@@ -1,0 +1,3 @@
+[submodule "src/GAP_turbo"]
+	path = src/GAP_turbo
+	url = http://github.com/libatoms/GAP_turbo.git
