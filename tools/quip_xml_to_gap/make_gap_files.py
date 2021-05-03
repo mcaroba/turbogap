@@ -33,7 +33,7 @@ import re
 import sys
 from pathlib import Path
 
-print("\n		MAKE GAP FILES | v. 2.0, 27.04.2020 | Author(s): Mikhail S. Kuklin, Miguel A. Caro\n")
+print("\n		MAKE GAP FILES | v. 2.1, 03.05.2020 | Author(s): Mikhail S. Kuklin, Miguel A. Caro\n")
 
 # transform list to string function
 def listToString(s):
@@ -304,9 +304,11 @@ cut_tmp = rex('cutoff=([-+]?\d*\.\d+|\d+)')
 potname_tmp = rex('gpCoordinates label="GAP_(.*)" dimensions')
 ns_tmp = rex('n_species=(\d)')
 compress = rexdesc('compress_file')
+# check if hirshfeld.xml is given
 if len(sys.argv) > 3:
 	potname_h_tmp = rexh('gpCoordinates label="GAP_(.*)" dimensions')
-
+	delta_h_tmp = rexh('delta=([-+]?\d*\.\d+|\d+)')
+	lp1 = rexh('local_property0=([-+]?\d*\.\d+|\d+)')
 
 # give name of the output file as the second argument in the command when script is executed
 output = sys.argv[2]
@@ -499,15 +501,24 @@ for i in range(n_mb):
 			if len(compress) > 0:
 				f3.write('compress_soap = .true.\n')
 				f3.write('file_compress_soap = \'gap_files/compress_%u.dat\'\n' % u)
+			# add hirshfeld info is exist
 			if n_hirs > 0:
 				f3.write('has_vdw = .true.\n')
 				potname_h = potname_h_tmp[i]
 				f3.write('vdw_qs = \'gap_files/%s.sparseX.GAP_%s\'\n' % (sys.argv[3],potname_h))
 				f3.write('vdw_alphas = \'gap_files/alphas_hirshfeld_%u.dat\'\n' % u)
 				f3.write('vdw_zeta = %s\n' % zeta)
-				f3.write('vdw_delta = %s\n' % delta)
-				lp1 = rexh('local_property0=([-+]?\d*\.\d+|\d+)')
-				lp = lp1[0]
+				delta_h = float(delta_h_tmp[i])
+				f3.write('vdw_delta = %s\n' % delta_h)
+				if lp1 == []:
+					keyw_lp = rexh('local_property0={(.*?)}')
+					lp_tmp1 = keyw_lp[0]
+					lp_tmp2 = re.sub(r"(?!(?<=\d)\.(?=\d))[^0-9 ]"," ",lp_tmp1)
+					lp_tmp3 = [float(x) for x in lp_tmp2.split()]
+					lp_tmp4 = np.array(lp_tmp3)
+					lp = lp_tmp4[i]
+				else:
+					lp = lp1[0]						
 				f3.write('vdw_v0 = %s\n' % lp)
 				f3.write('gap_end\n')
 				f3.write('\n')
@@ -518,6 +529,7 @@ for i in range(n_mb):
 				f3.write('\n')
 				f3.close()
 
+# add core potentials if exist
 if n_cp > 0:
 	dat = rex('<point r=(.*)"/>')
 	s_dat = str(dat)
@@ -554,7 +566,7 @@ if n_cp > 0:
 	for i in range(n_cp):
 		with open(output, 'a') as f3:
 			if int(s_am[0]) == 1:
-				s = elem(int(s_at2[i]))
+				s = elem(int(s_at[i]))
 				f3.write('gap_beg core_pot\n')
 				f3.write('species1 = %s\n' % s)
 				f3.write('species2 = %s\n' % s)
