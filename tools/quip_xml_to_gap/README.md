@@ -18,5 +18,7 @@ With Hirshfeld volumes GAP(s):
 
 make_gap_files.py pot.xml pot.gap hirshfeld.xml
 
-Note that compression files should be included to the folder 'gap_files' manually with the name compress_[number_of_many_body_descriptor].dat (for example: compress_1.dat]
-All necessary files should be in the folder called 'gap_files'.
+Note that
+- all necessary files should be in the folder called 'gap_files'
+- compression files should be included to the folder 'gap_files' manually with the name compress_[number_of_many_body_descriptor].dat (for example: compress_1.dat)
+- current implementation allows reading only ONE hirshfeld.xml file. However, user can create necessary files running code several times and manually changing gap file
