@@ -260,9 +260,9 @@ module md
     implicit none
 
     real*8, intent(inout) :: positions(:, :), a_box(1:3), b_box(1:3), c_box(1:3)
-    real*8, intent(in) :: gamma
+    real*8, intent(in) :: gamma(3,3)
     integer, intent(in) :: n_steps, indices(:)
-    real*8 :: f
+    real*8 :: f(3,3), identity(3,3) = reshape([1.d0, 0.d0, 0.d0, 0.d0, 1.d0, 0.d0, 0.d0, 0.d0, 1.d0], [3,3])
     real*8, save :: a0(1:3), b0(1:3), c0(1:3)
     integer :: i_step
     integer, save :: indices0(1:3)
@@ -274,11 +274,16 @@ module md
       indices0(1:3) = indices(1:3)
     end if
 
-    positions = positions * ( 1.d0 + (gamma-1.d0) / dfloat(n_steps) )
-    f = 1.d0 + (gamma-1.d0) * dfloat(i_step+1) / dfloat(n_steps)
-    a_box = a0 * f / dfloat(indices0(1)) * dfloat(indices(1))
-    b_box = b0 * f / dfloat(indices0(2)) * dfloat(indices(2))
-    c_box = c0 * f / dfloat(indices0(3)) * dfloat(indices(3))
+!    positions = positions * ( 1.d0 + (gamma-1.d0) / dfloat(n_steps) )
+!    f = 1.d0 + (gamma-1.d0) * dfloat(i_step+1) / dfloat(n_steps)
+!    a_box = a0 * f / dfloat(indices0(1)) * dfloat(indices(1))
+!    b_box = b0 * f / dfloat(indices0(2)) * dfloat(indices(2))
+!    c_box = c0 * f / dfloat(indices0(3)) * dfloat(indices(3))
+    positions = positions + matmul(gamma-identity, positions) / dfloat(n_steps)
+    f = identity + (gamma-identity) * dfloat(i_step+1) / dfloat(n_steps)
+    a_box = matmul(f, a0) / dfloat(indices0(1)) * dfloat(indices(1))
+    b_box = matmul(f, b0) / dfloat(indices0(2)) * dfloat(indices(2))
+    c_box = matmul(f, c0) / dfloat(indices0(3)) * dfloat(indices(3))
 
   end subroutine 
 !**************************************************************************

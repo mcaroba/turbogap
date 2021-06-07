@@ -431,8 +431,10 @@ end if
     type(input_parameters), intent(out) :: params
 
 !   Internal variables
-    real*8 :: c6_ref, r0_ref, alpha0_ref 
-    integer :: iostatus, i
+    real*8 :: c6_ref, r0_ref, alpha0_ref, bsf 
+    integer :: iostatus, i, iostatus2
+    character*1024 :: long_line
+    character*128, allocatable :: long_line_items(:)
     character*64 :: keyword, cjunk
     character*32 :: implemented_thermostats(1:3)
     character*32 :: implemented_barostats(1:2)
@@ -613,7 +615,49 @@ end if
         read(10, *, iostat=iostatus) cjunk, cjunk, params%write_lv
       else if(keyword=='box_scaling_factor')then
         backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%box_scaling_factor
+        read(10, '(A)', iostat=iostatus) long_line
+        allocate( long_line_items(1:9) )
+        do i = 1, 9
+          read(long_line, *, iostat=iostatus2) cjunk, cjunk, long_line_items(1:i)
+          if( iostatus2 == -1 )exit
+        end do
+        i = i - 1
+        if( i == 1 )then
+          read(long_line_items(1), *) bsf
+          params%box_scaling_factor(1,1) = bsf
+          params%box_scaling_factor(2,2) = bsf
+          params%box_scaling_factor(3,3) = bsf
+        else if( i == 3 )then
+          read(long_line_items(1), *) bsf
+          params%box_scaling_factor(1,1) = bsf
+          read(long_line_items(2), *) bsf
+          params%box_scaling_factor(2,2) = bsf
+          read(long_line_items(3), *) bsf
+          params%box_scaling_factor(3,3) = bsf
+        else if( i == 9 )then
+          read(long_line_items(1), *) bsf
+          params%box_scaling_factor(1,1) = bsf
+          read(long_line_items(2), *) bsf
+          params%box_scaling_factor(1,2) = bsf
+          read(long_line_items(3), *) bsf
+          params%box_scaling_factor(1,3) = bsf
+          read(long_line_items(4), *) bsf
+          params%box_scaling_factor(2,1) = bsf
+          read(long_line_items(5), *) bsf
+          params%box_scaling_factor(2,2) = bsf
+          read(long_line_items(6), *) bsf
+          params%box_scaling_factor(2,3) = bsf
+          read(long_line_items(7), *) bsf
+          params%box_scaling_factor(3,1) = bsf
+          read(long_line_items(8), *) bsf
+          params%box_scaling_factor(3,2) = bsf
+          read(long_line_items(9), *) bsf
+          params%box_scaling_factor(3,3) = bsf
+        else
+          write(*,*) "ERROR: the box_scaling_factor must be given by 1, 3 or 9 numbers"
+          stop
+        end if
+        deallocate( long_line_items )
       else if( keyword == "vdw_type" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_type
