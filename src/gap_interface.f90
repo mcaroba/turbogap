@@ -69,7 +69,7 @@ module gap_interface
 
 !   Output variables
     real*8, allocatable, intent(out) :: soap(:,:), soap_cart_der(:,:,:)
-    real*8, intent(out) :: virial
+    real*8, intent(out) :: virial(1:3, 1:3)
 
 !   Inout variables
     real*8, intent(inout) :: energies0(:), forces0(:,:), hirshfeld_v0(:), hirshfeld_v_cart_der0(:,:)

@@ -52,8 +52,9 @@ program turbogap
   real*8, allocatable :: positions(:,:), positions_prev(:,:), soap(:,:), soap_cart_der(:,:,:), &
                          positions_diff(:,:), forces_prev(:,:)
   real*8 :: rcut_max, a_box(1:3), b_box(1:3), c_box(1:3), max_displacement, e_prev
-  real*8 :: virial, this_virial, virial_soap, virial_2b, virial_3b, virial_core_pot, virial_vdw, &
-            this_virial_vdw, v_uc, eVperA3tobar = 1602176.6208d0
+  real*8 :: virial(1:3, 1:3), this_virial(1:3, 1:3), virial_soap(1:3, 1:3), virial_2b(1:3, 1:3), &
+            virial_3b(1:3,1:3), virial_core_pot(1:3, 1:3), virial_vdw(1:3, 1:3), &
+            this_virial_vdw(1:3, 1:3), v_uc, eVperA3tobar = 1602176.6208d0
   real*8, allocatable :: energies(:), forces(:,:), energies_soap(:), forces_soap(:,:), this_energies(:), &
                          this_forces(:,:), &
                          energies_2b(:), forces_2b(:,:), energies_3b(:), forces_3b(:,:), &
@@ -1100,7 +1101,7 @@ program turbogap
       if( params%do_forces )then
         call cpu_time(time_mpi(1))
         call mpi_reduce(forces_soap, this_forces, 3*n_sites, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
-        call mpi_reduce(virial_soap, this_virial, 1, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+        call mpi_reduce(virial_soap, this_virial, 9, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
         call cpu_time(time_mpi(2))
         time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
         forces_soap = this_forces
@@ -1170,7 +1171,7 @@ program turbogap
         if( params%do_forces )then
           call mpi_reduce(this_forces_vdw, forces_vdw, 3*n_sites, MPI_DOUBLE_PRECISION, MPI_SUM, &
                           0, MPI_COMM_WORLD, ierr)
-          call mpi_reduce(this_virial_vdw, virial_vdw, 1, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+          call mpi_reduce(this_virial_vdw, virial_vdw, 9, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
         end if
         call cpu_time(time_mpi(2))
         time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
@@ -1224,7 +1225,7 @@ program turbogap
         if( params%do_forces )then
           call cpu_time(time_mpi(1))
           call mpi_reduce(forces_2b, this_forces, 3*n_sites, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
-          call mpi_reduce(virial_2b, this_virial, 1, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+          call mpi_reduce(virial_2b, this_virial, 9, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
           call cpu_time(time_mpi(2))
           time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
           forces_2b = this_forces
@@ -1268,7 +1269,7 @@ program turbogap
         if( params%do_forces )then
           call cpu_time(time_mpi(1))
           call mpi_reduce(forces_core_pot, this_forces, 3*n_sites, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
-          call mpi_reduce(virial_core_pot, this_virial, 1, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+          call mpi_reduce(virial_core_pot, this_virial, 9, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
           call cpu_time(time_mpi(2))
           time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
           forces_core_pot = this_forces
@@ -1314,7 +1315,7 @@ program turbogap
         if( params%do_forces )then
           call cpu_time(time_mpi(1))
           call mpi_reduce(forces_3b, this_forces, 3*n_sites, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
-          call mpi_reduce(virial_3b, this_virial, 1, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+          call mpi_reduce(virial_3b, this_virial, 9, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
           call cpu_time(time_mpi(2))
           time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
           forces_3b = this_forces
@@ -1381,7 +1382,7 @@ end if
         if( params%do_prediction .and. ( .not. params%do_md .or. &
             (params%do_md .and. (md_istep == 0 .or. md_istep == params%md_nsteps .or. &
                                  modulo(md_istep, params%write_xyz) == 0)) ) )then
-          write(10, *) n_sites, sum(energies), virial/3.d0/v_uc
+          write(10, *) n_sites, sum(energies), (virial(1,1) + virial(2,2) + virial(3,3))/3.d0/v_uc
           do i = 1, n_sites
             if( params%do_forces )then
               if( any( soap_turbo_hypers(:)%has_vdw ) )then
@@ -1441,7 +1442,7 @@ end if
       end do
       instant_temp = 2.d0/3.d0/dfloat(n_sites-1)/kB*E_kinetic
 !     Instant pressure in bar
-      instant_pressure = (kB*dfloat(n_sites-1)*instant_temp+virial/3.d0)/v_uc*eVperA3tobar
+      instant_pressure = (kB*dfloat(n_sites-1)*instant_temp+(virial(1,1) + virial(2,2) + virial(3,3))/3.d0)/v_uc*eVperA3tobar
       if( md_istep == 0 )then
         open(unit=10, file="thermo.log", status="unknown")
       else

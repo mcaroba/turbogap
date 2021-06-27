@@ -40,13 +40,13 @@ module gap
     implicit none
 
     real*8, intent(in) :: soap(:,:), soap_der(:,:,:), alphas(:), delta, Qs(:,:), e0, zeta0, xyz(:,:)
-    real*8, intent(out) :: energies(:), forces(:,:), virial
+    real*8, intent(out) :: energies(:), forces(:,:), virial(1:3,1:3)
     integer, intent(in) :: n_neigh(:), neighbors_list(:)
     logical, intent(in) :: do_forces, do_timing
     real*8, allocatable :: kernels(:,:), kernels_der(:,:), Qss(:,:), Qs_copy(:,:), this_Qss(:), &
                            kernels_copy(:,:)
     real*8 :: time1, time2, time3, energies_time, forces_time, zeta, this_force(1:3)
-    integer :: n_sites, n_sparse, n_soap, i, j, k, l, j2, zeta_int, n_sites0
+    integer :: n_sites, n_sparse, n_soap, i, j, k, l, j2, zeta_int, n_sites0, k1, k2
     logical :: is_zeta_int = .false.
 !    integer, allocatable :: neighbors_beg(:), neighbors_end(:)
 
@@ -151,7 +151,12 @@ module gap
             forces(k, j2) = forces(k, j2) + this_force(k)
           end do
 !         This is a many body potential, so there's no factor of 1/2 here
-          virial = virial + dot_product( this_force(1:3), xyz(1:3,l) )
+!          virial = virial + dot_product( this_force(1:3), xyz(1:3,l) )
+          do k1 = 1, 3
+            do k2 =1, 3
+              virial(k1, k2) = virial(k1, k2) + 0.5d0 * (this_force(k1)*xyz(k2,l) + this_force(k2)*xyz(k1,l))
+            end do
+          end do
         end do
       end do
 !!$OMP end parallel do
@@ -211,11 +216,11 @@ module gap
     logical, intent(in) :: do_forces, do_timing
 
 !   Output variables
-    real*8, intent(out) :: energies(:), forces(:,:), virial
+    real*8, intent(out) :: energies(:), forces(:,:), virial(1:3,1:3)
 
 !   Internal variables
     real*8 :: time1, time2, fcut, pi, dfcut, this_force(1:3)
-    integer :: n_sparse, i, j, k, n_sites, n_atom_pairs, s, sp1, sp2, n_sites0
+    integer :: n_sparse, i, j, k, n_sites, n_atom_pairs, s, sp1, sp2, n_sites0, k1, k2
 
     if( do_timing )then
       call cpu_time(time1)
@@ -305,7 +310,12 @@ module gap
                               dexp(-0.5d0 * (rjs(k) - Qs(s))**2 / sigma**2) * &
                               xyz(1:3, k) / rjs(k) * ( (rjs(k) - Qs(s)) / sigma**2 * fcut + dfcut )
               forces(1:3,i) = forces(1:3,i) + this_force(1:3)
-              virial = virial - dot_product( this_force(1:3), xyz(1:3,k) )
+!              virial = virial - dot_product( this_force(1:3), xyz(1:3,k) )
+              do k1 = 1, 3
+                do k2 =1, 3
+                  virial(k1, k2) = virial(k1, k2) - 0.5d0 * (this_force(k1)*xyz(k2,k) + this_force(k2)*xyz(k1,k))
+                end do
+              end do
             end do
           end if
         end do
@@ -346,7 +356,7 @@ module gap
     logical, intent(in) :: do_forces, do_timing
 
 !   Output variables
-    real*8, intent(out) :: energies(:), forces(:,:), virial
+    real*8, intent(out) :: energies(:), forces(:,:), virial(1:3,1:3)
 
 !   Internal variables
 !   There are two ways of doing the core_pot interpolation; most efficient probably depends on
@@ -356,7 +366,7 @@ module gap
     real*8 :: V_int(1:1), dV_int(1:1), this_force(1:3)
 !    real*8, allocatable :: V_int(:), dV_int(:)
     real*8 :: time1, time2, rcut
-    integer :: n_sparse, i, j, k, n_sites, n_atom_pairs, s, sp1, sp2, n_sites0
+    integer :: n_sparse, i, j, k, n_sites, n_atom_pairs, s, sp1, sp2, n_sites0, k1, k2
 
     if( do_timing )then
       call cpu_time(time1)
@@ -438,7 +448,12 @@ module gap
             dV_int = spline_der(x, V, dVdx2, yp1, ypn, rjs(k:k), rcut)
             this_force(1:3) = dV_int(1) * xyz(1:3, k) / rjs(k)
             forces(1:3,i) = forces(1:3,i) + this_force(1:3)
-            virial = virial - dot_product( this_force(1:3), xyz(1:3, k) )
+!            virial = virial - dot_product( this_force(1:3), xyz(1:3, k) )
+            do k1 = 1, 3
+              do k2 =1, 3
+                virial(k1, k2) = virial(k1, k2) - 0.5d0 * (this_force(k1)*xyz(k2,k) + this_force(k2)*xyz(k1,k))
+              end do
+            end do
           end if
         end do
       end do
@@ -482,7 +497,7 @@ module gap
     character*8, intent(in) :: species_center, species1, species2, species_types(:)
 
 !   Output variables 
-    real*8, intent(out) :: energies(:), forces(:,:), virial
+    real*8, intent(out) :: energies(:), forces(:,:), virial(1:3,1:3)
 
 !   Internal variables
     real*8 :: time1, time2, fcut, pi, r12, r13, r23, xyz12(1:3), xyz13(1:3), &
@@ -491,7 +506,7 @@ module gap
               xyz12_red(1:3), xyz13_red(1:3), xyz23_red(1:3), this_force(1:3)
     real*8, allocatable :: r(:), drdq(:,:), kernel(:), drdx1(:,:), drdx2(:,:), drdx3(:,:), pref(:), &
                            kernel_der(:)
-    integer :: n_sparse, i, j, k, k2, n_sites, n_atom_pairs, s, j2, i3, j3, k3, l, sp0, sp1, sp2, n_sites0
+    integer :: n_sparse, i, j, k, k2, n_sites, n_atom_pairs, s, j2, i3, j3, k3, l, sp0, sp1, sp2, n_sites0, k1, k4
 
     if( do_timing )then
       call cpu_time(time1)
@@ -649,8 +664,14 @@ module gap
                 forces(1:3, j3) = forces(1:3, j3) + force2(1:3)
                 forces(1:3, k3) = forces(1:3, k3) + force3(1:3)
 !               force1 acting on i3 does not contribute to the virial
-                virial = virial + dot_product( force2(1:3), xyz12(1:3) )
-                virial = virial + dot_product( force3(1:3), xyz13(1:3) )
+!                virial = virial + dot_product( force2(1:3), xyz12(1:3) )
+!                virial = virial + dot_product( force3(1:3), xyz13(1:3) )
+                do k1 = 1, 3
+                  do k4 =1, 3
+                    virial(k1, k4) = virial(k1, k4) + 0.5d0 * (force2(k1)*xyz12(k4) + force2(k4)*xyz12(k1))
+                    virial(k1, k4) = virial(k1, k4) + 0.5d0 * (force3(k1)*xyz13(k4) + force3(k4)*xyz13(k1))
+                  end do
+                end do
               end if
             else if( kernel_type == "pol" )then
 !             This kernel already contains the prefactor
@@ -685,8 +706,14 @@ module gap
                 forces(1:3, j3) = forces(1:3, j3) + force2(1:3)
                 forces(1:3, k3) = forces(1:3, k3) + force3(1:3)
 !               force1 acting on i3 does not contribute to the virial
-                virial = virial + dot_product( force2(1:3), xyz12(1:3) )
-                virial = virial + dot_product( force3(1:3), xyz13(1:3) )
+!                virial = virial + dot_product( force2(1:3), xyz12(1:3) )
+!                virial = virial + dot_product( force3(1:3), xyz13(1:3) )
+                do k1 = 1, 3
+                  do k4 =1, 3
+                    virial(k1, k4) = virial(k1, k4) + 0.5d0 * (force2(k1)*xyz12(k4) + force2(k4)*xyz12(k1))
+                    virial(k1, k4) = virial(k1, k4) + 0.5d0 * (force3(k1)*xyz13(k4) + force3(k4)*xyz13(k1))
+                 end do
+               end do
               end if
             end if
           end if

@@ -154,7 +154,7 @@ module vdw
     integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:)
     logical, intent(in) :: do_forces
 !   Output variables
-    real*8, intent(out) :: virial
+    real*8, intent(out) :: virial(1:3, 1:3)
 !   In-Out variables
     real*8, intent(inout) :: energies(:), forces0(:,:)
 !   Internal variables
@@ -164,7 +164,7 @@ module vdw
     real*8 :: time1, time2, c6_ii, c6_jj, r0_i, r0_j, alpha0_i, alpha0_j, rbuf, this_force(1:3)
     integer, allocatable:: i_buffer(:)
     integer :: n_sites, n_pairs, n_pairs_soap, n_species, n_sites0
-    integer :: i, j, i2, j2, k, n_in_buffer
+    integer :: i, j, i2, j2, k, n_in_buffer, k1, k2
     logical, allocatable :: is_in_buffer(:)
     logical :: do_timing = .false.
 
@@ -367,7 +367,12 @@ module vdw
               forces0(1:3, j2) = forces0(1:3, j2) + this_force(1:3)
 !             Sign is plus because this force is acting on j2. Factor of one is because this is
 !             derived from a local energy
-              virial = virial + dot_product(this_force(1:3), xyz(1:3,k))
+!              virial = virial + dot_product(this_force(1:3), xyz(1:3,k))
+              do k1 = 1, 3
+                do k2 =1, 3
+                  virial(k1, k2) = virial(k1, k2) + 0.5d0 * (this_force(k1)*xyz(k2,k) + this_force(k2)*xyz(k1,k))
+                end do
+              end do
             end if
             if( r0_ij(k) == 0.d0 )then
               this_force(1:3) = 0.d0
@@ -383,7 +388,12 @@ module vdw
 !           ... but the periodic replicas DO contribute to the virial
 !           Sign is minus because this force is acting on i2. Factor of 1/2 is because this is
 !           derived from a pair energy
-            virial = virial - 0.5d0 * dot_product(this_force(1:3), xyz(1:3,k))
+!            virial = virial - 0.5d0 * dot_product(this_force(1:3), xyz(1:3,k))
+            do k1 = 1, 3
+              do k2 =1, 3
+                virial(k1, k2) = virial(k1, k2) - 0.25d0 * (this_force(k1)*xyz(k2,k) + this_force(k2)*xyz(k1,k))
+              end do
+            end do
           end if
         end do
       end do
