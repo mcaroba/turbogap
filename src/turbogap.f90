@@ -355,7 +355,8 @@ program turbogap
                          n_distance_2b, distance_2b_hypers, &
                          n_angle_3b, angle_3b_hypers, &
                          n_core_pot, core_pot_hypers, &
-                         rcut_max, params%do_prediction )
+                         rcut_max, params%do_prediction, &
+                         params )
 !   Check if vdw_rcut is bigger
     if( params%vdw_rcut > rcut_max )then
       rcut_max = params%vdw_rcut

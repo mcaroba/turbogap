@@ -700,6 +700,12 @@ end if
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_alpha0_ref(1:n_species)
         are_vdw_refs_read(3) = .true.
+      else if( keyword == "core_pot_cutoff" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%core_pot_cutoff
+      else if( keyword == "core_pot_buffer" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%core_pot_buffer
       else if(keyword=='species')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%species_types(1:n_species)
@@ -772,11 +778,12 @@ end if
                              n_distance_2b, distance_2b_hypers, &
                              n_angle_3b, angle_3b_hypers, &
                              n_core_pot, core_pot_hypers, &
-                             rcut_max, do_prediction )
+                             rcut_max, do_prediction, params )
 
     implicit none
 
 !   Input variables
+    type(input_parameters), intent(in) :: params
     logical, intent(in) :: do_prediction
     character(len=*), intent(in) :: file_gap
 
@@ -789,7 +796,7 @@ end if
     type(core_pot), allocatable, intent(out) :: core_pot_hypers(:)
 
 !   Internal variables
-    real*8, allocatable :: u(:)
+    real*8, allocatable :: u(:), x(:), V(:)
     real*8 :: sig, p, qn, un
     integer :: iostatus, i, counter, n_species, n_sparse, ijunk, n
     character*64 :: keyword, cjunk
@@ -1184,13 +1191,32 @@ end if
           open(20, file=core_pot_hypers(n_core_pot)%core_pot_file, status="unknown")
           read(20, *) core_pot_hypers(n_core_pot)%n, core_pot_hypers(n_core_pot)%yp1, core_pot_hypers(n_core_pot)%ypn
           n = core_pot_hypers(n_core_pot)%n
-          allocate( core_pot_hypers(n_core_pot)%V(1:n) )
-          allocate( core_pot_hypers(n_core_pot)%x(1:n) )
-          allocate( core_pot_hypers(n_core_pot)%dVdx2(1:n) )
+          allocate( V(1:n) )
+          allocate( x(1:n) )
+          counter = 0
           do i = 1, n
-            read(20,*) core_pot_hypers(n_core_pot)%x(i), core_pot_hypers(n_core_pot)%V(i)
+            read(20,*) x(i), V(i)
+            if( x(i) <= params%core_pot_cutoff )then
+              counter = counter + 1
+              x(counter) = x(i)
+              if( x(i) <= params%core_pot_cutoff - params%core_pot_buffer )then
+                V(counter) = V(i)
+              else
+                V(counter) = V(i) * 0.5d0 * ( dcos(dacos(-1.d0)/params%core_pot_buffer*(x(i) - params%core_pot_cutoff &
+                             + params%core_pot_buffer)) + 1.d0 )
+              end if
+            end if
           end do
           close(20)
+          n = counter
+          core_pot_hypers(n_core_pot)%n = n
+          allocate( core_pot_hypers(n_core_pot)%V(1:n) )
+          core_pot_hypers(n_core_pot)%V(1:n) = V(1:n)
+          deallocate( V )
+          allocate( core_pot_hypers(n_core_pot)%x(1:n) )
+          core_pot_hypers(n_core_pot)%x(1:n) = x(1:n)
+          deallocate( x )
+          allocate( core_pot_hypers(n_core_pot)%dVdx2(1:n) )
 !         This code below for spline second derivative is more or less copy-pasted from QUIP. It's the
 !         easiest way to make sure both interpolations give the same numbers
           allocate( u(1:n) )
