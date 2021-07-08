@@ -33,12 +33,12 @@ respective licenses have been verified to be compatible for redistribution with 
 They may be redistributed separately from **TurboGAP** under their respective licenses.
 Refer to each piece of software in that subdirectory for further information.
 
-The **GAP_turbo** submodule, under `src/GAP_turbo`, is a separate distribution from
+The **soap_turbo** submodule, under `src/soap_turbo`, is a separate distribution from
 **TurboGAP**, but it is required
 for running **TurboGAP**, since it contains the `soap_turbo` routines. These routines are
 copyright (c) of Miguel A. Caro and they are also distributed under the ASL. Therefore, you
 can freely use this code for non-commercial academic research or teaching. If you want to
-obtain a commercial license for **GAP_turbo** please contact Miguel Caro (mcaroba@gmail.com).
+obtain a commercial license for **soap_turbo** please contact Miguel Caro (mcaroba@gmail.com).
 
 ## Overview of the code
 
@@ -50,11 +50,11 @@ dynamics simulations. The main current functionality is the computation of SOAP-
 descriptors [1], which were originally introduced by Bartók, Csányi et al. [2] in the
 context of the Gaussian Approximation Potential framework [3].
 
-**TurboGAP** is a primitive but efficient interface to the **GAP_turbo** library.
+**TurboGAP** is a primitive but efficient interface to the **soap_turbo** library.
 This native interface is currently restricted to limited functionality but reasonably
 fast (can outperform QUIP+LAMMPS in most situations); however it may be buggy, is
 undocumented, and can be "temperamental". If you want to use
-**GAP_turbo** routines to run molecular dynamics or to carry out other simulations involving
+**soap_turbo** routines to run molecular dynamics or to carry out other simulations involving
 heavy use of CPU power, without the worries of using the native interface, you are advised to
 use QUIP. However, some new or experimental features (e.g.,
 full support for van der Waals corrections) may only be available via the native interface.
@@ -74,7 +74,7 @@ or left on the Issues section of the Github page.
 *For more detailed info on download, installation, etc., you can visit the
 [TurboGAP wiki](https://turbogap.fi/wiki/index.php/Installation).*
 
-To get the **TurboGAP** code and the necessary **GAP_turbo** routines, do a recursive
+To get the **TurboGAP** code and the necessary **soap_turbo** routines, do a recursive
 `git clone`:
 
     git clone --recursive http://github.com/mcaroba/turbogap.git /turbogap/source/directory
@@ -99,7 +99,7 @@ refer to the [TurboGAP wiki](http://turbogap.fi).
 When using **TurboGAP**, you should give attribution to the
 **TurboGAP** author(s). The appropriate way to do that is to provide a link to the
 [**TurboGAP** website](https://www.turbogap.fi) and, if you publish results obtained
-using **TurboGAP** or the **GAP_turbo** library,
+using **TurboGAP** or the **soap_turbo** library,
 even if it is through one of its external interfaces, you should cite:
 
 >**Miguel A. Caro**. *Optimizing many-body atomic descriptors for enhanced computational
