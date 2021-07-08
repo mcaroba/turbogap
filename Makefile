@@ -52,11 +52,11 @@ PROGRAMS := turbogap
 SRC := splines.f90 types.f90 neighbors.f90 gap.f90 vdw.f90 read_files.f90 md.f90 \
        gap_interface.f90 mpi.f90
 SRC_TP_BT := resamplekin.f90
-SRC_GT := functions.f90 radial.f90 angular.f90 soap.f90
+SRC_ST := functions.f90 radial.f90 angular.f90 soap.f90
 
 OBJ := $(addprefix $(BUILD_DIR)/,$(patsubst %.f90,%.o,$(SRC)))
 OBJ_TP_BT := $(addprefix $(BUILD_DIR)/,$(patsubst %.f90,%.o,$(SRC_TP_BT)))
-OBJ_GT := $(addprefix $(BUILD_DIR)/,$(patsubst %.f90,%.o,$(SRC_GT)))
+OBJ_ST := $(addprefix $(BUILD_DIR)/,$(patsubst %.f90,%.o,$(SRC_ST)))
 
 PROG := $(addprefix $(BIN_DIR)/,$(PROGRAMS))
 
@@ -71,7 +71,7 @@ default: libturbogap programs
 all: default
 
 clean:
-	rm -rf $(OBJ_TP_BT) $(OBJ_GT) $(OBJ) $(INC_DIR)/*.mod $(PROG)
+	rm -rf $(OBJ_TP_BT) $(OBJ_ST) $(OBJ) $(INC_DIR)/*.mod $(PROG)
 
 deepclean:
 	rm -rf $(BUILD_DIR) $(BIN_DIR) ${INC_DIR} ${LIB_DIR}
@@ -81,15 +81,15 @@ deepclean:
 
 programs: $(PROG)
 
-libturbogap: $(OBJ_TP_BT) $(OBJ_GT) $(OBJ) ${LIB_DIR}
-	ar scr $(LIB_DIR)/libturbogap.a $(OBJ_TP_BT) $(OBJ_GT) $(OBJ)
+libturbogap: $(OBJ_TP_BT) $(OBJ_ST) $(OBJ) ${LIB_DIR}
+	ar scr $(LIB_DIR)/libturbogap.a $(OBJ_TP_BT) $(OBJ_ST) $(OBJ)
 
-$(BIN_DIR)/%: src/%.f90 $(OBJ_TP_BT) $(OBJ_GT) $(OBJ) | $$(@D)
-	$(F90) $(PP) $(F90_OPTS) $< -o $@ $(OBJ_TP_BT) $(OBJ_GT) $(OBJ) $(LIBS)
+$(BIN_DIR)/%: src/%.f90 $(OBJ_TP_BT) $(OBJ_ST) $(OBJ) | $$(@D)
+	$(F90) $(PP) $(F90_OPTS) $< -o $@ $(OBJ_TP_BT) $(OBJ_ST) $(OBJ) $(LIBS)
 
 $(BUILD_DIR)/%.o: src/third_party/bussi_thermostat/%.f90 | $$(@D)
 	$(F90) $(PP) $(F90_OPTS) -c $< -o $@
-$(BUILD_DIR)/%.o: src/GAP_turbo/src/%.f90 | $$(@D)
+$(BUILD_DIR)/%.o: src/soap_turbo/src/%.f90 | $$(@D)
 	$(F90) $(PP) $(F90_OPTS) -c $< -o $@
 $(BUILD_DIR)/%.o: src/%.f90 | $$(@D)
 	$(F90) $(PP) $(F90_OPTS) -c $< -o $@
