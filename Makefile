@@ -52,7 +52,7 @@ PROGRAMS := turbogap
 SRC := splines.f90 types.f90 neighbors.f90 gap.f90 vdw.f90 read_files.f90 md.f90 \
        gap_interface.f90 mpi.f90
 SRC_TP_BT := resamplekin.f90
-SRC_ST := functions.f90 radial.f90 angular.f90 soap.f90
+SRC_ST := functions.f90 radial.f90 angular.f90 soap.f90 soap_turbo_compress.f90
 
 OBJ := $(addprefix $(BUILD_DIR)/,$(patsubst %.f90,%.o,$(SRC)))
 OBJ_TP_BT := $(addprefix $(BUILD_DIR)/,$(patsubst %.f90,%.o,$(SRC_TP_BT)))

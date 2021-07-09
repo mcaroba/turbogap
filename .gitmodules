@@ -1,3 +1,4 @@
 [submodule "src/soap_turbo"]
 	path = src/soap_turbo
 	url = https://github.com/libAtoms/soap_turbo.git
+	branch = master

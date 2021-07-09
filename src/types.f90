@@ -39,8 +39,8 @@ module types
     integer, allocatable :: alpha_max(:), compress_soap_indices(:)
     integer :: n_species, central_species = 0, dim, l_max, radial_enhancement = 0, n_max, n_sparse, &
                vdw_n_sparse
-    character*1024 :: file_alphas, file_desc, file_compress, file_vdw_alphas, file_vdw_desc
-    character*64 :: basis = "poly3"
+    character*1024 :: file_alphas, file_desc, file_compress = "none", file_vdw_alphas, file_vdw_desc
+    character*64 :: basis = "poly3", compress_mode = "none"
     character*32 :: scaling_mode = "polynomial"
     character*8, allocatable :: species_types(:)
     logical :: compress_soap = .false., has_vdw = .false.

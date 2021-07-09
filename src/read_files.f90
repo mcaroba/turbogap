@@ -32,6 +32,7 @@ module read_files
   use types
   use splines
   use vdw
+  use soap_turbo_compress
 
 
   contains
@@ -972,6 +973,12 @@ end if
             else if( keyword == "compress_soap" )then
               backspace(10)
               read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%compress_soap
+            else if( keyword == "file_compress_soap" )then
+              backspace(10)
+              read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%file_compress
+            else if( keyword == "compress_mode" )then
+              backspace(10)
+              read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%compress_mode
             else if( keyword == "zeta" )then
               backspace(10)
               read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%zeta
@@ -1008,9 +1015,6 @@ end if
             else if( keyword == "desc_sparse" )then
               backspace(10)
               read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%file_desc
-            else if( keyword == "file_compress_soap" )then
-              backspace(10)
-              read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%file_compress
             else if( keyword == "has_vdw" )then
               backspace(10)
               read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%has_vdw
@@ -1064,13 +1068,34 @@ end if
           end do
 !         Handle SOAP compression here
           if( soap_turbo_hypers(n_soap_turbo)%compress_soap )then
-            open(unit=20, file=soap_turbo_hypers(n_soap_turbo)%file_compress, status="old")
-            read(20, *) (ijunk, i=1,n_species), ijunk, soap_turbo_hypers(n_soap_turbo)%dim
-            allocate( soap_turbo_hypers(n_soap_turbo)%compress_soap_indices(1:soap_turbo_hypers(n_soap_turbo)%dim) )
-            do i = 1, soap_turbo_hypers(n_soap_turbo)%dim
-              read(20, *) soap_turbo_hypers(n_soap_turbo)%compress_soap_indices(i)
-            end do
-            close(20)
+!           A compress file takes priority over compress mode
+            if( soap_turbo_hypers(n_soap_turbo)%file_compress /= "none" )then
+              open(unit=20, file=soap_turbo_hypers(n_soap_turbo)%file_compress, status="old")
+              read(20, *) (ijunk, i=1,n_species), ijunk, soap_turbo_hypers(n_soap_turbo)%dim
+              allocate( soap_turbo_hypers(n_soap_turbo)%compress_soap_indices(1:soap_turbo_hypers(n_soap_turbo)%dim) )
+              do i = 1, soap_turbo_hypers(n_soap_turbo)%dim
+                read(20, *) soap_turbo_hypers(n_soap_turbo)%compress_soap_indices(i)
+              end do
+              close(20)
+            else if( soap_turbo_hypers(n_soap_turbo)%compress_mode /= "none" )then
+              call get_compress_indices( soap_turbo_hypers(n_soap_turbo)%compress_mode, &
+                                         soap_turbo_hypers(n_soap_turbo)%alpha_max, &
+                                         soap_turbo_hypers(n_soap_turbo)%l_max, &
+                                         soap_turbo_hypers(n_soap_turbo)%dim, &
+                                         soap_turbo_hypers(n_soap_turbo)%compress_soap_indices, &
+                                         "get_dim" )
+              allocate( soap_turbo_hypers(n_soap_turbo)%compress_soap_indices(1:soap_turbo_hypers(n_soap_turbo)%dim) )
+              call get_compress_indices( soap_turbo_hypers(n_soap_turbo)%compress_mode, &
+                                         soap_turbo_hypers(n_soap_turbo)%alpha_max, &
+                                         soap_turbo_hypers(n_soap_turbo)%l_max, &
+                                         soap_turbo_hypers(n_soap_turbo)%dim, &
+                                         soap_turbo_hypers(n_soap_turbo)%compress_soap_indices, &
+                                         "set_indices" )
+            else
+              write(*,*) "ERROR: you're trying to use compression but neither a file_compress_soap nor", &
+                         "compress_mode are defined!"
+              stop
+            end if
           else
             soap_turbo_hypers(n_soap_turbo)%dim = soap_turbo_hypers(n_soap_turbo)%n_max * &
                                                   (soap_turbo_hypers(n_soap_turbo)%n_max+1)/2 * &
