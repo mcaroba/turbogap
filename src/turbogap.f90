@@ -63,6 +63,8 @@ program turbogap
                          hirshfeld_v_cart_der(:,:)
   real*8, allocatable, target :: this_hirshfeld_v(:), this_hirshfeld_v_cart_der(:,:)
   real*8, pointer :: this_hirshfeld_v_pt(:), this_hirshfeld_v_cart_der_pt(:,:)
+  real*8, allocatable :: all_energies(:,:), all_forces(:,:,:), all_virial(:,:,:)
+  real*8, allocatable :: all_this_energies(:,:), all_this_forces(:,:,:), all_this_virial(:,:,:)
   real*8 :: instant_temp, kB = 8.6173303d-5, E_kinetic, time1, time2, time3, time_neigh, &
             time_gap, time_soap(1:3), time_2b(1:3), time_3b(1:3), time_read_input(1:3), time_read_xyz(1:3), &
             time_mpi(1:3) = 0.d0, time_core_pot(1:3), time_vdw(1:3), instant_pressure, lv(1:3,1:3)
@@ -79,7 +81,7 @@ program turbogap
   integer :: n_sites, i, j, k, i2, j2, n_soap, k2, k3, l, n_sites_this, ierr, rank, ntasks, dim, n_sp, &
              n_pos, n_sp_sc, this_i_beg, this_i_end, this_j_beg, this_j_end, this_n_sites_mpi
   integer :: l_max, n_atom_pairs, n_max, ijunk, central_species = 0, n_atom_pairs_total
-  integer :: iostatus, counter
+  integer :: iostatus, counter, counter2
   integer :: which_atom = 0, n_species = 1, n_xyz, indices(1:3)
   integer :: radial_enhancement = 0
   integer :: md_istep
@@ -1093,21 +1095,6 @@ program turbogap
 
 
 #ifdef _MPIF90
-!     I should simplify the timer calls in this block of code
-      call cpu_time(time_mpi(1))
-      call mpi_reduce(energies_soap, this_energies, n_sites, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
-      call cpu_time(time_mpi(2))
-      time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
-      energies_soap = this_energies
-      if( params%do_forces )then
-        call cpu_time(time_mpi(1))
-        call mpi_reduce(forces_soap, this_forces, 3*n_sites, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
-        call mpi_reduce(virial_soap, this_virial, 9, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
-        call cpu_time(time_mpi(2))
-        time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
-        forces_soap = this_forces
-        virial_soap = this_virial
-      end if
       if( any( soap_turbo_hypers(:)%has_vdw ) )then
         call cpu_time(time_mpi(1))
         call mpi_reduce(hirshfeld_v, this_hirshfeld_v, n_sites, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
@@ -1129,6 +1116,14 @@ program turbogap
 !     Compute vdW energies and forces
       if( any( soap_turbo_hypers(:)%has_vdw ) .and. params%do_prediction .and. params%vdw_type == "ts" )then
         call cpu_time(time_vdw(1))
+#ifdef _MPIF90
+        allocate( this_energies_vdw(1:n_sites) )
+        this_energies_vdw = 0.d0
+        if( params%do_forces )then
+          allocate( this_forces_vdw(1:3,1:n_sites) )
+          this_forces_vdw = 0.d0
+        end if
+#endif
         allocate(v_neigh_vdw(1:j_end-j_beg+1))
         v_neigh_vdw = 0.d0
         k = 0
@@ -1140,16 +1135,6 @@ program turbogap
             v_neigh_vdw(k) = hirshfeld_v(j2)
           end do
         end do
-#ifdef _MPIF90
-        allocate( this_energies_vdw(1:n_sites) )
-        this_energies_vdw = 0.d0
-#endif
-        if( params%do_forces )then
-#ifdef _MPIF90
-          allocate( this_forces_vdw(1:3,1:n_sites) )
-          this_forces_vdw = 0.d0
-#endif
-        end if
         call get_ts_energy_and_forces( hirshfeld_v(i_beg:i_end), hirshfeld_v_cart_der(1:3, j_beg:j_end), &
                                        n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
                                        neighbor_species(j_beg:j_end), &
@@ -1166,27 +1151,11 @@ program turbogap
         call cpu_time(time_vdw(2))
         time_vdw(3) = time_vdw(2) - time_vdw(1)
 
-#ifdef _MPIF90
-        call cpu_time(time_mpi(1))
-        call mpi_reduce(this_energies_vdw, energies_vdw, n_sites, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
-        if( params%do_forces )then
-          call mpi_reduce(this_forces_vdw, forces_vdw, 3*n_sites, MPI_DOUBLE_PRECISION, MPI_SUM, &
-                          0, MPI_COMM_WORLD, ierr)
-          call mpi_reduce(this_virial_vdw, virial_vdw, 9, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
-        end if
-        call cpu_time(time_mpi(2))
-        time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
-
-        deallocate(this_energies_vdw)
-        if( params%do_forces )then
-          deallocate(this_forces_vdw)
-        end if
-#endif
         deallocate(v_neigh_vdw)
       end if
 
 
-!     Collect all energies and forces
+
 
 
       if( params%do_prediction )then
@@ -1216,23 +1185,8 @@ program turbogap
           time_2b(3) = time_2b(3) + time_2b(2) - time_2b(1)
         end do
 
-!       Collect all energies and forces
-#ifdef _MPIF90
-        call cpu_time(time_mpi(1))
-        call mpi_reduce(energies_2b, this_energies, n_sites, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
-        call cpu_time(time_mpi(2))
-        time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
-        energies_2b = this_energies
-        if( params%do_forces )then
-          call cpu_time(time_mpi(1))
-          call mpi_reduce(forces_2b, this_forces, 3*n_sites, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
-          call mpi_reduce(virial_2b, this_virial, 9, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
-          call cpu_time(time_mpi(2))
-          time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
-          forces_2b = this_forces
-          virial_2b = this_virial
-        end if
-#endif
+
+
 
 
 !       Loop through core_pot descriptors
@@ -1260,23 +1214,6 @@ program turbogap
           time_core_pot(3) = time_core_pot(3) + time_core_pot(2) - time_core_pot(1)
         end do
 
-!       Collect all energies and forces
-#ifdef _MPIF90
-        call cpu_time(time_mpi(1))
-        call mpi_reduce(energies_core_pot, this_energies, n_sites, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
-        call cpu_time(time_mpi(2))
-        time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
-        energies_core_pot = this_energies
-        if( params%do_forces )then
-          call cpu_time(time_mpi(1))
-          call mpi_reduce(forces_core_pot, this_forces, 3*n_sites, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
-          call mpi_reduce(virial_core_pot, this_virial, 9, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
-          call cpu_time(time_mpi(2))
-          time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
-          forces_core_pot = this_forces
-          virial_core_pot = this_virial
-        end if
-#endif
 
 
 
@@ -1306,23 +1243,145 @@ program turbogap
           time_3b(3) = time_3b(3) + time_3b(2) - time_3b(1)
         end do
 
-!       Collect all energies and forces
+
+
+
+
+!       Communicate all energies and forces here for all terms
 #ifdef _MPIF90
         call cpu_time(time_mpi(1))
-        call mpi_reduce(energies_3b, this_energies, n_sites, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+        counter2 = 0
+        if( n_soap_turbo > 0 )then
+          counter2 = counter2 + 1
+        end if
+        if( allocated(this_energies_vdw) )then
+          counter2 = counter2 + 1
+        end if
+        if( n_distance_2b > 0 )then
+          counter2 = counter2 + 1
+        end if
+        if( n_core_pot > 0 )then
+          counter2 = counter2 + 1
+        end if
+        if( n_angle_3b > 0 )then
+          counter2 = counter2 + 1
+        end if
+
+!       It would probably be faster to use pointers for this
+        allocate( all_energies(1:n_sites, 1:counter2) )
+        allocate( all_this_energies(1:n_sites, 1:counter2) )
+        if( params%do_forces )then
+          allocate( all_forces(1:3, 1:n_sites, 1:counter2) )
+          allocate( all_this_forces(1:3, 1:n_sites, 1:counter2) )
+          allocate( all_virial(1:3, 1:3, 1:counter2) )
+          allocate( all_this_virial(1:3, 1:3, 1:counter2) )
+        end if
+        counter2 = 0
+        if( n_soap_turbo > 0 )then
+          counter2 = counter2 + 1
+          all_energies(1:n_sites, counter2) = energies_soap(1:n_sites)
+          if( params%do_forces )then
+            all_forces(1:3, 1:n_sites, counter2) = forces_soap(1:3, 1:n_sites)
+            all_virial(1:3, 1:3, counter2) = virial_soap(1:3, 1:3)
+          end if
+        end if
+        if( allocated(this_energies_vdw) )then
+          counter2 = counter2 + 1
+!         Note the vdw things have "this" in front
+          all_energies(1:n_sites, counter2) = this_energies_vdw(1:n_sites)
+          if( params%do_forces )then
+            all_forces(1:3, 1:n_sites, counter2) = this_forces_vdw(1:3, 1:n_sites)
+            all_virial(1:3, 1:3, counter2) = this_virial_vdw(1:3, 1:3)
+          end if
+        end if
+        if( n_distance_2b > 0 )then
+          counter2 = counter2 + 1
+          all_energies(1:n_sites, counter2) = energies_2b(1:n_sites)
+          if( params%do_forces )then
+            all_forces(1:3, 1:n_sites, counter2) = forces_2b(1:3, 1:n_sites)
+            all_virial(1:3, 1:3, counter2) = virial_2b(1:3, 1:3)
+          end if
+        end if
+        if( n_core_pot > 0 )then
+          counter2 = counter2 + 1
+          all_energies(1:n_sites, counter2) = energies_core_pot(1:n_sites)
+          if( params%do_forces )then
+            all_forces(1:3, 1:n_sites, counter2) = forces_core_pot(1:3, 1:n_sites)
+            all_virial(1:3, 1:3, counter2) = virial_core_pot(1:3, 1:3)
+          end if
+        end if
+        if( n_angle_3b > 0 )then
+          counter2 = counter2 + 1
+          all_energies(1:n_sites, counter2) = energies_3b(1:n_sites)
+          if( params%do_forces )then
+            all_forces(1:3, 1:n_sites, counter2) = forces_3b(1:3, 1:n_sites)
+            all_virial(1:3, 1:3, counter2) = virial_3b(1:3, 1:3)
+          end if
+        end if
+
+!       Here we communicate
+        call mpi_reduce(all_energies, all_this_energies, n_sites*counter2, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+        if( params%do_forces )then
+          call mpi_reduce(all_forces, all_this_forces, 3*n_sites*counter2, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+          call mpi_reduce(all_virial, all_this_virial, 9*counter2, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+        end if
+
+!       Here we give proper names to the quantities - again, pointers would probably be faster
+        counter2 = 0
+        if( n_soap_turbo > 0 )then
+          counter2 = counter2 + 1
+          energies_soap(1:n_sites) = all_this_energies(1:n_sites, counter2)
+          if( params%do_forces )then
+            forces_soap(1:3, 1:n_sites) = all_this_forces(1:3, 1:n_sites, counter2)
+            virial_soap(1:3, 1:3) = all_this_virial(1:3, 1:3, counter2)
+          end if
+        end if
+        if( allocated(this_energies_vdw) )then
+          counter2 = counter2 + 1
+!         Note the vdw things DO NOT have "this" in front anymore
+          energies_vdw(1:n_sites) = all_this_energies(1:n_sites, counter2)
+          deallocate(this_energies_vdw)
+          if( params%do_forces )then
+            forces_vdw(1:3, 1:n_sites) = all_this_forces(1:3, 1:n_sites, counter2)
+            virial_vdw(1:3, 1:3) = all_this_virial(1:3, 1:3, counter2)
+            deallocate(this_forces_vdw)
+          end if
+        end if
+        if( n_distance_2b > 0 )then
+          counter2 = counter2 + 1
+          energies_2b(1:n_sites) = all_this_energies(1:n_sites, counter2)
+          if( params%do_forces )then
+            forces_2b(1:3, 1:n_sites) = all_this_forces(1:3, 1:n_sites, counter2)
+            virial_2b(1:3, 1:3) = all_this_virial(1:3, 1:3, counter2)
+          end if
+        end if
+        if( n_core_pot > 0 )then
+          counter2 = counter2 + 1
+          energies_core_pot(1:n_sites) = all_this_energies(1:n_sites, counter2)
+          if( params%do_forces )then
+            forces_core_pot(1:3, 1:n_sites) = all_this_forces(1:3, 1:n_sites, counter2)
+            virial_core_pot(1:3, 1:3) = all_this_virial(1:3, 1:3, counter2)
+          end if
+        end if
+        if( n_angle_3b > 0 )then
+          counter2 = counter2 + 1
+          energies_3b(1:n_sites) = all_this_energies(1:n_sites, counter2)
+          if( params%do_forces )then
+            forces_3b(1:3, 1:n_sites) = all_this_forces(1:3, 1:n_sites, counter2)
+            virial_3b(1:3, 1:3) = all_this_virial(1:3, 1:3, counter2)
+          end if
+        end if
+
+!       Clean up
+        deallocate( all_energies, all_this_energies )
+        if( params%do_forces )then
+          deallocate( all_forces, all_this_forces, all_virial, all_this_virial )
+        end if
+
         call cpu_time(time_mpi(2))
         time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
-        energies_3b = this_energies
-        if( params%do_forces )then
-          call cpu_time(time_mpi(1))
-          call mpi_reduce(forces_3b, this_forces, 3*n_sites, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
-          call mpi_reduce(virial_3b, this_virial, 9, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
-          call cpu_time(time_mpi(2))
-          time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
-          forces_3b = this_forces
-          virial_3b = this_virial
-        end if
 #endif
+
 
 
 
