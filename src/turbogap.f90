@@ -67,7 +67,8 @@ program turbogap
   real*8, allocatable :: all_this_energies(:,:), all_this_forces(:,:,:), all_this_virial(:,:,:)
   real*8 :: instant_temp, kB = 8.6173303d-5, E_kinetic, time1, time2, time3, time_neigh, &
             time_gap, time_soap(1:3), time_2b(1:3), time_3b(1:3), time_read_input(1:3), time_read_xyz(1:3), &
-            time_mpi(1:3) = 0.d0, time_core_pot(1:3), time_vdw(1:3), instant_pressure, lv(1:3,1:3)
+            time_mpi(1:3) = 0.d0, time_core_pot(1:3), time_vdw(1:3), instant_pressure, lv(1:3,1:3), &
+            time_mpi_positions(1:3) = 0.d0, time_mpi_ef(1:3) = 0.d0, time_md(3) = 0.d0
   integer, allocatable :: displs(:), displs2(:), counts(:), counts2(:)
   integer :: update_bar, n_sparse
   logical, allocatable :: do_list(:), has_vdw_mpi(:)
@@ -79,7 +80,7 @@ program turbogap
                           neighbor_species(:), sph_temp_int(:), der_neighbors(:), der_neighbors_list(:), &
                           i_beg_list(:), i_end_list(:), j_beg_list(:), j_end_list(:)
   integer :: n_sites, i, j, k, i2, j2, n_soap, k2, k3, l, n_sites_this, ierr, rank, ntasks, dim, n_sp, &
-             n_pos, n_sp_sc, this_i_beg, this_i_end, this_j_beg, this_j_end, this_n_sites_mpi
+             n_pos, n_sp_sc, this_i_beg, this_i_end, this_j_beg, this_j_end, this_n_sites_mpi, n_sites_prev = 0
   integer :: l_max, n_atom_pairs, n_max, ijunk, central_species = 0, n_atom_pairs_total
   integer :: iostatus, counter, counter2
   integer :: which_atom = 0, n_species = 1, n_xyz, indices(1:3)
@@ -216,10 +217,11 @@ program turbogap
   write(*,*)'*) Heikki Muhli (Aalto University)                               |'
   write(*,*)'*) Mikhail Kuklin (Aalto University)                             |'
   write(*,*)'*) Gábor Csányi (University of Cambridge)                        |'
+  write(*,*)'*) Jan Kloppenburg (Aalto University)                            |'
   write(*,*)'                                                                 |'
   write(*,*)'.................................................................|'
   write(*,*)'                                                                 |'
-  write(*,*)'                     Last updated: Apr. 2021                     |'
+  write(*,*)'                     Last updated: Jul. 2021                     |'
   write(*,*)'                                        _________________________/'
   write(*,*)'.......................................|'
 #ifdef _MPIF90
@@ -766,7 +768,7 @@ program turbogap
     allocate( xyz_species_supercell(1:n_sp_sc) )
     allocate( species_supercell(1:n_sp_sc) )
     END IF
-    call cpu_time(time_mpi(1))
+    call cpu_time(time_mpi_positions(1))
     call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
     if( params%do_md )then
       call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
@@ -781,8 +783,8 @@ program turbogap
     call mpi_bcast(b_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
     call mpi_bcast(c_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
     call mpi_bcast(n_sites, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-    call cpu_time(time_mpi(2))
-    time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
+    call cpu_time(time_mpi_positions(2))
+    time_mpi_positions(3) = time_mpi_positions(3) + time_mpi_positions(2) - time_mpi_positions(1)
 #endif
 !   Now that all ranks know the size of n_sites, we allocate do_list
     if( .not. params%do_md .or. (params%do_md .and. md_istep == 0) )then
@@ -876,13 +878,20 @@ program turbogap
     if( params%do_prediction .or. params%write_soap .or. params%write_derivatives )then
       call cpu_time(time1)
 
-      allocate( energies(1:n_sites) )
-      allocate( this_energies(1:n_sites) )
-      allocate( energies_soap(1:n_sites) )
-      allocate( energies_2b(1:n_sites) )
-      allocate( energies_3b(1:n_sites) )
-      allocate( energies_core_pot(1:n_sites) )
-      allocate( energies_vdw(1:n_sites) )
+!     We only need to reallocate the arrays if the number of sites changes
+      if( n_sites /= n_sites_prev )then
+        if( allocated(energies) )deallocate( energies, energies_soap, energies_2b, energies_3b, energies_core_pot, &
+                                             this_energies, energies_vdw )
+        allocate( energies(1:n_sites) )
+        allocate( this_energies(1:n_sites) )
+        allocate( energies_soap(1:n_sites) )
+        allocate( energies_2b(1:n_sites) )
+        allocate( energies_3b(1:n_sites) )
+        allocate( energies_core_pot(1:n_sites) )
+        allocate( energies_vdw(1:n_sites) )
+!       This needs to be allocated even if no force prediction is needed:
+        allocate( this_forces(1:3, 1:n_sites) )
+      end if
       energies = 0.d0
       energies_soap = 0.d0
       energies_2b = 0.d0
@@ -890,27 +899,42 @@ program turbogap
       energies_core_pot = 0.d0
       energies_vdw = 0.d0
       if( any( soap_turbo_hypers(:)%has_vdw ) )then
-        allocate( hirshfeld_v(1:n_sites) )
-        allocate( this_hirshfeld_v(1:n_sites) )
+        if( n_sites /= n_sites_prev )then
+          if( allocated(hirshfeld_v) )then
+            nullify( this_hirshfeld_v_pt )
+            deallocate( this_hirshfeld_v, hirshfeld_v )
+            if( params%do_forces )then
+              nullify( this_hirshfeld_v_cart_der_pt )
+              deallocate( this_hirshfeld_v_cart_der, hirshfeld_v_cart_der )
+            end if
+          end if
+          allocate( hirshfeld_v(1:n_sites) )
+          allocate( this_hirshfeld_v(1:n_sites) )
+!         I don't remember why this needs a pointer <----------------------------------------- CHECK
+          this_hirshfeld_v_pt => this_hirshfeld_v
+        end if
         hirshfeld_v = 0.d0
-!       I don't remember why this needs a pointer <----------------------------------------- CHECK
-        this_hirshfeld_v_pt => this_hirshfeld_v
         if( params%do_forces )then
-!          allocate( hirshfeld_v_cart_der(1:3, 1:n_atom_pairs) )
-!          allocate( this_hirshfeld_v_cart_der(1:3, 1:n_atom_pairs) )
-          allocate( hirshfeld_v_cart_der(1:3, 1:n_atom_pairs_by_rank(rank+1)) )
-          allocate( this_hirshfeld_v_cart_der(1:3, 1:n_atom_pairs_by_rank(rank+1)) )
+          if( n_sites /= n_sites_prev )then
+!            allocate( hirshfeld_v_cart_der(1:3, 1:n_atom_pairs) )
+!            allocate( this_hirshfeld_v_cart_der(1:3, 1:n_atom_pairs) )
+            allocate( hirshfeld_v_cart_der(1:3, 1:n_atom_pairs_by_rank(rank+1)) )
+            allocate( this_hirshfeld_v_cart_der(1:3, 1:n_atom_pairs_by_rank(rank+1)) )
+!            this_hirshfeld_v_cart_der_pt => this_hirshfeld_v_cart_der(1:3, j_beg:j_end)
+          end if
           hirshfeld_v_cart_der = 0.d0
-!          this_hirshfeld_v_cart_der_pt => this_hirshfeld_v_cart_der(1:3, j_beg:j_end)
         end if
       end if
       if( params%do_forces )then
-        allocate( forces(1:3, 1:n_sites) )
-        allocate( forces_soap(1:3, 1:n_sites) )
-        allocate( forces_2b(1:3, 1:n_sites) )
-        allocate( forces_3b(1:3, 1:n_sites) )
-        allocate( forces_core_pot(1:3, 1:n_sites) )
-        allocate( forces_vdw(1:3,1:n_sites) )
+        if( n_sites /= n_sites_prev )then
+          if( allocated(forces) )deallocate( forces, forces_soap, forces_2b, forces_3b, forces_core_pot, this_forces, forces_vdw )
+          allocate( forces(1:3, 1:n_sites) )
+          allocate( forces_soap(1:3, 1:n_sites) )
+          allocate( forces_2b(1:3, 1:n_sites) )
+          allocate( forces_3b(1:3, 1:n_sites) )
+          allocate( forces_core_pot(1:3, 1:n_sites) )
+          allocate( forces_vdw(1:3,1:n_sites) )
+        end if
         forces = 0.d0
         forces_soap = 0.d0
         forces_2b = 0.d0
@@ -924,8 +948,6 @@ program turbogap
         virial_core_pot = 0.d0
         virial_vdw = 0.d0
       end if
-!     This needs to be allocated even if no force prediction is needed:
-      allocate( this_forces(1:3, 1:n_sites) )
 
       if( params%do_prediction )then
 !       Assign the e0 to each atom according to its species
@@ -940,10 +962,10 @@ program turbogap
       end if
 !     Collect all energies
 #ifdef _MPIF90
-      call cpu_time(time_mpi(1))
+      call cpu_time(time_mpi_ef(1))
       call mpi_reduce(energies, this_energies, n_sites, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
-      call cpu_time(time_mpi(2))
-      time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
+      call cpu_time(time_mpi_ef(2))
+      time_mpi_ef(3) = time_mpi_ef(3) + time_mpi_ef(2) - time_mpi_ef(1)
       energies = this_energies
 #endif
 
@@ -1244,12 +1266,14 @@ program turbogap
         end do
 
 
+        call cpu_time(time2)
+        time_gap = time_gap + time2 - time1
 
 
 
 !       Communicate all energies and forces here for all terms
 #ifdef _MPIF90
-        call cpu_time(time_mpi(1))
+        call cpu_time(time_mpi_ef(1))
         counter2 = 0
         if( n_soap_turbo > 0 )then
           counter2 = counter2 + 1
@@ -1378,8 +1402,8 @@ program turbogap
           deallocate( all_forces, all_this_forces, all_virial, all_this_virial )
         end if
 
-        call cpu_time(time_mpi(2))
-        time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
+        call cpu_time(time_mpi_ef(2))
+        time_mpi_ef(3) = time_mpi_ef(3) + time_mpi_ef(2) - time_mpi_ef(1)
 #endif
 
 
@@ -1426,8 +1450,6 @@ write(*,*) "pressure_core_pot: ", virial_core_pot / 3.d0 / v_uc
 end if
 
 
-      call cpu_time(time2)
-      time_gap = time_gap + time2 - time1
 
       if( params%do_prediction )then
 #ifdef _MPIF90
@@ -1492,6 +1514,7 @@ end if
     IF( rank == 0 )THEN
 #endif
     if( params%do_md )then
+      call cpu_time(time_md(1))
 !     We wrap the positions and remoce CM velocity
       call wrap_pbc(positions(1:3,1:n_sites), a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)))
       call remove_cm_vel(velocities(1:3,1:n_sites), masses(1:n_sites))
@@ -1624,6 +1647,8 @@ end if
           end do
         end do
       end if
+      call cpu_time(time_md(2))
+      time_md(3) = time_md(3) + time_md(2) - time_md(1)
     end if
 #ifdef _MPIF90
     END IF
@@ -1632,29 +1657,30 @@ end if
 !   Make sure all ranks have correct positions and velocities
 #ifdef _MPIF90
     if( params%do_md )then
+      call cpu_time(time_mpi_positions(1))
       n_pos = size(positions,2)
-      call cpu_time(time_mpi(1))
       call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-      call cpu_time(time_mpi(2))
-      time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
+      call cpu_time(time_mpi_positions(2))
+      time_mpi_positions(3) = time_mpi_positions(3) + time_mpi_positions(2) - time_mpi_positions(1)
     end if
 #endif
 
 
+!   NOW THIS IS HANDLED AT THE BEGINNING OF THE CODE WHEN WE CHECK IF THE NUMBER OF SITES HAS CHANGED
 !   Clean up
-    deallocate( energies, energies_soap, energies_2b, energies_3b, energies_core_pot, this_energies, energies_vdw )
-    if( params%do_forces )then
-      deallocate( forces, forces_soap, forces_2b, forces_3b, forces_core_pot, this_forces, forces_vdw )
-    end if
-    if( any( soap_turbo_hypers(:)%has_vdw ) )then
-      nullify( this_hirshfeld_v_pt )
-      deallocate( this_hirshfeld_v, hirshfeld_v )
-      if( params%do_forces )then
-        nullify( this_hirshfeld_v_cart_der_pt )
-        deallocate( this_hirshfeld_v_cart_der, hirshfeld_v_cart_der )
-      end if
-    end if
+!    deallocate( energies, energies_soap, energies_2b, energies_3b, energies_core_pot, this_energies, energies_vdw )
+!    if( params%do_forces )then
+!      deallocate( forces, forces_soap, forces_2b, forces_3b, forces_core_pot, this_forces, forces_vdw )
+!    end if
+!    if( any( soap_turbo_hypers(:)%has_vdw ) )then
+!      nullify( this_hirshfeld_v_pt )
+!      deallocate( this_hirshfeld_v, hirshfeld_v )
+!      if( params%do_forces )then
+!        nullify( this_hirshfeld_v_cart_der_pt )
+!        deallocate( this_hirshfeld_v_cart_der, hirshfeld_v_cart_der )
+!      end if
+!    end if
 
 
     if( rebuild_neighbors_list )then
@@ -1668,6 +1694,7 @@ end if
       deallocate( positions_prev, forces_prev )
     end if
 
+    n_sites_prev = n_sites
 ! End of loop through structures in the xyz file or MD steps
   end do
 
@@ -1694,13 +1721,19 @@ end if
     write(*,'(A,F13.3,A)') '     -         3b:', time_3b(3), ' seconds |'
     write(*,'(A,F13.3,A)') '     -   core_pot:', time_core_pot(3), ' seconds |'
     write(*,'(A,F13.3,A)') '     -        vdw:', time_vdw(3), ' seconds |'
+    if( params%do_md )then
+      write(*,'(A,F13.3,A)') ' *  MD algorithms:', time_md(3), ' seconds |'
+    end if
 #ifdef _MPIF90
-    write(*,'(A,F13.3,A)') ' *  MPI comms.   :', time_mpi(3), ' seconds |'
+    write(*,'(A,F13.3,A)') ' *  MPI comms.   :', time_mpi(3) + time_mpi_positions(3) + time_mpi_ef(3), ' seconds |'
+    write(*,'(A,F13.3,A)') '     -  pos & vel:', time_mpi_positions(3), ' seconds |'
+    write(*,'(A,F13.3,A)') '     - E & F brc.:', time_mpi_ef(3), ' seconds |'
+    write(*,'(A,F13.3,A)') '     -  MPI misc.:', time_mpi(3), ' seconds |'
     write(*,'(A,F13.3,A)') ' *  Miscellaneous:', time2-time3 - time_neigh - time_gap - time_read_input(3) &
-      - time_read_xyz(3) - time_mpi(3), ' seconds |'
+      - time_read_xyz(3) - time_mpi(3) - time_mpi_positions(3) - time_mpi_ef(3) - time_md(3), ' seconds |'
 #else
     write(*,'(A,F13.3,A)') ' *  Miscellaneous:', time2-time3 - time_neigh - time_gap - time_read_input(3) &
-      - time_read_xyz(3), ' seconds |'
+      - time_read_xyz(3) - time_md(3), ' seconds |'
 #endif
     write(*,*)'                                       |'
     write(*,'(A,F13.3,A)') ' *     Total time:', time2-time3, ' seconds |'
