@@ -28,14 +28,14 @@
 program turbogap
 
   use neighbors
-  use soap_desc
+  use soap_turbo_desc
   use gap
   use read_files
   use md
   use gap_interface
   use types
   use vdw
-  use functions
+  use soap_turbo_functions
 #ifdef _MPIF90
   use mpi
   use mpi_helper

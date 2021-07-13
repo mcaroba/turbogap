@@ -28,7 +28,7 @@
 module neighbors
 
 
-  use functions
+  use soap_turbo_functions
 
 
   contains

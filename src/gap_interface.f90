@@ -27,7 +27,7 @@
 
 module gap_interface
 
-  use soap_desc
+  use soap_turbo_desc
   use gap
   use read_files
   use vdw
