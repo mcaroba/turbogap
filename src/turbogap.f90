@@ -68,7 +68,8 @@ program turbogap
   real*8 :: instant_temp, kB = 8.6173303d-5, E_kinetic, time1, time2, time3, time_neigh, &
             time_gap, time_soap(1:3), time_2b(1:3), time_3b(1:3), time_read_input(1:3), time_read_xyz(1:3), &
             time_mpi(1:3) = 0.d0, time_core_pot(1:3), time_vdw(1:3), instant_pressure, lv(1:3,1:3), &
-            time_mpi_positions(1:3) = 0.d0, time_mpi_ef(1:3) = 0.d0, time_md(3) = 0.d0
+            time_mpi_positions(1:3) = 0.d0, time_mpi_ef(1:3) = 0.d0, time_md(3) = 0.d0, &
+            instant_pressure_tensor(1:3, 1:3)
   integer, allocatable :: displs(:), displs2(:), counts(:), counts2(:)
   integer :: update_bar, n_sparse
   logical, allocatable :: do_list(:), has_vdw_mpi(:)
@@ -80,7 +81,8 @@ program turbogap
                           neighbor_species(:), sph_temp_int(:), der_neighbors(:), der_neighbors_list(:), &
                           i_beg_list(:), i_end_list(:), j_beg_list(:), j_end_list(:)
   integer :: n_sites, i, j, k, i2, j2, n_soap, k2, k3, l, n_sites_this, ierr, rank, ntasks, dim, n_sp, &
-             n_pos, n_sp_sc, this_i_beg, this_i_end, this_j_beg, this_j_end, this_n_sites_mpi, n_sites_prev = 0
+             n_pos, n_sp_sc, this_i_beg, this_i_end, this_j_beg, this_j_end, this_n_sites_mpi, n_sites_prev = 0, &
+             n_atom_pairs_by_rank_prev
   integer :: l_max, n_atom_pairs, n_max, ijunk, central_species = 0, n_atom_pairs_total
   integer :: iostatus, counter, counter2
   integer :: which_atom = 0, n_species = 1, n_xyz, indices(1:3)
@@ -915,12 +917,10 @@ program turbogap
         end if
         hirshfeld_v = 0.d0
         if( params%do_forces )then
-          if( n_sites /= n_sites_prev )then
-!            allocate( hirshfeld_v_cart_der(1:3, 1:n_atom_pairs) )
-!            allocate( this_hirshfeld_v_cart_der(1:3, 1:n_atom_pairs) )
+          if( n_atom_pairs_by_rank(rank+1) /= n_atom_pairs_by_rank_prev )then
+            if( allocated(hirshfeld_v_cart_der) )deallocate( hirshfeld_v_cart_der, this_hirshfeld_v_cart_der )
             allocate( hirshfeld_v_cart_der(1:3, 1:n_atom_pairs_by_rank(rank+1)) )
             allocate( this_hirshfeld_v_cart_der(1:3, 1:n_atom_pairs_by_rank(rank+1)) )
-!            this_hirshfeld_v_cart_der_pt => this_hirshfeld_v_cart_der(1:3, j_beg:j_end)
           end if
           hirshfeld_v_cart_der = 0.d0
         end if
@@ -1526,6 +1526,10 @@ end if
       instant_temp = 2.d0/3.d0/dfloat(n_sites-1)/kB*E_kinetic
 !     Instant pressure in bar
       instant_pressure = (kB*dfloat(n_sites-1)*instant_temp+(virial(1,1) + virial(2,2) + virial(3,3))/3.d0)/v_uc*eVperA3tobar
+      instant_pressure_tensor(1:3, 1:3) = virial(1:3,1:3)/v_uc*eVperA3tobar
+      do i = 1, 3
+        instant_pressure_tensor(i, i) = instant_pressure_tensor(i, i) + (kB*dfloat(n_sites-1)*instant_temp)/v_uc*eVperA3tobar
+      end do
       if( md_istep == 0 )then
         open(unit=10, file="thermo.log", status="unknown")
       else
@@ -1589,13 +1593,13 @@ end if
           lv(1:3, 3) = c_box(1:3)
           call berendsen_barostat(lv(1:3,1:3), &
                                   params%p_beg + (params%p_end-params%p_beg)*dfloat(md_istep+1)/float(params%md_nsteps), &
-                                  instant_pressure, params%tau_p, params%gamma_p, params%md_step)
+                                  instant_pressure_tensor, params%barostat_sym, params%tau_p, params%gamma_p, params%md_step)
           a_box(1:3) = lv(1:3, 1)
           b_box(1:3) = lv(1:3, 2)
           c_box(1:3) = lv(1:3, 3)
           call berendsen_barostat(positions(1:3, 1:n_sites), &
                                   params%p_beg + (params%p_end-params%p_beg)*dfloat(md_istep+1)/float(params%md_nsteps), &
-                                  instant_pressure, params%tau_p, params%gamma_p, params%md_step)
+                                  instant_pressure_tensor, params%barostat_sym, params%tau_p, params%gamma_p, params%md_step)
         end if
 !       If there are thermostating operations they happen here
         if( params%thermostat == "berendsen" )then
@@ -1695,6 +1699,7 @@ end if
     end if
 
     n_sites_prev = n_sites
+    n_atom_pairs_by_rank_prev = n_atom_pairs_by_rank(rank+1)
 ! End of loop through structures in the xyz file or MD steps
   end do
 

@@ -588,6 +588,9 @@ end if
           end if
           stop
         end if
+      else if(keyword=='barostat_sym')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%barostat_sym
       else if(keyword=='which_atom')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%which_atom

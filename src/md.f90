@@ -231,7 +231,7 @@ module md
 
 
 !**************************************************************************
-  subroutine berendsen_barostat(positions, P0, P, tau, gamma, dt)
+  subroutine berendsen_barostat(positions, P0, P, sym, tau, gamma, dt)
 !   Berendsen barostat that takes the bulk moduli ratio to that of water, gamma,
 !   and takes P in bar
 !   gamma = B / B_water; i.e., if the materials is very "hard", like diamond,
@@ -240,9 +240,24 @@ module md
     implicit none
 
     real*8, intent(inout) :: positions(:, :)
-    real*8, intent(in) :: P0, P, tau, dt, gamma
+    real*8, intent(in) :: P0, P(1:3,1:3), tau, dt, gamma
+    character(*), intent(in) :: sym
+    real*8 :: P_iso
+    integer :: i, n
 
-    positions = positions * (1.d0 + dt/tau * 4.5d-5/gamma * (P - P0))**(1.d0/3.d0)
+    P_iso = (P(1,1) + P(2,2) + P(3,3))/3.d0
+
+    if( sym(1:3) == "iso" )then
+      positions = positions * (1.d0 + dt/tau * 4.5d-5/gamma * (P_iso - P0))**(1.d0/3.d0)
+    else if( sym(1:4) == "diag" )then
+      n = size(positions, 2)
+      do i = 1, 3
+        positions(i, 1:n) = positions(i, 1:n) * (1.d0 + dt/tau * 4.5d-5/gamma * (P(i,i) - P0))**(1.d0/3.d0)
+      end do
+    else
+      write(*,*) "ERROR: I don't understand the specified barostat_sym keyword"
+      stop
+    end if
 
   end subroutine
 !**************************************************************************
