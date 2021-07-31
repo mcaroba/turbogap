@@ -770,6 +770,36 @@ end if
       end if
     end if
 
+!   Set the writeouts
+    if( .not. params%do_md )then
+!     Do not write temperature
+      params%write_property(3) = .false.
+!     Do not write time step
+      params%write_property(5) = .false.
+!     Do not write time
+      params%write_property(6) = .false.
+!     Do not write MD step
+      params%write_property(11) = .false.
+!     Do not write velocities
+      params%write_array_property(3) = .false.
+!     Do not write masses
+      params%write_array_property(6) = .false.
+    end if
+    if( .not. params%do_forces )then
+!     Do not write pressure
+      params%write_property(4) = .false.
+!     Do not write virial
+      params%write_property(8) = .false.
+!     Do not write stress
+      params%write_property(9) = .false.
+!     Do not write forces
+      params%write_array_property(4) = .false.
+    end if
+    if( params%vdw_type == "none" )then
+!     Do not write Hirshfeld volume
+      params%write_array_property(7) = .false.
+    end if
+
   end subroutine
 !**************************************************************************
 
