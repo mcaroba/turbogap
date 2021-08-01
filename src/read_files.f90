@@ -549,6 +549,30 @@ end if
       else if(keyword=='write_thermo')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%write_thermo
+      else if(keyword=='write_velocities')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%write_velocities
+      else if(keyword=='write_forces')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%write_forces
+      else if(keyword=='write_stress')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%write_stress
+      else if(keyword=='write_virial')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%write_virial
+      else if(keyword=='write_pressure')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%write_pressure
+      else if(keyword=='write_hirshfeld_v')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%write_hirshfeld_v
+      else if(keyword=='write_local_energies')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%write_local_energies
+      else if(keyword=='write_masses')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%write_masses
       else if(keyword=='print_progress')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%print_progress
@@ -671,7 +695,7 @@ end if
         else if( params%vdw_type == "none" )then
           continue
         else
-          write(*,*) "ERROR: I do not recognize the vdw_type keyword", params%vdw_type
+          write(*,*) "ERROR: I do not recognize the vdw_type keyword ", params%vdw_type
           stop
         end if
       else if( keyword == "vdw_sr" )then
@@ -774,6 +798,8 @@ end if
     if( .not. params%do_md )then
 !     Do not write temperature
       params%write_property(3) = .false.
+!     Do not write pressure
+      params%write_property(4) = .false.
 !     Do not write time step
       params%write_property(5) = .false.
 !     Do not write time
@@ -798,6 +824,28 @@ end if
     if( params%vdw_type == "none" )then
 !     Do not write Hirshfeld volume
       params%write_array_property(7) = .false.
+    end if
+!   Now individual flags
+    if( .not. params%write_velocities )then
+      params%write_array_property(3) = .false.
+    end if
+    if( .not. params%write_forces )then
+      params%write_array_property(4) = .false.
+    end if
+    if( .not. params%write_local_energies )then
+      params%write_array_property(5) = .false.
+    end if
+    if( .not. params%write_masses )then
+      params%write_array_property(6) = .false.
+    end if
+    if( .not. params%write_pressure )then
+      params%write_property(7) = .false.
+    end if
+    if( .not. params%write_virial )then
+      params%write_property(8) = .false.
+    end if
+    if( .not. params%write_stress )then
+      params%write_property(9) = .false.
     end if
 
   end subroutine

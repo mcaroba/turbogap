@@ -1426,7 +1426,7 @@ program turbogap
         write(*,'(A,1X,F23.8,1X,A)')' vdw energy:', sum(energies_vdw), 'eV |'
         write(*,'(A,1X,F21.8,1X,A)')' Total energy:', sum(energies), 'eV |'
         write(*,*)'                                       |'
-        write(*,*)'Energy and forces in "energies.dat"    |'
+        write(*,*)'Energy & forces in "trajectory_out.xyz"|'
         write(*,*)'                                       |'
         write(*,*)'.......................................|'
 #ifdef _MPIF90
@@ -1452,37 +1452,17 @@ end if
 
 
 
-      if( params%do_prediction )then
+      if( params%do_prediction .and. .not. params%do_md )then
 #ifdef _MPIF90
         IF( rank == 0 )then
 #endif
-!       Write energy and forces in case of MD's first step or if we're just doing static predictions
-        if( n_xyz == 1 .or. md_istep == 0 )then
-          open(unit=10, file="energies.dat", status="unknown")
-        else
-          open(unit=10, file="energies.dat", status="old", position="append")
-        end if
-        if( params%do_prediction .and. ( .not. params%do_md .or. &
-            (params%do_md .and. (md_istep == 0 .or. md_istep == params%md_nsteps .or. &
-                                 modulo(md_istep, params%write_xyz) == 0)) ) )then
-          write(10, *) n_sites, sum(energies), (virial(1,1) + virial(2,2) + virial(3,3))/3.d0/v_uc
-          do i = 1, n_sites
-            if( params%do_forces )then
-              if( any( soap_turbo_hypers(:)%has_vdw ) )then
-                write(10, *) energies(i), forces(1:3, i), hirshfeld_v(i)
-              else
-                write(10, *) energies(i), forces(1:3, i)
-              end if
-            else
-              if( any( soap_turbo_hypers(:)%has_vdw ) )then
-                write(10, *) energies(i), hirshfeld_v(i)
-              else
-                write(10, *) energies(i)
-              end if
-            end if
-          end do
-        end if
-        close(10)
+!       Write energy and forces if we're just doing static predictions
+        call write_extxyz( n_sites, -n_xyz, params%md_step, instant_temp, instant_pressure, &
+                           a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
+                           virial, xyz_species, &
+                           positions(1:3, 1:n_sites), velocities, &
+                           forces, energies(1:n_sites), masses, hirshfeld_v, &
+                           params%write_property, params%write_array_property )
 #ifdef _MPIF90
         END IF
 #endif
@@ -1563,33 +1543,17 @@ end if
         call velocity_verlet(positions(1:3, 1:n_sites), positions_prev(1:3, 1:n_sites), velocities(1:3, 1:n_sites), &
                              forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), params%md_step, &
                              md_istep == 0, a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)))
-!       We write out the trajectory file -> THIS NEEDS TO BE REWORKED TO PRINT MORE INFO HERE
-!        if( md_istep == 0 )then
-!          open(unit=10, file="trajectory_out.xyz", status="unknown")
-!        else if(  md_istep == params%md_nsteps .or. modulo(md_istep, params%write_xyz) == 0 )then
-!          open(unit=10, file="trajectory_out.xyz", status="old", position="append")
-!        end if
+!
+!       We write out the trajectory file
         if( md_istep == 0 .or. md_istep == params%md_nsteps .or. modulo(md_istep, params%write_xyz) == 0 )then
-!          do i = 1, 3
-!            write(lattice_string(i),'(F16.10)') a_box(i)/dfloat(indices(1))
-!            write(lattice_string(i+3),'(F16.10)') b_box(i)/dfloat(indices(2))
-!            write(lattice_string(i+6),'(F16.10)') c_box(i)/dfloat(indices(3))
-!          end do
-!          write(10,*) n_sites
-!          write(10,'(12A,I8,A,F16.6,A)') 'Properties=species:S:1:pos:R:3:vel:R:3 Lattice="', &
-!                          adjustl(lattice_string(1)), lattice_string(2:9), '" pbc="T T T"', &
-!                          ' md_step="', md_istep, '" time="', params%md_step*md_istep, '"'
-!          do i = 1, n_sites
-!             write(10,'(A,6F16.10)') adjustl(xyz_species(i)), positions_prev(1:3, i), velocities(1:3, i)
-!          end do
-!          close(10)
           call write_extxyz( n_sites, md_istep, params%md_step, instant_temp, instant_pressure, &
                              a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
-                             virial, instant_pressure_tensor, xyz_species, &
+                             virial, xyz_species, &
                              positions(1:3, 1:n_sites), velocities, &
                              forces, energies(1:n_sites), masses/103.6426965268d0, hirshfeld_v, &
                              params%write_property, params%write_array_property )
         end if
+!
 !       If there are pressure/box rescaling operations they happen here
         if( params%scale_box )then
           call box_scaling(positions(1:3, 1:n_sites), a_box(1:3), b_box(1:3), c_box(1:3), &

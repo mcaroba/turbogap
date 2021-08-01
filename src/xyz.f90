@@ -64,14 +64,14 @@ module xyz_module
 ! is .true., we write out the corresponding property
 !
   subroutine write_extxyz( Nat, md_istep, dt, temperature, pressure, a_cell, b_cell, c_cell, virial, &
-                           stress, species, positions, velocities, forces, local_energies, masses, &
+                           species, positions, velocities, forces, local_energies, masses, &
                            hirshfeld_v, write_property, write_array_property )
 
     implicit none
 
 !   In variables:
     real*8, intent(in) :: dt, temperature, pressure, a_cell(1:3), b_cell(1:3), c_cell(1:3), virial(1:3,1:3)
-    real*8, intent(in) :: stress(1:3,1:3), forces(:,:), velocities(:,:), positions(:,:), local_energies(:), masses(:)
+    real*8, intent(in) :: forces(:,:), velocities(:,:), positions(:,:), local_energies(:), masses(:)
     real*8, intent(in) :: hirshfeld_v(:)
     integer, intent(in) :: Nat, md_istep
     character(len=*), intent(in) :: species(:)
@@ -97,7 +97,7 @@ module xyz_module
       end if
     end do
 
-    if( md_istep == 0 )then
+    if( md_istep == 0 .or. md_istep == -1 )then
       open(unit=10, file="trajectory_out.xyz", status="unknown")
     else
       open(unit=10, file="trajectory_out.xyz", status="old", position="append")
@@ -219,9 +219,9 @@ module xyz_module
     if( write_property(9) )then
       vol = dot_product(cross_product(a_cell, b_cell), c_cell)
       do i = 1, 3
-        write(lattice_string(i),'(F16.8)') stress(1,i)
-        write(lattice_string(i+3),'(F16.8)') stress(2,1)
-        write(lattice_string(i+6),'(F16.8)') stress(3,i)
+        write(lattice_string(i),'(F16.8)') -virial(1,i)/vol
+        write(lattice_string(i+3),'(F16.8)') -virial(2,1)/vol
+        write(lattice_string(i+6),'(F16.8)') -virial(3,i)/vol
       end do
       write(10, "(1X,11A)", advance="no") "stress=""", adjustl(lattice_string(1)), lattice_string(2:9), """"
     end if
@@ -234,8 +234,13 @@ module xyz_module
 !
 !   Step
     if( write_property(11) )then
-      write(temp_string, "(I10)") md_istep
-      write(10, "(1X,2A)", advance="no") "step=", trim(adjustl(temp_string))
+      if( md_istep >= 0 )then
+        write(temp_string, "(I10)") md_istep
+        write(10, "(1X,2A)", advance="no") "step=", trim(adjustl(temp_string))
+      else
+        write(temp_string, "(I10)") -md_istep
+        write(10, "(1X,2A)", advance="no") "i_config=", trim(adjustl(temp_string))
+      end if
     end if
 !
 !   Advance
@@ -267,7 +272,7 @@ module xyz_module
       end if
 !     Masses
       if( write_array_property(6) )then
-        write(10, "(1X,F16.8)", advance="no") masses(i)
+        write(10, "(1X,F16.8)", advance="no") masses(i)/103.6426965268d0
       end if
 !     Hirshfeld volumes
       if( write_array_property(7) )then
