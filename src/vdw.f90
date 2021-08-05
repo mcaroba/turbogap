@@ -417,11 +417,12 @@ module vdw
 
 
 !**************************************************************************
-  subroutine get_vdw_ref_params(element, C6, R0, alpha0)
+  subroutine get_vdw_ref_params(element, C6, R0, alpha0, rank)
 
     implicit none
 
     character*8, intent(in) :: element
+    integer, intent(in) :: rank
     real*8, intent(out) :: C6, R0, alpha0
     real*8 :: Hartree = 27.211386024367243d0, Bohr = 0.5291772105638411d0
 
@@ -449,21 +450,23 @@ module vdw
       alpha0 = 12.d0 * Bohr**3
       C6 = 46.6d0 * Hartree * Bohr**6
     else
-      write(*,*)'                                       |'
-      write(*,*)'WARNING: default vdW reference parame- |'
-      write(*,*)'ters not available for element:        |'
-      write(*,*)'                                       |'
-      write(*,'(1X,A8,A)') element, '                               |'
-      write(*,*)'                                       |'
-      write(*,*)'You can safely disregard this warning  |'
-      write(*,*)'if your potential does not use van der |'
-      write(*,*)'Waals corrections. Otherwise, or if you|'
-      write(*,*)'want to overrride the defaults, you    |'
-      write(*,*)'need to provide your own definitions of|'
-      write(*,*)'vdw_c6_ref, vdw_r0_ref and             |'
-      write(*,*)'vdw_alpha0_ref in the input file.      |'
-      write(*,*)'                                       |'
-      write(*,*)'.......................................|'
+      if( rank == 0 )then
+        write(*,*)'                                       |'
+        write(*,*)'WARNING: default vdW reference parame- |'
+        write(*,*)'ters not available for element:        |'
+        write(*,*)'                                       |'
+        write(*,'(1X,A8,A)') element, '                               |'
+        write(*,*)'                                       |'
+        write(*,*)'You can safely disregard this warning  |'
+        write(*,*)'if your potential does not use van der |'
+        write(*,*)'Waals corrections. Otherwise, or if you|'
+        write(*,*)'want to overrride the defaults, you    |'
+        write(*,*)'need to provide your own definitions of|'
+        write(*,*)'vdw_c6_ref, vdw_r0_ref and             |'
+        write(*,*)'vdw_alpha0_ref in the input file.      |'
+        write(*,*)'                                       |'
+        write(*,*)'.......................................|'
+      end if
     end if
 
   end subroutine

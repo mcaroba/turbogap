@@ -93,7 +93,7 @@ module md
 !**************************************************************************
   subroutine velocity_verlet(positions, positions_prev, velocities, &
                              forces, forces_prev, masses, dt, &
-                             first_step, a_box, b_box, c_box)
+                             first_step, a_box, b_box, c_box, fix_atom)
 
     implicit none
 
@@ -102,9 +102,9 @@ module md
                              forces_prev(:,:)
     real*8, intent(in) :: forces(:,:), masses(:), dt, a_box(1:3), b_box(1:3), &
                           c_box(1:3)
-    logical, intent(in) :: first_step
+    logical, intent(in) :: first_step, fix_atom(:,:)
 !   Internal variables
-    integer :: n_sites, i
+    integer :: n_sites, i, j
 
     n_sites = size(masses)
 
@@ -114,14 +114,26 @@ module md
 !   velocities are given at t-dt (except for the first step, when they're given for t); compute for t
     if( .not. first_step )then
       do i = 1, n_sites
-        velocities(1:3, i) = velocities(1:3, i) + 0.5d0 * (forces(1:3, i) + forces_prev(1:3, i))/masses(i) * dt
+!        velocities(1:3, i) = velocities(1:3, i) + 0.5d0 * (forces(1:3, i) + forces_prev(1:3, i))/masses(i) * dt
+        do j = 1, 3
+          if( .not. fix_atom(j, i) )then
+            velocities(j, i) = velocities(j, i) + 0.5d0 * (forces(j, i) + forces_prev(j, i))/masses(i) * dt
+          else
+            velocities(j, i) = 0.d0
+          end if
+        end do
       end do
     end if
 !   positions are given at t; compute for t+dt
     positions_prev = positions
     forces_prev = forces
     do i = 1, n_sites
-      positions(1:3, i) = positions(1:3, i) + velocities(1:3, i)*dt + 0.5d0*forces(1:3, i)/masses(i)*dt**2
+!     positions(1:3, i) = positions(1:3, i) + velocities(1:3, i)*dt + 0.5d0*forces(1:3, i)/masses(i)*dt**2
+      do j = 1, 3
+        if( .not. fix_atom(j, i) )then
+          positions(j, i) = positions(j, i) + velocities(j, i)*dt + 0.5d0*forces(j, i)/masses(i)*dt**2
+        end if
+      end do
     end do
 
   end subroutine

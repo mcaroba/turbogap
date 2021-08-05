@@ -45,7 +45,7 @@ module read_files
                       repeat_xyz, rcut_max, which_atom, positions, &
                       do_md, velocities, masses_types, masses, xyz_species, xyz_species_supercell, &
                       species, species_supercell, indices, a_box, b_box, c_box, n_sites, &
-                      supercell_check_only )
+                      supercell_check_only, fix_atom )
 
     implicit none
 
@@ -64,6 +64,7 @@ module read_files
     integer, intent(inout) :: indices(1:3)
     character*8, allocatable, intent(inout) :: xyz_species(:), xyz_species_supercell(:)
     logical, intent(inout) :: repeat_xyz
+    logical, allocatable, intent(inout) :: fix_atom(:,:)
 
 !   Internal variables
     real*8, allocatable :: positions_supercell(:,:), velocities_supercell(:,:)
@@ -73,6 +74,7 @@ module read_files
     character*8 :: i_char
     character*128 :: cjunk, cjunk_array(1:100)
     character*12800 :: cjunk_array_flat
+    logical :: masses_from_xyz
 
     indices_prev = indices
 
@@ -128,8 +130,12 @@ if( .not. supercell_check_only )then
     if( do_md )then
     if( allocated(velocities) )deallocate(velocities)
     if( allocated(masses) )deallocate(masses)
+    if( allocated(fix_atom) )deallocate(fix_atom)
       allocate( velocities(1:3, 1:n_sites) )
       allocate( masses(1:n_sites) )
+      masses_from_xyz = .false.
+      allocate( fix_atom(1:3, 1:n_sites) )
+      fix_atom = .false.
     end if
 !
 !   I should raise a warning if the user is specifying more species than exist in the simulation,
@@ -140,7 +146,16 @@ if( .not. supercell_check_only )then
 !    species_multiplicity = 0
     do i = 1, n_sites
       if( do_md )then
+! temp hack; a proper XYZ reader should be implemented
+!read(11, *, iostat=iostatus) i_char, positions(1:3, i), velocities(1:3, i), masses(i)
+read(11, *, iostat=iostatus) i_char, positions(1:3, i), velocities(1:3, i), fix_atom(1:3, i)
+if( iostatus > 0 ) then
         read(11, *, iostat=iostatus) i_char, positions(1:3, i), velocities(1:3, i)
+else
+!masses_from_xyz = .true.
+!masses = masses * 103.6426965268d0
+continue
+end if
         if( iostatus > 0 )then
           write(*,*)'                                       |'
           write(*,*)'ERROR reading atoms file: have you     |  <-- ERROR'
@@ -158,7 +173,7 @@ if( .not. supercell_check_only )then
 !          species(species_multiplicity(i), i) = j
           xyz_species(i) = species_types(j)
           species(i) = j
-          if( do_md )then
+          if( do_md .and. .not. masses_from_xyz )then
             masses(i) = masses_types(j)
           end if
 !          exit
@@ -770,7 +785,7 @@ end if
     end if
 
     do i = 1, n_species
-      call get_vdw_ref_params( params%species_types(i), c6_ref, r0_ref, alpha0_ref )
+      call get_vdw_ref_params( params%species_types(i), c6_ref, r0_ref, alpha0_ref, rank )
       if( .not. are_vdw_refs_read(1) )then
         params%vdw_c6_ref(i) = c6_ref
       end if

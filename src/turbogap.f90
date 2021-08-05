@@ -73,7 +73,7 @@ program turbogap
             instant_pressure_tensor(1:3, 1:3)
   integer, allocatable :: displs(:), displs2(:), counts(:), counts2(:)
   integer :: update_bar, n_sparse
-  logical, allocatable :: do_list(:), has_vdw_mpi(:)
+  logical, allocatable :: do_list(:), has_vdw_mpi(:), fix_atom(:,:)
   logical :: rebuild_neighbors_list = .true.
   character*1 :: creturn = achar(13)
 
@@ -689,7 +689,7 @@ program turbogap
                     n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
                     positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
                     xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
-                    n_sites, .false. )
+                    n_sites, .false., fix_atom )
 !     Only rank 0 handles these variables
 !      allocate( positions_prev(1:3, 1:size(positions,2)) )
 !      allocate( positions_diff(1:3, 1:size(positions,2)) )
@@ -731,7 +731,7 @@ program turbogap
                     n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
                     positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
                     xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
-                    n_sites, .false. )
+                    n_sites, .false., fix_atom )
 #ifdef _MPIF90
       END IF
 #endif
@@ -765,6 +765,7 @@ program turbogap
       allocate( velocities(1:3, n_pos) )
 !      allocate( masses(n_pos) )
       allocate( masses(1:n_sp) )
+      allocate( fix_atom(1:3, 1:n_sp) )
     end if
     allocate( xyz_species(1:n_sp) )
     allocate( species(1:n_sp) )
@@ -776,6 +777,7 @@ program turbogap
     if( params%do_md )then
       call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(masses, n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+      call mpi_bcast(fix_atom, 3*n_sp, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
     end if
     call mpi_bcast(xyz_species, 8*n_sp, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
     call mpi_bcast(xyz_species_supercell, 8*n_sp_sc, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
@@ -813,7 +815,7 @@ program turbogap
                     n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
                     positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
                     xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
-                    n_sites, .true. )
+                    n_sites, .true., fix_atom )
     end if
 
 #ifdef _MPIF90
@@ -1542,7 +1544,8 @@ end if
 !       forces_prev is returned as equal to forces (both arrays contain the same information on return)
         call velocity_verlet(positions(1:3, 1:n_sites), positions_prev(1:3, 1:n_sites), velocities(1:3, 1:n_sites), &
                              forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), params%md_step, &
-                             md_istep == 0, a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)))
+                             md_istep == 0, a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
+                             fix_atom(1:3, 1:n_sites))
 !
 !       We write out the trajectory file
         if( md_istep == 0 .or. md_istep == params%md_nsteps .or. modulo(md_istep, params%write_xyz) == 0 )then
