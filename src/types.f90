@@ -92,9 +92,10 @@ module types
     logical :: do_md = .false., do_prediction = .false., do_forces = .false., do_derivatives = .false., &
                do_derivatives_fd = .false., write_soap = .false., write_derivatives = .false., &
                do_timing = .false., all_atoms = .true., print_progress = .true., scale_box = .false., &
-               write_lv = .false., write_forces, write_velocities, write_hirshfeld_v, &
-               write_virial, write_pressure, write_stress, write_local_energies, write_property(1:11) = .true., &
-               write_array_property(1:7) = .true., write_masses
+               write_lv = .false., write_forces = .true., write_velocities = .true., write_hirshfeld_v = .true., &
+               write_virial = .true., write_pressure = .true., write_stress = .true., &
+               write_local_energies = .true., write_property(1:11) = .true., &
+               write_array_property(1:7) = .true., write_masses = .false.
   end type input_parameters
 
 end module
