@@ -73,6 +73,7 @@ module read_files
     integer :: indices_prev(1:3)  
     character*8 :: i_char
     character*128 :: cjunk, cjunk_array(1:100)
+    character*1024 :: cjunk1024
     character*12800 :: cjunk_array_flat
     logical :: masses_from_xyz
 
@@ -148,11 +149,15 @@ if( .not. supercell_check_only )then
       if( do_md )then
 ! temp hack; a proper XYZ reader should be implemented
 !read(11, *, iostat=iostatus) i_char, positions(1:3, i), velocities(1:3, i), masses(i)
-read(11, *, iostat=iostatus) i_char, positions(1:3, i), velocities(1:3, i), fix_atom(1:3, i)
+!read(11, *, iostat=iostatus) i_char, positions(1:3, i), velocities(1:3, i), fix_atom(1:3, i)
+read(11, '(A)') cjunk1024
+read(cjunk1024, *, iostat=iostatus) i_char, positions(1:3, i), velocities(1:3, i), fix_atom(1:3, i)
 if( iostatus > 0 ) then
 backspace(11)
+read(11, '(A)') cjunk1024
 fix_atom(1:3, i) = .false.
-        read(11, *, iostat=iostatus) i_char, positions(1:3, i), velocities(1:3, i)
+!        read(11, *, iostat=iostatus) i_char, positions(1:3, i), velocities(1:3, i)
+        read(cjunk1024, *, iostat=iostatus) i_char, positions(1:3, i), velocities(1:3, i)
 else
 !masses_from_xyz = .true.
 !masses(i) = masses(i) * 103.6426965268d0
