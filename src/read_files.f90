@@ -128,9 +128,9 @@ if( .not. supercell_check_only )then
     xyz_species = ""
     species = 0
     if( do_md )then
-    if( allocated(velocities) )deallocate(velocities)
-    if( allocated(masses) )deallocate(masses)
-    if( allocated(fix_atom) )deallocate(fix_atom)
+      if( allocated(velocities) )deallocate(velocities)
+      if( allocated(masses) )deallocate(masses)
+      if( allocated(fix_atom) )deallocate(fix_atom)
       allocate( velocities(1:3, 1:n_sites) )
       allocate( masses(1:n_sites) )
       masses_from_xyz = .false.
@@ -155,7 +155,7 @@ fix_atom(1:3, i) = .false.
         read(11, *, iostat=iostatus) i_char, positions(1:3, i), velocities(1:3, i)
 else
 !masses_from_xyz = .true.
-!masses = masses * 103.6426965268d0
+!masses(i) = masses(i) * 103.6426965268d0
 continue
 end if
         if( iostatus > 0 )then
