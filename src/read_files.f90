@@ -150,6 +150,7 @@ if( .not. supercell_check_only )then
 !read(11, *, iostat=iostatus) i_char, positions(1:3, i), velocities(1:3, i), masses(i)
 read(11, *, iostat=iostatus) i_char, positions(1:3, i), velocities(1:3, i), fix_atom(1:3, i)
 if( iostatus > 0 ) then
+backspace(11)
         read(11, *, iostat=iostatus) i_char, positions(1:3, i), velocities(1:3, i)
 else
 !masses_from_xyz = .true.
