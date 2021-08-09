@@ -316,4 +316,50 @@ module md
 !**************************************************************************
 
 
+
+
+
+
+!**************************************************************************
+! Custom variable time step algorithm
+!
+  subroutine variable_time_step(init, vel, target_pos_step, tau_dt, dt0, dt)
+
+    implicit none
+
+    real*8, intent(inout) :: dt
+    real*8, intent(in) :: vel(:,:), target_pos_step, dt0, tau_dt
+    logical, intent(in) :: init
+    real*8, allocatable :: v(:)
+    real*8 :: new_dt, v_max
+    integer :: Np, i
+
+    Np = size(vel, 2)
+
+    if( allocated( v ) )then
+      if( size(v) /= Np )then
+        deallocate( v )
+        allocate( v(1:Np) )
+      end if
+    else
+      allocate( v(1:Np) )
+    end if
+
+    do i = 1, Np
+      v(i) = dot_product( vel(1:3, i), vel(1:3, i) )
+    end do
+    v_max = maxval(v)
+
+    if( init )then
+      new_dt = target_pos_step / v_max
+    else
+      new_dt = dt - dt**2/tau_dt + target_pos_step*dt/tau_dt/v_max
+    end if
+
+    dt = min(new_dt, dt0)
+
+  end subroutine
+!**************************************************************************
+
+
 end module

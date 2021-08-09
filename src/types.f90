@@ -83,7 +83,7 @@ module types
               vdw_buffer = 1.d0, vdw_rcut_inner = 0.5d0, vdw_buffer_inner = 0.5d0, &
               tau_p = 1000.d0, p_beg = 1.d0, p_end = 1.d0, gamma_p = 1.d0, &
               box_scaling_factor(3,3) = reshape([1.d0, 0.d0, 0.d0, 0.d0, 1.d0, 0.d0, 0.d0, 0.d0, 1.d0], [3,3]), &
-              core_pot_cutoff = 1.d10, core_pot_buffer = 1.d0
+              core_pot_cutoff = 1.d10, core_pot_buffer = 1.d0, tau_dt = 100.d0, target_pos_step
     integer :: md_nsteps = 1, write_xyz = 0, write_thermo = 1, which_atom = 0
     character*1024 :: atoms_file
     character*32 :: vdw_type = "none"
@@ -95,7 +95,8 @@ module types
                write_lv = .false., write_forces = .true., write_velocities = .true., write_hirshfeld_v = .true., &
                write_virial = .true., write_pressure = .true., write_stress = .true., &
                write_local_energies = .true., write_property(1:11) = .true., &
-               write_array_property(1:7) = .true., write_masses = .false.
+               write_array_property(1:8) = .true., write_masses = .false., write_fixes = .true., &
+               variable_time_step = .false.
   end type input_parameters
 
 end module

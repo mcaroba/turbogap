@@ -59,13 +59,14 @@ module xyz_module
 !  5 -> Local energy
 !  6 -> Masses
 !  7 -> Hirshfeld volumes
+!  8 -> Fix atoms
 !
 ! If the corresponding write_property(i) or write_array_property(i)
 ! is .true., we write out the corresponding property
 !
   subroutine write_extxyz( Nat, md_istep, dt, temperature, pressure, a_cell, b_cell, c_cell, virial, &
                            species, positions, velocities, forces, local_energies, masses, &
-                           hirshfeld_v, write_property, write_array_property )
+                           hirshfeld_v, write_property, write_array_property, fix_atom )
 
     implicit none
 
@@ -75,7 +76,7 @@ module xyz_module
     real*8, intent(in) :: hirshfeld_v(:)
     integer, intent(in) :: Nat, md_istep
     character(len=*), intent(in) :: species(:)
-    logical, intent(in) :: write_property(:), write_array_property(:)
+    logical, intent(in) :: write_property(:), write_array_property(:), fix_atom(:,:)
 
 !   Internal variables:
     real*8 :: vol
@@ -156,6 +157,13 @@ module xyz_module
       end if
       if( write_array_property(7) )then
         write(properties_string, "(A)") trim(adjustl(properties_string)) // "hirshfeld_v:R:1"
+        i = i + 1
+        if( i < n_array_properties )then
+          write(properties_string, "(A)") trim(adjustl(properties_string)) // ":"
+        end if
+      end if
+      if( write_array_property(8) )then
+        write(properties_string, "(A)") trim(adjustl(properties_string)) // "fix_atoms:S:3"
         i = i + 1
         if( i < n_array_properties )then
           write(properties_string, "(A)") trim(adjustl(properties_string)) // ":"
@@ -277,6 +285,10 @@ module xyz_module
 !     Hirshfeld volumes
       if( write_array_property(7) )then
         write(10, "(1X,F16.8)", advance="no") hirshfeld_v(i)
+      end if
+!     Fix atoms
+      if( write_array_property(8) )then
+        write(10, "(1X,L1,1X,L1,1X,L1)", advance="no") fix_atom(1:3, i)
       end if
 !     Advance
       write(10,*)

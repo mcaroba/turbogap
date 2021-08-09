@@ -577,6 +577,9 @@ end if
       else if(keyword=='write_forces')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%write_forces
+      else if(keyword=='write_fixes')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%write_fixes
       else if(keyword=='write_stress')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%write_stress
@@ -595,6 +598,13 @@ end if
       else if(keyword=='write_masses')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%write_masses
+      else if(keyword=='target_pos_step')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%target_pos_step
+        params%variable_time_step = .true.
+      else if(keyword=='tau_dt')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%tau_dt
       else if(keyword=='print_progress')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%print_progress
@@ -859,6 +869,9 @@ end if
     end if
     if( .not. params%write_masses )then
       params%write_array_property(6) = .false.
+    end if
+    if( .not. params%write_fixes )then
+      params%write_array_property(8) = .false.
     end if
     if( .not. params%write_pressure )then
       params%write_property(7) = .false.

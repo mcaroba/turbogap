@@ -70,7 +70,7 @@ program turbogap
             time_gap, time_soap(1:3), time_2b(1:3), time_3b(1:3), time_read_input(1:3), time_read_xyz(1:3), &
             time_mpi(1:3) = 0.d0, time_core_pot(1:3), time_vdw(1:3), instant_pressure, lv(1:3,1:3), &
             time_mpi_positions(1:3) = 0.d0, time_mpi_ef(1:3) = 0.d0, time_md(3) = 0.d0, &
-            instant_pressure_tensor(1:3, 1:3)
+            instant_pressure_tensor(1:3, 1:3), time_step, md_time
   integer, allocatable :: displs(:), displs2(:), counts(:), counts2(:)
   integer :: update_bar, n_sparse
   logical, allocatable :: do_list(:), has_vdw_mpi(:), fix_atom(:,:)
@@ -1459,12 +1459,15 @@ end if
         IF( rank == 0 )then
 #endif
 !       Write energy and forces if we're just doing static predictions
-        call write_extxyz( n_sites, -n_xyz, params%md_step, instant_temp, instant_pressure, &
+!       The masses should be divided by 103.6426965268d0 to have amu units, but
+!       since masses is not allocated for single point calculations, it would
+!       likely lead to a segfault
+        call write_extxyz( n_sites, -n_xyz, time_step, instant_temp, instant_pressure, &
                            a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
                            virial, xyz_species, &
                            positions(1:3, 1:n_sites), velocities, &
                            forces, energies(1:n_sites), masses, hirshfeld_v, &
-                           params%write_property, params%write_array_property )
+                           params%write_property, params%write_array_property, fix_atom )
 #ifdef _MPIF90
         END IF
 #endif
@@ -1498,32 +1501,58 @@ end if
 #endif
     if( params%do_md )then
       call cpu_time(time_md(1))
+!     Define the time_step and md_time prior to possible scaling (see variable_time_step below)
+      if( md_istep > 0 )then
+        md_time = md_time + time_step
+      else
+        md_time = 0.d0
+        time_step = params%md_step
+      end if
 !     We wrap the positions and remoce CM velocity
       call wrap_pbc(positions(1:3,1:n_sites), a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)))
       call remove_cm_vel(velocities(1:3,1:n_sites), masses(1:n_sites))
-!     Compute kinetic energy from current velocities
-      E_kinetic = 0.d0
-      do i = 1, n_sites
-        E_kinetic = E_kinetic + 0.5d0 * masses(i) * dot_product(velocities(1:3, i), velocities(1:3, i))
-      end do
-      instant_temp = 2.d0/3.d0/dfloat(n_sites-1)/kB*E_kinetic
+
 !     Instant pressure in bar
       instant_pressure = (kB*dfloat(n_sites-1)*instant_temp+(virial(1,1) + virial(2,2) + virial(3,3))/3.d0)/v_uc*eVperA3tobar
       instant_pressure_tensor(1:3, 1:3) = virial(1:3,1:3)/v_uc*eVperA3tobar
       do i = 1, 3
         instant_pressure_tensor(i, i) = instant_pressure_tensor(i, i) + (kB*dfloat(n_sites-1)*instant_temp)/v_uc*eVperA3tobar
       end do
+
+!     First we check if this is a variable time step simulation
+      if( params%variable_time_step )then
+        call variable_time_step(md_istep == 0, velocities(1:3, 1:n_sites), params%target_pos_step, params%tau_dt, &
+                                params%md_step, time_step)
+      end if
+!     This takes care of NVE
+!     Velocity Verlet takes positions for t, positions_prev for t-dt, and velocities for t-dt and returns everything
+!     dt later. forces are taken at t, and forces_prev at t-dt. forces is left unchanged by the routine, and
+!     forces_prev is returned as equal to forces (both arrays contain the same information on return)
+      call velocity_verlet(positions(1:3, 1:n_sites), positions_prev(1:3, 1:n_sites), velocities(1:3, 1:n_sites), &
+                           forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), time_step, &
+                           md_istep == 0, a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
+                           fix_atom(1:3, 1:n_sites))
+
+!     Compute kinetic energy from current velocities. Because Velocity Verlet
+!     works with the velocities at t-dt (except for the first time step) we
+!     have to compute the velocities after call Verlet
+      E_kinetic = 0.d0
+      do i = 1, n_sites
+        E_kinetic = E_kinetic + 0.5d0 * masses(i) * dot_product(velocities(1:3, i), velocities(1:3, i))
+      end do
+      instant_temp = 2.d0/3.d0/dfloat(n_sites-1)/kB*E_kinetic
+
+!     Here we write thermodynamic information -> THIS NEEDS CLEAN UP AND IMPROVEMENT
       if( md_istep == 0 )then
         open(unit=10, file="thermo.log", status="unknown")
       else
         open(unit=10, file="thermo.log", status="old", position="append")
       end if
-!     Here we write thermodynamic information -> THIS NEEDS CLEAN UP AND IMPROVEMENT
       if( md_istep == 0 .or. md_istep == params%md_nsteps .or. modulo(md_istep, params%write_thermo) == 0 )then
 !       Organize this better so that the user can have more freedom about what gets printed to thermo.log
 !       There should also be a header preceded by # specifying what gets printed
         write(10, "(I10, 1X, F16.4, 1X, F16.4, 1X, F20.8, 1X, F20.8, 1X, F20.8)", advance="no") &
-             md_istep, md_istep*params%md_step, instant_temp, E_kinetic, sum(energies), instant_pressure
+             md_istep, md_time, instant_temp, E_kinetic, sum(energies), instant_pressure
         if( params%write_lv )then
           write(10, "(1X, 9F20.8)", advance="no") a_box(1:3)/dfloat(indices(1)), &
                                                   b_box(1:3)/dfloat(indices(2)), &
@@ -1536,58 +1565,48 @@ end if
         write(10, *)
       end if
       close(10)
-!      if( md_istep < params%md_nsteps )then
-      if( .true. )then
-!       This takes care of NVE
-!       Velocity Verlet takes positions for t, positions_prev for t-dt, and velocities for t-dt and returns everything
-!       dt later. forces are taken at t, and forces_prev at t-dt. forces is left unchanged by the routine, and
-!       forces_prev is returned as equal to forces (both arrays contain the same information on return)
-        call velocity_verlet(positions(1:3, 1:n_sites), positions_prev(1:3, 1:n_sites), velocities(1:3, 1:n_sites), &
-                             forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), params%md_step, &
-                             md_istep == 0, a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
-                             fix_atom(1:3, 1:n_sites))
 !
-!       We write out the trajectory file
-        if( md_istep == 0 .or. md_istep == params%md_nsteps .or. modulo(md_istep, params%write_xyz) == 0 )then
-          call write_extxyz( n_sites, md_istep, params%md_step, instant_temp, instant_pressure, &
-                             a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
-                             virial, xyz_species, &
-                             positions(1:3, 1:n_sites), velocities, &
-                             forces, energies(1:n_sites), masses/103.6426965268d0, hirshfeld_v, &
-                             params%write_property, params%write_array_property )
-        end if
+!     We write out the trajectory file
+      if( md_istep == 0 .or. md_istep == params%md_nsteps .or. modulo(md_istep, params%write_xyz) == 0 )then
+        call write_extxyz( n_sites, md_istep, time_step, instant_temp, instant_pressure, &
+                           a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
+                           virial, xyz_species, &
+                           positions(1:3, 1:n_sites), velocities, &
+                           forces, energies(1:n_sites), masses/103.6426965268d0, hirshfeld_v, &
+                           params%write_property, params%write_array_property, fix_atom(1:3, 1:n_sites) )
+      end if
 !
-!       If there are pressure/box rescaling operations they happen here
-        if( params%scale_box )then
-          call box_scaling(positions(1:3, 1:n_sites), a_box(1:3), b_box(1:3), c_box(1:3), &
-                           indices, md_istep, params%md_nsteps, params%box_scaling_factor)
-        else if( params%barostat == "berendsen" )then
-          lv(1:3, 1) = a_box(1:3)
-          lv(1:3, 2) = b_box(1:3)
-          lv(1:3, 3) = c_box(1:3)
-          call berendsen_barostat(lv(1:3,1:3), &
-                                  params%p_beg + (params%p_end-params%p_beg)*dfloat(md_istep+1)/float(params%md_nsteps), &
-                                  instant_pressure_tensor, params%barostat_sym, params%tau_p, params%gamma_p, params%md_step)
-          a_box(1:3) = lv(1:3, 1)
-          b_box(1:3) = lv(1:3, 2)
-          c_box(1:3) = lv(1:3, 3)
-          call berendsen_barostat(positions(1:3, 1:n_sites), &
-                                  params%p_beg + (params%p_end-params%p_beg)*dfloat(md_istep+1)/float(params%md_nsteps), &
-                                  instant_pressure_tensor, params%barostat_sym, params%tau_p, params%gamma_p, params%md_step)
-        end if
-!       If there are thermostating operations they happen here
-        if( params%thermostat == "berendsen" )then
-          call berendsen_thermostat(velocities(1:3, 1:n_sites), &
-                                    params%t_beg + (params%t_end-params%t_beg)*dfloat(md_istep+1)/float(params%md_nsteps), &
-                                    instant_temp, params%tau_t, params%md_step)
-        else if( params%thermostat == "bussi" )then
-          velocities(1:3, 1:n_sites) = velocities(1:3, 1:n_sites) * dsqrt(resamplekin(E_kinetic, &
-                                       params%t_beg + (params%t_end-params%t_beg)*dfloat(md_istep+1)/float(params%md_nsteps), &
-                                       3*n_sites-3,params%tau_t, params%md_step) / E_kinetic)
-        end if
-!       Check what's the maximum atomic displacement since last neighbors build
-        positions_diff = positions_diff + positions(1:3, 1:n_sites) - positions_prev(1:3, 1:n_sites)
-        rebuild_neighbors_list = .false.
+!     If there are pressure/box rescaling operations they happen here
+      if( params%scale_box )then
+        call box_scaling(positions(1:3, 1:n_sites), a_box(1:3), b_box(1:3), c_box(1:3), &
+                         indices, md_istep, params%md_nsteps, params%box_scaling_factor)
+      else if( params%barostat == "berendsen" )then
+        lv(1:3, 1) = a_box(1:3)
+        lv(1:3, 2) = b_box(1:3)
+        lv(1:3, 3) = c_box(1:3)
+        call berendsen_barostat(lv(1:3,1:3), &
+                                params%p_beg + (params%p_end-params%p_beg)*dfloat(md_istep+1)/float(params%md_nsteps), &
+                                instant_pressure_tensor, params%barostat_sym, params%tau_p, params%gamma_p, time_step)
+        a_box(1:3) = lv(1:3, 1)
+        b_box(1:3) = lv(1:3, 2)
+        c_box(1:3) = lv(1:3, 3)
+        call berendsen_barostat(positions(1:3, 1:n_sites), &
+                                params%p_beg + (params%p_end-params%p_beg)*dfloat(md_istep+1)/float(params%md_nsteps), &
+                                instant_pressure_tensor, params%barostat_sym, params%tau_p, params%gamma_p, time_step)
+      end if
+!     If there are thermostating operations they happen here
+      if( params%thermostat == "berendsen" )then
+        call berendsen_thermostat(velocities(1:3, 1:n_sites), &
+                                  params%t_beg + (params%t_end-params%t_beg)*dfloat(md_istep+1)/float(params%md_nsteps), &
+                                  instant_temp, params%tau_t, time_step)
+      else if( params%thermostat == "bussi" )then
+        velocities(1:3, 1:n_sites) = velocities(1:3, 1:n_sites) * dsqrt(resamplekin(E_kinetic, &
+                                     params%t_beg + (params%t_end-params%t_beg)*dfloat(md_istep+1)/float(params%md_nsteps), &
+                                     3*n_sites-3,params%tau_t, time_step) / E_kinetic)
+      end if
+!     Check what's the maximum atomic displacement since last neighbors build
+      positions_diff = positions_diff + positions(1:3, 1:n_sites) - positions_prev(1:3, 1:n_sites)
+      rebuild_neighbors_list = .false.
 !--------
 ! CHECK THIS OUT and fix it at some point
 ! Here we set the neighbors list rebuild to always true if the supercell and the primitive unit cell are not
@@ -1596,35 +1615,34 @@ end if
 ! lists. A possible solution would be to wrap around the supercell, instead of the unit cell, to maintain the
 ! internal consistency of the positions(:,:) array, and then do a wrapping around the primitive unit cell for
 ! printing the XYZ coordinates only (i.e., keeping the other wrapping convention internally for positions(:,:))
-        if( any(indices > 1) )then
-          rebuild_neighbors_list = .true.
-        end if
+      if( any(indices > 1) )then
+        rebuild_neighbors_list = .true.
+      end if
 !--------
-        do i = 1, n_sites
-          if( positions_diff(1, i)**2 + positions_diff(2, i)**2 + positions_diff(3, i)**2 > params%neighbors_buffer/2.d0 )then
-            rebuild_neighbors_list = .true.
-            positions_diff = 0.d0
-            exit
-          end if
-        end do
+      do i = 1, n_sites
+        if( positions_diff(1, i)**2 + positions_diff(2, i)**2 + positions_diff(3, i)**2 > params%neighbors_buffer/2.d0 )then
+          rebuild_neighbors_list = .true.
+          positions_diff = 0.d0
+          exit
+        end if
+      end do
 !       We make sure the atoms in the supercell have the same positions and velocities as in the unit cell
-        j = 0
-        do i2 = 1, indices(1)
-          do j2 = 1, indices(2)
-            do k2 = 1, indices(3)
-              do i = 1, n_sites
-                j = j + 1
-                if( j > n_sites )then
-                  positions(1:3, j) = positions(1:3, i) + dfloat(i2-1)/dfloat(indices(1))*a_box &
-                                                        + dfloat(j2-1)/dfloat(indices(2))*b_box & 
-                                                        + dfloat(k2-1)/dfloat(indices(3))*c_box
-                  velocities(1:3, j) = velocities(1:3, i)
-                end if
-              end do
+      j = 0
+      do i2 = 1, indices(1)
+        do j2 = 1, indices(2)
+          do k2 = 1, indices(3)
+            do i = 1, n_sites
+              j = j + 1
+              if( j > n_sites )then
+                positions(1:3, j) = positions(1:3, i) + dfloat(i2-1)/dfloat(indices(1))*a_box &
+                                                      + dfloat(j2-1)/dfloat(indices(2))*b_box & 
+                                                      + dfloat(k2-1)/dfloat(indices(3))*c_box
+                velocities(1:3, j) = velocities(1:3, i)
+              end if
             end do
           end do
         end do
-      end if
+      end do
       call cpu_time(time_md(2))
       time_md(3) = time_md(3) + time_md(2) - time_md(1)
     end if
