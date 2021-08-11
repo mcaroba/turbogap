@@ -842,6 +842,8 @@ end if
       params%write_array_property(3) = .false.
 !     Do not write masses
       params%write_array_property(6) = .false.
+!     Do not write fixes
+      params%write_array_property(8) = .false.
     end if
     if( .not. params%do_forces )then
 !     Do not write pressure
