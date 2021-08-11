@@ -661,7 +661,7 @@ end if
       else if(keyword=='atoms_file' .or. keyword=='input_file')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%atoms_file
-      else if(keyword=='max_Gbytes_per_process')then
+      else if(keyword=='max_gbytes_per_process')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%max_Gbytes_per_process
       else if(keyword=='e_tol')then
