@@ -323,40 +323,69 @@ module md
 !**************************************************************************
 ! Custom variable time step algorithm
 !
-  subroutine variable_time_step(init, vel, target_pos_step, tau_dt, dt0, dt)
+  subroutine variable_time_step(init, vel, forces, masses, target_pos_step, tau_dt, dt0, dt)
 
     implicit none
 
     real*8, intent(inout) :: dt
-    real*8, intent(in) :: vel(:,:), target_pos_step, dt0, tau_dt
+    real*8, intent(in) :: vel(:,:), target_pos_step, dt0, tau_dt, forces(:,:), masses(:)
     logical, intent(in) :: init
-    real*8, allocatable :: v(:)
-    real*8 :: new_dt, v_max
-    integer :: Np, i
+    real*8, allocatable :: d(:)
+    real*8 :: new_dt, d_max, dt_prev
+    integer :: Np, i, i_max
+    logical :: optimize_time_step, too_large
 
     Np = size(vel, 2)
 
-    if( allocated( v ) )then
-      if( size(v) /= Np )then
-        deallocate( v )
-        allocate( v(1:Np) )
+    if( allocated( d ) )then
+      if( size(d) /= Np )then
+        deallocate( d )
+        allocate( d(1:Np) )
       end if
     else
-      allocate( v(1:Np) )
+      allocate( d(1:Np) )
     end if
+
 
     do i = 1, Np
-      v(i) = dot_product( vel(1:3, i), vel(1:3, i) )
+      d(i) = sqrt( dot_product( vel(1:3, i)*dt + 0.5d0*forces(1:3, i)/masses(i)*dt**2, &
+                                vel(1:3, i)*dt + 0.5d0*forces(1:3, i)/masses(i)*dt**2 ) )
     end do
-    v_max = maxval(v)
-
-    if( init )then
-      new_dt = target_pos_step / v_max
+    d_max = maxval(d)
+    if( d_max > target_pos_step )then
+      too_large = .true.
     else
-      new_dt = dt - dt**2/tau_dt + target_pos_step*dt/tau_dt/v_max
+      too_large = .false.
     end if
 
-    dt = min(new_dt, dt0)
+!   new_dt estimates the optimal time step for this snapshot (within 1% accuracy)
+    new_dt = dt
+    optimize_time_step = .true.
+    do while( optimize_time_step )
+      do i = 1, Np
+        d(i) = sqrt( dot_product( vel(1:3, i)*new_dt + 0.5d0*forces(1:3, i)/masses(i)*new_dt**2, &
+                                  vel(1:3, i)*new_dt + 0.5d0*forces(1:3, i)/masses(i)*new_dt**2 ) )
+      end do
+      d_max = maxval(d)
+!      i_max = maxloc(d)
+      if( d_max > target_pos_step .and. too_large )then
+        new_dt = new_dt * 0.99d0
+      else if( d_max < target_pos_step .and. .not. too_large )then
+        new_dt = new_dt * 1.01d0
+      else
+        optimize_time_step = .false.
+      end if
+    end do
+
+    if( init )then
+!     If we're at the first step (init) we use new_dt as estimated above
+      dt = min(new_dt, dt0)
+    else
+!     Otherwise we use a Berendsen approach
+      new_dt = dt * tau_dt / (tau_dt + dt - new_dt)
+      dt = min(new_dt, dt0)
+    end if
+
 
   end subroutine
 !**************************************************************************
