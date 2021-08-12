@@ -1462,6 +1462,7 @@ end if
 !       The masses should be divided by 103.6426965268d0 to have amu units, but
 !       since masses is not allocated for single point calculations, it would
 !       likely lead to a segfault
+        call wrap_pbc(positions(1:3,1:n_sites), a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)))
         call write_extxyz( n_sites, -n_xyz, time_step, instant_temp, instant_pressure, &
                            a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
                            virial, xyz_species, &
@@ -1568,6 +1569,7 @@ end if
 !
 !     We write out the trajectory file
       if( md_istep == 0 .or. md_istep == params%md_nsteps .or. modulo(md_istep, params%write_xyz) == 0 )then
+        call wrap_pbc(positions(1:3,1:n_sites), a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)))
         call write_extxyz( n_sites, md_istep, time_step, instant_temp, instant_pressure, &
                            a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
                            virial, xyz_species, &
