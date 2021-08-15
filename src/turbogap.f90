@@ -930,7 +930,7 @@ program turbogap
       end if
       if( params%do_forces )then
         if( n_sites /= n_sites_prev )then
-          if( allocated(forces) )deallocate( forces, forces_soap, forces_2b, forces_3b, forces_core_pot, this_forces, forces_vdw )
+          if( allocated(forces) )deallocate( forces, forces_soap, forces_2b, forces_3b, forces_core_pot, forces_vdw )
           allocate( forces(1:3, 1:n_sites) )
           allocate( forces_soap(1:3, 1:n_sites) )
           allocate( forces_2b(1:3, 1:n_sites) )
