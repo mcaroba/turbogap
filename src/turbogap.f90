@@ -886,7 +886,7 @@ program turbogap
 !     We only need to reallocate the arrays if the number of sites changes
       if( n_sites /= n_sites_prev )then
         if( allocated(energies) )deallocate( energies, energies_soap, energies_2b, energies_3b, energies_core_pot, &
-                                             this_energies, energies_vdw )
+                                             this_energies, energies_vdw, this_forces )
         allocate( energies(1:n_sites) )
         allocate( this_energies(1:n_sites) )
         allocate( energies_soap(1:n_sites) )
