@@ -121,7 +121,7 @@ module xyz_module
         end if
       end if
       if( write_array_property(2) )then
-        write(properties_string, "(A)") trim(adjustl(properties_string)) // "positions:R:3"
+        write(properties_string, "(A)") trim(adjustl(properties_string)) // "pos:R:3"
         i = i + 1
         if( i < n_array_properties )then
           write(properties_string, "(A)") trim(adjustl(properties_string)) // ":"
