@@ -1160,7 +1160,8 @@ program turbogap
             v_neigh_vdw(k) = hirshfeld_v(j2)
           end do
         end do
-        call get_ts_energy_and_forces( hirshfeld_v(i_beg:i_end), hirshfeld_v_cart_der(1:3, j_beg:j_end), &
+! TODO: change this back to get_ts_energy_and_forces and implement call for mbd energy
+        call get_mbd_energy_and_forces( hirshfeld_v(i_beg:i_end), hirshfeld_v_cart_der(1:3, j_beg:j_end), &
                                        n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
                                        neighbor_species(j_beg:j_end), &
                                        params%vdw_rcut, params%vdw_buffer, &

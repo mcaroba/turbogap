@@ -28,9 +28,9 @@
 
 module vdw
 
+!  use misc
 
   contains
-
 
 !**************************************************************************
   subroutine hirshfeld_predict( soap, Qs, alphas, V0, delta, zeta, V, &
@@ -412,6 +412,206 @@ module vdw
 
   end subroutine
 !**************************************************************************
+
+
+
+
+
+
+!**************************************************************************
+  subroutine get_mbd_energy_and_forces( hirshfeld_v, hirshfeld_v_cart_der, &
+                                       n_neigh, neighbors_list, neighbor_species, &
+                                       rcut, buffer, rcut_inner, buffer_inner, rjs, xyz, hirshfeld_v_neigh, &
+                                       sR, d, c6_ref, r0_ref, alpha0_ref, do_forces, &
+                                       energies, forces0, virial )
+
+    implicit none
+
+!   Input variables
+    real*8, intent(in) :: hirshfeld_v(:), hirshfeld_v_cart_der(:,:), rcut, buffer, rcut_inner, buffer_inner, &
+                          rjs(:), xyz(:,:), hirshfeld_v_neigh(:), sR, d, c6_ref(:), r0_ref(:), &
+                          alpha0_ref(:)
+    integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:)
+    logical, intent(in) :: do_forces
+!   Output variables
+    real*8, intent(out) :: virial(1:3, 1:3)
+!   In-Out variables
+    real*8, intent(inout) :: energies(:), forces0(:,:)
+!   Internal variables
+    real*8, allocatable :: neighbor_c6_ii(:), neighbor_c6_ij(:), r0_ii(:), r0_ij(:), &
+                           exp_damp(:), f_damp(:), c6_ij_free(:), neighbor_alpha0(:), &
+                           pref_force1(:), pref_force2(:), r6(:), r6_der(:), &
+                           T_func(:,:), T_func_der(:,:,:,:), h_func(:,:), g_func(:,:), &
+                           h_func_der(:,:,:,:), g_func_der(:,:,:,:), omegas(:), omega_i(:)
+    real*8 :: time1, time2, c6_ii, c6_jj, r0_i, r0_j, alpha0_i, alpha0_j, rbuf, this_force(1:3), Bohr, Hartree, omega
+    integer, allocatable:: i_buffer(:)
+    integer :: n_sites, n_pairs, n_pairs_soap, n_species, n_sites0
+    integer :: i, i2, j, j2, k, k2, a, n_in_buffer, c1, c2, c3
+    logical, allocatable :: is_in_buffer(:)
+    logical :: do_timing = .false.
+
+    n_sites = size(n_neigh)
+    n_pairs = size(neighbors_list)
+    n_species = size(c6_ref)
+    n_sites0 = size(forces0, 2)
+
+!   Hartree units (calculations done in Hartree units for simplicity)
+    Bohr = 0.5291772105638411
+    Hartree = 27.211386024367243
+
+!   We precompute the C6 coefficients of all the neighbors
+    allocate( neighbor_c6_ii(1:n_pairs) )
+    allocate( neighbor_c6_ij(1:n_pairs) )
+    allocate( r0_ij(1:n_pairs) )
+    allocate( r0_ii(1:n_pairs) )
+    allocate( neighbor_alpha0(1:n_pairs) )
+    allocate( exp_damp(1:n_pairs) )
+    allocate( f_damp(1:n_pairs) )
+    allocate( c6_ij_free(1:n_pairs) )
+    allocate( r6(1:n_pairs) )
+    allocate( is_in_buffer(1:n_pairs) )
+    allocate( T_func(1:3*n_sites,1:3*n_sites) )
+    allocate( h_func(1:n_sites,1:n_sites) )
+    allocate( g_func(1:n_sites,1:n_sites) )
+    allocate( omegas(1:11) )
+    allocate( omega_i(1:n_pairs) )
+    is_in_buffer = .false.
+    if( do_forces )then
+      allocate( pref_force1(1:n_sites) )
+      allocate( pref_force2(1:n_sites) )
+      allocate( r6_der(1:n_pairs) )
+      allocate( T_func_der(1:3*n_sites,1:3*n_sites,1:n_sites,1:3) )
+      allocate( h_func_der(1:n_sites,1:n_sites,1:n_sites,1:3) )
+      allocate( g_func_der(1:n_sites,1:n_sites,1:n_sites,1:3) )
+    end if
+
+    if( do_timing) then
+      call cpu_time(time1)
+    end if
+    
+!   Frequencies used for integration:
+    omega = 0.d0
+    do i = 1, 11
+      omegas(i) = omega
+      omega = omega + 0.4d0 
+    end do
+
+!   Check which atoms are in the buffer region
+    do k = 1, n_pairs
+      j = neighbor_species(k)
+      neighbor_c6_ii(k) = c6_ref(j)
+      r0_ii(k) = r0_ref(j)
+      neighbor_alpha0(k) = alpha0_ref(j)
+    end do
+    n_in_buffer = 0
+    if( buffer > 0.d0 .or. buffer_inner > 0.d0 )then
+      do k = 1, n_pairs
+        if( (rjs(k) > rcut-buffer .and. rjs(k) < rcut) .or. &
+            (rjs(k) < rcut_inner+buffer_inner .and. rjs(k) > rcut_inner) )then
+          n_in_buffer = n_in_buffer + 1
+          is_in_buffer(k) = .true.
+        end if
+      end do
+    end if
+    allocate( i_buffer(1:n_in_buffer) )
+    if( buffer > 0.d0 .or. buffer_inner > 0.d0 )then
+      i = 0
+      do k = 1, n_pairs
+        if( is_in_buffer(k) )then
+          i = i + 1
+          i_buffer(i) = k
+        end if
+      end do
+    end if
+
+    if( do_timing) then
+      call cpu_time(time2)
+      write(*,*) "vdw: creating pair quantities 1:", time2-time1
+      call cpu_time(time1)
+    end if
+
+!   Precompute some other pair quantities
+    neighbor_c6_ii = neighbor_c6_ii * hirshfeld_v_neigh**2
+!   This is slow, could replace by Taylor expansion maybe
+    r0_ii = r0_ii * hirshfeld_v_neigh**(1.d0/3.d0)
+    neighbor_alpha0 = neighbor_alpha0 * hirshfeld_v_neigh
+    omega_i = (4.d0 * neighbor_c6_ii)/(3*neighbor_alpha0**2) 
+    
+    if( do_timing) then
+      call cpu_time(time2)
+      write(*,*) "vdw: creating pair quantities 2:", time2-time1
+      call cpu_time(time1)
+    end if
+
+!   Computing dipole interaction tensor
+!   Requires the complete supercell to get correct dimensions for T_func! 3*N_at x 3*N_at, where N_at are atoms in supercell
+    T_func = 0.d0
+    k = 0
+    do i = 0, n_sites
+      k = k + 1
+      do j = i+1, n_sites
+        k = k + 1
+        if( rjs(k) < rcut )then
+          do c1 = 1, 3
+            T_func(3*i+c1,3*j+c1) = (3*xyz(k,c1+1) * xyz(k,c1+1) - rjs(k)**2)/rjs(k)**5
+            T_func(3*j+c1,3*i+c1) = T_func(3*i+c1,3*j+c1)
+!            do c2 = c1+1, 2
+!              T_func(3*i+c1,3*j2+c2) = (3*xyz(k,c1+1) * xyz(k,c2+1) - rjs(k)**2)/rjs(k)**5
+!              T_func(3*j2+c1,3*i+c2) = T_func(3*i+c1,3*j2+c2)
+!              T_func(3*i+c2,3*j2+c1) = T_func(3*i+c1,3*j2+c2)
+!              T_func(3*j2+c2,3*i+c1) = T_func(3*i+c1,3*j2+c2)
+!            end do
+          end do
+        end if
+      end do
+    end do
+
+    write(*,*) "Size:", size(T_func, 1), size(T_func, 2)
+    write(*,*) "T_ij:", T_func(1,1:9)
+    write(*,*) "T_ij:", T_func(2,1:9)
+    write(*,*) "T_ij:", T_func(3,1:9)
+    write(*,*) "T_ij:", T_func(4,1:9)
+    write(*,*) "T_ij:", T_func(5,1:9)
+    write(*,*) "T_ij:", T_func(6,1:9)
+    write(*,*) "T_ij:", T_func(7,1:9)
+    write(*,*) "T_ij:", T_func(8,1:9)
+    write(*,*) "T_ij:", T_func(9,1:9)
+
+    if( do_timing) then
+      call cpu_time(time2)
+      write(*,*) "vdw: creating pair quantities 3:", time2-time1
+      call cpu_time(time1)
+    end if
+
+!   Compute the TS local energies
+
+    if( do_timing) then
+      call cpu_time(time2)
+      write(*,*) "vdw: computing energies:", time2-time1
+      call cpu_time(time1)
+    end if
+
+!   Compute MBD forces
+    if( do_forces )then
+      forces0 = 0.d0
+      virial = 0.d0
+    end if
+
+    if( do_timing) then
+      call cpu_time(time2)
+      write(*,*) "vdw: computing forces:", time2-time1
+    end if
+ 
+!   Clean up
+    deallocate( neighbor_c6_ii, neighbor_c6_ij, r0_ij, exp_damp, f_damp, c6_ij_free, r6, is_in_buffer, i_buffer, T_func, &
+                h_func, g_func, omegas, omega_i )
+    if( do_forces )then
+      deallocate( pref_force1, pref_force2, r6_der, T_func_der, h_func_der, g_func_der )
+    end if
+
+  end subroutine
+!**************************************************************************
+
 
 
 
