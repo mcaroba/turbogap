@@ -441,9 +441,11 @@ module vdw
     real*8, allocatable :: neighbor_c6_ii(:), neighbor_c6_ij(:), r0_ii(:), r0_ij(:), &
                            exp_damp(:), f_damp(:), c6_ij_free(:), neighbor_alpha0(:), &
                            pref_force1(:), pref_force2(:), r6(:), r6_der(:), &
-                           T_func(:,:), T_func_der(:,:,:,:), h_func(:,:), g_func(:,:), &
-                           h_func_der(:,:,:,:), g_func_der(:,:,:,:), omegas(:), omega_i(:)
-    real*8 :: time1, time2, c6_ii, c6_jj, r0_i, r0_j, alpha0_i, alpha0_j, rbuf, this_force(1:3), Bohr, Hartree, omega
+                           T_func(:,:), T_func_der(:,:,:,:), h_func(:,:,:,:,:), g_func(:,:,:), &
+                           h_func_der(:,:,:,:), g_func_der(:,:,:,:), omegas(:), omega_i(:), &
+                           alpha_i(:,:), sigma_i(:,:), sigma_ij(:), T_SR(:,:,:), B_mat(:,:,:), &
+                           rjs_H(:), xyz_H(:,:)
+    real*8 :: time1, time2, c6_ii, c6_jj, r0_i, r0_j, alpha0_i, alpha0_j, rbuf, this_force(1:3), Bohr, Hartree, omega, pi
     integer, allocatable:: i_buffer(:)
     integer :: n_sites, n_pairs, n_pairs_soap, n_species, n_sites0
     integer :: i, i2, j, j2, k, k2, a, n_in_buffer, c1, c2, c3
@@ -458,6 +460,7 @@ module vdw
 !   Hartree units (calculations done in Hartree units for simplicity)
     Bohr = 0.5291772105638411
     Hartree = 27.211386024367243
+    pi = 3.14159265359
 
 !   We precompute the C6 coefficients of all the neighbors
     allocate( neighbor_c6_ii(1:n_pairs) )
@@ -471,10 +474,17 @@ module vdw
     allocate( r6(1:n_pairs) )
     allocate( is_in_buffer(1:n_pairs) )
     allocate( T_func(1:3*n_sites,1:3*n_sites) )
-    allocate( h_func(1:n_sites,1:n_sites) )
-    allocate( g_func(1:n_sites,1:n_sites) )
+    allocate( h_func(1:n_sites,1:n_sites,1:3,1:3,1:11) )
+    allocate( g_func(1:n_sites,1:n_sites,1:11) )
     allocate( omegas(1:11) )
     allocate( omega_i(1:n_pairs) )
+    allocate( sigma_i(1:n_sites,1:11) )
+    allocate( alpha_i(1:n_sites,1:11) )
+    allocate( sigma_ij(1:11) )
+    allocate( T_SR(1:3*n_sites,1:3*n_sites,1:11) )
+    allocate( B_mat(1:3*n_sites,1:3*n_sites,1:11) )
+    allocate( xyz_H(1:3,1:n_pairs) )
+    allocate( rjs_H(1:n_pairs) )
     is_in_buffer = .false.
     if( do_forces )then
       allocate( pref_force1(1:n_sites) )
@@ -499,9 +509,11 @@ module vdw
 !   Check which atoms are in the buffer region
     do k = 1, n_pairs
       j = neighbor_species(k)
-      neighbor_c6_ii(k) = c6_ref(j)
-      r0_ii(k) = r0_ref(j)
-      neighbor_alpha0(k) = alpha0_ref(j)
+      neighbor_c6_ii(k) = c6_ref(j) / (Hartree*Bohr**6)
+      r0_ii(k) = r0_ref(j) / Bohr
+      neighbor_alpha0(k) = alpha0_ref(j) / Bohr**3
+      xyz_H(:,k) = xyz(:,k)/Bohr
+      rjs_H(k) = rjs(k)/Bohr
     end do
     n_in_buffer = 0
     if( buffer > 0.d0 .or. buffer_inner > 0.d0 )then
@@ -543,29 +555,41 @@ module vdw
       call cpu_time(time1)
     end if
 
+    do i = 1, n_sites
+      k = (i-1)*n_sites+1
+      do j = 1, 11
+        alpha_i(i,j) = neighbor_alpha0(k)/(1.d0 + omegas(j)/omega_i(k))**2
+        sigma_i(i,j) = (sqrt(2.d0/pi) * alpha_i(i,j)/3.d0)**(1.d0/3.d0)
+      end do
+    end do
+
+    write(*,*) sigma_i(1:3,1:11)
+
 !   Computing dipole interaction tensor
 !   Requires the complete supercell to get correct dimensions for T_func! 3*N_at x 3*N_at, where N_at are atoms in supercell
     T_func = 0.d0
-    k = 0
-    do i = 0, n_sites
-      k = k + 1
+    f_damp = 0.d0
+    do i = 1, n_sites
       do j = i+1, n_sites
-        k = k + 1
+        k = n_sites*(i-1) + j
         if( rjs(k) < rcut )then
+          f_damp(k) = 1.d0/( 1.d0 + exp( -d*( rjs(k)/(sR*(r0_ii(n_sites*i+1) + r0_ii(k))) - 1.d0 ) ) )
           do c1 = 1, 3
-            T_func(3*i+c1,3*j+c1) = (3*xyz(k,c1+1) * xyz(k,c1+1) - rjs(k)**2)/rjs(k)**5
-            T_func(3*j+c1,3*i+c1) = T_func(3*i+c1,3*j+c1)
-!            do c2 = c1+1, 2
-!              T_func(3*i+c1,3*j2+c2) = (3*xyz(k,c1+1) * xyz(k,c2+1) - rjs(k)**2)/rjs(k)**5
-!              T_func(3*j2+c1,3*i+c2) = T_func(3*i+c1,3*j2+c2)
-!              T_func(3*i+c2,3*j2+c1) = T_func(3*i+c1,3*j2+c2)
-!              T_func(3*j2+c2,3*i+c1) = T_func(3*i+c1,3*j2+c2)
-!            end do
+            T_func(3*(i-1)+c1,3*(j-1)+c1) = (3*xyz_H(c1,k) * xyz_H(c1,k) - rjs_H(k)**2)/rjs_H(k)**5
+            T_func(3*(j-1)+c1,3*(i-1)+c1) = T_func(3*(i-1)+c1,3*(j-1)+c1)
+            do c2 = c1+1, 3
+              T_func(3*(i-1)+c1,3*(j-1)+c2) = (3*xyz_H(c1,k) * xyz_H(c2,k) - rjs_H(k)**2)/rjs_H(k)**5
+              T_func(3*(j-1)+c1,3*(i-1)+c2) = T_func(3*(i-1)+c1,3*(j-1)+c2)
+              T_func(3*(i-1)+c2,3*(j-1)+c1) = T_func(3*(i-1)+c1,3*(j-1)+c2)
+              T_func(3*(j-1)+c2,3*(i-1)+c1) = T_func(3*(i-1)+c1,3*(j-1)+c2)
+            end do
           end do
         end if
       end do
     end do
 
+    write(*,*) "f_damp:", f_damp(1:6)
+    write(*,*) "Size of neighbor list:", size(neighbors_list)
     write(*,*) "Size:", size(T_func, 1), size(T_func, 2)
     write(*,*) "T_ij:", T_func(1,1:9)
     write(*,*) "T_ij:", T_func(2,1:9)
@@ -576,6 +600,82 @@ module vdw
     write(*,*) "T_ij:", T_func(7,1:9)
     write(*,*) "T_ij:", T_func(8,1:9)
     write(*,*) "T_ij:", T_func(9,1:9)
+
+    g_func = 0.d0
+    h_func = 0.d0
+    do i = 1, n_sites
+      do j = i+1, n_sites
+        k = n_sites*(i-1) + j
+        if( rjs(k) < rcut )then
+          sigma_ij = sqrt(sigma_i(i,:)**2 + sigma_i(j,:)**2)
+          g_func(i,j,:) = erf(rjs_H(k)/sigma_ij) - 2.d0/sqrt(pi) * (rjs_H(k)/sigma_ij) * exp(-rjs_H(k)**2.d0/sigma_ij**2)
+          g_func(j,i,:) = g_func(i,j,:)
+          do c1 = 1, 3
+            do c2 = 1, 3
+              h_func(i,j,c1,c2,:) = 4.d0/sqrt(pi) * (rjs_H(k)/sigma_ij)**3 * &
+                                    xyz_H(c1,k)*xyz_H(c2,k)/rjs_H(k)**5 * exp(-rjs_H(k)**2/sigma_ij**2)
+              h_func(i,j,c2,c1,:) = h_func(i,j,c1,c2,:)
+              h_func(j,i,c1,c2,:) = h_func(i,j,c1,c2,:)
+              h_func(j,i,c2,c1,:) = h_func(i,j,c1,c2,:)
+            end do
+          end do 
+        end if
+      end do
+    end do
+
+    write(*,*) c6_ref(1)/(Hartree*Bohr**6), alpha0_ref(1)/Bohr**3
+    write(*,*) "g_func:", g_func(1,1:6,1)
+    write(*,*) "g_func:", g_func(2,1:6,1)
+    write(*,*) "g_func:", g_func(3,1:6,1)
+    write(*,*) "g_func:", g_func(4,1:6,1)
+    write(*,*) "g_func:", g_func(5,1:6,1)
+    write(*,*) "g_func:", g_func(6,1:6,1)
+    write(*,*) "h_func:", h_func(1,1:6,1,1,1)
+    write(*,*) "h_func:", h_func(2,1:6,1,1,1)
+    write(*,*) "h_func:", h_func(3,1:6,1,1,1)
+    write(*,*) "h_func:", h_func(4,1:6,1,1,1)
+    write(*,*) "h_func:", h_func(5,1:6,1,1,1)
+    write(*,*) "h_func:", h_func(6,1:6,1,1,1)
+    write(*,*) "h_func max:", maxval(h_func)
+
+    T_SR = 0.d0
+    B_mat = 0.d0
+    do i = 1, n_sites
+      do j = i+1, n_sites
+        k = n_sites*(i-1) + j
+        do c1 = 1, 3
+          B_mat(3*(i-1)+c1,3*(i-1)+c1,:) = 1.d0/alpha_i(i,:)
+          do c2 = 1, 3
+            T_SR(3*(i-1)+c1,3*(j-1)+c2,:) = (1-f_damp(k)) * (-T_func(3*(i-1)+c1,3*(j-1)+c2) * &
+                                          g_func(i,j,:) + h_func(i,j,c1,c2,:))
+            T_SR(3*(j-1)+c1,3*(i-1)+c2,:) = T_SR(3*(i-1)+c1,3*(j-1)+c2,:)
+            T_SR(3*(i-1)+c2,3*(j-1)+c1,:) = T_SR(3*(i-1)+c1,3*(j-1)+c2,:)
+            T_SR(3*(j-1)+c2,3*(i-1)+c1,:) = T_SR(3*(i-1)+c1,3*(j-1)+c2,:)
+          end do
+        end do
+      end do
+    end do
+    B_mat = B_mat + T_SR
+
+    write(*,*) "T_SR:", T_SR(1,1:9,1)
+    write(*,*) "T_SR:", T_SR(2,1:9,1)
+    write(*,*) "T_SR:", T_SR(3,1:9,1)
+    write(*,*) "T_SR:", T_SR(4,1:9,1)
+    write(*,*) "T_SR:", T_SR(5,1:9,1)
+    write(*,*) "T_SR:", T_SR(6,1:9,1)
+    write(*,*) "T_SR:", T_SR(7,1:9,1)
+    write(*,*) "T_SR:", T_SR(8,1:9,1)
+    write(*,*) "T_SR:", T_SR(9,1:9,1)
+    write(*,*) "B_mat:", B_mat(1,1:9,1)
+    write(*,*) "B_mat:", B_mat(2,1:9,1)
+    write(*,*) "B_mat:", B_mat(3,1:9,1)
+    write(*,*) "B_mat:", B_mat(4,1:9,1)
+    write(*,*) "B_mat:", B_mat(5,1:9,1)
+    write(*,*) "B_mat:", B_mat(6,1:9,1)
+    write(*,*) "B_mat:", B_mat(7,1:9,1)
+    write(*,*) "B_mat:", B_mat(8,1:9,1)
+    write(*,*) "B_mat:", B_mat(9,1:9,1)
+
 
     if( do_timing) then
       call cpu_time(time2)
@@ -604,7 +704,7 @@ module vdw
  
 !   Clean up
     deallocate( neighbor_c6_ii, neighbor_c6_ij, r0_ij, exp_damp, f_damp, c6_ij_free, r6, is_in_buffer, i_buffer, T_func, &
-                h_func, g_func, omegas, omega_i )
+                h_func, g_func, omegas, omega_i, alpha_i, sigma_i, sigma_ij, T_SR, B_mat, xyz_H, rjs_H )
     if( do_forces )then
       deallocate( pref_force1, pref_force2, r6_der, T_func_der, h_func_der, g_func_der )
     end if

@@ -1,0 +1,16 @@
+atoms_file = 'atoms.xyz'
+pot_file = 'gap_files/carbon.gap'
+
+! Species info
+n_species = 1
+species = C
+e0 = -.16138053
+masses = 12.01
+
+! van der Waals info
+vdw_type = ts
+vdw_sr = 0.83
+vdw_d = 6.
+vdw_rcut = 8.
+vdw_buffer = 0.
+vdw_r0_ref = 1.900
