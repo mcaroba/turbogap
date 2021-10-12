@@ -444,11 +444,15 @@ module vdw
                            T_func(:,:), T_func_der(:,:,:,:), h_func(:,:,:,:,:), g_func(:,:,:), &
                            h_func_der(:,:,:,:), g_func_der(:,:,:,:), omegas(:), omega_i(:), &
                            alpha_i(:,:), sigma_i(:,:), sigma_ij(:), T_SR(:,:,:), B_mat(:,:,:), &
-                           rjs_H(:), xyz_H(:,:)
-    real*8 :: time1, time2, c6_ii, c6_jj, r0_i, r0_j, alpha0_i, alpha0_j, rbuf, this_force(1:3), Bohr, Hartree, omega, pi
-    integer, allocatable:: i_buffer(:)
-    integer :: n_sites, n_pairs, n_pairs_soap, n_species, n_sites0
-    integer :: i, i2, j, j2, k, k2, a, n_in_buffer, c1, c2, c3
+                           rjs_H(:), xyz_H(:,:), A_mat(:,:,:), work_arr(:), A_i(:,:), alpha_SCS(:,:), &
+                           A_LR(:,:,:), T_LR(:,:), r0_ii_SCS(:), f_damp_SCS(:), I_mat(:,:), AT(:,:,:), &
+                           logIAT(:,:,:), VR(:,:), logMapo(:,:), VRinv(:,:), WR(:), WI(:), VL(:,:), &
+                           integrand(:)
+    real*8 :: time1, time2, c6_ii, c6_jj, r0_i, r0_j, alpha0_i, alpha0_j, rbuf, this_force(1:3), Bohr, Hartree, &
+              omega, pi, integral, E_MBD
+    integer, allocatable:: i_buffer(:), ipiv(:)
+    integer :: n_sites, n_pairs, n_pairs_soap, n_species, n_sites0, info
+    integer :: i, i2, j, j2, k, k2, a, n_in_buffer, c1, c2, c3, lwork
     logical, allocatable :: is_in_buffer(:)
     logical :: do_timing = .false.
 
@@ -460,7 +464,7 @@ module vdw
 !   Hartree units (calculations done in Hartree units for simplicity)
     Bohr = 0.5291772105638411
     Hartree = 27.211386024367243
-    pi = 3.14159265359
+    pi = acos(-1.d0)
 
 !   We precompute the C6 coefficients of all the neighbors
     allocate( neighbor_c6_ii(1:n_pairs) )
@@ -485,6 +489,25 @@ module vdw
     allocate( B_mat(1:3*n_sites,1:3*n_sites,1:11) )
     allocate( xyz_H(1:3,1:n_pairs) )
     allocate( rjs_H(1:n_pairs) )
+    allocate( A_mat(1:3*n_sites,1:3*n_sites,1:11) )
+    allocate( work_arr(1:12*n_sites) )
+    allocate( ipiv(1:3*n_sites) )
+    allocate( A_i(1:3,1:3) )
+    allocate( alpha_SCS(1:n_sites,1:11) )
+    allocate( A_LR(1:3*n_sites,1:3*n_sites,1:11) )
+    allocate( T_LR(1:3*n_sites,1:3*n_sites) )
+    allocate( f_damp_SCS(1:n_pairs) )
+    allocate( r0_ii_SCS(1:n_pairs) )
+    allocate( I_mat(1:3*n_sites,1:3*n_sites) )
+    allocate( AT(1:3*n_sites,1:3*n_sites,1:11) )
+    allocate( logIAT(1:3*n_sites,1:3*n_sites,1:11) )
+    allocate( VR(1:3*n_sites,1:3*n_sites) )
+    allocate( logMapo(1:3*n_sites,1:3*n_sites) )
+    allocate( VRinv(1:3*n_sites,1:3*n_sites) )
+    allocate( WR(1:3*n_sites) )
+    allocate( WI(1:3*n_sites) )
+    allocate( VL(1:3*n_sites,1:3*n_sites) )
+    allocate( integrand(1:11) )
     is_in_buffer = .false.
     if( do_forces )then
       allocate( pref_force1(1:n_sites) )
@@ -569,9 +592,12 @@ module vdw
 !   Requires the complete supercell to get correct dimensions for T_func! 3*N_at x 3*N_at, where N_at are atoms in supercell
     T_func = 0.d0
     f_damp = 0.d0
+    k = 0
     do i = 1, n_sites
-      do j = i+1, n_sites
-        k = n_sites*(i-1) + j
+      k = k+1
+      do j2 = 2, n_neigh(i)
+        k = k+1
+        j = neighbors_list(k) ! NOTE: mod not necessary because we are using only single C60 for now
         if( rjs(k) < rcut )then
           f_damp(k) = 1.d0/( 1.d0 + exp( -d*( rjs(k)/(sR*(r0_ii(n_sites*i+1) + r0_ii(k))) - 1.d0 ) ) )
           do c1 = 1, 3
@@ -603,9 +629,12 @@ module vdw
 
     g_func = 0.d0
     h_func = 0.d0
+    k = 0
     do i = 1, n_sites
-      do j = i+1, n_sites
-        k = n_sites*(i-1) + j
+      k = k+1
+      do j2 = 2, n_neigh(i)
+        k = k+1
+        j = neighbors_list(k)
         if( rjs(k) < rcut )then
           sigma_ij = sqrt(sigma_i(i,:)**2 + sigma_i(j,:)**2)
           g_func(i,j,:) = erf(rjs_H(k)/sigma_ij) - 2.d0/sqrt(pi) * (rjs_H(k)/sigma_ij) * exp(-rjs_H(k)**2.d0/sigma_ij**2)
@@ -640,9 +669,12 @@ module vdw
 
     T_SR = 0.d0
     B_mat = 0.d0
+    k = 0
     do i = 1, n_sites
-      do j = i+1, n_sites
-        k = n_sites*(i-1) + j
+      k = k+1
+      do j2 = i+1, n_sites
+        k = k+1
+        j = neighbors_list(k)
         do c1 = 1, 3
           B_mat(3*(i-1)+c1,3*(i-1)+c1,:) = 1.d0/alpha_i(i,:)
           do c2 = 1, 3
@@ -676,6 +708,123 @@ module vdw
     write(*,*) "B_mat:", B_mat(8,1:9,1)
     write(*,*) "B_mat:", B_mat(9,1:9,1)
 
+    A_mat = B_mat
+
+    do i = 1, 11
+      call dgetrf(3*n_sites, 3*n_sites, A_mat(:,:,i), 3*n_sites, ipiv, info)
+      call dgetri(3*n_sites, A_mat(:,:,i), 3*n_sites, ipiv, work_arr, 12*n_sites, info)
+    end do
+
+    write(*,*) "A_mat:", A_mat(1,1:6,1)
+    write(*,*) "A_mat:", A_mat(2,1:6,1)
+    write(*,*) "A_mat:", A_mat(3,1:6,1)
+    write(*,*) "A_mat:", A_mat(4,1:6,1)
+    write(*,*) "A_mat:", A_mat(5,1:6,1)
+    write(*,*) "A_mat:", A_mat(6,1:6,1)
+
+    do k = 1, 11
+      do i = 1, n_sites
+        A_i = 0.d0
+        do j = 1, n_sites
+          A_i = A_i + A_mat(3*(i-1)+1:3*(i-1)+3,3*(j-1)+1:3*(j-1)+3,k)
+        end do
+        alpha_SCS(i,k) = A_i(1,1)+A_i(2,2)+A_i(3,3)
+      end do
+    end do
+
+    A_LR = 0.d0
+
+    do k = 1, 11
+      do i = 1, n_sites
+        do c1 = 1, 3
+          A_LR(3*(i-1)+c1,3*(i-1)+c1,k) = alpha_SCS(i,k)
+        end do
+      end do
+    end do
+
+    write(*,*) "alpha_SCS:", alpha_SCS(:,1)
+    write(*,*) "A_LR:", A_LR(1,1:6,1)
+    write(*,*) "A_LR:", A_LR(2,1:6,1)
+    write(*,*) "A_LR:", A_LR(3,1:6,1)
+    write(*,*) "A_LR:", A_LR(4,1:6,1)
+    write(*,*) "A_LR:", A_LR(5,1:6,1)
+    write(*,*) "A_LR:", A_LR(6,1:6,1)
+
+    T_LR = 0.d0
+    k = 0
+    do i = 1, n_sites
+      k = k+1
+      do j = i+1, n_sites
+        k = k+1
+        T_LR(3*(i-1)+1:3*(i-1)+3,3*(j-1)+1:3*(j-1)+3) = f_damp(k) * T_func(3*(i-1)+1:3*(i-1)+3,3*(j-1)+1:3*(j-1)+3)
+        T_LR(3*(j-1)+1:3*(j-1)+3,3*(i-1)+1:3*(i-1)+3) = T_LR(3*(i-1)+1:3*(i-1)+3,3*(j-1)+1:3*(j-1)+3)
+      end do
+    end do
+
+    write(*,*) "T_LR:", T_LR(1,1:6)
+    write(*,*) "T_LR:", T_LR(2,1:6)
+    write(*,*) "T_LR:", T_LR(3,1:6)
+    write(*,*) "T_LR:", T_LR(4,1:6)
+    write(*,*) "T_LR:", T_LR(5,1:6)
+    write(*,*) "T_LR:", T_LR(6,1:6)
+
+    I_mat = 0.d0
+    do i = 1, 3*n_sites
+      I_mat(i,i) = 1.d0
+    end do
+
+    AT = 0.d0
+    do k = 1, 11
+      call dgemm('n', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, A_mat(:,:,k), 3*n_sites, T_LR, 3*n_sites, &
+                 0.d0, AT(:,:,k), 3*n_sites) 
+    end do
+
+    write(*,*) "AT:", AT(1,1:6,1)
+    write(*,*) "AT:", AT(2,1:6,1)
+    write(*,*) "AT:", AT(3,1:6,1)
+    write(*,*) "AT:", AT(4,1:6,1)
+    write(*,*) "AT:", AT(5,1:6,1)
+    write(*,*) "AT:", AT(6,1:6,1)
+
+    do k = 1,11
+      WR = 0.d0
+      VL = 0.d0
+      VR = 0.d0
+      call dgeev('n', 'v', 3*n_sites, I_mat-AT(:,:,k), 3*n_sites, WR, WI, VL, 3*n_sites, VR, 3*n_sites, &
+                 work_arr, 12*n_sites, info) 
+      logMapo = 0.d0
+      write(*,*) "WR:"
+      do i = 1, 3*n_sites
+        write(*,*) WR(i)
+        logMapo(i,i) = log(WR(i))
+      end do
+      VRinv = VR
+      VL = 0.d0
+      call dgetrf(3*n_sites, 3*n_sites, VRinv, 3*n_sites, ipiv, info)
+      call dgetri(3*n_sites, VRinv, 3*n_sites, ipiv, work_arr, 12*n_sites, info)
+      call dgemm('n', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, VR, 3*n_sites, logMapo, 3*n_sites, &
+                 0.d0, VL, 3*n_sites)
+      call dgemm('n', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, VL, 3*n_sites, VRinv, 3*n_sites, &
+                 0.d0, logIAT(:,:,k), 3*n_sites)
+    end do
+
+    write(*,*) "logIAT:", logIAT(1,1:6,1)
+    write(*,*) "logIAT:", logIAT(2,1:6,1)
+    write(*,*) "logIAT:", logIAT(3,1:6,1)
+    write(*,*) "logIAT:", logIAT(4,1:6,1)
+    write(*,*) "logIAT:", logIAT(5,1:6,1)
+    write(*,*) "logIAT:", logIAT(6,1:6,1)
+
+    integrand = 0.d0
+    do k = 1,11
+      do i = 1,3*n_sites
+        integrand(k) = integrand(k) + logIAT(i,i,k)
+      end do 
+    end do
+
+!    NOTE: Include misc.mod before commenting this out
+!    call integrate("trapezoidal", omegas, integrand, 0.d0, 10.d0, integral)
+!    E_MBD = integral/(2.d0*pi)
 
     if( do_timing) then
       call cpu_time(time2)
@@ -704,7 +853,8 @@ module vdw
  
 !   Clean up
     deallocate( neighbor_c6_ii, neighbor_c6_ij, r0_ij, exp_damp, f_damp, c6_ij_free, r6, is_in_buffer, i_buffer, T_func, &
-                h_func, g_func, omegas, omega_i, alpha_i, sigma_i, sigma_ij, T_SR, B_mat, xyz_H, rjs_H )
+                h_func, g_func, omegas, omega_i, alpha_i, sigma_i, sigma_ij, T_SR, B_mat, xyz_H, rjs_H, A_mat, A_i, &
+                alpha_SCS, A_LR, r0_ii_SCS, f_damp_SCS, I_mat, AT, logIAT, logMapo, VR, VRinv, WR, WI, VL, integrand )
     if( do_forces )then
       deallocate( pref_force1, pref_force2, r6_der, T_func_der, h_func_der, g_func_der )
     end if
