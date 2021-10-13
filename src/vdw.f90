@@ -28,7 +28,7 @@
 
 module vdw
 
-  use misc
+!  use misc
 
   contains
 
@@ -447,7 +447,7 @@ module vdw
                            rjs_H(:), xyz_H(:,:), A_mat(:,:,:), work_arr(:), A_i(:,:), alpha_SCS(:,:), &
                            A_LR(:,:,:), T_LR(:,:), r0_ii_SCS(:), f_damp_SCS(:), I_mat(:,:), AT(:,:,:), &
                            logIAT(:,:,:), VR(:,:), logMapo(:,:), VRinv(:,:), WR(:), WI(:), VL(:,:), &
-                           integrand(:)
+                           integrand(:), v_arr(:)
     real*8 :: time1, time2, c6_ii, c6_jj, r0_i, r0_j, alpha0_i, alpha0_j, rbuf, this_force(1:3), Bohr, Hartree, &
               omega, pi, integral, E_MBD
     integer, allocatable:: i_buffer(:), ipiv(:)
@@ -508,6 +508,7 @@ module vdw
     allocate( WI(1:3*n_sites) )
     allocate( VL(1:3*n_sites,1:3*n_sites) )
     allocate( integrand(1:11) )
+    allocate( v_arr(1:n_sites) )
     is_in_buffer = .false.
     if( do_forces )then
       allocate( pref_force1(1:n_sites) )
@@ -517,6 +518,71 @@ module vdw
       allocate( h_func_der(1:n_sites,1:n_sites,1:n_sites,1:3) )
       allocate( g_func_der(1:n_sites,1:n_sites,1:n_sites,1:3) )
     end if
+
+!   Temporary fixed array for Hirshfeld volumes:
+    v_arr = (/ 0.85308339, &
+               0.85305028, &
+               0.85307521, &
+               0.85306433, &
+               0.85309976, &
+               0.85300157, &
+               0.85300707, &
+               0.85305648, &
+               0.85298019, &
+               0.85303452, &
+               0.85295826, &
+               0.85306464, &
+               0.85306557, &
+               0.85305240, &
+               0.85299413, &
+               0.85309070, &
+               0.85299418, &
+               0.85310156, &
+               0.85296718, &
+               0.85312167, &
+               0.85317982, &
+               0.85305540, &
+               0.85310142, &
+               0.85317319, &
+               0.85309425, &
+               0.85311298, &
+               0.85310860, &
+               0.85305652, &
+               0.85300463, &
+               0.85308386, &
+               0.85306393, &
+               0.85300010, &
+               0.85312190, &
+               0.85306154, &
+               0.85315732, &
+               0.85299361, &
+               0.85298426, &
+               0.85317383, &
+               0.85318570, &
+               0.85305124, &
+               0.85308609, &
+               0.85306547, &
+               0.85303523, &
+               0.85306989, &
+               0.85312138, &
+               0.85306431, &
+               0.85304930, &
+               0.85315359, &
+               0.85309796, &
+               0.85300060, &
+               0.85306619, &
+               0.85310520, &
+               0.85300061, &
+               0.85306354, &
+               0.85312192, &
+               0.85296821, &
+               0.85298307, &
+               0.85312609, &
+               0.85310662, &
+               0.85295523 /)
+    do k = 1, n_sites
+      write(*,*) "v_arr:", v_arr(k)
+    end do
 
     if( do_timing) then
       call cpu_time(time1)
@@ -565,12 +631,25 @@ module vdw
       call cpu_time(time1)
     end if
 
-!   Precompute some other pair quantities
-    neighbor_c6_ii = neighbor_c6_ii * hirshfeld_v_neigh**2
-!   This is slow, could replace by Taylor expansion maybe
-    r0_ii = r0_ii * hirshfeld_v_neigh**(1.d0/3.d0)
-    neighbor_alpha0 = neighbor_alpha0 * hirshfeld_v_neigh
-    omega_i = (4.d0 * neighbor_c6_ii)/(3*neighbor_alpha0**2) 
+!!   UNCOMMENT THIS
+!!   Precompute some other pair quantities
+!    neighbor_c6_ii = neighbor_c6_ii * hirshfeld_v_neigh**2
+!!   This is slow, could replace by Taylor expansion maybe
+!    r0_ii = r0_ii * hirshfeld_v_neigh**(1.d0/3.d0)
+!    neighbor_alpha0 = neighbor_alpha0 * hirshfeld_v_neigh
+!    omega_i = (4.d0 * neighbor_c6_ii)/(3*neighbor_alpha0**2) 
+!!   UNCOMMENT END
+
+!   Temporary volume assignment:
+    do k = 1, n_pairs
+      j = neighbors_list(k)
+      neighbor_c6_ii(k) = neighbor_c6_ii(k) * v_arr(j)**2
+      r0_ii(k) = r0_ii(k) * v_arr(j)**(1.d0/3.d0)
+      neighbor_alpha0(k) = neighbor_alpha0(k) * v_arr(j)
+    end do
+    omega_i = (4.d0 * neighbor_c6_ii)/(3*neighbor_alpha0**2)
+!   Temporary assignment ends here.
+
     
     if( do_timing) then
       call cpu_time(time2)
@@ -586,7 +665,8 @@ module vdw
       end do
     end do
 
-    write(*,*) sigma_i(1:3,1:11)
+    write(*,*) "alpha_i:", alpha_i(:,1)
+    write(*,*) "sigma_i:", sigma_i(:,1)
 
 !   Computing dipole interaction tensor
 !   Requires the complete supercell to get correct dimensions for T_func! 3*N_at x 3*N_at, where N_at are atoms in supercell
@@ -599,12 +679,12 @@ module vdw
         k = k+1
         j = neighbors_list(k) ! NOTE: mod not necessary because we are using only single C60 for now
         if( rjs(k) < rcut )then
-          f_damp(k) = 1.d0/( 1.d0 + exp( -d*( rjs(k)/(sR*(r0_ii(n_sites*i+1) + r0_ii(k))) - 1.d0 ) ) )
+          f_damp(k) = 1.d0/( 1.d0 + exp( -d*( rjs_H(k)/(sR*(r0_ii(n_sites*i+1) + r0_ii(k))) - 1.d0 ) ) )
           do c1 = 1, 3
             T_func(3*(i-1)+c1,3*(j-1)+c1) = (3*xyz_H(c1,k) * xyz_H(c1,k) - rjs_H(k)**2)/rjs_H(k)**5
             T_func(3*(j-1)+c1,3*(i-1)+c1) = T_func(3*(i-1)+c1,3*(j-1)+c1)
             do c2 = c1+1, 3
-              T_func(3*(i-1)+c1,3*(j-1)+c2) = (3*xyz_H(c1,k) * xyz_H(c2,k) - rjs_H(k)**2)/rjs_H(k)**5
+              T_func(3*(i-1)+c1,3*(j-1)+c2) = (3*xyz_H(c1,k) * xyz_H(c2,k))/rjs_H(k)**5
               T_func(3*(j-1)+c1,3*(i-1)+c2) = T_func(3*(i-1)+c1,3*(j-1)+c2)
               T_func(3*(i-1)+c2,3*(j-1)+c1) = T_func(3*(i-1)+c1,3*(j-1)+c2)
               T_func(3*(j-1)+c2,3*(i-1)+c1) = T_func(3*(i-1)+c1,3*(j-1)+c2)
@@ -614,7 +694,7 @@ module vdw
       end do
     end do
 
-    write(*,*) "f_damp:", f_damp(1:6)
+    write(*,*) "f_damp:", f_damp
     write(*,*) "Size of neighbor list:", size(neighbors_list)
     write(*,*) "Size:", size(T_func, 1), size(T_func, 2)
     write(*,*) "T_ij:", T_func(1,1:9)
@@ -626,6 +706,7 @@ module vdw
     write(*,*) "T_ij:", T_func(7,1:9)
     write(*,*) "T_ij:", T_func(8,1:9)
     write(*,*) "T_ij:", T_func(9,1:9)
+    write(*,*) "T_ij full:", T_func
 
     g_func = 0.d0
     h_func = 0.d0
@@ -672,13 +753,15 @@ module vdw
     k = 0
     do i = 1, n_sites
       k = k+1
-      do j2 = i+1, n_sites
+      do c1 = 1, 3
+        B_mat(3*(i-1)+c1,3*(i-1)+c1,:) = 1.d0/alpha_i(i,:)
+      end do
+      do j2 = 2, n_neigh(i)
         k = k+1
         j = neighbors_list(k)
         do c1 = 1, 3
-          B_mat(3*(i-1)+c1,3*(i-1)+c1,:) = 1.d0/alpha_i(i,:)
           do c2 = 1, 3
-            T_SR(3*(i-1)+c1,3*(j-1)+c2,:) = (1-f_damp(k)) * (-T_func(3*(i-1)+c1,3*(j-1)+c2) * &
+            T_SR(3*(i-1)+c1,3*(j-1)+c2,:) = (1.d0-f_damp(k)) * (-T_func(3*(i-1)+c1,3*(j-1)+c2) * &
                                           g_func(i,j,:) + h_func(i,j,c1,c2,:))
             T_SR(3*(j-1)+c1,3*(i-1)+c2,:) = T_SR(3*(i-1)+c1,3*(j-1)+c2,:)
             T_SR(3*(i-1)+c2,3*(j-1)+c1,:) = T_SR(3*(i-1)+c1,3*(j-1)+c2,:)
@@ -708,12 +791,28 @@ module vdw
     write(*,*) "B_mat:", B_mat(8,1:9,1)
     write(*,*) "B_mat:", B_mat(9,1:9,1)
 
+!    write(*,*) "B_mat full:"
+!    do k = 1,3*n_sites
+!      write(*,*) B_mat(k,:,1)
+!    end do
+
+
     A_mat = B_mat
 
     do i = 1, 11
       call dgetrf(3*n_sites, 3*n_sites, A_mat(:,:,i), 3*n_sites, ipiv, info)
       call dgetri(3*n_sites, A_mat(:,:,i), 3*n_sites, ipiv, work_arr, 12*n_sites, info)
     end do
+
+    VL = 0.d0
+    call dgemm('n', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, A_mat(:,:,1), 3*n_sites, B_mat(:,:,1), 3*n_sites, &
+                 0.d0, VL, 3*n_sites)
+    write(*,*) "A_mat * B_mat:", VL(1,1:6)
+    write(*,*) "A_mat * B_mat:", VL(2,1:6)
+    write(*,*) "A_mat * B_mat:", VL(3,1:6)
+    write(*,*) "A_mat * B_mat:", VL(4,1:6)
+    write(*,*) "A_mat * B_mat:", VL(5,1:6)
+    write(*,*) "A_mat * B_mat:", VL(6,1:6)
 
     write(*,*) "A_mat:", A_mat(1,1:6,1)
     write(*,*) "A_mat:", A_mat(2,1:6,1)
@@ -728,7 +827,7 @@ module vdw
         do j = 1, n_sites
           A_i = A_i + A_mat(3*(i-1)+1:3*(i-1)+3,3*(j-1)+1:3*(j-1)+3,k)
         end do
-        alpha_SCS(i,k) = A_i(1,1)+A_i(2,2)+A_i(3,3)
+        alpha_SCS(i,k) = 1.d0/3.d0 * (A_i(1,1)+A_i(2,2)+A_i(3,3))
       end do
     end do
 
@@ -754,13 +853,17 @@ module vdw
     k = 0
     do i = 1, n_sites
       k = k+1
-      do j = i+1, n_sites
+      do j2 = 2, n_neigh(i)
         k = k+1
+        j = neighbors_list(k)
         T_LR(3*(i-1)+1:3*(i-1)+3,3*(j-1)+1:3*(j-1)+3) = f_damp(k) * T_func(3*(i-1)+1:3*(i-1)+3,3*(j-1)+1:3*(j-1)+3)
         T_LR(3*(j-1)+1:3*(j-1)+3,3*(i-1)+1:3*(i-1)+3) = T_LR(3*(i-1)+1:3*(i-1)+3,3*(j-1)+1:3*(j-1)+3)
       end do
     end do
 
+    do i = 1, n_sites
+      write(*,*) "T_LR diag:", T_LR(3*(i-1)+1:3*(i-1)+3,3*(i-1)+1:3*(i-1)+3)
+    end do
     write(*,*) "T_LR:", T_LR(1,1:6)
     write(*,*) "T_LR:", T_LR(2,1:6)
     write(*,*) "T_LR:", T_LR(3,1:6)
@@ -775,8 +878,9 @@ module vdw
 
     AT = 0.d0
     do k = 1, 11
-      call dgemm('n', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, A_mat(:,:,k), 3*n_sites, T_LR, 3*n_sites, &
-                 0.d0, AT(:,:,k), 3*n_sites) 
+      call dgemm('n', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, A_LR(:,:,k), 3*n_sites, T_LR, 3*n_sites, &
+                0.d0, AT(:,:,k), 3*n_sites)
+!      AT(:,:,k) = matmul(A_mat(:,:,k),T_LR) 
     end do
 
     write(*,*) "AT:", AT(1,1:6,1)
@@ -791,11 +895,12 @@ module vdw
       VL = 0.d0
       VR = 0.d0
       call dgeev('n', 'v', 3*n_sites, I_mat-AT(:,:,k), 3*n_sites, WR, WI, VL, 3*n_sites, VR, 3*n_sites, &
-                 work_arr, 12*n_sites, info) 
+                 work_arr, 12*n_sites, info)
+      write(*,*) "WI:", WI 
       logMapo = 0.d0
-      write(*,*) "WR:"
+!      write(*,*) "WR:"
       do i = 1, 3*n_sites
-        write(*,*) WR(i)
+!        write(*,*) WR(i)
         logMapo(i,i) = log(WR(i))
       end do
       VRinv = VR
@@ -826,6 +931,13 @@ module vdw
 !    call integrate("trapezoidal", omegas, integrand, 0.d0, 10.d0, integral)
 !    E_MBD = integral/(2.d0*pi)
 
+    integral = 0.d0
+    do k = 1,10
+      integral = integral + 0.5d0 * (integrand(k)+integrand(k+1)) * (omegas(k+1)-omegas(k))
+    end do
+    E_MBD = integral/(2.d0*pi)
+    write(*,*) "E_MBD:", E_MBD * 27.211386245988
+
     if( do_timing) then
       call cpu_time(time2)
       write(*,*) "vdw: creating pair quantities 3:", time2-time1
@@ -854,7 +966,8 @@ module vdw
 !   Clean up
     deallocate( neighbor_c6_ii, neighbor_c6_ij, r0_ij, exp_damp, f_damp, c6_ij_free, r6, is_in_buffer, i_buffer, T_func, &
                 h_func, g_func, omegas, omega_i, alpha_i, sigma_i, sigma_ij, T_SR, B_mat, xyz_H, rjs_H, A_mat, A_i, &
-                alpha_SCS, A_LR, r0_ii_SCS, f_damp_SCS, I_mat, AT, logIAT, logMapo, VR, VRinv, WR, WI, VL, integrand )
+                alpha_SCS, A_LR, r0_ii_SCS, f_damp_SCS, I_mat, AT, logIAT, logMapo, VR, VRinv, WR, WI, VL, integrand, &
+                v_arr )
     if( do_forces )then
       deallocate( pref_force1, pref_force2, r6_der, T_func_der, h_func_der, g_func_der )
     end if
