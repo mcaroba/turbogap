@@ -441,13 +441,17 @@ module vdw
     real*8, allocatable :: neighbor_c6_ii(:), neighbor_c6_ij(:), r0_ii(:), r0_ij(:), &
                            exp_damp(:), f_damp(:), c6_ij_free(:), neighbor_alpha0(:), &
                            pref_force1(:), pref_force2(:), r6(:), r6_der(:), &
-                           T_func(:,:), T_func_der(:,:,:,:), h_func(:,:,:,:,:), g_func(:,:,:), &
-                           h_func_der(:,:,:,:), g_func_der(:,:,:,:), omegas(:), omega_i(:), &
+                           T_func(:,:), h_func(:,:,:,:,:), g_func(:,:,:), &
+                           omegas(:), omega_i(:), &
                            alpha_i(:,:), sigma_i(:,:), sigma_ij(:), T_SR(:,:,:), B_mat(:,:,:), &
                            rjs_H(:), xyz_H(:,:), A_mat(:,:,:), work_arr(:), A_i(:,:), alpha_SCS(:,:), &
                            A_LR(:,:,:), T_LR(:,:), r0_ii_SCS(:), f_damp_SCS(:), I_mat(:,:), AT(:,:,:), &
                            logIAT(:,:,:), VR(:,:), logMapo(:,:), VRinv(:,:), WR(:), WI(:), VL(:,:), &
-                           integrand(:), v_arr(:)
+                           integrand(:), v_arr(:), dT(:,:,:), dT_SR(:,:,:,:,:), f_damp_der(:,:,:), &
+                           g_func_der(:,:,:,:), h_func_der(:,:,:,:,:,:), dA_mat(:,:,:,:,:), &
+                           dalpha(:,:,:,:), dA_LR(:,:,:,:,:), dT_LR(:,:,:,:), f_damp_der_SCS(:,:,:,:), &
+                           invIAT(:,:,:), G_mat(:,:,:,:,:), force_integrand(:,:,:), forces_MBD(:,:), &
+                           coeff_h_der(:), terms(:)
     real*8 :: time1, time2, c6_ii, c6_jj, r0_i, r0_j, alpha0_i, alpha0_j, rbuf, this_force(1:3), Bohr, Hartree, &
               omega, pi, integral, E_MBD
     integer, allocatable:: i_buffer(:), ipiv(:)
@@ -509,14 +513,27 @@ module vdw
     allocate( VL(1:3*n_sites,1:3*n_sites) )
     allocate( integrand(1:11) )
     allocate( v_arr(1:n_sites) )
+    allocate( dT(1:3*n_sites,1:3*n_sites,1:3) )
+    allocate( dT_SR(1:3*n_sites,1:3*n_sites,1:n_sites,1:3,1:11) )
+    allocate( f_damp_der(1:n_sites,1:n_sites,1:3) )
+    allocate( g_func_der(1:n_sites,1:n_sites,1:3,1:11) )
+    allocate( h_func_der(1:n_sites,1:n_sites,1:3,1:3,1:3,1:11) )
+    allocate( dA_mat(1:3*n_sites,1:3*n_sites,1:n_sites,1:3,1:11) )
+    allocate( dalpha(1:n_sites,1:n_sites,1:3,1:11) )
+    allocate( dA_LR(1:3*n_sites,1:3*n_sites,1:n_sites,1:3,1:11) )
+    allocate( dT_LR(1:3*n_sites,1:3*n_sites,1:n_sites,1:3) )
+    allocate( f_damp_der_SCS(1:n_sites,1:n_sites,1:n_sites,1:3) )
+    allocate( invIAT(1:3*n_sites,1:3*n_sites,1:11) )
+    allocate( G_mat(1:3*n_sites,1:3*n_sites,1:n_sites,1:3,1:11) )
+    allocate( force_integrand(1:n_sites,1:3,1:11) )
+    allocate( forces_MBD(1:n_sites,1:3) )
+    allocate( coeff_h_der(1:11) )
+    allocate( terms(1:11) )
     is_in_buffer = .false.
     if( do_forces )then
       allocate( pref_force1(1:n_sites) )
       allocate( pref_force2(1:n_sites) )
       allocate( r6_der(1:n_pairs) )
-      allocate( T_func_der(1:3*n_sites,1:3*n_sites,1:n_sites,1:3) )
-      allocate( h_func_der(1:n_sites,1:n_sites,1:n_sites,1:3) )
-      allocate( g_func_der(1:n_sites,1:n_sites,1:n_sites,1:3) )
     end if
 
 !   Temporary fixed array for Hirshfeld volumes:
@@ -1033,13 +1050,103 @@ module vdw
       call cpu_time(time1)
     end if
 
-!   Compute the TS local energies
 
     if( do_timing) then
       call cpu_time(time2)
       write(*,*) "vdw: computing energies:", time2-time1
       call cpu_time(time1)
     end if
+
+!   Force calculation starts here:
+    dT = 0.d0
+    k = 0
+    do i = 1, n_sites
+      k = k+1
+      do j2 = 2, n_neigh(i)
+        k = k+1
+        j = neighbors_list(k)
+        do c1 = 1,3
+          do c2 = 1,3
+            do c3 = 1,3
+              dT(3*(i-1)+c1,3*(j-1)+c2,c3) = (-15.d0 * xyz_H(c1,k) * xyz_H(c2,k) * xyz_H(c3,k))/rjs_H(k)**7
+              if (c1 == c2) then
+                dT(3*(i-1)+c1,3*(j-1)+c2,c3) = dT(3*(i-1)+c1,3*(j-1)+c2,c3) + 3.d0/rjs_H(k)**5 * xyz_H(c3,k)
+              end if
+              if (c2 == c3) then
+                dT(3*(i-1)+c1,3*(j-1)+c2,c3) = dT(3*(i-1)+c1,3*(j-1)+c2,c3) + 3.d0/rjs_H(k)**5 * xyz_H(c1,k)
+              end if
+              if (c1 == c3) then
+                dT(3*(i-1)+c1,3*(j-1)+c2,c3) = dT(3*(i-1)+c1,3*(j-1)+c2,c3) + 3.d0/rjs_H(k)**5 * xyz_H(c2,k)
+              end if
+            end do
+          end do
+        end do
+      end do
+    end do
+
+    write(*,*) "dT:", dT(1,1:6,1)
+    write(*,*) "dT:", dT(2,1:6,1)
+    write(*,*) "dT:", dT(3,1:6,1)
+    write(*,*) "dT:", dT(4,1:6,1)
+    write(*,*) "dT:", dT(5,1:6,1)
+    write(*,*) "dT:", dT(6,1:6,1)
+
+    f_damp_der = 0.d0
+    g_func_der = 0.d0
+    h_func_der = 0.d0
+    dT_SR = 0.d0
+
+    do a = 1, n_sites
+      k = 0
+      do i = 1, n_sites
+        k = k+1
+        do j2 = 2, n_neigh(i)
+          k = k+1
+          j = neighbors_list(k)
+          if (a == i .or. a == j) then
+!            write(*,*) i, j
+            sigma_ij = sqrt(sigma_i(i,:)**2 + sigma_i(j,:)**2)
+            do c3 = 1, 3
+              f_damp_der(i,j,c3) = d/sR * f_damp(k)**2 * exp( -d*(rjs_H(k)/(sR*(r0_ii(n_sites*(i-1)+1) + &
+                                   r0_ii(k))) - 1.d0) ) * xyz_H(c3,k)/rjs_H(k)
+              g_func_der(i,j,c3,:) = 4.d0/sqrt(pi) * rjs_H(k)/sigma_ij**3 * xyz_H(c3,k) * &
+                                     exp(-rjs_H(k)**2/sigma_ij**2) 
+              do c1 = 1, 3
+                do c2 = 1,3
+                  coeff_h_der = 4.d0/sqrt(pi) * 1.d0/sigma_ij**3 * exp(-rjs_H(k)**2/sigma_ij**2)
+                  terms = 0.d0
+                  if (c1 == c3) then
+                    terms = terms + xyz_H(c2,k)/rjs_H(k)**2
+                  end if
+                  if (c2 == c3) then
+                    terms = terms + xyz_H(c1,k)/rjs_H(k)**2
+                  end if
+                  terms = terms + -2.d0*(xyz_H(c1,k)*xyz_H(c2,k)*xyz_H(c3,k))/rjs_H(k)**2 * &
+                          (1.d0/rjs_H(k)**2 + 1.d0/sigma_ij**2)
+                  h_func_der(i,j,c1,c2,c3,:) = coeff_h_der * terms
+                  dT_SR(3*(i-1)+c1,3*(j-1)+c2,a,c3,:) = f_damp_der(i,j,c3) * T_func(3*(i-1)+c1,3*(j-1)+c2) * &
+                                                        g_func(i,j,:) - (1.d0 - f_damp(k)) * dT(3*(i-1)+c1,3*(j-1)+c2,c3) * &
+                                                        g_func(i,j,:) - g_func_der(i,j,c3,:) * (1.d0 - f_damp(k)) * &
+                                                        T_func(3*(i-1)+c1,3*(j-1)+c2) - f_damp_der(i,j,c3) * h_func(i,j,c1,c2,:) + &
+                                                        h_func_der(i,j,c1,c2,c3,:) * (1.d0 + f_damp(k)) 
+                end do
+              end do
+            end do
+            if (a == i) then
+              dT_SR(3*(i-1)+1:3*(i-1)+3,3*(j-1)+1:3*(j-1)+3,a,:,:) = -dT_SR(3*(i-1)+1:3*(i-1)+3,3*(j-1)+1:3*(j-1)+3,a,:,:)
+            end if
+          end if
+        end do
+      end do
+    end do
+
+    write(*,*) "dT_SR:", dT_SR(1,1:6,1,1,1)
+    write(*,*) "dT_SR:", dT_SR(2,1:6,1,1,1)
+    write(*,*) "dT_SR:", dT_SR(3,1:6,1,1,1)
+    write(*,*) "dT_SR:", dT_SR(4,1:6,1,1,1)
+    write(*,*) "dT_SR:", dT_SR(5,1:6,1,1,1)
+    write(*,*) "dT_SR:", dT_SR(6,1:6,1,1,1)
+
 
 !   Compute MBD forces
     if( do_forces )then
@@ -1056,9 +1163,10 @@ module vdw
     deallocate( neighbor_c6_ii, neighbor_c6_ij, r0_ij, exp_damp, f_damp, c6_ij_free, r6, is_in_buffer, i_buffer, T_func, &
                 h_func, g_func, omegas, omega_i, alpha_i, sigma_i, sigma_ij, T_SR, B_mat, xyz_H, rjs_H, A_mat, A_i, &
                 alpha_SCS, A_LR, r0_ii_SCS, f_damp_SCS, I_mat, AT, logIAT, logMapo, VR, VRinv, WR, WI, VL, integrand, &
-                v_arr )
+                v_arr, dT, dT_SR, f_damp_der, g_func_der, h_func_der, dA_mat, dalpha, dA_LR, dT_LR, f_damp_der_SCS, &
+                invIAT, G_mat, force_integrand, forces_MBD, coeff_h_der, terms )
     if( do_forces )then
-      deallocate( pref_force1, pref_force2, r6_der, T_func_der, h_func_der, g_func_der )
+      deallocate( pref_force1, pref_force2, r6_der )
     end if
 
   end subroutine
