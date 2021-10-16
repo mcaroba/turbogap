@@ -170,6 +170,9 @@ program turbogap
 !
   call get_command_argument(1,mode)
   if( mode == "" .or. mode == "none" )then
+    write(*,*) "ERROR: you need to run 'turbogap md' or 'turbogap predict'"
+    stop
+! THIS SHOULD BE FIXED, IN CASE THE USER JUST WANT TO OUTPUT THE SOAP DESCRIPTORS
     mode = "soap"
   end if
 !**************************************************************************
@@ -1683,7 +1686,10 @@ end if
 
     if( rebuild_neighbors_list )then
       deallocate( rjs, xyz, thetas, phis, neighbor_species )
-      deallocate( neighbors_list, n_neigh, n_neigh_local )
+      deallocate( neighbors_list, n_neigh )
+#ifdef _MPIF90
+      deallocate( n_neigh_local )
+#endif
     end if
     if( .not. params%do_md .or. (params%do_md .and. md_istep == params%md_nsteps) )then
       deallocate( positions, xyz_species, xyz_species_supercell, species, species_supercell, do_list )
