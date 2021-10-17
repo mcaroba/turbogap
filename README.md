@@ -20,6 +20,7 @@ statement at the beginning).
 * **Heikki Muhli** (Aalto University)
 * **Mikhail Kuklin** (Aalto University)
 * Gábor Csányi (University of Cambridge)
+* **Jan Kloppenburg** (Aalto University)
 
 **TurboGAP** is licensed under the Academic Software License (ASL), an "available source"
 non-commercial license. This means that you are free to use and distribute the code for
@@ -80,8 +81,14 @@ To get the **TurboGAP** code and the necessary **soap_turbo** routines, do a rec
     git clone --recursive http://github.com/mcaroba/turbogap.git /turbogap/source/directory
 
 Where `/turbogap/source/directory` is the directory where you're putting the **TurboGAP**
-source code. To build the **TubogGAP** binary and library, edit the `Makefile` to fit
-your system and just type
+source code. To build the **TubogGAP** binary and library, you need to provide a `Makefile`
+with the appropriate options for your system. A list of example makefiles is provided under
+the `makefiles/` directory. You can copy (and edit, as needed) the `Makefile` that best
+fits your system, e.g.,
+
+    cp makefiles/Makefile.Ubuntu_gfortran_mpi Makefile
+
+After a `Makefile` is provided, to build the code just type
 
     make
 
