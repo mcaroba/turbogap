@@ -2,4 +2,3 @@ bin/
 build/
 include/
 lib/
-Makefile
