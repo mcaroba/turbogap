@@ -81,14 +81,13 @@ To get the **TurboGAP** code and the necessary **soap_turbo** routines, do a rec
     git clone --recursive http://github.com/mcaroba/turbogap.git /turbogap/source/directory
 
 Where `/turbogap/source/directory` is the directory where you're putting the **TurboGAP**
-source code. To build the **TubogGAP** binary and library, you need to provide a `Makefile`
-with the appropriate options for your system. A list of example makefiles is provided under
-the `makefiles/` directory. You can copy (and edit, as needed) the `Makefile` that best
-fits your system, e.g.,
+source code. To build the **TubogGAP** binary and library, you need to select the options
+that best match your architecture, by editing this line in the `Makefile`:
 
-    cp makefiles/Makefile.Ubuntu_gfortran_mpi Makefile
+    include makefiles/Makefile.Ubuntu_gfortran_mpi
 
-After a `Makefile` is provided, to build the code just type
+A list of example makefiles is provided under the `makefiles/` directory. Once you are
+happy with your `Makefile`, to build the code just type
 
     make
 
