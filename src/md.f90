@@ -391,4 +391,69 @@ module md
 !**************************************************************************
 
 
+
+
+
+
+
+!**************************************************************************
+  subroutine gradient_descent(positions, positions_prev, velocities, &
+                              forces, forces_prev, masses, gamma0, max_opt_step, &
+                              first_step, a_box, b_box, c_box, fix_atom)
+
+    implicit none
+
+!   Input variables
+    real*8, intent(inout) :: positions(:,:), positions_prev(:,:), velocities(:,:), &
+                             forces_prev(:,:)
+    real*8, intent(in) :: forces(:,:), masses(:), a_box(1:3), b_box(1:3), &
+                          c_box(1:3), max_opt_step, gamma0
+    logical, intent(in) :: fix_atom(:,:), first_step
+!   Internal variables
+    real*8 :: gamma, max_force, this_force, pos(1:3), d
+    real*8, save :: gamma_prev
+    integer :: n_sites, i, j, i_shift(1:3)
+
+    n_sites = size(masses)
+
+!   Here we always set the velocities to zero
+    velocities = 0.d0
+
+
+    if( first_step )then
+      max_force = 0.d0
+      do i = 1, n_sites
+        this_force = sqrt( dot_product(forces(1:3,i), forces(1:3,i)) )
+        if( this_force > max_force )then
+          max_force = this_force
+        end if
+      end do
+      gamma = min(gamma0, max_opt_step/max_force)
+    else
+!     Make sure we use the same image convention for positions and positions_prev
+      do i = 1, n_sites
+        call get_distance(positions_prev(1:3, i), positions(1:3, i), a_box, b_box, c_box, &
+                          [.true., .true., .true.], pos(1:3), d, i_shift(1:3))
+        positions_prev(1:3, i) = positions(1:3, i) - pos(1:3)
+      end do
+!     Barzilai–Borwein method for finding gamma
+      gamma = sum( (positions-positions_prev) * (forces-forces_prev)) / sum( (forces-forces_prev)**2 )
+      gamma = abs( gamma )
+    end if
+
+    positions_prev = positions
+    forces_prev = forces
+
+    do i = 1, n_sites
+      do j = 1, 3
+        if( .not. fix_atom(j, i) )then
+          positions(j, i) = positions_prev(j, i) + gamma*forces_prev(j, i)
+        end if
+      end do
+    end do
+
+    gamma_prev = gamma
+
+  end subroutine
+!**************************************************************************
 end module

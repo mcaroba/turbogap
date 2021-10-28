@@ -766,6 +766,21 @@ end if
       else if( keyword == "core_pot_buffer" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%core_pot_buffer
+      else if( keyword == "optimize" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%optimize
+        if( params%optimize == "md" .or. params%optimize == "gd" )then
+          continue
+        else
+          write(*,*) "ERROR: optimize algorithm not implemented:", params%optimize
+          stop
+        end if
+      else if( keyword == "gamma0" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%gamma0
+      else if( keyword == "max_opt_step" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%max_opt_step
       else if(keyword=='species')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%species_types(1:n_species)

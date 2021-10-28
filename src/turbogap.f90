@@ -52,7 +52,7 @@ program turbogap
   real*8, allocatable :: rjs(:), thetas(:), phis(:), xyz(:,:), sph_temp(:), sph_temp3(:,:)
   real*8, allocatable :: positions(:,:), positions_prev(:,:), soap(:,:), soap_cart_der(:,:,:), &
                          positions_diff(:,:), forces_prev(:,:)
-  real*8 :: rcut_max, a_box(1:3), b_box(1:3), c_box(1:3), max_displacement, e_prev
+  real*8 :: rcut_max, a_box(1:3), b_box(1:3), c_box(1:3), max_displacement, energy, energy_prev
   real*8 :: virial(1:3, 1:3), this_virial(1:3, 1:3), virial_soap(1:3, 1:3), virial_2b(1:3, 1:3), &
             virial_3b(1:3,1:3), virial_core_pot(1:3, 1:3), virial_vdw(1:3, 1:3), &
             this_virial_vdw(1:3, 1:3), v_uc, eVperA3tobar = 1602176.6208d0
@@ -74,7 +74,7 @@ program turbogap
   integer, allocatable :: displs(:), displs2(:), counts(:), counts2(:)
   integer :: update_bar, n_sparse
   logical, allocatable :: do_list(:), has_vdw_mpi(:), fix_atom(:,:)
-  logical :: rebuild_neighbors_list = .true.
+  logical :: rebuild_neighbors_list = .true., exit_loop = .true.
   character*1 :: creturn = achar(13)
 
 ! Clean up these variables after code refactoring !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -638,6 +638,8 @@ program turbogap
   md_istep = -1
   n_xyz = 0
   do while( repeat_xyz .or. ( params%do_md .and. md_istep < params%md_nsteps) )
+
+    exit_loop = .false.
 
     if( params%do_md )then
       md_istep = md_istep + 1
@@ -1417,6 +1419,8 @@ program turbogap
 
 !       Add up all the energy terms
         energies = energies + energies_soap + energies_2b + energies_3b + energies_core_pot + energies_vdw
+        energy_prev = energy
+        energy = sum(energies)
       end if
 
       if( .not. params%do_md )then
@@ -1525,11 +1529,17 @@ end if
 !     Velocity Verlet takes positions for t, positions_prev for t-dt, and velocities for t-dt and returns everything
 !     dt later. forces are taken at t, and forces_prev at t-dt. forces is left unchanged by the routine, and
 !     forces_prev is returned as equal to forces (both arrays contain the same information on return)
-      call velocity_verlet(positions(1:3, 1:n_sites), positions_prev(1:3, 1:n_sites), velocities(1:3, 1:n_sites), &
-                           forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), time_step, &
-                           md_istep == 0, a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
-                           fix_atom(1:3, 1:n_sites))
-
+      if( params%optimize == "md" )then
+        call velocity_verlet(positions(1:3, 1:n_sites), positions_prev(1:3, 1:n_sites), velocities(1:3, 1:n_sites), &
+                             forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), time_step, &
+                             md_istep == 0, a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
+                             fix_atom(1:3, 1:n_sites))
+      else if( params%optimize == "gd" )then
+        call gradient_descent(positions(1:3, 1:n_sites), positions_prev(1:3, 1:n_sites), velocities(1:3, 1:n_sites), &
+                              forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), params%gamma0, &
+                              params%max_opt_step, md_istep == 0, a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), &
+                              c_box/dfloat(indices(3)), fix_atom(1:3, 1:n_sites))
+      end if
 !     Compute kinetic energy from current velocities. Because Velocity Verlet
 !     works with the velocities at t-dt (except for the first time step) we
 !     have to compute the velocities after call Verlet
@@ -1570,13 +1580,14 @@ end if
       end if
       close(10)
 !
-!     We write out the trajectory file
+!     We write out the trajectory file. We write positions_prev which is then one for which we have computed
+!     the properties. positions_prev and velocities are synchronous
       if( md_istep == 0 .or. md_istep == params%md_nsteps .or. modulo(md_istep, params%write_xyz) == 0 )then
-        call wrap_pbc(positions(1:3,1:n_sites), a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)))
+        call wrap_pbc(positions_prev(1:3,1:n_sites), a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)))
         call write_extxyz( n_sites, md_istep, time_step, instant_temp, instant_pressure, &
                            a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
                            virial, xyz_species, &
-                           positions(1:3, 1:n_sites), velocities, &
+                           positions_prev(1:3, 1:n_sites), velocities, &
                            forces, energies(1:n_sites), masses/103.6426965268d0, hirshfeld_v, &
                            params%write_property, params%write_array_property, fix_atom(1:3, 1:n_sites) )
       end if
@@ -1700,6 +1711,15 @@ end if
 
     n_sites_prev = n_sites
     n_atom_pairs_by_rank_prev = n_atom_pairs_by_rank(rank+1)
+
+    if( params%do_md .and. params%optimize == "gd" .and. md_istep > 0 .and. &
+        abs(energy-energy_prev) < params%e_tol .and. rank == 0 )then
+      exit_loop = .true.
+    end if
+#ifdef _MPIF90
+    call mpi_bcast(exit_loop, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+#endif
+    if( exit_loop )exit
 ! End of loop through structures in the xyz file or MD steps
   end do
 
