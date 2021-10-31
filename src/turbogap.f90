@@ -1529,7 +1529,7 @@ end if
 !     Velocity Verlet takes positions for t, positions_prev for t-dt, and velocities for t-dt and returns everything
 !     dt later. forces are taken at t, and forces_prev at t-dt. forces is left unchanged by the routine, and
 !     forces_prev is returned as equal to forces (both arrays contain the same information on return)
-      if( params%optimize == "md" )then
+      if( params%optimize == "vv" )then
         call velocity_verlet(positions(1:3, 1:n_sites), positions_prev(1:3, 1:n_sites), velocities(1:3, 1:n_sites), &
                              forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), time_step, &
                              md_istep == 0, a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &

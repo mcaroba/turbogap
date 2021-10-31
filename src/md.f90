@@ -433,7 +433,12 @@ module md
           max_force = this_force
         end if
       end do
-      gamma = max(gamma0, max_opt_step/max_force)
+      if( max_force == 0.d0 )then
+        gamma = 0.d0
+      else
+!        gamma = max(gamma0, max_opt_step/max_force)
+        gamma = max_opt_step/max_force
+      end if
     else if( backtracking )then
 !     After the first step, we perform backtracking line search until fullfilling the
 !     Armijo-Goldstein condition
