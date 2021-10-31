@@ -1538,7 +1538,7 @@ end if
         call gradient_descent(positions(1:3, 1:n_sites), positions_prev(1:3, 1:n_sites), velocities(1:3, 1:n_sites), &
                               forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), params%gamma0, &
                               params%max_opt_step, md_istep == 0, a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), &
-                              c_box/dfloat(indices(3)), fix_atom(1:3, 1:n_sites))
+                              c_box/dfloat(indices(3)), fix_atom(1:3, 1:n_sites), energy)
       end if
 !     Compute kinetic energy from current velocities. Because Velocity Verlet
 !     works with the velocities at t-dt (except for the first time step) we
@@ -1734,7 +1734,8 @@ end if
 !      write(*,'(A)')'] |'
       write(*,*)
       write(*,*)'                                       |'
-      write(*,'(I8,A,F13.3,A)') params%md_nsteps, ' MD steps:', time2-time3, ' seconds |'
+!      write(*,'(I8,A,F13.3,A)') params%md_nsteps, ' MD steps:', time2-time3, ' seconds |'
+      write(*,'(I8,A,F13.3,A)') md_istep, ' MD steps:', time2-time3, ' seconds |'
     end if
     write(*,*)'                                       |'
     write(*,'(A,F13.3,A)') ' *     Read input:', time_read_input(3), ' seconds |'

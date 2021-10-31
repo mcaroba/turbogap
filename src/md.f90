@@ -399,7 +399,7 @@ module md
 !**************************************************************************
   subroutine gradient_descent(positions, positions_prev, velocities, &
                               forces, forces_prev, masses, gamma0, max_opt_step, &
-                              first_step, a_box, b_box, c_box, fix_atom)
+                              first_step, a_box, b_box, c_box, fix_atom, energy)
 
     implicit none
 
@@ -407,20 +407,25 @@ module md
     real*8, intent(inout) :: positions(:,:), positions_prev(:,:), velocities(:,:), &
                              forces_prev(:,:)
     real*8, intent(in) :: forces(:,:), masses(:), a_box(1:3), b_box(1:3), &
-                          c_box(1:3), max_opt_step, gamma0
+                          c_box(1:3), max_opt_step, gamma0, energy
     logical, intent(in) :: fix_atom(:,:), first_step
 !   Internal variables
     real*8 :: gamma, max_force, this_force, pos(1:3), d
-    real*8, save :: gamma_prev
+    real*8, save :: gamma_prev, energy0, m_prev
+    real*8, allocatable, save :: positions0(:,:)
     integer :: n_sites, i, j, i_shift(1:3)
+    logical, save :: backtracking = .true.
 
     n_sites = size(masses)
 
 !   Here we always set the velocities to zero
     velocities = 0.d0
 
-
     if( first_step )then
+      allocate( positions0(1:3, 1:size(positions,2)) )
+      positions0 = positions
+      energy0 = energy
+!     The first step is (over)estimated from user provided values
       max_force = 0.d0
       do i = 1, n_sites
         this_force = sqrt( dot_product(forces(1:3,i), forces(1:3,i)) )
@@ -428,8 +433,21 @@ module md
           max_force = this_force
         end if
       end do
-      gamma = min(gamma0, max_opt_step/max_force)
-    else
+      gamma = max(gamma0, max_opt_step/max_force)
+    else if( backtracking )then
+!     After the first step, we perform backtracking line search until fullfilling the
+!     Armijo-Goldstein condition
+      if( energy <= energy0 + gamma_prev*0.5d0*m_prev )then
+        backtracking = .false.
+      else
+!       If the condition is not fulfilled, we restore the original positions and decrease
+!       the step by half
+        gamma = gamma_prev * 0.5d0
+        positions = positions0 
+      end if
+    end if
+
+    if( .not. first_step .and. .not. backtracking )then
 !     Make sure we use the same image convention for positions and positions_prev
       do i = 1, n_sites
         call get_distance(positions_prev(1:3, i), positions(1:3, i), a_box, b_box, c_box, &
@@ -453,6 +471,7 @@ module md
     end do
 
     gamma_prev = gamma
+    m_prev = sum( forces**2 )
 
   end subroutine
 !**************************************************************************
