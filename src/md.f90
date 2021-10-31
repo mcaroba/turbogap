@@ -437,7 +437,7 @@ module md
     else if( backtracking )then
 !     After the first step, we perform backtracking line search until fullfilling the
 !     Armijo-Goldstein condition
-      if( energy <= energy0 + gamma_prev*0.5d0*m_prev )then
+      if( energy <= energy0 - gamma_prev*0.5d0*m_prev )then
         backtracking = .false.
       else
 !       If the condition is not fulfilled, we restore the original positions and decrease
