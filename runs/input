@@ -1,9 +1,9 @@
-atoms_file = 'atoms.xyz'
+!atoms_file = 'atoms.xyz'
 !atoms_file = 'atoms_plus.xyz'
 !atoms_file = 'atoms_minus.xyz'
 !atoms_file = '4070.xyz'
 !atoms_file = '4070_plus.xyz'
-!atoms_file = '4070_minus.xyz'
+atoms_file = '4070_minus.xyz'
 pot_file = 'gap_files/carbon.gap'
 
 ! Species info
