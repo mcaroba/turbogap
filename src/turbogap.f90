@@ -607,7 +607,7 @@ program turbogap
 #endif
     write(*,*)'                                       |'
     write(*,*)'Doing molecular dynamics...            |'
-    if( params%print_progress )then
+    if( params%print_progress .and. md_istep > 0 )then
       write(*,*)'                                       |'
       write(*,*)'Progress:                              |'
       write(*,*)'                                       |'

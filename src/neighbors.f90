@@ -288,7 +288,6 @@ module neighbors
         write(*,*)'you may also have several instances of |'
         write(*,*)'non-orthorhombic cells.                |'
         write(*,*)'                                       |'
-        write(*,*)'.......................................|'
       end if
     end if
 !
@@ -309,7 +308,6 @@ module neighbors
         write(*,*)'several instances of non-orthorhombic  |'
         write(*,*)'cells.                                 |'
         write(*,*)'                                       |'
-        write(*,*)'.......................................|'
       end if
     end if
 !
