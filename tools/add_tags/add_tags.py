@@ -94,7 +94,7 @@ for i in range(0, len(at)):
         sv = np.sqrt(n) * sigma_v[ct]
     except:
         sv = np.sqrt(n) * sigma_v["default"]
-    at[i].info["virial_sigma"] = se
+    at[i].info["virial_sigma"] = sv
 #   Print progress
     sys.stdout.write('\rProgress:%6.1f%%' % (float(i)*100./float(len(at))) )
     sys.stdout.flush()
