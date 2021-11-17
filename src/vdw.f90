@@ -430,82 +430,58 @@ module vdw
 !   Input variables
     real*8, intent(in) :: hirshfeld_v_cart_der(:,:), rcut, buffer, rcut_inner, buffer_inner, &
                           rjs(:), xyz(:,:), sR, d, c6_ref(:), r0_ref(:), &
-                          alpha0_ref(:)
+                          alpha0_ref(:), hirshfeld_v(:), hirshfeld_v_neigh(:)
     integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:)
     logical, intent(in) :: do_forces
 !   Output variables
     real*8, intent(out) :: virial(1:3, 1:3)
 !   In-Out variables
-!   TEMPORARILY ADDED hirshfeld_v AND hirshfeld_v_neigh AS INOUT VARIABLES FOR DEBUGGIN!!! (originally in vars)
-    real*8, intent(inout) :: energies(:), forces0(:,:), hirshfeld_v(:), hirshfeld_v_neigh(:)
+    real*8, intent(inout) :: energies(:), forces0(:,:)
 !   Internal variables
-    real*8, allocatable :: neighbor_c6_ii(:), neighbor_c6_ij(:), r0_ii(:), r0_ij(:), &
-                           exp_damp(:), f_damp(:), c6_ij_free(:), neighbor_alpha0(:), &
-                           pref_force1(:), pref_force2(:), r6(:), r6_der(:), &
+    real*8, allocatable :: neighbor_c6_ii(:), r0_ii(:), &
+                           f_damp(:), neighbor_alpha0(:), &
+                           pref_force1(:), pref_force2(:), &
                            T_func(:), h_func(:,:), g_func(:,:), &
                            omegas(:), omega_i(:), &
                            alpha_i(:,:), sigma_i(:,:), sigma_ij(:), T_SR(:,:,:), B_mat(:,:,:), &
                            rjs_H(:), xyz_H(:,:), A_mat(:,:,:), work_arr(:), A_i(:,:), alpha_SCS(:,:), &
                            A_LR(:,:,:), T_LR(:,:), r0_ii_SCS(:), f_damp_SCS(:), I_mat(:,:), AT(:,:,:), &
                            logIAT(:,:,:), VR(:,:), logMapo(:,:), VRinv(:,:), WR(:), WI(:), VL(:,:), &
-                           integrand(:), v_arr(:), dT(:,:), dT_SR(:,:,:,:,:), f_damp_der(:,:,:), &
-                           g_func_der(:,:,:,:), h_func_der(:,:,:,:,:,:), dA_mat(:,:,:,:,:), &
-                           dalpha(:,:,:,:), dA_LR(:,:,:,:,:), dT_LR(:,:,:,:), f_damp_der_SCS(:,:,:,:), &
+                           integrand(:), dT(:,:), dT_SR(:,:,:,:,:), f_damp_der(:,:), &
+                           g_func_der(:,:,:), h_func_der(:,:,:), dA_mat(:,:,:,:,:), &
+                           dalpha(:,:,:,:), dA_LR(:,:,:,:,:), dT_LR(:,:,:,:), f_damp_der_SCS(:,:,:), &
                            invIAT(:,:,:), G_mat(:,:,:,:,:), force_integrand(:,:,:), forces_MBD(:,:), &
                            coeff_h_der(:), terms(:), dT_SR_A_mat(:,:), dT_SR_v(:,:,:,:,:), &
-                           f_damp_der_v(:,:,:,:), g_func_der_v(:,:,:,:,:), h_func_der_v(:,:,:,:,:,:,:), &
-                           dB_mat(:,:,:,:,:), dB_mat_v(:,:,:,:,:), dA_mat_v(:,:,:,:,:), dalpha_v(:,:,:,:), &
-                           dalpha_v_r(:,:,:,:), dR_vdW(:), dv_i(:), dv_j(:), dsigma(:,:), &
-                           g_func_der_v_coeff(:), coeff_der(:,:,:,:,:), coeff_fdamp(:,:,:,:,:), dg(:), &
+                           dB_mat(:,:,:,:,:), dB_mat_v(:,:,:,:,:), &
+                           dv_i(:), dv_j(:), &
+                           coeff_der(:,:,:,:,:), coeff_fdamp(:,:,:,:,:), dg(:), &
                            dh(:), hirshfeld_v_cart_der_H(:,:)
-    real*8 :: time1, time2, c6_ii, c6_jj, r0_i, r0_j, alpha0_i, alpha0_j, rbuf, this_force(1:3), Bohr, Hartree, &
+    real*8 :: time1, time2, this_force(1:3), Bohr, Hartree, &
               omega, pi, integral, E_MBD, R_vdW_ij, R_vdW_SCS_ij, S_vdW_ij, dS_vdW_ij, exp_term, &
-              f_damp_der_v_coeff, rcut_vdw, r_vdw_i, r_vdw_j
-    integer, allocatable:: i_buffer(:), ipiv(:)
-    integer :: n_sites, n_pairs, n_pairs_soap, n_species, n_sites0, info
-    integer :: i, i2, j, j2, k, k2, k3, a, n_in_buffer, c1, c2, c3, lwork, b, a2
-    logical, allocatable :: is_in_buffer(:)
+              rcut_vdw, r_vdw_i, r_vdw_j
+    integer, allocatable :: ipiv(:)
+    integer :: n_sites, n_pairs, n_species, n_sites0, info
+    integer :: i, i2, j, j2, k, k2, k3, a, a2, c1, c2, c3, lwork, b
     logical :: do_timing = .false., do_hirshfeld_gradients = .true.
 
 !   Change these to be input variables (NOTE THAT THEY ARE IN ANGSTROMS!):
-    rcut_vdw = 4.d0
+    rcut_vdw = 8.d0
 
     n_sites = size(n_neigh)
     n_pairs = size(neighbors_list)
     n_species = size(c6_ref)
     n_sites0 = size(forces0, 2)
 
-!    write(*,*) "hirshfeld_v:", hirshfeld_v
-!    write(*,*) "hirshfeld_v_neigh:", hirshfeld_v_neigh
-
-!   Debugging for dimer (remove later):
-!   plus:
-!    hirshfeld_v = (/ 1.0154463183569753, 1.0154463183569753 /)
-!    hirshfeld_v_neigh = (/ 1.0154463183569753, 1.0154463183569753, &
-!                           1.0154463183569753, 1.0154463183569753 /)
-!   minus:
-!    hirshfeld_v = (/ 1.0168126496003040, 1.0168126496003040 /)
-!    hirshfeld_v_neigh = (/ 1.0168126496003040, 1.0168126496003040, &
-!                           1.0168126496003040, 1.0168126496003040 /)
-
-
 !   Hartree units (calculations done in Hartree units for simplicity)
     Bohr = 0.5291772105638411
     Hartree = 27.211386024367243
     pi = acos(-1.d0)
 
-!   We precompute the C6 coefficients of all the neighbors
+!   Allocate all the necessary stuff
     allocate( neighbor_c6_ii(1:n_pairs) )
-    allocate( neighbor_c6_ij(1:n_pairs) )
-    allocate( r0_ij(1:n_pairs) )
     allocate( r0_ii(1:n_pairs) )
     allocate( neighbor_alpha0(1:n_pairs) )
-    allocate( exp_damp(1:n_pairs) )
     allocate( f_damp(1:n_pairs) )
-    allocate( c6_ij_free(1:n_pairs) )
-    allocate( r6(1:n_pairs) )
-    allocate( is_in_buffer(1:n_pairs) )
-!    allocate( T_func(1:3*n_sites,1:3*n_sites) )
     allocate( T_func(1:9*n_pairs) )
     allocate( h_func(1:9*n_pairs,1:11) )
     allocate( g_func(1:n_pairs,1:11) )
@@ -537,17 +513,16 @@ module vdw
     allocate( WI(1:3*n_sites) )
     allocate( VL(1:3*n_sites,1:3*n_sites) )
     allocate( integrand(1:11) )
-    allocate( v_arr(1:n_sites) )
     allocate( dT(1:9*n_pairs,1:3) )
     allocate( dT_SR(1:3*n_sites,1:3*n_sites,1:n_sites,1:3,1:11) )
-    allocate( f_damp_der(1:n_sites,1:n_sites,1:3) )
-    allocate( g_func_der(1:n_sites,1:n_sites,1:3,1:11) )
-    allocate( h_func_der(1:n_sites,1:n_sites,1:3,1:3,1:3,1:11) )
+    allocate( f_damp_der(1:n_pairs,1:3) )
+    allocate( g_func_der(1:n_pairs,1:3,1:11) )
+    allocate( h_func_der(1:9*n_pairs,1:3,1:11) )
     allocate( dA_mat(1:3*n_sites,1:3*n_sites,1:n_sites,1:3,1:11) )
     allocate( dalpha(1:n_sites,1:n_sites,1:3,1:11) )
     allocate( dA_LR(1:3*n_sites,1:3*n_sites,1:n_sites,1:3,1:11) )
     allocate( dT_LR(1:3*n_sites,1:3*n_sites,1:n_sites,1:3) )
-    allocate( f_damp_der_SCS(1:n_sites,1:n_sites,1:n_sites,1:3) )
+    allocate( f_damp_der_SCS(1:n_pairs,1:n_sites,1:3) )
     allocate( invIAT(1:3*n_sites,1:3*n_sites,1:11) )
     allocate( G_mat(1:3*n_sites,1:3*n_sites,1:n_sites,1:3,1:11) )
     allocate( force_integrand(1:n_sites,1:3,1:11) )
@@ -556,119 +531,15 @@ module vdw
     allocate( terms(1:11) )
     allocate( dT_SR_A_mat(1:3*n_sites,1:3*n_sites) )
     allocate( dT_SR_v(1:3*n_sites,1:3*n_sites,1:n_sites,1:3,1:11) )
-    allocate( f_damp_der_v(1:n_sites,1:n_sites,1:n_sites,1:3) )
-    allocate( g_func_der_v(1:n_sites,1:n_sites,1:n_sites,1:3,1:11) )
-    allocate( h_func_der_v(1:n_sites,1:n_sites,1:n_sites,1:3,1:3,1:3,1:11) )
     allocate( dB_mat(1:3*n_sites,1:3*n_sites,1:n_sites,1:3,1:11) )
     allocate( dB_mat_v(1:3*n_sites,1:3*n_sites,1:n_sites,1:3,1:11) )
-    allocate( dalpha_v(1:n_sites,1:n_sites,1:3,1:11) )
-    allocate( dA_mat_v(1:3*n_sites,1:3*n_sites,1:n_sites,1:3,1:11) )
-    allocate( dR_vdW(1:3) )
     allocate( dv_i(1:3) )
     allocate( dv_j(1:3) )
-    allocate( dsigma(1:3,1:11) )
-    allocate( g_func_der_v_coeff(1:11) )
     allocate( coeff_der(1:n_sites,1:n_sites,1:3,1:3,1:11) )
     allocate( coeff_fdamp(1:n_sites,1:n_sites,1:3,1:3,1:11) )
     allocate( dg(1:11) )
     allocate( dh(1:11) )
     allocate( hirshfeld_v_cart_der_H(1:3,1:n_pairs) )
-!    allocate( dalpha_v_r(1:n_sites,1:n_sites,1:3,1:11) )
-    is_in_buffer = .false.
-    if( do_forces )then
-      allocate( pref_force1(1:n_sites) )
-      allocate( pref_force2(1:n_sites) )
-      allocate( r6_der(1:n_pairs) )
-    end if
-
-!   Hirshfeld derivative test:
-!    k = 0
-!    write(*,*) "hirshfeld_v_neigh", hirshfeld_v_neigh
-!    do i = 1, n_neigh(1)
-!      k = k+1
-!      j = neighbors_list(k)
-!      write(*,*) i, j, hirshfeld_v_neigh(k)
-!    end do
-!    k = 0
-!    write(*,*) "hirshfeld_v_cart_der"
-!    do i = 1, n_sites
-!      do a2 = 1, n_neigh(i)
-!        k = k+1
-!        a = neighbors_list(k)
-!        write(*,*) i, a, hirshfeld_v_cart_der(1:3,k)
-!      end do
-!    end do
-
-!   Temporary fixed array for Hirshfeld volumes:
-    v_arr = (/ 0.85308339, &
-               0.85305028, &
-               0.85307521, &
-               0.85306433, &
-               0.85309976, &
-               0.85300157, &
-               0.85300707, &
-               0.85305648, &
-               0.85298019, &
-               0.85303452, &
-               0.85295826, &
-               0.85306464, &
-               0.85306557, &
-               0.85305240, &
-               0.85299413, &
-               0.85309070, &
-               0.85299418, &
-               0.85310156, &
-               0.85296718, &
-               0.85312167, &
-               0.85317982, &
-               0.85305540, &
-               0.85310142, &
-               0.85317319, &
-               0.85309425, &
-               0.85311298, &
-               0.85310860, &
-               0.85305652, &
-               0.85300463, &
-               0.85308386, &
-               0.85306393, &
-               0.85300010, &
-               0.85312190, &
-               0.85306154, &
-               0.85315732, &
-               0.85299361, &
-               0.85298426, &
-               0.85317383, &
-               0.85318570, &
-               0.85305124, &
-               0.85308609, &
-               0.85306547, &
-               0.85303523, &
-               0.85306989, &
-               0.85312138, &
-               0.85306431, &
-               0.85304930, &
-               0.85315359, &
-               0.85309796, &
-               0.85300060, &
-               0.85306619, &
-               0.85310520, &
-               0.85300061, &
-               0.85306354, &
-               0.85312192, &
-               0.85296821, &
-               0.85298307, &
-               0.85312609, &
-               0.85310662, &
-               0.85295523 /)
-!    do k = 1, n_sites
-!      write(*,*) "v_arr:", v_arr(k)
-!    end do
-
-!    write(*,*) "v_arr:", v_arr(1)
-!   THIS IS FOR TESTING:
-!    v_arr(1) = v_arr(1) - 0.01d0
-!   REMOVE AFTERWARDS
-!    write(*,*) "v_arr:", v_arr(1)
 
     if( do_timing) then
       call cpu_time(time1)
@@ -680,9 +551,7 @@ module vdw
       omegas(i) = omega
       omega = omega + 0.4d0 
     end do
-!    write(*,*) "omegas", omegas
 
-!   Check which atoms are in the buffer region
     do k = 1, n_pairs
       j = neighbor_species(k)
       neighbor_c6_ii(k) = c6_ref(j) / (Hartree*Bohr**6)
@@ -692,66 +561,13 @@ module vdw
       rjs_H(k) = rjs(k)/Bohr
       hirshfeld_v_cart_der_H(:,k) = hirshfeld_v_cart_der(:,k)*Bohr
     end do
-!    write(*,*) "r0_ii:", r0_ii(3090), r0_ii(3564)
 
-!   This is not used in the MBD implementation (yet):
-    n_in_buffer = 0
-    if( buffer > 0.d0 .or. buffer_inner > 0.d0 )then
-      do k = 1, n_pairs
-        if( (rjs(k) > rcut-buffer .and. rjs(k) < rcut) .or. &
-            (rjs(k) < rcut_inner+buffer_inner .and. rjs(k) > rcut_inner) )then
-          n_in_buffer = n_in_buffer + 1
-          is_in_buffer(k) = .true.
-        end if
-      end do
-    end if
-    allocate( i_buffer(1:n_in_buffer) )
-    if( buffer > 0.d0 .or. buffer_inner > 0.d0 )then
-      i = 0
-      do k = 1, n_pairs
-        if( is_in_buffer(k) )then
-          i = i + 1
-          i_buffer(i) = k
-        end if
-      end do
-    end if
-
-!    if( do_timing) then
-!      call cpu_time(time2)
-!      write(*,*) "vdw: creating pair quantities 1:", time2-time1
-!      call cpu_time(time1)
-!    end if
-
-!   UNCOMMENT THIS
 !   Precompute some other pair quantities
     neighbor_c6_ii = neighbor_c6_ii * hirshfeld_v_neigh**2
 !   This is slow, could replace by Taylor expansion maybe
     r0_ii = r0_ii * hirshfeld_v_neigh**(1.d0/3.d0)
     neighbor_alpha0 = neighbor_alpha0 * hirshfeld_v_neigh
-!   UNCOMMENT END
-
-!    write(*,*) "i, R_vdW:", 1, r0_ii(1)
-!    write(*,*) "i, R_vdW:", 2, r0_ii(4)
-!    write(*,*) "i, a, dR_vdW:", 1, 1, 1.d0/3.d0 * r0_ii(1)/hirshfeld_v(1) * hirshfeld_v_cart_der(1:3,1)
-!    write(*,*) "i, a, dR_vdW:", 2, 1, 1.d0/3.d0 * r0_ii(4)/hirshfeld_v(2) * hirshfeld_v_cart_der(1:3,4)
-
-!   Temporary volume assignment:
-!    do k = 1, n_pairs
-!      j = neighbors_list(k)
-!      neighbor_c6_ii(k) = neighbor_c6_ii(k) * v_arr(j)**2
-!      r0_ii(k) = r0_ii(k) * v_arr(j)**(1.d0/3.d0)
-!      neighbor_alpha0(k) = neighbor_alpha0(k) * v_arr(j)
-!    end do
-!    write(*,*) "r0_ii:", r0_ii(3090), r0_ii(3564)
-!   Temporary assignment ends here.
     omega_i = (4.d0 * neighbor_c6_ii)/(3.d0*neighbor_alpha0**2)
-
-    
-!    if( do_timing) then
-!      call cpu_time(time2)
-!      write(*,*) "vdw: creating pair quantities 2:", time2-time1
-!      call cpu_time(time1)
-!    end if
 
     k2 = 1
     do i = 1, n_sites
@@ -767,7 +583,6 @@ module vdw
     T_func = 0.d0
     f_damp = 0.d0
     k = 0
-!    write(*,*) "f_damp calc:"
     do i = 1, n_sites
       k = k+1
       r_vdw_i = r0_ii(k)
@@ -883,7 +698,6 @@ module vdw
         if (rjs(k) < rcut_vdW) then
           r_vdw_j = r0_ii_SCS(k)
           j = neighbors_list(k)
-!          f_damp_SCS(k) = 1.d0/( 1.d0 + exp( -d*( rjs_H(k)/(sR*(r0_ii_SCS(n_sites*(i-1)+1) + r0_ii_SCS(k))) - 1.d0 ) ) )
           f_damp_SCS(k) = 1.d0/( 1.d0 + exp( -d*( rjs_H(k)/(sR*(r_vdw_i + r_vdw_j)) - 1.d0 ) ) )
         end if
       end do
@@ -1001,10 +815,10 @@ module vdw
             if (a == i .or. a == j) then
               sigma_ij = sqrt(sigma_i(i,:)**2 + sigma_i(j,:)**2)
               do c3 = 1, 3
-                f_damp_der(i,j,c3) = d/(sR*(r0_ii(n_sites*(i-1)+1) + r0_ii(k))) * f_damp(k)**2 * &
+                f_damp_der(k,c3) = d/(sR*(r0_ii(n_sites*(i-1)+1) + r0_ii(k))) * f_damp(k)**2 * &
                                      exp( -d*(rjs_H(k)/(sR*(r0_ii(n_sites*(i-1)+1) + &
                                      r0_ii(k))) - 1.d0) ) * xyz_H(c3,k)/rjs_H(k)
-                g_func_der(i,j,c3,:) = 4.d0/sqrt(pi) * rjs_H(k)/sigma_ij**3 * xyz_H(c3,k) * &
+                g_func_der(k,c3,:) = 4.d0/sqrt(pi) * rjs_H(k)/sigma_ij**3 * xyz_H(c3,k) * &
                                        exp(-rjs_H(k)**2/sigma_ij**2) 
                 k2 = 9*(k-1)
                 do c1 = 1, 3
@@ -1020,12 +834,12 @@ module vdw
                     end if
                     terms = terms + -2.d0*(xyz_H(c1,k)*xyz_H(c2,k)*xyz_H(c3,k))/rjs_H(k)**2 * &
                             (1.d0/rjs_H(k)**2 + 1.d0/sigma_ij**2)
-                    h_func_der(i,j,c1,c2,c3,:) = coeff_h_der * terms
-                    dT_SR(3*(i-1)+c1,3*(j-1)+c2,a,c3,:) = f_damp_der(i,j,c3) * T_func(k2) * &
+                    h_func_der(k2,c3,:) = coeff_h_der * terms
+                    dT_SR(3*(i-1)+c1,3*(j-1)+c2,a,c3,:) = f_damp_der(k,c3) * T_func(k2) * &
                                                           g_func(k,:) - (1.d0 - f_damp(k)) * dT(k2,c3) * &
-                                                          g_func(k,:) - g_func_der(i,j,c3,:) * (1.d0 - f_damp(k)) * &
-                                                          T_func(k2) - f_damp_der(i,j,c3) * h_func(k2,:) + &
-                                                          h_func_der(i,j,c1,c2,c3,:) * (1.d0 - f_damp(k)) 
+                                                          g_func(k,:) - g_func_der(k,c3,:) * (1.d0 - f_damp(k)) * &
+                                                          T_func(k2) - f_damp_der(k,c3) * h_func(k2,:) + &
+                                                          h_func_der(k2,c3,:) * (1.d0 - f_damp(k)) 
                   end do
                 end do
               end do
@@ -1037,52 +851,6 @@ module vdw
         end do
       end do
     end do
-
-!    dA_mat = 0.d0
-!    do k = 1, 11
-!      do a = 1, n_sites
-!        do c3 = 1, 3
-!          dT_SR_A_mat = 0.d0
-!          call dgemm('n', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, dT_SR(:,:,a,c3,k), 3*n_sites, A_mat(:,:,k), 3*n_sites, &
-!                     0.d0, dT_SR_A_mat, 3*n_sites)
-!          call dgemm('n', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, -A_mat(:,:,k), 3*n_sites, dT_SR_A_mat, 3*n_sites, &
-!                     0.d0, dA_mat(:,:,a,c3,k), 3*n_sites)
-!        end do
-!      end do
-!    end do
-
-!    write(*,*) "dA_mat:", dA_mat(1,1:6,1,1,1)
-!    write(*,*) "dA_mat:", dA_mat(2,1:6,1,1,1)
-!    write(*,*) "dA_mat:", dA_mat(3,1:6,1,1,1)
-!    write(*,*) "dA_mat:", dA_mat(4,1:6,1,1,1)
-!    write(*,*) "dA_mat:", dA_mat(5,1:6,1,1,1)
-!    write(*,*) "dA_mat:", dA_mat(6,1:6,1,1,1)
-
-!    dalpha = 0.d0
-!    do k = 1, 11
-!      do i = 1, n_sites
-!        do a = 1, n_sites
-!          do c3 = 1, 3
-!            A_i = 0.d0
-!            do j = 1, n_sites
-!              A_i = A_i + dA_mat(3*(i-1)+1:3*(i-1)+3,3*(j-1)+1:3*(j-1)+3,a,c3,k)
-!            end do
-!            do j2 = 1, 3
-!              dalpha(i,a,c3,k) = dalpha(i,a,c3,k) + A_i(j2,j2)
-!            end do
-!            dalpha(i,a,c3,k) = 1.d0/3.d0 * dalpha(i,a,c3,k)
-!          end do
-!        end do
-!      end do
-!    end do
-
-!    write(*,*) "d, sR", d, sR
-!    write(*,*) "r0_ii:", r0_ii
-
-!    write(*,*) "T_func:"
-!    do i = 1, 6
-!      write(*,*) T_func(i,1:6)
-!    end do
 
     dB_mat = dT_SR
     if (do_hirshfeld_gradients) then
@@ -1117,16 +885,12 @@ module vdw
         end do
       end do
 
-!      write(*,*) "coeff_fdamp:", coeff_fdamp
-!      write(*,*) "coeff_der:", coeff_der(:,:,1)
-
       k2 = 0
       k3 = 0
       do i = 1, n_sites
         do a2 = 1, n_neigh(i)
           k2 = k2+1
           a = neighbors_list(k2)
-!          write(*,*) i, a, hirshfeld_v_cart_der_H(1,k2)
           do c3 = 1, 3
             do c1 = 1, 3
               dB_mat_v(3*(i-1)+c1,3*(i-1)+c1,a,c3,:) = -1.d0/(hirshfeld_v(i)*alpha_i(i,:)) * &
@@ -1185,21 +949,6 @@ module vdw
       dB_mat = dB_mat + dB_mat_v
     end if
 
-!    write(*,*) "dB_mat:"
-!    do i = 1, 6
-!      write(*,*) dB_mat(i,1:6,1,1,1)
-!    end do
-
-!    write(*,*) "dT_SR:"
-!    do i = 1, 6
-!      write(*,*) dT_SR(i,1:6,1,1,1)
-!    end do
-
-!    write(*,*) "dT_SR_v:"
-!    do i = 1, 6
-!      write(*,*) dT_SR_v(i,1:6,1,1,1)
-!    end do
-
     dA_mat = 0.d0
     do k = 1, 11
       do a = 1, n_sites
@@ -1231,34 +980,6 @@ module vdw
       end do
     end do
 
-!    do i = 55, 60
-!      write(*,*) "f_damp_der_v:", f_damp_der_v(i,55:60,60)
-!    end do
-!    do i = 55, 60
-!      write(*,*) "g_func_der_v:", g_func_der_v(i,55:60,60,1)
-!    end do
-!    do i = 55, 60
-!      write(*,*) "h_func_der_v:", h_func_der_v(i,55:60,60,1,1,1)
-!    end do
-!    do i = 175, 180
-!      write(*,*) "dT_SR_v:", dT_SR_v(i,175:180,60,1)
-!    end do
-!    write(*,*) "dB_mat_v:"
-!    do i = 1, 3*n_sites
-!      write(*,*) dB_mat_v(i,1:3*n_sites,1,1)
-!    end do
-!    write(*,*) "dA_mat_v:"
-!    do i = 1, 3*n_sites
-!      write(*,*) dA_mat_v(i,1:3*n_sites,1,1)
-!    end do
-!    write(*,*) "dalpha_v:", dalpha_v(:,1,1)
-!    write(*,*) "dalpha_v_r:", dalpha_v_r(:,1,1,1)
-!    write(*,*) "dalpha:", dalpha(:,1,1,1)
-
-!    do a = 1, n_sites
-!      write(*,*) "dalpha", dalpha(1,a,:,1)
-!    end do
-
     dA_LR = 0.d0
 
     do k = 1, 11
@@ -1272,10 +993,6 @@ module vdw
         end do
       end do
     end do
-
-!    do i = 1, 9
-!      write(*,*) "dA_LR", dA_LR(i,1:9,1,1,1)
-!    end do
 
     f_damp_der_SCS = 0.d0
     f_damp_der = 0.d0 ! This is cleared so we can recalculate it with SCS values
@@ -1295,34 +1012,20 @@ module vdw
             do c3 = 1, 3
               dS_vdW_ij = sR/3.d0 * ( r0_ii_SCS(n_sites*(i-1)+1)/alpha_SCS(i,1) * dalpha(i,a,c3,1) + &
                                       r0_ii_SCS(k)/alpha_SCS(j,1) * dalpha(j,a,c3,1) )
-              f_damp_der_SCS(i,j,a,c3) = -(d*rjs_H(k))/S_vdW_ij**2 * f_damp_SCS(k)**2 * &
+              f_damp_der_SCS(k,a,c3) = -(d*rjs_H(k))/S_vdW_ij**2 * f_damp_SCS(k)**2 * &
                                          exp(-d*(rjs_H(k)/S_vdW_ij - 1.d0)) * dS_vdW_ij
-!            if (a == 1 .and. c3 == 1 .and. i == 1 .and. j == 2) then
-!              write(*,*) i-1, j-1
-!              write(*,*) "f_damp_der_SCS", f_damp_der_SCS(i,j,a,1)
-!              write(*,*) "dS_vdW_ij", dS_vdW_ij
-!              write(*,*) "R_vdW_SCS_ij", R_vdW_SCS_ij
-!              write(*,*) "S_vdW_ij", S_vdW_ij
-!            end if
-!            if (a == 1 .and. c3 == 1 .and. i == 2 .and. j == 1) then
-!              write(*,*) i-1, j-1
-!              write(*,*) "f_damp_der_SCS", f_damp_der_SCS(i,j,a,1)
-!              write(*,*) "dS_vdW_ij", dS_vdW_ij
-!              write(*,*) "R_vdW_SCS_ij", R_vdW_SCS_ij
-!              write(*,*) "S_vdW_ij", S_vdW_ij
-!            end if
               k2 = 9*(k-1)
               do c1 = 1, 3
                 do c2 = 1, 3
                   k2 = k2+1
                   dT_LR(3*(i-1)+c1,3*(j-1)+c2,a,c3) = dT_LR(3*(i-1)+c1,3*(j-1)+c2,a,c3) + &
-                                    T_func(k2) * f_damp_der_SCS(i,j,a,c3) 
+                                    T_func(k2) * f_damp_der_SCS(k,a,c3) 
                 end do
               end do
             end do
             if (a == i .or. a == j) then
               do c3 = 1, 3
-              f_damp_der(i,j,c3) = d/S_vdW_ij * f_damp_SCS(k)**2 * &
+              f_damp_der(k,c3) = d/S_vdW_ij * f_damp_SCS(k)**2 * &
                                    exp( -d*(rjs_H(k)/S_vdW_ij - 1.d0) ) * xyz_H(c3,k)/rjs_H(k)
                 k2 = 9*(k-1)
                 do c1 = 1, 3
@@ -1330,11 +1033,11 @@ module vdw
                     k2 = k2+1
                     if (a == i) then
                       dT_LR(3*(i-1)+c1,3*(j-1)+c2,a,c3) = dT_LR(3*(i-1)+c1,3*(j-1)+c2,a,c3) - &
-                                         T_func(k2) * f_damp_der(i,j,c3) - &
+                                         T_func(k2) * f_damp_der(k,c3) - &
                                          dT(k2,c3) * f_damp_SCS(k)
                     else if (a == j) then
                       dT_LR(3*(i-1)+c1,3*(j-1)+c2,a,c3) = dT_LR(3*(i-1)+c1,3*(j-1)+c2,a,c3) + &
-                                         T_func(k2) * f_damp_der(i,j,c3) + &
+                                         T_func(k2) * f_damp_der(k,c3) + &
                                          dT(k2,c3) * f_damp_SCS(k)
                     end if
                   end do
@@ -1345,14 +1048,6 @@ module vdw
         end do
       end do
     end do
-
-!    do i = 1, n_sites
-!      write(*,*) "dT_LR", dT_LR(i,1:6,1,1)
-!    end do
-
-!    do i = 1, n_sites
-!      write(*,*) "dA_LR", dA_LR(i,1:6,1,2,1)
-!    end do
 
     invIAT = 0.d0
     G_mat = 0.d0
@@ -1384,14 +1079,6 @@ module vdw
       end do
     end do
 
-!    do i = 1, 9
-!      write(*,*) "G_mat:", G_mat(i,1:6,1,1,1)
-!    end do
-
-!    do a = 1, n_sites
-!      write(*,*) "Force integrand:", force_integrand(a,:,1)
-!    end do
-
     forces_MBD = 0.d0
 
     do a = 1, n_sites
@@ -1408,11 +1095,6 @@ module vdw
     do a = 1, n_sites
       write(*,*) forces_MBD(a,:)
     end do
-!   Compute MBD forces
-!    if( do_forces )then
-!      forces0 = 0.d0
-!      virial = 0.d0
-!    end if
 
     if( do_timing) then
       call cpu_time(time2)
@@ -1420,16 +1102,13 @@ module vdw
     end if
  
 !   Clean up
-    deallocate( neighbor_c6_ii, neighbor_c6_ij, r0_ij, exp_damp, f_damp, c6_ij_free, r6, is_in_buffer, i_buffer, T_func, &
+    deallocate( neighbor_c6_ii, f_damp, T_func, &
                 h_func, g_func, omegas, omega_i, alpha_i, sigma_i, sigma_ij, T_SR, B_mat, xyz_H, rjs_H, A_mat, A_i, &
                 alpha_SCS, A_LR, r0_ii_SCS, f_damp_SCS, I_mat, AT, logIAT, logMapo, VR, VRinv, WR, WI, VL, integrand, &
-                v_arr, dT, dT_SR, f_damp_der, g_func_der, h_func_der, dA_mat, dalpha, dA_LR, dT_LR, f_damp_der_SCS, &
+                dT, dT_SR, f_damp_der, g_func_der, h_func_der, dA_mat, dalpha, dA_LR, dT_LR, f_damp_der_SCS, &
                 invIAT, G_mat, force_integrand, forces_MBD, coeff_h_der, terms, dT_SR_A_mat, dT_SR_v, &
-                f_damp_der_v, g_func_der_v, h_func_der_v, dB_mat, dB_mat_v, dalpha_v, dA_mat_v, dR_vdW, dv_i, dv_j, &
-                dsigma, g_func_der_v_coeff, coeff_der, coeff_fdamp, dg, dh, hirshfeld_v_cart_der_H )
-    if( do_forces )then
-      deallocate( pref_force1, pref_force2, r6_der )
-    end if
+                dB_mat, dB_mat_v, dv_i, dv_j, &
+                coeff_der, coeff_fdamp, dg, dh, hirshfeld_v_cart_der_H )
 
   end subroutine
 !**************************************************************************
