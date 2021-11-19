@@ -456,14 +456,14 @@ module vdw
                            dv_i(:), dv_j(:), &
                            coeff_der(:,:,:,:,:), coeff_fdamp(:,:,:,:,:), dg(:), &
                            dh(:), hirshfeld_v_cart_der_H(:,:), AT_n(:,:,:,:), A_LR_k(:,:,:,:), AT_k(:,:,:,:), &
-                           integrand_k(:,:), E_MBD_k(:)
+                           integrand_k(:,:), E_MBD_k(:), alpha_k(:,:), sigma_k(:,:), s_i(:), s_j(:)
     real*8 :: time1, time2, this_force(1:3), Bohr, Hartree, &
               omega, pi, integral, E_MBD, R_vdW_ij, R_vdW_SCS_ij, S_vdW_ij, dS_vdW_ij, exp_term, &
               rcut_vdw, r_vdw_i, r_vdw_j
     integer, allocatable :: ipiv(:)
     integer :: n_sites, n_pairs, n_species, n_sites0, info, n_order
     integer :: i, i2, j, j2, k, k2, k3, a, a2, c1, c2, c3, lwork, b
-    logical :: do_timing = .false., do_hirshfeld_gradients = .true., logarithm = .true.
+    logical :: do_timing = .false., do_hirshfeld_gradients = .true., logarithm = .false.
 
 !   Change these to be input variables (NOTE THAT THEY ARE IN ANGSTROMS!):
     rcut_vdw = 8.d0
@@ -547,6 +547,10 @@ module vdw
     allocate( AT_k(1:3*n_sites,1:3*n_sites,1:11,1:n_sites) )
     allocate( integrand_k(1:11,1:n_sites) )
     allocate( E_MBD_k(1:n_sites) )
+    allocate( alpha_k(1:n_pairs,1:11) )
+    allocate( sigma_k(1:n_pairs,1:11) )
+    allocate( s_i(1:11) )
+    allocate( s_j(1:11) )
 
     if( do_timing) then
       call cpu_time(time1)
@@ -585,6 +589,11 @@ module vdw
       k2 = k2+n_neigh(i)
     end do
 
+    do k = 1, 11
+      alpha_k(:,k) = neighbor_alpha0/(1.d0 + omegas(k)**2/omega_i**2)
+      sigma_k(:,k) = (sqrt(2.d0/pi) * alpha_k(:,k)/3.d0)**(1.d0/3.d0)
+    end do
+
 !   Computing dipole interaction tensor
 !   Requires the complete supercell to get correct dimensions for T_func! 3*N_at x 3*N_at, where N_at are atoms in supercell
     T_func = 0.d0
@@ -618,11 +627,13 @@ module vdw
     k = 0
     do i = 1, n_sites
       k = k+1
+      s_i = sigma_k(k,:)
       do j2 = 2, n_neigh(i)
         k = k+1
+        s_j = sigma_k(k,:)
         j = neighbors_list(k)
         if( rjs(k) < rcut_vdw )then
-          sigma_ij = sqrt(sigma_i(i,:)**2 + sigma_i(j,:)**2)
+          sigma_ij = sqrt(s_i**2 + s_j**2)
           g_func(k,:) = erf(rjs_H(k)/sigma_ij) - 2.d0/sqrt(pi) * (rjs_H(k)/sigma_ij) * exp(-rjs_H(k)**2.d0/sigma_ij**2)
           k2 = 9*(k-1)
           do c1 = 1, 3
@@ -642,7 +653,7 @@ module vdw
     do i = 1, n_sites
       k = k+1
       do c1 = 1, 3
-        B_mat(3*(i-1)+c1,3*(i-1)+c1,:) = 1.d0/alpha_i(i,:)
+        B_mat(3*(i-1)+c1,3*(i-1)+c1,:) = 1.d0/alpha_k(k,:)
       end do
       do j2 = 2, n_neigh(i)
         k = k+1
@@ -771,17 +782,23 @@ module vdw
       end do
 
       call integrate("trapezoidal", omegas, integrand, 0.d0, 10.d0, integral)
+
+      E_MBD = integral/(2.d0*pi)
+
+      ! Conversion to eV:
+      E_MBD = E_MBD * 27.211386245988
+      write(*,*) "E_MBD:", E_MBD
     else
-      A_LR_k = 0.d0
-      do i = 1, n_sites
-        A_LR_k(3*(i-1)+1:3*(i-1)+3,3*(i-1)+1:3*(i-1)+3,:,i) = A_LR(3*(i-1)+1:3*(i-1)+3,3*(i-1)+1:3*(i-1)+3,:)
-      end do
+!      A_LR_k = 0.d0
+!      do i = 1, n_sites
+!        A_LR_k(3*(i-1)+1:3*(i-1)+3,3*(i-1)+1:3*(i-1)+3,:,i) = A_LR(3*(i-1)+1:3*(i-1)+3,3*(i-1)+1:3*(i-1)+3,:)
+!      end do
       AT_n = 0.d0
       AT_n(:,:,:,1) = AT
-      logIAT = 0.d0
-      do k = 1, 11
-        logIAT(:,:,k) = -I_mat
-      end do
+!      logIAT = 0.d0
+!      do k = 1, 11
+!        logIAT(:,:,k) = -I_mat
+!      end do
       do k2 = 1, n_order-1
         integrand_k = 0.d0
         do k = 1, 11
@@ -789,13 +806,17 @@ module vdw
                      3*n_sites, 0.d0, AT_n(:,:,k,k2+1), 3*n_sites)
           logIAT(:,:,k) = logIAT(:,:,k) - 1.d0/(k2+1) * AT_n(:,:,k,k2)
           do i =1, n_sites
-            VL = 0.d0
-            call dgemm('n', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, T_LR, 3*n_sites, logIAT(:,:,k), &
-                       3*n_sites, 0.d0, VL, 3*n_sites)
-            call dgemm('n', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, A_LR_k(:,:,k,i), 3*n_sites, VL, &
-                       3*n_sites, 0.d0, AT_k(:,:,k,i), 3*n_sites)
-            do i2 = 1, 3*n_sites
-              integrand_k(k,i) = integrand_k(k,i) + AT_k(i2,i2,k,i)
+!            VL = 0.d0
+!            call dgemm('n', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, T_LR, 3*n_sites, logIAT(:,:,k), &
+!                       3*n_sites, 0.d0, VL, 3*n_sites)
+!            call dgemm('n', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, A_LR_k(:,:,k,i), 3*n_sites, VL, &
+!                       3*n_sites, 0.d0, AT_k(:,:,k,i), 3*n_sites)
+!            do i2 = 1, 3*n_sites
+!              integrand_k(k,i) = integrand_k(k,i) + AT_k(i2,i2,k,i)
+!            end do
+            do c1 = 1, 3
+              integrand_k(k,i) = integrand_k(k,i) + alpha_SCS(i,k) * &
+                dot_product(T_LR(3*(i-1)+c1,:), logIAT(:,3*(i-1)+c1,k))
             end do
           end do
 !          do i = 1, 3*n_sites
@@ -805,7 +826,6 @@ module vdw
 !        write(*,*) "integrand_k", integrand_k(:,1)
         E_MBD_k = 0.d0
         do i = 1, n_sites
-          integral = 0.d0
           call integrate("trapezoidal", omegas, integrand_k(:,i), 0.d0, 10.d0, E_MBD_k(i))
         end do
         E_MBD_k = E_MBD_k/(2.d0*pi)
@@ -823,12 +843,6 @@ module vdw
 
 !      call integrate("trapezoidal", omegas, integrand, 0.d0, 10.d0, integral)
     end if
-
-    E_MBD = integral/(2.d0*pi)
-
-    ! Conversion to eV:
-    E_MBD = E_MBD * 27.211386245988
-    write(*,*) "E_MBD:", E_MBD
 
 !   Force calculation starts here:
     dT = 0.d0
@@ -1169,7 +1183,7 @@ module vdw
                 dT, dT_SR, f_damp_der, g_func_der, h_func_der, dA_mat, dalpha, dA_LR, dT_LR, f_damp_der_SCS, &
                 invIAT, G_mat, force_integrand, forces_MBD, coeff_h_der, terms, dT_SR_A_mat, dT_SR_v, &
                 dB_mat, dB_mat_v, dv_i, dv_j, &
-                coeff_der, coeff_fdamp, dg, dh, hirshfeld_v_cart_der_H, AT_n, A_LR_k )
+                coeff_der, coeff_fdamp, dg, dh, hirshfeld_v_cart_der_H, AT_n, A_LR_k, alpha_k, sigma_k, s_i, s_j )
 
   end subroutine
 !**************************************************************************
