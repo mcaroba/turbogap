@@ -469,7 +469,7 @@ module vdw
 
 !   Change these to be input variables (NOTE THAT THEY ARE IN ANGSTROMS!):
     rcut_vdw = 8.d0
-    n_order = 100
+    n_order = 30
 
     n_sites = size(n_neigh)
     n_pairs = size(neighbors_list)
@@ -813,6 +813,7 @@ module vdw
         do i2 = 1, n_sites
           if ( any(neighbors_list(n_tot+1:n_tot+n_neigh(i)) == i2) ) then
             p = findloc(neighbors_list(n_tot+1:n_tot+n_neigh(i)),i2,1)
+!            write(*,*) "i2, p, neighbors_list(n_tot+p)", i2, p, neighbors_list(n_tot+p)
             k = k+1
             do c1 = 1, 3
               B_mat_i(3*(p-1)+c1,3*(p-1)+c1,:) = 1.d0/alpha_k(k,:)
@@ -856,6 +857,8 @@ module vdw
           end do
         end do
 
+!        write(*,*) "alpha_SCS_i:", alpha_SCS_i(:,1)
+
         do k3 = 1, 11
           do p = 1, n_neigh(i)
             do c1 = 1, 3
@@ -894,9 +897,13 @@ module vdw
           end if
         end do
 
+!        do c1 = 1, 3
+!          write(*,*) "T_LR", T_LR_i(3*(42-1)+c1,1:3)
+!        end do
+
         I_mat_n = 0.d0
         do i2 = 1, 3*n_neigh(i)
-          I_mat(i2,i2) = 1.d0
+          I_mat_n(i2,i2) = 1.d0
         end do
 
         AT_i = 0.d0
@@ -908,6 +915,9 @@ module vdw
         AT_n = 0.d0
         AT_n(:,:,:,1) = AT_i
         series = 0.d0
+        do k = 1, 11
+          series(:,:,k) = -I_mat_n
+        end do
 
         do k2 = 1, n_order-1
           integrand = 0.d0
@@ -916,8 +926,8 @@ module vdw
                        AT_n(:,:,k,k2), 3*n_neigh(i), 0.d0, AT_n(:,:,k,k2+1), 3*n_neigh(i))
             series(:,:,k) = series(:,:,k) - 1.d0/(k2+1) * AT_n(:,:,k,k2)
             do c1 = 1, 3
-              integrand = integrand + alpha_SCS(1,k) * &
-                dot_product(T_LR(c1,:), series(:,c1,k))
+              integrand(k) = integrand(k) + alpha_SCS(1,k) * &
+                dot_product(T_LR_i(c1,:), series(:,c1,k))
             end do
           end do
           integrand = integrand / (2.d0*pi)
