@@ -456,16 +456,18 @@ module vdw
                            dv_i(:), dv_j(:), &
                            coeff_der(:,:,:,:,:), coeff_fdamp(:,:,:,:,:), dg(:), &
                            dh(:), hirshfeld_v_cart_der_H(:,:), AT_n(:,:,:,:), A_LR_k(:,:,:,:), AT_k(:,:,:,:), &
-                           integrand_k(:,:), E_MBD_k(:,:), alpha_k(:,:), sigma_k(:,:), s_i(:), s_j(:), &
+                           integrand_k(:,:), E_MBD_k(:), alpha_k(:,:), sigma_k(:,:), s_i(:), s_j(:), &
                            T_SR_i(:,:,:), B_mat_i(:,:,:), alpha_SCS_i(:,:), A_mat_i(:,:,:), A_LR_i(:,:,:), &
-                           T_LR_i(:,:), AT_i(:,:,:), series(:,:,:), integrand_2(:)
+                           T_LR_i(:,:), AT_i(:,:,:), series(:,:,:), integrand_2(:), I_mat_n(:,:), &
+                           logIAT_n(:,:,:), WR_n(:), WI_n(:), VL_n(:,:), VR_n(:,:), VRinv_n(:,:), &
+                           logMapo_n(:,:)
     real*8 :: time1, time2, this_force(1:3), Bohr, Hartree, &
               omega, pi, integral, E_MBD, R_vdW_ij, R_vdW_SCS_ij, S_vdW_ij, dS_vdW_ij, exp_term, &
               rcut_vdw, r_vdw_i, r_vdw_j, dist, f_damp_SCS_ij
     integer, allocatable :: ipiv(:)
     integer :: n_sites, n_pairs, n_species, n_sites0, info, n_order, n_tot
     integer :: i, i2, j, j2, k, k2, k3, a, a2, c1, c2, c3, lwork, b, p, q
-    logical :: do_timing = .false., do_hirshfeld_gradients = .true., logarithm = .false.
+    logical :: do_timing = .false., do_hirshfeld_gradients = .true., nonlocal = .false.
 
 !   Change these to be input variables (NOTE THAT THEY ARE IN ANGSTROMS!):
     rcut_vdw = 8.d0
@@ -547,7 +549,7 @@ module vdw
     allocate( A_LR_k(1:3*n_sites,1:3*n_sites,1:11,1:n_sites) )
     allocate( AT_k(1:3*n_sites,1:3*n_sites,1:11,1:n_sites) )
     allocate( integrand_k(1:11,1:n_sites) )
-    allocate( E_MBD_k(1:n_sites,1:n_order) )
+    allocate( E_MBD_k(1:n_sites) )
     allocate( alpha_k(1:n_pairs,1:11) )
     allocate( sigma_k(1:n_pairs,1:11) )
     allocate( s_i(1:11) )
@@ -754,10 +756,11 @@ module vdw
                 0.d0, AT(:,:,k), 3*n_sites)
     end do
 
-    if (logarithm) then
+    if (nonlocal) then
       logIAT = 0.d0
       do k = 1,11
         WR = 0.d0
+        WI = 0.d0
         VL = 0.d0
         VR = 0.d0
         call dgeev('n', 'v', 3*n_sites, I_mat-AT(:,:,k), 3*n_sites, WR, WI, VL, 3*n_sites, VR, 3*n_sites, &
@@ -783,6 +786,25 @@ module vdw
         end do 
       end do
 
+!     Local energy test:
+!      E_MBD_k = 0.d0
+!      do i = 1, n_sites
+!        integrand = 0.d0
+!        do k = 1,11
+!          do i2 = 1,3*n_sites
+!            integrand(k) = integrand(k) + logIAT(i2,i2,k)
+!          end do
+!          integrand(k) = alpha_SCS(i,k)/sum(alpha_SCS(:,k)) * integrand(k)
+!        end do
+!        integral = 0.d0
+!        call integrate("trapezoidal", omegas, integrand, 0.d0, 10.d0, integral)
+!        E_MBD_k(i,1) = integral/(2.d0*pi)
+!        E_MBD_k(i,1) = E_MBD_k(i,1) * 27.211386245988
+!        write(*,*) "E_MBD:", i, E_MBD_k(i,1)
+!      end do
+!      write(*,*) "Total MBD energy:", sum(E_MBD_k(:,1))
+
+
       call integrate("trapezoidal", omegas, integrand, 0.d0, 10.d0, integral)
 
       E_MBD = integral/(2.d0*pi)
@@ -790,6 +812,12 @@ module vdw
       ! Conversion to eV:
       E_MBD = E_MBD * 27.211386245988
       write(*,*) "E_MBD:", E_MBD
+
+!      write(*,*) "Local energy attempt:"
+!      do i = 1, n_sites
+!        write(*,*) "E_MBD local for atom:", i, alpha_SCS(i,1)/sum(alpha_SCS(:,1)) * E_MBD
+!      end do
+
     else
       E_MBD_k = 0.d0
       n_tot = 0
@@ -802,7 +830,15 @@ module vdw
         allocate( T_LR_i(1:3*n_neigh(i),1:3*n_neigh(i)) )
         allocate( AT_n(1:3*n_neigh(i),1:3,1:11,1:n_order) )
         allocate( AT_i(1:3*n_neigh(i),1:3*n_neigh(i),1:11) )
+        allocate( I_mat_n(1:3*n_neigh(i),1:3*n_neigh(i)) )
         allocate( series(1:3*n_neigh(i),1:3,1:11) )
+        allocate( WR_n(1:3*n_neigh(i)) )
+        allocate( WI_n(1:3*n_neigh(i)) )
+        allocate( VR_n(1:3*n_neigh(i),1:3*n_neigh(i)) )
+        allocate( VL_n(1:3*n_neigh(i),1:3*n_neigh(i)) )
+        allocate( VRinv_n(1:3*n_neigh(i),1:3*n_neigh(i)) )
+        allocate( logMapo_n(1:3*n_neigh(i),1:3*n_neigh(i)) )
+        allocate( logIAT_n(1:3*n_neigh(i),1:3*n_neigh(i),1:11) )
         T_SR_i = 0.d0
         B_mat_i = 0.d0
         A_mat_i = 0.d0
@@ -903,62 +939,90 @@ module vdw
                      T_LR_i, 3*n_neigh(i), 0.d0, AT_i(:,:,k), 3*n_neigh(i))
         end do
 
-        series = 0.d0
-        AT_n = 0.d0
+        I_mat_n = 0.d0
+        do i2 = 1, 3*n_neigh(i)
+          I_mat_n(i2,i2) = 1.d0
+        end do
+
+        logIAT_n = 0.d0
+        do k = 1,11
+          WR_n = 0.d0
+          WI_n = 0.d0
+          VL_n = 0.d0
+          VR_n = 0.d0
+          VRinv_n = 0.d0
+          call dgeev('n', 'v', 3*n_neigh(i), I_mat_n-AT_i(:,:,k), 3*n_neigh(i), WR_n, WI_n, VL_n, &
+                     3*n_neigh(i), VR_n, 3*n_neigh(i), work_arr, 12*n_sites, info)
+          logMapo_n = 0.d0
+          do i2 = 1, 3*n_neigh(i)
+            logMapo_n(i2,i2) = log(WR_n(i2))
+          end do
+          VRinv_n = VR_n
+          VL_n = 0.d0
+          call dgetrf(3*n_neigh(i), 3*n_neigh(i), VRinv_n, 3*n_neigh(i), ipiv, info)
+          call dgetri(3*n_neigh(i), VRinv_n, 3*n_neigh(i), ipiv, work_arr, 12*n_sites, info)
+          call dgemm('n', 'n', 3*n_neigh(i), 3*n_neigh(i), 3*n_neigh(i), 1.d0, VR_n, 3*n_neigh(i), logMapo_n, &
+                     3*n_neigh(i), 0.d0, VL_n, 3*n_neigh(i))
+          call dgemm('n', 'n', 3*n_neigh(i), 3*n_neigh(i), 3*n_neigh(i), 1.d0, VL_n, 3*n_neigh(i), VRinv_n, &
+                     3*n_neigh(i), 0.d0, logIAT_n(:,:,k), 3*n_neigh(i))
+        end do
+!       Local energy test:
         integrand = 0.d0
-!        integrand_2 = 0.d0
-        do k = 1, 11
-          call dgemm('n', 'n', 3*n_neigh(i), 3, 3*n_neigh(i), 1.d0, A_LR_i(:,:,k), 3*n_neigh(i), &
-                      T_LR_i(:,1:3), 3*n_neigh(i), 0.d0, AT_n(:,:,k,1), 3*n_neigh(i))
-          series(:,:,k) = -1.d0/2 * AT_n(:,:,k,1)
-          do c1 = 1, 3
-            integrand(k) = integrand(k) + alpha_SCS(1,k) * &
-              dot_product(T_LR_i(c1,:), series(:,c1,k))
-!            integrand_2(k) = integrand_2(k) -1.d0/2 * alpha_SCS(1,k) * &
-!              dot_product(T_LR_i(c1,:), AT_i(:,c1,k))
+        do k = 1,11
+          do i2 = 1,3*n_neigh(i)
+            integrand(k) = integrand(k) + logIAT_n(i2,i2,k)
           end do
+          integrand(k) = alpha_SCS_i(1,k)/sum(alpha_SCS(:,k)) * integrand(k)
         end do
-        integrand = integrand / (2.d0*pi)
-        call integrate("trapezoidal", omegas, integrand, 0.d0, 10.d0, E_MBD_k(i,1))
-!        integrand_2 = integrand_2 / (2.d0*pi)
-!        call integrate("trapezoidal", omegas, integrand_2, 0.d0, 10.d0, E_MBD)
-!        write(*,*) "E_MBD comparison:", E_MBD_k(i,1), E_MBD
+        integral = 0.d0
+        call integrate("trapezoidal", omegas, integrand, 0.d0, 10.d0, integral)
+        E_MBD_k(i) = integral/(2.d0*pi)
+        E_MBD_k(i) = E_MBD_k(i) * 27.211386245988
+        write(*,*) "E_MBD_k:", i, E_MBD_k(i)
+!        write(*,*) "Total MBD energy:", sum(E_MBD_k(:,1))
 
 
-!        do p = 1, 6
-!          write(*,*) "series:", series(p,:,1)
+
+!        series = 0.d0
+!        AT_n = 0.d0
+!        integrand = 0.d0
+!        do k = 1, 11
+!          call dgemm('n', 'n', 3*n_neigh(i), 3, 3*n_neigh(i), 1.d0, A_LR_i(:,:,k), 3*n_neigh(i), &
+!                      T_LR_i(:,1:3), 3*n_neigh(i), 0.d0, AT_n(:,:,k,1), 3*n_neigh(i))
+!          series(:,:,k) = -1.d0/2 * AT_n(:,:,k,1)
+!          do c1 = 1, 3
+!            integrand(k) = integrand(k) + alpha_SCS(1,k) * &
+!              dot_product(T_LR_i(c1,:), series(:,c1,k))
+!          end do
+!        end do
+!        integrand = integrand / (2.d0*pi)
+!        call integrate("trapezoidal", omegas, integrand, 0.d0, 10.d0, E_MBD_k(i,1))
+
+!        do k2 = 2, n_order
+!          integrand = 0.d0
+!          do k = 1, 11
+!            call dgemm('n', 'n', 3*n_neigh(i), 3, 3*n_neigh(i), 1.d0, AT_i(:,:,k), 3*n_neigh(i), &
+!                       AT_n(:,:,k,k2-1), 3*n_neigh(i), 0.d0, AT_n(:,:,k,k2), 3*n_neigh(i))
+!            series(:,:,k) = series(:,:,k) - 1.d0/(k2+1) * AT_n(:,:,k,k2)
+!            do c1 = 1, 3
+!              integrand(k) = integrand(k) + alpha_SCS(1,k) * &
+!                dot_product(T_LR_i(c1,:), series(:,c1,k))
+!            end do
+!          end do
+!          integrand = integrand / (2.d0*pi)
+!          call integrate("trapezoidal", omegas, integrand, 0.d0, 10.d0, E_MBD_k(i,k2))
 !        end do
 
-        do k2 = 2, n_order
-          integrand = 0.d0
-          do k = 1, 11
-            call dgemm('n', 'n', 3*n_neigh(i), 3, 3*n_neigh(i), 1.d0, AT_i(:,:,k), 3*n_neigh(i), &
-                       AT_n(:,:,k,k2-1), 3*n_neigh(i), 0.d0, AT_n(:,:,k,k2), 3*n_neigh(i))
-            series(:,:,k) = series(:,:,k) - 1.d0/(k2+1) * AT_n(:,:,k,k2)
-            do c1 = 1, 3
-              integrand(k) = integrand(k) + alpha_SCS(1,k) * &
-                dot_product(T_LR_i(c1,:), series(:,c1,k))
-            end do
-          end do
-          integrand = integrand / (2.d0*pi)
-          call integrate("trapezoidal", omegas, integrand, 0.d0, 10.d0, E_MBD_k(i,k2))
-!          write(*,*) "Local energy for order", k2+1, E_MBD_k*27.211386245988
-!          write(*,*) "Sum of local energies", sum(E_MBD_k)*27.211386245988
-        end do
+!        write(*,*) "Local energy for site", i, E_MBD_k(i,n_order)*27.211386245988
 
-!        do p = 1, 6
-!          write(*,*) "series 2:", series(p,:,1)
-!        end do
-
-        write(*,*) "Local energy for site", i, E_MBD_k(i,n_order)*27.211386245988
-
-        deallocate( T_SR_i, B_mat_i, A_mat_i, alpha_SCS_i, A_LR_i, T_LR_i, AT_n, AT_i, series )
+        deallocate( T_SR_i, B_mat_i, A_mat_i, alpha_SCS_i, A_LR_i, T_LR_i, AT_n, AT_i, series, I_mat_n, &
+                    WR_n, WI_n, VR_n, VL_n, VRinv_n, logMapo_n, logIAT_n )
         n_tot = n_tot + n_neigh(i)
       end do
-      write(*,*) "n_order | Total MBD energy:"
-      do k2 = 1, n_order
-        write(*,*) k2, sum(E_MBD_k(:,k2))*27.211386245988
-      end do
+!      write(*,*) "n_order | Total MBD energy:"
+!      do k2 = 1, n_order
+      write(*,*) "Total MBD energy:", sum(E_MBD_k)
+!      end do
     end if
 
 !      A_LR_k = 0.d0
@@ -1356,7 +1420,7 @@ module vdw
                 invIAT, G_mat, force_integrand, forces_MBD, coeff_h_der, terms, dT_SR_A_mat, dT_SR_v, &
                 dB_mat, dB_mat_v, dv_i, dv_j, &
                 coeff_der, coeff_fdamp, dg, dh, hirshfeld_v_cart_der_H, A_LR_k, alpha_k, sigma_k, s_i, s_j, &
-                integrand_2 )
+                integrand_2, E_MBD_k )
 
   end subroutine
 !**************************************************************************
