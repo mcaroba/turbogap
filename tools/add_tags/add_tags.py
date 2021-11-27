@@ -36,6 +36,11 @@ import sys
 input_database = "train.xyz"
 output_database = "train_tagged.xyz"
 
+# If you want to remove the stress tag and only rely on virial
+virial_only = True
+# If you want to add some custom processing to your database
+custom_code = True
+
 # Energy and virial regularization options. All values in eV/atom! The code will adjust for
 # the total number of atoms in each configuration. sigma_e is a dictionary. The code will
 # look in your input XYZ file for a config_type tag. You need to provide the list of config
@@ -49,7 +54,9 @@ sigma_v = {"default": 0.1}
 
 # Force regularization options. The force fraction will determine how many forces are masked
 # randomly out of the database.
-force_fraction = 1. # must be 0. <= force_fraction <= 1.
+# must be 0. <= force_fraction <= 1.
+force_fraction = {"default": 1.,
+                  "unrelaxed_CNTs": 1.}
 sigma_f_min = 0.1 # minimum force regularization in eV/Angstrom
 f_scale = 0.1 # scaling factor: sigma_f = f_scale * f (if sigma_f > sigma_f_min)
 force_parameter_name = "forces" # what is the force array called?
@@ -59,7 +66,7 @@ force_parameter_name = "forces" # what is the force array called?
 
 
 #############################################################################################
-# Do not modify below this line
+# Do not modify below this line (only if you have custom code)
 #############################################################################################
 print("Reading database...")
 at = read(input_database, index=":")
@@ -70,33 +77,52 @@ print("")
 print("Adding energy, virial and force-component reg. param. and force mask...")
 print("")
 
-
 print("Adding energy, virial and force-component reg. param. and force mask...")
-for i in range(0, len(at)):
+# The structures are looped in reversed order so that the user can safely remove them using custom code
+for i in reversed(range(0, len(at))):
+#   Bookkeeping
+    at[i].pbc = True
+    vol = at[i].get_volume()
+    if "config_type" in at[i].info:
+        ct = at[i].info["config_type"]
+    else:
+        ct = "default"
+#   Custom code
+    if custom_code:
+        pass
+#   Remove stress and replace by virial (if virial not present and stress is), if requested
+    if virial_only:
+        if "stress" in at[i].info:
+            stress = at[i].info["stress"]
+            del at[i].info["stress"]
+            del at[i].calc.results["stress"]
+            virial = -vol * stress
+            if "virial" not in at[i].info:
+                at[i].info["virial"] = virial
 #   Force part
-    mask = np.random.choice([False, True], size=len(at[i]), p=[force_fraction, 1.-force_fraction])
+    if ct in force_fraction:
+        ff = force_fraction[ct]
+    else:
+        ff = force_fraction["default"]
+    mask = np.random.choice([False, True], size=len(at[i]), p=[ff, 1.-ff])
     forces = at[i].get_array(force_parameter_name)
     at[i].set_array("force_mask", mask)
     f = np.clip( np.abs(forces) * f_scale, a_min = sigma_f_min, a_max = None )
     at[i].set_array("force_component_sigma", f)
 #   Energy and virial part
     n = len(at[i])
-    try:
-        ct = at[i].info["config_type"]
-    except:
-        ct = "default"
-    try:
+    if ct in sigma_e:
         se = np.sqrt(n) * sigma_e[ct]
-    except:
+    else:
         se = np.sqrt(n) * sigma_e["default"]
     at[i].info["energy_sigma"] = se
-    try:
+    if ct in sigma_v:
         sv = np.sqrt(n) * sigma_v[ct]
-    except:
+    else:
         sv = np.sqrt(n) * sigma_v["default"]
     at[i].info["virial_sigma"] = sv
 #   Print progress
-    sys.stdout.write('\rProgress:%6.1f%%' % (float(i)*100./float(len(at))) )
+    sys.stdout.write('\rProgress:%6.1f%%' % ((len(at)-float(i))*100./float(len(at))) )
     sys.stdout.flush()
 
 print("")
