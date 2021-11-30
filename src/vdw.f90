@@ -456,7 +456,7 @@ module vdw
                            dv_i(:), dv_j(:), &
                            coeff_der(:,:,:,:,:), coeff_fdamp(:,:,:,:,:), dg(:), &
                            dh(:), hirshfeld_v_cart_der_H(:,:), AT_n(:,:,:,:), A_LR_k(:,:,:,:), AT_k(:,:,:,:), &
-                           integrand_k(:,:), E_MBD_k(:), alpha_k(:,:), sigma_k(:,:), s_i(:), s_j(:), &
+                           integrand_k(:), E_MBD_k(:), alpha_k(:,:), sigma_k(:,:), s_i(:), s_j(:), &
                            T_SR_i(:,:,:), B_mat_i(:,:,:), alpha_SCS_i(:,:), A_mat_i(:,:,:), A_LR_i(:,:,:), &
                            T_LR_i(:,:), AT_i(:,:,:), series(:,:,:), integrand_2(:), I_mat_n(:,:), &
                            logIAT_n(:,:,:), WR_n(:), WI_n(:), VL_n(:,:), VR_n(:,:), VRinv_n(:,:), &
@@ -473,13 +473,19 @@ module vdw
     logical :: do_timing = .false., do_hirshfeld_gradients = .true., nonlocal = .false.
 
 !   Change these to be input variables (NOTE THAT THEY ARE IN ANGSTROMS!):
-    rcut_vdw = 8.d0
+    write(*,*) "rcut", rcut
+!    rcut_vdw = 4.d0
     n_order = 100
 
     n_sites = size(n_neigh)
     n_pairs = size(neighbors_list)
     n_species = size(c6_ref)
     n_sites0 = size(forces0, 2)
+
+!   Number of neighbors check for finite difference:
+    do i = 1, n_sites
+      write(*,*) "n_neigh:", i, n_neigh(i)
+    end do
 
 !   Hartree units (calculations done in Hartree units for simplicity)
     Bohr = 0.5291772105638411
@@ -551,7 +557,7 @@ module vdw
     allocate( hirshfeld_v_cart_der_H(1:3,1:n_pairs) )
     allocate( A_LR_k(1:3*n_sites,1:3*n_sites,1:11,1:n_sites) )
     allocate( AT_k(1:3*n_sites,1:3*n_sites,1:11,1:n_sites) )
-    allocate( integrand_k(1:11,1:n_sites) )
+    allocate( integrand_k(1:11) )
     allocate( E_MBD_k(1:n_sites) )
     allocate( alpha_k(1:n_pairs,1:11) )
     allocate( sigma_k(1:n_pairs,1:11) )
@@ -616,7 +622,7 @@ module vdw
       do j2 = 2, n_neigh(i)
         k = k+1
         r_vdw_j = r0_ii(k)
-        if( rjs(k) < rcut_vdw )then
+        if( rjs(k) < rcut )then
           f_damp(k) = 1.d0/( 1.d0 + exp( -d*( rjs_H(k)/(sR*(r_vdw_i + r_vdw_j)) - 1.d0 ) ) )
           k2 = 9*(k-1)
           do c1 = 1, 3
@@ -643,7 +649,7 @@ module vdw
         k = k+1
         s_j = sigma_k(k,:)
         j = neighbors_list(k)
-        if( rjs(k) < rcut_vdw )then
+        if( rjs(k) < rcut )then
           sigma_ij = sqrt(s_i**2 + s_j**2)
           g_func(k,:) = erf(rjs_H(k)/sigma_ij) - 2.d0/sqrt(pi) * (rjs_H(k)/sigma_ij) * exp(-rjs_H(k)**2.d0/sigma_ij**2)
           k2 = 9*(k-1)
@@ -669,7 +675,7 @@ module vdw
       do j2 = 2, n_neigh(i)
         k = k+1
         j = neighbors_list(k)
-        if( rjs(k) < rcut_vdw )then
+        if( rjs(k) < rcut )then
           k2 = 9*(k-1)
           do c1 = 1, 3
             do c2 = 1, 3
@@ -724,7 +730,7 @@ module vdw
       r_vdw_i = r0_ii_SCS(k)
       do j2 = 2, n_neigh(i)
         k=k+1
-        if (rjs(k) < rcut_vdW) then
+        if (rjs(k) < rcut) then
           r_vdw_j = r0_ii_SCS(k)
           j = neighbors_list(k)
           f_damp_SCS(k) = 1.d0/( 1.d0 + exp( -d*( rjs_H(k)/(sR*(r_vdw_i + r_vdw_j)) - 1.d0 ) ) )
@@ -739,7 +745,7 @@ module vdw
       do j2 = 2, n_neigh(i)
         k = k+1
         j = neighbors_list(k)
-        if (rjs(k) < rcut_vdW) then
+        if (rjs(k) < rcut) then
           k2 = 9*(k-1)
           do c1 = 1, 3
             do c2 = 1, 3
@@ -769,7 +775,7 @@ module vdw
       k = k+1
       do j2 = 2, n_neigh(i)
         k = k+1
-        if (rjs(k) < rcut_vdw) then
+        if (rjs(k) < rcut) then
           k2 = 9*(k-1)
           do c1 = 1,3
             do c2 = 1,3
@@ -804,7 +810,7 @@ module vdw
         do j2 = 2, n_neigh(i)
           k = k+1
           j = neighbors_list(k)
-          if (rjs(k) < rcut_vdw) then
+          if (rjs(k) < rcut) then
             if (a == i .or. a == j) then
               sigma_ij = sqrt(sigma_i(i,:)**2 + sigma_i(j,:)**2)
               do c3 = 1, 3
@@ -857,7 +863,7 @@ module vdw
         do j2 = 2, n_neigh(i)
           k = k+1
           j = neighbors_list(k)
-          if (rjs(k) < rcut_vdw) then
+          if (rjs(k) < rcut) then
             sigma_ij = sqrt(sigma_i(i,:)**2 + sigma_i(j,:)**2)
             S_vdW_ij = sR*(r0_ii(n_sites*(i-1)+1) + r0_ii(k))
             exp_term = exp(-d*(rjs_H(k)/S_vdW_ij - 1.d0))
@@ -891,7 +897,7 @@ module vdw
             end do
             do k = 1, 11
               do j2 = 2, n_neigh(i)
-                if (rjs(k3+j2) < rcut_vdw) then
+                if (rjs(k3+j2) < rcut) then
                   j = neighbors_list(k3+j2)
                   do c1 = 1, 3
                     do c2 = 1, 3
@@ -918,7 +924,7 @@ module vdw
           do c3 = 1, 3
             do k = 1, 11
               do i2 = 2, n_neigh(j)
-                if (rjs(k3+i2) < rcut_vdw) then
+                if (rjs(k3+i2) < rcut) then
                   i = neighbors_list(k3+i2)
                   do c1 = 1, 3
                     do c2 = 1, 3
@@ -1078,7 +1084,7 @@ module vdw
           r_vdw_i = r0_ii_SCS(k)
           do j2 = 2, n_neigh(i)
             k = k+1
-            if (rjs(k) < rcut_vdw) then
+            if (rjs(k) < rcut) then
               j = neighbors_list(k)
               r_vdw_j = r0_ii_SCS(k)
               R_vdW_SCS_ij = r_vdw_i + r_vdw_j
@@ -1225,7 +1231,7 @@ module vdw
               k = k+1
               j = neighbors_list(k)
               if ( any(neighbors_list(n_tot+1:n_tot+n_neigh(i)) == j) ) then
-                if ( rjs(k) < rcut_vdw) then
+                if ( rjs(k) < rcut) then
                   q = findloc(neighbors_list(n_tot+1:n_tot+n_neigh(i)),j,1)
                   k2 = 9*(k-1)
                   do c1 = 1, 3
@@ -1280,7 +1286,7 @@ module vdw
               k = k+1
               j = neighbors_list(k)
               if ( any(neighbors_list(n_tot+1:n_tot+n_neigh(i)) == j) ) then
-                if (rjs(k) < rcut_vdW) then
+                if (rjs(k) < rcut) then
                   q = findloc(neighbors_list(n_tot+1:n_tot+n_neigh(i)),j,1)
                   r_vdw_j = r0_ii(k) * (alpha_SCS_i(q,1)/neighbor_alpha0(k))**(1.d0/3.d0)
                   f_damp_SCS_ij = 1.d0/( 1.d0 + exp( -d*( rjs_H(k)/(sR*(r_vdw_i + r_vdw_j)) - 1.d0 ) ) )
@@ -1335,17 +1341,24 @@ module vdw
         end do
 !       Local energy test:
         integrand = 0.d0
+        integrand_k = 0.d0
+        write(*,*) "alpha_SCS_i:", i, alpha_SCS_i(1,1)
         do k = 1,11
           do i2 = 1,3*n_neigh(i)
             integrand(k) = integrand(k) + logIAT_n(i2,i2,k)
           end do
-          integrand(k) = alpha_SCS_i(1,k)/sum(alpha_SCS(:,k)) * integrand(k)
+          integrand_k(k) = alpha_SCS_i(1,k)/sum(alpha_SCS_i(:,k)) * integrand(k)
         end do
         integral = 0.d0
-        call integrate("trapezoidal", omegas, integrand, 0.d0, 10.d0, integral)
+        call integrate("trapezoidal", omegas, integrand_k, 0.d0, 10.d0, integral)
         E_MBD_k(i) = integral/(2.d0*pi)
         E_MBD_k(i) = E_MBD_k(i) * 27.211386245988
+        integral = 0.d0
+        call integrate("trapezoidal", omegas, integrand, 0.d0, 10.d0, integral)
+        E_MBD = integral/(2.d0*pi)
+        E_MBD = E_MBD * 27.211386245988
         write(*,*) "E_MBD_k:", i, E_MBD_k(i)
+        write(*,*) "E_MBD_tot for k:", i, E_MBD
 !        write(*,*) "Total MBD energy:", sum(E_MBD_k(:,1))
 
 
@@ -1391,7 +1404,7 @@ module vdw
               j = neighbors_list(k)
               k = k+1
               if ( any(neighbors_list(n_tot+1:n_tot+n_neigh(i)) == j) ) then
-                if (rjs(k) < rcut_vdW) then
+                if (rjs(k) < rcut) then
                   q = findloc(neighbors_list(n_tot+1:n_tot+n_neigh(i)),j,1)
                   do c1 = 1, 3
                     do c2 = 1, 3
@@ -1477,7 +1490,7 @@ module vdw
               k = k+1
               j = neighbors_list(k)
               if ( any(neighbors_list(n_tot+1:n_tot+n_neigh(i)) == j) ) then
-                if (rjs(k) < rcut_vdW) then
+                if (rjs(k) < rcut) then
                   q = findloc(neighbors_list(n_tot+1:n_tot+n_neigh(i)),j,1)
                   r_vdw_j = r0_ii(k) * (alpha_SCS_i(q,1)/neighbor_alpha0(k))**(1.d0/3.d0)
                   R_vdW_SCS_ij = r_vdw_i + r_vdw_j
@@ -1828,7 +1841,7 @@ module vdw
                 invIAT, G_mat, force_integrand, forces_MBD, coeff_h_der, terms, dT_SR_A_mat, dT_SR_v, &
                 dB_mat, dB_mat_v, dv_i, dv_j, &
                 coeff_der, coeff_fdamp, dg, dh, hirshfeld_v_cart_der_H, A_LR_k, alpha_k, sigma_k, s_i, s_j, &
-                integrand_2, E_MBD_k, f_damp_der_n, f_damp_der_SCS_n, force_integrand_n, forces_MBD_k )
+                integrand_2, E_MBD_k, f_damp_der_n, f_damp_der_SCS_n, force_integrand_n, forces_MBD_k, integrand_k )
 
   end subroutine
 !**************************************************************************
