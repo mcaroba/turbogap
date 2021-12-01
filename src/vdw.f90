@@ -486,6 +486,12 @@ module vdw
     do i = 1, n_sites
       write(*,*) "n_neigh:", i, n_neigh(i)
     end do
+    write(*,*) "Size of neighbors_list:", size(neighbors_list)
+    k = 0
+    do i = 1, n_sites
+      write(*,*) neighbors_list(k+1:k+n_neigh(i))
+      k = k+n_neigh(i)
+    end do
 
 !   Hartree units (calculations done in Hartree units for simplicity)
     Bohr = 0.5291772105638411
@@ -588,6 +594,10 @@ module vdw
       xyz_H(:,k) = xyz(:,k)/Bohr
       rjs_H(k) = rjs(k)/Bohr
       hirshfeld_v_cart_der_H(:,k) = hirshfeld_v_cart_der(:,k)*Bohr
+    end do
+
+    do i = 1, n_neigh(i)
+      write(*,*) "i, neighbors_list(i), dv_i", i, neighbors_list(i), rjs(i), hirshfeld_v_cart_der_H(:,i)
     end do
 
 !   Precompute some other pair quantities
@@ -948,10 +958,10 @@ module vdw
       dB_mat = dB_mat + dB_mat_v
     end if
 
-!    write(*,*) "dB_mat:"
-!    do c1 = 1, 3
-!      write(*,*) dB_mat(c1,3*(29-1)+1:3*(29-1)+3,1,1,1)
-!    end do
+    write(*,*) "dB_mat:"
+    do p = 1, 6
+      write(*,*) dB_mat(p,1:6,1,1,1)
+    end do
 
     if (nonlocal) then
       logIAT = 0.d0
@@ -1051,7 +1061,7 @@ module vdw
         end do
       end do
 
-!      write(*,*) "dalpha:", dalpha(:,1,1,1)
+      write(*,*) "dalpha:", dalpha(:,1,1,1)
 
       dA_LR = 0.d0
 
@@ -1225,13 +1235,13 @@ module vdw
 !            write(*,*) "i2, p, neighbors_list(n_tot+p)", i2, p, neighbors_list(n_tot+p)
             k = k+1
             do c1 = 1, 3
-              B_mat_i(3*(p-1)+c1,3*(p-1)+c1,:) = 1.d0/alpha_k(k,:)
+              B_mat_i(3*(p-1)+c1,3*(p-1)+c1,:) = 1.d0/alpha_k(n_tot+p,:)
             end do
             do j2 = 2, n_neigh(i2)
               k = k+1
               j = neighbors_list(k)
               if ( any(neighbors_list(n_tot+1:n_tot+n_neigh(i)) == j) ) then
-                if ( rjs(k) < rcut) then
+                 if ( rjs(k) < rcut) then
                   q = findloc(neighbors_list(n_tot+1:n_tot+n_neigh(i)),j,1)
                   k2 = 9*(k-1)
                   do c1 = 1, 3
@@ -1250,6 +1260,12 @@ module vdw
         end do
         B_mat_i = B_mat_i + T_SR_i
         A_mat_i = B_mat_i
+
+!        write(*,*) "B_mat_i:"
+!        do p = 1, 6
+!          write(*,*) B_mat_i(p,1:6,1)
+!        end do
+
 
         do k3 = 1, 11
           call dgetrf(3*n_neigh(i), 3*n_neigh(i), A_mat_i(:,:,k3), 3*n_neigh(i), ipiv, info)
@@ -1306,11 +1322,21 @@ module vdw
           end if
         end do
 
+!        write(*,*) "T_LR_i:"
+!        do p = 1, 6
+!          write(*,*) T_LR_i(p,1:6)
+!        end do
+
         AT_i = 0.d0
         do k = 1, 11
           call dgemm('n', 'n', 3*n_neigh(i), 3*n_neigh(i), 3*n_neigh(i), 1.d0, A_LR_i(:,:,k), 3*n_neigh(i), &
                      T_LR_i, 3*n_neigh(i), 0.d0, AT_i(:,:,k), 3*n_neigh(i))
         end do
+
+!        write(*,*) "AT_i:"
+!        do p = 1, 6
+!          write(*,*) AT_i(p,1:6,1)
+!        end do
 
         I_mat_n = 0.d0
         do i2 = 1, 3*n_neigh(i)
@@ -1342,13 +1368,14 @@ module vdw
 !       Local energy test:
         integrand = 0.d0
         integrand_k = 0.d0
-        write(*,*) "alpha_SCS_i:", i, alpha_SCS_i(1,1)
+!        write(*,*) "alpha_SCS_i:", i, alpha_SCS_i(1,1)
         do k = 1,11
           do i2 = 1,3*n_neigh(i)
             integrand(k) = integrand(k) + logIAT_n(i2,i2,k)
           end do
           integrand_k(k) = alpha_SCS_i(1,k)/sum(alpha_SCS_i(:,k)) * integrand(k)
         end do
+!        write(*,*) "Integrand:", integrand
         integral = 0.d0
         call integrate("trapezoidal", omegas, integrand_k, 0.d0, 10.d0, integral)
         E_MBD_k(i) = integral/(2.d0*pi)
@@ -1398,13 +1425,18 @@ module vdw
         dB_mat_n = 0.d0
         k = 0
         do i2 = 1, n_sites
+          k = k+1
           if ( any(neighbors_list(n_tot+1:n_tot+n_neigh(i)) == i2) ) then
             p = findloc(neighbors_list(n_tot+1:n_tot+n_neigh(i)),i2,1)
-            do j2 = 1, n_neigh(i2)
-              j = neighbors_list(k)
+            do c1 = 1, 3
+              dB_mat_n(3*(p-1)+c1,3*(p-1)+c1,:,:) = dB_mat(3*(i2-1)+c1,3*(i2-1)+c1,i,:,:)
+            end do
+            do j2 = 2, n_neigh(i2)
               k = k+1
+              j = neighbors_list(k)
               if ( any(neighbors_list(n_tot+1:n_tot+n_neigh(i)) == j) ) then
                 if (rjs(k) < rcut) then
+!                  write(*,*) "i2, j:", i2, j
                   q = findloc(neighbors_list(n_tot+1:n_tot+n_neigh(i)),j,1)
                   do c1 = 1, 3
                     do c2 = 1, 3
@@ -1418,6 +1450,11 @@ module vdw
             k = k + n_neigh(i2)
           end if
         end do
+
+!        write(*,*) "dB_mat_n:"
+!        do p = 1, 6
+!          write(*,*) dB_mat_n(p,1:6,1,1)
+!        end do
 
 !        write(*,*) "dB_mat_n:"
 !        write(*,*) dB_mat_n(3*(1-1)+1,1:6,1,1)
@@ -1478,6 +1515,7 @@ module vdw
 !          write(*,*) "dA_LR_n:", dA_LR_n(i2,1:6,1,1)
 !        end do
 
+        dT_LR_n = 0.d0
         f_damp_der_n = 0.d0
         f_damp_der_SCS_n = 0.d0
         k = 0
@@ -1538,6 +1576,11 @@ module vdw
             k = k + n_neigh(i2)
           end if
         end do
+
+!        write(*,*) "dT_LR_n:"
+!        do p = 1, 6
+!          write(*,*) dT_LR_n(p,1:6,1)
+!        end do
 
 !        write(*,*) "dT_LR_n:"
 !        write(*,*) dT_LR_n(3*(1-1)+1,1:6,1)
