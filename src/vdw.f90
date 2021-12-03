@@ -440,7 +440,6 @@ module vdw
 !   Internal variables
     real*8, allocatable :: neighbor_c6_ii(:), r0_ii(:), &
                            f_damp(:), neighbor_alpha0(:), &
-                           pref_force1(:), pref_force2(:), &
                            T_func(:), h_func(:,:), g_func(:,:), &
                            omegas(:), omega_i(:), &
                            alpha_i(:,:), sigma_i(:,:), sigma_ij(:), T_SR(:,:,:), B_mat(:,:,:), &
@@ -455,10 +454,10 @@ module vdw
                            dB_mat(:,:,:,:,:), dB_mat_v(:,:,:,:,:), &
                            dv_i(:), dv_j(:), &
                            coeff_der(:,:,:,:,:), coeff_fdamp(:,:,:,:,:), dg(:), &
-                           dh(:), hirshfeld_v_cart_der_H(:,:), AT_n(:,:,:,:), A_LR_k(:,:,:,:), AT_k(:,:,:,:), &
+                           dh(:), hirshfeld_v_cart_der_H(:,:), &
                            integrand_k(:), E_MBD_k(:), alpha_k(:,:), sigma_k(:,:), s_i(:), s_j(:), &
                            T_SR_i(:,:,:), B_mat_i(:,:,:), alpha_SCS_i(:,:), A_mat_i(:,:,:), A_LR_i(:,:,:), &
-                           T_LR_i(:,:), AT_i(:,:,:), series(:,:,:), integrand_2(:), I_mat_n(:,:), &
+                           T_LR_i(:,:), AT_i(:,:,:), series(:,:,:), I_mat_n(:,:), &
                            logIAT_n(:,:,:), WR_n(:), WI_n(:), VL_n(:,:), VR_n(:,:), VRinv_n(:,:), &
                            logMapo_n(:,:), dB_mat_n(:,:,:,:), dA_mat_n(:,:,:,:), dBA_n(:,:), &
                            dA_LR_n(:,:,:,:), dalpha_n(:,:,:), f_damp_der_ij_n(:), f_damp_der_SCS_ij_n(:), &
@@ -562,15 +561,12 @@ module vdw
     allocate( dg(1:11) )
     allocate( dh(1:11) )
     allocate( hirshfeld_v_cart_der_H(1:3,1:n_pairs) )
-    allocate( A_LR_k(1:3*n_sites,1:3*n_sites,1:11,1:n_sites) )
-    allocate( AT_k(1:3*n_sites,1:3*n_sites,1:11,1:n_sites) )
     allocate( integrand_k(1:11) )
     allocate( E_MBD_k(1:n_sites) )
     allocate( alpha_k(1:n_pairs,1:11) )
     allocate( sigma_k(1:n_pairs,1:11) )
     allocate( s_i(1:11) )
     allocate( s_j(1:11) )
-    allocate( integrand_2(1:11) )
     allocate( f_damp_der_ij_n(1:3) )
     allocate( f_damp_der_SCS_ij_n(1:3) )
     allocate( force_integrand_n(1:3,1:11) )
@@ -1226,7 +1222,6 @@ module vdw
         allocate( alpha_SCS_i(1:n_neigh(i),1:11) )
         allocate( A_LR_i(1:3*n_neigh(i),1:3*n_neigh(i),1:11) )
         allocate( T_LR_i(1:3*n_neigh(i),1:3*n_neigh(i)) )
-        allocate( AT_n(1:3*n_neigh(i),1:3,1:11,1:n_order) )
         allocate( AT_i(1:3*n_neigh(i),1:3*n_neigh(i),1:11) )
         allocate( I_mat_n(1:3*n_neigh(i),1:3*n_neigh(i)) )
         allocate( series(1:3*n_neigh(i),1:3,1:11) )
@@ -1674,7 +1669,7 @@ module vdw
         forces_MBD_k(i,:) = forces_MBD_k(i,:) * 51.42208619083232
         write(*,*) "force_k:", i, forces_MBD_k(i,:)
 
-        deallocate( T_SR_i, B_mat_i, A_mat_i, alpha_SCS_i, A_LR_i, T_LR_i, AT_n, AT_i, series, I_mat_n, &
+        deallocate( T_SR_i, B_mat_i, A_mat_i, alpha_SCS_i, A_LR_i, T_LR_i, AT_i, series, I_mat_n, &
                     WR_n, WI_n, VR_n, VL_n, VRinv_n, logMapo_n, logIAT_n, dB_mat_n, dA_mat_n, dBA_n, dalpha_n, &
                     dA_LR_n, dT_LR_n, invIAT_n, G_mat_n )
         n_tot = n_tot + n_neigh(i)
@@ -1933,8 +1928,8 @@ module vdw
                 dT, dT_SR, f_damp_der, g_func_der, h_func_der, dA_mat, dalpha, dA_LR, dT_LR, f_damp_der_SCS, &
                 invIAT, G_mat, force_integrand, forces_MBD, coeff_h_der, terms, dT_SR_A_mat, dT_SR_v, &
                 dB_mat, dB_mat_v, dv_i, dv_j, &
-                coeff_der, coeff_fdamp, dg, dh, hirshfeld_v_cart_der_H, A_LR_k, alpha_k, sigma_k, s_i, s_j, &
-                integrand_2, E_MBD_k, f_damp_der_ij_n, f_damp_der_SCS_ij_n, force_integrand_n, forces_MBD_k, integrand_k )
+                coeff_der, coeff_fdamp, dg, dh, hirshfeld_v_cart_der_H, alpha_k, sigma_k, s_i, s_j, &
+                E_MBD_k, f_damp_der_ij_n, f_damp_der_SCS_ij_n, force_integrand_n, forces_MBD_k, integrand_k )
 
   end subroutine
 !**************************************************************************
