@@ -470,13 +470,30 @@ module vdw
     integer :: n_sites, n_pairs, n_species, n_sites0, info, n_order, n_tot
     integer :: i, i2, j, j2, k, k2, k3, a, a2, c1, c2, c3, lwork, b, p, q, kf
     logical :: do_timing = .false., do_hirshfeld_gradients = .true., nonlocal = .false., &
-               series_expansion = .false., total_energy = .true.
+               series_expansion = .true., total_energy = .true., series_average = .true.
+
+
+    !There are some flags and other parameters that should eventually be made function arguments:
+    !do_hirshfeld_gradients = .true. -> If this is true, the Hirshfeld gradients are included in the forces
+    !nonlocal = .false. -> If this is true, the full MBD energy and forces are calculated for the input .xyz 
+    !                      (instead of the local version)
+    !series_expansion = .false. -> If this is true, series expansion is used for the local stuff, if false, 
+    !                              the local energies are not that well defined (just 1/N_neigh of the 
+    !                              entire cutoff sphere)
+    !total_energy = .true. -> This is used to calculate the total energies for the cutoff spheres; mostly 
+    !                         used for doing finite difference for the forces
+    !series_average = .true. -> If this is true, the series expansion is averaged for n_order and
+    !                           n_order-1, which should give better results because the series expansion
+    !                           seems to be a Cauchy sequence of n_order
+    !
+    !n_order -> This gives the order of the series expansion for the local part and has to be at least 2
+
 
 !   Change these to be input variables (NOTE THAT THEY ARE IN ANGSTROMS!):
     write(*,*) "rcut", rcut
 !    rcut_vdw = 4.d0
     ! n_order has to be at least 2
-    n_order = 2
+    n_order = 20
 
     n_sites = size(n_neigh)
     n_pairs = size(neighbors_list)
@@ -1381,7 +1398,11 @@ module vdw
               energy_term = 0.d0
               call dgemm('n', 'n', 3*n_neigh(i), 3, 3*n_neigh(i), 1.d0, AT_n(:,:,k,k2), 3*n_neigh(i), &
                          AT_i(:,1:3,k), 3*n_neigh(i), 0.d0, energy_term, 3*n_neigh(i))
-              energy_series(:,:,k) = energy_series(:,:,k) - 1.d0/(k2+2)*energy_term
+              if (series_average .and. k2 == n_order-2) then
+                energy_series(:,:,k) = (2.d0 * energy_series(:,:,k) - 1.d0/(k2+2)*energy_term)/2.d0 
+              else
+                energy_series(:,:,k) = energy_series(:,:,k) - 1.d0/(k2+2)*energy_term
+              end if
             end do
             do c1 = 1, 3
               integrand(k) = integrand(k) + alpha_SCS_i(1,k) * dot_product(T_LR_i(c1,:), &
@@ -1404,7 +1425,11 @@ module vdw
               VL_n = 0.d0
               call dgemm('n', 'n', 3*n_neigh(i), 3*n_neigh(i), 3*n_neigh(i), 1.d0, AT_i(:,:,k), 3*n_neigh(i), &
                          AT_n(:,:,k,n_order-1), 3*n_neigh(i), 0.d0, VL_n, 3*n_neigh(i))
-              force_series(:,:,k) = force_series(:,:,k) -1.d0/n_order * VL_n
+              if ( series_average ) then
+                force_series(:,:,k) = (2.d0*force_series(:,:,k) -1.d0/n_order * VL_n)/2.d0
+              else
+                force_series(:,:,k) = force_series(:,:,k) -1.d0/n_order * VL_n
+              end if
               do i2 = 1, 3*n_neigh(i)
                 integrand(k) = integrand(k) + force_series(i2,i2,k)
               end do
@@ -1446,7 +1471,7 @@ module vdw
             do i2 = 1,3*n_neigh(i)
               integrand(k) = integrand(k) + logIAT_n(i2,i2,k)
             end do
-            integrand_k(k) = alpha_SCS_i(1,k)/sum(alpha_SCS_i(:,k)) * integrand(k)
+            integrand_k(k) = 1.d0/n_neigh(i) * integrand(k)
           end do
 !          write(*,*) "Integrand:", integrand
           integral = 0.d0
@@ -1694,7 +1719,11 @@ module vdw
         if (series_expansion) then
           do k = 1, 11
             do k2 = 1, n_order-1
-              force_series(:,:,k) = force_series(:,:,k) + AT_n(:,:,k,k2)
+              if (series_average .and. k2 == n_order-1) then
+                force_series(:,:,k) = (2.d0 * force_series(:,:,k) + AT_n(:,:,k,k2))/2.d0
+              else
+                force_series(:,:,k) = force_series(:,:,k) + AT_n(:,:,k,k2)
+              end if
             end do
             do c3 = 1, 3
               ! call dgemm for G_mat
