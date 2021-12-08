@@ -457,24 +457,26 @@ module vdw
                            dh(:), hirshfeld_v_cart_der_H(:,:), &
                            integrand_k(:), E_MBD_k(:), alpha_k(:,:), sigma_k(:,:), s_i(:), s_j(:), &
                            T_SR_i(:,:,:), B_mat_i(:,:,:), alpha_SCS_i(:,:), A_mat_i(:,:,:), A_LR_i(:,:,:), &
-                           T_LR_i(:,:), AT_i(:,:,:), series(:,:,:), I_mat_n(:,:), &
+                           T_LR_i(:,:), AT_i(:,:,:), energy_series(:,:,:), I_mat_n(:,:), &
                            logIAT_n(:,:,:), WR_n(:), WI_n(:), VL_n(:,:), VR_n(:,:), VRinv_n(:,:), &
                            logMapo_n(:,:), dB_mat_n(:,:,:,:), dA_mat_n(:,:,:,:), dBA_n(:,:), &
                            dA_LR_n(:,:,:,:), dalpha_n(:,:,:), f_damp_der_ij_n(:), f_damp_der_SCS_ij_n(:), &
                            dT_LR_n(:,:,:), force_integrand_n(:,:), forces_MBD_k(:,:), invIAT_n(:,:,:), &
-                           G_mat_n(:,:,:,:)
+                           G_mat_n(:,:,:,:), AT_n(:,:,:,:), force_series(:,:,:), energy_term(:,:)
     real*8 :: time1, time2, this_force(1:3), Bohr, Hartree, &
               omega, pi, integral, E_MBD, R_vdW_ij, R_vdW_SCS_ij, S_vdW_ij, dS_vdW_ij, exp_term, &
               rcut_vdw, r_vdw_i, r_vdw_j, dist, f_damp_SCS_ij
     integer, allocatable :: ipiv(:)
     integer :: n_sites, n_pairs, n_species, n_sites0, info, n_order, n_tot
     integer :: i, i2, j, j2, k, k2, k3, a, a2, c1, c2, c3, lwork, b, p, q, kf
-    logical :: do_timing = .false., do_hirshfeld_gradients = .true., nonlocal = .false.
+    logical :: do_timing = .false., do_hirshfeld_gradients = .true., nonlocal = .false., &
+               series_expansion = .false., total_energy = .true.
 
 !   Change these to be input variables (NOTE THAT THEY ARE IN ANGSTROMS!):
     write(*,*) "rcut", rcut
 !    rcut_vdw = 4.d0
-    n_order = 100
+    ! n_order has to be at least 2
+    n_order = 2
 
     n_sites = size(n_neigh)
     n_pairs = size(neighbors_list)
@@ -1224,7 +1226,7 @@ module vdw
         allocate( T_LR_i(1:3*n_neigh(i),1:3*n_neigh(i)) )
         allocate( AT_i(1:3*n_neigh(i),1:3*n_neigh(i),1:11) )
         allocate( I_mat_n(1:3*n_neigh(i),1:3*n_neigh(i)) )
-        allocate( series(1:3*n_neigh(i),1:3,1:11) )
+        allocate( energy_series(1:3*n_neigh(i),1:3,1:11) )
         allocate( WR_n(1:3*n_neigh(i)) )
         allocate( WI_n(1:3*n_neigh(i)) )
         allocate( VR_n(1:3*n_neigh(i),1:3*n_neigh(i)) )
@@ -1240,6 +1242,9 @@ module vdw
         allocate( dT_LR_n(1:3*n_neigh(i),1:3*n_neigh(i),1:3) )
         allocate( invIAT_n(1:3*n_neigh(i),1:3*n_neigh(i),1:11) )
         allocate( G_mat_n(1:3*n_neigh(i),1:3*n_neigh(i),1:3,1:11) )
+        allocate( AT_n(1:3*n_neigh(i),1:3*n_neigh(i),1:11,1:n_order-1) )
+        allocate( force_series(1:3*n_neigh(i),1:3*n_neigh(i),1:11) )
+        allocate( energy_term(1:3*n_neigh(i),1:3) )
         T_SR_i = 0.d0
         B_mat_i = 0.d0
         A_mat_i = 0.d0
@@ -1362,51 +1367,100 @@ module vdw
           I_mat_n(i2,i2) = 1.d0
         end do
 
-        logIAT_n = 0.d0
-        do k = 1,11
-          WR_n = 0.d0
-          WI_n = 0.d0
-          VL_n = 0.d0
-          VR_n = 0.d0
-          VRinv_n = 0.d0
-          call dgeev('n', 'v', 3*n_neigh(i), I_mat_n-AT_i(:,:,k), 3*n_neigh(i), WR_n, WI_n, VL_n, &
-                     3*n_neigh(i), VR_n, 3*n_neigh(i), work_arr, 12*n_sites, info)
-          logMapo_n = 0.d0
-          do i2 = 1, 3*n_neigh(i)
-            logMapo_n(i2,i2) = log(WR_n(i2))
+        if (series_expansion) then
+          AT_n = 0.d0
+          AT_n(:,:,:,1) = AT_i
+          integrand = 0.d0
+          energy_series = -0.5d0 * AT_i(:,1:3,:)
+          do k = 1, 11
+            do k2 = 1, n_order-2
+              ! Precalculate the full AT_n for forces:
+              call dgemm('n', 'n', 3*n_neigh(i), 3*n_neigh(i), 3*n_neigh(i), 1.d0, AT_i(:,:,k), 3*n_neigh(i), &
+                         AT_n(:,:,k,k2), 3*n_neigh(i), 0.d0, AT_n(:,:,k,k2+1), 3*n_neigh(i))
+              ! Use only slice for local energies:
+              energy_term = 0.d0
+              call dgemm('n', 'n', 3*n_neigh(i), 3, 3*n_neigh(i), 1.d0, AT_n(:,:,k,k2), 3*n_neigh(i), &
+                         AT_i(:,1:3,k), 3*n_neigh(i), 0.d0, energy_term, 3*n_neigh(i))
+              energy_series(:,:,k) = energy_series(:,:,k) - 1.d0/(k2+2)*energy_term
+            end do
+            do c1 = 1, 3
+              integrand(k) = integrand(k) + alpha_SCS_i(1,k) * dot_product(T_LR_i(c1,:), &
+                             energy_series(:,c1,k))
+            end do
           end do
-          VRinv_n = VR_n
-          VL_n = 0.d0
-          call dgetrf(3*n_neigh(i), 3*n_neigh(i), VRinv_n, 3*n_neigh(i), ipiv, info)
-          call dgetri(3*n_neigh(i), VRinv_n, 3*n_neigh(i), ipiv, work_arr, 12*n_sites, info)
-          call dgemm('n', 'n', 3*n_neigh(i), 3*n_neigh(i), 3*n_neigh(i), 1.d0, VR_n, 3*n_neigh(i), logMapo_n, &
-                     3*n_neigh(i), 0.d0, VL_n, 3*n_neigh(i))
-          call dgemm('n', 'n', 3*n_neigh(i), 3*n_neigh(i), 3*n_neigh(i), 1.d0, VL_n, 3*n_neigh(i), VRinv_n, &
-                     3*n_neigh(i), 0.d0, logIAT_n(:,:,k), 3*n_neigh(i))
-        end do
-!       Local energy test:
-        integrand = 0.d0
-        integrand_k = 0.d0
-!        write(*,*) "alpha_SCS_i:", i, alpha_SCS_i(1,1)
-        do k = 1,11
-          do i2 = 1,3*n_neigh(i)
-            integrand(k) = integrand(k) + logIAT_n(i2,i2,k)
+          integral = 0.d0
+          call integrate("trapezoidal", omegas, integrand, 0.d0, 10.d0, integral)
+          E_MBD_k(i) = integral/(2.d0*pi)
+          E_MBD_k(i) = E_MBD_k(i) * 27.211386245988
+          write(*,*) "E_MBD_k:", i, E_MBD_k(i)
+          ! Calculate total MBD energy inside the cutoff sphere (mostly for checking finite difference)
+          if (total_energy) then
+            force_series = 0.d0
+            integrand = 0.d0
+            do k = 1, 11
+              do k2 = 2, n_order-1
+                force_series(:,:,k) = force_series(:,:,k) - 1.d0/k2 * AT_n(:,:,k,k2)
+              end do
+              VL_n = 0.d0
+              call dgemm('n', 'n', 3*n_neigh(i), 3*n_neigh(i), 3*n_neigh(i), 1.d0, AT_i(:,:,k), 3*n_neigh(i), &
+                         AT_n(:,:,k,n_order-1), 3*n_neigh(i), 0.d0, VL_n, 3*n_neigh(i))
+              force_series(:,:,k) = force_series(:,:,k) -1.d0/n_order * VL_n
+              do i2 = 1, 3*n_neigh(i)
+                integrand(k) = integrand(k) + force_series(i2,i2,k)
+              end do
+            end do
+            integral = 0.d0
+            call integrate("trapezoidal", omegas, integrand, 0.d0, 10.d0, integral)
+            E_MBD = integral/(2.d0*pi)
+            E_MBD = E_MBD * 27.211386245988
+            write(*,*) "E_MBD_k_tot:", i, E_MBD
+          end if
+        else
+          logIAT_n = 0.d0
+          do k = 1,11
+            WR_n = 0.d0
+            WI_n = 0.d0
+            VL_n = 0.d0
+            VR_n = 0.d0
+            VRinv_n = 0.d0
+            call dgeev('n', 'v', 3*n_neigh(i), I_mat_n-AT_i(:,:,k), 3*n_neigh(i), WR_n, WI_n, VL_n, &
+                       3*n_neigh(i), VR_n, 3*n_neigh(i), work_arr, 12*n_sites, info)
+            logMapo_n = 0.d0
+            do i2 = 1, 3*n_neigh(i)
+              logMapo_n(i2,i2) = log(WR_n(i2))
+            end do
+            VRinv_n = VR_n
+            VL_n = 0.d0
+            call dgetrf(3*n_neigh(i), 3*n_neigh(i), VRinv_n, 3*n_neigh(i), ipiv, info)
+            call dgetri(3*n_neigh(i), VRinv_n, 3*n_neigh(i), ipiv, work_arr, 12*n_sites, info)
+            call dgemm('n', 'n', 3*n_neigh(i), 3*n_neigh(i), 3*n_neigh(i), 1.d0, VR_n, 3*n_neigh(i), logMapo_n, &
+                       3*n_neigh(i), 0.d0, VL_n, 3*n_neigh(i))
+            call dgemm('n', 'n', 3*n_neigh(i), 3*n_neigh(i), 3*n_neigh(i), 1.d0, VL_n, 3*n_neigh(i), VRinv_n, &
+                       3*n_neigh(i), 0.d0, logIAT_n(:,:,k), 3*n_neigh(i))
           end do
-          integrand_k(k) = alpha_SCS_i(1,k)/sum(alpha_SCS_i(:,k)) * integrand(k)
-        end do
-!        write(*,*) "Integrand:", integrand
-        integral = 0.d0
-        call integrate("trapezoidal", omegas, integrand_k, 0.d0, 10.d0, integral)
-        E_MBD_k(i) = integral/(2.d0*pi)
-        E_MBD_k(i) = E_MBD_k(i) * 27.211386245988
-        integral = 0.d0
-        call integrate("trapezoidal", omegas, integrand, 0.d0, 10.d0, integral)
-        E_MBD = integral/(2.d0*pi)
-        E_MBD = E_MBD * 27.211386245988
-        write(*,*) "E_MBD_k:", i, E_MBD_k(i)
-        write(*,*) "E_MBD_tot for k:", i, E_MBD
-!        write(*,*) "Total MBD energy:", sum(E_MBD_k(:,1))
-
+!         Local energy test:
+          integrand = 0.d0
+          integrand_k = 0.d0
+!          write(*,*) "alpha_SCS_i:", i, alpha_SCS_i(1,1)
+          do k = 1,11
+            do i2 = 1,3*n_neigh(i)
+              integrand(k) = integrand(k) + logIAT_n(i2,i2,k)
+            end do
+            integrand_k(k) = alpha_SCS_i(1,k)/sum(alpha_SCS_i(:,k)) * integrand(k)
+          end do
+!          write(*,*) "Integrand:", integrand
+          integral = 0.d0
+          call integrate("trapezoidal", omegas, integrand_k, 0.d0, 10.d0, integral)
+          E_MBD_k(i) = integral/(2.d0*pi)
+          E_MBD_k(i) = E_MBD_k(i) * 27.211386245988
+          integral = 0.d0
+          call integrate("trapezoidal", omegas, integrand, 0.d0, 10.d0, integral)
+          E_MBD = integral/(2.d0*pi)
+          E_MBD = E_MBD * 27.211386245988
+          write(*,*) "E_MBD_k:", i, E_MBD_k(i)
+          write(*,*) "E_MBD_tot for k:", i, E_MBD
+!          write(*,*) "Total MBD energy:", sum(E_MBD_k(:,1))
+        end if
 
 
 !        series = 0.d0
@@ -1635,31 +1689,54 @@ module vdw
         invIAT_n = 0.d0
         G_mat_n = 0.d0
         force_integrand_n = 0.d0
+        force_series = 0.d0
 
-        do k = 1, 11
-          invIAT_n(:,:,k) = I_mat_n - AT_i(:,:,k)
-          call dgetrf(3*n_neigh(i), 3*n_neigh(i), invIAT_n(:,:,k), 3*n_neigh(i), ipiv, info)
-          call dgetri(3*n_neigh(i), invIAT_n(:,:,k), 3*n_neigh(i), ipiv, work_arr, 12*n_sites, info)
-          do c3 = 1, 3
-            ! call dgemm for G_mat
-            VL_n = 0.d0
-            VR_n = 0.d0
-            call dgemm('n', 'n', 3*n_neigh(i), 3*n_neigh(i), 3*n_neigh(i), 1.d0, A_LR_i(:,:,k), 3*n_neigh(i), &
-                       dT_LR_n(:,:,c3), 3*n_neigh(i), 0.d0, VL_n, 3*n_neigh(i))
-            call dgemm('n', 'n', 3*n_neigh(i), 3*n_neigh(i), 3*n_neigh(i), 1.d0, dA_LR_n(:,:,c3,k), 3*n_neigh(i), &
-                       T_LR_i, 3*n_neigh(i), 0.d0, VR_n, 3*n_neigh(i))
-            G_mat_n(:,:,c3,k) = VL_n + VR_n
-            VL_n = 0.d0
-            call dgemm('n', 'n', 3*n_neigh(i), 3*n_neigh(i), 3*n_neigh(i), 1.d0, invIAT_n(:,:,k), 3*n_neigh(i), &
-                       G_mat_n(:,:,c3,k), 3*n_neigh(i), 0.d0, VL_n, 3*n_neigh(i))
-            ! Take trace of invIAT * G_mat to get force integrand
-            do i2 = 1, 3*n_neigh(i)
-              force_integrand_n(c3,k) = force_integrand_n(c3,k) + VL_n(i2,i2)
+        if (series_expansion) then
+          do k = 1, 11
+            do k2 = 1, n_order-1
+              force_series(:,:,k) = force_series(:,:,k) + AT_n(:,:,k,k2)
+            end do
+            do c3 = 1, 3
+              ! call dgemm for G_mat
+              VL_n = 0.d0
+              VR_n = 0.d0
+              call dgemm('n', 'n', 3*n_neigh(i), 3*n_neigh(i), 3*n_neigh(i), 1.d0, A_LR_i(:,:,k), 3*n_neigh(i), &
+                         dT_LR_n(:,:,c3), 3*n_neigh(i), 0.d0, VL_n, 3*n_neigh(i))
+              call dgemm('n', 'n', 3*n_neigh(i), 3*n_neigh(i), 3*n_neigh(i), 1.d0, dA_LR_n(:,:,c3,k), 3*n_neigh(i), &
+                         T_LR_i, 3*n_neigh(i), 0.d0, VR_n, 3*n_neigh(i))
+              G_mat_n(:,:,c3,k) = VL_n + VR_n
+              VL_n = 0.d0
+              call dgemm('n', 'n', 3*n_neigh(i), 3*n_neigh(i), 3*n_neigh(i), 1.d0, force_series(:,:,k), 3*n_neigh(i), &
+                         G_mat_n(:,:,c3,k), 3*n_neigh(i), 0.d0, VL_n, 3*n_neigh(i))
+              do i2 = 1, 3*n_neigh(i)
+                force_integrand_n(c3,k) = force_integrand_n(c3,k) + VL_n(i2,i2)
+              end do
             end do
           end do
-        end do
-
-!        forces_MBD = 0.d0
+        else
+          do k = 1, 11
+            invIAT_n(:,:,k) = I_mat_n - AT_i(:,:,k)
+            call dgetrf(3*n_neigh(i), 3*n_neigh(i), invIAT_n(:,:,k), 3*n_neigh(i), ipiv, info)
+            call dgetri(3*n_neigh(i), invIAT_n(:,:,k), 3*n_neigh(i), ipiv, work_arr, 12*n_sites, info)
+            do c3 = 1, 3
+              ! call dgemm for G_mat
+              VL_n = 0.d0
+              VR_n = 0.d0
+              call dgemm('n', 'n', 3*n_neigh(i), 3*n_neigh(i), 3*n_neigh(i), 1.d0, A_LR_i(:,:,k), 3*n_neigh(i), &
+                         dT_LR_n(:,:,c3), 3*n_neigh(i), 0.d0, VL_n, 3*n_neigh(i))
+              call dgemm('n', 'n', 3*n_neigh(i), 3*n_neigh(i), 3*n_neigh(i), 1.d0, dA_LR_n(:,:,c3,k), 3*n_neigh(i), &
+                         T_LR_i, 3*n_neigh(i), 0.d0, VR_n, 3*n_neigh(i))
+              G_mat_n(:,:,c3,k) = VL_n + VR_n
+              VL_n = 0.d0
+              call dgemm('n', 'n', 3*n_neigh(i), 3*n_neigh(i), 3*n_neigh(i), 1.d0, invIAT_n(:,:,k), 3*n_neigh(i), &
+                         G_mat_n(:,:,c3,k), 3*n_neigh(i), 0.d0, VL_n, 3*n_neigh(i))
+              ! Take trace of invIAT * G_mat to get force integrand
+              do i2 = 1, 3*n_neigh(i)
+                force_integrand_n(c3,k) = force_integrand_n(c3,k) + VL_n(i2,i2)
+              end do
+            end do
+          end do
+        end if
 
         integral = 0.d0
         do c3 = 1, 3
@@ -1669,9 +1746,9 @@ module vdw
         forces_MBD_k(i,:) = forces_MBD_k(i,:) * 51.42208619083232
         write(*,*) "force_k:", i, forces_MBD_k(i,:)
 
-        deallocate( T_SR_i, B_mat_i, A_mat_i, alpha_SCS_i, A_LR_i, T_LR_i, AT_i, series, I_mat_n, &
+        deallocate( T_SR_i, B_mat_i, A_mat_i, alpha_SCS_i, A_LR_i, T_LR_i, AT_i, I_mat_n, &
                     WR_n, WI_n, VR_n, VL_n, VRinv_n, logMapo_n, logIAT_n, dB_mat_n, dA_mat_n, dBA_n, dalpha_n, &
-                    dA_LR_n, dT_LR_n, invIAT_n, G_mat_n )
+                    dA_LR_n, dT_LR_n, invIAT_n, G_mat_n, energy_series, AT_n, force_series, energy_term )
         n_tot = n_tot + n_neigh(i)
       end do
 !      write(*,*) "n_order | Total MBD energy:"
