@@ -794,19 +794,26 @@ end if
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_order
         if( params%vdw_mbd_order < 2 )then
-          write(*,*) "ERROR: vdw_mbd_order be >= 2"
+          write(*,*) "ERROR: vdw_mbd_order must be >= 2"
           stop
         end if
       else if( keyword == "vdw_mbd_nfreq" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_nfreq
         if( params%vdw_mbd_nfreq < 2 )then
-          write(*,*) "ERROR: vdw_mbd_nfreq be >= 2"
+          write(*,*) "ERROR: vdw_mbd_nfreq must be >= 2"
           stop
         end if
       else if( keyword == "vdw_mbd_maxfreq" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_maxfreq
+      else if( keyword == "vdw_mbd_expfreq" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_expfreq
+        if( params%vdw_mbd_expfreq < 0.d0 )then
+          write(*,*) "ERROR: vdw_mbd_expfreq must be > 0."
+          stop
+        end if
       else if( keyword == "core_pot_cutoff" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%core_pot_cutoff
