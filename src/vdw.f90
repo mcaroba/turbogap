@@ -465,12 +465,34 @@ module vdw
                            G_mat_n(:,:,:,:), AT_n(:,:,:,:), force_series(:,:,:), energy_term(:,:)
     real*8 :: time1, time2, this_force(1:3), Bohr, Hartree, &
               omega, pi, integral, E_MBD, R_vdW_ij, R_vdW_SCS_ij, S_vdW_ij, dS_vdW_ij, exp_term, &
-              rcut_vdw, r_vdw_i, r_vdw_j, dist, f_damp_SCS_ij
+              rcut_vdw, r_vdw_i, r_vdw_j, dist, f_damp_SCS_ij, t1, t2
     integer, allocatable :: ipiv(:)
     integer :: n_sites, n_pairs, n_species, n_sites0, info, n_order, n_tot
     integer :: i, i2, j, j2, k, k2, k3, a, a2, c1, c2, c3, lwork, b, p, q, kf
     logical :: do_timing = .false., do_hirshfeld_gradients = .true., nonlocal = .false., &
-               series_expansion = .true., total_energy = .true., series_average = .true.
+               series_expansion = .true., total_energy = .false., series_average = .true.
+
+real*8, allocatable :: this_AT_i(:,:), this_AT_n(:,:), next_AT_n(:,:)
+! WE SHOULD ENFORCE RCUT_MBD, RCUT_SCS <= RCUT - BUFFER
+! 4.5, 4.5, 0.5, 0.5; make sure 
+real*8 :: rcut_scs, rcut_mbd, buffer_scs, buffer_mbd
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+! TO DO: SPLIT THIS SUBROUTINE INTO TWO (OR, MAYBE HAVE A KEYWORD TO SELECT IN WHICH "MODE" THE SUBROUTINE IS
+!        BEING CALLED, THAT WAY WE CAN USE SAVE STATEMENTS, E.G., FOR THE PAIR QUANTITIES):
+! 1) THE FIRST ONE IS USED TO COMPUTE THE SELF-CONSISTENT POLARIZABILITIES. THESE ARE REDUCED/BROADCASTED BY
+!    RANK 0 AND PASSED ON TO THE SECOND SUBROUTINE SO THAT ALL THE ATOMS ARE CHARACTERIZED BY THE MORE ACCURATE
+!    POLARIZABILIES RATHER THAN TS POLARIZABILITIES. THIS PART SHOULD BE REASONABLY CHEAP (COMPARABLE TO
+!    BROADCASTING THE HIRSHFELD VOLUMES IN THE TS IMPLEMENTATION)
+! 2) THE SECOND ONE DOES THE SCREENED DIPOLE-DIPOLE COUPLING CALCULATION USING THE SCS POLARIZABILITIES
+!
+! NOTES:
+! *) THE SCS POLARIZABILITIES HAVE THEIR OWN CUTOFF RADIUS AND CUTOFF FUNCTION, WHICH IS ENFORCED THROUGH THE
+!    SHORT-RANGE DIPOLE INTERACTION TENSOR CUTOFF
+! *) T_LR SHOULD HAVE A CUTOFF FOR FULL COUPLING (ALL ATOMS INTERACT) AND ANOTHER FOR PAIR INTERACTIONS (ONLY
+!    CENTRAL ATOM AND OTHER ONE INTERACT; THERE ARE THE T_1J = T_J1 TERMS). THIS WILL MAKE T_LR SPARSE.
+!    HOPEFULLY, ACCURATE MODELS CAN BE OBTAINED WITH FULL COUPLING CUTOFFS MUCH SMALLER THAN OVERALL CUTOFFS.
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 
     !There are some flags and other parameters that should eventually be made function arguments:
@@ -493,7 +515,8 @@ module vdw
     write(*,*) "rcut", rcut
 !    rcut_vdw = 4.d0
     ! n_order has to be at least 2
-    n_order = 20
+!    n_order = 6
+    n_order = 3
 
     n_sites = size(n_neigh)
     n_pairs = size(neighbors_list)
@@ -530,6 +553,9 @@ module vdw
     allocate( sigma_i(1:n_sites,1:11) )
     allocate( alpha_i(1:n_sites,1:11) )
     allocate( sigma_ij(1:11) )
+!   T_SR SHOULD BE ALLOCATED FOR EACH ATOM SEPARATELY USING THE NUMBER OF NEIGHBORS INSIDE THE RCUT_SCS
+!   THE SAME APPLIES TO A LOT OF THESE VARIABLES HERE. N_SITES CAN BE AS SMALL AS 1, DEPENDING ON HOW
+!   PARALLELISM IS HANDLED
     allocate( T_SR(1:3*n_sites,1:3*n_sites,1:11) )
     allocate( B_mat(1:3*n_sites,1:3*n_sites,1:11) )
     allocate( xyz_H(1:3,1:n_pairs) )
@@ -602,6 +628,7 @@ module vdw
       omega = omega + 0.4d0 
     end do
 
+call cpu_time(t1)
     do k = 1, n_pairs
       j = neighbor_species(k)
       neighbor_c6_ii(k) = c6_ref(j) / (Hartree*Bohr**6)
@@ -636,9 +663,12 @@ module vdw
       alpha_k(:,k) = neighbor_alpha0/(1.d0 + omegas(k)**2/omega_i**2)
       sigma_k(:,k) = (sqrt(2.d0/pi) * alpha_k(:,k)/3.d0)**(1.d0/3.d0)
     end do
+call cpu_time(t2)
+!write(*,*) "Computing basic pair quantities:", t2-t1, "seconds"
 
 !   Computing dipole interaction tensor
 !   Requires the complete supercell to get correct dimensions for T_func! 3*N_at x 3*N_at, where N_at are atoms in supercell
+call cpu_time(t1)
     T_func = 0.d0
     f_damp = 0.d0
     k = 0
@@ -664,7 +694,10 @@ module vdw
         end if
       end do
     end do
+call cpu_time(t2)
+!write(*,*) "Computing dipole-dipole tensor:", t2-t1, "seconds"
 
+call cpu_time(t1)
     g_func = 0.d0
     h_func = 0.d0
     k = 0
@@ -689,7 +722,10 @@ module vdw
         end if
       end do
     end do
+call cpu_time(t2)
+!write(*,*) "g and h functions, whatever that is:", t2-t1, "seconds"
 
+call cpu_time(t1)
     T_SR = 0.d0
     B_mat = 0.d0
     k = 0
@@ -716,12 +752,18 @@ module vdw
     B_mat = B_mat + T_SR
 
     A_mat = B_mat
+call cpu_time(t2)
+!write(*,*) "computing T_SR, A_mat, B_mat:", t2-t1, "seconds"
 
+call cpu_time(t1)
     do i = 1, 11
       call dgetrf(3*n_sites, 3*n_sites, A_mat(:,:,i), 3*n_sites, ipiv, info)
       call dgetri(3*n_sites, A_mat(:,:,i), 3*n_sites, ipiv, work_arr, 12*n_sites, info)
     end do
+call cpu_time(t2)
+!write(*,*) "matrix multiplications with LAPACK:", t2-t1, "seconds"
 
+call cpu_time(t1)
     do k = 1, 11
       do i = 1, n_sites
         A_i = 0.d0
@@ -731,7 +773,13 @@ module vdw
         alpha_SCS(i,k) = 1.d0/3.d0 * (A_i(1,1)+A_i(2,2)+A_i(3,3))
       end do
     end do
+call cpu_time(t2)
+!write(*,*) "A_i:", t2-t1, "seconds"
 
+write(*,*) "alpha_TS(1) =", neighbor_alpha0(1)
+write(*,*) "alpha_scs(1,1) =", alpha_SCS(1,1)
+
+call cpu_time(t1)
     A_LR = 0.d0
 
     do k = 1, 11
@@ -741,7 +789,11 @@ module vdw
         end do
       end do
     end do
+call cpu_time(t2)
+!write(*,*) "A_LR:", t2-t1, "seconds"
 
+
+call cpu_time(t1)
     r0_ii_SCS = 0.d0
 
     do k = 1, n_pairs
@@ -763,7 +815,10 @@ module vdw
         end if
       end do
     end do
+call cpu_time(t2)
+!write(*,*) "damping function:", t2-t1, "seconds"
 
+call cpu_time(t1)
     T_LR = 0.d0
     k = 0
     do i = 1, n_sites
@@ -783,18 +838,24 @@ module vdw
         end if
       end do
     end do
+call cpu_time(t2)
+!write(*,*) "T_LR", t2-t1, "seconds"
 
     I_mat = 0.d0
     do i = 1, 3*n_sites
       I_mat(i,i) = 1.d0
     end do
 
+call cpu_time(t1)
     AT = 0.d0
     do k = 1, 11
       call dgemm('n', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, A_LR(:,:,k), 3*n_sites, T_LR, 3*n_sites, &
                 0.d0, AT(:,:,k), 3*n_sites)
     end do
+call cpu_time(t2)
+!write(*,*) "A_LR x T_LR:", t2-t1, "seconds"
 
+call cpu_time(t1)
     dT = 0.d0
     k = 0
     do i = 1, n_sites
@@ -823,12 +884,15 @@ module vdw
         end if
       end do
     end do
+call cpu_time(t2)
+!write(*,*) "ugly loop:", t2-t1, "seconds"
 
     f_damp_der = 0.d0
     g_func_der = 0.d0
     h_func_der = 0.d0
     dT_SR = 0.d0
 
+call cpu_time(t1)
     do a = 1, n_sites
       k = 0
       do i = 1, n_sites
@@ -884,11 +948,14 @@ module vdw
         end do
       end do
     end do
+call cpu_time(t2)
+!write(*,*) "very ugly loop:", t2-t1, "seconds"
 
 !    write(*,*) "dT_SR:"
 !    write(*,*) dT_SR(3*(33-1)+1,1,1,1,1)
 !    write(*,*) dT_SR(1,3*(33-1)+1,1,1,1)
 
+call cpu_time(t1)
     dB_mat = dT_SR
     if (do_hirshfeld_gradients) then
       dB_mat_v = 0.d0
@@ -989,6 +1056,8 @@ module vdw
 
       dB_mat = dB_mat + dB_mat_v
     end if
+call cpu_time(t2)
+write(*,*) "very ugly gradients loop:", t2-t1, "seconds"
 
 !    write(*,*) "dT_SR_v:"
 !    write(*,*) dT_SR_v(3*(33-1)+1,1,1,1,1)
@@ -1235,6 +1304,7 @@ module vdw
       n_tot = 0
       kf = 0 ! Counter for force calculation
       do i = 1, n_sites
+call cpu_time(t1)
         allocate( T_SR_i(1:3*n_neigh(i),1:3*n_neigh(i),1:11) )
         allocate( B_mat_i(1:3*n_neigh(i),1:3*n_neigh(i),1:11) )
         allocate( A_mat_i(1:3*n_neigh(i),1:3*n_neigh(i),1:11) )
@@ -1259,7 +1329,7 @@ module vdw
         allocate( dT_LR_n(1:3*n_neigh(i),1:3*n_neigh(i),1:3) )
         allocate( invIAT_n(1:3*n_neigh(i),1:3*n_neigh(i),1:11) )
         allocate( G_mat_n(1:3*n_neigh(i),1:3*n_neigh(i),1:3,1:11) )
-        allocate( AT_n(1:3*n_neigh(i),1:3*n_neigh(i),1:11,1:n_order-1) )
+        allocate( AT_n(1:3*n_neigh(i),1:3*n_neigh(i), 1:n_order-1, 1:11) )
         allocate( force_series(1:3*n_neigh(i),1:3*n_neigh(i),1:11) )
         allocate( energy_term(1:3*n_neigh(i),1:3) )
         T_SR_i = 0.d0
@@ -1268,6 +1338,12 @@ module vdw
         alpha_SCS_i = 0.d0
         A_LR_i = 0.d0
         T_LR_i = 0.d0
+allocate( this_AT_i(1:3*n_neigh(i),1:3*n_neigh(i)) )
+allocate( this_AT_n(1:3*n_neigh(i),1:3*n_neigh(i)) )
+allocate( next_AT_n(1:3*n_neigh(i),1:3*n_neigh(i)) )
+call cpu_time(t2)
+!write(*,*) "initializing stuff for atom", i, "done in:", t2-t1, "seconds"
+call cpu_time(t1)
         k = 0
         do i2 = 1, n_sites
           if ( any(neighbors_list(n_tot+1:n_tot+n_neigh(i)) == i2) ) then
@@ -1301,6 +1377,8 @@ module vdw
         end do
         B_mat_i = B_mat_i + T_SR_i
         A_mat_i = B_mat_i
+call cpu_time(t2)
+!write(*,*) "loop within loop for atom", i, "done in:", t2-t1, "seconds"
 
 !        write(*,*) "B_mat_i:"
 !        do p = 1, 6
@@ -1308,11 +1386,15 @@ module vdw
 !        end do
 
 
+call cpu_time(t1)
         do k3 = 1, 11
           call dgetrf(3*n_neigh(i), 3*n_neigh(i), A_mat_i(:,:,k3), 3*n_neigh(i), ipiv, info)
           call dgetri(3*n_neigh(i), A_mat_i(:,:,k3), 3*n_neigh(i), ipiv, work_arr, 12*n_sites, info)
         end do
+call cpu_time(t2)
+!write(*,*) "LAPACK for atom", i, "done in:", t2-t1, "seconds"
 
+call cpu_time(t1)
         do k3 = 1, 11
           do p = 1, n_neigh(i)
             A_i = 0.d0
@@ -1323,6 +1405,8 @@ module vdw
           end do
         end do
 
+write(*,*) "alpha_scs_i(1,1) =", alpha_SCS_i(1,1)
+
 !        write(*,*) "alpha_SCS_i:", alpha_SCS_i(:,1)
 
         do k3 = 1, 11
@@ -1332,7 +1416,10 @@ module vdw
             end do
           end do
         end do
+call cpu_time(t2)
+!write(*,*) "Polarizability matrices for atom", i, "done in:", t2-t1, "seconds"
 
+call cpu_time(t1)
         k = 0
         do i2 = 1, n_sites
           if ( any(neighbors_list(n_tot+1:n_tot+n_neigh(i)) == i2) ) then
@@ -1362,17 +1449,22 @@ module vdw
             k = k + n_neigh(i2)
           end if
         end do
+call cpu_time(t2)
+!write(*,*) "dipole-dipole tensor for atom", i, "done in:", t2-t1, "seconds"
 
 !        write(*,*) "T_LR_i:"
 !        do p = 1, 6
 !          write(*,*) T_LR_i(p,1:6)
 !        end do
 
+call cpu_time(t1)
         AT_i = 0.d0
         do k = 1, 11
           call dgemm('n', 'n', 3*n_neigh(i), 3*n_neigh(i), 3*n_neigh(i), 1.d0, A_LR_i(:,:,k), 3*n_neigh(i), &
                      T_LR_i, 3*n_neigh(i), 0.d0, AT_i(:,:,k), 3*n_neigh(i))
         end do
+call cpu_time(t2)
+!write(*,*) "A_LR x T_LR for atom", i, "done in:", t2-t1, "seconds"
 
 !        write(*,*) "AT_i:"
 !        do p = 1, 6
@@ -1385,18 +1477,32 @@ module vdw
         end do
 
         if (series_expansion) then
+call cpu_time(t1)
+open(unit=25, file="at.dat", status="unknown")
+do k = 1, 3*n_neigh(i)
+do k2 = 1, 3*n_neigh(i)
+write(25,*) AT_i(k2,k,1)
+end do
+end do
+close(25)
           AT_n = 0.d0
-          AT_n(:,:,:,1) = AT_i
           integrand = 0.d0
           energy_series = -0.5d0 * AT_i(:,1:3,:)
           do k = 1, 11
+            AT_n(:,:,1,k) = AT_i(:,:,k)
+this_AT_i = AT_i(:,:,k)
+this_AT_n = this_AT_i
             do k2 = 1, n_order-2
               ! Precalculate the full AT_n for forces:
-              call dgemm('n', 'n', 3*n_neigh(i), 3*n_neigh(i), 3*n_neigh(i), 1.d0, AT_i(:,:,k), 3*n_neigh(i), &
-                         AT_n(:,:,k,k2), 3*n_neigh(i), 0.d0, AT_n(:,:,k,k2+1), 3*n_neigh(i))
+!              call dgemm('n', 'n', 3*n_neigh(i), 3*n_neigh(i), 3*n_neigh(i), 1.d0, AT_i(:,:,k), 3*n_neigh(i), &
+!                         AT_n(:,:,k2,k), 3*n_neigh(i), 0.d0, AT_n(:,:,k2+1,k), 3*n_neigh(i))
+              call dgemm('n', 'n', 3*n_neigh(i), 3*n_neigh(i), 3*n_neigh(i), 1.d0, this_AT_i, 3*n_neigh(i), &
+                         this_AT_n, 3*n_neigh(i), 0.d0, next_AT_n, 3*n_neigh(i))
+AT_n(:,:,k2+1,k) = next_AT_n
+this_AT_n = next_AT_n
               ! Use only slice for local energies:
               energy_term = 0.d0
-              call dgemm('n', 'n', 3*n_neigh(i), 3, 3*n_neigh(i), 1.d0, AT_n(:,:,k,k2), 3*n_neigh(i), &
+              call dgemm('n', 'n', 3*n_neigh(i), 3, 3*n_neigh(i), 1.d0, AT_n(:,:,k2,k), 3*n_neigh(i), &
                          AT_i(:,1:3,k), 3*n_neigh(i), 0.d0, energy_term, 3*n_neigh(i))
               if (series_average .and. k2 == n_order-2) then
                 energy_series(:,:,k) = (2.d0 * energy_series(:,:,k) - 1.d0/(k2+2)*energy_term)/2.d0 
@@ -1408,11 +1514,14 @@ module vdw
               integrand(k) = integrand(k) + alpha_SCS_i(1,k) * dot_product(T_LR_i(c1,:), &
                              energy_series(:,c1,k))
             end do
+write(*,*) k, integrand(k)
           end do
           integral = 0.d0
           call integrate("trapezoidal", omegas, integrand, 0.d0, 10.d0, integral)
           E_MBD_k(i) = integral/(2.d0*pi)
           E_MBD_k(i) = E_MBD_k(i) * 27.211386245988
+call cpu_time(t2)
+write(*,*) "MBD energy for atom", i, "done in:", t2-t1, "seconds"
           write(*,*) "E_MBD_k:", i, E_MBD_k(i)
           ! Calculate total MBD energy inside the cutoff sphere (mostly for checking finite difference)
           if (total_energy) then
@@ -1521,6 +1630,7 @@ module vdw
 !        write(*,*) "Local energy for site", i, E_MBD_k(i,n_order)*27.211386245988
 
 !        write(*,*) "dB_mat calc:"
+call cpu_time(t1)
         dB_mat_n = 0.d0
         k = 0
         do i2 = 1, n_sites
@@ -1561,6 +1671,8 @@ module vdw
             k = k + n_neigh(i2)
           end if
         end do
+call cpu_time(t2)
+!write(*,*) "dB_mat stuff:", t2-t1, "seconds"
 
 !        write(*,*) "dB_mat_n:"
 !        do p = 1, 6
@@ -1586,6 +1698,7 @@ module vdw
 !        write(*,*) dB_mat_n(3*(42-1)+2,3*(42-1)+2,1,1)
 !        write(*,*) dB_mat_n(3*(42-1)+3,3*(42-1)+3,1,1)
 
+call cpu_time(t1)
         dA_mat_n = 0.d0
         do k = 1, 11
           do c3 = 1, 3
@@ -1596,12 +1709,15 @@ module vdw
                        3*n_neigh(i), 0.d0, dA_mat_n(:,:,c3,k), 3*n_neigh(i))
           end do
         end do
+call cpu_time(t2)
+write(*,*) "LAPACK with dA_mat stuff:", t2-t1, "seconds"
 
 !        write(*,*) "dA_mat_n:"
 !        write(*,*) dA_mat_n(3*(1-1)+1,1:6,1,1)
 !        write(*,*) dA_mat_n(3*(1-1)+2,1:6,1,1)
 !        write(*,*) dA_mat_n(3*(1-1)+3,1:6,1,1)
 
+call cpu_time(t1)
         dalpha_n = 0.d0
         do k = 1, 11
           do p = 1, n_neigh(i)
@@ -1617,12 +1733,14 @@ module vdw
             end do
           end do
         end do
+call cpu_time(t2)
+!write(*,*) "dalpha:", t2-t1, "seconds"
 
 !        write(*,*) "dalpha_n:", dalpha_n(:,1,1)
 !        write(*,*) "dalpha_n(42):", dalpha_n(42,1,1)
 
+call cpu_time(t1)
         dA_LR_n = 0.d0
-
         do k = 1, 11
           do c3 = 1, 3
             do p = 1, n_neigh(i)
@@ -1632,11 +1750,14 @@ module vdw
             end do
           end do
         end do
+call cpu_time(t2)
+!write(*,*) "dA_LR:", t2-t1, "seconds"
 
 !        do i2 = 1, 6
 !          write(*,*) "dA_LR_n:", dA_LR_n(i2,1:6,1,1)
 !        end do
 
+call cpu_time(t1)
         dT_LR_n = 0.d0
 !        f_damp_der_n = 0.d0
 !        f_damp_der_SCS_n = 0.d0
@@ -1700,6 +1821,8 @@ module vdw
             k = k + n_neigh(i2)
           end if
         end do
+call cpu_time(t2)
+!write(*,*) "dT_LR:", t2-t1, "seconds"
 
 !        write(*,*) "dT_LR_n:"
 !        do p = 1, 6
@@ -1717,6 +1840,7 @@ module vdw
         force_series = 0.d0
 
         if (series_expansion) then
+call cpu_time(t1)
           do k = 1, 11
             do k2 = 1, n_order-1
               if (series_average .and. k2 == n_order-1) then
@@ -1742,6 +1866,8 @@ module vdw
               end do
             end do
           end do
+call cpu_time(t2)
+write(*,*) "LAPACK for force:", t2-t1, "seconds"
         else
           do k = 1, 11
             invIAT_n(:,:,k) = I_mat_n - AT_i(:,:,k)
@@ -1767,6 +1893,7 @@ module vdw
           end do
         end if
 
+call cpu_time(t1)
         integral = 0.d0
         do c3 = 1, 3
           call integrate("trapezoidal", omegas, force_integrand_n(c3,:), 0.d0, 10.d0, integral)
@@ -1774,10 +1901,13 @@ module vdw
         end do
         forces_MBD_k(i,:) = forces_MBD_k(i,:) * 51.42208619083232
         write(*,*) "force_k:", i, forces_MBD_k(i,:)
+call cpu_time(t2)
+!write(*,*) "force integration:", t2-t1, "seconds"
 
         deallocate( T_SR_i, B_mat_i, A_mat_i, alpha_SCS_i, A_LR_i, T_LR_i, AT_i, I_mat_n, &
                     WR_n, WI_n, VR_n, VL_n, VRinv_n, logMapo_n, logIAT_n, dB_mat_n, dA_mat_n, dBA_n, dalpha_n, &
                     dA_LR_n, dT_LR_n, invIAT_n, G_mat_n, energy_series, AT_n, force_series, energy_term )
+deallocate( this_AT_i, this_AT_n, next_AT_n )
         n_tot = n_tot + n_neigh(i)
       end do
 !      write(*,*) "n_order | Total MBD energy:"
