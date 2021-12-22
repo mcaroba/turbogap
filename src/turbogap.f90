@@ -656,7 +656,7 @@ program turbogap
     end if
 
 !   Update progress bar
-    if( params%print_progress .and. counter == update_bar )then
+    if( params%do_md .and. params%print_progress .and. counter == update_bar )then
 #ifdef _MPIF90
       IF( rank == 0 )THEN
 #endif
@@ -1792,12 +1792,12 @@ end if
                                       forces, a_box, b_box, c_box, energy, &
                                       species, species_supercell, n_sites, indices, fix_atom, &
                                       xyz_species, xyz_species_supercell)
-if( rank == 0 )then
-counter = 1
-write(*,*)
-write(*,*)
-write(*,*) "Running nested sampling iteration", i_nested, "/", params%n_nested
-end if
+        if( rank == 0 )then
+          counter = 1
+          write(*,*)'                                                                 |'
+          write(*,*)'                                                                 |'
+          write(*,'(A,I8,A,I8,A)') "Nested sampling iter.:", i_nested, "/", params%n_nested, " |"
+        end if
       else if( i_nested == params%n_nested )then
         exit_loop = .true.
       end if
