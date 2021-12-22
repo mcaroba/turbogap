@@ -41,6 +41,11 @@ module read_files
 !**************************************************************************
 ! This subroutine reads in the XYZ file
 !
+! WE NEED TO WRITE A PROPER EXTXYZ READER THAT CAN IDENTIFY WHICH COLUMN CONTAINS
+! EACH PROPERTY. THIS SUBROUTINE CAN ONLY READ IN FILES WITH THE FOLLOWING CONVENTION:
+!
+! SPECIES X Y Z (VX VY VZ (FIXX FIXY FIXZ))
+!
   subroutine read_xyz(filename, ase_format, all_atoms, do_timing, n_species, species_types, &
                       repeat_xyz, rcut_max, which_atom, positions, &
                       do_md, velocities, masses_types, masses, xyz_species, xyz_species_supercell, &
@@ -128,12 +133,16 @@ if( .not. supercell_check_only )then
     allocate( species(1:n_sites) )
     xyz_species = ""
     species = 0
-    if( do_md )then
+!   We need to comment this out here for nested sampling
+!    if( do_md )then
+    if( .true. )then
       if( allocated(velocities) )deallocate(velocities)
       if( allocated(masses) )deallocate(masses)
       if( allocated(fix_atom) )deallocate(fix_atom)
       allocate( velocities(1:3, 1:n_sites) )
+      velocities = 0.d0
       allocate( masses(1:n_sites) )
+      masses = 0.d0
       masses_from_xyz = .false.
       allocate( fix_atom(1:3, 1:n_sites) )
       fix_atom = .false.
@@ -180,7 +189,9 @@ end if
 !          species(species_multiplicity(i), i) = j
           xyz_species(i) = species_types(j)
           species(i) = j
-          if( do_md .and. .not. masses_from_xyz )then
+!         This is commented out because we also need masses with nested sampling when used in combination with MD
+!          if( do_md .and. .not. masses_from_xyz )then
+          if( .not. masses_from_xyz )then
             masses(i) = masses_types(j)
           end if
 !          exit
@@ -571,6 +582,12 @@ end if
       else if(keyword=='write_thermo')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%write_thermo
+      else if(keyword=='n_nested')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%n_nested
+        if( params%n_nested > 0 )then
+          params%do_nested_sampling = .true.
+        end if
       else if(keyword=='write_velocities')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%write_velocities
