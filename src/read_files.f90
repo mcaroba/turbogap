@@ -858,6 +858,17 @@ end if
       end if
     end if
 
+!   Nested sampling checks
+    if( params%do_nested_sampling )then
+      if( params%thermostat /= "none" )then
+        write(*,*)'                                       |'
+        write(*,*)'WARNING: Nested sampling only works    |  <-- WARNING'
+        write(*,*)'(currently) in combination with total  |'
+        write(*,*)'energy MD. The selected thermostat has |'
+        write(*,*)'been disabled.                         |'
+      end if
+    end if
+
 !   Set the writeouts
     if( .not. params%do_md )then
 !     Do not write temperature

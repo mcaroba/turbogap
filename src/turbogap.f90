@@ -126,7 +126,7 @@ program turbogap
   logical, allocatable :: compress_soap_mpi(:)
 
 ! Nested sampling
-  real*8 :: e_max
+  real*8 :: e_max, e_kin
   integer :: i_nested, i_max, i_image
   type(image), allocatable :: images(:), images_temp(:)
 !**************************************************************************
@@ -1740,6 +1740,7 @@ end if
         deallocate(images_temp)
       end if
 !     Save initial pool of structures
+      velocities = 0.d0
       call from_properties_to_image(images(i_image), positions, velocities, masses, &
                                     forces, a_box, b_box, c_box, energy, &
                                     species, species_supercell, n_sites, indices, fix_atom, &
@@ -1757,6 +1758,7 @@ end if
 !     At the end of the MD/MC moves we add the image to the pool if its energy has decreased
       if( md_istep == params%md_nsteps )then
         md_istep = -1
+        velocities = 0.d0
         if( energy < e_max )then
           call from_properties_to_image(images(i_image), positions, velocities, masses, &
                                         forces, a_box, b_box, c_box, energy, &
@@ -1788,16 +1790,26 @@ end if
             i = mod(irand(), n_xyz) + 1
           end do
         end if
+        if( rank == 0 )then
+          counter = 2
+!          write(*,*)
+          write(*,*)'                                       |'
+          write(*,'(A,I8,A,I8,A)') "Nested sampling iter.:", i_nested, "/", params%n_nested, " |"
+          write(*,'(A,I8,A)') " - Highest energy image:       ", i_image, " |"
+          write(*,'(A,I8,A)') " - Image selected for cloning: ", i, " |"
+          write(*,'(A,F17.6,A)') " - Maximum energy: ", e_max, " eV |"
+        end if
         call from_image_to_properties(images(i), positions, velocities, masses, &
                                       forces, a_box, b_box, c_box, energy, &
                                       species, species_supercell, n_sites, indices, fix_atom, &
                                       xyz_species, xyz_species_supercell)
-        if( rank == 0 )then
-          counter = 1
-          write(*,*)'                                                                 |'
-          write(*,*)'                                                                 |'
-          write(*,'(A,I8,A,I8,A)') "Nested sampling iter.:", i_nested, "/", params%n_nested, " |"
-        end if
+!       This is the so-called total energy Hamiltonian Montecarlo approach (with physical masses)
+        call random_number( velocities )
+        e_kin = 0.d0
+        do i = 1, size(masses)
+          e_kin = e_kin + 0.5d0 * masses(i) * dot_product(velocities(1:3, i), velocities(1:3, i))
+        end do
+        velocities = velocities / sqrt(e_kin) * sqrt(e_max - energy)
       else if( i_nested == params%n_nested )then
         exit_loop = .true.
       end if
