@@ -583,6 +583,10 @@ end if
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%write_thermo
       else if(keyword=='n_nested')then
+        if( mode /= "predict" )then
+          write(*,*) 'ERROR: the "n_nested" option for nested sampling can only be used with "turbogap predict"'
+          stop
+        end if
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%n_nested
         if( params%n_nested > 0 )then
