@@ -140,6 +140,8 @@ program turbogap
 ! Start recording the time
   call cpu_time(time1)
   time3 = time1
+! Start random seed
+  call srand(int(time1*1000))
 !**************************************************************************
 
 
@@ -621,13 +623,18 @@ program turbogap
     END IF
 #endif
   end if
-  if( params%do_md .or. params%do_nested_sampling )then
-    update_bar = params%md_nsteps/36
-    if( update_bar < 1 )then
-      update_bar = 1
-    end if
-    counter = 1
-  end if
+!  if( params%do_md .or. params%do_nested_sampling )then
+!    if( params%do_nested_sampling )then
+!      update_bar = (params%md_nsteps-1)/36
+!    else
+!      update_bar = params%md_nsteps/36
+!    end if
+!    if( update_bar < 1 )then
+!      update_bar = 1
+!    end if
+!    counter = 1
+!  end if
+  counter = 1
 !**************************************************************************
 
 
@@ -656,7 +663,8 @@ program turbogap
     end if
 
 !   Update progress bar
-    if( params%do_md .and. params%print_progress .and. counter == update_bar )then
+    if( params%do_md .and. params%print_progress .and. &
+        ( real(md_istep)/real(params%md_nsteps)*36.d0 > real(counter)-1.d-10 .or. md_istep == params%md_nsteps ) )then
 #ifdef _MPIF90
       IF( rank == 0 )THEN
 #endif
@@ -677,8 +685,6 @@ program turbogap
 #ifdef _MPIF90
       END IF
 #endif
-      counter = 1
-    else
       counter = counter + 1
     end if
 !**************************************************************************
@@ -1791,7 +1797,7 @@ end if
           end do
         end if
         if( rank == 0 )then
-          counter = 2
+          counter = 1
 !          write(*,*)
           write(*,*)'                                       |'
           write(*,'(A,I8,A,I8,A)') "Nested sampling iter.:", i_nested, "/", params%n_nested, " |"
@@ -1857,7 +1863,7 @@ end if
 #endif
     if( params%do_md )then
 !      write(*,'(A)')'] |'
-      write(*,*)
+!      write(*,*)
       write(*,*)'                                       |'
 !      write(*,'(I8,A,F13.3,A)') params%md_nsteps, ' MD steps:', time2-time3, ' seconds |'
       write(*,'(I8,A,F13.3,A)') md_istep, ' MD steps:', time2-time3, ' seconds |'
