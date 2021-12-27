@@ -1760,6 +1760,9 @@ end if
         md_istep = -1
         params%write_xyz = params%md_nsteps
         params%do_md = .true.
+        write(*,*)'                                       |'
+        write(*,*)'Running nested sampling algorithm with |'
+        write(*,'(I6,A)') n_xyz, ' walkers.                        |'
       end if
 !     At the end of the MD/MC moves we add the image to the pool if its energy has decreased
       if( md_istep == params%md_nsteps )then
@@ -1800,9 +1803,9 @@ end if
           counter = 1
 !          write(*,*)
           write(*,*)'                                       |'
-          write(*,'(A,I8,A,I8,A)') "Nested sampling iter.:", i_nested, "/", params%n_nested, " |"
-          write(*,'(A,I8,A)') " - Highest energy image:       ", i_image, " |"
-          write(*,'(A,I8,A)') " - Image selected for cloning: ", i, " |"
+          write(*,'(A,I6,A,I6,A)') "Nested sampling iteration:", i_nested, "/", params%n_nested, " |"
+          write(*,'(A,I8,A)') " - Highest energy walker:      ", i_image, " |"
+          write(*,'(A,I8,A)') " - Walker selected for cloning:", i, " |"
           write(*,'(A,F17.6,A)') " - Maximum energy: ", e_max, " eV |"
         end if
         call from_image_to_properties(images(i), positions, velocities, masses, &
