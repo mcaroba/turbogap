@@ -592,6 +592,9 @@ end if
         if( params%n_nested > 0 )then
           params%do_nested_sampling = .true.
         end if
+      else if(keyword=='t_extra')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%t_extra
       else if(keyword=='write_velocities')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%write_velocities

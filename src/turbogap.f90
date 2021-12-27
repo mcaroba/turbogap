@@ -1818,7 +1818,7 @@ end if
         do i = 1, size(masses)
           e_kin = e_kin + 0.5d0 * masses(i) * dot_product(velocities(1:3, i), velocities(1:3, i))
         end do
-        velocities = velocities / sqrt(e_kin) * sqrt(e_max - energy)
+        velocities = velocities / sqrt(e_kin) * sqrt(e_max - energy + 1.5d0*real(size(masses)-1)*kB*params%t_extra)
       else if( i_nested == params%n_nested )then
         exit_loop = .true.
       end if
