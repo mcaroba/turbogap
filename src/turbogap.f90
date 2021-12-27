@@ -1814,11 +1814,12 @@ end if
                                       xyz_species, xyz_species_supercell)
 !       This is the so-called total energy Hamiltonian Montecarlo approach (with physical masses)
         call random_number( velocities )
+        call remove_cm_vel(velocities(1:3,1:n_sites), masses(1:n_sites))    
         e_kin = 0.d0
-        do i = 1, size(masses)
+        do i = 1, n_sites
           e_kin = e_kin + 0.5d0 * masses(i) * dot_product(velocities(1:3, i), velocities(1:3, i))
         end do
-        velocities = velocities / sqrt(e_kin) * sqrt(e_max - energy + 1.5d0*real(size(masses)-1)*kB*params%t_extra)
+        velocities = velocities / sqrt(e_kin) * sqrt(e_max - energy + 1.5d0*real(n_sites-1)*kB*params%t_extra)
       else if( i_nested == params%n_nested )then
         exit_loop = .true.
       end if
