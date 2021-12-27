@@ -1760,9 +1760,11 @@ end if
         md_istep = -1
         params%write_xyz = params%md_nsteps
         params%do_md = .true.
-        write(*,*)'                                       |'
-        write(*,*)'Running nested sampling algorithm with |'
-        write(*,'(I6,A)') n_xyz, ' walkers.                        |'
+        if( rank == 0 )then
+          write(*,*)'                                       |'
+          write(*,*)'Running nested sampling algorithm with |'
+          write(*,'(1X,I6,A)') n_xyz, ' walkers.                        |'
+        end if
       end if
 !     At the end of the MD/MC moves we add the image to the pool if its energy has decreased
       if( md_istep == params%md_nsteps )then
