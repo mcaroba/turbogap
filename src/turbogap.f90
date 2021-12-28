@@ -1822,7 +1822,8 @@ end if
           e_kin = e_kin + 0.5d0 * masses(i) * dot_product(velocities(1:3, i), velocities(1:3, i))
         end do
         call random_number( rand )
-        velocities = velocities / sqrt(e_kin) * sqrt(e_max - energy + 1.5d0*real(n_sites-1)*kB*params%t_extra*rand)
+        rand = rand * 4.d0/3.d0 - 1.d0/3.d0
+        velocities = velocities / sqrt(e_kin) * sqrt(e_max - energy + 1.5d0*real(n_sites-1)*kB*params%t_extra*max(0.d0, rand))
       else if( i_nested == params%n_nested )then
         exit_loop = .true.
       end if
