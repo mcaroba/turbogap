@@ -126,7 +126,7 @@ program turbogap
   logical, allocatable :: compress_soap_mpi(:)
 
 ! Nested sampling
-  real*8 :: e_max, e_kin
+  real*8 :: e_max, e_kin, rand
   integer :: i_nested, i_max, i_image
   type(image), allocatable :: images(:), images_temp(:)
 !**************************************************************************
@@ -1821,7 +1821,8 @@ end if
         do i = 1, n_sites
           e_kin = e_kin + 0.5d0 * masses(i) * dot_product(velocities(1:3, i), velocities(1:3, i))
         end do
-        velocities = velocities / sqrt(e_kin) * sqrt(e_max - energy + 1.5d0*real(n_sites-1)*kB*params%t_extra)
+        call random_number( rand )
+        velocities = velocities / sqrt(e_kin) * sqrt(e_max - energy + 1.5d0*real(n_sites-1)*kB*params%t_extra*rand)
       else if( i_nested == params%n_nested )then
         exit_loop = .true.
       end if
