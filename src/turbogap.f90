@@ -126,7 +126,7 @@ program turbogap
   logical, allocatable :: compress_soap_mpi(:)
 
 ! Nested sampling
-  real*8 :: e_max, e_kin, rand
+  real*8 :: e_max, e_kin, rand, rand_scale(1:6)
   integer :: i_nested, i_max, i_image
   type(image), allocatable :: images(:), images_temp(:)
 !**************************************************************************
@@ -1824,6 +1824,22 @@ end if
         call random_number( rand )
         rand = rand * 4.d0/3.d0 - 1.d0/3.d0
         velocities = velocities / sqrt(e_kin) * sqrt(e_max - energy + 1.5d0*real(n_sites-1)*kB*params%t_extra*max(0.d0, rand))
+!       This only gets triggered if we are doing box rescaling, i.e., if the target nested sampling pressure (*not* the
+!       actual pressure for the atomic configuration) is > 0
+!!!!!!!!!!!!!!!!!!!!!!!!!! Temporary hack
+if( .false. )then
+params%scale_box = .true.
+call random_number(rand_scale)
+!!!!!!!!!!!!!!! Fix this, hardcoded to 0.5% strain at the moment; volume scaling and shear/axial should be handled separately with input parameters
+!!!!!!!!!!!!!!! The size of the scaling should also decrease as we reach convergence (otherwise all trial moves will be rejected)
+!!!!!!!!!!!!!!! I should also implement the appropriate probability distribution which favors larger volumes (rescaling the homogeneous probability
+!               distribution from the random number generator
+!!!!!!!!!!!!!!! Finally, there should be a limit for the acceptable aspect ratio of the simulation box
+rand_scale = 2.d0*(rand_scale - 0.5d0) * 0.005d0
+params%box_scaling_factor = reshape([1.d0+rand_scale(1), rand_scale(6)/2.d0, rand_scale(5)/2.d0, &
+                                     rand_scale(6)/2.d0, 1.d0+rand_scale(2), rand_scale(4)/2.d0, &
+                                     rand_scale(5)/2.d0, rand_scale(4)/2.d0, 1.d0+rand_scale(3)], [3,3])
+end if
       else if( i_nested == params%n_nested )then
         exit_loop = .true.
       end if

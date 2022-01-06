@@ -228,7 +228,9 @@ if( .not. supercell_check_only .or. (supercell_check_only .and. any(indices /= i
     if( indices(1) > 1 .or. indices(2) > 1 .or. indices(3) > 1 )then
       n_sites_supercell = n_sites * indices(1) * indices(2) * indices(3)
       allocate( positions_supercell(1:3, 1:n_sites_supercell) )
-      if( do_md )then
+!     We need to comment this out here for nested sampling
+!      if( do_md )then
+      if( .true. )then
         allocate( velocities_supercell(1:3, 1:n_sites_supercell) )
       end if
 !      allocate( species_supercell(1:max_species_multiplicity, 1:n_sites_supercell) )
@@ -248,7 +250,9 @@ if( .not. supercell_check_only .or. (supercell_check_only .and. any(indices /= i
               positions_supercell(1:3, counter) = positions(1:3, i) + dfloat(i2-1)*a_box(1:3) &
                                                                     + dfloat(j2-1)*b_box(1:3) &
                                                                     + dfloat(k2-1)*c_box(1:3)
-              if( do_md )then
+!             We need to comment this out here for nested sampling
+!              if( do_md )then
+              if( .true. )then
                 velocities_supercell(1:3, counter) = velocities(1:3, i)
               end if
 !              species_supercell(:, counter) = species(:, i)
@@ -262,7 +266,9 @@ if( .not. supercell_check_only .or. (supercell_check_only .and. any(indices /= i
       allocate( positions(1:3, 1:n_sites_supercell) )
       positions(1:3, 1:n_sites_supercell) = positions_supercell(1:3, 1:n_sites_supercell)
       deallocate( positions_supercell )
-      if( do_md )then
+!     We need to comment this out here for nested sampling
+!      if( do_md )then
+      if( .true. )then
         deallocate( velocities )
         allocate( velocities(1:3, 1:n_sites_supercell) )
         velocities(1:3, 1:n_sites_supercell) = velocities_supercell(1:3, 1:n_sites_supercell)
@@ -288,7 +294,9 @@ if( .not. supercell_check_only .or. (supercell_check_only .and. any(indices /= i
         allocate( positions(1:3, 1:n_sites_supercell) )
         positions(1:3, 1:n_sites_supercell) = positions_supercell(1:3, 1:n_sites_supercell)
         deallocate( positions_supercell )
-        if( do_md )then
+!       We need to comment this out here for nested sampling
+!        if( do_md )then
+        if( .true. )then
           allocate( velocities_supercell(1:3, 1:n_sites_supercell) )
           velocities_supercell = velocities(1:3, 1:n_sites_supercell)
           deallocate( velocities )
