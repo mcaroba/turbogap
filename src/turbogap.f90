@@ -1503,7 +1503,8 @@ end if
                            virial, xyz_species, &
                            positions(1:3, 1:n_sites), velocities, &
                            forces, energies(1:n_sites), masses, hirshfeld_v, &
-                           params%write_property, params%write_array_property, fix_atom )
+                           params%write_property, params%write_array_property, fix_atom, & 
+                           "trajectory_out.xyz", .false. )
 #ifdef _MPIF90
         END IF
 #endif
@@ -1612,15 +1613,28 @@ end if
 !
 !     We write out the trajectory file. We write positions_prev which is then one for which we have computed
 !     the properties. positions_prev and velocities are synchronous
-      if( (md_istep == 0 .and. .not. params%do_nested_sampling) .or. md_istep == params%md_nsteps &
-          .or. (modulo(md_istep, params%write_xyz) == 0 .and. .not. params%do_nested_sampling) )then
+      if( (md_istep == 0 .and. .not. params%do_nested_sampling) .or. &
+          (md_istep == params%md_nsteps .and. .not. params%do_nested_sampling ) .or. &
+          (modulo(md_istep, params%write_xyz) == 0 .and. .not. params%do_nested_sampling) )then
         call wrap_pbc(positions_prev(1:3,1:n_sites), a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)))
         call write_extxyz( n_sites, md_istep, time_step, instant_temp, instant_pressure, &
                            a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
                            virial, xyz_species, &
                            positions_prev(1:3, 1:n_sites), velocities, &
                            forces, energies(1:n_sites), masses/103.6426965268d0, hirshfeld_v, &
-                           params%write_property, params%write_array_property, fix_atom(1:3, 1:n_sites) )
+                           params%write_property, params%write_array_property, fix_atom(1:3, 1:n_sites), &
+                           "trajectory_out.xyz", .false. )
+      else if( md_istep == params%md_nsteps .and. params%do_nested_sampling )then
+        write(cjunk,'(I8)') i_image
+        write(filename,'(A,A,A)') "walkers/", trim(adjustl(cjunk)), ".xyz"
+        call wrap_pbc(positions_prev(1:3,1:n_sites), a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)))
+        call write_extxyz( n_sites, md_istep, time_step, instant_temp, instant_pressure, &
+                           a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
+                           virial, xyz_species, &
+                           positions_prev(1:3, 1:n_sites), velocities, &
+                           forces, energies(1:n_sites), masses/103.6426965268d0, hirshfeld_v, &
+                           params%write_property, params%write_array_property, fix_atom(1:3, 1:n_sites), & 
+                           filename, .true. )
       end if
 !
 !     If there are pressure/box rescaling operations they happen here
@@ -1712,25 +1726,11 @@ end if
 
 
 
-!   NOW THIS IS HANDLED AT THE BEGINNING OF THE CODE WHEN WE CHECK IF THE NUMBER OF SITES HAS CHANGED
-!   Clean up
-!    deallocate( energies, energies_soap, energies_2b, energies_3b, energies_core_pot, this_energies, energies_vdw )
-!    if( params%do_forces )then
-!      deallocate( forces, forces_soap, forces_2b, forces_3b, forces_core_pot, this_forces, forces_vdw )
-!    end if
-!    if( any( soap_turbo_hypers(:)%has_vdw ) )then
-!      nullify( this_hirshfeld_v_pt )
-!      deallocate( this_hirshfeld_v, hirshfeld_v )
-!      if( params%do_forces )then
-!        nullify( this_hirshfeld_v_cart_der_pt )
-!        deallocate( this_hirshfeld_v_cart_der, hirshfeld_v_cart_der )
-!      end if
-!    end if
-
 
 
 !**************************************************************************
 !   Nested sampling
+!   PUT THIS INTO A MODULE!!!!!!!!!!!!!!
 
 !   This runs at the beginning to read in the initial images
     if( params%do_nested_sampling .and. n_xyz > i_image .and. .not. params%do_md )then
@@ -1764,13 +1764,22 @@ end if
           write(*,*)'                                       |'
           write(*,*)'Running nested sampling algorithm with |'
           write(*,'(1X,I6,A)') n_xyz, ' walkers.                        |'
+          write(*,*)'                                       |'
+          write(*,*)'Target pressure in nested sampling:    |'
+          write(*,'(A,ES15.7,A)') ' P = ', params%p_nested, ' bar.               |'
+          write(*,*)'                                       |'
+          write(*,*)'[P = 0 means total energy, rather than |'
+          write(*,*)'total enthalphy, simulation]           |'
         end if
       end if
 !     At the end of the MD/MC moves we add the image to the pool if its energy has decreased
       if( md_istep == params%md_nsteps )then
         md_istep = -1
         velocities = 0.d0
-        if( energy < e_max )then
+!       Unit cell volume
+        v_uc = dot_product( cross_product(a_box, b_box), c_box ) / (dfloat(indices(1)*indices(2)*indices(3)))
+!       We check enthalpy, not potential energy (they are the same for P = 0)
+        if( energy + params%p_nested/eVperA3tobar*v_uc < e_max )then
           call from_properties_to_image(images(i_image), positions, velocities, masses, &
                                         forces, a_box, b_box, c_box, energy, &
                                         species, species_supercell, n_sites, indices, fix_atom, &
@@ -1784,8 +1793,11 @@ end if
         i_max = 0
         e_max = -1.d100
         do i = 1, n_xyz
-          if( images(i)%energy > e_max )then
-            e_max = images(i)%energy
+          v_uc = dot_product( cross_product(images(i)%a_box, images(i)%b_box), images(i)%c_box ) / &
+                 (dfloat(images(i)%indices(1)*images(i)%indices(2)*images(i)%indices(3)))
+!         We check enthalpy, not potential energy (they are the same for P = 0)
+          if( images(i)%energy + params%p_nested/eVperA3tobar*v_uc > e_max )then
+            e_max = images(i)%energy + params%p_nested/eVperA3tobar*v_uc
             i_max = i
           end if
         end do
@@ -1806,15 +1818,41 @@ end if
 !          write(*,*)
           write(*,*)'                                       |'
           write(*,'(A,I6,A,I6,A)') "Nested sampling iteration:", i_nested, "/", params%n_nested, " |"
-          write(*,'(A,I8,A)') " - Highest energy walker:      ", i_image, " |"
+          write(*,'(A,I8,A)') " - Highest enthalpy walker:    ", i_image, " |"
           write(*,'(A,I8,A)') " - Walker selected for cloning:", i, " |"
-          write(*,'(A,F17.6,A)') " - Maximum energy: ", e_max, " eV |"
+          write(*,'(A,F15.4,A)') " - Maximum enthalpy: ", e_max, " eV |"
         end if
         call from_image_to_properties(images(i), positions, velocities, masses, &
                                       forces, a_box, b_box, c_box, energy, &
                                       species, species_supercell, n_sites, indices, fix_atom, &
                                       xyz_species, xyz_species_supercell)
-!       This is the so-called total energy Hamiltonian Montecarlo approach (with physical masses)
+        v_uc = dot_product( cross_product(images(i)%a_box, images(i)%b_box), images(i)%c_box ) / &
+               (dfloat(images(i)%indices(1)*images(i)%indices(2)*images(i)%indices(3)))
+!       This only gets triggered if we are doing box rescaling, i.e., if the target nested sampling pressure (*not* the
+!       actual pressure for the atomic configuration) is > 0
+!!!!!!!!!!!!!!!!!!!!!!!!!! Temporary hack
+if( params%scale_box_nested )then
+params%scale_box = .true.
+call random_number(rand_scale)
+!!!!!!!!!!!!!!! The size of the scaling should also decrease as we reach convergence (otherwise all trial moves will be rejected)
+!!!!!!!!!!!!!!! Finally, there should be a limit for the acceptable aspect ratio of the simulation box
+rand_scale = 2.d0*(rand_scale - 0.5d0) * params%nested_max_strain
+params%box_scaling_factor = reshape([1.d0+rand_scale(1), rand_scale(6)/2.d0, rand_scale(5)/2.d0, &
+                                     rand_scale(6)/2.d0, 1.d0+rand_scale(2), rand_scale(4)/2.d0, &
+                                     rand_scale(5)/2.d0, rand_scale(4)/2.d0, 1.d0+rand_scale(3)], [3,3])
+! Make the transformation volume-preserving
+call volume_preserving_strain_transformation(a_box, b_box, c_box, params%box_scaling_factor)
+! Volume scaling
+call get_ns_unbiased_volume_proposal(1.d0-params%nested_max_volume_change, 1.d0+params%nested_max_volume_change, n_sites, rand)
+params%box_scaling_factor = params%box_scaling_factor * (rand)**(1.d0/3.d0)
+! Each MPI process has a different set of random numbers so we need to broadcast
+#ifdef _MPIF90
+call mpi_bcast(params%box_scaling_factor, 9, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+#endif
+end if
+!       This is the so-called total enthalpy Hamiltonian Montecarlo approach (with physical masses)
+!       We do not need to broadcast the velocities here since they get broadcasted later on; otherwise
+!       we would have to do it since each MPI rank may see a different random number
         call random_number( velocities )
         call remove_cm_vel(velocities(1:3,1:n_sites), masses(1:n_sites))    
         e_kin = 0.d0
@@ -1823,23 +1861,8 @@ end if
         end do
         call random_number( rand )
         rand = rand * 4.d0/3.d0 - 1.d0/3.d0
-        velocities = velocities / sqrt(e_kin) * sqrt(e_max - energy + 1.5d0*real(n_sites-1)*kB*params%t_extra*max(0.d0, rand))
-!       This only gets triggered if we are doing box rescaling, i.e., if the target nested sampling pressure (*not* the
-!       actual pressure for the atomic configuration) is > 0
-!!!!!!!!!!!!!!!!!!!!!!!!!! Temporary hack
-if( .false. )then
-params%scale_box = .true.
-call random_number(rand_scale)
-!!!!!!!!!!!!!!! Fix this, hardcoded to 0.5% strain at the moment; volume scaling and shear/axial should be handled separately with input parameters
-!!!!!!!!!!!!!!! The size of the scaling should also decrease as we reach convergence (otherwise all trial moves will be rejected)
-!!!!!!!!!!!!!!! I should also implement the appropriate probability distribution which favors larger volumes (rescaling the homogeneous probability
-!               distribution from the random number generator
-!!!!!!!!!!!!!!! Finally, there should be a limit for the acceptable aspect ratio of the simulation box
-rand_scale = 2.d0*(rand_scale - 0.5d0) * 0.005d0
-params%box_scaling_factor = reshape([1.d0+rand_scale(1), rand_scale(6)/2.d0, rand_scale(5)/2.d0, &
-                                     rand_scale(6)/2.d0, 1.d0+rand_scale(2), rand_scale(4)/2.d0, &
-                                     rand_scale(5)/2.d0, rand_scale(4)/2.d0, 1.d0+rand_scale(3)], [3,3])
-end if
+        velocities = velocities / sqrt(e_kin) * sqrt(e_max - energy - params%p_nested/eVperA3tobar*v_uc + &
+                                                     1.5d0*real(n_sites-1)*kB*params%t_extra*max(0.d0, rand))
       else if( i_nested == params%n_nested )then
         exit_loop = .true.
       end if
@@ -1885,7 +1908,7 @@ end if
 #ifdef _MPIF90
     IF( rank == 0 )then
 #endif
-    if( params%do_md )then
+    if( params%do_md .and. .not. params%do_nested_sampling )then
 !      write(*,'(A)')'] |'
 !      write(*,*)
       write(*,*)'                                       |'

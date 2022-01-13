@@ -603,6 +603,18 @@ end if
       else if(keyword=='t_extra')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%t_extra
+      else if(keyword=='p_nested')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%p_nested
+      else if(keyword=='nested_max_strain')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%nested_max_strain
+      else if(keyword=='nested_max_volume_change')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%nested_max_volume_change
+      else if(keyword=='scale_box_nested')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%scale_box_nested
       else if(keyword=='write_velocities')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%write_velocities
@@ -882,6 +894,9 @@ end if
         write(*,*)'energy MD. The selected thermostat has |'
         write(*,*)'been disabled.                         |'
       end if
+!     Prepare directory where we create the latest version of the walkers
+      call system("rm -rf walkers/")
+      call system("mkdir -p walkers/")
     end if
 
 !   Set the writeouts

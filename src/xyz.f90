@@ -34,7 +34,7 @@ module xyz_module
 
 
 !**************************************************************************
-! This subroutine writes the trajectory_out.xyz file with ASE's extended
+! This subroutine writes the filename (usually trajectory_out.xyz) file with ASE's extended
 ! XYZ format
 !
 ! Each property is designated with a number:
@@ -66,7 +66,8 @@ module xyz_module
 !
   subroutine write_extxyz( Nat, md_istep, dt, temperature, pressure, a_cell, b_cell, c_cell, virial, &
                            species, positions, velocities, forces, local_energies, masses, &
-                           hirshfeld_v, write_property, write_array_property, fix_atom )
+                           hirshfeld_v, write_property, write_array_property, fix_atom, filename, &
+                           overwrite )
 
     implicit none
 
@@ -75,8 +76,8 @@ module xyz_module
     real*8, intent(in) :: forces(:,:), velocities(:,:), positions(:,:), local_energies(:), masses(:)
     real*8, intent(in) :: hirshfeld_v(:)
     integer, intent(in) :: Nat, md_istep
-    character(len=*), intent(in) :: species(:)
-    logical, intent(in) :: write_property(:), write_array_property(:), fix_atom(:,:)
+    character(len=*), intent(in) :: species(:), filename
+    logical, intent(in) :: write_property(:), write_array_property(:), fix_atom(:,:), overwrite
 
 !   Internal variables:
     real*8 :: vol
@@ -98,10 +99,10 @@ module xyz_module
       end if
     end do
 
-    if( md_istep == 0 .or. md_istep == -1 )then
-      open(unit=10, file="trajectory_out.xyz", status="unknown")
+    if( md_istep == 0 .or. md_istep == -1 .or. overwrite )then
+      open(unit=10, file=filename, status="unknown")
     else
-      open(unit=10, file="trajectory_out.xyz", status="old", position="append")
+      open(unit=10, file=filename, status="old", position="append")
     end if
 
 !   We always write the number of atoms on the first line
