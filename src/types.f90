@@ -106,7 +106,7 @@ module types
   type image
     real*8, allocatable :: positions(:,:), positions_prev(:,:), velocities(:,:), masses(:), &
                            forces(:,:), forces_prev(:,:)
-    real*8 :: a_box(1:3), b_box(1:3), c_box(1:3), energy
+    real*8 :: a_box(1:3), b_box(1:3), c_box(1:3), energy, e_kin
     integer, allocatable :: species(:), species_supercell(:)
     integer :: n_sites, indices(1:3)
     logical, allocatable :: fix_atom(:,:)
@@ -122,14 +122,14 @@ module types
 ! This provides a way to pass all the individual arrays/variables in the main code to an image container
 ! In time I should make the image data type the default way to store these properties!!!!!!!
   subroutine from_properties_to_image(this_image, positions, velocities, masses, &
-                                      forces, a_box, b_box, c_box, energy, &
+                                      forces, a_box, b_box, c_box, energy, e_kin, &
                                       species, species_supercell, n_sites, indices, fix_atom, &
                                       xyz_species, xyz_species_supercell)
     implicit none
 
 !   Input variables
     real*8, intent(in) :: positions(:,:), velocities(:,:), masses(:), &
-                           forces(:,:), a_box(1:3), b_box(1:3), c_box(1:3), energy
+                           forces(:,:), a_box(1:3), b_box(1:3), c_box(1:3), energy, e_kin
     integer, intent(in) :: species(:), species_supercell(:), n_sites, indices(1:3)
     logical, intent(in) :: fix_atom(:,:)
     character*8, intent(in) :: xyz_species(:), xyz_species_supercell(:)
@@ -166,6 +166,8 @@ module types
 
     this_image%energy = energy
 
+    this_image%e_kin = e_kin
+
     n = size(species, 1)
     if( allocated( this_image%species ) )deallocate( this_image%species )
     allocate( this_image%species(1:n) )
@@ -197,7 +199,7 @@ module types
   end subroutine
 
   subroutine from_image_to_properties(this_image, positions, velocities, masses, &
-                                      forces, a_box, b_box, c_box, energy, &
+                                      forces, a_box, b_box, c_box, energy, e_kin, &
                                       species, species_supercell, n_sites, indices, fix_atom, &
                                       xyz_species, xyz_species_supercell)
     implicit none
@@ -207,7 +209,7 @@ module types
 !   Output variables
     real*8, allocatable, intent(out) :: positions(:,:), velocities(:,:), masses(:), &
                            forces(:,:)
-    real*8, intent(out) :: a_box(1:3), b_box(1:3), c_box(1:3), energy
+    real*8, intent(out) :: a_box(1:3), b_box(1:3), c_box(1:3), energy, e_kin
     integer, allocatable, intent(out) :: species(:), species_supercell(:)
     integer, intent(out) :: n_sites, indices(1:3)
     logical, allocatable, intent(out) :: fix_atom(:,:)
@@ -238,6 +240,8 @@ module types
     c_box = this_image%c_box
 
     energy = this_image%energy
+
+    e_kin = this_image%e_kin
 
     n = size(this_image%species, 1)
     allocate( species(1:n) )

@@ -1748,7 +1748,7 @@ end if
 !     Save initial pool of structures
       velocities = 0.d0
       call from_properties_to_image(images(i_image), positions, velocities, masses, &
-                                    forces, a_box, b_box, c_box, energy, &
+                                    forces, a_box, b_box, c_box, energy, E_kinetic, &
                                     species, species_supercell, n_sites, indices, fix_atom, &
                                     xyz_species, xyz_species_supercell)
     end if
@@ -1778,10 +1778,10 @@ end if
         velocities = 0.d0
 !       Unit cell volume
         v_uc = dot_product( cross_product(a_box, b_box), c_box ) / (dfloat(indices(1)*indices(2)*indices(3)))
-!       We check enthalpy, not potential energy (they are the same for P = 0)
-        if( energy + params%p_nested/eVperA3tobar*v_uc < e_max )then
+!       We check enthalpy, not internal energy (they are the same for P = 0)
+        if( energy + E_kinetic + params%p_nested/eVperA3tobar*v_uc < e_max )then
           call from_properties_to_image(images(i_image), positions, velocities, masses, &
-                                        forces, a_box, b_box, c_box, energy, &
+                                        forces, a_box, b_box, c_box, energy, E_kinetic, &
                                         species, species_supercell, n_sites, indices, fix_atom, &
                                         xyz_species, xyz_species_supercell)
         end if
@@ -1796,8 +1796,8 @@ end if
           v_uc = dot_product( cross_product(images(i)%a_box, images(i)%b_box), images(i)%c_box ) / &
                  (dfloat(images(i)%indices(1)*images(i)%indices(2)*images(i)%indices(3)))
 !         We check enthalpy, not potential energy (they are the same for P = 0)
-          if( images(i)%energy + params%p_nested/eVperA3tobar*v_uc > e_max )then
-            e_max = images(i)%energy + params%p_nested/eVperA3tobar*v_uc
+          if( images(i)%energy + images(i)%e_kin + params%p_nested/eVperA3tobar*v_uc > e_max )then
+            e_max = images(i)%energy + images(i)%e_kin + params%p_nested/eVperA3tobar*v_uc
             i_max = i
           end if
         end do
@@ -1817,13 +1817,13 @@ end if
           counter = 1
 !          write(*,*)
           write(*,*)'                                       |'
-          write(*,'(A,I6,A,I6,A)') "Nested sampling iteration:", i_nested, "/", params%n_nested, " |"
+          write(*,'(A,I8,A,I8,A)') "Nested sampling iter.:", i_nested, "/", params%n_nested, " |"
           write(*,'(A,I8,A)') " - Highest enthalpy walker:    ", i_image, " |"
           write(*,'(A,I8,A)') " - Walker selected for cloning:", i, " |"
           write(*,'(A,F15.4,A)') " - Maximum enthalpy: ", e_max, " eV |"
         end if
         call from_image_to_properties(images(i), positions, velocities, masses, &
-                                      forces, a_box, b_box, c_box, energy, &
+                                      forces, a_box, b_box, c_box, energy, E_kinetic, &
                                       species, species_supercell, n_sites, indices, fix_atom, &
                                       xyz_species, xyz_species_supercell)
         v_uc = dot_product( cross_product(images(i)%a_box, images(i)%b_box), images(i)%c_box ) / &
@@ -1860,9 +1860,10 @@ end if
           e_kin = e_kin + 0.5d0 * masses(i) * dot_product(velocities(1:3, i), velocities(1:3, i))
         end do
         call random_number( rand )
-        rand = rand * 4.d0/3.d0 - 1.d0/3.d0
-        velocities = velocities / sqrt(e_kin) * sqrt(e_max - energy - params%p_nested/eVperA3tobar*v_uc + &
-                                                     1.5d0*real(n_sites-1)*kB*params%t_extra*max(0.d0, rand))
+!        rand = rand * 4.d0/3.d0 - 1.d0/3.d0
+!        velocities = velocities / sqrt(e_kin) * sqrt(e_max - energy - params%p_nested/eVperA3tobar*v_uc + &
+!                                                     1.5d0*real(n_sites-1)*kB*params%t_extra*max(0.d0, rand))
+        velocities = velocities / sqrt(e_kin) * sqrt(rand*(e_max - energy - params%p_nested/eVperA3tobar*v_uc))
       else if( i_nested == params%n_nested )then
         exit_loop = .true.
       end if
