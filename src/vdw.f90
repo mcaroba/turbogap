@@ -455,7 +455,8 @@ module vdw
     integer, allocatable :: ipiv(:), n_sneigh(:), sneighbors_list(:), p_to_i(:), i_to_p(:), &
                             neighbors_list2(:), local_neighbors(:), neighbor_species2(:), &
                             neighbor_species_H(:)
-    integer :: n_sites, n_pairs, n_species, n_sites0, info, n_order, n_tot, n_spairs, n_beg, n_end
+    integer :: n_sites, n_pairs, n_species, n_sites0, info, n_order, n_tot, n_spairs, n_beg, n_end, &
+               n_ssites
     integer :: i, i2, j, j2, k, k2, k3, a, a2, c1, c2, c3, lwork, b, p, q
     logical :: do_timing = .false., do_hirshfeld_gradients = .true., nonlocal = .false., &
                series_expansion = .true., total_energy = .false., series_average = .true.
@@ -473,8 +474,8 @@ module vdw
     n_sites0 = size(forces0, 2)
 
 !   This should allow to only take a subset of atoms for parallelization:
-    n_beg = 1
-    n_end = n_sites
+    n_beg = 5
+    n_end = 8
 
 !   Hartree units (calculations done in Hartree units for simplicity)
     Bohr = 0.5291772105638411
@@ -497,8 +498,8 @@ module vdw
     allocate( s_i(1:11) )
     allocate( s_j(1:11) )
     allocate( sigma_ij(1:11) )
-    allocate( alpha_i(n_beg:n_end,1:11) )
-    allocate( sigma_i(n_beg:n_end,1:11) )
+!    allocate( alpha_i(n_beg:n_end,1:11) )
+!    allocate( sigma_i(n_beg:n_end,1:11) )
     allocate( coeff_h_der(1:11) )
     allocate( terms(1:11) )
     allocate( dg(1:11) )
@@ -521,6 +522,7 @@ module vdw
     do i = n_beg, n_end
       allocate( local_neighbors(1:n_neigh(i)) )
       local_neighbors = neighbors_list(n_tot+1:n_tot+n_neigh(i))
+      n_ssites = 0
       n_sneigh = 0
       neighbors_list2 = 0
       hirshfeld_v_cart_der2 = 0
@@ -534,10 +536,11 @@ module vdw
       k2 = 0
       do p = 1, n_neigh(i)
         if ( rjs(n_tot+p) < rcut ) then
+          n_ssites = n_ssites + 1
           i2 = local_neighbors(p)
           k2 = k2+1
-          p_to_i(p) = i2
-          i_to_p(i2) = p
+          p_to_i(n_ssites) = i2
+          i_to_p(i2) = n_ssites
           k = sum(n_neigh(1:i2)) - n_neigh(i2) + 1
           neighbors_list2(k2) = neighbors_list(k)
           hirshfeld_v_cart_der2(1:3,k2) = hirshfeld_v_cart_der(1:3,k)
@@ -545,6 +548,7 @@ module vdw
           xyz2(1:3,k2) = xyz(1:3,k)
           hirshfeld_v_neigh2(k2) = hirshfeld_v_neigh(k)
           neighbor_species2(k2) = neighbor_species(k)
+          n_sneigh(n_ssites) = n_sneigh(n_ssites) + 1
           ! Go through the neighbors of i2
           do j2 = 2, n_neigh(i2)
             k = k+1
@@ -556,7 +560,7 @@ module vdw
               if ( rjs(n_tot+q) < rcut) then
                 ! Is it also within cutoff of i2?
                 if ( rjs(k) < rcut ) then
-                  n_sneigh(p) = n_sneigh(p) + 1
+                  n_sneigh(n_ssites) = n_sneigh(n_ssites) + 1
                   k2 = k2+1
                   neighbors_list2(k2) = j
                   hirshfeld_v_cart_der2(1:3,k2) = hirshfeld_v_cart_der(1:3,k)
@@ -569,9 +573,9 @@ module vdw
             end if
           end do
           ! Add the self-neighbor if atom has neighbors at all:
-          if ( n_sneigh(p) > 0 ) then
-            n_sneigh(p) = n_sneigh(p) + 1
-          end if
+!          if ( n_sneigh(n_ssites) > 0 ) then
+!            n_sneigh(n_ssites) = n_sneigh(n_ssites) + 1
+!          end if
         end if
       end do
 
@@ -601,6 +605,21 @@ module vdw
         end if
       end do
 
+!      write(*,*) "sneighbors_list"
+!      k = 0
+!      do p = 1, n_ssites
+!        write(*,*) "p", p
+!        write(*,*) "p to i", p_to_i(p)
+!        do q = 1, n_sneigh(p)
+!          k = k+1
+!          write(*,*) sneighbors_list(k)
+!        end do
+!      end do
+!      write(*,*) "k", k
+!      write(*,*) size(sneighbors_list)
+!      write(*,*) "n_neigh(i)", n_neigh(i)
+!      write(*,*) "n_ssites", n_ssites
+
       rcut_H = rcut/Bohr
       rjs_H = rjs_H/Bohr
       xyz_H = xyz_H/Bohr
@@ -628,14 +647,14 @@ module vdw
       allocate( alpha_k(1:n_spairs,1:11) )
       allocate( sigma_k(1:n_spairs,1:11) )
 
-      k2 = 1
-      do i2 = n_beg, n_end
-        do k = 1, 11
-          alpha_i(i2,k) = neighbor_alpha0(k2)/(1.d0 + omegas(k)**2/omega_i(k2)**2)
-          sigma_i(i2,k) = (sqrt(2.d0/pi) * alpha_i(i2,k)/3.d0)**(1.d0/3.d0)
-        end do
-        k2 = k2+n_neigh(i)
-      end do
+!      k2 = 1
+!      do i2 = n_beg, n_end
+!        do k = 1, 11
+!          alpha_i(i2,k) = neighbor_alpha0(k2)/(1.d0 + omegas(k)**2/omega_i(k2)**2)
+!          sigma_i(i2,k) = (sqrt(2.d0/pi) * alpha_i(i2,k)/3.d0)**(1.d0/3.d0)
+!        end do
+!        k2 = k2+n_neigh(i)
+!      end do
 
       do k = 1, 11
         alpha_k(:,k) = neighbor_alpha0/(1.d0 + omegas(k)**2/omega_i**2)
@@ -652,7 +671,7 @@ module vdw
       T_func = 0.d0
       f_damp = 0.d0
       k = 0
-      do p = 1, n_neigh(i)
+      do p = 1, n_ssites
         k = k+1
         r_vdw_i = r0_ii(k)
         do q = 2, n_sneigh(p)
@@ -678,7 +697,7 @@ module vdw
       g_func = 0.d0
       h_func = 0.d0
       k = 0
-      do p = 1, n_neigh(i)
+      do p = 1, n_ssites
         k = k+1
         s_i = sigma_k(k,:)
         do q = 2, n_sneigh(p)
@@ -702,13 +721,13 @@ module vdw
       
 !      write(*,*) "T_SR"
 
-      allocate( T_SR(1:3*n_neigh(i),1:3*n_neigh(i),1:11) )
-      allocate( B_mat(1:3*n_neigh(i),1:3*n_neigh(i),1:11) )
+      allocate( T_SR(1:3*n_ssites,1:3*n_ssites,1:11) )
+      allocate( B_mat(1:3*n_ssites,1:3*n_ssites,1:11) )
 
       T_SR = 0.d0
       B_mat = 0.d0
       k = 0
-      do p = 1, n_neigh(i)
+      do p = 1, n_ssites
         k = k+1
         do c1 = 1, 3
           B_mat(3*(p-1)+c1,3*(p-1)+c1,:) = 1.d0/alpha_k(k,:)
@@ -737,7 +756,7 @@ module vdw
 
       dT = 0.d0
       k = 0
-      do p = 1, n_neigh(i)
+      do p = 1, n_ssites
         k = k+1
         do j2 = 2, n_sneigh(p)
           k = k+1
@@ -766,7 +785,7 @@ module vdw
 
 !      write(*,*) "dT_SR"
       
-      allocate( dT_SR(1:3*n_neigh(i),1:3*n_neigh(i),1:n_neigh(i),1:3,1:11) )
+      allocate( dT_SR(1:3*n_ssites,1:3*n_ssites,1:n_ssites,1:3,1:11) )
       allocate( f_damp_der(1:n_spairs,1:3) )
       allocate( g_func_der(1:n_spairs,1:3,1:11) )
       allocate( h_func_der(1:9*n_spairs,1:3,1:11) )
@@ -776,9 +795,10 @@ module vdw
       h_func_der = 0.d0
       dT_SR = 0.d0
 
-      do a = 1, n_neigh(i)
+      do a = 1, n_ssites
         k = 0
-        do p = 1, n_neigh(i)
+        k3 = 0
+        do p = 1, n_ssites
           k = k+1
           r_vdw_i = r0_ii(k)
           do j2 = 2, n_sneigh(p)
@@ -788,7 +808,7 @@ module vdw
             q = i_to_p(j)
             if (rjs_H(k) < rcut_H) then
               if (a == p .or. a == q) then
-                sigma_ij = sqrt(sigma_i(p_to_i(p),:)**2 + sigma_i(j,:)**2)
+                sigma_ij = sqrt(sigma_k(k3+1,:)**2 + sigma_k(k,:)**2)
                 do c3 = 1, 3
                   f_damp_der(k,c3) = d/(sR*(r_vdw_i + r_vdw_j)) * f_damp(k)**2 * &
                                        exp( -d*(rjs_H(k)/(sR*(r_vdw_i + &
@@ -824,16 +844,17 @@ module vdw
               end if
             end if
           end do
+          k3 = k3+n_sneigh(p)
         end do
       end do
       
 !      write(*,*) "dB_mat"
 
-      allocate( dB_mat(1:3*n_neigh(i),1:3*n_neigh(i),1:n_neigh(i),1:3,1:11) )
-      allocate( dT_SR_v(1:3*n_neigh(i),1:3*n_neigh(i),1:n_neigh(i),1:3,1:11) )
-      allocate( dB_mat_v(1:3*n_neigh(i),1:3*n_neigh(i),1:n_neigh(i),1:3,1:11) )
-      allocate( coeff_der(1:n_neigh(i),1:n_neigh(i),1:3,1:3,1:11) )
-      allocate( coeff_fdamp(1:n_neigh(i),1:n_neigh(i),1:3,1:3,1:11) )
+      allocate( dB_mat(1:3*n_ssites,1:3*n_ssites,1:n_ssites,1:3,1:11) )
+      allocate( dT_SR_v(1:3*n_ssites,1:3*n_ssites,1:n_ssites,1:3,1:11) )
+      allocate( dB_mat_v(1:3*n_ssites,1:3*n_ssites,1:n_ssites,1:3,1:11) )
+      allocate( coeff_der(1:n_ssites,1:n_ssites,1:3,1:3,1:11) )
+      allocate( coeff_fdamp(1:n_ssites,1:n_ssites,1:3,1:3,1:11) )
 
       dB_mat = dT_SR
       if (do_hirshfeld_gradients) then
@@ -842,7 +863,8 @@ module vdw
         coeff_fdamp = 0.d0
         coeff_der = 0.d0
         k = 0
-        do p = 1, n_neigh(i)
+        k3 = 0
+        do p = 1, n_ssites
           k = k+1
           r_vdw_i = r0_ii(k)
           do j2 = 2, n_sneigh(p)
@@ -851,7 +873,7 @@ module vdw
             j = sneighbors_list(k)
             q = i_to_p(j)
             if (rjs_H(k) < rcut_H) then
-              sigma_ij = sqrt(sigma_i(p_to_i(p),:)**2 + sigma_i(j,:)**2)
+              sigma_ij = sqrt(sigma_k(k3+1,:)**2 + sigma_k(k,:)**2)
               S_vdW_ij = sR*(r_vdw_i + r_vdw_j)
               exp_term = exp(-d*(rjs_H(k)/S_vdW_ij - 1.d0))
               k2 = 9*(k-1)
@@ -869,33 +891,34 @@ module vdw
               end do
             end if
           end do
+          k3 = k3 + n_sneigh(p)
         end do
 
         k2 = 0
         k3 = 0
-        do p = 1, n_neigh(i)
+        do p = 1, n_ssites
           r_vdw_i = r0_ii(k3+1)
           do a2 = 1, n_sneigh(p)
             k2 = k2+1
             a = i_to_p(sneighbors_list(k2))
             do c3 = 1, 3
               do c1 = 1, 3
-                dB_mat_v(3*(p-1)+c1,3*(p-1)+c1,a,c3,:) = -1.d0/(hirshfeld_v(p_to_i(p))*alpha_i(p_to_i(p),:)) * &
+                dB_mat_v(3*(p-1)+c1,3*(p-1)+c1,a,c3,:) = -1.d0/(hirshfeld_v_neigh_H(k3+1)*alpha_k(k3+1,:)) * &
                               hirshfeld_v_cart_der_H(c3,k2)
               end do
               do k = 1, 11
                 do j2 = 2, n_sneigh(p)
                   if (rjs_H(k3+j2) < rcut_H) then
-                    j = neighbors_list(k3+j2)
+                    j = sneighbors_list(k3+j2)
                     q = i_to_p(j)
                     do c1 = 1, 3
                       do c2 = 1, 3
                         dT_SR_v(3*(p-1)+c1,3*(q-1)+c2,a,c3,k) = dT_SR_v(3*(p-1)+c1,3*(q-1)+c2,a,c3,k) + &
-                          coeff_der(p,q,c1,c2,k) * (sigma_i(p_to_i(p),k)**2/hirshfeld_v(p_to_i(i)) * &
+                          coeff_der(p,q,c1,c2,k) * (sigma_k(k3+1,k)**2/hirshfeld_v_neigh_H(k3+1) * &
                           hirshfeld_v_cart_der_H(c3,k2))
                         dT_SR_v(3*(p-1)+c1,3*(q-1)+c2,a,c3,k) = &
                           dT_SR_v(3*(p-1)+c1,3*(q-1)+c2,a,c3,k) + &
-                          coeff_fdamp(p,q,c1,c2,k) * r_vdw_i/hirshfeld_v(p_to_i(p)) * hirshfeld_v_cart_der_H(c3,k2)
+                          coeff_fdamp(p,q,c1,c2,k) * r_vdw_i/hirshfeld_v_neigh_H(k3+1) * hirshfeld_v_cart_der_H(c3,k2)
                       end do
                     end do
                   end if      
@@ -907,25 +930,25 @@ module vdw
         end do
         k2 = 0
         k3 = 0
-        do q = 1, n_neigh(i)
+        do q = 1, n_ssites
           r_vdw_j = r0_ii(k3+1)
           do a2 = 1, n_sneigh(q)
             k2 = k2+1
-            a = neighbors_list(k2)
+            a = i_to_p(sneighbors_list(k2))
             do c3 = 1, 3
               do k = 1, 11
                 do j2 = 2, n_sneigh(q)
                   if (rjs_H(k3+j2) < rcut_H) then
-                    i2 = neighbors_list(k3+j2)
+                    i2 = sneighbors_list(k3+j2)
                     p = i_to_p(i2)
                     do c1 = 1, 3
                       do c2 = 1, 3
                         dT_SR_v(3*(p-1)+c1,3*(q-1)+c2,a,c3,k) = dT_SR_v(3*(p-1)+c1,3*(q-1)+c2,a,c3,k) + &
-                          coeff_der(p,q,c1,c2,k) * (sigma_i(p_to_i(q),k)**2/hirshfeld_v(p_to_i(q)) * &
+                          coeff_der(p,q,c1,c2,k) * (sigma_k(k3+1,k)**2/hirshfeld_v_neigh_H(k3+1) * &
                           hirshfeld_v_cart_der_H(c3,k2))
                         dT_SR_v(3*(p-1)+c1,3*(q-1)+c2,a,c3,k) = &
                           dT_SR_v(3*(p-1)+c1,3*(q-1)+c2,a,c3,k) + &
-                          coeff_fdamp(p,q,c1,c2,k) * r_vdw_j/hirshfeld_v(p_to_i(q)) * hirshfeld_v_cart_der_H(c3,k2)
+                          coeff_fdamp(p,q,c1,c2,k) * r_vdw_j/hirshfeld_v_neigh_H(k3+1) * hirshfeld_v_cart_der_H(c3,k2)
                       end do
                     end do
                   end if
@@ -941,46 +964,47 @@ module vdw
         dB_mat = dB_mat + dB_mat_v
       end if
 
-      allocate( A_mat(1:3*n_neigh(i),1:3*n_neigh(i),1:11) )
+      allocate( A_mat(1:3*n_ssites,1:3*n_ssites,1:11) )
       A_mat = B_mat
 
-      allocate( ipiv(1:3*n_neigh(i)) )
-      allocate( work_arr(1:12*n_neigh(i)) )
+      allocate( ipiv(1:3*n_ssites) )
+      allocate( work_arr(1:12*n_ssites) )
       do k3 = 1, 11
-        call dgetrf(3*n_neigh(i), 3*n_neigh(i), A_mat(:,:,k3), 3*n_neigh(i), ipiv, info)
-        call dgetri(3*n_neigh(i), A_mat(:,:,k3), 3*n_neigh(i), ipiv, work_arr, 12*n_neigh(i), info)
+        call dgetrf(3*n_ssites, 3*n_ssites, A_mat(:,:,k3), 3*n_ssites, ipiv, info)
+        call dgetri(3*n_ssites, A_mat(:,:,k3), 3*n_ssites, ipiv, work_arr, 12*n_ssites, info)
       end do
 
       do k3 = 1, 11
 !        do p = 1, n_neigh(i)
         A_i = 0.d0
-        do q = 1, n_neigh(i)
+        do q = 1, n_ssites
           A_i = A_i + A_mat(1:3,3*(q-1)+1:3*(q-1)+3,k3)
         end do
         alpha_SCS(i,k3) = 1.d0/3.d0 * (A_i(1,1)+A_i(2,2)+A_i(3,3))
 !        end do
       end do
 
-      allocate( dA_mat(1:3,1:3*n_neigh(i),1:n_neigh(i),1:3,1:11) )
-      allocate( AdB_n(1:3,1:3*n_neigh(i)) )
+      allocate( dA_mat(1:3,1:3*n_ssites,1:n_ssites,1:3,1:11) )
+      allocate( AdB_n(1:3,1:3*n_ssites) )
       dA_mat = 0.d0
-      do a2 = 1, n_neigh(i)
+      do a2 = 1, n_ssites
         do k = 1, 11
           do c3 = 1, 3
             AdB_n = 0.d0
-            call dgemm('n', 'n', 3, 3*n_neigh(i), 3*n_neigh(i), 1.d0, -A_mat(1:3,:,k), 3, &
-                       dB_mat(:,:,a2,c3,k), 3*n_neigh(i), 0.d0, AdB_n, 3)
-            call dgemm('n', 'n', 3, 3*n_neigh(i), 3*n_neigh(i), 1.d0, AdB_n, 3, A_mat(:,:,k), &
-                       3*n_neigh(i), 0.d0, dA_mat(:,:,a2,c3,k), 3)
+            call dgemm('n', 'n', 3, 3*n_ssites, 3*n_ssites, 1.d0, -A_mat(1:3,:,k), 3, &
+                       dB_mat(:,:,a2,c3,k), 3*n_ssites, 0.d0, AdB_n, 3)
+            call dgemm('n', 'n', 3, 3*n_ssites, 3*n_ssites, 1.d0, AdB_n, 3, A_mat(:,:,k), &
+                       3*n_ssites, 0.d0, dA_mat(:,:,a2,c3,k), 3)
           end do
         end do
       end do
 
-      do a2 = 1, n_neigh(i)
+!     Remember that the a2 here are just the permuted indices: p_to_i should be part of the output array
+      do a2 = 1, n_ssites
         do k = 1, 11
           do c3 = 1, 3
             A_i = 0.d0
-            do q = 1, n_neigh(i)
+            do q = 1, n_ssites
               A_i = A_i + dA_mat(1:3,3*(q-1)+1:3*(q-1)+3,a2,c3,k)
             end do
             do c1 = 1, 3
@@ -994,7 +1018,7 @@ module vdw
       ! WRONG VALUES FOR alpha_SCS and dalpha! CHECK INTERMEDIATE VALUES!
       write(*,*) "alpha_SCS:", i, alpha_SCS(i,1)
       write(*,*) "dalpha:"
-      do p = 1, n_neigh(i)
+      do p = 1, n_ssites
         write(*,*) dalpha(n_tot+p,1,1)
       end do
 
@@ -1013,7 +1037,7 @@ module vdw
                   dT_SR_v, dB_mat_v, coeff_der, coeff_fdamp, A_mat, dA_mat, ipiv, work_arr, AdB_n )
       n_tot = n_tot+n_neigh(i)
     end do
-    deallocate( omegas, s_i, s_j, sigma_ij, alpha_i, sigma_i, coeff_h_der, terms, n_sneigh, p_to_i, i_to_p, &
+    deallocate( omegas, s_i, s_j, sigma_ij, coeff_h_der, terms, n_sneigh, p_to_i, i_to_p, &
                 neighbors_list2, hirshfeld_v_cart_der2, rjs2, xyz2, hirshfeld_v_neigh2, neighbor_species2, &
                 dg, dh, A_i, alpha_SCS, dalpha )
     call cpu_time(time2)
@@ -1022,7 +1046,9 @@ module vdw
 
 !~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~OLD IMPLEMENTATION STARTS HERE~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-
+!   This implementation assumes that rcut is the largest cutoff, that is, the neigbhbors_list contains only the atoms within the vdW cutoff.
+!   The implementation matches with the implementation above if rcut is the largest cutoff or the cutoff is so small that the only neighbor
+!   the atoms see are themselves (n_neigh(i) = 1 for all i).
 
 
 !   Allocate all the necessary stuff
