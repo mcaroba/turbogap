@@ -461,6 +461,14 @@ module vdw
     logical :: do_timing = .false., do_hirshfeld_gradients = .true., nonlocal = .false., &
                series_expansion = .true., total_energy = .false., series_average = .true.
 
+!   IMPORTANT NOTE ABOUT THE DERIVATIVES:
+!   If rcut < rcut_soap, the derivatives in the new implementation omit the terms that fall outside of rcut.
+!   This means that the finite difference and the analytical derivative do not match in the present version
+!   in this special case. The old implementation gives the correct derivatives even in this case. I will
+!   probably fix this at some point but it will require using the full n_neigh(i) again, instead of 
+!   n_ssites, to construct the sneighbors_list.
+
+
 !   Change these to be input variables (NOTE THAT THEY ARE IN ANGSTROMS!):
     write(*,*) "rcut", rcut
 !    rcut_vdw = 4.d0
@@ -474,8 +482,8 @@ module vdw
     n_sites0 = size(forces0, 2)
 
 !   This should allow to only take a subset of atoms for parallelization:
-    n_beg = 5
-    n_end = 8
+    n_beg = 1
+    n_end = 1
 
 !   Hartree units (calculations done in Hartree units for simplicity)
     Bohr = 0.5291772105638411
@@ -518,7 +526,7 @@ module vdw
     allocate( p_to_i(1:n_sites) )
     allocate( i_to_p(1:n_sites) )
     n_tot = sum(n_neigh(1:n_beg))-n_neigh(n_beg)  ! Can you just do sum(n_neigh(1:n_beg-1)) or what happens if n_beg = 1?
-    write(*,*) "n_tot init:", n_tot
+!    write(*,*) "n_tot init:", n_tot
     do i = n_beg, n_end
       allocate( local_neighbors(1:n_neigh(i)) )
       local_neighbors = neighbors_list(n_tot+1:n_tot+n_neigh(i))
@@ -1015,12 +1023,13 @@ module vdw
         end do
       end do
 
-      ! WRONG VALUES FOR alpha_SCS and dalpha! CHECK INTERMEDIATE VALUES!
-      write(*,*) "alpha_SCS:", i, alpha_SCS(i,1)
-      write(*,*) "dalpha:"
-      do p = 1, n_ssites
-        write(*,*) dalpha(n_tot+p,1,1)
-      end do
+!TEST1
+!      write(*,*) "atom:", i
+!      write(*,*) "alpha_SCS:", alpha_SCS(i,1)
+!      write(*,*) "dalpha:"
+!      do p = 1, n_ssites
+!        write(*,*) p_to_i(p), dalpha(n_tot+p,1,1)
+!      end do
 
 !      write(*,*) "Central atom:", i
 !      k = 0
@@ -1041,7 +1050,8 @@ module vdw
                 neighbors_list2, hirshfeld_v_cart_der2, rjs2, xyz2, hirshfeld_v_neigh2, neighbor_species2, &
                 dg, dh, A_i, alpha_SCS, dalpha )
     call cpu_time(time2)
-    write(*,*) "sub neighbor list timing:", time2-time1
+!TEST1
+!    write(*,*) "sub neighbor list timing:", time2-time1
 
 
 !~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~OLD IMPLEMENTATION STARTS HERE~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1409,8 +1419,10 @@ module vdw
     allocate( dalpha_n(1:n_pairs,1:3,1:11) )
     alpha_SCS_i = 0.d0
     dalpha_n = 0.d0
-    do i = 1, n_sites
-      write(*,*) "allocate"
+! TEST1
+    do i = 1, 1
+!    do i = 1, n_sites
+!      write(*,*) "allocate"
       allocate( T_SR_i(1:3*n_neigh(i),1:3*n_neigh(i),1:11) )
       allocate( B_mat_i(1:3*n_neigh(i),1:3*n_neigh(i),1:11) )
       allocate( A_mat_i(1:3*n_neigh(i),1:3*n_neigh(i),1:11) )
@@ -1424,7 +1436,13 @@ module vdw
       A_mat_i = 0.d0
       alpha_SCS_i = 0.d0
 
-      write(*,*) "T_SR_i"
+!      write(*,*) "rjs"
+
+!      do p = 1, n_neigh(i)
+!        write(*,*) rjs(n_tot+p)
+!      end do
+
+
       k = 0
       ! Changing the order and logic in some of the loops here might make a difference. Have to test.
       ! The problem is having to go through the entire neighbors list for each atom (to get interactions
@@ -1433,6 +1451,8 @@ module vdw
         if ( any(neighbors_list(n_tot+1:n_tot+n_neigh(i)) == i2) ) then
           p = findloc(neighbors_list(n_tot+1:n_tot+n_neigh(i)),i2,1)
 !          write(*,*) "i2, p, neighbors_list(n_tot+p)", i2, p, neighbors_list(n_tot+p)
+!          if ( rjs(n_tot+p) < rcut ) then
+!            write(*,*) p, alpha_k(n_tot+p,:)
           k = k+1
           do c1 = 1, 3
             B_mat_i(3*(p-1)+c1,3*(p-1)+c1,:) = 1.d0/alpha_k(n_tot+p,:)
@@ -1440,21 +1460,28 @@ module vdw
           do j2 = 2, n_neigh(i2)
             k = k+1
             j = neighbors_list(k)
-!            write(*,*) "i2, j, rjs(k)", i2, j, rjs(k)
+!              write(*,*) "i2, j, rjs(k)", i2, j, rjs(k)
             if ( any(neighbors_list(n_tot+1:n_tot+n_neigh(i)) == j) ) then
-               if ( rjs(k) < rcut) then
-                q = findloc(neighbors_list(n_tot+1:n_tot+n_neigh(i)),j,1)
-                k2 = 9*(k-1)
-                do c1 = 1, 3
-                  do c2 = 1, 3
-                    k2 = k2+1
-                    T_SR_i(3*(p-1)+c1,3*(q-1)+c2,:) = (1.d0-f_damp(k)) * (-T_func(k2) * &
-                                                      g_func(k,:) + h_func(k2,:))
+              q = findloc(neighbors_list(n_tot+1:n_tot+n_neigh(i)),j,1)
+              if ( rjs(n_tot+q) < rcut) then
+!                write(*,*) "q, rjs(k):", q, rjs(k)
+                if ( rjs(k) < rcut) then
+!                  write(*,*) "q:", q
+                  k2 = 9*(k-1)
+                  do c1 = 1, 3
+                    do c2 = 1, 3
+                      k2 = k2+1
+                      T_SR_i(3*(p-1)+c1,3*(q-1)+c2,:) = (1.d0-f_damp(k)) * (-T_func(k2) * &
+                                                        g_func(k,:) + h_func(k2,:))
+                    end do
                   end do
-                end do
+                end if
               end if
             end if
           end do
+!          else
+!            k = k+n_neigh(i2)
+!          end if
         else
           k = k+n_neigh(i2)
         end if
@@ -1462,10 +1489,23 @@ module vdw
       B_mat_i = B_mat_i + T_SR_i
       A_mat_i = B_mat_i
 
+!      write(*,*) "B_mat_i:"
+!      do p = 1, 6
+!        write(*,*) B_mat_i(p,1:6,1)
+!      end do
+
+
       do k3 = 1, 11
         call dgetrf(3*n_neigh(i), 3*n_neigh(i), A_mat_i(:,:,k3), 3*n_neigh(i), ipiv, info)
+!        write(*,*) "dgetrf:", k3, info
         call dgetri(3*n_neigh(i), A_mat_i(:,:,k3), 3*n_neigh(i), ipiv, work_arr, 12*n_sites, info)
+!        write(*,*) "dgetri:", k3, info
       end do
+
+!      write(*,*) "A_mat_i:"
+!      do p = 1, 6
+!        write(*,*) A_mat_i(p,1:6,1)
+!      end do
         
       ! Have to check, but probably only the central one is needed (p = 1)
       do k3 = 1, 11
@@ -1478,7 +1518,7 @@ module vdw
         end do
       end do
 
-      write(*,*) "dB_mat_n"
+!      write(*,*) "dB_mat_n"
       dB_mat_n = 0.d0
       do a2 = 1, n_neigh(i)
         a = neighbors_list(n_tot+a2)
@@ -1499,16 +1539,19 @@ module vdw
               j = neighbors_list(k)
 !              write(*,*) "i2, j, rjs(k)", i2, j, rjs(k)
               if ( any(neighbors_list(n_tot+1:n_tot+n_neigh(i)) == j) ) then
-                if (rjs(k) < rcut) then
+                q = findloc(neighbors_list(n_tot+1:n_tot+n_neigh(i)),j,1)
+                if (rjs(n_tot+q) < rcut) then
+                  if (rjs(k) < rcut) then
 !                  write(*,*) "i2, j:", i2, j
-                  q = findloc(neighbors_list(n_tot+1:n_tot+n_neigh(i)),j,1)
-                  do c1 = 1, 3
-                    do c2 = 1, 3
-                      do c3 = 1, 3
-                        dB_mat_n(3*(p-1)+c1,3*(q-1)+c2,a2,c3,:) = dB_mat(3*(i2-1)+c1,3*(j-1)+c2,a,c3,:)
+                    q = findloc(neighbors_list(n_tot+1:n_tot+n_neigh(i)),j,1)
+                    do c1 = 1, 3
+                      do c2 = 1, 3
+                        do c3 = 1, 3
+                          dB_mat_n(3*(p-1)+c1,3*(q-1)+c2,a2,c3,:) = dB_mat(3*(i2-1)+c1,3*(j-1)+c2,a,c3,:)
+                        end do
                       end do
                     end do
-                  end do
+                  end if
                 end if
               end if
             end do
@@ -1518,7 +1561,7 @@ module vdw
         end do
       end do
 
-      write(*,*) "dA_mat_n"
+!      write(*,*) "dA_mat_n"
       dA_mat_n = 0.d0
       do a2 = 1, n_neigh(i)
         do k = 1, 11
@@ -1532,7 +1575,7 @@ module vdw
         end do
       end do
 
-      write(*,*) "dalpha_n"
+!      write(*,*) "dalpha_n"
 !      dalpha_n = 0.d0
       do a2 = 1, n_neigh(i)
         do k = 1, 11
@@ -1548,17 +1591,24 @@ module vdw
           end do
         end do
       end do
-      write(*,*) "atom:", i
-      ! SCS polarizability of the central atom
+! TEST1
+!      write(*,*) "atom:", i
+!      ! SCS polarizability of the central atom
       write(*,*) "alpha_SCS:", alpha_SCS_i(n_tot+1,1)
-      write(*,*) "dalpha_SCS:", dalpha_n(n_tot+1,1,1)
+!      write(*,*) "dalpha_SCS:"
+!      do p = 1, n_neigh(i)
+!        write(*,*) neighbors_list(n_tot+p), dalpha_n(n_tot+p,1,1)
+!      end do
+
+
+
 
       n_tot = n_tot + n_neigh(i)
       
-      write(*,*) "deallocate"
+!      write(*,*) "deallocate"
       ! MEMORY CORRUPTION HERE: double free or corruption
       deallocate( T_SR_i, B_mat_i, A_mat_i, dB_mat_n, dA_mat_n, AdB_n )
-      write(*,*) "end"
+!      write(*,*) "end"
     end do
     ! TODO: This subroutine should output alpha_SCS_i and dalpha_n: they can be read using the neighbors_list
     ! The alpha_SCS_i should probably be reduced to the size of n_sites (only the SCS polarizability of each

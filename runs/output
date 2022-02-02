@@ -1,0 +1,101 @@
+ _________________________________________________________________ 
+                              _                                   \
+  ___________            __   \\ /\        _____     ___   _____  |
+ /____  ____/           / / /\|*\|*\/\    / ___ \   /   | |  _  \ |
+     / / __  __  __    / /  \********/   / /  /_/  / /| | | / | | |
+    / / / / / / / /_  / /__  \**__**/   / / ____  / / | | | |_/ / |
+   / / / / / / / __/ / ___ \ /*/  \*\  / / /_  / / /__| | |  __/  |
+  / / / /_/ / / /   / /__/ / \ \__/ / / /___/ / / ____  | | |     |
+ /_/_/_____/_/_/___/______/___\____/__\______/_/_/____|_|_|_|____ |
+ _____________________________________________________________  / |
+ *************************************************************|/  |
+                      Welcome to TurboGAP v0.1                    |
+                     Written and maintained by                    |
+                                                                  |
+                          Miguel A. Caro                          |
+                        mcaroba@gmail.com                         |
+                       miguel.caro@aalto.fi                       |
+                                                                  |
+        Department of Electrical Engineering and Automation       |
+                      Aalto University, Finland                   |
+                                                                  |
+ .................................................................|
+                                                                  |
+ ====================>>>>>  turbogap.fi  <<<<<====================|
+                                                                  |
+ .................................................................|
+                                                                  |
+ Contributors (code and methodology) in chronological order:      |
+                                                                  |
+ *) Miguel A. Caro (Aalto University)                             |
+ *) Patricia Hernández-León (Aalto University)                    |
+ *) Suresh Kondati Natarajan (now @ QuantumWise, formerly @ Aalto)|
+ *) Albert P. Bartók-Pártay (Warwick University)                  |
+ *) Eelis V. Mielonen (now @ EPFL, formerly @ Aalto)              |
+ *) Heikki Muhli (Aalto University)                               |
+ *) Mikhail Kuklin (Aalto University)                             |
+ *) Gábor Csányi (University of Cambridge)                        |
+ *) Jan Kloppenburg (Aalto University)                            |
+                                                                  |
+ .................................................................|
+                                                                  |
+                      Last updated: Jul. 2021                     |
+                                         _________________________/
+ .......................................|
+                                        |
+ Running TurboGAP with MPI support:     |
+                                        |
+ Running TurboGAP on      1 MPI tasks   |
+                                        |
+ .......................................|
+                                        |
+ Checking input file...                 |
+                                        |
+ You specified the following options:   |
+                                        |
+ ---------------------------------      |
+ Atoms file =            atoms.xyz      |
+ ---------------------------------      |
+ No. of species   = 1                   |
+   *) Species #1  =              C      |
+ ---------------------------------      |
+ rcut_max =          4.5000 Angst.      |
+ ---------------------------------      |
+                                        |
+ .......................................|
+ rcut   4.5000000000000000     
+ alpha_SCS:   7.9254332309013478     
+ alpha_SCS:   7.9254332309013442     
+                                        |
+ SOAP energy:          -761.18235736 eV |
+ 2b energy:             272.71287666 eV |
+ 3b energy:             -32.74363930 eV |
+ core_pot energy:        -0.46433622 eV |
+ vdw energy:              0.00000000 eV |
+ Total energy:         -531.36028802 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ *     Read input:        0.525 seconds |
+ * Read XYZ files:        0.000 seconds |
+ * Neighbor lists:        0.000 seconds |
+ *  GAP desc/pred:        1.453 seconds |
+     - soap_turbo:        0.107 seconds |
+     -         2b:        0.002 seconds |
+     -         3b:        0.015 seconds |
+     -   core_pot:        0.000 seconds |
+     -        vdw:        1.329 seconds |
+ *  MPI comms.   :        0.000 seconds |
+     -  pos & vel:        0.000 seconds |
+     - E & F brc.:        0.000 seconds |
+     -  MPI misc.:        0.000 seconds |
+ *  Miscellaneous:        0.016 seconds |
+                                        |
+ *     Total time:        1.995 seconds |
+                                        |
+ .......................................|
+                                        |
+ End of execution                       |
+ _______________________________________/
