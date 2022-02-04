@@ -454,9 +454,10 @@ module vdw
               rcut_vdw, r_vdw_i, r_vdw_j, dist, f_damp_SCS_ij, t1, t2, rcut_H
     integer, allocatable :: ipiv(:), n_sneigh(:), sneighbors_list(:), p_to_i(:), i_to_p(:), &
                             neighbors_list2(:), local_neighbors(:), neighbor_species2(:), &
-                            neighbor_species_H(:)
+                            neighbor_species_H(:), neighbors_list3(:), n_sneigh_vder(:), &
+                            sneighbors_list_vder(:)
     integer :: n_sites, n_pairs, n_species, n_sites0, info, n_order, n_tot, n_spairs, n_beg, n_end, &
-               n_ssites
+               n_ssites, n_spairs_vder
     integer :: i, i2, j, j2, k, k2, k3, a, a2, c1, c2, c3, lwork, b, p, q
     logical :: do_timing = .false., do_hirshfeld_gradients = .true., nonlocal = .false., &
                series_expansion = .true., total_energy = .false., series_average = .true.
@@ -482,8 +483,8 @@ module vdw
     n_sites0 = size(forces0, 2)
 
 !   This should allow to only take a subset of atoms for parallelization:
-    n_beg = 1
-    n_end = 1
+    n_beg = 5
+    n_end = 8
 
 !   Hartree units (calculations done in Hartree units for simplicity)
     Bohr = 0.5291772105638411
@@ -525,6 +526,8 @@ module vdw
     allocate( neighbor_species2(1:n_pairs) )
     allocate( p_to_i(1:n_sites) )
     allocate( i_to_p(1:n_sites) )
+    allocate( neighbors_list3(1:n_pairs) )
+    allocate( n_sneigh_vder(1:n_sites) )
     n_tot = sum(n_neigh(1:n_beg))-n_neigh(n_beg)  ! Can you just do sum(n_neigh(1:n_beg-1)) or what happens if n_beg = 1?
 !    write(*,*) "n_tot init:", n_tot
     do i = n_beg, n_end
@@ -532,7 +535,9 @@ module vdw
       local_neighbors = neighbors_list(n_tot+1:n_tot+n_neigh(i))
       n_ssites = 0
       n_sneigh = 0
+      n_sneigh_vder = 0
       neighbors_list2 = 0
+      neighbors_list3 = 0
       hirshfeld_v_cart_der2 = 0
       rjs2 = 0
       xyz2 = 0
@@ -542,36 +547,55 @@ module vdw
       i_to_p = 0
       k = 0
       k2 = 0
+      k3 = 0
+      n_spairs_vder = 0
       do p = 1, n_neigh(i)
         if ( rjs(n_tot+p) < rcut ) then
           n_ssites = n_ssites + 1
           i2 = local_neighbors(p)
           k2 = k2+1
+          k3 = k3+1
           p_to_i(n_ssites) = i2
           i_to_p(i2) = n_ssites
           k = sum(n_neigh(1:i2)) - n_neigh(i2) + 1
           neighbors_list2(k2) = neighbors_list(k)
-          hirshfeld_v_cart_der2(1:3,k2) = hirshfeld_v_cart_der(1:3,k)
+!          hirshfeld_v_cart_der2(1:3,k2) = hirshfeld_v_cart_der(1:3,k)
           rjs2(k2) = rjs(k)
           xyz2(1:3,k2) = xyz(1:3,k)
           hirshfeld_v_neigh2(k2) = hirshfeld_v_neigh(k)
           neighbor_species2(k2) = neighbor_species(k)
           n_sneigh(n_ssites) = n_sneigh(n_ssites) + 1
+          n_sneigh_vder(n_ssites) = n_sneigh_vder(n_ssites) + 1
+          neighbors_list3(k3) = neighbors_list(k)
+          hirshfeld_v_cart_der2(1:3,k3) = hirshfeld_v_cart_der(1:3,k)
+          n_spairs_vder = n_spairs_vder + 1
           ! Go through the neighbors of i2
           do j2 = 2, n_neigh(i2)
             k = k+1
             j = neighbors_list(k)
             ! Is j a neighbor of i as well?
             if ( any(local_neighbors == j) ) then
-              q = findloc(local_neighbors,j,1)
+               q = findloc(local_neighbors,j,1)
+!              k3 = k3+1
+!              n_spairs_vder = n_spairs_vder + 1
+!              n_sneigh_vder(n_ssites) = n_sneigh_vder(n_ssites) + 1
+!              q = findloc(local_neighbors,j,1)
+!              neighbors_list3(k3) = neighbors_list(k)
+!              hirshfeld_v_cart_der2(1:3,k3) = hirshfeld_v_cart_der(1:3,k)
               ! Is it within cutoff of central atom?
               if ( rjs(n_tot+q) < rcut) then
+                k3 = k3+1
+                n_spairs_vder = n_spairs_vder + 1
+                n_sneigh_vder(n_ssites) = n_sneigh_vder(n_ssites) + 1
+!                q = findloc(local_neighbors,j,1)
+                neighbors_list3(k3) = neighbors_list(k)
+                hirshfeld_v_cart_der2(1:3,k3) = hirshfeld_v_cart_der(1:3,k)
                 ! Is it also within cutoff of i2?
                 if ( rjs(k) < rcut ) then
                   n_sneigh(n_ssites) = n_sneigh(n_ssites) + 1
                   k2 = k2+1
                   neighbors_list2(k2) = j
-                  hirshfeld_v_cart_der2(1:3,k2) = hirshfeld_v_cart_der(1:3,k)
+!                  hirshfeld_v_cart_der2(1:3,k2) = hirshfeld_v_cart_der(1:3,k)
                   rjs2(k2) = rjs(k)
                   xyz2(1:3,k2) = xyz(1:3,k)
                   hirshfeld_v_neigh2(k2) = hirshfeld_v_neigh(k)
@@ -589,11 +613,12 @@ module vdw
 
       n_spairs = sum(n_sneigh)
       allocate( sneighbors_list(1:n_spairs) )
-      allocate( hirshfeld_v_cart_der_H(1:3,1:n_spairs) )
+      allocate( hirshfeld_v_cart_der_H(1:3,1:n_spairs_vder) )
       allocate( rjs_H(1:n_spairs) )
       allocate( xyz_H(1:3,1:n_spairs) )
       allocate( hirshfeld_v_neigh_H(1:n_spairs) )
       allocate( neighbor_species_H(1:n_spairs) )
+      allocate( sneighbors_list_vder(1:n_spairs_vder) )
 
       sneighbors_list = 0
       hirshfeld_v_cart_der_H = 0
@@ -601,17 +626,46 @@ module vdw
       xyz_H = 0
       hirshfeld_v_neigh_H = 0
       neighbor_species_H = 0
+      sneighbors_list_vder = 0
 
       do k = 1, n_spairs
         if (neighbors_list2(k) > 0) then
           sneighbors_list(k) = neighbors_list2(k)
-          hirshfeld_v_cart_der_H(1:3,k) = hirshfeld_v_cart_der2(1:3,k)
+!          hirshfeld_v_cart_der_H(1:3,k) = hirshfeld_v_cart_der2(1:3,k)
           rjs_H(k) = rjs2(k)
           xyz_H(1:3,k) = xyz2(1:3,k)
           hirshfeld_v_neigh_H(k) = hirshfeld_v_neigh2(k)
           neighbor_species_H(k) = neighbor_species2(k)
         end if
       end do
+
+!      write(*,*) "sum of n_sneigh_vder", sum(n_sneigh_vder)
+!      write(*,*) "n_spairs_vder", n_spairs_vder
+!      write(*,*) "n_spairs", n_spairs
+
+      do k = 1, n_spairs_vder
+        if (neighbors_list3(k) > 0) then
+          sneighbors_list_vder(k) = neighbors_list3(k)
+          hirshfeld_v_cart_der_H(1:3,k) = hirshfeld_v_cart_der2(1:3,k)
+        end if
+      end do
+!      k2 = 0
+!      do p = 1, n_ssites
+!        write(*,*) "atom", p_to_i(p)
+!        do a2 = 1, n_sneigh_vder(p)
+!          k2 = k2+1
+!          write(*,*) sneighbors_list_vder(k2)
+!        end do
+!      end do
+!      write(*,*) "what"
+!      k2 = 0
+!      do p = 1, n_ssites
+!        write(*,*) "atom", p_to_i(p)
+!        do j2 = 1, n_sneigh(p)
+!          k2 = k2+1
+!          write(*,*) sneighbors_list(k2)
+!        end do
+!      end do
 
 !      write(*,*) "sneighbors_list"
 !      k = 0
@@ -682,6 +736,7 @@ module vdw
       do p = 1, n_ssites
         k = k+1
         r_vdw_i = r0_ii(k)
+!        if (n_sneigh(p) > 1) then
         do q = 2, n_sneigh(p)
           k = k+1
           r_vdw_j = r0_ii(k)
@@ -700,6 +755,7 @@ module vdw
             end do
           end if
         end do
+!        end if
       end do
 
       g_func = 0.d0
@@ -708,6 +764,7 @@ module vdw
       do p = 1, n_ssites
         k = k+1
         s_i = sigma_k(k,:)
+!        if (n_sneigh(p) > 1) then
         do q = 2, n_sneigh(p)
           k = k+1
           s_j = sigma_k(k,:)
@@ -725,6 +782,7 @@ module vdw
             end do 
           end if
         end do
+!        end if
       end do
       
 !      write(*,*) "T_SR"
@@ -740,6 +798,7 @@ module vdw
         do c1 = 1, 3
           B_mat(3*(p-1)+c1,3*(p-1)+c1,:) = 1.d0/alpha_k(k,:)
         end do
+!        if (n_sneigh(p) > 1) then
         do j2 = 2, n_sneigh(p)
           k = k+1
           j = sneighbors_list(k)
@@ -755,6 +814,7 @@ module vdw
             end do
           end if
         end do
+!        end if
       end do
       B_mat = B_mat + T_SR
       
@@ -766,6 +826,7 @@ module vdw
       k = 0
       do p = 1, n_ssites
         k = k+1
+        if (n_sneigh(p) > 1) then
         do j2 = 2, n_sneigh(p)
           k = k+1
           if (rjs_H(k) < rcut_H) then
@@ -789,6 +850,7 @@ module vdw
             end do
           end if
         end do
+        end if
       end do
 
 !      write(*,*) "dT_SR"
@@ -808,6 +870,7 @@ module vdw
         k3 = 0
         do p = 1, n_ssites
           k = k+1
+!          if (n_sneigh(p) > 1) then
           r_vdw_i = r0_ii(k)
           do j2 = 2, n_sneigh(p)
             k = k+1
@@ -852,6 +915,7 @@ module vdw
               end if
             end if
           end do
+!          end if
           k3 = k3+n_sneigh(p)
         end do
       end do
@@ -874,13 +938,14 @@ module vdw
         k3 = 0
         do p = 1, n_ssites
           k = k+1
+!          if (n_sneigh(p) > 1) then
           r_vdw_i = r0_ii(k)
           do j2 = 2, n_sneigh(p)
             k = k+1
             r_vdw_j = r0_ii(k)
             j = sneighbors_list(k)
             q = i_to_p(j)
-            if (rjs_H(k) < rcut_H) then
+            !if (rjs_H(k) < rcut_H) then
               sigma_ij = sqrt(sigma_k(k3+1,:)**2 + sigma_k(k,:)**2)
               S_vdW_ij = sR*(r_vdw_i + r_vdw_j)
               exp_term = exp(-d*(rjs_H(k)/S_vdW_ij - 1.d0))
@@ -897,28 +962,39 @@ module vdw
                   coeff_der(p,q,c1,c2,:) = (1.d0-f_damp(k)) * (-T_func(k2)*dg+dh)
                 end do
               end do
-            end if
+            !end if
           end do
+!          end if
           k3 = k3 + n_sneigh(p)
         end do
 
+!        write(*,*) "coeff_fdamp", coeff_fdamp(1,3,1,1,1)
+!        write(*,*) "coeff_der", coeff_der(1,3,1,1,1)
+
         k2 = 0
         k3 = 0
+!        write(*,*) "n_ssites", n_ssites
         do p = 1, n_ssites
           r_vdw_i = r0_ii(k3+1)
-          do a2 = 1, n_sneigh(p)
+          i2 = p_to_i(p)
+          do a2 = 1, n_sneigh_vder(p)  !NOTE: THIS NEEDS TO GO FROM 1 TO N_SSITES!!!!!!!!! hirshfeld_v_cart_der_H should be longer, "symmetry" of dT_SR_v requires it
             k2 = k2+1
-            a = i_to_p(sneighbors_list(k2))
+            a = i_to_p(sneighbors_list_vder(k2))
+!            write(*,*) "a", a            
+!            write(*,*) "k2, sneighbor", k2, sneighbors_list(k2)
+!            write(*,*) "p, a:", p, a
             do c3 = 1, 3
               do c1 = 1, 3
                 dB_mat_v(3*(p-1)+c1,3*(p-1)+c1,a,c3,:) = -1.d0/(hirshfeld_v_neigh_H(k3+1)*alpha_k(k3+1,:)) * &
                               hirshfeld_v_cart_der_H(c3,k2)
               end do
+!              if (n_sneigh(p) > 1) then
               do k = 1, 11
                 do j2 = 2, n_sneigh(p)
-                  if (rjs_H(k3+j2) < rcut_H) then
+                  !if (rjs_H(k3+j2) < rcut_H) then
                     j = sneighbors_list(k3+j2)
                     q = i_to_p(j)
+!                    write(*,*) "q", q
                     do c1 = 1, 3
                       do c2 = 1, 3
                         dT_SR_v(3*(p-1)+c1,3*(q-1)+c2,a,c3,k) = dT_SR_v(3*(p-1)+c1,3*(q-1)+c2,a,c3,k) + &
@@ -927,11 +1003,19 @@ module vdw
                         dT_SR_v(3*(p-1)+c1,3*(q-1)+c2,a,c3,k) = &
                           dT_SR_v(3*(p-1)+c1,3*(q-1)+c2,a,c3,k) + &
                           coeff_fdamp(p,q,c1,c2,k) * r_vdw_i/hirshfeld_v_neigh_H(k3+1) * hirshfeld_v_cart_der_H(c3,k2)
+!                        if ( a == 2 .and. c3 == 1 .and. k == 1 .and. p == 1 .and. q == 3 .and. c1 == 1 .and. c2 == 1) then
+!                          write(*,*) "r_vdw_i", r_vdw_i
+!                          write(*,*) "hirshfeld_v_neigh_H", hirshfeld_v_neigh_H(k3+1)
+!                          write(*,*) "sigma_k", sigma_k(k3+1,k)
+!                          write(*,*) "hirshfeld_v_cart_der_H", hirshfeld_v_cart_der_H(c3,k2)
+!                          write(*,*) "dT_SR_v", dT_SR_v(3*(p-1)+c1,3*(q-1)+c2,a,c3,k)
+!                        end if 
                       end do
                     end do
-                  end if      
+                  !end if      
                 end do
               end do
+!              end if
             end do
           end do
           k3 = k3 + n_sneigh(p)
@@ -940,15 +1024,19 @@ module vdw
         k3 = 0
         do q = 1, n_ssites
           r_vdw_j = r0_ii(k3+1)
-          do a2 = 1, n_sneigh(q)
+          do a2 = 1, n_sneigh_vder(q)
             k2 = k2+1
-            a = i_to_p(sneighbors_list(k2))
+!            if (n_sneigh(p) > 1) then
+            a = i_to_p(sneighbors_list_vder(k2))
+!            write(*,*) "k2, sneighbor", k2, sneighbors_list(k2)
+!            write(*,*) "q, a:", q, a
             do c3 = 1, 3
               do k = 1, 11
                 do j2 = 2, n_sneigh(q)
-                  if (rjs_H(k3+j2) < rcut_H) then
+                  !if (rjs_H(k3+j2) < rcut_H) then
                     i2 = sneighbors_list(k3+j2)
                     p = i_to_p(i2)
+!                    write(*,*) "p", p
                     do c1 = 1, 3
                       do c2 = 1, 3
                         dT_SR_v(3*(p-1)+c1,3*(q-1)+c2,a,c3,k) = dT_SR_v(3*(p-1)+c1,3*(q-1)+c2,a,c3,k) + &
@@ -957,15 +1045,25 @@ module vdw
                         dT_SR_v(3*(p-1)+c1,3*(q-1)+c2,a,c3,k) = &
                           dT_SR_v(3*(p-1)+c1,3*(q-1)+c2,a,c3,k) + &
                           coeff_fdamp(p,q,c1,c2,k) * r_vdw_j/hirshfeld_v_neigh_H(k3+1) * hirshfeld_v_cart_der_H(c3,k2)
+!                        if ( a == 2 .and. c3 == 1 .and. k == 1 .and. p == 1 .and. q == 3 .and. c1 == 1 .and. c2 == 1) then
+!                          write(*,*) "r_vdw_j", r_vdw_j
+!                          write(*,*) "hirshfeld_v_neigh_H", hirshfeld_v_neigh_H(k3+1)
+!                          write(*,*) "sigma_k", sigma_k(k3+1,k)
+!                          write(*,*) "hirshfeld_v_cart_der_H", hirshfeld_v_cart_der_H(c3,k2)
+!                          write(*,*) "dT_SR_v", dT_SR_v(3*(p-1)+c1,3*(q-1)+c2,a,c3,k)
+!                        end if
                       end do
                     end do
-                  end if
+                  !end if
                 end do
               end do
             end do
+!            end if
           end do
           k3 = k3 + n_sneigh(q)
         end do
+
+!        write(*,*) "dT_SR_v:", dT_SR_v(1,3*(3-1)+1,2,1,1)
 
         dB_mat_v = dB_mat_v + dT_SR_v
 
@@ -1007,6 +1105,23 @@ module vdw
         end do
       end do
 
+!      write(*,*) "dB_mat for atom", p_to_i(3)
+!      do p = 1, 3*n_ssites
+!        write(*,*) dB_mat(p,:,2,1,1)
+!      end do
+!      write(*,*) dB_mat(1,3*(3-1)+1:3*(3-1)+3,2,1,1)
+
+!      write(*,*) "A_mat"
+!      do p = 1, 3*n_ssites
+!        write(*,*) A_mat(p,:,1)
+!      end do
+!      write(*,*) A_mat(1,:,1)
+
+!      write(*,*) "dA_mat"
+!      do p = 1, 3
+!        write(*,*) dA_mat(p,:,2,1,1)
+!      end do
+
 !     Remember that the a2 here are just the permuted indices: p_to_i should be part of the output array
       do a2 = 1, n_ssites
         do k = 1, 11
@@ -1024,12 +1139,13 @@ module vdw
       end do
 
 !TEST1
-!      write(*,*) "atom:", i
-!      write(*,*) "alpha_SCS:", alpha_SCS(i,1)
-!      write(*,*) "dalpha:"
-!      do p = 1, n_ssites
-!        write(*,*) p_to_i(p), dalpha(n_tot+p,1,1)
-!      end do
+      write(*,*) "atom:", i
+      write(*,*) "alpha_SCS:", alpha_SCS(i,1)
+      write(*,*) "dalpha:"
+      do p = 1, n_ssites
+        write(*,*) p_to_i(p), dalpha(n_tot+p,1,1)
+      end do
+!      write(*,*) p_to_i(2), dalpha(n_tot+2,1,1)
 
 !      write(*,*) "Central atom:", i
 !      k = 0
@@ -1040,21 +1156,27 @@ module vdw
 !        end if
 !      end do
 
-      deallocate( local_neighbors, sneighbors_list, hirshfeld_v_cart_der_H, rjs_H, xyz_H, hirshfeld_v_neigh_H, &
+      deallocate( local_neighbors, sneighbors_list, rjs_H, xyz_H, hirshfeld_v_neigh_H, &
                   neighbor_species_H, neighbor_c6_ii, r0_ii, neighbor_alpha0, omega_i, alpha_k, sigma_k, f_damp, &
                   g_func, h_func, T_func, T_SR, B_mat, dT, dT_SR, f_damp_der, g_func_der, h_func_der, dB_mat, &
-                  dT_SR_v, dB_mat_v, coeff_der, coeff_fdamp, A_mat, dA_mat, ipiv, work_arr, AdB_n )
+                  dT_SR_v, dB_mat_v, coeff_der, coeff_fdamp, A_mat, dA_mat, ipiv, work_arr, AdB_n, &
+                  sneighbors_list_vder, hirshfeld_v_cart_der_H )
       n_tot = n_tot+n_neigh(i)
     end do
     deallocate( omegas, s_i, s_j, sigma_ij, coeff_h_der, terms, n_sneigh, p_to_i, i_to_p, &
                 neighbors_list2, hirshfeld_v_cart_der2, rjs2, xyz2, hirshfeld_v_neigh2, neighbor_species2, &
-                dg, dh, A_i, alpha_SCS, dalpha )
+                dg, dh, A_i, alpha_SCS, dalpha, neighbors_list3, n_sneigh_vder )
     call cpu_time(time2)
 !TEST1
 !    write(*,*) "sub neighbor list timing:", time2-time1
 
 
 !~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~OLD IMPLEMENTATION STARTS HERE~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    write(*,*) "Start of the old implementation; values are precalculated and matrices"
+    write(*,*) "are larger but contain the same number of non-zero elements."
+    write(*,*) "Eventually a switch will be implemented to choose which one"
+    write(*,*) "to use, or the old one will be scrapped."
 
 !   This implementation assumes that rcut is the largest cutoff, that is, the neigbhbors_list contains only the atoms within the vdW cutoff.
 !   The implementation matches with the implementation above if rcut is the largest cutoff or the cutoff is so small that the only neighbor
@@ -1348,6 +1470,9 @@ module vdw
         end do
       end do
 
+!      write(*,*) "coeff_fdamp", coeff_fdamp(1,3,1,1,1)
+!      write(*,*) "coeff_der", coeff_der(1,3,1,1,1)
+
       k2 = 0
       k3 = 0
       do i = 1, n_sites
@@ -1371,6 +1496,13 @@ module vdw
                       dT_SR_v(3*(i-1)+c1,3*(j-1)+c2,a,c3,k) = &
                         dT_SR_v(3*(i-1)+c1,3*(j-1)+c2,a,c3,k) + &
                         coeff_fdamp(i,j,c1,c2,k) * r_vdw_i/hirshfeld_v(i) * hirshfeld_v_cart_der_H(c3,k2)
+!                        if ( a == 12 .and. c3 == 1 .and. k == 1 .and. i == 1 .and. j == 3 .and. c1 == 1 .and. c2 == 1) then
+!                          write(*,*) "r_vdw_i", r_vdw_i
+!                          write(*,*) "hirshfeld_v_neigh_H", hirshfeld_v(i)
+!                          write(*,*) "sigma_k", sigma_i(i,k)
+!                          write(*,*) "hirshfeld_v_cart_der_H", hirshfeld_v_cart_der_H(c3,k2)
+!                          write(*,*) "dT_SR_v", dT_SR_v(3*(i-1)+c1,3*(j-1)+c2,a,c3,k)
+!                        end if
                     end do
                   end do
                 end if      
@@ -1399,6 +1531,13 @@ module vdw
                       dT_SR_v(3*(i-1)+c1,3*(j-1)+c2,a,c3,k) = &
                         dT_SR_v(3*(i-1)+c1,3*(j-1)+c2,a,c3,k) + &
                         coeff_fdamp(i,j,c1,c2,k) * r_vdw_j/hirshfeld_v(j) * hirshfeld_v_cart_der_H(c3,k2)
+!                        if ( a == 12 .and. c3 == 1 .and. k == 1 .and. i == 1 .and. j == 3 .and. c1 == 1 .and. c2 == 1) then
+!                          write(*,*) "r_vdw_j", r_vdw_j
+!                          write(*,*) "hirshfeld_v_neigh_H", hirshfeld_v(j)
+!                          write(*,*) "sigma_k", sigma_i(j,k)
+!                          write(*,*) "hirshfeld_v_cart_der_H", hirshfeld_v_cart_der_H(c3,k2)
+!                          write(*,*) "dT_SR_v", dT_SR_v(3*(i-1)+c1,3*(j-1)+c2,a,c3,k)
+!                        end if
                     end do
                   end do
                 end if
@@ -1420,7 +1559,7 @@ module vdw
     alpha_SCS_i = 0.d0
     dalpha_n = 0.d0
 ! TEST1
-    do i = 1, 1
+    do i = 1, n_sites
 !    do i = 1, n_sites
 !      write(*,*) "allocate"
       allocate( T_SR_i(1:3*n_neigh(i),1:3*n_neigh(i),1:11) )
@@ -1575,6 +1714,23 @@ module vdw
         end do
       end do
 
+!      write(*,*) "dB_mat for atom:", neighbors_list(n_tot+12)
+!      do p = 1, 3*n_neigh(i)
+!        write(*,*) dB_mat_n(p,:,9,1,1)
+!      end do
+!      write(*,*) dB_mat_n(1,3*(12-1)+1:3*(12-1)+3,9,1,1)
+
+!      write(*,*) "A_mat"
+!      do p = 1, 3*n_neigh(i)
+!        write(*,*) A_mat_i(p,:,1)
+!      end do
+!      write(*,*) A_mat_i(1,:,1)
+
+!      write(*,*) "dA_mat"
+!      do p = 1, 3
+!        write(*,*) dA_mat_n(p,:,9,1,1)
+!      end do
+
 !      write(*,*) "dalpha_n"
 !      dalpha_n = 0.d0
       do a2 = 1, n_neigh(i)
@@ -1592,14 +1748,14 @@ module vdw
         end do
       end do
 ! TEST1
-!      write(*,*) "atom:", i
-!      ! SCS polarizability of the central atom
+      write(*,*) "atom:", i
+      ! SCS polarizability of the central atom
       write(*,*) "alpha_SCS:", alpha_SCS_i(n_tot+1,1)
-!      write(*,*) "dalpha_SCS:"
-!      do p = 1, n_neigh(i)
-!        write(*,*) neighbors_list(n_tot+p), dalpha_n(n_tot+p,1,1)
-!      end do
-
+      write(*,*) "dalpha_SCS:"
+      do p = 1, n_neigh(i)
+        write(*,*) neighbors_list(n_tot+p), dalpha_n(n_tot+p,1,1)
+      end do
+!      write(*,*) neighbors_list(n_tot+9), dalpha_n(n_tot+9,1,1)
 
 
 
