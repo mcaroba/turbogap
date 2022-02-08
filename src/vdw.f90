@@ -451,7 +451,7 @@ module vdw
                            rjs2(:), xyz2(:,:), hirshfeld_v_neigh2(:)
     real*8 :: time1, time2, this_force(1:3), Bohr, Hartree, &
               omega, pi, integral, E_MBD, R_vdW_ij, R_vdW_SCS_ij, S_vdW_ij, dS_vdW_ij, exp_term, &
-              rcut_vdw, r_vdw_i, r_vdw_j, dist, f_damp_SCS_ij, t1, t2, rcut_H
+              rcut_vdw, r_vdw_i, r_vdw_j, dist, f_damp_SCS_ij, t1, t2, rcut_H, buffer_H, rbuf
     integer, allocatable :: ipiv(:), n_sneigh(:), sneighbors_list(:), p_to_i(:), i_to_p(:), &
                             neighbors_list2(:), local_neighbors(:), neighbor_species2(:), &
                             neighbor_species_H(:), neighbors_list3(:), n_sneigh_vder(:), &
@@ -461,6 +461,7 @@ module vdw
     integer :: i, i2, j, j2, k, k2, k3, a, a2, c1, c2, c3, lwork, b, p, q
     logical :: do_timing = .false., do_hirshfeld_gradients = .true., nonlocal = .false., &
                series_expansion = .true., total_energy = .false., series_average = .true.
+    logical, allocatable :: i0_buffer2(:), ij_buffer2(:), i0_buffer(:), ij_buffer(:)
 
 !   IMPORTANT NOTE ABOUT THE DERIVATIVES:
 !   If rcut < rcut_soap, the derivatives in the new implementation omit the terms that fall outside of rcut.
@@ -483,8 +484,8 @@ module vdw
     n_sites0 = size(forces0, 2)
 
 !   This should allow to only take a subset of atoms for parallelization:
-    n_beg = 5
-    n_end = 8
+    n_beg = 1
+    n_end = 2
 
 !   Hartree units (calculations done in Hartree units for simplicity)
     Bohr = 0.5291772105638411
@@ -528,10 +529,12 @@ module vdw
     allocate( i_to_p(1:n_sites) )
     allocate( neighbors_list3(1:n_pairs) )
     allocate( n_sneigh_vder(1:n_sites) )
+    allocate( ij_buffer2(1:n_pairs) )
     n_tot = sum(n_neigh(1:n_beg))-n_neigh(n_beg)  ! Can you just do sum(n_neigh(1:n_beg-1)) or what happens if n_beg = 1?
 !    write(*,*) "n_tot init:", n_tot
     do i = n_beg, n_end
       allocate( local_neighbors(1:n_neigh(i)) )
+      allocate( i0_buffer2(1:n_neigh(i)) )
       local_neighbors = neighbors_list(n_tot+1:n_tot+n_neigh(i))
       n_ssites = 0
       n_sneigh = 0
@@ -543,6 +546,8 @@ module vdw
       xyz2 = 0
       hirshfeld_v_neigh2 = 0
       neighbor_species2 = 0
+      i0_buffer2 = .false.
+      ij_buffer2 = .false.
       p_to_i = 0
       i_to_p = 0
       k = 0
@@ -570,6 +575,9 @@ module vdw
           hirshfeld_v_cart_der2(1:3,k3) = hirshfeld_v_cart_der(1:3,k)
           n_spairs_vder = n_spairs_vder + 1
           ! Go through the neighbors of i2
+          if ( rjs(n_tot+p) > rcut - buffer ) then
+            i0_buffer2(p) = .true.
+          end if
           do j2 = 2, n_neigh(i2)
             k = k+1
             j = neighbors_list(k)
@@ -600,6 +608,9 @@ module vdw
                   xyz2(1:3,k2) = xyz(1:3,k)
                   hirshfeld_v_neigh2(k2) = hirshfeld_v_neigh(k)
                   neighbor_species2(k2) = neighbor_species(k)
+                  if ( rjs(k) > rcut - buffer ) then
+                    ij_buffer2(k2) = .true.
+                  end if
                 end if
               end if
             end if
@@ -611,6 +622,11 @@ module vdw
         end if
       end do
 
+      call cpu_time(time2)
+
+      write(*,*) "neighbor list stuff 1:", time2-time1
+      call cpu_time(time1)
+
       n_spairs = sum(n_sneigh)
       allocate( sneighbors_list(1:n_spairs) )
       allocate( hirshfeld_v_cart_der_H(1:3,1:n_spairs_vder) )
@@ -619,6 +635,8 @@ module vdw
       allocate( hirshfeld_v_neigh_H(1:n_spairs) )
       allocate( neighbor_species_H(1:n_spairs) )
       allocate( sneighbors_list_vder(1:n_spairs_vder) )
+      allocate( i0_buffer(1:n_ssites) )
+      allocate( ij_buffer(1:n_spairs) )
 
       sneighbors_list = 0
       hirshfeld_v_cart_der_H = 0
@@ -627,6 +645,12 @@ module vdw
       hirshfeld_v_neigh_H = 0
       neighbor_species_H = 0
       sneighbors_list_vder = 0
+      i0_buffer = .false.
+      ij_buffer = .false.
+
+      do k = 1, n_ssites
+        i0_buffer(k) = i0_buffer2(k)
+      end do
 
       do k = 1, n_spairs
         if (neighbors_list2(k) > 0) then
@@ -636,6 +660,7 @@ module vdw
           xyz_H(1:3,k) = xyz2(1:3,k)
           hirshfeld_v_neigh_H(k) = hirshfeld_v_neigh2(k)
           neighbor_species_H(k) = neighbor_species2(k)
+          ij_buffer(k) = ij_buffer2(k)
         end if
       end do
 
@@ -682,7 +707,12 @@ module vdw
 !      write(*,*) "n_neigh(i)", n_neigh(i)
 !      write(*,*) "n_ssites", n_ssites
 
+      call cpu_time(time2)
+      write(*,*) "neighbor list stuff 2", time2-time1
+      call cpu_time(time1)
+
       rcut_H = rcut/Bohr
+      buffer_H = buffer/Bohr
       rjs_H = rjs_H/Bohr
       xyz_H = xyz_H/Bohr
       hirshfeld_v_cart_der_H = hirshfeld_v_cart_der_H*Bohr
@@ -722,6 +752,10 @@ module vdw
         alpha_k(:,k) = neighbor_alpha0/(1.d0 + omegas(k)**2/omega_i**2)
         sigma_k(:,k) = (sqrt(2.d0/pi) * alpha_k(:,k)/3.d0)**(1.d0/3.d0)
       end do
+
+      call cpu_time(time2)
+      write(*,*) "pair quantities", time2-time1
+      call cpu_time(time1)
 
 !      write(*,*) "T_func"
       
@@ -787,6 +821,10 @@ module vdw
       
 !      write(*,*) "T_SR"
 
+      call cpu_time(time2)
+      write(*,*) "more pair quantities", time2-time1
+      call cpu_time(time1)
+
       allocate( T_SR(1:3*n_ssites,1:3*n_ssites,1:11) )
       allocate( B_mat(1:3*n_ssites,1:3*n_ssites,1:11) )
 
@@ -812,13 +850,31 @@ module vdw
                                                 g_func(k,:) + h_func(k2,:))
               end do
             end do
+            if ( ij_buffer(k) ) then
+              rbuf = (rjs_H(k)-rcut_H+buffer_H)/buffer_H
+              T_SR(3*(p-1)+1:3*(p-1)+3,3*(q-1)+1:3*(q-1)+3,:) = T_SR(3*(p-1)+1:3*(p-1)+3,3*(q-1)+1:3*(q-1)+3,:) * &
+                  (1.d0 - 3.d0 * rbuf**2 + 2.d0 * rbuf**3)
+            end if
           end if
         end do
 !        end if
       end do
+
+      do p = 1, n_ssites
+        if ( i0_buffer(p) ) then
+          rbuf = (rjs(n_tot+p)-rcut+buffer)/buffer
+          T_SR(3*(p-1)+1:3*(p-1)+3,:,:) = T_SR(3*(p-1)+1:3*(p-1)+3,:,:) * (1.d0 - 3.d0 * rbuf**2 + 2.d0 * rbuf**3)
+          T_SR(:,3*(p-1)+1:3*(p-1)+3,:) = T_SR(:,3*(p-1)+1:3*(p-1)+3,:) * (1.d0 - 3.d0 * rbuf**2 + 2.d0 * rbuf**3)
+        end if
+      end do
+
+
       B_mat = B_mat + T_SR
       
 !      write(*,*) "dT"
+      call cpu_time(time2)
+      write(*,*) "B_mat", time2-time1
+      call cpu_time(time1)
 
       allocate( dT(1:9*n_spairs,1:3) )
 
@@ -852,6 +908,10 @@ module vdw
         end do
         end if
       end do
+
+      call cpu_time(time2)
+      write(*,*) "dT", time2-time1
+      call cpu_time(time1)
 
 !      write(*,*) "dT_SR"
       
@@ -919,6 +979,10 @@ module vdw
           k3 = k3+n_sneigh(p)
         end do
       end do
+
+      call cpu_time(time2)
+      write(*,*) "dT_SR", time2-time1
+      call cpu_time(time1)
       
 !      write(*,*) "dB_mat"
 
@@ -928,7 +992,11 @@ module vdw
       allocate( coeff_der(1:n_ssites,1:n_ssites,1:3,1:3,1:11) )
       allocate( coeff_fdamp(1:n_ssites,1:n_ssites,1:3,1:3,1:11) )
 
-      dB_mat = dT_SR
+      call cpu_time(time2)
+      write(*,*) "allocation", time2-time1
+      call cpu_time(time1)
+
+      dB_mat = 0.d0
       if (do_hirshfeld_gradients) then
         dB_mat_v = 0.d0
         dT_SR_v = 0.d0
@@ -967,6 +1035,10 @@ module vdw
 !          end if
           k3 = k3 + n_sneigh(p)
         end do
+
+        call cpu_time(time2)
+        write(*,*) "dB_mat_v 1:", time2-time1
+        call cpu_time(time1)
 
 !        write(*,*) "coeff_fdamp", coeff_fdamp(1,3,1,1,1)
 !        write(*,*) "coeff_der", coeff_der(1,3,1,1,1)
@@ -1065,10 +1137,83 @@ module vdw
 
 !        write(*,*) "dT_SR_v:", dT_SR_v(1,3*(3-1)+1,2,1,1)
 
-        dB_mat_v = dB_mat_v + dT_SR_v
+        dT_SR = dT_SR + dT_SR_v
 
-        dB_mat = dB_mat + dB_mat_v
+        dB_mat = dB_mat_v
+        call cpu_time(time2)
+        write(*,*) "dB_mat_v 2:", time2-time1
+        call cpu_time(time1)
       end if
+
+      ! Buffer region:
+!      allocate( dfB(1:3*n_ssites,1:3*n_ssites,1:n_ssites,1:3,1:11) )
+      k2 = 0
+      k3 = 0
+      do p = 1, n_ssites
+        if ( i0_buffer(p) ) then
+          rbuf = (rjs(n_tot+p)-rcut+buffer)/buffer
+          dT_SR(3*(p-1)+1:3*(p-1)+3,:,:,:,:) = dT_SR(3*(p-1)+1:3*(p-1)+3,:,:,:,:) * &
+                 (1.d0 - 3.d0 * rbuf**2 + 2.d0 * rbuf**3) 
+          dT_SR(:,3*(p-1)+1:3*(p-1)+3,:,:,:) = dT_SR(:,3*(p-1)+1:3*(p-1)+3,:,:,:) * &
+                 (1.d0 - 3.d0 * rbuf**2 + 2.d0 * rbuf**3)
+        end if
+        i2 = p_to_i(p)
+        do a2 = 1, n_sneigh_vder(p)
+          k2 = k2+1
+          a = i_to_p(sneighbors_list_vder(k2))
+          if ( i0_buffer(p) .and. p == a ) then
+            rbuf = (rjs(n_tot+p)-rcut+buffer)/buffer
+            do c3 = 1, 3
+              dT_SR(3*(p-1)+1:3*(p-1)+3,:,a,c3,:) = dT_SR(3*(p-1)+1:3*(p-1)+3,:,a,c3,:) - &
+                     (-6.d0 * (rbuf-rbuf**2) * 1.d0/buffer_H * xyz(c3,n_tot+p)/rjs(n_tot+p) ) / &
+                     (1.d0 - 3.d0 * rbuf**2 + 2.d0 * rbuf**3) * T_SR(3*(p-1)+1:3*(p-1)+3,:,:)
+              dT_SR(:,3*(p-1)+1:3*(p-1)+3,a,c3,:) = dT_SR(:,3*(p-1)+1:3*(p-1)+3,a,c3,:) + &
+                     (-6.d0 * (rbuf-rbuf**2) * 1.d0/buffer_H * xyz(c3,n_tot+p)/rjs(n_tot+p) ) / &
+                     (1.d0 - 3.d0 * rbuf**2 + 2.d0 * rbuf**3) * T_SR(:,3*(p-1)+1:3*(p-1)+3,:)
+            end do
+          end if
+          do j2 = 2, n_sneigh(p)
+            j = sneighbors_list(k3+j2)
+            q = i_to_p(j)
+            if ( ij_buffer(k3+j2) .and. (p == a .or. q == a) ) then
+              rbuf = (rjs_H(k3+j2)-rcut_H+buffer_H)/buffer_H
+              if ( p == a ) then
+                do c3 = 1, 3
+                  dT_SR(3*(p-1)+1:3*(p-1)+3,3*(q-1)+1:3*(q-1)+3,a,c3,:) = dT_SR(3*(p-1)+1:3*(p-1)+3,3*(q-1)+1:3*(q-1)+3,a,c3,:) - &
+                       (-6.d0 * (rbuf-rbuf**2) * 1.d0/buffer_H * xyz_H(c3,k3+j2)/rjs(k3+j2) ) / &
+                       (1.d0 - 3.d0 * rbuf**2 + 2.d0 * rbuf**3) * T_SR(3*(p-1)+1:3*(p-1)+3,3*(q-1)+1:3*(q-1)+3,:)
+                end do
+              end if
+              if ( q == a ) then
+                do c3 = 1, 3
+                  dT_SR(3*(p-1)+1:3*(p-1)+3,3*(q-1)+1:3*(q-1)+3,a,c3,:) = dT_SR(3*(p-1)+1:3*(p-1)+3,3*(q-1)+1:3*(q-1)+3,a,c3,:) + &
+                       (-6.d0 * (rbuf-rbuf**2) * 1.d0/buffer_H * xyz_H(c3,k3+j2)/rjs(k3+j2) ) / &
+                       (1.d0 - 3.d0 * rbuf**2 + 2.d0 * rbuf**3) * T_SR(3*(p-1)+1:3*(p-1)+3,3*(q-1)+1:3*(q-1)+3,:)
+                end do
+              end if   
+            end if
+          end do
+        end do
+        k3 = k3 + n_sneigh(p)
+      end do
+
+!      Pasted here for reference:
+
+!      do p = 1, n_ssites
+!        if ( i0_buffer(p) ) then
+!          rbuf = (rjs(n_tot+p)-rcut+buffer)/buffer
+!          T_SR(3*(p-1)+1:3*(p-1)+3,:,:) = T_SR(3*(p-1)+1:3*(p-1)+3,:,:) * (1.d0 - 3.d0 * rbuf**2 + 2.d0 * rbuf**3)
+!          T_SR(:,3*(p-1)+1:3*(p-1)+3,:) = T_SR(:,3*(p-1)+1:3*(p-1)+3,:) * (1.d0 - 3.d0 * rbuf**2 + 2.d0 * rbuf**3)
+!        end if
+!      end do
+
+!            if ( ij_buffer(k) ) then
+!              rbuf = (rjs_H(k)-rcut_H+buffer_H)/buffer_H
+!              T_SR(3*(p-1)+1:3*(p-1)+3,3*(q-1)+1:3*(q-1)+3,:) = T_SR(3*(p-1)+1:3*(p-1)+3,3*(q-1)+1:3*(q-1)+3,:) * &
+!                  (1.d0 - 3.d0 * rbuf**2 + 2.d0 * rbuf**3)
+!            end if
+
+      dB_mat = dB_mat + dT_SR
 
       allocate( A_mat(1:3*n_ssites,1:3*n_ssites,1:11) )
       A_mat = B_mat
@@ -1090,6 +1235,10 @@ module vdw
 !        end do
       end do
 
+      call cpu_time(time2)
+      write(*,*) "alpha SCS", time2-time1
+      call cpu_time(time1)
+
       allocate( dA_mat(1:3,1:3*n_ssites,1:n_ssites,1:3,1:11) )
       allocate( AdB_n(1:3,1:3*n_ssites) )
       dA_mat = 0.d0
@@ -1104,6 +1253,10 @@ module vdw
           end do
         end do
       end do
+
+      call cpu_time(time2)
+      write(*,*) "dA_mat", time2-time1
+      call cpu_time(time1)
 
 !      write(*,*) "dB_mat for atom", p_to_i(3)
 !      do p = 1, 3*n_ssites
@@ -1160,14 +1313,16 @@ module vdw
                   neighbor_species_H, neighbor_c6_ii, r0_ii, neighbor_alpha0, omega_i, alpha_k, sigma_k, f_damp, &
                   g_func, h_func, T_func, T_SR, B_mat, dT, dT_SR, f_damp_der, g_func_der, h_func_der, dB_mat, &
                   dT_SR_v, dB_mat_v, coeff_der, coeff_fdamp, A_mat, dA_mat, ipiv, work_arr, AdB_n, &
-                  sneighbors_list_vder, hirshfeld_v_cart_der_H )
+                  sneighbors_list_vder, hirshfeld_v_cart_der_H, i0_buffer2, i0_buffer, ij_buffer )
       n_tot = n_tot+n_neigh(i)
     end do
     deallocate( omegas, s_i, s_j, sigma_ij, coeff_h_der, terms, n_sneigh, p_to_i, i_to_p, &
                 neighbors_list2, hirshfeld_v_cart_der2, rjs2, xyz2, hirshfeld_v_neigh2, neighbor_species2, &
-                dg, dh, A_i, alpha_SCS, dalpha, neighbors_list3, n_sneigh_vder )
+                dg, dh, A_i, alpha_SCS, dalpha, neighbors_list3, n_sneigh_vder, ij_buffer2 )
     call cpu_time(time2)
+    write(*,*) "the rest (deallocating and writing)", time2-time1
 !TEST1
+
 !    write(*,*) "sub neighbor list timing:", time2-time1
 
 
