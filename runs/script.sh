@@ -1,5 +1,5 @@
 > cutoff_scs.dat
-> pol_scs2.dat
+> pol_scs_cutoff.dat
 
 for i in $(seq 1.0 0.2 8.0); do
 
@@ -20,11 +20,11 @@ vdw_type = ts
 vdw_sr = 0.83
 vdw_d = 6.
 vdw_rcut = $i
-vdw_buffer = 0.
+vdw_buffer = 0.2
 vdw_r0_ref = 1.900
 EOF
 
 echo $i >> cutoff_scs.dat
-../bin/turbogap predict | grep "alpha_SCS" | awk '{print $2}' >> pol_scs2.dat
+../bin/turbogap predict | grep "alpha_SCS" | awk '{print $2}' >> pol_scs_cutoff.dat
 
 done
