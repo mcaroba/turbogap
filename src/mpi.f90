@@ -34,10 +34,12 @@ module mpi_helper
   contains
 
   subroutine allocate_soap_turbo_hypers(n_soap_turbo, n_species, n_sparse, dim, vdw_n_sparse, &
-                                        has_vdw, compress_soap, desc)
+!                                        has_vdw, compress_soap, desc)
+has_vdw, compress_soap, compress_P_nonzero, desc)
 
 !   Input variables
     integer, intent(in) :: n_soap_turbo, n_species(:), n_sparse(:), dim(:), vdw_n_sparse(:)
+integer, intent(in) :: compress_P_nonzero(:)
     logical, intent(in) :: compress_soap(:), has_vdw(:)
 
 !   Output_variables
@@ -45,6 +47,7 @@ module mpi_helper
 
 !   Internal variables
     integer :: i, n_sp, d
+integer :: n_nonzero
 
     allocate( desc(1:n_soap_turbo) )
 
@@ -72,7 +75,12 @@ module mpi_helper
 !     Currently the cutoff does not get allocated
 !      allocate( desc(i)%cutoff(1:n_sp) )
       if( compress_soap(i) )then
-        allocate( desc(i)%compress_soap_indices(1:d) )
+!        allocate( desc(i)%compress_soap_indices(1:d) )
+n_nonzero = compress_P_nonzero(i)
+desc(i)%compress_P_nonzero = n_nonzero
+allocate( desc(i)%compress_P_i(1:n_nonzero) )
+allocate( desc(i)%compress_P_j(1:n_nonzero) )
+allocate( desc(i)%compress_P_el(1:n_nonzero) )
       end if
       if( has_vdw(i) )then
         n_sp = vdw_n_sparse(i)

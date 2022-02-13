@@ -120,6 +120,7 @@ program turbogap
   real*8, allocatable :: temp_1d(:), temp_1d_bis(:), temp_2d(:,:)
   integer, allocatable :: temp_1d_int(:), n_atom_pairs_by_rank(:), displ(:)
   integer :: i_beg, i_end, n_sites_mpi, j_beg, j_end, size_soap_turbo, size_distance_2b, size_angle_3b
+integer :: n_nonzero
   integer, allocatable :: n_species_mpi(:), n_sparse_mpi_soap_turbo(:), dim_mpi(:), n_sparse_mpi_distance_2b(:), &
                           n_sparse_mpi_angle_3b(:), n_mpi_core_pot(:), vdw_n_sparse_mpi_soap_turbo(:), &
                           n_neigh_local(:)
@@ -479,7 +480,11 @@ program turbogap
       call mpi_bcast(soap_turbo_hypers(i)%radial_enhancement, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(soap_turbo_hypers(i)%compress_soap, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
       if( soap_turbo_hypers(i)%compress_soap )then
-        call mpi_bcast(soap_turbo_hypers(i)%compress_soap_indices(1:dim), dim, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+!        call mpi_bcast(soap_turbo_hypers(i)%compress_soap_indices(1:dim), dim, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+n_nonzero = soap_turbo_hypers(i)%compress_P_nonzero
+call mpi_bcast(soap_turbo_hypers(i)%compress_P_i(1:n_nonzero), n_nonzero, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+call mpi_bcast(soap_turbo_hypers(i)%compress_P_j(1:n_nonzero), n_nonzero, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+call mpi_bcast(soap_turbo_hypers(i)%compress_P_el(1:n_nonzero), n_nonzero, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
       end if
       call mpi_bcast(soap_turbo_hypers(i)%has_vdw, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
       if( soap_turbo_hypers(i)%has_vdw )then
@@ -1048,7 +1053,9 @@ program turbogap
                             soap_turbo_hypers(i)%central_weight, soap_turbo_hypers(i)%basis, &
                             soap_turbo_hypers(i)%scaling_mode, params%do_timing, params%do_derivatives, params%do_forces, &
                             params%do_prediction, params%write_soap, params%write_derivatives, &
-                            soap_turbo_hypers(i)%compress_soap, soap_turbo_hypers(i)%compress_soap_indices, &
+!                            soap_turbo_hypers(i)%compress_soap, soap_turbo_hypers(i)%compress_soap_indices, &
+soap_turbo_hypers(i)%compress_soap, soap_turbo_hypers(i)%compress_P_i, &
+soap_turbo_hypers(i)%compress_P_j, soap_turbo_hypers(i)%compress_P_el, &
                             soap_turbo_hypers(i)%delta, soap_turbo_hypers(i)%zeta, soap_turbo_hypers(i)%central_species, &
                             xyz_species(this_i_beg:this_i_end), xyz_species_supercell, soap_turbo_hypers(i)%alphas, &
                             soap_turbo_hypers(i)%Qs, params%all_atoms, params%which_atom, indices, soap, soap_cart_der, &
@@ -1820,7 +1827,7 @@ end if
           write(*,'(A,I8,A,I8,A)') "Nested sampling iter.:", i_nested, "/", params%n_nested, " |"
           write(*,'(A,I8,A)') " - Highest enthalpy walker:    ", i_image, " |"
           write(*,'(A,I8,A)') " - Walker selected for cloning:", i, " |"
-          write(*,'(A,F15.4,A)') " - Maximum enthalpy: ", e_max, " eV |"
+          write(*,'(A,F15.7,A)') " - Max. enthalpy: ", e_max, " eV |"
         end if
         call from_image_to_properties(images(i), positions, velocities, masses, &
                                       forces, a_box, b_box, c_box, energy, E_kinetic, &
