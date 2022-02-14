@@ -2,7 +2,7 @@
 ! HND X
 ! HND X   TurboGAP
 ! HND X
-! HND X   TurboGAP is copyright (c) 2019-2021, Miguel A. Caro and others
+! HND X   TurboGAP is copyright (c) 2019-2022, Miguel A. Caro and others
 ! HND X
 ! HND X   TurboGAP is published and distributed under the
 ! HND X      Academic Software License v1.0 (ASL)
@@ -119,11 +119,11 @@ program turbogap
 ! MPI stuff
   real*8, allocatable :: temp_1d(:), temp_1d_bis(:), temp_2d(:,:)
   integer, allocatable :: temp_1d_int(:), n_atom_pairs_by_rank(:), displ(:)
-  integer :: i_beg, i_end, n_sites_mpi, j_beg, j_end, size_soap_turbo, size_distance_2b, size_angle_3b
-integer :: n_nonzero
   integer, allocatable :: n_species_mpi(:), n_sparse_mpi_soap_turbo(:), dim_mpi(:), n_sparse_mpi_distance_2b(:), &
                           n_sparse_mpi_angle_3b(:), n_mpi_core_pot(:), vdw_n_sparse_mpi_soap_turbo(:), &
-                          n_neigh_local(:)
+                          n_neigh_local(:), n_nonzero_mpi(:)
+  integer :: i_beg, i_end, n_sites_mpi, j_beg, j_end, size_soap_turbo, size_distance_2b, size_angle_3b
+  integer :: n_nonzero
   logical, allocatable :: compress_soap_mpi(:)
 
 ! Nested sampling
@@ -224,17 +224,17 @@ integer :: n_nonzero
   write(*,*)'                                                                 |'
   write(*,*)'*) Miguel A. Caro (Aalto University)                             |'
   write(*,*)'*) Patricia Hernández-León (Aalto University)                    |'
-  write(*,*)'*) Suresh Kondati Natarajan (now @ QuantumWise, formerly @ Aalto)|'
+  write(*,*)'*) Suresh Kondati Natarajan (formerly @ Aalto University)        |'
   write(*,*)'*) Albert P. Bartók-Pártay (Warwick University)                  |'
-  write(*,*)'*) Eelis V. Mielonen (now @ EPFL, formerly @ Aalto)              |'
+  write(*,*)'*) Eelis V. Mielonen (formerly @ Aalto University)               |'
   write(*,*)'*) Heikki Muhli (Aalto University)                               |'
-  write(*,*)'*) Mikhail Kuklin (Aalto University)                             |'
+  write(*,*)'*) Mikhail Kuklin (formerly @ Aalto University)                  |'
   write(*,*)'*) Gábor Csányi (University of Cambridge)                        |'
   write(*,*)'*) Jan Kloppenburg (Aalto University)                            |'
   write(*,*)'                                                                 |'
   write(*,*)'.................................................................|'
   write(*,*)'                                                                 |'
-  write(*,*)'                     Last updated: Dec. 2021                     |'
+  write(*,*)'                     Last updated: Feb. 2022                     |'
   write(*,*)'                                        _________________________/'
   write(*,*)'.......................................|'
 #ifdef _MPIF90
@@ -405,6 +405,7 @@ integer :: n_nonzero
     allocate( n_sparse_mpi_distance_2b(1:n_distance_2b) )
     allocate( n_sparse_mpi_angle_3b(1:n_angle_3b) )
     allocate( n_mpi_core_pot(1:n_core_pot) )
+    allocate( n_nonzero_mpi(1:n_soap_turbo) )
     IF( rank == 0 )THEN
       n_species_mpi = soap_turbo_hypers(1:n_soap_turbo)%n_species
       n_sparse_mpi_soap_turbo = soap_turbo_hypers(1:n_soap_turbo)%n_sparse
@@ -415,6 +416,7 @@ integer :: n_nonzero
       n_sparse_mpi_distance_2b = distance_2b_hypers(1:n_distance_2b)%n_sparse
       n_sparse_mpi_angle_3b = angle_3b_hypers(1:n_angle_3b)%n_sparse
       n_mpi_core_pot = core_pot_hypers(1:n_core_pot)%n
+      n_nonzero_mpi = soap_turbo_hypers(1:n_soap_turbo)%compress_P_nonzero
     END IF
     call cpu_time(time_mpi(1))
     call mpi_bcast(n_species_mpi, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
@@ -426,12 +428,13 @@ integer :: n_nonzero
     call mpi_bcast(n_sparse_mpi_distance_2b, n_distance_2b, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
     call mpi_bcast(n_sparse_mpi_angle_3b, n_angle_3b, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
     call mpi_bcast(n_mpi_core_pot, n_core_pot, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+    call mpi_bcast(n_nonzero_mpi, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
     call cpu_time(time_mpi(2))
     time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
     IF( rank /= 0 )THEN
       call allocate_soap_turbo_hypers(n_soap_turbo, n_species_mpi, n_sparse_mpi_soap_turbo, dim_mpi, &
                                       vdw_n_sparse_mpi_soap_turbo, has_vdw_mpi, compress_soap_mpi, &
-                                      soap_turbo_hypers)
+                                      n_nonzero_mpi, soap_turbo_hypers)
       call allocate_distance_2b_hypers(n_distance_2b, n_sparse_mpi_distance_2b, distance_2b_hypers)
       call allocate_angle_3b_hypers(n_angle_3b, n_sparse_mpi_angle_3b, angle_3b_hypers)
       call allocate_core_pot_hypers(n_core_pot, n_mpi_core_pot, core_pot_hypers)
@@ -467,6 +470,7 @@ integer :: n_nonzero
       call mpi_bcast(soap_turbo_hypers(i)%species_types(1:n_sp), 8*n_sp, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
       n_sparse = soap_turbo_hypers(i)%n_sparse
       dim = soap_turbo_hypers(i)%dim
+      n_nonzero = soap_turbo_hypers(i)%compress_P_nonzero
       call mpi_bcast(soap_turbo_hypers(i)%alphas(1:n_sparse), n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(soap_turbo_hypers(i)%Qs(1:dim, 1:n_sparse), n_sparse*dim, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(soap_turbo_hypers(i)%delta, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
@@ -480,11 +484,9 @@ integer :: n_nonzero
       call mpi_bcast(soap_turbo_hypers(i)%radial_enhancement, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(soap_turbo_hypers(i)%compress_soap, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
       if( soap_turbo_hypers(i)%compress_soap )then
-!        call mpi_bcast(soap_turbo_hypers(i)%compress_soap_indices(1:dim), dim, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-n_nonzero = soap_turbo_hypers(i)%compress_P_nonzero
-call mpi_bcast(soap_turbo_hypers(i)%compress_P_i(1:n_nonzero), n_nonzero, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-call mpi_bcast(soap_turbo_hypers(i)%compress_P_j(1:n_nonzero), n_nonzero, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-call mpi_bcast(soap_turbo_hypers(i)%compress_P_el(1:n_nonzero), n_nonzero, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(soap_turbo_hypers(i)%compress_P_i(1:n_nonzero), n_nonzero, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(soap_turbo_hypers(i)%compress_P_j(1:n_nonzero), n_nonzero, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(soap_turbo_hypers(i)%compress_P_el(1:n_nonzero), n_nonzero, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
       end if
       call mpi_bcast(soap_turbo_hypers(i)%has_vdw, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
       if( soap_turbo_hypers(i)%has_vdw )then
@@ -1053,9 +1055,9 @@ call mpi_bcast(soap_turbo_hypers(i)%compress_P_el(1:n_nonzero), n_nonzero, MPI_D
                             soap_turbo_hypers(i)%central_weight, soap_turbo_hypers(i)%basis, &
                             soap_turbo_hypers(i)%scaling_mode, params%do_timing, params%do_derivatives, params%do_forces, &
                             params%do_prediction, params%write_soap, params%write_derivatives, &
-!                            soap_turbo_hypers(i)%compress_soap, soap_turbo_hypers(i)%compress_soap_indices, &
-soap_turbo_hypers(i)%compress_soap, soap_turbo_hypers(i)%compress_P_i, &
-soap_turbo_hypers(i)%compress_P_j, soap_turbo_hypers(i)%compress_P_el, &
+                            soap_turbo_hypers(i)%compress_soap, soap_turbo_hypers(i)%compress_P_nonzero, &
+                            soap_turbo_hypers(i)%compress_P_i, soap_turbo_hypers(i)%compress_P_j, &
+                            soap_turbo_hypers(i)%compress_P_el, &
                             soap_turbo_hypers(i)%delta, soap_turbo_hypers(i)%zeta, soap_turbo_hypers(i)%central_species, &
                             xyz_species(this_i_beg:this_i_end), xyz_species_supercell, soap_turbo_hypers(i)%alphas, &
                             soap_turbo_hypers(i)%Qs, params%all_atoms, params%which_atom, indices, soap, soap_cart_der, &

@@ -2,7 +2,7 @@
 ! HND X
 ! HND X   TurboGAP
 ! HND X
-! HND X   TurboGAP is copyright (c) 2019-2021, Miguel A. Caro and others
+! HND X   TurboGAP is copyright (c) 2019-2022, Miguel A. Caro and others
 ! HND X
 ! HND X   TurboGAP is published and distributed under the
 ! HND X      Academic Software License v1.0 (ASL)
@@ -34,14 +34,11 @@ module types
     real*8, allocatable :: nf(:), rcut_hard(:), rcut_soft(:), atom_sigma_r(:), atom_sigma_t(:), &
                            atom_sigma_r_scaling(:), atom_sigma_t_scaling(:), amplitude_scaling(:), &
                            central_weight(:), global_scaling(:), alphas(:), Qs(:,:), cutoff(:), &
-                           vdw_Qs(:,:), vdw_alphas(:), vdw_cutoff(:)
-real*8, allocatable :: compress_P_el(:)
+                           vdw_Qs(:,:), vdw_alphas(:), vdw_cutoff(:), compress_P_el(:)
     real*8 :: zeta = 2.d0, delta = 1.d0, rcut_max, vdw_zeta, vdw_delta, vdw_V0
-!    integer, allocatable :: alpha_max(:), compress_soap_indices(:)
-integer, allocatable :: alpha_max(:), compress_P_i(:), compress_P_j(:)
+    integer, allocatable :: alpha_max(:), compress_P_i(:), compress_P_j(:)
     integer :: n_species, central_species = 0, dim, l_max, radial_enhancement = 0, n_max, n_sparse, &
-               vdw_n_sparse
-integer :: compress_P_nonzero = 0
+               vdw_n_sparse, compress_P_nonzero = 0
     character*1024 :: file_alphas, file_desc, file_compress = "none", file_vdw_alphas, file_vdw_desc
     character*64 :: basis = "poly3", compress_mode = "none"
     character*32 :: scaling_mode = "polynomial"
@@ -122,6 +119,8 @@ integer :: compress_P_nonzero = 0
 
   contains
 
+
+!**************************************************************************
 ! This provides a way to pass all the individual arrays/variables in the main code to an image container
 ! In time I should make the image data type the default way to store these properties!!!!!!!
   subroutine from_properties_to_image(this_image, positions, velocities, masses, &
@@ -200,7 +199,13 @@ integer :: compress_P_nonzero = 0
     allocate( this_image%xyz_species_supercell(1:n) )
     this_image%xyz_species_supercell = xyz_species_supercell
   end subroutine
+!**************************************************************************
 
+
+
+
+
+!**************************************************************************
   subroutine from_image_to_properties(this_image, positions, velocities, masses, &
                                       forces, a_box, b_box, c_box, energy, e_kin, &
                                       species, species_supercell, n_sites, indices, fix_atom, &
@@ -270,5 +275,7 @@ integer :: compress_P_nonzero = 0
     allocate( xyz_species_supercell(1:n) )
     xyz_species_supercell = this_image%xyz_species_supercell
   end subroutine
+!**************************************************************************
+
 
 end module

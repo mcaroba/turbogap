@@ -2,7 +2,7 @@
 ! HND X
 ! HND X   TurboGAP
 ! HND X
-! HND X   TurboGAP is copyright (c) 2019-2021, Miguel A. Caro and others
+! HND X   TurboGAP is copyright (c) 2019-2022, Miguel A. Caro and others
 ! HND X
 ! HND X   TurboGAP is published and distributed under the
 ! HND X      Academic Software License v1.0 (ASL)
@@ -1263,64 +1263,60 @@ end if
             if( soap_turbo_hypers(n_soap_turbo)%file_compress /= "none" )then
               open(unit=20, file=soap_turbo_hypers(n_soap_turbo)%file_compress, status="old")
               read(20, *) (ijunk, i=1,n_species), ijunk, soap_turbo_hypers(n_soap_turbo)%dim
-read(20, '(A)') cjunk
-if( cjunk == "P_transformation" )then
-n_nonzero = -1
-do while(cjunk /= "end_transformation")
-read(20, '(A)') cjunk
-n_nonzero = n_nonzero + 1
-end do
-soap_turbo_hypers(n_soap_turbo)%compress_P_nonzero = n_non_zero
-allocate( soap_turbo_hypers(n_soap_turbo)%compress_P_el(1:n_non_zero) )
-allocate( soap_turbo_hypers(n_soap_turbo)%compress_P_i(1:n_non_zero) )
-allocate( soap_turbo_hypers(n_soap_turbo)%compress_P_j(1:n_non_zero) )
-do i = 1, n_non_zero+1
-backspace(20)
-end do
-do i = 1, n_non_zero
-read(20,*) soap_turbo_hypers(n_soap_turbo)%compress_P_i(i), &
-           soap_turbo_hypers(n_soap_turbo)%compress_P_j(i), &
-           soap_turbo_hypers(n_soap_turbo)%compress_P_el(i)
-end do
-else
-! Old way to handle compression for backcompatibility
-soap_turbo_hypers(n_soap_turbo)%compress_P_nonzero = soap_turbo_hypers(n_soap_turbo)%dim
-allocate( soap_turbo_hypers(n_soap_turbo)%compress_P_el(1:soap_turbo_hypers(n_soap_turbo)%dim) )
-allocate( soap_turbo_hypers(n_soap_turbo)%compress_P_i(1:soap_turbo_hypers(n_soap_turbo)%dim) )
-allocate( soap_turbo_hypers(n_soap_turbo)%compress_P_j(1:soap_turbo_hypers(n_soap_turbo)%dim) )
-do i = 1, soap_turbo_hypers(n_soap_turbo)%dim
-read(20, *) soap_turbo_hypers(n_soap_turbo)%compress_P_j(i)
-soap_turbo_hypers(n_soap_turbo)%compress_P_i(i) = i
-soap_turbo_hypers(n_soap_turbo)%compress_P_el(i) = 1.d0
-end do
-!              allocate( soap_turbo_hypers(n_soap_turbo)%compress_soap_indices(1:soap_turbo_hypers(n_soap_turbo)%dim) )
-!              do i = 1, soap_turbo_hypers(n_soap_turbo)%dim
-!                read(20, *) soap_turbo_hypers(n_soap_turbo)%compress_soap_indices(i)
-!              end do
-
-end if
+              read(20, '(A)') cjunk
+              if( cjunk == "P_transformation" )then
+                n_nonzero = -1
+                do while(cjunk /= "end_transformation")
+                  read(20, '(A)') cjunk
+                  n_nonzero = n_nonzero + 1
+                end do
+                soap_turbo_hypers(n_soap_turbo)%compress_P_nonzero = n_nonzero
+                allocate( soap_turbo_hypers(n_soap_turbo)%compress_P_el(1:n_nonzero) )
+                allocate( soap_turbo_hypers(n_soap_turbo)%compress_P_i(1:n_nonzero) )
+                allocate( soap_turbo_hypers(n_soap_turbo)%compress_P_j(1:n_nonzero) )
+                do i = 1, n_nonzero+1
+                  backspace(20)
+                end do
+                do i = 1, n_nonzero
+                  read(20,*) soap_turbo_hypers(n_soap_turbo)%compress_P_i(i), &
+                             soap_turbo_hypers(n_soap_turbo)%compress_P_j(i), &
+                             soap_turbo_hypers(n_soap_turbo)%compress_P_el(i)
+                end do
+              else
+                backspace(20)
+!               Old way to handle compression for backcompatibility
+                soap_turbo_hypers(n_soap_turbo)%compress_P_nonzero = soap_turbo_hypers(n_soap_turbo)%dim
+                allocate( soap_turbo_hypers(n_soap_turbo)%compress_P_el(1:soap_turbo_hypers(n_soap_turbo)%dim) )
+                allocate( soap_turbo_hypers(n_soap_turbo)%compress_P_i(1:soap_turbo_hypers(n_soap_turbo)%dim) )
+                allocate( soap_turbo_hypers(n_soap_turbo)%compress_P_j(1:soap_turbo_hypers(n_soap_turbo)%dim) )
+                do i = 1, soap_turbo_hypers(n_soap_turbo)%dim
+                  read(20, *) soap_turbo_hypers(n_soap_turbo)%compress_P_j(i)
+                  soap_turbo_hypers(n_soap_turbo)%compress_P_i(i) = i
+                  soap_turbo_hypers(n_soap_turbo)%compress_P_el(i) = 1.d0
+                end do
+            end if
               close(20)
             else if( soap_turbo_hypers(n_soap_turbo)%compress_mode /= "none" )then
               call get_compress_indices( soap_turbo_hypers(n_soap_turbo)%compress_mode, &
                                          soap_turbo_hypers(n_soap_turbo)%alpha_max, &
                                          soap_turbo_hypers(n_soap_turbo)%l_max, &
                                          soap_turbo_hypers(n_soap_turbo)%dim, &
-!                                         soap_turbo_hypers(n_soap_turbo)%compress_soap_indices, &
-soap_turbo_hypers(n_soap_turbo)%compress_P_non_zero, &
-soap_turbo_hypers(n_soap_turbo)%compress_P_i, &
-soap_turbo_hypers(n_soap_turbo)%compress_P_j, &
-soap_turbo_hypers(n_soap_turbo)%compress_P_el, &
+                                         soap_turbo_hypers(n_soap_turbo)%compress_P_nonzero, &
+                                         soap_turbo_hypers(n_soap_turbo)%compress_P_i, &
+                                         soap_turbo_hypers(n_soap_turbo)%compress_P_j, &
+                                         soap_turbo_hypers(n_soap_turbo)%compress_P_el, &
                                          "get_dim" )
-              allocate( soap_turbo_hypers(n_soap_turbo)%compress_soap_indices(1:soap_turbo_hypers(n_soap_turbo)%dim) )
+              allocate( soap_turbo_hypers(n_soap_turbo)%compress_P_i(1:soap_turbo_hypers(n_soap_turbo)%compress_P_nonzero) )
+              allocate( soap_turbo_hypers(n_soap_turbo)%compress_P_j(1:soap_turbo_hypers(n_soap_turbo)%compress_P_nonzero) )
+              allocate( soap_turbo_hypers(n_soap_turbo)%compress_P_el(1:soap_turbo_hypers(n_soap_turbo)%compress_P_nonzero) )
               call get_compress_indices( soap_turbo_hypers(n_soap_turbo)%compress_mode, &
                                          soap_turbo_hypers(n_soap_turbo)%alpha_max, &
                                          soap_turbo_hypers(n_soap_turbo)%l_max, &
                                          soap_turbo_hypers(n_soap_turbo)%dim, &
-!                                         soap_turbo_hypers(n_soap_turbo)%compress_soap_indices, &
-soap_turbo_hypers(n_soap_turbo)%compress_P_non_zero, &
-soap_turbo_hypers(n_soap_turbo)%compress_P_i, &
-soap_turbo_hypers(n_soap_turbo)%compress_P_j, &
-soap_turbo_hypers(n_soap_turbo)%compress_P_el, &
+                                         soap_turbo_hypers(n_soap_turbo)%compress_P_nonzero, &
+                                         soap_turbo_hypers(n_soap_turbo)%compress_P_i, &
+                                         soap_turbo_hypers(n_soap_turbo)%compress_P_j, &
+                                         soap_turbo_hypers(n_soap_turbo)%compress_P_el, &
                                          "set_indices" )
             else
               write(*,*) "ERROR: you're trying to use compression but neither a file_compress_soap nor", &
