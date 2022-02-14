@@ -32,7 +32,7 @@ module read_files
   use types
   use splines
   use vdw
-  use soap_turbo_compress
+  use soap_turbo_compress_module
 
 
   contains
