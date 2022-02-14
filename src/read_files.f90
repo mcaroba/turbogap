@@ -1294,7 +1294,7 @@ end if
                   soap_turbo_hypers(n_soap_turbo)%compress_P_i(i) = i
                   soap_turbo_hypers(n_soap_turbo)%compress_P_el(i) = 1.d0
                 end do
-            end if
+              end if
               close(20)
             else if( soap_turbo_hypers(n_soap_turbo)%compress_mode /= "none" )then
               call get_compress_indices( soap_turbo_hypers(n_soap_turbo)%compress_mode, &
