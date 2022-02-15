@@ -1,10 +1,10 @@
-> cutoff_scs_full.dat
-> pol_scs_cutoff_full.dat
+> cutoff_2829.dat
+> pol_scs_2829.dat
 
-for i in $(seq 8.0 0.2 15.0); do
+for i in $(seq 1.2 0.2 4.6); do
 
 cat <<EOF > input
-atoms_file = 'atoms.xyz'
+atoms_file = '2829_supercell.xyz'
 !atoms_file = 'atoms_p.xyz'
 !atoms_file = 'atoms_m.xyz'
 pot_file = 'gap_files/carbon.gap'
@@ -24,7 +24,7 @@ vdw_buffer = 0.
 vdw_r0_ref = 1.900
 EOF
 
-echo $i >> cutoff_scs_full.dat
-../bin/turbogap predict | grep "alpha_SCS" | awk '{print $2}' >> pol_scs_cutoff_full.dat
+echo $i >> cutoff_2829.dat
+../bin/turbogap predict | grep "alpha_SCS" | awk '{print $2}' >> pol_scs_2829.dat
 
 done

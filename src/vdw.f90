@@ -449,17 +449,18 @@ module vdw
                            dB_mat_n(:,:,:,:,:), dA_mat_n(:,:,:,:,:), dBA_n(:,:), &
                            dalpha_n(:,:,:), AdB_n(:,:), hirshfeld_v_neigh_H(:), hirshfeld_v_cart_der2(:,:), &
                            rjs2(:), xyz2(:,:), hirshfeld_v_neigh2(:), rjs_central2(:), rjs_central(:), &
-                           xyz_central2(:,:), xyz_central(:,:)
+                           xyz_central2(:,:), xyz_central(:,:), dalpha2(:,:,:)
     real*8 :: time1, time2, this_force(1:3), Bohr, Hartree, &
               omega, pi, integral, E_MBD, R_vdW_ij, R_vdW_SCS_ij, S_vdW_ij, dS_vdW_ij, exp_term, &
               rcut_vdw, r_vdw_i, r_vdw_j, dist, f_damp_SCS_ij, t1, t2, rcut_H, buffer_H, rbuf, fcut, dfcut
     integer, allocatable :: ipiv(:), n_sneigh(:), sneighbors_list(:), p_to_i(:), i_to_p(:), &
                             neighbors_list2(:), local_neighbors(:), neighbor_species2(:), &
                             neighbor_species_H(:), neighbors_list3(:), n_sneigh_vder(:), &
-                            sneighbors_list_vder(:)
+                            sneighbors_list_vder(:), n_sneigh_list2(:), &
+                            n_sneigh_list(:), n_ssites_list(:)
     integer :: n_sites, n_pairs, n_species, n_sites0, info, n_order, n_tot, n_spairs, n_beg, n_end, &
                n_ssites, n_spairs_vder
-    integer :: i, i2, j, j2, k, k2, k3, a, a2, c1, c2, c3, lwork, b, p, q
+    integer :: i, i2, j, j2, k, k2, k3, a, a2, c1, c2, c3, lwork, b, p, q, n_count
     logical :: do_timing = .false., do_hirshfeld_gradients = .true., nonlocal = .false., &
                series_expansion = .true., total_energy = .false., series_average = .true., &
                new_implementation = .true.
@@ -474,7 +475,9 @@ module vdw
 
 !   Change these to be input variables (NOTE THAT THEY ARE IN ANGSTROMS!):
     write(*,*) "rcut", rcut
-!    rcut_vdw = 4.d0
+!TEST2 : CHANGE EACH OCCURENCE OF rcut_vdw BACK TO rcut
+!    rcut_vdw = rcut-7.d0
+!    write(*,*) "rcut_vdw", rcut_vdw
     ! n_order has to be at least 2
 !    n_order = 6
 !    n_order = 3
@@ -491,13 +494,18 @@ module vdw
 
 !   This should allow to only take a subset of atoms for parallelization:
     n_beg = 1
-    n_end = 2
+    n_end = 1
 
     if ( new_implementation ) then
     allocate( alpha_SCS(n_beg:n_end,1:11) )
-    allocate( dalpha(1:n_pairs,1:3,1:11) )
+    allocate( dalpha2(1:n_pairs,1:3,1:11) )
+    allocate( n_ssites_list(n_beg:n_end) )
+    allocate( n_sneigh_list2(1:n_pairs) )
     alpha_SCS = 0
-    dalpha = 0
+    dalpha2 = 0
+    n_ssites_list = 0
+    n_sneigh_list2 = 0
+    n_count = 0
 
 !   Frequencies used for integration:
     allocate( omegas(1:11) )
@@ -517,23 +525,26 @@ module vdw
     allocate( dg(1:11) )
     allocate( dh(1:11) )
     allocate( A_i(1:3,1:3) )
-    
+
+
+    write(*,*) "max of neighbors list:", maxval(neighbors_list)
 !   Let's try to build a sub neighbor list for one atomic environment:
     call cpu_time(time1)
-    allocate( n_sneigh(1:n_sites) )
+    allocate( n_sneigh(1:maxval(neighbors_list)) )
     allocate( neighbors_list2(1:n_pairs) )
     allocate( hirshfeld_v_cart_der2(1:3,1:n_pairs) )
     allocate( rjs2(1:n_pairs) )
     allocate( xyz2(1:3,1:n_pairs) )
     allocate( hirshfeld_v_neigh2(1:n_pairs) )
     allocate( neighbor_species2(1:n_pairs) )
-    allocate( p_to_i(1:n_sites) )
-    allocate( i_to_p(1:n_sites) )
+    allocate( p_to_i(1:maxval(neighbors_list)) )
+    allocate( i_to_p(1:maxval(neighbors_list)) )
     allocate( neighbors_list3(1:n_pairs) )
-    allocate( n_sneigh_vder(1:n_sites) )
+    allocate( n_sneigh_vder(1:maxval(neighbors_list)) )
     allocate( ij_buffer2(1:n_pairs) )
     n_tot = sum(n_neigh(1:n_beg))-n_neigh(n_beg)  ! Can you just do sum(n_neigh(1:n_beg-1)) or what happens if n_beg = 1?
 !    write(*,*) "n_tot init:", n_tot
+
     do i = n_beg, n_end
       allocate( local_neighbors(1:n_neigh(i)) )
       allocate( i0_buffer2(1:n_neigh(i)) )
@@ -560,10 +571,15 @@ module vdw
       k2 = 0
       k3 = 0
       n_spairs_vder = 0
+      write(*,*) "initialization ok"
       do p = 1, n_neigh(i)
+!TEST2
+        write(*,*) "new p", p
         if ( rjs(n_tot+p) < rcut ) then
+!        if ( rjs(n_tot+p) < rcut_vdw) then
           n_ssites = n_ssites + 1
           i2 = local_neighbors(p)
+          write(*,*) "i2", i2
           k2 = k2+1
           k3 = k3+1
           p_to_i(n_ssites) = i2
@@ -587,36 +603,37 @@ module vdw
             xyz_central2(1:3,n_ssites) = xyz(1:3,n_tot+p)
 !            write(*,*) "rjs in buffer:", rjs(n_tot+p)
           end if
+!TEST2
           do j2 = 2, n_neigh(i2)
             k = k+1
             j = neighbors_list(k)
+!            write(*,*) "j", j
+!            write(*,*) "local neighbors:", local_neighbors
             ! Is j a neighbor of i as well?
             if ( any(local_neighbors == j) ) then
-               q = findloc(local_neighbors,j,1)
-!              k3 = k3+1
-!              n_spairs_vder = n_spairs_vder + 1
-!              n_sneigh_vder(n_ssites) = n_sneigh_vder(n_ssites) + 1
-!              q = findloc(local_neighbors,j,1)
-!              neighbors_list3(k3) = neighbors_list(k)
-!              hirshfeld_v_cart_der2(1:3,k3) = hirshfeld_v_cart_der(1:3,k)
+!              write(*,*) "hello?"
+              q = findloc(local_neighbors,j,1)
               ! Is it within cutoff of central atom?
-              if ( rjs(n_tot+q) < rcut) then
+!              write(*,*) "check if within central cutoff"
+              if ( rjs(n_tot+q) < rcut ) then
                 k3 = k3+1
                 n_spairs_vder = n_spairs_vder + 1
                 n_sneigh_vder(n_ssites) = n_sneigh_vder(n_ssites) + 1
-!                q = findloc(local_neighbors,j,1)
                 neighbors_list3(k3) = neighbors_list(k)
                 hirshfeld_v_cart_der2(1:3,k3) = hirshfeld_v_cart_der(1:3,k)
                 ! Is it also within cutoff of i2?
+!TEST2
+!                write(*,*) "check for neighbor-neighbor"
                 if ( rjs(k) < rcut ) then
                   n_sneigh(n_ssites) = n_sneigh(n_ssites) + 1
                   k2 = k2+1
                   neighbors_list2(k2) = j
-!                  hirshfeld_v_cart_der2(1:3,k2) = hirshfeld_v_cart_der(1:3,k)
                   rjs2(k2) = rjs(k)
                   xyz2(1:3,k2) = xyz(1:3,k)
                   hirshfeld_v_neigh2(k2) = hirshfeld_v_neigh(k)
                   neighbor_species2(k2) = neighbor_species(k)
+!TEST2
+!                  write(*,*) "check if buffer"
                   if ( rjs(k) > rcut - buffer ) then
                     ij_buffer2(k2) = .true.
                   end if
@@ -624,12 +641,10 @@ module vdw
               end if
             end if
           end do
-          ! Add the self-neighbor if atom has neighbors at all:
-!          if ( n_sneigh(n_ssites) > 0 ) then
-!            n_sneigh(n_ssites) = n_sneigh(n_ssites) + 1
-!          end if
         end if
       end do
+
+      write(*,*) "n_sneigh", n_sneigh
 
       call cpu_time(time2)
 
@@ -793,7 +808,8 @@ module vdw
         do q = 2, n_sneigh(p)
           k = k+1
           r_vdw_j = r0_ii(k)
-          if( rjs_H(k) < rcut_H )then
+!TEST2
+!          if( rjs_H(k) < rcut_H )then
             f_damp(k) = 1.d0/( 1.d0 + exp( -d*( rjs_H(k)/(sR*(r_vdw_i + r_vdw_j)) - 1.d0 ) ) )
             k2 = 9*(k-1)
             do c1 = 1, 3
@@ -806,7 +822,8 @@ module vdw
                 end if
               end do
             end do
-          end if
+!TEST2
+!          end if
         end do
 !        end if
       end do
@@ -822,7 +839,8 @@ module vdw
           k = k+1
           s_j = sigma_k(k,:)
 !          j = sneighbors_list(k)
-          if( rjs_H(k) < rcut_H )then
+!TEST2
+!          if( rjs_H(k) < rcut_H )then
             sigma_ij = sqrt(s_i**2 + s_j**2)
             g_func(k,:) = erf(rjs_H(k)/sigma_ij) - 2.d0/sqrt(pi) * (rjs_H(k)/sigma_ij) * exp(-rjs_H(k)**2.d0/sigma_ij**2)
             k2 = 9*(k-1)
@@ -833,7 +851,8 @@ module vdw
                                       xyz_H(c1,k)*xyz_H(c2,k)/rjs_H(k)**5 * exp(-rjs_H(k)**2/sigma_ij**2)
               end do
             end do 
-          end if
+!TEST2
+!          end if
         end do
 !        end if
       end do
@@ -860,7 +879,8 @@ module vdw
           k = k+1
           j = sneighbors_list(k)
           q = i_to_p(j)
-          if( rjs_H(k) < rcut_H )then
+!TEST2
+!          if( rjs_H(k) < rcut_H )then
             k2 = 9*(k-1)
             do c1 = 1, 3
               do c2 = 1, 3
@@ -869,13 +889,14 @@ module vdw
                                                 g_func(k,:) + h_func(k2,:))
               end do
             end do
-!TEST1
+!TEST2
             if ( ij_buffer(k) ) then
               rbuf = (rjs_H(k)-rcut_H+buffer_H)/buffer_H
               T_SR(3*(p-1)+1:3*(p-1)+3,3*(q-1)+1:3*(q-1)+3,:) = T_SR(3*(p-1)+1:3*(p-1)+3,3*(q-1)+1:3*(q-1)+3,:) * &
                   (1.d0 - 3.d0 * rbuf**2 + 2.d0 * rbuf**3)
             end if
-          end if
+!TEST2
+!          end if
         end do
 !        end if
       end do
@@ -888,6 +909,10 @@ module vdw
         end if
       end do
 
+!      write(*,*) "T_SR"
+!      do p = 1, 3*n_ssites
+!        write(*,*) T_SR(p,:,1)
+!      end do
 
       B_mat = B_mat + T_SR
       
@@ -905,7 +930,8 @@ module vdw
         if (n_sneigh(p) > 1) then
         do j2 = 2, n_sneigh(p)
           k = k+1
-          if (rjs_H(k) < rcut_H) then
+!TEST2
+!          if (rjs_H(k) < rcut_H) then
             k2 = 9*(k-1)
             do c1 = 1,3
               do c2 = 1,3
@@ -924,7 +950,8 @@ module vdw
                 end do
               end do
             end do
-          end if
+!TEST2
+!          end if
         end do
         end if
       end do
@@ -957,7 +984,8 @@ module vdw
             r_vdw_j = r0_ii(k)
             j = sneighbors_list(k)
             q = i_to_p(j)
-            if (rjs_H(k) < rcut_H) then
+!TEST2
+!            if (rjs_H(k) < rcut_H) then
               if (a == p .or. a == q) then
                 sigma_ij = sqrt(sigma_k(k3+1,:)**2 + sigma_k(k,:)**2)
                 do c3 = 1, 3
@@ -993,7 +1021,8 @@ module vdw
                   dT_SR(3*(p-1)+1:3*(p-1)+3,3*(q-1)+1:3*(q-1)+3,a,:,:) = -dT_SR(3*(p-1)+1:3*(p-1)+3,3*(q-1)+1:3*(q-1)+3,a,:,:)
                 end if
               end if
-            end if
+!TEST2
+!            end if
           end do
 !          end if
           k3 = k3+n_sneigh(p)
@@ -1184,6 +1213,7 @@ module vdw
           k = k+1
           j = sneighbors_list(k)
           q = i_to_p(j)
+!TEST2
           if( rjs_H(k) < rcut_H )then
             if ( ij_buffer(k) ) then
               rbuf = (rjs_H(k)-rcut_H+buffer_H)/buffer_H
@@ -1279,6 +1309,22 @@ module vdw
 !        end do
       end do
 
+! TEST FOR SURROUNDING POLARIZABILITIES #########################
+      write(*,*) "rjs_central", rjs_central
+      do k3 = 1, 11
+        !A_i = 0.d0
+        do p = 1, n_ssites
+          A_i = 0.d0
+          do q = 1, n_ssites
+            A_i = A_i + A_mat(3*(p-1)+1:3*(p-1)+3,3*(q-1)+1:3*(q-1)+3,k3)
+          end do
+          if (k3 == 1) then
+            write(*,*) "alpha SCS for atom:", p_to_i(p), rjs_central(p)*Bohr,  1.d0/3.d0 * (A_i(1,1)+A_i(2,2)+A_i(3,3))
+          end if
+        end do
+      end do
+! ###############################################################
+
       call cpu_time(time2)
       write(*,*) "alpha SCS (timing):", time2-time1
       call cpu_time(time1)
@@ -1328,19 +1374,21 @@ module vdw
               A_i = A_i + dA_mat(1:3,3*(q-1)+1:3*(q-1)+3,a2,c3,k)
             end do
             do c1 = 1, 3
-              dalpha(n_tot+a2,c3,k) = dalpha(n_tot+a2,c3,k) + A_i(c1,c1)
+              dalpha2(n_count+a2,c3,k) = dalpha2(n_count+a2,c3,k) + A_i(c1,c1)
             end do
-            dalpha(n_tot+a2,c3,k) = 1.d0/3.d0 * dalpha(n_tot+a2,c3,k)
+            dalpha2(n_count+a2,c3,k) = 1.d0/3.d0 * dalpha2(n_count+a2,c3,k)
           end do
         end do
       end do
 
+      n_ssites_list(i) = n_ssites
+      n_sneigh_list2(n_count+1:n_count+n_ssites) = n_sneigh(1:n_ssites)
 !TEST1
       write(*,*) "atom:", i
       write(*,*) "alpha_SCS:", alpha_SCS(i,1)
       write(*,*) "dalpha:"
       do p = 1, n_ssites
-        write(*,*) p_to_i(p), dalpha(n_tot+p,1,1)
+        write(*,*) p_to_i(p), dalpha2(n_count+p,1,1)
       end do
 !      write(*,*) p_to_i(2), dalpha(n_tot+2,1,1)
 
@@ -1352,6 +1400,7 @@ module vdw
 !          k = k + n_sneigh(p)
 !        end if
 !      end do
+      n_count = n_count + n_ssites
 
       deallocate( local_neighbors, sneighbors_list, rjs_H, xyz_H, hirshfeld_v_neigh_H, &
                   neighbor_species_H, neighbor_c6_ii, r0_ii, neighbor_alpha0, omega_i, alpha_k, sigma_k, f_damp, &
@@ -1361,9 +1410,18 @@ module vdw
                   rjs_central, xyz_central2, xyz_central )
       n_tot = n_tot+n_neigh(i)
     end do
+
+    ! These should be output variables (with alpha_SCS and n_ssites_list)
+    allocate( dalpha(1:n_count,1:3,1:11) )
+    allocate( n_sneigh_list(1:n_count) )
+    dalpha(1:n_count,:,:) = dalpha2(1:n_count,:,:)
+    n_sneigh_list = n_sneigh_list2(1:n_count)
+
+
     deallocate( omegas, s_i, s_j, sigma_ij, coeff_h_der, terms, n_sneigh, p_to_i, i_to_p, &
                 neighbors_list2, hirshfeld_v_cart_der2, rjs2, xyz2, hirshfeld_v_neigh2, neighbor_species2, &
-                dg, dh, A_i, alpha_SCS, dalpha, neighbors_list3, n_sneigh_vder, ij_buffer2 )
+                dg, dh, A_i, dalpha2, neighbors_list3, n_sneigh_vder, ij_buffer2, &
+                n_sneigh_list2 )
     call cpu_time(time2)
     write(*,*) "the rest (deallocating and writing)", time2-time1
 !TEST1
@@ -1978,6 +2036,22 @@ module vdw
                 dB_mat, dB_mat_v, &
                 coeff_der, coeff_fdamp, dg, dh, hirshfeld_v_cart_der_H, alpha_k, sigma_k, s_i, s_j )
     end if
+
+!  end subroutine
+
+!**************************************************************************
+
+!  subroutine get_mbd_energy_and_forces(...)
+
+!  implicit none
+
+!  Define variables here...
+
+!  This is included in the previous subroutine for now but should be made separate.
+!  This only works for the new implementation at the moment.
+
+
+  deallocate( alpha_SCS, dalpha, n_ssites_list, n_sneigh_list )
 
   end subroutine
 !**************************************************************************
