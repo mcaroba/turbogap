@@ -1,7 +1,9 @@
 > cutoff_2829.dat
 > pol_scs_2829.dat
 
-for i in $(seq 1.2 0.2 4.6); do
+for i in $(seq 1.2 0.2 9.0); do
+
+echo $i
 
 cat <<EOF > input
 atoms_file = '2829_supercell.xyz'

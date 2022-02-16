@@ -1,7 +1,7 @@
-> cutoff_scs_full.dat
-> pol_scs_cutoff_full.dat
+> cutoff_buff.dat
+> pol_scs_buff.dat
 
-for i in $(seq 8.0 0.2 15.0); do
+for i in $(seq 1.0 0.2 8.0); do
 
 cat <<EOF > input
 atoms_file = 'atoms.xyz'
@@ -24,7 +24,7 @@ vdw_buffer = 0.
 vdw_r0_ref = 1.900
 EOF
 
-echo $i >> cutoff_scs_full.dat
-../bin/turbogap predict | grep "alpha_SCS" | awk '{print $2}' >> pol_scs_cutoff_full.dat
+echo $i >> cutoff_buff.dat
+../bin/turbogap predict | grep "alpha_SCS" | awk '{print $2}' >> pol_scs_buff.dat
 
 done
