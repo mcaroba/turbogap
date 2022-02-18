@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 rcut = np.loadtxt("cutoff_2829.dat")
+#rcut = rcut-7.
 pol = np.loadtxt("pol_scs_2829.dat")
 #pol2 = np.loadtxt("pol_scs2.dat")
 #pol3 = np.loadtxt("pol_scs_cutoff_full.dat")

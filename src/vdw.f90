@@ -439,7 +439,7 @@ module vdw
                            rjs_H(:), xyz_H(:,:), A_mat(:,:,:), work_arr(:), A_i(:,:), alpha_SCS(:,:), &
                            dT(:,:), dT_SR(:,:,:,:,:), f_damp_der(:,:), &
                            g_func_der(:,:,:), h_func_der(:,:,:), dA_mat(:,:,:,:,:), &
-                           dalpha(:,:,:), &
+                           dalpha(:,:,:), dalpha_full(:,:,:,:), &
                            coeff_h_der(:), terms(:), dT_SR_A_mat(:,:), dT_SR_v(:,:,:,:,:), &
                            dB_mat(:,:,:,:,:), dB_mat_v(:,:,:,:,:), &
                            coeff_der(:,:,:,:,:), coeff_fdamp(:,:,:,:,:), dg(:), &
@@ -463,7 +463,7 @@ module vdw
     integer :: i, i2, j, j2, k, k2, k3, a, a2, c1, c2, c3, lwork, b, p, q, n_count
     logical :: do_timing = .false., do_hirshfeld_gradients = .true., nonlocal = .false., &
                series_expansion = .true., total_energy = .false., series_average = .true., &
-               new_implementation = .true., do_derivatives = .false.
+               new_implementation = .false., do_derivatives = .false.
     logical, allocatable :: i0_buffer2(:), ij_buffer2(:), i0_buffer(:), ij_buffer(:)
 
 !   IMPORTANT NOTE ABOUT THE DERIVATIVES:
@@ -580,8 +580,8 @@ module vdw
       do p = 1, n_neigh(i)
 !TEST2
         write(*,*) "new p", p
-        if ( rjs(n_tot+p) < rcut ) then
-!        if ( rjs(n_tot+p) < rcut_vdw) then
+!        if ( rjs(n_tot+p) < rcut ) then
+        if ( rjs(n_tot+p) < rcut) then
           n_ssites = n_ssites + 1
           i2 = local_neighbors(p)
           write(*,*) "i2", i2
@@ -603,9 +603,9 @@ module vdw
           n_spairs_vder = n_spairs_vder + 1
           ! Go through the neighbors of i2
 !buffer test
-!          if ( rjs(n_tot+p) > rcut - buffer ) then
+          if ( rjs(n_tot+p) > rcut - buffer ) then
 !          if ( rjs(n_tot+p) > rcut/2.d0 ) then
-          if ( rjs(n_tot+p) > 0.d0 ) then
+!          if ( rjs(n_tot+p) > 0.d0 ) then
             i0_buffer2(n_ssites) = .true.
             rjs_central2(n_ssites) = rjs(n_tot+p)
             xyz_central2(1:3,n_ssites) = xyz(1:3,n_tot+p)
@@ -623,7 +623,8 @@ module vdw
               q = findloc(local_neighbors,j,1)
               ! Is it within cutoff of central atom?
 !              write(*,*) "check if within central cutoff"
-              if ( rjs(n_tot+q) < rcut ) then
+!              if ( rjs(n_tot+q) < rcut ) then
+              if ( rjs(n_tot+q) < rcut) then
                 k3 = k3+1
                 n_spairs_vder = n_spairs_vder + 1
                 n_sneigh_vder(n_ssites) = n_sneigh_vder(n_ssites) + 1
@@ -632,7 +633,7 @@ module vdw
                 ! Is it also within cutoff of i2?
 !TEST2
 !                write(*,*) "check for neighbor-neighbor"
-                if ( rjs(k) < rcut ) then
+!                if ( rjs(k) < rcut ) then
                   n_sneigh(n_ssites) = n_sneigh(n_ssites) + 1
                   k2 = k2+1
                   neighbors_list2(k2) = j
@@ -644,10 +645,10 @@ module vdw
 !                  write(*,*) "check if buffer"
 !                  if ( rjs(k) > rcut - buffer ) then
 !                  if ( rjs(k) > rcut/2.d0 ) then
-                  if ( rjs(k) > 0.d0 ) then
-                    ij_buffer2(k2) = .true.
-                  end if
-                end if
+!                  if ( rjs(k) > 0.d0 ) then
+!                    ij_buffer2(k2) = .true.
+!                  end if
+!                end if
               end if
             end if
           end do
@@ -753,10 +754,12 @@ module vdw
       write(*,*) "neighbor list stuff 2:", time2-time1
       call cpu_time(time1)
 
+!TEST2
+      ! rcut_H = rcut/Bohr
       rcut_H = rcut/Bohr
 !TEST2
-!      buffer_H = buffer/Bohr
-      buffer_H = rcut_H
+      buffer_H = buffer/Bohr
+!      buffer_H = rcut_H
 !      buffer_H = rcut_H/2.d0
       rjs_H = rjs_H/Bohr
       xyz_H = xyz_H/Bohr
@@ -1480,47 +1483,50 @@ module vdw
     allocate( neighbor_alpha0(1:n_pairs) )
     allocate( f_damp(1:n_pairs) )
     allocate( T_func(1:9*n_pairs) )
-    allocate( h_func(1:9*n_pairs,1:11) )
-    allocate( g_func(1:n_pairs,1:11) )
-    allocate( omegas(1:11) )
+    allocate( h_func(1:9*n_pairs,1:n_freq) )
+    allocate( g_func(1:n_pairs,1:n_freq) )
+    allocate( omegas(1:n_freq) )
     allocate( omega_i(1:n_pairs) )
-    allocate( sigma_i(1:n_sites,1:11) )
-    allocate( alpha_i(1:n_sites,1:11) )
-    allocate( sigma_ij(1:11) )
+    allocate( sigma_i(1:n_sites,1:n_freq) )
+    allocate( alpha_i(1:n_sites,1:n_freq) )
+    allocate( sigma_ij(1:n_freq) )
 !   T_SR SHOULD BE ALLOCATED FOR EACH ATOM SEPARATELY USING THE NUMBER OF NEIGHBORS INSIDE THE RCUT_SCS
 !   THE SAME APPLIES TO A LOT OF THESE VARIABLES HERE. N_SITES CAN BE AS SMALL AS 1, DEPENDING ON HOW
 !   PARALLELISM IS HANDLED
-    allocate( T_SR(1:3*n_sites,1:3*n_sites,1:11) )
-    allocate( B_mat(1:3*n_sites,1:3*n_sites,1:11) )
+    allocate( T_SR(1:3*n_sites,1:3*n_sites,1:n_freq) )
+    allocate( B_mat(1:3*n_sites,1:3*n_sites,1:n_freq) )
     allocate( xyz_H(1:3,1:n_pairs) )
     allocate( rjs_H(1:n_pairs) )
-    allocate( A_mat(1:3*n_sites,1:3*n_sites,1:11) )
+    allocate( A_mat(1:3*n_sites,1:3*n_sites,1:n_freq) )
     allocate( work_arr(1:12*n_sites) )
     allocate( ipiv(1:3*n_sites) )
     allocate( A_i(1:3,1:3) )
-    allocate( alpha_SCS(1:n_sites,1:11) )
+    allocate( alpha_SCS(1:n_sites,1:n_freq) )
+    if ( do_derivatives ) then
     allocate( dT(1:9*n_pairs,1:3) )
-    allocate( dT_SR(1:3*n_sites,1:3*n_sites,1:n_sites,1:3,1:11) )
+    allocate( dT_SR(1:3*n_sites,1:3*n_sites,1:n_sites,1:3,1:n_freq) )
     allocate( f_damp_der(1:n_pairs,1:3) )
-    allocate( g_func_der(1:n_pairs,1:3,1:11) )
-    allocate( h_func_der(1:9*n_pairs,1:3,1:11) )
-    allocate( dA_mat(1:3*n_sites,1:3*n_sites,1:n_sites,1:3,1:11) )
-!    allocate( dalpha(1:n_sites,1:n_sites,1:3,1:11) )
-    allocate( coeff_h_der(1:11) )
-    allocate( terms(1:11) )
+    allocate( g_func_der(1:n_pairs,1:3,1:n_freq) )
+    allocate( h_func_der(1:9*n_pairs,1:3,1:n_freq) )
+    allocate( dA_mat(1:3*n_sites,1:3*n_sites,1:n_sites,1:3,1:n_freq) )
+    allocate( dalpha_full(1:n_sites,1:n_sites,1:3,1:n_freq) )
+    allocate( coeff_h_der(1:n_freq) )
+    allocate( terms(1:n_freq) )
     allocate( dT_SR_A_mat(1:3*n_sites,1:3*n_sites) )
-    allocate( dT_SR_v(1:3*n_sites,1:3*n_sites,1:n_sites,1:3,1:11) )
-    allocate( dB_mat(1:3*n_sites,1:3*n_sites,1:n_sites,1:3,1:11) )
-    allocate( dB_mat_v(1:3*n_sites,1:3*n_sites,1:n_sites,1:3,1:11) )
-    allocate( coeff_der(1:n_sites,1:n_sites,1:3,1:3,1:11) )
-    allocate( coeff_fdamp(1:n_sites,1:n_sites,1:3,1:3,1:11) )
-    allocate( dg(1:11) )
-    allocate( dh(1:11) )
+    allocate( dT_SR_v(1:3*n_sites,1:3*n_sites,1:n_sites,1:3,1:n_freq) )
+    allocate( dB_mat(1:3*n_sites,1:3*n_sites,1:n_sites,1:3,1:n_freq) )
+    allocate( dB_mat_v(1:3*n_sites,1:3*n_sites,1:n_sites,1:3,1:n_freq) )
+    allocate( coeff_der(1:n_sites,1:n_sites,1:3,1:3,1:n_freq) )
+    allocate( coeff_fdamp(1:n_sites,1:n_sites,1:3,1:3,1:n_freq) )
+    allocate( dg(1:n_freq) )
+    allocate( dh(1:n_freq) )
     allocate( hirshfeld_v_cart_der_H(1:3,1:n_pairs) )
-    allocate( alpha_k(1:n_pairs,1:11) )
-    allocate( sigma_k(1:n_pairs,1:11) )
-    allocate( s_i(1:11) )
-    allocate( s_j(1:11) )
+    allocate( AdB_n(1:3*n_sites,1:3*n_sites) )
+    end if
+    allocate( alpha_k(1:n_pairs,1:n_freq) )
+    allocate( sigma_k(1:n_pairs,1:n_freq) )
+    allocate( s_i(1:n_freq) )
+    allocate( s_j(1:n_freq) )
 
     if( do_timing) then
       call cpu_time(time1)
@@ -1528,7 +1534,7 @@ module vdw
     
 !   Frequencies used for integration:
     omega = 0.d0
-    do i = 1, 11
+    do i = 1, n_freq
       omegas(i) = omega
       omega = omega + 0.4d0 
     end do
@@ -1540,7 +1546,9 @@ module vdw
       neighbor_alpha0(k) = alpha0_ref(j) / Bohr**3
       xyz_H(:,k) = xyz(:,k)/Bohr
       rjs_H(k) = rjs(k)/Bohr
-      hirshfeld_v_cart_der_H(:,k) = hirshfeld_v_cart_der(:,k)*Bohr
+      if ( do_derivatives ) then
+        hirshfeld_v_cart_der_H(:,k) = hirshfeld_v_cart_der(:,k)*Bohr
+      end if
     end do
 
 !   Precompute some other pair quantities
@@ -1552,14 +1560,14 @@ module vdw
 
     k2 = 1
     do i = 1, n_sites
-      do k = 1, 11
+      do k = 1, n_freq
         alpha_i(i,k) = neighbor_alpha0(k2)/(1.d0 + omegas(k)**2/omega_i(k2)**2)
         sigma_i(i,k) = (sqrt(2.d0/pi) * alpha_i(i,k)/3.d0)**(1.d0/3.d0)
       end do
       k2 = k2+n_neigh(i)
     end do
 
-    do k = 1, 11
+    do k = 1, n_freq
       alpha_k(:,k) = neighbor_alpha0/(1.d0 + omegas(k)**2/omega_i**2)
       sigma_k(:,k) = (sqrt(2.d0/pi) * alpha_k(:,k)/3.d0)**(1.d0/3.d0)
     end do
@@ -1642,6 +1650,13 @@ module vdw
     end do
     B_mat = B_mat + T_SR
 
+    write(*,*) "B_mat"
+    do p = 1, n_sites
+      write(*,*) B_mat(p,:,1)
+    end do
+
+
+    if ( do_derivatives ) then
     dT = 0.d0
     k = 0
     do i = 1, n_sites
@@ -1776,7 +1791,7 @@ module vdw
               dB_mat_v(3*(i-1)+c1,3*(i-1)+c1,a,c3,:) = -1.d0/(hirshfeld_v(i)*alpha_i(i,:)) * &
                             hirshfeld_v_cart_der_H(c3,k2)
             end do
-            do k = 1, 11
+            do k = 1, n_freq
               do j2 = 2, n_neigh(i)
                 if (rjs(k3+j2) < rcut) then
                   j = neighbors_list(k3+j2)
@@ -1811,7 +1826,7 @@ module vdw
           k2 = k2+1
           a = neighbors_list(k2)
           do c3 = 1, 3
-            do k = 1, 11
+            do k = 1, n_freq
               do i2 = 2, n_neigh(j)
                 if (rjs(k3+i2) < rcut) then
                   i = neighbors_list(k3+i2)
@@ -1843,7 +1858,89 @@ module vdw
 
       dB_mat = dB_mat + dB_mat_v
     end if
+    end if ! do_derivatives
+    
+    A_mat = B_mat
 
+      do k3 = 1, n_freq
+        call dgetrf(3*n_sites, 3*n_sites, A_mat(:,:,k3), 3*n_sites, ipiv, info)
+!        write(*,*) "dgetrf:", k3, info
+        call dgetri(3*n_sites, A_mat(:,:,k3), 3*n_sites, ipiv, work_arr, 12*n_sites, info)
+!        write(*,*) "dgetri:", k3, info
+      end do
+
+      do k3 = 1, n_freq
+        do p = 1, n_sites
+          A_i = 0.d0
+          do q = 1, n_sites
+            A_i = A_i + A_mat(3*(p-1)+1:3*(p-1)+3,3*(q-1)+1:3*(q-1)+3,k3)
+          end do
+          alpha_SCS(p,k3) = 1.d0/3.d0 * (A_i(1,1)+A_i(2,2)+A_i(3,3))
+        end do
+      end do
+
+      if ( do_derivatives ) then
+      dA_mat = 0.d0
+      do a2 = 1, n_sites
+        do k = 1, n_freq
+          do c3 = 1, 3
+            AdB_n = 0.d0
+            call dgemm('n', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, -A_mat(:,:,k), 3*n_sites, &
+                       dB_mat(:,:,a2,c3,k), 3*n_sites, 0.d0, AdB_n, 3*n_sites)
+            call dgemm('n', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, AdB_n, 3*n_sites, A_mat(:,:,k), &
+                       3*n_sites, 0.d0, dA_mat(:,:,a2,c3,k), 3*n_sites)
+          end do
+        end do
+      end do
+
+      dalpha_full = 0.d0
+      do a2 = 1, n_sites
+        do k = 1, n_freq
+          do c3 = 1, 3
+            do p = 1, n_sites
+              A_i = 0.d0
+              do q = 1, n_sites
+                A_i = A_i + dA_mat(3*(p-1)+1:3*(p-1)+3,3*(q-1)+1:3*(q-1)+3,a2,c3,k)
+              end do
+              do c1 = 1, 3
+                dalpha_full(p,a2,c3,k) = dalpha_full(p,a2,c3,k) + A_i(c1,c1)
+              end do
+              dalpha_full(p,a2,c3,k) = 1.d0/3.d0 * dalpha_full(p,a2,c3,k)
+            end do
+          end do
+        end do
+      end do
+
+      end if
+! TEST1
+      write(*,*) "alpha_SCS:" ! alpha_SCS(1,1)
+      do p = 1, n_sites
+        write(*,*) p, alpha_SCS(p,1)
+      end do
+
+
+      if ( do_derivatives ) then
+      write(*,*) "dalpha_SCS w.r.t. atom 1 in x direction:"
+      do p = 1, n_sites
+        write(*,*) p, dalpha_full(p,1,1,1)
+      end do
+!      write(*,*) neighbors_list(n_tot+9), dalpha_n(n_tot+9,1,1)
+      end if
+
+    ! TODO: This subroutine should output alpha_SCS_i and dalpha_n: they can be read using the neighbors_list
+    ! The alpha_SCS_i should probably be reduced to the size of n_sites (only the SCS polarizability of each
+    ! central atom).
+
+!   Clean up
+    deallocate( neighbor_c6_ii, f_damp, T_func, &
+                h_func, g_func, omegas, omega_i, alpha_i, sigma_i, sigma_ij, T_SR, B_mat, xyz_H, rjs_H, A_mat, A_i, &
+                alpha_SCS, alpha_k, sigma_k, s_i, s_j, )
+    if ( do_derivatives ) then
+    deallocate( dT, dT_SR, f_damp_der, g_func_der, h_func_der, dA_mat, coeff_h_der, terms, dT_SR_A_mat, dT_SR_v, &
+                dB_mat, dB_mat_v, dalpha_full, coeff_der, coeff_fdamp, dg, dh, hirshfeld_v_cart_der_H, AdB_n )
+    end if
+
+  if ( .false. ) then
     n_tot = 0
     allocate( alpha_SCS_i(1:n_pairs,1:11) )
     allocate( dalpha_n(1:n_pairs,1:3,1:11) )
@@ -2069,6 +2166,9 @@ module vdw
                 dT, dT_SR, f_damp_der, g_func_der, h_func_der, dA_mat, coeff_h_der, terms, dT_SR_A_mat, dT_SR_v, &
                 dB_mat, dB_mat_v, &
                 coeff_der, coeff_fdamp, dg, dh, hirshfeld_v_cart_der_H, alpha_k, sigma_k, s_i, s_j )
+    
+    end if
+    
     end if
 
 !  end subroutine
@@ -2084,10 +2184,11 @@ module vdw
 !  This is included in the previous subroutine for now but should be made separate.
 !  This only works for the new implementation at the moment.
 
-
-  deallocate( alpha_SCS, n_ssites_list, n_sneigh_list )
-  if ( do_derivatives ) then
-    deallocate( dalpha )
+  if ( new_implementation ) then
+    deallocate( alpha_SCS, n_ssites_list, n_sneigh_list )
+    if ( do_derivatives ) then
+      deallocate( dalpha )
+    end if
   end if
 
   end subroutine

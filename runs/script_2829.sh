@@ -1,12 +1,12 @@
 > cutoff_2829.dat
 > pol_scs_2829.dat
 
-for i in $(seq 1.2 0.2 9.0); do
+for i in $(seq 1.0 0.2 8.0); do
 
 echo $i
 
 cat <<EOF > input
-atoms_file = '2829_supercell.xyz'
+atoms_file = '2829.xyz'
 !atoms_file = 'atoms_p.xyz'
 !atoms_file = 'atoms_m.xyz'
 pot_file = 'gap_files/carbon.gap'
