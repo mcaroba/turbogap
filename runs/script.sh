@@ -1,10 +1,12 @@
-> cutoff_full.dat
-> pol_scs_full.dat
+> cutoff_diamond.dat
+> pol_scs_diamond.dat
 
-for i in $(seq 1.0 0.2 8.0); do
+for i in $(seq 1.0 0.2 5.0); do
+
+echo $i
 
 cat <<EOF > input
-atoms_file = 'atoms.xyz'
+atoms_file = 'diamond.xyz'
 !atoms_file = 'atoms_p.xyz'
 !atoms_file = 'atoms_m.xyz'
 pot_file = 'gap_files/carbon.gap'
@@ -24,7 +26,7 @@ vdw_buffer = 0.
 vdw_r0_ref = 1.900
 EOF
 
-echo $i >> cutoff_full.dat
-../bin/turbogap predict | grep "alpha_SCS" | awk '{print $2}' >> pol_scs_full.dat
+echo $i >> cutoff_diamond.dat
+../bin/turbogap predict | grep "alpha_SCS" | awk '{print $2}' >> pol_scs_diamond.dat
 
 done

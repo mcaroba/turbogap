@@ -1,7 +1,7 @@
 > cutoff_2829.dat
 > pol_scs_2829.dat
 
-for i in $(seq 1.0 0.2 8.0); do
+for i in $(seq 1.0 0.2 4.5); do
 
 echo $i
 

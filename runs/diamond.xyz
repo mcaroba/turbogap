@@ -1,0 +1,10 @@
+8
+Lattice="3.567095 0.0 0.0 0.0 3.567095 0.0 0.0 0.0 3.567095" Properties=species:S:1:pos:R:3:frac_pos:R:3:force:R:3 fix_occupancy=F castep_run_time=201.3 xc_functional="L D A" cut_off_energy="6 5 0   e V" max_scf_cycles=200 calculate_stress=T castep_file_name="1 . c a s t e p" nneightol=1.2 detailed_ct="d i s t _ d i a" mix_charge_amp=0.15 popn_calculate=F smearing_width="0 . 1   e V" finite_basis_corr="a u t o m a t i c" spin_polarized=F mix_history_length=20 mixing_scheme="P u l a y" config_type="b u l k _ c r y s t" opt_strategy="s p e e d" energy=-1261.787108 write_checkpoint="n o n e" nextra_bands=8 elec_energy_tol=1e-08 kpoints_mp_grid="11 11 11" virial="39.53226704 -0.0 -3.06217169 -0.0 33.01469557 -0.0 -3.06217169 -0.0 43.59155664" pdos_calculate_weights=F task="S i n g l e P o i n t" cutoff=-1.0 pbc="T T T"
+C        0.00000000       0.00000000       0.00000000       0.00000000       0.00095800       0.00000000       0.00000000      -0.07457174       0.00000000
+C        0.89177375       0.89177375       0.89177375       0.25000000       0.24904200       0.25000000       0.00000000       0.07457174       0.00000000
+C        1.78354750       1.78354750       0.00000000       0.50000000       0.50095800       0.00000000       0.00000000      -0.07457174       0.00000000
+C        1.78354750       0.00000000       1.78354750       0.75000000       0.74904200       0.25000000       0.00000000       0.07457174       0.00000000
+C        0.00000000       1.78354750       1.78354750       0.50000000       0.00095800       0.50000000       0.00000000      -0.07457174      -0.00000000
+C        2.67532125       2.67532125       0.89177375       0.75000000       0.24904200       0.75000000       0.00000000       0.07457174       0.00000000
+C        2.67532125       0.89177375       2.67532125      -0.00000000       0.50095800       0.50000000       0.00000000      -0.07457174      -0.00000000
+C        0.89177375       2.67532125       2.67532125       0.25000000       0.74904200       0.75000000      -0.00000000       0.07457174       0.00000000

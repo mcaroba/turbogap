@@ -446,10 +446,10 @@ module vdw
                            dh(:), hirshfeld_v_cart_der_H(:,:), &
                            alpha_k(:,:), sigma_k(:,:), s_i(:), s_j(:), &
                            T_SR_i(:,:,:), B_mat_i(:,:,:), alpha_SCS_i(:,:), A_mat_i(:,:,:), &
-                           dB_mat_n(:,:,:,:,:), dA_mat_n(:,:,:,:,:), dBA_n(:,:), &
+                           dB_mat_n(:,:,:,:,:), dA_mat_n(:,:,:,:,:), dBA_n(:,:), I_mat(:,:), &
                            dalpha_n(:,:,:), AdB_n(:,:), hirshfeld_v_neigh_H(:), hirshfeld_v_cart_der2(:,:), &
                            rjs2(:), xyz2(:,:), hirshfeld_v_neigh2(:), rjs_central2(:), rjs_central(:), &
-                           xyz_central2(:,:), xyz_central(:,:), dalpha2(:,:,:)
+                           xyz_central2(:,:), xyz_central(:,:), dalpha2(:,:,:), a_prev(:,:,:), a_next(:,:,:)
     real*8 :: time1, time2, this_force(1:3), Bohr, Hartree, &
               omega, pi, integral, E_MBD, R_vdW_ij, R_vdW_SCS_ij, S_vdW_ij, dS_vdW_ij, exp_term, &
               rcut_vdw, r_vdw_i, r_vdw_j, dist, f_damp_SCS_ij, t1, t2, rcut_H, buffer_H, rbuf, fcut, dfcut
@@ -459,11 +459,11 @@ module vdw
                             sneighbors_list_vder(:), n_sneigh_list2(:), &
                             n_sneigh_list(:), n_ssites_list(:)
     integer :: n_sites, n_pairs, n_species, n_sites0, info, n_order, n_tot, n_spairs, n_beg, n_end, &
-               n_ssites, n_spairs_vder, n_freq
+               n_ssites, n_spairs_vder, n_freq, n_iter
     integer :: i, i2, j, j2, k, k2, k3, a, a2, c1, c2, c3, lwork, b, p, q, n_count
     logical :: do_timing = .false., do_hirshfeld_gradients = .true., nonlocal = .false., &
                series_expansion = .true., total_energy = .false., series_average = .true., &
-               new_implementation = .false., do_derivatives = .false.
+               new_implementation = .false., do_derivatives = .false., iterative = .false.
     logical, allocatable :: i0_buffer2(:), ij_buffer2(:), i0_buffer(:), ij_buffer(:)
 
 !   IMPORTANT NOTE ABOUT THE DERIVATIVES:
@@ -481,6 +481,8 @@ module vdw
     ! n_order has to be at least 2
 !    n_order = 6
 !    n_order = 3
+
+!    write(*,*) "neighbors_list", neighbors_list
 
     n_sites = size(n_neigh)
     n_pairs = size(neighbors_list)
@@ -1636,7 +1638,23 @@ module vdw
       do j2 = 2, n_neigh(i)
         k = k+1
         j = neighbors_list(k)
+        j = modulo(j-1,n_sites)+1
         if( rjs(k) < rcut )then
+!          write(*,*) i, j
+!          if (i == 8 .and. j == 1) then
+!            write(*,*) "i, j", i, j
+!            write(*,*) "f_damp", f_damp(k)
+!            write(*,*) "T_func", T_func(9*(k-1)+1:9*(k-1)+9)
+!            write(*,*) "g_func", g_func(k,1)
+!            write(*,*) "h_func", h_func(9*(k-1)+1:9*(k-1)+9,1)
+!          end if
+!          if (i == 1 .and. j == 8) then
+!            write(*,*) "i, j", i, j
+!            write(*,*) "f_damp", f_damp(k)
+!            write(*,*) "T_func", T_func(9*(k-1)+1:9*(k-1)+9)
+!            write(*,*) "g_func", g_func(k,1)
+!            write(*,*) "h_func", h_func(9*(k-1)+1:9*(k-1)+9,1)
+!          end if
           k2 = 9*(k-1)
           do c1 = 1, 3
             do c2 = 1, 3
@@ -1650,10 +1668,10 @@ module vdw
     end do
     B_mat = B_mat + T_SR
 
-    write(*,*) "B_mat"
-    do p = 1, n_sites
-      write(*,*) B_mat(p,:,1)
-    end do
+!    write(*,*) "B_mat"
+!    do p = 1, 3*n_sites
+!      write(*,*) B_mat(p,:,1)
+!    end do
 
 
     if ( do_derivatives ) then
@@ -1862,11 +1880,52 @@ module vdw
     
     A_mat = B_mat
 
+    if ( iterative ) then
+      n_iter = 100
+      allocate( I_mat(1:3,1:3) )
+      allocate( a_prev(1:3*n_sites,1:3,1:n_freq) )
+      allocate( a_next(1:3*n_sites,1:3,1:n_freq) )
+      I_mat = 0.d0
+      do c1 = 1, 3
+        I_mat(c1,c1) = 1.d0
+      end do
+      do p = 1, n_sites
+        do k = 1, n_freq
+          a_prev(3*(p-1)+1:3*(p-1)+3,1:3,k) = alpha_i(p,k) * I_mat 
+        end do
+      end do
+      a_next = 0.d0
+      do k = 1, n_freq
+        do i2 = 1, n_iter
+          do p = 1, n_sites
+            a_next(3*(p-1)+1:3*(p-1)+3,1:3,k) = alpha_i(p,k) * I_mat
+            do q = 1, n_sites
+              if ( any(T_SR(3*(p-1)+1:3*(p-1)+3,3*(q-1)+1:3*(q-1)+3,k) > 1.d-10) .or. p .ne. q ) then
+                a_next(3*(p-1)+1:3*(p-1)+3,1:3,k) = a_next(3*(p-1)+1:3*(p-1)+3,1:3,k) - 0.5d0 * alpha_i(p,k) * &
+                  matmul(T_SR(3*(p-1)+1:3*(p-1)+3,3*(q-1)+1:3*(q-1)+3,k), a_prev(3*(q-1)+1:3*(q-1)+3,1:3,k))
+              end if
+            end do
+          end do
+          a_prev(:,:,k) = a_next(:,:,k)
+        end do
+      end do
+      alpha_SCS = 0.d0
+      do k = 1, n_freq
+        do p = 1, n_sites
+          do c1 = 1, 3
+            alpha_SCS(p,k) = alpha_SCS(p,k) + a_next(3*(p-1)+c1,c1,k)
+          end do
+        end do
+      end do
+      alpha_SCS = alpha_SCS/3.d0
+
+      deallocate( I_mat, a_prev, a_next )
+    else
       do k3 = 1, n_freq
         call dgetrf(3*n_sites, 3*n_sites, A_mat(:,:,k3), 3*n_sites, ipiv, info)
-!        write(*,*) "dgetrf:", k3, info
+!        write(*,*) "dgetrf:", info
         call dgetri(3*n_sites, A_mat(:,:,k3), 3*n_sites, ipiv, work_arr, 12*n_sites, info)
-!        write(*,*) "dgetri:", k3, info
+!        write(*,*) "dgetri:", info
       end do
 
       do k3 = 1, n_freq
@@ -1878,6 +1937,7 @@ module vdw
           alpha_SCS(p,k3) = 1.d0/3.d0 * (A_i(1,1)+A_i(2,2)+A_i(3,3))
         end do
       end do
+    end if
 
       if ( do_derivatives ) then
       dA_mat = 0.d0
@@ -1913,7 +1973,7 @@ module vdw
 
       end if
 ! TEST1
-      write(*,*) "alpha_SCS:" ! alpha_SCS(1,1)
+      write(*,*) "alpha_SCS:" !,  alpha_SCS(1,1)
       do p = 1, n_sites
         write(*,*) p, alpha_SCS(p,1)
       end do
