@@ -463,7 +463,7 @@ module vdw
     integer :: i, i2, j, j2, k, k2, k3, a, a2, c1, c2, c3, lwork, b, p, q, n_count
     logical :: do_timing = .false., do_hirshfeld_gradients = .true., nonlocal = .false., &
                series_expansion = .true., total_energy = .false., series_average = .true., &
-               new_implementation = .false., do_derivatives = .false., iterative = .false.
+               new_implementation = .false., do_derivatives = .false., iterative = .true.
     logical, allocatable :: i0_buffer2(:), ij_buffer2(:), i0_buffer(:), ij_buffer(:)
 
 !   IMPORTANT NOTE ABOUT THE DERIVATIVES:
@@ -499,7 +499,7 @@ module vdw
     n_end = 1
 
 !   Number of frequencies
-    n_freq = 11
+    n_freq = 1
 
     if ( new_implementation ) then
     allocate( alpha_SCS(n_beg:n_end,1:n_freq) )
@@ -787,6 +787,8 @@ module vdw
       r0_ii = r0_ii * hirshfeld_v_neigh_H**(1.d0/3.d0)
       neighbor_alpha0 = neighbor_alpha0 * hirshfeld_v_neigh_H
       omega_i = (4.d0 * neighbor_c6_ii)/(3.d0*neighbor_alpha0**2)
+
+!      write(*,*) "omega_i:", omega_i
 
       allocate( alpha_k(1:n_spairs,1:n_freq) )
       allocate( sigma_k(1:n_spairs,1:n_freq) )
@@ -1560,6 +1562,8 @@ module vdw
     neighbor_alpha0 = neighbor_alpha0 * hirshfeld_v_neigh
     omega_i = (4.d0 * neighbor_c6_ii)/(3.d0*neighbor_alpha0**2)
 
+!    write(*,*) "omega_i:", omega_i
+
     k2 = 1
     do i = 1, n_sites
       do k = 1, n_freq
@@ -1568,6 +1572,8 @@ module vdw
       end do
       k2 = k2+n_neigh(i)
     end do
+
+    write(*,*) "alpha_i", alpha_i(:,1)
 
     do k = 1, n_freq
       alpha_k(:,k) = neighbor_alpha0/(1.d0 + omegas(k)**2/omega_i**2)
@@ -1614,6 +1620,7 @@ module vdw
         j = neighbors_list(k)
         if( rjs(k) < rcut )then
           sigma_ij = sqrt(s_i**2 + s_j**2)
+          write(*,*) "sigma_ij:", sigma_ij
           g_func(k,:) = erf(rjs_H(k)/sigma_ij) - 2.d0/sqrt(pi) * (rjs_H(k)/sigma_ij) * exp(-rjs_H(k)**2.d0/sigma_ij**2)
           k2 = 9*(k-1)
           do c1 = 1, 3
@@ -1878,42 +1885,29 @@ module vdw
     end if
     end if ! do_derivatives
     
-    A_mat = B_mat
+!    A_mat = B_mat
 
     if ( iterative ) then
       n_iter = 100
-      allocate( I_mat(1:3,1:3) )
+      allocate( I_mat(1:3*n_sites,1:3) )
       allocate( a_prev(1:3*n_sites,1:3,1:n_freq) )
       allocate( a_next(1:3*n_sites,1:3,1:n_freq) )
       I_mat = 0.d0
-      do c1 = 1, 3
-        I_mat(c1,c1) = 1.d0
-      end do
       do p = 1, n_sites
-        do k = 1, n_freq
-          a_prev(3*(p-1)+1:3*(p-1)+3,1:3,k) = alpha_i(p,k) * I_mat 
+        do c1 = 1, 3
+          I_mat(3*(p-1)+c1,c1) = 1.d0
         end do
       end do
-      a_next = 0.d0
       do k = 1, n_freq
-        do i2 = 1, n_iter
-          do p = 1, n_sites
-            a_next(3*(p-1)+1:3*(p-1)+3,1:3,k) = alpha_i(p,k) * I_mat
-            do q = 1, n_sites
-              if ( any(T_SR(3*(p-1)+1:3*(p-1)+3,3*(q-1)+1:3*(q-1)+3,k) > 1.d-10) .or. p .ne. q ) then
-                a_next(3*(p-1)+1:3*(p-1)+3,1:3,k) = a_next(3*(p-1)+1:3*(p-1)+3,1:3,k) - 0.5d0 * alpha_i(p,k) * &
-                  matmul(T_SR(3*(p-1)+1:3*(p-1)+3,3*(q-1)+1:3*(q-1)+3,k), a_prev(3*(q-1)+1:3*(q-1)+3,1:3,k))
-              end if
-            end do
-          end do
-          a_prev(:,:,k) = a_next(:,:,k)
-        end do
+        a_prev(:,:,k) = I_mat
+        call dsysv('U', 3*n_sites, 3, B_mat(:,:,k), 3*n_sites, ipiv, a_prev(:,:,k), 3*n_sites, work_arr, &
+                    12*n_sites, info)  
       end do
       alpha_SCS = 0.d0
       do k = 1, n_freq
         do p = 1, n_sites
           do c1 = 1, 3
-            alpha_SCS(p,k) = alpha_SCS(p,k) + a_next(3*(p-1)+c1,c1,k)
+            alpha_SCS(p,k) = alpha_SCS(p,k) + a_prev(3*(p-1)+c1,c1,k)
           end do
         end do
       end do
@@ -1921,6 +1915,8 @@ module vdw
 
       deallocate( I_mat, a_prev, a_next )
     else
+!      B_mat = B_mat + T_SR
+      A_mat = B_mat
       do k3 = 1, n_freq
         call dgetrf(3*n_sites, 3*n_sites, A_mat(:,:,k3), 3*n_sites, ipiv, info)
 !        write(*,*) "dgetrf:", info
