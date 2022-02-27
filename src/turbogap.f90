@@ -1580,9 +1580,16 @@ end if
       end if
       close(10)
 !
+!     Check if we have converged a relaxation calculation
+      if( params%do_md .and. params%optimize == "gd" .and. md_istep > 0 .and. &
+          abs(energy-energy_prev) < params%e_tol .and. rank == 0 )then
+        exit_loop = .true.
+      end if
+
 !     We write out the trajectory file. We write positions_prev which is then one for which we have computed
 !     the properties. positions_prev and velocities are synchronous
-      if( md_istep == 0 .or. md_istep == params%md_nsteps .or. modulo(md_istep, params%write_xyz) == 0 )then
+      if( md_istep == 0 .or. md_istep == params%md_nsteps .or. modulo(md_istep, params%write_xyz) == 0 .or. &
+          exit_loop )then
         call wrap_pbc(positions_prev(1:3,1:n_sites), a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)))
         call write_extxyz( n_sites, md_istep, time_step, instant_temp, instant_pressure, &
                            a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
@@ -1712,10 +1719,6 @@ end if
     n_sites_prev = n_sites
     n_atom_pairs_by_rank_prev = n_atom_pairs_by_rank(rank+1)
 
-    if( params%do_md .and. params%optimize == "gd" .and. md_istep > 0 .and. &
-        abs(energy-energy_prev) < params%e_tol .and. rank == 0 )then
-      exit_loop = .true.
-    end if
 #ifdef _MPIF90
     call mpi_bcast(exit_loop, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
 #endif
