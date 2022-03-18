@@ -1,7 +1,7 @@
 > cutoff_2829.dat
 > pol_scs_2829.dat
 
-for i in $(seq 1.0 0.2 4.5); do
+for i in $(seq 1.4 0.2 4.4); do
 
 echo $i
 
@@ -22,7 +22,7 @@ vdw_type = ts
 vdw_sr = 0.83
 vdw_d = 6.
 vdw_rcut = $i
-vdw_buffer = 0.
+vdw_buffer = 0.3
 vdw_r0_ref = 1.900
 EOF
 

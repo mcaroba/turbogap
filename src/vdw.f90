@@ -29,6 +29,15 @@
 module vdw
 
   use misc
+  use psb_base_mod
+  use psb_prec_mod
+  use psb_krylov_mod
+  use psb_util_mod
+  use psb_d_base_prec_mod
+  use psb_d_ilu_fact_mod
+  use psb_d_ainv_fact_mod
+  use psb_d_invk_fact_mod
+  use psb_d_invt_fact_mod
 
   contains
 
@@ -415,7 +424,7 @@ module vdw
   subroutine get_scs_polarizabilities( hirshfeld_v, hirshfeld_v_cart_der, &
                                        n_neigh, neighbors_list, neighbor_species, &
                                        rcut, buffer, rcut_inner, buffer_inner, rjs, xyz, hirshfeld_v_neigh, &
-                                       sR, d, c6_ref, r0_ref, alpha0_ref, do_forces, &
+                                       sR, d, c6_ref, r0_ref, alpha0_ref, do_forces, alpha_SCS0, &
                                        energies, forces0, virial )
 
     implicit none
@@ -429,14 +438,14 @@ module vdw
 !   Output variables
     real*8, intent(out) :: virial(1:3, 1:3)
 !   In-Out variables
-    real*8, intent(inout) :: energies(:), forces0(:,:)
+    real*8, intent(inout) :: energies(:), forces0(:,:), alpha_SCS0(:,:)
 !   Internal variables
     real*8, allocatable :: neighbor_c6_ii(:), r0_ii(:), &
                            f_damp(:), neighbor_alpha0(:), &
                            T_func(:), h_func(:,:), g_func(:,:), &
                            omegas(:), omega_i(:), &
                            alpha_i(:,:), sigma_i(:,:), sigma_ij(:), T_SR(:,:,:), B_mat(:,:,:), &
-                           rjs_H(:), xyz_H(:,:), A_mat(:,:,:), work_arr(:), A_i(:,:), alpha_SCS(:,:), &
+                           rjs_H(:), xyz_H(:,:), A_mat(:,:,:), work_arr(:), A_i(:,:), &
                            dT(:,:), dT_SR(:,:,:,:,:), f_damp_der(:,:), &
                            g_func_der(:,:,:), h_func_der(:,:,:), dA_mat(:,:,:,:,:), &
                            dalpha(:,:,:), dalpha_full(:,:,:,:), &
@@ -445,14 +454,16 @@ module vdw
                            coeff_der(:,:,:,:,:), coeff_fdamp(:,:,:,:,:), dg(:), &
                            dh(:), hirshfeld_v_cart_der_H(:,:), &
                            alpha_k(:,:), sigma_k(:,:), s_i(:), s_j(:), &
-                           T_SR_i(:,:,:), B_mat_i(:,:,:), alpha_SCS_i(:,:), A_mat_i(:,:,:), &
+                           T_SR_i(:,:,:), B_mat_i(:,:,:), alpha_SCS_i(:,:), A_mat_i(:,:,:), alpha_SCS(:,:), &
                            dB_mat_n(:,:,:,:,:), dA_mat_n(:,:,:,:,:), dBA_n(:,:), I_mat(:,:), &
                            dalpha_n(:,:,:), AdB_n(:,:), hirshfeld_v_neigh_H(:), hirshfeld_v_cart_der2(:,:), &
                            rjs2(:), xyz2(:,:), hirshfeld_v_neigh2(:), rjs_central2(:), rjs_central(:), &
-                           xyz_central2(:,:), xyz_central(:,:), dalpha2(:,:,:), a_prev(:,:,:), a_next(:,:,:)
+                           xyz_central2(:,:), xyz_central(:,:), dalpha2(:,:,:), I_aT(:,:,:), a_vec(:,:,:), &
+                           regularization(:,:), I_aT_a_vec(:,:), I_aT2(:,:)
     real*8 :: time1, time2, this_force(1:3), Bohr, Hartree, &
               omega, pi, integral, E_MBD, R_vdW_ij, R_vdW_SCS_ij, S_vdW_ij, dS_vdW_ij, exp_term, &
-              rcut_vdw, r_vdw_i, r_vdw_j, dist, f_damp_SCS_ij, t1, t2, rcut_H, buffer_H, rbuf, fcut, dfcut
+              rcut_vdw, r_vdw_i, r_vdw_j, dist, f_damp_SCS_ij, t1, t2, rcut_H, buffer_H, rbuf, fcut, dfcut, &
+              reg_param
     integer, allocatable :: ipiv(:), n_sneigh(:), sneighbors_list(:), p_to_i(:), i_to_p(:), &
                             neighbors_list2(:), local_neighbors(:), neighbor_species2(:), &
                             neighbor_species_H(:), neighbors_list3(:), n_sneigh_vder(:), &
@@ -465,6 +476,15 @@ module vdw
                series_expansion = .true., total_energy = .false., series_average = .true., &
                new_implementation = .false., do_derivatives = .false., iterative = .true.
     logical, allocatable :: i0_buffer2(:), ij_buffer2(:), i0_buffer(:), ij_buffer(:)
+    type(psb_ctxt_type) :: icontxt
+    integer(psb_ipk_) ::  iam, np, ip, jp, idummy, nr, nnz, info_psb
+    type(psb_desc_type) :: desc_a
+    type(psb_dspmat_type) :: A_sp
+    real*8, allocatable :: x_vec(:,:), b_vec(:,:)
+    integer(psb_lpk_), allocatable :: ia(:), ja(:), myidx(:)
+    real(psb_dpk_), allocatable :: val(:), val_xv(:,:), val_bv(:,:)
+    type(psb_dprec_type)  :: prec
+    character(len=20) :: ptype
 
 !   IMPORTANT NOTE ABOUT THE DERIVATIVES:
 !   If rcut < rcut_soap, the derivatives in the new implementation omit the terms that fall outside of rcut.
@@ -499,7 +519,7 @@ module vdw
     n_end = 1
 
 !   Number of frequencies
-    n_freq = 1
+    n_freq = size(alpha_SCS0, 2)
 
     if ( new_implementation ) then
     allocate( alpha_SCS(n_beg:n_end,1:n_freq) )
@@ -1535,6 +1555,11 @@ module vdw
     if( do_timing) then
       call cpu_time(time1)
     end if
+
+!    write(*,*) "hirshfeld_v:"
+!    do p = 1, n_sites
+!      write(*,*) p, hirshfeld_v(p)
+!    end do
     
 !   Frequencies used for integration:
     omega = 0.d0
@@ -1555,6 +1580,9 @@ module vdw
       end if
     end do
 
+    rcut_H = rcut/Bohr
+    buffer_H = buffer/Bohr
+
 !   Precompute some other pair quantities
     neighbor_c6_ii = neighbor_c6_ii * hirshfeld_v_neigh**2
 !   This is slow, could replace by Taylor expansion maybe
@@ -1573,7 +1601,7 @@ module vdw
       k2 = k2+n_neigh(i)
     end do
 
-    write(*,*) "alpha_i", alpha_i(:,1)
+!    write(*,*) "alpha_i", alpha_i(:,1)
 
     do k = 1, n_freq
       alpha_k(:,k) = neighbor_alpha0/(1.d0 + omegas(k)**2/omega_i**2)
@@ -1593,6 +1621,8 @@ module vdw
         r_vdw_j = r0_ii(k)
         if( rjs(k) < rcut )then
           f_damp(k) = 1.d0/( 1.d0 + exp( -d*( rjs_H(k)/(sR*(r_vdw_i + r_vdw_j)) - 1.d0 ) ) )
+! FDAMP TEST:
+!          f_damp(k) = 1.d0/( 1.d0 + exp( -d*( rjs_H(k)/((0.5d0*rcut)) - 1.d0 ) ) )
           k2 = 9*(k-1)
           do c1 = 1, 3
             do c2 = 1, 3
@@ -1620,7 +1650,7 @@ module vdw
         j = neighbors_list(k)
         if( rjs(k) < rcut )then
           sigma_ij = sqrt(s_i**2 + s_j**2)
-          write(*,*) "sigma_ij:", sigma_ij
+          !write(*,*) "sigma_ij:", sigma_ij
           g_func(k,:) = erf(rjs_H(k)/sigma_ij) - 2.d0/sqrt(pi) * (rjs_H(k)/sigma_ij) * exp(-rjs_H(k)**2.d0/sigma_ij**2)
           k2 = 9*(k-1)
           do c1 = 1, 3
@@ -1634,13 +1664,25 @@ module vdw
       end do
     end do
 
+    allocate( ia(1:9*n_sites*n_sites) )
+    allocate( ja(1:9*n_sites*n_sites) )
+    allocate( val(1:9*n_sites*n_sites) )
+
     T_SR = 0.d0
     B_mat = 0.d0
     k = 0
+    nnz = 0
     do i = 1, n_sites
       k = k+1
       do c1 = 1, 3
         B_mat(3*(i-1)+c1,3*(i-1)+c1,:) = 1.d0/alpha_k(k,:)
+!REGULARIZATION TEST:
+!        B_mat(3*(i-1)+c1,3*(i-1)+c1,:) = alpha_k(k,:)
+        nnz = nnz+1
+        ia(nnz) = 3*(i-1)+c1
+        ja(nnz) = 3*(i-1)+c1
+        val(nnz) = B_mat(3*(i-1)+c1,3*(i-1)+c1,1)
+        !write(*,*) "i, nnz", i, nnz
       end do
       do j2 = 2, n_neigh(i)
         k = k+1
@@ -1666,14 +1708,40 @@ module vdw
           do c1 = 1, 3
             do c2 = 1, 3
               k2 = k2+1
-              T_SR(3*(i-1)+c1,3*(j-1)+c2,:) = (1.d0-f_damp(k)) * (-T_func(k2) * &
-                                              g_func(k,:) + h_func(k2,:))
+              if ( iterative ) then
+                nnz = nnz+1
+                !write(*,*) "j, nnz", j, nnz
+                if ( rjs(k) > rcut-buffer ) then
+                  rbuf = (rjs_H(k)-rcut_H+buffer_H)/buffer_H
+                  T_SR(3*(i-1)+c1,3*(j-1)+c2,:) = alpha_i(i,:) * (1.d0-f_damp(k)) * (-T_func(k2) * &
+                                                  g_func(k,:) + h_func(k2,:)) * (1.d0 - 3.d0 * rbuf**2 + 2.d0 * rbuf**3)
+                else
+                  T_SR(3*(i-1)+c1,3*(j-1)+c2,:) = alpha_i(i,:) * (1.d0-f_damp(k)) * (-T_func(k2) * &
+                                                  g_func(k,:) + h_func(k2,:))
+!              T_SR(3*(i-1)+c1,3*(j-1)+c2,:) = (1.d0-f_damp(k)) * (-T_func(k2) * &
+!                                              g_func(k,:) + h_func(k2,:))
+                end if
+                ia(nnz) = 3*(i-1)+c1
+                ja(nnz) = 3*(j-1)+c2
+                val(nnz) = T_SR(3*(i-1)+c1,3*(j-1)+c2,1)
+              else
+                T_SR(3*(i-1)+c1,3*(j-1)+c2,:) = (1.d0-f_damp(k)) * (-T_func(k2) * &
+                                                g_func(k,:) + h_func(k2,:))
+              end if
             end do
           end do
         end if
       end do
     end do
+
+    !write(*,*) "nnz", nnz
+
     B_mat = B_mat + T_SR
+
+!REGULARIZATION TEST
+!    do k2 = 1, n_freq
+!    B_mat(:,:,k2) = matmul(B_mat(:,:,k2),T_SR(:,:,k2))
+!    end do
 
 !    write(*,*) "B_mat"
 !    do p = 1, 3*n_sites
@@ -1888,32 +1956,109 @@ module vdw
 !    A_mat = B_mat
 
     if ( iterative ) then
+
+      !call psb_init(icontxt)
+      !call psb_cdall(icontxt, desc_a, info_psb, nl=3*n_sites)
+      !write(*,*) "cdall", info_psb
+      !call psb_spall(A_sp, desc_a, info_psb, nnz)
+      !write(*,*) "spall", info_psb
+      !call psb_geall(x_vec, desc_a, info_psb, 3, 1)
+      !write(*,*) "geall x", info_psb, size(x_vec,1), size(x_vec,2)
+      !call psb_geall(b_vec, desc_a, info_psb, 3, 1)
+      !write(*,*) "geall b", info_psb, size(b_vec,1), size(b_vec,2)
+      !write(*,*) "size of b", size(b_vec,1)
+      !call psb_spins(nnz, ia(1:nnz), ja(1:nnz), val(1:nnz), A_sp, desc_a, info_psb)
+      !write(*,*) "spins", info_psb
+      !allocate( val_xv(1:3*n_sites,1:3) )
+      !allocate( val_bv(1:3*n_sites,1:3) )
+      !allocate( myidx(1:3*n_sites) )
+      !val_xv = 0.d0
+      !val_bv = 0.d0
+      !do p = 1, n_sites
+      !  do c1 = 1, 3
+      !    myidx(3*(p-1)+c1) = 3*(p-1)+c1
+      !    val_xv(3*(p-1)+c1,c1) = 1.d0
+      !    val_bv(3*(p-1)+c1,c1) = 1.d0
+      !  end do
+      !end do
+      !call psb_geins(3*n_sites, myidx, val_xv, x_vec, desc_a, info_psb)
+      !write(*,*) "x_vec", info_psb
+      !call psb_geins(3*n_sites, myidx, val_bv, b_vec, desc_a, info_psb)
+      !write(*,*) "b_vec", info_psb
+      !call psb_cdasb(desc_a, info_psb)
+      !write(*,*) "cdasb", info_psb
+      !call psb_spasb(A_sp, desc_a, info_psb)
+      !write(*,*) "spasb", info_psb
+      !call psb_geasb(x_vec, desc_a, info_psb)
+      !write(*,*) "geasb x", info_psb
+      !call psb_geasb(b_vec, desc_a, info_psb)
+      !write(*,*) "geasb b", info_psb
+      !ptype="DIAG"
+      !call prec%init(icontxt, ptype, info_psb)
+      !call prec%build(A_sp, desc_a, info_psb)
+      !write(*,*) "prec build", info_psb
+      !call psb_krylov("BICGSTAB", A_sp, prec, b_vec, x_vec, 1.d-6, desc_a, info)
+      !deallocate( val_xv, val_bv )
+      !call psb_exit(icontxt)
+      deallocate( ia, ja, val )
+
+
       n_iter = 100
-      allocate( I_mat(1:3*n_sites,1:3) )
-      allocate( a_prev(1:3*n_sites,1:3,1:n_freq) )
-      allocate( a_next(1:3*n_sites,1:3,1:n_freq) )
+      allocate( I_mat(1:3*n_sites,1:3*n_sites) )
+      allocate( I_aT(1:3*n_sites,1:3*n_sites,1:n_freq) )
+      allocate( a_vec(1:3*n_sites,1:3,1:n_freq) )
+      allocate( regularization(1:3*n_sites,1:3*n_sites) )
       I_mat = 0.d0
+!      regularization = 0.d0
       do p = 1, n_sites
         do c1 = 1, 3
-          I_mat(3*(p-1)+c1,c1) = 1.d0
+          I_mat(3*(p-1)+c1,3*(p-1)+c1) = 1.d0
+!          regularization(3*(p-1)+c1,3*(p-1)+c1) = 0.0d0
         end do
       end do
+      I_aT = 0.d0
+      a_vec = 0.d0
       do k = 1, n_freq
-        a_prev(:,:,k) = I_mat
-        call dsysv('U', 3*n_sites, 3, B_mat(:,:,k), 3*n_sites, ipiv, a_prev(:,:,k), 3*n_sites, work_arr, &
-                    12*n_sites, info)  
-      end do
-      alpha_SCS = 0.d0
-      do k = 1, n_freq
+        I_aT(:,:,k) = I_mat + T_SR(:,:,k)
         do p = 1, n_sites
           do c1 = 1, 3
-            alpha_SCS(p,k) = alpha_SCS(p,k) + a_prev(3*(p-1)+c1,c1,k)
+            a_vec(3*(p-1)+c1,c1,k) = alpha_i(p,k)
           end do
         end do
       end do
-      alpha_SCS = alpha_SCS/3.d0
+      !write(*,*) "a_TS:"
+      !do p = 1, 3*n_sites
+      !  write(*,*) a_next(p,:,1)
+      !end do
 
-      deallocate( I_mat, a_prev, a_next )
+      allocate( I_aT_a_vec(1:3*n_sites,1:3) )
+      allocate( I_aT2(1:3*n_sites,1:3*n_sites) )
+
+      reg_param = 0.0d0
+      do k = 1, n_freq
+        call dgemm('t', 'n', 3*n_sites, 3, 3*n_sites, 1.d0, I_aT(:,:,k), 3*n_sites, &
+                    a_vec(:,:,k), 3*n_sites, 0.d0, I_aT_a_vec, 3*n_sites)
+        a_vec(:,:,k) = I_aT_a_vec + reg_param * a_vec(:,:,k)
+        call dgemm('t', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, I_aT(:,:,k), 3*n_sites, &
+                    I_aT(:,:,k), 3*n_sites, 0.d0, I_aT2, 3*n_sites)
+        I_aT2 = I_aT2 + reg_param * I_mat
+        call dsysv('U', 3*n_sites, 3, I_aT2, 3*n_sites, ipiv, &
+                    a_vec(:,:,k), 3*n_sites, work_arr, 12*n_sites, info)  
+      end do
+
+      deallocate( I_aT_a_vec, I_aT2 )
+
+      alpha_SCS0 = 0.d0
+      do k = 1, n_freq
+        do p = 1, n_sites
+          do c1 = 1, 3
+            alpha_SCS0(p,k) = alpha_SCS0(p,k) + a_vec(3*(p-1)+c1,c1,k)
+          end do
+        end do
+      end do
+      alpha_SCS0 = alpha_SCS0/3.d0
+
+      deallocate( I_mat, I_aT, a_vec, regularization )
     else
 !      B_mat = B_mat + T_SR
       A_mat = B_mat
@@ -1969,9 +2114,9 @@ module vdw
 
       end if
 ! TEST1
-      write(*,*) "alpha_SCS:" !,  alpha_SCS(1,1)
+      write(*,*) "alpha_SCS:" ,  alpha_SCS0(1,1)
       do p = 1, n_sites
-        write(*,*) p, alpha_SCS(p,1)
+        write(*,*) p, alpha_SCS0(p,1)
       end do
 
 
@@ -2227,19 +2372,6 @@ module vdw
     
     end if
 
-!  end subroutine
-
-!**************************************************************************
-
-!  subroutine get_mbd_energy_and_forces(...)
-
-!  implicit none
-
-!  Define variables here...
-
-!  This is included in the previous subroutine for now but should be made separate.
-!  This only works for the new implementation at the moment.
-
   if ( new_implementation ) then
     deallocate( alpha_SCS, n_ssites_list, n_sneigh_list )
     if ( do_derivatives ) then
@@ -2248,6 +2380,213 @@ module vdw
   end if
 
   end subroutine
+
+!**************************************************************************
+
+!NOTE: T_func and dT remain unchanged. Should they be directly passed to this subroutine?
+
+  subroutine get_mbd( alpha_SCS0, n_neigh, neighbors_list, neighbor_species, &
+                      rcut, buffer, rcut_inner, buffer_inner, rjs, xyz, &
+                      sR, d, c6_ref, r0_ref, alpha0_ref, do_forces, &
+                      energies, forces0, virial)
+
+    implicit none
+    real*8, intent(inout) :: alpha_SCS0(:,:), energies(:), forces0(:,:)
+    real*8, intent(in) :: rcut, buffer, rcut_inner, buffer_inner, &
+                          rjs(:), xyz(:,:), sR, d, c6_ref(:), r0_ref(:), &
+                          alpha0_ref(:)
+    real*8, intent(out) :: virial(1:3, 1:3)
+    integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:)
+    logical, intent(in) :: do_forces
+    real*8, allocatable :: A_LR(:,:,:), T_LR(:,:), r0_ii_SCS(:), r0_ii(:), neighbor_alpha0(:), &
+                           xyz_H(:,:), rjs_H(:), f_damp_SCS(:), T_func(:), AT(:,:,:), AT_n(:,:,:,:), &
+                           energy_series(:,:,:), integrand(:,:), energy_term(:,:), omegas(:)
+    integer :: n_order, n_freq, n_sites, n_pairs, n_species, n_sites0
+    integer :: k, k2, i, j, j2, c1, c2
+    real*8 :: Bohr, Hartree, pi, r_vdw_i, r_vdw_j, E_MBD, integral, omega
+    logical :: series_average = .false.
+
+!   Hartree units (calculations done in Hartree units for simplicity)
+    Bohr = 0.5291772105638411
+    Hartree = 27.211386024367243
+    pi = acos(-1.d0)
+
+    n_order = 8
+
+    n_freq = size(alpha_SCS0, 2)
+    n_sites = size(n_neigh)
+    n_pairs = size(neighbors_list)
+    n_species = size(c6_ref)
+    n_sites0 = size(forces0, 2)
+
+    allocate( omegas(1:n_freq) )
+    allocate( xyz_H(1:3,1:n_pairs) )
+    allocate( rjs_H(1:n_pairs) )
+    allocate( r0_ii(1:n_pairs) )
+    allocate( neighbor_alpha0(1:n_pairs) )
+    allocate( T_func(1:9*n_pairs) )
+    allocate( A_LR(1:3*n_sites,1:3*n_sites,1:n_freq) )
+    allocate( T_LR(1:3*n_sites,1:3*n_sites) )
+    allocate( r0_ii_SCS(1:n_pairs) )
+    allocate( f_damp_SCS(1:n_pairs) )
+    allocate( AT(1:3*n_sites,1:3*n_sites,1:n_freq) )
+    allocate( AT_n(1:3*n_sites,1:3*n_sites, 1:n_order-1, 1:n_freq) )
+    allocate( energy_series(1:3*n_sites,1:3*n_sites,1:n_freq) )
+    allocate( integrand(1:n_sites,1:n_freq) )
+    allocate( energy_term(1:3*n_sites,1:3*n_sites) )
+
+    omega = 0.d0
+    do i = 1, n_freq
+      omegas(i) = omega
+      omega = omega + 0.4d0
+    end do
+
+    do k = 1, n_pairs
+      j = neighbor_species(k)
+      r0_ii(k) = r0_ref(j) / Bohr
+      neighbor_alpha0(k) = alpha0_ref(j) / Bohr**3
+      xyz_H(:,k) = xyz(:,k)/Bohr
+      rjs_H(k) = rjs(k)/Bohr
+    end do
+
+    T_func = 0.d0
+    k = 0
+    do i = 1, n_sites
+      k = k+1
+      do j2 = 2, n_neigh(i)
+        k = k+1
+        if( rjs(k) < rcut )then
+          k2 = 9*(k-1)
+          do c1 = 1, 3
+            do c2 = 1, 3
+              k2 = k2 + 1
+              if (c1 == c2) then
+                T_func(k2) = (3*xyz_H(c1,k) * xyz_H(c1,k) - rjs_H(k)**2)/rjs_H(k)**5
+              else
+                T_func(k2) = (3*xyz_H(c1,k) * xyz_H(c2,k))/rjs_H(k)**5
+              end if
+            end do
+          end do
+        end if
+      end do
+    end do
+
+    A_LR = 0.d0
+
+    do k = 1, n_freq
+      do i = 1, n_sites
+        do c1 = 1, 3
+          A_LR(3*(i-1)+c1,3*(i-1)+c1,k) = alpha_SCS0(i,k)
+        end do
+      end do
+    end do
+
+    write(*,*) "A_LR:"
+    do i = 1, 3
+      write(*,*) A_LR(i,1:3,1)
+    end do
+
+    do k = 1, n_pairs
+      j = neighbors_list(k)
+      r0_ii_SCS(k) = r0_ii(k) * (alpha_SCS0(j,1)/neighbor_alpha0(k))**(1.d0/3.d0)
+    end do
+
+    f_damp_SCS = 0.d0
+    k = 0
+    do i = 1, n_sites
+      k = k+1
+      r_vdw_i = r0_ii_SCS(k)
+      do j2 = 2, n_neigh(i)
+        k=k+1
+        if (rjs(k) < rcut) then
+          r_vdw_j = r0_ii_SCS(k)
+          j = neighbors_list(k)
+          f_damp_SCS(k) = 1.d0/( 1.d0 + exp( -d*( rjs_H(k)/(sR*(r_vdw_i + r_vdw_j)) - 1.d0 ) ) )
+        end if
+      end do
+    end do
+
+    T_LR = 0.d0
+    k = 0
+    do i = 1, n_sites
+      k = k+1
+      do j2 = 2, n_neigh(i)
+        k = k+1
+        j = neighbors_list(k)
+        if (rjs(k) < rcut) then
+          k2 = 9*(k-1)
+          do c1 = 1, 3
+            do c2 = 1, 3
+              k2 = k2+1
+              T_LR(3*(i-1)+c1,3*(j-1)+c2) = f_damp_SCS(k) * T_func(k2)
+              !T_LR(3*(j-1)+c1,3*(i-1)+c2) = T_LR(3*(i-1)+c1,3*(j-1)+c2)
+            end do
+          end do
+        end if
+      end do
+    end do
+
+    write(*,*) "T_LR"
+    do i = 1, 6
+      write(*,*) T_LR(i,1:6)
+    end do
+
+    AT = 0.d0
+    do k = 1, n_freq
+      call dgemm('n', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, A_LR(:,:,k), 3*n_sites, &
+                 T_LR, 3*n_sites, 0.d0, AT(:,:,k), 3*n_sites)
+    end do
+
+    write(*,*) "AT"
+    do i = 1, 6
+      write(*,*) AT(i,1:6,1)
+    end do
+
+    AT_n = 0.d0
+    integrand = 0.d0
+    energy_series = -0.5d0 * AT(:,:,:)
+    do k = 1, n_freq
+      AT_n(:,:,1,k) = AT(:,:,k)
+      do k2 = 1, n_order-2
+        ! Precalculate the full AT_n for forces:
+        call dgemm('n', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, AT(:,:,k), 3*n_sites, &
+                   AT_n(:,:,k2,k), 3*n_sites, 0.d0, AT_n(:,:,k2+1,k), 3*n_sites)
+        ! Use only slice for local energies:
+        energy_term = 0.d0
+        call dgemm('n', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, AT_n(:,:,k2,k), 3*n_sites, &
+                   AT(:,:,k), 3*n_sites, 0.d0, energy_term, 3*n_sites)
+        if (series_average .and. k2 == n_order-2) then
+          energy_series(:,:,k) = (2.d0 * energy_series(:,:,k) - 1.d0/(k2+2)*energy_term)/2.d0
+        else
+          energy_series(:,:,k) = energy_series(:,:,k) - 1.d0/(k2+2)*energy_term
+        end if
+      end do
+      do i = 1, n_sites
+        do c1 = 1, 3
+          integrand(i,k) = integrand(i,k) + alpha_SCS0(i,k) * dot_product(T_LR(3*(i-1)+c1,:), &
+                         energy_series(:,3*(i-1)+c1,k))
+        end do
+      end do
+    end do
+    do i = 1, n_sites
+      integral = 0.d0
+      call integrate("trapezoidal", omegas, integrand(i,:), 0.d0, 10.d0, integral)
+      E_MBD = integral/(2.d0*pi)
+      energies(i) = E_MBD * 27.211386245988
+      write(*,*) "local energy", i, energies(i)
+    end do
+    write(*,*) "MBD energy:", sum(energies)
+
+    deallocate( omegas, xyz_H, rjs_H, r0_ii, neighbor_alpha0, T_func, A_LR, T_LR, r0_ii_SCS, &
+                f_damp_SCS, AT, AT_n, energy_series, integrand, energy_term )
+
+!    Define variables here...
+
+!    This is included in the previous subroutine for now but should be made separate.
+!    This only works for the new implementation at the moment.
+
+  end subroutine
+
 !**************************************************************************
   subroutine get_mbd_energy_and_forces( hirshfeld_v, hirshfeld_v_cart_der, &
                                        n_neigh, neighbors_list, neighbor_species, &
@@ -2298,7 +2637,7 @@ module vdw
     integer, allocatable :: ipiv(:)
     integer :: n_sites, n_pairs, n_species, n_sites0, info, n_order, n_tot
     integer :: i, i2, j, j2, k, k2, k3, a, a2, c1, c2, c3, lwork, b, p, q
-    logical :: do_timing = .false., do_hirshfeld_gradients = .true., nonlocal = .false., &
+    logical :: do_timing = .false., do_hirshfeld_gradients = .false., nonlocal = .true., &
                series_expansion = .true., total_energy = .false., series_average = .true.
 
 ! WE SHOULD ENFORCE RCUT_MBD, RCUT_SCS <= RCUT - BUFFER
@@ -2667,6 +3006,13 @@ call cpu_time(t1)
 call cpu_time(t2)
 !write(*,*) "T_LR", t2-t1, "seconds"
 
+    write(*,*) "T_LR:"
+    do p = 1, 6
+      write(*,*) T_LR(p,1:6)
+    end do
+
+
+
     I_mat = 0.d0
     do i = 1, 3*n_sites
       I_mat(i,i) = 1.d0
@@ -2680,6 +3026,12 @@ call cpu_time(t1)
     end do
 call cpu_time(t2)
 !write(*,*) "A_LR x T_LR:", t2-t1, "seconds"
+
+    write(*,*) "AT"
+    do p = 1, 6
+      write(*,*) AT(p,1:6,1)
+    end do
+
 
 call cpu_time(t1)
     dT = 0.d0
