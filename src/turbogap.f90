@@ -1177,6 +1177,7 @@ program turbogap
 #endif
         n_freq = 11
         allocate( alpha_SCS(i_beg:i_end,1:n_freq) )
+call cpu_time(time2)
         call get_scs_polarizabilities( hirshfeld_v(i_beg:i_end), hirshfeld_v_cart_der(1:3, j_beg:j_end), &
                                        n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
                                        neighbor_species(j_beg:j_end), &
@@ -1190,6 +1191,8 @@ program turbogap
 #else
                                        energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
 #endif
+call cpu_time(time1)
+write(*,*) "scs timing", time1-time2
         !write(*,*) "alpha_SCS0:", alpha_SCS
         call get_mbd( alpha_SCS, n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
                       neighbor_species(j_beg:j_end), params%vdw_rcut, params%vdw_buffer, &

@@ -473,7 +473,7 @@ module vdw
                n_ssites, n_spairs_vder, n_freq, n_iter
     integer :: i, i2, j, j2, k, k2, k3, a, a2, c1, c2, c3, lwork, b, p, q, n_count
     logical :: do_timing = .false., do_hirshfeld_gradients = .true., nonlocal = .false., &
-               series_expansion = .true., total_energy = .false., series_average = .true., &
+               series_expansion = .true., total_energy = .true., series_average = .true., &
                new_implementation = .false., do_derivatives = .false., iterative = .true.
     logical, allocatable :: i0_buffer2(:), ij_buffer2(:), i0_buffer(:), ij_buffer(:)
     type(psb_ctxt_type) :: icontxt
@@ -2060,6 +2060,37 @@ module vdw
 
       deallocate( I_mat, I_aT, a_vec, regularization )
     else
+      deallocate( ia, ja, val)
+      allocate( a_vec(1:3*n_sites,1:3,1:n_freq) )
+
+      a_vec = 0.d0
+      do k = 1, n_freq
+        do p = 1, n_sites
+          do c1 = 1, 3
+            a_vec(3*(p-1)+c1,c1,k) = 1.d0
+          end do
+        end do
+      end do
+!      do k = 1, n_freq
+!        call dsysv('U', 3*n_sites, 3, B_mat(:,:,k), 3*n_sites, ipiv, &
+!                    a_vec(:,:,k), 3*n_sites, work_arr, 12*n_sites, info)
+!      end do
+      alpha_SCS0 = 0.d0
+      do k = 1, n_freq
+        do p = 1, n_sites
+          do c1 = 1, 3
+            alpha_SCS0(p,k) = alpha_SCS0(p,k) + a_vec(3*(p-1)+c1,c1,k)
+          end do
+        end do
+      end do
+      alpha_SCS0 = alpha_SCS0/3.d0
+      write(*,*) "alpha_SCS0"
+      do p = 1, n_sites
+        write(*,*) alpha_SCS0(p,1)
+      end do
+
+      deallocate( a_vec )
+
 !      B_mat = B_mat + T_SR
       A_mat = B_mat
       do k3 = 1, n_freq
@@ -2069,13 +2100,14 @@ module vdw
 !        write(*,*) "dgetri:", info
       end do
 
+      alpha_SCS0 = 0.d0
       do k3 = 1, n_freq
         do p = 1, n_sites
           A_i = 0.d0
           do q = 1, n_sites
             A_i = A_i + A_mat(3*(p-1)+1:3*(p-1)+3,3*(q-1)+1:3*(q-1)+3,k3)
           end do
-          alpha_SCS(p,k3) = 1.d0/3.d0 * (A_i(1,1)+A_i(2,2)+A_i(3,3))
+          alpha_SCS0(p,k3) = 1.d0/3.d0 * (A_i(1,1)+A_i(2,2)+A_i(3,3))
         end do
       end do
     end if
@@ -2114,10 +2146,10 @@ module vdw
 
       end if
 ! TEST1
-      write(*,*) "alpha_SCS:" ,  alpha_SCS0(1,1)
-      do p = 1, n_sites
-        write(*,*) p, alpha_SCS0(p,1)
-      end do
+!      write(*,*) "alpha_SCS:" ,  alpha_SCS0(1,1)
+!      do p = 1, n_sites
+!        write(*,*) p, alpha_SCS0(p,1)
+!      end do
 
 
       if ( do_derivatives ) then
@@ -2400,11 +2432,11 @@ module vdw
     logical, intent(in) :: do_forces
     real*8, allocatable :: A_LR(:,:,:), T_LR(:,:), r0_ii_SCS(:), r0_ii(:), neighbor_alpha0(:), &
                            xyz_H(:,:), rjs_H(:), f_damp_SCS(:), T_func(:), AT(:,:,:), AT_n(:,:,:,:), &
-                           energy_series(:,:,:), integrand(:,:), energy_term(:,:), omegas(:)
+                           energy_series(:,:,:), integrand(:,:), omegas(:)
     integer :: n_order, n_freq, n_sites, n_pairs, n_species, n_sites0
     integer :: k, k2, i, j, j2, c1, c2
     real*8 :: Bohr, Hartree, pi, r_vdw_i, r_vdw_j, E_MBD, integral, omega
-    logical :: series_average = .false.
+    logical :: series_average = .true.
 
 !   Hartree units (calculations done in Hartree units for simplicity)
     Bohr = 0.5291772105638411
@@ -2433,7 +2465,6 @@ module vdw
     allocate( AT_n(1:3*n_sites,1:3*n_sites, 1:n_order-1, 1:n_freq) )
     allocate( energy_series(1:3*n_sites,1:3*n_sites,1:n_freq) )
     allocate( integrand(1:n_sites,1:n_freq) )
-    allocate( energy_term(1:3*n_sites,1:3*n_sites) )
 
     omega = 0.d0
     do i = 1, n_freq
@@ -2481,11 +2512,6 @@ module vdw
       end do
     end do
 
-    write(*,*) "A_LR:"
-    do i = 1, 3
-      write(*,*) A_LR(i,1:3,1)
-    end do
-
     do k = 1, n_pairs
       j = neighbors_list(k)
       r0_ii_SCS(k) = r0_ii(k) * (alpha_SCS0(j,1)/neighbor_alpha0(k))**(1.d0/3.d0)
@@ -2519,27 +2545,16 @@ module vdw
             do c2 = 1, 3
               k2 = k2+1
               T_LR(3*(i-1)+c1,3*(j-1)+c2) = f_damp_SCS(k) * T_func(k2)
-              !T_LR(3*(j-1)+c1,3*(i-1)+c2) = T_LR(3*(i-1)+c1,3*(j-1)+c2)
             end do
           end do
         end if
       end do
     end do
 
-    write(*,*) "T_LR"
-    do i = 1, 6
-      write(*,*) T_LR(i,1:6)
-    end do
-
     AT = 0.d0
     do k = 1, n_freq
       call dgemm('n', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, A_LR(:,:,k), 3*n_sites, &
                  T_LR, 3*n_sites, 0.d0, AT(:,:,k), 3*n_sites)
-    end do
-
-    write(*,*) "AT"
-    do i = 1, 6
-      write(*,*) AT(i,1:6,1)
     end do
 
     AT_n = 0.d0
@@ -2551,14 +2566,10 @@ module vdw
         ! Precalculate the full AT_n for forces:
         call dgemm('n', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, AT(:,:,k), 3*n_sites, &
                    AT_n(:,:,k2,k), 3*n_sites, 0.d0, AT_n(:,:,k2+1,k), 3*n_sites)
-        ! Use only slice for local energies:
-        energy_term = 0.d0
-        call dgemm('n', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, AT_n(:,:,k2,k), 3*n_sites, &
-                   AT(:,:,k), 3*n_sites, 0.d0, energy_term, 3*n_sites)
         if (series_average .and. k2 == n_order-2) then
-          energy_series(:,:,k) = (2.d0 * energy_series(:,:,k) - 1.d0/(k2+2)*energy_term)/2.d0
+          energy_series(:,:,k) = energy_series(:,:,k) - 1.d0/(k2+2)*AT_n(:,:,k2+1,k)/2.d0
         else
-          energy_series(:,:,k) = energy_series(:,:,k) - 1.d0/(k2+2)*energy_term
+          energy_series(:,:,k) = energy_series(:,:,k) - 1.d0/(k2+2)*AT_n(:,:,k2+1,k)
         end if
       end do
       do i = 1, n_sites
@@ -2569,6 +2580,10 @@ module vdw
       end do
     end do
     do i = 1, n_sites
+      write(*,*) "integrand", i, integrand(i,:)
+    end do
+
+    do i = 1, n_sites
       integral = 0.d0
       call integrate("trapezoidal", omegas, integrand(i,:), 0.d0, 10.d0, integral)
       E_MBD = integral/(2.d0*pi)
@@ -2578,12 +2593,7 @@ module vdw
     write(*,*) "MBD energy:", sum(energies)
 
     deallocate( omegas, xyz_H, rjs_H, r0_ii, neighbor_alpha0, T_func, A_LR, T_LR, r0_ii_SCS, &
-                f_damp_SCS, AT, AT_n, energy_series, integrand, energy_term )
-
-!    Define variables here...
-
-!    This is included in the previous subroutine for now but should be made separate.
-!    This only works for the new implementation at the moment.
+                f_damp_SCS, AT, AT_n, energy_series, integrand )
 
   end subroutine
 
@@ -2637,8 +2647,8 @@ module vdw
     integer, allocatable :: ipiv(:)
     integer :: n_sites, n_pairs, n_species, n_sites0, info, n_order, n_tot
     integer :: i, i2, j, j2, k, k2, k3, a, a2, c1, c2, c3, lwork, b, p, q
-    logical :: do_timing = .false., do_hirshfeld_gradients = .false., nonlocal = .true., &
-               series_expansion = .true., total_energy = .false., series_average = .true.
+    logical :: do_timing = .false., do_hirshfeld_gradients = .false., nonlocal = .false., &
+               series_expansion = .true., total_energy = .true., series_average = .true.
 
 ! WE SHOULD ENFORCE RCUT_MBD, RCUT_SCS <= RCUT - BUFFER
 ! 4.5, 4.5, 0.5, 0.5; make sure 
@@ -2683,7 +2693,7 @@ real*8 :: rcut_scs, rcut_mbd, buffer_scs, buffer_mbd
 !    rcut_vdw = 4.d0
     ! n_order has to be at least 2
 !    n_order = 6
-    n_order = 3
+    n_order = 8
 
     n_sites = size(n_neigh)
     n_pairs = size(neighbors_list)
@@ -2939,6 +2949,13 @@ call cpu_time(t1)
       end do
     end do
 call cpu_time(t2)
+
+!write(*,*) "alpha_SCS old method"
+!do i = 1, n_sites
+!  write(*,*) alpha_SCS(i,1)
+!end do
+
+
 !write(*,*) "A_i:", t2-t1, "seconds"
 
 !write(*,*) "alpha_TS(1) =", neighbor_alpha0(1)
@@ -3575,7 +3592,7 @@ call cpu_time(t1)
           end do
         end do
 
-write(*,*) "alpha_scs_i", i, alpha_SCS_i(1,1)
+!write(*,*) "alpha_scs_i", i, alpha_SCS_i(1,1)
 
 !        write(*,*) "alpha_SCS_i:", alpha_SCS_i(:,1)
 
@@ -3680,6 +3697,7 @@ call cpu_time(t1)
             end do
 !write(*,*) k, integrand(k)
           end do
+          write(*,*) "integrand:", i, integrand
           integral = 0.d0
           call integrate("trapezoidal", omegas, integrand, 0.d0, 10.d0, integral)
           E_MBD_k(i) = integral/(2.d0*pi)
