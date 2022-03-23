@@ -474,7 +474,7 @@ module vdw
     integer :: i, i2, j, j2, k, k2, k3, a, a2, c1, c2, c3, lwork, b, p, q, n_count
     logical :: do_timing = .false., do_hirshfeld_gradients = .true., nonlocal = .false., &
                series_expansion = .true., total_energy = .true., series_average = .true., &
-               new_implementation = .false., do_derivatives = .false., iterative = .true.
+               new_implementation = .false., do_derivatives = .true., iterative = .true.
     logical, allocatable :: i0_buffer2(:), ij_buffer2(:), i0_buffer(:), ij_buffer(:)
     type(psb_ctxt_type) :: icontxt
     integer(psb_ipk_) ::  iam, np, ip, jp, idummy, nr, nnz, info_psb
@@ -1734,6 +1734,11 @@ module vdw
       end do
     end do
 
+    write(*,*) "T_SR:"
+    do i = 1, 6
+      write(*,*) T_SR(i,1:6,1)
+    end do
+
     !write(*,*) "nnz", nnz
 
     B_mat = B_mat + T_SR
@@ -1834,7 +1839,6 @@ module vdw
       end do
     end do
 
-    dB_mat = dT_SR
     if (do_hirshfeld_gradients) then
       dB_mat_v = 0.d0
       dT_SR_v = 0.d0
@@ -1880,10 +1884,6 @@ module vdw
           k2 = k2+1
           a = neighbors_list(k2)
           do c3 = 1, 3
-            do c1 = 1, 3
-              dB_mat_v(3*(i-1)+c1,3*(i-1)+c1,a,c3,:) = -1.d0/(hirshfeld_v(i)*alpha_i(i,:)) * &
-                            hirshfeld_v_cart_der_H(c3,k2)
-            end do
             do k = 1, n_freq
               do j2 = 2, n_neigh(i)
                 if (rjs(k3+j2) < rcut) then
@@ -1947,11 +1947,37 @@ module vdw
         k3 = k3 + n_neigh(j)
       end do
 
-      dB_mat_v = dB_mat_v + dT_SR_v
+    dB_mat = 0.d0
+    k2 = 0
+    do i = 1, n_sites
+      do a2 = 1, n_neigh(i)
+        k2 = k2+1
+        a = neighbors_list(k2)
+        do k = 1, n_freq
+          do c3 = 1, 3
+            dT_SR_v(3*(i-1)+1:3*(i-1)+3,:,a,c3,k) = dT_SR_v(3*(i-1)+1:3*(i-1)+3,:,a,c3,k) + &
+              1.d0/hirshfeld_v(i) * hirshfeld_v_cart_der(c3,k2) * T_SR(3*(i-1)+1:3*(i-1)+3,:,k)
+          end do
+        end do
+      end do
+    end do
 
-      dB_mat = dB_mat + dB_mat_v
+    dT_SR = dT_SR + dT_SR_v
     end if
+
+    do i = 1, n_sites
+      do k = 1, n_freq
+        dT_SR(3*(i-1)+1:3*(i-1)+3,:,:,:,k) = alpha_i(i,k) * dT_SR(3*(i-1)+1:3*(i-1)+3,:,:,:,k) 
+      end do
+    end do
+
+    write(*,*) "dT_SR:"
+    do i = 1, 6
+      write(*,*) dT_SR(i,1:6,1,1,1)
+    end do
+
     end if ! do_derivatives
+
     
 !    A_mat = B_mat
 
@@ -2091,25 +2117,22 @@ module vdw
 
       deallocate( a_vec )
 
-!      B_mat = B_mat + T_SR
-      A_mat = B_mat
-      do k3 = 1, n_freq
-        call dgetrf(3*n_sites, 3*n_sites, A_mat(:,:,k3), 3*n_sites, ipiv, info)
-!        write(*,*) "dgetrf:", info
-        call dgetri(3*n_sites, A_mat(:,:,k3), 3*n_sites, ipiv, work_arr, 12*n_sites, info)
-!        write(*,*) "dgetri:", info
-      end do
+!      A_mat = B_mat
+!      do k3 = 1, n_freq
+!        call dgetrf(3*n_sites, 3*n_sites, A_mat(:,:,k3), 3*n_sites, ipiv, info)
+!        call dgetri(3*n_sites, A_mat(:,:,k3), 3*n_sites, ipiv, work_arr, 12*n_sites, info)
+!      end do
 
-      alpha_SCS0 = 0.d0
-      do k3 = 1, n_freq
-        do p = 1, n_sites
-          A_i = 0.d0
-          do q = 1, n_sites
-            A_i = A_i + A_mat(3*(p-1)+1:3*(p-1)+3,3*(q-1)+1:3*(q-1)+3,k3)
-          end do
-          alpha_SCS0(p,k3) = 1.d0/3.d0 * (A_i(1,1)+A_i(2,2)+A_i(3,3))
-        end do
-      end do
+!      alpha_SCS0 = 0.d0
+!      do k3 = 1, n_freq
+!        do p = 1, n_sites
+!          A_i = 0.d0
+!          do q = 1, n_sites
+!            A_i = A_i + A_mat(3*(p-1)+1:3*(p-1)+3,3*(q-1)+1:3*(q-1)+3,k3)
+!          end do
+!          alpha_SCS0(p,k3) = 1.d0/3.d0 * (A_i(1,1)+A_i(2,2)+A_i(3,3))
+!        end do
+!      end do
     end if
 
       if ( do_derivatives ) then
