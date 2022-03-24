@@ -1711,16 +1711,18 @@ module vdw
               if ( iterative ) then
                 nnz = nnz+1
                 !write(*,*) "j, nnz", j, nnz
-                if ( rjs(k) > rcut-buffer ) then
-                  rbuf = (rjs_H(k)-rcut_H+buffer_H)/buffer_H
-                  T_SR(3*(i-1)+c1,3*(j-1)+c2,:) = alpha_i(i,:) * (1.d0-f_damp(k)) * (-T_func(k2) * &
-                                                  g_func(k,:) + h_func(k2,:)) * (1.d0 - 3.d0 * rbuf**2 + 2.d0 * rbuf**3)
-                else
-                  T_SR(3*(i-1)+c1,3*(j-1)+c2,:) = alpha_i(i,:) * (1.d0-f_damp(k)) * (-T_func(k2) * &
-                                                  g_func(k,:) + h_func(k2,:))
+                !if ( rjs(k) > rcut-buffer ) then
+                !  rbuf = (rjs_H(k)-rcut_H+buffer_H)/buffer_H
+                !  T_SR(3*(i-1)+c1,3*(j-1)+c2,:) = alpha_i(i,:) * (1.d0-f_damp(k)) * (-T_func(k2) * &
+                !                                  g_func(k,:) + h_func(k2,:)) * (1.d0 - 3.d0 * rbuf**2 + 2.d0 * rbuf**3)
+                !else
+                do k3 = 1, n_freq
+                  T_SR(3*(i-1)+c1,3*(j-1)+c2,k3) = alpha_i(i,k3) * (1.d0-f_damp(k)) * (-T_func(k2) * &
+                                                  g_func(k,k3) + h_func(k2,k3))
+                end do
 !              T_SR(3*(i-1)+c1,3*(j-1)+c2,:) = (1.d0-f_damp(k)) * (-T_func(k2) * &
 !                                              g_func(k,:) + h_func(k2,:))
-                end if
+                !end if
                 ia(nnz) = 3*(i-1)+c1
                 ja(nnz) = 3*(j-1)+c2
                 val(nnz) = T_SR(3*(i-1)+c1,3*(j-1)+c2,1)
@@ -1734,6 +1736,8 @@ module vdw
       end do
     end do
 
+    write(*,*) "alpha_i", size(alpha_i,1)
+    write(*,*) "hirshfeld_v", size(hirshfeld_v,1)
     write(*,*) "T_SR:"
     do i = 1, 6
       write(*,*) T_SR(i,1:6,1)
@@ -1947,29 +1951,37 @@ module vdw
         k3 = k3 + n_neigh(j)
       end do
 
-    dB_mat = 0.d0
-    k2 = 0
-    do i = 1, n_sites
-      do a2 = 1, n_neigh(i)
-        k2 = k2+1
-        a = neighbors_list(k2)
-        do k = 1, n_freq
-          do c3 = 1, 3
-            dT_SR_v(3*(i-1)+1:3*(i-1)+3,:,a,c3,k) = dT_SR_v(3*(i-1)+1:3*(i-1)+3,:,a,c3,k) + &
-              1.d0/hirshfeld_v(i) * hirshfeld_v_cart_der(c3,k2) * T_SR(3*(i-1)+1:3*(i-1)+3,:,k)
+    if ( iterative ) then
+      k2 = 0
+      do i = 1, n_sites
+        do a2 = 1, n_neigh(i)
+          k2 = k2+1
+          a = neighbors_list(k2)
+          do k = 1, n_freq
+            do c3 = 1, 3
+              dT_SR_v(3*(i-1)+1:3*(i-1)+3,:,a,c3,k) = dT_SR_v(3*(i-1)+1:3*(i-1)+3,:,a,c3,k) + &
+                1.d0/hirshfeld_v(i) * hirshfeld_v_cart_der_H(c3,k2) * &
+                T_SR(3*(i-1)+1:3*(i-1)+3,:,k) / alpha_i(i,k)
+              if ( i == 1 .and. a == 1 .and. k == 1 .and. c3 == 1) then
+                write(*,*) "hirshfeld_v", hirshfeld_v(i)
+                write(*,*) "dv/dr", hirshfeld_v_cart_der_H(c3,k2)
+              end if
+            end do
           end do
         end do
       end do
-    end do
+    end if
 
     dT_SR = dT_SR + dT_SR_v
     end if
 
-    do i = 1, n_sites
-      do k = 1, n_freq
-        dT_SR(3*(i-1)+1:3*(i-1)+3,:,:,:,k) = alpha_i(i,k) * dT_SR(3*(i-1)+1:3*(i-1)+3,:,:,:,k) 
+    if ( iterative ) then
+      do i = 1, n_sites
+        do k = 1, n_freq
+          dT_SR(3*(i-1)+1:3*(i-1)+3,:,:,:,k) = alpha_i(i,k) * dT_SR(3*(i-1)+1:3*(i-1)+3,:,:,:,k) 
+        end do
       end do
-    end do
+    end if
 
     write(*,*) "dT_SR:"
     do i = 1, 6
@@ -2110,10 +2122,10 @@ module vdw
         end do
       end do
       alpha_SCS0 = alpha_SCS0/3.d0
-      write(*,*) "alpha_SCS0"
-      do p = 1, n_sites
-        write(*,*) alpha_SCS0(p,1)
-      end do
+      !write(*,*) "alpha_SCS0"
+      !do p = 1, n_sites
+      !  write(*,*) alpha_SCS0(p,1)
+      !end do
 
       deallocate( a_vec )
 
