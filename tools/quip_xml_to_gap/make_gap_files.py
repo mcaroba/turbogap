@@ -7,8 +7,8 @@
 # HND X   TurboGAP is published and distributed under the
 # HND X      Academic Software License v1.0 (ASL)
 # HND X
-# HND X   This file, make_gap_files.py, is copyright (c) 2019-2021, Mikhail S. Kuklin
-# HND X   and Miguel A. Caro
+# HND X   This file, make_gap_files.py, is copyright (c) 2019-2021, Mikhail S. Kuklin,
+# HND X   Miguel A. Caro and Richard Jana
 # HND X
 # HND X   TurboGAP is distributed in the hope that it will be useful for non-commercial
 # HND X   academic research, but WITHOUT ANY WARRANTY; without even the implied

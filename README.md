@@ -1,6 +1,6 @@
 # The TurboGAP code
 
-**TurboGAP** (c) 2018-2021 by **Miguel A. Caro** and others (see "contributors" below
+**TurboGAP** (c) 2018-2022 by **Miguel A. Caro** and others (see "contributors" below
 for detailed authorship info).
 
 [www.turbogap.fi](http://www.turbogap.fi)
@@ -21,6 +21,7 @@ statement at the beginning).
 * **Mikhail Kuklin** (Aalto University)
 * Gábor Csányi (University of Cambridge)
 * **Jan Kloppenburg** (Aalto University)
+* **Richard Jana** (Aalto University)
 
 **TurboGAP** is licensed under the Academic Software License (ASL), an "available source"
 non-commercial license. This means that you are free to use and distribute the code for

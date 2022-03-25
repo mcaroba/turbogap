@@ -1,4 +1,4 @@
-Author(s): Mikhail S. Kuklin, Miguel A. Caro
+Author(s): Mikhail S. Kuklin, Miguel A. Caro, Richard Jana
 
 **Documentation**
 
