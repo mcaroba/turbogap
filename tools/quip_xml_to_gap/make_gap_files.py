@@ -153,7 +153,9 @@ def write_descriptor_to_output(output_file, gpCoordinates, index):
             output.write(f'alphas_sparse = "gap_files/alphas_' + f"{desc_dict['type']}_{index}.dat" + '"\n')
             if 'compress_file' in desc_dict:
                 output.write('compress_soap = .true.\n')
-                output.write('file_compress_soap = "' + f"{desc_dict['compress_file']}" + '"\n')
+                output.write('file_compress_soap = "gap_files' + f"{desc_dict['compress_file']}" + '"\n')
+                # copy the compression file to gap_files/
+                shutil.copyfile(desc_dict['compress_file'], f"gap_files/{desc_dict['compress_file']}")
             if descriptor_counts['hirshfeld'] > 0:
                 hirshfeld_dict = descriptor_to_dict(hirshfeld_soup.find_all('gpCoordinates')[0].find('descriptor'))
                 output.write('has_vdw = .true.\n')
