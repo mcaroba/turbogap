@@ -57,7 +57,7 @@ cov_type = {'ard_se': 'exp', 'pp': 'pol'}
 
 def write_alphas_file(gpCoordinates, index, hirshfeld=False):
     if hirshfeld == True:
-        with open(f"gap_files/alphas_hirshfeld.dat", "w+") as alpha:
+        with open(f"gap_files/alphas_hirshfeld_{index}.dat", "w+") as alpha:
             for sx in gpCoordinates.find_all('sparseX'):
                 alpha.write(f"{sx['alpha']}\n")
     else:
@@ -82,6 +82,21 @@ def descriptor_to_dict(descriptor):
         dict[key] = val
 
     return dict
+
+def compare_descriptors(descriptor1, descriptor2):
+    ignore_fields = ['config_type_n_sparse', 'n_sparse']
+    dict1 = descriptor_to_dict(descriptor1)
+    dict2 = descriptor_to_dict(descriptor2)
+    keys = list(set(dict1.keys()).union(set(dict2.keys())) - set(ignore_fields))
+
+    for key in keys:
+        try:
+            if dict1[key] != dict2[key]:
+                return False
+        except:
+            return False
+
+    return True
 
 def write_descriptor_to_output(output_file, gpCoordinates, index):
     descriptor = gpCoordinates.find('descriptor')
@@ -157,20 +172,24 @@ def write_descriptor_to_output(output_file, gpCoordinates, index):
                 # copy the compression file to gap_files/
                 shutil.copyfile(desc_dict['compress_file'], f"gap_files/{desc_dict['compress_file']}")
             if descriptor_counts['hirshfeld'] > 0:
-                hirshfeld_dict = descriptor_to_dict(hirshfeld_soup.find_all('gpCoordinates')[0].find('descriptor'))
-                output.write('has_vdw = .true.\n')
-                output.write('vdw_qs = "' + hirshfeld_soup.find('gpCoordinates')['sparseX_filename'] + '"\n')
-                output.write(f'vdw_alphas = "alphas_hirshfeld.dat"\n')
-                output.write(f"vdw_zeta = {hirshfeld_dict['zeta']}\n")
-                output.write(f"vdw_delta = {hirshfeld_dict['delta']}\n")
-                for word in hirshfeld_soup.find('command_line').get_text().split():
-                    try:
-                        key, entry = word.split('=')
-                        if key == 'local_property0':
-                            local_property0 = entry
-                    except:
-                        continue
-                output.write(f"vdw_v0 = {local_property0}\n")
+                # find right Hirshfeld descriptor (if any)
+                for index_hirsh, gpc in enumerate(hirshfeld_soup.find_all('gpCoordinates')):
+                    if compare_descriptors(gpc.find('descriptor'), gpCoordinates.find('descriptor')):
+                        hirshfeld_dict = descriptor_to_dict(gpc.find('descriptor'))
+                        output.write('has_vdw = .true.\n')
+                        output.write('vdw_qs = "' + hirshfeld_soup.find('gpCoordinates')['sparseX_filename'] + '"\n')
+                        output.write(f'vdw_alphas = "alphas_hirshfeld_{index_hirsh+1}.dat"\n')
+                        output.write(f"vdw_zeta = {hirshfeld_dict['zeta']}\n")
+                        output.write(f"vdw_delta = {hirshfeld_dict['delta']}\n")
+                        for word in hirshfeld_soup.find('command_line').get_text().split():
+                            try:
+                                key, entry = word.split('=')
+                                if key == 'local_property0':
+                                    local_property0 = entry
+                            except:
+                                continue
+                        output.write(f"vdw_v0 = {local_property0.strip('{}')}\n")
+                        break # only include the first matching Hirshfeld
             output.write("gap_end\n")
             output.write("\n")
 
