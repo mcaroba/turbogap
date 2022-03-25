@@ -459,7 +459,9 @@ module vdw
                            dalpha_n(:,:,:), AdB_n(:,:), hirshfeld_v_neigh_H(:), hirshfeld_v_cart_der2(:,:), &
                            rjs2(:), xyz2(:,:), hirshfeld_v_neigh2(:), rjs_central2(:), rjs_central(:), &
                            xyz_central2(:,:), xyz_central(:,:), dalpha2(:,:,:), I_aT(:,:,:), a_vec(:,:,:), &
-                           regularization(:,:), I_aT_a_vec(:,:), I_aT2(:,:)
+                           regularization(:,:), I_aT_a_vec(:,:), I_aT2(:,:), BTB_reg(:,:,:), B_reg(:,:,:), &
+                           BTB_reg_copy(:,:), a_SCS(:,:,:), da_vec(:,:,:,:,:), dBTB(:,:), vect1(:,:), &
+                           vect2(:,:), vect3(:,:), da_SCS(:,:,:,:,:)
     real*8 :: time1, time2, this_force(1:3), Bohr, Hartree, &
               omega, pi, integral, E_MBD, R_vdW_ij, R_vdW_SCS_ij, S_vdW_ij, dS_vdW_ij, exp_term, &
               rcut_vdw, r_vdw_i, r_vdw_j, dist, f_damp_SCS_ij, t1, t2, rcut_H, buffer_H, rbuf, fcut, dfcut, &
@@ -1675,7 +1677,7 @@ module vdw
     do i = 1, n_sites
       k = k+1
       do c1 = 1, 3
-        B_mat(3*(i-1)+c1,3*(i-1)+c1,:) = 1.d0/alpha_k(k,:)
+        B_mat(3*(i-1)+c1,3*(i-1)+c1,:) = 1.d0
 !REGULARIZATION TEST:
 !        B_mat(3*(i-1)+c1,3*(i-1)+c1,:) = alpha_k(k,:)
         nnz = nnz+1
@@ -1708,7 +1710,7 @@ module vdw
           do c1 = 1, 3
             do c2 = 1, 3
               k2 = k2+1
-              if ( iterative ) then
+              !if ( iterative ) then
                 nnz = nnz+1
                 !write(*,*) "j, nnz", j, nnz
                 !if ( rjs(k) > rcut-buffer ) then
@@ -1726,10 +1728,10 @@ module vdw
                 ia(nnz) = 3*(i-1)+c1
                 ja(nnz) = 3*(j-1)+c2
                 val(nnz) = T_SR(3*(i-1)+c1,3*(j-1)+c2,1)
-              else
-                T_SR(3*(i-1)+c1,3*(j-1)+c2,:) = (1.d0-f_damp(k)) * (-T_func(k2) * &
-                                                g_func(k,:) + h_func(k2,:))
-              end if
+              !else
+              !  T_SR(3*(i-1)+c1,3*(j-1)+c2,:) = (1.d0-f_damp(k)) * (-T_func(k2) * &
+              !                                  g_func(k,:) + h_func(k2,:))
+              !end if
             end do
           end do
         end if
@@ -1951,7 +1953,7 @@ module vdw
         k3 = k3 + n_neigh(j)
       end do
 
-    if ( iterative ) then
+    !if ( iterative ) then
       k2 = 0
       do i = 1, n_sites
         do a2 = 1, n_neigh(i)
@@ -1970,18 +1972,18 @@ module vdw
           end do
         end do
       end do
-    end if
+    !end if
 
     dT_SR = dT_SR + dT_SR_v
     end if
 
-    if ( iterative ) then
+    !if ( iterative ) then
       do i = 1, n_sites
         do k = 1, n_freq
           dT_SR(3*(i-1)+1:3*(i-1)+3,:,:,:,k) = alpha_i(i,k) * dT_SR(3*(i-1)+1:3*(i-1)+3,:,:,:,k) 
         end do
       end do
-    end if
+    !end if
 
     write(*,*) "dT_SR:"
     do i = 1, 6
@@ -1993,7 +1995,7 @@ module vdw
     
 !    A_mat = B_mat
 
-    if ( iterative ) then
+    !if ( iterative ) then
 
       !call psb_init(icontxt)
       !call psb_cdall(icontxt, desc_a, info_psb, nl=3*n_sites)
@@ -2043,9 +2045,9 @@ module vdw
 
       n_iter = 100
       allocate( I_mat(1:3*n_sites,1:3*n_sites) )
-      allocate( I_aT(1:3*n_sites,1:3*n_sites,1:n_freq) )
+      !allocate( I_aT(1:3*n_sites,1:3*n_sites,1:n_freq) )
       allocate( a_vec(1:3*n_sites,1:3,1:n_freq) )
-      allocate( regularization(1:3*n_sites,1:3*n_sites) )
+      !allocate( regularization(1:3*n_sites,1:3*n_sites) )
       I_mat = 0.d0
 !      regularization = 0.d0
       do p = 1, n_sites
@@ -2054,10 +2056,10 @@ module vdw
 !          regularization(3*(p-1)+c1,3*(p-1)+c1) = 0.0d0
         end do
       end do
-      I_aT = 0.d0
+      !I_aT = 0.d0
       a_vec = 0.d0
       do k = 1, n_freq
-        I_aT(:,:,k) = I_mat + T_SR(:,:,k)
+        !I_aT(:,:,k) = I_mat + T_SR(:,:,k)
         do p = 1, n_sites
           do c1 = 1, 3
             a_vec(3*(p-1)+c1,c1,k) = alpha_i(p,k)
@@ -2069,65 +2071,87 @@ module vdw
       !  write(*,*) a_next(p,:,1)
       !end do
 
-      allocate( I_aT_a_vec(1:3*n_sites,1:3) )
-      allocate( I_aT2(1:3*n_sites,1:3*n_sites) )
+      allocate( a_SCS(1:3*n_sites,1:3,1:n_freq) )
+      allocate( BTB_reg_copy(1:3*n_sites,1:3*n_sites) )
+      !allocate( I_aT2(1:3*n_sites,1:3*n_sites) )
 
-      reg_param = 0.0d0
+      reg_param = 0.01d0
+      allocate( BTB_reg(1:3*n_sites,1:3*n_sites,1:n_freq) )
+      allocate( B_reg(1:3*n_sites,1:3*n_sites,1:n_freq) )
       do k = 1, n_freq
-        call dgemm('t', 'n', 3*n_sites, 3, 3*n_sites, 1.d0, I_aT(:,:,k), 3*n_sites, &
-                    a_vec(:,:,k), 3*n_sites, 0.d0, I_aT_a_vec, 3*n_sites)
-        a_vec(:,:,k) = I_aT_a_vec + reg_param * a_vec(:,:,k)
-        call dgemm('t', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, I_aT(:,:,k), 3*n_sites, &
-                    I_aT(:,:,k), 3*n_sites, 0.d0, I_aT2, 3*n_sites)
-        I_aT2 = I_aT2 + reg_param * I_mat
-        call dsysv('U', 3*n_sites, 3, I_aT2, 3*n_sites, ipiv, &
-                    a_vec(:,:,k), 3*n_sites, work_arr, 12*n_sites, info)  
+        B_reg(:,:,k) = B_mat(:,:,k) + reg_param * I_mat
+        call dgemm('t', 'n', 3*n_sites, 3, 3*n_sites, 1.d0, B_reg(:,:,k), 3*n_sites, &
+                    a_vec(:,:,k), 3*n_sites, 0.d0, a_SCS(:,:,k), 3*n_sites)
+        call dgemm('t', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, B_mat(:,:,k), 3*n_sites, &
+                    B_mat(:,:,k), 3*n_sites, 0.d0, BTB_reg(:,:,k), 3*n_sites)
+        BTB_reg(:,:,k) = BTB_reg(:,:,k) + reg_param * I_mat
+        BTB_reg_copy = BTB_reg(:,:,k)
+!        if (k == 1) then
+!          write(*,*) "I_aT2 before"
+!          do p = 1, 6
+!            write(*,*) I_aT2(p,1:6)
+!          end do
+!        end if
+        call dsysv('U', 3*n_sites, 3, BTB_reg_copy, 3*n_sites, ipiv, &
+                    a_SCS(:,:,k), 3*n_sites, work_arr, 12*n_sites, info)
+!        if (k == 1) then
+!          write(*,*) "I_aT2 after"
+!          do p = 1, 6
+!            write(*,*) I_aT2(p,1:6)
+!          end do
+!        end if  
       end do
 
-      deallocate( I_aT_a_vec, I_aT2 )
+      !deallocate( BTB_reg, B_reg, BTB_reg_copy )
+      !deallocate( I_aT_a_vec, I_aT2 )
 
       alpha_SCS0 = 0.d0
       do k = 1, n_freq
         do p = 1, n_sites
           do c1 = 1, 3
-            alpha_SCS0(p,k) = alpha_SCS0(p,k) + a_vec(3*(p-1)+c1,c1,k)
+            alpha_SCS0(p,k) = alpha_SCS0(p,k) + a_SCS(3*(p-1)+c1,c1,k)
           end do
         end do
       end do
       alpha_SCS0 = alpha_SCS0/3.d0
 
-      deallocate( I_mat, I_aT, a_vec, regularization )
-    else
-      deallocate( ia, ja, val)
-      allocate( a_vec(1:3*n_sites,1:3,1:n_freq) )
-
-      a_vec = 0.d0
-      do k = 1, n_freq
-        do p = 1, n_sites
-          do c1 = 1, 3
-            a_vec(3*(p-1)+c1,c1,k) = 1.d0
-          end do
-        end do
+      write(*,*) "a_SCS"
+      do i = 1, n_sites
+        write(*,*) a_SCS(i,:,1)
       end do
+
+!      deallocate( BTB_reg, B_reg, BTB_reg_copy, I_mat, a_vec, a_SCS )
+    !else
+!      deallocate( ia, ja, val)
+!      allocate( a_vec(1:3*n_sites,1:3,1:n_freq) )
+!
+!      a_vec = 0.d0
+!      do k = 1, n_freq
+!        do p = 1, n_sites
+!          do c1 = 1, 3
+!            a_vec(3*(p-1)+c1,c1,k) = 1.d0
+!          end do
+!        end do
+!      end do
 !      do k = 1, n_freq
 !        call dsysv('U', 3*n_sites, 3, B_mat(:,:,k), 3*n_sites, ipiv, &
 !                    a_vec(:,:,k), 3*n_sites, work_arr, 12*n_sites, info)
 !      end do
-      alpha_SCS0 = 0.d0
-      do k = 1, n_freq
-        do p = 1, n_sites
-          do c1 = 1, 3
-            alpha_SCS0(p,k) = alpha_SCS0(p,k) + a_vec(3*(p-1)+c1,c1,k)
-          end do
-        end do
-      end do
-      alpha_SCS0 = alpha_SCS0/3.d0
+!      alpha_SCS0 = 0.d0
+!      do k = 1, n_freq
+!        do p = 1, n_sites
+!          do c1 = 1, 3
+!            alpha_SCS0(p,k) = alpha_SCS0(p,k) + a_vec(3*(p-1)+c1,c1,k)
+!          end do
+!        end do
+!      end do
+!      alpha_SCS0 = alpha_SCS0/3.d0
       !write(*,*) "alpha_SCS0"
       !do p = 1, n_sites
       !  write(*,*) alpha_SCS0(p,1)
       !end do
 
-      deallocate( a_vec )
+!      deallocate( a_vec )
 
 !      A_mat = B_mat
 !      do k3 = 1, n_freq
@@ -2145,46 +2169,127 @@ module vdw
 !          alpha_SCS0(p,k3) = 1.d0/3.d0 * (A_i(1,1)+A_i(2,2)+A_i(3,3))
 !        end do
 !      end do
-    end if
+!    end if
 
       if ( do_derivatives ) then
-      dA_mat = 0.d0
-      do a2 = 1, n_sites
-        do k = 1, n_freq
-          do c3 = 1, 3
-            AdB_n = 0.d0
-            call dgemm('n', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, -A_mat(:,:,k), 3*n_sites, &
-                       dB_mat(:,:,a2,c3,k), 3*n_sites, 0.d0, AdB_n, 3*n_sites)
-            call dgemm('n', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, AdB_n, 3*n_sites, A_mat(:,:,k), &
-                       3*n_sites, 0.d0, dA_mat(:,:,a2,c3,k), 3*n_sites)
-          end do
-        end do
-      end do
 
-      dalpha_full = 0.d0
-      do a2 = 1, n_sites
-        do k = 1, n_freq
-          do c3 = 1, 3
-            do p = 1, n_sites
-              A_i = 0.d0
-              do q = 1, n_sites
-                A_i = A_i + dA_mat(3*(p-1)+1:3*(p-1)+3,3*(q-1)+1:3*(q-1)+3,a2,c3,k)
-              end do
+      allocate( da_vec(1:3*n_sites,1:3,1*n_sites,1:3,1:n_freq) )
+      da_vec = 0.d0
+      do k = 1, n_freq
+        k2 = 0
+        do i = 1, n_sites
+          do a2 = 1, n_neigh(i)
+            k2 = k2+1
+            a = neighbors_list(k2)
+            do c3 = 1, 3
               do c1 = 1, 3
-                dalpha_full(p,a2,c3,k) = dalpha_full(p,a2,c3,k) + A_i(c1,c1)
+                da_vec(3*(i-1)+c1,c1,a,c3,k) = 1.d0/hirshfeld_v(i) * alpha_i(i,k) * &
+                  hirshfeld_v_cart_der_H(c3,k2)
               end do
-              dalpha_full(p,a2,c3,k) = 1.d0/3.d0 * dalpha_full(p,a2,c3,k)
             end do
           end do
         end do
       end do
 
+      !write(*,*) "da_vec"
+      !do i = 1, 3*n_sites
+      !  write(*,*) da_vec(i,:,1,1,1)
+      !end do
+
+      allocate( dBTB(1:3*n_sites,1:3*n_sites) )
+      allocate( vect1(1:3*n_sites,1:3) )
+      allocate( vect2(1:3*n_sites,1:3) )
+      allocate( vect3(1:3*n_sites,1:3) )
+      allocate( da_SCS(1:3*n_sites,1:3,1:n_sites,1:3,1:n_freq) )
+
+      ! What happens here: regularized equation
+      ! (B^T * B + reg_param * I) a_SCS = (B^T + reg_param*I) a_vec
+      ! is differentiated:
+      ! (B^T * B + reg_param * I) a_SCS' = (B')^T a_vec + (B^T + reg_param*I) a_vec' - ((B')^T * B + B^T * B') a_SCS
+      !                                    |---vect1--|   |---------vect2----------|   |--------vect3--------------|
+      ! a_SCS' is solved with dsysv.
+
+      write(*,*) "Doing: freq, atom"
+      do k = 1, n_freq
+        do a = 1, n_sites
+          write(*,*) k, a
+          do c3 = 1, 3
+            call dgemm('t', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, dT_SR(:,:,a,c3,k), 3*n_sites, &
+              B_mat(:,:,k), 3*n_sites, 0.d0, dBTB, 3*n_sites)
+            call dgemm('t', 'n', 3*n_sites, 3, 3*n_sites, 1.d0, dT_SR(:,:,a,c3,k), 3*n_sites, &
+              a_vec(:,:,k), 3*n_sites, 0.d0, vect1, 3*n_sites)
+            call dgemm('t', 'n', 3*n_sites, 3, 3*n_sites, 1.d0, B_reg(:,:,k), 3*n_sites, &
+              da_vec(:,:,a,c3,k), 3*n_sites, 0.d0, vect2, 3*n_sites)
+            call dgemm('n', 'n', 3*n_sites, 3, 3*n_sites, 1.d0, dBTB+transpose(dBTB), 3*n_sites, &
+              a_SCS(:,:,k), 3*n_sites, 0.d0, vect3, 3*n_sites)
+            da_SCS(:,:,a,c3,k) = vect1 + vect2 - vect3
+            BTB_reg_copy = BTB_reg(:,:,k)
+            call dsysv('U', 3*n_sites, 3, BTB_reg_copy, 3*n_sites, ipiv, &
+              da_SCS(:,:,a,c3,k), 3*n_sites, work_arr, 12*n_sites, info)
+          end do
+        end do
+      end do
+
+      write(*,*) "da_SCS"
+      do p = 1, n_sites
+        write(*,*) da_SCS(p,:,1,1,1)
+      end do
+
+      do k = 1, n_freq
+        do i = 1, n_sites
+          do a = 1, n_sites
+            do c3 = 1, 3
+              dalpha_full(i,a,c3,k) = 1.d0/3.d0 * (da_SCS(3*(i-1)+1,1,a,c3,k) + &
+                da_SCS(3*(i-1)+2,2,a,c3,k) + da_SCS(3*(i-1)+3,3,a,c3,k))
+            end do
+          end do
+        end do
+      end do
+
+
+
       end if
-! TEST1
-!      write(*,*) "alpha_SCS:" ,  alpha_SCS0(1,1)
-!      do p = 1, n_sites
-!        write(*,*) p, alpha_SCS0(p,1)
+
+      deallocate( BTB_reg, B_reg, BTB_reg_copy, I_mat, a_vec, a_SCS, da_vec, dBTB, vect1, vect2, &
+                  vect3, da_SCS )
+
+!      dA_mat = 0.d0
+!      do a2 = 1, n_sites
+!        do k = 1, n_freq
+!          do c3 = 1, 3
+!            AdB_n = 0.d0
+!            call dgemm('n', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, -A_mat(:,:,k), 3*n_sites, &
+!                       dB_mat(:,:,a2,c3,k), 3*n_sites, 0.d0, AdB_n, 3*n_sites)
+!            call dgemm('n', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, AdB_n, 3*n_sites, A_mat(:,:,k), &
+!                       3*n_sites, 0.d0, dA_mat(:,:,a2,c3,k), 3*n_sites)
+!          end do
+!        end do
 !      end do
+!
+!      dalpha_full = 0.d0
+!      do a2 = 1, n_sites
+!        do k = 1, n_freq
+!          do c3 = 1, 3
+!            do p = 1, n_sites
+!              A_i = 0.d0
+!              do q = 1, n_sites
+!                A_i = A_i + dA_mat(3*(p-1)+1:3*(p-1)+3,3*(q-1)+1:3*(q-1)+3,a2,c3,k)
+!              end do
+!              do c1 = 1, 3
+!                dalpha_full(p,a2,c3,k) = dalpha_full(p,a2,c3,k) + A_i(c1,c1)
+!              end do
+!              dalpha_full(p,a2,c3,k) = 1.d0/3.d0 * dalpha_full(p,a2,c3,k)
+!            end do
+!          end do
+!        end do
+!      end do
+!
+!      end if
+! TEST1
+      write(*,*) "alpha_SCS:" !,  alpha_SCS0(1,1)
+      do p = 1, n_sites
+        write(*,*) p, alpha_SCS0(p,1)
+      end do
 
 
       if ( do_derivatives ) then

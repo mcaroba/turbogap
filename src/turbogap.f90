@@ -1175,7 +1175,7 @@ program turbogap
 !#else
 !                                       energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
 !#endif
-        n_freq = 11
+        n_freq = 2
         allocate( alpha_SCS(i_beg:i_end,1:n_freq) )
 call cpu_time(time2)
         call get_scs_polarizabilities( hirshfeld_v(i_beg:i_end), hirshfeld_v_cart_der(1:3, j_beg:j_end), &
