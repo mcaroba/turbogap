@@ -38,7 +38,7 @@ import os
 from pathlib import Path
 import sys
 
-print("\n		MAKE GAP FILES | v. 2.1, 03.05.2020 | Author(s): Mikhail S. Kuklin, Miguel A. Caro\n")
+print("\n		MAKE GAP FILES | v. 3.0, 25.03.2022 | Author(s): Mikhail S. Kuklin, Miguel A. Caro, Richard Jana\n")
 
 # dictionary of the elements: 1-57, 72-89
 elements = {1: ' H', 2: ' He', 3: 'Li', 4: 'Be', 5: 'B', 6: 'C', 7: 'N', 8: 'O', 9: 'F', 10: 'Ne',
