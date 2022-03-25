@@ -36,6 +36,7 @@ from bs4 import BeautifulSoup
 import numpy as np
 import os
 from pathlib import Path
+import shutil
 import sys
 
 print("\n		MAKE GAP FILES | v. 3.0, 25.03.2022 | Author(s): Mikhail S. Kuklin, Miguel A. Caro, Richard Jana\n")
@@ -65,6 +66,9 @@ def write_alphas_file(gpCoordinates, index, hirshfeld=False):
             for sx in gpCoordinates.find_all('sparseX'):
                 alpha.write(f"{sx['alpha']} {sx['sparseCutoff']}\n")
 
+    # copy the original xml file to gap_files/
+    shutil.copyfile(gpCoordinates['sparseX_filename'], f"gap_files/{gpCoordinates['sparseX_filename']}")
+
 def descriptor_to_dict(descriptor):
     # there can be rogue spaces (e.g. in multi species terms like {8 8}),
     # therefor just splitting at ' ' wouldn't work reliably!
@@ -91,7 +95,7 @@ def write_descriptor_to_output(output_file, gpCoordinates, index):
             output.write(f"delta = {desc_dict['delta']}\n")
             output.write(f"sigma = {desc_dict['theta_uniform']}\n")
             output.write(f"rcut = {desc_dict['cutoff']}\n")
-            output.write('desc_sparse = "' + gpCoordinates['sparseX_filename'] + '"\n')
+            output.write('desc_sparse = "gap_files/' + gpCoordinates['sparseX_filename'] + '"\n')
             output.write(f'alphas_sparse = "gap_files/alphas_' + f"{desc_dict['type']}_{index}.dat" + '"\n')
             output.write("gap_end\n")
             output.write("\n")
@@ -106,7 +110,7 @@ def write_descriptor_to_output(output_file, gpCoordinates, index):
             output.write(f"sigma = {gpCoordinates.find('theta').get_text().strip()}\n")
             output.write(f"kernel_type = {cov_type[desc_dict['covariance_type']]}\n")
             output.write(f"rcut = {desc_dict['cutoff']}\n")
-            output.write('desc_sparse = "' + gpCoordinates['sparseX_filename'] + '"\n')
+            output.write('desc_sparse = "gap_files/' + gpCoordinates['sparseX_filename'] + '"\n')
             output.write(f'alphas_sparse = "gap_files/alphas_' + f"{desc_dict['type']}_{index}.dat" + '"\n')
             output.write("gap_end\n")
             output.write("\n")
@@ -145,7 +149,7 @@ def write_descriptor_to_output(output_file, gpCoordinates, index):
             output.write(f"radial_enhancement = {desc_dict['radial_enhancement'].strip('{}')}\n")
             output.write(f"zeta = {desc_dict['zeta']}\n")
             output.write(f"delta = {desc_dict['delta']}\n")
-            output.write('desc_sparse = "' + gpCoordinates['sparseX_filename'] + '"\n')
+            output.write('desc_sparse = "gap_files/' + gpCoordinates['sparseX_filename'] + '"\n')
             output.write(f'alphas_sparse = "gap_files/alphas_' + f"{desc_dict['type']}_{index}.dat" + '"\n')
             if 'compress_file' in desc_dict:
                 output.write('compress_soap = .true.\n')
@@ -153,7 +157,7 @@ def write_descriptor_to_output(output_file, gpCoordinates, index):
             if descriptor_counts['hirshfeld'] > 0:
                 hirshfeld_dict = descriptor_to_dict(hirshfeld_soup.find_all('gpCoordinates')[0].find('descriptor'))
                 output.write('has_vdw = .true.\n')
-                output.write('vdw_qs = "' + hirshfeld_soup.find('gpCoordinates')['sparseX_filename'] + '"\n')
+                output.write('vdw_qs = "gap_files/' + hirshfeld_soup.find('gpCoordinates')['sparseX_filename'] + '"\n')
                 output.write(f'vdw_alphas = "gap_files/alphas_hirshfeld.dat"\n')
                 output.write(f"vdw_zeta = {hirshfeld_dict['zeta']}\n")
                 output.write(f"vdw_delta = {hirshfeld_dict['delta']}\n")
@@ -196,6 +200,9 @@ if Path(f"gap_files/{output_file}").is_file():
     exit()
 if not Path('gap_files').is_dir():
     os.mkdir('gap_files') # make dir for gap files, if it doesn't already exist
+
+# copy the original xml file to gap_files/
+shutil.copyfile(gap_file, f"gap_files/{gap_file}")
 
 print(f"Reading {gap_file} ...")
 with open(gap_file) as file:
