@@ -760,6 +760,15 @@ end if
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_alpha0_ref(1:n_species)
         are_vdw_refs_read(3) = .true.
+      else if( keyword == "vdw_scs_rcut" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_scs_rcut
+      else if( keyword == "vdw_mbd_nfreq" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_nfreq
+      else if( keyword == "vdw_mbd_grad" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_grad
       else if( keyword == "core_pot_cutoff" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%core_pot_cutoff
