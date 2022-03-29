@@ -424,7 +424,7 @@ module vdw
   subroutine get_scs_polarizabilities( hirshfeld_v, hirshfeld_v_cart_der, &
                                        n_neigh, neighbors_list, neighbor_species, &
                                        rcut, buffer, rcut_inner, buffer_inner, rjs, xyz, hirshfeld_v_neigh, &
-                                       sR, d, c6_ref, r0_ref, alpha0_ref, do_forces, alpha_SCS0, dalpha_full, &
+                                       sR, d, c6_ref, r0_ref, alpha0_ref, do_derivatives, alpha_SCS0, dalpha_full, &
                                        energies, forces0, virial )
 
     implicit none
@@ -434,7 +434,7 @@ module vdw
                           rjs(:), xyz(:,:), sR, d, c6_ref(:), r0_ref(:), &
                           alpha0_ref(:), hirshfeld_v(:), hirshfeld_v_neigh(:)
     integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:)
-    logical, intent(in) :: do_forces
+    logical, intent(in) :: do_derivatives
 !   Output variables
     real*8, intent(out) :: virial(1:3, 1:3)
 !   In-Out variables
@@ -456,12 +456,12 @@ module vdw
                            alpha_k(:,:), sigma_k(:,:), s_i(:), s_j(:), &
                            T_SR_i(:,:,:), B_mat_i(:,:,:), alpha_SCS_i(:,:), A_mat_i(:,:,:), alpha_SCS(:,:), &
                            dB_mat_n(:,:,:,:,:), dA_mat_n(:,:,:,:,:), dBA_n(:,:), I_mat(:,:), &
-                           dalpha_n(:,:,:), AdB_n(:,:), hirshfeld_v_neigh_H(:), hirshfeld_v_cart_der2(:,:), &
+                           dalpha_n(:,:,:), hirshfeld_v_neigh_H(:), hirshfeld_v_cart_der2(:,:), &
                            rjs2(:), xyz2(:,:), hirshfeld_v_neigh2(:), rjs_central2(:), rjs_central(:), &
                            xyz_central2(:,:), xyz_central(:,:), dalpha2(:,:,:), I_aT(:,:,:), a_vec(:,:,:), &
                            regularization(:,:), I_aT_a_vec(:,:), I_aT2(:,:), BTB_reg(:,:,:), B_reg(:,:,:), &
                            BTB_reg_copy(:,:), a_SCS(:,:,:), da_vec(:,:,:,:,:), dBTB(:,:), vect1(:,:), &
-                           vect2(:,:), vect3(:,:), da_SCS(:,:,:,:,:)
+                           vect2(:,:), vect3(:,:), da_SCS(:,:,:,:,:), AdB_n(:,:)
     real*8 :: time1, time2, this_force(1:3), Bohr, Hartree, &
               omega, pi, integral, E_MBD, R_vdW_ij, R_vdW_SCS_ij, S_vdW_ij, dS_vdW_ij, exp_term, &
               rcut_vdw, r_vdw_i, r_vdw_j, dist, f_damp_SCS_ij, t1, t2, rcut_H, buffer_H, rbuf, fcut, dfcut, &
@@ -476,7 +476,7 @@ module vdw
     integer :: i, i2, j, j2, k, k2, k3, a, a2, c1, c2, c3, lwork, b, p, q, n_count
     logical :: do_timing = .false., do_hirshfeld_gradients = .true., nonlocal = .false., &
                series_expansion = .true., total_energy = .true., series_average = .true., &
-               new_implementation = .false., do_derivatives = .true., iterative = .true.
+               new_implementation = .false., iterative = .true.
     logical, allocatable :: i0_buffer2(:), ij_buffer2(:), i0_buffer(:), ij_buffer(:)
     type(psb_ctxt_type) :: icontxt
     integer(psb_ipk_) ::  iam, np, ip, jp, idummy, nr, nnz, info_psb
@@ -1547,7 +1547,6 @@ module vdw
     allocate( dg(1:n_freq) )
     allocate( dh(1:n_freq) )
     allocate( hirshfeld_v_cart_der_H(1:3,1:n_pairs) )
-    allocate( AdB_n(1:3*n_sites,1:3*n_sites) )
     end if
     allocate( alpha_k(1:n_pairs,1:n_freq) )
     allocate( sigma_k(1:n_pairs,1:n_freq) )
@@ -2246,12 +2245,11 @@ module vdw
         end do
       end do
 
-
+      deallocate( da_vec, dBTB, vect1, vect2, vect3, da_SCS )
 
       end if
 
-      deallocate( BTB_reg, B_reg, BTB_reg_copy, I_mat, a_vec, a_SCS, da_vec, dBTB, vect1, vect2, &
-                  vect3, da_SCS )
+      deallocate( BTB_reg, B_reg, BTB_reg_copy, I_mat, a_vec, a_SCS )
 
 !      dA_mat = 0.d0
 !      do a2 = 1, n_sites
@@ -2310,7 +2308,7 @@ module vdw
                 alpha_SCS, alpha_k, sigma_k, s_i, s_j, )
     if ( do_derivatives ) then
     deallocate( dT, dT_SR, f_damp_der, g_func_der, h_func_der, dA_mat, coeff_h_der, terms, dT_SR_A_mat, dT_SR_v, &
-                dB_mat, dB_mat_v, coeff_der, coeff_fdamp, dg, dh, hirshfeld_v_cart_der_H, AdB_n )
+                dB_mat, dB_mat_v, coeff_der, coeff_fdamp, dg, dh, hirshfeld_v_cart_der_H )
     end if
 
   if ( .false. ) then
@@ -2547,7 +2545,7 @@ module vdw
   if ( new_implementation ) then
     deallocate( alpha_SCS, n_ssites_list, n_sneigh_list )
     if ( do_derivatives ) then
-      deallocate( dalpha )
+      deallocate( dalpha, AdB_n )
     end if
   end if
 
@@ -2559,7 +2557,7 @@ module vdw
 
   subroutine get_mbd( alpha_SCS0, alpha_SCS_grad, n_neigh, neighbors_list, neighbor_species, &
                       rcut, buffer, rcut_inner, buffer_inner, rjs, xyz, &
-                      sR, d, c6_ref, r0_ref, alpha0_ref, do_forces, &
+                      sR, d, c6_ref, r0_ref, alpha0_ref, do_derivatives, &
                       energies, forces0, virial)
 
     implicit none
@@ -2569,7 +2567,7 @@ module vdw
                           alpha0_ref(:)
     real*8, intent(out) :: virial(1:3, 1:3)
     integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:)
-    logical, intent(in) :: do_forces
+    logical, intent(in) :: do_derivatives
     real*8, allocatable :: A_LR(:,:,:), T_LR(:,:), r0_ii_SCS(:), r0_ii(:), neighbor_alpha0(:), &
                            xyz_H(:,:), rjs_H(:), f_damp_SCS(:), T_func(:), AT(:,:,:), AT_n(:,:,:,:), &
                            energy_series(:,:,:), integrand(:,:), omegas(:), f_damp_der(:,:), &
@@ -2580,8 +2578,9 @@ module vdw
     integer :: k, k2, i, j, j2, c1, c2, c3, a
     real*8 :: Bohr, Hartree, pi, r_vdw_i, r_vdw_j, E_MBD, integral, omega, R_vdW_SCS_ij, S_vdW_ij, &
               dS_vdW_ij
-    logical :: series_average = .true., do_derivatives = .true.
+    logical :: series_average = .true.
 
+    write(*,*) "rcut (MBD)", rcut
 !   Hartree units (calculations done in Hartree units for simplicity)
     Bohr = 0.5291772105638411
     Hartree = 27.211386024367243
@@ -2610,20 +2609,22 @@ module vdw
     allocate( T_LR(1:3*n_sites,1:3*n_sites) )
     allocate( r0_ii_SCS(1:n_pairs) )
     allocate( f_damp_SCS(1:n_pairs) )
+    allocate( AT(1:3*n_sites,1:3*n_sites,1:n_freq) )
+    allocate( AT_n(1:3*n_sites,1:3*n_sites, 1:n_order-1, 1:n_freq) )
+    allocate( energy_series(1:3*n_sites,1:3*n_sites,1:n_freq) )
+    allocate( integrand(1:n_sites,1:n_freq) )
+    if ( do_derivatives ) then
     allocate( dA_LR(1:3*n_sites,1:3*n_sites,1:n_sites,1:3,1:11) )
     allocate( dT(1:9*n_pairs,1:3) )
     allocate( f_damp_der(1:n_pairs,1:3) )
     allocate( f_damp_der_SCS(1:n_pairs,1:n_sites,1:3) )
     allocate( dT_LR(1:3*n_sites,1:3*n_sites,1:n_sites,1:3) )
-    allocate( AT(1:3*n_sites,1:3*n_sites,1:n_freq) )
-    allocate( AT_n(1:3*n_sites,1:3*n_sites, 1:n_order-1, 1:n_freq) )
-    allocate( energy_series(1:3*n_sites,1:3*n_sites,1:n_freq) )
     allocate( G_mat(1:3*n_sites,1:3*n_sites,1:n_sites,1:3,1:11) )
     allocate( force_integrand(1:n_sites,1:3,1:11) ) 
-    allocate( integrand(1:n_sites,1:n_freq) )
     allocate( force_series(1:3*n_sites,1:3*n_sites,1:11) )
     allocate( VL(1:3*n_sites,1:3*n_sites) )
     allocate( VR(1:3*n_sites,1:3*n_sites) )
+    end if
 
     omega = 0.d0
     do i = 1, n_freq
@@ -2708,6 +2709,15 @@ module vdw
           end do
         end if
       end do
+    end do
+
+    write(*,*) "A_LR"
+    do i = 1, 6
+      write(*,*) A_LR(i,1:6,1)
+    end do
+    write(*,*) "T_LR"
+    do i = 1, 6
+      write(*,*) T_LR(i,1:6)
     end do
     
     if ( do_derivatives ) then
@@ -2808,6 +2818,16 @@ module vdw
           end do
         end do
       end do
+
+      write(*,*) "dA_LR"
+      do i = 1, 6
+        write(*,*) dA_LR(i,1:6,1,1,1)
+      end do
+      write(*,*) "dT_LR"
+      do i = 1, 6
+        write(*,*) dT_LR(i,1:6,1,1)
+      end do
+
     end if
 
     AT = 0.d0
@@ -2857,11 +2877,11 @@ module vdw
       force_integrand = 0.d0
       force_series = 0.d0
       do k = 1, n_freq
-        do k2 = 1, n_order-1
+        do k2 = 1, n_order-2
           if (series_average .and. k2 == n_order-1) then
-            force_series(:,:,k) = (2.d0 * force_series(:,:,k) + AT_n(:,:,k,k2))/2.d0
+            force_series(:,:,k) = force_series(:,:,k) + AT_n(:,:,k2+1,k)/2.d0
           else
-            force_series(:,:,k) = force_series(:,:,k) + AT_n(:,:,k,k2)
+            force_series(:,:,k) = force_series(:,:,k) + AT_n(:,:,k2+1,k)
           end if
         end do
         do a = 1, n_sites
@@ -2900,8 +2920,10 @@ module vdw
     end if
 
     deallocate( omegas, xyz_H, rjs_H, r0_ii, neighbor_alpha0, T_func, A_LR, T_LR, r0_ii_SCS, &
-                f_damp_SCS, AT, AT_n, energy_series, integrand, f_damp_der, f_damp_der_SCS, &
-                force_series, force_integrand, G_mat, VL, VR )
+                f_damp_SCS, AT, AT_n, energy_series, integrand )
+    if ( do_derivatives ) then
+      deallocate( f_damp_der, f_damp_der_SCS, force_series, force_integrand, G_mat, VL, VR )
+    end if
 
   end subroutine
 

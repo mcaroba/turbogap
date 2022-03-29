@@ -1,6 +1,8 @@
-!atoms_file = 'atoms.xyz'
+atoms_file = 'atoms.xyz'
 !atoms_file = 'atoms_p.xyz'
-atoms_file = 'atoms_m.xyz'
+!atoms_file = 'atoms_m.xyz'
+!atoms_file = 'atoms_1yp.xyz'
+!atoms_file = 'atoms_1ym.xyz'
 pot_file = 'gap_files/carbon.gap'
 
 ! Species info
@@ -16,3 +18,7 @@ vdw_d = 6.
 vdw_rcut = 8.
 vdw_buffer = 0.
 vdw_r0_ref = 1.900
+vdw_scs_rcut = 4.
+vdw_mbd_nfreq = 11
+vdw_mbd_grad = .true.
+!vdw_mbd_grad = .false.

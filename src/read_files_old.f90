@@ -724,6 +724,8 @@ end if
         call upper_to_lower_case(params%vdw_type)
         if( params%vdw_type == "ts" )then
           continue
+        else if( params%vdw_type == "mbd" )then
+          continue
         else if( params%vdw_type == "none" )then
           continue
         else
@@ -742,12 +744,20 @@ end if
       else if( keyword == "vdw_buffer" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_buffer
+        if( params%vdw_buffer < 0.d0 )then
+          write(*,*) "ERROR: the vdw_buffer region must be >= 0"
+          stop
+        end if
       else if( keyword == "vdw_rcut_inner" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_rcut_inner
       else if( keyword == "vdw_buffer_inner" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_buffer_inner
+        if( params%vdw_buffer_inner < 0.d0 )then
+          write(*,*) "ERROR: the vdw_buffer_inner region must be >= 0"
+          stop
+        end if
       else if( keyword == "vdw_c6_ref" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_c6_ref(1:n_species)
@@ -763,33 +773,53 @@ end if
       else if( keyword == "vdw_scs_rcut" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_scs_rcut
+      else if( keyword == "vdw_scs_buffer" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_scs_buffer
+        if( params%vdw_scs_buffer < 0.d0 )then
+          write(*,*) "ERROR: the vdw_scs_buffer region must be >= 0"
+          stop
+        end if
+      else if( keyword == "vdw_mbd_rcut" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_rcut
+      else if( keyword == "vdw_mbd_buffer" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_buffer
+        if( params%vdw_mbd_buffer < 0.d0 )then
+          write(*,*) "ERROR: the vdw_mbd_buffer region must be >= 0"
+          stop
+        end if
+      else if( keyword == "vdw_mbd_order" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_order
+        if( params%vdw_mbd_order < 2 )then
+          write(*,*) "ERROR: vdw_mbd_order must be >= 2"
+          stop
+        end if
       else if( keyword == "vdw_mbd_nfreq" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_nfreq
-      else if( keyword == "vdw_mbd_grad" )then
+        if( params%vdw_mbd_nfreq < 2 )then
+          write(*,*) "ERROR: vdw_mbd_nfreq must be >= 2"
+          stop
+        end if
+      else if( keyword == "vdw_mbd_maxfreq" )then
         backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_grad
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_maxfreq
+      else if( keyword == "vdw_mbd_expfreq" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_expfreq
+        if( params%vdw_mbd_expfreq < 0.d0 )then
+          write(*,*) "ERROR: vdw_mbd_expfreq must be > 0."
+          stop
+        end if
       else if( keyword == "core_pot_cutoff" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%core_pot_cutoff
       else if( keyword == "core_pot_buffer" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%core_pot_buffer
-      else if( keyword == "optimize" )then
-        backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%optimize
-        if( params%optimize == "vv" .or. params%optimize == "gd" )then
-          continue
-        else
-          write(*,*) "ERROR: optimize algorithm not implemented:", params%optimize
-          stop
-        end if
-      else if( keyword == "gamma0" )then
-        backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%gamma0
-      else if( keyword == "max_opt_step" )then
-        backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%max_opt_step
       else if(keyword=='species')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%species_types(1:n_species)
@@ -841,11 +871,38 @@ end if
 !   If we don't use van der Waals, then unset the default cutoff
     if( params%vdw_type == "none" )then
       params%vdw_rcut = 0.d0
-    else
-!     If van der Waals is enabled, make sure the inner and outer cutoff regions do not overlap
+    else if( params%vdw_type == "ts" )then
+!     If TS van der Waals is enabled, make sure the inner and outer cutoff regions do not overlap
 !     and other sanity checks
       if( params%vdw_rcut - params%vdw_buffer < params%vdw_rcut_inner + params%vdw_buffer_inner )then
         write(*,*) "ERROR: vdW inner and outer cutoff regions can't overlap. Check your vdw_* definitions"
+        stop
+      end if
+      if( params%vdw_rcut < params%vdw_buffer )then
+        write(*,*) "ERROR: vdw_rcut must be larger than vdw_buffer"
+        stop
+      end if
+      if( params%vdw_rcut_inner < params%vdw_buffer_inner )then
+        write(*,*) "ERROR: vdw_rcut_inner must be larger than vdw_buffer_inner"
+        stop
+      end if
+    else if( params%vdw_type == "mbd" )then
+!     Make sure that the MBD and SCS cutoff spheres are smaller than the vdW cutoff sphere and other
+!     checks
+      if( params%vdw_scs_rcut < params%vdw_scs_buffer )then
+        write(*,*) "ERROR: vdw_scs_rcut must be larger than vdw_scs_buffer"
+        stop
+      end if
+      if( params%vdw_mbd_rcut < params%vdw_mbd_buffer )then
+        write(*,*) "ERROR: vdw_mbd_rcut must be larger than vdw_mbd_buffer"
+        stop
+      end if
+      if( params%vdw_mbd_rcut > params%vdw_rcut - params%vdw_buffer )then
+        write(*,*) "ERROR: vdw_mbd_rcut must be smaller than vdw_rcut - vdw_buffer"
+        stop
+      end if
+      if( params%vdw_scs_rcut > params%vdw_rcut - params%vdw_buffer )then
+        write(*,*) "ERROR: vdw_scs_rcut must be smaller than vdw_rcut - vdw_buffer"
         stop
       end if
     end if
