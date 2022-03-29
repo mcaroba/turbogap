@@ -224,10 +224,11 @@ program turbogap
   write(*,*)'*) Mikhail Kuklin (Aalto University)                             |'
   write(*,*)'*) Gábor Csányi (University of Cambridge)                        |'
   write(*,*)'*) Jan Kloppenburg (Aalto University)                            |'
+  write(*,*)'*) Richard Jana (Aalto University)                               |'
   write(*,*)'                                                                 |'
   write(*,*)'.................................................................|'
   write(*,*)'                                                                 |'
-  write(*,*)'                     Last updated: Jul. 2021                     |'
+  write(*,*)'                     Last updated: Mar. 2022                     |'
   write(*,*)'                                        _________________________/'
   write(*,*)'.......................................|'
 #ifdef _MPIF90
