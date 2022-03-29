@@ -65,7 +65,7 @@ module vdw
     if( n_sites > 0 )then
       call dgemm( "t", "n", n_sites, n_sparse, n_soap, 1.d0, soap, n_soap, Qs, n_soap, 0.d0, &
                 K, n_sites)
-    if
+    end if
 
     zeta_int = nint(zeta)
     if( dabs( dfloat(zeta_int) - zeta ) < 1.d-10 )then
