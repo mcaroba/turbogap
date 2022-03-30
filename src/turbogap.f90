@@ -1193,7 +1193,7 @@ call cpu_time(time2)
 call cpu_time(time1)
 write(*,*) "scs timing", time1-time2
         !write(*,*) "alpha_SCS0:", alpha_SCS
-        call get_mbd( alpha_SCS, alpha_SCS_grad, n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
+        call get_mbd_energies_and_forces( alpha_SCS, alpha_SCS_grad, n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
                       neighbor_species(j_beg:j_end), params%vdw_rcut, params%vdw_buffer, &
                       params%vdw_rcut_inner, params%vdw_buffer_inner, rjs(j_beg:j_end), &
                       xyz(1:3, j_beg:j_end), params%vdw_sr, params%vdw_d, &
