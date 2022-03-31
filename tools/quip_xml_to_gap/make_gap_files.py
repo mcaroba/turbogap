@@ -110,8 +110,8 @@ def write_descriptor_to_output(output_file, gpCoordinates, index):
             output.write(f"delta = {desc_dict['delta']}\n")
             output.write(f"sigma = {desc_dict['theta_uniform']}\n")
             output.write(f"rcut = {desc_dict['cutoff']}\n")
-            output.write('desc_sparse = "' + gpCoordinates['sparseX_filename'] + '"\n')
-            output.write(f'alphas_sparse = "alphas_' + f"{desc_dict['type']}_{index}.dat" + '"\n')
+            output.write('desc_sparse = "gap_files/' + gpCoordinates['sparseX_filename'] + '"\n')
+            output.write(f'alphas_sparse = "gap_files/alphas_' + f"{desc_dict['type']}_{index}.dat" + '"\n')
             output.write("gap_end\n")
             output.write("\n")
 
@@ -125,8 +125,8 @@ def write_descriptor_to_output(output_file, gpCoordinates, index):
             output.write(f"sigma = {gpCoordinates.find('theta').get_text().strip()}\n")
             output.write(f"kernel_type = {cov_type[desc_dict['covariance_type']]}\n")
             output.write(f"rcut = {desc_dict['cutoff']}\n")
-            output.write('desc_sparse = "' + gpCoordinates['sparseX_filename'] + '"\n')
-            output.write(f'alphas_sparse = "alphas_' + f"{desc_dict['type']}_{index}.dat" + '"\n')
+            output.write('desc_sparse = "gap_files/' + gpCoordinates['sparseX_filename'] + '"\n')
+            output.write(f'alphas_sparse = "gap_files/alphas_' + f"{desc_dict['type']}_{index}.dat" + '"\n')
             output.write("gap_end\n")
             output.write("\n")
 
@@ -164,11 +164,11 @@ def write_descriptor_to_output(output_file, gpCoordinates, index):
             output.write(f"radial_enhancement = {desc_dict['radial_enhancement'].strip('{}')}\n")
             output.write(f"zeta = {desc_dict['zeta']}\n")
             output.write(f"delta = {desc_dict['delta']}\n")
-            output.write('desc_sparse = "' + gpCoordinates['sparseX_filename'] + '"\n')
-            output.write(f'alphas_sparse = "alphas_' + f"{desc_dict['type']}_{index}.dat" + '"\n')
+            output.write('desc_sparse = "gap_files/' + gpCoordinates['sparseX_filename'] + '"\n')
+            output.write(f'alphas_sparse = "gap_files/alphas_' + f"{desc_dict['type']}_{index}.dat" + '"\n')
             if 'compress_file' in desc_dict:
                 output.write('compress_soap = .true.\n')
-                output.write('file_compress_soap = "' + f"{desc_dict['compress_file']}" + '"\n')
+                output.write('file_compress_soap = "gap_files/' + f"{desc_dict['compress_file']}" + '"\n')
                 # copy the compression file to gap_files/
                 shutil.copyfile(desc_dict['compress_file'], f"gap_files/{desc_dict['compress_file']}")
             if descriptor_counts['hirshfeld'] > 0:
@@ -177,8 +177,8 @@ def write_descriptor_to_output(output_file, gpCoordinates, index):
                     if compare_descriptors(gpc.find('descriptor'), gpCoordinates.find('descriptor')):
                         hirshfeld_dict = descriptor_to_dict(gpc.find('descriptor'))
                         output.write('has_vdw = .true.\n')
-                        output.write('vdw_qs = "' + hirshfeld_soup.find('gpCoordinates')['sparseX_filename'] + '"\n')
-                        output.write(f'vdw_alphas = "alphas_hirshfeld_{index_hirsh+1}.dat"\n')
+                        output.write('vdw_qs = "gap_files/' + hirshfeld_soup.find('gpCoordinates')['sparseX_filename'] + '"\n')
+                        output.write(f'vdw_alphas = "gap_files/alphas_hirshfeld_{index_hirsh+1}.dat"\n')
                         output.write(f"vdw_zeta = {hirshfeld_dict['zeta']}\n")
                         output.write(f"vdw_delta = {hirshfeld_dict['delta']}\n")
                         for word in hirshfeld_soup.find('command_line').get_text().split():
@@ -207,7 +207,7 @@ def write_pairpot_to_output(output_file, per_pair_data, index):
         output.write("gap_beg core_pot\n")
         output.write(f"species1 = {elements[int(per_type_data[per_pair_data['type1']])]}\n")
         output.write(f"species2 = {elements[int(per_type_data[per_pair_data['type2']])]}\n")
-        output.write(f'core_pot_file = "core_pot_' + str(index) + '.dat"\n')
+        output.write(f'core_pot_file = "gap_files/core_pot_' + str(index) + '.dat"\n')
         output.write("gap_end\n")
         output.write("\n")
 
