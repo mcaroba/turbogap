@@ -478,11 +478,10 @@ module vdw
                             sneighbors_list_vder(:), n_sneigh_list2(:), &
                             n_sneigh_list(:), n_ssites_list(:)
     integer :: n_sites, n_pairs, n_species, n_sites0, info, n_order, n_tot, n_spairs, n_beg, n_end, &
-               n_ssites, n_spairs_vder, n_freq, n_iter
+               n_ssites, n_spairs_vder, n_freq
     integer :: i, i2, j, j2, k, k2, k3, a, a2, c1, c2, c3, lwork, b, p, q, n_count
-    logical :: do_timing = .false., do_hirshfeld_gradients = .true., nonlocal = .false., &
-               series_expansion = .true., total_energy = .true., series_average = .true., &
-               new_implementation = .false., iterative = .true.
+    logical :: do_timing = .false., do_hirshfeld_gradients = .true., &
+               total_energy = .true.
     logical, allocatable :: i0_buffer2(:), ij_buffer2(:), i0_buffer(:), ij_buffer(:)
     type(psb_ctxt_type) :: icontxt
     integer(psb_ipk_) ::  iam, np, ip, jp, idummy, nr, nnz, info_psb
@@ -961,7 +960,7 @@ module vdw
       !call psb_exit(icontxt)
       deallocate( ia, ja, val )
 
-      n_iter = 100
+      !n_iter = 100
       allocate( I_mat(1:3*n_sites,1:3*n_sites) )
       allocate( a_vec(1:3*n_sites,1:3,1:n_freq) )
       I_mat = 0.d0
@@ -1227,7 +1226,7 @@ module vdw
 !    write(*,*) "A_LR:"
 !    open(1, file = 'A_LR_m.dat', status = 'new')
 !    do i = 1, 3*n_sites
-!      write(*,*) A_LR(i,:,1)
+!      write(1,*) A_LR(i,:,1)
 !    end do
 !    close(1)
 
@@ -1272,8 +1271,8 @@ module vdw
 
 !    write(*,*) "T_LR:"
 !    open(1, file = 'T_LR_m.dat', status = 'new')
-!    do i = 1, 3
-!      write(*,*) T_LR(3*(64-1)+i:3*(64-1)+i,1:3)
+!    do i = 1, 3*n_sites
+!      write(1,*) T_LR(i,:)
 !    end do
 !    close(1)
     
@@ -1377,16 +1376,16 @@ module vdw
       end do
 
 !      write(*,*) "dA_LR:"
-!      open(1, file = 'dA_LR_m.dat', status = 'new')
+!      open(1, file = 'dA_LR.dat', status = 'new')
 !      do i = 1, 3*n_sites
 !        write(1,*) dA_LR(i,:,1,1,1)
 !      end do
 !      close(1)
 
 !      write(*,*) "dT_LR:"
-!      open(1, file = 'dT_LR_m.dat', status = 'new')
-!      do i = 1, 3
-!        write(*,*) dT_LR(3*(64-1)+i:3*(64-1)+i,1:3,1,1)
+!      open(1, file = 'dT_LR.dat', status = 'new')
+!      do i = 1, 3*n_sites
+!        write(1,*) dT_LR(i,:,1,1)
 !      end do
 !      close(1)
 
@@ -1407,26 +1406,36 @@ module vdw
 
     AT_n = 0.d0
     integrand = 0.d0
-    energy_series = -0.5d0 * AT(:,:,:)
-    do k = 1, n_freq
-      AT_n(:,:,1,k) = AT(:,:,k)
-      do k2 = 1, n_order-2
-        ! Precalculate the full AT_n for forces:
-        call dgemm('n', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, AT(:,:,k), 3*n_sites, &
-                   AT_n(:,:,k2,k), 3*n_sites, 0.d0, AT_n(:,:,k2+1,k), 3*n_sites)
-        if (series_average .and. k2 == n_order-2) then
-          energy_series(:,:,k) = energy_series(:,:,k) - 1.d0/(k2+2)*AT_n(:,:,k2+1,k)/2.d0
-        else
-          energy_series(:,:,k) = energy_series(:,:,k) - 1.d0/(k2+2)*AT_n(:,:,k2+1,k)
-        end if
-      end do
-      do i = 1, n_sites
-        do c1 = 1, 3
-          integrand(i,k) = integrand(i,k) + alpha_SCS0(i,k) * dot_product(T_LR(3*(i-1)+c1,:), &
-                         energy_series(:,3*(i-1)+c1,k))
+    energy_series = 0.d0
+!    energy_series = -0.5d0 * AT(:,:,:)
+    if ( n_order > 1 ) then
+      do k = 1, n_freq
+!        AT_n(:,:,1,k) = AT(:,:,k)
+        do k2 = 1, n_order-1
+          ! Precalculate the full AT_n for forces:
+          if ( k2 == 1 ) then
+            AT_n(:,:,k2,k) = AT(:,:,k)
+          else
+            call dgemm('n', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, AT(:,:,k), 3*n_sites, &
+                       AT_n(:,:,k2-1,k), 3*n_sites, 0.d0, AT_n(:,:,k2,k), 3*n_sites)
+          end if
+          if (series_average .and. k2 == n_order-1) then
+            energy_series(:,:,k) = energy_series(:,:,k) - 1.d0/(k2+1)*AT_n(:,:,k2,k)/2.d0
+          else
+            energy_series(:,:,k) = energy_series(:,:,k) - 1.d0/(k2+1)*AT_n(:,:,k2,k)
+          end if
+        end do
+        do i = 1, n_sites
+          do c1 = 1, 3
+            integrand(i,k) = integrand(i,k) + alpha_SCS0(i,k) * dot_product(T_LR(3*(i-1)+c1,:), &
+                           energy_series(:,3*(i-1)+c1,k))
+          end do
         end do
       end do
-    end do
+    else
+      write(*,*) "WARNING: Series expansion requires that vdw_mbd_order > 1 or the resulting energies"
+      write(*,*) "and forces will be zero."
+    end if
 
 !    write(*,*) "energy integrand:"
 !    write(*,*) sum(integrand(:,1))
@@ -1446,36 +1455,38 @@ module vdw
       G_mat = 0.d0
       force_integrand = 0.d0
       force_series = 0.d0
-      do k = 1, n_freq
-        do k2 = 1, n_order-1
-          if (series_average .and. k2 == n_order-1) then
-            force_series(:,:,k) = force_series(:,:,k) + AT_n(:,:,k2,k)/2.d0
-          else
-            force_series(:,:,k) = force_series(:,:,k) + AT_n(:,:,k2,k)
-          end if
-        end do
-        do a = 1, n_sites
-          do c3 = 1, 3
-            ! call dgemm for G_mat
-            VL = 0.d0
-            VR = 0.d0
-            call dgemm('n', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, A_LR(:,:,k), 3*n_sites, &
-                       dT_LR(:,:,a,c3), 3*n_sites, 0.d0, VL, 3*n_sites)
-            call dgemm('n', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, dA_LR(:,:,a,c3,k), 3*n_sites, &
-                       T_LR, 3*n_sites, 0.d0, VR, 3*n_sites)
-            G_mat(:,:,a,c3,k) = VL + VR
-            VL = 0.d0
-            call dgemm('n', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, force_series(:,:,k), 3*n_sites, &
-                       G_mat(:,:,a,c3,k), 3*n_sites, 0.d0, VL, 3*n_sites)
-            do i = 1, 3*n_sites
-              force_integrand(a,c3,k) = force_integrand(a,c3,k) + VL(i,i)
+      if ( n_order > 1 ) then
+        do k = 1, n_freq
+          do k2 = 1, n_order-1
+            if (series_average .and. k2 == n_order-1) then
+              force_series(:,:,k) = force_series(:,:,k) + AT_n(:,:,k2,k)/2.d0
+            else
+              force_series(:,:,k) = force_series(:,:,k) + AT_n(:,:,k2,k)
+            end if
+          end do
+          do a = 1, n_sites
+            do c3 = 1, 3
+              ! call dgemm for G_mat
+              VL = 0.d0
+              VR = 0.d0
+              call dgemm('n', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, A_LR(:,:,k), 3*n_sites, &
+                         dT_LR(:,:,a,c3), 3*n_sites, 0.d0, VL, 3*n_sites)
+              call dgemm('n', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, dA_LR(:,:,a,c3,k), 3*n_sites, &
+                         T_LR, 3*n_sites, 0.d0, VR, 3*n_sites)
+              G_mat(:,:,a,c3,k) = VL + VR
+              VL = 0.d0
+              call dgemm('n', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, force_series(:,:,k), 3*n_sites, &
+                         G_mat(:,:,a,c3,k), 3*n_sites, 0.d0, VL, 3*n_sites)
+              do i = 1, 3*n_sites
+                force_integrand(a,c3,k) = force_integrand(a,c3,k) + VL(i,i)
+              end do
             end do
           end do
         end do
-      end do
+      end if
 
 !      write(*,*) "G_mat:"
-!      open(1, file = 'G_mat_m.dat', status = 'new')
+!      open(1, file = 'G_mat.dat', status = 'new')
 !      do i = 1, 3*n_sites
 !        write(1,*) G_mat(i,:,1,1,1)
 !      end do
