@@ -62,8 +62,10 @@ module vdw
       allocate( Qs_copy(1:n_soap, 1:n_sparse) )
     end if    
 
-    call dgemm( "t", "n", n_sites, n_sparse, n_soap, 1.d0, soap, n_soap, Qs, n_soap, 0.d0, &
-              K, n_sites)
+    if( n_sites > 0 )then
+      call dgemm( "t", "n", n_sites, n_sparse, n_soap, 1.d0, soap, n_soap, Qs, n_soap, 0.d0, &
+                K, n_sites)
+    end if
 
     zeta_int = nint(zeta)
     if( dabs( dfloat(zeta_int) - zeta ) < 1.d-10 )then
@@ -99,7 +101,9 @@ module vdw
     end if
 
 !    V = delta**2 * matmul( K, alphas ) + V0
-    call dgemm( "n", "n", n_sites, 1, n_sparse, delta**2, K, n_sites, alphas, n_sparse, 0.d0, V, n_sites)
+    if( n_sites > 0 )then
+      call dgemm( "n", "n", n_sites, 1, n_sparse, delta**2, K, n_sites, alphas, n_sparse, 0.d0, V, n_sites)
+    end if
     V = V + V0
 
 !   Make sure all V are >= 0
@@ -110,8 +114,10 @@ module vdw
     end do
 
     if( do_derivatives)then
-      call dgemm("n", "t", n_sites, n_soap, n_sparse, delta**2, K_der, n_sites, &
-                 Qs_copy, n_soap, 0.d0, Qss, n_sites)
+      if( n_sites > 0 )then
+        call dgemm("n", "t", n_sites, n_soap, n_sparse, delta**2, K_der, n_sites, &
+                   Qs_copy, n_soap, 0.d0, Qss, n_sites)
+      end if
       j = 1
       do i = 1, n_sites
         do i2 = 1, n_neigh(i)

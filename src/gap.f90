@@ -72,8 +72,10 @@ module gap
     allocate( kernels(1:n_sites, 1:n_sparse) )
     kernels = 0.d0
     allocate( kernels_copy(1:n_sites, 1:n_sparse) )
-    call dgemm( "t", "n", n_sites, n_sparse, n_soap, 1.d0, soap, n_soap, Qs, n_soap, 0.d0, &
-              kernels, n_sites)
+    if( n_sites > 0 )then
+      call dgemm( "t", "n", n_sites, n_sparse, n_soap, 1.d0, soap, n_soap, Qs, n_soap, 0.d0, &
+                kernels, n_sites)
+    end if
 !   We copy the kernels because it makes the matmul() operation (WHICH SHOULD BY THE WAY BE WRITTEN
 !   USING LAPACK ROUTINES) a lot faster
     if( is_zeta_int )then
@@ -119,8 +121,10 @@ module gap
         end do
       end if
 
-      call dgemm("n", "t", n_sites, n_soap, n_sparse, -zeta*delta**2, kernels_der, n_sites, &
-                 Qs_copy, n_soap, 0.d0, Qss, n_sites)
+      if( n_sites > 0 )then
+        call dgemm("n", "t", n_sites, n_soap, n_sparse, -zeta*delta**2, kernels_der, n_sites, &
+                   Qs_copy, n_soap, 0.d0, Qss, n_sites)
+      end if
 
 ! EXPERIMENTAL CODE
 !      call cpu_time(time1)
