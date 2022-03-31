@@ -1224,10 +1224,12 @@ module vdw
       end do
     end do
 
-    write(*,*) "A_LR:"
-    do i = 1, 3
-      write(*,*) A_LR(i,3*(72-1)+1:3*(72-1)+3,1)
-    end do
+!    write(*,*) "A_LR:"
+!    open(1, file = 'A_LR_m.dat', status = 'new')
+!    do i = 1, 3*n_sites
+!      write(*,*) A_LR(i,:,1)
+!    end do
+!    close(1)
 
     do k = 1, n_pairs
       j = neighbors_list(k)
@@ -1268,10 +1270,12 @@ module vdw
       end do
     end do
 
-    write(*,*) "T_LR:"
-    do i = 1, 3
-      write(*,*) T_LR(i,3*(72-1)+1:3*(72-1)+3)
-    end do
+!    write(*,*) "T_LR:"
+!    open(1, file = 'T_LR_m.dat', status = 'new')
+!    do i = 1, 3
+!      write(*,*) T_LR(3*(64-1)+i:3*(64-1)+i,1:3)
+!    end do
+!    close(1)
     
     if ( do_derivatives ) then
 
@@ -1333,8 +1337,8 @@ module vdw
               R_vdW_SCS_ij = r_vdw_i + r_vdw_j
               S_vdW_ij = sR*R_vdW_SCS_ij
               do c3 = 1, 3
-                dS_vdW_ij = sR/3.d0 * ( r0_ii_SCS(n_sites*(i-1)+1)/alpha_SCS0(i,1) * alpha_SCS_grad(i,a,c3,1) + &
-                                        r0_ii_SCS(k)/alpha_SCS0(j,1) * alpha_SCS_grad(j,a,c3,1) )
+                dS_vdW_ij = sR/3.d0 * ( r_vdw_i/alpha_SCS0(i,1) * alpha_SCS_grad(i,a,c3,1) + &
+                                        r_vdw_j/alpha_SCS0(j,1) * alpha_SCS_grad(j,a,c3,1) )
                 f_damp_der_SCS(k,a,c3) = -(d*rjs_H(k))/S_vdW_ij**2 * f_damp_SCS(k)**2 * &
                                            exp(-d*(rjs_H(k)/S_vdW_ij - 1.d0)) * dS_vdW_ij
                 k2 = 9*(k-1)
@@ -1372,15 +1376,19 @@ module vdw
         end do
       end do
 
-      write(*,*) "dA_LR:"
-      do i = 1, 3
-        write(*,*) dA_LR(i,3*(72-1)+1:3*(72-1)+3,1,1,1)
-      end do
+!      write(*,*) "dA_LR:"
+!      open(1, file = 'dA_LR_m.dat', status = 'new')
+!      do i = 1, 3*n_sites
+!        write(1,*) dA_LR(i,:,1,1,1)
+!      end do
+!      close(1)
 
-      write(*,*) "dT_LR:"
-      do i = 1, 3
-        write(*,*) dT_LR(i,3*(72-1)+1:3*(72-1)+3,1,1)
-      end do
+!      write(*,*) "dT_LR:"
+!      open(1, file = 'dT_LR_m.dat', status = 'new')
+!      do i = 1, 3
+!        write(*,*) dT_LR(3*(64-1)+i:3*(64-1)+i,1:3,1,1)
+!      end do
+!      close(1)
 
     end if
 
@@ -1390,10 +1398,12 @@ module vdw
                  T_LR, 3*n_sites, 0.d0, AT(:,:,k), 3*n_sites)
     end do
 
-    write(*,*) "AT:"
-    do i = 1, 3
-      write(*,*) AT(i,3*(72-1)+1:3*(72-1)+3,1)
-    end do
+!    write(*,*) "AT:"
+!    open(1, file = 'AT_m.dat', status = 'new')
+!    do i = 1, 3*n_sites
+!      write(1,*) AT(i,:,1)
+!    end do
+!    close(1)
 
     AT_n = 0.d0
     integrand = 0.d0
@@ -1418,16 +1428,16 @@ module vdw
       end do
     end do
 
-    write(*,*) "energy integrand:"
-    write(*,*) sum(integrand(:,1))
+!    write(*,*) "energy integrand:"
+!    write(*,*) sum(integrand(:,1))
 
-    write(*,*) "Atom | Local energy:"
+!    write(*,*) "Atom | Local energy:"
     do i = 1, n_sites
       integral = 0.d0
       call integrate("trapezoidal", omegas, integrand(i,:), omegas(1), omegas(n_freq), integral)
       E_MBD = integral/(2.d0*pi)
       energies(i) = E_MBD * 27.211386245988
-      write(*,*) i, energies(i)
+!      write(*,*) i, energies(i)
     end do
     write(*,*) "MBD energy:", sum(energies)
 
@@ -1464,13 +1474,15 @@ module vdw
         end do
       end do
 
-      write(*,*) "G_mat:"
-      do i = 1, 3
-        write(*,*) G_mat(i,3*(72-1)+1:3*(72-1)+3,1,1,1)
-      end do
+!      write(*,*) "G_mat:"
+!      open(1, file = 'G_mat_m.dat', status = 'new')
+!      do i = 1, 3*n_sites
+!        write(1,*) G_mat(i,:,1,1,1)
+!      end do
+!      close(1)
 
-      write(*,*) "force_integrand:"
-      write(*,*) force_integrand(1,1,1)
+!      write(*,*) "force_integrand:"
+!      write(*,*) force_integrand(1,1,1)
 
       do a = 1, n_sites
         do c3 = 1, 3
