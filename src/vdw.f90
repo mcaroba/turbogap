@@ -1126,13 +1126,13 @@ module vdw
     integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:)
     logical, intent(in) :: do_derivatives
     real*8, allocatable :: T_LR(:,:), r0_ii_SCS(:), r0_ii(:), neighbor_alpha0(:), &
-                           xyz_H(:,:), rjs_H(:), f_damp_SCS(:), T_func(:), AT(:,:,:), AT_n(:,:,:,:), &
-                           energy_series(:,:,:), integrand(:,:), omegas(:), f_damp_der(:,:), &
-                           f_damp_der_SCS(:,:,:), dT_LR(:,:,:,:), dT(:,:), &
-                           G_mat(:,:,:,:,:), force_integrand(:,:,:), force_series(:,:,:), &
+                           xyz_H(:,:), rjs_H(:), f_damp_SCS(:), T_func(:), AT(:,:), AT_n(:,:,:), &
+                           energy_series(:,:), integrand(:,:), omegas(:), f_damp_der(:), &
+                           f_damp_der_SCS(:), dT_LR(:,:), dT(:), &
+                           G_mat(:,:), force_integrand(:,:,:), force_series(:,:), &
                            VL(:,:)
     integer :: n_order, n_freq, n_sites, n_pairs, n_species, n_sites0
-    integer :: k, k2, i, j, j2, c1, c2, c3, a
+    integer :: k, k2, i, j, j2, c1, c2, c3, a, om
     real*8 :: Bohr, Hartree, pi, r_vdw_i, r_vdw_j, E_MBD, integral, omega, R_vdW_SCS_ij, S_vdW_ij, &
               dS_vdW_ij, time1, time2
     logical :: series_average = .true., do_timing = .true.
@@ -1162,25 +1162,19 @@ module vdw
     allocate( T_LR(1:3*n_sites,1:3*n_sites) )
     allocate( r0_ii_SCS(1:n_pairs) )
     allocate( f_damp_SCS(1:n_pairs) )
-    allocate( AT(1:3*n_sites,1:3*n_sites,1:n_freq) )
-    allocate( AT_n(1:3*n_sites,1:3*n_sites, 1:n_order-1, 1:n_freq) )
-    allocate( energy_series(1:3*n_sites,1:3*n_sites,1:n_freq) )
+    allocate( AT(1:3*n_sites,1:3*n_sites) )
+    allocate( AT_n(1:3*n_sites,1:3*n_sites, 1:n_order-1) )
+    allocate( energy_series(1:3*n_sites,1:3*n_sites) )
     allocate( integrand(1:n_sites,1:n_freq) )
     if ( do_derivatives ) then
-      allocate( dT(1:9*n_pairs,1:3) )
-      allocate( f_damp_der(1:n_pairs,1:3) )
-      allocate( f_damp_der_SCS(1:n_pairs,1:n_sites,1:3) )
-      allocate( dT_LR(1:3*n_sites,1:3*n_sites,1:n_sites,1:3) )
-      allocate( G_mat(1:3*n_sites,1:3*n_sites,1:n_sites,1:3,1:n_freq) )
+      allocate( dT(1:9*n_pairs) )
+      allocate( f_damp_der(1:n_pairs) )
+      allocate( f_damp_der_SCS(1:n_pairs) )
+      allocate( dT_LR(1:3*n_sites,1:3*n_sites) )
+      allocate( G_mat(1:3*n_sites,1:3*n_sites) )
       allocate( force_integrand(1:n_sites,1:3,1:n_freq) ) 
-      allocate( force_series(1:3*n_sites,1:3*n_sites,1:n_freq) )
+      allocate( force_series(1:3*n_sites,1:3*n_sites) )
       allocate( VL(1:3*n_sites,1:3*n_sites) )
-    end if
-
-    if( do_timing ) then
-      call cpu_time(time2)
-      write(*,*) "Timing for allocation:", time2-time1
-      call cpu_time(time1)
     end if
 
     omega = 0.d0
@@ -1196,12 +1190,6 @@ module vdw
       xyz_H(:,k) = xyz(:,k)/Bohr
       rjs_H(k) = rjs(k)/Bohr
     end do
-
-    if( do_timing ) then
-      call cpu_time(time2)
-      write(*,*) "Timing for initialization:", time2-time1
-      call cpu_time(time1)
-    end if
 
     T_func = 0.d0
     k = 0
@@ -1230,12 +1218,6 @@ module vdw
       r0_ii_SCS(k) = r0_ii(k) * (alpha_SCS0(j,1)/neighbor_alpha0(k))**(1.d0/3.d0)
     end do
 
-    if( do_timing ) then
-      call cpu_time(time2)
-      write(*,*) "Timing for T_func, r0_ii_SCS:", time2-time1
-      call cpu_time(time1)
-    end if
-
     f_damp_SCS = 0.d0
     k = 0
     do i = 1, n_sites
@@ -1250,12 +1232,6 @@ module vdw
         end if
       end do
     end do
-
-    if( do_timing ) then
-      call cpu_time(time2)
-      write(*,*) "Timing for f_damp_SCS:", time2-time1
-      call cpu_time(time1)
-    end if
 
     T_LR = 0.d0
     k = 0
@@ -1275,170 +1251,174 @@ module vdw
         end if
       end do
     end do
-
-    if( do_timing ) then
-      call cpu_time(time2)
-      write(*,*) "Timing for T_LR:", time2-time1
-      call cpu_time(time1)
-    end if
-
-    if ( do_derivatives ) then
-
-      dT = 0.d0
-      k = 0
-      do i = 1, n_sites
-        k = k+1
-        do j2 = 2, n_neigh(i)
-          k = k+1
-          if (rjs(k) < rcut) then
-            k2 = 9*(k-1)
-            do c1 = 1,3
-              do c2 = 1,3
-                k2 = k2+1
-                do c3 = 1,3
-                  dT(k2,c3) = (-15.d0 * xyz_H(c1,k) * xyz_H(c2,k) * xyz_H(c3,k))/rjs_H(k)**7
-                  if (c1 == c2) then
-                    dT(k2,c3) = dT(k2,c3) + 3.d0/rjs_H(k)**5 * xyz_H(c3,k)
-                  end if
-                  if (c2 == c3) then
-                    dT(k2,c3) = dT(k2,c3) + 3.d0/rjs_H(k)**5 * xyz_H(c1,k)
-                  end if
-                  if (c1 == c3) then
-                    dT(k2,c3) = dT(k2,c3) + 3.d0/rjs_H(k)**5 * xyz_H(c2,k)
-                  end if
-                end do
-              end do
-            end do
-          end if
-        end do
-      end do
     
-      if( do_timing ) then
-        call cpu_time(time2)
-        write(*,*) "Timing for dT:", time2-time1
-        call cpu_time(time1)
-      end if
+    integrand = 0.d0
+    force_integrand = 0.d0
 
-      f_damp_der_SCS = 0.d0
-      f_damp_der = 0.d0 ! This is cleared so we can recalculate it with SCS values
-      dT_LR = 0.d0
-      do a = 1, n_sites
-        k = 0
+    do om = 1, n_freq
+    
+      AT = 0.d0
+      do k = 1, n_freq
         do i = 1, n_sites
-          k = k+1
-          r_vdw_i = r0_ii_SCS(k)
-          do j2 = 2, n_neigh(i)
-            k = k+1
-            if (rjs(k) < rcut) then
-              j = neighbors_list(k)
-              r_vdw_j = r0_ii_SCS(k)
-              R_vdW_SCS_ij = r_vdw_i + r_vdw_j
-              S_vdW_ij = sR*R_vdW_SCS_ij
-              do c3 = 1, 3
-                dS_vdW_ij = sR/3.d0 * ( r_vdw_i/alpha_SCS0(i,1) * alpha_SCS_grad(i,a,c3,1) + &
-                                        r_vdw_j/alpha_SCS0(j,1) * alpha_SCS_grad(j,a,c3,1) )
-                f_damp_der_SCS(k,a,c3) = -(d*rjs_H(k))/S_vdW_ij**2 * f_damp_SCS(k)**2 * &
-                                           exp(-d*(rjs_H(k)/S_vdW_ij - 1.d0)) * dS_vdW_ij
-                k2 = 9*(k-1)
-                do c1 = 1, 3
-                  do c2 = 1, 3
-                    k2 = k2+1
-                    dT_LR(3*(i-1)+c1,3*(j-1)+c2,a,c3) = dT_LR(3*(i-1)+c1,3*(j-1)+c2,a,c3) + &
-                                      T_func(k2) * f_damp_der_SCS(k,a,c3) 
-                  end do
-                end do
-              end do
-              if (a == i .or. a == j) then
-                do c3 = 1, 3
-                f_damp_der(k,c3) = d/S_vdW_ij * f_damp_SCS(k)**2 * &
-                                     exp( -d*(rjs_H(k)/S_vdW_ij - 1.d0) ) * xyz_H(c3,k)/rjs_H(k)
-                  k2 = 9*(k-1)
-                  do c1 = 1, 3
-                    do c2 = 1, 3
-                      k2 = k2+1
-                      if (a == i) then
-                        dT_LR(3*(i-1)+c1,3*(j-1)+c2,a,c3) = dT_LR(3*(i-1)+c1,3*(j-1)+c2,a,c3) - &
-                                           T_func(k2) * f_damp_der(k,c3) - &
-                                           dT(k2,c3) * f_damp_SCS(k)
-                      else if (a == j) then
-                        dT_LR(3*(i-1)+c1,3*(j-1)+c2,a,c3) = dT_LR(3*(i-1)+c1,3*(j-1)+c2,a,c3) + &
-                                           T_func(k2) * f_damp_der(k,c3) + &
-                                           dT(k2,c3) * f_damp_SCS(k)
-                      end if
-                    end do
-                  end do
-                end do
-              end if
-            end if
-          end do
+          AT(3*(i-1)+1:3*(i-1)+3,:) = alpha_SCS0(i,om) * T_LR(3*(i-1)+1:3*(i-1)+3,:)
         end do
       end do
 
-      if( do_timing ) then
-        call cpu_time(time2)
-        write(*,*) "Timing for dT_LR:", time2-time1
-        call cpu_time(time1)
+      AT_n = 0.d0
+      energy_series = 0.d0
+      if ( do_derivatives ) then
+        force_series = 0.d0
       end if
 
-    end if
-
-    AT = 0.d0
-    do k = 1, n_freq
-      do i = 1, n_sites
-        AT(3*(i-1)+1:3*(i-1)+3,:,k) = alpha_SCS0(i,k) * T_LR(3*(i-1)+1:3*(i-1)+3,:)
-      end do
-    end do
-
-    if( do_timing ) then
-      call cpu_time(time2)
-      write(*,*) "Timing for AT:", time2-time1
-      call cpu_time(time1)
-    end if
-
-    AT_n = 0.d0
-    integrand = 0.d0
-    energy_series = 0.d0
-
-    if( do_timing ) then
-      call cpu_time(time2)
-      write(*,*) "Timing for initialization of AT_n, integrand, energy_series:", time2-time1
-      call cpu_time(time1)
-    end if
-
-    if ( n_order > 1 ) then
-      do k = 1, n_freq
+      if ( n_order > 1 ) then
         do k2 = 1, n_order-1
           ! Precalculate the full AT_n for forces:
           if ( k2 == 1 ) then
-            AT_n(:,:,k2,k) = AT(:,:,k)
+            AT_n(:,:,k2) = AT
           else
-            call dgemm('n', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, AT(:,:,k), 3*n_sites, &
-                       AT_n(:,:,k2-1,k), 3*n_sites, 0.d0, AT_n(:,:,k2,k), 3*n_sites)
+            call dgemm('n', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, AT, 3*n_sites, &
+                       AT_n(:,:,k2-1), 3*n_sites, 0.d0, AT_n(:,:,k2), 3*n_sites)
           end if
           if (series_average .and. k2 == n_order-1) then
-            energy_series(:,:,k) = energy_series(:,:,k) - 1.d0/(k2+1)*AT_n(:,:,k2,k)/2.d0
+            energy_series = energy_series - 1.d0/(k2+1)*AT_n(:,:,k2)/2.d0
+            if ( do_derivatives ) then
+              force_series = force_series + AT_n(:,:,k2)/2.d0
+            end if
           else
-            energy_series(:,:,k) = energy_series(:,:,k) - 1.d0/(k2+1)*AT_n(:,:,k2,k)
+            energy_series = energy_series - 1.d0/(k2+1)*AT_n(:,:,k2)
+            if ( do_derivatives ) then
+              force_series = force_series + AT_n(:,:,k2)
+            end if
           end if
         end do
         do i = 1, n_sites
           do c1 = 1, 3
-            integrand(i,k) = integrand(i,k) + alpha_SCS0(i,k) * dot_product(T_LR(3*(i-1)+c1,:), &
-                           energy_series(:,3*(i-1)+c1,k))
+            integrand(i,om) = integrand(i,om) + alpha_SCS0(i,om) * dot_product(T_LR(3*(i-1)+c1,:), &
+                           energy_series(:,3*(i-1)+c1))
           end do
         end do
-      end do
-    else
-      write(*,*) "WARNING: Series expansion requires that vdw_mbd_order > 1 or the resulting energies"
-      write(*,*) "and forces will be zero."
-    end if
+      else
+        write(*,*) "WARNING: Series expansion requires that vdw_mbd_order > 1 or the resulting energies"
+        write(*,*) "and forces will be zero."
+      end if
 
-    if( do_timing ) then
-      call cpu_time(time2)
-      write(*,*) "Timing for energy integrand:", time2-time1
-      call cpu_time(time1)
-    end if
+      if ( do_derivatives ) then
+      
+        do c3 = 1, 3
 
+          dT = 0.d0
+          k = 0
+          do i = 1, n_sites
+            k = k+1
+            do j2 = 2, n_neigh(i)
+              k = k+1
+              if (rjs(k) < rcut) then
+                k2 = 9*(k-1)
+                do c1 = 1,3
+                  do c2 = 1,3
+                    k2 = k2+1
+                    dT(k2) = (-15.d0 * xyz_H(c1,k) * xyz_H(c2,k) * xyz_H(c3,k))/rjs_H(k)**7
+                    if (c1 == c2) then
+                      dT(k2) = dT(k2) + 3.d0/rjs_H(k)**5 * xyz_H(c3,k)
+                    end if
+                    if (c2 == c3) then
+                      dT(k2) = dT(k2) + 3.d0/rjs_H(k)**5 * xyz_H(c1,k)
+                    end if
+                    if (c1 == c3) then
+                      dT(k2) = dT(k2) + 3.d0/rjs_H(k)**5 * xyz_H(c2,k)
+                    end if
+                  end do
+                end do
+              end if
+            end do
+          end do
+
+          do a = 1, n_sites
+
+            f_damp_der_SCS = 0.d0
+            f_damp_der = 0.d0 ! This is cleared so we can recalculate it with SCS values
+            dT_LR = 0.d0
+
+            k = 0
+            do i = 1, n_sites
+              k = k+1
+              r_vdw_i = r0_ii_SCS(k)
+              do j2 = 2, n_neigh(i)
+                k = k+1
+                if (rjs(k) < rcut) then
+                  j = neighbors_list(k)
+                  r_vdw_j = r0_ii_SCS(k)
+                  R_vdW_SCS_ij = r_vdw_i + r_vdw_j
+                  S_vdW_ij = sR*R_vdW_SCS_ij
+                  dS_vdW_ij = sR/3.d0 * ( r_vdw_i/alpha_SCS0(i,1) * alpha_SCS_grad(i,a,c3,1) + &
+                                          r_vdw_j/alpha_SCS0(j,1) * alpha_SCS_grad(j,a,c3,1) )
+                  f_damp_der_SCS(k) = -(d*rjs_H(k))/S_vdW_ij**2 * f_damp_SCS(k)**2 * &
+                                       exp(-d*(rjs_H(k)/S_vdW_ij - 1.d0)) * dS_vdW_ij
+                  k2 = 9*(k-1)
+                  do c1 = 1, 3
+                    do c2 = 1, 3
+                      k2 = k2+1
+                      dT_LR(3*(i-1)+c1,3*(j-1)+c2) = dT_LR(3*(i-1)+c1,3*(j-1)+c2) + &
+                                        T_func(k2) * f_damp_der_SCS(k) 
+                    end do
+                  end do
+                  if (a == i .or. a == j) then
+                    f_damp_der(k) = d/S_vdW_ij * f_damp_SCS(k)**2 * &
+                                    exp( -d*(rjs_H(k)/S_vdW_ij - 1.d0) ) * xyz_H(c3,k)/rjs_H(k)
+                    k2 = 9*(k-1)
+                    do c1 = 1, 3
+                      do c2 = 1, 3
+                        k2 = k2+1
+                        if (a == i) then
+                          dT_LR(3*(i-1)+c1,3*(j-1)+c2) = dT_LR(3*(i-1)+c1,3*(j-1)+c2) - &
+                                             T_func(k2) * f_damp_der(k) - &
+                                             dT(k2) * f_damp_SCS(k)
+                        else if (a == j) then
+                          dT_LR(3*(i-1)+c1,3*(j-1)+c2) = dT_LR(3*(i-1)+c1,3*(j-1)+c2) + &
+                                             T_func(k2) * f_damp_der(k) + &
+                                             dT(k2) * f_damp_SCS(k)
+                        end if
+                      end do
+                    end do
+                  end if
+                end if
+              end do
+            end do
+
+            G_mat = 0.d0
+!            force_series = 0.d0
+
+            if ( n_order > 1 ) then
+!            do k2 = 1, n_order-1
+!              if (series_average .and. k2 == n_order-1) then
+!                force_series = force_series + AT_n(:,:,k2)/2.d0
+!              else
+!                force_series = force_series + AT_n(:,:,k2)
+!              end if
+!            end do
+              ! call dgemm for G_mat
+              do i = 1, n_sites
+                G_mat(3*(i-1)+1:3*(i-1)+3,:) = G_mat(3*(i-1)+1:3*(i-1)+3,:) + &
+                  alpha_SCS0(i,om) * dT_LR(3*(i-1)+1:3*(i-1)+3,:) + &
+                  alpha_SCS_grad(i,a,c3,om) * T_LR(3*(i-1)+1:3*(i-1)+3,:)
+              end do
+              !call dgemm('n', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, force_series(:,:,k), 3*n_sites, &
+              !           G_mat(:,:,a,c3,k), 3*n_sites, 0.d0, VL, 3*n_sites)
+              do i = 1, 3*n_sites
+                !force_integrand(a,c3,k) = force_integrand(a,c3,k) + VL(i,i)
+                force_integrand(a,c3,om) = force_integrand(a,c3,om) + &
+                  dot_product(G_mat(i,:), force_series(:,i))
+              end do
+            end if
+            
+          end do ! a loop
+          
+        end do ! c3 loop
+        
+      end if ! do derivatives
+      
+    end do ! om loop
+      
     do i = 1, n_sites
       integral = 0.d0
       call integrate("trapezoidal", omegas, integrand(i,:), omegas(1), omegas(n_freq), integral)
@@ -1448,74 +1428,7 @@ module vdw
     end do
     write(*,*) "MBD energy:", sum(energies)
 
-    if( do_timing ) then
-      call cpu_time(time2)
-      write(*,*) "Timing for MBD energy integration:", time2-time1
-      call cpu_time(time1)
-    end if
-
     if ( do_derivatives ) then
-
-      G_mat = 0.d0
-      force_integrand = 0.d0
-      force_series = 0.d0
-
-      if( do_timing ) then
-        call cpu_time(time2)
-        write(*,*) "Timing for initialization of G_mat, force_integrand, force_series:", time2-time1
-        call cpu_time(time1)
-      end if
-
-      if ( n_order > 1 ) then
-        do k = 1, n_freq
-          if( do_timing ) then
-            call cpu_time(time2)
-            write(*,*) "force_series start:", time2-time1
-            call cpu_time(time1)
-          end if
-          do k2 = 1, n_order-1
-            if (series_average .and. k2 == n_order-1) then
-              force_series(:,:,k) = force_series(:,:,k) + AT_n(:,:,k2,k)/2.d0
-            else
-              force_series(:,:,k) = force_series(:,:,k) + AT_n(:,:,k2,k)
-            end if
-          end do
-          if( do_timing ) then
-            call cpu_time(time2)
-            write(*,*) "Timing for force_series freq:", k, time2-time1
-            call cpu_time(time1)
-          end if
-          do a = 1, n_sites
-            do c3 = 1, 3
-              ! call dgemm for G_mat
-              do i = 1, n_sites
-                G_mat(3*(i-1)+1:3*(i-1)+3,:,a,c3,k) = G_mat(3*(i-1)+1:3*(i-1)+3,:,a,c3,k) + &
-                  alpha_SCS0(i,k) * dT_LR(3*(i-1)+1:3*(i-1)+3,:,a,c3) + &
-                  alpha_SCS_grad(i,a,c3,k) * T_LR(3*(i-1)+1:3*(i-1)+3,:)
-              end do
-              !call dgemm('n', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, force_series(:,:,k), 3*n_sites, &
-              !           G_mat(:,:,a,c3,k), 3*n_sites, 0.d0, VL, 3*n_sites)
-              do i = 1, 3*n_sites
-                !force_integrand(a,c3,k) = force_integrand(a,c3,k) + VL(i,i)
-                force_integrand(a,c3,k) = force_integrand(a,c3,k) + &
-                  dot_product(G_mat(i,:,a,c3,k), force_series(:,i,k))
-              end do
-            end do
-          end do
-          if( do_timing ) then
-            call cpu_time(time2)
-            write(*,*) "Timing for force_integrand freq:", k, time2-time1
-            call cpu_time(time1)
-          end if
-        end do
-      end if
-
-      if( do_timing ) then
-        call cpu_time(time2)
-        write(*,*) "Timing for force_integrand:", time2-time1
-        call cpu_time(time1)
-      end if
-
       do a = 1, n_sites
         do c3 = 1, 3
           integral = 0.d0
@@ -1524,12 +1437,6 @@ module vdw
         end do
       end do
       forces0 = forces0 * 51.42208619083232
-
-      if( do_timing ) then
-        call cpu_time(time2)
-        write(*,*) "Timing for MBD force integration:", time2-time1
-        call cpu_time(time1)
-      end if
 
       write(*,*) "MBD forces:"
       do i = 1, n_sites
