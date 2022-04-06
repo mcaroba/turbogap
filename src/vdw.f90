@@ -29,10 +29,10 @@
 module vdw
 
   use misc
-  use psb_base_mod
-  use psb_prec_mod
-  use psb_krylov_mod
-  use psb_util_mod
+!  use psb_base_mod
+!  use psb_prec_mod
+!  use psb_krylov_mod
+!  use psb_util_mod
 
   contains
 
@@ -455,7 +455,7 @@ module vdw
                            hirshfeld_v_cart_der_H(:,:), I_mat(:,:), &
                            a_vec(:,:), &
                            BTB_reg(:,:), B_reg(:,:), &
-                           BTB_reg_copy(:,:), a_SCS(:,:), da_vec(:,:), vect1(:,:), &
+                           a_SCS(:,:), da_vec(:,:), vect1(:,:), &
                            vect2(:,:), vect3(:,:), vect4(:,:), vect_temp(:,:), da_SCS(:,:)
     real*8 :: time1, time2, this_force(1:3), Bohr, Hartree, &
               omega, pi, integral, E_MBD, R_vdW_ij, R_vdW_SCS_ij, S_vdW_ij, dS_vdW_ij, exp_term, &
@@ -464,17 +464,17 @@ module vdw
     integer, allocatable :: ipiv(:)
     integer :: n_sites, n_pairs, n_species, n_sites0, info, n_order, n_freq, om, n_tot
     integer :: i, i2, j, j2, k, k2, k3, a, a2, c1, c2, c3, lwork, b, p, q, n_count
-    logical :: do_timing = .true., do_hirshfeld_gradients = .true., &
+    logical :: do_timing = .false., do_hirshfeld_gradients = .true., &
                total_energy = .true.
-    type(psb_ctxt_type) :: icontxt
-    integer(psb_ipk_) ::  iam, np, ip, jp, idummy, nr, nnz, info_psb
-    type(psb_desc_type) :: desc_a
-    type(psb_dspmat_type) :: A_sp
+!    type(psb_ctxt_type) :: icontxt
+!    integer(psb_ipk_) ::  iam, np, ip, jp, idummy, nr, nnz, info_psb
+!    type(psb_desc_type) :: desc_a
+!    type(psb_dspmat_type) :: A_sp
     real*8, allocatable :: x_vec(:,:), b_vec(:,:)
-    integer(psb_lpk_), allocatable :: ia(:), ja(:), myidx(:)
-    real(psb_dpk_), allocatable :: val(:), val_xv(:,:), val_bv(:,:)
-    type(psb_dprec_type)  :: prec
-    character(len=20) :: ptype
+!    integer(psb_lpk_), allocatable :: ia(:), ja(:), myidx(:)
+!    real(psb_dpk_), allocatable :: val(:), val_xv(:,:), val_bv(:,:)
+!    type(psb_dprec_type)  :: prec
+!    character(len=20) :: ptype
 
 !   IMPORTANT NOTE ABOUT THE DERIVATIVES:
 !   If rcut < rcut_soap, the derivatives in the new implementation omit the terms that fall outside of rcut.
@@ -504,7 +504,7 @@ module vdw
 !   The implementation matches with the implementation above if rcut is the largest cutoff or the cutoff is so small that the only neighbor
 !   the atoms see are themselves (n_neigh(i) = 1 for all i).
 
-    if( do_timing) then
+    if( do_timing ) then
       call cpu_time(time1)
     end if
 
@@ -529,7 +529,7 @@ module vdw
     allocate( I_mat(1:3*n_sites,1:3*n_sites) )
     allocate( a_vec(1:3*n_sites,1:3) )
     allocate( a_SCS(1:3*n_sites,1:3) )
-    allocate( BTB_reg_copy(1:3*n_sites,1:3*n_sites) )
+!    allocate( BTB_reg_copy(1:3*n_sites,1:3*n_sites) )
     allocate( BTB_reg(1:3*n_sites,1:3*n_sites) )
     allocate( B_reg(1:3*n_sites,1:3*n_sites) )
     if ( do_derivatives ) then
@@ -765,8 +765,8 @@ module vdw
       call dgemm('t', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, B_mat, 3*n_sites, &
                   B_mat, 3*n_sites, 0.d0, BTB_reg, 3*n_sites)
       BTB_reg = BTB_reg + reg_param * I_mat
-      BTB_reg_copy = BTB_reg
-      call dsysv('U', 3*n_sites, 3, BTB_reg_copy, 3*n_sites, ipiv, &
+!      BTB_reg_copy = BTB_reg
+      call dsysv('U', 3*n_sites, 3, BTB_reg, 3*n_sites, ipiv, &
                   a_SCS, 3*n_sites, work_arr, 12*n_sites, info)
 
 !      alpha_SCS0(:,om) = 0.d0
@@ -817,6 +817,9 @@ module vdw
           end do
 
           do a = 1, n_sites
+
+            !write(*,*) "frequency, cartesian, atom:", om, c3, a
+
             f_damp_der = 0.d0
             g_func_der = 0.d0
             h_func_der = 0.d0
@@ -1054,8 +1057,8 @@ module vdw
             call dgemm('t', 'n', 3*n_sites, 3, 3*n_sites, 1.d0, B_mat, 3*n_sites, &
               vect_temp, 3*n_sites, 0.d0, vect4, 3*n_sites)
             da_SCS = vect1 + vect2 - vect3 - vect4
-            BTB_reg_copy = BTB_reg
-            call dsysv('U', 3*n_sites, 3, BTB_reg_copy, 3*n_sites, ipiv, &
+!            BTB_reg_copy = BTB_reg
+            call dsytrs('U', 3*n_sites, 3, BTB_reg, 3*n_sites, ipiv, &
               da_SCS, 3*n_sites, work_arr, 12*n_sites, info)
 
             do i = 1, n_sites
@@ -1092,7 +1095,7 @@ module vdw
 !   Clean up
     deallocate( neighbor_c6_ii, f_damp, T_func, &
                 h_func, g_func, omegas, omega_i, alpha_i, sigma_i, B_mat, xyz_H, rjs_H, &
-                BTB_reg, B_reg, BTB_reg_copy, I_mat, a_vec, a_SCS )
+                BTB_reg, B_reg, I_mat, a_vec, a_SCS )
     if ( do_derivatives ) then
       deallocate( dT, dT_SR, f_damp_der, g_func_der, h_func_der, dT_SR_v, &
                   coeff_der, coeff_fdamp, hirshfeld_v_cart_der_H, da_vec, &
@@ -1135,7 +1138,7 @@ module vdw
     integer :: k, k2, i, j, j2, c1, c2, c3, a, om
     real*8 :: Bohr, Hartree, pi, r_vdw_i, r_vdw_j, E_MBD, integral, omega, R_vdW_SCS_ij, S_vdW_ij, &
               dS_vdW_ij, time1, time2
-    logical :: series_average = .true., do_timing = .true.
+    logical :: series_average = .true., do_timing = .false.
 
     write(*,*) "rcut (MBD)", rcut
 !   Hartree units (calculations done in Hartree units for simplicity)

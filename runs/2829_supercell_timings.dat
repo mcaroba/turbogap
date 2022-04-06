@@ -1,0 +1,65 @@
+scs timing   3418.4633300000000
+
+ SOAP energy:        -14295.11530473 eV |
+ 2b energy:            7248.18453340 eV |
+ 3b energy:            -504.33964147 eV |
+ core_pot energy:        -3.12541782 eV |
+ vdw energy:              0.00000000 eV |
+ Total energy:        -7715.77636062 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ *     Read input:        0.681 seconds |
+ * Read XYZ files:        0.002 seconds |
+ * Neighbor lists:        0.209 seconds |
+ *  GAP desc/pred:     2166.371 seconds |
+     - soap_turbo:        3.035 seconds |
+     -         2b:        0.092 seconds |
+     -         3b:        0.963 seconds |
+     -   core_pot:        0.002 seconds |
+     -        vdw:     5583.777 seconds |
+ *  MPI comms.   :        0.000 seconds |
+     -  pos & vel:        0.000 seconds |
+     - E & F brc.:        0.000 seconds |
+     -  MPI misc.:        0.000 seconds |
+ *  Miscellaneous:     3421.549 seconds |
+                                        |
+ *     Total time:     5588.812 seconds |
+                                        |
+ .......................................|
+                                        |
+ End of execution                       |
+ _______________________________________/
+
+input file: (2829_supercell.xyz contains 1000 atoms)
+----------------------------------------
+atoms_file = '2829_supercell.xyz'
+!atoms_file = '2829_p.xyz'
+!atoms_file = '2829_m.xyz'
+!atoms_file = 'atoms.xyz'
+!atoms_file = 'atoms_p.xyz'
+!atoms_file = 'atoms_m.xyz'
+!atoms_file = 'atoms_1yp.xyz'
+!atoms_file = 'atoms_1ym.xyz'
+pot_file = 'gap_files/carbon.gap'
+
+! Species info
+n_species = 1
+species = C
+e0 = -.16138053
+masses = 12.01
+
+! van der Waals info
+vdw_type = ts
+vdw_sr = 0.83
+vdw_d = 6.
+vdw_rcut = 9.
+vdw_buffer = 0.
+vdw_r0_ref = 1.900
+vdw_scs_rcut = 4.5
+vdw_mbd_nfreq = 3
+vdw_mbd_grad = .true.
+!vdw_mbd_grad = .false.
+
