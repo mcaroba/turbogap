@@ -465,7 +465,11 @@ module vdw
     integer :: n_sites, n_pairs, n_species, n_sites0, info, n_order, n_freq, om, n_tot
     integer :: i, i2, j, j2, k, k2, k3, a, a2, c1, c2, c3, lwork, b, p, q, n_count
     logical :: do_timing = .false., do_hirshfeld_gradients = .true., &
-               total_energy = .true.
+               total_energy = .true., regularization = .true. ! NOTE: THERE IS A BUG WITH regularization = .false.
+                                                              ! INCONSISTENT FINITE DIFFERENCE FORCES!
+
+
+
 !    type(psb_ctxt_type) :: icontxt
 !    integer(psb_ipk_) ::  iam, np, ip, jp, idummy, nr, nnz, info_psb
 !    type(psb_desc_type) :: desc_a
@@ -752,24 +756,50 @@ module vdw
         end do
       end do
 
+      !if ( om == 1 ) then
+      !write(*,*) "a_vec"
+      !do p = 1, 3*n_sites
+      !  write(*,*) a_vec(p,:)
+      !end do
+      !end if
+
       if( do_timing) then
         call cpu_time(time2)
         write(*,*) "Energies: timing for everything else:", time2-time1
         call cpu_time(time1)
       end if     
 
-      reg_param = 0.01d0
-      B_reg = B_mat + reg_param * I_mat
-      call dgemm('t', 'n', 3*n_sites, 3, 3*n_sites, 1.d0, B_reg, 3*n_sites, &
-                  a_vec, 3*n_sites, 0.d0, a_SCS, 3*n_sites)
-      call dgemm('t', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, B_mat, 3*n_sites, &
-                  B_mat, 3*n_sites, 0.d0, BTB_reg, 3*n_sites)
-      BTB_reg = BTB_reg + reg_param * I_mat
-!      BTB_reg_copy = BTB_reg
-      call dsysv('U', 3*n_sites, 3, BTB_reg, 3*n_sites, ipiv, &
-                  a_SCS, 3*n_sites, work_arr, 12*n_sites, info)
+      if ( regularization ) then
+        reg_param = 0.01d0
+        B_reg = B_mat + reg_param * I_mat
+        call dgemm('t', 'n', 3*n_sites, 3, 3*n_sites, 1.d0, B_reg, 3*n_sites, &
+                    a_vec, 3*n_sites, 0.d0, a_SCS, 3*n_sites)
+        call dgemm('t', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, B_mat, 3*n_sites, &
+                    B_mat, 3*n_sites, 0.d0, BTB_reg, 3*n_sites)
+        BTB_reg = BTB_reg + reg_param * I_mat
+!        BTB_reg_copy = BTB_reg
+        call dsysv('U', 3*n_sites, 3, BTB_reg, 3*n_sites, ipiv, &
+                    a_SCS, 3*n_sites, work_arr, 12*n_sites, info)
+      else
+        BTB_reg = B_mat
+        a_SCS = a_vec
+        call dgesv(3*n_sites, 3, BTB_reg, 3*n_sites, ipiv, &
+                    a_SCS, 3*n_sites, info)
+      end if
 
-!      alpha_SCS0(:,om) = 0.d0
+      if ( om == 1 ) then
+      write(*,*) "a_SCS"
+      do i = 1, 3*n_sites
+        write(*,*) a_SCS(i,:)
+      end do
+
+      write(*,*) "B_mat"
+      do i = 1, 6
+        write(*,*) B_mat(i,1:6)
+      end do
+      end if
+
+      alpha_SCS0(:,om) = 0.d0
       do p = 1, n_sites
         do c1 = 1, 3
           alpha_SCS0(p,om) = alpha_SCS0(p,om) + a_SCS(3*(p-1)+c1,c1)
@@ -1003,7 +1033,7 @@ module vdw
             end do
 
             da_vec = 0.d0
-            k2 = 0
+            !k2 = 0
             do i = 1, n_sites
               n_tot = sum(n_neigh(1:i))-n_neigh(i)
               if ( any(neighbors_list(n_tot+1:n_tot+n_neigh(i)) == a) ) then
@@ -1014,6 +1044,14 @@ module vdw
                 end do
               end if
             end do
+
+            if ( a == 1 .and. om == 1 .and. c3 == 1 ) then
+            !write(*,*) "da_vec"
+            !do i = 1, 3*n_sites
+            !  write(*,*) da_vec(i,:)
+            !end do
+            end if
+
 
       ! What happens here: regularized equation
       ! (B^T * B + reg_param * I) a_SCS = (B^T + reg_param*I) a_vec
@@ -1028,43 +1066,54 @@ module vdw
               call cpu_time(time1)
             end if
 
-!TEST
-            do i = 1, 3*n_sites
-              do c1 = 1, 3
-                vect1(i,c1) = dot_product(dT_SR(c1::3,i), a_vec(c1::3,c1))
-                vect2(i,c1) = dot_product(B_reg(c1::3,i), da_vec(c1::3,c1))
+            if ( regularization ) then
+              do i = 1, 3*n_sites
+                do c1 = 1, 3
+                  vect1(i,c1) = dot_product(dT_SR(c1::3,i), a_vec(c1::3,c1))
+                  vect2(i,c1) = dot_product(B_reg(c1::3,i), da_vec(c1::3,c1))
+                end do
               end do
-            end do
-!              write(*,*) "vect1"
-!              do i = 1, 6
-!                write(*,*) vect1(i,:)
-!              end do
-!              call dgemm('t', 'n', 3*n_sites, 3, 3*n_sites, 1.d0, dT_SR(:,:,a,c3,k), 3*n_sites, &
-!                a_vec(:,:,k), 3*n_sites, 0.d0, vect1, 3*n_sites)
-!              call dgemm('t', 'n', 3*n_sites, 3, 3*n_sites, 1.d0, B_reg(:,:,k), 3*n_sites, &
-!                da_vec(:,:,a,c3,k), 3*n_sites, 0.d0, vect2, 3*n_sites)
-!              write(*,*) "vect1 after"
-!              do i = 1, 6
-!                write(*,*) vect1(i,:)
-!              end do
-!TEST ENDS
-            call dgemm('n', 'n', 3*n_sites, 3, 3*n_sites, 1.d0, B_mat, 3*n_sites, &
-              a_SCS, 3*n_sites, 0.d0, vect_temp, 3*n_sites)
-            call dgemm('t', 'n', 3*n_sites, 3, 3*n_sites, 1.d0, dT_SR, 3*n_sites, &
-              vect_temp, 3*n_sites, 0.d0, vect3, 3*n_sites)
-            call dgemm('n', 'n', 3*n_sites, 3, 3*n_sites, 1.d0, dT_SR, 3*n_sites, &
-              a_SCS, 3*n_sites, 0.d0, vect_temp, 3*n_sites)
-            call dgemm('t', 'n', 3*n_sites, 3, 3*n_sites, 1.d0, B_mat, 3*n_sites, &
-              vect_temp, 3*n_sites, 0.d0, vect4, 3*n_sites)
-            da_SCS = vect1 + vect2 - vect3 - vect4
-!            BTB_reg_copy = BTB_reg
-            call dsytrs('U', 3*n_sites, 3, BTB_reg, 3*n_sites, ipiv, &
-              da_SCS, 3*n_sites, work_arr, 12*n_sites, info)
+              call dgemm('n', 'n', 3*n_sites, 3, 3*n_sites, 1.d0, B_mat, 3*n_sites, &
+                a_SCS, 3*n_sites, 0.d0, vect_temp, 3*n_sites)
+              call dgemm('t', 'n', 3*n_sites, 3, 3*n_sites, 1.d0, dT_SR, 3*n_sites, &
+                vect_temp, 3*n_sites, 0.d0, vect3, 3*n_sites)
+              call dgemm('n', 'n', 3*n_sites, 3, 3*n_sites, 1.d0, dT_SR, 3*n_sites, &
+                a_SCS, 3*n_sites, 0.d0, vect_temp, 3*n_sites)
+              call dgemm('t', 'n', 3*n_sites, 3, 3*n_sites, 1.d0, B_mat, 3*n_sites, &
+                vect_temp, 3*n_sites, 0.d0, vect4, 3*n_sites)
+              da_SCS = vect1 + vect2 - vect3 - vect4
+              call dsytrs('U', 3*n_sites, 3, BTB_reg, 3*n_sites, ipiv, &
+                da_SCS, 3*n_sites, info)
+            else
+              if ( a == 1 .and. c3 == 1 .and. om == 1) then
+              write(*,*) "a_SCS"
+              do p = 1, 3*n_sites
+                write(*,*) a_SCS(p,:)
+              end do
+              end if
+              call dgemm('n', 'n', 3*n_sites, 3, 3*n_sites, 1.d0, dT_SR, 3*n_sites, &
+                a_SCS, 3*n_sites, 0.d0, vect_temp, 3*n_sites)
+              da_SCS = da_vec - vect_temp
+              call dgetrs('n', 3*n_sites, 3, BTB_reg, 3*n_sites, ipiv, &
+                da_SCS, 3*n_sites, info)
+            end if
 
             do i = 1, n_sites
               dalpha_full(i,a,c3,om) = 1.d0/3.d0 * (da_SCS(3*(i-1)+1,1) + &
                 da_SCS(3*(i-1)+2,2) + da_SCS(3*(i-1)+3,3))
             end do
+
+            if ( a == 1 .and. om == 1 .and. c3 == 1 ) then
+            !write(*,*) "da_SCS"
+            !do i = 1, 3*n_sites
+            !  write(*,*) da_SCS(i,:)
+            !end do
+
+            write(*,*) "dT_SR"
+            do i = 1, 6
+              write(*,*) dT_SR(i,1:6)
+            end do
+            end if
 
             if( do_timing) then
               call cpu_time(time2)

@@ -1,3 +1,4 @@
+!atoms_file = 'atoms.xyz'
 atoms_file = '2829.xyz'
 !atoms_file = '2829_p.xyz'
 !atoms_file = '2829_m.xyz'
