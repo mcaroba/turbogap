@@ -33,6 +33,8 @@ module read_files
   use splines
   use vdw
   use soap_turbo_compress
+  use xyz_module
+  use md
 
 
   contains
@@ -45,12 +47,12 @@ module read_files
                       repeat_xyz, rcut_max, which_atom, positions, &
                       do_md, velocities, masses_types, masses, xyz_species, xyz_species_supercell, &
                       species, species_supercell, indices, a_box, b_box, c_box, n_sites, &
-                      supercell_check_only, fix_atom )
+                      supercell_check_only, fix_atom, t_beg )
 
     implicit none
 
 !   Input variables
-    real*8, intent(in) :: rcut_max, masses_types(:)
+    real*8, intent(in) :: rcut_max, masses_types(:), t_beg
     integer, intent(in) :: which_atom, n_species
     character*8, intent(in) :: species_types(:)
     character*1024, intent(in) :: filename
@@ -68,14 +70,15 @@ module read_files
 
 !   Internal variables
     real*8, allocatable :: positions_supercell(:,:), velocities_supercell(:,:)
-    real*8 :: time1, time2, dist(1:3), read_time
+    real*8 :: time1, time2, dist(1:3), read_time, E_kinetic, instant_temp
+    real*8 :: kB = 8.6173303d-5
     integer :: i, iostatus, j, n_sites_supercell, counter, ijunk, k2, i2, j2
     integer :: indices_prev(1:3)  
     character*8 :: i_char
     character*128 :: cjunk, cjunk_array(1:100)
-    character*1024 :: cjunk1024
+    character*1024 :: cjunk1024, properties
     character*12800 :: cjunk_array_flat
-    logical :: masses_from_xyz
+    logical :: masses_from_xyz, has_velocities
 
     indices_prev = indices
 
@@ -93,11 +96,13 @@ if( .not. supercell_check_only )then
       read(11, fmt='(A)') cjunk_array_flat
       cjunk_array = ""
       read(cjunk_array_flat, *, iostat=iostatus) cjunk_array(:)
+!     Read in lattice vectors
       i = 0
       do
         i = i + 1
         cjunk = cjunk_array(i)
-        if( cjunk(1:7) == "Lattice" )then
+        call upper_to_lower_case(cjunk)
+        if( cjunk(1:7) == "lattice" )then
           read(cjunk(10:), *) a_box(1)
           read(cjunk_array(i+1), *) a_box(2)
           read(cjunk_array(i+2), *) a_box(3)
@@ -108,6 +113,25 @@ if( .not. supercell_check_only )then
           read(cjunk_array(i+7), *) c_box(2)
           cjunk = adjustr(cjunk_array(i+8))
           read(cjunk(1:127), *) c_box(3)
+          exit
+        end if
+      end do
+!     Read in properties string
+      i = 0
+      do
+        i = i + 1
+        cjunk = cjunk_array_flat(i:i+9)
+        call upper_to_lower_case(cjunk)
+        if( cjunk == "properties" )then
+          j = i+9
+          do
+            j = j + 1
+            if( cjunk_array_flat(j:j) == " " )then
+              properties = cjunk_array_flat(i:j-1)
+              call upper_to_lower_case(properties)
+              exit
+            end if
+          end do
           exit
         end if
       end do
@@ -133,6 +157,7 @@ if( .not. supercell_check_only )then
       if( allocated(masses) )deallocate(masses)
       if( allocated(fix_atom) )deallocate(fix_atom)
       allocate( velocities(1:3, 1:n_sites) )
+      velocities = 0.d0
       allocate( masses(1:n_sites) )
       masses_from_xyz = .false.
       allocate( fix_atom(1:3, 1:n_sites) )
@@ -147,30 +172,18 @@ if( .not. supercell_check_only )then
 !    species_multiplicity = 0
     do i = 1, n_sites
       if( do_md )then
-! temp hack; a proper XYZ reader should be implemented
-!read(11, *, iostat=iostatus) i_char, positions(1:3, i), velocities(1:3, i), masses(i)
-!read(11, *, iostat=iostatus) i_char, positions(1:3, i), velocities(1:3, i), fix_atom(1:3, i)
-read(11, '(A)') cjunk1024
-read(cjunk1024, *, iostat=iostatus) i_char, positions(1:3, i), velocities(1:3, i), fix_atom(1:3, i)
-if( iostatus /= 0 ) then
-backspace(11)
-read(11, '(A)') cjunk1024
-fix_atom(1:3, i) = .false.
-!        read(11, *, iostat=iostatus) i_char, positions(1:3, i), velocities(1:3, i)
-        read(cjunk1024, *, iostat=iostatus) i_char, positions(1:3, i), velocities(1:3, i)
-else
+        read(11, '(A)') cjunk1024
+        call read_xyz_line( properties, cjunk1024, i_char, positions(1:3, i), velocities(1:3, i), fix_atom(1:3, i), has_velocities )
 !masses_from_xyz = .true.
 !masses(i) = masses(i) * 103.6426965268d0
-continue
-end if
-        if( iostatus /= 0 )then
-          write(*,*)'                                       |'
-          write(*,*)'ERROR reading atoms file: have you     |  <-- ERROR'
-          write(*,*)'provided velocities?                   |'
-          write(*,*)'                                       |'
-          write(*,*)'.......................................|'
-          stop
-        end if
+!        if( iostatus /= 0 )then
+!          write(*,*)'                                       |'
+!          write(*,*)'ERROR reading atoms file: have you     |  <-- ERROR'
+!          write(*,*)'provided velocities?                   |'
+!          write(*,*)'                                       |'
+!          write(*,*)'.......................................|'
+!          stop
+!        end if
       else
         read(11, *) i_char, positions(1:3, i)
       end if
@@ -195,6 +208,26 @@ end if
         stop
       end if
     end do
+!   Randomize velocities if velocities are not provided
+    if( do_md .and. .not. has_velocities )then
+      write(*,*)'                                       |'
+      write(*,*)'WARNING: you have not provided initial |  <-- WARNING'
+      write(*,*)'velocities. I am randomizing them so   |'
+      write(*,*)'that they match your initial target    |'
+      write(*,*)'temperature:                           |'
+      write(*,*)'                                       |'
+      write(*,'(A, F16.4, A)')' t_beg = ', t_beg, ' K             |'
+      write(*,*)'                                       |'
+      write(*,*)'.......................................|'
+      call random_number(velocities)
+      call remove_cm_vel(velocities(1:3,1:n_sites), masses(1:n_sites))
+      E_kinetic = 0.d0
+      do i = 1, n_sites
+        E_kinetic = E_kinetic + 0.5d0 * masses(i) * dot_product(velocities(1:3, i), velocities(1:3, i))
+      end do
+      instant_temp = 2.d0/3.d0/dfloat(n_sites-1)/kB*E_kinetic
+      velocities = velocities * dsqrt(t_beg/instant_temp)
+    end if
 !   Check if there are more structures in the xyz file
     read(11, *, iostat=iostatus) cjunk
     if( iostatus == 0 )then
