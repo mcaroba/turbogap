@@ -152,7 +152,7 @@ if( .not. supercell_check_only )then
 !read(11, *, iostat=iostatus) i_char, positions(1:3, i), velocities(1:3, i), fix_atom(1:3, i)
 read(11, '(A)') cjunk1024
 read(cjunk1024, *, iostat=iostatus) i_char, positions(1:3, i), velocities(1:3, i), fix_atom(1:3, i)
-if( iostatus > 0 ) then
+if( iostatus /= 0 ) then
 backspace(11)
 read(11, '(A)') cjunk1024
 fix_atom(1:3, i) = .false.
@@ -163,7 +163,7 @@ else
 !masses(i) = masses(i) * 103.6426965268d0
 continue
 end if
-        if( iostatus > 0 )then
+        if( iostatus /= 0 )then
           write(*,*)'                                       |'
           write(*,*)'ERROR reading atoms file: have you     |  <-- ERROR'
           write(*,*)'provided velocities?                   |'
