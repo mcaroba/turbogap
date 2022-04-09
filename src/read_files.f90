@@ -47,7 +47,7 @@ module read_files
                       repeat_xyz, rcut_max, which_atom, positions, &
                       do_md, velocities, masses_types, masses, xyz_species, xyz_species_supercell, &
                       species, species_supercell, indices, a_box, b_box, c_box, n_sites, &
-                      supercell_check_only, fix_atom, t_beg )
+                      supercell_check_only, fix_atom, t_beg, write_masses )
 
     implicit none
 
@@ -65,13 +65,13 @@ module read_files
     integer, intent(inout) :: n_sites
     integer, intent(inout) :: indices(1:3)
     character*8, allocatable, intent(inout) :: xyz_species(:), xyz_species_supercell(:)
-    logical, intent(inout) :: repeat_xyz
+    logical, intent(inout) :: repeat_xyz, write_masses
     logical, allocatable, intent(inout) :: fix_atom(:,:)
 
 !   Internal variables
     real*8, allocatable :: positions_supercell(:,:), velocities_supercell(:,:)
     real*8 :: time1, time2, dist(1:3), read_time, E_kinetic, instant_temp
-    real*8 :: kB = 8.6173303d-5, rjunk(1:3)
+    real*8 :: kB = 8.6173303d-5, rjunk(1:3), rjunk1d
     integer :: i, iostatus, j, n_sites_supercell, counter, ijunk, k2, i2, j2
     integer :: indices_prev(1:3)  
     character*8 :: i_char
@@ -173,11 +173,15 @@ if( .not. supercell_check_only )then
     do i = 1, n_sites
       read(11, '(A)') cjunk1024
       if( do_md )then
-        call read_xyz_line( properties, cjunk1024, i_char, positions(1:3, i), velocities(1:3, i), fix_atom(1:3, i), has_velocities )
-!masses_from_xyz = .true.
-!masses(i) = masses(i) * 103.6426965268d0
+        call read_xyz_line( properties, cjunk1024, i_char, positions(1:3, i), velocities(1:3, i), fix_atom(1:3, i), &
+                            has_velocities, masses(i), masses_from_xyz )
+        if( masses_from_xyz )then
+          masses(i) = masses(i) * 103.6426965268d0
+          write_masses = .true.
+        end if
       else
-        call read_xyz_line( properties, cjunk1024, i_char, positions(1:3, i), rjunk(1:3), ljunk(1:3), has_velocities )
+        call read_xyz_line( properties, cjunk1024, i_char, positions(1:3, i), rjunk(1:3), ljunk(1:3), has_velocities, &
+                            rjunk1d, masses_from_xyz )
       end if
       do j = 1, n_species
         if( trim(i_char) == trim(species_types(j)) )then

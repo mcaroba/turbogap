@@ -309,7 +309,8 @@ module xyz_module
 
 
 !**************************************************************************
-  subroutine read_xyz_line( properties, line, species, positions, velocities, fix_atom, has_velocities )
+  subroutine read_xyz_line( properties, line, species, positions, velocities, fix_atom, has_velocities, &
+                            masses, has_masses )
 
     implicit none
 
@@ -317,10 +318,10 @@ module xyz_module
     character*1024, intent(in) :: properties, line
 
 !   Output variables
-    real*8, intent(inout) :: velocities(1:3), positions(1:3)
+    real*8, intent(inout) :: velocities(1:3), positions(1:3), masses
     character*8 :: species
     logical, intent(inout) :: fix_atom(1:3)
-    logical, intent(out) :: has_velocities
+    logical, intent(out) :: has_velocities, has_masses
 
 !   Internal variables
     integer :: i, j, k, iostatus
@@ -328,6 +329,7 @@ module xyz_module
     character*32 :: property
 
     has_velocities = .false.
+    has_masses = .false.
 
     j = 0
     property = ""
@@ -347,8 +349,8 @@ module xyz_module
         else if( property == "fix_atoms" .or. property == "fix_atom" )then
           read(line, *) (junk, k = 1, j), fix_atom(1:3)
         else if( property == "mass" .or. property == "masses" )then
-!       IMPLEMENT READING MASSES FROM FILE!!!!!!!
-          continue
+          read(line, *) (junk, k = 1, j), masses
+          has_masses = .true.
         else
 !         Advance the pointer by the correct number of fields
           read(property, *, iostat=iostatus) k
