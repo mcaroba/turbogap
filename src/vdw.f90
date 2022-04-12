@@ -1179,17 +1179,17 @@ module vdw
     logical, intent(in) :: do_derivatives
     real*8, allocatable :: T_LR(:,:), r0_ii_SCS(:), r0_ii(:), neighbor_alpha0(:), &
                            xyz_H(:,:), rjs_H(:), f_damp_SCS(:), T_func(:), AT(:,:), AT_n(:,:,:), &
-                           energy_series(:,:), integrand(:,:), omegas(:), f_damp_der(:), &
+                           AT_n_f(:,:,:), energy_series(:,:), integrand(:,:), omegas(:), f_damp_der(:), &
                            f_damp_der_SCS(:), dT_LR(:,:), dT(:), &
                            G_mat(:,:), force_integrand(:,:,:), force_series(:,:), &
                            VL(:,:)
     integer :: n_order, n_freq, n_sites, n_pairs, n_species, n_sites0, n_sub_sites, n_sub_pairs
-    integer :: k, k2, k3, i, i2, j, j2, j3, c1, c2, c3, a, om, p, q, n_tot, n_tot2, s
+    integer :: k, k2, k3, i, i2, j, j2, j3, c1, c2, c3, a, a2, om, p, q, n_tot, n_tot2, s
     real*8 :: Bohr, Hartree, pi, r_vdw_i, r_vdw_j, E_MBD, integral, omega, R_vdW_SCS_ij, S_vdW_ij, &
               dS_vdW_ij, time1, time2
     logical :: series_average = .true., do_timing = .false., local = .true.
     logical, allocatable :: in_cutoff(:) 
-    integer, allocatable :: p_to_i(:), i_to_p(:), sub_neighbors_list(:)
+    integer, allocatable :: p_to_i(:), i_to_p(:), sub_neighbors_list(:), n_sub_neigh(:)
 
     write(*,*) "rcut (MBD)", rcut
 !   Hartree units (calculations done in Hartree units for simplicity)
@@ -1226,9 +1226,13 @@ module vdw
       allocate( in_cutoff(1:n_sites) )
       allocate( p_to_i(1:n_sites) )
       allocate( i_to_p(1:n_sites) )
-      
+
       k = 0
       do i = 1, n_sites
+      
+        if ( do_derivatives ) then
+          force_integrand = 0.d0
+        end if
         p_to_i = 0
         i_to_p = 0
         in_cutoff = .false.
@@ -1251,13 +1255,17 @@ module vdw
         !write(*,*) "in_cutoff", in_cutoff
         n_sub_pairs = 0
         n_tot = sum(n_neigh(1:i))-n_neigh(i)
+        allocate( n_sub_neigh(1:n_neigh(i)) )
+        n_sub_neigh = 0
         do j2 = 1, n_neigh(i)
           j = neighbors_list(n_tot+j2)
           n_sub_pairs = n_sub_pairs + 1
+          n_sub_neigh(j2) = n_sub_neigh(j2) + 1
           n_tot2 = sum(n_neigh(1:j))-n_neigh(j)
           do j3 = 2, n_neigh(j)
             if ( rjs(n_tot2+j3) < rcut ) then
               if ( in_cutoff(neighbors_list(n_tot2+j3)) ) then
+                n_sub_neigh(j2) = n_sub_neigh(j2) + 1
                 n_sub_pairs = n_sub_pairs + 1
               end if
             end if
@@ -1278,14 +1286,17 @@ module vdw
         allocate( r0_ii_SCS(1:n_sub_pairs) )
         allocate( f_damp_SCS(1:n_sub_pairs) )
         allocate( AT(1:3*n_sub_sites,1:3*n_sub_sites) )
-        allocate( AT_n(1:3*n_sub_sites,1:3*n_sub_sites,1:n_order-1) )
+        !allocate( AT_n(1:3*n_sub_sites,1:3*n_sub_sites,1:n_order-1) )
+        allocate( AT_n(1:3*n_sub_sites,1:3,1:n_order-1) )
         allocate( energy_series(1:3*n_sub_sites,1:3) )
         if ( do_derivatives ) then
+          allocate( AT_n_f(1:3*n_sub_sites,1:3*n_sub_sites,1:n_order-1) )
           allocate( dT(1:9*n_sub_pairs) )
           allocate( f_damp_der(1:n_sub_pairs) )
           allocate( f_damp_der_SCS(1:n_sub_pairs) )
           allocate( dT_LR(1:3*n_sub_sites,1:3*n_sub_sites) )
           allocate( G_mat(1:3*n_sub_sites,1:3*n_sub_sites) )
+          !allocate( force_series(1:3*n_sub_sites,1:3*n_sub_sites) )
           allocate( force_series(1:3*n_sub_sites,1:3*n_sub_sites) )
           allocate( VL(1:3*n_sub_sites,1:3*n_sub_sites) )
         end if
@@ -1294,11 +1305,13 @@ module vdw
         T_func = 0.d0
         T_LR = 0.d0
         n_tot = sum(n_neigh(1:i))-n_neigh(i)
+        !n_sub_neigh = 0
         do j2 = 1, n_neigh(i)
           k2 = k2+1
           s = neighbor_species(n_tot+j2)
           i2 = neighbors_list(n_tot+j2)
           sub_neighbors_list(k2) = i2
+          !n_sub_neigh(j2) = n_sub_neigh(i2) + 1
           r0_ii(k2) = r0_ref(s) / Bohr
           neighbor_alpha0(k2) = alpha0_ref(s) / Bohr**3
           xyz_H(:,k2) = xyz(:,n_tot+j2)/Bohr
@@ -1309,6 +1322,7 @@ module vdw
           do j3 = 2, n_neigh(i2)
             if ( rjs(n_tot2+j3) < rcut ) then
               if ( in_cutoff(neighbors_list(n_tot2+j3)) ) then
+                !n_sub_neigh(j2) = n_sub_neigh(j2) + 1
                 k2 = k2+1    
                 s = neighbor_species(n_tot2+j3)
                 j = neighbors_list(n_tot2+j3)
@@ -1357,6 +1371,7 @@ module vdw
           AT_n = 0.d0
           energy_series = 0.d0
           if ( do_derivatives ) then
+            AT_n_f = 0.d0
             force_series = 0.d0
           end if
 
@@ -1364,21 +1379,29 @@ module vdw
             do k2 = 1, n_order-1
               ! Precalculate the full AT_n for forces:
               if ( k2 == 1 ) then
-                AT_n(:,:,k2) = AT
+                AT_n(:,:,k2) = AT(:,1:3)
+                if ( do_derivatives ) then
+                  AT_n_f(:,:,k2) = AT
+                end if
               else
-                call dgemm('n', 'n', 3*n_sub_sites, 3*n_sub_sites, 3*n_sub_sites, 1.d0, AT, &
+                call dgemm('n', 'n', 3*n_sub_sites, 3, 3*n_sub_sites, 1.d0, AT, &
                            3*n_sub_sites, AT_n(:,:,k2-1), 3*n_sub_sites, 0.d0, AT_n(:,:,k2), &
                            3*n_sub_sites)
+                if ( do_derivatives ) then
+                  call dgemm('n', 'n', 3*n_sub_sites, 3*n_sub_sites, 3*n_sub_sites, 1.d0, AT, &
+                             3*n_sub_sites, AT_n_f(:,:,k2-1), 3*n_sub_sites, 0.d0, AT_n_f(:,:,k2), &
+                             3*n_sub_sites)
+                end if
               end if
               if (series_average .and. k2 == n_order-1) then
-                energy_series = energy_series - 1.d0/(k2+1)*AT_n(:,1:3,k2)/2.d0
+                energy_series = energy_series - 1.d0/(k2+1)*AT_n(:,:,k2)/2.d0
                 if ( do_derivatives ) then
-                  force_series = force_series + AT_n(:,:,k2)/2.d0
+                  force_series = force_series + AT_n_f(:,:,k2)/2.d0
                 end if
               else
                 energy_series = energy_series - 1.d0/(k2+1)*AT_n(:,1:3,k2)
                 if ( do_derivatives ) then
-                  force_series = force_series + AT_n(:,:,k2)
+                  force_series = force_series + AT_n_f(:,:,k2)
                 end if
               end if
             end do
@@ -1392,8 +1415,130 @@ module vdw
             write(*,*) "WARNING: Series expansion requires that vdw_mbd_order > 1 or the resulting energies"
             write(*,*) "and forces will be zero."
           end if
+          
+          if ( do_derivatives ) then
+      
+          do c3 = 1, 3
+          
+            dT = 0.d0
+            k2 = 0
+            do j2 = 1, n_neigh(i)
+              k2 = k2+1
+              i2 = sub_neighbors_list(k2)
+              if ( n_sub_neigh(j2) > 1 ) then
+                do j3 = 2, n_sub_neigh(j2)
+                  k2 = k2+1
+                  j = sub_neighbors_list(k2)    
+                  k3 = 9*(k2-1)
+                  do c1 = 1,3
+                    do c2 = 1,3
+                      k3 = k3+1
+                      !write(*,*) "k3", k3
+                      dT(k3) = (-15.d0 * xyz_H(c1,k2) * xyz_H(c2,k2) * xyz_H(c3,k2))/rjs_H(k2)**7
+                      if (c1 == c2) then
+                        dT(k3) = dT(k3) + 3.d0/rjs_H(k2)**5 * xyz_H(c3,k2)
+                      end if
+                      if (c2 == c3) then
+                        dT(k3) = dT(k3) + 3.d0/rjs_H(k2)**5 * xyz_H(c1,k2)
+                      end if
+                      if (c1 == c3) then
+                        dT(k3) = dT(k3) + 3.d0/rjs_H(k2)**5 * xyz_H(c2,k2)
+                      end if
+                    end do
+                  end do
+                end do
+              end if
+            end do
+            
+            do a2 = 1, n_neigh(i)
 
-        end do
+              f_damp_der_SCS = 0.d0
+              f_damp_der = 0.d0 ! This is cleared so we can recalculate it with SCS values
+              dT_LR = 0.d0
+              a = neighbors_list(n_tot+a2)
+              k2 = 0
+              do j2 = 1, n_neigh(i)
+                k2 = k2+1
+                r_vdw_i = r0_ii_SCS(k2)
+                i2 = sub_neighbors_list(k2)
+                if ( n_sub_neigh(j2) > 1 ) then
+                do j3 = 2, n_sub_neigh(j2)
+                  k2 = k2+1
+                  j = sub_neighbors_list(k2)
+                  r_vdw_j = r0_ii_SCS(k2)
+                  R_vdW_SCS_ij = r_vdw_i + r_vdw_j
+                  S_vdW_ij = sR*R_vdW_SCS_ij
+                  dS_vdW_ij = sR/3.d0 * ( r_vdw_i/alpha_SCS0(i2,1) * alpha_SCS_grad(i2,a,c3,1) + &
+                                            r_vdw_j/alpha_SCS0(j,1) * alpha_SCS_grad(j,a,c3,1) )
+                  f_damp_der_SCS(k2) = -(d*rjs_H(k2))/S_vdW_ij**2 * f_damp_SCS(k2)**2 * &
+                                         exp(-d*(rjs_H(k2)/S_vdW_ij - 1.d0)) * dS_vdW_ij
+                  k3 = 9*(k2-1)
+                  p = i_to_p(i2)
+                  q = i_to_p(j)
+                  do c1 = 1, 3
+                    do c2 = 1, 3
+                      k3 = k3+1
+                      dT_LR(3*(p-1)+c1,3*(q-1)+c2) = dT_LR(3*(p-1)+c1,3*(q-1)+c2) + &
+                                        T_func(k3) * f_damp_der_SCS(k2) 
+                    end do
+                  end do
+                  if (a == i2 .or. a == j) then
+                    f_damp_der(k2) = d/S_vdW_ij * f_damp_SCS(k2)**2 * &
+                                    exp( -d*(rjs_H(k2)/S_vdW_ij - 1.d0) ) * xyz_H(c3,k2)/rjs_H(k2)
+                    k3 = 9*(k2-1)
+                    do c1 = 1, 3
+                      do c2 = 1, 3
+                        k3 = k3+1
+                        if (a == i2) then
+                          dT_LR(3*(p-1)+c1,3*(q-1)+c2) = dT_LR(3*(p-1)+c1,3*(q-1)+c2) - &
+                                             T_func(k3) * f_damp_der(k2) - &
+                                             dT(k3) * f_damp_SCS(k2)
+                        else if (a == j) then
+                          dT_LR(3*(p-1)+c1,3*(q-1)+c2) = dT_LR(3*(p-1)+c1,3*(q-1)+c2) + &
+                                             T_func(k3) * f_damp_der(k2) + &
+                                             dT(k3) * f_damp_SCS(k2)
+                        end if
+                      end do
+                    end do
+                  end if
+                end do
+                end if
+              end do
+              
+              G_mat = 0.d0
+!              force_series = 0.d0
+
+              if ( n_order > 1 ) then
+
+                do p = 1, n_sub_sites
+                  i2 = p_to_i(p)
+                  G_mat(3*(p-1)+1:3*(p-1)+3,:) = G_mat(3*(p-1)+1:3*(p-1)+3,:) + &
+                    alpha_SCS0(i2,om) * dT_LR(3*(p-1)+1:3*(p-1)+3,:) + &
+                    alpha_SCS_grad(i2,a,c3,om) * T_LR(3*(p-1)+1:3*(p-1)+3,:)
+                end do
+                do i2 = 1, 3*n_sites
+                  force_integrand(a,c3,om) = force_integrand(a,c3,om) + &
+                    dot_product(G_mat(i2,:), force_series(:,i2))
+                end do
+                
+              end if
+              
+            end do ! a loop
+          
+          end do ! c3 loop
+          
+          do a = 1, n_sites
+            do c3 = 1, 3
+              integral = 0.d0
+              call integrate("trapezoidal", omegas, force_integrand(a,c3,:), omegas(1), omegas(n_freq), integral)
+              forces0(c3,a) = forces0(c3,a) + 1.d0/(2.d0*pi) * integral
+            end do
+          end do
+          forces0 = forces0 * 51.42208619083232
+        
+        end if ! do derivatives
+
+        end do ! om loop
         
         !write(*,*) "integrand", integrand(i,:)
         !write(*,*) "omegas", omegas
@@ -1403,16 +1548,25 @@ module vdw
         energies(i) = E_MBD * 27.211386245988
         write(*,*) i, energies(i)
 
-        deallocate( sub_neighbors_list, xyz_H, rjs_H, r0_ii, neighbor_alpha0, T_func, T_LR, &
+
+        deallocate( n_sub_neigh, sub_neighbors_list, xyz_H, rjs_H, r0_ii, neighbor_alpha0, T_func, T_LR, &
                     r0_ii_SCS, f_damp_SCS, AT, AT_n, energy_series )
         if ( do_derivatives ) then
-          deallocate( dT, f_damp_der, f_damp_der_SCS, dT_LR, G_mat, force_series, VL )
+          deallocate( AT_n_f, dT, f_damp_der, f_damp_der_SCS, dT_LR, G_mat, force_series, VL )
         end if
 
 
       end do
       
       write(*,*) "MBD sum of local energies:", sum(energies)
+
+      if ( do_derivatives ) then
+        write(*,*) "MBD forces:"
+        do i = 1, n_sites
+          write(*,*) i, forces0(:,i)
+        end do
+      end if
+
       
       deallocate( in_cutoff, p_to_i, i_to_p )
       
