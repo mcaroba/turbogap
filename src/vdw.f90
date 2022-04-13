@@ -1103,18 +1103,6 @@ module vdw
                 da_SCS(3*(i-1)+2,2) + da_SCS(3*(i-1)+3,3))
             end do
 
-            if ( a == 1 .and. om == 1 .and. c3 == 1 ) then
-            !write(*,*) "da_SCS"
-            !do i = 1, 3*n_sites
-            !  write(*,*) da_SCS(i,:)
-            !end do
-
-            write(*,*) "dT_SR"
-            do i = 1, 6
-              write(*,*) dT_SR(i,1:6)
-            end do
-            end if
-
             if( do_timing) then
               call cpu_time(time2)
               write(*,*) "Gradients: timing for solving alpha_SCS_grad:", time2-time1
@@ -1182,7 +1170,7 @@ module vdw
                            AT_n_f(:,:,:), energy_series(:,:), integrand(:,:), omegas(:), f_damp_der(:), &
                            f_damp_der_SCS(:), dT_LR(:,:), dT(:), &
                            G_mat(:,:), force_integrand(:,:,:), force_series(:,:), &
-                           VL(:,:)
+                           VL(:,:), total_energy_series(:,:), total_integrand(:,:)
     integer :: n_order, n_freq, n_sites, n_pairs, n_species, n_sites0, n_sub_sites, n_sub_pairs
     integer :: k, k2, k3, i, i2, j, j2, j3, c1, c2, c3, a, a2, om, p, q, n_tot, n_tot2, s
     real*8 :: Bohr, Hartree, pi, r_vdw_i, r_vdw_j, E_MBD, integral, omega, R_vdW_SCS_ij, S_vdW_ij, &
@@ -1220,8 +1208,16 @@ module vdw
     end do
 
     integrand = 0.d0
+    if ( do_derivatives ) then
+      force_integrand = 0.d0
+    end if
 
     if ( local ) then
+
+      if ( do_derivatives ) then
+        allocate( total_integrand(1:n_sites,1:n_freq) )
+        total_integrand = 0.d0
+      end if
     
       allocate( in_cutoff(1:n_sites) )
       allocate( p_to_i(1:n_sites) )
@@ -1230,9 +1226,6 @@ module vdw
       k = 0
       do i = 1, n_sites
       
-        if ( do_derivatives ) then
-          force_integrand = 0.d0
-        end if
         p_to_i = 0
         i_to_p = 0
         in_cutoff = .false.
@@ -1299,6 +1292,7 @@ module vdw
           !allocate( force_series(1:3*n_sub_sites,1:3*n_sub_sites) )
           allocate( force_series(1:3*n_sub_sites,1:3*n_sub_sites) )
           allocate( VL(1:3*n_sub_sites,1:3*n_sub_sites) )
+          allocate( total_energy_series(1:3*n_sub_sites,1:3*n_sub_sites) )
         end if
         
         k2 = 0
@@ -1367,12 +1361,21 @@ module vdw
             i2 = p_to_i(p)
             AT(3*(p-1)+1:3*(p-1)+3,:) = alpha_SCS0(i2,om) * T_LR(3*(p-1)+1:3*(p-1)+3,:)
           end do
+
+          !if ( i == 1 .and. om == 1 ) then
+          !  write(*,*) "3*n_sub_sites", 3*n_sub_sites
+          !  write(*,*) "AT"
+          !  do p = 1, 3*n_sub_sites
+          !    write(*,*) AT(p,:)
+          !  end do
+          !end if
  
           AT_n = 0.d0
           energy_series = 0.d0
           if ( do_derivatives ) then
             AT_n_f = 0.d0
             force_series = 0.d0
+            total_energy_series = 0.d0
           end if
 
           if ( n_order > 1 ) then
@@ -1397,11 +1400,13 @@ module vdw
                 energy_series = energy_series - 1.d0/(k2+1)*AT_n(:,:,k2)/2.d0
                 if ( do_derivatives ) then
                   force_series = force_series + AT_n_f(:,:,k2)/2.d0
+                  total_energy_series = total_energy_series - 1.d0/(k2+1)*AT_n_f(:,:,k2)/2.d0
                 end if
               else
                 energy_series = energy_series - 1.d0/(k2+1)*AT_n(:,1:3,k2)
                 if ( do_derivatives ) then
                   force_series = force_series + AT_n_f(:,:,k2)
+                  total_energy_series = total_energy_series - 1.d0/(k2+1)*AT_n_f(:,:,k2)
                 end if
               end if
             end do
@@ -1411,6 +1416,15 @@ module vdw
               !write(*,*) "T_LR", T_LR(c1,:)
               !write(*,*) "energy_series", energy_series(:,c1)
             end do
+            if ( do_derivatives ) then
+              do p = 1, n_sub_sites
+                i2 = p_to_i(p)
+                do c1 = 1, 3
+                  total_integrand(i,om) = total_integrand(i,om) + alpha_SCS0(i2,om) * dot_product(T_LR(3*(p-1)+c1,:), &
+                                  total_energy_series(:,3*(p-1)+c1))
+                  end do
+              end do
+            end if
           else
             write(*,*) "WARNING: Series expansion requires that vdw_mbd_order > 1 or the resulting energies"
             write(*,*) "and forces will be zero."
@@ -1450,12 +1464,12 @@ module vdw
               end if
             end do
             
-            do a2 = 1, n_neigh(i)
+            !do a2 = 1, n_neigh(i)
 
               f_damp_der_SCS = 0.d0
               f_damp_der = 0.d0 ! This is cleared so we can recalculate it with SCS values
               dT_LR = 0.d0
-              a = neighbors_list(n_tot+a2)
+              !a = neighbors_list(n_tot+a2)
               k2 = 0
               do j2 = 1, n_neigh(i)
                 k2 = k2+1
@@ -1468,32 +1482,44 @@ module vdw
                   r_vdw_j = r0_ii_SCS(k2)
                   R_vdW_SCS_ij = r_vdw_i + r_vdw_j
                   S_vdW_ij = sR*R_vdW_SCS_ij
-                  dS_vdW_ij = sR/3.d0 * ( r_vdw_i/alpha_SCS0(i2,1) * alpha_SCS_grad(i2,a,c3,1) + &
-                                            r_vdw_j/alpha_SCS0(j,1) * alpha_SCS_grad(j,a,c3,1) )
+                  dS_vdW_ij = sR/3.d0 * ( r_vdw_i/alpha_SCS0(i2,1) * alpha_SCS_grad(i2,i,c3,1) + &
+                                            r_vdw_j/alpha_SCS0(j,1) * alpha_SCS_grad(j,i,c3,1) )
                   f_damp_der_SCS(k2) = -(d*rjs_H(k2))/S_vdW_ij**2 * f_damp_SCS(k2)**2 * &
                                          exp(-d*(rjs_H(k2)/S_vdW_ij - 1.d0)) * dS_vdW_ij
                   k3 = 9*(k2-1)
                   p = i_to_p(i2)
                   q = i_to_p(j)
+                  if ( i == 1 .and. c3 == 1 .and. om == 1 ) then
+                          write(*,*) "p,q", p, q
+                  end if
                   do c1 = 1, 3
                     do c2 = 1, 3
                       k3 = k3+1
                       dT_LR(3*(p-1)+c1,3*(q-1)+c2) = dT_LR(3*(p-1)+c1,3*(q-1)+c2) + &
                                         T_func(k3) * f_damp_der_SCS(k2) 
+                        if ( i == 1 .and. c3 == 1 .and. om == 1 .and. p == 19 .and. q == 9 ) then
+                          write(*,*) "f_damp_der_SCS", f_damp_der_SCS(k2)
+                        end if
                     end do
                   end do
-                  if (a == i2 .or. a == j) then
+                  if (i == i2 .or. i == j) then
                     f_damp_der(k2) = d/S_vdW_ij * f_damp_SCS(k2)**2 * &
                                     exp( -d*(rjs_H(k2)/S_vdW_ij - 1.d0) ) * xyz_H(c3,k2)/rjs_H(k2)
                     k3 = 9*(k2-1)
                     do c1 = 1, 3
                       do c2 = 1, 3
                         k3 = k3+1
-                        if (a == i2) then
+                        if ( i == 1 .and. c3 == 1 .and. om == 1 .and. p == 19 .and. q == 9 ) then
+                          write(*,*) "T_func", T_func(k3)
+                          write(*,*) "f_damp_der", f_damp_der(k2)
+                          write(*,*) "dT", dT(k3)
+                          write(*,*) "f_damp_SCS", f_damp_SCS(k2)
+                        end if
+                        if (i == i2) then
                           dT_LR(3*(p-1)+c1,3*(q-1)+c2) = dT_LR(3*(p-1)+c1,3*(q-1)+c2) - &
                                              T_func(k3) * f_damp_der(k2) - &
                                              dT(k3) * f_damp_SCS(k2)
-                        else if (a == j) then
+                        else if (i == j) then
                           dT_LR(3*(p-1)+c1,3*(q-1)+c2) = dT_LR(3*(p-1)+c1,3*(q-1)+c2) + &
                                              T_func(k3) * f_damp_der(k2) + &
                                              dT(k3) * f_damp_SCS(k2)
@@ -1504,7 +1530,7 @@ module vdw
                 end do
                 end if
               end do
-              
+
               G_mat = 0.d0
 !              force_series = 0.d0
 
@@ -1514,27 +1540,34 @@ module vdw
                   i2 = p_to_i(p)
                   G_mat(3*(p-1)+1:3*(p-1)+3,:) = G_mat(3*(p-1)+1:3*(p-1)+3,:) + &
                     alpha_SCS0(i2,om) * dT_LR(3*(p-1)+1:3*(p-1)+3,:) + &
-                    alpha_SCS_grad(i2,a,c3,om) * T_LR(3*(p-1)+1:3*(p-1)+3,:)
+                    alpha_SCS_grad(i2,i,c3,om) * T_LR(3*(p-1)+1:3*(p-1)+3,:)
+                  if ( i == 1 .and. om == 1 .and. c3 == 1 .and. p == 19 ) then
+                    write(*,*) "dT_LR"
+                    do c1 = 1, 3
+                      write(*,*) dT_LR(3*(p-1)+c1,:)
+                    end do
+                    write(*,*) "T_LR"
+                    do c1 = 1, 3
+                      write(*,*) T_LR(3*(p-1)+c1,:)
+                    end do
+                  end if
                 end do
-                do i2 = 1, 3*n_sites
-                  force_integrand(a,c3,om) = force_integrand(a,c3,om) + &
+                !if ( i == 1 .and. om == 1 .and. c3 == 1 ) then
+                !  write(*,*) "G_mat"
+                !  do p = 1, 3*n_sub_sites
+                !    write(*,*) G_mat(p,:)
+                !  end do
+                !end if
+                do i2 = 1, 3*n_sub_sites
+                  force_integrand(i,c3,om) = force_integrand(i,c3,om) + &
                     dot_product(G_mat(i2,:), force_series(:,i2))
                 end do
                 
               end if
               
-            end do ! a loop
+            !end do ! a loop
           
           end do ! c3 loop
-          
-          do a = 1, n_sites
-            do c3 = 1, 3
-              integral = 0.d0
-              call integrate("trapezoidal", omegas, force_integrand(a,c3,:), omegas(1), omegas(n_freq), integral)
-              forces0(c3,a) = forces0(c3,a) + 1.d0/(2.d0*pi) * integral
-            end do
-          end do
-          forces0 = forces0 * 51.42208619083232
         
         end if ! do derivatives
 
@@ -1546,13 +1579,27 @@ module vdw
         call integrate("trapezoidal", omegas, integrand(i,:), omegas(1), omegas(n_freq), integral)
         E_MBD = integral/(2.d0*pi)
         energies(i) = E_MBD * 27.211386245988
-        write(*,*) i, energies(i)
+        write(*,*) "Local energy", i, energies(i)
+        
+        if ( do_derivatives ) then
+          do c3 = 1, 3
+            integral = 0.d0
+            call integrate("trapezoidal", omegas, force_integrand(i,c3,:), omegas(1), omegas(n_freq), integral)
+            forces0(c3,i) = forces0(c3,i) + 1.d0/(2.d0*pi) * integral         
+          end do
+          forces0(:,i) = forces0(:,i) * 51.42208619083232
+          write(*,*) "Force", i, forces0(:,i)
+          integral = 0.d0
+          call integrate("trapezoidal", omegas, total_integrand(i,:), omegas(1), omegas(n_freq), integral)
+          E_MBD = integral/(2.d0*pi) * 27.211386245988
+          write(*,*) "Total energy", i, E_MBD
+        end if
 
 
         deallocate( n_sub_neigh, sub_neighbors_list, xyz_H, rjs_H, r0_ii, neighbor_alpha0, T_func, T_LR, &
                     r0_ii_SCS, f_damp_SCS, AT, AT_n, energy_series )
         if ( do_derivatives ) then
-          deallocate( AT_n_f, dT, f_damp_der, f_damp_der_SCS, dT_LR, G_mat, force_series, VL )
+          deallocate( AT_n_f, dT, f_damp_der, f_damp_der_SCS, dT_LR, G_mat, force_series, VL, total_energy_series )
         end if
 
 
@@ -1567,9 +1614,11 @@ module vdw
         end do
       end if
 
-      
       deallocate( in_cutoff, p_to_i, i_to_p )
-      
+      if ( do_derivatives ) then
+        deallocate( total_integrand )
+      end if
+
     else
 
       allocate( xyz_H(1:3,1:n_pairs) )
@@ -1858,12 +1907,15 @@ module vdw
       deallocate( xyz_H, rjs_H, r0_ii, neighbor_alpha0, T_func, T_LR, r0_ii_SCS, &
                   f_damp_SCS, AT, AT_n, energy_series )
       if ( do_derivatives ) then
-        deallocate( dT, dT_LR, f_damp_der, f_damp_der_SCS, force_series, G_mat, VL, force_integrand )
+        deallocate( dT, dT_LR, f_damp_der, f_damp_der_SCS, force_series, G_mat, VL )
       end if
       
     end if ! local
     
     deallocate( omegas, integrand )
+    if ( do_derivatives ) then
+      deallocate( force_integrand )
+    end if
 
   end subroutine
 

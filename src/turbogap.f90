@@ -1174,36 +1174,42 @@ program turbogap
 !#else
 !                                       energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
 !#endif
-        allocate( alpha_SCS(i_beg:i_end,1:params%vdw_mbd_nfreq) )
-        allocate( alpha_SCS_grad(i_beg:i_end,i_beg:i_end,1:3,1:params%vdw_mbd_nfreq) )
+        if ( params%vdw_scs_rcut > params%vdw_rcut ) then
+          write(*,*) "VDW CALCULATION ABORTED:               |"
+          write(*,*) "Please provide vdw_rcut > vdw_scs_rcut |"
+          write(*,*) "or vdw_rcut = vdw_scs_rcut             |"
+        else
+          allocate( alpha_SCS(i_beg:i_end,1:params%vdw_mbd_nfreq) )
+          allocate( alpha_SCS_grad(i_beg:i_end,i_beg:i_end,1:3,1:params%vdw_mbd_nfreq) )
 call cpu_time(time2)
-        call get_scs_polarizabilities( hirshfeld_v(i_beg:i_end), hirshfeld_v_cart_der(1:3, j_beg:j_end), &
-                                       n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
-                                       neighbor_species(j_beg:j_end), &
-                                       params%vdw_scs_rcut, params%vdw_buffer, &
-                                       params%vdw_rcut_inner, params%vdw_buffer_inner, &
-                                       rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), v_neigh_vdw, &
-                                       params%vdw_sr, params%vdw_d, params%vdw_c6_ref, params%vdw_r0_ref, &
-                                       params%vdw_alpha0_ref, params%vdw_mbd_grad, alpha_SCS, alpha_SCS_grad, &
+          call get_scs_polarizabilities( hirshfeld_v(i_beg:i_end), hirshfeld_v_cart_der(1:3, j_beg:j_end), &
+                                         n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
+                                         neighbor_species(j_beg:j_end), &
+                                         params%vdw_scs_rcut, params%vdw_buffer, &
+                                         params%vdw_rcut_inner, params%vdw_buffer_inner, &
+                                         rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), v_neigh_vdw, &
+                                         params%vdw_sr, params%vdw_d, params%vdw_c6_ref, params%vdw_r0_ref, &
+                                         params%vdw_alpha0_ref, params%vdw_mbd_grad, alpha_SCS, alpha_SCS_grad, &
 #ifdef _MPIF90
-                                       this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw )
+                                         this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw )
 #else
-                                       energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
+                                         energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
 #endif
 call cpu_time(time1)
 write(*,*) "scs timing", time1-time2
-        !write(*,*) "alpha_SCS0:", alpha_SCS
-        call get_mbd_energies_and_forces( alpha_SCS, alpha_SCS_grad, n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
-                      neighbor_species(j_beg:j_end), params%vdw_rcut, params%vdw_buffer, &
-                      params%vdw_rcut_inner, params%vdw_buffer_inner, rjs(j_beg:j_end), &
-                      xyz(1:3, j_beg:j_end), params%vdw_sr, params%vdw_d, &
-                      params%vdw_c6_ref, params%vdw_r0_ref, params%vdw_alpha0_ref, &
-                      params%vdw_mbd_grad, energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
+          !write(*,*) "alpha_SCS0:", alpha_SCS
+          call get_mbd_energies_and_forces( alpha_SCS, alpha_SCS_grad, n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
+                        neighbor_species(j_beg:j_end), params%vdw_rcut, params%vdw_buffer, &
+                        params%vdw_rcut_inner, params%vdw_buffer_inner, rjs(j_beg:j_end), &
+                        xyz(1:3, j_beg:j_end), params%vdw_sr, params%vdw_d, &
+                        params%vdw_c6_ref, params%vdw_r0_ref, params%vdw_alpha0_ref, &
+                        params%vdw_mbd_grad, energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
         !write(*,*) "alpha_SCS0 after MBD:", alpha_SCS
-        call cpu_time(time_vdw(2))
-        time_vdw(3) = time_vdw(2) - time_vdw(1)
+          call cpu_time(time_vdw(2))
+          time_vdw(3) = time_vdw(2) - time_vdw(1)
 
-        deallocate(v_neigh_vdw, alpha_SCS, alpha_SCS_grad)
+          deallocate(v_neigh_vdw, alpha_SCS, alpha_SCS_grad)
+        end if
       end if
 
 
