@@ -487,7 +487,7 @@ module vdw
 !   probably fix this at some point but it will require using the full n_neigh(i) again, instead of 
 !   n_ssites, to construct the sneighbors_list.
 
-    write(*,*) "rcut", rcut
+    write(*,*) "rcut (SCS)", rcut
 
     n_sites = size(n_neigh)
     n_pairs = size(neighbors_list)
@@ -1248,26 +1248,32 @@ module vdw
         !write(*,*) "in_cutoff", in_cutoff
         n_sub_pairs = 0
         n_tot = sum(n_neigh(1:i))-n_neigh(i)
-        allocate( n_sub_neigh(1:n_neigh(i)) )
+        allocate( n_sub_neigh(1:n_sub_sites) )
         n_sub_neigh = 0
+        p = 0
         do j2 = 1, n_neigh(i)
           j = neighbors_list(n_tot+j2)
-          n_sub_pairs = n_sub_pairs + 1
-          n_sub_neigh(j2) = n_sub_neigh(j2) + 1
-          n_tot2 = sum(n_neigh(1:j))-n_neigh(j)
-          do j3 = 2, n_neigh(j)
-            if ( rjs(n_tot2+j3) < rcut ) then
-              if ( in_cutoff(neighbors_list(n_tot2+j3)) ) then
-                n_sub_neigh(j2) = n_sub_neigh(j2) + 1
-                n_sub_pairs = n_sub_pairs + 1
+          if ( in_cutoff(j) ) then
+            p = p + 1
+            n_sub_pairs = n_sub_pairs + 1
+            n_sub_neigh(p) = n_sub_neigh(p) + 1
+            n_tot2 = sum(n_neigh(1:j))-n_neigh(j)
+            do j3 = 2, n_neigh(j)
+              if ( rjs(n_tot2+j3) < rcut ) then
+                if ( in_cutoff(neighbors_list(n_tot2+j3)) ) then
+                  n_sub_neigh(p) = n_sub_neigh(p) + 1
+                  n_sub_pairs = n_sub_pairs + 1
+                end if
               end if
-            end if
-          end do
+            end do
+          end if
         end do
         
         !write(*,*) "p_to_i", p_to_i
         !write(*,*) "i_to_p", i_to_p
         !write(*,*) "n_sub_pairs", n_sub_pairs
+        !write(*,*) "n_sub_sites", n_sub_sites
+        !write(*,*) "n_sub_neigh", n_sub_neigh
         
         allocate( sub_neighbors_list(1:n_sub_pairs) )
         allocate( xyz_H(1:3,1:n_sub_pairs) )
@@ -1301,52 +1307,54 @@ module vdw
         n_tot = sum(n_neigh(1:i))-n_neigh(i)
         !n_sub_neigh = 0
         do j2 = 1, n_neigh(i)
-          k2 = k2+1
-          s = neighbor_species(n_tot+j2)
           i2 = neighbors_list(n_tot+j2)
-          sub_neighbors_list(k2) = i2
-          !n_sub_neigh(j2) = n_sub_neigh(i2) + 1
-          r0_ii(k2) = r0_ref(s) / Bohr
-          neighbor_alpha0(k2) = alpha0_ref(s) / Bohr**3
-          xyz_H(:,k2) = xyz(:,n_tot+j2)/Bohr
-          rjs_H(k2) = rjs(n_tot+j2)/Bohr
-          r0_ii_SCS(k2) = r0_ii(k2) * (alpha_SCS0(i2,1)/neighbor_alpha0(k2))**(1.d0/3.d0)
-          r_vdw_i = r0_ii_SCS(k2)
-          n_tot2 = sum(n_neigh(1:i2))-n_neigh(i2)
-          do j3 = 2, n_neigh(i2)
-            if ( rjs(n_tot2+j3) < rcut ) then
-              if ( in_cutoff(neighbors_list(n_tot2+j3)) ) then
-                !n_sub_neigh(j2) = n_sub_neigh(j2) + 1
-                k2 = k2+1    
-                s = neighbor_species(n_tot2+j3)
-                j = neighbors_list(n_tot2+j3)
-                sub_neighbors_list(k2) = j                        
-                r0_ii(k2) = r0_ref(s) / Bohr
-                neighbor_alpha0(k2) = alpha0_ref(s) / Bohr**3
-                xyz_H(:,k2) = xyz(:,n_tot2+j3)/Bohr
-                rjs_H(k2) = rjs(n_tot2+j3)/Bohr
-                r0_ii_SCS(k2) = r0_ii(k2) * (alpha_SCS0(j,1)/neighbor_alpha0(k2))**(1.d0/3.d0)
-                r_vdw_j = r0_ii_SCS(k2)
-                f_damp_SCS(k2) = 1.d0/( 1.d0 + exp( -d*( rjs_H(k2)/(sR*(r_vdw_i + r_vdw_j)) - 1.d0 ) ) )
-                k3 = 9*(k2-1)
-                do c1 = 1, 3
-                  do c2 = 1, 3
-                    k3 = k3 + 1
-                    if (c1 == c2) then
-                      T_func(k3) = (3*xyz_H(c1,k2) * xyz_H(c1,k2) - rjs_H(k2)**2)/rjs_H(k2)**5
-                    else
-                      T_func(k3) = (3*xyz_H(c1,k2) * xyz_H(c2,k2))/rjs_H(k2)**5
-                    end if
-                    p = i_to_p(i2)
-                    q = i_to_p(j)
-                    !write(*,*) "f_damp_SCS", f_damp_SCS(k2)
-                    !write(*,*) "T_func", T_func(k3)
-                    T_LR(3*(p-1)+c1,3*(q-1)+c2) = f_damp_SCS(k2) * T_func(k3)
+          if ( in_cutoff(i2) ) then 
+            k2 = k2+1
+            s = neighbor_species(n_tot+j2)
+            sub_neighbors_list(k2) = i2
+            !n_sub_neigh(j2) = n_sub_neigh(i2) + 1
+            r0_ii(k2) = r0_ref(s) / Bohr
+            neighbor_alpha0(k2) = alpha0_ref(s) / Bohr**3
+            xyz_H(:,k2) = xyz(:,n_tot+j2)/Bohr
+            rjs_H(k2) = rjs(n_tot+j2)/Bohr
+            r0_ii_SCS(k2) = r0_ii(k2) * (alpha_SCS0(i2,1)/neighbor_alpha0(k2))**(1.d0/3.d0)
+            r_vdw_i = r0_ii_SCS(k2)
+            n_tot2 = sum(n_neigh(1:i2))-n_neigh(i2)
+            do j3 = 2, n_neigh(i2)
+              if ( rjs(n_tot2+j3) < rcut ) then
+                if ( in_cutoff(neighbors_list(n_tot2+j3)) ) then
+                  !n_sub_neigh(j2) = n_sub_neigh(j2) + 1
+                  k2 = k2+1    
+                  s = neighbor_species(n_tot2+j3)
+                  j = neighbors_list(n_tot2+j3)
+                  sub_neighbors_list(k2) = j                        
+                  r0_ii(k2) = r0_ref(s) / Bohr
+                  neighbor_alpha0(k2) = alpha0_ref(s) / Bohr**3
+                  xyz_H(:,k2) = xyz(:,n_tot2+j3)/Bohr
+                  rjs_H(k2) = rjs(n_tot2+j3)/Bohr
+                  r0_ii_SCS(k2) = r0_ii(k2) * (alpha_SCS0(j,1)/neighbor_alpha0(k2))**(1.d0/3.d0)
+                  r_vdw_j = r0_ii_SCS(k2)
+                  f_damp_SCS(k2) = 1.d0/( 1.d0 + exp( -d*( rjs_H(k2)/(sR*(r_vdw_i + r_vdw_j)) - 1.d0 ) ) )
+                  k3 = 9*(k2-1)
+                  do c1 = 1, 3
+                    do c2 = 1, 3
+                      k3 = k3 + 1
+                      if (c1 == c2) then
+                        T_func(k3) = (3*xyz_H(c1,k2) * xyz_H(c1,k2) - rjs_H(k2)**2)/rjs_H(k2)**5
+                      else
+                        T_func(k3) = (3*xyz_H(c1,k2) * xyz_H(c2,k2))/rjs_H(k2)**5
+                      end if
+                      p = i_to_p(i2)
+                      q = i_to_p(j)
+                      !write(*,*) "f_damp_SCS", f_damp_SCS(k2)
+                      !write(*,*) "T_func", T_func(k3)
+                      T_LR(3*(p-1)+c1,3*(q-1)+c2) = f_damp_SCS(k2) * T_func(k3)
+                    end do
                   end do
-                end do
+                end if
               end if
-            end if
-          end do
+            end do
+          end if
         end do
         
         !write(*,*) "T_LR"
@@ -1436,11 +1444,11 @@ module vdw
           
             dT = 0.d0
             k2 = 0
-            do j2 = 1, n_neigh(i)
+            do p = 1, n_sub_sites
               k2 = k2+1
               i2 = sub_neighbors_list(k2)
-              if ( n_sub_neigh(j2) > 1 ) then
-                do j3 = 2, n_sub_neigh(j2)
+              if ( n_sub_neigh(p) > 1 ) then
+                do j3 = 2, n_sub_neigh(p)
                   k2 = k2+1
                   j = sub_neighbors_list(k2)    
                   k3 = 9*(k2-1)
@@ -1471,63 +1479,55 @@ module vdw
               dT_LR = 0.d0
               !a = neighbors_list(n_tot+a2)
               k2 = 0
-              do j2 = 1, n_neigh(i)
+              do p = 1, n_sub_sites
                 k2 = k2+1
                 r_vdw_i = r0_ii_SCS(k2)
                 i2 = sub_neighbors_list(k2)
-                if ( n_sub_neigh(j2) > 1 ) then
-                do j3 = 2, n_sub_neigh(j2)
-                  k2 = k2+1
-                  j = sub_neighbors_list(k2)
-                  r_vdw_j = r0_ii_SCS(k2)
-                  R_vdW_SCS_ij = r_vdw_i + r_vdw_j
-                  S_vdW_ij = sR*R_vdW_SCS_ij
-                  dS_vdW_ij = sR/3.d0 * ( r_vdw_i/alpha_SCS0(i2,1) * alpha_SCS_grad(i2,i,c3,1) + &
-                                            r_vdw_j/alpha_SCS0(j,1) * alpha_SCS_grad(j,i,c3,1) )
-                  f_damp_der_SCS(k2) = -(d*rjs_H(k2))/S_vdW_ij**2 * f_damp_SCS(k2)**2 * &
-                                         exp(-d*(rjs_H(k2)/S_vdW_ij - 1.d0)) * dS_vdW_ij
-                  k3 = 9*(k2-1)
-                  p = i_to_p(i2)
-                  q = i_to_p(j)
-                  if ( i == 1 .and. c3 == 1 .and. om == 1 ) then
-                          write(*,*) "p,q", p, q
-                  end if
-                  do c1 = 1, 3
-                    do c2 = 1, 3
-                      k3 = k3+1
-                      dT_LR(3*(p-1)+c1,3*(q-1)+c2) = dT_LR(3*(p-1)+c1,3*(q-1)+c2) + &
-                                        T_func(k3) * f_damp_der_SCS(k2) 
-                        if ( i == 1 .and. c3 == 1 .and. om == 1 .and. p == 19 .and. q == 9 ) then
-                          write(*,*) "f_damp_der_SCS", f_damp_der_SCS(k2)
-                        end if
-                    end do
-                  end do
-                  if (i == i2 .or. i == j) then
-                    f_damp_der(k2) = d/S_vdW_ij * f_damp_SCS(k2)**2 * &
-                                    exp( -d*(rjs_H(k2)/S_vdW_ij - 1.d0) ) * xyz_H(c3,k2)/rjs_H(k2)
+                if ( n_sub_neigh(p) > 1 ) then
+                  do j3 = 2, n_sub_neigh(p)
+                    k2 = k2+1
+                    j = sub_neighbors_list(k2)
+                    r_vdw_j = r0_ii_SCS(k2)
+                    R_vdW_SCS_ij = r_vdw_i + r_vdw_j
+                    S_vdW_ij = sR*R_vdW_SCS_ij
+                    dS_vdW_ij = sR/3.d0 * ( r_vdw_i/alpha_SCS0(i2,1) * alpha_SCS_grad(i2,i,c3,1) + &
+                                              r_vdw_j/alpha_SCS0(j,1) * alpha_SCS_grad(j,i,c3,1) )
+                    f_damp_der_SCS(k2) = -(d*rjs_H(k2))/S_vdW_ij**2 * f_damp_SCS(k2)**2 * &
+                                           exp(-d*(rjs_H(k2)/S_vdW_ij - 1.d0)) * dS_vdW_ij
                     k3 = 9*(k2-1)
+                    !p = i_to_p(i2)
+                    q = i_to_p(j)
+                    !write(*,*) "p, j2", p, j2
                     do c1 = 1, 3
                       do c2 = 1, 3
                         k3 = k3+1
-                        if ( i == 1 .and. c3 == 1 .and. om == 1 .and. p == 19 .and. q == 9 ) then
-                          write(*,*) "T_func", T_func(k3)
-                          write(*,*) "f_damp_der", f_damp_der(k2)
-                          write(*,*) "dT", dT(k3)
-                          write(*,*) "f_damp_SCS", f_damp_SCS(k2)
-                        end if
-                        if (i == i2) then
-                          dT_LR(3*(p-1)+c1,3*(q-1)+c2) = dT_LR(3*(p-1)+c1,3*(q-1)+c2) - &
-                                             T_func(k3) * f_damp_der(k2) - &
-                                             dT(k3) * f_damp_SCS(k2)
-                        else if (i == j) then
-                          dT_LR(3*(p-1)+c1,3*(q-1)+c2) = dT_LR(3*(p-1)+c1,3*(q-1)+c2) + &
-                                             T_func(k3) * f_damp_der(k2) + &
-                                             dT(k3) * f_damp_SCS(k2)
-                        end if
+                        dT_LR(3*(p-1)+c1,3*(q-1)+c2) = dT_LR(3*(p-1)+c1,3*(q-1)+c2) + &
+                                          T_func(k3) * f_damp_der_SCS(k2) 
+                          if ( i == 1 .and. c3 == 1 .and. om == 1 .and. p == 19 .and. q == 9 ) then
+                            write(*,*) "f_damp_der_SCS", f_damp_der_SCS(k2)
+                          end if
                       end do
                     end do
-                  end if
-                end do
+                    if (i == i2 .or. i == j) then
+                      f_damp_der(k2) = d/S_vdW_ij * f_damp_SCS(k2)**2 * &
+                                      exp( -d*(rjs_H(k2)/S_vdW_ij - 1.d0) ) * xyz_H(c3,k2)/rjs_H(k2)
+                      k3 = 9*(k2-1)
+                      do c1 = 1, 3
+                        do c2 = 1, 3
+                          k3 = k3+1
+                          if (i == i2) then
+                            dT_LR(3*(p-1)+c1,3*(q-1)+c2) = dT_LR(3*(p-1)+c1,3*(q-1)+c2) - &
+                                               T_func(k3) * f_damp_der(k2) - &
+                                               dT(k3) * f_damp_SCS(k2)
+                          else if (i == j) then
+                            dT_LR(3*(p-1)+c1,3*(q-1)+c2) = dT_LR(3*(p-1)+c1,3*(q-1)+c2) + &
+                                               T_func(k3) * f_damp_der(k2) + &
+                                               dT(k3) * f_damp_SCS(k2)
+                          end if
+                        end do
+                      end do
+                    end if
+                  end do
                 end if
               end do
 
@@ -1541,16 +1541,6 @@ module vdw
                   G_mat(3*(p-1)+1:3*(p-1)+3,:) = G_mat(3*(p-1)+1:3*(p-1)+3,:) + &
                     alpha_SCS0(i2,om) * dT_LR(3*(p-1)+1:3*(p-1)+3,:) + &
                     alpha_SCS_grad(i2,i,c3,om) * T_LR(3*(p-1)+1:3*(p-1)+3,:)
-                  if ( i == 1 .and. om == 1 .and. c3 == 1 .and. p == 19 ) then
-                    write(*,*) "dT_LR"
-                    do c1 = 1, 3
-                      write(*,*) dT_LR(3*(p-1)+c1,:)
-                    end do
-                    write(*,*) "T_LR"
-                    do c1 = 1, 3
-                      write(*,*) T_LR(3*(p-1)+c1,:)
-                    end do
-                  end if
                 end do
                 !if ( i == 1 .and. om == 1 .and. c3 == 1 ) then
                 !  write(*,*) "G_mat"

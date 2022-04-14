@@ -1,7 +1,7 @@
 !atoms_file = 'atoms.xyz'
-atoms_file = '2829.xyz'
-!atoms_file = '2829_p.xyz'
-!atoms_file = '2829_m.xyz'
+atoms_file = '2829_supercell.xyz'
+!atoms_file = '2829_2yp.xyz'
+!atoms_file = '2829_2ym.xyz'
 !atoms_file = 'atoms.xyz'
 !atoms_file = 'atoms_p.xyz'
 !atoms_file = 'atoms_m.xyz'
@@ -19,11 +19,11 @@ masses = 12.01
 vdw_type = ts
 vdw_sr = 0.83
 vdw_d = 6.
-vdw_rcut = 4.5
+vdw_rcut = 9.
 vdw_buffer = 0.
 vdw_r0_ref = 1.900
 vdw_scs_rcut = 4.5
 vdw_mbd_nfreq = 3
-vdw_mbd_grad = .true.
-!vdw_mbd_grad = .false.
+!vdw_mbd_grad = .true.
+vdw_mbd_grad = .false.
 

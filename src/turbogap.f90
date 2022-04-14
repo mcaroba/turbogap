@@ -1174,11 +1174,11 @@ program turbogap
 !#else
 !                                       energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
 !#endif
-        if ( params%vdw_scs_rcut > params%vdw_rcut ) then
-          write(*,*) "VDW CALCULATION ABORTED:               |"
-          write(*,*) "Please provide vdw_rcut > vdw_scs_rcut |"
-          write(*,*) "or vdw_rcut = vdw_scs_rcut             |"
-        else
+!        if ( params%vdw_scs_rcut > params%vdw_rcut ) then
+!          write(*,*) "VDW CALCULATION ABORTED:               |"
+!          write(*,*) "Please provide vdw_rcut > vdw_scs_rcut |"
+!          write(*,*) "or vdw_rcut = vdw_scs_rcut             |"
+!        else
           allocate( alpha_SCS(i_beg:i_end,1:params%vdw_mbd_nfreq) )
           allocate( alpha_SCS_grad(i_beg:i_end,i_beg:i_end,1:3,1:params%vdw_mbd_nfreq) )
 call cpu_time(time2)
@@ -1209,7 +1209,7 @@ write(*,*) "scs timing", time1-time2
           time_vdw(3) = time_vdw(2) - time_vdw(1)
 
           deallocate(v_neigh_vdw, alpha_SCS, alpha_SCS_grad)
-        end if
+        !end if
       end if
 
 
