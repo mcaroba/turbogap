@@ -29,10 +29,11 @@
 module vdw
 
   use misc
-!  use psb_base_mod
-!  use psb_prec_mod
-!  use psb_krylov_mod
-!  use psb_util_mod
+  use psb_base_mod
+  use psb_prec_mod
+  use psb_krylov_mod
+  use psb_util_mod
+  use psb_d_prec_type
 
   contains
 
@@ -146,7 +147,7 @@ module vdw
   subroutine get_ts_energy_and_forces( hirshfeld_v, hirshfeld_v_cart_der, &
                                        n_neigh, neighbors_list, neighbor_species, &
                                        rcut, buffer, rcut_inner, buffer_inner, rjs, xyz, hirshfeld_v_neigh, &
-                                       sR, d, c6_ref, r0_ref, alpha0_ref, do_forces, &
+                                       sR, d, c6_ref, r0_ref, alpha0_ref, c6_scs, r0_scs, alpha0_scs, do_forces, &
                                        energies, forces0, virial )
 
     implicit none
@@ -154,7 +155,7 @@ module vdw
 !   Input variables
     real*8, intent(in) :: hirshfeld_v(:), hirshfeld_v_cart_der(:,:), rcut, buffer, rcut_inner, buffer_inner, &
                           rjs(:), xyz(:,:), hirshfeld_v_neigh(:), sR, d, c6_ref(:), r0_ref(:), &
-                          alpha0_ref(:)
+                          alpha0_ref(:), c6_scs(:), r0_scs(:), alpha0_scs(:)
     integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:)
     logical, intent(in) :: do_forces
 !   Output variables
@@ -170,7 +171,7 @@ module vdw
     integer :: n_sites, n_pairs, n_pairs_soap, n_species, n_sites0
     integer :: i, j, i2, j2, k, n_in_buffer, k1, k2
     logical, allocatable :: is_in_buffer(:)
-    logical :: do_timing = .false.
+    logical :: do_timing = .false., read_hirshfeld = .true.
 
     n_sites = size(n_neigh)
     n_pairs = size(neighbors_list)
@@ -261,10 +262,22 @@ module vdw
     end if
 
 !   Precompute some other pair quantities
-    neighbor_c6_ii = neighbor_c6_ii * hirshfeld_v_neigh**2
-!   This is slow, could replace by Taylor expansion maybe
-    r0_ii = r0_ii * hirshfeld_v_neigh**(1.d0/3.d0)
-    neighbor_alpha0 = neighbor_alpha0 * hirshfeld_v_neigh
+    if ( read_hirshfeld ) then
+      write(*,*) "neighbor_c6_ii", neighbor_c6_ii
+      write(*,*) "r0_ii)", r0_ii
+      write(*,*) "neighbor_alpha0", neighbor_alpha0
+      neighbor_c6_ii = c6_scs
+      r0_ii = r0_scs
+      neighbor_alpha0 = alpha0_scs
+      write(*,*) "neighbor_c6_ii", neighbor_c6_ii
+      write(*,*) "r0_ii)", r0_ii
+      write(*,*) "neighbor_alpha0", neighbor_alpha0
+    else
+      neighbor_c6_ii = neighbor_c6_ii * hirshfeld_v_neigh**2
+!     This is slow, could replace by Taylor expansion maybe
+      r0_ii = r0_ii * hirshfeld_v_neigh**(1.d0/3.d0)
+      neighbor_alpha0 = neighbor_alpha0 * hirshfeld_v_neigh
+    end if
 
     if( do_timing) then
       call cpu_time(time2)
@@ -303,6 +316,7 @@ module vdw
     end if
 
 !   Compute the TS local energies
+    energies = 0.d0
     f_damp = 0.d0
     k = 0
     do i = 1, n_sites
@@ -313,10 +327,17 @@ module vdw
           exp_damp(k) = exp( -d*(rjs(k)/(sR*r0_ij(k)) - 1.d0) )
           f_damp(k) = 1.d0/( 1.d0 + exp_damp(k) )
           energies(i) = energies(i) + neighbor_c6_ij(k) * r6(k) * f_damp(k)
+          write(*,*) "neighbor_c6_ij", neighbor_c6_ij(k)
+          write(*,*) "r6", r6(k)
+          write(*,*) "f_damp", f_damp(k)
+          write(*,*) "rjs", rjs(k)
+          write(*,*) "pair contribution ij", -0.5d0 * neighbor_c6_ij(k) * r6(k) * f_damp(k)
         end if         
       end do
     end do
     energies = -0.5d0 * energies
+
+    write(*,*) "TS energy", sum(energies)
 
     if( do_timing) then
       call cpu_time(time2)
@@ -426,20 +447,21 @@ module vdw
                                        n_neigh, neighbors_list, neighbor_species, &
                                        rcut, buffer, rcut_inner, buffer_inner, rjs, xyz, hirshfeld_v_neigh, &
                                        sR, d, c6_ref, r0_ref, alpha0_ref, do_derivatives, alpha_SCS0, dalpha_full, &
-                                       energies, forces0, virial )
+                                       c6_scs, r0_scs, alpha0_scs, energies, forces0, virial )
 
     implicit none
 
 !   Input variables
     real*8, intent(in) :: hirshfeld_v_cart_der(:,:), rcut, buffer, rcut_inner, buffer_inner, &
                           rjs(:), xyz(:,:), sR, d, c6_ref(:), r0_ref(:), &
-                          alpha0_ref(:), hirshfeld_v(:), hirshfeld_v_neigh(:)
+                          alpha0_ref(:) !, hirshfeld_v(:), hirshfeld_v_neigh(:) !NOTE: uncomment this in final implementation
     integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:)
     logical, intent(in) :: do_derivatives
 !   Output variables
     real*8, intent(out) :: virial(1:3, 1:3)
 !   In-Out variables
-    real*8, intent(inout) :: energies(:), forces0(:,:), alpha_SCS0(:,:), dalpha_full(:,:,:,:)
+    real*8, intent(inout) :: energies(:), forces0(:,:), alpha_SCS0(:,:), dalpha_full(:,:,:,:), hirshfeld_v(:), &
+                             hirshfeld_v_neigh(:), c6_scs(:), r0_scs(:), alpha0_scs(:)
 !   Internal variables
     real*8, allocatable :: neighbor_c6_ii(:), r0_ii(:), &
                            f_damp(:), neighbor_alpha0(:), &
@@ -456,7 +478,8 @@ module vdw
                            a_vec(:,:), &
                            BTB_reg(:,:), B_reg(:,:), &
                            a_SCS(:,:), da_vec(:,:), vect1(:,:), &
-                           vect2(:,:), vect3(:,:), vect4(:,:), vect_temp(:,:), da_SCS(:,:)
+                           vect2(:,:), vect3(:,:), vect4(:,:), vect_temp(:,:), da_SCS(:,:), &
+                           c6_nsites(:)
     real*8 :: time1, time2, this_force(1:3), Bohr, Hartree, &
               omega, pi, integral, E_MBD, R_vdW_ij, R_vdW_SCS_ij, S_vdW_ij, dS_vdW_ij, exp_term, &
               rcut_vdw, r_vdw_i, r_vdw_j, dist, f_damp_SCS_ij, t1, t2, &
@@ -465,20 +488,18 @@ module vdw
     integer :: n_sites, n_pairs, n_species, n_sites0, info, n_order, n_freq, om, n_tot
     integer :: i, i2, j, j2, k, k2, k3, a, a2, c1, c2, c3, lwork, b, p, q, n_count
     logical :: do_timing = .false., do_hirshfeld_gradients = .true., &
-               total_energy = .true., regularization = .true. ! NOTE: THERE IS A BUG WITH regularization = .false.
-                                                              ! INCONSISTENT FINITE DIFFERENCE FORCES!
+               total_energy = .true., regularization = .true., read_hirshfeld = .true.
 
-
-
-!    type(psb_ctxt_type) :: icontxt
-!    integer(psb_ipk_) ::  iam, np, ip, jp, idummy, nr, nnz, info_psb
-!    type(psb_desc_type) :: desc_a
-!    type(psb_dspmat_type) :: A_sp
+!    PSBLAS stuff:
+    type(psb_ctxt_type) :: icontxt
+    integer(psb_ipk_) ::  iam, np, ip, jp, idummy, nr, nnz, info_psb
+    type(psb_desc_type) :: desc_a
+    type(psb_dspmat_type) :: A_sp
     real*8, allocatable :: x_vec(:,:), b_vec(:,:)
-!    integer(psb_lpk_), allocatable :: ia(:), ja(:), myidx(:)
-!    real(psb_dpk_), allocatable :: val(:), val_xv(:,:), val_bv(:,:)
-!    type(psb_dprec_type)  :: prec
-!    character(len=20) :: ptype
+    integer(psb_lpk_), allocatable :: ia(:), ja(:), myidx(:)
+    real(psb_dpk_), allocatable :: val(:), val_xv(:,:), val_bv(:,:)
+    type(psb_dprec_type) :: prec
+    character(len=20) :: ptype
 
 !   IMPORTANT NOTE ABOUT THE DERIVATIVES:
 !   If rcut < rcut_soap, the derivatives in the new implementation omit the terms that fall outside of rcut.
@@ -493,6 +514,28 @@ module vdw
     n_pairs = size(neighbors_list)
     n_species = size(c6_ref)
     n_sites0 = size(forces0, 2)
+
+    if ( read_hirshfeld ) then
+
+      open(unit=89, file="hirshfeld", status="old")
+      do i = 1, n_sites
+        read(89,*) hirshfeld_v(i)
+      end do
+      close(89)
+
+      k = 0
+      do i = 1, n_sites
+        do j = 1, n_neigh(i)
+          k = k+1
+          i2 = neighbors_list(k)
+          hirshfeld_v_neigh(k) = hirshfeld_v(i2)
+        end do
+      end do
+
+      write(*,*) "hirshfeld_v", hirshfeld_v
+      write(*,*) "hirshfeld_v_neigh", hirshfeld_v_neigh 
+
+    end if
 
 !   Hartree units (calculations done in Hartree units for simplicity)
     Bohr = 0.5291772105638411
@@ -536,6 +579,7 @@ module vdw
 !    allocate( BTB_reg_copy(1:3*n_sites,1:3*n_sites) )
     allocate( BTB_reg(1:3*n_sites,1:3*n_sites) )
     allocate( B_reg(1:3*n_sites,1:3*n_sites) )
+    allocate( c6_nsites(1:n_sites) )
     if ( do_derivatives ) then
       allocate( dT(1:9*n_pairs) )
       allocate( dT_SR(1:3*n_sites,1:3*n_sites) )
@@ -660,22 +704,22 @@ module vdw
         end do
       end do
 
-!      allocate( ia(1:9*n_sites*n_sites) )
-!      allocate( ja(1:9*n_sites*n_sites) )
-!      allocate( val(1:9*n_sites*n_sites) )
+      allocate( ia(1:9*n_sites*n_sites) )
+      allocate( ja(1:9*n_sites*n_sites) )
+      allocate( val(1:9*n_sites*n_sites) )
 
 !      T_SR = 0.d0
       B_mat = 0.d0
       k = 0
-!      nnz = 0
+      nnz = 0
       do i = 1, n_sites
         k = k+1
         do c1 = 1, 3
           B_mat(3*(i-1)+c1,3*(i-1)+c1) = 1.d0
-!          nnz = nnz+1
-!          ia(nnz) = 3*(i-1)+c1
-!          ja(nnz) = 3*(i-1)+c1
-!          val(nnz) = B_mat(3*(i-1)+c1,3*(i-1)+c1,1)
+          nnz = nnz+1
+          ia(nnz) = 3*(i-1)+c1
+          ja(nnz) = 3*(i-1)+c1
+          val(nnz) = B_mat(3*(i-1)+c1,3*(i-1)+c1)
         end do
         do j2 = 2, n_neigh(i)
           k = k+1
@@ -686,12 +730,12 @@ module vdw
             do c1 = 1, 3
               do c2 = 1, 3
                 k2 = k2+1
-!                nnz = nnz+1
+                nnz = nnz+1
                 B_mat(3*(i-1)+c1,3*(j-1)+c2) = alpha_i(i) * (1.d0-f_damp(k)) * (-T_func(k2) * &
                                                   g_func(k) + h_func(k2))
-!                ia(nnz) = 3*(i-1)+c1
-!                ja(nnz) = 3*(j-1)+c2
-!                val(nnz) = T_SR(3*(i-1)+c1,3*(j-1)+c2,1)
+                ia(nnz) = 3*(i-1)+c1
+                ja(nnz) = 3*(j-1)+c2
+                val(nnz) = B_mat(3*(i-1)+c1,3*(j-1)+c2)
               end do
             end do
           end if
@@ -702,50 +746,52 @@ module vdw
 
       !if ( iterative ) then
 
-      !call psb_init(icontxt)
-      !call psb_cdall(icontxt, desc_a, info_psb, nl=3*n_sites)
-      !write(*,*) "cdall", info_psb
-      !call psb_spall(A_sp, desc_a, info_psb, nnz)
-      !write(*,*) "spall", info_psb
-      !call psb_geall(x_vec, desc_a, info_psb, 3, 1)
-      !write(*,*) "geall x", info_psb, size(x_vec,1), size(x_vec,2)
-      !call psb_geall(b_vec, desc_a, info_psb, 3, 1)
-      !write(*,*) "geall b", info_psb, size(b_vec,1), size(b_vec,2)
-      !write(*,*) "size of b", size(b_vec,1)
-      !call psb_spins(nnz, ia(1:nnz), ja(1:nnz), val(1:nnz), A_sp, desc_a, info_psb)
-      !write(*,*) "spins", info_psb
-      !allocate( val_xv(1:3*n_sites,1:3) )
-      !allocate( val_bv(1:3*n_sites,1:3) )
-      !allocate( myidx(1:3*n_sites) )
-      !val_xv = 0.d0
-      !val_bv = 0.d0
-      !do p = 1, n_sites
-      !  do c1 = 1, 3
-      !    myidx(3*(p-1)+c1) = 3*(p-1)+c1
-      !    val_xv(3*(p-1)+c1,c1) = 1.d0
-      !    val_bv(3*(p-1)+c1,c1) = 1.d0
-      !  end do
-      !end do
-      !call psb_geins(3*n_sites, myidx, val_xv, x_vec, desc_a, info_psb)
-      !write(*,*) "x_vec", info_psb
-      !call psb_geins(3*n_sites, myidx, val_bv, b_vec, desc_a, info_psb)
-      !write(*,*) "b_vec", info_psb
-      !call psb_cdasb(desc_a, info_psb)
-      !write(*,*) "cdasb", info_psb
-      !call psb_spasb(A_sp, desc_a, info_psb)
-      !write(*,*) "spasb", info_psb
-      !call psb_geasb(x_vec, desc_a, info_psb)
-      !write(*,*) "geasb x", info_psb
-      !call psb_geasb(b_vec, desc_a, info_psb)
-      !write(*,*) "geasb b", info_psb
-      !ptype="DIAG"
-      !call prec%init(icontxt, ptype, info_psb)
-      !call prec%build(A_sp, desc_a, info_psb)
-      !write(*,*) "prec build", info_psb
-      !call psb_krylov("BICGSTAB", A_sp, prec, b_vec, x_vec, 1.d-6, desc_a, info)
-      !deallocate( val_xv, val_bv )
+      call psb_init(icontxt)
+      call psb_cdall(icontxt, desc_a, info_psb, nl=3*n_sites)
+      write(*,*) "cdall", info_psb
+      call psb_spall(A_sp, desc_a, info_psb, nnz)
+      write(*,*) "spall", info_psb
+      call psb_geall(x_vec, desc_a, info_psb, 3, 1)
+      write(*,*) "geall x", info_psb, size(x_vec,1), size(x_vec,2)
+      call psb_geall(b_vec, desc_a, info_psb, 3, 1)
+      write(*,*) "geall b", info_psb, size(b_vec,1), size(b_vec,2)
+      write(*,*) "size of b", size(b_vec,1)
+      call psb_spins(nnz, ia(1:nnz), ja(1:nnz), val(1:nnz), A_sp, desc_a, info_psb)
+      write(*,*) "spins", info_psb
+      allocate( val_xv(1:3*n_sites,1:3) )
+      allocate( val_bv(1:3*n_sites,1:3) )
+      allocate( myidx(1:3*n_sites) )
+      val_xv = 0.d0
+      val_bv = 0.d0
+      do p = 1, n_sites
+        do c1 = 1, 3
+          myidx(3*(p-1)+c1) = 3*(p-1)+c1
+          val_xv(3*(p-1)+c1,c1) = 1.d0
+          val_bv(3*(p-1)+c1,c1) = 1.d0
+        end do
+      end do
+      call psb_geins(3*n_sites, myidx, val_xv, x_vec, desc_a, info_psb)
+      write(*,*) "x_vec", info_psb
+      call psb_geins(3*n_sites, myidx, val_bv, b_vec, desc_a, info_psb)
+      write(*,*) "b_vec", info_psb
+      call psb_cdasb(desc_a, info_psb)
+      write(*,*) "cdasb", info_psb
+      call psb_spasb(A_sp, desc_a, info_psb)
+      write(*,*) "spasb", info_psb
+      call psb_geasb(x_vec, desc_a, info_psb)
+      write(*,*) "geasb x", info_psb
+      call psb_geasb(b_vec, desc_a, info_psb)
+      write(*,*) "geasb b", info_psb
+      ptype="DIAG"
+      ! NOTE: Everything works fine until preconditioner has to be set. Then the compilation fails.
+      call prec%init(icontxt, ptype, info_psb)
+      write(*,*) "prec init", info_psb
+      call prec%build(A_sp, desc_a, info_psb)
+      write(*,*) "prec build", info_psb
+      !call psb_krylov("BICGSTAB", A_sp, prec, b_vec(:,1), x_vec(:,1), 0.000001d0, desc_a, info_psb)
+      deallocate( val_xv, val_bv, myidx )
       !call psb_exit(icontxt)
-!      deallocate( ia, ja, val )
+      deallocate( ia, ja, val )
 
       !n_iter = 100
       
@@ -1119,8 +1165,28 @@ module vdw
 
     write(*,*) "alpha_SCS:" !,  alpha_SCS0(1,1)
     do p = 1, n_sites
-      write(*,*) p, alpha_SCS0(p,1)
+      write(*,*) p, alpha_SCS0(p,:)
     end do
+
+    if ( read_hirshfeld ) then
+      write(*,*) "atom, alpha_SCS, C6_SCS:"
+      do p = 1, n_sites
+        call integrate("trapezoidal", omegas, alpha_SCS0(p,:)**2, omegas(1), omegas(n_freq), c6_nsites(p))
+        c6_nsites(p) = 3.d0/pi*c6_nsites(p)
+        write(*,*) p, alpha_SCS0(p,1) * Bohr**3, c6_nsites(p)
+      end do
+
+      k = 0
+      do i = 1, n_sites
+        do j = 1,  n_neigh(i)
+          k = k+1
+          i2 = neighbors_list(k)
+          c6_scs(k) = c6_nsites(i2) * (Hartree*Bohr**6)
+          r0_scs(k) = (alpha_SCS0(i2,1)/neighbor_alpha0(k))**(1.d0/3.d0) * r0_ii(k) * Bohr
+          alpha0_scs(k) = alpha_SCS0(i2,1) * Bohr**3
+        end do
+      end do
+    end if
 
     if ( do_derivatives ) then
       write(*,*) "dalpha_SCS w.r.t. atom 1 in x direction:"
@@ -1132,7 +1198,7 @@ module vdw
 !   Clean up
     deallocate( neighbor_c6_ii, f_damp, T_func, &
                 h_func, g_func, omegas, omega_i, alpha_i, sigma_i, B_mat, xyz_H, rjs_H, &
-                BTB_reg, B_reg, I_mat, a_vec, a_SCS )
+                BTB_reg, B_reg, I_mat, a_vec, a_SCS, c6_nsites )
     if ( do_derivatives ) then
       deallocate( dT, dT_SR, f_damp_der, g_func_der, h_func_der, dT_SR_v, &
                   coeff_der, coeff_fdamp, hirshfeld_v_cart_der_H, da_vec, &

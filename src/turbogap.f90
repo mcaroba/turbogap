@@ -61,7 +61,7 @@ program turbogap
                          energies_2b(:), forces_2b(:,:), energies_3b(:), forces_3b(:,:), &
                          energies_core_pot(:), forces_core_pot(:,:), &
                          velocities(:,:), masses_types(:), masses(:), hirshfeld_v(:), &
-                         hirshfeld_v_cart_der(:,:)
+                         hirshfeld_v_cart_der(:,:), c6_scs(:), r0_scs(:), alpha0_scs(:)
   real*8, allocatable, target :: this_hirshfeld_v(:), this_hirshfeld_v_cart_der(:,:)
   real*8, pointer :: this_hirshfeld_v_pt(:), this_hirshfeld_v_cart_der_pt(:,:)
   real*8, allocatable :: all_energies(:,:), all_forces(:,:,:), all_virial(:,:,:)
@@ -1181,6 +1181,9 @@ program turbogap
 !        else
           allocate( alpha_SCS(i_beg:i_end,1:params%vdw_mbd_nfreq) )
           allocate( alpha_SCS_grad(i_beg:i_end,i_beg:i_end,1:3,1:params%vdw_mbd_nfreq) )
+          allocate( c6_scs(1:j_end-j_beg+1) )
+          allocate( r0_scs(1:j_end-j_beg+1) )
+          allocate( alpha0_scs(1:j_end-j_beg+1) )
 call cpu_time(time2)
           call get_scs_polarizabilities( hirshfeld_v(i_beg:i_end), hirshfeld_v_cart_der(1:3, j_beg:j_end), &
                                          n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
@@ -1190,6 +1193,7 @@ call cpu_time(time2)
                                          rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), v_neigh_vdw, &
                                          params%vdw_sr, params%vdw_d, params%vdw_c6_ref, params%vdw_r0_ref, &
                                          params%vdw_alpha0_ref, params%vdw_mbd_grad, alpha_SCS, alpha_SCS_grad, &
+                                         c6_scs, r0_scs, alpha0_scs, &
 #ifdef _MPIF90
                                          this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw )
 #else
@@ -1197,18 +1201,29 @@ call cpu_time(time2)
 #endif
 call cpu_time(time1)
 write(*,*) "scs timing", time1-time2
-          !write(*,*) "alpha_SCS0:", alpha_SCS
+        call get_ts_energy_and_forces( hirshfeld_v(i_beg:i_end), hirshfeld_v_cart_der(1:3, j_beg:j_end), &
+                                       n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
+                                       neighbor_species(j_beg:j_end), &
+                                       params%vdw_rcut, params%vdw_buffer, &
+                                       params%vdw_rcut_inner, params%vdw_buffer_inner, &
+                                       rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), v_neigh_vdw, &
+                                       params%vdw_sr, params%vdw_d, params%vdw_c6_ref, params%vdw_r0_ref, &
+                                       params%vdw_alpha0_ref, c6_scs, r0_scs, alpha0_scs, params%do_forces, &
+#ifdef _MPIF90
+                                       this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw )
+#else
+                                       energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
+#endif
           call get_mbd_energies_and_forces( alpha_SCS, alpha_SCS_grad, n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
                         neighbor_species(j_beg:j_end), params%vdw_rcut, params%vdw_buffer, &
                         params%vdw_rcut_inner, params%vdw_buffer_inner, rjs(j_beg:j_end), &
                         xyz(1:3, j_beg:j_end), params%vdw_sr, params%vdw_d, &
                         params%vdw_c6_ref, params%vdw_r0_ref, params%vdw_alpha0_ref, &
                         params%vdw_mbd_grad, energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
-        !write(*,*) "alpha_SCS0 after MBD:", alpha_SCS
           call cpu_time(time_vdw(2))
           time_vdw(3) = time_vdw(2) - time_vdw(1)
 
-          deallocate(v_neigh_vdw, alpha_SCS, alpha_SCS_grad)
+          deallocate(v_neigh_vdw, alpha_SCS, alpha_SCS_grad, c6_scs, r0_scs, alpha0_scs)
         !end if
       end if
 
