@@ -33,7 +33,6 @@ module vdw
   use psb_prec_mod
   use psb_krylov_mod
   use psb_util_mod
-  use psb_d_prec_type
 
   contains
 
@@ -171,7 +170,7 @@ module vdw
     integer :: n_sites, n_pairs, n_pairs_soap, n_species, n_sites0
     integer :: i, j, i2, j2, k, n_in_buffer, k1, k2
     logical, allocatable :: is_in_buffer(:)
-    logical :: do_timing = .false., read_hirshfeld = .true.
+    logical :: do_timing = .false., read_hirshfeld = .false.
 
     n_sites = size(n_neigh)
     n_pairs = size(neighbors_list)
@@ -263,15 +262,9 @@ module vdw
 
 !   Precompute some other pair quantities
     if ( read_hirshfeld ) then
-      write(*,*) "neighbor_c6_ii", neighbor_c6_ii
-      write(*,*) "r0_ii)", r0_ii
-      write(*,*) "neighbor_alpha0", neighbor_alpha0
       neighbor_c6_ii = c6_scs
       r0_ii = r0_scs
       neighbor_alpha0 = alpha0_scs
-      write(*,*) "neighbor_c6_ii", neighbor_c6_ii
-      write(*,*) "r0_ii)", r0_ii
-      write(*,*) "neighbor_alpha0", neighbor_alpha0
     else
       neighbor_c6_ii = neighbor_c6_ii * hirshfeld_v_neigh**2
 !     This is slow, could replace by Taylor expansion maybe
@@ -327,11 +320,6 @@ module vdw
           exp_damp(k) = exp( -d*(rjs(k)/(sR*r0_ij(k)) - 1.d0) )
           f_damp(k) = 1.d0/( 1.d0 + exp_damp(k) )
           energies(i) = energies(i) + neighbor_c6_ij(k) * r6(k) * f_damp(k)
-          write(*,*) "neighbor_c6_ij", neighbor_c6_ij(k)
-          write(*,*) "r6", r6(k)
-          write(*,*) "f_damp", f_damp(k)
-          write(*,*) "rjs", rjs(k)
-          write(*,*) "pair contribution ij", -0.5d0 * neighbor_c6_ij(k) * r6(k) * f_damp(k)
         end if         
       end do
     end do
@@ -487,15 +475,17 @@ module vdw
     integer, allocatable :: ipiv(:)
     integer :: n_sites, n_pairs, n_species, n_sites0, info, n_order, n_freq, om, n_tot
     integer :: i, i2, j, j2, k, k2, k3, a, a2, c1, c2, c3, lwork, b, p, q, n_count
-    logical :: do_timing = .false., do_hirshfeld_gradients = .true., &
-               total_energy = .true., regularization = .true., read_hirshfeld = .true.
+    logical :: do_timing = .true., do_hirshfeld_gradients = .true., &
+               total_energy = .true., regularization = .false., read_hirshfeld = .false., &
+               psblas = .false.
 
 !    PSBLAS stuff:
     type(psb_ctxt_type) :: icontxt
     integer(psb_ipk_) ::  iam, np, ip, jp, idummy, nr, nnz, info_psb
     type(psb_desc_type) :: desc_a
     type(psb_dspmat_type) :: A_sp
-    real*8, allocatable :: x_vec(:,:), b_vec(:,:)
+    !real*8, allocatable :: x_vec(:,:), b_vec(:,:)
+    type(psb_d_vect_type) :: x_vec, b_vec
     integer(psb_lpk_), allocatable :: ia(:), ja(:), myidx(:)
     real(psb_dpk_), allocatable :: val(:), val_xv(:,:), val_bv(:,:)
     type(psb_dprec_type) :: prec
@@ -665,8 +655,14 @@ module vdw
       call cpu_time(time2)
       write(*,*) "Timing for initial stuff:", time2-time1
     end if
+    
+    allocate( ia(1:9*n_sites*n_sites) )
+    allocate( ja(1:9*n_sites*n_sites) )
+    allocate( val(1:9*n_sites*n_sites) )
 
     do om = 1, n_freq
+
+      write(*,*) "Doing frequency", om
 
       if( do_timing) then
         call cpu_time(time1)
@@ -704,10 +700,6 @@ module vdw
         end do
       end do
 
-      allocate( ia(1:9*n_sites*n_sites) )
-      allocate( ja(1:9*n_sites*n_sites) )
-      allocate( val(1:9*n_sites*n_sites) )
-
 !      T_SR = 0.d0
       B_mat = 0.d0
       k = 0
@@ -724,7 +716,9 @@ module vdw
         do j2 = 2, n_neigh(i)
           k = k+1
           j = neighbors_list(k)
-          j = modulo(j-1,n_sites)+1
+          !write(*,*) "j", j
+          !j = modulo(j-1,n_sites)+1
+          !write(*,*) "j2", j
           if( rjs(k) < rcut )then
             k2 = 9*(k-1)
             do c1 = 1, 3
@@ -742,56 +736,82 @@ module vdw
         end do
       end do
 
+      !write(*,*) "Writing B_mat"
+      !open(unit=79, file="B_mat.dat", status="new")
+      !do p = 1, 3*n_sites
+      !  write(79,*) B_mat(p,:)
+      !end do
+      !close(79)
+      !write(*,*) "Writing done"
+
 !      B_mat = B_mat + T_SR
 
-      !if ( iterative ) then
+      if ( psblas ) then
 
-      call psb_init(icontxt)
-      call psb_cdall(icontxt, desc_a, info_psb, nl=3*n_sites)
-      write(*,*) "cdall", info_psb
-      call psb_spall(A_sp, desc_a, info_psb, nnz)
-      write(*,*) "spall", info_psb
-      call psb_geall(x_vec, desc_a, info_psb, 3, 1)
-      write(*,*) "geall x", info_psb, size(x_vec,1), size(x_vec,2)
-      call psb_geall(b_vec, desc_a, info_psb, 3, 1)
-      write(*,*) "geall b", info_psb, size(b_vec,1), size(b_vec,2)
-      write(*,*) "size of b", size(b_vec,1)
-      call psb_spins(nnz, ia(1:nnz), ja(1:nnz), val(1:nnz), A_sp, desc_a, info_psb)
-      write(*,*) "spins", info_psb
       allocate( val_xv(1:3*n_sites,1:3) )
       allocate( val_bv(1:3*n_sites,1:3) )
       allocate( myidx(1:3*n_sites) )
       val_xv = 0.d0
       val_bv = 0.d0
-      do p = 1, n_sites
-        do c1 = 1, 3
-          myidx(3*(p-1)+c1) = 3*(p-1)+c1
-          val_xv(3*(p-1)+c1,c1) = 1.d0
-          val_bv(3*(p-1)+c1,c1) = 1.d0
+      k2 = 0
+      do c1 = 1, 3
+        do p = 1, n_sites
+          k2 = k2+1
+          myidx(k2) = k2
+          val_xv(3*(p-1)+c1,c1) = alpha_i(p)
+          val_bv(3*(p-1)+c1,c1) = alpha_i(p)
         end do
       end do
-      call psb_geins(3*n_sites, myidx, val_xv, x_vec, desc_a, info_psb)
-      write(*,*) "x_vec", info_psb
-      call psb_geins(3*n_sites, myidx, val_bv, b_vec, desc_a, info_psb)
-      write(*,*) "b_vec", info_psb
-      call psb_cdasb(desc_a, info_psb)
-      write(*,*) "cdasb", info_psb
-      call psb_spasb(A_sp, desc_a, info_psb)
-      write(*,*) "spasb", info_psb
-      call psb_geasb(x_vec, desc_a, info_psb)
-      write(*,*) "geasb x", info_psb
-      call psb_geasb(b_vec, desc_a, info_psb)
-      write(*,*) "geasb b", info_psb
-      ptype="DIAG"
-      ! NOTE: Everything works fine until preconditioner has to be set. Then the compilation fails.
-      call prec%init(icontxt, ptype, info_psb)
-      write(*,*) "prec init", info_psb
-      call prec%build(A_sp, desc_a, info_psb)
-      write(*,*) "prec build", info_psb
-      !call psb_krylov("BICGSTAB", A_sp, prec, b_vec(:,1), x_vec(:,1), 0.000001d0, desc_a, info_psb)
+
+      call cpu_time(time1)
+      call psb_init(icontxt)
+      do c1 = 1, 3
+        call psb_cdall(icontxt, desc_a, info_psb, vl=myidx)
+        !write(*,*) "cdall", info_psb
+        call psb_spall(A_sp, desc_a, info_psb, nnz=nnz)
+        !write(*,*) "spall", info_psb
+        call psb_geall(x_vec,desc_a,info_psb)
+        !write(*,*) "geall x", info_psb
+        call psb_geall(b_vec,desc_a,info_psb)
+        !write(*,*) "geall b", info_psb
+        call psb_spins(nnz, ia(1:nnz), ja(1:nnz), val(1:nnz), A_sp, desc_a, info_psb)
+        !write(*,*) "spins", info_psb
+        call psb_geins(3*n_sites, myidx, val_xv(:,c1), x_vec, desc_a, info_psb)
+        !write(*,*) "x_vec", info_psb
+        call psb_geins(3*n_sites, myidx, val_bv(:,c1), b_vec, desc_a, info_psb)
+        !write(*,*) "b_vec", info_psb
+        call psb_cdasb(desc_a, info_psb)
+        !write(*,*) "cdasb", info_psb
+        call psb_spasb(A_sp, desc_a, info_psb)
+        !write(*,*) "spasb", info_psb
+        call psb_geasb(x_vec, desc_a, info_psb)
+        !write(*,*) "geasb x", info_psb
+        call psb_geasb(b_vec, desc_a, info_psb)
+        !write(*,*) "geasb b", info_psb
+        ptype="DIAG"
+        ! NOTE: Everything works fine until preconditioner has to be set. Then the compilation fails.
+        call prec%init(icontxt, ptype, info_psb)
+        !write(*,*) "prec init", info_psb
+        call prec%build(A_sp, desc_a, info_psb)
+        !write(*,*) "prec build", info_psb
+        call psb_krylov("BICGSTAB", A_sp, prec, b_vec, x_vec, 0.000001d0, desc_a, info_psb)
+        !write(*,*) "krylov", info_psb
+        val_xv(:,c1) = x_vec%get_vect()
+      end do
+      !call psb_exit(icontxt)
+      !write(*,*) "val_xv"
+      a_SCS = val_xv
+      alpha_SCS0(:,om) = 0.d0
+      do p = 1, n_sites
+        alpha_SCS0(p,om) = 1.d0/3.d0 * (val_xv(3*(p-1)+1,1) + val_xv(3*(p-1)+2,2) + val_xv(3*(p-1)+3,3))
+      end do
       deallocate( val_xv, val_bv, myidx )
       !call psb_exit(icontxt)
-      deallocate( ia, ja, val )
+      !deallocate( ia, ja, val )
+      call cpu_time(time2)
+      write(*,*) "Timing for PSBLAS", time2-time1
+      
+      else ! psblas
 
       !n_iter = 100
       
@@ -857,6 +877,8 @@ module vdw
         call cpu_time(time2)
         write(*,*) "Energies: timing for solving alpha_SCS:", time2-time1
       end if
+      
+      end if ! psblas
 
       if ( do_derivatives ) then
       
@@ -1091,14 +1113,6 @@ module vdw
               end if
             end do
 
-            if ( a == 1 .and. om == 1 .and. c3 == 1 ) then
-            !write(*,*) "da_vec"
-            !do i = 1, 3*n_sites
-            !  write(*,*) da_vec(i,:)
-            !end do
-            end if
-
-
       ! What happens here: regularized equation
       ! (B^T * B + reg_param * I) a_SCS = (B^T + reg_param*I) a_vec
       ! is differentiated:
@@ -1111,6 +1125,74 @@ module vdw
               write(*,*) "Gradients: timing for everything else:", time2-time1
               call cpu_time(time1)
             end if
+            
+      if ( psblas ) then
+      
+      call dgemm('n', 'n', 3*n_sites, 3, 3*n_sites, 1.d0, dT_SR, 3*n_sites, &
+                 a_SCS, 3*n_sites, 0.d0, vect_temp, 3*n_sites)
+      da_SCS = da_vec - vect_temp
+
+      allocate( val_xv(1:3*n_sites,1:3) )
+      allocate( val_bv(1:3*n_sites,1:3) )
+      allocate( myidx(1:3*n_sites) )
+      val_xv = 0.d0
+      val_bv = 0.d0
+      k2 = 0
+      do p = 1, 3*n_sites
+          k2 = k2+1
+          myidx(k2) = k2
+          val_xv(p,:) = da_SCS(p,:)
+          val_bv(p,:) = da_SCS(p,:)
+      end do
+
+      call cpu_time(time1)
+      !call psb_init(icontxt)
+      do c1 = 1, 3
+        call psb_cdall(icontxt, desc_a, info_psb, vl=myidx)
+        !write(*,*) "cdall", info_psb
+        call psb_spall(A_sp, desc_a, info_psb, nnz=nnz)
+        !write(*,*) "spall", info_psb
+        call psb_geall(x_vec,desc_a,info_psb)
+        !write(*,*) "geall x", info_psb
+        call psb_geall(b_vec,desc_a,info_psb)
+        !write(*,*) "geall b", info_psb
+        call psb_spins(nnz, ia(1:nnz), ja(1:nnz), val(1:nnz), A_sp, desc_a, info_psb)
+        !write(*,*) "spins", info_psb
+        call psb_geins(3*n_sites, myidx, val_xv(:,c1), x_vec, desc_a, info_psb)
+        !write(*,*) "x_vec", info_psb
+        call psb_geins(3*n_sites, myidx, val_bv(:,c1), b_vec, desc_a, info_psb)
+        !write(*,*) "b_vec", info_psb
+        call psb_cdasb(desc_a, info_psb)
+        !write(*,*) "cdasb", info_psb
+        call psb_spasb(A_sp, desc_a, info_psb)
+        !write(*,*) "spasb", info_psb
+        call psb_geasb(x_vec, desc_a, info_psb)
+        !write(*,*) "geasb x", info_psb
+        call psb_geasb(b_vec, desc_a, info_psb)
+        !write(*,*) "geasb b", info_psb
+        ptype="DIAG"
+        ! NOTE: Everything works fine until preconditioner has to be set. Then the compilation fails.
+        call prec%init(icontxt, ptype, info_psb)
+        !write(*,*) "prec init", info_psb
+        call prec%build(A_sp, desc_a, info_psb)
+        !write(*,*) "prec build", info_psb
+        call psb_krylov("BICGSTAB", A_sp, prec, b_vec, x_vec, 0.000001d0, desc_a, info_psb)
+        !write(*,*) "krylov", info_psb
+        val_xv(:,c1) = x_vec%get_vect()
+      end do
+      !call psb_exit(icontxt)
+      !write(*,*) "val_xv"
+      dalpha_full(:,a,c3,om) = 0.d0
+      do p = 1, n_sites
+        dalpha_full(p,a,c3,om) = 1.d0/3.d0 * (val_xv(3*(p-1)+1,1) + val_xv(3*(p-1)+2,2) + val_xv(3*(p-1)+3,3))
+      end do
+      deallocate( val_xv, val_bv, myidx )
+      !call psb_exit(icontxt)
+      !deallocate( ia, ja, val )
+      call cpu_time(time2)
+      write(*,*) "Timing for PSBLAS", time2-time1
+      
+      else ! psblas
 
             if ( regularization ) then
               do i = 1, 3*n_sites
@@ -1131,12 +1213,6 @@ module vdw
               call dsytrs('U', 3*n_sites, 3, BTB_reg, 3*n_sites, ipiv, &
                 da_SCS, 3*n_sites, info)
             else
-              if ( a == 1 .and. c3 == 1 .and. om == 1) then
-              write(*,*) "a_SCS"
-              do p = 1, 3*n_sites
-                write(*,*) a_SCS(p,:)
-              end do
-              end if
               call dgemm('n', 'n', 3*n_sites, 3, 3*n_sites, 1.d0, dT_SR, 3*n_sites, &
                 a_SCS, 3*n_sites, 0.d0, vect_temp, 3*n_sites)
               da_SCS = da_vec - vect_temp
@@ -1144,9 +1220,14 @@ module vdw
                 da_SCS, 3*n_sites, info)
             end if
 
+            !n_tot = sum(n_neigh(1:a))-n_neigh(a)
+            !do i2 = 1, n_neigh(a)
             do i = 1, n_sites
-              dalpha_full(i,a,c3,om) = 1.d0/3.d0 * (da_SCS(3*(i-1)+1,1) + &
-                da_SCS(3*(i-1)+2,2) + da_SCS(3*(i-1)+3,3))
+              !if ( rjs(n_tot+i2) < rcut ) then
+                !i = neighbors_list(n_tot+i2)
+                dalpha_full(i,a,c3,om) = 1.d0/3.d0 * (da_SCS(3*(i-1)+1,1) + &
+                  da_SCS(3*(i-1)+2,2) + da_SCS(3*(i-1)+3,3))
+              !end if
             end do
 
             if( do_timing) then
@@ -1154,6 +1235,8 @@ module vdw
               write(*,*) "Gradients: timing for solving alpha_SCS_grad:", time2-time1
               call cpu_time(time1)
             end if
+            
+            end if ! psblas
 
           end do ! a loop
           
@@ -1162,6 +1245,17 @@ module vdw
       end if ! do_derivatives
 
     end do ! om loop
+
+            ! Cut-off test: This is a hack to test the validity of the approximation;
+            ! Implement this in the loops above
+            !do i = 1, n_sites
+            !  n_tot = sum(n_neigh(1:i))-n_neigh(i)
+            !  do a = 1, n_sites
+            !    if (.not.( any(neighbors_list(n_tot+1:n_tot+n_neigh(i)) == a) )) then   
+            !      dalpha_full(i,a,:,:) = 0.d0
+            !    end if
+            !  end do
+            !end do
 
     write(*,*) "alpha_SCS:" !,  alpha_SCS0(1,1)
     do p = 1, n_sites
@@ -1194,6 +1288,8 @@ module vdw
         write(*,*) p, dalpha_full(p,1,1,1)
       end do
     end if
+
+    deallocate( ia, ja, val )
 
 !   Clean up
     deallocate( neighbor_c6_ii, f_damp, T_func, &
@@ -1569,9 +1665,6 @@ module vdw
                         k3 = k3+1
                         dT_LR(3*(p-1)+c1,3*(q-1)+c2) = dT_LR(3*(p-1)+c1,3*(q-1)+c2) + &
                                           T_func(k3) * f_damp_der_SCS(k2) 
-                          if ( i == 1 .and. c3 == 1 .and. om == 1 .and. p == 19 .and. q == 9 ) then
-                            write(*,*) "f_damp_der_SCS", f_damp_der_SCS(k2)
-                          end if
                       end do
                     end do
                     if (i == i2 .or. i == j) then

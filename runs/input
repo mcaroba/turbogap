@@ -1,8 +1,8 @@
-atoms_file = 'CH4.xyz'
+!atoms_file = 'CH4.xyz'
 !atoms_file = 'atoms.xyz'
-!atoms_file = '2829.xyz'
-!atoms_file = '2829_2yp.xyz'
-!atoms_file = '2829_2ym.xyz'
+atoms_file = '2829_supercell.xyz'
+!atoms_file = '2829_p.xyz'
+!atoms_file = '2829_m.xyz'
 !atoms_file = 'atoms.xyz'
 !atoms_file = 'atoms_p.xyz'
 !atoms_file = 'atoms_m.xyz'
@@ -11,22 +11,22 @@ atoms_file = 'CH4.xyz'
 pot_file = 'gap_files/carbon.gap'
 
 ! Species info
-n_species = 2
-species = C H
+n_species = 1 !2
+species = C !H
 !e0 = -.16138053
 masses = 12.01 1.00784
 
 ! van der Waals info
 vdw_type = ts
-vdw_sr = 0.97
-vdw_d = 20.            ! Use d = 20 for TS(SCS) and d = 6 for MBD
-vdw_rcut = 6.0
+vdw_sr = 0.83 !0.97
+vdw_d = 6. !20.            ! Use d = 20 for TS(SCS) and d = 6 for MBD
+vdw_rcut = 4.5
 vdw_buffer = 0.
-vdw_r0_ref = 1.900 1.64
-vdw_alpha0_ref = 1.778 0.667
-vdw_c6_ref = 27.8 3.88
-vdw_scs_rcut = 6.0
-vdw_mbd_nfreq = 20
-!vdw_mbd_grad = .true.
-vdw_mbd_grad = .false.
+vdw_r0_ref = 1.900 !1.64
+vdw_alpha0_ref = 1.778 !0.667
+vdw_c6_ref = 27.8 !3.88
+vdw_scs_rcut = 4.5
+vdw_mbd_nfreq = 3
+vdw_mbd_grad = .true.
+!vdw_mbd_grad = .false.
 
