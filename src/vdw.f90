@@ -479,6 +479,12 @@ module vdw
     logical :: do_timing = .true., do_hirshfeld_gradients = .true., &
                total_energy = .true., regularization = .false., read_hirshfeld = .false., &
                psblas = .false.
+               
+!    LOCAL TEST stuff:
+    integer, allocatable :: p_to_i(:), i_to_p(:), sub_neighbors_list(:), n_sub_neigh(:)
+    logical, allocatable :: in_cutoff(:)
+    integer :: n_sub_sites, n_sub_pairs, n_tot2, s, j3
+    logical :: local = .true.
 
 !    PSBLAS stuff:
     type(psb_ctxt_type) :: icontxt
@@ -537,6 +543,162 @@ module vdw
 
 !   Number of frequencies
     n_freq = size(alpha_SCS0, 2)
+    
+!   LOCAL TEST:
+    if ( local ) then
+    
+      allocate( sigma_i(1:n_sites) )
+      allocate( alpha_i(1:n_sites) )
+      
+      k2 = 1
+      do i = 1, n_sites
+        alpha_i(i) = neighbor_alpha0(k2)
+        sigma_i(i) = (sqrt(2.d0/pi) * alpha_i(i)/3.d0)**(1.d0/3.d0)
+        k2 = k2+n_neigh(i)
+      end do
+    
+      allocate( in_cutoff(1:n_sites) )
+      allocate( p_to_i(1:n_sites) )
+      allocate( i_to_p(1:n_sites) )
+
+      k = 0
+      do i = 1, n_sites
+      
+        p_to_i = 0
+        i_to_p = 0
+        in_cutoff = .false.
+        k = k+1
+        p = 1
+        p_to_i(p) = i
+        i_to_p(i) = p
+        in_cutoff(i) = .true.
+        do j2 = 2, n_neigh(i)
+          k = k+1
+          j = neighbors_list(k)
+          if (rjs(k) < rcut) then
+            in_cutoff(j) = .true.
+            p = p+1
+            p_to_i(p) = j
+            i_to_p(j) = p
+          end if
+        end do
+        n_sub_sites = p
+        !write(*,*) "in_cutoff", in_cutoff
+        n_sub_pairs = 0
+        n_tot = sum(n_neigh(1:i))-n_neigh(i)
+        allocate( n_sub_neigh(1:n_sub_sites) )
+        n_sub_neigh = 0
+        p = 0
+        do j2 = 1, n_neigh(i)
+          j = neighbors_list(n_tot+j2)
+          if ( in_cutoff(j) ) then
+            p = p + 1
+            n_sub_pairs = n_sub_pairs + 1
+            n_sub_neigh(p) = n_sub_neigh(p) + 1
+            n_tot2 = sum(n_neigh(1:j))-n_neigh(j)
+            do j3 = 2, n_neigh(j)
+              if ( rjs(n_tot2+j3) < rcut ) then
+                if ( in_cutoff(neighbors_list(n_tot2+j3)) ) then
+                  n_sub_neigh(p) = n_sub_neigh(p) + 1
+                  n_sub_pairs = n_sub_pairs + 1
+                end if
+              end if
+            end do
+          end if
+        end do
+     
+        write(*,*) "first loop"   
+        !write(*,*) "p_to_i", p_to_i
+        !write(*,*) "i_to_p", i_to_p
+        !write(*,*) "n_sub_pairs", n_sub_pairs
+        !write(*,*) "n_sub_sites", n_sub_sites
+        !write(*,*) "n_sub_neigh", n_sub_neigh
+        
+        allocate( sub_neighbors_list(1:n_sub_pairs) )
+        allocate( xyz_H(1:3,1:n_sub_pairs) )
+        allocate( rjs_H(1:n_sub_pairs) )
+        allocate( r0_ii(1:n_sub_pairs) )
+        allocate( neighbor_alpha0(1:n_sub_pairs) )
+        allocate( T_func(1:9*n_sub_pairs) )
+        allocate( B_mat(1:3*n_sub_sites,1:3*n_sub_sites) )
+        allocate( f_damp(1:n_sub_pairs) )
+        allocate( g_func(1:n_sub_pairs) )
+        allocate( h_func(1:9*n_sub_pairs) )
+        
+        k2 = 0
+        T_func = 0.d0
+        B_mat = 0.d0
+        n_tot = sum(n_neigh(1:i))-n_neigh(i)
+        !n_sub_neigh = 0
+        do j2 = 1, n_neigh(i)
+          i2 = neighbors_list(n_tot+j2)
+          if ( in_cutoff(i2) ) then 
+            k2 = k2+1
+            s = neighbor_species(n_tot+j2)
+            sub_neighbors_list(k2) = i2
+            !n_sub_neigh(j2) = n_sub_neigh(i2) + 1
+            r0_ii(k2) = r0_ref(s) / Bohr
+            neighbor_alpha0(k2) = alpha0_ref(s) / Bohr**3
+            xyz_H(:,k2) = xyz(:,n_tot+j2)/Bohr
+            rjs_H(k2) = rjs(n_tot+j2)/Bohr
+            r_vdw_i = r0_ii(k2)
+            n_tot2 = sum(n_neigh(1:i2))-n_neigh(i2)
+            s_i = sigma_i(i2)
+            do j3 = 2, n_neigh(i2)
+              if ( rjs(n_tot2+j3) < rcut ) then
+                if ( in_cutoff(neighbors_list(n_tot2+j3)) ) then
+                  !n_sub_neigh(j2) = n_sub_neigh(j2) + 1
+                  k2 = k2+1    
+                  s = neighbor_species(n_tot2+j3)
+                  j = neighbors_list(n_tot2+j3)
+                  sub_neighbors_list(k2) = j                        
+                  r0_ii(k2) = r0_ref(s) / Bohr
+                  neighbor_alpha0(k2) = alpha0_ref(s) / Bohr**3
+                  xyz_H(:,k2) = xyz(:,n_tot2+j3)/Bohr
+                  rjs_H(k2) = rjs(n_tot2+j3)/Bohr
+                  r_vdw_j = r0_ii(k2)
+                  f_damp(k2) = 1.d0/( 1.d0 + exp( -d*( rjs_H(k2)/(sR*(r_vdw_i + r_vdw_j)) - 1.d0 ) ) )
+                  s_j = sigma_i(j)
+                  sigma_ij = sqrt(s_i**2 + s_j**2)
+                  g_func(k2) = erf(rjs_H(k2)/sigma_ij) - 2.d0/sqrt(pi) * (rjs_H(k2)/sigma_ij) * exp(-rjs_H(k2)**2.d0/sigma_ij**2)
+                  k3 = 9*(k2-1)
+                  do c1 = 1, 3
+                    do c2 = 1, 3
+                      k3 = k3 + 1
+                      if (c1 == c2) then
+                        T_func(k3) = (3*xyz_H(c1,k2) * xyz_H(c1,k2) - rjs_H(k2)**2)/rjs_H(k2)**5
+                      else
+                        T_func(k3) = (3*xyz_H(c1,k2) * xyz_H(c2,k2))/rjs_H(k2)**5
+                      end if
+                      h_func(k3) = 4.d0/sqrt(pi) * (rjs_H(k2)/sigma_ij)**3 * &
+                                      xyz_H(c1,k2)*xyz_H(c2,k2)/rjs_H(k2)**5 * exp(-rjs_H(k2)**2/sigma_ij**2)
+                      p = i_to_p(i2)
+                      q = i_to_p(j)
+                      !write(*,*) "f_damp_SCS", f_damp_SCS(k2)
+                      !write(*,*) "T_func", T_func(k3)
+                      B_mat(3*(p-1)+c1,3*(q-1)+c2) = alpha_i(i2) * (1.d0-f_damp(k2)) * (-T_func(k3) * &
+                                                  g_func(k2) + h_func(k3))
+                    end do
+                  end do
+                end if
+              end if
+            end do
+          end if
+        end do
+        
+        write(*,*) "Local B_mat:"
+        do p = 1, 6
+          write(*,*) B_mat(p,:)
+        end do
+        
+        deallocate( n_sub_neigh, sub_neighbors_list, xyz_H, rjs_H, r0_ii, neighbor_alpha0, T_func, &
+                    B_mat, g_func, h_func )
+                   
+      end do
+      
+      deallocate( in_cutoff, p_to_i, i_to_p, alpha_i, sigma_i )
+      
+    end if
 
 !   This implementation assumes that rcut is the largest cutoff, that is, the neigbhbors_list contains only the atoms within the vdW cutoff.
 !   The implementation matches with the implementation above if rcut is the largest cutoff or the cutoff is so small that the only neighbor
@@ -1165,14 +1327,14 @@ module vdw
       !           a_SCS, 3*n_sites, 0.d0, vect_temp, 3*n_sites)
       !da_SCS = da_vec - vect_temp
       b_der = b_der + da_vec
-      write(*,*) "da_SCS"
-      do p = 1, 6
-        write(*,*) da_SCS(p,:)
-      end do
-      write(*,*) "b_der"
-      do p = 1, 6
-        write(*,*) b_der(p,:)
-      end do
+      !write(*,*) "da_SCS"
+      !do p = 1, 6
+      !  write(*,*) da_SCS(p,:)
+      !end do
+      !write(*,*) "b_der"
+      !do p = 1, 6
+      !  write(*,*) b_der(p,:)
+      !end do
 
       allocate( val_xv(1:3*n_sites,1:3) )
       allocate( val_bv(1:3*n_sites,1:3) )
