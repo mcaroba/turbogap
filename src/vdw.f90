@@ -552,7 +552,7 @@ module vdw
       
       k2 = 1
       do i = 1, n_sites
-        alpha_i(i) = neighbor_alpha0(k2)
+        alpha_i(i) = alpha0_ref(1) / Bohr**3 * hirshfeld_v(i)
         sigma_i(i) = (sqrt(2.d0/pi) * alpha_i(i)/3.d0)**(1.d0/3.d0)
         k2 = k2+n_neigh(i)
       end do
@@ -574,6 +574,7 @@ module vdw
         in_cutoff(i) = .true.
         do j2 = 2, n_neigh(i)
           k = k+1
+          !write(*,*) "k", k
           j = neighbors_list(k)
           if (rjs(k) < rcut) then
             in_cutoff(j) = .true.
@@ -607,7 +608,6 @@ module vdw
           end if
         end do
      
-        write(*,*) "first loop"   
         !write(*,*) "p_to_i", p_to_i
         !write(*,*) "i_to_p", i_to_p
         !write(*,*) "n_sub_pairs", n_sub_pairs
@@ -624,10 +624,16 @@ module vdw
         allocate( f_damp(1:n_sub_pairs) )
         allocate( g_func(1:n_sub_pairs) )
         allocate( h_func(1:9*n_sub_pairs) )
+        allocate( a_vec(1:3*n_sub_sites,1:3) )
+        allocate( a_SCS(1:3*n_sub_sites,1:3) )
+        allocate( ipiv(1:3*n_sub_sites) )
         
         k2 = 0
         T_func = 0.d0
         B_mat = 0.d0
+        do j2 = 1, 3*n_sub_sites
+          B_mat(j2,j2) = 1.d0
+        end do
         n_tot = sum(n_neigh(1:i))-n_neigh(i)
         !n_sub_neigh = 0
         do j2 = 1, n_neigh(i)
@@ -686,13 +692,37 @@ module vdw
           end if
         end do
         
-        write(*,*) "Local B_mat:"
-        do p = 1, 6
-          write(*,*) B_mat(p,:)
+        a_vec = 0.d0
+        do p = 1, n_sub_sites
+          do c1 = 1, 3
+            a_vec(3*(p-1)+c1,c1) = alpha_i(p_to_i(p))
+          end do
         end do
         
+        !write(*,*) "Local B_mat:"
+        !do p = 1, 6
+        !  write(*,*) B_mat(p,1:6)
+        !end do
+        
+        a_SCS = a_vec
+        call dgesv(3*n_sub_sites, 3, B_mat, 3*n_sub_sites, ipiv, &
+                    a_SCS, 3*n_sub_sites, info)
+                    
+        !do p = 1, n_sub_sites
+        !  write(*,*) "atom", p, 1.d0/3.d0 * (a_SCS(3*(p-1)+1,1)+a_SCS(3*(p-1)+2,2)+a_SCS(3*(p-1)+3,3))
+        !end do
+
+        alpha_SCS0(i,1) = 0.d0
+        do c1 = 1, 3
+          alpha_SCS0(i,1) = alpha_SCS0(i,1) + a_SCS(c1,c1)
+        end do
+        alpha_SCS0(i,1) = alpha_SCS0(i,1)/3.d0
+        
+        !write(*,*) "alpha_SCS0"
+        write(*,*) i, alpha_SCS0(i,1)
+
         deallocate( n_sub_neigh, sub_neighbors_list, xyz_H, rjs_H, r0_ii, neighbor_alpha0, T_func, &
-                    B_mat, g_func, h_func )
+                    B_mat, g_func, h_func, f_damp, a_vec, a_SCS, ipiv )
                    
       end do
       
