@@ -484,7 +484,7 @@ module vdw
     integer, allocatable :: p_to_i(:), i_to_p(:), sub_neighbors_list(:), n_sub_neigh(:)
     logical, allocatable :: in_cutoff(:)
     integer :: n_sub_sites, n_sub_pairs, n_tot2, s, j3
-    logical :: local = .true.
+    logical :: local = .false.
 
 !    PSBLAS stuff:
     type(psb_ctxt_type) :: icontxt
@@ -1455,8 +1455,11 @@ module vdw
               !da_SCS = da_vec - vect_temp
               !call dgetrs('n', 3*n_sites, 3, BTB_reg, 3*n_sites, ipiv, &
               !  da_SCS, 3*n_sites, info)
-              call dgetrs('n', 3*n_sites, 3, BTB_reg, 3*n_sites, ipiv, &
-                b_der, 3*n_sites, info)
+              ! DERIVATIVE TEST HACK
+              !call dgetrs('n', 3*n_sites, 3, BTB_reg, 3*n_sites, ipiv, &
+              !  b_der, 3*n_sites, info)
+              write(*,*) "just for fun"
+              ! END
             end if
 
             !n_tot = sum(n_neigh(1:a))-n_neigh(a)
@@ -1464,8 +1467,12 @@ module vdw
             do i = 1, n_sites
                 !dalpha_full(i,a,c3,om) = 1.d0/3.d0 * (da_SCS(3*(i-1)+1,1) + &
                 !  da_SCS(3*(i-1)+2,2) + da_SCS(3*(i-1)+3,3))
+                ! DERIVATIVE TEST HACK
                 dalpha_full(i,a,c3,om) = 1.d0/3.d0 * (b_der(3*(i-1)+1,1) + &
                   b_der(3*(i-1)+2,2) + b_der(3*(i-1)+3,3))
+                !dalpha_full(i,a,c3,om) = 1.d0/3.d0 * (da_vec(3*(i-1)+1,1) + &
+                !  da_vec(3*(i-1)+2,2) + da_vec(3*(i-1)+3,3))
+                ! END
             end do
 
             if( do_timing) then
@@ -1894,6 +1901,9 @@ module vdw
                                               r_vdw_j/alpha_SCS0(j,1) * alpha_SCS_grad(j,i,c3,1) )
                     f_damp_der_SCS(k2) = -(d*rjs_H(k2))/S_vdW_ij**2 * f_damp_SCS(k2)**2 * &
                                            exp(-d*(rjs_H(k2)/S_vdW_ij - 1.d0)) * dS_vdW_ij
+                    ! DERIVATIVE TEST HACK:
+                    !f_damp_der_SCS(k2) = 0.d0
+                    ! END
                     k3 = 9*(k2-1)
                     !p = i_to_p(i2)
                     q = i_to_p(j)
