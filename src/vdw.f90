@@ -486,6 +486,10 @@ module vdw
     integer :: n_sub_sites, n_sub_pairs, n_tot2, s, j3
     logical :: local = .false.
 
+!   DERIVATIVE TEST stuff:
+    real*8 :: polyfit(1:12)
+    real*8, allocatable :: eigval(:) 
+
 !    PSBLAS stuff:
     type(psb_ctxt_type) :: icontxt
     integer(psb_ipk_) ::  iam, np, ip, jp, idummy, nr, nnz, info_psb
@@ -901,7 +905,8 @@ module vdw
       do i = 1, n_sites
         k = k+1
         do c1 = 1, 3
-          B_mat(3*(i-1)+c1,3*(i-1)+c1) = 1.d0
+          !B_mat(3*(i-1)+c1,3*(i-1)+c1) = 1.d0
+          B_mat(3*(i-1)+c1,3*(i-1)+c1) = 1.d0/alpha_i(i)
           nnz = nnz+1
           ia(nnz) = 3*(i-1)+c1
           ja(nnz) = 3*(i-1)+c1
@@ -919,7 +924,9 @@ module vdw
               do c2 = 1, 3
                 k2 = k2+1
                 nnz = nnz+1
-                B_mat(3*(i-1)+c1,3*(j-1)+c2) = alpha_i(i) * (1.d0-f_damp(k)) * (-T_func(k2) * &
+                !B_mat(3*(i-1)+c1,3*(j-1)+c2) = alpha_i(i) * (1.d0-f_damp(k)) * (-T_func(k2) * &
+                !                                  g_func(k) + h_func(k2))
+                B_mat(3*(i-1)+c1,3*(j-1)+c2) = (1.d0-f_damp(k)) * (-T_func(k2) * &
                                                   g_func(k) + h_func(k2))
                 ia(nnz) = 3*(i-1)+c1
                 ja(nnz) = 3*(j-1)+c2
@@ -930,6 +937,23 @@ module vdw
         end do
       end do
 
+      allocate( eigval(1:3*n_sites) )
+
+      if ( om == 1 ) then
+        call dsyev('n', 'u', 3*n_sites, B_mat, 3*n_sites, eigval, work_arr, 12*n_sites, info)
+        open(unit=79, file="eigs.dat", status="new")
+        write(*,*) "B_mat"
+        write(79,*) eigval
+        close(79)
+      end if
+
+      deallocate( eigval )
+
+      !write(*,*) "Matrix norm"
+      !do p = 1, 3*n_sites
+      !  write(*,*) sum(dabs(-B_mat(p,:)+I_mat(p,:)))
+      !end do
+
       !write(*,*) "Writing B_mat"
       !open(unit=79, file="B_mat.dat", status="new")
       !do p = 1, 3*n_sites
@@ -939,6 +963,9 @@ module vdw
       !write(*,*) "Writing done"
 
 !      B_mat = B_mat + T_SR
+
+      !EIGENVALUE TEST
+      if ( .false. ) then
 
       if ( psblas ) then
 
@@ -1012,7 +1039,8 @@ module vdw
       a_vec = 0.d0
       do p = 1, n_sites
         do c1 = 1, 3
-          a_vec(3*(p-1)+c1,c1) = alpha_i(p)
+          !a_vec(3*(p-1)+c1,c1) = alpha_i(p)
+          a_vec(3*(p-1)+c1,c1) = 1.d0
         end do
       end do
 
@@ -1337,7 +1365,7 @@ module vdw
                 end do
               end if
             end do
-
+            
       ! What happens here: regularized equation
       ! (B^T * B + reg_param * I) a_SCS = (B^T + reg_param*I) a_vec
       ! is differentiated:
@@ -1357,6 +1385,8 @@ module vdw
       !           a_SCS, 3*n_sites, 0.d0, vect_temp, 3*n_sites)
       !da_SCS = da_vec - vect_temp
       b_der = b_der + da_vec
+
+
       !write(*,*) "da_SCS"
       !do p = 1, 6
       !  write(*,*) da_SCS(p,:)
@@ -1450,15 +1480,44 @@ module vdw
               call dsytrs('U', 3*n_sites, 3, BTB_reg, 3*n_sites, ipiv, &
                 da_SCS, 3*n_sites, info)
             else
+              !polyfit = (/ -0.01252063d0,  0.16690202d0, -0.90556109d0,  2.52934965d0, -3.713878d0, 2.3867889d0, &
+              !              0.03266611d0, -0.19889042d0, -0.97601187d0,  1.19685207d0, -1.01171277d0,  0.99889649d0 /)
+              polyfit = (/ -0.011111d0,    0.10555365d0, -0.42261792d0,  0.93352476d0, -1.27295025d0,  1.20591827d0, &
+                 -1.00960849d0,  0.96270989d0, -0.99307669d0,  1.00191393d0, -1.00020537d0,  0.99999289d0 /)
               !call dgemm('n', 'n', 3*n_sites, 3, 3*n_sites, 1.d0, dT_SR, 3*n_sites, &
               !  a_SCS, 3*n_sites, 0.d0, vect_temp, 3*n_sites)
               !da_SCS = da_vec - vect_temp
               !call dgetrs('n', 3*n_sites, 3, BTB_reg, 3*n_sites, ipiv, &
               !  da_SCS, 3*n_sites, info)
+              b_der = da_vec + b_der
               ! DERIVATIVE TEST HACK
               !call dgetrs('n', 3*n_sites, 3, BTB_reg, 3*n_sites, ipiv, &
               !  b_der, 3*n_sites, info)
-              write(*,*) "just for fun"
+              da_SCS = polyfit(12) * b_der
+              vect_temp = b_der
+              do p = 1, 11
+                call dgemm('n', 'n', 3*n_sites, 3, 3*n_sites, 1.d0, B_mat-I_mat, 3*n_sites, &
+                  vect_temp, 3*n_sites, 0.d0, vect1, 3*n_sites)
+                  da_SCS = da_SCS + polyfit(12-p)*vect1
+                  vect_temp = vect1
+              end do
+              !call dgemm('n', 'n', 3*n_sites, 3, 3*n_sites, 1.d0, -B_mat+I_mat, 3*n_sites, &
+              !  b_der, 3*n_sites, 0.d0, vect1, 3*n_sites)
+              !da_SCS = da_SCS - 1.13904254d0 * vect1
+              !call dgemm('n', 'n', 3*n_sites, 3, 3*n_sites, 1.d0, -B_mat+I_mat, 3*n_sites, &
+              !  vect1, 3*n_sites, 0.d0, vect2, 3*n_sites)
+              !da_SCS = da_SCS + 0.92858092d0 * vect2
+              !call dgemm('n', 'n', 3*n_sites, 3, 3*n_sites, 1.d0, -B_mat+I_mat, 3*n_sites, &
+              !  vect2, 3*n_sites, 0.d0, vect3, 3*n_sites)
+              !da_SCS = da_SCS - 0.37501278d0 * vect3
+              !call dgemm('n', 'n', 3*n_sites, 3, 3*n_sites, 1.d0, -B_mat+I_mat, 3*n_sites, &
+              !  vect3, 3*n_sites, 0.d0, vect4, 3*n_sites)
+              !da_SCS = da_SCS + 0.05495458d0 * vect4
+              !call dgemm('n', 'n', 3*n_sites, 3, 3*n_sites, 1.d0, -B_mat+I_mat, 3*n_sites, &
+              !  vect4, 3*n_sites, 0.d0, vect_temp, 3*n_sites)
+              !da_SCS = da_SCS + vect_temp/120.d0
+              b_der = da_SCS
+              !write(*,*) "just for fun"
               ! END
             end if
 
@@ -1489,6 +1548,8 @@ module vdw
 
       end if ! do_derivatives
 
+      end if ! EIGENVALUE TEST if (.false.)
+
     end do ! om loop
 
             ! Cut-off test: This is a hack to test the validity of the approximation;
@@ -1501,6 +1562,9 @@ module vdw
             !    end if
             !  end do
             !end do
+
+    !EIGENVALUE TEST
+    if ( .false. ) then
 
     write(*,*) "alpha_SCS:" !,  alpha_SCS0(1,1)
     do p = 1, n_sites
@@ -1535,6 +1599,8 @@ module vdw
     end if
 
     deallocate( ia, ja, val )
+
+    end if ! EIGENVALUE TEST if ( .false. )
 
 !   Clean up
     deallocate( neighbor_c6_ii, f_damp, T_func, &

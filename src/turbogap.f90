@@ -1214,14 +1214,14 @@ write(*,*) "scs timing", time1-time2
 !#else
 !                                       energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
 !#endif
-          call get_mbd_energies_and_forces( alpha_SCS, alpha_SCS_grad, n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
-                        neighbor_species(j_beg:j_end), params%vdw_rcut, params%vdw_buffer, &
-                        params%vdw_rcut_inner, params%vdw_buffer_inner, rjs(j_beg:j_end), &
-                        xyz(1:3, j_beg:j_end), params%vdw_sr, params%vdw_d, &
-                        params%vdw_c6_ref, params%vdw_r0_ref, params%vdw_alpha0_ref, &
-                        params%vdw_mbd_grad, energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
-          call cpu_time(time_vdw(2))
-          time_vdw(3) = time_vdw(2) - time_vdw(1)
+  !        call get_mbd_energies_and_forces( alpha_SCS, alpha_SCS_grad, n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
+  !                      neighbor_species(j_beg:j_end), params%vdw_rcut, params%vdw_buffer, &
+  !                      params%vdw_rcut_inner, params%vdw_buffer_inner, rjs(j_beg:j_end), &
+  !                      xyz(1:3, j_beg:j_end), params%vdw_sr, params%vdw_d, &
+  !                      params%vdw_c6_ref, params%vdw_r0_ref, params%vdw_alpha0_ref, &
+  !                      params%vdw_mbd_grad, energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
+  !        call cpu_time(time_vdw(2))
+  !        time_vdw(3) = time_vdw(2) - time_vdw(1)
 
           deallocate(v_neigh_vdw, alpha_SCS, alpha_SCS_grad, c6_scs, r0_scs, alpha0_scs)
         !end if
