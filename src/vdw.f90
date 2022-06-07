@@ -29,10 +29,10 @@
 module vdw
 
   use misc
-  use psb_base_mod
-  use psb_prec_mod
-  use psb_krylov_mod
-  use psb_util_mod
+  !use psb_base_mod
+  !use psb_prec_mod
+  !use psb_krylov_mod
+  !use psb_util_mod
 
   contains
 
@@ -491,16 +491,16 @@ module vdw
     real*8, allocatable :: eigval(:) 
 
 !    PSBLAS stuff:
-    type(psb_ctxt_type) :: icontxt
-    integer(psb_ipk_) ::  iam, np, ip, jp, idummy, nr, nnz, info_psb
-    type(psb_desc_type) :: desc_a
-    type(psb_dspmat_type) :: A_sp
-    !real*8, allocatable :: x_vec(:,:), b_vec(:,:)
-    type(psb_d_vect_type) :: x_vec, b_vec
-    integer(psb_lpk_), allocatable :: ia(:), ja(:), myidx(:)
-    real(psb_dpk_), allocatable :: val(:), val_xv(:,:), val_bv(:,:)
-    type(psb_dprec_type) :: prec
-    character(len=20) :: ptype
+    !type(psb_ctxt_type) :: icontxt
+    !integer(psb_ipk_) ::  iam, np, ip, jp, idummy, nr, nnz, info_psb
+    !type(psb_desc_type) :: desc_a
+    !type(psb_dspmat_type) :: A_sp
+    !!real*8, allocatable :: x_vec(:,:), b_vec(:,:)
+    !type(psb_d_vect_type) :: x_vec, b_vec
+    !integer(psb_lpk_), allocatable :: ia(:), ja(:), myidx(:)
+    !real(psb_dpk_), allocatable :: val(:), val_xv(:,:), val_bv(:,:)
+    !type(psb_dprec_type) :: prec
+    !character(len=20) :: ptype
 
 !   IMPORTANT NOTE ABOUT THE DERIVATIVES:
 !   If rcut < rcut_soap, the derivatives in the new implementation omit the terms that fall outside of rcut.
@@ -854,9 +854,9 @@ module vdw
       write(*,*) "Timing for initial stuff:", time2-time1
     end if
     
-    allocate( ia(1:9*n_sites*n_sites) )
-    allocate( ja(1:9*n_sites*n_sites) )
-    allocate( val(1:9*n_sites*n_sites) )
+    !allocate( ia(1:9*n_sites*n_sites) )
+    !allocate( ja(1:9*n_sites*n_sites) )
+    !allocate( val(1:9*n_sites*n_sites) )
 
     do om = 1, n_freq
 
@@ -901,16 +901,16 @@ module vdw
 !      T_SR = 0.d0
       B_mat = 0.d0
       k = 0
-      nnz = 0
+      !nnz = 0
       do i = 1, n_sites
         k = k+1
         do c1 = 1, 3
           !B_mat(3*(i-1)+c1,3*(i-1)+c1) = 1.d0
           B_mat(3*(i-1)+c1,3*(i-1)+c1) = 1.d0/alpha_i(i)
-          nnz = nnz+1
-          ia(nnz) = 3*(i-1)+c1
-          ja(nnz) = 3*(i-1)+c1
-          val(nnz) = B_mat(3*(i-1)+c1,3*(i-1)+c1)
+          !nnz = nnz+1
+          !ia(nnz) = 3*(i-1)+c1
+          !ja(nnz) = 3*(i-1)+c1
+          !val(nnz) = B_mat(3*(i-1)+c1,3*(i-1)+c1)
         end do
         do j2 = 2, n_neigh(i)
           k = k+1
@@ -923,14 +923,14 @@ module vdw
             do c1 = 1, 3
               do c2 = 1, 3
                 k2 = k2+1
-                nnz = nnz+1
+                !nnz = nnz+1
                 !B_mat(3*(i-1)+c1,3*(j-1)+c2) = alpha_i(i) * (1.d0-f_damp(k)) * (-T_func(k2) * &
                 !                                  g_func(k) + h_func(k2))
                 B_mat(3*(i-1)+c1,3*(j-1)+c2) = (1.d0-f_damp(k)) * (-T_func(k2) * &
                                                   g_func(k) + h_func(k2))
-                ia(nnz) = 3*(i-1)+c1
-                ja(nnz) = 3*(j-1)+c2
-                val(nnz) = B_mat(3*(i-1)+c1,3*(j-1)+c2)
+                !ia(nnz) = 3*(i-1)+c1
+                !ja(nnz) = 3*(j-1)+c2
+                !val(nnz) = B_mat(3*(i-1)+c1,3*(j-1)+c2)
               end do
             end do
           end if
@@ -940,11 +940,16 @@ module vdw
       allocate( eigval(1:3*n_sites) )
 
       if ( om == 1 ) then
-        call dsyev('n', 'u', 3*n_sites, B_mat, 3*n_sites, eigval, work_arr, 12*n_sites, info)
+        call dsyev('v', 'u', 3*n_sites, B_mat, 3*n_sites, eigval, work_arr, 12*n_sites, info)
         open(unit=79, file="eigs.dat", status="new")
+        open(unit=89, file="eigvec.dat",status="new")
         write(*,*) "B_mat"
         write(79,*) eigval
+        do p = 1, 3*n_sites
+          write(89,*) B_mat(p,:)
+        end do
         close(79)
+        close(89)
       end if
 
       deallocate( eigval )
@@ -969,68 +974,68 @@ module vdw
 
       if ( psblas ) then
 
-      allocate( val_xv(1:3*n_sites,1:3) )
-      allocate( val_bv(1:3*n_sites,1:3) )
-      allocate( myidx(1:3*n_sites) )
-      val_xv = 0.d0
-      val_bv = 0.d0
-      k2 = 0
-      do c1 = 1, 3
-        do p = 1, n_sites
-          k2 = k2+1
-          myidx(k2) = k2
-          val_xv(3*(p-1)+c1,c1) = alpha_i(p)
-          val_bv(3*(p-1)+c1,c1) = alpha_i(p)
-        end do
-      end do
+      !allocate( val_xv(1:3*n_sites,1:3) )
+      !allocate( val_bv(1:3*n_sites,1:3) )
+      !allocate( myidx(1:3*n_sites) )
+      !val_xv = 0.d0
+      !val_bv = 0.d0
+      !k2 = 0
+      !do c1 = 1, 3
+      !  do p = 1, n_sites
+      !    k2 = k2+1
+      !    myidx(k2) = k2
+      !    val_xv(3*(p-1)+c1,c1) = alpha_i(p)
+      !    val_bv(3*(p-1)+c1,c1) = alpha_i(p)
+      !  end do
+      !end do
 
-      call cpu_time(time1)
-      call psb_init(icontxt)
-      do c1 = 1, 3
-        call psb_cdall(icontxt, desc_a, info_psb, vl=myidx)
-        !write(*,*) "cdall", info_psb
-        call psb_spall(A_sp, desc_a, info_psb, nnz=nnz)
-        !write(*,*) "spall", info_psb
-        call psb_geall(x_vec,desc_a,info_psb)
-        !write(*,*) "geall x", info_psb
-        call psb_geall(b_vec,desc_a,info_psb)
-        !write(*,*) "geall b", info_psb
-        call psb_spins(nnz, ia(1:nnz), ja(1:nnz), val(1:nnz), A_sp, desc_a, info_psb)
-        !write(*,*) "spins", info_psb
-        call psb_geins(3*n_sites, myidx, val_xv(:,c1), x_vec, desc_a, info_psb)
-        !write(*,*) "x_vec", info_psb
-        call psb_geins(3*n_sites, myidx, val_bv(:,c1), b_vec, desc_a, info_psb)
-        !write(*,*) "b_vec", info_psb
-        call psb_cdasb(desc_a, info_psb)
-        !write(*,*) "cdasb", info_psb
-        call psb_spasb(A_sp, desc_a, info_psb)
-        !write(*,*) "spasb", info_psb
-        call psb_geasb(x_vec, desc_a, info_psb)
-        !write(*,*) "geasb x", info_psb
-        call psb_geasb(b_vec, desc_a, info_psb)
-        !write(*,*) "geasb b", info_psb
-        ptype="DIAG"
-        ! NOTE: Everything works fine until preconditioner has to be set. Then the compilation fails.
-        call prec%init(icontxt, ptype, info_psb)
-        !write(*,*) "prec init", info_psb
-        call prec%build(A_sp, desc_a, info_psb)
-        !write(*,*) "prec build", info_psb
-        call psb_krylov("BICGSTAB", A_sp, prec, b_vec, x_vec, 0.000001d0, desc_a, info_psb)
-        !write(*,*) "krylov", info_psb
-        val_xv(:,c1) = x_vec%get_vect()
-      end do
+      !call cpu_time(time1)
+      !call psb_init(icontxt)
+      !do c1 = 1, 3
+      !  call psb_cdall(icontxt, desc_a, info_psb, vl=myidx)
+      !  !write(*,*) "cdall", info_psb
+      !  call psb_spall(A_sp, desc_a, info_psb, nnz=nnz)
+      !  !write(*,*) "spall", info_psb
+      !  call psb_geall(x_vec,desc_a,info_psb)
+      !  !write(*,*) "geall x", info_psb
+      !  call psb_geall(b_vec,desc_a,info_psb)
+      !  !write(*,*) "geall b", info_psb
+      !  call psb_spins(nnz, ia(1:nnz), ja(1:nnz), val(1:nnz), A_sp, desc_a, info_psb)
+      !  !write(*,*) "spins", info_psb
+      !  call psb_geins(3*n_sites, myidx, val_xv(:,c1), x_vec, desc_a, info_psb)
+      !  !write(*,*) "x_vec", info_psb
+      !  call psb_geins(3*n_sites, myidx, val_bv(:,c1), b_vec, desc_a, info_psb)
+      !  !write(*,*) "b_vec", info_psb
+      !  call psb_cdasb(desc_a, info_psb)
+      !  !write(*,*) "cdasb", info_psb
+      !  call psb_spasb(A_sp, desc_a, info_psb)
+      !  !write(*,*) "spasb", info_psb
+      !  call psb_geasb(x_vec, desc_a, info_psb)
+      !  !write(*,*) "geasb x", info_psb
+      !  call psb_geasb(b_vec, desc_a, info_psb)
+      !  !write(*,*) "geasb b", info_psb
+      !  ptype="DIAG"
+      !  ! NOTE: Everything works fine until preconditioner has to be set. Then the compilation fails.
+      !  call prec%init(icontxt, ptype, info_psb)
+      !  !write(*,*) "prec init", info_psb
+      !  call prec%build(A_sp, desc_a, info_psb)
+      !  !write(*,*) "prec build", info_psb
+      !  call psb_krylov("BICGSTAB", A_sp, prec, b_vec, x_vec, 0.000001d0, desc_a, info_psb)
+      !  !write(*,*) "krylov", info_psb
+      !  val_xv(:,c1) = x_vec%get_vect()
+      !end do
       !call psb_exit(icontxt)
       !write(*,*) "val_xv"
-      a_SCS = val_xv
-      alpha_SCS0(:,om) = 0.d0
-      do p = 1, n_sites
-        alpha_SCS0(p,om) = 1.d0/3.d0 * (val_xv(3*(p-1)+1,1) + val_xv(3*(p-1)+2,2) + val_xv(3*(p-1)+3,3))
-      end do
-      deallocate( val_xv, val_bv, myidx )
+      !a_SCS = val_xv
+      !alpha_SCS0(:,om) = 0.d0
+      !do p = 1, n_sites
+      !  alpha_SCS0(p,om) = 1.d0/3.d0 * (val_xv(3*(p-1)+1,1) + val_xv(3*(p-1)+2,2) + val_xv(3*(p-1)+3,3))
+      !end do
+      !deallocate( val_xv, val_bv, myidx )
       !call psb_exit(icontxt)
       !deallocate( ia, ja, val )
-      call cpu_time(time2)
-      write(*,*) "Timing for PSBLAS", time2-time1
+      !call cpu_time(time2)
+      !write(*,*) "Timing for PSBLAS", time2-time1
       
       else ! psblas
 
@@ -1384,7 +1389,7 @@ module vdw
       !call dgemm('n', 'n', 3*n_sites, 3, 3*n_sites, 1.d0, dT_SR, 3*n_sites, &
       !           a_SCS, 3*n_sites, 0.d0, vect_temp, 3*n_sites)
       !da_SCS = da_vec - vect_temp
-      b_der = b_der + da_vec
+      !b_der = b_der + da_vec
 
 
       !write(*,*) "da_SCS"
@@ -1396,67 +1401,67 @@ module vdw
       !  write(*,*) b_der(p,:)
       !end do
 
-      allocate( val_xv(1:3*n_sites,1:3) )
-      allocate( val_bv(1:3*n_sites,1:3) )
-      allocate( myidx(1:3*n_sites) )
-      val_xv = 0.d0
-      val_bv = 0.d0
-      k2 = 0
-      do p = 1, 3*n_sites
-          k2 = k2+1
-          myidx(k2) = k2
-          !val_xv(p,:) = da_SCS(p,:)
-          !val_bv(p,:) = da_SCS(p,:)
-          val_xv(p,:) = b_der(p,:)
-          val_bv(p,:) = b_der(p,:)
-      end do
+      !allocate( val_xv(1:3*n_sites,1:3) )
+      !allocate( val_bv(1:3*n_sites,1:3) )
+      !allocate( myidx(1:3*n_sites) )
+      !val_xv = 0.d0
+      !val_bv = 0.d0
+      !k2 = 0
+      !do p = 1, 3*n_sites
+      !    k2 = k2+1
+      !    myidx(k2) = k2
+      !    !val_xv(p,:) = da_SCS(p,:)
+      !    !val_bv(p,:) = da_SCS(p,:)
+      !    val_xv(p,:) = b_der(p,:)
+      !    val_bv(p,:) = b_der(p,:)
+      !end do
 
       call cpu_time(time1)
       !call psb_init(icontxt)
-      do c1 = 1, 3
-        call psb_cdall(icontxt, desc_a, info_psb, vl=myidx)
-        !write(*,*) "cdall", info_psb
-        call psb_spall(A_sp, desc_a, info_psb, nnz=nnz)
-        !write(*,*) "spall", info_psb
-        call psb_geall(x_vec,desc_a,info_psb)
-        !write(*,*) "geall x", info_psb
-        call psb_geall(b_vec,desc_a,info_psb)
-        !write(*,*) "geall b", info_psb
-        call psb_spins(nnz, ia(1:nnz), ja(1:nnz), val(1:nnz), A_sp, desc_a, info_psb)
-        !write(*,*) "spins", info_psb
-        call psb_geins(3*n_sites, myidx, val_xv(:,c1), x_vec, desc_a, info_psb)
-        !write(*,*) "x_vec", info_psb
-        call psb_geins(3*n_sites, myidx, val_bv(:,c1), b_vec, desc_a, info_psb)
-        !write(*,*) "b_vec", info_psb
-        call psb_cdasb(desc_a, info_psb)
-        !write(*,*) "cdasb", info_psb
-        call psb_spasb(A_sp, desc_a, info_psb)
-        !write(*,*) "spasb", info_psb
-        call psb_geasb(x_vec, desc_a, info_psb)
-        !write(*,*) "geasb x", info_psb
-        call psb_geasb(b_vec, desc_a, info_psb)
-        !write(*,*) "geasb b", info_psb
-        ptype="DIAG"
-        ! NOTE: Everything works fine until preconditioner has to be set. Then the compilation fails.
-        call prec%init(icontxt, ptype, info_psb)
-        !write(*,*) "prec init", info_psb
-        call prec%build(A_sp, desc_a, info_psb)
-        !write(*,*) "prec build", info_psb
-        call psb_krylov("BICGSTAB", A_sp, prec, b_vec, x_vec, 0.000001d0, desc_a, info_psb)
-        !write(*,*) "krylov", info_psb
-        val_xv(:,c1) = x_vec%get_vect()
-      end do
+      !do c1 = 1, 3
+      !  call psb_cdall(icontxt, desc_a, info_psb, vl=myidx)
+      !  !write(*,*) "cdall", info_psb
+      !  call psb_spall(A_sp, desc_a, info_psb, nnz=nnz)
+      !  !write(*,*) "spall", info_psb
+      !  call psb_geall(x_vec,desc_a,info_psb)
+      !  !write(*,*) "geall x", info_psb
+      !  call psb_geall(b_vec,desc_a,info_psb)
+      !  !write(*,*) "geall b", info_psb
+      !  call psb_spins(nnz, ia(1:nnz), ja(1:nnz), val(1:nnz), A_sp, desc_a, info_psb)
+      !  !write(*,*) "spins", info_psb
+      !  call psb_geins(3*n_sites, myidx, val_xv(:,c1), x_vec, desc_a, info_psb)
+      !  !write(*,*) "x_vec", info_psb
+      !  call psb_geins(3*n_sites, myidx, val_bv(:,c1), b_vec, desc_a, info_psb)
+      !  !write(*,*) "b_vec", info_psb
+      !  call psb_cdasb(desc_a, info_psb)
+      !  !write(*,*) "cdasb", info_psb
+      !  call psb_spasb(A_sp, desc_a, info_psb)
+      !  !write(*,*) "spasb", info_psb
+      !  call psb_geasb(x_vec, desc_a, info_psb)
+      !  !write(*,*) "geasb x", info_psb
+      !  call psb_geasb(b_vec, desc_a, info_psb)
+      !  !write(*,*) "geasb b", info_psb
+      !  ptype="DIAG"
+      !  ! NOTE: Everything works fine until preconditioner has to be set. Then the compilation fails.
+      !  call prec%init(icontxt, ptype, info_psb)
+      !  !write(*,*) "prec init", info_psb
+      !  call prec%build(A_sp, desc_a, info_psb)
+      !  !write(*,*) "prec build", info_psb
+      !  call psb_krylov("BICGSTAB", A_sp, prec, b_vec, x_vec, 0.000001d0, desc_a, info_psb)
+      !  !write(*,*) "krylov", info_psb
+      !  val_xv(:,c1) = x_vec%get_vect()
+      !end do
       !call psb_exit(icontxt)
       !write(*,*) "val_xv"
-      dalpha_full(:,a,c3,om) = 0.d0
-      do p = 1, n_sites
-        dalpha_full(p,a,c3,om) = 1.d0/3.d0 * (val_xv(3*(p-1)+1,1) + val_xv(3*(p-1)+2,2) + val_xv(3*(p-1)+3,3))
-      end do
-      deallocate( val_xv, val_bv, myidx )
+      !dalpha_full(:,a,c3,om) = 0.d0
+      !do p = 1, n_sites
+      !  dalpha_full(p,a,c3,om) = 1.d0/3.d0 * (val_xv(3*(p-1)+1,1) + val_xv(3*(p-1)+2,2) + val_xv(3*(p-1)+3,3))
+      !end do
+      !deallocate( val_xv, val_bv, myidx )
       !call psb_exit(icontxt)
       !deallocate( ia, ja, val )
-      call cpu_time(time2)
-      write(*,*) "Timing for PSBLAS", time2-time1
+      !call cpu_time(time2)
+      !write(*,*) "Timing for PSBLAS", time2-time1
       
       else ! psblas
 
@@ -1598,7 +1603,7 @@ module vdw
       end do
     end if
 
-    deallocate( ia, ja, val )
+    !deallocate( ia, ja, val )
 
     end if ! EIGENVALUE TEST if ( .false. )
 

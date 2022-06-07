@@ -23,7 +23,7 @@ PP=-cpp -D _MPIF90
 #F90_OPTS=-fPIC -O3 -fcheck=bounds -g -fcheck=all -Wall
 F90_MOD_DIR_OPT=-J
 #LIBS=-L$(LAPACK_LIB_DIR) -llapack -lopenblas
-LIBS=-L/home/muhlih1/psblas3/lib -lpsb_util -lpsb_krylov -lpsb_prec -lpsb_base  -llapack -lblas
+LIBS=-lmkl_gf_lp64 -lmkl_sequential -lmkl_core #-L/home/muhlih1/psblas3/lib -lpsb_util -lpsb_krylov -lpsb_prec -lpsb_base  -llapack -lblas
 endif
 
 ifeq ($(F90),gfortran)
@@ -32,7 +32,7 @@ F90_OPTS=-fPIC -O3
 PP=-cpp
 F90_MOD_DIR_OPT=-J
 #LIBS=-L$(LAPACK_LIB_DIR) -llapack -lopenblas
-LIBS=-L/home/muhlih1/psblas3/lib -lpsb_util -lpsb_krylov -lpsb_prec -lpsb_base  -llapack -lblas
+LIBS=-lmkl_gf_lp64 -lmkl_sequential -lmkl_core #-L/home/muhlih1/psblas3/lib -lpsb_util -lpsb_krylov -lpsb_prec -lpsb_base  -llapack -lblas
 endif
 
 ifeq ($(F90),ifort)
@@ -93,7 +93,7 @@ $(BUILD_DIR)/%.o: src/third_party/bussi_thermostat/%.f90 | $$(@D)
 $(BUILD_DIR)/%.o: src/soap_turbo/src/%.f90 | $$(@D)
 	$(F90) $(PP) $(F90_OPTS) -c $< -o $@
 $(BUILD_DIR)/%.o: src/%.f90 | $$(@D)
-	$(F90) $(PP) $(F90_OPTS) -c $< -o $@ -I/home/muhlih1/psblas3/modules
+	$(F90) $(PP) $(F90_OPTS) -c $< -o $@ #-I/home/muhlih1/psblas3/modules
 
 $(BUILD_DIR): ${INC_DIR}
 	mkdir -p $@
