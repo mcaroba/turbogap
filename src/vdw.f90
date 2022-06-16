@@ -487,7 +487,7 @@ module vdw
     logical :: local = .true.
 
 !   DERIVATIVE TEST stuff:
-    real*8 :: polyfit(1:4)
+    real*8 :: polyfit(1:12)
     real*8, allocatable :: eigval(:) 
 
 !    PSBLAS stuff:
@@ -594,8 +594,12 @@ module vdw
             end if
           end if
         end do
-        write(*,*) "in cutoff"
-        write(*,*) in_cutoff
+        !write(*,*) "in cutoff"
+        !write(*,*) in_cutoff
+        !write(*,*) "p_to_i"
+        !write(*,*) p_to_i
+        !write(*,*) "i_to_p"
+        !write(*,*) i_to_p
         n_sub_sites = p
         !write(*,*) "in_cutoff", in_cutoff
         n_sub_pairs = 0
@@ -606,11 +610,12 @@ module vdw
         !do j2 = 1, n_neigh(i)
         !  j = modulo(neighbors_list(n_tot+j2)-1,n_sites)+1
         do p = 1, n_sub_sites
-          j = p_to_i(q)
+          j = p_to_i(p)
           if ( in_cutoff(j) ) then
             n_sub_pairs = n_sub_pairs + 1
             n_sub_neigh(p) = n_sub_neigh(p) + 1
             n_tot2 = sum(n_neigh(1:j))-n_neigh(j)
+            !write(*,*) "n_tot2", n_tot2
             do j3 = 2, n_neigh(j)
               if ( rjs(n_tot2+j3) < rcut ) then
                 if ( in_cutoff(modulo(neighbors_list(n_tot2+j3)-1,n_sites)+1) ) then
@@ -624,9 +629,9 @@ module vdw
      
         !write(*,*) "p_to_i", p_to_i
         !write(*,*) "i_to_p", i_to_p
-        write(*,*) "n_sub_pairs", n_sub_pairs
-        write(*,*) "n_sub_sites", n_sub_sites
-        write(*,*) "n_sub_neigh", n_sub_neigh
+        !write(*,*) "n_sub_pairs", n_sub_pairs
+        !write(*,*) "n_sub_sites", n_sub_sites
+        !write(*,*) "n_sub_neigh", n_sub_neigh
         
         allocate( sub_neighbors_list(1:n_sub_pairs) )
         allocate( xyz_H(1:3,1:n_sub_pairs) )
@@ -642,22 +647,26 @@ module vdw
         allocate( a_SCS(1:3*n_sub_sites,1:3) )
         allocate( ipiv(1:3*n_sub_sites) )
         
-        allocate( ia(1:9*n_sub_sites*n_sub_sites) )
-        allocate( ja(1:9*n_sub_sites*n_sub_sites) )
-        allocate( val(1:9*n_sub_sites*n_sub_sites) )
+        allocate( ia(1:9*n_sub_pairs) )
+        allocate( ja(1:9*n_sub_pairs) )
+        allocate( val(1:9*n_sub_pairs) )
         
-        write(*,*) "allocation successful"
+        !write(*,*) "allocation successful"
 
         nnz = 0
         k2 = 0
         T_func = 0.d0
         B_mat = 0.d0
-        do j2 = 1, 3*n_sub_sites
-          B_mat(j2,j2) = 1.d0
-          nnz = nnz+1
-          ia(nnz) = j2
-          ja(nnz) = j2
-          val(nnz) = 1.d0
+        do p = 1, n_sub_sites
+          do c1 = 1, 3
+            !B_mat(j2,j2) = 1.d0
+            B_mat(3*(p-1)+c1,3*(p-1)+c1) = 1.d0/alpha_i(p_to_i(p))
+            nnz = nnz+1
+            ia(nnz) = 3*(p-1)+c1
+            ja(nnz) = 3*(p-1)+c1
+            !val(nnz) = 1.d0
+            val(nnz) = 1.d0/alpha_i(p_to_i(p))
+          end do
         end do
         n_tot = sum(n_neigh(1:i))-n_neigh(i)
         !n_sub_neigh = 0
@@ -679,11 +688,12 @@ module vdw
             s_i = sigma_i(i2)
             do j3 = 2, n_neigh(i2)
               if ( rjs(n_tot2+j3) < rcut ) then
-                if ( in_cutoff(modulo(neighbors_list(n_tot2+j3)-1,n_sites)+1) ) then
+                j = modulo(neighbors_list(n_tot2+j3)-1,n_sites)+1
+                if ( in_cutoff(j) ) then
                   !n_sub_neigh(j2) = n_sub_neigh(j2) + 1
                   k2 = k2+1    
                   s = neighbor_species(n_tot2+j3)
-                  j = neighbors_list(n_tot2+j3)
+                  !j = neighbors_list(n_tot2+j3)
                   sub_neighbors_list(k2) = j                        
                   r0_ii(k2) = r0_ref(s) / Bohr
                   neighbor_alpha0(k2) = alpha0_ref(s) / Bohr**3
@@ -709,11 +719,11 @@ module vdw
                       q = i_to_p(j)
                       !write(*,*) "f_damp_SCS", f_damp_SCS(k2)
                       !write(*,*) "T_func", T_func(k3)
-                      B_mat(3*(p-1)+c1,3*(q-1)+c2) = alpha_i(i2) * (1.d0-f_damp(k2)) * (-T_func(k3) * &
+                      B_mat(3*(p-1)+c1,3*(q-1)+c2) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
                                                   g_func(k2) + h_func(k3))
                       nnz = nnz+1
-                      ia(nnz) = p
-                      ja(nnz) = q
+                      ia(nnz) = 3*(p-1)+c1
+                      ja(nnz) = 3*(q-1)+c2
                       val(nnz) = B_mat(3*(p-1)+c1,3*(q-1)+c2)
                     end do
                   end do
@@ -722,6 +732,14 @@ module vdw
             end do
           end if
         end do
+
+        !write(*,*) "nnz", nnz
+        !write(*,*) "9*n_sub_pairs", 9*n_sub_pairs
+        
+        !write(*,*) "B_mat"
+        !do p = 1, 9
+        !  write(*,*) B_mat(p,1:9)
+        !end do
         
         a_vec = 0.d0
         do p = 1, n_sub_sites
@@ -730,7 +748,9 @@ module vdw
           end do
         end do
         
-        polyfit = (/ -11465.40348552d0, 6509.62160556d0, -1165.56417327d0, 70.55762083d0 /)
+        polyfit = (/ -8.52126705e+11,  1.54164485e+12, -1.22546032e+12,  5.62886097e+11, &
+                     -1.65311654e+11,  3.24458270e+10, -4.32224085e+09,  3.89166719e+08, &
+                     -2.31700842e+07,  8.74333211e+05, -1.94556850e+04,  2.24501478e+02 /)
 
         allocate( val_xv(1:3*n_sub_sites,1:3) )
         allocate( val_bv(1:3*n_sub_sites,1:3) )
@@ -743,14 +763,26 @@ module vdw
             k2 = k2+1
             myidx(k2) = k2
             i2 = p_to_i(p)
-            val_xv(3*(p-1)+c1,c1) = alpha_i(i2)
-            val_bv(3*(p-1)+c1,c1) = alpha_i(i2)
+            val_xv(3*(p-1)+c1,c1) = 1.d0
+            val_bv(3*(p-1)+c1,c1) = 1.d0
           end do
         end do
+        
+        write(*,*) "i according to p = 1"
+        write(*,*) p_to_i(1)
+
+        !write(*,*) "val_xv"
+        !do p = 1, 6
+        !  write(*,*) val_xv(p,:)
+        !end do
 
         call cpu_time(time1)
         call psb_init(icontxt)
         a_SCS = polyfit(n_degree+1)*val_bv
+        write(*,*) "polyfit(n_degree+1)"
+        write(*,*) polyfit(n_degree+1)
+        !write(*,*) "a_SCS"
+        !write(*,*) a_SCS
         call psb_cdall(icontxt, desc_a, info_psb, vl=myidx)
           !write(*,*) "cdall", info_psb
         call psb_spall(A_sp, desc_a, info_psb, nnz=nnz)
@@ -771,8 +803,10 @@ module vdw
         call cpu_time(time1)
         do k2 = 1, n_degree
           call psb_spmm(1.d0, A_sp, val_bv, 0.d0, val_xv, desc_a, info_psb)
-          write(*,*) "psb_spmm", info_psb
+          !write(*,*) "psb_spmm", info_psb
           a_SCS = a_SCS + polyfit(n_degree+1-k2) * val_xv 
+          !write(*,*) "a_SCS"
+          !write(*,*) a_SCS
           val_bv = val_xv
         end do
         call cpu_time(time2)
@@ -780,8 +814,9 @@ module vdw
 
         alpha_SCS0(i,1) = 0.d0
         do c1 = 1, 3
-          alpha_SCS0(i,1) = alpha_SCS0(i,1)
+          alpha_SCS0(i,1) = alpha_SCS0(i,1) + a_SCS(c1,c1)
         end do
+        alpha_SCS0(i,1) = alpha_SCS0(i,1)/3.d0
         deallocate( val_xv, val_bv, myidx )
 
         call cpu_time(time2)
@@ -808,7 +843,7 @@ module vdw
         !alpha_SCS0(i,1) = alpha_SCS0(i,1)/3.d0
         
         !write(*,*) "alpha_SCS0"
-        write(*,*) i, alpha_SCS0(i,1)
+        !write(*,*) i, alpha_SCS0(i,1)
 
         deallocate( n_sub_neigh, sub_neighbors_list, xyz_H, rjs_H, r0_ii, neighbor_alpha0, T_func, &
                     B_mat, g_func, h_func, f_damp, a_vec, a_SCS, ipiv, ia, ja, val )
@@ -1067,7 +1102,7 @@ module vdw
        !-1.65311654e+11,  3.24458270e+10, -4.32224085e+09,  3.89166719e+08, &
        !-2.31700842e+07,  8.74333211e+05, -1.94556850e+04,  2.24501478e+02 /)
 
-       polyfit = (/ -11465.40348552d0, 6509.62160556d0, -1165.56417327d0, 70.55762083d0 /)
+       !polyfit = (/ -11465.40348552d0, 6509.62160556d0, -1165.56417327d0, 70.55762083d0 /)
 
       allocate( val_xv(1:3*n_sites,1:3) )
       allocate( val_bv(1:3*n_sites,1:3) )
