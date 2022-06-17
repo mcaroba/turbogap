@@ -487,7 +487,7 @@ module vdw
     logical :: local = .true.
 
 !   DERIVATIVE TEST stuff:
-    real*8 :: polyfit(1:12)
+    real*8 :: polyfit(1:4)
     real*8, allocatable :: eigval(:) 
 
 !    PSBLAS stuff:
@@ -601,7 +601,7 @@ module vdw
         !write(*,*) "i_to_p"
         !write(*,*) i_to_p
         n_sub_sites = p
-        !write(*,*) "in_cutoff", in_cutoff
+        write(*,*) "n_sub_sites", n_sub_sites
         n_sub_pairs = 0
         n_tot = sum(n_neigh(1:i))-n_neigh(i)
         allocate( n_sub_neigh(1:n_sub_sites) )
@@ -748,9 +748,12 @@ module vdw
           end do
         end do
         
-        polyfit = (/ -8.52126705e+11,  1.54164485e+12, -1.22546032e+12,  5.62886097e+11, &
-                     -1.65311654e+11,  3.24458270e+10, -4.32224085e+09,  3.89166719e+08, &
-                     -2.31700842e+07,  8.74333211e+05, -1.94556850e+04,  2.24501478e+02 /)
+        !polyfit = (/ -8.52126705e+11,  1.54164485e+12, -1.22546032e+12,  5.62886097e+11, &
+        !             -1.65311654e+11,  3.24458270e+10, -4.32224085e+09,  3.89166719e+08, &
+        !             -2.31700842e+07,  8.74333211e+05, -1.94556850e+04,  2.24501478e+02 /)
+
+        polyfit = (/ -11465.40348552d0, 6509.62160556d0, -1165.56417327d0, 70.55762083d0 /)
+
 
         allocate( val_xv(1:3*n_sub_sites,1:3) )
         allocate( val_bv(1:3*n_sub_sites,1:3) )
@@ -768,8 +771,8 @@ module vdw
           end do
         end do
         
-        write(*,*) "i according to p = 1"
-        write(*,*) p_to_i(1)
+        !write(*,*) "i according to p = 1"
+        !write(*,*) p_to_i(1)
 
         !write(*,*) "val_xv"
         !do p = 1, 6
@@ -779,8 +782,8 @@ module vdw
         call cpu_time(time1)
         call psb_init(icontxt)
         a_SCS = polyfit(n_degree+1)*val_bv
-        write(*,*) "polyfit(n_degree+1)"
-        write(*,*) polyfit(n_degree+1)
+        !write(*,*) "polyfit(n_degree+1)"
+        !write(*,*) polyfit(n_degree+1)
         !write(*,*) "a_SCS"
         !write(*,*) a_SCS
         call psb_cdall(icontxt, desc_a, info_psb, vl=myidx)
@@ -810,7 +813,7 @@ module vdw
           val_bv = val_xv
         end do
         call cpu_time(time2)
-        write(*,*) "psb_spmm timing", time2-time1
+        !write(*,*) "psb_spmm timing", time2-time1
 
         alpha_SCS0(i,1) = 0.d0
         do c1 = 1, 3
@@ -820,7 +823,7 @@ module vdw
         deallocate( val_xv, val_bv, myidx )
 
         call cpu_time(time2)
-        write(*,*) "Timing for PSBLAS", time2-time1
+        !write(*,*) "Timing for PSBLAS", time2-time1
         write(*,*) i, alpha_SCS0(i,1)
         
         !write(*,*) "Local B_mat:"
@@ -1102,7 +1105,7 @@ module vdw
        !-1.65311654e+11,  3.24458270e+10, -4.32224085e+09,  3.89166719e+08, &
        !-2.31700842e+07,  8.74333211e+05, -1.94556850e+04,  2.24501478e+02 /)
 
-       !polyfit = (/ -11465.40348552d0, 6509.62160556d0, -1165.56417327d0, 70.55762083d0 /)
+       polyfit = (/ -11465.40348552d0, 6509.62160556d0, -1165.56417327d0, 70.55762083d0 /)
 
       allocate( val_xv(1:3*n_sites,1:3) )
       allocate( val_bv(1:3*n_sites,1:3) )
