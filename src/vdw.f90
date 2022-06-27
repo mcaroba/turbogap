@@ -498,7 +498,7 @@ module vdw
     !real*8, allocatable :: x_vec(:,:), b_vec(:,:)
     type(psb_d_vect_type) :: x_vec, b_vec
     integer(psb_lpk_), allocatable :: ia(:), ja(:), myidx(:)
-    real(psb_dpk_), allocatable :: val(:), val_xv(:,:), val_bv(:,:)
+    real(psb_dpk_), allocatable :: val(:), val_xv(:,:), val_bv(:,:), b_i(:,:), d_vec(:,:)
     type(psb_dprec_type) :: prec
     character(len=20) :: ptype
 
@@ -520,6 +520,8 @@ module vdw
     n_sites0 = size(forces0, 2)
     
     n_degree = size(polyfit)-1
+    !n_degree = 3
+
 
     if ( read_hirshfeld ) then
 
@@ -650,6 +652,7 @@ module vdw
         allocate( ia(1:9*n_sub_pairs) )
         allocate( ja(1:9*n_sub_pairs) )
         allocate( val(1:9*n_sub_pairs) )
+        allocate( b_i(1:3*n_sub_sites,1:3) )
         
         !write(*,*) "allocation successful"
 
@@ -657,6 +660,10 @@ module vdw
         k2 = 0
         T_func = 0.d0
         B_mat = 0.d0
+        b_i = 0.d0
+        do c1 = 1, 3
+          b_i(c1,c1) = 1.d0/alpha_i(i)
+        end do
         do p = 1, n_sub_sites
           do c1 = 1, 3
             !B_mat(j2,j2) = 1.d0
@@ -721,6 +728,10 @@ module vdw
                       !write(*,*) "T_func", T_func(k3)
                       B_mat(3*(p-1)+c1,3*(q-1)+c2) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
                                                   g_func(k2) + h_func(k3))
+                      if ( p == 1 ) then
+                        b_i(3*(q-1)+c2,c1) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
+                                                  g_func(k2) + h_func(k3))
+                      end if
                       nnz = nnz+1
                       ia(nnz) = 3*(p-1)+c1
                       ja(nnz) = 3*(q-1)+c2
@@ -732,6 +743,21 @@ module vdw
             end do
           end if
         end do
+
+        !if ( i == 1 ) then 
+        !open(unit=79, file="B_mat.dat", status="new")
+        !do p = 1, 3*n_sub_sites
+        !  write(79,*) B_mat(p,:)
+        !end do
+        !close(79)
+        !end if
+
+        if ( i == 1 ) then
+        write(*,*) "b_i"
+        do p = 1, 3*n_sub_sites
+          write(*,*) b_i(p,:)
+        end do
+        end if
 
         !write(*,*) "nnz", nnz
         !write(*,*) "9*n_sub_pairs", 9*n_sub_pairs
@@ -759,15 +785,15 @@ module vdw
         allocate( val_bv(1:3*n_sub_sites,1:3) )
         allocate( myidx(1:3*n_sub_sites) )
         val_xv = 0.d0
-        val_bv = 0.d0
+        !val_bv = 0.d0
         k2 = 0
         do c1 = 1, 3
           do p = 1, n_sub_sites
             k2 = k2+1
             myidx(k2) = k2
-            i2 = p_to_i(p)
-            val_xv(3*(p-1)+c1,c1) = 1.d0
-            val_bv(3*(p-1)+c1,c1) = 1.d0
+        !    i2 = p_to_i(p)
+        !    val_xv(3*(p-1)+c1,c1) = 1.d0
+        !    val_bv(3*(p-1)+c1,c1) = 1.d0
           end do
         end do
         
@@ -781,7 +807,7 @@ module vdw
 
         call cpu_time(time1)
         call psb_init(icontxt)
-        a_SCS = polyfit(n_degree+1)*val_bv
+        a_SCS = polyfit(n_degree)*b_i
         !write(*,*) "polyfit(n_degree+1)"
         !write(*,*) polyfit(n_degree+1)
         !write(*,*) "a_SCS"
@@ -804,23 +830,32 @@ module vdw
           !write(*,*) "cdasb", info_psb
         call psb_spasb(A_sp, desc_a, info_psb)
         call cpu_time(time1)
-        do k2 = 1, n_degree
-          call psb_spmm(1.d0, A_sp, val_bv, 0.d0, val_xv, desc_a, info_psb)
-          !write(*,*) "psb_spmm", info_psb
-          a_SCS = a_SCS + polyfit(n_degree+1-k2) * val_xv 
+        do k2 = 1, n_degree-1
+          call psb_spmm(1.d0, A_sp, b_i, 0.d0, val_xv, desc_a, info_psb, 'T')
+          !write(*,*) "psb_spmm", val_xv
+          a_SCS = a_SCS + polyfit(n_degree-k2) * val_xv
+          b_i = val_xv 
           !write(*,*) "a_SCS"
           !write(*,*) a_SCS
-          val_bv = val_xv
+          !val_bv = val_xv
         end do
         call cpu_time(time2)
         !write(*,*) "psb_spmm timing", time2-time1
 
+        allocate( d_vec(1:3,1:3*n_sub_sites) )
+        d_vec = 0.d0
+        do p = 1, n_sub_sites
+          do c1 = 1, 3
+            d_vec(c1,3*(p-1)+c1) = 1.d0
+          end do
+        end do
+
         alpha_SCS0(i,1) = 0.d0
         do c1 = 1, 3
-          alpha_SCS0(i,1) = alpha_SCS0(i,1) + a_SCS(c1,c1)
+          alpha_SCS0(i,1) = alpha_SCS0(i,1) + polyfit(n_degree+1) + dot_product(d_vec(c1,:),a_SCS(:,c1))
         end do
         alpha_SCS0(i,1) = alpha_SCS0(i,1)/3.d0
-        deallocate( val_xv, val_bv, myidx )
+        deallocate( val_xv, val_bv, myidx, d_vec )
 
         call cpu_time(time2)
         !write(*,*) "Timing for PSBLAS", time2-time1
@@ -849,13 +884,13 @@ module vdw
         !write(*,*) i, alpha_SCS0(i,1)
 
         deallocate( n_sub_neigh, sub_neighbors_list, xyz_H, rjs_H, r0_ii, neighbor_alpha0, T_func, &
-                    B_mat, g_func, h_func, f_damp, a_vec, a_SCS, ipiv, ia, ja, val )
+                    B_mat, b_i, g_func, h_func, f_damp, a_vec, a_SCS, ipiv, ia, ja, val )
                    
       end do
       
       deallocate( in_cutoff, p_to_i, i_to_p, alpha_i, sigma_i )
       
-    end if
+    else ! local
 
 !   This implementation assumes that rcut is the largest cutoff, that is, the neigbhbors_list contains only the atoms within the vdW cutoff.
 !   The implementation matches with the implementation above if rcut is the largest cutoff or the cutoff is so small that the only neighbor
@@ -1725,6 +1760,8 @@ module vdw
     !EIGENVALUE TEST
     !if ( .false. ) then
 
+    end if ! local
+
     write(*,*) "alpha_SCS:" !,  alpha_SCS0(1,1)
     do p = 1, n_sites
       write(*,*) p, alpha_SCS0(p,:)
@@ -1762,6 +1799,8 @@ module vdw
     !end if ! EIGENVALUE TEST if ( .false. )
 
 !   Clean up
+
+    if ( .not. local ) then
     deallocate( neighbor_c6_ii, f_damp, T_func, &
                 h_func, g_func, omegas, omega_i, alpha_i, sigma_i, B_mat, xyz_H, rjs_H, &
                 BTB_reg, B_reg, I_mat, a_vec, a_SCS, c6_nsites )
@@ -1770,6 +1809,7 @@ module vdw
                   coeff_der, coeff_fdamp, hirshfeld_v_cart_der_H, da_vec, &
                   vect1, vect2, vect3, vect4, vect_temp, da_SCS, b_der ) !dT_SR, dT_SR_v
     
+    end if
     end if
 
   end subroutine
