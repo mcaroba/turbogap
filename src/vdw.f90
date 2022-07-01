@@ -468,7 +468,7 @@ module vdw
                            BTB_reg(:,:), B_reg(:,:), &
                            a_SCS(:,:), da_vec(:,:), vect1(:,:), &
                            vect2(:,:), vect3(:,:), vect4(:,:), vect_temp(:,:), da_SCS(:,:), &
-                           c6_nsites(:), b_der(:,:), alpha_SCS_full(:,:)
+                           c6_nsites(:), b_der(:,:), alpha_SCS_full(:,:), dB_mat(:,:)
     real*8 :: time1, time2, this_force(1:3), Bohr, Hartree, &
               omega, pi, integral, E_MBD, R_vdW_ij, R_vdW_SCS_ij, S_vdW_ij, dS_vdW_ij, exp_term, &
               rcut_vdw, r_vdw_i, r_vdw_j, dist, f_damp_SCS_ij, t1, t2, &
@@ -558,10 +558,17 @@ module vdw
 !   LOCAL TEST:
     if ( local ) then
     
+      !write(*,*) "hirshfeld_v"
+      !do i = 1, n_sites
+      !  write(*,*) hirshfeld_v(i), ", &"
+      !end do
+
+      alpha_SCS0 = 0.d0
       allocate( sigma_i(1:n_sites) )
       allocate( alpha_i(1:n_sites) )
       allocate( alpha_SCS_full(1:3,1:3*n_sites) )
       if ( do_derivatives ) then
+        dalpha_full = 0.d0
         allocate( hirshfeld_v_cart_der_H(1:3,1:n_pairs) )
         do k = 1, n_pairs
           hirshfeld_v_cart_der_H(:,k) = hirshfeld_v_cart_der(:,k)*Bohr
@@ -601,6 +608,7 @@ module vdw
           !write(*,*) "k", k
           j = neighbors_list(k)
           if (rjs(k) < n_degree * rcut) then
+          !if (rjs(k) < 3*rcut) then
             in_cutoff(j) = .true.
             p = p+1
             p_to_i(p) = j
@@ -614,7 +622,7 @@ module vdw
         !write(*,*) "i_to_p"
         !write(*,*) i_to_p
         n_sub_sites = p
-        write(*,*) "n_sub_sites", n_sub_sites
+        !write(*,*) "n_sub_sites", n_sub_sites
         n_sub_pairs = 0
         n_tot = sum(n_neigh(1:i))-n_neigh(i)
         allocate( n_sub_neigh(1:n_sub_sites) )
@@ -754,6 +762,13 @@ module vdw
             end do
           end if
         end do
+        
+        if ( i == 1 ) then
+        write(*,*) "B_mat"
+        do p = 1, 12
+          write(*,*) B_mat(p,1:12)
+        end do
+        end if
 
         !if ( i == 1 ) then 
         !open(unit=79, file="B_mat.dat", status="new")
@@ -763,12 +778,12 @@ module vdw
         !close(79)
         !end if
 
-        if ( i == 1 ) then
-        write(*,*) "b_i"
-        do p = 1, 3*n_sub_sites
-          write(*,*) b_i(p,:)
-        end do
-        end if
+        !if ( i == 1 ) then
+        !write(*,*) "b_i"
+        !do p = 1, 3*n_sub_sites
+        !  write(*,*) b_i(p,:)
+        !end do
+        !end if
 
         !write(*,*) "nnz", nnz
         !write(*,*) "9*n_sub_pairs", 9*n_sub_pairs
@@ -881,7 +896,7 @@ module vdw
 
         call cpu_time(time2)
         !write(*,*) "Timing for PSBLAS", time2-time1
-        write(*,*) i, alpha_SCS0(i,1)
+        !write(*,*) i, alpha_SCS0(i,1)
         
         !write(*,*) "Local B_mat:"
         !do p = 1, 6
@@ -917,6 +932,8 @@ module vdw
       k = 0
       do i = 1, n_sites
       
+        write(*,*) "Gradients for atom", i
+
         p_to_i = 0
         i_to_p = 0
         in_cutoff = .false.
@@ -929,7 +946,8 @@ module vdw
           k = k+1
           !write(*,*) "k", k
           j = neighbors_list(k)
-          if (rjs(k) < n_degree * rcut) then
+          if (rjs(k) < n_degree * rcut) then !CUT-OFF TEST!!!!
+          !if (rjs(k) < 3 * rcut) then
             in_cutoff(j) = .true.
             p = p+1
             p_to_i(p) = j
@@ -1056,10 +1074,12 @@ module vdw
         if ( do_derivatives ) then
 
         allocate( dT(1:9*n_sub_pairs) )
+        allocate( dB_mat(1:3*n_sub_sites,1:3*n_sub_sites) )
         allocate( b_der(1:3,1:3*n_sub_sites) )
         allocate( f_damp_der(1:n_sub_pairs) )
         allocate( g_func_der(1:n_sub_pairs) )
         allocate( h_func_der(1:9*n_sub_pairs) )
+        dB_mat = 0.d0
 
         do c3 = 1, 3
           dT = 0.d0
@@ -1095,7 +1115,7 @@ module vdw
           k2 = 1
           do r = 1, n_sub_sites
             a = sub_neighbors_list(k2)
-            write(*,*) "frequency, cartesian, atom:", om, c3, a
+            !write(*,*) "frequency, cartesian, atom:", om, c3, a
 
             f_damp_der = 0.d0
             g_func_der = 0.d0
@@ -1113,7 +1133,7 @@ module vdw
                 j = sub_neighbors_list(k3)
                 if (a == i2 .or. a == j) then
                   q = i_to_p(j)
-                  sigma_ij = sqrt(sigma_i(i)**2 + sigma_i(j)**2)
+                  sigma_ij = sqrt(sigma_i(i2)**2 + sigma_i(j)**2)
                   f_damp_der(k3) = d/(sR*(r_vdw_i + r_vdw_j)) * f_damp(k3)**2 * &
                                      exp( -d*(rjs_H(k3)/(sR*(r_vdw_i + &
                                      r_vdw_j)) - 1.d0) ) * xyz_H(c3,k3)/rjs_H(k3)
@@ -1140,13 +1160,37 @@ module vdw
                                                           g_func(k3) - g_func_der(k3) * (1.d0 - f_damp(k3)) * &
                                                           T_func(k4) - f_damp_der(k3) * h_func(k4) + &
                                                           h_func_der(k4) * (1.d0 - f_damp(k3))) * alpha_SCS_full(:,3*(j-1)+c2)
+                        dB_mat(3*(p-1)+c1,3*(q-1)+c2) = dB_mat(3*(p-1)+c1,3*(q-1)+c2) + (f_damp_der(k3) * T_func(k4) * &
+                                                          g_func(k3) - (1.d0 - f_damp(k3)) * dT(k4) * &
+                                                          g_func(k3) - g_func_der(k3) * (1.d0 - f_damp(k3)) * &
+                                                          T_func(k4) - f_damp_der(k3) * h_func(k4) + &
+                                                          h_func_der(k4) * (1.d0 - f_damp(k3)))
                       else
                         b_der(:,3*(p-1)+c1) = b_der(:,3*(p-1)+c1) - (f_damp_der(k3) * T_func(k4) * &
                                                           g_func(k3) - (1.d0 - f_damp(k3)) * dT(k4) * &
                                                           g_func(k3) - g_func_der(k3) * (1.d0 - f_damp(k3)) * &
                                                           T_func(k4) - f_damp_der(k3) * h_func(k4) + &
                                                           h_func_der(k4) * (1.d0 - f_damp(k3))) * alpha_SCS_full(:,3*(j-1)+c2)
+                        dB_mat(3*(p-1)+c1,3*(q-1)+c2) = dB_mat(3*(p-1)+c1,3*(q-1)+c2) - (f_damp_der(k3) * T_func(k4) * &
+                                                          g_func(k3) - (1.d0 - f_damp(k3)) * dT(k4) * &
+                                                          g_func(k3) - g_func_der(k3) * (1.d0 - f_damp(k3)) * &
+                                                          T_func(k4) - f_damp_der(k3) * h_func(k4) + &
+                                                          h_func_der(k4) * (1.d0 - f_damp(k3)))                                
                       end if
+                      !if ( i == 1 .and. a == 1 .and. c3 == 1 .and. p == 1 .and. q == 3 ) then
+                      !  write(*,*) "f_damp_der", f_damp_der(k3)
+                      !  write(*,*) "g_func_der", g_func_der(k3)
+                      !  write(*,*) "h_func_der", h_func_der(k4)
+                      !  write(*,*) "dT", dT(k4)
+                      !  write(*,*) "T_func, g_func, h_func, f_damp", T_func(k4), g_func(k3), h_func(k4), f_damp(k3)
+                      !end if
+                      !if ( i == 1 .and. a == 1 .and. c3 == 1 .and. p == 3 .and. q == 1 ) then
+                      !  write(*,*) "f_damp_der", f_damp_der(k3)
+                      !  write(*,*) "g_func_der", g_func_der(k3)
+                      !  write(*,*) "h_func_der", h_func_der(k4)
+                      !  write(*,*) "dT", dT(k4)
+                      !  write(*,*) "T_func, g_func, h_func, f_damp", T_func(k4), g_func(k3), h_func(k4), f_damp(k3)
+                      !end if
                       !write(*,*) "a, i2, j", a, i2, j
                       !write(*,*) "b_der", (f_damp_der(k3) * T_func(k4) * &
                       !                                    g_func(k3) - (1.d0 - f_damp(k3)) * dT(k4) * &
@@ -1203,9 +1247,11 @@ module vdw
                   j3 = findloc(neighbors_list(n_tot2+1:n_tot2+n_neigh(i2)),a,1)
                   do j2 = 1, n_sub_neigh(p)
                     j = sub_neighbors_list(k3+j2)
-                    q = p_to_i(j)
+                    q = i_to_p(j)
                     if ( i2 == j ) then
                       do c1 = 1, 3
+                        dB_mat(3*(p-1)+c1,3*(p-1)+c1) = - 1.d0/(alpha_i(i2) * hirshfeld_v(i2)) * &
+                                                 hirshfeld_v_cart_der_H(c3,n_tot2+j3)
                         do c2 = 1, 3
                           b_der(c2,3*(p-1)+c1) = b_der(c2,3*(p-1)+c1) - 1.d0/(alpha_i(i2) * hirshfeld_v(i2)) * &
                                                  hirshfeld_v_cart_der_H(c3,n_tot2+j3) * alpha_SCS_full(c2,3*(i2-1)+c1)
@@ -1218,10 +1264,16 @@ module vdw
                           ((coeff_der(p,q,c1,c2) * sigma_i(i2)**2/hirshfeld_v(i2) + &
                           coeff_fdamp(p,q,c1,c2) * r_vdw_i/hirshfeld_v(i2)) * hirshfeld_v_cart_der_H(c3,n_tot2+j3)) * &
                           alpha_SCS_full(:,3*(j-1)+c2)
+                        dB_mat(3*(p-1)+c1,3*(q-1)+c2) = dB_mat(3*(p-1)+c1,3*(q-1)+c2) - &
+                          ((coeff_der(p,q,c1,c2) * sigma_i(i2)**2/hirshfeld_v(i2) + &
+                          coeff_fdamp(p,q,c1,c2) * r_vdw_i/hirshfeld_v(i2)) * hirshfeld_v_cart_der_H(c3,n_tot2+j3))
                         b_der(:,3*(q-1)+c1) = b_der(:,3*(q-1)+c1) - &
                           ((coeff_der(q,p,c1,c2) * sigma_i(i2)**2/hirshfeld_v(i2) + &
                           coeff_fdamp(q,p,c1,c2) * r_vdw_i/hirshfeld_v(i2)) * hirshfeld_v_cart_der_H(c3,n_tot2+j3)) * &
                           alpha_SCS_full(:,3*(i2-1)+c2)
+                        dB_mat(3*(q-1)+c1,3*(p-1)+c2) = dB_mat(3*(q-1)+c1,3*(p-1)+c2) - &
+                          ((coeff_der(q,p,c1,c2) * sigma_i(i2)**2/hirshfeld_v(i2) + &
+                          coeff_fdamp(q,p,c1,c2) * r_vdw_i/hirshfeld_v(i2)) * hirshfeld_v_cart_der_H(c3,n_tot2+j3))
                       end do
                     end do     
                   end do
@@ -1233,13 +1285,26 @@ module vdw
               
             end if
             
+            if ( i == 1 .and. a == 1 .and. c3 == 1) then
+            write(*,*) "dB_mat"
+            do p = 1, 12
+              write(*,*) dB_mat(p,1:12)
+            end do
+            end if            
+
+            do c1 = 1, 3
+              dalpha_full(i,a,c3,1) = dalpha_full(i,a,c3,1) - polyfit(n_degree+1) * b_der(c1,c1) &
+                                      - dot_product(b_der(c1,:), A_i(1:3*n_sub_sites,3*(i-1)+c1))
+            end do
+            dalpha_full(i,a,c3,1) = 1.d0/3.d0 * dalpha_full(i,a,c3,1)
+            
             k2 = k2+n_sub_neigh(r)
             
           end do 
           
         end do ! c3 loop
 
-        deallocate( dT, b_der, f_damp_der, g_func_der, h_func_der )
+        deallocate( dT, dB_mat, b_der, f_damp_der, g_func_der, h_func_der )
 
         end if ! do_derivatives
 
@@ -1503,7 +1568,7 @@ module vdw
        !-1.65311654e+11,  3.24458270e+10, -4.32224085e+09,  3.89166719e+08, &
        !-2.31700842e+07,  8.74333211e+05, -1.94556850e+04,  2.24501478e+02 /)
 
-       polyfit = (/ -11465.40348552d0, 6509.62160556d0, -1165.56417327d0, 70.55762083d0 /)
+       !polyfit = (/ -11465.40348552d0, 6509.62160556d0, -1165.56417327d0, 70.55762083d0 /)
 
       allocate( val_xv(1:3*n_sites,1:3) )
       allocate( val_bv(1:3*n_sites,1:3) )
