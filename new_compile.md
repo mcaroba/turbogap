@@ -1,8 +1,8 @@
 # Compile with gpu
 
-Tempoarary fix:
+Temporary fix:
 ```
-nvcc -c -O2 src/cuda_wrappers.cu;
+nvcc -c -O2 --arch=sm_80 src/cuda_wrappers.cu;
 make -B;
 ```
 
