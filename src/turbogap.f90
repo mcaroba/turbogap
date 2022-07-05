@@ -70,7 +70,8 @@ program turbogap
             time_gap, time_soap(1:3), time_2b(1:3), time_3b(1:3), time_read_input(1:3), time_read_xyz(1:3), &
             time_mpi(1:3) = 0.d0, time_core_pot(1:3), time_vdw(1:3), instant_pressure, lv(1:3,1:3), &
             time_mpi_positions(1:3) = 0.d0, time_mpi_ef(1:3) = 0.d0, time_md(3) = 0.d0, &
-            instant_pressure_tensor(1:3, 1:3), time_step, md_time
+            instant_pressure_tensor(1:3, 1:3), time_step, md_time, &
+            solo_time_soap=0.d0
   integer, allocatable :: displs(:), displs2(:), counts(:), counts2(:)
   integer :: update_bar, n_sparse
   logical, allocatable :: do_list(:), has_vdw_mpi(:), fix_atom(:,:)
@@ -1007,6 +1008,7 @@ program turbogap
               this_hirshfeld_v_cart_der_pt => this_hirshfeld_v_cart_der(1:3, this_j_beg:this_j_end)
             end if
           end if
+          !call cpu_time(solo_time_soap(1))
           call get_gap_soap(n_sites, this_n_sites_mpi, n_neigh(this_i_beg:this_i_end), neighbors_list(this_j_beg:this_j_end), &
                             soap_turbo_hypers(i)%n_species, soap_turbo_hypers(i)%species_types, &
                             rjs(this_j_beg:this_j_end), thetas(this_j_beg:this_j_end), phis(this_j_beg:this_j_end), &
@@ -1028,7 +1030,7 @@ program turbogap
                             soap_turbo_hypers(i)%has_vdw, soap_turbo_hypers(i)%vdw_Qs, soap_turbo_hypers(i)%vdw_alphas, &
                             soap_turbo_hypers(i)%vdw_zeta, soap_turbo_hypers(i)%vdw_delta, soap_turbo_hypers(i)%vdw_V0, &
                             this_energies, this_forces, this_hirshfeld_v_pt, this_hirshfeld_v_cart_der_pt, &
-                            this_virial )
+                            this_virial, solo_time_soap )
 
           energies_soap = energies_soap + this_energies
           if( soap_turbo_hypers(i)%has_vdw )then
@@ -1042,7 +1044,9 @@ program turbogap
             virial_soap = virial_soap + this_virial
           end if
         end do
+        !call cpu_time(solo_time_soap(2))
         deallocate( i_beg_list, i_end_list, j_beg_list, j_end_list )
+        !solo_time_soap(3)=solo_time_soap(3)+solo_time_soap(2)-solo_time_soap(1)
 
 
 ! THIS WON'T WORK! THE SOAP AND SOAP DERIVATIVES NEED TO BE COLLECTED FROM ALL RANKS <--------------------- FIX THIS!!!!
@@ -1062,7 +1066,7 @@ program turbogap
         if( params%write_soap )then
           if( n_xyz == 1 .or. md_istep == 0 )then
             open(unit=10, file="soap" // trim(i_char) // ".dat", status="unknown")
-          else 
+          else
             open(unit=10, file="soap" // trim(i_char) // ".dat", status="old", position="append")
           end if
           if( .not. params%do_md .or. &
@@ -1083,7 +1087,7 @@ program turbogap
         if( ( params%do_derivatives .or. params%do_derivatives_fd ) .and. params%write_derivatives )then
           if( n_xyz == 1 .or. md_istep == 0 )then
             open(unit=10, file="soap_der" // trim(i_char) // ".dat", status="unknown")
-          else 
+          else
             open(unit=10, file="soap_der" // trim(i_char) // ".dat", status="old", position="append")
           end if
           if( .not. params%do_md .or. &
@@ -1658,7 +1662,7 @@ end if
               j = j + 1
               if( j > n_sites )then
                 positions(1:3, j) = positions(1:3, i) + dfloat(i2-1)/dfloat(indices(1))*a_box &
-                                                      + dfloat(j2-1)/dfloat(indices(2))*b_box & 
+                                                      + dfloat(j2-1)/dfloat(indices(2))*b_box &
                                                       + dfloat(k2-1)/dfloat(indices(3))*c_box
                 velocities(1:3, j) = velocities(1:3, i)
               end if
@@ -1746,6 +1750,7 @@ end if
     write(*,'(A,F13.3,A)') ' * Neighbor lists:', time_neigh, ' seconds |'
     write(*,'(A,F13.3,A)') ' *  GAP desc/pred:', time_gap, ' seconds |'
     write(*,'(A,F13.3,A)') '     - soap_turbo:', time_soap(3), ' seconds |'
+    write(*,'(A,F13.3,A)') '     - lin__turbo:', solo_time_soap, ' seconds |'
     write(*,'(A,F13.3,A)') '     -         2b:', time_2b(3), ' seconds |'
     write(*,'(A,F13.3,A)') '     -         3b:', time_3b(3), ' seconds |'
     write(*,'(A,F13.3,A)') '     -   core_pot:', time_core_pot(3), ' seconds |'
@@ -1794,6 +1799,8 @@ end if
   END IF
 #endif
 
+
+write(*,*) "    - lin__turbo:", solo_time_soap, rank
 
 
 #ifdef _MPIF90

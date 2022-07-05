@@ -48,7 +48,7 @@ module gap_interface
                           xyz_species, xyz_species_supercell, alphas, Qs, all_atoms, &
                           which_atom, indices, soap, soap_cart_der, der_neighbors, der_neighbors_list, &
                           has_vdw, vdw_Qs, vdw_alphas, vdw_zeta, vdw_delta, vdw_V0, &
-                          energies0, forces0, hirshfeld_v0, hirshfeld_v_cart_der0, virial )
+                          energies0, forces0, hirshfeld_v0, hirshfeld_v_cart_der0, virial, solo_time_soap )
 
     implicit none
 
@@ -70,6 +70,7 @@ module gap_interface
 !   Output variables
     real*8, allocatable, intent(out) :: soap(:,:), soap_cart_der(:,:,:)
     real*8, intent(out) :: virial(1:3, 1:3)
+    real*8, intent(inout)  :: solo_time_soap
 
 !   Inout variables
     real*8, intent(inout) :: energies0(:), forces0(:,:), hirshfeld_v0(:), hirshfeld_v_cart_der0(:,:)
@@ -282,7 +283,7 @@ module gap_interface
       if( n_sites > 0 )then
         call get_soap_energy_and_forces(soap, soap_cart_der, alphas, delta, zeta, 0.d0, Qs, &
                                         n_neigh, neighbors_list, xyz, do_forces, do_timing, &
-                                        energies, forces, virial)
+                                        energies, forces, virial, solo_time_soap)
       end if
 
       do i = 1, n_sites

@@ -5,7 +5,8 @@ SHELL = /bin/sh
 # Include user-modifiable variables from a customizable file.
 # Check the makefiles/ directory for a list of tested architectures
 
-include makefiles/Makefile.Ubuntu_gfortran_mpi
+include makefiles/Makefile.CSC-Mahti_gfortran_openblas_mpi
+
 
 # Default locations for various files
 BUILD_DIR=build
