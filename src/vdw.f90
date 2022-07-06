@@ -462,13 +462,15 @@ module vdw
                            g_func_der(:), h_func_der(:), &
                            dalpha(:,:,:), &
                            !dT_SR_v(:,:), &
-                           coeff_der(:,:,:,:), coeff_fdamp(:,:,:,:), &
+                           !coeff_der(:,:,:,:), coeff_fdamp(:,:,:,:), &
+                           coeff_der(:), coeff_fdamp(:), & ! Assuming that coeff_der and coeff_fdamp are symmetric
                            hirshfeld_v_cart_der_H(:,:), I_mat(:,:), &
                            a_vec(:,:), &
                            BTB_reg(:,:), B_reg(:,:), &
                            a_SCS(:,:), da_vec(:,:), vect1(:,:), &
                            vect2(:,:), vect3(:,:), vect4(:,:), vect_temp(:,:), da_SCS(:,:), &
-                           c6_nsites(:), b_der(:,:), alpha_SCS_full(:,:), dB_mat(:,:)
+                           c6_nsites(:), b_der(:,:), alpha_SCS_full(:,:), dB_mat(:,:), alpha_test(:,:), &
+                           test_vector(:,:)
     real*8 :: time1, time2, this_force(1:3), Bohr, Hartree, &
               omega, pi, integral, E_MBD, R_vdW_ij, R_vdW_SCS_ij, S_vdW_ij, dS_vdW_ij, exp_term, &
               rcut_vdw, r_vdw_i, r_vdw_j, dist, f_damp_SCS_ij, t1, t2, &
@@ -476,7 +478,7 @@ module vdw
     integer, allocatable :: ipiv(:)
     integer :: n_sites, n_pairs, n_species, n_sites0, info, n_order, n_freq, om, n_tot
     integer :: i, i2, j, j2, j3, k, k2, k3, k4, a, a2, c1, c2, c3, lwork, b, p, q, r, n_count, n_max
-    logical :: do_timing = .true., do_hirshfeld_gradients = .true., &
+    logical :: do_timing = .false., do_hirshfeld_gradients = .true., &
                total_energy = .true., regularization = .false., read_hirshfeld = .false., &
                psblas = .true.
                
@@ -488,6 +490,7 @@ module vdw
 
 !   DERIVATIVE TEST stuff:
     real*8 :: polyfit(1:4)
+    !real*8 :: polyfit(1:16)
     real*8, allocatable :: eigval(:) 
 
 !    PSBLAS stuff:
@@ -786,19 +789,30 @@ module vdw
           end if
         end do
         
-        if ( i == 2 ) then
-        write(*,*) "B_mat"
-        p = 40
-          write(*,*) p, p_to_i(p)
-          do c1 = 1, 3
-            write(*,*) B_mat(3*(p-1)+c1,3*(41-1)+1:3*(41-1)+3)
-          end do
+        if ( i == 1 ) then
+          allocate( work_arr(1:12*n_sub_sites) )
+          allocate( eigval(1:3*n_sub_sites) )
+          call dsyev('n', 'u', 3*n_sub_sites, B_mat, 3*n_sub_sites, eigval, work_arr, 12*n_sub_sites, info)
+          open(unit=79, file="eigs.dat", status="new")
+          write(*,*) "B_mat eigenvalues"
+          write(79,*) eigval
+          close(79)
+        end if
+
+
+        !if ( i == 2 ) then
+        !write(*,*) "B_mat"
+        !p = 40
+        !  write(*,*) p, p_to_i(p)
+        !  do c1 = 1, 3
+        !    write(*,*) B_mat(3*(p-1)+c1,3*(41-1)+1:3*(41-1)+3)
+        !  end do
         !p = 1
         !  write(*,*) p, p_to_i(p)
         !  do c1 = 1, 3
         !    write(*,*) B_mat(3*(p-1)+c1,3*(12-1)+1:3*(12-1)+3)
         !  end do
-        end if
+        !end if
 
         !if ( i == 2 ) then 
         !open(unit=79, file="B_mat_m.dat", status="new")
@@ -830,6 +844,17 @@ module vdw
           end do
         end do
         
+       ! polyfit = (/ -3.31525776e+16,  7.89944926e+16, -8.53819481e+16,  5.53868928e+16, &
+       !-2.40438014e+16,  7.37366123e+15, -1.64394857e+15,  2.70126090e+14, &
+       !-3.28169793e+13,  2.93125361e+12, -1.89787301e+11,  8.69690504e+09, &
+       !-2.72026948e+08,  5.50385670e+06, -6.63665627e+04,  4.15743362e+02 /)
+
+        !polyfit = (/ -6.59272895e+25,  3.02926089e+25, -6.41114226e+24,  8.28835491e+23, &
+        !             -7.31899543e+22,  4.67633148e+21, -2.23402698e+20,  8.13165425e+18, &
+        !             -2.27673070e+17,  4.91451412e+15, -8.14338131e+13,  1.02395959e+12, &
+        !             -9.56997700e+09,  6.42191667e+07, -2.91632441e+05,  8.00411821e+02 /)
+
+
         !polyfit = (/ -8.52126705e+11,  1.54164485e+12, -1.22546032e+12,  5.62886097e+11, &
         !             -1.65311654e+11,  3.24458270e+10, -4.32224085e+09,  3.89166719e+08, &
         !             -2.31700842e+07,  8.74333211e+05, -1.94556850e+04,  2.24501478e+02 /)
@@ -908,16 +933,16 @@ module vdw
         
         do c1 = 1, 3
           do c2 = 1, 3
-            alpha_SCS_full(3*(i-1)+c1,c2) = dot_product(d_vec(c1,:),a_SCS(:,c2))
+            alpha_SCS_full(3*(i-1)+c2,c1) = dot_product(d_vec(c1,:),a_SCS(:,c2))
             if ( c1 == c2) then
-              alpha_SCS_full(3*(i-1)+c1,c2) = alpha_SCS_full(c1,3*(i-1)+c2) + polyfit(n_degree+1)
+              alpha_SCS_full(3*(i-1)+c2,c1) = alpha_SCS_full(3*(i-1)+c2,c1) + polyfit(n_degree+1)
             end if
           end do
         end do
 
         alpha_SCS0(i,1) = 0.d0
         do c1 = 1, 3
-          alpha_SCS0(i,1) = alpha_SCS0(i,1) + alpha_SCS_full(3*(i-1)+c1,c2)
+          alpha_SCS0(i,1) = alpha_SCS0(i,1) + alpha_SCS_full(3*(i-1)+c1,c1)
         end do
         alpha_SCS0(i,1) = alpha_SCS0(i,1)/3.d0
         deallocate( val_xv, val_bv, myidx, d_vec )
@@ -948,7 +973,7 @@ module vdw
         !alpha_SCS0(i,1) = alpha_SCS0(i,1)/3.d0
         
         !write(*,*) "alpha_SCS0"
-        !write(*,*) i, alpha_SCS0(i,1)
+        write(*,*) i, alpha_SCS0(i,1)
 
         deallocate( n_sub_neigh, sub_neighbors_list, xyz_H, rjs_H, r0_ii, neighbor_alpha0, T_func, &
                     B_mat, b_i, g_func, h_func, f_damp, a_vec, a_SCS, ipiv, ia, ja, val )
@@ -963,6 +988,10 @@ module vdw
       do i = 1, n_sites
       
         write(*,*) "Gradients for atom", i
+
+        if ( do_timing ) then
+        call cpu_time(time1)
+        end if
 
         p_to_i = 0
         i_to_p = 0
@@ -1108,16 +1137,30 @@ module vdw
         !write(*,*) f_damp
         !end if
         
+        if ( do_timing ) then
+        call cpu_time(time2)
+        write(*,*) "pre-calculation stuff timing", time2-time1
+        call cpu_time(time1)
+        end if
+        
         if ( do_derivatives ) then
 
         allocate( dT(1:9*n_sub_pairs) )
-        allocate( dB_mat(1:3*n_sub_sites,1:3*n_sub_sites) )
+        !allocate( dB_mat(1:3*n_sub_sites,1:3*n_sub_sites) )
         allocate( b_der(1:3*n_sub_sites,1:3) )
         allocate( f_damp_der(1:n_sub_pairs) )
         allocate( g_func_der(1:n_sub_pairs) )
         allocate( h_func_der(1:9*n_sub_pairs) )
+        
+        if ( do_timing ) then
+        call cpu_time(time2)
+        write(*,*) "gradient allocation", time2-time1
+        end if
 
         do c3 = 1, 3
+          if ( do_timing ) then
+          call cpu_time(time1)
+          end if
           dT = 0.d0
           k2 = 0
           do p = 1, n_sub_sites
@@ -1148,16 +1191,30 @@ module vdw
         !write(*,*) "k2", k2
         !write(*,*) "n_sub_pairs", n_sub_pairs
         
+          if ( do_timing ) then
+          call cpu_time(time2)
+          write(*,*) "dT timing", time2-time1
+          end if        
+
           k2 = 1
           do r = 1, n_sub_sites
+            if ( do_timing ) then
+            call cpu_time(time1)
+            end if
             a = sub_neighbors_list(k2)
             !write(*,*) "frequency, cartesian, atom:", om, c3, a
 
-            dB_mat = 0.d0
+            !dB_mat = 0.d0
             f_damp_der = 0.d0
             g_func_der = 0.d0
             h_func_der = 0.d0
             b_der = 0.d0
+            
+            if ( do_timing ) then
+            call cpu_time(time2)
+            write(*,*) "initialization of gradients", time2-time1
+            call cpu_time(time1)
+            end if
           
             k3 = 0
             do p = 1, n_sub_sites
@@ -1201,11 +1258,11 @@ module vdw
                                                           T_func(k4) - f_damp_der(k3) * h_func(k4) + &
                                                           h_func_der(k4) * (1.d0 - f_damp(k3))) * &
                                                           alpha_SCS_full(3*(j-1)+c2,:)
-                        dB_mat(3*(p-1)+c1,3*(q-1)+c2) = dB_mat(3*(p-1)+c1,3*(q-1)+c2) - (f_damp_der(k3) * T_func(k4) * &
-                                                          g_func(k3) - (1.d0 - f_damp(k3)) * dT(k4) * &
-                                                          g_func(k3) - g_func_der(k3) * (1.d0 - f_damp(k3)) * &
-                                                          T_func(k4) - f_damp_der(k3) * h_func(k4) + &
-                                                          h_func_der(k4) * (1.d0 - f_damp(k3)))
+                        !dB_mat(3*(p-1)+c1,3*(q-1)+c2) = dB_mat(3*(p-1)+c1,3*(q-1)+c2) - (f_damp_der(k3) * T_func(k4) * &
+                        !                                  g_func(k3) - (1.d0 - f_damp(k3)) * dT(k4) * &
+                        !                                  g_func(k3) - g_func_der(k3) * (1.d0 - f_damp(k3)) * &
+                        !                                  T_func(k4) - f_damp_der(k3) * h_func(k4) + &
+                        !                                  h_func_der(k4) * (1.d0 - f_damp(k3)))
                       else
                         b_der(3*(p-1)+c1,:) = b_der(3*(p-1)+c1,:) + (f_damp_der(k3) * T_func(k4) * &
                                                           g_func(k3) - (1.d0 - f_damp(k3)) * dT(k4) * &
@@ -1213,21 +1270,21 @@ module vdw
                                                           T_func(k4) - f_damp_der(k3) * h_func(k4) + &
                                                           h_func_der(k4) * (1.d0 - f_damp(k3))) * &
                                                           alpha_SCS_full(3*(j-1)+c2,:)
-                        dB_mat(3*(p-1)+c1,3*(q-1)+c2) = dB_mat(3*(p-1)+c1,3*(q-1)+c2) + (f_damp_der(k3) * T_func(k4) * &
-                                                          g_func(k3) - (1.d0 - f_damp(k3)) * dT(k4) * &
-                                                          g_func(k3) - g_func_der(k3) * (1.d0 - f_damp(k3)) * &
-                                                          T_func(k4) - f_damp_der(k3) * h_func(k4) + &
-                                                          h_func_der(k4) * (1.d0 - f_damp(k3)))                                
+                        !dB_mat(3*(p-1)+c1,3*(q-1)+c2) = dB_mat(3*(p-1)+c1,3*(q-1)+c2) + (f_damp_der(k3) * T_func(k4) * &
+                        !                                  g_func(k3) - (1.d0 - f_damp(k3)) * dT(k4) * &
+                        !                                  g_func(k3) - g_func_der(k3) * (1.d0 - f_damp(k3)) * &
+                        !                                  T_func(k4) - f_damp_der(k3) * h_func(k4) + &
+                        !                                  h_func_der(k4) * (1.d0 - f_damp(k3)))                                
                       end if
-                      if ( i == 2 .and. a == 1 .and. c3 == 1 .and. p == 39 .and. q == 56 .and. c1 == 1 .and. c2 == 1) then
-                      write(*,*) "T_func", T_func(k4)
-                      write(*,*) "g_func", g_func(k3)
-                      write(*,*) "h_func", h_func(k4)
-                      write(*,*) "f_damp_der", f_damp_der(k3)
-                      write(*,*) "dT", dT(k4)
-                      write(*,*) "g_func_der", g_func_der(k3)
-                      write(*,*) "h_func_der", h_func_der(k4)
-                      end if
+                      !if ( i == 2 .and. a == 1 .and. c3 == 1 .and. p == 39 .and. q == 56 .and. c1 == 1 .and. c2 == 1) then
+                      !write(*,*) "T_func", T_func(k4)
+                      !write(*,*) "g_func", g_func(k3)
+                      !write(*,*) "h_func", h_func(k4)
+                      !write(*,*) "f_damp_der", f_damp_der(k3)
+                      !write(*,*) "dT", dT(k4)
+                      !write(*,*) "g_func_der", g_func_der(k3)
+                      !write(*,*) "h_func_der", h_func_der(k4)
+                      !end if
                       !if ( i == 1 .and. a == 1 .and. c3 == 1 .and. p == 1 .and. q == 3 ) then
                       !  write(*,*) "f_damp_der", f_damp_der(k3)
                       !  write(*,*) "g_func_der", g_func_der(k3)
@@ -1254,19 +1311,30 @@ module vdw
               end do
             end do
             
-            if ( i == 2 .and. a == 1 .and. c3 == 1) then
-            write(*,*) "dB_mat"
-            p = 40
-            write(*,*) p, p_to_i(p)
-            do c1 = 1, 3
-              write(*,*) dB_mat(3*(p-1)+c1,3*(41-1)+1:3*(41-1)+3)
-            end do
-            end if
+            if ( do_timing ) then
+            call cpu_time(time2)
+            write(*,*) "gradients without hirshfeld timing", time2-time1
+            end if            
+
+            !if ( i == 2 .and. a == 1 .and. c3 == 1) then
+            !write(*,*) "dB_mat"
+            !p = 40
+            !write(*,*) p, p_to_i(p)
+            !do c1 = 1, 3
+            !  write(*,*) dB_mat(3*(p-1)+c1,3*(41-1)+1:3*(41-1)+3)
+            !end do
+            !end if
 
             if (do_hirshfeld_gradients) then
+            
+              if ( do_timing ) then
+              call cpu_time(time1)
+              end if
 
-              allocate( coeff_der(1:n_sub_sites,1:n_sub_sites,1:3,1:3) )
-              allocate( coeff_fdamp(1:n_sub_sites,1:n_sub_sites,1:3,1:3) )
+              !allocate( coeff_der(1:n_sub_sites,1:n_sub_sites,1:3,1:3) )
+              !allocate( coeff_fdamp(1:n_sub_sites,1:n_sub_sites,1:3,1:3) )
+              allocate( coeff_der(1:9*n_sub_pairs) )
+              allocate( coeff_fdamp(1:9*n_sub_pairs) )
               
               in_force_cutoff = .false.
               k3 = sum(n_neigh(1:a))-n_neigh(a)
@@ -1280,6 +1348,13 @@ module vdw
             
               coeff_fdamp = 0.d0
               coeff_der = 0.d0
+              
+              if ( do_timing ) then
+              call cpu_time(time2)
+              write(*,*) "allocation and force cutoff array timing", time2-time1
+              call cpu_time(time1)
+              end if
+              
               k3 = 0
               do p = 1, n_sub_sites
                 k3 = k3+1
@@ -1297,21 +1372,30 @@ module vdw
                   do c1 = 1, 3
                     do c2 = 1, 3
                       k4 = k4+1
-                      coeff_fdamp(p,q,c1,c2) = (d*sR*rjs_H(k3))/(3*S_vdW_ij**2) * exp_term/(1.d0+exp_term)**2 * &
+                      !coeff_fdamp(p,q,c1,c2) = (d*sR*rjs_H(k3))/(3*S_vdW_ij**2) * exp_term/(1.d0+exp_term)**2 * &
+                      !                         (-T_func(k4) * g_func(k3) + h_func(k4))
+                      coeff_fdamp(k4) = (d*sR*rjs_H(k3))/(3*S_vdW_ij**2) * exp_term/(1.d0+exp_term)**2 * &
                                                (-T_func(k4) * g_func(k3) + h_func(k4))
                       dg = 4.d0/sqrt(pi) * exp(-rjs_H(k3)**2/sigma_ij**2) * (rjs_H(k3)/sigma_ij)**2 * &
                            (-rjs_H(k3)/(3.d0 * sigma_ij**3))
                       dh = 4.d0/sqrt(pi) * exp(-rjs_H(k3)**2/sigma_ij**2) * xyz_H(c1,k3)*xyz_H(c2,k3) / &
                            (sigma_ij**5 * rjs_H(k3)**2) * (-1.d0 + 2.d0/3.d0 * (rjs_H(k3)/sigma_ij)**2)
-                      coeff_der(p,q,c1,c2) = (1.d0-f_damp(k3)) * (-T_func(k4)*dg+dh)
-                      if ( i == 2 .and. p == 40 .and. q == 41 .and. a == 1 .and. c3 == 1 .and. c1 == 3 &
-                             .and. c2 == 2 ) then
-                        write(*,*) "coeff_fdamp first", (d*sR*rjs_H(k3))/(3*S_vdW_ij**2) * exp_term/(1.d0+exp_term)**2
-                      end if
+                      !coeff_der(p,q,c1,c2) = (1.d0-f_damp(k3)) * (-T_func(k4)*dg+dh)
+                      coeff_der(k4) = (1.d0-f_damp(k3)) * (-T_func(k4)*dg+dh)
+                      !if ( i == 2 .and. p == 40 .and. q == 41 .and. a == 1 .and. c3 == 1 .and. c1 == 3 &
+                      !       .and. c2 == 2 ) then
+                      !  write(*,*) "coeff_fdamp first", (d*sR*rjs_H(k3))/(3*S_vdW_ij**2) * exp_term/(1.d0+exp_term)**2
+                      !end if
                     end do
                   end do
                 end do
               end do
+
+              if ( do_timing ) then
+              call cpu_time(time2)
+              write(*,*) "calculation of coeff_fdamp and coeff_der timing", time2-time1
+              call cpu_time(time1)
+              end if
 
               k3 = 0
               do p = 1, n_sub_sites
@@ -1325,89 +1409,151 @@ module vdw
                     q = i_to_p(j)
                     if ( i2 == j ) then
                       do c1 = 1, 3
-                        dB_mat(3*(p-1)+c1,3*(p-1)+c1) = - 1.d0/(alpha_i(i2) * hirshfeld_v(i2)) * &
-                                                 hirshfeld_v_cart_der_H(c3,n_tot2+j3)
-                        do c2 = 1, 3
-                          b_der(c3*(p-1)+c1,c2) = b_der(c3*(p-1)+c1,c2) - 1.d0/(alpha_i(i2) * hirshfeld_v(i2)) * &
-                                                 hirshfeld_v_cart_der_H(c3,n_tot2+j3) * alpha_SCS_full(3*(i2-1)+c1,c2)
-                        end do 
+                        !dB_mat(3*(p-1)+c1,3*(p-1)+c1) = - 1.d0/(alpha_i(i2) * hirshfeld_v(i2)) * &
+                        !                         hirshfeld_v_cart_der_H(c3,n_tot2+j3)
+                        !do c2 = 1, 3
+                          b_der(3*(p-1)+c1,:) = b_der(3*(p-1)+c1,:) - 1.d0/(alpha_i(i2) * hirshfeld_v(i2)) * &
+                                                 hirshfeld_v_cart_der_H(c3,n_tot2+j3) * alpha_SCS_full(3*(i2-1)+c1,:)
+                        !end do 
                       end do
                     end if
+                    k4 = 9*(k3+j2-1)
                     do c1 = 1, 3
                       do c2 = 1, 3
+                        k4 = k4+1
                         b_der(3*(p-1)+c1,:) = b_der(3*(p-1)+c1,:) + &
-                          ((coeff_der(p,q,c1,c2) * sigma_i(i2)**2/hirshfeld_v(i2) + &
-                          coeff_fdamp(p,q,c1,c2) * r_vdw_i/hirshfeld_v(i2)) * hirshfeld_v_cart_der_H(c3,n_tot2+j3)) * &
+                          ((coeff_der(k4) * sigma_i(i2)**2/hirshfeld_v(i2) + &
+                          coeff_fdamp(k4) * r_vdw_i/hirshfeld_v(i2)) * hirshfeld_v_cart_der_H(c3,n_tot2+j3)) * &
                           alpha_SCS_full(3*(j-1)+c2,:)
-                        dB_mat(3*(p-1)+c1,3*(q-1)+c2) = dB_mat(3*(p-1)+c1,3*(q-1)+c2) + &
-                          ((coeff_der(p,q,c1,c2) * sigma_i(i2)**2/hirshfeld_v(i2) + &
-                          coeff_fdamp(p,q,c1,c2) * r_vdw_i/hirshfeld_v(i2)) * hirshfeld_v_cart_der_H(c3,n_tot2+j3))
+                        !b_der(3*(p-1)+c1,:) = b_der(3*(p-1)+c1,:) + &
+                        !  ((coeff_der(p,q,c1,c2) * sigma_i(i2)**2/hirshfeld_v(i2) + &
+                        !  coeff_fdamp(p,q,c1,c2) * r_vdw_i/hirshfeld_v(i2)) * hirshfeld_v_cart_der_H(c3,n_tot2+j3)) * &
+                        !  alpha_SCS_full(3*(j-1)+c2,:)
+                        
+                        !dB_mat(3*(p-1)+c1,3*(q-1)+c2) = dB_mat(3*(p-1)+c1,3*(q-1)+c2) + &
+                        !  ((coeff_der(p,q,c1,c2) * sigma_i(i2)**2/hirshfeld_v(i2) + &
+                        !  coeff_fdamp(p,q,c1,c2) * r_vdw_i/hirshfeld_v(i2)) * hirshfeld_v_cart_der_H(c3,n_tot2+j3))
                         b_der(3*(q-1)+c1,:) = b_der(3*(q-1)+c1,:) + &
-                          ((coeff_der(q,p,c1,c2) * sigma_i(i2)**2/hirshfeld_v(i2) + &
-                          coeff_fdamp(q,p,c1,c2) * r_vdw_i/hirshfeld_v(i2)) * hirshfeld_v_cart_der_H(c3,n_tot2+j3)) * &
+                          ((coeff_der(k4) * sigma_i(i2)**2/hirshfeld_v(i2) + &
+                          coeff_fdamp(k4) * r_vdw_i/hirshfeld_v(i2)) * hirshfeld_v_cart_der_H(c3,n_tot2+j3)) * &
                           alpha_SCS_full(3*(i2-1)+c2,:)
-                        dB_mat(3*(q-1)+c1,3*(p-1)+c2) = dB_mat(3*(q-1)+c1,3*(p-1)+c2) + &
-                          ((coeff_der(q,p,c1,c2) * sigma_i(i2)**2/hirshfeld_v(i2) + &
-                          coeff_fdamp(q,p,c1,c2) * r_vdw_i/hirshfeld_v(i2)) * hirshfeld_v_cart_der_H(c3,n_tot2+j3))
-                        if ( i == 2 .and. p == 40 .and. q == 41 .and. a == 1 .and. c3 == 1 .and. c1 == 3 &
-                             .and. c2 == 2) then
-                          write(*,*) "p, q, i2, j", p, q, i2, j
-                          write(*,*) "coeff_fdamp", coeff_fdamp(p,q,c1,c2) !/(-T_func(k4) * g_func(k3) + h_func(k4)) !* &
-                                                    !r_vdw_i/hirshfeld_v(i2) * hirshfeld_v_cart_der_H(c3,n_tot2+j3)
-                          write(*,*) "dB_mat", dB_mat(3*(p-1)+c1,3*(q-1)+c2)
-                          write(*,*) "hirshfeld_v_cart_der term", r_vdw_i/hirshfeld_v(i2) * &
-                                          hirshfeld_v_cart_der_H(c3,n_tot2+j3)
-                        end if
-                        if ( i == 2 .and. p == 41 .and. q == 40 .and. a == 1 .and. c3 == 1 .and. c1 == 3 &
-                             .and. c2 == 2 ) then
-                          write(*,*) "p, q", p, q
-                          write(*,*) "coeff_fdamp", coeff_fdamp(q,p,c1,c2) !/(-T_func(k4) * g_func(k3) + h_func(k4)) * &
-                                                    !r_vdw_i/hirshfeld_v(i2) * hirshfeld_v_cart_der_H(c3,n_tot2+j3)
-                          write(*,*) "dB_mat", dB_mat(3*(q-1)+c1,3*(p-1)+c2)
-                          write(*,*) "hirshfeld_v_cart_der term", r_vdw_i/hirshfeld_v(i2) * &
-                                         hirshfeld_v_cart_der_H(c3,n_tot2+j3)
-                        end if
+                        !b_der(3*(q-1)+c1,:) = b_der(3*(q-1)+c1,:) + &
+                        !  ((coeff_der(q,p,c1,c2) * sigma_i(i2)**2/hirshfeld_v(i2) + &
+                        !  coeff_fdamp(q,p,c1,c2) * r_vdw_i/hirshfeld_v(i2)) * hirshfeld_v_cart_der_H(c3,n_tot2+j3)) * &
+                        !  alpha_SCS_full(3*(i2-1)+c2,:)
+                          
+                        !dB_mat(3*(q-1)+c1,3*(p-1)+c2) = dB_mat(3*(q-1)+c1,3*(p-1)+c2) + &
+                        !  ((coeff_der(q,p,c1,c2) * sigma_i(i2)**2/hirshfeld_v(i2) + &
+                        !  coeff_fdamp(q,p,c1,c2) * r_vdw_i/hirshfeld_v(i2)) * hirshfeld_v_cart_der_H(c3,n_tot2+j3))
+                        !if ( i == 2 .and. p == 40 .and. q == 41 .and. a == 1 .and. c3 == 1 .and. c1 == 3 &
+                        !     .and. c2 == 2) then
+                        !  write(*,*) "p, q, i2, j", p, q, i2, j
+                        !  write(*,*) "coeff_fdamp", coeff_fdamp(p,q,c1,c2) !/(-T_func(k4) * g_func(k3) + h_func(k4)) !* &
+                        !                            !r_vdw_i/hirshfeld_v(i2) * hirshfeld_v_cart_der_H(c3,n_tot2+j3)
+                        !  write(*,*) "dB_mat", dB_mat(3*(p-1)+c1,3*(q-1)+c2)
+                        !  write(*,*) "hirshfeld_v_cart_der term", r_vdw_i/hirshfeld_v(i2) * &
+                        !                  hirshfeld_v_cart_der_H(c3,n_tot2+j3)
+                        !end if
+                        !if ( i == 2 .and. p == 41 .and. q == 40 .and. a == 1 .and. c3 == 1 .and. c1 == 3 &
+                        !     .and. c2 == 2 ) then
+                        !  write(*,*) "p, q", p, q
+                        !  write(*,*) "coeff_fdamp", coeff_fdamp(q,p,c1,c2) !/(-T_func(k4) * g_func(k3) + h_func(k4)) * &
+                        !                            !r_vdw_i/hirshfeld_v(i2) * hirshfeld_v_cart_der_H(c3,n_tot2+j3)
+                        !  write(*,*) "dB_mat", dB_mat(3*(q-1)+c1,3*(p-1)+c2)
+                        !  write(*,*) "hirshfeld_v_cart_der term", r_vdw_i/hirshfeld_v(i2) * &
+                        !                 hirshfeld_v_cart_der_H(c3,n_tot2+j3)
+                        !end if
                       end do
                     end do     
                   end do
                 end if
                 k3 = k3 + n_sub_neigh(p)
               end do
-            
+              
+              if ( do_timing ) then
+              call cpu_time(time2)
+              write(*,*) "hirshfeld gradient timing", time2-time1
+              end if            
+
               deallocate( coeff_der, coeff_fdamp )
               
             end if
             
-            if ( i == 2 .and. a == 1 .and. c3 == 1) then
-            write(*,*) "dB_mat"
-            p = 487
-            write(*,*) p, p_to_i(p)
-            do c1 = 1, 3
-              write(*,*) dB_mat(3*(p-1)+c1,3*(p-1)+1:3*(p-1)+3)
-            end do
+            if ( do_timing ) then
+            call cpu_time(time1)
             end if
             
-        if ( i == 2 .and. a == 1 .and. c3 == 1) then 
-        open(unit=89, file="dB_mat.dat", status="new")
-        do p = 1, 3*n_sub_sites
-          write(89,*) dB_mat(p,:)
-        end do
-        close(89)
-        end if            
+            !if ( i == 2 .and. a == 1 .and. c3 == 1) then
+            !write(*,*) "dB_mat"
+            !p = 487
+            !write(*,*) p, p_to_i(p)
+            !do c1 = 1, 3
+            !  write(*,*) dB_mat(3*(p-1)+c1,3*(p-1)+1:3*(p-1)+3)
+            !end do
+            !end if
+            
+        !if ( i == 2 .and. a == 1 .and. c3 == 1) then 
+        !open(unit=89, file="dB_mat.dat", status="new")
+        !do p = 1, 3*n_sub_sites
+        !  write(89,*) dB_mat(p,:)
+        !end do
+        !close(89)
+        !end if
+        
+        
+            !if ( i == 2 .and. a == 1 .and. c3 == 1 ) then
+            !allocate( alpha_test(1:3*n_sub_sites,1:3) )
+            !allocate( test_vector(1:3*n_sub_sites,1:3) )
+            
+            !alpha_test = 0.d0
+            !test_vector = 0.d0
+            !do p = 1, n_sub_sites
+            !  i2 = p_to_i(p)
+            !  alpha_test(3*(p-1)+1:3*(p-1)+3,1:3) = alpha_SCS_full(3*(i2-1)+1:3*(i2-1)+3,1:3)
+            !end do
+            !
+            !write(*,*) "alpha_test", alpha_test(1,:)
+
+            !call dgemm('n', 'n', 3*n_sub_sites, 3, 3*n_sub_sites, 1.d0, dB_mat, 3*n_sub_sites, &
+            !        alpha_test, 3*n_sub_sites, 0.d0, test_vector, 3*n_sub_sites)
+            
+            !write(*,*) "test_vector", test_vector(1,:)
+
+            !open(unit=79, file="b_der_new.dat", status="new")
+            !open(unit=89, file="test_vector.dat", status="new")
+
+            !write(*,*) "writing vectors"
+            !do p = 1, 3*n_sub_sites
+            !  write(79,*) b_der(p,:)
+            !  write(89,*) test_vector(p,:)
+            !end do
+            !write(*,*) "done"
+            
+            !close(79)
+            !close(89)
+            
+            !deallocate( alpha_test, test_vector )
+            !end if            
 
             do c1 = 1, 3
               dalpha_full(i,a,c3,1) = dalpha_full(i,a,c3,1) - polyfit(n_degree+1) * b_der(c1,c1) &
-                                      - dot_product(b_der(c1,:), A_i(1:3*n_sub_sites,3*(i-1)+c1))
+                                      - dot_product(b_der(:,c1), A_i(1:3*n_sub_sites,3*(i-1)+c1))
             end do
             dalpha_full(i,a,c3,1) = 1.d0/3.d0 * dalpha_full(i,a,c3,1)
             
             k2 = k2+n_sub_neigh(r)
             
+            if ( do_timing ) then
+            call cpu_time(time2)
+            write(*,*) "dalpha calculation timing", time2-time1
+            end if            
+
           end do 
           
         end do ! c3 loop
 
-        deallocate( dT, dB_mat, b_der, f_damp_der, g_func_der, h_func_der )
+        deallocate( dT, b_der, f_damp_der, g_func_der, h_func_der )
+        !deallocate( dB_mat )
 
         end if ! do_derivatives
 
@@ -1464,8 +1610,10 @@ module vdw
       allocate( g_func_der(1:n_pairs) )
       allocate( h_func_der(1:9*n_pairs) )
       !allocate( dT_SR_v(1:3*n_sites,1:3*n_sites) )
-      allocate( coeff_der(1:n_sites,1:n_sites,1:3,1:3) )
-      allocate( coeff_fdamp(1:n_sites,1:n_sites,1:3,1:3) )
+      !allocate( coeff_der(1:n_sites,1:n_sites,1:3,1:3) )   ! THIS IS CHANGED RECENTLY, MIGHT CHANGE THE VALUES!!!!!!!!!!!!
+      !allocate( coeff_fdamp(1:n_sites,1:n_sites,1:3,1:3) ) ! THIS TOO!!!
+      allocate( coeff_der(1:9*n_pairs) )
+      allocate( coeff_fdamp(1:9*n_pairs) )
       allocate( hirshfeld_v_cart_der_H(1:3,1:n_pairs) )
       allocate( da_vec(1:3*n_sites,1:3) )
       allocate( vect1(1:3*n_sites,1:3) )
@@ -1945,13 +2093,16 @@ module vdw
                     do c1 = 1, 3
                       do c2 = 1, 3
                         k2 = k2+1
-                        coeff_fdamp(i,j,c1,c2) = (d*sR*rjs_H(k))/(3*S_vdW_ij**2) * exp_term/(1.d0+exp_term)**2 * &
+                        !coeff_fdamp(i,j,c1,c2) = (d*sR*rjs_H(k))/(3*S_vdW_ij**2) * exp_term/(1.d0+exp_term)**2 * &
+                        !                         (-T_func(k2) * g_func(k) + h_func(k2))
+                        coeff_fdamp(k2) = (d*sR*rjs_H(k))/(3*S_vdW_ij**2) * exp_term/(1.d0+exp_term)**2 * &
                                                  (-T_func(k2) * g_func(k) + h_func(k2))
                         dg = 4.d0/sqrt(pi) * exp(-rjs_H(k)**2/sigma_ij**2) * (rjs_H(k)/sigma_ij)**2 * &
                              (-rjs_H(k)/(3.d0 * sigma_ij**3))
                         dh = 4.d0/sqrt(pi) * exp(-rjs_H(k)**2/sigma_ij**2) * xyz_H(c1,k)*xyz_H(c2,k) / &
                              (sigma_ij**5 * rjs_H(k)**2) * (-1.d0 + 2.d0/3.d0 * (rjs_H(k)/sigma_ij)**2)
-                        coeff_der(i,j,c1,c2) = (1.d0-f_damp(k)) * (-T_func(k2)*dg+dh)
+                        !coeff_der(i,j,c1,c2) = (1.d0-f_damp(k)) * (-T_func(k2)*dg+dh)
+                        coeff_der(k2) = (1.d0-f_damp(k)) * (-T_func(k2)*dg+dh)
                       end do
                     end do
                   end if
@@ -1982,8 +2133,10 @@ module vdw
                           end do 
                         end do
                       end if
+                      k4 = 9*(k3+j2-1)
                       do c1 = 1, 3
                         do c2 = 1, 3
+                          k4 = k4+1
                           !dT_SR_v(3*(i-1)+c1,3*(j-1)+c2) = dT_SR_v(3*(i-1)+c1,3*(j-1)+c2) + &
                           !  (coeff_der(i,j,c1,c2) * sigma_i(i)**2/hirshfeld_v(i) + &
                           !  coeff_fdamp(i,j,c1,c2) * r_vdw_i/hirshfeld_v(i)) * hirshfeld_v_cart_der_H(c3,n_tot+p) ! n_tot+p = k2
@@ -1991,12 +2144,14 @@ module vdw
                           !  (coeff_der(j,i,c1,c2) * sigma_i(i)**2/hirshfeld_v(i) + &
                           !  coeff_fdamp(j,i,c1,c2) * r_vdw_i/hirshfeld_v(i)) * hirshfeld_v_cart_der_H(c3,n_tot+p) ! n_tot+p = k2
                           b_der(3*(i-1)+c1,:) = b_der(3*(i-1)+c1,:) - &
-                            ((coeff_der(i,j,c1,c2) * sigma_i(i)**2/hirshfeld_v(i) + &
-                            coeff_fdamp(i,j,c1,c2) * r_vdw_i/hirshfeld_v(i)) * hirshfeld_v_cart_der_H(c3,n_tot+p)) * &
+                            ((coeff_der(k4) * sigma_i(i)**2/hirshfeld_v(i) + &
+                            coeff_fdamp(k4) * r_vdw_i/hirshfeld_v(i)) * hirshfeld_v_cart_der_H(c3,n_tot+p)) * &
                             a_SCS(3*(j-1)+c2,:)
+                          ! THE FOLLOWING ONLY WORKS ON THE ASSUMPTION THAT COEFF_DER AND COEFF_FDAMP ARE SYMMETRIC!
+                          ! THAT IS, B HAS TO BE SYMMETRIC!
                           b_der(3*(j-1)+c1,:) = b_der(3*(j-1)+c1,:) - &
-                            ((coeff_der(j,i,c1,c2) * sigma_i(i)**2/hirshfeld_v(i) + &
-                            coeff_fdamp(j,i,c1,c2) * r_vdw_i/hirshfeld_v(i)) * hirshfeld_v_cart_der_H(c3,n_tot+p)) * &
+                            ((coeff_der(k4) * sigma_i(i)**2/hirshfeld_v(i) + &
+                            coeff_fdamp(k4) * r_vdw_i/hirshfeld_v(i)) * hirshfeld_v_cart_der_H(c3,n_tot+p)) * &
                             a_SCS(3*(i-1)+c2,:)
 ! TEST:
 !                        dT_SR_v(3*(i-1)+c1,3*(j-1)+c2,a,c3,k) = dT_SR_v(3*(i-1)+c1,3*(j-1)+c2,a,c3,k) + &
