@@ -489,8 +489,9 @@ module vdw
     logical :: local = .true.
 
 !   DERIVATIVE TEST stuff:
-    real*8 :: polyfit(1:4)
-    !real*8 :: polyfit(1:16)
+    !real*8 :: polyfit(1:4)
+    !real*8 :: polyfit(1:9)
+    real*8 :: polyfit(1:16)
     real*8, allocatable :: eigval(:) 
 
 !    PSBLAS stuff:
@@ -505,6 +506,11 @@ module vdw
     type(psb_dprec_type) :: prec
     character(len=20) :: ptype
 
+polyfit = (/ 385.2817801096765, -55777.83566111619, 4127549.667135566, -180025475.92576298, 5041269205.6078205, &
+-95868751596.71606, 1285708929444.545, -12466576737395.455, 88704849805146.6, &
+-465989594891260.1, 1802171697198277.0, -5062468268809594.0, 100394505796158820, &
+-133158164876604320, 10594888282665030, -3822503725467252.0 /)
+
     !write(*,*) "neighbors_list"
     !write(*,*) neighbors_list
 
@@ -515,7 +521,7 @@ module vdw
 !   probably fix this at some point but it will require using the full n_neigh(i) again, instead of 
 !   n_ssites, to construct the sneighbors_list.
 
-    write(*,*) "rcut (SCS)", rcut
+    !write(*,*) "rcut (SCS)", rcut
 
     n_sites = size(n_neigh)
     n_pairs = size(neighbors_list)
@@ -579,14 +585,14 @@ module vdw
         end do
       end if
       
-      write(*,*) "hirshfeld der"
-      do p = 1, n_neigh(1)
-        write(*,*) neighbors_list(p), hirshfeld_v_cart_der_H(1,p)
-      end do
-      write(*,*) "the other"
-      do p = sum(n_neigh(1:2))-n_neigh(2)+1, sum(n_neigh(1:2))
-        write(*,*) neighbors_list(p), hirshfeld_v_cart_der_H(1,p)
-      end do
+      !write(*,*) "hirshfeld der"
+      !do p = 1, n_neigh(1)
+      !  write(*,*) neighbors_list(p), hirshfeld_v_cart_der_H(1,p)
+      !end do
+      !write(*,*) "the other"
+      !do p = sum(n_neigh(1:2))-n_neigh(2)+1, sum(n_neigh(1:2))
+      !  write(*,*) neighbors_list(p), hirshfeld_v_cart_der_H(1,p)
+      !end do
 
       alpha_SCS_full = 0.d0
       
@@ -748,12 +754,12 @@ module vdw
                   rjs_H(k2) = rjs(n_tot2+j3)/Bohr
                   r_vdw_j = r0_ii(k2)
                   f_damp(k2) = 1.d0/( 1.d0 + exp( -d*( rjs_H(k2)/(sR*(r_vdw_i + r_vdw_j)) - 1.d0 ) ) )
-                  if ( i == 2 .and. p == 40 .and. q == 41 ) then
-                    write(*,*) "p,q,f_damp", p, q, f_damp(k2)
-                  end if
-                  if ( i == 2 .and. p == 41 .and. q == 40 ) then
-                    write(*,*) "p,q,f_damp", p, q, f_damp(k2)
-                  end if
+                  !if ( i == 2 .and. p == 40 .and. q == 41 ) then
+                  !  write(*,*) "p,q,f_damp", p, q, f_damp(k2)
+                  !end if
+                  !if ( i == 2 .and. p == 41 .and. q == 40 ) then
+                  !  write(*,*) "p,q,f_damp", p, q, f_damp(k2)
+                  !end if
                   s_j = sigma_i(j)
                   sigma_ij = sqrt(s_i**2 + s_j**2)
                   g_func(k2) = erf(rjs_H(k2)/sigma_ij) - 2.d0/sqrt(pi) * (rjs_H(k2)/sigma_ij) * exp(-rjs_H(k2)**2.d0/sigma_ij**2)
@@ -789,15 +795,18 @@ module vdw
           end if
         end do
         
-        if ( i == 1 ) then
-          allocate( work_arr(1:12*n_sub_sites) )
-          allocate( eigval(1:3*n_sub_sites) )
-          call dsyev('n', 'u', 3*n_sub_sites, B_mat, 3*n_sub_sites, eigval, work_arr, 12*n_sub_sites, info)
-          open(unit=79, file="eigs.dat", status="new")
-          write(*,*) "B_mat eigenvalues"
-          write(79,*) eigval
-          close(79)
-        end if
+        !if ( i == 1 ) then
+        !allocate( work_arr(1:12*n_sub_sites) )
+        !allocate( eigval(1:3*n_sub_sites) )
+        !call dsyev('n', 'u', 3*n_sub_sites, B_mat, 3*n_sub_sites, eigval, work_arr, 12*n_sub_sites, info)
+        !write(*,*) "i, min eig", i, minval(eigval)
+        !  open(unit=79, file="eigs.dat", status="new")
+        !  write(*,*) "B_mat eigenvalues"
+        !  write(79,*) eigval
+        !  close(79)
+        !deallocate( work_arr )
+        !deallocate( eigval)
+        !end if
 
 
         !if ( i == 2 ) then
@@ -844,10 +853,21 @@ module vdw
           end do
         end do
         
-       ! polyfit = (/ -3.31525776e+16,  7.89944926e+16, -8.53819481e+16,  5.53868928e+16, &
-       !-2.40438014e+16,  7.37366123e+15, -1.64394857e+15,  2.70126090e+14, &
-       !-3.28169793e+13,  2.93125361e+12, -1.89787301e+11,  8.69690504e+09, &
-       !-2.72026948e+08,  5.50385670e+06, -6.63665627e+04,  4.15743362e+02 /)
+        !polyfit = (/ 84.08246148,  -1338.28083377,   6787.98492226, -10607.58194954 /)
+        
+        !polyfit = (/ 2.12029873e+02, -1.35632077e+04,  3.81505690e+05, -5.61866155e+06, &
+        !4.72926792e+07, -2.35489960e+08,  6.85252955e+08, -1.07601605e+09, &
+        !7.03788232e+08 /)
+
+
+
+
+
+        !polyfit = (/ 70.55762083d0, -1165.56417327d0, 6509.62160556d0, -11465.40348552d0 /)
+
+        !polyfit = (/ 7.03788232e+08, -1.07601605e+09,  6.85252955e+08, -2.35489960e+08, &
+        !4.72926792e+07, -5.61866155e+06,  3.81505690e+05, -1.35632077e+04, &
+        !2.12029873e+02 /)
 
         !polyfit = (/ -6.59272895e+25,  3.02926089e+25, -6.41114226e+24,  8.28835491e+23, &
         !             -7.31899543e+22,  4.67633148e+21, -2.23402698e+20,  8.13165425e+18, &
@@ -859,7 +879,7 @@ module vdw
         !             -1.65311654e+11,  3.24458270e+10, -4.32224085e+09,  3.89166719e+08, &
         !             -2.31700842e+07,  8.74333211e+05, -1.94556850e+04,  2.24501478e+02 /)
 
-        polyfit = (/ -11465.40348552d0, 6509.62160556d0, -1165.56417327d0, 70.55762083d0 /)
+        !polyfit = (/ -11465.40348552d0, 6509.62160556d0, -1165.56417327d0, 70.55762083d0 /)
 
 
         allocate( val_xv(1:3*n_sub_sites,1:3) )
@@ -888,7 +908,7 @@ module vdw
 
         call cpu_time(time1)
         call psb_init(icontxt)
-        a_SCS = polyfit(n_degree)*b_i
+        a_SCS = polyfit(2)*b_i
         !write(*,*) "polyfit(n_degree+1)"
         !write(*,*) polyfit(n_degree+1)
         !write(*,*) "a_SCS"
@@ -911,11 +931,12 @@ module vdw
           !write(*,*) "cdasb", info_psb
         call psb_spasb(A_sp, desc_a, info_psb)
         call cpu_time(time1)
-        do k2 = 1, n_degree-1
+        do k2 = 3, n_degree+1
           call psb_spmm(1.d0, A_sp, b_i, 0.d0, val_xv, desc_a, info_psb, 'T')
           !write(*,*) "psb_spmm", val_xv
-          a_SCS = a_SCS + polyfit(n_degree-k2) * val_xv
+          a_SCS = a_SCS + polyfit(k2) * val_xv
           b_i = val_xv 
+          !write(*,*) "k2, polyfit", k2, polyfit(k2)
           !write(*,*) "a_SCS"
           !write(*,*) a_SCS
           !val_bv = val_xv
@@ -935,7 +956,7 @@ module vdw
           do c2 = 1, 3
             alpha_SCS_full(3*(i-1)+c2,c1) = dot_product(d_vec(c1,:),a_SCS(:,c2))
             if ( c1 == c2) then
-              alpha_SCS_full(3*(i-1)+c2,c1) = alpha_SCS_full(3*(i-1)+c2,c1) + polyfit(n_degree+1)
+              alpha_SCS_full(3*(i-1)+c2,c1) = alpha_SCS_full(3*(i-1)+c2,c1) + polyfit(1)
             end if
           end do
         end do
@@ -973,7 +994,10 @@ module vdw
         !alpha_SCS0(i,1) = alpha_SCS0(i,1)/3.d0
         
         !write(*,*) "alpha_SCS0"
+        if ( i == 1 ) then
+        write(*,*) "n_degree", n_degree
         write(*,*) i, alpha_SCS0(i,1)
+        end if
 
         deallocate( n_sub_neigh, sub_neighbors_list, xyz_H, rjs_H, r0_ii, neighbor_alpha0, T_func, &
                     B_mat, b_i, g_func, h_func, f_damp, a_vec, a_SCS, ipiv, ia, ja, val )
@@ -987,7 +1011,7 @@ module vdw
       k = 0
       do i = 1, n_sites
       
-        write(*,*) "Gradients for atom", i
+        !write(*,*) "Gradients for atom", i
 
         if ( do_timing ) then
         call cpu_time(time1)
@@ -1020,7 +1044,7 @@ module vdw
         !write(*,*) "i_to_p"
         !write(*,*) i_to_p
         n_sub_sites = p
-        write(*,*) "n_sub_sites", n_sub_sites
+        !write(*,*) "n_sub_sites", n_sub_sites
         n_sub_pairs = 0
         n_tot = sum(n_neigh(1:i))-n_neigh(i)
         allocate( n_sub_neigh(1:n_sub_sites) )
@@ -1536,7 +1560,7 @@ module vdw
             !end if            
 
             do c1 = 1, 3
-              dalpha_full(i,a,c3,1) = dalpha_full(i,a,c3,1) - polyfit(n_degree+1) * b_der(c1,c1) &
+              dalpha_full(i,a,c3,1) = dalpha_full(i,a,c3,1) - polyfit(1) * b_der(c1,c1) &
                                       - dot_product(b_der(:,c1), A_i(1:3*n_sub_sites,3*(i-1)+c1))
             end do
             dalpha_full(i,a,c3,1) = 1.d0/3.d0 * dalpha_full(i,a,c3,1)
@@ -2451,10 +2475,10 @@ module vdw
 
     end if ! local
 
-    write(*,*) "alpha_SCS:" !,  alpha_SCS0(1,1)
-    do p = 1, n_sites
-      write(*,*) p, alpha_SCS0(p,:)
-    end do
+    !write(*,*) "alpha_SCS:" !,  alpha_SCS0(1,1)
+    !do p = 1, n_sites
+    !  write(*,*) p, alpha_SCS0(p,:)
+    !end do
 
     if ( read_hirshfeld ) then
       write(*,*) "atom, alpha_SCS, C6_SCS:"
@@ -2476,12 +2500,12 @@ module vdw
       end do
     end if
 
-    if ( do_derivatives ) then
-      write(*,*) "dalpha_SCS w.r.t. atom 1 in x direction:"
-      do p = 1, n_sites
-        write(*,*) p, dalpha_full(p,1,1,1)
-      end do
-    end if
+    !if ( do_derivatives ) then
+    !  write(*,*) "dalpha_SCS w.r.t. atom 1 in x direction:"
+    !  do p = 1, n_sites
+    !    write(*,*) p, dalpha_full(p,1,1,1)
+    !  end do
+    !end if
 
     !deallocate( ia, ja, val )
 
