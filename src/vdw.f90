@@ -489,9 +489,9 @@ module vdw
     logical :: local = .true.
 
 !   DERIVATIVE TEST stuff:
-    !real*8 :: polyfit(1:4)
+    real*8 :: polyfit(1:4)
     !real*8 :: polyfit(1:9)
-    real*8 :: polyfit(1:16)
+    !real*8 :: polyfit(1:5)
     real*8, allocatable :: eigval(:) 
 
 !    PSBLAS stuff:
@@ -506,10 +506,6 @@ module vdw
     type(psb_dprec_type) :: prec
     character(len=20) :: ptype
 
-polyfit = (/ 385.2817801096765, -55777.83566111619, 4127549.667135566, -180025475.92576298, 5041269205.6078205, &
--95868751596.71606, 1285708929444.545, -12466576737395.455, 88704849805146.6, &
--465989594891260.1, 1802171697198277.0, -5062468268809594.0, 100394505796158820, &
--133158164876604320, 10594888282665030, -3822503725467252.0 /)
 
     !write(*,*) "neighbors_list"
     !write(*,*) neighbors_list
@@ -794,6 +790,29 @@ polyfit = (/ 385.2817801096765, -55777.83566111619, 4127549.667135566, -18002547
             end do
           end if
         end do
+
+        !if ( i == 1 ) then
+        !  call cpu_time(time1)
+        !  allocate( alpha_test(1:3*n_sub_sites,1:3) )
+        !  allocate( work_arr(1:12*n_sub_sites) )
+        !  alpha_test = 0.d0
+        !  write(*,*) "n_sub_sites", n_sub_sites
+        !  do p = 1, n_sub_sites
+        !    do c1 = 1, 3
+        !      alpha_test(3*(p-1)+c1,c1) = 1.d0
+        !    end do
+        !  end do
+        !  call dsysv('U', 3*n_sub_sites, 3, B_mat, 3*n_sub_sites, ipiv, alpha_test, 3*n_sub_sites, &
+        !              work_arr, 12*n_sub_sites, info)   
+        !  do p = 1, n_sub_sites
+        !    write(*,*) "i, alpha", p_to_i(p), 1.d0/3.d0 * (alpha_test(3*(p-1)+1,1) &
+        !               + alpha_test(3*(p-1)+2,2) + alpha_test(3*(p-1)+3,3))
+        !  end do
+        !  deallocate( alpha_test, work_arr )
+        !  call cpu_time(time2)
+        !  write(*,*) "dsysv timing", time2-time1
+        !end if
+
         
         !if ( i == 1 ) then
         !allocate( work_arr(1:12*n_sub_sites) )
@@ -855,12 +874,19 @@ polyfit = (/ 385.2817801096765, -55777.83566111619, 4127549.667135566, -18002547
         
         !polyfit = (/ 84.08246148,  -1338.28083377,   6787.98492226, -10607.58194954 /)
         
+        !polyfit = (/ 10.10959571,  -112.85725612,  1031.81772985, -4952.3578965, &
+        !           8753.70435394 /)
+
+        !polyfit = (/ 3.758815051071723e+01, -5.038466196237694e+02, 3.050524035914507e+03, &
+        !             -8.477575791121733e+03, 8.779056378876217e+03 /)
+
         !polyfit = (/ 2.12029873e+02, -1.35632077e+04,  3.81505690e+05, -5.61866155e+06, &
         !4.72926792e+07, -2.35489960e+08,  6.85252955e+08, -1.07601605e+09, &
         !7.03788232e+08 /)
 
 
-
+        polyfit = (/ 2.994512687772163e+01, -2.907761872594571e+02, 1.113198934383532e+03, &
+                    -1.454330688020761e+03 /)
 
 
         !polyfit = (/ 70.55762083d0, -1165.56417327d0, 6509.62160556d0, -11465.40348552d0 /)
@@ -994,10 +1020,10 @@ polyfit = (/ 385.2817801096765, -55777.83566111619, 4127549.667135566, -18002547
         !alpha_SCS0(i,1) = alpha_SCS0(i,1)/3.d0
         
         !write(*,*) "alpha_SCS0"
-        if ( i == 1 ) then
-        write(*,*) "n_degree", n_degree
+        !if ( i == 1 ) then
+        !write(*,*) "n_degree", n_degree
         write(*,*) i, alpha_SCS0(i,1)
-        end if
+        !end if
 
         deallocate( n_sub_neigh, sub_neighbors_list, xyz_H, rjs_H, r0_ii, neighbor_alpha0, T_func, &
                     B_mat, b_i, g_func, h_func, f_damp, a_vec, a_SCS, ipiv, ia, ja, val )
@@ -1800,6 +1826,36 @@ polyfit = (/ 385.2817801096765, -55777.83566111619, 4127549.667135566, -18002547
           end if
         end do
       end do
+
+        if (om == 1) then
+        allocate( eigval(1:3*n_sites) )
+        call dsyev('n', 'u', 3*n_sites, B_mat, 3*n_sites, eigval, work_arr, 12*n_sites, info)
+        !write(*,*) "i, min eig", i, minval(eigval)
+        open(unit=79, file="eigs_aC.dat", status="new")
+        write(*,*) "B_mat eigenvalues"
+        write(79,*) eigval
+        close(79)
+        deallocate( eigval)
+        end if
+
+
+          allocate( alpha_test(1:3*n_sites,1:3) )
+          alpha_test = 0.d0
+          write(*,*) "n_sub_sites", n_sub_sites
+          do p = 1, n_sites
+            do c1 = 1, 3
+              alpha_test(3*(p-1)+c1,c1) = 1.d0
+            end do
+          end do
+          call dsysv('U', 3*n_sites, 3, B_mat, 3*n_sites, ipiv, alpha_test, 3*n_sites, &
+                      work_arr, 12*n_sites, info)
+          do p = 1, n_sites
+            write(*,*) "i, alpha", p, 1.d0/3.d0 * (alpha_test(3*(p-1)+1,1) &
+                       + alpha_test(3*(p-1)+2,2) + alpha_test(3*(p-1)+3,3))
+          end do
+          deallocate( alpha_test )
+
+      
 
       !allocate( eigval(1:3*n_sites) )
 
