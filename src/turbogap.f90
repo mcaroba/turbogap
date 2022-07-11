@@ -1185,6 +1185,7 @@ program turbogap
           allocate( r0_scs(1:j_end-j_beg+1) )
           allocate( alpha0_scs(1:j_end-j_beg+1) )
 call cpu_time(time2)
+          write(*,*) "SCS calculation starts here"
           call get_scs_polarizabilities( hirshfeld_v(i_beg:i_end), hirshfeld_v_cart_der(1:3, j_beg:j_end), &
                                          n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
                                          neighbor_species(j_beg:j_end), &

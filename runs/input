@@ -32,7 +32,7 @@ vdw_r0_ref = 1.900 !1.64
 vdw_alpha0_ref = 1.778 !0.667
 vdw_c6_ref = 27.8 !3.88
 vdw_scs_rcut = 3.
-vdw_mbd_nfreq = 10
+vdw_mbd_nfreq = 1
 vdw_mbd_grad = .true.
 !vdw_mbd_grad = .false.
 
