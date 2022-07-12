@@ -489,8 +489,8 @@ module vdw
     logical :: local = .true.
 
 !   DERIVATIVE TEST stuff:
-    real*8 :: polyfit(1:4)
-    !real*8 :: polyfit(1:9)
+    !real*8 :: polyfit(1:4)
+    real*8 :: polyfit(1:9)
     !real*8 :: polyfit(1:5)
     real*8, allocatable :: eigval(:) 
 
@@ -562,7 +562,9 @@ module vdw
     
 !   LOCAL TEST:
     if ( local ) then
-    
+      
+      !open(unit=69, file="alpha_SCS_local_inv.dat", status="new")
+      !open(unit=79, file="alpha_SCS_local_pol.dat", status="new")
       !write(*,*) "hirshfeld_v"
       !do i = 1, n_sites
       !  write(*,*) hirshfeld_v(i), ", &"
@@ -573,7 +575,7 @@ module vdw
       !allocate( sigma_i(1:n_sites) )
       !allocate( alpha_i(1:n_sites) )
       allocate( alpha_SCS_full(1:3*n_sites,1:3) )
-      write(*,*) "test 1"
+      !write(*,*) "test 1"
       if ( do_derivatives ) then
         dalpha_full = 0.d0
         !allocate( hirshfeld_v_cart_der_H(1:3,1:n_pairs) )
@@ -581,7 +583,7 @@ module vdw
         !  hirshfeld_v_cart_der_H(:,k) = hirshfeld_v_cart_der(:,k)*Bohr
         !end do
       end if
-      write(*,*) "test 2"
+      !write(*,*) "test 2"
       !write(*,*) "hirshfeld der"
       !do p = 1, n_neigh(1)
       !  write(*,*) neighbors_list(p), hirshfeld_v_cart_der_H(1,p)
@@ -606,16 +608,17 @@ module vdw
       allocate( p_to_i(1:n_max) )
       allocate( i_to_p(1:n_max) )
       allocate( A_i(1:3*n_sites,1:3*n_sites) )
-      write(*,*) "test 3"
+      !write(*,*) "test 3"
       if ( do_derivatives .and. do_hirshfeld_gradients ) then
         allocate( in_force_cutoff(1:n_max) )
       end if
-      write(*,*) "test 4"
+      !write(*,*) "test 4"
       A_i = 0.d0 ! This is a temporary solution to store a_SCS's for each atom
 
       k = 0
       do i = 1, n_sites
       
+        write(*,*) i, "/", n_sites
         p_to_i = 0
         i_to_p = 0
         in_cutoff = .false.
@@ -628,8 +631,8 @@ module vdw
           k = k+1
           !write(*,*) "k", k
           j = neighbors_list(k)
-          if (rjs(k) < n_degree * rcut) then
-          !if (rjs(k) < 3*rcut) then
+          !if (rjs(k) < n_degree * rcut) then
+          if (rjs(k) < 2*rcut) then
             in_cutoff(j) = .true.
             p = p+1
             p_to_i(p) = j
@@ -682,7 +685,7 @@ module vdw
         allocate( neighbor_alpha0(1:n_sub_pairs) )
         allocate( neighbor_sigma(1:n_sub_pairs) )
         allocate( T_func(1:9*n_sub_pairs) )
-        !allocate( B_mat(1:3*n_sub_sites,1:3*n_sub_sites) )
+        allocate( B_mat(1:3*n_sub_sites,1:3*n_sub_sites) )
         allocate( f_damp(1:n_sub_pairs) )
         allocate( g_func(1:n_sub_pairs) )
         allocate( h_func(1:9*n_sub_pairs) )
@@ -704,7 +707,7 @@ module vdw
         nnz = 0
         k2 = 0
         T_func = 0.d0
-        !B_mat = 0.d0
+        B_mat = 0.d0
         b_i = 0.d0
         !do p = 1, n_sub_sites
         !  do c1 = 1, 3
@@ -742,7 +745,7 @@ module vdw
               end do
             end if
             do c1 = 1, 3
-              !B_mat(3*(p-1)+c1,3*(p-1)+c1) = 1.d0/neighbor_alpha0(k2)
+              B_mat(3*(p-1)+c1,3*(p-1)+c1) = 1.d0/neighbor_alpha0(k2)
               nnz = nnz+1
               ia(nnz) = 3*(p-1)+c1
               ja(nnz) = 3*(p-1)+c1
@@ -786,8 +789,8 @@ module vdw
                       end if
                       h_func(k3) = 4.d0/sqrt(pi) * (rjs_H(k2)/sigma_ij)**3 * &
                                       xyz_H(c1,k2)*xyz_H(c2,k2)/rjs_H(k2)**5 * exp(-rjs_H(k2)**2/sigma_ij**2)
-                      !B_mat(3*(p-1)+c1,3*(q-1)+c2) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
-                      !                            g_func(k2) + h_func(k3))
+                      B_mat(3*(p-1)+c1,3*(q-1)+c2) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
+                                                  g_func(k2) + h_func(k3))
                       if ( p == 1 ) then
                         b_i(3*(q-1)+c2,c1) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
                                                   g_func(k2) + h_func(k3))
@@ -805,27 +808,23 @@ module vdw
           end if
         end do
 
-        !if ( i == 1 ) then
-        !  call cpu_time(time1)
-        !  allocate( alpha_test(1:3*n_sub_sites,1:3) )
-        !  allocate( work_arr(1:12*n_sub_sites) )
-        !  alpha_test = 0.d0
-        !  write(*,*) "n_sub_sites", n_sub_sites
-        !  do p = 1, n_sub_sites
-        !    do c1 = 1, 3
-        !      alpha_test(3*(p-1)+c1,c1) = 1.d0
-        !    end do
-        !  end do
-        !  call dsysv('U', 3*n_sub_sites, 3, B_mat, 3*n_sub_sites, ipiv, alpha_test, 3*n_sub_sites, &
-        !              work_arr, 12*n_sub_sites, info)   
-        !  do p = 1, n_sub_sites
-        !    write(*,*) "i, alpha", p_to_i(p), 1.d0/3.d0 * (alpha_test(3*(p-1)+1,1) &
-        !               + alpha_test(3*(p-1)+2,2) + alpha_test(3*(p-1)+3,3))
-        !  end do
-        !  deallocate( alpha_test, work_arr )
-        !  call cpu_time(time2)
-        !  write(*,*) "dsysv timing", time2-time1
-        !end if
+          !call cpu_time(time1)
+          allocate( alpha_test(1:3*n_sub_sites,1:3) )
+          allocate( work_arr(1:12*n_sub_sites) )
+          alpha_test = 0.d0
+          !write(*,*) "n_sub_sites", n_sub_sites
+          do p = 1, n_sub_sites
+            do c1 = 1, 3
+              alpha_test(3*(p-1)+c1,c1) = 1.d0
+            end do
+          end do
+          call dsysv('U', 3*n_sub_sites, 3, B_mat, 3*n_sub_sites, ipiv, alpha_test, 3*n_sub_sites, &
+                      work_arr, 12*n_sub_sites, info)   
+            write(*,*) p_to_i(1), 1.d0/3.d0 * (alpha_test(1,1) &
+                       + alpha_test(2,2) + alpha_test(3,3))
+          deallocate( alpha_test, work_arr )
+          call cpu_time(time2)
+          !write(*,*) "dsysv timing", time2-time1
 
         
         !if ( i == 1 ) then
@@ -910,8 +909,12 @@ module vdw
         !7.03788232e+08 /)
 
 
-        polyfit = (/ 2.994512687772163e+01, -2.907761872594571e+02, 1.113198934383532e+03, &
-                    -1.454330688020761e+03 /)
+         polyfit = (/ 1.635129814687002e+02, -9.514311673161255e+03, 2.673453078422191e+05, &
+         -4.144083327933860e+06, 3.785670447085521e+07, &
+         -2.085444365507566e+08, 6.798867503738488e+08, -1.206533236274752e+09, 8.974206800841812e+08 /)
+
+        !polyfit = (/ 2.994512687772163e+01, -2.907761872594571e+02, 1.113198934383532e+03, &
+        !            -1.454330688020761e+03 /)
 
 
         !polyfit = (/ 70.55762083d0, -1165.56417327d0, 6509.62160556d0, -11465.40348552d0 /)
@@ -932,7 +935,7 @@ module vdw
 
         !polyfit = (/ -11465.40348552d0, 6509.62160556d0, -1165.56417327d0, 70.55762083d0 /)
 
-
+!call cpu_time(time1)
         allocate( val_xv(1:3*n_sub_sites,1:3) )
         allocate( val_bv(1:3*n_sub_sites,1:3) )
         allocate( myidx(1:3*n_sub_sites) )
@@ -1019,6 +1022,8 @@ module vdw
         alpha_SCS0(i,1) = alpha_SCS0(i,1)/3.d0
         deallocate( val_xv, val_bv, myidx, d_vec )
         
+!call cpu_time(time2)
+!write(*,*) "polynomial timing", time2-time1
         A_i(1:3*n_sub_sites,3*(i-1)+1:3*(i-1)+3) = a_SCS
 
         call cpu_time(time2)
@@ -1052,10 +1057,19 @@ module vdw
 
         deallocate( n_sub_neigh, sub_neighbors_list, xyz_H, rjs_H, r0_ii, neighbor_alpha0, neighbor_sigma, T_func, &
                     b_i, g_func, h_func, f_damp, a_SCS, ipiv, ia, ja, val )
-        !deallocate( B_mat)
+        deallocate( B_mat)
                    
       end do
       
+      !close(69)
+      !close(79)
+      !write(*,*) "Writing polarizabilities"
+      !open(unit=69, file="alpha_SCS_polynomial.dat", status="new")
+      !do i = 1, n_sites
+      !  write(69,*) alpha_SCS0(i,1)
+      !end do
+      !close(69)
+
       ! Next we do the force calculation separately after having calculated A_i and alpha_SCS0 for all atoms first.
       ! We should have alpha_SCS0 and A_i stored now.
       ! We only need dB/dr for each atom within the MBD cut-off of atom i.
@@ -1081,8 +1095,8 @@ module vdw
           k = k+1
           !write(*,*) "k", k
           j = neighbors_list(k)
-          if (rjs(k) < n_degree * rcut) then !CUT-OFF TEST!!!!
-          !if (rjs(k) < 3 * rcut) then
+          !if (rjs(k) < n_degree * rcut) then !CUT-OFF TEST!!!!
+          if (rjs(k) < 2 * rcut) then
             in_cutoff(j) = .true.
             p = p+1
             p_to_i(p) = j
@@ -1425,7 +1439,8 @@ module vdw
               do j2 = 1, n_neigh(a)
                 k3 = k3+1
                 j = neighbors_list(k3)
-                if (rjs(k3) < n_degree * rcut) then !CUT-OFF TEST!!!!
+                !if (rjs(k3) < n_degree * rcut) then !CUT-OFF TEST!!!!
+                if (rjs(k3) < 2 * rcut ) then
                   in_force_cutoff(j) = .true.
                 end if
               end do
@@ -1866,21 +1881,21 @@ module vdw
         end do
       end do
 
-        if (om == 1) then
-        allocate( eigval(1:3*n_sites) )
-        call dsyev('n', 'u', 3*n_sites, B_mat, 3*n_sites, eigval, work_arr, 12*n_sites, info)
+        !if (om == 1) then
+        !allocate( eigval(1:3*n_sites) )
+        !call dsyev('n', 'u', 3*n_sites, B_mat, 3*n_sites, eigval, work_arr, 12*n_sites, info)
         !write(*,*) "i, min eig", i, minval(eigval)
-        open(unit=79, file="eigs_aC.dat", status="new")
-        write(*,*) "B_mat eigenvalues"
-        write(79,*) eigval
-        close(79)
-        deallocate( eigval)
-        end if
+        !open(unit=79, file="eigs_aC.dat", status="new")
+        !write(*,*) "B_mat eigenvalues"
+        !write(79,*) eigval
+        !close(79)
+        !deallocate( eigval)
+        !end if
 
 
           allocate( alpha_test(1:3*n_sites,1:3) )
           alpha_test = 0.d0
-          write(*,*) "n_sub_sites", n_sub_sites
+          !write(*,*) "n_sub_sites", n_sub_sites
           do p = 1, n_sites
             do c1 = 1, 3
               alpha_test(3*(p-1)+c1,c1) = 1.d0
@@ -1889,7 +1904,7 @@ module vdw
           call dsysv('U', 3*n_sites, 3, B_mat, 3*n_sites, ipiv, alpha_test, 3*n_sites, &
                       work_arr, 12*n_sites, info)
           do p = 1, n_sites
-            write(*,*) "i, alpha", p, 1.d0/3.d0 * (alpha_test(3*(p-1)+1,1) &
+            write(*,*) p, 1.d0/3.d0 * (alpha_test(3*(p-1)+1,1) &
                        + alpha_test(3*(p-1)+2,2) + alpha_test(3*(p-1)+3,3))
           end do
           deallocate( alpha_test )
