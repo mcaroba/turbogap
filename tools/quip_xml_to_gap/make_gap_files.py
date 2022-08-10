@@ -171,6 +171,8 @@ def write_descriptor_to_output(output_file, gpCoordinates, index):
                 output.write('file_compress_soap = "gap_files/' + f"{desc_dict['compress_file']}" + '"\n')
                 # copy the compression file to gap_files/
                 shutil.copyfile(desc_dict['compress_file'], f"gap_files/{desc_dict['compress_file']}")
+            if 'compress_mode' in desc_dict:
+                output.write('compress_mode = ' + '"' + desc_dict['compress_mode'] + '"\n')
             if descriptor_counts['hirshfeld'] > 0:
                 # find right Hirshfeld descriptor (if any)
                 for index_hirsh, gpc in enumerate(hirshfeld_soup.find_all('gpCoordinates')):
