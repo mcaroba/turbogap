@@ -2,12 +2,12 @@
 ! HND X
 ! HND X   TurboGAP
 ! HND X
-! HND X   TurboGAP is copyright (c) 2019-2021, Miguel A. Caro and others
+! HND X   TurboGAP is copyright (c) 2019-2022, Miguel A. Caro and others
 ! HND X
 ! HND X   TurboGAP is published and distributed under the
 ! HND X      Academic Software License v1.0 (ASL)
 ! HND X
-! HND X   This file, neighbors.f90, is copyright (c) 2019-2021, Miguel A. Caro
+! HND X   This file, neighbors.f90, is copyright (c) 2019-2022, Miguel A. Caro
 ! HND X
 ! HND X   TurboGAP is distributed in the hope that it will be useful for non-commercial
 ! HND X   academic research, but WITHOUT ANY WARRANTY; without even the implied
@@ -131,6 +131,7 @@ module neighbors
       d = dsqrt( dot_product(dist,dist) )
     else
       write(*,*) "Sorry, non-orthorhombic unit cells only work in combination with full PBC"
+      stop
     end if
 
   return
@@ -146,7 +147,7 @@ module neighbors
 !**************************************************************************
 !
 ! This subroutine returns the number of primitive unit cells required to
-! construct a supercell whose unit cell places are at least 2*rcut apart.
+! construct a supercell whose unit cell's planes are at least 2*rcut apart.
 ! This construct allows us to search for all the neighbors within the given
 ! cutoff. indices(1:3) tell the user how many repetitions are required to
 ! construct a unit cell with the properties outlined above. (1,1,1) means
@@ -170,7 +171,7 @@ module neighbors
     bxc = cross_product(b, c)
     bxc = bxc / dsqrt( dot_product(bxc, bxc) )
 
-!   We construct our matrix to get the MIC only if the lattice vectors have changed
+!   Matrix elements
     mat(1,1) = dot_product(axb, a)
     mat(1,2) = dot_product(axb, b)
     mat(1,3) = dot_product(axb, c)
@@ -263,7 +264,7 @@ module neighbors
 !    if( a_box(2) == 0.d0 .and. a_box(3) == 0.d0 .and. b_box(1) == 0.d0 .and. &
 !        b_box(3) == 0.d0 .and. c_box(1) == 0.d0 .and. c_box(2) == 0.d0 )then
 !        .and. size(positions,2) == n_sites )then
-!   This assumes that if the non-diagonal components of the lattice vectors are zero,
+!   This assumes that if the non-diagonal components of the lattice vectors are approximately zero,
 !   it is due to numerical noise, and thus the box is square
     if( dabs(a_box(2)) < d_tol .and. dabs(a_box(3)) < d_tol .and. &
         dabs(b_box(1)) < d_tol .and. dabs(b_box(3)) < d_tol .and. &
@@ -635,6 +636,80 @@ module neighbors
     return
 
   end subroutine
+!**************************************************************************
+
+
+
+
+
+!**************************************************************************
+!
+! This subroutine returns the fractional coordinates from a list of
+! Cartesian positions. This subroutine does NOT carry out unit cell
+! wrapping. Wrapped Cartesian coordinates should be provided if wrapped
+! fractional coordinates are wanted.
+!
+  subroutine get_fractional_coordinates(pos, a, b, c, frac)
+
+    implicit none
+
+!   Input variables
+    real*8, intent(in) :: pos(:,:), a(1:3), b(1:3), c(1:3)
+!   Output variables
+    real*8, intent(out) :: frac(1:3,1:size(pos,2))
+!   Internal variables
+    real*8 :: L(1:3), d_tol = 1.d-6
+    real*8 :: mat(1:3,1:3), md
+    real*8, save :: a0(1:3) = 0.d0, b0(1:3) = 0.d0, c0(1:3) = 0.d0, mat_inv(1:3,1:3) = 0.d0
+    integer :: i, atom, n_atoms
+    logical :: lattice_check_a(1:3), lattice_check_b(1:3), lattice_check_c(1:3)
+
+    n_atoms = size(pos, 2)
+
+    if( dabs(a(2)) < d_tol .and. dabs(a(3)) < d_tol .and. &
+        dabs(b(1)) < d_tol .and. dabs(b(3)) < d_tol .and. &
+        dabs(c(1)) < d_tol .and. dabs(c(2)) < d_tol )then
+!     Fast solution for orthorhombic cells
+      L = (/ a(1), b(2), c(3) /)
+      do atom = 1, n_atoms
+        do i = 1, 3
+          frac(i, atom) = pos(i, atom) / L(i)
+        end do
+      end do
+    else
+!     Slow solution for other unit cells
+      lattice_check_a = ( a /= a0 )
+      lattice_check_b = ( b /= b0 )
+      lattice_check_c = ( c /= c0 )
+      if( any(lattice_check_a) .or. any(lattice_check_b) .or. any(lattice_check_c) )then
+        a0 = a
+        b0 = b
+        c0 = c
+!       We construct our matrix to get the MIC only if the lattice vectors have changed
+        mat(1:3,1) = a(1:3)
+        mat(1:3,2) = b(1:3)
+        mat(1:3,3) = c(1:3)
+!       We compute the inverse of this matrix analytically
+        md = -mat(1,3)*mat(3,1)*mat(2,2) + mat(2,1)*mat(1,3)*mat(3,2) + mat(1,2)*mat(3,1)*mat(2,3) - mat(1,1)*mat(2,3)*mat(3,2) &
+             - mat(1,2)*mat(2,1)*mat(3,3) + mat(1,1)*mat(2,2)*mat(3,3)
+        mat_inv(1,1) = mat(2,2)*mat(3,3) - mat(2,3)*mat(3,2)
+        mat_inv(1,2) = mat(1,3)*mat(3,2) - mat(1,2)*mat(3,3)
+        mat_inv(1,3) = mat(1,2)*mat(2,3) - mat(1,3)*mat(2,2)
+        mat_inv(2,1) = mat(2,3)*mat(3,1) - mat(2,1)*mat(3,3)
+        mat_inv(2,2) = mat(1,1)*mat(3,3) - mat(1,3)*mat(3,1)
+        mat_inv(2,3) = mat(1,3)*mat(2,1) - mat(1,1)*mat(2,3)
+        mat_inv(3,1) = mat(2,1)*mat(3,2) - mat(2,2)*mat(3,1)
+        mat_inv(3,2) = mat(1,2)*mat(3,1) - mat(1,1)*mat(3,2)
+        mat_inv(3,3) = mat(1,1)*mat(2,2) - mat(1,2)*mat(2,1)
+        mat_inv = mat_inv / md
+      end if
+      do atom = 1, n_atoms
+        frac(1:3, atom)  = matmul(mat_inv, pos(1:3, atom))
+      end do
+    end if
+
+    return
+  end subroutine get_fractional_coordinates
 !**************************************************************************
 
 

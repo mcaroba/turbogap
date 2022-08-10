@@ -2,12 +2,12 @@
 ! HND X
 ! HND X   TurboGAP
 ! HND X
-! HND X   TurboGAP is copyright (c) 2019-2021, Miguel A. Caro and others
+! HND X   TurboGAP is copyright (c) 2019-2022, Miguel A. Caro and others
 ! HND X
 ! HND X   TurboGAP is published and distributed under the
 ! HND X      Academic Software License v1.0 (ASL)
 ! HND X
-! HND X   This file, turbogap.f90, is copyright (c) 2019-2021, Miguel A. Caro
+! HND X   This file, turbogap.f90, is copyright (c) 2019-2022, Miguel A. Caro
 ! HND X
 ! HND X   TurboGAP is distributed in the hope that it will be useful for non-commercial
 ! HND X   academic research, but WITHOUT ANY WARRANTY; without even the implied
@@ -51,7 +51,7 @@ program turbogap
 !
   real*8, allocatable :: rjs(:), thetas(:), phis(:), xyz(:,:), sph_temp(:), sph_temp3(:,:)
   real*8, allocatable :: positions(:,:), positions_prev(:,:), soap(:,:), soap_cart_der(:,:,:), &
-                         positions_diff(:,:), forces_prev(:,:)
+                         positions_diff(:,:), forces_prev(:,:), frac_positions(:,:)
   real*8 :: rcut_max, a_box(1:3), b_box(1:3), c_box(1:3), max_displacement, energy, energy_prev
   real*8 :: virial(1:3, 1:3), this_virial(1:3, 1:3), virial_soap(1:3, 1:3), virial_2b(1:3, 1:3), &
             virial_3b(1:3,1:3), virial_core_pot(1:3, 1:3), virial_vdw(1:3, 1:3), &
@@ -215,20 +215,14 @@ program turbogap
   write(*,*)'                                                                 |'
   write(*,*)'Contributors (code and methodology) in chronological order:      |'
   write(*,*)'                                                                 |'
-  write(*,*)'*) Miguel A. Caro (Aalto University)                             |'
-  write(*,*)'*) Patricia Hernández-León (Aalto University)                    |'
-  write(*,*)'*) Suresh Kondati Natarajan (now @ QuantumWise, formerly @ Aalto)|'
-  write(*,*)'*) Albert P. Bartók-Pártay (Warwick University)                  |'
-  write(*,*)'*) Eelis V. Mielonen (now @ EPFL, formerly @ Aalto)              |'
-  write(*,*)'*) Heikki Muhli (Aalto University)                               |'
-  write(*,*)'*) Mikhail Kuklin (Aalto University)                             |'
-  write(*,*)'*) Gábor Csányi (University of Cambridge)                        |'
-  write(*,*)'*) Jan Kloppenburg (Aalto University)                            |'
-  write(*,*)'*) Richard Jana (Aalto University)                               |'
+  write(*,*)'Miguel A. Caro, Patricia Hernández-León, Suresh Kondati          |'
+  write(*,*)'Natarajan, Albert P. Bartók-Pártay, Eelis V. Mielonen, Heikki    |'
+  write(*,*)'Muhli, Mikhail Kuklin, Gábor Csányi, Jan Kloppenburg, Richard    |'
+  write(*,*)'Jana                                                             |'
   write(*,*)'                                                                 |'
   write(*,*)'.................................................................|'
   write(*,*)'                                                                 |'
-  write(*,*)'                     Last updated: Mar. 2022                     |'
+  write(*,*)'                     Last updated: Jul. 2022                     |'
   write(*,*)'                                        _________________________/'
   write(*,*)'.......................................|'
 #ifdef _MPIF90
@@ -695,7 +689,7 @@ program turbogap
                     n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
                     positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
                     xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
-                    n_sites, .false., fix_atom )
+                    n_sites, .false., fix_atom, params%t_beg, params%write_array_property(6) )
 !     Only rank 0 handles these variables
 !      allocate( positions_prev(1:3, 1:size(positions,2)) )
 !      allocate( positions_diff(1:3, 1:size(positions,2)) )
@@ -737,7 +731,7 @@ program turbogap
                     n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
                     positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
                     xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
-                    n_sites, .false., fix_atom )
+                    n_sites, .false., fix_atom, params%t_beg, params%write_array_property(6) )
 #ifdef _MPIF90
       END IF
 #endif
@@ -821,7 +815,7 @@ program turbogap
                     n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
                     positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
                     xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
-                    n_sites, .true., fix_atom )
+                    n_sites, .true., fix_atom, params%t_beg, params%write_array_property(6) )
     end if
 
 #ifdef _MPIF90
@@ -1596,7 +1590,7 @@ end if
                            a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
                            virial, xyz_species, &
                            positions_prev(1:3, 1:n_sites), velocities, &
-                           forces, energies(1:n_sites), masses/103.6426965268d0, hirshfeld_v, &
+                           forces, energies(1:n_sites), masses, hirshfeld_v, &
                            params%write_property, params%write_array_property, fix_atom(1:3, 1:n_sites) )
       end if
 !

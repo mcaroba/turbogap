@@ -138,7 +138,10 @@ def write_descriptor_to_output(output_file, gpCoordinates, index):
             for z in desc_dict['species_Z'].strip('{}').split():
                 output.write(f" {elements[int(z)]}")
             output.write("\n")
-            output.write(f"central_species = {desc_dict['central_index']}\n")
+            try:
+                output.write(f"central_species = {desc_dict['central_index']}\n")
+            except:
+                output.write(f"central_species = 1\n")
             output.write("rcut =")
             for i in range(int(desc_dict['n_species'])):
                 output.write(f" {desc_dict['rcut_hard']}")
