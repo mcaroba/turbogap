@@ -474,7 +474,7 @@ module vdw
     real*8 :: time1, time2, this_force(1:3), Bohr, Hartree, &
               omega, pi, integral, E_MBD, R_vdW_ij, R_vdW_SCS_ij, S_vdW_ij, dS_vdW_ij, exp_term, &
               rcut_vdw, r_vdw_i, r_vdw_j, dist, f_damp_SCS_ij, t1, t2, &
-              reg_param, sigma_ij, coeff_h_der, dg, dh, s_i, s_j, terms
+              reg_param, sigma_ij, coeff_h_der, dg, dh, s_i, s_j, terms, omega_ref
     integer, allocatable :: ipiv(:)
     integer :: n_sites, n_pairs, n_species, n_sites0, info, n_order, n_freq, om, n_tot
     integer :: i, i2, j, j2, j3, k, k2, k3, k4, a, a2, c1, c2, c3, lwork, b, p, q, r, n_count, n_max
@@ -486,11 +486,11 @@ module vdw
     integer, allocatable :: p_to_i(:), i_to_p(:), sub_neighbors_list(:), n_sub_neigh(:)
     logical, allocatable :: in_cutoff(:), in_force_cutoff(:)
     integer :: n_sub_sites, n_sub_pairs, n_tot2, s, n_degree
-    logical :: local = .true.
+    logical :: local = .false.
 
 !   DERIVATIVE TEST stuff:
     !real*8 :: polyfit(1:4)
-    real*8 :: polyfit(1:9)
+    real*8 :: polyfit(1:11)
     !real*8 :: polyfit(1:5)
     real*8, allocatable :: eigval(:) 
 
@@ -506,6 +506,8 @@ module vdw
     type(psb_dprec_type) :: prec
     character(len=20) :: ptype
 
+
+    !write(*,*) "c6_ref, alpha0_ref", c6_ref, alpha0_ref
 
     !write(*,*) "neighbors_list"
     !write(*,*) neighbors_list
@@ -553,6 +555,7 @@ module vdw
 !   Hartree units (calculations done in Hartree units for simplicity)
     Bohr = 0.5291772105638411
     Hartree = 27.211386024367243
+    omega_ref = (4.d0 * c6_ref(1)/(Hartree*Bohr**6)) / (3.d0*(alpha0_ref(1)/Bohr**3)**2)
     pi = acos(-1.d0)
 
 !   This should allow to only take a subset of atoms for parallelization:
@@ -616,8 +619,8 @@ module vdw
       A_i = 0.d0 ! This is a temporary solution to store a_SCS's for each atom
 
       k = 0
-      do i = 1, n_sites
-      
+      do i = 1, n_sites      
+
         write(*,*) i, "/", n_sites
         p_to_i = 0
         i_to_p = 0
@@ -685,7 +688,7 @@ module vdw
         allocate( neighbor_alpha0(1:n_sub_pairs) )
         allocate( neighbor_sigma(1:n_sub_pairs) )
         allocate( T_func(1:9*n_sub_pairs) )
-        allocate( B_mat(1:3*n_sub_sites,1:3*n_sub_sites) )
+        !allocate( B_mat(1:3*n_sub_sites,1:3*n_sub_sites) )
         allocate( f_damp(1:n_sub_pairs) )
         allocate( g_func(1:n_sub_pairs) )
         allocate( h_func(1:9*n_sub_pairs) )
@@ -699,6 +702,13 @@ module vdw
         allocate( b_i(1:3*n_sub_sites,1:3) )
         
         !write(*,*) "allocation successful"
+        do om = 1, 2
+
+        xyz_H = 0.d0
+        rjs_H = 0.d0
+        r0_ii = 0.d0
+        neighbor_alpha0 = 0.d0
+        neighbor_sigma = 0.d0
 
         f_damp = 0.d0
         g_func = 0.d0
@@ -707,7 +717,9 @@ module vdw
         nnz = 0
         k2 = 0
         T_func = 0.d0
-        B_mat = 0.d0
+        !B_mat = 0.d0
+
+        a_SCS = 0.d0
         b_i = 0.d0
         !do p = 1, n_sub_sites
         !  do c1 = 1, 3
@@ -724,6 +736,7 @@ module vdw
         !n_sub_neigh = 0
         !do j2 = 1, n_neigh(i)
         !  i2 = modulo(neighbors_list(n_tot+j2)-1,n_sites)+1
+
         do p = 1, n_sub_sites
           i2 = p_to_i(p)
           if ( in_cutoff(i2) ) then 
@@ -733,7 +746,11 @@ module vdw
             sub_neighbors_list(k2) = i2
             !n_sub_neigh(j2) = n_sub_neigh(i2) + 1
             r0_ii(k2) = r0_ref(s) / Bohr * hirshfeld_v_neigh(n_tot2+1)**(1.d0/3.d0)
-            neighbor_alpha0(k2) = alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot2+1)
+            if ( om == 1 ) then
+              neighbor_alpha0(k2) = alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot2+1)
+            else
+              neighbor_alpha0(k2) = (alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot2+1)) / 2.d0 ! omega = omega_p
+            end if
             neighbor_sigma(k2) = (sqrt(2.d0/pi) * neighbor_alpha0(k2)/3.d0)**(1.d0/3.d0)
             xyz_H(:,k2) = xyz(:,n_tot2+1)/Bohr
             rjs_H(k2) = rjs(n_tot2+1)/Bohr
@@ -745,7 +762,7 @@ module vdw
               end do
             end if
             do c1 = 1, 3
-              B_mat(3*(p-1)+c1,3*(p-1)+c1) = 1.d0/neighbor_alpha0(k2)
+              !B_mat(3*(p-1)+c1,3*(p-1)+c1) = 1.d0/neighbor_alpha0(k2)
               nnz = nnz+1
               ia(nnz) = 3*(p-1)+c1
               ja(nnz) = 3*(p-1)+c1
@@ -763,7 +780,11 @@ module vdw
                   !j = neighbors_list(n_tot2+j3)
                   sub_neighbors_list(k2) = j                        
                   r0_ii(k2) = r0_ref(s) / Bohr * hirshfeld_v_neigh(n_tot2+j3)**(1.d0/3.d0)
-                  neighbor_alpha0(k2) = alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot2+j3)
+                  if ( om == 1 ) then
+                    neighbor_alpha0(k2) = alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot2+j3)
+                  else
+                    neighbor_alpha0(k2) = (alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot2+j3)) / 2.d0 ! omega = omega_p
+                  end if
                   neighbor_sigma(k2) = (sqrt(2.d0/pi) * neighbor_alpha0(k2)/3.d0)**(1.d0/3.d0)
                   xyz_H(:,k2) = xyz(:,n_tot2+j3)/Bohr
                   rjs_H(k2) = rjs(n_tot2+j3)/Bohr
@@ -789,8 +810,8 @@ module vdw
                       end if
                       h_func(k3) = 4.d0/sqrt(pi) * (rjs_H(k2)/sigma_ij)**3 * &
                                       xyz_H(c1,k2)*xyz_H(c2,k2)/rjs_H(k2)**5 * exp(-rjs_H(k2)**2/sigma_ij**2)
-                      B_mat(3*(p-1)+c1,3*(q-1)+c2) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
-                                                  g_func(k2) + h_func(k3))
+                      !B_mat(3*(p-1)+c1,3*(q-1)+c2) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
+                      !                            g_func(k2) + h_func(k3))
                       if ( p == 1 ) then
                         b_i(3*(q-1)+c2,c1) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
                                                   g_func(k2) + h_func(k3))
@@ -809,21 +830,21 @@ module vdw
         end do
 
           !call cpu_time(time1)
-          allocate( alpha_test(1:3*n_sub_sites,1:3) )
-          allocate( work_arr(1:12*n_sub_sites) )
-          alpha_test = 0.d0
+          !allocate( alpha_test(1:3*n_sub_sites,1:3) )
+          !allocate( work_arr(1:12*n_sub_sites) )
+          !alpha_test = 0.d0
           !write(*,*) "n_sub_sites", n_sub_sites
-          do p = 1, n_sub_sites
-            do c1 = 1, 3
-              alpha_test(3*(p-1)+c1,c1) = 1.d0
-            end do
-          end do
-          call dsysv('U', 3*n_sub_sites, 3, B_mat, 3*n_sub_sites, ipiv, alpha_test, 3*n_sub_sites, &
-                      work_arr, 12*n_sub_sites, info)   
-            write(*,*) p_to_i(1), 1.d0/3.d0 * (alpha_test(1,1) &
-                       + alpha_test(2,2) + alpha_test(3,3))
-          deallocate( alpha_test, work_arr )
-          call cpu_time(time2)
+          !do p = 1, n_sub_sites
+          !  do c1 = 1, 3
+          !    alpha_test(3*(p-1)+c1,c1) = 1.d0
+          !  end do
+          !end do
+          !call dsysv('U', 3*n_sub_sites, 3, B_mat, 3*n_sub_sites, ipiv, alpha_test, 3*n_sub_sites, &
+          !            work_arr, 12*n_sub_sites, info)   
+          !  write(*,*) p_to_i(1), 1.d0/3.d0 * (alpha_test(1,1) &
+          !             + alpha_test(2,2) + alpha_test(3,3))
+          !deallocate( alpha_test, work_arr )
+          !call cpu_time(time2)
           !write(*,*) "dsysv timing", time2-time1
 
         
@@ -836,7 +857,8 @@ module vdw
         !end do
         !close(69)
         !call dsyev('v', 'u', 3*n_sub_sites, B_mat, 3*n_sub_sites, eigval, work_arr, 12*n_sub_sites, info)
-        !!write(*,*) "i, min eig", i, minval(eigval)
+        !write(*,*) "i, min eig", i, minval(eigval)
+        !write(*,*) "i, max eig", i, maxval(eigval)
         !  open(unit=79, file="eigs.dat", status="new")
         !  open(unit=89, file="eig_vec.dat", status="new")
         !  write(*,*) "B_mat eigenvalues"
@@ -909,9 +931,14 @@ module vdw
         !7.03788232e+08 /)
 
 
-         polyfit = (/ 1.635129814687002e+02, -9.514311673161255e+03, 2.673453078422191e+05, &
-         -4.144083327933860e+06, 3.785670447085521e+07, &
-         -2.085444365507566e+08, 6.798867503738488e+08, -1.206533236274752e+09, 8.974206800841812e+08 /)
+         polyfit = (/ 1.852410095984594e+02, -1.126081177187482e+04, 3.176118570899907e+05, &
+         -4.904320838862314e+06, 4.548037957602596e+07, &
+         -2.666898862162416e+08, 1.011621820718062e+09, -2.474317624682581e+09, 3.764893927440310e+09, &
+         -3.239938620264567e+09, 1.204250236388468e+09 /)
+
+        ! polyfit = (/ 1.635129814687002e+02, -9.514311673161255e+03, 2.673453078422191e+05, &
+        ! -4.144083327933860e+06, 3.785670447085521e+07, &
+        ! -2.085444365507566e+08, 6.798867503738488e+08, -1.206533236274752e+09, 8.974206800841812e+08 /)
 
         !polyfit = (/ 2.994512687772163e+01, -2.907761872594571e+02, 1.113198934383532e+03, &
         !            -1.454330688020761e+03 /)
@@ -1015,16 +1042,18 @@ module vdw
           end do
         end do
 
-        alpha_SCS0(i,1) = 0.d0
+        alpha_SCS0(i,om) = 0.d0
         do c1 = 1, 3
-          alpha_SCS0(i,1) = alpha_SCS0(i,1) + alpha_SCS_full(3*(i-1)+c1,c1)
+          alpha_SCS0(i,om) = alpha_SCS0(i,om) + alpha_SCS_full(3*(i-1)+c1,c1)
         end do
-        alpha_SCS0(i,1) = alpha_SCS0(i,1)/3.d0
+        alpha_SCS0(i,om) = alpha_SCS0(i,om)/3.d0
         deallocate( val_xv, val_bv, myidx, d_vec )
         
 !call cpu_time(time2)
 !write(*,*) "polynomial timing", time2-time1
-        A_i(1:3*n_sub_sites,3*(i-1)+1:3*(i-1)+3) = a_SCS
+        if ( om == 1 ) then
+          A_i(1:3*n_sub_sites,3*(i-1)+1:3*(i-1)+3) = a_SCS
+        end if
 
         call cpu_time(time2)
         !write(*,*) "Timing for PSBLAS", time2-time1
@@ -1052,12 +1081,18 @@ module vdw
         !write(*,*) "alpha_SCS0"
         !if ( i == 1 ) then
         !write(*,*) "n_degree", n_degree
-        write(*,*) i, alpha_SCS0(i,1)
+        write(*,*) i, om, alpha_SCS0(i,om)
         !end if
+        end do ! om
+
+        ! store omega_p for MBD calculation
+        alpha_SCS0(i,3) = omega_ref/sqrt(alpha_SCS0(i,1)/alpha_SCS0(i,2)-1.d0)
+
+        write(*,*) "omega_p", alpha_SCS0(i,3)
 
         deallocate( n_sub_neigh, sub_neighbors_list, xyz_H, rjs_H, r0_ii, neighbor_alpha0, neighbor_sigma, T_func, &
                     b_i, g_func, h_func, f_damp, a_SCS, ipiv, ia, ja, val )
-        deallocate( B_mat)
+       ! deallocate( B_mat)
                    
       end do
       
@@ -1074,6 +1109,7 @@ module vdw
       ! We should have alpha_SCS0 and A_i stored now.
       ! We only need dB/dr for each atom within the MBD cut-off of atom i.
       
+      if ( do_derivatives ) then
       k = 0
       do i = 1, n_sites
       
@@ -1238,7 +1274,7 @@ module vdw
         call cpu_time(time1)
         end if
         
-        if ( do_derivatives ) then
+        !if ( do_derivatives ) then
 
         allocate( dT(1:9*n_sub_pairs) )
         !allocate( dB_mat(1:3*n_sub_sites,1:3*n_sub_sites) )
@@ -1440,7 +1476,8 @@ module vdw
                 k3 = k3+1
                 j = neighbors_list(k3)
                 !if (rjs(k3) < n_degree * rcut) then !CUT-OFF TEST!!!!
-                if (rjs(k3) < 2 * rcut ) then
+                if ( rjs(k3) < 2 * rcut ) then
+                !if ( rjs(k3) < rcut ) then
                   in_force_cutoff(j) = .true.
                 end if
               end do
@@ -1657,7 +1694,7 @@ module vdw
         deallocate( dT, b_der, f_damp_der, g_func_der, h_func_der )
         !deallocate( dB_mat )
 
-        end if ! do_derivatives
+        !end if ! do_derivatives
 
 
         deallocate( n_sub_neigh, sub_neighbors_list, xyz_H, rjs_H, r0_ii, neighbor_alpha0, neighbor_sigma, T_func, &
@@ -1665,6 +1702,8 @@ module vdw
         !deallocate( B_mat )
                    
       end do
+
+      end if ! do_derivatives
       
       deallocate( alpha_SCS_full, in_cutoff, p_to_i, i_to_p, A_i, )
       !deallocate( alpha_i, sigma_i, hirshfeld_v_cart_der_H )
@@ -1893,6 +1932,7 @@ module vdw
         !end if
 
 
+          write(*,*) "Solving full polarizabilities"
           allocate( alpha_test(1:3*n_sites,1:3) )
           alpha_test = 0.d0
           !write(*,*) "n_sub_sites", n_sub_sites
@@ -2682,7 +2722,8 @@ module vdw
 
     n_order = 4
 
-    n_freq = size(alpha_SCS0, 2)
+    !n_freq = size(alpha_SCS0, 2)
+    n_freq = 12
     n_sites = size(n_neigh)
     n_pairs = size(neighbors_list)
     n_species = size(c6_ref)

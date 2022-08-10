@@ -25,12 +25,16 @@ plt.ylim([4,12])
 plt.show()
 
 plt.figure(1)
-plt.scatter(a_full,a_appr,alpha=0.25)
 plt.plot([4,12],[4,12],'r-')
-plt.xlabel("Exact polarizabilities")
-plt.ylabel("Local polynomial approximation")
+plt.scatter(a_full,a_appr,alpha=0.25)
+#plt.plot([4,12],[4,12],'r-')
+plt.title("a-C structure SCS polarizabilities",fontsize=12)
+plt.xlabel("Exact polarizabilities [a$_0^3$]",fontsize=12)
+plt.ylabel("Local approximation [a$_0^3$]",fontsize=12)
 plt.xlim([4,12])
 plt.ylim([4,12])
+plt.text(9, 5, 'RMSE = %.3f' % RMSE, fontsize = 12, 
+         bbox = dict(facecolor = 'white', alpha = 0.5))
 
 plt.show()
 
