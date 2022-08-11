@@ -480,7 +480,7 @@ module vdw
     integer :: i, i2, j, j2, j3, k, k2, k3, k4, a, a2, c1, c2, c3, lwork, b, p, q, r, n_count, n_max
     logical :: do_timing = .false., do_hirshfeld_gradients = .true., &
                total_energy = .true., regularization = .false., read_hirshfeld = .false., &
-               psblas = .true.
+               psblas = .false.
                
 !    LOCAL TEST stuff:
     integer, allocatable :: p_to_i(:), i_to_p(:), sub_neighbors_list(:), n_sub_neigh(:)
@@ -490,7 +490,7 @@ module vdw
 
 !   DERIVATIVE TEST stuff:
     !real*8 :: polyfit(1:4)
-    real*8 :: polyfit(1:11)
+    real*8 :: polyfit(1:9)
     !real*8 :: polyfit(1:5)
     real*8, allocatable :: eigval(:) 
 
@@ -749,7 +749,7 @@ module vdw
             if ( om == 1 ) then
               neighbor_alpha0(k2) = alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot2+1)
             else
-              neighbor_alpha0(k2) = (alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot2+1)) / 2.d0 ! omega = omega_p
+              neighbor_alpha0(k2) = (alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot2+1)) / 5.d0 ! omega = 2*omega_p
             end if
             neighbor_sigma(k2) = (sqrt(2.d0/pi) * neighbor_alpha0(k2)/3.d0)**(1.d0/3.d0)
             xyz_H(:,k2) = xyz(:,n_tot2+1)/Bohr
@@ -783,7 +783,7 @@ module vdw
                   if ( om == 1 ) then
                     neighbor_alpha0(k2) = alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot2+j3)
                   else
-                    neighbor_alpha0(k2) = (alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot2+j3)) / 2.d0 ! omega = omega_p
+                    neighbor_alpha0(k2) = (alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot2+j3)) / 5.d0 ! omega = 2*omega_p
                   end if
                   neighbor_sigma(k2) = (sqrt(2.d0/pi) * neighbor_alpha0(k2)/3.d0)**(1.d0/3.d0)
                   xyz_H(:,k2) = xyz(:,n_tot2+j3)/Bohr
@@ -931,14 +931,20 @@ module vdw
         !7.03788232e+08 /)
 
 
-         polyfit = (/ 1.852410095984594e+02, -1.126081177187482e+04, 3.176118570899907e+05, &
-         -4.904320838862314e+06, 4.548037957602596e+07, &
-         -2.666898862162416e+08, 1.011621820718062e+09, -2.474317624682581e+09, 3.764893927440310e+09, &
-         -3.239938620264567e+09, 1.204250236388468e+09 /)
+        ! polyfit = (/ 1.852410095984594e+02, -1.126081177187482e+04, 3.176118570899907e+05, &
+        ! -4.904320838862314e+06, 4.548037957602596e+07, &
+        ! -2.666898862162416e+08, 1.011621820718062e+09, -2.474317624682581e+09, 3.764893927440310e+09, &
+        ! -3.239938620264567e+09, 1.204250236388468e+09 /)
 
-        ! polyfit = (/ 1.635129814687002e+02, -9.514311673161255e+03, 2.673453078422191e+05, &
-        ! -4.144083327933860e+06, 3.785670447085521e+07, &
-        ! -2.085444365507566e+08, 6.798867503738488e+08, -1.206533236274752e+09, 8.974206800841812e+08 /)
+         if (om == 1) then
+           polyfit = (/ 1.635129814687002e+02, -9.514311673161255e+03, 2.673453078422191e+05, &
+           -4.144083327933860e+06, 3.785670447085521e+07, &
+           -2.085444365507566e+08, 6.798867503738488e+08, -1.206533236274752e+09, 8.974206800841812e+08 /)
+         else
+           polyfit = (/ 2.249275104208679e+01, -2.182842455080738e+02, 1.200089629733290e+03, &
+           -4.122306953524228e+03, 9.184254246299068e+03, &
+           -1.328795285431040e+04, 1.205522778284883e+04, -6.231749327066547e+03, 1.400480752004396e+03 /)
+         end if
 
         !polyfit = (/ 2.994512687772163e+01, -2.907761872594571e+02, 1.113198934383532e+03, &
         !            -1.454330688020761e+03 /)
@@ -1086,13 +1092,13 @@ module vdw
         end do ! om
 
         ! store omega_p for MBD calculation
-        alpha_SCS0(i,3) = omega_ref/sqrt(alpha_SCS0(i,1)/alpha_SCS0(i,2)-1.d0)
+        alpha_SCS0(i,3) = 2.d0*omega_ref/sqrt(alpha_SCS0(i,1)/alpha_SCS0(i,2)-1.d0)
 
         write(*,*) "omega_p", alpha_SCS0(i,3)
 
         deallocate( n_sub_neigh, sub_neighbors_list, xyz_H, rjs_H, r0_ii, neighbor_alpha0, neighbor_sigma, T_func, &
                     b_i, g_func, h_func, f_damp, a_SCS, ipiv, ia, ja, val )
-       ! deallocate( B_mat)
+        !deallocate( B_mat)
                    
       end do
       
@@ -1367,9 +1373,9 @@ module vdw
                                      r_vdw_j)) - 1.d0) ) * xyz_H(c3,k3)/rjs_H(k3)
                   g_func_der(k3) = 4.d0/sqrt(pi) * rjs_H(k3)/sigma_ij**3 * xyz_H(c3,k3) * &
                                        exp(-rjs_H(k3)**2/sigma_ij**2)
-                  if ( i == 2 .and. c3 == 1 .and. a == 1 .and. p == 40 .and. q == 41 ) then
-                    write(*,*) "f_damp_der", f_damp_der(k3)
-                  end if
+                  !if ( i == 2 .and. c3 == 1 .and. a == 1 .and. p == 40 .and. q == 41 ) then
+                  !  write(*,*) "f_damp_der", f_damp_der(k3)
+                  !end if
                   k4 = 9*(k3-1)
                   do c1 = 1, 3
                     do c2 = 1, 3
@@ -1766,6 +1772,7 @@ module vdw
       allocate( vect_temp(1:3*n_sites,1:3) )
       allocate( da_SCS(1:3*n_sites,1:3) )
       allocate( b_der(1:3*n_sites,1:3) )
+      dalpha_full = 0.d0
     end if
 
 !   Frequencies used for integration:
@@ -1931,24 +1938,24 @@ module vdw
         !deallocate( eigval)
         !end if
 
-
+          !write(*,*) "B_mat", B_mat(1,:)
           write(*,*) "Solving full polarizabilities"
-          allocate( alpha_test(1:3*n_sites,1:3) )
-          alpha_test = 0.d0
+          !allocate( alpha_test(1:3*n_sites,1:3) )
+          a_SCS = 0.d0
           !write(*,*) "n_sub_sites", n_sub_sites
           do p = 1, n_sites
             do c1 = 1, 3
-              alpha_test(3*(p-1)+c1,c1) = 1.d0
+              a_SCS(3*(p-1)+c1,c1) = 1.d0
             end do
           end do
-          call dsysv('U', 3*n_sites, 3, B_mat, 3*n_sites, ipiv, alpha_test, 3*n_sites, &
+          call dsysv('U', 3*n_sites, 3, B_mat, 3*n_sites, ipiv, a_SCS, 3*n_sites, &
                       work_arr, 12*n_sites, info)
           do p = 1, n_sites
-            write(*,*) p, 1.d0/3.d0 * (alpha_test(3*(p-1)+1,1) &
-                       + alpha_test(3*(p-1)+2,2) + alpha_test(3*(p-1)+3,3))
+            write(*,*) p, 1.d0/3.d0 * (a_SCS(3*(p-1)+1,1) &
+                       + a_SCS(3*(p-1)+2,2) + a_SCS(3*(p-1)+3,3))
           end do
-          deallocate( alpha_test )
-
+          !deallocate( alpha_test )
+          !write(*,*) "B_mat after", B_mat(1,:)
       
 
       !allocate( eigval(1:3*n_sites) )
@@ -2140,7 +2147,7 @@ module vdw
       end if ! psblas
 
       if ( do_derivatives ) then
-      
+
         if( do_timing) then
           call cpu_time(time1)
         end if
@@ -2546,18 +2553,18 @@ module vdw
               !da_SCS = da_vec - vect_temp
               !call dgetrs('n', 3*n_sites, 3, BTB_reg, 3*n_sites, ipiv, &
               !  da_SCS, 3*n_sites, info)
-              b_der = da_vec + b_der
+              !b_der = da_vec + b_der
               ! DERIVATIVE TEST HACK
               !call dgetrs('n', 3*n_sites, 3, BTB_reg, 3*n_sites, ipiv, &
               !  b_der, 3*n_sites, info)
-              da_SCS = polyfit(n_degree) * b_der
-              vect_temp = b_der
-              do p = 1, n_degree
-                call dgemm('n', 'n', 3*n_sites, 3, 3*n_sites, 1.d0, B_mat-I_mat, 3*n_sites, &
-                  vect_temp, 3*n_sites, 0.d0, vect1, 3*n_sites)
-                  da_SCS = da_SCS + polyfit(n_degree+1-p)*vect1
-                  vect_temp = vect1
-              end do
+              !da_SCS = polyfit(n_degree) * b_der
+              !vect_temp = b_der
+              !do p = 1, n_degree
+              !  call dgemm('n', 'n', 3*n_sites, 3, 3*n_sites, 1.d0, B_mat-I_mat, 3*n_sites, &
+              !    vect_temp, 3*n_sites, 0.d0, vect1, 3*n_sites)
+              !    da_SCS = da_SCS + polyfit(n_degree+1-p)*vect1
+              !    vect_temp = vect1
+              !end do
               !call dgemm('n', 'n', 3*n_sites, 3, 3*n_sites, 1.d0, -B_mat+I_mat, 3*n_sites, &
               !  b_der, 3*n_sites, 0.d0, vect1, 3*n_sites)
               !da_SCS = da_SCS - 1.13904254d0 * vect1
@@ -2573,7 +2580,13 @@ module vdw
               !call dgemm('n', 'n', 3*n_sites, 3, 3*n_sites, 1.d0, -B_mat+I_mat, 3*n_sites, &
               !  vect4, 3*n_sites, 0.d0, vect_temp, 3*n_sites)
               !da_SCS = da_SCS + vect_temp/120.d0
-              b_der = da_SCS
+              !write(*,*) "b_der"
+              !do p = 1, 3*n_sites
+              !  write(*,*) b_der(p,:)
+              !end do
+              call dsytrs('U', 3*n_sites, 3, B_mat, 3*n_sites, ipiv, &
+                b_der, 3*n_sites, info)
+              !b_der = da_SCS
               !write(*,*) "just for fun"
               ! END
             end if
@@ -2650,12 +2663,12 @@ module vdw
       end do
     end if
 
-    !if ( do_derivatives ) then
-    !  write(*,*) "dalpha_SCS w.r.t. atom 1 in x direction:"
-    !  do p = 1, n_sites
-    !    write(*,*) p, dalpha_full(p,1,1,1)
-    !  end do
-    !end if
+    if ( do_derivatives ) then
+      write(*,*) "dalpha_SCS w.r.t. atom 1 in x direction:"
+      do p = 1, n_sites
+        write(*,*) p, dalpha_full(p,1,1,1)
+      end do
+    end if
 
     !deallocate( ia, ja, val )
 
@@ -2903,7 +2916,7 @@ module vdw
           AT = 0.d0
           do p = 1, n_sub_sites
             i2 = p_to_i(p)
-            AT(3*(p-1)+1:3*(p-1)+3,:) = alpha_SCS0(i2,om) * T_LR(3*(p-1)+1:3*(p-1)+3,:)
+            AT(3*(p-1)+1:3*(p-1)+3,:) = alpha_SCS0(i2,1)/(1.d0 + (omegas(om)/alpha_SCS0(i2,3))**2) * T_LR(3*(p-1)+1:3*(p-1)+3,:)
           end do
 
           !if ( i == 1 .and. om == 1 ) then
@@ -2955,8 +2968,8 @@ module vdw
               end if
             end do
             do c1 = 1, 3
-              integrand(i,om) = integrand(i,om) + alpha_SCS0(i,om) * dot_product(T_LR(c1,:), &
-                                energy_series(:,c1))
+              integrand(i,om) = integrand(i,om) + alpha_SCS0(i,1)/(1.d0 + (omegas(om)/alpha_SCS0(i2,3))**2) &
+                                * dot_product(T_LR(c1,:),energy_series(:,c1))
               !write(*,*) "T_LR", T_LR(c1,:)
               !write(*,*) "energy_series", energy_series(:,c1)
             end do
@@ -2964,8 +2977,9 @@ module vdw
               do p = 1, n_sub_sites
                 i2 = p_to_i(p)
                 do c1 = 1, 3
-                  total_integrand(i,om) = total_integrand(i,om) + alpha_SCS0(i2,om) * dot_product(T_LR(3*(p-1)+c1,:), &
-                                  total_energy_series(:,3*(p-1)+c1))
+                  total_integrand(i,om) = total_integrand(i,om) + alpha_SCS0(i,1)/(1.d0 + &
+                       (omegas(om)/alpha_SCS0(i2,3))**2) * dot_product(T_LR(3*(p-1)+c1,:), &
+                       total_energy_series(:,3*(p-1)+c1))
                   end do
               end do
             end if
@@ -3075,8 +3089,10 @@ module vdw
                 do p = 1, n_sub_sites
                   i2 = p_to_i(p)
                   G_mat(3*(p-1)+1:3*(p-1)+3,:) = G_mat(3*(p-1)+1:3*(p-1)+3,:) + &
-                    alpha_SCS0(i2,om) * dT_LR(3*(p-1)+1:3*(p-1)+3,:) + &
-                    alpha_SCS_grad(i2,i,c3,om) * T_LR(3*(p-1)+1:3*(p-1)+3,:)
+                    alpha_SCS0(i2,1)/(1.d0 + (omegas(om)/alpha_SCS0(i2,3))**2) * &
+                    dT_LR(3*(p-1)+1:3*(p-1)+3,:) + &
+                    alpha_SCS_grad(i2,i,c3,1)/(1.d0 + (omegas(om)/alpha_SCS0(i2,3))**2) * &
+                    T_LR(3*(p-1)+1:3*(p-1)+3,:)
                 end do
                 !if ( i == 1 .and. om == 1 .and. c3 == 1 ) then
                 !  write(*,*) "G_mat"
