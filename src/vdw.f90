@@ -486,7 +486,7 @@ module vdw
     integer, allocatable :: p_to_i(:), i_to_p(:), sub_neighbors_list(:), n_sub_neigh(:)
     logical, allocatable :: in_cutoff(:), in_force_cutoff(:)
     integer :: n_sub_sites, n_sub_pairs, n_tot2, s, n_degree
-    logical :: local = .false.
+    logical :: local = .true.
 
 !   DERIVATIVE TEST stuff:
     !real*8 :: polyfit(1:4)
@@ -1709,6 +1709,11 @@ module vdw
                    
       end do
 
+      write(*,*) "dalpha w.r.t. atom 1 in x direction"
+      do p = 1, n_sites
+        write(*,*) p, dalpha_full(p,1,1,1)
+      end do
+
       end if ! do_derivatives
       
       deallocate( alpha_SCS_full, in_cutoff, p_to_i, i_to_p, A_i, )
@@ -1776,11 +1781,11 @@ module vdw
     end if
 
 !   Frequencies used for integration:
-    omega = 0.d0
-    do i = 1, n_freq
-      omegas(i) = omega
-      omega = omega + 0.4d0 
-    end do
+    !omega = 0.d0
+    !do i = 1, n_freq
+    !  omegas(i) = omega
+    !  omega = omega + 0.4d0 
+    !end do
 
     do k = 1, n_pairs
       j = neighbor_species(k)
@@ -1801,6 +1806,9 @@ module vdw
     neighbor_alpha0 = neighbor_alpha0 * hirshfeld_v_neigh
     omega_i = (4.d0 * neighbor_c6_ii)/(3.d0*neighbor_alpha0**2)
     
+    omegas(1) = 0.d0
+    omegas(2) = 2.d0 * omega_i(1)
+
     write(*,*) "omega_i", omega_i(1)
 
 !   Identity matrix
@@ -1848,7 +1856,7 @@ module vdw
     allocate( ja(1:9*n_sites*n_sites) )
     allocate( val(1:9*n_sites*n_sites) )
 
-    do om = 1, n_freq
+    do om = 1, 2
 
       write(*,*) "Doing frequency", om
 
@@ -1951,8 +1959,9 @@ module vdw
           call dsysv('U', 3*n_sites, 3, B_mat, 3*n_sites, ipiv, a_SCS, 3*n_sites, &
                       work_arr, 12*n_sites, info)
           do p = 1, n_sites
-            write(*,*) p, 1.d0/3.d0 * (a_SCS(3*(p-1)+1,1) &
+            alpha_SCS0(p,om) = 1.d0/3.d0 * (a_SCS(3*(p-1)+1,1) &
                        + a_SCS(3*(p-1)+2,2) + a_SCS(3*(p-1)+3,3))
+            write(*,*) p, alpha_SCS0(p,om)
           end do
           !deallocate( alpha_test )
           !write(*,*) "B_mat after", B_mat(1,:)
@@ -2080,13 +2089,13 @@ module vdw
 
       !n_iter = 100
       
-      a_vec = 0.d0
-      do p = 1, n_sites
-        do c1 = 1, 3
-          !a_vec(3*(p-1)+c1,c1) = alpha_i(p)
-          a_vec(3*(p-1)+c1,c1) = 1.d0
-        end do
-      end do
+      !a_vec = 0.d0
+      !do p = 1, n_sites
+      !  do c1 = 1, 3
+      !    !a_vec(3*(p-1)+c1,c1) = alpha_i(p)
+      !    a_vec(3*(p-1)+c1,c1) = 1.d0
+      ! end do
+      !end do
 
       !if ( om == 1 ) then
       !write(*,*) "a_vec"
@@ -2095,29 +2104,29 @@ module vdw
       !end do
       !end if
 
-      if( do_timing) then
-        call cpu_time(time2)
-        write(*,*) "Energies: timing for everything else:", time2-time1
-        call cpu_time(time1)
-      end if     
+      !if( do_timing) then
+      !  call cpu_time(time2)
+      !  write(*,*) "Energies: timing for everything else:", time2-time1
+      !  call cpu_time(time1)
+      !end if     
 
-      if ( regularization ) then
-        reg_param = 0.01d0
-        B_reg = B_mat + reg_param * I_mat
-        call dgemm('t', 'n', 3*n_sites, 3, 3*n_sites, 1.d0, B_reg, 3*n_sites, &
-                    a_vec, 3*n_sites, 0.d0, a_SCS, 3*n_sites)
-        call dgemm('t', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, B_mat, 3*n_sites, &
-                    B_mat, 3*n_sites, 0.d0, BTB_reg, 3*n_sites)
-        BTB_reg = BTB_reg + reg_param * I_mat
-!        BTB_reg_copy = BTB_reg
-        call dsysv('U', 3*n_sites, 3, BTB_reg, 3*n_sites, ipiv, &
-                    a_SCS, 3*n_sites, work_arr, 12*n_sites, info)
-      else
-        BTB_reg = B_mat
-        a_SCS = a_vec
-        call dgesv(3*n_sites, 3, BTB_reg, 3*n_sites, ipiv, &
-                    a_SCS, 3*n_sites, info)
-      end if
+      !if ( regularization ) then
+      !  reg_param = 0.01d0
+      !  B_reg = B_mat + reg_param * I_mat
+      !  call dgemm('t', 'n', 3*n_sites, 3, 3*n_sites, 1.d0, B_reg, 3*n_sites, &
+      !              a_vec, 3*n_sites, 0.d0, a_SCS, 3*n_sites)
+      !  call dgemm('t', 'n', 3*n_sites, 3*n_sites, 3*n_sites, 1.d0, B_mat, 3*n_sites, &
+      !              B_mat, 3*n_sites, 0.d0, BTB_reg, 3*n_sites)
+      !  BTB_reg = BTB_reg + reg_param * I_mat
+!     !   BTB_reg_copy = BTB_reg
+      !  call dsysv('U', 3*n_sites, 3, BTB_reg, 3*n_sites, ipiv, &
+      !              a_SCS, 3*n_sites, work_arr, 12*n_sites, info)
+      !else
+      !  BTB_reg = B_mat
+      !  a_SCS = a_vec
+      !  call dgesv(3*n_sites, 3, BTB_reg, 3*n_sites, ipiv, &
+      !              a_SCS, 3*n_sites, info)
+      !end if
 
 !      if ( om == 1 ) then
 !      write(*,*) "a_SCS"
@@ -2131,13 +2140,13 @@ module vdw
 !      end do
 !      end if
 
-      alpha_SCS0(:,om) = 0.d0
-      do p = 1, n_sites
-        do c1 = 1, 3
-          alpha_SCS0(p,om) = alpha_SCS0(p,om) + a_SCS(3*(p-1)+c1,c1)
-        end do
-      end do
-      alpha_SCS0(:,om) = alpha_SCS0(:,om)/3.d0
+      !alpha_SCS0(:,om) = 0.d0
+      !do p = 1, n_sites
+      !  do c1 = 1, 3
+      !    alpha_SCS0(p,om) = alpha_SCS0(p,om) + a_SCS(3*(p-1)+c1,c1)
+      !  end do
+      !end do
+      !alpha_SCS0(:,om) = alpha_SCS0(:,om)/3.d0
       
       if( do_timing) then
         call cpu_time(time2)
@@ -2308,10 +2317,10 @@ module vdw
                       j = neighbors_list(k3+j2)
                       if ( i == j ) then
                         do c1 = 1, 3
-                          do c2 = 1, 3
-                            b_der(3*(i-1)+c1,c2) = b_der(3*(i-1)+c1,c2) - 1.d0/(alpha_i(i) * hirshfeld_v(i)) * &
-                                                   hirshfeld_v_cart_der_H(c3,n_tot+p) * a_SCS(3*(i-1)+c1,c2)
-                          end do 
+                          !do c2 = 1, 3
+                          b_der(3*(i-1)+c1,:) = b_der(3*(i-1)+c1,:) + 1.d0/(alpha_i(i) * hirshfeld_v(i)) * &
+                                                   hirshfeld_v_cart_der_H(c3,n_tot+p) * a_SCS(3*(i-1)+c1,:)
+                          !end do 
                         end do
                       end if
                       k4 = 9*(k3+j2-1)
@@ -2584,8 +2593,10 @@ module vdw
               !do p = 1, 3*n_sites
               !  write(*,*) b_der(p,:)
               !end do
+              !write(*,*) "b_der", b_der
               call dsytrs('U', 3*n_sites, 3, B_mat, 3*n_sites, ipiv, &
                 b_der, 3*n_sites, info)
+              !write(*,*) "b_der", b_der
               !b_der = da_SCS
               !write(*,*) "just for fun"
               ! END
@@ -2621,6 +2632,10 @@ module vdw
       !end if ! EIGENVALUE TEST if (.false.)
 
     end do ! om loop
+
+    do i = 1, n_sites
+      alpha_SCS0(i,3) = 2.d0*omega_i(1)/sqrt(alpha_SCS0(i,1)/alpha_SCS0(i,2)-1.d0)
+    end do
 
             ! Cut-off test: This is a hack to test the validity of the approximation;
             ! Implement this in the loops above
