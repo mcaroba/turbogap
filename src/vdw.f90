@@ -469,7 +469,7 @@ module vdw
                            BTB_reg(:,:), B_reg(:,:), &
                            a_SCS(:,:), da_vec(:,:), vect1(:,:), &
                            vect2(:,:), vect3(:,:), vect4(:,:), vect_temp(:,:), da_SCS(:,:), &
-                           c6_nsites(:), b_der(:,:), alpha_SCS_full(:,:), dB_mat(:,:), alpha_test(:,:), &
+                           c6_nsites(:), b_der(:,:), alpha_SCS_full(:,:,:), dB_mat(:,:), alpha_test(:,:), &
                            test_vector(:,:), neighbor_sigma(:)
     real*8 :: time1, time2, this_force(1:3), Bohr, Hartree, &
               omega, pi, integral, E_MBD, R_vdW_ij, R_vdW_SCS_ij, S_vdW_ij, dS_vdW_ij, exp_term, &
@@ -490,7 +490,7 @@ module vdw
 
 !   DERIVATIVE TEST stuff:
     !real*8 :: polyfit(1:4)
-    real*8 :: polyfit(1:9)
+    real*8 :: polyfit(1:12)
     !real*8 :: polyfit(1:5)
     real*8, allocatable :: eigval(:) 
 
@@ -577,7 +577,7 @@ module vdw
       alpha_SCS0 = 0.d0
       !allocate( sigma_i(1:n_sites) )
       !allocate( alpha_i(1:n_sites) )
-      allocate( alpha_SCS_full(1:3*n_sites,1:3) )
+      allocate( alpha_SCS_full(1:3*n_sites,1:3,1:2) )
       !write(*,*) "test 1"
       if ( do_derivatives ) then
         dalpha_full = 0.d0
@@ -688,7 +688,7 @@ module vdw
         allocate( neighbor_alpha0(1:n_sub_pairs) )
         allocate( neighbor_sigma(1:n_sub_pairs) )
         allocate( T_func(1:9*n_sub_pairs) )
-        !allocate( B_mat(1:3*n_sub_sites,1:3*n_sub_sites) )
+        allocate( B_mat(1:3*n_sub_sites,1:3*n_sub_sites) )
         allocate( f_damp(1:n_sub_pairs) )
         allocate( g_func(1:n_sub_pairs) )
         allocate( h_func(1:9*n_sub_pairs) )
@@ -717,7 +717,7 @@ module vdw
         nnz = 0
         k2 = 0
         T_func = 0.d0
-        !B_mat = 0.d0
+        B_mat = 0.d0
 
         a_SCS = 0.d0
         b_i = 0.d0
@@ -762,7 +762,7 @@ module vdw
               end do
             end if
             do c1 = 1, 3
-              !B_mat(3*(p-1)+c1,3*(p-1)+c1) = 1.d0/neighbor_alpha0(k2)
+              B_mat(3*(p-1)+c1,3*(p-1)+c1) = 1.d0/neighbor_alpha0(k2)
               nnz = nnz+1
               ia(nnz) = 3*(p-1)+c1
               ja(nnz) = 3*(p-1)+c1
@@ -810,8 +810,8 @@ module vdw
                       end if
                       h_func(k3) = 4.d0/sqrt(pi) * (rjs_H(k2)/sigma_ij)**3 * &
                                       xyz_H(c1,k2)*xyz_H(c2,k2)/rjs_H(k2)**5 * exp(-rjs_H(k2)**2/sigma_ij**2)
-                      !B_mat(3*(p-1)+c1,3*(q-1)+c2) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
-                      !                            g_func(k2) + h_func(k3))
+                      B_mat(3*(p-1)+c1,3*(q-1)+c2) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
+                                                  g_func(k2) + h_func(k3))
                       if ( p == 1 ) then
                         b_i(3*(q-1)+c2,c1) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
                                                   g_func(k2) + h_func(k3))
@@ -828,6 +828,20 @@ module vdw
             end do
           end if
         end do
+
+        !if ( i == 1 .and. om == 1 ) then
+        !  write(*,*) "Writing B_mat"
+        !  !open(unit=69, file="indices.dat", status="new")
+        !  open(unit=79, file="B_mat_m.dat", status="new")
+        !  do p = 1, n_sub_sites
+        !    !write(69,*) p_to_i(p)
+        !    do c1 = 1, 3
+        !      write(79,*) B_mat(3*(p-1)+c1,:)
+        !    end do
+        !  end do
+        !  !close(69)
+        !  close(79)
+        !end if
 
           !call cpu_time(time1)
           !allocate( alpha_test(1:3*n_sub_sites,1:3) )
@@ -937,13 +951,22 @@ module vdw
         ! -3.239938620264567e+09, 1.204250236388468e+09 /)
 
          if (om == 1) then
-           polyfit = (/ 1.635129814687002e+02, -9.514311673161255e+03, 2.673453078422191e+05, &
-           -4.144083327933860e+06, 3.785670447085521e+07, &
-           -2.085444365507566e+08, 6.798867503738488e+08, -1.206533236274752e+09, 8.974206800841812e+08 /)
+         !  polyfit = (/ 1.635129814687002e+02, -9.514311673161255e+03, 2.673453078422191e+05, &
+         !  -4.144083327933860e+06, 3.785670447085521e+07, &
+         !  -2.085444365507566e+08, 6.798867503738488e+08, -1.206533236274752e+09, 8.974206800841812e+08 /)
+           polyfit = (/ 2.619652273544946e+02, -2.541165321210297e+04, 1.238702036672193e+06, &
+           -3.484275967677591e+07, 6.121187495909173e+08, &
+           -7.039412728611286e+09, 5.432799199845714e+10, -2.831213305568388e+11, 9.822909546821646e+11, &
+           -2.172784949806289e+12, 2.770968854860906e+12, -1.549957105267603e+12 /)
+
          else
-           polyfit = (/ 2.249275104208679e+01, -2.182842455080738e+02, 1.200089629733290e+03, &
-           -4.122306953524228e+03, 9.184254246299068e+03, &
-           -1.328795285431040e+04, 1.205522778284883e+04, -6.231749327066547e+03, 1.400480752004396e+03 /)
+           !polyfit = (/ 2.249275104208679e+01, -2.182842455080738e+02, 1.200089629733290e+03, &
+           !-4.122306953524228e+03, 9.184254246299068e+03, &
+           !-1.328795285431040e+04, 1.205522778284883e+04, -6.231749327066547e+03, 1.400480752004396e+03 /)
+           polyfit = (/ 3.000172283070225e+01, -4.036116156105709e+02, 3.219989000357632e+03, &
+           -1.697210647947278e+04, 6.229122151964411e+04, &
+           -1.633238972645150e+05, 3.084285019980082e+05, -4.166392585088962e+05, 3.929119475839526e+05, &
+           -2.457281332200794e+05, 9.157664584332390e+04, -1.539155185053000e+04 /)
          end if
 
         !polyfit = (/ 2.994512687772163e+01, -2.907761872594571e+02, 1.113198934383532e+03, &
@@ -1041,16 +1064,16 @@ module vdw
         
         do c1 = 1, 3
           do c2 = 1, 3
-            alpha_SCS_full(3*(i-1)+c2,c1) = dot_product(d_vec(c1,:),a_SCS(:,c2))
+            alpha_SCS_full(3*(i-1)+c2,c1,om) = dot_product(d_vec(c1,:),a_SCS(:,c2))
             if ( c1 == c2) then
-              alpha_SCS_full(3*(i-1)+c2,c1) = alpha_SCS_full(3*(i-1)+c2,c1) + polyfit(1)
+              alpha_SCS_full(3*(i-1)+c2,c1,om) = alpha_SCS_full(3*(i-1)+c2,c1,om) + polyfit(1)
             end if
           end do
         end do
 
         alpha_SCS0(i,om) = 0.d0
         do c1 = 1, 3
-          alpha_SCS0(i,om) = alpha_SCS0(i,om) + alpha_SCS_full(3*(i-1)+c1,c1)
+          alpha_SCS0(i,om) = alpha_SCS0(i,om) + alpha_SCS_full(3*(i-1)+c1,c1,om)
         end do
         alpha_SCS0(i,om) = alpha_SCS0(i,om)/3.d0
         deallocate( val_xv, val_bv, myidx, d_vec )
@@ -1098,9 +1121,16 @@ module vdw
 
         deallocate( n_sub_neigh, sub_neighbors_list, xyz_H, rjs_H, r0_ii, neighbor_alpha0, neighbor_sigma, T_func, &
                     b_i, g_func, h_func, f_damp, a_SCS, ipiv, ia, ja, val )
-        !deallocate( B_mat)
+        deallocate( B_mat)
                    
       end do
+
+      !write(*,*) "Writing alpha_SCS_full"
+      !open(unit=89, file="alpha_SCS_full.dat", status="new")
+      !do p = 1, 3*n_sub_sites
+      !  write(89,*) alpha_SCS_full(p,:)
+      !end do
+      !close(89)
       
       !close(69)
       !close(79)
@@ -1115,7 +1145,19 @@ module vdw
       ! We should have alpha_SCS0 and A_i stored now.
       ! We only need dB/dr for each atom within the MBD cut-off of atom i.
       
+      write(*,*) "alpha_SCS_full"
+      do i = 1, 3*n_sites
+        write(*,*) alpha_SCS_full(i,:,1)
+      end do
+
       if ( do_derivatives ) then
+
+      polyfit = (/ 2.619652273544946e+02, -2.541165321210297e+04, 1.238702036672193e+06, &
+       -3.484275967677591e+07, 6.121187495909173e+08, &
+       -7.039412728611286e+09, 5.432799199845714e+10, -2.831213305568388e+11, 9.822909546821646e+11, &
+       -2.172784949806289e+12, 2.770968854860906e+12, -1.549957105267603e+12 /)
+
+
       k = 0
       do i = 1, n_sites
       
@@ -1397,7 +1439,7 @@ module vdw
                                                           g_func(k3) - g_func_der(k3) * (1.d0 - f_damp(k3)) * &
                                                           T_func(k4) - f_damp_der(k3) * h_func(k4) + &
                                                           h_func_der(k4) * (1.d0 - f_damp(k3))) * &
-                                                          alpha_SCS_full(3*(j-1)+c2,:)
+                                                          alpha_SCS_full(3*(j-1)+c2,:,1)
                         !dB_mat(3*(p-1)+c1,3*(q-1)+c2) = dB_mat(3*(p-1)+c1,3*(q-1)+c2) - (f_damp_der(k3) * T_func(k4) * &
                         !                                  g_func(k3) - (1.d0 - f_damp(k3)) * dT(k4) * &
                         !                                  g_func(k3) - g_func_der(k3) * (1.d0 - f_damp(k3)) * &
@@ -1409,7 +1451,7 @@ module vdw
                                                           g_func(k3) - g_func_der(k3) * (1.d0 - f_damp(k3)) * &
                                                           T_func(k4) - f_damp_der(k3) * h_func(k4) + &
                                                           h_func_der(k4) * (1.d0 - f_damp(k3))) * &
-                                                          alpha_SCS_full(3*(j-1)+c2,:)
+                                                          alpha_SCS_full(3*(j-1)+c2,:,1)
                         !dB_mat(3*(p-1)+c1,3*(q-1)+c2) = dB_mat(3*(p-1)+c1,3*(q-1)+c2) + (f_damp_der(k3) * T_func(k4) * &
                         !                                  g_func(k3) - (1.d0 - f_damp(k3)) * dT(k4) * &
                         !                                  g_func(k3) - g_func_der(k3) * (1.d0 - f_damp(k3)) * &
@@ -1558,7 +1600,7 @@ module vdw
                         !dB_mat(3*(p-1)+c1,3*(p-1)+c1) = - 1.d0/(neighbor_alpha0(k3+1) * hirshfeld_v(i2)) * &
                         !                         hirshfeld_v_cart_der(c3,n_tot2+j3)*Bohr
                         b_der(3*(p-1)+c1,:) = b_der(3*(p-1)+c1,:) - 1.d0/(neighbor_alpha0(k3+1) * hirshfeld_v(i2)) * &
-                                              hirshfeld_v_cart_der(c3,n_tot2+j3)*Bohr * alpha_SCS_full(3*(i2-1)+c1,:)
+                                              hirshfeld_v_cart_der(c3,n_tot2+j3)*Bohr * alpha_SCS_full(3*(i2-1)+c1,:,1)
                       end do
                     end if
                     k4 = 9*(k3+j2-1)
@@ -1568,7 +1610,7 @@ module vdw
                         b_der(3*(p-1)+c1,:) = b_der(3*(p-1)+c1,:) + &
                           ((coeff_der(k4) * s_i**2/hirshfeld_v(i2) + &
                           coeff_fdamp(k4) * r_vdw_i/hirshfeld_v(i2)) * hirshfeld_v_cart_der(c3,n_tot2+j3)*Bohr) * &
-                          alpha_SCS_full(3*(j-1)+c2,:)
+                          alpha_SCS_full(3*(j-1)+c2,:,1)
                         !b_der(3*(p-1)+c1,:) = b_der(3*(p-1)+c1,:) + &
                         !  ((coeff_der(p,q,c1,c2) * sigma_i(i2)**2/hirshfeld_v(i2) + &
                         !  coeff_fdamp(p,q,c1,c2) * r_vdw_i/hirshfeld_v(i2)) * hirshfeld_v_cart_der_H(c3,n_tot2+j3)) * &
@@ -1580,7 +1622,7 @@ module vdw
                         b_der(3*(q-1)+c1,:) = b_der(3*(q-1)+c1,:) + &
                           ((coeff_der(k4) * s_i**2/hirshfeld_v(i2) + &
                           coeff_fdamp(k4) * r_vdw_i/hirshfeld_v(i2)) * hirshfeld_v_cart_der(c3,n_tot2+j3)*Bohr) * &
-                          alpha_SCS_full(3*(i2-1)+c2,:)
+                          alpha_SCS_full(3*(i2-1)+c2,:,1)
                         !b_der(3*(q-1)+c1,:) = b_der(3*(q-1)+c1,:) + &
                         !  ((coeff_der(q,p,c1,c2) * sigma_i(i2)**2/hirshfeld_v(i2) + &
                         !  coeff_fdamp(q,p,c1,c2) * r_vdw_i/hirshfeld_v(i2)) * hirshfeld_v_cart_der_H(c3,n_tot2+j3)) * &
@@ -1678,7 +1720,15 @@ module vdw
             !close(89)
             
             !deallocate( alpha_test, test_vector )
-            !end if            
+            !end if
+
+            !if ( i == 1 .and. a == 1 .and. c3 == 1 ) then
+            !  open(unit=59, file="b_der.dat", status="new")
+            !  do p = 1, 3*n_sub_sites
+            !    write(59,*) b_der(p,:)
+            !  end do
+            !  close(59)
+            !end if
 
             do c1 = 1, 3
               dalpha_full(i,a,c3,1) = dalpha_full(i,a,c3,1) - polyfit(1) * b_der(c1,c1) &
