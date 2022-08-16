@@ -478,7 +478,7 @@ module vdw
     integer, allocatable :: ipiv(:)
     integer :: n_sites, n_pairs, n_species, n_sites0, info, n_order, n_freq, om, n_tot
     integer :: i, i2, j, j2, j3, k, k2, k3, k4, a, a2, c1, c2, c3, lwork, b, p, q, r, n_count, n_max
-    logical :: do_timing = .false., do_hirshfeld_gradients = .true., &
+    logical :: do_timing = .false., do_hirshfeld_gradients = .false., &
                total_energy = .true., regularization = .false., read_hirshfeld = .false., &
                psblas = .false.
                
@@ -555,7 +555,7 @@ module vdw
 !   Hartree units (calculations done in Hartree units for simplicity)
     Bohr = 0.5291772105638411
     Hartree = 27.211386024367243
-    omega_ref = (4.d0 * c6_ref(1)/(Hartree*Bohr**6)) / (3.d0*(alpha0_ref(1)/Bohr**3)**2)
+    !omega_ref = (4.d0 * c6_ref(1)/(Hartree*Bohr**6)) / (3.d0*(alpha0_ref(1)/Bohr**3)**2)
     pi = acos(-1.d0)
 
 !   This should allow to only take a subset of atoms for parallelization:
@@ -626,6 +626,8 @@ module vdw
         i_to_p = 0
         in_cutoff = .false.
         k = k+1
+        s = neighbor_species(k)
+        omega_ref = (4.d0 * c6_ref(s)/(Hartree*Bohr**6)) / (3.d0*(alpha0_ref(s)/Bohr**3)**2)
         p = 1
         p_to_i(p) = i
         i_to_p(i) = p
@@ -687,6 +689,7 @@ module vdw
         allocate( r0_ii(1:n_sub_pairs) )
         allocate( neighbor_alpha0(1:n_sub_pairs) )
         allocate( neighbor_sigma(1:n_sub_pairs) )
+        allocate( omegas(1:n_sub_pairs) )
         allocate( T_func(1:9*n_sub_pairs) )
         allocate( B_mat(1:3*n_sub_sites,1:3*n_sub_sites) )
         allocate( f_damp(1:n_sub_pairs) )
@@ -746,10 +749,12 @@ module vdw
             sub_neighbors_list(k2) = i2
             !n_sub_neigh(j2) = n_sub_neigh(i2) + 1
             r0_ii(k2) = r0_ref(s) / Bohr * hirshfeld_v_neigh(n_tot2+1)**(1.d0/3.d0)
+            omegas(k2) = (4.d0 * c6_ref(s)/(Hartree*Bohr**6)) / (3.d0*(alpha0_ref(s)/Bohr**3)**2)
             if ( om == 1 ) then
               neighbor_alpha0(k2) = alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot2+1)
             else
-              neighbor_alpha0(k2) = (alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot2+1)) / 5.d0 ! omega = 2*omega_p
+              neighbor_alpha0(k2) = (alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot2+1)) / &
+                (1.d0 + (2.d0 * omega_ref/omegas(k2))**2) ! omega = 2*omega_p
             end if
             neighbor_sigma(k2) = (sqrt(2.d0/pi) * neighbor_alpha0(k2)/3.d0)**(1.d0/3.d0)
             xyz_H(:,k2) = xyz(:,n_tot2+1)/Bohr
@@ -780,10 +785,12 @@ module vdw
                   !j = neighbors_list(n_tot2+j3)
                   sub_neighbors_list(k2) = j                        
                   r0_ii(k2) = r0_ref(s) / Bohr * hirshfeld_v_neigh(n_tot2+j3)**(1.d0/3.d0)
+                  omegas(k2) = (4.d0 * c6_ref(s)/(Hartree*Bohr**6)) / (3.d0*(alpha0_ref(s)/Bohr**3)**2)
                   if ( om == 1 ) then
                     neighbor_alpha0(k2) = alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot2+j3)
                   else
-                    neighbor_alpha0(k2) = (alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot2+j3)) / 5.d0 ! omega = 2*omega_p
+                    neighbor_alpha0(k2) = (alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot2+j3)) / &
+                      (1.d0 + (2.d0 * omega_ref/omegas(k2))**2) ! omega = 2*omega_p
                   end if
                   neighbor_sigma(k2) = (sqrt(2.d0/pi) * neighbor_alpha0(k2)/3.d0)**(1.d0/3.d0)
                   xyz_H(:,k2) = xyz(:,n_tot2+j3)/Bohr
@@ -1119,8 +1126,8 @@ module vdw
 
         write(*,*) "omega_p", alpha_SCS0(i,3)
 
-        deallocate( n_sub_neigh, sub_neighbors_list, xyz_H, rjs_H, r0_ii, neighbor_alpha0, neighbor_sigma, T_func, &
-                    b_i, g_func, h_func, f_damp, a_SCS, ipiv, ia, ja, val )
+        deallocate( n_sub_neigh, sub_neighbors_list, xyz_H, rjs_H, r0_ii, neighbor_alpha0, neighbor_sigma, omegas, &
+                    T_func, b_i, g_func, h_func, f_damp, a_SCS, ipiv, ia, ja, val )
         deallocate( B_mat)
                    
       end do
@@ -2787,12 +2794,14 @@ module vdw
     integer :: n_order, n_freq, n_sites, n_pairs, n_species, n_sites0, n_sub_sites, n_sub_pairs
     integer :: k, k2, k3, i, i2, j, j2, j3, c1, c2, c3, a, a2, om, p, q, n_tot, n_tot2, s
     real*8 :: Bohr, Hartree, pi, r_vdw_i, r_vdw_j, E_MBD, integral, omega, R_vdW_SCS_ij, S_vdW_ij, &
-              dS_vdW_ij, time1, time2
+              dS_vdW_ij, time1, time2, rcut_mbd
     logical :: series_average = .true., do_timing = .false., local = .true.
     logical, allocatable :: in_cutoff(:) 
     integer, allocatable :: p_to_i(:), i_to_p(:), sub_neighbors_list(:), n_sub_neigh(:)
 
-    write(*,*) "rcut (MBD)", rcut
+    rcut_mbd = 4.5d0
+    write(*,*) "Full cutoff", rcut
+    write(*,*) "MBD cutoff", rcut_mbd
 !   Hartree units (calculations done in Hartree units for simplicity)
     Bohr = 0.5291772105638411
     Hartree = 27.211386024367243
@@ -2851,7 +2860,7 @@ module vdw
         do j2 = 2, n_neigh(i)
           k = k+1
           j = neighbors_list(k)
-          if (rjs(k) < rcut) then
+          if (rjs(k) < rcut_mbd) then
             in_cutoff(j) = .true.
             p = p+1
             p_to_i(p) = j
@@ -2873,7 +2882,7 @@ module vdw
             n_sub_neigh(p) = n_sub_neigh(p) + 1
             n_tot2 = sum(n_neigh(1:j))-n_neigh(j)
             do j3 = 2, n_neigh(j)
-              if ( rjs(n_tot2+j3) < rcut ) then
+              if ( rjs(n_tot2+j3) < rcut_mbd ) then
                 if ( in_cutoff(neighbors_list(n_tot2+j3)) ) then
                   n_sub_neigh(p) = n_sub_neigh(p) + 1
                   n_sub_pairs = n_sub_pairs + 1
@@ -2935,7 +2944,7 @@ module vdw
             r_vdw_i = r0_ii_SCS(k2)
             n_tot2 = sum(n_neigh(1:i2))-n_neigh(i2)
             do j3 = 2, n_neigh(i2)
-              if ( rjs(n_tot2+j3) < rcut ) then
+              if ( rjs(n_tot2+j3) < rcut_mbd ) then
                 if ( in_cutoff(neighbors_list(n_tot2+j3)) ) then
                   !n_sub_neigh(j2) = n_sub_neigh(j2) + 1
                   k2 = k2+1    
@@ -3263,7 +3272,7 @@ module vdw
         k = k+1
         do j2 = 2, n_neigh(i)
           k = k+1
-          if( rjs(k) < rcut )then
+          if( rjs(k) < rcut_mbd )then
             k2 = 9*(k-1)
             do c1 = 1, 3
               do c2 = 1, 3
@@ -3291,7 +3300,7 @@ module vdw
         r_vdw_i = r0_ii_SCS(k)
         do j2 = 2, n_neigh(i)
           k=k+1
-          if (rjs(k) < rcut) then
+          if (rjs(k) < rcut_mbd) then
             r_vdw_j = r0_ii_SCS(k)
             j = neighbors_list(k)
             f_damp_SCS(k) = 1.d0/( 1.d0 + exp( -d*( rjs_H(k)/(sR*(r_vdw_i + r_vdw_j)) - 1.d0 ) ) )
@@ -3306,7 +3315,7 @@ module vdw
         do j2 = 2, n_neigh(i)
           k = k+1
           j = neighbors_list(k)
-          if (rjs(k) < rcut) then
+          if (rjs(k) < rcut_mbd) then
             k2 = 9*(k-1)
             do c1 = 1, 3
               do c2 = 1, 3
@@ -3378,7 +3387,7 @@ module vdw
               k = k+1
               do j2 = 2, n_neigh(i)
                 k = k+1
-                if (rjs(k) < rcut) then
+                if (rjs(k) < rcut_mbd) then
                   k2 = 9*(k-1)
                   do c1 = 1,3
                     do c2 = 1,3
@@ -3411,7 +3420,7 @@ module vdw
                 r_vdw_i = r0_ii_SCS(k)
                 do j2 = 2, n_neigh(i)
                   k = k+1
-                  if (rjs(k) < rcut) then
+                  if (rjs(k) < rcut_mbd) then
                     j = neighbors_list(k)
                     r_vdw_j = r0_ii_SCS(k)
                     R_vdW_SCS_ij = r_vdw_i + r_vdw_j
