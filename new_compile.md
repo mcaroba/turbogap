@@ -16,7 +16,7 @@ srun  --time=00:15:00 --partition=gputest --account=project_2000634 --nodes=1 --
 Temporary fix:
 ```
 rm cuda_wrappers.o;
-nvcc -c -O2 -arch=sm_80 src/cuda_wrappers.cu; s
+nvcc -c -O2 -arch=sm_80 src/cuda_wrappers.cu; 
 make -B;
 ```
 
