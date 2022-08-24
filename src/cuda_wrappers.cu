@@ -1,6 +1,6 @@
  // wrappers file
 // compile with:
-// rm cuda_wrapperso; nvcc -lcublas -lcurand -arch=sm_70 src/cuda_wrappers.cu -c;
+// rm cuda_wrappers.o; nvcc -lcublas -lcurand -arch=sm_70 src/cuda_wrappers.cu -c;
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
