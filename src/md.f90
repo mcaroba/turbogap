@@ -411,14 +411,12 @@ module md
                           max_opt_step_eps
     logical, intent(in) :: fix_atom(:,:), first_step, relax_box, eps_dof(1:6)
 !   Internal variables
-    real*8 :: gamma, max_force, this_force, pos(1:3), d, gamma_a, gamma_b, gamma_c, gamma_eps
-    real*8, allocatable :: forces_dot_a(:), forces_dot_b(:), forces_dot_c(:), frac_a(:), &
-                           frac_b(:), frac_c(:)
-    real*8, allocatable, save :: forces_dot_a_prev(:), forces_dot_b_prev(:), forces_dot_c_prev(:), &
-                                 frac_a_prev(:), frac_b_prev(:), frac_c_prev(:)
+    real*8 :: gamma, max_force, this_force, pos(1:3), d, gamma_lv(1:3), gamma_eps
+    real*8, allocatable :: forces_dot_lv(:,:), frac_pos(:,:)
+    real*8, allocatable, save :: forces_dot_lv_prev(:), frac_pos_prev(:,:)
     real*8, save :: gamma_prev, energy0, m_prev, a_box0(1:3), b_box0(1:3), c_box0(1:3), &
-                    eps(1:6), gamma_a_prev, gamma_b_prev, gamma_c_prev, gamma_eps_prev, &
-                    m_a_prev, m_b_prev, m_c_prev, m_eps_prev
+                    eps(1:6), gamma_lv_prev(1:3), gamma_eps_prev, &
+                    m_lv_prev(1:3), m_eps_prev
     real*8, allocatable, save :: positions0(:,:)
     integer :: n_sites, i, j, i_shift(1:3)
     logical, save :: backtracking = .true., backtracking_box_pos = .true.
@@ -431,23 +429,15 @@ module md
 !   When doing a box relaxation we need to project the forces onto the lattice vectors
     if( relax_box )then
       if( first_step )then
-        allocate( forces_dot_a(1:n_sites) )
-        allocate( forces_dot_b(1:n_sites) )
-        allocate( forces_dot_c(1:n_sites) )
-        allocate( forces_dot_a_prev(1:n_sites) )
-        allocate( forces_dot_b_prev(1:n_sites) )
-        allocate( forces_dot_c_prev(1:n_sites) )
-        allocate( frac_a(1:n_sites) )
-        allocate( frac_b(1:n_sites) )
-        allocate( frac_c(1:n_sites) )
-        allocate( frac_a_prev(1:n_sites) )
-        allocate( frac_b_prev(1:n_sites) )
-        allocate( frac_c_prev(1:n_sites) )
+        allocate( forces_dot_lv(1:3, 1:n_sites) )
+        allocate( forces_dot_lv_prev(1:3, 1:n_sites) )
+        allocate( frac_pos(1:3, 1:n_sites) )
+        allocate( frac_pos_prev(1:3, 1:n_sites) )
       end if
       do i = 1, n_sites
-        forces_dot_a(i) = dot_product(forces(1:3, i), a_box(1:3))
-        forces_dot_b(i) = dot_product(forces(1:3, i), b_box(1:3))
-        forces_dot_c(i) = dot_product(forces(1:3, i), c_box(1:3))
+        forces_dot_lv(1, i) = dot_product(forces(1:3, i), a_box(1:3))
+        forces_dot_lv(2, i) = dot_product(forces(1:3, i), b_box(1:3))
+        forces_dot_lv(3, i) = dot_product(forces(1:3, i), c_box(1:3))
       end do
     end if
 
@@ -475,9 +465,9 @@ module md
 !     The same for box relaxation
       if( relax_box )then
 !       For a, b, c
-        gamma_a = gamma / sqrt(dot_product(a_box, a_box))
-        gamma_b = gamma / sqrt(dot_product(b_box, b_box))
-        gamma_c = gamma / sqrt(dot_product(c_box, c_box))
+        gamma_lv(1) = gamma / sqrt(dot_product(a_box, a_box))
+        gamma_lv(2) = gamma / sqrt(dot_product(b_box, b_box))
+        gamma_lv(3) = gamma / sqrt(dot_product(c_box, c_box))
 !       For eps
         max_force = 0.d0
         do i = 1, 6
@@ -507,13 +497,10 @@ module md
 !     For box relaxation, backtracking is performed separately for atomic positions and strain
       else if( backtracking_box_pos )then
 !       Positions first, without changing the box
-        if( energy <= energy0 - gamma_a_prev*0.5d0*m_a_prev - gamma_b_prev*0.5d0*m_b_prev &
-                              - gamma_c_prev*0.5d0*m_c_prev )then
+        if( energy <= energy0 - sum( gamma_lv_prev(1:3)*0.5d0*m_lv_prev(1:3) ) )then
           backtracking_box_pos = .false.
         else
-          gamma_a = gamma_a_prev * 0.5d0
-          gamma_b = gamma_b_prev * 0.5d0
-          gamma_c = gamma_c_prev * 0.5d0
+          gamma_lv(1:3) = gamma_lv_prev(1:3) * 0.5d0
           positions = positions0
           a_box = a_box0
           b_box = b_box0
@@ -534,6 +521,11 @@ module md
       end if
     end if
 
+!   Transform positions to fractional coordinate system
+    if( relax_box )then
+      call get_fractional_coordinates(positions, a_box, b_box, c_pox, frac_pos)
+    end if
+
     if( .not. first_step .and. .not. backtracking )then
       if( .not. relax_box )then
   !     Make sure we use the same image convention for positions and positions_prev
@@ -546,23 +538,66 @@ module md
         gamma = sum( (positions-positions_prev) * (forces-forces_prev)) / sum( (forces-forces_prev)**2 )
         gamma = abs( gamma )
       else
+  !     Make sure we use the same image convention for positions and positions_prev
+        do i = 1, n_sites
+          call get_distance(frac_pos_prev(1:3, i), frac_pos(1:3, i), [1.d0, 0.d0, 0.d0], [0.d0, 1.d0, 0.d0], &
+                            [0.d0, 0.d0, 1.d0], [.true., .true., .true.], pos(1:3), d, i_shift(1:3))
+          frac_pos_prev(1:3, i) = frac-pos(1:3, i) - pos(1:3)
+        end do
+  !     Barzilai–Borwein method for finding gamma
+        do i = 1, 3
+          gamma_lv(i) = sum( (frac_pos(i,:)-frac_pos_prev(i,:)) * (forces_dot_lv(i,:)-forces_dot_lv_prev(i,:))) / &
+                    sum( (forces_dot_lv(i,:)-forces_dot_lv_prev(i,:))**2 )
+          gamma_lv(i) = abs( gamma_lv(i) )
+        end do
+
+        gamma_eps = sum( (eps(1:6)-eps_prev(1:6)) * (virial(1:6)-virial_prev(1:6))) / &
+                  sum( (virial(1:6)-virial_prev(1:6))**2 )
+        gamma_eps = abs( gamma_eps )
+
 
       end if
+    end if
+
+    if( relax_box )then
+      virial_prev = virial
+      eps_prev = eps
+      frac_pos_prev = frac_pos
+      forces_dot_lv_prev = forces_dot_lv
+      do i = 1, n_sites
+        positions(1:3, i) = frac_pos(1, i) * a_box(1:3) + frac_pos(2, i) * b_box(1:3) + &
+                            frac_pos(3, i) * c_box(1:3)
+      end do
     end if
 
     positions_prev = positions
     forces_prev = forces
 
-    do i = 1, n_sites
-      do j = 1, 3
-        if( .not. fix_atom(j, i) )then
-          positions(j, i) = positions_prev(j, i) + gamma*forces_prev(j, i)
-        end if
+    if( .not. relax_box )then
+      do i = 1, n_sites
+        do j = 1, 3
+          if( .not. fix_atom(j, i) )then
+            positions(j, i) = positions_prev(j, i) + gamma*forces_prev(j, i)
+          end if
+        end do
       end do
-    end do
-
-    gamma_prev = gamma
-    m_prev = sum( forces**2 )
+      gamma_prev = gamma
+      m_prev = sum( forces**2 )
+    else
+      do i = 1, n_sites
+        do j = 1, 3
+          if( .not. fix_atom(j, i) )then
+            pos_frac(j, i) = pos_frac_prev(j, i) + gamma_lv(j)*forces_dot_lv_prev(j, i)
+          end if
+        end do
+      end do
+      gamma_lv_prev = gamma_lv
+      do i = 1, 3
+        m_lv_prev(i) = sum( forces_dot_lv(i,:)**2 )
+      end do
+      eps(1:6) = eps_prev(1:6) + gamma_eps * virial(1:6)
+      m_eps_prev = sum( virial_prev(1:6)**2 )
+    end if
 
   end subroutine
 !**************************************************************************
