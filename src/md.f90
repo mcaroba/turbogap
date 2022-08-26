@@ -407,14 +407,14 @@ module md
 !   Input variables
     real*8, intent(inout) :: positions(:,:), positions_prev(:,:), velocities(:,:), &
                              forces_prev(:,:), a_box(1:3), b_box(1:3), c_box(1:3)
-    real*8, intent(in) :: forces(:,:), masses(:), max_opt_step, energy, virial(:), &
+    real*8, intent(in) :: forces(:,:), masses(:), max_opt_step, energy, virial(1:6), &
                           max_opt_step_eps
     logical, intent(in) :: fix_atom(:,:), first_step, relax_box, eps_dof(1:6)
 !   Internal variables
     real*8 :: gamma, max_force, this_force, pos(1:3), d, gamma_lv(1:3), gamma_eps, &
-              t_eps(1:3, 1:3)
+              t_eps(1:3, 1:3), virial_prev(1:6)
     real*8, allocatable :: forces_dot_lv(:,:), frac_pos(:,:)
-    real*8, allocatable, save :: forces_dot_lv_prev(:), frac_pos_prev(:,:)
+    real*8, allocatable, save :: forces_dot_lv_prev(:,:), frac_pos_prev(:,:)
     real*8, save :: gamma_prev, energy0, m_prev, a_box0(1:3), b_box0(1:3), c_box0(1:3), &
                     eps(1:6), eps_prev(1:6), gamma_lv_prev(1:3), gamma_eps_prev, &
                     m_lv_prev(1:3), m_eps_prev
@@ -524,7 +524,7 @@ module md
 
 !   Transform positions to fractional coordinate system
     if( relax_box )then
-      call get_fractional_coordinates(positions, a_box, b_box, c_pox, frac_pos)
+      call get_fractional_coordinates(positions, a_box, b_box, c_box, frac_pos)
     end if
 
     if( .not. first_step .and. .not. backtracking )then
@@ -543,7 +543,7 @@ module md
         do i = 1, n_sites
           call get_distance(frac_pos_prev(1:3, i), frac_pos(1:3, i), [1.d0, 0.d0, 0.d0], [0.d0, 1.d0, 0.d0], &
                             [0.d0, 0.d0, 1.d0], [.true., .true., .true.], pos(1:3), d, i_shift(1:3))
-          frac_pos_prev(1:3, i) = frac-pos(1:3, i) - pos(1:3)
+          frac_pos_prev(1:3, i) = frac_pos(1:3, i) - pos(1:3)
         end do
   !     Barzilai–Borwein method for finding gamma
         do i = 1, 3
@@ -600,9 +600,9 @@ module md
       eps(1:6) = eps_prev(1:6) + gamma_eps * virial(1:6)
       m_eps_prev = sum( virial_prev(1:6)**2 )
       
-      t_eps = [ [1.d0 + eps(1), eps(6)/2.d0, eps(5)/2.d0], &
-                [eps(6)/2.d0, 1.d0 + eps(2), eps(4)/2.d0], &
-                [eps(5)/2.d0, eps(4)/2.d0, 1.d0 + eps(3)] ]
+      t_eps(1:3, 1) = [1.d0 + eps(1), eps(6)/2.d0, eps(5)/2.d0]
+      t_eps(1:3, 2) = [eps(6)/2.d0, 1.d0 + eps(2), eps(4)/2.d0]
+      t_eps(1:3, 3) = [eps(5)/2.d0, eps(4)/2.d0, 1.d0 + eps(3)]
       a_box = matmul( t_eps, a_box0 )
       b_box = matmul( t_eps, b_box0 )
       c_box = matmul( t_eps, c_box0 )

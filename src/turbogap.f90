@@ -1530,10 +1530,17 @@ end if
                              md_istep == 0, a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
                              fix_atom(1:3, 1:n_sites))
       else if( params%optimize == "gd" )then
+        a_box = a_box/dfloat(indices(1))
+        b_box = b_box/dfloat(indices(2))
+        c_box = c_box/dfloat(indices(3))
         call gradient_descent(positions(1:3, 1:n_sites), positions_prev(1:3, 1:n_sites), velocities(1:3, 1:n_sites), &
-                              forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), params%gamma0, &
-                              params%max_opt_step, md_istep == 0, a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), &
-                              c_box/dfloat(indices(3)), fix_atom(1:3, 1:n_sites), energy)
+                              forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), &
+                              params%max_opt_step, md_istep == 0, a_box, b_box, &
+                              c_box, fix_atom(1:3, 1:n_sites), energy, &
+                              .true., virial, [.true., .true., .true., .true., .true., .true.], 0.05d0 )
+        a_box = a_box*dfloat(indices(1))
+        b_box = b_box*dfloat(indices(2))
+        c_box = c_box*dfloat(indices(3))
       end if
 !     Compute kinetic energy from current velocities. Because Velocity Verlet
 !     works with the velocities at t-dt (except for the first time step) we
