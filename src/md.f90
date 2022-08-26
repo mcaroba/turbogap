@@ -411,11 +411,12 @@ module md
                           max_opt_step_eps
     logical, intent(in) :: fix_atom(:,:), first_step, relax_box, eps_dof(1:6)
 !   Internal variables
-    real*8 :: gamma, max_force, this_force, pos(1:3), d, gamma_lv(1:3), gamma_eps
+    real*8 :: gamma, max_force, this_force, pos(1:3), d, gamma_lv(1:3), gamma_eps, &
+              t_eps(1:3, 1:3)
     real*8, allocatable :: forces_dot_lv(:,:), frac_pos(:,:)
     real*8, allocatable, save :: forces_dot_lv_prev(:), frac_pos_prev(:,:)
     real*8, save :: gamma_prev, energy0, m_prev, a_box0(1:3), b_box0(1:3), c_box0(1:3), &
-                    eps(1:6), gamma_lv_prev(1:3), gamma_eps_prev, &
+                    eps(1:6), eps_prev(1:6), gamma_lv_prev(1:3), gamma_eps_prev, &
                     m_lv_prev(1:3), m_eps_prev
     real*8, allocatable, save :: positions0(:,:)
     integer :: n_sites, i, j, i_shift(1:3)
@@ -551,10 +552,9 @@ module md
           gamma_lv(i) = abs( gamma_lv(i) )
         end do
 
-        gamma_eps = sum( (eps(1:6)-eps_prev(1:6)) * (virial(1:6)-virial_prev(1:6))) / &
-                  sum( (virial(1:6)-virial_prev(1:6))**2 )
+        gamma_eps = sum( (eps(:)-eps_prev(:)) * (virial(:)-virial_prev(:)) ) / &
+                  sum( (virial(:)-virial_prev(:))**2 )
         gamma_eps = abs( gamma_eps )
-
 
       end if
     end if
@@ -587,8 +587,10 @@ module md
       do i = 1, n_sites
         do j = 1, 3
           if( .not. fix_atom(j, i) )then
-            pos_frac(j, i) = pos_frac_prev(j, i) + gamma_lv(j)*forces_dot_lv_prev(j, i)
+            frac_pos(j, i) = frac_pos_prev(j, i) + gamma_lv(j)*forces_dot_lv_prev(j, i)
           end if
+          positions(1:3, i) = frac_pos(1, i) * a_box(1:3) + frac_pos(2, i) * b_box(1:3) + &
+                              frac_pos(3, i) * c_box(1:3)
         end do
       end do
       gamma_lv_prev = gamma_lv
@@ -597,6 +599,13 @@ module md
       end do
       eps(1:6) = eps_prev(1:6) + gamma_eps * virial(1:6)
       m_eps_prev = sum( virial_prev(1:6)**2 )
+      
+      t_eps = [ [1.d0 + eps(1), eps(6)/2.d0, eps(5)/2.d0], &
+                [eps(6)/2.d0, 1.d0 + eps(2), eps(4)/2.d0], &
+                [eps(5)/2.d0, eps(4)/2.d0, 1.d0 + eps(3)] ]
+      a_box = matmul( t_eps, a_box0 )
+      b_box = matmul( t_eps, b_box0 )
+      c_box = matmul( t_eps, c_box0 )
     end if
 
   end subroutine
