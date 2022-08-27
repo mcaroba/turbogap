@@ -696,6 +696,9 @@ end if
       else if(keyword=='e_tol')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%e_tol
+      else if(keyword=='f_tol')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%f_tol
       else if(keyword=='scale_box')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%scale_box
@@ -807,7 +810,7 @@ end if
       else if( keyword == "optimize" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%optimize
-        if( params%optimize == "vv" .or. params%optimize == "gd" )then
+        if( params%optimize == "vv" .or. params%optimize == "gd" .or. params%optimize == "gd-box" )then
           continue
         else
           write(*,*) "ERROR: optimize algorithm not implemented:", params%optimize
@@ -819,6 +822,9 @@ end if
       else if( keyword == "max_opt_step" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%max_opt_step
+      else if( keyword == "max_opt_step_eps" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%max_opt_step_eps
       else if(keyword=='species')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%species_types(1:n_species)

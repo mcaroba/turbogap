@@ -84,12 +84,13 @@ module types
               tau_p = 1000.d0, p_beg = 1.d0, p_end = 1.d0, gamma_p = 1.d0, &
               box_scaling_factor(3,3) = reshape([1.d0, 0.d0, 0.d0, 0.d0, 1.d0, 0.d0, 0.d0, 0.d0, 1.d0], [3,3]), &
               core_pot_cutoff = 1.d10, core_pot_buffer = 1.d0, tau_dt = 100.d0, target_pos_step, &
-              gamma0 = 0.01d0, max_opt_step = 0.1d0, vdw_scs_rcut = 4.d0
+              gamma0 = 0.01d0, max_opt_step = 0.1d0, vdw_scs_rcut = 4.d0, f_tol = 0.01d0, &
+              max_opt_step_eps = 0.05d0
     integer :: md_nsteps = 1, write_xyz = 0, write_thermo = 1, which_atom = 0, vdw_mbd_nfreq = 11
     character*1024 :: atoms_file
     character*32 :: vdw_type = "none"
     character*8, allocatable :: species_types(:)
-    character*2 :: optimize = "vv"
+    character*6 :: optimize = "vv"
     character*32 :: barostat = "none", thermostat = "none", barostat_sym = "isotropic"
     logical :: do_md = .false., do_prediction = .false., do_forces = .false., do_derivatives = .false., &
                do_derivatives_fd = .false., write_soap = .false., write_derivatives = .false., &

@@ -1529,15 +1529,16 @@ end if
                              forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), time_step, &
                              md_istep == 0, a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
                              fix_atom(1:3, 1:n_sites))
-      else if( params%optimize == "gd" )then
+      else if( params%optimize == "gd" .or. params%optimize == "gd-box" )then
         a_box = a_box/dfloat(indices(1))
         b_box = b_box/dfloat(indices(2))
         c_box = c_box/dfloat(indices(3))
         call gradient_descent(positions(1:3, 1:n_sites), positions_prev(1:3, 1:n_sites), velocities(1:3, 1:n_sites), &
                               forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), &
                               params%max_opt_step, md_istep == 0, a_box, b_box, &
-                              c_box, fix_atom(1:3, 1:n_sites), energy, &
-                              .true., virial, [.true., .true., .true., .true., .true., .true.], 0.05d0 )
+                              c_box, fix_atom(1:3, 1:n_sites), energy, params%optimize == "gd-box", &
+                              [virial(1,1), virial(2,2), virial(3,3), virial(2,3), virial(1,3), virial(1,2)], &
+                              [.true., .true., .true., .true., .true., .true.], params%max_opt_step_eps )
         a_box = a_box*dfloat(indices(1))
         b_box = b_box*dfloat(indices(2))
         c_box = c_box*dfloat(indices(3))
@@ -1584,7 +1585,11 @@ end if
 !
 !     Check if we have converged a relaxation calculation
       if( params%do_md .and. params%optimize == "gd" .and. md_istep > 0 .and. &
-          abs(energy-energy_prev) < params%e_tol .and. rank == 0 )then
+          abs(energy-energy_prev) < params%e_tol .and. maxval(forces) < params%f_tol .and. rank == 0 )then
+        exit_loop = .true.
+      else if( params%do_md .and. params%optimize == "gd-box" .and. md_istep > 0 .and. &
+               abs(energy-energy_prev) < params%e_tol .and. maxval(abs(virial)) < params%e_tol .and. &
+               maxval(abs(forces)) < params%f_tol .and. rank == 0 )then
         exit_loop = .true.
       end if
 

@@ -412,12 +412,12 @@ module md
     logical, intent(in) :: fix_atom(:,:), first_step, relax_box, eps_dof(1:6)
 !   Internal variables
     real*8 :: gamma, max_force, this_force, pos(1:3), d, gamma_lv(1:3), gamma_eps, &
-              t_eps(1:3, 1:3), virial_prev(1:6)
-    real*8, allocatable :: forces_dot_lv(:,:), frac_pos(:,:)
+              t_eps(1:3, 1:3)
+    real*8, allocatable, save :: forces_dot_lv(:,:), frac_pos(:,:)
     real*8, allocatable, save :: forces_dot_lv_prev(:,:), frac_pos_prev(:,:)
     real*8, save :: gamma_prev, energy0, m_prev, a_box0(1:3), b_box0(1:3), c_box0(1:3), &
                     eps(1:6), eps_prev(1:6), gamma_lv_prev(1:3), gamma_eps_prev, &
-                    m_lv_prev(1:3), m_eps_prev
+                    m_lv_prev(1:3), m_eps_prev, virial_prev(1:6)
     real*8, allocatable, save :: positions0(:,:)
     integer :: n_sites, i, j, i_shift(1:3)
     logical, save :: backtracking = .true., backtracking_box_pos = .true.
@@ -500,8 +500,16 @@ module md
 !       Positions first, without changing the box
         if( energy <= energy0 - sum( gamma_lv_prev(1:3)*0.5d0*m_lv_prev(1:3) ) )then
           backtracking_box_pos = .false.
+          gamma_lv = gamma_lv_prev
+          gamma_eps = gamma_eps_prev
+          a_box = a_box0
+          b_box = b_box0
+          c_box = c_box0
+          eps = 0.d0
+          energy0 = energy
         else
           gamma_lv(1:3) = gamma_lv_prev(1:3) * 0.5d0
+          gamma_eps = gamma_eps_prev
           positions = positions0
           a_box = a_box0
           b_box = b_box0
@@ -513,6 +521,7 @@ module md
         if( energy <= energy0 - gamma_eps_prev*0.5d0*m_eps_prev )then
           backtracking = .false.
         else
+          gamma_lv = gamma_lv_prev
           gamma_eps = gamma_eps_prev * 0.5d0
           a_box = a_box0
           b_box = b_box0
@@ -584,28 +593,46 @@ module md
       gamma_prev = gamma
       m_prev = sum( forces**2 )
     else
-      do i = 1, n_sites
-        do j = 1, 3
-          if( .not. fix_atom(j, i) )then
-            frac_pos(j, i) = frac_pos_prev(j, i) + gamma_lv(j)*forces_dot_lv_prev(j, i)
-          end if
-          positions(1:3, i) = frac_pos(1, i) * a_box(1:3) + frac_pos(2, i) * b_box(1:3) + &
-                              frac_pos(3, i) * c_box(1:3)
-        end do
-      end do
       gamma_lv_prev = gamma_lv
       do i = 1, 3
         m_lv_prev(i) = sum( forces_dot_lv(i,:)**2 )
       end do
-      eps(1:6) = eps_prev(1:6) + gamma_eps * virial(1:6)
+      if( backtracking_box_pos )then
+        eps = 0.d0
+      else
+        eps(1:6) = eps_prev(1:6) + gamma_eps * virial(1:6)
+      end if
+      gamma_eps_prev = gamma_eps
       m_eps_prev = sum( virial_prev(1:6)**2 )
-      
+
       t_eps(1:3, 1) = [1.d0 + eps(1), eps(6)/2.d0, eps(5)/2.d0]
       t_eps(1:3, 2) = [eps(6)/2.d0, 1.d0 + eps(2), eps(4)/2.d0]
       t_eps(1:3, 3) = [eps(5)/2.d0, eps(4)/2.d0, 1.d0 + eps(3)]
       a_box = matmul( t_eps, a_box0 )
       b_box = matmul( t_eps, b_box0 )
       c_box = matmul( t_eps, c_box0 )
+      if( backtracking_box_pos .or. .not. backtracking )then
+        do i = 1, n_sites
+          do j = 1, 3
+            if( .not. fix_atom(j, i) )then
+              frac_pos(j, i) = frac_pos_prev(j, i) + gamma_lv(j)*forces_dot_lv_prev(j, i)
+            end if
+          end do
+          positions(1:3, i) = frac_pos(1, i) * a_box(1:3) + frac_pos(2, i) * b_box(1:3) + &
+                              frac_pos(3, i) * c_box(1:3)
+        end do
+      else
+!       If we're only backtracking for optimal gamma_eps we do not change the fractional positions
+        do i = 1, n_sites
+          do j = 1, 3
+            if( .not. fix_atom(j, i) )then
+              frac_pos(j, i) = frac_pos_prev(j, i)
+            end if
+          end do
+          positions(1:3, i) = frac_pos(1, i) * a_box(1:3) + frac_pos(2, i) * b_box(1:3) + &
+                              frac_pos(3, i) * c_box(1:3)
+        end do
+      end if
     end if
 
   end subroutine
