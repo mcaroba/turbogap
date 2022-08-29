@@ -72,9 +72,9 @@ program turbogap
             time_mpi_positions(1:3) = 0.d0, time_mpi_ef(1:3) = 0.d0, time_md(3) = 0.d0, &
             instant_pressure_tensor(1:3, 1:3), time_step, md_time
   integer, allocatable :: displs(:), displs2(:), counts(:), counts2(:)
-  integer :: update_bar, n_sparse
+  integer :: update_bar, n_sparse, gd_istep = 0
   logical, allocatable :: do_list(:), has_vdw_mpi(:), fix_atom(:,:)
-  logical :: rebuild_neighbors_list = .true., exit_loop = .true.
+  logical :: rebuild_neighbors_list = .true., exit_loop = .true., gd_box_do_pos = .true.
   character*1 :: creturn = achar(13)
 
 ! Clean up these variables after code refactoring !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -1529,19 +1529,28 @@ end if
                              forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), time_step, &
                              md_istep == 0, a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
                              fix_atom(1:3, 1:n_sites))
-      else if( params%optimize == "gd" .or. params%optimize == "gd-box" )then
-        a_box = a_box/dfloat(indices(1))
-        b_box = b_box/dfloat(indices(2))
-        c_box = c_box/dfloat(indices(3))
+      else if( params%optimize == "gd" )then
         call gradient_descent(positions(1:3, 1:n_sites), positions_prev(1:3, 1:n_sites), velocities(1:3, 1:n_sites), &
                               forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), &
-                              params%max_opt_step, md_istep == 0, a_box, b_box, &
-                              c_box, fix_atom(1:3, 1:n_sites), energy, params%optimize == "gd-box", &
-                              [virial(1,1), virial(2,2), virial(3,3), virial(2,3), virial(1,3), virial(1,2)], &
-                              [.true., .true., .true., .true., .true., .true.], params%max_opt_step_eps )
-        a_box = a_box*dfloat(indices(1))
-        b_box = b_box*dfloat(indices(2))
-        c_box = c_box*dfloat(indices(3))
+                              params%max_opt_step, md_istep == 0, a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), &
+                              c_box/dfloat(indices(3)), fix_atom(1:3, 1:n_sites), energy)
+      else if( (params%optimize == "gd-box" .or. params%optimize == "gd-box-ortho") .and. gd_box_do_pos )then
+!       We propagate the positions
+        call gradient_descent(positions(1:3, 1:n_sites), positions_prev(1:3, 1:n_sites), velocities(1:3, 1:n_sites), &
+                              forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), &
+                              params%max_opt_step, gd_istep == 0, a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), &
+                              c_box/dfloat(indices(3)), fix_atom(1:3, 1:n_sites), energy)
+        if( gd_istep > 0 .and. abs(energy-energy_prev) < params%e_tol )then
+!         If the position optimization is converged (energy only) we set the code to do the box relaxation (below)
+          gd_box_do_pos = .false.
+          gd_istep = 0
+        else
+          gd_istep = gd_istep + 1
+        end if
+      else
+!       If nothing happens we still update these variables
+        positions_prev(1:3, 1:n_sites) = positions(1:3, 1:n_sites)
+        forces_prev(1:3, 1:n_sites) = forces(1:3, 1:n_sites)
       end if
 !     Compute kinetic energy from current velocities. Because Velocity Verlet
 !     works with the velocities at t-dt (except for the first time step) we
@@ -1587,13 +1596,13 @@ end if
       if( params%do_md .and. params%optimize == "gd" .and. md_istep > 0 .and. &
           abs(energy-energy_prev) < params%e_tol .and. maxval(forces) < params%f_tol .and. rank == 0 )then
         exit_loop = .true.
-      else if( params%do_md .and. params%optimize == "gd-box" .and. md_istep > 0 .and. &
+      else if( params%do_md .and. (params%optimize == "gd-box" .or. params%optimize == "gd-box-ortho") .and. md_istep > 0 .and. &
                abs(energy-energy_prev) < params%e_tol .and. maxval(abs(virial)) < params%e_tol .and. &
                maxval(abs(forces)) < params%f_tol .and. rank == 0 )then
         exit_loop = .true.
       end if
 
-!     We write out the trajectory file. We write positions_prev which is then one for which we have computed
+!     We write out the trajectory file. We write positions_prev which is the one for which we have computed
 !     the properties. positions_prev and velocities are synchronous
       if( md_istep == 0 .or. md_istep == params%md_nsteps .or. modulo(md_istep, params%write_xyz) == 0 .or. &
           exit_loop )then
@@ -1623,6 +1632,28 @@ end if
         call berendsen_barostat(positions(1:3, 1:n_sites), &
                                 params%p_beg + (params%p_end-params%p_beg)*dfloat(md_istep+1)/float(params%md_nsteps), &
                                 instant_pressure_tensor, params%barostat_sym, params%tau_p, params%gamma_p, time_step)
+      else if( (params%optimize == "gd-box" .or. params%optimize == "gd-box-ortho") .and. .not. gd_box_do_pos )then
+        if( gd_istep > 0 .and. abs(energy-energy_prev) < params%e_tol )then
+          gd_box_do_pos = .true.
+          gd_istep = 0
+        else
+!         We rewind positions and forces because they were already updated above
+          positions(1:3, 1:n_sites) = positions_prev(1:3, 1:n_sites)
+          forces(1:3, 1:n_sites) = forces_prev(1:3, 1:n_sites)
+!
+          a_box = a_box/dfloat(indices(1))
+          b_box = b_box/dfloat(indices(2))
+          c_box = c_box/dfloat(indices(3))
+          call gradient_descent_box(positions(1:3, 1:n_sites), positions_prev(1:3, 1:n_sites), velocities(1:3, 1:n_sites), &
+                                    forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), &
+                                    params%max_opt_step_eps, gd_istep == 0, a_box, b_box, c_box, energy, &
+                                    [virial(1,1), virial(2,2), virial(3,3), virial(2,3), virial(1,3), virial(1,2)], &
+                                    params%optimize )
+          a_box = a_box*dfloat(indices(1))
+          b_box = b_box*dfloat(indices(2))
+          c_box = c_box*dfloat(indices(3))
+          gd_istep = gd_istep + 1
+        end if
       end if
 !     If there are thermostating operations they happen here
       if( params%thermostat == "berendsen" )then

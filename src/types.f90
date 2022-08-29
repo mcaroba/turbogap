@@ -90,7 +90,7 @@ module types
     character*1024 :: atoms_file
     character*32 :: vdw_type = "none"
     character*8, allocatable :: species_types(:)
-    character*6 :: optimize = "vv"
+    character*16 :: optimize = "vv"
     character*32 :: barostat = "none", thermostat = "none", barostat_sym = "isotropic"
     logical :: do_md = .false., do_prediction = .false., do_forces = .false., do_derivatives = .false., &
                do_derivatives_fd = .false., write_soap = .false., write_derivatives = .false., &

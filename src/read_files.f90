@@ -810,7 +810,8 @@ end if
       else if( keyword == "optimize" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%optimize
-        if( params%optimize == "vv" .or. params%optimize == "gd" .or. params%optimize == "gd-box" )then
+        if( params%optimize == "vv" .or. params%optimize == "gd" .or. params%optimize == "gd-box" .or. &
+            params%optimize == "gd-box-ortho" )then
           continue
         else
           write(*,*) "ERROR: optimize algorithm not implemented:", params%optimize

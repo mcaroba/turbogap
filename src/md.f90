@@ -394,63 +394,39 @@ module md
 
 
 
-
-
 !**************************************************************************
   subroutine gradient_descent(positions, positions_prev, velocities, &
                               forces, forces_prev, masses, max_opt_step, &
-                              first_step, a_box, b_box, c_box, fix_atom, energy, &
-                              relax_box, virial, eps_dof, max_opt_step_eps )
+                              first_step, a_box, b_box, c_box, fix_atom, energy)
 
     implicit none
 
 !   Input variables
     real*8, intent(inout) :: positions(:,:), positions_prev(:,:), velocities(:,:), &
-                             forces_prev(:,:), a_box(1:3), b_box(1:3), c_box(1:3)
-    real*8, intent(in) :: forces(:,:), masses(:), max_opt_step, energy, virial(1:6), &
-                          max_opt_step_eps
-    logical, intent(in) :: fix_atom(:,:), first_step, relax_box, eps_dof(1:6)
+                             forces_prev(:,:), forces(:,:)
+    real*8, intent(in) :: masses(:), a_box(1:3), b_box(1:3), &
+                          c_box(1:3), max_opt_step, energy
+    logical, intent(in) :: fix_atom(:,:), first_step
 !   Internal variables
-    real*8 :: gamma, max_force, this_force, pos(1:3), d, gamma_lv(1:3), gamma_eps, &
-              t_eps(1:3, 1:3)
-    real*8, allocatable, save :: forces_dot_lv(:,:), frac_pos(:,:)
-    real*8, allocatable, save :: forces_dot_lv_prev(:,:), frac_pos_prev(:,:)
-    real*8, save :: gamma_prev, energy0, m_prev, a_box0(1:3), b_box0(1:3), c_box0(1:3), &
-                    eps(1:6), eps_prev(1:6), gamma_lv_prev(1:3), gamma_eps_prev, &
-                    m_lv_prev(1:3), m_eps_prev, virial_prev(1:6)
-    real*8, allocatable, save :: positions0(:,:)
+    real*8 :: gamma, max_force, this_force, pos(1:3), d
+    real*8, save :: gamma_prev, energy0, m_prev
+    real*8, allocatable, save :: positions0(:,:), forces0(:,:)
     integer :: n_sites, i, j, i_shift(1:3)
-    logical, save :: backtracking = .true., backtracking_box_pos = .true.
+    logical, save :: backtracking
 
     n_sites = size(masses)
 
 !   Here we always set the velocities to zero
     velocities = 0.d0
 
-!   When doing a box relaxation we need to project the forces onto the lattice vectors
-    if( relax_box )then
-      if( first_step )then
-        allocate( forces_dot_lv(1:3, 1:n_sites) )
-        allocate( forces_dot_lv_prev(1:3, 1:n_sites) )
-        allocate( frac_pos(1:3, 1:n_sites) )
-        allocate( frac_pos_prev(1:3, 1:n_sites) )
-      end if
-      do i = 1, n_sites
-        forces_dot_lv(1, i) = dot_product(forces(1:3, i), a_box(1:3))
-        forces_dot_lv(2, i) = dot_product(forces(1:3, i), b_box(1:3))
-        forces_dot_lv(3, i) = dot_product(forces(1:3, i), c_box(1:3))
-      end do
-    end if
-
     if( first_step )then
-      allocate( positions0(1:3, 1:size(positions,2)) )
+      backtracking = .true.
+      if( .not. allocated(positions0) )allocate( positions0(1:3, 1:size(positions,2)) )
+      if( .not. allocated(forces0) )allocate( forces0(1:3, 1:size(positions,2)) )
       positions0 = positions
+      forces0 = forces
       energy0 = energy
-      a_box0 = a_box
-      b_box0 = b_box
-      c_box0 = c_box
-      eps = 0.d0
-!     The first step is (over)estimated from user-provided values
+!     The first step is (over)estimated from user provided values
       max_force = 0.d0
       do i = 1, n_sites
         this_force = sqrt( dot_product(forces(1:3,i), forces(1:3,i)) )
@@ -461,180 +437,179 @@ module md
       if( max_force == 0.d0 )then
         gamma = 0.d0
       else
+!        gamma = max(gamma0, max_opt_step/max_force)
         gamma = max_opt_step/max_force
       end if
-!     The same for box relaxation
-      if( relax_box )then
-!       For a, b, c
-        gamma_lv(1) = gamma / sqrt(dot_product(a_box, a_box))
-        gamma_lv(2) = gamma / sqrt(dot_product(b_box, b_box))
-        gamma_lv(3) = gamma / sqrt(dot_product(c_box, c_box))
-!       For eps
-        max_force = 0.d0
-        do i = 1, 6
-          this_force = sqrt( virial(i)**2 )
-          if( this_force > max_force )then
-            max_force = this_force
-          end if
-        end do
-        if( max_force == 0.d0 )then
-          gamma_eps = 0.d0
-        else
-          gamma_eps = max_opt_step_eps / max_force
-        end if
-      end if
     else if( backtracking )then
-      if( .not. relax_box )then
-  !     After the first step, we perform backtracking line search until fullfilling the
-  !     Armijo-Goldstein condition
-        if( energy <= energy0 - gamma_prev*0.5d0*m_prev )then
-          backtracking = .false.
-        else
-  !       If the condition is not fulfilled, we restore the original positions and decrease
-  !       the step by half
-          gamma = gamma_prev * 0.5d0
-          positions = positions0 
-        end if
-!     For box relaxation, backtracking is performed separately for atomic positions and strain
-      else if( backtracking_box_pos )then
-!       Positions first, without changing the box
-        if( energy <= energy0 - sum( gamma_lv_prev(1:3)*0.5d0*m_lv_prev(1:3) ) )then
-          backtracking_box_pos = .false.
-          gamma_lv = gamma_lv_prev
-          gamma_eps = gamma_eps_prev
-          a_box = a_box0
-          b_box = b_box0
-          c_box = c_box0
-          eps = 0.d0
-          energy0 = energy
-        else
-          gamma_lv(1:3) = gamma_lv_prev(1:3) * 0.5d0
-          gamma_eps = gamma_eps_prev
-          positions = positions0
-          a_box = a_box0
-          b_box = b_box0
-          c_box = c_box0
-          eps = 0.d0
-        end if
+!     After the first step, we perform backtracking line search until fullfilling the
+!     Armijo-Goldstein condition
+      if( energy <= energy0 - gamma_prev*0.5d0*m_prev )then
+        backtracking = .false.
       else
-!       Then strain, at fixed fractional positions
-        if( energy <= energy0 - gamma_eps_prev*0.5d0*m_eps_prev )then
-          backtracking = .false.
-        else
-          gamma_lv = gamma_lv_prev
-          gamma_eps = gamma_eps_prev * 0.5d0
-          a_box = a_box0
-          b_box = b_box0
-          c_box = c_box0
-          eps = 0.d0
-        end if
+!       If the condition is not fulfilled, we restore the original positions and decrease
+!       the step by half
+        gamma = gamma_prev * 0.5d0
+        positions = positions0
+        forces = forces0
       end if
-    end if
-
-!   Transform positions to fractional coordinate system
-    if( relax_box )then
-      call get_fractional_coordinates(positions, a_box, b_box, c_box, frac_pos)
     end if
 
     if( .not. first_step .and. .not. backtracking )then
-      if( .not. relax_box )then
-  !     Make sure we use the same image convention for positions and positions_prev
-        do i = 1, n_sites
-          call get_distance(positions_prev(1:3, i), positions(1:3, i), a_box, b_box, c_box, &
-                            [.true., .true., .true.], pos(1:3), d, i_shift(1:3))
-          positions_prev(1:3, i) = positions(1:3, i) - pos(1:3)
-        end do
-  !     Barzilai–Borwein method for finding gamma
-        gamma = sum( (positions-positions_prev) * (forces-forces_prev)) / sum( (forces-forces_prev)**2 )
-        gamma = abs( gamma )
-      else
-  !     Make sure we use the same image convention for positions and positions_prev
-        do i = 1, n_sites
-          call get_distance(frac_pos_prev(1:3, i), frac_pos(1:3, i), [1.d0, 0.d0, 0.d0], [0.d0, 1.d0, 0.d0], &
-                            [0.d0, 0.d0, 1.d0], [.true., .true., .true.], pos(1:3), d, i_shift(1:3))
-          frac_pos_prev(1:3, i) = frac_pos(1:3, i) - pos(1:3)
-        end do
-  !     Barzilai–Borwein method for finding gamma
-        do i = 1, 3
-          gamma_lv(i) = sum( (frac_pos(i,:)-frac_pos_prev(i,:)) * (forces_dot_lv(i,:)-forces_dot_lv_prev(i,:))) / &
-                    sum( (forces_dot_lv(i,:)-forces_dot_lv_prev(i,:))**2 )
-          gamma_lv(i) = abs( gamma_lv(i) )
-        end do
-
-        gamma_eps = sum( (eps(:)-eps_prev(:)) * (virial(:)-virial_prev(:)) ) / &
-                  sum( (virial(:)-virial_prev(:))**2 )
-        gamma_eps = abs( gamma_eps )
-
-      end if
-    end if
-
-    if( relax_box )then
-      virial_prev = virial
-      eps_prev = eps
-      frac_pos_prev = frac_pos
-      forces_dot_lv_prev = forces_dot_lv
+!     Make sure we use the same image convention for positions and positions_prev
       do i = 1, n_sites
-        positions(1:3, i) = frac_pos(1, i) * a_box(1:3) + frac_pos(2, i) * b_box(1:3) + &
-                            frac_pos(3, i) * c_box(1:3)
+        call get_distance(positions_prev(1:3, i), positions(1:3, i), a_box, b_box, c_box, &
+                          [.true., .true., .true.], pos(1:3), d, i_shift(1:3))
+        positions_prev(1:3, i) = positions(1:3, i) - pos(1:3)
       end do
+!     Barzilai–Borwein method for finding gamma
+      gamma = sum( (positions-positions_prev) * (forces-forces_prev)) / sum( (forces-forces_prev)**2 )
+      gamma = abs( gamma )
     end if
 
     positions_prev = positions
     forces_prev = forces
 
-    if( .not. relax_box )then
-      do i = 1, n_sites
-        do j = 1, 3
-          if( .not. fix_atom(j, i) )then
-            positions(j, i) = positions_prev(j, i) + gamma*forces_prev(j, i)
-          end if
-        end do
+    do i = 1, n_sites
+      do j = 1, 3
+        if( .not. fix_atom(j, i) )then
+          positions(j, i) = positions_prev(j, i) + gamma*forces_prev(j, i)
+        end if
       end do
-      gamma_prev = gamma
-      m_prev = sum( forces**2 )
-    else
-      gamma_lv_prev = gamma_lv
-      do i = 1, 3
-        m_lv_prev(i) = sum( forces_dot_lv(i,:)**2 )
-      end do
-      if( backtracking_box_pos )then
-        eps = 0.d0
-      else
-        eps(1:6) = eps_prev(1:6) + gamma_eps * virial(1:6)
-      end if
-      gamma_eps_prev = gamma_eps
-      m_eps_prev = sum( virial_prev(1:6)**2 )
+    end do
 
-      t_eps(1:3, 1) = [1.d0 + eps(1), eps(6)/2.d0, eps(5)/2.d0]
-      t_eps(1:3, 2) = [eps(6)/2.d0, 1.d0 + eps(2), eps(4)/2.d0]
-      t_eps(1:3, 3) = [eps(5)/2.d0, eps(4)/2.d0, 1.d0 + eps(3)]
-      a_box = matmul( t_eps, a_box0 )
-      b_box = matmul( t_eps, b_box0 )
-      c_box = matmul( t_eps, c_box0 )
-      if( backtracking_box_pos .or. .not. backtracking )then
-        do i = 1, n_sites
-          do j = 1, 3
-            if( .not. fix_atom(j, i) )then
-              frac_pos(j, i) = frac_pos_prev(j, i) + gamma_lv(j)*forces_dot_lv_prev(j, i)
-            end if
-          end do
-          positions(1:3, i) = frac_pos(1, i) * a_box(1:3) + frac_pos(2, i) * b_box(1:3) + &
-                              frac_pos(3, i) * c_box(1:3)
-        end do
+    gamma_prev = gamma
+    m_prev = sum( forces**2 )
+
+  end subroutine
+!**************************************************************************
+
+
+
+
+
+
+!**************************************************************************
+  subroutine gradient_descent_box(positions, positions_prev, velocities, &
+                                  forces, forces_prev, masses, max_opt_step_eps, &
+                                  first_step, a_box, b_box, c_box, energy, &
+                                  virial, optim_mode )
+
+    implicit none
+
+!   Input variables
+    real*8, intent(inout) :: positions(:,:), positions_prev(:,:), velocities(:,:), &
+                             forces_prev(:,:), a_box(1:3), b_box(1:3), c_box(1:3)
+    real*8, intent(in) :: forces(:,:), masses(:), max_opt_step_eps, energy, virial(1:6)
+    logical, intent(in) :: first_step
+    character*16, intent(in) :: optim_mode
+!   Internal variables
+    real*8 :: max_force, this_force, pos(1:3), d, gamma_eps, t_eps(1:3, 1:3)
+    real*8, allocatable, save :: frac_pos(:,:), frac_pos_prev(:,:)
+    real*8, save :: gamma_prev, energy0, m_prev, a_box0(1:3), b_box0(1:3), c_box0(1:3), &
+                    eps(1:6), eps_prev(1:6), gamma_lv_prev(1:3), gamma_eps_prev, &
+                    m_lv_prev(1:3), m_eps_prev, virial_prev(1:6), virial0(1:6), this_virial(1:6)
+    real*8, allocatable, save :: positions0(:,:)
+    integer :: n_sites, i, j, i_shift(1:3)
+    logical, save :: backtracking
+
+    n_sites = size(masses)
+
+!   Here we always set the velocities to zero
+    velocities = 0.d0
+
+    this_virial = virial
+
+    if( first_step )then
+      backtracking = .true.
+      if( .not. allocated(frac_pos) )allocate( frac_pos(1:3, 1:n_sites) )
+      if( .not. allocated(frac_pos_prev) )allocate( frac_pos_prev(1:3, 1:n_sites) )
+      if( .not. allocated(positions0) )allocate( positions0(1:3, 1:size(positions,2)) )
+      positions0 = positions
+      virial0 = this_virial
+      energy0 = energy
+      a_box0 = a_box
+      b_box0 = b_box
+      c_box0 = c_box
+      eps = 0.d0
+!     The first step is (over)estimated from user-provided values
+      max_force = 0.d0
+      do i = 1, 6
+        this_force = sqrt( this_virial(i)**2 )
+        if( this_force > max_force )then
+          max_force = this_force
+        end if
+      end do
+      if( max_force == 0.d0 )then
+        gamma_eps = 0.d0
       else
-!       If we're only backtracking for optimal gamma_eps we do not change the fractional positions
-        do i = 1, n_sites
-          do j = 1, 3
-            if( .not. fix_atom(j, i) )then
-              frac_pos(j, i) = frac_pos_prev(j, i)
-            end if
-          end do
-          positions(1:3, i) = frac_pos(1, i) * a_box(1:3) + frac_pos(2, i) * b_box(1:3) + &
-                              frac_pos(3, i) * c_box(1:3)
-        end do
+        gamma_eps = max_opt_step_eps / max_force
+      end if
+    else if( backtracking )then
+!     After the first step, we perform backtracking line search until fullfilling the
+!     Armijo-Goldstein condition
+      if( energy <= energy0 - gamma_eps_prev*0.5d0*m_eps_prev )then
+        backtracking = .false.
+      else
+!       If the condition is not fulfilled, we restore the original positions and decrease
+!       the step by half
+        gamma_eps = gamma_eps_prev * 0.5d0
+        a_box = a_box0
+        b_box = b_box0
+        c_box = c_box0
+        eps = 0.d0
+        positions = positions0 
+        this_virial = virial0 
       end if
     end if
 
+!   Transform positions to fractional coordinate system
+    call get_fractional_coordinates(positions, a_box, b_box, c_box, frac_pos)
+
+    if( .not. first_step .and. .not. backtracking )then
+!     Make sure we use the same image convention for positions and positions_prev
+      do i = 1, n_sites
+        call get_distance(frac_pos_prev(1:3, i), frac_pos(1:3, i), [1.d0, 0.d0, 0.d0], [0.d0, 1.d0, 0.d0], &
+                          [0.d0, 0.d0, 1.d0], [.true., .true., .true.], pos(1:3), d, i_shift(1:3))
+        frac_pos_prev(1:3, i) = frac_pos(1:3, i) - pos(1:3)
+      end do
+!     Barzilai–Borwein method for finding gamma
+      gamma_eps = sum( (eps(:)-eps_prev(:)) * (this_virial(:)-virial_prev(:)) ) / &
+                  sum( (this_virial(:)-virial_prev(:))**2 )
+      gamma_eps = abs( gamma_eps )
+    end if
+
+    virial_prev = this_virial
+    eps_prev = eps
+    frac_pos_prev = frac_pos
+    do i = 1, n_sites
+      positions(1:3, i) = frac_pos(1, i) * a_box(1:3) + frac_pos(2, i) * b_box(1:3) + &
+                          frac_pos(3, i) * c_box(1:3)
+    end do
+
+    positions_prev = positions
+    forces_prev = forces
+
+    eps(1:6) = eps_prev(1:6) + gamma_eps * virial_prev(1:6)
+    gamma_eps_prev = gamma_eps
+    m_eps_prev = sum( virial_prev(1:6)**2 )
+
+    if( optim_mode == "gd-box-ortho" )then
+      eps(4) = 0.d0
+      eps(5) = 0.d0
+      eps(6) = 0.d0
+    end if
+
+    t_eps(1:3, 1) = [1.d0 + eps(1), eps(6)/2.d0, eps(5)/2.d0]
+    t_eps(1:3, 2) = [eps(6)/2.d0, 1.d0 + eps(2), eps(4)/2.d0]
+    t_eps(1:3, 3) = [eps(5)/2.d0, eps(4)/2.d0, 1.d0 + eps(3)]
+    a_box = matmul( t_eps, a_box0 )
+    b_box = matmul( t_eps, b_box0 )
+    c_box = matmul( t_eps, c_box0 )
+
+    do i = 1, n_sites
+      positions(1:3, i) = frac_pos(1, i) * a_box(1:3) + frac_pos(2, i) * b_box(1:3) + &
+                          frac_pos(3, i) * c_box(1:3)
+    end do
   end subroutine
 !**************************************************************************
 end module
