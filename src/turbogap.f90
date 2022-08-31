@@ -70,11 +70,11 @@ program turbogap
             time_gap, time_soap(1:3), time_2b(1:3), time_3b(1:3), time_read_input(1:3), time_read_xyz(1:3), &
             time_mpi(1:3) = 0.d0, time_core_pot(1:3), time_vdw(1:3), instant_pressure, lv(1:3,1:3), &
             time_mpi_positions(1:3) = 0.d0, time_mpi_ef(1:3) = 0.d0, time_md(3) = 0.d0, &
-            instant_pressure_tensor(1:3, 1:3), time_step, md_time
+            instant_pressure_tensor(1:3, 1:3), time_step, md_time, instant_pressure_prev
   integer, allocatable :: displs(:), displs2(:), counts(:), counts2(:)
   integer :: update_bar, n_sparse, gd_istep = 0
   logical, allocatable :: do_list(:), has_vdw_mpi(:), fix_atom(:,:)
-  logical :: rebuild_neighbors_list = .true., exit_loop = .true., gd_box_do_pos = .true.
+  logical :: rebuild_neighbors_list = .true., exit_loop = .true., gd_box_do_pos = .true., restart_box_optim = .false.
   character*1 :: creturn = achar(13)
 
 ! Clean up these variables after code refactoring !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -1415,6 +1415,7 @@ program turbogap
 !       Add up all the energy terms
         energies = energies + energies_soap + energies_2b + energies_3b + energies_core_pot + energies_vdw
         energy_prev = energy
+        instant_pressure_prev = instant_pressure
         energy = sum(energies)
       end if
 
@@ -1540,7 +1541,7 @@ end if
                               forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), &
                               params%max_opt_step, gd_istep == 0, a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), &
                               c_box/dfloat(indices(3)), fix_atom(1:3, 1:n_sites), energy)
-        if( gd_istep > 0 .and. abs(energy-energy_prev) < params%e_tol )then
+        if( gd_istep > 0 .and. abs(energy-energy_prev) < params%e_tol*dfloat(n_sites) .and. maxval(forces) < params%f_tol )then
 !         If the position optimization is converged (energy only) we set the code to do the box relaxation (below)
           gd_box_do_pos = .false.
           gd_istep = 0
@@ -1594,10 +1595,14 @@ end if
 !
 !     Check if we have converged a relaxation calculation
       if( params%do_md .and. params%optimize == "gd" .and. md_istep > 0 .and. &
-          abs(energy-energy_prev) < params%e_tol .and. maxval(forces) < params%f_tol .and. rank == 0 )then
+          abs(energy-energy_prev) < params%e_tol*dfloat(n_sites) .and. maxval(forces) < params%f_tol .and. rank == 0 )then
         exit_loop = .true.
+!     THIS CONDITION ON INSTANT PRESSURE WILL NEED TO BE FINE TUNED, TO ACCOUNT FOR ARBITRARY TARGET PRESSURES
+!     BUT ALSO TO ACCOMMODATE NON-TRICLINIC TARGET BOX SHAPES, WHERE IT MIGHT NOT BE POSSIBLE TO CONVERGE THE
+!     TOTAL PRESSURE BELOW A CERTAIN MINIMUM (DUE TO THE BOX SHAPE CONSTRAINTS)
       else if( params%do_md .and. (params%optimize == "gd-box" .or. params%optimize == "gd-box-ortho") .and. md_istep > 0 .and. &
-               abs(energy-energy_prev) < params%e_tol .and. maxval(abs(virial)) < params%e_tol .and. &
+               abs(energy-energy_prev) < params%e_tol*dfloat(n_sites) .and. &
+               abs(instant_pressure - instant_pressure_prev) < params%p_tol .and. &
                maxval(abs(forces)) < params%f_tol .and. rank == 0 )then
         exit_loop = .true.
       end if
@@ -1633,7 +1638,9 @@ end if
                                 params%p_beg + (params%p_end-params%p_beg)*dfloat(md_istep+1)/float(params%md_nsteps), &
                                 instant_pressure_tensor, params%barostat_sym, params%tau_p, params%gamma_p, time_step)
       else if( (params%optimize == "gd-box" .or. params%optimize == "gd-box-ortho") .and. .not. gd_box_do_pos )then
-        if( gd_istep > 0 .and. abs(energy-energy_prev) < params%e_tol )then
+        if( gd_istep > 0 .and. ( ( abs(energy-energy_prev) < params%e_tol*dfloat(n_sites) &
+                                   .and. abs(instant_pressure - instant_pressure_prev) < params%p_tol ) &
+                                 .or. restart_box_optim) )then
           gd_box_do_pos = .true.
           gd_istep = 0
         else
@@ -1648,7 +1655,7 @@ end if
                                     forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), &
                                     params%max_opt_step_eps, gd_istep == 0, a_box, b_box, c_box, energy, &
                                     [virial(1,1), virial(2,2), virial(3,3), virial(2,3), virial(1,3), virial(1,2)], &
-                                    params%optimize )
+                                    params%optimize, restart_box_optim )
           a_box = a_box*dfloat(indices(1))
           b_box = b_box*dfloat(indices(2))
           c_box = c_box*dfloat(indices(3))

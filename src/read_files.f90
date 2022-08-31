@@ -699,6 +699,9 @@ end if
       else if(keyword=='f_tol')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%f_tol
+      else if(keyword=='p_tol')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%p_tol
       else if(keyword=='scale_box')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%scale_box

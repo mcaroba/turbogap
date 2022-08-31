@@ -393,7 +393,6 @@ module md
 
 
 
-
 !**************************************************************************
   subroutine gradient_descent(positions, positions_prev, velocities, &
                               forces, forces_prev, masses, max_opt_step, &
@@ -409,10 +408,10 @@ module md
     logical, intent(in) :: fix_atom(:,:), first_step
 !   Internal variables
     real*8 :: gamma, max_force, this_force, pos(1:3), d
-    real*8, save :: gamma_prev, energy0, m_prev
+    real*8, save :: gamma_prev, energy0, m_prev, gamma_back0
     real*8, allocatable, save :: positions0(:,:), forces0(:,:)
     integer :: n_sites, i, j, i_shift(1:3)
-    logical, save :: backtracking
+    logical, save :: backtracking, initialized = .false.
 
     n_sites = size(masses)
 
@@ -436,6 +435,8 @@ module md
       end do
       if( max_force == 0.d0 )then
         gamma = 0.d0
+      else if( initialized )then
+        gamma = gamma_back0
       else
 !        gamma = max(gamma0, max_opt_step/max_force)
         gamma = max_opt_step/max_force
@@ -445,6 +446,8 @@ module md
 !     Armijo-Goldstein condition
       if( energy <= energy0 - gamma_prev*0.5d0*m_prev )then
         backtracking = .false.
+        initialized = .true.
+        gamma_back0 = gamma_prev
       else
 !       If the condition is not fulfilled, we restore the original positions and decrease
 !       the step by half
@@ -488,11 +491,13 @@ module md
 
 
 
+
 !**************************************************************************
   subroutine gradient_descent_box(positions, positions_prev, velocities, &
                                   forces, forces_prev, masses, max_opt_step_eps, &
                                   first_step, a_box, b_box, c_box, energy, &
-                                  virial, optim_mode )
+                                  virial, optim_mode, restart )
+!                                  virial, optim_mode, n_restart, restart )
 
     implicit none
 
@@ -500,17 +505,23 @@ module md
     real*8, intent(inout) :: positions(:,:), positions_prev(:,:), velocities(:,:), &
                              forces_prev(:,:), a_box(1:3), b_box(1:3), c_box(1:3)
     real*8, intent(in) :: forces(:,:), masses(:), max_opt_step_eps, energy, virial(1:6)
+!    integer, intent(inout) :: n_restart
+    integer :: n_restart
     logical, intent(in) :: first_step
     character*16, intent(in) :: optim_mode
+!   Output variables
+    logical :: restart
 !   Internal variables
     real*8 :: max_force, this_force, pos(1:3), d, gamma_eps, t_eps(1:3, 1:3)
     real*8, allocatable, save :: frac_pos(:,:), frac_pos_prev(:,:)
-    real*8, save :: gamma_prev, energy0, m_prev, a_box0(1:3), b_box0(1:3), c_box0(1:3), &
-                    eps(1:6), eps_prev(1:6), gamma_lv_prev(1:3), gamma_eps_prev, &
-                    m_lv_prev(1:3), m_eps_prev, virial_prev(1:6), virial0(1:6), this_virial(1:6)
+    real*8, save :: energy0, m_prev, a_box0(1:3), b_box0(1:3), c_box0(1:3), &
+                    eps(1:6), eps_prev(1:6), gamma_eps_prev, &
+                    m_eps_prev, virial_prev(1:6), virial0(1:6), this_virial(1:6), &
+                    gamma_back0
     real*8, allocatable, save :: positions0(:,:)
     integer :: n_sites, i, j, i_shift(1:3)
-    logical, save :: backtracking
+    integer, save :: i_restart
+    logical, save :: backtracking, initialized = .false.
 
     n_sites = size(masses)
 
@@ -519,7 +530,14 @@ module md
 
     this_virial = virial
 
+!   HARDCODED FOR NOW
+    n_restart = 10
+    if( n_restart < 2 )then
+      n_restart = 2
+    end if
+
     if( first_step )then
+      i_restart = 0
       backtracking = .true.
       if( .not. allocated(frac_pos) )allocate( frac_pos(1:3, 1:n_sites) )
       if( .not. allocated(frac_pos_prev) )allocate( frac_pos_prev(1:3, 1:n_sites) )
@@ -541,6 +559,8 @@ module md
       end do
       if( max_force == 0.d0 )then
         gamma_eps = 0.d0
+      else if( initialized )then
+        gamma_eps = gamma_back0
       else
         gamma_eps = max_opt_step_eps / max_force
       end if
@@ -549,16 +569,19 @@ module md
 !     Armijo-Goldstein condition
       if( energy <= energy0 - gamma_eps_prev*0.5d0*m_eps_prev )then
         backtracking = .false.
+        initialized = .true.
+        gamma_back0 = gamma_eps_prev
       else
 !       If the condition is not fulfilled, we restore the original positions and decrease
 !       the step by half
         gamma_eps = gamma_eps_prev * 0.5d0
+        gamma_back0 = gamma_eps
         a_box = a_box0
         b_box = b_box0
         c_box = c_box0
         eps = 0.d0
-        positions = positions0 
-        this_virial = virial0 
+        positions = positions0
+        this_virial = virial0
       end if
     end if
 
@@ -610,6 +633,13 @@ module md
       positions(1:3, i) = frac_pos(1, i) * a_box(1:3) + frac_pos(2, i) * b_box(1:3) + &
                           frac_pos(3, i) * c_box(1:3)
     end do
+
+    i_restart = i_restart + 1
+    if( i_restart == n_restart )then
+      restart = .true.
+    else
+      restart = .false.
+    end if
   end subroutine
 !**************************************************************************
 end module
