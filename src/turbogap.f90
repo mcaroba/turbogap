@@ -1754,10 +1754,11 @@ end if
       deallocate( n_neigh_local )
 #endif
     end if
-    if( .not. params%do_md .or. (params%do_md .and. md_istep == params%md_nsteps) )then
+    if( .not. params%do_md .or. (params%do_md .and. (md_istep == params%md_nsteps .or. exit_loop)) )then
       deallocate( positions, xyz_species, xyz_species_supercell, species, species_supercell, do_list )
+      if( allocated(velocities) )deallocate( velocities )
     end if
-    if( params%do_md .and. md_istep == params%md_nsteps .and. rank == 0 )then
+    if( params%do_md .and. (md_istep == params%md_nsteps .or. exit_loop) .and. rank == 0 )then
       deallocate( positions_prev, forces_prev )
     end if
 
