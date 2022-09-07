@@ -1541,7 +1541,7 @@ end if
                               forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), &
                               params%max_opt_step, gd_istep == 0, a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), &
                               c_box/dfloat(indices(3)), fix_atom(1:3, 1:n_sites), energy)
-        if( gd_istep > 0 .and. abs(energy-energy_prev) < params%e_tol*dfloat(n_sites) .and. maxval(forces) < params%f_tol )then
+        if( gd_istep > 1 .and. abs(energy-energy_prev) < params%e_tol*dfloat(n_sites) .and. maxval(forces) < params%f_tol )then
 !         If the position optimization is converged (energy only) we set the code to do the box relaxation (below)
           gd_box_do_pos = .false.
           gd_istep = 0
@@ -1600,7 +1600,7 @@ end if
 !     THIS CONDITION ON INSTANT PRESSURE WILL NEED TO BE FINE TUNED, TO ACCOUNT FOR ARBITRARY TARGET PRESSURES
 !     BUT ALSO TO ACCOMMODATE NON-TRICLINIC TARGET BOX SHAPES, WHERE IT MIGHT NOT BE POSSIBLE TO CONVERGE THE
 !     TOTAL PRESSURE BELOW A CERTAIN MINIMUM (DUE TO THE BOX SHAPE CONSTRAINTS)
-      else if( params%do_md .and. (params%optimize == "gd-box" .or. params%optimize == "gd-box-ortho") .and. md_istep > 0 .and. &
+      else if( params%do_md .and. (params%optimize == "gd-box" .or. params%optimize == "gd-box-ortho") .and. gd_istep > 1 .and. &
                abs(energy-energy_prev) < params%e_tol*dfloat(n_sites) .and. &
                abs(instant_pressure - instant_pressure_prev) < params%p_tol .and. &
                maxval(abs(forces)) < params%f_tol .and. rank == 0 )then
@@ -1638,7 +1638,7 @@ end if
                                 params%p_beg + (params%p_end-params%p_beg)*dfloat(md_istep+1)/float(params%md_nsteps), &
                                 instant_pressure_tensor, params%barostat_sym, params%tau_p, params%gamma_p, time_step)
       else if( (params%optimize == "gd-box" .or. params%optimize == "gd-box-ortho") .and. .not. gd_box_do_pos )then
-        if( gd_istep > 0 .and. ( ( abs(energy-energy_prev) < params%e_tol*dfloat(n_sites) &
+        if( gd_istep > 1 .and. ( ( abs(energy-energy_prev) < params%e_tol*dfloat(n_sites) &
                                    .and. abs(instant_pressure - instant_pressure_prev) < params%p_tol ) &
                                  .or. restart_box_optim) )then
           gd_box_do_pos = .true.
