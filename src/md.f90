@@ -635,7 +635,7 @@ module md
     end do
 
     i_restart = i_restart + 1
-    if( i_restart == n_restart )then
+    if( i_restart >= n_restart .and. energy < energy0 )then
       restart = .true.
     else
       restart = .false.
