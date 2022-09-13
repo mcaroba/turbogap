@@ -48,7 +48,7 @@ module gap_interface
                           xyz_species, xyz_species_supercell, alphas, Qs, all_atoms, &
                           which_atom, indices, soap, soap_cart_der, der_neighbors, der_neighbors_list, &
                           has_vdw, vdw_Qs, vdw_alphas, vdw_zeta, vdw_delta, vdw_V0, &
-                          energies0, forces0, hirshfeld_v0, hirshfeld_v_cart_der0, virial, solo_time_soap )
+                          energies0, forces0, hirshfeld_v0, hirshfeld_v_cart_der0, virial, solo_time_soap, time_get_soap )
 
     implicit none
 
@@ -70,7 +70,7 @@ module gap_interface
 !   Output variables
     real*8, allocatable, intent(out) :: soap(:,:), soap_cart_der(:,:,:)
     real*8, intent(out) :: virial(1:3, 1:3)
-    real*8, intent(inout)  :: solo_time_soap
+    real*8, intent(inout)  :: solo_time_soap, time_get_soap
 
 !   Inout variables
     real*8, intent(inout) :: energies0(:), forces0(:,:), hirshfeld_v0(:), hirshfeld_v_cart_der0(:,:)
@@ -88,6 +88,7 @@ module gap_interface
     logical, allocatable :: mask(:,:), mask0(:,:), is_atom_seen(:)
 !   CLEAN THIS UP
     real*8 :: time1, time2
+    real*8 :: ttt(2)
 
     n_sites_supercell = size(xyz_species_supercell)
 
@@ -232,12 +233,16 @@ module gap_interface
     end if
 
     if( n_sites > 0 )then
+!      call cpu_time(ttt(1))
       call get_soap(n_sites, n_neigh, n_species, species, species_multiplicity, n_atom_pairs, mask, rjs, &
                     thetas, phis, alpha_max, l_max, rcut_hard, rcut_soft, nf, global_scaling, &
                     atom_sigma_r, atom_sigma_r_scaling, atom_sigma_t, atom_sigma_t_scaling, &
                     amplitude_scaling, radial_enhancement, central_weight, basis, scaling_mode, do_timing, &
-                    do_derivatives, compress_soap, compress_soap_indices, soap, soap_cart_der)
+                    do_derivatives, compress_soap, compress_soap_indices, soap, soap_cart_der, time_get_soap)
+!      call cpu_time(ttt(2))
     end if
+
+   !time_get_soap=time_get_soap+ttt(2)-ttt(1)
 
     if( has_vdw )then
 !call cpu_time(time1)

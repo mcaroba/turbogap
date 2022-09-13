@@ -9,6 +9,8 @@
 #include <cublas_v2.h>
 #include <curand.h>
 #include <assert.h>
+#include <cuComplex.h>
+
 #define tpb 128
 
 /*__device__ double atomicDoubleAdd(double* address, double val)
@@ -60,6 +62,20 @@ extern "C" void cuda_malloc_double(void **a_d, int Np)
    return;
 }
 
+extern "C" void cuda_malloc_double_complex(void **a_d, int Np)
+{
+   // Allocate memory on GPU
+   //double **loc_a_d=(double **) a_d;
+   //printf(" malloc double \n" );
+   //if ( cudaSuccess != cudaMalloc( loc_a_d, sizeof(double) * Np )); exit(0);
+   //gpuErrchk(cudaMalloc( a_d, sizeof(double) * Np ));
+   //printf("Error in malloc double \n" );
+   /*if ( cudaSuccess != cudaMalloc( a_d, sizeof(double) * Np ));
+   printf("Error in malloc double \n" );*/
+   cudaMallocAsync( a_d, sizeof(cuDoubleComplex) * Np,0);
+   return;
+}
+
 extern "C" void cuda_malloc_int(int **a_d, int Np)
 {
    // Allocate memory on GPU
@@ -95,6 +111,15 @@ extern "C" void cuda_cpy_double_htod(double *a, double *a_d, int N)
 {
    //cudaMemcpy(a_d, a, sizeof(double) * N, cudaMemcpyHostToDevice);
    cudaMemcpyAsync(a_d, a, sizeof(double) * N, cudaMemcpyHostToDevice);
+
+
+   return;
+}
+
+extern "C" void cuda_cpy_double_complex_htod(double *a, double *a_d, int N)
+{
+   //cudaMemcpy(a_d, a, sizeof(double) * N, cudaMemcpyHostToDevice);
+   cudaMemcpyAsync(a_d, a, sizeof(cuDoubleComplex) * N, cudaMemcpyHostToDevice);
 
 
    return;
