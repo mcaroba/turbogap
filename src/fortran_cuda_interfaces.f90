@@ -192,5 +192,17 @@ MODULE F_B_C
         real(c_double), value :: cdelta_ene, cdelta_force, mzetam, e0, zeta
       end subroutine
 
+      subroutine gpu_get_sqrt_dot_p(sqrt_dot_d, soap_d, multiplicity_array_d, &
+                                    cnk_d, skip_soap_component_d,  &
+                                    n_sites, n_soap, n_max,l_max) &
+                  bind(C,name="gpu_get_sqrt_dot_p")
+        use iso_c_binding
+        type(c_ptr), value :: cnk_d, skip_soap_component_d
+        type(c_ptr), value :: sqrt_dot_d, soap_d, multiplicity_array_d
+        integer(c_int),value :: n_sites, n_soap, n_max,l_max
+      end subroutine
+
     END INTERFACE
   END MODULE F_B_C
+
+

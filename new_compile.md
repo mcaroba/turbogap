@@ -1,11 +1,18 @@
 # Compile with gpu
 Load the modules:
 
-
 ``` 
 module load gcc; module load openblas; module load openmpi ; 
 module load cuda; 
 ```  
+
+Temporary fix:
+```
+rm cuda_wrappers.o;
+nvcc -c -O2 -arch=sm_80 src/cuda_wrappers.cu; 
+make clean; rm cuda_wrappers.o ; nvcc -c -O2 -arch=sm_80 src/cuda_wrappers.cu ;mpif90 -O2 src/fortran_cuda_interfaces.f90 -c;  make;
+make -B;
+```
 Run with:
 
 ``` 
@@ -13,10 +20,4 @@ srun  --time=00:15:00 --partition=gputest --account=project_2000634 --nodes=1 --
 ``` 
 
 
-Temporary fix:
-```
-rm cuda_wrappers.o;
-nvcc -c -O2 -arch=sm_80 src/cuda_wrappers.cu; 
-make -B;
-```
 

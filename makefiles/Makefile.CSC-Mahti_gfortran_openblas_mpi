@@ -22,7 +22,7 @@ PP=-cpp -D _MPIF90
 F90_MOD_DIR_OPT=-J
 
 # Optimization flags (uncomment second option to enable debugging tools)
-F90_OPTS=-fPIC -O2 -lcudart   -lcublas -lcurand  cuda_wrappers.o 
+F90_OPTS=-fPIC -O2 -lcudart   -lcublas -lcurand fortran_cuda_interfaces.o cuda_wrappers.o 
 CUDA_OPTS= -lcublas -lcurand -arch=sm_70 -c cuda_wrappers.o
 #F90_OPTS+=-fPIC -O3 -fcheck=bounds -g -fcheck=all -Wall
 

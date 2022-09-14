@@ -138,19 +138,11 @@ extern "C" void cuda_cpy_int_htod(int *a, int *a_d, int N)
 
 extern "C" void cuda_cpy_double_dtoh(double *a_d, double *a ,int N)
 {
-   cudaMemcpyAsync( a, a_d, sizeof(double) * N, cudaMemcpyDeviceToHost );
-   //cudaMemcpy( a, a_d, sizeof(double) * N, cudaMemcpyDeviceToHost );
+  //cudaMemcpyAsync( a, a_d, sizeof(double) * N, cudaMemcpyDeviceToHost );
+  cudaMemcpy( a, a_d, sizeof(double) * N, cudaMemcpyDeviceToHost );
   //gpuErrchk(cudaMemcpy( a, a_d, sizeof(double) * N, cudaMemcpyDeviceToHost ));
    //printf("\nTest cpy D to H \n");
-   /*cudaError_t error;
-
-   error = cudaGetLastError();
-   if (error != cudaSuccess)
-    {
-        printf("returned error %s (code %d), line(%d)\n", cudaGetErrorString(error), error, __LINE__);
-
-    }*/
-
+   
    return;
 }
 extern "C" void cuda_cpy_double_dtod(double *b_d, double *a_d,int N)
@@ -577,4 +569,81 @@ extern "C" void gpu_soap_energies_forces_virial(int *n_neigh_d, int n_sites, int
      /*gpuErrchk( cudaPeekAtLastError() );
      gpuErrchk( cudaDeviceSynchronize() );*/
      return;
+}
+
+
+
+__global__ void cuda_get_soap_p(double *soap_d, double *multiplicity_array_d, 
+                           cuDoubleComplex *cnk_d, int *skip_soap_component_d,
+                           int n_sites, int n_soap, int n_max, int l_max)
+{
+   int i_site = threadIdx.x+blockIdx.x*blockDim.x;
+   int k_max=1+l_max*(l_max+1)/2+l_max;
+   if (i_site<n_sites){ 
+    int counter=0;
+    int counter2=0; 
+    for(int n=0;n<n_max;n++){
+      for(int np=n;np<n_max;np++){
+        for(int l=0;l<=l_max;l++){
+          if(skip_soap_component_d[l+(l_max+1)*(np+n*n_max)]!=0){
+            counter++;
+            for(int m=0;m<=l; m++){
+              int k=1+l*(l+1)/2+m;
+              counter2++;
+              cuDoubleComplex tmp_cnk_d=cnk_d[k+k_max*(n+i_site*n_max)];
+              soap_d[counter-1+i_site*n_soap]+=multiplicity_array_d[counter2-1]*tmp_cnk_d.x*tmp_cnk_d.y;
+            }
+
+          }
+        }
+      }
+    }
+ }
+}
+
+__global__ void cuda_get_sqrt_dot_p(double *soap_d, double *sqrt_dot_p_d,  
+                                int n_sites, int n_soap)
+{
+  int i_site=blockIdx.x;
+  int tid=threadIdx.x;
+  __shared__ double sh_sqrt_dot_p_d[tpb];
+  double this_dotprod=0.0;
+  for(int s=0;s<n_soap;s=s+tpb){
+    if(s<n_soap){
+      this_dotprod+=soap_d[tid+s*tpb+i_site*n_soap]*soap_d[tid+s*tpb+i_site*n_soap];
+    } 
+  }
+  sh_sqrt_dot_p_d[tid]=this_dotprod;
+  __syncthreads();
+
+  //reduction
+  for (int s=tpb/2; s>0; s>>=1) // s=s/2
+  {
+    if (tid < s)
+    {
+      sh_sqrt_dot_p_d[tid] +=sh_sqrt_dot_p_d[tid + s];
+    }
+    __syncthreads();
+
+  }
+  //  at this point this_force is computed
+  if(tid==0){
+    double final_dotprod=1.0;
+    if(sh_sqrt_dot_p_d[0]>=1.0e-5){
+      final_dotprod=sh_sqrt_dot_p_d[0];
+    }
+    sqrt_dot_p_d[i_site]=final_dotprod;
+  }
+}
+
+extern "C" void gpu_get_sqrt_dot_p(double *sqrt_dot_d, double *soap_d, double *multiplicity_array_d, 
+                                   cuDoubleComplex *cnk_d, int *skip_soap_component_d, 
+                                   int n_sites, int n_soap, int n_max, int l_max)
+{
+  dim3 nblocks=dim3((n_sites+1-tpb)/tpb,1,1);
+  dim3 nthreads=dim3(tpb,1,1);
+  cuda_get_soap_p<<<nblocks, nthreads>>>(soap_d, multiplicity_array_d, cnk_d, skip_soap_component_d, 
+                                         n_sites, n_soap, n_max, l_max);
+  cuda_get_sqrt_dot_p<<<n_sites,tpb>>>(soap_d,sqrt_dot_d, n_sites, n_soap);                                      
+  return;
 }

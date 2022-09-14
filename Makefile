@@ -22,7 +22,7 @@ F90_OPTS += $(F90_MOD_DIR_OPT) $(INC_DIR)
 PROGRAMS := turbogap
 
 SRC := splines.f90 types.f90 neighbors.f90 gap.f90 vdw.f90 read_files.f90 md.f90 \
-       gap_interface.f90 mpi.f90 xyz.f90
+       gap_interface.f90 mpi.f90 xyz.f90 
 SRC_TP_BT := resamplekin.f90
 SRC_ST := soap_turbo_functions.f90 soap_turbo_radial.f90 soap_turbo_angular.f90 \
           soap_turbo.f90 soap_turbo_compress.f90
