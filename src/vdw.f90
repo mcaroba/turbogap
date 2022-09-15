@@ -474,10 +474,10 @@ module vdw
     real*8 :: time1, time2, this_force(1:3), Bohr, Hartree, &
               omega, pi, integral, E_MBD, R_vdW_ij, R_vdW_SCS_ij, S_vdW_ij, dS_vdW_ij, exp_term, &
               rcut_vdw, r_vdw_i, r_vdw_j, dist, f_damp_SCS_ij, t1, t2, &
-              reg_param, sigma_ij, coeff_h_der, dg, dh, s_i, s_j, terms, omega_ref
+              reg_param, sigma_ij, coeff_h_der, dg, dh, s_i, s_j, terms, omega_ref, xyz_i(1:3), xyz_j(1:3)
     integer, allocatable :: ipiv(:)
     integer :: n_sites, n_pairs, n_species, n_sites0, info, n_order, n_freq, om, n_tot
-    integer :: i, i2, j, j2, j3, k, k2, k3, k4, a, a2, c1, c2, c3, lwork, b, p, q, r, n_count, n_max
+    integer :: i, i2, i3, j, j2, j3, k, k2, k3, k4, a, a2, c1, c2, c3, lwork, b, p, q, r, n_count, n_max, k_i, k_j
     logical :: do_timing = .false., do_hirshfeld_gradients = .false., &
                total_energy = .true., regularization = .false., read_hirshfeld = .false., &
                psblas = .false.
@@ -505,7 +505,6 @@ module vdw
     real(psb_dpk_), allocatable :: val(:), val_xv(:,:), val_bv(:,:), b_i(:,:), d_vec(:,:), A_i(:,:)
     type(psb_dprec_type) :: prec
     character(len=20) :: ptype
-
 
     !write(*,*) "c6_ref, alpha0_ref", c6_ref, alpha0_ref
 
@@ -557,6 +556,8 @@ module vdw
     Hartree = 27.211386024367243
     !omega_ref = (4.d0 * c6_ref(1)/(Hartree*Bohr**6)) / (3.d0*(alpha0_ref(1)/Bohr**3)**2)
     pi = acos(-1.d0)
+
+    write(*,*) "rcut", rcut/Bohr
 
 !   This should allow to only take a subset of atoms for parallelization:
 
@@ -610,7 +611,7 @@ module vdw
       allocate( in_cutoff(1:n_max) )
       allocate( p_to_i(1:n_max) )
       allocate( i_to_p(1:n_max) )
-      allocate( A_i(1:3*n_sites,1:3*n_sites) )
+      allocate( A_i(1:3*n_max,1:3*n_sites) )
       !write(*,*) "test 3"
       if ( do_derivatives .and. do_hirshfeld_gradients ) then
         allocate( in_force_cutoff(1:n_max) )
@@ -621,61 +622,74 @@ module vdw
       k = 0
       do i = 1, n_sites      
 
+        n_tot = sum(n_neigh(1:i))-n_neigh(i)
         write(*,*) i, "/", n_sites
-        p_to_i = 0
-        i_to_p = 0
-        in_cutoff = .false.
-        k = k+1
-        s = neighbor_species(k)
+        !p_to_i = 0
+        !i_to_p = 0
+        !in_cutoff = .false.
+        !k = k+1
+        s = neighbor_species(n_tot+1)
         omega_ref = (4.d0 * c6_ref(s)/(Hartree*Bohr**6)) / (3.d0*(alpha0_ref(s)/Bohr**3)**2)
-        p = 1
-        p_to_i(p) = i
-        i_to_p(i) = p
-        in_cutoff(i) = .true.
-        do j2 = 2, n_neigh(i)
-          k = k+1
-          !write(*,*) "k", k
-          j = neighbors_list(k)
-          !if (rjs(k) < n_degree * rcut) then
-          if (rjs(k) < 2*rcut) then
-            in_cutoff(j) = .true.
-            p = p+1
-            p_to_i(p) = j
-            i_to_p(j) = p
-          end if
-        end do
+        !p = 1
+        !p_to_i(p) = i
+        !i_to_p(i) = p
+        !in_cutoff(i) = .true.
+        !do j2 = 2, n_neigh(i)
+        !  k = k+1
+        !  j = neighbors_list(k)
+        !  if (rjs(k) < 2*rcut) then
+        !    in_cutoff(j) = .true.
+        !    p = p+1
+        !    p_to_i(p) = j
+        !    i_to_p(j) = p
+        !  end if
+        !end do
         !write(*,*) "in cutoff"
         !write(*,*) in_cutoff
         !write(*,*) "p_to_i"
         !write(*,*) p_to_i
         !write(*,*) "i_to_p"
         !write(*,*) i_to_p
-        n_sub_sites = p
+        !n_sub_sites = p
         !write(*,*) "n_sub_sites", n_sub_sites
+        n_sub_sites = 0
         n_sub_pairs = 0
-        n_tot = sum(n_neigh(1:i))-n_neigh(i)
+        !n_tot = sum(n_neigh(1:i))-n_neigh(i)
         allocate( n_sub_neigh(1:n_sub_sites) )
-        n_sub_neigh = 0
-        !p = 0
-        !do j2 = 1, n_neigh(i)
-        !  j = modulo(neighbors_list(n_tot+j2)-1,n_sites)+1
-        do p = 1, n_sub_sites
-          j = p_to_i(p)
-          if ( in_cutoff(j) ) then
+        !n_sub_neigh = 0
+        k_i = 0
+        do i3 = 1, n_neigh(i)
+          k = k+1
+          k_i = k_i + 1
+          !j = p_to_i(p)
+          if (rjs(n_tot+k_i) < 2*rcut ) then
+            n_sub_sites = n_sub_sites + 1
             n_sub_pairs = n_sub_pairs + 1
-            n_sub_neigh(p) = n_sub_neigh(p) + 1
-            n_tot2 = sum(n_neigh(1:j))-n_neigh(j)
+            !n_sub_neigh(p) = n_sub_neigh(p) + 1
+            !n_tot2 = sum(n_neigh(1:j))-n_neigh(j)
             !write(*,*) "n_tot2", n_tot2
-            do j3 = 2, n_neigh(j)
-              if ( rjs(n_tot2+j3) < rcut ) then
-                if ( in_cutoff(neighbors_list(n_tot2+j3)) ) then
-                  n_sub_neigh(p) = n_sub_neigh(p) + 1
+            xyz_i = xyz(:,n_tot+k_i)/Bohr
+            k_j = 0
+            do j3 = 1, n_neigh(i)
+              k_j = k_j + 1
+              if ( rjs(n_tot+k_j) < 2*rcut ) then
+                if (i3 .ne. j3) then
+                xyz_j = xyz(:,n_tot+k_j)/Bohr
+                if ( sqrt(sum((xyz_j-xyz_i)**2)) < rcut/Bohr ) then
+                  !if (i == 1 .and. p == 7) then
+                  !write(*,*) "i, j", j, neighbors_list(n_tot2+j3)
+                  !end if
+                  !n_sub_neigh(p) = n_sub_neigh(p) + 1
                   n_sub_pairs = n_sub_pairs + 1
+                end if
                 end if
               end if
             end do
           end if
         end do
+
+        !write(*,*) "n_sub_sites", n_sub_sites
+        !write(*,*) "n_sub_pairs", n_sub_pairs
      
         !write(*,*) "p_to_i", p_to_i
         !write(*,*) "i_to_p", i_to_p
@@ -691,7 +705,7 @@ module vdw
         allocate( neighbor_sigma(1:n_sub_pairs) )
         allocate( omegas(1:n_sub_pairs) )
         allocate( T_func(1:9*n_sub_pairs) )
-        allocate( B_mat(1:3*n_sub_sites,1:3*n_sub_sites) )
+        !allocate( B_mat(1:3*n_sub_sites,1:3*n_sub_sites) )
         allocate( f_damp(1:n_sub_pairs) )
         allocate( g_func(1:n_sub_pairs) )
         allocate( h_func(1:9*n_sub_pairs) )
@@ -720,7 +734,7 @@ module vdw
         nnz = 0
         k2 = 0
         T_func = 0.d0
-        B_mat = 0.d0
+        !B_mat = 0.d0
 
         a_SCS = 0.d0
         b_i = 0.d0
@@ -735,30 +749,54 @@ module vdw
         !    val(nnz) = 1.d0/alpha_i(p_to_i(p))
         !  end do
         !end do
-        n_tot = sum(n_neigh(1:i))-n_neigh(i)
+
+
+        !n_tot = sum(n_neigh(1:i))-n_neigh(i)
+
+
         !n_sub_neigh = 0
         !do j2 = 1, n_neigh(i)
         !  i2 = modulo(neighbors_list(n_tot+j2)-1,n_sites)+1
 
-        do p = 1, n_sub_sites
-          i2 = p_to_i(p)
-          if ( in_cutoff(i2) ) then 
+        !NEIGHBORS_LIST TEST
+        !do p = 1, n_sub_sites
+        !  i2 = p_to_i(p)
+        !write(*,*) "n_neigh", n_neigh(i)
+        k_i = 0
+        p = 0
+        do i3 = 1, n_neigh(i)
+          !if (i == 1 .and. i3 == 8) then
+          !write(*,*) "k2", k2
+          !end if
+          k_i = k_i+1
+          i2 = neighbors_list(n_tot+k_i)
+          if ( rjs(n_tot+k_i) < 2*rcut ) then
+            p = p+1
+            !p = i_to_p(i2)
+            !write(*,*) "p, i_to_p", p, i_to_p(i2) 
             k2 = k2+1
-            n_tot2 = sum(n_neigh(1:i2))-n_neigh(i2)
-            s = neighbor_species(n_tot2+1)
-            sub_neighbors_list(k2) = i2
-            !n_sub_neigh(j2) = n_sub_neigh(i2) + 1
-            r0_ii(k2) = r0_ref(s) / Bohr * hirshfeld_v_neigh(n_tot2+1)**(1.d0/3.d0)
+            !n_tot2 = sum(n_neigh(1:i2))-n_neigh(i2)
+            !s = neighbor_species(n_tot2+1)
+            s = neighbor_species(n_tot+k_i)
+            sub_neighbors_list(k2) = neighbors_list(n_tot+k_i)
+            !r0_ii(k2) = r0_ref(s) / Bohr * hirshfeld_v_neigh(n_tot2+1)**(1.d0/3.d0)
+            r0_ii(k2) = r0_ref(s) / Bohr * hirshfeld_v_neigh(n_tot+k_i)**(1.d0/3.d0)
             omegas(k2) = (4.d0 * c6_ref(s)/(Hartree*Bohr**6)) / (3.d0*(alpha0_ref(s)/Bohr**3)**2)
             if ( om == 1 ) then
-              neighbor_alpha0(k2) = alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot2+1)
+              !neighbor_alpha0(k2) = alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot2+1)
+              neighbor_alpha0(k2) = alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot+k_i)
             else
-              neighbor_alpha0(k2) = (alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot2+1)) / &
+              !neighbor_alpha0(k2) = (alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot2+1)) / &
+              !  (1.d0 + (2.d0 * omega_ref/omegas(k2))**2) ! omega = 2*omega_p
+              neighbor_alpha0(k2) = (alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot+k_i)) / &
                 (1.d0 + (2.d0 * omega_ref/omegas(k2))**2) ! omega = 2*omega_p
             end if
             neighbor_sigma(k2) = (sqrt(2.d0/pi) * neighbor_alpha0(k2)/3.d0)**(1.d0/3.d0)
-            xyz_H(:,k2) = xyz(:,n_tot2+1)/Bohr
-            rjs_H(k2) = rjs(n_tot2+1)/Bohr
+            !xyz_H(:,k2) = xyz(:,n_tot2+1)/Bohr
+            !rjs_H(k2) = rjs(n_tot2+1)/Bohr
+            xyz_H(:,k2) = xyz(:,n_tot+k_i)/Bohr
+            xyz_i = xyz_H(:,k2)
+            rjs_H(k2) = rjs(n_tot+k_i)/Bohr
             r_vdw_i = r0_ii(k2)
             s_i = neighbor_sigma(k2)
             if (p == 1) then
@@ -767,42 +805,47 @@ module vdw
               end do
             end if
             do c1 = 1, 3
-              B_mat(3*(p-1)+c1,3*(p-1)+c1) = 1.d0/neighbor_alpha0(k2)
+              !B_mat(3*(p-1)+c1,3*(p-1)+c1) = 1.d0/neighbor_alpha0(k2)
               nnz = nnz+1
               ia(nnz) = 3*(p-1)+c1
               ja(nnz) = 3*(p-1)+c1
-              !val(nnz) = 1.d0
               val(nnz) = 1.d0/neighbor_alpha0(k2)
             end do
-            do j3 = 2, n_neigh(i2)
-              if ( rjs(n_tot2+j3) < rcut ) then
-                j = neighbors_list(n_tot2+j3)
-                if ( in_cutoff(j) ) then
-                  q = i_to_p(j)
-                  !n_sub_neigh(j2) = n_sub_neigh(j2) + 1
+            k_j = 0
+            q = 0
+            !do j3 = 2, n_neigh(i2)
+            do j3 = 1, n_neigh(i)
+              k_j = k_j+1
+              if ( rjs(n_tot+k_j) < 2*rcut ) then
+                q = q+1
+                !write(*,*) "q, i_to_p", q, i_to_p(neighbors_list(n_tot+k_j))
+                if (i3 .ne. j3) then
+                xyz_j = xyz(:,n_tot+k_j)/Bohr
+                if ( sqrt(sum((xyz_j-xyz_i)**2)) < rcut/Bohr ) then
+                !j = neighbors_list(n_tot+k_j)
+                !if ( rjs(n_tot+k_j) < 2*rcut ) then
+                  !if (i == 1 .and. i3 == 7) then
+                  !write(*,*) "i, j", i2, j
+                  !end if
+                  j = neighbors_list(n_tot+k_j)
+                  !q = i_to_p(j)
                   k2 = k2+1    
-                  s = neighbor_species(n_tot2+j3)
-                  !j = neighbors_list(n_tot2+j3)
+                  s = neighbor_species(n_tot+k_j)
                   sub_neighbors_list(k2) = j                        
-                  r0_ii(k2) = r0_ref(s) / Bohr * hirshfeld_v_neigh(n_tot2+j3)**(1.d0/3.d0)
+                  r0_ii(k2) = r0_ref(s) / Bohr * hirshfeld_v_neigh(n_tot+k_j)**(1.d0/3.d0)
                   omegas(k2) = (4.d0 * c6_ref(s)/(Hartree*Bohr**6)) / (3.d0*(alpha0_ref(s)/Bohr**3)**2)
                   if ( om == 1 ) then
-                    neighbor_alpha0(k2) = alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot2+j3)
+                    neighbor_alpha0(k2) = alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot+k_j)
                   else
-                    neighbor_alpha0(k2) = (alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot2+j3)) / &
+                    neighbor_alpha0(k2) = (alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot+k_j)) / &
                       (1.d0 + (2.d0 * omega_ref/omegas(k2))**2) ! omega = 2*omega_p
                   end if
                   neighbor_sigma(k2) = (sqrt(2.d0/pi) * neighbor_alpha0(k2)/3.d0)**(1.d0/3.d0)
-                  xyz_H(:,k2) = xyz(:,n_tot2+j3)/Bohr
-                  rjs_H(k2) = rjs(n_tot2+j3)/Bohr
+                  xyz_H(:,k2) = xyz_j-xyz_i
+                  !rjs_H(k2) = rjs(n_tot2+j3)/Bohr
+                  rjs_H(k2) = sqrt(sum((xyz_j-xyz_i)**2))
                   r_vdw_j = r0_ii(k2)
                   f_damp(k2) = 1.d0/( 1.d0 + exp( -d*( rjs_H(k2)/(sR*(r_vdw_i + r_vdw_j)) - 1.d0 ) ) )
-                  !if ( i == 2 .and. p == 40 .and. q == 41 ) then
-                  !  write(*,*) "p,q,f_damp", p, q, f_damp(k2)
-                  !end if
-                  !if ( i == 2 .and. p == 41 .and. q == 40 ) then
-                  !  write(*,*) "p,q,f_damp", p, q, f_damp(k2)
-                  !end if
                   s_j = neighbor_sigma(k2)
                   sigma_ij = sqrt(s_i**2 + s_j**2)
                   g_func(k2) = erf(rjs_H(k2)/sigma_ij) - 2.d0/sqrt(pi) * (rjs_H(k2)/sigma_ij) * exp(-rjs_H(k2)**2.d0/sigma_ij**2)
@@ -817,8 +860,8 @@ module vdw
                       end if
                       h_func(k3) = 4.d0/sqrt(pi) * (rjs_H(k2)/sigma_ij)**3 * &
                                       xyz_H(c1,k2)*xyz_H(c2,k2)/rjs_H(k2)**5 * exp(-rjs_H(k2)**2/sigma_ij**2)
-                      B_mat(3*(p-1)+c1,3*(q-1)+c2) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
-                                                  g_func(k2) + h_func(k3))
+                      !B_mat(3*(p-1)+c1,3*(q-1)+c2) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
+                      !                            g_func(k2) + h_func(k3))
                       if ( p == 1 ) then
                         b_i(3*(q-1)+c2,c1) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
                                                   g_func(k2) + h_func(k3))
@@ -832,9 +875,15 @@ module vdw
                   end do
                 end if
               end if
+              end if
             end do
           end if
         end do
+
+        !if (i == 1) then
+        !write(*,*) "k2", k2
+        !write(*,*) "n_sub_pairs", n_sub_pairs
+        !end if
 
         !if ( i == 1 .and. om == 1 ) then
         !  write(*,*) "Writing B_mat"
@@ -999,9 +1048,9 @@ module vdw
         !polyfit = (/ -11465.40348552d0, 6509.62160556d0, -1165.56417327d0, 70.55762083d0 /)
 
 !call cpu_time(time1)
+        allocate( myidx(1:3*n_sub_sites) )
         allocate( val_xv(1:3*n_sub_sites,1:3) )
         allocate( val_bv(1:3*n_sub_sites,1:3) )
-        allocate( myidx(1:3*n_sub_sites) )
         val_xv = 0.d0
         !val_bv = 0.d0
         k2 = 0
@@ -1022,6 +1071,7 @@ module vdw
         !do p = 1, 6
         !  write(*,*) val_xv(p,:)
         !end do
+
 
         call cpu_time(time1)
         call psb_init(icontxt)
@@ -1128,7 +1178,7 @@ module vdw
 
         deallocate( n_sub_neigh, sub_neighbors_list, xyz_H, rjs_H, r0_ii, neighbor_alpha0, neighbor_sigma, omegas, &
                     T_func, b_i, g_func, h_func, f_damp, a_SCS, ipiv, ia, ja, val )
-        deallocate( B_mat)
+        !deallocate( B_mat)
                    
       end do
 
@@ -1168,64 +1218,74 @@ module vdw
       k = 0
       do i = 1, n_sites
       
-        write(*,*) "Gradients for atom", i
-
-        if ( do_timing ) then
-        call cpu_time(time1)
-        end if
-
-        p_to_i = 0
-        i_to_p = 0
-        in_cutoff = .false.
-        k = k+1
-        p = 1
-        p_to_i(p) = i
-        i_to_p(i) = p
-        in_cutoff(i) = .true.
-        do j2 = 2, n_neigh(i)
-          k = k+1
-          !write(*,*) "k", k
-          j = neighbors_list(k)
-          !if (rjs(k) < n_degree * rcut) then !CUT-OFF TEST!!!!
-          if (rjs(k) < 2 * rcut) then
-            in_cutoff(j) = .true.
-            p = p+1
-            p_to_i(p) = j
-            i_to_p(j) = p
-          end if
-        end do
+        n_tot = sum(n_neigh(1:i))-n_neigh(i)
+        write(*,*) i, "/", n_sites
+        !p_to_i = 0
+        !i_to_p = 0
+        !in_cutoff = .false.
+        !k = k+1
+        s = neighbor_species(n_tot+1)
+        omega_ref = (4.d0 * c6_ref(s)/(Hartree*Bohr**6)) / (3.d0*(alpha0_ref(s)/Bohr**3)**2)
+        !p = 1
+        !p_to_i(p) = i
+        !i_to_p(i) = p
+        !in_cutoff(i) = .true.
+        !do j2 = 2, n_neigh(i)
+        !  k = k+1
+        !  j = neighbors_list(k)
+        !  if (rjs(k) < 2*rcut) then
+        !    in_cutoff(j) = .true.
+        !    p = p+1
+        !    p_to_i(p) = j
+        !    i_to_p(j) = p
+        !  end if
+        !end do
         !write(*,*) "in cutoff"
         !write(*,*) in_cutoff
         !write(*,*) "p_to_i"
         !write(*,*) p_to_i
         !write(*,*) "i_to_p"
         !write(*,*) i_to_p
-        n_sub_sites = p
+        !n_sub_sites = p
         !write(*,*) "n_sub_sites", n_sub_sites
+        n_sub_sites = 0
         n_sub_pairs = 0
-        n_tot = sum(n_neigh(1:i))-n_neigh(i)
+        !n_tot = sum(n_neigh(1:i))-n_neigh(i)
         allocate( n_sub_neigh(1:n_sub_sites) )
-        n_sub_neigh = 0
-        !p = 0
-        !do j2 = 1, n_neigh(i)
-        !  j = modulo(neighbors_list(n_tot+j2)-1,n_sites)+1
-        do p = 1, n_sub_sites
-          j = p_to_i(p)
-          if ( in_cutoff(j) ) then
+        !n_sub_neigh = 0
+        k_i = 0
+        do i3 = 1, n_neigh(i)
+          k = k+1
+          k_i = k_i + 1
+          !j = p_to_i(p)
+          if (rjs(n_tot+k_i) < 2*rcut ) then
+            n_sub_sites = n_sub_sites + 1
             n_sub_pairs = n_sub_pairs + 1
-            n_sub_neigh(p) = n_sub_neigh(p) + 1
-            n_tot2 = sum(n_neigh(1:j))-n_neigh(j)
+            !n_sub_neigh(p) = n_sub_neigh(p) + 1
+            !n_tot2 = sum(n_neigh(1:j))-n_neigh(j)
             !write(*,*) "n_tot2", n_tot2
-            do j3 = 2, n_neigh(j)
-              if ( rjs(n_tot2+j3) < rcut ) then
-                if ( in_cutoff(neighbors_list(n_tot2+j3)) ) then
-                  n_sub_neigh(p) = n_sub_neigh(p) + 1
+            xyz_i = xyz(:,n_tot+k_i)/Bohr
+            k_j = 0
+            do j3 = 1, n_neigh(i)
+              k_j = k_j + 1
+              if ( rjs(n_tot+k_j) < 2*rcut ) then
+                if (i3 .ne. j3) then
+                xyz_j = xyz(:,n_tot+k_j)/Bohr
+                if ( sqrt(sum((xyz_j-xyz_i)**2)) < rcut/Bohr ) then
+                  !if (i == 1 .and. p == 7) then
+                  !write(*,*) "i, j", j, neighbors_list(n_tot2+j3)
+                  !end if
+                  !n_sub_neigh(p) = n_sub_neigh(p) + 1
                   n_sub_pairs = n_sub_pairs + 1
+                end if
                 end if
               end if
             end do
           end if
         end do
+
+        !write(*,*) "n_sub_sites", n_sub_sites
+        !write(*,*) "n_sub_pairs", n_sub_pairs
      
         !write(*,*) "p_to_i", p_to_i
         !write(*,*) "i_to_p", i_to_p
@@ -1239,62 +1299,121 @@ module vdw
         allocate( r0_ii(1:n_sub_pairs) )
         allocate( neighbor_alpha0(1:n_sub_pairs) )
         allocate( neighbor_sigma(1:n_sub_pairs) )
+        allocate( omegas(1:n_sub_pairs) )
         allocate( T_func(1:9*n_sub_pairs) )
         !allocate( B_mat(1:3*n_sub_sites,1:3*n_sub_sites) )
         allocate( f_damp(1:n_sub_pairs) )
         allocate( g_func(1:n_sub_pairs) )
         allocate( h_func(1:9*n_sub_pairs) )
+        !allocate( a_vec(1:3*n_sub_sites,1:3) )
+        !allocate( a_SCS(1:3*n_sub_sites,1:3) )
+        allocate( ipiv(1:3*n_sub_sites) )
+        
+        !allocate( ia(1:9*n_sub_pairs) )
+        !allocate( ja(1:9*n_sub_pairs) )
+        !allocate( val(1:9*n_sub_pairs) )
+        !allocate( b_i(1:3*n_sub_sites,1:3) )
         
         !write(*,*) "allocation successful"
 
+        xyz_H = 0.d0
+        rjs_H = 0.d0
+        r0_ii = 0.d0
+        neighbor_alpha0 = 0.d0
+        neighbor_sigma = 0.d0
+
+        f_damp = 0.d0
+        g_func = 0.d0
+        h_func = 0.d0
+
+        nnz = 0
         k2 = 0
         T_func = 0.d0
         !B_mat = 0.d0
 
+        a_SCS = 0.d0
+        b_i = 0.d0
         !do p = 1, n_sub_sites
         !  do c1 = 1, 3
         !    !B_mat(j2,j2) = 1.d0
-        !    B_mat(3*(p-1)+c1,3*(p-1)+c1) = 1.d0/alpha_i(p_to_i(p))
+        !    !B_mat(3*(p-1)+c1,3*(p-1)+c1) = 1.d0/alpha_i(p_to_i(p))
+        !    nnz = nnz+1
+        !    ia(nnz) = 3*(p-1)+c1
+        !    ja(nnz) = 3*(p-1)+c1
+        !    !val(nnz) = 1.d0
+        !    val(nnz) = 1.d0/alpha_i(p_to_i(p))
         !  end do
         !end do
-        n_tot = sum(n_neigh(1:i))-n_neigh(i)
-        do p = 1, n_sub_sites
-          i2 = p_to_i(p)
-          if ( in_cutoff(i2) ) then 
+
+
+        !n_tot = sum(n_neigh(1:i))-n_neigh(i)
+
+
+        !n_sub_neigh = 0
+        !do j2 = 1, n_neigh(i)
+        !  i2 = modulo(neighbors_list(n_tot+j2)-1,n_sites)+1
+
+        !NEIGHBORS_LIST TEST
+        !do p = 1, n_sub_sites
+        !  i2 = p_to_i(p)
+        !write(*,*) "n_neigh", n_neigh(i)
+        k_i = 0
+        p = 0
+        do i3 = 1, n_neigh(i)
+          !if (i == 1 .and. i3 == 8) then
+          !write(*,*) "k2", k2
+          !end if
+          k_i = k_i+1
+          i2 = neighbors_list(n_tot+k_i)
+          if ( rjs(n_tot+k_i) < 2*rcut ) then
+            p = p+1
+            !p = i_to_p(i2)
+            !write(*,*) "p, i_to_p", p, i_to_p(i2) 
             k2 = k2+1
-            n_tot2 = sum(n_neigh(1:i2))-n_neigh(i2)
-            s = neighbor_species(n_tot2+1)
-            sub_neighbors_list(k2) = i2
-            !n_sub_neigh(j2) = n_sub_neigh(i2) + 1
-            r0_ii(k2) = r0_ref(s) / Bohr * hirshfeld_v_neigh(n_tot2+1)**(1.d0/3.d0)
-            neighbor_alpha0(k2) = alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot2+1)
+            !n_tot2 = sum(n_neigh(1:i2))-n_neigh(i2)
+            !s = neighbor_species(n_tot2+1)
+            s = neighbor_species(n_tot+k_i)
+            sub_neighbors_list(k2) = neighbors_list(n_tot+k_i)
+            !r0_ii(k2) = r0_ref(s) / Bohr * hirshfeld_v_neigh(n_tot2+1)**(1.d0/3.d0)
+            r0_ii(k2) = r0_ref(s) / Bohr * hirshfeld_v_neigh(n_tot+k_i)**(1.d0/3.d0)
+            omegas(k2) = (4.d0 * c6_ref(s)/(Hartree*Bohr**6)) / (3.d0*(alpha0_ref(s)/Bohr**3)**2)
             neighbor_sigma(k2) = (sqrt(2.d0/pi) * neighbor_alpha0(k2)/3.d0)**(1.d0/3.d0)
-            xyz_H(:,k2) = xyz(:,n_tot2+1)/Bohr
-            rjs_H(k2) = rjs(n_tot2+1)/Bohr
+            !xyz_H(:,k2) = xyz(:,n_tot2+1)/Bohr
+            !rjs_H(k2) = rjs(n_tot2+1)/Bohr
+            xyz_H(:,k2) = xyz(:,n_tot+k_i)/Bohr
+            xyz_i = xyz_H(:,k2)
+            rjs_H(k2) = rjs(n_tot+k_i)/Bohr
             r_vdw_i = r0_ii(k2)
-            !s_i = sigma_i(i2)
             s_i = neighbor_sigma(k2)
-            do j3 = 2, n_neigh(i2)
-              if ( rjs(n_tot2+j3) < rcut ) then
-                j = neighbors_list(n_tot2+j3)
-                q = i_to_p(j)
-                if ( in_cutoff(j) ) then
-                  !n_sub_neigh(j2) = n_sub_neigh(j2) + 1
+            k_j = 0
+            q = 0
+            !do j3 = 2, n_neigh(i2)
+            do j3 = 1, n_neigh(i)
+              k_j = k_j+1
+              if ( rjs(n_tot+k_j) < 2*rcut ) then
+                q = q+1
+                !write(*,*) "q, i_to_p", q, i_to_p(neighbors_list(n_tot+k_j))
+                if (i3 .ne. j3) then
+                xyz_j = xyz(:,n_tot+k_j)/Bohr
+                if ( sqrt(sum((xyz_j-xyz_i)**2)) < rcut/Bohr ) then
+                !j = neighbors_list(n_tot+k_j)
+                !if ( rjs(n_tot+k_j) < 2*rcut ) then
+                  !if (i == 1 .and. i3 == 7) then
+                  !write(*,*) "i, j", i2, j
+                  !end if
+                  j = neighbors_list(n_tot+k_j)
+                  !q = i_to_p(j)
                   k2 = k2+1    
-                  s = neighbor_species(n_tot2+j3)
-                  !j = neighbors_list(n_tot2+j3)
+                  s = neighbor_species(n_tot+k_j)
                   sub_neighbors_list(k2) = j                        
-                  r0_ii(k2) = r0_ref(s) / Bohr * hirshfeld_v_neigh(n_tot2+j3)**(1.d0/3.d0)
-                  neighbor_alpha0(k2) = alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot2+j3)
+                  r0_ii(k2) = r0_ref(s) / Bohr * hirshfeld_v_neigh(n_tot+k_j)**(1.d0/3.d0)
+                  omegas(k2) = (4.d0 * c6_ref(s)/(Hartree*Bohr**6)) / (3.d0*(alpha0_ref(s)/Bohr**3)**2)
                   neighbor_sigma(k2) = (sqrt(2.d0/pi) * neighbor_alpha0(k2)/3.d0)**(1.d0/3.d0)
-                  xyz_H(:,k2) = xyz(:,n_tot2+j3)/Bohr
-                  rjs_H(k2) = rjs(n_tot2+j3)/Bohr
+                  xyz_H(:,k2) = xyz_j-xyz_i
+                  !rjs_H(k2) = rjs(n_tot2+j3)/Bohr
+                  rjs_H(k2) = sqrt(sum((xyz_j-xyz_i)**2))
                   r_vdw_j = r0_ii(k2)
                   f_damp(k2) = 1.d0/( 1.d0 + exp( -d*( rjs_H(k2)/(sR*(r_vdw_i + r_vdw_j)) - 1.d0 ) ) )
-                  !if ( i == 11 .and. p == 1 .and. q == 12 ) then
-                  !  write(*,*) "f_damp", f_damp(k2)
-                  !end if
-                  !s_j = sigma_i(j)
                   s_j = neighbor_sigma(k2)
                   sigma_ij = sqrt(s_i**2 + s_j**2)
                   g_func(k2) = erf(rjs_H(k2)/sigma_ij) - 2.d0/sqrt(pi) * (rjs_H(k2)/sigma_ij) * exp(-rjs_H(k2)**2.d0/sigma_ij**2)
@@ -1309,27 +1428,20 @@ module vdw
                       end if
                       h_func(k3) = 4.d0/sqrt(pi) * (rjs_H(k2)/sigma_ij)**3 * &
                                       xyz_H(c1,k2)*xyz_H(c2,k2)/rjs_H(k2)**5 * exp(-rjs_H(k2)**2/sigma_ij**2)
-                      !B_mat(3*(p-1)+c1,3*(q-1)+c2) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
-                      !                            g_func(k2) + h_func(k3))
                     end do
                   end do
                 end if
               end if
+              end if
             end do
           end if
         end do
-        !if ( i == 1 ) then
-        !write(*,*) "f_damp full"
-        !write(*,*) f_damp
-        !end if
         
         if ( do_timing ) then
         call cpu_time(time2)
         write(*,*) "pre-calculation stuff timing", time2-time1
         call cpu_time(time1)
         end if
-        
-        !if ( do_derivatives ) then
 
         allocate( dT(1:9*n_sub_pairs) )
         !allocate( dB_mat(1:3*n_sub_sites,1:3*n_sub_sites) )
@@ -1343,7 +1455,7 @@ module vdw
         write(*,*) "gradient allocation", time2-time1
         end if
 
-        do c3 = 1, 3
+        do c3 = 1, 3  ! REMOVE NEIGHBOR-NEIGHBOR LIST DEPENDENCIES INSIDE THIS LOOP!!!!!
           if ( do_timing ) then
           call cpu_time(time1)
           end if
@@ -2797,14 +2909,14 @@ module vdw
                n_2b_sites, n_2b_pairs, n_tot_sites
     integer :: k, k2, k3, i, i2, j, j2, j3, c1, c2, c3, a, a2, om, p, q, r, n_tot, n_tot2, s
     real*8 :: Bohr, Hartree, pi, r_vdw_i, r_vdw_j, E_MBD, integral, omega, R_vdW_SCS_ij, S_vdW_ij, &
-              dS_vdW_ij, time1, time2, rcut_mbd
+              dS_vdW_ij, time1, time2, rcut_mbd, C6_2b, E_TS
     logical :: series_average = .false., do_timing = .false., local = .true.
     logical, allocatable :: in_cutoff(:), in_2b_cutoff(:) 
     integer, allocatable :: p_to_i(:), i_to_p(:), sub_neighbors_list(:), n_sub_neigh(:), sub_2b_list(:), &
                             r_to_i(:), i_to_r(:)
 
 
-    rcut_mbd = 9.d0
+    rcut_mbd = 4.5d0
     write(*,*) "Full cutoff", rcut
     write(*,*) "MBD cutoff", rcut_mbd
 !   Hartree units (calculations done in Hartree units for simplicity)
@@ -3023,6 +3135,7 @@ module vdw
           end if
         end do
 
+        E_TS = 0.d0
         k2 = 0
         T_func_2b = 0.d0
         t_vec = 0.d0
@@ -3042,23 +3155,29 @@ module vdw
             rjs_2b(k2) = rjs(n_tot+j2)/Bohr
             r0_ii_SCS_2b(k2) = r0_ii_2b(k2) * (alpha_SCS0(i2,1)/neighbor_alpha0_2b(k2))**(1.d0/3.d0)
             r_vdw_j = r0_ii_SCS_2b(k2)
-            f_damp_SCS_2b(k2) = 1.d0/( 1.d0 + exp( -d*( rjs_2b(k2)/(sR*(r_vdw_i + r_vdw_j)) - 1.d0 ) ) )
-            k3 = 9*(k2-1)
-            do c1 = 1, 3
-              do c2 = 1, 3
-                k3 = k3 + 1
-                if (c1 == c2) then
-                  T_func_2b(k3) = (3*xyz_2b(c1,k2) * xyz_2b(c1,k2) - rjs_2b(k2)**2)/rjs_2b(k2)**5
-                else
-                  T_func_2b(k3) = (3*xyz_2b(c1,k2) * xyz_2b(c2,k2))/rjs_2b(k2)**5
-                end if
-                q = i_to_r(i2)
-                !q = i_to_r(j)
-                t_vec(c1,3*(q-1)+c2) = f_damp_SCS_2b(k2) * T_func_2b(k3)
-              end do
-            end do
+            ! Here sR=0.97 for TS-SCS!
+            f_damp_SCS_2b(k2) = 1.d0/( 1.d0 + exp( -d*( rjs_2b(k2)/(0.97d0*(r_vdw_i + r_vdw_j)) - 1.d0 ) ) )
+            C6_2b = 3.d0/2.d0 * alpha_SCS0(i,1) * alpha_SCS0(i2,1) * (alpha_SCS0(i,3) * alpha_SCS0(i2,3)) / &
+                    (alpha_SCS0(i,3) + alpha_SCS0(i2,3))
+            E_TS = E_TS - C6_2b/rjs_2b(k2)**6 * f_damp_SCS_2b(k2)
+            !MBD 2b approach below
+            !k3 = 9*(k2-1)
+            !do c1 = 1, 3
+            !  do c2 = 1, 3
+            !    k3 = k3 + 1
+            !    if (c1 == c2) then
+            !      T_func_2b(k3) = (3*xyz_2b(c1,k2) * xyz_2b(c1,k2) - rjs_2b(k2)**2)/rjs_2b(k2)**5
+            !    else
+            !      T_func_2b(k3) = (3*xyz_2b(c1,k2) * xyz_2b(c2,k2))/rjs_2b(k2)**5
+            !    end if
+            !    q = i_to_r(i2)
+            !    !q = i_to_r(j)
+            !    t_vec(c1,3*(q-1)+c2) = f_damp_SCS_2b(k2) * T_func_2b(k3)
+            !  end do
+            !end do
           end if
         end do
+        E_TS = 1.d0/2.d0 * E_TS
 
         !write(*,*) "t_vec"
         !do p = 1, 3*n_2b_sites
@@ -3150,10 +3269,10 @@ module vdw
               end do
             end if
             ! Two-body stuff
-            do c1 = 1, 3
-              integrand(i,om) = integrand(i,om) - alpha_SCS0(i,1)/(1.d0 + (omegas(om)/alpha_SCS0(i,3))**2) * &
-                                dot_product(t_vec(c1,:),g_vec(c1,:))/2.d0
-            end do
+            !do c1 = 1, 3
+            !  integrand(i,om) = integrand(i,om) - alpha_SCS0(i,1)/(1.d0 + (omegas(om)/alpha_SCS0(i,3))**2) * &
+            !                    dot_product(t_vec(c1,:),g_vec(c1,:))/2.d0
+            !end do
 
 
           else
@@ -3290,15 +3409,17 @@ module vdw
         end if ! do derivatives
 
         end do ! om loop
-        
+
         !write(*,*) "integrand", integrand(i,:)
         !write(*,*) "omegas", omegas
         integral = 0.d0
         call integrate("trapezoidal", omegas, integrand(i,:), omegas(1), omegas(n_freq), integral)
         E_MBD = integral/(2.d0*pi)
-        energies(i) = E_MBD * 27.211386245988
+        energies(i) = (E_MBD+E_TS) * 27.211386245988
         write(*,*) "Local energy", i, energies(i)
-        
+        write(*,*) "MBD:", E_MBD * 27.211386245988
+        write(*,*) "TS:", E_TS * 27.211386245988        
+
         if ( do_derivatives ) then
           do c3 = 1, 3
             integral = 0.d0
