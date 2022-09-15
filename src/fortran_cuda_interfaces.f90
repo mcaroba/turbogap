@@ -27,6 +27,13 @@ MODULE F_B_C
           integer(c_int),value :: n
       end subroutine
 
+      subroutine gpu_malloc_bool(a_d,n) bind(C,name="cuda_malloc_bool")
+        use iso_c_binding
+        implicit none
+          type(c_ptr) :: a_d
+          integer(c_int),value :: n
+      end subroutine
+
       subroutine gpu_free(a_d) bind(C,name="cuda_free")
         use iso_c_binding
         implicit none
@@ -49,6 +56,13 @@ MODULE F_B_C
       end subroutine
 
       subroutine cpy_int_htod(a,a_d,n) bind(C,name="cuda_cpy_int_htod")
+        use iso_c_binding
+        implicit none
+        type(c_ptr),value :: a_d,a
+        integer(c_int),value :: n
+      end subroutine
+
+      subroutine cpy_bool_htod(a,a_d,n) bind(C,name="cuda_cpy_bool_htod")
         use iso_c_binding
         implicit none
         type(c_ptr),value :: a_d,a

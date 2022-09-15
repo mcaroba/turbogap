@@ -119,8 +119,13 @@ extern "C" void cuda_cpy_double_htod(double *a, double *a_d, int N)
 {
    //cudaMemcpy(a_d, a, sizeof(double) * N, cudaMemcpyHostToDevice);
    cudaMemcpyAsync(a_d, a, sizeof(double) * N, cudaMemcpyHostToDevice);
+   return;
+}
 
-
+extern "C" void cuda_cpy_bool_htod(bool *a, double *a_d, int N)
+{
+   //cudaMemcpy(a_d, a, sizeof(double) * N, cudaMemcpyHostToDevice);
+   cudaMemcpyAsync(a_d, a, sizeof(bool) * N, cudaMemcpyHostToDevice);
    return;
 }
 
@@ -581,45 +586,49 @@ extern "C" void gpu_soap_energies_forces_virial(int *n_neigh_d, int n_sites, int
 
 
 
-__global__ void cuda_get_soap_p(double *soap_d, double *multiplicity_array_d, 
-                           cuDoubleComplex *cnk_d, int *skip_soap_component_d,
+__global__ void cuda_get_soap_p(double *soap_d, double *sqrt_dot_p_d, double *multiplicity_array_d, 
+                           cuDoubleComplex *cnk_d, bool *skip_soap_component_d,
                            int n_sites, int n_soap, int n_max, int l_max)
 {
    int i_site = threadIdx.x+blockIdx.x*blockDim.x;
    int k_max=1+l_max*(l_max+1)/2+l_max;
+   double my_sqrt_dot_p=0.0;
    if (i_site<n_sites){ 
     int counter=0;
     int counter2=0; 
+    //int ssc_counter=0;
     for(int n=1;n<=n_max;n++){
       for(int np=n;np<=n_max;np++){
         for(int l=0;l<=l_max;l++){
-          if(skip_soap_component_d[l+(l_max+1)*(np-1+(n-1)*n_max)]!=0){ //if( skip_soap_component(l, np, n) )cycle
+          //if(!skip_soap_component_d[ssc_counter]){ //if( skip_soap_component(l, np, n) )cycle
+          if(!skip_soap_component_d[l+(l_max+1)*(np-1+(n-1)*n_max)]){ //if( skip_soap_component(l, np, n) )cycle
             
             counter++;
-            if(i_site==1186){
-              printf("\n %d %d %d\n", i_site, counter, skip_soap_component_d[l+(l_max+1)*(np-1+(n-1)*n_max)]);
-            }
             double my_soap=soap_d[counter-1+i_site*n_soap];
             for(int m=0;m<=l; m++){
               int k=1+l*(l+1)/2+m; //k = 1 + l*(l+1)/2 + m
               counter2++;
               cuDoubleComplex tmp_1_cnk_d=cnk_d[k-1+k_max*(n-1 +i_site*n_max)];
               cuDoubleComplex tmp_2_cnk_d=cnk_d[k-1+k_max*(np-1+i_site*n_max)];
-              my_soap+=multiplicity_array_d[counter2-1]*(tmp_1_cnk_d.x*tmp_2_cnk_d.x-tmp_1_cnk_d.y*tmp_2_cnk_d.y); 
+              my_soap+=multiplicity_array_d[counter2-1]*(tmp_1_cnk_d.x*tmp_2_cnk_d.x+tmp_1_cnk_d.y*tmp_2_cnk_d.y); 
               //soap(counter, i) = soap(counter, i) + multiplicity * real(cnk(k, n, i) * conjg(cnk(k, np, i)))
             }
             soap_d[counter-1+i_site*n_soap]=my_soap;
+            my_sqrt_dot_p+=my_soap*my_soap;
           }
+          //ssc_counter++;
         }
-        /*if(i_site==1186){
-          printf("\n %d %d \n", i_site, counter);
-        }
-        */
       }
     }
+    my_sqrt_dot_p=sqrt(my_sqrt_dot_p);
+    if(my_sqrt_dot_p<1.0e-5){
+      my_sqrt_dot_p=1.0;
+    }
+    sqrt_dot_p_d[i_site]=my_sqrt_dot_p;
  }
 }
 
+/*
 __global__ void cuda_get_sqrt_dot_p(double *soap_d, double *sqrt_dot_p_d,  
                                 int n_sites, int n_soap)
 {
@@ -652,15 +661,16 @@ __global__ void cuda_get_sqrt_dot_p(double *soap_d, double *sqrt_dot_p_d,
     sqrt_dot_p_d[i_site]=final_dotprod;
   }
 }
+*/
 
 extern "C" void gpu_get_sqrt_dot_p(double *sqrt_dot_d, double *soap_d, double *multiplicity_array_d, 
-                                   cuDoubleComplex *cnk_d, int *skip_soap_component_d, 
+                                   cuDoubleComplex *cnk_d, bool *skip_soap_component_d, 
                                    int n_sites, int n_soap, int n_max, int l_max)
 {
   dim3 nblocks=dim3((n_sites-1+tpb)/tpb,1,1);
   dim3 nthreads=dim3(tpb,1,1);
-  cuda_get_soap_p<<<nblocks, nthreads>>>(soap_d, multiplicity_array_d, cnk_d, skip_soap_component_d, 
+  cuda_get_soap_p<<<nblocks, nthreads>>>(soap_d,sqrt_dot_d, multiplicity_array_d, cnk_d, skip_soap_component_d, 
                                          n_sites, n_soap, n_max, l_max);
-  cuda_get_sqrt_dot_p<<<n_sites,tpb>>>(soap_d,sqrt_dot_d, n_sites, n_soap);                                      
+  //cuda_get_sqrt_dot_p<<<n_sites,tpb>>>(soap_d,sqrt_dot_d, n_sites, n_soap);                                      
   return;
 }
