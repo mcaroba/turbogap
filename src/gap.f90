@@ -204,21 +204,6 @@ module gap
     call gpu_malloc_double(soap_der_d,size_soap_der)
     call cpy_double_htod(c_loc(soap_der), soap_der_d, size_soap_der)
 
-         ! gpu_soap_energies_forces_virial(n_neigh_d,n_sites,maxnn, &
-         !                                         Qss_d,n_soap,neighbors_beg_d, &
-         !                                         soap_der_d, &
-         !                                         xyz_d, virial_d, &
-         !                                         neighbors_list_d, n_sites0, forces_d, &
-         !                                         cuhandle, kernels_der_d, Qs_copy_d, &
-         !                                         n_sparse, cdelta_force, &
-         !                                         alphas_d, &
-         !                                         kernels_d, mzetam, size_kernels, &
-         !                                         do_forces, &
-         !                                         energies_d, cdelta_ene, e0,  size_energies, &
-         !                                         Qs_d, size_Qs, &
-         !                                         kernels_copy_d, &
-         !                                         zeta, &
-         !                                         soap_d)
      call gpu_soap_energies_forces_virial(n_neigh_d,n_sites, maxnn, &
                                       Qss_d,n_soap, neighbors_beg_d, &
                                       soap_der_d,  &
@@ -263,6 +248,9 @@ module gap
       call gpu_free(Qs_copy_d)
       call gpu_free(forces_d)
       call gpu_free(virial_d)
+      call gpu_free(xyz_d)
+      call gpu_free(soap_der_d)
+      call gpu_free(n_neigh_d)
 
 
 
