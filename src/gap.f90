@@ -68,7 +68,8 @@ module gap
     real*8, intent(inout) :: solo_time_soap
     real*8 :: ttt(2)
 
-    call cpu_time(ttt(1))
+    !call cpu_time(ttt(1))
+    ttt(1)=MPI_Wtime()
     call mpi_comm_rank(MPI_COMM_WORLD, rank, ierr)
     call gpu_set_device(rank) ! Every node has 4 GPUs. Even if there are more than 1 nodes used. This will assing the ranks to GPU in a roundbin fashion
     cdelta_ene=delta*delta
@@ -115,17 +116,22 @@ module gap
     call gpu_malloc_double(alphas_d,size_alphas)
     call gpu_malloc_double(energies_d,size_energies)
     call cpy_double_htod(c_loc(alphas),alphas_d,size_alphas)
+    !call dgemm( "t", "n", n_sites, n_sparse, n_soap, 1.d0, soap, n_soap, Qs, n_soap, 0.d0, &
+    !          kernels, n_sites)
+    call gpu_blas_mmul_t_n(cublas_handle, Qs_d, soap_d, kernels_d, n_sparse, n_soap, n_sites)
+    call cpy_double_dtoh(kernels_d,c_loc(kernels), n_sites*n_sparse)
 
-    if( do_timing )then
-      call cpu_time(time2)
-      energies_time = time2 - time1
-    end if
-
-
-      if( do_timing )then
-        call cpu_time(time1)
-      end if
-
+    !gpu_kernels_pow( kernels_d, kernels_copy_d,zeta, size_kernels);
+    !gpu_blas_mvmul_n(handle, kernels_copy_d, alphas_d, energies_d, n_sites, n_sparse);
+    !gpu_axpc( energies_d,cdelta_ene,e0, size_energies);
+    open(unit=15,file="test_kernels_gpu.txt")
+    do j=1,n_sparse
+       do i=1,n_sites
+          write(15,*) kernels(i,j)
+       enddo
+    enddo
+    close(15)
+    stop
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !    size_kernels=n_sites*n_sparse
 !    size_soap=n_soap*n_sites
@@ -276,7 +282,8 @@ module gap
   call gpu_free(energies_d)
   call gpu_free(alphas_d)
   call gpu_free(this_Qss_d)
-  call cpu_time(ttt(2))
+  !call cpu_time(ttt(2))
+  ttt(2)=MPI_Wtime()
   solo_time_soap=solo_time_soap+ttt(2)-ttt(1)
   !stop
   end subroutine

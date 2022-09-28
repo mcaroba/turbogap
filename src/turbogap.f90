@@ -135,7 +135,8 @@ program turbogap
 
 !**************************************************************************
 ! Start recording the time
-  call cpu_time(time1)
+  !call cpu_time(time1)
+  time1=MPI_Wtime()
   time3 = time1
 !**************************************************************************
 
@@ -259,7 +260,8 @@ program turbogap
 ! Read input file and other files
 !
   time_read_input(3) = 0.d0
-  call cpu_time(time_read_input(1))
+  !call cpu_time(time_read_input(1))
+  time_read_input(1)=MPI_Wtime()
   open(unit=10,file='input',status='old',iostat=iostatus)
 ! Check for existence of input file
 #ifdef _MPIF90
@@ -380,7 +382,8 @@ program turbogap
 !   THIS CHUNK HERE DISTRIBUTES THE INPUT DATA AMONG ALL THE PROCESSES
 !   Broadcast number of descriptors to other processes
 #ifdef _MPIF90
-    call cpu_time(time_mpi(1))
+    !call cpu_time(time_mpi(1))
+    time_mpi(1)=MPI_Wtime()
     call mpi_bcast(n_soap_turbo, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
     call mpi_bcast(n_distance_2b, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
     call mpi_bcast(n_angle_3b, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
@@ -388,7 +391,8 @@ program turbogap
 !   Broadcast the maximum cutoff distance
     call mpi_bcast(rcut_max, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
 !   Processes other than 0 need to allocate the data structures on their own
-    call cpu_time(time_mpi(2))
+    !call cpu_time(time_mpi(2))
+    time_mpi(2)=MPI_Wtime()
     time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
     allocate( n_species_mpi(1:n_soap_turbo) )
     allocate( n_sparse_mpi_soap_turbo(1:n_soap_turbo) )
@@ -410,7 +414,8 @@ program turbogap
       n_sparse_mpi_angle_3b = angle_3b_hypers(1:n_angle_3b)%n_sparse
       n_mpi_core_pot = core_pot_hypers(1:n_core_pot)%n
     END IF
-    call cpu_time(time_mpi(1))
+    !call cpu_time(time_mpi(1))
+    time_mpi(1)=MPI_Wtime()
     call mpi_bcast(n_species_mpi, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
     call mpi_bcast(n_sparse_mpi_soap_turbo, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
     call mpi_bcast(dim_mpi, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
@@ -420,7 +425,8 @@ program turbogap
     call mpi_bcast(n_sparse_mpi_distance_2b, n_distance_2b, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
     call mpi_bcast(n_sparse_mpi_angle_3b, n_angle_3b, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
     call mpi_bcast(n_mpi_core_pot, n_core_pot, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-    call cpu_time(time_mpi(2))
+    !call cpu_time(time_mpi(2))
+    time_mpi(2)=MPI_Wtime()
     time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
     IF( rank /= 0 )THEN
       call allocate_soap_turbo_hypers(n_soap_turbo, n_species_mpi, n_sparse_mpi_soap_turbo, dim_mpi, &
@@ -443,7 +449,8 @@ program turbogap
 !   type) at once via broadcasting, to reduce the total number of MPI calls to the minimum. This will be
 !   done at the module's subroutine's level.
 !   soap_turbo allocatable structures
-    call cpu_time(time_mpi(1))
+    !call cpu_time(time_mpi(1))
+    time_mpi(1)=MPI_Wtime()
     do i = 1, n_soap_turbo
       n_sp = soap_turbo_hypers(i)%n_species
       call mpi_bcast(soap_turbo_hypers(i)%nf(1:n_sp), n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
@@ -522,7 +529,8 @@ program turbogap
       call mpi_bcast(core_pot_hypers(i)%species1, 8, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(core_pot_hypers(i)%species2, 8, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
     end do
-    call cpu_time(time_mpi(2))
+    !call cpu_time(time_mpi(2))
+    time_mpi(2)=MPI_Wtime()
     time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
 !   Clean up
     deallocate( n_species_mpi, n_sparse_mpi_soap_turbo, dim_mpi, compress_soap_mpi, n_sparse_mpi_distance_2b, &
@@ -542,7 +550,8 @@ program turbogap
 #endif
     stop
   end if
-  call cpu_time(time_read_input(2))
+  !call cpu_time(time_read_input(2))
+  time_read_input(2)=MPI_Wtime()
   time_read_input(3) = time_read_input(3) + time_read_input(2) - time_read_input(1)
 !**************************************************************************
 
@@ -687,7 +696,8 @@ program turbogap
 !   or MD step
 !   Read in XYZ file and build neighbors lists
     if( params%do_md .and. md_istep == 0 )then
-      call cpu_time(time_read_xyz(1))
+      !call cpu_time(time_read_xyz(1))
+      time_read_xyz(1)=MPI_Wtime()
 #ifdef _MPIF90
       IF( rank == 0 )THEN
 #endif
@@ -707,7 +717,8 @@ program turbogap
 #ifdef _MPIF90
       END IF
 #endif
-      call cpu_time(time_read_xyz(2))
+      !call cpu_time(time_read_xyz(2))
+      time_read_xyz(2)=MPI_Wtime()
       time_read_xyz(3) = time_read_xyz(3) + time_read_xyz(2) - time_read_xyz(1)
 !     If we're doing MD, we don't read beyond the first snapshot in the XYZ file
       repeat_xyz = .false.
@@ -729,7 +740,8 @@ program turbogap
       END IF
 #endif
     else if( .not. params%do_md )then
-      call cpu_time(time_read_xyz(1))
+      !call cpu_time(time_read_xyz(1))
+      time_read_xyz(1)=MPI_Wtime()
 #ifdef _MPIF90
       IF( rank == 0 )THEN
 #endif
@@ -741,12 +753,15 @@ program turbogap
 #ifdef _MPIF90
       END IF
 #endif
-      call cpu_time(time_read_xyz(2))
+      !call cpu_time(time_read_xyz(2))
+      time_read_xyz(2)=MPI_Wtime()
       time_read_xyz(3) = time_read_xyz(3) + time_read_xyz(2) - time_read_xyz(1)
 #ifdef _MPIF90
-      call cpu_time(time_mpi(1))
+      !call cpu_time(time_mpi(1))
+      time_mpi(1)=MPI_Wtime()
       call mpi_bcast(repeat_xyz, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
-      call cpu_time(time_mpi(2))
+      !call cpu_time(time_mpi(2))
+      time_mpi(2)=MPI_Wtime()
       time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
 #endif
       rebuild_neighbors_list = .true.
@@ -759,11 +774,13 @@ program turbogap
     n_sp = size(xyz_species,1)
     n_sp_sc = size(xyz_species_supercell,1)
     END IF
-    call cpu_time(time_mpi(1))
+    !call cpu_time(time_mpi(1))
+    time_mpi(1)=MPI_Wtime()
     call mpi_bcast(n_pos, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
     call mpi_bcast(n_sp, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
     call mpi_bcast(n_sp_sc, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-    call cpu_time(time_mpi(2))
+    !call cpu_time(time_mpi(2))
+    time_mpi(2)=MPI_Wtime()
     time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
     IF( rank /= 0 .and. (.not. params%do_md .or. md_istep == 0) )THEN
     allocate( positions(1:3, n_pos) )
@@ -778,7 +795,8 @@ program turbogap
     allocate( xyz_species_supercell(1:n_sp_sc) )
     allocate( species_supercell(1:n_sp_sc) )
     END IF
-    call cpu_time(time_mpi_positions(1))
+    !call cpu_time(time_mpi_positions(1))
+    time_mpi_positions(1)=MPI_Wtime()
     call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
     if( params%do_md )then
       call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
@@ -794,7 +812,8 @@ program turbogap
     call mpi_bcast(b_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
     call mpi_bcast(c_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
     call mpi_bcast(n_sites, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-    call cpu_time(time_mpi_positions(2))
+    !call cpu_time(time_mpi_positions(2))
+    time_mpi_positions(2)=MPI_Wtime()
     time_mpi_positions(3) = time_mpi_positions(3) + time_mpi_positions(2) - time_mpi_positions(1)
 #endif
 !   Now that all ranks know the size of n_sites, we allocate do_list
@@ -803,7 +822,8 @@ program turbogap
       do_list = .true.
     end if
 !
-    call cpu_time(time1)
+    !call cpu_time(time1)
+    time1=MPI_Wtime()
 #ifdef _MPIF90
 !   Parallel neighbors list build
     call mpi_bcast(rebuild_neighbors_list, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
@@ -873,7 +893,8 @@ program turbogap
 #endif
 !   Compute the volume of the "primitive" unit cell
     v_uc = dot_product( cross_product(a_box, b_box), c_box ) / (dfloat(indices(1)*indices(2)*indices(3)))
-    call cpu_time(time2)
+    !call cpu_time(time2)
+    time2=MPI_Wtime()
     time_neigh = time_neigh + time2 - time1
 !**************************************************************************
 
@@ -887,7 +908,8 @@ program turbogap
 !**************************************************************************
 !   If we are doing prediction, we run this chunk of code
     if( params%do_prediction .or. params%write_soap .or. params%write_derivatives )then
-      call cpu_time(time1)
+      !call cpu_time(time1)
+      time1=MPI_Wtime()
 
 !     We only need to reallocate the arrays if the number of sites changes
       if( n_sites /= n_sites_prev )then
@@ -971,17 +993,21 @@ program turbogap
       end if
 !     Collect all energies
 #ifdef _MPIF90
-      call cpu_time(time_mpi_ef(1))
+      !call cpu_time(time_mpi_ef(1))
+      time_mpi_ef(1)=MPI_Wtime()
       call mpi_reduce(energies, this_energies, n_sites, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
-      call cpu_time(time_mpi_ef(2))
+      !call cpu_time(time_mpi_ef(2))
+      time_mpi_ef(2)=MPI_Wtime()
       time_mpi_ef(3) = time_mpi_ef(3) + time_mpi_ef(2) - time_mpi_ef(1)
       energies = this_energies
 #endif
 
 !     Loop through soap_turbo descriptors - we always call this routine, even if we don't want to do prediction
-          call cpu_time(soap_time_soap(1))
+          !call cpu_time(soap_time_soap(1))
+          soap_time_soap(1)=MPI_Wtime()
       do i = 1, n_soap_turbo
-        call cpu_time(time_soap(1))
+        !call cpu_time(time_soap(1))
+        time_soap(1)=MPI_Wtime()
 !       Compute number of pairs for this SOAP. SOAP has in general a different cutoff than overall max
 !       cutoff, so the number of pairs may be a lot smaller for the SOAP subset.
 !       This subroutine splits the load optimally so as to not use more memory per MPI process than available.
@@ -1044,7 +1070,8 @@ program turbogap
             virial_soap = virial_soap + this_virial
           end if
         end do
-        call cpu_time(soap_time_soap(2))
+        !call cpu_time(soap_time_soap(2))
+        soap_time_soap(2)=MPI_Wtime()
         deallocate( i_beg_list, i_end_list, j_beg_list, j_end_list )
         soap_time_soap(3)=soap_time_soap(3)+soap_time_soap(2)-soap_time_soap(1)
 
@@ -1123,14 +1150,16 @@ program turbogap
         END IF
 #endif
 
-        call cpu_time(time_soap(2))
+        !call cpu_time(time_soap(2))
+        time_soap(2)=MPI_Wtime()
         time_soap(3) = time_soap(3) + time_soap(2) - time_soap(1)
       end do
 
 
 #ifdef _MPIF90
       if( any( soap_turbo_hypers(:)%has_vdw ) )then
-        call cpu_time(time_mpi(1))
+        !call cpu_time(time_mpi(1))
+        time_mpi(1)=MPI_Wtime()
         call mpi_reduce(hirshfeld_v, this_hirshfeld_v, n_sites, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
 !        if( params%do_forces )then
 !         I'm not sure if this is necessary at all... CHECK
@@ -1140,7 +1169,8 @@ program turbogap
 !        end if
         hirshfeld_v = this_hirshfeld_v
         call mpi_bcast(hirshfeld_v, n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        call cpu_time(time_mpi(2))
+        !call cpu_time(time_mpi(2))
+        time_mpi(2)=MPI_Wtime()
         time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
       end if
 #endif
@@ -1149,7 +1179,8 @@ program turbogap
 
 !     Compute vdW energies and forces
       if( any( soap_turbo_hypers(:)%has_vdw ) .and. params%do_prediction .and. params%vdw_type == "ts" )then
-        call cpu_time(time_vdw(1))
+        !call cpu_time(time_vdw(1))
+        time_vdw(1)=MPI_Wtime()
 #ifdef _MPIF90
         allocate( this_energies_vdw(1:n_sites) )
         this_energies_vdw = 0.d0
@@ -1182,7 +1213,8 @@ program turbogap
 #else
                                        energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
 #endif
-        call cpu_time(time_vdw(2))
+        !call cpu_time(time_vdw(2))
+        time_vdw(2)=MPI_Wtime()
         time_vdw(3) = time_vdw(2) - time_vdw(1)
 
         deallocate(v_neigh_vdw)
@@ -1195,7 +1227,8 @@ program turbogap
       if( params%do_prediction )then
 !       Loop through distance_2b descriptors
         do i = 1, n_distance_2b
-          call cpu_time(time_2b(1))
+          !call cpu_time(time_2b(1))
+          time_2b(1)=MPI_Wtime()
           this_energies = 0.d0
           if( params%do_forces )then
             this_forces = 0.d0
@@ -1215,7 +1248,8 @@ program turbogap
             forces_2b = forces_2b + this_forces
             virial_2b = virial_2b + this_virial
           end if
-          call cpu_time(time_2b(2))
+          !call cpu_time(time_2b(2))
+          time_2b(2)=MPI_Wtime()
           time_2b(3) = time_2b(3) + time_2b(2) - time_2b(1)
         end do
 
@@ -1225,7 +1259,8 @@ program turbogap
 
 !       Loop through core_pot descriptors
         do i = 1, n_core_pot
-          call cpu_time(time_core_pot(1))
+          !call cpu_time(time_core_pot(1))
+          time_core_pot(1)=MPI_Wtime()
           this_energies = 0.d0
           if( params%do_forces )then
             this_forces = 0.d0
@@ -1244,7 +1279,8 @@ program turbogap
             forces_core_pot = forces_core_pot + this_forces
             virial_core_pot = virial_core_pot + this_virial
           end if
-          call cpu_time(time_core_pot(2))
+          !call cpu_time(time_core_pot(2))
+          time_core_pot(2)=MPI_Wtime()
           time_core_pot(3) = time_core_pot(3) + time_core_pot(2) - time_core_pot(1)
         end do
 
@@ -1253,7 +1289,8 @@ program turbogap
 
 !       Loop through angle_3b descriptors
         do i = 1, n_angle_3b
-          call cpu_time(time_3b(1))
+          !call cpu_time(time_3b(1))
+          time_3b(1)=MPI_Wtime()
           this_energies = 0.d0
           if( params%do_forces )then
             this_forces = 0.d0
@@ -1273,19 +1310,22 @@ program turbogap
             forces_3b = forces_3b + this_forces
             virial_3b = virial_3b + this_virial
           end if
-          call cpu_time(time_3b(2))
+          !call cpu_time(time_3b(2))
+          time_3b(2)=MPI_Wtime()
           time_3b(3) = time_3b(3) + time_3b(2) - time_3b(1)
         end do
 
 
-        call cpu_time(time2)
+        !call cpu_time(time2)
+        time2=MPI_Wtime()
         time_gap = time_gap + time2 - time1
 
 
 
 !       Communicate all energies and forces here for all terms
 #ifdef _MPIF90
-        call cpu_time(time_mpi_ef(1))
+        !call cpu_time(time_mpi_ef(1))
+        time_mpi_ef(1)=MPI_Wtime()
         counter2 = 0
         if( n_soap_turbo > 0 )then
           counter2 = counter2 + 1
@@ -1414,7 +1454,8 @@ program turbogap
           deallocate( all_forces, all_this_forces, all_virial, all_this_virial )
         end if
 
-        call cpu_time(time_mpi_ef(2))
+        !call cpu_time(time_mpi_ef(2))
+        time_mpi_ef(2)=MPI_Wtime()
         time_mpi_ef(3) = time_mpi_ef(3) + time_mpi_ef(2) - time_mpi_ef(1)
 #endif
 
@@ -1512,7 +1553,8 @@ end if
     IF( rank == 0 )THEN
 #endif
     if( params%do_md )then
-      call cpu_time(time_md(1))
+      !call cpu_time(time_md(1))
+      time_md(1)=MPI_Wtime()
 !     Define the time_step and md_time prior to possible scaling (see variable_time_step below)
       if( md_istep > 0 )then
         md_time = md_time + time_step
@@ -1670,7 +1712,8 @@ end if
           end do
         end do
       end do
-      call cpu_time(time_md(2))
+      !call cpu_time(time_md(2))
+      time_md(2)=MPI_Wtime()
       time_md(3) = time_md(3) + time_md(2) - time_md(1)
     end if
 #ifdef _MPIF90
@@ -1680,11 +1723,13 @@ end if
 !   Make sure all ranks have correct positions and velocities
 #ifdef _MPIF90
     if( params%do_md )then
-      call cpu_time(time_mpi_positions(1))
+      !call cpu_time(time_mpi_positions(1))
+      time_mpi_positions(1)=MPI_Wtime()
       n_pos = size(positions,2)
       call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-      call cpu_time(time_mpi_positions(2))
+      !call cpu_time(time_mpi_positions(2))
+      time_mpi_positions(2)=MPI_Wtime()
       time_mpi_positions(3) = time_mpi_positions(3) + time_mpi_positions(2) - time_mpi_positions(1)
     end if
 #endif
@@ -1733,7 +1778,8 @@ end if
 
 
   if( params%do_md .or. params%do_prediction )then
-    call cpu_time(time2)
+    !call cpu_time(time2)
+    time2=MPI_Wtime()
 #ifdef _MPIF90
     IF( rank == 0 )then
 #endif

@@ -90,6 +90,13 @@ MODULE F_B_C
         integer(c_int),value :: n
       end subroutine
 
+      subroutine cpy_double_complex_dtoh(a_d,a,n) bind(C,name="cuda_cpy_double_complex_dtoh")
+        use iso_c_binding
+        implicit none
+        type(c_ptr),value :: a_d,a
+        integer(c_int),value :: n
+      end subroutine
+
       subroutine gpu_vector_fill_curand(a_d,n,c) bind(C,name="GPU_fill_rand")
         use iso_c_binding
         implicit none
@@ -245,6 +252,22 @@ MODULE F_B_C
         use iso_c_binding
         type(c_ptr), value :: sqrt_dot_d, soap_d
         integer(c_int),value :: n_sites, n_soap
+      end subroutine
+
+      subroutine gpu_get_derivatives(radial_exp_coeff_d, angular_exp_coeff_d, radial_exp_coeff_der_d, &
+                                  angular_exp_coeff_rad_der_d, angular_exp_coeff_azi_der_d, angular_exp_coeff_pol_der_d, &
+                                  cnk_rad_der_d, cnk_azi_der_d, cnk_pol_der_d, &
+                                  rjs_d, &
+                                  rcut_max, &
+                                  n_atom_pairs, n_soap, k_max, n_max, l_max) &
+                                  bind(C,name="gpu_get_derivatives")
+        use iso_c_binding
+        type(c_ptr), value :: rjs_d
+        type(c_ptr), value :: radial_exp_coeff_d, angular_exp_coeff_d, radial_exp_coeff_der_d
+        type(c_ptr), value :: angular_exp_coeff_rad_der_d, angular_exp_coeff_azi_der_d, angular_exp_coeff_pol_der_d
+        type(c_ptr), value :: cnk_rad_der_d, cnk_azi_der_d, cnk_pol_der_d
+        real(c_double), value :: rcut_max
+        integer(c_int),value :: n_atom_pairs, n_soap, k_max, n_max, l_max
       end subroutine
 
     END INTERFACE

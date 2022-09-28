@@ -112,13 +112,13 @@ extern "C" void cuda_cpy_bool_htod(bool *a, double *a_d, int N)
    return;
 }
 
-extern "C" void cuda_cpy_bool_dtoh(double *a_d, bool *a, int N)
+extern "C" void cuda_cpy_bool_dtoh(bool *a_d, bool *a, int N)
 {
   gpuErrchk(cudaMemcpy(a, a_d, sizeof(bool) * N, cudaMemcpyDeviceToHost));
    return;
 }
 
-extern "C" void cuda_cpy_double_complex_htod(double *a, double *a_d, int N)
+extern "C" void cuda_cpy_double_complex_htod(cuDoubleComplex *a, cuDoubleComplex *a_d, int N)
 {
    
    gpuErrchk(cudaMemcpy(a_d, a, sizeof(cuDoubleComplex) * N, cudaMemcpyHostToDevice));
@@ -127,6 +127,15 @@ extern "C" void cuda_cpy_double_complex_htod(double *a, double *a_d, int N)
 }
 
 
+
+extern "C" void cuda_cpy_double_complex_dtoh(cuDoubleComplex *a_d, cuDoubleComplex *a ,int N)
+{
+  //cudaMemcpyAsync( a, a_d, sizeof(double) * N, cudaMemcpyDeviceToHost );
+  gpuErrchk(cudaMemcpy( a, a_d, sizeof(cuDoubleComplex) * N, cudaMemcpyDeviceToHost ));
+   //printf("\nTest cpy D to H \n");
+   
+   return;
+}
 
 extern "C" void cuda_cpy_int_htod(int *a, int *a_d, int N)
 {
@@ -354,7 +363,8 @@ extern "C" void cuda_matvect_qs(double *qs_d,double *qs_copy_d, double *alphas_d
 
 
 // gpu_blas_mmul_n_t(cubhandle, kernels_der_d, Qs_copy_d, Qss_d, n_sparse, n_soap, n_sites, cdelta)
-extern "C" void gpu_blas_mmul_n_t(cublasHandle_t handle, const double *kernels_der_d, const double *Qs_copy_d, double *Qss_d, const int n_sparse, const int n_soap, const int n_sites, double cdelta)
+extern "C" void gpu_blas_mmul_n_t(cublasHandle_t handle, const double *kernels_der_d, const double *Qs_copy_d, 
+                       double *Qss_d, const int n_sparse, const int n_soap, const int n_sites, double cdelta)
 {
 
 	const double alf = cdelta;
@@ -371,7 +381,8 @@ extern "C" void gpu_blas_mmul_n_t(cublasHandle_t handle, const double *kernels_d
 // allocate( Qs_copy(1:n_soap, 1:n_sparse) ))
 // allocate( Qss(1:n_sites, 1:n_soap) )
 // call dgemm("n", "t", n_sites, n_soap, n_sparse, cdelta, kernels_der, n_sites, Qs_copy, n_soap, 0.d0, Qss, n_sites)
-  cublasDgemm(handle, CUBLAS_OP_N, CUBLAS_OP_T, n_sites,  n_soap, n_sparse, alpha,  kernels_der_d, n_sites,Qs_copy_d, n_soap, beta, Qss_d, n_sites);
+  cublasDgemm(handle, CUBLAS_OP_N, CUBLAS_OP_T, n_sites,  n_soap, n_sparse, alpha,  kernels_der_d, n_sites,
+                         Qs_copy_d, n_soap, beta, Qss_d, n_sites);
 }
 
 /*
@@ -547,28 +558,15 @@ extern "C" void gpu_soap_energies_forces_virial(int *n_neigh_d, int n_sites, int
      cuda_matvect_kernels(Qs_copy_d, alphas_d, n_soap, n_sparse);
     }
        gpu_blas_mmul_n_t(handle, kernels_der_d, Qs_copy_d, Qss_d, n_sparse,n_soap, n_sites, cdelta_force);
-
+       
        gpu_final_soap_forces_virial(n_neigh_d, n_sites, maxnn,
                                      Qss_d, n_soap,neighbors_beg_d,
                                      soap_der_d, xyz_d, virial_d,
                                      neighbors_list_d, n_sites0, forces_d);
-       /*dim3 nblocks(n_sites,maxnn,1);*/
-       /*gpuErrchk(cudaMemset(forces_d,0, 3*n_sites0*sizeof(double)));
-       gpuErrchk(cudaMemset(virial_d,0, 9*sizeof(double)));*/
-
-       /*cudaMemsetAsync(forces_d,0, 3*n_sites0*sizeof(double));
-       cudaMemsetAsync(virial_d,0, 9*sizeof(double));
-
-       cuda_soap_forces_virial<<<nblocks,tpb>>>(n_neigh_d,n_sites,
-                                            Qss_d,n_soap,neighbors_beg_d,
-                                            soap_der_d,
-                                            xyz_d, virial_d,
-                                            neighbors_list_d, n_sites0, forces_d);*/
   }
-
-     /*gpuErrchk( cudaPeekAtLastError() );
-     gpuErrchk( cudaDeviceSynchronize() );*/
-     return;
+  /*gpuErrchk( cudaPeekAtLastError() );
+  gpuErrchk( cudaDeviceSynchronize() );*/
+  return;
 }
 
 
@@ -616,41 +614,6 @@ __global__ void cuda_get_soap_p(double *soap_d, double *sqrt_dot_p_d, double *mu
  }
 }
 
-/*
-__global__ void cuda_get_sqrt_dot_p(double *soap_d, double *sqrt_dot_p_d,  
-                                int n_sites, int n_soap)
-{
-  int i_site=blockIdx.x;
-  int tid=threadIdx.x;
-  __shared__ double sh_sqrt_dot_p_d[tpb];
-  double this_dotprod=0.0;
-  for(int s=tid;s<n_soap;s=s+tpb){
-    this_dotprod+=soap_d[s+i_site*n_soap]*soap_d[s+i_site*n_soap];
-  }
-  sh_sqrt_dot_p_d[tid]=this_dotprod;
-  __syncthreads();
-
-  //reduction
-  for (int s=tpb/2; s>0; s>>=1) // s=s/2
-  {
-    if (tid < s)
-    {
-      sh_sqrt_dot_p_d[tid] +=sh_sqrt_dot_p_d[tid + s];
-    }
-    __syncthreads();
-
-  }
-  //  at this point this_force is computed
-  if(tid==0){
-    double final_dotprod=1.0;
-    if(sqrt(sh_sqrt_dot_p_d[0])>=1.0e-5){
-      final_dotprod=sqrt(sh_sqrt_dot_p_d[0]);
-    }
-    sqrt_dot_p_d[i_site]=final_dotprod;
-  }
-}
-*/
-
 extern "C" void gpu_get_sqrt_dot_p(double *sqrt_dot_d, double *soap_d, double *multiplicity_array_d, 
                                    cuDoubleComplex *cnk_d, bool *skip_soap_component_d, 
                                    int n_sites, int n_soap, int n_max, int l_max)
@@ -671,10 +634,6 @@ __global__ void cuda_get_soap_der_one(double *soap_rad_der_d, double *soap_azi_d
                                       int n_sites, int n_atom_pairs, int n_soap, int k_max, int n_max, int l_max)
 {
   int k2 = threadIdx.x+blockIdx.x*blockDim.x;
-  /* if(threadIdx.x==121 && blockIdx.x==154)
-  {
-    printf("\n Pair  %d \n" , k2);
-  } */
   if (k2<n_atom_pairs){
     int i_site=k2_i_site_d[k2]-1;
     int counter=0;
@@ -911,28 +870,82 @@ extern "C" void gpu_get_soap_der(double *soap_d, double *sqrt_dot_d, double3 *so
   return;
 }
 
-__global__ void cuda_get_soap_der_thr_two(double *soap_d, double *sqrt_dot_d, int n_soap, int n_sites)
+__global__ void cuda_soap_normalize(double *soap_d, double *sqrt_dot_d, int n_soap, int n_sites)
 { 
-int i_site=blockIdx.x;
-int tid=threadIdx.x;
-int my_start=i_k2_start_d[i_site]-1;
-int k3=my_start;
-int my_n_neigh=n_neigh_d[i_site];
-
-for(int s=tid;s<n_soap;s=s+tpb){
-double3 loc_sum;
-loc_sum.x=0,loc_sum.y=0,loc_sum.z=0;
-int k2=my_start+1;
-for(int j=1;j<my_n_neigh; j++){
-double3 my_soap_cart_der=soap_cart_der_d[s+k2*n_soap];
-loc_sum.x+=my_soap_cart_der.x;
-loc_sum.y+=my_soap_cart_der.y;
-loc_sum.z+=my_soap_cart_der.z;
-k2++;
-}
-soap_cart_der_d[s+k3*n_soap]=loc_sum;
-}
+  int i_site=blockIdx.x;
+  int tid=threadIdx.x;
+  double  my_sqrt_dot_p=sqrt_dot_d[i_site];
+  for(int s=tid;s<n_soap;s=s+tpb){
+    double my_soap_final=soap_d[s+i_site*n_soap]/my_sqrt_dot_p;
+    soap_d[s+i_site*n_soap]=my_soap_final;
+  }
 }
 extern "C" void gpu_soap_normalize(double *soap_d, double *sqrt_dot_d, int n_soap, int n_sites){
+  cuda_soap_normalize<<<n_sites,tpb>>>(soap_d, sqrt_dot_d, n_soap,n_sites);
+}
 
+__global__ void cuda_get_derivatives(double *radial_exp_coeff_d, cuDoubleComplex *angular_exp_coeff_d, double *radial_exp_coeff_der_d, 
+                                   cuDoubleComplex *angular_exp_coeff_rad_der_d, cuDoubleComplex *angular_exp_coeff_azi_der_d, cuDoubleComplex *angular_exp_coeff_pol_der_d,
+                                   cuDoubleComplex *cnk_rad_der_d, cuDoubleComplex *cnk_azi_der_d, cuDoubleComplex *cnk_pol_der_d,
+                                   double *rjs_d, 
+                                   double rcut_max,
+                                   int n_atom_pairs, int n_soap, int k_max, int n_max, int l_max)
+{
+  int k2 = threadIdx.x+blockIdx.x*blockDim.x;
+  double Pi=4.0*acos(-1.0);
+  if(k2<n_atom_pairs){
+    double my_rjs=rjs_d[k2];
+    // printf(" %lf  %d\n", my_rjs, k2);
+    if(my_rjs<rcut_max){
+      for(int n=1;n<=n_max;n++){
+        double my_radial_exp_c;
+        my_radial_exp_c=radial_exp_coeff_d[n-1+k2*n_max];
+        double my_radial_exp_c_der;
+        my_radial_exp_c_der=radial_exp_coeff_der_d[n-1+k2*n_max];
+        for(int  l=0;l<=l_max;l++){
+          for(int m=0;m<=l;m++){
+            int k=1+l*(l+1)/2+m;
+            cuDoubleComplex my_cnk_rad_der;cuDoubleComplex my_cnk_azi_der;cuDoubleComplex my_cnk_pol_der;
+
+            cuDoubleComplex my_ang_exp_c;
+            my_ang_exp_c=angular_exp_coeff_d[k-1+k2*k_max];
+
+            cuDoubleComplex my_ang_exp_c_rad_der;
+            my_ang_exp_c_rad_der=angular_exp_coeff_rad_der_d[k-1+k2*k_max];
+            cuDoubleComplex my_ang_exp_c_azi_der;
+            my_ang_exp_c_azi_der=angular_exp_coeff_azi_der_d[k-1+k2*k_max];
+            cuDoubleComplex my_ang_exp_c_pol_der;
+            my_ang_exp_c_pol_der=angular_exp_coeff_pol_der_d[k-1+k2*k_max];
+
+            my_cnk_rad_der.x=Pi*(my_ang_exp_c.x*my_radial_exp_c_der+my_ang_exp_c_rad_der.x*my_radial_exp_c);
+            my_cnk_rad_der.y=Pi*(my_ang_exp_c.y*my_radial_exp_c_der+my_ang_exp_c_rad_der.y*my_radial_exp_c);
+
+            my_cnk_azi_der.x=Pi*(my_ang_exp_c_azi_der.x*my_radial_exp_c);
+            my_cnk_azi_der.y=Pi*(my_ang_exp_c_azi_der.y*my_radial_exp_c);
+
+            my_cnk_pol_der.x=Pi*(my_ang_exp_c_pol_der.x*my_radial_exp_c);
+            my_cnk_pol_der.y=Pi*(my_ang_exp_c_pol_der.y*my_radial_exp_c);
+
+            cnk_rad_der_d[k-1+k_max*(n-1+k2*n_max)]=my_cnk_rad_der;
+            cnk_azi_der_d[k-1+k_max*(n-1+k2*n_max)]=my_cnk_azi_der;
+            cnk_pol_der_d[k-1+k_max*(n-1+k2*n_max)]=my_cnk_pol_der;
+          }
+        }
+      }
+    }
+  }
+}
+extern "C" void gpu_get_derivatives(double *radial_exp_coeff_d, cuDoubleComplex *angular_exp_coeff_d, double *radial_exp_coeff_der_d, 
+                                    cuDoubleComplex *angular_exp_coeff_rad_der_d, cuDoubleComplex *angular_exp_coeff_azi_der_d, cuDoubleComplex *angular_exp_coeff_pol_der_d,
+                                    cuDoubleComplex *cnk_rad_der_d, cuDoubleComplex *cnk_azi_der_d, cuDoubleComplex *cnk_pol_der_d,
+                                    double *rjs_d, double rcut_max,
+                                     int n_atom_pairs, int n_soap, int k_max, int n_max, int l_max)
+{
+  dim3 nblocks=dim3((n_atom_pairs-1+tpb)/tpb,1,1);
+  dim3 nthreads=dim3(tpb,1,1);
+  cuda_get_derivatives<<<nblocks, nthreads>>>(radial_exp_coeff_d, angular_exp_coeff_d, radial_exp_coeff_der_d,
+                                              angular_exp_coeff_rad_der_d, angular_exp_coeff_azi_der_d, angular_exp_coeff_pol_der_d,
+                                              cnk_rad_der_d, cnk_azi_der_d, cnk_pol_der_d,
+                                              rjs_d, rcut_max,
+                                              n_atom_pairs, n_soap,k_max, n_max, l_max);
 }
