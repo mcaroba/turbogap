@@ -115,7 +115,7 @@ program turbogap
 
 !vdw crap
   real*8, allocatable :: v_neigh_vdw(:), energies_vdw(:), forces_vdw(:,:), this_energies_vdw(:), this_forces_vdw(:,:)
-  real*8, allocatable :: alpha_SCS(:,:), alpha_SCS_grad(:,:,:,:)
+  real*8, allocatable :: alpha_SCS(:,:), alpha_SCS_grad(:,:)
 
 ! MPI stuff
   real*8, allocatable :: temp_1d(:), temp_1d_bis(:), temp_2d(:,:)
@@ -1180,7 +1180,7 @@ program turbogap
 !          write(*,*) "or vdw_rcut = vdw_scs_rcut             |"
 !        else
           allocate( alpha_SCS(i_beg:i_end,1:params%vdw_mbd_nfreq) )
-          allocate( alpha_SCS_grad(i_beg:i_end,i_beg:i_end,1:3,1:params%vdw_mbd_nfreq) )
+          allocate( alpha_SCS_grad(j_beg:j_end,1:3) )
           allocate( c6_scs(1:j_end-j_beg+1) )
           allocate( r0_scs(1:j_end-j_beg+1) )
           allocate( alpha0_scs(1:j_end-j_beg+1) )
@@ -1215,12 +1215,15 @@ write(*,*) "scs timing", time1-time2
 !#else
 !                                       energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
 !#endif
-          call get_mbd_energies_and_forces( alpha_SCS, alpha_SCS_grad, n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
-                        neighbor_species(j_beg:j_end), params%vdw_rcut, params%vdw_buffer, &
-                        params%vdw_rcut_inner, params%vdw_buffer_inner, rjs(j_beg:j_end), &
-                        xyz(1:3, j_beg:j_end), params%vdw_sr, params%vdw_d, &
-                        params%vdw_c6_ref, params%vdw_r0_ref, params%vdw_alpha0_ref, &
-                        params%vdw_mbd_grad, energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
+
+          !call get_mbd_energies_and_forces( alpha_SCS, alpha_SCS_grad, n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
+          !              neighbor_species(j_beg:j_end), params%vdw_rcut, params%vdw_buffer, &
+          !              params%vdw_rcut_inner, params%vdw_buffer_inner, rjs(j_beg:j_end), &
+          !              xyz(1:3, j_beg:j_end), params%vdw_sr, params%vdw_d, &
+          !              params%vdw_c6_ref, params%vdw_r0_ref, params%vdw_alpha0_ref, &
+          !              params%vdw_mbd_grad, energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
+
+
   !        call cpu_time(time_vdw(2))
   !        time_vdw(3) = time_vdw(2) - time_vdw(1)
 
