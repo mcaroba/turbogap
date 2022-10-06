@@ -31,6 +31,9 @@ module gap_interface
   use gap
   use read_files
   use vdw
+  use F_B_C
+  use iso_c_binding
+  use mpi
 
 
   contains
@@ -85,10 +88,15 @@ module gap_interface
     integer, allocatable :: species_multiplicity_supercell(:)
     integer :: n_sites, i, j, n_atom_pairs, k, k2, i2, j2, n_soap, max_species_multiplicity, i3, n_all_sites, &
                i4, n_sites_supercell, j3
+    integer :: ierr, rank
     logical, allocatable :: mask(:,:), mask0(:,:), is_atom_seen(:)
 !   CLEAN THIS UP
     real*8 :: time1, time2
     real*8 :: ttt(2)
+    type(c_ptr) :: soap_cart_der_d, soap_d
+
+    call mpi_comm_rank(MPI_COMM_WORLD, rank, ierr)
+    call gpu_set_device(rank) ! Every node has 4 GPUs. Even if there are more than 1 nodes used. This will assing the ranks to GPU in a roundbin fashion
 
     n_sites_supercell = size(xyz_species_supercell)
 
@@ -238,7 +246,8 @@ module gap_interface
                     thetas, phis, alpha_max, l_max, rcut_hard, rcut_soft, nf, global_scaling, &
                     atom_sigma_r, atom_sigma_r_scaling, atom_sigma_t, atom_sigma_t_scaling, &
                     amplitude_scaling, radial_enhancement, central_weight, basis, scaling_mode, do_timing, &
-                    do_derivatives, compress_soap, compress_soap_indices, soap, soap_cart_der, time_get_soap)
+                    do_derivatives, compress_soap, compress_soap_indices, soap, soap_cart_der, time_get_soap, &
+                    soap_d,  soap_cart_der_d)
 !      call cpu_time(ttt(2))
     end if
 
@@ -255,7 +264,7 @@ module gap_interface
 
       call hirshfeld_predict( soap, vdw_Qs, vdw_alphas, vdw_V0, vdw_delta, vdw_zeta, &
                               hirshfeld_v, do_derivatives, soap_cart_der, n_neigh, &
-                              hirshfeld_v_cart_der )
+                              hirshfeld_v_cart_der)
       do i = 1, n_sites
         i2 = in_to_out_site(i)
         hirshfeld_v0(i2) = hirshfeld_v(i)
@@ -288,7 +297,8 @@ module gap_interface
       if( n_sites > 0 )then
         call get_soap_energy_and_forces(soap, soap_cart_der, alphas, delta, zeta, 0.d0, Qs, &
                                         n_neigh, neighbors_list, xyz, do_forces, do_timing, &
-                                        energies, forces, virial, solo_time_soap)
+                                        energies, forces, virial, solo_time_soap,  &
+                                         soap_d,  soap_cart_der_d)
       end if
 
       do i = 1, n_sites

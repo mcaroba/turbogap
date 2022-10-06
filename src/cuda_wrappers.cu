@@ -160,6 +160,8 @@ extern "C" void cuda_cpy_double_dtod(double *b_d, double *a_d,int N)
   gpuErrchk(cudaMemcpyAsync( a_d, b_d, sizeof(double) * N, cudaMemcpyDeviceToDevice ));
    //cudaMemcpy( a_d, b_d, sizeof(double) * N, cudaMemcpyDeviceToDevice );
 
+  /*gpuErrchk( cudaPeekAtLastError() );
+  gpuErrchk( cudaDeviceSynchronize() );*/
    return;
 }
 
@@ -385,145 +387,118 @@ extern "C" void gpu_blas_mmul_n_t(cublasHandle_t handle, const double *kernels_d
                          Qs_copy_d, n_soap, beta, Qss_d, n_sites);
 }
 
-/*
-!!$OMP parallel do private(i,j,l,j2,this_Qss)
-!      l = 0
-      do i = 1, n_sites
-        this_Qss = Qss(i,1:n_soap)
-!        do j = 1, n_neigh(i)
-!          l = l + 1
-         do l = neighbors_beg(i), neighbors_end(i)
-          j2 = mod(neighbors_list(l)-1, n_sites0) + 1
-          do k = 1, 3
-            this_force(k) = dot_product(this_Qss, soap_der(k,:,l))
-            forces(k, j2) = forces(k, j2) + this_force(k)
-          end do
-!         This is a many body potential, so there's no factor of 1/2 here
-!          virial = virial + dot_product( this_force(1:3), xyz(1:3,l) )
-          do k1 = 1, 3
-            do k2 =1, 3
-              virial(k1, k2) = virial(k1, k2) + 0.5d0 * (this_force(k1)*xyz(k2,l) + this_force(k2)*xyz(k1,l))
-            end do
-          end do
-        end do
-      end do
-!!$OMP end parallel do
-*/
-__global__ void cuda_soap_forces_virial(int *n_neigh_d,int n_sites,
+
+
+__global__ void cuda_soap_forces_virial_two(int n_sites,
                                         double *Qss_d,int n_soap,
-                                        int *neighbors_beg_d,
+                                        int *l_index_d, int *j2_index_d,
                                         double3 *soap_der_d,
                                         double3 *xyz_d, double *virial_d,
-                                        int *neighbors_list_d,int n_sites0, double *forces_d)
+                                        int n_sites0, double *forces_d)
 {
-  int i_site=blockIdx.x;
-  int i_nn=blockIdx.y;
-  int n_nn_i_site=n_neigh_d[i_site];
+  int l_nn=blockIdx.x;
   int tid=threadIdx.x;
-
-  if(i_nn<n_nn_i_site)  // only the blocks with index smaller than the number of neighbors are participating in the calcultions
+  int i_site=l_index_d[l_nn]-1;
+  
+  __shared__ double shxthis_block_force[tpb];
+  __shared__ double shythis_block_force[tpb];
+  __shared__ double shzthis_block_force[tpb];
+  
+  shxthis_block_force[tid]=0;
+  shythis_block_force[tid]=0;
+  shzthis_block_force[tid]=0;
+  
+  double locx_this_force=0;
+  double locy_this_force=0;
+  double locz_this_force=0;
+  
+  for(int ii=tid; ii< n_soap;ii=ii+tpb)
   {
-    int l_nn=neighbors_beg_d[i_site]-1+i_nn;
-
-
-    __shared__ double shxthis_block_force[tpb];
-    __shared__ double shythis_block_force[tpb];
-    __shared__ double shzthis_block_force[tpb];
-
-    shxthis_block_force[tid]=0;
-    shythis_block_force[tid]=0;
-    shzthis_block_force[tid]=0;
-    double locx_this_force=0;
-    double locy_this_force=0;
-    double locz_this_force=0;
-
-
-    for(int ii=tid; ii< n_soap;ii=ii+tpb)
+    int i_Qss=i_site+ii*n_sites; // --> (i, 1:n_soap) 
+    double loc_this_Qss=Qss_d[i_Qss];// this read  seems OK
+    int in_soap_der=(l_nn*n_soap+ii); // (k,:,l) l is pair index, soap_der(3,n_soap,n_pairs)
+    double3 loc_soap_der=soap_der_d[in_soap_der];
+    locx_this_force+=loc_this_Qss*loc_soap_der.x;
+    locy_this_force+=loc_this_Qss*loc_soap_der.y;
+    locz_this_force+=loc_this_Qss*loc_soap_der.z;
+  }
+  
+  shxthis_block_force[tid]=locx_this_force;
+  shythis_block_force[tid]=locy_this_force;
+  shzthis_block_force[tid]=locz_this_force;
+  
+  __syncthreads();
+  
+  //reduction
+  for (int s=tpb/2; s>0; s>>=1) // s=s/2'
+  {
+    if (tid < s)
     {
-        int i_Qss=i_site+ii*n_sites;
-        double loc_this_Qss=Qss_d[i_Qss];// this rea<d  seems OK
-        int in_soap_der=(l_nn*n_soap+ii);
-        double3 loc_soap_der=soap_der_d[in_soap_der];
-        locx_this_force+=loc_this_Qss*loc_soap_der.x;
-        locy_this_force+=loc_this_Qss*loc_soap_der.y;
-        locz_this_force+=loc_this_Qss*loc_soap_der.z;
-      }
-
-    shxthis_block_force[tid]=locx_this_force;
-    shythis_block_force[tid]=locy_this_force;
-    shzthis_block_force[tid]=locz_this_force;
-
-    __syncthreads();
-
-    //reduction
-    for (int s=tpb/2; s>0; s>>=1) // s=s/2
-    {
-      if (tid < s)
-      {
-        shxthis_block_force[tid] +=shxthis_block_force[tid + s];
-        shythis_block_force[tid] +=shythis_block_force[tid + s];
-        shzthis_block_force[tid] +=shzthis_block_force[tid + s];
-      }
-      __syncthreads();
-
+      shxthis_block_force[tid] +=shxthis_block_force[tid + s];
+      shythis_block_force[tid] +=shythis_block_force[tid + s];
+      shzthis_block_force[tid] +=shzthis_block_force[tid + s];
     }
-    //  at this point this_force is computed
-    if(tid==0)
-    {
-      int j2=(neighbors_list_d[l_nn]-1) % (n_sites0);
-      if(j2>= n_sites0)
-      {printf("j2 the error! \n");}
-
-      atomicAdd(&forces_d[j2*3]  , shxthis_block_force[0]);
-      atomicAdd(&forces_d[j2*3+1], shythis_block_force[0]);
-      atomicAdd(&forces_d[j2*3+2], shzthis_block_force[0]);
-
-      // now the virial
-      double this_force[3];
-      this_force[0]=shxthis_block_force[0];
-      this_force[1]=shythis_block_force[0];
-      this_force[2]=shzthis_block_force[0];
-
-      double3 tmp_xyz;
-      tmp_xyz=xyz_d[l_nn];
-      double this_xyz[3];
-      this_xyz[0]=tmp_xyz.x;
-      this_xyz[1]=tmp_xyz.y;
-      this_xyz[2]=tmp_xyz.z;
-
-      for(int k1=0;k1<3;k1++)
-      {
-        for(int k2=0;k2<3;k2++)
-        {
-          double loc_viri=0.5*(this_force[k1]*this_xyz[k2]+this_force[k2]*this_xyz[k1]);
-          atomicAdd(&virial_d[k2+3*k1], loc_viri);
-        }
+    __syncthreads();
+  }
+  
+  //  at this point this_force is computed
+  if(tid==0)
+  {
+    int j2=j2_index_d[l_nn]-1;//(neighbors_list_d[l_nn]) % (n_sites0);
+    if(j2>= n_sites0 || j2<0)
+    {printf("j2 the error! \n");}
+    atomicAdd(&forces_d[j2*3]  , shxthis_block_force[0]);
+    atomicAdd(&forces_d[j2*3+1], shythis_block_force[0]);
+    atomicAdd(&forces_d[j2*3+2], shzthis_block_force[0]);
+    
+    // now the virial
+    double this_force[3];
+    this_force[0]=shxthis_block_force[0];
+    this_force[1]=shythis_block_force[0];
+    this_force[2]=shzthis_block_force[0];
+    
+    double3 tmp_xyz;
+    tmp_xyz=xyz_d[l_nn];
+    double this_xyz[3];
+    this_xyz[0]=tmp_xyz.x;
+    this_xyz[1]=tmp_xyz.y;
+    this_xyz[2]=tmp_xyz.z;
+    
+    for(int k1=0;k1<3;k1++){
+      for(int k2=0;k2<3;k2++){
+        double loc_viri=0.5*(this_force[k1]*this_xyz[k2]+this_force[k2]*this_xyz[k1]);
+        atomicAdd(&virial_d[k2+3*k1], loc_viri);
       }
     }
   }
 }
-
-extern "C" void gpu_final_soap_forces_virial(int *n_neigh_d, int n_sites, int maxnn,
-                                             double *Qss_d,int n_soap, int *neighbors_beg_d, double3 *soap_der_d,
+ 
+extern "C" void gpu_final_soap_forces_virial(int n_sites,
+                                             double *Qss_d,int n_soap, int *l_index_d, int *j2_index_d,
+                                             double3 *soap_der_d,
                                              double3 *xyz_d, double *virial_d,
-                                             int *neighbors_list_d,int n_sites0, double *forces_d)
+                                             int n_sites0, 
+                                             double *forces_d, int n_pairs)
 {
+  dim3 nblocks(n_pairs,1);
 
-     dim3 nblocks(n_sites,maxnn,1);
-     cudaMemsetAsync(forces_d,0, 3*n_sites0*sizeof(double));
-     cudaMemsetAsync(virial_d,0, 9*sizeof(double));
-     cuda_soap_forces_virial<<<nblocks,tpb>>>(n_neigh_d,n_sites,
-                                              Qss_d,n_soap, neighbors_beg_d,
+  /*double *this_force_d; 
+  cudaMalloc((void**)&this_force_d,sizeof(double)*n_pairs*3);*/
+  cudaMemsetAsync(forces_d,0, 3*n_sites0*sizeof(double));
+  cudaMemsetAsync(virial_d,0, 9*sizeof(double));
+     
+  cuda_soap_forces_virial_two<<<nblocks,tpb>>>(n_sites,
+                                              Qss_d,n_soap, l_index_d, j2_index_d,
                                               soap_der_d, xyz_d, virial_d,
-                                              neighbors_list_d, n_sites0, forces_d);
+                                              n_sites0, forces_d);
 
-     /*gpuErrchk( cudaPeekAtLastError() );
-     gpuErrchk( cudaDeviceSynchronize() );*/
+  /*gpuErrchk( cudaPeekAtLastError() );
+  gpuErrchk( cudaDeviceSynchronize() );*/
 
-     return;
+  return;
 }
 
-
+/*
 extern "C" void gpu_soap_energies_forces_virial(int *n_neigh_d, int n_sites, int maxnn,
                                              double *Qss_d,int n_soap, int *neighbors_beg_d,
                                              double3 *soap_der_d,
@@ -564,12 +539,12 @@ extern "C" void gpu_soap_energies_forces_virial(int *n_neigh_d, int n_sites, int
                                      soap_der_d, xyz_d, virial_d,
                                      neighbors_list_d, n_sites0, forces_d);
   }
-  /*gpuErrchk( cudaPeekAtLastError() );
-  gpuErrchk( cudaDeviceSynchronize() );*/
+  //gpuErrchk( cudaPeekAtLastError() );
+  //gpuErrchk( cudaDeviceSynchronize() );
   return;
 }
 
-
+*/
 
 __global__ void cuda_get_soap_p(double *soap_d, double *sqrt_dot_p_d, double *multiplicity_array_d, 
                            cuDoubleComplex *cnk_d, bool *skip_soap_component_d,
@@ -647,7 +622,7 @@ __global__ void cuda_get_soap_der_one(double *soap_rad_der_d, double *soap_azi_d
             double my_soap_azi_der=soap_azi_der_d[counter-1+k2*n_soap];
             double my_soap_pol_der=soap_pol_der_d[counter-1+k2*n_soap];
             for(int m=0;m<=l; m++){
-              int k=1+l*(l+1)/2+m; //k = 1 + l*(l+1)/2 + m
+              int k=1+l*(l+1)/2+m; 
               counter2++;
               /* if(threadIdx.x==121 && blockIdx.x==154){
                 printf("\n Pair  %d \n" , k2, i_site);              
@@ -780,7 +755,7 @@ __global__ void cuda_get_soap_der_thr_one(double3 *soap_cart_der_d,
                         -sin(my_phi)/my_rj*my_soap_azi_der;
       my_soap_cart_der.y=sin(my_theta)*sin(my_phi)*my_soap_rad_der 
                         -cos(my_theta)*sin(my_phi)/my_rj*my_soap_pol_der
-                        -cos(my_phi)/my_rj*my_soap_azi_der;
+                        +cos(my_phi)/my_rj*my_soap_azi_der;
       my_soap_cart_der.z=cos(my_theta)*my_soap_rad_der 
                         +sin(my_theta)/my_rj*my_soap_pol_der;
       soap_cart_der_d[s+k2*n_soap]=my_soap_cart_der;
@@ -806,9 +781,9 @@ __global__ void cuda_get_soap_der_thr_two(double3 *soap_cart_der_d,
     int k2=my_start+1;
     for(int j=1;j<my_n_neigh; j++){
       double3 my_soap_cart_der=soap_cart_der_d[s+k2*n_soap];
-      loc_sum.x+=my_soap_cart_der.x;
-      loc_sum.y+=my_soap_cart_der.y;
-      loc_sum.z+=my_soap_cart_der.z;
+      loc_sum.x-=my_soap_cart_der.x;
+      loc_sum.y-=my_soap_cart_der.y;
+      loc_sum.z-=my_soap_cart_der.z;
       k2++;
     }
     soap_cart_der_d[s+k3*n_soap]=loc_sum;
@@ -948,4 +923,48 @@ extern "C" void gpu_get_derivatives(double *radial_exp_coeff_d, cuDoubleComplex 
                                               cnk_rad_der_d, cnk_azi_der_d, cnk_pol_der_d,
                                               rjs_d, rcut_max,
                                               n_atom_pairs, n_soap,k_max, n_max, l_max);
+}
+
+__global__ void cuda_get_cnk_one(cuDoubleComplex *cnk_d, double *radial_exp_coeff_d, cuDoubleComplex *angular_exp_coeff_d,                             
+                                 int *n_neigh_d, int  *k2_start_d, 
+                                 int n_sites, int k_max, int n_max, int l_max)
+{
+  int i_site=threadIdx.x+blockIdx.x*blockDim.x;
+  double pi=acos(-1.0);
+  if(i_site<n_sites)
+  {
+    int k2=k2_start_d[i_site];
+    int my_n_neigh=n_neigh_d[i_site];
+    for(int j=1;j<=my_n_neigh; j++)
+    {
+      k2++;
+      for(int n=1; n<=n_max; n++)
+      {
+        double loc_rad_exp_coeff=radial_exp_coeff_d[n-1+n_max*(k2-1)];
+        for(int l=0; l<=l_max; l++)
+        {
+          for(int m=0; m<=l; m++)
+          {
+            int k=1+l*(l+1)/2+m;
+            cuDoubleComplex loc_cnk=cnk_d[k-1+k_max*(n-1+n_max*i_site)];
+            cuDoubleComplex loc_ang_exp_coeff=angular_exp_coeff_d[k-1+k_max*(k2-1)];
+            loc_cnk.x+=4.0*pi*loc_rad_exp_coeff*loc_ang_exp_coeff.x;
+            loc_cnk.y+=4.0*pi*loc_rad_exp_coeff*loc_ang_exp_coeff.y;
+            cnk_d[k-1+k_max*(n-1+n_max*i_site)]=loc_cnk;
+          }
+        }
+      }
+    }
+  }
+}
+extern "C" void gpu_get_cnk(double *radial_exp_coeff_d, cuDoubleComplex *angular_exp_coeff_d,
+                            cuDoubleComplex *cnk_d, 
+                            int *n_neigh_d, int  *k2_start_d,
+                            int n_sites, int n_atom_pairs, int n_soap, int k_max, int n_max, int l_max)
+{
+  dim3 nblocks=dim3((n_sites-1+tpb)/tpb,1,1);
+  dim3 nthreads=dim3(tpb,1,1);
+  cuda_get_cnk_one<<<nblocks,nthreads>>>(cnk_d, radial_exp_coeff_d, angular_exp_coeff_d,
+                                         n_neigh_d, k2_start_d,
+                                         n_sites, k_max, n_max, l_max);
 }

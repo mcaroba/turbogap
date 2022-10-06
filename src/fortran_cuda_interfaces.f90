@@ -180,44 +180,47 @@ MODULE F_B_C
         integer(c_int), value :: n_sites,n_sparse
       end subroutine
 
-      subroutine gpu_final_soap_forces_virial(n_neigh_d,n_sites,maxnn, &
-                                              Qss_d,n_soap,neighbors_beg_d, &
+      subroutine gpu_final_soap_forces_virial(n_sites, &
+                                              Qss_d,n_soap, l_index_d, j2_index_d, &
                                               soap_der_d, &
                                               xyz_d, virial_d, &
-                                              neighbors_list_d, n_sites0, forces_d) &
+                                              n_sites0, &
+                                              forces_d, &
+                                              n_pairs) &
                   bind(C,name="gpu_final_soap_forces_virial")
         use iso_c_binding
-        type(c_ptr), value :: Qss_d, n_neigh_d,neighbors_beg_d, neighbors_list_d
+        type(c_ptr), value :: Qss_d, l_index_d
         type(c_ptr), value :: forces_d, soap_der_d, xyz_d, virial_d
-        integer(c_int), value :: n_sites,n_soap,maxnn, n_sites0
+        type(c_ptr), value ::  j2_index_d
+        integer(c_int), value :: n_sites,n_soap, n_sites0, n_pairs
       end subroutine
 
-      subroutine gpu_soap_energies_forces_virial(n_neigh_d,n_sites,maxnn, &
-                                              Qss_d,n_soap,neighbors_beg_d, &
-                                              soap_der_d, &
-                                              xyz_d, virial_d, &
-                                              neighbors_list_d, n_sites0, forces_d, &
-                                              cuhandle, kernels_der_d, Qs_copy_d, &
-                                              n_sparse, cdelta_force, &
-                                              alphas_d, &
-                                              kernels_d, mzetam, size_kernels, &
-                                              do_forces, &
-                                              energies_d, cdelta_ene, e0,  size_energies, &
-                                              Qs_d, size_Qs, &
-                                              kernels_copy_d, &
-                                              zeta, &
-                                              soap_d ) &
-                  bind(C,name="gpu_soap_energies_forces_virial")
-        use iso_c_binding
-        type(c_ptr), value :: Qss_d, n_neigh_d,neighbors_beg_d, neighbors_list_d
-        type(c_ptr), value :: forces_d, soap_der_d, xyz_d, virial_d
-        integer(c_int), value :: n_sites,n_soap,maxnn, n_sites0, size_energies
-        type(c_ptr), value :: cuhandle,kernels_der_d, Qs_copy_d, alphas_d, kernels_d
-        type(c_ptr), value :: energies_d, Qs_d, kernels_copy_d, soap_d
-        integer(c_int),value :: n_sparse, size_kernels, size_Qs
-        logical, value:: do_forces
-        real(c_double), value :: cdelta_ene, cdelta_force, mzetam, e0, zeta
-      end subroutine
+      ! subroutine gpu_soap_energies_forces_virial(n_neigh_d,n_sites,maxnn, &
+      !                                         Qss_d,n_soap,neighbors_beg_d, &
+      !                                         soap_der_d, &
+      !                                         xyz_d, virial_d, &
+      !                                         neighbors_list_d, n_sites0, forces_d, &
+      !                                         cuhandle, kernels_der_d, Qs_copy_d, &
+      !                                         n_sparse, cdelta_force, &
+      !                                         alphas_d, &
+      !                                         kernels_d, mzetam, size_kernels, &
+      !                                         do_forces, &
+      !                                         energies_d, cdelta_ene, e0,  size_energies, &
+      !                                         Qs_d, size_Qs, &
+      !                                         kernels_copy_d, &
+      !                                         zeta, &
+      !                                         soap_d ) &
+      !             bind(C,name="gpu_soap_energies_forces_virial")
+      !   use iso_c_binding
+      !   type(c_ptr), value :: Qss_d, n_neigh_d,neighbors_beg_d, neighbors_list_d
+      !   type(c_ptr), value :: forces_d, soap_der_d, xyz_d, virial_d
+      !   integer(c_int), value :: n_sites,n_soap,maxnn, n_sites0, size_energies
+      !   type(c_ptr), value :: cuhandle,kernels_der_d, Qs_copy_d, alphas_d, kernels_d
+      !   type(c_ptr), value :: energies_d, Qs_d, kernels_copy_d, soap_d
+      !   integer(c_int),value :: n_sparse, size_kernels, size_Qs
+      !   logical, value:: do_forces
+      !   real(c_double), value :: cdelta_ene, cdelta_force, mzetam, e0, zeta
+      ! end subroutine
 
       subroutine gpu_get_sqrt_dot_p(sqrt_dot_d, soap_d, multiplicity_array_d, &
                                     cnk_d, skip_soap_component_d,  &
@@ -268,6 +271,19 @@ MODULE F_B_C
         type(c_ptr), value :: cnk_rad_der_d, cnk_azi_der_d, cnk_pol_der_d
         real(c_double), value :: rcut_max
         integer(c_int),value :: n_atom_pairs, n_soap, k_max, n_max, l_max
+      end subroutine
+
+
+      subroutine gpu_get_cnk(radial_exp_coeff_d, angular_exp_coeff_d, &
+                             cnk_d, &
+                             n_neigh_d, k2_start_d, &
+                             n_sites,  n_atom_pairs,n_soap, k_max, n_max, l_max) &
+                             bind(C,name="gpu_get_cnk")
+        use iso_c_binding
+        type(c_ptr), value :: n_neigh_d, k2_start_d
+        type(c_ptr), value :: radial_exp_coeff_d, angular_exp_coeff_d
+        type(c_ptr), value :: cnk_d
+        integer(c_int),value :: n_sites,  n_atom_pairs,n_soap, k_max, n_max, l_max
       end subroutine
 
     END INTERFACE
