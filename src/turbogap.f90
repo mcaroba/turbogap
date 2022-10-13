@@ -1180,7 +1180,8 @@ program turbogap
 !          write(*,*) "or vdw_rcut = vdw_scs_rcut             |"
 !        else
           allocate( alpha_SCS(i_beg:i_end,1:params%vdw_mbd_nfreq) )
-          allocate( alpha_SCS_grad(j_beg:j_end,1:3) )
+          !allocate( alpha_SCS_grad(j_beg:j_end,1:3) )
+          allocate( alpha_SCS_grad(i_beg:i_end,1:3) )
           allocate( c6_scs(1:j_end-j_beg+1) )
           allocate( r0_scs(1:j_end-j_beg+1) )
           allocate( alpha0_scs(1:j_end-j_beg+1) )
