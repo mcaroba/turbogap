@@ -492,7 +492,8 @@ module vdw
 
 !   MBD stuff:
     real*8, allocatable :: T_LR(:,:), r0_ii_SCS(:), f_damp_SCS(:), AT(:,:), AT_n(:,:,:), energy_series(:,:), &
-                           integrand(:)	
+                           integrand(:), AT_n_f(:,:,:), f_damp_der_SCS(:), dT_LR(:,:), G_mat(:,:), force_series(:,:), &
+                           VL(:,:), total_energy_series(:,:), alpha_grad(:), total_integrand(:)
 
 !   DERIVATIVE TEST stuff:
     !real*8 :: polyfit(1:7)
@@ -1824,7 +1825,7 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
       !  end do
       !end do
 
-      if ( polynomial_expansion .and. do_derivatives ) then
+      if ( polynomial_expansion ) then
 
       write(*,*) "Calculating gradients"
 
@@ -2072,8 +2073,10 @@ polyfit = (/ 3.237385145550585d+02, -4.241125470183307d+04, 3.008572712845031d+0
                       end if
                       h_func(k3) = 4.d0/sqrt(pi) * (rjs_H(k2)/sigma_ij)**3 * &
                                       xyz_H(c1,k2)*xyz_H(c2,k2)/rjs_H(k2)**5 * exp(-rjs_H(k2)**2/sigma_ij**2)
-                      B_mat(3*(p-1)+c1,3*(q-1)+c2) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
-                                                  g_func(k2) + h_func(k3))
+                      if ( rjs_H(k3) < rcut/Bohr ) then
+                        B_mat(3*(p-1)+c1,3*(q-1)+c2) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
+                                                    g_func(k2) + h_func(k3))
+                      end if
                     end do
                   end do
                 end if
@@ -2094,6 +2097,17 @@ polyfit = (/ 3.237385145550585d+02, -4.241125470183307d+04, 3.008572712845031d+0
         allocate( energy_series(1:3*n_sub_sites,1:3) )
         allocate( omegas(1:n_freq) )
         allocate( integrand(1:n_freq) )
+        if ( do_derivatives ) then
+          allocate( AT_n_f(1:3*n_sub_sites,1:3*n_sub_sites,1:n_order-1) )
+          allocate( f_damp_der(1:n_sub_pairs) )
+          allocate( f_damp_der_SCS(1:n_sub_pairs) )
+          allocate( dT_LR(1:3*n_sub_sites,1:3*n_sub_sites) )
+          allocate( G_mat(1:3*n_sub_sites,1:3*n_sub_sites) )
+          allocate( force_series(1:3*n_sub_sites,1:3*n_sub_sites) )
+          allocate( VL(1:3*n_sub_sites,1:3*n_sub_sites) )
+          allocate( total_energy_series(1:3*n_sub_sites,1:3*n_sub_sites) )
+          allocate( total_integrand(1:n_freq) )
+        end if
 
         omega = 0.d0
         do i2 = 1, n_freq
@@ -2148,18 +2162,18 @@ polyfit = (/ 3.237385145550585d+02, -4.241125470183307d+04, 3.008572712845031d+0
             ! Precalculate the full AT_n for forces:
             if ( k2 == 1 ) then
               AT_n(:,:,k2) = AT(:,1:3)
-              !if ( do_derivatives ) then
-              !  AT_n_f(:,:,k2) = AT
-              !end if
+              if ( do_derivatives ) then
+                AT_n_f(:,:,k2) = AT
+              end if
             else
               call dgemm('n', 'n', 3*n_sub_sites, 3, 3*n_sub_sites, 1.d0, AT, &
                          3*n_sub_sites, AT_n(:,:,k2-1), 3*n_sub_sites, 0.d0, AT_n(:,:,k2), &
                          3*n_sub_sites)
-              !if ( do_derivatives ) then
-              !  call dgemm('n', 'n', 3*n_sub_sites, 3*n_sub_sites, 3*n_sub_sites, 1.d0, AT, &
-              !             3*n_sub_sites, AT_n_f(:,:,k2-1), 3*n_sub_sites, 0.d0, AT_n_f(:,:,k2), &
-              !             3*n_sub_sites)
-              !end if
+              if ( do_derivatives ) then
+                call dgemm('n', 'n', 3*n_sub_sites, 3*n_sub_sites, 3*n_sub_sites, 1.d0, AT, &
+                           3*n_sub_sites, AT_n_f(:,:,k2-1), 3*n_sub_sites, 0.d0, AT_n_f(:,:,k2), &
+                           3*n_sub_sites)
+              end if
             end if
             !energy_series = energy_series - 1.d0/(k2+1)*AT_n(:,1:3,k2)
             !if ( do_derivatives ) then
@@ -2172,17 +2186,15 @@ polyfit = (/ 3.237385145550585d+02, -4.241125470183307d+04, 3.008572712845031d+0
             energy_series = 0.d0
             do k2 = 1, n_order-1
               energy_series = energy_series - 1.d0/(k2+1) * AT_n(:,1:3,k2) * &
-                              (1.d0/(1.d0 + (omegas(om)/alpha_SCS0(i,3))**2))**k2
-
+                              (1.d0/(1.d0 + (omegas(om)/0.5d0)**2))**k2 !alpha_SCS0(i,3))**2))**k2
             end do
             do c1 = 1, 3
-              integrand(om) = integrand(om) + alpha_SCS0(i,1)/(1.d0 + (omegas(om)/alpha_SCS0(i,3))**2) &
+              integrand(om) = integrand(om) + alpha_SCS0(i,1)/(1.d0 + (omegas(om)/0.5d0)**2) & !/alpha_SCS0(i,3))**2) &
                               * dot_product(T_LR(c1,:),energy_series(:,c1))
             end do
           end do
 
           integral = 0.d0
-          write(*,*) "integrand", integrand
           call integrate("trapezoidal", omegas, integrand, omegas(1), omegas(n_freq), integral)
           integral = integral/(2.d0*pi)
           energies(i) = integral * 27.211386245988
@@ -2205,12 +2217,12 @@ polyfit = (/ 3.237385145550585d+02, -4.241125470183307d+04, 3.008572712845031d+0
         end if
       !end do
 
-          integral = 0.d0
-          write(*,*) "integrand", integrand
-          call integrate("trapezoidal", omegas, integrand, omegas(1), omegas(n_freq), integral)
-          integral = integral/(2.d0*pi)
-          energies(i) = integral * 27.211386245988
-          write(*,*) "MBD energy", i, energies(i)
+          !integral = 0.d0
+          !write(*,*) "integrand", integrand
+          !call integrate("trapezoidal", omegas, integrand, omegas(1), omegas(n_freq), integral)
+          !integral = integral/(2.d0*pi)
+          !energies(i) = integral * 27.211386245988
+          !write(*,*) "MBD energy", i, energies(i)
 
 
         !write(*,*) "Inverting B_mat"
@@ -2247,6 +2259,8 @@ polyfit = (/ 3.237385145550585d+02, -4.241125470183307d+04, 3.008572712845031d+0
         !close(69)
         !end if
 
+
+        if ( do_derivatives ) then
         
         if ( do_timing ) then
         call cpu_time(time2)
@@ -2257,7 +2271,7 @@ polyfit = (/ 3.237385145550585d+02, -4.241125470183307d+04, 3.008572712845031d+0
         allocate( dT(1:9*n_sub_pairs) )
         !allocate( dB_mat(1:3*n_sub_sites,1:3*n_sub_sites) )
         allocate( b_der(1:3*n_sub_sites,1:3) )
-        allocate( f_damp_der(1:n_sub_pairs) )
+        !allocate( f_damp_der(1:n_sub_pairs) )
         allocate( g_func_der(1:n_sub_pairs) )
         allocate( h_func_der(1:9*n_sub_pairs) )
         
@@ -2666,28 +2680,134 @@ polyfit = (/ 3.237385145550585d+02, -4.241125470183307d+04, 3.008572712845031d+0
             end do
             write(*,*) "End of all gradients"
             end if
-            deallocate( da_SCS )
+
+            ! MBD forces
+
+            allocate( alpha_grad(1:n_sub_sites) )
+            alpha_grad = 0.d0
+            do p = 1, n_sub_sites
+              do c1 = 1, 3
+                alpha_grad(p) = alpha_grad(p) - da_SCS(3*(p-1)+c1,c1)
+              end do
+            end do
+            alpha_grad = 1.d0/3.d0 * alpha_grad
+
+            if ( i == 1 .and. c3 == 1 ) then
+            write(*,*) "alpha_grad"
+            k3 = 0
+            do p = 1, n_sub_sites
+              i2 = sub_neighbors_list(k3+1)
+              write(*,*) i2, alpha_grad(p)
+              k3 = k3+n_sub_neigh(p)
+            end do
+            end if
+
+            f_damp_der_SCS = 0.d0
+            f_damp_der = 0.d0 ! This is cleared so we can recalculate it with SCS values
+            dT_LR = 0.d0
+            k2 = 0
+            do p = 1, n_sub_sites
+              k2 = k2+1
+              r_vdw_i = r0_ii_SCS(k2)
+              i2 = sub_neighbors_list(k2)
+              do j3 = 2, n_sub_neigh(p)
+                k2 = k2+1
+                j = sub_neighbors_list(k2)
+                q = p_list(k2)
+                r_vdw_j = r0_ii_SCS(k2)
+                R_vdW_SCS_ij = r_vdw_i + r_vdw_j
+                S_vdW_ij = sR*R_vdW_SCS_ij
+                dS_vdW_ij = sR/3.d0 * ( r_vdw_i/alpha_SCS0(i2,1) * alpha_grad(p) + &
+                                        r_vdw_j/alpha_SCS0(j,1) * alpha_grad(q) )
+                f_damp_der_SCS(k2) = -(d*rjs_H(k2))/S_vdW_ij**2 * f_damp_SCS(k2)**2 * &
+                                       exp(-d*(rjs_H(k2)/S_vdW_ij - 1.d0)) * dS_vdW_ij
+                k3 = 9*(k2-1)
+                do c1 = 1, 3
+                  do c2 = 1, 3
+                    k3 = k3+1
+                    dT_LR(3*(p-1)+c1,3*(q-1)+c2) = dT_LR(3*(p-1)+c1,3*(q-1)+c2) + &
+                                      T_func(k3) * f_damp_der_SCS(k2)
+                  end do
+                end do
+                if (i == i2 .or. i == j) then
+                  f_damp_der(k2) = d/S_vdW_ij * f_damp_SCS(k2)**2 * &
+                                   exp( -d*(rjs_H(k2)/S_vdW_ij - 1.d0) ) * xyz_H(c3,k2)/rjs_H(k2)
+                  k3 = 9*(k2-1)
+                  do c1 = 1, 3
+                    do c2 = 1, 3
+                      k3 = k3+1
+                      if (i == i2) then
+                        dT_LR(3*(p-1)+c1,3*(q-1)+c2) = dT_LR(3*(p-1)+c1,3*(q-1)+c2) - &
+                                           T_func(k3) * f_damp_der(k2) - &
+                                           dT(k3) * f_damp_SCS(k2)
+                      else if (i == j) then
+                        dT_LR(3*(p-1)+c1,3*(q-1)+c2) = dT_LR(3*(p-1)+c1,3*(q-1)+c2) + &
+                                           T_func(k3) * f_damp_der(k2) + &
+                                           dT(k3) * f_damp_SCS(k2)
+                      end if
+                    end do
+                  end do
+                end if
+              end do
+            end do
+
+            G_mat = 0.d0
+
+            if ( n_order > 1 ) then
 
 
-            ! MBD calculation starts here:
+              integrand = 0.d0
+              total_integrand = 0.d0
+              do om = 1, n_freq
 
-            
+                k3 = 0
+                do p = 1, n_sub_sites
+                  i2 = sub_neighbors_list(k3+1)
+                  G_mat(3*(p-1)+1:3*(p-1)+3,:) = G_mat(3*(p-1)+1:3*(p-1)+3,:) + &
+                    alpha_SCS0(i2,1)/(1.d0 + (omegas(om)/0.5d0)**2) * & !/alpha_SCS0(i,3))**2) * &
+                    dT_LR(3*(p-1)+1:3*(p-1)+3,:) + &
+                    alpha_grad(p)/(1.d0 + (omegas(om)/0.5d0)**2) * & !/alpha_SCS0(i,3))**2) * &
+                    T_LR(3*(p-1)+1:3*(p-1)+3,:)
+                  k3 = k3+n_sub_neigh(p)
+                end do
+
+                force_series = 0.d0
+                total_energy_series = 0.d0
+                do k2 = 1, n_order-1
+                  force_series = force_series + AT_n_f(:,:,k2) * &
+                                 (1.d0/(1.d0 + (omegas(om)/0.5d0)**2))**k2 !/alpha_SCS0(i,3))**2))**k2
+                  total_energy_series = total_energy_series - 1.d0/(k2+1)*AT_n_f(:,:,k2) * &
+                                 (1.d0/(1.d0 + (omegas(om)/0.5d0)**2))**k2 !/alpha_SCS0(i,3))**2))**k2
+                end do
+                k3 = 0
+                do p = 1, n_sub_sites
+                  i2 = sub_neighbors_list(k3+1)
+                  do c1 = 1, 3
+                    integrand(om) = integrand(om) + dot_product(G_mat(3*(p-1)+c1,:),force_series(:,3*(p-1)+c1))
+                    total_integrand(om) = total_integrand(om) + alpha_SCS0(i2,1) / &
+                          (1.d0 + (omegas(om)/0.5d0)**2) & !/alpha_SCS0(i,3))**2) &
+                          * dot_product(T_LR(3*(p-1)+c1,:), &
+                          total_energy_series(:,3*(p-1)+c1))
+                  end do
+                  k3 = k3 + n_sub_neigh(p)
+                end do
+              end do
+
+              integral = 0.d0
+              call integrate("trapezoidal", omegas, integrand, omegas(1), omegas(n_freq), integral)
+              forces0(c3,i) = forces0(c3,i) + 1.d0/(2.d0*pi) * integral
+              forces0(c3,i) = forces0(c3,i) * 51.42208619083232
+
+              write(*,*) "MBD force", i, c3, forces0(c3,i)
+              integral = 0.d0
+              call integrate("trapezoidal", omegas, total_integrand, omegas(1), omegas(n_freq), integral)
+              write(*,*) "MBD total energy of sphere", i, integral / (2.d0*pi) * 27.211386245988
+
+            end if
+
+            deallocate( da_SCS, alpha_grad )
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
- 
             !if ( i == 2 .and. a == 1 .and. c3 == 1) then
             !write(*,*) "dB_mat"
             !p = 487
@@ -2805,10 +2925,10 @@ polyfit = (/ 3.237385145550585d+02, -4.241125470183307d+04, 3.008572712845031d+0
           
         end do ! c3 loop
 
-        deallocate( dT, b_der, f_damp_der, g_func_der, h_func_der, hirshfeld_v_sub_der )
+        deallocate( dT, b_der, g_func_der, h_func_der, hirshfeld_v_sub_der )
         !deallocate( dB_mat )
 
-        !end if ! do_derivatives
+        end if ! do_derivatives
 
 
         deallocate( n_sub_neigh, sub_neighbors_list, xyz_H, rjs_H, r0_ii, neighbor_alpha0, neighbor_sigma, T_func, &
@@ -2816,6 +2936,11 @@ polyfit = (/ 3.237385145550585d+02, -4.241125470183307d+04, 3.008572712845031d+0
         deallocate( B_mat, ipiv, work_arr )
         ! MBD stuff
         deallocate( T_LR, r0_ii_SCS, f_damp_SCS, AT, AT_n, energy_series, omegas, integrand )    
+        if ( do_derivatives ) then
+          deallocate( AT_n_f, f_damp_der, f_damp_der_SCS, dT_LR, G_mat, force_series, VL, total_energy_series, &
+                      total_integrand ) 
+        end if
+
 
                
       end do
