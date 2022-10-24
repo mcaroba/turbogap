@@ -967,9 +967,9 @@ module vdw
           !write(*,*) "dsysv timing", time2-time1
 
         
-        if ( i == 1 .and. om == 2) then
-        allocate( work_arr(1:12*n_sub_sites) )
-        allocate( eigval(1:3*n_sub_sites) )
+        !if ( i == 1 .and. om == 2) then
+        !allocate( work_arr(1:12*n_sub_sites) )
+        !allocate( eigval(1:3*n_sub_sites) )
         !open(unit=69, file="B_mat.dat", status="new")
         !do p = 1, 3*n_sub_sites
         !  write(69,*) B_mat(p,:)
@@ -977,9 +977,9 @@ module vdw
         !close(69)
         !write(*,*) "dsyev"
         !write(*,*) 3*n_sub_sites
-        call dsyev('n', 'u', 3*n_sub_sites, B_mat, 3*n_sub_sites, eigval, work_arr, 12*n_sub_sites, info)
-        write(*,*) "i, min eig", i, minval(eigval)
-        write(*,*) "i, max eig", i, maxval(eigval)
+        !call dsyev('n', 'u', 3*n_sub_sites, B_mat, 3*n_sub_sites, eigval, work_arr, 12*n_sub_sites, info)
+        !write(*,*) "i, min eig", i, minval(eigval)
+        !write(*,*) "i, max eig", i, maxval(eigval)
         !  open(unit=79, file="eigs.dat", status="new")
         !  open(unit=89, file="eig_vec.dat", status="new")
         !  write(*,*) "B_mat eigenvalues"
@@ -989,9 +989,9 @@ module vdw
         !    write(89,*) B_mat(p,:)
         !  end do
         !  close(89)
-        deallocate( work_arr )
-        deallocate( eigval)
-        end if
+        !deallocate( work_arr )
+        !deallocate( eigval)
+        !end if
 
 
         !if ( i == 2 ) then
@@ -2079,7 +2079,7 @@ polyfit = (/ 3.237385145550585d+02, -4.241125470183307d+04, 3.008572712845031d+0
                       end if
                       h_func(k3) = 4.d0/sqrt(pi) * (rjs_H(k2)/sigma_ij)**3 * &
                                       xyz_H(c1,k2)*xyz_H(c2,k2)/rjs_H(k2)**5 * exp(-rjs_H(k2)**2/sigma_ij**2)
-                      if ( rjs_H(k3) < rcut/Bohr ) then
+                      if ( rjs_H(k2) < rcut/Bohr ) then
                         B_mat(3*(p-1)+c1,3*(q-1)+c2) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
                                                     g_func(k2) + h_func(k3))
                         nnz = nnz+1
@@ -2155,13 +2155,6 @@ polyfit = (/ 3.237385145550585d+02, -4.241125470183307d+04, 3.008572712845031d+0
                   T_func(k4) = (3*xyz_H(c1,k3) * xyz_H(c2,k3))/rjs_H(k3)**5
                 end if
                 T_LR(3*(p-1)+c1,3*(q-1)+c2) = f_damp_SCS(k3) * T_func(k4)
-                if ( i == 1 .and. p == 37 .and. q == 50 .and. c1 == 2 .and. c2 == 2 ) then
-                  write(*,*) "f_damp_SCS", f_damp_SCS(k3)
-                  write(*,*) "T_func", T_func(k4)
-                  write(*,*) "alpha i", alpha_SCS0(i2,1)
-                  write(*,*) "alpha j", alpha_SCS0(j,1)
-                  write(*,*) "T_LR", T_LR(3*(p-1)+c1,3*(q-1)+c2)
-                end if
               end do
             end do
           end do
@@ -2283,11 +2276,15 @@ polyfit = (/ 3.237385145550585d+02, -4.241125470183307d+04, 3.008572712845031d+0
         else ! derivative_expansion
 
         ! DIRECT INVERSION:
-        !if ( .false. ) then
+        if ( .false. ) then
         !write(*,*) "Inverting B_mat"
+        write(*,*) "B_mat init", B_mat(1,1:6)
+        ipiv = 0
+        work_arr = 0.d0
         call dgetrf( 3*n_sub_sites, 3*n_sub_sites, B_mat, 3*n_sub_sites, ipiv, info )
         !write(*,*) "info", info
         call dgetri( 3*n_sub_sites, B_mat, 3*n_sub_sites, ipiv, work_arr, 12*n_sub_sites, info )
+        write(*,*) "B_mat final", B_mat(1,1:6)
         !write(*,*) "Done"
         !end if
 
@@ -2308,6 +2305,9 @@ polyfit = (/ 3.237385145550585d+02, -4.241125470183307d+04, 3.008572712845031d+0
           end do
           deallocate( d_vec, a_SCS )
         end if
+
+        end if ! if .false.
+
         end if ! derivative_expansion
 
         !if ( i == 1 ) then
@@ -2733,18 +2733,11 @@ polyfit = (/ 3.237385145550585d+02, -4.241125470183307d+04, 3.008572712845031d+0
             call dgemm( 'N', 'N', 3*n_sub_sites, 3, 3*n_sub_sites, 1.d0, B_inv, 3*n_sub_sites, b_der, &
                          3*n_sub_sites, 0.d0, da_SCS, 3*n_sub_sites)
             else
-            call dgemm( 'N', 'N', 3*n_sub_sites, 3, 3*n_sub_sites, 1.d0, B_mat, 3*n_sub_sites, b_der, &
-                         3*n_sub_sites, 0.d0, da_SCS, 3*n_sub_sites)
-            end if
-            if ( i == 1 .and. c3 == 1 ) then
-            write(*,*) "All gradients w.r.t. atom", i
-            k3 = 0
-            do p = 1, n_sub_sites
-              i2 = sub_neighbors_list(k3+1)
-              write(*,*) i2, 1.d0/3.d0 * (-da_SCS(3*(p-1)+1,1) - da_SCS(3*(p-1)+2,2) - da_SCS(3*(p-1)+3,3))
-              k3 = k3+n_sub_neigh(p)
-            end do
-            write(*,*) "End of all gradients"
+            !call dgemm( 'N', 'N', 3*n_sub_sites, 3, 3*n_sub_sites, 1.d0, B_mat, 3*n_sub_sites, b_der, &
+            !             3*n_sub_sites, 0.d0, da_SCS, 3*n_sub_sites)
+
+            call dsysv( 'U', 3*n_sub_sites, 3, B_mat, 3*n_sub_sites, ipiv, b_der, 3*n_sub_sites, work_arr, &
+                         12*n_sub_sites, info ) 
             end if
 
             ! MBD forces
@@ -2753,7 +2746,7 @@ polyfit = (/ 3.237385145550585d+02, -4.241125470183307d+04, 3.008572712845031d+0
             alpha_grad = 0.d0
             do p = 1, n_sub_sites
               do c1 = 1, 3
-                alpha_grad(p) = alpha_grad(p) - da_SCS(3*(p-1)+c1,c1)
+                alpha_grad(p) = alpha_grad(p) - b_der(3*(p-1)+c1,c1)
               end do
             end do
             alpha_grad = 1.d0/3.d0 * alpha_grad
@@ -2793,11 +2786,6 @@ polyfit = (/ 3.237385145550585d+02, -4.241125470183307d+04, 3.008572712845031d+0
                     k3 = k3+1
                     dT_LR(3*(p-1)+c1,3*(q-1)+c2) = dT_LR(3*(p-1)+c1,3*(q-1)+c2) + &
                                       T_func(k3) * f_damp_der_SCS(k2)
-                if ( i == 1 .and. c3 == 1 .and. p == 37 .and. q == 50 .and. c1 == 2 .and. c2 == 2 ) then
-                  write(*,*) "f_damp_der_SCS", f_damp_der_SCS(k2)
-                  write(*,*) "dalpha p", alpha_grad(p)
-                  write(*,*) "dalpha q", alpha_grad(q)
-                end if
                   end do
                 end do
                 if (i == i2 .or. i == j) then
@@ -3929,11 +3917,11 @@ polyfit = (/ 3.237385145550585d+02, -4.241125470183307d+04, 3.008572712845031d+0
 
             !n_tot = sum(n_neigh(1:a))-n_neigh(a)
             !do i2 = 1, n_neigh(a)
-            do i = 1, n_sites
+            !do i = 1, n_sites
                 ! DERIVATIVE TEST: THIS NEEDS TO BE CHANGED INTO FORM dalpha(k_a,c3) TO WORK
                 !dalpha_full(i,a,c3,om) = 1.d0/3.d0 * (b_der(3*(i-1)+1,1) + &
                 ! b_der(3*(i-1)+2,2) + b_der(3*(i-1)+3,3))
-            end do
+            !end do
 
             if( do_timing) then
               call cpu_time(time2)
@@ -3998,23 +3986,23 @@ polyfit = (/ 3.237385145550585d+02, -4.241125470183307d+04, 3.008572712845031d+0
       end do
     end if
 
-    if ( do_derivatives ) then
+    !if ( do_derivatives ) then
       !write(*,*) "dalpha_SCS w.r.t. atom 1 in x direction:"
-      write(*,*) "dalpha_SCS of atom 1 w.r.t. its neighbors:"
+    !  write(*,*) "dalpha_SCS of atom 1 w.r.t. its neighbors:"
       !do i2 = 1, n_neigh(1)
       !  write(*,*) neighbors_list(i2), dalpha_full(i2,1)
       !end do
       !k = 0
-      do i2 = 1, n_sites
+    !  do i2 = 1, n_sites
       !write(*,*) "gradients of atom x w.r.t. atom 1"
         !do a2 = 1, n_neigh(i2)
         !  k = k+1
         !  if ( neighbors_list(k) == 1 .or. neighbors_list(k) == 2) then
-            write(*,*) i2, dalpha_full(i2,1)
+    !        write(*,*) i2, dalpha_full(i2,1)
         !  end if
         !end do
-      end do
-    end if
+    !  end do
+    !end if
 
     write(*,*) "Full MBD energy", sum(energies)
 
