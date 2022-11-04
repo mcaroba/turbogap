@@ -1103,6 +1103,7 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
             o_p(p) = 2.d0*omega_ref/sqrt(a_iso(p,2)/a_iso(p,1)-1.d0)
           end do
         
+          
           write(*,*) "omega SCS", o_p(1)
           write(*,*) "omega average", sum(o_p)/n_sub_sites
         end if 
@@ -1123,7 +1124,7 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
         if ( om == 2 ) then
 
         ! MBD for local polarizabilities:
-        rcut_mbd = 4.5d0
+        rcut_mbd = 9.d0
         n_mbd_sites = 0
         n_mbd_pairs = 0
         
@@ -1249,12 +1250,18 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
             neighbor_alpha0_mbd(k2) = alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot+k_i)
             if ( rjs(n_tot+k_i) < rcut ) then
               r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),i2,1)
-              a_mbd(k2) = 1.d0/3.d0 * (a_SCS(3*(r-1)+1,1) + a_SCS(3*(r-1)+2,2) + &
-                                      a_SCS(3*(r-1)+3,3))
+              a_mbd(k2) = a_iso(r,2) * &
+                          (1.d0 - 3.d0 * ((rjs(n_tot+k_i))/rcut)**2 &
+                                + 2.d0 * ((rjs(n_tot+k_i))/rcut)**3) + &
+                          (a_iso(1,2)/neighbor_alpha0_mbd(1)) * neighbor_alpha0_mbd(k2) * &
+                                ( + 3.d0 * ((rjs(n_tot+k_i))/rcut)**2 &
+                                - 2.d0 * ((rjs(n_tot+k_i))/rcut)**3)
+              write(*,*) "a_mbd", a_mbd(k2)
             else
-              a_mbd(k2) = neighbor_alpha0_mbd(k2) * (1.d0 &
+              a_mbd(k2) = (a_iso(1,2)/neighbor_alpha0_mbd(1)) * neighbor_alpha0_mbd(k2) * (1.d0 &
                                   - 3.d0 * ((rjs(n_tot+k_i)-rcut_mbd+(rcut_mbd-rcut))/(rcut_mbd-rcut))**2 &
                                   + 2.d0 * ((rjs(n_tot+k_i)-rcut_mbd+(rcut_mbd-rcut))/(rcut_mbd-rcut))**3)
+              write(*,*) "a_mbd larger", a_mbd(k2)
             end if
             r0_ii_SCS(k2) = r0_ii_mbd(k2) * (a_mbd(p)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0)
             r_vdw_i = r0_ii_SCS(k2)
@@ -1281,10 +1288,14 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
                   neighbor_alpha0_mbd(k2) = alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot+k_j)
                   if ( rjs(n_tot+k_j) < rcut ) then
                     r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),j,1)
-                    a_mbd(k2) = 1.d0/3.d0 * (a_SCS(3*(r-1)+1,1) + a_SCS(3*(r-1)+2,2) + &
-                                            a_SCS(3*(r-1)+3,3))
+                    a_mbd(k2) = a_iso(r,2) * &
+                                (1.d0 - 3.d0 * ((rjs(n_tot+k_j))/rcut)**2 &
+                                      + 2.d0 * ((rjs(n_tot+k_j))/rcut)**3) + &
+                                (a_iso(1,2)/neighbor_alpha0_mbd(1)) * neighbor_alpha0_mbd(k2) * &
+                                      ( + 3.d0 * ((rjs(n_tot+k_j))/rcut)**2 &
+                                      - 2.d0 * ((rjs(n_tot+k_j))/rcut)**3)
                   else
-                    a_mbd(k2) = neighbor_alpha0_mbd(k2) * (1.d0 &
+                    a_mbd(k2) = (a_iso(1,2)/neighbor_alpha0_mbd(1)) * neighbor_alpha0_mbd(k2) * (1.d0 &
                                      - 3.d0 * ((rjs(n_tot+k_j)-rcut_mbd+(rcut_mbd-rcut))/(rcut_mbd-rcut))**2 &
                                      + 2.d0 * ((rjs(n_tot+k_j)-rcut_mbd+(rcut_mbd-rcut))/(rcut_mbd-rcut))**3)
                   end if
