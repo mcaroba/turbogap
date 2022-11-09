@@ -496,7 +496,7 @@ module vdw
                            VL(:,:), total_energy_series(:,:), alpha_grad(:,:), total_integrand(:), B_inv(:,:), rjs_0(:), &
                            T_mbd(:), r0_ii_mbd(:), neighbor_alpha0_mbd(:), omegas_mbd(:), rjs_0_mbd(:), xyz_0_mbd(:,:), &
                            xyz_mbd(:,:), rjs_mbd(:), d_der(:,:), dT_mbd(:), f_damp_der_mbd(:), a_mbd(:), da_mbd(:), &
-                           a_iso(:,:), o_p(:)
+                           a_iso(:,:), o_p(:), central_pol(:), da_iso(:)
     real*8 :: rcut_mbd, xyz_l(1:3), a_mbd_i, a_mbd_j, da_i, da_j
     logical :: derivative_expansion = .false.
     integer :: n_mbd_sites, n_mbd_pairs, l, l_cent	
@@ -520,7 +520,6 @@ module vdw
     type(psb_dprec_type) :: prec
     character(len=20) :: ptype
 
-    !write(*,*) "c6_ref, alpha0_ref", c6_ref, alpha0_ref
 
     !write(*,*) "neighbors_list"
     !write(*,*) neighbors_list
@@ -653,6 +652,8 @@ module vdw
       
       n_max = maxval(neighbors_list)
     
+      allocate( central_pol(1:n_sites) )
+      central_pol = 0.d0
       allocate( in_cutoff(1:n_max) )
       allocate( p_to_i(1:n_max) )
       allocate( i_to_p(1:n_max) )
@@ -663,6 +664,257 @@ module vdw
       end if
       !write(*,*) "test 4"
       A_i = 0.d0 ! This is a temporary solution to store a_SCS's for each atom
+
+      do i = 1, n_sites      
+
+        n_tot = sum(n_neigh(1:i))-n_neigh(i)
+        s = neighbor_species(n_tot+1)
+        omega_ref = (4.d0 * c6_ref(s)/(Hartree*Bohr**6)) / (3.d0*(alpha0_ref(s)/Bohr**3)**2)
+        n_sub_sites = 0
+        n_sub_pairs = 0
+        k_i = 0
+        do i3 = 1, n_neigh(i)
+          !k = k+1
+          k_i = k_i + 1
+          !j = p_to_i(p)
+          if (rjs(n_tot+k_i) < rcut ) then
+            n_sub_sites = n_sub_sites + 1
+            n_sub_pairs = n_sub_pairs + 1
+            xyz_i = xyz(:,n_tot+k_i)/Bohr
+            k_j = 0
+            do j3 = 1, n_neigh(i)
+              k_j = k_j + 1
+              if ( rjs(n_tot+k_j) < 2*rcut ) then !2*rcut
+                if (i3 .ne. j3) then
+                xyz_j = xyz(:,n_tot+k_j)/Bohr
+                if ( sqrt(sum((xyz_j-xyz_i)**2)) < rcut/Bohr ) then
+                  n_sub_pairs = n_sub_pairs + 1
+                end if
+                end if
+              end if
+            end do
+          end if
+        end do
+        
+        allocate( sub_neighbors_list(1:n_sub_pairs) )
+        allocate( n_sub_neigh(1:n_sub_sites) )
+        allocate( p_list(1:n_sub_pairs) )
+        allocate( xyz_H(1:3,1:n_sub_pairs) )
+        allocate( rjs_H(1:n_sub_pairs) )
+        allocate( r0_ii(1:n_sub_pairs) )
+        allocate( neighbor_alpha0(1:n_sub_pairs) )
+        allocate( neighbor_sigma(1:n_sub_pairs) )
+        allocate( omegas(1:n_sub_pairs) )
+        allocate( T_func(1:9*n_sub_pairs) )
+        allocate( B_mat(1:3*n_sub_sites,1:3*n_sub_sites) )
+        allocate( f_damp(1:n_sub_pairs) )
+        allocate( g_func(1:n_sub_pairs) )
+        allocate( h_func(1:9*n_sub_pairs) )
+        !allocate( a_vec(1:3*n_sub_sites,1:3) )
+        allocate( a_SCS(1:3*n_sub_sites,1:3) )
+        allocate( ipiv(1:3*n_sub_sites) )
+        allocate( work_arr(1:12*n_sub_sites) )
+        allocate( rjs_0(1:n_sub_pairs) )
+        allocate( a_iso(1:n_sub_sites,1:2) )
+        allocate( o_p(1:n_sub_sites) )
+        if ( do_derivatives .and. do_hirshfeld_gradients ) then
+          allocate( hirshfeld_v_sub_der(1:3,1:n_sub_sites) )
+          hirshfeld_v_sub_der = 0.d0
+        end if
+        
+        allocate( ia(1:9*n_sub_pairs) )
+        allocate( ja(1:9*n_sub_pairs) )
+        allocate( val(1:9*n_sub_pairs) )
+        allocate( b_i(1:3*n_sub_sites,1:3) )
+        allocate( d_vec(1:3*n_sub_sites,1:3) )
+        
+        a_iso = 0.d0
+
+        !write(*,*) "allocation successful"
+
+        xyz_H = 0.d0
+        rjs_H = 0.d0
+        r0_ii = 0.d0
+        neighbor_alpha0 = 0.d0
+        neighbor_sigma = 0.d0
+
+        f_damp = 0.d0
+        g_func = 0.d0
+        h_func = 0.d0
+
+        nnz = 0
+        k2 = 0
+        T_func = 0.d0
+        B_mat = 0.d0
+
+        a_SCS = 0.d0
+        b_i = 0.d0
+        !a_iso = 0.d0
+
+        d_vec = 0.d0
+        do p = 1, n_sub_sites
+          do c1 = 1, 3
+            d_vec(3*(p-1)+c1,c1) = 1.d0
+          end do
+        end do
+
+        p_list = 0
+        n_sub_neigh = 0
+
+        k_i = 0
+        p = 0
+
+        do i3 = 1, n_neigh(i)
+          !if (i == 1 .and. i3 == 8) then
+          !write(*,*) "k2", k2
+          !end if
+          k_i = k_i+1
+          i2 = neighbors_list(n_tot+k_i)
+          if ( rjs(n_tot+k_i) < rcut ) then
+            p = p+1
+            !p = i_to_p(i2)
+            !write(*,*) "p, i_to_p", p, i_to_p(i2) 
+            k2 = k2+1
+            rjs_0(k2) = rjs(n_tot+k_i)
+            !n_tot2 = sum(n_neigh(1:i2))-n_neigh(i2)
+            !s = neighbor_species(n_tot2+1)
+            s = neighbor_species(n_tot+k_i)
+            sub_neighbors_list(k2) = neighbors_list(n_tot+k_i)
+            if ( do_derivatives .and. do_hirshfeld_gradients ) then
+              hirshfeld_v_sub_der(1:3,p) = hirshfeld_v_cart_der_H(1:3,n_tot+k_i)
+            end if
+            n_sub_neigh(p) = n_sub_neigh(p) + 1
+            p_list(k2) = p
+            !r0_ii(k2) = r0_ref(s) / Bohr * hirshfeld_v_neigh(n_tot2+1)**(1.d0/3.d0)
+            r0_ii(k2) = r0_ref(s) / Bohr * hirshfeld_v_neigh(n_tot+k_i)**(1.d0/3.d0)
+            omegas(k2) = (4.d0 * c6_ref(s)/(Hartree*Bohr**6)) / (3.d0*(alpha0_ref(s)/Bohr**3)**2)
+            neighbor_alpha0(k2) = alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot+k_i)
+            neighbor_sigma(k2) = (sqrt(2.d0/pi) * neighbor_alpha0(k2)/3.d0)**(1.d0/3.d0)
+            !xyz_H(:,k2) = xyz(:,n_tot2+1)/Bohr
+            !rjs_H(k2) = rjs(n_tot2+1)/Bohr
+            xyz_H(:,k2) = xyz(:,n_tot+k_i)/Bohr
+            xyz_i = xyz_H(:,k2)
+            rjs_H(k2) = rjs(n_tot+k_i)/Bohr
+            r_vdw_i = r0_ii(k2)
+            s_i = neighbor_sigma(k2)
+            if (p == 1) then
+              do c1 = 1, 3
+                b_i(c1,c1) = 1.d0/neighbor_alpha0(k2)
+              end do
+            end if
+            do c1 = 1, 3
+                B_mat(3*(p-1)+c1,3*(p-1)+c1) = 1.d0/neighbor_alpha0(k2)
+                nnz = nnz+1
+                ia(nnz) = 3*(p-1)+c1
+                ja(nnz) = 3*(p-1)+c1
+                val(nnz) = 1.d0/neighbor_alpha0(k2)
+            end do
+            k_j = 0
+            q = 0
+            do j3 = 1, n_neigh(i)
+              k_j = k_j+1
+              if ( rjs(n_tot+k_j) < 2*rcut ) then !2*rcut
+                if ( rjs(n_tot+k_j) < rcut ) then
+                  q = q+1
+                end if
+                ! TWO-BODY TEST
+                !write(*,*) "q, i_to_p", q, i_to_p(neighbors_list(n_tot+k_j))
+                if (i3 .ne. j3) then
+                xyz_j = xyz(:,n_tot+k_j)/Bohr
+                if ( sqrt(sum((xyz_j-xyz_i)**2)) < rcut/Bohr ) then
+                !j = neighbors_list(n_tot+k_j)
+                !if ( rjs(n_tot+k_j) < 2*rcut ) then
+                  !if (i == 1 .and. i3 == 7) then
+                  !write(*,*) "i, j", i2, j
+                  !end if
+                  n_sub_neigh(p) = n_sub_neigh(p) + 1
+                  j = neighbors_list(n_tot+k_j)
+                  !q = i_to_p(j)
+                  k2 = k2+1
+                  rjs_0(k2) = rjs(n_tot+k_j)
+                  if ( rjs(n_tot+k_j) < rcut ) then
+                    p_list(k2) = q
+                  end if    
+                  s = neighbor_species(n_tot+k_j)
+                  sub_neighbors_list(k2) = j                        
+                  r0_ii(k2) = r0_ref(s) / Bohr * hirshfeld_v_neigh(n_tot+k_j)**(1.d0/3.d0)
+                  omegas(k2) = (4.d0 * c6_ref(s)/(Hartree*Bohr**6)) / (3.d0*(alpha0_ref(s)/Bohr**3)**2)
+                  neighbor_alpha0(k2) = alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot+k_j)
+                  neighbor_sigma(k2) = (sqrt(2.d0/pi) * neighbor_alpha0(k2)/3.d0)**(1.d0/3.d0)
+                  xyz_H(:,k2) = xyz_j-xyz_i
+                  !rjs_H(k2) = rjs(n_tot2+j3)/Bohr
+                  rjs_H(k2) = sqrt(sum((xyz_j-xyz_i)**2))
+                  r_vdw_j = r0_ii(k2)
+                  f_damp(k2) = 1.d0/( 1.d0 + exp( -d*( rjs_H(k2)/(sR*(r_vdw_i + r_vdw_j)) - 1.d0 ) ) )
+                  s_j = neighbor_sigma(k2)
+                  sigma_ij = sqrt(s_i**2 + s_j**2)
+                  g_func(k2) = erf(rjs_H(k2)/sigma_ij) - 2.d0/sqrt(pi) * (rjs_H(k2)/sigma_ij) * exp(-rjs_H(k2)**2.d0/sigma_ij**2)
+                  k3 = 9*(k2-1)
+                  do c1 = 1, 3
+                    do c2 = 1, 3
+                      k3 = k3 + 1
+                      if (c1 == c2) then
+                        T_func(k3) = (3*xyz_H(c1,k2) * xyz_H(c1,k2) - rjs_H(k2)**2)/rjs_H(k2)**5
+                      else
+                        T_func(k3) = (3*xyz_H(c1,k2) * xyz_H(c2,k2))/rjs_H(k2)**5
+                      end if
+                      h_func(k3) = 4.d0/sqrt(pi) * (rjs_H(k2)/sigma_ij)**3 * &
+                                      xyz_H(c1,k2)*xyz_H(c2,k2)/rjs_H(k2)**5 * exp(-rjs_H(k2)**2/sigma_ij**2)
+                      if ( rjs(n_tot+k_j) < rcut ) then
+                      B_mat(3*(p-1)+c1,3*(q-1)+c2) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
+                                                  g_func(k2) + h_func(k3))
+                      if ( p == 1 ) then
+                        b_i(3*(q-1)+c2,c1) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
+                                                  g_func(k2) + h_func(k3))
+                      end if
+                      nnz = nnz+1
+                      ia(nnz) = 3*(p-1)+c1
+                      ja(nnz) = 3*(q-1)+c2
+                      val(nnz) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
+                                 g_func(k2) + h_func(k3))
+                      else ! rjs(n_tot+k_j) < rcut
+                        d_vec(3*(p-1)+c1,c2) = d_vec(3*(p-1)+c1,c2) - (1.d0-f_damp(k2)) * (-T_func(k3) * &
+                                                  g_func(k2) + h_func(k3)) * neighbor_alpha0(k2)
+                      end if
+                    end do
+                  end do
+                end if
+              end if
+              end if
+            end do
+          end if
+        end do
+        
+        a_SCS = d_vec
+
+        call dsysv( 'U', 3*n_sub_sites, 3, B_mat, 3*n_sub_sites, ipiv, a_SCS, 3*n_sub_sites, work_arr, &
+                    12*n_sub_sites, info )
+
+        if ( i == 1 ) then
+          write(*,*) "a_SCS"
+          k2 = 0
+          do p = 1, n_sub_sites
+            write(*,*) sub_neighbors_list(k2+1), 1.d0/3.d0 * ( a_SCS(3*(p-1)+1,1) + a_SCS(3*(p-1)+2,2) + &
+                                                               a_SCS(3*(p-1)+3,3) )
+            k2 = k2+n_sub_neigh(p)
+          end do
+        end if
+
+        do c1 = 1, 3
+          central_pol(i) = central_pol(i) + a_SCS(c1,c1)
+        end do
+        central_pol(i) = central_pol(i)/3.d0
+        write(*,*) "central polarizability", i, central_pol(i)
+        
+        deallocate( sub_neighbors_list, n_sub_neigh, p_list, xyz_H, rjs_H, r0_ii, neighbor_alpha0, neighbor_sigma, &
+                    omegas, T_func, B_mat, f_damp, g_func, h_func, a_SCS, ipiv, work_arr, rjs_0, a_iso, o_p )
+        if ( do_derivatives .and. do_hirshfeld_gradients ) then
+          deallocate( hirshfeld_v_sub_der )
+        end if
+        
+        deallocate( ia, ja, val, b_i, d_vec )        
+        
+      end do  
 
       !k = 0
       do i = 1, n_sites      
@@ -1103,9 +1355,12 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
             o_p(p) = 2.d0*omega_ref/sqrt(a_iso(p,2)/a_iso(p,1)-1.d0)
           end do
         
-          
-          write(*,*) "omega SCS", o_p(1)
-          write(*,*) "omega average", sum(o_p)/n_sub_sites
+          !write(*,*) i, a_iso(1,2), neighbor_alpha0(1)
+          !if ( a_iso(1,2) > neighbor_alpha0(1) ) then
+          !  write(*,*) "#####################################################################################"
+          !end if
+          !write(*,*) "omega SCS", o_p(1)
+          !write(*,*) "omega average", sum(o_p)/n_sub_sites
         end if 
 
         do c1 = 1, 3
@@ -1253,15 +1508,15 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
               a_mbd(k2) = a_iso(r,2) * &
                           (1.d0 - 3.d0 * ((rjs(n_tot+k_i))/rcut)**2 &
                                 + 2.d0 * ((rjs(n_tot+k_i))/rcut)**3) + &
-                          (a_iso(1,2)/neighbor_alpha0_mbd(1)) * neighbor_alpha0_mbd(k2) * &
+                          central_pol(i2) * & !neighbor_alpha0_mbd(k2) * &
                                 ( + 3.d0 * ((rjs(n_tot+k_i))/rcut)**2 &
                                 - 2.d0 * ((rjs(n_tot+k_i))/rcut)**3)
-              write(*,*) "a_mbd", a_mbd(k2)
+              !write(*,*) "a_mbd", a_mbd(k2)
             else
-              a_mbd(k2) = (a_iso(1,2)/neighbor_alpha0_mbd(1)) * neighbor_alpha0_mbd(k2) * (1.d0 &
+              a_mbd(k2) = central_pol(i2) * (1.d0 & !neighbor_alpha0_mbd(k2) * (1.d0 &
                                   - 3.d0 * ((rjs(n_tot+k_i)-rcut_mbd+(rcut_mbd-rcut))/(rcut_mbd-rcut))**2 &
                                   + 2.d0 * ((rjs(n_tot+k_i)-rcut_mbd+(rcut_mbd-rcut))/(rcut_mbd-rcut))**3)
-              write(*,*) "a_mbd larger", a_mbd(k2)
+              !write(*,*) "a_mbd larger", a_mbd(k2)
             end if
             r0_ii_SCS(k2) = r0_ii_mbd(k2) * (a_mbd(p)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0)
             r_vdw_i = r0_ii_SCS(k2)
@@ -1291,11 +1546,11 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
                     a_mbd(k2) = a_iso(r,2) * &
                                 (1.d0 - 3.d0 * ((rjs(n_tot+k_j))/rcut)**2 &
                                       + 2.d0 * ((rjs(n_tot+k_j))/rcut)**3) + &
-                                (a_iso(1,2)/neighbor_alpha0_mbd(1)) * neighbor_alpha0_mbd(k2) * &
+                                central_pol(j) * &
                                       ( + 3.d0 * ((rjs(n_tot+k_j))/rcut)**2 &
                                       - 2.d0 * ((rjs(n_tot+k_j))/rcut)**3)
                   else
-                    a_mbd(k2) = (a_iso(1,2)/neighbor_alpha0_mbd(1)) * neighbor_alpha0_mbd(k2) * (1.d0 &
+                    a_mbd(k2) = central_pol(j) * (1.d0 &
                                      - 3.d0 * ((rjs(n_tot+k_j)-rcut_mbd+(rcut_mbd-rcut))/(rcut_mbd-rcut))**2 &
                                      + 2.d0 * ((rjs(n_tot+k_j)-rcut_mbd+(rcut_mbd-rcut))/(rcut_mbd-rcut))**3)
                   end if
@@ -1381,6 +1636,8 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
         if (do_derivatives .and. om == 2) then
         
         allocate( da_SCS(1:3*n_sub_sites,1:3) )
+        allocate( da_iso(1:n_sub_sites) )
+        da_iso = 0.d0
         allocate( dT(1:9*n_sub_pairs) )
         allocate( dB_mat(1:3*n_sub_sites,1:3*n_sub_sites) )
         dB_mat = 0.d0
@@ -1900,6 +2157,14 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
             ! MBD forces
 
             da_SCS = -b_der
+            
+            do p = 1, n_sub_sites
+              do c1 = 1, 3
+                da_iso(p) = da_iso(p) + da_SCS(3*(p-1)+c1,c1)
+              end do
+            end do
+            da_iso = da_iso/3.d0
+        
 
             if ( i == 1 .and. c3 == 1 ) then
               write(*,*) "da_SCS"
@@ -1923,14 +2188,28 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
               i2 = mbd_neighbors_list(k2)
               if ( rjs_0_mbd(k2) < rcut ) then
                 r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),i2,1)
-                da_mbd(k2) = 1.d0/3.d0 * (da_SCS(3*(r-1)+1,1) + da_SCS(3*(r-1)+2,2) + &
-                                        da_SCS(3*(r-1)+3,3))
+                if ( rjs_0_mbd(k2) > 1.d-10 ) then ! Don't divide by zero
+                  da_mbd(k2) = da_iso(r) * &
+                            (1.d0 - 3.d0 * (rjs_0_mbd(k2)/rcut)**2 &
+                                  + 2.d0 * (rjs_0_mbd(k2)/rcut)**3) + &
+                                  a_iso(r,2) * &
+                            (- 6.d0 * (rjs_0_mbd(k2)/rcut) &
+                             + 6.d0 * (rjs_0_mbd(k2)/rcut)**2) &
+                             * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(rcut/Bohr)) + &
+                             central_pol(i2) * &
+                             ( + 6.d0 * (rjs_0_mbd(k2)/rcut) &
+                               - 6.d0 * (rjs_0_mbd(k2)/rcut)**2) &
+                               * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(rcut/Bohr))
+                else
+                  da_mbd(k2) = da_iso(r)
+                end if
+                  !write(*,*) "da_mbd", da_mbd(k2) 
               else
-                da_mbd(k2) = neighbor_alpha0_mbd(k2) &
-                   * (- 6.d0 * ((rjs_0_mbd(k2)-rcut_mbd+(rcut_mbd-rcut))/(rcut_mbd-rcut)) &
-                   + 6.d0 * ((rjs_0_mbd(k2)-rcut_mbd+(rcut_mbd-rcut))/(rcut_mbd-rcut))**2) &
-                   * (-xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/((rcut_mbd-rcut)/Bohr))
-                !da_mbd(k2) = 0.d0
+                  da_mbd(k2) = central_pol(i2) &
+                     * (- 6.d0 * ((rjs_0_mbd(k2)-rcut_mbd+(rcut_mbd-rcut))/(rcut_mbd-rcut)) &
+                     + 6.d0 * ((rjs_0_mbd(k2)-rcut_mbd+(rcut_mbd-rcut))/(rcut_mbd-rcut))**2) &
+                     * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/((rcut_mbd-rcut)/Bohr))
+                  !write(*,*) "da_mbd larger", da_mbd(k2)
               end if
               da_i = da_mbd(k2)
               a_mbd_i = a_mbd(k2)
@@ -1940,14 +2219,26 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
                 q = p_mbd(k2)
                 if ( rjs_0_mbd(k2) < rcut ) then
                   r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),j,1)
-                  da_mbd(k2) = 1.d0/3.d0 * (da_SCS(3*(r-1)+1,1) + da_SCS(3*(r-1)+2,2) + &
-                                          da_SCS(3*(r-1)+3,3))
+                  if ( rjs_0_mbd(k2) > 1.d-16 ) then 
+                    da_mbd(k2) = da_iso(r) * &
+                            (1.d0 - 3.d0 * (rjs_0_mbd(k2)/rcut)**2 &
+                                  + 2.d0 * (rjs_0_mbd(k2)/rcut)**3) + &
+                                  a_iso(r,2) * &
+                            (- 6.d0 * (rjs_0_mbd(k2)/rcut) &
+                             + 6.d0 * (rjs_0_mbd(k2)/rcut)**2) &
+                             * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(rcut/Bohr)) + &
+                             central_pol(j) * &
+                             ( + 6.d0 * (rjs_0_mbd(k2)/rcut) &
+                               - 6.d0 * (rjs_0_mbd(k2)/rcut)**2) &
+                               * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(rcut/Bohr))    
+                  else
+                    da_mbd(k2) = da_iso(r)
+                  end if
                 else
-                  da_mbd(k2) = neighbor_alpha0_mbd(k2) &
+                  da_mbd(k2) = central_pol(j) &
                      * (- 6.d0 * ((rjs_0_mbd(k2)-rcut_mbd+(rcut_mbd-rcut))/(rcut_mbd-rcut)) &
                      + 6.d0 * ((rjs_0_mbd(k2)-rcut_mbd+(rcut_mbd-rcut))/(rcut_mbd-rcut))**2) &
                      * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/((rcut_mbd-rcut)/Bohr)) 
-                  !da_mbd(k2) = 0.d0
                 end if
                 da_j = da_mbd(k2)
                 a_mbd_j = a_mbd(k2)
@@ -2061,7 +2352,7 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
 
         end do ! c3 loop
         
-        deallocate( da_SCS, dT, dB_mat, b_der, g_func_der, h_func_der, d_der, f_damp_der )
+        deallocate( da_SCS, dT, dB_mat, b_der, g_func_der, h_func_der, d_der, f_damp_der, da_iso )
 
         end if ! do_derivatives
         
@@ -2654,9 +2945,9 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
         !if ( i == 1 ) then
         !write(*,*) "n_degree", n_degree
 
-        if ( om == 2 ) then
-          write(*,*) i, alpha_SCS0(i,om)
-        end if
+ !       if ( om == 2 ) then
+ !         write(*,*) i, alpha_SCS0(i,om)
+ !       end if
 
         end do ! om
 
@@ -3962,6 +4253,7 @@ polyfit = (/ 3.237385145550585d+02, -4.241125470183307d+04, 3.008572712845031d+0
 
       end if ! do_derivatives
       
+      deallocate( central_pol )
       deallocate( alpha_SCS_full, in_cutoff, p_to_i, i_to_p, A_i, hirshfeld_v_cart_der_H )
       !deallocate( alpha_i, sigma_i, hirshfeld_v_cart_der_H )
       if ( do_derivatives .and. do_hirshfeld_gradients ) then

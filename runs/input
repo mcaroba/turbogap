@@ -6,7 +6,7 @@
 !atoms_file = 'atoms_vacuum_m.xyz'
 !atoms_file = 'atoms_vacuum_0yp.xyz'
 !atoms_file = 'atoms_vacuum_0ym.xyz'
-atoms_file = '4070_supercell.xyz'
+!atoms_file = '4070_supercell.xyz'
 !atoms_file = '4070_supercell_p.xyz'
 !atoms_file = '4070_supercell_m.xyz'
 !atoms_file = '2829.xyz'
@@ -14,7 +14,7 @@ atoms_file = '4070_supercell.xyz'
 !atoms_file = '2829_m.xyz'
 !atoms_file = '2829_supercell.xyz'
 !atoms_file = '2829_supercell_p.xyz'
-!atoms_file = '2829_supercell_m.xyz'
+atoms_file = '2829_supercell_m.xyz'
 !atoms_file = '2829_supercell_2xp.xyz'
 !atoms_file = '2829_supercell_2xm.xyz'
 !atoms_file = '2829_125p.xyz'
@@ -29,6 +29,7 @@ atoms_file = '4070_supercell.xyz'
 !atoms_file = '4070.xyz'
 !atoms_file = '4070_p.xyz'
 !atoms_file = '4070_m.xyz'
+!atoms_file = 'annealed_1.xyz'
 pot_file = 'gap_files/carbon.gap'
 
 ! Species info
@@ -48,6 +49,6 @@ vdw_alpha0_ref = 1.778 !0.667
 vdw_c6_ref = 27.8 !3.88
 vdw_scs_rcut = 4.5
 vdw_mbd_nfreq = 3
-!vdw_mbd_grad = .true.
-vdw_mbd_grad = .false.
+vdw_mbd_grad = .true.
+!vdw_mbd_grad = .false.
 
