@@ -496,10 +496,12 @@ module vdw
                            VL(:,:), total_energy_series(:,:), alpha_grad(:,:), total_integrand(:), B_inv(:,:), rjs_0(:), &
                            T_mbd(:), r0_ii_mbd(:), neighbor_alpha0_mbd(:), omegas_mbd(:), rjs_0_mbd(:), xyz_0_mbd(:,:), &
                            xyz_mbd(:,:), rjs_mbd(:), d_der(:,:), dT_mbd(:), f_damp_der_mbd(:), a_mbd(:), da_mbd(:), &
-                           a_iso(:,:), o_p(:), central_pol(:), da_iso(:), central_omega(:), o_mbd(:)
-    real*8 :: rcut_mbd, xyz_l(1:3), a_mbd_i, a_mbd_j, da_i, da_j, pol1
+                           a_iso(:,:), o_p(:), central_pol(:), da_iso(:), central_omega(:), o_mbd(:), sub_2b_list(:), &
+                           xyz_2b(:,:), rjs_2b(:), r0_ii_2b(:), neighbor_alpha0_2b(:), f_damp_SCS_2b(:), &
+                           a_2b(:), r0_ii_SCS_2b(:)
+    real*8 :: rcut_mbd, xyz_l(1:3), a_mbd_i, a_mbd_j, da_i, da_j, pol1, E_TS, C6_2b, rcut_2b
     logical :: derivative_expansion = .false.
-    integer :: n_mbd_sites, n_mbd_pairs, l, l_cent	
+    integer :: n_mbd_sites, n_mbd_pairs, l, l_cent, n_2b_sites
     integer, allocatable :: n_mbd_neigh(:), mbd_neighbors_list(:), p_mbd(:)
 
 !   DERIVATIVE TEST stuff:
@@ -1410,13 +1412,14 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
         if ( om == 2 ) then
 
         ! MBD for local polarizabilities:
-        rcut_mbd = 9.d0
+        rcut_mbd = 5.d0
+        rcut_2b = 9.d0
         n_mbd_sites = 0
         n_mbd_pairs = 0
         
         k_i = 0
         do i3 = 1, n_neigh(i)
-          k = k+1
+          !k = k+1
           k_i = k_i + 1
           !j = p_to_i(p)
           if (rjs(n_tot+k_i) < rcut_mbd ) then
@@ -1435,6 +1438,16 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
                 end if
               end if
             end do
+          end if
+        end do
+        
+        k_i = 0
+        n_2b_sites = 0
+        do j2 = 2, n_neigh(i)
+          !k = k+1
+          k_i = k_i + 1
+          if (rjs(n_tot+k_i) < rcut_2b .and. rjs(n_tot+k_i) .ge. rcut) then
+            n_2b_sites = n_2b_sites + 1
           end if
         end do
 
@@ -1490,6 +1503,15 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
         !  allocate( alpha_grad(1:3,1:n_mbd_sites) )
         !  alpha_grad = 0.d0
         !end if
+        
+        allocate( sub_2b_list(1:n_2b_sites) )
+        allocate( xyz_2b(1:3,1:n_2b_sites) )
+        allocate( rjs_2b(1:n_2b_sites) )
+        allocate( r0_ii_2b(1:n_2b_sites) )
+        allocate( neighbor_alpha0_2b(1:n_2b_sites) )
+        allocate( a_2b(1:n_2b_sites) )
+        allocate( r0_ii_SCS_2b(1:n_2b_sites) )
+        allocate( f_damp_SCS_2b(1:n_2b_sites) )
         
         a_mbd = 0.d0
         
@@ -1609,6 +1631,45 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
             end do
           end if
         end do
+        
+        E_TS = 0.d0
+        k2 = 0
+        k_i = 0
+        s = neighbor_species(n_tot+1)
+        r_vdw_i = r0_ref(s) / Bohr * (central_pol(i)/(alpha0_ref(s)/Bohr**3))**(1.d0/3.d0)
+        do i3 = 2, n_neigh(i)
+          k_i = k_i+1
+          i2 = neighbors_list(n_tot+k_i)
+          if ( rjs(n_tot+k_i) < rcut_2b .and. rjs(n_tot+k_i) .ge. rcut ) then
+            k2 = k2+1
+            s = neighbor_species(n_tot+k_i)
+            sub_2b_list(k2) = neighbors_list(n_tot+k_i)
+            r0_ii_2b(k2) = r0_ref(s) / Bohr * hirshfeld_v_neigh(n_tot+k_i)**(1.d0/3.d0)
+            xyz_2b(:,k2) = xyz(:,n_tot+k_i)/Bohr
+            xyz_i = xyz_2b(:,k2)
+            rjs_2b(k2) = rjs(n_tot+k_i)/Bohr
+            neighbor_alpha0_2b(k2) = alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot+k_i)
+            if ( rjs(n_tot+k_i) .ge. rcut .and. rjs(n_tot+k_i) < rcut_mbd ) then
+              r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),i2,1)
+              a_2b(k2) = central_pol(i2) * & !neighbor_alpha0_mbd(k2) * &
+                                ( + 3.d0 * ((rjs(n_tot+k_i)-rcut)/(rcut_mbd-rcut))**2 &
+                                - 2.d0 * ((rjs(n_tot+k_i)-rcut)/(rcut_mbd-rcut))**3)
+              !write(*,*) "a_mbd", a_mbd(k2)
+            else
+              a_2b(k2) = central_pol(i2) * (1.d0 & !neighbor_alpha0_mbd(k2) * (1.d0 &
+                         - 3.d0 * ((rjs(n_tot+k_i)-rcut_2b+(rcut_2b-rcut_mbd))/(rcut_2b-rcut_mbd))**2 &
+                         + 2.d0 * ((rjs(n_tot+k_i)-rcut_2b+(rcut_2b-rcut_mbd))/(rcut_2b-rcut_mbd))**3)
+              !write(*,*) "a_mbd larger", a_mbd(k2)
+            end if
+            C6_2b = 3.d0/2.d0 * central_pol(i) * a_2b(k2) * (central_omega(i) * central_omega(i2)) / &
+                    (central_omega(i) + central_omega(i2))
+            r0_ii_SCS_2b(k2) = r0_ii_2b(k2) * (a_2b(k2)/neighbor_alpha0_2b(k2))**(1.d0/3.d0)
+            r_vdw_j = r0_ii_SCS_2b(k2)
+            f_damp_SCS_2b(k2) = 1.d0/( 1.d0 + exp( -d*( rjs_2b(k2)/(0.97d0*(r_vdw_i + r_vdw_j)) - 1.d0 ) ) )
+            E_TS = E_TS - C6_2b/rjs_2b(k2)**6 * f_damp_SCS_2b(k2)
+          end if
+        end do
+        E_TS = 1.d0/2.d0 * E_TS
 
         do i2 = 1, n_freq
         k3 = 0
@@ -1666,10 +1727,10 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
           !write(*,*) "omegas_mbd", omegas_mbd
           !write(*,*) "o_mbd", o_mbd(1)
           call integrate("trapezoidal", omegas_mbd, integrand, omegas_mbd(1), omegas_mbd(n_freq), integral)
-          integral = integral/(2.d0*pi) * 27.211386245988
-          !energies(i) = integral * 27.211386245988
-          write(*,*) "MBD energy", i, integral
-          E_MBD = E_MBD + integral          
+          integral = integral/(2.d0*pi)
+          energies(i) = (integral + E_TS) * 27.211386245988
+          write(*,*) "MBD energy", i, energies(i)
+          E_MBD = E_MBD + energies(i)          
         !else
         !  write(*,*) "WARNING: Series expansion requires that vdw_mbd_order > 1 or the resulting energies"
         !  write(*,*) "and forces will be zero."
@@ -2408,7 +2469,8 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
         
         deallocate( T_LR, r0_ii_SCS, f_damp_SCS, AT, AT_n, energy_series, omegas_mbd, integrand, n_mbd_neigh, &
                     mbd_neighbors_list, p_mbd, r0_ii_mbd, neighbor_alpha0_mbd, xyz_mbd, rjs_mbd, T_mbd, a_mbd, &
-                    rjs_0_mbd, xyz_0_mbd, o_mbd )
+                    rjs_0_mbd, xyz_0_mbd, o_mbd, sub_2b_list, xyz_2b, rjs_2b, r0_ii_2b, neighbor_alpha0_2b, &
+                    a_2b, r0_ii_SCS_2b, f_damp_SCS_2b )
                     
         if ( do_derivatives ) then
           deallocate( da_mbd, AT_n_f, dT_mbd, f_damp_der_mbd, f_damp_der_SCS, dT_LR, G_mat, force_series, VL, &
