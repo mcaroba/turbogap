@@ -498,8 +498,9 @@ module vdw
                            xyz_mbd(:,:), rjs_mbd(:), d_der(:,:), dT_mbd(:), f_damp_der_mbd(:), a_mbd(:), da_mbd(:), &
                            a_iso(:,:), o_p(:), central_pol(:), da_iso(:), central_omega(:), o_mbd(:), sub_2b_list(:), &
                            xyz_2b(:,:), rjs_2b(:), r0_ii_2b(:), neighbor_alpha0_2b(:), f_damp_SCS_2b(:), &
-                           a_2b(:), r0_ii_SCS_2b(:)
-    real*8 :: rcut_mbd, xyz_l(1:3), a_mbd_i, a_mbd_j, da_i, da_j, pol1, E_TS, C6_2b, rcut_2b
+                           a_2b(:), r0_ii_SCS_2b(:), C6_2b(:), da_2b(:)
+    real*8 :: rcut_mbd, xyz_l(1:3), a_mbd_i, a_mbd_j, da_i, da_j, pol1, E_TS, rcut_2b, r_buffer, f_damp_der_2b, dr_vdw_i, &
+              dr_vdw_j, forces_TS, dC6_2b
     logical :: derivative_expansion = .false.
     integer :: n_mbd_sites, n_mbd_pairs, l, l_cent, n_2b_sites
     integer, allocatable :: n_mbd_neigh(:), mbd_neighbors_list(:), p_mbd(:)
@@ -1412,8 +1413,10 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
         if ( om == 2 ) then
 
         ! MBD for local polarizabilities:
+        ! At least for now: rcut <= rcut_mbd <= rcut_2b
         rcut_mbd = 5.d0
         rcut_2b = 9.d0
+        r_buffer = 0.5d0
         n_mbd_sites = 0
         n_mbd_pairs = 0
         
@@ -1432,7 +1435,7 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
               if ( rjs(n_tot+k_j) < rcut_mbd ) then
                 if (i3 .ne. j3) then
                 xyz_j = xyz(:,n_tot+k_j)/Bohr
-                if ( sqrt(sum((xyz_j-xyz_i)**2)) < rcut_mbd/Bohr ) then
+                if ( sqrt(sum((xyz_j-xyz_i)**2)) < (rcut_mbd)/Bohr ) then
                   n_mbd_pairs = n_mbd_pairs + 1
                 end if
                 end if
@@ -1443,10 +1446,10 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
         
         k_i = 0
         n_2b_sites = 0
-        do j2 = 2, n_neigh(i)
+        do j2 = 1, n_neigh(i)
           !k = k+1
           k_i = k_i + 1
-          if (rjs(n_tot+k_i) < rcut_2b .and. rjs(n_tot+k_i) .ge. rcut) then
+          if (rjs(n_tot+k_i) < rcut_2b .and. rjs(n_tot+k_i) .ge. rcut_mbd-r_buffer) then
             n_2b_sites = n_2b_sites + 1
           end if
         end do
@@ -1512,6 +1515,10 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
         allocate( a_2b(1:n_2b_sites) )
         allocate( r0_ii_SCS_2b(1:n_2b_sites) )
         allocate( f_damp_SCS_2b(1:n_2b_sites) )
+        allocate( C6_2b(1:n_2b_sites) )
+        if ( do_derivatives ) then
+          allocate( da_2b(1:n_2b_sites) )
+        end if
         
         a_mbd = 0.d0
         
@@ -1554,26 +1561,31 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
             xyz_mbd(:,k2) = xyz(:,n_tot+k_i)/Bohr
             xyz_i = xyz_mbd(:,k2)
             rjs_mbd(k2) = rjs(n_tot+k_i)/Bohr
-            rjs_0_mbd(k2) = rjs(n_tot+k_i)
-            xyz_0_mbd(:,k2) = xyz(:,n_tot+k_i)
+            rjs_0_mbd(k2) = rjs(n_tot+k_i)/Bohr
+            xyz_0_mbd(:,k2) = xyz(:,n_tot+k_i)/Bohr
             neighbor_alpha0_mbd(k2) = alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot+k_i)
-            if ( rjs(n_tot+k_i) < rcut ) then
+            if ( rjs(n_tot+k_i) < rcut-r_buffer ) then
+              r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),i2,1)
+              a_mbd(k2) = a_iso(r,2)
+            else if ( rjs(n_tot+k_i) < rcut .and. rjs(n_tot+k_i) .ge. rcut-r_buffer ) then
               r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),i2,1)
               a_mbd(k2) = a_iso(r,2) * &
-                          (1.d0 - 3.d0 * ((rjs(n_tot+k_i))/rcut)**2 &
-                                + 2.d0 * ((rjs(n_tot+k_i))/rcut)**3) + &
+                          (1.d0 - 3.d0 * ((rjs(n_tot+k_i)-rcut+r_buffer)/r_buffer)**2 &
+                                + 2.d0 * ((rjs(n_tot+k_i)-rcut+r_buffer)/r_buffer)**3) + &
                           central_pol(i2) * & !neighbor_alpha0_mbd(k2) * &
-                                ( + 3.d0 * ((rjs(n_tot+k_i))/rcut)**2 &
-                                - 2.d0 * ((rjs(n_tot+k_i))/rcut)**3)
+                                ( + 3.d0 * ((rjs(n_tot+k_i)-rcut+r_buffer)/r_buffer)**2 &
+                                - 2.d0 * ((rjs(n_tot+k_i)-rcut+r_buffer)/r_buffer)**3)
               !write(*,*) "a_mbd", a_mbd(k2)
-            else
+            else if ( rjs(n_tot+k_i) .ge. rcut .and. rjs(n_tot+k_i) < rcut_mbd-r_buffer) then
+              a_mbd(k2) = central_pol(i2)
+            else if ( rjs(n_tot+k_i) .ge. rcut_mbd-r_buffer .and. rjs(n_tot+k_i) < rcut_mbd ) then
               a_mbd(k2) = central_pol(i2) * (1.d0 & !neighbor_alpha0_mbd(k2) * (1.d0 &
-                                  - 3.d0 * ((rjs(n_tot+k_i)-rcut_mbd+(rcut_mbd-rcut))/(rcut_mbd-rcut))**2 &
-                                  + 2.d0 * ((rjs(n_tot+k_i)-rcut_mbd+(rcut_mbd-rcut))/(rcut_mbd-rcut))**3)
+                                  - 3.d0 * ((rjs(n_tot+k_i)-rcut_mbd+r_buffer)/(r_buffer))**2 &
+                                  + 2.d0 * ((rjs(n_tot+k_i)-rcut_mbd+r_buffer)/(r_buffer))**3)
               !write(*,*) "a_mbd larger", a_mbd(k2)
             end if
             o_mbd(k2) = central_omega(i2)
-            r0_ii_SCS(k2) = r0_ii_mbd(k2) * (a_mbd(p)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0)
+            r0_ii_SCS(k2) = r0_ii_mbd(k2) * (a_mbd(k2)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0)
             r_vdw_i = r0_ii_SCS(k2)
             k_j = 0
             q = 0
@@ -1593,21 +1605,28 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
                   r0_ii_mbd(k2) = r0_ref(s) / Bohr * hirshfeld_v_neigh(n_tot+k_j)**(1.d0/3.d0)
                   xyz_mbd(:,k2) = xyz_j-xyz_i
                   rjs_mbd(k2) = sqrt(sum((xyz_j-xyz_i)**2))
-                  rjs_0_mbd(k2) = rjs(n_tot+k_j)
-                  xyz_0_mbd(:,k2) = xyz(:,n_tot+k_j)
+                  rjs_0_mbd(k2) = rjs(n_tot+k_j)/Bohr
+                  xyz_0_mbd(:,k2) = xyz(:,n_tot+k_j)/Bohr
                   neighbor_alpha0_mbd(k2) = alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot+k_j)
-                  if ( rjs(n_tot+k_j) < rcut ) then
+                  if ( rjs(n_tot+k_j) < rcut-r_buffer ) then
+                    r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),j,1)
+                    a_mbd(k2) = a_iso(r,2)
+                  else if ( rjs(n_tot+k_j) < rcut .and. rjs(n_tot+k_j) .ge. rcut-r_buffer ) then
                     r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),j,1)
                     a_mbd(k2) = a_iso(r,2) * &
-                                (1.d0 - 3.d0 * ((rjs(n_tot+k_j))/rcut)**2 &
-                                      + 2.d0 * ((rjs(n_tot+k_j))/rcut)**3) + &
-                                central_pol(j) * &
-                                      ( + 3.d0 * ((rjs(n_tot+k_j))/rcut)**2 &
-                                      - 2.d0 * ((rjs(n_tot+k_j))/rcut)**3)
+                          (1.d0 - 3.d0 * ((rjs(n_tot+k_j)-rcut+r_buffer)/r_buffer)**2 &
+                                + 2.d0 * ((rjs(n_tot+k_j)-rcut+r_buffer)/r_buffer)**3) + &
+                    central_pol(j) * & !neighbor_alpha0_mbd(k2) * &
+                                ( + 3.d0 * ((rjs(n_tot+k_j)-rcut+r_buffer)/r_buffer)**2 &
+                                - 2.d0 * ((rjs(n_tot+k_j)-rcut+r_buffer)/r_buffer)**3)
+                   !write(*,*) "a_mbd", a_mbd(k2)
+                  else if ( rjs(n_tot+k_j) .ge. rcut .and. rjs(n_tot+k_j) < rcut_mbd-r_buffer) then
+                    a_mbd(k2) = central_pol(j)
                   else
-                    a_mbd(k2) = central_pol(j) * (1.d0 &
-                                     - 3.d0 * ((rjs(n_tot+k_j)-rcut_mbd+(rcut_mbd-rcut))/(rcut_mbd-rcut))**2 &
-                                     + 2.d0 * ((rjs(n_tot+k_j)-rcut_mbd+(rcut_mbd-rcut))/(rcut_mbd-rcut))**3)
+                    a_mbd(k2) = central_pol(j) * (1.d0 & !neighbor_alpha0_mbd(k2) * (1.d0 &
+                                        - 3.d0 * ((rjs(n_tot+k_j)-rcut_mbd+r_buffer)/(r_buffer))**2 &
+                                        + 2.d0 * ((rjs(n_tot+k_j)-rcut_mbd+r_buffer)/(r_buffer))**3)
+                   !write(*,*) "a_mbd larger", a_mbd(k2)
                   end if
                   o_mbd(k2) = central_omega(j)
                   r0_ii_SCS(k2) = r0_ii_mbd(k2) * (a_mbd(k2)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0)
@@ -1635,12 +1654,21 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
         E_TS = 0.d0
         k2 = 0
         k_i = 0
+        a_2b = 0.d0
+        rjs_2b = 0.d0
+        xyz_2b = 0.d0
+        sub_2b_list = 0
+        r0_ii_2b = 0.d0
+        neighbor_alpha0_2b = 0.d0
+        C6_2b = 0.d0
+        r0_ii_SCS_2b = 0.d0
+        f_damp_SCS_2b = 0.d0
         s = neighbor_species(n_tot+1)
-        r_vdw_i = r0_ref(s) / Bohr * (central_pol(i)/(alpha0_ref(s)/Bohr**3))**(1.d0/3.d0)
-        do i3 = 2, n_neigh(i)
+        r_vdw_i = r0_ref(s) / Bohr * (a_iso(1,2)/(alpha0_ref(s)/Bohr**3))**(1.d0/3.d0)
+        do i3 = 1, n_neigh(i)
           k_i = k_i+1
           i2 = neighbors_list(n_tot+k_i)
-          if ( rjs(n_tot+k_i) < rcut_2b .and. rjs(n_tot+k_i) .ge. rcut ) then
+          if ( rjs(n_tot+k_i) < rcut_2b .and. rjs(n_tot+k_i) .ge. rcut_mbd-r_buffer ) then
             k2 = k2+1
             s = neighbor_species(n_tot+k_i)
             sub_2b_list(k2) = neighbors_list(n_tot+k_i)
@@ -1649,24 +1677,26 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
             xyz_i = xyz_2b(:,k2)
             rjs_2b(k2) = rjs(n_tot+k_i)/Bohr
             neighbor_alpha0_2b(k2) = alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot+k_i)
-            if ( rjs(n_tot+k_i) .ge. rcut .and. rjs(n_tot+k_i) < rcut_mbd ) then
+            if ( rjs(n_tot+k_i) .ge. rcut_mbd-r_buffer .and. rjs(n_tot+k_i) < rcut_mbd ) then
               r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),i2,1)
               a_2b(k2) = central_pol(i2) * & !neighbor_alpha0_mbd(k2) * &
-                                ( + 3.d0 * ((rjs(n_tot+k_i)-rcut)/(rcut_mbd-rcut))**2 &
-                                - 2.d0 * ((rjs(n_tot+k_i)-rcut)/(rcut_mbd-rcut))**3)
+                                ( + 3.d0 * ((rjs(n_tot+k_i)-rcut_mbd+r_buffer)/(r_buffer))**2 &
+                                - 2.d0 * ((rjs(n_tot+k_i)-rcut_mbd+r_buffer)/(r_buffer))**3)
               !write(*,*) "a_mbd", a_mbd(k2)
-            else
+            else if ( rjs(n_tot+k_i) .ge. rcut_mbd .and. rjs(n_tot+k_i) < rcut_2b-r_buffer) then
+              a_2b(k2) = central_pol(i2)
+            else if ( rjs(n_tot+k_i) .ge. rcut_2b-r_buffer .and. rjs(n_tot+k_i) < rcut_2b) then
               a_2b(k2) = central_pol(i2) * (1.d0 & !neighbor_alpha0_mbd(k2) * (1.d0 &
-                         - 3.d0 * ((rjs(n_tot+k_i)-rcut_2b+(rcut_2b-rcut_mbd))/(rcut_2b-rcut_mbd))**2 &
-                         + 2.d0 * ((rjs(n_tot+k_i)-rcut_2b+(rcut_2b-rcut_mbd))/(rcut_2b-rcut_mbd))**3)
+                         - 3.d0 * ((rjs(n_tot+k_i)-rcut_2b+r_buffer)/(r_buffer))**2 &
+                         + 2.d0 * ((rjs(n_tot+k_i)-rcut_2b+r_buffer)/(r_buffer))**3)
               !write(*,*) "a_mbd larger", a_mbd(k2)
             end if
-            C6_2b = 3.d0/2.d0 * central_pol(i) * a_2b(k2) * (central_omega(i) * central_omega(i2)) / &
+            C6_2b(k2) = 3.d0/2.d0 * a_iso(1,2) * a_2b(k2) * (central_omega(i) * central_omega(i2)) / &
                     (central_omega(i) + central_omega(i2))
             r0_ii_SCS_2b(k2) = r0_ii_2b(k2) * (a_2b(k2)/neighbor_alpha0_2b(k2))**(1.d0/3.d0)
             r_vdw_j = r0_ii_SCS_2b(k2)
             f_damp_SCS_2b(k2) = 1.d0/( 1.d0 + exp( -d*( rjs_2b(k2)/(0.97d0*(r_vdw_i + r_vdw_j)) - 1.d0 ) ) )
-            E_TS = E_TS - C6_2b/rjs_2b(k2)**6 * f_damp_SCS_2b(k2)
+            E_TS = E_TS - C6_2b(k2)/rjs_2b(k2)**6 * f_damp_SCS_2b(k2)
           end if
         end do
         E_TS = 1.d0/2.d0 * E_TS
@@ -2292,30 +2322,29 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
               k2 = k2+1
               r_vdw_i = r0_ii_SCS(k2)
               i2 = mbd_neighbors_list(k2)
-              if ( rjs_0_mbd(k2) < rcut ) then
+              if ( rjs_0_mbd(k2) < (rcut-r_buffer)/Bohr ) then
                 r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),i2,1)
-                if ( rjs_0_mbd(k2) > 1.d-10 ) then ! Don't divide by zero
-                  da_mbd(k2) = da_iso(r) * &
-                            (1.d0 - 3.d0 * (rjs_0_mbd(k2)/rcut)**2 &
-                                  + 2.d0 * (rjs_0_mbd(k2)/rcut)**3) + &
+                da_mbd(k2) = da_iso(r)
+              else if ( rjs_0_mbd(k2) .ge. (rcut-r_buffer)/Bohr .and. rjs_0_mbd(k2) < rcut/Bohr ) then
+                r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),i2,1)
+                da_mbd(k2) = da_iso(r) * &
+                            (1.d0 - 3.d0 * ((rjs_0_mbd(k2)*Bohr-rcut+r_buffer)/r_buffer)**2 &
+                                  + 2.d0 * ((rjs_0_mbd(k2)*Bohr-rcut+r_buffer)/r_buffer)**3) + &
                                   a_iso(r,2) * &
-                            (- 6.d0 * (rjs_0_mbd(k2)/rcut) &
-                             + 6.d0 * (rjs_0_mbd(k2)/rcut)**2) &
-                             * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(rcut/Bohr)) + &
+                            (- 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut+r_buffer)/r_buffer) &
+                             + 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut+r_buffer)/r_buffer)**2) &
+                             * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buffer/Bohr)) + &
                              central_pol(i2) * &
-                             ( + 6.d0 * (rjs_0_mbd(k2)/rcut) &
-                               - 6.d0 * (rjs_0_mbd(k2)/rcut)**2) &
-                               * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(rcut/Bohr))
-                else
-                  da_mbd(k2) = da_iso(r)
-                end if
-                  !write(*,*) "da_mbd", da_mbd(k2) 
-              else
-                  da_mbd(k2) = central_pol(i2) &
-                     * (- 6.d0 * ((rjs_0_mbd(k2)-rcut_mbd+(rcut_mbd-rcut))/(rcut_mbd-rcut)) &
-                     + 6.d0 * ((rjs_0_mbd(k2)-rcut_mbd+(rcut_mbd-rcut))/(rcut_mbd-rcut))**2) &
-                     * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/((rcut_mbd-rcut)/Bohr))
-                  !write(*,*) "da_mbd larger", da_mbd(k2)
+                             ( + 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut+r_buffer)/r_buffer) &
+                               - 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut+r_buffer)/r_buffer)**2) &
+                             * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buffer/Bohr))
+              else if ( rjs_0_mbd(k2) .ge. rcut/Bohr .and. rjs_0_mbd(k2) < (rcut_mbd-r_buffer)/Bohr ) then
+                da_mbd(k2) = 0.d0
+              else if ( rjs_0_mbd(k2) .ge. (rcut_mbd-r_buffer)/Bohr .and. rjs_0_mbd(k2) < rcut_mbd/Bohr ) then
+                da_mbd(k2) = central_pol(i2) &
+                     * (- 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut_mbd+r_buffer)/r_buffer) &
+                     + 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut_mbd+r_buffer)/r_buffer)**2) &
+                     * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buffer/Bohr))
               end if
               da_i = da_mbd(k2)
               a_mbd_i = a_mbd(k2)
@@ -2323,28 +2352,29 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
                 k2 = k2+1
                 j = mbd_neighbors_list(k2)
                 q = p_mbd(k2)
-                if ( rjs_0_mbd(k2) < rcut ) then
+                if ( rjs_0_mbd(k2) < (rcut-r_buffer)/Bohr ) then
                   r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),j,1)
-                  if ( rjs_0_mbd(k2) > 1.d-16 ) then 
-                    da_mbd(k2) = da_iso(r) * &
-                            (1.d0 - 3.d0 * (rjs_0_mbd(k2)/rcut)**2 &
-                                  + 2.d0 * (rjs_0_mbd(k2)/rcut)**3) + &
-                                  a_iso(r,2) * &
-                            (- 6.d0 * (rjs_0_mbd(k2)/rcut) &
-                             + 6.d0 * (rjs_0_mbd(k2)/rcut)**2) &
-                             * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(rcut/Bohr)) + &
-                             central_pol(j) * &
-                             ( + 6.d0 * (rjs_0_mbd(k2)/rcut) &
-                               - 6.d0 * (rjs_0_mbd(k2)/rcut)**2) &
-                               * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(rcut/Bohr))    
-                  else
-                    da_mbd(k2) = da_iso(r)
-                  end if
-                else
+                  da_mbd(k2) = da_iso(r)
+                else if ( rjs_0_mbd(k2) .ge. (rcut-r_buffer)/Bohr .and. rjs_0_mbd(k2) < rcut/Bohr ) then
+                  r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),j,1)
+                  da_mbd(k2) = da_iso(r) * &
+                              (1.d0 - 3.d0 * ((rjs_0_mbd(k2)*Bohr-rcut+r_buffer)/r_buffer)**2 &
+                                    + 2.d0 * ((rjs_0_mbd(k2)*Bohr-rcut+r_buffer)/r_buffer)**3) + &
+                                    a_iso(r,2) * &
+                              (- 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut+r_buffer)/r_buffer) &
+                               + 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut+r_buffer)/r_buffer)**2) &
+                               * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buffer/Bohr)) + &
+                               central_pol(j) * &
+                                ( + 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut+r_buffer)/r_buffer) &
+                                 - 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut+r_buffer)/r_buffer)**2) &
+                                 * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buffer/Bohr)) 
+                else if ( rjs_0_mbd(k2) .ge. rcut/Bohr .and. rjs_0_mbd(k2) < (rcut_mbd-r_buffer)/Bohr ) then
+                  da_mbd(k2) = 0.d0
+                else if ( rjs_0_mbd(k2) .ge. (rcut_mbd-r_buffer)/Bohr .and. rjs_0_mbd(k2) < rcut_mbd/Bohr ) then
                   da_mbd(k2) = central_pol(j) &
-                     * (- 6.d0 * ((rjs_0_mbd(k2)-rcut_mbd+(rcut_mbd-rcut))/(rcut_mbd-rcut)) &
-                     + 6.d0 * ((rjs_0_mbd(k2)-rcut_mbd+(rcut_mbd-rcut))/(rcut_mbd-rcut))**2) &
-                     * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/((rcut_mbd-rcut)/Bohr)) 
+                       * (- 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut_mbd+r_buffer)/r_buffer) &
+                       + 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut_mbd+r_buffer)/r_buffer)**2) &
+                       * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buffer/Bohr))
                 end if
                 da_j = da_mbd(k2)
                 a_mbd_j = a_mbd(k2)
@@ -2394,6 +2424,45 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
                 end if
               end do
             end do
+            
+            forces_TS = 0.d0
+            k2 = 0
+            da_2b = 0.d0
+            s = neighbor_species(n_tot+1)
+            r_vdw_i = r0_ref(s) / Bohr * (a_iso(1,2)/(alpha0_ref(s)/Bohr**3))**(1.d0/3.d0)
+            dr_vdw_i = r_vdw_i / (3.d0 * a_iso(1,2)) * da_iso(1)
+            do p = 1, n_2b_sites
+              k2 = k2+1
+              i2 = sub_2b_list(k2)
+              if ( rjs_2b(k2) .ge. (rcut_mbd-r_buffer)/Bohr .and. rjs_2b(k2) < rcut_mbd/Bohr ) then
+                da_2b(k2) = a_2b(k2) * & !neighbor_alpha0_mbd(k2) * &
+                              ( + 6.d0 * ((rjs_2b(k2)*Bohr-rcut_mbd+r_buffer)/(r_buffer)) &
+                                - 6.d0 * ((rjs_2b(k2)*Bohr-rcut_mbd+r_buffer)/(r_buffer))**2) &
+                                * ( -xyz_2b(c3,k2)/rjs_2b(k2)/(r_buffer/Bohr))
+              else if ( rjs_2b(k2) .ge. rcut_mbd/Bohr .and. rjs_2b(k2) < (rcut_2b-r_buffer)/Bohr ) then
+                da_2b(k2) = 0.d0
+              else if ( rjs_2b(k2) .ge. (rcut_2b-r_buffer)/Bohr .and. rjs_2b(k2) < rcut_2b/Bohr ) then
+                da_2b(k2) = a_2b(i2) * & !neighbor_alpha0_mbd(k2) * (1.d0 &
+                       ( - 6.d0 * ((rjs_2b(k2)*Bohr-rcut_2b+r_buffer)/(r_buffer)) &
+                         + 6.d0 * ((rjs_2b(k2)*Bohr-rcut_2b+r_buffer)/(r_buffer))**2) &
+                       * ( -xyz_2b(c3,k2)/rjs_2b(k2)/(r_buffer/Bohr))
+              end if
+              r_vdw_j = r0_ii_SCS_2b(k2)
+              dr_vdw_j = r_vdw_j / (3.d0 * a_2b(k2)) * da_2b(k2)
+              !f_damp_SCS_2b(k2) = 1.d0/( 1.d0 + exp( -d*( rjs_2b(k2)/(0.97d0*(r_vdw_i + r_vdw_j)) - 1.d0 ) ) )
+              dC6_2b = 3.d0/2.d0*central_omega(i)*central_omega(i2) &
+                          / (central_omega(i)+central_omega(i2)) * (da_iso(1)*a_2b(k2) + a_iso(1,2)*da_2b(k2))
+              f_damp_der_2b = d/0.97d0 * f_damp_SCS_2b(k2)**2 * &
+                                      exp( -d*( rjs_2b(k2)/(0.97d0*(r_vdw_i + r_vdw_j)) - 1.d0 ) ) &
+                                      * (1.d0/(0.97d0 * (r_vdw_i+r_vdw_j)) * (-xyz_2b(c3,k2)/rjs_2b(k2)) &
+                                      - rjs_2b(k2)/0.97d0 * (r_vdw_i+r_vdw_j)**2 &
+                                      * (dr_vdw_i + dr_vdw_j))
+              forces_TS = forces_TS + ( dC6_2b * f_damp_SCS_2b(k2) / rjs_2b(k2)**6 &
+                                      + 6.d0/rjs_2b(k2)**8 * xyz_2b(c3,k2) * C6_2b(k2) * f_damp_SCS_2b(k2) &
+                                      + C6_2b(k2)/rjs_2b(k2)**6 * f_damp_der_2b )
+            end do
+            forces_TS = 1.d0/2.d0 * forces_TS
+
 
             !if ( i == 1 .and. c3 == 1 ) then
             !  write(*,*) "dT_LR"
@@ -2448,15 +2517,15 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
 
               integral = 0.d0
               call integrate("trapezoidal", omegas_mbd, integrand, omegas_mbd(1), omegas_mbd(n_freq), integral)
-              forces0(c3,i) = forces0(c3,i) + 1.d0/(2.d0*pi) * integral
-              forces0(c3,i) = forces0(c3,i) * 51.42208619083232
+              forces0(c3,i) = forces0(c3,i) + (1.d0/(2.d0*pi) * integral + forces_TS) * 51.42208619083232
+              !forces0(c3,i) = forces0(c3,i) * 51.42208619083232
 
               write(*,*) "MBD force", i, c3, forces0(c3,i)
               !write(*,*) i, c3, forces0(c3,i)
               integral = 0.d0
               if (c3 == 1 ) then
               call integrate("trapezoidal", omegas_mbd, total_integrand, omegas_mbd(1), omegas_mbd(n_freq), integral)
-              write(*,*) "MBD total energy of sphere", i, integral / (2.d0*pi) * 27.211386245988
+              write(*,*) "MBD total energy of sphere", i, (integral / (2.d0*pi) + E_TS)* 27.211386245988
               end if
 
             end if
@@ -2470,11 +2539,11 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
         deallocate( T_LR, r0_ii_SCS, f_damp_SCS, AT, AT_n, energy_series, omegas_mbd, integrand, n_mbd_neigh, &
                     mbd_neighbors_list, p_mbd, r0_ii_mbd, neighbor_alpha0_mbd, xyz_mbd, rjs_mbd, T_mbd, a_mbd, &
                     rjs_0_mbd, xyz_0_mbd, o_mbd, sub_2b_list, xyz_2b, rjs_2b, r0_ii_2b, neighbor_alpha0_2b, &
-                    a_2b, r0_ii_SCS_2b, f_damp_SCS_2b )
+                    a_2b, r0_ii_SCS_2b, f_damp_SCS_2b, C6_2b )
                     
         if ( do_derivatives ) then
           deallocate( da_mbd, AT_n_f, dT_mbd, f_damp_der_mbd, f_damp_der_SCS, dT_LR, G_mat, force_series, VL, &
-                      total_energy_series, total_integrand, alpha_grad )
+                      total_energy_series, total_integrand, alpha_grad, da_2b )
         end if
         
         end if
