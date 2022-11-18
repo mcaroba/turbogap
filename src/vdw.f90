@@ -669,6 +669,7 @@ module vdw
       end if
       !write(*,*) "test 4"
       A_i = 0.d0 ! This is a temporary solution to store a_SCS's for each atom
+      r_buffer = 0.5d0
 
       do i = 1, n_sites      
 
@@ -881,20 +882,51 @@ module vdw
                       h_func(k3) = 4.d0/sqrt(pi) * (rjs_H(k2)/sigma_ij)**3 * &
                                       xyz_H(c1,k2)*xyz_H(c2,k2)/rjs_H(k2)**5 * exp(-rjs_H(k2)**2/sigma_ij**2)
                       if ( rjs(n_tot+k_j) < rcut ) then
-                      B_mat(3*(p-1)+c1,3*(q-1)+c2) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
+                        !if ( rjs(n_tot+k_j) < rcut-r_buffer ) then
+                          B_mat(3*(p-1)+c1,3*(q-1)+c2) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
+                                                      g_func(k2) + h_func(k3))
+                          if ( p == 1 ) then
+                            b_i(3*(q-1)+c2,c1) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
                                                   g_func(k2) + h_func(k3))
-                      if ( p == 1 ) then
-                        b_i(3*(q-1)+c2,c1) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
-                                                  g_func(k2) + h_func(k3))
-                      end if
-                      nnz = nnz+1
-                      ia(nnz) = 3*(p-1)+c1
-                      ja(nnz) = 3*(q-1)+c2
-                      val(nnz) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
-                                 g_func(k2) + h_func(k3))
+                          end if
+                          nnz = nnz+1
+                          ia(nnz) = 3*(p-1)+c1
+                          ja(nnz) = 3*(q-1)+c2
+                          val(nnz) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
+                                     g_func(k2) + h_func(k3))
+                        !else
+                        !  B_mat(3*(p-1)+c1,3*(q-1)+c2) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
+                        !                              g_func(k2) + h_func(k3)) * &
+                        !                 (1.d0 - 3.d0 * ((rjs(n_tot+k_j)-rcut+r_buffer)/(r_buffer))**2 &
+                        !                       + 2.d0 * ((rjs(n_tot+k_j)-rcut+r_buffer)/(r_buffer))**3 )
+                        !  if ( p == 1 ) then
+                        !    b_i(3*(q-1)+c2,c1) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
+                        !                          g_func(k2) + h_func(k3)) * &
+                        !                 (1.d0 - 3.d0 * ((rjs(n_tot+k_j)-rcut+r_buffer)/(r_buffer))**2 &
+                        !                       + 2.d0 * ((rjs(n_tot+k_j)-rcut+r_buffer)/(r_buffer))**3 )
+                        !  end if
+                        !  nnz = nnz+1
+                        !  ia(nnz) = 3*(p-1)+c1
+                        !  ja(nnz) = 3*(q-1)+c2
+                        !  val(nnz) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
+                        !             g_func(k2) + h_func(k3)) * &
+                        !                 (1.d0 - 3.d0 * ((rjs(n_tot+k_j)-rcut+r_buffer)/(r_buffer))**2 &
+                        !                       + 2.d0 * ((rjs(n_tot+k_j)-rcut+r_buffer)/(r_buffer))**3 )
+                        !  d_vec(3*(p-1)+c1,c2) = d_vec(3*(p-1)+c1,c2) - (1.d0-f_damp(k2)) * (-T_func(k3) * &
+                        !                          g_func(k2) + h_func(k3)) * neighbor_alpha0(k2) * &
+                        !                          ( 3.d0 * ((rjs(n_tot+k_j)-rcut+r_buffer)/(r_buffer))**2 &
+                        !                           -2.d0 * ((rjs(n_tot+k_j)-rcut+r_buffer)/(r_buffer))**3 )
+                        !end if
                       else ! rjs(n_tot+k_j) < rcut
-                        d_vec(3*(p-1)+c1,c2) = d_vec(3*(p-1)+c1,c2) - (1.d0-f_damp(k2)) * (-T_func(k3) * &
-                                                  g_func(k2) + h_func(k3)) * neighbor_alpha0(k2)
+                        !if ( rjs(n_tot+k_j) < 2*rcut-r_buffer ) then
+                          d_vec(3*(p-1)+c1,c2) = d_vec(3*(p-1)+c1,c2) - (1.d0-f_damp(k2)) * (-T_func(k3) * &
+                                                    g_func(k2) + h_func(k3)) * neighbor_alpha0(k2)
+                        !else
+                        !  d_vec(3*(p-1)+c1,c2) = d_vec(3*(p-1)+c1,c2) - (1.d0-f_damp(k2)) * (-T_func(k3) * &
+                        !                            g_func(k2) + h_func(k3)) * neighbor_alpha0(k2) * &
+                        !                   (1.d0 - 3.d0 * ((rjs(n_tot+k_j)-2*rcut+r_buffer)/(r_buffer))**2 &
+                        !                       + 2.d0 * ((rjs(n_tot+k_j)-2*rcut+r_buffer)/(r_buffer))**3 )
+                        !end if
                       end if
                     end do
                   end do
@@ -931,7 +963,7 @@ module vdw
             central_pol(i) = central_pol(i) + a_SCS(c1,c1)
           end do
           central_pol(i) = central_pol(i)/3.d0
-          !write(*,*) "central polarizability", i, central_pol(i)
+          write(*,*) "central polarizability", i, central_pol(i)
           central_omega(i) = 2.d0*omega_ref/sqrt(central_pol(i)/pol1-1.d0)
           !write(*,*) "central omega", i, central_omega(i)
         end if
@@ -1414,7 +1446,7 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
 
         ! MBD for local polarizabilities:
         ! At least for now: rcut <= rcut_mbd <= rcut_2b
-        rcut_mbd = 5.d0
+        rcut_mbd = 7.d0
         rcut_2b = 9.d0
         r_buffer = 0.5d0
         n_mbd_sites = 0
@@ -1679,14 +1711,14 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
             neighbor_alpha0_2b(k2) = alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot+k_i)
             if ( rjs(n_tot+k_i) .ge. rcut_mbd-r_buffer .and. rjs(n_tot+k_i) < rcut_mbd ) then
               r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),i2,1)
-              a_2b(k2) = central_pol(i2) * & !neighbor_alpha0_mbd(k2) * &
+              a_2b(k2) = central_pol(i2) * &
                                 ( + 3.d0 * ((rjs(n_tot+k_i)-rcut_mbd+r_buffer)/(r_buffer))**2 &
                                 - 2.d0 * ((rjs(n_tot+k_i)-rcut_mbd+r_buffer)/(r_buffer))**3)
               !write(*,*) "a_mbd", a_mbd(k2)
             else if ( rjs(n_tot+k_i) .ge. rcut_mbd .and. rjs(n_tot+k_i) < rcut_2b-r_buffer) then
               a_2b(k2) = central_pol(i2)
             else if ( rjs(n_tot+k_i) .ge. rcut_2b-r_buffer .and. rjs(n_tot+k_i) < rcut_2b) then
-              a_2b(k2) = central_pol(i2) * (1.d0 & !neighbor_alpha0_mbd(k2) * (1.d0 &
+              a_2b(k2) = central_pol(i2) * (1.d0 & 
                          - 3.d0 * ((rjs(n_tot+k_i)-rcut_2b+r_buffer)/(r_buffer))**2 &
                          + 2.d0 * ((rjs(n_tot+k_i)-rcut_2b+r_buffer)/(r_buffer))**3)
               !write(*,*) "a_mbd larger", a_mbd(k2)
@@ -1747,7 +1779,7 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
                               !(1.d0/(1.d0 + (omegas_mbd(i2)/0.5d0)**2))**k2 !alpha_SCS0(i,3))**2))**k2
             end do
             do c1 = 1, 3
-              integrand(i2) = integrand(i2) + a_mbd(1)/(1.d0 + (omegas_mbd(i2)/o_mbd(1))**2) & !/alpha_SCS0(i,3))**2) &
+              integrand(i2) = integrand(i2) + a_mbd(1)/(1.d0 + (omegas_mbd(i2)/o_mbd(1))**2) & 
                               * dot_product(T_LR(c1,:),energy_series(:,c1))
             end do
           end do
@@ -2435,14 +2467,14 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
               k2 = k2+1
               i2 = sub_2b_list(k2)
               if ( rjs_2b(k2) .ge. (rcut_mbd-r_buffer)/Bohr .and. rjs_2b(k2) < rcut_mbd/Bohr ) then
-                da_2b(k2) = a_2b(k2) * & !neighbor_alpha0_mbd(k2) * &
+                da_2b(k2) = a_2b(k2) * &
                               ( + 6.d0 * ((rjs_2b(k2)*Bohr-rcut_mbd+r_buffer)/(r_buffer)) &
                                 - 6.d0 * ((rjs_2b(k2)*Bohr-rcut_mbd+r_buffer)/(r_buffer))**2) &
                                 * ( -xyz_2b(c3,k2)/rjs_2b(k2)/(r_buffer/Bohr))
               else if ( rjs_2b(k2) .ge. rcut_mbd/Bohr .and. rjs_2b(k2) < (rcut_2b-r_buffer)/Bohr ) then
                 da_2b(k2) = 0.d0
               else if ( rjs_2b(k2) .ge. (rcut_2b-r_buffer)/Bohr .and. rjs_2b(k2) < rcut_2b/Bohr ) then
-                da_2b(k2) = a_2b(i2) * & !neighbor_alpha0_mbd(k2) * (1.d0 &
+                da_2b(k2) = a_2b(k2) * &
                        ( - 6.d0 * ((rjs_2b(k2)*Bohr-rcut_2b+r_buffer)/(r_buffer)) &
                          + 6.d0 * ((rjs_2b(k2)*Bohr-rcut_2b+r_buffer)/(r_buffer))**2) &
                        * ( -xyz_2b(c3,k2)/rjs_2b(k2)/(r_buffer/Bohr))
@@ -2451,11 +2483,12 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
               dr_vdw_j = r_vdw_j / (3.d0 * a_2b(k2)) * da_2b(k2)
               !f_damp_SCS_2b(k2) = 1.d0/( 1.d0 + exp( -d*( rjs_2b(k2)/(0.97d0*(r_vdw_i + r_vdw_j)) - 1.d0 ) ) )
               dC6_2b = 3.d0/2.d0*central_omega(i)*central_omega(i2) &
-                          / (central_omega(i)+central_omega(i2)) * (da_iso(1)*a_2b(k2) + a_iso(1,2)*da_2b(k2))
+                          / (central_omega(i)+central_omega(i2)) &
+                          * (da_iso(1)*a_2b(k2) + a_iso(1,2)*da_2b(k2))
               f_damp_der_2b = d/0.97d0 * f_damp_SCS_2b(k2)**2 * &
                                       exp( -d*( rjs_2b(k2)/(0.97d0*(r_vdw_i + r_vdw_j)) - 1.d0 ) ) &
                                       * (1.d0/(0.97d0 * (r_vdw_i+r_vdw_j)) * (-xyz_2b(c3,k2)/rjs_2b(k2)) &
-                                      - rjs_2b(k2)/0.97d0 * (r_vdw_i+r_vdw_j)**2 &
+                                      - rjs_2b(k2)/0.97d0 * 1.d0/(r_vdw_i+r_vdw_j)**2 &
                                       * (dr_vdw_i + dr_vdw_j))
               forces_TS = forces_TS + ( dC6_2b * f_damp_SCS_2b(k2) / rjs_2b(k2)**6 &
                                       + 6.d0/rjs_2b(k2)**8 * xyz_2b(c3,k2) * C6_2b(k2) * f_damp_SCS_2b(k2) &
@@ -2478,8 +2511,10 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
             do p = 1, n_mbd_sites
               i2 = mbd_neighbors_list(k3+1)
               G_mat(3*(p-1)+1:3*(p-1)+3,:,j) = G_mat(3*(p-1)+1:3*(p-1)+3,:,j) + &
-                a_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) * dT_LR(3*(p-1)+1:3*(p-1)+3,:) + &
-                da_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) * T_LR(3*(p-1)+1:3*(p-1)+3,:)
+                a_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) &
+                * dT_LR(3*(p-1)+1:3*(p-1)+3,:) + &
+                da_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) &
+                * T_LR(3*(p-1)+1:3*(p-1)+3,:)
               k3 = k3+n_mbd_neigh(p)
             end do
             end do
@@ -2507,7 +2542,7 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
                     integrand(j) = integrand(j) + & !1.d0/(1.d0 + (omegas_mbd(j)/0.5d0)**2) * &
                     dot_product(G_mat(3*(p-1)+c1,:,j),force_series(:,3*(p-1)+c1))
                     total_integrand(j) = total_integrand(j) + a_mbd(k3+1) / &
-                          (1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) & !/alpha_SCS0(i,3))**2) &
+                          (1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) &
                           * dot_product(T_LR(3*(p-1)+c1,:), &
                           total_energy_series(:,3*(p-1)+c1))
                   end do
@@ -2518,6 +2553,7 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
               integral = 0.d0
               call integrate("trapezoidal", omegas_mbd, integrand, omegas_mbd(1), omegas_mbd(n_freq), integral)
               forces0(c3,i) = forces0(c3,i) + (1.d0/(2.d0*pi) * integral + forces_TS) * 51.42208619083232
+              !forces0(c3,i) = 1.d0/(2.d0*pi) * integral * 51.42208619083232
               !forces0(c3,i) = forces0(c3,i) * 51.42208619083232
 
               write(*,*) "MBD force", i, c3, forces0(c3,i)
@@ -2525,7 +2561,8 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
               integral = 0.d0
               if (c3 == 1 ) then
               call integrate("trapezoidal", omegas_mbd, total_integrand, omegas_mbd(1), omegas_mbd(n_freq), integral)
-              write(*,*) "MBD total energy of sphere", i, (integral / (2.d0*pi) + E_TS)* 27.211386245988
+              write(*,*) "MBD total energy of sphere", i, (integral / (2.d0*pi) + E_TS) * 27.211386245988
+              !write(*,*) "Total TS energy of sphere", i, integral/(2.d0*pi) * 27.211386245988
               end if
 
             end if
