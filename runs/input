@@ -4,6 +4,7 @@
 atoms_file = 'atoms_vacuum.xyz'
 !atoms_file = 'atoms_vacuum_p.xyz'
 !atoms_file = 'atoms_vacuum_m.xyz'
+!atoms_file = '4070_supercell.xyz'
 pot_file = 'gap_files/carbon.gap'
 
 ! Species info
