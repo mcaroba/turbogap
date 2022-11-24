@@ -500,7 +500,7 @@ module vdw
                            xyz_2b(:,:), rjs_2b(:), r0_ii_2b(:), neighbor_alpha0_2b(:), f_damp_SCS_2b(:), &
                            a_2b(:), r0_ii_SCS_2b(:), C6_2b(:), da_2b(:)
     real*8 :: rcut_mbd, xyz_l(1:3), a_mbd_i, a_mbd_j, da_i, da_j, pol1, E_TS, rcut_2b, r_buffer, f_damp_der_2b, dr_vdw_i, &
-              dr_vdw_j, forces_TS, dC6_2b, mult1, mult2
+              dr_vdw_j, forces_TS, dC6_2b, mult1_i, mult1_j, mult2
     logical :: derivative_expansion = .false.
     integer :: n_mbd_sites, n_mbd_pairs, l, l_cent, n_2b_sites
     integer, allocatable :: n_mbd_neigh(:), mbd_neighbors_list(:), p_mbd(:)
@@ -669,7 +669,7 @@ module vdw
       end if
       !write(*,*) "test 4"
       A_i = 0.d0 ! This is a temporary solution to store a_SCS's for each atom
-      r_buffer = 0.25d0
+      r_buffer = 0.5d0
 
       do i = 1, n_sites      
 
@@ -825,6 +825,12 @@ module vdw
                 ja(nnz) = 3*(p-1)+c1
                 val(nnz) = 1.d0/neighbor_alpha0(k2)
             end do
+            mult1_i = 1.d0
+            if ( rjs(n_tot+k_i) .ge. rcut-r_buffer ) then
+              mult1_i = mult1_i * &
+                              (1.d0 - 3.d0 * ((rjs(n_tot+k_i)-rcut+r_buffer)/(r_buffer))**2 &
+                               + 2.d0 * ((rjs(n_tot+k_i)-rcut+r_buffer)/(r_buffer))**3 )
+            end if
             k_j = 0
             q = 0
             do j3 = 1, n_neigh(i)
@@ -882,11 +888,11 @@ module vdw
                       h_func(k3) = 4.d0/sqrt(pi) * (rjs_H(k2)/sigma_ij)**3 * &
                                       xyz_H(c1,k2)*xyz_H(c2,k2)/rjs_H(k2)**5 * exp(-rjs_H(k2)**2/sigma_ij**2)
                       if ( rjs(n_tot+k_j) < rcut ) then
-                        mult1 = 1.d0
+                        mult1_j = 1.d0
                         mult2 = 1.d0
                         !if ( rjs(n_tot+k_j) < rcut-r_buffer ) then)
                         if ( rjs(n_tot+k_j) .ge. rcut-r_buffer ) then
-                          mult1 = mult1 * &
+                          mult1_j = mult1_j * &
                                          (1.d0 - 3.d0 * ((rjs(n_tot+k_j)-rcut+r_buffer)/(r_buffer))**2 &
                                                + 2.d0 * ((rjs(n_tot+k_j)-rcut+r_buffer)/(r_buffer))**3 )
                         end if
@@ -899,24 +905,24 @@ module vdw
                         end if
                         !write(*,*) "mult1, mult2", mult1, mult2
                         B_mat(3*(p-1)+c1,3*(q-1)+c2) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
-                                                      g_func(k2) + h_func(k3)) * mult1 * mult2
+                                                      g_func(k2) + h_func(k3)) * mult1_i * mult1_j * mult2
                         if ( p == 1 ) then
                           b_i(3*(q-1)+c2,c1) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
-                                                g_func(k2) + h_func(k3)) * mult1 * mult2
+                                                g_func(k2) + h_func(k3)) * mult1_i * mult1_j * mult2
                         end if
                         nnz = nnz+1
                         ia(nnz) = 3*(p-1)+c1
                         ja(nnz) = 3*(q-1)+c2
                         val(nnz) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
-                                   g_func(k2) + h_func(k3)) * mult1 * mult2
+                                   g_func(k2) + h_func(k3)) * mult1_j * mult2
                         d_vec(3*(p-1)+c1,c2) = d_vec(3*(p-1)+c1,c2) - (1.d0-f_damp(k2)) * (-T_func(k3) * &
                                                   g_func(k2) + h_func(k3)) * neighbor_alpha0(k2) * &
-                                                  ( 1.d0 - mult1 ) * mult2
+                                                  mult1_i * ( 1.d0 - mult1_j ) * mult2
                       else ! rjs(n_tot+k_j) < rcut
-                        mult1 = 1.d0
+                        mult1_j = 1.d0
                         mult2 = 1.d0
                         if ( rjs(n_tot+k_j) .ge. 2.d0*rcut-r_buffer ) then
-                          mult1 = mult1 * &
+                          mult1_j = mult1_j * &
                                          (1.d0 - 3.d0 * ((rjs(n_tot+k_j)-2.d0*rcut+r_buffer)/(r_buffer))**2 &
                                                + 2.d0 * ((rjs(n_tot+k_j)-2.d0*rcut+r_buffer)/(r_buffer))**3 )
                         end if
@@ -930,7 +936,7 @@ module vdw
                         !write(*,*) "d mult1, mult2", mult1, mult2
                         d_vec(3*(p-1)+c1,c2) = d_vec(3*(p-1)+c1,c2) - (1.d0-f_damp(k2)) * (-T_func(k3) * &
                                                     g_func(k2) + h_func(k3)) * neighbor_alpha0(k2) * &
-                                                    mult1 * mult2
+                                                    mult1_j * mult2
                       end if
                     end do
                   end do
@@ -1215,6 +1221,12 @@ module vdw
               !  val(nnz) = 1.d0/(neighbor_alpha0(k2))
               !end if
             end do
+            mult1_i = 1.d0
+            if ( rjs(n_tot+k_i) .ge. rcut-r_buffer ) then
+              mult1_i = mult1_i * &
+                              (1.d0 - 3.d0 * ((rjs(n_tot+k_i)-rcut+r_buffer)/(r_buffer))**2 &
+                               + 2.d0 * ((rjs(n_tot+k_i)-rcut+r_buffer)/(r_buffer))**3 )
+            end if
             k_j = 0
             q = 0
             !do j3 = 2, n_neigh(i2)
@@ -1273,20 +1285,67 @@ module vdw
                       h_func(k3) = 4.d0/sqrt(pi) * (rjs_H(k2)/sigma_ij)**3 * &
                                       xyz_H(c1,k2)*xyz_H(c2,k2)/rjs_H(k2)**5 * exp(-rjs_H(k2)**2/sigma_ij**2)
                       if ( rjs(n_tot+k_j) < rcut ) then
-                      B_mat(3*(p-1)+c1,3*(q-1)+c2) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
-                                                  g_func(k2) + h_func(k3))
-                      if ( p == 1 ) then
-                        b_i(3*(q-1)+c2,c1) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
-                                                  g_func(k2) + h_func(k3))
-                      end if
-                      nnz = nnz+1
-                      ia(nnz) = 3*(p-1)+c1
-                      ja(nnz) = 3*(q-1)+c2
-                      val(nnz) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
-                                 g_func(k2) + h_func(k3))
-                      else ! rjs(n_tot+k_j) < rcut
+                        mult1_j = 1.d0
+                        mult2 = 1.d0
+                        !if ( rjs(n_tot+k_j) < rcut-r_buffer ) then)
+                        if ( rjs(n_tot+k_j) .ge. rcut-r_buffer ) then
+                          mult1_j = mult1_j * &
+                                         (1.d0 - 3.d0 * ((rjs(n_tot+k_j)-rcut+r_buffer)/(r_buffer))**2 &
+                                               + 2.d0 * ((rjs(n_tot+k_j)-rcut+r_buffer)/(r_buffer))**3 )
+                        end if
+                        if ( rjs_H(k2) .ge. (rcut-r_buffer)/Bohr ) then !.and. rjs_H(k2) < (rcut-r_buffer)/Bohr ) then
+                          mult2 = mult2 * &
+                                         (1.d0 - 3.d0 * ((rjs_H(k2)-(rcut-r_buffer)/Bohr)/(r_buffer/Bohr))**2 &
+                                               + 2.d0 * ((rjs_H(k2)-(rcut-r_buffer)/Bohr)/(r_buffer/Bohr))**3 )
+                        !else if ( rjs_H(k2) > (rcut-r_buffer)/Bohr ) then
+                        !  mult2 = 0.d0
+                        end if
+                        !write(*,*) "mult1, mult2", mult1, mult2
+                        if ( i == 17 .and. p == 1 .and. q == 2 ) then
+                          write(*,*) "p, q", p, q
+                          write(*,*) "rjs", rjs(n_tot+k_i), rjs(n_tot+k_j)
+                          write(*,*) "f_damp, T_func, g_func, h_func, mult1, mult2", f_damp(k2), T_func(k3), &
+                                      g_func(k2), h_func(k3), mult1_j, mult2
+                        end if
+                        if ( i == 17 .and. q == 1 .and. p == 2 ) then
+                          write(*,*) "p, q", p, q
+                          write(*,*) "rjs", rjs(n_tot+k_i), rjs(n_tot+k_j)
+                          write(*,*) "f_damp, T_func, g_func, h_func, mult1, mult2", f_damp(k2), T_func(k3), &
+                                      g_func(k2), h_func(k3), mult1_j, mult2
+                        end if
+                        B_mat(3*(p-1)+c1,3*(q-1)+c2) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
+                                                      g_func(k2) + h_func(k3)) * mult1_i * mult1_j * mult2
+                        if ( p == 1 ) then
+                          b_i(3*(q-1)+c2,c1) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
+                                                g_func(k2) + h_func(k3)) * mult1_i * mult1_j * mult2
+                        end if
+                        nnz = nnz+1
+                        ia(nnz) = 3*(p-1)+c1
+                        ja(nnz) = 3*(q-1)+c2
+                        val(nnz) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
+                                   g_func(k2) + h_func(k3)) * mult1_j * mult2
                         d_vec(3*(p-1)+c1,c2) = d_vec(3*(p-1)+c1,c2) - (1.d0-f_damp(k2)) * (-T_func(k3) * &
-                                                  g_func(k2) + h_func(k3)) * neighbor_alpha0(k2)
+                                                  g_func(k2) + h_func(k3)) * neighbor_alpha0(k2) * &
+                                                  mult1_i * ( 1.d0 - mult1_j ) * mult2
+                      else ! rjs(n_tot+k_j) < rcut
+                        mult1_j = 1.d0
+                        mult2 = 1.d0
+                        if ( rjs(n_tot+k_j) .ge. 2.d0*rcut-r_buffer ) then
+                          mult1_j = mult1_j * &
+                                         (1.d0 - 3.d0 * ((rjs(n_tot+k_j)-2.d0*rcut+r_buffer)/(r_buffer))**2 &
+                                               + 2.d0 * ((rjs(n_tot+k_j)-2.d0*rcut+r_buffer)/(r_buffer))**3 )
+                        end if
+                        if ( rjs_H(k2) .ge. (rcut-r_buffer)/Bohr ) then !.and. rjs_H(k2) < (rcut-r_buffer)/Bohr ) then
+                          mult2 = mult2 * &
+                                        (1.d0 - 3.d0 * ((rjs_H(k2)-(rcut-r_buffer)/Bohr)/(r_buffer/Bohr))**2 &
+                                              + 2.d0 * ((rjs_H(k2)-(rcut-r_buffer)/Bohr)/(r_buffer/Bohr))**3 )
+                        !else if ( rjs_H(k2) > (rcut-r_buffer)/Bohr ) then
+                        !  mult2 = 0.d0
+                        end if
+                        !write(*,*) "d mult1, mult2", mult1, mult2
+                        d_vec(3*(p-1)+c1,c2) = d_vec(3*(p-1)+c1,c2) - (1.d0-f_damp(k2)) * (-T_func(k3) * &
+                                                    g_func(k2) + h_func(k3)) * neighbor_alpha0(k2) * &
+                                                    mult1_j * mult2
                       end if
                     end do
                   end do
@@ -1400,6 +1459,17 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
         ! This is the exact solution:
         a_SCS = d_vec
 
+        if ( i == 17 ) then
+          write(*,*) "B_mat"
+          do p = 1, 3*n_sub_sites
+            write(*,*) B_mat(p,:)
+          end do
+          write(*,*) "d_vec"
+          do p = 1, 3*n_sub_sites
+            write(*,*) d_vec(p,:)
+          end do
+        end if
+
         call dsysv( 'U', 3*n_sub_sites, 3, B_mat, 3*n_sub_sites, ipiv, a_SCS, 3*n_sub_sites, work_arr, &
                     12*n_sub_sites, info )
 
@@ -1425,6 +1495,12 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
             o_p(p) = 2.d0*omega_ref/sqrt(a_iso(p,2)/a_iso(p,1)-1.d0)
           end do
         
+          if ( i == 17 ) then
+          write(*,*) "a_iso"
+          do p = 1, n_sub_sites
+            write(*,*) a_iso(p,2)
+          end do
+          end if
           !write(*,*) i, a_iso(1,2), neighbor_alpha0(1)
           !if ( a_iso(1,2) > neighbor_alpha0(1) ) then
           !  write(*,*) "#####################################################################################"
@@ -1450,7 +1526,7 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
 
         ! MBD for local polarizabilities:
         ! At least for now: rcut <= rcut_mbd <= rcut_2b
-        rcut_mbd = 7.d0
+        rcut_mbd = 5.d0
         rcut_2b = 9.d0
         r_buffer = 0.5d0
         n_mbd_sites = 0
@@ -1789,7 +1865,6 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
           end do
 
           integral = 0.d0
-          !write(*,*) "integrand", integrand
           !write(*,*) "omegas_mbd", omegas_mbd
           !write(*,*) "o_mbd", o_mbd(1)
           call integrate("trapezoidal", omegas_mbd, integrand, omegas_mbd(1), omegas_mbd(n_freq), integral)
