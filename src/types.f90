@@ -2,12 +2,12 @@
 ! HND X
 ! HND X   TurboGAP
 ! HND X
-! HND X   TurboGAP is copyright (c) 2019-2021, Miguel A. Caro and others
+! HND X   TurboGAP is copyright (c) 2019-2022, Miguel A. Caro and others
 ! HND X
 ! HND X   TurboGAP is published and distributed under the
 ! HND X      Academic Software License v1.0 (ASL)
 ! HND X
-! HND X   This file, types.f90, is copyright (c) 2019-2021, Miguel A. Caro
+! HND X   This file, types.f90, is copyright (c) 2019-2022, Miguel A. Caro
 ! HND X
 ! HND X   TurboGAP is distributed in the hope that it will be useful for non-commercial
 ! HND X   academic research, but WITHOUT ANY WARRANTY; without even the implied
@@ -34,11 +34,11 @@ module types
     real*8, allocatable :: nf(:), rcut_hard(:), rcut_soft(:), atom_sigma_r(:), atom_sigma_t(:), &
                            atom_sigma_r_scaling(:), atom_sigma_t_scaling(:), amplitude_scaling(:), &
                            central_weight(:), global_scaling(:), alphas(:), Qs(:,:), cutoff(:), &
-                           vdw_Qs(:,:), vdw_alphas(:), vdw_cutoff(:)
+                           vdw_Qs(:,:), vdw_alphas(:), vdw_cutoff(:), compress_P_el(:)
     real*8 :: zeta = 2.d0, delta = 1.d0, rcut_max, vdw_zeta, vdw_delta, vdw_V0
-    integer, allocatable :: alpha_max(:), compress_soap_indices(:)
+    integer, allocatable :: alpha_max(:), compress_P_i(:), compress_P_j(:)
     integer :: n_species, central_species = 0, dim, l_max, radial_enhancement = 0, n_max, n_sparse, &
-               vdw_n_sparse
+               vdw_n_sparse, compress_P_nonzero
     character*1024 :: file_alphas, file_desc, file_compress = "none", file_vdw_alphas, file_vdw_desc
     character*64 :: basis = "poly3", compress_mode = "none"
     character*32 :: scaling_mode = "polynomial"

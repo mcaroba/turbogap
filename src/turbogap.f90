@@ -83,7 +83,7 @@ program turbogap
                           i_beg_list(:), i_end_list(:), j_beg_list(:), j_end_list(:)
   integer :: n_sites, i, j, k, i2, j2, n_soap, k2, k3, l, n_sites_this, ierr, rank, ntasks, dim, n_sp, &
              n_pos, n_sp_sc, this_i_beg, this_i_end, this_j_beg, this_j_end, this_n_sites_mpi, n_sites_prev = 0, &
-             n_atom_pairs_by_rank_prev
+             n_atom_pairs_by_rank_prev, cPnz
   integer :: l_max, n_atom_pairs, n_max, ijunk, central_species = 0, n_atom_pairs_total
   integer :: iostatus, counter = 0, counter2
   integer :: which_atom = 0, n_species = 1, n_xyz, indices(1:3)
@@ -123,7 +123,7 @@ program turbogap
   integer :: i_beg, i_end, n_sites_mpi, j_beg, j_end, size_soap_turbo, size_distance_2b, size_angle_3b
   integer, allocatable :: n_species_mpi(:), n_sparse_mpi_soap_turbo(:), dim_mpi(:), n_sparse_mpi_distance_2b(:), &
                           n_sparse_mpi_angle_3b(:), n_mpi_core_pot(:), vdw_n_sparse_mpi_soap_turbo(:), &
-                          n_neigh_local(:)
+                          n_neigh_local(:), compress_P_nonzero_mpi(:)
   logical, allocatable :: compress_soap_mpi(:)
 !**************************************************************************
 
@@ -387,6 +387,7 @@ program turbogap
     allocate( n_species_mpi(1:n_soap_turbo) )
     allocate( n_sparse_mpi_soap_turbo(1:n_soap_turbo) )
     allocate( dim_mpi(1:n_soap_turbo) )
+    allocate( compress_P_nonzero_mpi(1:n_soap_turbo) )
     allocate( vdw_n_sparse_mpi_soap_turbo(1:n_soap_turbo) )
     allocate( has_vdw_mpi(1:n_soap_turbo) )
     allocate( compress_soap_mpi(1:n_soap_turbo) )
@@ -397,6 +398,7 @@ program turbogap
       n_species_mpi = soap_turbo_hypers(1:n_soap_turbo)%n_species
       n_sparse_mpi_soap_turbo = soap_turbo_hypers(1:n_soap_turbo)%n_sparse
       dim_mpi = soap_turbo_hypers(1:n_soap_turbo)%dim
+      compress_P_nonzero_mpi = soap_turbo_hypers(1:n_soap_turbo)%compress_P_nonzero
       vdw_n_sparse_mpi_soap_turbo = soap_turbo_hypers(1:n_soap_turbo)%vdw_n_sparse
       has_vdw_mpi = soap_turbo_hypers(1:n_soap_turbo)%has_vdw
       compress_soap_mpi = soap_turbo_hypers(1:n_soap_turbo)%compress_soap
@@ -408,6 +410,7 @@ program turbogap
     call mpi_bcast(n_species_mpi, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
     call mpi_bcast(n_sparse_mpi_soap_turbo, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
     call mpi_bcast(dim_mpi, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+    call mpi_bcast(compress_P_nonzero_mpi, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
     call mpi_bcast(vdw_n_sparse_mpi_soap_turbo, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
     call mpi_bcast(has_vdw_mpi, n_soap_turbo, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
     call mpi_bcast(compress_soap_mpi, n_soap_turbo, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
@@ -418,8 +421,8 @@ program turbogap
     time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
     IF( rank /= 0 )THEN
       call allocate_soap_turbo_hypers(n_soap_turbo, n_species_mpi, n_sparse_mpi_soap_turbo, dim_mpi, &
-                                      vdw_n_sparse_mpi_soap_turbo, has_vdw_mpi, compress_soap_mpi, &
-                                      soap_turbo_hypers)
+                                      compress_P_nonzero_mpi, vdw_n_sparse_mpi_soap_turbo, &
+                                      has_vdw_mpi, compress_soap_mpi, soap_turbo_hypers)
       call allocate_distance_2b_hypers(n_distance_2b, n_sparse_mpi_distance_2b, distance_2b_hypers)
       call allocate_angle_3b_hypers(n_angle_3b, n_sparse_mpi_angle_3b, angle_3b_hypers)
       call allocate_core_pot_hypers(n_core_pot, n_mpi_core_pot, core_pot_hypers)
@@ -468,7 +471,10 @@ program turbogap
       call mpi_bcast(soap_turbo_hypers(i)%radial_enhancement, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(soap_turbo_hypers(i)%compress_soap, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
       if( soap_turbo_hypers(i)%compress_soap )then
-        call mpi_bcast(soap_turbo_hypers(i)%compress_soap_indices(1:dim), dim, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+        cPnz = soap_turbo_hypers(i)%compress_P_nonzero
+        call mpi_bcast(soap_turbo_hypers(i)%compress_P_el(1:cPnz), cPnz, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(soap_turbo_hypers(i)%compress_P_i(1:cPnz), cPnz, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(soap_turbo_hypers(i)%compress_P_j(1:cPnz), cPnz, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
       end if
       call mpi_bcast(soap_turbo_hypers(i)%has_vdw, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
       if( soap_turbo_hypers(i)%has_vdw )then
@@ -520,7 +526,7 @@ program turbogap
     time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
 !   Clean up
     deallocate( n_species_mpi, n_sparse_mpi_soap_turbo, dim_mpi, compress_soap_mpi, n_sparse_mpi_distance_2b, &
-                n_sparse_mpi_angle_3b, n_mpi_core_pot )
+                n_sparse_mpi_angle_3b, n_mpi_core_pot, compress_P_nonzero_mpi )
 #endif
   else
 #ifdef _MPIF90
@@ -1015,7 +1021,9 @@ program turbogap
                             soap_turbo_hypers(i)%central_weight, soap_turbo_hypers(i)%basis, &
                             soap_turbo_hypers(i)%scaling_mode, params%do_timing, params%do_derivatives, params%do_forces, &
                             params%do_prediction, params%write_soap, params%write_derivatives, &
-                            soap_turbo_hypers(i)%compress_soap, soap_turbo_hypers(i)%compress_soap_indices, &
+                            soap_turbo_hypers(i)%compress_soap, soap_turbo_hypers(i)%compress_P_nonzero, &
+                            soap_turbo_hypers(i)%compress_P_i, soap_turbo_hypers(i)%compress_P_j, &
+                            soap_turbo_hypers(i)%compress_P_el, &
                             soap_turbo_hypers(i)%delta, soap_turbo_hypers(i)%zeta, soap_turbo_hypers(i)%central_species, &
                             xyz_species(this_i_beg:this_i_end), xyz_species_supercell, soap_turbo_hypers(i)%alphas, &
                             soap_turbo_hypers(i)%Qs, params%all_atoms, params%which_atom, indices, soap, soap_cart_der, &

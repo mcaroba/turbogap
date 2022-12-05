@@ -2,12 +2,12 @@
 ! HND X
 ! HND X   TurboGAP
 ! HND X
-! HND X   TurboGAP is copyright (c) 2019-2021, Miguel A. Caro and others
+! HND X   TurboGAP is copyright (c) 2019-2022, Miguel A. Caro and others
 ! HND X
 ! HND X   TurboGAP is published and distributed under the
 ! HND X      Academic Software License v1.0 (ASL)
 ! HND X
-! HND X   This file, gap_interface.f90, is copyright (c) 2019-2021, Miguel A. Caro
+! HND X   This file, gap_interface.f90, is copyright (c) 2019-2022, Miguel A. Caro
 ! HND X
 ! HND X   TurboGAP is distributed in the hope that it will be useful for non-commercial
 ! HND X   academic research, but WITHOUT ANY WARRANTY; without even the implied
@@ -44,7 +44,8 @@ module gap_interface
                           amplitude_scaling, radial_enhancement, central_weight, basis, &
                           scaling_mode, do_timing, do_derivatives, do_forces, do_prediction, &
                           write_soap, write_derivatives, compress_soap, &
-                          compress_soap_indices, delta, zeta, central_species, &
+                          compress_P_nonzero, compress_P_i, compress_P_j, compress_P_el, &
+                          delta, zeta, central_species, &
                           xyz_species, xyz_species_supercell, alphas, Qs, all_atoms, &
                           which_atom, indices, soap, soap_cart_der, der_neighbors, der_neighbors_list, &
                           has_vdw, vdw_Qs, vdw_alphas, vdw_zeta, vdw_delta, vdw_V0, &
@@ -57,10 +58,10 @@ module gap_interface
                           nf(:), global_scaling(:), atom_sigma_r(:), atom_sigma_r_scaling(:), &
                           atom_sigma_t(:), atom_sigma_t_scaling(:), amplitude_scaling(:), &
                           central_weight(:), delta, zeta, alphas(:), Qs(:,:), vdw_Qs(:,:), &
-                          vdw_alphas(:), vdw_zeta, vdw_delta, vdw_V0
+                          vdw_alphas(:), vdw_zeta, vdw_delta, vdw_V0, compress_P_el(:)
     integer, intent(in) :: n_sites0, n_neigh0(:), neighbors_list0(:), n_species, central_species, &
-                           radial_enhancement, compress_soap_indices(:), which_atom, &
-                           indices(1:3), alpha_max(:), l_max, n_total_sites
+                           radial_enhancement, which_atom, indices(1:3), alpha_max(:), l_max, &
+                           n_total_sites, compress_P_nonzero, compress_P_i(:), compress_P_j(:)
     logical, intent(in) :: do_timing, do_derivatives, compress_soap, do_forces, do_prediction, &
                            all_atoms, write_soap, write_derivatives, has_vdw
     character*64, intent(in) :: basis
@@ -235,7 +236,8 @@ module gap_interface
                     thetas, phis, alpha_max, l_max, rcut_hard, rcut_soft, nf, global_scaling, &
                     atom_sigma_r, atom_sigma_r_scaling, atom_sigma_t, atom_sigma_t_scaling, &
                     amplitude_scaling, radial_enhancement, central_weight, basis, scaling_mode, do_timing, &
-                    do_derivatives, compress_soap, compress_soap_indices, soap, soap_cart_der)
+                    do_derivatives, compress_soap, compress_P_nonzero, compress_P_i, compress_P_j, compress_P_el, &
+                    soap, soap_cart_der)
     end if
 
     if( has_vdw )then

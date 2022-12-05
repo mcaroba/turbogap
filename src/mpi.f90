@@ -2,12 +2,12 @@
 ! HND X
 ! HND X   TurboGAP
 ! HND X
-! HND X   TurboGAP is copyright (c) 2019-2021, Miguel A. Caro and others
+! HND X   TurboGAP is copyright (c) 2019-2022, Miguel A. Caro and others
 ! HND X
 ! HND X   TurboGAP is published and distributed under the
 ! HND X      Academic Software License v1.0 (ASL)
 ! HND X
-! HND X   This file, mpi.f90, is copyright (c) 2019-2021, Miguel A. Caro
+! HND X   This file, mpi.f90, is copyright (c) 2019-2022, Miguel A. Caro
 ! HND X
 ! HND X   TurboGAP is distributed in the hope that it will be useful for non-commercial
 ! HND X   academic research, but WITHOUT ANY WARRANTY; without even the implied
@@ -33,18 +33,19 @@ module mpi_helper
 
   contains
 
-  subroutine allocate_soap_turbo_hypers(n_soap_turbo, n_species, n_sparse, dim, vdw_n_sparse, &
-                                        has_vdw, compress_soap, desc)
+  subroutine allocate_soap_turbo_hypers(n_soap_turbo, n_species, n_sparse, dim, compress_P_nonzero, &
+                                        vdw_n_sparse, has_vdw, compress_soap, desc)
 
 !   Input variables
-    integer, intent(in) :: n_soap_turbo, n_species(:), n_sparse(:), dim(:), vdw_n_sparse(:)
+    integer, intent(in) :: n_soap_turbo, n_species(:), n_sparse(:), dim(:), vdw_n_sparse(:), &
+                           compress_P_nonzero(:)
     logical, intent(in) :: compress_soap(:), has_vdw(:)
 
 !   Output_variables
     type(soap_turbo), allocatable, intent(out) :: desc(:)
 
 !   Internal variables
-    integer :: i, n_sp, d
+    integer :: i, n_sp, d, cPnz
 
     allocate( desc(1:n_soap_turbo) )
 
@@ -67,12 +68,16 @@ module mpi_helper
       desc(i)%n_sparse = n_sp
       d = dim(i)
       desc(i)%dim = d
+      cPnz = compress_P_nonzero(i)
+      desc(i)%compress_P_nonzero = cPnz
       allocate( desc(i)%alphas(1:n_sp) )
       allocate( desc(i)%Qs(1:d, 1:n_sp) )
 !     Currently the cutoff does not get allocated
 !      allocate( desc(i)%cutoff(1:n_sp) )
       if( compress_soap(i) )then
-        allocate( desc(i)%compress_soap_indices(1:d) )
+        allocate( desc(i)%compress_P_el(1:cPnz) )
+        allocate( desc(i)%compress_P_i(1:cPnz) )
+        allocate( desc(i)%compress_P_j(1:cPnz) )
       end if
       if( has_vdw(i) )then
         n_sp = vdw_n_sparse(i)
