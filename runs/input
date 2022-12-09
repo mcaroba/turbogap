@@ -4,8 +4,11 @@
 atoms_file = 'atoms_vacuum.xyz'
 !atoms_file = 'atoms_vacuum_p.xyz'
 !atoms_file = 'atoms_vacuum_m.xyz'
-!atoms_file = '4070_supercell.xyz'
+!atoms_file = '4070.xyz'
 !atoms_file = 'slab.xyz'
+!atoms_file = 'trimer.xyz'
+!atoms_file = 'trimer_p.xyz'
+!atoms_file = 'trimer_m.xyz'
 pot_file = 'gap_files/carbon.gap'
 
 ! Species info
@@ -23,7 +26,7 @@ vdw_buffer = 0.
 vdw_r0_ref = 1.900 !1.64
 vdw_alpha0_ref = 1.778 !0.667
 vdw_c6_ref = 27.8 !3.88
-vdw_scs_rcut = 4.5
+vdw_scs_rcut = 3.
 vdw_mbd_nfreq = 3
 vdw_mbd_grad = .true.
 !vdw_mbd_grad = .false.
