@@ -2845,8 +2845,8 @@ polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+0
                 dT_LR(3*(p-1)+1:3*(p-1)+3,:) + &
                 da_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) * &
                 T_LR(3*(p-1)+1:3*(p-1)+3,:) + &
-                a_mbd(k3+1) * (2.d0 * omegas_mbd(j) * o_mbd(k3+1)) / &
-                ( o_mbd(k3+1)**2 + omegas_mbd(j)**2 ) * &
+                a_mbd(k3+1) * (2.d0 * omegas_mbd(j)**2 * o_mbd(k3+1)) * &
+                do_mbd(k3+1) / ( o_mbd(k3+1)**2 + omegas_mbd(j)**2 )**2 * &
                 T_LR(3*(p-1)+1:3*(p-1)+3,:)
               k3 = k3+n_mbd_neigh(p)
             end do
