@@ -489,6 +489,7 @@ module vdw
 
 
     !PSBLAS stuff:
+    logical :: polynomial_expansion = .false.
     type(psb_ctxt_type) :: icontxt
     integer(psb_ipk_) ::  iam, np, ip, jp, idummy, nr, nnz, info_psb
     type(psb_desc_type) :: desc_a
@@ -496,10 +497,12 @@ module vdw
     !real*8, allocatable :: x_vec(:,:), b_vec(:,:)
     type(psb_d_vect_type) :: x_vec, b_vec
     integer(psb_lpk_), allocatable :: ia(:), ja(:), myidx(:)
-    real(psb_dpk_), allocatable :: val(:), val_xv(:,:), val_bv(:,:), b_i(:,:), d_vec(:,:), A_i(:,:)
+    real(psb_dpk_), allocatable :: val(:), val_xv(:,:), b_i(:,:), d_vec(:,:)
     type(psb_dprec_type) :: prec
     character(len=20) :: ptype
-
+    real*8 :: polyfit(1:15)
+    integer :: n_degree
+    real*8, allocatable :: B_pol(:,:), B_mult(:,:)
 
 !   IMPORTANT NOTE ABOUT THE DERIVATIVES:
 !   If rcut < rcut_soap, the derivatives in the new implementation omit the terms that fall outside of rcut.
@@ -594,6 +597,8 @@ module vdw
     central_omega = 0.d0
       
     r_buffer = 0.5d0
+
+    call cpu_time(time1)
 
     do i = 1, n_sites      
 
@@ -836,30 +841,94 @@ module vdw
           end if
         end do
         
-        a_SCS = d_vec
+        if ( polynomial_expansion ) then
+        
+          if (om == 2) then
+            polyfit = (/ 3.237385145550585d+02, -4.241125470183307d+04, 3.008572712845031d+06, &
+                        -1.309430416378132d+08, 3.756106046665028d+09, -7.433108326602138d+10, &
+                         1.045457946646248d+12, -1.064278184563909d+13, 7.908875986032283d+13, &
+                        -4.286093180295281d+14, 1.673744363742281d+15, -4.582925299269683d+15, &
+                         8.343821283398570d+15, -9.066835011532402d+15, 4.447833222479864d+15 /)
 
-        call dsysv( 'U', 3*n_sub_sites, 3, B_mat, 3*n_sub_sites, ipiv, a_SCS, 3*n_sub_sites, work_arr, &
-                    12*n_sub_sites, info )
+          else
+            polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+03, &
+                        -3.643266484189429e+04, 1.774056111172961e+05, -6.476342669175469e+05, &
+                         1.805107059718787e+06, -3.873561223705132e+06, 6.400647427099578e+06, &
+                        -8.079084665579021e+06, 7.651382671329762e+06, -5.264071084777111e+06, &
+                         2.484267601324048e+06, -7.192678344511647e+05, 9.633392189452502e+04 /)
+          end if
+         
+          n_degree = size(polyfit)-1
 
-        if ( om == 1 ) then
-          pol1 = 0.d0
+          allocate( myidx(1:3*n_sub_sites) )
+          allocate( val_xv(1:3*n_sub_sites,1:3) )
+          val_xv = 0.d0
+          k2 = 0
           do c1 = 1, 3
-            pol1 = pol1 + a_SCS(c1,c1) 
+            do p = 1, n_sub_sites
+              k2 = k2+1
+              myidx(k2) = k2
+            end do
           end do
-          pol1 = pol1/3.d0
-          central_pol(i) = 0.d0
-          do c1 = 1, 3
-            central_pol(i) = central_pol(i) + a_SCS(c1,c1)
+
+          call psb_init(icontxt)
+          a_SCS = polyfit(2)*b_i
+          call psb_cdall(icontxt, desc_a, info_psb, vl=myidx)
+          call psb_spall(A_sp, desc_a, info_psb, nnz=nnz)
+          call psb_spins(nnz, ia(1:nnz), ja(1:nnz), val(1:nnz), A_sp, desc_a, info_psb)
+          call psb_cdasb(desc_a, info_psb)
+          call psb_spasb(A_sp, desc_a, info_psb)
+          do k2 = 3, n_degree+1
+            call psb_spmm(1.d0, A_sp, b_i, 0.d0, val_xv, desc_a, info_psb, 'T')
+            a_SCS = a_SCS + polyfit(k2) * val_xv
+            b_i = val_xv 
           end do
-          central_pol(i) = central_pol(i)/3.d0
+          if ( om == 1 ) then
+            pol1 = polyfit(1)
+            do c1 = 1, 3
+              pol1 = pol1 + dot_product(a_SCS(:,c1),d_vec(:,c1))/3.d0
+            end do
+            !write(*,*) "pol1", pol1
+          else
+            central_pol(i) = polyfit(1)
+            do c1 = 1, 3
+              central_pol(i) = central_pol(i) + dot_product(a_SCS(:,c1),d_vec(:,c1))/3.d0
+            end do
+            central_omega(i) = 2.d0*omega_ref/sqrt(central_pol(i)/pol1-1.d0)
+            write(*,*) "PSBLAS central polarizability", i, central_pol(i), central_omega(i)
+          end if
+      
+          deallocate( myidx, val_xv )
+        
         else
-          central_pol(i) = 0.d0
-          do c1 = 1, 3
-            central_pol(i) = central_pol(i) + a_SCS(c1,c1)
-          end do
-          central_pol(i) = central_pol(i)/3.d0
-          write(*,*) i, central_pol(i)
-          central_omega(i) = 2.d0*omega_ref/sqrt(central_pol(i)/pol1-1.d0)
+        
+          a_SCS = d_vec
+
+          call dsysv( 'U', 3*n_sub_sites, 3, B_mat, 3*n_sub_sites, ipiv, a_SCS, 3*n_sub_sites, work_arr, &
+                      12*n_sub_sites, info )
+                    
+
+          if ( om == 1 ) then
+            pol1 = 0.d0
+            do c1 = 1, 3
+              pol1 = pol1 + a_SCS(c1,c1) 
+            end do
+            pol1 = pol1/3.d0
+            central_pol(i) = 0.d0
+            do c1 = 1, 3
+              central_pol(i) = central_pol(i) + a_SCS(c1,c1)
+            end do
+            central_pol(i) = central_pol(i)/3.d0
+          else
+            central_pol(i) = 0.d0
+            do c1 = 1, 3
+              central_pol(i) = central_pol(i) + a_SCS(c1,c1)
+            end do
+            central_pol(i) = central_pol(i)/3.d0
+            write(*,*) i, central_pol(i)
+            central_omega(i) = 2.d0*omega_ref/sqrt(central_pol(i)/pol1-1.d0)
+          end if
+        
         end if
 
       end do
@@ -873,11 +942,18 @@ module vdw
       deallocate( ia, ja, val, b_i, d_vec )        
 
     end do 
+
+    call cpu_time(time2)
+
+    write(*,*) "Central polarizabilities timing", time2-time1
+
       
 !******************************************************************************************
 ! This is where you would break this into get_scs and get_mbd for two separate subroutines:
 ! Store central_pol and central_omega and pass them to get_mbd
 !******************************************************************************************
+
+    call cpu_time(time1)
 
     do i = 1, n_sites      
 
@@ -1202,38 +1278,120 @@ module vdw
             end do
           end if
         end do
-
-        ! This is the exact solution:
-        a_SCS = d_vec
-
-        call dsysv( 'U', 3*n_sub_sites, 3, B_mat, 3*n_sub_sites, ipiv, a_SCS, 3*n_sub_sites, work_arr, &
-                    12*n_sub_sites, info )
-
-        do p = 1, n_sub_sites
-          do c1 = 1, 3
-            a_iso(p,om) = a_iso(p,om) + a_SCS(3*(p-1)+c1,c1)
-          end do
-        end do
-        a_iso(:,om) = a_iso(:,om)/3.d0
         
-        if ( om == 2 ) then
+        if ( polynomial_expansion ) then
+        
+          ! This does not work properly yet
+
+          if (om == 2) then
+            polyfit = (/ 3.237385145550585d+02, -4.241125470183307d+04, 3.008572712845031d+06, &
+                        -1.309430416378132d+08, 3.756106046665028d+09, -7.433108326602138d+10, &
+                         1.045457946646248d+12, -1.064278184563909d+13, 7.908875986032283d+13, &
+                        -4.286093180295281d+14, 1.673744363742281d+15, -4.582925299269683d+15, &
+                         8.343821283398570d+15, -9.066835011532402d+15, 4.447833222479864d+15 /)
+
+          else
+            polyfit = (/ 3.464569029392560e+01, -5.541785287730104e+02, 5.429135883990769e+03, &
+                        -3.643266484189429e+04, 1.774056111172961e+05, -6.476342669175469e+05, &
+                         1.805107059718787e+06, -3.873561223705132e+06, 6.400647427099578e+06, &
+                        -8.079084665579021e+06, 7.651382671329762e+06, -5.264071084777111e+06, &
+                         2.484267601324048e+06, -7.192678344511647e+05, 9.633392189452502e+04 /)
+          end if
+         
+          n_degree = size(polyfit)-1
+
+          allocate( myidx(1:3*n_sub_sites) )
+          allocate( val_xv(1:3*n_sub_sites,1:3*n_sub_sites) )
+          allocate( B_pol(1:3*n_sub_sites,1:3*n_sub_sites) )
+          allocate( B_mult(1:3*n_sub_sites,1:3*n_sub_sites) )
+          B_mult = B_mat
+          val_xv = 0.d0
+          k2 = 0
+          do c1 = 1, 3
+            do p = 1, n_sub_sites
+              k2 = k2+1
+              myidx(k2) = k2
+            end do
+          end do
+
+          call psb_init(icontxt)
+          B_pol = polyfit(2)*B_mat
+          call psb_cdall(icontxt, desc_a, info_psb, vl=myidx)
+          call psb_spall(A_sp, desc_a, info_psb, nnz=nnz)
+          call psb_spins(nnz, ia(1:nnz), ja(1:nnz), val(1:nnz), A_sp, desc_a, info_psb)
+          call psb_cdasb(desc_a, info_psb)
+          call psb_spasb(A_sp, desc_a, info_psb)
+          do k2 = 3, n_degree+1
+            call psb_spmm(1.d0, A_sp, B_mult, 0.d0, val_xv, desc_a, info_psb, 'T')
+            B_pol = B_pol + polyfit(k2) * val_xv
+            B_mult = val_xv 
+          end do
+          a_SCS = 0.d0
           do p = 1, n_sub_sites
-            o_p(p) = 2.d0*omega_ref/sqrt(a_iso(p,2)/a_iso(p,1)-1.d0)
+            do c1 = 1, 3
+              a_SCS(3*(p-1)+c1,c1) = a_SCS(3*(p-1)+c1,c1) + polyfit(1)
+              do c2 = 1, 3
+                a_SCS(3*(p-1)+c1,c2) = a_SCS(3*(p-1)+c1,c2) + dot_product(B_pol(3*(p-1)+c1,:),d_vec(:,c2))
+              end do
+            end do
           end do
+          do p = 1, n_sub_sites
+            do c1 = 1, 3
+              a_iso(p,om) = a_iso(p,om) + a_SCS(3*(p-1)+c1,c1)
+            end do
+          end do
+          a_iso(:,om) = a_iso(:,om)/3.d0
+
+          if( om == 2 ) then
+            write(*,*) "a_iso"
+            do p = 1, n_sub_sites
+              write(*,*) a_iso(p,2)
+            end do
+          end if
+          
+          if ( om == 2 ) then
+            do p = 1, n_sub_sites
+              o_p(p) = 2.d0*omega_ref/sqrt(a_iso(p,2)/a_iso(p,1)-1.d0)
+            end do
+          end if
+
+          deallocate( myidx, val_xv, B_pol, B_mult )
+
+        else
+
+          ! This is the exact solution:
+          a_SCS = d_vec
+
+          call dsysv( 'U', 3*n_sub_sites, 3, B_mat, 3*n_sub_sites, ipiv, a_SCS, 3*n_sub_sites, work_arr, &
+                      12*n_sub_sites, info )
+
+          do p = 1, n_sub_sites
+            do c1 = 1, 3
+              a_iso(p,om) = a_iso(p,om) + a_SCS(3*(p-1)+c1,c1)
+            end do
+          end do
+          a_iso(:,om) = a_iso(:,om)/3.d0
+        
+          if ( om == 2 ) then
+            do p = 1, n_sub_sites
+              o_p(p) = 2.d0*omega_ref/sqrt(a_iso(p,2)/a_iso(p,1)-1.d0)
+            end do
+          end if
+
+          do c1 = 1, 3
+            do c2 = 1, 3
+              alpha_SCS_full(3*(i-1)+c1,c2,om) = a_SCS(c1,c2)
+            end do
+          end do
+          
+          alpha_SCS0(i,om) = 0.d0
+          do c1 = 1, 3
+            alpha_SCS0(i,om) = alpha_SCS0(i,om) + a_SCS(c1,c1)
+          end do
+          alpha_SCS0(i,om) = alpha_SCS0(i,om)/3.d0
+          ! Exact solution ends
+        
         end if
-
-        do c1 = 1, 3
-          do c2 = 1, 3
-            alpha_SCS_full(3*(i-1)+c1,c2,om) = a_SCS(c1,c2)
-          end do
-        end do
-
-        alpha_SCS0(i,om) = 0.d0
-        do c1 = 1, 3
-          alpha_SCS0(i,om) = alpha_SCS0(i,om) + a_SCS(c1,c1)
-        end do
-        alpha_SCS0(i,om) = alpha_SCS0(i,om)/3.d0
-        ! Exact solution ends
         
         if ( om == 2 ) then
 
@@ -2169,6 +2327,10 @@ module vdw
       end if
            
     end do
+
+    call cpu_time(time2)
+
+    write(*,*) "Local energies and forces timing", time2-time1
 
     write(*,*) "E_MBD", E_MBD
       
