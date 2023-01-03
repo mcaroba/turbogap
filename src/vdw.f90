@@ -489,7 +489,7 @@ module vdw
 
 
     !PSBLAS stuff:
-    logical :: polynomial_expansion = .false.
+    logical :: polynomial_expansion = .true.
     type(psb_ctxt_type) :: icontxt
     integer(psb_ipk_) ::  iam, np, ip, jp, idummy, nr, nnz, info_psb
     type(psb_desc_type) :: desc_a
@@ -1281,8 +1281,6 @@ module vdw
         
         if ( polynomial_expansion ) then
         
-          ! This does not work properly yet
-
           if (om == 2) then
             polyfit = (/ 3.237385145550585d+02, -4.241125470183307d+04, 3.008572712845031d+06, &
                         -1.309430416378132d+08, 3.756106046665028d+09, -7.433108326602138d+10, &
@@ -1316,6 +1314,9 @@ module vdw
 
           call psb_init(icontxt)
           B_pol = polyfit(2)*B_mat
+          do p = 1, 3*n_sub_sites
+            B_pol(p,p) = B_pol(p,p) + polyfit(1)
+          end do
           call psb_cdall(icontxt, desc_a, info_psb, vl=myidx)
           call psb_spall(A_sp, desc_a, info_psb, nnz=nnz)
           call psb_spins(nnz, ia(1:nnz), ja(1:nnz), val(1:nnz), A_sp, desc_a, info_psb)
@@ -1329,7 +1330,6 @@ module vdw
           a_SCS = 0.d0
           do p = 1, n_sub_sites
             do c1 = 1, 3
-              a_SCS(3*(p-1)+c1,c1) = a_SCS(3*(p-1)+c1,c1) + polyfit(1)
               do c2 = 1, 3
                 a_SCS(3*(p-1)+c1,c2) = a_SCS(3*(p-1)+c1,c2) + dot_product(B_pol(3*(p-1)+c1,:),d_vec(:,c2))
               end do
@@ -1342,13 +1342,6 @@ module vdw
           end do
           a_iso(:,om) = a_iso(:,om)/3.d0
 
-          if( om == 2 ) then
-            write(*,*) "a_iso"
-            do p = 1, n_sub_sites
-              write(*,*) a_iso(p,2)
-            end do
-          end if
-          
           if ( om == 2 ) then
             do p = 1, n_sub_sites
               o_p(p) = 2.d0*omega_ref/sqrt(a_iso(p,2)/a_iso(p,1)-1.d0)
