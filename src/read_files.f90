@@ -766,9 +766,24 @@ end if
       else if( keyword == "vdw_mbd_nfreq" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_nfreq
+      else if( keyword == "vdw_mbd_norder" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_norder
       else if( keyword == "vdw_mbd_grad" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_grad
+      else if( keyword == "vdw_hirsh_grad" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_hirsh_grad
+      else if( keyword == "vdw_mbd_rcut" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_rcut
+      else if( keyword == "vdw_2b_rcut" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_2b_rcut
+      else if( keyword == "vdw_polynomial" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_polynomial
       else if( keyword == "core_pot_cutoff" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%core_pot_cutoff

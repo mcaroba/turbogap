@@ -433,18 +433,20 @@ module vdw
 !**************************************************************************
   subroutine get_scs_polarizabilities( hirshfeld_v, hirshfeld_v_cart_der, &
                                        n_neigh, neighbors_list, neighbor_species, &
-                                       rcut, buffer, rcut_inner, buffer_inner, rjs, xyz, hirshfeld_v_neigh, &
-                                       sR, d, c6_ref, r0_ref, alpha0_ref, do_derivatives, alpha_SCS0, dalpha_full, &
+                                       rcut, rcut_mbd, rcut_2b, r_buffer, rcut_inner, buffer_inner, rjs, xyz, &
+                                       hirshfeld_v_neigh, sR, d, c6_ref, r0_ref, alpha0_ref, do_derivatives, &
+                                       do_hirshfeld_gradients, polynomial_expansion, n_freq, n_order, &
+                                       alpha_SCS0, dalpha_full, &
                                        c6_scs, r0_scs, alpha0_scs, energies, forces0, virial )
 
     implicit none
 
 !   Input variables
-    real*8, intent(in) :: hirshfeld_v_cart_der(:,:), rcut, buffer, rcut_inner, buffer_inner, &
-                          rjs(:), xyz(:,:), sR, d, c6_ref(:), r0_ref(:), &
+    real*8, intent(in) :: hirshfeld_v_cart_der(:,:), rcut, r_buffer, rcut_inner, buffer_inner, &
+                          rjs(:), xyz(:,:), sR, d, c6_ref(:), r0_ref(:), rcut_mbd, rcut_2b, &
                           alpha0_ref(:) !, hirshfeld_v(:), hirshfeld_v_neigh(:) !NOTE: uncomment this in final implementation
-    integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:)
-    logical, intent(in) :: do_derivatives
+    integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:), n_freq, n_order
+    logical, intent(in) :: do_derivatives, do_hirshfeld_gradients, polynomial_expansion
 !   Output variables
     real*8, intent(out) :: virial(1:3, 1:3)
 !   In-Out variables
@@ -461,10 +463,9 @@ module vdw
               rcut_vdw, r_vdw_i, r_vdw_j, f_damp_SCS_ij, t1, t2, &
               sigma_ij, coeff_h_der, dg, dh, s_i, s_j, terms, omega_ref, xyz_i(1:3), xyz_j(1:3)
     integer, allocatable :: ipiv(:)
-    integer :: n_sites, n_pairs, n_species, n_sites0, info, n_order, n_freq, om, n_tot
+    integer :: n_sites, n_pairs, n_species, n_sites0, info, om, n_tot
     integer :: i, i2, i3, j, j2, j3, k, k2, k3, k4, a, a2, c1, c2, c3, lwork, b, p, q, r, n_count, n_max, k_i, k_j
-    logical :: do_timing = .false., do_hirshfeld_gradients = .true., &
-               read_hirshfeld = .false.
+    logical :: read_hirshfeld = .false.
                
 !    LOCAL TEST stuff:
     integer, allocatable :: sub_neighbors_list(:), n_sub_neigh(:), p_list(:)
@@ -481,7 +482,7 @@ module vdw
                            a_2b(:), r0_ii_SCS_2b(:), C6_2b(:), da_2b(:), T_SR(:), T_SR_mult(:), d_arr_i(:), d_arr_o(:), &
                            d_mult_i(:), d_mult_o(:), dT_SR_mult(:,:), d_dmult_i(:,:), d_dmult_o(:,:), do_mbd(:), &
                            hirshfeld_sub_neigh(:)
-    real*8 :: rcut_mbd, a_mbd_i, a_mbd_j, da_i, da_j, pol1, E_TS, rcut_2b, r_buffer, f_damp_der_2b, dr_vdw_i, &
+    real*8 :: a_mbd_i, a_mbd_j, da_i, da_j, pol1, E_TS, f_damp_der_2b, dr_vdw_i, &
               dr_vdw_j, forces_TS, dC6_2b, mult1_i, mult1_j, mult2, dmult1_i(1:3), dmult1_j(1:3), dmult2(1:3), hv_p_der, &
               hv_q_der, do_pref
     integer :: n_mbd_sites, n_mbd_pairs, n_2b_sites
@@ -489,7 +490,7 @@ module vdw
 
 
     !PSBLAS stuff:
-    logical :: polynomial_expansion = .false.
+    !logical :: polynomial_expansion = .true.
     type(psb_ctxt_type) :: icontxt
     integer(psb_ipk_) ::  iam, np, ip, jp, idummy, nr, nnz, info_psb
     type(psb_desc_type) :: desc_a
@@ -596,7 +597,7 @@ module vdw
     allocate( central_omega(1:n_sites) )
     central_omega = 0.d0
       
-    r_buffer = 0.5d0
+    !r_buffer = 0.5d0
 
     call cpu_time(time1)
 
@@ -841,6 +842,8 @@ module vdw
           end if
         end do
         
+        !call cpu_time(time1)
+
         if ( polynomial_expansion ) then
         
           if (om == 2) then
@@ -930,6 +933,10 @@ module vdw
           end if
         
         end if
+
+        !call cpu_time(time2)
+
+        !write(*,*) "Timing for solving the polarizability of central atom:", time2-time1
 
       end do
         
@@ -1283,7 +1290,7 @@ module vdw
         end do
         
         if ( polynomial_expansion ) then
-        
+
           if (om == 2) then
             polyfit = (/ 3.237385145550585d+02, -4.241125470183307d+04, 3.008572712845031d+06, &
                         -1.309430416378132d+08, 3.756106046665028d+09, -7.433108326602138d+10, &
@@ -1325,11 +1332,22 @@ module vdw
           call psb_spins(nnz, ia(1:nnz), ja(1:nnz), val(1:nnz), A_sp, desc_a, info_psb)
           call psb_cdasb(desc_a, info_psb)
           call psb_spasb(A_sp, desc_a, info_psb)
+
+          !call cpu_time(time1)
+
           do k2 = 3, n_degree+1
-            call psb_spmm(1.d0, A_sp, B_mult, 0.d0, val_xv, desc_a, info_psb, 'T')
+            ! ATTENTION: For some reason psb_spmm slows down after the first iteration and dgemm perfoms faster.
+            !call psb_spmm(1.d0, A_sp, B_mult, 0.d0, val_xv, desc_a, info_psb, 'T')
+            call dgemm( "n", "n", 3*n_sub_sites, 3*n_sub_sites, 3*n_sub_sites, 1.d0, B_mult, 3*n_sub_sites, B_mat, &
+                        3*n_sub_sites, 0.d0, val_xv, 3*n_sub_sites)
             B_pol = B_pol + polyfit(k2) * val_xv
             B_mult = val_xv 
           end do
+
+          !call cpu_time(time2)
+
+          !write(*,*) "Timing for matrix multiplications", time2-time1
+
           a_SCS = 0.d0
           do p = 1, n_sub_sites
             do c1 = 1, 3
@@ -1388,13 +1406,13 @@ module vdw
           ! Exact solution ends
         
         end if
-        
+
         if ( om == 2 ) then
 
           ! MBD for local polarizabilities:
           ! At least for now: rcut <= rcut_mbd <= rcut_2b
-          rcut_mbd = 5.d0
-          rcut_2b = 9.d0
+          !rcut_mbd = 5.d0
+          !rcut_2b = 9.d0
           n_mbd_sites = 0
           n_mbd_pairs = 0
         
@@ -1429,8 +1447,8 @@ module vdw
             end if
           end do
 
-          n_order = 4
-          n_freq = 12
+          !n_order = 4
+          !n_freq = 12
 
           allocate( T_LR(1:3*n_mbd_sites,1:3*n_mbd_sites) )
           allocate( r0_ii_SCS(1:n_mbd_pairs) )
@@ -2019,6 +2037,8 @@ module vdw
 
             b_der = -b_der+d_der
 
+            !call cpu_time(time1)
+
             if ( polynomial_expansion ) then
             
               call dgemm( "n", "n", 3*n_sub_sites, 3, 3*n_sub_sites, 1.d0, B_pol, 3*n_sub_sites, b_der, &
@@ -2032,6 +2052,10 @@ module vdw
               da_SCS = b_der
             
             end if
+
+            !call cpu_time(time2)
+
+            !write(*,*) "Timing for solving force component", time2-time1
             
             do p = 1, n_sub_sites
               do c1 = 1, 3
