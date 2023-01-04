@@ -489,7 +489,7 @@ module vdw
 
 
     !PSBLAS stuff:
-    logical :: polynomial_expansion = .true.
+    logical :: polynomial_expansion = .false.
     type(psb_ctxt_type) :: icontxt
     integer(psb_ipk_) ::  iam, np, ip, jp, idummy, nr, nnz, info_psb
     type(psb_desc_type) :: desc_a
@@ -1028,7 +1028,10 @@ module vdw
       allocate( val(1:9*n_sub_pairs) )
       allocate( b_i(1:3*n_sub_sites,1:3) )
       allocate( d_vec(1:3*n_sub_sites,1:3) )
-        
+      if ( polynomial_expansion ) then
+        allocate( B_pol(1:3*n_sub_sites,1:3*n_sub_sites) )
+      end if
+
       a_iso = 0.d0
       T_SR = 0.d0
       T_SR_mult = 0.d0
@@ -1300,7 +1303,7 @@ module vdw
 
           allocate( myidx(1:3*n_sub_sites) )
           allocate( val_xv(1:3*n_sub_sites,1:3*n_sub_sites) )
-          allocate( B_pol(1:3*n_sub_sites,1:3*n_sub_sites) )
+          !allocate( B_pol(1:3*n_sub_sites,1:3*n_sub_sites) )
           allocate( B_mult(1:3*n_sub_sites,1:3*n_sub_sites) )
           B_mult = B_mat
           val_xv = 0.d0
@@ -1348,7 +1351,7 @@ module vdw
             end do
           end if
 
-          deallocate( myidx, val_xv, B_pol, B_mult )
+          deallocate( myidx, val_xv, B_mult )
 
         else
 
@@ -2016,10 +2019,19 @@ module vdw
 
             b_der = -b_der+d_der
 
-            call dsytrs( 'U', 3*n_sub_sites, 3, B_mat, 3*n_sub_sites, ipiv, b_der, 3*n_sub_sites, work_arr, &
-                         12*n_sub_sites, info )
+            if ( polynomial_expansion ) then
+            
+              call dgemm( "n", "n", 3*n_sub_sites, 3, 3*n_sub_sites, 1.d0, B_pol, 3*n_sub_sites, b_der, &
+                          3*n_sub_sites, 0.d0, da_SCS, 3*n_sub_sites)
+            
+            else
 
-            da_SCS = b_der
+              call dsytrs( 'U', 3*n_sub_sites, 3, B_mat, 3*n_sub_sites, ipiv, b_der, 3*n_sub_sites, work_arr, &
+                           12*n_sub_sites, info )
+
+              da_SCS = b_der
+            
+            end if
             
             do p = 1, n_sub_sites
               do c1 = 1, 3
@@ -2311,6 +2323,9 @@ module vdw
                   d_dmult_o, hirshfeld_sub_neigh )
 
       deallocate( B_mat )
+      if ( polynomial_expansion ) then
+        deallocate( B_pol )
+      end if
 
       if ( do_derivatives ) then
         deallocate( da_iso )
