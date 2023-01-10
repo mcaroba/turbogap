@@ -38,7 +38,7 @@ module gap
   !                                energies, forces, virial, solo_time_soap)
   subroutine get_soap_energy_and_forces(soap, soap_der, alphas, delta, zeta0, e0, Qs, &
                                         n_neigh, neighbors_list, xyz, do_forces, do_timing, &
-                                        energies, forces, virial,  solo_time_soap)
+                                        energies, forces, virial,  solo_time_soap, soap_d, soap_der_d)
 !   **********************************************
 !   soap(1:n_soap, 1:n_sites)
 
@@ -51,27 +51,35 @@ module gap
     logical, intent(in) :: do_forces, do_timing
     real(c_double), allocatable,target :: kernels(:,:), kernels_der(:,:), &
                             Qss(:,:), Qs_copy(:,:), this_Qss(:), &
-                           kernels_copy(:,:)
+                           kernels_copy(:,:), this_force_h(:,:)
     real(c_double) :: time1, time2, time3, energies_time, forces_time, this_force(1:3)
     real(c_double) ::  zeta, cdelta_ene,cdelta_force, mzetam
     integer(c_int) :: n_sites, n_sparse, n_soap, i, j, k, l, j2, zeta_int, n_sites0, k1, k2
     logical :: is_zeta_int = .false.
-    type(c_ptr) :: cublas_handle, kernels_copy_d, kernels_d, soap_d, Qs_d, energies_d, alphas_d
-    type(c_ptr) :: kernels_der_d, Qss_d, Qs_copy_d, this_Qss_d
+    type(c_ptr) :: cublas_handle, kernels_copy_d, kernels_d, Qs_d, energies_d, alphas_d
+    type(c_ptr) :: kernels_der_d, Qss_d, Qs_copy_d !, this_Qss_d
     integer(c_int) :: size_kernels, size_soap, size_Qs, size_alphas, size_energies,maxnn
     integer(c_int) :: size_nnlist, size_xyz, n1xyz, n2xyz, n1forces,n2forces, n1virial,n2virial
     integer(c_int) :: size_forces, size_virial, size_soap_der,n1soap_der,n2soap_der,n3soap_der
     integer(c_int) :: rank, ierr
+    integer(c_int) :: n_pairs
     integer(c_int), allocatable, target :: neighbors_beg(:), neighbors_end(:)
-    type(c_ptr) :: soap_der_d, virial_d, n_neigh_d
+    type(c_ptr) :: virial_d, n_neigh_d, l_index_d, j2_index_d, this_force_d
     type(c_ptr) :: neighbors_beg_d, neighbors_end_d, xyz_d,  neighbors_list_d, forces_d
     real*8, intent(inout) :: solo_time_soap
+    integer(c_int), allocatable, target :: l_index(:), j2_index(:)
+    type(c_ptr), intent(inout) :: soap_der_d, soap_d
     real*8 :: ttt(2)
-
-    !call cpu_time(ttt(1))
-    ttt(1)=MPI_Wtime()
-    call mpi_comm_rank(MPI_COMM_WORLD, rank, ierr)
-    call gpu_set_device(rank) ! Every node has 4 GPUs. Even if there are more than 1 nodes used. This will assing the ranks to GPU in a roundbin fashion
+    integer(c_size_t) :: st_alphas, st_Qs, st_kernels, st_energies, st_soap
+    integer(c_size_t) :: st_n_pairs, st_xyz,st_nnlist, st_forces, st_virial
+    integer(c_size_t) :: st_neigh,st_neigh_beg, st_neigh_end
+    
+#ifdef _MPIF90
+    ttt(1) = MPI_Wtime()
+#else
+    call cpu_time(ttt(1))
+#endif
+   
     cdelta_ene=delta*delta
     if( dabs(zeta0-dfloat(int(zeta0))) < 1.d-5 )then
       is_zeta_int = .true.
@@ -87,70 +95,77 @@ module gap
       time3 = time1
     end if
 
-    n_sparse = size(alphas)
-    n_soap = size(soap, 1)
-    n_sites = size(soap, 2)
-    n_sites0 = size(forces, 2)
+  n_sparse = size(alphas)
+  n_soap = size(soap, 1)
+  n_sites = size(soap, 2)
+  n_sites0 = size(forces, 2)
 
-    allocate( kernels(1:n_sites, 1:n_sparse) )
-    kernels = 0.d0
-    allocate( kernels_copy(1:n_sites, 1:n_sparse) )
+  allocate( kernels(1:n_sites, 1:n_sparse) )
+  kernels = 0.d0
+  allocate( kernels_copy(1:n_sites, 1:n_sparse) )
 
-    size_kernels=n_sites*n_sparse
-    size_soap=n_soap*n_sites
-    size_Qs = n_soap*n_sparse
-    size_alphas=n_sparse
-    size_energies=n_sites
-    !write(*,*)
-    !write(*,*)  "n_sites", n_sites, "n_soap", n_soap, "n_sparse", n_sparse
-    !write(*,*) size_kernels,size_soap,size_Qs,size_alphas,size_energies
-    call create_cublas_handle(cublas_handle)
-    call gpu_malloc_double(kernels_d,size_kernels)
-    call gpu_malloc_double(kernels_copy_d,size_kernels)
-    call gpu_malloc_double(soap_d,size_soap)
-    call gpu_malloc_double(Qs_d,size_Qs)
+  size_kernels=n_sites*n_sparse
+  size_soap=n_soap*n_sites
+  size_Qs = n_soap*n_sparse
+  size_alphas=n_sparse
 
-    call cpy_double_htod(c_loc(soap),soap_d,size_soap)
-    call cpy_double_htod(c_loc(Qs),   Qs_d ,size_Qs)
+  size_energies=n_sites
 
-    call gpu_malloc_double(alphas_d,size_alphas)
-    call gpu_malloc_double(energies_d,size_energies)
-    call cpy_double_htod(c_loc(alphas),alphas_d,size_alphas)
-    !call dgemm( "t", "n", n_sites, n_sparse, n_soap, 1.d0, soap, n_soap, Qs, n_soap, 0.d0, &
-    !          kernels, n_sites)
-    call gpu_blas_mmul_t_n(cublas_handle, Qs_d, soap_d, kernels_d, n_sparse, n_soap, n_sites)
-    call cpy_double_dtoh(kernels_d,c_loc(kernels), n_sites*n_sparse)
+  st_kernels=size_kernels*(sizeof(kernels(1,1)))
+  st_Qs=size_Qs*(sizeof(Qs(1,1)))
+  st_alphas=size_alphas*(sizeof(alphas(1)))
+  st_energies=size_energies*(sizeof(energies(1)))
 
-    !gpu_kernels_pow( kernels_d, kernels_copy_d,zeta, size_kernels);
-    !gpu_blas_mvmul_n(handle, kernels_copy_d, alphas_d, energies_d, n_sites, n_sparse);
-    !gpu_axpc( energies_d,cdelta_ene,e0, size_energies);
-    open(unit=15,file="test_kernels_gpu.txt")
-    do j=1,n_sparse
-       do i=1,n_sites
-          write(15,*) kernels(i,j)
-       enddo
-    enddo
-    close(15)
-    stop
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!    size_kernels=n_sites*n_sparse
-!    size_soap=n_soap*n_sites
-!    size_Qs = n_soap*n_sparse
-!    size_alphas=n_sparse
-!    size_energies=n_sites
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-      call gpu_malloc_double(kernels_der_d,size_kernels)
-      call gpu_malloc_double(Qss_d,size_soap)
-      call gpu_malloc_double(Qs_copy_d,size_Qs)
-      call gpu_malloc_double(this_Qss_d,n_soap)
+  call gpu_malloc_all(kernels_d,st_kernels)
+  call gpu_malloc_all(kernels_copy_d,st_kernels)
+  !! call gpu_malloc_double(soap_d,size_soap)
+  call gpu_malloc_all(Qs_d,st_Qs)
 
-      !call cpy_double_dtod(Qs_d,   Qs_copy_d ,size_Qs)
+  !! call cpy_double_htod(c_loc(soap),soap_d,size_soap)
+  
+  call gpu_malloc_all(alphas_d,st_alphas)
 
+  call gpu_malloc_all(energies_d,st_energies)
+
+  call cpy_htod(c_loc(Qs), Qs_d ,st_Qs) !call cpy_double_htod(c_loc(Qs), Qs_d ,size_Qs)
+  call cpy_htod(c_loc(alphas),alphas_d,st_alphas) !call cpy_double_htod(c_loc(alphas),alphas_d,size_alphas)
+
+  call create_cublas_handle(cublas_handle)
+ 
+  call gpu_blas_mmul_t_n(cublas_handle, Qs_d, soap_d, kernels_d, n_sparse, n_soap, n_sites)
+  call gpu_kernels_pow( kernels_d,kernels_copy_d,  zeta, size_kernels)
+  call gpu_blas_mvmul_n(cublas_handle, kernels_copy_d, alphas_d, energies_d, n_sites, n_sparse)
+     
+  call gpu_axpe(energies_d, cdelta_ene,e0, size_energies)
+
+  if(do_forces) then
+
+      call gpu_malloc_all(kernels_der_d,st_kernels)
+      st_soap=size_soap*sizeof(Qss(1,1))
+      call gpu_malloc_all(Qss_d,st_soap)
+      call gpu_malloc_all(Qs_copy_d,st_Qs)
+      
+      !call gpu_malloc_all(this_Qss_d,n_soap)
+
+      call cpy_dtod(Qs_d,   Qs_copy_d ,st_Qs) !call cpy_double_dtod(Qs_d,   Qs_copy_d ,size_Qs)
+      
       mzetam=zeta-1
+      call gpu_kernels_pow( kernels_d,kernels_der_d,  mzetam, size_kernels)
 
-      cdelta_force=-zeta*delta**2 !*0
-! EXPERIMENTAL CODE
-      call cpu_time(time1)
+      if(n_sites<n_soap) then
+        call gpu_matvect(kernels_der_d, alphas_d, n_sites, n_sparse)
+      else
+        call gpu_matvect(Qs_copy_d, alphas_d, n_soap, n_sparse)
+      endif
+
+
+      cdelta_force=-zeta*delta**2 
+      call gpu_blas_mmul_n_t(cublas_handle, kernels_der_d, Qs_copy_d, Qss_d, n_sparse, &
+                                  n_soap, n_sites, cdelta_force)
+    
+
+
+
       allocate( neighbors_beg(1:n_sites) )
       allocate( neighbors_end(1:n_sites) )
       l = 0
@@ -165,6 +180,33 @@ module gap
           maxnn=n_neigh(i)
         end if
       end do
+      n_pairs=l
+
+      allocate(l_index(1:n_pairs))
+
+      l = 0
+      do i = 1, n_sites
+        do j = 1, n_neigh(i)
+          l = l + 1
+          l_index(l) = i
+        end do
+      end do
+    st_n_pairs=n_pairs*sizeof(l_index(1))
+    call gpu_malloc_all(l_index_d, st_n_pairs) !call gpu_malloc_int(l_index_d, n_pairs)
+    call cpy_htod(c_loc(l_index),l_index_d,st_n_pairs) !call cpy_int_htod(c_loc(l_index),l_index_d,n_pairs)
+
+    allocate(j2_index(1:n_pairs))
+    l = 0
+    do i = 1, n_sites
+        do j = 1, n_neigh(i)
+          l = l + 1
+          j2 = mod(neighbors_list(l)-1, n_sites0) + 1
+          j2_index(l)=j2
+        end do
+      end do
+    call gpu_malloc_all(j2_index_d, st_n_pairs) !call gpu_malloc_int(j2_index_d, n_pairs)
+    call cpy_htod(c_loc(j2_index),j2_index_d, st_n_pairs) !call cpy_int_htod(c_loc(j2_index),j2_index_d,n_pairs)
+
 ! END EXPERIMENTAL CODE
 
      virial = 0.d0
@@ -180,6 +222,8 @@ module gap
     n1forces = size(forces, 1)
     n2forces = size(forces, 2)
     size_forces=n1forces*n2forces
+    ! write(*,*) n1forces, n2forces
+    ! stop
 
     n1virial = size(virial, 1)
     n2virial = size(virial, 2)
@@ -189,46 +233,49 @@ module gap
     n2soap_der = size(soap_der, 2)
     n3soap_der = size(soap_der, 3)
     size_soap_der=n1soap_der*n2soap_der*n3soap_der
-    call gpu_malloc_double(xyz_d,size_xyz)
-    call cpy_double_htod(c_loc( xyz), xyz_d,size_xyz)
 
-    call gpu_malloc_int(neighbors_list_d,size_nnlist)
-    call cpy_int_htod(c_loc(neighbors_list), neighbors_list_d, size_nnlist)
+    st_xyz=size_xyz*sizeof(xyz(1,1))
+    call gpu_malloc_all(xyz_d,st_xyz) !call gpu_malloc_double(xyz_d,size_xyz)
+    call cpy_htod(c_loc( xyz), xyz_d,st_xyz) !call cpy_double_htod(c_loc( xyz), xyz_d,size_xyz)
 
-    call gpu_malloc_double(forces_d,size_forces)
-    call gpu_malloc_double(virial_d,size_virial)
+    st_nnlist=size_nnlist*sizeof(neighbors_list(1))
+    call gpu_malloc_all(neighbors_list_d,st_nnlist) ! call gpu_malloc_int(neighbors_list_d,size_nnlist)
+    call cpy_htod(c_loc(neighbors_list), neighbors_list_d, st_nnlist) !call cpy_int_htod(c_loc(neighbors_list), neighbors_list_d, size_nnlist)
 
-    call gpu_malloc_int(n_neigh_d,n_sites)
-    call cpy_int_htod(c_loc( n_neigh), n_neigh_d,n_sites)
+    st_forces=size_forces*sizeof(forces(1,1))
+    call gpu_malloc_all(forces_d,st_forces) !call gpu_malloc_double(forces_d,size_forces)
+    st_virial=size_virial*sizeof(virial(1,1))
+    call gpu_malloc_all(virial_d,st_virial) !call gpu_malloc_double(virial_d,size_virial)
 
-    call gpu_malloc_int(neighbors_end_d,n_sites)
-    call cpy_int_htod(c_loc( neighbors_end), neighbors_end_d,n_sites)
+    st_neigh=n_sites*sizeof(n_neigh(1))
+    call gpu_malloc_all(n_neigh_d,st_neigh) !call gpu_malloc_int(n_neigh_d,n_sites) 
+    call cpy_htod(c_loc( n_neigh), n_neigh_d,st_neigh) ! call cpy_int_htod(c_loc( n_neigh), n_neigh_d,n_sites)
 
-    call gpu_malloc_int(neighbors_beg_d,n_sites)
-    call cpy_int_htod(c_loc( neighbors_beg), neighbors_beg_d,n_sites)
+    st_neigh_end=n_sites*sizeof(neighbors_end(1))
+    call gpu_malloc_all(neighbors_end_d,st_neigh_end)
+    call cpy_htod(c_loc( neighbors_end), neighbors_end_d,st_neigh_end)
 
-    call gpu_malloc_double(soap_der_d,size_soap_der)
-    call cpy_double_htod(c_loc(soap_der), soap_der_d, size_soap_der)
+    st_neigh_beg=n_sites*sizeof(neighbors_beg(1))
+    call gpu_malloc_all(neighbors_beg_d,st_neigh_beg)
+    call cpy_htod(c_loc( neighbors_beg), neighbors_beg_d,st_neigh_beg)
+    
+                                
+    call   gpu_final_soap_forces_virial(n_sites, &
+                                        Qss_d,n_soap, l_index_d, j2_index_d, &
+                                        soap_der_d, &
+                                        xyz_d, virial_d, &
+                                        n_sites0, &
+                                        forces_d, &
+                                        n_pairs)
 
-     call gpu_soap_energies_forces_virial(n_neigh_d,n_sites, maxnn, &
-                                      Qss_d,n_soap, neighbors_beg_d, &
-                                      soap_der_d,  &
-                                      xyz_d, virial_d, &
-                                      neighbors_list_d, n_sites0, forces_d, &
-                                      cublas_handle, kernels_der_d, Qs_copy_d, &
-                                      n_sparse, cdelta_force,&
-                                      alphas_d, &
-                                      kernels_d, mzetam, size_kernels, &
-                                      do_forces, &
-                                      energies_d, cdelta_ene, e0,  size_energies, &
-                                      Qs_d, size_Qs, &
-                                      kernels_copy_d, &
-                                      zeta, &
-                                      soap_d)
+    
+    call cpy_dtoh(forces_d,c_loc(forces), st_forces)
+    call cpy_dtoh(virial_d,c_loc(virial), st_virial)
 
-      call cpy_double_dtoh(forces_d,c_loc(forces), size_forces)
-      call cpy_double_dtoh(virial_d,c_loc(virial), size_virial)
-      call cpy_double_dtoh(energies_d,c_loc(energies),size_energies)
+  endif
+
+  
+  call cpy_dtoh(energies_d,c_loc(energies),st_energies)
 
 
 
@@ -237,52 +284,34 @@ module gap
         forces_time = time2 - time1
       end if
 
-
-
-! EXPERIMENTAL CODE
-      deallocate( neighbors_beg, neighbors_end )
-!      call cpu_time(time2)
-!      write(*,*) time2-time1
-! END EXPERIMENTAL CODE
-
-
-      call gpu_free(neighbors_list_d)
-      call gpu_free(neighbors_end_d)
-      call gpu_free(neighbors_beg_d)
-      call gpu_free(kernels_der_d)
-      call gpu_free(Qss_d)
-      call gpu_free(Qs_copy_d)
-      call gpu_free(forces_d)
-      call gpu_free(virial_d)
-      call gpu_free(xyz_d)
-      call gpu_free(soap_der_d)
-      call gpu_free(n_neigh_d)
-
-
-
-    if( do_timing )then
-      call cpu_time(time2)
-      write(*,*)'                                       |'
-      write(*,*)'Prediction timings (SOAP):             |'
-      write(*,*)'                                       |'
-      write(*,'(A, F7.3, A)') '  *) Energy prediction: ', energies_time, ' seconds |'
-      if( do_forces )then
-        write(*,'(A, F7.3, A)') '  *) Forces prediction: ', forces_time, ' seconds |'
-      end if
-      write(*,'(A, F8.3, A)') '  *) Total prediction: ', time2-time3, ' seconds |'
-      write(*,*)'                                       |'
-      write(*,*)'.......................................|'
-    end if
-
+  call gpu_free_async(neighbors_list_d)
+  call gpu_free_async(neighbors_end_d)
+  call gpu_free_async(neighbors_beg_d)
+  call gpu_free_async(kernels_der_d)
+  call gpu_free_async(Qss_d)
+  call gpu_free_async(Qs_copy_d)
+  call gpu_free_async(forces_d)
+  call gpu_free_async(virial_d)
+  call gpu_free_async(xyz_d)
+  call gpu_free_async(soap_der_d)
+  call gpu_free_async(n_neigh_d)
+  call gpu_free_async(kernels_d)
+  call gpu_free_async(kernels_copy_d)
+  call gpu_free_async(soap_d)
+  call gpu_free_async(Qs_d)
+  call gpu_free_async(energies_d)
   call destroy_cublas_handle(cublas_handle)
-  call gpu_free(kernels_d)
-  call gpu_free(kernels_copy_d)
-  call gpu_free(soap_d)
-  call gpu_free(Qs_d)
-  call gpu_free(energies_d)
   call gpu_free(alphas_d)
-  call gpu_free(this_Qss_d)
-  !call cpu_time(ttt(2))
+  !call gpu_free(this_Qss_d)
+  
+  deallocate( neighbors_beg, neighbors_end )
+ 
+#ifdef _MPIF90
+    ttt(2) = MPI_Wtime()
+#else
+    call cpu_time(ttt(2))
+#endif
+
   ttt(2)=MPI_Wtime()
   solo_time_soap=solo_time_soap+ttt(2)-ttt(1)
   !stop

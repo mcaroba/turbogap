@@ -6,6 +6,19 @@
 !plot "< paste trajectory_out.xyz_64k_oiriginal trajectory_out.xyz | awk 'NR>2{print $5,$13}'", x
 MODULE F_B_C
     INTERFACE
+      subroutine gpu_malloc_all(a_d,n) bind(C,name="cuda_malloc_all")
+        use iso_c_binding
+        implicit none
+        type(c_ptr) :: a_d
+        integer(c_size_t),value :: n
+      end subroutine
+      subroutine gpu_malloc_all_blocking(a_d,n) bind(C,name="cuda_malloc_all_blocking")
+        use iso_c_binding
+        implicit none
+        type(c_ptr) :: a_d
+        integer(c_size_t),value :: n
+      end subroutine
+
       subroutine gpu_malloc_double(a_d,n) bind(C,name="cuda_malloc_double")
         use iso_c_binding
         implicit none
@@ -40,13 +53,39 @@ MODULE F_B_C
         type(c_ptr) :: a_d
       end subroutine
 
+      subroutine gpu_free_async(a_d) bind(C,name="cuda_free_async")
+        use iso_c_binding
+        implicit none
+        type(c_ptr) :: a_d
+      end subroutine
+
+      subroutine cpy_htod(a,a_d,n) bind(C,name="cuda_cpy_htod")
+        use iso_c_binding
+        implicit none
+        type(c_ptr),value :: a_d,a
+        integer(c_size_t),value :: n
+      end subroutine
+
+      subroutine cpy_dtod(b_d,a_d,n) bind(C,name="cuda_cpy_dtod")
+        use iso_c_binding
+        implicit none
+        type(c_ptr),value :: a_d,b_d
+        integer(c_size_t),value :: n
+      end subroutine
+
+      subroutine cpy_dtoh(a_d,a,n) bind(C,name="cuda_cpy_dtoh")
+        use iso_c_binding
+        implicit none
+        type(c_ptr),value :: a_d,a
+        integer(c_size_t),value :: n
+      end subroutine
+
       subroutine cpy_double_htod(a,a_d,n) bind(C,name="cuda_cpy_double_htod")
         use iso_c_binding
         implicit none
         type(c_ptr),value :: a_d,a
         integer(c_int),value :: n
       end subroutine
-
 
       subroutine cpy_double_complex_htod(a,a_d,n) bind(C,name="cuda_cpy_double_complex_htod")
         use iso_c_binding

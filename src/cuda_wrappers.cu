@@ -48,6 +48,19 @@ __global__ void vect_dble(double *a, int N)
    if (idx<N)printf(" %lf \n", a[idx]);
 }
 
+
+extern "C" void cuda_malloc_all(void **a_d, size_t Np)
+{
+  //gpuErrchk(cudaMalloc( a_d,  Np ));
+  gpuErrchk(cudaMallocAsync( a_d,  Np ,0));
+   return;
+}
+
+extern "C" void cuda_malloc_all_blocking(void **a_d, size_t Np)
+{
+  gpuErrchk(cudaMalloc( a_d,  Np ));
+   return;
+}
 extern "C" void cuda_malloc_double(void **a_d, int Np)
 {
    gpuErrchk(cudaMalloc( a_d, sizeof(double) * Np ));
@@ -57,7 +70,8 @@ extern "C" void cuda_malloc_double(void **a_d, int Np)
 extern "C" void cuda_malloc_double_complex(void **a_d, int Np)
 {
 
-   gpuErrchk(cudaMalloc( a_d, sizeof(cuDoubleComplex) * Np));
+  gpuErrchk(cudaMalloc( a_d, sizeof(cuDoubleComplex) * Np));
+  //gpuErrchk(cudaMallocAsync( a_d, sizeof(cuDoubleComplex) * Np,0));
    return;
 }
 
@@ -69,16 +83,23 @@ extern "C" void cuda_malloc_int(int **a_d, int Np)
 }
 
 
-extern "C" void cuda_malloc_bool(int **a_d, int Np)
+extern "C" void cuda_malloc_bool(void **a_d, int Np)
 {
    // Allocate memory on GPU
    gpuErrchk(cudaMalloc( a_d, sizeof(bool) * Np ));
    return;
 }
 
-extern "C" void cuda_free(double **a_d)
+extern "C" void cuda_free(void **a_d)
 {
   gpuErrchk(cudaFree(*a_d));
+   //printf("GPU memory freed \n");
+   return;
+}
+
+extern "C" void cuda_free_async(void **a_d)
+{
+  gpuErrchk(cudaFreeAsync(*a_d,0));
    //printf("GPU memory freed \n");
    return;
 }
@@ -98,6 +119,27 @@ extern "C" void cuda_free(double **a_d)
   printf("\n Filled \n");
 }
 */
+
+extern "C" void cuda_cpy_htod(void *a, void *a_d, size_t N)
+{
+
+   gpuErrchk(cudaMemcpyAsync(a_d, a, N, cudaMemcpyHostToDevice ));
+   //gpuErrchk(cudaMemcpyAsync(a_d, a, sizeof(int) * N, cudaMemcpyHostToDevice ));
+   return;
+}
+
+extern "C" void cuda_cpy_dtod(void *b_d, void *a_d,size_t N)
+{
+  gpuErrchk(cudaMemcpyAsync( a_d, b_d, N, cudaMemcpyDeviceToDevice ));
+   return;
+}
+
+extern "C" void cuda_cpy_dtoh(void *a_d, void *a, size_t N)
+{
+  gpuErrchk(cudaMemcpyAsync(a, a_d,  N, cudaMemcpyDeviceToHost));
+   return;
+}
+
 extern "C" void cuda_cpy_double_htod(double *a, double *a_d, int N)
 {
    cudaMemcpy(a_d, a, sizeof(double) * N, cudaMemcpyHostToDevice);
@@ -257,50 +299,50 @@ extern "C" void gpu_axpc(double *a, double dccc, double e0, int size)
 
 }
 
-extern "C" void wrappers_all(double *soap, double *kernels, double *kernels_copy, double *Qs, double *energies, double delta, double zeta, double e0, int n_sites, int n_soap, int n_sparse, int size_kernels, int size_soap, int size_Qs, int size_alphas, int  size_energies)
-{
-  int ntpb=256;
-  int nblocks=(size_kernels+ntpb-1)/ntpb;
-  // Create a handle for CUBLAS
-	cublasHandle_t handle;
-	cublasCreate(&handle);
-  double *kernels_d, *kernels_copy_d, *soap_d, *Qs_d, *energies_d;
-  cudaMalloc( &kernels_d, sizeof(double) * size_kernels );
-  cudaMalloc( &kernels_copy_d, sizeof(double) * size_kernels );
-  cudaMalloc( &soap_d, sizeof(double) * size_soap );
-  cudaMalloc( &Qs_d, sizeof(double) * size_Qs );
-  cudaMalloc( &energies_d, sizeof(double)*size_energies);
+// extern "C" void wrappers_all(double *soap, double *kernels, double *kernels_copy, double *Qs, double *energies, double delta, double zeta, double e0, int n_sites, int n_soap, int n_sparse, int size_kernels, int size_soap, int size_Qs, int size_alphas, int  size_energies)
+// {
+//   int ntpb=256;
+//   int nblocks=(size_kernels+ntpb-1)/ntpb;
+//   // Create a handle for CUBLAS
+// 	cublasHandle_t handle;
+// 	cublasCreate(&handle);
+//   double *kernels_d, *kernels_copy_d, *soap_d, *Qs_d, *energies_d;
+//   cudaMalloc( &kernels_d, sizeof(double) * size_kernels );
+//   cudaMalloc( &kernels_copy_d, sizeof(double) * size_kernels );
+//   cudaMalloc( &soap_d, sizeof(double) * size_soap );
+//   cudaMalloc( &Qs_d, sizeof(double) * size_Qs );
+//   cudaMalloc( &energies_d, sizeof(double)*size_energies);
 
 
-  const double alf = 1;
-  const double bet = 0;
+//   const double alf = 1;
+//   const double bet = 0;
 
-  cudaMemcpy(kernels_d, kernels, sizeof(double) * size_kernels, cudaMemcpyHostToDevice );
-  cudaMemcpy(soap_d, soap, sizeof(double) * size_soap, cudaMemcpyHostToDevice );
-  cudaMemcpy(Qs_d, Qs, sizeof(double) * size_Qs, cudaMemcpyHostToDevice );
-  // Do the actual multiplication
+//   cudaMemcpy(kernels_d, kernels, sizeof(double) * size_kernels, cudaMemcpyHostToDevice );
+//   cudaMemcpy(soap_d, soap, sizeof(double) * size_soap, cudaMemcpyHostToDevice );
+//   cudaMemcpy(Qs_d, Qs, sizeof(double) * size_Qs, cudaMemcpyHostToDevice );
+//   // Do the actual multiplication
 
-  cublasDgemm(handle, CUBLAS_OP_T, CUBLAS_OP_N, n_sites, n_sparse, n_soap, &alf, soap_d, n_soap, Qs_d, n_soap, &bet, kernels_d, n_sites);
-//cublasDgemm(handle, CUBLAS_OP_T, CUBLAS_OP_N,  nBy, nAx, nAy, alpha, B, nAy, A, nAy, beta, C, nBy);
-    //printf("\n cublasDgemm \n");
-  // gpu_blas_mmul_t_n(cubhandle,     A,     B,      C,         nAx,      nAy,       nBy,             bb, zeta, N)
-  // gpu_blas_mmul_t_n(cublas_handle, Qs_d, soap_d, kernels_d, n_sparse, n_soap, n_sites, kernels_copy_d, zeta, size_kernels)
+//   cublasDgemm(handle, CUBLAS_OP_T, CUBLAS_OP_N, n_sites, n_sparse, n_soap, &alf, soap_d, n_soap, Qs_d, n_soap, &bet, kernels_d, n_sites);
+// //cublasDgemm(handle, CUBLAS_OP_T, CUBLAS_OP_N,  nBy, nAx, nAy, alpha, B, nAy, A, nAy, beta, C, nBy);
+//     //printf("\n cublasDgemm \n");
+//   // gpu_blas_mmul_t_n(cubhandle,     A,     B,      C,         nAx,      nAy,       nBy,             bb, zeta, N)
+//   // gpu_blas_mmul_t_n(cublas_handle, Qs_d, soap_d, kernels_d, n_sparse, n_soap, n_sites, kernels_copy_d, zeta, size_kernels)
 
-  cudaMemcpy( kernels, kernels_d, sizeof(double) * size_kernels, cudaMemcpyDeviceToHost );
-  gpu_pow<<<dim3(nblocks,1,1),dim3(ntpb,1,1)>>>(kernels_d,kernels_copy_d, zeta, size_kernels);
-  cudaMemcpy( kernels_copy, kernels_copy_d, sizeof(double) * size_kernels, cudaMemcpyDeviceToHost );
-	// Destroy the handle
-	cublasDestroy(handle);
-  cudaFree(kernels_d);
-  cudaFree(kernels_copy_d);
-  cudaFree(soap_d);
-  cudaFree(Qs_d);
-  cudaFree(energies_d);
-  //printf("\n %d %d %d %d %d %d %d %d  \n", n_sites, n_soap, n_sparse, size_kernels,  size_soap,  size_Qs,  size_alphas,  size_energies);
-  //printf("\n %d %d %d\n", nblocks,ntpb, size_kernels);
-  //exit(0);
- return;
-}
+//   cudaMemcpy( kernels, kernels_d, sizeof(double) * size_kernels, cudaMemcpyDeviceToHost );
+//   gpu_pow<<<dim3(nblocks,1,1),dim3(ntpb,1,1)>>>(kernels_d,kernels_copy_d, zeta, size_kernels);
+//   cudaMemcpy( kernels_copy, kernels_copy_d, sizeof(double) * size_kernels, cudaMemcpyDeviceToHost );
+// 	// Destroy the handle
+// 	cublasDestroy(handle);
+//   cudaFree(kernels_d);
+//   cudaFree(kernels_copy_d);
+//   cudaFree(soap_d);
+//   cudaFree(Qs_d);
+//   cudaFree(energies_d);
+//   //printf("\n %d %d %d %d %d %d %d %d  \n", n_sites, n_soap, n_sparse, size_kernels,  size_soap,  size_Qs,  size_alphas,  size_energies);
+//   //printf("\n %d %d %d\n", nblocks,ntpb, size_kernels);
+//   //exit(0);
+//  return;
+// }
 
 extern "C" void cuda_set_device( int my_rank)
 {
@@ -308,6 +350,7 @@ extern "C" void cuda_set_device( int my_rank)
   int  num_gpus=0;
   gpuErrchk(cudaGetDeviceCount(&num_gpus));
   gpuErrchk(cudaSetDevice(my_rank%num_gpus));
+  //printf("\n Seta Aset\n");
   return;
 }
 
@@ -445,8 +488,8 @@ __global__ void cuda_soap_forces_virial_two(int n_sites,
   if(tid==0)
   {
     int j2=j2_index_d[l_nn]-1;//(neighbors_list_d[l_nn]) % (n_sites0);
-    if(j2>= n_sites0 || j2<0)
-    {printf("j2 the error! \n");}
+    /*if(j2>= n_sites0 || j2<0)
+    {printf("j2 the error! \n");}*/
     atomicAdd(&forces_d[j2*3]  , shxthis_block_force[0]);
     atomicAdd(&forces_d[j2*3+1], shythis_block_force[0]);
     atomicAdd(&forces_d[j2*3+2], shzthis_block_force[0]);
