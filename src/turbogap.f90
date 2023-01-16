@@ -115,11 +115,11 @@ program turbogap
 
 !vdw crap
   real*8, allocatable :: v_neigh_vdw(:), energies_vdw(:), forces_vdw(:,:), this_energies_vdw(:), this_forces_vdw(:,:)
-  real*8, allocatable :: alpha_SCS(:,:), alpha_SCS_grad(:,:)
+  real*8, allocatable :: alpha_SCS(:,:), alpha_SCS_grad(:,:), hirshfeld_transfer(:,:)
 
 ! MPI stuff
   real*8, allocatable :: temp_1d(:), temp_1d_bis(:), temp_2d(:,:)
-  integer, allocatable :: temp_1d_int(:), n_atom_pairs_by_rank(:), displ(:)
+  integer, allocatable :: temp_1d_int(:), n_atom_pairs_by_rank(:), displ(:), site_in_rank(:), this_site_in_rank(:)
   integer :: i_beg, i_end, n_sites_mpi, j_beg, j_end, size_soap_turbo, size_distance_2b, size_angle_3b
   integer, allocatable :: n_species_mpi(:), n_sparse_mpi_soap_turbo(:), dim_mpi(:), n_sparse_mpi_distance_2b(:), &
                           n_sparse_mpi_angle_3b(:), n_mpi_core_pot(:), vdw_n_sparse_mpi_soap_turbo(:), &
@@ -159,6 +159,8 @@ program turbogap
   ntasks = 1
 #endif
   allocate( n_atom_pairs_by_rank(1:ntasks) )
+  allocate( site_in_rank(1:ntasks) )
+  allocate( this_site_in_rank(1:ntasks) )
 !**************************************************************************
 
 
@@ -865,6 +867,16 @@ program turbogap
     j_end = n_atom_pairs
     n_atom_pairs_by_rank(rank+1) = n_atom_pairs
 #endif
+!   Store by which rank each site is being handled
+    site_in_rank = 0
+    this_site_in_rank = 0
+    do i = i_beg, i_end
+      this_site_in_rank(i) = rank
+    end do
+#ifdef _MPIF90
+    call mpi_reduce(this_site_in_rank, site_in_rank, ntasks, MPI_INTEGER, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+    call mpi_bcast(site_in_rank, ntasks, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+#endif
 !   Compute the volume of the "primitive" unit cell
     v_uc = dot_product( cross_product(a_box, b_box), c_box ) / (dfloat(indices(1)*indices(2)*indices(3)))
     call cpu_time(time2)
@@ -1131,6 +1143,31 @@ program turbogap
 !        end if
         hirshfeld_v = this_hirshfeld_v
         call mpi_bcast(hirshfeld_v, n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!       HERE WE TRANSFER THE HIRSHFELD VOLUME GRADIENTS IF NEEDED FOR SCS
+        if( params%do_forces .and. params%vdw_hirsh_grad )then
+          allocate( hirshfeld_transfer(1:ntasks, 1:ntasks) )
+          allocate( this_hirshfeld_transfer(1:ntasks) )
+          this_hirshfeld_transfer = 0
+          hirshfeld_transfer = 0
+          do i = 1, n_atom_pairs_by_rank(rank+1)
+!           j is the atom's index in the supercell, use mod() to wrap it back to the unit cell
+            j = neighbors_list(i)
+            k = site_in_rank( mod(j-1,n_sites)+1 )
+!           Transfer only those derivatives that are not zero
+            if( all( hirshfeld_v_cart_der(1:3,i) == 0.d0 ) )then
+!             rank = rank sends another derivative to rank = k
+!              this_hirshfeld_transfer( rank+1, k+1 ) = this_hirshfeld_transfer( rank+1, k+1 ) + 1
+              this_hirshfeld_transfer( k+1 ) = this_hirshfeld_transfer( k+1 ) + 1
+            end if
+          end do
+          call mpi_allgather( this_hirshfeld_transfer, ntasks, MPI_DOUBLE_PRECISION, hirshfeld_transfer, ntasks**2, &
+                              MPI_DOUBLE_PRECISION, MPI_COMM_WORLD, ierr)
+          deallocate( this_hirshfeld_transfer )
+          deallocate( hirshfeld_transfer )
+! IN SUPERCELL INDEX OFFSET FOR I,J HAS TO BE EQUAL TO MINUS INDEX OFFSET FOR J,I
+        end if
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         call cpu_time(time_mpi(2))
         time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
       end if
