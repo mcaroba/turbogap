@@ -29,10 +29,10 @@
 module vdw
 
   use misc
-  use psb_base_mod
-  use psb_prec_mod
-  use psb_krylov_mod
-  use psb_util_mod
+  !use psb_base_mod
+  !use psb_prec_mod
+  !use psb_krylov_mod
+  !use psb_util_mod
 
   contains
 
@@ -490,20 +490,18 @@ module vdw
 
 
     !PSBLAS stuff:
-    !logical :: polynomial_expansion = .true.
-    type(psb_ctxt_type) :: icontxt
-    integer(psb_ipk_) ::  iam, np, ip, jp, idummy, nr, nnz, info_psb
-    type(psb_desc_type) :: desc_a
-    type(psb_dspmat_type) :: A_sp
-    !real*8, allocatable :: x_vec(:,:), b_vec(:,:)
-    type(psb_d_vect_type) :: x_vec, b_vec
-    integer(psb_lpk_), allocatable :: ia(:), ja(:), myidx(:)
-    real(psb_dpk_), allocatable :: val(:), val_xv(:,:), b_i(:,:), d_vec(:,:)
-    type(psb_dprec_type) :: prec
-    character(len=20) :: ptype
+    !type(psb_ctxt_type) :: icontxt
+    !integer(psb_ipk_) ::  iam, np, ip, jp, idummy, nr, nnz, info_psb
+    !type(psb_desc_type) :: desc_a
+    !type(psb_dspmat_type) :: A_sp
+    !type(psb_d_vect_type) :: x_vec, b_vec
+    !integer(psb_lpk_), allocatable :: ia(:), ja(:), myidx(:)
+    !real(psb_dpk_), allocatable :: val(:), val_xv(:,:), b_i(:,:), d_vec(:,:)
+    !type(psb_dprec_type) :: prec
+    !character(len=20) :: ptype
     real*8 :: polyfit(1:15)
     integer :: n_degree
-    real*8, allocatable :: B_pol(:,:), B_mult(:,:)
+    real*8, allocatable :: B_pol(:,:), B_mult(:,:), b_i(:,:), d_vec(:,:), val_xv(:,:)
 
 !   IMPORTANT NOTE ABOUT THE DERIVATIVES:
 !   If rcut < rcut_soap, the derivatives in the new implementation omit the terms that fall outside of rcut.
@@ -655,9 +653,9 @@ module vdw
         hirshfeld_v_sub_der = 0.d0
       end if
         
-      allocate( ia(1:9*n_sub_pairs) )
-      allocate( ja(1:9*n_sub_pairs) )
-      allocate( val(1:9*n_sub_pairs) )
+      !allocate( ia(1:9*n_sub_pairs) )
+      !allocate( ja(1:9*n_sub_pairs) )
+      !allocate( val(1:9*n_sub_pairs) )
       allocate( b_i(1:3*n_sub_sites,1:3) )
       allocate( d_vec(1:3*n_sub_sites,1:3) )
         
@@ -675,7 +673,7 @@ module vdw
         g_func = 0.d0
         h_func = 0.d0
 
-        nnz = 0
+        !nnz = 0
         k2 = 0
         T_func = 0.d0
         B_mat = 0.d0
@@ -731,10 +729,10 @@ module vdw
             end if
             do c1 = 1, 3
               B_mat(3*(p-1)+c1,3*(p-1)+c1) = 1.d0/neighbor_alpha0(k2)
-              nnz = nnz+1
-              ia(nnz) = 3*(p-1)+c1
-              ja(nnz) = 3*(p-1)+c1
-              val(nnz) = 1.d0/neighbor_alpha0(k2)
+              !nnz = nnz+1
+              !ia(nnz) = 3*(p-1)+c1
+              !ja(nnz) = 3*(p-1)+c1
+              !val(nnz) = 1.d0/neighbor_alpha0(k2)
             end do
             mult1_i = 1.d0
             if ( rjs(n_tot+k_i) .ge. rcut-r_buffer ) then
@@ -808,11 +806,11 @@ module vdw
                             b_i(3*(q-1)+c2,c1) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
                                                   g_func(k2) + h_func(k3)) * mult1_i * mult1_j * mult2
                           end if
-                          nnz = nnz+1
-                          ia(nnz) = 3*(p-1)+c1
-                          ja(nnz) = 3*(q-1)+c2
-                          val(nnz) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
-                                     g_func(k2) + h_func(k3)) * mult1_j * mult2
+                          !nnz = nnz+1
+                          !ia(nnz) = 3*(p-1)+c1
+                          !ja(nnz) = 3*(q-1)+c2
+                          !val(nnz) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
+                          !           g_func(k2) + h_func(k3)) * mult1_j * mult2
                           d_vec(3*(p-1)+c1,c2) = d_vec(3*(p-1)+c1,c2) - (1.d0-f_damp(k2)) * (-T_func(k3) * &
                                                     g_func(k2) + h_func(k3)) * neighbor_alpha0(k2) * &
                                                     mult1_i * ( 1.d0 - mult1_j ) * mult2
@@ -863,26 +861,28 @@ module vdw
          
           n_degree = size(polyfit)-1
 
-          allocate( myidx(1:3*n_sub_sites) )
+          !allocate( myidx(1:3*n_sub_sites) )
           allocate( val_xv(1:3*n_sub_sites,1:3) )
           val_xv = 0.d0
-          k2 = 0
-          do c1 = 1, 3
-            do p = 1, n_sub_sites
-              k2 = k2+1
-              myidx(k2) = k2
-            end do
-          end do
+          !k2 = 0
+          !do c1 = 1, 3
+          !  do p = 1, n_sub_sites
+          !    k2 = k2+1
+          !    myidx(k2) = k2
+          !  end do
+          !end do
 
-          call psb_init(icontxt)
+          !call psb_init(icontxt)
           a_SCS = polyfit(2)*b_i
-          call psb_cdall(icontxt, desc_a, info_psb, vl=myidx)
-          call psb_spall(A_sp, desc_a, info_psb, nnz=nnz)
-          call psb_spins(nnz, ia(1:nnz), ja(1:nnz), val(1:nnz), A_sp, desc_a, info_psb)
-          call psb_cdasb(desc_a, info_psb)
-          call psb_spasb(A_sp, desc_a, info_psb)
+          !call psb_cdall(icontxt, desc_a, info_psb, vl=myidx)
+          !call psb_spall(A_sp, desc_a, info_psb, nnz=nnz)
+          !call psb_spins(nnz, ia(1:nnz), ja(1:nnz), val(1:nnz), A_sp, desc_a, info_psb)
+          !call psb_cdasb(desc_a, info_psb)
+          !call psb_spasb(A_sp, desc_a, info_psb)
           do k2 = 3, n_degree+1
-            call psb_spmm(1.d0, A_sp, b_i, 0.d0, val_xv, desc_a, info_psb, 'T')
+            !call psb_spmm(1.d0, A_sp, b_i, 0.d0, val_xv, desc_a, info_psb, 'T')
+            call dgemm( "n", "n", 3*n_sub_sites, 3, 3*n_sub_sites, 1.d0, B_mat, 3*n_sub_sites, b_i, &
+                        3*n_sub_sites, 0.d0, val_xv, 3*n_sub_sites)
             a_SCS = a_SCS + polyfit(k2) * val_xv
             b_i = val_xv 
           end do
@@ -898,10 +898,11 @@ module vdw
               central_pol(i) = central_pol(i) + dot_product(a_SCS(:,c1),d_vec(:,c1))/3.d0
             end do
             central_omega(i) = 2.d0*omega_ref/sqrt(central_pol(i)/pol1-1.d0)
-            write(*,*) "PSBLAS central polarizability", i, central_pol(i), central_omega(i)
+            write(*,*) "Polynomial central polarizability", i, central_pol(i), central_omega(i)
           end if
       
-          deallocate( myidx, val_xv )
+          deallocate( val_xv )
+          !deallocate( myidx )
         
         else
         
@@ -946,7 +947,8 @@ module vdw
         deallocate( hirshfeld_v_sub_der )
       end if
         
-      deallocate( ia, ja, val, b_i, d_vec )        
+      deallocate( b_i, d_vec )
+      !deallocate( ia, ja, val )        
 
     end do 
 
@@ -1030,9 +1032,9 @@ module vdw
         hirshfeld_v_sub_der = 0.d0
       end if
         
-      allocate( ia(1:9*n_sub_pairs) )
-      allocate( ja(1:9*n_sub_pairs) )
-      allocate( val(1:9*n_sub_pairs) )
+      !allocate( ia(1:9*n_sub_pairs) )
+      !allocate( ja(1:9*n_sub_pairs) )
+      !allocate( val(1:9*n_sub_pairs) )
       allocate( b_i(1:3*n_sub_sites,1:3) )
       allocate( d_vec(1:3*n_sub_sites,1:3) )
       if ( polynomial_expansion ) then
@@ -1063,7 +1065,7 @@ module vdw
         g_func = 0.d0
         h_func = 0.d0
 
-        nnz = 0
+        !nnz = 0
         k2 = 0
         T_func = 0.d0
         B_mat = 0.d0
@@ -1123,10 +1125,10 @@ module vdw
                 k3 = k3+1
                 if ( c1 == c2 ) then
                 B_mat(3*(p-1)+c1,3*(p-1)+c1) = 1.d0/neighbor_alpha0(k2)
-                nnz = nnz+1
-                ia(nnz) = 3*(p-1)+c1
-                ja(nnz) = 3*(p-1)+c1
-                val(nnz) = 1.d0/neighbor_alpha0(k2)
+                !nnz = nnz+1
+                !ia(nnz) = 3*(p-1)+c1
+                !ja(nnz) = 3*(p-1)+c1
+                !val(nnz) = 1.d0/neighbor_alpha0(k2)
                 T_SR(k3) = 1.d0/neighbor_alpha0(k2)
                 end if
               end do
@@ -1263,11 +1265,11 @@ module vdw
                             b_i(3*(q-1)+c2,c1) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
                                                   g_func(k2) + h_func(k3)) * T_SR_mult(k2)
                           end if
-                          nnz = nnz+1
-                          ia(nnz) = 3*(p-1)+c1
-                          ja(nnz) = 3*(q-1)+c2
-                          val(nnz) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
-                                     g_func(k2) + h_func(k3)) * T_SR_mult(k2)
+                          !nnz = nnz+1
+                          !ia(nnz) = 3*(p-1)+c1
+                          !ja(nnz) = 3*(q-1)+c2
+                          !val(nnz) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
+                          !           g_func(k2) + h_func(k3)) * T_SR_mult(k2)
                           d_vec(3*(p-1)+c1,c2) = d_vec(3*(p-1)+c1,c2) - (1.d0-f_damp(k2)) * (-T_func(k3) * &
                                                     g_func(k2) + h_func(k3)) * neighbor_alpha0(k2) * &
                                                     d_mult_i(k2)
@@ -1308,30 +1310,30 @@ module vdw
          
           n_degree = size(polyfit)-1
 
-          allocate( myidx(1:3*n_sub_sites) )
+          !allocate( myidx(1:3*n_sub_sites) )
           allocate( val_xv(1:3*n_sub_sites,1:3*n_sub_sites) )
           !allocate( B_pol(1:3*n_sub_sites,1:3*n_sub_sites) )
           allocate( B_mult(1:3*n_sub_sites,1:3*n_sub_sites) )
           B_mult = B_mat
           val_xv = 0.d0
-          k2 = 0
-          do c1 = 1, 3
-            do p = 1, n_sub_sites
-              k2 = k2+1
-              myidx(k2) = k2
-            end do
-          end do
+          !k2 = 0
+          !do c1 = 1, 3
+          !  do p = 1, n_sub_sites
+          !    k2 = k2+1
+          !    myidx(k2) = k2
+          !  end do
+          !end do
 
-          call psb_init(icontxt)
+          !call psb_init(icontxt)
           B_pol = polyfit(2)*B_mat
           do p = 1, 3*n_sub_sites
             B_pol(p,p) = B_pol(p,p) + polyfit(1)
           end do
-          call psb_cdall(icontxt, desc_a, info_psb, vl=myidx)
-          call psb_spall(A_sp, desc_a, info_psb, nnz=nnz)
-          call psb_spins(nnz, ia(1:nnz), ja(1:nnz), val(1:nnz), A_sp, desc_a, info_psb)
-          call psb_cdasb(desc_a, info_psb)
-          call psb_spasb(A_sp, desc_a, info_psb)
+          !call psb_cdall(icontxt, desc_a, info_psb, vl=myidx)
+          !call psb_spall(A_sp, desc_a, info_psb, nnz=nnz)
+          !call psb_spins(nnz, ia(1:nnz), ja(1:nnz), val(1:nnz), A_sp, desc_a, info_psb)
+          !call psb_cdasb(desc_a, info_psb)
+          !call psb_spasb(A_sp, desc_a, info_psb)
 
           !call cpu_time(time1)
 
@@ -1369,7 +1371,8 @@ module vdw
             end do
           end if
 
-          deallocate( myidx, val_xv, B_mult )
+          deallocate( val_xv, B_mult )
+          !deallocate( myidx )
 
         else
 
@@ -2342,9 +2345,10 @@ module vdw
       end do ! om
 
       deallocate( n_sub_neigh, sub_neighbors_list, xyz_H, rjs_H, r0_ii, neighbor_alpha0, neighbor_sigma, omegas, &
-                  T_func, b_i, d_vec, g_func, h_func, f_damp, a_SCS, ipiv, ia, ja, val, p_list, work_arr, rjs_0, &
+                  T_func, b_i, d_vec, g_func, h_func, f_damp, a_SCS, ipiv, p_list, work_arr, rjs_0, &
                   a_iso, o_p, T_SR, T_SR_mult, d_arr_i, d_arr_o, d_mult_i, d_mult_o, dT_SR_mult, d_dmult_i, &
                   d_dmult_o, hirshfeld_sub_neigh )
+      !deallocate( ia, ja, val )
 
       deallocate( B_mat )
       if ( polynomial_expansion ) then
