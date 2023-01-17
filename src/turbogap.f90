@@ -115,7 +115,7 @@ program turbogap
 
 !vdw crap
   real*8, allocatable :: v_neigh_vdw(:), energies_vdw(:), forces_vdw(:,:), this_energies_vdw(:), this_forces_vdw(:,:)
-  real*8, allocatable :: alpha_SCS(:,:), alpha_SCS_grad(:,:), hirshfeld_transfer(:,:)
+  real*8, allocatable :: alpha_SCS(:,:), alpha_SCS_grad(:,:), hirshfeld_transfer(:,:), this_hirshfeld_transfer(:)
 
 ! MPI stuff
   real*8, allocatable :: temp_1d(:), temp_1d_bis(:), temp_2d(:,:)
@@ -1157,14 +1157,48 @@ program turbogap
 !           Transfer only those derivatives that are not zero
             if( all( hirshfeld_v_cart_der(1:3,i) == 0.d0 ) )then
 !             rank = rank sends another derivative to rank = k
-!              this_hirshfeld_transfer( rank+1, k+1 ) = this_hirshfeld_transfer( rank+1, k+1 ) + 1
               this_hirshfeld_transfer( k+1 ) = this_hirshfeld_transfer( k+1 ) + 1
             end if
           end do
+!write(*,*) rank, this_hirshfeld_transfer
+!call mpi_wall( MPI_COMM_WORLD, ierr )
           call mpi_allgather( this_hirshfeld_transfer, ntasks, MPI_DOUBLE_PRECISION, hirshfeld_transfer, ntasks**2, &
-                              MPI_DOUBLE_PRECISION, MPI_COMM_WORLD, ierr)
+                              MPI_DOUBLE_PRECISION, MPI_COMM_WORLD, ierr )
+!if( rank == 0 )then
+!write(*,*) hirshfeld_transfer
+!end if
+!         Now we repeat the operation above but actually populating the array that is to be scattered by this rank.
+!         The gradients are stored in hirshfeld_v_cart_der_send in such a way that contiguous blocks of memory
+!         are going to be sent to the same rank
+          allocate( hirshfeld_v_cart_der_send(1:3, 1:sum(hirshfeld_transfer(1:ntasks, rank+1)) )
+          allocate( i_send(1:sum(hirshfeld_transfer(1:ntasks, rank+1)) )
+          allocate( j_send(1:sum(hirshfeld_transfer(1:ntasks, rank+1)) )
+          allocate( k_array(1:ntasks) )
+          k = 0
+!         This points to the part of hirshfeld_v_cart_der_send where gradients are to be put
+          k_array = 0
+          do i = 2, ntasks
+            k_array(i) = this_hirshfeld_transfer(i-1)
+          end do
+          do i = i_beg, i_end
+            k = k + 1
+            i2 = neighbors_list(k)
+            do j = 2, n_neigh(i-i_beg+1)
+              k = k + 1
+              j2 = neighbors_list(k)
+              k2 = site_in_rank( mod(j2-1, n_sites)+1 )
+              if( all( hirshfeld_v_cart_der(1:3, k) == 0.d0 ) )then
+!               Roll the pointer for rank k2 by 1
+                k_array(k2+1) = k_array(k2+1) + 1
+                hirshfeld_v_cart_der_send(1:3, k_array(k2+1)) = hirshfeld_v_cart_der(1:3, k)
+!               i2 and j2 are "supercell" indices, although i2 is always also a primitive unit cell index
+                i_send(k_array(k2+1)) = i2
+                j_send(k_array(k2+1)) = j2
+              end if
+            end do
+          end do
           deallocate( this_hirshfeld_transfer )
-          deallocate( hirshfeld_transfer )
+          deallocate( hirshfeld_transfer, hirshfeld_v_cart_der_send, i_send, j_send )
 ! IN SUPERCELL INDEX OFFSET FOR I,J HAS TO BE EQUAL TO MINUS INDEX OFFSET FOR J,I
         end if
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
