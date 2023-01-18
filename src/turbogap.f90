@@ -116,7 +116,7 @@ program turbogap
 !vdw crap
   real*8, allocatable :: v_neigh_vdw(:), energies_vdw(:), forces_vdw(:,:), this_energies_vdw(:), this_forces_vdw(:,:)
   real*8, allocatable :: alpha_SCS(:,:), alpha_SCS_grad(:,:), hirshfeld_v_cart_der_send(:,:), &
-                         hirshfeld_v_cart_der_receive(:,:), this_hirshfeld_v_cart_der_receive(:)
+                         hirshfeld_v_cart_der_receive(:,:), this_hirshfeld_v_cart_der_receive(:,:)
   integer, allocatable :: hirshfeld_transfer(:,:), this_hirshfeld_transfer(:), i_send(:), j_send(:), k_array(:), &
                           i_receive(:), j_receive(:), this_i_receive(:), this_j_receive(:), hirshfeld_disp(:)
 
@@ -1170,8 +1170,8 @@ program turbogap
               this_hirshfeld_transfer( k+1 ) = this_hirshfeld_transfer( k+1 ) + 1
             end if
           end do
-          call mpi_allgather( this_hirshfeld_transfer, ntasks, MPI_DOUBLE_PRECISION, hirshfeld_transfer, ntasks**2, &
-                              MPI_DOUBLE_PRECISION, MPI_COMM_WORLD, ierr )
+          call mpi_allgather( this_hirshfeld_transfer, ntasks, MPI_INTEGER, hirshfeld_transfer, ntasks, &
+                              MPI_INTEGER, MPI_COMM_WORLD, ierr )
 !         Now we repeat the operation above but actually populating the array that is to be scattered by this rank.
 !         The gradients are stored in hirshfeld_v_cart_der_send in such a way that contiguous blocks of memory
 !         are going to be sent to the same rank
@@ -1210,31 +1210,46 @@ program turbogap
 !                                CHECK POSSIBLE WAYS TO SPEED THIS UP (REDUCE COMMUNICATION)
           allocate( hirshfeld_disp(1:ntasks) )
           do i = 1, ntasks
-            allocate( this_hirshfeld_v_cart_der_receive(1:hirshfeld_tranfer(rank+1, i)) )
-            allocate( this_i_receive(1:hirshfeld_tranfer(rank+1, i)) )
-            allocate( this_j_receive(1:hirshfeld_tranfer(rank+1, i)) )
-            hishsfeld_disp(1) = 1
+            allocate( this_hirshfeld_v_cart_der_receive(1:3, 1:hirshfeld_transfer(rank+1, i)) )
+            allocate( this_i_receive(1:hirshfeld_transfer(rank+1, i)) )
+            allocate( this_j_receive(1:hirshfeld_transfer(rank+1, i)) )
+            hirshfeld_disp(1) = 1
             do j = 2, ntasks
-              hishfeld_disp(j) = hirshfeld_disp(j-1) + hirshfeld_transfer(j, i)
+              hirshfeld_disp(j) = hirshfeld_disp(j-1) + hirshfeld_transfer(j, i)
             end do
-            call mpi_scatterv(hirshfeld_v_cart_der_send, 3*size(hirshfeld_v_cart_der_send, 2), hirshfeld_disp, &
+            call mpi_scatterv(hirshfeld_v_cart_der_send, 3*hirshfeld_transfer(1:ntasks, i), hirshfeld_disp, &
                               MPI_DOUBLE_PRECISION, this_hirshfeld_v_cart_der_receive, &
                               3*hirshfeld_transfer(rank+1, i), MPI_DOUBLE_PRECISION, i-1, &
                               MPI_COMM_WORLD, ierr )
-            call mpi_scatterv(i_send, 3*size(i_send, 2), hirshfeld_disp, MPI_INTEGER, this_i_receive, &
-                              3*hirshfeld_transfer(rank+1, i), MPI_INTEGER, i-1, MPI_COMM_WORLD, ierr )
-            call mpi_scatterv(j_send, 3*size(i_send, 2), hirshfeld_disp, MPI_INTEGER, this_j_receive, &
-                              3*hirshfeld_transfer(rank+1, i), MPI_INTEGER, i-1, MPI_COMM_WORLD, ierr )
-            hishsfeld_disp(1) = 1
+            call mpi_scatterv(i_send, hirshfeld_transfer(1:ntasks, i), hirshfeld_disp, MPI_INTEGER, this_i_receive, &
+                              hirshfeld_transfer(rank+1, i), MPI_INTEGER, i-1, MPI_COMM_WORLD, ierr )
+            call mpi_scatterv(j_send, hirshfeld_transfer(1:ntasks, i), hirshfeld_disp, MPI_INTEGER, this_j_receive, &
+                              hirshfeld_transfer(rank+1, i), MPI_INTEGER, i-1, MPI_COMM_WORLD, ierr )
+            hirshfeld_disp(1) = 1
             do j = 2, ntasks
-              hishfeld_disp(j) = hirshfeld_disp(j-1) + hirshfeld_transfer(rank+1, j)
+              hirshfeld_disp(j) = hirshfeld_disp(j-1) + hirshfeld_transfer(rank+1, j)
             end do
-            hirshfeld_v_cart_der_receive(hirshfeld_disp(i):hirshfeld_disp(i)-1+hirshfeld_transfer(rank+1, i)) = &
+write(*,*) rank, i, hirshfeld_disp(i), hirshfeld_disp(i)-1+hirshfeld_transfer(rank+1, i)
+            hirshfeld_v_cart_der_receive(1:3, hirshfeld_disp(i):hirshfeld_disp(i)-1+hirshfeld_transfer(rank+1, i)) = &
                 this_hirshfeld_v_cart_der_receive
             i_receive(hirshfeld_disp(i):hirshfeld_disp(i)-1+hirshfeld_transfer(rank+1, i)) = this_i_receive
             j_receive(hirshfeld_disp(i):hirshfeld_disp(i)-1+hirshfeld_transfer(rank+1, i)) = this_j_receive
             deallocate( this_hirshfeld_v_cart_der_receive, this_i_receive, this_j_receive )
           end do
+
+k = 0
+do i = i_beg, i_end
+  k = k + 1
+  i2 = neighbors_list(k)
+  do j = 2, n_neigh(i-i_beg+1)
+    k = k + 1
+    j2 = neighbors_list(k)
+    if( i == 410 .and. j2 == 979 )then
+      write(*,*) rank, rjs(k), hirshfeld_v_cart_der(1:3, k)
+    end if
+  end do
+end do
+
           deallocate( this_hirshfeld_transfer, hirshfeld_transfer, hirshfeld_v_cart_der_send, i_send, j_send, &
                       k_array, hirshfeld_v_cart_der_receive, i_receive, j_receive, hirshfeld_disp )
 ! IN SUPERCELL INDEX OFFSET FOR I,J HAS TO BE EQUAL TO MINUS INDEX OFFSET FOR J,I
