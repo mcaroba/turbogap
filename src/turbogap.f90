@@ -1165,7 +1165,7 @@ program turbogap
             j = neighbors_list(i)
             k = site_in_rank( mod(j-1,n_sites)+1 )
 !           Transfer only those derivatives that are not zero
-            if( all( hirshfeld_v_cart_der(1:3,i) == 0.d0 ) )then
+            if( .not. all( hirshfeld_v_cart_der(1:3,i) == 0.d0 ) )then
 !             rank = rank sends another derivative to rank = k
               this_hirshfeld_transfer( k+1 ) = this_hirshfeld_transfer( k+1 ) + 1
             end if
@@ -1175,6 +1175,7 @@ program turbogap
 !         Now we repeat the operation above but actually populating the array that is to be scattered by this rank.
 !         The gradients are stored in hirshfeld_v_cart_der_send in such a way that contiguous blocks of memory
 !         are going to be sent to the same rank
+!         i_send stores the *central* atom's index; j_send stores the neighbor atom's index
           allocate( hirshfeld_v_cart_der_send(1:3, 1:sum(hirshfeld_transfer(1:ntasks, rank+1))) )
           allocate( i_send(1:sum(hirshfeld_transfer(1:ntasks, rank+1))) )
           allocate( j_send(1:sum(hirshfeld_transfer(1:ntasks, rank+1))) )
@@ -1183,7 +1184,7 @@ program turbogap
 !         This points to the part of hirshfeld_v_cart_der_send where gradients are to be put
           k_array = 0
           do i = 2, ntasks
-            k_array(i) = this_hirshfeld_transfer(i-1)
+            k_array(i) = k_array(i-1) + this_hirshfeld_transfer(i-1)
           end do
           do i = i_beg, i_end
             k = k + 1
@@ -1192,7 +1193,7 @@ program turbogap
               k = k + 1
               j2 = neighbors_list(k)
               k2 = site_in_rank( mod(j2-1, n_sites)+1 )
-              if( all( hirshfeld_v_cart_der(1:3, k) == 0.d0 ) )then
+              if( .not. all( hirshfeld_v_cart_der(1:3, k) == 0.d0 ) )then
 !               Roll the pointer for rank k2 by 1
                 k_array(k2+1) = k_array(k2+1) + 1
                 hirshfeld_v_cart_der_send(1:3, k_array(k2+1)) = hirshfeld_v_cart_der(1:3, k)
@@ -1215,9 +1216,9 @@ program turbogap
             allocate( this_j_receive(1:hirshfeld_transfer(rank+1, i)) )
             hirshfeld_disp(1) = 1
             do j = 2, ntasks
-              hirshfeld_disp(j) = hirshfeld_disp(j-1) + hirshfeld_transfer(j, i)
+              hirshfeld_disp(j) = hirshfeld_disp(j-1) + hirshfeld_transfer(j-1, i)
             end do
-            call mpi_scatterv(hirshfeld_v_cart_der_send, 3*hirshfeld_transfer(1:ntasks, i), hirshfeld_disp, &
+            call mpi_scatterv(hirshfeld_v_cart_der_send, 3*hirshfeld_transfer(1:ntasks, i), 3*hirshfeld_disp, &
                               MPI_DOUBLE_PRECISION, this_hirshfeld_v_cart_der_receive, &
                               3*hirshfeld_transfer(rank+1, i), MPI_DOUBLE_PRECISION, i-1, &
                               MPI_COMM_WORLD, ierr )
@@ -1227,9 +1228,8 @@ program turbogap
                               hirshfeld_transfer(rank+1, i), MPI_INTEGER, i-1, MPI_COMM_WORLD, ierr )
             hirshfeld_disp(1) = 1
             do j = 2, ntasks
-              hirshfeld_disp(j) = hirshfeld_disp(j-1) + hirshfeld_transfer(rank+1, j)
+              hirshfeld_disp(j) = hirshfeld_disp(j-1) + hirshfeld_transfer(rank+1, j-1)
             end do
-write(*,*) rank, i, hirshfeld_disp(i), hirshfeld_disp(i)-1+hirshfeld_transfer(rank+1, i)
             hirshfeld_v_cart_der_receive(1:3, hirshfeld_disp(i):hirshfeld_disp(i)-1+hirshfeld_transfer(rank+1, i)) = &
                 this_hirshfeld_v_cart_der_receive
             i_receive(hirshfeld_disp(i):hirshfeld_disp(i)-1+hirshfeld_transfer(rank+1, i)) = this_i_receive
@@ -1245,10 +1245,22 @@ do i = i_beg, i_end
     k = k + 1
     j2 = neighbors_list(k)
     if( i == 410 .and. j2 == 979 )then
-      write(*,*) rank, rjs(k), hirshfeld_v_cart_der(1:3, k)
+      write(*,*) rank, hirshfeld_v_cart_der(1:3, k)
     end if
   end do
 end do
+
+do k = 1, size(hirshfeld_v_cart_der_receive,2)
+  i = i_receive(k)
+  j = j_receive(k)
+  if( i == 410 .and. j == 979 )then
+    write(*,*) rank, hirshfeld_v_cart_der_receive(1:3, k)
+  end if
+end do
+
+
+call mpi_barrier( MPI_COMM_WORLD, ierr )
+stop
 
           deallocate( this_hirshfeld_transfer, hirshfeld_transfer, hirshfeld_v_cart_der_send, i_send, j_send, &
                       k_array, hirshfeld_v_cart_der_receive, i_receive, j_receive, hirshfeld_disp )
