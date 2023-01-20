@@ -1236,34 +1236,31 @@ program turbogap
             j_receive(hirshfeld_disp(i):hirshfeld_disp(i)-1+hirshfeld_transfer(rank+1, i)) = this_j_receive
             deallocate( this_hirshfeld_v_cart_der_receive, this_i_receive, this_j_receive )
           end do
-
-k = 0
-do i = i_beg, i_end
-  k = k + 1
-  i2 = neighbors_list(k)
-  do j = 2, n_neigh(i-i_beg+1)
-    k = k + 1
-    j2 = neighbors_list(k)
-    if( i == 410 .and. j2 == 979 )then
-      write(*,*) rank, hirshfeld_v_cart_der(1:3, k)
-    end if
-  end do
-end do
-
-do k = 1, size(hirshfeld_v_cart_der_receive,2)
-  i = i_receive(k)
-  j = j_receive(k)
-  if( i == 410 .and. j == 979 )then
-    write(*,*) rank, hirshfeld_v_cart_der_receive(1:3, k)
-  end if
-end do
-
-
-call mpi_barrier( MPI_COMM_WORLD, ierr )
-stop
-
+!         Now we do the inverse mapping so that we know where to find grad_i(nu_j). Things to note:
+!         *) On this rank, the central atom is i and the neighbor is j
+!         *) i_receive and j_receive contain central and neighbor atoms from the point of view of the rank that
+!            sent them. If it was sent by the local rank we don't need to change it; if it was sent by a
+!            different rank, we do need to swap i and j
+!         *) We need to consider that for this rank j can be > n_sites if a supercell was used to construct the
+!            neighbors list. Therefore, local-rank (i,j) can correspond to a different (j',i') on the remote
+!            rank. i <= n_sites and j' <= n_sites, but that's only necessarily true for j and i' modulo n_sites.
+!            The (i,j) and (j',i') tuples need their two elements to be separated by the same distance to be
+!            equivalent (in addition to being equal modulo n_sites)
+!
+!         First, reduce the indices to those native to the local rank
+          k = 0
+          do i = 1, ntasks
+            do j = hirshfeld_disp(i), hirshfeld_disp(i)-1+hirshfeld_transfer(rank+1, i)
+              k = k + 1
+              if( rank+1 /= i )then
+                i2 = i_receive(k)
+                j2 = j_receive(k)
+              end if
+            end do
+          end do
           deallocate( this_hirshfeld_transfer, hirshfeld_transfer, hirshfeld_v_cart_der_send, i_send, j_send, &
-                      k_array, hirshfeld_v_cart_der_receive, i_receive, j_receive, hirshfeld_disp )
+                      k_array, hirshfeld_v_cart_der_receive, i_receive, j_receive, hirshfeld_disp, which_k )
+
 ! IN SUPERCELL INDEX OFFSET FOR I,J HAS TO BE EQUAL TO MINUS INDEX OFFSET FOR J,I
         end if
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
