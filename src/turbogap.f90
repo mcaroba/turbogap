@@ -1255,13 +1255,17 @@ program turbogap
               if( rank+1 /= i )then
                 i2 = i_receive(k)
                 j2 = j_receive(k)
+                jx = modulo((j2-1)/n_sites, indices(1))
+                jy = modulo((j2-1)/(indices(1)*n_sites), indices(2))
+                jz = modulo((j2-1)/(indices(1)*indices(2)*n_sites), indices(3))
+!               This reduces j2 to the primitive unit cell
+                j_receive(k) = j2 - jx*n_sites - jy*indices(1)*n_sites - jz*indices(1)*indices(2)*n_sites
+!               Now we need to provide the correct supercell tag for i2 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! FIX THIS!!!!!
               end if
             end do
           end do
           deallocate( this_hirshfeld_transfer, hirshfeld_transfer, hirshfeld_v_cart_der_send, i_send, j_send, &
-                      k_array, hirshfeld_v_cart_der_receive, i_receive, j_receive, hirshfeld_disp, which_k )
-
-! IN SUPERCELL INDEX OFFSET FOR I,J HAS TO BE EQUAL TO MINUS INDEX OFFSET FOR J,I
+                      k_array, hirshfeld_v_cart_der_receive, i_receive, j_receive, hirshfeld_disp )
         end if
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         call cpu_time(time_mpi(2))
