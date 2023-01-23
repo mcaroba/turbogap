@@ -116,9 +116,11 @@ program turbogap
 !vdw crap
   real*8, allocatable :: v_neigh_vdw(:), energies_vdw(:), forces_vdw(:,:), this_energies_vdw(:), this_forces_vdw(:,:)
   real*8, allocatable :: alpha_SCS(:,:), alpha_SCS_grad(:,:), hirshfeld_v_cart_der_send(:,:), &
-                         hirshfeld_v_cart_der_receive(:,:), this_hirshfeld_v_cart_der_receive(:,:)
+                         hirshfeld_v_cart_der_receive(:,:), this_hirshfeld_v_cart_der_receive(:,:), &
+                         hirshfeld_v_cart_der_ji(:,:)
   integer, allocatable :: hirshfeld_transfer(:,:), this_hirshfeld_transfer(:), i_send(:), j_send(:), k_array(:), &
-                          i_receive(:), j_receive(:), this_i_receive(:), this_j_receive(:), hirshfeld_disp(:)
+                          i_receive(:), j_receive(:), this_i_receive(:), this_j_receive(:), hirshfeld_disp(:), &
+                          k_start(:)
 
 ! MPI stuff
   real*8, allocatable :: temp_1d(:), temp_1d_bis(:), temp_2d(:,:)
@@ -1260,12 +1262,38 @@ program turbogap
                 jz = modulo((j2-1)/(indices(1)*indices(2)*n_sites), indices(3))
 !               This reduces j2 to the primitive unit cell
                 j_receive(k) = j2 - jx*n_sites - jy*indices(1)*n_sites - jz*indices(1)*indices(2)*n_sites
-!               Now we need to provide the correct supercell tag for i2 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! FIX THIS!!!!!
+!               Now we need to provide the correct supercell tag for i2 !!!!!!!!!!!!!!!!!!!!! NOT SURE IF THIS IS CORRECT!!!!!
+                i_receive(k) = i2 + jx*n_sites + jy*indices(1)*n_sites + jz*indices(1)*indices(2)*n_sites
               end if
             end do
           end do
+!
+!         Now we need to map the position in the big hirshfeld_v_cart_der array to those in the hirshfeld_v_cart_der_receive array
+!         NOTE THIS ARRAY INDEX DOES NOT START BY 1
+          allocate( k_start(i_beg:i_end) )
+          k = 1
+          do i = i_beg, i_end
+            k_start(i) = k
+            k = k + n_neigh(i-i_beg+1)
+          end do
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! FIX: PUT THE DEALLOCATION AFTER MBD COMPUTATION
+          if( allocated(hirshfeld_v_cart_der_ji) )deallocate( hirshfeld_v_cart_der_ji )
+          allocate( hirshfeld_v_cart_der_ji(1:3, 1:n_atom_pairs_by_rank(rank+1)) )
+          hirshfeld_v_cart_der_ji = 0.d0
+          do k2 = 1, size(i_receive)
+!           These indices are inverted here
+            j = i_receive(k2)
+            i = j_receive(k2)
+            do k = k_start(i), k_start(i)+n_neigh(i-i_beg+1)
+              j2 = neighbors_list(k)
+              if( j == j2 )then
+                hirshfeld_v_cart_der_ji(1:3, k) = hirshfeld_v_cart_der_receive(1:3, k2)
+              end if
+            end do
+          end do
+!
           deallocate( this_hirshfeld_transfer, hirshfeld_transfer, hirshfeld_v_cart_der_send, i_send, j_send, &
-                      k_array, hirshfeld_v_cart_der_receive, i_receive, j_receive, hirshfeld_disp )
+                      k_array, hirshfeld_v_cart_der_receive, i_receive, j_receive, hirshfeld_disp, k_start )
         end if
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         call cpu_time(time_mpi(2))
