@@ -1218,7 +1218,7 @@ program turbogap
             allocate( this_hirshfeld_v_cart_der_receive(1:3, 1:hirshfeld_transfer(rank+1, i)) )
             allocate( this_i_receive(1:hirshfeld_transfer(rank+1, i)) )
             allocate( this_j_receive(1:hirshfeld_transfer(rank+1, i)) )
-            hirshfeld_disp(1) = 1
+            hirshfeld_disp(1) = 0
             do j = 2, ntasks
               hirshfeld_disp(j) = hirshfeld_disp(j-1) + hirshfeld_transfer(j-1, i)
             end do
@@ -1230,14 +1230,14 @@ program turbogap
                               hirshfeld_transfer(rank+1, i), MPI_INTEGER, i-1, MPI_COMM_WORLD, ierr )
             call mpi_scatterv(j_send, hirshfeld_transfer(1:ntasks, i), hirshfeld_disp, MPI_INTEGER, this_j_receive, &
                               hirshfeld_transfer(rank+1, i), MPI_INTEGER, i-1, MPI_COMM_WORLD, ierr )
-            hirshfeld_disp(1) = 1
+            hirshfeld_disp(1) = 0
             do j = 2, ntasks
               hirshfeld_disp(j) = hirshfeld_disp(j-1) + hirshfeld_transfer(rank+1, j-1)
             end do
-            hirshfeld_v_cart_der_receive(1:3, hirshfeld_disp(i):hirshfeld_disp(i)-1+hirshfeld_transfer(rank+1, i)) = &
+            hirshfeld_v_cart_der_receive(1:3, hirshfeld_disp(i)+1:hirshfeld_disp(i)+hirshfeld_transfer(rank+1, i)) = &
                 this_hirshfeld_v_cart_der_receive
-            i_receive(hirshfeld_disp(i):hirshfeld_disp(i)-1+hirshfeld_transfer(rank+1, i)) = this_i_receive
-            j_receive(hirshfeld_disp(i):hirshfeld_disp(i)-1+hirshfeld_transfer(rank+1, i)) = this_j_receive
+            i_receive(hirshfeld_disp(i)+1:hirshfeld_disp(i)+hirshfeld_transfer(rank+1, i)) = this_i_receive
+            j_receive(hirshfeld_disp(i)+1:hirshfeld_disp(i)+hirshfeld_transfer(rank+1, i)) = this_j_receive
             deallocate( this_hirshfeld_v_cart_der_receive, this_i_receive, this_j_receive )
           end do
 !         Now we do the inverse mapping so that we know where to find grad_i(nu_j). Things to note:
@@ -1254,7 +1254,7 @@ program turbogap
 !         First, reduce the indices to those native to the local rank
           k = 0
           do i = 1, ntasks
-            do j = hirshfeld_disp(i), hirshfeld_disp(i)-1+hirshfeld_transfer(rank+1, i)
+            do j = hirshfeld_disp(i)+1, hirshfeld_disp(i)+hirshfeld_transfer(rank+1, i)
               k = k + 1
               if( rank+1 /= i )then
                 i2 = i_receive(k)
@@ -1355,6 +1355,7 @@ program turbogap
 call cpu_time(time2)
           write(*,*) "SCS calculation starts here"
           call get_scs_polarizabilities( hirshfeld_v(i_beg:i_end), hirshfeld_v_cart_der(1:3, j_beg:j_end), &
+                                         hirshfeld_v_cart_der_ji(1:3, j_beg:j_end), &
                                          n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
                                          neighbor_species(j_beg:j_end), &
                                          params%vdw_scs_rcut, params%vdw_mbd_rcut, params%vdw_2b_rcut, params%vdw_buffer, &
