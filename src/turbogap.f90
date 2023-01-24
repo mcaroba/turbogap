@@ -1168,7 +1168,7 @@ program turbogap
             j = neighbors_list(i)
             k = site_in_rank( mod(j-1,n_sites)+1 )
 !           Transfer only those derivatives that are not zero
-            if( .not. all( hirshfeld_v_cart_der(1:3,i) == 0.d0 ) )then
+            if( .not. all( abs(hirshfeld_v_cart_der(1:3,i)) < 1.d-20 ) )then
 !             rank = rank sends another derivative to rank = k
               this_hirshfeld_transfer( k+1 ) = this_hirshfeld_transfer( k+1 ) + 1
             end if
@@ -1190,13 +1190,14 @@ program turbogap
             k_array(i) = k_array(i-1) + this_hirshfeld_transfer(i-1)
           end do
           do i = i_beg, i_end
-            k = k + 1
-            i2 = neighbors_list(k)
-            do j = 2, n_neigh(i-i_beg+1)
+            do j = 1, n_neigh(i-i_beg+1)
               k = k + 1
+              if( j == 1 )then
+                i2 = neighbors_list(k)
+              end if
               j2 = neighbors_list(k)
               k2 = site_in_rank( mod(j2-1, n_sites)+1 )
-              if( .not. all( hirshfeld_v_cart_der(1:3, k) == 0.d0 ) )then
+              if( .not. all( abs(hirshfeld_v_cart_der(1:3, k)) < 1.d-20 ) )then
 !               Roll the pointer for rank k2 by 1
                 k_array(k2+1) = k_array(k2+1) + 1
                 hirshfeld_v_cart_der_send(1:3, k_array(k2+1)) = hirshfeld_v_cart_der(1:3, k)
@@ -1285,7 +1286,7 @@ program turbogap
 !           These indices are inverted here
             j = i_receive(k2)
             i = j_receive(k2)
-            do k = k_start(i), k_start(i)+n_neigh(i-i_beg+1)
+            do k = k_start(i), k_start(i)+n_neigh(i-i_beg+1)-1
               j2 = neighbors_list(k)
               if( j == j2 )then
                 hirshfeld_v_cart_der_ji(1:3, k) = hirshfeld_v_cart_der_receive(1:3, k2)
