@@ -1189,7 +1189,7 @@ program turbogap
             k_array(i) = k_array(i-1) + this_hirshfeld_transfer(i-1)
           end do
           do i = i_beg, i_end
-            do j = 1, n_neigh(i-i_beg+1)
+            do j = 1, n_neigh(i)
               k = k + 1
               if( j == 1 )then
                 i2 = neighbors_list(k)
@@ -1275,7 +1275,7 @@ program turbogap
           k = 1
           do i = i_beg, i_end
             k_start(i) = k
-            k = k + n_neigh(i-i_beg+1)
+            k = k + n_neigh(i)
           end do
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! FIX: PUT THE DEALLOCATION AFTER MBD COMPUTATION
           if( allocated(hirshfeld_v_cart_der_ji) )deallocate( hirshfeld_v_cart_der_ji )
@@ -1285,7 +1285,7 @@ program turbogap
 !           These indices are inverted here
             j = i_receive(k2)
             i = j_receive(k2)
-            do k = k_start(i), k_start(i)+n_neigh(i-i_beg+1)-1
+            do k = k_start(i), k_start(i)+n_neigh(i)-1
               j2 = neighbors_list(k)
               if( j == j2 )then
                 hirshfeld_v_cart_der_ji(1:3, k) = hirshfeld_v_cart_der_receive(1:3, k2)
@@ -1354,7 +1354,7 @@ program turbogap
 call cpu_time(time2)
           write(*,*) "SCS calculation starts here"
           call get_scs_polarizabilities( hirshfeld_v(i_beg:i_end), hirshfeld_v_cart_der(1:3, j_beg:j_end), &
-                                         hirshfeld_v_cart_der_ji(1:3, j_beg:j_end), &
+                                         hirshfeld_v_cart_der_ji, &
                                          n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
                                          neighbor_species(j_beg:j_end), &
                                          params%vdw_scs_rcut, params%vdw_mbd_rcut, params%vdw_2b_rcut, params%vdw_buffer, &
