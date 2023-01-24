@@ -1143,7 +1143,6 @@ program turbogap
         time_soap(3) = time_soap(3) + time_soap(2) - time_soap(1)
       end do
 
-
 #ifdef _MPIF90
       if( any( soap_turbo_hypers(:)%has_vdw ) )then
         call cpu_time(time_mpi(1))
