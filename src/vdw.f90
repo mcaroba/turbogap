@@ -431,7 +431,7 @@ module vdw
 
 
 !**************************************************************************
-  subroutine get_scs_polarizabilities( hirshfeld_v, hirshfeld_v_cart_der, &
+  subroutine get_scs_polarizabilities( hirshfeld_v, hirshfeld_v_cart_der, hirshfeld_v_cart_der_ji, &
                                        n_neigh, neighbors_list, neighbor_species, &
                                        rcut, rcut_mbd, rcut_2b, r_buffer, rcut_inner, buffer_inner, rjs, xyz, &
                                        hirshfeld_v_neigh, sR, d, c6_ref, r0_ref, alpha0_ref, do_derivatives, &
@@ -443,7 +443,7 @@ module vdw
 
 !   Input variables
     real*8, intent(in) :: hirshfeld_v_cart_der(:,:), rcut, r_buffer, rcut_inner, buffer_inner, &
-                          rjs(:), xyz(:,:), sR, d, c6_ref(:), r0_ref(:), rcut_mbd, rcut_2b, &
+                          rjs(:), xyz(:,:), sR, d, c6_ref(:), r0_ref(:), rcut_mbd, rcut_2b, hirshfeld_v_cart_der_ji(:,:), &
                           alpha0_ref(:) !, hirshfeld_v(:), hirshfeld_v_neigh(:) !NOTE: uncomment this in final implementation
     integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:), n_freq, n_order
     logical, intent(in) :: do_derivatives, do_hirshfeld_gradients, polynomial_expansion
@@ -529,18 +529,26 @@ module vdw
 
     hirshfeld_v_cart_der_H = 0.d0
 
-    write(*,*) "dv"
-    k = 0
-    do i = 1, n_sites
-      do j2 = 1, n_neigh(i)
-        k = k+1
-        j = neighbors_list(k)
-        n_tot = sum(n_neigh(1:j)) - n_neigh(j)
-        a = findloc(neighbors_list(n_tot+1:n_tot+n_neigh(j)),i,1) 
-        hirshfeld_v_cart_der_H(:,k) = hirshfeld_v_cart_der(:,n_tot+a)
-        !write(*,*) "i, j, der, der_H", i, j, hirshfeld_v_cart_der(:,k), hirshfeld_v_cart_der_H(:,k)
-      end do
-    end do
+    !write(*,*) "dv"
+    !k = 0
+    !do i = 1, n_sites
+    !  do j2 = 1, n_neigh(i)
+    !    k = k+1
+    !    j = neighbors_list(k)
+    !    n_tot = sum(n_neigh(1:j)) - n_neigh(j)
+    !    a = findloc(neighbors_list(n_tot+1:n_tot+n_neigh(j)),i,1)
+    !    hirshfeld_v_cart_der_H(:,k) = hirshfeld_v_cart_der(:,n_tot+a)
+    !  end do
+    !end do
+
+    !do i = 1, n_neigh(1)
+    !  write(*,*) hirshfeld_v_cart_der_H(1:3,i), hirshfeld_v_cart_der_ji(1:3,i)
+    !end do
+    if ( do_derivatives .and. do_hirshfeld_gradients ) then
+    hirshfeld_v_cart_der_H = hirshfeld_v_cart_der_ji
+    !write(*,*) "hirshfeld_der"
+    !write(*,*) hirshfeld_v_cart_der_H(1:n_neigh(1))
+    end if
 
     ! HACK END
 
