@@ -590,7 +590,7 @@ module vdw
 
     E_MBD = 0.d0
 
-    alpha_SCS0 = 0.d0
+    !alpha_SCS0 = 0.d0
     allocate( alpha_SCS_full(1:3*n_sites,1:3,1:2) )
     if ( do_derivatives ) then
       dalpha_full = 0.d0

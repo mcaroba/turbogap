@@ -1342,16 +1342,17 @@ program turbogap
 !          write(*,*) "Please provide vdw_rcut > vdw_scs_rcut |"
 !          write(*,*) "or vdw_rcut = vdw_scs_rcut             |"
 !        else
-          allocate( alpha_SCS(i_beg:i_end,1:params%vdw_mbd_nfreq) )
+          allocate( alpha_SCS(1:n_sites,1:2) )
+          alpha_SCS = 0.d0
           !allocate( alpha_SCS_grad(j_beg:j_end,1:3) )
-          allocate( alpha_SCS_grad(i_beg:i_end,1:3) )
+          allocate( alpha_SCS_grad(1:n_sites,1:3) )
           allocate( c6_scs(1:j_end-j_beg+1) )
           allocate( r0_scs(1:j_end-j_beg+1) )
           allocate( alpha0_scs(1:j_end-j_beg+1) )
 call cpu_time(time2)
           write(*,*) "SCS calculation starts here"
           call get_scs_polarizabilities( hirshfeld_v(i_beg:i_end), hirshfeld_v_cart_der(1:3, j_beg:j_end), &
-                                         hirshfeld_v_cart_der_ji, &
+                                         hirshfeld_v_cart_der_ji(1:3,j_beg:j_end), &
                                          n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
                                          neighbor_species(j_beg:j_end), &
                                          params%vdw_scs_rcut, params%vdw_mbd_rcut, params%vdw_2b_rcut, params%vdw_buffer, &
@@ -1360,13 +1361,17 @@ call cpu_time(time2)
                                          params%vdw_sr, params%vdw_d, params%vdw_c6_ref, params%vdw_r0_ref, &
                                          params%vdw_alpha0_ref, params%vdw_mbd_grad, params%vdw_hirsh_grad, &
                                          params%vdw_polynomial, params%vdw_mbd_nfreq, params%vdw_mbd_norder, &
-                                         alpha_SCS, alpha_SCS_grad, &
+                                         alpha_SCS(i_beg:i_end,1:2), alpha_SCS_grad, &
                                          c6_scs, r0_scs, alpha0_scs, &
 #ifdef _MPIF90
                                          this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw )
 #else
                                          energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
 #endif
+write(*,*) "alpha_SCS"
+do i = 1, n_sites
+  write(*,*) i, alpha_SCS(i,2)
+end do
 call cpu_time(time1)
 write(*,*) "scs timing", time1-time2
 !        call get_ts_energy_and_forces( hirshfeld_v(i_beg:i_end), hirshfeld_v_cart_der(1:3, j_beg:j_end), &
