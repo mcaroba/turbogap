@@ -1242,8 +1242,7 @@ program turbogap
 !         Now we do the inverse mapping so that we know where to find grad_i(nu_j). Things to note:
 !         *) On this rank, the central atom is i and the neighbor is j
 !         *) i_receive and j_receive contain central and neighbor atoms from the point of view of the rank that
-!            sent them. If it was sent by the local rank we don't need to change it; if it was sent by a
-!            different rank, we do need to swap i and j
+!            sent them. We do need to swap i and j
 !         *) We need to consider that for this rank j can be > n_sites if a supercell was used to construct the
 !            neighbors list. Therefore, local-rank (i,j) can correspond to a different (j',i') on the remote
 !            rank. i <= n_sites and j' <= n_sites, but that's only necessarily true for j and i' modulo n_sites.
@@ -1255,17 +1254,15 @@ program turbogap
           do i = 1, ntasks
             do j = hirshfeld_disp(i)+1, hirshfeld_disp(i)+hirshfeld_transfer(rank+1, i)
               k = k + 1
-              if( rank+1 /= i )then
-                i2 = i_receive(k)
-                j2 = j_receive(k)
-                jx = modulo((j2-1)/n_sites, indices(1))
-                jy = modulo((j2-1)/(indices(1)*n_sites), indices(2))
-                jz = modulo((j2-1)/(indices(1)*indices(2)*n_sites), indices(3))
-!               This reduces j2 to the primitive unit cell
-                j_receive(k) = j2 - jx*n_sites - jy*indices(1)*n_sites - jz*indices(1)*indices(2)*n_sites
-!               Now we need to provide the correct supercell tag for i2 !!!!!!!!!!!!!!!!!!!!! NOT SURE IF THIS IS CORRECT!!!!!
-                i_receive(k) = i2 + jx*n_sites + jy*indices(1)*n_sites + jz*indices(1)*indices(2)*n_sites
-              end if
+              i2 = i_receive(k)
+              j2 = j_receive(k)
+              jx = modulo((j2-1)/n_sites, indices(1))
+              jy = modulo((j2-1)/(indices(1)*n_sites), indices(2))
+              jz = modulo((j2-1)/(indices(1)*indices(2)*n_sites), indices(3))
+!             This reduces j2 to the primitive unit cell
+              j_receive(k) = j2 - jx*n_sites - jy*indices(1)*n_sites - jz*indices(1)*indices(2)*n_sites
+!             Now we need to provide the correct supercell tag for i2 !!!!!!!!!!!!!!!!!!!!! NOT SURE IF THIS IS CORRECT!!!!!
+              i_receive(k) = i2 + jx*n_sites + jy*indices(1)*n_sites + jz*indices(1)*indices(2)*n_sites
             end do
           end do
 !
