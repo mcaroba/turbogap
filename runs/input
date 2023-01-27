@@ -1,5 +1,7 @@
 !atoms_file = '2829_supercell.xyz'
 atoms_file = '2829.xyz'
+!atoms_file = '2829_p.xyz'
+!atoms_file = '2829_m.xyz'
 !atoms_file = '2829_supercell_p.xyz'
 !atoms_file = '2829_supercell_m.xyz'
 !atoms_file = 'atoms_vacuum.xyz'
@@ -29,8 +31,8 @@ vdw_r0_ref = 1.900 !1.64
 vdw_alpha0_ref = 1.778 !0.667
 vdw_c6_ref = 27.8 !3.88
 vdw_buffer = 0.5          ! Buffer for transitions between cut-off regions
-vdw_scs_rcut = 4.5        ! If this is smaller than SOAP cut-off, derivatives might be inaccurate
-vdw_mbd_rcut = 5.         ! Cut-off for atoms to include for local MBD energy (vdw_mbd_rcut >= vdw_scs_rcut + vdw_buffer)
+vdw_scs_rcut = 7.        ! If this is smaller than SOAP cut-off, derivatives might be inaccurate
+vdw_mbd_rcut = 7.5         ! Cut-off for atoms to include for local MBD energy (vdw_mbd_rcut >= vdw_scs_rcut + vdw_buffer)
 vdw_2b_rcut = 9.          ! Cut-off for local TS-SCS (vdw_2b_rcut >= vdw_mbd_rcut + vdw_buffer)
 vdw_mbd_nfreq = 12        ! Number of frequency values for MBD integration
 vdw_mbd_norder = 4        ! Contributions up to n-body interactions (i.e. cut-off degree for Taylor expansion of ln(I-AT))

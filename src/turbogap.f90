@@ -115,7 +115,7 @@ program turbogap
 
 !vdw crap
   real*8, allocatable :: v_neigh_vdw(:), energies_vdw(:), forces_vdw(:,:), this_energies_vdw(:), this_forces_vdw(:,:)
-  real*8, allocatable :: alpha_SCS(:,:), alpha_SCS_grad(:,:), hirshfeld_v_cart_der_send(:,:), &
+  real*8, allocatable :: alpha_SCS(:), omega_SCS(:), alpha_SCS_grad(:,:), hirshfeld_v_cart_der_send(:,:), &
                          hirshfeld_v_cart_der_receive(:,:), this_hirshfeld_v_cart_der_receive(:,:), &
                          hirshfeld_v_cart_der_ji(:,:)
   integer, allocatable :: hirshfeld_transfer(:,:), this_hirshfeld_transfer(:), i_send(:), j_send(:), k_array(:), &
@@ -1342,7 +1342,8 @@ program turbogap
 !          write(*,*) "Please provide vdw_rcut > vdw_scs_rcut |"
 !          write(*,*) "or vdw_rcut = vdw_scs_rcut             |"
 !        else
-          allocate( alpha_SCS(1:n_sites,1:2) )
+          allocate( alpha_SCS(1:n_sites) )
+          allocate( omega_SCS(1:n_sites) )
           alpha_SCS = 0.d0
           !allocate( alpha_SCS_grad(j_beg:j_end,1:3) )
           allocate( alpha_SCS_grad(1:n_sites,1:3) )
@@ -1361,7 +1362,7 @@ call cpu_time(time2)
                                          params%vdw_sr, params%vdw_d, params%vdw_c6_ref, params%vdw_r0_ref, &
                                          params%vdw_alpha0_ref, params%vdw_mbd_grad, params%vdw_hirsh_grad, &
                                          params%vdw_polynomial, params%vdw_mbd_nfreq, params%vdw_mbd_norder, &
-                                         alpha_SCS(i_beg:i_end,1:2), alpha_SCS_grad, &
+                                         alpha_SCS(i_beg:i_end), omega_SCS(i_beg:i_end), alpha_SCS_grad, &
                                          c6_scs, r0_scs, alpha0_scs, &
 #ifdef _MPIF90
                                          this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw )
@@ -1370,7 +1371,7 @@ call cpu_time(time2)
 #endif
 write(*,*) "alpha_SCS"
 do i = 1, n_sites
-  write(*,*) i, alpha_SCS(i,2)
+  write(*,*) i, alpha_SCS(i)
 end do
 call cpu_time(time1)
 write(*,*) "scs timing", time1-time2
@@ -1399,7 +1400,7 @@ write(*,*) "scs timing", time1-time2
   !        call cpu_time(time_vdw(2))
   !        time_vdw(3) = time_vdw(2) - time_vdw(1)
 
-          deallocate(v_neigh_vdw, alpha_SCS, alpha_SCS_grad, c6_scs, r0_scs, alpha0_scs)
+          deallocate(v_neigh_vdw, alpha_SCS, omega_SCS, alpha_SCS_grad, c6_scs, r0_scs, alpha0_scs)
         !end if
       end if
 
