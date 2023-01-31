@@ -591,12 +591,12 @@ module vdw
     E_MBD = 0.d0
 
     !alpha_SCS0 = 0.d0
-    allocate( alpha_SCS_full(1:3*n_sites,1:3,1:2) )
+    !allocate( alpha_SCS_full(1:3*n_sites,1:3,1:2) )
     if ( do_derivatives ) then
       dalpha_full = 0.d0
     end if
 
-    alpha_SCS_full = 0.d0
+    !alpha_SCS_full = 0.d0
     
     !allocate( central_pol(1:n_sites) )
     !central_pol = 0.d0
@@ -655,7 +655,7 @@ module vdw
       allocate( ipiv(1:3*n_sub_sites) )
       allocate( work_arr(1:12*n_sub_sites) )
       allocate( rjs_0(1:n_sub_pairs) )
-      allocate( a_iso(1:n_sub_sites,1:2) )
+      !allocate( a_iso(1:n_sub_sites,1:2) )
       allocate( o_p(1:n_sub_sites) )
       if ( do_derivatives .and. do_hirshfeld_gradients ) then
         allocate( hirshfeld_v_sub_der(1:3,1:n_sub_sites) )
@@ -668,7 +668,7 @@ module vdw
       allocate( b_i(1:3*n_sub_sites,1:3) )
       allocate( d_vec(1:3*n_sub_sites,1:3) )
         
-      a_iso = 0.d0
+      !a_iso = 0.d0
 
       do om = 1, 2
 
@@ -951,7 +951,8 @@ module vdw
       end do
         
       deallocate( sub_neighbors_list, n_sub_neigh, p_list, xyz_H, rjs_H, r0_ii, neighbor_alpha0, neighbor_sigma, &
-                  omegas, T_func, B_mat, f_damp, g_func, h_func, a_SCS, ipiv, work_arr, rjs_0, a_iso, o_p )
+                  omegas, T_func, B_mat, f_damp, g_func, h_func, a_SCS, ipiv, work_arr, rjs_0, o_p )
+      !deallocate( a_iso )
       if ( do_derivatives .and. do_hirshfeld_gradients ) then
         deallocate( hirshfeld_v_sub_der )
       end if
@@ -1300,6 +1301,13 @@ module vdw
             end do
           end if
         end do
+
+        !if ( i == 1 .and. om == 2 ) then
+        !  write(*,*) "B_mat"
+        !  do p = 1, 3*n_sub_sites
+        !    write(*,*) B_mat(p,:)
+        !  end do
+        !end if
         
         if ( polynomial_expansion ) then
 
@@ -1405,11 +1413,11 @@ module vdw
             end do
           end if
 
-          do c1 = 1, 3
-            do c2 = 1, 3
-              alpha_SCS_full(3*(i-1)+c1,c2,om) = a_SCS(c1,c2)
-            end do
-          end do
+          !do c1 = 1, 3
+          !  do c2 = 1, 3
+          !    alpha_SCS_full(3*(i-1)+c1,c2,om) = a_SCS(c1,c2)
+          !  end do
+          !end do
           
           !alpha_SCS0(i,om) = 0.d0
           !do c1 = 1, 3
@@ -1741,6 +1749,13 @@ module vdw
             end if
           end do
 
+          if ( i == 1 .and. om == 2 ) then
+            write(*,*) "AT"
+            do p = 1, 3*n_sub_sites
+              write(*,*) AT(p,:,1)
+            end do
+          end if
+
           integrand = 0.d0
           do i2 = 1, n_freq
             energy_series = 0.d0
@@ -1768,8 +1783,8 @@ module vdw
         
           allocate( da_SCS(1:3*n_sub_sites,1:3) )
           allocate( dT(1:9*n_sub_pairs) )
-          !allocate( dB_mat(1:3*n_sub_sites,1:3*n_sub_sites) )
-          !dB_mat = 0.d0
+          allocate( dB_mat(1:3*n_sub_sites,1:3*n_sub_sites) )
+          dB_mat = 0.d0
           allocate( b_der(1:3*n_sub_sites,1:3) )
           allocate( f_damp_der(1:n_sub_pairs) )
           allocate( g_func_der(1:n_sub_pairs) )
@@ -1806,7 +1821,7 @@ module vdw
             ! Derivatives are always w.r.t. the central atom:
             a = i
 
-            !dB_mat = 0.d0
+            dB_mat = 0.d0
             f_damp_der = 0.d0
             g_func_der = 0.d0
             h_func_der = 0.d0
@@ -1857,11 +1872,11 @@ module vdw
                                                             T_func(k4) - f_damp_der(k3) * h_func(k4) + &
                                                             h_func_der(k4) * (1.d0 - f_damp(k3))) * &
                                                             T_SR_mult(k3) * a_SCS(3*(q-1)+c2,:)
-                          !dB_mat(3*(p-1)+c1,3*(q-1)+c2) = dB_mat(3*(p-1)+c1,3*(q-1)+c2) - (f_damp_der(k3) * T_func(k4) * &
-                          !                                  g_func(k3) - (1.d0 - f_damp(k3)) * dT(k4) * &
-                          !                                  g_func(k3) - g_func_der(k3) * (1.d0 - f_damp(k3)) * &
-                          !                                  T_func(k4) - f_damp_der(k3) * h_func(k4) + &
-                          !                                  h_func_der(k4) * (1.d0 - f_damp(k3))) * T_SR_mult(k3)                   
+                          dB_mat(3*(p-1)+c1,3*(q-1)+c2) = dB_mat(3*(p-1)+c1,3*(q-1)+c2) - (f_damp_der(k3) * T_func(k4) * &
+                                                            g_func(k3) - (1.d0 - f_damp(k3)) * dT(k4) * &
+                                                            g_func(k3) - g_func_der(k3) * (1.d0 - f_damp(k3)) * &
+                                                            T_func(k4) - f_damp_der(k3) * h_func(k4) + &
+                                                            h_func_der(k4) * (1.d0 - f_damp(k3))) * T_SR_mult(k3)                   
                           d_der(3*(p-1)+c1,c2) = d_der(3*(p-1)+c1,c2) + (f_damp_der(k3) * T_func(k4) * &
                                                             g_func(k3) - (1.d0 - f_damp(k3)) * dT(k4) * &
                                                             g_func(k3) - g_func_der(k3) * (1.d0 - f_damp(k3)) * &
@@ -1875,11 +1890,11 @@ module vdw
                                                             T_func(k4) - f_damp_der(k3) * h_func(k4) + &
                                                             h_func_der(k4) * (1.d0 - f_damp(k3))) * &
                                                             T_SR_mult(k3) * a_SCS(3*(q-1)+c2,:)
-                          !dB_mat(3*(p-1)+c1,3*(q-1)+c2) = dB_mat(3*(p-1)+c1,3*(q-1)+c2) + (f_damp_der(k3) * T_func(k4) * &
-                          !                                  g_func(k3) - (1.d0 - f_damp(k3)) * dT(k4) * &
-                          !                                  g_func(k3) - g_func_der(k3) * (1.d0 - f_damp(k3)) * &
-                          !                                  T_func(k4) - f_damp_der(k3) * h_func(k4) + &
-                          !                                  h_func_der(k4) * (1.d0 - f_damp(k3))) * T_SR_mult(k3)
+                          dB_mat(3*(p-1)+c1,3*(q-1)+c2) = dB_mat(3*(p-1)+c1,3*(q-1)+c2) + (f_damp_der(k3) * T_func(k4) * &
+                                                            g_func(k3) - (1.d0 - f_damp(k3)) * dT(k4) * &
+                                                            g_func(k3) - g_func_der(k3) * (1.d0 - f_damp(k3)) * &
+                                                            T_func(k4) - f_damp_der(k3) * h_func(k4) + &
+                                                            h_func_der(k4) * (1.d0 - f_damp(k3))) * T_SR_mult(k3)
                           d_der(3*(p-1)+c1,c2) = d_der(3*(p-1)+c1,c2) - (f_damp_der(k3) * T_func(k4) * &
                                                             g_func(k3) - (1.d0 - f_damp(k3)) * dT(k4) * &
                                                             g_func(k3) - g_func_der(k3) * (1.d0 - f_damp(k3)) * &
@@ -1961,9 +1976,9 @@ module vdw
                 do c1 = 1, 3
                   b_der(3*(p-1)+c1,:) = b_der(3*(p-1)+c1,:) - 1.d0/(neighbor_alpha0(k3+1) * hirshfeld_sub_neigh(k3+1)) * &
                                         hirshfeld_v_sub_der(c3,p)*Bohr * a_SCS(3*(p-1)+c1,:) 
-                  !dB_mat(3*(p-1)+c1,3*(p-1)+c1) = dB_mat(3*(p-1)+c1,3*(p-1)+c1) - 1.d0/(neighbor_alpha0(k3+1) &
-                  !                      * hirshfeld_sub_neigh(k3+1)) * &
-                  !                      hirshfeld_v_sub_der(c3,p)*Bohr
+                  dB_mat(3*(p-1)+c1,3*(p-1)+c1) = dB_mat(3*(p-1)+c1,3*(p-1)+c1) - 1.d0/(neighbor_alpha0(k3+1) &
+                                        * hirshfeld_sub_neigh(k3+1)) * &
+                                        hirshfeld_v_sub_der(c3,p)*Bohr
                 end do
                 do j2 = 2, n_sub_neigh(p)
                   j = sub_neighbors_list(k3+j2)
@@ -1988,13 +2003,13 @@ module vdw
                           coeff_fdamp(k4) * r_vdw_j/hirshfeld_sub_neigh(k3+j2)) * &
                           hv_q_der) * &
                           a_SCS(3*(q-1)+c2,:) * T_SR_mult(k3+j2)
-                        !dB_mat(3*(p-1)+c1,3*(q-1)+c2) = dB_mat(3*(p-1)+c1,3*(q-1)+c2) + &
-                        !  ((coeff_der(k4) * s_i**2/hirshfeld_sub_neigh(k3+1) + &
-                        !  coeff_fdamp(k4) * r_vdw_i/hirshfeld_sub_neigh(k3+1)) * &
-                        !  hv_p_der + &
-                        !  (coeff_der(k4) * s_j**2/hirshfeld_sub_neigh(k3+j2) + &
-                        !  coeff_fdamp(k4) * r_vdw_j/hirshfeld_sub_neigh(k3+j2)) * &
-                        !  hv_q_der) * T_SR_mult(k3+j2)
+                        dB_mat(3*(p-1)+c1,3*(q-1)+c2) = dB_mat(3*(p-1)+c1,3*(q-1)+c2) + &
+                          ((coeff_der(k4) * s_i**2/hirshfeld_sub_neigh(k3+1) + &
+                          coeff_fdamp(k4) * r_vdw_i/hirshfeld_sub_neigh(k3+1)) * &
+                          hv_p_der + &
+                          (coeff_der(k4) * s_j**2/hirshfeld_sub_neigh(k3+j2) + &
+                          coeff_fdamp(k4) * r_vdw_j/hirshfeld_sub_neigh(k3+j2)) * &
+                          hv_q_der) * T_SR_mult(k3+j2)
                         d_der(3*(p-1)+c1,c2) = d_der(3*(p-1)+c1,c2) - &
                           ((coeff_der(k4) * s_i**2/hirshfeld_sub_neigh(k3+1) + &
                           coeff_fdamp(k4) * r_vdw_i/hirshfeld_sub_neigh(k3+1)) * &
@@ -2037,8 +2052,8 @@ module vdw
                   do c2 = 1, 3
                     k4 = k4+1
                     if ( rjs_0(k3) < rcut ) then
-                      !dB_mat(3*(p-1)+c1,3*(q-1)+c2) = dB_mat(3*(p-1)+c1,3*(q-1)+c2) + &
-                      !    dT_SR_mult(k3,c3) * T_SR(k4)
+                      dB_mat(3*(p-1)+c1,3*(q-1)+c2) = dB_mat(3*(p-1)+c1,3*(q-1)+c2) + &
+                          dT_SR_mult(k3,c3) * T_SR(k4)
                       b_der(3*(p-1)+c1,:) = b_der(3*(p-1)+c1,:) + dT_SR_mult(k3,c3) * T_SR(k4) * &
                                             a_SCS(3*(q-1)+c2,:) 
                       d_der(3*(p-1)+c1,c2) = d_der(3*(p-1)+c1,c2) - d_dmult_i(k3,c3) * d_arr_i(k4)
@@ -2049,6 +2064,13 @@ module vdw
                 end do
               end do
             end do
+
+            !if ( i == 1 .and. c3 == 1 .and. om == 2 ) then
+            !  write(*,*) "dB_mat"
+            !  do p = 1, 3*n_sub_sites
+            !    write(*,*) dB_mat(p,:)
+            !  end do
+            !end if
 
             b_der = -b_der+d_der
 
@@ -2291,10 +2313,26 @@ module vdw
                     a_mbd(k3+1) * (2.d0 * omegas_mbd(j)**2 * o_mbd(k3+1)) * &
                     do_mbd(k3+1) / ( o_mbd(k3+1)**2 + omegas_mbd(j)**2 )**2 * &
                     T_LR(3*(p-1)+1:3*(p-1)+3,:)
+                    if ( p == 29 .and. i == 1 .and. c3 == 1 .and. om == 2 ) then
+                      write(*,*) "G_mat", G_mat(3*(p-1)+3,3*(21-1)+1,1)
+                      write(*,*) "a_mbd", a_mbd(k3+1)
+                      write(*,*) "o_mbd", o_mbd(k3+1)
+                      write(*,*) "dT_LR", dT_LR(3*(p-1)+3,3*(21-1)+1)
+                      write(*,*) "da_mbd", da_mbd(k3+1)
+                      write(*,*) "T_LR", T_LR(3*(p-1)+3,3*(21-1)+1)
+                      write(*,*) "do_mbd", do_mbd(k3+1)
+                    end if
                   k3 = k3+n_mbd_neigh(p)
                 end do
               end do
 
+
+              if ( i == 1 .and. c3 == 1 .and. om == 2 ) then
+                write(*,*) "G_mat"
+                do p = 1, 3*n_sub_sites
+                  write(*,*) G_mat(p,:,1)
+                end do
+              end if
 
               if ( n_order > 1 ) then
 
@@ -2341,7 +2379,7 @@ module vdw
           end do ! c3 loop
         
           deallocate( da_SCS, dT, b_der, g_func_der, h_func_der, d_der, f_damp_der )
-          !deallocate( dB_mat )
+          deallocate( dB_mat )
 
         end if ! do_derivatives
         
@@ -2386,7 +2424,8 @@ module vdw
     write(*,*) "E_MBD", E_MBD
       
     !deallocate( central_pol, central_omega )
-    deallocate( alpha_SCS_full, hirshfeld_v_cart_der_H )
+    deallocate( hirshfeld_v_cart_der_H )
+    !deallocate( alpha_SCS_full )
 
   end subroutine
 
