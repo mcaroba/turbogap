@@ -1749,12 +1749,12 @@ module vdw
             end if
           end do
 
-          if ( i == 1 .and. om == 2 ) then
-            write(*,*) "AT"
-            do p = 1, 3*n_sub_sites
-              write(*,*) AT(p,:,1)
-            end do
-          end if
+          !if ( i == 1 .and. om == 2 ) then
+          !  write(*,*) "AT"
+          !  do p = 1, 3*n_sub_sites
+          !    write(*,*) AT(p,:,1)
+          !  end do
+          !end if
 
           integrand = 0.d0
           do i2 = 1, n_freq
@@ -2313,26 +2313,28 @@ module vdw
                     a_mbd(k3+1) * (2.d0 * omegas_mbd(j)**2 * o_mbd(k3+1)) * &
                     do_mbd(k3+1) / ( o_mbd(k3+1)**2 + omegas_mbd(j)**2 )**2 * &
                     T_LR(3*(p-1)+1:3*(p-1)+3,:)
-                    if ( p == 29 .and. i == 1 .and. c3 == 1 .and. om == 2 ) then
-                      write(*,*) "G_mat", G_mat(3*(p-1)+3,3*(21-1)+1,1)
-                      write(*,*) "a_mbd", a_mbd(k3+1)
-                      write(*,*) "o_mbd", o_mbd(k3+1)
-                      write(*,*) "dT_LR", dT_LR(3*(p-1)+3,3*(21-1)+1)
-                      write(*,*) "da_mbd", da_mbd(k3+1)
-                      write(*,*) "T_LR", T_LR(3*(p-1)+3,3*(21-1)+1)
-                      write(*,*) "do_mbd", do_mbd(k3+1)
-                    end if
+                    !if ( p == 29 .and. i == 1 .and. c3 == 1 .and. om == 2 .and. j == 1 ) then
+                    !  write(*,*) "G_mat", G_mat(3*(p-1)+3,3*(21-1)+1,1)
+                    !  write(*,*) "a_mbd", a_mbd(k3+1)
+                    !  write(*,*) "o_mbd", o_mbd(k3+1)
+                    !  write(*,*) "dT_LR", dT_LR(3*(p-1)+3,3*(21-1)+1)
+                    !  write(*,*) "da_mbd", da_mbd(k3+1)
+                    !  write(*,*) "T_LR", T_LR(3*(p-1)+3,3*(21-1)+1)
+                    !  write(*,*) "do_mbd", do_mbd(k3+1)
+                    !  write(*,*) "k3+1", k3+1
+                    !  write(*,*) "rjs_0_mbd", rjs_0_mbd(k3+1)*Bohr
+                    !end if
                   k3 = k3+n_mbd_neigh(p)
                 end do
               end do
 
 
-              if ( i == 1 .and. c3 == 1 .and. om == 2 ) then
-                write(*,*) "G_mat"
-                do p = 1, 3*n_sub_sites
-                  write(*,*) G_mat(p,:,1)
-                end do
-              end if
+              !if ( i == 1 .and. c3 == 1 .and. om == 2 ) then
+              !  write(*,*) "G_mat"
+              !  do p = 1, 3*n_sub_sites
+              !    write(*,*) G_mat(p,:,1)
+              !  end do
+              !end if
 
               if ( n_order > 1 ) then
 
