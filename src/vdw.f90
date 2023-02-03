@@ -481,7 +481,7 @@ module vdw
                            xyz_2b(:,:), rjs_2b(:), r0_ii_2b(:), neighbor_alpha0_2b(:), f_damp_SCS_2b(:), &
                            a_2b(:), r0_ii_SCS_2b(:), C6_2b(:), da_2b(:), T_SR(:), T_SR_mult(:), d_arr_i(:), d_arr_o(:), &
                            d_mult_i(:), d_mult_o(:), dT_SR_mult(:,:), d_dmult_i(:,:), d_dmult_o(:,:), do_mbd(:), &
-                           hirshfeld_sub_neigh(:)
+                           hirshfeld_sub_neigh(:), o_2b(:), do_2b(:)
     real*8 :: a_mbd_i, a_mbd_j, da_i, da_j, pol1, E_TS, f_damp_der_2b, dr_vdw_i, &
               dr_vdw_j, forces_TS, dC6_2b, mult1_i, mult1_j, mult2, dmult1_i(1:3), dmult1_j(1:3), dmult2(1:3), hv_p_der, &
               hv_q_der, do_pref
@@ -971,6 +971,11 @@ module vdw
 ! This is where you would break this into get_scs and get_mbd for two separate subroutines:
 ! Store central_pol and central_omega and pass them to get_mbd
 !******************************************************************************************
+
+! TEST !!!!!!!!!!!!!!!!
+central_pol = 10.d0
+central_omega = 0.5d0
+
 
     call cpu_time(time1)
 
@@ -1511,11 +1516,13 @@ module vdw
           allocate( r0_ii_2b(1:n_2b_sites) )
           allocate( neighbor_alpha0_2b(1:n_2b_sites) )
           allocate( a_2b(1:n_2b_sites) )
+          allocate( o_2b(1:n_2b_sites) )
           allocate( r0_ii_SCS_2b(1:n_2b_sites) )
           allocate( f_damp_SCS_2b(1:n_2b_sites) )
           allocate( C6_2b(1:n_2b_sites) )
           if ( do_derivatives ) then
             allocate( da_2b(1:n_2b_sites) )
+            allocate( do_2b(1:n_2b_sites) )
           end if
         
           a_mbd = 0.d0
@@ -1671,6 +1678,7 @@ module vdw
           k2 = 0
           k_i = 0
           a_2b = 0.d0
+          o_2b = 0.d0
           rjs_2b = 0.d0
           xyz_2b = 0.d0
           sub_2b_list = 0
@@ -1689,25 +1697,32 @@ module vdw
               k2 = k2+1
               s = neighbor_species(n_tot+k_i)
               sub_2b_list(k2) = neighbors_list(n_tot+k_i)
-              r0_ii_2b(k2) = r0_ref(s) / Bohr * hirshfeld_v_neigh(n_tot+k_i)**(1.d0/3.d0)
+              r0_ii_2b(k2) = r0_ref(s) / Bohr !* hirshfeld_v_neigh(n_tot+k_i)**(1.d0/3.d0)
               xyz_2b(:,k2) = xyz(:,n_tot+k_i)/Bohr
               xyz_i = xyz_2b(:,k2)
               rjs_2b(k2) = rjs(n_tot+k_i)/Bohr
-              neighbor_alpha0_2b(k2) = alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot+k_i)
+              neighbor_alpha0_2b(k2) = alpha0_ref(s) / Bohr**3 !* hirshfeld_v_neigh(n_tot+k_i)
               if ( rjs(n_tot+k_i) .ge. rcut_mbd-r_buffer .and. rjs(n_tot+k_i) < rcut_mbd ) then
                 r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),i2,1)
                 a_2b(k2) = central_pol(i1) * &
                                   ( + 3.d0 * ((rjs(n_tot+k_i)-rcut_mbd+r_buffer)/(r_buffer))**2 &
                                   - 2.d0 * ((rjs(n_tot+k_i)-rcut_mbd+r_buffer)/(r_buffer))**3)
+                o_2b(k2) = central_omega(i1) * &
+                                  ( + 3.d0 * ((rjs(n_tot+k_i)-rcut_mbd+r_buffer)/(r_buffer))**2 &
+                                  - 2.d0 * ((rjs(n_tot+k_i)-rcut_mbd+r_buffer)/(r_buffer))**3)
               else if ( rjs(n_tot+k_i) .ge. rcut_mbd .and. rjs(n_tot+k_i) < rcut_2b-r_buffer) then
                 a_2b(k2) = central_pol(i1)
+                o_2b(k2) = central_omega(i1)
               else if ( rjs(n_tot+k_i) .ge. rcut_2b-r_buffer .and. rjs(n_tot+k_i) < rcut_2b) then
                 a_2b(k2) = central_pol(i1) * (1.d0 & 
                            - 3.d0 * ((rjs(n_tot+k_i)-rcut_2b+r_buffer)/(r_buffer))**2 &
                            + 2.d0 * ((rjs(n_tot+k_i)-rcut_2b+r_buffer)/(r_buffer))**3)
+                o_2b(k2) = central_omega(i1) * (1.d0 &
+                           - 3.d0 * ((rjs(n_tot+k_i)-rcut_2b+r_buffer)/(r_buffer))**2 &
+                           + 2.d0 * ((rjs(n_tot+k_i)-rcut_2b+r_buffer)/(r_buffer))**3)
               end if
-              C6_2b(k2) = 3.d0/2.d0 * a_iso(1,2) * a_2b(k2) * (central_omega(i0) * central_omega(i1)) / &
-                      (central_omega(i0) + central_omega(i1))
+              C6_2b(k2) = 3.d0/2.d0 * a_iso(1,2) * a_2b(k2) * (central_omega(i0) * o_2b(k2)) / &
+                      (central_omega(i0) + o_2b(k2))
               r0_ii_SCS_2b(k2) = r0_ii_2b(k2) * (a_2b(k2)/neighbor_alpha0_2b(k2))**(1.d0/3.d0)
               r_vdw_j = r0_ii_SCS_2b(k2)
               f_damp_SCS_2b(k2) = 1.d0/( 1.d0 + exp( -d*( rjs_2b(k2)/(0.97d0*(r_vdw_i + r_vdw_j)) - 1.d0 ) ) )
@@ -1715,6 +1730,10 @@ module vdw
             end if
           end do
           E_TS = 1.d0/2.d0 * E_TS
+
+          if ( i == 1 .and. om == 2 ) then
+            write(*,*) "E_TS", E_TS
+          end if
 
           do i2 = 1, n_freq
             k3 = 0
@@ -1771,7 +1790,7 @@ module vdw
           integral = 0.d0
           call integrate("trapezoidal", omegas_mbd, integrand, omegas_mbd(1), omegas_mbd(n_freq), integral)
           integral = integral/(2.d0*pi)
-          energies(i) = (integral + E_TS) * 27.211386245988
+          energies(i) = (integral + E_TS) * Hartree
           write(*,*) "MBD energy", i, energies(i)
           E_MBD = E_MBD + energies(i)          
         
@@ -2263,32 +2282,46 @@ module vdw
               forces_TS = 0.d0
               k2 = 0
               da_2b = 0.d0
+              do_2b = 0.d0
               s = neighbor_species(n_tot+1)
               r_vdw_i = r0_ref(s) / Bohr * (a_iso(1,2)/(alpha0_ref(s)/Bohr**3))**(1.d0/3.d0)
               dr_vdw_i = r_vdw_i / (3.d0 * a_iso(1,2)) * da_iso(1,c3,2)
+              do_pref = -omega_ref * (a_iso(1,1) * da_iso(1,c3,2) - a_iso(1,2) * da_iso(1,c3,1)) / &
+                               ( a_iso(1,1)**2 * (a_iso(1,2)/a_iso(1,1) - 1.d0)**(3.d0/2.d0) )
               do p = 1, n_2b_sites
                 k2 = k2+1
                 i2 = sub_2b_list(k2)
                 i1 = modulo(i2-1, n_sites0) + 1
                 if ( rjs_2b(k2) .ge. (rcut_mbd-r_buffer)/Bohr .and. rjs_2b(k2) < rcut_mbd/Bohr ) then
-                  da_2b(k2) = a_2b(k2) * &
+                  da_2b(k2) = central_pol(i1) * &
+                                ( + 6.d0 * ((rjs_2b(k2)*Bohr-rcut_mbd+r_buffer)/(r_buffer)) &
+                                  - 6.d0 * ((rjs_2b(k2)*Bohr-rcut_mbd+r_buffer)/(r_buffer))**2) &
+                                  * ( -xyz_2b(c3,k2)/rjs_2b(k2)/(r_buffer/Bohr))
+                  do_2b(k2) = central_omega(i1) * &
                                 ( + 6.d0 * ((rjs_2b(k2)*Bohr-rcut_mbd+r_buffer)/(r_buffer)) &
                                   - 6.d0 * ((rjs_2b(k2)*Bohr-rcut_mbd+r_buffer)/(r_buffer))**2) &
                                   * ( -xyz_2b(c3,k2)/rjs_2b(k2)/(r_buffer/Bohr))
                 else if ( rjs_2b(k2) .ge. rcut_mbd/Bohr .and. rjs_2b(k2) < (rcut_2b-r_buffer)/Bohr ) then
                   da_2b(k2) = 0.d0
+                  do_2b(k2) = 0.d0
                 else if ( rjs_2b(k2) .ge. (rcut_2b-r_buffer)/Bohr .and. rjs_2b(k2) < rcut_2b/Bohr ) then
-                  da_2b(k2) = a_2b(k2) * &
+                  da_2b(k2) = central_pol(i1) * &
+                         ( - 6.d0 * ((rjs_2b(k2)*Bohr-rcut_2b+r_buffer)/(r_buffer)) &
+                           + 6.d0 * ((rjs_2b(k2)*Bohr-rcut_2b+r_buffer)/(r_buffer))**2) &
+                         * ( -xyz_2b(c3,k2)/rjs_2b(k2)/(r_buffer/Bohr))
+                  do_2b(k2) = central_omega(i1) * &
                          ( - 6.d0 * ((rjs_2b(k2)*Bohr-rcut_2b+r_buffer)/(r_buffer)) &
                            + 6.d0 * ((rjs_2b(k2)*Bohr-rcut_2b+r_buffer)/(r_buffer))**2) &
                          * ( -xyz_2b(c3,k2)/rjs_2b(k2)/(r_buffer/Bohr))
                 end if
                 r_vdw_j = r0_ii_SCS_2b(k2)
                 dr_vdw_j = r_vdw_j / (3.d0 * a_2b(k2)) * da_2b(k2)
-                dC6_2b = 3.d0/2.d0*central_omega(i0)*central_omega(i1) &
-                            / (central_omega(i0)+central_omega(i1)) &
-                            * (da_iso(1,c3,2)*a_2b(k2) + a_iso(1,2)*da_2b(k2))
-                f_damp_der_2b = d/0.97d0 * f_damp_SCS_2b(k2)**2 * &
+                dC6_2b = 3.d0/2.d0 * (central_omega(i0)*o_2b(k2) &
+                            / (central_omega(i0)+o_2b(k2)) &
+                            * (da_iso(1,c3,2)*a_2b(k2) + a_iso(1,2)*da_2b(k2)) &
+                            + a_iso(1,2) * a_2b(k2) / (central_omega(i0)+o_2b(k2))**2 &
+                            * (do_pref * o_2b(k2)**2 + central_omega(i0)**2 * do_2b(k2)))
+                f_damp_der_2b = d * f_damp_SCS_2b(k2)**2 * &
                                         exp( -d*( rjs_2b(k2)/(0.97d0*(r_vdw_i + r_vdw_j)) - 1.d0 ) ) &
                                         * (1.d0/(0.97d0 * (r_vdw_i+r_vdw_j)) * (-xyz_2b(c3,k2)/rjs_2b(k2)) &
                                         - rjs_2b(k2)/0.97d0 * 1.d0/(r_vdw_i+r_vdw_j)**2 &
@@ -2298,6 +2331,10 @@ module vdw
                                         + C6_2b(k2)/rjs_2b(k2)**6 * f_damp_der_2b )
               end do
               forces_TS = 1.d0/2.d0 * forces_TS
+
+              if ( i == 1 .and. c3 == 1 .and. om == 2 ) then
+                write(*,*) "forces_TS", forces_TS
+              end if
 
               G_mat = 0.d0
 
@@ -2365,13 +2402,14 @@ module vdw
 
                 integral = 0.d0
                 call integrate("trapezoidal", omegas_mbd, integrand, omegas_mbd(1), omegas_mbd(n_freq), integral)
-                forces0(c3,i) = forces0(c3,i) + (1.d0/(2.d0*pi) * integral + forces_TS) * 51.42208619083232
+                forces0(c3,i) = forces0(c3,i) + (1.d0/(2.d0*pi) * integral + forces_TS) * Hartree/Bohr
 
+                write(*,*) "integral", integral
                 write(*,*) "MBD force", i, c3, forces0(c3,i)
                 integral = 0.d0
                 if (c3 == 1 ) then
                   call integrate("trapezoidal", omegas_mbd, total_integrand, omegas_mbd(1), omegas_mbd(n_freq), integral)
-                  write(*,*) "MBD total energy of sphere", i, (integral / (2.d0*pi) + E_TS) * 27.211386245988
+                  write(*,*) "MBD total energy of sphere", i, (integral / (2.d0*pi) + E_TS) * Hartree
                 end if
 
               end if
@@ -2389,12 +2427,12 @@ module vdw
           deallocate( T_LR, r0_ii_SCS, f_damp_SCS, AT, AT_n, energy_series, omegas_mbd, integrand, n_mbd_neigh, &
                       mbd_neighbors_list, p_mbd, r0_ii_mbd, neighbor_alpha0_mbd, xyz_mbd, rjs_mbd, T_mbd, a_mbd, &
                       rjs_0_mbd, xyz_0_mbd, o_mbd, sub_2b_list, xyz_2b, rjs_2b, r0_ii_2b, neighbor_alpha0_2b, &
-                      a_2b, r0_ii_SCS_2b, f_damp_SCS_2b, C6_2b )
+                      a_2b, o_2b, r0_ii_SCS_2b, f_damp_SCS_2b, C6_2b )
         end if
                     
         if ( do_derivatives .and. om == 2 ) then
           deallocate( da_mbd, AT_n_f, dT_mbd, f_damp_der_mbd, f_damp_der_SCS, dT_LR, G_mat, force_series, &
-                      total_energy_series, total_integrand, da_2b, do_mbd )
+                      total_energy_series, total_integrand, da_2b, do_2b, do_mbd )
         end if
 
       end do ! om
