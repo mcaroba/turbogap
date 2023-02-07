@@ -431,62 +431,56 @@ module vdw
 
 
 !**************************************************************************
-  subroutine get_scs_polarizabilities( hirshfeld_v, hirshfeld_v_cart_der, hirshfeld_v_cart_der_ji, &
-                                       n_neigh, neighbors_list, neighbor_species, &
-                                       rcut, rcut_mbd, rcut_2b, r_buffer, rcut_inner, buffer_inner, rjs, xyz, &
-                                       hirshfeld_v_neigh, sR, d, c6_ref, r0_ref, alpha0_ref, do_derivatives, &
-                                       do_hirshfeld_gradients, polynomial_expansion, n_freq, n_order, &
-                                       central_pol, central_omega, dalpha_full, &
-                                       c6_scs, r0_scs, alpha0_scs, energies, forces0, virial )
+  subroutine get_scs_polarizabilities( n_neigh, neighbors_list, neighbor_species, &
+                                       rcut, r_buffer, rjs, xyz, &
+                                       hirshfeld_v_neigh, sR, d, c6_ref, r0_ref, alpha0_ref, &
+                                       polynomial_expansion, &
+                                       central_pol, central_omega, forces0 )
 
     implicit none
 
 !   Input variables
-    real*8, intent(in) :: hirshfeld_v_cart_der(:,:), rcut, r_buffer, rcut_inner, buffer_inner, &
-                          rjs(:), xyz(:,:), sR, d, c6_ref(:), r0_ref(:), rcut_mbd, rcut_2b, hirshfeld_v_cart_der_ji(:,:), &
+    real*8, intent(in) :: rcut, r_buffer, hirshfeld_v_neigh(:), &
+                          rjs(:), xyz(:,:), sR, d, c6_ref(:), r0_ref(:), &
                           alpha0_ref(:) !, hirshfeld_v(:), hirshfeld_v_neigh(:) !NOTE: uncomment this in final implementation
-    integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:), n_freq, n_order
-    logical, intent(in) :: do_derivatives, do_hirshfeld_gradients, polynomial_expansion
+    integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:)
+    logical, intent(in) :: polynomial_expansion
 !   Output variables
-    real*8, intent(out) :: virial(1:3, 1:3)
 !   In-Out variables
-    real*8, intent(inout) :: energies(:), forces0(:,:), central_pol(:), central_omega(:), dalpha_full(:,:), hirshfeld_v(:), &
-                             hirshfeld_v_neigh(:), c6_scs(:), r0_scs(:), alpha0_scs(:)
+    real*8, intent(inout) :: central_pol(:), central_omega(:), forces0(:,:)
 !   Internal variables
     real*8, allocatable :: neighbor_c6_ii(:), r0_ii(:), f_damp(:), neighbor_alpha0(:), T_func(:), h_func(:), g_func(:), &
-                           omegas(:), omega_i(:), B_mat(:,:), rjs_H(:), xyz_H(:,:), work_arr(:), dT(:), f_damp_der(:), &
-                           g_func_der(:), h_func_der(:), coeff_der(:), coeff_fdamp(:), hirshfeld_v_cart_der_H(:,:), &
-                           a_SCS(:,:), da_SCS(:,:), b_der(:,:), alpha_SCS_full(:,:,:), dB_mat(:,:), alpha_test(:,:), &
-                           neighbor_sigma(:), hirshfeld_v_sub_der(:,:)
-    real*8 :: time1, time2, this_force(1:3), Bohr, Hartree, &
-              omega, pi, integral, E_MBD, R_vdW_ij, R_vdW_SCS_ij, S_vdW_ij, dS_vdW_ij, exp_term, &
-              rcut_vdw, r_vdw_i, r_vdw_j, f_damp_SCS_ij, t1, t2, &
-              sigma_ij, coeff_h_der, dg, dh, s_i, s_j, terms, omega_ref, xyz_i(1:3), xyz_j(1:3)
+                           omegas(:), B_mat(:,:), rjs_H(:), xyz_H(:,:), work_arr(:), &
+                           a_SCS(:,:), &
+                           neighbor_sigma(:), rjs_0(:)
+    real*8 :: time1, time2, Bohr, Hartree, &
+              omega, pi, &
+              r_vdw_i, r_vdw_j, t1, t2, &
+              sigma_ij, s_i, s_j, omega_ref, xyz_i(1:3), xyz_j(1:3), mult1_i, mult1_j, mult2, pol1
     integer, allocatable :: ipiv(:)
     integer :: n_sites, n_pairs, n_species, n_sites0, info, om, n_tot
-    integer :: i, i0, i1, i2, i3, j, j1, j2, j3, k, k2, k3, k4, a, a2, c1, c2, c3, lwork, b, p, q, r, n_count, n_max, k_i, k_j
-    logical :: read_hirshfeld = .false.
+    integer :: i, i0, i1, i2, i3, j, j1, j2, j3, k, k2, k3, k4, a, a2, c1, c2, c3, lwork, b, p, q, r, k_i, k_j
                
 !    LOCAL TEST stuff:
     integer, allocatable :: sub_neighbors_list(:), n_sub_neigh(:), p_list(:)
     integer :: n_sub_sites, n_sub_pairs, s
 
 !   MBD stuff:
-    real*8, allocatable :: T_LR(:,:), r0_ii_SCS(:), f_damp_SCS(:), AT(:,:,:), AT_n(:,:,:,:), energy_series(:,:), &
-                           integrand(:), AT_n_f(:,:,:,:), f_damp_der_SCS(:), dT_LR(:,:), G_mat(:,:,:), force_series(:,:), &
-                           total_energy_series(:,:), total_integrand(:), rjs_0(:), &
-                           T_mbd(:), r0_ii_mbd(:), neighbor_alpha0_mbd(:), omegas_mbd(:), rjs_0_mbd(:), xyz_0_mbd(:,:), &
-                           xyz_mbd(:,:), rjs_mbd(:), d_der(:,:), dT_mbd(:), f_damp_der_mbd(:), a_mbd(:), da_mbd(:), &
-                           a_iso(:,:), o_p(:), da_iso(:,:,:),  o_mbd(:), sub_2b_list(:), &
-                           xyz_2b(:,:), rjs_2b(:), r0_ii_2b(:), neighbor_alpha0_2b(:), f_damp_SCS_2b(:), &
-                           a_2b(:), r0_ii_SCS_2b(:), C6_2b(:), da_2b(:), T_SR(:), T_SR_mult(:), d_arr_i(:), d_arr_o(:), &
-                           d_mult_i(:), d_mult_o(:), dT_SR_mult(:,:), d_dmult_i(:,:), d_dmult_o(:,:), do_mbd(:), &
-                           hirshfeld_sub_neigh(:), o_2b(:), do_2b(:)
-    real*8 :: a_mbd_i, a_mbd_j, da_i, da_j, pol1, E_TS, f_damp_der_2b, dr_vdw_i, &
-              dr_vdw_j, forces_TS, dC6_2b, mult1_i, mult1_j, mult2, dmult1_i(1:3), dmult1_j(1:3), dmult2(1:3), hv_p_der, &
-              hv_q_der, do_pref
-    integer :: n_mbd_sites, n_mbd_pairs, n_2b_sites
-    integer, allocatable :: n_mbd_neigh(:), mbd_neighbors_list(:), p_mbd(:)
+!    real*8, allocatable :: T_LR(:,:), r0_ii_SCS(:), f_damp_SCS(:), AT(:,:,:), AT_n(:,:,:,:), energy_series(:,:), &
+!                           integrand(:), AT_n_f(:,:,:,:), f_damp_der_SCS(:), dT_LR(:,:), G_mat(:,:,:), force_series(:,:), &
+!                           total_energy_series(:,:), total_integrand(:), rjs_0(:), &
+!                           T_mbd(:), r0_ii_mbd(:), neighbor_alpha0_mbd(:), omegas_mbd(:), rjs_0_mbd(:), xyz_0_mbd(:,:), &
+!                           xyz_mbd(:,:), rjs_mbd(:), d_der(:,:), dT_mbd(:), f_damp_der_mbd(:), a_mbd(:), da_mbd(:), &
+!                           a_iso(:,:), o_p(:), da_iso(:,:,:),  o_mbd(:), sub_2b_list(:), &
+!                           xyz_2b(:,:), rjs_2b(:), r0_ii_2b(:), neighbor_alpha0_2b(:), f_damp_SCS_2b(:), &
+!                           a_2b(:), r0_ii_SCS_2b(:), C6_2b(:), da_2b(:), T_SR(:), T_SR_mult(:), d_arr_i(:), d_arr_o(:), &
+!                           d_mult_i(:), d_mult_o(:), dT_SR_mult(:,:), d_dmult_i(:,:), d_dmult_o(:,:), do_mbd(:), &
+!                           hirshfeld_sub_neigh(:), o_2b(:), do_2b(:)
+!    real*8 :: a_mbd_i, a_mbd_j, da_i, da_j, pol1, E_TS, f_damp_der_2b, dr_vdw_i, &
+!              dr_vdw_j, forces_TS, dC6_2b, mult1_i, mult1_j, mult2, dmult1_i(1:3), dmult1_j(1:3), dmult2(1:3), hv_p_der, &
+!              hv_q_der, do_pref
+!    integer :: n_mbd_sites, n_mbd_pairs, n_2b_sites
+!    integer, allocatable :: n_mbd_neigh(:), mbd_neighbors_list(:), p_mbd(:)
 
 
     !PSBLAS stuff:
@@ -525,9 +519,9 @@ module vdw
 
 
     ! HACK FOR HIRSHFELD DERIVATIVES
-    allocate( hirshfeld_v_cart_der_H(1:3, n_pairs) )
+    !allocate( hirshfeld_v_cart_der_H(1:3, n_pairs) )
 
-    hirshfeld_v_cart_der_H = 0.d0
+    !hirshfeld_v_cart_der_H = 0.d0
 
     !write(*,*) "dv"
     !k = 0
@@ -544,11 +538,11 @@ module vdw
     !do i = 1, n_neigh(1)
     !  write(*,*) hirshfeld_v_cart_der_H(1:3,i), hirshfeld_v_cart_der_ji(1:3,i)
     !end do
-    if ( do_derivatives .and. do_hirshfeld_gradients ) then
-    hirshfeld_v_cart_der_H = hirshfeld_v_cart_der_ji
+    !if ( do_derivatives .and. do_hirshfeld_gradients ) then
+    !hirshfeld_v_cart_der_H = hirshfeld_v_cart_der_ji
     !write(*,*) "hirshfeld_der"
     !write(*,*) hirshfeld_v_cart_der_H(1:n_neigh(1))
-    end if
+    !end if
 
     ! HACK END
 
@@ -560,29 +554,6 @@ module vdw
     !do p = 1, n_neigh(1)
     !  write(*,*) hirshfeld_v_cart_der_H(1,p)
     !end do
-
-    if ( read_hirshfeld ) then
-
-      open(unit=89, file="hirshfeld.dat", status="old")
-      do i = 1, n_sites
-        read(89,*) hirshfeld_v(i)
-      end do
-      close(89)
-
-      hirshfeld_v_neigh = 0.d0
-      k = 0
-      do i = 1, n_sites
-        do j = 1, n_neigh(i)
-          k = k+1
-          i2 = modulo(neighbors_list(k)-1, n_sites) + 1 !neighbors_list(k)
-          hirshfeld_v_neigh(k) = hirshfeld_v(i2)
-        end do
-      end do
-
-      !write(*,*) "hirshfeld_v", hirshfeld_v
-      !write(*,*) "hirshfeld_v_neigh", hirshfeld_v_neigh 
-
-    end if
 
 !   Hartree units (calculations done in Hartree units for simplicity)
     Bohr = 0.5291772105638411
@@ -596,13 +567,13 @@ module vdw
       
     write(*,*) "Starting local calculation"
 
-    E_MBD = 0.d0
+    !E_MBD = 0.d0
 
     !alpha_SCS0 = 0.d0
     !allocate( alpha_SCS_full(1:3*n_sites,1:3,1:2) )
-    if ( do_derivatives ) then
-      dalpha_full = 0.d0
-    end if
+    !if ( do_derivatives ) then
+    !  dalpha_full = 0.d0
+    !end if
 
     !alpha_SCS_full = 0.d0
     
@@ -664,11 +635,11 @@ module vdw
       allocate( work_arr(1:12*n_sub_sites) )
       allocate( rjs_0(1:n_sub_pairs) )
       !allocate( a_iso(1:n_sub_sites,1:2) )
-      allocate( o_p(1:n_sub_sites) )
-      if ( do_derivatives .and. do_hirshfeld_gradients ) then
-        allocate( hirshfeld_v_sub_der(1:3,1:n_sub_sites) )
-        hirshfeld_v_sub_der = 0.d0
-      end if
+      !allocate( o_p(1:n_sub_sites) )
+      !if ( do_derivatives .and. do_hirshfeld_gradients ) then
+      !  allocate( hirshfeld_v_sub_der(1:3,1:n_sub_sites) )
+      !  hirshfeld_v_sub_der = 0.d0
+      !end if
         
       !allocate( ia(1:9*n_sub_pairs) )
       !allocate( ja(1:9*n_sub_pairs) )
@@ -720,9 +691,9 @@ module vdw
             rjs_0(k2) = rjs(n_tot+k_i)
             s = neighbor_species(n_tot+k_i)
             sub_neighbors_list(k2) = i2
-            if ( do_derivatives .and. do_hirshfeld_gradients ) then
-              hirshfeld_v_sub_der(1:3,p) = hirshfeld_v_cart_der_H(1:3,n_tot+k_i)
-            end if
+            !if ( do_derivatives .and. do_hirshfeld_gradients ) then
+            !  hirshfeld_v_sub_der(1:3,p) = hirshfeld_v_cart_der_H(1:3,n_tot+k_i)
+            !end if
             n_sub_neigh(p) = n_sub_neigh(p) + 1
             p_list(k2) = p
             r0_ii(k2) = r0_ref(s) / Bohr * hirshfeld_v_neigh(n_tot+k_i)**(1.d0/3.d0)
@@ -959,11 +930,11 @@ module vdw
       end do
         
       deallocate( sub_neighbors_list, n_sub_neigh, p_list, xyz_H, rjs_H, r0_ii, neighbor_alpha0, neighbor_sigma, &
-                  omegas, T_func, B_mat, f_damp, g_func, h_func, a_SCS, ipiv, work_arr, rjs_0, o_p )
+                  omegas, T_func, B_mat, f_damp, g_func, h_func, a_SCS, ipiv, work_arr, rjs_0 )
       !deallocate( a_iso )
-      if ( do_derivatives .and. do_hirshfeld_gradients ) then
-        deallocate( hirshfeld_v_sub_der )
-      end if
+      !if ( do_derivatives .and. do_hirshfeld_gradients ) then
+      !  deallocate( hirshfeld_v_sub_der )
+      !end if
         
       deallocate( b_i, d_vec )
       !deallocate( ia, ja, val )        
@@ -974,6 +945,17 @@ module vdw
 
     write(*,*) "Central polarizabilities timing", time2-time1
 
+
+
+  end subroutine
+!**************************************************************************
+
+
+
+
+
+
+
       
 !******************************************************************************************
 ! This is where you would break this into get_scs and get_mbd for two separate subroutines:
@@ -981,8 +963,139 @@ module vdw
 !******************************************************************************************
 
 ! TEST !!!!!!!!!!!!!!!!
-central_pol = 10.d0
-central_omega = 0.5d0
+!central_pol = 10.d0
+!central_omega = 0.5d0
+
+!**************************************************************************
+  subroutine get_mbd_energies_and_forces( hirshfeld_v, hirshfeld_v_cart_der_ji, &
+                                       n_neigh, neighbors_list, neighbor_species, &
+                                       rcut, rcut_mbd, rcut_2b, r_buffer, rcut_inner, buffer_inner, rjs, xyz, &
+                                       hirshfeld_v_neigh, sR, d, c6_ref, r0_ref, alpha0_ref, do_derivatives, &
+                                       do_hirshfeld_gradients, polynomial_expansion, n_freq, n_order, &
+                                       central_pol, central_omega, dalpha_full, &
+                                       c6_scs, r0_scs, alpha0_scs, energies, forces0, virial )
+
+    implicit none
+
+!   Input variables
+    real*8, intent(in) :: rcut, r_buffer, rcut_inner, buffer_inner, &
+                          rjs(:), xyz(:,:), sR, d, c6_ref(:), r0_ref(:), rcut_mbd, rcut_2b, hirshfeld_v_cart_der_ji(:,:), &
+                          alpha0_ref(:) !, hirshfeld_v(:), hirshfeld_v_neigh(:) !NOTE: uncomment this in final implementation
+    integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:), n_freq, n_order
+    logical, intent(in) :: do_derivatives, do_hirshfeld_gradients, polynomial_expansion
+!   Output variables
+    real*8, intent(out) :: virial(1:3, 1:3)
+!   In-Out variables
+    real*8, intent(inout) :: energies(:), forces0(:,:), central_pol(:), central_omega(:), dalpha_full(:,:), hirshfeld_v(:), &
+                             hirshfeld_v_neigh(:), c6_scs(:), r0_scs(:), alpha0_scs(:)
+!   Internal variables
+    real*8, allocatable :: neighbor_c6_ii(:), r0_ii(:), f_damp(:), neighbor_alpha0(:), T_func(:), h_func(:), g_func(:), &
+                           omegas(:), B_mat(:,:), rjs_H(:), xyz_H(:,:), work_arr(:), dT(:), f_damp_der(:), &
+                           g_func_der(:), h_func_der(:), coeff_der(:), coeff_fdamp(:), hirshfeld_v_cart_der_H(:,:), &
+                           a_SCS(:,:), da_SCS(:,:), b_der(:,:), alpha_SCS_full(:,:,:), dB_mat(:,:), alpha_test(:,:), &
+                           neighbor_sigma(:), hirshfeld_v_sub_der(:,:)
+    real*8 :: time1, time2, this_force(1:3), Bohr, Hartree, &
+              omega, pi, integral, E_MBD, R_vdW_ij, R_vdW_SCS_ij, S_vdW_ij, dS_vdW_ij, exp_term, &
+              rcut_vdw, r_vdw_i, r_vdw_j, f_damp_SCS_ij, t1, t2, &
+              sigma_ij, coeff_h_der, dg, dh, s_i, s_j, terms, omega_ref, xyz_i(1:3), xyz_j(1:3)
+    integer, allocatable :: ipiv(:)
+    integer :: n_sites, n_pairs, n_species, n_sites0, info, om, n_tot
+    integer :: i, i0, i1, i2, i3, j, j1, j2, j3, k, k2, k3, k4, a, a2, c1, c2, c3, lwork, b, p, q, r, n_count, n_max, k_i, k_j
+    logical :: read_hirshfeld = .false.
+
+!    LOCAL TEST stuff:
+    integer, allocatable :: sub_neighbors_list(:), n_sub_neigh(:), p_list(:)
+    integer :: n_sub_sites, n_sub_pairs, s
+
+!   MBD stuff:
+    real*8, allocatable :: T_LR(:,:), r0_ii_SCS(:), f_damp_SCS(:), AT(:,:,:), AT_n(:,:,:,:), energy_series(:,:), &
+                           integrand(:), AT_n_f(:,:,:,:), f_damp_der_SCS(:), dT_LR(:,:), G_mat(:,:,:), force_series(:,:), &
+                           total_energy_series(:,:), total_integrand(:), rjs_0(:), &
+                           T_mbd(:), r0_ii_mbd(:), neighbor_alpha0_mbd(:), omegas_mbd(:), rjs_0_mbd(:), xyz_0_mbd(:,:), &
+                           xyz_mbd(:,:), rjs_mbd(:), d_der(:,:), dT_mbd(:), f_damp_der_mbd(:), a_mbd(:), da_mbd(:), &
+                           a_iso(:,:), o_p(:), da_iso(:,:,:),  o_mbd(:), sub_2b_list(:), &
+                           xyz_2b(:,:), rjs_2b(:), r0_ii_2b(:), neighbor_alpha0_2b(:), f_damp_SCS_2b(:), &
+                           a_2b(:), r0_ii_SCS_2b(:), C6_2b(:), da_2b(:), T_SR(:), T_SR_mult(:), d_arr_i(:), d_arr_o(:), &
+                           d_mult_i(:), d_mult_o(:), dT_SR_mult(:,:), d_dmult_i(:,:), d_dmult_o(:,:), do_mbd(:), &
+                           hirshfeld_sub_neigh(:), o_2b(:), do_2b(:)
+    real*8 :: a_mbd_i, a_mbd_j, da_i, da_j, pol1, E_TS, f_damp_der_2b, dr_vdw_i, &
+              dr_vdw_j, forces_TS, dC6_2b, mult1_i, mult1_j, mult2, dmult1_i(1:3), dmult1_j(1:3), dmult2(1:3), hv_p_der, &
+              hv_q_der, do_pref
+    integer :: n_mbd_sites, n_mbd_pairs, n_2b_sites
+    integer, allocatable :: n_mbd_neigh(:), mbd_neighbors_list(:), p_mbd(:)
+    real*8 :: polyfit(1:15)
+    integer :: n_degree
+    real*8, allocatable :: B_pol(:,:), B_mult(:,:), b_i(:,:), d_vec(:,:), val_xv(:,:)
+
+    n_sites = size(n_neigh)
+    n_pairs = size(neighbors_list)
+    n_species = size(c6_ref)
+    n_sites0 = size(forces0, 2)
+
+    ! HACK FOR HIRSHFELD DERIVATIVES
+    allocate( hirshfeld_v_cart_der_H(1:3, n_pairs) )
+
+    hirshfeld_v_cart_der_H = 0.d0
+
+    !write(*,*) "dv"
+    !k = 0
+    !do i = 1, n_sites
+    !  do j2 = 1, n_neigh(i)
+    !    k = k+1
+    !    j = neighbors_list(k)
+    !    n_tot = sum(n_neigh(1:j)) - n_neigh(j)
+    !    a = findloc(neighbors_list(n_tot+1:n_tot+n_neigh(j)),i,1)
+    !    hirshfeld_v_cart_der_H(:,k) = hirshfeld_v_cart_der(:,n_tot+a)
+    !  end do
+    !end do
+
+    !do i = 1, n_neigh(1)
+    !  write(*,*) hirshfeld_v_cart_der_H(1:3,i), hirshfeld_v_cart_der_ji(1:3,i)
+    !end do
+    if ( do_derivatives .and. do_hirshfeld_gradients ) then
+    hirshfeld_v_cart_der_H = hirshfeld_v_cart_der_ji
+    !write(*,*) "hirshfeld_der"
+    !write(*,*) hirshfeld_v_cart_der_H(1:n_neigh(1))
+    end if
+
+    ! HACK END
+
+    !write(*,*) "hirshfeld"
+    !do p = 1, n_neigh(1)
+    !  write(*,*) hirshfeld_v_neigh(p)
+    !end do
+    !write(*,*) "der"
+    !do p = 1, n_neigh(1)
+    !  write(*,*) hirshfeld_v_cart_der_H(1,p)
+    !end do
+    Bohr = 0.5291772105638411
+    Hartree = 27.211386024367243
+    pi = acos(-1.d0)
+
+    write(*,*) "rcut", rcut/Bohr
+
+!   Number of frequencies
+    !n_freq = size(alpha_SCS0, 2)
+
+    write(*,*) "Starting local calculation"
+
+    E_MBD = 0.d0
+
+    !alpha_SCS0 = 0.d0
+    !allocate( alpha_SCS_full(1:3*n_sites,1:3,1:2) )
+    if ( do_derivatives ) then
+      dalpha_full = 0.d0
+    end if
+
+    !alpha_SCS_full = 0.d0
+
+    !allocate( central_pol(1:n_sites) )
+    !central_pol = 0.d0
+    !allocate( central_omega(1:n_sites) )
+    !central_omega = 0.d0
+
+    !r_buffer = 0.5d0
+
 
 
     call cpu_time(time1)

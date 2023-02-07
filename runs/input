@@ -1,5 +1,5 @@
-atoms_file = '2829_supercell.xyz'
-!atoms_file = '2829.xyz'
+!atoms_file = '2829_supercell.xyz'
+atoms_file = '2829.xyz'
 !atoms_file = '2829_p.xyz'
 !atoms_file = '2829_m.xyz'
 !atoms_file = '2829_supercell_p.xyz'

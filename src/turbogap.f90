@@ -1352,7 +1352,26 @@ program turbogap
           allocate( alpha0_scs(1:j_end-j_beg+1) )
 call cpu_time(time2)
           write(*,*) "SCS calculation starts here"
-          call get_scs_polarizabilities( hirshfeld_v(i_beg:i_end), hirshfeld_v_cart_der(1:3, j_beg:j_end), &
+          call get_scs_polarizabilities( n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
+                                         neighbor_species(j_beg:j_end), &
+                                         params%vdw_scs_rcut, params%vdw_buffer, &
+                                         rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), v_neigh_vdw, &
+                                         params%vdw_sr, params%vdw_d, params%vdw_c6_ref, params%vdw_r0_ref, &
+                                         params%vdw_alpha0_ref, &
+                                         params%vdw_polynomial, &
+                                         alpha_SCS(i_beg:i_end), omega_SCS(i_beg:i_end), &
+#ifdef _MPIF90
+                                         this_forces_vdw )
+#else
+                                         forces_vdw )
+#endif
+write(*,*) "alpha_SCS"
+do i = 1, n_sites
+  write(*,*) i, alpha_SCS(i)
+end do
+call cpu_time(time1)
+write(*,*) "scs timing", time1-time2
+          call get_mbd_energies_and_forces( hirshfeld_v(i_beg:i_end), &
                                          hirshfeld_v_cart_der_ji(1:3,j_beg:j_end), &
                                          n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
                                          neighbor_species(j_beg:j_end), &
@@ -1369,12 +1388,7 @@ call cpu_time(time2)
 #else
                                          energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
 #endif
-write(*,*) "alpha_SCS"
-do i = 1, n_sites
-  write(*,*) i, alpha_SCS(i)
-end do
-call cpu_time(time1)
-write(*,*) "scs timing", time1-time2
+
 !        call get_ts_energy_and_forces( hirshfeld_v(i_beg:i_end), hirshfeld_v_cart_der(1:3, j_beg:j_end), &
 !                                       n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
 !                                       neighbor_species(j_beg:j_end), &
