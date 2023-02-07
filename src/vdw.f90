@@ -552,6 +552,14 @@ module vdw
 
     ! HACK END
 
+    !write(*,*) "hirshfeld"
+    !do p = 1, n_neigh(1)
+    !  write(*,*) hirshfeld_v_neigh(p)
+    !end do
+    !write(*,*) "der"
+    !do p = 1, n_neigh(1)
+    !  write(*,*) hirshfeld_v_cart_der_H(1,p)
+    !end do
 
     if ( read_hirshfeld ) then
 
@@ -1308,9 +1316,11 @@ central_omega = 0.5d0
         end do
 
         !if ( i == 1 .and. om == 2 ) then
-        !  write(*,*) "B_mat"
+        !  write(*,*) "d_vec"
+        !  !write(*,*) "B_mat"
         !  do p = 1, 3*n_sub_sites
-        !    write(*,*) B_mat(p,:)
+        !    !write(*,*) B_mat(p,:)
+        !    write(*,*) d_vec(p,:)
         !  end do
         !end if
         
@@ -1721,8 +1731,8 @@ central_omega = 0.5d0
                            - 3.d0 * ((rjs(n_tot+k_i)-rcut_2b+r_buffer)/(r_buffer))**2 &
                            + 2.d0 * ((rjs(n_tot+k_i)-rcut_2b+r_buffer)/(r_buffer))**3)
               end if
-              C6_2b(k2) = 3.d0/2.d0 * a_iso(1,2) * a_2b(k2) * (central_omega(i0) * o_2b(k2)) / &
-                      (central_omega(i0) + o_2b(k2))
+              C6_2b(k2) = 3.d0/2.d0 * a_iso(1,2) * a_2b(k2) * (o_p(1) * o_2b(k2)) / &
+                      (o_p(1) + o_2b(k2))
               r0_ii_SCS_2b(k2) = r0_ii_2b(k2) * (a_2b(k2)/neighbor_alpha0_2b(k2))**(1.d0/3.d0)
               r_vdw_j = r0_ii_SCS_2b(k2)
               f_damp_SCS_2b(k2) = 1.d0/( 1.d0 + exp( -d*( rjs_2b(k2)/(0.97d0*(r_vdw_i + r_vdw_j)) - 1.d0 ) ) )
@@ -1731,9 +1741,13 @@ central_omega = 0.5d0
           end do
           E_TS = 1.d0/2.d0 * E_TS
 
-          if ( i == 1 .and. om == 2 ) then
-            write(*,*) "E_TS", E_TS
-          end if
+          !if ( i == 1 .and. om == 2 ) then
+          !  write(*,*) "c6_2b"
+          !  do p = 1, n_2b_sites
+          !    write(*,*) C6_2b(p)
+          !  end do
+          !  write(*,*) "E_TS", E_TS
+          !end if
 
           do i2 = 1, n_freq
             k3 = 0
@@ -2085,9 +2099,11 @@ central_omega = 0.5d0
             end do
 
             !if ( i == 1 .and. c3 == 1 .and. om == 2 ) then
-            !  write(*,*) "dB_mat"
+            !  write(*,*) "d_der"
+            !  !write(*,*) "dB_mat"
             !  do p = 1, 3*n_sub_sites
-            !    write(*,*) dB_mat(p,:)
+            !    !write(*,*) dB_mat(p,:)
+            !    write(*,*) d_der(p,:)
             !  end do
             !end if
 
@@ -2120,6 +2136,13 @@ central_omega = 0.5d0
             end do
             da_iso(:,c3,om) = da_iso(:,c3,om)/3.d0
             
+            !if ( i == 1 .and. c3 == 1 .and. om == 2 ) then
+            !  write(*,*) "da_iso"
+            !  do p = 1, n_sub_sites
+            !    write(*,*) da_iso(p,1,2)
+            !  end do
+            !end if
+
             if ( om == 2 ) then
             
               f_damp_der_SCS = 0.d0
@@ -2279,6 +2302,9 @@ central_omega = 0.5d0
                 end do
               end do
             
+
+              !write(*,*) "dC6_2b"
+
               forces_TS = 0.d0
               k2 = 0
               da_2b = 0.d0
@@ -2288,6 +2314,7 @@ central_omega = 0.5d0
               dr_vdw_i = r_vdw_i / (3.d0 * a_iso(1,2)) * da_iso(1,c3,2)
               do_pref = -omega_ref * (a_iso(1,1) * da_iso(1,c3,2) - a_iso(1,2) * da_iso(1,c3,1)) / &
                                ( a_iso(1,1)**2 * (a_iso(1,2)/a_iso(1,1) - 1.d0)**(3.d0/2.d0) )
+              !do_pref = 0.d0
               do p = 1, n_2b_sites
                 k2 = k2+1
                 i2 = sub_2b_list(k2)
@@ -2316,11 +2343,15 @@ central_omega = 0.5d0
                 end if
                 r_vdw_j = r0_ii_SCS_2b(k2)
                 dr_vdw_j = r_vdw_j / (3.d0 * a_2b(k2)) * da_2b(k2)
-                dC6_2b = 3.d0/2.d0 * (central_omega(i0)*o_2b(k2) &
-                            / (central_omega(i0)+o_2b(k2)) &
+                dC6_2b = 3.d0/2.d0 * (o_p(1)*o_2b(k2) &
+                            / (o_p(1)+o_2b(k2)) &
                             * (da_iso(1,c3,2)*a_2b(k2) + a_iso(1,2)*da_2b(k2)) &
-                            + a_iso(1,2) * a_2b(k2) / (central_omega(i0)+o_2b(k2))**2 &
-                            * (do_pref * o_2b(k2)**2 + central_omega(i0)**2 * do_2b(k2)))
+                            + a_iso(1,2) * a_2b(k2) / (o_p(1)+o_2b(k2))**2 &
+                            * (do_pref * o_2b(k2)**2 + o_p(1)**2 * do_2b(k2)))
+                !if ( i == 1 .and. c3 == 1 .and. om == 2 .and. k2 == 1) then
+                !write(*,*) "a_iso", a_iso(1,2)
+                !write(*,*) "da_iso", da_iso(1,c3,2)
+                !end if
                 f_damp_der_2b = d * f_damp_SCS_2b(k2)**2 * &
                                         exp( -d*( rjs_2b(k2)/(0.97d0*(r_vdw_i + r_vdw_j)) - 1.d0 ) ) &
                                         * (1.d0/(0.97d0 * (r_vdw_i+r_vdw_j)) * (-xyz_2b(c3,k2)/rjs_2b(k2)) &
@@ -2332,9 +2363,9 @@ central_omega = 0.5d0
               end do
               forces_TS = 1.d0/2.d0 * forces_TS
 
-              if ( i == 1 .and. c3 == 1 .and. om == 2 ) then
-                write(*,*) "forces_TS", forces_TS
-              end if
+              !if ( i == 1 .and. c3 == 1 .and. om == 2 ) then
+              !  write(*,*) "forces_TS", forces_TS
+              !end if
 
               G_mat = 0.d0
 
