@@ -452,7 +452,7 @@ module vdw
     real*8, allocatable :: neighbor_c6_ii(:), r0_ii(:), f_damp(:), neighbor_alpha0(:), T_func(:), h_func(:), g_func(:), &
                            omegas(:), B_mat(:,:), rjs_H(:), xyz_H(:,:), work_arr(:), &
                            a_SCS(:,:), &
-                           neighbor_sigma(:), rjs_0(:)
+                           neighbor_sigma(:) !, rjs_0(:)
     real*8 :: time1, time2, Bohr, Hartree, &
               omega, pi, &
               r_vdw_i, r_vdw_j, t1, t2, &
@@ -633,7 +633,7 @@ module vdw
       allocate( a_SCS(1:3*n_sub_sites,1:3) )
       allocate( ipiv(1:3*n_sub_sites) )
       allocate( work_arr(1:12*n_sub_sites) )
-      allocate( rjs_0(1:n_sub_pairs) )
+      !allocate( rjs_0(1:n_sub_pairs) )
       !allocate( a_iso(1:n_sub_sites,1:2) )
       !allocate( o_p(1:n_sub_sites) )
       !if ( do_derivatives .and. do_hirshfeld_gradients ) then
@@ -688,7 +688,7 @@ module vdw
           if ( rjs(n_tot+k_i) < rcut ) then
             p = p+1 
             k2 = k2+1
-            rjs_0(k2) = rjs(n_tot+k_i)
+            !rjs_0(k2) = rjs(n_tot+k_i)
             s = neighbor_species(n_tot+k_i)
             sub_neighbors_list(k2) = i2
             !if ( do_derivatives .and. do_hirshfeld_gradients ) then
@@ -742,7 +742,7 @@ module vdw
                     n_sub_neigh(p) = n_sub_neigh(p) + 1
                     j = neighbors_list(n_tot+k_j)
                     k2 = k2+1
-                    rjs_0(k2) = rjs(n_tot+k_j)
+                    !rjs_0(k2) = rjs(n_tot+k_j)
                     if ( rjs(n_tot+k_j) < rcut ) then
                       p_list(k2) = q
                     end if    
@@ -930,7 +930,7 @@ module vdw
       end do
         
       deallocate( sub_neighbors_list, n_sub_neigh, p_list, xyz_H, rjs_H, r0_ii, neighbor_alpha0, neighbor_sigma, &
-                  omegas, T_func, B_mat, f_damp, g_func, h_func, a_SCS, ipiv, work_arr, rjs_0 )
+                  omegas, T_func, B_mat, f_damp, g_func, h_func, a_SCS, ipiv, work_arr )
       !deallocate( a_iso )
       !if ( do_derivatives .and. do_hirshfeld_gradients ) then
       !  deallocate( hirshfeld_v_sub_der )
@@ -967,18 +967,18 @@ module vdw
 !central_omega = 0.5d0
 
 !**************************************************************************
-  subroutine get_mbd_energies_and_forces( hirshfeld_v, hirshfeld_v_cart_der_ji, &
+  subroutine get_mbd_energies_and_forces( hirshfeld_v_cart_der_ji, &
                                        n_neigh, neighbors_list, neighbor_species, &
-                                       rcut, rcut_mbd, rcut_2b, r_buffer, rcut_inner, buffer_inner, rjs, xyz, &
+                                       rcut, rcut_mbd, rcut_2b, r_buffer, rjs, xyz, &
                                        hirshfeld_v_neigh, sR, d, c6_ref, r0_ref, alpha0_ref, do_derivatives, &
                                        do_hirshfeld_gradients, polynomial_expansion, n_freq, n_order, &
-                                       central_pol, central_omega, dalpha_full, &
-                                       c6_scs, r0_scs, alpha0_scs, energies, forces0, virial )
+                                       central_pol, central_omega, &
+                                       energies, forces0, virial )
 
     implicit none
 
 !   Input variables
-    real*8, intent(in) :: rcut, r_buffer, rcut_inner, buffer_inner, &
+    real*8, intent(in) :: rcut, r_buffer, &
                           rjs(:), xyz(:,:), sR, d, c6_ref(:), r0_ref(:), rcut_mbd, rcut_2b, hirshfeld_v_cart_der_ji(:,:), &
                           alpha0_ref(:) !, hirshfeld_v(:), hirshfeld_v_neigh(:) !NOTE: uncomment this in final implementation
     integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:), n_freq, n_order
@@ -986,22 +986,21 @@ module vdw
 !   Output variables
     real*8, intent(out) :: virial(1:3, 1:3)
 !   In-Out variables
-    real*8, intent(inout) :: energies(:), forces0(:,:), central_pol(:), central_omega(:), dalpha_full(:,:), hirshfeld_v(:), &
-                             hirshfeld_v_neigh(:), c6_scs(:), r0_scs(:), alpha0_scs(:)
+    real*8, intent(inout) :: energies(:), forces0(:,:), central_pol(:), central_omega(:), &
+                             hirshfeld_v_neigh(:)
 !   Internal variables
     real*8, allocatable :: neighbor_c6_ii(:), r0_ii(:), f_damp(:), neighbor_alpha0(:), T_func(:), h_func(:), g_func(:), &
                            omegas(:), B_mat(:,:), rjs_H(:), xyz_H(:,:), work_arr(:), dT(:), f_damp_der(:), &
                            g_func_der(:), h_func_der(:), coeff_der(:), coeff_fdamp(:), hirshfeld_v_cart_der_H(:,:), &
-                           a_SCS(:,:), da_SCS(:,:), b_der(:,:), alpha_SCS_full(:,:,:), dB_mat(:,:), alpha_test(:,:), &
+                           a_SCS(:,:), da_SCS(:,:), b_der(:,:), dB_mat(:,:), &
                            neighbor_sigma(:), hirshfeld_v_sub_der(:,:)
     real*8 :: time1, time2, this_force(1:3), Bohr, Hartree, &
-              omega, pi, integral, E_MBD, R_vdW_ij, R_vdW_SCS_ij, S_vdW_ij, dS_vdW_ij, exp_term, &
-              rcut_vdw, r_vdw_i, r_vdw_j, f_damp_SCS_ij, t1, t2, &
+              omega, pi, integral, E_MBD, R_vdW_SCS_ij, S_vdW_ij, dS_vdW_ij, exp_term, &
+              r_vdw_i, r_vdw_j, t1, t2, &
               sigma_ij, coeff_h_der, dg, dh, s_i, s_j, terms, omega_ref, xyz_i(1:3), xyz_j(1:3)
     integer, allocatable :: ipiv(:)
     integer :: n_sites, n_pairs, n_species, n_sites0, info, om, n_tot
-    integer :: i, i0, i1, i2, i3, j, j1, j2, j3, k, k2, k3, k4, a, a2, c1, c2, c3, lwork, b, p, q, r, n_count, n_max, k_i, k_j
-    logical :: read_hirshfeld = .false.
+    integer :: i, i0, i1, i2, i3, j, j1, j2, j3, k, k2, k3, k4, a, a2, c1, c2, c3, lwork, b, p, q, r, k_i, k_j
 
 !    LOCAL TEST stuff:
     integer, allocatable :: sub_neighbors_list(:), n_sub_neigh(:), p_list(:)
@@ -1083,9 +1082,6 @@ module vdw
 
     !alpha_SCS0 = 0.d0
     !allocate( alpha_SCS_full(1:3*n_sites,1:3,1:2) )
-    if ( do_derivatives ) then
-      dalpha_full = 0.d0
-    end if
 
     !alpha_SCS_full = 0.d0
 
@@ -2133,7 +2129,7 @@ module vdw
                   if ( rjs_0(k3+j2) < rcut ) then
                     q = p_list(k3+j2)
                     hv_q_der = hirshfeld_v_sub_der(c3,q)*Bohr
-                  else
+                  else ! This needs to be changed for potential case rcut < rcut_soap
                     hv_q_der = 0.d0
                   end if
                   k4 = 9*(k3+j2-1)

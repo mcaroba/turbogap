@@ -1371,18 +1371,15 @@ do i = 1, n_sites
 end do
 call cpu_time(time1)
 write(*,*) "scs timing", time1-time2
-          call get_mbd_energies_and_forces( hirshfeld_v(i_beg:i_end), &
-                                         hirshfeld_v_cart_der_ji(1:3,j_beg:j_end), &
+          call get_mbd_energies_and_forces( hirshfeld_v_cart_der_ji(1:3,j_beg:j_end), &
                                          n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
                                          neighbor_species(j_beg:j_end), &
                                          params%vdw_scs_rcut, params%vdw_mbd_rcut, params%vdw_2b_rcut, params%vdw_buffer, &
-                                         params%vdw_rcut_inner, params%vdw_buffer_inner, &
                                          rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), v_neigh_vdw, &
                                          params%vdw_sr, params%vdw_d, params%vdw_c6_ref, params%vdw_r0_ref, &
                                          params%vdw_alpha0_ref, params%vdw_mbd_grad, params%vdw_hirsh_grad, &
                                          params%vdw_polynomial, params%vdw_mbd_nfreq, params%vdw_mbd_norder, &
-                                         alpha_SCS(i_beg:i_end), omega_SCS(i_beg:i_end), alpha_SCS_grad, &
-                                         c6_scs, r0_scs, alpha0_scs, &
+                                         alpha_SCS(i_beg:i_end), omega_SCS(i_beg:i_end), &
 #ifdef _MPIF90
                                          this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw )
 #else
