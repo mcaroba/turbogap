@@ -597,17 +597,17 @@ module vdw
       k_i = 0
       do i3 = 1, n_neigh(i)
         k_i = k_i + 1
-        if (rjs(n_tot+k_i) < rcut ) then
+        if (rjs(n_tot+k_i) .le. rcut ) then
           n_sub_sites = n_sub_sites + 1
           n_sub_pairs = n_sub_pairs + 1
           xyz_i = xyz(:,n_tot+k_i)/Bohr
           k_j = 0
           do j3 = 1, n_neigh(i)
             k_j = k_j + 1
-            if ( rjs(n_tot+k_j) < 2*rcut ) then !2*rcut
+            if ( rjs(n_tot+k_j) .le. 2*rcut ) then !2*rcut
               if (i3 .ne. j3) then
                 xyz_j = xyz(:,n_tot+k_j)/Bohr
-                if ( sqrt(sum((xyz_j-xyz_i)**2)) < rcut/Bohr ) then
+                if ( sqrt(sum((xyz_j-xyz_i)**2)) .le. rcut/Bohr ) then
                   n_sub_pairs = n_sub_pairs + 1
                 end if
               end if
@@ -685,7 +685,7 @@ module vdw
         do i3 = 1, n_neigh(i)
           k_i = k_i+1
           i2 = neighbors_list(n_tot+k_i)
-          if ( rjs(n_tot+k_i) < rcut ) then
+          if ( rjs(n_tot+k_i) .le. rcut ) then
             p = p+1 
             k2 = k2+1
             !rjs_0(k2) = rjs(n_tot+k_i)
@@ -723,7 +723,7 @@ module vdw
               !val(nnz) = 1.d0/neighbor_alpha0(k2)
             end do
             mult1_i = 1.d0
-            if ( rjs(n_tot+k_i) .ge. rcut-r_buffer ) then
+            if ( rjs(n_tot+k_i) > rcut-r_buffer ) then
               mult1_i = mult1_i * &
                               (1.d0 - 3.d0 * ((rjs(n_tot+k_i)-rcut+r_buffer)/(r_buffer))**2 &
                                + 2.d0 * ((rjs(n_tot+k_i)-rcut+r_buffer)/(r_buffer))**3 )
@@ -732,18 +732,18 @@ module vdw
             q = 0
             do j3 = 1, n_neigh(i)
               k_j = k_j+1
-              if ( rjs(n_tot+k_j) < 2*rcut ) then !2*rcut
-                if ( rjs(n_tot+k_j) < rcut ) then
+              if ( rjs(n_tot+k_j) .le. 2*rcut ) then !2*rcut
+                if ( rjs(n_tot+k_j) .le. rcut ) then
                   q = q+1
                 end if
                 if (i3 .ne. j3) then
                   xyz_j = xyz(:,n_tot+k_j)/Bohr
-                  if ( sqrt(sum((xyz_j-xyz_i)**2)) < rcut/Bohr ) then
+                  if ( sqrt(sum((xyz_j-xyz_i)**2)) .le. rcut/Bohr ) then
                     n_sub_neigh(p) = n_sub_neigh(p) + 1
                     j = neighbors_list(n_tot+k_j)
                     k2 = k2+1
                     !rjs_0(k2) = rjs(n_tot+k_j)
-                    if ( rjs(n_tot+k_j) < rcut ) then
+                    if ( rjs(n_tot+k_j) .le. rcut ) then
                       p_list(k2) = q
                     end if    
                     s = neighbor_species(n_tot+k_j)
@@ -775,15 +775,15 @@ module vdw
                         end if
                         h_func(k3) = 4.d0/sqrt(pi) * (rjs_H(k2)/sigma_ij)**3 * &
                                         xyz_H(c1,k2)*xyz_H(c2,k2)/rjs_H(k2)**5 * exp(-rjs_H(k2)**2/sigma_ij**2)
-                        if ( rjs(n_tot+k_j) < rcut ) then
+                        if ( rjs(n_tot+k_j) .le. rcut ) then
                           mult1_j = 1.d0
                           mult2 = 1.d0
-                          if ( rjs(n_tot+k_j) .ge. rcut-r_buffer ) then
+                          if ( rjs(n_tot+k_j) > rcut-r_buffer ) then
                             mult1_j = mult1_j * &
                                            (1.d0 - 3.d0 * ((rjs(n_tot+k_j)-rcut+r_buffer)/(r_buffer))**2 &
                                                  + 2.d0 * ((rjs(n_tot+k_j)-rcut+r_buffer)/(r_buffer))**3 )
                           end if
-                          if ( rjs_H(k2) .ge. (rcut-r_buffer)/Bohr ) then !.and. rjs_H(k2) < (rcut-r_buffer)/Bohr ) then
+                          if ( rjs_H(k2) > (rcut-r_buffer)/Bohr ) then !.and. rjs_H(k2) < (rcut-r_buffer)/Bohr ) then
                             mult2 = mult2 * &
                                            (1.d0 - 3.d0 * ((rjs_H(k2)-(rcut-r_buffer)/Bohr)/(r_buffer/Bohr))**2 &
                                                  + 2.d0 * ((rjs_H(k2)-(rcut-r_buffer)/Bohr)/(r_buffer/Bohr))**3 )
@@ -805,12 +805,12 @@ module vdw
                         else ! rjs(n_tot+k_j) < rcut
                           mult1_j = 1.d0
                           mult2 = 1.d0
-                          if ( rjs(n_tot+k_j) .ge. 2.d0*rcut-r_buffer ) then
+                          if ( rjs(n_tot+k_j) > 2.d0*rcut-r_buffer ) then
                             mult1_j = mult1_j * &
                                            (1.d0 - 3.d0 * ((rjs(n_tot+k_j)-2.d0*rcut+r_buffer)/(r_buffer))**2 &
                                                  + 2.d0 * ((rjs(n_tot+k_j)-2.d0*rcut+r_buffer)/(r_buffer))**3 )
                           end if
-                          if ( rjs_H(k2) .ge. (rcut-r_buffer)/Bohr ) then !.and. rjs_H(k2) < (rcut-r_buffer)/Bohr ) then
+                          if ( rjs_H(k2) > (rcut-r_buffer)/Bohr ) then !.and. rjs_H(k2) < (rcut-r_buffer)/Bohr ) then
                             mult2 = mult2 * &
                                           (1.d0 - 3.d0 * ((rjs_H(k2)-(rcut-r_buffer)/Bohr)/(r_buffer/Bohr))**2 &
                                                 + 2.d0 * ((rjs_H(k2)-(rcut-r_buffer)/Bohr)/(r_buffer/Bohr))**3 )
@@ -1016,7 +1016,8 @@ module vdw
                            xyz_2b(:,:), rjs_2b(:), r0_ii_2b(:), neighbor_alpha0_2b(:), f_damp_SCS_2b(:), &
                            a_2b(:), r0_ii_SCS_2b(:), C6_2b(:), da_2b(:), T_SR(:), T_SR_mult(:), d_arr_i(:), d_arr_o(:), &
                            d_mult_i(:), d_mult_o(:), dT_SR_mult(:,:), d_dmult_i(:,:), d_dmult_o(:,:), do_mbd(:), &
-                           hirshfeld_sub_neigh(:), o_2b(:), do_2b(:)
+                           hirshfeld_sub_neigh(:), o_2b(:), do_2b(:), hirshfeld_v_mbd_der(:,:), hirshfeld_mbd_neigh(:), &
+                           hirshfeld_v_2b_der(:,:)
     real*8 :: a_mbd_i, a_mbd_j, da_i, da_j, pol1, E_TS, f_damp_der_2b, dr_vdw_i, &
               dr_vdw_j, forces_TS, dC6_2b, mult1_i, mult1_j, mult2, dmult1_i(1:3), dmult1_j(1:3), dmult2(1:3), hv_p_der, &
               hv_q_der, do_pref
@@ -1107,17 +1108,17 @@ module vdw
       k_i = 0
       do i3 = 1, n_neigh(i)
         k_i = k_i + 1
-        if (rjs(n_tot+k_i) < rcut ) then
+        if (rjs(n_tot+k_i) .le. rcut ) then
           n_sub_sites = n_sub_sites + 1
           n_sub_pairs = n_sub_pairs + 1
           xyz_i = xyz(:,n_tot+k_i)/Bohr
           k_j = 0
           do j3 = 1, n_neigh(i)
             k_j = k_j + 1
-            if ( rjs(n_tot+k_j) < 2*rcut ) then !2*rcut
+            if ( rjs(n_tot+k_j) .le. 2*rcut ) then !2*rcut
               if (i3 .ne. j3) then
                 xyz_j = xyz(:,n_tot+k_j)/Bohr
-                if ( sqrt(sum((xyz_j-xyz_i)**2)) < rcut/Bohr ) then
+                if ( sqrt(sum((xyz_j-xyz_i)**2)) .le. rcut/Bohr ) then
                   n_sub_pairs = n_sub_pairs + 1
                 end if
               end if
@@ -1125,7 +1126,7 @@ module vdw
           end do
         end if
       end do
-        
+      
       allocate( sub_neighbors_list(1:n_sub_pairs) )
       allocate( n_sub_neigh(1:n_sub_sites) )
       allocate( p_list(1:n_sub_pairs) )
@@ -1161,7 +1162,7 @@ module vdw
         da_iso = 0.d0
       end if
       if ( do_derivatives .and. do_hirshfeld_gradients ) then
-        allocate( hirshfeld_v_sub_der(1:3,1:n_sub_sites) )
+        allocate( hirshfeld_v_sub_der(1:3,1:n_sub_pairs) )
         hirshfeld_v_sub_der = 0.d0
       end if
         
@@ -1221,7 +1222,7 @@ module vdw
         do i3 = 1, n_neigh(i)
           k_i = k_i+1
           i2 = neighbors_list(n_tot+k_i)
-          if ( rjs(n_tot+k_i) < rcut ) then
+          if ( rjs(n_tot+k_i) .le. rcut ) then
             p = p+1 
             k2 = k2+1
             rjs_0(k2) = rjs(n_tot+k_i)
@@ -1229,7 +1230,7 @@ module vdw
             s = neighbor_species(n_tot+k_i)
             sub_neighbors_list(k2) = i2
             if ( do_derivatives .and. do_hirshfeld_gradients ) then
-              hirshfeld_v_sub_der(1:3,p) = hirshfeld_v_cart_der_H(1:3,n_tot+k_i)
+              hirshfeld_v_sub_der(1:3,k2) = hirshfeld_v_cart_der_H(1:3,n_tot+k_i)
             end if
             n_sub_neigh(p) = n_sub_neigh(p) + 1
             p_list(k2) = p
@@ -1268,7 +1269,7 @@ module vdw
             end do
             mult1_i = 1.d0
             dmult1_i = 0.d0
-            if ( rjs(n_tot+k_i) .ge. rcut-r_buffer ) then
+            if ( rjs(n_tot+k_i) > rcut-r_buffer ) then
               mult1_i = mult1_i * &
                               (1.d0 - 3.d0 * ((rjs(n_tot+k_i)-rcut+r_buffer)/(r_buffer))**2 &
                                + 2.d0 * ((rjs(n_tot+k_i)-rcut+r_buffer)/(r_buffer))**3 )
@@ -1280,20 +1281,23 @@ module vdw
             q = 0
             do j3 = 1, n_neigh(i)
               k_j = k_j+1
-              if ( rjs(n_tot+k_j) < 2*rcut ) then !2*rcut
-                if ( rjs(n_tot+k_j) < rcut ) then
+              if ( rjs(n_tot+k_j) .le. 2*rcut ) then !2*rcut
+                if ( rjs(n_tot+k_j) .le. rcut ) then
                   q = q+1
                 end if
                 if (i3 .ne. j3) then
                   xyz_j = xyz(:,n_tot+k_j)/Bohr
-                  if ( sqrt(sum((xyz_j-xyz_i)**2)) < rcut/Bohr ) then
+                  if ( sqrt(sum((xyz_j-xyz_i)**2)) .le. rcut/Bohr ) then
                     n_sub_neigh(p) = n_sub_neigh(p) + 1
                     j = neighbors_list(n_tot+k_j)
                     k2 = k2+1
                     rjs_0(k2) = rjs(n_tot+k_j)
                     hirshfeld_sub_neigh(k2) = hirshfeld_v_neigh(n_tot+k_j)
-                    if ( rjs(n_tot+k_j) < rcut ) then
+                    if ( rjs(n_tot+k_j) .le. rcut ) then
                       p_list(k2) = q
+                    end if
+                    if ( do_derivatives .and. do_hirshfeld_gradients ) then
+                      hirshfeld_v_sub_der(1:3,k2) = hirshfeld_v_cart_der_H(1:3,n_tot+k_j)
                     end if    
                     s = neighbor_species(n_tot+k_j)
                     sub_neighbors_list(k2) = j                        
@@ -1314,12 +1318,12 @@ module vdw
                     sigma_ij = sqrt(s_i**2 + s_j**2)
                     g_func(k2) = erf(rjs_H(k2)/sigma_ij) - 2.d0/sqrt(pi) * (rjs_H(k2)/sigma_ij) * exp(-rjs_H(k2)**2.d0/sigma_ij**2)
                     k3 = 9*(k2-1)
-                    if ( rjs(n_tot+k_j) < rcut ) then
+                    if ( rjs(n_tot+k_j) .le. rcut ) then
                       mult1_j = 1.d0
                       dmult1_j = 0.d0
                       mult2 = 1.d0
                       dmult2 = 0.d0
-                      if ( rjs(n_tot+k_j) .ge. rcut-r_buffer ) then
+                      if ( rjs(n_tot+k_j) > rcut-r_buffer ) then
                         mult1_j = mult1_j * &
                                        (1.d0 - 3.d0 * ((rjs(n_tot+k_j)-rcut+r_buffer)/(r_buffer))**2 &
                                              + 2.d0 * ((rjs(n_tot+k_j)-rcut+r_buffer)/(r_buffer))**3 )
@@ -1327,7 +1331,7 @@ module vdw
                                 + 6.d0 * ((rjs(n_tot+k_j)-rcut+r_buffer)/(r_buffer))**2 ) &
                                 * ( -xyz(:,n_tot+k_j)/rjs(n_tot+k_j)/(r_buffer/Bohr))
                       end if
-                      if ( rjs_H(k2) .ge. (rcut-r_buffer)/Bohr ) then !.and. rjs_H(k2) < (rcut-r_buffer)/Bohr ) then
+                      if ( rjs_H(k2) > (rcut-r_buffer)/Bohr ) then !.and. rjs_H(k2) < (rcut-r_buffer)/Bohr ) then
                         mult2 = mult2 * &
                                        (1.d0 - 3.d0 * ((rjs_H(k2)-(rcut-r_buffer)/Bohr)/(r_buffer/Bohr))**2 &
                                              + 2.d0 * ((rjs_H(k2)-(rcut-r_buffer)/Bohr)/(r_buffer/Bohr))**3 )
@@ -1353,7 +1357,7 @@ module vdw
                       dmult1_j = 0.d0
                       mult2 = 1.d0
                       dmult2 = 0.d0
-                      if ( rjs(n_tot+k_j) .ge. 2.d0*rcut-r_buffer ) then
+                      if ( rjs(n_tot+k_j) > 2.d0*rcut-r_buffer ) then
                         mult1_j = mult1_j * &
                                        (1.d0 - 3.d0 * ((rjs(n_tot+k_j)-2.d0*rcut+r_buffer)/(r_buffer))**2 &
                                              + 2.d0 * ((rjs(n_tot+k_j)-2.d0*rcut+r_buffer)/(r_buffer))**3 )
@@ -1361,7 +1365,7 @@ module vdw
                                 + 6.d0 * ((rjs(n_tot+k_j)-2.d0*rcut+r_buffer)/(r_buffer))**2 ) &
                                 * ( -xyz(:,n_tot+k_j)/rjs(n_tot+k_j)/(r_buffer/Bohr))
                       end if
-                      if ( rjs_H(k2) .ge. (rcut-r_buffer)/Bohr ) then !.and. rjs_H(k2) < (rcut-r_buffer)/Bohr ) then
+                      if ( rjs_H(k2) > (rcut-r_buffer)/Bohr ) then !.and. rjs_H(k2) < (rcut-r_buffer)/Bohr ) then
                         mult2 = mult2 * &
                                       (1.d0 - 3.d0 * ((rjs_H(k2)-(rcut-r_buffer)/Bohr)/(r_buffer/Bohr))**2 &
                                             + 2.d0 * ((rjs_H(k2)-(rcut-r_buffer)/Bohr)/(r_buffer/Bohr))**3 )
@@ -1389,7 +1393,7 @@ module vdw
                         end if
                         h_func(k3) = 4.d0/sqrt(pi) * (rjs_H(k2)/sigma_ij)**3 * &
                                         xyz_H(c1,k2)*xyz_H(c2,k2)/rjs_H(k2)**5 * exp(-rjs_H(k2)**2/sigma_ij**2)
-                        if ( rjs(n_tot+k_j) < rcut ) then
+                        if ( rjs(n_tot+k_j) .le. rcut ) then
                           B_mat(3*(p-1)+c1,3*(q-1)+c2) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
                                                         g_func(k2) + h_func(k3)) * T_SR_mult(k2)
                           T_SR(k3) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
@@ -1537,6 +1541,13 @@ module vdw
             end do
           end if
 
+          if (i == 1 .and. om == 2) then
+            write(*,*) "a_iso"
+            do p = 1, n_sub_sites
+              write(*,*) a_iso(p,2)
+            end do
+          end if
+
           !do c1 = 1, 3
           !  do c2 = 1, 3
           !    alpha_SCS_full(3*(i-1)+c1,c2,om) = a_SCS(c1,c2)
@@ -1564,17 +1575,17 @@ module vdw
           k_i = 0
           do i3 = 1, n_neigh(i)
             k_i = k_i + 1
-            if (rjs(n_tot+k_i) < rcut_mbd ) then
+            if (rjs(n_tot+k_i) .le. rcut_mbd ) then
               n_mbd_sites = n_mbd_sites + 1
               n_mbd_pairs = n_mbd_pairs + 1
               xyz_i = xyz(:,n_tot+k_i)/Bohr
               k_j = 0
               do j3 = 1, n_neigh(i)
                 k_j = k_j + 1
-                if ( rjs(n_tot+k_j) < rcut_mbd ) then
+                if ( rjs(n_tot+k_j) .le. rcut_mbd ) then
                   if (i3 .ne. j3) then
                     xyz_j = xyz(:,n_tot+k_j)/Bohr
-                    if ( sqrt(sum((xyz_j-xyz_i)**2)) < (rcut_mbd)/Bohr ) then
+                    if ( sqrt(sum((xyz_j-xyz_i)**2)) .le. (rcut_mbd)/Bohr ) then
                       n_mbd_pairs = n_mbd_pairs + 1
                     end if
                   end if
@@ -1587,7 +1598,7 @@ module vdw
           n_2b_sites = 0
           do j2 = 1, n_neigh(i)
             k_i = k_i + 1
-            if (rjs(n_tot+k_i) < rcut_2b .and. rjs(n_tot+k_i) .ge. rcut_mbd-r_buffer) then
+            if (rjs(n_tot+k_i) .le. rcut_2b .and. rjs(n_tot+k_i) > rcut_mbd-r_buffer) then
               n_2b_sites = n_2b_sites + 1
             end if
           end do
@@ -1615,6 +1626,8 @@ module vdw
           allocate( o_mbd(1:n_mbd_pairs) )
           allocate( rjs_0_mbd(1:n_mbd_pairs) )
           allocate( xyz_0_mbd(1:3,n_mbd_pairs) )
+          allocate( hirshfeld_mbd_neigh(1:n_mbd_pairs) )
+          hirshfeld_mbd_neigh = 0.d0
           if ( do_derivatives ) then
             allocate( da_mbd(1:n_mbd_pairs) )
             allocate( AT_n_f(1:3*n_mbd_sites,1:3*n_mbd_sites,1:n_order-1,1:n_freq) )
@@ -1628,6 +1641,13 @@ module vdw
             allocate( total_integrand(1:n_freq) )
             allocate( do_mbd(1:n_mbd_pairs) )
           end if
+          if ( do_derivatives .and. do_hirshfeld_gradients ) then
+            allocate( hirshfeld_v_mbd_der(1:3,1:n_mbd_pairs) )
+            hirshfeld_v_mbd_der = 0.d0
+            allocate( hirshfeld_v_2b_der(1:3,1:n_2b_sites) )
+            hirshfeld_v_2b_der = 0.d0
+          end if
+
         
           allocate( sub_2b_list(1:n_2b_sites) )
           allocate( xyz_2b(1:3,1:n_2b_sites) )
@@ -1675,25 +1695,29 @@ module vdw
             k_i = k_i+1
             i2 = neighbors_list(n_tot+k_i)
             i1 = modulo(i2-1, n_sites0) + 1
-            if ( rjs(n_tot+k_i) < rcut_mbd ) then
+            if ( rjs(n_tot+k_i) .le. rcut_mbd ) then
               p = p+1
               k2 = k2+1
               s = neighbor_species(n_tot+k_i)
               mbd_neighbors_list(k2) = i2
               n_mbd_neigh(p) = n_mbd_neigh(p) + 1
               p_mbd(k2) = p
+              if ( do_derivatives .and. do_hirshfeld_gradients ) then
+                hirshfeld_v_mbd_der(1:3,k2) = hirshfeld_v_cart_der_H(1:3,n_tot+k_i)
+              end if
               r0_ii_mbd(k2) = r0_ref(s) / Bohr * hirshfeld_v_neigh(n_tot+k_i)**(1.d0/3.d0)
               xyz_mbd(:,k2) = xyz(:,n_tot+k_i)/Bohr
               xyz_i = xyz_mbd(:,k2)
               rjs_mbd(k2) = rjs(n_tot+k_i)/Bohr
               rjs_0_mbd(k2) = rjs(n_tot+k_i)/Bohr
               xyz_0_mbd(:,k2) = xyz(:,n_tot+k_i)/Bohr
-              neighbor_alpha0_mbd(k2) = alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot+k_i)
-              if ( rjs(n_tot+k_i) < rcut-r_buffer ) then
+              hirshfeld_mbd_neigh(k2) = hirshfeld_v_neigh(n_tot+k_i)
+              neighbor_alpha0_mbd(k2) = alpha0_ref(s) / Bohr**3 ! * hirshfeld_v_neigh(n_tot+k_i)
+              if ( rjs(n_tot+k_i) .le. rcut-r_buffer ) then
                 r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),i2,1)
                 a_mbd(k2) = a_iso(r,2)
                 o_mbd(k2) = o_p(r)
-              else if ( rjs(n_tot+k_i) < rcut .and. rjs(n_tot+k_i) .ge. rcut-r_buffer ) then
+              else if ( rjs(n_tot+k_i) .le. rcut .and. rjs(n_tot+k_i) > rcut-r_buffer ) then
                 r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),i2,1)
                 a_mbd(k2) = a_iso(r,2) * &
                             (1.d0 - 3.d0 * ((rjs(n_tot+k_i)-rcut+r_buffer)/r_buffer)**2 &
@@ -1707,10 +1731,10 @@ module vdw
                             central_omega(i1) * & 
                                   ( + 3.d0 * ((rjs(n_tot+k_i)-rcut+r_buffer)/r_buffer)**2 &
                                   - 2.d0 * ((rjs(n_tot+k_i)-rcut+r_buffer)/r_buffer)**3)
-              else if ( rjs(n_tot+k_i) .ge. rcut .and. rjs(n_tot+k_i) < rcut_mbd-r_buffer) then
+              else if ( rjs(n_tot+k_i) > rcut .and. rjs(n_tot+k_i) .le. rcut_mbd-r_buffer) then
                 a_mbd(k2) = central_pol(i1)
                 o_mbd(k2) = central_omega(i1)
-              else if ( rjs(n_tot+k_i) .ge. rcut_mbd-r_buffer .and. rjs(n_tot+k_i) < rcut_mbd ) then
+              else if ( rjs(n_tot+k_i) > rcut_mbd-r_buffer .and. rjs(n_tot+k_i) .le. rcut_mbd ) then
                 a_mbd(k2) = central_pol(i1) * (1.d0 & 
                                     - 3.d0 * ((rjs(n_tot+k_i)-rcut_mbd+r_buffer)/(r_buffer))**2 &
                                     + 2.d0 * ((rjs(n_tot+k_i)-rcut_mbd+r_buffer)/(r_buffer))**3)
@@ -1718,35 +1742,39 @@ module vdw
                                     - 3.d0 * ((rjs(n_tot+k_i)-rcut_mbd+r_buffer)/(r_buffer))**2 &
                                     + 2.d0 * ((rjs(n_tot+k_i)-rcut_mbd+r_buffer)/(r_buffer))**3)
               end if
-              r0_ii_SCS(k2) = r0_ii_mbd(k2) * (a_mbd(k2)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0)
+              r0_ii_SCS(k2) = r0_ii_mbd(k2) * (a_mbd(k2)/neighbor_alpha0_mbd(k2)/hirshfeld_mbd_neigh(k2))**(1.d0/3.d0)
               r_vdw_i = r0_ii_SCS(k2)
               k_j = 0
               q = 0
               do j3 = 1, n_neigh(i)
                 k_j = k_j+1
-                if ( rjs(n_tot+k_j) < rcut_mbd ) then
+                if ( rjs(n_tot+k_j) .le. rcut_mbd ) then
                   q = q+1
                   if (i3 .ne. j3) then
                     xyz_j = xyz(:,n_tot+k_j)/Bohr
-                    if ( sqrt(sum((xyz_j-xyz_i)**2)) < rcut_mbd/Bohr ) then
+                    if ( sqrt(sum((xyz_j-xyz_i)**2)) .le. rcut_mbd/Bohr ) then
                       n_mbd_neigh(p) = n_mbd_neigh(p) + 1
                       j = neighbors_list(n_tot+k_j)
                       j1 = modulo(j-1, n_sites0) + 1
                       k2 = k2+1    
                       s = neighbor_species(n_tot+k_j)
                       mbd_neighbors_list(k2) = j
-                      p_mbd(k2) = q                       
+                      p_mbd(k2) = q
+                      if ( do_derivatives .and. do_hirshfeld_gradients ) then
+                        hirshfeld_v_mbd_der(1:3,k2) = hirshfeld_v_cart_der_H(1:3,n_tot+k_j)
+                      end if                     
                       r0_ii_mbd(k2) = r0_ref(s) / Bohr * hirshfeld_v_neigh(n_tot+k_j)**(1.d0/3.d0)
                       xyz_mbd(:,k2) = xyz_j-xyz_i
                       rjs_mbd(k2) = sqrt(sum((xyz_j-xyz_i)**2))
                       rjs_0_mbd(k2) = rjs(n_tot+k_j)/Bohr
                       xyz_0_mbd(:,k2) = xyz(:,n_tot+k_j)/Bohr
-                      neighbor_alpha0_mbd(k2) = alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot+k_j)
-                      if ( rjs(n_tot+k_j) < rcut-r_buffer ) then
+                      hirshfeld_mbd_neigh(k2) = hirshfeld_v_neigh(n_tot+k_j)
+                      neighbor_alpha0_mbd(k2) = alpha0_ref(s) / Bohr**3 !* hirshfeld_v_neigh(n_tot+k_j)
+                      if ( rjs(n_tot+k_j) .le. rcut-r_buffer ) then
                         r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),j,1)
                         a_mbd(k2) = a_iso(r,2)
                         o_mbd(k2) = o_p(r)
-                      else if ( rjs(n_tot+k_j) < rcut .and. rjs(n_tot+k_j) .ge. rcut-r_buffer ) then
+                      else if ( rjs(n_tot+k_j) .le. rcut .and. rjs(n_tot+k_j) > rcut-r_buffer ) then
                         r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),j,1)
                         a_mbd(k2) = a_iso(r,2) * &
                               (1.d0 - 3.d0 * ((rjs(n_tot+k_j)-rcut+r_buffer)/r_buffer)**2 &
@@ -1760,7 +1788,7 @@ module vdw
                         central_omega(j1) * & 
                                     ( + 3.d0 * ((rjs(n_tot+k_j)-rcut+r_buffer)/r_buffer)**2 &
                                     - 2.d0 * ((rjs(n_tot+k_j)-rcut+r_buffer)/r_buffer)**3)
-                      else if ( rjs(n_tot+k_j) .ge. rcut .and. rjs(n_tot+k_j) < rcut_mbd-r_buffer) then
+                      else if ( rjs(n_tot+k_j) > rcut .and. rjs(n_tot+k_j) .le. rcut_mbd-r_buffer) then
                         a_mbd(k2) = central_pol(j1)
                         o_mbd(k2) = central_omega(j1)
                       else
@@ -1771,7 +1799,7 @@ module vdw
                                             - 3.d0 * ((rjs(n_tot+k_j)-rcut_mbd+r_buffer)/(r_buffer))**2 &
                                             + 2.d0 * ((rjs(n_tot+k_j)-rcut_mbd+r_buffer)/(r_buffer))**3)
                       end if
-                      r0_ii_SCS(k2) = r0_ii_mbd(k2) * (a_mbd(k2)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0)
+                      r0_ii_SCS(k2) = r0_ii_mbd(k2) * (a_mbd(k2)/neighbor_alpha0_mbd(k2)/hirshfeld_mbd_neigh(k2))**(1.d0/3.d0)
                       r_vdw_j = r0_ii_SCS(k2)
                       f_damp_SCS(k2) = 1.d0/( 1.d0 + exp( -d*( rjs_mbd(k2)/(sR*(r_vdw_i + r_vdw_j)) - 1.d0 ) ) )
                       k3 = 9*(k2-1)
@@ -1812,16 +1840,19 @@ module vdw
             k_i = k_i+1
             i2 = neighbors_list(n_tot+k_i)
             i1 = modulo(i2-1, n_sites0) + 1
-            if ( rjs(n_tot+k_i) < rcut_2b .and. rjs(n_tot+k_i) .ge. rcut_mbd-r_buffer ) then
+            if ( rjs(n_tot+k_i) .le. rcut_2b .and. rjs(n_tot+k_i) > rcut_mbd-r_buffer ) then
               k2 = k2+1
               s = neighbor_species(n_tot+k_i)
               sub_2b_list(k2) = neighbors_list(n_tot+k_i)
+              if ( do_derivatives .and. do_hirshfeld_gradients ) then
+                hirshfeld_v_2b_der(1:3,k2) = hirshfeld_v_cart_der_H(1:3,n_tot+k_i)
+              end if
               r0_ii_2b(k2) = r0_ref(s) / Bohr !* hirshfeld_v_neigh(n_tot+k_i)**(1.d0/3.d0)
               xyz_2b(:,k2) = xyz(:,n_tot+k_i)/Bohr
               xyz_i = xyz_2b(:,k2)
               rjs_2b(k2) = rjs(n_tot+k_i)/Bohr
               neighbor_alpha0_2b(k2) = alpha0_ref(s) / Bohr**3 !* hirshfeld_v_neigh(n_tot+k_i)
-              if ( rjs(n_tot+k_i) .ge. rcut_mbd-r_buffer .and. rjs(n_tot+k_i) < rcut_mbd ) then
+              if ( rjs(n_tot+k_i) > rcut_mbd-r_buffer .and. rjs(n_tot+k_i) .le. rcut_mbd ) then
                 r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),i2,1)
                 a_2b(k2) = central_pol(i1) * &
                                   ( + 3.d0 * ((rjs(n_tot+k_i)-rcut_mbd+r_buffer)/(r_buffer))**2 &
@@ -1829,10 +1860,10 @@ module vdw
                 o_2b(k2) = central_omega(i1) * &
                                   ( + 3.d0 * ((rjs(n_tot+k_i)-rcut_mbd+r_buffer)/(r_buffer))**2 &
                                   - 2.d0 * ((rjs(n_tot+k_i)-rcut_mbd+r_buffer)/(r_buffer))**3)
-              else if ( rjs(n_tot+k_i) .ge. rcut_mbd .and. rjs(n_tot+k_i) < rcut_2b-r_buffer) then
+              else if ( rjs(n_tot+k_i) > rcut_mbd .and. rjs(n_tot+k_i) .le. rcut_2b-r_buffer) then
                 a_2b(k2) = central_pol(i1)
                 o_2b(k2) = central_omega(i1)
-              else if ( rjs(n_tot+k_i) .ge. rcut_2b-r_buffer .and. rjs(n_tot+k_i) < rcut_2b) then
+              else if ( rjs(n_tot+k_i) > rcut_2b-r_buffer .and. rjs(n_tot+k_i) .le. rcut_2b) then
                 a_2b(k2) = central_pol(i1) * (1.d0 & 
                            - 3.d0 * ((rjs(n_tot+k_i)-rcut_2b+r_buffer)/(r_buffer))**2 &
                            + 2.d0 * ((rjs(n_tot+k_i)-rcut_2b+r_buffer)/(r_buffer))**3)
@@ -1850,13 +1881,13 @@ module vdw
           end do
           E_TS = 1.d0/2.d0 * E_TS
 
-          !if ( i == 1 .and. om == 2 ) then
+          if ( i == 1 .and. om == 2 ) then
           !  write(*,*) "c6_2b"
           !  do p = 1, n_2b_sites
           !    write(*,*) C6_2b(p)
           !  end do
-          !  write(*,*) "E_TS", E_TS
-          !end if
+            write(*,*) "E_TS", E_TS
+          end if
 
           do i2 = 1, n_freq
             k3 = 0
@@ -1982,7 +2013,7 @@ module vdw
                 s_j = neighbor_sigma(k3)
                 j = sub_neighbors_list(k3)
                 if (a == i2 .or. a == j) then
-                  if ( rjs_0(k3) < rcut ) then
+                  if ( rjs_0(k3) .le. rcut ) then
                     q = p_list(k3)
                   end if
                   sigma_ij = sqrt(s_i**2 + s_j**2)
@@ -2006,7 +2037,7 @@ module vdw
                       terms = terms -2.d0*(xyz_H(c1,k3)*xyz_H(c2,k3)*xyz_H(c3,k3))/rjs_H(k3)**2 * &
                               (1.d0/rjs_H(k3)**2 + 1.d0/sigma_ij**2)
                       h_func_der(k4) = coeff_h_der * terms
-                      if ( rjs_0(k3) < rcut ) then
+                      if ( rjs_0(k3) .le. rcut ) then
                         if (a == i2) then
                           b_der(3*(p-1)+c1,:) = b_der(3*(p-1)+c1,:) - (f_damp_der(k3) * T_func(k4) * &
                                                             g_func(k3) - (1.d0 - f_damp(k3)) * dT(k4) * &
@@ -2091,7 +2122,7 @@ module vdw
                   S_vdW_ij = sR*(r_vdw_i + r_vdw_j)
                   exp_term = exp(-d*(rjs_H(k3)/S_vdW_ij - 1.d0))
                   k4 = 9*(k3-1)
-                  if ( rjs_0(k3) < rcut ) then
+                  if ( rjs_0(k3) .le. rcut ) then
                     q = p_list(k3)
                   end if
                   do c1 = 1, 3
@@ -2112,31 +2143,31 @@ module vdw
               k3 = 0
               do p = 1, n_sub_sites
                 i2 = sub_neighbors_list(k3+1)
-                hv_p_der = hirshfeld_v_sub_der(c3,p)*Bohr
+                hv_p_der = hirshfeld_v_sub_der(c3,k3+1)*Bohr
                 r_vdw_i = r0_ii(k3+1)
                 s_i = neighbor_sigma(k3+1)
                 do c1 = 1, 3
                   b_der(3*(p-1)+c1,:) = b_der(3*(p-1)+c1,:) - 1.d0/(neighbor_alpha0(k3+1) * hirshfeld_sub_neigh(k3+1)) * &
-                                        hirshfeld_v_sub_der(c3,p)*Bohr * a_SCS(3*(p-1)+c1,:) 
+                                        hirshfeld_v_sub_der(c3,k3+1)*Bohr * a_SCS(3*(p-1)+c1,:) 
                   dB_mat(3*(p-1)+c1,3*(p-1)+c1) = dB_mat(3*(p-1)+c1,3*(p-1)+c1) - 1.d0/(neighbor_alpha0(k3+1) &
                                         * hirshfeld_sub_neigh(k3+1)) * &
-                                        hirshfeld_v_sub_der(c3,p)*Bohr
+                                        hirshfeld_v_sub_der(c3,k3+1)*Bohr
                 end do
                 do j2 = 2, n_sub_neigh(p)
                   j = sub_neighbors_list(k3+j2)
                   r_vdw_j = r0_ii(k3+j2)
                   s_j = neighbor_sigma(k3+j2)
-                  if ( rjs_0(k3+j2) < rcut ) then
+                  hv_q_der = hirshfeld_v_sub_der(c3,k3+j2)*Bohr
+                  if ( rjs_0(k3+j2) .le. rcut ) then
                     q = p_list(k3+j2)
-                    hv_q_der = hirshfeld_v_sub_der(c3,q)*Bohr
-                  else ! This needs to be changed for potential case rcut < rcut_soap
-                    hv_q_der = 0.d0
+                  !else ! This needs to be changed for potential case rcut < rcut_soap
+                  !  hv_q_der = 0.d0
                   end if
                   k4 = 9*(k3+j2-1)
                   do c1 = 1, 3
                     do c2 = 1, 3
                       k4 = k4+1
-                      if ( rjs_0(k3+j2) < rcut ) then                      
+                      if ( rjs_0(k3+j2) .le. rcut ) then                      
                         b_der(3*(p-1)+c1,:) = b_der(3*(p-1)+c1,:) + &
                           ((coeff_der(k4) * s_i**2/hirshfeld_sub_neigh(k3+1) + &
                           coeff_fdamp(k4) * r_vdw_i/hirshfeld_sub_neigh(k3+1)) * &
@@ -2186,14 +2217,14 @@ module vdw
               k3 = k3+1
               do j2 = 2, n_sub_neigh(p)
                 k3 = k3+1
-                if ( rjs_0(k3) < rcut ) then
+                if ( rjs_0(k3) .le. rcut ) then
                   q = p_list(k3)
                 end if
                 k4 = 9*(k3-1)
                 do c1 = 1, 3
                   do c2 = 1, 3
                     k4 = k4+1
-                    if ( rjs_0(k3) < rcut ) then
+                    if ( rjs_0(k3) .le. rcut ) then
                       dB_mat(3*(p-1)+c1,3*(q-1)+c2) = dB_mat(3*(p-1)+c1,3*(q-1)+c2) + &
                           dT_SR_mult(k3,c3) * T_SR(k4)
                       b_der(3*(p-1)+c1,:) = b_der(3*(p-1)+c1,:) + dT_SR_mult(k3,c3) * T_SR(k4) * &
@@ -2245,12 +2276,12 @@ module vdw
             end do
             da_iso(:,c3,om) = da_iso(:,c3,om)/3.d0
             
-            !if ( i == 1 .and. c3 == 1 .and. om == 2 ) then
-            !  write(*,*) "da_iso"
-            !  do p = 1, n_sub_sites
-            !    write(*,*) da_iso(p,1,2)
-            !  end do
-            !end if
+            if ( i == 1 .and. c3 == 1 .and. om == 2 ) then
+              write(*,*) "da_iso"
+              do p = 1, n_sub_sites
+                write(*,*) da_iso(p,1,2)
+              end do
+            end if
 
             if ( om == 2 ) then
             
@@ -2266,13 +2297,13 @@ module vdw
                 r_vdw_i = r0_ii_SCS(k2)
                 i2 = mbd_neighbors_list(k2)
                 i1 = modulo(i2-1, n_sites0) + 1
-                if ( rjs_0_mbd(k2) < (rcut-r_buffer)/Bohr ) then
+                if ( rjs_0_mbd(k2) .le. (rcut-r_buffer)/Bohr ) then
                   r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),i2,1)
                   da_mbd(k2) = da_iso(r,c3,2)
                   do_pref = -omega_ref * (a_iso(r,1) * da_iso(r,c3,2) - a_iso(r,2) * da_iso(r,c3,1)) / &
                                ( a_iso(r,1)**2 * (a_iso(r,2)/a_iso(r,1) - 1.d0)**(3.d0/2.d0) )
                   do_mbd(k2) = do_pref
-                else if ( rjs_0_mbd(k2) .ge. (rcut-r_buffer)/Bohr .and. rjs_0_mbd(k2) < rcut/Bohr ) then
+                else if ( rjs_0_mbd(k2) > (rcut-r_buffer)/Bohr .and. rjs_0_mbd(k2) .le. rcut/Bohr ) then
                   r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),i2,1)
                   do_pref = -omega_ref * (a_iso(r,1) * da_iso(r,c3,2) - a_iso(r,2) * da_iso(r,c3,1)) / &
                                ( a_iso(r,1)**2 * (a_iso(r,2)/a_iso(r,1) - 1.d0)**(3.d0/2.d0) )
@@ -2283,6 +2314,10 @@ module vdw
                               (- 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut+r_buffer)/r_buffer) &
                                + 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut+r_buffer)/r_buffer)**2) &
                                * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buffer/Bohr)) + &
+                                    neighbor_alpha0_mbd(k2) * &
+                                    hirshfeld_v_mbd_der(c3,k2)*Bohr * &
+                              (+ 3.d0 * ((rjs_0_mbd(k2)*Bohr-rcut+r_buffer)/r_buffer)**2 &
+                               - 2.d0 * ((rjs_0_mbd(k2)*Bohr-rcut+r_buffer)/r_buffer)**3) + &
                                central_pol(i1) * &
                                ( + 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut+r_buffer)/r_buffer) &
                                  - 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut+r_buffer)/r_buffer)**2) &
@@ -2298,11 +2333,16 @@ module vdw
                                ( + 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut+r_buffer)/r_buffer) &
                                  - 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut+r_buffer)/r_buffer)**2) &
                                  * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buffer/Bohr))
-                else if ( rjs_0_mbd(k2) .ge. rcut/Bohr .and. rjs_0_mbd(k2) < (rcut_mbd-r_buffer)/Bohr ) then
-                  da_mbd(k2) = 0.d0
+                else if ( rjs_0_mbd(k2) > rcut/Bohr .and. rjs_0_mbd(k2) .le. (rcut_mbd-r_buffer)/Bohr ) then
+                  da_mbd(k2) = neighbor_alpha0_mbd(k2) * &
+                                    hirshfeld_v_mbd_der(c3,k2)*Bohr
                   do_mbd(k2) = 0.d0
-                else if ( rjs_0_mbd(k2) .ge. (rcut_mbd-r_buffer)/Bohr .and. rjs_0_mbd(k2) < rcut_mbd/Bohr ) then
-                  da_mbd(k2) = central_pol(i1) &
+                else if ( rjs_0_mbd(k2) > (rcut_mbd-r_buffer)/Bohr .and. rjs_0_mbd(k2) .le. rcut_mbd/Bohr ) then
+                  da_mbd(k2) = neighbor_alpha0_mbd(k2) * &
+                                    hirshfeld_v_mbd_der(c3,k2)*Bohr * &
+                       ( 1.d0 - 3.d0 * ((rjs_0_mbd(k2)*Bohr-rcut_mbd+r_buffer)/r_buffer)**2 &
+                              + 2.d0 * ((rjs_0_mbd(k2)*Bohr-rcut_mbd+r_buffer)/r_buffer)**3) + &
+                               central_pol(i1) &
                        * (- 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut_mbd+r_buffer)/r_buffer) &
                        + 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut_mbd+r_buffer)/r_buffer)**2) &
                        * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buffer/Bohr))
@@ -2318,12 +2358,12 @@ module vdw
                   j = mbd_neighbors_list(k2)
                   j1 = modulo(j-1, n_sites0) + 1
                   q = p_mbd(k2)
-                  if ( rjs_0_mbd(k2) < (rcut-r_buffer)/Bohr ) then
+                  if ( rjs_0_mbd(k2) .le. (rcut-r_buffer)/Bohr ) then
                     r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),j,1)
                     da_mbd(k2) = da_iso(r,c3,2)
                     do_pref = -omega_ref * (a_iso(r,1) * da_iso(r,c3,2) - a_iso(r,2) * da_iso(r,c3,1)) / &
                                ( a_iso(r,1)**2 * (a_iso(r,2)/a_iso(r,1) - 1.d0)**(3.d0/2.d0) )
-                  else if ( rjs_0_mbd(k2) .ge. (rcut-r_buffer)/Bohr .and. rjs_0_mbd(k2) < rcut/Bohr ) then
+                  else if ( rjs_0_mbd(k2) > (rcut-r_buffer)/Bohr .and. rjs_0_mbd(k2) .le. rcut/Bohr ) then
                     r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),j,1)
                     do_pref = -omega_ref * (a_iso(r,1) * da_iso(r,c3,2) - a_iso(r,2) * da_iso(r,c3,1)) / &
                                ( a_iso(r,1)**2 * (a_iso(r,2)/a_iso(r,1) - 1.d0)**(3.d0/2.d0) )
@@ -2334,6 +2374,10 @@ module vdw
                                 (- 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut+r_buffer)/r_buffer) &
                                  + 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut+r_buffer)/r_buffer)**2) &
                                  * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buffer/Bohr)) + &
+                                    neighbor_alpha0_mbd(k2) * &
+                                    hirshfeld_v_mbd_der(c3,k2)*Bohr * &
+                              (+ 3.d0 * ((rjs_0_mbd(k2)*Bohr-rcut+r_buffer)/r_buffer)**2 &
+                               - 2.d0 * ((rjs_0_mbd(k2)*Bohr-rcut+r_buffer)/r_buffer)**3) + &
                                  central_pol(j1) * &
                                   ( + 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut+r_buffer)/r_buffer) &
                                    - 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut+r_buffer)/r_buffer)**2) &
@@ -2349,11 +2393,16 @@ module vdw
                                   ( + 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut+r_buffer)/r_buffer) &
                                    - 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut+r_buffer)/r_buffer)**2) &
                                    * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buffer/Bohr))
-                  else if ( rjs_0_mbd(k2) .ge. rcut/Bohr .and. rjs_0_mbd(k2) < (rcut_mbd-r_buffer)/Bohr ) then
-                    da_mbd(k2) = 0.d0
+                  else if ( rjs_0_mbd(k2) > rcut/Bohr .and. rjs_0_mbd(k2) .le. (rcut_mbd-r_buffer)/Bohr ) then
+                    da_mbd(k2) = neighbor_alpha0_mbd(k2) * &
+                                    hirshfeld_v_mbd_der(c3,k2)*Bohr
                     do_mbd(k2) = 0.d0
-                  else if ( rjs_0_mbd(k2) .ge. (rcut_mbd-r_buffer)/Bohr .and. rjs_0_mbd(k2) < rcut_mbd/Bohr ) then
-                    da_mbd(k2) = central_pol(j1) &
+                  else if ( rjs_0_mbd(k2) > (rcut_mbd-r_buffer)/Bohr .and. rjs_0_mbd(k2) .le. rcut_mbd/Bohr ) then
+                    da_mbd(k2) = neighbor_alpha0_mbd(k2) * &
+                                    hirshfeld_v_mbd_der(c3,k2)*Bohr * &
+                       ( 1.d0 - 3.d0 * ((rjs_0_mbd(k2)*Bohr-rcut_mbd+r_buffer)/r_buffer)**2 &
+                              + 2.d0 * ((rjs_0_mbd(k2)*Bohr-rcut_mbd+r_buffer)/r_buffer)**3) + &
+                                 central_pol(j1) &
                          * (- 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut_mbd+r_buffer)/r_buffer) &
                          + 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut_mbd+r_buffer)/r_buffer)**2) &
                          * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buffer/Bohr))
@@ -2428,8 +2477,11 @@ module vdw
                 k2 = k2+1
                 i2 = sub_2b_list(k2)
                 i1 = modulo(i2-1, n_sites0) + 1
-                if ( rjs_2b(k2) .ge. (rcut_mbd-r_buffer)/Bohr .and. rjs_2b(k2) < rcut_mbd/Bohr ) then
-                  da_2b(k2) = central_pol(i1) * &
+                if ( rjs_2b(k2) > (rcut_mbd-r_buffer)/Bohr .and. rjs_2b(k2) .le. rcut_mbd/Bohr ) then
+                  da_2b(k2) = neighbor_alpha0_2b(k2) * hirshfeld_v_2b_der(c3,k2)*Bohr * &
+                                 (+ 3.d0 * ((rjs_2b(k2)*Bohr-rcut_mbd+r_buffer)/(r_buffer))**2 &
+                                  - 2.d0 * ((rjs_2b(k2)*Bohr-rcut_mbd+r_buffer)/(r_buffer))**3) + &
+                              central_pol(i1) * &
                                 ( + 6.d0 * ((rjs_2b(k2)*Bohr-rcut_mbd+r_buffer)/(r_buffer)) &
                                   - 6.d0 * ((rjs_2b(k2)*Bohr-rcut_mbd+r_buffer)/(r_buffer))**2) &
                                   * ( -xyz_2b(c3,k2)/rjs_2b(k2)/(r_buffer/Bohr))
@@ -2437,11 +2489,14 @@ module vdw
                                 ( + 6.d0 * ((rjs_2b(k2)*Bohr-rcut_mbd+r_buffer)/(r_buffer)) &
                                   - 6.d0 * ((rjs_2b(k2)*Bohr-rcut_mbd+r_buffer)/(r_buffer))**2) &
                                   * ( -xyz_2b(c3,k2)/rjs_2b(k2)/(r_buffer/Bohr))
-                else if ( rjs_2b(k2) .ge. rcut_mbd/Bohr .and. rjs_2b(k2) < (rcut_2b-r_buffer)/Bohr ) then
-                  da_2b(k2) = 0.d0
+                else if ( rjs_2b(k2) > rcut_mbd/Bohr .and. rjs_2b(k2) .le. (rcut_2b-r_buffer)/Bohr ) then
+                  da_2b(k2) = neighbor_alpha0_2b(k2) * hirshfeld_v_2b_der(c3,k2)*Bohr
                   do_2b(k2) = 0.d0
-                else if ( rjs_2b(k2) .ge. (rcut_2b-r_buffer)/Bohr .and. rjs_2b(k2) < rcut_2b/Bohr ) then
-                  da_2b(k2) = central_pol(i1) * &
+                else if ( rjs_2b(k2) > (rcut_2b-r_buffer)/Bohr .and. rjs_2b(k2) .le. rcut_2b/Bohr ) then
+                  da_2b(k2) = neighbor_alpha0_2b(k2) * hirshfeld_v_2b_der(c3,k2)*Bohr * &
+                     (1.d0 - 3.d0 * ((rjs_2b(k2)*Bohr-rcut_2b+r_buffer)/(r_buffer))**2 &
+                           + 2.d0 * ((rjs_2b(k2)*Bohr-rcut_2b+r_buffer)/(r_buffer))**3) + &
+                              central_pol(i1) * &
                          ( - 6.d0 * ((rjs_2b(k2)*Bohr-rcut_2b+r_buffer)/(r_buffer)) &
                            + 6.d0 * ((rjs_2b(k2)*Bohr-rcut_2b+r_buffer)/(r_buffer))**2) &
                          * ( -xyz_2b(c3,k2)/rjs_2b(k2)/(r_buffer/Bohr))
@@ -2472,9 +2527,9 @@ module vdw
               end do
               forces_TS = 1.d0/2.d0 * forces_TS
 
-              !if ( i == 1 .and. c3 == 1 .and. om == 2 ) then
-              !  write(*,*) "forces_TS", forces_TS
-              !end if
+              if ( i == 1 .and. c3 == 1 .and. om == 2 ) then
+                write(*,*) "forces_TS", forces_TS
+              end if
 
               G_mat = 0.d0
 
@@ -2544,7 +2599,6 @@ module vdw
                 call integrate("trapezoidal", omegas_mbd, integrand, omegas_mbd(1), omegas_mbd(n_freq), integral)
                 forces0(c3,i) = forces0(c3,i) + (1.d0/(2.d0*pi) * integral + forces_TS) * Hartree/Bohr
 
-                write(*,*) "integral", integral
                 write(*,*) "MBD force", i, c3, forces0(c3,i)
                 integral = 0.d0
                 if (c3 == 1 ) then
@@ -2567,12 +2621,15 @@ module vdw
           deallocate( T_LR, r0_ii_SCS, f_damp_SCS, AT, AT_n, energy_series, omegas_mbd, integrand, n_mbd_neigh, &
                       mbd_neighbors_list, p_mbd, r0_ii_mbd, neighbor_alpha0_mbd, xyz_mbd, rjs_mbd, T_mbd, a_mbd, &
                       rjs_0_mbd, xyz_0_mbd, o_mbd, sub_2b_list, xyz_2b, rjs_2b, r0_ii_2b, neighbor_alpha0_2b, &
-                      a_2b, o_2b, r0_ii_SCS_2b, f_damp_SCS_2b, C6_2b )
+                      a_2b, o_2b, r0_ii_SCS_2b, f_damp_SCS_2b, C6_2b, hirshfeld_mbd_neigh )
         end if
                     
         if ( do_derivatives .and. om == 2 ) then
           deallocate( da_mbd, AT_n_f, dT_mbd, f_damp_der_mbd, f_damp_der_SCS, dT_LR, G_mat, force_series, &
                       total_energy_series, total_integrand, da_2b, do_2b, do_mbd )
+          if ( do_hirshfeld_gradients ) then
+            deallocate( hirshfeld_v_mbd_der, hirshfeld_v_2b_der )
+          end if
         end if
 
       end do ! om

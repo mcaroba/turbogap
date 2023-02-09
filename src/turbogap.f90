@@ -1337,6 +1337,7 @@ program turbogap
 !#else
 !                                       energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
 !#endif
+!write(*,*) "TS energy", sum(energies_vdw)
 !        if ( params%vdw_scs_rcut > params%vdw_rcut ) then
 !          write(*,*) "VDW CALCULATION ABORTED:               |"
 !          write(*,*) "Please provide vdw_rcut > vdw_scs_rcut |"
@@ -1399,6 +1400,7 @@ write(*,*) "scs timing", time1-time2
 !#else
 !                                       energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
 !#endif
+!write(*,*) "TS_energies", sum(energies)
 
           !call get_mbd_energies_and_forces( alpha_SCS, alpha_SCS_grad, n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
           !              neighbor_species(j_beg:j_end), params%vdw_rcut, params%vdw_buffer, &
