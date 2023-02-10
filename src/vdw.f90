@@ -1429,11 +1429,11 @@ module vdw
         end do
 
         !if ( i == 1 .and. om == 2 ) then
-        !  write(*,*) "d_vec"
-        !  !write(*,*) "B_mat"
+        !  !write(*,*) "d_vec"
+        !  write(*,*) "B_mat"
         !  do p = 1, 3*n_sub_sites
-        !    !write(*,*) B_mat(p,:)
-        !    write(*,*) d_vec(p,:)
+        !    write(*,*) B_mat(p,:)
+        !    !write(*,*) d_vec(p,:)
         !  end do
         !end if
         
@@ -1541,12 +1541,12 @@ module vdw
             end do
           end if
 
-          if (i == 1 .and. om == 2) then
-            write(*,*) "a_iso"
-            do p = 1, n_sub_sites
-              write(*,*) a_iso(p,2)
-            end do
-          end if
+          !if (i == 1 .and. om == 2) then
+          !  write(*,*) "a_iso"
+          !  do p = 1, n_sub_sites
+          !    write(*,*) a_iso(p,2)
+          !  end do
+          !end if
 
           !do c1 = 1, 3
           !  do c2 = 1, 3
@@ -1738,9 +1738,9 @@ module vdw
                 a_mbd(k2) = central_pol(i1) * (1.d0 & 
                                     - 3.d0 * ((rjs(n_tot+k_i)-rcut_mbd+r_buffer)/(r_buffer))**2 &
                                     + 2.d0 * ((rjs(n_tot+k_i)-rcut_mbd+r_buffer)/(r_buffer))**3)
-                o_mbd(k2) = central_omega(i1) * (1.d0 & 
-                                    - 3.d0 * ((rjs(n_tot+k_i)-rcut_mbd+r_buffer)/(r_buffer))**2 &
-                                    + 2.d0 * ((rjs(n_tot+k_i)-rcut_mbd+r_buffer)/(r_buffer))**3)
+                o_mbd(k2) = central_omega(i1) !* (1.d0 & 
+                                    !- 3.d0 * ((rjs(n_tot+k_i)-rcut_mbd+r_buffer)/(r_buffer))**2 &
+                                    !+ 2.d0 * ((rjs(n_tot+k_i)-rcut_mbd+r_buffer)/(r_buffer))**3)
               end if
               r0_ii_SCS(k2) = r0_ii_mbd(k2) * (a_mbd(k2)/neighbor_alpha0_mbd(k2)/hirshfeld_mbd_neigh(k2))**(1.d0/3.d0)
               r_vdw_i = r0_ii_SCS(k2)
@@ -1795,9 +1795,9 @@ module vdw
                         a_mbd(k2) = central_pol(j1) * (1.d0 & 
                                             - 3.d0 * ((rjs(n_tot+k_j)-rcut_mbd+r_buffer)/(r_buffer))**2 &
                                             + 2.d0 * ((rjs(n_tot+k_j)-rcut_mbd+r_buffer)/(r_buffer))**3)
-                        o_mbd(k2) = central_omega(j1) * (1.d0 & 
-                                            - 3.d0 * ((rjs(n_tot+k_j)-rcut_mbd+r_buffer)/(r_buffer))**2 &
-                                            + 2.d0 * ((rjs(n_tot+k_j)-rcut_mbd+r_buffer)/(r_buffer))**3)
+                        o_mbd(k2) = central_omega(j1) !* (1.d0 & 
+                                            !- 3.d0 * ((rjs(n_tot+k_j)-rcut_mbd+r_buffer)/(r_buffer))**2 &
+                                            !+ 2.d0 * ((rjs(n_tot+k_j)-rcut_mbd+r_buffer)/(r_buffer))**3)
                       end if
                       r0_ii_SCS(k2) = r0_ii_mbd(k2) * (a_mbd(k2)/neighbor_alpha0_mbd(k2)/hirshfeld_mbd_neigh(k2))**(1.d0/3.d0)
                       r_vdw_j = r0_ii_SCS(k2)
@@ -1820,6 +1820,9 @@ module vdw
               end do
             end if
           end do
+
+          !write(*,*) "a_mbd", a_mbd
+          !write(*,*) "o_mbd", o_mbd
         
           E_TS = 0.d0
           k2 = 0
@@ -1867,9 +1870,9 @@ module vdw
                 a_2b(k2) = central_pol(i1) * (1.d0 & 
                            - 3.d0 * ((rjs(n_tot+k_i)-rcut_2b+r_buffer)/(r_buffer))**2 &
                            + 2.d0 * ((rjs(n_tot+k_i)-rcut_2b+r_buffer)/(r_buffer))**3)
-                o_2b(k2) = central_omega(i1) * (1.d0 &
-                           - 3.d0 * ((rjs(n_tot+k_i)-rcut_2b+r_buffer)/(r_buffer))**2 &
-                           + 2.d0 * ((rjs(n_tot+k_i)-rcut_2b+r_buffer)/(r_buffer))**3)
+                o_2b(k2) = central_omega(i1) !* (1.d0 &
+                           !- 3.d0 * ((rjs(n_tot+k_i)-rcut_2b+r_buffer)/(r_buffer))**2 &
+                           !+ 2.d0 * ((rjs(n_tot+k_i)-rcut_2b+r_buffer)/(r_buffer))**3)
               end if
               C6_2b(k2) = 3.d0/2.d0 * a_iso(1,2) * a_2b(k2) * (o_p(1) * o_2b(k2)) / &
                       (o_p(1) + o_2b(k2))
@@ -1924,7 +1927,7 @@ module vdw
 
           !if ( i == 1 .and. om == 2 ) then
           !  write(*,*) "AT"
-          !  do p = 1, 3*n_sub_sites
+          !  do p = 1, 3*n_mbd_sites
           !    write(*,*) AT(p,:,1)
           !  end do
           !end if
@@ -2245,6 +2248,11 @@ module vdw
             !    !write(*,*) dB_mat(p,:)
             !    write(*,*) d_der(p,:)
             !  end do
+            !  write(*,*) "n_sub_sites", n_sub_sites
+            !  write(*,*) "a_SCS"
+            !  do p = 1, 3*n_sub_sites
+            !    write(*,*) a_SCS(p,:)
+            !  end do
             !end if
 
             b_der = -b_der+d_der
@@ -2276,12 +2284,14 @@ module vdw
             end do
             da_iso(:,c3,om) = da_iso(:,c3,om)/3.d0
             
-            if ( i == 1 .and. c3 == 1 .and. om == 2 ) then
-              write(*,*) "da_iso"
-              do p = 1, n_sub_sites
-                write(*,*) da_iso(p,1,2)
-              end do
-            end if
+            !if ( i == 1 .and. c3 == 1 .and. om == 2 ) then
+            !  write(*,*) "da_iso"
+            !  !write(*,*) "da_SCS"
+            !  do p = 1, n_sub_sites
+            !    write(*,*) da_iso(p,1,2)
+            !    !write(*,*) da_SCS(p,:)
+            !  end do
+            !end if
 
             if ( om == 2 ) then
             
@@ -2346,13 +2356,20 @@ module vdw
                        * (- 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut_mbd+r_buffer)/r_buffer) &
                        + 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut_mbd+r_buffer)/r_buffer)**2) &
                        * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buffer/Bohr))
-                  do_mbd(k2) = central_omega(i1) &
-                       * (- 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut_mbd+r_buffer)/r_buffer) &
-                       + 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut_mbd+r_buffer)/r_buffer)**2) &
-                       * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buffer/Bohr))
+                  do_mbd(k2) = 0.d0 !central_omega(i1) &
+                       !* (- 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut_mbd+r_buffer)/r_buffer) &
+                       !+ 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut_mbd+r_buffer)/r_buffer)**2) &
+                       !* ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buffer/Bohr))
                 end if
                 da_i = da_mbd(k2)
+                if ( p == 1 .and. i == 1 .and. c3 == 1 ) then
+                  write(*,*) "da_i, a_mbd_i", da_i, a_mbd_i
+                  write(*,*) "rjs_0_mbd", rjs_0_mbd(k2)
+                end if
                 a_mbd_i = a_mbd(k2)
+                if ( a_mbd_i > 0.d0 ) then
+                  da_i = da_i/a_mbd_i
+                end if
                 do j3 = 2, n_mbd_neigh(p)
                   k2 = k2+1
                   j = mbd_neighbors_list(k2)
@@ -2406,18 +2423,26 @@ module vdw
                          * (- 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut_mbd+r_buffer)/r_buffer) &
                          + 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut_mbd+r_buffer)/r_buffer)**2) &
                          * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buffer/Bohr))
-                    do_mbd(k2) = central_omega(j1) &
-                         * (- 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut_mbd+r_buffer)/r_buffer) &
-                         + 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut_mbd+r_buffer)/r_buffer)**2) &
-                         * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buffer/Bohr))
+                    do_mbd(k2) = 0.d0 !central_omega(j1) &
+                         !* (- 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut_mbd+r_buffer)/r_buffer) &
+                         !+ 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut_mbd+r_buffer)/r_buffer)**2) &
+                         !* ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buffer/Bohr))
                   end if
                   da_j = da_mbd(k2)
                   a_mbd_j = a_mbd(k2)
+                  ! Avoid division by zero if a_mbd is right at the cut-off where it's zero (with da_mbd = 0)
+                  if ( a_mbd_j > 0.d0 ) then
+                    da_j = da_j/a_mbd_j
+                  end if
+                  if ( p == 1 .and. i == 1 .and. c3 == 1 ) then
+                    write(*,*) "a_mbd_i, a_mbd_j", a_mbd_i, a_mbd_j
+                    write(*,*) "da_i, da_j", da_i, da_j
+                  end if
                   r_vdw_j = r0_ii_SCS(k2)
                   R_vdW_SCS_ij = r_vdw_i + r_vdw_j
                   S_vdW_ij = sR*R_vdW_SCS_ij
-                  dS_vdW_ij = sR/3.d0 * ( r_vdw_i/a_mbd_i * da_i + &
-                                          r_vdw_j/a_mbd_j * da_j )
+                  dS_vdW_ij = sR/3.d0 * ( r_vdw_i * da_i + &
+                                          r_vdw_j * da_j )
                   f_damp_der_SCS(k2) = -(d*rjs_mbd(k2))/S_vdW_ij**2 * f_damp_SCS(k2)**2 * &
                                          exp(-d*(rjs_mbd(k2)/S_vdW_ij - 1.d0)) * dS_vdW_ij
                   k3 = 9*(k2-1)
@@ -2460,8 +2485,8 @@ module vdw
                 end do
               end do
             
-
-              !write(*,*) "dC6_2b"
+              !write(*,*) "da_mbd", da_mbd
+              !write(*,*) "do_mbd", do_mbd
 
               forces_TS = 0.d0
               k2 = 0
@@ -2500,13 +2525,18 @@ module vdw
                          ( - 6.d0 * ((rjs_2b(k2)*Bohr-rcut_2b+r_buffer)/(r_buffer)) &
                            + 6.d0 * ((rjs_2b(k2)*Bohr-rcut_2b+r_buffer)/(r_buffer))**2) &
                          * ( -xyz_2b(c3,k2)/rjs_2b(k2)/(r_buffer/Bohr))
-                  do_2b(k2) = central_omega(i1) * &
-                         ( - 6.d0 * ((rjs_2b(k2)*Bohr-rcut_2b+r_buffer)/(r_buffer)) &
-                           + 6.d0 * ((rjs_2b(k2)*Bohr-rcut_2b+r_buffer)/(r_buffer))**2) &
-                         * ( -xyz_2b(c3,k2)/rjs_2b(k2)/(r_buffer/Bohr))
+                  do_2b(k2) = 0.d0 !central_omega(i1) * &
+                         !( - 6.d0 * ((rjs_2b(k2)*Bohr-rcut_2b+r_buffer)/(r_buffer)) &
+                         !  + 6.d0 * ((rjs_2b(k2)*Bohr-rcut_2b+r_buffer)/(r_buffer))**2) &
+                         !* ( -xyz_2b(c3,k2)/rjs_2b(k2)/(r_buffer/Bohr))
                 end if
                 r_vdw_j = r0_ii_SCS_2b(k2)
-                dr_vdw_j = r_vdw_j / (3.d0 * a_2b(k2)) * da_2b(k2)
+                if ( a_2b(k2) > 0.d0 ) then
+                  da_j = da_2b(k2) / a_2b(k2)
+                else
+                  da_j = da_2b(k2)
+                end if
+                dr_vdw_j = r_vdw_j / 3.d0 * da_j
                 dC6_2b = 3.d0/2.d0 * (o_p(1)*o_2b(k2) &
                             / (o_p(1)+o_2b(k2)) &
                             * (da_iso(1,c3,2)*a_2b(k2) + a_iso(1,2)*da_2b(k2)) &
@@ -2545,17 +2575,17 @@ module vdw
                     a_mbd(k3+1) * (2.d0 * omegas_mbd(j)**2 * o_mbd(k3+1)) * &
                     do_mbd(k3+1) / ( o_mbd(k3+1)**2 + omegas_mbd(j)**2 )**2 * &
                     T_LR(3*(p-1)+1:3*(p-1)+3,:)
-                    !if ( p == 29 .and. i == 1 .and. c3 == 1 .and. om == 2 .and. j == 1 ) then
-                    !  write(*,*) "G_mat", G_mat(3*(p-1)+3,3*(21-1)+1,1)
-                    !  write(*,*) "a_mbd", a_mbd(k3+1)
-                    !  write(*,*) "o_mbd", o_mbd(k3+1)
-                    !  write(*,*) "dT_LR", dT_LR(3*(p-1)+3,3*(21-1)+1)
-                    !  write(*,*) "da_mbd", da_mbd(k3+1)
-                    !  write(*,*) "T_LR", T_LR(3*(p-1)+3,3*(21-1)+1)
-                    !  write(*,*) "do_mbd", do_mbd(k3+1)
-                    !  write(*,*) "k3+1", k3+1
-                    !  write(*,*) "rjs_0_mbd", rjs_0_mbd(k3+1)*Bohr
-                    !end if
+                    if ( p == 1 .and. i == 1 .and. c3 == 1 .and. om == 2 .and. j == 1 ) then
+                      write(*,*) "G_mat", G_mat(3*(p-1)+1,3*(2-1)+2,1)
+                      write(*,*) "a_mbd", a_mbd(k3+1)
+                      write(*,*) "o_mbd", o_mbd(k3+1)
+                      write(*,*) "dT_LR", dT_LR(3*(p-1)+1,3*(2-1)+2)
+                      write(*,*) "da_mbd", da_mbd(k3+1)
+                      write(*,*) "T_LR", T_LR(3*(p-1)+3,3*(2-1)+2)
+                      write(*,*) "do_mbd", do_mbd(k3+1)
+                      write(*,*) "k3+1", k3+1
+                      write(*,*) "rjs_0_mbd", rjs_0_mbd(k3+1)*Bohr
+                    end if
                   k3 = k3+n_mbd_neigh(p)
                 end do
               end do
@@ -2563,7 +2593,7 @@ module vdw
 
               !if ( i == 1 .and. c3 == 1 .and. om == 2 ) then
               !  write(*,*) "G_mat"
-              !  do p = 1, 3*n_sub_sites
+              !  do p = 1, 3*n_mbd_sites
               !    write(*,*) G_mat(p,:,1)
               !  end do
               !end if
