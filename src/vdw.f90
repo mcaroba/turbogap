@@ -1027,6 +1027,10 @@ module vdw
     integer :: n_degree
     real*8, allocatable :: B_pol(:,:), B_mult(:,:), b_i(:,:), d_vec(:,:), val_xv(:,:)
 
+!central_pol = 10.d0
+!central_omega = 0.5d0
+
+
     n_sites = size(n_neigh)
     n_pairs = size(neighbors_list)
     n_species = size(c6_ref)
@@ -2362,10 +2366,6 @@ module vdw
                        !* ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buffer/Bohr))
                 end if
                 da_i = da_mbd(k2)
-                if ( p == 1 .and. i == 1 .and. c3 == 1 ) then
-                  write(*,*) "da_i, a_mbd_i", da_i, a_mbd_i
-                  write(*,*) "rjs_0_mbd", rjs_0_mbd(k2)
-                end if
                 a_mbd_i = a_mbd(k2)
                 if ( a_mbd_i > 0.d0 ) then
                   da_i = da_i/a_mbd_i
@@ -2433,10 +2433,6 @@ module vdw
                   ! Avoid division by zero if a_mbd is right at the cut-off where it's zero (with da_mbd = 0)
                   if ( a_mbd_j > 0.d0 ) then
                     da_j = da_j/a_mbd_j
-                  end if
-                  if ( p == 1 .and. i == 1 .and. c3 == 1 ) then
-                    write(*,*) "a_mbd_i, a_mbd_j", a_mbd_i, a_mbd_j
-                    write(*,*) "da_i, da_j", da_i, da_j
                   end if
                   r_vdw_j = r0_ii_SCS(k2)
                   R_vdW_SCS_ij = r_vdw_i + r_vdw_j
@@ -2575,17 +2571,18 @@ module vdw
                     a_mbd(k3+1) * (2.d0 * omegas_mbd(j)**2 * o_mbd(k3+1)) * &
                     do_mbd(k3+1) / ( o_mbd(k3+1)**2 + omegas_mbd(j)**2 )**2 * &
                     T_LR(3*(p-1)+1:3*(p-1)+3,:)
-                    if ( p == 1 .and. i == 1 .and. c3 == 1 .and. om == 2 .and. j == 1 ) then
-                      write(*,*) "G_mat", G_mat(3*(p-1)+1,3*(2-1)+2,1)
-                      write(*,*) "a_mbd", a_mbd(k3+1)
-                      write(*,*) "o_mbd", o_mbd(k3+1)
-                      write(*,*) "dT_LR", dT_LR(3*(p-1)+1,3*(2-1)+2)
-                      write(*,*) "da_mbd", da_mbd(k3+1)
-                      write(*,*) "T_LR", T_LR(3*(p-1)+3,3*(2-1)+2)
-                      write(*,*) "do_mbd", do_mbd(k3+1)
-                      write(*,*) "k3+1", k3+1
-                      write(*,*) "rjs_0_mbd", rjs_0_mbd(k3+1)*Bohr
-                    end if
+                    !if ( p == 29 .and. i == 1 .and. c3 == 1 .and. om == 2 .and. j == 1 ) then
+                    !  q = 21
+                    !  write(*,*) "G_mat", G_mat(3*(p-1)+3,3*(q-1)+1,1)
+                    !  write(*,*) "a_mbd", a_mbd(k3+1)
+                    !  write(*,*) "o_mbd", o_mbd(k3+1)
+                    !  write(*,*) "dT_LR", dT_LR(3*(p-1)+3,3*(q-1)+1)
+                    !  write(*,*) "da_mbd", da_mbd(k3+1)
+                    !  write(*,*) "T_LR", T_LR(3*(p-1)+3,3*(q-1)+1)
+                    !  write(*,*) "do_mbd", do_mbd(k3+1)
+                    !  write(*,*) "k3+1", k3+1
+                    !  write(*,*) "rjs_0_mbd", rjs_0_mbd(k3+1)*Bohr
+                    !end if
                   k3 = k3+n_mbd_neigh(p)
                 end do
               end do
