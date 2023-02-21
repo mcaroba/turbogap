@@ -1917,7 +1917,7 @@ module vdw
                             (1.d0 - 10.d0 * rb**3 &
                                + 15.d0 * rb**4 &
                                - 6.d0 * rb**5) + &
-                                r0_ii_mbd(k2) * (central_pol(j1)//neighbor_alpha0_mbd(k2))**(1.d0/3.d0) * &
+                                r0_ii_mbd(k2) * (central_pol(j1)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0) * &
                                 ( + 10.d0 *rb**3 &
                                - 15.d0 * rb**4 &
                                + 6.d0 * rb**5)

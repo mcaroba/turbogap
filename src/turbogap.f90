@@ -117,7 +117,7 @@ program turbogap
   real*8, allocatable :: v_neigh_vdw(:), energies_vdw(:), forces_vdw(:,:), this_energies_vdw(:), this_forces_vdw(:,:)
   real*8, allocatable :: alpha_SCS(:), omega_SCS(:), alpha_SCS_grad(:,:), hirshfeld_v_cart_der_send(:,:), &
                          hirshfeld_v_cart_der_receive(:,:), this_hirshfeld_v_cart_der_receive(:,:), &
-                         hirshfeld_v_cart_der_ji(:,:)
+                         hirshfeld_v_cart_der_ji(:,:), this_alpha_SCS(:), this_omega_SCS(:)
   integer, allocatable :: hirshfeld_transfer(:,:), this_hirshfeld_transfer(:), i_send(:), j_send(:), k_array(:), &
                           i_receive(:), j_receive(:), this_i_receive(:), this_j_receive(:), hirshfeld_disp(:), &
                           k_start(:)
@@ -1344,8 +1344,13 @@ program turbogap
 !          write(*,*) "or vdw_rcut = vdw_scs_rcut             |"
 !        else
           allocate( alpha_SCS(1:n_sites) )
+          allocate( this_alpha_SCS(1:n_sites) )
           allocate( omega_SCS(1:n_sites) )
+          allocate( this_omega_SCS(1:n_sites) )
           alpha_SCS = 0.d0
+          omega_SCS = 0.d0
+          this_alpha_SCS = 0.d0
+          this_omega_SCS = 0.d0
           !allocate( alpha_SCS_grad(j_beg:j_end,1:3) )
           allocate( alpha_SCS_grad(1:n_sites,1:3) )
           allocate( c6_scs(1:j_end-j_beg+1) )
@@ -1366,6 +1371,14 @@ call cpu_time(time2)
 #else
                                          forces_vdw )
 #endif
+
+call mpi_reduce(alpha_SCS, this_alpha_SCS, n_sites, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+alpha_SCS = this_alpha_SCS
+call mpi_bcast(alpha_SCS, n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+call mpi_reduce(omega_SCS, this_omega_SCS, n_sites, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+omega_SCS = this_omega_SCS
+call mpi_bcast(omega_SCS, n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+
 write(*,*) "alpha_SCS"
 do i = 1, n_sites
   write(*,*) i, alpha_SCS(i)
