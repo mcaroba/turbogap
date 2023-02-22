@@ -724,6 +724,8 @@ end if
         call upper_to_lower_case(params%vdw_type)
         if( params%vdw_type == "ts" )then
           continue
+        else if( params%vdw_type == "mbd" )then
+          continue
         else if( params%vdw_type == "none" )then
           continue
         else
