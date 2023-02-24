@@ -1,25 +1,8 @@
-!atoms_file = '2829_supercell.xyz'
-!atoms_file = '2829.xyz'
-!atoms_file = '2829_p.xyz'
-!atoms_file = '2829_m.xyz'
-!atoms_file = '2829_supercell_p.xyz'
-!atoms_file = '2829_supercell_m.xyz'
-atoms_file = 'atoms_vacuum.xyz'
-!atoms_file = 'atoms_vacuum_p.xyz'
-!atoms_file = 'atoms_vacuum_m.xyz'
-!atoms_file = 'atoms_vacuum_p_0.00001.xyz'
-!atoms_file = 'atoms_vacuum_m_0.00001.xyz'
-!atoms_file = '4070.xyz'
-!atoms_file = '4070_p.xyz'
-!atoms_file = '4070_m.xyz'
-!atoms_file = 'slab.xyz'
-!atoms_file = 'trimer.xyz'
-!atoms_file = 'trimer_p.xyz'
-!atoms_file = 'trimer_m.xyz'
-!atoms_file = 'buckled_graphene.xyz'
-!atoms_file = 'dimer.xyz'
-!atoms_file = 'dimer_p.xyz'
-!atoms_file = 'dimer_m.xyz'
+> c60_energies_ts.dat
+for i in $(seq 8 0.2 15); do
+echo $i
+cat <<EOF > input
+atoms_file = 'c60_dimer_$i.xyz'
 pot_file = 'gap_files/carbon.gap'
 
 ! Species info
@@ -29,9 +12,9 @@ species = C !H
 masses = 12.01 1.00784
 
 ! van der Waals info
-vdw_type = mbd
-vdw_sr = 0.83 !0.97
-vdw_d = 6. !20.            ! Use d = 20 for TS(SCS) and d = 6 for MBD
+vdw_type = ts
+vdw_sr = 0.94 !0.83 !0.97
+vdw_d = 20. !6. !20.            ! Use d = 20 for TS(SCS) and d = 6 for MBD
 vdw_rcut = 9.
 vdw_r0_ref = 1.900 !1.64
 vdw_alpha0_ref = 1.778 !0.667
@@ -47,3 +30,7 @@ vdw_mbd_norder = 4        ! Contributions up to n-body interactions (i.e. cut-of
 vdw_mbd_grad = .false.     ! Calculate MBD forces. Type: LOGICAL
 vdw_hirsh_grad = .true.   ! Include Hirshfeld gradients in the forces. Type: LOGICAL
 vdw_polynomial = .false.  ! Use polynomial approximation for inverse matrices. Type: LOGICAL
+vdw_omega_ref = 3.d0
+EOF
+mpirun -np 4 ../bin/turbogap predict | grep "Total energy" | awk '{print $3}' >> c60_energies_ts.dat
+done

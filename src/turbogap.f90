@@ -1361,7 +1361,7 @@ call cpu_time(time2)
                                          rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), v_neigh_vdw, &
                                          params%vdw_sr, params%vdw_d, params%vdw_c6_ref, params%vdw_r0_ref, &
                                          params%vdw_alpha0_ref, &
-                                         params%vdw_polynomial, &
+                                         params%vdw_polynomial, params%vdw_omega_ref, &
                                          alpha_SCS(i_beg:i_end), omega_SCS(i_beg:i_end), &
 #ifdef _MPIF90
                                          this_forces_vdw )
@@ -1376,10 +1376,10 @@ call mpi_reduce(omega_SCS, this_omega_SCS, n_sites, MPI_DOUBLE_PRECISION, MPI_SU
 omega_SCS = this_omega_SCS
 call mpi_bcast(omega_SCS, n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
 
-!write(*,*) "alpha_SCS"
-!do i = 1, n_sites
-!  write(*,*) i, alpha_SCS(i)
-!end do
+write(*,*) "alpha_SCS"
+do i = 1, n_sites
+  write(*,*) i, alpha_SCS(i)
+end do
 call cpu_time(time1)
 !write(*,*) "scs timing", time1-time2
           call get_mbd_energies_and_forces( hirshfeld_v_cart_der_ji(1:3,j_beg:j_end), &
@@ -1390,7 +1390,7 @@ call cpu_time(time1)
                                          params%vdw_sr, params%vdw_d, params%vdw_c6_ref, params%vdw_r0_ref, &
                                          params%vdw_alpha0_ref, params%vdw_mbd_grad, params%vdw_hirsh_grad, &
                                          params%vdw_polynomial, params%vdw_mbd_nfreq, params%vdw_mbd_norder, &
-                                         alpha_SCS, omega_SCS, &
+                                         params%vdw_omega_ref, alpha_SCS, omega_SCS, &
 #ifdef _MPIF90
                                          this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw )
 #else

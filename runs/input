@@ -1,25 +1,4 @@
-!atoms_file = '2829_supercell.xyz'
-atoms_file = '2829.xyz'
-!atoms_file = '2829_p.xyz'
-!atoms_file = '2829_m.xyz'
-!atoms_file = '2829_supercell_p.xyz'
-!atoms_file = '2829_supercell_m.xyz'
-!atoms_file = 'atoms_vacuum.xyz'
-!atoms_file = 'atoms_vacuum_p.xyz'
-!atoms_file = 'atoms_vacuum_m.xyz'
-!atoms_file = 'atoms_vacuum_p_0.00001.xyz'
-!atoms_file = 'atoms_vacuum_m_0.00001.xyz'
-!atoms_file = '4070.xyz'
-!atoms_file = '4070_p.xyz'
-!atoms_file = '4070_m.xyz'
-!atoms_file = 'slab.xyz'
-!atoms_file = 'trimer.xyz'
-!atoms_file = 'trimer_p.xyz'
-!atoms_file = 'trimer_m.xyz'
-!atoms_file = 'buckled_graphene.xyz'
-!atoms_file = 'dimer.xyz'
-!atoms_file = 'dimer_p.xyz'
-!atoms_file = 'dimer_m.xyz'
+atoms_file = 'c60_dimer_7.5.xyz'
 pot_file = 'gap_files/carbon.gap'
 
 ! Species info
@@ -32,18 +11,19 @@ masses = 12.01 1.00784
 vdw_type = mbd
 vdw_sr = 0.83 !0.97
 vdw_d = 6. !20.            ! Use d = 20 for TS(SCS) and d = 6 for MBD
-vdw_rcut = 15.
+vdw_rcut = 16.
 vdw_r0_ref = 1.900 !1.64
 vdw_alpha0_ref = 1.778 !0.667
 vdw_c6_ref = 27.8 !3.88
 ! The order of the cutoffs is vdw_scs_rcut < vdw_mbd_rcut < vdw_2b_rcut
 ! If two cutoffs are equal, there is no buffer region between them!
 vdw_buffer = 0.5          ! Buffer for transitions between cut-off regions. Type: REAL
-vdw_scs_rcut = 5.        ! vdw_scs_rcut > vdw_buffer. Type: REAL
-vdw_mbd_rcut = 10.        ! Cut-off for atoms to include for local MBD energy (vdw_mbd_rcut >= vdw_scs_rcut + vdw_buffer). Type: REAL
-vdw_2b_rcut = 15.          ! Cut-off for local TS-SCS (vdw_2b_rcut >= vdw_mbd_rcut + vdw_buffer), Type: REAL
+vdw_scs_rcut = 5.5        ! vdw_scs_rcut > vdw_buffer. Type: REAL
+vdw_mbd_rcut = 15.5        ! Cut-off for atoms to include for local MBD energy (vdw_mbd_rcut >= vdw_scs_rcut + vdw_buffer). Type: REAL
+vdw_2b_rcut = 16.          ! Cut-off for local TS-SCS (vdw_2b_rcut >= vdw_mbd_rcut + vdw_buffer), Type: REAL
 vdw_mbd_nfreq = 12        ! Number of frequency values for MBD integration. Type: INT
 vdw_mbd_norder = 4        ! Contributions up to n-body interactions (i.e. cut-off degree for Taylor expansion of ln(I-AT)). Type: INT
 vdw_mbd_grad = .false.     ! Calculate MBD forces. Type: LOGICAL
 vdw_hirsh_grad = .true.   ! Include Hirshfeld gradients in the forces. Type: LOGICAL
 vdw_polynomial = .false.  ! Use polynomial approximation for inverse matrices. Type: LOGICAL
+vdw_omega_ref = 3.d0

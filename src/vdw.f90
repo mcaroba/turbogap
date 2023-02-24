@@ -434,7 +434,7 @@ module vdw
   subroutine get_scs_polarizabilities( n_neigh, neighbors_list, neighbor_species, &
                                        rcut, r_buffer, rjs, xyz, &
                                        hirshfeld_v_neigh, sR, d, c6_ref, r0_ref, alpha0_ref, &
-                                       polynomial_expansion, &
+                                       polynomial_expansion, vdw_omega_ref, &
                                        central_pol, central_omega, forces0 )
 
     implicit none
@@ -442,7 +442,7 @@ module vdw
 !   Input variables
     real*8, intent(in) :: rcut, r_buffer, hirshfeld_v_neigh(:), &
                           rjs(:), xyz(:,:), sR, d, c6_ref(:), r0_ref(:), &
-                          alpha0_ref(:) !, hirshfeld_v(:), hirshfeld_v_neigh(:) !NOTE: uncomment this in final implementation
+                          alpha0_ref(:), vdw_omega_ref !, hirshfeld_v(:), hirshfeld_v_neigh(:) !NOTE: uncomment this in final implementation
     integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:)
     logical, intent(in) :: polynomial_expansion
 !   Output variables
@@ -597,7 +597,7 @@ module vdw
       n_tot = sum(n_neigh(1:i))-n_neigh(i)
       i0 = modulo(neighbors_list(n_tot+1)-1, n_sites0) + 1
       s = neighbor_species(n_tot+1)
-      omega_ref = (4.d0 * c6_ref(s)/(Hartree*Bohr**6)) / (3.d0*(alpha0_ref(s)/Bohr**3)**2)
+      omega_ref = (vdw_omega_ref * c6_ref(s)/(Hartree*Bohr**6)) / (3.d0*(alpha0_ref(s)/Bohr**3)**2)
       n_sub_sites = 0
       n_sub_pairs = 0
       k_i = 0
@@ -708,7 +708,7 @@ module vdw
               neighbor_alpha0(k2) = alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot+k_i)
             else
               neighbor_alpha0(k2) = (alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot+k_i)) / &
-                (1.d0 + (2.d0 * omega_ref/omegas(k2))**2) ! omega = 2*omega_p
+                (1.d0 + (vdw_omega_ref * omega_ref/omegas(k2))**2) ! omega = 2*omega_p
             end if
             neighbor_sigma(k2) = (sqrt(2.d0/pi) * neighbor_alpha0(k2)/3.d0)**(1.d0/3.d0)
             xyz_H(:,k2) = xyz(:,n_tot+k_i)/Bohr
@@ -762,7 +762,7 @@ module vdw
                       neighbor_alpha0(k2) = alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot+k_j)
                     else
                       neighbor_alpha0(k2) = (alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot+k_j)) / &
-                        (1.d0 + (2.d0 * omega_ref/omegas(k2))**2) ! omega = 2*omega_p
+                        (1.d0 + (vdw_omega_ref * omega_ref/omegas(k2))**2) ! omega = 2*omega_p
                     end if
                     neighbor_sigma(k2) = (sqrt(2.d0/pi) * neighbor_alpha0(k2)/3.d0)**(1.d0/3.d0)
                     xyz_H(:,k2) = xyz_j-xyz_i
@@ -901,7 +901,15 @@ module vdw
             do c1 = 1, 3
               central_pol(i) = central_pol(i) + dot_product(a_SCS(:,c1),d_vec(:,c1))/3.d0
             end do
-            central_omega(i) = 2.d0*omega_ref/sqrt(central_pol(i)/pol1-1.d0)
+            if (central_pol(i) .le. pol1) then
+              write(*,*) "ERROR: frequency dependency approximation fails for"
+              write(*,*) "one of the central polarizabilities."
+              write(*,*) "You can try using a larger value for"
+              write(*,*) "vdw_omega_ref or larger vdw_scs_rcut."
+              return
+            else
+              central_omega(i) = vdw_omega_ref*omega_ref/sqrt(central_pol(i)/pol1-1.d0)
+            end if  
             !write(*,*) "Polynomial central polarizability", i0, central_pol(i), central_omega(i)
           end if
       
@@ -921,6 +929,15 @@ module vdw
             do c1 = 1, 3
               pol1 = pol1 + a_SCS(c1,c1) 
             end do
+            if ( pol1 .le. 0.d0 ) then
+              write(*,*) "ERROR: At least one of the SCS polarizabilities"
+              write(*,*) "received a non-positive value. This is probably due to"
+              write(*,*) "very small interatomic distances where the local SCS"
+              write(*,*) "cycle for MBD fails. We recommend switching off"
+              write(*,*) "vdW corrections, using Tkatchenko-Scheffler or"
+              write(*,*) "trying to increase the value of vdw_scs_rcut."
+              return
+            end if
             pol1 = pol1/3.d0
             central_pol(i) = 0.d0
             do c1 = 1, 3
@@ -932,9 +949,26 @@ module vdw
             do c1 = 1, 3
               central_pol(i) = central_pol(i) + a_SCS(c1,c1)
             end do
+            if ( central_pol(i) .le. 0.d0 ) then
+              write(*,*) "ERROR: At least one of the SCS polarizabilities"
+              write(*,*) "received a non-positive value. This is probably due to"
+              write(*,*) "very small interatomic distances where the SCS"
+              write(*,*) "cycle for MBD fails. We recommend switching off"
+              write(*,*) "vdW corrections, using Tkatchenko-Scheffler or"
+              write(*,*) "trying to increase the value of vdw_scs_rcut."
+              return
+            end if
             central_pol(i) = central_pol(i)/3.d0
             !write(*,*) i0, central_pol(i)
-            central_omega(i) = 2.d0*omega_ref/sqrt(central_pol(i)/pol1-1.d0)
+            if (central_pol(i) .le. pol1) then
+              write(*,*) "ERROR: frequency dependency approximation fails for"
+              write(*,*) "one of the central polarizabilities."
+              write(*,*) "You can try using a larger value for"
+              write(*,*) "vdw_omega_ref."
+              return
+            else
+              central_omega(i) = vdw_omega_ref*omega_ref/sqrt(central_pol(i)/pol1-1.d0)
+            end if
           end if
         
         end if
@@ -988,7 +1022,7 @@ module vdw
                                        rcut, rcut_mbd, rcut_2b, r_buffer, rjs, xyz, &
                                        hirshfeld_v_neigh, sR, d, c6_ref, r0_ref, alpha0_ref, do_derivatives, &
                                        do_hirshfeld_gradients, polynomial_expansion, n_freq, n_order, &
-                                       central_pol, central_omega, &
+                                       vdw_omega_ref, central_pol, central_omega, &
                                        energies, forces0, virial )
 
     implicit none
@@ -996,7 +1030,7 @@ module vdw
 !   Input variables
     real*8, intent(in) :: rcut, r_buffer, &
                           rjs(:), xyz(:,:), sR, d, c6_ref(:), r0_ref(:), rcut_mbd, rcut_2b, hirshfeld_v_cart_der_ji(:,:), &
-                          alpha0_ref(:) !, hirshfeld_v(:), hirshfeld_v_neigh(:) !NOTE: uncomment this in final implementation
+                          alpha0_ref(:), vdw_omega_ref !, hirshfeld_v(:), hirshfeld_v_neigh(:) !NOTE: uncomment this in final implementation
     integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:), n_freq, n_order
     logical, intent(in) :: do_derivatives, do_hirshfeld_gradients, polynomial_expansion
 !   Output variables
@@ -1162,7 +1196,7 @@ module vdw
       n_tot = sum(n_neigh(1:i))-n_neigh(i)
       i0 = modulo(neighbors_list(n_tot+1)-1, n_sites0) + 1
       s = neighbor_species(n_tot+1)
-      omega_ref = (4.d0 * c6_ref(s)/(Hartree*Bohr**6)) / (3.d0*(alpha0_ref(s)/Bohr**3)**2)
+      omega_ref = (vdw_omega_ref * c6_ref(s)/(Hartree*Bohr**6)) / (3.d0*(alpha0_ref(s)/Bohr**3)**2)
       n_sub_sites = 0
       n_sub_pairs = 0
       k_i = 0
@@ -1310,7 +1344,7 @@ module vdw
               neighbor_alpha0(k2) = alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot+k_i)
             else
               neighbor_alpha0(k2) = (alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot+k_i)) / &
-                (1.d0 + (2.d0 * omega_ref/omegas(k2))**2) ! omega = 2*omega_p
+                (1.d0 + (vdw_omega_ref * omega_ref/omegas(k2))**2) ! omega = 2*omega_p
             end if
             neighbor_sigma(k2) = (sqrt(2.d0/pi) * neighbor_alpha0(k2)/3.d0)**(1.d0/3.d0)
             xyz_H(:,k2) = xyz(:,n_tot+k_i)/Bohr
@@ -1380,7 +1414,7 @@ module vdw
                       neighbor_alpha0(k2) = alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot+k_j)
                     else
                       neighbor_alpha0(k2) = (alpha0_ref(s) / Bohr**3 * hirshfeld_v_neigh(n_tot+k_j)) / &
-                        (1.d0 + (2.d0 * omega_ref/omegas(k2))**2) ! omega = 2*omega_p
+                        (1.d0 + (vdw_omega_ref * omega_ref/omegas(k2))**2) ! omega = 2*omega_p
                     end if
                     neighbor_sigma(k2) = (sqrt(2.d0/pi) * neighbor_alpha0(k2)/3.d0)**(1.d0/3.d0)
                     xyz_H(:,k2) = xyz_j-xyz_i
@@ -1601,12 +1635,37 @@ module vdw
             do c1 = 1, 3
               a_iso(p,om) = a_iso(p,om) + a_SCS(3*(p-1)+c1,c1)
             end do
+            if ( a_iso(p,om) .le. 0.d0 ) then
+              write(*,*) "ERROR: At least one of the SCS polarizabilities"
+              write(*,*) "received a non-positive value. This is probably due to"
+              write(*,*) "very small interatomic distances where the SCS"
+              write(*,*) "cycle for MBD fails. We recommend switching off"
+              write(*,*) "vdW corrections, using Tkatchenko-Scheffler or"
+              write(*,*) "trying to increase the value of vdw_scs_rcut."
+              return
+            end if
           end do
           a_iso(:,om) = a_iso(:,om)/3.d0
 
           if ( om == 2 ) then
+            k2 = 0
             do p = 1, n_sub_sites
-              o_p(p) = 2.d0*omega_ref/sqrt(a_iso(p,2)/a_iso(p,1)-1.d0)
+              if (a_iso(p,2) .le. a_iso(p,1)) then
+                write(*,*) "WARNING: frequency dependency approximation fails for"
+                write(*,*) "one of the local atoms. Using central characteristic"
+                write(*,*) "frequency for now. You can try using a larger value for"
+                write(*,*) "vdw_omega_ref. If you see this warning, your input"
+                write(*,*) "structure probably has at least one very small"
+                write(*,*) "intertomic distance where the SCS cycle in MBD"
+                write(*,*) "calculation fails. We recommend switching off"
+                write(*,*) "vdW corrections or using Tkatchenko-Scheffler." 
+                i2 = p_list(k2)
+                i1 = modulo(i2-1, n_sites0) + 1
+                o_p(p) = central_omega(i1)
+              else
+                o_p(p) = vdw_omega_ref*omega_ref/sqrt(a_iso(p,2)/a_iso(p,1)-1.d0)
+              end if
+              k2 = k2 + n_sub_neigh(p)
             end do
           end if
 
@@ -1625,12 +1684,38 @@ module vdw
             do c1 = 1, 3
               a_iso(p,om) = a_iso(p,om) + a_SCS(3*(p-1)+c1,c1)
             end do
+            if ( a_iso(p,om) .le. 0.d0 ) then
+              write(*,*) "ERROR: At least one of the SCS polarizabilities"
+              write(*,*) "received a non-positive value. This is probably due to"
+              write(*,*) "very small interatomic distances where the SCS"
+              write(*,*) "cycle for MBD fails. We recommend switching off"
+              write(*,*) "vdW corrections, using Tkatchenko-Scheffler or"
+              write(*,*) "trying to increase the value of vdw_scs_rcut."
+              write(*,*) "p, om, a_iso", p, om, a_iso(p,om)
+              return
+            end if
           end do
           a_iso(:,om) = a_iso(:,om)/3.d0
         
           if ( om == 2 ) then
+            k2 = 0
             do p = 1, n_sub_sites
-              o_p(p) = 2.d0*omega_ref/sqrt(a_iso(p,2)/a_iso(p,1)-1.d0)
+              if (a_iso(p,2) .le. a_iso(p,1)) then
+                write(*,*) "WARNING: frequency dependency approximation fails for"
+                write(*,*) "one of the local atoms. Using central characteristic"
+                write(*,*) "frequency for now. You can try using a larger value for"
+                write(*,*) "vdw_omega_ref. If you see this warning, your input"
+                write(*,*) "structure probably has at least one very small"
+                write(*,*) "intertomic distance where the SCS cycle in MBD"
+                write(*,*) "calculation fails. We recommend switching off"
+                write(*,*) "vdW corrections or using Tkatchenko-Scheffler."
+                i2 = p_list(k2)
+                i1 = modulo(i2-1, n_sites0) + 1
+                o_p(p) = central_omega(i1)
+              else
+                o_p(p) = vdw_omega_ref*omega_ref/sqrt(a_iso(p,2)/a_iso(p,1)-1.d0)
+              end if
+              k2 = k2 + n_sub_neigh(p)
             end do
           end if
 
@@ -1730,8 +1815,8 @@ module vdw
             allocate( dT_LR(1:3*n_mbd_sites,1:3*n_mbd_sites) )
             allocate( G_mat(1:3*n_mbd_sites,1:3*n_mbd_sites,1:n_freq) )
             allocate( force_series(1:3*n_mbd_sites,1:3*n_mbd_sites) )
-            !allocate( total_energy_series(1:3*n_mbd_sites,1:3*n_mbd_sites) )
-            !allocate( total_integrand(1:n_freq) )
+            allocate( total_energy_series(1:3*n_mbd_sites,1:3*n_mbd_sites) )
+            allocate( total_integrand(1:n_freq) )
             allocate( do_mbd(1:n_mbd_pairs) )
             allocate( dr0_ii_SCS(1:n_mbd_pairs) )
             allocate( dr0_ii_SCS_2b(1:n_2b_sites) )
@@ -2083,10 +2168,10 @@ module vdw
 
           !write(*,*) "n_mbd_sites", n_mbd_sites
 
-          !if ( i == 1 .and. om == 2 ) then
+          !if ( i == 47 .and. om == 2 ) then
           !  write(*,*) "AT"
           !  do p = 1, 3*n_mbd_sites
-          !    write(*,*) AT(p,:,1)
+          !    write(*,*) p, AT(p,:,1)
           !  end do
           !end if
 
@@ -2106,7 +2191,7 @@ module vdw
           call integrate("trapezoidal", omegas_mbd, integrand, omegas_mbd(1), omegas_mbd(n_freq), integral)
           integral = integral/(2.d0*pi)
           energies(i) = (integral + E_TS) * Hartree
-          !write(*,*) "MBD energy", i, energies(i)
+          write(*,*) "MBD energy", i, energies(i)
           E_MBD = E_MBD + energies(i)          
         
         end if ! om loop
@@ -2471,14 +2556,14 @@ module vdw
                 if ( rjs_0_mbd(k2) .le. (rcut-r_buf_scs)/Bohr ) then
                   r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),i2,1)
                   da_mbd(k2) = da_iso(r,c3,2)
-                  do_pref = -omega_ref * (a_iso(r,1) * da_iso(r,c3,2) - a_iso(r,2) * da_iso(r,c3,1)) / &
+                  do_pref = -0.5d0*vdw_omega_ref*omega_ref * (a_iso(r,1) * da_iso(r,c3,2) - a_iso(r,2) * da_iso(r,c3,1)) / &
                                ( a_iso(r,1)**2 * (a_iso(r,2)/a_iso(r,1) - 1.d0)**(3.d0/2.d0) )
                   do_mbd(k2) = do_pref
                   dr0_ii_SCS(k2) = r0_ii_mbd(k2) * (a_iso(r,2)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0) / &
                                    (3.d0 * a_iso(r,2)) * da_iso(r,c3,2)
                 else if ( rjs_0_mbd(k2) > (rcut-r_buf_scs)/Bohr .and. rjs_0_mbd(k2) .le. rcut/Bohr ) then
                   r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),i2,1)
-                  do_pref = -omega_ref * (a_iso(r,1) * da_iso(r,c3,2) - a_iso(r,2) * da_iso(r,c3,1)) / &
+                  do_pref = -0.5d0*vdw_omega_ref*omega_ref * (a_iso(r,1) * da_iso(r,c3,2) - a_iso(r,2) * da_iso(r,c3,1)) / &
                                ( a_iso(r,1)**2 * (a_iso(r,2)/a_iso(r,1) - 1.d0)**(3.d0/2.d0) )
                   rb = (rjs_0_mbd(k2)*Bohr-rcut+r_buf_scs)/r_buf_scs
                   da_mbd(k2) = da_iso(r,c3,2) * &
@@ -2592,7 +2677,7 @@ module vdw
                   if ( rjs_0_mbd(k2) .le. (rcut-r_buf_scs)/Bohr ) then
                     r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),j,1)
                     da_mbd(k2) = da_iso(r,c3,2)
-                    do_pref = -omega_ref * (a_iso(r,1) * da_iso(r,c3,2) - a_iso(r,2) * da_iso(r,c3,1)) / &
+                    do_pref = -0.5d0*vdw_omega_ref*omega_ref * (a_iso(r,1) * da_iso(r,c3,2) - a_iso(r,2) * da_iso(r,c3,1)) / &
                                ( a_iso(r,1)**2 * (a_iso(r,2)/a_iso(r,1) - 1.d0)**(3.d0/2.d0) )
                     dr0_ii_SCS(k2) = r0_ii_mbd(k2) * (a_iso(r,2)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0) / &
                                    (3.d0 * a_iso(r,2)) * da_iso(r,c3,2)
@@ -2607,7 +2692,7 @@ module vdw
                     !               (3.d0 * a_iso(r,2)) * da_iso(r,c3,2)
                   else if ( rjs_0_mbd(k2) > (rcut-r_buf_scs)/Bohr .and. rjs_0_mbd(k2) .le. rcut/Bohr ) then
                     r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),j,1)
-                    do_pref = -omega_ref * (a_iso(r,1) * da_iso(r,c3,2) - a_iso(r,2) * da_iso(r,c3,1)) / &
+                    do_pref = -0.5d0*vdw_omega_ref*omega_ref * (a_iso(r,1) * da_iso(r,c3,2) - a_iso(r,2) * da_iso(r,c3,1)) / &
                                ( a_iso(r,1)**2 * (a_iso(r,2)/a_iso(r,1) - 1.d0)**(3.d0/2.d0) )
                     rb = (rjs_0_mbd(k2)*Bohr-rcut+r_buf_scs)/r_buf_scs
                     da_mbd(k2) = da_iso(r,c3,2) * &
@@ -2789,7 +2874,7 @@ module vdw
               s = neighbor_species(n_tot+1)
               r_vdw_i = r0_ref(s) / Bohr * (a_iso(1,2)/(alpha0_ref(s)/Bohr**3))**(1.d0/3.d0)
               dr_vdw_i = r_vdw_i / (3.d0 * a_iso(1,2)) * da_iso(1,c3,2)
-              do_pref = -omega_ref * (a_iso(1,1) * da_iso(1,c3,2) - a_iso(1,2) * da_iso(1,c3,1)) / &
+              do_pref = -0.5d0*vdw_omega_ref*omega_ref * (a_iso(1,1) * da_iso(1,c3,2) - a_iso(1,2) * da_iso(1,c3,1)) / &
                                ( a_iso(1,1)**2 * (a_iso(1,2)/a_iso(1,1) - 1.d0)**(3.d0/2.d0) )
               !do_pref = 0.d0
               do p = 1, n_2b_sites
@@ -2953,14 +3038,14 @@ module vdw
               if ( n_order > 1 ) then
 
                 integrand = 0.d0
-                !total_integrand = 0.d0
+                total_integrand = 0.d0
                 do j = 1, n_freq
 
                   force_series = 0.d0
-                  !total_energy_series = 0.d0
+                  total_energy_series = 0.d0
                   do k2 = 1, n_order-1
                     force_series = force_series + AT_n_f(:,:,k2,j) 
-                    !total_energy_series = total_energy_series - 1.d0/(k2+1)*AT_n_f(:,:,k2,j) 
+                    total_energy_series = total_energy_series - 1.d0/(k2+1)*AT_n_f(:,:,k2,j) 
                   end do
                   k3 = 0
                   do p = 1, n_mbd_sites
@@ -2968,10 +3053,10 @@ module vdw
                     do c1 = 1, 3
                       integrand(j) = integrand(j) + & !1.d0/(1.d0 + (omegas_mbd(j)/0.5d0)**2) * &
                       dot_product(G_mat(3*(p-1)+c1,:,j),force_series(:,3*(p-1)+c1))
-                      !total_integrand(j) = total_integrand(j) + a_mbd(k3+1) / &
-                      !      (1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) &
-                      !      * dot_product(T_LR(3*(p-1)+c1,:), &
-                      !      total_energy_series(:,3*(p-1)+c1))
+                      total_integrand(j) = total_integrand(j) + a_mbd(k3+1) / &
+                            (1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) &
+                            * dot_product(T_LR(3*(p-1)+c1,:), &
+                            total_energy_series(:,3*(p-1)+c1))
                     end do
                     k3 = k3 + n_mbd_neigh(p)
                   end do
@@ -2981,12 +3066,12 @@ module vdw
                 call integrate("trapezoidal", omegas_mbd, integrand, omegas_mbd(1), omegas_mbd(n_freq), integral)
                 forces0(c3,i) = forces0(c3,i) + (1.d0/(2.d0*pi) * integral + forces_TS) * Hartree/Bohr
 
-                !write(*,*) "MBD force", i, c3, forces0(c3,i)
+                write(*,*) "MBD force", i, c3, forces0(c3,i)
                 integral = 0.d0
-                !if (c3 == 1 ) then
-                !  call integrate("trapezoidal", omegas_mbd, total_integrand, omegas_mbd(1), omegas_mbd(n_freq), integral)
-                !  write(*,*) "MBD total energy of sphere", i, (integral / (2.d0*pi) + E_TS) * Hartree
-                !end if
+                if (c3 == 1 ) then
+                  call integrate("trapezoidal", omegas_mbd, total_integrand, omegas_mbd(1), omegas_mbd(n_freq), integral)
+                  write(*,*) "MBD total energy of sphere", i, (integral / (2.d0*pi) + E_TS) * Hartree
+                end if
 
               end if
             
@@ -3009,7 +3094,7 @@ module vdw
         if ( do_derivatives .and. om == 2 ) then
           deallocate( da_mbd, AT_n_f, dT_mbd, f_damp_der_mbd, f_damp_der_SCS, dT_LR, G_mat, force_series, &
                       da_2b, do_2b, do_mbd, dr0_ii_SCS, dr0_ii_SCS_2b )
-          !deallocate( total_energy_series, total_integrand )
+          deallocate( total_energy_series, total_integrand )
           if ( do_hirshfeld_gradients ) then
             deallocate( hirshfeld_v_mbd_der, hirshfeld_v_2b_der )
           end if
