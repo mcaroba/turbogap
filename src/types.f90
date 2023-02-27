@@ -85,7 +85,7 @@ module types
               box_scaling_factor(3,3) = reshape([1.d0, 0.d0, 0.d0, 0.d0, 1.d0, 0.d0, 0.d0, 0.d0, 1.d0], [3,3]), &
               core_pot_cutoff = 1.d10, core_pot_buffer = 1.d0, tau_dt = 100.d0, target_pos_step, &
               gamma0 = 0.01d0, max_opt_step = 0.1d0, vdw_scs_rcut = 4.5d0, vdw_mbd_rcut = 5.d0, vdw_2b_rcut = 9.d0, &
-              vdw_omega_ref = 2.d0
+              vdw_omega_ref = 3.d0
     integer :: md_nsteps = 1, write_xyz = 0, write_thermo = 1, which_atom = 0, vdw_mbd_nfreq = 12, vdw_mbd_norder = 4
     character*1024 :: atoms_file
     character*32 :: vdw_type = "none"

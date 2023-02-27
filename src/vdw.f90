@@ -451,7 +451,7 @@ module vdw
 !   Internal variables
     real*8, allocatable :: neighbor_c6_ii(:), r0_ii(:), f_damp(:), neighbor_alpha0(:), T_func(:), h_func(:), g_func(:), &
                            omegas(:), B_mat(:,:), rjs_H(:), xyz_H(:,:), work_arr(:), &
-                           a_SCS(:,:), &
+                           a_SCS(:,:), inner_damp(:), &
                            neighbor_sigma(:) !, rjs_0(:)
     real*8 :: time1, time2, Bohr, Hartree, &
               omega, pi, &
@@ -639,7 +639,7 @@ module vdw
       allocate( a_SCS(1:3*n_sub_sites,1:3) )
       allocate( ipiv(1:3*n_sub_sites) )
       allocate( work_arr(1:12*n_sub_sites) )
-      !allocate( rjs_0(1:n_sub_pairs) )
+      allocate( inner_damp(1:n_sub_pairs) )
       !allocate( a_iso(1:n_sub_sites,1:2) )
       !allocate( o_p(1:n_sub_sites) )
       !if ( do_derivatives .and. do_hirshfeld_gradients ) then
@@ -663,6 +663,7 @@ module vdw
         neighbor_alpha0 = 0.d0
         neighbor_sigma = 0.d0
 
+        inner_damp = 1.d0
         f_damp = 0.d0
         g_func = 0.d0
         h_func = 0.d0
@@ -772,6 +773,10 @@ module vdw
                     s_j = neighbor_sigma(k2)
                     sigma_ij = sqrt(s_i**2 + s_j**2)
                     g_func(k2) = erf(rjs_H(k2)/sigma_ij) - 2.d0/sqrt(pi) * (rjs_H(k2)/sigma_ij) * exp(-rjs_H(k2)**2.d0/sigma_ij**2)
+                    if ( rjs_H(k2)*Bohr < 2.d0 ) then
+                      rb = (rjs_H(k2)*Bohr)/2.d0
+                      inner_damp(k2) = 10.d0*rb**3-15.d0*rb**4+6.d0*rb**5
+                    end if
                     k3 = 9*(k2-1)
                     do c1 = 1, 3
                       do c2 = 1, 3
@@ -813,7 +818,7 @@ module vdw
                           !           g_func(k2) + h_func(k3)) * mult1_j * mult2
                           d_vec(3*(p-1)+c1,c2) = d_vec(3*(p-1)+c1,c2) - (1.d0-f_damp(k2)) * (-T_func(k3) * &
                                                     g_func(k2) + h_func(k3)) * neighbor_alpha0(k2) * &
-                                                    mult1_i * ( 1.d0 - mult1_j ) * mult2
+                                                    mult1_i * ( 1.d0 - mult1_j ) * mult2 * inner_damp(k2)
                         else ! rjs(n_tot+k_j) < rcut
                           mult1_j = 1.d0
                           mult2 = 1.d0
@@ -833,7 +838,7 @@ module vdw
                           end if
                           d_vec(3*(p-1)+c1,c2) = d_vec(3*(p-1)+c1,c2) - (1.d0-f_damp(k2)) * (-T_func(k3) * &
                                                       g_func(k2) + h_func(k3)) * neighbor_alpha0(k2) * &
-                                                      mult1_j * mult2
+                                                      mult1_j * mult2 * inner_damp(k2)
                         end if
                       end do
                     end do
@@ -980,7 +985,7 @@ module vdw
       end do
         
       deallocate( sub_neighbors_list, n_sub_neigh, p_list, xyz_H, rjs_H, r0_ii, neighbor_alpha0, neighbor_sigma, &
-                  omegas, T_func, B_mat, f_damp, g_func, h_func, a_SCS, ipiv, work_arr )
+                  omegas, T_func, B_mat, f_damp, g_func, h_func, a_SCS, ipiv, work_arr, inner_damp )
       !deallocate( a_iso )
       !if ( do_derivatives .and. do_hirshfeld_gradients ) then
       !  deallocate( hirshfeld_v_sub_der )
@@ -1043,7 +1048,7 @@ module vdw
                            omegas(:), B_mat(:,:), rjs_H(:), xyz_H(:,:), work_arr(:), dT(:), f_damp_der(:), &
                            g_func_der(:), h_func_der(:), coeff_der(:), coeff_fdamp(:), hirshfeld_v_cart_der_H(:,:), &
                            a_SCS(:,:), da_SCS(:,:), b_der(:,:), dB_mat(:,:), &
-                           neighbor_sigma(:), hirshfeld_v_sub_der(:,:)
+                           neighbor_sigma(:), hirshfeld_v_sub_der(:,:), inner_damp(:)
     real*8 :: time1, time2, this_force(1:3), Bohr, Hartree, &
               omega, pi, integral, E_MBD, R_vdW_SCS_ij, S_vdW_ij, dS_vdW_ij, exp_term, &
               r_vdw_i, r_vdw_j, t1, t2, r_buf_scs, r_buf_mbd, r_buf_2b, &
@@ -1233,6 +1238,7 @@ module vdw
       allocate( T_func(1:9*n_sub_pairs) )
       allocate( B_mat(1:3*n_sub_sites,1:3*n_sub_sites) )
       allocate( f_damp(1:n_sub_pairs) )
+      allocate( inner_damp(1:n_sub_pairs) )
       allocate( g_func(1:n_sub_pairs) )
       allocate( h_func(1:9*n_sub_pairs) )
       allocate( a_SCS(1:3*n_sub_sites,1:3) )
@@ -1302,6 +1308,7 @@ module vdw
         f_damp = 0.d0
         g_func = 0.d0
         h_func = 0.d0
+        inner_damp = 1.d0
 
         !nnz = 0
         k2 = 0
@@ -1424,6 +1431,10 @@ module vdw
                     s_j = neighbor_sigma(k2)
                     sigma_ij = sqrt(s_i**2 + s_j**2)
                     g_func(k2) = erf(rjs_H(k2)/sigma_ij) - 2.d0/sqrt(pi) * (rjs_H(k2)/sigma_ij) * exp(-rjs_H(k2)**2.d0/sigma_ij**2)
+                    if ( rjs_H(k2)*Bohr < 2.d0 ) then
+                      rb = (rjs_H(k2)*Bohr)/2.d0
+                      inner_damp(k2) = 10.d0*rb**3-15.d0*rb**4+6.d0*rb**5
+                    end if
                     k3 = 9*(k2-1)
                     if ( rjs(n_tot+k_j) .le. rcut ) then
                       mult1_j = 1.d0
@@ -1534,13 +1545,13 @@ module vdw
                           !           g_func(k2) + h_func(k3)) * T_SR_mult(k2)
                           d_vec(3*(p-1)+c1,c2) = d_vec(3*(p-1)+c1,c2) - (1.d0-f_damp(k2)) * (-T_func(k3) * &
                                                     g_func(k2) + h_func(k3)) * neighbor_alpha0(k2) * &
-                                                    d_mult_i(k2)
+                                                    d_mult_i(k2) * inner_damp(k2)
                           d_arr_i(k3) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
                                                     g_func(k2) + h_func(k3)) * neighbor_alpha0(k2)
                         else
                           d_vec(3*(p-1)+c1,c2) = d_vec(3*(p-1)+c1,c2) - (1.d0-f_damp(k2)) * (-T_func(k3) * &
                                                       g_func(k2) + h_func(k3)) * neighbor_alpha0(k2) * &
-                                                      d_mult_o(k2)
+                                                      d_mult_o(k2) * inner_damp(k2)
                           d_arr_o(k3) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
                                                       g_func(k2) + h_func(k3)) * neighbor_alpha0(k2)
                         end if
@@ -1654,11 +1665,11 @@ module vdw
                 write(*,*) "WARNING: frequency dependency approximation fails for"
                 write(*,*) "one of the local atoms. Using central characteristic"
                 write(*,*) "frequency for now. You can try using a larger value for"
-                write(*,*) "vdw_omega_ref. If you see this warning, your input"
-                write(*,*) "structure probably has at least one very small"
+                write(*,*) "vdw_omega_ref or vdw_scs_rcut. If you see this warning,"
+                write(*,*) "your input structure probably has at least one very small"
                 write(*,*) "intertomic distance where the SCS cycle in MBD"
-                write(*,*) "calculation fails. We recommend switching off"
-                write(*,*) "vdW corrections or using Tkatchenko-Scheffler." 
+                write(*,*) "calculation fails. For high energy calculations"
+                write(*,*) "we recommend switching off vdW corrections." 
                 i2 = p_list(k2)
                 i1 = modulo(i2-1, n_sites0) + 1
                 o_p(p) = central_omega(i1)
@@ -1674,6 +1685,15 @@ module vdw
 
         else
 
+
+          if ( i == 17 .and. om == 2 ) then
+            write(*,*) "d_vec"
+            do p = 1, n_sub_sites
+              do c1 = 1, 3
+                write(*,*) p, d_vec(3*(p-1)+c1,:)
+              end do
+            end do
+          end if
           ! This is the exact solution:
           a_SCS = d_vec
 
@@ -1704,11 +1724,11 @@ module vdw
                 write(*,*) "WARNING: frequency dependency approximation fails for"
                 write(*,*) "one of the local atoms. Using central characteristic"
                 write(*,*) "frequency for now. You can try using a larger value for"
-                write(*,*) "vdw_omega_ref. If you see this warning, your input"
-                write(*,*) "structure probably has at least one very small"
+                write(*,*) "vdw_omega_ref or vdw_scs_rcut. If you see this warning,"
+                write(*,*) "your input structure probably has at least one very small"
                 write(*,*) "intertomic distance where the SCS cycle in MBD"
-                write(*,*) "calculation fails. We recommend switching off"
-                write(*,*) "vdW corrections or using Tkatchenko-Scheffler."
+                write(*,*) "calculation fails. For high energy calculations"                          
+                write(*,*) "we recommend switching off vdW corrections."
                 i2 = p_list(k2)
                 i1 = modulo(i2-1, n_sites0) + 1
                 o_p(p) = central_omega(i1)
@@ -2168,10 +2188,10 @@ module vdw
 
           !write(*,*) "n_mbd_sites", n_mbd_sites
 
-          !if ( i == 47 .and. om == 2 ) then
-          !  write(*,*) "AT"
+          !if ( i == 1 .and. om == 2 ) then
+          !  write(*,*) "AT_n"
           !  do p = 1, 3*n_mbd_sites
-          !    write(*,*) p, AT(p,:,1)
+          !    write(*,*) p, AT_n(p,:,n_order-1,1)
           !  end do
           !end if
 
@@ -3105,7 +3125,7 @@ module vdw
       deallocate( n_sub_neigh, sub_neighbors_list, xyz_H, rjs_H, r0_ii, neighbor_alpha0, neighbor_sigma, omegas, &
                   T_func, b_i, d_vec, g_func, h_func, f_damp, a_SCS, ipiv, p_list, work_arr, rjs_0, &
                   a_iso, o_p, T_SR, T_SR_mult, d_arr_i, d_arr_o, d_mult_i, d_mult_o, dT_SR_mult, d_dmult_i, &
-                  d_dmult_o, hirshfeld_sub_neigh )
+                  d_dmult_o, hirshfeld_sub_neigh, inner_damp )
       !deallocate( ia, ja, val )
 
       deallocate( B_mat )
