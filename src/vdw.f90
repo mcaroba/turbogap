@@ -1075,7 +1075,7 @@ module vdw
                            hirshfeld_v_2b_der(:,:), dr0_ii_SCS(:), dr0_ii_SCS_2b(:)
     real*8 :: a_mbd_i, a_mbd_j, da_i, da_j, pol1, E_TS, f_damp_der_2b, dr_vdw_i, &
               dr_vdw_j, forces_TS, dC6_2b, mult1_i, mult1_j, mult2, dmult1_i(1:3), dmult1_j(1:3), dmult2(1:3), hv_p_der, &
-              hv_q_der, do_pref, rb
+              hv_q_der, do_pref, rb, inner_damp_der
     integer :: n_mbd_sites, n_mbd_pairs, n_2b_sites
     integer, allocatable :: n_mbd_neigh(:), mbd_neighbors_list(:), p_mbd(:)
     real*8 :: polyfit(1:15)
@@ -1739,12 +1739,12 @@ module vdw
             end do
           end if
 
-          !if (i == 1 .and. om == 2) then
-          !  write(*,*) "a_iso"
-          !  do p = 1, n_sub_sites
-          !    write(*,*) a_iso(p,2)
-          !  end do
-          !end if
+          if (i == 1 .and. om == 2) then
+            write(*,*) "a_iso"
+            do p = 1, n_sub_sites
+              write(*,*) a_iso(p,2)
+            end do
+          end if
 
           !do c1 = 1, 3
           !  do c2 = 1, 3
@@ -2321,7 +2321,15 @@ module vdw
                                                             g_func(k3) - g_func_der(k3) * (1.d0 - f_damp(k3)) * &
                                                             T_func(k4) - f_damp_der(k3) * h_func(k4) + &
                                                             h_func_der(k4) * (1.d0 - f_damp(k3))) * d_mult_i(k3) * &
-                                                            neighbor_alpha0(k3)
+                                                            neighbor_alpha0(k3) * inner_damp(k3)
+                          if ( rjs_H(k3)*Bohr < 2.d0 ) then
+                            rb = (rjs_H(k3)*Bohr)/2.d0
+                            inner_damp_der = (30.d0*rb**2-60.d0*rb**3+30.d0*rb**4) * &
+                                             (-xyz_H(c3,k3)/rjs_H(k3))*(Bohr/2.d0)
+                            write(*,*) "inner_damp, inner_damp_der", inner_damp(k3), inner_damp_der
+                            d_der(3*(p-1)+c1,c2) = d_der(3*(p-1)+c1,c2) + d_arr_i(k4) * d_mult_i(k3) * &
+                                                   inner_damp_der
+                          end if
                         else
                           b_der(3*(p-1)+c1,:) = b_der(3*(p-1)+c1,:) + (f_damp_der(k3) * T_func(k4) * &
                                                             g_func(k3) - (1.d0 - f_damp(k3)) * dT(k4) * &
@@ -2339,7 +2347,15 @@ module vdw
                                                             g_func(k3) - g_func_der(k3) * (1.d0 - f_damp(k3)) * &
                                                             T_func(k4) - f_damp_der(k3) * h_func(k4) + &
                                                             h_func_der(k4) * (1.d0 - f_damp(k3))) * d_mult_i(k3) * &
-                                                            neighbor_alpha0(k3)
+                                                            neighbor_alpha0(k3) * inner_damp(k3)
+                          if ( rjs_H(k3)*Bohr < 2.d0 ) then
+                            rb = (rjs_H(k3)*Bohr)/2.d0
+                            inner_damp_der = (30.d0*rb**2-60.d0*rb**3+30.d0*rb**4) * &
+                                             (xyz_H(c3,k3)/rjs_H(k3))*(Bohr/2.d0)
+                            write(*,*) "inner_damp, inner_damp_der", inner_damp(k3), inner_damp_der
+                            d_der(3*(p-1)+c1,c2) = d_der(3*(p-1)+c1,c2) + d_arr_i(k4) * d_mult_i(k3) * &
+                                                   inner_damp_der
+                          end if
                         end if      
                       else
                         if ( a == i2 ) then
@@ -2348,15 +2364,30 @@ module vdw
                                                             g_func(k3) - g_func_der(k3) * (1.d0 - f_damp(k3)) * &
                                                             T_func(k4) - f_damp_der(k3) * h_func(k4) + &
                                                             h_func_der(k4) * (1.d0 - f_damp(k3))) * &
-                                                            neighbor_alpha0(k3)) * d_mult_o(k3)
+                                                            neighbor_alpha0(k3)) * d_mult_o(k3) * inner_damp(k3)
+                          if ( rjs_H(k3)*Bohr < 2.d0 ) then
+                            rb = (rjs_H(k3)*Bohr)/2.d0
+                            inner_damp_der = (30.d0*rb**2-60.d0*rb**3+30.d0*rb**4) * &
+                                             (-xyz_H(c3,k3)/rjs_H(k3))*(Bohr/2.d0)
+                            write(*,*) "inner_damp, inner_damp_der", inner_damp(k3), inner_damp_der
+                            d_der(3*(p-1)+c1,c2) = d_der(3*(p-1)+c1,c2) + d_arr_o(k4) * d_mult_o(k3) * &
+                                                   inner_damp_der
+                          end if
                         else
                           d_der(3*(p-1)+c1,c2) = d_der(3*(p-1)+c1,c2) - ((f_damp_der(k3) * T_func(k4) * &
                                                             g_func(k3) - (1.d0 - f_damp(k3)) * dT(k4) * &
                                                             g_func(k3) - g_func_der(k3) * (1.d0 - f_damp(k3)) * &
                                                             T_func(k4) - f_damp_der(k3) * h_func(k4) + &
                                                             h_func_der(k4) * (1.d0 - f_damp(k3))) * &
-                                                            neighbor_alpha0(k3)) * d_mult_o(k3)
-
+                                                            neighbor_alpha0(k3)) * d_mult_o(k3) * inner_damp(k3)
+                          if ( rjs_H(k3)*Bohr < 2.d0 ) then
+                            rb = (rjs_H(k3)*Bohr)/2.d0
+                            inner_damp_der = (30.d0*rb**2-60.d0*rb**3+30.d0*rb**4) * &
+                                             (xyz_H(c3,k3)/rjs_H(k3))*(Bohr/2.d0)
+                            write(*,*) "inner_damp, inner_damp_der", inner_damp(k3), inner_damp_der
+                            d_der(3*(p-1)+c1,c2) = d_der(3*(p-1)+c1,c2) + d_arr_o(k4) * d_mult_o(k3) * &
+                                                   inner_damp_der
+                          end if
                         end if
                       end if
                     end do
@@ -2456,8 +2487,9 @@ module vdw
                           (coeff_der(k4) * s_j**2/hirshfeld_sub_neigh(k3+j2) + &
                           coeff_fdamp(k4) * r_vdw_j/hirshfeld_sub_neigh(k3+j2)) * &
                           hv_q_der) * &
-                          neighbor_alpha0(k3+j2) * d_mult_i(k3+j2) - &
-                          d_arr_i(k4)/hirshfeld_sub_neigh(k3+j2) * hv_q_der * d_mult_i(k3+j2)
+                          neighbor_alpha0(k3+j2) * d_mult_i(k3+j2) * inner_damp(k3+j2) - &
+                          d_arr_i(k4)/hirshfeld_sub_neigh(k3+j2) * hv_q_der * d_mult_i(k3+j2) * &
+                          inner_damp(k3+j2)
                       else
                         d_der(3*(p-1)+c1,c2) = d_der(3*(p-1)+c1,c2) - &
                           ((coeff_der(k4) * s_i**2/hirshfeld_sub_neigh(k3+1) + &
@@ -2466,8 +2498,9 @@ module vdw
                           (coeff_der(k4) * s_j**2/hirshfeld_sub_neigh(k3+j2) + &
                           coeff_fdamp(k4) * r_vdw_j/hirshfeld_sub_neigh(k3+j2)) * &
                           hv_q_der) * &
-                          neighbor_alpha0(k3+j2) * d_mult_o(k3+j2) - &
-                          d_arr_o(k4)/hirshfeld_sub_neigh(k3+j2) * hv_q_der * d_mult_o(k3+j2)
+                          neighbor_alpha0(k3+j2) * d_mult_o(k3+j2) * inner_damp(k3+j2) - &
+                          d_arr_o(k4)/hirshfeld_sub_neigh(k3+j2) * hv_q_der * d_mult_o(k3+j2) * &
+                          inner_damp(k3+j2)
                       end if
 
                     end do
@@ -2497,9 +2530,11 @@ module vdw
                       !    dT_SR_mult(k3,c3) * T_SR(k4)
                       b_der(3*(p-1)+c1,:) = b_der(3*(p-1)+c1,:) + dT_SR_mult(k3,c3) * T_SR(k4) * &
                                             a_SCS(3*(q-1)+c2,:) 
-                      d_der(3*(p-1)+c1,c2) = d_der(3*(p-1)+c1,c2) - d_dmult_i(k3,c3) * d_arr_i(k4)
+                      d_der(3*(p-1)+c1,c2) = d_der(3*(p-1)+c1,c2) - d_dmult_i(k3,c3) * d_arr_i(k4) * &
+                                                  inner_damp(k3)
                     else
-                      d_der(3*(p-1)+c1,c2) = d_der(3*(p-1)+c1,c2) - d_dmult_o(k3,c3) * d_arr_o(k4)
+                      d_der(3*(p-1)+c1,c2) = d_der(3*(p-1)+c1,c2) - d_dmult_o(k3,c3) * d_arr_o(k4) * &
+                                                  inner_damp(k3)
                     end if
                   end do
                 end do
@@ -2549,14 +2584,14 @@ module vdw
             end do
             da_iso(:,c3,om) = da_iso(:,c3,om)/3.d0
             
-            !if ( i == 1 .and. c3 == 1 .and. om == 2 ) then
-            !  write(*,*) "da_iso"
-            !  !write(*,*) "da_SCS"
-            !  do p = 1, n_sub_sites
-            !    write(*,*) da_iso(p,1,2)
-            !    !write(*,*) da_SCS(p,:)
-            !  end do
-            !end if
+            if ( i == 1 .and. c3 == 1 .and. om == 2 ) then
+              write(*,*) "da_iso"
+              !write(*,*) "da_SCS"
+              do p = 1, n_sub_sites
+                write(*,*) da_iso(p,1,2)
+                !write(*,*) da_SCS(p,:)
+              end do
+            end if
 
             if ( om == 2 ) then
             
