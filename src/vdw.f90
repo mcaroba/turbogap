@@ -773,7 +773,7 @@ module vdw
                     s_j = neighbor_sigma(k2)
                     sigma_ij = sqrt(s_i**2 + s_j**2)
                     g_func(k2) = erf(rjs_H(k2)/sigma_ij) - 2.d0/sqrt(pi) * (rjs_H(k2)/sigma_ij) * exp(-rjs_H(k2)**2.d0/sigma_ij**2)
-                    if ( rjs_H(k2)*Bohr < 2.d0 ) then
+                    if ( rjs_H(k2)*Bohr < 2.d0 .and. rjs(n_tot+k_j) > rcut-r_buf ) then
                       rb = (rjs_H(k2)*Bohr)/2.d0
                       inner_damp(k2) = 10.d0*rb**3-15.d0*rb**4+6.d0*rb**5
                     end if
@@ -1075,7 +1075,7 @@ module vdw
                            hirshfeld_v_2b_der(:,:), dr0_ii_SCS(:), dr0_ii_SCS_2b(:)
     real*8 :: a_mbd_i, a_mbd_j, da_i, da_j, pol1, E_TS, f_damp_der_2b, dr_vdw_i, &
               dr_vdw_j, forces_TS, dC6_2b, mult1_i, mult1_j, mult2, dmult1_i(1:3), dmult1_j(1:3), dmult2(1:3), hv_p_der, &
-              hv_q_der, do_pref, rb, inner_damp_der
+              hv_q_der, do_pref, rb, inner_damp_der, rjs_0_i
     integer :: n_mbd_sites, n_mbd_pairs, n_2b_sites
     integer, allocatable :: n_mbd_neigh(:), mbd_neighbors_list(:), p_mbd(:)
     real*8 :: polyfit(1:15)
@@ -1431,7 +1431,7 @@ module vdw
                     s_j = neighbor_sigma(k2)
                     sigma_ij = sqrt(s_i**2 + s_j**2)
                     g_func(k2) = erf(rjs_H(k2)/sigma_ij) - 2.d0/sqrt(pi) * (rjs_H(k2)/sigma_ij) * exp(-rjs_H(k2)**2.d0/sigma_ij**2)
-                    if ( rjs_H(k2)*Bohr < 2.d0 ) then
+                    if ( rjs_H(k2)*Bohr < 2.d0 .and. rjs(n_tot+k_j) > rcut-r_buf_scs ) then
                       rb = (rjs_H(k2)*Bohr)/2.d0
                       inner_damp(k2) = 10.d0*rb**3-15.d0*rb**4+6.d0*rb**5
                     end if
@@ -1686,14 +1686,14 @@ module vdw
         else
 
 
-          if ( i == 17 .and. om == 2 ) then
-            write(*,*) "d_vec"
-            do p = 1, n_sub_sites
-              do c1 = 1, 3
-                write(*,*) p, d_vec(3*(p-1)+c1,:)
-              end do
-            end do
-          end if
+          !if ( i == 17 .and. om == 2 ) then
+          !  write(*,*) "d_vec"
+          !  do p = 1, n_sub_sites
+          !    do c1 = 1, 3
+          !      write(*,*) p, d_vec(3*(p-1)+c1,:)
+          !    end do
+          !  end do
+          !end if
           ! This is the exact solution:
           a_SCS = d_vec
 
@@ -1739,12 +1739,12 @@ module vdw
             end do
           end if
 
-          if (i == 1 .and. om == 2) then
-            write(*,*) "a_iso"
-            do p = 1, n_sub_sites
-              write(*,*) a_iso(p,2)
-            end do
-          end if
+          !if (i == 1 .and. om == 2) then
+          !  write(*,*) "a_iso"
+          !  do p = 1, n_sub_sites
+          !    write(*,*) a_iso(p,2)
+          !  end do
+          !end if
 
           !do c1 = 1, 3
           !  do c2 = 1, 3
@@ -2288,6 +2288,17 @@ module vdw
                                      r_vdw_j)) - 1.d0) ) * xyz_H(c3,k3)/rjs_H(k3)
                   g_func_der(k3) = 4.d0/sqrt(pi) * rjs_H(k3)/sigma_ij**3 * xyz_H(c3,k3) * &
                                        exp(-rjs_H(k3)**2/sigma_ij**2)
+                  inner_damp_der = 0.d0
+                  if ( rjs_H(k3)*Bohr < 2.d0 .and. rjs_0(k3) > rcut-r_buf_scs ) then ! This is probably never true but it's still here just in case
+                    rb = (rjs_H(k3)*Bohr)/2.d0
+                    if ( a == i2 ) then
+                      inner_damp_der = (30.d0*rb**2-60.d0*rb**3+30.d0*rb**4) * &
+                                             (-xyz_H(c3,k3)/rjs_H(k3))*(Bohr/2.d0)
+                    else
+                      inner_damp_der = (30.d0*rb**2-60.d0*rb**3+30.d0*rb**4) * &
+                                             (xyz_H(c3,k3)/rjs_H(k3))*(Bohr/2.d0)
+                    end if
+                  end if                  
                   k4 = 9*(k3-1)
                   do c1 = 1, 3
                     do c2 = 1, 3
@@ -2321,15 +2332,8 @@ module vdw
                                                             g_func(k3) - g_func_der(k3) * (1.d0 - f_damp(k3)) * &
                                                             T_func(k4) - f_damp_der(k3) * h_func(k4) + &
                                                             h_func_der(k4) * (1.d0 - f_damp(k3))) * d_mult_i(k3) * &
-                                                            neighbor_alpha0(k3) * inner_damp(k3)
-                          if ( rjs_H(k3)*Bohr < 2.d0 ) then
-                            rb = (rjs_H(k3)*Bohr)/2.d0
-                            inner_damp_der = (30.d0*rb**2-60.d0*rb**3+30.d0*rb**4) * &
-                                             (-xyz_H(c3,k3)/rjs_H(k3))*(Bohr/2.d0)
-                            write(*,*) "inner_damp, inner_damp_der", inner_damp(k3), inner_damp_der
-                            d_der(3*(p-1)+c1,c2) = d_der(3*(p-1)+c1,c2) + d_arr_i(k4) * d_mult_i(k3) * &
-                                                   inner_damp_der
-                          end if
+                                                            neighbor_alpha0(k3) * inner_damp(k3) - d_arr_i(k4) * &
+                                                            d_mult_i(k3) * inner_damp_der
                         else
                           b_der(3*(p-1)+c1,:) = b_der(3*(p-1)+c1,:) + (f_damp_der(k3) * T_func(k4) * &
                                                             g_func(k3) - (1.d0 - f_damp(k3)) * dT(k4) * &
@@ -2347,15 +2351,8 @@ module vdw
                                                             g_func(k3) - g_func_der(k3) * (1.d0 - f_damp(k3)) * &
                                                             T_func(k4) - f_damp_der(k3) * h_func(k4) + &
                                                             h_func_der(k4) * (1.d0 - f_damp(k3))) * d_mult_i(k3) * &
-                                                            neighbor_alpha0(k3) * inner_damp(k3)
-                          if ( rjs_H(k3)*Bohr < 2.d0 ) then
-                            rb = (rjs_H(k3)*Bohr)/2.d0
-                            inner_damp_der = (30.d0*rb**2-60.d0*rb**3+30.d0*rb**4) * &
-                                             (xyz_H(c3,k3)/rjs_H(k3))*(Bohr/2.d0)
-                            write(*,*) "inner_damp, inner_damp_der", inner_damp(k3), inner_damp_der
-                            d_der(3*(p-1)+c1,c2) = d_der(3*(p-1)+c1,c2) + d_arr_i(k4) * d_mult_i(k3) * &
-                                                   inner_damp_der
-                          end if
+                                                            neighbor_alpha0(k3) * inner_damp(k3) - d_arr_i(k4) * &
+                                                            d_mult_i(k3) * inner_damp_der
                         end if      
                       else
                         if ( a == i2 ) then
@@ -2364,30 +2361,18 @@ module vdw
                                                             g_func(k3) - g_func_der(k3) * (1.d0 - f_damp(k3)) * &
                                                             T_func(k4) - f_damp_der(k3) * h_func(k4) + &
                                                             h_func_der(k4) * (1.d0 - f_damp(k3))) * &
-                                                            neighbor_alpha0(k3)) * d_mult_o(k3) * inner_damp(k3)
-                          if ( rjs_H(k3)*Bohr < 2.d0 ) then
-                            rb = (rjs_H(k3)*Bohr)/2.d0
-                            inner_damp_der = (30.d0*rb**2-60.d0*rb**3+30.d0*rb**4) * &
-                                             (-xyz_H(c3,k3)/rjs_H(k3))*(Bohr/2.d0)
-                            write(*,*) "inner_damp, inner_damp_der", inner_damp(k3), inner_damp_der
-                            d_der(3*(p-1)+c1,c2) = d_der(3*(p-1)+c1,c2) + d_arr_o(k4) * d_mult_o(k3) * &
-                                                   inner_damp_der
-                          end if
+                                                            neighbor_alpha0(k3)) * d_mult_o(k3) * inner_damp(k3) - &
+                                                            d_arr_o(k4) * d_mult_o(k3) * &
+                                                            inner_damp_der
                         else
                           d_der(3*(p-1)+c1,c2) = d_der(3*(p-1)+c1,c2) - ((f_damp_der(k3) * T_func(k4) * &
                                                             g_func(k3) - (1.d0 - f_damp(k3)) * dT(k4) * &
                                                             g_func(k3) - g_func_der(k3) * (1.d0 - f_damp(k3)) * &
                                                             T_func(k4) - f_damp_der(k3) * h_func(k4) + &
                                                             h_func_der(k4) * (1.d0 - f_damp(k3))) * &
-                                                            neighbor_alpha0(k3)) * d_mult_o(k3) * inner_damp(k3)
-                          if ( rjs_H(k3)*Bohr < 2.d0 ) then
-                            rb = (rjs_H(k3)*Bohr)/2.d0
-                            inner_damp_der = (30.d0*rb**2-60.d0*rb**3+30.d0*rb**4) * &
-                                             (xyz_H(c3,k3)/rjs_H(k3))*(Bohr/2.d0)
-                            write(*,*) "inner_damp, inner_damp_der", inner_damp(k3), inner_damp_der
-                            d_der(3*(p-1)+c1,c2) = d_der(3*(p-1)+c1,c2) + d_arr_o(k4) * d_mult_o(k3) * &
-                                                   inner_damp_der
-                          end if
+                                                            neighbor_alpha0(k3)) * d_mult_o(k3) * inner_damp(k3) - &
+                                                            d_arr_o(k4) * d_mult_o(k3) * &
+                                                            inner_damp_der
                         end if
                       end if
                     end do
@@ -2584,14 +2569,14 @@ module vdw
             end do
             da_iso(:,c3,om) = da_iso(:,c3,om)/3.d0
             
-            if ( i == 1 .and. c3 == 1 .and. om == 2 ) then
-              write(*,*) "da_iso"
-              !write(*,*) "da_SCS"
-              do p = 1, n_sub_sites
-                write(*,*) da_iso(p,1,2)
-                !write(*,*) da_SCS(p,:)
-              end do
-            end if
+            !if ( i == 1 .and. c3 == 1 .and. om == 2 ) then
+            !  write(*,*) "da_iso"
+            !  !write(*,*) "da_SCS"
+            !  do p = 1, n_sub_sites
+            !    write(*,*) da_iso(p,1,2)
+            !    !write(*,*) da_SCS(p,:)
+            !  end do
+            !end if
 
             if ( om == 2 ) then
             
@@ -2611,15 +2596,25 @@ module vdw
                 if ( rjs_0_mbd(k2) .le. (rcut-r_buf_scs)/Bohr ) then
                   r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),i2,1)
                   da_mbd(k2) = da_iso(r,c3,2)
-                  do_pref = -0.5d0*vdw_omega_ref*omega_ref * (a_iso(r,1) * da_iso(r,c3,2) - a_iso(r,2) * da_iso(r,c3,1)) / &
-                               ( a_iso(r,1)**2 * (a_iso(r,2)/a_iso(r,1) - 1.d0)**(3.d0/2.d0) )
+                  if ( a_iso(r,2) > a_iso(r,1) ) then
+                    do_pref = -0.5d0*vdw_omega_ref*omega_ref * (a_iso(r,1) * da_iso(r,c3,2) - a_iso(r,2) * da_iso(r,c3,1)) / &
+                                 ( a_iso(r,1)**2 * (a_iso(r,2)/a_iso(r,1) - 1.d0)**(3.d0/2.d0) )
+                  else
+                    write(*,*) "WARNING: frequency dependency failure. Use larger vdw_omega_ref."
+                    do_pref = 0.d0
+                  end if
                   do_mbd(k2) = do_pref
                   dr0_ii_SCS(k2) = r0_ii_mbd(k2) * (a_iso(r,2)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0) / &
                                    (3.d0 * a_iso(r,2)) * da_iso(r,c3,2)
                 else if ( rjs_0_mbd(k2) > (rcut-r_buf_scs)/Bohr .and. rjs_0_mbd(k2) .le. rcut/Bohr ) then
                   r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),i2,1)
-                  do_pref = -0.5d0*vdw_omega_ref*omega_ref * (a_iso(r,1) * da_iso(r,c3,2) - a_iso(r,2) * da_iso(r,c3,1)) / &
-                               ( a_iso(r,1)**2 * (a_iso(r,2)/a_iso(r,1) - 1.d0)**(3.d0/2.d0) )
+                  if ( a_iso(r,2) > a_iso(r,1) ) then
+                    do_pref = -0.5d0*vdw_omega_ref*omega_ref * (a_iso(r,1) * da_iso(r,c3,2) - a_iso(r,2) * da_iso(r,c3,1)) / &
+                                 ( a_iso(r,1)**2 * (a_iso(r,2)/a_iso(r,1) - 1.d0)**(3.d0/2.d0) )
+                  else
+                    write(*,*) "WARNING: frequency dependency failure. Use larger vdw_omega_ref."
+                    do_pref = 0.d0
+                  end if
                   rb = (rjs_0_mbd(k2)*Bohr-rcut+r_buf_scs)/r_buf_scs
                   da_mbd(k2) = da_iso(r,c3,2) * &
                               (1.d0 - 10.d0 * rb**3 &
@@ -2732,8 +2727,13 @@ module vdw
                   if ( rjs_0_mbd(k2) .le. (rcut-r_buf_scs)/Bohr ) then
                     r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),j,1)
                     da_mbd(k2) = da_iso(r,c3,2)
-                    do_pref = -0.5d0*vdw_omega_ref*omega_ref * (a_iso(r,1) * da_iso(r,c3,2) - a_iso(r,2) * da_iso(r,c3,1)) / &
-                               ( a_iso(r,1)**2 * (a_iso(r,2)/a_iso(r,1) - 1.d0)**(3.d0/2.d0) )
+                    if ( a_iso(r,2) > a_iso(r,1) ) then
+                      do_pref = -0.5d0*vdw_omega_ref*omega_ref * (a_iso(r,1) * da_iso(r,c3,2) - a_iso(r,2) * da_iso(r,c3,1)) / &
+                                 ( a_iso(r,1)**2 * (a_iso(r,2)/a_iso(r,1) - 1.d0)**(3.d0/2.d0) )
+                    else
+                      write(*,*) "WARNING: frequency dependency failure. Use larger vdw_omega_ref."
+                      do_pref = 0.d0
+                    end if
                     dr0_ii_SCS(k2) = r0_ii_mbd(k2) * (a_iso(r,2)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0) / &
                                    (3.d0 * a_iso(r,2)) * da_iso(r,c3,2)
                     !if ( i == 1 .and. c3 == 1 .and. k2 == 2 ) then
@@ -2747,8 +2747,13 @@ module vdw
                     !               (3.d0 * a_iso(r,2)) * da_iso(r,c3,2)
                   else if ( rjs_0_mbd(k2) > (rcut-r_buf_scs)/Bohr .and. rjs_0_mbd(k2) .le. rcut/Bohr ) then
                     r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),j,1)
-                    do_pref = -0.5d0*vdw_omega_ref*omega_ref * (a_iso(r,1) * da_iso(r,c3,2) - a_iso(r,2) * da_iso(r,c3,1)) / &
-                               ( a_iso(r,1)**2 * (a_iso(r,2)/a_iso(r,1) - 1.d0)**(3.d0/2.d0) )
+                    if ( a_iso(r,2) > a_iso(r,1) ) then
+                      do_pref = -0.5d0*vdw_omega_ref*omega_ref * (a_iso(r,1) * da_iso(r,c3,2) - a_iso(r,2) * da_iso(r,c3,1)) / &
+                                 ( a_iso(r,1)**2 * (a_iso(r,2)/a_iso(r,1) - 1.d0)**(3.d0/2.d0) )
+                    else
+                      write(*,*) "WARNING: frequency dependency failure. Use larger vdw_omega_ref."
+                      do_pref = 0.d0
+                    end if
                     rb = (rjs_0_mbd(k2)*Bohr-rcut+r_buf_scs)/r_buf_scs
                     da_mbd(k2) = da_iso(r,c3,2) * &
                                 (1.d0 - 10.d0 * rb**3 &
@@ -2929,8 +2934,13 @@ module vdw
               s = neighbor_species(n_tot+1)
               r_vdw_i = r0_ref(s) / Bohr * (a_iso(1,2)/(alpha0_ref(s)/Bohr**3))**(1.d0/3.d0)
               dr_vdw_i = r_vdw_i / (3.d0 * a_iso(1,2)) * da_iso(1,c3,2)
-              do_pref = -0.5d0*vdw_omega_ref*omega_ref * (a_iso(1,1) * da_iso(1,c3,2) - a_iso(1,2) * da_iso(1,c3,1)) / &
-                               ( a_iso(1,1)**2 * (a_iso(1,2)/a_iso(1,1) - 1.d0)**(3.d0/2.d0) )
+              if ( a_iso(1,2) > a_iso(1,1) ) then
+                do_pref = -0.5d0*vdw_omega_ref*omega_ref * (a_iso(1,1) * da_iso(1,c3,2) - a_iso(1,2) * da_iso(1,c3,1)) / &
+                                 ( a_iso(1,1)**2 * (a_iso(1,2)/a_iso(1,1) - 1.d0)**(3.d0/2.d0) )
+              else
+                write(*,*) "WARNING: frequency dependency failure. Use larger vdw_omega_ref."
+                do_pref = 0.d0
+              end if
               !do_pref = 0.d0
               do p = 1, n_2b_sites
                 k2 = k2+1
