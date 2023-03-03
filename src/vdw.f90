@@ -1072,10 +1072,10 @@ module vdw
                            a_2b(:), r0_ii_SCS_2b(:), C6_2b(:), da_2b(:), T_SR(:), T_SR_mult(:), d_arr_i(:), d_arr_o(:), &
                            d_mult_i(:), d_mult_o(:), dT_SR_mult(:,:), d_dmult_i(:,:), d_dmult_o(:,:), do_mbd(:), &
                            hirshfeld_sub_neigh(:), o_2b(:), do_2b(:), hirshfeld_v_mbd_der(:,:), hirshfeld_mbd_neigh(:), &
-                           hirshfeld_v_2b_der(:,:), dr0_ii_SCS(:), dr0_ii_SCS_2b(:)
+                           hirshfeld_v_2b_der(:,:), dr0_ii_SCS(:), dr0_ii_SCS_2b(:), V_int(:,:)
     real*8 :: a_mbd_i, a_mbd_j, da_i, da_j, pol1, E_TS, f_damp_der_2b, dr_vdw_i, &
               dr_vdw_j, forces_TS, dC6_2b, mult1_i, mult1_j, mult2, dmult1_i(1:3), dmult1_j(1:3), dmult2(1:3), hv_p_der, &
-              hv_q_der, do_pref, rb, inner_damp_der, rjs_0_i
+              hv_q_der, do_pref, rb, inner_damp_der, rjs_0_i, rcut_forces, o_i
     integer :: n_mbd_sites, n_mbd_pairs, n_2b_sites
     integer, allocatable :: n_mbd_neigh(:), mbd_neighbors_list(:), p_mbd(:)
     real*8 :: polyfit(1:15)
@@ -1739,12 +1739,12 @@ module vdw
             end do
           end if
 
-          !if (i == 1 .and. om == 2) then
-          !  write(*,*) "a_iso"
-          !  do p = 1, n_sub_sites
-          !    write(*,*) a_iso(p,2)
-          !  end do
-          !end if
+          if (i == 1 .and. om == 2) then
+            write(*,*) "a_iso"
+            do p = 1, n_sub_sites
+              write(*,*) a_iso(p,2)
+            end do
+          end if
 
           !do c1 = 1, 3
           !  do c2 = 1, 3
@@ -2189,11 +2189,46 @@ module vdw
           !write(*,*) "n_mbd_sites", n_mbd_sites
 
           !if ( i == 1 .and. om == 2 ) then
-          !  write(*,*) "AT_n"
+          !  write(*,*) "AT"
           !  do p = 1, 3*n_mbd_sites
-          !    write(*,*) p, AT_n(p,:,n_order-1,1)
+          !    write(*,*) AT(p,:,1)
           !  end do
           !end if
+          
+          !TEST!!!!!!!!!!!!!!!!!
+          !allocate( V_int(1:3*n_mbd_sites,1:3*n_mbd_sites) )
+          !V_int = 0.d0
+          !k3 = 0
+          !do p = 1, n_mbd_sites
+          !  k3 = k3+1
+          !  i2 = mbd_neighbors_list(k3)
+          !  i1 = modulo(i2-1, n_sites0) + 1
+          !  o_i = central_omega(i1)
+          !  a_mbd_i = central_pol(i1)
+          !  do c1 = 1, 3
+          !    V_int(3*(p-1)+c1,3*(p-1)+c1) = o_i**2
+          !  end do
+          !  do j3 = 2, n_mbd_neigh(p)
+          !    k3 = k3+1
+          !    q = p_mbd(k3)
+          !    j = mbd_neighbors_list(k3)
+          !    j1 = modulo(j-1, n_sites0) + 1
+          !    V_int(3*(p-1)+1:3*(p-1)+3,3*(q-1)+1:3*(q-1)+3) = o_i * central_omega(j1) * &
+          !          sqrt(a_mbd_i * central_pol(j1)) * T_LR(3*(p-1)+1:3*(p-1)+3,3*(q-1)+1:3*(q-1)+3)
+          !  end do
+          !end do
+          !write(*,*) "omega_sum", sum(central_omega)
+          !if ( i == 1 .and. om == 2 ) then
+          !  open(unit=89, file="V_int.dat", status="new")
+          !  write(*,*) "V_int"
+          !  do p = 1, 3*n_mbd_sites
+          !    write(89,*) V_int(p,:)
+          !  end do
+          !  close(89)
+          !end if
+          !
+          !deallocate( V_int )
+          !TEST!!!!!!!!!!!!!!!!!
 
           integrand = 0.d0
           do i2 = 1, n_freq
@@ -2569,14 +2604,14 @@ module vdw
             end do
             da_iso(:,c3,om) = da_iso(:,c3,om)/3.d0
             
-            !if ( i == 1 .and. c3 == 1 .and. om == 2 ) then
-            !  write(*,*) "da_iso"
-            !  !write(*,*) "da_SCS"
-            !  do p = 1, n_sub_sites
-            !    write(*,*) da_iso(p,1,2)
-            !    !write(*,*) da_SCS(p,:)
-            !  end do
-            !end if
+            if ( i == 1 .and. c3 == 1 .and. om == 2 ) then
+              write(*,*) "da_iso"
+              !write(*,*) "da_SCS"
+              do p = 1, n_sub_sites
+                write(*,*) da_iso(p,1,2)
+                !write(*,*) da_SCS(p,:)
+              end do
+            end if
 
             if ( om == 2 ) then
             
@@ -2911,6 +2946,13 @@ module vdw
                   end if
                 end do
               end do
+
+              !if ( i == 1 .and. c3 == 1 ) then
+              !  write(*,*) "dT_LR"
+              !  do p = 1, 3*n_mbd_sites
+              !    write(*,*) dT_LR(p,:)
+              !  end do
+              !end if
             
               !if ( i == 1 .and. c3 == 1 ) then
               !write(*,*) "r0_ii_SCS"
@@ -3060,20 +3102,23 @@ module vdw
               !  write(*,*) "forces_TS", forces_TS
               !end if
 
+              rcut_forces = rcut
+
               G_mat = 0.d0
 
               do j = 1, n_freq
                 k3 = 0
                 do p = 1, n_mbd_sites
-                  i2 = mbd_neighbors_list(k3+1)
-                  G_mat(3*(p-1)+1:3*(p-1)+3,:,j) = G_mat(3*(p-1)+1:3*(p-1)+3,:,j) + &
-                    a_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) * &
-                    dT_LR(3*(p-1)+1:3*(p-1)+3,:) + &
-                    da_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) * &
-                    T_LR(3*(p-1)+1:3*(p-1)+3,:) + &
-                    a_mbd(k3+1) * (2.d0 * omegas_mbd(j)**2 * o_mbd(k3+1)) * &
-                    do_mbd(k3+1) / ( o_mbd(k3+1)**2 + omegas_mbd(j)**2 )**2 * &
-                    T_LR(3*(p-1)+1:3*(p-1)+3,:)
+                  !if ( rjs_0_mbd(k3+1) .le. rcut_forces ) then
+                    i2 = mbd_neighbors_list(k3+1)
+                    G_mat(3*(p-1)+1:3*(p-1)+3,:,j) = G_mat(3*(p-1)+1:3*(p-1)+3,:,j) + &
+                      a_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) * &
+                      dT_LR(3*(p-1)+1:3*(p-1)+3,:) + &
+                      da_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) * &
+                      T_LR(3*(p-1)+1:3*(p-1)+3,:) + &
+                      a_mbd(k3+1) * (2.d0 * omegas_mbd(j)**2 * o_mbd(k3+1)) * &
+                      do_mbd(k3+1) / ( o_mbd(k3+1)**2 + omegas_mbd(j)**2 )**2 * &
+                      T_LR(3*(p-1)+1:3*(p-1)+3,:)
                     !if ( p == 59 .and. i == 1 .and. c3 == 1 .and. om == 2 .and. j == 1 ) then
                     !  q = 54
                     !  c1 = 1
@@ -3088,6 +3133,7 @@ module vdw
                     !  write(*,*) "k3+1", k3+1
                     !  write(*,*) "rjs_0_mbd", rjs_0_mbd(k3+1)*Bohr
                     !end if
+                  !end if
                   k3 = k3+n_mbd_neigh(p)
                 end do
               end do
