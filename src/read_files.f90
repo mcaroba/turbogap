@@ -952,33 +952,39 @@ end if
 
 !   Get masses from database
     if( params%do_md .and. .not. masses_in_input_file )then
-      write(*,*)'                                       |'
-      write(*,*)'WARNING: you have not provided masses  |  <-- WARNING'
-      write(*,*)'in your input file. I am attempting to |'
-      write(*,*)'read them from a database. If you have |'
-      write(*,*)'provided masses in your XYZ file these |'
-      write(*,*)'values will be overwritten and you can |'
-      write(*,*)'safely disregard any further warnings  |'
-      write(*,*)'printed below if a given element is not|'
-      write(*,*)'in the database (usually because you   |'
-      write(*,*)'provided a non-standard name; note that|'
-      write(*,*)'element names are case sensitive).     |'
-      write(*,*)'                                       |'
-      write(*,*)'               Element      Mass (amu) |'
+      if( rank == 0 )then
+        write(*,*)'                                       |'
+        write(*,*)'WARNING: you have not provided masses  |  <-- WARNING'
+        write(*,*)'in your input file. I am attempting to |'
+        write(*,*)'read them from a database. If you have |'
+        write(*,*)'provided masses in your XYZ file these |'
+        write(*,*)'values will be overwritten and you can |'
+        write(*,*)'safely disregard any further warnings  |'
+        write(*,*)'printed below if a given element is not|'
+        write(*,*)'in the database (usually because you   |'
+        write(*,*)'provided a non-standard name; note that|'
+        write(*,*)'element names are case sensitive).     |'
+        write(*,*)'                                       |'
+        write(*,*)'               Element      Mass (amu) |'
+      end if
       do i = 1, n_species
         call get_atomic_mass( params%species_types(i), params%masses_types(i), valid_choice )
-        write(*,*)'                                       |'
-        if( valid_choice )then
-          write(*,'(A, A8, A, F15.6, A)')' ', adjustr(params%species_types(i)), ' (in database) ', params%masses_types(i), ' |'
-        else
-          write(*,'(A, A8, A, F11.6, A)')' ', adjustr(params%species_types(i)), ' (not in database) ', params%masses_types(i), &
-                                         ' |  <-- WARNING'
+        if( rank == 0 )then
+          write(*,*)'                                       |'
+          if( valid_choice )then
+            write(*,'(A, A8, A, F15.6, A)')' ', adjustr(params%species_types(i)), ' (in database) ', params%masses_types(i), ' |'
+          else
+            write(*,'(A, A8, A, F11.6, A)')' ', adjustr(params%species_types(i)), ' (not in database) ', params%masses_types(i), &
+                                           ' |  <-- WARNING'
+          end if
         end if
       end do
 !     We convert the masses in amu to eV*fs^2/A^2
       params%masses_types = params%masses_types * 103.6426965268d0
-      write(*,*)'                                       |'
-      write(*,*)'.......................................|'
+      if( rank == 0 )then
+        write(*,*)'                                       |'
+        write(*,*)'.......................................|'
+      end if
     end if
 
   end subroutine

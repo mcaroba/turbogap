@@ -691,7 +691,7 @@ module md
 
     mass = 0.d0
     do i = 1, size(elements, 1)
-      if( elements(i) == element )then
+      if( trim(adjustl(elements(i))) == trim(adjustl(element)) )then
         mass = masses(i)
         is_in_database = .true.
         exit
