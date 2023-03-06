@@ -1,6 +1,6 @@
 # The TurboGAP code
 
-**TurboGAP** (c) 2018-2022 by **Miguel A. Caro** and others (see "contributors" below
+**TurboGAP** (c) 2018-2023 by **Miguel A. Caro** and others (see "contributors" below
 for detailed authorship info).
 
 [www.turbogap.fi](http://www.turbogap.fi)
@@ -14,11 +14,11 @@ statement at the beginning).
 
 * **Miguel A. Caro** (Aalto University)
 * Patricia Hernández-León (Aalto University)
-* Suresh Kondati Natarajan (now @ QuantumWise, formerly @ Aalto)
+* Suresh Kondati Natarajan (formerly @ Aalto University)
 * **Albert P. Bartók-Pártay** (Warwick University)
-* Eelis V. Mielonen (now @ EPFL, formerly @ Aalto)
+* Eelis V. Mielonen (formerly @ Aalto University)
 * **Heikki Muhli** (Aalto University)
-* **Mikhail Kuklin** (Aalto University)
+* **Mikhail Kuklin** (formerly @ Aalto University)
 * Gábor Csányi (University of Cambridge)
 * **Jan Kloppenburg** (Aalto University)
 * **Richard Jana** (Aalto University)
