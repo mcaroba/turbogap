@@ -89,7 +89,8 @@ module gap_interface
     integer :: n_sites, i, j, n_atom_pairs, k, k2, i2, j2, n_soap, max_species_multiplicity, i3, n_all_sites, &
                i4, n_sites_supercell, j3
     integer :: ierr, rank
-    logical, allocatable :: mask(:,:), mask0(:,:), is_atom_seen(:)
+    logical, allocatable :: mask(:,:)
+    logical, allocatable ::  mask0(:,:), is_atom_seen(:)
 !   CLEAN THIS UP
     real*8 :: time1, time2
     real*8 :: ttt(2)
