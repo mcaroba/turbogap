@@ -316,13 +316,43 @@ MODULE F_B_C
       subroutine gpu_get_cnk(radial_exp_coeff_d, angular_exp_coeff_d, &
                              cnk_d, &
                              n_neigh_d, k2_start_d, &
-                             n_sites,  n_atom_pairs,n_soap, k_max, n_max, l_max) &
+                             n_sites,  n_atom_pairs,n_soap, k_max, n_max, l_max, &
+                             bintybint, &
+                             atom_sigma_r_d, atom_sigma_t_d, rcut_hard_d, &
+                             central_weight_d, species_d, i_beg_d, i_end_d, &
+                             radial_enhancement, species_multiplicity_d, &
+                             W_d, S_d, size_species_1) &
                              bind(C,name="gpu_get_cnk")
         use iso_c_binding
         type(c_ptr), value :: n_neigh_d, k2_start_d
         type(c_ptr), value :: radial_exp_coeff_d, angular_exp_coeff_d
         type(c_ptr), value :: cnk_d
         integer(c_int),value :: n_sites,  n_atom_pairs,n_soap, k_max, n_max, l_max
+        integer(c_int), value :: bintybint, radial_enhancement, size_species_1
+        type(c_ptr), value :: rcut_hard_d, species_multiplicity_d
+        type(c_ptr), value :: atom_sigma_r_d, atom_sigma_t_d
+        type(c_ptr), value :: central_weight_d, species_d, i_beg_d, i_end_d
+        type(c_ptr), value :: W_d, S_d
+      end subroutine
+
+      subroutine gpu_get_plm_array_global(plm_array_global_d, n_atom_pairs, kmax, &
+                                      lmax, thetas_d) &
+                                      bind(C,name="gpu_get_plm_array_global")
+      use iso_c_binding
+      type(c_ptr), value :: plm_array_global_d, thetas_d
+      integer(c_int),value :: n_atom_pairs, kmax, lmax
+      end subroutine
+
+      subroutine gpu_get_eimphi_array_global(eimphi_global_d, &
+                                      rjs_d, phis_d, &
+                                      mask_d, atom_simga_in_d, atom_simga_scaling_d, & 
+                                      rcut, n_atom_piars, n_spceies, lmax, prefl_array_global) &
+                                      bind(C,name="gpu_get_eimphi_array_global")
+      use iso_c_binding
+      type(c_ptr), value :: eimphi_global_d, rjs_d, phis_d, mask_d
+      type(c_ptr), value :: atom_simga_in_d, atom_simga_scaling_d, prefl_array_global
+      integer(c_int), value ::  n_atom_piars, n_spceies, lmax
+      real(c_double), value :: rcut
       end subroutine
 
     END INTERFACE
