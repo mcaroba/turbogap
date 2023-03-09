@@ -1,5 +1,5 @@
-> energies.dat
-for i in $(seq 1 0.1 10); do
+> dimer_vdw_energies.dat
+for i in $(seq 1 0.1 9); do
 echo $i
 cat <<EOF > input
 atoms_file = 'dimer_$i.xyz'
@@ -31,5 +31,5 @@ vdw_mbd_grad = .false.     ! Calculate MBD forces. Type: LOGICAL
 vdw_hirsh_grad = .true.   ! Include Hirshfeld gradients in the forces. Type: LOGICAL
 vdw_polynomial = .false.  ! Use polynomial approximation for inverse matrices. Type: LOGICAL
 EOF
-mpirun -np 4 ../bin/turbogap predict | grep "Total energy" | awk '{print $3}' >> energies.dat
+mpirun -np 4 ../bin/turbogap predict | grep "vdw energy" | awk '{print $3}' >> dimer_vdw_energies.dat
 done

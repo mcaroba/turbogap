@@ -1353,7 +1353,7 @@ program turbogap
           allocate( c6_scs(1:j_end-j_beg+1) )
           allocate( r0_scs(1:j_end-j_beg+1) )
           allocate( alpha0_scs(1:j_end-j_beg+1) )
-call cpu_time(time2)
+call cpu_time(time1)
           !write(*,*) "SCS calculation starts here"
           call get_scs_polarizabilities( n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
                                          neighbor_species(j_beg:j_end), &
@@ -1368,6 +1368,9 @@ call cpu_time(time2)
 #else
                                          forces_vdw )
 #endif
+call cpu_time(time2)
+write(*,*) "SCS timing", time2-time1
+call cpu_time(time1)
 
 call mpi_reduce(alpha_SCS, this_alpha_SCS, n_sites, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
 alpha_SCS = this_alpha_SCS
@@ -1375,6 +1378,9 @@ call mpi_bcast(alpha_SCS, n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr
 call mpi_reduce(omega_SCS, this_omega_SCS, n_sites, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
 omega_SCS = this_omega_SCS
 call mpi_bcast(omega_SCS, n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+
+call cpu_time(time2)
+write(*,*) "Communication timing", time2-time1
 
 write(*,*) "alpha_SCS"
 do i = 1, n_sites
@@ -1396,6 +1402,9 @@ call cpu_time(time1)
 #else
                                          energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
 #endif
+
+call cpu_time(time2)
+write(*,*) "MBD timing", time2-time1
 
 !        call get_ts_energy_and_forces( hirshfeld_v(i_beg:i_end), hirshfeld_v_cart_der(1:3, j_beg:j_end), &
 !                                       n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
