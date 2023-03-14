@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 
 d = np.linspace(8,15,36)
 ene_ts = np.loadtxt("c60_energies_ts.dat")
@@ -19,7 +20,8 @@ ene = np.zeros([len(scs),len(d)])
 ene_ts = ene_ts-total_energy_ts
 ene_none = ene_none-total_energy_none
 
-
+fig = plt.gcf()
+fig.set_size_inches(18.5, 10.5)
 plt.plot(d[6:],ene_none[6:],'r.-',label="None")
 plt.plot(d[6:],ene_ts[6:],'b.-',label="TS")
 
@@ -38,6 +40,8 @@ plt.ylabel("Interaction energy [eV]")
 plt.legend(loc='center left', bbox_to_anchor=(1, 0.5), prop={'size': 6})
 plt.show()
 
+fig = plt.gcf()
+fig.set_size_inches(18.5, 10.5)
 t_scs = np.zeros([len(scs),len(d)])
 
 for i in range(len(scs)):
@@ -55,6 +59,8 @@ plt.legend(loc='center left', bbox_to_anchor=(1, 0.5), prop={'size': 6})
 plt.show()
 
 t_com = np.zeros([len(scs),len(d)])
+fig = plt.gcf()
+fig.set_size_inches(18.5, 10.5)
 
 for i in range(len(scs)):
     s = "%.1f" % scs[i]
@@ -71,6 +77,8 @@ plt.legend(loc='center left', bbox_to_anchor=(1, 0.5), prop={'size': 6})
 plt.show()
 
 t_mbd = np.zeros([len(scs),len(d)])
+fig = plt.gcf()
+fig.set_size_inches(18.5, 10.5)
 
 for i in range(len(scs)):
     s = "%.1f" % scs[i]
@@ -98,6 +106,8 @@ t_scs_f_ac = np.zeros(len(scs_f))
 t_com_f_ac = np.zeros(len(scs_f))
 t_mbd_f_ac = np.zeros(len(scs_f))
 
+fig = plt.gcf()
+fig.set_size_inches(18.5, 10.5)
 for i in range(len(scs_f)):
     s = "%.1f" % scs_f[i]
     filename = "scs_timing_forces_" + s + ".dat"
@@ -133,6 +143,9 @@ plt.xlim([scs[0],scs[-1]])
 plt.legend()
 plt.show()
 
+fig = plt.gcf()
+fig.set_size_inches(18.5, 10.5)
+
 plt.plot(scs,np.mean(t_com,axis=1),'b.-',label="No forces")
 plt.plot(scs_f,np.mean(t_com_f,axis=1),'r.-',label="With forces")
 plt.title("C60 dimer, MBD cutoff = SCS cutoff + 2 Å")
@@ -141,6 +154,9 @@ plt.ylabel("Average CPU time for communication [s]")
 plt.xlim([scs[0],scs[-1]])
 plt.legend()
 plt.show()
+
+fig = plt.gcf()
+fig.set_size_inches(18.5, 10.5)
 
 plt.plot(scs,np.mean(t_mbd,axis=1),'b.-',label="No forces")
 plt.plot(scs_f,np.mean(t_mbd_f,axis=1),'r.-',label="With forces")
@@ -151,6 +167,18 @@ plt.xlim([scs[0],scs[-1]])
 plt.legend()
 plt.show()
 
+fig = plt.gcf()
+fig.set_size_inches(18.5, 10.5)
+
+plt.plot(scs_f,ene_ac,'b.-')
+plt.xlabel("SCS cutoff [Å]")
+plt.ylabel("MBD energy [eV]")
+plt.title("Amorphous carbon MBD energy (125 atoms, MBD cutoff = SCS cutoff + 2Å)")
+plt.xlim([scs_f[0],scs_f[-1]])
+plt.show()
+
+fig = plt.gcf()
+fig.set_size_inches(18.5, 10.5)
 
 plt.plot(scs_f,t_scs_ac,'b.-',label="No forces")
 plt.plot(scs_f,t_scs_f_ac,'r.-',label="With forces")
@@ -161,6 +189,9 @@ plt.xlim([scs_f[0],scs_f[-1]])
 plt.legend()
 plt.show()
 
+fig = plt.gcf()
+fig.set_size_inches(18.5, 10.5)
+
 plt.plot(scs_f,t_com_ac,'b.-',label="No forces")
 plt.plot(scs_f,t_com_f_ac,'r.-',label="With forces")
 plt.title("Amorphous carbon, MBD cutoff = SCS cutoff + 2 Å")
@@ -170,6 +201,9 @@ plt.xlim([scs_f[0],scs_f[-1]])
 plt.legend()
 plt.show()
 
+fig = plt.gcf()
+fig.set_size_inches(18.5, 10.5)
+
 plt.plot(scs_f,t_mbd_ac,'b.-',label="No forces")
 plt.plot(scs_f,t_mbd_f_ac,'r.-',label="With forces")
 plt.title("Amorphous carbon, MBD cutoff = SCS cutoff + 2 Å")
@@ -177,5 +211,52 @@ plt.xlabel("SCS cutoff [Å]")
 plt.ylabel("CPU time for MBD calculation [s]")
 plt.xlim([scs_f[0],scs_f[-1]])
 plt.legend()
+plt.show()
+
+fig = plt.gcf()
+fig.set_size_inches(18.5, 10.5)
+
+d = np.linspace(0,8,41)
+scs = np.linspace(0,7,8)
+ene_c60_slab = np.zeros([len(scs),len(d)])
+
+ax = plt.subplot(111)
+c60_energy_slab_ts = -524.53523070
+slab_ts = -8112.81007882
+c60_slab_ref = np.loadtxt("c60_slab_ref.dat")
+slab_ref = np.loadtxt("slab_ref.dat")
+ene_c60_slab_ts = np.loadtxt("c60_slab_ts.dat")
+ene_c60_slab_ts = ene_c60_slab_ts - c60_energy_slab_ts - slab_ts
+ax.plot(d[10:],ene_c60_slab_ts[10:],'k.-',label="TS")
+
+c60_energy_slab_none = -521.67745458
+slab_none = -7975.33552343
+ene_c60_slab_none = np.loadtxt("c60_slab_none.dat")
+ene_c60_slab_none = ene_c60_slab_none - c60_energy_slab_none - slab_none
+ax.plot(d[10:],ene_c60_slab_none[10:],'r.-',label="None")
+
+for i in range(len(scs)):
+    s = "%.1f" % scs[i]
+    filename = "c60_slab_" + s + ".dat"
+    ene_c60_slab[i,:] = np.loadtxt(filename)
+    ene_c60_slab[i,:] = ene_c60_slab[i,:] - c60_slab_ref[i] - slab_ref[i]
+    x = float(i)/len(scs)
+    ax.plot(d[10:],ene_c60_slab[i,10:],color=(0,x,1.0-x),linestyle='solid',marker='.',label="SCS cutoff " + str(scs[i]) + " Å")
+
+plt.xlim([d[10],d[-1]])
+plt.xlabel("Displacement from initial configuration [Å]")
+plt.ylabel("Interaction energy [eV]")
+plt.title("C60 molecule interacting with amorphous carbon slab")
+plt.legend()
+
+arr_img = plt.imread('image.png')
+im = OffsetImage(arr_img, zoom=.2)
+ab = AnnotationBbox(im, (0.45, 0.7), xycoords='axes fraction', bboxprops=dict(alpha=0.0))
+arr_img2 = plt.imread('image2.png')
+im2 = OffsetImage(arr_img2, zoom=.2)
+ab2 = AnnotationBbox(im2, (0.55, 0.7), xycoords='axes fraction', bboxprops=dict(alpha=0.0))
+ax.add_artist(ab)
+ax.add_artist(ab2)
+
 plt.show()
 

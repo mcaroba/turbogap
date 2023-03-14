@@ -1,4 +1,7 @@
-> c60_slab_ts.dat
+for d in $(seq 4.0 1.0 7.0); do
+g="$( bc <<<"$d + 1" )"
+echo $d $g
+> c60_slab_$d.dat
 for i in $(seq 0.0 0.2 8.0); do
 echo $i
 cat <<EOF > input
@@ -12,9 +15,9 @@ species = C !H
 masses = 12.01 1.00784
 
 ! van der Waals info
-vdw_type = ts
-vdw_sr = 0.94 !0.83 !0.97
-vdw_d = 20. !6. !20.            ! Use d = 20 for TS(SCS) and d = 6 for MBD
+vdw_type = mbd
+vdw_sr = 0.83 !0.97
+vdw_d = 6. !20.            ! Use d = 20 for TS(SCS) and d = 6 for MBD
 vdw_rcut = 20.
 vdw_r0_ref = 1.900 !1.64
 vdw_alpha0_ref = 1.778 !0.667
@@ -22,8 +25,8 @@ vdw_c6_ref = 27.8 !3.88
 ! The order of the cutoffs is vdw_scs_rcut < vdw_mbd_rcut < vdw_2b_rcut
 ! If two cutoffs are equal, there is no buffer region between them!
 vdw_buffer = 0.5          ! Buffer for transitions between cut-off regions. Type: REAL
-vdw_scs_rcut = 5.        ! vdw_scs_rcut > vdw_buffer. Type: REAL
-vdw_mbd_rcut = 5.5        ! Cut-off for atoms to include for local MBD energy (vdw_mbd_rcut >= vdw_scs_rcut + vdw_buffer). Type: REAL
+vdw_scs_rcut = $d        ! vdw_scs_rcut > vdw_buffer. Type: REAL
+vdw_mbd_rcut = $g        ! Cut-off for atoms to include for local MBD energy (vdw_mbd_rcut >= vdw_scs_rcut + vdw_buffer). Type: REAL
 vdw_2b_rcut = 20.          ! Cut-off for local TS-SCS (vdw_2b_rcut >= vdw_mbd_rcut + vdw_buffer), Type: REAL
 vdw_mbd_nfreq = 12        ! Number of frequency values for MBD integration. Type: INT
 vdw_mbd_norder = 4        ! Contributions up to n-body interactions (i.e. cut-off degree for Taylor expansion of ln(I-AT)). Type: INT
@@ -32,5 +35,8 @@ vdw_hirsh_grad = .true.   ! Include Hirshfeld gradients in the forces. Type: LOG
 vdw_polynomial = .false.  ! Use polynomial approximation for inverse matrices. Type: LOGICAL
 vdw_omega_ref = 4.d0
 EOF
-mpirun -np 4 ../bin/turbogap predict | grep "Total energy" | awk '{print $3}' >> c60_slab_ts.dat
+> output
+mpirun -np 4 ../bin/turbogap predict >> output
+grep "Total energy" output | awk '{print $3}' >> c60_slab_$d.dat
+done
 done

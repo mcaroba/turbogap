@@ -1024,7 +1024,7 @@ module vdw
 !**************************************************************************
   subroutine get_mbd_energies_and_forces( hirshfeld_v_cart_der_ji, &
                                        n_neigh, neighbors_list, neighbor_species, &
-                                       rcut, rcut_mbd, rcut_2b, r_buffer, rjs, xyz, &
+                                       rcut, rcut_loc, rcut_mbd, rcut_2b, r_buffer, rjs, xyz, &
                                        hirshfeld_v_neigh, sR, d, c6_ref, r0_ref, alpha0_ref, do_derivatives, &
                                        do_hirshfeld_gradients, polynomial_expansion, n_freq, n_order, &
                                        vdw_omega_ref, central_pol, central_omega, &
@@ -1034,7 +1034,8 @@ module vdw
 
 !   Input variables
     real*8, intent(in) :: rcut, r_buffer, &
-                          rjs(:), xyz(:,:), sR, d, c6_ref(:), r0_ref(:), rcut_mbd, rcut_2b, hirshfeld_v_cart_der_ji(:,:), &
+                          rjs(:), xyz(:,:), sR, d, c6_ref(:), r0_ref(:), rcut_loc, rcut_mbd, rcut_2b, &
+                          hirshfeld_v_cart_der_ji(:,:), &
                           alpha0_ref(:), vdw_omega_ref !, hirshfeld_v(:), hirshfeld_v_neigh(:) !NOTE: uncomment this in final implementation
     integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:), n_freq, n_order
     logical, intent(in) :: do_derivatives, do_hirshfeld_gradients, polynomial_expansion
@@ -1051,7 +1052,7 @@ module vdw
                            neighbor_sigma(:), hirshfeld_v_sub_der(:,:), inner_damp(:)
     real*8 :: time1, time2, this_force(1:3), Bohr, Hartree, &
               omega, pi, integral, E_MBD, R_vdW_SCS_ij, S_vdW_ij, dS_vdW_ij, exp_term, &
-              r_vdw_i, r_vdw_j, t1, t2, r_buf_scs, r_buf_mbd, r_buf_2b, &
+              r_vdw_i, r_vdw_j, t1, t2, r_buf_scs, r_buf_mbd, r_buf_2b, r_buf_loc, &
               sigma_ij, coeff_h_der, dg, dh, s_i, s_j, terms, omega_ref, xyz_i(1:3), xyz_j(1:3)
     integer, allocatable :: ipiv(:)
     integer :: n_sites, n_pairs, n_species, n_sites0, info, om, n_tot
@@ -1088,8 +1089,12 @@ module vdw
 ! TESTING: Change neighbor_alpha0_mbd... and neighbor_alpha0_2b... back to central_pol in a_2b and a_mbd parts
 ! Test G_mat with finite difference; it should be equal to the analytical solution now
 
-    if ( rcut_mbd < rcut ) then
-      write(*,*) "ERROR: vdw_mbd_rcut should be larger than vdw_scs_rcut!"
+    if ( rcut_loc > rcut ) then
+      write(*,*) "ERROR: vdw_loc_rcut should be at most vdw_scs_rcut!"
+      return
+    end if
+    if ( rcut_mbd < rcut_loc ) then
+      write(*,*) "ERROR: vdw_mbd_rcut should be larger than vdw_loc_rcut!"
       return
     end if
     if ( rcut_2b < rcut_mbd ) then
@@ -1179,9 +1184,15 @@ module vdw
     else
       r_buf_scs = r_buffer
     end if
+
+    if ( rcut_loc < r_buffer ) then
+      r_buf_loc = rcut_loc
+    else
+      r_buf_loc = r_buffer
+    end if
     
-    if ( rcut_mbd-rcut < r_buffer ) then
-      r_buf_mbd = rcut_mbd-rcut
+    if ( rcut_mbd-rcut_loc < r_buffer ) then
+      r_buf_mbd = rcut_mbd-rcut_loc
     else
       r_buf_mbd = r_buffer
     end if
@@ -1914,14 +1925,14 @@ module vdw
               xyz_0_mbd(:,k2) = xyz(:,n_tot+k_i)/Bohr
               hirshfeld_mbd_neigh(k2) = hirshfeld_v_neigh(n_tot+k_i)
               neighbor_alpha0_mbd(k2) = alpha0_ref(s) / Bohr**3 ! * hirshfeld_v_neigh(n_tot+k_i)
-              if ( rjs(n_tot+k_i) .le. rcut-r_buf_scs ) then
+              if ( rjs(n_tot+k_i) .le. rcut_loc-r_buf_loc ) then
                 r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),i2,1)
                 a_mbd(k2) = a_iso(r,2)
                 o_mbd(k2) = o_p(r)
                 r0_ii_SCS(k2) = r0_ii_mbd(k2) * (a_iso(r,2)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0)
-              else if ( rjs(n_tot+k_i) .le. rcut .and. rjs(n_tot+k_i) > rcut-r_buf_scs ) then
+              else if ( rjs(n_tot+k_i) .le. rcut_loc .and. rjs(n_tot+k_i) > rcut_loc-r_buf_loc ) then
                 r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),i2,1)
-                rb = (rjs(n_tot+k_i)-rcut+r_buf_scs)/r_buf_scs
+                rb = (rjs(n_tot+k_i)-rcut_loc+r_buf_loc)/r_buf_loc
                 a_mbd(k2) = a_iso(r,2) * &
                             (1.d0 - 10.d0 * rb**3 &
                                + 15.d0 * rb**4 &
@@ -1947,7 +1958,7 @@ module vdw
                                 ( + 10.d0 *rb**3 &
                                - 15.d0 * rb**4 &
                                + 6.d0 * rb**5)
-              else if ( rjs(n_tot+k_i) > rcut .and. rjs(n_tot+k_i) .le. rcut_mbd-r_buf_mbd) then
+              else if ( rjs(n_tot+k_i) > rcut_loc .and. rjs(n_tot+k_i) .le. rcut_mbd-r_buf_mbd) then
                 a_mbd(k2) = central_pol(i1) !neighbor_alpha0_mbd(k2) * hirshfeld_v_neigh(n_tot+k_i)
                 o_mbd(k2) = central_omega(i1)
                 r0_ii_SCS(k2) = r0_ii_mbd(k2) * (central_pol(i1)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0)
@@ -1993,14 +2004,14 @@ module vdw
                       xyz_0_mbd(:,k2) = xyz(:,n_tot+k_j)/Bohr
                       hirshfeld_mbd_neigh(k2) = hirshfeld_v_neigh(n_tot+k_j)
                       neighbor_alpha0_mbd(k2) = alpha0_ref(s) / Bohr**3 !* hirshfeld_v_neigh(n_tot+k_j)
-                      if ( rjs(n_tot+k_j) .le. rcut-r_buf_scs ) then
+                      if ( rjs(n_tot+k_j) .le. rcut_loc-r_buf_loc ) then
                         r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),j,1)
                         a_mbd(k2) = a_iso(r,2)
                         o_mbd(k2) = o_p(r)
                         r0_ii_SCS(k2) = r0_ii_mbd(k2) * (a_iso(r,2)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0)
-                      else if ( rjs(n_tot+k_j) .le. rcut .and. rjs(n_tot+k_j) > rcut-r_buf_scs ) then
+                      else if ( rjs(n_tot+k_j) .le. rcut_loc .and. rjs(n_tot+k_j) > rcut-r_buf_loc ) then
                         r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),j,1)
-                        rb = (rjs(n_tot+k_j)-rcut+r_buf_scs)/r_buf_scs
+                        rb = (rjs(n_tot+k_j)-rcut_loc+r_buf_loc)/r_buf_loc
                         a_mbd(k2) = a_iso(r,2) * &
                               (1.d0 - 10.d0 * rb**3 &
                                + 15.d0 * rb**4 &
@@ -2026,7 +2037,7 @@ module vdw
                                 ( + 10.d0 *rb**3 &
                                - 15.d0 * rb**4 &
                                + 6.d0 * rb**5)
-                      else if ( rjs(n_tot+k_j) > rcut .and. rjs(n_tot+k_j) .le. rcut_mbd-r_buf_mbd) then
+                      else if ( rjs(n_tot+k_j) > rcut_loc .and. rjs(n_tot+k_j) .le. rcut_mbd-r_buf_mbd) then
                         a_mbd(k2) = central_pol(j1) !central_pol(j1)
                         o_mbd(k2) = central_omega(j1)
                         r0_ii_SCS(k2) = r0_ii_mbd(k2) * (central_pol(j1)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0)
@@ -2628,7 +2639,7 @@ module vdw
                 r_vdw_i = r0_ii_SCS(k2)
                 i2 = mbd_neighbors_list(k2)
                 i1 = modulo(i2-1, n_sites0) + 1
-                if ( rjs_0_mbd(k2) .le. (rcut-r_buf_scs)/Bohr ) then
+                if ( rjs_0_mbd(k2) .le. (rcut_loc-r_buf_loc)/Bohr ) then
                   r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),i2,1)
                   da_mbd(k2) = da_iso(r,c3,2)
                   if ( a_iso(r,2) > a_iso(r,1) ) then
@@ -2641,7 +2652,7 @@ module vdw
                   do_mbd(k2) = do_pref
                   dr0_ii_SCS(k2) = r0_ii_mbd(k2) * (a_iso(r,2)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0) / &
                                    (3.d0 * a_iso(r,2)) * da_iso(r,c3,2)
-                else if ( rjs_0_mbd(k2) > (rcut-r_buf_scs)/Bohr .and. rjs_0_mbd(k2) .le. rcut/Bohr ) then
+                else if ( rjs_0_mbd(k2) > (rcut_loc-r_buf_loc)/Bohr .and. rjs_0_mbd(k2) .le. rcut_loc/Bohr ) then
                   r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),i2,1)
                   if ( a_iso(r,2) > a_iso(r,1) ) then
                     do_pref = -0.5d0*vdw_omega_ref*omega_ref * (a_iso(r,1) * da_iso(r,c3,2) - a_iso(r,2) * da_iso(r,c3,1)) / &
@@ -2650,7 +2661,7 @@ module vdw
                     write(*,*) "WARNING: frequency dependency failure. Use larger vdw_omega_ref."
                     do_pref = 0.d0
                   end if
-                  rb = (rjs_0_mbd(k2)*Bohr-rcut+r_buf_scs)/r_buf_scs
+                  rb = (rjs_0_mbd(k2)*Bohr-rcut_loc+r_buf_loc)/r_buf_loc
                   da_mbd(k2) = da_iso(r,c3,2) * &
                               (1.d0 - 10.d0 * rb**3 &
                                + 15.d0 * rb**4 &
@@ -2707,7 +2718,7 @@ module vdw
                               - 60.d0 * rb**3 &
                               + 30.d0 * rb**4) &
                                  * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_scs/Bohr))
-                else if ( rjs_0_mbd(k2) > rcut/Bohr .and. rjs_0_mbd(k2) .le. (rcut_mbd-r_buf_mbd)/Bohr ) then
+                else if ( rjs_0_mbd(k2) > rcut_loc/Bohr .and. rjs_0_mbd(k2) .le. (rcut_mbd-r_buf_mbd)/Bohr ) then
                   if ( do_hirshfeld_gradients ) then
                     da_mbd(k2) = neighbor_alpha0_mbd(k2) * &
                                     hirshfeld_v_mbd_der(c3,k2)*Bohr
@@ -2759,7 +2770,7 @@ module vdw
                   j = mbd_neighbors_list(k2)
                   j1 = modulo(j-1, n_sites0) + 1
                   q = p_mbd(k2)
-                  if ( rjs_0_mbd(k2) .le. (rcut-r_buf_scs)/Bohr ) then
+                  if ( rjs_0_mbd(k2) .le. (rcut_loc-r_buf_loc)/Bohr ) then
                     r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),j,1)
                     da_mbd(k2) = da_iso(r,c3,2)
                     if ( a_iso(r,2) > a_iso(r,1) ) then
@@ -2780,7 +2791,7 @@ module vdw
                     !r0_ii_SCS(k2) = r0_ii_mbd(k2) * (a_iso(r,2)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0)
                     !dr0_ii_SCS(k2) = r0_ii_mbd(k2) * (a_iso(r,2)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0) / &
                     !               (3.d0 * a_iso(r,2)) * da_iso(r,c3,2)
-                  else if ( rjs_0_mbd(k2) > (rcut-r_buf_scs)/Bohr .and. rjs_0_mbd(k2) .le. rcut/Bohr ) then
+                  else if ( rjs_0_mbd(k2) > (rcut_loc-r_buf_loc)/Bohr .and. rjs_0_mbd(k2) .le. rcut_loc/Bohr ) then
                     r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),j,1)
                     if ( a_iso(r,2) > a_iso(r,1) ) then
                       do_pref = -0.5d0*vdw_omega_ref*omega_ref * (a_iso(r,1) * da_iso(r,c3,2) - a_iso(r,2) * da_iso(r,c3,1)) / &
@@ -2789,7 +2800,7 @@ module vdw
                       write(*,*) "WARNING: frequency dependency failure. Use larger vdw_omega_ref."
                       do_pref = 0.d0
                     end if
-                    rb = (rjs_0_mbd(k2)*Bohr-rcut+r_buf_scs)/r_buf_scs
+                    rb = (rjs_0_mbd(k2)*Bohr-rcut_loc+r_buf_loc)/r_buf_loc
                     da_mbd(k2) = da_iso(r,c3,2) * &
                                 (1.d0 - 10.d0 * rb**3 &
                                + 15.d0 * rb**4 &
@@ -2846,7 +2857,7 @@ module vdw
                               - 60.d0 * rb**3 &
                               + 30.d0 * rb**4) &
                                    * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_scs/Bohr))
-                  else if ( rjs_0_mbd(k2) > rcut/Bohr .and. rjs_0_mbd(k2) .le. (rcut_mbd-r_buf_mbd)/Bohr ) then
+                  else if ( rjs_0_mbd(k2) > rcut_loc/Bohr .and. rjs_0_mbd(k2) .le. (rcut_mbd-r_buf_mbd)/Bohr ) then
                     if ( do_hirshfeld_gradients ) then
                       da_mbd(k2) = neighbor_alpha0_mbd(k2) * &
                                     hirshfeld_v_mbd_der(c3,k2)*Bohr

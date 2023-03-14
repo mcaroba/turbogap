@@ -1,4 +1,4 @@
-> c60_slab_ts.dat
+> c60_slab_none.dat
 for i in $(seq 0.0 0.2 8.0); do
 echo $i
 cat <<EOF > input
@@ -12,7 +12,7 @@ species = C !H
 masses = 12.01 1.00784
 
 ! van der Waals info
-vdw_type = ts
+vdw_type = none
 vdw_sr = 0.94 !0.83 !0.97
 vdw_d = 20. !6. !20.            ! Use d = 20 for TS(SCS) and d = 6 for MBD
 vdw_rcut = 20.
@@ -32,5 +32,5 @@ vdw_hirsh_grad = .true.   ! Include Hirshfeld gradients in the forces. Type: LOG
 vdw_polynomial = .false.  ! Use polynomial approximation for inverse matrices. Type: LOGICAL
 vdw_omega_ref = 4.d0
 EOF
-mpirun -np 4 ../bin/turbogap predict | grep "Total energy" | awk '{print $3}' >> c60_slab_ts.dat
+mpirun -np 4 ../bin/turbogap predict | grep "Total energy" | awk '{print $3}' >> c60_slab_none.dat
 done

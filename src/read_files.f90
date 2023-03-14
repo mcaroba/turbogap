@@ -777,6 +777,9 @@ end if
       else if( keyword == "vdw_hirsh_grad" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_hirsh_grad
+      else if( keyword == "vdw_loc_rcut" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_loc_rcut
       else if( keyword == "vdw_mbd_rcut" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_rcut
