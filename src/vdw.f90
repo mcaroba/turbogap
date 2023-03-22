@@ -1084,7 +1084,7 @@ module vdw
     real*8, allocatable :: B_pol(:,:), B_mult(:,:), b_i(:,:), d_vec(:,:), val_xv(:,:)
 
 !central_pol = 10.d0
-!central_omega = 0.5d0
+central_omega = 0.5d0
 
 ! TESTING: Change neighbor_alpha0_mbd... and neighbor_alpha0_2b... back to central_pol in a_2b and a_mbd parts
 ! Test G_mat with finite difference; it should be equal to the analytical solution now
@@ -1937,8 +1937,8 @@ module vdw
                             (1.d0 - 10.d0 * rb**3 &
                                + 15.d0 * rb**4 &
                                - 6.d0 * rb**5 ) + &
-                            central_pol(i1) * &
-                            !neighbor_alpha0_mbd(k2) * hirshfeld_v_neigh(n_tot+k_i) * &
+                            !central_pol(i1) * &
+                            neighbor_alpha0_mbd(k2) * hirshfeld_v_neigh(n_tot+k_i) * &
                                   ( + 10.d0 *rb**3 &
                                - 15.d0 * rb**4 &
                                + 6.d0 * rb**5)
@@ -1954,24 +1954,25 @@ module vdw
                             (1.d0 - 10.d0 * rb**3 &
                                + 15.d0 * rb**4 &
                                - 6.d0 * rb**5) + &
-                                r0_ii_mbd(k2) * (central_pol(i1)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0) * &
+                                !r0_ii_mbd(k2) * (central_pol(i1)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0) * &
+                                 r0_ii_mbd(k2) * (hirshfeld_mbd_neigh(k2))**(1.d0/3.d0) * &
                                 ( + 10.d0 *rb**3 &
                                - 15.d0 * rb**4 &
                                + 6.d0 * rb**5)
               else if ( rjs(n_tot+k_i) > rcut_loc .and. rjs(n_tot+k_i) .le. rcut_mbd-r_buf_mbd) then
-                a_mbd(k2) = central_pol(i1) !neighbor_alpha0_mbd(k2) * hirshfeld_v_neigh(n_tot+k_i)
+                a_mbd(k2) = neighbor_alpha0_mbd(k2) * hirshfeld_v_neigh(n_tot+k_i) !central_pol(i1)
                 o_mbd(k2) = central_omega(i1)
-                r0_ii_SCS(k2) = r0_ii_mbd(k2) * (central_pol(i1)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0)
+                r0_ii_SCS(k2) = r0_ii_mbd(k2) * (hirshfeld_mbd_neigh(k2))**(1.d0/3.d0) !(central_pol(i1)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0)
               else if ( rjs(n_tot+k_i) > rcut_mbd-r_buf_mbd .and. rjs(n_tot+k_i) .le. rcut_mbd ) then
                 rb = (rjs(n_tot+k_i)-rcut_mbd+r_buf_mbd)/(r_buf_mbd)
-                a_mbd(k2) = central_pol(i1) * (1.d0 & !central_pol(i1) * (1.d0 & 
-                                    - 10.d0 * rb**3 &
-                               + 15.d0 * rb**4 &
-                               - 6.d0 * rb**5)
+                a_mbd(k2) = neighbor_alpha0_mbd(k2) * hirshfeld_v_neigh(n_tot+k_i) !central_pol(i1) !* (1.d0 & 
+                              !      - 10.d0 * rb**3 &
+                              ! + 15.d0 * rb**4 &
+                              ! - 6.d0 * rb**5)
                 o_mbd(k2) = central_omega(i1) !* (1.d0 & 
                                     !- 3.d0 * ((rjs(n_tot+k_i)-rcut_mbd+r_buffer)/(r_buffer))**2 &
                                     !+ 2.d0 * ((rjs(n_tot+k_i)-rcut_mbd+r_buffer)/(r_buffer))**3)
-                r0_ii_SCS(k2) = r0_ii_mbd(k2) * (central_pol(i1)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0) !* (1.d0 & 
+                r0_ii_SCS(k2) = r0_ii_mbd(k2) * (hirshfeld_mbd_neigh(k2))**(1.d0/3.d0) !(central_pol(i1)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0) !* (1.d0 & 
                               !      - 10.d0 * rb**3 &
                               ! + 15.d0 * rb**4 &
                               ! - 6.d0 * rb**5)
@@ -2016,8 +2017,8 @@ module vdw
                               (1.d0 - 10.d0 * rb**3 &
                                + 15.d0 * rb**4 &
                                - 6.d0 * rb**5) + &
-                        !neighbor_alpha0_mbd(k2) * hirshfeld_v_neigh(n_tot+k_j) * &
-                        central_pol(j1) * & 
+                        neighbor_alpha0_mbd(k2) * hirshfeld_v_neigh(n_tot+k_j) * &
+                        !central_pol(j1) * & 
                                     ( + 10.d0 *rb**3 &
                                - 15.d0 * rb**4 &
                                + 6.d0 * rb**5)
@@ -2033,24 +2034,25 @@ module vdw
                             (1.d0 - 10.d0 * rb**3 &
                                + 15.d0 * rb**4 &
                                - 6.d0 * rb**5) + &
-                                r0_ii_mbd(k2) * (central_pol(j1)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0) * &
+                                !r0_ii_mbd(k2) * (central_pol(j1)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0) * &
+                                 r0_ii_mbd(k2) * (hirshfeld_mbd_neigh(k2))**(1.d0/3.d0) * &
                                 ( + 10.d0 *rb**3 &
                                - 15.d0 * rb**4 &
                                + 6.d0 * rb**5)
                       else if ( rjs(n_tot+k_j) > rcut_loc .and. rjs(n_tot+k_j) .le. rcut_mbd-r_buf_mbd) then
-                        a_mbd(k2) = central_pol(j1) !central_pol(j1)
+                        a_mbd(k2) = neighbor_alpha0_mbd(k2) * hirshfeld_v_neigh(n_tot+k_i) !central_pol(j1)
                         o_mbd(k2) = central_omega(j1)
-                        r0_ii_SCS(k2) = r0_ii_mbd(k2) * (central_pol(j1)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0)
-                      else
+                        r0_ii_SCS(k2) = r0_ii_mbd(k2) * (hirshfeld_mbd_neigh(k2))**(1.d0/3.d0) !(central_pol(j1)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0)
+                      else if ( rjs(n_tot+k_i) > rcut_mbd-r_buf_mbd .and. rjs(n_tot+k_i) .le. rcut_mbd ) then
                         rb = (rjs(n_tot+k_j)-rcut_mbd+r_buf_mbd)/(r_buf_mbd)
-                        a_mbd(k2) = central_pol(j1) * (1.d0 & !central_pol(j1) * (1.d0 & 
-                                            - 10.d0 * rb**3 &
-                               + 15.d0 * rb**4 &
-                               - 6.d0 * rb**5)
+                        a_mbd(k2) = neighbor_alpha0_mbd(k2) * hirshfeld_v_neigh(n_tot+k_j) !central_pol(j1) !* (1.d0 & 
+                                            !- 10.d0 * rb**3 &
+                               !+ 15.d0 * rb**4 &
+                               !- 6.d0 * rb**5)
                         o_mbd(k2) = central_omega(j1) !* (1.d0 & 
                                             !- 3.d0 * ((rjs(n_tot+k_j)-rcut_mbd+r_buffer)/(r_buffer))**2 &
                                             !+ 2.d0 * ((rjs(n_tot+k_j)-rcut_mbd+r_buffer)/(r_buffer))**3)
-                        r0_ii_SCS(k2) = r0_ii_mbd(k2) * (central_pol(j1)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0) !* (1.d0 & 
+                        r0_ii_SCS(k2) = r0_ii_mbd(k2) * r0_ii_mbd(k2) * (hirshfeld_mbd_neigh(k2))**(1.d0/3.d0) !(central_pol(j1)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0) !* (1.d0 & 
                                          !  - 10.d0 * rb**3 &
                                          ! + 15.d0 * rb**4 &
                                          ! - 6.d0 * rb**5)
@@ -2116,7 +2118,7 @@ module vdw
               if ( rjs(n_tot+k_i) > rcut_mbd-r_buf_mbd .and. rjs(n_tot+k_i) .le. rcut_mbd ) then
                 r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),i2,1)
                 rb = (rjs(n_tot+k_i)-rcut_mbd+r_buf_mbd)/(r_buf_mbd)
-                a_2b(k2) = central_pol(i1) * & !neighbor_alpha0_2b(k2) * hirshfeld_v_neigh(n_tot+k_i) * &
+                a_2b(k2) = neighbor_alpha0_2b(k2) * hirshfeld_v_neigh(n_tot+k_i) * & !central_pol(i1)
                                   ( + 10.d0 *rb**3 &
                                - 15.d0 * rb**4 &
                                + 6.d0 * rb**5)
@@ -2124,24 +2126,24 @@ module vdw
                               !    ( + 10.d0 *rb**3 &
                               ! - 15.d0 * rb**4 &
                               ! + 6.d0 * rb**5)
-                r0_ii_SCS_2b(k2) = r0_ii_2b(k2) * (central_pol(i1)/neighbor_alpha0_2b(k2))**(1.d0/3.d0) !* &
+                r0_ii_SCS_2b(k2) = r0_ii_2b(k2) * hirshfeld_2b_neigh(k2)**(1.d0/3.d0) !(central_pol(i1)/neighbor_alpha0_2b(k2))**(1.d0/3.d0) !* &
                               !    ( + 10.d0 *rb**3 &
                               ! - 15.d0 * rb**4 &
                               ! + 6.d0 * rb**5)
               else if ( rjs(n_tot+k_i) > rcut_mbd .and. rjs(n_tot+k_i) .le. rcut_2b-r_buf_2b) then
                 a_2b(k2) = central_pol(i1) !neighbor_alpha0_2b(k2) * hirshfeld_v_neigh(n_tot+k_i)
                 o_2b(k2) = central_omega(i1)
-                r0_ii_SCS_2b(k2) = r0_ii_2b(k2) * (central_pol(i1)/neighbor_alpha0_2b(k2))**(1.d0/3.d0)
+                r0_ii_SCS_2b(k2) = r0_ii_2b(k2) * hirshfeld_2b_neigh(k2)**(1.d0/3.d0) !(central_pol(i1)/neighbor_alpha0_2b(k2))**(1.d0/3.d0)
               else if ( rjs(n_tot+k_i) > rcut_2b-r_buf_2b .and. rjs(n_tot+k_i) .le. rcut_2b) then
                 rb = (rjs(n_tot+k_i)-rcut_2b+r_buf_2b)/(r_buf_2b)
-                a_2b(k2) = central_pol(i1) * (1.d0 & !neighbor_alpha0_2b(k2) * hirshfeld_v_neigh(n_tot+k_i) * (1.d0 &
+                a_2b(k2) = neighbor_alpha0_2b(k2) * hirshfeld_v_neigh(n_tot+k_i) * (1.d0 & !central_pol(i1) * (1.d0 & !neighbor_alpha0_2b(k2) * hirshfeld_v_neigh(n_tot+k_i) * (1.d0 &
                            - 10.d0 * rb**3 &
                                + 15.d0 * rb**4 &
                                - 6.d0 * rb**5)
                 o_2b(k2) = central_omega(i1) !* (1.d0 &
                            !- 3.d0 * ((rjs(n_tot+k_i)-rcut_2b+r_buffer)/(r_buffer))**2 &
                            !+ 2.d0 * ((rjs(n_tot+k_i)-rcut_2b+r_buffer)/(r_buffer))**3)
-                r0_ii_SCS_2b(k2) = r0_ii_2b(k2) * (central_pol(i1)/neighbor_alpha0_2b(k2))**(1.d0/3.d0) !* (1.d0 & !central_pol(i1) * (1.d0 & 
+                r0_ii_SCS_2b(k2) = r0_ii_2b(k2) * hirshfeld_2b_neigh(k2)**(1.d0/3.d0) !(central_pol(i1)/neighbor_alpha0_2b(k2))**(1.d0/3.d0) !* (1.d0 & !central_pol(i1) * (1.d0 & 
                            !- 10.d0 * rb**3 &
                            !   + 15.d0 * rb**4 &
                            !    - 6.d0 * rb**5)
@@ -2671,7 +2673,7 @@ module vdw
                               + 60.d0 * rb**3 &
                               - 30.d0 * rb**4) &
                                * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_scs/Bohr)) + &
-                               central_pol(i1) * & !neighbor_alpha0_mbd(k2) * hirshfeld_mbd_neigh(k2) * &
+                              neighbor_alpha0_mbd(k2) * hirshfeld_mbd_neigh(k2) * & !central_pol(i1) * &
                                ( +30.d0 * rb**2 &
                               - 60.d0 * rb**3 &
                               + 30.d0 * rb**4) &
@@ -2686,7 +2688,7 @@ module vdw
                               + 60.d0 * rb**3 &
                               - 30.d0 * rb**4) &
                                * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_scs/Bohr)) + &
-                                r0_ii_mbd(k2) * (central_pol(i1)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0) * &
+                                r0_ii_mbd(k2) * (hirshfeld_mbd_neigh(k2))**(1.d0/3.d0) * & !(central_pol(i1)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0) * &
                               (+30.d0 * rb**2 &
                               - 60.d0 * rb**3 &
                               + 30.d0 * rb**4) &
@@ -2731,17 +2733,17 @@ module vdw
                   do_mbd(k2) = 0.d0
                 else if ( rjs_0_mbd(k2) > (rcut_mbd-r_buf_mbd)/Bohr .and. rjs_0_mbd(k2) .le. rcut_mbd/Bohr ) then
                   rb = (rjs_0_mbd(k2)*Bohr-rcut_mbd+r_buf_mbd)/r_buf_mbd
-                  da_mbd(k2) = central_pol(i1) & !neighbor_alpha0_mbd(k2) * hirshfeld_mbd_neigh(k2) &
-                       * (-30.d0 * rb**2 &
-                              + 60.d0 * rb**3 &
-                              - 30.d0 * rb**4) &
-                       * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_mbd/Bohr))
+                  da_mbd(k2) = 0.d0 !central_pol(i1) & !neighbor_alpha0_mbd(k2) * hirshfeld_mbd_neigh(k2) &
+                       !* (-30.d0 * rb**2 &
+                       !       + 60.d0 * rb**3 &
+                       !       - 30.d0 * rb**4) &
+                       !* ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_mbd/Bohr))
                   if ( do_hirshfeld_gradients ) then
                     da_mbd(k2) = da_mbd(k2) + neighbor_alpha0_mbd(k2) * &
-                                    hirshfeld_v_mbd_der(c3,k2)*Bohr * &
-                       ( 1.d0 - 10.d0 * rb**3 &
-                               + 15.d0 * rb**4 &
-                               - 6.d0 * rb**5)
+                                    hirshfeld_v_mbd_der(c3,k2)*Bohr !* &
+                       !( 1.d0 - 10.d0 * rb**3 &
+                       !        + 15.d0 * rb**4 &
+                       !        - 6.d0 * rb**5)
                   end if
                   do_mbd(k2) = 0.d0 !central_omega(i1) &
                        !* (- 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut_mbd+r_buffer)/r_buffer) &
@@ -2810,7 +2812,7 @@ module vdw
                               + 60.d0 * rb**3 &
                               - 30.d0 * rb**4) &
                                  * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_scs/Bohr)) + &
-                                 central_pol(j1) * & !neighbor_alpha0_mbd(k2) * hirshfeld_mbd_neigh(k2) * &
+                                neighbor_alpha0_mbd(k2) * hirshfeld_mbd_neigh(k2) * & !central_pol(j1) * &
                                   ( +30.d0 * rb**2 &
                               - 60.d0 * rb**3 &
                               + 30.d0 * rb**4) &
@@ -2825,7 +2827,7 @@ module vdw
                               + 60.d0 * rb**3 &
                               - 30.d0 * rb**4) &
                                * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_scs/Bohr)) + &
-                                r0_ii_mbd(k2) * (central_pol(j1)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0) * &
+                                r0_ii_mbd(k2) * (hirshfeld_mbd_neigh(k2))**(1.d0/3.d0) * & !(central_pol(j1)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0) * &
                               (+30.d0 * rb**2 &
                               - 60.d0 * rb**3 &
                               + 30.d0 * rb**4) &
@@ -2870,17 +2872,17 @@ module vdw
                     do_mbd(k2) = 0.d0
                   else if ( rjs_0_mbd(k2) > (rcut_mbd-r_buf_mbd)/Bohr .and. rjs_0_mbd(k2) .le. rcut_mbd/Bohr ) then
                     rb = (rjs_0_mbd(k2)*Bohr-rcut_mbd+r_buf_mbd)/r_buf_mbd
-                    da_mbd(k2) = central_pol(j1) & !neighbor_alpha0_mbd(k2) * hirshfeld_mbd_neigh(k2) &
-                         * (-30.d0 * rb**2 &
-                              + 60.d0 * rb**3 &
-                              - 30.d0 * rb**4) &
-                         * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_mbd/Bohr))
+                    da_mbd(k2) = 0.d0 !central_pol(j1) & !neighbor_alpha0_mbd(k2) * hirshfeld_mbd_neigh(k2) &
+                         !* (-30.d0 * rb**2 &
+                         !     + 60.d0 * rb**3 &
+                         !     - 30.d0 * rb**4) &
+                         !* ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_mbd/Bohr))
                     if ( do_hirshfeld_gradients ) then
                       da_mbd(k2) = da_mbd(k2) + neighbor_alpha0_mbd(k2) * &
-                                    hirshfeld_v_mbd_der(c3,k2)*Bohr * &
-                       ( 1.d0 - 10.d0 * rb**3 &
-                               + 15.d0 * rb**4 &
-                               - 6.d0 * rb**5) 
+                                    hirshfeld_v_mbd_der(c3,k2)*Bohr !* &
+                       !( 1.d0 - 10.d0 * rb**3 &
+                       !        + 15.d0 * rb**4 &
+                       !        - 6.d0 * rb**5) 
                     end if
                     do_mbd(k2) = 0.d0 !central_omega(j1) &
                          !* (- 6.d0 * ((rjs_0_mbd(k2)*Bohr-rcut_mbd+r_buffer)/r_buffer) &
@@ -3001,7 +3003,7 @@ module vdw
                 i1 = modulo(i2-1, n_sites0) + 1
                 if ( rjs_2b(k2) > (rcut_mbd-r_buf_mbd)/Bohr .and. rjs_2b(k2) .le. rcut_mbd/Bohr ) then
                   rb = (rjs_2b(k2)*Bohr-rcut_mbd+r_buf_mbd)/(r_buf_mbd)
-                  da_2b(k2) = central_pol(i1) * & !neighbor_alpha0_2b(k2) * hirshfeld_2b_neigh(k2) * &
+                  da_2b(k2) = neighbor_alpha0_2b(k2) * hirshfeld_2b_neigh(k2) * & !central_pol(i1) * &
                                 ( +30.d0 * rb**2 &
                               - 60.d0 * rb**3 &
                               + 30.d0 * rb**4) &
@@ -3039,7 +3041,7 @@ module vdw
                   do_2b(k2) = 0.d0
                 else if ( rjs_2b(k2) > (rcut_2b-r_buf_2b)/Bohr .and. rjs_2b(k2) .le. rcut_2b/Bohr ) then
                   rb = (rjs_2b(k2)*Bohr-rcut_2b+r_buf_2b)/(r_buf_2b)
-                  da_2b(k2) = central_pol(i1) * & !neighbor_alpha0_2b(k2) * hirshfeld_2b_neigh(k2) * &
+                  da_2b(k2) = neighbor_alpha0_2b(k2) * hirshfeld_2b_neigh(k2) * & !central_pol(i1) * &
                          ( -30.d0 * rb**2 &
                               + 60.d0 * rb**3 &
                               - 30.d0 * rb**4) &
@@ -3188,12 +3190,13 @@ module vdw
                 call integrate("trapezoidal", omegas_mbd, integrand, omegas_mbd(1), omegas_mbd(n_freq), integral)
                 forces0(c3,i) = forces0(c3,i) + (1.d0/(2.d0*pi) * integral + forces_TS) * Hartree/Bohr
 
-                write(*,*) "MBD force", i, c3, forces0(c3,i)
                 integral = 0.d0
                 if (c3 == 1 ) then
                   call integrate("trapezoidal", omegas_mbd, total_integrand, omegas_mbd(1), omegas_mbd(n_freq), integral)
                   write(*,*) "MBD total energy of sphere", i, (integral / (2.d0*pi) + E_TS) * Hartree
                 end if
+
+                write(*,*) "MBD force", i, c3, forces0(c3,i)
 
               end if
             

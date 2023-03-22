@@ -1,4 +1,10 @@
-atoms_file = 'atoms_vacuum.xyz'
+for d in $(seq 0.0 1.0 7.0); do
+echo "MBD cutoff" $d
+> c60_slab_loc_$d.dat
+for i in $(seq 0.0 0.2 8.0); do
+echo $i
+cat <<EOF > input
+atoms_file = 'c60_slab_$i.xyz'
 pot_file = 'gap_files/carbon.gap'
 
 ! Species info
@@ -18,13 +24,19 @@ vdw_c6_ref = 27.8 !3.88
 ! The order of the cutoffs is vdw_scs_rcut < vdw_mbd_rcut < vdw_2b_rcut
 ! If two cutoffs are equal, there is no buffer region between them!
 vdw_buffer = 0.5          ! Buffer for transitions between cut-off regions. Type: REAL
-vdw_loc_rcut = 4.5
-vdw_scs_rcut = 4.5        ! vdw_scs_rcut > vdw_buffer. Type: REAL
-vdw_mbd_rcut = 7.        ! Cut-off for atoms to include for local MBD energy (vdw_mbd_rcut >= vdw_scs_rcut + vdw_buffer). Type: REAL
+vdw_loc_rcut = 0.
+vdw_scs_rcut = 4.        ! vdw_scs_rcut > vdw_buffer. Type: REAL
+vdw_mbd_rcut = $d        ! Cut-off for atoms to include for local MBD energy (vdw_mbd_rcut >= vdw_scs_rcut + vdw_buffer). Type: REAL
 vdw_2b_rcut = 20.          ! Cut-off for local TS-SCS (vdw_2b_rcut >= vdw_mbd_rcut + vdw_buffer), Type: REAL
 vdw_mbd_nfreq = 12        ! Number of frequency values for MBD integration. Type: INT
-vdw_mbd_norder = 6        ! Contributions up to n-body interactions (i.e. cut-off degree for Taylor expansion of ln(I-AT)). Type: INT
-vdw_mbd_grad = .true.     ! Calculate MBD forces. Type: LOGICAL
+vdw_mbd_norder = 4        ! Contributions up to n-body interactions (i.e. cut-off degree for Taylor expansion of ln(I-AT)). Type: INT
+vdw_mbd_grad = .false.     ! Calculate MBD forces. Type: LOGICAL
 vdw_hirsh_grad = .true.   ! Include Hirshfeld gradients in the forces. Type: LOGICAL
 vdw_polynomial = .false.  ! Use polynomial approximation for inverse matrices. Type: LOGICAL
-vdw_omega_ref = 4.d0
+vdw_omega_ref = 4.
+EOF
+> output
+mpirun -np 4 ../bin/turbogap predict >> output
+grep "Total energy" output | awk '{print $3}' >> c60_slab_loc_$d.dat
+done
+done

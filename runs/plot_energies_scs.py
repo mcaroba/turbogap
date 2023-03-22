@@ -260,3 +260,75 @@ ax.add_artist(ab2)
 
 plt.show()
 
+
+fig = plt.gcf()
+fig.set_size_inches(18.5, 10.5)
+
+
+ax = plt.subplot(111)
+ax.plot(d[10:],ene_c60_slab_ts[10:],'k.-',label="TS")
+ax.plot(d[10:],ene_c60_slab_none[10:],'r.-',label="None")
+
+
+c60_slab_ref_loc = np.loadtxt("c60_slab_ref_loc.dat")
+slab_ref_loc = np.loadtxt("slab_ref_loc.dat")
+ene_c60_slab_loc = np.zeros([len(scs),len(d)])
+
+for i in range(len(scs)):
+    s = "%.1f" % scs[i]
+    filename = "c60_slab_loc_" + s + ".dat"
+    ene_c60_slab_loc[i,:] = np.loadtxt(filename)
+    ene_c60_slab_loc[i,:] = ene_c60_slab_loc[i,:] - c60_slab_ref_loc[i] - slab_ref_loc[i]
+    x = float(i)/len(scs)
+    ax.plot(d[10:],ene_c60_slab_loc[i,10:],color=(0,x,1.0-x),linestyle='solid',marker='.',label="MBD cutoff " + str(scs[i]) + " Å")
+
+ax.plot(d[10:],ene_c60_slab[len(scs)-1,10:],color=(1,0.5,0),linestyle='solid',marker='.',label="MBD 8 Å, SCS 7 Å")
+
+plt.xlim([d[10],d[-1]])
+plt.xlabel("Displacement from initial configuration [Å]")
+plt.ylabel("Interaction energy [eV]")
+plt.title("C60 molecule interacting with amorphous carbon slab (SCS cutoff 4 Å)")
+plt.legend()
+
+
+arr_img = plt.imread('image.png')
+im = OffsetImage(arr_img, zoom=.2)
+ab = AnnotationBbox(im, (0.45, 0.7), xycoords='axes fraction', bboxprops=dict(alpha=0.0))
+arr_img2 = plt.imread('image2.png')
+im2 = OffsetImage(arr_img2, zoom=.2)
+ab2 = AnnotationBbox(im2, (0.55, 0.7), xycoords='axes fraction', bboxprops=dict(alpha=0.0))
+#ax.add_artist(ab)
+#ax.add_artist(ab2)
+
+plt.show()
+
+fig = plt.gcf()
+fig.set_size_inches(18.5, 10.5)
+
+
+ax = plt.subplot(111)
+ax.plot(d[10:],ene_c60_slab_ts[10:],'k.-',label="TS")
+ax.plot(d[10:],ene_c60_slab_none[10:],'r.-',label="None")
+
+
+c60_slab_ref_scs = np.loadtxt("c60_slab_ref_scs.dat")
+slab_ref_scs = np.loadtxt("slab_ref_scs.dat")
+ene_c60_slab_scs = np.zeros([len(scs),len(d)])
+
+for i in range(len(scs)):
+    s = "%.1f" % scs[i]
+    filename = "c60_slab_scs_" + s + ".dat"
+    ene_c60_slab_scs[i,:] = np.loadtxt(filename)
+    ene_c60_slab_scs[i,:] = ene_c60_slab_scs[i,:] - c60_slab_ref_scs[i] - slab_ref_scs[i]
+    x = float(i)/len(scs)
+    ax.plot(d[10:],ene_c60_slab_scs[i,10:],color=(0,x,1.0-x),linestyle='solid',marker='.',label="SCS cutoff " + str(scs[i]) + " Å")
+
+ax.plot(d[10:],ene_c60_slab[len(scs)-1,10:],color=(1,0.5,0),linestyle='solid',marker='.',label="MBD 8 Å, SCS 7 Å")
+
+plt.xlim([d[10],d[-1]])
+plt.xlabel("Displacement from initial configuration [Å]")
+plt.ylabel("Interaction energy [eV]")
+plt.title("C60 molecule interacting with amorphous carbon slab (MBD cutoff 5 Å)")
+plt.legend()
+
+plt.show()
