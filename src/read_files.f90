@@ -484,12 +484,13 @@ end if
 
 !   Internal variables
     real*8 :: c6_ref, r0_ref, alpha0_ref, bsf 
-    integer :: iostatus, i, iostatus2
+    integer :: iostatus, i, j, nw, iostatus2
     character*1024 :: long_line
     character*128, allocatable :: long_line_items(:)
     character*64 :: keyword, cjunk
     character*32 :: implemented_thermostats(1:3)
     character*32 :: implemented_barostats(1:2)
+    character*32 :: implemented_mc_types(1:6)
     character*2 :: element
     character*1 :: keyword_first
     logical :: are_vdw_refs_read(1:3), valid_choice, masses_in_input_file = .false.
@@ -500,6 +501,14 @@ end if
 
     implemented_barostats(1) = "none"
     implemented_barostats(2) = "berendsen"
+
+    implemented_mc_types(1) = "none"
+    implemented_mc_types(2) = "move"
+    implemented_mc_types(3) = "insertion"
+    implemented_mc_types(4) = "removal"
+    implemented_mc_types(5) = "relax"
+    implemented_mc_types(6) = "md"
+
 
 !   Some defaults before reading the input file (the values in the input file will override them)
     if( mode == "md" .or. mode == "mc" )then
@@ -528,6 +537,7 @@ end if
     params%vdw_r0_ref = 0.d0
     params%vdw_alpha0_ref = 0.d0
     are_vdw_refs_read = .false.
+
 
 !   Read the input file now
     iostatus = 0
@@ -601,18 +611,31 @@ end if
       else if(keyword=='mc_nsteps')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_nsteps
-      else if(keyword=='mc_move')then
+      else if(keyword=='n_mc_types')then
         backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_move
-      else if(keyword=='mc_gcmc')then
+        read(10, *, iostat=iostatus) cjunk, cjunk, (params%n_mc_types(nw),nw=1,params%n_mc_types)
+        allocate( params%mc_types(1:n_mc_types) )
+      else if(keyword=='mc_types')then
         backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_gcmc
-      else if(keyword=='mc_volume')then
-        backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_volume
-      else if(keyword=='mc_relax')then
-        backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_relax
+        read(10, *, iostat=iostatus) cjunk, cjunk, (params%mc_types(nw),nw=1,params%n_mc_types)
+        !       Need the check the implemented types
+        valid_choice = .false.
+        do j = 1, params%n_mc_types
+           valid_choice = .false.
+           do i = 1, size(implemented_mc_types)
+              if( trim(params%mc_types(j)) == trim(implemented_thermostats(i)) )then
+                 valid_choice = .true.
+              end if
+           end do
+           if( .not. valid_choice )then
+              if( rank == 0 )then
+                 write(*,*) "ERROR -> Invalid mc_type keyword:", params%mc_type(j)
+                 write(*,*) "This is a list of valid options:"
+                 write(*,*) implemented_mc_types
+              end if
+              stop
+           end if
+       end do
       else if(keyword=='mc_mu')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_mu

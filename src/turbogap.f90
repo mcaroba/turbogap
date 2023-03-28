@@ -77,8 +77,7 @@ program turbogap
   logical :: rebuild_neighbors_list = .true., exit_loop = .true.
   character*1 :: creturn = achar(13)
 
-  character*32, allocatable :: mc_moves(:)
-  integer, dimension(5)    :: mc_allowed=0
+
 ! Clean up these variables after code refactoring !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   integer, allocatable :: n_neigh(:), neighbors_list(:), alpha_max(:), species(:), species_supercell(:), &
                           neighbor_species(:), sph_temp_int(:), der_neighbors(:), der_neighbors_list(:), &
@@ -1451,37 +1450,7 @@ program turbogap
 
      if (params%do_mc)then
 !       Now we do a monte-carlo step: we choose what the steps are from the available list and then choose a random number
-        if (mc_istep == 0)then
-           !       Make the list of moves
-           allocate mc_moves(1:5)
-           if(params%mc_move)then
-              n_mc_step += 1
-              mc_allowed(n_mc_step) = 1
-              mc_moves(n_mc_step) = "move"
-           end if
-           if(params%mc_gcmc)then
-              n_mc_step += 1
-              mc_allowed(n_mc_step) = 1
-              mc_moves(n_mc_step) = "insertion"
-              n_mc_step += 1
-              mc_allowed(n_mc_step) = 1
-              mc_moves(n_mc_step) = "removal"
-           end if
-           if(params%mc_volume)then
-              n_mc_step += 1
-              mc_allowed(n_mc_step) = 1
-              mc_moves(n_mc_step) = "volume"
-           end if
-           if(params%mc_relax)then
-              n_mc_step += 1
-              mc_allowed(n_mc_step) = 1
-              mc_moves(n_mc_step) = "relax"
-           end if
-
-           allocate mc_moves(1:n_mc_step)
-
-           do n_mc, 1:n_mc_step
-              mc_moves(mc_allowed(n_mc))
+!       -- We have the list of move types in params%mc_types and the number params%n_mc_types --
 
         end if
 

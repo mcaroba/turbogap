@@ -87,9 +87,10 @@ module types
               gamma0 = 0.01d0, max_opt_step = 0.1d0, vdw_scs_rcut = 4.d0, f_tol = 0.01d0, p_tol = 0.01d0, &
               max_opt_step_eps = 0.05d0, mc_mu = 0.0d0
     integer :: md_nsteps = 1, mc_nsteps = 1, write_xyz = 0, write_thermo = 1, which_atom = 0, &
-               vdw_mbd_nfreq = 11
+               vdw_mbd_nfreq = 11, n_mc_types = 0
     character*1024 :: atoms_file
     character*32 :: vdw_type = "none"
+    character*32 allocatable ::  mc_types(:)
     character*8, allocatable :: species_types(:)
     character*16 :: optimize = "vv"
     character*32 :: barostat = "none", thermostat = "none", barostat_sym = "isotropic", mc_species = "none"
@@ -100,8 +101,7 @@ module types
                write_virial = .true., write_pressure = .true., write_stress = .true., &
                write_local_energies = .true., write_property(1:11) = .true., &
                write_array_property(1:8) = .true., write_masses = .false., write_fixes = .true., &
-               variable_time_step = .false., vdw_mbd_grad = .false., mc_move = .false., &
-               mc_gcmc = .false., mc_relax = .false., mc_volume = .false.
+               variable_time_step = .false., vdw_mbd_grad = .false.
   end type input_parameters
 
 end module
