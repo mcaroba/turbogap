@@ -77,18 +77,20 @@ program turbogap
   logical :: rebuild_neighbors_list = .true., exit_loop = .true.
   character*1 :: creturn = achar(13)
 
+  character*32, allocatable :: mc_moves(:)
+  integer, dimension(5)    :: mc_allowed=0
 ! Clean up these variables after code refactoring !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   integer, allocatable :: n_neigh(:), neighbors_list(:), alpha_max(:), species(:), species_supercell(:), &
                           neighbor_species(:), sph_temp_int(:), der_neighbors(:), der_neighbors_list(:), &
                           i_beg_list(:), i_end_list(:), j_beg_list(:), j_end_list(:)
   integer :: n_sites, i, j, k, i2, j2, n_soap, k2, k3, l, n_sites_this, ierr, rank, ntasks, dim, n_sp, &
              n_pos, n_sp_sc, this_i_beg, this_i_end, this_j_beg, this_j_end, this_n_sites_mpi, n_sites_prev = 0, &
-             n_atom_pairs_by_rank_prev
+             n_atom_pairs_by_rank_prev, n_mc_types = 0
   integer :: l_max, n_atom_pairs, n_max, ijunk, central_species = 0, n_atom_pairs_total
   integer :: iostatus, counter = 0, counter2
   integer :: which_atom = 0, n_species = 1, n_xyz, indices(1:3)
   integer :: radial_enhancement = 0
-  integer :: md_istep
+  integer :: md_istep, mc_istep, n_mc
 
   logical :: repeat_xyz = .true.
 
@@ -616,7 +618,30 @@ program turbogap
       update_bar = 1
     end if
     counter = 1
+ end if
+
+  if( params%do_mc )then
+#ifdef _MPIF90
+    IF( rank == 0 )THEN
+#endif
+    write(*,*)'                                       |'
+    write(*,*)'Doing Monte-Carlo...            |'
+    if( params%print_progress .and. md_istep > 0 )then
+      write(*,*)'                                       |'
+      write(*,*)'Progress:                              |'
+      write(*,*)'                                       |'
+      write(*,'(1X,A)',advance='no')'[                                    ] |'
+    end if
+#ifdef _MPIF90
+    END IF
+#endif
+    update_bar = params%mc_nsteps/36
+    if( update_bar < 1 )then
+      update_bar = 1
+    end if
+    counter = 1
   end if
+
 !**************************************************************************
 
 
@@ -632,12 +657,15 @@ program turbogap
 ! structures in the xyz file provided or we're doing molecular dynamics
   md_istep = -1
   n_xyz = 0
-  do while( repeat_xyz .or. ( params%do_md .and. md_istep < params%md_nsteps) )
+  do while( repeat_xyz .or. ( params%do_md .and. md_istep < params%md_nsteps) .or. &
+                            ( params%do_mc .and. mc_istep < params%mc_nsteps) )
 
     exit_loop = .false.
 
     if( params%do_md )then
-      md_istep = md_istep + 1
+       md_istep = md_istep + 1
+    elseif( params%do_mc )then
+       mc_istep = mc_istep + 1
     else
       n_xyz = n_xyz + 1
     end if
@@ -680,7 +708,7 @@ program turbogap
 !   This chunk of code does all the reading/neighbor builds etc for each snapshot
 !   or MD step
 !   Read in XYZ file and build neighbors lists
-    if( params%do_md .and. md_istep == 0 )then
+    if( ((params%do_md .and. md_istep == 0) .or. (params%do_mc .and. mc_istep == 0) )then
       call cpu_time(time_read_xyz(1))
 #ifdef _MPIF90
       IF( rank == 0 )THEN
@@ -792,7 +820,8 @@ program turbogap
     time_mpi_positions(3) = time_mpi_positions(3) + time_mpi_positions(2) - time_mpi_positions(1)
 #endif
 !   Now that all ranks know the size of n_sites, we allocate do_list
-    if( .not. params%do_md .or. (params%do_md .and. md_istep == 0) )then
+    if( .not. params%do_md .or. (params%do_md .and. md_istep == 0) .or. &
+                                (params%do_mc .and. mc_istep == 0) )then
       allocate( do_list(1:n_sites) )
       do_list = .true.
     end if
@@ -880,7 +909,8 @@ program turbogap
 
 !**************************************************************************
 !   If we are doing prediction, we run this chunk of code
-    if( params%do_prediction .or. params%write_soap .or. params%write_derivatives )then
+    if( params%do_prediction .or. params%write_soap .or. params%write_derivatives .or. &
+                                                       (params%do_mc .and. mc_istep > 0))then
       call cpu_time(time1)
 
 !     We only need to reallocate the arrays if the number of sites changes
@@ -952,7 +982,7 @@ program turbogap
         virial_vdw = 0.d0
       end if
 
-      if( params%do_prediction )then
+      if( params%do_prediction .or. params%do_mc )then
 !       Assign the e0 to each atom according to its species
 !        do i = 1, n_sites
         do i = i_beg, i_end
@@ -1139,7 +1169,8 @@ program turbogap
 
 
 !     Compute vdW energies and forces
-      if( any( soap_turbo_hypers(:)%has_vdw ) .and. params%do_prediction .and. params%vdw_type == "ts" )then
+      if( any( soap_turbo_hypers(:)%has_vdw ) .and. ( params%do_prediction .or. params%do_mc ) &
+                                                     .and. params%vdw_type == "ts" )then
         call cpu_time(time_vdw(1))
 #ifdef _MPIF90
         allocate( this_energies_vdw(1:n_sites) )
@@ -1183,7 +1214,7 @@ program turbogap
 
 
 
-      if( params%do_prediction )then
+      if( params%do_prediction .or. params%do_mc )then
 !       Loop through distance_2b descriptors
         do i = 1, n_distance_2b
           call cpu_time(time_2b(1))
@@ -1416,7 +1447,45 @@ program turbogap
         energies = energies + energies_soap + energies_2b + energies_3b + energies_core_pot + energies_vdw
         energy_prev = energy
         energy = sum(energies)
-      end if
+     end if
+
+     if (params%do_mc)then
+!       Now we do a monte-carlo step: we choose what the steps are from the available list and then choose a random number
+        if (mc_istep == 0)then
+           !       Make the list of moves
+           allocate mc_moves(1:5)
+           if(params%mc_move)then
+              n_mc_step += 1
+              mc_allowed(n_mc_step) = 1
+              mc_moves(n_mc_step) = "move"
+           end if
+           if(params%mc_gcmc)then
+              n_mc_step += 1
+              mc_allowed(n_mc_step) = 1
+              mc_moves(n_mc_step) = "insertion"
+              n_mc_step += 1
+              mc_allowed(n_mc_step) = 1
+              mc_moves(n_mc_step) = "removal"
+           end if
+           if(params%mc_volume)then
+              n_mc_step += 1
+              mc_allowed(n_mc_step) = 1
+              mc_moves(n_mc_step) = "volume"
+           end if
+           if(params%mc_relax)then
+              n_mc_step += 1
+              mc_allowed(n_mc_step) = 1
+              mc_moves(n_mc_step) = "relax"
+           end if
+
+           allocate mc_moves(1:n_mc_step)
+
+           do n_mc, 1:n_mc_step
+              mc_moves(mc_allowed(n_mc))
+
+        end if
+
+     end if
 
       if( .not. params%do_md )then
 #ifdef _MPIF90
