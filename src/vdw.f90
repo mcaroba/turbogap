@@ -1073,7 +1073,8 @@ module vdw
                            a_2b(:), r0_ii_SCS_2b(:), C6_2b(:), da_2b(:), T_SR(:), T_SR_mult(:), d_arr_i(:), d_arr_o(:), &
                            d_mult_i(:), d_mult_o(:), dT_SR_mult(:,:), d_dmult_i(:,:), d_dmult_o(:,:), do_mbd(:), &
                            hirshfeld_sub_neigh(:), o_2b(:), do_2b(:), hirshfeld_v_mbd_der(:,:), hirshfeld_mbd_neigh(:), &
-                           hirshfeld_v_2b_der(:,:), dr0_ii_SCS(:), dr0_ii_SCS_2b(:), V_int(:,:)
+                           hirshfeld_v_2b_der(:,:), dr0_ii_SCS(:), dr0_ii_SCS_2b(:), V_int(:,:), T_LR_mult(:), &
+                           T_LR_mult_ij(:), dT_LR_mult(:), dT_LR_mult_ij(:)
     real*8 :: a_mbd_i, a_mbd_j, da_i, da_j, pol1, E_TS, f_damp_der_2b, dr_vdw_i, &
               dr_vdw_j, forces_TS, dC6_2b, mult1_i, mult1_j, mult2, dmult1_i(1:3), dmult1_j(1:3), dmult2(1:3), hv_p_der, &
               hv_q_der, do_pref, rb, inner_damp_der, rjs_0_i, rcut_forces, o_i
@@ -1191,8 +1192,8 @@ central_omega = 0.5d0
       r_buf_loc = r_buffer
     end if
     
-    if ( rcut_mbd-rcut_loc < r_buffer ) then
-      r_buf_mbd = rcut_mbd-rcut_loc
+    if ( rcut_mbd < r_buffer ) then
+      r_buf_mbd = rcut_mbd
     else
       r_buf_mbd = r_buffer
     end if
@@ -1697,11 +1698,11 @@ central_omega = 0.5d0
         else
 
 
-          !if ( i == 17 .and. om == 2 ) then
-          !  write(*,*) "d_vec"
+          !if ( i == 1 .and. om == 2 ) then
+          !  write(*,*) "B_mat"
           !  do p = 1, n_sub_sites
           !    do c1 = 1, 3
-          !      write(*,*) p, d_vec(3*(p-1)+c1,:)
+          !      write(*,*) B_mat(3*(p-1)+c1,:)
           !    end do
           !  end do
           !end if
@@ -1836,6 +1837,8 @@ central_omega = 0.5d0
           allocate( rjs_0_mbd(1:n_mbd_pairs) )
           allocate( xyz_0_mbd(1:3,n_mbd_pairs) )
           allocate( hirshfeld_mbd_neigh(1:n_mbd_pairs) )
+          allocate( T_LR_mult(1:n_mbd_pairs) )
+          allocate( T_LR_mult_ij(1:n_mbd_pairs) )
           hirshfeld_mbd_neigh = 0.d0
           if ( do_derivatives ) then
             allocate( da_mbd(1:n_mbd_pairs) )
@@ -1851,6 +1854,8 @@ central_omega = 0.5d0
             allocate( do_mbd(1:n_mbd_pairs) )
             allocate( dr0_ii_SCS(1:n_mbd_pairs) )
             allocate( dr0_ii_SCS_2b(1:n_2b_sites) )
+            allocate( dT_LR_mult(1:n_mbd_pairs) )
+            allocate( dT_LR_mult_ij(1:n_mbd_pairs) )
           end if
           if ( do_derivatives .and. do_hirshfeld_gradients ) then
             allocate( hirshfeld_v_mbd_der(1:3,1:n_mbd_pairs) )
@@ -1890,6 +1895,9 @@ central_omega = 0.5d0
           AT_n = 0.d0
           r0_ii_SCS = 0.d0
           f_damp_SCS = 0.d0
+          
+          T_LR_mult = 1.d0
+          T_LR_mult_ij = 1.d0
         
           n_mbd_neigh = 0
           mbd_neighbors_list = 0
@@ -1976,6 +1984,10 @@ central_omega = 0.5d0
                               !      - 10.d0 * rb**3 &
                               ! + 15.d0 * rb**4 &
                               ! - 6.d0 * rb**5)
+                T_LR_mult(k2) = (1.d0 & 
+                               - 10.d0 * rb**3 &
+                               + 15.d0 * rb**4 &
+                               - 6.d0 * rb**5)
               end if
               !r0_ii_SCS(k2) = r0_ii_mbd(k2) * (a_mbd(k2)/neighbor_alpha0_mbd(k2)/hirshfeld_mbd_neigh(k2))**(1.d0/3.d0)
               r_vdw_i = r0_ii_SCS(k2)
@@ -1991,7 +2003,10 @@ central_omega = 0.5d0
                       n_mbd_neigh(p) = n_mbd_neigh(p) + 1
                       j = neighbors_list(n_tot+k_j)
                       j1 = modulo(j-1, n_sites0) + 1
-                      k2 = k2+1    
+                      k2 = k2+1
+                      if ( k2 == 2 ) then
+                        write(*,*) "k2", k2, rjs(n_tot+k_j)
+                      end if    
                       s = neighbor_species(n_tot+k_j)
                       mbd_neighbors_list(k2) = j
                       p_mbd(k2) = q
@@ -2043,7 +2058,7 @@ central_omega = 0.5d0
                         a_mbd(k2) = neighbor_alpha0_mbd(k2) * hirshfeld_v_neigh(n_tot+k_i) !central_pol(j1)
                         o_mbd(k2) = central_omega(j1)
                         r0_ii_SCS(k2) = r0_ii_mbd(k2) * (hirshfeld_mbd_neigh(k2))**(1.d0/3.d0) !(central_pol(j1)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0)
-                      else if ( rjs(n_tot+k_i) > rcut_mbd-r_buf_mbd .and. rjs(n_tot+k_i) .le. rcut_mbd ) then
+                      else if ( rjs(n_tot+k_j) > rcut_mbd-r_buf_mbd .and. rjs(n_tot+k_i) .le. rcut_mbd ) then
                         rb = (rjs(n_tot+k_j)-rcut_mbd+r_buf_mbd)/(r_buf_mbd)
                         a_mbd(k2) = neighbor_alpha0_mbd(k2) * hirshfeld_v_neigh(n_tot+k_j) !central_pol(j1) !* (1.d0 & 
                                             !- 10.d0 * rb**3 &
@@ -2056,6 +2071,17 @@ central_omega = 0.5d0
                                          !  - 10.d0 * rb**3 &
                                          ! + 15.d0 * rb**4 &
                                          ! - 6.d0 * rb**5)
+                        T_LR_mult(k2) = (1.d0 & 
+                               - 10.d0 * rb**3 &
+                               + 15.d0 * rb**4 &
+                               - 6.d0 * rb**5)
+                      end if
+                      if ( rjs_mbd(k2)*Bohr > rcut_mbd-r_buf_mbd .and. rjs_mbd(k2)*Bohr .le. rcut_mbd ) then
+                        rb = (rjs_mbd(k2)*Bohr-rcut_mbd+r_buf_mbd)/(r_buf_mbd)
+                        T_LR_mult_ij(k2) = (1.d0 & 
+                               - 10.d0 * rb**3 &
+                               + 15.d0 * rb**4 &
+                               - 6.d0 * rb**5)
                       end if
                       !r0_ii_SCS(k2) = r0_ii_mbd(k2) * (a_mbd(k2)/neighbor_alpha0_mbd(k2)/hirshfeld_mbd_neigh(k2))**(1.d0/3.d0)
                       r_vdw_j = r0_ii_SCS(k2)
@@ -2069,7 +2095,13 @@ central_omega = 0.5d0
                           else
                             T_mbd(k3) = (3*xyz_mbd(c1,k2) * xyz_mbd(c2,k2))/rjs_mbd(k2)**5
                           end if
-                          T_LR(3*(p-1)+c1,3*(q-1)+c2) = f_damp_SCS(k2) * T_mbd(k3)
+                          T_LR(3*(p-1)+c1,3*(q-1)+c2) = f_damp_SCS(k2) * T_mbd(k3) * T_LR_mult(k2) * T_LR_mult_ij(k2)
+                          if ( i == 1 .and. om == 2 .and. p == 33 .and. q == 75 .and. c1 == 3 .and. c2 == 3 ) then
+                            write(*,*) "T_LR_mult", T_LR_mult(k2)
+                            write(*,*) "T_LR_mult_ij", T_LR_mult_ij(k2)
+                            write(*,*) "f_damp_SCS", f_damp_SCS(k2)
+                            write(*,*) "T_mbd", T_mbd(k3)
+                          end if
                         end do
                       end do
                     end if
@@ -2270,8 +2302,8 @@ central_omega = 0.5d0
         
           allocate( da_SCS(1:3*n_sub_sites,1:3) )
           allocate( dT(1:9*n_sub_pairs) )
-          !allocate( dB_mat(1:3*n_sub_sites,1:3*n_sub_sites) )
-          !dB_mat = 0.d0
+          allocate( dB_mat(1:3*n_sub_sites,1:3*n_sub_sites) )
+          dB_mat = 0.d0
           allocate( b_der(1:3*n_sub_sites,1:3) )
           allocate( f_damp_der(1:n_sub_pairs) )
           allocate( g_func_der(1:n_sub_pairs) )
@@ -2370,11 +2402,11 @@ central_omega = 0.5d0
                                                             T_func(k4) - f_damp_der(k3) * h_func(k4) + &
                                                             h_func_der(k4) * (1.d0 - f_damp(k3))) * &
                                                             T_SR_mult(k3) * a_SCS(3*(q-1)+c2,:)
-                          !dB_mat(3*(p-1)+c1,3*(q-1)+c2) = dB_mat(3*(p-1)+c1,3*(q-1)+c2) - (f_damp_der(k3) * T_func(k4) * &
-                          !                                  g_func(k3) - (1.d0 - f_damp(k3)) * dT(k4) * &
-                          !                                  g_func(k3) - g_func_der(k3) * (1.d0 - f_damp(k3)) * &
-                          !                                  T_func(k4) - f_damp_der(k3) * h_func(k4) + &
-                          !                                  h_func_der(k4) * (1.d0 - f_damp(k3))) * T_SR_mult(k3)                   
+                          dB_mat(3*(p-1)+c1,3*(q-1)+c2) = dB_mat(3*(p-1)+c1,3*(q-1)+c2) - (f_damp_der(k3) * T_func(k4) * &
+                                                            g_func(k3) - (1.d0 - f_damp(k3)) * dT(k4) * &
+                                                            g_func(k3) - g_func_der(k3) * (1.d0 - f_damp(k3)) * &
+                                                            T_func(k4) - f_damp_der(k3) * h_func(k4) + &
+                                                            h_func_der(k4) * (1.d0 - f_damp(k3))) * T_SR_mult(k3)                   
                           d_der(3*(p-1)+c1,c2) = d_der(3*(p-1)+c1,c2) + (f_damp_der(k3) * T_func(k4) * &
                                                             g_func(k3) - (1.d0 - f_damp(k3)) * dT(k4) * &
                                                             g_func(k3) - g_func_der(k3) * (1.d0 - f_damp(k3)) * &
@@ -2389,11 +2421,11 @@ central_omega = 0.5d0
                                                             T_func(k4) - f_damp_der(k3) * h_func(k4) + &
                                                             h_func_der(k4) * (1.d0 - f_damp(k3))) * &
                                                             T_SR_mult(k3) * a_SCS(3*(q-1)+c2,:)
-                          !dB_mat(3*(p-1)+c1,3*(q-1)+c2) = dB_mat(3*(p-1)+c1,3*(q-1)+c2) + (f_damp_der(k3) * T_func(k4) * &
-                          !                                  g_func(k3) - (1.d0 - f_damp(k3)) * dT(k4) * &
-                          !                                  g_func(k3) - g_func_der(k3) * (1.d0 - f_damp(k3)) * &
-                          !                                  T_func(k4) - f_damp_der(k3) * h_func(k4) + &
-                          !                                  h_func_der(k4) * (1.d0 - f_damp(k3))) * T_SR_mult(k3)
+                          dB_mat(3*(p-1)+c1,3*(q-1)+c2) = dB_mat(3*(p-1)+c1,3*(q-1)+c2) + (f_damp_der(k3) * T_func(k4) * &
+                                                            g_func(k3) - (1.d0 - f_damp(k3)) * dT(k4) * &
+                                                            g_func(k3) - g_func_der(k3) * (1.d0 - f_damp(k3)) * &
+                                                            T_func(k4) - f_damp_der(k3) * h_func(k4) + &
+                                                            h_func_der(k4) * (1.d0 - f_damp(k3))) * T_SR_mult(k3)
                           d_der(3*(p-1)+c1,c2) = d_der(3*(p-1)+c1,c2) - (f_damp_der(k3) * T_func(k4) * &
                                                             g_func(k3) - (1.d0 - f_damp(k3)) * dT(k4) * &
                                                             g_func(k3) - g_func_der(k3) * (1.d0 - f_damp(k3)) * &
@@ -2479,9 +2511,9 @@ central_omega = 0.5d0
                 do c1 = 1, 3
                   b_der(3*(p-1)+c1,:) = b_der(3*(p-1)+c1,:) - 1.d0/(neighbor_alpha0(k3+1) * hirshfeld_sub_neigh(k3+1)) * &
                                         hirshfeld_v_sub_der(c3,k3+1)*Bohr * a_SCS(3*(p-1)+c1,:) 
-                  !dB_mat(3*(p-1)+c1,3*(p-1)+c1) = dB_mat(3*(p-1)+c1,3*(p-1)+c1) - 1.d0/(neighbor_alpha0(k3+1) &
-                  !                      * hirshfeld_sub_neigh(k3+1)) * &
-                  !                      hirshfeld_v_sub_der(c3,k3+1)*Bohr
+                  dB_mat(3*(p-1)+c1,3*(p-1)+c1) = dB_mat(3*(p-1)+c1,3*(p-1)+c1) - 1.d0/(neighbor_alpha0(k3+1) &
+                                        * hirshfeld_sub_neigh(k3+1)) * &
+                                        hirshfeld_v_sub_der(c3,k3+1)*Bohr
                 end do
                 do j2 = 2, n_sub_neigh(p)
                   j = sub_neighbors_list(k3+j2)
@@ -2506,13 +2538,13 @@ central_omega = 0.5d0
                           coeff_fdamp(k4) * r_vdw_j/hirshfeld_sub_neigh(k3+j2)) * &
                           hv_q_der) * &
                           a_SCS(3*(q-1)+c2,:) * T_SR_mult(k3+j2)
-                        !dB_mat(3*(p-1)+c1,3*(q-1)+c2) = dB_mat(3*(p-1)+c1,3*(q-1)+c2) + &
-                        !  ((coeff_der(k4) * s_i**2/hirshfeld_sub_neigh(k3+1) + &
-                        !  coeff_fdamp(k4) * r_vdw_i/hirshfeld_sub_neigh(k3+1)) * &
-                        !  hv_p_der + &
-                        !  (coeff_der(k4) * s_j**2/hirshfeld_sub_neigh(k3+j2) + &
-                        !  coeff_fdamp(k4) * r_vdw_j/hirshfeld_sub_neigh(k3+j2)) * &
-                        !  hv_q_der) * T_SR_mult(k3+j2)
+                        dB_mat(3*(p-1)+c1,3*(q-1)+c2) = dB_mat(3*(p-1)+c1,3*(q-1)+c2) + &
+                          ((coeff_der(k4) * s_i**2/hirshfeld_sub_neigh(k3+1) + &
+                          coeff_fdamp(k4) * r_vdw_i/hirshfeld_sub_neigh(k3+1)) * &
+                          hv_p_der + &
+                          (coeff_der(k4) * s_j**2/hirshfeld_sub_neigh(k3+j2) + &
+                          coeff_fdamp(k4) * r_vdw_j/hirshfeld_sub_neigh(k3+j2)) * &
+                          hv_q_der) * T_SR_mult(k3+j2)
                         d_der(3*(p-1)+c1,c2) = d_der(3*(p-1)+c1,c2) - &
                           ((coeff_der(k4) * s_i**2/hirshfeld_sub_neigh(k3+1) + &
                           coeff_fdamp(k4) * r_vdw_i/hirshfeld_sub_neigh(k3+1)) * &
@@ -2559,8 +2591,8 @@ central_omega = 0.5d0
                   do c2 = 1, 3
                     k4 = k4+1
                     if ( rjs_0(k3) .le. rcut ) then
-                      !dB_mat(3*(p-1)+c1,3*(q-1)+c2) = dB_mat(3*(p-1)+c1,3*(q-1)+c2) + &
-                      !    dT_SR_mult(k3,c3) * T_SR(k4)
+                      dB_mat(3*(p-1)+c1,3*(q-1)+c2) = dB_mat(3*(p-1)+c1,3*(q-1)+c2) + &
+                          dT_SR_mult(k3,c3) * T_SR(k4)
                       b_der(3*(p-1)+c1,:) = b_der(3*(p-1)+c1,:) + dT_SR_mult(k3,c3) * T_SR(k4) * &
                                             a_SCS(3*(q-1)+c2,:) 
                       d_der(3*(p-1)+c1,c2) = d_der(3*(p-1)+c1,c2) - d_dmult_i(k3,c3) * d_arr_i(k4) * &
@@ -2574,19 +2606,21 @@ central_omega = 0.5d0
               end do
             end do
 
-            !if ( i == 1 .and. c3 == 1 .and. om == 2 ) then
-            !  write(*,*) "d_der"
-            !  !write(*,*) "dB_mat"
-            !  do p = 1, 3*n_sub_sites
-            !    !write(*,*) dB_mat(p,:)
-            !    write(*,*) d_der(p,:)
-            !  end do
+            if ( i == 1 .and. c3 == 1 .and. om == 2 ) then
+             ! write(*,*) "d_der"
+             ! do c1 = 1, 3
+             !   write(*,*) d_der(3*(55-1)+c1,:)
+             ! end do
+              write(*,*) "dB_mat"
+              do p = 1, 3*n_sub_sites
+                write(*,*) dB_mat(p,:)
+              end do
             !  write(*,*) "n_sub_sites", n_sub_sites
             !  write(*,*) "a_SCS"
             !  do p = 1, 3*n_sub_sites
             !    write(*,*) a_SCS(p,:)
             !  end do
-            !end if
+            end if
 
             b_der = -b_der+d_der
 
@@ -2632,6 +2666,8 @@ central_omega = 0.5d0
               f_damp_der_mbd = 0.d0 ! This is cleared so we can recalculate it with SCS values
               dT_mbd = 0.d0
               dT_LR = 0.d0
+              dT_LR_mult = 0.d0
+              dT_LR_mult_ij = 0.d0
               da_mbd = 0.d0
               do_mbd = 0.d0
               dr0_ii_SCS = 0.d0
@@ -2672,12 +2708,12 @@ central_omega = 0.5d0
                               (-30.d0 * rb**2 &
                               + 60.d0 * rb**3 &
                               - 30.d0 * rb**4) &
-                               * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_scs/Bohr)) + &
+                               * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_loc/Bohr)) + &
                               neighbor_alpha0_mbd(k2) * hirshfeld_mbd_neigh(k2) * & !central_pol(i1) * &
                                ( +30.d0 * rb**2 &
                               - 60.d0 * rb**3 &
                               + 30.d0 * rb**4) &
-                                 * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_scs/Bohr))
+                                 * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_loc/Bohr))
                   dr0_ii_SCS(k2) = r0_ii_mbd(k2) * (a_iso(r,2)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0) / &
                                    (3.d0 * a_iso(r,2)) * da_iso(r,c3,2) * &
                               (1.d0 - 10.d0 * rb**3 &
@@ -2687,12 +2723,12 @@ central_omega = 0.5d0
                               (-30.d0 * rb**2 &
                               + 60.d0 * rb**3 &
                               - 30.d0 * rb**4) &
-                               * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_scs/Bohr)) + &
+                               * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_loc/Bohr)) + &
                                 r0_ii_mbd(k2) * (hirshfeld_mbd_neigh(k2))**(1.d0/3.d0) * & !(central_pol(i1)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0) * &
                               (+30.d0 * rb**2 &
                               - 60.d0 * rb**3 &
                               + 30.d0 * rb**4) &
-                               * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_scs/Bohr))
+                               * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_loc/Bohr))
                   if ( do_hirshfeld_gradients ) then
                     da_mbd(k2) = da_mbd(k2) + neighbor_alpha0_mbd(k2) * &
                                     hirshfeld_v_mbd_der(c3,k2)*Bohr * &
@@ -2714,12 +2750,12 @@ central_omega = 0.5d0
                               (-30.d0 * rb**2 &
                               + 60.d0 * rb**3 &
                               - 30.d0 * rb**4) &
-                               * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buffer/Bohr)) + &
+                               * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_loc/Bohr)) + &
                                central_omega(i1) * &
                                ( +30.d0 * rb**2 &
                               - 60.d0 * rb**3 &
                               + 30.d0 * rb**4) &
-                                 * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_scs/Bohr))
+                                 * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_loc/Bohr))
                 else if ( rjs_0_mbd(k2) > rcut_loc/Bohr .and. rjs_0_mbd(k2) .le. (rcut_mbd-r_buf_mbd)/Bohr ) then
                   if ( do_hirshfeld_gradients ) then
                     da_mbd(k2) = neighbor_alpha0_mbd(k2) * &
@@ -2761,6 +2797,11 @@ central_omega = 0.5d0
                        !        + 15.d0 * rb**4 &
                        !        - 6.d0 * rb**5)
                   end if
+                  dT_LR_mult(k2) = (-30.d0 * rb**2 &
+                              + 60.d0 * rb**3 &
+                              - 30.d0 * rb**4) &
+                              * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_mbd/Bohr))
+
                 end if
                 dr_vdw_i = dr0_ii_SCS(k2)
                 a_mbd_i = a_mbd(k2)
@@ -2784,6 +2825,11 @@ central_omega = 0.5d0
                     end if
                     dr0_ii_SCS(k2) = r0_ii_mbd(k2) * (a_iso(r,2)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0) / &
                                    (3.d0 * a_iso(r,2)) * da_iso(r,c3,2)
+                    if ( p == 33 .and. q == 75 .and. i == 1 .and. c3 == 1 ) then
+                      write(*,*) "a_iso", a_iso(r,2)
+                      write(*,*) "da_iso", da_iso(r,c3,2)
+                      write(*,*) "r", r
+                    end if
                     !if ( i == 1 .and. c3 == 1 .and. k2 == 2 ) then
                     !  write(*,*) "r0_ii_SCS", r0_ii_SCS(k2)
                     !  write(*,*) "dr0_ii_SCS", dr0_ii_SCS(k2)
@@ -2811,12 +2857,12 @@ central_omega = 0.5d0
                                 (-30.d0 * rb**2 &
                               + 60.d0 * rb**3 &
                               - 30.d0 * rb**4) &
-                                 * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_scs/Bohr)) + &
+                                 * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_loc/Bohr)) + &
                                 neighbor_alpha0_mbd(k2) * hirshfeld_mbd_neigh(k2) * & !central_pol(j1) * &
                                   ( +30.d0 * rb**2 &
                               - 60.d0 * rb**3 &
                               + 30.d0 * rb**4) &
-                                   * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_scs/Bohr))
+                                   * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_loc/Bohr))
                     dr0_ii_SCS(k2) = r0_ii_mbd(k2) * (a_iso(r,2)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0) / &
                                    (3.d0 * a_iso(r,2)) * da_iso(r,c3,2) * &
                               (1.d0 - 10.d0 * rb**3 &
@@ -2826,12 +2872,12 @@ central_omega = 0.5d0
                               (-30.d0 * rb**2 &
                               + 60.d0 * rb**3 &
                               - 30.d0 * rb**4) &
-                               * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_scs/Bohr)) + &
+                               * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_loc/Bohr)) + &
                                 r0_ii_mbd(k2) * (hirshfeld_mbd_neigh(k2))**(1.d0/3.d0) * & !(central_pol(j1)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0) * &
                               (+30.d0 * rb**2 &
                               - 60.d0 * rb**3 &
                               + 30.d0 * rb**4) &
-                               * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_scs/Bohr))
+                               * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_loc/Bohr))
                     if ( do_hirshfeld_gradients ) then
                       da_mbd(k2) = da_mbd(k2) + neighbor_alpha0_mbd(k2) * &
                                     hirshfeld_v_mbd_der(c3,k2)*Bohr * &
@@ -2853,12 +2899,12 @@ central_omega = 0.5d0
                                 (-30.d0 * rb**2 &
                               + 60.d0 * rb**3 &
                               - 30.d0 * rb**4) &
-                                 * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_scs/Bohr)) + &
+                                 * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_loc/Bohr)) + &
                                  central_omega(j1) * &
                                   ( +30.d0 * rb**2 &
                               - 60.d0 * rb**3 &
                               + 30.d0 * rb**4) &
-                                   * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_scs/Bohr))
+                                   * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_loc/Bohr))
                   else if ( rjs_0_mbd(k2) > rcut_loc/Bohr .and. rjs_0_mbd(k2) .le. (rcut_mbd-r_buf_mbd)/Bohr ) then
                     if ( do_hirshfeld_gradients ) then
                       da_mbd(k2) = neighbor_alpha0_mbd(k2) * &
@@ -2900,6 +2946,10 @@ central_omega = 0.5d0
                          !      + 15.d0 * rb**4 &
                          !      - 6.d0 * rb**5)
                     end if
+                    dT_LR_mult(k2) = (-30.d0 * rb**2 &
+                              + 60.d0 * rb**3 &
+                              - 30.d0 * rb**4) &
+                              * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_mbd/Bohr))
                   end if
                   dr_vdw_j = dr0_ii_SCS(k2)
                   a_mbd_j = a_mbd(k2)
@@ -2911,13 +2961,13 @@ central_omega = 0.5d0
                   R_vdW_SCS_ij = r_vdw_i + r_vdw_j
                   S_vdW_ij = sR*R_vdW_SCS_ij
                   dS_vdW_ij = sR * ( dr_vdw_i + dr_vdw_j )
-                  !if ( i == 1 .and. c3 == 1 ) then
-                  !  write(*,*) "a_mbd_j", a_mbd_j
-                  !  write(*,*) "da_j", da_j
+                  if ( i == 1 .and. c3 == 1 .and. p == 33 .and. q == 75 ) then
                   ! write(*,*) "rjs_0_mbd", rjs_0_mbd(k2)
                   !  write(*,*) "dS_vdW_ij", dS_vdW_ij
-                  !  write(*,*) "r_vdw_j", r_vdw_j
-                  !end if
+                    write(*,*) "rjs_0_mbd", rjs_0_mbd(k2)
+                    write(*,*) "r_vdw_i, dr_vdw_i", r_vdw_i, dr_vdw_i
+                    write(*,*) "r_vdw_j, dr_vdw_j", r_vdw_j, dr_vdw_j
+                  end if
                   f_damp_der_SCS(k2) = -(d*rjs_mbd(k2))/S_vdW_ij**2 * f_damp_SCS(k2)**2 * &
                                          exp(-d*(rjs_mbd(k2)/S_vdW_ij - 1.d0)) * dS_vdW_ij
                   k3 = 9*(k2-1)
@@ -2925,12 +2975,29 @@ central_omega = 0.5d0
                     do c2 = 1, 3
                       k3 = k3+1
                       dT_LR(3*(p-1)+c1,3*(q-1)+c2) = dT_LR(3*(p-1)+c1,3*(q-1)+c2) + &
-                                        T_mbd(k3) * f_damp_der_SCS(k2)
+                                        T_mbd(k3) * f_damp_der_SCS(k2) * T_LR_mult(k2) * &
+                                        T_LR_mult_ij(k2) + &
+                                        f_damp_SCS(k2) * T_mbd(k3) * T_LR_mult_ij(k2) * &
+                                        dT_LR_mult(k2)
                     end do
                   end do
                   if (i == i2 .or. i == j) then
                     f_damp_der_mbd(k2) = d/S_vdW_ij * f_damp_SCS(k2)**2 * &
                                      exp( -d*(rjs_mbd(k2)/S_vdW_ij - 1.d0) ) * xyz_mbd(c3,k2)/rjs_mbd(k2)
+                    if ( rjs_mbd(k2) > (rcut_mbd-r_buf_mbd)/Bohr .and. rjs_mbd(k2) .le. rcut_mbd/Bohr ) then
+                      rb = (rjs_mbd(k2)*Bohr-rcut_mbd+r_buf_mbd)/r_buf_mbd
+                      if ( i == i2 ) then
+                        dT_LR_mult_ij(k2) = (-30.d0 * rb**2 &
+                              + 60.d0 * rb**3 &
+                              - 30.d0 * rb**4) &
+                              * ( -xyz_mbd(c3,k2)/rjs_mbd(k2)/(r_buf_mbd/Bohr))
+                      else if ( i == j ) then
+                        dT_LR_mult_ij(k2) = (-30.d0 * rb**2 &
+                              + 60.d0 * rb**3 &
+                              - 30.d0 * rb**4) &
+                              * ( xyz_mbd(c3,k2)/rjs_mbd(k2)/(r_buf_mbd/Bohr))
+                      end if
+                    end if
                     k3 = 9*(k2-1)
                     do c1 = 1, 3
                       do c2 = 1, 3
@@ -2947,24 +3014,38 @@ central_omega = 0.5d0
                         end if
                         if (i == i2) then
                           dT_LR(3*(p-1)+c1,3*(q-1)+c2) = dT_LR(3*(p-1)+c1,3*(q-1)+c2) - &
-                                             T_mbd(k3) * f_damp_der_mbd(k2) - &
-                                             dT_mbd(k3) * f_damp_SCS(k2)
+                                             (T_mbd(k3) * f_damp_der_mbd(k2) + &
+                                             dT_mbd(k3) * f_damp_SCS(k2)) * &
+                                             (T_LR_mult(k2) * T_LR_mult_ij(k2))
                         else if (i == j) then
                           dT_LR(3*(p-1)+c1,3*(q-1)+c2) = dT_LR(3*(p-1)+c1,3*(q-1)+c2) + &
-                                             T_mbd(k3) * f_damp_der_mbd(k2) + &
-                                             dT_mbd(k3) * f_damp_SCS(k2)
+                                             (T_mbd(k3) * f_damp_der_mbd(k2) + &
+                                             dT_mbd(k3) * f_damp_SCS(k2)) * &
+                                             (T_LR_mult(k2) * T_LR_mult_ij(k2))
                         end if
+                        dT_LR(3*(p-1)+c1,3*(q-1)+c2) = dT_LR(3*(p-1)+c1,3*(q-1)+c2) + &
+                                             f_damp_SCS(k2) * T_mbd(k3) * T_LR_mult(k2) * &
+                                             dT_LR_mult_ij(k2)
                       end do
                     end do
+                  end if
+                  if ( i == 1 .and. c3 == 1 .and. p == 33 .and. q == 75 ) then
+                    write(*,*) "dT_LR_mult", dT_LR_mult(k2)
+                    write(*,*) "dT_LR_mult_ij", dT_LR_mult_ij(k2)
+                    write(*,*) "f_damp_der_mbd", f_damp_der_mbd(k2)+f_damp_der_SCS(k2)
                   end if
                 end do
               end do
 
               !if ( i == 1 .and. c3 == 1 ) then
-              !  write(*,*) "dT_LR"
-              !  do p = 1, 3*n_mbd_sites
-              !    write(*,*) dT_LR(p,:)
-              !  end do
+                !write(*,*) "T_LR"
+                !do p = 1, 3*n_mbd_sites
+                !  write(*,*) T_LR(p,:)
+                !end do
+                !write(*,*) "dT_LR"
+                !do p = 1, 3*n_mbd_sites
+                !  write(*,*) dT_LR(p,:)
+                !end do
               !end if
             
               !if ( i == 1 .and. c3 == 1 ) then
@@ -3205,7 +3286,7 @@ central_omega = 0.5d0
           end do ! c3 loop
         
           deallocate( da_SCS, dT, b_der, g_func_der, h_func_der, d_der, f_damp_der )
-          !deallocate( dB_mat )
+          deallocate( dB_mat )
 
         end if ! do_derivatives
         
@@ -3213,12 +3294,13 @@ central_omega = 0.5d0
           deallocate( T_LR, r0_ii_SCS, f_damp_SCS, AT, AT_n, energy_series, omegas_mbd, integrand, n_mbd_neigh, &
                       mbd_neighbors_list, p_mbd, r0_ii_mbd, neighbor_alpha0_mbd, xyz_mbd, rjs_mbd, T_mbd, a_mbd, &
                       rjs_0_mbd, xyz_0_mbd, o_mbd, sub_2b_list, xyz_2b, rjs_2b, r0_ii_2b, neighbor_alpha0_2b, &
-                      hirshfeld_2b_neigh, a_2b, o_2b, r0_ii_SCS_2b, f_damp_SCS_2b, C6_2b, hirshfeld_mbd_neigh )
+                      hirshfeld_2b_neigh, a_2b, o_2b, r0_ii_SCS_2b, f_damp_SCS_2b, C6_2b, hirshfeld_mbd_neigh, &
+                      T_LR_mult, T_LR_mult_ij )
         end if
                     
         if ( do_derivatives .and. om == 2 ) then
           deallocate( da_mbd, AT_n_f, dT_mbd, f_damp_der_mbd, f_damp_der_SCS, dT_LR, G_mat, force_series, &
-                      da_2b, do_2b, do_mbd, dr0_ii_SCS, dr0_ii_SCS_2b )
+                      da_2b, do_2b, do_mbd, dr0_ii_SCS, dr0_ii_SCS_2b, dT_LR_mult, dT_LR_mult_ij )
           deallocate( total_energy_series, total_integrand )
           if ( do_hirshfeld_gradients ) then
             deallocate( hirshfeld_v_mbd_der, hirshfeld_v_2b_der )

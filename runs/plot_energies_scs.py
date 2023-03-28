@@ -213,6 +213,8 @@ plt.xlim([scs_f[0],scs_f[-1]])
 plt.legend()
 plt.show()
 
+plt.rcParams.update({'font.size': 22})
+
 fig = plt.gcf()
 fig.set_size_inches(18.5, 10.5)
 
@@ -241,7 +243,7 @@ for i in range(len(scs)):
     ene_c60_slab[i,:] = np.loadtxt(filename)
     ene_c60_slab[i,:] = ene_c60_slab[i,:] - c60_slab_ref[i] - slab_ref[i]
     x = float(i)/len(scs)
-    ax.plot(d[10:],ene_c60_slab[i,10:],color=(0,x,1.0-x),linestyle='solid',marker='.',label="SCS cutoff " + str(scs[i]) + " Å")
+    ax.plot(d[10:],ene_c60_slab[i,10:],color=(0,x,1.0-x),linestyle='solid',marker='.',label="SCS " + str(scs[i]) + " Å, MBD " + str(scs[i]+1) + " Å")
 
 plt.xlim([d[10],d[-1]])
 plt.xlabel("Displacement from initial configuration [Å]")
@@ -250,11 +252,11 @@ plt.title("C60 molecule interacting with amorphous carbon slab")
 plt.legend()
 
 arr_img = plt.imread('image.png')
-im = OffsetImage(arr_img, zoom=.2)
-ab = AnnotationBbox(im, (0.45, 0.7), xycoords='axes fraction', bboxprops=dict(alpha=0.0))
+im = OffsetImage(arr_img, zoom=.25)
+ab = AnnotationBbox(im, (0.35, 0.65), xycoords='axes fraction', bboxprops=dict(alpha=0.0))
 arr_img2 = plt.imread('image2.png')
-im2 = OffsetImage(arr_img2, zoom=.2)
-ab2 = AnnotationBbox(im2, (0.55, 0.7), xycoords='axes fraction', bboxprops=dict(alpha=0.0))
+im2 = OffsetImage(arr_img2, zoom=.25)
+ab2 = AnnotationBbox(im2, (0.5, 0.65), xycoords='axes fraction', bboxprops=dict(alpha=0.0))
 ax.add_artist(ab)
 ax.add_artist(ab2)
 
