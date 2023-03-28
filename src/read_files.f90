@@ -502,7 +502,7 @@ end if
     implemented_barostats(2) = "berendsen"
 
 !   Some defaults before reading the input file (the values in the input file will override them)
-    if( mode == "md" )then
+    if( mode == "md" .or. mode == "mc" )then
       params%do_md = .true.
       params%do_prediction = .true.
       params%do_forces = .true.
@@ -544,6 +544,9 @@ end if
       else if(keyword=='do_md')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%do_md
+      else if(keyword=='do_mc')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%do_mc
       else if(keyword=='do_prediction')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%do_prediction
@@ -595,6 +598,27 @@ end if
       else if(keyword=='md_nsteps')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%md_nsteps
+      else if(keyword=='mc_nsteps')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_nsteps
+      else if(keyword=='mc_move')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_move
+      else if(keyword=='mc_gcmc')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_gcmc
+      else if(keyword=='mc_volume')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_volume
+      else if(keyword=='mc_relax')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_relax
+      else if(keyword=='mc_mu')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_mu
+      else if(keyword=='mc_species')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_species
       else if(keyword=='write_xyz')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%write_xyz
