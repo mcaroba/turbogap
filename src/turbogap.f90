@@ -82,7 +82,7 @@ program turbogap
 ! Clean up these variables after code refactoring !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   integer, allocatable :: n_neigh(:), neighbors_list(:), alpha_max(:), species(:), species_supercell(:), &
                           neighbor_species(:), sph_temp_int(:), der_neighbors(:), der_neighbors_list(:), &
-                          i_beg_list(:), i_end_list(:), j_beg_list(:), j_end_list(:)
+                          i_beg_list(:), i_end_list(:), j_beg_list(:), j_end_list(:), species_idx(:)
   integer :: n_sites, i, j, k, i2, j2, n_soap, k2, k3, l, n_sites_this, ierr, rank, ntasks, dim, n_sp, &
              n_pos, n_sp_sc, this_i_beg, this_i_end, this_j_beg, this_j_end, this_n_sites_mpi, n_sites_prev = 0, &
              n_atom_pairs_by_rank_prev
@@ -90,7 +90,7 @@ program turbogap
   integer :: iostatus, counter = 0, counter2
   integer :: which_atom = 0, n_species = 1, n_xyz, indices(1:3)
   integer :: radial_enhancement = 0
-  integer :: md_istep, mc_istep, n_mc
+  integer :: md_istep, mc_istep, n_mc, n_mc_species
 
   logical :: repeat_xyz = .true., overwrite = .false.
 
@@ -1520,33 +1520,81 @@ program turbogap
            disp = params%mc_move_max * ( random_number(ranv) - 0.5d0 )
 
 !       Now pick a random index and displace
-           idx = floor( random_number(ranf) * n_sites ) + 1
+
            positions(1:3, idx) = positions(1:3, idx) + disp
         end if
         if (mc_move == "insertion" .or. mc_move == "removal" )then
-!       Choose a random atom and move it half of the maximum move
-           disp = params%mc_move_max * ( random_number(ranv) - 0.5d0 )
 
-!       Now pick a random index and displace
-           idx = floor( random_number(ranf) * n_sites ) + 1
-           positions(1:3, idx) = positions(1:3, idx) + disp
 
-!     Check that, if this is GCMC, that the number of atoms has not changed so we need to reallocate
-           if( n_sites /= n_sites_prev )then
-              if( allocated(energies) )deallocate( energies, energies_soap, energies_2b, energies_3b, energies_core_pot, &
-                   this_energies, energies_vdw, this_forces )
-              allocate( energies(1:n_sites) )
-              allocate( this_energies(1:n_sites) )
-              allocate( energies_soap(1:n_sites) )
-              allocate( energies_2b(1:n_sites) )
-              allocate( energies_3b(1:n_sites) )
-              allocate( energies_core_pot(1:n_sites) )
-              allocate( energies_vdw(1:n_sites) )
-              !       This needs to be allocated even if no force prediction is needed:
-              allocate( this_forces(1:3, 1:n_sites) )
+           do i = 1, n_sites
+              if (species(i) == params%mc_species)then
+                 n_mc_species = n_mc_species + 1
+              end if
+           end do
+
+           if allocated(species_idx)deallocate(species_idx)
+           allocate( species_idx(1:n_mc_species) )
+
+           n_mc_species = 0
+           do i = 1, n_sites
+              if (species(i) == params%mc_species)then
+                 n_mc_species = n_mc_species + 1
+                 species_idx(n_mc_species) = i
+              end if
+           end do
+
+
+
+           if (mc_move == "insertion")then
+              n_sites = n_sites + 1
+           else
+              n_sites = n_sites - 1
+              idx = species_idx( floor( random_number(ranf) * n_mc_species ) + 1 )
+              !             Get the index of the removes               #
+         call read_xyz(params%atoms_file, .true., params%all_atoms, params%do_timing, &
+                    n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
+                    positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
+                    xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
+                    n_sites, .false., fix_atom, params%t_beg, params%write_array_property(6) )
+
            end if
 
+
+           if( allocated(energies) )deallocate( energies, energies_soap, energies_2b, energies_3b, energies_core_pot, &
+                this_energies, energies_vdw, this_forces, positions )
+           allocate( energies(1:n_sites) )
+           allocate( this_energies(1:n_sites) )
+           allocate( energies_soap(1:n_sites) )
+           allocate( energies_2b(1:n_sites) )
+           allocate( energies_3b(1:n_sites) )
+           allocate( energies_core_pot(1:n_sites) )
+           allocate( energies_vdw(1:n_sites) )
+           !       This needs to be allocated even if no force prediction is needed:
+           allocate( this_forces(1:3, 1:n_sites) )
+           allocate( positions(1:3, 1:n_sites) )
+
+
+           if (mc_move == "insertion")then
+              positions(1:3,1:n_sites-1) = positions_prev(1:3,1:n_sites-1)
+!          Now choose a position
+           else if (mc_move == "removal")then
+              do i = 1, n_sites
+                 if (i < idx)then
+                    positions(1:3,i) = positions_prev(1:3,i)
+                 else
+                    positions(1:3,i) = positions_prev(1:3,i+1)
+                 end if
+           end if
+
+
+           call build_neighbors_list(positions, a_box, b_box, c_box, params%do_timing, &
+                              species_supercell, rcut_max, n_atom_pairs, rjs, &
+                              thetas, phis, xyz, n_neigh, neighbors_list, neighbor_species, n_sites, indices, &
+                              rebuild_neighbors_list, do_list, rank )
+
+
         end if
+
 
 
         
