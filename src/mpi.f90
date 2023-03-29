@@ -33,6 +33,7 @@ module mpi_helper
 
   contains
 
+
   subroutine allocate_soap_turbo_hypers(n_soap_turbo, n_species, n_sparse, dim, compress_P_nonzero, &
                                         vdw_n_sparse, has_vdw, compress_soap, desc)
 
@@ -45,6 +46,7 @@ module mpi_helper
     type(soap_turbo), allocatable, intent(out) :: desc(:)
 
 !   Internal variables
+
     integer :: i, n_sp, d, cPnz
 
     allocate( desc(1:n_soap_turbo) )
@@ -88,10 +90,12 @@ module mpi_helper
     end do
 
   end subroutine
+!**************************************************************************
 
 
 
 
+!**************************************************************************
   subroutine allocate_distance_2b_hypers(n_distance_2b, n_sparse, desc)
 
 !   Input variables
@@ -114,11 +118,13 @@ module mpi_helper
     end do
 
   end subroutine
+!**************************************************************************
 
 
 
 
 
+!**************************************************************************
   subroutine allocate_angle_3b_hypers(n_angle_3b, n_sparse, desc)
 
 !   Input variables
@@ -141,12 +147,14 @@ module mpi_helper
     end do
 
   end subroutine
+!**************************************************************************
 
 
 
 
 
 
+!**************************************************************************
   subroutine allocate_core_pot_hypers(n_core_pot, n, desc)
 
 !   Input variables
@@ -169,6 +177,7 @@ module mpi_helper
     end do
 
   end subroutine
+!**************************************************************************
 
 
 end module

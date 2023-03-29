@@ -43,6 +43,11 @@ module read_files
 !**************************************************************************
 ! This subroutine reads in the XYZ file
 !
+! WE NEED TO WRITE A PROPER EXTXYZ READER THAT CAN IDENTIFY WHICH COLUMN CONTAINS
+! EACH PROPERTY. THIS SUBROUTINE CAN ONLY READ IN FILES WITH THE FOLLOWING CONVENTION:
+!
+! SPECIES X Y Z (VX VY VZ (FIXX FIXY FIXZ))
+!
   subroutine read_xyz(filename, ase_format, all_atoms, do_timing, n_species, species_types, &
                       repeat_xyz, rcut_max, which_atom, positions, &
                       do_md, velocities, masses_types, masses, xyz_species, xyz_species_supercell, &
@@ -152,13 +157,16 @@ if( .not. supercell_check_only )then
     allocate( species(1:n_sites) )
     xyz_species = ""
     species = 0
-    if( do_md )then
+!   We need to comment this out here for nested sampling
+!    if( do_md )then
+    if( .true. )then
       if( allocated(velocities) )deallocate(velocities)
       if( allocated(masses) )deallocate(masses)
       if( allocated(fix_atom) )deallocate(fix_atom)
       allocate( velocities(1:3, 1:n_sites) )
       velocities = 0.d0
       allocate( masses(1:n_sites) )
+      masses = 0.d0
       masses_from_xyz = .false.
       allocate( fix_atom(1:3, 1:n_sites) )
       fix_atom = .false.
@@ -189,7 +197,9 @@ if( .not. supercell_check_only )then
 !          species(species_multiplicity(i), i) = j
           xyz_species(i) = species_types(j)
           species(i) = j
-          if( do_md .and. .not. masses_from_xyz )then
+!         This is commented out because we also need masses with nested sampling when used in combination with MD
+!          if( do_md .and. .not. masses_from_xyz )then
+          if( .not. masses_from_xyz )then
             masses(i) = masses_types(j)
           end if
 !          exit
@@ -246,7 +256,9 @@ if( .not. supercell_check_only .or. (supercell_check_only .and. any(indices /= i
     if( indices(1) > 1 .or. indices(2) > 1 .or. indices(3) > 1 )then
       n_sites_supercell = n_sites * indices(1) * indices(2) * indices(3)
       allocate( positions_supercell(1:3, 1:n_sites_supercell) )
-      if( do_md )then
+!     We need to comment this out here for nested sampling
+!      if( do_md )then
+      if( .true. )then
         allocate( velocities_supercell(1:3, 1:n_sites_supercell) )
       end if
 !      allocate( species_supercell(1:max_species_multiplicity, 1:n_sites_supercell) )
@@ -266,7 +278,9 @@ if( .not. supercell_check_only .or. (supercell_check_only .and. any(indices /= i
               positions_supercell(1:3, counter) = positions(1:3, i) + dfloat(i2-1)*a_box(1:3) &
                                                                     + dfloat(j2-1)*b_box(1:3) &
                                                                     + dfloat(k2-1)*c_box(1:3)
-              if( do_md )then
+!             We need to comment this out here for nested sampling
+!              if( do_md )then
+              if( .true. )then
                 velocities_supercell(1:3, counter) = velocities(1:3, i)
               end if
 !              species_supercell(:, counter) = species(:, i)
@@ -280,7 +294,9 @@ if( .not. supercell_check_only .or. (supercell_check_only .and. any(indices /= i
       allocate( positions(1:3, 1:n_sites_supercell) )
       positions(1:3, 1:n_sites_supercell) = positions_supercell(1:3, 1:n_sites_supercell)
       deallocate( positions_supercell )
-      if( do_md )then
+!     We need to comment this out here for nested sampling
+!      if( do_md )then
+      if( .true. )then
         deallocate( velocities )
         allocate( velocities(1:3, 1:n_sites_supercell) )
         velocities(1:3, 1:n_sites_supercell) = velocities_supercell(1:3, 1:n_sites_supercell)
@@ -306,7 +322,9 @@ if( .not. supercell_check_only .or. (supercell_check_only .and. any(indices /= i
         allocate( positions(1:3, 1:n_sites_supercell) )
         positions(1:3, 1:n_sites_supercell) = positions_supercell(1:3, 1:n_sites_supercell)
         deallocate( positions_supercell )
-        if( do_md )then
+!       We need to comment this out here for nested sampling
+!        if( do_md )then
+        if( .true. )then
           allocate( velocities_supercell(1:3, 1:n_sites_supercell) )
           velocities_supercell = velocities(1:3, 1:n_sites_supercell)
           deallocate( velocities )
@@ -648,6 +666,31 @@ end if
       else if(keyword=='write_thermo')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%write_thermo
+      else if(keyword=='n_nested')then
+        if( mode /= "predict" )then
+          write(*,*) 'ERROR: the "n_nested" option for nested sampling can only be used with "turbogap predict"'
+          stop
+        end if
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%n_nested
+        if( params%n_nested > 0 )then
+          params%do_nested_sampling = .true.
+        end if
+      else if(keyword=='t_extra')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%t_extra
+      else if(keyword=='p_nested')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%p_nested
+      else if(keyword=='nested_max_strain')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%nested_max_strain
+      else if(keyword=='nested_max_volume_change')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%nested_max_volume_change
+      else if(keyword=='scale_box_nested')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%scale_box_nested
       else if(keyword=='write_velocities')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%write_velocities
@@ -936,6 +979,20 @@ end if
         write(*,*) "ERROR: vdW inner and outer cutoff regions can't overlap. Check your vdw_* definitions"
         stop
       end if
+    end if
+
+!   Nested sampling checks
+    if( params%do_nested_sampling )then
+      if( params%thermostat /= "none" )then
+        write(*,*)'                                       |'
+        write(*,*)'WARNING: Nested sampling only works    |  <-- WARNING'
+        write(*,*)'(currently) in combination with total  |'
+        write(*,*)'energy MD. The selected thermostat has |'
+        write(*,*)'been disabled.                         |'
+      end if
+!     Prepare directory where we create the latest version of the walkers
+      call system("rm -rf walkers/")
+      call system("mkdir -p walkers/")
     end if
 
 !   Set the writeouts

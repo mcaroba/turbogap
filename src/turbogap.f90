@@ -117,15 +117,20 @@ program turbogap
 !vdw crap
   real*8, allocatable :: v_neigh_vdw(:), energies_vdw(:), forces_vdw(:,:), this_energies_vdw(:), this_forces_vdw(:,:)
 
-
 ! MPI stuff
   real*8, allocatable :: temp_1d(:), temp_1d_bis(:), temp_2d(:,:)
   integer, allocatable :: temp_1d_int(:), n_atom_pairs_by_rank(:), displ(:)
-  integer :: i_beg, i_end, n_sites_mpi, j_beg, j_end, size_soap_turbo, size_distance_2b, size_angle_3b
   integer, allocatable :: n_species_mpi(:), n_sparse_mpi_soap_turbo(:), dim_mpi(:), n_sparse_mpi_distance_2b(:), &
                           n_sparse_mpi_angle_3b(:), n_mpi_core_pot(:), vdw_n_sparse_mpi_soap_turbo(:), &
-                          n_neigh_local(:)
+                          n_neigh_local(:), n_nonzero_mpi(:)
+  integer :: i_beg, i_end, n_sites_mpi, j_beg, j_end, size_soap_turbo, size_distance_2b, size_angle_3b
+  integer :: n_nonzero
   logical, allocatable :: compress_soap_mpi(:)
+
+! Nested sampling
+  real*8 :: e_max, e_kin, rand, rand_scale(1:6)
+  integer :: i_nested, i_max, i_image
+  type(image), allocatable :: images(:), images_temp(:)
 !**************************************************************************
 
 
@@ -137,6 +142,8 @@ program turbogap
 ! Start recording the time
   call cpu_time(time1)
   time3 = time1
+! Start random seed
+  call srand(int(time1*1000))
 !**************************************************************************
 
 
@@ -394,6 +401,7 @@ program turbogap
     allocate( n_sparse_mpi_distance_2b(1:n_distance_2b) )
     allocate( n_sparse_mpi_angle_3b(1:n_angle_3b) )
     allocate( n_mpi_core_pot(1:n_core_pot) )
+    allocate( n_nonzero_mpi(1:n_soap_turbo) )
     IF( rank == 0 )THEN
       n_species_mpi = soap_turbo_hypers(1:n_soap_turbo)%n_species
       n_sparse_mpi_soap_turbo = soap_turbo_hypers(1:n_soap_turbo)%n_sparse
@@ -404,6 +412,7 @@ program turbogap
       n_sparse_mpi_distance_2b = distance_2b_hypers(1:n_distance_2b)%n_sparse
       n_sparse_mpi_angle_3b = angle_3b_hypers(1:n_angle_3b)%n_sparse
       n_mpi_core_pot = core_pot_hypers(1:n_core_pot)%n
+      n_nonzero_mpi = soap_turbo_hypers(1:n_soap_turbo)%compress_P_nonzero
     END IF
     call cpu_time(time_mpi(1))
     call mpi_bcast(n_species_mpi, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
@@ -415,12 +424,13 @@ program turbogap
     call mpi_bcast(n_sparse_mpi_distance_2b, n_distance_2b, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
     call mpi_bcast(n_sparse_mpi_angle_3b, n_angle_3b, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
     call mpi_bcast(n_mpi_core_pot, n_core_pot, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+    call mpi_bcast(n_nonzero_mpi, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
     call cpu_time(time_mpi(2))
     time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
     IF( rank /= 0 )THEN
       call allocate_soap_turbo_hypers(n_soap_turbo, n_species_mpi, n_sparse_mpi_soap_turbo, dim_mpi, &
                                       vdw_n_sparse_mpi_soap_turbo, has_vdw_mpi, compress_soap_mpi, &
-                                      soap_turbo_hypers)
+                                      n_nonzero_mpi, soap_turbo_hypers)
       call allocate_distance_2b_hypers(n_distance_2b, n_sparse_mpi_distance_2b, distance_2b_hypers)
       call allocate_angle_3b_hypers(n_angle_3b, n_sparse_mpi_angle_3b, angle_3b_hypers)
       call allocate_core_pot_hypers(n_core_pot, n_mpi_core_pot, core_pot_hypers)
@@ -456,6 +466,7 @@ program turbogap
       call mpi_bcast(soap_turbo_hypers(i)%species_types(1:n_sp), 8*n_sp, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
       n_sparse = soap_turbo_hypers(i)%n_sparse
       dim = soap_turbo_hypers(i)%dim
+      n_nonzero = soap_turbo_hypers(i)%compress_P_nonzero
       call mpi_bcast(soap_turbo_hypers(i)%alphas(1:n_sparse), n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(soap_turbo_hypers(i)%Qs(1:dim, 1:n_sparse), n_sparse*dim, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(soap_turbo_hypers(i)%delta, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
@@ -469,7 +480,9 @@ program turbogap
       call mpi_bcast(soap_turbo_hypers(i)%radial_enhancement, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(soap_turbo_hypers(i)%compress_soap, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
       if( soap_turbo_hypers(i)%compress_soap )then
-        call mpi_bcast(soap_turbo_hypers(i)%compress_soap_indices(1:dim), dim, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(soap_turbo_hypers(i)%compress_P_i(1:n_nonzero), n_nonzero, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(soap_turbo_hypers(i)%compress_P_j(1:n_nonzero), n_nonzero, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(soap_turbo_hypers(i)%compress_P_el(1:n_nonzero), n_nonzero, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
       end if
       call mpi_bcast(soap_turbo_hypers(i)%has_vdw, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
       if( soap_turbo_hypers(i)%has_vdw )then
@@ -612,13 +625,13 @@ program turbogap
 #ifdef _MPIF90
     END IF
 #endif
+
     update_bar = params%md_nsteps/36
     if( update_bar < 1 )then
       update_bar = 1
     end if
     counter = 1
  end if
-
   if( params%do_mc )then
 #ifdef _MPIF90
     IF( rank == 0 )THEN
@@ -641,6 +654,17 @@ program turbogap
     counter = 1
   end if
 
+!  if( params%do_md .or. params%do_nested_sampling )then
+!    if( params%do_nested_sampling )then
+!      update_bar = (params%md_nsteps-1)/36
+!    else
+!      update_bar = params%md_nsteps/36
+!    end if
+!    if( update_bar < 1 )then
+!      update_bar = 1
+!    end if
+!    counter = 1
+!  end if
 !**************************************************************************
 
 
@@ -656,6 +680,9 @@ program turbogap
 ! structures in the xyz file provided or we're doing molecular dynamics
   md_istep = -1
   n_xyz = 0
+  i_nested = 0
+  i_image = 0
+
   do while( repeat_xyz .or. ( params%do_md .and. md_istep < params%md_nsteps) .or. &
                             ( params%do_mc .and. mc_istep < params%mc_nsteps) )
 
@@ -670,7 +697,8 @@ program turbogap
     end if
 
 !   Update progress bar
-    if( params%print_progress .and. counter == update_bar )then
+    if( params%do_md .and. params%print_progress .and. &
+        ( real(md_istep)/real(params%md_nsteps)*36.d0 > real(counter)-1.d-10 .or. md_istep == params%md_nsteps ) )then
 #ifdef _MPIF90
       IF( rank == 0 )THEN
 #endif
@@ -691,8 +719,6 @@ program turbogap
 #ifdef _MPIF90
       END IF
 #endif
-      counter = 1
-    else
       counter = counter + 1
     end if
 !**************************************************************************
@@ -712,16 +738,24 @@ program turbogap
 #ifdef _MPIF90
       IF( rank == 0 )THEN
 #endif
-      call read_xyz(params%atoms_file, .true., params%all_atoms, params%do_timing, &
+         <<<<<<< HEAD
+      if( .not. params%do_nested_sampling )then
+         call read_xyz(params%atoms_file, .true., params%all_atoms, params%do_timing, &
                     n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
                     positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
                     xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
                     n_sites, .false., fix_atom, params%t_beg, params%write_array_property(6) )
+
+      end if
+
 !     Only rank 0 handles these variables
 !      allocate( positions_prev(1:3, 1:size(positions,2)) )
 !      allocate( positions_diff(1:3, 1:size(positions,2)) )
+      if( allocated(forces_prev) )deallocate( forces_prev )
       allocate( forces_prev(1:3, 1:n_sites) )
+      if( allocated(positions_prev) )deallocate( positions_prev )
       allocate( positions_prev(1:3, 1:n_sites) )
+      if( allocated(positions_diff) )deallocate( positions_diff )
       allocate( positions_diff(1:3, 1:n_sites) )
       positions_diff = 0.d0
       rebuild_neighbors_list = .true.
@@ -787,21 +821,29 @@ program turbogap
     call cpu_time(time_mpi(2))
     time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
     IF( rank /= 0 .and. (.not. params%do_md .or. md_istep == 0) )THEN
+    if( allocated( positions ) )deallocate( positions )
     allocate( positions(1:3, n_pos) )
-    if( params%do_md )then
+    if( params%do_md .or. params%do_nested_sampling )then
+      if( allocated( velocities ) )deallocate( velocities )
       allocate( velocities(1:3, n_pos) )
 !      allocate( masses(n_pos) )
+      if( allocated( masses ) )deallocate( masses )
       allocate( masses(1:n_sp) )
+      if( allocated( fix_atom ) )deallocate( fix_atom )
       allocate( fix_atom(1:3, 1:n_sp) )
     end if
+    if( allocated( xyz_species ) )deallocate( xyz_species )
     allocate( xyz_species(1:n_sp) )
+    if( allocated( species ) )deallocate( species )
     allocate( species(1:n_sp) )
+    if( allocated( xyz_species_supercell ) )deallocate( xyz_species_supercell )
     allocate( xyz_species_supercell(1:n_sp_sc) )
+    if( allocated( species_supercell ) )deallocate( species_supercell )
     allocate( species_supercell(1:n_sp_sc) )
     END IF
     call cpu_time(time_mpi_positions(1))
     call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-    if( params%do_md )then
+    if( params%do_md .or. params%do_nested_sampling )then
       call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(masses, n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(fix_atom, 3*n_sp, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
@@ -1044,7 +1086,9 @@ program turbogap
                             soap_turbo_hypers(i)%central_weight, soap_turbo_hypers(i)%basis, &
                             soap_turbo_hypers(i)%scaling_mode, params%do_timing, params%do_derivatives, params%do_forces, &
                             params%do_prediction, params%write_soap, params%write_derivatives, &
-                            soap_turbo_hypers(i)%compress_soap, soap_turbo_hypers(i)%compress_soap_indices, &
+                            soap_turbo_hypers(i)%compress_soap, soap_turbo_hypers(i)%compress_P_nonzero, &
+                            soap_turbo_hypers(i)%compress_P_i, soap_turbo_hypers(i)%compress_P_j, &
+                            soap_turbo_hypers(i)%compress_P_el, &
                             soap_turbo_hypers(i)%delta, soap_turbo_hypers(i)%zeta, soap_turbo_hypers(i)%central_species, &
                             xyz_species(this_i_beg:this_i_end), xyz_species_supercell, soap_turbo_hypers(i)%alphas, &
                             soap_turbo_hypers(i)%Qs, params%all_atoms, params%which_atom, indices, soap, soap_cart_der, &
@@ -1508,7 +1552,8 @@ end if
                            virial, xyz_species, &
                            positions(1:3, 1:n_sites), velocities, &
                            forces, energies(1:n_sites), masses, hirshfeld_v, &
-                           params%write_property, params%write_array_property, fix_atom )
+                           params%write_property, params%write_array_property, fix_atom, & 
+                           "trajectory_out.xyz", .false. )
 #ifdef _MPIF90
         END IF
 #endif
@@ -1615,16 +1660,20 @@ end if
       end do
 
 !     Here we write thermodynamic information -> THIS NEEDS CLEAN UP AND IMPROVEMENT
-      if( md_istep == 0 )then
+
+      if ( params%do_mc .and. mc_istep == 0 )then
+         open(unit=10, file="mc.log", status="unknown")
+      end if
+      if ( params%do_mc .and. mc_istep > 0  )then
+         open(unit=10, file="mc.log", status="old", position="append")
+      end if
+
+      if( md_istep == 0 .and. .not. params%do_nested_sampling )then
          open(unit=10, file="thermo.log", status="unknown")
-         if ( params%do_mc )then
-            open(unit=10, file="mc.log", status="unknown")
-         end if
+      else if( md_istep == 0 .and. i_nested == 1 )then
+        open(unit=10, file="thermo.log", status="unknown")
       else
          open(unit=10, file="thermo.log", status="old", position="append")
-         if ( params%do_mc )then
-            open(unit=10, file="mc.log", status="old", position="append")
-         end if
       end if
       if( .not. params%do_mc .and. (md_istep == 0 .or. md_istep == params%md_nsteps .or. modulo(md_istep, params%write_thermo) == 0) )then
 !       Organize this better so that the user can have more freedom about what gets printed to thermo.log
@@ -1656,8 +1705,20 @@ end if
 
 !     We write out the trajectory file. We write positions_prev which is then one for which we have computed
 !     the properties. positions_prev and velocities are synchronous
-      if( md_istep == 0 .or. md_istep == params%md_nsteps .or. modulo(md_istep, params%write_xyz) == 0 .or. &
+      if( (md_istep == 0 .and. .not. params%do_nested_sampling) .or. &
+          (md_istep == params%md_nsteps .and. .not. params%do_nested_sampling ) .or. &
+          (modulo(md_istep, params%write_xyz) == 0 .and. .not. params%do_nested_sampling) .or. &
           exit_loop )then
+        call wrap_pbc(positions_prev(1:3,1:n_sites), a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)))
+        call write_extxyz( n_sites, md_istep, time_step, instant_temp, instant_pressure, &
+                           a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
+                           virial, xyz_species, &
+                           positions_prev(1:3, 1:n_sites), velocities, &
+                           forces, energies(1:n_sites), masses, hirshfeld_v, &
+                           params%write_property, params%write_array_property, fix_atom(1:3, 1:n_sites) )
+      else if( md_istep == params%md_nsteps .and. params%do_nested_sampling )then
+        write(cjunk,'(I8)') i_image
+        write(filename,'(A,A,A)') "walkers/", trim(adjustl(cjunk)), ".xyz"
         call wrap_pbc(positions_prev(1:3,1:n_sites), a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)))
         call write_extxyz( n_sites, md_istep, time_step, instant_temp, instant_pressure, &
                            a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
@@ -1752,22 +1813,155 @@ end if
       time_mpi_positions(3) = time_mpi_positions(3) + time_mpi_positions(2) - time_mpi_positions(1)
     end if
 #endif
+!**************************************************************************
 
 
-!   NOW THIS IS HANDLED AT THE BEGINNING OF THE CODE WHEN WE CHECK IF THE NUMBER OF SITES HAS CHANGED
-!   Clean up
-!    deallocate( energies, energies_soap, energies_2b, energies_3b, energies_core_pot, this_energies, energies_vdw )
-!    if( params%do_forces )then
-!      deallocate( forces, forces_soap, forces_2b, forces_3b, forces_core_pot, this_forces, forces_vdw )
-!    end if
-!    if( any( soap_turbo_hypers(:)%has_vdw ) )then
-!      nullify( this_hirshfeld_v_pt )
-!      deallocate( this_hirshfeld_v, hirshfeld_v )
-!      if( params%do_forces )then
-!        nullify( this_hirshfeld_v_cart_der_pt )
-!        deallocate( this_hirshfeld_v_cart_der, hirshfeld_v_cart_der )
-!      end if
-!    end if
+
+
+
+!**************************************************************************
+!   Nested sampling
+!   PUT THIS INTO A MODULE!!!!!!!!!!!!!!
+
+!   This runs at the beginning to read in the initial images
+    if( params%do_nested_sampling .and. n_xyz > i_image .and. .not. params%do_md )then
+      i_image = i_image + 1
+      if( .not. allocated( images ) )then
+        allocate( images(1:i_image) )
+      else
+        allocate( images_temp(1:i_image) )
+        images_temp(1:i_image-1) = images(1:i_image-1)
+        deallocate( images )
+        allocate( images(1:i_image) )
+        images = images_temp
+        deallocate(images_temp)
+      end if
+!     Save initial pool of structures
+      velocities = 0.d0
+      call from_properties_to_image(images(i_image), positions, velocities, masses, &
+                                    forces, a_box, b_box, c_box, energy, E_kinetic, &
+                                    species, species_supercell, n_sites, indices, fix_atom, &
+                                    xyz_species, xyz_species_supercell)
+    end if
+
+!   This handles the nested sampling iterations after all images have
+!   been read and their energies computed
+    if( params%do_nested_sampling .and. .not. repeat_xyz )then
+      if( i_nested == 0 )then
+        md_istep = -1
+        params%write_xyz = params%md_nsteps
+        params%do_md = .true.
+        if( rank == 0 )then
+          write(*,*)'                                       |'
+          write(*,*)'Running nested sampling algorithm with |'
+          write(*,'(1X,I6,A)') n_xyz, ' walkers.                        |'
+          write(*,*)'                                       |'
+          write(*,*)'Target pressure in nested sampling:    |'
+          write(*,'(A,ES15.7,A)') ' P = ', params%p_nested, ' bar.               |'
+          write(*,*)'                                       |'
+          write(*,*)'[P = 0 means total energy, rather than |'
+          write(*,*)'total enthalphy, simulation]           |'
+        end if
+      end if
+!     At the end of the MD/MC moves we add the image to the pool if its energy has decreased
+      if( md_istep == params%md_nsteps )then
+        md_istep = -1
+        velocities = 0.d0
+!       Unit cell volume
+        v_uc = dot_product( cross_product(a_box, b_box), c_box ) / (dfloat(indices(1)*indices(2)*indices(3)))
+!       We check enthalpy, not internal energy (they are the same for P = 0)
+        if( energy + E_kinetic + params%p_nested/eVperA3tobar*v_uc < e_max )then
+          call from_properties_to_image(images(i_image), positions, velocities, masses, &
+                                        forces, a_box, b_box, c_box, energy, E_kinetic, &
+                                        species, species_supercell, n_sites, indices, fix_atom, &
+                                        xyz_species, xyz_species_supercell)
+        end if
+      end if
+!     This selects the highest energy image from the pool
+      if( md_istep == -1 .and. i_nested < params%n_nested )then
+        i_nested = i_nested + 1
+        rebuild_neighbors_list = .true.
+        i_max = 0
+        e_max = -1.d100
+        do i = 1, n_xyz
+          v_uc = dot_product( cross_product(images(i)%a_box, images(i)%b_box), images(i)%c_box ) / &
+                 (dfloat(images(i)%indices(1)*images(i)%indices(2)*images(i)%indices(3)))
+!         We check enthalpy, not potential energy (they are the same for P = 0)
+          if( images(i)%energy + images(i)%e_kin + params%p_nested/eVperA3tobar*v_uc > e_max )then
+            e_max = images(i)%energy + images(i)%e_kin + params%p_nested/eVperA3tobar*v_uc
+            i_max = i
+          end if
+        end do
+        i_image = i_max
+        deallocate( positions, velocities, masses, forces, species, &
+                    species_supercell, fix_atom, xyz_species, xyz_species_supercell )
+!       Make a copy of a randonmly chosen image which is not i_image
+        if( n_xyz == 1 )then
+          i = i_image
+        else
+          i = i_image
+          do while( i == i_image )
+            i = mod(irand(), n_xyz) + 1
+          end do
+        end if
+        if( rank == 0 )then
+          counter = 1
+!          write(*,*)
+          write(*,*)'                                       |'
+          write(*,'(A,I8,A,I8,A)') "Nested sampling iter.:", i_nested, "/", params%n_nested, " |"
+          write(*,'(A,I8,A)') " - Highest enthalpy walker:    ", i_image, " |"
+          write(*,'(A,I8,A)') " - Walker selected for cloning:", i, " |"
+          write(*,'(A,F15.7,A)') " - Max. enthalpy: ", e_max, " eV |"
+        end if
+        call from_image_to_properties(images(i), positions, velocities, masses, &
+                                      forces, a_box, b_box, c_box, energy, E_kinetic, &
+                                      species, species_supercell, n_sites, indices, fix_atom, &
+                                      xyz_species, xyz_species_supercell)
+        v_uc = dot_product( cross_product(images(i)%a_box, images(i)%b_box), images(i)%c_box ) / &
+               (dfloat(images(i)%indices(1)*images(i)%indices(2)*images(i)%indices(3)))
+!       This only gets triggered if we are doing box rescaling, i.e., if the target nested sampling pressure (*not* the
+!       actual pressure for the atomic configuration) is > 0
+!!!!!!!!!!!!!!!!!!!!!!!!!! Temporary hack
+if( params%scale_box_nested )then
+params%scale_box = .true.
+call random_number(rand_scale)
+!!!!!!!!!!!!!!! The size of the scaling should also decrease as we reach convergence (otherwise all trial moves will be rejected)
+!!!!!!!!!!!!!!! Finally, there should be a limit for the acceptable aspect ratio of the simulation box
+rand_scale = 2.d0*(rand_scale - 0.5d0) * params%nested_max_strain
+params%box_scaling_factor = reshape([1.d0+rand_scale(1), rand_scale(6)/2.d0, rand_scale(5)/2.d0, &
+                                     rand_scale(6)/2.d0, 1.d0+rand_scale(2), rand_scale(4)/2.d0, &
+                                     rand_scale(5)/2.d0, rand_scale(4)/2.d0, 1.d0+rand_scale(3)], [3,3])
+! Make the transformation volume-preserving
+call volume_preserving_strain_transformation(a_box, b_box, c_box, params%box_scaling_factor)
+! Volume scaling
+call get_ns_unbiased_volume_proposal(1.d0-params%nested_max_volume_change, 1.d0+params%nested_max_volume_change, n_sites, rand)
+params%box_scaling_factor = params%box_scaling_factor * (rand)**(1.d0/3.d0)
+! Each MPI process has a different set of random numbers so we need to broadcast
+#ifdef _MPIF90
+call mpi_bcast(params%box_scaling_factor, 9, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+#endif
+end if
+!       This is the so-called total enthalpy Hamiltonian Montecarlo approach (with physical masses)
+!       We do not need to broadcast the velocities here since they get broadcasted later on; otherwise
+!       we would have to do it since each MPI rank may see a different random number
+        call random_number( velocities )
+        call remove_cm_vel(velocities(1:3,1:n_sites), masses(1:n_sites))    
+        e_kin = 0.d0
+        do i = 1, n_sites
+          e_kin = e_kin + 0.5d0 * masses(i) * dot_product(velocities(1:3, i), velocities(1:3, i))
+        end do
+        call random_number( rand )
+!        rand = rand * 4.d0/3.d0 - 1.d0/3.d0
+!        velocities = velocities / sqrt(e_kin) * sqrt(e_max - energy - params%p_nested/eVperA3tobar*v_uc + &
+!                                                     1.5d0*real(n_sites-1)*kB*params%t_extra*max(0.d0, rand))
+        velocities = velocities / sqrt(e_kin) * sqrt(rand*(e_max - energy - params%p_nested/eVperA3tobar*v_uc))
+      else if( i_nested == params%n_nested )then
+        exit_loop = .true.
+      end if
+    end if
+!**************************************************************************
+
+
 
 
     if( rebuild_neighbors_list )then
@@ -1790,6 +1984,7 @@ end if
 #ifdef _MPIF90
     call mpi_bcast(exit_loop, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
 #endif
+
     if( exit_loop )exit
 ! End of loop through structures in the xyz file or MD steps
   end do
@@ -1801,9 +1996,9 @@ end if
 #ifdef _MPIF90
     IF( rank == 0 )then
 #endif
-    if( params%do_md )then
+    if( params%do_md .and. .not. params%do_nested_sampling )then
 !      write(*,'(A)')'] |'
-      write(*,*)
+!      write(*,*)
       write(*,*)'                                       |'
 !      write(*,'(I8,A,F13.3,A)') params%md_nsteps, ' MD steps:', time2-time3, ' seconds |'
       write(*,'(I8,A,F13.3,A)') md_istep, ' MD steps:', time2-time3, ' seconds |'
