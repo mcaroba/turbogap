@@ -32,6 +32,7 @@ program turbogap
   use gap
   use read_files
   use md
+  use mc
   use gap_interface
   use types
   use vdw
@@ -738,7 +739,6 @@ program turbogap
 #ifdef _MPIF90
       IF( rank == 0 )THEN
 #endif
-         <<<<<<< HEAD
       if( .not. params%do_nested_sampling )then
          call read_xyz(params%atoms_file, .true., params%all_atoms, params%do_timing, &
                     n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &

@@ -83,7 +83,7 @@ module mc
 
   end subroutine monte_carlo_move
 
-  subroutine monte_carlo_volume(e_new, e_prev, T, V_new, V_prev, P, N_exch):
+  subroutine monte_carlo_volume(e_new, e_prev, T, V_new, V_prev, P, N_exch)
     real*8, intent(in) :: e_new, e_prev, T, V_new, V_prev, P
     real*8 :: kB = 8.617333262e-5, beta
     integer intent(in) :: N_exch
