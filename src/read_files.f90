@@ -653,7 +653,13 @@ end if
               end if
               stop
            end if
-       end do
+        end do
+      else if(keyword=='mc_move_max')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_move_max
+      else if(keyword=='mc_lnvol_max')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_lnvol_max
       else if(keyword=='mc_mu')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_mu

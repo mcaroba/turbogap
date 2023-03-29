@@ -56,7 +56,7 @@ program turbogap
   real*8 :: rcut_max, a_box(1:3), b_box(1:3), c_box(1:3), max_displacement, energy, energy_prev
   real*8 :: virial(1:3, 1:3), this_virial(1:3, 1:3), virial_soap(1:3, 1:3), virial_2b(1:3, 1:3), &
             virial_3b(1:3,1:3), virial_core_pot(1:3, 1:3), virial_vdw(1:3, 1:3), &
-            this_virial_vdw(1:3, 1:3), v_uc, eVperA3tobar = 1602176.6208d0
+            this_virial_vdw(1:3, 1:3), v_uc, eVperA3tobar = 1602176.6208d0, ranf, ranv(1:3), disp
   real*8, allocatable :: energies(:), forces(:,:), energies_soap(:), forces_soap(:,:), this_energies(:), &
                          this_forces(:,:), &
                          energies_2b(:), forces_2b(:,:), energies_3b(:), forces_3b(:,:), &
@@ -73,7 +73,7 @@ program turbogap
             time_mpi_positions(1:3) = 0.d0, time_mpi_ef(1:3) = 0.d0, time_md(3) = 0.d0, &
             instant_pressure_tensor(1:3, 1:3), time_step, md_time
   integer, allocatable :: displs(:), displs2(:), counts(:), counts2(:)
-  integer :: update_bar, n_sparse
+  integer :: update_bar, n_sparse, idx
   logical, allocatable :: do_list(:), has_vdw_mpi(:), fix_atom(:,:)
   logical :: rebuild_neighbors_list = .true., exit_loop = .true.
   character*1 :: creturn = achar(13)
@@ -85,18 +85,18 @@ program turbogap
                           i_beg_list(:), i_end_list(:), j_beg_list(:), j_end_list(:)
   integer :: n_sites, i, j, k, i2, j2, n_soap, k2, k3, l, n_sites_this, ierr, rank, ntasks, dim, n_sp, &
              n_pos, n_sp_sc, this_i_beg, this_i_end, this_j_beg, this_j_end, this_n_sites_mpi, n_sites_prev = 0, &
-             n_atom_pairs_by_rank_prev, n_mc_types = 0
+             n_atom_pairs_by_rank_prev
   integer :: l_max, n_atom_pairs, n_max, ijunk, central_species = 0, n_atom_pairs_total
   integer :: iostatus, counter = 0, counter2
   integer :: which_atom = 0, n_species = 1, n_xyz, indices(1:3)
   integer :: radial_enhancement = 0
   integer :: md_istep, mc_istep, n_mc
 
-  logical :: repeat_xyz = .true.
+  logical :: repeat_xyz = .true., overwrite = .false.
 
   character*1024 :: filename, cjunk, file_compress_soap, file_alphas, file_soap, file_2b, file_alphas_2b, &
                     file_3b, file_alphas_3b, file_gap = "none"
-  character*64 :: keyword
+  character*64 :: keyword, filename
   character*16 :: lattice_string(1:9)
   character*8 :: i_char
   character*8, allocatable :: species_types(:), xyz_species(:), xyz_species_supercell(:)
@@ -104,6 +104,7 @@ program turbogap
 
 ! This is the mode in which we run TurboGAP
   character*16 :: mode = "none"
+  character*32 :: mc_move
 
 ! Here we store the input parameters
   type(input_parameters) :: params
@@ -823,7 +824,7 @@ program turbogap
     IF( rank /= 0 .and. (.not. params%do_md .or. md_istep == 0) )THEN
     if( allocated( positions ) )deallocate( positions )
     allocate( positions(1:3, n_pos) )
-    if( params%do_md .or. params%do_nested_sampling )then
+    if( params%do_md .or. params%do_nested_sampling .or. params%do_mc )then
       if( allocated( velocities ) )deallocate( velocities )
       allocate( velocities(1:3, n_pos) )
 !      allocate( masses(n_pos) )
@@ -843,7 +844,7 @@ program turbogap
     END IF
     call cpu_time(time_mpi_positions(1))
     call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-    if( params%do_md .or. params%do_nested_sampling )then
+    if( params%do_md .or. params%do_nested_sampling .or. params%do_mc )then
       call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(masses, n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(fix_atom, 3*n_sp, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
@@ -951,7 +952,7 @@ program turbogap
 !**************************************************************************
 !   If we are doing prediction, we run this chunk of code
     if( params%do_prediction .or. params%write_soap .or. params%write_derivatives .or. &
-                                                       (params%do_mc .and. mc_istep > 0))then
+                                                       (params%do_mc .and. mc_istep == 0))then
       call cpu_time(time1)
 
 !     We only need to reallocate the arrays if the number of sites changes
@@ -1023,7 +1024,7 @@ program turbogap
         virial_vdw = 0.d0
       end if
 
-      if( params%do_prediction .or. params%do_mc )then
+      if( params%do_prediction .or. ( params%do_mc .and. mc_istep == 0) )then
 !       Assign the e0 to each atom according to its species
 !        do i = 1, n_sites
         do i = i_beg, i_end
@@ -1212,7 +1213,7 @@ program turbogap
 
 
 !     Compute vdW energies and forces
-      if( any( soap_turbo_hypers(:)%has_vdw ) .and. ( params%do_prediction .or. params%do_mc ) &
+      if( any( soap_turbo_hypers(:)%has_vdw ) .and. ( params%do_prediction .or. ( params%do_mc .and. mc_istep == 0) ) &
                                                      .and. params%vdw_type == "ts" )then
         call cpu_time(time_vdw(1))
 #ifdef _MPIF90
@@ -1257,7 +1258,7 @@ program turbogap
 
 
 
-      if( params%do_prediction .or. params%do_mc )then
+      if( params%do_prediction .or. ( params%do_mc .and. mc_istep == 0 ) )then
 !       Loop through distance_2b descriptors
         do i = 1, n_distance_2b
           call cpu_time(time_2b(1))
@@ -1495,12 +1496,65 @@ program turbogap
      if (params%do_mc)then
 !       Now we do a monte-carlo step: we choose what the steps are from the available list and then choose a random number
 !       -- We have the list of move types in params%mc_types and the number params%n_mc_types --
+!       >> First generate a random number in the range of the number of
+        n_mc = floor( len( params%mc_types ) * random_number(randf) ) + 1
+        mc_move = params%mc_types(n_mc)
+
+        if (mc_istep == 0)then
+           write(*,*) 'MC Moves parsed:'
+           write(*,*) mc_types
+        end if
+
+        write(*,*)'                                       |'
+        write(*,'(A,1X,I0,1X,A)')' MC Iteration:', mc_istep, ' |'
+        write(*,'(A,1X,A,1X,A)')'    Move type:', mc_move, ' |'
+        write(*,'(A,1X,A,1X,A)')'    Etot_prev:', energy, ' |'
+
+        if( allocated(positions_prev) )deallocate( positions_prev )
+        allocate( positions_prev(1:3, 1:n_sites) )
+
+        positions_prev(1:3,1:n_sites) = positions(1:3,1:n_sites)
+
+        if (mc_move == "move")then
+!       Choose a random atom and move it half of the maximum move
+           disp = params%mc_move_max * ( random_number(ranv) - 0.5d0 )
+
+!       Now pick a random index and displace
+           idx = floor( random_number(ranf) * n_sites ) + 1
+           positions(1:3, idx) = positions(1:3, idx) + disp
+        end if
+        if (mc_move == "insertion" .or. mc_move == "removal" )then
+!       Choose a random atom and move it half of the maximum move
+           disp = params%mc_move_max * ( random_number(ranv) - 0.5d0 )
+
+!       Now pick a random index and displace
+           idx = floor( random_number(ranf) * n_sites ) + 1
+           positions(1:3, idx) = positions(1:3, idx) + disp
+
+!     Check that, if this is GCMC, that the number of atoms has not changed so we need to reallocate
+           if( n_sites /= n_sites_prev )then
+              if( allocated(energies) )deallocate( energies, energies_soap, energies_2b, energies_3b, energies_core_pot, &
+                   this_energies, energies_vdw, this_forces )
+              allocate( energies(1:n_sites) )
+              allocate( this_energies(1:n_sites) )
+              allocate( energies_soap(1:n_sites) )
+              allocate( energies_2b(1:n_sites) )
+              allocate( energies_3b(1:n_sites) )
+              allocate( energies_core_pot(1:n_sites) )
+              allocate( energies_vdw(1:n_sites) )
+              !       This needs to be allocated even if no force prediction is needed:
+              allocate( this_forces(1:3, 1:n_sites) )
+           end if
 
         end if
 
+
+        
      end if
 
-      if( .not. params%do_md )then
+  end if
+
+  if( .not. params%do_md )then
 #ifdef _MPIF90
         IF( rank == 0 )then
 #endif
@@ -1552,7 +1606,7 @@ end if
                            virial, xyz_species, &
                            positions(1:3, 1:n_sites), velocities, &
                            forces, energies(1:n_sites), masses, hirshfeld_v, &
-                           params%write_property, params%write_array_property, fix_atom, & 
+                           params%write_property, params%write_array_property, fix_atom, &
                            "trajectory_out.xyz", .false. )
 #ifdef _MPIF90
         END IF
@@ -1595,20 +1649,6 @@ end if
         time_step = params%md_step
      end if
 
-!     Check that, if this is GCMC, that the number of atoms has not changed so we need to reallocate
-      if( params%do_mc .and. n_sites /= n_sites_prev )then
-        if( allocated(energies) )deallocate( energies, energies_soap, energies_2b, energies_3b, energies_core_pot, &
-                                             this_energies, energies_vdw, this_forces )
-        allocate( energies(1:n_sites) )
-        allocate( this_energies(1:n_sites) )
-        allocate( energies_soap(1:n_sites) )
-        allocate( energies_2b(1:n_sites) )
-        allocate( energies_3b(1:n_sites) )
-        allocate( energies_core_pot(1:n_sites) )
-        allocate( energies_vdw(1:n_sites) )
-!       This needs to be allocated even if no force prediction is needed:
-        allocate( this_forces(1:3, 1:n_sites) )
-      end if
 
 
 !     We wrap the positions and remoce CM velocity
@@ -1715,7 +1755,9 @@ end if
                            virial, xyz_species, &
                            positions_prev(1:3, 1:n_sites), velocities, &
                            forces, energies(1:n_sites), masses, hirshfeld_v, &
-                           params%write_property, params%write_array_property, fix_atom(1:3, 1:n_sites) )
+                           params%write_property, params%write_array_property, fix_atom(1:3, 1:n_sites), &
+                           "trajectory_out.xyz", .true. )
+
       else if( md_istep == params%md_nsteps .and. params%do_nested_sampling )then
         write(cjunk,'(I8)') i_image
         write(filename,'(A,A,A)') "walkers/", trim(adjustl(cjunk)), ".xyz"
@@ -1725,7 +1767,8 @@ end if
                            virial, xyz_species, &
                            positions_prev(1:3, 1:n_sites), velocities, &
                            forces, energies(1:n_sites), masses, hirshfeld_v, &
-                           params%write_property, params%write_array_property, fix_atom(1:3, 1:n_sites) )
+                           params%write_property, params%write_array_property, fix_atom(1:3, 1:n_sites), &
+                           filename, .true. )
       end if
 !
 !     If there are pressure/box rescaling operations they happen here
