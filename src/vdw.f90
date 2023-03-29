@@ -1084,6 +1084,13 @@ module vdw
     integer :: n_degree
     real*8, allocatable :: B_pol(:,:), B_mult(:,:), b_i(:,:), d_vec(:,:), val_xv(:,:)
 
+    write(*,*) "hirshfeld_v_cart_der_ji"
+    do k2 = 1, n_neigh(1)
+      write(*,*) "i", neighbors_list(k2), "dist", rjs(k2), "hirshfeld_der", hirshfeld_v_cart_der_ji(1:3,k2)
+    end do
+
+
+
 !central_pol = 10.d0
 central_omega = 0.5d0
 
@@ -1352,6 +1359,13 @@ central_omega = 0.5d0
             hirshfeld_sub_neigh(k2) = hirshfeld_v_neigh(n_tot+k_i)
             s = neighbor_species(n_tot+k_i)
             sub_neighbors_list(k2) = i2
+            if ( p == 55 .and. i == 1 .and. om == 2 ) then
+              write(*,*) "p", p
+              write(*,*) "i2", i2
+              write(*,*) "rjs", rjs(n_tot+k_i)
+              write(*,*) "h", hirshfeld_sub_neigh(k2)
+              write(*,*) "h_der", hirshfeld_v_cart_der_H(1:3,n_tot+k_i)
+            end if
             if ( do_derivatives .and. do_hirshfeld_gradients ) then
               hirshfeld_v_sub_der(1:3,k2) = hirshfeld_v_cart_der_H(1:3,n_tot+k_i)
             end if
@@ -1751,12 +1765,12 @@ central_omega = 0.5d0
             end do
           end if
 
-          if (i == 1 .and. om == 2) then
-            write(*,*) "a_iso"
-            do p = 1, n_sub_sites
-              write(*,*) a_iso(p,2)
-            end do
-          end if
+          !if (i == 1 .and. om == 2) then
+          !  write(*,*) "a_iso"
+          !  do p = 1, n_sub_sites
+          !    write(*,*) a_iso(p,2)
+          !  end do
+          !end if
 
           !do c1 = 1, 3
           !  do c2 = 1, 3
@@ -2004,9 +2018,6 @@ central_omega = 0.5d0
                       j = neighbors_list(n_tot+k_j)
                       j1 = modulo(j-1, n_sites0) + 1
                       k2 = k2+1
-                      if ( k2 == 2 ) then
-                        write(*,*) "k2", k2, rjs(n_tot+k_j)
-                      end if    
                       s = neighbor_species(n_tot+k_j)
                       mbd_neighbors_list(k2) = j
                       p_mbd(k2) = q
@@ -2606,21 +2617,21 @@ central_omega = 0.5d0
               end do
             end do
 
-            if ( i == 1 .and. c3 == 1 .and. om == 2 ) then
+            !if ( i == 1 .and. c3 == 1 .and. om == 2 ) then
              ! write(*,*) "d_der"
              ! do c1 = 1, 3
              !   write(*,*) d_der(3*(55-1)+c1,:)
              ! end do
-              write(*,*) "dB_mat"
-              do p = 1, 3*n_sub_sites
-                write(*,*) dB_mat(p,:)
-              end do
+             ! write(*,*) "dB_mat"
+             ! do p = 1, 3*n_sub_sites
+             !   write(*,*) dB_mat(p,:)
+             ! end do
             !  write(*,*) "n_sub_sites", n_sub_sites
             !  write(*,*) "a_SCS"
             !  do p = 1, 3*n_sub_sites
             !    write(*,*) a_SCS(p,:)
             !  end do
-            end if
+            !end if
 
             b_der = -b_der+d_der
 
@@ -2651,14 +2662,14 @@ central_omega = 0.5d0
             end do
             da_iso(:,c3,om) = da_iso(:,c3,om)/3.d0
             
-            if ( i == 1 .and. c3 == 1 .and. om == 2 ) then
-              write(*,*) "da_iso"
-              !write(*,*) "da_SCS"
-              do p = 1, n_sub_sites
-                write(*,*) da_iso(p,1,2)
-                !write(*,*) da_SCS(p,:)
-              end do
-            end if
+            !if ( i == 1 .and. c3 == 1 .and. om == 2 ) then
+            !  write(*,*) "da_iso"
+            !  !write(*,*) "da_SCS"
+            !  do p = 1, n_sub_sites
+            !    write(*,*) da_iso(p,1,2)
+            !    !write(*,*) da_SCS(p,:)
+            !  end do
+            !end if
 
             if ( om == 2 ) then
             

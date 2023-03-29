@@ -1,4 +1,4 @@
-atoms_file = '2829_supercell.xyz'
+atoms_file = '2829_problem.xyz'
 pot_file = 'gap_files/carbon.gap'
 
 ! Species info
