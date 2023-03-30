@@ -1086,7 +1086,8 @@ module vdw
 
     write(*,*) "hirshfeld_v_cart_der_ji"
     do k2 = 1, n_neigh(1)
-      write(*,*) "i", neighbors_list(k2), "dist", rjs(k2), "hirshfeld_der", hirshfeld_v_cart_der_ji(1:3,k2)
+      write(*,*) "i", neighbors_list(k2), "dist", rjs(k2), "hirshfeld", hirshfeld_v_neigh(k2), &
+                  "hirshfeld_der", hirshfeld_v_cart_der_ji(1:3,k2)
     end do
 
 
