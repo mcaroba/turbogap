@@ -56,13 +56,14 @@ program turbogap
   real*8 :: rcut_max, a_box(1:3), b_box(1:3), c_box(1:3), max_displacement, energy, energy_prev
   real*8 :: virial(1:3, 1:3), this_virial(1:3, 1:3), virial_soap(1:3, 1:3), virial_2b(1:3, 1:3), &
             virial_3b(1:3,1:3), virial_core_pot(1:3, 1:3), virial_vdw(1:3, 1:3), &
-            this_virial_vdw(1:3, 1:3), v_uc, eVperA3tobar = 1602176.6208d0, ranf, ranv(1:3), disp
+            this_virial_vdw(1:3, 1:3), v_uc, v_uc_prev, eVperA3tobar = 1602176.6208d0, ranf, ranv(1:3), disp, &
+            e_mc_prev, p_accept
   real*8, allocatable :: energies(:), forces(:,:), energies_soap(:), forces_soap(:,:), this_energies(:), &
                          this_forces(:,:), &
                          energies_2b(:), forces_2b(:,:), energies_3b(:), forces_3b(:,:), &
                          energies_core_pot(:), forces_core_pot(:,:), &
-                         velocities(:,:), masses_types(:), masses(:), hirshfeld_v(:), &
-                         hirshfeld_v_cart_der(:,:)
+                         velocities(:,:), masses_types(:), masses(:), hirshfeld_v(:), hirshfeld_v_temp(:) &
+                         hirshfeld_v_cart_der(:,:), masses_temp(:)
   real*8, allocatable, target :: this_hirshfeld_v(:), this_hirshfeld_v_cart_der(:,:)
   real*8, pointer :: this_hirshfeld_v_pt(:), this_hirshfeld_v_cart_der_pt(:,:)
   real*8, allocatable :: all_energies(:,:), all_forces(:,:,:), all_virial(:,:,:)
@@ -92,19 +93,19 @@ program turbogap
   integer :: radial_enhancement = 0
   integer :: md_istep, mc_istep, n_mc, n_mc_species
 
-  logical :: repeat_xyz = .true., overwrite = .false.
+  logical :: repeat_xyz = .true., overwrite = .false., check_species
 
   character*1024 :: filename, cjunk, file_compress_soap, file_alphas, file_soap, file_2b, file_alphas_2b, &
                     file_3b, file_alphas_3b, file_gap = "none"
   character*64 :: keyword, filename
   character*16 :: lattice_string(1:9)
   character*8 :: i_char
-  character*8, allocatable :: species_types(:), xyz_species(:), xyz_species_supercell(:)
+  character*8, allocatable :: species_types(:), xyz_species(:), xyz_species_supercell(:), species_type_temp(:)
   character*1 :: keyword_first
 
 ! This is the mode in which we run TurboGAP
   character*16 :: mode = "none"
-  character*32 :: mc_move
+  character*32 :: mc_move = "none"
 
 ! Here we store the input parameters
   type(input_parameters) :: params
@@ -692,7 +693,7 @@ program turbogap
 
     if( params%do_md )then
        md_istep = md_istep + 1
-    elseif( params%do_mc )then
+    elseif( params%do_mc .and. (.not. (mc_move == "md")))then
        mc_istep = mc_istep + 1
     else
       n_xyz = n_xyz + 1
@@ -705,7 +706,7 @@ program turbogap
       IF( rank == 0 )THEN
 #endif
       do j = 1, 36+3
-        write(*,"(A)", advance="no") creturn
+images(1)%xyz_species(1:n_sites-1)        write(*,"(A)", advance="no") creturn
       end do
       write (*,"(1X,A)",advance="no") "["
       do i = 1, 36*md_istep/params%md_nsteps
@@ -735,7 +736,7 @@ program turbogap
 !   This chunk of code does all the reading/neighbor builds etc for each snapshot
 !   or MD step
 !   Read in XYZ file and build neighbors lists
-    if( ((params%do_md .and. md_istep == 0) .or. (params%do_mc .and. mc_istep == 0) )then
+    if( ((params%do_md .and. md_istep == 0) .or. (params%do_mc) )then
       call cpu_time(time_read_xyz(1))
 #ifdef _MPIF90
       IF( rank == 0 )THEN
@@ -863,7 +864,7 @@ program turbogap
 #endif
 !   Now that all ranks know the size of n_sites, we allocate do_list
     if( .not. params%do_md .or. (params%do_md .and. md_istep == 0) .or. &
-                                (params%do_mc .and. mc_istep == 0) )then
+                                (params%do_mc ) )then
       allocate( do_list(1:n_sites) )
       do_list = .true.
     end if
@@ -952,7 +953,7 @@ program turbogap
 !**************************************************************************
 !   If we are doing prediction, we run this chunk of code
     if( params%do_prediction .or. params%write_soap .or. params%write_derivatives .or. &
-                                                       (params%do_mc .and. mc_istep == 0))then
+                                                       (params%do_mc ))then
       call cpu_time(time1)
 
 !     We only need to reallocate the arrays if the number of sites changes
@@ -1024,7 +1025,7 @@ program turbogap
         virial_vdw = 0.d0
       end if
 
-      if( params%do_prediction .or. ( params%do_mc .and. mc_istep == 0) )then
+      if( params%do_prediction .or. ( params%do_mc ) )then
 !       Assign the e0 to each atom according to its species
 !        do i = 1, n_sites
         do i = i_beg, i_end
@@ -1213,7 +1214,7 @@ program turbogap
 
 
 !     Compute vdW energies and forces
-      if( any( soap_turbo_hypers(:)%has_vdw ) .and. ( params%do_prediction .or. ( params%do_mc .and. mc_istep == 0) ) &
+      if( any( soap_turbo_hypers(:)%has_vdw ) .and. ( params%do_prediction .or. ( params%do_mc) ) &
                                                      .and. params%vdw_type == "ts" )then
         call cpu_time(time_vdw(1))
 #ifdef _MPIF90
@@ -1258,7 +1259,7 @@ program turbogap
 
 
 
-      if( params%do_prediction .or. ( params%do_mc .and. mc_istep == 0 ) )then
+      if( params%do_prediction .or. ( params%do_mc  ) )then
 !       Loop through distance_2b descriptors
         do i = 1, n_distance_2b
           call cpu_time(time_2b(1))
@@ -1497,13 +1498,120 @@ program turbogap
 !       Now we do a monte-carlo step: we choose what the steps are from the available list and then choose a random number
 !       -- We have the list of move types in params%mc_types and the number params%n_mc_types --
 !       >> First generate a random number in the range of the number of
-        n_mc = floor( len( params%mc_types ) * random_number(randf) ) + 1
-        mc_move = params%mc_types(n_mc)
+
+        if (mc_istep > 0)then
+           !       Evaluate the conditions for acceptance
+           !       > We have the mc conditions in mc.f90
+           !       > We care about comparing e_store to the energy of the new configuration based on the mc_movw
+
+           call from_properties_to_image(images(2), positions, velocities, masses, &
+                forces, a_box, b_box, c_box, energy, E_kinetic, &
+                species, species_supercell, n_sites, indices, fix_atom, &
+                xyz_species, xyz_species_supercell)
+
+           v_uc = dot_product( cross_product(a_box, b_box), c_box ) / (dfloat(indices(1)*indices(2)*indices(3)))
+           random_number(ranf)
+           if (mc_move == "move")then
+              monte_carlo_move(p_accept, energy, e_mc_prev, params%t_beg)
+
+              !     Not implemented the volume bias yet
+           else if (mc_move == "insertion")then
+              monte_carlo_insert(p_accept, energy, e_mc_prev, params%t_beg, params%mc_mu, &
+                   mass_types(mc_id), V_uc, 1.0d0, n_mc_species)
+           else if (mc_move == "removal")then
+              monte_carlo_insert(p_accept, energy, e_mc_prev, params%t_beg, params%mc_mu, &
+                   mass_types(mc_id), V_uc, 1.0d0, n_mc_species)
+
+           else if (mc_move == "volume")then
+              monte_carlo_insert(p_accept, energy, e_mc_prev, params%t_beg, V_uc, V_uc_prev, &
+                   params%p_beg, n_mc_species)
+
+           end if
+
+
+           !    ACCEPT OR REJECT
+
+           if (p_accept > ranf)then
+              !             Accept
+              call from_image_to_properties(images(2), positions, velocities, masses, &
+                   forces, a_box, b_box, c_box, energy, E_kinetic, &
+                   species, species_supercell, n_sites, indices, fix_atom, &
+                   xyz_species, xyz_species_supercell)
+
+
+              call write_extxyz( n_sites, 0, 1.0d0, 0.0d0, 0.0d0, &
+                   a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
+                   virial, xyz_species, &
+                   positions(1:3, 1:n_sites), velocities, &
+                   forces, energies(1:n_sites), masses, hirshfeld_v, &
+                   params%write_property, params%write_array_property, fix_atom, &
+                   "mc_initial.xyz", .true. )
+
+!          Add acceptance to the log file else dont
+
+              write(100, "(A, 1X, I8, 1X, F20.8, 1X, F20.8)", advance="no") &
+                   mc_move, 1, energy, e_mc_prev
+           else
+              !          Revert back to old config
+              write(100, "(A, 1X, I8, 1X, F20.8, 1X, F20.8)", advance="no") &
+                   mc_move, 0, energy, e_mc_prev
+
+           end if
+
 
         if (mc_istep == 0)then
            write(*,*) 'MC Moves parsed:'
            write(*,*) mc_types
+
+           e_mc_prev = energy
+           v_uc_prev = dot_product( cross_product(a_box, b_box), c_box ) / (dfloat(indices(1)*indices(2)*indices(3)))
+           !    get the mc species type
+           do i = 1, n_species
+              if (species_type(i) == mc_species) mc_id=i
+           end do
+
+           
+           !       Now use the image construct to store an image
+           if( .not. allocated( images ) )then
+              allocate( images(1:2) )
+           end if
+           velocities = 0.d0
+           call from_properties_to_image(images(1), positions, velocities, masses, &
+                forces, a_box, b_box, c_box, energy, E_kinetic, &
+                species, species_supercell, n_sites, indices, fix_atom, &
+                xyz_species, xyz_species_supercell)
+! setting "md_istep" to 0 to overwrite
+           call write_extxyz( n_sites, 0, 1.0d0, 0.0d0, 0.0d0, &
+                           a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
+                           virial, xyz_species, &
+                           positions(1:3, 1:n_sites), velocities, &
+                           forces, energies(1:n_sites), masses, hirshfeld_v, &
+                           params%write_property, params%write_array_property, fix_atom, &
+                           "mc_current.xyz", .true. )
+! setting "md_istep" to 1 to append
+           call write_extxyz( n_sites, 1, 1.0d0, 0.0d0, 0.0d0, &
+                           a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
+                           virial, xyz_species, &
+                           positions(1:3, 1:n_sites), velocities, &
+                           forces, energies(1:n_sites), masses, hirshfeld_v, &
+                           params%write_property, params%write_array_property, fix_atom, &
+                           "mc_all.xyz", .false. )
+        else
+! setting "md_istep" to 1 to append
+           call write_extxyz( n_sites, 1, 1.0d0, 0.0d0, 0.0d0, &
+                           a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
+                           virial, xyz_species, &
+                           positions(1:3, 1:n_sites), velocities, &
+                           forces, energies(1:n_sites), masses, hirshfeld_v, &
+                           params%write_property, params%write_array_property, fix_atom, &
+                           "mc_all.xyz", .true. )
         end if
+
+
+
+        n_mc = floor( len( params%mc_types ) * random_number(randf) ) + 1
+        mc_move = params%mc_types(n_mc)
+
 
         write(*,*)'                                       |'
         write(*,'(A,1X,I0,1X,A)')' MC Iteration:', mc_istep, ' |'
@@ -1525,9 +1633,8 @@ program turbogap
         end if
         if (mc_move == "insertion" .or. mc_move == "removal" )then
 
-
            do i = 1, n_sites
-              if (species(i) == params%mc_species)then
+              if (xyz_species(i) == params%mc_species)then
                  n_mc_species = n_mc_species + 1
               end if
            end do
@@ -1537,65 +1644,123 @@ program turbogap
 
            n_mc_species = 0
            do i = 1, n_sites
-              if (species(i) == params%mc_species)then
+              if (xyz_species(i) == params%mc_species)then
                  n_mc_species = n_mc_species + 1
                  species_idx(n_mc_species) = i
               end if
            end do
 
-
+           n_sites_prev = n_sites
 
            if (mc_move == "insertion")then
               n_sites = n_sites + 1
-           else
+           else if (mc_move == "removal")then
               n_sites = n_sites - 1
               idx = species_idx( floor( random_number(ranf) * n_mc_species ) + 1 )
-              !             Get the index of the removes               #
-         call read_xyz(params%atoms_file, .true., params%all_atoms, params%do_timing, &
-                    n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
-                    positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
-                    xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
-                    n_sites, .false., fix_atom, params%t_beg, params%write_array_property(6) )
-
            end if
 
 
-           if( allocated(energies) )deallocate( energies, energies_soap, energies_2b, energies_3b, energies_core_pot, &
-                this_energies, energies_vdw, this_forces, positions )
+           if( allocated(energies) )deallocate( energies, positions, velocities, masses, &
+                forces, species, species_supercell, &
+                xyz_species, xyz_species_supercell, velocities)
            allocate( energies(1:n_sites) )
-           allocate( this_energies(1:n_sites) )
-           allocate( energies_soap(1:n_sites) )
-           allocate( energies_2b(1:n_sites) )
-           allocate( energies_3b(1:n_sites) )
-           allocate( energies_core_pot(1:n_sites) )
-           allocate( energies_vdw(1:n_sites) )
-           !       This needs to be allocated even if no force prediction is needed:
-           allocate( this_forces(1:3, 1:n_sites) )
+           allocate( forces(1:3, 1:n_sites) )
+           allocate( velocities(1:3, 1:n_sites) )
            allocate( positions(1:3, 1:n_sites) )
+           allocate( xyz_species(1:n_sites) )
+!           allocate( species(1:n_sites) )
+           velocities = 0.0d0
+           forces = 0.0d0
 
+
+           if (.not. allocated(masses_temp))allocate(masses_temp(1:size(masses,1)))
+           masses_temp(1:size(masses,1)) = masses(1:size(masses,1))
+           if (.not. allocated(hirshfeld_v_temp))allocate(hirshfeld_v_temp(1:size(hirshfeld_v,1)))
+           hirshfeld_v_temp(1:size(hirshfeld_v,1)) = hirshfeld_v(1:size(hirshfeld_v,1))
 
            if (mc_move == "insertion")then
               positions(1:3,1:n_sites-1) = positions_prev(1:3,1:n_sites-1)
-!          Now choose a position
+              positions(1:3,1:n_sites-1) = positions_prev(1:3,1:n_sites-1)
+              idx = n_sites
+              !          Now choose a position
+              positions(1,n_sites) = random_number(ranf)*norm2(a_box)
+              positions(2,n_sites) = random_number(ranf)*norm2(b_box)
+              positions(3,n_sites) = random_number(ranf)*norm2(c_box)
+
+              call wrap_pbc(positions(1:3,1:n_sites), a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)))
+              energies(1:n_sites)                = 0.0d0
+              forces(1:3, 1:n_sites)             = 0.0d0
+
+              xyz_species(1:n_sites-1)           = images(1)%xyz_species(1:n_sites-1)
+              species(1:n_sites-1)               = images(1)%species(1:n_sites-1)
+
+              xyz_species(n_sites)               = params%mc_species
+              !  If the number of species in total has changed then one must change the list perhaps
+              ! check_species = .false.
+              ! do i = 1,n_species
+              !    if (species_type(i) == params%mc_species)then
+              !       check_species = .true.
+              !    end if
+              ! end do
+
+              ! if (check_species == .false. )n_species=n_species + 1
+
+              deallocate(masses)
+              allocate(masses(1:n_sites))
+              masses(1:n_sites-1) = masses_temp(1:n_sites-1)
+              masses(n_sites) = masses_types(mc_id)
+
+              deallocate(hirshfeld_v)
+              allocate(hirshfeld_v(1:n_sites))
+              hirshfeld_v(1:n_sites-1) = hirshfeld_v_temp(1:n_sites-1)
+              ! ignoring the hirshfeld v just want to get rough implementation done
+              hirshfeld_v(n_sites) = hirshfeld_v(n_sites-1)
+
+                 ! if allocated(species_type_temp)deallocate(species_type_temp)
+                 ! allocate(species_type_temp(1:n_species))
+                 ! species_type_temp(1:n_species) = species_type(1:n_species)
+                 ! deallocate(species_type)
+                 ! allocate(species_type(1:n_species+1))
+                 ! species_type(1:n_species) = species_type_temp(1:n_species)
+
+                 !        The species is not in the list, add it
+
+              
+              ! species(1:n_sites-1)               = images(1)%species(1:n_sites-1)
+
+
            else if (mc_move == "removal")then
               do i = 1, n_sites
                  if (i < idx)then
                     positions(1:3,i) = positions_prev(1:3,i)
+
+                    xyz_species(i)           = images(1)%xyz_species(i)
+                    species(i)               = images(1)%species(i)
+
                  else
                     positions(1:3,i) = positions_prev(1:3,i+1)
+                    xyz_species(i)           = images(1)%xyz_species(i+1)
+                    species(i)               = images(1)%species(i+1)
+
                  end if
            end if
 
+           call from_image_to_properties(images(2), positions, velocities, masses, &
+                forces, a_box, b_box, c_box, energy, E_kinetic, &
+                species, species_supercell, n_sites, indices, fix_atom, &
+                xyz_species, xyz_species_supercell)
 
-           call build_neighbors_list(positions, a_box, b_box, c_box, params%do_timing, &
-                              species_supercell, rcut_max, n_atom_pairs, rjs, &
-                              thetas, phis, xyz, n_neigh, neighbors_list, neighbor_species, n_sites, indices, &
-                              rebuild_neighbors_list, do_list, rank )
-
+           call write_extxyz( n_sites, 0, 1.0d0, 0.0d0, 0.0d0, &
+                           a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
+                           virial, xyz_species, &
+                           positions(1:3, 1:n_sites), velocities, &
+                           forces, energies(1:n_sites), masses, hirshfeld_v, &
+                           params%write_property, params%write_array_property, fix_atom, &
+                           "mc_trial.xyz", .true. )
 
         end if
 
-
+        mc_istep = mc_istep + 1
 
         
      end if
@@ -1613,10 +1778,19 @@ program turbogap
         write(*,'(A,1X,F18.8,1X,A)')' core_pot energy:', sum(energies_core_pot), 'eV |'
         write(*,'(A,1X,F23.8,1X,A)')' vdw energy:', sum(energies_vdw), 'eV |'
         write(*,'(A,1X,F21.8,1X,A)')' Total energy:', sum(energies), 'eV |'
-        write(*,*)'                                       |'
-        write(*,*)'Energy & forces in "trajectory_out.xyz"|'
-        write(*,*)'                                       |'
-        write(*,*)'.......................................|'
+
+        if ( .not. params%do_mc)then
+           write(*,*)'                                       |'
+           write(*,*)'Energy & forces in "trajectory_out.xyz"|'
+           write(*,*)'                                       |'
+           write(*,*)'.......................................|'
+        else
+           write(*,*)'                                       |'
+           write(*,*)' MC configs in "mc_current.xyz" and    |'
+           write(*,*)'               "mc_trial.xyz"        |'
+           write(*,*)'.......................................|'
+        end if
+
 #ifdef _MPIF90
         END IF
 #endif
@@ -1750,10 +1924,10 @@ end if
 !     Here we write thermodynamic information -> THIS NEEDS CLEAN UP AND IMPROVEMENT
 
       if ( params%do_mc .and. mc_istep == 0 )then
-         open(unit=10, file="mc.log", status="unknown")
+         open(unit=100, file="mc.log", status="unknown")
       end if
       if ( params%do_mc .and. mc_istep > 0  )then
-         open(unit=10, file="mc.log", status="old", position="append")
+         open(unit=100, file="mc.log", status="old", position="append")
       end if
 
       if( md_istep == 0 .and. .not. params%do_nested_sampling )then
