@@ -94,7 +94,7 @@ module types
 
     character*1024 :: atoms_file
     character*32 :: vdw_type = "none"
-    character*32 allocatable ::  mc_types(:)
+    character*32, allocatable ::  mc_types(:)
     character*8, allocatable :: species_types(:)
     character*16 :: optimize = "vv"
     character*32 :: barostat = "none", thermostat = "none", barostat_sym = "isotropic", mc_species = "none"

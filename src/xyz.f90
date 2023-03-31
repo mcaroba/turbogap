@@ -78,7 +78,7 @@ module xyz_module
     real*8, intent(in) :: hirshfeld_v(:)
     integer, intent(in) :: Nat, md_istep
     character(len=*), intent(in) :: species(:), filename
-    logical, intent(in) :: write_property(:), write_array_property(:), fix_atom(:,:), overwrite(:)
+    logical, intent(in) :: write_property(:), write_array_property(:), fix_atom(:,:), overwrite
 
 !   Internal variables:
     real*8 :: vol
@@ -100,7 +100,7 @@ module xyz_module
       end if
     end do
 
-    if( md_istep == 0 .or. md_istep == -1 .or. overwrite )then
+    if( md_istep == 0 .or. (md_istep == -1 .or. overwrite) )then
       open(unit=10, file=filename, status="unknown")
     else
       open(unit=10, file=filename, status="old", position="append")

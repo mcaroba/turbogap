@@ -32,7 +32,7 @@ module read_files
   use types
   use splines
   use vdw
-  use soap_turbo_compress_module
+!  use soap_turbo_compress_module
   use xyz_module
   use md
 
@@ -631,8 +631,8 @@ end if
         read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_nsteps
       else if(keyword=='n_mc_types')then
         backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, (params%n_mc_types(nw),nw=1,params%n_mc_types)
-        allocate( params%mc_types(1:n_mc_types) )
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%n_mc_types
+        allocate( params%mc_types(1:params%n_mc_types) )
       else if(keyword=='mc_types')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, (params%mc_types(nw),nw=1,params%n_mc_types)
@@ -647,7 +647,7 @@ end if
            end do
            if( .not. valid_choice )then
               if( rank == 0 )then
-                 write(*,*) "ERROR -> Invalid mc_type keyword:", params%mc_type(j)
+                 write(*,*) "ERROR -> Invalid mc_type keyword:", params%mc_types(j)
                  write(*,*) "This is a list of valid options:"
                  write(*,*) implemented_mc_types
               end if
