@@ -1262,7 +1262,9 @@ program turbogap
 !             This reduces j2 to the primitive unit cell
               j_receive(k) = j2 - jx*n_sites - jy*indices(1)*n_sites - jz*indices(1)*indices(2)*n_sites
 !             Now we need to provide the correct supercell tag for i2 !!!!!!!!!!!!!!!!!!!!! NOT SURE IF THIS IS CORRECT!!!!!
-              i_receive(k) = i2 + jx*n_sites + jy*indices(1)*n_sites + jz*indices(1)*indices(2)*n_sites
+!              i_receive(k) = i2 + jx*n_sites + jy*indices(1)*n_sites + jz*indices(1)*indices(2)*n_sites
+              i_receive(k) = i2 + modulo(-jx, indices(1))*n_sites + modulo(-jy, indices(2))*indices(1)*n_sites &
+                                + modulo(-jz, indices(3))*indices(1)*indices(2)*n_sites
             end do
           end do
 !
