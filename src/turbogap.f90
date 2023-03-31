@@ -56,13 +56,13 @@ program turbogap
   real*8 :: rcut_max, a_box(1:3), b_box(1:3), c_box(1:3), max_displacement, energy, energy_prev
   real*8 :: virial(1:3, 1:3), this_virial(1:3, 1:3), virial_soap(1:3, 1:3), virial_2b(1:3, 1:3), &
             virial_3b(1:3,1:3), virial_core_pot(1:3, 1:3), virial_vdw(1:3, 1:3), &
-            this_virial_vdw(1:3, 1:3), v_uc, v_uc_prev, eVperA3tobar = 1602176.6208d0, ranf, ranv(1:3), disp, &
-            e_mc_prev, p_accept
+            this_virial_vdw(1:3, 1:3), v_uc, v_uc_prev, eVperA3tobar = 1602176.6208d0, &
+            ranf, ranv(1:3), disp(1:3), e_mc_prev, p_accept
   real*8, allocatable :: energies(:), forces(:,:), energies_soap(:), forces_soap(:,:), this_energies(:), &
                          this_forces(:,:), &
                          energies_2b(:), forces_2b(:,:), energies_3b(:), forces_3b(:,:), &
                          energies_core_pot(:), forces_core_pot(:,:), &
-                         velocities(:,:), masses_types(:), masses(:), hirshfeld_v(:), hirshfeld_v_temp(:) &
+                         velocities(:,:), masses_types(:), masses(:), hirshfeld_v(:), hirshfeld_v_temp(:), &
                          hirshfeld_v_cart_der(:,:), masses_temp(:)
   real*8, allocatable, target :: this_hirshfeld_v(:), this_hirshfeld_v_cart_der(:,:)
   real*8, pointer :: this_hirshfeld_v_pt(:), this_hirshfeld_v_cart_der_pt(:,:)
@@ -72,11 +72,11 @@ program turbogap
             time_gap, time_soap(1:3), time_2b(1:3), time_3b(1:3), time_read_input(1:3), time_read_xyz(1:3), &
             time_mpi(1:3) = 0.d0, time_core_pot(1:3), time_vdw(1:3), instant_pressure, lv(1:3,1:3), &
             time_mpi_positions(1:3) = 0.d0, time_mpi_ef(1:3) = 0.d0, time_md(3) = 0.d0, &
-            instant_pressure_tensor(1:3, 1:3), time_step, md_time
+            instant_pressure_tensor(1:3, 1:3), time_step, md_time, instant_pressure_prev
   integer, allocatable :: displs(:), displs2(:), counts(:), counts2(:)
-  integer :: update_bar, n_sparse, idx
+  integer :: update_bar, n_sparse, idx, gd_istep = 0
   logical, allocatable :: do_list(:), has_vdw_mpi(:), fix_atom(:,:)
-  logical :: rebuild_neighbors_list = .true., exit_loop = .true.
+  logical :: rebuild_neighbors_list = .true., exit_loop = .true., gd_box_do_pos = .true., restart_box_optim = .false.
   character*1 :: creturn = achar(13)
 
 
@@ -86,18 +86,18 @@ program turbogap
                           i_beg_list(:), i_end_list(:), j_beg_list(:), j_end_list(:), species_idx(:)
   integer :: n_sites, i, j, k, i2, j2, n_soap, k2, k3, l, n_sites_this, ierr, rank, ntasks, dim, n_sp, &
              n_pos, n_sp_sc, this_i_beg, this_i_end, this_j_beg, this_j_end, this_n_sites_mpi, n_sites_prev = 0, &
-             n_atom_pairs_by_rank_prev
+             n_atom_pairs_by_rank_prev, cPnz
   integer :: l_max, n_atom_pairs, n_max, ijunk, central_species = 0, n_atom_pairs_total
   integer :: iostatus, counter = 0, counter2
   integer :: which_atom = 0, n_species = 1, n_xyz, indices(1:3)
   integer :: radial_enhancement = 0
-  integer :: md_istep, mc_istep, n_mc, n_mc_species
+  integer :: md_istep, mc_istep, mc_id, n_mc, n_mc_species
 
   logical :: repeat_xyz = .true., overwrite = .false., check_species
 
   character*1024 :: filename, cjunk, file_compress_soap, file_alphas, file_soap, file_2b, file_alphas_2b, &
                     file_3b, file_alphas_3b, file_gap = "none"
-  character*64 :: keyword, filename
+  character*64 :: keyword
   character*16 :: lattice_string(1:9)
   character*8 :: i_char
   character*8, allocatable :: species_types(:), xyz_species(:), xyz_species_supercell(:), species_type_temp(:)
@@ -125,7 +125,7 @@ program turbogap
   integer, allocatable :: temp_1d_int(:), n_atom_pairs_by_rank(:), displ(:)
   integer, allocatable :: n_species_mpi(:), n_sparse_mpi_soap_turbo(:), dim_mpi(:), n_sparse_mpi_distance_2b(:), &
                           n_sparse_mpi_angle_3b(:), n_mpi_core_pot(:), vdw_n_sparse_mpi_soap_turbo(:), &
-                          n_neigh_local(:), n_nonzero_mpi(:)
+                          n_neigh_local(:), compress_P_nonzero_mpi(:)
   integer :: i_beg, i_end, n_sites_mpi, j_beg, j_end, size_soap_turbo, size_distance_2b, size_angle_3b
   integer :: n_nonzero
   logical, allocatable :: compress_soap_mpi(:)
@@ -215,7 +215,7 @@ program turbogap
   write(*,*)'                       mcaroba@gmail.com                         |'
   write(*,*)'                      miguel.caro@aalto.fi                       |'
   write(*,*)'                                                                 |'
-  write(*,*)'       Department of Electrical Engineering and Automation       |'
+  write(*,*)'          Department of Chemistry and Materials Science          |'
   write(*,*)'                     Aalto University, Finland                   |'
   write(*,*)'                                                                 |'
   write(*,*)'.................................................................|'
@@ -233,7 +233,7 @@ program turbogap
   write(*,*)'                                                                 |'
   write(*,*)'.................................................................|'
   write(*,*)'                                                                 |'
-  write(*,*)'                     Last updated: Jul. 2022                     |'
+  write(*,*)'                     Last updated: Mar. 2023                     |'
   write(*,*)'                                        _________________________/'
   write(*,*)'.......................................|'
 #ifdef _MPIF90
@@ -404,7 +404,7 @@ program turbogap
     allocate( n_sparse_mpi_distance_2b(1:n_distance_2b) )
     allocate( n_sparse_mpi_angle_3b(1:n_angle_3b) )
     allocate( n_mpi_core_pot(1:n_core_pot) )
-    allocate( n_nonzero_mpi(1:n_soap_turbo) )
+    allocate( compress_P_nonzero_mpi(1:n_soap_turbo) )
     IF( rank == 0 )THEN
       n_species_mpi = soap_turbo_hypers(1:n_soap_turbo)%n_species
       n_sparse_mpi_soap_turbo = soap_turbo_hypers(1:n_soap_turbo)%n_sparse
@@ -415,7 +415,7 @@ program turbogap
       n_sparse_mpi_distance_2b = distance_2b_hypers(1:n_distance_2b)%n_sparse
       n_sparse_mpi_angle_3b = angle_3b_hypers(1:n_angle_3b)%n_sparse
       n_mpi_core_pot = core_pot_hypers(1:n_core_pot)%n
-      n_nonzero_mpi = soap_turbo_hypers(1:n_soap_turbo)%compress_P_nonzero
+      compress_P_nonzero_mpi = soap_turbo_hypers(1:n_soap_turbo)%compress_P_nonzero
     END IF
     call cpu_time(time_mpi(1))
     call mpi_bcast(n_species_mpi, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
@@ -427,13 +427,14 @@ program turbogap
     call mpi_bcast(n_sparse_mpi_distance_2b, n_distance_2b, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
     call mpi_bcast(n_sparse_mpi_angle_3b, n_angle_3b, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
     call mpi_bcast(n_mpi_core_pot, n_core_pot, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-    call mpi_bcast(n_nonzero_mpi, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+    call mpi_bcast(compress_P_nonzero_mpi, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
     call cpu_time(time_mpi(2))
     time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
     IF( rank /= 0 )THEN
+
       call allocate_soap_turbo_hypers(n_soap_turbo, n_species_mpi, n_sparse_mpi_soap_turbo, dim_mpi, &
-                                      vdw_n_sparse_mpi_soap_turbo, has_vdw_mpi, compress_soap_mpi, &
-                                      n_nonzero_mpi, soap_turbo_hypers)
+                                      compress_P_nonzero_mpi, vdw_n_sparse_mpi_soap_turbo, &
+                                      has_vdw_mpi, compress_soap_mpi, soap_turbo_hypers)
       call allocate_distance_2b_hypers(n_distance_2b, n_sparse_mpi_distance_2b, distance_2b_hypers)
       call allocate_angle_3b_hypers(n_angle_3b, n_sparse_mpi_angle_3b, angle_3b_hypers)
       call allocate_core_pot_hypers(n_core_pot, n_mpi_core_pot, core_pot_hypers)
@@ -483,9 +484,10 @@ program turbogap
       call mpi_bcast(soap_turbo_hypers(i)%radial_enhancement, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(soap_turbo_hypers(i)%compress_soap, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
       if( soap_turbo_hypers(i)%compress_soap )then
-        call mpi_bcast(soap_turbo_hypers(i)%compress_P_i(1:n_nonzero), n_nonzero, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(soap_turbo_hypers(i)%compress_P_j(1:n_nonzero), n_nonzero, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(soap_turbo_hypers(i)%compress_P_el(1:n_nonzero), n_nonzero, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+        cPnz = soap_turbo_hypers(i)%compress_P_nonzero
+        call mpi_bcast(soap_turbo_hypers(i)%compress_P_el(1:cPnz), cPnz, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(soap_turbo_hypers(i)%compress_P_i(1:cPnz), cPnz, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(soap_turbo_hypers(i)%compress_P_j(1:cPnz), cPnz, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
       end if
       call mpi_bcast(soap_turbo_hypers(i)%has_vdw, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
       if( soap_turbo_hypers(i)%has_vdw )then
@@ -537,7 +539,7 @@ program turbogap
     time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
 !   Clean up
     deallocate( n_species_mpi, n_sparse_mpi_soap_turbo, dim_mpi, compress_soap_mpi, n_sparse_mpi_distance_2b, &
-                n_sparse_mpi_angle_3b, n_mpi_core_pot )
+         n_sparse_mpi_angle_3b, n_mpi_core_pot, compress_P_nonzero_mpi )
 #endif
   else
 #ifdef _MPIF90
@@ -693,20 +695,20 @@ program turbogap
 
     if( params%do_md )then
        md_istep = md_istep + 1
-    elseif( params%do_mc .and. (.not. (mc_move == "md")))then
+    else if( params%do_mc .and. (.not. (mc_move == "md")))then
        mc_istep = mc_istep + 1
     else
       n_xyz = n_xyz + 1
     end if
 
-!   Update progress bar
-    if( params%do_md .and. params%print_progress .and. &
-        ( real(md_istep)/real(params%md_nsteps)*36.d0 > real(counter)-1.d-10 .or. md_istep == params%md_nsteps ) )then
+    !   Update progress bar
+
+    if( params%do_md .and. params%print_progress  .and. counter == update_bar)then
 #ifdef _MPIF90
       IF( rank == 0 )THEN
 #endif
       do j = 1, 36+3
-images(1)%xyz_species(1:n_sites-1)        write(*,"(A)", advance="no") creturn
+         write(*,"(A)", advance="no") creturn
       end do
       write (*,"(1X,A)",advance="no") "["
       do i = 1, 36*md_istep/params%md_nsteps
@@ -722,6 +724,8 @@ images(1)%xyz_species(1:n_sites-1)        write(*,"(A)", advance="no") creturn
 #ifdef _MPIF90
       END IF
 #endif
+      counter = 1
+    else
       counter = counter + 1
     end if
 !**************************************************************************
@@ -736,7 +740,7 @@ images(1)%xyz_species(1:n_sites-1)        write(*,"(A)", advance="no") creturn
 !   This chunk of code does all the reading/neighbor builds etc for each snapshot
 !   or MD step
 !   Read in XYZ file and build neighbors lists
-    if( ((params%do_md .and. md_istep == 0) .or. (params%do_mc) )then
+    if( (params%do_md .and. md_istep == 0) .or. (params%do_mc) )then
       call cpu_time(time_read_xyz(1))
 #ifdef _MPIF90
       IF( rank == 0 )THEN
@@ -1491,6 +1495,7 @@ images(1)%xyz_species(1:n_sites-1)        write(*,"(A)", advance="no") creturn
 !       Add up all the energy terms
         energies = energies + energies_soap + energies_2b + energies_3b + energies_core_pot + energies_vdw
         energy_prev = energy
+        instant_pressure_prev = instant_pressure
         energy = sum(energies)
      end if
 
@@ -1510,20 +1515,20 @@ images(1)%xyz_species(1:n_sites-1)        write(*,"(A)", advance="no") creturn
                 xyz_species, xyz_species_supercell)
 
            v_uc = dot_product( cross_product(a_box, b_box), c_box ) / (dfloat(indices(1)*indices(2)*indices(3)))
-           random_number(ranf)
+           call random_number(ranf)
            if (mc_move == "move")then
-              monte_carlo_move(p_accept, energy, e_mc_prev, params%t_beg)
+              call monte_carlo_move(p_accept, energy, e_mc_prev, params%t_beg)
 
               !     Not implemented the volume bias yet
            else if (mc_move == "insertion")then
-              monte_carlo_insert(p_accept, energy, e_mc_prev, params%t_beg, params%mc_mu, &
-                   mass_types(mc_id), V_uc, 1.0d0, n_mc_species)
+              call monte_carlo_insert(p_accept, energy, e_mc_prev, params%t_beg, params%mc_mu, &
+                   masses_types(mc_id), V_uc, 1.0d0, n_mc_species)
            else if (mc_move == "removal")then
-              monte_carlo_insert(p_accept, energy, e_mc_prev, params%t_beg, params%mc_mu, &
-                   mass_types(mc_id), V_uc, 1.0d0, n_mc_species)
+              call monte_carlo_insert(p_accept, energy, e_mc_prev, params%t_beg, params%mc_mu, &
+                   masses_types(mc_id), V_uc, 1.0d0, n_mc_species)
 
            else if (mc_move == "volume")then
-              monte_carlo_insert(p_accept, energy, e_mc_prev, params%t_beg, V_uc, V_uc_prev, &
+              call monte_carlo_volume(p_accept, energy, e_mc_prev, params%t_beg, V_uc, V_uc_prev, &
                    params%p_beg, n_mc_species)
 
            end if
@@ -1561,13 +1566,13 @@ images(1)%xyz_species(1:n_sites-1)        write(*,"(A)", advance="no") creturn
 
         if (mc_istep == 0)then
            write(*,*) 'MC Moves parsed:'
-           write(*,*) mc_types
+           write(*,*) params%mc_types
 
            e_mc_prev = energy
            v_uc_prev = dot_product( cross_product(a_box, b_box), c_box ) / (dfloat(indices(1)*indices(2)*indices(3)))
            !    get the mc species type
            do i = 1, n_species
-              if (species_type(i) == mc_species) mc_id=i
+              if (species_types(i) == trim(params%mc_species)) mc_id=i
            end do
 
            
@@ -1609,7 +1614,8 @@ images(1)%xyz_species(1:n_sites-1)        write(*,"(A)", advance="no") creturn
 
 
 
-        n_mc = floor( len( params%mc_types ) * random_number(randf) ) + 1
+        call random_number(ranf)
+        n_mc = floor( len( params%mc_types ) * ranf ) + 1
         mc_move = params%mc_types(n_mc)
 
 
@@ -1624,9 +1630,9 @@ images(1)%xyz_species(1:n_sites-1)        write(*,"(A)", advance="no") creturn
         positions_prev(1:3,1:n_sites) = positions(1:3,1:n_sites)
 
         if (mc_move == "move")then
-!       Choose a random atom and move it half of the maximum move
-           disp = params%mc_move_max * ( random_number(ranv) - 0.5d0 )
-
+           !       Choose a random atom and move it half of the maximum move
+           call random_number(ranv)
+           disp= params%mc_move_max * ( ranv - 0.5d0 )
 !       Now pick a random index and displace
 
            positions(1:3, idx) = positions(1:3, idx) + disp
@@ -1639,7 +1645,7 @@ images(1)%xyz_species(1:n_sites-1)        write(*,"(A)", advance="no") creturn
               end if
            end do
 
-           if allocated(species_idx)deallocate(species_idx)
+           if( allocated(species_idx))deallocate(species_idx)
            allocate( species_idx(1:n_mc_species) )
 
            n_mc_species = 0
@@ -1656,13 +1662,14 @@ images(1)%xyz_species(1:n_sites-1)        write(*,"(A)", advance="no") creturn
               n_sites = n_sites + 1
            else if (mc_move == "removal")then
               n_sites = n_sites - 1
-              idx = species_idx( floor( random_number(ranf) * n_mc_species ) + 1 )
+              call  random_number(ranf)
+              idx = species_idx( floor( ranf * n_mc_species ) + 1 )
            end if
 
 
            if( allocated(energies) )deallocate( energies, positions, velocities, masses, &
                 forces, species, species_supercell, &
-                xyz_species, xyz_species_supercell, velocities)
+                xyz_species, xyz_species_supercell)
            allocate( energies(1:n_sites) )
            allocate( forces(1:3, 1:n_sites) )
            allocate( velocities(1:3, 1:n_sites) )
@@ -1683,9 +1690,10 @@ images(1)%xyz_species(1:n_sites-1)        write(*,"(A)", advance="no") creturn
               positions(1:3,1:n_sites-1) = positions_prev(1:3,1:n_sites-1)
               idx = n_sites
               !          Now choose a position
-              positions(1,n_sites) = random_number(ranf)*norm2(a_box)
-              positions(2,n_sites) = random_number(ranf)*norm2(b_box)
-              positions(3,n_sites) = random_number(ranf)*norm2(c_box)
+              call random_number(ranv)
+              positions(1,n_sites) = ranv(1)*norm2(a_box)
+              positions(2,n_sites) = ranv(2)*norm2(b_box)
+              positions(3,n_sites) = ranv(3)*norm2(c_box)
 
               call wrap_pbc(positions(1:3,1:n_sites), a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)))
               energies(1:n_sites)                = 0.0d0
@@ -1743,6 +1751,7 @@ images(1)%xyz_species(1:n_sites-1)        write(*,"(A)", advance="no") creturn
                     species(i)               = images(1)%species(i+1)
 
                  end if
+              end do
            end if
 
            call from_image_to_properties(images(2), positions, velocities, masses, &
@@ -1891,20 +1900,29 @@ end if
                              forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), time_step, &
                              md_istep == 0, a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
                              fix_atom(1:3, 1:n_sites))
-      else if( params%optimize == "gd" .or. params%optimize == "gd-box" )then
-        a_box = a_box/dfloat(indices(1))
-        b_box = b_box/dfloat(indices(2))
-        c_box = c_box/dfloat(indices(3))
+     else if( params%optimize == "gd" )then
+        call gradient_descent(positions(1:3, 1:n_sites), positions_prev(1:3, 1:n_sites), velocities(1:3, 1:n_sites), &
+             forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), &
+             params%max_opt_step, md_istep == 0, a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), &
+             c_box/dfloat(indices(3)), fix_atom(1:3, 1:n_sites), energy)
+     else if( (params%optimize == "gd-box" .or. params%optimize == "gd-box-ortho") .and. gd_box_do_pos )then
+!       We propagate the positions
         call gradient_descent(positions(1:3, 1:n_sites), positions_prev(1:3, 1:n_sites), velocities(1:3, 1:n_sites), &
                               forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), &
-                              params%max_opt_step, md_istep == 0, a_box, b_box, &
-                              c_box, fix_atom(1:3, 1:n_sites), energy, params%optimize == "gd-box", &
-                              [virial(1,1), virial(2,2), virial(3,3), virial(2,3), virial(1,3), virial(1,2)], &
-                              [.true., .true., .true., .true., .true., .true.], params%max_opt_step_eps )
-        a_box = a_box*dfloat(indices(1))
-        b_box = b_box*dfloat(indices(2))
-        c_box = c_box*dfloat(indices(3))
-      end if
+                              params%max_opt_step, gd_istep == 0, a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), &
+                              c_box/dfloat(indices(3)), fix_atom(1:3, 1:n_sites), energy)
+        if( gd_istep > 1 .and. abs(energy-energy_prev) < params%e_tol*dfloat(n_sites) .and. maxval(forces) < params%f_tol )then
+!         If the position optimization is converged (energy only) we set the code to do the box relaxation (below)
+          gd_box_do_pos = .false.
+          gd_istep = 0
+        else
+          gd_istep = gd_istep + 1
+       end if
+     else
+        !       If nothing happens we still update these variables
+        positions_prev(1:3, 1:n_sites) = positions(1:3, 1:n_sites)
+        forces_prev(1:3, 1:n_sites) = forces(1:3, 1:n_sites)
+     end if
 !     Compute kinetic energy from current velocities. Because Velocity Verlet
 !     works with the velocities at t-dt (except for the first time step) we
 !     have to compute the velocities after call Verlet
@@ -1937,7 +1955,8 @@ end if
       else
          open(unit=10, file="thermo.log", status="old", position="append")
       end if
-      if( .not. params%do_mc .and. (md_istep == 0 .or. md_istep == params%md_nsteps .or. modulo(md_istep, params%write_thermo) == 0) )then
+      if( .not. params%do_mc .and. (md_istep == 0 .or. md_istep == params%md_nsteps &
+           .or. modulo(md_istep, params%write_thermo) == 0) )then
 !       Organize this better so that the user can have more freedom about what gets printed to thermo.log
 !       There should also be a header preceded by # specifying what gets printed
         write(10, "(I10, 1X, F16.4, 1X, F16.4, 1X, F20.8, 1X, F20.8, 1X, F20.8)", advance="no") &
@@ -1956,14 +1975,22 @@ end if
       close(10)
 !
 !     Check if we have converged a relaxation calculation
+!     Check if we have converged a relaxation calculation
       if( params%do_md .and. params%optimize == "gd" .and. md_istep > 0 .and. &
-          abs(energy-energy_prev) < params%e_tol .and. maxval(forces) < params%f_tol .and. rank == 0 )then
+          abs(energy-energy_prev) < params%e_tol*dfloat(n_sites) .and. maxval(forces) < params%f_tol .and. rank == 0 )then
         exit_loop = .true.
-      else if( params%do_md .and. params%optimize == "gd-box" .and. md_istep > 0 .and. &
-               abs(energy-energy_prev) < params%e_tol .and. maxval(abs(virial)) < params%e_tol .and. &
+!     THIS CONDITION ON INSTANT PRESSURE WILL NEED TO BE FINE TUNED, TO ACCOUNT FOR ARBITRARY TARGET PRESSURES
+!     BUT ALSO TO ACCOMMODATE NON-TRICLINIC TARGET BOX SHAPES, WHERE IT MIGHT NOT BE POSSIBLE TO CONVERGE THE
+!     TOTAL PRESSURE BELOW A CERTAIN MINIMUM (DUE TO THE BOX SHAPE CONSTRAINTS)
+      else if( params%do_md .and. (params%optimize == "gd-box" .or. params%optimize == "gd-box-ortho") .and. gd_istep > 1 .and. &
+               abs(energy-energy_prev) < params%e_tol*dfloat(n_sites) .and. &
+               abs(instant_pressure - instant_pressure_prev) < params%p_tol .and. &
                maxval(abs(forces)) < params%f_tol .and. rank == 0 )then
         exit_loop = .true.
       end if
+      if( params%do_md .and. params%optimize == "gd" .and. md_istep > 0 .and. &
+           abs(energy-energy_prev) < params%e_tol*dfloat(n_sites) .and. maxval(forces) < params%f_tol .and. rank == 0 )then
+         exit_loop = .true.
 
 !     We write out the trajectory file. We write positions_prev which is then one for which we have computed
 !     the properties. positions_prev and velocities are synchronous
@@ -2010,9 +2037,34 @@ end if
         call berendsen_barostat(positions(1:3, 1:n_sites), &
                                 params%p_beg + (params%p_end-params%p_beg)*dfloat(md_istep+1)/float(params%md_nsteps), &
                                 instant_pressure_tensor, params%barostat_sym, params%tau_p, params%gamma_p, time_step)
-      end if
+     else if( (params%optimize == "gd-box" .or. params%optimize == "gd-box-ortho") .and. .not. gd_box_do_pos )then
+        if( gd_istep > 1 .and. ( ( abs(energy-energy_prev) < params%e_tol*dfloat(n_sites) &
+             .and. abs(instant_pressure - instant_pressure_prev) < params%p_tol ) &
+             .or. restart_box_optim) )then
+           gd_box_do_pos = .true.
+           gd_istep = 0
+        else
+           !         We rewind positions and forces because they were already updated above
+           positions(1:3, 1:n_sites) = positions_prev(1:3, 1:n_sites)
+           forces(1:3, 1:n_sites) = forces_prev(1:3, 1:n_sites)
+           !
+           a_box = a_box/dfloat(indices(1))
+           b_box = b_box/dfloat(indices(2))
+           c_box = c_box/dfloat(indices(3))
+           call gradient_descent_box(positions(1:3, 1:n_sites), positions_prev(1:3, 1:n_sites), velocities(1:3, 1:n_sites), &
+                forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), &
+                params%max_opt_step_eps, gd_istep == 0, a_box, b_box, c_box, energy, &
+                [virial(1,1), virial(2,2), virial(3,3), virial(2,3), virial(1,3), virial(1,2)], &
+                params%optimize, restart_box_optim )
+           a_box = a_box*dfloat(indices(1))
+           b_box = b_box*dfloat(indices(2))
+           c_box = c_box*dfloat(indices(3))
+           gd_istep = gd_istep + 1
+        end if
+
+     end if
 !     If there are thermostating operations they happen here
-      if( params%thermostat == "berendsen" )then
+     if( params%thermostat == "berendsen" )then
         call berendsen_thermostat(velocities(1:3, 1:n_sites), &
                                   params%t_beg + (params%t_end-params%t_beg)*dfloat(md_istep+1)/float(params%md_nsteps), &
                                   instant_temp, params%tau_t, time_step)
@@ -2046,23 +2098,23 @@ end if
 !       We make sure the atoms in the supercell have the same positions and velocities as in the unit cell
       j = 0
       do i2 = 1, indices(1)
-        do j2 = 1, indices(2)
-          do k2 = 1, indices(3)
-            do i = 1, n_sites
-              j = j + 1
-              if( j > n_sites )then
-                positions(1:3, j) = positions(1:3, i) + dfloat(i2-1)/dfloat(indices(1))*a_box &
-                                                      + dfloat(j2-1)/dfloat(indices(2))*b_box & 
-                                                      + dfloat(k2-1)/dfloat(indices(3))*c_box
-                velocities(1:3, j) = velocities(1:3, i)
-              end if
+         do j2 = 1, indices(2)
+            do k2 = 1, indices(3)
+               do i = 1, n_sites
+                  j = j + 1
+                  if( j > n_sites )then
+                     positions(1:3, j) = positions(1:3, i) + dfloat(i2-1)/dfloat(indices(1))*a_box &
+                                                           + dfloat(j2-1)/dfloat(indices(2))*b_box &
+                                                           + dfloat(k2-1)/dfloat(indices(3))*c_box
+                     velocities(1:3, j) = velocities(1:3, i)
+                  end if
+               end do
             end do
-          end do
-        end do
+         end do
       end do
       call cpu_time(time_md(2))
       time_md(3) = time_md(3) + time_md(2) - time_md(1)
-    end if
+   end if
 #ifdef _MPIF90
     END IF
     call mpi_bcast(rebuild_neighbors_list, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
@@ -2107,11 +2159,11 @@ end if
                                     forces, a_box, b_box, c_box, energy, E_kinetic, &
                                     species, species_supercell, n_sites, indices, fix_atom, &
                                     xyz_species, xyz_species_supercell)
-    end if
+   end if
 
 !   This handles the nested sampling iterations after all images have
 !   been read and their energies computed
-    if( params%do_nested_sampling .and. .not. repeat_xyz )then
+   if( params%do_nested_sampling .and. .not. repeat_xyz )then
       if( i_nested == 0 )then
         md_istep = -1
         params%write_xyz = params%md_nsteps
@@ -2140,28 +2192,28 @@ end if
                                         forces, a_box, b_box, c_box, energy, E_kinetic, &
                                         species, species_supercell, n_sites, indices, fix_atom, &
                                         xyz_species, xyz_species_supercell)
-        end if
-      end if
+       end if
+    end if
 !     This selects the highest energy image from the pool
-      if( md_istep == -1 .and. i_nested < params%n_nested )then
-        i_nested = i_nested + 1
-        rebuild_neighbors_list = .true.
-        i_max = 0
-        e_max = -1.d100
-        do i = 1, n_xyz
+    if( md_istep == -1 .and. i_nested < params%n_nested )then
+       i_nested = i_nested + 1
+       rebuild_neighbors_list = .true.
+       i_max = 0
+       e_max = -1.d100
+       do i = 1, n_xyz
           v_uc = dot_product( cross_product(images(i)%a_box, images(i)%b_box), images(i)%c_box ) / &
-                 (dfloat(images(i)%indices(1)*images(i)%indices(2)*images(i)%indices(3)))
-!         We check enthalpy, not potential energy (they are the same for P = 0)
+               (dfloat(images(i)%indices(1)*images(i)%indices(2)*images(i)%indices(3)))
+          !         We check enthalpy, not potential energy (they are the same for P = 0)
           if( images(i)%energy + images(i)%e_kin + params%p_nested/eVperA3tobar*v_uc > e_max )then
-            e_max = images(i)%energy + images(i)%e_kin + params%p_nested/eVperA3tobar*v_uc
-            i_max = i
+             e_max = images(i)%energy + images(i)%e_kin + params%p_nested/eVperA3tobar*v_uc
+             i_max = i
           end if
-        end do
-        i_image = i_max
-        deallocate( positions, velocities, masses, forces, species, &
-                    species_supercell, fix_atom, xyz_species, xyz_species_supercell )
+       end do
+       i_image = i_max
+       deallocate( positions, velocities, masses, forces, species, &
+            species_supercell, fix_atom, xyz_species, xyz_species_supercell )
 !       Make a copy of a randonmly chosen image which is not i_image
-        if( n_xyz == 1 )then
+       if( n_xyz == 1 )then
           i = i_image
         else
           i = i_image
@@ -2177,53 +2229,54 @@ end if
           write(*,'(A,I8,A)') " - Highest enthalpy walker:    ", i_image, " |"
           write(*,'(A,I8,A)') " - Walker selected for cloning:", i, " |"
           write(*,'(A,F15.7,A)') " - Max. enthalpy: ", e_max, " eV |"
-        end if
+       end if
         call from_image_to_properties(images(i), positions, velocities, masses, &
                                       forces, a_box, b_box, c_box, energy, E_kinetic, &
                                       species, species_supercell, n_sites, indices, fix_atom, &
                                       xyz_species, xyz_species_supercell)
         v_uc = dot_product( cross_product(images(i)%a_box, images(i)%b_box), images(i)%c_box ) / &
                (dfloat(images(i)%indices(1)*images(i)%indices(2)*images(i)%indices(3)))
-!       This only gets triggered if we are doing box rescaling, i.e., if the target nested sampling pressure (*not* the
-!       actual pressure for the atomic configuration) is > 0
+        !       This only gets triggered if we are doing box rescaling, i.e., if the target nested sampling pressure (*not* the
+        !       actual pressure for the atomic configuration) is > 0
 !!!!!!!!!!!!!!!!!!!!!!!!!! Temporary hack
-if( params%scale_box_nested )then
-params%scale_box = .true.
-call random_number(rand_scale)
+        if( params%scale_box_nested )then
+           params%scale_box = .true.
+           call random_number(rand_scale)
 !!!!!!!!!!!!!!! The size of the scaling should also decrease as we reach convergence (otherwise all trial moves will be rejected)
 !!!!!!!!!!!!!!! Finally, there should be a limit for the acceptable aspect ratio of the simulation box
-rand_scale = 2.d0*(rand_scale - 0.5d0) * params%nested_max_strain
-params%box_scaling_factor = reshape([1.d0+rand_scale(1), rand_scale(6)/2.d0, rand_scale(5)/2.d0, &
-                                     rand_scale(6)/2.d0, 1.d0+rand_scale(2), rand_scale(4)/2.d0, &
-                                     rand_scale(5)/2.d0, rand_scale(4)/2.d0, 1.d0+rand_scale(3)], [3,3])
-! Make the transformation volume-preserving
-call volume_preserving_strain_transformation(a_box, b_box, c_box, params%box_scaling_factor)
-! Volume scaling
-call get_ns_unbiased_volume_proposal(1.d0-params%nested_max_volume_change, 1.d0+params%nested_max_volume_change, n_sites, rand)
-params%box_scaling_factor = params%box_scaling_factor * (rand)**(1.d0/3.d0)
-! Each MPI process has a different set of random numbers so we need to broadcast
+           rand_scale = 2.d0*(rand_scale - 0.5d0) * params%nested_max_strain
+           params%box_scaling_factor = reshape([1.d0+rand_scale(1), rand_scale(6)/2.d0, rand_scale(5)/2.d0, &
+                rand_scale(6)/2.d0, 1.d0+rand_scale(2), rand_scale(4)/2.d0, &
+                rand_scale(5)/2.d0, rand_scale(4)/2.d0, 1.d0+rand_scale(3)], [3,3])
+           ! Make the transformation volume-preserving
+           call volume_preserving_strain_transformation(a_box, b_box, c_box, params%box_scaling_factor)
+           ! Volume scaling
+           call get_ns_unbiased_volume_proposal(1.d0-params%nested_max_volume_change, &
+                1.d0+params%nested_max_volume_change, n_sites, rand)
+           params%box_scaling_factor = params%box_scaling_factor * (rand)**(1.d0/3.d0)
+           ! Each MPI process has a different set of random numbers so we need to broadcast
 #ifdef _MPIF90
-call mpi_bcast(params%box_scaling_factor, 9, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+           call mpi_bcast(params%box_scaling_factor, 9, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
 #endif
-end if
-!       This is the so-called total enthalpy Hamiltonian Montecarlo approach (with physical masses)
-!       We do not need to broadcast the velocities here since they get broadcasted later on; otherwise
-!       we would have to do it since each MPI rank may see a different random number
+        end if
+        !       This is the so-called total enthalpy Hamiltonian Montecarlo approach (with physical masses)
+        !       We do not need to broadcast the velocities here since they get broadcasted later on; otherwise
+        !       we would have to do it since each MPI rank may see a different random number
         call random_number( velocities )
         call remove_cm_vel(velocities(1:3,1:n_sites), masses(1:n_sites))    
         e_kin = 0.d0
         do i = 1, n_sites
           e_kin = e_kin + 0.5d0 * masses(i) * dot_product(velocities(1:3, i), velocities(1:3, i))
-        end do
+       end do
         call random_number( rand )
 !        rand = rand * 4.d0/3.d0 - 1.d0/3.d0
 !        velocities = velocities / sqrt(e_kin) * sqrt(e_max - energy - params%p_nested/eVperA3tobar*v_uc + &
 !                                                     1.5d0*real(n_sites-1)*kB*params%t_extra*max(0.d0, rand))
         velocities = velocities / sqrt(e_kin) * sqrt(rand*(e_max - energy - params%p_nested/eVperA3tobar*v_uc))
-      else if( i_nested == params%n_nested )then
+     else if( i_nested == params%n_nested )then
         exit_loop = .true.
-      end if
-    end if
+     end if
+  end if
 !**************************************************************************
 
 
@@ -2236,11 +2289,11 @@ end if
       deallocate( n_neigh_local )
 #endif
     end if
-    if( .not. params%do_md .or. (params%do_md .and. md_istep == params%md_nsteps) )then
+    if( .not. params%do_md .or. (params%do_md .and. (md_istep == params%md_nsteps .or. exit_loop) ) )then
       deallocate( positions, xyz_species, xyz_species_supercell, species, species_supercell, do_list )
     end if
-    if( params%do_md .and. md_istep == params%md_nsteps .and. rank == 0 )then
-      deallocate( positions_prev, forces_prev )
+    if( params%do_md .and. (md_istep == params%md_nsteps .or. exit_loop) .and. rank == 0 )then
+       deallocate( positions_prev, forces_prev )
     end if
 
     n_sites_prev = n_sites
@@ -2251,8 +2304,9 @@ end if
 #endif
 
     if( exit_loop )exit
-! End of loop through structures in the xyz file or MD steps
-  end do
+    ! End of loop through structures in the xyz file or MD steps
+ end if
+end do
 
 
 
@@ -2299,7 +2353,7 @@ end if
 #ifdef _MPIF90
     END IF
 #endif
-  end if
+ end if
 
 
 
