@@ -981,7 +981,7 @@ program turbogap
       call cpu_time(time1)
 
 !     We only need to reallocate the arrays if the number of sites changes
-      if( n_sites /= n_sites_prev .or. params%do_mc )then
+      if( n_sites /= n_sites_prev )then
         if( allocated(energies) )deallocate( energies, energies_soap, energies_2b, energies_3b, energies_core_pot, &
                                              this_energies, energies_vdw, this_forces )
         allocate( energies(1:n_sites) )
@@ -1531,7 +1531,7 @@ program turbogap
            allocate( images(1:2) )
         end if
 
-        n_sites_prev = n_sites
+
 
         if (mc_istep > 0)then
            !       Evaluate the conditions for acceptance
@@ -1539,7 +1539,7 @@ program turbogap
            !       > We care about comparing e_store to the energy of the new configuration based on the mc_movw
 
            call from_properties_to_image(images(2), positions, velocities, masses, &
-                forces, a_box, b_box, c_box, energy, E_kinetic, &
+                forces, a_box, b_box, c_box,  energy, energies, E_kinetic, &
                 species, species_supercell, n_sites, indices, fix_atom, &
                 xyz_species, xyz_species_supercell)
 
@@ -1547,20 +1547,20 @@ program turbogap
            call random_number(ranf)
            if (mc_move == "move")then
               write( *, '(A,A)')'Checking acceptance of mc_move ', mc_move
-              call monte_carlo_move(p_accept, energy, e_mc_prev, params%t_beg)
+              call monte_carlo_move(p_accept, energy, images(1)%energy, params%t_beg)
               !     Not implemented the volume bias yet
            else if (mc_move == "insertion")then
               write( *, '(A,A)')'Checking acceptance of mc_move ', mc_move
-              call monte_carlo_insertion(p_accept, energy, e_mc_prev, params%t_beg, params%mc_mu, &
+              call monte_carlo_insertion(p_accept, energy, images(1)%energy, params%t_beg, params%mc_mu, &
                    params%masses_types(mc_id), V_uc, 1.0d0, n_mc_species)
            else if (mc_move == "removal")then
               write( *, '(A,A)')'Checking acceptance of mc_move ', mc_move
-              call monte_carlo_removal(p_accept, energy, e_mc_prev, params%t_beg, params%mc_mu, &
+              call monte_carlo_removal(p_accept, energy, images(1)%energy, params%t_beg, params%mc_mu, &
                    params%masses_types(mc_id), V_uc, 1.0d0, n_mc_species)
 
            else if (mc_move == "volume")then
               write( *, '(A,A)')'Checking acceptance of mc_move ', mc_move
-              call monte_carlo_volume(p_accept, energy, e_mc_prev, params%t_beg, V_uc, V_uc_prev, &
+              call monte_carlo_volume(p_accept, energy, images(1)%energy, params%t_beg, V_uc, V_uc_prev, &
                    params%p_beg, n_mc_species)
            end if
 
@@ -1571,10 +1571,12 @@ program turbogap
 
            if (p_accept > ranf)then
               !             Accept
-              call from_image_to_properties(images(1), positions, velocities, masses, &
-                   forces, a_box, b_box, c_box, energy, E_kinetic, &
-                   species, species_supercell, n_sites, indices, fix_atom, &
-                   xyz_species, xyz_species_supercell)
+              images(1) = images(2)
+
+              ! call from_image_to_properties(images(1), positions, velocities, masses, &
+              !      forces, a_box, b_box, c_box,  energy, energies, E_kinetic, &
+              !      species, species_supercell, n_sites, indices, fix_atom, &
+              !      xyz_species, xyz_species_supercell)
 
 
               call write_extxyz( n_sites, 0, 1.0d0, 0.0d0, 0.0d0, &
@@ -1593,14 +1595,16 @@ program turbogap
                    params%write_property, params%write_array_property, fix_atom, &
                    "mc_all.xyz", .false. )
 
+              n_sites_prev = n_sites
+
 !          Add acceptance to the log file else dont
 
               write( 200, "(A, 1X, I8, 1X, F20.8, 1X, F20.8)") &
-                   mc_move, 1, energy, e_mc_prev
+                   mc_move, 1, energy, images(1)%energy
            else
               !          Revert back to old config
               write( 200, "(A, 1X, I8, 1X, F20.8, 1X, F20.8)") &
-                   mc_move, 0, energy, e_mc_prev
+                   mc_move, 0, energy, images(1)%energy
 
            end if
 
@@ -1609,8 +1613,8 @@ program turbogap
            write(*,*) 'MC Moves parsed:'
            write(*,*) params%mc_types
 
-           e_mc_prev = energy
-           v_uc_prev = dot_product( cross_product(a_box, b_box), c_box ) / (dfloat(indices(1)*indices(2)*indices(3)))
+           ! e_mc_prev = energy
+           ! v_uc_prev = dot_product( cross_product(a_box, b_box), c_box ) / (dfloat(indices(1)*indices(2)*indices(3)))
            !    get the mc species type
            do i = 1, n_species
               if (params%species_types(i) == params%mc_species ) mc_id=i
@@ -1620,7 +1624,7 @@ program turbogap
            !       Now use the image construct to store an image
            velocities = 0.d0
            call from_properties_to_image(images(1), positions, velocities, masses, &
-                forces, a_box, b_box, c_box, energy, E_kinetic, &
+                forces, a_box, b_box, c_box,  energy, energies, E_kinetic, &
                 species, species_supercell, n_sites, indices, fix_atom, &
                 xyz_species, xyz_species_supercell)
            !  >>> This is the dumb implementation where we will
@@ -1646,6 +1650,20 @@ program turbogap
 
         end if
 
+
+        call from_image_to_properties(images(1), positions, velocities, masses, &
+             forces, a_box, b_box, c_box, energy, energies, E_kinetic, &
+             species, species_supercell, n_sites, indices, fix_atom, &
+             xyz_species, xyz_species_supercell)
+
+        n_sites = size(positions, 2)
+
+        n_mc_species = 0
+        do i = 1, n_sites
+           if (xyz_species(i) == params%mc_species)then
+              n_mc_species = n_mc_species + 1
+           end if
+        end do
 
 
         call random_number(ranf)
@@ -1689,18 +1707,11 @@ program turbogap
            end if
 
 
-           do i = 1, n_sites
-              if (xyz_species(i) == params%mc_species)then
-                 n_mc_species = n_mc_species + 1
-              end if
-           end do
-
-           print *, "n_mc_species = ", n_mc_species
-
            if (n_mc_species == 0 .and. mc_move == "removal" )then
               ! We can't remove any species! therefore log the move and move onto next iteration
               skip_mc = .true.
            else
+
 
               if( allocated(species_idx))deallocate(species_idx)
               allocate( species_idx(1:n_mc_species) )
@@ -1740,8 +1751,8 @@ program turbogap
 
 
               if (mc_move == "insertion")then
-                 positions(1:3,1:n_sites-1) = positions_prev(1:3,1:n_sites-1)
-                 positions(1:3,1:n_sites-1) = positions_prev(1:3,1:n_sites-1)
+                 positions(1:3,1:n_sites-1) = images(1)%positions(1:3,1:n_sites-1)
+                 positions(1:3,1:n_sites-1) = images(1)%positions(1:3,1:n_sites-1)
                  idx = n_sites
                  print *, "insertion idx ", idx
                  !          Now choose a position
@@ -1754,6 +1765,8 @@ program turbogap
                       b_box/dfloat(indices(2)), c_box/dfloat(indices(3)))
                  energies(1:n_sites)                = 0.0d0
                  forces(1:3, 1:n_sites)             = 0.0d0
+
+                 print *, "images(1)%xyz_species", len(images(1)%xyz_species), images(1)%xyz_species
 
                  xyz_species(1:n_sites-1)= images(1)%xyz_species(1:n_sites-1)
                  species(1:n_sites-1)= images(1)%species(1:n_sites-1)
@@ -1771,7 +1784,7 @@ program turbogap
 
                  deallocate(masses)
                  allocate(masses(1:n_sites))
-                 masses(1:n_sites-1) = masses_temp(1:n_sites-1)
+                 masses(1:n_sites-1) = images(1)%masses(1:n_sites-1)
                  masses(n_sites) = params%masses_types(mc_id)
 
                  if (allocated(hirshfeld_v))then
@@ -1869,10 +1882,10 @@ program turbogap
         ! not done that.
 
 
-        call from_properties_to_image(images(2), positions, velocities, masses, &
-             forces, a_box, b_box, c_box, energy, E_kinetic, &
-             species, species_supercell, n_sites, indices, fix_atom, &
-             xyz_species, xyz_species_supercell)
+        ! call from_properties_to_image(images(2), positions, velocities, masses, &
+        !      forces, a_box, b_box, c_box, 0.0, E_kinetic, &
+        !      species, species_supercell, n_sites, indices, fix_atom, &
+        !      xyz_species, xyz_species_supercell)
 
         call write_extxyz( n_sites, 0, 1.0d0, 0.0d0, 0.0d0, &
              a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
@@ -1881,6 +1894,7 @@ program turbogap
              forces, energies(1:n_sites), masses, hirshfeld_v, &
              params%write_property, params%write_array_property, fix_atom, &
              mc_file, .true. )
+
 
         
      end if
@@ -1896,7 +1910,11 @@ program turbogap
         write(*,'(A,1X,F24.8,1X,A)')' 3b energy:', sum(energies_3b), 'eV |'
         write(*,'(A,1X,F18.8,1X,A)')' core_pot energy:', sum(energies_core_pot), 'eV |'
         write(*,'(A,1X,F23.8,1X,A)')' vdw energy:', sum(energies_vdw), 'eV |'
-        write(*,'(A,1X,F21.8,1X,A)')' Total energy:', sum(energies), 'eV |'
+        if (params%do_mc)then
+           write(*,'(A,1X,F21.8,1X,A)')' Total energy:', sum(images(2)%energies), 'eV |'
+        else
+           write(*,'(A,1X,F21.8,1X,A)')' Total energy:', sum(energies), 'eV |'
+        end if
 
         if ( .not. params%do_mc)then
            write(*,*)'                                       |'
@@ -2266,7 +2284,7 @@ end if
 !     Save initial pool of structures
       velocities = 0.d0
       call from_properties_to_image(images(i_image), positions, velocities, masses, &
-                                    forces, a_box, b_box, c_box, energy, E_kinetic, &
+                                    forces, a_box, b_box, c_box, energy, energies, E_kinetic, &
                                     species, species_supercell, n_sites, indices, fix_atom, &
                                     xyz_species, xyz_species_supercell)
    end if
@@ -2299,7 +2317,7 @@ end if
 !       We check enthalpy, not internal energy (they are the same for P = 0)
         if( energy + E_kinetic + params%p_nested/eVperA3tobar*v_uc < e_max )then
           call from_properties_to_image(images(i_image), positions, velocities, masses, &
-                                        forces, a_box, b_box, c_box, energy, E_kinetic, &
+                                        forces, a_box, b_box, c_box, energy, energies, E_kinetic, &
                                         species, species_supercell, n_sites, indices, fix_atom, &
                                         xyz_species, xyz_species_supercell)
        end if
@@ -2341,7 +2359,7 @@ end if
           write(*,'(A,F15.7,A)') " - Max. enthalpy: ", e_max, " eV |"
        end if
         call from_image_to_properties(images(i), positions, velocities, masses, &
-                                      forces, a_box, b_box, c_box, energy, E_kinetic, &
+                                      forces, a_box, b_box, c_box, energy, energies, E_kinetic, &
                                       species, species_supercell, n_sites, indices, fix_atom, &
                                       xyz_species, xyz_species_supercell)
         v_uc = dot_product( cross_product(images(i)%a_box, images(i)%b_box), images(i)%c_box ) / &
