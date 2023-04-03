@@ -165,6 +165,7 @@ if( .not. supercell_check_only )then
       if( allocated(fix_atom) )deallocate(fix_atom)
       allocate( velocities(1:3, 1:n_sites) )
       velocities = 0.d0
+      print *, "allocated masses in read_files.f90"
       allocate( masses(1:n_sites) )
       masses = 0.d0
       masses_from_xyz = .false.
@@ -529,8 +530,13 @@ end if
 
 
 !   Some defaults before reading the input file (the values in the input file will override them)
-    if( mode == "md" .or. mode == "mc" )then
+    if( mode == "md" )then
       params%do_md = .true.
+      params%do_prediction = .true.
+      params%do_forces = .true.
+      params%do_derivatives = .true.
+    else if( mode == "mc" )then
+      params%do_mc = .true.
       params%do_prediction = .true.
       params%do_forces = .true.
       params%do_derivatives = .true.
@@ -641,7 +647,7 @@ end if
         do j = 1, params%n_mc_types
            valid_choice = .false.
            do i = 1, size(implemented_mc_types)
-              if( trim(params%mc_types(j)) == trim(implemented_thermostats(i)) )then
+              if( trim(params%mc_types(j)) == trim(implemented_mc_types(i)) )then
                  valid_choice = .true.
               end if
            end do

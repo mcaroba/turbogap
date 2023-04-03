@@ -36,7 +36,7 @@ module mc
   contains
 
 
-  subroutine monte_carlo_insert(p_accept, e_new, e_prev, temp, mu, m, volume, volume_bias, N_exch)
+  subroutine monte_carlo_insertion(p_accept, e_new, e_prev, temp, mu, m, volume, volume_bias, N_exch)
     implicit none
 
 
@@ -53,10 +53,10 @@ module mc
     p_accept =  (volume*volume_bias) / (lam**3.0 * (N_exch + 1)) * &
                 exp( -( e_new - e_prev - mu  ) / (kB * temp) )
 
-  end subroutine monte_carlo_insert
+  end subroutine monte_carlo_insertion
 
 
-  subroutine monte_carlo_remove(p_accept, e_new, e_prev, temp, mu, m, volume, volume_bias, N_exch)
+  subroutine monte_carlo_removal(p_accept, e_new, e_prev, temp, mu, m, volume, volume_bias, N_exch)
     implicit none
 
     real*8, intent(in) :: e_new, e_prev, temp, mu, m, volume, volume_bias
@@ -72,7 +72,7 @@ module mc
     p_accept = (lam**3.0 * N_exch ) / (volume*volume_bias)  * &
                 exp( -( e_new - e_prev + mu  ) / (kB * temp) )
 
-  end subroutine monte_carlo_remove
+  end subroutine monte_carlo_removal
 
   subroutine monte_carlo_move(p_accept, e_new, e_prev, temp)
     implicit none
