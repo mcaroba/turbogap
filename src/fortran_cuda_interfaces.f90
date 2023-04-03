@@ -25,6 +25,11 @@ MODULE F_B_C
         type(c_ptr) :: a_d
         integer(c_int),value :: n
       end subroutine
+      
+      subroutine gpu_device_reset() bind(C,name="cuda_device_reset")
+        use iso_c_binding
+        implicit none
+      end subroutine
 
       subroutine gpu_malloc_double_complex(a_d,n) bind(C,name="cuda_malloc_double_complex")
         use iso_c_binding
@@ -343,16 +348,29 @@ MODULE F_B_C
       integer(c_int),value :: n_atom_pairs, kmax, lmax
       end subroutine
 
-      subroutine gpu_get_eimphi_array_global(eimphi_global_d, &
+      subroutine gpu_get_exp_coeff_array(eimphi_global_d, thetas_d, &
                                       rjs_d, phis_d, &
                                       mask_d, atom_simga_in_d, atom_simga_scaling_d, & 
-                                      rcut, n_atom_piars, n_spceies, lmax, prefl_array_global) &
-                                      bind(C,name="gpu_get_eimphi_array_global")
+                                      rcut, n_atom_piars, n_spceies, lmax, kmax, &
+                                      prefl_array_global_d, plm_array_global_d, &
+                                      plm_array_der_global_d, &
+                                      prefl_array_global_der_d, &
+                                      preflm_d,exp_coeff_d, &
+                                      c_do_derivatives, &
+                                      eimphi_rad_der_global_d, eimphi_azi_der_global_d, &
+                                      plm_array_div_sin_d, plm_array_der_mul_sin_d, &
+                                      exp_coeff_rad_der_d, exp_coeff_azi_der_d, exp_coeff_pol_der_d) & 
+                                      bind(C,name="gpu_get_exp_coeff_array")
       use iso_c_binding
-      type(c_ptr), value :: eimphi_global_d, rjs_d, phis_d, mask_d
-      type(c_ptr), value :: atom_simga_in_d, atom_simga_scaling_d, prefl_array_global
-      integer(c_int), value ::  n_atom_piars, n_spceies, lmax
+      type(c_ptr), value :: eimphi_global_d, rjs_d, phis_d, mask_d, exp_coeff_d
+      type(c_ptr), value :: atom_simga_in_d, atom_simga_scaling_d, prefl_array_global_der_d
+      integer(c_int), value ::  n_atom_piars, n_spceies, lmax, kmax
       real(c_double), value :: rcut
+      type(c_ptr), value :: eimphi_rad_der_global_d, eimphi_azi_der_global_d, thetas_d
+      type(c_ptr), value :: preflm_d, prefl_array_global_d, plm_array_global_d, plm_array_der_global_d
+      logical(c_bool), value :: c_do_derivatives
+      type(c_ptr), value :: exp_coeff_rad_der_d, exp_coeff_azi_der_d, exp_coeff_pol_der_d
+      type(c_ptr), value :: plm_array_div_sin_d, plm_array_der_mul_sin_d
       end subroutine
 
     END INTERFACE

@@ -91,10 +91,14 @@ extern "C" void cuda_malloc_bool(void **a_d, int Np)
    return;
 }
 
+extern "C" void cuda_device_reset(){
+  cudaDeviceReset();
+}
 extern "C" void cuda_free(void **a_d)
 {
   gpuErrchk(cudaFree(*a_d));
    //printf("GPU memory freed \n");
+   //cudaDeviceReset();
    return;
 }
 
@@ -1100,7 +1104,7 @@ extern "C" void gpu_get_derivatives(double *radial_exp_coeff_d, cuDoubleComplex 
   exit(0);*/
                                               
 }
-
+/*
 __global__ void cuda_get_cnk_one(cuDoubleComplex *cnk_d, double *radial_exp_coeff_d, cuDoubleComplex *angular_exp_coeff_d,                             
                                  int *n_neigh_d, int  *k2_start_d, 
                                  int n_sites, int k_max, int n_max, int l_max)
@@ -1133,8 +1137,8 @@ __global__ void cuda_get_cnk_one(cuDoubleComplex *cnk_d, double *radial_exp_coef
     }
   }
 }
-
-
+*/
+/*
 
 __global__ void cuda_get_cnk_one_new(cuDoubleComplex *cnk_d, double *radial_exp_coeff_d, cuDoubleComplex *angular_exp_coeff_d,                             
                                  int *n_neigh_d, int  *k2_start_d, 
@@ -1161,7 +1165,7 @@ __global__ void cuda_get_cnk_one_new(cuDoubleComplex *cnk_d, double *radial_exp_
     }
   }
 }
-
+*/
 __global__ void cuda_get_cnk_one_new_new(cuDoubleComplex *cnk_d, double *radial_exp_coeff_d, cuDoubleComplex *angular_exp_coeff_d,                             
                                  int *n_neigh_d, int  *k2_start_d, 
                                  int n_sites, int k_max, int n_max, int l_max)
@@ -1331,11 +1335,11 @@ extern "C" void  gpu_get_plm_array_global(double *plm_array_global_d, int n_atom
 }
 
 
-__global__ void cuda_get_prefl_arrays_one(cuDoubleComplex *eimphi_global_d, double *rjs_d, double *phis_d,
+__global__ void cuda_get_exp_coeff_one(cuDoubleComplex *eimphi_global_d, double *rjs_d, double *phis_d,
                                       bool *mask_d, double *atom_sigma_in_d, double *atom_sigma_scaling_d,
-                                      double rcut, int n_atom_pairs, int n_species, int lmax,
-                                      double *prefl_global_d, cuDoubleComplex *prefm_global_d,
-                                      double *fact_array_d)
+                                      double rcut, int n_atom_pairs, int n_species, int lmax, int kmax,
+                                      double *prefl_global_d, cuDoubleComplex *prefm_global_d, double *preflm_d, 
+                                      double *plm_array_global_d, cuDoubleComplex *exp_coeff_d) //, double *fact_array_d)
 {
   int k_ij=threadIdx.x+blockIdx.x*blockDim.x;
   double xcut = 1.0e-7;
@@ -1350,11 +1354,17 @@ __global__ void cuda_get_prefl_arrays_one(cuDoubleComplex *eimphi_global_d, doub
         }
       }
       double atom_sigma=atom_sigma_in_d[i_sp-1] + atom_sigma_scaling_d[i_sp-1]*rj;
+      double scaling=atom_sigma_scaling_d[i_sp-1];
       double rjbysigma=rj/atom_sigma;
+      double amplitude=(rcut*rcut)/(atom_sigma*atom_sigma);
       double x=rjbysigma;
       double x2=x*x;
       double x4=x2*x2;
       double flm2, flm1,fl; 
+
+      double coeff1 = 2.0*rj/atom_sigma*atom_sigma;
+      double coeff2 = 1.0 - scaling*rj/atom_sigma;
+      
       if(x>0){
         flm2=fabs((1.0-exp(-2.0*x2))/2.0/x2);
         flm1=fabs((x2-1.0+exp(-2.0*x2)*(x2+1.0))/2.0/x4);
@@ -1427,6 +1437,11 @@ __global__ void cuda_get_prefl_arrays_one(cuDoubleComplex *eimphi_global_d, doub
           loc_emphi.x=ilexp*tmp_prefm.x;
           loc_emphi.y=ilexp*tmp_prefm.y;
           eimphi_global_d[k_ij+k*n_atom_pairs]=loc_emphi;
+          cuDoubleComplex loc_exp_coeff;
+          loc_exp_coeff.x=amplitude*preflm_d[k]*plm_array_global_d[k_ij+k*n_atom_pairs]*loc_emphi.x;
+          loc_exp_coeff.y=amplitude*preflm_d[k]*plm_array_global_d[k_ij+k*n_atom_pairs]*loc_emphi.y;
+          //exp_coeff_d[k_ij+k*n_atom_pairs]=loc_exp_coeff; 
+          exp_coeff_d[k+k_ij*kmax]=loc_exp_coeff;// naive transpose
           k++;
         }
       }
@@ -1435,53 +1450,7 @@ __global__ void cuda_get_prefl_arrays_one(cuDoubleComplex *eimphi_global_d, doub
 }
 
 
-
-__global__ void cuda_get_prefm_arrays_one(cuDoubleComplex *eimphi_global_d, double *rjs_d,  double *phis_d,
-                                      bool *mask_d, double *atom_sigma_in_d, double *atom_sigma_scaling_d,
-                                      double rcut, int n_atom_pairs, int n_species, int lmax,
-                                      double *prefl_global_d, cuDoubleComplex *prefm_global_d, 
-                                      double *fact_array_d)
-{
-  int k_ij=threadIdx.x+blockIdx.x*blockDim.x;
-  if(k_ij<n_atom_pairs){
-    double rj=rjs_d[k_ij];
-    double phi=phis_d[k_ij];
-    if(rj<rcut){
-      int i_sp;
-      for(i_sp=0;i_sp<n_species; i_sp++){
-        if(mask_d[k_ij+(i_sp)*n_atom_pairs]){
-          return;
-        }
-      }
-
-      // Complex exponential using Euler's formula and Chebyshev recursion
-      double cosm2 = cos(phi);
-      double cosphi2 = 2.0 * cosm2;
-      double sinm2 = -sin(phi);
-      double cosm1 = 1.0;
-      double sinm1 = 0.0;
-      cuDoubleComplex loc_prefm;
-      loc_prefm.x= 1.0;
-      loc_prefm.y= 0.0;
-      prefm_global_d[k_ij] = loc_prefm;
-      
-      for(int l=1;l<=lmax; l++){
-        double cos0 = cosphi2 * cosm1 - cosm2;
-        double sin0 = cosphi2 * sinm1 - sinm2;
-        cosm2 = cosm1;
-        sinm2 = sinm1;
-        cosm1 = cos0;
-        sinm1 = sin0;
-        loc_prefm.x= cos0;
-        loc_prefm.y= -sin0;
-        prefm_global_d[k_ij+l*n_atom_pairs] = loc_prefm;
-      }
-    }
-  }
-}
-
-
-__global__ void cuda_get_fact_array(double *fact_array_d, int lmax)
+/*__global__ void cuda_get_fact_array(double *fact_array_d, int lmax)
 {
   if(lmax>0){
     double fact=1.0;
@@ -1492,36 +1461,94 @@ __global__ void cuda_get_fact_array(double *fact_array_d, int lmax)
     }
   }
 }
+*/
 
 
 
-__global__ void cuda_get_eimphi_arrays_one(cuDoubleComplex *eimphi_global_d, double *rjs_d,  double *phis_d,
+__global__ void cuda_get_exp_coeff_der_one(cuDoubleComplex *eimphi_global_d, double *rjs_d, double *phis_d,
                                       bool *mask_d, double *atom_sigma_in_d, double *atom_sigma_scaling_d,
-                                      double rcut, int n_atom_pairs, int n_species, int lmax,
-                                      double *prefl_global_d, cuDoubleComplex *prefm_global_d, 
-                                      double *fact_array_d)
+                                      double rcut, int n_atom_pairs, int n_species, int lmax, int kmax,
+                                      double *prefl_global_d, cuDoubleComplex *prefm_global_d, double *preflm_d, 
+                                      double *prefl_global_der_d, 
+                                      double *plm_array_global_d, double *plm_array_global_der_d, cuDoubleComplex *exp_coeff_d,
+                                      cuDoubleComplex *eimphi_rad_der_global_d, cuDoubleComplex *eimphi_azi_der_global_d,
+                                      double *plm_array_div_sin, double *plm_array_der_mul_sin, 
+                                      cuDoubleComplex *exp_coeff_rad_der_d, cuDoubleComplex *exp_coeff_azi_der_d, cuDoubleComplex *exp_coeff_pol_der_d) 
 {
   int k_ij=threadIdx.x+blockIdx.x*blockDim.x;
+
   if(k_ij<n_atom_pairs){
     double rj=rjs_d[k_ij];
-    //double phi=phis_d[k_ij];
+    /*double phi=phis_d[k_ij];*/
     if(rj<rcut){
-      int i_sp;
-      for(i_sp=0;i_sp<n_species; i_sp++){
-        if(mask_d[k_ij+(i_sp)*n_atom_pairs]){
-          return;
+      int i_sp=1;
+      for(i_sp=1;i_sp<=n_species; i_sp++){
+        if(mask_d[k_ij+(i_sp-1)*n_atom_pairs]){
+          break;
         }
       }
+      double atom_sigma=atom_sigma_in_d[i_sp-1] + atom_sigma_scaling_d[i_sp-1]*rj;
+      double scaling=atom_sigma_scaling_d[i_sp-1];
+      double amplitude=(rcut*rcut)/(atom_sigma*atom_sigma);
+      /*double rjbysigma=rj/atom_sigma;
+      double x=rjbysigma;
+      double x2=x*x;
+      double x4=x2*x2;/
+      double flm2, flm1,fl; */
+
+      double coeff1 = 2.0*rj/(atom_sigma*atom_sigma);
+      double coeff2 = 1.0 - scaling*rj/atom_sigma;
+      //cuDoubleComplex  loc_prefm;
+      //double ilexp=-500000;// no need for this, just makig sure the next lines were working
+      
 
       int k=0;
+      
+      double ilexp_der;
 
       for(int l=0;l<=lmax; l++){
-        double pref=prefl_global_d[k_ij+l*n_atom_pairs];
-        for(int m=0;m<=l; m++){
-          cuDoubleComplex loc_emphi;
-          loc_emphi.x=pref*prefm_global_d[k_ij+m*n_atom_pairs].x;
-          loc_emphi.y=pref*prefm_global_d[k_ij+m*n_atom_pairs].y;
-          eimphi_global_d[k_ij+k*n_atom_pairs]=loc_emphi;
+        if(l==0){
+          ilexp_der=coeff1*(prefl_global_d[k_ij+n_atom_pairs]-prefl_global_d[k_ij]);
+        }
+        else{
+          ilexp_der=(-coeff1-(2.0*l+2.0)/rj)*prefl_global_d[k_ij+l*n_atom_pairs]+coeff1*prefl_global_d[k_ij+(l-1)*n_atom_pairs];
+        }
+        if(rj<1.0e-5){
+          ilexp_der=0.0;
+        }
+        ilexp_der*=coeff2;
+        prefl_global_der_d[k_ij+l*n_atom_pairs]=ilexp_der;
+        for(int m=0;m<=l;m++){
+          cuDoubleComplex loc_exp_coeff=exp_coeff_d[k+k_ij*kmax];
+          double loc_preflm=preflm_d[k];
+          cuDoubleComplex loc_emphi=eimphi_global_d[k_ij+k*n_atom_pairs];
+          cuDoubleComplex tmp_prefm=prefm_global_d[k_ij+m*n_atom_pairs];
+          cuDoubleComplex loc_emphi_rad_der;
+          loc_emphi_rad_der.x=ilexp_der*tmp_prefm.x;
+          loc_emphi_rad_der.y=ilexp_der*tmp_prefm.y;
+          eimphi_rad_der_global_d[k_ij+k*n_atom_pairs]=loc_emphi_rad_der;
+
+          cuDoubleComplex loc_emphi_azi_der;
+          loc_emphi_azi_der.x=-loc_emphi.y;
+          loc_emphi_azi_der.y= loc_emphi.x;
+          eimphi_azi_der_global_d[k_ij+k*n_atom_pairs]=loc_emphi_azi_der;
+
+          cuDoubleComplex loc_e_c_rad_der,loc_e_c_azi_der, loc_e_c_pol_der;
+          loc_e_c_rad_der.x=amplitude*loc_preflm*plm_array_global_d[k_ij+k*n_atom_pairs]*loc_emphi_rad_der.x-
+                            2.0* atom_sigma_scaling_d[i_sp-1]/atom_sigma*loc_exp_coeff.x;
+          loc_e_c_rad_der.y=amplitude*loc_preflm*plm_array_global_d[k_ij+k*n_atom_pairs]*loc_emphi_rad_der.y-
+                            2.0* atom_sigma_scaling_d[i_sp-1]/atom_sigma*loc_exp_coeff.y;
+          
+          loc_e_c_azi_der.x=amplitude*loc_preflm*plm_array_div_sin[k_ij+k*n_atom_pairs]*loc_emphi_azi_der.x;
+          loc_e_c_azi_der.y=amplitude*loc_preflm*plm_array_div_sin[k_ij+k*n_atom_pairs]*loc_emphi_azi_der.y;     
+          
+          loc_e_c_pol_der.x=amplitude*loc_preflm*plm_array_der_mul_sin[k_ij+k*n_atom_pairs]*loc_emphi.x;
+          loc_e_c_pol_der.y=amplitude*loc_preflm*plm_array_der_mul_sin[k_ij+k*n_atom_pairs]*loc_emphi.y;              
+
+          exp_coeff_rad_der_d[k+k_ij*kmax]=loc_e_c_rad_der;
+          exp_coeff_azi_der_d[k+k_ij*kmax]=loc_e_c_azi_der;
+          exp_coeff_pol_der_d[k+k_ij*kmax]=loc_e_c_pol_der;
+
           k++;
         }
       }
@@ -1530,47 +1557,122 @@ __global__ void cuda_get_eimphi_arrays_one(cuDoubleComplex *eimphi_global_d, dou
 }
 
 
-extern "C" void  gpu_get_eimphi_array_global(cuDoubleComplex *eimphi_global_d, double *rjs_d,  double *phis_d, 
+__global__ void cuda_get_plm_arrays_der_one(double *plm_array_global_der_d,int kmax, int lmax, double *thetas_d, int n_atom_pairs,
+                                            double *plm_array_div_sin, double *plm_array_der_mul_sin )
+{
+  int k_ij=threadIdx.x+blockIdx.x*blockDim.x;
+  if(k_ij<n_atom_pairs){
+    //double x=cos(thetas_d[k_ij]);
+    double part1, part2;
+    for(int l=0;l<=lmax;l++){
+      for(int m=0; m<=l; m++){
+        int k=1+l*(l+1)/2+m;
+        int k_l_mp1=k+1;
+        int k_l_mm1=k-1;
+        int k_temp=-5;
+        //       If m = 0 then we are asking for P_l^{-1}, which is not defined. We need
+        //      to rewrite in terms of P_l^1:
+        if(m==0){
+          // P_0^1=0
+          if(l==0){
+            part1=0.0;
+            // P_l^{-1} = - (l-1)!/(l+1)! * P_l^1
+          }
+          else{
+            k_temp=1+l*(l+1)/2+1;
+            part1= -0.5*plm_array_global_der_d[k_ij+(k_temp-1)*n_atom_pairs];
+          }
+        }
+        else{
+          part1=0.5*(l+m)*(l-m+1)*plm_array_global_der_d[k_ij+(k_l_mm1-1)*n_atom_pairs];
+        }
+        if(m==l){
+          part2=0.0;
+        }
+        else{
+          part2= -0.5*plm_array_global_der_d[k_ij+(k_l_mp1-1)*n_atom_pairs];
+        }
+        plm_array_der_mul_sin[k_ij+(k-1)*n_atom_pairs]=part1+part2;
+      }
+    }
+    for(int l=0; l<=lmax;l++){
+      for(int m=0; m<=l; m++){
+        int k=1+l*(l+1)/2+m;
+        if(m==0){
+          plm_array_div_sin[k_ij+(k-1)*n_atom_pairs]=0.0;
+        }
+        else{
+          int k_lp1_mp1 = 1 + (l+1)*(l+2)/2 + m + 1;
+          int k_lp1_mm1 = 1 + (l+1)*(l+2)/2 + m - 1;
+          part1=0.5*(l-m+1)*(l-m+2)*plm_array_global_der_d[k_ij+(k_lp1_mm1-1)*n_atom_pairs];
+          part2=0.5*plm_array_global_der_d[k_ij+(k_lp1_mp1-1)*n_atom_pairs];
+          plm_array_div_sin[k_ij+(k-1)*n_atom_pairs]=part1+part2;
+        }
+      }
+    }
+  }
+}
+
+extern "C" void  gpu_get_exp_coeff_array(cuDoubleComplex *eimphi_global_d, double *rjs_d,  double *phis_d,  double *thetas_d, 
                                              bool *mask_d, double *atom_sigma_in_d, double *atom_sigma_scaling_d, 
-                                             double rcut, int n_atom_pairs, int n_species, int lmax,
-                                             double *prefl_global_d)
+                                             double rcut, int n_atom_pairs, int n_species, int lmax, int kmax, 
+                                             double *prefl_global_d, double *plm_array_global_d,double *plm_array_global_der_d, 
+                                             double *prefl_global_der_d,
+                                             double *preflm_d, cuDoubleComplex *exp_coeff_d, 
+                                             bool c_do_derivatives, 
+                                             cuDoubleComplex *eimphi_rad_der_global_d, cuDoubleComplex *eimphi_azi_der_global_d,
+                                             double *plm_array_div_sin, double *plm_array_der_mul_sin, 
+                                             cuDoubleComplex *exp_coeff_rad_der_d, cuDoubleComplex *exp_coeff_azi_der_d, cuDoubleComplex *exp_coeff_pol_der_d)
 {
   dim3 nblocks=dim3((n_atom_pairs-1+tpb)/tpb,1,1);
   dim3 nthreads=dim3(tpb,1,1);
-  //printf("%d %d %d %lf\n", n_atom_pairs,n_species, lmax, rcut);
-  //double *prefl_global_d;
-  double *fact_array_d;
+
   cuDoubleComplex *prefm_global_d;
+  //double *plm_array_div_sin, *plm_array_der_mul_sin ;
    
-  //gpuErrchk(cudaMallocAsync(&prefl_global_d,  n_atom_pairs*(lmax+1)*sizeof(double) ,0));
   gpuErrchk(cudaMallocAsync(&prefm_global_d,  n_atom_pairs*(lmax+1)*sizeof(cuDoubleComplex) ,0));
-  gpuErrchk(cudaMallocAsync(&fact_array_d, (lmax+1)*sizeof(double) ,0));
+
+  //double *fact_array_d;
+  //gpuErrchk(cudaMallocAsync(&fact_array_d, (lmax+1)*sizeof(double) ,0));
   //cuda_get_fact_array<<<1,1>>>(fact_array_d, lmax);
   
-  gpuErrchk( cudaPeekAtLastError() );
-  gpuErrchk( cudaDeviceSynchronize() );
-  //printf("%d %d %d %lf\n", n_atom_pairs,n_species, lmax, rcut);
-  cuda_get_prefl_arrays_one<<<nblocks, nthreads>>>(eimphi_global_d,rjs_d, phis_d,
-                                                   mask_d, atom_sigma_in_d, atom_sigma_scaling_d,
-                                                   rcut, n_atom_pairs, n_species, lmax,
-                                                   prefl_global_d, prefm_global_d, fact_array_d);
-  gpuErrchk( cudaPeekAtLastError() );
-  gpuErrchk( cudaDeviceSynchronize() );
-  //gpuErrchk(cudaMemcpyAsync( prefl_array_global, prefl_global_d, n_atom_pairs*(lmax+1)*sizeof(double), cudaMemcpyDeviceToDevice ));
-  /*cuda_get_prefm_arrays_one<<<nblocks, nthreads>>>(eimphi_global_d,rjs_d,  phis_d, 
-                                                   mask_d, atom_sigma_in_d, atom_sigma_scaling_d,
-                                                   rcut, n_atom_pairs, n_species, lmax,
-                                                   prefl_global_d, prefm_global_d, fact_array_d);
-  
-  cuda_get_eimphi_arrays_one<<<nblocks, nthreads>>>(eimphi_global_d,rjs_d,  phis_d, 
-                                                   mask_d, atom_sigma_in_d, atom_sigma_scaling_d,
-                                                   rcut, n_atom_pairs, n_species, lmax,
-                                                   prefl_global_d, prefm_global_d, fact_array_d);
-  */
-  
-  gpuErrchk(cudaFreeAsync(fact_array_d,0));
-  //gpuErrchk(cudaFreeAsync(prefl_global_d,0));
-  gpuErrchk(cudaFree(prefm_global_d));
-}
-//write a C loop 
+/*   gpuErrchk( cudaPeekAtLastError() );
+  gpuErrchk( cudaDeviceSynchronize() ); */
 
+
+
+
+cuda_get_exp_coeff_one<<<nblocks, nthreads>>>(eimphi_global_d,rjs_d, phis_d,
+                                                   mask_d, atom_sigma_in_d, atom_sigma_scaling_d,
+                                                   rcut, n_atom_pairs, n_species, lmax, kmax,
+                                                   prefl_global_d, prefm_global_d, preflm_d,
+                                                   plm_array_global_d, exp_coeff_d); //, fact_array_d);
+  /* gpuErrchk( cudaPeekAtLastError() );
+  gpuErrchk( cudaDeviceSynchronize() ); */
+  if(c_do_derivatives){
+   
+  /*gpuErrchk(cudaMallocAsync(&plm_array_div_sin,  n_atom_pairs*kmax*sizeof(double) ,0)); 
+  gpuErrchk(cudaMallocAsync(&plm_array_der_mul_sin,  n_atom_pairs*kmax*sizeof(double) ,0));*/
+
+  cuda_get_plm_arrays_der_one<<<nblocks, nthreads>>>(plm_array_global_der_d,kmax,lmax, thetas_d, n_atom_pairs,
+                                                     plm_array_div_sin, plm_array_der_mul_sin );
+
+  cuda_get_exp_coeff_der_one<<<nblocks, nthreads>>>(eimphi_global_d, rjs_d, phis_d,
+                                      mask_d, atom_sigma_in_d, atom_sigma_scaling_d,
+                                      rcut, n_atom_pairs, n_species, lmax, kmax, 
+                                      prefl_global_d, prefm_global_d, preflm_d, 
+                                      prefl_global_der_d,
+                                      plm_array_global_d, plm_array_global_der_d, exp_coeff_d,
+                                      eimphi_rad_der_global_d, eimphi_azi_der_global_d,
+                                      plm_array_div_sin, plm_array_der_mul_sin,
+                                      exp_coeff_rad_der_d, exp_coeff_azi_der_d, exp_coeff_pol_der_d);
+  
+  //gpuErrchk(cudaFreeAsync(plm_array_div_sin,0));
+  //gpuErrchk(cudaFreeAsync(plm_array_der_mul_sin,0)) ;
+  }
+  
+  //gpuErrchk(cudaFreeAsync(fact_array_d,0));
+  //gpuErrchk(cudaFreeAsync(prefl_global_d,0));
+  
+  gpuErrchk(cudaFreeAsync(prefm_global_d,0));
+}

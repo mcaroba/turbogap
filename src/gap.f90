@@ -207,7 +207,6 @@ module gap
     call gpu_malloc_all(j2_index_d, st_n_pairs) !call gpu_malloc_int(j2_index_d, n_pairs)
     call cpy_htod(c_loc(j2_index),j2_index_d, st_n_pairs) !call cpy_int_htod(c_loc(j2_index),j2_index_d,n_pairs)
 
-! END EXPERIMENTAL CODE
 
      virial = 0.d0
      forces = 0.d0
@@ -302,7 +301,6 @@ module gap
   call gpu_free_async(energies_d)
   call destroy_cublas_handle(cublas_handle)
   call gpu_free(alphas_d)
-  !call gpu_free(this_Qss_d)
   
   deallocate( neighbors_beg, neighbors_end )
  

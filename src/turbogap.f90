@@ -36,6 +36,8 @@ program turbogap
   use types
   use vdw
   use soap_turbo_functions
+  use F_B_C
+  use iso_c_binding
 #ifdef _MPIF90
   use mpi
   use mpi_helper
@@ -128,15 +130,16 @@ program turbogap
   logical, allocatable :: compress_soap_mpi(:)
 !**************************************************************************
 
+! integer :: n_ii,i_ii, j_jj,k_ii
+! real*8 :: CC(1:1024,1:1024), BB(1:1024,1:1024), AA(1:1024,1:1024), dut1, dut2
 
 
-
-
+! call random_number(AA)
+! call random_number(BB)
 
 !**************************************************************************
 ! Start recording the time
-  !call cpu_time(time1)
-  time1=MPI_Wtime()
+  call cpu_time(time1)
   time3 = time1
 !**************************************************************************
 
@@ -151,6 +154,8 @@ program turbogap
   call mpi_init(ierr)
   call mpi_comm_size(MPI_COMM_WORLD, ntasks, ierr)
   call mpi_comm_rank(MPI_COMM_WORLD, rank, ierr)
+  time1=MPI_Wtime()
+  time3 = time1
 !  allocate( displs(1:ntasks) )
 !  allocate( displs2(1:ntasks) )
 !  allocate( counts(1:ntasks) )
@@ -165,6 +170,25 @@ program turbogap
 
 
 
+
+! write(*,*) "Starting dummy kernel"
+
+! dut1= MPI_Wtime()
+! do n_ii=1,10
+     
+!      do i_ii=1, 1024
+!      do j_jj=1,1024
+!      CC(i_ii,j_jj)=0.0
+!      do k_ii=1,1024
+!      CC(i_ii,j_jj)=CC(i_ii,j_jj)+AA(i_ii,k_ii)*BB(k_ii,j_jj)
+!      enddo
+!      enddo
+!      enddo
+! enddo 
+! dut2= MPI_Wtime()
+! write(*,*) "Ending dummy region"
+! write(*,*) "Time spent in dummy region", dut2-dut1
+   
 
 
 !**************************************************************************
@@ -1776,7 +1800,6 @@ end if
   end do
 
 
-
   if( params%do_md .or. params%do_prediction )then
     !call cpu_time(time2)
     time2=MPI_Wtime()
@@ -1834,8 +1857,26 @@ end if
   if( allocated(angle_3b_hypers) )deallocate(angle_3b_hypers)
   if( allocated(core_pot_hypers) )deallocate(core_pot_hypers)
 
+  call gpu_device_reset()
 
+! write(*,*) "Starting dummy kernel"
 
+! dut1= MPI_Wtime()
+! do n_ii=1,10
+     
+!      do i_ii=1, 1024
+!      do j_jj=1,1024
+!      CC(i_ii,j_jj)=0.0
+!      do k_ii=1,1024
+!      CC(i_ii,j_jj)=CC(i,j)+AA(i_ii,k_ii)*BB(k_ii,j_jj)
+!      enddo
+!      enddo
+!      enddo
+! enddo 
+! dut2= MPI_Wtime()
+! write(*,*) "Ending dummy region"
+! write(*,*) "Time spent in dummy region", dut2-dut1
+   
 
 #ifdef _MPIF90
   IF( rank == 0 )then
