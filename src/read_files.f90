@@ -165,7 +165,6 @@ if( .not. supercell_check_only )then
       if( allocated(fix_atom) )deallocate(fix_atom)
       allocate( velocities(1:3, 1:n_sites) )
       velocities = 0.d0
-      print *, "allocated masses in read_files.f90"
       allocate( masses(1:n_sites) )
       masses = 0.d0
       masses_from_xyz = .false.
@@ -663,6 +662,9 @@ end if
       else if(keyword=='mc_move_max')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_move_max
+      else if(keyword=='mc_min_dist')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_min_dist
       else if(keyword=='mc_lnvol_max')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_lnvol_max

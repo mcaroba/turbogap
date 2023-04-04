@@ -29,8 +29,8 @@
 
 module mc
 
-
   use neighbors
+  use md
 
 
   contains
@@ -38,7 +38,6 @@ module mc
 !   These are the routines for calculating the monte-carlo acceptance criteria for different move types
   subroutine monte_carlo_insertion(p_accept, e_new, e_prev, temp, mu, m, volume, volume_bias, N_exch)
     implicit none
-
 
     real*8, intent(in) :: e_new, e_prev, temp, mu, m, volume, volume_bias
     integer, intent(in) :: N_exch
@@ -98,8 +97,26 @@ module mc
                      -(N_exch+1) * log( V_new/V_prev )/ beta ) )
   end subroutine monte_carlo_volume
 
+  ! Not implemented this yet as it is a little complicated as one has
+  ! to recalculate the neighbours but with the mc_min_dist as the
+  ! cutoff!
+
+  ! subroutine get_volume_bias(volume_bias, mc_min_dist, positions, &
+  !      n_neigh, neighbor_list, n_atom_pairs)
+  !   implicit none
+
+  !   real*8, intent(in) :: mc_min_dist, positions(:,:)
+  !   real*8, intent(out) :: volume_bias
+  !   integer :: n_neigh(:), neighbor_list(:), n_atom_pairs
+
+  !   ! is the number of neighbors for a given atom index including itself
 
 
+  ! end subroutine get_volume_bias
+
+
+
+    
 
   subroutine get_mc_acceptance(mc_move, p_accept, energy, energy_prev, temp, &
        mu, n_mc_species, v_uc, v_uc_prev, mass, pressure)
@@ -110,6 +127,8 @@ module mc
     real*8, intent(in) ::  energy, energy_prev, temp, &
          mu, v_uc, v_uc_prev, mass, pressure
     integer, intent(in) :: n_mc_species
+
+
 
     if (mc_move == "move")then
        call monte_carlo_move(p_accept, energy, energy_prev, temp)
@@ -177,6 +196,74 @@ module mc
 
   end subroutine get_mc_move
 
+
+  subroutine mc_insert_site(mc_species, positions, ref_positions, idx, n_sites, a_box, b_box, c_box, &
+       indices, species, ref_species, xyz_species, ref_xyz_species, min_dist )
+
+    implicit none
+
+    real*8, intent(inout) :: positions(:,:)
+    real*8, intent(out) :: ref_positions(:,:)
+    real*8, intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3), min_dist
+    real*8 :: ranv(1:3)
+    integer, intent(in) :: idx, n_sites, indices(1:3), ref_species(:)
+    integer, intent(inout) :: species(:)
+    character*8, intent(in) :: ref_xyz_species(:)
+    character*8, intent(inout) :: xyz_species(:)
+    character*32, intent(in) :: mc_species
+    logical :: too_close
+
+    positions(1:3,1:n_sites-1) = ref_positions(1:3,1:n_sites-1)
+    positions(1:3,1:n_sites-1) = ref_positions(1:3,1:n_sites-1)
+    xyz_species(1:n_sites-1)= ref_xyz_species(1:n_sites-1)
+    species(1:n_sites-1)= ref_species(1:n_sites-1)
+
+    xyz_species(n_sites) = mc_species
+
+    too_close = .true.
+    do while ( too_close )
+
+       call random_number(ranv)
+       positions(1,n_sites) = ranv(1)*norm2(a_box)
+       positions(2,n_sites) = ranv(2)*norm2(b_box)
+       positions(3,n_sites) = ranv(3)*norm2(c_box)
+
+       call wrap_pbc(positions(1:3,1:n_sites), a_box/dfloat(indices(1)), &
+            b_box/dfloat(indices(2)), c_box/dfloat(indices(3)))
+
+       call check_if_atoms_too_close(positions(1:3,n_sites), ref_positions, n_sites-1, &
+            a_box, b_box, c_box, min_dist, too_close)
+
+    end do
+
+    write(*,*) "Found insertion position at ", positions(1:3,n_sites)
+
+  end subroutine mc_insert_site
+
+
+  subroutine check_if_atoms_too_close(position, ref_positions, n_sites, &
+       a_box, b_box, c_box, min_dist, too_close)
+    implicit none
+    integer, intent(in) :: n_sites
+    integer :: i, i_shift(1:3)
+    real*8, intent(in) :: position(:), ref_positions(:,:), min_dist
+    real*8, intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3)
+    real*8 :: d, dist(1:3)
+    logical, intent(inout) :: too_close
+
+    too_close = .false.
+    do i = 1, n_sites
+       call get_distance(position(1:3), ref_positions(1:3,i), &
+            a_box, b_box, c_box, (/ .true., .true., .true. /), dist, d, i_shift)
+
+       if( d < min_dist )then
+          write(*,*) "Insertion site too close, finding another one"
+          too_close=.true.
+          exit
+       end if
+    end do
+
+  end subroutine check_if_atoms_too_close
 
 
 end module mc
