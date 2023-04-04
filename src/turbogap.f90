@@ -1049,7 +1049,7 @@ program turbogap
         virial_vdw = 0.d0
       end if
 
-      if( params%do_prediction .or. ( params%do_mc ) )then
+      if( params%do_prediction .or.  params%do_mc  )then
 !       Assign the e0 to each atom according to its species
 !        do i = 1, n_sites
         do i = i_beg, i_end
@@ -1571,7 +1571,7 @@ program turbogap
 
            if (p_accept > ranf)then
               !             Accept
-              images(1) = images(2)
+
 
               ! call from_image_to_properties(images(1), positions, velocities, masses, &
               !      forces, a_box, b_box, c_box,  energy, energies, E_kinetic, &
@@ -1601,6 +1601,9 @@ program turbogap
 
               write( 200, "(A, 1X, I8, 1X, F20.8, 1X, F20.8)") &
                    mc_move, 1, energy, images(1)%energy
+
+!   Assigning the default image with the accepted one
+              images(1) = images(2)
            else
               !          Revert back to old config
               write( 200, "(A, 1X, I8, 1X, F20.8, 1X, F20.8)") &
@@ -1737,16 +1740,19 @@ program turbogap
 
            if ( .not. skip_mc )then
               if( allocated(energies) )deallocate( energies, positions, velocities, &
-                   forces, species,  &
+                   forces, this_forces, species,  &
                    xyz_species)
               allocate( energies(1:n_sites) )
               allocate( forces(1:3, 1:n_sites) )
+              allocate( this_forces(1:3, 1:n_sites) )
               allocate( velocities(1:3, 1:n_sites) )
               allocate( positions(1:3, 1:n_sites) )
               allocate( xyz_species(1:n_sites) )
               allocate( species(1:n_sites) )
               velocities = 0.0d0
               forces = 0.0d0
+              this_forces = 0.0d0
+
 
 
 
@@ -1910,7 +1916,9 @@ program turbogap
         write(*,'(A,1X,F24.8,1X,A)')' 3b energy:', sum(energies_3b), 'eV |'
         write(*,'(A,1X,F18.8,1X,A)')' core_pot energy:', sum(energies_core_pot), 'eV |'
         write(*,'(A,1X,F23.8,1X,A)')' vdw energy:', sum(energies_vdw), 'eV |'
-        if (params%do_mc)then
+        if (params%do_mc .and. mc_istep == 0)then
+           write(*,'(A,1X,F21.8,1X,A)')' Total energy:', sum(images(1)%energies), 'eV |'
+        else if (params%do_mc .and. mc_istep > 0)then
            write(*,'(A,1X,F21.8,1X,A)')' Total energy:', sum(images(2)%energies), 'eV |'
         else
            write(*,'(A,1X,F21.8,1X,A)')' Total energy:', sum(energies), 'eV |'
