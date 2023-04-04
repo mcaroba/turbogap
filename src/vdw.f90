@@ -598,7 +598,6 @@ module vdw
       i0 = modulo(neighbors_list(n_tot+1)-1, n_sites0) + 1
       s = neighbor_species(n_tot+1)
       omega_ref = (c6_ref(s)/(Hartree*Bohr**6)) / (3.d0*(alpha0_ref(s)/Bohr**3)**2)
-      write(*,*) "omega_ref", omega_ref
       n_sub_sites = 0
       n_sub_pairs = 0
       k_i = 0
@@ -1101,10 +1100,6 @@ central_omega = 0.5d0
 
     if ( rcut_loc > rcut ) then
       write(*,*) "ERROR: vdw_loc_rcut should be at most vdw_scs_rcut!"
-      return
-    end if
-    if ( rcut_mbd < rcut_loc ) then
-      write(*,*) "ERROR: vdw_mbd_rcut should be larger than vdw_loc_rcut!"
       return
     end if
     if ( rcut_2b < rcut_mbd ) then
@@ -3127,7 +3122,7 @@ central_omega = 0.5d0
                     do_pref = 0.d0
                   end if
                   do_2b(k2) = do_pref
-                  dr0_ii_SCS_2b(k2) = r0_ii_mbd(k2) * (a_iso(r,2)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0) / &
+                  dr0_ii_SCS_2b(k2) = r0_ii_2b(k2) * (a_iso(r,2)/neighbor_alpha0_2b(k2))**(1.d0/3.d0) / &
                                    (3.d0 * a_iso(r,2)) * da_iso(r,c3,2)
                 else if ( rjs_2b(k2) > (rcut_loc-r_buf_loc)/Bohr .and. rjs_2b(k2) .le. rcut_loc/Bohr ) then
                   r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),i2,1)
@@ -3147,7 +3142,7 @@ central_omega = 0.5d0
                               (-30.d0 * rb**2 &
                               + 60.d0 * rb**3 &
                               - 30.d0 * rb**4) &
-                               * ( -xyz_0_mbd(c3,k2)/rjs_2b(k2)/(r_buf_loc/Bohr)) + &
+                               * ( -xyz_2b(c3,k2)/rjs_2b(k2)/(r_buf_loc/Bohr)) + &
                               neighbor_alpha0_2b(k2) * hirshfeld_2b_neigh(k2) * & !central_pol(i1) * &
                                ( +30.d0 * rb**2 &
                               - 60.d0 * rb**3 &
@@ -3300,14 +3295,14 @@ central_omega = 0.5d0
               end do
 
 
-              if ( i == 1 .and. c3 == 1 .and. om == 2 ) then
-                write(*,*) "o_mbd"
-                k3 = 0
-                do p = 1, n_mbd_sites
-                  write(*,*) o_mbd(k3+1)
-                  k3 = k3+n_mbd_neigh(p)
-                end do
-              end if
+              !if ( i == 1 .and. c3 == 1 .and. om == 2 ) then
+              !  write(*,*) "o_mbd"
+              !  k3 = 0
+              !  do p = 1, n_mbd_sites
+              !    write(*,*) o_mbd(k3+1)
+              !    k3 = k3+n_mbd_neigh(p)
+              !  end do
+              !end if
 
               if ( n_order > 1 ) then
 
@@ -3346,6 +3341,8 @@ central_omega = 0.5d0
                   write(*,*) "MBD total energy of sphere", i, (integral / (2.d0*pi) + E_TS) * Hartree
                 end if
 
+                write(*,*) "MBD part", 1.d0/(2.d0*pi) * integral * Hartree/Bohr
+                write(*,*) "TS part", forces_TS
                 write(*,*) "MBD force", i, c3, forces0(c3,i)
 
               end if
