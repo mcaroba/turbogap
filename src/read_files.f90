@@ -244,7 +244,7 @@ if( .not. supercell_check_only )then
       repeat_xyz = .false.
     end if
     indices_prev = 1
-end if
+ end if
 !   Now we construct a supercell of the required size to accommodate the given rcut_max
 !   This needs to be done when the simulation box cannot accommodate one cutoff sphere
     a_box = a_box/dfloat(indices_prev(1))
@@ -674,6 +674,9 @@ end if
       else if(keyword=='mc_species')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_species
+      else if(keyword=='mc_write_xyz')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_write_xyz
       else if(keyword=='write_xyz')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%write_xyz
