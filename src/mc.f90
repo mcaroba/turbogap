@@ -236,8 +236,6 @@ module mc
 
     end do
 
-    write(*,*) "Found insertion position at ", positions(1:3,n_sites)
-
   end subroutine mc_insert_site
 
 
@@ -257,7 +255,6 @@ module mc
             a_box, b_box, c_box, (/ .true., .true., .true. /), dist, d, i_shift)
 
        if( d < min_dist )then
-          write(*,*) "Insertion site too close, finding another one"
           too_close=.true.
           exit
        end if

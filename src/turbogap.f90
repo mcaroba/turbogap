@@ -694,9 +694,9 @@ program turbogap
 
     exit_loop = .false.
 
-    if( params%do_md )then
+    if( params%do_md .or. mc_move == "md")then
        md_istep = md_istep + 1
-    else if( params%do_mc .and. (.not. (mc_move == "md")))then
+    else if( params%do_mc .and. (.not. mc_move == "md"))then
        mc_istep = mc_istep + 1
     else
       n_xyz = n_xyz + 1
@@ -888,7 +888,7 @@ program turbogap
 !   Now that all ranks know the size of n_sites, we allocate do_list
     if( .not. params%do_md .or. (params%do_md .and. md_istep == 0) .or. &
                                 (params%do_mc ) )then
-      allocate( do_list(1:n_sites) )
+      if (.not. allocated(do_list))allocate( do_list(1:n_sites) )
       do_list = .true.
     end if
 !
@@ -1538,7 +1538,6 @@ program turbogap
 !       -- We have the list of move types in params%mc_types and the number params%n_mc_types --
         !       >> First generate a random number in the range of the number of
 
-
         if ( params%do_mc .and. mc_istep == 1 )then
            open(unit=200, file="mc.log", status="unknown")
         end if
@@ -1552,26 +1551,34 @@ program turbogap
            !       > We have the mc conditions in mc.f90
            !       > We care about comparing e_store to the energy of the new configuration based on the mc_movw
 
+
            call from_properties_to_image(images(2), positions, velocities, masses, &
                 forces, a_box, b_box, c_box,  energy, energies, E_kinetic, &
                 species, species_supercell, n_sites, indices, fix_atom, &
                 xyz_species, xyz_species_supercell)
 
+
+
+           write(*,*)'------------------------------------------------'
+           write(*,'(A,1X,I0)')   ' MC Iteration:', mc_istep
+           write(*,'(A,1X,A)')    '    Move type:', mc_move
+           write(*,'(A,1X,F22.8)')'    Etot_prev:', images(1)%energy
+           write(*,'(A,1X,F22.8)')'    Etot_new :', images(2)%energy
+
            v_uc = dot_product( cross_product(a_box, b_box), c_box ) / (dfloat(indices(1)*indices(2)*indices(3)))
 
 
-           write(*, '(A,1X,A)') 'Checking acceptance of mc_move', mc_move
 
            call get_mc_acceptance(mc_move, p_accept, energy, images(1)%energy, params%t_beg, &
                                  params%mc_mu, n_mc_species, v_uc, v_uc_prev, params%masses_types(mc_id), params%p_beg)
 
 
            call random_number(ranf)
-           write(*, '(A,1X,A,1X,A,ES12.6,1X,A,1X,ES12.6)') 'Finished checking acceptance of mc_move', mc_move, &
-                'p_accept =', p_accept, ' ranf = ', ranf
+
 
            !    ACCEPT OR REJECT
-
+           write(*, '(A,1X,A,1X,A,L4,1X,A,ES12.6,1X,A,1X,ES12.6)') 'Is ', trim(mc_move), &
+                'accepted?', p_accept > ranf, ' p_accept =', p_accept, ' ranf = ', ranf
            if (p_accept > ranf)then
               !             Accept
               call write_extxyz( n_sites, 0, 1.0d0, 0.0d0, 0.0d0, &
@@ -1591,7 +1598,7 @@ program turbogap
                    "mc_all.xyz", .false. )
 
               n_sites_prev = n_sites
-              v_uc_prev = dot_product( cross_product(a_box, b_box), c_box ) / (dfloat(indices(1)*indices(2)*indices(3)))
+              v_uc_prev = v_uc
 !          Add acceptance to the log file else dont
 
               write(200, "(I8, 1X, A, 1X, I8, 1X, F20.8, 1X, F20.8, 1X, I8, 1X, I8, 1X)") &
@@ -1668,11 +1675,6 @@ program turbogap
         call get_mc_move(n_mc_species, params%mc_types, mc_move)
 
 
-        write(*,*)'------------------------------------------------'
-        write(*,'(A,1X,I0)')   ' MC Iteration:', mc_istep
-        write(*,'(A,1X,A)')    '    Move type:', mc_move
-        write(*,'(A,1X,F22.8)')'    Etot_prev:', energy
-
         if( allocated(positions_prev) )deallocate( positions_prev )
         allocate( positions_prev(1:3, 1:n_sites) )
 
@@ -1709,9 +1711,9 @@ program turbogap
            else if (mc_move == "removal")then
               n_sites = n_sites - 1
               call  random_number(ranf)
+! Index of atom to remove
               idx = species_idx( floor( ranf * n_mc_species ) + 1 )
            end if
-
 
            if( allocated(energies) )deallocate( energies, positions, velocities, &
                 forces, species,  &
@@ -1726,14 +1728,10 @@ program turbogap
            forces = 0.0d0
            energies= 0.0d0
 
-
-
-
            if (mc_move == "insertion")then
               call mc_insert_site(params%mc_species, positions, images(1)%positions, idx, &
                    n_sites, a_box, b_box, c_box, indices, species, images(1)%species, &
                    xyz_species, images(1)%xyz_species, params%mc_min_dist )
-
 
               deallocate(masses)
               allocate(masses(1:n_sites))
@@ -1747,8 +1745,6 @@ program turbogap
                  ! ignoring the hirshfeld v just want to get rough implementation done
                  hirshfeld_v(n_sites) = hirshfeld_v(n_sites-1)
               end if
-
-
 
            else if (mc_move == "removal")then
               deallocate(masses)
@@ -1782,15 +1778,12 @@ program turbogap
 
         end if
 
-
         ! NOTE: the species_supercell and xyz_species_supercell are
         ! not commensurate with the new image as these have not been
         ! calculated. If reading from an outputted xyz file, then it
         ! should be okay but really the new atoms should be added to
         ! the supercell in the usual way, but for convenience, one has
         ! not done that.
-
-
 
         call write_extxyz( n_sites, 0, 1.0d0, 0.0d0, 0.0d0, &
              a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
@@ -1800,15 +1793,13 @@ program turbogap
              params%write_property, params%write_array_property, fix_atom, &
              mc_file, .true. )
 
-
-        
      end if
 #ifdef _MPIF90
         END IF
 #endif
 
 
-     if( .not. params%do_md )then
+     if( .not. params%do_md  )then
 #ifdef _MPIF90
         IF( rank == 0 )then
 #endif
@@ -1818,12 +1809,12 @@ program turbogap
         write(*,'(A,1X,F24.8,1X,A)')' 3b energy:', sum(energies_3b), 'eV |'
         write(*,'(A,1X,F18.8,1X,A)')' core_pot energy:', sum(energies_core_pot), 'eV |'
         write(*,'(A,1X,F23.8,1X,A)')' vdw energy:', sum(energies_vdw), 'eV |'
-        if (params%do_mc .and. mc_istep == 0)then
-           write(*,'(A,1X,F21.8,1X,A)')' Total energy:', sum(images(1)%energies), 'eV |'
-        else if (params%do_mc .and. mc_istep > 0)then
-           write(*,'(A,1X,F21.8,1X,A)')' Total energy:', sum(images(2)%energies), 'eV |'
-        else
+        if (.not. params%do_mc)then
            write(*,'(A,1X,F21.8,1X,A)')' Total energy:', sum(energies), 'eV |'
+        else if (mc_istep == 0)then
+           write(*,'(A,1X,F21.8,1X,A)')' Total energy:', sum(images(1)%energies), 'eV |'
+        else
+           write(*,'(A,1X,F21.8,1X,A)')' Total energy:', sum(images(2)%energies), 'eV |'
         end if
 
         if ( .not. params%do_mc)then
@@ -1831,10 +1822,11 @@ program turbogap
            write(*,*)'Energy & forces in "trajectory_out.xyz"|'
            write(*,*)'                                       |'
            write(*,*)'.......................................|'
-        else
+        else if ( mc_istep == 0 )then
            write(*,*)'                                       |'
            write(*,*)' MC configs in "mc_current.xyz" and    |'
-           write(*,*)'               "mc_trial.xyz"        |'
+           write(*,*)'               "mc_trial.xyz"          |'
+           write(*,*)'               "mc_all.xyz"            |'
            write(*,*)'.......................................|'
         end if
 
