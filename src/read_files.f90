@@ -52,7 +52,7 @@ module read_files
                       repeat_xyz, rcut_max, which_atom, positions, &
                       do_md, velocities, masses_types, masses, xyz_species, xyz_species_supercell, &
                       species, species_supercell, indices, a_box, b_box, c_box, n_sites, &
-                      supercell_check_only, fix_atom, t_beg, write_masses )
+                      supercell_check_only, fix_atom, t_beg, write_masses, recalculate_supercell )
 
     implicit none
 
@@ -61,7 +61,8 @@ module read_files
     integer, intent(in) :: which_atom, n_species
     character*8, intent(in) :: species_types(:)
     character*1024, intent(in) :: filename
-    logical, intent(in) :: ase_format, all_atoms, do_timing, do_md, supercell_check_only
+    logical, intent(in) :: ase_format, all_atoms, do_timing, do_md, supercell_check_only, &
+         recalculate_supercell
 
 !   In and out variables
     real*8, allocatable, intent(inout) :: positions(:,:), velocities(:,:), masses(:)
@@ -252,7 +253,8 @@ if( .not. supercell_check_only )then
     c_box = c_box/dfloat(indices_prev(3))
     call number_of_unit_cells_for_given_cutoff(a_box, b_box, c_box, rcut_max, [.true., .true., .true.], indices)
 
-if( .not. supercell_check_only .or. (supercell_check_only .and. any(indices /= indices_prev)) )then
+    if( .not. supercell_check_only .or. (supercell_check_only .and. any(indices /= indices_prev)) &
+         .or. recalculate_supercell )then
     if( indices(1) > 1 .or. indices(2) > 1 .or. indices(3) > 1 )then
       n_sites_supercell = n_sites * indices(1) * indices(2) * indices(3)
       allocate( positions_supercell(1:3, 1:n_sites_supercell) )
