@@ -184,10 +184,10 @@ module mc
        n_mc = floor( size( mc_types,1 ) * ranf ) + 1
        mc_move = mc_types(n_mc)
 
+! If there are none of the gc species to remove, then we can't remove!!
        cant_remove =  (n_mc_species == 0 .and. mc_move == "removal" )
 
        if(cant_remove)then
-          write(*,*) "Cannot remove any mc species! Choosing another move!"
           invalid_move = .true.
        else
           invalid_move = .false.
