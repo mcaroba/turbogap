@@ -22,7 +22,7 @@ vdw_alpha0_ref = 1.778 !0.667
 vdw_c6_ref = 27.8 !3.88
 ! The order of the cutoffs is vdw_scs_rcut < vdw_mbd_rcut < vdw_2b_rcut
 ! If two cutoffs are equal, there is no buffer region between them!
-vdw_buffer = 0.5          ! Buffer for transitions between cut-off regions. Type: REAL
+vdw_buffer = 2.          ! Buffer for transitions between cut-off regions. Type: REAL
 vdw_loc_rcut = 4.5
 vdw_scs_rcut = 4.5        ! vdw_scs_rcut > vdw_buffer. Type: REAL
 vdw_mbd_rcut = 7.        ! Cut-off for atoms to include for local MBD energy (vdw_mbd_rcut >= vdw_scs_rcut + vdw_buffer). Type: REAL

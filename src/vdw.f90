@@ -597,7 +597,7 @@ module vdw
       n_tot = sum(n_neigh(1:i))-n_neigh(i)
       i0 = modulo(neighbors_list(n_tot+1)-1, n_sites0) + 1
       s = neighbor_species(n_tot+1)
-      omega_ref = (c6_ref(s)/(Hartree*Bohr**6)) / (3.d0*(alpha0_ref(s)/Bohr**3)**2)
+      omega_ref = (4.d0 * c6_ref(s)/(Hartree*Bohr**6)) / (3.d0*(alpha0_ref(s)/Bohr**3)**2)
       n_sub_sites = 0
       n_sub_pairs = 0
       k_i = 0
@@ -1077,19 +1077,12 @@ module vdw
                            T_LR_mult_ij(:), dT_LR_mult(:), dT_LR_mult_ij(:), r6_mult(:), dr6_mult(:)
     real*8 :: a_mbd_i, a_mbd_j, da_i, da_j, pol1, E_TS, f_damp_der_2b, dr_vdw_i, &
               dr_vdw_j, forces_TS, dC6_2b, mult1_i, mult1_j, mult2, dmult1_i(1:3), dmult1_j(1:3), dmult2(1:3), hv_p_der, &
-              hv_q_der, do_pref, rb, inner_damp_der, rjs_0_i, rcut_forces, o_i
+              hv_q_der, do_pref, rb, inner_damp_der, rjs_0_i, rcut_forces, o_i, do_i
     integer :: n_mbd_sites, n_mbd_pairs, n_2b_sites
     integer, allocatable :: n_mbd_neigh(:), mbd_neighbors_list(:), p_mbd(:)
     real*8 :: polyfit(1:15)
     integer :: n_degree
     real*8, allocatable :: B_pol(:,:), B_mult(:,:), b_i(:,:), d_vec(:,:), val_xv(:,:)
-
-    write(*,*) "hirshfeld_v_cart_der_ji"
-    do k2 = 1, n_neigh(1)
-      write(*,*) "i", neighbors_list(k2), "dist", rjs(k2), "hirshfeld", hirshfeld_v_neigh(k2), &
-                  "hirshfeld_der", hirshfeld_v_cart_der_ji(1:3,k2)
-    end do
-
 
 
 !central_pol = 10.d0
@@ -1217,7 +1210,7 @@ central_omega = 0.5d0
       n_tot = sum(n_neigh(1:i))-n_neigh(i)
       i0 = modulo(neighbors_list(n_tot+1)-1, n_sites0) + 1
       s = neighbor_species(n_tot+1)
-      omega_ref = (vdw_omega_ref * c6_ref(s)/(Hartree*Bohr**6)) / (3.d0*(alpha0_ref(s)/Bohr**3)**2)
+      omega_ref = (4.d0 * c6_ref(s)/(Hartree*Bohr**6)) / (3.d0*(alpha0_ref(s)/Bohr**3)**2)
       n_sub_sites = 0
       n_sub_pairs = 0
       k_i = 0
@@ -1356,13 +1349,6 @@ central_omega = 0.5d0
             hirshfeld_sub_neigh(k2) = hirshfeld_v_neigh(n_tot+k_i)
             s = neighbor_species(n_tot+k_i)
             sub_neighbors_list(k2) = i2
-            if ( p == 55 .and. i == 1 .and. om == 2 ) then
-              write(*,*) "p", p
-              write(*,*) "i2", i2
-              write(*,*) "rjs", rjs(n_tot+k_i)
-              write(*,*) "h", hirshfeld_sub_neigh(k2)
-              write(*,*) "h_der", hirshfeld_v_cart_der_H(1:3,n_tot+k_i)
-            end if
             if ( do_derivatives .and. do_hirshfeld_gradients ) then
               hirshfeld_v_sub_der(1:3,k2) = hirshfeld_v_cart_der_H(1:3,n_tot+k_i)
             end if
@@ -3100,11 +3086,11 @@ central_omega = 0.5d0
               r_vdw_i = r0_ref(s) / Bohr * (a_iso(1,2)/(alpha0_ref(s)/Bohr**3))**(1.d0/3.d0)
               dr_vdw_i = r_vdw_i / (3.d0 * a_iso(1,2)) * da_iso(1,c3,2)
               if ( a_iso(1,2) > a_iso(1,1) ) then
-                do_pref = -0.5d0*vdw_omega_ref*omega_ref * (a_iso(1,1) * da_iso(1,c3,2) - a_iso(1,2) * da_iso(1,c3,1)) / &
+                do_i = -0.5d0*vdw_omega_ref*omega_ref * (a_iso(1,1) * da_iso(1,c3,2) - a_iso(1,2) * da_iso(1,c3,1)) / &
                                  ( a_iso(1,1)**2 * (a_iso(1,2)/a_iso(1,1) - 1.d0)**(3.d0/2.d0) )
               else
                 write(*,*) "WARNING: frequency dependency failure. Use larger vdw_omega_ref."
-                do_pref = 0.d0
+                do_i = 0.d0
               end if
               !do_pref = 0.d0
               do p = 1, n_2b_sites
@@ -3225,7 +3211,7 @@ central_omega = 0.5d0
                             / (o_p(1)+o_2b(k2)) &
                             * (da_iso(1,c3,2)*a_2b(k2) + a_iso(1,2)*da_2b(k2)) &
                             + a_iso(1,2) * a_2b(k2) / (o_p(1)+o_2b(k2))**2 &
-                            * (do_pref * o_2b(k2)**2 + o_p(1)**2 * do_2b(k2)))
+                            * (do_i * o_2b(k2)**2 + o_p(1)**2 * do_2b(k2)))
                 !if ( i == 1 .and. c3 == 1 .and. om == 2 .and. k2 == 1) then
                 !write(*,*) "a_iso", a_iso(1,2)
                 !write(*,*) "da_iso", da_iso(1,c3,2)
@@ -3243,13 +3229,9 @@ central_omega = 0.5d0
               forces_TS = 1.d0/2.d0 * forces_TS
 
               !if ( i == 1 .and. c3 == 1 ) then
-              !write(*,*) "r0_ii_SCS_2b"
+              !write(*,*) "r6_mult, dr6_mult"
               !do k3 = 1, n_2b_sites
-              !  write(*,*) k3, r0_ii_SCS_2b(k3)
-              !end do
-              !write(*,*) "dr0_ii_SCS_2b"
-              !do k3 = 1, n_2b_sites
-              !  write(*,*) k3, dr0_ii_SCS_2b(k3)
+              !  write(*,*) k3, r6_mult(k3), dr6_mult(k3)
               !end do
               !end if
 
@@ -3341,8 +3323,6 @@ central_omega = 0.5d0
                   write(*,*) "MBD total energy of sphere", i, (integral / (2.d0*pi) + E_TS) * Hartree
                 end if
 
-                write(*,*) "MBD part", 1.d0/(2.d0*pi) * integral * Hartree/Bohr
-                write(*,*) "TS part", forces_TS
                 write(*,*) "MBD force", i, c3, forces0(c3,i)
 
               end if
