@@ -695,7 +695,7 @@ program turbogap
                     n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
                     positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
                     xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
-                    n_sites, .false., fix_atom, params%t_beg, params%write_array_property(6) )
+                    n_sites, .false., fix_atom, params%t_beg, params%write_array_property(6), .true. )
 !     Only rank 0 handles these variables
 !      allocate( positions_prev(1:3, 1:size(positions,2)) )
 !      allocate( positions_diff(1:3, 1:size(positions,2)) )
@@ -737,7 +737,7 @@ program turbogap
                     n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
                     positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
                     xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
-                    n_sites, .false., fix_atom, params%t_beg, params%write_array_property(6) )
+                    n_sites, .false., fix_atom, params%t_beg, params%write_array_property(6), .true. )
 #ifdef _MPIF90
       END IF
 #endif
@@ -821,7 +821,7 @@ program turbogap
                     n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
                     positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
                     xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
-                    n_sites, .true., fix_atom, params%t_beg, params%write_array_property(6) )
+                    n_sites, .true., fix_atom, params%t_beg, params%write_array_property(6), .true. )
     end if
 
 #ifdef _MPIF90
