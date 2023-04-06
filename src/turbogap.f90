@@ -32,6 +32,7 @@ program turbogap
   use gap
   use read_files
   use md
+  use mc
   use gap_interface
   use types
   use vdw
