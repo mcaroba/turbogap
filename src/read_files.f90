@@ -43,11 +43,16 @@ module read_files
 !**************************************************************************
 ! This subroutine reads in the XYZ file
 !
+! WE NEED TO WRITE A PROPER EXTXYZ READER THAT CAN IDENTIFY WHICH COLUMN CONTAINS
+! EACH PROPERTY. THIS SUBROUTINE CAN ONLY READ IN FILES WITH THE FOLLOWING CONVENTION:
+!
+! SPECIES X Y Z (VX VY VZ (FIXX FIXY FIXZ))
+!
   subroutine read_xyz(filename, ase_format, all_atoms, do_timing, n_species, species_types, &
                       repeat_xyz, rcut_max, which_atom, positions, &
                       do_md, velocities, masses_types, masses, xyz_species, xyz_species_supercell, &
                       species, species_supercell, indices, a_box, b_box, c_box, n_sites, &
-                      supercell_check_only, fix_atom, t_beg, write_masses )
+                      supercell_check_only, fix_atom, t_beg, write_masses, recalculate_supercell )
 
     implicit none
 
@@ -56,7 +61,8 @@ module read_files
     integer, intent(in) :: which_atom, n_species
     character*8, intent(in) :: species_types(:)
     character*1024, intent(in) :: filename
-    logical, intent(in) :: ase_format, all_atoms, do_timing, do_md, supercell_check_only
+    logical, intent(in) :: ase_format, all_atoms, do_timing, do_md, supercell_check_only, &
+         recalculate_supercell
 
 !   In and out variables
     real*8, allocatable, intent(inout) :: positions(:,:), velocities(:,:), masses(:)
@@ -73,7 +79,7 @@ module read_files
     real*8 :: time1, time2, dist(1:3), read_time, E_kinetic, instant_temp
     real*8 :: kB = 8.6173303d-5, rjunk(1:3), rjunk1d
     integer :: i, iostatus, j, n_sites_supercell, counter, ijunk, k2, i2, j2
-    integer :: indices_prev(1:3)  
+    integer :: indices_prev(1:3)
     character*8 :: i_char
     character*128 :: cjunk, cjunk_array(1:100)
     character*1024 :: cjunk1024, properties
@@ -152,13 +158,16 @@ if( .not. supercell_check_only )then
     allocate( species(1:n_sites) )
     xyz_species = ""
     species = 0
-    if( do_md )then
+!   We need to comment this out here for nested sampling
+!    if( do_md )then
+    if( .true. )then
       if( allocated(velocities) )deallocate(velocities)
       if( allocated(masses) )deallocate(masses)
       if( allocated(fix_atom) )deallocate(fix_atom)
       allocate( velocities(1:3, 1:n_sites) )
       velocities = 0.d0
       allocate( masses(1:n_sites) )
+      masses = 0.d0
       masses_from_xyz = .false.
       allocate( fix_atom(1:3, 1:n_sites) )
       fix_atom = .false.
@@ -189,7 +198,9 @@ if( .not. supercell_check_only )then
 !          species(species_multiplicity(i), i) = j
           xyz_species(i) = species_types(j)
           species(i) = j
-          if( do_md .and. .not. masses_from_xyz )then
+!         This is commented out because we also need masses with nested sampling when used in combination with MD
+!          if( do_md .and. .not. masses_from_xyz )then
+          if( .not. masses_from_xyz )then
             masses(i) = masses_types(j)
           end if
 !          exit
@@ -234,7 +245,7 @@ if( .not. supercell_check_only )then
       repeat_xyz = .false.
     end if
     indices_prev = 1
-end if
+ end if
 !   Now we construct a supercell of the required size to accommodate the given rcut_max
 !   This needs to be done when the simulation box cannot accommodate one cutoff sphere
     a_box = a_box/dfloat(indices_prev(1))
@@ -242,11 +253,14 @@ end if
     c_box = c_box/dfloat(indices_prev(3))
     call number_of_unit_cells_for_given_cutoff(a_box, b_box, c_box, rcut_max, [.true., .true., .true.], indices)
 
-if( .not. supercell_check_only .or. (supercell_check_only .and. any(indices /= indices_prev)) )then
+    if( .not. supercell_check_only .or. (supercell_check_only .and. any(indices /= indices_prev)) &
+         .or. recalculate_supercell )then
     if( indices(1) > 1 .or. indices(2) > 1 .or. indices(3) > 1 )then
       n_sites_supercell = n_sites * indices(1) * indices(2) * indices(3)
       allocate( positions_supercell(1:3, 1:n_sites_supercell) )
-      if( do_md )then
+!     We need to comment this out here for nested sampling
+!      if( do_md )then
+      if( .true. )then
         allocate( velocities_supercell(1:3, 1:n_sites_supercell) )
       end if
 !      allocate( species_supercell(1:max_species_multiplicity, 1:n_sites_supercell) )
@@ -266,7 +280,9 @@ if( .not. supercell_check_only .or. (supercell_check_only .and. any(indices /= i
               positions_supercell(1:3, counter) = positions(1:3, i) + dfloat(i2-1)*a_box(1:3) &
                                                                     + dfloat(j2-1)*b_box(1:3) &
                                                                     + dfloat(k2-1)*c_box(1:3)
-              if( do_md )then
+!             We need to comment this out here for nested sampling
+!              if( do_md )then
+              if( .true. )then
                 velocities_supercell(1:3, counter) = velocities(1:3, i)
               end if
 !              species_supercell(:, counter) = species(:, i)
@@ -280,7 +296,9 @@ if( .not. supercell_check_only .or. (supercell_check_only .and. any(indices /= i
       allocate( positions(1:3, 1:n_sites_supercell) )
       positions(1:3, 1:n_sites_supercell) = positions_supercell(1:3, 1:n_sites_supercell)
       deallocate( positions_supercell )
-      if( do_md )then
+!     We need to comment this out here for nested sampling
+!      if( do_md )then
+      if( .true. )then
         deallocate( velocities )
         allocate( velocities(1:3, 1:n_sites_supercell) )
         velocities(1:3, 1:n_sites_supercell) = velocities_supercell(1:3, 1:n_sites_supercell)
@@ -306,7 +324,9 @@ if( .not. supercell_check_only .or. (supercell_check_only .and. any(indices /= i
         allocate( positions(1:3, 1:n_sites_supercell) )
         positions(1:3, 1:n_sites_supercell) = positions_supercell(1:3, 1:n_sites_supercell)
         deallocate( positions_supercell )
-        if( do_md )then
+!       We need to comment this out here for nested sampling
+!        if( do_md )then
+        if( .true. )then
           allocate( velocities_supercell(1:3, 1:n_sites_supercell) )
           velocities_supercell = velocities(1:3, 1:n_sites_supercell)
           deallocate( velocities )
@@ -483,13 +503,14 @@ end if
     type(input_parameters), intent(out) :: params
 
 !   Internal variables
-    real*8 :: c6_ref, r0_ref, alpha0_ref, bsf 
-    integer :: iostatus, i, iostatus2
+    real*8 :: c6_ref, r0_ref, alpha0_ref, bsf
+    integer :: iostatus, i, j, nw, iostatus2
     character*1024 :: long_line
     character*128, allocatable :: long_line_items(:)
     character*64 :: keyword, cjunk
     character*32 :: implemented_thermostats(1:3)
     character*32 :: implemented_barostats(1:2)
+    character*32 :: implemented_mc_types(1:6)
     character*2 :: element
     character*1 :: keyword_first
     logical :: are_vdw_refs_read(1:3), valid_choice, masses_in_input_file = .false.
@@ -501,9 +522,22 @@ end if
     implemented_barostats(1) = "none"
     implemented_barostats(2) = "berendsen"
 
+    implemented_mc_types(1) = "none"
+    implemented_mc_types(2) = "move"
+    implemented_mc_types(3) = "insertion"
+    implemented_mc_types(4) = "removal"
+    implemented_mc_types(5) = "relax"
+    implemented_mc_types(6) = "md"
+
+
 !   Some defaults before reading the input file (the values in the input file will override them)
     if( mode == "md" )then
       params%do_md = .true.
+      params%do_prediction = .true.
+      params%do_forces = .true.
+      params%do_derivatives = .true.
+    else if( mode == "mc" )then
+      params%do_mc = .true.
       params%do_prediction = .true.
       params%do_forces = .true.
       params%do_derivatives = .true.
@@ -529,6 +563,7 @@ end if
     params%vdw_alpha0_ref = 0.d0
     are_vdw_refs_read = .false.
 
+
 !   Read the input file now
     iostatus = 0
     do while(iostatus==0)
@@ -544,6 +579,9 @@ end if
       else if(keyword=='do_md')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%do_md
+      else if(keyword=='do_mc')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%do_mc
       else if(keyword=='do_prediction')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%do_prediction
@@ -595,12 +633,83 @@ end if
       else if(keyword=='md_nsteps')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%md_nsteps
+      else if(keyword=='mc_nsteps')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_nsteps
+      else if(keyword=='n_mc_types')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%n_mc_types
+        allocate( params%mc_types(1:params%n_mc_types) )
+      else if(keyword=='mc_types')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, (params%mc_types(nw),nw=1,params%n_mc_types)
+        !       Need the check the implemented types
+        valid_choice = .false.
+        do j = 1, params%n_mc_types
+           valid_choice = .false.
+           do i = 1, size(implemented_mc_types)
+              if( trim(params%mc_types(j)) == trim(implemented_mc_types(i)) )then
+                 valid_choice = .true.
+              end if
+           end do
+           if( .not. valid_choice )then
+              if( rank == 0 )then
+                 write(*,*) "ERROR -> Invalid mc_type keyword:", params%mc_types(j)
+                 write(*,*) "This is a list of valid options:"
+                 write(*,*) implemented_mc_types
+              end if
+              stop
+           end if
+        end do
+      else if(keyword=='mc_move_max')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_move_max
+      else if(keyword=='mc_min_dist')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_min_dist
+      else if(keyword=='mc_lnvol_max')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_lnvol_max
+      else if(keyword=='mc_mu')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_mu
+      else if(keyword=='mc_species')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_species
+      else if(keyword=='mc_write_xyz')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_write_xyz
       else if(keyword=='write_xyz')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%write_xyz
       else if(keyword=='write_thermo')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%write_thermo
+      else if(keyword=='n_nested')then
+        if( mode /= "predict" )then
+          write(*,*) 'ERROR: the "n_nested" option for nested sampling can only be used with "turbogap predict"'
+          stop
+        end if
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%n_nested
+        if( params%n_nested > 0 )then
+          params%do_nested_sampling = .true.
+        end if
+      else if(keyword=='t_extra')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%t_extra
+      else if(keyword=='p_nested')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%p_nested
+      else if(keyword=='nested_max_strain')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%nested_max_strain
+      else if(keyword=='nested_max_volume_change')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%nested_max_volume_change
+      else if(keyword=='scale_box_nested')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%scale_box_nested
       else if(keyword=='write_velocities')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%write_velocities
@@ -889,6 +998,20 @@ end if
         write(*,*) "ERROR: vdW inner and outer cutoff regions can't overlap. Check your vdw_* definitions"
         stop
       end if
+    end if
+
+!   Nested sampling checks
+    if( params%do_nested_sampling )then
+      if( params%thermostat /= "none" )then
+        write(*,*)'                                       |'
+        write(*,*)'WARNING: Nested sampling only works    |  <-- WARNING'
+        write(*,*)'(currently) in combination with total  |'
+        write(*,*)'energy MD. The selected thermostat has |'
+        write(*,*)'been disabled.                         |'
+      end if
+!     Prepare directory where we create the latest version of the walkers
+      call system("rm -rf walkers/")
+      call system("mkdir -p walkers/")
     end if
 
 !   Set the writeouts
@@ -1211,7 +1334,7 @@ end if
             else if( keyword == "basis" )then
               backspace(10)
               read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%basis
-              if( soap_turbo_hypers(n_soap_turbo)%basis /= "poly3" .and. & 
+              if( soap_turbo_hypers(n_soap_turbo)%basis /= "poly3" .and. &
                 soap_turbo_hypers(n_soap_turbo)%basis /= "poly3gauss" )then
                 write(*,*)'                                       |'
                 write(*,*)'WARNING: I didn''t understand your      |  <-- WARNING'
