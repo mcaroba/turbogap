@@ -100,7 +100,8 @@ program turbogap
   character*64 :: keyword
   character*16 :: lattice_string(1:9)
   character*8 :: i_char
-  character*8, allocatable :: xyz_species(:), xyz_species_supercell(:), species_type_temp(:)
+  character*8, allocatable :: xyz_species(:), xyz_species_supercell(:), species_type_temp(:), &
+       species_types(:)
   character*1 :: keyword_first
 
 ! This is the mode in which we run TurboGAP
