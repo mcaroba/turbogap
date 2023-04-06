@@ -637,27 +637,27 @@ program turbogap
     end if
     counter = 1
  end if
-  if( params%do_mc )then
-#ifdef _MPIF90
-    IF( rank == 0 )THEN
-#endif
-    write(*,*)'                                       |'
-    write(*,*)'Doing Monte-Carlo...            |'
-    if( params%print_progress .and. md_istep > 0 )then
-      write(*,*)'                                       |'
-      write(*,*)'Progress:                              |'
-      write(*,*)'                                       |'
-      write(*,'(1X,A)',advance='no')'[                                    ] |'
-    end if
-#ifdef _MPIF90
-    END IF
-#endif
-    update_bar = params%mc_nsteps/36
-    if( update_bar < 1 )then
-      update_bar = 1
-    end if
-    counter = 1
-  end if
+!   if( params%do_mc )then
+! #ifdef _MPIF90
+!     IF( rank == 0 )THEN
+! #endif
+!     write(*,*)'                                       |'
+!     write(*,*)'Doing Monte-Carlo...            |'
+!     if( params%print_progress .and. md_istep > 0 )then
+!       write(*,*)'                                       |'
+!       write(*,*)'Progress:                              |'
+!       write(*,*)'                                       |'
+!       write(*,'(1X,A)',advance='no')'[                                    ] |'
+!     end if
+! #ifdef _MPIF90
+!     END IF
+! #endif
+!     update_bar = params%mc_nsteps/36
+!     if( update_bar < 1 )then
+!       update_bar = 1
+!     end if
+!     counter = 1
+!   end if
 
 !  if( params%do_md .or. params%do_nested_sampling )then
 !    if( params%do_nested_sampling )then
@@ -837,81 +837,81 @@ program turbogap
        n_sp_sc = size(xyz_species_supercell,1)
     END IF
     call cpu_time(time_mpi(1))
-    print *, "Before n_pos bcast, ierr = ", ierr
+    print *, "Before n_pos bcast, ierr = ", ierr, " rank ", rank
     call mpi_bcast(n_pos, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-    print *, "After n_pos bcast, ierr = ", ierr
-    print *, "Before n_sp bcasth, ierr = ", ierr
+    print *, "After n_pos bcast, ierr = ", ierr, " rank ", rank
+    print *, "Before n_sp bcasth, ierr = ", ierr, " rank ", rank
     call mpi_bcast(n_sp, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-    print *, "After n_sp bcast, ierr = ", ierr
-    print *, "Before n_sp_sc bcast, ierr = ", ierr
+    print *, "After n_sp bcast, ierr = ", ierr, " rank ", rank
+    print *, "Before n_sp_sc bcast, ierr = ", ierr, " rank ", rank
     call mpi_bcast(n_sp_sc, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-    print *, "After n_sp_sc bcast, ierr = ", ierr
+    print *, "After n_sp_sc bcast, ierr = ", ierr, " rank ", rank
     call cpu_time(time_mpi(2))
     time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
     IF( rank /= 0 .and. (.not. params%do_md .or. md_istep == 0) )THEN
-    if( allocated( positions ) )deallocate( positions )
-    allocate( positions(1:3, n_pos) )
-    if( params%do_md .or. params%do_nested_sampling .or. params%do_mc )then
-      if( allocated( velocities ) )deallocate( velocities )
-      allocate( velocities(1:3, n_pos) )
-!      allocate( masses(n_pos) )
-      if( allocated( masses ) )deallocate( masses )
-      allocate( masses(1:n_sp) )
-      if( allocated( fix_atom ) )deallocate( fix_atom )
-      allocate( fix_atom(1:3, 1:n_sp) )
-    end if
-    if( allocated( xyz_species ) )deallocate( xyz_species )
-    allocate( xyz_species(1:n_sp) )
-    if( allocated( species ) )deallocate( species )
-    allocate( species(1:n_sp) )
-    if( allocated( xyz_species_supercell ) )deallocate( xyz_species_supercell )
-    allocate( xyz_species_supercell(1:n_sp_sc) )
-    if( allocated( species_supercell ) )deallocate( species_supercell )
-    allocate( species_supercell(1:n_sp_sc) )
+       if( allocated( positions ) )deallocate( positions )
+       allocate( positions(1:3, n_pos) )
+       if( params%do_md .or. params%do_nested_sampling .or. params%do_mc )then
+          if( allocated( velocities ) )deallocate( velocities )
+          allocate( velocities(1:3, n_pos) )
+          !      allocate( masses(n_pos) )
+          if( allocated( masses ) )deallocate( masses )
+          allocate( masses(1:n_sp) )
+          if( allocated( fix_atom ) )deallocate( fix_atom )
+          allocate( fix_atom(1:3, 1:n_sp) )
+       end if
+       if( allocated( xyz_species ) )deallocate( xyz_species )
+       allocate( xyz_species(1:n_sp) )
+       if( allocated( species ) )deallocate( species )
+       allocate( species(1:n_sp) )
+       if( allocated( xyz_species_supercell ) )deallocate( xyz_species_supercell )
+       allocate( xyz_species_supercell(1:n_sp_sc) )
+       if( allocated( species_supercell ) )deallocate( species_supercell )
+       allocate( species_supercell(1:n_sp_sc) )
     END IF
     call cpu_time(time_mpi_positions(1))
-    print *, "Before positions bcast, ierr = ", ierr
+    print *, "Before positions bcast, ierr = ", ierr, " rank ", rank
     call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-    print *, "After positions bcast, ierr = ", ierr
+    print *, "After positions bcast, ierr = ", ierr, " rank ", rank
     if( params%do_md .or. params%do_nested_sampling .or. params%do_mc )then
-       print *, "Before velocities bcast, ierr = ", ierr
+       print *, "Before velocities bcast, ierr = ", ierr, " rank ", rank
 !   Error is here with mpi bcast !!!
        call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-       print *, "After velocities bcast, ierr = ", ierr
-       print *, "Before masses bcast, ierr = ", ierr
+       print *, "After velocities bcast, ierr = ", ierr, " rank ", rank
+       print *, "Before masses bcast, ierr = ", ierr, " rank ", rank
        call mpi_bcast(masses, n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-       print *, "After masses bcast, ierr = ", ierr
-       print *, "Before fix_atom bcast, ierr = ", ierr
+       print *, "After masses bcast, ierr = ", ierr, " rank ", rank
+       print *, "Before fix_atom bcast, ierr = ", ierr, " rank ", rank
        call mpi_bcast(fix_atom, 3*n_sp, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
-       print *, "After fix_atom bcast, ierr = ", ierr
+       print *, "After fix_atom bcast, ierr = ", ierr, " rank ", rank
     end if
-    print *, "Before xyz_species bcast, ierr = ", ierr
+    print *, "Before xyz_species bcast, ierr = ", ierr, " rank ", rank
     call mpi_bcast(xyz_species, 8*n_sp, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
-    print *, "After xyz_species bcast, ierr = ", ierr
-    print *, "Before xyz_species_supercell bcast, ierr = ", ierr
+    print *, "After xyz_species bcast, ierr = ", ierr, " rank ", rank
+    print *, "Before xyz_species_supercell bcast, ierr = ", ierr, " rank ", rank
     call mpi_bcast(xyz_species_supercell, 8*n_sp_sc, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
-    print *, "After xyz_species_supercell bcast, ierr = ", ierr
-    print *, "Before species bcast, ierr = ", ierr
+    print *, "After xyz_species_supercell bcast, ierr = ", ierr, " rank ", rank
+    print *, "Before species bcast, ierr = ", ierr, " rank ", rank
     call mpi_bcast(species, n_sp, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-    print *, "After species bcast, ierr = ", ierr
-    print *, "Before species_supercell bcast, ierr = ", ierr
+    print *, "After species bcast, ierr = ", ierr, " rank ", rank
+    print *, "Before species_supercell bcast, ierr = ", ierr, " rank ", rank
     call mpi_bcast(species_supercell, n_sp_sc, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-    print *, "After species_supercell bcast, ierr = ", ierr
-    print *, "Before indices bcast, ierr = ", ierr
+    print *, "After species_supercell bcast, ierr = ", ierr, " rank ", rank
+    print *, "Before indices bcast, ierr = ", ierr, " rank ", rank
     call mpi_bcast(indices, 3, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-    print *, "After indices bcast, ierr = ", ierr
-    print *, "Before a_box bcast, ierr = ", ierr
+    print *, "After indices bcast, ierr = ", ierr, " rank ", rank
+    print *, "Before a_box bcast, ierr = ", ierr, " rank ", rank
     call mpi_bcast(a_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-    print *, "After a_box bcast, ierr = ", ierr
-    print *, "Before b_box bcast, ierr = ", ierr
+    print *, "After a_box bcast, ierr = ", ierr, " rank ", rank
+    print *, "Before b_box bcast, ierr = ", ierr, " rank ", rank
     call mpi_bcast(b_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-    print *, "After b_box bcast, ierr = ", ierr
-    print *, "Before c_box bcast, ierr = ", ierr
+    print *, "After b_box bcast, ierr = ", ierr, " rank ", rank
+    print *, "Before c_box bcast, ierr = ", ierr, " rank ", rank
     call mpi_bcast(c_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-    print *, "After c_box bcast, ierr = ", ierr
-    print *, "Before n_sites bcast, ierr = ", ierr
+    print *, "After c_box bcast, ierr = ", ierr, " rank ", rank
+    print *, "Before n_sites bcast, ierr = ", ierr, " rank ", rank
     call mpi_bcast(n_sites, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-    print *, "After n_sites bcast, ierr = ", ierr
+    print *, "After n_sites bcast, ierr = ", ierr, " rank ", rank
     call cpu_time(time_mpi_positions(2))
     time_mpi_positions(3) = time_mpi_positions(3) + time_mpi_positions(2) - time_mpi_positions(1)
 #endif
@@ -929,9 +929,9 @@ program turbogap
     call cpu_time(time1)
 #ifdef _MPIF90
     !   Parallel neighbors list build
-    print *, "Before rebuild_neighbors_list bcast, ierr = ", ierr
+    print *, "Before rebuild_neighbors_list bcast, ierr = ", ierr, " rank ", rank
     call mpi_bcast(rebuild_neighbors_list, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
-    print *, "After rebuild_neighbors_list bcast, ierr = ", ierr
+    print *, "After rebuild_neighbors_list bcast, ierr = ", ierr, " rank ", rank
 #endif
 
 !   If we're using a box rescaling algorithm or a barostat, then the box size can
@@ -988,9 +988,9 @@ program turbogap
 !     Get number of neighbors
       if( .not. allocated(n_neigh))allocate( n_neigh(1:n_sites) )
       call mpi_reduce(n_neigh_local, n_neigh, n_sites, MPI_INTEGER, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
-      print *, "Before n_neigh bcast, ierr = ", ierr
+      print *, "Before n_neigh bcast, ierr = ", ierr, " rank ", rank
       call mpi_bcast(n_neigh, n_sites, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-      print *, "After n_neigh bcast, ierr = ", ierr
+      print *, "After n_neigh bcast, ierr = ", ierr, " rank ", rank
 
       j_beg = 1
       j_end = n_atom_pairs_by_rank(rank+1)
@@ -1279,9 +1279,9 @@ program turbogap
 !          hirshfeld_v_cart_der = this_hirshfeld_v_cart_der
 !        end if
         hirshfeld_v = this_hirshfeld_v
-        print *, "Before hirshfeld_v bcast, ierr = ", ierr
+        print *, "Before hirshfeld_v bcast, ierr = ", ierr, " rank ", rank
         call mpi_bcast(hirshfeld_v, n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        print *, "After hirshfeld_v bcast, ierr = ", ierr
+        print *, "After hirshfeld_v bcast, ierr = ", ierr, " rank ", rank
         call cpu_time(time_mpi(2))
         time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
       end if
@@ -1580,26 +1580,15 @@ program turbogap
 !       -- We have the list of move types in params%mc_types and the number params%n_mc_types --
         !       >> First generate a random number in the range of the number of
 
-        if ( params%do_mc .and. mc_istep == 1 )then
-           open(unit=200, file="mc.log", status="unknown")
-        end if
-        if ( params%do_mc .and. mc_istep > 1  )then
-           open(unit=200, file="mc.log", status="old", position="append")
-        end if
-
-
         if (mc_istep > 0)then
            !       Evaluate the conditions for acceptance
            !       > We have the mc conditions in mc.f90
            !       > We care about comparing e_store to the energy of the new configuration based on the mc_movw
 
-
            call from_properties_to_image(images(2), positions, velocities, masses, &
                 forces, a_box, b_box, c_box,  energy, energies, E_kinetic, &
                 species, species_supercell, n_sites, indices, fix_atom, &
                 xyz_species, xyz_species_supercell)
-
-
 
            write(*,*)'------------------------------------------------'
            write(*,'(A,1X,I0)')   ' MC Iteration:', mc_istep
@@ -1645,19 +1634,23 @@ program turbogap
 
               n_sites_prev = n_sites
               v_uc_prev = v_uc
-!          Add acceptance to the log file else dont
 
-              write(200, "(I8, 1X, A, 1X, I8, 1X, F20.8, 1X, F20.8, 1X, I8, 1X, I8, 1X)") &
-                   mc_istep, mc_move, 1, energy, images(1)%energy, n_sites, n_mc_species
 
 !   Assigning the default image with the accepted one
               images(1) = images(2)
-           else
-              !          Revert back to old config
-              write(200, "(I8, 1X A, 1X, I8, 1X, F20.8, 1X, F20.8, 1X, I8, 1X, I8, 1X)") &
-                   mc_istep, mc_move, 0, energy, images(1)%energy, n_sites, n_mc_species
 
            end if
+           !          Add acceptance to the log file else dont
+           if ( mc_istep == 1 )then
+              open(unit=200, file="mc.log", status="unknown")
+           end if
+           if ( mc_istep > 1  )then
+              open(unit=200, file="mc.log", status="old", position="append")
+           end if
+
+           write(200, "(I8, 1X, A, 1X, L4, 1X, F20.8, 1X, F20.8, 1X, I8, 1X, I8, 1X)") &
+                mc_istep, mc_move, p_accept > ranf, energy, images(1)%energy, n_sites, n_mc_species
+
            close(200)
 
         else ! if (mc_istep == 0)
@@ -1867,7 +1860,7 @@ program turbogap
     print *, "Before n_pos bcast 2, ierr = ", ierr, " rank ", rank
     call mpi_bcast(n_pos, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
     print *, "After n_pos bcast 2, ierr = ", ierr, " rank ", rank
-    print *, "Before n_sp bcasth, ierr = ", ierr, " rank ", rank
+    print *, "Before n_sp bcasth 2, ierr = ", ierr, " rank ", rank
     call mpi_bcast(n_sp, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
     print *, "After n_sp bcast 2, ierr = ", ierr, " rank ", rank
     print *, "Before n_sp_sc bcast 2, ierr = ", ierr, " rank ", rank
@@ -2299,19 +2292,24 @@ end if
    end if
 #ifdef _MPIF90
 END IF
-print *, "Before rebuild_neighbors_list bcast 2, ierr = ", ierr, " rank ", rank
+if (rank /= 0) print *, "Before rebuild_neighbors_list bcast 2, ierr = ", ierr, " rank ", rank
 call mpi_bcast(rebuild_neighbors_list, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
-print *, "After rebuild_neighbors_list bcast 2, ierr = ", ierr, " rank ", rank
+if (rank /= 0) print *, "After rebuild_neighbors_list bcast 2, ierr = ", ierr, " rank ", rank
 #endif
 !   Make sure all ranks have correct positions and velocities
 #ifdef _MPIF90
     if( params%do_md )then
       call cpu_time(time_mpi_positions(1))
       n_pos = size(positions,2)
+      call mpi_bcast(n_pos, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
       print *, "Before positions bcast 3, ierr = ", ierr, " rank ", rank
       call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
       print *, "After positions bcast 3, ierr = ", ierr, " rank ", rank
       print *, "Before velocities bcast 3, ierr = ", ierr, " rank ", rank
+      if( rank /= 0 .and.  allocated( velocities ) )then
+         deallocate( velocities )
+      end if
+      if (rank /= 0) allocate( velocities(1:3, n_pos) )
       call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
       print *, "After velocities bcast 3, ierr = ", ierr, " rank ", rank
       call cpu_time(time_mpi_positions(2))
