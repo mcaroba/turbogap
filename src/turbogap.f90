@@ -390,7 +390,7 @@ program turbogap
     call mpi_bcast(n_distance_2b, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
     call mpi_bcast(n_angle_3b, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
     call mpi_bcast(n_core_pot, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-!   Broadcast the maximum cutoff distance
+    !   Broadcast the maximum cutoff distance
     call mpi_bcast(rcut_max, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
 !   Processes other than 0 need to allocate the data structures on their own
     call cpu_time(time_mpi(2))
@@ -454,20 +454,20 @@ program turbogap
 !   soap_turbo allocatable structures
     call cpu_time(time_mpi(1))
     do i = 1, n_soap_turbo
-      n_sp = soap_turbo_hypers(i)%n_species
-      call mpi_bcast(soap_turbo_hypers(i)%nf(1:n_sp), n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-      call mpi_bcast(soap_turbo_hypers(i)%rcut_hard(1:n_sp), n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-      call mpi_bcast(soap_turbo_hypers(i)%rcut_soft(1:n_sp), n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-      call mpi_bcast(soap_turbo_hypers(i)%rcut_max, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-      call mpi_bcast(soap_turbo_hypers(i)%atom_sigma_r(1:n_sp), n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-      call mpi_bcast(soap_turbo_hypers(i)%atom_sigma_t(1:n_sp), n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-      call mpi_bcast(soap_turbo_hypers(i)%atom_sigma_r_scaling(1:n_sp), n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-      call mpi_bcast(soap_turbo_hypers(i)%atom_sigma_t_scaling(1:n_sp), n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-      call mpi_bcast(soap_turbo_hypers(i)%amplitude_scaling(1:n_sp), n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-      call mpi_bcast(soap_turbo_hypers(i)%central_weight(1:n_sp), n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-      call mpi_bcast(soap_turbo_hypers(i)%global_scaling(1:n_sp), n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-      call mpi_bcast(soap_turbo_hypers(i)%alpha_max(1:n_sp), n_sp, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-      call mpi_bcast(soap_turbo_hypers(i)%species_types(1:n_sp), 8*n_sp, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
+       n_sp = soap_turbo_hypers(i)%n_species
+       call mpi_bcast(soap_turbo_hypers(i)%nf(1:n_sp), n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+       call mpi_bcast(soap_turbo_hypers(i)%rcut_hard(1:n_sp), n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+       call mpi_bcast(soap_turbo_hypers(i)%rcut_soft(1:n_sp), n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+       call mpi_bcast(soap_turbo_hypers(i)%rcut_max, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+       call mpi_bcast(soap_turbo_hypers(i)%atom_sigma_r(1:n_sp), n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+       call mpi_bcast(soap_turbo_hypers(i)%atom_sigma_t(1:n_sp), n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+       call mpi_bcast(soap_turbo_hypers(i)%atom_sigma_r_scaling(1:n_sp), n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+       call mpi_bcast(soap_turbo_hypers(i)%atom_sigma_t_scaling(1:n_sp), n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+       call mpi_bcast(soap_turbo_hypers(i)%amplitude_scaling(1:n_sp), n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+       call mpi_bcast(soap_turbo_hypers(i)%central_weight(1:n_sp), n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+       call mpi_bcast(soap_turbo_hypers(i)%global_scaling(1:n_sp), n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+       call mpi_bcast(soap_turbo_hypers(i)%alpha_max(1:n_sp), n_sp, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+       call mpi_bcast(soap_turbo_hypers(i)%species_types(1:n_sp), 8*n_sp, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
       n_sparse = soap_turbo_hypers(i)%n_sparse
       dim = soap_turbo_hypers(i)%dim
       n_nonzero = soap_turbo_hypers(i)%compress_P_nonzero
@@ -484,56 +484,56 @@ program turbogap
       call mpi_bcast(soap_turbo_hypers(i)%radial_enhancement, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(soap_turbo_hypers(i)%compress_soap, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
       if( soap_turbo_hypers(i)%compress_soap )then
-        cPnz = soap_turbo_hypers(i)%compress_P_nonzero
-        call mpi_bcast(soap_turbo_hypers(i)%compress_P_el(1:cPnz), cPnz, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(soap_turbo_hypers(i)%compress_P_i(1:cPnz), cPnz, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(soap_turbo_hypers(i)%compress_P_j(1:cPnz), cPnz, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+         cPnz = soap_turbo_hypers(i)%compress_P_nonzero
+         call mpi_bcast(soap_turbo_hypers(i)%compress_P_el(1:cPnz), cPnz, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+         call mpi_bcast(soap_turbo_hypers(i)%compress_P_i(1:cPnz), cPnz, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+         call mpi_bcast(soap_turbo_hypers(i)%compress_P_j(1:cPnz), cPnz, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
       end if
       call mpi_bcast(soap_turbo_hypers(i)%has_vdw, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
       if( soap_turbo_hypers(i)%has_vdw )then
-        n_sparse = soap_turbo_hypers(i)%vdw_n_sparse
-        call mpi_bcast(soap_turbo_hypers(i)%vdw_delta, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(soap_turbo_hypers(i)%vdw_zeta, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(soap_turbo_hypers(i)%vdw_V0, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(soap_turbo_hypers(i)%vdw_alphas(1:n_sparse), n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(soap_turbo_hypers(i)%vdw_Qs(1:dim, 1:n_sparse), n_sparse*dim, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+         n_sparse = soap_turbo_hypers(i)%vdw_n_sparse
+         call mpi_bcast(soap_turbo_hypers(i)%vdw_delta, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+         call mpi_bcast(soap_turbo_hypers(i)%vdw_zeta, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+         call mpi_bcast(soap_turbo_hypers(i)%vdw_V0, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+         call mpi_bcast(soap_turbo_hypers(i)%vdw_alphas(1:n_sparse), n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+         call mpi_bcast(soap_turbo_hypers(i)%vdw_Qs(1:dim, 1:n_sparse), n_sparse*dim, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
       end if
     end do
     do i = 1, n_distance_2b
-      n_sparse = distance_2b_hypers(i)%n_sparse
-      call mpi_bcast(distance_2b_hypers(i)%alphas(1:n_sparse), n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-      call mpi_bcast(distance_2b_hypers(i)%cutoff(1:n_sparse), n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-      call mpi_bcast(distance_2b_hypers(i)%Qs(1:n_sparse, 1:1), n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-      call mpi_bcast(distance_2b_hypers(i)%delta, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-      call mpi_bcast(distance_2b_hypers(i)%sigma, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-      call mpi_bcast(distance_2b_hypers(i)%rcut, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-      call mpi_bcast(distance_2b_hypers(i)%buffer, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-      call mpi_bcast(distance_2b_hypers(i)%species1, 8, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
-      call mpi_bcast(distance_2b_hypers(i)%species2, 8, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
+       n_sparse = distance_2b_hypers(i)%n_sparse
+       call mpi_bcast(distance_2b_hypers(i)%alphas(1:n_sparse), n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+       call mpi_bcast(distance_2b_hypers(i)%cutoff(1:n_sparse), n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+       call mpi_bcast(distance_2b_hypers(i)%Qs(1:n_sparse, 1:1), n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+       call mpi_bcast(distance_2b_hypers(i)%delta, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+       call mpi_bcast(distance_2b_hypers(i)%sigma, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+       call mpi_bcast(distance_2b_hypers(i)%rcut, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+       call mpi_bcast(distance_2b_hypers(i)%buffer, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+       call mpi_bcast(distance_2b_hypers(i)%species1, 8, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
+       call mpi_bcast(distance_2b_hypers(i)%species2, 8, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
     end do
     do i = 1, n_angle_3b
-      n_sparse = angle_3b_hypers(i)%n_sparse
-      call mpi_bcast(angle_3b_hypers(i)%alphas(1:n_sparse), n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-      call mpi_bcast(angle_3b_hypers(i)%cutoff(1:n_sparse), n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-      call mpi_bcast(angle_3b_hypers(i)%Qs(1:n_sparse, 1:3), 3*n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-      call mpi_bcast(angle_3b_hypers(i)%delta, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-      call mpi_bcast(angle_3b_hypers(i)%sigma(1:3), 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-      call mpi_bcast(angle_3b_hypers(i)%rcut, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-      call mpi_bcast(angle_3b_hypers(i)%buffer, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-      call mpi_bcast(angle_3b_hypers(i)%species_center, 8, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
-      call mpi_bcast(angle_3b_hypers(i)%species1, 8, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
-      call mpi_bcast(angle_3b_hypers(i)%species2, 8, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
-      call mpi_bcast(angle_3b_hypers(i)%kernel_type, 3, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
+       n_sparse = angle_3b_hypers(i)%n_sparse
+       call mpi_bcast(angle_3b_hypers(i)%alphas(1:n_sparse), n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+       call mpi_bcast(angle_3b_hypers(i)%cutoff(1:n_sparse), n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+       call mpi_bcast(angle_3b_hypers(i)%Qs(1:n_sparse, 1:3), 3*n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+       call mpi_bcast(angle_3b_hypers(i)%delta, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+       call mpi_bcast(angle_3b_hypers(i)%sigma(1:3), 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+       call mpi_bcast(angle_3b_hypers(i)%rcut, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+       call mpi_bcast(angle_3b_hypers(i)%buffer, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+       call mpi_bcast(angle_3b_hypers(i)%species_center, 8, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
+       call mpi_bcast(angle_3b_hypers(i)%species1, 8, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
+       call mpi_bcast(angle_3b_hypers(i)%species2, 8, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
+       call mpi_bcast(angle_3b_hypers(i)%kernel_type, 3, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
     end do
     do i = 1, n_core_pot
-      n_sparse = core_pot_hypers(i)%n
-      call mpi_bcast(core_pot_hypers(i)%x(1:n_sparse), n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-      call mpi_bcast(core_pot_hypers(i)%V(1:n_sparse), n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-      call mpi_bcast(core_pot_hypers(i)%dVdx2(1:n_sparse), n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-      call mpi_bcast(core_pot_hypers(i)%yp1, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-      call mpi_bcast(core_pot_hypers(i)%ypn, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-      call mpi_bcast(core_pot_hypers(i)%species1, 8, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
-      call mpi_bcast(core_pot_hypers(i)%species2, 8, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
+       n_sparse = core_pot_hypers(i)%n
+       call mpi_bcast(core_pot_hypers(i)%x(1:n_sparse), n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+       call mpi_bcast(core_pot_hypers(i)%V(1:n_sparse), n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+       call mpi_bcast(core_pot_hypers(i)%dVdx2(1:n_sparse), n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+       call mpi_bcast(core_pot_hypers(i)%yp1, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+       call mpi_bcast(core_pot_hypers(i)%ypn, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+       call mpi_bcast(core_pot_hypers(i)%species1, 8, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
+       call mpi_bcast(core_pot_hypers(i)%species2, 8, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
     end do
     call cpu_time(time_mpi(2))
     time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
@@ -837,9 +837,15 @@ program turbogap
        n_sp_sc = size(xyz_species_supercell,1)
     END IF
     call cpu_time(time_mpi(1))
+    print *, "Before n_pos bcast, ierr = ", ierr
     call mpi_bcast(n_pos, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+    print *, "After n_pos bcast, ierr = ", ierr
+    print *, "Before n_sp bcasth, ierr = ", ierr
     call mpi_bcast(n_sp, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+    print *, "After n_sp bcast, ierr = ", ierr
+    print *, "Before n_sp_sc bcast, ierr = ", ierr
     call mpi_bcast(n_sp_sc, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+    print *, "After n_sp_sc bcast, ierr = ", ierr
     call cpu_time(time_mpi(2))
     time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
     IF( rank /= 0 .and. (.not. params%do_md .or. md_istep == 0) )THEN
@@ -864,21 +870,48 @@ program turbogap
     allocate( species_supercell(1:n_sp_sc) )
     END IF
     call cpu_time(time_mpi_positions(1))
+    print *, "Before positions bcast, ierr = ", ierr
     call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+    print *, "After positions bcast, ierr = ", ierr
     if( params%do_md .or. params%do_nested_sampling .or. params%do_mc )then
-      call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-      call mpi_bcast(masses, n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-      call mpi_bcast(fix_atom, 3*n_sp, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+       print *, "Before velocities bcast, ierr = ", ierr
+!   Error is here with mpi bcast !!!
+       call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+       print *, "After velocities bcast, ierr = ", ierr
+       print *, "Before masses bcast, ierr = ", ierr
+       call mpi_bcast(masses, n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+       print *, "After masses bcast, ierr = ", ierr
+       print *, "Before fix_atom bcast, ierr = ", ierr
+       call mpi_bcast(fix_atom, 3*n_sp, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+       print *, "After fix_atom bcast, ierr = ", ierr
     end if
+    print *, "Before xyz_species bcast, ierr = ", ierr
     call mpi_bcast(xyz_species, 8*n_sp, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
+    print *, "After xyz_species bcast, ierr = ", ierr
+    print *, "Before xyz_species_supercell bcast, ierr = ", ierr
     call mpi_bcast(xyz_species_supercell, 8*n_sp_sc, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
+    print *, "After xyz_species_supercell bcast, ierr = ", ierr
+    print *, "Before species bcast, ierr = ", ierr
     call mpi_bcast(species, n_sp, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+    print *, "After species bcast, ierr = ", ierr
+    print *, "Before species_supercell bcast, ierr = ", ierr
     call mpi_bcast(species_supercell, n_sp_sc, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+    print *, "After species_supercell bcast, ierr = ", ierr
+    print *, "Before indices bcast, ierr = ", ierr
     call mpi_bcast(indices, 3, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+    print *, "After indices bcast, ierr = ", ierr
+    print *, "Before a_box bcast, ierr = ", ierr
     call mpi_bcast(a_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+    print *, "After a_box bcast, ierr = ", ierr
+    print *, "Before b_box bcast, ierr = ", ierr
     call mpi_bcast(b_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+    print *, "After b_box bcast, ierr = ", ierr
+    print *, "Before c_box bcast, ierr = ", ierr
     call mpi_bcast(c_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+    print *, "After c_box bcast, ierr = ", ierr
+    print *, "Before n_sites bcast, ierr = ", ierr
     call mpi_bcast(n_sites, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+    print *, "After n_sites bcast, ierr = ", ierr
     call cpu_time(time_mpi_positions(2))
     time_mpi_positions(3) = time_mpi_positions(3) + time_mpi_positions(2) - time_mpi_positions(1)
 #endif
@@ -895,8 +928,10 @@ program turbogap
 !
     call cpu_time(time1)
 #ifdef _MPIF90
-!   Parallel neighbors list build
+    !   Parallel neighbors list build
+    print *, "Before rebuild_neighbors_list bcast, ierr = ", ierr
     call mpi_bcast(rebuild_neighbors_list, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+    print *, "After rebuild_neighbors_list bcast, ierr = ", ierr
 #endif
 
 !   If we're using a box rescaling algorithm or a barostat, then the box size can
@@ -953,7 +988,9 @@ program turbogap
 !     Get number of neighbors
       if( .not. allocated(n_neigh))allocate( n_neigh(1:n_sites) )
       call mpi_reduce(n_neigh_local, n_neigh, n_sites, MPI_INTEGER, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+      print *, "Before n_neigh bcast, ierr = ", ierr
       call mpi_bcast(n_neigh, n_sites, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+      print *, "After n_neigh bcast, ierr = ", ierr
 
       j_beg = 1
       j_end = n_atom_pairs_by_rank(rank+1)
@@ -1242,7 +1279,9 @@ program turbogap
 !          hirshfeld_v_cart_der = this_hirshfeld_v_cart_der
 !        end if
         hirshfeld_v = this_hirshfeld_v
+        print *, "Before hirshfeld_v bcast, ierr = ", ierr
         call mpi_bcast(hirshfeld_v, n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+        print *, "After hirshfeld_v bcast, ierr = ", ierr
         call cpu_time(time_mpi(2))
         time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
       end if
@@ -1805,6 +1844,7 @@ program turbogap
         end if
         ! As we have moved/added/removed, we must check the supercell and  broadcast the results
 
+
         ! call read_xyz(mc_file, .true., params%all_atoms, params%do_timing, &
         !             n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
         !             positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
@@ -1814,6 +1854,106 @@ program turbogap
      end if
 #ifdef _MPIF90
         END IF
+#endif
+
+#ifdef _MPIF90
+    IF( rank == 0 .and. params%do_mc )THEN
+       n_pos = size(positions,2)
+       n_sp = size(xyz_species,1)
+       n_sp_sc = size(xyz_species_supercell,1)
+    END IF
+    print *, "rank ", rank
+    call cpu_time(time_mpi(1))
+    print *, "Before n_pos bcast 2, ierr = ", ierr, " rank ", rank
+    call mpi_bcast(n_pos, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+    print *, "After n_pos bcast 2, ierr = ", ierr, " rank ", rank
+    print *, "Before n_sp bcasth, ierr = ", ierr, " rank ", rank
+    call mpi_bcast(n_sp, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+    print *, "After n_sp bcast 2, ierr = ", ierr, " rank ", rank
+    print *, "Before n_sp_sc bcast 2, ierr = ", ierr, " rank ", rank
+    call mpi_bcast(n_sp_sc, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+    print *, "After n_sp_sc bcast 2, ierr = ", ierr, " rank ", rank
+    call cpu_time(time_mpi(2))
+    time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
+    IF (rank == 0)   print *, "size vel, ", size(velocities,2), " rank ", rank
+    IF( rank /= 0 )THEN
+
+       if( allocated( positions ) )deallocate( positions )
+       allocate( positions(1:3, n_pos) )
+       print *, "size vel, ", size(velocities,2), " rank ", rank, " n_pos ", n_pos
+       if( allocated( velocities ) )deallocate( velocities )
+       allocate( velocities(1:3, n_pos) )
+       print *, "size vel after, ", size(velocities,2), " rank ", rank
+       !      allocate( masses(n_pos) )
+       if( allocated( masses ) )deallocate( masses )
+       allocate( masses(1:n_sp) )
+       if( allocated( fix_atom ) )deallocate( fix_atom )
+       allocate( fix_atom(1:3, 1:n_sp) )
+
+       if( allocated( xyz_species ) )deallocate( xyz_species )
+       allocate( xyz_species(1:n_sp) )
+       if( allocated( species ) )deallocate( species )
+       allocate( species(1:n_sp) )
+       if( allocated( xyz_species_supercell ) )deallocate( xyz_species_supercell )
+       allocate( xyz_species_supercell(1:n_sp_sc) )
+       if( allocated( species_supercell ) )deallocate( species_supercell )
+       allocate( species_supercell(1:n_sp_sc) )
+    END IF
+    call cpu_time(time_mpi_positions(1))
+    print *, "Before positions bcast 2, ierr = ", ierr, " rank ", rank
+    call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+    print *, "After positions bcast 2, ierr = ", ierr, " rank ", rank
+
+    print *, "Before velocities bcast 2, ierr = ", ierr, " rank ", rank
+    !   Error is here with mpi bcast !!!
+    call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+    print *, "After velocities bcast 2, ierr = ", ierr, " rank ", rank
+    print *, "Before masses bcast 2, ierr = ", ierr, " rank ", rank
+    call mpi_bcast(masses, n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+    print *, "After masses bcast 2, ierr = ", ierr, " rank ", rank
+    print *, "Before fix_atom bcast 2, ierr = ", ierr, " rank ", rank
+    call mpi_bcast(fix_atom, 3*n_sp, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+    print *, "After fix_atom bcast 2, ierr = ", ierr, " rank ", rank
+
+    print *, "Before xyz_species bcast 2, ierr = ", ierr, " rank ", rank
+    call mpi_bcast(xyz_species, 8*n_sp, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
+    print *, "After xyz_species bcast 2, ierr = ", ierr, " rank ", rank
+    print *, "Before xyz_species_supercell bcast 2, ierr = ", ierr, " rank ", rank
+    call mpi_bcast(xyz_species_supercell, 8*n_sp_sc, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
+    print *, "After xyz_species_supercell bcast 2, ierr = ", ierr, " rank ", rank
+    print *, "Before species bcast 2, ierr = ", ierr, " rank ", rank
+    call mpi_bcast(species, n_sp, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+    print *, "After species bcast 2, ierr = ", ierr, " rank ", rank
+    print *, "Before species_supercell bcast 2, ierr = ", ierr, " rank ", rank
+    call mpi_bcast(species_supercell, n_sp_sc, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+    print *, "After species_supercell bcast 2, ierr = ", ierr, " rank ", rank
+    print *, "Before indices bcast 2, ierr = ", ierr, " rank ", rank
+    call mpi_bcast(indices, 3, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+    print *, "After indices bcast 2, ierr = ", ierr, " rank ", rank
+
+    print *, "Before a_box bcast 2, ierr = ", ierr, " rank ", rank
+    call mpi_bcast(a_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+    print *, "After a_box bcast 2, ierr = ", ierr, " rank ", rank
+    print *, "Before b_box bcast 2, ierr = ", ierr, " rank ", rank
+    call mpi_bcast(b_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+    print *, "After b_box bcast 2, ierr = ", ierr, " rank ", rank
+    print *, "Before c_box bcast 2, ierr = ", ierr, " rank ", rank
+    call mpi_bcast(c_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+    print *, "After c_box bcast 2, ierr = ", ierr, " rank ", rank
+    print *, "Before n_sites bcast 2, ierr = ", ierr, " rank ", rank
+    call mpi_bcast(n_sites, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+    print *, "After n_sites bcast 2, ierr = ", ierr, " rank ", rank
+    call cpu_time(time_mpi_positions(2))
+    time_mpi_positions(3) = time_mpi_positions(3) + time_mpi_positions(2) - time_mpi_positions(1)
+#endif
+!   Now that all ranks know the size of n_sites, we allocate do_list
+!
+    call cpu_time(time1)
+#ifdef _MPIF90
+    !   Parallel neighbors list build
+    print *, "Before rebuild_neighbors_list bcast 2, ierr = ", ierr, " rank ", rank
+    call mpi_bcast(rebuild_neighbors_list, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+    print *, "After rebuild_neighbors_list bcast 2, ierr = ", ierr, " rank ", rank
 #endif
 
 
@@ -2158,16 +2298,22 @@ end if
       time_md(3) = time_md(3) + time_md(2) - time_md(1)
    end if
 #ifdef _MPIF90
-    END IF
-    call mpi_bcast(rebuild_neighbors_list, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+END IF
+print *, "Before rebuild_neighbors_list bcast 2, ierr = ", ierr, " rank ", rank
+call mpi_bcast(rebuild_neighbors_list, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+print *, "After rebuild_neighbors_list bcast 2, ierr = ", ierr, " rank ", rank
 #endif
 !   Make sure all ranks have correct positions and velocities
 #ifdef _MPIF90
     if( params%do_md )then
       call cpu_time(time_mpi_positions(1))
       n_pos = size(positions,2)
+      print *, "Before positions bcast 3, ierr = ", ierr, " rank ", rank
       call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+      print *, "After positions bcast 3, ierr = ", ierr, " rank ", rank
+      print *, "Before velocities bcast 3, ierr = ", ierr, " rank ", rank
       call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+      print *, "After velocities bcast 3, ierr = ", ierr, " rank ", rank
       call cpu_time(time_mpi_positions(2))
       time_mpi_positions(3) = time_mpi_positions(3) + time_mpi_positions(2) - time_mpi_positions(1)
     end if
@@ -2298,7 +2444,9 @@ end if
            params%box_scaling_factor = params%box_scaling_factor * (rand)**(1.d0/3.d0)
            ! Each MPI process has a different set of random numbers so we need to broadcast
 #ifdef _MPIF90
+           print *, "Before params%box_scaling_factor bcast, ierr = ", ierr
            call mpi_bcast(params%box_scaling_factor, 9, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+           print *, "After params%box_scaling_factor bcast, ierr = ", ierr
 #endif
         end if
         !       This is the so-called total enthalpy Hamiltonian Montecarlo approach (with physical masses)
@@ -2343,7 +2491,9 @@ end if
     n_atom_pairs_by_rank_prev = n_atom_pairs_by_rank(rank+1)
 
 #ifdef _MPIF90
+    print *, "Before exit_loop bcast, ierr = ", ierr
     call mpi_bcast(exit_loop, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+    print *, "After exit_loop bcast, ierr = ", ierr
 #endif
 
     if( exit_loop )exit
