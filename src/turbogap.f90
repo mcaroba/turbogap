@@ -56,13 +56,14 @@ program turbogap
   real*8 :: rcut_max, a_box(1:3), b_box(1:3), c_box(1:3), max_displacement, energy, energy_prev
   real*8 :: virial(1:3, 1:3), this_virial(1:3, 1:3), virial_soap(1:3, 1:3), virial_2b(1:3, 1:3), &
             virial_3b(1:3,1:3), virial_core_pot(1:3, 1:3), virial_vdw(1:3, 1:3), &
-            this_virial_vdw(1:3, 1:3), v_uc, eVperA3tobar = 1602176.6208d0
+            this_virial_vdw(1:3, 1:3), v_uc, eVperA3tobar = 1602176.6208d0, &
+            v_uc_prev, ranf, ranv(1:3), disp(1:3), d_disp,  e_mc_prev, p_accept
   real*8, allocatable :: energies(:), forces(:,:), energies_soap(:), forces_soap(:,:), this_energies(:), &
                          this_forces(:,:), &
                          energies_2b(:), forces_2b(:,:), energies_3b(:), forces_3b(:,:), &
                          energies_core_pot(:), forces_core_pot(:,:), &
-                         velocities(:,:), masses_types(:), masses(:), hirshfeld_v(:), &
-                         hirshfeld_v_cart_der(:,:)
+                         velocities(:,:), masses_types(:), masses(:), hirshfeld_v(:), hirshfeld_v_temp(:), &
+                         hirshfeld_v_cart_der(:,:), masses_temp(:)
   real*8, allocatable, target :: this_hirshfeld_v(:), this_hirshfeld_v_cart_der(:,:)
   real*8, pointer :: this_hirshfeld_v_pt(:), this_hirshfeld_v_cart_der_pt(:,:)
   real*8, allocatable :: all_energies(:,:), all_forces(:,:,:), all_virial(:,:,:)
@@ -73,7 +74,7 @@ program turbogap
             time_mpi_positions(1:3) = 0.d0, time_mpi_ef(1:3) = 0.d0, time_md(3) = 0.d0, &
             instant_pressure_tensor(1:3, 1:3), time_step, md_time, instant_pressure_prev
   integer, allocatable :: displs(:), displs2(:), counts(:), counts2(:)
-  integer :: update_bar, n_sparse, gd_istep = 0
+  integer :: update_bar, n_sparse, idx, gd_istep = 0
   logical, allocatable :: do_list(:), has_vdw_mpi(:), fix_atom(:,:)
   logical :: rebuild_neighbors_list = .true., exit_loop = .true., gd_box_do_pos = .true., restart_box_optim = .false.
   character*1 :: creturn = achar(13)
@@ -81,7 +82,7 @@ program turbogap
 ! Clean up these variables after code refactoring !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   integer, allocatable :: n_neigh(:), neighbors_list(:), alpha_max(:), species(:), species_supercell(:), &
                           neighbor_species(:), sph_temp_int(:), der_neighbors(:), der_neighbors_list(:), &
-                          i_beg_list(:), i_end_list(:), j_beg_list(:), j_end_list(:)
+                          i_beg_list(:), i_end_list(:), j_beg_list(:), j_end_list(:), species_idx(:)
   integer :: n_sites, i, j, k, i2, j2, n_soap, k2, k3, l, n_sites_this, ierr, rank, ntasks, dim, n_sp, &
              n_pos, n_sp_sc, this_i_beg, this_i_end, this_j_beg, this_j_end, this_n_sites_mpi, n_sites_prev = 0, &
              n_atom_pairs_by_rank_prev, cPnz
@@ -89,16 +90,17 @@ program turbogap
   integer :: iostatus, counter = 0, counter2
   integer :: which_atom = 0, n_species = 1, n_xyz, indices(1:3)
   integer :: radial_enhancement = 0
-  integer :: md_istep
+  integer :: md_istep, mc_istep, mc_id, n_mc, n_mc_species
 
-  logical :: repeat_xyz = .true.
+  logical :: repeat_xyz = .true., overwrite = .false., check_species, skip_mc
 
   character*1024 :: filename, cjunk, file_compress_soap, file_alphas, file_soap, file_2b, file_alphas_2b, &
-                    file_3b, file_alphas_3b, file_gap = "none"
+                    file_3b, file_alphas_3b, file_gap = "none", mc_file = "mc_trial.xyz"
   character*64 :: keyword
   character*16 :: lattice_string(1:9)
   character*8 :: i_char
-  character*8, allocatable :: species_types(:), xyz_species(:), xyz_species_supercell(:)
+  character*8, allocatable :: species_types(:), xyz_species(:), xyz_species_supercell(:), &
+       species_type_temp(:)
   character*1 :: keyword_first
 
 ! This is the mode in which we run TurboGAP
