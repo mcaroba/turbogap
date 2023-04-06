@@ -653,7 +653,8 @@ program turbogap
   i_nested = 0
   i_image = 0
 
-  do while( repeat_xyz .or. ( params%do_md .and. md_istep < params%md_nsteps) )
+  do while( repeat_xyz .or. ( params%do_md .and. md_istep < params%md_nsteps) &
+       .or. ( params%do_mc .and. mc_istep < params%mc_nsteps))
     exit_loop = .false.
 
     if( params%do_md .or. mc_move == "md")then
@@ -811,7 +812,8 @@ program turbogap
     call mpi_bcast(n_sp_sc, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
     call cpu_time(time_mpi(2))
     time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
-    IF( rank /= 0 .and. (.not. params%do_md .or. md_istep == 0) )THEN
+    IF( rank /= 0 .and. (.not. params%do_md .or. md_istep == 0) &
+         .and. (.not. params%do_mc .or. mc_istep == 0))THEN
     allocate( positions(1:3, n_pos) )
     if( params%do_md .or. params%do_nested_sampling .or. params%do_mc )then
       allocate( velocities(1:3, n_pos) )
@@ -2270,15 +2272,20 @@ end if
       deallocate( n_neigh_local )
 #endif
     end if
-    if( .not. params%do_md .or. (params%do_md .and. (md_istep == params%md_nsteps .or. exit_loop)) )then
+    if( (.not. params%do_md .and. .not. params%do_mc) .or. &
+         (params%do_md .and. (md_istep == params%md_nsteps .or. exit_loop)) .or. &
+         (params%do_mc .and. (mc_istep == params%mc_nsteps .or. exit_loop)))then
       deallocate( positions, xyz_species, xyz_species_supercell, species, species_supercell, do_list )
       if( allocated(velocities) )deallocate( velocities )
     end if
     if( params%do_md .and. (md_istep == params%md_nsteps .or. exit_loop) .and. rank == 0 )then
       deallocate( positions_prev, forces_prev )
     end if
+    if( params%do_mc .and. (mc_istep == params%mc_nsteps .or. exit_loop) .and. rank == 0 )then
+      deallocate( positions_prev, forces_prev )
+    end if
 
-    n_sites_prev = n_sites
+    if (.not. params%do_mc )n_sites_prev = n_sites
     n_atom_pairs_by_rank_prev = n_atom_pairs_by_rank(rank+1)
 
 #ifdef _MPIF90
@@ -2290,7 +2297,7 @@ end if
 
 
 
-  if( params%do_md .or. params%do_prediction )then
+  if( params%do_md .or. params%do_prediction .or. params%do_mc)then
     call cpu_time(time2)
 #ifdef _MPIF90
     IF( rank == 0 )then
@@ -2301,7 +2308,15 @@ end if
       write(*,*)'                                       |'
 !      write(*,'(I8,A,F13.3,A)') params%md_nsteps, ' MD steps:', time2-time3, ' seconds |'
       write(*,'(I8,A,F13.3,A)') md_istep, ' MD steps:', time2-time3, ' seconds |'
+   end if
+    if( params%do_mc )then
+!      write(*,'(A)')'] |'
+      write(*,*)
+      write(*,*)'                                       |'
+!      write(*,'(I8,A,F13.3,A)') params%md_nsteps, ' MD steps:', time2-time3, ' seconds |'
+      write(*,'(I8,A,F13.3,A)') mc_istep, ' MC steps:', time2-time3, ' seconds |'
     end if
+
     write(*,*)'                                       |'
     write(*,'(A,F13.3,A)') ' *     Read input:', time_read_input(3), ' seconds |'
     write(*,'(A,F13.3,A)') ' * Read XYZ files:', time_read_xyz(3), ' seconds |'

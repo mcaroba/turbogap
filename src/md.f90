@@ -491,6 +491,67 @@ module md
 
 
 
+!**************************************************************************
+  subroutine volume_preserving_strain_transformation(a_box, b_box, c_box, gamma)
+
+    implicit none
+
+    real*8, intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3)
+    real*8, intent(inout) :: gamma(3,3)
+    real*8 :: identity(3,3) = reshape([1.d0, 0.d0, 0.d0, 0.d0, 1.d0, 0.d0, 0.d0, 0.d0, 1.d0], [3,3]), &
+              a(1:3), b(1:3), c(1:3), vol, vol_p, vol_ratio
+
+    a = a_box + matmul(gamma-identity, a_box)
+    b = b_box + matmul(gamma-identity, b_box)
+    c = c_box + matmul(gamma-identity, c_box)
+
+    vol = dot_product(cross_product(a_box, b_box), c_box)
+    vol_p = dot_product(cross_product(a, b), c)
+
+    vol_ratio = (vol / vol_p)**(1.d0/3.d0)
+
+    gamma = gamma * vol_ratio
+
+  end subroutine
+!**************************************************************************
+
+
+
+
+
+
+
+!**************************************************************************
+  subroutine get_ns_unbiased_volume_proposal(V1, V2, n_sites, V)
+
+!   V1 is the minimal volume, V2 is the maximal volume, V is the volume proposal
+!   The likelihood of a volume proposal should scale as V^n_sites. Therefore
+!   larger volumes are favored. We use a homogeneous random distribution within
+!   (0,1) and scale it so that the integrated probability density matches that
+!   of V^n_sites within [V1, V2], before making the assignment between the two
+    !   distributions
+
+    implicit none
+    real*8, intent(in) :: V1, V2
+    integer, intent(in) :: n_sites
+!   Output variables
+    real*8, intent(out) :: V
+!   Internal variables
+    real*8 :: rand, log_V_V2, v_ratio
+
+    call random_number( rand )
+
+    v_ratio = (V1/V2)**(n_sites+1)
+
+    log_V_V2 = dlog(rand + (1.d0-rand)*v_ratio) / dfloat(n_sites + 1)
+
+    V = V2 * dexp(log_V_V2)
+
+  end subroutine
+
+
+
+
 
 !**************************************************************************
   subroutine gradient_descent_box(positions, positions_prev, velocities, &
