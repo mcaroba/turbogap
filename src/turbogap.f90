@@ -101,10 +101,12 @@ program turbogap
   character*8 :: i_char
   character*8, allocatable :: species_types(:), xyz_species(:), xyz_species_supercell(:), &
        species_type_temp(:)
+
   character*1 :: keyword_first
 
 ! This is the mode in which we run TurboGAP
   character*16 :: mode = "none"
+  character*32 :: mc_move = "none"
 
 ! Here we store the input parameters
   type(input_parameters) :: params
@@ -128,8 +130,12 @@ program turbogap
                           n_sparse_mpi_angle_3b(:), n_mpi_core_pot(:), vdw_n_sparse_mpi_soap_turbo(:), &
                           n_neigh_local(:), compress_P_nonzero_mpi(:)
   logical, allocatable :: compress_soap_mpi(:)
-!**************************************************************************
 
+! Nested sampling
+  real*8 :: e_max, e_kin, rand, rand_scale(1:6)
+  integer :: i_nested, i_max, i_image
+  type(image), allocatable :: images(:), images_temp(:)
+!**************************************************************************
 
 
 
@@ -139,6 +145,9 @@ program turbogap
 ! Start recording the time
   call cpu_time(time1)
   time3 = time1
+! Start random seed
+  call srand(int(time1*1000))
+
 !**************************************************************************
 
 
@@ -639,13 +648,18 @@ program turbogap
 ! This checks if we need to do the SOAP calculation more than once, if there are several concatenated
 ! structures in the xyz file provided or we're doing molecular dynamics
   md_istep = -1
+  mc_istep = -1
   n_xyz = 0
-  do while( repeat_xyz .or. ( params%do_md .and. md_istep < params%md_nsteps) )
+  i_nested = 0
+  i_image = 0
 
+  do while( repeat_xyz .or. ( params%do_md .and. md_istep < params%md_nsteps) )
     exit_loop = .false.
 
-    if( params%do_md )then
-      md_istep = md_istep + 1
+    if( params%do_md .or. mc_move == "md")then
+       md_istep = md_istep + 1
+    else if( params%do_mc .and. (.not. mc_move == "md"))then
+       mc_istep = mc_istep + 1
     else
       n_xyz = n_xyz + 1
     end if
@@ -693,11 +707,30 @@ program turbogap
 #ifdef _MPIF90
       IF( rank == 0 )THEN
 #endif
-      call read_xyz(params%atoms_file, .true., params%all_atoms, params%do_timing, &
-                    n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
-                    positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
-                    xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
-                    n_sites, .false., fix_atom, params%t_beg, params%write_array_property(6), .true. )
+         if(mc_istep > 0)then
+            call read_xyz(mc_file, .true., params%all_atoms, params%do_timing, &
+                 n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
+                 positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
+                 xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
+                 n_sites, .not. params%mc_write_xyz, fix_atom, params%t_beg, &
+                 params%write_array_property(6), .not. params%mc_write_xyz)
+            rebuild_neighbors_list = .true.
+
+         else if( .not. params%do_nested_sampling .or. mc_istep == 0 )then
+            call read_xyz(params%atoms_file, .true., params%all_atoms, params%do_timing, &
+                 n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
+                 positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
+                 xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
+                 n_sites, .false., fix_atom, params%t_beg, &
+                 params%write_array_property(6), .false. )
+
+         end if
+
+      ! call read_xyz(params%atoms_file, .true., params%all_atoms, params%do_timing, &
+      !               n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
+      !               positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
+      !               xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
+      !               n_sites, .false., fix_atom, params%t_beg, params%write_array_property(6), .true. )
 !     Only rank 0 handles these variables
 !      allocate( positions_prev(1:3, 1:size(positions,2)) )
 !      allocate( positions_diff(1:3, 1:size(positions,2)) )
@@ -735,11 +768,22 @@ program turbogap
 #ifdef _MPIF90
       IF( rank == 0 )THEN
 #endif
-      call read_xyz(params%atoms_file, .true., params%all_atoms, params%do_timing, &
-                    n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
-                    positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
-                    xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
-                    n_sites, .false., fix_atom, params%t_beg, params%write_array_property(6), .true. )
+      if(mc_istep > 0)then
+         call read_xyz(mc_file, .true., params%all_atoms, params%do_timing, &
+              n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
+              positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
+              xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
+              n_sites, .not. params%mc_write_xyz, fix_atom, params%t_beg, &
+              params%write_array_property(6), .not. params%mc_write_xyz )
+         rebuild_neighbors_list = .true.
+      else
+         call read_xyz(params%atoms_file, .true., params%all_atoms, params%do_timing, &
+              n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
+              positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
+              xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
+              n_sites, .false., fix_atom, params%t_beg, params%write_array_property(6), &
+              .not. params%mc_write_xyz)
+      end if
 #ifdef _MPIF90
       END IF
 #endif
@@ -769,7 +813,7 @@ program turbogap
     time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
     IF( rank /= 0 .and. (.not. params%do_md .or. md_istep == 0) )THEN
     allocate( positions(1:3, n_pos) )
-    if( params%do_md )then
+    if( params%do_md .or. params%do_nested_sampling .or. params%do_mc )then
       allocate( velocities(1:3, n_pos) )
 !      allocate( masses(n_pos) )
       allocate( masses(1:n_sp) )
@@ -782,7 +826,7 @@ program turbogap
     END IF
     call cpu_time(time_mpi_positions(1))
     call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-    if( params%do_md )then
+    if( params%do_md .or. params%do_nested_sampling .or. params%do_mc )then
       call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(masses, n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(fix_atom, 3*n_sp, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
@@ -800,9 +844,11 @@ program turbogap
     time_mpi_positions(3) = time_mpi_positions(3) + time_mpi_positions(2) - time_mpi_positions(1)
 #endif
 !   Now that all ranks know the size of n_sites, we allocate do_list
-    if( .not. params%do_md .or. (params%do_md .and. md_istep == 0) )then
-      allocate( do_list(1:n_sites) )
-      do_list = .true.
+    if( .not. params%do_md .or. (params%do_md .and. md_istep == 0) .or. &
+         ( params%do_mc ) )then
+       if( allocated(do_list))deallocate(do_list)
+       allocate( do_list(1:n_sites) )
+       do_list = .true.
     end if
 !
     call cpu_time(time1)
@@ -818,12 +864,21 @@ program turbogap
 !   is smaller -> makes computations slower) or default back to the primitive unit cell
 !   (i.e., the box was smaller and now is bigger -> makes computations faster).
 !   We only need to check if rebuild_neighbors_list = .true.
-    if( rebuild_neighbors_list )then
-      call read_xyz(params%atoms_file, .true., params%all_atoms, params%do_timing, &
-                    n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
-                    positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
-                    xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
-                    n_sites, .true., fix_atom, params%t_beg, params%write_array_property(6), .true. )
+    if( rebuild_neighbors_list .and.  params%do_mc .and. mc_istep > 0 )then
+       call read_xyz(mc_file, .true., params%all_atoms, params%do_timing, &
+            n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
+            positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
+            xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
+            n_sites, .not. params%mc_write_xyz, fix_atom, params%t_beg, &
+            params%write_array_property(6), .not. params%mc_write_xyz)
+    else if( rebuild_neighbors_list )then
+       call read_xyz(params%atoms_file, .true., params%all_atoms, params%do_timing, &
+            n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
+            positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
+            xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
+            n_sites, .true., fix_atom, params%t_beg, params%write_array_property(6), &
+            .false.)
+
     end if
 
 #ifdef _MPIF90
@@ -888,11 +943,12 @@ program turbogap
 
 !**************************************************************************
 !   If we are doing prediction, we run this chunk of code
-    if( params%do_prediction .or. params%write_soap .or. params%write_derivatives )then
+    if( params%do_prediction .or. params%write_soap .or. params%write_derivatives .or. &
++                                                       (params%do_mc ))then
       call cpu_time(time1)
 
 !     We only need to reallocate the arrays if the number of sites changes
-      if( n_sites /= n_sites_prev )then
+      if( n_sites /= n_sites_prev .or. params%do_mc  )then
         if( allocated(energies) )deallocate( energies, energies_soap, energies_2b, energies_3b, energies_core_pot, &
                                              this_energies, energies_vdw, this_forces )
         allocate( energies(1:n_sites) )
@@ -912,7 +968,7 @@ program turbogap
       energies_core_pot = 0.d0
       energies_vdw = 0.d0
       if( any( soap_turbo_hypers(:)%has_vdw ) )then
-        if( n_sites /= n_sites_prev )then
+        if( n_sites /= n_sites_prev .or.  params%do_mc  )then
           if( allocated(hirshfeld_v) )then
             nullify( this_hirshfeld_v_pt )
             deallocate( this_hirshfeld_v, hirshfeld_v )
@@ -937,7 +993,7 @@ program turbogap
         end if
       end if
       if( params%do_forces )then
-        if( n_sites /= n_sites_prev )then
+        if( n_sites /= n_sites_prev .or.  params%do_mc )then
           if( allocated(forces) )deallocate( forces, forces_soap, forces_2b, forces_3b, forces_core_pot, forces_vdw )
           allocate( forces(1:3, 1:n_sites) )
           allocate( forces_soap(1:3, 1:n_sites) )
@@ -960,7 +1016,7 @@ program turbogap
         virial_vdw = 0.d0
       end if
 
-      if( params%do_prediction )then
+      if( params%do_prediction .or.  params%do_mc )then
 !       Assign the e0 to each atom according to its species
 !        do i = 1, n_sites
         do i = i_beg, i_end
