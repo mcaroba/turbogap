@@ -79,7 +79,7 @@ module read_files
     real*8 :: time1, time2, dist(1:3), read_time, E_kinetic, instant_temp
     real*8 :: kB = 8.6173303d-5, rjunk(1:3), rjunk1d
     integer :: i, iostatus, j, n_sites_supercell, counter, ijunk, k2, i2, j2
-    integer :: indices_prev(1:3)  
+    integer :: indices_prev(1:3)
     character*8 :: i_char
     character*128 :: cjunk, cjunk_array(1:100)
     character*1024 :: cjunk1024, properties
@@ -149,7 +149,8 @@ if( .not. supercell_check_only )then
 !      b_box = 0.d0
 !      c_box = 0.d0
 !      read(10, *) cjunk, cjunk, a_box(1), junk, junk, junk, b_box(2), junk, junk, junk, c_box(3)
-    end if
+   end if
+   if (.not. recalculate_supercell)then
     if( allocated(positions) )deallocate(positions)
     if( allocated(xyz_species) )deallocate(xyz_species)
     if( allocated(species) )deallocate(species)
@@ -246,6 +247,8 @@ if( .not. supercell_check_only )then
     end if
     indices_prev = 1
  end if
+end if
+
 !   Now we construct a supercell of the required size to accommodate the given rcut_max
 !   This needs to be done when the simulation box cannot accommodate one cutoff sphere
     a_box = a_box/dfloat(indices_prev(1))
@@ -503,7 +506,7 @@ end if
     type(input_parameters), intent(out) :: params
 
 !   Internal variables
-    real*8 :: c6_ref, r0_ref, alpha0_ref, bsf 
+    real*8 :: c6_ref, r0_ref, alpha0_ref, bsf
     integer :: iostatus, i, j, nw, iostatus2
     character*1024 :: long_line
     character*128, allocatable :: long_line_items(:)
@@ -1334,7 +1337,7 @@ end if
             else if( keyword == "basis" )then
               backspace(10)
               read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%basis
-              if( soap_turbo_hypers(n_soap_turbo)%basis /= "poly3" .and. & 
+              if( soap_turbo_hypers(n_soap_turbo)%basis /= "poly3" .and. &
                 soap_turbo_hypers(n_soap_turbo)%basis /= "poly3gauss" )then
                 write(*,*)'                                       |'
                 write(*,*)'WARNING: I didn''t understand your      |  <-- WARNING'

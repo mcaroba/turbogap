@@ -67,8 +67,8 @@ module xyz_module
 !
   subroutine write_extxyz( Nat, md_istep, dt, temperature, pressure, a_cell, b_cell, c_cell, virial, &
                            species, positions, velocities, forces, local_energies, masses, &
-                           hirshfeld_v, write_property, write_array_property, fix_atom, filename, &
-                           overwrite )
+                           hirshfeld_v, write_property, write_array_property, fix_atom, &
+                           filename, overwrite )
 
     implicit none
 
@@ -100,7 +100,7 @@ module xyz_module
       end if
     end do
 
-    if( md_istep == 0 .or. (md_istep == -1 .or. overwrite) )then
+    if( md_istep == 0 .or. md_istep == -1 .or. overwrite)then
       open(unit=10, file=filename, status="unknown")
     else
       open(unit=10, file=filename, status="old", position="append")
