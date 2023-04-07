@@ -149,7 +149,8 @@ if( .not. supercell_check_only )then
 !      b_box = 0.d0
 !      c_box = 0.d0
 !      read(10, *) cjunk, cjunk, a_box(1), junk, junk, junk, b_box(2), junk, junk, junk, c_box(3)
-    end if
+   end if
+   if (.not. recalculate_supercell)then
     if( allocated(positions) )deallocate(positions)
     if( allocated(xyz_species) )deallocate(xyz_species)
     if( allocated(species) )deallocate(species)
@@ -158,6 +159,8 @@ if( .not. supercell_check_only )then
     allocate( species(1:n_sites) )
     xyz_species = ""
     species = 0
+
+
 !   We need to comment this out here for nested sampling
 !    if( do_md )then
     if( .true. )then
@@ -246,6 +249,8 @@ if( .not. supercell_check_only )then
     end if
     indices_prev = 1
  end if
+end if
+
 !   Now we construct a supercell of the required size to accommodate the given rcut_max
 !   This needs to be done when the simulation box cannot accommodate one cutoff sphere
     a_box = a_box/dfloat(indices_prev(1))

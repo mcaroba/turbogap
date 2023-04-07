@@ -493,8 +493,12 @@ program turbogap
            call mpi_bcast(soap_turbo_hypers(i)%vdw_delta, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
            call mpi_bcast(soap_turbo_hypers(i)%vdw_zeta, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
            call mpi_bcast(soap_turbo_hypers(i)%vdw_V0, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-           call mpi_bcast(soap_turbo_hypers(i)%vdw_alphas(1:n_sparse), n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-           call mpi_bcast(soap_turbo_hypers(i)%vdw_Qs(1:dim, 1:n_sparse), n_sparse*dim, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+           call mpi_bcast(soap_turbo_hypers(i)%vdw_alphas(1:n_sparse)&
+                &, n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD,&
+                & ierr)
+           call mpi_bcast(soap_turbo_hypers(i)%vdw_Qs(1:dim,&
+                & 1:n_sparse), n_sparse*dim, MPI_DOUBLE_PRECISION, 0,&
+                & MPI_COMM_WORLD, ierr)
         end if
      end do
      do i = 1, n_distance_2b
@@ -871,8 +875,8 @@ program turbogap
              n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
              positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
              xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
-             n_sites, .not. params%mc_write_xyz, fix_atom, params%t_beg, &
-             params%write_array_property(6), .not. params%mc_write_xyz)
+             n_sites, .true., fix_atom, params%t_beg, &
+             params%write_array_property(6), .false.)
      else if( rebuild_neighbors_list )then
         call read_xyz(params%atoms_file, .true., params%all_atoms, params%do_timing, &
              n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
@@ -1190,11 +1194,15 @@ program turbogap
 #ifdef _MPIF90
         if( any( soap_turbo_hypers(:)%has_vdw ) )then
            call cpu_time(time_mpi(1))
-           call mpi_reduce(hirshfeld_v, this_hirshfeld_v, n_sites, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+           call mpi_reduce(hirshfeld_v, this_hirshfeld_v, n_sites,&
+                & MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD,&
+                & ierr)
            !        if( params%do_forces )then
            !         I'm not sure if this is necessary at all... CHECK
-           !          call mpi_reduce(hirshfeld_v_cart_der, this_hirshfeld_v_cart_der, 3*n_atom_pairs, MPI_DOUBLE_PRECISION, MPI_SUM, &
-           !                          0, MPI_COMM_WORLD, ierr)
+           !          call mpi_reduce(hirshfeld_v_cart_der,
+           !          this_hirshfeld_v_cart_der, 3*n_atom_pairs,
+           !          MPI_DOUBLE_PRECISION, MPI_SUM, 0,
+           !          MPI_COMM_WORLD, ierr)
            !          hirshfeld_v_cart_der = this_hirshfeld_v_cart_der
            !        end if
            hirshfeld_v = this_hirshfeld_v
@@ -1416,10 +1424,16 @@ program turbogap
            end if
 
            !       Here we communicate
-           call mpi_reduce(all_energies, all_this_energies, n_sites*counter2, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+           call mpi_reduce(all_energies, all_this_energies, n_sites&
+                &*counter2, MPI_DOUBLE_PRECISION, MPI_SUM, 0,&
+                & MPI_COMM_WORLD, ierr)
            if( params%do_forces )then
-              call mpi_reduce(all_forces, all_this_forces, 3*n_sites*counter2, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
-              call mpi_reduce(all_virial, all_this_virial, 9*counter2, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+              call mpi_reduce(all_forces, all_this_forces, 3*n_sites&
+                   &*counter2, MPI_DOUBLE_PRECISION, MPI_SUM, 0,&
+                   & MPI_COMM_WORLD, ierr)
+              call mpi_reduce(all_virial, all_this_virial, 9*counter2&
+                   &, MPI_DOUBLE_PRECISION, MPI_SUM, 0,&
+                   & MPI_COMM_WORLD, ierr)
            end if
 
            !       Here we give proper names to the quantities - again, pointers would probably be faster
@@ -1750,15 +1764,81 @@ program turbogap
               ! As we have moved/added/removed, we must check the supercell and  broadcast the results
 
 
-              ! call read_xyz(mc_file, .true., params%all_atoms, params%do_timing, &
-              !             n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
-              !             positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
-              !             xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
-              !             n_sites, .true., fix_atom, params%t_beg, &
-              !             params%write_array_property(6), .true. )
+              call read_xyz(mc_file, .true., params%all_atoms, params%do_timing, &
+                          n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
+                          positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
+                          xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
+                          n_sites, .true., fix_atom, params%t_beg, &
+                          params%write_array_property(6), .true. )
            end if
 #ifdef _MPIF90
         END IF
+#endif
+#ifdef _MPIF90
+     IF( params%do_mc .and. rank == 0 )THEN
+        n_pos = size(positions,2)
+        n_sp = size(xyz_species,1)
+        n_sp_sc = size(xyz_species_supercell,1)
+     END IF
+     call cpu_time(time_mpi(1))
+     call mpi_bcast(n_pos, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+     call mpi_bcast(n_sp, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+     call mpi_bcast(n_sp_sc, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+     call cpu_time(time_mpi(2))
+     time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
+     IF( rank /= 0 )THEN !.and. (mc_move == "insertion" .or. mc_move == "removal")
+        if(allocated(positions))deallocate(positions)
+        allocate( positions(1:3, n_pos) )
+        if( params%do_md .or. params%do_nested_sampling .or. params%do_mc )then
+           if(allocated(velocities))deallocate(velocities)
+           allocate( velocities(1:3, n_pos) )
+           !      allocate( masses(n_pos) )
+           if(allocated(masses))deallocate(masses)
+           allocate( masses(1:n_sp) )
+           if(allocated(fix_atom))deallocate(fix_atom)
+           allocate( fix_atom(1:3, 1:n_sp) )
+        end if
+        if(allocated(xyz_species))deallocate(xyz_species)
+        allocate( xyz_species(1:n_sp) )
+        if(allocated(species))deallocate(species)
+        allocate( species(1:n_sp) )
+        if(allocated(xyz_species_supercell))deallocate(xyz_species_supercell)
+        allocate( xyz_species_supercell(1:n_sp_sc) )
+        if(allocated(species_supercell))deallocate(species_supercell)
+        allocate( species_supercell(1:n_sp_sc) )
+     END IF
+     call cpu_time(time_mpi_positions(1))
+     call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+     if( params%do_md .or. params%do_nested_sampling .or. params%do_mc )then
+        call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(masses, n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(fix_atom, 3*n_sp, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+     end if
+     call mpi_bcast(xyz_species, 8*n_sp, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
+     call mpi_bcast(xyz_species_supercell, 8*n_sp_sc, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
+     call mpi_bcast(species, n_sp, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+     call mpi_bcast(species_supercell, n_sp_sc, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+     print *, "size spec super", size(species_supercell), "rank ", rank
+     call mpi_bcast(indices, 3, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+     call mpi_bcast(a_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+     call mpi_bcast(b_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+     call mpi_bcast(c_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+     call mpi_bcast(n_sites, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+     call cpu_time(time_mpi_positions(2))
+     time_mpi_positions(3) = time_mpi_positions(3) + time_mpi_positions(2) - time_mpi_positions(1)
+#endif
+     !   Now that all ranks know the size of n_sites, we allocate do_list
+     if( .not. params%do_md .or. (params%do_md .and. md_istep == 0) .or. &
+          ( params%do_mc ) )then
+        if( allocated(do_list))deallocate(do_list)
+        allocate( do_list(1:n_sites) )
+        do_list = .true.
+     end if
+     !
+     call cpu_time(time1)
+#ifdef _MPIF90
+     !   Parallel neighbors list build
+     call mpi_bcast(rebuild_neighbors_list, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
 #endif
 
         if( .not. params%do_md )then
@@ -1822,14 +1902,17 @@ program turbogap
               !       The masses should be divided by 103.6426965268d0 to have amu units, but
               !       since masses is not allocated for single point calculations, it would
               !       likely lead to a segfault
-              call wrap_pbc(positions(1:3,1:n_sites), a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)))
-              call write_extxyz( n_sites, -n_xyz, time_step, instant_temp, instant_pressure, &
-                   a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
-                   virial, xyz_species, &
-                   positions(1:3, 1:n_sites), velocities, &
-                   forces, energies(1:n_sites), masses, hirshfeld_v, &
-                   params%write_property, params%write_array_property, fix_atom, &
-                   "trajectory_out.xyz", .false.)
+              call wrap_pbc(positions(1:3,1:n_sites), a_box&
+                   &/dfloat(indices(1)), b_box/dfloat(indices(2)),&
+                   & c_box/dfloat(indices(3)))
+              call write_extxyz( n_sites, -n_xyz, time_step,&
+                   & instant_temp, instant_pressure, a_box&
+                   &/dfloat(indices(1)), b_box/dfloat(indices(2)),&
+                   & c_box/dfloat(indices(3)), virial, xyz_species,&
+                   & positions(1:3, 1:n_sites), velocities, forces,&
+                   & energies(1:n_sites), masses, hirshfeld_v, params&
+                   &%write_property, params%write_array_property,&
+                   & fix_atom, "trajectory_out.xyz", .false.)
 #ifdef _MPIF90
            END IF
 #endif
@@ -1871,8 +1954,11 @@ program turbogap
               time_step = params%md_step
            end if
            !     We wrap the positions and remoce CM velocity
-           call wrap_pbc(positions(1:3,1:n_sites), a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)))
-           call remove_cm_vel(velocities(1:3,1:n_sites), masses(1:n_sites))
+           call wrap_pbc(positions(1:3,1:n_sites), a_box&
+                &/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box&
+                &/dfloat(indices(3)))
+           call remove_cm_vel(velocities(1:3,1:n_sites),&
+                & masses(1:n_sites))
 
            !     First we check if this is a variable time step simulation
            if( params%variable_time_step )then
@@ -1895,12 +1981,20 @@ program turbogap
                    c_box/dfloat(indices(3)), fix_atom(1:3, 1:n_sites), energy)
            else if( (params%optimize == "gd-box" .or. params%optimize == "gd-box-ortho") .and. gd_box_do_pos )then
               !       We propagate the positions
-              call gradient_descent(positions(1:3, 1:n_sites), positions_prev(1:3, 1:n_sites), velocities(1:3, 1:n_sites), &
-                   forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), &
-                   params%max_opt_step, gd_istep == 0, a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), &
-                   c_box/dfloat(indices(3)), fix_atom(1:3, 1:n_sites), energy)
-              if( gd_istep > 1 .and. abs(energy-energy_prev) < params%e_tol*dfloat(n_sites) .and. maxval(forces) < params%f_tol )then
-                 !         If the position optimization is converged (energy only) we set the code to do the box relaxation (below)
+              call gradient_descent(positions(1:3, 1:n_sites),&
+                   & positions_prev(1:3, 1:n_sites), velocities(1:3,&
+                   & 1:n_sites), forces(1:3, 1:n_sites),&
+                   & forces_prev(1:3, 1:n_sites), masses(1:n_sites),&
+                   & params%max_opt_step, gd_istep == 0, a_box&
+                   &/dfloat(indices(1)), b_box/dfloat(indices(2)),&
+                   & c_box/dfloat(indices(3)), fix_atom(1:3,&
+                   & 1:n_sites), energy)
+              if( gd_istep > 1 .and. abs(energy-energy_prev) < params&
+                   &%e_tol*dfloat(n_sites) .and. maxval(forces) <&
+                   & params%f_tol )then
+                 !         If the position optimization is converged
+                 !         (energy only) we set the code to do the
+                 !         box relaxation (below)
                  gd_box_do_pos = .false.
                  gd_istep = 0
               else
@@ -1921,10 +2015,15 @@ program turbogap
            instant_temp = 2.d0/3.d0/dfloat(n_sites-1)/kB*E_kinetic
 
            !     Instant pressure in bar
-           instant_pressure = (kB*dfloat(n_sites-1)*instant_temp+(virial(1,1) + virial(2,2) + virial(3,3))/3.d0)/v_uc*eVperA3tobar
-           instant_pressure_tensor(1:3, 1:3) = virial(1:3,1:3)/v_uc*eVperA3tobar
+           instant_pressure = (kB*dfloat(n_sites-1)*instant_temp&
+                &+(virial(1,1) + virial(2,2) + virial(3,3))/3.d0)&
+                &/v_uc*eVperA3tobar
+           instant_pressure_tensor(1:3, 1:3) = virial(1:3,1:3)/v_uc&
+                &*eVperA3tobar
            do i = 1, 3
-              instant_pressure_tensor(i, i) = instant_pressure_tensor(i, i) + (kB*dfloat(n_sites-1)*instant_temp)/v_uc*eVperA3tobar
+              instant_pressure_tensor(i, i) =&
+                   & instant_pressure_tensor(i, i) + (kB&
+                   &*dfloat(n_sites-1)*instant_temp)/v_uc*eVperA3tobar
            end do
 
            !     Here we write thermodynamic information -> THIS NEEDS CLEAN UP AND IMPROVEMENT
@@ -1935,11 +2034,17 @@ program turbogap
            else
               open(unit=10, file="thermo.log", status="old", position="append")
            end if
-           if( md_istep == 0 .or. md_istep == params%md_nsteps .or. modulo(md_istep, params%write_thermo) == 0 )then
-              !       Organize this better so that the user can have more freedom about what gets printed to thermo.log
-              !       There should also be a header preceded by # specifying what gets printed
-              write(10, "(I10, 1X, F16.4, 1X, F16.4, 1X, F20.8, 1X, F20.8, 1X, F20.8)", advance="no") &
-                   md_istep, md_time, instant_temp, E_kinetic, sum(energies), instant_pressure
+           if( md_istep == 0 .or. md_istep == params%md_nsteps .or.&
+                & modulo(md_istep, params%write_thermo) == 0 )then
+              !       Organize this better so that the user can have
+              !       more freedom about what gets printed to
+              !       thermo.log
+              !       There should also be a header preceded by #
+              !       specifying what gets printed
+              write(10, "(I10, 1X, F16.4, 1X, F16.4, 1X, F20.8, 1X,&
+                   & F20.8, 1X, F20.8)", advance="no") md_istep,&
+                   & md_time, instant_temp, E_kinetic, sum(energies),&
+                   & instant_pressure
               if( params%write_lv )then
                  write(10, "(1X, 9F20.8)", advance="no") a_box(1:3)/dfloat(indices(1)), &
                       b_box(1:3)/dfloat(indices(2)), &
@@ -1955,15 +2060,20 @@ program turbogap
            !
            !     Check if we have converged a relaxation calculation
            if( params%do_md .and. params%optimize == "gd" .and. md_istep > 0 .and. &
-                abs(energy-energy_prev) < params%e_tol*dfloat(n_sites) .and. maxval(forces) < params%f_tol .and. rank == 0 )then
+                abs(energy-energy_prev) < params%e_tol&
+                &*dfloat(n_sites) .and. maxval(forces) < params%f_tol&
+                & .and. rank == 0 )then
               exit_loop = .true.
               !     THIS CONDITION ON INSTANT PRESSURE WILL NEED TO BE FINE TUNED, TO ACCOUNT FOR ARBITRARY TARGET PRESSURES
               !     BUT ALSO TO ACCOMMODATE NON-TRICLINIC TARGET BOX SHAPES, WHERE IT MIGHT NOT BE POSSIBLE TO CONVERGE THE
               !     TOTAL PRESSURE BELOW A CERTAIN MINIMUM (DUE TO THE BOX SHAPE CONSTRAINTS)
-           else if( params%do_md .and. (params%optimize == "gd-box" .or. params%optimize == "gd-box-ortho") .and. gd_istep > 1 .and. &
-                abs(energy-energy_prev) < params%e_tol*dfloat(n_sites) .and. &
-                abs(instant_pressure - instant_pressure_prev) < params%p_tol .and. &
-                maxval(abs(forces)) < params%f_tol .and. rank == 0 )then
+           else if( params%do_md .and. (params%optimize == "gd-box"&
+                & .or. params%optimize == "gd-box-ortho") .and.&
+                & gd_istep > 1 .and. abs(energy-energy_prev) < params&
+                &%e_tol*dfloat(n_sites) .and. abs(instant_pressure -&
+                & instant_pressure_prev) < params%p_tol .and.&
+                & maxval(abs(forces)) < params%f_tol .and. rank == 0&
+                & )then
               exit_loop = .true.
            end if
 
@@ -1973,18 +2083,23 @@ program turbogap
                 (md_istep == params%md_nsteps .and. .not. params%do_nested_sampling) &
                 .or. (modulo(md_istep, params%write_xyz) == 0  .and. .not. params%do_nested_sampling) .or. &
                 exit_loop )then
-              call wrap_pbc(positions_prev(1:3,1:n_sites), a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)))
-              call write_extxyz( n_sites, md_istep, time_step, instant_temp, instant_pressure, &
-                   a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
-                   virial, xyz_species, &
-                   positions_prev(1:3, 1:n_sites), velocities, &
-                   forces, energies(1:n_sites), masses, hirshfeld_v, &
-                   params%write_property, params%write_array_property, fix_atom(1:3, 1:n_sites), &
-                   "trajectory_out.xyz", .true.)
+              call wrap_pbc(positions_prev(1:3,1:n_sites), a_box&
+                   &/dfloat(indices(1)), b_box/dfloat(indices(2)),&
+                   & c_box/dfloat(indices(3)))
+              call write_extxyz( n_sites, md_istep, time_step,&
+                   & instant_temp, instant_pressure, a_box&
+                   &/dfloat(indices(1)), b_box/dfloat(indices(2)),&
+                   & c_box/dfloat(indices(3)), virial, xyz_species,&
+                   & positions_prev(1:3, 1:n_sites), velocities,&
+                   & forces, energies(1:n_sites), masses, hirshfeld_v&
+                   &, params%write_property, params&
+                   &%write_array_property, fix_atom(1:3, 1:n_sites),&
+                   & "trajectory_out.xyz", .true.)
            else if( md_istep == params%md_nsteps .and. params%do_nested_sampling )then
               write(cjunk,'(I8)') i_image
               write(filename,'(A,A,A)') "walkers/", trim(adjustl(cjunk)), ".xyz"
-              call wrap_pbc(positions_prev(1:3,1:n_sites), a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)))
+              call wrap_pbc(positions_prev(1:3,1:n_sites), &
+                   a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)))
               call write_extxyz( n_sites, md_istep, time_step, instant_temp, instant_pressure, &
                    a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
                    virial, xyz_species, &
@@ -2012,7 +2127,8 @@ program turbogap
               call berendsen_barostat(positions(1:3, 1:n_sites), &
                    params%p_beg + (params%p_end-params%p_beg)*dfloat(md_istep+1)/float(params%md_nsteps), &
                    instant_pressure_tensor, params%barostat_sym, params%tau_p, params%gamma_p, time_step)
-           else if( (params%optimize == "gd-box" .or. params%optimize == "gd-box-ortho") .and. .not. gd_box_do_pos )then
+           else if( (params%optimize == "gd-box" .or. params%optimize == "gd-box-ortho") &
+                .and. .not. gd_box_do_pos )then
               if( gd_istep > 1 .and. ( ( abs(energy-energy_prev) < params%e_tol*dfloat(n_sites) &
                    .and. abs(instant_pressure - instant_pressure_prev) < params%p_tol ) &
                    .or. restart_box_optim) )then
@@ -2026,7 +2142,8 @@ program turbogap
                  a_box = a_box/dfloat(indices(1))
                  b_box = b_box/dfloat(indices(2))
                  c_box = c_box/dfloat(indices(3))
-                 call gradient_descent_box(positions(1:3, 1:n_sites), positions_prev(1:3, 1:n_sites), velocities(1:3, 1:n_sites), &
+                 call gradient_descent_box(positions(1:3, 1:n_sites), positions_prev(1:3, 1:n_sites), &
+                      velocities(1:3, 1:n_sites), &
                       forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), &
                       params%max_opt_step_eps, gd_istep == 0, a_box, b_box, c_box, energy, &
                       [virial(1,1), virial(2,2), virial(3,3), virial(2,3), virial(1,3), virial(1,2)], &
