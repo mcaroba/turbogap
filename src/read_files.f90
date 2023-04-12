@@ -682,6 +682,9 @@ end if
       else if(keyword=='mc_write_xyz')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_write_xyz
+      else if(keyword=='mc_relax')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_relax
       else if(keyword=='write_xyz')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%write_xyz

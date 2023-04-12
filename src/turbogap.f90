@@ -2379,7 +2379,8 @@ program turbogap
         deallocate( positions_prev, forces_prev )
      end if
      if( params%do_mc .and. (mc_istep == params%mc_nsteps .or. exit_loop) .and. rank == 0 )then
-        deallocate( positions_prev, forces_prev )
+        if( allocated(forces_prev)) deallocate(forces_prev)
+        if( allocated(positions_prev)) deallocate(positions_prev)
      end if
 
      if (.not. params%do_mc )n_sites_prev = n_sites

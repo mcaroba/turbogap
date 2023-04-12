@@ -106,7 +106,7 @@ module types
                write_local_energies = .true., write_property(1:11) = .true., &
                write_array_property(1:8) = .true., write_masses = .false., write_fixes = .true., &
                variable_time_step = .false., vdw_mbd_grad = .false., do_nested_sampling = .false., &
-               scale_box_nested = .false., mc_write_xyz = .false.
+               scale_box_nested = .false., mc_write_xyz = .false., mc_relax = .false.
 
   end type input_parameters
 
