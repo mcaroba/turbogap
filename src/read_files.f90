@@ -506,7 +506,7 @@ end if
     type(input_parameters), intent(out) :: params
 
 !   Internal variables
-    real*8 :: c6_ref, r0_ref, alpha0_ref, bsf
+    real*8 :: c6_ref, r0_ref, alpha0_ref, bsf, k
     integer :: iostatus, i, j, nw, iostatus2
     character*1024 :: long_line
     character*128, allocatable :: long_line_items(:)
@@ -532,6 +532,7 @@ end if
     implemented_mc_types(5) = "relax"
     implemented_mc_types(6) = "md"
 
+    k = 0.d0
 
 !   Some defaults before reading the input file (the values in the input file will override them)
     if( mode == "md" )then
@@ -643,6 +644,8 @@ end if
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%n_mc_types
         allocate( params%mc_types(1:params%n_mc_types) )
+        allocate( params%mc_acceptance(1:params%n_mc_types) )
+        params%mc_acceptance = 1.d0 / params%n_mc_types
       else if(keyword=='mc_types')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, (params%mc_types(nw),nw=1,params%n_mc_types)
@@ -685,6 +688,18 @@ end if
       else if(keyword=='mc_relax')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_relax
+      else if(keyword=='mc_acceptance')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, (params%mc_acceptance(nw),nw=1,params%n_mc_types)
+        ! The acceptance probability is based on this sum and normalised
+        do i=1, params%n_mc_types
+           k = k + params%mc_acceptance(i)
+        end do
+
+        do i=1, params%n_mc_types
+           params%mc_acceptance(i) = params%mc_acceptance(i) / k
+        end do
+
       else if(keyword=='write_xyz')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%write_xyz
@@ -1019,6 +1034,32 @@ end if
       call system("rm -rf walkers/")
       call system("mkdir -p walkers/")
     end if
+
+!   Monte-carlo checkes checks
+    if( params%do_mc )then
+       do i = 1, params%n_mc_types
+          if (params%mc_types(i) == "md")then
+             if( params%thermostat == "none" )then
+                write(*,*)'                                       |'
+                write(*,*)'WARNING: You need to specify a         |  <-- WARNING'
+                write(*,*)'thermostat when using md type mc steps!|'
+             end if
+          end if
+
+          if (params%mc_types(i) == "relax")then
+             if( params%optimize == "none" )then
+                write(*,*)'                                       |'
+                write(*,*)'WARNING: You need to specify an        |  <-- WARNING'
+                write(*,*)'optimizer when using relax type mc     |'
+                write(*,*)'steps!!                                |'
+             end if
+          end if
+
+       end do
+
+    end if
+
+
 
 !   Set the writeouts
     if( .not. params%do_md )then

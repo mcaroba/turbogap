@@ -76,7 +76,8 @@ module types
 
 ! These is the type for the input parameters
   type input_parameters
-    real*8, allocatable :: masses_types(:), e0(:), vdw_c6_ref(:), vdw_r0_ref(:), vdw_alpha0_ref(:)
+     real*8, allocatable :: masses_types(:), e0(:), vdw_c6_ref(:), vdw_r0_ref(:), vdw_alpha0_ref(:), &
+          mc_acceptance(:)
     real*8 :: t_beg = 300.d0, t_end = 300.d0, tau_t = 100.d0, md_step = 1.d0, &
               neighbors_buffer = 0.d0, max_GBytes_per_process = 1.d0, e_tol = 1.d-6, &
               vdw_sr = 0.94d0, vdw_d = 20.d0, vdw_rcut = 10.d0, &
@@ -250,7 +251,6 @@ module types
     n = size(this_image%masses, 1)
     allocate( masses(1:n) )
     masses = this_image%masses
-
 
     n = size(this_image%energies, 1)
     allocate( energies(1:n) )

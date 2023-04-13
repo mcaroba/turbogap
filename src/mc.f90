@@ -130,7 +130,7 @@ module mc
 
 
 
-    if (mc_move == "move")then
+    if (mc_move == "move" .or. mc_move == "relax" .or. mc_move == "md")then
        call monte_carlo_move(p_accept, energy, energy_prev, temp)
        !     Not implemented the volume bias yet
     else if (mc_move == "insertion")then
@@ -168,20 +168,33 @@ module mc
   end subroutine mc_get_atom_disp
 
 
-  subroutine get_mc_move(n_mc_species, mc_types, mc_move)
+  subroutine get_mc_move(n_mc_species, mc_types, mc_move, acceptance)
     implicit none
 
     integer, intent(in) :: n_mc_species
-    integer :: n_mc
+    integer :: n_mc, i
     character*32, intent(in) ::  mc_types(:)
     character*32, intent(out) :: mc_move
-    real*8 :: ranf
+    real*8 :: ranf, acceptance(:), k
     logical :: invalid_move, cant_remove
 
     invalid_move = .true.
     do while( invalid_move )
        call random_number(ranf)
-       n_mc = floor( size( mc_types,1 ) * ranf ) + 1
+
+       ! Now choose the move based on the acceptance ratios
+
+       k = 0.d0
+       do i = 1, size(mc_types)
+          n_mc = i
+          k = k + acceptance(i)
+          if( ranf < k )then
+             print *, "k ", k, "n_mc ", i
+             exit
+          end if
+       end do
+       ! Original implementation n_mc = floor( size( mc_types,1 ) * ranf ) + 1
+       print *, "n_mc = ", n_mc
        mc_move = mc_types(n_mc)
 
 ! If there are none of the gc species to remove, then we can't remove!!
