@@ -773,7 +773,7 @@ program turbogap
                    positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
                    xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
                    n_sites, .false., fix_atom, params%t_beg, params%write_array_property(6), &
-                   .not. params%mc_write_xyz)
+                   .false. )
            end if
 #ifdef _MPIF90
         END IF
@@ -2072,13 +2072,13 @@ program turbogap
                     !             Accept
                     if ((mc_istep == 0 .or. mc_istep == params%mc_nsteps .or. &
                          modulo(mc_istep, params%write_xyz) == 0))then
-
+                       write(*,'(A)')'----> Writing mc_current.xyz and mc_all.xyz <---- '
                        call write_extxyz( n_sites, 0, 1.0d0, 0.0d0, 0.0d0, &
                             a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
                             virial, xyz_species, positions(1:3, 1:n_sites), velocities, &
                             forces, energies(1:n_sites), masses, hirshfeld_v, &
                             params%write_property, params%write_array_property, fix_atom, &
-                            "mc_initial.xyz", .true. )
+                            "mc_current.xyz", .true. )
 
                        call write_extxyz( n_sites, 1, 1.0d0, 0.0d0, 0.0d0, &
                             a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
@@ -2131,6 +2131,7 @@ program turbogap
                  !  >>> write to an xyz every iteration. This is slow so
                  !  >>> once validated it should be reommovwd
                  ! setting "md_istep" to 0 to overwrite
+
                  if ((mc_istep == 0 .or. mc_istep == params%mc_nsteps .or. &
                       modulo(mc_istep, params%write_xyz) == 0))then
 
@@ -2139,14 +2140,14 @@ program turbogap
                          virial, xyz_species, positions(1:3, 1:n_sites), velocities, &
                          forces, energies(1:n_sites), masses, hirshfeld_v, &
                          params%write_property, params%write_array_property, fix_atom, &
-                         "mc_current.xyz", .true. )
+                         "mc_initial.xyz", .true. )
                     ! setting "md_istep" to 1 to append
                     call write_extxyz( n_sites, 0, 1.0d0, 0.0d0, 0.0d0, &
                          a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
                          virial, xyz_species, positions(1:3, 1:n_sites), velocities, &
                          forces, energies(1:n_sites), masses, hirshfeld_v, &
                          params%write_property, params%write_array_property, fix_atom, &
-                         "mc_all.xyz", .false. )
+                         "mc_all.xyz", .true. )
                  end if
 
 
