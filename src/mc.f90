@@ -449,4 +449,9 @@ module mc
 
   end subroutine perform_mc_step
 
+  ! Implement this to make condition checking more clear
+  ! subroutine get_mc_conditions()
+  ! end subroutine get_mc_conditions
+
+
 end module mc
