@@ -1638,17 +1638,18 @@ program turbogap
            !     Velocity Verlet takes positions for t, positions_prev for t-dt, and velocities for t-dt and returns everything
            !     dt later. forces are taken at t, and forces_prev at t-dt. forces is left unchanged by the routine, and
            !     forces_prev is returned as equal to forces (both arrays contain the same information on return)
-           if( params%optimize == "vv" )then
+           if( params%optimize == "vv" .and. .not. mc_move == 'md')then
               call velocity_verlet(positions(1:3, 1:n_sites), positions_prev(1:3, 1:n_sites), velocities(1:3, 1:n_sites), &
                    forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), time_step, &
                    md_istep == 0, a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
                    fix_atom(1:3, 1:n_sites))
-           else if( params%optimize == "gd" )then
+           else if( params%optimize == "gd" .and. .not. mc_move == 'md')then
               call gradient_descent(positions(1:3, 1:n_sites), positions_prev(1:3, 1:n_sites), velocities(1:3, 1:n_sites), &
                    forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), &
                    params%max_opt_step, md_istep == 0, a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), &
                    c_box/dfloat(indices(3)), fix_atom(1:3, 1:n_sites), energy)
-           else if( (params%optimize == "gd-box" .or. params%optimize == "gd-box-ortho") .and. gd_box_do_pos )then
+           else if( (params%optimize == "gd-box" .or. params%optimize == "gd-box-ortho") .and. gd_box_do_pos &
+                .and. .not. mc_move == 'md')then
               !       We propagate the positions
               call gradient_descent(positions(1:3, 1:n_sites),&
                    & positions_prev(1:3, 1:n_sites), velocities(1:3,&
@@ -1728,6 +1729,7 @@ program turbogap
                 abs(energy-energy_prev) < params%e_tol*dfloat(n_sites) .and. &
                 maxval(forces) < params%f_tol .and. rank == 0 )then
               exit_loop = .true.
+!              if (params%do_mc .and. mc_istep /= params%mc_nsteps) exit_loop=.false.
               !     THIS CONDITION ON INSTANT PRESSURE WILL NEED TO BE FINE TUNED, TO ACCOUNT FOR ARBITRARY TARGET PRESSURES
               !     BUT ALSO TO ACCOMMODATE NON-TRICLINIC TARGET BOX SHAPES, WHERE IT MIGHT NOT BE POSSIBLE TO CONVERGE THE
               !     TOTAL PRESSURE BELOW A CERTAIN MINIMUM (DUE TO THE BOX SHAPE CONSTRAINTS)
@@ -1739,6 +1741,7 @@ program turbogap
                 & maxval(abs(forces)) < params%f_tol .and. rank == 0&
                 & )then
               exit_loop = .true.
+ !             if (params%do_mc .and. mc_istep /= params%mc_nsteps) exit_loop=.false.
            end if
 
            !     We write out the trajectory file. We write positions_prev which is the one for which we have computed
@@ -2046,7 +2049,11 @@ program turbogap
 #ifdef _MPIF90
         IF( rank == 0 )THEN
 #endif
-           if (params%do_mc .and. (md_istep == params%md_nsteps .or. md_istep == -1) )then
+           if ( (params%do_mc .and. (md_istep == params%md_nsteps) &
+                .and. mc_move == "md" )&
+                .or. ((params%do_mc .and. params%mc_relax .and.  &
+                (md_istep == params%mc_nrelax ) .and. ))&
+                .or. (params%do_mc .and. (md_istep == -1) ) )then
               !       Now we do a monte-carlo step: we choose what the steps are from the available list and then choose a random number
               !       -- We have the list of move types in params%mc_types and the number params%n_mc_types --
               !       >> First generate a random number in the range of the number of
@@ -2208,6 +2215,14 @@ program turbogap
               ! the supercell in the usual way, but for convenience, one has
               ! not done that.
 
+              ! Now, if relaxing every step then
+              if(params%mc_relax)then
+                 ! Set the parameters for relaxatrino
+                 md_istep = -1
+                 params%do_md = .true.
+                 ! Note, that this may override md steps if the same is chosen! More testing needed
+              end if
+
               if ((params%mc_write_xyz .or. mc_istep == 0 .or. mc_istep == params%mc_nsteps .or. &
                    modulo(mc_istep, params%write_xyz) == 0))then
 
@@ -2229,8 +2244,14 @@ program turbogap
                           n_sites, .true., fix_atom, params%t_beg, &
                           params%write_array_property(6), .true. )
            else
-              if(params%do_mc)write(*,'(1X,A,1X,I8,1X,A,1X,I8)')"Hybrid md step ", md_istep, "/", params%md_nsteps
+              if(params%do_mc .and. mc_move == 'md')then
+                 write(*,'(1X,A,1X,I8,1X,A,1X,I8)')"Hybrid md step ", md_istep, "/", params%md_nsteps
+              else
+                 write(*,'(1X,A,1X,I8,1X,A,1X,I8)')"MC Relax md step ", md_istep, "/", params%mc_nrelax
+              end if
            end if
+
+
 #ifdef _MPIF90
         END IF
 #endif
