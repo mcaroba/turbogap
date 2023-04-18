@@ -802,19 +802,29 @@ program turbogap
      call mpi_bcast(n_sp_sc, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call cpu_time(time_mpi(2))
      time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
-     IF( rank /= 0 .and. (.not. params%do_md .or. md_istep == 0) &
-          .and. (.not. params%do_mc .or. mc_istep == 0))THEN
+     IF( rank /= 0 )THEN
+        if(allocated(positions))deallocate(positions)
         allocate( positions(1:3, n_pos) )
         if( params%do_md .or. params%do_nested_sampling .or. params%do_mc )then
+           if(allocated(velocities))deallocate(velocities)
            allocate( velocities(1:3, n_pos) )
            !      allocate( masses(n_pos) )
+           if(allocated( masses ))deallocate( masses )
            allocate( masses(1:n_sp) )
+           if(allocated( fix_atom ))deallocate( fix_atom )
            allocate( fix_atom(1:3, 1:n_sp) )
         end if
+        if(allocated( xyz_species ))deallocate( xyz_species )
         allocate( xyz_species(1:n_sp) )
+        if(allocated( species ))deallocate( species )
         allocate( species(1:n_sp) )
+        if(allocated( xyz_species_supercell ))deallocate( xyz_species_supercell )
         allocate( xyz_species_supercell(1:n_sp_sc) )
+        if(allocated( species_supercell ))deallocate( species_supercell )
         allocate( species_supercell(1:n_sp_sc) )
+        if(allocated( fix_atom ))deallocate( fix_atom )
+        allocate( fix_atom(1:3,1:n_pos) )
+
      END IF
      call cpu_time(time_mpi_positions(1))
      call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
@@ -890,6 +900,20 @@ program turbogap
 
      do_list = .false.
      do_list(i_beg:i_end) = .true.
+     if( rebuild_neighbors_list )then
+        print *, "DEALLOCATING NEIGHBOUR LISTS"
+        if(allocated( rjs))deallocate( rjs)
+        if(allocated( xyz))deallocate( xyz)
+        if(allocated( thetas))deallocate( thetas)
+        if(allocated( phis))deallocate( phis)
+        if(allocated( neighbor_species ))deallocate( neighbor_species )
+        if(allocated( neighbors_list))deallocate( neighbors_list )
+        if(allocated(n_neigh))deallocate( n_neigh )
+#ifdef _MPIF90
+        if(allocated(n_neigh_local))deallocate( n_neigh_local )
+#endif
+     end if
+
      call build_neighbors_list(positions, a_box, b_box, c_box, params%do_timing, &
           species_supercell, rcut_max, n_atom_pairs, rjs, &
           thetas, phis, xyz, n_neigh_local, neighbors_list, neighbor_species, n_sites, indices, &
@@ -2235,11 +2259,12 @@ program turbogap
 
                  if( allocated(energies) )deallocate( energies, positions, velocities, &
                       forces, species,  &
-                      xyz_species)
+                      xyz_species, fix_atom)
                  allocate( energies(1:n_sites) )
                  allocate( forces(1:3, 1:n_sites) )
                  allocate( velocities(1:3, 1:n_sites) )
                  allocate( positions(1:3, 1:n_sites) )
+                 allocate( fix_atom(1:3, 1:n_sites) )
                  allocate( xyz_species(1:n_sites) )
                  allocate( species(1:n_sites) )
                  velocities = 0.0d0
@@ -2275,18 +2300,20 @@ program turbogap
 
                     do i = 1, n_sites
                        if (i < idx)then
-                          positions(1:3,i) = positions_prev(1:3,i)
+                          positions(1:3,i) = images(1)%positions(1:3,i)
 
                           xyz_species(i)           = images(1)%xyz_species(i)
                           species(i)               = images(1)%species(i)
                           masses(i)= images(1)%masses(i)
+                          fix_atom(1:3,i)= images(1)%fix_atom(1:3,i)
 
                           if (allocated(hirshfeld_v))hirshfeld_v(i) = hirshfeld_v_temp(i)
                        else
-                          positions(1:3,i) = positions_prev(1:3,i+1)
+                          positions(1:3,i) = images(1)%positions(1:3,i+1)
                           xyz_species(i)           = images(1)%xyz_species(i+1)
                           species(i)               = images(1)%species(i+1)
                           masses(i)= images(1)%masses(i+1)
+                          fix_atom(1:3,i)= images(1)%fix_atom(1:3,i+1)
                           if (allocated(hirshfeld_v))hirshfeld_v(i) = hirshfeld_v_temp(i+1)
                        end if
                     end do
@@ -2336,6 +2363,8 @@ program turbogap
      call mpi_bcast(n_pos, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(n_sp, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(n_sp_sc, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+     call mpi_bcast(params%do_md, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+     call mpi_bcast(md_istep, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call cpu_time(time_mpi(2))
      time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
      IF( rank /= 0 )THEN !.and. (mc_move == "insertion" .or. mc_move == "removal")
@@ -2403,6 +2432,7 @@ program turbogap
 
 
      if( rebuild_neighbors_list )then
+        print *, "DEALLOCATING NEIGHBOUR LISTS"
         deallocate( rjs, xyz, thetas, phis, neighbor_species )
         deallocate( neighbors_list, n_neigh )
 #ifdef _MPIF90
