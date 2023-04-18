@@ -1640,7 +1640,7 @@ program turbogap
            !     Velocity Verlet takes positions for t, positions_prev for t-dt, and velocities for t-dt and returns everything
            !     dt later. forces are taken at t, and forces_prev at t-dt. forces is left unchanged by the routine, and
            !     forces_prev is returned as equal to forces (both arrays contain the same information on return)
-           if( params%optimize == "vv" .and. .not. mc_move == 'md')then
+           if( params%optimize == "vv")then
               call velocity_verlet(positions(1:3, 1:n_sites), positions_prev(1:3, 1:n_sites), velocities(1:3, 1:n_sites), &
                    forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), time_step, &
                    md_istep == 0, a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
@@ -1651,7 +1651,7 @@ program turbogap
                    params%max_opt_step, md_istep == 0, a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), &
                    c_box/dfloat(indices(3)), fix_atom(1:3, 1:n_sites), energy)
            else if( (params%optimize == "gd-box" .or. params%optimize == "gd-box-ortho") .and. gd_box_do_pos &
-                .and. .not. mc_move == 'md')then
+                .and. (.not. mc_move == 'md' .and. params%mc_relax))then
               !       We propagate the positions
               call gradient_descent(positions(1:3, 1:n_sites),&
                    & positions_prev(1:3, 1:n_sites), velocities(1:3,&
@@ -2109,7 +2109,7 @@ program turbogap
                     !             Accept
                     if ((mc_istep == 0 .or. mc_istep == params%mc_nsteps .or. &
                          modulo(mc_istep, params%write_xyz) == 0))then
-                       write(*,'(A)')'----> Writing mc_current.xyz and mc_all.xyz <---- '
+                       write(*,'(1X,A)')' Writing mc_current.xyz and mc_all.xyz '
                        call write_extxyz( n_sites, 0, 1.0d0, 0.0d0, 0.0d0, &
                             a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
                             virial, xyz_species, positions(1:3, 1:n_sites), velocities, &
@@ -2229,8 +2229,18 @@ program turbogap
                  ! Set the parameters for relaxatrino
                  md_istep = -1
                  params%do_md = .true.
+                 params%optimize = params%mc_relax_opt
                  ! Note, that this may override md steps if the same is chosen! More testing needed
               end if
+              ! If doing md, don't relax
+              if( mc_move == 'md')then
+                 ! Set the parameters for relaxatrino
+                 md_istep = -1
+                 params%do_md = .true.
+                 params%optimize = params%mc_hybrid_opt
+                 ! Note, that this may override md steps if the same is chosen! More testing needed
+              end if
+
 
               if ((params%mc_write_xyz .or. mc_istep == 0 .or. mc_istep == params%mc_nsteps .or. &
                    modulo(mc_istep, params%write_xyz) == 0))then
@@ -2254,9 +2264,11 @@ program turbogap
                           params%write_array_property(6), .true. )
            else
               if(params%do_mc .and. mc_move == 'md')then
-                 write(*,'(1X,A,1X,I8,1X,A,1X,I8)')"Hybrid md step ", md_istep, "/", params%md_nsteps
+                 write(*,'(1X,A,1X,F20.8,1X,A,1X,I8,1X,A,1X,I8)')"Hybrid md step: energy = ", energy, &
+                      ", iteration ", md_istep, "/", params%md_nsteps
               else
-                 write(*,'(1X,A,1X,I8,1X,A,1X,I8)')"MC Relax md step ", md_istep, "/", params%mc_nrelax
+                 write(*,'(1X,A,1X,F20.8,1X,A,1X,I8,1X,A,1X,I8)')"MC Relax md step: energy = ", energy, &
+                      ", iteration ", md_istep, "/", params%mc_nrelax
               end if
            end if
 

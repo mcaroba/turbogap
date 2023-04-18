@@ -691,7 +691,12 @@ end if
       else if(keyword=='mc_nrelax')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_nrelax
-
+      else if(keyword=='mc_relax_opt')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_relax_opt
+      else if(keyword=='mc_hybrid_opt')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_hybrid_opt
       else if(keyword=='mc_acceptance')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, (params%mc_acceptance(nw),nw=1,params%n_mc_types)

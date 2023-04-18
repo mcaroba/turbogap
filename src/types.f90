@@ -97,7 +97,7 @@ module types
     character*32 :: vdw_type = "none"
     character*32, allocatable ::  mc_types(:)
     character*8, allocatable :: species_types(:)
-    character*16 :: optimize = "vv"
+    character*16 :: optimize = "vv", mc_relax_opt = "gd", mc_hybrid_opt = "vv"
     character*32 :: barostat = "none", thermostat = "none", barostat_sym = "isotropic", mc_species = "none"
     logical :: do_md = .false., do_mc = .false., do_prediction = .false., do_forces = .false., do_derivatives = .false., &
                do_derivatives_fd = .false., write_soap = .false., write_derivatives = .false., &
