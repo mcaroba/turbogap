@@ -652,10 +652,12 @@ program turbogap
        .or. ( params%do_mc .and. mc_istep < params%mc_nsteps))
      exit_loop = .false.
 
-     if( params%do_md .or. mc_move == "md" .or. params%mc_relax)then
-        md_istep = md_istep + 1
-     else if( params%do_mc .and. .not. mc_move == "md")then
+     if( params%do_mc .and. .not. (mc_move == "md") .and. md_istep == -1 )then
         mc_istep = mc_istep + 1
+     end if
+
+     if( params%do_md )then
+        md_istep = md_istep + 1
      else
         n_xyz = n_xyz + 1
      end if
@@ -1512,7 +1514,7 @@ program turbogap
         end if
 
 
-        if( .not. params%do_md )then
+        if( .not. params%do_md) then
 #ifdef _MPIF90
            IF( rank == 0 )then
 #endif
@@ -1729,7 +1731,7 @@ program turbogap
                 abs(energy-energy_prev) < params%e_tol*dfloat(n_sites) .and. &
                 maxval(forces) < params%f_tol .and. rank == 0 )then
               exit_loop = .true.
-!              if (params%do_mc .and. mc_istep /= params%mc_nsteps) exit_loop=.false.
+              if (params%do_mc) exit_loop=.false.
               !     THIS CONDITION ON INSTANT PRESSURE WILL NEED TO BE FINE TUNED, TO ACCOUNT FOR ARBITRARY TARGET PRESSURES
               !     BUT ALSO TO ACCOMMODATE NON-TRICLINIC TARGET BOX SHAPES, WHERE IT MIGHT NOT BE POSSIBLE TO CONVERGE THE
               !     TOTAL PRESSURE BELOW A CERTAIN MINIMUM (DUE TO THE BOX SHAPE CONSTRAINTS)
@@ -1741,7 +1743,7 @@ program turbogap
                 & maxval(abs(forces)) < params%f_tol .and. rank == 0&
                 & )then
               exit_loop = .true.
- !             if (params%do_mc .and. mc_istep /= params%mc_nsteps) exit_loop=.false.
+              if (params%do_mc ) exit_loop=.false.
            end if
 
            !     We write out the trajectory file. We write positions_prev which is the one for which we have computed
@@ -2049,11 +2051,18 @@ program turbogap
 #ifdef _MPIF90
         IF( rank == 0 )THEN
 #endif
-           if ( (params%do_mc .and. (md_istep == params%md_nsteps) &
+           if (params%do_mc .and. (mc_istep == params%mc_nsteps) )then
+              exit_loop = .true.
+           else
+              exit_loop = .false.
+           end if
+
+
+           if ( .not. exit_loop .and. ( (params%do_mc .and. (md_istep == params%md_nsteps) &
                 .and. mc_move == "md" )&
                 .or. ((params%do_mc .and. params%mc_relax .and.  &
-                (md_istep == params%mc_nrelax ) .and. ))&
-                .or. (params%do_mc .and. (md_istep == -1) ) )then
+                (md_istep == params%mc_nrelax ) ))&
+                .or. (params%do_mc .and. (md_istep == -1) ) ))then
               !       Now we do a monte-carlo step: we choose what the steps are from the available list and then choose a random number
               !       -- We have the list of move types in params%mc_types and the number params%n_mc_types --
               !       >> First generate a random number in the range of the number of
@@ -2255,8 +2264,9 @@ program turbogap
 #ifdef _MPIF90
         END IF
 #endif
+
 #ifdef _MPIF90
-     IF( params%do_mc .and. rank == 0 )THEN
+     IF( params%do_mc .and. md_istep == -1 .and. rank == 0 )THEN
         n_pos = size(positions,2)
         n_sp = size(xyz_species,1)
         n_sp_sc = size(xyz_species_supercell,1)
@@ -2303,8 +2313,8 @@ program turbogap
      call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
      if( params%do_md .or. params%do_nested_sampling .or. params%do_mc )then
         call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(masses, n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(fix_atom, 3*n_sp, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(masses, n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(fix_atom, 3*n_pos, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
      end if
      call mpi_bcast(xyz_species, 8*n_sp, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(xyz_species_supercell, 8*n_sp_sc, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
@@ -2340,12 +2350,18 @@ program turbogap
         deallocate( n_neigh_local )
 #endif
      end if
-     if( (.not. params%do_md .and. .not. params%do_mc) .or. &
-          (params%do_md .and. (md_istep == params%md_nsteps .or. exit_loop)) .or. &
-          (params%do_mc .and. (mc_istep == params%mc_nsteps .or. exit_loop)))then
+     if( ( params%do_nested_sampling .and. .not. params%do_mc) .and. &
+          (params%do_md .and. (md_istep == params%md_nsteps .or. exit_loop)))then
         deallocate( positions, xyz_species, xyz_species_supercell, species, species_supercell, do_list )
         if( allocated(velocities) )deallocate( velocities )
      end if
+     if(params%do_mc .and. params%do_md)then
+        if (params%do_mc .and. (mc_istep == params%mc_nsteps .or. exit_loop))then
+           deallocate( positions, xyz_species, xyz_species_supercell, species, species_supercell, do_list )
+           if( allocated(velocities) )deallocate( velocities )
+        end if
+     end if
+
      if( (params%do_md .and. .not. params%do_mc) .and. &
           (md_istep == params%md_nsteps .or. exit_loop) .and. rank == 0 )then
         deallocate( positions_prev, forces_prev )

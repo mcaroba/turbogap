@@ -321,16 +321,7 @@ module mc
     !  Get the mc move type using a random number
     call get_mc_move(n_mc_species, mc_types, mc_move, mc_acceptance)
 
-
-    if( allocated(positions_prev) )deallocate( positions_prev )
-    allocate( positions_prev(1:3, 1:n_sites) )
-
-    positions_prev(1:3,1:n_sites) = positions(1:3,1:n_sites)
-    if(allocated(forces_prev))deallocate(forces_prev)
-    allocate( forces_prev(1:3, 1:n_sites) )
-    if(allocated(positions_diff))deallocate(positions_diff)
-    allocate( positions_diff(1:3, 1:n_sites) )
-    positions_diff = 0.d0
+    write(*,'(1X,A,1X,A)') " Next MC Move: ", mc_move
 
     if (mc_move == "move")then
        call mc_get_atom_disp(n_sites, mc_move_max, idx, disp, d_disp)
@@ -446,6 +437,14 @@ module mc
           end do
        end if
     end if
+
+    if( allocated(positions_prev) )deallocate( positions_prev )
+    allocate( positions_prev(1:3, 1:n_sites) )
+    if(allocated(forces_prev))deallocate(forces_prev)
+    allocate( forces_prev(1:3, 1:n_sites) )
+    if(allocated(positions_diff))deallocate(positions_diff)
+    allocate( positions_diff(1:3, 1:n_sites) )
+    positions_diff = 0.d0
 
   end subroutine perform_mc_step
 
