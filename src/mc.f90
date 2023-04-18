@@ -31,7 +31,7 @@ module mc
 
   use neighbors
   use md
-
+  use types
 
   contains
 
@@ -275,5 +275,178 @@ module mc
 
   end subroutine check_if_atoms_too_close
 
+
+  subroutine perform_mc_step(&
+       & positions, species, xyz_species, masses, fix_atom,&
+       & velocities, positions_prev, positions_diff, disp, d_disp,&
+       & mc_acceptance, hirshfeld_v, hirshfeld_v_temp, energies,&
+       & forces, forces_prev, n_sites, n_mc_species, mc_move, mc_species,&
+       & mc_move_max, mc_min_dist, mc_types, masses_types,&
+       & species_idx, im_pos, im_species, im_xyz_species, im_fix_atom&
+       &, im_masses, a_box, b_box, c_box, indices, do_md, mc_relax,&
+       & md_istep, mc_id)
+
+    implicit none
+
+    real*8, allocatable, intent(inout) :: positions(:,:), masses(:), hirshfeld_v(:),&
+         forces_prev(:,:), positions_prev(:,:), positions_diff(:,:),&
+         mc_acceptance(:), hirshfeld_v_temp(:), velocities(:,:), &
+         energies(:), forces(:,:), masses_types(:), im_pos(:,:), im_masses(:)
+    real*8 :: mc_move_max, ranf, ranv(1:3)
+    real*8, intent(inout) :: disp(1:3), mc_min_dist, d_disp
+
+    integer, intent(inout) :: n_mc_species, n_sites, md_istep, mc_id
+    integer, allocatable, intent(inout) :: species(:), im_species(:)
+    character*8, allocatable :: species_types(:), xyz_species(:), xyz_species_supercell(:),&
+         im_xyz_species(:)
+    character*32, intent(inout) :: mc_move, mc_species
+    character*32, allocatable, intent(in) ::  mc_types(:)
+    integer :: idx, i
+    integer, allocatable, intent(inout) :: species_idx(:)
+    type(image), allocatable :: images
+    integer :: indices(1:3)
+    real*8 :: a_box(1:3), b_box(1:3), c_box(1:3)
+    logical, allocatable:: fix_atom(:,:), im_fix_atom(:,:)
+    logical, intent(inout) :: do_md, mc_relax
+
+    n_sites = size(positions, 2)
+    ! Count the mc species (no multi species mc just yet)
+    n_mc_species = 0
+    do i = 1, n_sites
+       if (xyz_species(i) == mc_species)then
+          n_mc_species = n_mc_species + 1
+       end if
+    end do
+
+    !  Get the mc move type using a random number
+    call get_mc_move(n_mc_species, mc_types, mc_move, mc_acceptance)
+
+
+    if( allocated(positions_prev) )deallocate( positions_prev )
+    allocate( positions_prev(1:3, 1:n_sites) )
+
+    positions_prev(1:3,1:n_sites) = positions(1:3,1:n_sites)
+    if(allocated(forces_prev))deallocate(forces_prev)
+    allocate( forces_prev(1:3, 1:n_sites) )
+    if(allocated(positions_diff))deallocate(positions_diff)
+    allocate( positions_diff(1:3, 1:n_sites) )
+    positions_diff = 0.d0
+
+    if (mc_move == "move")then
+       call mc_get_atom_disp(n_sites, mc_move_max, idx, disp, d_disp)
+       write(*,'(A,1X,I8,1X,A,F22.8,1X,A)')'    MC Move: atom ', idx, ' distance = ', d_disp, 'A '
+       positions(1:3, idx) = positions(1:3, idx) + disp
+    end if
+
+    if (mc_move == "relax" .or. mc_move == "md" .or. mc_relax)then
+       md_istep = -1
+       do_md = .true.
+       if(allocated(forces_prev))deallocate(forces_prev)
+       allocate( forces_prev(1:3, 1:n_sites) )
+       if(allocated(positions_diff))deallocate(positions_diff)
+       allocate( positions_diff(1:3, 1:n_sites) )
+       if(allocated(positions_prev))deallocate(positions_prev)
+       allocate( positions_prev(1:3, 1:n_sites) )
+
+       positions_diff = 0.d0
+
+       ! Assume that the number of steps has already been set.
+    end if
+
+    if (mc_move == "insertion" .or. mc_move == "removal" )then
+
+       !   Allocate temporary storage arrays
+       if(allocated(hirshfeld_v))then
+          if (.not. allocated(hirshfeld_v_temp))allocate(hirshfeld_v_temp(1:size(hirshfeld_v,1)))
+          hirshfeld_v_temp(1:size(hirshfeld_v,1)) = hirshfeld_v(1:size(hirshfeld_v,1))
+       end if
+
+       if( allocated(species_idx))deallocate(species_idx)
+       allocate( species_idx(1:n_mc_species) )
+
+       n_mc_species = 0
+       do i = 1, n_sites
+          if (xyz_species(i) == mc_species)then
+             n_mc_species = n_mc_species + 1
+             species_idx(n_mc_species) = i
+          end if
+       end do
+
+
+       if (mc_move == "insertion")then
+          n_sites = n_sites + 1
+       else if (mc_move == "removal")then
+          n_sites = n_sites - 1
+          call  random_number(ranf)
+          ! Index of atom to remove
+          idx = species_idx( floor( ranf * n_mc_species ) + 1 )
+       end if
+
+       if( allocated(energies) )deallocate( energies, positions, velocities, &
+            forces, species,  &
+            xyz_species, fix_atom)
+       allocate( energies(1:n_sites) )
+       allocate( forces(1:3, 1:n_sites) )
+       allocate( velocities(1:3, 1:n_sites) )
+       allocate( positions(1:3, 1:n_sites) )
+       allocate( fix_atom(1:3, 1:n_sites) )
+       allocate( xyz_species(1:n_sites) )
+       allocate( species(1:n_sites) )
+       velocities = 0.0d0
+       forces = 0.0d0
+       energies= 0.0d0
+
+       if (mc_move == "insertion")then
+          call mc_insert_site(mc_species, positions,&
+               & im_pos, idx, n_sites,&
+               & a_box, b_box, c_box, indices, species,&
+               & im_species, xyz_species,&
+               & im_xyz_species, mc_min_dist )
+
+          deallocate(masses)
+          allocate(masses(1:n_sites))
+          masses(1:n_sites-1) = im_masses(1:n_sites-1)
+          masses(n_sites) = masses_types(mc_id)
+
+          if (allocated(hirshfeld_v))then
+             deallocate(hirshfeld_v)
+             allocate(hirshfeld_v(1:n_sites))
+             hirshfeld_v(1:n_sites-1) = hirshfeld_v_temp(1:n_sites-1)
+             ! ignoring the hirshfeld v just want to get rough implementation done
+             hirshfeld_v(n_sites) = hirshfeld_v(n_sites-1)
+          end if
+
+       else if (mc_move == "removal")then
+          deallocate(masses)
+          allocate(masses(1:n_sites))
+
+          if (allocated(hirshfeld_v))then
+             deallocate(hirshfeld_v)
+             allocate(hirshfeld_v(1:n_sites))
+          end if
+
+          do i = 1, n_sites
+             if (i < idx)then
+                positions(1:3,i) = im_pos(1:3,i)
+
+                xyz_species(i)           = im_xyz_species(i)
+                species(i)               = im_species(i)
+                masses(i)= im_masses(i)
+                fix_atom(1:3,i)= im_fix_atom(1:3,i)
+
+                if (allocated(hirshfeld_v))hirshfeld_v(i) = hirshfeld_v_temp(i)
+             else
+                positions(1:3,i) = im_pos(1:3,i+1)
+                xyz_species(i)           = im_xyz_species(i+1)
+                species(i)               = im_species(i+1)
+                masses(i)= im_masses(i+1)
+                fix_atom(1:3,i)= im_fix_atom(1:3,i+1)
+                if (allocated(hirshfeld_v))hirshfeld_v(i) = hirshfeld_v_temp(i+1)
+             end if
+          end do
+       end if
+    end if
+
+  end subroutine perform_mc_step
 
 end module mc

@@ -131,7 +131,7 @@ program turbogap
 
   ! Nested sampling
   real*8 :: e_max, e_kin, rand, rand_scale(1:6)
-  integer :: i_nested, i_max, i_image
+  integer :: i_nested, i_max, i_image, i_current_image=1, i_trial_image=2
   type(image), allocatable :: images(:), images_temp(:)
   !**************************************************************************
 
@@ -901,7 +901,6 @@ program turbogap
      do_list = .false.
      do_list(i_beg:i_end) = .true.
      if( rebuild_neighbors_list )then
-        print *, "DEALLOCATING NEIGHBOUR LISTS"
         if(allocated( rjs))deallocate( rjs)
         if(allocated( xyz))deallocate( xyz)
         if(allocated( thetas))deallocate( thetas)
@@ -2007,9 +2006,7 @@ program turbogap
               params%box_scaling_factor = params%box_scaling_factor * (rand)**(1.d0/3.d0)
               ! Each MPI process has a different set of random numbers so we need to broadcast
 #ifdef _MPIF90
-              print *, "Before params%box_scaling_factor bcast, ierr = ", ierr
               call mpi_bcast(params%box_scaling_factor, 9, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-              print *, "After params%box_scaling_factor bcast, ierr = ", ierr
 #endif
            end if
            !       This is the so-called total enthalpy Hamiltonian Montecarlo approach (with physical masses)
@@ -2137,8 +2134,10 @@ program turbogap
                  write(*,*) 'MC Moves parsed:'
                  write(*,*) params%mc_types
 
-                 if( .not. allocated( images ) )then
+                 if( .not. allocated( images ) .and. .not. params%do_nested_sampling )then
                     allocate( images(1:2) )
+                 else if (.not. allocated(images) .and. params%do_nested_sampling )then
+                    allocate(images(1:2*i_image))
                  end if
 
                  !    get the mc species type
@@ -2184,141 +2183,23 @@ program turbogap
                    species, species_supercell, n_sites, indices, fix_atom, &
                    xyz_species, xyz_species_supercell)
 
-              n_sites = size(positions, 2)
-              ! Count the mc species (no multi species mc just yet)
-              n_mc_species = 0
-              do i = 1, n_sites
-                 if (xyz_species(i) == params%mc_species)then
-                    n_mc_species = n_mc_species + 1
-                 end if
-              end do
+              call perform_mc_step(&
+                   & positions, species, xyz_species, masses, fix_atom,&
+                   & velocities, positions_prev, positions_diff, disp, d_disp,&
+                   & params%mc_acceptance, hirshfeld_v, hirshfeld_v_temp, energies,&
+                   & forces, forces_prev, n_sites, n_mc_species,&
+                   & mc_move, params %mc_species,&
+                   & params%mc_move_max, params%mc_min_dist, params&
+                   &%mc_types, params%masses_types, species_idx,&
+                   & images(i_current_image)%positions,&
+                   & images(i_current_image)%species,&
+                   & images(i_current_image)%xyz_species,&
+                   & images(i_current_image)%fix_atom,&
+                   & images(i_current_image)%masses, a_box, b_box,&
+                   & c_box, indices, params%do_md, params%mc_relax,&
+                   & md_istep, mc_id )
 
-              !  Get the mc move type using a random number
-              call get_mc_move(n_mc_species, params%mc_types, mc_move, params%mc_acceptance)
-
-
-              if( allocated(positions_prev) )deallocate( positions_prev )
-              allocate( positions_prev(1:3, 1:n_sites) )
-
-              positions_prev(1:3,1:n_sites) = positions(1:3,1:n_sites)
-              if(allocated(forces_prev))deallocate(forces_prev)
-              allocate( forces_prev(1:3, 1:n_sites) )
-              if(allocated(positions_diff))deallocate(positions_diff)
-              allocate( positions_diff(1:3, 1:n_sites) )
-              positions_diff = 0.d0
-
-              if (mc_move == "move")then
-                 call mc_get_atom_disp(n_sites, params%mc_move_max, idx, disp, d_disp)
-                 write(*,'(A,1X,I8,1X,A,F22.8,1X,A)')'    MC Move: atom ', idx, ' distance = ', d_disp, 'A '
-                 positions(1:3, idx) = positions(1:3, idx) + disp
-              end if
-
-              if (mc_move == "relax" .or. mc_move == "md" .or. params%mc_relax)then
-                 md_istep = -1
-                 params%do_md = .true.
-                 if(allocated(forces_prev))deallocate(forces_prev)
-                 allocate( forces_prev(1:3, 1:n_sites) )
-                 if(allocated(positions_diff))deallocate(positions_diff)
-                 allocate( positions_diff(1:3, 1:n_sites) )
-                 if(allocated(positions_prev))deallocate(positions_prev)
-                 allocate( positions_prev(1:3, 1:n_sites) )
-
-                 positions_diff = 0.d0
-
-                 ! Assume that the number of steps has already been set.
-              end if
-
-              if (mc_move == "insertion" .or. mc_move == "removal" )then
-
-                 !   Allocate temporary storage arrays
-                 if(allocated(hirshfeld_v))then
-                    if (.not. allocated(hirshfeld_v_temp))allocate(hirshfeld_v_temp(1:size(hirshfeld_v,1)))
-                    hirshfeld_v_temp(1:size(hirshfeld_v,1)) = hirshfeld_v(1:size(hirshfeld_v,1))
-                 end if
-
-                 if( allocated(species_idx))deallocate(species_idx)
-                 allocate( species_idx(1:n_mc_species) )
-
-                 n_mc_species = 0
-                 do i = 1, n_sites
-                    if (xyz_species(i) == params%mc_species)then
-                       n_mc_species = n_mc_species + 1
-                       species_idx(n_mc_species) = i
-                    end if
-                 end do
-
-
-                 if (mc_move == "insertion")then
-                    n_sites = n_sites + 1
-                 else if (mc_move == "removal")then
-                    n_sites = n_sites - 1
-                    call  random_number(ranf)
-                    ! Index of atom to remove
-                    idx = species_idx( floor( ranf * n_mc_species ) + 1 )
-                 end if
-
-                 if( allocated(energies) )deallocate( energies, positions, velocities, &
-                      forces, species,  &
-                      xyz_species, fix_atom)
-                 allocate( energies(1:n_sites) )
-                 allocate( forces(1:3, 1:n_sites) )
-                 allocate( velocities(1:3, 1:n_sites) )
-                 allocate( positions(1:3, 1:n_sites) )
-                 allocate( fix_atom(1:3, 1:n_sites) )
-                 allocate( xyz_species(1:n_sites) )
-                 allocate( species(1:n_sites) )
-                 velocities = 0.0d0
-                 forces = 0.0d0
-                 energies= 0.0d0
-
-                 if (mc_move == "insertion")then
-                    call mc_insert_site(params%mc_species, positions, images(1)%positions, idx, &
-                         n_sites, a_box, b_box, c_box, indices, species, images(1)%species, &
-                         xyz_species, images(1)%xyz_species, params%mc_min_dist )
-
-                    deallocate(masses)
-                    allocate(masses(1:n_sites))
-                    masses(1:n_sites-1) = images(1)%masses(1:n_sites-1)
-                    masses(n_sites) = params%masses_types(mc_id)
-
-                    if (allocated(hirshfeld_v))then
-                       deallocate(hirshfeld_v)
-                       allocate(hirshfeld_v(1:n_sites))
-                       hirshfeld_v(1:n_sites-1) = hirshfeld_v_temp(1:n_sites-1)
-                       ! ignoring the hirshfeld v just want to get rough implementation done
-                       hirshfeld_v(n_sites) = hirshfeld_v(n_sites-1)
-                    end if
-
-                 else if (mc_move == "removal")then
-                    deallocate(masses)
-                    allocate(masses(1:n_sites))
-
-                    if (allocated(hirshfeld_v))then
-                       deallocate(hirshfeld_v)
-                       allocate(hirshfeld_v(1:n_sites))
-                    end if
-
-                    do i = 1, n_sites
-                       if (i < idx)then
-                          positions(1:3,i) = images(1)%positions(1:3,i)
-
-                          xyz_species(i)           = images(1)%xyz_species(i)
-                          species(i)               = images(1)%species(i)
-                          masses(i)= images(1)%masses(i)
-                          fix_atom(1:3,i)= images(1)%fix_atom(1:3,i)
-
-                          if (allocated(hirshfeld_v))hirshfeld_v(i) = hirshfeld_v_temp(i)
-                       else
-                          positions(1:3,i) = images(1)%positions(1:3,i+1)
-                          xyz_species(i)           = images(1)%xyz_species(i+1)
-                          species(i)               = images(1)%species(i+1)
-                          masses(i)= images(1)%masses(i+1)
-                          fix_atom(1:3,i)= images(1)%fix_atom(1:3,i+1)
-                          if (allocated(hirshfeld_v))hirshfeld_v(i) = hirshfeld_v_temp(i+1)
-                       end if
-                    end do
-                 end if
-              end if
+              ! end if
 
               ! NOTE: the species_supercell and xyz_species_supercell are
               ! not commensurate with the new image as these have not been
@@ -2348,7 +2229,7 @@ program turbogap
                           n_sites, .true., fix_atom, params%t_beg, &
                           params%write_array_property(6), .true. )
            else
-              print *, "Performing md step ", md_istep
+              if(params%do_mc)write(*,'(1X,A,1X,I8,1X,A,1X,I8)')"Hybrid md step ", md_istep, "/", params%md_nsteps
            end if
 #ifdef _MPIF90
         END IF
@@ -2432,7 +2313,6 @@ program turbogap
 
 
      if( rebuild_neighbors_list )then
-        print *, "DEALLOCATING NEIGHBOUR LISTS"
         deallocate( rjs, xyz, thetas, phis, neighbor_species )
         deallocate( neighbors_list, n_neigh )
 #ifdef _MPIF90
