@@ -49,7 +49,7 @@ module mc
     ! lam is thermal debroglie wavelength
     lam = sqrt( ( 2.0 * pi * hbar*hbar ) / ( m * kB * temp ) )
 
-    p_accept =  (volume*volume_bias) / (lam**3.0 * (N_exch + 1)) * &
+    p_accept =  ((volume*volume_bias) / (lam**3.0 * (N_exch + 1))) * &
                 exp( -( e_new - e_prev - mu  ) / (kB * temp) )
 
   end subroutine monte_carlo_insertion
@@ -65,10 +65,10 @@ module mc
     real*8, intent(out) :: p_accept
     ! mass has units eV*fs^2/A^2
     ! hbar in eV.fs
-    ! lam is thermal debroglie wavelength
+    ! lam is thermal debroglie wavelength in A, volume in A^3
     lam = sqrt( ( 2.0 * pi * hbar*hbar ) / ( m * kB * temp ) )
 
-    p_accept = (lam**3.0 * N_exch ) / (volume*volume_bias)  * &
+    p_accept = ((lam**3.0 * N_exch ) / (volume*volume_bias))  * &
                 exp( -( e_new - e_prev + mu  ) / (kB * temp) )
 
   end subroutine monte_carlo_removal
@@ -143,6 +143,8 @@ module mc
        call monte_carlo_volume(p_accept, energy, energy_prev, temp, &
             v_uc, v_uc_prev, pressure, n_mc_species)
     end if
+
+    p_accept = min(1.0, p_accept)
 
   end subroutine get_mc_acceptance
 

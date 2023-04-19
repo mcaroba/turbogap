@@ -2151,8 +2151,31 @@ program turbogap
 
 
               else ! if (mc_istep == 0)
-                 write(*,*) 'MC Moves parsed:'
-                 write(*,*) params%mc_types
+                 write(*,*) '                                       |'
+                 write(*,*) 'Starting MC, using parameters:         |'
+                 write(*,*) '                                       |'
+                 write(*,'(1X,A,1X,I8,1X,A)')    'mc_nsteps     = ', params%mc_nsteps, '             |'
+                 write(*,'(1X,A,1X,I8,1X,A)')    'n_mc_types    = ', params%n_mc_types, '             |'
+                 write(*,'(1X,A)') 'mc_types:                              |'
+                 do i = 1, params%n_mc_types
+                    write(*,'(1X,A,1X,A,1X,A)') '     ', params%mc_types(i), '|'
+                 end do
+                 write(*,'(1X,A)') 'mc_accept_ratio:                       |'
+                 do i = 1, params%n_mc_types
+                    write(*,'(1X,A,1X,F12.8,1X,A)') '   ', params%mc_acceptance(i), '                      |'
+                 end do
+                 write(*,'(1X,A,1X,F17.8,1X,A)') 'mc_move_max   = ', params%mc_move_max,  'A   |'
+                 write(*,'(1X,A,1X,F17.8,1X,A)') 'mc_mu         = ', params%mc_mu,        'eV  |'
+                 write(*,'(1X,A,1X,A,1X,A)')     'mc_species    = ', trim(params%mc_species),   '                    |'
+                 write(*,'(1X,A,1X,F17.8,1X,A)') 'mc_min_dist   = ', params%mc_min_dist,  'A   |'
+                 write(*,'(1X,A,1X,F17.8,1X,A)') 'mc_lnvol_max  = ', params%mc_lnvol_max, '    |'
+                 write(*,'(1X,A,1X,L8,1X,A)')    'mc_write_xyz  = ', params%mc_write_xyz, '             |'
+                 write(*,'(1X,A,1X,L8,1X,A)')    'mc_relax      = ', params%mc_relax,     '             |'
+                 write(*,'(1X,A,1X,I8,1X,A)')    'mc_nrelax     = ', params%mc_nrelax,    '             |'
+                 write(*,'(1X,A,1X,A,1X,A)')     'mc_relax_opt  = ', params%mc_relax_opt, '     |'
+                 write(*,'(1X,A,1X,A,1X,A)')     'mc_hybrid_opt = ', params%mc_hybrid_opt,'     |'
+                 write(*,*) '                                       |'
+                 ! t_beg must
 
                  if( .not. allocated( images ) .and. .not. params%do_nested_sampling )then
                     allocate( images(1:2) )
