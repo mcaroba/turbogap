@@ -2,12 +2,12 @@
 ! HND X
 ! HND X   TurboGAP
 ! HND X
-! HND X   TurboGAP is copyright (c) 2019-2022, Miguel A. Caro and others
+! HND X   TurboGAP is copyright (c) 2019-2023, Miguel A. Caro and others
 ! HND X
 ! HND X   TurboGAP is published and distributed under the
 ! HND X      Academic Software License v1.0 (ASL)
 ! HND X
-! HND X   This file, turbogap.f90, is copyright (c) 2019-2022, Miguel A. Caro
+! HND X   This file, turbogap.f90, is copyright (c) 2019-2023, Miguel A. Caro
 ! HND X
 ! HND X   TurboGAP is distributed in the hope that it will be useful for non-commercial
 ! HND X   academic research, but WITHOUT ANY WARRANTY; without even the implied
@@ -217,10 +217,9 @@ program turbogap
      write(*,*)'Contributors (code and methodology) in chronological order:      |'
      write(*,*)'                                                                 |'
      write(*,*)'Miguel A. Caro, Patricia Hernández-León, Suresh Kondati          |'
-     write(*,*)'Natarajan, Albert P. Bartók-Pártay, Eelis V. Mielonen, Heikki    |'
-     write(*,*)'Muhli, Mikhail Kuklin, Gábor Csányi, Jan Kloppenburg, Richard    |'
-     write(*,*)'Jana                                                             |'
-     write(*,*)'                                                                 |'
+     write(*,*)'Natarajan, Albert P. Bartók, Eelis V. Mielonen, Heikki Muhli     |'
+     write(*,*)'Mikhail Kuklin, Gábor Csányi, Jan Kloppenburg, Richard Jana      |'
+     write(*,*)'Tigany Zarrouk                                                   |'
      write(*,*)'.................................................................|'
      write(*,*)'                                                                 |'
      write(*,*)'                     Last updated: Mar. 2023                     |'
@@ -1645,13 +1644,12 @@ program turbogap
                    forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), time_step, &
                    md_istep == 0, a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
                    fix_atom(1:3, 1:n_sites))
-           else if( params%optimize == "gd" .and. .not. mc_move == 'md')then
+           else if( params%optimize == "gd" )then
               call gradient_descent(positions(1:3, 1:n_sites), positions_prev(1:3, 1:n_sites), velocities(1:3, 1:n_sites), &
                    forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), &
                    params%max_opt_step, md_istep == 0, a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), &
                    c_box/dfloat(indices(3)), fix_atom(1:3, 1:n_sites), energy)
-           else if( (params%optimize == "gd-box" .or. params%optimize == "gd-box-ortho") .and. gd_box_do_pos &
-                .and. (.not. mc_move == 'md' .and. params%mc_relax))then
+           else if( (params%optimize == "gd-box" .or. params%optimize == "gd-box-ortho") .and. gd_box_do_pos)then
               !       We propagate the positions
               call gradient_descent(positions(1:3, 1:n_sites),&
                    & positions_prev(1:3, 1:n_sites), velocities(1:3,&
@@ -2213,7 +2211,7 @@ program turbogap
                    & images(i_current_image)%fix_atom,&
                    & images(i_current_image)%masses, a_box, b_box,&
                    & c_box, indices, params%do_md, params%mc_relax,&
-                   & md_istep, mc_id )
+                   & md_istep, mc_id, E_kinetic, instant_temp, params%t_beg )
 
               ! end if
 
@@ -2266,9 +2264,21 @@ program turbogap
               if(params%do_mc .and. mc_move == 'md')then
                  write(*,'(1X,A,1X,F20.8,1X,A,1X,I8,1X,A,1X,I8)')"Hybrid md step: energy = ", energy, &
                       ", iteration ", md_istep, "/", params%md_nsteps
+                 write(*,'(A,1X,F22.8,1X,A)')' SOAP energy:', sum(energies_soap), 'eV |'
+                 write(*,'(A,1X,F24.8,1X,A)')' 2b energy:', sum(energies_2b), 'eV |'
+                 write(*,'(A,1X,F24.8,1X,A)')' 3b energy:', sum(energies_3b), 'eV |'
+                 write(*,'(A,1X,F18.8,1X,A)')' core_pot energy:', sum(energies_core_pot), 'eV |'
+                 write(*,'(A,1X,F23.8,1X,A)')' vdw energy:', sum(energies_vdw), 'eV |'
+
               else
                  write(*,'(1X,A,1X,F20.8,1X,A,1X,I8,1X,A,1X,I8)')"MC Relax md step: energy = ", energy, &
                       ", iteration ", md_istep, "/", params%mc_nrelax
+                 write(*,'(A,1X,F22.8,1X,A)')' SOAP energy:', sum(energies_soap), 'eV |'
+                 write(*,'(A,1X,F24.8,1X,A)')' 2b energy:', sum(energies_2b), 'eV |'
+                 write(*,'(A,1X,F24.8,1X,A)')' 3b energy:', sum(energies_3b), 'eV |'
+                 write(*,'(A,1X,F18.8,1X,A)')' core_pot energy:', sum(energies_core_pot), 'eV |'
+                 write(*,'(A,1X,F23.8,1X,A)')' vdw energy:', sum(energies_vdw), 'eV |'
+
               end if
            end if
 
@@ -2276,6 +2286,26 @@ program turbogap
 #ifdef _MPIF90
         END IF
 #endif
+
+! NOTE!! One tried for far far too long to be smart and implement some
+! sort of conditional broadcasting: having a logical array named
+! broadcast, which perform_mc_step would then to set values to
+! true. Specific indexes referenced specific quantities to be
+! broadcasted, which allowed for the broadcasting amount to be
+! dependent on the step, e.g. if it were an insertion step then
+! positions, masses, n_sites, etc would have to be broadcast, whereas
+! for a simple move only positions had to be broadcasted. This array
+! would then subsequently be broadcast to all other ranks, thereby
+! allowing for the minimum number of allocations and
+! communication. BUT, for some reason, this led to segfaults
+! (corrupted unsorted chunks or something of that sort).
+
+! This doesn't make sense to be as all ranks have the same broadcast
+! array (as it is broadcasted before) so it seems like it should work
+! but it does not! Hence, in the following broadcasting, everything is
+! transmitted.
+
+! This can be optimised, so please do if you are smarter than me
 
 #ifdef _MPIF90
      IF( params%do_mc .and. md_istep == -1 .and. rank == 0 )THEN
@@ -2303,13 +2333,13 @@ program turbogap
            if(allocated(fix_atom))deallocate(fix_atom)
            allocate( fix_atom(1:3, 1:n_sp) )
 
-           if(allocated(forces_prev))deallocate(forces_prev)
-           allocate( forces_prev(1:3, 1:n_sites) )
-           if(allocated(positions_prev))deallocate(positions_prev)
-           allocate( positions_prev(1:3, 1:n_sites) )
-           if(allocated(positions_diff))deallocate(positions_diff)
-           allocate( positions_diff(1:3, 1:n_sites) )
-           positions_diff = 0.d0
+           ! if(allocated(forces_prev))deallocate(forces_prev)
+           ! allocate( forces_prev(1:3, 1:n_sites) )
+           ! if(allocated(positions_prev))deallocate(positions_prev)
+           ! allocate( positions_prev(1:3, 1:n_sites) )
+           ! if(allocated(positions_diff))deallocate(positions_diff)
+           ! allocate( positions_diff(1:3, 1:n_sites) )
+           ! positions_diff = 0.d0
 
         end if
         if(allocated(xyz_species))deallocate(xyz_species)

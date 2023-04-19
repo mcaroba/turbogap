@@ -189,12 +189,10 @@ module mc
           n_mc = i
           k = k + acceptance(i)
           if( ranf < k )then
-             print *, "k ", k, "n_mc ", i
              exit
           end if
        end do
        ! Original implementation n_mc = floor( size( mc_types,1 ) * ranf ) + 1
-       print *, "n_mc = ", n_mc
        mc_move = mc_types(n_mc)
 
 ! If there are none of the gc species to remove, then we can't remove!!
@@ -284,7 +282,7 @@ module mc
        & mc_move_max, mc_min_dist, mc_types, masses_types,&
        & species_idx, im_pos, im_species, im_xyz_species, im_fix_atom&
        &, im_masses, a_box, b_box, c_box, indices, do_md, mc_relax,&
-       & md_istep, mc_id)
+       & md_istep, mc_id, E_kinetic, instant_temp, t_beg)
 
     implicit none
 
@@ -293,7 +291,7 @@ module mc
          mc_acceptance(:), hirshfeld_v_temp(:), velocities(:,:), &
          energies(:), forces(:,:), masses_types(:), im_pos(:,:), im_masses(:)
     real*8 :: mc_move_max, ranf, ranv(1:3)
-    real*8, intent(inout) :: disp(1:3), mc_min_dist, d_disp
+    real*8, intent(inout) :: disp(1:3), mc_min_dist, d_disp, E_kinetic, instant_temp, t_beg
 
     integer, intent(inout) :: n_mc_species, n_sites, md_istep, mc_id
     integer, allocatable, intent(inout) :: species(:), im_species(:)
@@ -305,7 +303,7 @@ module mc
     integer, allocatable, intent(inout) :: species_idx(:)
     type(image), allocatable :: images
     integer :: indices(1:3)
-    real*8 :: a_box(1:3), b_box(1:3), c_box(1:3)
+    real*8 :: a_box(1:3), b_box(1:3), c_box(1:3), kB = 8.6173303d-5
     logical, allocatable:: fix_atom(:,:), im_fix_atom(:,:)
     logical, intent(inout) :: do_md, mc_relax
 
@@ -340,6 +338,28 @@ module mc
        allocate( positions_prev(1:3, 1:n_sites) )
 
        positions_diff = 0.d0
+
+       if(mc_move == 'md')then
+          ! Randomize the velocities
+          write(*,*)'                                       |'
+          write(*,*)'NOTICE: Randomizing velocities for     |'
+          write(*,*)'hybrid mc, so that they match your     |'
+          write(*,*)'initial target temperature:            |'
+          write(*,*)'                                       |'
+          write(*,'(A, F16.4, A)')' t_beg = ', t_beg, ' K             |'
+          write(*,*)'                                       |'
+          write(*,*)'.......................................|'
+          call random_number(velocities)
+          call remove_cm_vel(velocities(1:3,1:n_sites), masses(1:n_sites))
+          E_kinetic = 0.d0
+          do i = 1, n_sites
+             E_kinetic = E_kinetic + 0.5d0 * masses(i) * dot_product(velocities(1:3, i), velocities(1:3, i))
+          end do
+          instant_temp = 2.d0/3.d0/dfloat(n_sites-1)/kB*E_kinetic
+          velocities = velocities * dsqrt(t_beg/instant_temp)
+       end if
+
+
 
        ! Assume that the number of steps has already been set.
     end if
