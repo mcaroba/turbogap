@@ -2136,7 +2136,7 @@ program turbogap
                  end if
 
                  write(200, "(I8, 1X, A, 1X, L4, 1X, F20.8, 1X, F20.8, 1X, I8, 1X, I8, 1X)") &
-                      mc_istep, mc_move, p_accept > ranf, energy, images(1)%energy, n_sites, n_mc_species
+                      mc_istep, mc_move, p_accept > ranf, energy, images(1)%energy, images(2)%n_sites, n_mc_species
 
                  close(200)
 
