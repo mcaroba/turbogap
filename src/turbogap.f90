@@ -651,8 +651,11 @@ program turbogap
        .or. ( params%do_mc .and. mc_istep < params%mc_nsteps))
      exit_loop = .false.
 
-     if( params%do_mc .and. .not. (mc_move == "md") .and. md_istep == -1 )then
+     if( params%do_mc )then
         mc_istep = mc_istep + 1
+        ! Undo if the step is md related
+        if(md_istep > -1) mc_istep = mc_istep - 1
+
      end if
 
      if( params%do_md )then
@@ -2123,13 +2126,6 @@ program turbogap
                             "mc_all.xyz", .false. )
                     end if
 
-                    n_sites_prev = n_sites
-                    v_uc_prev = v_uc
-
-
-                    !   Assigning the default image with the accepted one
-                    images(1) = images(2)
-
                  end if
                  !          Add acceptance to the log file else dont
                  if ( mc_istep == 1 )then
@@ -2143,6 +2139,16 @@ program turbogap
                       mc_istep, mc_move, p_accept > ranf, energy, images(1)%energy, n_sites, n_mc_species
 
                  close(200)
+
+                 if (p_accept > ranf)then
+                    ! Set variables
+                    n_sites_prev = n_sites
+                    v_uc_prev = v_uc
+                    !   Assigning the default image with the accepted one
+                    images(1) = images(2)
+                 end if
+
+
 
               else ! if (mc_istep == 0)
                  write(*,*) 'MC Moves parsed:'
