@@ -57,7 +57,7 @@ program turbogap
   real*8 :: virial(1:3, 1:3), this_virial(1:3, 1:3), virial_soap(1:3, 1:3), virial_2b(1:3, 1:3), &
        virial_3b(1:3,1:3), virial_core_pot(1:3, 1:3), virial_vdw(1:3, 1:3), &
        this_virial_vdw(1:3, 1:3), v_uc, v_uc_prev, eVperA3tobar = 1602176.6208d0, &
-       ranf, ranv(1:3), disp(1:3), d_disp,  e_mc_prev, p_accept
+       ranf, ranv(1:3), disp(1:3), d_disp,  e_mc_prev, p_accept, virial_prev(1:3, 1:3)
   real*8, allocatable :: energies(:), forces(:,:), energies_soap(:), forces_soap(:,:), this_energies(:), &
        this_forces(:,:), &
        energies_2b(:), forces_2b(:,:), energies_3b(:), forces_3b(:,:), &
@@ -794,6 +794,8 @@ program turbogap
      end if
      !   Broadcast the info in the XYZ file: positions, velocities, masses, xyz_species, xyz_species_supercell,
      !   species, species_supercell, indices, a_box, b_box, c_box and n_sites. I should put this into a module!!!!!!!
+
+
 #ifdef _MPIF90
      IF( rank == 0 )THEN
         n_pos = size(positions,2)
@@ -904,18 +906,18 @@ program turbogap
 
      do_list = .false.
      do_list(i_beg:i_end) = .true.
-     if( rebuild_neighbors_list )then
-        if(allocated( rjs))deallocate( rjs)
-        if(allocated( xyz))deallocate( xyz)
-        if(allocated( thetas))deallocate( thetas)
-        if(allocated( phis))deallocate( phis)
-        if(allocated( neighbor_species ))deallocate( neighbor_species )
-        if(allocated( neighbors_list))deallocate( neighbors_list )
-        if(allocated(n_neigh))deallocate( n_neigh )
-#ifdef _MPIF90
-        if(allocated(n_neigh_local))deallocate( n_neigh_local )
-#endif
-     end if
+!      if( rebuild_neighbors_list )then
+!         if(allocated( rjs))deallocate( rjs)
+!         if(allocated( xyz))deallocate( xyz)
+!         if(allocated( thetas))deallocate( thetas)
+!         if(allocated( phis))deallocate( phis)
+!         if(allocated( neighbor_species ))deallocate( neighbor_species )
+!         if(allocated( neighbors_list))deallocate( neighbors_list )
+!         if(allocated(n_neigh))deallocate( n_neigh )
+! #ifdef _MPIF90
+!         if(allocated(n_neigh_local))deallocate( n_neigh_local )
+! #endif
+!      end if
 
      call build_neighbors_list(positions, a_box, b_box, c_box, params%do_timing, &
           species_supercell, rcut_max, n_atom_pairs, rjs, &
@@ -962,8 +964,7 @@ program turbogap
 
      !**************************************************************************
      !   If we are doing prediction, we run this chunk of code
-     if( params%do_prediction .or. params%write_soap .or. params%write_derivatives .or. &
-          (params%do_mc ))then
+     if( params%do_prediction .or. params%write_soap .or. params%write_derivatives)then
         call cpu_time(time1)
 
         !     We only need to reallocate the arrays if the number of sites changes
@@ -1035,7 +1036,7 @@ program turbogap
            virial_vdw = 0.d0
         end if
 
-        if( params%do_prediction .or.  params%do_mc )then
+        if( params%do_prediction )then
            !       Assign the e0 to each atom according to its species
            !        do i = 1, n_sites
            do i = i_beg, i_end
@@ -1225,10 +1226,8 @@ program turbogap
         end if
 #endif
 
-
-
         !     Compute vdW energies and forces
-        if( any( soap_turbo_hypers(:)%has_vdw ) .and.( params%do_prediction .or. params%do_mc) &
+        if( any( soap_turbo_hypers(:)%has_vdw ) .and.( params%do_prediction ) &
              .and. params%vdw_type == "ts" )then
            call cpu_time(time_vdw(1))
 #ifdef _MPIF90
@@ -1273,7 +1272,7 @@ program turbogap
 
 
 
-        if( params%do_prediction .or. params%do_mc )then
+        if( params%do_prediction )then
            !       Loop through distance_2b descriptors
            do i = 1, n_distance_2b
               call cpu_time(time_2b(1))
@@ -1529,7 +1528,7 @@ program turbogap
               if (.not. params%do_mc .or. mc_istep <= 1)then
                  write(*,'(A,1X,F21.8,1X,A)')' Total energy:', sum(energies), 'eV |'
               else
-                 write(*,'(A,1X,F21.8,1X,A)')' Total energy:', sum(images(2)%energies), 'eV |'
+                 write(*,'(A,1X,F21.8,1X,A)')' Total energy:', sum(images(i_trial_image)%energies), 'eV |'
               end if
 
               if ( .not. params%do_mc)then
@@ -1567,7 +1566,7 @@ program turbogap
 
 
 
-        if( params%do_prediction .and. .not. params%do_md )then
+        if( params%do_prediction .and. .not. params%do_md .and. .not. params%do_mc)then
 #ifdef _MPIF90
            IF( rank == 0 )then
 #endif
@@ -1914,7 +1913,7 @@ program turbogap
         call from_properties_to_image(images(i_image), positions, velocities, masses, &
              forces, a_box, b_box, c_box, energy, energies, E_kinetic, &
              species, species_supercell, n_sites, indices, fix_atom, &
-             xyz_species, xyz_species_supercell)
+             xyz_species, xyz_species_supercell, hirshfeld_v)
      end if
 
      !   This handles the nested sampling iterations after all images have
@@ -1947,7 +1946,7 @@ program turbogap
               call from_properties_to_image(images(i_image), positions, velocities, masses, &
                    forces, a_box, b_box, c_box, energy, energies, E_kinetic, &
                    species, species_supercell, n_sites, indices, fix_atom, &
-                   xyz_species, xyz_species_supercell)
+                   xyz_species, xyz_species_supercell, hirshfeld_v)
            end if
         end if
         !     This selects the highest energy image from the pool
@@ -1989,7 +1988,7 @@ program turbogap
            call from_image_to_properties(images(i), positions, velocities, masses, &
                 forces, a_box, b_box, c_box, energy, energies, E_kinetic, &
                 species, species_supercell, n_sites, indices, fix_atom, &
-                xyz_species, xyz_species_supercell)
+                xyz_species, xyz_species_supercell, hirshfeld_v)
            v_uc = dot_product( cross_product(images(i)%a_box, images(i)%b_box), images(i)%c_box ) / &
                 (dfloat(images(i)%indices(1)*images(i)%indices(2)*images(i)%indices(3)))
            !       This only gets triggered if we are doing box rescaling, i.e., if the target nested sampling pressure (*not* the
@@ -2052,265 +2051,300 @@ program turbogap
 #ifdef _MPIF90
         IF( rank == 0 )THEN
 #endif
-           if (params%do_mc .and. (mc_istep == params%mc_nsteps) )then
-              exit_loop = .true.
-           else
-              exit_loop = .false.
-           end if
+           if(params%do_mc)then
+              if (mc_istep == params%mc_nsteps) then
+                 exit_loop = .true.
+              else
+                 exit_loop = .false.
+              end if
 
 
-           if ( .not. exit_loop .and. ( (params%do_mc .and. (md_istep == params%md_nsteps) &
-                .and. mc_move == "md" )&
-                .or. ((params%do_mc .and. params%mc_relax .and.  &
-                (md_istep == params%mc_nrelax ) ))&
-                .or. (params%do_mc .and. (md_istep == -1) ) ))then
-              !       Now we do a monte-carlo step: we choose what the steps are from the available list and then choose a random number
-              !       -- We have the list of move types in params%mc_types and the number params%n_mc_types --
-              !       >> First generate a random number in the range of the number of
+              if ( .not. exit_loop .and. ( (params%do_mc .and. (md_istep == params%md_nsteps) &
+                   .and. mc_move == "md" )&
+                   .or. ((params%do_mc .and. params%mc_relax .and.  &
+                   (md_istep == params%mc_nrelax ) ))&
+                   .or. (params%do_mc .and. (md_istep == -1) ) ))then
+                 !       Now we do a monte-carlo step: we choose what the steps are from the available list and then choose a random number
+                 !       -- We have the list of move types in params%mc_types and the number params%n_mc_types --
+                 !       >> First generate a random number in the range of the number of
 
-              if (mc_istep > 0)then
-                 !       Evaluate the conditions for acceptance
-                 !       > We have the mc conditions in mc.f90
-                 !       > We care about comparing e_store to the energy of the new configuration based on the mc_movw
+                 if (mc_istep > 0)then
+                    !       Evaluate the conditions for acceptance
+                    !       > We have the mc conditions in mc.f90
+                    !       > We care about comparing e_store to the energy of the new configuration based on the mc_movw
 
-                 ! Reset the parameters for md / relaxation
-                 if (mc_move == "relax" .or. mc_move == "md" .or. params%mc_relax)then
-                    md_istep = -1
-                    params%do_md = .false.
-                    ! Assume that the number of steps has already been set.
-                 end if
-
-
-                 call from_properties_to_image(images(2), positions, velocities, masses, &
-                      forces, a_box, b_box, c_box,  energy, energies, E_kinetic, &
-                      species, species_supercell, n_sites, indices, fix_atom, &
-                      xyz_species, xyz_species_supercell)
-
-                 write(*,*)'------------------------------------------------'
-                 write(*,'(A,1X,I0)')   ' MC Iteration:', mc_istep
-                 write(*,'(A,1X,A)')    '    Move type:', mc_move
-                 write(*,'(A,1X,F22.8)')'    Etot_prev:', images(1)%energy
-                 write(*,'(A,1X,F22.8)')'    Etot_new :', images(2)%energy
-
-                 v_uc = dot_product( cross_product(a_box, b_box), c_box ) / (dfloat(indices(1)*indices(2)*indices(3)))
+                    ! Reset the parameters for md / relaxation
+                    if (mc_move == "relax" .or. mc_move == "md" .or. params%mc_relax)then
+                       md_istep = -1
+                       params%do_md = .false.
+                       ! Assume that the number of steps has already been set.
+                    end if
 
 
+                    call from_properties_to_image(images(i_trial_image), positions, velocities, masses, &
+                         forces, a_box, b_box, c_box,  energy, energies, E_kinetic, &
+                         species, species_supercell, n_sites, indices, fix_atom, &
+                         xyz_species, xyz_species_supercell, hirshfeld_v)
 
-                 call get_mc_acceptance(mc_move, p_accept, energy, images(1)%energy, params%t_beg, &
-                      params%mc_mu, n_mc_species, v_uc, v_uc_prev, params%masses_types(mc_id), params%p_beg)
+                    write(*,*)'.......................................|'
+                    write(*,'(A,1X,I0)')   ' MC Iteration:', mc_istep
+                    write(*,'(A,1X,A)')    '    Move type:', mc_move
+                    write(*,'(A,1X,F22.8)')'    Etot_prev:', images(i_current_image)%energy
+                    write(*,'(A,1X,F22.8)')'    Etot_new :', images(i_trial_image)%energy
+
+                    v_uc = dot_product( cross_product(a_box, b_box), c_box ) / (dfloat(indices(1)*indices(2)*indices(3)))
 
 
-                 call random_number(ranf)
+
+                    call get_mc_acceptance(mc_move, p_accept, energy, images(i_current_image)%energy, params%t_beg, &
+                         params%mc_mu, n_mc_species, v_uc, v_uc_prev, params%masses_types(mc_id), params%p_beg)
 
 
-                 !    ACCEPT OR REJECT
-                 write(*, '(A,1X,A,1X,A,L4,1X,A,ES12.6,1X,A,1X,ES12.6)') 'Is ', trim(mc_move), &
-                      'accepted?', p_accept > ranf, ' p_accept =', p_accept, ' ranf = ', ranf
-                 if (p_accept > ranf)then
-                    !             Accept
+                    call random_number(ranf)
+
+
+                    !    ACCEPT OR REJECT
+                    write(*, '(A,1X,A,1X,A,L4,1X,A,ES12.6,1X,A,1X,ES12.6)') 'Is ', trim(mc_move), &
+                         'accepted?', p_accept > ranf, ' p_accept =', p_accept, ' ranf = ', ranf
+                    if (p_accept > ranf)then
+                       !             Accept
+                       if (mc_move == "insertion") n_mc_species = n_mc_species +1
+                       if (mc_move == "removal"  ) n_mc_species = n_mc_species -1
+
+                       if ((mc_istep == 0 .or. mc_istep == params%mc_nsteps .or. &
+                            modulo(mc_istep, params%write_xyz) == 0))then
+                          write(*,'(1X,A)')' Writing mc_current.xyz and mc_all.xyz '
+                          call write_extxyz( images(i_current_image)%n_sites, 0, 1.0d0, 0.0d0, 0.0d0, &
+                               images(i_current_image)%a_box/dfloat(indices(1)), &
+                               images(i_current_image)%b_box/dfloat(indices(2)), &
+                               images(i_current_image)%c_box/dfloat(indices(3)), &
+                               virial_prev, images(i_current_image)%xyz_species, &
+                               images(i_current_image)%positions(1:3, 1:images(i_current_image)%n_sites),&
+                               images(i_current_image)%velocities, &
+                               images(i_current_image)%forces, &
+                               images(i_current_image)%energies(1:images(i_current_image)%n_sites), &
+                               images(i_current_image)%masses, images(i_current_image)%hirshfeld_v, &
+                               params%write_property, params%write_array_property, images(i_current_image)%fix_atom, &
+                               "mc_current.xyz", .true. )
+
+                          call write_extxyz( images(i_current_image)%n_sites, 1, 1.0d0, 0.0d0, 0.0d0, &
+                               images(i_current_image)%a_box/dfloat(indices(1)), &
+                               images(i_current_image)%b_box/dfloat(indices(2)), &
+                               images(i_current_image)%c_box/dfloat(indices(3)), &
+                               virial_prev, images(i_current_image)%xyz_species, &
+                               images(i_current_image)%positions(1:3, 1:images(i_current_image)%n_sites),&
+                               images(i_current_image)%velocities, &
+                               images(i_current_image)%forces, &
+                               images(i_current_image)%energies(1:images(i_current_image)%n_sites), &
+                               images(i_current_image)%masses, images(i_current_image)%hirshfeld_v, &
+                               params%write_property, params%write_array_property, images(i_current_image)%fix_atom, &
+                               "mc_all.xyz", .false. )
+                       end if
+
+                    end if
+                    !          Add acceptance to the log file else dont
+                    if ( mc_istep == 1 )then
+                       open(unit=200, file="mc.log", status="unknown")
+                    end if
+                    if ( mc_istep > 1  )then
+                       open(unit=200, file="mc.log", status="old", position="append")
+                    end if
+
+                    write(200, "(I8, 1X, A, 1X, L4, 1X, F20.8, 1X, F20.8, 1X, I8, 1X, I8, 1X)") &
+                         mc_istep, mc_move, p_accept > ranf, energy, images(i_current_image)%energy, &
+                         images(i_trial_image)%n_sites, n_mc_species
+
+                    close(200)
+
+                    if (p_accept > ranf)then
+                       ! Set variables
+                       n_sites_prev = n_sites
+                       v_uc_prev = v_uc
+                       virial_prev = virial
+                       !   Assigning the default image with the accepted one
+                       images(i_current_image) = images(i_trial_image)
+                    end if
+
+
+
+                 else ! if (mc_istep == 0)
+                    write(*,*) '                                       |'
+                    write(*,*) 'Starting MC, using parameters:         |'
+                    write(*,*) '                                       |'
+                    write(*,'(1X,A,1X,I8,1X,A)')    'mc_nsteps     = ', params%mc_nsteps, '             |'
+                    write(*,'(1X,A,1X,I8,1X,A)')    'n_mc_types    = ', params%n_mc_types, '             |'
+                    write(*,'(1X,A)') 'mc_types:                              |'
+                    do i = 1, params%n_mc_types
+                       write(*,'(1X,A,1X,A,1X,A)') '     ', params%mc_types(i), '|'
+                    end do
+                    write(*,'(1X,A)') 'mc_accept_ratio:                       |'
+                    do i = 1, params%n_mc_types
+                       write(*,'(1X,A,1X,F12.8,1X,A)') '   ', params%mc_acceptance(i), '                      |'
+                    end do
+                    write(*,'(1X,A,1X,F17.8,1X,A)') 'mc_move_max   = ', params%mc_move_max,  'A   |'
+                    write(*,'(1X,A,1X,F17.8,1X,A)') 'mc_mu         = ', params%mc_mu,        'eV  |'
+                    write(*,'(1X,A,1X,A,1X,A)')     'mc_species    = ', trim(params%mc_species),   '                    |'
+                    write(*,'(1X,A,1X,F17.8,1X,A)') 'mc_min_dist   = ', params%mc_min_dist,  'A   |'
+                    write(*,'(1X,A,1X,F17.8,1X,A)') 'mc_lnvol_max  = ', params%mc_lnvol_max, '    |'
+                    write(*,'(1X,A,1X,L8,1X,A)')    'mc_write_xyz  = ', params%mc_write_xyz, '             |'
+                    write(*,'(1X,A,1X,L8,1X,A)')    'mc_relax      = ', params%mc_relax,     '             |'
+                    write(*,'(1X,A,1X,I8,1X,A)')    'mc_nrelax     = ', params%mc_nrelax,    '             |'
+                    write(*,'(1X,A,1X,A,1X,A)')     'mc_relax_opt  = ', params%mc_relax_opt, '     |'
+                    write(*,'(1X,A,1X,A,1X,A)')     'mc_hybrid_opt = ', params%mc_hybrid_opt,'     |'
+                    write(*,*) '                                       |'
+                    ! t_beg must
+
+                    if( .not. allocated( images ) .and. .not. params%do_nested_sampling )then
+                       allocate( images(1:2) )
+                    else if (.not. allocated(images) .and. params%do_nested_sampling )then
+                       allocate(images(1:2*i_image))
+                    end if
+
+                    !    get the mc species type
+                    do i = 1, n_species
+                       if (params%species_types(i) == params%mc_species ) mc_id=i
+                    end do
+
+                    !       Now use the image construct to store this as the image to compare to
+                    call from_properties_to_image(images(i_current_image), positions, velocities, masses, &
+                         forces, a_box, b_box, c_box,  energy, energies, E_kinetic, &
+                         species, species_supercell, n_sites, indices, fix_atom, &
+                         xyz_species, xyz_species_supercell, hirshfeld_v)
+                    !  >>> This is the dumb implementation where we will
+                    !  >>> write to an xyz every iteration. This is slow so
+                    !  >>> once validated it should be reommovwd
+                    ! setting "md_istep" to 0 to overwrite
+
                     if ((mc_istep == 0 .or. mc_istep == params%mc_nsteps .or. &
                          modulo(mc_istep, params%write_xyz) == 0))then
                        write(*,'(1X,A)')' Writing mc_current.xyz and mc_all.xyz '
-                       call write_extxyz( n_sites, 0, 1.0d0, 0.0d0, 0.0d0, &
-                            a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
-                            virial, xyz_species, positions(1:3, 1:n_sites), velocities, &
-                            forces, energies(1:n_sites), masses, hirshfeld_v, &
-                            params%write_property, params%write_array_property, fix_atom, &
+                       call write_extxyz( images(i_current_image)%n_sites, 0, 1.0d0, 0.0d0, 0.0d0, &
+                            images(i_current_image)%a_box/dfloat(indices(1)), &
+                            images(i_current_image)%b_box/dfloat(indices(2)), &
+                            images(i_current_image)%c_box/dfloat(indices(3)), &
+                            virial_prev, images(i_current_image)%xyz_species, &
+                            images(i_current_image)%positions(1:3, 1:images(i_current_image)%n_sites),&
+                            images(i_current_image)%velocities, &
+                            images(i_current_image)%forces, &
+                            images(i_current_image)%energies(1:images(i_current_image)%n_sites), &
+                            images(i_current_image)%masses, images(i_current_image)%hirshfeld_v, &
+                            params%write_property, params%write_array_property, images(i_current_image)%fix_atom, &
                             "mc_current.xyz", .true. )
 
-                       call write_extxyz( n_sites, 1, 1.0d0, 0.0d0, 0.0d0, &
-                            a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
-                            virial, xyz_species, positions(1:3, 1:n_sites), velocities, &
-                            forces, energies(1:n_sites), masses, hirshfeld_v, &
-                            params%write_property, params%write_array_property, fix_atom, &
-                            "mc_all.xyz", .false. )
+                       call write_extxyz( images(i_current_image)%n_sites, 1, 1.0d0, 0.0d0, 0.0d0, &
+                            images(i_current_image)%a_box/dfloat(indices(1)), &
+                            images(i_current_image)%b_box/dfloat(indices(2)), &
+                            images(i_current_image)%c_box/dfloat(indices(3)), &
+                            virial_prev, images(i_current_image)%xyz_species, &
+                            images(i_current_image)%positions(1:3, 1:images(i_current_image)%n_sites),&
+                            images(i_current_image)%velocities, &
+                            images(i_current_image)%forces, &
+                            images(i_current_image)%energies(1:images(i_current_image)%n_sites), &
+                            images(i_current_image)%masses, images(i_current_image)%hirshfeld_v, &
+                            params%write_property, params%write_array_property, images(i_current_image)%fix_atom, &
+                            "mc_all.xyz", .true. )
+
+
                     end if
 
-                 end if
-                 !          Add acceptance to the log file else dont
-                 if ( mc_istep == 1 )then
-                    open(unit=200, file="mc.log", status="unknown")
-                 end if
-                 if ( mc_istep > 1  )then
-                    open(unit=200, file="mc.log", status="old", position="append")
-                 end if
 
-                 write(200, "(I8, 1X, A, 1X, L4, 1X, F20.8, 1X, F20.8, 1X, I8, 1X, I8, 1X)") &
-                      mc_istep, mc_move, p_accept > ranf, energy, images(1)%energy, images(2)%n_sites, n_mc_species
-
-                 close(200)
-
-                 if (p_accept > ranf)then
-                    ! Set variables
-                    n_sites_prev = n_sites
-                    v_uc_prev = v_uc
-                    !   Assigning the default image with the accepted one
-                    images(1) = images(2)
                  end if
 
 
-
-              else ! if (mc_istep == 0)
-                 write(*,*) '                                       |'
-                 write(*,*) 'Starting MC, using parameters:         |'
-                 write(*,*) '                                       |'
-                 write(*,'(1X,A,1X,I8,1X,A)')    'mc_nsteps     = ', params%mc_nsteps, '             |'
-                 write(*,'(1X,A,1X,I8,1X,A)')    'n_mc_types    = ', params%n_mc_types, '             |'
-                 write(*,'(1X,A)') 'mc_types:                              |'
-                 do i = 1, params%n_mc_types
-                    write(*,'(1X,A,1X,A,1X,A)') '     ', params%mc_types(i), '|'
-                 end do
-                 write(*,'(1X,A)') 'mc_accept_ratio:                       |'
-                 do i = 1, params%n_mc_types
-                    write(*,'(1X,A,1X,F12.8,1X,A)') '   ', params%mc_acceptance(i), '                      |'
-                 end do
-                 write(*,'(1X,A,1X,F17.8,1X,A)') 'mc_move_max   = ', params%mc_move_max,  'A   |'
-                 write(*,'(1X,A,1X,F17.8,1X,A)') 'mc_mu         = ', params%mc_mu,        'eV  |'
-                 write(*,'(1X,A,1X,A,1X,A)')     'mc_species    = ', trim(params%mc_species),   '                    |'
-                 write(*,'(1X,A,1X,F17.8,1X,A)') 'mc_min_dist   = ', params%mc_min_dist,  'A   |'
-                 write(*,'(1X,A,1X,F17.8,1X,A)') 'mc_lnvol_max  = ', params%mc_lnvol_max, '    |'
-                 write(*,'(1X,A,1X,L8,1X,A)')    'mc_write_xyz  = ', params%mc_write_xyz, '             |'
-                 write(*,'(1X,A,1X,L8,1X,A)')    'mc_relax      = ', params%mc_relax,     '             |'
-                 write(*,'(1X,A,1X,I8,1X,A)')    'mc_nrelax     = ', params%mc_nrelax,    '             |'
-                 write(*,'(1X,A,1X,A,1X,A)')     'mc_relax_opt  = ', params%mc_relax_opt, '     |'
-                 write(*,'(1X,A,1X,A,1X,A)')     'mc_hybrid_opt = ', params%mc_hybrid_opt,'     |'
-                 write(*,*) '                                       |'
-                 ! t_beg must
-
-                 if( .not. allocated( images ) .and. .not. params%do_nested_sampling )then
-                    allocate( images(1:2) )
-                 else if (.not. allocated(images) .and. params%do_nested_sampling )then
-                    allocate(images(1:2*i_image))
-                 end if
-
-                 !    get the mc species type
-                 do i = 1, n_species
-                    if (params%species_types(i) == params%mc_species ) mc_id=i
-                 end do
-
-                 !       Now use the image construct to store this as the image to compare to
-                 call from_properties_to_image(images(1), positions, velocities, masses, &
-                      forces, a_box, b_box, c_box,  energy, energies, E_kinetic, &
+                 !  Now start the mc logic: first, use the stored images properties
+                 call from_image_to_properties(images(i_current_image), positions, velocities, masses, &
+                      forces, a_box, b_box, c_box, energy, energies, E_kinetic, &
                       species, species_supercell, n_sites, indices, fix_atom, &
-                      xyz_species, xyz_species_supercell)
-                 !  >>> This is the dumb implementation where we will
-                 !  >>> write to an xyz every iteration. This is slow so
-                 !  >>> once validated it should be reommovwd
-                 ! setting "md_istep" to 0 to overwrite
+                      xyz_species, xyz_species_supercell, hirshfeld_v)
 
-                 if ((mc_istep == 0 .or. mc_istep == params%mc_nsteps .or. &
+                 call perform_mc_step(&
+                      & positions, species, xyz_species, masses, fix_atom,&
+                      & velocities, positions_prev, positions_diff, disp, d_disp,&
+                      & params%mc_acceptance, hirshfeld_v, &
+                      images(i_current_image)%hirshfeld_v, energies,&
+                      & forces, forces_prev, n_sites, n_mc_species,&
+                      & mc_move, params %mc_species,&
+                      & params%mc_move_max, params%mc_min_dist, params&
+                      &%mc_types, params%masses_types, species_idx,&
+                      & images(i_current_image)%positions,&
+                      & images(i_current_image)%species,&
+                      & images(i_current_image)%xyz_species,&
+                      & images(i_current_image)%fix_atom,&
+                      & images(i_current_image)%masses, a_box, b_box,&
+                      & c_box, indices, params%do_md, params%mc_relax,&
+                      & md_istep, mc_id, E_kinetic, instant_temp, params%t_beg )
+
+                 rebuild_neighbors_list = .true.
+                 ! end if
+
+                 ! NOTE: the species_supercell and xyz_species_supercell are
+                 ! not commensurate with the new image as these have not been
+                 ! calculated. If reading from an outputted xyz file, then it
+                 ! should be okay but really the new atoms should be added to
+                 ! the supercell in the usual way, but for convenience, one has
+                 ! not done that.
+
+                 ! Now, if relaxing every step then
+                 if(params%mc_relax)then
+                    ! Set the parameters for relaxatrino
+                    md_istep = -1
+                    params%do_md = .true.
+                    params%optimize = params%mc_relax_opt
+                    ! Note, that this may override md steps if the same is chosen! More testing needed
+                 end if
+                 ! If doing md, don't relax
+                 if( mc_move == 'md')then
+                    ! Set the parameters for relaxatrino
+                    md_istep = -1
+                    params%do_md = .true.
+                    params%optimize = params%mc_hybrid_opt
+                    ! Note, that this may override md steps if the same is chosen! More testing needed
+                 end if
+
+
+                 if ((params%mc_write_xyz .or. mc_istep == 0 .or. mc_istep == params%mc_nsteps .or. &
                       modulo(mc_istep, params%write_xyz) == 0))then
 
                     call write_extxyz( n_sites, 0, 1.0d0, 0.0d0, 0.0d0, &
                          a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
-                         virial, xyz_species, positions(1:3, 1:n_sites), velocities, &
+                         virial, xyz_species, &
+                         positions(1:3, 1:n_sites), velocities, &
                          forces, energies(1:n_sites), masses, hirshfeld_v, &
                          params%write_property, params%write_array_property, fix_atom, &
-                         "mc_initial.xyz", .true. )
-                    ! setting "md_istep" to 1 to append
-                    call write_extxyz( n_sites, 0, 1.0d0, 0.0d0, 0.0d0, &
-                         a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
-                         virial, xyz_species, positions(1:3, 1:n_sites), velocities, &
-                         forces, energies(1:n_sites), masses, hirshfeld_v, &
-                         params%write_property, params%write_array_property, fix_atom, &
-                         "mc_all.xyz", .true. )
+                         mc_file, .true. )
                  end if
+                 ! As we have moved/added/removed, we must check the supercell and  broadcast the results
 
 
-              end if
-
-
-              !  Now start the mc logic: first, use the stored images properties
-              call from_image_to_properties(images(1), positions, velocities, masses, &
-                   forces, a_box, b_box, c_box, energy, energies, E_kinetic, &
-                   species, species_supercell, n_sites, indices, fix_atom, &
-                   xyz_species, xyz_species_supercell)
-
-              call perform_mc_step(&
-                   & positions, species, xyz_species, masses, fix_atom,&
-                   & velocities, positions_prev, positions_diff, disp, d_disp,&
-                   & params%mc_acceptance, hirshfeld_v, hirshfeld_v_temp, energies,&
-                   & forces, forces_prev, n_sites, n_mc_species,&
-                   & mc_move, params %mc_species,&
-                   & params%mc_move_max, params%mc_min_dist, params&
-                   &%mc_types, params%masses_types, species_idx,&
-                   & images(i_current_image)%positions,&
-                   & images(i_current_image)%species,&
-                   & images(i_current_image)%xyz_species,&
-                   & images(i_current_image)%fix_atom,&
-                   & images(i_current_image)%masses, a_box, b_box,&
-                   & c_box, indices, params%do_md, params%mc_relax,&
-                   & md_istep, mc_id, E_kinetic, instant_temp, params%t_beg )
-
-              ! end if
-
-              ! NOTE: the species_supercell and xyz_species_supercell are
-              ! not commensurate with the new image as these have not been
-              ! calculated. If reading from an outputted xyz file, then it
-              ! should be okay but really the new atoms should be added to
-              ! the supercell in the usual way, but for convenience, one has
-              ! not done that.
-
-              ! Now, if relaxing every step then
-              if(params%mc_relax)then
-                 ! Set the parameters for relaxatrino
-                 md_istep = -1
-                 params%do_md = .true.
-                 params%optimize = params%mc_relax_opt
-                 ! Note, that this may override md steps if the same is chosen! More testing needed
-              end if
-              ! If doing md, don't relax
-              if( mc_move == 'md')then
-                 ! Set the parameters for relaxatrino
-                 md_istep = -1
-                 params%do_md = .true.
-                 params%optimize = params%mc_hybrid_opt
-                 ! Note, that this may override md steps if the same is chosen! More testing needed
-              end if
-
-
-              if ((params%mc_write_xyz .or. mc_istep == 0 .or. mc_istep == params%mc_nsteps .or. &
-                   modulo(mc_istep, params%write_xyz) == 0))then
-
-                 call write_extxyz( n_sites, 0, 1.0d0, 0.0d0, 0.0d0, &
-                      a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
-                      virial, xyz_species, &
-                      positions(1:3, 1:n_sites), velocities, &
-                      forces, energies(1:n_sites), masses, hirshfeld_v, &
-                      params%write_property, params%write_array_property, fix_atom, &
-                      mc_file, .true. )
-              end if
-              ! As we have moved/added/removed, we must check the supercell and  broadcast the results
-
-
-              call read_xyz(mc_file, .true., params%all_atoms, params%do_timing, &
-                          n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
-                          positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
-                          xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
-                          n_sites, .true., fix_atom, params%t_beg, &
-                          params%write_array_property(6), .true. )
-           else
-              if(params%do_mc .and. mc_move == 'md')then
-                 write(*,'(1X,A,1X,F20.8,1X,A,1X,I8,1X,A,1X,I8)')"Hybrid md step: energy = ", energy, &
-                      ", iteration ", md_istep, "/", params%md_nsteps
-                 write(*,'(A,1X,F22.8,1X,A)')' SOAP energy:', sum(energies_soap), 'eV |'
-                 write(*,'(A,1X,F24.8,1X,A)')' 2b energy:', sum(energies_2b), 'eV |'
-                 write(*,'(A,1X,F24.8,1X,A)')' 3b energy:', sum(energies_3b), 'eV |'
-                 write(*,'(A,1X,F18.8,1X,A)')' core_pot energy:', sum(energies_core_pot), 'eV |'
-                 write(*,'(A,1X,F23.8,1X,A)')' vdw energy:', sum(energies_vdw), 'eV |'
+                 call read_xyz(mc_file, .true., params%all_atoms, params%do_timing, &
+                      n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
+                      positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
+                      xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
+                      n_sites, .true., fix_atom, params%t_beg, &
+                      params%write_array_property(6), .true. )
 
               else
-                 write(*,'(1X,A,1X,F20.8,1X,A,1X,I8,1X,A,1X,I8)')"MC Relax md step: energy = ", energy, &
-                      ", iteration ", md_istep, "/", params%mc_nrelax
-                 write(*,'(A,1X,F22.8,1X,A)')' SOAP energy:', sum(energies_soap), 'eV |'
-                 write(*,'(A,1X,F24.8,1X,A)')' 2b energy:', sum(energies_2b), 'eV |'
-                 write(*,'(A,1X,F24.8,1X,A)')' 3b energy:', sum(energies_3b), 'eV |'
-                 write(*,'(A,1X,F18.8,1X,A)')' core_pot energy:', sum(energies_core_pot), 'eV |'
-                 write(*,'(A,1X,F23.8,1X,A)')' vdw energy:', sum(energies_vdw), 'eV |'
+                 if( mc_move == 'md')then
+                    write(*,'(1X,A,1X,F20.8,1X,A,1X,I8,1X,A,1X,I8)')"Hybrid md step: energy = ", energy, &
+                         ", iteration ", md_istep, "/", params%md_nsteps
+                    write(*,'(A,1X,F22.8,1X,A)')' SOAP energy:', sum(energies_soap), 'eV |'
+                    write(*,'(A,1X,F24.8,1X,A)')' 2b energy:', sum(energies_2b), 'eV |'
+                    write(*,'(A,1X,F24.8,1X,A)')' 3b energy:', sum(energies_3b), 'eV |'
+                    write(*,'(A,1X,F18.8,1X,A)')' core_pot energy:', sum(energies_core_pot), 'eV |'
+                    write(*,'(A,1X,F23.8,1X,A)')' vdw energy:', sum(energies_vdw), 'eV |'
 
+                 else
+                    write(*,'(1X,A,1X,F20.8,1X,A,1X,I8,1X,A,1X,I8)')"MC Relax md step: energy = ", energy, &
+                         ", iteration ", md_istep, "/", params%mc_nrelax
+                    write(*,'(A,1X,F22.8,1X,A)')' SOAP energy:', sum(energies_soap), 'eV |'
+                    write(*,'(A,1X,F24.8,1X,A)')' 2b energy:', sum(energies_2b), 'eV |'
+                    write(*,'(A,1X,F24.8,1X,A)')' 3b energy:', sum(energies_3b), 'eV |'
+                    write(*,'(A,1X,F18.8,1X,A)')' core_pot energy:', sum(energies_core_pot), 'eV |'
+                    write(*,'(A,1X,F23.8,1X,A)')' vdw energy:', sum(energies_vdw), 'eV |'
+
+                 end if
               end if
            end if
-
 
 #ifdef _MPIF90
         END IF

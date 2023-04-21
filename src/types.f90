@@ -114,7 +114,7 @@ module types
 ! This is a container for atomic images
   type image
     real*8, allocatable :: positions(:,:), positions_prev(:,:), velocities(:,:), masses(:), &
-                           forces(:,:), forces_prev(:,:), energies(:)
+                           forces(:,:), forces_prev(:,:), energies(:), hirshfeld_v(:)
     real*8 :: a_box(1:3), b_box(1:3), c_box(1:3), energy, e_kin
     integer, allocatable :: species(:), species_supercell(:)
     integer :: n_sites, indices(1:3)
@@ -135,12 +135,13 @@ module types
   subroutine from_properties_to_image(this_image, positions, velocities, masses, &
                                       forces, a_box, b_box, c_box, energy, energies, e_kin, &
                                       species, species_supercell, n_sites, indices, fix_atom, &
-                                      xyz_species, xyz_species_supercell)
+                                      xyz_species, xyz_species_supercell, hirshfeld_v)
     implicit none
 
 !   Input variables
     real*8, intent(in) :: positions(:,:), velocities(:,:), masses(:), energies(:), &
-                           forces(:,:), a_box(1:3), b_box(1:3), c_box(1:3), energy, e_kin
+         forces(:,:), a_box(1:3), b_box(1:3), c_box(1:3), energy, e_kin
+    real*8, allocatable, intent(in) :: hirshfeld_v(:)
     integer, intent(in) :: species(:), species_supercell(:), n_sites, indices(1:3)
     logical, intent(in) :: fix_atom(:,:)
     character*8, intent(in) :: xyz_species(:), xyz_species_supercell(:)
@@ -213,6 +214,14 @@ module types
     if( allocated( this_image%xyz_species_supercell ) )deallocate( this_image%xyz_species_supercell )
     allocate( this_image%xyz_species_supercell(1:n) )
     this_image%xyz_species_supercell = xyz_species_supercell
+
+    if(allocated(hirshfeld_v))then
+       n = size(hirshfeld_v, 1)
+       if( allocated( this_image%hirshfeld_v ) )deallocate( this_image%hirshfeld_v )
+       allocate( this_image%hirshfeld_v(1:n) )
+       this_image%hirshfeld_v = hirshfeld_v
+    end if
+
   end subroutine
 !**************************************************************************
 
@@ -224,14 +233,15 @@ module types
   subroutine from_image_to_properties(this_image, positions, velocities, masses, &
                                       forces, a_box, b_box, c_box, energy, energies, e_kin, &
                                       species, species_supercell, n_sites, indices, fix_atom, &
-                                      xyz_species, xyz_species_supercell)
+                                      xyz_species, xyz_species_supercell, hirshfeld_v)
     implicit none
 
 !   Input variables
     type(image), intent(in) :: this_image
 !   Output variables
     real*8, allocatable, intent(out) :: positions(:,:), velocities(:,:), masses(:), &
-                           forces(:,:), energies(:)
+         forces(:,:), energies(:)
+    real*8, allocatable, intent(out) :: hirshfeld_v(:)
     real*8, intent(out) :: a_box(1:3), b_box(1:3), c_box(1:3), energy, e_kin
     integer, allocatable, intent(out) :: species(:), species_supercell(:)
     integer, intent(out) :: n_sites, indices(1:3)
@@ -294,6 +304,13 @@ module types
     n = size(this_image%xyz_species_supercell, 1)
     allocate( xyz_species_supercell(1:n) )
     xyz_species_supercell = this_image%xyz_species_supercell
+
+    if(allocated(this_image%hirshfeld_v))then
+       n = size(this_image%hirshfeld_v, 1)
+       allocate( hirshfeld_v(1:n) )
+       hirshfeld_v = this_image%hirshfeld_v
+    end if
+
   end subroutine
 !**************************************************************************
 

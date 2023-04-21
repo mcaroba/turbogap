@@ -210,17 +210,17 @@ module mc
   end subroutine get_mc_move
 
 
-  subroutine mc_insert_site(mc_species, positions, ref_positions, idx, n_sites, a_box, b_box, c_box, &
+  subroutine mc_insert_site(mc_species, mc_id, positions, ref_positions, idx, n_sites, a_box, b_box, c_box, &
        indices, species, ref_species, xyz_species, ref_xyz_species, min_dist )
 
     implicit none
 
     real*8, intent(inout) :: positions(:,:)
-    real*8, intent(out) :: ref_positions(:,:)
+    real*8, intent(in) :: ref_positions(:,:)
     real*8, intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3), min_dist
     real*8 :: ranv(1:3)
     integer, intent(in) :: idx, n_sites, indices(1:3), ref_species(:)
-    integer, intent(inout) :: species(:)
+    integer, intent(inout) :: species(:), mc_id
     character*8, intent(in) :: ref_xyz_species(:)
     character*8, intent(inout) :: xyz_species(:)
     character*32, intent(in) :: mc_species
@@ -232,6 +232,7 @@ module mc
     species(1:n_sites-1)= ref_species(1:n_sites-1)
 
     xyz_species(n_sites) = mc_species
+    species(n_sites) = mc_id
 
     too_close = .true.
     do while ( too_close )
@@ -279,7 +280,7 @@ module mc
   subroutine perform_mc_step(&
        & positions, species, xyz_species, masses, fix_atom,&
        & velocities, positions_prev, positions_diff, disp, d_disp,&
-       & mc_acceptance, hirshfeld_v, hirshfeld_v_temp, energies,&
+       & mc_acceptance, hirshfeld_v, im_hirshfeld_v, energies,&
        & forces, forces_prev, n_sites, n_mc_species, mc_move, mc_species,&
        & mc_move_max, mc_min_dist, mc_types, masses_types,&
        & species_idx, im_pos, im_species, im_xyz_species, im_fix_atom&
@@ -290,7 +291,7 @@ module mc
 
     real*8, allocatable, intent(inout) :: positions(:,:), masses(:), hirshfeld_v(:),&
          forces_prev(:,:), positions_prev(:,:), positions_diff(:,:),&
-         mc_acceptance(:), hirshfeld_v_temp(:), velocities(:,:), &
+         mc_acceptance(:), im_hirshfeld_v(:), velocities(:,:), &
          energies(:), forces(:,:), masses_types(:), im_pos(:,:), im_masses(:)
     real*8 :: mc_move_max, ranf, ranv(1:3)
     real*8, intent(inout) :: disp(1:3), mc_min_dist, d_disp, E_kinetic, instant_temp, t_beg
@@ -369,10 +370,6 @@ module mc
     if (mc_move == "insertion" .or. mc_move == "removal" )then
 
        !   Allocate temporary storage arrays
-       if(allocated(hirshfeld_v))then
-          if (.not. allocated(hirshfeld_v_temp))allocate(hirshfeld_v_temp(1:size(hirshfeld_v,1)))
-          hirshfeld_v_temp(1:size(hirshfeld_v,1)) = hirshfeld_v(1:size(hirshfeld_v,1))
-       end if
 
        if( allocated(species_idx))deallocate(species_idx)
        allocate( species_idx(1:n_mc_species) )
@@ -410,7 +407,7 @@ module mc
        energies= 0.0d0
 
        if (mc_move == "insertion")then
-          call mc_insert_site(mc_species, positions,&
+          call mc_insert_site(mc_species, mc_id, positions,&
                & im_pos, idx, n_sites,&
                & a_box, b_box, c_box, indices, species,&
                & im_species, xyz_species,&
@@ -424,7 +421,7 @@ module mc
           if (allocated(hirshfeld_v))then
              deallocate(hirshfeld_v)
              allocate(hirshfeld_v(1:n_sites))
-             hirshfeld_v(1:n_sites-1) = hirshfeld_v_temp(1:n_sites-1)
+             hirshfeld_v(1:n_sites-1) = im_hirshfeld_v(1:n_sites-1)
              ! ignoring the hirshfeld v just want to get rough implementation done
              hirshfeld_v(n_sites) = hirshfeld_v(n_sites-1)
           end if
@@ -444,17 +441,18 @@ module mc
 
                 xyz_species(i)           = im_xyz_species(i)
                 species(i)               = im_species(i)
+
                 masses(i)= im_masses(i)
                 fix_atom(1:3,i)= im_fix_atom(1:3,i)
 
-                if (allocated(hirshfeld_v))hirshfeld_v(i) = hirshfeld_v_temp(i)
+                if (allocated(hirshfeld_v))hirshfeld_v(i) = im_hirshfeld_v(i)
              else
                 positions(1:3,i) = im_pos(1:3,i+1)
                 xyz_species(i)           = im_xyz_species(i+1)
                 species(i)               = im_species(i+1)
                 masses(i)= im_masses(i+1)
                 fix_atom(1:3,i)= im_fix_atom(1:3,i+1)
-                if (allocated(hirshfeld_v))hirshfeld_v(i) = hirshfeld_v_temp(i+1)
+                if (allocated(hirshfeld_v))hirshfeld_v(i) = im_hirshfeld_v(i+1)
              end if
           end do
        end if
