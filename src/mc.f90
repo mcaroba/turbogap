@@ -130,7 +130,8 @@ module mc
 
 
 
-    if (mc_move == "move" .or. mc_move == "relax" .or. mc_move == "md")then
+    if (mc_move == "move" .or. mc_move == "relax" .or. mc_move == "md" &
+         .or. mc_move == "swap")then
        call monte_carlo_move(p_accept, energy, energy_prev, temp)
        !     Not implemented the volume bias yet
     else if (mc_move == "insertion")then
@@ -170,15 +171,24 @@ module mc
   end subroutine mc_get_atom_disp
 
 
-  subroutine get_mc_move(n_mc_species, mc_types, mc_move, acceptance)
+
+  subroutine get_mc_move(n_sites, n_mc_species, mc_types, mc_move, acceptance,&
+       & n_spec_swap_1, n_spec_swap_2, species_types, n_mc_swaps,&
+       & mc_swaps_id, species, swap_id_1, swap_id_2, swap_species_1, swap_species_2)
     implicit none
 
-    integer, intent(in) :: n_mc_species
+    integer, intent(in) :: n_sites, n_mc_species
     integer :: n_mc, i
     character*32, intent(in) ::  mc_types(:)
     character*32, intent(out) :: mc_move
     real*8 :: ranf, acceptance(:), k
-    logical :: invalid_move, cant_remove
+    logical :: invalid_move, cant_remove, cant_swap=.false.
+    integer, intent(inout) :: n_spec_swap_1, n_spec_swap_2,&
+         & n_mc_swaps, swap_id_1, swap_id_2
+    integer, allocatable, intent(inout) :: species(:), mc_swaps_id(:)
+    character*8, allocatable :: species_types(:)
+    character*8, intent(inout) :: swap_species_1, swap_species_2
+
 
     invalid_move = .true.
     do while( invalid_move )
@@ -197,10 +207,19 @@ module mc
        ! Original implementation n_mc = floor( size( mc_types,1 ) * ranf ) + 1
        mc_move = mc_types(n_mc)
 
+       cant_swap = .false.
+       if(mc_move == "swap")then
+          call count_swap_species(n_spec_swap_1, n_spec_swap_2,&
+               & species_types, n_mc_swaps, mc_swaps_id, species,&
+               & n_sites, swap_id_1, swap_id_2, swap_species_1,swap_species_2)
+          cant_swap = (n_spec_swap_1 < 1 .or. n_spec_swap_2 < 1)
+       end if
+
 ! If there are none of the gc species to remove, then we can't remove!!
        cant_remove =  (n_mc_species == 0 .and. mc_move == "removal" )
 
-       if(cant_remove)then
+       ! Also, if it is a swap and there are no species to swap
+       if(cant_remove .or. cant_swap)then
           invalid_move = .true.
        else
           invalid_move = .false.
@@ -276,6 +295,44 @@ module mc
 
   end subroutine check_if_atoms_too_close
 
+  subroutine count_swap_species(n_spec_swap_1, n_spec_swap_2,&
+       & species_types, n_mc_swaps, mc_swaps_id, species, n_sites,&
+       & swap_id_1, swap_id_2, swap_species_1, swap_species_2)
+    implicit none
+
+    integer, intent(inout) :: n_spec_swap_1, n_spec_swap_2, n_mc_swaps
+    integer, allocatable, intent(inout) :: species(:), mc_swaps_id(:)
+    character*8, allocatable, intent(inout) :: species_types(:)
+    character*8, intent(inout) :: swap_species_1, swap_species_2
+    integer :: i, idx
+    integer, intent(inout) :: swap_id_1, swap_id_2
+    integer, intent(in) :: n_sites
+    real*8 :: ranf
+    ! Now choose the species to swap
+    call random_number(ranf)
+    idx = floor( ranf * 2 * n_mc_swaps ) + 1
+
+    if(modulo(idx, 2) == 0)then
+       ! it is even so we swap with the species id before
+       swap_id_1 = mc_swaps_id(idx)
+       swap_id_2 = mc_swaps_id(idx-1)
+    else
+       swap_id_1 = mc_swaps_id(idx)
+       swap_id_2 = mc_swaps_id(idx+1)
+    end if
+
+    swap_species_1 = species_types(swap_id_1)
+    swap_species_2 = species_types(swap_id_2)
+
+    ! Now count how many there are of each species and then randomly choose to swap
+    n_spec_swap_1=0
+    n_spec_swap_2=0
+    do i=1,n_sites
+       if(species(i) == swap_id_1) n_spec_swap_1 = n_spec_swap_1 + 1
+       if(species(i) == swap_id_2) n_spec_swap_2 = n_spec_swap_2 + 1
+    end do
+  end subroutine count_swap_species
+
 
   subroutine perform_mc_step(&
        & positions, species, xyz_species, masses, fix_atom,&
@@ -285,7 +342,8 @@ module mc
        & mc_move_max, mc_min_dist, mc_types, masses_types,&
        & species_idx, im_pos, im_species, im_xyz_species, im_fix_atom&
        &, im_masses, a_box, b_box, c_box, indices, do_md, mc_relax,&
-       & md_istep, mc_id, E_kinetic, instant_temp, t_beg)
+       & md_istep, mc_id, E_kinetic, instant_temp, t_beg,&
+       & n_mc_swaps, mc_swaps, mc_swaps_id, species_types)
 
     implicit none
 
@@ -296,18 +354,23 @@ module mc
     real*8 :: mc_move_max, ranf, ranv(1:3)
     real*8, intent(inout) :: disp(1:3), mc_min_dist, d_disp, E_kinetic, instant_temp, t_beg
 
-    integer, intent(inout) :: n_mc_species, n_sites, md_istep, mc_id
-    integer, allocatable, intent(inout) :: species(:), im_species(:)
-    character*8, allocatable :: species_types(:), xyz_species(:), xyz_species_supercell(:),&
-         im_xyz_species(:)
+    integer, intent(inout) :: n_mc_species, n_sites, md_istep, mc_id, n_mc_swaps
+    integer, allocatable, intent(inout) :: species(:), mc_swaps_id(:)
+    integer, allocatable, intent(in) ::  im_species(:)
+    character*8, allocatable, intent(inout) :: species_types(:),&
+         & xyz_species(:),  mc_swaps(:)
+    character*8, allocatable, intent(in) :: im_xyz_species(:)
     character*32, intent(inout) :: mc_move, mc_species
+    character*8 ::  swap_species_1, swap_species_2
     character*32, allocatable, intent(in) ::  mc_types(:)
-    integer :: idx, i
+    integer :: idx, i, swap_id_1, swap_id_2, n_spec_swap_1, n_spec_swap_2, &
+         swap_atom_id_1, swap_atom_id_2
+    integer, allocatable :: swap_idx_1(:), swap_idx_2(:)
     integer, allocatable, intent(inout) :: species_idx(:)
-    type(image), allocatable :: images
     integer :: indices(1:3)
     real*8 :: a_box(1:3), b_box(1:3), c_box(1:3), kB = 8.6173303d-5
-    logical, allocatable:: fix_atom(:,:), im_fix_atom(:,:)
+    logical, allocatable:: fix_atom(:,:)
+    logical, allocatable, intent(in) :: im_fix_atom(:,:)
     logical, intent(inout) :: do_md, mc_relax
 
     n_sites = size(positions, 2)
@@ -320,7 +383,10 @@ module mc
     end do
 
     !  Get the mc move type using a random number
-    call get_mc_move(n_mc_species, mc_types, mc_move, mc_acceptance)
+    call get_mc_move(n_sites, n_mc_species, mc_types, mc_move,&
+         & mc_acceptance, n_spec_swap_1, n_spec_swap_2, species_types&
+         &, n_mc_swaps, mc_swaps_id, species, swap_id_1, swap_id_2,&
+         & swap_species_1, swap_species_2)
 
     write(*,'(1X,A,1X,A)') " Next MC Move: ", mc_move
 
@@ -329,6 +395,64 @@ module mc
        write(*,'(A,1X,I8,1X,A,F22.8,1X,A)')'    MC Move: atom ', idx, ' distance = ', d_disp, 'A '
        positions(1:3, idx) = positions(1:3, idx) + disp
     end if
+
+
+    if (mc_move == "swap")then
+       ! Assume symmetric swap
+       if (n_mc_swaps == 0)then
+          write(*,*) 'Swap move is not valid as n_mc_swaps not specified!! Check input file '
+       end if
+
+       ! call count_swap_species(n_spec_swap_1, n_spec_swap_2,&
+       !      & species_types, n_mc_swaps, mc_swaps_id, species, n_sites, swap_idx_1, swap_idx_2)
+
+       allocate(swap_idx_1(1:n_spec_swap_1))
+       allocate(swap_idx_2(1:n_spec_swap_2))
+       idx = 0
+       do i=1,n_sites
+          if(species(i) == swap_id_1)then
+             idx = idx + 1
+             swap_idx_1(idx) = i
+          end if
+       end do
+       call random_number(ranf)
+       swap_atom_id_1 = swap_idx_1( floor( ranf * n_spec_swap_1 ) + 1 )
+
+       idx = 0
+       do i=1,n_sites
+          if(species(i) == swap_id_2)then
+             idx = idx + 1
+             swap_idx_2(idx) = i
+          end if
+       end do
+       ! reusing swap id
+       call random_number(ranf)
+       swap_atom_id_2= swap_idx_2( floor( ranf * n_spec_swap_2 ) + 1 )
+
+       ! Now randomly choose the atoms to swap
+       ! positions(1:3,swap_atom_id_1) = im_pos(1:3,swap_atom_id_2)
+       ! positions(1:3,swap_atom_id_2) = im_pos(1:3,swap_atom_id_1)
+
+       xyz_species(swap_atom_id_1) = im_xyz_species(swap_atom_id_2)
+       xyz_species(swap_atom_id_2) = im_xyz_species(swap_atom_id_1)
+
+       species(swap_atom_id_1) = im_species(swap_atom_id_2)
+       species(swap_atom_id_2) = im_species(swap_atom_id_1) !swap_id_1
+
+       masses(swap_atom_id_1) = masses_types(swap_id_2)
+       masses(swap_atom_id_2) = masses_types(swap_id_1)
+
+       fix_atom(1:3,swap_atom_id_1)= .false.
+       fix_atom(1:3,swap_atom_id_2)= .false.
+
+       deallocate(swap_idx_1)
+       deallocate(swap_idx_2)
+
+       write(*,'(A,1X,I8,1X,A,1X,I8,1X,A)')'    MC Swap: ',&
+            & swap_atom_id_1, trim(swap_species_1), swap_atom_id_2,&
+            & trim(swap_species_2)
+    end if
+
 
     if (mc_move == "relax" .or. mc_move == "md" .or. mc_relax)then
        md_istep = -1

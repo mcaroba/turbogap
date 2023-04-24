@@ -531,6 +531,7 @@ end if
     implemented_mc_types(4) = "removal"
     implemented_mc_types(5) = "relax"
     implemented_mc_types(6) = "md"
+    implemented_mc_types(6) = "swap"
 
     k = 0.d0
 
@@ -646,6 +647,34 @@ end if
         allocate( params%mc_types(1:params%n_mc_types) )
         allocate( params%mc_acceptance(1:params%n_mc_types) )
         params%mc_acceptance = 1.d0 / params%n_mc_types
+      else if(keyword=='n_mc_swaps')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%n_mc_swaps
+        allocate( params%mc_swaps(1:2*params%n_mc_swaps) )
+        allocate( params%mc_swaps_id(1:2*params%n_mc_swaps) )
+      else if(keyword=='mc_swaps')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, (params%mc_swaps(nw),nw=1,2*params%n_mc_swaps)
+        !       Need the check the implemented types
+        valid_choice = .false.
+        do j = 1, 2*params%n_mc_swaps
+           valid_choice = .false.
+           do i = 1, n_species
+              if( trim(params%species_types(i)) == trim(params%mc_swaps(j)) )then
+                 params%mc_swaps_id(i) = i
+                 valid_choice = .true.
+              end if
+           end do
+           if( .not. valid_choice )then
+              if( rank == 0 )then
+                 write(*,*) "ERROR -> Invalid mc_swaps species keyword:", params%mc_swaps(j)
+                 write(*,*) "This is a list of valid options:"
+                 write(*,*) params%species_types
+              end if
+              stop
+           end if
+        end do
+
       else if(keyword=='mc_types')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, (params%mc_types(nw),nw=1,params%n_mc_types)
@@ -697,6 +726,12 @@ end if
       else if(keyword=='mc_hybrid_opt')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_hybrid_opt
+      else if(keyword=='n_exp_opt')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%n_exp_opt
+      else if(keyword=='do_exp_opt')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%do_exp_opt
       else if(keyword=='mc_acceptance')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, (params%mc_acceptance(nw),nw=1,params%n_mc_types)
@@ -1432,6 +1467,7 @@ end if
             else if( keyword == "vdw_v0" )then
               backspace(10)
               read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%vdw_v0
+
             end if
           end do
 !         We actually read in the "buffer" zone width, so transform to rcut_soft:

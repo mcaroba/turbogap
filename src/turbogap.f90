@@ -98,7 +98,7 @@ program turbogap
   character*64 :: keyword
   character*16 :: lattice_string(1:9)
   character*8 :: i_char
-  character*8, allocatable :: species_types(:), xyz_species(:), xyz_species_supercell(:), &
+  character*8, allocatable ::  xyz_species(:), xyz_species_supercell(:), &
        species_type_temp(:)
 
   character*1 :: keyword_first
@@ -2102,14 +2102,14 @@ program turbogap
 
                     call random_number(ranf)
 
+                    if (mc_move == "insertion") n_mc_species = n_mc_species +1
+                    if (mc_move == "removal"  ) n_mc_species = n_mc_species -1
 
                     !    ACCEPT OR REJECT
                     write(*, '(A,1X,A,1X,A,L4,1X,A,ES12.6,1X,A,1X,ES12.6)') 'Is ', trim(mc_move), &
                          'accepted?', p_accept > ranf, ' p_accept =', p_accept, ' ranf = ', ranf
                     if (p_accept > ranf)then
                        !             Accept
-                       if (mc_move == "insertion") n_mc_species = n_mc_species +1
-                       if (mc_move == "removal"  ) n_mc_species = n_mc_species -1
 
                        if ((mc_istep == 0 .or. mc_istep == params%mc_nsteps .or. &
                             modulo(mc_istep, params%write_xyz) == 0))then
@@ -2181,6 +2181,11 @@ program turbogap
                     do i = 1, params%n_mc_types
                        write(*,'(1X,A,1X,F12.8,1X,A)') '   ', params%mc_acceptance(i), '                      |'
                     end do
+                    write(*,'(1X,A,1X,I8,1X,A)')    'n_mc_swaps    = ', params%n_mc_swaps, '             |'
+                    write(*,'(1X,A)') 'mc_swaps:                              |'
+                    do i = 1, 2*params%n_mc_swaps
+                       write(*,'(1X,A,1X,A,1X,A)') '   ', params%mc_swaps(i), '                      |'
+                    end do
                     write(*,'(1X,A,1X,F17.8,1X,A)') 'mc_move_max   = ', params%mc_move_max,  'A   |'
                     write(*,'(1X,A,1X,F17.8,1X,A)') 'mc_mu         = ', params%mc_mu,        'eV  |'
                     write(*,'(1X,A,1X,A,1X,A)')     'mc_species    = ', trim(params%mc_species),   '                    |'
@@ -2204,6 +2209,7 @@ program turbogap
                     do i = 1, n_species
                        if (params%species_types(i) == params%mc_species ) mc_id=i
                     end do
+
 
                     !       Now use the image construct to store this as the image to compare to
                     call from_properties_to_image(images(i_current_image), positions, velocities, masses, &
@@ -2272,7 +2278,9 @@ program turbogap
                       & images(i_current_image)%fix_atom,&
                       & images(i_current_image)%masses, a_box, b_box,&
                       & c_box, indices, params%do_md, params%mc_relax,&
-                      & md_istep, mc_id, E_kinetic, instant_temp, params%t_beg )
+                      & md_istep, mc_id, E_kinetic, instant_temp, params%t_beg,&
+                      & params%n_mc_swaps, params%mc_swaps, params%mc_swaps_id, &
+                      & params%species_types)
 
                  rebuild_neighbors_list = .true.
                  ! end if
@@ -2314,7 +2322,6 @@ program turbogap
                          mc_file, .true. )
                  end if
                  ! As we have moved/added/removed, we must check the supercell and  broadcast the results
-
 
                  call read_xyz(mc_file, .true., params%all_atoms, params%do_timing, &
                       n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
