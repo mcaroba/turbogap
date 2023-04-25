@@ -67,8 +67,11 @@ module xyz_module
 !
   subroutine write_extxyz( Nat, md_istep, dt, temperature, pressure, a_cell, b_cell, c_cell, virial, &
                            species, positions, velocities, forces, local_energies, masses, &
-                           hirshfeld_v, write_property, write_array_property, fix_atom, &
-                           filename, overwrite )
+                           hirshfeld_v, write_property,&
+                           & write_array_property,&
+                           & write_local_properties,&
+                           & local_property_labels, fix_atom,&
+                           & filename , overwrite )
 
     implicit none
 
@@ -79,12 +82,14 @@ module xyz_module
     integer, intent(in) :: Nat, md_istep
     character(len=*), intent(in) :: species(:), filename
     logical, intent(in) :: write_property(:), write_array_property(:), fix_atom(:,:), overwrite
-
+    logical, allocatable, intent(in) :: write_local_properties(:)
+    character*1024, allocatable, intent(in) :: local_property_labels(:)
 !   Internal variables:
     real*8 :: vol
-    integer :: n_properties, n_array_properties, i, j
+    integer :: n_properties, n_array_properties, i, j, k
     character*1024 :: properties_string
     character*16 :: lattice_string(1:16), temp_string
+
 
     n_properties = 0
     do i = 1, size( write_property )
@@ -99,6 +104,15 @@ module xyz_module
         n_array_properties = n_array_properties + 1
       end if
     end do
+    ! Adding in for the local properties
+    if(allocated(write_local_properties))then
+       do i = 1, size( write_local_properties )
+          if( write_local_properties(i) )then
+             n_array_properties = n_array_properties + 1
+          end if
+       end do
+    end if
+
 
     if( md_istep == 0 .or. md_istep == -1 .or. overwrite)then
       open(unit=10, file=filename, status="unknown")
@@ -156,7 +170,21 @@ module xyz_module
         if( i < n_array_properties )then
           write(properties_string, "(A)") trim(adjustl(properties_string)) // ":"
         end if
-      end if
+     end if
+     ! Now we write in the local properties of those which are passed in
+     if(allocated(write_local_properties))then
+        do k=1, size(write_local_properties,1)
+           if( write_local_properties(k) )then
+              write(properties_string, "(A)") trim(adjustl(properties_string)) // local_property_labels(k) // ":R:1"
+              i = i + 1
+              if( i < n_array_properties )then
+                 write(properties_string, "(A)") trim(adjustl(properties_string)) // ":"
+              end if
+           end if
+        end do
+     end if
+
+! Not removing yet for compatibility
       if( write_array_property(7) )then
         write(properties_string, "(A)") trim(adjustl(properties_string)) // "hirshfeld_v:R:1"
         i = i + 1

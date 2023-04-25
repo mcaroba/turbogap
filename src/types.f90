@@ -31,12 +31,19 @@ module types
 
   ! GAP+descriptor data structure for SOAP
 
-  type exp_soap_turbo
-     real*8, allocatable :: exp_Qs(:,:), exp_alphas(:), exp_cutoff(:), exp_data(:,:)
-     real*8              :: exp_zeta, exp_delta, exp_V0
-     character*1024      :: file_exp_data, file_exp_alphas, file_exp_desc
-     integer             :: exp_n_sparse, exp_n_data
-  end type exp_soap_turbo
+  type local_property_soap_turbo
+     real*8, allocatable :: local_property_Qs(:,:),&
+          & local_property_alphas(:), local_property_cutoff(:),&
+          & local_property_data(:,:)
+     real*8              :: local_property_zeta, local_property_delta&
+          &, local_property_V0
+     character*1024      :: file_local_property_data="none",&
+          & file_local_property_alphas, file_local_property_desc,&
+          & local_property_label
+     integer             :: local_property_n_sparse,&
+          & local_property_n_data
+     logical :: local_property_has_data = .false., do_derivatives = .false.
+  end type local_property_soap_turbo
 
 
   type soap_turbo
@@ -47,14 +54,14 @@ module types
     real*8 :: zeta = 2.d0, delta = 1.d0, rcut_max, vdw_zeta, vdw_delta, vdw_V0
     integer, allocatable :: alpha_max(:), compress_P_i(:), compress_P_j(:)
     integer :: n_species, central_species = 0, dim, l_max, radial_enhancement = 0, n_max, n_sparse, &
-               vdw_n_sparse, compress_P_nonzero, n_exp=0
+               vdw_n_sparse, compress_P_nonzero, n_local_properties=0
     character*1024 :: file_alphas, file_desc, file_compress = "none", file_vdw_alphas, file_vdw_desc
-    character*1024, allocatable :: file_exp_data(:), file_exp_alphas(:), file_exp_desc(:)
     character*64 :: basis = "poly3", compress_mode = "none"
     character*32 :: scaling_mode = "polynomial"
     character*8, allocatable :: species_types(:)
-    logical :: compress_soap = .false., has_vdw = .false., has_exp = .false.
-    type(exp_soap_turbo), allocatable :: exp_models(:)
+    logical :: compress_soap = .false., has_vdw = .false.,&
+         & has_core_electron_be=.false. has_local_properties = .false.
+    type(local_property_soap_turbo), allocatable :: local_property_models(:)
   end type soap_turbo
 
 
@@ -104,7 +111,7 @@ module types
               mc_lnvol_max = 0.01d0, mc_min_dist = 0.2d0
 
     integer :: md_nsteps = 1, mc_nsteps = 1, write_xyz = 0, write_thermo = 1, which_atom = 0, &
-               vdw_mbd_nfreq = 11, n_mc_types = 0, n_nested = 0, mc_idx = 1, mc_nrelax=0
+               vdw_mbd_nfreq = 11, n_mc_types = 0, n_nested = 0, mc_idx = 1, mc_nrelax=0, n_local_properties=0
 
     character*1024 :: atoms_file
     character*32 :: vdw_type = "none"
@@ -121,8 +128,10 @@ module types
                write_array_property(1:8) = .true., write_masses = .false., write_fixes = .true., &
                variable_time_step = .false., vdw_mbd_grad = .false., do_nested_sampling = .false., &
                scale_box_nested = .false., mc_write_xyz = .false., mc_relax = .false.
+    logical, allocatable :: write_local_properties(:)
 
   end type input_parameters
+
 
 ! This is a container for atomic images
   type image

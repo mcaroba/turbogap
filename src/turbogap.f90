@@ -76,7 +76,8 @@ program turbogap
   integer, allocatable :: displs(:), displs2(:), counts(:), counts2(:)
   integer :: update_bar, n_sparse, idx, gd_istep = 0
   logical, allocatable :: do_list(:), has_vdw_mpi(:), fix_atom(:,:)
-  logical :: rebuild_neighbors_list = .true., exit_loop = .true., gd_box_do_pos = .true., restart_box_optim = .false.
+  logical :: rebuild_neighbors_list = .true., exit_loop = .true.,&
+       & gd_box_do_pos = .true., restart_box_optim = .false.
   character*1 :: creturn = achar(13)
   ! Clean up these variables after code refactoring !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   integer, allocatable :: n_neigh(:), neighbors_list(:), alpha_max(:), species(:), species_supercell(:), &
@@ -116,6 +117,7 @@ program turbogap
   type(distance_2b), allocatable :: distance_2b_hypers(:)
   type(angle_3b), allocatable :: angle_3b_hypers(:)
   type(core_pot), allocatable :: core_pot_hypers(:)
+  real*8, allocatable :: local_properties(:,:), local_properties_der(:,:,:)
 
   !vdw crap
   real*8, allocatable :: v_neigh_vdw(:), energies_vdw(:), forces_vdw(:,:), this_energies_vdw(:), this_forces_vdw(:,:)
@@ -1012,6 +1014,18 @@ program turbogap
               hirshfeld_v_cart_der = 0.d0
            end if
         end if
+
+! Adding allocation of local properties
+        if( any(soap_turbo_hypers(:)%has_local_properties) ) then
+           if( n_sites /= n_sites_prev .or.  params%do_mc  )then
+              if( allocated(local_properties) )then
+                 deallocate( local_properties )
+              end if
+              allocate(local_properties(1:params%n_local_properties, 1:n_sites))
+           end if
+           local_properties = 0.d0
+        end if
+
         if( params%do_forces )then
            if( n_sites /= n_sites_prev .or.  params%do_mc )then
               if( allocated(forces) )deallocate( forces, forces_soap, forces_2b, forces_3b, forces_core_pot, forces_vdw )
@@ -1109,7 +1123,7 @@ program turbogap
                    soap_turbo_hypers(i)%has_vdw, soap_turbo_hypers(i)%vdw_Qs, soap_turbo_hypers(i)%vdw_alphas, &
                    soap_turbo_hypers(i)%vdw_zeta, soap_turbo_hypers(i)%vdw_delta, soap_turbo_hypers(i)%vdw_V0, &
                    this_energies, this_forces, this_hirshfeld_v_pt, this_hirshfeld_v_cart_der_pt, &
-                   this_virial )
+                   this_virial, soap_turbo_hypers(i)%has_local_properties, soap_turbo_hypers(i)%local_property_models
 
               energies_soap = energies_soap + this_energies
               if( soap_turbo_hypers(i)%has_vdw )then
