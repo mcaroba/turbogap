@@ -383,6 +383,44 @@ end if
 
 
 
+
+
+!**************************************************************************
+  subroutine read_exp_data(file_data, n_points, data)
+
+    implicit none
+
+!   Input variables
+    character*1024, intent(in) :: file_data
+!   Output variables
+    real*8, allocatable, intent(out) :: data(:)
+    integer, intent(out) :: n_points
+
+!   Internal variables
+    integer :: i, j, iostatus, dim, unit_number
+
+
+    !   Read data file to figure out data file size
+    open(newunit=unit_number, file=file_data, status="old")
+    iostatus = 0
+    n_points = -1
+    do while(iostatus == 0)
+       read(unit_number, *, iostat=iostatus)
+       n_points = n_points + 1
+    end do
+    close(unit_number)
+
+    allocate( data(1:2,1:n_points) )
+    !     Read exp data
+    open(newunit=unit_number, file=file_data, status="old")
+    do i = 1, n_points
+       read(unit_number, *)  data(1,i), data(2,i)
+    end do
+    close(unit_number)
+
+  end subroutine
+!**************************************************************************
+
 !**************************************************************************
   subroutine read_alphas_and_descriptors(file_desc, file_alphas, n_sparse, descriptor_type, alphas, Qs, cutoff)
 
@@ -1189,16 +1227,15 @@ end if
 
 !   Output variables
     real*8, intent(out) :: rcut_max
-    integer, intent(out) :: n_soap_turbo, n_distance_2b, n_angle_3b, n_core_pot
+    integer, intent(out) :: n_soap_turbo, n_distance_2b, n_angle_3b, n_core_pot, nw
     type(soap_turbo), allocatable, intent(out) :: soap_turbo_hypers(:)
     type(distance_2b), allocatable, intent(out) :: distance_2b_hypers(:)
     type(angle_3b), allocatable, intent(out) :: angle_3b_hypers(:)
     type(core_pot), allocatable, intent(out) :: core_pot_hypers(:)
-
 !   Internal variables
     real*8, allocatable :: u(:), x(:), V(:)
     real*8 :: sig, p, qn, un
-    integer :: iostatus, i, counter, n_species, n_sparse, ijunk, n, n_nonzero
+    integer :: iostatus, i, counter, n_species, n_sparse, ijunk, n, n_nonzero, j
     character*64 :: keyword, cjunk, compress_string
     character*1 :: keyword_first
 
@@ -1432,6 +1469,53 @@ end if
             else if( keyword == "vdw_v0" )then
               backspace(10)
               read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%vdw_v0
+            else if( keyword == "has_exp" )then
+              backspace(10)
+              read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%has_exp
+            else if( keyword == "n_exp" )then
+              backspace(10)
+              read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%n_exp
+              ! Now allocate the exp_soap_turbo object in the soap_turbo_hypers
+              allocate( soap_turbo_hypers(n_soap_turbo)%exp_models(1:n_exp) )
+
+            else if( keyword == "exp_qs" )then
+              backspace(10)
+              read(10, *, iostat=iostatus) cjunk, cjunk, &
+                   (soap_turbo_hypers(n_soap_turbo)%exp_models(nw)&
+                   &%file_exp_desc,nw=1&
+                   &,soap_turbo_hypers(n_soap_turbo)%n_exp)
+            else if( keyword == "exp_alphas" )then
+              backspace(10)
+              read(10, *, iostat=iostatus) cjunk, cjunk, &
+                   (soap_turbo_hypers(n_soap_turbo)%exp_models(nw)&
+                   &%file_exp_alphas,nw=1&
+                   &,soap_turbo_hypers(n_soap_turbo)%n_exp)
+            else if( keyword == "exp_data" )then
+              backspace(10)
+              read(10, *, iostat=iostatus) cjunk, cjunk, &
+                   (soap_turbo_hypers(n_soap_turbo)%exp_models(nw)&
+                   &%file_exp_data ,nw=1&
+                   &,soap_turbo_hypers(n_soap_turbo) %n_exp)
+
+
+            else if( keyword == "exp_zeta" )then
+              backspace(10)
+              read(10, *, iostat=iostatus) cjunk, cjunk,&
+                   & (soap_turbo_hypers(n_soap_turbo)&
+                   &%exp_models(nw)%file_exp_zeta,nw=1&
+                   &,soap_turbo_hypers(n_soap_turbo)%n_exp)
+            else if( keyword == "exp_delta" )then
+              backspace(10)
+              read(10, *, iostat=iostatus) cjunk, cjunk, &
+                   & (soap_turbo_hypers(n_soap_turbo)%exp_models(nw)&
+                   &%exp_delta ,nw=1,soap_turbo_hypers(n_soap_turbo)&
+                   &%n_exp)
+            else if( keyword == "exp_v0" )then
+              backspace(10)
+              read(10, *, iostat=iostatus) cjunk, cjunk, &
+                   & (soap_turbo_hypers(n_soap_turbo)%exp_models(nw)&
+                   &%exp_V0 ,nw=1,soap_turbo_hypers(n_soap_turbo)&
+                   &%n_exp)
             end if
           end do
 !         We actually read in the "buffer" zone width, so transform to rcut_soft:
@@ -1452,13 +1536,32 @@ end if
                                              soap_turbo_hypers(n_soap_turbo)%Qs, &
                                              soap_turbo_hypers(n_soap_turbo)%cutoff)
             if( soap_turbo_hypers(n_soap_turbo)%has_vdw )then
-              call read_alphas_and_descriptors(soap_turbo_hypers(n_soap_turbo)%file_vdw_desc, &
-                                               soap_turbo_hypers(n_soap_turbo)%file_vdw_alphas, &
-                                               soap_turbo_hypers(n_soap_turbo)%vdw_n_sparse, &
-                                               "soap_turbo", soap_turbo_hypers(n_soap_turbo)%vdw_alphas, &
-                                               soap_turbo_hypers(n_soap_turbo)%vdw_Qs, &
-                                               soap_turbo_hypers(n_soap_turbo)%vdw_cutoff)
+               call read_alphas_and_descriptors(soap_turbo_hypers(n_soap_turbo)%file_vdw_desc, &
+                    soap_turbo_hypers(n_soap_turbo)%file_vdw_alphas, &
+                    soap_turbo_hypers(n_soap_turbo)%vdw_n_sparse, &
+                    "soap_turbo", soap_turbo_hypers(n_soap_turbo)%vdw_alphas, &
+                    soap_turbo_hypers(n_soap_turbo)%vdw_Qs, &
+                    soap_turbo_hypers(n_soap_turbo)%vdw_cutoff)
+
             end if
+
+            if( soap_turbo_hypers(n_soap_turbo)%has_exp )then
+               do j=1, soap_turbo_hypers(n_soap_turbo)%n_exp
+
+                  call read_alphas_and_descriptors(soap_turbo_hypers(n_soap_turbo)%exp_models(j)%file_exp_desc, &
+                       soap_turbo_hypers(n_soap_turbo)%exp_models(j)%file_exp_alphas, &
+                       soap_turbo_hypers(n_soap_turbo)%exp_models(j)%exp_n_sparse, &
+                       "soap_turbo", soap_turbo_hypers(n_soap_turbo)%exp_models(j)%exp_alphas, &
+                       soap_turbo_hypers(n_soap_turbo)%exp_models(j)%exp_Qs, &
+                       soap_turbo_hypers(n_soap_turbo)%exp_models(j)%exp_cutoff)
+
+                  call read_exp_data(soap_turbo_hypers(n_soap_turbo)%exp_models(j)%file_exp_data,&
+                       soap_turbo_hypers(n_soap_turbo)%exp_models(j)%exp_n_data,&
+                       soap_turbo_hypers(n_soap_turbo)%exp_models(j)%exp_data)
+
+               end do
+            end if
+
           end if
           do i = 1, n_species
             if( soap_turbo_hypers(n_soap_turbo)%rcut_hard(i) > rcut_max )then
