@@ -35,22 +35,24 @@ module mpi_helper
 
 
   subroutine allocate_soap_turbo_hypers(n_soap_turbo, n_species, n_sparse, dim, compress_P_nonzero, &
-                                        vdw_n_sparse, has_vdw, compress_soap, desc)
+       local_properties_n_sparse, local_properties_n_data, has_local_properties, n_local_properties, &
+       compress_soap, desc)
 
 !   Input variables
-    integer, intent(in) :: n_soap_turbo, n_species(:), n_sparse(:), dim(:), vdw_n_sparse(:), &
-                           compress_P_nonzero(:)
-    logical, intent(in) :: compress_soap(:), has_vdw(:)
+    integer, intent(in) :: n_soap_turbo, n_species(:), n_sparse(:), dim(:), local_properties_n_sparse(:), &
+                           compress_P_nonzero(:), n_local_properties(:), local_properties_n_data(:)
+    logical, intent(in) :: compress_soap(:), has_local_properties(:)
 
 !   Output_variables
     type(soap_turbo), allocatable, intent(out) :: desc(:)
 
 !   Internal variables
 
-    integer :: i, n_sp, d, cPnz
+    integer :: i, n_sp, d, cPnz, counter, counter2
 
     allocate( desc(1:n_soap_turbo) )
-
+    counter = 1
+    counter2 = 1
     do i = 1, n_soap_turbo
       n_sp = n_species(i)
       desc(i)%n_species = n_sp
@@ -80,12 +82,24 @@ module mpi_helper
         allocate( desc(i)%compress_P_el(1:cPnz) )
         allocate( desc(i)%compress_P_i(1:cPnz) )
         allocate( desc(i)%compress_P_j(1:cPnz) )
-      end if
-      if( has_vdw(i) )then
-        n_sp = vdw_n_sparse(i)
-        desc(i)%vdw_n_sparse = n_sp
-        allocate( desc(i)%vdw_alphas(1:n_sp) )
-        allocate( desc(i)%vdw_Qs(1:d, 1:n_sp) )
+     end if
+      if( has_local_properties(i) )then
+         desc(i)%n_local_properties = n_local_properties(i)
+         allocate( desc(i)%local_property_models(1:n_local_properties(i)))
+         ! actually this isn't that simple as one has to broadcast and allocate the local_property models
+         do j = 1, desc(i)%n_local_properties
+            n_sp = local_properties_n_sparse(counter)
+            desc(i)%local_property_models(j)%n_sparse = n_sp
+            allocate( desc(i)%local_property_models(j)%alphas(1:n_sp) )
+            ! Assuming same dimension
+            allocate( desc(i)%local_property_models(j)%Qs(1:d, 1:n_sp) )
+            if (desc(i)%local_property_models(j)%has_data)then
+               n_sp = local_properties_n_data(counter2)
+               allocate( desc(i)%local_property_models(j)%data(1:2,1:n_sp) )
+               counter2 = counter2 + 1
+            end if
+            counter = counter + 1
+         end do
       end if
     end do
 

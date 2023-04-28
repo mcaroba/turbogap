@@ -49,7 +49,7 @@ module gap_interface
                           xyz_species, xyz_species_supercell, alphas, Qs, all_atoms, &
                           which_atom, indices, soap, soap_cart_der, der_neighbors, der_neighbors_list, &
                           energies0, forces0, virial,&
-                          & has_local_properties, n_pairs, in_to_out_pairs,&
+                          & has_local_properties, n_atom_pairs, in_to_out_pairs,&
                           & n_all_sites, in_to_out_site, n_neigh_out, n_sites_out )
 
     implicit none
@@ -62,8 +62,7 @@ module gap_interface
     integer, intent(in) :: n_sites0, n_neigh0(:), neighbors_list0(:), n_species, central_species, &
                            radial_enhancement, which_atom, indices(1:3), alpha_max(:), l_max, &
                            n_total_sites, compress_P_nonzero,&
-                           & compress_P_i(:), compress_P_j(:),&
-                           & n_local_properties
+                           & compress_P_i(:), compress_P_j(:)
     logical, intent(in) :: do_timing, do_derivatives, compress_soap,&
          & do_forces, do_prediction, all_atoms, write_soap,&
          & write_derivatives,  has_local_properties
@@ -286,14 +285,14 @@ module gap_interface
 
 !       do i = 1, n_local_properties
 !          if(local_property_models(i)%do_derivatives)then
-!             allocate( local_properties_der(1:3, 1:n_sites_out, 1:n_local_properties ) )
+!             allocate( local_properties_cart_der(1:3, 1:n_sites_out, 1:n_local_properties ) )
 !          end if
 !       end do
 
 !       do i = 1, n_local_properties
 !          local_properties = 0.d0
 !          if(local_property_models(i)%do_derivatives)then
-!             local_properties_der = 0.d0
+!             local_properties_cart_der = 0.d0
 !          end if
 
 !          call local_property_predict( soap, &
@@ -304,7 +303,7 @@ module gap_interface
 !               & local_property_models(i)%zeta,&
 !               & local_properties(i,1:n_sites_out),&
 !               & local_property_models(i)%do_derivatives,&
-!               & soap_cart_der, n_neigh_out, local_properties_der(1:3, 1:n_sites_out, i) )
+!               & soap_cart_der, n_neigh_out, local_properties_cart_der(1:3, 1:n_sites_out, i) )
 !          do j = 1, n_sites_out
 !             i2 = in_to_out_site(j)
 !             local_properties0(i2) = local_properties(j)
@@ -319,7 +318,7 @@ module gap_interface
 
 !       deallocate( local_properties )
 !       do i = 1, n_local_properties
-!          if(local_property_models(i)%do_derivatives) deallocate( local_properties_der )
+!          if(local_property_models(i)%do_derivatives) deallocate( local_properties_cart_der )
 !       end do
 
 ! !call cpu_time(time2)
@@ -412,16 +411,17 @@ module gap_interface
 
 subroutine get_local_properties( soap, Qs, alphas, V0, delta, zeta, &
                               local_property0, do_derivatives, soap_cart_der, n_neigh_out, &
-                              local_property_cart_der0, n_pairs,&
+                              local_property_cart_der0, n_atom_pairs,&
                               & in_to_out_pairs, n_all_sites,&
-                              & in_to_out_site, do_derivatives, n_sites_out  )
+                              & in_to_out_site, n_sites_out )
 
   real*8, allocatable, intent(in) :: soap(:,:), soap_cart_der(:,:,:)
   real*8, intent(in) ::  Qs(:,:), alphas(:), zeta, delta, V0
   real*8, intent(inout) :: local_property0(:), local_property_cart_der0(:,:)
-  real*8 :: local_property(:), local_property_cart_der(:,:)
-  integer, intent(in) :: n_pairs, in_to_out_pairs(:), n_all_sites,&
+  real*8, allocatable :: local_property(:), local_property_cart_der(:,:)
+  integer, intent(in) :: n_atom_pairs, in_to_out_pairs(:), n_all_sites,&
        & in_to_out_site(:), n_neigh_out(:), n_sites_out
+  logical, intent(in) :: do_derivatives
 
   allocate( local_property( 1:n_sites_out ) )
   local_property = 0.d0
@@ -450,6 +450,7 @@ subroutine get_local_properties( soap, Qs, alphas, V0, delta, zeta, &
   end if
 !call cpu_time(time2)
 !write(*,*) "hirshfeld_v time =", time2-time1, "seconds"
+end subroutine get_local_properties
 
 
 

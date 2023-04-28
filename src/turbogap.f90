@@ -67,6 +67,12 @@ program turbogap
   real*8, allocatable, target :: this_hirshfeld_v(:), this_hirshfeld_v_cart_der(:,:)
   real*8, pointer :: this_hirshfeld_v_pt(:), this_hirshfeld_v_cart_der_pt(:,:)
 
+  real*8, allocatable, target :: local_properties(:,:), local_properties_cart_der(:,:,:)
+  ! Have one rank lower for the pointer, such that it just relates to a sub array of the local properties/cart_der
+  real*8, pointer :: local_properties_pt(:), local_properties_cart_der_pt(:,:)
+  real*8, allocatable, target :: this_local_properties(:), this_local_properties_cart_der(:,:)
+  real*8, pointer :: this_local_properties_pt(:), this_local_properties_cart_der_pt(:,:)
+
 
   real*8, allocatable :: all_energies(:,:), all_forces(:,:,:), all_virial(:,:,:)
   real*8, allocatable :: all_this_energies(:,:), all_this_forces(:,:,:), all_this_virial(:,:,:)
@@ -77,20 +83,22 @@ program turbogap
        instant_pressure_tensor(1:3, 1:3), time_step, md_time, instant_pressure_prev
   integer, allocatable :: displs(:), displs2(:), counts(:), counts2(:), in_to_out_pairs(:), in_to_out_site(:)
   integer :: update_bar, n_sparse, idx, gd_istep = 0
-  logical, allocatable :: do_list(:), has_vdw_mpi(:), fix_atom(:,:)
+  logical, allocatable :: do_list(:), has_local_properties_mpi(:), fix_atom(:,:)
   logical :: rebuild_neighbors_list = .true., exit_loop = .true.,&
        & gd_box_do_pos = .true., restart_box_optim = .false.
   character*1 :: creturn = achar(13)
   ! Clean up these variables after code refactoring !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   integer, allocatable :: n_neigh(:), neighbors_list(:), alpha_max(:), species(:), species_supercell(:), &
        neighbor_species(:), sph_temp_int(:), der_neighbors(:), der_neighbors_list(:), &
-       i_beg_list(:), i_end_list(:), j_beg_list(:), j_end_list(:), species_idx(:), n_neigh_out(:)
+       i_beg_list(:), i_end_list(:), j_beg_list(:), j_end_list(:), species_idx(:), n_neigh_out(:), n_local_properties_mpi(:)
   integer :: n_sites, i, j, k, i2, j2, n_soap, k2, k3, l, n_sites_this, ierr, rank, ntasks, dim, n_sp, &
        n_pos, n_sp_sc, this_i_beg, this_i_end, this_j_beg, this_j_end, this_n_sites_mpi, n_sites_prev = 0, &
-       n_atom_pairs_by_rank_prev, cPnz, n_pairs, n_all_sites, n_sites_out
-  integer :: l_max, n_atom_pairs, n_max, ijunk, central_species = 0, n_atom_pairs_total
+       n_atom_pairs_by_rank_prev, cPnz, n_pairs, n_all_sites,&
+       & n_sites_out, n_local_properties_tot=0, n_lp_count=0, n_lp_data_count=0, n_data_local_properties_tot=0
+  integer :: l_max, n_atom_pairs, n_max, ijunk, central_species = 0,&
+       & n_atom_pairs_total
   integer :: iostatus, counter = 0, counter2
-  integer :: which_atom = 0, n_species = 1, n_xyz, indices1:3
+  integer :: which_atom = 0, n_species = 1, n_xyz, indices(1:3)
   integer :: radial_enhancement = 0
   integer :: md_istep, mc_istep, mc_id, n_mc, n_mc_species
 
@@ -120,7 +128,7 @@ program turbogap
   type(angle_3b), allocatable :: angle_3b_hypers(:)
   type(core_pot), allocatable :: core_pot_hypers(:)
 
-  real*8, allocatable :: local_properties(:,:), local_properties_der(:,:,:)
+
 
   !vdw crap
   real*8, allocatable :: v_neigh_vdw(:), energies_vdw(:), forces_vdw(:,:), this_energies_vdw(:), this_forces_vdw(:,:)
@@ -128,8 +136,8 @@ program turbogap
   real*8, allocatable :: temp_1d(:), temp_1d_bis(:), temp_2d(:,:)
   integer, allocatable :: temp_1d_int(:), n_atom_pairs_by_rank(:), displ(:)
   integer, allocatable :: n_species_mpi(:), n_sparse_mpi_soap_turbo(:), dim_mpi(:), n_sparse_mpi_distance_2b(:), &
-       n_sparse_mpi_angle_3b(:), n_mpi_core_pot(:), vdw_n_sparse_mpi_soap_turbo(:), &
-       n_neigh_local(:), compress_P_nonzero_mpi(:)
+       n_sparse_mpi_angle_3b(:), n_mpi_core_pot(:), local_properties_n_sparse_mpi_soap_turbo(:), &
+       n_neigh_local(:), compress_P_nonzero_mpi(:), local_properties_n_data_mpi_soap_turbo(:)
   integer :: i_beg, i_end, n_sites_mpi, j_beg, j_end, size_soap_turbo, size_distance_2b, size_angle_3b
   integer :: n_nonzero
   logical, allocatable :: compress_soap_mpi(:)
@@ -379,9 +387,11 @@ program turbogap
 
      ! Check that the local properties we want to compute are valid
      ! with the .gap input we have
-     if(allocated(params%compute_local_properties))then
-        do j = 1, n_soap_turbo
-           if( soap_turbo_hypers(j)%has_local_properties )then
+     n_local_properties_tot = 0
+     n_data_local_properties_tot = 0
+     do j = 1, n_soap_turbo
+        if( soap_turbo_hypers(j)%has_local_properties )then
+           if(allocated(params%compute_local_properties))then
               do k = 1, soap_turbo_hypers(j)%n_local_properties
                  valid_local_properties = .false.
 
@@ -393,6 +403,13 @@ program turbogap
                        valid_local_properties=.true.
                     end if
                  end do
+
+                 if (soap_turbo_hypers(j)%local_property_models(k)%has_data)then
+                    n_data_local_properties_tot = n_data_local_properties_tot + 1
+                 end if
+
+                 n_local_properties_tot = n_local_properties_tot + 1
+
                  if (.not. valid_local_properties )then
                     write(*,*) 'FATAL: Local properties to compute in the input file do not match those in the descriptor'
                     write(*,*) params%compute_local_properties
@@ -402,8 +419,8 @@ program turbogap
                  end if
               end do
            end if
-        end do
-     end if
+        end if
+     end do
 
 
 
@@ -416,6 +433,7 @@ program turbogap
      call mpi_bcast(n_distance_2b, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(n_angle_3b, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(n_core_pot, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+     call mpi_bcast(n_local_properties_tot, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      !   Broadcast the maximum cutoff distance
      call mpi_bcast(rcut_max, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
      !   Processes other than 0 need to allocate the data structures on their own
@@ -424,8 +442,9 @@ program turbogap
      allocate( n_species_mpi(1:n_soap_turbo) )
      allocate( n_sparse_mpi_soap_turbo(1:n_soap_turbo) )
      allocate( dim_mpi(1:n_soap_turbo) )
-     allocate( vdw_n_sparse_mpi_soap_turbo(1:n_soap_turbo) )
-     allocate( has_vdw_mpi(1:n_soap_turbo) )
+     allocate( local_properties_n_sparse_mpi_soap_turbo(1:n_local_properties_tot))
+     allocate( local_properties_n_data_mpi_soap_turbo(1:n_data_local_properties_tot))
+     allocate( has_local_properties_mpi(1:n_soap_turbo) )
      allocate( compress_soap_mpi(1:n_soap_turbo) )
      allocate( n_sparse_mpi_distance_2b(1:n_distance_2b) )
      allocate( n_sparse_mpi_angle_3b(1:n_angle_3b) )
@@ -435,20 +454,54 @@ program turbogap
         n_species_mpi = soap_turbo_hypers(1:n_soap_turbo)%n_species
         n_sparse_mpi_soap_turbo = soap_turbo_hypers(1:n_soap_turbo)%n_sparse
         dim_mpi = soap_turbo_hypers(1:n_soap_turbo)%dim
-        vdw_n_sparse_mpi_soap_turbo = soap_turbo_hypers(1:n_soap_turbo)%vdw_n_sparse
-        has_vdw_mpi = soap_turbo_hypers(1:n_soap_turbo)%has_vdw
+        has_local_properties_mpi = soap_turbo_hypers(1:n_soap_turbo)%has_local_properties
+        n_local_properties_mpi = soap_turbo_hypers(1:n_soap_turbo)%n_local_properties
         compress_soap_mpi = soap_turbo_hypers(1:n_soap_turbo)%compress_soap
         n_sparse_mpi_distance_2b = distance_2b_hypers(1:n_distance_2b)%n_sparse
         n_sparse_mpi_angle_3b = angle_3b_hypers(1:n_angle_3b)%n_sparse
         n_mpi_core_pot = core_pot_hypers(1:n_core_pot)%n
         compress_P_nonzero_mpi = soap_turbo_hypers(1:n_soap_turbo)%compress_P_nonzero
+
+
+        ! Allocate the arrays have n_sparse and n_data
+        if( any( soap_turbo_hypers(:)%has_local_properties ))then
+           n_lp_count = 1
+           n_lp_data_count = 1
+
+           do i = 1, n_soap_turbo
+              do j = 1, n_local_properties_mpi(i)
+                 local_properties_n_sparse_mpi_soap_turbo(n_lp_count) =&
+                      & soap_turbo_hypers(i)%local_property_models(j)&
+                      &%n_sparse
+                 n_lp_count = n_lp_count + 1
+              end do
+              do j = 1, n_local_properties_mpi(i)
+                 local_properties_n_data_mpi_soap_turbo(n_lp_data_count) =&
+                      & soap_turbo_hypers(i)%local_property_models(j)&
+                      &%n_data
+                 n_lp_data_count = n_lp_data_count + 1
+              end do
+           end do
+
+        end if
+
+
      END IF
      call cpu_time(time_mpi(1))
      call mpi_bcast(n_species_mpi, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(n_sparse_mpi_soap_turbo, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(dim_mpi, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-     call mpi_bcast(vdw_n_sparse_mpi_soap_turbo, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-     call mpi_bcast(has_vdw_mpi, n_soap_turbo, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+     call mpi_bcast(n_local_properties_tot, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+     call mpi_bcast(n_data_local_properties_tot , n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+     call mpi_bcast(local_properties_n_sparse_mpi_soap_turbo,&
+          & n_local_properties_tot, MPI_INTEGER, 0,&
+          & MPI_COMM_WORLD, ierr)
+     call mpi_bcast(local_properties_n_data_mpi_soap_turbo,&
+          & n_data_local_properties_tot, MPI_INTEGER, 0,&
+          & MPI_COMM_WORLD, ierr)
+     call mpi_bcast(has_local_properties_mpi, n_soap_turbo,&
+          & MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+     call mpi_bcast(n_local_properties_mpi, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(compress_soap_mpi, n_soap_turbo, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(n_sparse_mpi_distance_2b, n_distance_2b, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(n_sparse_mpi_angle_3b, n_angle_3b, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
@@ -458,8 +511,8 @@ program turbogap
      time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
      IF( rank /= 0 )THEN
         call allocate_soap_turbo_hypers(n_soap_turbo, n_species_mpi, n_sparse_mpi_soap_turbo, dim_mpi, &
-             compress_P_nonzero_mpi, vdw_n_sparse_mpi_soap_turbo, &
-             has_vdw_mpi, compress_soap_mpi, soap_turbo_hypers)
+             compress_P_nonzero_mpi, local_properties_n_sparse_mpi_soap_turbo, local_properties_n_data_mpi_soap_turbo, &
+             has_local_properties_mpi, n_local_properties_mpi, compress_soap_mpi, soap_turbo_hypers)
         call allocate_distance_2b_hypers(n_distance_2b, n_sparse_mpi_distance_2b, distance_2b_hypers)
         call allocate_angle_3b_hypers(n_angle_3b, n_sparse_mpi_angle_3b, angle_3b_hypers)
         call allocate_core_pot_hypers(n_core_pot, n_mpi_core_pot, core_pot_hypers)
@@ -515,17 +568,30 @@ program turbogap
            call mpi_bcast(soap_turbo_hypers(i)%compress_P_j(1:cPnz), cPnz, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
         end if
         call mpi_bcast(soap_turbo_hypers(i)%has_vdw, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
-        if( soap_turbo_hypers(i)%has_vdw )then
-           n_sparse = soap_turbo_hypers(i)%vdw_n_sparse
-           call mpi_bcast(soap_turbo_hypers(i)%vdw_delta, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-           call mpi_bcast(soap_turbo_hypers(i)%vdw_zeta, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-           call mpi_bcast(soap_turbo_hypers(i)%vdw_V0, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-           call mpi_bcast(soap_turbo_hypers(i)%vdw_alphas(1:n_sparse)&
-                &, n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD,&
-                & ierr)
-           call mpi_bcast(soap_turbo_hypers(i)%vdw_Qs(1:dim,&
-                & 1:n_sparse), n_sparse*dim, MPI_DOUBLE_PRECISION, 0,&
-                & MPI_COMM_WORLD, ierr)
+        if( soap_turbo_hypers(i)%has_local_properties )then
+           do j = 1, soap_turbo_hypers(i)%n_local_properties
+              n_sparse = soap_turbo_hypers(i)%local_property_models(j)%n_sparse
+              call mpi_bcast(soap_turbo_hypers(i)%local_property_models(j)%delta, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+              call mpi_bcast(soap_turbo_hypers(i)%local_property_models(j)%zeta, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+              call mpi_bcast(soap_turbo_hypers(i)%local_property_models(j)%V0, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+              call mpi_bcast(soap_turbo_hypers(i)%local_property_models(j)%alphas(1:n_sparse)&
+                   &, n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD,&
+                   & ierr)
+              call mpi_bcast(soap_turbo_hypers(i)%local_property_models(j)%Qs(1:dim,&
+                   & 1:n_sparse), n_sparse*dim, MPI_DOUBLE_PRECISION, 0,&
+                   & MPI_COMM_WORLD, ierr)
+              if (soap_turbo_hypers(i)%local_property_models(j)%has_data)then
+                 call mpi_bcast(soap_turbo_hypers(i)%local_property_models(j)%n_data, 1, MPI_DOUBLE_PRECISION, 0,&
+                      & MPI_COMM_WORLD, ierr)
+                 ! Broadcast the data too
+                 call mpi_bcast(soap_turbo_hypers(i)&
+                      &%local_property_models(j)%data(1:2&
+                      &,1:soap_turbo_hypers(i)%local_property_models(j)&
+                      &%n_data), 2*soap_turbo_hypers(i)%local_property_models(j)%n_data,&
+                      & MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+              end if
+
+           end do
         end if
      end do
      do i = 1, n_distance_2b
@@ -833,7 +899,6 @@ program turbogap
      !   species, species_supercell, indices, a_box, b_box, c_box and n_sites. I should put this into a module!!!!!!!
 
 
-        allocate( soap_turbo_hypers(n_soap_turbo)%local_property_models(nw)%values(1:n_) )
 
 
 #ifdef _MPIF90
@@ -1029,43 +1094,8 @@ program turbogap
         energies_vdw = 0.d0
 
 ! Adding allocation of local properties
-        if( any(soap_turbo_hypers(:)%has_local_properties) ) then
-           if( n_sites /= n_sites_prev .or.  params%do_mc  )then
-              if( allocated(local_properties) )then
-                 deallocate( local_properties )
-              end if
-              allocate(local_properties(1:n_sites, 1:params%n_local_properties))
-           end if
-           local_properties = 0.d0
-        end if
 
         ! Now one could use pointers such that hirshfeld_v(:) acts as an alias for local_properties(vdw_index,:)...
-
-        if( any( soap_turbo_hypers(:)%has_vdw ) )then
-           if( n_sites /= n_sites_prev .or.  params%do_mc  )then
-              if( allocated(hirshfeld_v) )then
-                 nullify( this_hirshfeld_v_pt )
-                 deallocate( this_hirshfeld_v, hirshfeld_v )
-                 if( params%do_forces )then
-                    nullify( this_hirshfeld_v_cart_der_pt )
-                    deallocate( this_hirshfeld_v_cart_der, hirshfeld_v_cart_der )
-                 end if
-              end if
-              allocate( hirshfeld_v(1:n_sites) )
-              allocate( this_hirshfeld_v(1:n_sites) )
-              !         I don't remember why this needs a pointer <----------------------------------------- CHECK
-              this_hirshfeld_v_pt => this_hirshfeld_v
-           end if
-           hirshfeld_v = 0.d0
-           if( params%do_forces )then
-              if( n_atom_pairs_by_rank(rank+1) /= n_atom_pairs_by_rank_prev )then
-                 if( allocated(hirshfeld_v_cart_der) )deallocate( hirshfeld_v_cart_der, this_hirshfeld_v_cart_der )
-                 allocate( hirshfeld_v_cart_der(1:3, 1:n_atom_pairs_by_rank(rank+1)) )
-                 allocate( this_hirshfeld_v_cart_der(1:3, 1:n_atom_pairs_by_rank(rank+1)) )
-              end if
-              hirshfeld_v_cart_der = 0.d0
-           end if
-        end if
 
         if( any( soap_turbo_hypers(:)%has_local_properties ) )then
            if( n_sites /= n_sites_prev .or.  params%do_mc  )then
@@ -1080,21 +1110,26 @@ program turbogap
               allocate( local_properties(1:n_sites, 1:params%n_local_properties) )
               allocate( this_local_properties(1:n_sites) )
               !         I don't remember why this needs a pointer <----------------------------------------- CHECK
-              this_local_properties_pt => this_local_properties
            end if
            local_properties = 0.d0
 
            if( params%do_forces )then
               if( n_atom_pairs_by_rank(rank+1) /= n_atom_pairs_by_rank_prev )then
                  if( allocated(local_properties_cart_der) )deallocate( local_properties_cart_der, this_local_properties_cart_der )
-                 allocate( local_properties_cart_der(1:3, 1:n_atom_pairs_by_rank(rank+1)) )
+                 allocate( local_properties_cart_der(1:3, 1:n_atom_pairs_by_rank(rank+1), 1:params%n_local_properties) )
                  allocate( this_local_properties_cart_der(1:3, 1:n_atom_pairs_by_rank(rank+1)) )
               end if
               local_properties_cart_der = 0.d0
            end if
         end if
 
-        
+! Now go through the soap turbo hypers, and see if any are vdw or
+! otherwise, if vdw, one can have pointers to point to the data
+! structures such that it makes things clearer. One needs to check
+! that this allocation still works iwth if(allocated(hirsh_v))
+        ! statements
+
+
 
         if( params%do_forces )then
            if( n_sites /= n_sites_prev .or.  params%do_mc )then
@@ -1190,11 +1225,9 @@ program turbogap
                    xyz_species(this_i_beg:this_i_end), xyz_species_supercell, soap_turbo_hypers(i)%alphas, &
                    soap_turbo_hypers(i)%Qs, params%all_atoms, params%which_atom, indices, soap, soap_cart_der, &
                    der_neighbors, der_neighbors_list, &
-                   soap_turbo_hypers(i)%has_vdw, soap_turbo_hypers(i)%vdw_Qs, soap_turbo_hypers(i)%vdw_alphas, &
-                   soap_turbo_hypers(i)%vdw_zeta, soap_turbo_hypers(i)%vdw_delta, soap_turbo_hypers(i)%vdw_V0, &
-                   this_energies, this_forces, this_hirshfeld_v_pt, this_hirshfeld_v_cart_der_pt, &
+                   this_energies, this_forces, &
                    this_virial, soap_turbo_hypers(i)&
-                   &%has_local_properties, in_to_out_pairs, in_to_out_site, n_pairs, n_all_sites, n_neigh_out )
+                   &%has_local_properties, n_pairs, in_to_out_pairs, n_all_sites, in_to_out_site, n_neigh_out, n_sites_out )
 
 
 
@@ -1204,19 +1237,30 @@ program turbogap
                     if (soap_turbo_hypers(i)%local_property_models(l)%compute)then
                        ! compute the local property!
                        ! Above the local properties passes are this_local_properties so one must change
+                       !
+                       ! Allocate the pointer
+                       this_local_properties = 0.d0
+                       this_local_properties_pt => this_local_properties
+                       if( params%do_forces )then
+                          this_local_properties_cart_der = 0.d0
+                          !             I don't remember why this needs a pointer <----------------------------------------- CHECK
+                          this_local_properties_cart_der_pt => this_local_properties_cart_der(1:3, this_j_beg:this_j_end)
+                       end if
+
+
                        call get_local_properties( soap, &
                             soap_turbo_hypers(i)%local_property_models(l)%Qs, &
                             soap_turbo_hypers(i)%local_property_models(l)%alphas, &
                             soap_turbo_hypers(i)%local_property_models(l)%V0, &
                             soap_turbo_hypers(i)%local_property_models(l)%delta, &
                             soap_turbo_hypers(i)%local_property_models(l)%zeta, &
-                            this_local_properties(:,l), &
+                            this_local_properties_pt, &
                             soap_turbo_hypers(i)%local_property_models(l)%do_derivatives, &
                             soap_cart_der, &
                             n_neigh_out, &
-                            this_local_property_cart_der(:,:,l), n_pairs,&
+                            this_local_properties_cart_der_pt, n_pairs,&
                             & in_to_out_pairs, n_all_sites,&
-                            & in_to_out_site, do_derivatives, n_sites_out  )
+                            & in_to_out_site,  n_sites_out )
                     end if
                  end do
                  ! Now deallocate the arrays which were not deallocated in get_gap_soap
@@ -1229,11 +1273,15 @@ program turbogap
 
 
               energies_soap = energies_soap + this_energies
-              if( soap_turbo_hypers(i)%has_vdw )then
-                 hirshfeld_v = hirshfeld_v + this_hirshfeld_v
-                 if( params%do_forces )then
-                    hirshfeld_v_cart_der = hirshfeld_v_cart_der + this_hirshfeld_v_cart_der
-                 end if
+              if( soap_turbo_hypers(i)%has_local_properties )then
+                 do k = 1, soap_turbo_hypers(i)%n_local_properties
+                    local_properties(:,k) = local_properties(:,k) + this_local_properties(:)
+                    if( params%do_forces )then
+                       if (soap_turbo_hypers(i)%has_vdw)then
+                          local_properties_cart_der(:,:,k) = local_properties_cart_der(:,:,k) + this_hirshfeld_v_cart_der(:,:)
+                       end if
+                    end if
+                 end do
               end if
               if( params%do_forces )then
                  forces_soap = forces_soap + this_forces
@@ -1701,6 +1749,7 @@ program turbogap
                    & positions(1:3, 1:n_sites), velocities, forces,&
                    & energies(1:n_sites), masses, hirshfeld_v, params&
                    &%write_property, params%write_array_property,&
+                   & params%write_local_properties, params%n_local_properties,&
                    & fix_atom, "trajectory_out.xyz", .false.)
 #ifdef _MPIF90
            END IF
