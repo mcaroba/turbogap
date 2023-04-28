@@ -393,7 +393,7 @@ end if
 !   Input variables
     character*1024, intent(in) :: file_data
 !   Output variables
-    real*8, allocatable, intent(out) :: data(:)
+    real*8, allocatable, intent(out) :: data(:,:)
     integer, intent(out) :: n_points
 
 !   Internal variables
@@ -782,7 +782,17 @@ end if
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%n_local_properties
         allocate( params%write_local_properties(1:params%n_local_properties) )
+        allocate( params%compute_local_properties(1:params%n_local_properties) )
         params%write_local_properties = .true.
+      else if(keyword=='compute_local_properties')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, (params&
+             &%compute_local_properties(nw),nw=1 ,params&
+             &%n_local_properties)
+
+        ! One needs to see if these match up with those in the actual gap file
+
+
       else if(keyword=='write_velocities')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%write_velocities
@@ -1237,7 +1247,8 @@ end if
 
 !   Output variables
     real*8, intent(out) :: rcut_max
-    integer, intent(out) :: n_soap_turbo, n_distance_2b, n_angle_3b, n_core_pot, nw
+    integer, intent(out) :: n_soap_turbo, n_distance_2b, n_angle_3b, n_core_pot
+    integer :: nw
     type(soap_turbo), allocatable, intent(out) :: soap_turbo_hypers(:)
     type(distance_2b), allocatable, intent(out) :: distance_2b_hypers(:)
     type(angle_3b), allocatable, intent(out) :: angle_3b_hypers(:)
@@ -1486,24 +1497,29 @@ end if
               backspace(10)
               read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%n_local_properties
               ! Now allocate the local_property_soap_turbo object in the soap_turbo_hypers
-              allocate( soap_turbo_hypers(n_soap_turbo)%local_property_models(1:n_local_properties) )
+              allocate( soap_turbo_hypers(n_soap_turbo)%local_property_models(&
+                   1:soap_turbo_hypers(n_soap_turbo)%n_local_properties) )
+
             else if( keyword == "local_property_labels" )then
               backspace(10)
               read(10, *, iostat=iostatus) cjunk, cjunk, &
                    (soap_turbo_hypers(n_soap_turbo)%local_property_models(nw)&
-                   &%local_property_label,nw=1&
+                   &%label,nw=1&
                    &,soap_turbo_hypers(n_soap_turbo)%n_local_properties)
 
               do nw=1, soap_turbo_hypers(n_soap_turbo)%n_local_properties
                  if(soap_turbo_hypers(n_soap_turbo)%local_property_models(nw)&
-                      &%local_property_label == "hirshfeld_v")then
+                      &%label == "hirshfeld_v")then
                     soap_turbo_hypers(n_soap_turbo)%has_vdw=.true.
                     soap_turbo_hypers(n_soap_turbo)%local_property_models(nw)%do_derivatives=.true.
+                    soap_turbo_hypers(n_soap_turbo)%vdw_index=nw
                  end if
 
                  if(soap_turbo_hypers(n_soap_turbo)%local_property_models(nw)&
-                      &%local_property_label == "core_electron_be") &
-                      soap_turbo_hypers(n_soap_turbo)%has_core_electron_be=.true.
+                      &%label == "core_electron_be")then
+                    soap_turbo_hypers(n_soap_turbo)%has_core_electron_be=.true.
+                    soap_turbo_hypers(n_soap_turbo)%core_electron_be_index=nw
+                 end if
 
               end do
 
@@ -1511,38 +1527,48 @@ end if
               backspace(10)
               read(10, *, iostat=iostatus) cjunk, cjunk, &
                    (soap_turbo_hypers(n_soap_turbo)%local_property_models(nw)&
-                   &%file_local_property_desc,nw=1&
+                   &%file_desc,nw=1&
                    &,soap_turbo_hypers(n_soap_turbo)%n_local_properties)
             else if( keyword == "local_property_alphas" )then
               backspace(10)
               read(10, *, iostat=iostatus) cjunk, cjunk, &
                    (soap_turbo_hypers(n_soap_turbo)%local_property_models(nw)&
-                   &%file_local_property_alphas,nw=1&
+                   &%file_alphas,nw=1&
                    &,soap_turbo_hypers(n_soap_turbo)%n_local_properties)
             else if( keyword == "local_property_data" )then
               backspace(10)
               read(10, *, iostat=iostatus) cjunk, cjunk, &
                    (soap_turbo_hypers(n_soap_turbo)%local_property_models(nw)&
-                   &%file_local_property_data ,nw=1&
+                   &%file_data ,nw=1&
                    &,soap_turbo_hypers(n_soap_turbo) %n_local_properties)
 
-            else if( keyword == "local_property_zeta" )then
+              do i = 1, soap_turbo_hypers(n_soap_turbo)%n_local_properties
+                 if (soap_turbo_hypers(n_soap_turbo)&
+                      &%local_property_models(i)&
+                      &%file_data /= "none")then
+
+                    soap_turbo_hypers(n_soap_turbo)&
+                         &%local_property_models(nw)%has_data = .true.
+                 end if
+              end do
+
+            else if( keyword == "local_property_zetas" )then
               backspace(10)
               read(10, *, iostat=iostatus) cjunk, cjunk,&
                    & (soap_turbo_hypers(n_soap_turbo)&
-                   &%local_property_models(nw)%file_local_property_zeta,nw=1&
+                   &%local_property_models(nw)%zeta,nw=1&
                    &,soap_turbo_hypers(n_soap_turbo)%n_local_properties)
-            else if( keyword == "local_property_delta" )then
+            else if( keyword == "local_property_deltas" )then
               backspace(10)
               read(10, *, iostat=iostatus) cjunk, cjunk, &
                    & (soap_turbo_hypers(n_soap_turbo)%local_property_models(nw)&
-                   &%local_property_delta ,nw=1,soap_turbo_hypers(n_soap_turbo)&
+                   &%delta ,nw=1,soap_turbo_hypers(n_soap_turbo)&
                    &%n_local_properties)
-            else if( keyword == "local_property_v0" )then
+            else if( keyword == "local_property_v0s" )then
               backspace(10)
               read(10, *, iostat=iostatus) cjunk, cjunk, &
                    & (soap_turbo_hypers(n_soap_turbo)%local_property_models(nw)&
-                   &%local_property_V0 ,nw=1,soap_turbo_hypers(n_soap_turbo)&
+                   &%V0 ,nw=1,soap_turbo_hypers(n_soap_turbo)&
                    &%n_local_properties)
             end if
           end do
@@ -1577,18 +1603,20 @@ end if
                do j=1, soap_turbo_hypers(n_soap_turbo)%n_local_properties
 
                   call read_alphas_and_descriptors(&
-                       soap_turbo_hypers(n_soap_turbo)%local_property_models(j)%file_local_property_desc, &
-                       soap_turbo_hypers(n_soap_turbo)%local_property_models(j)%file_local_property_alphas, &
-                       soap_turbo_hypers(n_soap_turbo)%local_property_models(j)%local_property_n_sparse, &
-                       "soap_turbo", soap_turbo_hypers(n_soap_turbo)%local_property_models(j)%local_property_alphas, &
-                       soap_turbo_hypers(n_soap_turbo)%local_property_models(j)%local_property_Qs, &
-                       soap_turbo_hypers(n_soap_turbo)%local_property_models(j)%local_property_cutoff)
+                       soap_turbo_hypers(n_soap_turbo)%local_property_models(j)%file_desc, &
+                       soap_turbo_hypers(n_soap_turbo)%local_property_models(j)%file_alphas, &
+                       soap_turbo_hypers(n_soap_turbo)%local_property_models(j)%n_sparse, &
+                       "soap_turbo", &
+                       soap_turbo_hypers(n_soap_turbo)%local_property_models(j)%alphas, &
+                       soap_turbo_hypers(n_soap_turbo)%local_property_models(j)%Qs, &
+                       soap_turbo_hypers(n_soap_turbo)%local_property_models(j)%cutoff)
 
-                  if
-                  call read_local_property_data(&
-                       soap_turbo_hypers(n_soap_turbo)%local_property_models(j)%file_local_property_data,&
-                       soap_turbo_hypers(n_soap_turbo)%local_property_models(j)%local_property_n_data,&
-                       soap_turbo_hypers(n_soap_turbo)%local_property_models(j)%local_property_data)
+                  if(soap_turbo_hypers(n_soap_turbo)%local_property_models(nw)%has_data)then
+                     call read_local_property_data(&
+                          soap_turbo_hypers(n_soap_turbo)%local_property_models(j)%file_data,&
+                          soap_turbo_hypers(n_soap_turbo)%local_property_models(j)%n_data,&
+                          soap_turbo_hypers(n_soap_turbo)%local_property_models(j)%data)
+                  end if
 
                end do
             end if

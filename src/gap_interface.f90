@@ -48,10 +48,9 @@ module gap_interface
                           delta, zeta, central_species, &
                           xyz_species, xyz_species_supercell, alphas, Qs, all_atoms, &
                           which_atom, indices, soap, soap_cart_der, der_neighbors, der_neighbors_list, &
-                          has_vdw, vdw_Qs, vdw_alphas, vdw_zeta, vdw_delta, vdw_V0, &
-                          energies0, forces0, hirshfeld_v0,&
-                          & hirshfeld_v_cart_der0, virial,&
-                          & has_local_properties, n_local_properties, local_property_models )
+                          energies0, forces0, virial,&
+                          & has_local_properties, n_pairs, in_to_out_pairs,&
+                          & n_all_sites, in_to_out_site, n_neigh_out, n_sites_out )
 
     implicit none
 
@@ -59,8 +58,7 @@ module gap_interface
     real*8, intent(in) :: rjs0(:), thetas0(:), phis0(:), xyz0(:,:), rcut_hard(:), rcut_soft(:), &
                           nf(:), global_scaling(:), atom_sigma_r(:), atom_sigma_r_scaling(:), &
                           atom_sigma_t(:), atom_sigma_t_scaling(:), amplitude_scaling(:), &
-                          central_weight(:), delta, zeta, alphas(:), Qs(:,:), vdw_Qs(:,:), &
-                          vdw_alphas(:), vdw_zeta, vdw_delta, vdw_V0, compress_P_el(:)
+                          central_weight(:), delta, zeta, alphas(:), Qs(:,:), compress_P_el(:)
     integer, intent(in) :: n_sites0, n_neigh0(:), neighbors_list0(:), n_species, central_species, &
                            radial_enhancement, which_atom, indices(1:3), alpha_max(:), l_max, &
                            n_total_sites, compress_P_nonzero,&
@@ -68,7 +66,7 @@ module gap_interface
                            & n_local_properties
     logical, intent(in) :: do_timing, do_derivatives, compress_soap,&
          & do_forces, do_prediction, all_atoms, write_soap,&
-         & write_derivatives, has_vdw, has_local_properties
+         & write_derivatives,  has_local_properties
     character*64, intent(in) :: basis
     character*32, intent(in) :: scaling_mode
     character*8, intent(in) :: xyz_species(:), xyz_species_supercell(:), species_types(:)
@@ -78,23 +76,22 @@ module gap_interface
     real*8, intent(out) :: virial(1:3, 1:3)
 
 !   Inout variables
-    real*8, intent(inout) :: energies0(:), forces0(:,:), hirshfeld_v0(:), hirshfeld_v_cart_der0(:,:)
+    real*8, intent(inout) :: energies0(:), forces0(:,:)
 
 !   Internal variables
     real*8, allocatable :: rjs(:), thetas(:), phis(:), energies(:), forces(:,:), soap_temp(:,:), &
-                           hirshfeld_v(:), hirshfeld_v_cart_der(:,:),&
-                           & xyz(:,:), local_properties(:,:),&
-                           & local_properties_der(:,:,:)
+                           & xyz(:,:)
     real*8 :: rcut_max
-    integer, allocatable :: in_to_out_site(:), n_neigh(:), neighbors_list(:), species_multiplicity(:), &
+    integer, allocatable :: neighbors_list(:), species_multiplicity(:), &
                             species(:,:), species0(:,:), species_multiplicity0(:), out_to_in_site(:), &
-                            der_neighbors(:), der_neighbors_list(:), in_to_out_pairs(:)
+                            der_neighbors(:), der_neighbors_list(:)
+    integer, allocatable, intent(out) :: in_to_out_pairs(:), in_to_out_site(:), n_neigh_out(:)
     integer, allocatable :: species_multiplicity_supercell(:)
-    integer :: n_sites, i, j, n_atom_pairs, k, k2, i2, j2, n_soap, max_species_multiplicity, i3, n_all_sites, &
-               i4, n_sites_supercell, j3
+    integer :: n_sites, i, j, k, k2, i2, j2, n_soap, max_species_multiplicity, i3, &
+         i4, n_sites_supercell, j3
+    integer, intent(out) :: n_atom_pairs, n_all_sites, n_sites_out
     logical, allocatable :: mask(:,:), mask0(:,:), is_atom_seen(:)
 
-    type(local_property_soap_turbo), allocatable :: local_property_models(:)
 
 !   CLEAN THIS UP
     real*8 :: time1, time2
@@ -127,7 +124,7 @@ module gap_interface
 !
 !   First, we just count the number of sites to keep and the number of atom pairs for allocation purposes
     rcut_max = maxval(rcut_hard)
-    n_sites = 0
+    n_sites_out = 0
 !   n_all_sites are all the sites (central or else) to which this descriptor is not blind (including neighbors)
 !   and on which forces might be acting
     n_all_sites = 0
@@ -137,7 +134,7 @@ module gap_interface
     is_atom_seen = .false.
     do i = 1, n_sites0
       if( species0(1, i) == central_species .or. central_species == 0 )then
-        n_sites = n_sites + 1
+        n_sites_out = n_sites_out + 1
         do j = 1, n_neigh0(i)
           k = k + 1
           j2 = mod(neighbors_list0(k)-1, n_total_sites)+1
@@ -157,9 +154,9 @@ module gap_interface
     end do
 
 !   Second, we build all the new neighbors list stuff with the correct subset of information
-    allocate( n_neigh(1:n_sites) )
-    allocate( species_multiplicity(1:n_sites) )
-    allocate( species(1:max_species_multiplicity, 1:n_sites) )
+    allocate( n_neigh_out(1:n_sites_out) )
+    allocate( species_multiplicity(1:n_sites_out) )
+    allocate( species(1:max_species_multiplicity, 1:n_sites_out) )
     allocate( neighbors_list(1:n_atom_pairs) )
     allocate( rjs(1:n_atom_pairs) )
     allocate( thetas(1:n_atom_pairs) )
@@ -168,7 +165,7 @@ module gap_interface
     allocate( mask(1:n_atom_pairs, 1:n_species) )
     allocate( in_to_out_site(1:n_all_sites) )
     allocate( in_to_out_pairs(1:n_atom_pairs) )
-!    allocate( out_to_in_site(1:n_sites0) )
+!    allocate( out_to_in_site(1:n_sites_out0) )
     allocate( out_to_in_site(1:n_total_sites) )
     in_to_out_site = 0
     in_to_out_pairs = 0
@@ -177,7 +174,7 @@ module gap_interface
     i4 = 0
     k = 0
     i2 = 0
-!   The first n_sites sites are assigned to the central sites
+!   The first n_sites_out sites are assigned to the central sites
     do i = 1, n_sites0
       k = k + 1
       j = mod(neighbors_list0(k)-1, n_total_sites) + 1
@@ -217,8 +214,8 @@ module gap_interface
             end do
             if( j > 1 .and. out_to_in_site(j3) == 0 )then
               i4 = i4 + 1
-              in_to_out_site(n_sites + i4) = j3
-              out_to_in_site(j3) = n_sites + i4
+              in_to_out_site(n_sites_out + i4) = j3
+              out_to_in_site(j3) = n_sites_out + i4
               neighbors_list(k2) = out_to_in_site(j3)
             else if( j > 1 .and. out_to_in_site(j3) /= 0 )then
               neighbors_list(k2) = out_to_in_site(j3)
@@ -227,22 +224,22 @@ module gap_interface
             end if
           end if
         end do
-        n_neigh(i2) = j2
+        n_neigh_out(i2) = j2
       else
         k = k + n_neigh0(i)
       end if
     end do
 
 !   Get SOAP vectors and derivatives:
-    allocate( soap(1:n_soap, 1:n_sites) )
+    allocate( soap(1:n_soap, 1:n_sites_out) )
     soap = 0.d0
     if( do_derivatives )then
       allocate( soap_cart_der(1:3, 1:n_soap, 1:n_atom_pairs) )
       soap_cart_der = 0.d0
     end if
 
-    if( n_sites > 0 )then
-      call get_soap(n_sites, n_neigh, n_species, species, species_multiplicity, n_atom_pairs, mask, rjs, &
+    if( n_sites_out > 0 )then
+      call get_soap(n_sites_out, n_neigh_out, n_species, species, species_multiplicity, n_atom_pairs, mask, rjs, &
                     thetas, phis, alpha_max, l_max, rcut_hard, rcut_soft, nf, global_scaling, &
                     atom_sigma_r, atom_sigma_r_scaling, atom_sigma_t, atom_sigma_t_scaling, &
                     amplitude_scaling, radial_enhancement, central_weight, basis, scaling_mode, do_timing, &
@@ -250,99 +247,102 @@ module gap_interface
                     compress_P_el, soap, soap_cart_der)
     end if
 
-    if( has_vdw )then
-!call cpu_time(time1)
-      allocate( hirshfeld_v( 1:n_sites ) )
-      hirshfeld_v = 0.d0
-      if( do_derivatives )then
-        allocate( hirshfeld_v_cart_der(1:3, 1:n_atom_pairs) )
-        hirshfeld_v_cart_der = 0.d0
-      end if
+!     if( has_vdw )then
+! !call cpu_time(time1)
+!       allocate( hirshfeld_v( 1:n_sites_out ) )
+!       hirshfeld_v = 0.d0
+!       if( do_derivatives )then
+!         allocate( hirshfeld_v_cart_der(1:3, 1:n_atom_pairs) )
+!         hirshfeld_v_cart_der = 0.d0
+!       end if
 
-      call hirshfeld_predict( soap, vdw_Qs, vdw_alphas, vdw_V0, vdw_delta, vdw_zeta, &
-                              hirshfeld_v, do_derivatives, soap_cart_der, n_neigh, &
-                              hirshfeld_v_cart_der )
-      do i = 1, n_sites
-        i2 = in_to_out_site(i)
-        hirshfeld_v0(i2) = hirshfeld_v(i)
-      end do
-      if( do_derivatives )then
-        do k = 1, n_atom_pairs
-          k2 = in_to_out_pairs(k)
-          hirshfeld_v_cart_der0(1:3, k2) = hirshfeld_v_cart_der(1:3, k)
-        end do
-      end if
+!       call hirshfeld_predict( soap, vdw_Qs, vdw_alphas, vdw_V0, vdw_delta, vdw_zeta, &
+!                               hirshfeld_v, do_derivatives, soap_cart_der, n_neigh_out, &
+!                               hirshfeld_v_cart_der )
+!       do i = 1, n_sites_out
+!         i2 = in_to_out_site(i)
+!         hirshfeld_v0(i2) = hirshfeld_v(i)
+!       end do
+!       if( do_derivatives )then
+!         do k = 1, n_atom_pairs
+!           k2 = in_to_out_pairs(k)
+!           hirshfeld_v_cart_der0(1:3, k2) = hirshfeld_v_cart_der(1:3, k)
+!         end do
+!       end if
 
-      deallocate( hirshfeld_v )
-      if( do_derivatives )then
-        deallocate( hirshfeld_v_cart_der )
-      end if
-!call cpu_time(time2)
-!write(*,*) "hirshfeld_v time =", time2-time1, "seconds"
-    end if
+!       deallocate( hirshfeld_v )
+!       if( do_derivatives )then
+!         deallocate( hirshfeld_v_cart_der )
+!       end if
+! !call cpu_time(time2)
+! !write(*,*) "hirshfeld_v time =", time2-time1, "seconds"
+!     end if
 
 
 
-    if( has_local_properties )then
-!call cpu_time(time1)
-       allocate( local_properties(1:n_local_properties, 1:n_sites ) )
+!     if( has_local_properties )then
+! !call cpu_time(time1)
+!        allocate( local_properties( 1:n_sites_out, 1:n_local_properties ) )
 
-       if( any(local_properties_models(:)%do_derivatives))then
-          allocate( local_properties_der(1:n_local_properties, 1:3, 1:n_sites ) )
-       end if
+!       do i = 1, n_local_properties
+!          if(local_property_models(i)%do_derivatives)then
+!             allocate( local_properties_der(1:3, 1:n_sites_out, 1:n_local_properties ) )
+!          end if
+!       end do
 
-      do i = 1, n_local_properties
-         local_properties = 0.d0
-         if(local_properties_models(i)%do_derivatives)then
-            local_properties_der = 0.d0
-         end if
+!       do i = 1, n_local_properties
+!          local_properties = 0.d0
+!          if(local_property_models(i)%do_derivatives)then
+!             local_properties_der = 0.d0
+!          end if
 
-         call local_property_predict( soap, &
-              & local_property_models(i)%local_property_Qs,&
-              & local_property_models(i)%local_property_alphas,&
-              & local_property_models(i)%local_property_V0,&
-              & local_property_models(i)%local_property_delta,&
-              & local_property_models(i)%local_property_zeta,&
-              & local_properties(i,1:n_sites),&
-              & local_property_models(i)%do_derivatives,&
-              & soap_cart_der, n_neigh, local_properties_der(i,1:3,1:n_sites) )
-         do j = 1, n_sites
-            i2 = in_to_out_site(j)
-            local_properties0(i2) = local_properties(j)
-         end do
-         if( local_property_models(i)%do_derivatives )then
-            do k = 1, n_atom_pairs
-               k2 = in_to_out_pairs(k)
-               local_properties_cart_der0(1:3, k2) = local_properties_cart_der(1:3, k)
-            end do
-         end if
-      end do
+!          call local_property_predict( soap, &
+!               & local_property_models(i)%Qs,&
+!               & local_property_models(i)%alphas,&
+!               & local_property_models(i)%V0,&
+!               & local_property_models(i)%delta,&
+!               & local_property_models(i)%zeta,&
+!               & local_properties(i,1:n_sites_out),&
+!               & local_property_models(i)%do_derivatives,&
+!               & soap_cart_der, n_neigh_out, local_properties_der(1:3, 1:n_sites_out, i) )
+!          do j = 1, n_sites_out
+!             i2 = in_to_out_site(j)
+!             local_properties0(i2) = local_properties(j)
+!          end do
+!          if( local_property_models(i)%do_derivatives )then
+!             do k = 1, n_atom_pairs
+!                k2 = in_to_out_pairs(k)
+!                local_properties_cart_der0(1:3, k2) = local_properties_cart_der(1:3, k)
+!             end do
+!          end if
+!       end do
 
-      deallocate( local_properties )
-      if( any(local_property_models(:)%do_derivatives) )then
-         deallocate( local_properties_der )
-      end if
-!call cpu_time(time2)
-!write(*,*) "hirshfeld_v time =", time2-time1, "seconds"
-   end if
+!       deallocate( local_properties )
+!       do i = 1, n_local_properties
+!          if(local_property_models(i)%do_derivatives) deallocate( local_properties_der )
+!       end do
+
+! !call cpu_time(time2)
+! !write(*,*) "hirshfeld_v time =", time2-time1, "seconds"
+!    end if
 
 
 
     if( do_prediction )then
 !     Get energies and forces
-      allocate( energies(1:n_sites) )
+      allocate( energies(1:n_sites_out) )
       energies = 0.d0
       if( do_forces )then
         allocate( forces(1:3, 1:n_all_sites) )
         forces = 0.d0
       end if
-      if( n_sites > 0 )then
+      if( n_sites_out > 0 )then
         call get_soap_energy_and_forces(soap, soap_cart_der, alphas, delta, zeta, 0.d0, Qs, &
-                                        n_neigh, neighbors_list, xyz, do_forces, do_timing, &
+                                        n_neigh_out, neighbors_list, xyz, do_forces, do_timing, &
                                         energies, forces, virial)
       end if
 
-      do i = 1, n_sites
+      do i = 1, n_sites_out
         i2 = in_to_out_site(i)
         energies0(i2) = energies(i)
       end do
@@ -358,7 +358,7 @@ module gap_interface
     if( write_soap )then
       allocate( soap_temp(1:n_soap, 1:n_sites0) )
       soap_temp = 0.d0
-      do i = 1, n_sites
+      do i = 1, n_sites_out
         i2 = in_to_out_site(i)
         soap_temp(1:n_soap, i2) = soap(1:n_soap, i)
       end do
@@ -368,12 +368,12 @@ module gap_interface
       deallocate( soap_temp )
     end if
     if( do_derivatives .and. write_derivatives )then
-      allocate( der_neighbors(1:n_sites) )
+      allocate( der_neighbors(1:n_sites_out) )
       allocate( der_neighbors_list(1:n_atom_pairs) )
-      der_neighbors = n_neigh
+      der_neighbors = n_neigh_out
       k = 0
-      do i = 1, n_sites
-        do j = 1, n_neigh(i)
+      do i = 1, n_sites_out
+        do j = 1, n_neigh_out(i)
           k = k + 1
           j2 = neighbors_list(k)
           der_neighbors_list(k) = in_to_out_site(j2)
@@ -390,18 +390,69 @@ module gap_interface
       deallocate( forces )
     end if
 
-    deallocate( neighbors_list, n_neigh, rjs, thetas, phis, mask, mask0, is_atom_seen )
+
+    deallocate( neighbors_list, rjs, thetas, phis, mask, mask0, is_atom_seen )
     deallocate( species0, species_multiplicity0, species, species_multiplicity, species_multiplicity_supercell )
-    deallocate( in_to_out_site, out_to_in_site , in_to_out_pairs )
-    if( .not. write_soap )then
+    if(.not. has_local_properties )then
+       deallocate( in_to_out_site, out_to_in_site , in_to_out_pairs, n_neigh_out )
+    else
+       deallocate(out_to_in_site)
+    end if
+
+    if( .not. write_soap .or. .not. has_local_properties )then
       deallocate( soap )
     end if
-    if( do_derivatives .and. .not. write_derivatives )then
+    if( do_derivatives .and. .not. write_derivatives .and. .not. has_local_properties )then
       deallocate( soap_cart_der )
     end if
 
   end subroutine
 !**************************************************************************
+
+
+subroutine get_local_properties( soap, Qs, alphas, V0, delta, zeta, &
+                              local_property0, do_derivatives, soap_cart_der, n_neigh_out, &
+                              local_property_cart_der0, n_pairs,&
+                              & in_to_out_pairs, n_all_sites,&
+                              & in_to_out_site, do_derivatives, n_sites_out  )
+
+  real*8, allocatable, intent(in) :: soap(:,:), soap_cart_der(:,:,:)
+  real*8, intent(in) ::  Qs(:,:), alphas(:), zeta, delta, V0
+  real*8, intent(inout) :: local_property0(:), local_property_cart_der0(:,:)
+  real*8 :: local_property(:), local_property_cart_der(:,:)
+  integer, intent(in) :: n_pairs, in_to_out_pairs(:), n_all_sites,&
+       & in_to_out_site(:), n_neigh_out(:), n_sites_out
+
+  allocate( local_property( 1:n_sites_out ) )
+  local_property = 0.d0
+  if( do_derivatives )then
+     allocate( local_property_cart_der(1:3, 1:n_atom_pairs) )
+     local_property_cart_der = 0.d0
+  end if
+
+  call local_property_predict( soap, Qs, alphas, V0, delta, zeta, &
+       local_property, do_derivatives, soap_cart_der, n_neigh_out, &
+       local_property_cart_der )
+  do i = 1, n_sites_out
+     i2 = in_to_out_site(i)
+     local_property0(i2) = local_property(i)
+  end do
+  if( do_derivatives )then
+     do k = 1, n_atom_pairs
+        k2 = in_to_out_pairs(k)
+        local_property_cart_der0(1:3, k2) = local_property_cart_der(1:3, k)
+     end do
+  end if
+
+  deallocate( local_property )
+  if( do_derivatives )then
+     deallocate( local_property_cart_der )
+  end if
+!call cpu_time(time2)
+!write(*,*) "hirshfeld_v time =", time2-time1, "seconds"
+
+
+
 
 
 

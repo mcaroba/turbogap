@@ -66,6 +66,8 @@ program turbogap
        hirshfeld_v_cart_der(:,:), masses_temp(:)
   real*8, allocatable, target :: this_hirshfeld_v(:), this_hirshfeld_v_cart_der(:,:)
   real*8, pointer :: this_hirshfeld_v_pt(:), this_hirshfeld_v_cart_der_pt(:,:)
+
+
   real*8, allocatable :: all_energies(:,:), all_forces(:,:,:), all_virial(:,:,:)
   real*8, allocatable :: all_this_energies(:,:), all_this_forces(:,:,:), all_this_virial(:,:,:)
   real*8 :: instant_temp, kB = 8.6173303d-5, E_kinetic, time1, time2, time3, time_neigh, &
@@ -73,7 +75,7 @@ program turbogap
        time_mpi(1:3) = 0.d0, time_core_pot(1:3), time_vdw(1:3), instant_pressure, lv(1:3,1:3), &
        time_mpi_positions(1:3) = 0.d0, time_mpi_ef(1:3) = 0.d0, time_md(3) = 0.d0, &
        instant_pressure_tensor(1:3, 1:3), time_step, md_time, instant_pressure_prev
-  integer, allocatable :: displs(:), displs2(:), counts(:), counts2(:)
+  integer, allocatable :: displs(:), displs2(:), counts(:), counts2(:), in_to_out_pairs(:), in_to_out_site(:)
   integer :: update_bar, n_sparse, idx, gd_istep = 0
   logical, allocatable :: do_list(:), has_vdw_mpi(:), fix_atom(:,:)
   logical :: rebuild_neighbors_list = .true., exit_loop = .true.,&
@@ -82,17 +84,17 @@ program turbogap
   ! Clean up these variables after code refactoring !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   integer, allocatable :: n_neigh(:), neighbors_list(:), alpha_max(:), species(:), species_supercell(:), &
        neighbor_species(:), sph_temp_int(:), der_neighbors(:), der_neighbors_list(:), &
-       i_beg_list(:), i_end_list(:), j_beg_list(:), j_end_list(:), species_idx(:)
+       i_beg_list(:), i_end_list(:), j_beg_list(:), j_end_list(:), species_idx(:), n_neigh_out(:)
   integer :: n_sites, i, j, k, i2, j2, n_soap, k2, k3, l, n_sites_this, ierr, rank, ntasks, dim, n_sp, &
        n_pos, n_sp_sc, this_i_beg, this_i_end, this_j_beg, this_j_end, this_n_sites_mpi, n_sites_prev = 0, &
-       n_atom_pairs_by_rank_prev, cPnz
+       n_atom_pairs_by_rank_prev, cPnz, n_pairs, n_all_sites, n_sites_out
   integer :: l_max, n_atom_pairs, n_max, ijunk, central_species = 0, n_atom_pairs_total
   integer :: iostatus, counter = 0, counter2
-  integer :: which_atom = 0, n_species = 1, n_xyz, indices(1:3)
+  integer :: which_atom = 0, n_species = 1, n_xyz, indices1:3
   integer :: radial_enhancement = 0
   integer :: md_istep, mc_istep, mc_id, n_mc, n_mc_species
 
-  logical :: repeat_xyz = .true., overwrite = .false., check_species, skip_mc
+  logical :: repeat_xyz = .true., overwrite = .false., check_species, valid_local_properties=.false.
 
   character*1024 :: filename, cjunk, file_compress_soap, file_alphas, file_soap, file_2b, file_alphas_2b, &
        file_3b, file_alphas_3b, file_gap = "none", mc_file = "mc_trial.xyz"
@@ -117,6 +119,7 @@ program turbogap
   type(distance_2b), allocatable :: distance_2b_hypers(:)
   type(angle_3b), allocatable :: angle_3b_hypers(:)
   type(core_pot), allocatable :: core_pot_hypers(:)
+
   real*8, allocatable :: local_properties(:,:), local_properties_der(:,:,:)
 
   !vdw crap
@@ -373,6 +376,38 @@ program turbogap
 #ifdef _MPIF90
      END IF
 #endif
+
+     ! Check that the local properties we want to compute are valid
+     ! with the .gap input we have
+     if(allocated(params%compute_local_properties))then
+        do j = 1, n_soap_turbo
+           if( soap_turbo_hypers(j)%has_local_properties )then
+              do k = 1, soap_turbo_hypers(j)%n_local_properties
+                 valid_local_properties = .false.
+
+                 ! set compute to false and then switch on if seen
+                 soap_turbo_hypers(j)%local_property_models(k)%compute = .false.
+                 do i = 1, params%n_local_properties
+                    if (trim(params%compute_local_properties(i)) == trim(soap_turbo_hypers(j)%local_property_models(k)%label) )then
+                       soap_turbo_hypers(j)%local_property_models(i)%compute = .true.
+                       valid_local_properties=.true.
+                    end if
+                 end do
+                 if (.not. valid_local_properties )then
+                    write(*,*) 'FATAL: Local properties to compute in the input file do not match those in the descriptor'
+                    write(*,*) params%compute_local_properties
+                    write(*,*) 'does not match what is in the gap file'
+                    write(*,*) soap_turbo_hypers(j)%local_property_models(:)%label
+                    stop
+                 end if
+              end do
+           end if
+        end do
+     end if
+
+
+
+
      !   THIS CHUNK HERE DISTRIBUTES THE INPUT DATA AMONG ALL THE PROCESSES
      !   Broadcast number of descriptors to other processes
 #ifdef _MPIF90
@@ -798,6 +833,9 @@ program turbogap
      !   species, species_supercell, indices, a_box, b_box, c_box and n_sites. I should put this into a module!!!!!!!
 
 
+        allocate( soap_turbo_hypers(n_soap_turbo)%local_property_models(nw)%values(1:n_) )
+
+
 #ifdef _MPIF90
      IF( rank == 0 )THEN
         n_pos = size(positions,2)
@@ -989,6 +1027,20 @@ program turbogap
         energies_3b = 0.d0
         energies_core_pot = 0.d0
         energies_vdw = 0.d0
+
+! Adding allocation of local properties
+        if( any(soap_turbo_hypers(:)%has_local_properties) ) then
+           if( n_sites /= n_sites_prev .or.  params%do_mc  )then
+              if( allocated(local_properties) )then
+                 deallocate( local_properties )
+              end if
+              allocate(local_properties(1:n_sites, 1:params%n_local_properties))
+           end if
+           local_properties = 0.d0
+        end if
+
+        ! Now one could use pointers such that hirshfeld_v(:) acts as an alias for local_properties(vdw_index,:)...
+
         if( any( soap_turbo_hypers(:)%has_vdw ) )then
            if( n_sites /= n_sites_prev .or.  params%do_mc  )then
               if( allocated(hirshfeld_v) )then
@@ -1015,16 +1067,34 @@ program turbogap
            end if
         end if
 
-! Adding allocation of local properties
-        if( any(soap_turbo_hypers(:)%has_local_properties) ) then
+        if( any( soap_turbo_hypers(:)%has_local_properties ) )then
            if( n_sites /= n_sites_prev .or.  params%do_mc  )then
               if( allocated(local_properties) )then
-                 deallocate( local_properties )
+                 nullify( this_local_properties_pt )
+                 deallocate( this_local_properties, local_properties )
+                 if( params%do_forces )then
+                    nullify( this_local_properties_cart_der_pt )
+                    deallocate( this_local_properties_cart_der, local_properties_cart_der )
+                 end if
               end if
-              allocate(local_properties(1:params%n_local_properties, 1:n_sites))
+              allocate( local_properties(1:n_sites, 1:params%n_local_properties) )
+              allocate( this_local_properties(1:n_sites) )
+              !         I don't remember why this needs a pointer <----------------------------------------- CHECK
+              this_local_properties_pt => this_local_properties
            end if
            local_properties = 0.d0
+
+           if( params%do_forces )then
+              if( n_atom_pairs_by_rank(rank+1) /= n_atom_pairs_by_rank_prev )then
+                 if( allocated(local_properties_cart_der) )deallocate( local_properties_cart_der, this_local_properties_cart_der )
+                 allocate( local_properties_cart_der(1:3, 1:n_atom_pairs_by_rank(rank+1)) )
+                 allocate( this_local_properties_cart_der(1:3, 1:n_atom_pairs_by_rank(rank+1)) )
+              end if
+              local_properties_cart_der = 0.d0
+           end if
         end if
+
+        
 
         if( params%do_forces )then
            if( n_sites /= n_sites_prev .or.  params%do_mc )then
@@ -1123,7 +1193,40 @@ program turbogap
                    soap_turbo_hypers(i)%has_vdw, soap_turbo_hypers(i)%vdw_Qs, soap_turbo_hypers(i)%vdw_alphas, &
                    soap_turbo_hypers(i)%vdw_zeta, soap_turbo_hypers(i)%vdw_delta, soap_turbo_hypers(i)%vdw_V0, &
                    this_energies, this_forces, this_hirshfeld_v_pt, this_hirshfeld_v_cart_der_pt, &
-                   this_virial, soap_turbo_hypers(i)%has_local_properties, soap_turbo_hypers(i)%local_property_models
+                   this_virial, soap_turbo_hypers(i)&
+                   &%has_local_properties, in_to_out_pairs, in_to_out_site, n_pairs, n_all_sites, n_neigh_out )
+
+
+
+              if (soap_turbo_hypers(i)%has_local_properties)then
+                 ! only iterating over the computed properties
+                 do l = 1, soap_turbo_hypers(i)%n_local_properties
+                    if (soap_turbo_hypers(i)%local_property_models(l)%compute)then
+                       ! compute the local property!
+                       ! Above the local properties passes are this_local_properties so one must change
+                       call get_local_properties( soap, &
+                            soap_turbo_hypers(i)%local_property_models(l)%Qs, &
+                            soap_turbo_hypers(i)%local_property_models(l)%alphas, &
+                            soap_turbo_hypers(i)%local_property_models(l)%V0, &
+                            soap_turbo_hypers(i)%local_property_models(l)%delta, &
+                            soap_turbo_hypers(i)%local_property_models(l)%zeta, &
+                            this_local_properties(:,l), &
+                            soap_turbo_hypers(i)%local_property_models(l)%do_derivatives, &
+                            soap_cart_der, &
+                            n_neigh_out, &
+                            this_local_property_cart_der(:,:,l), n_pairs,&
+                            & in_to_out_pairs, n_all_sites,&
+                            & in_to_out_site, do_derivatives, n_sites_out  )
+                    end if
+                 end do
+                 ! Now deallocate the arrays which were not deallocated in get_gap_soap
+                 deallocate(in_to_out_pairs, in_to_out_site, n_neigh_out, soap)
+                 if (soap_turbo_hypers(i)%local_property_models(l)%do_derivatives)then
+                    deallocate(soap_cart_der)
+                 end if
+              end if
+
+
 
               energies_soap = energies_soap + this_energies
               if( soap_turbo_hypers(i)%has_vdw )then

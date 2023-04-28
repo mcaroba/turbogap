@@ -32,17 +32,11 @@ module types
   ! GAP+descriptor data structure for SOAP
 
   type local_property_soap_turbo
-     real*8, allocatable :: local_property_Qs(:,:),&
-          & local_property_alphas(:), local_property_cutoff(:),&
-          & local_property_data(:,:)
-     real*8              :: local_property_zeta, local_property_delta&
-          &, local_property_V0
-     character*1024      :: file_local_property_data="none",&
-          & file_local_property_alphas, file_local_property_desc,&
-          & local_property_label
-     integer             :: local_property_n_sparse,&
-          & local_property_n_data
-     logical :: local_property_has_data = .false., do_derivatives = .false.
+     real*8, allocatable :: Qs(:,:), alphas(:), cutoff(:), data(:,:), values(:)
+     real*8              :: zeta, delta, V0
+     character*1024      :: file_data="none", file_alphas, file_desc, label
+     integer             :: n_sparse, n_data
+     logical             :: has_data = .false., do_derivatives = .false., compute=.true.
   end type local_property_soap_turbo
 
 
@@ -54,13 +48,15 @@ module types
     real*8 :: zeta = 2.d0, delta = 1.d0, rcut_max, vdw_zeta, vdw_delta, vdw_V0
     integer, allocatable :: alpha_max(:), compress_P_i(:), compress_P_j(:)
     integer :: n_species, central_species = 0, dim, l_max, radial_enhancement = 0, n_max, n_sparse, &
-               vdw_n_sparse, compress_P_nonzero, n_local_properties=0
-    character*1024 :: file_alphas, file_desc, file_compress = "none", file_vdw_alphas, file_vdw_desc
+               vdw_n_sparse, compress_P_nonzero, n_local_properties=0&
+               &, vdw_index=0, core_electron_be_index=0
+    character*1024 :: file_alphas, file_desc, file_compress = "none",&
+         & file_vdw_alphas, file_vdw_desc
     character*64 :: basis = "poly3", compress_mode = "none"
     character*32 :: scaling_mode = "polynomial"
     character*8, allocatable :: species_types(:)
     logical :: compress_soap = .false., has_vdw = .false.,&
-         & has_core_electron_be=.false. has_local_properties = .false.
+         & has_core_electron_be=.false., has_local_properties = .false.
     type(local_property_soap_turbo), allocatable :: local_property_models(:)
   end type soap_turbo
 
@@ -114,6 +110,7 @@ module types
                vdw_mbd_nfreq = 11, n_mc_types = 0, n_nested = 0, mc_idx = 1, mc_nrelax=0, n_local_properties=0
 
     character*1024 :: atoms_file
+    character*1024, allocatable :: compute_local_properties(:)
     character*32 :: vdw_type = "none"
     character*32, allocatable ::  mc_types(:)
     character*8, allocatable :: species_types(:)
