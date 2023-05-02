@@ -32,6 +32,7 @@ module gap_interface
   use read_files
   use vdw
   use types
+  use local_prop
 
   contains
 

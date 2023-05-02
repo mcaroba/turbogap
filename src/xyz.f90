@@ -59,7 +59,7 @@ module xyz_module
 !  4 -> Forces
 !  5 -> Local energy
 !  6 -> Masses
-!  7 -> Hirshfeld volumes
+!  7 -> Hirshfeld volumes || Note, this is being replaced by the local properties
 !  8 -> Fix atoms
 !
 ! If the corresponding write_property(i) or write_array_property(i)
@@ -70,7 +70,7 @@ module xyz_module
                            hirshfeld_v, write_property,&
                            & write_array_property,&
                            & write_local_properties,&
-                           & local_property_labels, fix_atom,&
+                           & local_property_labels, local_properties, fix_atom,&
                            & filename , overwrite )
 
     implicit none
@@ -78,7 +78,7 @@ module xyz_module
 !   In variables:
     real*8, intent(in) :: dt, temperature, pressure, a_cell(1:3), b_cell(1:3), c_cell(1:3), virial(1:3,1:3)
     real*8, intent(in) :: forces(:,:), velocities(:,:), positions(:,:), local_energies(:), masses(:)
-    real*8, intent(in) :: hirshfeld_v(:)
+    real*8, intent(in) :: hirshfeld_v(:), local_properties(:,:)
     integer, intent(in) :: Nat, md_istep
     character(len=*), intent(in) :: species(:), filename
     logical, intent(in) :: write_property(:), write_array_property(:), fix_atom(:,:), overwrite
@@ -315,7 +315,14 @@ module xyz_module
 !     Hirshfeld volumes
       if( write_array_property(7) )then
         write(10, "(1X,F16.8)", advance="no") hirshfeld_v(i)
-      end if
+     end if
+! Local properties
+     if( allocated(write_local_properties ))then
+        do j = 1, size(local_properties, 2)
+           write(10, "(1X,F16.8)", advance="no") local_properties(i, j)
+        end do
+     end if
+
 !     Fix atoms
       if( write_array_property(8) )then
         write(10, "(1X,L1,1X,L1,1X,L1)", advance="no") fix_atom(1:3, i)

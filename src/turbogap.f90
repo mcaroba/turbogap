@@ -102,6 +102,7 @@ program turbogap
   integer :: radial_enhancement = 0
   integer :: md_istep, mc_istep, mc_id, n_mc, n_mc_species
 
+  character*1024, allocatable ::  local_property_labels(:), local_property_labels_temp(:)
   logical :: repeat_xyz = .true., overwrite = .false., check_species, valid_local_properties=.false.
 
   character*1024 :: filename, cjunk, file_compress_soap, file_alphas, file_soap, file_2b, file_alphas_2b, &
@@ -385,13 +386,22 @@ program turbogap
      END IF
 #endif
 
-     ! Check that the local properties we want to compute are valid
-     ! with the .gap input we have
+     ! Check that the local properties we want to compute are valid,
+     ! so things are commensurate between input file and .gap model
+
+     ! Need to set the number of local properties, and get an array of labels and sizes for broadcasting
+
      n_local_properties_tot = 0
      n_data_local_properties_tot = 0
+     i2 = 1 ! using this as a counter for the labels
      do j = 1, n_soap_turbo
         if( soap_turbo_hypers(j)%has_local_properties )then
+           ! This property has the labels of the quantities to
+           ! compute. We must specify the number of local properties, for the sake of coding simplicity
            if(allocated(params%compute_local_properties))then
+              allocate(local_property_labels(1:size(params%compute_local_properties)))
+              local_property_labels = params%compute_local_properties
+
               do k = 1, soap_turbo_hypers(j)%n_local_properties
                  valid_local_properties = .false.
 
@@ -403,6 +413,7 @@ program turbogap
                        valid_local_properties=.true.
                     end if
                  end do
+
 
                  if (soap_turbo_hypers(j)%local_property_models(k)%has_data)then
                     n_data_local_properties_tot = n_data_local_properties_tot + 1
@@ -1749,7 +1760,7 @@ program turbogap
                    & positions(1:3, 1:n_sites), velocities, forces,&
                    & energies(1:n_sites), masses, hirshfeld_v, params&
                    &%write_property, params%write_array_property,&
-                   & params%write_local_properties, params%n_local_properties,&
+                   & params%write_local_properties, local_property_labels, local_properties, &
                    & fix_atom, "trajectory_out.xyz", .false.)
 #ifdef _MPIF90
            END IF
@@ -1928,7 +1939,9 @@ program turbogap
                    & positions_prev(1:3, 1:n_sites), velocities,&
                    & forces, energies(1:n_sites), masses, hirshfeld_v&
                    &, params%write_property, params&
-                   &%write_array_property, fix_atom(1:3, 1:n_sites),&
+                   &%write_array_property, params&
+                   &%write_local_properties, local_property_labels,&
+                   & local_properties, fix_atom(1:3, 1:n_sites),&
                    & "trajectory_out.xyz", .true.)
            else if( md_istep == params%md_nsteps .and. params%do_nested_sampling )then
               write(cjunk,'(I8)') i_image
@@ -1940,8 +1953,10 @@ program turbogap
                    virial, xyz_species, &
                    positions_prev(1:3, 1:n_sites), velocities, &
                    forces, energies(1:n_sites), masses, hirshfeld_v, &
-                   params%write_property, params%write_array_property, fix_atom(1:3, 1:n_sites), &
-                   filename, .true. )
+                   params%write_property, params%write_array_property&
+                   &,params%write_local_properties,&
+                   & local_property_labels, local_properties,&
+                   & fix_atom(1:3, 1:n_sites), filename, .true. )
 
            end if
            !
@@ -2290,8 +2305,13 @@ program turbogap
                                images(i_current_image)%forces, &
                                images(i_current_image)%energies(1:images(i_current_image)%n_sites), &
                                images(i_current_image)%masses, images(i_current_image)%hirshfeld_v, &
-                               params%write_property, params%write_array_property, images(i_current_image)%fix_atom, &
-                               "mc_current.xyz", .true. )
+                               params%write_property, params&
+                               &%write_array_property, params&
+                               &%write_local_properties,&
+                               & local_property_labels,&
+                               & local_properties&
+                               &,images(i_current_image)%fix_atom,&
+                               & "mc_current.xyz", .true. )
 
                           call write_extxyz( images(i_current_image)%n_sites, 1, 1.0d0, 0.0d0, 0.0d0, &
                                images(i_current_image)%a_box/dfloat(indices(1)), &
@@ -2303,8 +2323,13 @@ program turbogap
                                images(i_current_image)%forces, &
                                images(i_current_image)%energies(1:images(i_current_image)%n_sites), &
                                images(i_current_image)%masses, images(i_current_image)%hirshfeld_v, &
-                               params%write_property, params%write_array_property, images(i_current_image)%fix_atom, &
-                               "mc_all.xyz", .false. )
+                               params%write_property, params&
+                               &%write_array_property, params&
+                               &%write_local_properties,&
+                               & local_property_labels,&
+                               & local_properties,&
+                               & images(i_current_image)%fix_atom,&
+                               & "mc_all.xyz", .false. )
                        end if
 
                     end if
@@ -2394,8 +2419,12 @@ program turbogap
                             images(i_current_image)%forces, &
                             images(i_current_image)%energies(1:images(i_current_image)%n_sites), &
                             images(i_current_image)%masses, images(i_current_image)%hirshfeld_v, &
-                            params%write_property, params%write_array_property, images(i_current_image)%fix_atom, &
-                            "mc_current.xyz", .true. )
+                            params%write_property, params&
+                            &%write_array_property, params&
+                            &%write_local_properties,&
+                            & local_property_labels, local_properties&
+                            &, images(i_current_image)%fix_atom,&
+                            & "mc_current.xyz", .true. )
 
                        call write_extxyz( images(i_current_image)%n_sites, 1, 1.0d0, 0.0d0, 0.0d0, &
                             images(i_current_image)%a_box/dfloat(indices(1)), &
@@ -2407,8 +2436,12 @@ program turbogap
                             images(i_current_image)%forces, &
                             images(i_current_image)%energies(1:images(i_current_image)%n_sites), &
                             images(i_current_image)%masses, images(i_current_image)%hirshfeld_v, &
-                            params%write_property, params%write_array_property, images(i_current_image)%fix_atom, &
-                            "mc_all.xyz", .true. )
+                            params%write_property, params&
+                            &%write_array_property, params&
+                            &%write_local_properties,&
+                            & local_property_labels, local_properties&
+                            &, images(i_current_image)%fix_atom,&
+                            & "mc_all.xyz", .true. )
 
 
                     end if
@@ -2476,8 +2509,11 @@ program turbogap
                          virial, xyz_species, &
                          positions(1:3, 1:n_sites), velocities, &
                          forces, energies(1:n_sites), masses, hirshfeld_v, &
-                         params%write_property, params%write_array_property, fix_atom, &
-                         mc_file, .true. )
+                         params%write_property, params&
+                         &%write_array_property, params&
+                         &%write_local_properties,&
+                         & local_property_labels, local_properties&
+                         &,fix_atom, mc_file, .true. )
                  end if
                  ! As we have moved/added/removed, we must check the supercell and  broadcast the results
 
