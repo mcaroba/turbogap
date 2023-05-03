@@ -280,7 +280,7 @@ module mc
   subroutine perform_mc_step(&
        & positions, species, xyz_species, masses, fix_atom,&
        & velocities, positions_prev, positions_diff, disp, d_disp,&
-       & mc_acceptance, hirshfeld_v, im_hirshfeld_v, energies,&
+       & mc_acceptance, n_lp, local_properties, im_local_properties, energies,&
        & forces, forces_prev, n_sites, n_mc_species, mc_move, mc_species,&
        & mc_move_max, mc_min_dist, mc_types, masses_types,&
        & species_idx, im_pos, im_species, im_xyz_species, im_fix_atom&
@@ -289,13 +289,13 @@ module mc
 
     implicit none
 
-    real*8, allocatable, intent(inout) :: positions(:,:), masses(:), hirshfeld_v(:),&
+    real*8, allocatable, intent(inout) :: positions(:,:), masses(:), local_properties(:,:),&
          forces_prev(:,:), positions_prev(:,:), positions_diff(:,:),&
-         mc_acceptance(:), im_hirshfeld_v(:), velocities(:,:), &
+         mc_acceptance(:), im_local_properties(:,:), velocities(:,:), &
          energies(:), forces(:,:), masses_types(:), im_pos(:,:), im_masses(:)
     real*8 :: mc_move_max, ranf, ranv(1:3)
     real*8, intent(inout) :: disp(1:3), mc_min_dist, d_disp, E_kinetic, instant_temp, t_beg
-
+    integer, intent(in) :: n_lp
     integer, intent(inout) :: n_mc_species, n_sites, md_istep, mc_id
     integer, allocatable, intent(inout) :: species(:), im_species(:)
     character*8, allocatable :: species_types(:), xyz_species(:), xyz_species_supercell(:),&
@@ -418,21 +418,21 @@ module mc
           masses(1:n_sites-1) = im_masses(1:n_sites-1)
           masses(n_sites) = masses_types(mc_id)
 
-          if (allocated(hirshfeld_v))then
-             deallocate(hirshfeld_v)
-             allocate(hirshfeld_v(1:n_sites))
-             hirshfeld_v(1:n_sites-1) = im_hirshfeld_v(1:n_sites-1)
+          if (allocated(local_properties))then
+             deallocate(local_properties)
+             allocate(local_properties(1:n_sites, n_lp))
+             local_properties(1:n_sites-1,1:n_lp) = im_local_properties(1:n_sites-1,1:n_lp)
              ! ignoring the hirshfeld v just want to get rough implementation done
-             hirshfeld_v(n_sites) = hirshfeld_v(n_sites-1)
+             local_properties(n_sites,1:n_lp) = 0.d0 ! local_properties(n_sites-1)
           end if
 
        else if (mc_move == "removal")then
           deallocate(masses)
           allocate(masses(1:n_sites))
 
-          if (allocated(hirshfeld_v))then
-             deallocate(hirshfeld_v)
-             allocate(hirshfeld_v(1:n_sites))
+          if (allocated(local_properties))then
+             deallocate(local_properties)
+             allocate(local_properties(1:n_sites,1:n_lp))
           end if
 
           do i = 1, n_sites
@@ -445,14 +445,14 @@ module mc
                 masses(i)= im_masses(i)
                 fix_atom(1:3,i)= im_fix_atom(1:3,i)
 
-                if (allocated(hirshfeld_v))hirshfeld_v(i) = im_hirshfeld_v(i)
+                if (allocated(local_properties))local_properties(i,1:n_lp) = im_local_properties(i,1:n_lp)
              else
                 positions(1:3,i) = im_pos(1:3,i+1)
                 xyz_species(i)           = im_xyz_species(i+1)
                 species(i)               = im_species(i+1)
                 masses(i)= im_masses(i+1)
                 fix_atom(1:3,i)= im_fix_atom(1:3,i+1)
-                if (allocated(hirshfeld_v))hirshfeld_v(i) = im_hirshfeld_v(i+1)
+                if (allocated(local_properties))local_properties(i,1:n_lp) = im_local_properties(i+1,1:n_lp)
              end if
           end do
        end if

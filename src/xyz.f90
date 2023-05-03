@@ -67,7 +67,7 @@ module xyz_module
 !
   subroutine write_extxyz( Nat, md_istep, dt, temperature, pressure, a_cell, b_cell, c_cell, virial, &
                            species, positions, velocities, forces, local_energies, masses, &
-                           hirshfeld_v, write_property,&
+                           write_property,&
                            & write_array_property,&
                            & write_local_properties,&
                            & local_property_labels, local_properties, fix_atom,&
@@ -78,7 +78,7 @@ module xyz_module
 !   In variables:
     real*8, intent(in) :: dt, temperature, pressure, a_cell(1:3), b_cell(1:3), c_cell(1:3), virial(1:3,1:3)
     real*8, intent(in) :: forces(:,:), velocities(:,:), positions(:,:), local_energies(:), masses(:)
-    real*8, intent(in) :: hirshfeld_v(:), local_properties(:,:)
+    real*8, intent(in) :: local_properties(:,:)
     integer, intent(in) :: Nat, md_istep
     character(len=*), intent(in) :: species(:), filename
     logical, intent(in) :: write_property(:), write_array_property(:), fix_atom(:,:), overwrite
@@ -185,13 +185,13 @@ module xyz_module
      end if
 
 ! Not removing yet for compatibility
-      if( write_array_property(7) )then
-        write(properties_string, "(A)") trim(adjustl(properties_string)) // "hirshfeld_v:R:1"
-        i = i + 1
-        if( i < n_array_properties )then
-          write(properties_string, "(A)") trim(adjustl(properties_string)) // ":"
-        end if
-      end if
+      ! if( write_array_property(7) )then
+      !   write(properties_string, "(A)") trim(adjustl(properties_string)) // "hirshfeld_v:R:1"
+      !   i = i + 1
+      !   if( i < n_array_properties )then
+      !     write(properties_string, "(A)") trim(adjustl(properties_string)) // ":"
+      !   end if
+      ! end if
       if( write_array_property(8) )then
         write(properties_string, "(A)") trim(adjustl(properties_string)) // "fix_atoms:S:3"
         i = i + 1
@@ -313,9 +313,9 @@ module xyz_module
         write(10, "(1X,F16.8)", advance="no") masses(i)/103.6426965268d0
       end if
 !     Hirshfeld volumes
-      if( write_array_property(7) )then
-        write(10, "(1X,F16.8)", advance="no") hirshfeld_v(i)
-     end if
+     !  if( write_array_property(7) )then
+     !    write(10, "(1X,F16.8)", advance="no") hirshfeld_v(i)
+     ! end if
 ! Local properties
      if( allocated(write_local_properties ))then
         do j = 1, size(local_properties, 2)

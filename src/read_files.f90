@@ -784,6 +784,7 @@ end if
         allocate( params%write_local_properties(1:params%n_local_properties) )
         allocate( params%compute_local_properties(1:params%n_local_properties) )
         params%write_local_properties = .true.
+        print *, "params%n_local_properties", params%n_local_properties
       else if(keyword=='compute_local_properties')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, (params&
@@ -791,8 +792,6 @@ end if
              &%n_local_properties)
 
         ! One needs to see if these match up with those in the actual gap file
-
-
       else if(keyword=='write_velocities')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%write_velocities
@@ -1500,13 +1499,13 @@ end if
               allocate( soap_turbo_hypers(n_soap_turbo)%local_property_models(&
                    1:soap_turbo_hypers(n_soap_turbo)%n_local_properties) )
 
+
             else if( keyword == "local_property_labels" )then
               backspace(10)
               read(10, *, iostat=iostatus) cjunk, cjunk, &
                    (soap_turbo_hypers(n_soap_turbo)%local_property_models(nw)&
                    &%label,nw=1&
                    &,soap_turbo_hypers(n_soap_turbo)%n_local_properties)
-
               do nw=1, soap_turbo_hypers(n_soap_turbo)%n_local_properties
                  if(soap_turbo_hypers(n_soap_turbo)%local_property_models(nw)&
                       &%label == "hirshfeld_v")then
@@ -1529,12 +1528,14 @@ end if
                    (soap_turbo_hypers(n_soap_turbo)%local_property_models(nw)&
                    &%file_desc,nw=1&
                    &,soap_turbo_hypers(n_soap_turbo)%n_local_properties)
+              print *, "local property qs", soap_turbo_hypers(n_soap_turbo)%local_property_models(1)%file_desc
             else if( keyword == "local_property_alphas" )then
               backspace(10)
               read(10, *, iostat=iostatus) cjunk, cjunk, &
                    (soap_turbo_hypers(n_soap_turbo)%local_property_models(nw)&
                    &%file_alphas,nw=1&
                    &,soap_turbo_hypers(n_soap_turbo)%n_local_properties)
+              print *, "local property alphas", soap_turbo_hypers(n_soap_turbo)%local_property_models(1)%file_alphas
             else if( keyword == "local_property_data" )then
               backspace(10)
               read(10, *, iostat=iostatus) cjunk, cjunk, &
@@ -1589,15 +1590,16 @@ end if
                                              "soap_turbo", soap_turbo_hypers(n_soap_turbo)%alphas, &
                                              soap_turbo_hypers(n_soap_turbo)%Qs, &
                                              soap_turbo_hypers(n_soap_turbo)%cutoff)
-            if( soap_turbo_hypers(n_soap_turbo)%has_vdw )then
-               call read_alphas_and_descriptors(soap_turbo_hypers(n_soap_turbo)%file_vdw_desc, &
-                    soap_turbo_hypers(n_soap_turbo)%file_vdw_alphas, &
-                    soap_turbo_hypers(n_soap_turbo)%vdw_n_sparse, &
-                    "soap_turbo", soap_turbo_hypers(n_soap_turbo)%vdw_alphas, &
-                    soap_turbo_hypers(n_soap_turbo)%vdw_Qs, &
-                    soap_turbo_hypers(n_soap_turbo)%vdw_cutoff)
+            ! Commenting this out as it will be subsumed into local property prediction
+            ! if( soap_turbo_hypers(n_soap_turbo)%has_vdw )then
+            !    call read_alphas_and_descriptors(soap_turbo_hypers(n_soap_turbo)%file_vdw_desc, &
+            !         soap_turbo_hypers(n_soap_turbo)%file_vdw_alphas, &
+            !         soap_turbo_hypers(n_soap_turbo)%vdw_n_sparse, &
+            !         "soap_turbo", soap_turbo_hypers(n_soap_turbo)%vdw_alphas, &
+            !         soap_turbo_hypers(n_soap_turbo)%vdw_Qs, &
+            !         soap_turbo_hypers(n_soap_turbo)%vdw_cutoff)
 
-            end if
+            ! end if
 
             if( soap_turbo_hypers(n_soap_turbo)%has_local_properties )then
                do j=1, soap_turbo_hypers(n_soap_turbo)%n_local_properties
@@ -1611,7 +1613,7 @@ end if
                        soap_turbo_hypers(n_soap_turbo)%local_property_models(j)%Qs, &
                        soap_turbo_hypers(n_soap_turbo)%local_property_models(j)%cutoff)
 
-                  if(soap_turbo_hypers(n_soap_turbo)%local_property_models(nw)%has_data)then
+                  if(soap_turbo_hypers(n_soap_turbo)%local_property_models(j)%has_data)then
                      call read_local_property_data(&
                           soap_turbo_hypers(n_soap_turbo)%local_property_models(j)%file_data,&
                           soap_turbo_hypers(n_soap_turbo)%local_property_models(j)%n_data,&
