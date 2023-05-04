@@ -789,6 +789,9 @@ end if
       else if( keyword == "vdw_polynomial" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_polynomial
+      else if( keyword == "do_nnls" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%do_nnls
       else if( keyword == "vdw_omega_ref" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_omega_ref

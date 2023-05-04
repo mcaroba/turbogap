@@ -1398,7 +1398,8 @@ call cpu_time(time1)
                                          rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), v_neigh_vdw, &
                                          params%vdw_sr, params%vdw_d, params%vdw_c6_ref, params%vdw_r0_ref, &
                                          params%vdw_alpha0_ref, params%vdw_mbd_grad, params%vdw_hirsh_grad, &
-                                         params%vdw_polynomial, params%vdw_mbd_nfreq, params%vdw_mbd_norder, &
+                                         params%vdw_polynomial, params%do_nnls, params%vdw_mbd_nfreq, &
+                                         params%vdw_mbd_norder, &
                                          params%vdw_omega_ref, alpha_SCS, omega_SCS, &
 #ifdef _MPIF90
                                          this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw )

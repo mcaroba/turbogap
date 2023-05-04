@@ -100,7 +100,7 @@ module types
                write_local_energies = .true., write_property(1:11) = .true., &
                write_array_property(1:8) = .true., write_masses = .false., write_fixes = .true., &
                variable_time_step = .false., vdw_mbd_grad = .false., vdw_hirsh_grad = .false., &
-               vdw_polynomial = .false.
+               vdw_polynomial = .false., do_nnls = .true.
   end type input_parameters
 
 end module
