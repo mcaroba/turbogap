@@ -399,12 +399,12 @@ module gap_interface
        deallocate(out_to_in_site)
     end if
 
-    if( .not. write_soap .or. .not. has_local_properties )then
-      deallocate( soap )
+    if( .not. write_soap .and. .not. has_local_properties )then
+       deallocate( soap )
     end if
     if( do_derivatives .and. .not. write_derivatives .and. .not. has_local_properties )then
       deallocate( soap_cart_der )
-    end if
+   end if
 
   end subroutine
 !**************************************************************************

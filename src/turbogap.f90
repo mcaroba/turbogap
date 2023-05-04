@@ -397,20 +397,15 @@ program turbogap
 
      i2 = 1 ! using this as a counter for the labels
      do j = 1, n_soap_turbo
-        print *, "soap_turbo_hypers(j)%has_local_properties ", soap_turbo_hypers(j)%has_local_properties
         if( soap_turbo_hypers(j)%has_local_properties )then
            ! This property has the labels of the quantities to
            ! compute. We must specify the number of local properties, for the sake of coding simplicity
-
-           print *, "params%compute_local_properties ", params%compute_local_properties
-
            if(allocated(params%compute_local_properties))then
 
               if(.not. allocated(local_property_labels))then
                  allocate(local_property_labels(1:size(params%compute_local_properties)))
                  local_property_labels = params%compute_local_properties
               end if
-
 
               n_local_properties_tot = n_local_properties_tot + soap_turbo_hypers(j)%n_local_properties
               do k = 1, soap_turbo_hypers(j)%n_local_properties
@@ -447,7 +442,6 @@ program turbogap
         end if
      end do
 
-     print *, "n_local_properties_tot = ", n_local_properties_tot
 
 #ifdef _MPIF90
      END IF
@@ -604,6 +598,7 @@ program turbogap
         if( soap_turbo_hypers(i)%has_local_properties )then
            do j = 1, soap_turbo_hypers(i)%n_local_properties
               n_sparse = soap_turbo_hypers(i)%local_property_models(j)%n_sparse
+              call mpi_bcast(soap_turbo_hypers(i)%local_property_models(j)%label, 1, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
               call mpi_bcast(soap_turbo_hypers(i)%local_property_models(j)%delta, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
               call mpi_bcast(soap_turbo_hypers(i)%local_property_models(j)%zeta, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
               call mpi_bcast(soap_turbo_hypers(i)%local_property_models(j)%V0, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
@@ -623,7 +618,6 @@ program turbogap
                       &%n_data), 2*soap_turbo_hypers(i)%local_property_models(j)%n_data,&
                       & MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
               end if
-              print *, "broadcasted local props rank ", rank
            end do
         end if
      end do
@@ -1263,7 +1257,6 @@ program turbogap
                    this_virial, soap_turbo_hypers(i)&
                    &%has_local_properties, n_pairs, in_to_out_pairs, n_all_sites, in_to_out_site, n_neigh_out, n_sites_out )
 
-              print *, " got the descriptors, now local property prediction, rank ", rank
 
               ! We can have a pointer to specific parts of this_local_properties array to then
 
@@ -1282,10 +1275,10 @@ program turbogap
                        ! Allocate the pointer
 
                        this_local_properties_pt => this_local_properties(1:n_sites, l)
-                       print *, "this local prop pt", size(this_local_properties_pt,1)
-                       print *, "this local prop", size(this_local_properties,1), size(this_local_properties,2)
                           !             I don't remember why this needs a pointer <----------------------------------------- CHECK
                        this_local_properties_cart_der_pt => this_local_properties_cart_der(1:3, this_j_beg:this_j_end, l)
+
+                       print *, " Calculating Local Property: ", trim(soap_turbo_hypers(i)%local_property_models(l)%label)
 
                        call get_local_properties( soap, &
                             soap_turbo_hypers(i)%local_property_models(l)%Qs, &
@@ -1304,10 +1297,10 @@ program turbogap
                     nullify(this_local_properties_pt)
                     nullify(this_local_properties_cart_der_pt)
                  end do
-                 print *, local_properties
                  ! Now deallocate the arrays which were not deallocated in get_gap_soap
                  deallocate(in_to_out_pairs, in_to_out_site, n_neigh_out, soap)
-                 if (soap_turbo_hypers(i)%local_property_models(l)%do_derivatives)then
+
+                 if (any(soap_turbo_hypers(i)%local_property_models(:)%do_derivatives))then
                     deallocate(soap_cart_der)
                  end if
               end if
