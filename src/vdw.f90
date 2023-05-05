@@ -174,6 +174,8 @@ module vdw
     logical, allocatable :: is_in_buffer(:)
     logical :: do_timing = .false.
 
+
+
     n_sites = size(n_neigh)
     n_pairs = size(neighbors_list)
     n_species = size(c6_ref)

@@ -180,8 +180,6 @@ program turbogap
 
 
 
-
-
   !**************************************************************************
   ! Read the mode. It should be "soap", "predict" or "md"
   !
@@ -464,7 +462,7 @@ program turbogap
      allocate( n_species_mpi(1:n_soap_turbo) )
      allocate( n_sparse_mpi_soap_turbo(1:n_soap_turbo) )
      allocate( dim_mpi(1:n_soap_turbo) )
-     allocate( n_local_properties_mpi(1:n_local_properties_tot))
+     allocate( n_local_properties_mpi(1:n_soap_turbo))
      allocate( local_properties_n_sparse_mpi_soap_turbo(1:n_local_properties_tot))
      allocate( local_properties_n_data_mpi_soap_turbo(1:n_data_local_properties_tot))
      allocate( has_local_properties_mpi(1:n_soap_turbo) )
@@ -492,23 +490,23 @@ program turbogap
            n_lp_data_count = 1
 
            do i = 1, n_soap_turbo
-              do j = 1, n_local_properties_mpi(i)
-                 local_properties_n_sparse_mpi_soap_turbo(n_lp_count) =&
-                      & soap_turbo_hypers(i)%local_property_models(j)&
-                      &%n_sparse
-                 n_lp_count = n_lp_count + 1
-              end do
-              do j = 1, n_local_properties_mpi(i)
-                 if (soap_turbo_hypers(i)%local_property_models(j)%has_data)then
-                    local_properties_n_data_mpi_soap_turbo(n_lp_data_count) =&
+              if (n_local_properties_mpi(i) > 0)then
+                 do j = 1, n_local_properties_mpi(i)
+                    local_properties_n_sparse_mpi_soap_turbo(n_lp_count) =&
                          & soap_turbo_hypers(i)%local_property_models(j)&
-                         &%n_data
-                    n_lp_data_count = n_lp_data_count + 1
-                 end if
-
-              end do
+                         &%n_sparse
+                    n_lp_count = n_lp_count + 1
+                 end do
+                 do j = 1, n_local_properties_mpi(i)
+                    if (soap_turbo_hypers(i)%local_property_models(j)%has_data)then
+                       local_properties_n_data_mpi_soap_turbo(n_lp_data_count) =&
+                            & soap_turbo_hypers(i)%local_property_models(j)&
+                            &%n_data
+                       n_lp_data_count = n_lp_data_count + 1
+                    end if
+                 end do
+              end if
            end do
-
         end if
 
 
@@ -517,8 +515,10 @@ program turbogap
      call mpi_bcast(n_species_mpi, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(n_sparse_mpi_soap_turbo, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(dim_mpi, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-     call mpi_bcast(n_local_properties_tot, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-     call mpi_bcast(n_data_local_properties_tot , n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+
+     call mpi_bcast(n_local_properties_tot, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+     call mpi_bcast(n_data_local_properties_tot , 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+
      call mpi_bcast(local_properties_n_sparse_mpi_soap_turbo,&
           & n_local_properties_tot, MPI_INTEGER, 0,&
           & MPI_COMM_WORLD, ierr)
@@ -595,13 +595,15 @@ program turbogap
            call mpi_bcast(soap_turbo_hypers(i)%compress_P_j(1:cPnz), cPnz, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
         end if
         call mpi_bcast(soap_turbo_hypers(i)%has_local_properties, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(soap_turbo_hypers(i)%n_local_properties, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
         if( soap_turbo_hypers(i)%has_local_properties )then
            do j = 1, soap_turbo_hypers(i)%n_local_properties
-              n_sparse = soap_turbo_hypers(i)%local_property_models(j)%n_sparse
-              call mpi_bcast(soap_turbo_hypers(i)%local_property_models(j)%label, 1, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
+              call mpi_bcast(soap_turbo_hypers(i)%local_property_models(j)%n_sparse, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+              call mpi_bcast(soap_turbo_hypers(i)%local_property_models(j)%label, 1024, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
               call mpi_bcast(soap_turbo_hypers(i)%local_property_models(j)%delta, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
               call mpi_bcast(soap_turbo_hypers(i)%local_property_models(j)%zeta, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
               call mpi_bcast(soap_turbo_hypers(i)%local_property_models(j)%V0, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+              n_sparse = soap_turbo_hypers(i)%local_property_models(j)%n_sparse
               call mpi_bcast(soap_turbo_hypers(i)%local_property_models(j)%alphas(1:n_sparse)&
                    &, n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD,&
                    & ierr)
@@ -1260,6 +1262,7 @@ program turbogap
 
               ! We can have a pointer to specific parts of this_local_properties array to then
 
+
               if (soap_turbo_hypers(i)%has_local_properties)then
                  ! only iterating over the computed properties
                  this_local_properties = 0.d0
@@ -1278,7 +1281,11 @@ program turbogap
                           !             I don't remember why this needs a pointer <----------------------------------------- CHECK
                        this_local_properties_cart_der_pt => this_local_properties_cart_der(1:3, this_j_beg:this_j_end, l)
 
-                       print *, " Calculating Local Property: ", trim(soap_turbo_hypers(i)%local_property_models(l)%label)
+                       print *, " Calculating Local Property: ",&
+                            & trim(soap_turbo_hypers(i)&
+                            &%local_property_models(l)%label), " rank&
+                            & ", rank
+
 
                        call get_local_properties( soap, &
                             soap_turbo_hypers(i)%local_property_models(l)%Qs, &
@@ -1294,8 +1301,10 @@ program turbogap
                             & in_to_out_pairs, n_all_sites,&
                             & in_to_out_site,  n_sites_out )
                     end if
+
                     nullify(this_local_properties_pt)
                     nullify(this_local_properties_cart_der_pt)
+
                  end do
                  ! Now deallocate the arrays which were not deallocated in get_gap_soap
                  deallocate(in_to_out_pairs, in_to_out_site, n_neigh_out, soap)
@@ -1457,7 +1466,9 @@ program turbogap
                  v_neigh_vdw(k) = local_properties(j2, vdw_lp_index)
               end do
            end do
-           call get_ts_energy_and_forces( hirshfeld_v(i_beg:i_end), hirshfeld_v_cart_der(1:3, j_beg:j_end), &
+!            call get_ts_energy_and_forces( hirshfeld_v(i_beg:i_end), hirshfeld_v_cart_der(1:3, j_beg:j_end), &
+           call get_ts_energy_and_forces( local_properties(i_beg:i_end, vdw_lp_index), &
+                & local_properties_cart_der(1:3, j_beg:j_end, vdw_lp_index), &
                 n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
                 neighbor_species(j_beg:j_end), &
                 params%vdw_rcut, params%vdw_buffer, &
@@ -1761,8 +1772,6 @@ program turbogap
            forces = forces_soap + forces_2b + forces_3b + forces_core_pot + forces_vdw
            virial = virial_soap + virial_2b + virial_3b + virial_core_pot + virial_vdw
         end if
-
-
         ! For debugging the virial implementation
         if( rank == 0 .and. .false. )then
            write(*,*) "pressure_soap: ", virial_soap / 3.d0 / v_uc
@@ -1974,7 +1983,7 @@ program turbogap
                    & params %write_local_properties,&
                    & local_property_labels, local_properties,&
                    & fix_atom(1:3, 1:n_sites), "trajectory_out.xyz",&
-                   & .true.)
+                   & .false. )
            else if( md_istep == params%md_nsteps .and. params%do_nested_sampling )then
               write(cjunk,'(I8)') i_image
               write(filename,'(A,A,A)') "walkers/", trim(adjustl(cjunk)), ".xyz"

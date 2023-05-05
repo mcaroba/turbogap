@@ -784,7 +784,6 @@ end if
         allocate( params%write_local_properties(1:params%n_local_properties) )
         allocate( params%compute_local_properties(1:params%n_local_properties) )
         params%write_local_properties = .true.
-        print *, "params%n_local_properties", params%n_local_properties
       else if(keyword=='compute_local_properties')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, (params&
@@ -1507,15 +1506,15 @@ end if
                    &%label,nw=1&
                    &,soap_turbo_hypers(n_soap_turbo)%n_local_properties)
               do nw=1, soap_turbo_hypers(n_soap_turbo)%n_local_properties
-                 if(soap_turbo_hypers(n_soap_turbo)%local_property_models(nw)&
-                      &%label == "hirshfeld_v")then
+                 if(trim(soap_turbo_hypers(n_soap_turbo)%local_property_models(nw)&
+                      &%label) == "hirshfeld_v")then
                     soap_turbo_hypers(n_soap_turbo)%has_vdw=.true.
                     soap_turbo_hypers(n_soap_turbo)%local_property_models(nw)%do_derivatives=.true.
                     soap_turbo_hypers(n_soap_turbo)%vdw_index=nw
                  end if
 
-                 if(soap_turbo_hypers(n_soap_turbo)%local_property_models(nw)&
-                      &%label == "core_electron_be")then
+                 if(trim(soap_turbo_hypers(n_soap_turbo)%local_property_models(nw)&
+                      &%label) == "core_electron_be")then
                     soap_turbo_hypers(n_soap_turbo)%has_core_electron_be=.true.
                     soap_turbo_hypers(n_soap_turbo)%core_electron_be_index=nw
                  end if
@@ -1528,14 +1527,12 @@ end if
                    (soap_turbo_hypers(n_soap_turbo)%local_property_models(nw)&
                    &%file_desc,nw=1&
                    &,soap_turbo_hypers(n_soap_turbo)%n_local_properties)
-              print *, "local property qs", soap_turbo_hypers(n_soap_turbo)%local_property_models(1)%file_desc
             else if( keyword == "local_property_alphas" )then
               backspace(10)
               read(10, *, iostat=iostatus) cjunk, cjunk, &
                    (soap_turbo_hypers(n_soap_turbo)%local_property_models(nw)&
                    &%file_alphas,nw=1&
                    &,soap_turbo_hypers(n_soap_turbo)%n_local_properties)
-              print *, "local property alphas", soap_turbo_hypers(n_soap_turbo)%local_property_models(1)%file_alphas
             else if( keyword == "local_property_data" )then
               backspace(10)
               read(10, *, iostat=iostatus) cjunk, cjunk, &
