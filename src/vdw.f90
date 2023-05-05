@@ -1094,7 +1094,10 @@ module vdw
     logical :: do_total_energy = .true.
 
 !central_pol = 10.d0
-central_omega = 0.5d0
+!central_omega = 0.5d0
+central_omega(1:size(central_omega)/3) = 0.5d0
+central_omega(size(central_omega)/3:2*size(central_omega)/3) = 0.8d0
+central_omega(2*size(central_omega)/3:size(central_omega)) = 1.4d0
 
 ! TESTING: Change neighbor_alpha0_mbd... and neighbor_alpha0_2b... back to central_pol in a_2b and a_mbd parts
 ! Test G_mat with finite difference; it should be equal to the analytical solution now
@@ -2356,7 +2359,10 @@ central_omega = 0.5d0
           end do
 
           integral = 0.d0
+          call cpu_time(time1)
           call integrate("trapezoidal", omegas_nnls, integrand_nnls, omegas_nnls(1), omegas_nnls(size(omegas_nnls)), integral)
+          call cpu_time(time2)
+          write(*,*) "Integration time", time2-time1
           integral = integral/(2.d0*pi)
          
           deallocate( A_nnls, b_nnls, coeff_nnls, work_nnls, ind_nnls, omegas_nnls, integrand_nnls )
@@ -3309,6 +3315,8 @@ central_omega = 0.5d0
 
               G_mat = 0.d0
 
+
+write(*,*) "o_mbd"
               do j = 1, n_freq
                 k3 = 0
                 do p = 1, n_mbd_sites
@@ -3337,6 +3345,9 @@ central_omega = 0.5d0
                     !  write(*,*) "rjs_0_mbd", rjs_0_mbd(k3+1)*Bohr
                     !end if
                   !end if
+if ( i == 1 .and. c3 == 1 .and. j == 1) then
+                  write(*,*) o_mbd(k3+1), do_mbd(k3+1)
+end if
                   k3 = k3+n_mbd_neigh(p)
                 end do
               end do
@@ -3369,6 +3380,7 @@ central_omega = 0.5d0
                       total_energy_series = total_energy_series - 1.d0/(k2+1)*AT_n_f(:,:,k2,j)
                     end if 
                   end do
+! You might want to calculate the trace here for NNLS with forces
                   k3 = 0
                   do p = 1, n_mbd_sites
                     i2 = mbd_neighbors_list(k3+1)
@@ -3386,9 +3398,6 @@ central_omega = 0.5d0
                   end do
                 end do
 
-                write(*,*) "OMEGAS", omegas_mbd
-                write(*,*) "FORCE INTEGRAND", integrand
-                
                 if ( do_nnls ) then
 
                 allocate( A_nnls(1:n_freq,1:n_order+2) )
@@ -3451,7 +3460,7 @@ central_omega = 0.5d0
                   !integrand_nnls(i2) = -coeff_nnls(1)/integrand_nnls(i2)
                 end do
 
-                write(*,*) "INTEGRAND_NNLS", integrand_nnls
+                !write(*,*) "INTEGRAND_NNLS", integrand_nnls
 
                 integral = 0.d0
                 call integrate("trapezoidal", omegas_nnls, integrand_nnls, omegas_nnls(1), omegas_nnls(size(omegas_nnls)), integral)
