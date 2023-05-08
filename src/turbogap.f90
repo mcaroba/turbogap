@@ -392,7 +392,9 @@ program turbogap
      n_data_local_properties_tot = 0
      ! One needs to find how large the local_property array needs to be, this is n_sites x n_irr_dim, where n_irr_dim is the number of calculation types
      ! We can set this based on the user putting this in the input file for the number of compute properties
-
+     write(*,*)'                                       |'
+     write(*,*)'.......................................|'
+     write(*,*)'                                       |'
      i2 = 1 ! using this as a counter for the labels
      do j = 1, n_soap_turbo
         if( soap_turbo_hypers(j)%has_local_properties )then
@@ -407,7 +409,11 @@ program turbogap
 
               n_local_properties_tot = n_local_properties_tot + soap_turbo_hypers(j)%n_local_properties
               do k = 1, soap_turbo_hypers(j)%n_local_properties
-
+                 write(*,*)' Local property found                  |'
+                 write(*,'(A,1X,I8,1X,A,1X,A)')' Descriptor ', i,&
+                      & trim(soap_turbo_hypers(j)&
+                      &%local_property_models(k)%label),  ' |'
+                 write(*,*)'                                       |'
                  valid_local_properties = .false.
 
                  ! set compute to false and then switch on if seen
@@ -486,6 +492,7 @@ program turbogap
 
         ! Allocate the arrays have n_sparse and n_data
         if( any( soap_turbo_hypers(:)%has_local_properties ))then
+
            n_lp_count = 1
            n_lp_data_count = 1
 
