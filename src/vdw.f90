@@ -1087,11 +1087,11 @@ module vdw
 !   NNLS stuff;
     
     real*8, allocatable :: A_nnls(:,:), b_nnls(:), coeff_nnls(:), work_nnls(:), omegas_nnls(:), integrand_nnls(:), &
-                           total_integrand_nnls(:), work_integrand(:)
+                           total_integrand_nnls(:), work_integrand(:), trace_nnls(:), force_series0(:,:), full_integrand(:)
     integer, allocatable :: ind_nnls(:)
-    real*8 :: res_nnls, E_tot
+    real*8 :: res_nnls, E_tot, trace0
     integer :: mode_nnls
-    logical :: do_total_energy = .true.
+    logical :: do_total_energy = .false.
 
 !central_pol = 10.d0
 !central_omega = 0.5d0
@@ -1855,7 +1855,6 @@ central_omega(2*size(central_omega)/3:size(central_omega)) = 1.4d0
             allocate( f_damp_der_mbd(1:n_mbd_pairs) )
             allocate( f_damp_der_SCS(1:n_mbd_pairs) )
             allocate( dT_LR(1:3*n_mbd_sites,1:3*n_mbd_sites) )
-            allocate( G_mat(1:3*n_mbd_sites,1:3*n_mbd_sites,1:n_freq) )
             allocate( force_series(1:3*n_mbd_sites,1:3*n_mbd_sites) )
             if ( do_total_energy ) then
               allocate( total_energy_series(1:3*n_mbd_sites,1:3*n_mbd_sites) )
@@ -3313,45 +3312,6 @@ central_omega(2*size(central_omega)/3:size(central_omega)) = 1.4d0
 
               rcut_forces = rcut
 
-              G_mat = 0.d0
-
-
-write(*,*) "o_mbd"
-              do j = 1, n_freq
-                k3 = 0
-                do p = 1, n_mbd_sites
-                  !if ( rjs_0_mbd(k3+1) .le. rcut_forces ) then
-                    i2 = mbd_neighbors_list(k3+1)
-                    G_mat(3*(p-1)+1:3*(p-1)+3,:,j) = G_mat(3*(p-1)+1:3*(p-1)+3,:,j) + &
-                      a_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) * &
-                      dT_LR(3*(p-1)+1:3*(p-1)+3,:) + &
-                      da_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) * &
-                      T_LR(3*(p-1)+1:3*(p-1)+3,:) + &
-                      a_mbd(k3+1) * (2.d0 * omegas_mbd(j)**2 * o_mbd(k3+1)) * &
-                      do_mbd(k3+1) / ( o_mbd(k3+1)**2 + omegas_mbd(j)**2 )**2 * &
-                      T_LR(3*(p-1)+1:3*(p-1)+3,:)
-                    !if ( p == 59 .and. i == 1 .and. c3 == 1 .and. om == 2 .and. j == 1 ) then
-                    !  q = 54
-                    !  c1 = 1
-                    !  c2 = 1
-                    !  write(*,*) "G_mat", G_mat(3*(p-1)+c1,3*(q-1)+c2,j)
-                    !  write(*,*) "a_mbd", a_mbd(k3+1)
-                    !  write(*,*) "o_mbd", o_mbd(k3+1)
-                    !  write(*,*) "dT_LR", dT_LR(3*(p-1)+c1,3*(q-1)+c2)
-                    !  write(*,*) "da_mbd", da_mbd(k3+1)
-                    !  write(*,*) "T_LR", T_LR(3*(p-1)+c1,3*(q-1)+c2)
-                    !  write(*,*) "do_mbd", do_mbd(k3+1)
-                    !  write(*,*) "k3+1", k3+1
-                    !  write(*,*) "rjs_0_mbd", rjs_0_mbd(k3+1)*Bohr
-                    !end if
-                  !end if
-if ( i == 1 .and. c3 == 1 .and. j == 1) then
-                  write(*,*) o_mbd(k3+1), do_mbd(k3+1)
-end if
-                  k3 = k3+n_mbd_neigh(p)
-                end do
-              end do
-
 
               !if ( i == 1 .and. c3 == 1 .and. om == 2 ) then
               !  write(*,*) "o_mbd"
@@ -3364,6 +3324,14 @@ end if
 
               if ( n_order > 1 ) then
 
+                if ( do_nnls ) then
+                
+                allocate( trace_nnls(1:n_freq) )
+                allocate( force_series0(1:3*n_mbd_sites,1:3*n_mbd_sites) )
+                
+                trace_nnls = 0.d0
+                force_series0 = 0.d0
+                
                 integrand = 0.d0
                 if ( c3 == 1 .and. do_total_energy ) then
                   total_integrand = 0.d0
@@ -3380,34 +3348,24 @@ end if
                       total_energy_series = total_energy_series - 1.d0/(k2+1)*AT_n_f(:,:,k2,j)
                     end if 
                   end do
-! You might want to calculate the trace here for NNLS with forces
-                  k3 = 0
-                  do p = 1, n_mbd_sites
-                    i2 = mbd_neighbors_list(k3+1)
-                    do c1 = 1, 3
-                      integrand(j) = integrand(j) + & !1.d0/(1.d0 + (omegas_mbd(j)/0.5d0)**2) * &
-                      dot_product(G_mat(3*(p-1)+c1,:,j),force_series(:,3*(p-1)+c1))
-                      if ( c3 == 1 .and. do_total_energy ) then
-                        total_integrand(j) = total_integrand(j) + a_mbd(k3+1) / &
-                              (1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) &
-                              * dot_product(T_LR(3*(p-1)+c1,:), &
-                              total_energy_series(:,3*(p-1)+c1))
-                      end if
-                    end do
-                    k3 = k3 + n_mbd_neigh(p)
+                  if ( j == 1 ) then
+                    force_series0 = force_series
+                  end if
+                  do p = 1, 3*n_mbd_sites
+                    trace_nnls(j) = trace_nnls(j) + force_series(p,p)
                   end do
                 end do
-
-                if ( do_nnls ) then
-
-                allocate( A_nnls(1:n_freq,1:n_order+2) )
+                trace0 = trace_nnls(1)
+                
+                allocate( A_nnls(1:n_freq,1:n_order) )
                 allocate( b_nnls(1:n_freq) )
-                allocate( coeff_nnls(1:n_order+2) )
-                allocate( work_nnls(1:n_order+2) )
-                allocate( ind_nnls(1:n_order+2) )
-                allocate( omegas_nnls(1:201) )
-                allocate( integrand_nnls(1:201) )
+                allocate( coeff_nnls(1:n_order) )
+                allocate( work_nnls(1:n_order) )
+                allocate( ind_nnls(1:n_order) )
+                allocate( omegas_nnls(1:21) )
+                allocate( integrand_nnls(1:21) )
                 allocate( work_integrand(1:size(integrand)) )
+                allocate( full_integrand(1:21) )
 
                 A_nnls = 0.d0
                 b_nnls = 0.d0
@@ -3416,55 +3374,92 @@ end if
                 work_nnls = 0.d0
                 ind_nnls = 0.d0
                 
-                if (integrand(1) < 0.d0 ) then
-                  work_integrand = -integrand
+                if (trace_nnls(1) < 0.d0 ) then
+                  work_integrand = -trace_nnls
                 else
-                  work_integrand = integrand
+                  work_integrand = trace_nnls
                 end if
 
                 do i2 = 1, n_freq
                   b_nnls(i2) = work_integrand(i2)
-                  do j2 = 1, n_order+2
+                  do j2 = 1, n_order
                     if ( j2 == 1 ) then
                       A_nnls(i2,j2) = 1.d0
-                    else if (j2 == n_order+2 ) then
-                      A_nnls(i2,j2) = -omegas_mbd(i2)
                     else
                       A_nnls(i2,j2) = -work_integrand(i2)*omegas_mbd(i2)**(2*(j2-1))
                     end if
                   end do
                 end do
+                
+                call nnls(A_nnls, n_freq, n_order, b_nnls, coeff_nnls, res_nnls, work_nnls, ind_nnls, mode_nnls)
 
-                call nnls(A_nnls, n_freq, n_order+1, b_nnls, coeff_nnls, res_nnls, work_nnls, ind_nnls, mode_nnls)
-          
                 integrand_nnls = 1.d0
                 omegas_nnls = 0.d0
-                do j2 = 2, n_order+1
+                do j2 = 2, n_order
                   integrand_nnls(1) = integrand_nnls(1) + coeff_nnls(j2)*omegas_nnls(1)**(2.d0*(j2-1))
                 end do
-                if (integrand(1) < 0.d0 ) then
-                  integrand_nnls(1) = (-coeff_nnls(1) + coeff_nnls(n_order+2) * omegas_nnls(1))/integrand_nnls(1)
+                if (trace_nnls(1) < 0.d0 ) then
+                  integrand_nnls(1) = -coeff_nnls(1)/integrand_nnls(1)
                 else
-                  integrand_nnls(1) = (coeff_nnls(1) - coeff_nnls(n_order+2) * omegas_nnls(1))/integrand_nnls(1)
+                  integrand_nnls(1) = coeff_nnls(1)/integrand_nnls(1)
                 end if
-                do i2 = 2, 201
-                  omegas_nnls(i2) = omegas_nnls(i2-1)+0.05d0
-                  do j2 = 2, n_order+1
+                do i2 = 2, 21
+                  omegas_nnls(i2) = omegas_nnls(i2-1)+0.2d0
+                  do j2 = 2, n_order
                     integrand_nnls(i2) = integrand_nnls(i2) + coeff_nnls(j2)*omegas_nnls(i2)**(2.d0*(j2-1)) 
                   end do
-                  if (integrand(1) < 0.d0 ) then
-                    integrand_nnls(i2) = (-coeff_nnls(1) + coeff_nnls(n_order+2) * omegas_nnls(i2))/integrand_nnls(i2)
+                  if (trace_nnls(1) < 0.d0 ) then
+                    integrand_nnls(i2) = -coeff_nnls(1)/integrand_nnls(i2)
                   else
-                    integrand_nnls(1) = (coeff_nnls(1) - coeff_nnls(n_order+2) * omegas_nnls(i2))/integrand_nnls(i2)
+                    integrand_nnls(i2) = coeff_nnls(1)/integrand_nnls(i2)
                   end if
-                  !integrand_nnls(i2) = -coeff_nnls(1)/integrand_nnls(i2)
                 end do
 
-                !write(*,*) "INTEGRAND_NNLS", integrand_nnls
-
-                integral = 0.d0
-                call integrate("trapezoidal", omegas_nnls, integrand_nnls, omegas_nnls(1), omegas_nnls(size(omegas_nnls)), integral)
+                allocate( G_mat(1:3*n_mbd_sites,1:3*n_mbd_sites,1:21) )
                 
+                G_mat = 0.d0
+
+                do j = 1, 21
+                  k3 = 0
+                  do p = 1, n_mbd_sites
+                    i2 = mbd_neighbors_list(k3+1)
+                    G_mat(3*(p-1)+1:3*(p-1)+3,:,j) = G_mat(3*(p-1)+1:3*(p-1)+3,:,j) + &
+                      a_mbd(k3+1)/(1.d0 + (omegas_nnls(j)/o_mbd(k3+1))**2) * &
+                      dT_LR(3*(p-1)+1:3*(p-1)+3,:) + &
+                      da_mbd(k3+1)/(1.d0 + (omegas_nnls(j)/o_mbd(k3+1))**2) * &
+                      T_LR(3*(p-1)+1:3*(p-1)+3,:) + &
+                      a_mbd(k3+1) * (2.d0 * omegas_nnls(j)**2 * o_mbd(k3+1)) * &
+                      do_mbd(k3+1) / ( o_mbd(k3+1)**2 + omegas_nnls(j)**2 )**2 * &
+                      T_LR(3*(p-1)+1:3*(p-1)+3,:)
+                    k3 = k3+n_mbd_neigh(p)
+                  end do
+                end do
+
+                full_integrand = 0.d0
+                do j = 1, 21
+                  k3 = 0
+                  do p = 1, n_mbd_sites
+                    i2 = mbd_neighbors_list(k3+1)
+                    do c1 = 1, 3
+                      full_integrand(j) = full_integrand(j) + & !1.d0/(1.d0 + (omegas_mbd(j)/0.5d0)**2) * &
+                      dot_product(G_mat(3*(p-1)+c1,:,j),force_series0(:,3*(p-1)+c1))
+                      
+                      !if ( c3 == 1 .and. do_total_energy ) then
+                      !  total_integrand(j) = total_integrand(j) + a_mbd(k3+1) / &
+                      !        (1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) &
+                      !        * dot_product(T_LR(3*(p-1)+c1,:), &
+                      !        total_energy_series(:,3*(p-1)+c1))
+                      !end if
+                    end do
+                  end do
+                  full_integrand(j) = integrand_nnls(j)/trace0 * full_integrand(j)
+                end do
+          
+                integral = 0.d0
+                call integrate("trapezoidal", omegas_nnls, full_integrand, omegas_nnls(1), omegas_nnls(size(omegas_nnls)), integral)
+
+                write(*,*) "full_integrand", full_integrand
+
                 if ( do_total_energy ) then
                 A_nnls = 0.d0
                 b_nnls = 0.d0
@@ -3506,18 +3501,76 @@ end if
                 
                 end if
 
-                deallocate( A_nnls, b_nnls, coeff_nnls, work_nnls, ind_nnls, omegas_nnls, integrand_nnls, work_integrand )
+                deallocate( A_nnls, b_nnls, coeff_nnls, work_nnls, ind_nnls, omegas_nnls, integrand_nnls, work_integrand, &
+                            trace_nnls, force_series0, full_integrand, G_mat )
           
                 else
+                
+                allocate( G_mat(1:3*n_mbd_sites,1:3*n_mbd_sites,1:n_freq) )
+
+                G_mat = 0.d0
+
+                do j = 1, n_freq
+                  k3 = 0
+                  do p = 1, n_mbd_sites
+                    i2 = mbd_neighbors_list(k3+1)
+                    G_mat(3*(p-1)+1:3*(p-1)+3,:,j) = G_mat(3*(p-1)+1:3*(p-1)+3,:,j) + &
+                      a_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) * &
+                      dT_LR(3*(p-1)+1:3*(p-1)+3,:) + &
+                      da_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) * &
+                      T_LR(3*(p-1)+1:3*(p-1)+3,:) + &
+                      a_mbd(k3+1) * (2.d0 * omegas_mbd(j)**2 * o_mbd(k3+1)) * &
+                      do_mbd(k3+1) / ( o_mbd(k3+1)**2 + omegas_mbd(j)**2 )**2 * &
+                      T_LR(3*(p-1)+1:3*(p-1)+3,:)
+                    k3 = k3+n_mbd_neigh(p)
+                  end do
+                end do
+                
+                integrand = 0.d0
+                if ( c3 == 1 .and. do_total_energy ) then
+                  total_integrand = 0.d0
+                end if
+                do j = 1, n_freq
+
+                  force_series = 0.d0
+                  if ( c3 == 1 .and. do_total_energy ) then
+                    total_energy_series = 0.d0
+                  end if
+                  do k2 = 1, n_order-1
+                    force_series = force_series + AT_n_f(:,:,k2,j) 
+                    if ( c3 == 1 .and. do_total_energy ) then
+                      total_energy_series = total_energy_series - 1.d0/(k2+1)*AT_n_f(:,:,k2,j)
+                    end if 
+                  end do
+                  k3 = 0
+                  do p = 1, n_mbd_sites
+                    i2 = mbd_neighbors_list(k3+1)
+                    do c1 = 1, 3
+                      integrand(j) = integrand(j) + & !1.d0/(1.d0 + (omegas_mbd(j)/0.5d0)**2) * &
+                      dot_product(G_mat(3*(p-1)+c1,:,j),force_series(:,3*(p-1)+c1))
+                      if ( c3 == 1 .and. do_total_energy ) then
+                        total_integrand(j) = total_integrand(j) + a_mbd(k3+1) / &
+                              (1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) &
+                              * dot_product(T_LR(3*(p-1)+c1,:), &
+                              total_energy_series(:,3*(p-1)+c1))
+                      end if
+                    end do
+                    k3 = k3 + n_mbd_neigh(p)
+                  end do
+                end do
 
                 integral = 0.d0
                 call integrate("trapezoidal", omegas_mbd, integrand, omegas_mbd(1), omegas_mbd(n_freq), integral)
                 
+                write(*,*) "integrand", integrand
+
                 if ( c3 == 1 .and. do_total_energy ) then
                   E_tot = 0.d0
                   call integrate("trapezoidal", omegas_mbd, total_integrand, omegas_mbd(1), omegas_mbd(n_freq), E_tot)
                   E_tot = (E_tot/(2.d0*pi) + E_TS) * Hartree
                 end if
+                
+                deallocate( G_mat )
 
                 end if
 
@@ -3549,7 +3602,7 @@ end if
         end if
                     
         if ( do_derivatives .and. om == 2 ) then
-          deallocate( da_mbd, AT_n_f, dT_mbd, f_damp_der_mbd, f_damp_der_SCS, dT_LR, G_mat, force_series, &
+          deallocate( da_mbd, AT_n_f, dT_mbd, f_damp_der_mbd, f_damp_der_SCS, dT_LR, force_series, &
                       da_2b, do_2b, do_mbd, dr0_ii_SCS, dr0_ii_SCS_2b, dT_LR_mult, dT_LR_mult_ij, dr6_mult )
           
           if ( do_total_energy ) then
