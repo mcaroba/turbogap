@@ -36,6 +36,7 @@ program turbogap
   use gap_interface
   use types
   use vdw
+  use xps_utils
   use soap_turbo_functions
 #ifdef _MPIF90
   use mpi
@@ -57,7 +58,7 @@ program turbogap
   real*8 :: virial(1:3, 1:3), this_virial(1:3, 1:3), virial_soap(1:3, 1:3), virial_2b(1:3, 1:3), &
        virial_3b(1:3,1:3), virial_core_pot(1:3, 1:3), virial_vdw(1:3, 1:3), &
        this_virial_vdw(1:3, 1:3), v_uc, v_uc_prev, eVperA3tobar = 1602176.6208d0, &
-       ranf, ranv(1:3), disp(1:3), d_disp,  e_mc_prev, p_accept, virial_prev(1:3, 1:3)
+       ranf, ranv(1:3), disp(1:3), d_disp,  e_mc_prev, p_accept, virial_prev(1:3, 1:3), sim_exp_pred, sim_exp_prev
   real*8, allocatable :: energies(:), forces(:,:), energies_soap(:), forces_soap(:,:), this_energies(:), &
        this_forces(:,:), &
        energies_2b(:), forces_2b(:,:), energies_3b(:), forces_3b(:,:), &
@@ -73,7 +74,7 @@ program turbogap
   real*8, pointer :: hirshfeld_v(:), hirshfeld_v_cart_der(:,:)
   real*8, allocatable, target :: this_local_properties(:,:), this_local_properties_cart_der(:,:,:)
   real*8, pointer :: this_local_properties_pt(:), this_local_properties_cart_der_pt(:,:)
-
+  real*8, allocatable ::  x_i_exp(:), y_i_exp(:), x_i_pred(:), y_i_pred(:)
 
   real*8, allocatable :: all_energies(:,:), all_forces(:,:,:), all_virial(:,:,:)
   real*8, allocatable :: all_this_energies(:,:), all_this_forces(:,:,:), all_this_virial(:,:,:)
@@ -86,7 +87,7 @@ program turbogap
   integer :: update_bar, n_sparse, idx, gd_istep = 0
   logical, allocatable :: do_list(:), has_local_properties_mpi(:), fix_atom(:,:)
   logical :: rebuild_neighbors_list = .true., exit_loop = .true.,&
-       & gd_box_do_pos = .true., restart_box_optim = .false.
+       & gd_box_do_pos = .true., restart_box_optim = .false., valid_xps=.false.
   character*1 :: creturn = achar(13)
   ! Clean up these variables after code refactoring !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   integer, allocatable :: n_neigh(:), neighbors_list(:), alpha_max(:), species(:), species_supercell(:), &
@@ -142,7 +143,7 @@ program turbogap
        n_sparse_mpi_angle_3b(:), n_mpi_core_pot(:), local_properties_n_sparse_mpi_soap_turbo(:), &
        n_neigh_local(:), compress_P_nonzero_mpi(:), local_properties_n_data_mpi_soap_turbo(:)
   integer :: i_beg, i_end, n_sites_mpi, j_beg, j_end, size_soap_turbo, size_distance_2b, size_angle_3b
-  integer :: n_nonzero
+  integer :: n_nonzero, xids, xids_lp
   logical, allocatable :: compress_soap_mpi(:)
 
   ! Nested sampling
@@ -423,7 +424,14 @@ program turbogap
                        soap_turbo_hypers(j)%local_property_models(i)%compute = .true.
                        valid_local_properties=.true.
                        if (trim(params%compute_local_properties(i)) == "hirshfeld_v") vdw_lp_index=i
-                       if (trim(params%compute_local_properties(i)) == "core_electron_be") core_be_lp_index=i
+                       if (trim(params%compute_local_properties(i)) == "core_electron_be")then
+                          core_be_lp_index=i
+                          if(params%mc_opt_spectra .and. soap_turbo_hypers(j)%local_property_models(k)%has_data)then
+                             valid_xps = .true.
+                             xids = j
+                             xids_lp = k
+                          end if
+                       end if
                     end if
                  end do
 
@@ -445,6 +453,16 @@ program turbogap
            end if
         end if
      end do
+
+     ! This can be generalised by having an
+     ! implemented_spectra_options array and then seeing if they
+     ! exist, just as for the thermostats or mc moves in
+     ! read_files.f90, but keeping it simple right now!
+     if (.not. valid_xps .and. params%mc_opt_spectra )then
+        write(*,*) 'FATAL: optimize_spectra option chosen, but there was no core_electron_be model specified in the gap file! '
+        stop
+     end if
+
 
 
 #ifdef _MPIF90
@@ -2332,6 +2350,24 @@ program turbogap
                     call random_number(ranf)
 
 
+                    ! Here, put in the optimize xps spectra
+                    if (params%mc_opt_spectra .and. valid_xps)then
+                       call compare_exp_to_pred_spectra(&
+                            & soap_turbo_hypers(xids)&
+                            &%local_property_models(xids_lp)%data,&
+                            & local_properties(:,core_be_lp_index),&
+                            & params%xps_sigma, params%xps_n_samples,&
+                            & sim_exp_pred, x_i_exp, y_i_exp,&
+                            & x_i_pred, y_i_pred, .false. )
+                    end if
+
+                    if (sim_exp_pred > sim_exp_prev .and. params%mc_opt_spectra)then
+                       p_accept = 1.d0
+                       write(*, "(A)") " XPS spectra similarity increased, setting p_accept to 1"
+                    end if
+
+
+
                     !    ACCEPT OR REJECT
                     write(*, '(A,1X,A,1X,A,L4,1X,A,ES12.6,1X,A,1X,ES12.6)') 'Is ', trim(mc_move), &
                          'accepted?', p_accept > ranf, ' p_accept =', p_accept, ' ranf = ', ranf
@@ -2378,6 +2414,11 @@ program turbogap
                                & images(i_current_image)%local_properties,&
                                & images(i_current_image)%fix_atom,&
                                & "mc_all.xyz", .false. )
+
+                           if (params%mc_opt_spectra .and. valid_xps)then
+                              call write_local_property_data(x_i_pred, y_i_pred, .true.)
+                           end if
+
                        end if
 
                     end if
@@ -2400,6 +2441,7 @@ program turbogap
                        n_sites_prev = n_sites
                        v_uc_prev = v_uc
                        virial_prev = virial
+                       if (params%mc_opt_spectra .and. valid_xps) sim_exp_prev = sim_exp_pred
                        !   Assigning the default image with the accepted one
                        images(i_current_image) = images(i_trial_image)
                     end if
@@ -2430,6 +2472,7 @@ program turbogap
                     write(*,'(1X,A,1X,I8,1X,A)')    'mc_nrelax     = ', params%mc_nrelax,    '             |'
                     write(*,'(1X,A,1X,A,1X,A)')     'mc_relax_opt  = ', params%mc_relax_opt, '     |'
                     write(*,'(1X,A,1X,A,1X,A)')     'mc_hybrid_opt = ', params%mc_hybrid_opt,'     |'
+                    write(*,'(1X,A,1X,L8,1X,A)')    'mc_opt_spectra = ', params%mc_opt_spectra,'  |'
                     write(*,*) '                                       |'
                     ! t_beg must
 
@@ -2453,6 +2496,17 @@ program turbogap
                     !  >>> write to an xyz every iteration. This is slow so
                     !  >>> once validated it should be reommovwd
                     ! setting "md_istep" to 0 to overwrite
+
+                    ! Here, put in the optimize xps spectra
+                    if (params%mc_opt_spectra .and. valid_xps)then
+                       call compare_exp_to_pred_spectra(soap_turbo_hypers(xids)&
+                            &%local_property_models(xids_lp)%data, local_properties(:,core_be_lp_index),&
+                            & params%xps_sigma, params%xps_n_samples, sim_exp_pred,&
+                            & x_i_exp, y_i_exp, x_i_pred, y_i_pred,&
+                            & .true. )
+                       sim_exp_prev = sim_exp_pred
+                    end if
+
 
                     if ((mc_istep == 0 .or. mc_istep == params%mc_nsteps .or. &
                          modulo(mc_istep, params%write_xyz) == 0))then
@@ -2491,6 +2545,10 @@ program turbogap
                             &, images(i_current_image)%fix_atom,&
                             & "mc_all.xyz", .true. )
 
+
+                       if (params%mc_opt_spectra .and. valid_xps)then
+                          call write_local_property_data(x_i_pred, y_i_pred, .true.)
+                       end if
 
                     end if
 

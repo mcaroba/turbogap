@@ -8,7 +8,7 @@
 # HND X      Academic Software License v1.0 (ASL)
 # HND X
 # HND X   This file, make_gap_files.py, is copyright (c) 2019-2022, Mikhail S. Kuklin,
-# HND X   Miguel A. Caro, Richard Jana and Jan Kloppenburg
+# HND X   Miguel A. Caro, Richard Jana, Jan Kloppenburg and Tigany Zarrouk
 # HND X
 # HND X   TurboGAP is distributed in the hope that it will be useful for non-commercial
 # HND X   academic research, but WITHOUT ANY WARRANTY; without even the implied
@@ -55,9 +55,9 @@ elements = {1: ' H', 2: ' He', 3: 'Li', 4: 'Be', 5: 'B', 6: 'C', 7: 'N', 8: 'O',
 #cov_type = {'1': 'exp', '4': 'pol'}
 cov_type = {'ard_se': 'exp', 'pp': 'pol'}
 
-def write_alphas_file(gpCoordinates, index, hirshfeld=False):
-    if hirshfeld == True:
-        with open(f"gap_files/alphas_hirshfeld_{index}.dat", "w+") as alpha:
+def write_alphas_file(gpCoordinates, index, local_property_label=None):
+    if not local_property_label is None:
+        with open(f"gap_files/alphas_{local_property_label}_{index}.dat", "w+") as alpha:
             for sx in gpCoordinates.find_all('sparseX'):
                 alpha.write(f"{sx['alpha']}\n")
     else:
@@ -98,7 +98,7 @@ def compare_descriptors(descriptor1, descriptor2):
 
     return True
 
-def write_descriptor_to_output(output_file, gpCoordinates, index):
+def write_descriptor_to_output(output_file, gpCoordinates, index, local_property_labels=[]):
     descriptor = gpCoordinates.find('descriptor')
     desc_dict = descriptor_to_dict(descriptor)
 
@@ -178,25 +178,61 @@ def write_descriptor_to_output(output_file, gpCoordinates, index):
                 if 'compress_file' not in desc_dict:
                     output.write('compress_soap = .true.\n')
                 output.write('compress_mode = ' + '"' + desc_dict['compress_mode'] + '"\n')
-            if descriptor_counts['hirshfeld'] > 0:
-                # find right Hirshfeld descriptor (if any)
-                for index_hirsh, gpc in enumerate(hirshfeld_soup.find_all('gpCoordinates')):
-                    if compare_descriptors(gpc.find('descriptor'), gpCoordinates.find('descriptor')):
-                        hirshfeld_dict = descriptor_to_dict(gpc.find('descriptor'))
-                        output.write('has_vdw = .true.\n')
-                        output.write('vdw_qs = "gap_files/' + hirshfeld_soup.find('gpCoordinates')['sparseX_filename'] + '"\n')
-                        output.write(f'vdw_alphas = "gap_files/alphas_hirshfeld_{index_hirsh+1}.dat"\n')
-                        output.write(f"vdw_zeta = {hirshfeld_dict['zeta']}\n")
-                        output.write(f"vdw_delta = {hirshfeld_dict['delta']}\n")
-                        for word in hirshfeld_soup.find('command_line').get_text().split():
-                            try:
-                                key, entry = word.split('=')
-                                if key == 'local_property0':
-                                    local_property0 = entry
-                            except:
-                                continue
-                        output.write(f"vdw_v0 = {local_property0.strip('{}')}\n")
-                        break # only include the first matching Hirshfeld
+
+            n_lp = 0
+            write_lp = False
+            if len(local_property_labels) > 0:
+                # Must loop through the local properties and then write the strings
+                has_lp_str    = 'has_local_properties = .true.'
+                lp_qs_str     = "local_property_qs ="
+                lp_alphas_str = "local_property_alphas ="
+                lp_labels_str = "local_property_labels ="
+                lp_zetas_str  = "local_property_zetas ="
+                lp_deltas_str = "local_property_deltas ="
+                lp_v0s_str    = "local_property_v0s ="
+
+                for k, local_property_label in enumerate(local_property_labels):
+                    if descriptor_counts[local_property_label] > 0:
+                        # Then we should write for the local
+                        # properties. One will first append to some
+                        write_lp = True
+                        n_lp += 1
+                    else:
+                        continue
+                    
+                    for index_hirsh, gpc in enumerate(local_property_soups[k].find_all('gpCoordinates')):
+                        if compare_descriptors(gpc.find('descriptor'), gpCoordinates.find('descriptor')):
+                            hirshfeld_dict = descriptor_to_dict(gpc.find('descriptor'))
+
+                            lp_qs_str     += ' "gap_files/' + local_property_soups[k].find('gpCoordinates')['sparseX_filename'] + '"'
+                            lp_alphas_str += f' "gap_files/alphas_{local_property_label}_{index_hirsh+1}.dat"'
+                            lp_labels_str += f" \"{local_property_label}\""
+                            lp_zetas_str  += f" {hirshfeld_dict['zeta']}"
+                            lp_deltas_str += f" {hirshfeld_dict['delta']}"
+
+                            for word in local_property_soups[k].find('command_line').get_text().split():
+                                try:
+                                    key, entry = word.split('=')
+                                    if key == 'local_property0':
+                                        local_property0 = entry
+                                except:
+                                    continue
+                            # Process the local property string if there are colons in there
+                            lpv0 = local_property0.strip('{}')
+                            if ":" in lpv0:
+                                lpv0 = lpv0.split(":")[index_hirsh*2 + 1]
+                            lp_v0s_str += f" {lpv0}"
+                            break # only include the first matching Hirshfeld
+                if write_lp:
+                    output.write( has_lp_str   + "\n" )
+                    output.write( f"n_local_properties = {n_lp}\n" )                    
+                    output.write( lp_qs_str    + "\n" )
+                    output.write( lp_alphas_str+ "\n" )
+                    output.write( lp_labels_str+ "\n" )
+                    output.write( lp_zetas_str + "\n" )
+                    output.write( lp_deltas_str+ "\n" )
+                    output.write( lp_v0s_str   + "\n" )
+
             output.write("gap_end\n")
             output.write("\n")
 
@@ -241,23 +277,38 @@ descriptor_counts = {'distance_2b': 0,
                      'angle_3b': 0,
                      'soap_turbo': 0,
                      'pairpot': 0,
-                     'hirshfeld': 0}
+                     'hirshfeld': 0,
+                     'core_electron_be': 0}
 
+# Generalise this to include the number of local properties 
+
+local_property_files = []
+local_property_labels = []
+local_property_soups = []
 if len(sys.argv) > 3:
-    hirshfeld = sys.argv[3]
-    print(f"Reading {hirshfeld} ...")
-    with open(hirshfeld) as file:
-        hirshfeld_soup = BeautifulSoup(file,'xml')
+    n_local_properties = int(sys.argv[3])
+    # The number of arguments after are the names of the local properties
+    print(f" Found {n_local_properties} local properties!")
+    for i in range(n_local_properties):
+        local_property_files.append( sys.argv[3 + 2*i + 1])
+        local_property_labels.append(sys.argv[3 + 2*i + 2])        
+        local_property = local_property_files[-1] 
+        local_property_label = local_property_labels[-1]       
+        print(f"Reading {local_property} ...")
+        with open(local_property) as file:
+            local_property_soup = BeautifulSoup(file,'xml')
 
-    for gpc in hirshfeld_soup.find_all('gpCoordinates'):
-        descriptor_counts['hirshfeld'] += 1
-        write_alphas_file(gpc, descriptor_counts['hirshfeld'], hirshfeld=True)
+            for gpc in local_property_soup.find_all('gpCoordinates'):
+                descriptor_counts[local_property_label] += 1
+                write_alphas_file(gpc, descriptor_counts[local_property_label], local_property_label = local_property_label)
+
+            local_property_soups.append(local_property_soup)
 
 for gpc in xml_soup.find_all('gpCoordinates'):
     type = gpc.find('descriptor').get_text().split()[0]
     descriptor_counts[type] += 1
     write_alphas_file(gpc, descriptor_counts[type])
-    write_descriptor_to_output(output_file, gpc, descriptor_counts[type])
+    write_descriptor_to_output(output_file, gpc, descriptor_counts[type], local_property_labels=local_property_labels)
 
 if xml_soup.find('pairpot'):
     per_type_data = {} # convert 'type1' etc. into atomic numbers
@@ -275,5 +326,12 @@ print(f"Number of angle_3b => {descriptor_counts['angle_3b']}")
 print(f"Number of soap_turbo => {descriptor_counts['soap_turbo']}")
 if descriptor_counts['pairpot'] > 0:
     print(f"Core potentials found => {descriptor_counts['pairpot']}")
-if descriptor_counts['hirshfeld'] > 0:
-    print(f"Hirshfeld volume GAP(s) are found => {descriptor_counts['hirshfeld']}")
+
+if len(local_property_soups) > 0:
+    for i,l in enumerate(local_property_labels):
+        if descriptor_counts[l] > 0:
+            print(f"{l} GAP(s) are found => {descriptor_counts[l]}")
+
+
+# Test command:
+# python3 make_gap_files.py CO.xml CO.gap 1 core_electron_be_co.xml core_electron_be

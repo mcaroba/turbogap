@@ -418,7 +418,37 @@ end if
     end do
     close(unit_number)
 
-  end subroutine
+  end subroutine read_local_property_data
+
+
+  subroutine write_local_property_data(x, y, overwrite)
+
+    implicit none
+
+!   Input variables
+    character*1024 :: filename = "xps_prediction.dat"
+!   Output variables
+    real*8, allocatable, intent(in) :: x(:), y(:)
+    logical, intent(in) :: overwrite
+!   Internal variables
+    integer :: i
+
+    if( overwrite )then
+       open(unit=200, file=filename, status="unknown")
+       write(200,*) '#  Core_Electron_Binding_Energies[eV]  Distribution '
+    else
+       open(unit=200, file=filename, status="old", position="append")
+       write(200,*) ' '
+    end if
+
+    do i = 1, size(x)
+       write(200, '(1X,F20.8,1X,F20.8)') x(i), y(i)
+    end do
+    close(200)
+
+  end subroutine write_local_property_data
+
+
 !**************************************************************************
 
 !**************************************************************************
@@ -746,7 +776,15 @@ end if
         do i=1, params%n_mc_types
            params%mc_acceptance(i) = params%mc_acceptance(i) / k
         end do
-
+      else if(keyword=='mc_opt_spectra')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_opt_spectra
+      else if(keyword=='xps_sigma')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%xps_sigma
+      else if(keyword=='xps_n_samples')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%xps_n_samples
       else if(keyword=='write_xyz')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%write_xyz
@@ -1610,6 +1648,13 @@ end if
                        soap_turbo_hypers(n_soap_turbo)%local_property_models(j)%Qs, &
                        soap_turbo_hypers(n_soap_turbo)%local_property_models(j)%cutoff)
 
+                  ! Really, this could actually just not be associated
+                  ! with the soap turbo type as the same data might be
+                  ! reread into separate soap turbo descriptors when
+                  ! only one is needed, and further this is
+                  ! broadcasted. But this way, all the files are
+                  ! specified in the .gap file rather than in the
+                  ! input file.
                   if(soap_turbo_hypers(n_soap_turbo)%local_property_models(j)%has_data)then
                      call read_local_property_data(&
                           soap_turbo_hypers(n_soap_turbo)%local_property_models(j)%file_data,&
