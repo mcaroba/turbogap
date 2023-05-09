@@ -1584,7 +1584,7 @@ end if
                       &%file_data /= "none")then
 
                     soap_turbo_hypers(n_soap_turbo)&
-                         &%local_property_models(nw)%has_data = .true.
+                         &%local_property_models(i)%has_data = .true.
                  end if
               end do
 
