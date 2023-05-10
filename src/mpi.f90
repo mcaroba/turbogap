@@ -35,13 +35,14 @@ module mpi_helper
 
 
   subroutine allocate_soap_turbo_hypers(n_soap_turbo, n_species, n_sparse, dim, compress_P_nonzero, &
-       local_properties_n_sparse, local_properties_n_data, has_local_properties, n_local_properties, &
+       local_properties_n_sparse, local_properties_dim, local_properties_has_data, &
+       local_properties_n_data, has_local_properties, n_local_properties, &
        compress_soap, desc)
 
 !   Input variables
     integer, intent(in) :: n_soap_turbo, n_species(:), n_sparse(:), dim(:), local_properties_n_sparse(:), &
-                           compress_P_nonzero(:), n_local_properties(:), local_properties_n_data(:)
-    logical, intent(in) :: compress_soap(:), has_local_properties(:)
+                           compress_P_nonzero(:), n_local_properties(:), local_properties_n_data(:), local_properties_dim(:)
+    logical, intent(in) :: compress_soap(:), has_local_properties(:), local_properties_has_data(:)
 
 !   Output_variables
     type(soap_turbo), allocatable, intent(out) :: desc(:)
@@ -89,10 +90,14 @@ module mpi_helper
          ! actually this isn't that simple as one has to broadcast and allocate the local_property models
          do j = 1, desc(i)%n_local_properties
             n_sp = local_properties_n_sparse(counter)
+            d = local_properties_dim(counter)
             desc(i)%local_property_models(j)%n_sparse = n_sp
+            desc(i)%local_property_models(j)%dim = d
             allocate( desc(i)%local_property_models(j)%alphas(1:n_sp) )
-            ! Assuming same dimension
+            ! Assuming same dimension as from vdw implementation
+            ! will just change d to the actual one read in
             allocate( desc(i)%local_property_models(j)%Qs(1:d, 1:n_sp) )
+            desc(i)%local_property_models(j)%has_data = local_properties_has_data(counter)
             if (desc(i)%local_property_models(j)%has_data)then
                n_sp = local_properties_n_data(counter2)
                allocate( desc(i)%local_property_models(j)%data(1:2,1:n_sp) )

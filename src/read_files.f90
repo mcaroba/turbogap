@@ -1655,7 +1655,14 @@ end if
                   ! broadcasted. But this way, all the files are
                   ! specified in the .gap file rather than in the
                   ! input file.
-                  if(soap_turbo_hypers(n_soap_turbo)%local_property_models(j)%has_data)then
+                  soap_turbo_hypers(n_soap_turbo)&
+                       &%local_property_models(j)%dim =&
+                       & size(soap_turbo_hypers(n_soap_turbo)&
+                       &%local_property_models(j)%Qs,1)
+
+
+                  if(soap_turbo_hypers(n_soap_turbo)&
+                       &%local_property_models(j)%has_data)then
                      call read_local_property_data(&
                           soap_turbo_hypers(n_soap_turbo)%local_property_models(j)%file_data,&
                           soap_turbo_hypers(n_soap_turbo)%local_property_models(j)%n_data,&

@@ -85,9 +85,11 @@ program turbogap
        instant_pressure_tensor(1:3, 1:3), time_step, md_time, instant_pressure_prev
   integer, allocatable :: displs(:), displs2(:), counts(:), counts2(:), in_to_out_pairs(:), in_to_out_site(:)
   integer :: update_bar, n_sparse, idx, gd_istep = 0
-  logical, allocatable :: do_list(:), has_local_properties_mpi(:), fix_atom(:,:)
+  logical, allocatable :: do_list(:), has_local_properties_mpi(:),&
+       & local_properties_has_data_mpi_soap_turbo(:), fix_atom(:,:)
   logical :: rebuild_neighbors_list = .true., exit_loop = .true.,&
-       & gd_box_do_pos = .true., restart_box_optim = .false., valid_xps=.false.
+       & gd_box_do_pos = .true., restart_box_optim = .false.,&
+       & valid_xps=.false.
   character*1 :: creturn = achar(13)
   ! Clean up these variables after code refactoring !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   integer, allocatable :: n_neigh(:), neighbors_list(:), alpha_max(:), species(:), species_supercell(:), &
@@ -140,8 +142,11 @@ program turbogap
   real*8, allocatable :: temp_1d(:), temp_1d_bis(:), temp_2d(:,:)
   integer, allocatable :: temp_1d_int(:), n_atom_pairs_by_rank(:), displ(:)
   integer, allocatable :: n_species_mpi(:), n_sparse_mpi_soap_turbo(:), dim_mpi(:), n_sparse_mpi_distance_2b(:), &
-       n_sparse_mpi_angle_3b(:), n_mpi_core_pot(:), local_properties_n_sparse_mpi_soap_turbo(:), &
-       n_neigh_local(:), compress_P_nonzero_mpi(:), local_properties_n_data_mpi_soap_turbo(:)
+       n_sparse_mpi_angle_3b(:), n_mpi_core_pot(:),&
+       & local_properties_n_sparse_mpi_soap_turbo(:),&
+       & local_properties_dim_mpi_soap_turbo(:), n_neigh_local(:),&
+       & compress_P_nonzero_mpi(:),&
+       & local_properties_n_data_mpi_soap_turbo(:)
   integer :: i_beg, i_end, n_sites_mpi, j_beg, j_end, size_soap_turbo, size_distance_2b, size_angle_3b
   integer :: n_nonzero, xids, xids_lp
   logical, allocatable :: compress_soap_mpi(:)
@@ -464,11 +469,9 @@ program turbogap
      end if
 
 
-
 #ifdef _MPIF90
      END IF
 #endif
-
      !   THIS CHUNK HERE DISTRIBUTES THE INPUT DATA AMONG ALL THE PROCESSES
      !   Broadcast number of descriptors to other processes
 #ifdef _MPIF90
@@ -478,6 +481,7 @@ program turbogap
      call mpi_bcast(n_angle_3b, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(n_core_pot, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(n_local_properties_tot, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+     call mpi_bcast(n_data_local_properties_tot, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      !   Broadcast the maximum cutoff distance
      call mpi_bcast(rcut_max, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
      !   Processes other than 0 need to allocate the data structures on their own
@@ -488,6 +492,8 @@ program turbogap
      allocate( dim_mpi(1:n_soap_turbo) )
      allocate( n_local_properties_mpi(1:n_soap_turbo))
      allocate( local_properties_n_sparse_mpi_soap_turbo(1:n_local_properties_tot))
+     allocate( local_properties_has_data_mpi_soap_turbo(1:n_local_properties_tot))
+     allocate( local_properties_dim_mpi_soap_turbo(1:n_local_properties_tot))
      allocate( local_properties_n_data_mpi_soap_turbo(1:n_data_local_properties_tot))
      allocate( has_local_properties_mpi(1:n_soap_turbo) )
      allocate( compress_soap_mpi(1:n_soap_turbo) )
@@ -520,6 +526,13 @@ program turbogap
                     local_properties_n_sparse_mpi_soap_turbo(n_lp_count) =&
                          & soap_turbo_hypers(i)%local_property_models(j)&
                          &%n_sparse
+                    local_properties_dim_mpi_soap_turbo(n_lp_count) =&
+                         & soap_turbo_hypers(i)%local_property_models(j)&
+                         &%dim
+                    local_properties_has_data_mpi_soap_turbo(n_lp_count) =&
+                         & soap_turbo_hypers(i)%local_property_models(j)&
+                         &%has_data
+
                     n_lp_count = n_lp_count + 1
                  end do
                  do j = 1, n_local_properties_mpi(i)
@@ -547,11 +560,17 @@ program turbogap
      call mpi_bcast(local_properties_n_sparse_mpi_soap_turbo,&
           & n_local_properties_tot, MPI_INTEGER, 0,&
           & MPI_COMM_WORLD, ierr)
+     call mpi_bcast(local_properties_dim_mpi_soap_turbo,&
+          & n_local_properties_tot, MPI_INTEGER, 0,&
+          & MPI_COMM_WORLD, ierr)
      call mpi_bcast(local_properties_n_data_mpi_soap_turbo,&
           & n_data_local_properties_tot, MPI_INTEGER, 0,&
           & MPI_COMM_WORLD, ierr)
      call mpi_bcast(has_local_properties_mpi, n_soap_turbo,&
           & MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+     call mpi_bcast(local_properties_has_data_mpi_soap_turbo, n_data_local_properties_tot,&
+          & MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+
      call mpi_bcast(n_local_properties_mpi, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(compress_soap_mpi, n_soap_turbo, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(n_sparse_mpi_distance_2b, n_distance_2b, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
@@ -563,8 +582,13 @@ program turbogap
 
      IF( rank /= 0 )THEN
         call allocate_soap_turbo_hypers(n_soap_turbo, n_species_mpi, n_sparse_mpi_soap_turbo, dim_mpi, &
-             compress_P_nonzero_mpi, local_properties_n_sparse_mpi_soap_turbo, local_properties_n_data_mpi_soap_turbo, &
-             has_local_properties_mpi, n_local_properties_mpi, compress_soap_mpi, soap_turbo_hypers)
+             compress_P_nonzero_mpi,&
+             & local_properties_n_sparse_mpi_soap_turbo,&
+             & local_properties_dim_mpi_soap_turbo,&
+             & local_properties_has_data_mpi_soap_turbo,&
+             & local_properties_n_data_mpi_soap_turbo,&
+             & has_local_properties_mpi, n_local_properties_mpi,&
+             & compress_soap_mpi, soap_turbo_hypers)
         call allocate_distance_2b_hypers(n_distance_2b, n_sparse_mpi_distance_2b, distance_2b_hypers)
         call allocate_angle_3b_hypers(n_angle_3b, n_sparse_mpi_angle_3b, angle_3b_hypers)
         call allocate_core_pot_hypers(n_core_pot, n_mpi_core_pot, core_pot_hypers)
@@ -623,50 +647,95 @@ program turbogap
         call mpi_bcast(soap_turbo_hypers(i)%n_local_properties, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
         if( soap_turbo_hypers(i)%has_local_properties )then
            do j = 1, soap_turbo_hypers(i)%n_local_properties
-              call mpi_bcast(soap_turbo_hypers(i)%local_property_models(j)%n_sparse, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-              call mpi_bcast(soap_turbo_hypers(i)%local_property_models(j)%label, 1024, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
-              call mpi_bcast(soap_turbo_hypers(i)%local_property_models(j)%delta, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-              call mpi_bcast(soap_turbo_hypers(i)%local_property_models(j)%zeta, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-              call mpi_bcast(soap_turbo_hypers(i)%local_property_models(j)%V0, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-              n_sparse = soap_turbo_hypers(i)%local_property_models(j)%n_sparse
-              call mpi_bcast(soap_turbo_hypers(i)%local_property_models(j)%alphas(1:n_sparse)&
-                   &, n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD,&
-                   & ierr)
-              call mpi_bcast(soap_turbo_hypers(i)%local_property_models(j)%Qs(1:dim,&
-                   & 1:n_sparse), n_sparse*dim, MPI_DOUBLE_PRECISION, 0,&
+              call mpi_bcast(soap_turbo_hypers(i)&
+                   &%local_property_models(j)%n_sparse, 1,&
+                   & MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+              call mpi_bcast(soap_turbo_hypers(i)&
+                   &%local_property_models(j)%label, 1024,&
+                   & MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
+              call mpi_bcast(soap_turbo_hypers(i)&
+                   &%local_property_models(j)%delta, 1,&
+                   & MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+              call mpi_bcast(soap_turbo_hypers(i)&
+                   &%local_property_models(j)%zeta, 1,&
+                   & MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+              call mpi_bcast(soap_turbo_hypers(i)&
+                   &%local_property_models(j)%V0, 1,&
+                   & MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+              call mpi_bcast(soap_turbo_hypers(i)&
+                   &%local_property_models(j)%dim, 1, MPI_INTEGER, 0,&
                    & MPI_COMM_WORLD, ierr)
-              if (soap_turbo_hypers(i)%local_property_models(j)%has_data)then
-                 call mpi_bcast(soap_turbo_hypers(i)%local_property_models(j)%n_data, 1, MPI_DOUBLE_PRECISION, 0,&
-                      & MPI_COMM_WORLD, ierr)
-                 ! Broadcast the data too
+              n_sparse = soap_turbo_hypers(i)&
+                   &%local_property_models(j)%n_sparse
+              dim = soap_turbo_hypers(i)%local_property_models(j)%dim
+              call mpi_bcast(soap_turbo_hypers(i)&
+                   &%local_property_models(j)%alphas(1:n_sparse) ,&
+                   & n_sparse, MPI_DOUBLE_PRECISION, 0,&
+                   & MPI_COMM_WORLD, ierr)
+
+! Fortran runtime warning: An array temporary was created for
+              ! argument 'buffer' of procedure 'mpi_bcast'
+              call mpi_bcast(soap_turbo_hypers(i) &
+                   &%local_property_models(j)%Qs(1:dim, 1:n_sparse),&
+                   & n_sparse*dim, MPI_DOUBLE_PRECISION, 0,&
+                   & MPI_COMM_WORLD, ierr)
+              call mpi_bcast(soap_turbo_hypers(i)&
+                   &%local_property_models(j)%has_data, 1,&
+                   & MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+
+              if (soap_turbo_hypers(i)%local_property_models(j)&
+                   &%has_data)then
                  call mpi_bcast(soap_turbo_hypers(i)&
-                      &%local_property_models(j)%data(1:2&
-                      &,1:soap_turbo_hypers(i)%local_property_models(j)&
-                      &%n_data), 2*soap_turbo_hypers(i)%local_property_models(j)%n_data,&
-                      & MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+                      &%local_property_models(j)%n_data, 1,&
+                      & MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+                 ! Broadcast the data too
+                 call mpi_bcast(soap_turbo_hypers(i)%local_property_models(j)%data, &
+                      & 2 * soap_turbo_hypers(i)%local_property_models(j)&
+                      &%n_data, MPI_DOUBLE_PRECISION, 0,&
+                      & MPI_COMM_WORLD, ierr)
               end if
            end do
         end if
      end do
      do i = 1, n_distance_2b
         n_sparse = distance_2b_hypers(i)%n_sparse
-        call mpi_bcast(distance_2b_hypers(i)%alphas(1:n_sparse), n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(distance_2b_hypers(i)%cutoff(1:n_sparse), n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(distance_2b_hypers(i)%Qs(1:n_sparse, 1:1), n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(distance_2b_hypers(i)%delta, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(distance_2b_hypers(i)%sigma, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(distance_2b_hypers(i)%rcut, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(distance_2b_hypers(i)%buffer, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(distance_2b_hypers(i)%species1, 8, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(distance_2b_hypers(i)%species2, 8, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(distance_2b_hypers(i)%alphas(1:n_sparse),&
+             & n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD,&
+             & ierr)
+        call mpi_bcast(distance_2b_hypers(i)%cutoff(1:n_sparse),&
+             & n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD,&
+             & ierr)
+        call mpi_bcast(distance_2b_hypers(i)%Qs(1:n_sparse, 1:1),&
+             & n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD,&
+             & ierr)
+        call mpi_bcast(distance_2b_hypers(i)%delta, 1,&
+             & MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(distance_2b_hypers(i)%sigma, 1,&
+             & MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(distance_2b_hypers(i)%rcut, 1,&
+             & MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(distance_2b_hypers(i)%buffer, 1,&
+             & MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(distance_2b_hypers(i)%species1, 8,&
+             & MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(distance_2b_hypers(i)%species2, 8,&
+             & MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
      end do
      do i = 1, n_angle_3b
         n_sparse = angle_3b_hypers(i)%n_sparse
-        call mpi_bcast(angle_3b_hypers(i)%alphas(1:n_sparse), n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(angle_3b_hypers(i)%cutoff(1:n_sparse), n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(angle_3b_hypers(i)%Qs(1:n_sparse, 1:3), 3*n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(angle_3b_hypers(i)%delta, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(angle_3b_hypers(i)%sigma(1:3), 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(angle_3b_hypers(i)%alphas(1:n_sparse),&
+             & n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD,&
+             & ierr)
+        call mpi_bcast(angle_3b_hypers(i)%cutoff(1:n_sparse),&
+             & n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD,&
+             & ierr)
+        call mpi_bcast(angle_3b_hypers(i)%Qs(1:n_sparse, 1:3), 3&
+             &*n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD,&
+             & ierr)
+        call mpi_bcast(angle_3b_hypers(i)%delta, 1,&
+             & MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(angle_3b_hypers(i)%sigma(1:3), 3,&
+             & MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
         call mpi_bcast(angle_3b_hypers(i)%rcut, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
         call mpi_bcast(angle_3b_hypers(i)%buffer, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
         call mpi_bcast(angle_3b_hypers(i)%species_center, 8, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
@@ -707,7 +776,6 @@ program turbogap
   call cpu_time(time_read_input(2))
   time_read_input(3) = time_read_input(3) + time_read_input(2) - time_read_input(1)
   !**************************************************************************
-
 
 
 
@@ -1310,11 +1378,6 @@ program turbogap
                        this_local_properties_pt => this_local_properties(1:n_sites, l)
                           !             I don't remember why this needs a pointer <----------------------------------------- CHECK
                        this_local_properties_cart_der_pt => this_local_properties_cart_der(1:3, this_j_beg:this_j_end, l)
-
-                       print *, " Calculating Local Property: ",&
-                            & trim(soap_turbo_hypers(i)&
-                            &%local_property_models(l)%label), " rank&
-                            & ", rank
 
 
                        call get_local_properties( soap, &
@@ -2356,7 +2419,6 @@ program turbogap
 
 
                     ! Here, put in the optimize xps spectra
-                    print *, "simiilarity before ", sim_exp_pred
                     if (params%mc_opt_spectra .and. valid_xps)then
                        call compare_exp_to_pred_spectra(&
                             & soap_turbo_hypers(xids)&
@@ -2365,13 +2427,13 @@ program turbogap
                             & params%xps_sigma, params%xps_n_samples,&
                             & sim_exp_pred, x_i_exp, y_i_exp,&
                             & x_i_pred, y_i_pred, .false. )
-                    end if
 
-                    if (sim_exp_pred > sim_exp_prev .and. params%mc_opt_spectra)then
-                       p_accept = 1.d0
-                       write(*, "(A,1X,F8.3,1X,A,1X,F8.3,1X,A)") " XPS spectra similarity increased from",&
-                            & sim_exp_prev, ' to ', sim_exp_pred ,&
-                            & "setting p_accept to 1"
+                       if (sim_exp_pred > sim_exp_prev)then
+                          p_accept = 1.d0
+                          write(*, "(A,1X,F8.3,1X,A,1X,F8.3,1X,A)") " XPS spectra similarity increased from",&
+                               & sim_exp_prev, ' to ', sim_exp_pred ,&
+                               & "setting p_accept to 1"
+                       end if
                     end if
 
 

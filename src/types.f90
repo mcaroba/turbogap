@@ -35,7 +35,7 @@ module types
      real*8, allocatable :: Qs(:,:), alphas(:), cutoff(:), data(:,:)
      real*8              :: zeta, delta, V0
      character*1024      :: file_data="none", file_alphas, file_desc, label
-     integer             :: n_sparse, n_data
+     integer             :: n_sparse, n_data, dim
      logical             :: has_data = .false., do_derivatives = .false., compute=.true.
   end type local_property_soap_turbo
 
