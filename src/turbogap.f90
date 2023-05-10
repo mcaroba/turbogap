@@ -1174,6 +1174,11 @@ program turbogap
                  allocate( local_properties_cart_der(1:3, 1:n_atom_pairs_by_rank(rank+1), 1:params%n_local_properties) )
                  allocate( this_local_properties_cart_der(1:3, 1:n_atom_pairs_by_rank(rank+1), 1:params%n_local_properties) )
               end if
+              if(.not. allocated(local_properties_cart_der) )then
+                 allocate( local_properties_cart_der(1:3, 1:n_atom_pairs_by_rank(rank+1), 1:params%n_local_properties) )
+                 allocate( this_local_properties_cart_der(1:3, 1:n_atom_pairs_by_rank(rank+1), 1:params%n_local_properties) )
+              end if
+
               local_properties_cart_der = 0.d0
            end if
         end if
@@ -2351,6 +2356,7 @@ program turbogap
 
 
                     ! Here, put in the optimize xps spectra
+                    print *, "simiilarity before ", sim_exp_pred
                     if (params%mc_opt_spectra .and. valid_xps)then
                        call compare_exp_to_pred_spectra(&
                             & soap_turbo_hypers(xids)&
@@ -2363,7 +2369,9 @@ program turbogap
 
                     if (sim_exp_pred > sim_exp_prev .and. params%mc_opt_spectra)then
                        p_accept = 1.d0
-                       write(*, "(A)") " XPS spectra similarity increased, setting p_accept to 1"
+                       write(*, "(A,1X,F8.3,1X,A,1X,F8.3,1X,A)") " XPS spectra similarity increased from",&
+                            & sim_exp_prev, ' to ', sim_exp_pred ,&
+                            & "setting p_accept to 1"
                     end if
 
 
@@ -2416,7 +2424,7 @@ program turbogap
                                & "mc_all.xyz", .false. )
 
                            if (params%mc_opt_spectra .and. valid_xps)then
-                              call write_local_property_data(x_i_pred, y_i_pred, .true.)
+                              call write_local_property_data(x_i_pred, y_i_pred, .false.)
                            end if
 
                        end if
