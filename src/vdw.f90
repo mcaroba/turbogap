@@ -1094,10 +1094,10 @@ module vdw
     logical :: do_total_energy = .false.
 
 !central_pol = 10.d0
-central_omega = 0.5d0
-!central_omega(1:size(central_omega)/3) = 0.5d0
-!central_omega(size(central_omega)/3:2*size(central_omega)/3) = 0.8d0
-!central_omega(2*size(central_omega)/3:size(central_omega)) = 1.4d0
+!central_omega = 0.5d0
+central_omega(1:size(central_omega)/3) = 0.5d0
+central_omega(size(central_omega)/3:2*size(central_omega)/3) = 0.8d0
+central_omega(2*size(central_omega)/3:size(central_omega)) = 1.4d0
 
 ! TESTING: Change neighbor_alpha0_mbd... and neighbor_alpha0_2b... back to central_pol in a_2b and a_mbd parts
 ! Test G_mat with finite difference; it should be equal to the analytical solution now
@@ -3381,11 +3381,11 @@ central_omega = 0.5d0
 
                 if ( do_nnls ) then
                
-                allocate( A_nnls(1:n_freq,1:n_order+3) )
+                allocate( A_nnls(1:n_freq,1:2*n_order+1) )
                 allocate( b_nnls(1:n_freq) )
-                allocate( coeff_nnls(1:n_order+3) )
-                allocate( work_nnls(1:n_order+3) )
-                allocate( ind_nnls(1:n_order+3) )
+                allocate( coeff_nnls(1:2*n_order+1) )
+                allocate( work_nnls(1:2*n_order+1) )
+                allocate( ind_nnls(1:2*n_order+1) )
                 allocate( omegas_nnls(1:21) )
                 allocate( integrand_nnls(1:21) )
                 allocate( work_integrand(1:size(integrand)) )
@@ -3405,16 +3405,10 @@ central_omega = 0.5d0
 
                 do i2 = 1, n_freq
                   b_nnls(i2) = work_integrand(i2)
-                  do j2 = 1, n_order+3
-                    if ( j2 == 1 ) then
-                      A_nnls(i2,j2) = 1.d0
-                    else if ( j2 < n_order+1 ) then
-                      A_nnls(i2,j2) = (-1.d0 * omegas_mbd(i2))**(j2-1)
-                    else if ( j2 < n_order+3 ) then
-                      A_nnls(i2,j2) = -work_integrand(i2) * omegas_mbd(i2)**(2*(j2-n_order))
-                    else
-                      A_nnls(i2,j2) = -work_integrand(i2) * omegas_mbd(i2)**(2*n_order)
-                    end if
+                  A_nnls(i2,1) = 1.d0
+                  do j2 = 1, n_order
+                    A_nnls(i2,j2+1) = (-1.d0 * omegas_mbd(i2))**j2
+                    A_nnls(i2,n_order+j2+1) = -work_integrand(i2) * omegas_mbd(i2)**(2*j2)
                   end do
                 end do
                 
@@ -3426,33 +3420,31 @@ central_omega = 0.5d0
                   integrand_nnls = coeff_nnls(1)
                 end if
                 omegas_nnls = 0.d0
-                do j2 = 2, n_order
+                do j2 = 1, n_order
                   if ( integrand(1) < 0.d0 ) then
-                    integrand_nnls(1) = integrand_nnls(1) - coeff_nnls(j2)*(-1.d0*omegas_nnls(1))**(j2-1)
+                    integrand_nnls(1) = integrand_nnls(1) - coeff_nnls(j2+1)*(-1.d0*omegas_nnls(1))**j2
                   else
-                    integrand_nnls(1) = integrand_nnls(1) + coeff_nnls(j2)*(-1.d0*omegas_nnls(1))**(j2-1)
+                    integrand_nnls(1) = integrand_nnls(1) + coeff_nnls(j2+1)*(-1.d0*omegas_nnls(1))**j2
                   end if
                 end do
                 denom = 1.d0
-                do j2 = 1, 2
-                  denom = denom + coeff_nnls(j2+n_order) * omegas_nnls(1)**(2**j2)
+                do j2 = 1, n_order
+                  denom = denom + coeff_nnls(n_order+j2+1) * omegas_nnls(1)**(2**j2)
                 end do
-                denom = denom + coeff_nnls(3+n_order) * omegas_nnls(1)**(2*n_order)
                 integrand_nnls(1) = integrand_nnls(1)/denom
                 do i2 = 2, 21
                   omegas_nnls(i2) = omegas_nnls(i2-1)+0.2d0
-                  do j2 = 2, n_order
-                    if ( integrand(1) < 0.d0) then
-                      integrand_nnls(i2) = integrand_nnls(i2) - coeff_nnls(j2)*(-1.d0*omegas_nnls(i2))**(j2-1)
+                  do j2 = 1, n_order
+                    if ( integrand(1) < 0.d0 ) then
+                      integrand_nnls(i2) = integrand_nnls(i2) - coeff_nnls(j2+1)*(-1.d0*omegas_nnls(i2))**j2
                     else
-                      integrand_nnls(i2) = integrand_nnls(i2) + coeff_nnls(j2)*(-1.d0*omegas_nnls(i2))**(j2-1)
-                    end if 
+                      integrand_nnls(i2) = integrand_nnls(i2) + coeff_nnls(j2+1)*(-1.d0*omegas_nnls(i2))**j2
+                    end if
                   end do
                   denom = 1.d0
-                  do j2 = 1, 2
-                    denom = denom + coeff_nnls(j2+n_order) * omegas_nnls(i2)**(2**j2)
+                  do j2 = 1, n_order
+                    denom = denom + coeff_nnls(n_order+j2+1) * omegas_nnls(i2)**(2**j2)
                   end do
-                  denom = denom + coeff_nnls(3+n_order) * omegas_nnls(j2)**(2*n_order)
                   integrand_nnls(i2) = integrand_nnls(i2)/denom
                 end do
 
