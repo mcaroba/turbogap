@@ -3,7 +3,7 @@ from ase.io import read, write
 
 d_arr = np.linspace(8,15,36)
 
-atoms1 = read("c60.xyz")
+atoms1 = read("dimer.xyz")
 
 for d in d_arr:
     atoms2 = read("c60.xyz")

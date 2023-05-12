@@ -54,7 +54,7 @@
  You specified the following options:   |
                                         |
  ---------------------------------      |
- Atoms file =              c60.xyz      |
+ Atoms file =        dimer_1.0.xyz      |
  ---------------------------------      |
  No. of species   = 1                   |
    *) Species #1  =              C      |
@@ -63,398 +63,164 @@
  ---------------------------------      |
                                         |
  .......................................|
- SCS timing   5.4161000000000015E-002
- Communication timing   4.0000000000040004E-006
+ SCS timing   6.6100000000002268E-004
+ Communication timing   9.9999999999544897E-006
  alpha_SCS
-           1   7.8570105554112359     
-           2   7.8619921174365439     
-           3   7.8576003601809745     
-           4   7.8644254181616597     
-           5   7.8634543651968345     
-           6   7.8601461900658789     
-           7   7.8633486972823263     
-           8   7.8554329515309513     
-           9   7.8666296836505190     
-          10   7.8554625009063601     
-          11   7.8489049891987479     
-          12   7.8729731430294692     
-          13   7.8556788467641310     
-          14   7.8630926310102529     
-          15   7.8530771794114962     
-          16   7.8657171160743360     
-          17   7.8766245001542714     
-          18   7.8571416554666271     
-          19   7.8583876519419986     
-          20   7.8657244473612478     
-          21   7.8691627760383369     
-          22   7.8556936740689025     
-          23   7.8633394310847562     
-          24   7.8574748646565675     
-          25   7.8613878388049514     
-          26   7.8684164727762154     
-          27   7.8647615207163595     
-          28   7.8524232441418009     
-          29   7.8632934986067733     
-          30   7.8656103612447881     
-          31   7.8557583363768684     
-          32   7.8601923295994736     
-          33   7.8537962291595740     
-          34   7.8763233000935529     
-          35   7.8763895632205987     
-          36   7.8590060923947496     
-          37   7.8527974814444024     
-          38   7.8576001751051718     
-          39   7.8692984195743279     
-          40   7.8630606077642371     
-          41   7.8571519037676980     
-          42   7.8733024562886760     
-          43   7.8552305229160693     
-          44   7.8572487800237978     
-          45   7.8539544024131480     
-          46   7.8644195943092745     
-          47   7.8619985627864049     
-          48   7.8764140525207056     
-          49   7.8615456884312946     
-          50   7.8592299330192006     
-          51   7.8764437327429739     
-          52   7.8644814052218708     
-          53   7.8768442066837432     
-          54   7.8526795954474373     
-          55   7.8685016345719241     
-          56   7.8583413263615078     
-          57   7.8667382852720520     
-          58   7.8659946573490558     
-          59   7.8572471008018097     
-          60   7.8487875584463067     
- MBD energy           1  -7.1171481374449758E-002
- MBD total energy of sphere           1  -1.6008143336825378     
- MBD force           1           1   2.6812107428055176E-002
- MBD force           1           2   4.8202566913355220E-002
- MBD force           1           3  -5.5388802087482432E-002
- MBD energy           2  -7.1167191293737164E-002
- MBD total energy of sphere           2  -1.6008167423255300     
- MBD force           2           1   6.6545536463522813E-003
- MBD force           2           2   2.8356678042230247E-002
- MBD force           2           3  -7.2571919589366526E-002
- MBD energy           3  -7.1191569764319368E-002
- MBD total energy of sphere           3  -1.6009624385165742     
- MBD force           3           1   1.5601324921533679E-002
- MBD force           3           2   6.7242501270944596E-002
- MBD force           3           3  -3.6546755637937266E-002
- MBD energy           4  -7.1176662262872101E-002
- MBD total energy of sphere           4  -1.6007742283231812     
- MBD force           4           1  -2.1949983885557980E-002
- MBD force           4           2   2.9932015906177917E-002
- MBD force           4           3  -6.8751327607814383E-002
- MBD energy           5  -7.1203611832089120E-002
- MBD total energy of sphere           5  -1.6009147904896108     
- MBD force           5           1  -3.9959163908653915E-002
- MBD force           5           2   2.4810198876857614E-003
- MBD force           5           3  -6.7139540964007760E-002
- MBD energy           6  -7.1195866925206797E-002
- MBD total energy of sphere           6  -1.6008541399879486     
- MBD force           6           1   2.1312263376669437E-002
- MBD force           6           2  -1.0742846214405945E-003
- MBD force           6           3  -7.5214622402728804E-002
- MBD energy           7  -7.1193319740175343E-002
- MBD total energy of sphere           7  -1.6009051594454065     
- MBD force           7           1   5.4985816969644703E-003
- MBD force           7           2  -2.5267279457085498E-002
- MBD force           7           3  -7.3755692865270589E-002
- MBD energy           8  -7.1224541730458252E-002
- MBD total energy of sphere           8  -1.6009548226821604     
- MBD force           8           1  -2.7002151891812154E-002
- MBD force           8           2  -2.3466001031782271E-002
- MBD force           8           3  -6.9461825412672443E-002
- MBD energy           9  -7.1192930563420173E-002
- MBD total energy of sphere           9  -1.6010153189545624     
- MBD force           9           1   5.3743607253602457E-002
- MBD force           9           2   5.6699773281791210E-002
- MBD force           9           3  -2.7818487678265018E-004
- MBD energy          10  -7.1179175942152395E-002
- MBD total energy of sphere          10  -1.6008339901394726     
- MBD force          10           1   6.6407945424593787E-002
- MBD force          10           2   3.5067344946836075E-002
- MBD force          10           3  -2.1778245951744869E-002
- MBD energy          11  -7.1241731660508484E-002
- MBD total energy of sphere          11  -1.6011677898405918     
- MBD force          11           1   2.9953958574550025E-002
- MBD force          11           2   7.1718732302928065E-002
- MBD force          11           3  -7.2522800253426506E-003
- MBD energy          12  -7.1132088067513727E-002
- MBD total energy of sphere          12  -1.6006601661173085     
- MBD force          12           1   5.3744073785910999E-002
- MBD force          12           2   3.1118272816800376E-002
- MBD force          12           3  -4.7467966793616617E-002
- MBD energy          13  -7.1205728355641970E-002
- MBD total energy of sphere          13  -1.6009069617074903     
- MBD force          13           1   5.0506277502519230E-002
- MBD force          13           2   6.0694156529167301E-004
- MBD force          13           3  -5.9762391851550793E-002
- MBD energy          14  -7.1195628316454235E-002
- MBD total energy of sphere          14  -1.6008330936136685     
- MBD force          14           1   7.7477466078012813E-002
- MBD force          14           2   9.1880149893743390E-003
- MBD force          14           3  -4.5379492920772455E-003
- MBD energy          15  -7.1246102701029074E-002
- MBD total energy of sphere          15  -1.6010918135731469     
- MBD force          15           1   7.4575646177514124E-002
- MBD force          15           2  -1.7722367865956656E-002
- MBD force          15           3  -1.5386171203737543E-002
- MBD energy          16  -7.1189744897740256E-002
- MBD total energy of sphere          16  -1.6007841624408210     
- MBD force          16           1   6.0128926014975180E-002
- MBD force          16           2  -2.2263548624676010E-002
- MBD force          16           3  -4.4655574580351430E-002
- MBD energy          17  -7.1138423038658818E-002
- MBD total energy of sphere          17  -1.6007949314963206     
- MBD force          17           1   9.1472261644794540E-003
- MBD force          17           2   6.5330316210426204E-002
- MBD force          17           3   4.1763045388838405E-002
- MBD energy          18  -7.1185808363522590E-002
- MBD total energy of sphere          18  -1.6008879564665650     
- MBD force          18           1   3.6176597048248028E-002
- MBD force          18           2   4.8355394574825558E-002
- MBD force          18           3   4.9611121793001520E-002
- MBD energy          19  -7.1189260619891268E-002
- MBD total energy of sphere          19  -1.6010248956526463     
- MBD force          19           1   6.2598188960336226E-003
- MBD force          19           2   7.6368294976939352E-002
- MBD force          19           3   1.5086136732799233E-002
- MBD energy          20  -7.1157559949602975E-002
- MBD total energy of sphere          20  -1.6007374532205250     
- MBD force          20           1   5.6990154426203150E-002
- MBD force          20           2   4.4249968708101266E-002
- MBD force          20           3   3.0019057132135013E-002
- MBD energy          21  -7.1126221254437544E-002
- MBD total energy of sphere          21  -1.6005969804604463     
- MBD force          21           1   7.1764003029221576E-002
- MBD force          21           2   1.4719502386079112E-002
- MBD force          21           3   2.7324440700533210E-002
- MBD energy          22  -7.1223970910656131E-002
- MBD total energy of sphere          22  -1.6009541608374505     
- MBD force          22           1   2.7003319758510603E-002
- MBD force          22           2   2.3458419203764885E-002
- MBD force          22           3   6.9460729243322764E-002
- MBD energy          23  -7.1203201035703753E-002
- MBD total energy of sphere          23  -1.6009083462317431     
- MBD force          23           1   3.9954774047090282E-002
- MBD force          23           2  -2.4799014101139932E-003
- MBD force          23           3   6.7135774219520467E-002
- MBD energy          24  -7.1151815577084290E-002
- MBD total energy of sphere          24  -1.6006557664246763     
- MBD force          24           1   6.3783777688073306E-002
- MBD force          24           2  -7.0669808397245196E-003
- MBD force          24           3   4.4650151483612170E-002
- MBD energy          25  -7.1170853397211978E-002
- MBD total energy of sphere          25  -1.6008471913223028     
- MBD force          25           1  -4.5425834199927899E-002
- MBD force          25           2   6.2310279002892710E-002
- MBD force          25           3   1.2733409008875252E-002
- MBD energy          26  -7.1132508345252435E-002
- MBD total energy of sphere          26  -1.6006702847561507     
- MBD force          26           1  -4.2171544311960872E-002
- MBD force          26           2   4.9779658974853258E-002
- MBD force          26           3   4.2993867257212728E-002
- MBD energy          27  -7.1157379568532422E-002
- MBD total energy of sphere          27  -1.6008065432086389     
- MBD force          27           1  -2.2730391161587985E-002
- MBD force          27           2   7.4698547710910612E-002
- MBD force          27           3  -3.9636073168201511E-004
- MBD energy          28  -7.1181769533490119E-002
- MBD total energy of sphere          28  -1.6008561970557051     
- MBD force          28           1  -1.6599878288930944E-002
- MBD force          28           2   5.1321523712532804E-002
- MBD force          28           3   5.6598627622296005E-002
- MBD energy          29  -7.1194553407527936E-002
- MBD total energy of sphere          29  -1.6009136907843293     
- MBD force          29           1  -5.4976145587474542E-003
- MBD force          29           2   2.5271016455933937E-002
- MBD force          29           3   7.3755498165341687E-002
- MBD energy          30  -7.1188313191961755E-002
- MBD total energy of sphere          30  -1.6007879613895231     
- MBD force          30           1  -6.0127598027145283E-002
- MBD force          30           2   2.2256313403327035E-002
- MBD force          30           3   4.4660338370935651E-002
- MBD energy          31  -7.1204446983176059E-002
- MBD total energy of sphere          31  -1.6009004054041283     
- MBD force          31           1  -5.0504009347807230E-002
- MBD force          31           2  -6.0171952886127814E-004
- MBD force          31           3   5.9756429684783223E-002
- MBD energy          32  -7.1196978425839386E-002
- MBD total energy of sphere          32  -1.6008631174984900     
- MBD force          32           1  -2.1318487049433957E-002
- MBD force          32           2   1.0683097833446425E-003
- MBD force          32           3   7.5216955705004071E-002
- MBD energy          33  -7.1199267271404035E-002
- MBD total energy of sphere          33  -1.6009154033442967     
- MBD force          33           1  -3.4621692076785893E-002
- MBD force          33           2   5.1720111370507395E-002
- MBD force          33           3  -4.7347230452706189E-002
- MBD energy          34  -7.1152732888706591E-002
- MBD total energy of sphere          34  -1.6007374514938042     
- MBD force          34           1  -6.0402033179367411E-002
- MBD force          34           2   3.7408504058551367E-002
- MBD force          34           3  -3.2460422567679906E-002
- MBD energy          35  -7.1141612526085987E-002
- MBD total energy of sphere          35  -1.6006997733300452     
- MBD force          35           1  -1.6971277563243799E-002
- MBD force          35           2   6.9038605489005381E-002
- MBD force          35           3  -3.2224637081020142E-002
- MBD energy          36  -7.1217992544911055E-002
- MBD total energy of sphere          36  -1.6009650934223616     
- MBD force          36           1  -6.5455288057618688E-002
- MBD force          36           2   4.2432645509936320E-002
- MBD force          36           3  -4.4175292395669530E-003
- MBD energy          37  -7.1246971960700789E-002
- MBD total energy of sphere          37  -1.6011017745039229     
- MBD force          37           1  -7.4578146112983273E-002
- MBD force          37           2   1.7726510697046498E-002
- MBD force          37           3   1.5387225797597919E-002
- MBD energy          38  -7.1150472586172214E-002
- MBD total energy of sphere          38  -1.6006513289431998     
- MBD force          38           1  -6.3784685085230178E-002
- MBD force          38           2   7.0580883655743214E-003
- MBD force          38           3  -4.4645082030816616E-002
- MBD energy          39  -7.1124646283238252E-002
- MBD total energy of sphere          39  -1.6005897327336915     
- MBD force          39           1  -7.1760436915201467E-002
- MBD force          39           2  -1.4713470253221948E-002
- MBD force          39           3  -2.7327224864457756E-002
- MBD energy          40  -7.1196154872771811E-002
- MBD total energy of sphere          40  -1.6008390549258797     
- MBD force          40           1  -7.7480176660025879E-002
- MBD force          40           2  -9.1928200269317771E-003
- MBD force          40           3   4.5356678676711356E-003
- MBD energy          41  -7.1170994455406075E-002
- MBD total energy of sphere          41  -1.6008083280674958     
- MBD force          41           1  -2.6816118334892232E-002
- MBD force          41           2  -4.8198775547256739E-002
- MBD force          41           3   5.5385541676444751E-002
- MBD energy          42  -7.1130573645455289E-002
- MBD total energy of sphere          42  -1.6006573314859645     
- MBD force          42           1  -5.3749028798596769E-002
- MBD force          42           2  -3.1117934087580096E-002
- MBD force          42           3   4.7462047332260997E-002
- MBD energy          43  -7.1179526369665264E-002
- MBD total energy of sphere          43  -1.6008352001742157     
- MBD force          43           1  -6.6411034534999053E-002
- MBD force          43           2  -3.5061140373733292E-002
- MBD force          43           3   2.1777151205764258E-002
- MBD energy          44  -7.1192594042659263E-002
- MBD total energy of sphere          44  -1.6009623517592109     
- MBD force          44           1  -1.5605154130047953E-002
- MBD force          44           2  -6.7242249802363360E-002
- MBD force          44           3   3.6549711535503356E-002
- MBD energy          45  -7.1197903494227180E-002
- MBD total energy of sphere          45  -1.6009088663853002     
- MBD force          45           1   3.4617010222609781E-002
- MBD force          45           2  -5.1717841558786552E-002
- MBD force          45           3   4.7350324741264334E-002
- MBD energy          46  -7.1175655172609806E-002
- MBD total energy of sphere          46  -1.6007745699048470     
- MBD force          46           1   2.1944546813680188E-002
- MBD force          46           2  -2.9937680806254276E-002
- MBD force          46           3   6.8752561298055681E-002
- MBD energy          47  -7.1167480716992401E-002
- MBD total energy of sphere          47  -1.6008167672519991     
- MBD force          47           1  -6.6595855844770032E-003
- MBD force          47           2  -2.8356013023322885E-002
- MBD force          47           3   7.2571298411202453E-002
- MBD energy          48  -7.1141539565390474E-002
- MBD total energy of sphere          48  -1.6006982372576546     
- MBD force          48           1   1.6974265552392599E-002
- MBD force          48           2  -6.9039030065414134E-002
- MBD force          48           3   3.2230218674531803E-002
- MBD energy          49  -7.1169304935345679E-002
- MBD total energy of sphere          49  -1.6008360967891031     
- MBD force          49           1   4.5429402293247524E-002
- MBD force          49           2  -6.2306568899121888E-002
- MBD force          49           3  -1.2726100222036090E-002
- MBD energy          50  -7.1216155919469740E-002
- MBD total energy of sphere          50  -1.6009564686604492     
- MBD force          50           1   6.5453062079642549E-002
- MBD force          50           2  -4.2435336170024658E-002
- MBD force          50           3   4.4224424596107908E-003
- MBD energy          51  -7.1152371763361227E-002
- MBD total energy of sphere          51  -1.6007358370540621     
- MBD force          51           1   6.0400946902061485E-002
- MBD force          51           2  -3.7406961708767839E-002
- MBD force          51           3   3.2464673831755927E-002
- MBD energy          52  -7.1158118795556752E-002
- MBD total energy of sphere          52  -1.6008054483981844     
- MBD force          52           1   2.2740065720549953E-002
- MBD force          52           2  -7.4700319736883847E-002
- MBD force          52           3   3.9918669065444878E-004
- MBD energy          53  -7.1137619627234888E-002
- MBD total energy of sphere          53  -1.6007837227449639     
- MBD force          53           1  -9.1389800974163143E-003
- MBD force          53           2  -6.5327512522862174E-002
- MBD force          53           3  -4.1764701249183092E-002
- MBD energy          54  -7.1180369622247455E-002
- MBD total energy of sphere          54  -1.6008448585963431     
- MBD force          54           1   1.6603267621957605E-002
- MBD force          54           2  -5.1322827867021768E-002
- MBD force          54           3  -5.6595293669493132E-002
- MBD energy          55  -7.1131909472961261E-002
- MBD total energy of sphere          55  -1.6006660934322077     
- MBD force          55           1   4.2176090841961736E-002
- MBD force          55           2  -4.9779826604859391E-002
- MBD force          55           3  -4.2990738969646364E-002
- MBD energy          56  -7.1190374247972477E-002
- MBD total energy of sphere          56  -1.6010234112496280     
- MBD force          56           1  -6.2530946036622528E-003
- MBD force          56           2  -7.6371535562547471E-002
- MBD force          56           3  -1.5091043727362780E-002
- MBD energy          57  -7.1193352303770538E-002
- MBD total energy of sphere          57  -1.6010102173850733     
- MBD force          57           1  -5.3744699288687546E-002
- MBD force          57           2  -5.6696803015586834E-002
- MBD force          57           3   2.6944799405888005E-004
- MBD energy          58  -7.1156460003141381E-002
- MBD total energy of sphere          58  -1.6007284208463248     
- MBD force          58           1  -5.6986446993648437E-002
- MBD force          58           2  -4.4250502406947563E-002
- MBD force          58           3  -3.0021272195517357E-002
- MBD energy          59  -7.1185340603963781E-002
- MBD total energy of sphere          59  -1.6008854575071938     
- MBD force          59           1  -3.6173789788124945E-002
- MBD force          59           2  -4.8352930322500196E-002
- MBD force          59           3  -4.9617449097725738E-002
- MBD energy          60  -7.1243577596010785E-002
- MBD total energy of sphere          60  -1.6011663196450567     
- MBD force          60           1  -2.9954151428685096E-002
- MBD force          60           2  -7.1720441743924140E-002
- MBD force          60           3   7.2488473591929810E-003
- MBD timing   10.045169999999999     
+           1   11.344388020925487     
+           2   11.344388022082226     
+ MBD energy           1  -3.3140438805812174E-009
+ MBD total energy of sphere           1  -6.6280877611624332E-009
+ MBD force           1           1  -4.9804159815058858E-008
+ MBD force           1           2  -2.1896275894259633E-025
+ MBD force           1           3   1.1549660851480763E-034
+ MBD energy           2  -3.3140438805811430E-009
+ MBD total energy of sphere           2  -6.6280877611622859E-009
+ MBD force           2           1   4.9804159815057740E-008
+ MBD force           2           2   2.1896275894259137E-025
+ MBD force           2           3  -1.1549655703341827E-034
+ MBD timing   2.0719999999999628E-003
                                         |
- SOAP energy:          -761.18235569 eV |
- 2b energy:             272.71287662 eV |
- 3b energy:             -32.74363930 eV |
- core_pot energy:        -0.46433622 eV |
- vdw energy:             -4.27081151 eV |
- Total energy:         -525.94826610 eV |
+ SOAP energy:            -6.35837330 eV |
+ 2b energy:               1.33433933 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.00000001 eV |
+ Total energy:           -5.02403397 eV |
                                         |
  Energy & forces in "trajectory_out.xyz"|
                                         |
  .......................................|
                                         |
- *     Read input:        0.451 seconds |
+ *     Read input:        0.519 seconds |
  * Read XYZ files:        0.000 seconds |
- * Neighbor lists:        0.001 seconds |
- *  GAP desc/pred:       10.095 seconds |
-     - soap_turbo:        0.094 seconds |
-     -         2b:        0.004 seconds |
-     -         3b:        0.045 seconds |
+ * Neighbor lists:        0.000 seconds |
+ *  GAP desc/pred:        0.002 seconds |
+     - soap_turbo:        0.062 seconds |
+     -         2b:        0.000 seconds |
+     -         3b:        0.000 seconds |
      -   core_pot:        0.000 seconds |
-     -        vdw:       10.100 seconds |
+     -        vdw:        0.003 seconds |
  *  MPI comms.   :        0.000 seconds |
      -  pos & vel:        0.000 seconds |
      - E & F brc.:        0.000 seconds |
      -  MPI misc.:        0.000 seconds |
- *  Miscellaneous:        0.368 seconds |
+ *  Miscellaneous:        0.267 seconds |
                                         |
- *     Total time:       10.915 seconds |
+ *     Total time:        0.789 seconds |
+                                        |
+ .......................................|
+                                        |
+ End of execution                       |
+ _______________________________________/
+ _________________________________________________________________ 
+                              _                                   \
+  ___________            __   \\ /\        _____     ___   _____  |
+ /____  ____/           / / /\|*\|*\/\    / ___ \   /   | |  _  \ |
+     / / __  __  __    / /  \********/   / /  /_/  / /| | | / | | |
+    / / / / / / / /_  / /__  \**__**/   / / ____  / / | | | |_/ / |
+   / / / / / / / __/ / ___ \ /*/  \*\  / / /_  / / /__| | |  __/  |
+  / / / /_/ / / /   / /__/ / \ \__/ / / /___/ / / ____  | | |     |
+ /_/_/_____/_/_/___/______/___\____/__\______/_/_/____|_|_|_|____ |
+ _____________________________________________________________  / |
+ *************************************************************|/  |
+                      Welcome to TurboGAP v0.1                    |
+                     Written and maintained by                    |
+                                                                  |
+                          Miguel A. Caro                          |
+                        mcaroba@gmail.com                         |
+                       miguel.caro@aalto.fi                       |
+                                                                  |
+        Department of Electrical Engineering and Automation       |
+                      Aalto University, Finland                   |
+                                                                  |
+ .................................................................|
+                                                                  |
+ ====================>>>>>  turbogap.fi  <<<<<====================|
+                                                                  |
+ .................................................................|
+                                                                  |
+ Contributors (code and methodology) in chronological order:      |
+                                                                  |
+ *) Miguel A. Caro (Aalto University)                             |
+ *) Patricia Hernández-León (Aalto University)                    |
+ *) Suresh Kondati Natarajan (now @ QuantumWise, formerly @ Aalto)|
+ *) Albert P. Bartók-Pártay (Warwick University)                  |
+ *) Eelis V. Mielonen (now @ EPFL, formerly @ Aalto)              |
+ *) Heikki Muhli (Aalto University)                               |
+ *) Mikhail Kuklin (Aalto University)                             |
+ *) Gábor Csányi (University of Cambridge)                        |
+ *) Jan Kloppenburg (Aalto University)                            |
+                                                                  |
+ .................................................................|
+                                                                  |
+                      Last updated: Jul. 2021                     |
+                                         _________________________/
+ .......................................|
+                                        |
+ Running TurboGAP with MPI support:     |
+                                        |
+ Running TurboGAP on      1 MPI tasks   |
+                                        |
+ .......................................|
+                                        |
+ Checking input file...                 |
+                                        |
+ You specified the following options:   |
+                                        |
+ ---------------------------------      |
+ Atoms file =        dimer_1.1.xyz      |
+ ---------------------------------      |
+ No. of species   = 1                   |
+   *) Species #1  =              C      |
+ ---------------------------------      |
+ rcut_max =         20.0000 Angst.      |
+ ---------------------------------      |
+                                        |
+ .......................................|
+ SCS timing   6.6699999999997317E-004
+ Communication timing   9.9999999999544897E-006
+ alpha_SCS
+           1   9.8385419781789505     
+           2   9.8385419778843097     
+ MBD energy           1  -7.8215575672298307E-012
+ MBD total energy of sphere           1  -1.5643115134459661E-011
+ MBD force           1           1  -7.4157183432366429E-011
+ MBD force           1           2  -1.3400347611520901E-027
+ MBD force           1           3   2.6723012870498920E-038
+ MBD energy           2  -7.8215575672295561E-012
+ MBD total energy of sphere           2  -1.5643115134459112E-011
+ MBD force           2           1   7.4157183432363559E-011
+ MBD force           2           2   1.3400347611520286E-027
+ MBD force           2           3  -2.6722691791649878E-038
+ MBD timing   1.5089999999999826E-003
+                                        |
+ SOAP energy:            -3.84043275 eV |
+ 2b energy:              -0.73259551 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:        -2.53588301 eV |
+ vdw energy:             -0.00000000 eV |
+ Total energy:           -7.10891126 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ *     Read input:        0.513 seconds |
+ * Read XYZ files:        0.000 seconds |
+ * Neighbor lists:        0.000 seconds |
+ *  GAP desc/pred:        0.002 seconds |
+     - soap_turbo:        0.040 seconds |
+     -         2b:        0.000 seconds |
+     -         3b:        0.000 seconds |
+     -   core_pot:        0.000 seconds |
+     -        vdw:        0.003 seconds |
+ *  MPI comms.   :        0.000 seconds |
+     -  pos & vel:        0.000 seconds |
+     - E & F brc.:        0.000 seconds |
+     -  MPI misc.:        0.000 seconds |
+ *  Miscellaneous:        0.222 seconds |
+                                        |
+ *     Total time:        0.737 seconds |
                                         |
  .......................................|
                                         |
