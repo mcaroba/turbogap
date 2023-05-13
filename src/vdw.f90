@@ -181,6 +181,7 @@ module vdw
     n_species = size(c6_ref)
     n_sites0 = size(forces0, 2)
 
+
 !   We precompute the C6 coefficients of all the neighbors
     allocate( neighbor_c6_ii(1:n_pairs) )
     allocate( neighbor_c6_ij(1:n_pairs) )

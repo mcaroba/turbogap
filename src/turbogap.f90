@@ -56,15 +56,16 @@ program turbogap
        positions_diff(:,:), forces_prev(:,:), frac_positions(:,:)
   real*8 :: rcut_max, a_box(1:3), b_box(1:3), c_box(1:3), max_displacement, energy, energy_prev
   real*8 :: virial(1:3, 1:3), this_virial(1:3, 1:3), virial_soap(1:3, 1:3), virial_2b(1:3, 1:3), &
-       virial_3b(1:3,1:3), virial_core_pot(1:3, 1:3), virial_vdw(1:3, 1:3), &
-       this_virial_vdw(1:3, 1:3), v_uc, v_uc_prev, eVperA3tobar = 1602176.6208d0, &
-       ranf, ranv(1:3), disp(1:3), d_disp,  e_mc_prev, p_accept, virial_prev(1:3, 1:3), sim_exp_pred, sim_exp_prev
-  real*8, allocatable :: energies(:), forces(:,:), energies_soap(:), forces_soap(:,:), this_energies(:), &
-       this_forces(:,:), &
-       energies_2b(:), forces_2b(:,:), energies_3b(:), forces_3b(:,:), &
-       energies_core_pot(:), forces_core_pot(:,:), &
-       velocities(:,:), masses_types(:), masses(:),  hirshfeld_v_temp(:), &
-        masses_temp(:)
+       virial_3b(1:3,1:3), virial_core_pot(1:3, 1:3), virial_vdw(1:3, 1:3), virial_lp(1:3,1:3), &
+       this_virial_vdw(1:3, 1:3), this_virial_lp(1:3, 1:3), v_uc, v_uc_prev, eVperA3tobar = 1602176.6208d0, &
+       ranf, ranv(1:3), disp(1:3), d_disp,  e_mc_prev, p_accept,&
+       & virial_prev(1:3, 1:3), sim_exp_pred, sim_exp_prev, sim_exp_pred_der(1:3)
+  real*8, allocatable :: energies(:), forces(:,:), energies_soap(:),&
+       & forces_soap(:,:), this_energies(:), this_forces(:,:),&
+       & energies_2b(:), forces_2b(:,:), energies_3b(:), forces_3b(:&
+       &,:), energies_core_pot(:), forces_core_pot(:,:), velocities(:&
+       &,:), masses_types(:), masses(:),  hirshfeld_v_temp(:),&
+       & masses_temp(:)
 !  real*8, allocatable, target :: this_hirshfeld_v(:), this_hirshfeld_v_cart_der(:,:)
 !  real*8, pointer :: this_hirshfeld_v_pt(:), this_hirshfeld_v_cart_der_pt(:,:)
 
@@ -74,7 +75,7 @@ program turbogap
   real*8, pointer :: hirshfeld_v(:), hirshfeld_v_cart_der(:,:)
   real*8, allocatable, target :: this_local_properties(:,:), this_local_properties_cart_der(:,:,:)
   real*8, pointer :: this_local_properties_pt(:), this_local_properties_cart_der_pt(:,:)
-  real*8, allocatable ::  x_i_exp(:), y_i_exp(:), x_i_pred(:), y_i_pred(:)
+  real*8, allocatable ::  x_i_exp(:), y_i_exp(:), x_i_pred(:), y_i_pred(:), y_i_pred_der(:,:)
 
   real*8, allocatable :: all_energies(:,:), all_forces(:,:,:), all_virial(:,:,:)
   real*8, allocatable :: all_this_energies(:,:), all_this_forces(:,:,:), all_this_virial(:,:,:)
@@ -100,6 +101,7 @@ program turbogap
        n_atom_pairs_by_rank_prev, cPnz, n_pairs, n_all_sites,&
        & n_sites_out, n_local_properties_tot=0, n_lp_count=0, n_lp_data_count=0, n_data_local_properties_tot=0,&
        & vdw_lp_index, core_be_lp_index
+
   integer :: l_max, n_atom_pairs, n_max, ijunk, central_species = 0,&
        & n_atom_pairs_total
   integer :: iostatus, counter = 0, counter2
@@ -138,6 +140,7 @@ program turbogap
 
   !vdw crap
   real*8, allocatable :: v_neigh_vdw(:), energies_vdw(:), forces_vdw(:,:), this_energies_vdw(:), this_forces_vdw(:,:)
+  real*8, allocatable :: v_neigh_lp(:), energies_lp(:), forces_lp(:,:), this_energies_lp(:), this_forces_lp(:,:)
   ! MPI stuff
   real*8, allocatable :: temp_1d(:), temp_1d_bis(:), temp_2d(:,:)
   integer, allocatable :: temp_1d_int(:), n_atom_pairs_by_rank(:), displ(:)
@@ -431,7 +434,8 @@ program turbogap
                        if (trim(params%compute_local_properties(i)) == "hirshfeld_v") vdw_lp_index=i
                        if (trim(params%compute_local_properties(i)) == "core_electron_be")then
                           core_be_lp_index=i
-                          if(params%mc_opt_spectra .and. soap_turbo_hypers(j)%local_property_models(k)%has_data)then
+                          if((params%mc_opt_spectra .and. soap_turbo_hypers(j)%local_property_models(k)%has_data ) .or. &
+                               & (params%optimize_exp_data .and. soap_turbo_hypers(j)%local_property_models(k)%has_data))then
                              valid_xps = .true.
                              xids = j
                              xids_lp = k
@@ -463,7 +467,7 @@ program turbogap
      ! implemented_spectra_options array and then seeing if they
      ! exist, just as for the thermostats or mc moves in
      ! read_files.f90, but keeping it simple right now!
-     if (.not. valid_xps .and. params%mc_opt_spectra )then
+     if (.not. valid_xps .and. (params%mc_opt_spectra .or. params%optimize_exp_data) )then
         write(*,*) 'FATAL: optimize_spectra option chosen, but there was no core_electron_be model specified in the gap file! '
         stop
      end if
@@ -1205,6 +1209,7 @@ program turbogap
            allocate( energies_3b(1:n_sites) )
            allocate( energies_core_pot(1:n_sites) )
            allocate( energies_vdw(1:n_sites) )
+           allocate( energies_lp(1:n_sites) )
            !       This needs to be allocated even if no force prediction is needed:
            allocate( this_forces(1:3, 1:n_sites) )
         end if
@@ -1214,6 +1219,7 @@ program turbogap
         energies_3b = 0.d0
         energies_core_pot = 0.d0
         energies_vdw = 0.d0
+        energies_lp = 0.d0
 
 ! Adding allocation of local properties
 
@@ -1268,6 +1274,7 @@ program turbogap
               allocate( forces_3b(1:3, 1:n_sites) )
               allocate( forces_core_pot(1:3, 1:n_sites) )
               allocate( forces_vdw(1:3,1:n_sites) )
+              allocate( forces_lp(1:3,1:n_sites) )
            end if
            forces = 0.d0
            forces_soap = 0.d0
@@ -1275,6 +1282,7 @@ program turbogap
            forces_3b = 0.d0
            forces_core_pot = 0.d0
            forces_vdw = 0.d0
+           forces_lp = 0.d0
            virial = 0.d0
            virial_soap = 0.d0
            virial_2b = 0.d0
@@ -1411,8 +1419,10 @@ program turbogap
 
               energies_soap = energies_soap + this_energies
               if( soap_turbo_hypers(i)%has_local_properties )then
-                 hirshfeld_v => local_properties( :, vdw_lp_index)
-                 hirshfeld_v_cart_der => local_properties_cart_der( :, :, vdw_lp_index)
+                 if( soap_turbo_hypers(i)%has_vdw )then
+                    hirshfeld_v => local_properties( :, vdw_lp_index)
+                    hirshfeld_v_cart_der => local_properties_cart_der( :, :, vdw_lp_index)
+                 end if
 
                  local_properties(:,:) = local_properties(:,:) + this_local_properties(:,:)
                  if( params%do_forces )then
@@ -1580,6 +1590,61 @@ program turbogap
            deallocate(v_neigh_vdw)
         end if
 
+        !     Compute core_electron_be energies and forces this is näive and every process does it!
+        if( any( soap_turbo_hypers(:)%has_core_electron_be ) .and.( params%do_prediction ) &
+             .and. params%optimize_exp_data )then
+#ifdef _MPIF90
+           allocate( this_energies_lp(1:n_sites) )
+           this_energies_lp = 0.d0
+           if( params%do_forces )then
+              allocate( this_forces_lp(1:3,1:n_sites) )
+              this_forces_lp = 0.d0
+           end if
+#endif
+           allocate(v_neigh_lp(1:j_end-j_beg+1))
+           v_neigh_lp = 0.d0
+           k = 0
+           do i = i_beg, i_end
+              do j = 1, n_neigh(i)
+                 !           I'm not sure if this is necessary or neighbors_list is already bounded between 1 and n_sites -> CHECK THIS
+                 j2 = mod(neighbors_list(j_beg + k)-1, n_sites) + 1
+                 k = k + 1
+!                 v_neigh_lp(k) = hirshfeld_v(j2)
+                 v_neigh_lp(k) = local_properties(j2, core_be_lp_index)
+              end do
+           end do
+!            call get_ts_energy_and_forces( hirshfeld_v(i_beg:i_end), hirshfeld_v_cart_der(1:3, j_beg:j_end), &
+
+           call get_exp_pred_spectra_energies_forces(&
+                & soap_turbo_hypers(xids)&
+                &%local_property_models(xids_lp)%data, params%energy_scales_opt_exp_data,&
+                & local_properties(i_beg:i_end,core_be_lp_index),&
+                & local_properties_cart_der(1:3, j_beg:j_end, core_be_lp_index ), &
+                n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
+                neighbor_species(j_beg:j_end), &
+                & params%xps_sigma, params%xps_n_samples,&
+                & x_i_exp, y_i_exp, y_i_pred,.true., params%do_forces,  rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), &
+#ifdef _MPIF90
+                n_sites, this_energies_lp(i_beg:i_end), this_forces_lp, this_virial_lp )
+
+#else
+           n_sites, energies_lp(i_beg:i_end), forces_lp, virial_lp )
+#endif
+
+           if (rank == 0)then
+              if (.not. params%do_mc )then
+                 call write_local_property_data(x_i_exp, y_i_pred, md_istep == 0 )
+              else
+                 call write_local_property_data(x_i_exp, y_i_pred, mc_istep == 0 )
+              end if
+           end if
+
+
+           deallocate(x_i_exp, y_i_exp, y_i_pred)
+           ! sim_exp_pred would be an energy if multiplied by some energy scale \gamma * ( 1 - sim )
+           ! sim_exp_pred_der would be the array of forces if multiplied by (- \gamma )
+           deallocate(v_neigh_lp)
+        end if
 
 
 
@@ -1685,6 +1750,9 @@ program turbogap
            if( allocated(this_energies_vdw) )then
               counter2 = counter2 + 1
            end if
+           if( allocated(this_energies_lp) )then
+              counter2 = counter2 + 1
+           end if
            if( n_distance_2b > 0 )then
               counter2 = counter2 + 1
            end if
@@ -1721,6 +1789,17 @@ program turbogap
                  all_forces(1:3, 1:n_sites, counter2) = this_forces_vdw(1:3, 1:n_sites)
                  all_virial(1:3, 1:3, counter2) = this_virial_vdw(1:3, 1:3)
               end if
+           end if
+
+           if( allocated(this_energies_lp) )then
+              counter2 = counter2 + 1
+              !         Note the vdw things have "this" in front
+              all_energies(1:n_sites, counter2) = this_energies_lp(1:n_sites)
+              if( params%do_forces )then
+                 all_forces(1:3, 1:n_sites, counter2) = this_forces_lp(1:3, 1:n_sites)
+                 all_virial(1:3, 1:3, counter2) = this_virial_lp(1:3, 1:3)
+              end if
+
            end if
            if( n_distance_2b > 0 )then
               counter2 = counter2 + 1
@@ -1781,6 +1860,17 @@ program turbogap
                  deallocate(this_forces_vdw)
               end if
            end if
+           if( allocated(this_energies_lp) )then
+              counter2 = counter2 + 1
+              !         Note the lp things DO NOT have "this" in front anymore
+              energies_lp(1:n_sites) = all_this_energies(1:n_sites, counter2)
+              deallocate(this_energies_lp)
+              if( params%do_forces )then
+                 forces_lp(1:3, 1:n_sites) = all_this_forces(1:3, 1:n_sites, counter2)
+                 virial_lp(1:3, 1:3) = all_this_virial(1:3, 1:3, counter2)
+                 deallocate(this_forces_lp)
+              end if
+           end if
            if( n_distance_2b > 0 )then
               counter2 = counter2 + 1
               energies_2b(1:n_sites) = all_this_energies(1:n_sites, counter2)
@@ -1820,7 +1910,9 @@ program turbogap
 
 
            !       Add up all the energy terms
-           energies = energies + energies_soap + energies_2b + energies_3b + energies_core_pot + energies_vdw
+           energies = energies + energies_soap + energies_2b +&
+                & energies_3b + energies_core_pot + energies_vdw +&
+                & energies_lp
            energy_prev = energy
            instant_pressure_prev = instant_pressure
            energy = sum(energies)
@@ -1837,6 +1929,7 @@ program turbogap
               write(*,'(A,1X,F24.8,1X,A)')' 3b energy:', sum(energies_3b), 'eV |'
               write(*,'(A,1X,F18.8,1X,A)')' core_pot energy:', sum(energies_core_pot), 'eV |'
               write(*,'(A,1X,F23.8,1X,A)')' vdw energy:', sum(energies_vdw), 'eV |'
+              write(*,'(A,1X,F23.8,1X,A)')' l_prop energy:', sum(energies_lp), 'eV |'
               if (.not. params%do_mc .or. mc_istep <= 1)then
                  write(*,'(A,1X,F21.8,1X,A)')' Total energy:', sum(energies), 'eV |'
               else
