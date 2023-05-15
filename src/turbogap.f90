@@ -75,7 +75,7 @@ program turbogap
   real*8, pointer :: hirshfeld_v(:), hirshfeld_v_cart_der(:,:)
   real*8, allocatable, target :: this_local_properties(:,:), this_local_properties_cart_der(:,:,:)
   real*8, pointer :: this_local_properties_pt(:), this_local_properties_cart_der_pt(:,:)
-  real*8, allocatable ::  x_i_exp(:), y_i_exp(:), x_i_pred(:), y_i_pred(:), y_i_pred_der(:,:)
+  real*8, allocatable ::  x_i_exp(:), y_i_exp(:), x_i_pred(:), y_i_pred(:)
 
   real*8, allocatable :: all_energies(:,:), all_forces(:,:,:), all_virial(:,:,:)
   real*8, allocatable :: all_this_energies(:,:), all_this_forces(:,:,:), all_this_virial(:,:,:)
@@ -439,6 +439,7 @@ program turbogap
                              valid_xps = .true.
                              xids = j
                              xids_lp = k
+                             soap_turbo_hypers(j)%local_property_models(k)%do_derivatives = .true.
                           end if
                        end if
                     end if
@@ -1617,7 +1618,7 @@ program turbogap
 
            call get_exp_pred_spectra_energies_forces(&
                 & soap_turbo_hypers(xids)&
-                &%local_property_models(xids_lp)%data, params%energy_scales_opt_exp_data,&
+                &%local_property_models(xids_lp)%data, params%energy_scales_opt_exp_data(core_be_lp_index),&
                 & local_properties(i_beg:i_end,core_be_lp_index),&
                 & local_properties_cart_der(1:3, j_beg:j_end, core_be_lp_index ), &
                 n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
