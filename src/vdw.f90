@@ -1102,7 +1102,7 @@ module vdw
     logical :: do_total_energy = .true. ! Finite difference testing purposes
 
 !central_pol = 10.d0
-central_omega = 0.5d0
+!central_omega = 0.5d0
 
 !central_omega(1:size(central_omega)/3) = 0.5d0
 !central_omega(size(central_omega)/3:2*size(central_omega)/3) = 0.8d0
@@ -3562,6 +3562,11 @@ central_omega = 0.5d0
                                       - 60.d0 * rb**3 &
                                       + 30.d0 * rb**4) * &
                                       (-xyz(c3,n_tot+k_j)/rjs(n_tot+k_j)/(r_buf_mbd/Bohr))
+                                      
+                              r6_mult_0j(k2) = 1.d0
+                              dr6_mult_0j(k2) = 0.d0        
+                                      
+                                      
                             else if ( rjs(n_tot+k_j) .le. rcut_2b .and. rjs(n_tot+k_j) > rcut_2b-r_buf_2b ) then
                               rb = (rjs(n_tot+k_j)-rcut_2b+r_buf_2b)/(r_buf_2b)
                               r6_mult_0j(k2) = (1.d0 - 10.d0 * rb**3 &
@@ -3571,6 +3576,10 @@ central_omega = 0.5d0
                                       + 60.d0 * rb**3 &
                                       - 30.d0 * rb**4) * &
                                       (-xyz(c3,n_tot+k_j)/rjs(n_tot+k_j)/(r_buf_2b/Bohr))
+
+                              !r6_mult_0j(k2) = 1.d0
+                              !dr6_mult_0j(k2) = 0.d0
+
                             end if
                             a_j = a_2b_tot(k2)
                             r_vdw_j = r0_ii_SCS_2b_tot(k2)
@@ -3582,7 +3591,7 @@ central_omega = 0.5d0
                                (o_i + o_j)
                             f_damp_SCS_2b_tot(k2) = 1.d0/( 1.d0 + &
                                 exp( -20.d0*( rjs_2b_tot(k2)/(0.97d0*(r_vdw_i + r_vdw_j)) - 1.d0 ) ) )
-                            E_TS_tot = E_TS_tot - c6_2b_tot(k2)/rjs_2b_tot(k2)**6 * f_damp_SCS_2b_tot(k2) &
+                            E_TS_tot = E_TS_tot - c6_2b_tot(k2)/rjs_2b_tot(k2)**6 * f_damp_SCS_2b_tot(k2) & ! NOTE: f_damp is squared here only to match MBD. Delete it later.
                                        * r6_mult_2b_tot(k2) * r6_mult_0j(k2)
                             dC6_2b = 3.d0/2.d0 * (o_i*o_j &
                                 / (o_i+o_j) &
@@ -3618,10 +3627,21 @@ central_omega = 0.5d0
                                   * r6_mult_0j(k2) &
                                   + c6_2b_tot(k2)/rjs_2b_tot(k2)**6 * f_damp_SCS_2b_tot(k2) * r6_mult_2b_tot(k2) &
                                   * dr6_mult_0j(k2)
-                            !if ( i == 2 .and. c3 == 1 ) then
-                            !  !write(*,*) "forces_TS", forces_TS, "upper", k2
-                            !  write(*,*) "r6_mult_0i, r6_mult_0j", r6_mult_0i(k2), r6_mult_0j(k2)
-                            !  !write(*,*) "dr6_mult_0i, dr6_mult_0j", dr6_mult_0i(k2), dr6_mult_0j(k2)
+                            !if ( i == 1 .and. c3 == 1 .and. abs(dr6_mult_0j(k2)) > 0.d0 ) then
+                            !  write(*,*) "forces_TS", dC6_2b * f_damp_SCS_2b_tot(k2) / rjs_2b_tot(k2)**6 * r6_mult_2b_tot(k2) &
+                            !      * r6_mult_0j(k2) &
+                            !      + c6_2b_tot(k2)/rjs_2b_tot(k2)**6 * f_damp_der_2b * r6_mult_2b_tot(k2) &
+                            !      * r6_mult_0j(k2) &
+                            !      + c6_2b_tot(k2)/rjs_2b_tot(k2)**6 * f_damp_SCS_2b_tot(k2) * dr6_mult(k2) &
+                            !      * r6_mult_0j(k2) &
+                            !      + r6_der * c6_2b_tot(k2) * f_damp_SCS_2b_tot(k2) * r6_mult_2b_tot(k2) &
+                            !      * r6_mult_0j(k2) &
+                            !      + c6_2b_tot(k2)/rjs_2b_tot(k2)**6 * f_damp_SCS_2b_tot(k2) * r6_mult_2b_tot(k2) &
+                            !      * dr6_mult_0j(k2), "upper", k2
+                            !  write(*,*) "buffer term", c6_2b_tot(k2)/rjs_2b_tot(k2)**6 * &
+                            !      f_damp_SCS_2b_tot(k2) * r6_mult_2b_tot(k2) &
+                            !      * dr6_mult_0j(k2)
+                            !  write(*,*) "buffer", dr6_mult_0j(k2)
                             !end if
                           end if
                         end if
@@ -3796,6 +3816,10 @@ central_omega = 0.5d0
                                       - 60.d0 * rb**3 &
                                       + 30.d0 * rb**4) * &
                                       (-xyz(c3,n_tot+k_i)/rjs(n_tot+k_i)/(r_buf_mbd/Bohr))
+                                      
+                              r6_mult_0i(k2) = 1.d0
+                              dr6_mult_0i(k2) = 0.d0        
+                                      
                             else if ( rjs(n_tot+k_i) .le. rcut_2b .and. rjs(n_tot+k_i) > rcut_2b-r_buf_2b ) then
                               rb = (rjs(n_tot+k_i)-rcut_2b+r_buf_2b)/(r_buf_2b)
                               r6_mult_0i(k2) = (1.d0 - 10.d0 * rb**3 &
@@ -3805,6 +3829,10 @@ central_omega = 0.5d0
                                       + 60.d0 * rb**3 &
                                       - 30.d0 * rb**4) * &
                                       (-xyz(c3,n_tot+k_i)/rjs(n_tot+k_i)/(r_buf_2b/Bohr))
+
+                              r6_mult_0i(k2) = 1.d0
+                              dr6_mult_0i(k2) = 0.d0
+
                             end if
                             if ( rjs(n_tot+k_j) .le. rcut_2b .and. rjs(n_tot+k_j) > rcut_2b-r_buf_2b ) then
                               rb = (rjs(n_tot+k_j)-rcut_2b+r_buf_2b)/(r_buf_2b)
@@ -3815,6 +3843,10 @@ central_omega = 0.5d0
                                       + 60.d0 * rb**3 &
                                       - 30.d0 * rb**4) * &
                                       (-xyz(c3,n_tot+k_j)/rjs(n_tot+k_j)/(r_buf_2b/Bohr))
+
+                              !r6_mult_0j(k2) = 1.d0
+                              !dr6_mult_0j(K2) = 0.d0
+
                             end if
                             a_j = a_2b_tot(k2)
                             r_vdw_j = r0_ii_SCS_2b_tot(k2)
@@ -3826,7 +3858,7 @@ central_omega = 0.5d0
                                (o_i + o_j)
                             f_damp_SCS_2b_tot(k2) = 1.d0/( 1.d0 + &
                                 exp( -20.d0*( rjs_2b_tot(k2)/(0.97d0*(r_vdw_i + r_vdw_j)) - 1.d0 ) ) )
-                            E_TS_tot = E_TS_tot - c6_2b_tot(k2)/rjs_2b_tot(k2)**6 * f_damp_SCS_2b_tot(k2) &
+                            E_TS_tot = E_TS_tot - c6_2b_tot(k2)/rjs_2b_tot(k2)**6 * f_damp_SCS_2b_tot(k2) & ! NOTE: f_damp is squared here only to match MBD. Delete it later.
                                        * r6_mult_2b_tot(k2) * r6_mult_0i(k2) * r6_mult_0j(k2)
                             dC6_2b = 3.d0/2.d0 * (o_i*o_j &
                                 / (o_i+o_j) &
@@ -3852,22 +3884,33 @@ central_omega = 0.5d0
                             else if ( j2 == i ) then
                               r6_der = -6.d0/rjs_2b_tot(k2)**8 * xyz_2b_tot(c3,k2)
                             end if
-                            forces_TS = forces_TS + ( dC6_2b * f_damp_SCS_2b_tot(k2) / rjs_2b_tot(k2)**6 * r6_mult_2b_tot(k2) &
+                            forces_TS = forces_TS + dC6_2b * f_damp_SCS_2b_tot(k2) / rjs_2b_tot(k2)**6 * r6_mult_2b_tot(k2) &
                                   * r6_mult_0i(k2) * r6_mult_0j(k2) &
                                   + c6_2b_tot(k2)/rjs_2b_tot(k2)**6 * f_damp_der_2b * r6_mult_2b_tot(k2) &
                                   * r6_mult_0i(k2) * r6_mult_0j(k2) &
                                   + c6_2b_tot(k2)/rjs_2b_tot(k2)**6 * f_damp_SCS_2b_tot(k2) * dr6_mult(k2) & 
                                   * r6_mult_0i(k2) * r6_mult_0j(k2) &
-                                  + r6_der * c6_2b_tot(k2) * f_damp_SCS_2b_tot(k2) * r6_mult_2b_tot(k2)) &
+                                  + r6_der * c6_2b_tot(k2) * f_damp_SCS_2b_tot(k2) * r6_mult_2b_tot(k2) &
                                   * r6_mult_0i(k2) * r6_mult_0j(k2) &
                                   + c6_2b_tot(k2)/rjs_2b_tot(k2)**6 * f_damp_SCS_2b_tot(k2) * r6_mult_2b_tot(k2) &
                                   * dr6_mult_0i(k2) * r6_mult_0j(k2) &
                                   + c6_2b_tot(k2)/rjs_2b_tot(k2)**6 * f_damp_SCS_2b_tot(k2) * r6_mult_2b_tot(k2) &
                                   * r6_mult_0i(k2) * dr6_mult_0j(k2)
-                            !if ( i == 2 .and. c3 == 1 ) then
-                            !  !write(*,*) "forces_TS", forces_TS, "upper", k2
-                            !  write(*,*) "r6_mult_0i, r6_mult_0j", r6_mult_0i(k2), r6_mult_0j(k2)
-                            !  !write(*,*) "dr6_mult_0i, dr6_mult_0j", dr6_mult_0i(k2), dr6_mult_0j(k2)
+                            !if ( i == 1 .and. c3 == 1 .and. abs(dr6_mult_0j(k2)) > 0.d0 ) then
+                            !  write(*,*) "forces_TS", dC6_2b * f_damp_SCS_2b_tot(k2) / rjs_2b_tot(k2)**6 * r6_mult_2b_tot(k2) &
+                            !      * r6_mult_0j(k2) &
+                            !      + c6_2b_tot(k2)/rjs_2b_tot(k2)**6 * f_damp_der_2b * r6_mult_2b_tot(k2) &
+                            !      * r6_mult_0j(k2) &
+                            !      + c6_2b_tot(k2)/rjs_2b_tot(k2)**6 * f_damp_SCS_2b_tot(k2) * dr6_mult(k2) &
+                            !      * r6_mult_0j(k2) &
+                            !      + r6_der * c6_2b_tot(k2) * f_damp_SCS_2b_tot(k2) * r6_mult_2b_tot(k2) &
+                            !      * r6_mult_0j(k2) &
+                            !      + c6_2b_tot(k2)/rjs_2b_tot(k2)**6 * f_damp_SCS_2b_tot(k2) * r6_mult_2b_tot(k2) &
+                            !      * dr6_mult_0j(k2), "upper", k2
+                            !  write(*,*) "buffer term", c6_2b_tot(k2)/rjs_2b_tot(k2)**6 * &
+                            !      f_damp_SCS_2b_tot(k2) * r6_mult_2b_tot(k2) &
+                            !      * dr6_mult_0j(k2)
+                            !  write(*,*) "buffer", dr6_mult_0j(k2)
                             !end if
                           end if
                         end if
