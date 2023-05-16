@@ -173,6 +173,7 @@ module xyz_module
      end if
      ! Now we write in the local properties of those which are passed in
      if(allocated(write_local_properties))then
+
         do k=1, size(write_local_properties,1)
            if( write_local_properties(k) )then
               write(properties_string, "(A)") trim(adjustl(properties_string)) // trim(local_property_labels(k)) // ":R:1"

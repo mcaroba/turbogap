@@ -649,6 +649,13 @@ program turbogap
            call mpi_bcast(soap_turbo_hypers(i)%compress_P_j(1:cPnz), cPnz, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
         end if
         call mpi_bcast(soap_turbo_hypers(i)%has_local_properties, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(soap_turbo_hypers(i)%has_core_electron_be, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(core_be_lp_index, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(xids, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(xids_lp, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+
+        call mpi_bcast(vdw_lp_index, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(soap_turbo_hypers(i)%has_vdw, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
         call mpi_bcast(soap_turbo_hypers(i)%n_local_properties, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
         if( soap_turbo_hypers(i)%has_local_properties )then
            do j = 1, soap_turbo_hypers(i)%n_local_properties
@@ -677,7 +684,6 @@ program turbogap
                    &%local_property_models(j)%alphas(1:n_sparse) ,&
                    & n_sparse, MPI_DOUBLE_PRECISION, 0,&
                    & MPI_COMM_WORLD, ierr)
-
 ! Fortran runtime warning: An array temporary was created for
               ! argument 'buffer' of procedure 'mpi_bcast'
               call mpi_bcast(soap_turbo_hypers(i) &
@@ -698,6 +704,10 @@ program turbogap
                       & 2 * soap_turbo_hypers(i)%local_property_models(j)&
                       &%n_data, MPI_DOUBLE_PRECISION, 0,&
                       & MPI_COMM_WORLD, ierr)
+                 call mpi_bcast(soap_turbo_hypers(i)%local_property_models(j)%do_derivatives, &
+                      & 1, MPI_LOGICAL, 0,&
+                      & MPI_COMM_WORLD, ierr)
+
               end if
            end do
         end if
@@ -1427,8 +1437,13 @@ program turbogap
 
                  local_properties(:,:) = local_properties(:,:) + this_local_properties(:,:)
                  if( params%do_forces )then
-                    if (soap_turbo_hypers(i)%has_vdw)then
-                       local_properties_cart_der(:,:,:) = local_properties_cart_der(:,:,:) + this_local_properties_cart_der(:,:,:)
+                    if (soap_turbo_hypers(i)%has_vdw .or.&
+                         & (soap_turbo_hypers(i)%has_core_electron_be&
+                         & .and. params%optimize_exp_data) )then
+
+                       local_properties_cart_der(:,:,:) =&
+                            & local_properties_cart_der(:,:,:) +&
+                            & this_local_properties_cart_der(:,:,:)
                     end if
                  end if
               end if
@@ -1610,12 +1625,11 @@ program turbogap
                  !           I'm not sure if this is necessary or neighbors_list is already bounded between 1 and n_sites -> CHECK THIS
                  j2 = mod(neighbors_list(j_beg + k)-1, n_sites) + 1
                  k = k + 1
-!                 v_neigh_lp(k) = hirshfeld_v(j2)
+                 !                 v_neigh_lp(k) = hirshfeld_v(j2)
                  v_neigh_lp(k) = local_properties(j2, core_be_lp_index)
               end do
            end do
 !            call get_ts_energy_and_forces( hirshfeld_v(i_beg:i_end), hirshfeld_v_cart_der(1:3, j_beg:j_end), &
-
            call get_exp_pred_spectra_energies_forces(&
                 & soap_turbo_hypers(xids)&
                 &%local_property_models(xids_lp)%data, params%energy_scales_opt_exp_data(core_be_lp_index),&
@@ -1956,13 +1970,14 @@ program turbogap
 
 
         if( params%do_forces )then
-           forces = forces_soap + forces_2b + forces_3b + forces_core_pot + forces_vdw
-           virial = virial_soap + virial_2b + virial_3b + virial_core_pot + virial_vdw
+           forces = forces_soap + forces_2b + forces_3b + forces_core_pot + forces_vdw + forces_lp
+           virial = virial_soap + virial_2b + virial_3b + virial_core_pot + virial_vdw + virial_lp
         end if
         ! For debugging the virial implementation
         if( rank == 0 .and. .false. )then
            write(*,*) "pressure_soap: ", virial_soap / 3.d0 / v_uc
            write(*,*) "pressure_vdw: ", virial_vdw / 3.d0 / v_uc
+           write(*,*) "pressure_lp: ", virial_lp / 3.d0 / v_uc
            write(*,*) "pressure_2b: ", virial_2b / 3.d0 / v_uc
            write(*,*) "pressure_3b: ", virial_3b / 3.d0 / v_uc
            write(*,*) "pressure_core_pot: ", virial_core_pot / 3.d0 / v_uc
