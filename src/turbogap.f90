@@ -1384,10 +1384,10 @@ call mpi_bcast(omega_SCS, n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr
 call cpu_time(time2)
 write(*,*) "Communication timing", time2-time1
 
-write(*,*) "alpha_SCS"
-do i = 1, n_sites
-  write(*,*) i, alpha_SCS(i)
-end do
+!write(*,*) "alpha_SCS"
+!do i = 1, n_sites
+!  write(*,*) i, alpha_SCS(i)
+!end do
 call cpu_time(time1)
 !write(*,*) "scs timing", time1-time2
           call get_mbd_energies_and_forces( hirshfeld_v_cart_der_ji(1:3,j_beg:j_end), &
