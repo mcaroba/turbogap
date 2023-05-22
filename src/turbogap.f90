@@ -75,7 +75,7 @@ program turbogap
   real*8, pointer :: hirshfeld_v(:), hirshfeld_v_cart_der(:,:)
   real*8, allocatable, target :: this_local_properties(:,:), this_local_properties_cart_der(:,:,:)
   real*8, pointer :: this_local_properties_pt(:), this_local_properties_cart_der_pt(:,:)
-  real*8, allocatable ::  x_i_exp(:), y_i_exp(:), x_i_pred(:), y_i_pred(:)
+  real*8, allocatable ::  x_i_exp(:), y_i_exp(:), x_i_pred(:), y_i_pred(:), moments(:), moments_exp(:)
 
   real*8, allocatable :: all_energies(:,:), all_forces(:,:,:), all_virial(:,:,:)
   real*8, allocatable :: all_this_energies(:,:), all_this_forces(:,:,:), all_this_virial(:,:,:)
@@ -1629,7 +1629,9 @@ program turbogap
                  v_neigh_lp(k) = local_properties(j2, core_be_lp_index)
               end do
            end do
-!            call get_ts_energy_and_forces( hirshfeld_v(i_beg:i_end), hirshfeld_v_cart_der(1:3, j_beg:j_end), &
+           !            call get_ts_energy_and_forces( hirshfeld_v(i_beg:i_end), hirshfeld_v_cart_der(1:3, j_beg:j_end), &
+
+           if (params%n_moments == 0)then
            call get_exp_pred_spectra_energies_forces(&
                 & soap_turbo_hypers(xids)&
                 &%local_property_models(xids_lp)%data, params%energy_scales_opt_exp_data(core_be_lp_index),&
@@ -1645,6 +1647,25 @@ program turbogap
 #else
            n_sites, energies_lp(i_beg:i_end), forces_lp, virial_lp )
 #endif
+        else
+           call get_moment_spectra_energies_forces(&
+                & soap_turbo_hypers(xids)&
+                &%local_property_models(xids_lp)%data, params%energy_scales_opt_exp_data,&
+                & local_properties(i_beg:i_end,core_be_lp_index),&
+                & local_properties_cart_der(1:3, j_beg:j_end, core_be_lp_index ), &
+                n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
+                neighbor_species(j_beg:j_end), &
+                & params%xps_sigma, params%xps_n_samples,&
+                & x_i_exp, y_i_exp, y_i_pred,.true., params%do_forces,  rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), &
+                & params%n_moments, moments, moments_exp,&
+#ifdef _MPIF90
+                n_sites, this_energies_lp(i_beg:i_end), this_forces_lp, this_virial_lp )
+
+#else
+           n_sites, energies_lp(i_beg:i_end), forces_lp, virial_lp )
+#endif
+        end if
+
 
            if (rank == 0)then
               if (.not. params%do_mc )then
@@ -1922,8 +1943,6 @@ program turbogap
 #endif
 
 
-
-
            !       Add up all the energy terms
            energies = energies + energies_soap + energies_2b +&
                 & energies_3b + energies_core_pot + energies_vdw +&
@@ -1968,9 +1987,9 @@ program turbogap
 #endif
         end if
 
-
+!        print *, forces_lp
         if( params%do_forces )then
-           forces = forces_soap + forces_2b + forces_3b + forces_core_pot + forces_vdw + forces_lp
+           forces = 0.d0 * (forces_soap + forces_2b + forces_3b + forces_core_pot + forces_vdw) + forces_lp
            virial = virial_soap + virial_2b + virial_3b + virial_core_pot + virial_vdw + virial_lp
         end if
         ! For debugging the virial implementation
@@ -2150,6 +2169,7 @@ program turbogap
            if( params%do_md .and. params%optimize == "gd" .and. md_istep > 0 .and. &
                 abs(energy-energy_prev) < params%e_tol*dfloat(n_sites) .and. &
                 maxval(forces) < params%f_tol .and. rank == 0 )then
+              print *, energy, energy_prev, abs(energy-energy_prev), params%e_tol*dfloat(n_sites)
               exit_loop = .true.
               if (params%do_mc) exit_loop=.false.
               !     THIS CONDITION ON INSTANT PRESSURE WILL NEED TO BE FINE TUNED, TO ACCOUNT FOR ARBITRARY TARGET PRESSURES
