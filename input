@@ -1,0 +1,19 @@
+! Species-specific info
+atoms_file = 'diamond.xyz'
+pot_file = 'gap_files/carbon.gap'
+n_species = 1
+species = C
+masses = 12
+
+! MD options
+md_nsteps = 5000
+md_step = 1.
+adaptive_time = .true.
+adapt_tstep_interval = 1
+adapt_tmin = 1.0E-07
+adapt_tmax = 0.01
+adapt_xmax = 1.0e-4
+adapt_emax = 50.0
+electronic_stopping = .true.
+eel_cut = 1.0
+estop_filename = 'C-in-C-el-stopping.txt'

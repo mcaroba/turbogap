@@ -1,0 +1,32 @@
+! Species-specific info
+atoms_file = 'silicon.xyz'
+pot_file = 'gap_files/silicon.gap'
+n_species = 1
+species = Si
+masses = 28
+
+! MD options
+md_nsteps = 100000
+md_step = 1.
+adaptive_time = .false.		! modify time adaptively, to put this on/off give true/false
+adapt_tstep_interval = 1	! interval at which dt is modified adaptively
+adapt_tmin = 1.0E-07		! dt will have this minimum limit
+adapt_tmax = 1.0E-01		! dt will have this maximum limit
+adapt_xmax = 1.0e-3		! maximum distance an atom will move in time dt
+adapt_emax = 50.0		! maximum energy an atom can transfer in time dt
+electronic_stopping = .false.	! apply electronic stopping based on SRIM-2013 data, to put this on/off give true/false
+eel_cut = 1.0			! below this energy no friction will be applied
+estop_filename = 'C-in-C-el-stopping.txt'	! E vs. dE/dx, electronic stopping data file
+nonadiabatic_processes = .false.		! apply electron-phonon coupling and electronic stopping, to put this on/off give true/false
+model_eph = 2					! model 1 (PRL 120, 185501 (2018)) and 2 (PRB 99, 174302 (2019)
+eph_fdm_option = 1				! 1/0 is for on/off of electronic heat diffusion equation
+eph_friction_option = 1				! 1/0 is for on/off of electronic stopping
+eph_random_option = 1				! 1/0 is for on/off of electron-phonon coupling
+eph_betafile = 'Si_PRB2021_constant.beta'	! data file for rho(r), beta(rho)
+eph_Tinfile = 'T_input.fdm'			! data file for electronic heat bath mesh
+eph_md_last_step = 0				! to keep record of previously done steps
+eph_freq_Tout = 100				! frequency of Temperature output data 
+eph_freq_mesh_Tout = 100000			! print out electronic mesh values (equal to md_nsteps)
+eph_Toutfile = 'T-Si-Ta0Te100.out'		! output file name for electronic mesh values
+write_thermo = 100
+write_xyz = 1000
