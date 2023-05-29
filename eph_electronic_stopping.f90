@@ -355,7 +355,7 @@ subroutine eph_Langevin_spatial_correlation(isfriction, israndom, vel, forces, m
 						
 						outer_p = 0
 						call get_outer_product(rel_ij, outer_p)
-						outer_p = outer_p * rho_ij / r_ij				! **2
+						outer_p = outer_p * rho_ij / r_ij**2
 						
 						alpha = 0.0
 						call spline_int (beta%rho, sqrt(beta%data_beta(jtype,:)), &
@@ -400,7 +400,7 @@ subroutine eph_Langevin_spatial_correlation(isfriction, israndom, vel, forces, m
 								
 								outer_p = 0
 								call get_outer_product(rel_ik, outer_p)
-								outer_p = outer_p * rho_ik / r_ik			!**2
+								outer_p = outer_p * rho_ik / r_ik**2
 								sum_outer_p = sum_outer_p + outer_p
 							end if
 						end if
