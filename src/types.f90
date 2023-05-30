@@ -2,7 +2,7 @@
 ! HND X
 ! HND X   TurboGAP
 ! HND X
-! HND X   TurboGAP is copyright (c) 2019-2023, Miguel A. Caro and others
+! HND X   TurboGAP is copyright (c) 2019-2022, Miguel A. Caro and others
 ! HND X
 ! HND X   TurboGAP is published and distributed under the
 ! HND X      Academic Software License v1.0 (ASL)
@@ -74,7 +74,7 @@ module types
     character*8 :: species1, species2
   end type core_pot
 
-! These is the type for the input parameters
+! This is the type for the input parameters
   type input_parameters
     real*8, allocatable :: masses_types(:), e0(:), vdw_c6_ref(:), vdw_r0_ref(:), vdw_alpha0_ref(:)
     real*8 :: t_beg = 300.d0, t_end = 300.d0, tau_t = 100.d0, md_step = 1.d0, &
@@ -100,6 +100,38 @@ module types
                write_local_energies = .true., write_property(1:11) = .true., &
                write_array_property(1:8) = .true., write_masses = .false., write_fixes = .true., &
                variable_time_step = .false., vdw_mbd_grad = .false.
+  
+! ------- option for doing simulation with adaptive time step				********* added here by Uttiyoarnab Saha
+	logical :: adaptive_time = .false.
+	integer :: adapt_tstep_interval = 1
+	real*8 :: adapt_tmin = 1.0d-3, adapt_tmax = 1.0d0, adapt_xmax = 1.0d-1, adapt_emax = 1.0d+1
+! ---------------------------------------------------------					******** until here for adaptive time
+
+! ------- option for radiation cascade simulation with electronic stopping				********* added here by Uttiyoarnab Saha 
+	logical :: electronic_stopping = .false.
+	real*8 :: eel_cut = 1.0d0
+	character*1024 :: estop_filename
+! ---------------------------------------------------------								******** until here for electronic stopping
+
+! ------- option for non-adiabatic processes of energy exchange through EPH model 		********* added here by Uttiyoarnab Saha
+
+	logical :: nonadiabatic_processes = .false.
+	integer :: eph_fdm_option = 1, eph_friction_option = 1, eph_random_option = 1
+	integer :: eph_md_last_step = 0, model_eph = 2
+	integer :: eph_freq_Tout = 1, eph_freq_mesh_Tout = 1 
+	integer :: eph_fdm_steps = 1
+	integer :: eph_gsx = 1, eph_gsy = 1, eph_gsz = 1 
+	real*8 :: eph_rho_e = 1.0
+	real*8 :: eph_C_e = 1.0
+	real*8 :: eph_kappa_e = 1.0
+	real*8 :: eph_Ti_e = 300.0, &
+	in_x0, in_x1, in_y0, in_y1, in_z0, in_z1, box_limits(6)
+	character*128 :: eph_Tinfile = 'NULL'
+	character*128 :: eph_Toutfile = 'NULL'
+	character*128 :: eph_betafile = 'NULL'
+	
+! ---------------------------------------------------------				******** until here for electronic stopping based on EPH model
+
   end type input_parameters
 
 end module
