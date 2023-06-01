@@ -36,6 +36,18 @@ subroutine variable_time_step_adaptive (init, vel, forces, masses, tmin, tmax, x
 
 	dtmin = 1.0E+20
 	
+	! When velocities of all atoms are set to 0 initially, the temperature
+	! changes to unrealistic values.
+	! So, initializing time steps to choose the minimum from a proper set
+	! of values of times and avoid getting 0.
+	
+	if ( init ) then
+		dtv = dt0; dtf = dt0; dte = dt0
+	else
+		dtv = dt; dtf = dt; dte = dt
+	end if
+	
+	
 	do i = 1, Np
 		vsq = dot_product (vel(1:3, i), vel(1:3, i))
 		fsq = dot_product (forces(1:3, i), forces(1:3, i))
