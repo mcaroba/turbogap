@@ -1987,9 +1987,9 @@ program turbogap
 #endif
         end if
 
-!        print *, forces_lp
+        print *, forces_lp(1:3,1)
         if( params%do_forces )then
-           forces = 0.d0 * (forces_soap + forces_2b + forces_3b + forces_core_pot + forces_vdw) + forces_lp
+           forces =  (forces_soap + forces_2b + forces_3b + forces_core_pot + forces_vdw) + forces_lp
            virial = virial_soap + virial_2b + virial_3b + virial_core_pot + virial_vdw + virial_lp
         end if
         ! For debugging the virial implementation

@@ -432,7 +432,8 @@ module md
         if( this_force > max_force )then
           max_force = this_force
         end if
-      end do
+     end do
+
       if( max_force == 0.d0 )then
         gamma = 0.d0
       else if( initialized )then
@@ -475,9 +476,10 @@ module md
     do i = 1, n_sites
       do j = 1, 3
         if( .not. fix_atom(j, i) )then
-          positions(j, i) = positions_prev(j, i) + gamma*forces_prev(j, i)
+           positions(j, i) = positions_prev(j, i) + gamma*forces_prev(j, i)
         end if
-      end do
+     end do
+
     end do
 
     gamma_prev = gamma
