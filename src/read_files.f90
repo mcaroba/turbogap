@@ -514,7 +514,7 @@ end if
     character*64 :: keyword, cjunk
     character*32 :: implemented_thermostats(1:3)
     character*32 :: implemented_barostats(1:2)
-    character*32 :: implemented_mc_types(1:6)
+    character*32 :: implemented_mc_types(1:7)
     character*2 :: element
     character*1 :: keyword_first
     logical :: are_vdw_refs_read(1:3), valid_choice, masses_in_input_file = .false.
@@ -532,7 +532,7 @@ end if
     implemented_mc_types(4) = "removal"
     implemented_mc_types(5) = "relax"
     implemented_mc_types(6) = "md"
-    implemented_mc_types(6) = "swap"
+    implemented_mc_types(7) = "swap"
 
     k = 0.d0
 
@@ -682,6 +682,7 @@ end if
         !       Need the check the implemented types
         valid_choice = .false.
         do j = 1, params%n_mc_types
+           call upper_to_lower_case(params%mc_types(j))
            valid_choice = .false.
            do i = 1, size(implemented_mc_types)
               if( trim(params%mc_types(j)) == trim(implemented_mc_types(i)) )then
@@ -715,6 +716,9 @@ end if
       else if(keyword=='mc_write_xyz')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_write_xyz
+      else if(keyword=='mc_hamiltonian')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_hamiltonian
       else if(keyword=='mc_relax')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_relax

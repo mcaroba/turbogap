@@ -2061,10 +2061,15 @@ program turbogap
               end if
 
 
-              if ( .not. exit_loop .and. ( (params%do_mc .and. (md_istep == params%md_nsteps) &
-                   .and. mc_move == "md" )&
+              if ( .not. exit_loop .and. &
+                   ( &
+                   (params%do_mc .and. (md_istep == params%md_nsteps) &
+                   .and. mc_move == "md" ) .or. &
+                   (params%do_mc .and. (abs(energy-energy_prev) < params%e_tol*dfloat(n_sites)) .and. &
+                   (maxval(forces) < params%f_tol) .and. (mc_move == "md" .or. params%mc_relax) .and. &
+                   md_istep > 0) &
                    .or. ((params%do_mc .and. params%mc_relax .and.  &
-                   (md_istep == params%mc_nrelax ) ))&
+                            (md_istep == params%mc_nrelax ) ))&
                    .or. (params%do_mc .and. (md_istep == -1) ) ))then
                  !       Now we do a monte-carlo step: we choose what the steps are from the available list and then choose a random number
                  !       -- We have the list of move types in params%mc_types and the number params%n_mc_types --
@@ -2083,6 +2088,7 @@ program turbogap
                     end if
 
 
+                    if (mc_move /= "md" .or. .not. params%mc_hamiltonian) E_kinetic = 0.d0
                     call from_properties_to_image(images(i_trial_image), positions, velocities, masses, &
                          forces, a_box, b_box, c_box,  energy, energies, E_kinetic, &
                          species, species_supercell, n_sites, indices, fix_atom, &
@@ -2098,7 +2104,10 @@ program turbogap
 
 
 
-                    call get_mc_acceptance(mc_move, p_accept, energy, images(i_current_image)%energy, params%t_beg, &
+                    call get_mc_acceptance(mc_move, p_accept, &
+                         energy + E_kinetic, &
+                         images(i_current_image)%energy + images(i_current_image)%e_kin, &
+                         params%t_beg, &
                          params%mc_mu, n_mc_species, v_uc, v_uc_prev, params%masses_types(mc_id), params%p_beg)
 
 
@@ -2153,7 +2162,8 @@ program turbogap
                     end if
 
                     write(200, "(I8, 1X, A, 1X, L4, 1X, F20.8, 1X, F20.8, 1X, I8, 1X, I8, 1X)") &
-                         mc_istep, mc_move, p_accept > ranf, energy, images(i_current_image)%energy, &
+                         mc_istep, mc_move, p_accept > ranf, energy + E_kinetic, &
+                         images(i_current_image)%energy + images(i_current_image)%e_kin, &
                          images(i_trial_image)%n_sites, n_mc_species
 
                     close(200)
@@ -2334,8 +2344,14 @@ program turbogap
 
               else
                  if( mc_move == 'md')then
-                    write(*,'(1X,A,1X,F20.8,1X,A,1X,I8,1X,A,1X,I8)')"Hybrid md step: energy = ", energy, &
-                         ", iteration ", md_istep, "/", params%md_nsteps
+                    if (params%mc_hamiltonian)then
+                       write(*,'(1X,A,1X,F20.8,1X,A,1X,I8,1X,A,1X,I8)')"Hybrid md step: H = T + V = ", energy + E_kinetic, &
+                            ", iteration ", md_istep, "/", params%md_nsteps
+                    else
+                       write(*,'(1X,A,1X,F20.8,1X,A,1X,I8,1X,A,1X,I8)')"Hybrid md step: energy = ", energy , &
+                            ", iteration ", md_istep, "/", params%md_nsteps
+                    end if
+
                     write(*,'(A,1X,F22.8,1X,A)')' SOAP energy:', sum(energies_soap), 'eV |'
                     write(*,'(A,1X,F24.8,1X,A)')' 2b energy:', sum(energies_2b), 'eV |'
                     write(*,'(A,1X,F24.8,1X,A)')' 3b energy:', sum(energies_3b), 'eV |'
