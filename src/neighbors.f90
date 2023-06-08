@@ -457,7 +457,6 @@ module neighbors
       end do
     end if
 
-
     if( rebuild_neighbors_list )then
       allocate( neighbors_list_temp(1:n_atom_pairs) )
       neighbors_list_temp = neighbors_list(1:n_atom_pairs)

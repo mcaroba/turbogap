@@ -236,8 +236,8 @@ module gap_interface
                     thetas, phis, alpha_max, l_max, rcut_hard, rcut_soft, nf, global_scaling, &
                     atom_sigma_r, atom_sigma_r_scaling, atom_sigma_t, atom_sigma_t_scaling, &
                     amplitude_scaling, radial_enhancement, central_weight, basis, scaling_mode, do_timing, &
-                    do_derivatives, compress_soap, compress_P_nonzero, compress_P_i, compress_P_j, compress_P_el, &
-                    soap, soap_cart_der)
+                    do_derivatives, compress_soap, compress_P_nonzero, compress_P_i, compress_P_j, &
+                    compress_P_el, soap, soap_cart_der)
     end if
 
     if( has_vdw )then
