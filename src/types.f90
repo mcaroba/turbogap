@@ -7,7 +7,8 @@
 ! HND X   TurboGAP is published and distributed under the
 ! HND X      Academic Software License v1.0 (ASL)
 ! HND X
-! HND X   This file, types.f90, is copyright (c) 2019-2022, Miguel A. Caro
+! HND X   This file, types.f90, is copyright (c) 2019-2022, Miguel A. Caro and
+! HND X   Tigany Zarrouk
 ! HND X
 ! HND X   TurboGAP is distributed in the hope that it will be useful for non-commercial
 ! HND X   academic research, but WITHOUT ANY WARRANTY; without even the implied
