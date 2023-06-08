@@ -89,7 +89,7 @@ program turbogap
   integer :: iostatus, counter = 0, counter2
   integer :: which_atom = 0, n_species = 1, n_xyz, indices(1:3)
   integer :: radial_enhancement = 0
-  integer :: md_istep, mc_istep, mc_id, n_mc, n_mc_species
+  integer :: md_istep, mc_istep, mc_id=1, n_mc, n_mc_species
 
   logical :: repeat_xyz = .true., overwrite = .false., check_species, skip_mc
 
