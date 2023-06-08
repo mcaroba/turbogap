@@ -1765,7 +1765,7 @@ program turbogap
                    & forces, energies(1:n_sites), masses, hirshfeld_v&
                    &, params%write_property, params&
                    &%write_array_property, fix_atom(1:3, 1:n_sites),&
-                   & "trajectory_out.xyz", .true.)
+                   & "trajectory_out.xyz", md_istep == 0)
            else if( md_istep == params%md_nsteps .and. params%do_nested_sampling )then
               write(cjunk,'(I8)') i_image
               write(filename,'(A,A,A)') "walkers/", trim(adjustl(cjunk)), ".xyz"
@@ -1777,7 +1777,7 @@ program turbogap
                    positions_prev(1:3, 1:n_sites), velocities, &
                    forces, energies(1:n_sites), masses, hirshfeld_v, &
                    params%write_property, params%write_array_property, fix_atom(1:3, 1:n_sites), &
-                   filename, .true. )
+                   filename, .false. )
 
            end if
            !
