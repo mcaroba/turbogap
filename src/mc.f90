@@ -342,7 +342,7 @@ module mc
        & species_idx, im_pos, im_species, im_xyz_species, im_fix_atom&
        &, im_masses, a_box, b_box, c_box, indices, do_md, mc_relax,&
        & md_istep, mc_id, E_kinetic, instant_temp, t_beg,&
-       & n_mc_swaps, mc_swaps, mc_swaps_id, species_types)
+       & n_mc_swaps, mc_swaps, mc_swaps_id, species_types, mc_hamiltonian)
 
     implicit none
 
@@ -370,7 +370,7 @@ module mc
     real*8 :: a_box(1:3), b_box(1:3), c_box(1:3), kB = 8.6173303d-5
     logical, allocatable:: fix_atom(:,:)
     logical, allocatable, intent(in) :: im_fix_atom(:,:)
-    logical, intent(inout) :: do_md, mc_relax
+    logical, intent(inout) :: do_md, mc_relax, mc_hamiltonian
 
     n_sites = size(positions, 2)
     ! Count the mc species (no multi species mc just yet)
@@ -465,7 +465,7 @@ module mc
 
        positions_diff = 0.d0
 
-       if(mc_move == 'md')then
+       if(mc_move == 'md' .or. mc_hamiltonian )then
           ! Randomize the velocities
           write(*,*)'                                       |'
           write(*,*)'NOTICE: Randomizing velocities for     |'
@@ -483,6 +483,7 @@ module mc
           end do
           instant_temp = 2.d0/3.d0/dfloat(n_sites-1)/kB*E_kinetic
           velocities = velocities * dsqrt(t_beg/instant_temp)
+          E_kinetic = E_kinetic * t_beg/instant_temp
        end if
 
 

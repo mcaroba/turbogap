@@ -803,6 +803,19 @@ program turbogap
         n_pos = size(positions,2)
         n_sp = size(xyz_species,1)
         n_sp_sc = size(xyz_species_supercell,1)
+
+        if ( .not. params%do_md .and. params%mc_hamiltonian )then
+           call random_number( velocities )
+           call remove_cm_vel(velocities(1:3,1:n_sites), masses(1:n_sites))
+           E_kinetic = 0.d0
+           do i = 1, n_sites
+              E_kinetic = E_kinetic + 0.5d0 * masses(i) * dot_product(velocities(1:3, i), velocities(1:3, i))
+           end do
+           instant_temp = 2.d0/3.d0/dfloat(n_sites-1)/kB*E_kinetic
+           velocities = velocities * dsqrt(params%t_beg/instant_temp)
+           E_kinetic = E_kinetic * params%t_beg/instant_temp
+        end if
+
      END IF
      call cpu_time(time_mpi(1))
      call mpi_bcast(n_pos, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
@@ -836,7 +849,7 @@ program turbogap
      END IF
      call cpu_time(time_mpi_positions(1))
      call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-     if( params%do_md .or. params%do_nested_sampling .or. params%do_mc )then
+     if( params%do_md .or. params%do_nested_sampling .or. params%do_mc .or. params%mc_hamiltonian)then
         call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
         call mpi_bcast(masses, n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
         call mpi_bcast(fix_atom, 3*n_sp, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
@@ -2097,8 +2110,8 @@ program turbogap
                     write(*,*)'.......................................|'
                     write(*,'(A,1X,I0)')   ' MC Iteration:', mc_istep
                     write(*,'(A,1X,A)')    '    Move type:', mc_move
-                    write(*,'(A,1X,F22.8)')'    Etot_prev:', images(i_current_image)%energy
-                    write(*,'(A,1X,F22.8)')'    Etot_new :', images(i_trial_image)%energy
+                    write(*,'(A,1X,F22.8)')'    Etot_prev:', images(i_current_image)%energy + images(i_current_image)%e_kin
+                    write(*,'(A,1X,F22.8)')'    Etot_new :', images(i_trial_image)%energy + images(i_trial_image)%e_kin
 
                     v_uc = dot_product( cross_product(a_box, b_box), c_box ) / (dfloat(indices(1)*indices(2)*indices(3)))
 
@@ -2223,6 +2236,7 @@ program turbogap
                     end do
 
 
+
                     !       Now use the image construct to store this as the image to compare to
                     call from_properties_to_image(images(i_current_image), positions, velocities, masses, &
                          forces, a_box, b_box, c_box,  energy, energies, E_kinetic, &
@@ -2292,7 +2306,7 @@ program turbogap
                       & c_box, indices, params%do_md, params%mc_relax,&
                       & md_istep, mc_id, E_kinetic, instant_temp, params%t_beg,&
                       & params%n_mc_swaps, params%mc_swaps, params%mc_swaps_id, &
-                      & params%species_types)
+                      & params%species_types, params%mc_hamiltonian)
 
                  rebuild_neighbors_list = .true.
                  ! end if
