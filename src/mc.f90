@@ -465,27 +465,6 @@ module mc
 
        positions_diff = 0.d0
 
-       if(mc_move == 'md' .or. mc_hamiltonian )then
-          ! Randomize the velocities
-          write(*,*)'                                       |'
-          write(*,*)'NOTICE: Randomizing velocities for     |'
-          write(*,*)'hybrid mc, so that they match your     |'
-          write(*,*)'initial target temperature:            |'
-          write(*,*)'                                       |'
-          write(*,'(A, F16.4, A)')' t_beg = ', t_beg, ' K             |'
-          write(*,*)'                                       |'
-          write(*,*)'.......................................|'
-          call random_number(velocities)
-          call remove_cm_vel(velocities(1:3,1:n_sites), masses(1:n_sites))
-          E_kinetic = 0.d0
-          do i = 1, n_sites
-             E_kinetic = E_kinetic + 0.5d0 * masses(i) * dot_product(velocities(1:3, i), velocities(1:3, i))
-          end do
-          instant_temp = 2.d0/3.d0/dfloat(n_sites-1)/kB*E_kinetic
-          velocities = velocities * dsqrt(t_beg/instant_temp)
-          E_kinetic = E_kinetic * t_beg/instant_temp
-       end if
-
 
 
        ! Assume that the number of steps has already been set.

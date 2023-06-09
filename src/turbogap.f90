@@ -69,7 +69,7 @@ program turbogap
   real*8, pointer :: this_hirshfeld_v_pt(:), this_hirshfeld_v_cart_der_pt(:,:)
   real*8, allocatable :: all_energies(:,:), all_forces(:,:,:), all_virial(:,:,:)
   real*8, allocatable :: all_this_energies(:,:), all_this_forces(:,:,:), all_this_virial(:,:,:)
-  real*8 :: instant_temp, kB = 8.6173303d-5, E_kinetic, time1, time2, time3, time_neigh, &
+  real*8 :: instant_temp, kB = 8.6173303d-5, E_kinetic=0.d0, E_kinetic_prev, time1, time2, time3, time_neigh, &
        time_gap, time_soap(1:3), time_2b(1:3), time_3b(1:3), time_read_input(1:3), time_read_xyz(1:3), &
        time_mpi(1:3) = 0.d0, time_core_pot(1:3), time_vdw(1:3), instant_pressure, lv(1:3,1:3), &
        time_mpi_positions(1:3) = 0.d0, time_mpi_ef(1:3) = 0.d0, time_md(3) = 0.d0, &
@@ -803,8 +803,8 @@ program turbogap
         n_pos = size(positions,2)
         n_sp = size(xyz_species,1)
         n_sp_sc = size(xyz_species_supercell,1)
-
-        if ( .not. params%do_md .and. params%mc_hamiltonian )then
+        if ( params%do_mc .and. (mc_move /= "md" .or. md_istep == 0) .and. params%mc_hamiltonian )then
+           if(mc_istep > 0) E_kinetic_prev = E_kinetic
            call random_number( velocities )
            call remove_cm_vel(velocities(1:3,1:n_sites), masses(1:n_sites))
            E_kinetic = 0.d0
@@ -813,7 +813,14 @@ program turbogap
            end do
            instant_temp = 2.d0/3.d0/dfloat(n_sites-1)/kB*E_kinetic
            velocities = velocities * dsqrt(params%t_beg/instant_temp)
-           E_kinetic = E_kinetic * params%t_beg/instant_temp
+           if (mc_istep > 0)then
+              E_kinetic = E_kinetic_prev
+              instant_temp = 2.d0/3.d0/dfloat(n_sites-1)/kB*E_kinetic
+              ! Reversing as we want it to be at the instant temp and not at t_beg
+              velocities = velocities * dsqrt(instant_temp / params%t_beg)
+           else
+              E_kinetic = E_kinetic * params%t_beg/instant_temp
+           end if
         end if
 
      END IF
@@ -2101,7 +2108,8 @@ program turbogap
                     end if
 
 
-                    if (mc_move /= "md" .or. .not. params%mc_hamiltonian) E_kinetic = 0.d0
+                    if (.not. params%mc_hamiltonian) E_kinetic = 0.d0
+
                     call from_properties_to_image(images(i_trial_image), positions, velocities, masses, &
                          forces, a_box, b_box, c_box,  energy, energies, E_kinetic, &
                          species, species_supercell, n_sites, indices, fix_atom, &
