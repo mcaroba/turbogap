@@ -20,7 +20,7 @@ vdw_c6_ref = 27.8 !3.88
 vdw_buffer = 0.5          ! Buffer for transitions between cut-off regions. Type: REAL
 vdw_loc_rcut = 5.
 vdw_scs_rcut = 5.        ! vdw_scs_rcut > vdw_buffer. Type: REAL
-vdw_mbd_rcut = 8.0        ! Cut-off for atoms to include for local MBD energy (vdw_mbd_rcut >= vdw_scs_rcut + vdw_buffer). Type: REAL
+vdw_mbd_rcut = 6.        ! Cut-off for atoms to include for local MBD energy (vdw_mbd_rcut >= vdw_scs_rcut + vdw_buffer). Type: REAL
 vdw_2b_rcut = 0.          ! Cut-off for local TS-SCS (vdw_2b_rcut >= vdw_mbd_rcut + vdw_buffer), Type: REAL
 vdw_mbd_nfreq = 21        ! Number of frequency values for MBD integration. Type: INT
 vdw_mbd_norder = 2        ! Contributions up to n-body interactions (i.e. cut-off degree for Taylor expansion of ln(I-AT)). Type: INT

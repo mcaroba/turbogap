@@ -1080,7 +1080,8 @@ module vdw
                            dT_LR_mult_0ji(:), xyz_2b_tot(:,:), rjs_2b_tot(:), r0_ii_2b_tot(:), neighbor_alpha0_2b_tot(:), &
                            f_damp_SCS_2b_tot(:), hirshfeld_2b_tot_neigh(:), a_2b_tot(:), o_2b_tot(:), &
                            r0_ii_SCS_2b_tot(:), c6_2b_tot(:), r6_mult_2b_tot(:), r6_mult_0i(:), r6_mult_0j(:), &
-                           dr6_mult_0i(:), dr6_mult_0j(:), dT_LR_mult_ij0(:), AT_mult(:), E_mult(:), dAT_mult(:), dE_mult(:)
+                           dr6_mult_0i(:), dr6_mult_0j(:), dT_LR_mult_ij0(:), AT_mult(:), E_mult(:), dAT_mult(:), dE_mult(:), &
+                           temp_mat(:,:)
     real*8 :: a_mbd_i, a_mbd_j, da_i, da_j, pol1, E_TS, f_damp_der_2b, dr_vdw_i, &
               dr_vdw_j, forces_TS, dC6_2b, mult1_i, mult1_j, mult2, dmult1_i(1:3), dmult1_j(1:3), dmult2(1:3), hv_p_der, &
               hv_q_der, do_pref, rb, inner_damp_der, rjs_0_i, rcut_forces, o_i, o_j, do_i, do_j, T_LR_mult_i, T_LR_mult_j, &
@@ -1222,7 +1223,7 @@ ac2 = 3.d0 + ac4
       r_buf_mbd = r_buffer
     end if
 
-    !r_buf_mbd = 0.d0
+    r_buf_mbd = 2.d0
     r_buf_ij = r_buffer
     
     !if ( rcut_2b-rcut_mbd < r_buffer ) then
@@ -1808,7 +1809,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
           !rcut_2b = 9.d0
           n_mbd_sites = 0
           n_mbd_pairs = 0
-          n_ene_sites = 0
+          !n_ene_sites = 0
         
           k_i = 0
           do i3 = 1, n_neigh(i)
@@ -1817,9 +1818,9 @@ if ( abs(rcut_2b) < 1.d-10 ) then
             if (rjs(n_tot+k_i) .le. 2.d0*rcut_mbd ) then
               n_mbd_sites = n_mbd_sites + 1
               n_mbd_pairs = n_mbd_pairs + 1
-              if ( rjs(n_tot+k_i) .le. rcut_mbd ) then
-                n_ene_sites = n_ene_sites + 1
-              end if
+              !if ( rjs(n_tot+k_i) .le. rcut_mbd ) then
+              !  n_ene_sites = n_ene_sites + 1
+              !end if
               xyz_i = xyz(:,n_tot+k_i)/Bohr
               k_j = 0
               do j3 = 1, n_neigh(i)
@@ -1882,7 +1883,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
           allocate( T_LR_mult_0ij(1:n_mbd_pairs) )
           allocate( T_LR_mult_0ji(1:n_mbd_pairs) )
           allocate( AT_mult(1:n_mbd_sites) )
-          allocate( E_mult(1:n_ene_sites) )
+          allocate( E_mult(1:n_mbd_sites) )
           hirshfeld_mbd_neigh = 0.d0
           if ( do_derivatives ) then
             allocate( da_mbd(1:n_mbd_pairs) )
@@ -1905,7 +1906,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
             allocate( dT_LR_mult_0ji(1:n_mbd_pairs) )
             allocate( dT_LR_mult_ij0(1:n_mbd_pairs) )
             allocate( dAT_mult(1:n_mbd_sites) )
-            allocate( dE_mult(1:n_ene_sites) )
+            allocate( dE_mult(1:n_mbd_sites) )
           end if
           if ( do_derivatives .and. do_hirshfeld_gradients ) then
             allocate( hirshfeld_v_mbd_der(1:3,1:n_mbd_pairs) )
@@ -4218,19 +4219,32 @@ if ( abs(rcut_2b) < 1.d-10 ) then
               if ( c3 == 1 .and. do_total_energy ) then
                 total_integrand = 0.d0
               end if
+
+              allocate( temp_mat(1:3*n_mbd_sites,1:3*n_mbd_sites) )
+              temp_mat = 0.d0
+
               do j = 1, n_freq
               
                 force_series = 0.d0
-                if ( c3 == 1 .and. do_total_energy ) then
-                  total_energy_series = 0.d0
-                end if
+                !if ( c3 == 1 .and. do_total_energy ) then
+                total_energy_series = 0.d0
+                !end if
                 do k2 = 1, n_order-1
-                  force_series = force_series + AT_n_f(:,:,k2,j)
-                  if ( c3 == 1 .and. do_total_energy ) then
-                    total_energy_series = total_energy_series - 1.d0/(k2+1)*AT_n_f(:,:,k2,j)
-                  end if 
+                  !if ( k2 == 1 ) then
+                  !  temp_mat = G_mat(:,:,j)
+                  !else
+                  !  call dgemm( "n", "n", 3*n_mbd_sites, 3*n_mbd_sites, 3*n_mbd_sites, 1.d0, G_mat, 3*n_mbd_sites, &
+                  !        AT_n_f(:,:,k2-1,j), 3*n_mbd_sites, 0.d0, temp_mat, 3*n_mbd_sites)
+                  !end if
+                  !force_series = force_series + AT_n_f(:,:,k2,j)
+                  !force_series = force_series + temp_mat
+                  !if ( c3 == 1 .and. do_total_energy ) then
+                  total_energy_series = total_energy_series - 1.d0/(k2+1)*AT_n_f(:,:,k2,j)
+                  !end if 
                 end do
                 k3 = 0
+                E_mult = 0.d0
+                dE_mult = 0.d0
                 do p = 1, n_mbd_sites
                   i2 = mbd_neighbors_list(k3+1)
                   do c1 = 1, 3
@@ -4239,25 +4253,49 @@ if ( abs(rcut_2b) < 1.d-10 ) then
 !!!!!!!!!!!!!!!!!!!!!!!!! THIS CUT-OFF IS NEEDED TO MAKE THE FORCES CONTINUOUS AT THE BOUNDARY
 !!!!!!!!!!!!!!!!!!!!!!!!! TRY TO GET THE TOTAL ENERGY AND FORCES TO MATCH WITH THIS CUT-OFF
                     if ( rjs_0_mbd(k3+1) .le. rcut_mbd/Bohr ) then
-                    integrand(j) = integrand(j) + & !1.d0/(1.d0 + (omegas_mbd(j)/0.5d0)**2) * &
-                    dot_product(G_mat(3*(p-1)+c1,:,j),force_series(:,3*(p-1)+c1))
-                    !if ( i == 2 .and. c3 == 3 .and. j == 1 ) then
-                    !  write(*,*) rjs_0_mbd(k3+1)*Bohr, dot_product(G_mat(3*(p-1)+c1,:,j),force_series(:,3*(p-1)+c1))
-                      !write(*,*) integrand(j)
-                    !end if
-                    if ( c3 == 1 .and. do_total_energy ) then
-                      total_integrand(j) = total_integrand(j) + a_mbd(k3+1) / &
-                            (1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) * AT_mult(p) &
-                            * dot_product(T_LR(3*(p-1)+c1,:), &
-                            total_energy_series(:,3*(p-1)+c1))
-                    end if
+                      !integrand(j) = integrand(j) + & 
+                      !dot_product(G_mat(3*(p-1)+c1,:,j),force_series(:,3*(p-1)+c1))
+                      !integrand(j) = integrand(j) + &                                            
+                      !  dot_product(AT(3*(p-1)+c1,:,j),force_series(:,3*(p-1)+c1))
+                      !integrand(j) = integrand(j) +  &
+                      !  dot_product(G_mat(3*(p-1)+c1,:,j),AT(:,3*(p-1)+c1,j))
+                      if ( rjs_0_mbd(k3+1) > (rcut_mbd-r_buf_mbd)/Bohr .and. rjs_0_mbd(k3+1) .le. rcut_mbd/Bohr ) then
+                        rb = (rjs_0_mbd(k3+1)*Bohr-rcut_mbd+r_buf_mbd)/r_buf_mbd
+                        E_mult(p) = (1.d0 - 3.d0*rb**2 + 2.d0*rb**3)
+                        dE_mult(p) = ( - 6.d0 * rb &
+                              + 6.d0 * rb**2) &
+                              * ( -xyz_0_mbd(c3,k3+1)/rjs_0_mbd(k3+1)/(r_buf_mbd/Bohr))
+                      else
+                        E_mult(p) = 1.d0
+                        dE_mult(p) = 0.d0
+                      end if 
+                      integrand(j) = integrand(j) - E_mult(p) * &
+                        (dot_product(G_mat(3*(p-1)+c1,:,j),total_energy_series(:,3*(p-1)+c1)) + &
+                         dot_product(total_energy_series(3*(p-1)+c1,:),G_mat(:,3*(p-1)+c1,j)))
+                      if ( n_order > 2 ) then
+                        do k2 = 2, n_order-1
+                          temp_mat = 0.d0
+                          call dgemm( "n", "n", 3*n_mbd_sites, 3*n_mbd_sites, 3*n_mbd_sites, 1.d0, G_mat(:,:,j), 3*n_mbd_sites, &
+                            AT_n_f(:,:,k2-1,j), 3*n_mbd_sites, 0.d0, temp_mat, 3*n_mbd_sites)
+                          integrand(j) = integrand(j) - &
+                            1.d0/(k2+1) * E_mult(p) * dot_product(AT_n_f(3*(p-1)+c1,:,n_order-1-(k2-1),j),temp_mat(:,3*(p-1)+c1))
+                        end do
+                      end if
+                      integrand(j) = integrand(j) - dE_mult(p) * &
+                        dot_product(AT(3*(p-1)+c1,:,j),total_energy_series(:,3*(p-1)+c1))
+                      if ( c3 == 1 .and. do_total_energy ) then
+                        total_integrand(j) = total_integrand(j) + a_mbd(k3+1) / &
+                              (1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) * AT_mult(p) &
+                              * E_mult(p) * dot_product(T_LR(3*(p-1)+c1,:), &
+                              total_energy_series(:,3*(p-1)+c1))
+                      end if
                     end if
                   end do
                   k3 = k3 + n_mbd_neigh(p)
                 end do
               end do
               
-              deallocate ( G_mat )
+              deallocate ( G_mat, temp_mat )
 
               if ( n_order > 1 ) then
 
