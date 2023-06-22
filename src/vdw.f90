@@ -30,10 +30,11 @@ module vdw
 
   use misc
   use nonneg_leastsq
-  !use psb_base_mod
-  !use psb_prec_mod
-  !use psb_krylov_mod
-  !use psb_util_mod
+  !use sparsekit
+  use psb_base_mod
+  use psb_prec_mod
+  use psb_krylov_mod
+  use psb_util_mod
 
   contains
 
@@ -491,7 +492,7 @@ module vdw
     !type(psb_dspmat_type) :: A_sp
     !type(psb_d_vect_type) :: x_vec, b_vec
     !integer(psb_lpk_), allocatable :: ia(:), ja(:), myidx(:)
-    !real(psb_dpk_), allocatable :: val(:), val_xv(:,:), b_i(:,:), d_vec(:,:)
+    !real(psb_dpk_), allocatable :: val(:) !, val_xv(:,:), b_i(:,:), d_vec(:,:)
     !type(psb_dprec_type) :: prec
     !character(len=20) :: ptype
     real*8 :: polyfit(1:15)
@@ -1102,6 +1103,16 @@ module vdw
     real*8 :: res_nnls, E_tot, denom
     integer :: mode_nnls
     logical :: do_total_energy = .true. ! Finite difference testing purposes
+
+    !PSBLAS stuff:
+    type(psb_ctxt_type) :: icontxt
+    integer(psb_ipk_) ::  iam, np, ip, jp, idummy, nr, nnz, info_psb
+    type(psb_desc_type) :: desc_a
+    type(psb_dspmat_type) :: A_sp
+    !type(psb_d_vect_type) :: x_vec, b_vec
+    integer(psb_lpk_), allocatable :: ia(:), ja(:), myidx(:)
+    real(psb_dpk_), allocatable :: val(:), AT_vec(:,:) !, val_xv(:,:), b_i(:,:), d_vec(:,:)
+
 
 !central_pol = 10.d0
 !central_omega = 0.5d0
@@ -1912,6 +1923,9 @@ if ( abs(rcut_2b) < 1.d-10 ) then
             allocate( hirshfeld_v_mbd_der(1:3,1:n_mbd_pairs) )
             hirshfeld_v_mbd_der = 0.d0
           end if
+          allocate( ia(1:9*n_mbd_pairs) )
+          allocate( ja(1:9*n_mbd_pairs) )
+          allocate( val(1:9*n_mbd_pairs) )
 
 end if
 
@@ -1961,6 +1975,10 @@ if ( abs(rcut_2b) < 1.d-10 ) then
           xyz_mbd = 0.d0
           rjs_mbd = 0.d0
           T_mbd = 0.d0
+
+          ia = 0
+          ja = 0
+          val = 0
 
           k2 = 0
           k_i = 0
@@ -2198,6 +2216,10 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                           end if
                           T_LR(3*(p-1)+c1,3*(q-1)+c2) = f_damp_SCS(k2) * T_mbd(k3) * T_LR_mult_i * T_LR_mult_j &
                                                         * T_LR_mult_ij(k2)
+                          ia(k3) = 3*(p-1)+c1
+                          ja(k3) = 3*(q-1)+c2
+                          val(k3) = f_damp_SCS(k2) * T_mbd(k3) * T_LR_mult_i * T_LR_mult_j &
+                                                        * T_LR_mult_ij(k2)
                           if ( i == 1 .and. p == 8 .and. q == 4 .and. c1 == 1 .and. c2 == 2 ) then
                             write(*,*) "T_LR", T_LR(3*(p-1)+c1,3*(q-1)+c2)
                             write(*,*) "T_mbd", T_mbd(k3)
@@ -2342,15 +2364,23 @@ if ( abs(rcut_2b) < 1.d-10 ) then
               end if
             end do
 
-            !if ( i == 1 .and. i2 == 1 ) then
-            !  open(unit=89, file="AT_m.dat", status="new")
+            if ( i == 1 .and. i2 == 1 ) then
+            !  open(unit=89, file="AT.dat", status="new")
             !  write(*,*) "AT"
-            !  do p = 1, 3*n_mbd_sites
+              write(*,*) "T_LR"
+              do p = 1, 3*n_mbd_sites
             !    write(89,*) AT(p,:,1)
-            !  end do
+                write(*,*) T_LR(p,:)
+              end do
+              write(*,*) "ia"
+              write(*,*) ia
+              write(*,*) "ja"
+              write(*,*) ja
+              write(*,*) "val"
+              write(*,*) val
             !  close(89)
             !  write(*,*) "AT done"
-            !end if
+            end if
 
             if ( n_order > 1 ) then
               do k2 = 1, n_order-1
@@ -3034,9 +3064,9 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                   j1 = modulo(j-1, n_sites0) + 1
                   q = p_mbd(k2)
                   rjs_j = rjs_0_mbd(k2)
-                  if ( p == 236 .or. p == 240 ) then
-                    write(*,*) "p, rjs_0_mbd", p, rjs_i*Bohr, rjs_j*Bohr, i2, i1, j, j1
-                  end if
+                  !if ( p == 236 .or. p == 240 ) then
+                  !  write(*,*) "p, rjs_0_mbd", p, rjs_i*Bohr, rjs_j*Bohr, i2, i1, j, j1
+                  !end if
                   xyz_j = xyz_0_mbd(:,k2)
                   if ( rjs_0_mbd(k2) .le. (rcut_loc-r_buf_loc)/Bohr ) then
                     r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),j,1)
@@ -4164,7 +4194,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
 
               G_mat = 0.d0
 
-              write(*,*) "AT_mult"
+              !write(*,*) "AT_mult"
               do j = 1, n_freq
                 k3 = 0
                 dAT_mult = 0.d0
@@ -4189,18 +4219,18 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                     AT_mult(p) * T_LR(3*(p-1)+1:3*(p-1)+3,:) + &
                     a_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) * &
                     dAT_mult(p) * T_LR(3*(p-1)+1:3*(p-1)+3,:)
-                    if ( i == 1 .and. c3 == 1 .and. p == 236 .and. j == 1 ) then
-                      write(*,*) "a_mbd", a_mbd(k3+1)
-                      write(*,*) "da_mbd", da_mbd(k3+1)
-                      write(*,*) "o_mbd", o_mbd(k3+1)
-                      write(*,*) "do_mbd", do_mbd(k3+1)
-                      write(*,*) "T_LR", T_LR(3*(p-1)+1,3*(267-1)+1)
-                      write(*,*) "dT_LR", dT_LR(3*(p-1)+1,3*(267-1)+1)
-                      write(*,*) "AT_mult", AT_mult(p)
-                      write(*,*) "dAT_mult", dAT_mult(p)
-                      write(*,*) "G_mat", G_mat(3*(p-1)+1,3*(267-1)+1,1)
-                      write(*,*) "rjs_0_mbd", k3+1, rjs_0_mbd(k3+1)*Bohr
-                    end if
+                    !if ( i == 1 .and. c3 == 1 .and. p == 236 .and. j == 1 ) then
+                    !  write(*,*) "a_mbd", a_mbd(k3+1)
+                    !  write(*,*) "da_mbd", da_mbd(k3+1)
+                    !  write(*,*) "o_mbd", o_mbd(k3+1)
+                    !  write(*,*) "do_mbd", do_mbd(k3+1)
+                    !  write(*,*) "T_LR", T_LR(3*(p-1)+1,3*(267-1)+1)
+                    !  write(*,*) "dT_LR", dT_LR(3*(p-1)+1,3*(267-1)+1)
+                    !  write(*,*) "AT_mult", AT_mult(p)
+                    !  write(*,*) "dAT_mult", dAT_mult(p)
+                    !  write(*,*) "G_mat", G_mat(3*(p-1)+1,3*(267-1)+1,1)
+                    !  write(*,*) "rjs_0_mbd", k3+1, rjs_0_mbd(k3+1)*Bohr
+                    !end if
                     !if ( i == 1 .and. c3 == 1 .and. j == 1 ) then
                     !  write(*,*) dAT_mult(p)
                     !end if
@@ -4233,7 +4263,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
               allocate( temp_mat(1:3*n_mbd_sites,1:3*n_mbd_sites) )
               temp_mat = 0.d0
 
-              write(*,*) "p, c1, rjs_0_mbd, integrand(p), a_mbd, da_mbd"
+              !write(*,*) "p, c1, rjs_0_mbd, integrand(p), a_mbd, da_mbd"
               do j = 1, n_freq
               
                 force_series = 0.d0
@@ -4286,12 +4316,12 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                       integrand(j) = integrand(j) + E_mult(p) * &
                         dot_product(G_mat(3*(p-1)+c1,:,j),force_series(:,3*(p-1)+c1)) !+ &
                          !dot_product(total_energy_series(3*(p-1)+c1,:),G_mat(:,3*(p-1)+c1,j)))
-                      if ( j == 1 ) then
-                        write(*,*) p, c1, rjs_0_mbd(k3+1)*Bohr, integrand(j)-pol1, a_mbd(k3+1), da_mbd(k3+1)
-                        if ( p == 236 .or. p == 240 ) then
-                          write(*,*) G_mat(3*(p-1)+c1,3*(n_mbd_sites-1)+1:,j)
-                        end if
-                      end if
+                      !if ( j == 1 ) then
+                      !  write(*,*) p, c1, rjs_0_mbd(k3+1)*Bohr, integrand(j)-pol1, a_mbd(k3+1), da_mbd(k3+1)
+                      !  if ( p == 236 .or. p == 240 ) then
+                      !    write(*,*) G_mat(3*(p-1)+c1,3*(n_mbd_sites-1)+1:,j)
+                      !  end if
+                      !end if
 
                       !if ( n_order > 2 ) then
                       !  do k2 = 2, n_order-1
@@ -4441,7 +4471,8 @@ if ( abs(rcut_2b) < 1.d-10 ) then
           deallocate( T_LR, r0_ii_SCS, f_damp_SCS, AT, AT_n, energy_series, omegas_mbd, integrand, n_mbd_neigh, &
                       mbd_neighbors_list, p_mbd, r0_ii_mbd, neighbor_alpha0_mbd, xyz_mbd, rjs_mbd, T_mbd, a_mbd, &
                       rjs_0_mbd, xyz_0_mbd, o_mbd, hirshfeld_mbd_neigh, &
-                      T_LR_mult_0i, T_LR_mult_0j, T_LR_mult_ij, T_LR_mult_0ij, T_LR_mult_0ji, AT_mult, E_mult )
+                      T_LR_mult_0i, T_LR_mult_0j, T_LR_mult_ij, T_LR_mult_0ij, T_LR_mult_0ji, AT_mult, E_mult, &
+                      ia, ja, val )
         end if
                     
         if ( do_derivatives .and. om == 2 ) then
