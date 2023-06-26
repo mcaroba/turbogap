@@ -1058,7 +1058,7 @@ module vdw
               sigma_ij, coeff_h_der, dg, dh, s_i, s_j, terms, omega_ref, xyz_i(1:3), xyz_j(1:3), rjs_i, rjs_j
     integer, allocatable :: ipiv(:)
     integer :: n_sites, n_pairs, n_species, n_sites0, info, om, n_tot
-    integer :: i, i0, i1, i2, i3, j, j1, j2, j3, k, k2, k3, k4, a, a2, c1, c2, c3, lwork, b, p, q, r, k_i, k_j
+    integer :: i, i0, i1, i2, i3, j, j1, j2, j3, k, k2, k3, k4, i_om, a, a2, c1, c2, c3, lwork, b, p, q, r, k_i, k_j
 
 !    LOCAL TEST stuff:
     integer, allocatable :: sub_neighbors_list(:), n_sub_neigh(:), p_list(:)
@@ -1083,7 +1083,7 @@ module vdw
                            r0_ii_SCS_2b_tot(:), c6_2b_tot(:), r6_mult_2b_tot(:), r6_mult_0i(:), r6_mult_0j(:), &
                            dr6_mult_0i(:), dr6_mult_0j(:), dT_LR_mult_ij0(:), AT_mult(:), E_mult(:), dAT_mult(:), dE_mult(:), &
                            temp_mat(:,:)
-    real*8 :: a_mbd_i, a_mbd_j, da_i, da_j, pol1, E_TS, f_damp_der_2b, dr_vdw_i, &
+    real*8 :: a_mbd_i, a_mbd_j, o_mbd_i, da_i, da_j, pol1, E_TS, f_damp_der_2b, dr_vdw_i, &
               dr_vdw_j, forces_TS, dC6_2b, mult1_i, mult1_j, mult2, dmult1_i(1:3), dmult1_j(1:3), dmult2(1:3), hv_p_der, &
               hv_q_der, do_pref, rb, inner_damp_der, rjs_0_i, rcut_forces, o_i, o_j, do_i, do_j, T_LR_mult_i, T_LR_mult_j, &
               dT_LR_mult_i, dT_LR_mult_j, dT_LR_mult_0ij_2, dT_LR_mult_0ji_2, a_i, a_j, E_TS_tot, r6_der, ac2, ac3, ac4, &
@@ -1111,7 +1111,7 @@ module vdw
     type(psb_dspmat_type) :: A_sp
     !type(psb_d_vect_type) :: x_vec, b_vec
     integer(psb_lpk_), allocatable :: ia(:), ja(:), myidx(:)
-    real(psb_dpk_), allocatable :: val(:), AT_vec(:,:) !, val_xv(:,:), b_i(:,:), d_vec(:,:)
+    real(psb_dpk_), allocatable :: val(:,:), AT_vec(:,:) !, val_xv(:,:), b_i(:,:), d_vec(:,:)
 
 
 !central_pol = 10.d0
@@ -1923,9 +1923,9 @@ if ( abs(rcut_2b) < 1.d-10 ) then
             allocate( hirshfeld_v_mbd_der(1:3,1:n_mbd_pairs) )
             hirshfeld_v_mbd_der = 0.d0
           end if
-          allocate( ia(1:9*n_mbd_pairs) )
-          allocate( ja(1:9*n_mbd_pairs) )
-          allocate( val(1:9*n_mbd_pairs) )
+          allocate( ia(1:9*(n_mbd_pairs-n_mbd_sites)) )
+          allocate( ja(1:9*(n_mbd_pairs-n_mbd_sites)) )
+          allocate( val(1:9*(n_mbd_pairs-n_mbd_sites),1:n_freq) )
 
 end if
 
@@ -1979,6 +1979,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
           ia = 0
           ja = 0
           val = 0
+          k4 = 0
 
           k2 = 0
           k_i = 0
@@ -2047,6 +2048,8 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 r0_ii_SCS(k2) = r0_ii_mbd(k2) * (central_pol(i1)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0) 
                                              !* (hirshfeld_mbd_neigh(k2))**(1.d0/3.d0)
               end if
+              a_mbd_i = a_mbd(k2)
+              o_mbd_i = o_mbd(k2)
               !if ( rjs(n_tot+k_i) > rcut_mbd-r_buf_mbd .and. &
               !     rjs(n_tot+k_i) .le. rcut_mbd ) then
               !  rb = (rjs(n_tot+k_i)-rcut_mbd+r_buf_mbd)/(r_buf_mbd)
@@ -2216,10 +2219,17 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                           end if
                           T_LR(3*(p-1)+c1,3*(q-1)+c2) = f_damp_SCS(k2) * T_mbd(k3) * T_LR_mult_i * T_LR_mult_j &
                                                         * T_LR_mult_ij(k2)
-                          ia(k3) = 3*(p-1)+c1
-                          ja(k3) = 3*(q-1)+c2
-                          val(k3) = f_damp_SCS(k2) * T_mbd(k3) * T_LR_mult_i * T_LR_mult_j &
+                          if ( abs(f_damp_SCS(k2) * T_mbd(k3) * T_LR_mult_i * T_LR_mult_j &
+                                                        * T_LR_mult_ij(k2)) > 1.d-20 ) then
+                            k4 = k4 + 1
+                            ia(k4) = 3*(p-1)+c1
+                            ja(k4) = 3*(q-1)+c2
+                            val(k4,1) = a_mbd_i * f_damp_SCS(k2) * T_mbd(k3) * T_LR_mult_i * T_LR_mult_j &
                                                         * T_LR_mult_ij(k2)
+                            do i_om = 2, n_freq
+                              val(k4,i_om) = 1.d0/(1.d0+(omegas_mbd(i_om)/o_mbd_i)**2) * val(k4,1)
+                            end do 
+                          end if
                           if ( i == 1 .and. p == 8 .and. q == 4 .and. c1 == 1 .and. c2 == 2 ) then
                             write(*,*) "T_LR", T_LR(3*(p-1)+c1,3*(q-1)+c2)
                             write(*,*) "T_mbd", T_mbd(k3)
@@ -2235,7 +2245,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
               end do
             end if
           end do
-
+          nnz = k4
 end if
 
 

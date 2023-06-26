@@ -1,4 +1,4 @@
-atoms_file = 'atoms_vacuum.xyz'
+atoms_file = 'aG.xyz'
 pot_file = 'gap_files/carbon.gap'
 
 ! Species info
