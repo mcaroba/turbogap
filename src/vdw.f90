@@ -1098,7 +1098,8 @@ module vdw
 !   NNLS stuff;
     
     real*8, allocatable :: A_nnls(:,:), b_nnls(:), coeff_nnls(:), work_nnls(:), omegas_nnls(:), integrand_nnls(:), &
-                           total_integrand_nnls(:), work_integrand(:), trace_nnls(:), force_series0(:,:), full_integrand(:)
+                           total_integrand_nnls(:), work_integrand(:), trace_nnls(:), force_series0(:,:), full_integrand(:), &
+                           integrand_sp(:), at_n_vec(:), at_vec(:)
     integer, allocatable :: ind_nnls(:)
     real*8 :: res_nnls, E_tot, denom
     integer :: mode_nnls
@@ -1111,7 +1112,7 @@ module vdw
     type(psb_dspmat_type) :: A_sp
     !type(psb_d_vect_type) :: x_vec, b_vec
     integer(psb_lpk_), allocatable :: ia(:), ja(:), myidx(:)
-    real(psb_dpk_), allocatable :: val(:,:), AT_vec(:,:) !, val_xv(:,:), b_i(:,:), d_vec(:,:)
+    real(psb_dpk_), allocatable :: val(:,:) !, val_xv(:,:), b_i(:,:), d_vec(:,:)
 
 
 !central_pol = 10.d0
@@ -2374,23 +2375,23 @@ if ( abs(rcut_2b) < 1.d-10 ) then
               end if
             end do
 
-            if ( i == 1 .and. i2 == 1 ) then
+            !if ( i == 1 .and. i2 == 1 ) then
             !  open(unit=89, file="AT.dat", status="new")
             !  write(*,*) "AT"
-              write(*,*) "T_LR"
-              do p = 1, 3*n_mbd_sites
+            !  write(*,*) "T_LR"
+            !  do p = 1, 3*n_mbd_sites
             !    write(89,*) AT(p,:,1)
-                write(*,*) T_LR(p,:)
-              end do
-              write(*,*) "ia"
-              write(*,*) ia
-              write(*,*) "ja"
-              write(*,*) ja
-              write(*,*) "val"
-              write(*,*) val
+            !    write(*,*) T_LR(p,:)
+            !  end do
+              !write(*,*) "ia"
+              !write(*,*) ia
+              !write(*,*) "ja"
+              !write(*,*) ja
+              !write(*,*) "val"
+              !write(*,*) val
             !  close(89)
             !  write(*,*) "AT done"
-            end if
+            !end if
 
             if ( n_order > 1 ) then
               do k2 = 1, n_order-1
@@ -2461,17 +2462,56 @@ if ( abs(rcut_2b) < 1.d-10 ) then
           !deallocate( V_int )
           !TEST!!!!!!!!!!!!!!!!!
 
+          allocate( myidx(1:3*n_mbd_sites) )
+          
+          k2 = 0
+          do p = 1, n_mbd_sites
+            do c1 = 1, 3
+              k2 = k2+1
+              myidx(k2) = k2
+            end do
+          end do
+
+          allocate( integrand_sp(1:n_freq) )
+          allocate( at_vec(1:3*n_mbd_sites) )
+          allocate( at_n_vec(1:3*n_mbd_sites) )
+          integrand_sp = 0.d0
+
           integrand = 0.d0
           do i2 = 1, n_freq
             energy_series = 0.d0
             do k2 = 1, n_order-1
               energy_series = energy_series - 1.d0/(k2+1) * AT_n(:,1:3,k2,i2) 
             end do
+            call psb_init(icontxt)
+            call psb_cdall(icontxt, desc_a, info_psb, vl=myidx)
+            call psb_spall(A_sp, desc_a, info_psb, nnz=nnz)
+            call psb_spins(nnz, ia(1:nnz), ja(1:nnz), val(1:nnz,i2), A_sp, desc_a, info_psb)
+            call psb_cdasb(desc_a, info_psb)
+            call psb_spasb(A_sp, desc_a, info_psb)
             do c1 = 1, 3
               integrand(i2) = integrand(i2) + a_mbd(1)/(1.d0 + (omegas_mbd(i2)/o_mbd(1))**2) & 
                               * dot_product(T_LR(c1,:),energy_series(:,c1))
+              at_vec = AT(:,c1,i2)
+              !write(*,*) "at_vec", at_vec
+              if ( n_order > 2 ) then
+                do k2 = 1, n_order-2
+                  call psb_spmm(1.d0, A_sp, at_vec, 0.d0, at_n_vec, desc_a, info_psb, 'N')
+                  !write(*,*) "at_n_vec", at_n_vec
+                  at_vec = at_n_vec
+                  integrand_sp(i2) = integrand_sp(i2) - 1.d0/(k2+1) * at_n_vec(c1)
+                end do
+              else
+                at_n_vec = at_vec
+              end if
+              integrand_sp(i2) = integrand_sp(i2) - 1.d0/(n_order) * a_mbd(1)/(1.d0 + &
+                              (omegas_mbd(i2)/o_mbd(1))**2) * dot_product(T_LR(c1,:),at_n_vec)
             end do
           end do
+          write(*,*) "integrand", integrand
+          write(*,*) "integrand_sp", integrand_sp
+
+          deallocate( integrand_sp, myidx, at_vec, at_n_vec )
 
           if ( do_nnls ) then
 
