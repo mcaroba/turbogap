@@ -830,6 +830,11 @@ program turbogap
      call mpi_bcast(n_sp_sc, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call cpu_time(time_mpi(2))
      time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
+     print *, "allocated xspc ", allocated(xyz_species_supercell), rank
+     if (allocated(xyz_species_supercell))     print *, "size xyzsp &
+          & ", size(xyz_species_supercell, 1),rank, n_sp_sc
+
+
      IF( rank /= 0 )THEN
         if(allocated(positions))deallocate(positions)
         allocate( positions(1:3, n_pos) )
@@ -839,21 +844,29 @@ program turbogap
            !      allocate( masses(n_pos) )
            if(allocated( masses ))deallocate( masses )
            allocate( masses(1:n_sp) )
-           if(allocated( fix_atom ))deallocate( fix_atom )
-           allocate( fix_atom(1:3, 1:n_sp) )
+           ! if(allocated( fix_atom ))deallocate( fix_atom )
+           ! allocate( fix_atom(1:3, 1:n_sp) )
         end if
         if(allocated( xyz_species ))deallocate( xyz_species )
         allocate( xyz_species(1:n_sp) )
         if(allocated( species ))deallocate( species )
         allocate( species(1:n_sp) )
+     print *, "loop allocated xspc ", allocated(xyz_species_supercell), rank
+     if (allocated(xyz_species_supercell))     print *, "loop size xyzsp &
+          & ", size(xyz_species_supercell, 1),rank
+
         if(allocated( xyz_species_supercell ))deallocate( xyz_species_supercell )
         allocate( xyz_species_supercell(1:n_sp_sc) )
         if(allocated( species_supercell ))deallocate( species_supercell )
         allocate( species_supercell(1:n_sp_sc) )
         if(allocated( fix_atom ))deallocate( fix_atom )
-        allocate( fix_atom(1:3,1:n_pos) )
+        allocate( fix_atom(1:3,1:n_sp) )
 
      END IF
+     print *, "allocated fixatm 2 ", allocated(xyz_species_supercell), rank
+     if (allocated(xyz_species_supercell))     print *, "size xyzsp 2&
+          & ", size(xyz_species_supercell, 1),rank
+
      call cpu_time(time_mpi_positions(1))
      call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
      if( params%do_md .or. params%do_nested_sampling .or. params%do_mc .or. params%mc_hamiltonian)then
@@ -1031,6 +1044,12 @@ program turbogap
                  allocate( hirshfeld_v_cart_der(1:3, 1:n_atom_pairs_by_rank(rank+1)) )
                  allocate( this_hirshfeld_v_cart_der(1:3, 1:n_atom_pairs_by_rank(rank+1)) )
               end if
+              if ( .not. allocated(hirshfeld_v_cart_der)) allocate(&
+                   & hirshfeld_v_cart_der(1:3,&
+                   & 1:n_atom_pairs_by_rank(rank+1)) )
+              if ( .not. allocated(this_hirshfeld_v_cart_der))&
+                   & allocate( this_hirshfeld_v_cart_der(1:3,&
+                   & 1:n_atom_pairs_by_rank(rank+1)) )
               hirshfeld_v_cart_der = 0.d0
            end if
         end if
@@ -2290,13 +2309,15 @@ program turbogap
 
                  end if
 
-
+                 print *, "size pos before ", size(positions,1), size(positions,2)
+                 print *, "size xyz_sup before ", size(xyz_species_supercell,1), size(xyz_species,1)
+                 print *, "size species  before ", size(species_supercell,1), size(species,1)
                  !  Now start the mc logic: first, use the stored images properties
                  call from_image_to_properties(images(i_current_image), positions, velocities, masses, &
                       forces, a_box, b_box, c_box, energy, energies, E_kinetic, &
                       species, species_supercell, n_sites, indices, fix_atom, &
                       xyz_species, xyz_species_supercell, hirshfeld_v)
-
+                 print *, "size pos after ", size(positions,1), size(positions,2)
                  call perform_mc_step(&
                       & positions, species, xyz_species, masses, fix_atom,&
                       & velocities, positions_prev, positions_diff, disp, d_disp,&
@@ -2466,7 +2487,7 @@ program turbogap
      if( params%do_md .or. params%do_nested_sampling .or. params%do_mc )then
         call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
         call mpi_bcast(masses, n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(fix_atom, 3*n_pos, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(fix_atom, 3*n_sp, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
      end if
      call mpi_bcast(xyz_species, 8*n_sp, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(xyz_species_supercell, 8*n_sp_sc, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
@@ -2496,6 +2517,11 @@ program turbogap
 
 
      if( rebuild_neighbors_list )then
+        print *, "allocated rjs", allocated(rjs), rank
+        print *, "allocated xyz", allocated(xyz), rank
+        print *, "allocated thetas", allocated(thetas), rank
+        print *, "allocated phis", allocated(phis), rank
+        print *, "allocated neighbor_species", allocated(neighbor_species), rank
         deallocate( rjs, xyz, thetas, phis, neighbor_species )
         deallocate( neighbors_list, n_neigh )
 #ifdef _MPIF90
