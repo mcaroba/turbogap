@@ -2937,12 +2937,12 @@ end if
             end do
             da_iso(:,c3,om) = da_iso(:,c3,om)/3.d0
 
-            if ( om == 2 .and. c3 == 3 .and. i == 1 ) then            
-            write(*,*) "da_iso", i
-            do p = 1, n_sub_sites
-              write(*,*) da_iso(p,:,2)
-            end do
-            end if
+            !if ( om == 2 .and. c3 == 3 .and. i == 1 ) then            
+            !write(*,*) "da_iso", i
+            !do p = 1, n_sub_sites
+            !  write(*,*) da_iso(p,:,2)
+            !end do
+            !end if
 
             !if ( i == 1 .and. c3 == 1 .and. om == 2 ) then
             !  write(*,*) "da_iso"
@@ -4312,6 +4312,21 @@ if ( abs(rcut_2b) < 1.d-10 ) then
 
               allocate( temp_mat(1:3*n_mbd_sites,1:3*n_mbd_sites) )
               temp_mat = 0.d0
+              
+              allocate( myidx(1:3*n_mbd_sites) )
+          
+              k2 = 0
+              do p = 1, n_mbd_sites
+                do c1 = 1, 3
+                  k2 = k2+1
+                  myidx(k2) = k2
+                end do
+              end do
+
+              allocate( integrand_sp(1:n_freq) )
+              allocate( at_vec(1:3*n_mbd_sites) )
+              allocate( at_n_vec(1:3*n_mbd_sites) )
+              integrand_sp = 0.d0
 
               !write(*,*) "p, c1, rjs_0_mbd, integrand(p), a_mbd, da_mbd"
               do j = 1, n_freq
@@ -4336,54 +4351,34 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 k3 = 0
                 E_mult = 1.d0
                 dE_mult = 0.d0
+                call psb_init(icontxt)
+                call psb_cdall(icontxt, desc_a, info_psb, vl=myidx)
+                call psb_spall(A_sp, desc_a, info_psb, nnz=nnz)
+                call psb_spins(nnz, ia(1:nnz), ja(1:nnz), val(1:nnz,j), A_sp, desc_a, info_psb)
+                call psb_cdasb(desc_a, info_psb)
+                call psb_spasb(A_sp, desc_a, info_psb)
                 do p = 1, n_mbd_sites
                   i2 = mbd_neighbors_list(k3+1)
                   do c1 = 1, 3
-!!!!!!!!!!!!!!!!!!!!!!!!! IMPORTANT: IF YOU REMOVE THIS IF CONDITION THE FINITE DIFFERENCE MATCHES
-!!!!!!!!!!!!!!!!!!!!!!!!! THE ANALYTICAL FORCES (WITHIN APPROXIMATION)
-!!!!!!!!!!!!!!!!!!!!!!!!! THIS CUT-OFF IS NEEDED TO MAKE THE FORCES CONTINUOUS AT THE BOUNDARY
-!!!!!!!!!!!!!!!!!!!!!!!!! TRY TO GET THE TOTAL ENERGY AND FORCES TO MATCH WITH THIS CUT-OFF
                     if ( rjs_0_mbd(k3+1) .le. (rcut_mbd+rcut_loc)/Bohr ) then
-                      !integrand(j) = integrand(j) + & 
-                      !dot_product(G_mat(3*(p-1)+c1,:,j),force_series(:,3*(p-1)+c1))
-                      !integrand(j) = integrand(j) + &                                            
-                      !  dot_product(AT(3*(p-1)+c1,:,j),force_series(:,3*(p-1)+c1))
-                      !integrand(j) = integrand(j) +  &
-                      !  dot_product(G_mat(3*(p-1)+c1,:,j),AT(:,3*(p-1)+c1,j))
-                    !  if ( rjs_0_mbd(k3+1) > (rcut_mbd-r_buf_mbd)/Bohr .and. rjs_0_mbd(k3+1) .le. rcut_mbd/Bohr ) then
-                    !    rb = (rjs_0_mbd(k3+1)*Bohr-rcut_mbd+r_buf_mbd)/r_buf_mbd
-                    !    E_mult(p) = (1.d0 - 3.d0*rb**2 + 2.d0*rb**3)
-                    !    dE_mult(p) = ( - 6.d0 * rb &
-                    !          + 6.d0 * rb**2) &
-                    !          * ( -xyz_0_mbd(c3,k3+1)/rjs_0_mbd(k3+1)/(r_buf_mbd/Bohr))
-                    !  else
-                    !    E_mult(p) = 1.d0
-                    !    dE_mult(p) = 0.d0
-                    !  end if
                       if ( j == 1 ) then
                         pol1 = integrand(j)
                       end if 
                       integrand(j) = integrand(j) + E_mult(p) * &
-                        dot_product(G_mat(3*(p-1)+c1,:,j),force_series(:,3*(p-1)+c1)) !+ &
-                         !dot_product(total_energy_series(3*(p-1)+c1,:),G_mat(:,3*(p-1)+c1,j)))
-                      !if ( j == 1 ) then
-                      !  write(*,*) p, c1, rjs_0_mbd(k3+1)*Bohr, integrand(j)-pol1, a_mbd(k3+1), da_mbd(k3+1)
-                      !  if ( p == 236 .or. p == 240 ) then
-                      !    write(*,*) G_mat(3*(p-1)+c1,3*(n_mbd_sites-1)+1:,j)
-                      !  end if
-                      !end if
-
-                      !if ( n_order > 2 ) then
-                      !  do k2 = 2, n_order-1
-                      !    temp_mat = 0.d0
-                      !    call dgemm( "n", "n", 3*n_mbd_sites, 3*n_mbd_sites, 3*n_mbd_sites, 1.d0, G_mat(:,:,j), 3*n_mbd_sites, &
-                      !      AT_n_f(:,:,k2-1,j), 3*n_mbd_sites, 0.d0, temp_mat, 3*n_mbd_sites)
-                      !    integrand(j) = integrand(j) - &
-                      !      1.d0/(k2+1) * E_mult(p) * dot_product(AT_n_f(3*(p-1)+c1,:,n_order-1-(k2-1),j),temp_mat(:,3*(p-1)+c1))
-                      !  end do
-                      !end if
-                      !integrand(j) = integrand(j) - dE_mult(p) * &
-                      !  dot_product(AT(3*(p-1)+c1,:,j),total_energy_series(:,3*(p-1)+c1))
+                        dot_product(G_mat(3*(p-1)+c1,:,j),force_series(:,3*(p-1)+c1))
+                      at_vec = G_mat(:,3*(p-1)+c1,j)
+                      !write(*,*) "at_vec", at_vec
+                      if ( n_order > 2 ) then
+                        do k2 = 1, n_order-2
+                          call psb_spmm(1.d0, A_sp, at_vec, 0.d0, at_n_vec, desc_a, info_psb, 'N')
+                          at_vec = at_n_vec
+                          integrand_sp(j) = integrand_sp(j) + at_n_vec(3*(p-1)+c1)
+                        end do
+                      else
+                        at_n_vec = at_vec
+                      end if
+                      integrand_sp(j) = integrand_sp(j) + a_mbd(k3+1)/(1.d0 + &
+                              (omegas_mbd(j)/o_mbd(k3+1))**2) * dot_product(T_LR(3*(p-1)+c1,:),at_n_vec)
                       if ( c3 == 1 .and. do_total_energy ) then
                         total_integrand(j) = total_integrand(j) + a_mbd(k3+1) / &
                               (1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) * AT_mult(p) &
@@ -4396,6 +4391,12 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 end do
               end do
               
+              !if ( i == 1 .and. c3 == 1 ) then
+                write(*,*) "force integrand", integrand
+                write(*,*) "force intgrand_sp", integrand_sp
+              !end if
+              
+              deallocate( integrand_sp, myidx, at_vec, at_n_vec )
               deallocate ( G_mat, temp_mat )
 
               if ( n_order > 1 ) then
