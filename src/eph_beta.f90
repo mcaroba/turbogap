@@ -171,7 +171,7 @@ subroutine beta_parameters(this,beta_infile,n_species)
 	
 	
 	! ------------------------------------------------------------------------
-	! ** As fix user-eph does in LAMMPS, but not as shown in the papers **
+	! ** As fix user-eph does with the function rho(r²) versus r² **
 	
 	this%r_cutoff_sq = this%r_cutoff * this%r_cutoff
 	this%dr_sq = this%r_cutoff_sq / (this%n_points_rho - 1)

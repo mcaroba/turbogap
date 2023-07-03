@@ -57,17 +57,13 @@ subroutine eph_Langevin_spatial_correlation(isfriction, israndom, vel, forces, m
 	real*8, intent(in) :: vel(:,:), positions(:,:), masses(:), type_mass(:), dt, md_time
 	real*8, intent(inout) :: forces(:,:)
 	real*8, allocatable :: forces_fric(:,:), forces_rnd(:,:)
-	integer :: Np, i, j, k, itype, jtype, ktype, atom_type, component
+	integer :: Np, i, j, k, itype, jtype, atom_type, component
 	
 	real*8 :: beta_rho, xi, yi, zi, xj, yj, zj, r_ij, &
-	alpha_I, alpha_J, &
-	sig_I(3),B_IJ(3,3),eta_I(3), W_IJ_I(3,3), W_IJ_J(3,3), W_IJ(3,3), &
-	outer_p(3,3), rho_ij, v_Te, rel_ij(3), &
+	alpha_I, alpha_J, sig_I(3), rho_ij, v_Te, rel_ij(3), &
 	rel_v_ij(3), correl_factor_eta, &
 	Energy_val_fric,Energy_val_rnd, Energy_val_eph, E_val_i_fric,E_val_i_rnd,E_val_i_eph, &
-	multiply_factor, r_v1, r_v2, r_ik_sq, st_dev_factor, & 
-	multiply_factor1, multiply_factor2, &
-	sum_of_forces
+	multiply_factor, multiply_factor1, multiply_factor2
 	
 	
 	real*8, allocatable :: rand_vec(:,:), rho_I(:), w_I(:,:)
@@ -91,23 +87,7 @@ subroutine eph_Langevin_spatial_correlation(isfriction, israndom, vel, forces, m
 		rand_vec(2,i) = random_gaussian()
 		rand_vec(3,i) = random_gaussian()
 	end do
-	
-	! The random vectors are component by component follow an independent
-	! Gaussian distribution, related to a heat bath at temperature T_e
-	! PRL 120, 185501 (2018).  
-	
-	! the random forces need finally to have certain correlations
-	  
-	!v_Te = sum(fdm%T_e) / fdm%ntotal
-	!correl_factor_eta = sqrt(2.0*boltzconst*v_Te/(dt))
-	!call get_distribution_factor(rand_vec(1,:), Np, correl_factor_eta, st_dev_factor)
-	!rand_vec(1,:) = rand_vec(1,:)*st_dev_factor
-	!call get_distribution_factor(rand_vec(2,:), Np, correl_factor_eta, st_dev_factor)
-	!rand_vec(2,:) = rand_vec(2,:)*st_dev_factor
-	!call get_distribution_factor(rand_vec(3,:), Np, correl_factor_eta, st_dev_factor)
-	!rand_vec(3,:) = rand_vec(3,:)*st_dev_factor
 
-	
 	allocate(forces_fric(3,Np), forces_rnd(3,Np))
 
 	forces_fric = 0.0
@@ -160,8 +140,6 @@ subroutine eph_Langevin_spatial_correlation(isfriction, israndom, vel, forces, m
 				xi = positions(1,i); yi = positions(2,i); zi = positions(3,i)
 				
 				do j = 1, Np
-					W_IJ_J = 0.0
-					W_IJ_I = 0.0
 					if (j /= i) then
 						xj = positions(1,j); yj = positions(2,j); zj = positions(3,j) 
 						r_ij = get_distance(xi,yi,zi,xj,yj,zj)
@@ -173,9 +151,6 @@ subroutine eph_Langevin_spatial_correlation(isfriction, israndom, vel, forces, m
 							
 							call relative_vector(positions(:,i), positions(:,j), rel_ij)
 							
-							!outer_p = 0.0
-							!call get_outer_product(rel_ij, outer_p)
-							
 							! find rho_I
 							rho_ij = 0.0
 							call beta%spline_int (beta%r,beta%data_rho(itype,:),beta%y2rho(itype,:), &
@@ -185,18 +160,13 @@ subroutine eph_Langevin_spatial_correlation(isfriction, israndom, vel, forces, m
 							alpha_J = 0.0
 							call beta%spline_int (beta%rho, beta%data_alpha(jtype,:), &
 									beta%y2alpha(jtype,:), beta%n_points_beta, rho_I(j), alpha_J)
-	
-							!W_IJ_J = - alpha_J * outer_p * rho_ij / r_ij / rho_I(j)
-							
-							!eta_I = 0.0
-							!call get_eta_I(W_IJ_J,rand_vec(:,j),eta_I)
 							
 							multiply_factor = dot_product( rel_ij, rand_vec(:,j) )
 							multiply_factor = - alpha_J * rho_ij * multiply_factor / r_ij / rho_I(j)
 							
-							forces_rnd(1,i) = forces_rnd(1,i) + multiply_factor*rel_ij(1)	!eta_I(1)
-							forces_rnd(2,i) = forces_rnd(2,i) + multiply_factor*rel_ij(2)	!eta_I(2)
-							forces_rnd(3,i) = forces_rnd(3,i) + multiply_factor*rel_ij(3)	!eta_I(3)
+							forces_rnd(1,i) = forces_rnd(1,i) + multiply_factor*rel_ij(1)
+							forces_rnd(2,i) = forces_rnd(2,i) + multiply_factor*rel_ij(2)
+							forces_rnd(3,i) = forces_rnd(3,i) + multiply_factor*rel_ij(3)
 							
 							! find rho_J
 							rho_ij = 0.0
@@ -207,18 +177,13 @@ subroutine eph_Langevin_spatial_correlation(isfriction, israndom, vel, forces, m
 							alpha_I = 0.0
 							call beta%spline_int (beta%rho, beta%data_alpha(itype,:), &
 									beta%y2alpha(itype,:),beta%n_points_beta, rho_I(i), alpha_I)
-
-							!W_IJ_I = alpha_I * outer_p * rho_ij / r_ij / rho_I(i)
-
-							!eta_I = 0.0
-							!call get_eta_I(W_IJ_I,rand_vec(:,i),eta_I)
 							
 							multiply_factor = dot_product( rel_ij, rand_vec(:,i) )
 							multiply_factor = alpha_I * rho_ij * multiply_factor / r_ij / rho_I(i)
 							
-							forces_rnd(1,i) = forces_rnd(1,i) + multiply_factor*rel_ij(1)	!eta_I(1)
-							forces_rnd(2,i) = forces_rnd(2,i) + multiply_factor*rel_ij(2)	!eta_I(2)
-							forces_rnd(3,i) = forces_rnd(3,i) + multiply_factor*rel_ij(3)	!eta_I(3)
+							forces_rnd(1,i) = forces_rnd(1,i) + multiply_factor*rel_ij(1)
+							forces_rnd(2,i) = forces_rnd(2,i) + multiply_factor*rel_ij(2)
+							forces_rnd(3,i) = forces_rnd(3,i) + multiply_factor*rel_ij(3)
 						end if
 					end if
 				end do
@@ -398,8 +363,6 @@ subroutine eph_Langevin_spatial_correlation(isfriction, israndom, vel, forces, m
 				xi = positions(1,i); yi = positions(2,i); zi = positions(3,i)
 				
 				do j = 1, Np
-					W_IJ_J = 0.0
-					W_IJ_I = 0.0
 					if (j /= i) then
 						xj = positions(1,j); yj = positions(2,j); zj = positions(3,j) 
 						r_ij = get_distance(xi,yi,zi,xj,yj,zj)
@@ -411,9 +374,6 @@ subroutine eph_Langevin_spatial_correlation(isfriction, israndom, vel, forces, m
 							
 							call relative_vector(positions(:,i), positions(:,j), rel_ij)
 							
-							!outer_p = 0.0
-							!call get_outer_product(rel_ij, outer_p)
-							
 							! find rho_I_r_sq
 							rho_ij = 0.0
 							call beta%spline_int (beta%r_sq, beta%data_rho_rsq(itype,:), &
@@ -423,18 +383,13 @@ subroutine eph_Langevin_spatial_correlation(isfriction, israndom, vel, forces, m
 							alpha_J = 0.0
 							call beta%spline_int (beta%rho, beta%data_alpha(jtype,:), &
 									beta%y2alpha(jtype,:), beta%n_points_beta, rho_I(j), alpha_J)
-	
-							!W_IJ_J = - alpha_J * outer_p * rho_ij / r_ij**2 / rho_I(j)
-							
-							!eta_I = 0.0
-							!call get_eta_I(W_IJ_J,rand_vec(:,j),eta_I)
 							
 							multiply_factor = dot_product( rel_ij, rand_vec(:,j) )
 							multiply_factor = - alpha_J * rho_ij * multiply_factor / r_ij**2 / rho_I(j)
 							
-							forces_rnd(1,i) = forces_rnd(1,i) + multiply_factor*rel_ij(1)	!eta_I(1)
-							forces_rnd(2,i) = forces_rnd(2,i) + multiply_factor*rel_ij(2)	!eta_I(2)
-							forces_rnd(3,i) = forces_rnd(3,i) + multiply_factor*rel_ij(3)	!eta_I(3)
+							forces_rnd(1,i) = forces_rnd(1,i) + multiply_factor*rel_ij(1)
+							forces_rnd(2,i) = forces_rnd(2,i) + multiply_factor*rel_ij(2)
+							forces_rnd(3,i) = forces_rnd(3,i) + multiply_factor*rel_ij(3)
 							
 							! find rho_J_r_sq
 							rho_ij = 0.0
@@ -445,18 +400,13 @@ subroutine eph_Langevin_spatial_correlation(isfriction, israndom, vel, forces, m
 							alpha_I = 0.0
 							call beta%spline_int (beta%rho, beta%data_alpha(itype,:), &
 									beta%y2alpha(itype,:), beta%n_points_beta, rho_I(i), alpha_I)
-
-							!W_IJ_I = alpha_I * outer_p * rho_ij / r_ij**2 / rho_I(i)
-
-							!eta_I = 0.0
-							!call get_eta_I(W_IJ_I,rand_vec(:,i),eta_I)
 							
 							multiply_factor = dot_product( rel_ij, rand_vec(:,i) )
 							multiply_factor = alpha_I * rho_ij * multiply_factor / r_ij**2 / rho_I(i)
 							
-							forces_rnd(1,i) = forces_rnd(1,i) + multiply_factor*rel_ij(1)	!eta_I(1)
-							forces_rnd(2,i) = forces_rnd(2,i) + multiply_factor*rel_ij(2)	!eta_I(2)
-							forces_rnd(3,i) = forces_rnd(3,i) + multiply_factor*rel_ij(3)	!eta_I(3)
+							forces_rnd(1,i) = forces_rnd(1,i) + multiply_factor*rel_ij(1)
+							forces_rnd(2,i) = forces_rnd(2,i) + multiply_factor*rel_ij(2)
+							forces_rnd(3,i) = forces_rnd(3,i) + multiply_factor*rel_ij(3)
 						end if
 					end if
 				end do
@@ -588,31 +538,6 @@ subroutine eph_Langevin_spatial_correlation(isfriction, israndom, vel, forces, m
 	
 	! The current forces get modified
 	
-	! First ensure that sum_I(eta_I) = 0, sum_I(sigma_I) = 0
-
-	!if (isfriction == 1) then
-	!	sum_of_forces = sum(forces_fric(1,:))/Np
-	!	forces_fric(1,:) = forces_fric(1,:) - sum_of_forces
-	!	
-	!	sum_of_forces = sum(forces_fric(2,:))/Np
-	!	forces_fric(2,:) = forces_fric(2,:) - sum_of_forces
-	!	
-	!	sum_of_forces = sum(forces_fric(3,:))/Np
-	!	forces_fric(3,:) = forces_fric(3,:) - sum_of_forces
-	!end if
-	!
-	!if (israndom == 1) then
-	!	sum_of_forces = sum(forces_rnd(1,:))/Np
-	!	forces_rnd(1,:) = forces_rnd(1,:) - sum_of_forces
-	!	
-	!	sum_of_forces = sum(forces_rnd(2,:))/Np
-	!	forces_rnd(2,:) = forces_rnd(2,:) - sum_of_forces
-	!	
-	!	sum_of_forces = sum(forces_rnd(3,:))/Np
-	!	forces_rnd(3,:) = forces_rnd(3,:) - sum_of_forces
-	!end if
-	
-	
 	! Different cases of switching ON/OFF the friction and random forces
 		 
 	! this is the full model
@@ -625,30 +550,6 @@ subroutine eph_Langevin_spatial_correlation(isfriction, israndom, vel, forces, m
 			xi = positions(1,i); yi = positions(2,i); zi = positions(3,i) 
 	
 			do component = 1, 3
-		!! ---- forces are adjusted by friction according to the relative signs of forces and velocities ----
-		!! when velocity and force are opposite, friction acts along the force
-		!		if ((vel(component,i)>0 .and. forces(component,i)<0).or. &
-		!		(vel(component,i)<0 .and. forces(component,i)>0)) then
-		!			if (forces(component,i)<0) then
-		!				forces(component,i) = forces(component,i) - abs(forces_fric(component,i))
-		!			end if
-		!			if (forces(component,i)>0) then
-		!				forces(component,i) = forces(component,i) + abs(forces_fric(component,i))
-		!			end if
-		!		end if
-		!!! when velocity and force are in same direction, friction acts opposite to the force
-		!		if ((vel(component,i)>0 .and. forces(component,i)>0).or. &
-		!		(vel(component,i)<0 .and. forces(component,i)<0)) then
-		!			if (forces(component,i)<0) then
-		!				forces(component,i) = forces(component,i) + abs(forces_fric(component,i))
-		!			end if
-		!			if (forces(component,i)>0) then 
-		!				forces(component,i) = forces(component,i) - abs(forces_fric(component,i))
-		!			end if
-		!		end if
-				
-				! ------ up to here -------
-				
 				forces(component,i) = forces(component,i) + forces_rnd(component,i) + forces_fric(component,i)
 	
 				E_val_i_fric = E_val_i_fric - dt*forces_fric(component,i)*vel(component,i)
@@ -673,27 +574,6 @@ subroutine eph_Langevin_spatial_correlation(isfriction, israndom, vel, forces, m
 			xi = positions(1,i); yi = positions(2,i); zi = positions(3,i)
 			
 			do component = 1, 3
-		!! ---- forces are adjusted by friction according to the relative signs of forces and velocities ----	
-		!! when velocity and force are opposite, friction acts along the force
-		!		if ((vel(component,i)>0 .and. forces(component,i)<0).or. &
-		!		(vel(component,i)<0 .and. forces(component,i)>0)) then
-		!			if (forces(component,i)<0) then
-		!				forces(component,i) = forces(component,i) - abs(forces_fric(component,i))
-		!			end if
-		!			if (forces(component,i)>0) then
-		!				forces(component,i) = forces(component,i) + abs(forces_fric(component,i))
-		!			end if
-		!		end if
-		!! when velocity and force are in same direction, friction acts opposite to the force
-		!		if ((vel(component,i)>0 .and. forces(component,i)>0).or. &
-		!		(vel(component,i)<0 .and. forces(component,i)<0)) then
-		!			if (forces(component,i)<0) then
-		!				forces(component,i) = forces(component,i) + abs(forces_fric(component,i))
-		!			end if
-		!			if (forces(component,i)>0) then 
-		!				forces(component,i) = forces(component,i) - abs(forces_fric(component,i))
-		!			end if
-		!		end if
 				forces(component,i) = forces(component,i) + forces_fric(component,i)
 				E_val_i_fric = E_val_i_fric - dt*forces_fric(component,i)*vel(component,i)
 			end do
@@ -796,61 +676,6 @@ subroutine get_atom_type(p,natomtypes,masses,type_mass,atom_type)
 end subroutine get_atom_type
 
 
-! Find the outer product of the unit vectors which are
-! used to calculate the random forces, eta_I.
-!subroutine get_outer_product(vector,outer_p)
-!	implicit none
-!	real*8, intent(in) :: vector(3)
-!	real*8, intent(out) :: outer_p(3,3)
-!	real*8 :: vec(3,1), vecT(1,3)
-!	integer :: l, m
-!	
-!	vec(1,1) = vector(1); vec(2,1) = vector(2); vec(3,1) = vector(3)
-!	vecT(1,1) = vector(1); vecT(1,2) = vector(2); vecT(1,3) = vector(3) 
-!	do l = 1, 3
-!		do m = 1, 3
-!			outer_p(l,m) = vec(l,1) * vecT(1,m)
-!		end do
-!	end do
-!end subroutine get_outer_product
-
-
-! Find eta_I, which are the random forces on the atoms. It is
-! found using the projection of the random vectors associated with
-! every atom on the (outer product of) relative unit vectors
-! of the atoms.
-!subroutine get_eta_I(W_ij,vector,eta_I)
-!	implicit none
-!	real*8, intent(in) :: W_ij(3,3), vector(3)
-!	real*8, intent(out) :: eta_I(3)
-!	integer :: i, j
-!	
-!	eta_I = 0.0
-!	do i = 1, 3
-!		do j = 1, 3
-!			eta_I(i) = eta_I(i) + W_ij(i,j) * vector(j)
-!		end do
-!	end do
-!end subroutine get_eta_I
-
-! Find sig_I, which are the friction forces on the atoms. It is
-! found using the projection of B_ij associated with W_ij by fluctuation-
-! dissipation theorem on the relative velocities of the atoms.
-!subroutine get_sigma_I(B_ij,vector,sig_I)
-!	implicit none
-!	real*8, intent(in) :: B_ij(3,3), vector(3)
-!	real*8, intent(out) :: sig_I(3)
-!	integer :: i, j
-!	
-!	sig_I = 0.0
-!	do i = 1, 3
-!		do j = 1, 3
-!			sig_I(i) = sig_I(i) + B_ij(i,j) * vector(j)
-!		end do
-!	end do
-!end subroutine get_sigma_I
-
-
 ! Box-Muller transmorfation to get (nearly) Gaussian random variate
 real function random_gaussian() result(randg)
 	implicit none
@@ -862,68 +687,6 @@ real function random_gaussian() result(randg)
 	theta = twoPi*n2
 	randg = R * cos(theta)
 end function random_gaussian
-
-
-! Box-Muller transmorfation to get Gaussian random variate
-! Choosing n1 and n2 as ordinate and abscissa of a random point
-! inside the unit circle around the origin.
-! (Ref. Numerical recipes in F77, vol. 1, W.H. Press et al.)
-
-! When the distribution of each of the components x, y, z are checked 
-! individually, they do not show a Gaussian distribution if we use this
-! method. Neither there is correct variation of the temperatures of the
-! electronic and atomic systems observed with this, specifically, the
-! temperatures do not show any significant variation either from 
-! the beginning or after some time. So, it is commented out.
-
-!real function random_gaussian() result(randg)
-!	implicit none
-!	
-!	integer :: iset
-!	real*8 :: n1, n2, Rsq, factor, randn1
-!	save :: iset, randn1
-!	data iset/0/
-!	!real*8, parameter :: twoPi = 2.0*3.14285714
-!	Rsq = 1.0
-!	if (iset == 0) then
-!		do while ( Rsq >= 1.0 .or. Rsq == 0.0)
-!			call random_number(n1)
-!			call random_number(n2)
-!			n1 = 2.0*n1 - 1.0
-!			n2 = 2.0*n2 - 1.0
-!			Rsq = n1**2 + n2**2	
-!		end do
-!		factor = sqrt(-2.0*log(Rsq)/Rsq)
-!		randn1 = n1*factor
-!		randg = n2*factor
-!		iset = 1
-!	else
-!		randg = randn1
-!		iset = 0
-!	end if
-!end function random_gaussian
-
-
-! The random_gaussian() function generate distributions of each component
-! of the vector with different variance from the required values.
-! So, the distributions are re-scaled to have the required variance.  
-
-! There is a correlation factor between 'eta', the random forces
-! which involves the T_e at position R_I(x,y,z) of the atom and not on the
-! overall temperature of the so-called "electronic heat bath". So, the following
-! subroutine seems not not to be a necessity. 
-
-!subroutine get_distribution_factor(vect, Np, st_dev_req, st_dev_factor)
-!	implicit none
-!	integer, intent(in) :: Np
-!	real*8, intent(in) :: vect(Np), st_dev_req
-!	real*8, intent(out) :: st_dev_factor
-!	real*8 :: st_dev_now, mean
-!	
-!	mean = sum(vect)/ size(vect)
-!	st_dev_now = sqrt( sum( (vect(:) - mean)**2 ) / size(vect) )
-!	st_dev_factor = st_dev_req / st_dev_now
-!end subroutine get_distribution_factor
 
 end module eph_electronic_stopping
 
