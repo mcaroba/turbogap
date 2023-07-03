@@ -1872,8 +1872,8 @@ if ( abs(rcut_2b) < 1.d-10 ) then
           allocate( r0_ii_SCS(1:n_mbd_pairs) )
           allocate( f_damp_SCS(1:n_mbd_pairs) )
           allocate( AT(1:3*n_mbd_sites,1:3*n_mbd_sites,1:n_freq) )
-          allocate( AT_n(1:3*n_mbd_sites,1:3,n_order-1,1:n_freq) )
-          allocate( energy_series(1:3*n_mbd_sites,1:3) )
+          !allocate( AT_n(1:3*n_mbd_sites,1:3,n_order-1,1:n_freq) )
+          !allocate( energy_series(1:3*n_mbd_sites,1:3) )
           allocate( omegas_mbd(1:n_freq) )
           allocate( integrand(1:n_freq) )
           allocate( n_mbd_neigh(1:n_mbd_sites) )
@@ -1899,16 +1899,16 @@ if ( abs(rcut_2b) < 1.d-10 ) then
           hirshfeld_mbd_neigh = 0.d0
           if ( do_derivatives ) then
             allocate( da_mbd(1:n_mbd_pairs) )
-            allocate( AT_n_f(1:3*n_mbd_sites,1:3*n_mbd_sites,1:n_order-1,1:n_freq) )
+            !allocate( AT_n_f(1:3*n_mbd_sites,1:3*n_mbd_sites,1:n_order-1,1:n_freq) )
             allocate( dT_mbd(1:9*n_mbd_pairs) )
             allocate( f_damp_der_mbd(1:n_mbd_pairs) )
             allocate( f_damp_der_SCS(1:n_mbd_pairs) )
             allocate( dT_LR(1:3*n_mbd_sites,1:3*n_mbd_sites) )
-            allocate( force_series(1:3*n_mbd_sites,1:3*n_mbd_sites) )
-            if ( do_total_energy ) then
-              allocate( total_energy_series(1:3*n_mbd_sites,1:3*n_mbd_sites) )
-              allocate( total_integrand(1:n_freq) )
-            end if
+            !allocate( force_series(1:3*n_mbd_sites,1:3*n_mbd_sites) )
+            !if ( do_total_energy ) then
+            !  allocate( total_energy_series(1:3*n_mbd_sites,1:3*n_mbd_sites) )
+            !  allocate( total_integrand(1:n_freq) )
+            !end if
             allocate( do_mbd(1:n_mbd_pairs) )
             allocate( dr0_ii_SCS(1:n_mbd_pairs) )
             allocate( dT_LR_mult_0i(1:n_mbd_pairs) )
@@ -1957,7 +1957,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
 
           T_LR = 0.d0
           AT = 0.d0
-          AT_n = 0.d0
+          !AT_n = 0.d0
           r0_ii_SCS = 0.d0
           f_damp_SCS = 0.d0
           
@@ -2393,29 +2393,29 @@ if ( abs(rcut_2b) < 1.d-10 ) then
             !  write(*,*) "AT done"
             !end if
 
-            if ( n_order > 1 ) then
-              do k2 = 1, n_order-1
-                ! Precalculate the full AT_n for forces:
-                if ( k2 == 1 ) then
-                  AT_n(:,:,k2,i2) = AT(:,1:3,i2)
-                  if ( do_derivatives ) then
-                    AT_n_f(:,:,k2,i2) = AT(:,:,i2)
-                  end if
-                else
-                  call dgemm('n', 'n', 3*n_mbd_sites, 3, 3*n_mbd_sites, 1.d0, AT(:,:,i2), &
-                             3*n_mbd_sites, AT_n(:,:,k2-1,i2), 3*n_mbd_sites, 0.d0, AT_n(:,:,k2,i2), &
-                             3*n_mbd_sites)
-                  if ( do_derivatives ) then
-                    call dgemm('n', 'n', 3*n_mbd_sites, 3*n_mbd_sites, 3*n_mbd_sites, 1.d0, AT(:,:,i2), &
-                               3*n_mbd_sites, AT_n_f(:,:,k2-1,i2), 3*n_mbd_sites, 0.d0, AT_n_f(:,:,k2,i2), &
-                               3*n_mbd_sites)
-                  end if
-                end if
-              end do
-            else
-              write(*,*) "WARNING: Series expansion requires that vdw_mbd_order > 1 or the resulting energies"
-              write(*,*) "and forces will be zero."
-            end if
+            !if ( n_order > 1 ) then
+            !  do k2 = 1, n_order-1
+            !    ! Precalculate the full AT_n for forces:
+            !    if ( k2 == 1 ) then
+            !      AT_n(:,:,k2,i2) = AT(:,1:3,i2)
+            !      if ( do_derivatives ) then
+            !        AT_n_f(:,:,k2,i2) = AT(:,:,i2)
+            !      end if
+            !    else
+            !      call dgemm('n', 'n', 3*n_mbd_sites, 3, 3*n_mbd_sites, 1.d0, AT(:,:,i2), &
+            !                 3*n_mbd_sites, AT_n(:,:,k2-1,i2), 3*n_mbd_sites, 0.d0, AT_n(:,:,k2,i2), &
+            !                 3*n_mbd_sites)
+            !      if ( do_derivatives ) then
+            !        call dgemm('n', 'n', 3*n_mbd_sites, 3*n_mbd_sites, 3*n_mbd_sites, 1.d0, AT(:,:,i2), &
+            !                   3*n_mbd_sites, AT_n_f(:,:,k2-1,i2), 3*n_mbd_sites, 0.d0, AT_n_f(:,:,k2,i2), &
+            !                   3*n_mbd_sites)
+            !      end if
+            !    end if
+            !  end do
+            !else
+            !  write(*,*) "WARNING: Series expansion requires that vdw_mbd_order > 1 or the resulting energies"
+            !  write(*,*) "and forces will be zero."
+            !end if
           end do
 
           !write(*,*) "n_mbd_sites", n_mbd_sites
@@ -2479,10 +2479,10 @@ if ( abs(rcut_2b) < 1.d-10 ) then
 
           integrand = 0.d0
           do i2 = 1, n_freq
-            energy_series = 0.d0
-            do k2 = 1, n_order-1
-              energy_series = energy_series - 1.d0/(k2+1) * AT_n(:,1:3,k2,i2) 
-            end do
+            !energy_series = 0.d0
+            !do k2 = 1, n_order-1
+            !  energy_series = energy_series - 1.d0/(k2+1) * AT_n(:,1:3,k2,i2) 
+            !end do
             call psb_init(icontxt)
             call psb_cdall(icontxt, desc_a, info_psb, vl=myidx)
             call psb_spall(A_sp, desc_a, info_psb, nnz=nnz)
@@ -2490,8 +2490,8 @@ if ( abs(rcut_2b) < 1.d-10 ) then
             call psb_cdasb(desc_a, info_psb)
             call psb_spasb(A_sp, desc_a, info_psb)
             do c1 = 1, 3
-              integrand(i2) = integrand(i2) + a_mbd(1)/(1.d0 + (omegas_mbd(i2)/o_mbd(1))**2) & 
-                              * dot_product(T_LR(c1,:),energy_series(:,c1))
+              !integrand(i2) = integrand(i2) + a_mbd(1)/(1.d0 + (omegas_mbd(i2)/o_mbd(1))**2) & 
+              !                * dot_product(T_LR(c1,:),energy_series(:,c1))
               at_vec = AT(:,c1,i2)
               !write(*,*) "at_vec", at_vec
               if ( n_order > 2 ) then
@@ -2499,17 +2499,20 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                   call psb_spmm(1.d0, A_sp, at_vec, 0.d0, at_n_vec, desc_a, info_psb, 'N')
                   !write(*,*) "at_n_vec", at_n_vec
                   at_vec = at_n_vec
-                  integrand_sp(i2) = integrand_sp(i2) - 1.d0/(k2+1) * at_n_vec(c1)
+                  !integrand_sp(i2) = integrand_sp(i2) - 1.d0/(k2+1) * at_n_vec(c1)
+                  integrand(i2) = integrand(i2) - 1.d0/(k2+1) * at_n_vec(c1)
                 end do
               else
                 at_n_vec = at_vec
               end if
-              integrand_sp(i2) = integrand_sp(i2) - 1.d0/(n_order) * a_mbd(1)/(1.d0 + &
+              !integrand_sp(i2) = integrand_sp(i2) - 1.d0/(n_order) * a_mbd(1)/(1.d0 + &
+              !                (omegas_mbd(i2)/o_mbd(1))**2) * dot_product(T_LR(c1,:),at_n_vec)
+              integrand(i2) = integrand(i2) - 1.d0/(n_order) * a_mbd(1)/(1.d0 + &
                               (omegas_mbd(i2)/o_mbd(1))**2) * dot_product(T_LR(c1,:),at_n_vec)
             end do
           end do
-          write(*,*) "integrand", integrand
-          write(*,*) "integrand_sp", integrand_sp
+          !write(*,*) "integrand", integrand
+          !write(*,*) "integrand_sp", integrand_sp
 
           deallocate( integrand_sp, myidx, at_vec, at_n_vec )
 
@@ -4306,9 +4309,9 @@ if ( abs(rcut_2b) < 1.d-10 ) then
               !end if
 
               integrand = 0.d0
-              if ( c3 == 1 .and. do_total_energy ) then
-                total_integrand = 0.d0
-              end if
+              !if ( c3 == 1 .and. do_total_energy ) then
+              !  total_integrand = 0.d0
+              !end if
 
               allocate( temp_mat(1:3*n_mbd_sites,1:3*n_mbd_sites) )
               temp_mat = 0.d0
@@ -4331,26 +4334,19 @@ if ( abs(rcut_2b) < 1.d-10 ) then
               !write(*,*) "p, c1, rjs_0_mbd, integrand(p), a_mbd, da_mbd"
               do j = 1, n_freq
               
-                force_series = 0.d0
+                !force_series = 0.d0
                 !if ( c3 == 1 .and. do_total_energy ) then
-                total_energy_series = 0.d0
+                !total_energy_series = 0.d0
                 !end if
-                do k2 = 1, n_order-1
-                  !if ( k2 == 1 ) then
-                  !  temp_mat = G_mat(:,:,j)
-                  !else
-                  !  call dgemm( "n", "n", 3*n_mbd_sites, 3*n_mbd_sites, 3*n_mbd_sites, 1.d0, G_mat, 3*n_mbd_sites, &
-                  !        AT_n_f(:,:,k2-1,j), 3*n_mbd_sites, 0.d0, temp_mat, 3*n_mbd_sites)
-                  !end if
-                  force_series = force_series + AT_n_f(:,:,k2,j)
-                  !force_series = force_series + temp_mat
-                  if ( c3 == 1 .and. do_total_energy ) then
-                    total_energy_series = total_energy_series - 1.d0/(k2+1)*AT_n_f(:,:,k2,j)
-                  end if 
-                end do
+                !do k2 = 1, n_order-1
+                !  force_series = force_series + AT_n_f(:,:,k2,j)
+                !  if ( c3 == 1 .and. do_total_energy ) then
+                !    total_energy_series = total_energy_series - 1.d0/(k2+1)*AT_n_f(:,:,k2,j)
+                !  end if 
+                !end do
                 k3 = 0
-                E_mult = 1.d0
-                dE_mult = 0.d0
+                !E_mult = 1.d0
+                !dE_mult = 0.d0
                 call psb_init(icontxt)
                 call psb_cdall(icontxt, desc_a, info_psb, vl=myidx)
                 call psb_spall(A_sp, desc_a, info_psb, nnz=nnz)
@@ -4361,30 +4357,33 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                   i2 = mbd_neighbors_list(k3+1)
                   do c1 = 1, 3
                     if ( rjs_0_mbd(k3+1) .le. (rcut_mbd+rcut_loc)/Bohr ) then
-                      if ( j == 1 ) then
-                        pol1 = integrand(j)
-                      end if 
-                      integrand(j) = integrand(j) + E_mult(p) * &
-                        dot_product(G_mat(3*(p-1)+c1,:,j),force_series(:,3*(p-1)+c1))
+                      !if ( j == 1 ) then
+                      !  pol1 = integrand(j)
+                      !end if 
+                      !integrand(j) = integrand(j) + E_mult(p) * &
+                      !  dot_product(G_mat(3*(p-1)+c1,:,j),force_series(:,3*(p-1)+c1))
                       at_vec = G_mat(:,3*(p-1)+c1,j)
                       !write(*,*) "at_vec", at_vec
                       if ( n_order > 2 ) then
                         do k2 = 1, n_order-2
                           call psb_spmm(1.d0, A_sp, at_vec, 0.d0, at_n_vec, desc_a, info_psb, 'N')
                           at_vec = at_n_vec
-                          integrand_sp(j) = integrand_sp(j) + at_n_vec(3*(p-1)+c1)
+                          !integrand_sp(j) = integrand_sp(j) + at_n_vec(3*(p-1)+c1)
+                          integrand(j) = integrand(j) + at_n_vec(3*(p-1)+c1)
                         end do
                       else
                         at_n_vec = at_vec
                       end if
-                      integrand_sp(j) = integrand_sp(j) + a_mbd(k3+1)/(1.d0 + &
+                      !integrand_sp(j) = integrand_sp(j) + a_mbd(k3+1)/(1.d0 + &
+                      !        (omegas_mbd(j)/o_mbd(k3+1))**2) * dot_product(T_LR(3*(p-1)+c1,:),at_n_vec)
+                      integrand(j) = integrand(j) + a_mbd(k3+1)/(1.d0 + &
                               (omegas_mbd(j)/o_mbd(k3+1))**2) * dot_product(T_LR(3*(p-1)+c1,:),at_n_vec)
-                      if ( c3 == 1 .and. do_total_energy ) then
-                        total_integrand(j) = total_integrand(j) + a_mbd(k3+1) / &
-                              (1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) * AT_mult(p) &
-                              * E_mult(p) * dot_product(T_LR(3*(p-1)+c1,:), &
-                              total_energy_series(:,3*(p-1)+c1))
-                      end if
+                      !if ( c3 == 1 .and. do_total_energy ) then
+                      !  total_integrand(j) = total_integrand(j) + a_mbd(k3+1) / &
+                      !        (1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) * AT_mult(p) &
+                      !        * E_mult(p) * dot_product(T_LR(3*(p-1)+c1,:), &
+                      !        total_energy_series(:,3*(p-1)+c1))
+                      !end if
                     end if
                   end do
                   k3 = k3 + n_mbd_neigh(p)
@@ -4392,8 +4391,8 @@ if ( abs(rcut_2b) < 1.d-10 ) then
               end do
               
               !if ( i == 1 .and. c3 == 1 ) then
-                write(*,*) "force integrand", integrand
-                write(*,*) "force intgrand_sp", integrand_sp
+              !  write(*,*) "force integrand", integrand
+              !  write(*,*) "force intgrand_sp", integrand_sp
               !end if
               
               deallocate( integrand_sp, myidx, at_vec, at_n_vec )
@@ -4480,19 +4479,19 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 integral = 0.d0
                 call integrate("trapezoidal", omegas_mbd, integrand, omegas_mbd(1), omegas_mbd(n_freq), integral)
 
-                if ( c3 == 1 .and. do_total_energy ) then
-                  E_tot = 0.d0
-                  call integrate("trapezoidal", omegas_mbd, total_integrand, omegas_mbd(1), omegas_mbd(n_freq), E_tot)
-                  E_tot = (E_tot/(2.d0*pi)+ E_TS_tot) * Hartree
-                end if
+                !if ( c3 == 1 .and. do_total_energy ) then
+                !  E_tot = 0.d0
+                !  call integrate("trapezoidal", omegas_mbd, total_integrand, omegas_mbd(1), omegas_mbd(n_freq), E_tot)
+                !  E_tot = (E_tot/(2.d0*pi)+ E_TS_tot) * Hartree
+                !end if
 
                 end if
 
                 forces0(c3,i) = forces0(c3,i) + (1.d0/(2.d0*pi) * integral + forces_TS) * Hartree/Bohr
                 
-                if ( c3 == 1 .and. do_total_energy ) then
-                  write(*,*) "Total energy of sphere", i, E_tot
-                end if
+                !if ( c3 == 1 .and. do_total_energy ) then
+                !  write(*,*) "Total energy of sphere", i, E_tot
+                !end if
 
                 !write(*,*) "MBD force", i, c3, 1.d0/(2.d0*pi) * integral * Hartree/Bohr
                 write(*,*) "Total force", i, c3, forces0(c3,i)
@@ -4519,21 +4518,22 @@ end if
       
 if ( abs(rcut_2b) < 1.d-10 ) then  
         if ( om == 2 ) then
-          deallocate( T_LR, r0_ii_SCS, f_damp_SCS, AT, AT_n, energy_series, omegas_mbd, integrand, n_mbd_neigh, &
+          deallocate( T_LR, r0_ii_SCS, f_damp_SCS, AT, omegas_mbd, integrand, n_mbd_neigh, &
                       mbd_neighbors_list, p_mbd, r0_ii_mbd, neighbor_alpha0_mbd, xyz_mbd, rjs_mbd, T_mbd, a_mbd, &
                       rjs_0_mbd, xyz_0_mbd, o_mbd, hirshfeld_mbd_neigh, &
                       T_LR_mult_0i, T_LR_mult_0j, T_LR_mult_ij, T_LR_mult_0ij, T_LR_mult_0ji, AT_mult, E_mult, &
                       ia, ja, val )
+          !deallocate( AT_n, energy_series )
         end if
                     
         if ( do_derivatives .and. om == 2 ) then
-          deallocate( da_mbd, AT_n_f, dT_mbd, f_damp_der_mbd, f_damp_der_SCS, dT_LR, force_series, &
+          deallocate( da_mbd, dT_mbd, f_damp_der_mbd, f_damp_der_SCS, dT_LR, &
                       do_mbd, dr0_ii_SCS, dT_LR_mult_0i, dT_LR_mult_0j,&
                       dT_LR_mult_ij, dT_LR_mult_0ij, dT_LR_mult_0ji, dT_LR_mult_ij0, dAT_mult, dE_mult )
-          
-          if ( do_total_energy ) then
-            deallocate( total_energy_series, total_integrand )
-          end if
+          !deallocate( AT_n_f, force_series )
+          !if ( do_total_energy ) then
+          !  deallocate( total_energy_series, total_integrand )
+          !end if
           if ( do_hirshfeld_gradients ) then
             deallocate( hirshfeld_v_mbd_der )
           end if
