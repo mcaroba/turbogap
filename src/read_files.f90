@@ -940,8 +940,9 @@ end if
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%optimize
         if( params%optimize == "vv" .or. params%optimize == "gd" .or. params%optimize == "gd-box" .or. &
-            params%optimize == "gd-box-ortho" )then
+            params%optimize == "gd-box-ortho" .or. params%optimize == "e-heat-bath")then
           continue
+          ! "electron-heat-bath" is added here to thermalize the system with electronic heat bath and not run velocity verlet
         else
           write(*,*) "ERROR: optimize algorithm not implemented:", params%optimize
           stop

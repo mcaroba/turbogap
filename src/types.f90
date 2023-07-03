@@ -117,7 +117,7 @@ module types
 
 	logical :: nonadiabatic_processes = .false.
 	integer :: eph_fdm_option = 1, eph_friction_option = 1, eph_random_option = 1
-	integer :: eph_md_last_step = 0, model_eph = 2
+	integer :: eph_md_last_step = 0, model_eph = 1
 	integer :: eph_freq_Tout = 1, eph_freq_mesh_Tout = 1 
 	integer :: eph_fdm_steps = 1
 	integer :: eph_gsx = 1, eph_gsy = 1, eph_gsz = 1 

@@ -1,3 +1,32 @@
+! HND XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+! HND X
+! HND X   TurboGAP
+! HND X
+! HND X   TurboGAP is copyright (c) 2019-2023, Miguel A. Caro and others
+! HND X
+! HND X   TurboGAP is published and distributed under the
+! HND X      Academic Software License v1.0 (ASL)
+! HND X
+! HND X   This file, eph_fdm.f90, is copyright (c) 2023, Uttiyoarnab Saha
+! HND X
+! HND X   TurboGAP is distributed in the hope that it will be useful for non-commercial
+! HND X   academic research, but WITHOUT ANY WARRANTY; without even the implied
+! HND X   warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+! HND X   ASL for more details.
+! HND X
+! HND X   You should have received a copy of the ASL along with this program
+! HND X   (e.g. in a LICENSE.md file); if not, you can write to the original
+! HND X   licensor, Miguel Caro (mcaroba@gmail.com). The ASL is also published at
+! HND X   http://github.com/gabor1/ASL
+! HND X
+! HND X   When using this software, please cite the following reference:
+! HND X
+! HND X   Miguel A. Caro. Phys. Rev. B 100, 024112 (2019)
+! HND X
+! HND XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+
+!**************************************************************************
+
 ! ------- option for radiation cascade simulation with electronic stopping 
 ! based on electron-phonon coupling model.
 ! This module provides the required data from the FDM input file or the input
@@ -25,19 +54,13 @@ type EPH_FDM_class
 	contains
 	procedure :: EPH_FDM_input_params, EPH_FDM_input_file, set_mesh_indices
 	procedure :: edges_of_3D_grids, feedback_ei_energy, heat_diffusion_solve
-	procedure :: which_grid, get_T, save_output_to_file, before_next_feedback 
+	procedure :: which_grid, Collect_Te, save_output_to_file, beforeNextFeedback 
 	
 end type EPH_FDM_class
 
 contains
 
-subroutine EPH_FDM_default(this)
-	implicit none
-	class (EPH_FDM_class) :: this
-	! a grid with one point
-	! have to define this one ....
-end subroutine EPH_FDM_default
-    
+! The calculation is based on the parameters provided in the input file ....
 subroutine EPH_FDM_input_params (this,fdm_option,in_nx,in_ny,in_nz,in_x0,in_x1,in_y0, &
 		in_y1, in_z0, in_z1,in_T_e, in_C_e, in_rho_e, in_kappa_e, in_steps)
 	implicit none
@@ -71,11 +94,13 @@ subroutine EPH_FDM_input_params (this,fdm_option,in_nx,in_ny,in_nz,in_x0,in_x1,i
 	this%T_e = in_T_e 
 	this%rho_e = in_rho_e
 	this%C_e = in_C_e 
-	this%kappa_e = in_kappa_e
+	this%kappa_e = in_kappa_e	!/1000.0		! 1000.0 is for ps <---> fs
 	this%flag = 0
 	this%T_dynamic_flag = 0
 end subroutine EPH_FDM_input_params
-	
+
+
+! The calculation is based on the FDM parameters provided through a mesh in parameter file ....
 subroutine EPH_FDM_input_file (this, fdm_option, FDM_infile, md_last_step, TDP_infile)
 	implicit none
 	class (EPH_FDM_class) :: this
@@ -83,6 +108,7 @@ subroutine EPH_FDM_input_file (this, fdm_option, FDM_infile, md_last_step, TDP_i
 	character*128, optional, intent(in) :: TDP_infile
 	integer, intent(in) :: fdm_option, md_last_step
 	integer :: i
+	! some T-dependent parameters will be used later ....
 	!real*8 :: dT, C_e_T, kappa_e_T, E_e_T
 	!real*8, allocatable :: file_C_e_T(:), file_kappa_e_T(:)
 	real*8 :: T_e_val, S_e_val, rho_e_val, C_e_val, kappa_e_val, flag_val
@@ -124,13 +150,7 @@ subroutine EPH_FDM_input_file (this, fdm_option, FDM_infile, md_last_step, TDP_i
 		T_e_val, S_e_val, rho_e_val, C_e_val, kappa_e_val, &
 		flag_val, T_dynamic_flag_val
 		
-		! since grid indices may be given from 0 to n-1
-		! if we know that mesh indices will be given from 0 to n-1, 
-		! then uncomment the following 3 lines
-		
-		!this%x_mesh(i) = this%x_mesh(i) + 1
-		!this%y_mesh(i) = this%y_mesh(i) + 1
-		!this%z_mesh(i) = this%z_mesh(i) + 1
+		! Always give grid indices from 1 to n, not from 0 to n-1
 		
 		! bad mesh index
 		if ((this%x_mesh(i) < 1).or.(this%x_mesh(i) > this%nx).or.(this%y_mesh(i) < 1).or. &
@@ -150,7 +170,7 @@ subroutine EPH_FDM_input_file (this, fdm_option, FDM_infile, md_last_step, TDP_i
 		this%S_e(this%z_mesh(i),this%y_mesh(i),this%x_mesh(i)) = S_e_val
 		this%rho_e(this%z_mesh(i),this%y_mesh(i),this%x_mesh(i)) = rho_e_val
 		this%C_e(this%z_mesh(i),this%y_mesh(i),this%x_mesh(i)) = C_e_val 
-		this%kappa_e(this%z_mesh(i),this%y_mesh(i),this%x_mesh(i)) = kappa_e_val
+		this%kappa_e(this%z_mesh(i),this%y_mesh(i),this%x_mesh(i)) = kappa_e_val	!/1000.0	! 1000.0 is for ps <---> fs
 		this%flag(this%z_mesh(i),this%y_mesh(i),this%x_mesh(i)) = flag_val
 		this%T_dynamic_flag(this%z_mesh(i),this%y_mesh(i),this%x_mesh(i)) = T_dynamic_flag_val
 	end do
@@ -193,6 +213,7 @@ subroutine edges_of_3D_grids (this,nx,ny,nz,x0,x1,y0,y1,z0,z1)
 	this%dV = this%dx*this%dy*this%dz
 end subroutine edges_of_3D_grids
 
+
 ! determine the mesh location depending on the position of the atom
 integer function which_grid (this, x, y, z)	result (indx)
 	implicit none
@@ -215,6 +236,7 @@ integer function which_grid (this, x, y, z)	result (indx)
 	indx = 1 + lx + ly*this%nx + lz*this%nx*this%ny
 end function which_grid
 
+
 ! add energy into a cell of mesh
 subroutine feedback_ei_energy (this, x, y, z, En, dt)
 	implicit none
@@ -229,8 +251,9 @@ subroutine feedback_ei_energy (this, x, y, z, En, dt)
 	this%Q_ei(this%z_mesh(indx),this%y_mesh(indx),this%x_mesh(indx)) + En/converter
 end subroutine feedback_ei_energy
 
+
 ! get temperature of a mesh cell for electrons
-real function get_T (this, x, y, z)	result(T_e_indx)
+real function Collect_Te (this, x, y, z)	result(T_e_indx)
 	implicit none
 	class (EPH_FDM_class) :: this
 	integer :: indx
@@ -238,7 +261,8 @@ real function get_T (this, x, y, z)	result(T_e_indx)
 
 	indx = this%which_grid (x, y, z)
 	T_e_indx = this%T_e(this%z_mesh(indx),this%y_mesh(indx),this%x_mesh(indx))
-end function get_T
+end function Collect_Te
+
 
 ! solve PDE to find the electronic mesh temperatures  
 subroutine heat_diffusion_solve(this,dt)
@@ -246,7 +270,7 @@ subroutine heat_diffusion_solve(this,dt)
 	class (EPH_FDM_class) :: this
 	real*8, intent(in) :: dt
 	real*8 :: inner_dt, e_sp_heat_min,e_rho_min,e_kappa_max,E_e
-	integer :: i,j,k, new_steps, n
+	integer :: i,j,k, new_steps, n, indx
 	real*8 :: stability, invdx2, invdy2, invdz2, sum_invd, factor
 	real*8, allocatable :: T_e_prev(:,:,:)
 	integer :: xback, xfront, yback, yfront, zback, zfront
@@ -281,7 +305,7 @@ subroutine heat_diffusion_solve(this,dt)
 		new_steps = max(int(dt/inner_dt),1)
 		inner_dt = dt/new_steps
 	end if
-
+	
 	allocate(T_e_prev(this%nx,this%ny,this%nz))
 	
 	do n = 1, new_steps
@@ -301,22 +325,23 @@ subroutine heat_diffusion_solve(this,dt)
 					if (zback < 1) zback = this%nz
 					if (xfront > this%nx) xfront = 1
 					if (yfront > this%ny) yfront = 1
-					if (zfront > this%nz) zfront = 1 					
+					if (zfront > this%nz) zfront = 1
 					
 					this%T_e(k,j,i) = T_e_prev(k,j,i) + &
-					inner_dt/(this%C_e(k,j,i)*this%rho_e(k,j,i)) * &
-					(this%kappa_e(k,j,i) * &
+					inner_dt/(this%C_e(k,j,i) * this%rho_e(k,j,i)) * &
+					((this%kappa_e(k,j,i) * &
 					((T_e_prev(k,j,xback) - 2.0*T_e_prev(k,j,i) + T_e_prev(k,j,xfront))*invdx2 + &
 					(T_e_prev(k,yback,i) - 2.0*T_e_prev(k,j,i) + T_e_prev(k,yfront,i))*invdy2 + &
-					(T_e_prev(zback,j,i) - 2.0*T_e_prev(k,j,i) + T_e_prev(zfront,j,i))*invdz2) + &
-					(this%Q_ei(k,j,i))/(this%kappa_e(k,j,i)))
-					
+					(T_e_prev(zback,j,i) - 2.0*T_e_prev(k,j,i) + T_e_prev(zfront,j,i))*invdz2)) + &
+					this%Q_ei(k,j,i))
+							
 					if (this%T_e(k,j,i) < 0.0) this%T_e(k,j,i) = 0.0
 				end do
 			end do
 		end do
 	end do
 end subroutine heat_diffusion_solve
+
 
 ! Save temperature state to ouput file
 subroutine save_output_to_file (this, outputfile, md_istep, dt)
@@ -351,11 +376,12 @@ subroutine save_output_to_file (this, outputfile, md_istep, dt)
 	close(unit = 300)
 end subroutine save_output_to_file
 
+
 ! prepare the holder for energy transfer for next step 
-subroutine before_next_feedback(this)
+subroutine beforeNextFeedback(this)
 	implicit none
 	class (EPH_FDM_class) :: this
 	this%Q_ei = 0.0
-end subroutine before_next_feedback
+end subroutine beforeNextFeedback
 
 end module eph_fdm

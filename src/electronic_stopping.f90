@@ -1,7 +1,33 @@
-! ------- option for radiation cascade simulation with velocity-dependent electronic stopping				
-!********* by Uttiyoarnab Saha
+! HND XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+! HND X
+! HND X   TurboGAP
+! HND X
+! HND X   TurboGAP is copyright (c) 2019-2023, Miguel A. Caro and others
+! HND X
+! HND X   TurboGAP is published and distributed under the
+! HND X      Academic Software License v1.0 (ASL)
+! HND X
+! HND X   This file, electronic_stopping.f90, is copyright (c) 2023, Uttiyoarnab Saha
+! HND X
+! HND X   TurboGAP is distributed in the hope that it will be useful for non-commercial
+! HND X   academic research, but WITHOUT ANY WARRANTY; without even the implied
+! HND X   warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+! HND X   ASL for more details.
+! HND X
+! HND X   You should have received a copy of the ASL along with this program
+! HND X   (e.g. in a LICENSE.md file); if not, you can write to the original
+! HND X   licensor, Miguel Caro (mcaroba@gmail.com). The ASL is also published at
+! HND X   http://github.com/gabor1/ASL
+! HND X
+! HND X   When using this software, please cite the following reference:
+! HND X
+! HND X   Miguel A. Caro. Phys. Rev. B 100, 024112 (2019)
+! HND X
+! HND XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
 !**************************************************************************
+
+! ------- option for radiation cascade simulation with velocity-dependent electronic stopping				
 ! The electron stopping should be calculated in every time step if the simulation 
 ! is done by invoking this option of electron stopping. The balance forces on the atoms 
 ! after electronic energy loss is returned on the timestep. The total electronic
@@ -16,6 +42,9 @@
 ! stopping values (eV/Ang) like E_1 dE/dx(element 1) dE/dx(element 2) .. (.. 3) ..
 !								E_2  "   (.. 1)			" (.. 2)	   " (.. 3) ..
 !								..	..		..			..				..		..
+!********* by Uttiyoarnab Saha
+
+!**************************************************************************
 
 module electronic_stopping
 
@@ -48,7 +77,7 @@ character*1024 :: infoline
 
 if( md_istep == 0 .or. md_istep == -1 )then
 	open (unit = 100, file = "ElectronicEnergyLoss.txt", status = "unknown")
-	write(100,*) 'Time (fs)  Total electronic energy loss (eV)'
+	write(100,*) 'Time (fs)  Total (cumulative) electronic energy loss (eV)'
 	else
 		open (unit = 100, file = "ElectronicEnergyLoss.txt", status = "old", position = "append")
 end if
@@ -67,7 +96,7 @@ end do
 
 Np = size(vel, 2)
 
-SeLoss = 0
+SeLoss = 0.0
 
 do i = 1, Np
 
@@ -121,7 +150,7 @@ do i = 1, Np
 	forces(2,i) = forces(2,i) + vel(2,i) * factor
 	forces(3,i) = forces(3,i) + vel(3,i) * factor
 
-	! roughly,E += (dE/dx)*dx
+	! roughly, E += (dE/dx) * (dx) = (Se) * (vabs*dt)
 	SeLoss = SeLoss + (Se * vabs * dt)
 end do
 

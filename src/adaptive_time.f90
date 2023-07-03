@@ -1,12 +1,41 @@
-! ------- option for doing simulation with adaptive time step			
-!********* by Uttiyoarnab Saha
+! HND XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+! HND X
+! HND X   TurboGAP
+! HND X
+! HND X   TurboGAP is copyright (c) 2019-2023, Miguel A. Caro and others
+! HND X
+! HND X   TurboGAP is published and distributed under the
+! HND X      Academic Software License v1.0 (ASL)
+! HND X
+! HND X   This file, eph_adaptive_time.f90, is copyright (c) 2023, Uttiyoarnab Saha
+! HND X
+! HND X   TurboGAP is distributed in the hope that it will be useful for non-commercial
+! HND X   academic research, but WITHOUT ANY WARRANTY; without even the implied
+! HND X   warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+! HND X   ASL for more details.
+! HND X
+! HND X   You should have received a copy of the ASL along with this program
+! HND X   (e.g. in a LICENSE.md file); if not, you can write to the original
+! HND X   licensor, Miguel Caro (mcaroba@gmail.com). The ASL is also published at
+! HND X   http://github.com/gabor1/ASL
+! HND X
+! HND X   When using this software, please cite the following reference:
+! HND X
+! HND X   Miguel A. Caro. Phys. Rev. B 100, 024112 (2019)
+! HND X
+! HND XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
 !**************************************************************************
+
+! ------- option for doing simulation with adaptive time step			
 ! Adaptive Time Step for Upgrading from the existing variable time step 
 ! algorithm in TurboGap. The fix is applied after every specified number of
 ! time step(s). It checks whether the displacement (and the energy transfer)
 ! between atoms in a time step is below a limit specified by the user and 
 ! modifies the time step, i.e. dt, if these are not so.
+!********* by Uttiyoarnab Saha
+
+!**************************************************************************
 
 module adaptive_time
 
