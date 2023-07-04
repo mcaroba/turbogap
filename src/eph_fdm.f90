@@ -246,7 +246,7 @@ subroutine feedback_ei_energy (this, x, y, z, En, dt)
 	integer :: indx
 	indx = this%which_grid (x, y, z)
 	converter = dt * this%dV 
-	! convert energy to power
+	! convert to energy per unit time per unit volume
 	this%Q_ei(this%z_mesh(indx),this%y_mesh(indx),this%x_mesh(indx)) = &
 	this%Q_ei(this%z_mesh(indx),this%y_mesh(indx),this%x_mesh(indx)) + En/converter
 end subroutine feedback_ei_energy
@@ -271,8 +271,8 @@ subroutine heat_diffusion_solve(this,dt)
 	real*8, intent(in) :: dt
 	real*8 :: inner_dt, e_sp_heat_min,e_rho_min,e_kappa_max,E_e
 	integer :: i,j,k, new_steps, n, indx
-	real*8 :: stability, invdx2, invdy2, invdz2, sum_invd, factor
-	real*8, allocatable :: T_e_prev(:,:,:)
+	real*8 :: stability, invdx2, invdy2, invdz2, sum_invd, factor, multiply_factor
+	!real*8, allocatable :: T_e_prev(:,:,:)
 	integer :: xback, xfront, yback, yfront, zback, zfront
 	
 	new_steps = 1
@@ -306,10 +306,10 @@ subroutine heat_diffusion_solve(this,dt)
 		inner_dt = dt/new_steps
 	end if
 	
-	allocate(T_e_prev(this%nx,this%ny,this%nz))
+	!allocate(T_e_prev(this%nx,this%ny,this%nz))
 	
 	do n = 1, new_steps
-		T_e_prev = this%T_e
+		!T_e_prev = this%T_e
 		do k = 1, this%nz
 			do j = 1, this%ny
 				do i = 1, this%nx
@@ -327,12 +327,13 @@ subroutine heat_diffusion_solve(this,dt)
 					if (yfront > this%ny) yfront = 1
 					if (zfront > this%nz) zfront = 1
 					
-					this%T_e(k,j,i) = T_e_prev(k,j,i) + &
-					inner_dt/(this%C_e(k,j,i) * this%rho_e(k,j,i)) * &
+					multiply_factor = inner_dt/(this%C_e(k,j,i) * this%rho_e(k,j,i))
+					
+					this%T_e(k,j,i) = this%T_e(k,j,i) + multiply_factor * &
 					((this%kappa_e(k,j,i) * &
-					((T_e_prev(k,j,xback) - 2.0*T_e_prev(k,j,i) + T_e_prev(k,j,xfront))*invdx2 + &
-					(T_e_prev(k,yback,i) - 2.0*T_e_prev(k,j,i) + T_e_prev(k,yfront,i))*invdy2 + &
-					(T_e_prev(zback,j,i) - 2.0*T_e_prev(k,j,i) + T_e_prev(zfront,j,i))*invdz2)) + &
+					((this%T_e(k,j,xback) - 2.0*this%T_e(k,j,i) + this%T_e(k,j,xfront))*invdx2 + &
+					(this%T_e(k,yback,i) - 2.0*this%T_e(k,j,i) + this%T_e(k,yfront,i))*invdy2 + &
+					(this%T_e(zback,j,i) - 2.0*this%T_e(k,j,i) + this%T_e(zfront,j,i))*invdz2)) + &
 					this%Q_ei(k,j,i))
 							
 					if (this%T_e(k,j,i) < 0.0) this%T_e(k,j,i) = 0.0
