@@ -421,12 +421,12 @@ end if
   end subroutine read_local_property_data
 
 
-  subroutine write_local_property_data(x, y, overwrite)
+  subroutine write_local_property_data(x, y, overwrite, filename)
 
     implicit none
 
 !   Input variables
-    character*1024 :: filename = "xps_prediction.dat"
+    character(len = *), intent(in) :: filename
 !   Output variables
     real*8, allocatable, intent(in) :: x(:), y(:)
     logical, intent(in) :: overwrite

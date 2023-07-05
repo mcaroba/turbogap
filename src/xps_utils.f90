@@ -34,12 +34,12 @@ module xps_utils
 
     !**************************************************************************
 
-    subroutine get_moments_of_distribution(x, y, dx, moments, n_moments)
+    subroutine get_moments_of_distribution(x, y, dx, moments, n_moments, mean_reference)
       implicit none
       real*8, allocatable, intent(in) ::  x(:), y(:)
       real*8, allocatable, intent(out) :: moments(:)
       real*8, allocatable :: xp(:)
-      real*8, intent(in) :: dx
+      real*8, intent(in) :: dx, mean_reference
       integer, intent(in) :: n_moments
       integer :: i, m, n
       ! Moments are defined at mu^p = \int dx x^p f(x)
@@ -48,13 +48,19 @@ module xps_utils
       allocate(xp(1:size(x)))
       moments = 0.d0
 
+      ! Here, the first moment is the mean,
+      ! was going to make the other moments central, but for now, just make them normal !
+
+      ! could actually have the reference be the mean of the
+      ! experimental distribution which would simplify the mathematics
+
       xp = 1.d0
       do i = 1, n_moments
 
          if (i == 1)then
             xp = xp * x
          else
-            xp = (x - moments(1))**( real(i) )
+            xp = (x - mean_reference)**( real(i) )
          end if
 
          moments(i) = (dot_product( dx * xp, y )) !**(1.d0 / real(i))
@@ -108,7 +114,7 @@ module xps_utils
       real*8, intent(inout) :: energies_lp(:)
       real*8, intent(inout) :: virial(1:3,1:3)
       real*8, allocatable, intent(inout) :: moments_exp(:), moments(:)
-      real*8 ::  this_force(1:3), mag, t
+      real*8 ::  this_force(1:3), mag, t, mean_reference
       real*8, allocatable :: x(:), y(:), x_exp(:), y_exp(:), y_all(:,:), y_der(:,:), int_der_moments(:,:), &
            x_int_der(:), der_diff_moments(:)
       integer, intent(in) :: n_samples, n_tot, n_moments
@@ -159,11 +165,11 @@ module xps_utils
       ! with that of the experiment and divide by the total number of
       ! atoms
 
+      mean_reference =  dot_product( dx * x_exp, y_exp )
       if (get_exp)then
-         call get_moments_of_distribution(x_exp, y_exp, dx, moments_exp, n_moments)
+         call get_moments_of_distribution(x_exp, y_exp, dx, moments_exp, n_moments, mean_reference)
       end if
-
-      call get_moments_of_distribution(x, y, dx, moments, n_moments)
+      call get_moments_of_distribution(x, y, dx, moments, n_moments, mean_reference)
 
       ! Now print out the moments for comparison
       e_tot = 0.d0
@@ -203,7 +209,13 @@ module xps_utils
          x_int_der = 1.d0
          do i = 1, n_moments
             der_diff_moments(i) = 2.d0 * energy_scales(i) * ( moments(i) - moments_exp(i) )
-            x_int_der = x_int_der * x
+
+            if (i == 1) then
+               x_int_der = x_int_der * x
+            else
+               x_int_der = (x - mean_reference)**(real(i))
+            end if
+
             do j = 1, size(core_electron_be)
                int_der_moments(i,j) = dx * dot_product( (x - core_electron_be(j)) / (sigma**2), &
                                                                & x_int_der * y_all(1:n_samples, j) )
@@ -399,7 +411,7 @@ module xps_utils
                        & core_electron_be_der(1:3, k),&
                        & y_der(1:3,1:n_samples ), sigma, y_exp(1:n_samples), this_force(1:3), mag, dx)
 
-                  this_force(1:3) =  energy_scale *  this_force(1:3)
+                  this_force(1:3) =  - energy_scale *  this_force(1:3)
 
                   forces0(1:3, j2) = forces0(1:3, j2) + this_force(1:3)
 

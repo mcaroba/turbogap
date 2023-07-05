@@ -310,7 +310,6 @@ module mc
     logical, allocatable:: fix_atom(:,:), im_fix_atom(:,:)
     logical, intent(inout) :: do_md, mc_relax
 
-    n_sites = size(positions, 2)
     ! Count the mc species (no multi species mc just yet)
     n_mc_species = 0
     do i = 1, n_sites

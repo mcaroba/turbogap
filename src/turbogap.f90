@@ -1055,7 +1055,7 @@ program turbogap
         allocate( positions(1:3, n_pos) )
         if( params%do_md .or. params%do_nested_sampling .or. params%do_mc )then
            if(allocated(velocities))deallocate(velocities)
-           allocate( velocities(1:3, n_pos) )
+           allocate( velocities(1:3, n_sp) )
            !      allocate( masses(n_pos) )
            if(allocated( masses ))deallocate( masses )
            allocate( masses(1:n_sp) )
@@ -1077,7 +1077,7 @@ program turbogap
      call cpu_time(time_mpi_positions(1))
      call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
      if( params%do_md .or. params%do_nested_sampling .or. params%do_mc )then
-        call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(velocities, 3*n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
         call mpi_bcast(masses, n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
         call mpi_bcast(fix_atom, 3*n_sp, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
      end if
@@ -1212,7 +1212,7 @@ program turbogap
         !     We only need to reallocate the arrays if the number of sites changes
         if( n_sites /= n_sites_prev .or. params%do_mc  )then
            if( allocated(energies) )deallocate( energies, energies_soap, energies_2b, energies_3b, energies_core_pot, &
-                this_energies, energies_vdw, this_forces )
+                this_energies, energies_vdw, this_forces, energies_lp )
            allocate( energies(1:n_sites) )
            allocate( this_energies(1:n_sites) )
            allocate( energies_soap(1:n_sites) )
@@ -1278,7 +1278,8 @@ program turbogap
 
         if( params%do_forces )then
            if( n_sites /= n_sites_prev .or.  params%do_mc )then
-              if( allocated(forces) )deallocate( forces, forces_soap, forces_2b, forces_3b, forces_core_pot, forces_vdw )
+              if( allocated(forces) )deallocate( forces, forces_soap, forces_2b, forces_3b, forces_core_pot, forces_vdw,&
+                   & forces_lp )
               allocate( forces(1:3, 1:n_sites) )
               allocate( forces_soap(1:3, 1:n_sites) )
               allocate( forces_2b(1:3, 1:n_sites) )
@@ -1632,6 +1633,7 @@ program turbogap
            !            call get_ts_energy_and_forces( hirshfeld_v(i_beg:i_end), hirshfeld_v_cart_der(1:3, j_beg:j_end), &
 
            if (params%n_moments == 0)then
+              print *, "Calculating similarity spectra energies and forces"
            call get_exp_pred_spectra_energies_forces(&
                 & soap_turbo_hypers(xids)&
                 &%local_property_models(xids_lp)%data, params%energy_scales_opt_exp_data(core_be_lp_index),&
@@ -1669,9 +1671,11 @@ program turbogap
 
            if (rank == 0)then
               if (.not. params%do_mc )then
-                 call write_local_property_data(x_i_exp, y_i_pred, md_istep == 0 )
+                 call write_local_property_data(x_i_exp, y_i_pred, md_istep == 0, "xps_prediction.dat")
+                 call write_local_property_data(x_i_exp, y_i_exp, md_istep == 0, "xps_exp.dat")
               else
-                 call write_local_property_data(x_i_exp, y_i_pred, mc_istep == 0 )
+                 call write_local_property_data(x_i_exp, y_i_pred, mc_istep == 0, "xps_prediction.dat" )
+                 call write_local_property_data(x_i_exp, y_i_exp, mc_istep == 0, "xps_exp.dat" )
               end if
            end if
 
@@ -1987,7 +1991,7 @@ program turbogap
 #endif
         end if
 
-        print *, forces_lp(1:3,1)
+        print *, "forces lp ", forces_lp(1:3,1)
         if( params%do_forces )then
            forces =  (forces_soap + forces_2b + forces_3b + forces_core_pot + forces_vdw) + forces_lp
            virial = virial_soap + virial_2b + virial_3b + virial_core_pot + virial_vdw + virial_lp
@@ -2169,7 +2173,11 @@ program turbogap
            if( params%do_md .and. params%optimize == "gd" .and. md_istep > 0 .and. &
                 abs(energy-energy_prev) < params%e_tol*dfloat(n_sites) .and. &
                 maxval(forces) < params%f_tol .and. rank == 0 )then
-              print *, energy, energy_prev, abs(energy-energy_prev), params%e_tol*dfloat(n_sites)
+              print *, "energy", energy, "energy_prev", energy_prev,&
+                   & "abs diff", abs(energy-energy_prev),"etol",&
+                   & params%e_tol*dfloat(n_sites)
+              print *, "maxval forces", maxval(forces), "ftol",&
+                   & params%f_tol
               exit_loop = .true.
               if (params%do_mc) exit_loop=.false.
               !     THIS CONDITION ON INSTANT PRESSURE WILL NEED TO BE FINE TUNED, TO ACCOUNT FOR ARBITRARY TARGET PRESSURES
@@ -2329,7 +2337,7 @@ program turbogap
         call cpu_time(time_mpi_positions(1))
         n_pos = size(positions,2)
         call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(velocities, 3*n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
         call cpu_time(time_mpi_positions(2))
         time_mpi_positions(3) = time_mpi_positions(3) + time_mpi_positions(2) - time_mpi_positions(1)
      end if
@@ -2615,7 +2623,8 @@ program turbogap
                                & "mc_all.xyz", .false. )
 
                            if (params%mc_opt_spectra .and. valid_xps)then
-                              call write_local_property_data(x_i_pred, y_i_pred, .false.)
+                              call write_local_property_data(x_i_pred, y_i_pred, .false., "xps_prediction.dat")
+                              call write_local_property_data(x_i_exp, y_i_exp, .false., "xps_exp.dat")
                            end if
 
                        end if
@@ -2746,7 +2755,8 @@ program turbogap
 
 
                        if (params%mc_opt_spectra .and. valid_xps)then
-                          call write_local_property_data(x_i_pred, y_i_pred, .true.)
+                          call write_local_property_data(x_i_pred, y_i_pred, .true., "xps_prediction.dat")
+                          call write_local_property_data(x_i_exp, y_i_exp, .true., "xps_exp.dat")
                        end if
 
                     end if
@@ -2896,7 +2906,7 @@ program turbogap
         allocate( positions(1:3, n_pos) )
         if( params%do_md .or. params%do_nested_sampling  .or. params%do_mc)then
            if(allocated(velocities))deallocate(velocities)
-           allocate( velocities(1:3, n_pos) )
+           allocate( velocities(1:3, n_sp) )
            !      allocate( masses(n_pos) )
            if(allocated(masses))deallocate(masses)
            allocate( masses(1:n_sp) )
@@ -2924,8 +2934,8 @@ program turbogap
      call cpu_time(time_mpi_positions(1))
      call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
      if( params%do_md .or. params%do_nested_sampling .or. params%do_mc )then
-        call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(masses, n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(velocities, 3*n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(masses, n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
         call mpi_bcast(fix_atom, 3*n_pos, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
      end if
      call mpi_bcast(xyz_species, 8*n_sp, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
