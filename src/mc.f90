@@ -373,9 +373,6 @@ module mc
     logical, intent(inout) :: do_md, mc_relax, mc_hamiltonian
 
     !    n_sites = size(positions, 2)
-    n_sites = size(xyz_species, 1)
-    print *, "size species ", size(xyz_species,1)
-    print *, "size pos ", size(positions,2)
     ! Count the mc species (no multi species mc just yet)
     n_mc_species = 0
     do i = 1, n_sites
