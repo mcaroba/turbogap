@@ -52,9 +52,9 @@ type EPH_FDM_class
 	integer, allocatable :: flag(:,:,:), T_dynamic_flag(:,:,:)
 	
 	contains
-	procedure :: EPH_FDM_input_params, EPH_FDM_input_file, set_mesh_indices
-	procedure :: edges_of_3D_grids, feedback_ei_energy, heat_diffusion_solve
-	procedure :: which_grid, Collect_Te, save_output_to_file, beforeNextFeedback 
+	procedure :: EPH_FDM_input_params, EPH_FDM_input_file, setMeshIndices
+	procedure :: edgesOf3DGrids, feedback_ei_energy, heat_diffusion_solve
+	procedure :: whichGrid, Collect_Te, save_output_to_file, beforeNextFeedback 
 	
 end type EPH_FDM_class
 
@@ -81,20 +81,20 @@ subroutine EPH_FDM_input_params (this,fdm_option,in_nx,in_ny,in_nz,in_x0,in_x1,i
 	
 	allocate(this%x_mesh(this%ntotal), this%y_mesh(this%ntotal), this%z_mesh(this%ntotal))
 	
-	call this%edges_of_3D_grids(in_nx,in_ny,in_nz,in_x0,in_x1,in_y0,in_y1,in_z0,in_z1)
+	call this%edgesOf3DGrids(in_nx,in_ny,in_nz,in_x0,in_x1,in_y0,in_y1,in_z0,in_z1)
 	
 	allocate(this%T_e(in_nx,in_ny,in_nz),this%S_e(in_nx,in_ny,in_nz),this%rho_e(in_nx,in_ny,in_nz), &
 	this%C_e(in_nx,in_ny,in_nz), this%kappa_e(in_nx,in_ny,in_nz),this%flag(in_nx,in_ny,in_nz), &
 	this%T_dynamic_flag(in_nx,in_ny,in_nz))
 	allocate(this%Q_ei(in_nx,in_ny,in_nz)) ! for electron-ion energy exchanges
 	
-	call this%set_mesh_indices()
+	call this%setMeshIndices()
 	
 	this%Q_ei = 0.0
 	this%T_e = in_T_e 
 	this%rho_e = in_rho_e
 	this%C_e = in_C_e 
-	this%kappa_e = in_kappa_e	!/1000.0		! 1000.0 is for ps <---> fs
+	this%kappa_e = in_kappa_e/1000.0		! 1000.0 is for ps <---> fs
 	this%flag = 0
 	this%T_dynamic_flag = 0
 end subroutine EPH_FDM_input_params
@@ -130,7 +130,7 @@ subroutine EPH_FDM_input_file (this, fdm_option, FDM_infile, md_last_step, TDP_i
 	read(10,*) this%y0,this%y1
 	read(10,*) this%z0,this%z1
 	read(10,*)	! Column headers (i j k T_e S_e rho_e C_e K_e flag T_dyn_flag)
-	call this%edges_of_3D_grids(this%nx,this%ny,this%nz,this%x0,this%x1,this%y0,this%y1, &
+	call this%edgesOf3DGrids(this%nx,this%ny,this%nz,this%x0,this%x1,this%y0,this%y1, &
 	this%z0,this%z1)
 	
 	this%ntotal = this%nx*this%ny*this%nz
@@ -170,7 +170,7 @@ subroutine EPH_FDM_input_file (this, fdm_option, FDM_infile, md_last_step, TDP_i
 		this%S_e(this%z_mesh(i),this%y_mesh(i),this%x_mesh(i)) = S_e_val
 		this%rho_e(this%z_mesh(i),this%y_mesh(i),this%x_mesh(i)) = rho_e_val
 		this%C_e(this%z_mesh(i),this%y_mesh(i),this%x_mesh(i)) = C_e_val 
-		this%kappa_e(this%z_mesh(i),this%y_mesh(i),this%x_mesh(i)) = kappa_e_val	!/1000.0	! 1000.0 is for ps <---> fs
+		this%kappa_e(this%z_mesh(i),this%y_mesh(i),this%x_mesh(i)) = kappa_e_val/1000.0	! 1000.0 is for ps <---> fs
 		this%flag(this%z_mesh(i),this%y_mesh(i),this%x_mesh(i)) = flag_val
 		this%T_dynamic_flag(this%z_mesh(i),this%y_mesh(i),this%x_mesh(i)) = T_dynamic_flag_val
 	end do
@@ -180,7 +180,7 @@ end subroutine EPH_FDM_input_file
 
 
 ! set the i,j,k of the coarse mesh
-subroutine set_mesh_indices(this)
+subroutine setMeshIndices(this)
 	implicit none
 	class (EPH_FDM_class) :: this
 	integer :: i, j, k, loc
@@ -194,28 +194,28 @@ subroutine set_mesh_indices(this)
 			end do
 		end do
 	end do
-end subroutine set_mesh_indices
+end subroutine setMeshIndices
 
 
 ! set the dimensions of the grids in box
-subroutine edges_of_3D_grids (this,nx,ny,nz,x0,x1,y0,y1,z0,z1)
+subroutine edgesOf3DGrids (this,nx,ny,nz,x0,x1,y0,y1,z0,z1)
 	implicit none
 	integer, intent(in) :: nx, ny, nz
 	real*8, intent(in) :: x0,x1,y0,y1,z0,z1
 	class (EPH_FDM_class) :: this
 	if (x0 >= x1 .or. y0 >= y1 .or. z0 >= z1) then
-		write(*,*) "ERROR: Box dimensions are not correct in input or in file"
+		write(*,*) "ERROR: Mesh boundaries are not correct in input or in file"
 		stop
 	end if
 	this%dx = (x1 - x0)/nx
 	this%dy = (y1 - y0)/ny
 	this%dz = (z1 - z0)/nz
 	this%dV = this%dx*this%dy*this%dz
-end subroutine edges_of_3D_grids
+end subroutine edgesOf3DGrids
 
 
 ! determine the mesh location depending on the position of the atom
-integer function which_grid (this, x, y, z)	result (indx)
+integer function whichGrid (this, x, y, z)	result (indx)
 	implicit none
 	class (EPH_FDM_class) :: this
 	real*8, intent(in) :: x, y, z
@@ -234,7 +234,7 @@ integer function which_grid (this, x, y, z)	result (indx)
 	lz = lz - pz * this%nz
 	
 	indx = 1 + lx + ly*this%nx + lz*this%nx*this%ny
-end function which_grid
+end function whichGrid
 
 
 ! add energy into a cell of mesh
@@ -244,7 +244,7 @@ subroutine feedback_ei_energy (this, x, y, z, En, dt)
 	real*8, intent(in) :: x, y, z, En, dt
 	real*8 :: converter
 	integer :: indx
-	indx = this%which_grid (x, y, z)
+	indx = this%whichGrid (x, y, z)
 	converter = dt * this%dV 
 	! convert to energy per unit time per unit volume
 	this%Q_ei(this%z_mesh(indx),this%y_mesh(indx),this%x_mesh(indx)) = &
@@ -259,19 +259,19 @@ real function Collect_Te (this, x, y, z)	result(T_e_indx)
 	integer :: indx
 	real*8, intent(in) :: x, y, z
 
-	indx = this%which_grid (x, y, z)
+	indx = this%whichGrid (x, y, z)
 	T_e_indx = this%T_e(this%z_mesh(indx),this%y_mesh(indx),this%x_mesh(indx))
 end function Collect_Te
 
 
 ! solve PDE to find the electronic mesh temperatures  
-subroutine heat_diffusion_solve(this,dt)
+subroutine heat_diffusion_solve(this, dt)
 	implicit none
 	class (EPH_FDM_class) :: this
 	real*8, intent(in) :: dt
-	real*8 :: inner_dt, e_sp_heat_min,e_rho_min,e_kappa_max,E_e
 	integer :: i,j,k, new_steps, n, indx
-	real*8 :: stability, invdx2, invdy2, invdz2, sum_invd, factor, multiply_factor
+	real*8 :: inner_dt, e_sp_heat_min, e_rho_min, e_kappa_max, grad_sq_T, &
+	stability, invdx2, invdy2, invdz2, sum_invd, factor, multiply_factor
 	!real*8, allocatable :: T_e_prev(:,:,:)
 	integer :: xback, xfront, yback, yfront, zback, zfront
 	
@@ -329,13 +329,14 @@ subroutine heat_diffusion_solve(this,dt)
 					
 					multiply_factor = inner_dt/(this%C_e(k,j,i) * this%rho_e(k,j,i))
 					
-					this%T_e(k,j,i) = this%T_e(k,j,i) + multiply_factor * &
-					((this%kappa_e(k,j,i) * &
-					((this%T_e(k,j,xback) - 2.0*this%T_e(k,j,i) + this%T_e(k,j,xfront))*invdx2 + &
+					grad_sq_T = &
+					(this%T_e(k,j,xback) - 2.0*this%T_e(k,j,i) + this%T_e(k,j,xfront))*invdx2 + &
 					(this%T_e(k,yback,i) - 2.0*this%T_e(k,j,i) + this%T_e(k,yfront,i))*invdy2 + &
-					(this%T_e(zback,j,i) - 2.0*this%T_e(k,j,i) + this%T_e(zfront,j,i))*invdz2)) + &
-					this%Q_ei(k,j,i))
-							
+					(this%T_e(zback,j,i) - 2.0*this%T_e(k,j,i) + this%T_e(zfront,j,i))*invdz2
+					
+					this%T_e(k,j,i) = this%T_e(k,j,i) + multiply_factor * &
+					( this%Q_ei(k,j,i) + (this%kappa_e(k,j,i) * grad_sq_T) )
+
 					if (this%T_e(k,j,i) < 0.0) this%T_e(k,j,i) = 0.0
 				end do
 			end do
@@ -353,16 +354,8 @@ subroutine save_output_to_file (this, outputfile, md_istep, dt)
 	real*8, intent(in) :: dt
 	integer :: i,j,k
 
-	if( md_istep == 0 .or. md_istep == -1 )then
-		open (unit=300, file = outputfile, status = "unknown")
-		write(300,*) this%nx, ' ', this%ny, ' ', this%nz
-		write(300,*) 'i j k T_e S_e rho_e C_e K_e flag T_dyn_flag'		! Column headers
-		! write(300,*) 'i  j  k  T  Q T_average Q_average Q_total time-step' 
-		write(300,*) md_istep + this%md_last_step
-		else
-			open (unit=300, file = outputfile, status = "old", position = "append")
-			write(300,*) md_istep + this%md_last_step
-	end if
+	open (unit=300, file = outputfile, status = "old", position = "append")
+	write(300,*) md_istep + this%md_last_step
 
 	do k = 1, this%nz
 		do j = 1, this%ny

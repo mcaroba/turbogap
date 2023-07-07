@@ -1589,18 +1589,18 @@ end if
 					params%masses_types, time_step, md_time, nrows, allelstopdata)		
 	  end if
 
-! ---------------------------------------------------------							******** until here for electronic stopping
+! ---------------------------------------------------------			******** until here for electronic stopping
 
-! ------- option for electronic stopping based on eph model							********* added here by Uttiyoarnab Saha
+! ------- option for electronic stopping based on eph model			********* added here by Uttiyoarnab Saha
 
 	  if ( params%nonadiabatic_processes ) then
 		call eph_Langevin_spatial_correlation (params%eph_friction_option, params%eph_random_option, &
 		velocities(1:3, 1:n_sites),forces(1:3, 1:n_sites), masses(1:n_sites),params%masses_types, &
-		md_istep,time_step,md_time, positions(1:3, 1:n_sites),n_species, params%eph_Toutfile, &
-		params%eph_freq_Tout, params%eph_freq_mesh_Tout, params%model_eph, ephbeta, ephfdm)	
+		md_istep,time_step,md_time, positions(1:3, 1:n_sites), neighbors_list, n_neigh, n_species, &
+		params%eph_Toutfile, params%eph_freq_Tout, params%eph_freq_mesh_Tout, params%model_eph, ephbeta, ephfdm)	
 	  end if
 
-! ---------------------------------------------------------							******** until here for electronic stopping basd on eph model
+! ---------------------------------------------------------			******** until here for electronic stopping basd on eph model
 
       
 !     This takes care of NVE

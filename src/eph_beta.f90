@@ -107,11 +107,11 @@ subroutine beta_parameters(this,beta_infile,n_species)
 	! according to the corresponding types of the species as specified in 
 	! the input file of TurboGAP.
 	
-	write(*,*) ' -- MESSAGE --'
-	write(*,*) 'It is assumed that data in the .beta file for different elements is'
-	write(*,*) 'according to the corresponding types of the species as specified in'
-	write(*,*) 'the input file, i.e the order of elements in both files are same.'
-	write(*,*) 'Please check it.'
+	write(*,*) ' -- MESSAGE from eph_beta.f90 --'
+	write(*,*) 'It is assumed that data in the'
+	write(*,*) '.beta file for different elements'
+	write(*,*) 'are in the order of species in'
+	write(*,*) 'the input file. Please check it.'
 	
 	this%data_rho = 0
 	this%data_beta = 0
@@ -123,7 +123,7 @@ subroutine beta_parameters(this,beta_infile,n_species)
 
 		do j = 1, this%n_points_beta
 			read(10,*) this%data_beta(i,j)
-			this%data_beta(i,j) = this%data_beta(i,j)		!*1000.0
+			!this%data_beta(i,j) = this%data_beta(i,j)*1000.0
 		end do
 	end do
 	close(unit = 10)
