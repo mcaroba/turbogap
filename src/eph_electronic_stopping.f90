@@ -343,12 +343,11 @@ subroutine eph_Langevin_spatial_correlation (isfriction, israndom, vel, forces, 
 	
 	
 	!=========================================================================
-	! ***** The following model is as per USER-FIX EPH in LAMMPS ********
+	! ***** Doing with rho as a function of r² ********
 	!=========================================================================
 	
 	! .......... Model 2 ..........
-	! As per USER-EPH FIX in LAMMPS which does with "rho_r_sq"
-	
+
 	if (model_eph == 2) then
 		
 		! Find total atomic electronic densities at all sites limited by the 
@@ -408,7 +407,7 @@ subroutine eph_Langevin_spatial_correlation (isfriction, israndom, vel, forces, 
 						call get_atom_type(j,natomtypes,masses,type_mass,atom_type)
 						jtype = atom_type
 						
-						if (r_ij**2 <= beta%r_cutoff_sq) then
+						if (r_ij**2 < beta%r_cutoff_sq) then
 							
 							call relativeVector(positions(:,j), positions(:,i), rel_ij)
 							
@@ -423,7 +422,7 @@ subroutine eph_Langevin_spatial_correlation (isfriction, israndom, vel, forces, 
 									beta%y2alpha(jtype,:), beta%n_points_beta, rho_I(j), alpha_J)
 							
 							multiply_factor = dot_product( rel_ij, rand_vec(:,j) )
-							multiply_factor = - alpha_J * rho_ij * multiply_factor / r_ij**2 / rho_I(j)
+							multiply_factor = - alpha_J * rho_ij * multiply_factor / r_ij / rho_I(j)
 							
 							forces_rnd(1,i) = forces_rnd(1,i) + multiply_factor*rel_ij(1)
 							forces_rnd(2,i) = forces_rnd(2,i) + multiply_factor*rel_ij(2)
@@ -440,7 +439,7 @@ subroutine eph_Langevin_spatial_correlation (isfriction, israndom, vel, forces, 
 									beta%y2alpha(itype,:), beta%n_points_beta, rho_I(i), alpha_I)
 
 							multiply_factor = dot_product( rel_ij, rand_vec(:,i) )
-							multiply_factor = alpha_I * rho_ij * multiply_factor / r_ij**2 / rho_I(i)
+							multiply_factor = alpha_I * rho_ij * multiply_factor / r_ij / rho_I(i)
 							
 							forces_rnd(1,i) = forces_rnd(1,i) + multiply_factor*rel_ij(1)
 							forces_rnd(2,i) = forces_rnd(2,i) + multiply_factor*rel_ij(2)
@@ -486,7 +485,7 @@ subroutine eph_Langevin_spatial_correlation (isfriction, israndom, vel, forces, 
 						xj = positions(1,j); yj = positions(2,j); zj = positions(3,j) 
 						r_ij = get_distance(xi,yi,zi,xj,yj,zj)
 							
-						if (r_ij**2 <= beta%r_cutoff_sq) then
+						if (r_ij**2 < beta%r_cutoff_sq) then
 							
 							call get_atom_type(j,natomtypes,masses,type_mass,atom_type)
 							jtype = atom_type
@@ -502,7 +501,7 @@ subroutine eph_Langevin_spatial_correlation (isfriction, israndom, vel, forces, 
 							rel_v_ij = rel_v_ij*1000.0		! A/fs ----> A/ps
 							multiply_factor = alpha_I * rho_ij * dot_product( rel_v_ij, rel_ij )
 							
-							multiply_factor = multiply_factor  / rho_I(i) / r_ij**2
+							multiply_factor = multiply_factor  / rho_I(i) / r_ij
 							
 							w_I(1,i) = w_I(1,i) + multiply_factor * rel_ij(1)
 							w_I(2,i) = w_I(2,i) + multiply_factor * rel_ij(2)
@@ -536,7 +535,7 @@ subroutine eph_Langevin_spatial_correlation (isfriction, israndom, vel, forces, 
 						xj = positions(1,j); yj = positions(2,j); zj = positions(3,j) 
 						r_ij = get_distance(xi,yi,zi,xj,yj,zj)
 							
-						if (r_ij**2 <= beta%r_cutoff_sq) then
+						if (r_ij**2 < beta%r_cutoff_sq) then
 							
 							call get_atom_type(j,natomtypes,masses,type_mass,atom_type)
 							jtype = atom_type
@@ -550,7 +549,7 @@ subroutine eph_Langevin_spatial_correlation (isfriction, israndom, vel, forces, 
 							
 							multiply_factor1 = alpha_I * rho_ij * dot_product( w_I(:,i), rel_ij )
 							
-							multiply_factor1 = multiply_factor1 / rho_I(i) / r_ij**2
+							multiply_factor1 = multiply_factor1 / rho_I(i) / r_ij
 							
 							
 							! alpha_J for the jtype atom
@@ -565,7 +564,7 @@ subroutine eph_Langevin_spatial_correlation (isfriction, israndom, vel, forces, 
 							
 							multiply_factor2 = alpha_J * rho_ij * dot_product( w_I(:,j), rel_ij )
 						
-							multiply_factor2 = multiply_factor2 / rho_I(j) / r_ij**2
+							multiply_factor2 = multiply_factor2 / rho_I(j) / r_ij
 							
 							multiply_factor = multiply_factor1 - multiply_factor2
 							
@@ -598,32 +597,7 @@ subroutine eph_Langevin_spatial_correlation (isfriction, israndom, vel, forces, 
 			xi = positions(1,i); yi = positions(2,i); zi = positions(3,i) 
 	
 			do component = 1, 3
-		!! ---- forces are adjusted by friction according to the relative signs of forces and velocities ----
-		!! when velocity and force are opposite, friction acts along the force
-		!		if ((vel(component,i)>0 .and. forces(component,i)<0).or. &
-		!		(vel(component,i)<0 .and. forces(component,i)>0)) then
-		!			if (forces(component,i)<0) then
-		!				forces(component,i) = forces(component,i) - abs(forces_fric(component,i))
-		!			end if
-		!			if (forces(component,i)>0) then
-		!				forces(component,i) = forces(component,i) + abs(forces_fric(component,i))
-		!			end if
-		!		end if
-		!! when velocity and force are in same direction, friction acts opposite to the force
-		!		if ((vel(component,i)>0 .and. forces(component,i)>0).or. &
-		!		(vel(component,i)<0 .and. forces(component,i)<0)) then
-		!			if (forces(component,i)<0) then
-		!				forces(component,i) = forces(component,i) + abs(forces_fric(component,i))
-		!			end if
-		!			if (forces(component,i)>0) then 
-		!				forces(component,i) = forces(component,i) - abs(forces_fric(component,i))
-		!			end if
-		!		end if
-				
-				!! ------ up to here -------
-				
 				forces(component,i) = forces(component,i) + forces_rnd(component,i) + forces_fric(component,i)
-	
 				E_val_i_fric = E_val_i_fric - dt*forces_fric(component,i)*vel(component,i)
 				E_val_i_rnd = E_val_i_rnd - dt*forces_rnd(component,i)*vel(component,i)
 			end do
@@ -646,27 +620,6 @@ subroutine eph_Langevin_spatial_correlation (isfriction, israndom, vel, forces, 
 			xi = positions(1,i); yi = positions(2,i); zi = positions(3,i)
 			
 			do component = 1, 3
-		!! ---- forces are adjusted by friction according to the relative signs of forces and velocities ----	
-		!! when velocity and force are opposite, friction acts along the force
-		!		if ((vel(component,i)>0 .and. forces(component,i)<0).or. &
-		!		(vel(component,i)<0 .and. forces(component,i)>0)) then
-		!			if (forces(component,i)<0) then
-		!				forces(component,i) = forces(component,i) - abs(forces_fric(component,i))
-		!			end if
-		!			if (forces(component,i)>0) then
-		!				forces(component,i) = forces(component,i) + abs(forces_fric(component,i))
-		!			end if
-		!		end if
-		!! when velocity and force are in same direction, friction acts opposite to the force
-		!		if ((vel(component,i)>0 .and. forces(component,i)>0).or. &
-		!		(vel(component,i)<0 .and. forces(component,i)<0)) then
-		!			if (forces(component,i)<0) then
-		!				forces(component,i) = forces(component,i) + abs(forces_fric(component,i))
-		!			end if
-		!			if (forces(component,i)>0) then 
-		!				forces(component,i) = forces(component,i) - abs(forces_fric(component,i))
-		!			end if
-		!		end if
 				forces(component,i) = forces(component,i) + forces_fric(component,i)
 				E_val_i_fric = E_val_i_fric - dt*forces_fric(component,i)*vel(component,i)
 			end do
@@ -820,25 +773,6 @@ subroutine randomGaussianArray(Np, mean, standard_deviation, rand_array)
 	!	rand_array(i) = rand_array(i) * standard_deviation/sd_actual
 	!end do
 end subroutine randomGaussianArray
-
-
-
-!! There is a correlation factor between 'eta', the random forces
-!! which involves the T_e at position R_I(x,y,z) of the atom and not on the
-!! overall temperature of the so-called "electronic heat bath". So, the following
-!! subroutine seems not not to be necessary. 
-
-!subroutine get_distribution_factor(vect, Np, st_dev_req, st_dev_factor)
-!	implicit none
-!	integer, intent(in) :: Np
-!	real*8, intent(in) :: vect(Np), st_dev_req
-!	real*8, intent(out) :: st_dev_factor
-!	real*8 :: st_dev_now, mean
-!	
-!	mean = sum(vect)/ size(vect)
-!	st_dev_now = sqrt( sum( (vect(:) - mean)**2 ) / size(vect) )
-!	st_dev_factor = st_dev_req / st_dev_now
-!end subroutine get_distribution_factor
 
 end module eph_electronic_stopping
 

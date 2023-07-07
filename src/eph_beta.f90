@@ -49,7 +49,7 @@ type EPH_Beta_class
 	integer :: n_species
 	
 	! --------------------------------------------------------------------
-	! ** As fix user-eph does in LAMMPS, but not as shown in the papers **
+	! ** Doing with rho as a function of r²**
 	real*8 :: dr_sq, r_cutoff_sq
 	real*8, allocatable :: data_rho_rsq(:,:), r_sq(:)
 	! --------------------------------------------------------------------
@@ -123,7 +123,6 @@ subroutine beta_parameters(this,beta_infile,n_species)
 
 		do j = 1, this%n_points_beta
 			read(10,*) this%data_beta(i,j)
-			!this%data_beta(i,j) = this%data_beta(i,j)*1000.0
 		end do
 	end do
 	close(unit = 10)
@@ -171,7 +170,7 @@ subroutine beta_parameters(this,beta_infile,n_species)
 	
 	
 	! ------------------------------------------------------------------------
-	! ** As fix user-eph does with the function rho(r²) versus r² **
+	! ** Doing by function rho(r²) versus r² **
 	
 	this%r_cutoff_sq = this%r_cutoff * this%r_cutoff
 	this%dr_sq = this%r_cutoff_sq / (this%n_points_rho - 1)
