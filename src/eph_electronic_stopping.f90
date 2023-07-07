@@ -122,8 +122,8 @@ subroutine eph_Langevin_spatial_correlation (isfriction, israndom, vel, forces, 
 				if (i /= neighbors_list(jneigh)) then
 					j = neighbors_list(jneigh)
 					xj = positions(1,j); yj = positions(2,j); zj = positions(3,j) 
-					r_ij = get_distance(xi,yi,zi,xj,yj,zj)
-					if (r_ij <= beta%r_cutoff) then
+					r_ij = get_distance(xi,yi,zi, xj,yj,zj)
+					if (r_ij < beta%r_cutoff) then
 						call get_atom_type(j,natomtypes,masses,type_mass,atom_type)
 						jtype = atom_type
 						rho_ij = 0.0
@@ -166,7 +166,7 @@ subroutine eph_Langevin_spatial_correlation (isfriction, israndom, vel, forces, 
 						call get_atom_type(j,natomtypes,masses,type_mass,atom_type)
 						jtype = atom_type
 						
-						if (r_ij <= beta%r_cutoff) then
+						if (r_ij < beta%r_cutoff) then
 							call relativeVector(positions(:,j), positions(:,i), rel_ij)
 							
 							! find rho_I
@@ -243,7 +243,7 @@ subroutine eph_Langevin_spatial_correlation (isfriction, israndom, vel, forces, 
 						xj = positions(1,j); yj = positions(2,j); zj = positions(3,j) 
 						r_ij = get_distance(xi,yi,zi,xj,yj,zj)
 							
-						if (r_ij <= beta%r_cutoff) then
+						if (r_ij < beta%r_cutoff) then
 							
 							call get_atom_type(j,natomtypes,masses,type_mass,atom_type)
 							jtype = atom_type
@@ -293,7 +293,7 @@ subroutine eph_Langevin_spatial_correlation (isfriction, israndom, vel, forces, 
 						xj = positions(1,j); yj = positions(2,j); zj = positions(3,j) 
 						r_ij = get_distance(xi,yi,zi,xj,yj,zj)
 							
-						if (r_ij <= beta%r_cutoff) then
+						if (r_ij < beta%r_cutoff) then
 							
 							call get_atom_type(j,natomtypes,masses,type_mass,atom_type)
 							jtype = atom_type
@@ -364,8 +364,8 @@ subroutine eph_Langevin_spatial_correlation (isfriction, israndom, vel, forces, 
 				if (i /= neighbors_list(jneigh)) then
 					j = neighbors_list(jneigh)
 					xj = positions(1,j); yj = positions(2,j); zj = positions(3,j) 
-					r_ij = get_distance(xi,yi,zi,xj,yj,zj)
-					if (r_ij**2 <= beta%r_cutoff_sq) then
+					r_ij = get_distance(xi,yi,zi, xj,yj,zj)
+					if (r_ij**2 < beta%r_cutoff_sq) then
 						call get_atom_type(j,natomtypes,masses,type_mass,atom_type)
 						jtype = atom_type
 						rho_ij = 0.0
@@ -813,12 +813,12 @@ subroutine randomGaussianArray(Np, mean, standard_deviation, rand_array)
 	
 	!! Mean and standard deviation must be brought to required values 
 	!! This works very good when mean is 0
-	mean_actual = sum(rand_array)/Np
-	sd_actual = sqrt(sum((rand_array - mean_actual)**2)/Np)
-	do i = 1, Np
-		rand_array(i) = rand_array(i) - mean_actual + mean
-		rand_array(i) = rand_array(i) * standard_deviation/sd_actual
-	end do
+	!mean_actual = sum(rand_array)/Np
+	!sd_actual = sqrt(sum((rand_array - mean_actual)**2)/Np)
+	!do i = 1, Np
+	!	rand_array(i) = rand_array(i) - mean_actual + mean
+	!	rand_array(i) = rand_array(i) * standard_deviation/sd_actual
+	!end do
 end subroutine randomGaussianArray
 
 
