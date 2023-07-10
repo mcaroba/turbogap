@@ -2310,14 +2310,14 @@ program turbogap
                       images(i_current_image)%hirshfeld_v, energies,&
                       & forces, forces_prev, n_sites, n_mc_species,&
                       & mc_move, params %mc_species,&
-                      & params%mc_move_max, params%mc_min_dist, params&
+                      & params%mc_move_max, params%mc_min_dist, params%mc_lnvol_max, params&
                       &%mc_types, params%masses_types, species_idx,&
                       & images(i_current_image)%positions,&
                       & images(i_current_image)%species,&
                       & images(i_current_image)%xyz_species,&
                       & images(i_current_image)%fix_atom,&
-                      & images(i_current_image)%masses, a_box, b_box,&
-                      & c_box, indices, params%do_md, params%mc_relax,&
+                      & images(i_current_image)%masses, a_box(1:3), b_box(1:3),&
+                      & c_box(1:3), indices, params%do_md, params%mc_relax,&
                       & md_istep, mc_id, E_kinetic, instant_temp, params%t_beg,&
                       & params%n_mc_swaps, params%mc_swaps, params%mc_swaps_id, &
                       & params%species_types, params%mc_hamiltonian)

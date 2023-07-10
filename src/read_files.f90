@@ -514,7 +514,7 @@ end if
     character*64 :: keyword, cjunk
     character*32 :: implemented_thermostats(1:3)
     character*32 :: implemented_barostats(1:2)
-    character*32 :: implemented_mc_types(1:7)
+    character*32 :: implemented_mc_types(1:8)
     character*2 :: element
     character*1 :: keyword_first
     logical :: are_vdw_refs_read(1:3), valid_choice, masses_in_input_file = .false.
@@ -533,6 +533,7 @@ end if
     implemented_mc_types(5) = "relax"
     implemented_mc_types(6) = "md"
     implemented_mc_types(7) = "swap"
+    implemented_mc_types(7) = "volume"
 
     k = 0.d0
 
@@ -1103,6 +1104,23 @@ end if
                 write(*,*)'steps!!                                |'
              end if
           end if
+
+          if (params%mc_types(i) == "volume")then
+             if( params%p_beg == 1.0d0 )then
+                write(*,*)'                                       |'
+                write(*,*)'WARNING: p_beg is the default          |  <-- WARNING'
+                write(*,*)'value of 1.0 bar. For MC volume moves  |'
+                write(*,*)'please make sure this is specified!!   |'
+             end if
+           if( params%mc_lnvol_max == 0.01d0 )then
+                write(*,*)'                                       |'
+                write(*,*)'WARNING: mc_lnvol_max is the default   |  <-- WARNING'
+                write(*,*)'value of 0.01. For MC volume moves     |'
+                write(*,*)'please make sure this is specified!!   |'
+             end if
+
+          end if
+
 
        end do
 

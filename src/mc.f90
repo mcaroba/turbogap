@@ -86,14 +86,15 @@ module mc
     implicit none
 
     real*8, intent(in) :: e_new, e_prev, temp, V_new, V_prev, P
-    real*8 :: kB = 8.617333262e-5, beta
+    real*8 :: kB = 8.617333262e-5, beta, eVperA3tobar = 1602176.6208d0
     integer, intent(in) :: N_exch
     real*8, intent(out) :: p_accept
 
     beta = (1./(kB * temp))
     p_accept = exp( - beta * ( (e_new - e_prev) + &
-                      P * ( V_new-V_prev ) + &
-                     -(N_exch+1) * log( V_new/V_prev )/ beta ) )
+                      (P / eVperA3tobar) * ( V_new-V_prev ) + &
+                      -(N_exch+1) * log( V_new/V_prev )/ beta ) )
+
   end subroutine monte_carlo_volume
 
   ! Not implemented this yet as it is a little complicated as one has
@@ -338,11 +339,12 @@ module mc
        & velocities, positions_prev, positions_diff, disp, d_disp,&
        & mc_acceptance, hirshfeld_v, im_hirshfeld_v, energies,&
        & forces, forces_prev, n_sites, n_mc_species, mc_move, mc_species,&
-       & mc_move_max, mc_min_dist, mc_types, masses_types,&
+       & mc_move_max, mc_min_dist, ln_vol_max, mc_types, masses_types,&
        & species_idx, im_pos, im_species, im_xyz_species, im_fix_atom&
        &, im_masses, a_box, b_box, c_box, indices, do_md, mc_relax,&
        & md_istep, mc_id, E_kinetic, instant_temp, t_beg,&
-       & n_mc_swaps, mc_swaps, mc_swaps_id, species_types, mc_hamiltonian)
+       & n_mc_swaps, mc_swaps, mc_swaps_id, species_types,&
+       & mc_hamiltonian)
 
     implicit none
 
@@ -350,8 +352,10 @@ module mc
          forces_prev(:,:), positions_prev(:,:), positions_diff(:,:),&
          mc_acceptance(:), im_hirshfeld_v(:), velocities(:,:), &
          energies(:), forces(:,:), masses_types(:), im_pos(:,:), im_masses(:)
-    real*8 :: mc_move_max, ranf, ranv(1:3)
-    real*8, intent(inout) :: disp(1:3), mc_min_dist, d_disp, E_kinetic, instant_temp, t_beg
+    real*8 :: mc_move_max, ln_vol_max, lnvn, vn, v_uc, length,&
+         & length_prev, l_prop, ranf, ranv(1:3), kB = 8.6173303d-5
+    real*8, intent(inout) :: disp(1:3), mc_min_dist, d_disp,&
+         & E_kinetic, instant_temp, t_beg
 
     integer, intent(inout) :: n_mc_species, n_sites, md_istep, mc_id, n_mc_swaps
     integer, allocatable, intent(inout) :: species(:), mc_swaps_id(:)
@@ -367,11 +371,11 @@ module mc
     integer, allocatable :: swap_idx_1(:), swap_idx_2(:)
     integer, allocatable, intent(inout) :: species_idx(:)
     integer :: indices(1:3)
-    real*8 :: a_box(1:3), b_box(1:3), c_box(1:3), kB = 8.6173303d-5
+    real*8, intent(inout):: a_box(1:3), b_box(1:3), c_box(1:3)
     logical, allocatable:: fix_atom(:,:)
     logical, allocatable, intent(in) :: im_fix_atom(:,:)
     logical, intent(inout) :: do_md, mc_relax, mc_hamiltonian
-
+    real*8 :: f(3,3), identity(3,3) = reshape([1.d0, 0.d0, 0.d0, 0.d0, 1.d0, 0.d0, 0.d0, 0.d0, 1.d0], [3,3]), gamma(3,3)
     !    n_sites = size(positions, 2)
     ! Count the mc species (no multi species mc just yet)
     n_mc_species = 0
@@ -465,10 +469,44 @@ module mc
 
        positions_diff = 0.d0
 
-
-
        ! Assume that the number of steps has already been set.
     end if
+
+    if (mc_move == "volume")then
+       ! Only the "center-of-mass" positions of the particles should
+       ! be scaled, and not the relative positions of the particles
+       ! themselves - Frenkel
+
+       call  random_number(ranf)
+
+       v_uc = dot_product( cross_product(a_box, b_box), c_box ) / (dfloat(indices(1)*indices(2)*indices(3)))
+
+       lnvn = log( v_uc ) + ( ranf - 0.5d0  ) * ln_vol_max
+       vn = exp( lnvn )
+
+       length = vn**( 1.0d0 / 3.0d0)
+       length_prev = ( v_uc )**(1.0d0 / 3.0d0)
+       l_prop = ( length / length_prev )
+       write(*,'(A,1X,F22.8)')'    MC Volume: Cube L_prev        ', length_prev
+       write(*,'(A,1X,F22.8)')'               Cube L_new         ', length
+       write(*,'(A,1X,F22.8)')'               Cube L_new/L_prev  ', l_prop
+       write(*,'(A,1X,F22.8)')'               V_prev             ', v_uc
+       write(*,'(A,1X,F22.8)')'               V_new              ', vn
+
+       gamma = reshape([l_prop - 1.d0, 0.d0, 0.d0, 0.d0, l_prop - 1.d0, 0.d0, 0.d0, 0.d0, l_prop - 1.d0], [3,3])
+       positions = positions + matmul(gamma, positions)
+       f = identity + (gamma)
+       a_box = matmul(f, a_box)
+       b_box = matmul(f, b_box)
+       c_box = matmul(f, c_box)
+
+       write(*,'(A,1X,F22.8,1X,F22.8,1X,F22.8)')'               a_box = ', a_box(1),  a_box(2),  a_box(3)
+       write(*,'(A,1X,F22.8,1X,F22.8,1X,F22.8)')'               b_box = ', b_box(1),  b_box(2),  b_box(3)
+       write(*,'(A,1X,F22.8,1X,F22.8,1X,F22.8)')'               c_box = ', c_box(1),  c_box(2),  c_box(3)
+
+    end if
+
+
 
     if (mc_move == "insertion" .or. mc_move == "removal" )then
 
