@@ -116,17 +116,24 @@ module types
     character*32, allocatable ::  mc_types(:)
     character*8, allocatable :: species_types(:)
     character*16 :: optimize = "vv", mc_relax_opt = "gd", mc_hybrid_opt = "vv"
-    character*32 :: barostat = "none", thermostat = "none", barostat_sym = "isotropic", mc_species = "none"
-    logical :: do_md = .false., do_mc = .false., do_prediction = .false., do_forces = .false., do_derivatives = .false., &
-               do_derivatives_fd = .false., write_soap = .false., write_derivatives = .false., &
-               do_timing = .false., all_atoms = .true., print_progress = .true., scale_box = .false., &
-               write_lv = .false., write_forces = .true., write_velocities = .true., write_hirshfeld_v = .true., &
-               write_virial = .true., write_pressure = .true., write_stress = .true., &
-               write_local_energies = .true., write_property(1:11) = .true., &
-               write_array_property(1:8) = .true., write_masses = .false., write_fixes = .true., &
-               variable_time_step = .false., vdw_mbd_grad = .false., do_nested_sampling = .false., &
-               scale_box_nested = .false., mc_write_xyz = .false., mc_relax = .false., mc_opt_spectra=.false., &
-               optimize_exp_data=.false.
+    character*32 :: barostat = "none", thermostat = "none",&
+         & barostat_sym = "isotropic", mc_species = "none",&
+         & xps_force_type = "similarity"
+    logical :: do_md = .false., do_mc = .false., do_prediction =&
+         & .false., do_forces = .false., do_derivatives = .false.,&
+         & do_derivatives_fd = .false., write_soap = .false.,&
+         & write_derivatives = .false., do_timing = .false.,&
+         & all_atoms = .true., print_progress = .true., scale_box =&
+         & .false., write_lv = .false., write_forces = .true.,&
+         & write_velocities = .true., write_hirshfeld_v = .true.,&
+         & write_virial = .true., write_pressure = .true.,&
+         & write_stress = .true., write_local_energies = .true.,&
+         & write_property(1:11) = .true., write_array_property(1:8) =&
+         & .true., write_masses = .false., write_fixes = .true.,&
+         & variable_time_step = .false., vdw_mbd_grad = .false.,&
+         & do_nested_sampling = .false., scale_box_nested = .false.,&
+         & mc_write_xyz = .false., mc_relax = .false., mc_opt_spectra&
+         &=.false., optimize_exp_data=.false., print_lp_forces=.false.
     logical, allocatable :: write_local_properties(:)
 
   end type input_parameters

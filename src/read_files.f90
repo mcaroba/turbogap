@@ -800,6 +800,12 @@ end if
       else if(keyword=='xps_n_samples')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%xps_n_samples
+      else if(keyword=='xps_force_type')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%xps_force_type
+      else if(keyword=='print_lp_forces')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%print_lp_forces
       else if(keyword=='write_xyz')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%write_xyz

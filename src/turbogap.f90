@@ -1632,7 +1632,7 @@ program turbogap
            end do
            !            call get_ts_energy_and_forces( hirshfeld_v(i_beg:i_end), hirshfeld_v_cart_der(1:3, j_beg:j_end), &
 
-           if (params%n_moments == 0)then
+           if (params%xps_force_type == "similarity")then
               print *, "Calculating similarity spectra energies and forces"
            call get_exp_pred_spectra_energies_forces(&
                 & soap_turbo_hypers(xids)&
@@ -1649,7 +1649,7 @@ program turbogap
 #else
            n_sites, energies_lp(i_beg:i_end), forces_lp, virial_lp )
 #endif
-        else
+        else if ( params%xps_force_type == "moments")then
            call get_moment_spectra_energies_forces(&
                 & soap_turbo_hypers(xids)&
                 &%local_property_models(xids_lp)%data, params%energy_scales_opt_exp_data,&
@@ -1991,10 +1991,19 @@ program turbogap
 #endif
         end if
 
-        print *, "forces lp ", forces_lp(1:3,1)
         if( params%do_forces )then
            forces =  (forces_soap + forces_2b + forces_3b + forces_core_pot + forces_vdw) + forces_lp
            virial = virial_soap + virial_2b + virial_3b + virial_core_pot + virial_vdw + virial_lp
+
+           if ( params%print_lp_forces )then
+              open(unit=90, file="forces_lp", status="unknown")
+              do i = 1, n_sites
+                 write(90, "(F20.8, 1X, F20.8, 1X, F20.8)") &
+                      forces_lp(1,i), forces_lp(2,i), forces_lp(3,i)
+              end do
+           end if
+
+
         end if
         ! For debugging the virial implementation
         if( rank == 0 .and. .false. )then

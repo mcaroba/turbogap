@@ -386,6 +386,17 @@ module xps_utils
       ! Now, the full similarity is the overlap integral between the
       ! predicted, broadened spectra and experiment.
 
+      ! The change of position of atom i, which has neighbours
+      ! (j,k,l...,m) results in a change in the soap descriptors of
+      ! (j,k,l,...m).
+      ! Hence, the neighbors,
+      ! number_of_neighbours = n_neigh(i)
+      ! Index of the neighbour list for i => idx_i = sum_j=1^i( n_neigh(j) )
+      ! Indexes of the neighbours => neighbor_list(idx_i: idx_i + n_neigh(i))
+
+      ! We compute the expression
+
+
 
       !   Compute xps forces
       if( do_forces )then
@@ -398,8 +409,12 @@ module xps_utils
          !     positions of its neighbors
          k = 0
          do i = 1, n_sites
+            ! k is the index which keeps a number of the atom pairs
+            ! i2 is the index of a particular atom
             i2 = modulo(neighbors_list(k+1)-1, n_sites0) + 1
             do j = 1, n_neigh(i)
+               ! Loop through the neighbors of atom i
+               ! j2 is the index of a neighboring atom to i
                k = k + 1
                j2 = modulo(neighbors_list(k)-1, n_sites0) + 1
                !             SOAP neighbors
@@ -577,13 +592,13 @@ module xps_utils
 
       y = 0.d0
       do i = 1, size(x)
-         f = - ( ( x(i) - x0 ) / (sigma**2) ) * exp( -( x(i) - x0 )**2 / (2*sigma**2) ) / mag
+         f = - ( ( x(i) - x0 ) / (sigma**2) ) * exp( -( x(i) - x0 )**2 / (2*sigma**2) ) * y_exp(i) / mag
          y(1:3,i) = y(1:3,i) + x0_der * f
       end do
 
-      y_tot(1) =  dot_product( dx * y(1,:) , y_exp)
-      y_tot(2) =  dot_product( dx * y(2,:) , y_exp)
-      y_tot(3) =  dot_product( dx * y(3,:) , y_exp)
+      y_tot(1) =  sum(  y(1,:) ) * dx
+      y_tot(2) =  sum(  y(2,:) ) * dx
+      y_tot(3) =  sum(  y(3,:) ) * dx
 
       ! Above is the first part of the sum, we know that we have a
       ! dependency on the normalisation condition, hence we must take
