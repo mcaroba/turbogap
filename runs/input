@@ -1,4 +1,4 @@
-atoms_file = '2829_supercell.xyz'
+atoms_file = '2829.xyz'
 pot_file = 'gap_files/carbon.gap'
 
 ! Species info
@@ -29,4 +29,3 @@ vdw_hirsh_grad = .true.   ! Include Hirshfeld gradients in the forces. Type: LOG
 vdw_polynomial = .false.  ! Use polynomial approximation for inverse matrices. Type: LOGICAL
 do_nnls = .true.          ! Use non-negative least squares fitting for integrand
 vdw_omega_ref = 4.d0
-

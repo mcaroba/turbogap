@@ -1052,7 +1052,7 @@ module vdw
                            g_func_der(:), h_func_der(:), coeff_der(:), coeff_fdamp(:), hirshfeld_v_cart_der_H(:,:), &
                            a_SCS(:,:), da_SCS(:,:), b_der(:,:), dB_mat(:,:), &
                            neighbor_sigma(:), hirshfeld_v_sub_der(:,:), inner_damp(:)
-    real*8 :: time1, time2, this_force(1:3), Bohr, Hartree, &
+    real*8 :: time1, time2, time3, time4, this_force(1:3), Bohr, Hartree, &
               omega, pi, integral, E_MBD, R_vdW_SCS_ij, S_vdW_ij, dS_vdW_ij, exp_term, &
               r_vdw_i, r_vdw_j, t1, t2, r_buf_scs, r_buf_mbd, r_buf_2b, r_buf_loc, &
               sigma_ij, coeff_h_der, dg, dh, s_i, s_j, terms, omega_ref, xyz_i(1:3), xyz_j(1:3), rjs_i, rjs_j
@@ -1244,9 +1244,11 @@ ac2 = 3.d0 + ac4
     !  r_buf_2b = r_buffer
     !end if
 
-    call cpu_time(time1)
+    !call cpu_time(time1)
 
     do i = 1, n_sites      
+
+      call cpu_time(time1)
 
       n_tot = sum(n_neigh(1:i))-n_neigh(i)
       i0 = modulo(neighbors_list(n_tot+1)-1, n_sites0) + 1
@@ -1810,10 +1812,16 @@ ac2 = 3.d0 + ac4
           ! Exact solution ends
         
         end if
+        
+        call cpu_time(time2)
+        
+        write(*,*) "Polarizabilities timing", time2-time1
 
         if ( om == 2 ) then
 
 if ( abs(rcut_2b) < 1.d-10 ) then
+
+          call cpu_time(time1)
 
           ! MBD for local polarizabilities:
           ! At least for now: rcut <= rcut_mbd <= rcut_2b
@@ -2247,6 +2255,10 @@ if ( abs(rcut_2b) < 1.d-10 ) then
             end if
           end do
           nnz = k4
+          
+          call cpu_time(time2)
+          
+          write(*,*) "Matrix construction timing", time2-time1
 end if
 
 
@@ -2352,6 +2364,8 @@ end if
 
 if ( abs(rcut_2b) < 1.d-10 ) then
 
+          call cpu_time(time1)
+
           AT_mult = 1.d0
           do i2 = 1, n_freq
             k3 = 0
@@ -2417,6 +2431,10 @@ if ( abs(rcut_2b) < 1.d-10 ) then
             !  write(*,*) "and forces will be zero."
             !end if
           end do
+          
+          call cpu_time(time2)
+          
+          write(*,*) "AT construction timing", time2-time1
 
           !write(*,*) "n_mbd_sites", n_mbd_sites
 
@@ -2461,6 +2479,8 @@ if ( abs(rcut_2b) < 1.d-10 ) then
           !
           !deallocate( V_int )
           !TEST!!!!!!!!!!!!!!!!!
+          
+          call cpu_time(time1)
 
           allocate( myidx(1:3*n_mbd_sites) )
           
@@ -2515,6 +2535,12 @@ if ( abs(rcut_2b) < 1.d-10 ) then
           !write(*,*) "integrand_sp", integrand_sp
 
           deallocate( integrand_sp, myidx, at_vec, at_n_vec )
+          
+          call cpu_time(time2)
+          
+          write(*,*) "Integrand calculation timing", time2-time1
+          
+          call cpu_time(time1)
 
           if ( do_nnls ) then
 
@@ -2580,6 +2606,10 @@ if ( abs(rcut_2b) < 1.d-10 ) then
           energies(i) = (integral + E_TS) * Hartree
           write(*,*) "MBD energy", i, energies(i)
           E_MBD = E_MBD + energies(i)          
+          
+          call cpu_time(time2)
+          
+          write(*,*) "Timing for the rest of energy calculation", time2-time1
         
         end if ! om loop
         
@@ -2588,6 +2618,8 @@ end if
         ! Derivatives:
         
         if (do_derivatives) then
+        
+          call cpu_time(time1)
         
           allocate( da_SCS(1:3*n_sub_sites,1:3) )
           allocate( dT(1:9*n_sub_pairs) )
@@ -2955,12 +2987,18 @@ end if
             !    !write(*,*) da_SCS(p,:)
             !  end do
             !end if
+            
+            call cpu_time(time2)
+            
+            write(*,*) "Polarizability gradient timing", time2-time1
 
 
 
             if ( om == 2 ) then
 
 if ( abs(rcut_2b) < 1.d-10 ) then
+
+              call cpu_time(time1)
             
               f_damp_der_SCS = 0.d0
               f_damp_der_mbd = 0.d0 ! This is cleared so we can recalculate it with SCS values
@@ -3420,6 +3458,10 @@ if ( abs(rcut_2b) < 1.d-10 ) then
 
               !write(*,*) "da_mbd", da_mbd
               !write(*,*) "do_mbd", do_mbd
+              
+              call cpu_time(time2)
+              
+              write(*,*) "dT_LR construction timing", time2-time1
               
 end if
 
@@ -4242,25 +4284,29 @@ end if
               !end if
       
 if ( abs(rcut_2b) < 1.d-10 ) then
+
+              call cpu_time(time1)
         
               allocate( G_mat(1:3*n_mbd_sites,1:3*n_mbd_sites,1:n_freq) )
 
               G_mat = 0.d0
+              integrand = 0.d0
 
               !write(*,*) "AT_mult"
               do j = 1, n_freq
                 k3 = 0
                 dAT_mult = 0.d0
                 do p = 1, n_mbd_sites
-                  if ( rjs_0_mbd(k3+1) > (2.d0*rcut_mbd+rcut_loc-r_buf_mbd)/Bohr .and. &
-                       rjs_0_mbd(k3+1) .le. (2.d0*rcut_mbd+rcut_loc)/Bohr ) then
-                    rb = (rjs_0_mbd(k3+1)*Bohr-2.d0*rcut_mbd-rcut_loc+r_buf_mbd)/r_buf_mbd
-                    dAT_mult(p) = &
-                            ( - 6.d0 * rb &
-                              + 6.d0 * rb**2) &
-                              * ( -xyz_0_mbd(c3,k3+1)/rjs_0_mbd(k3+1)/(r_buf_mbd/Bohr))      
-                  end if
-                  dAT_mult(p) = 0.d0
+                  if ( rjs_0_mbd(k3+1) .le. (rcut_mbd+rcut_loc)/Bohr ) then
+                  !if ( rjs_0_mbd(k3+1) > (2.d0*rcut_mbd+rcut_loc-r_buf_mbd)/Bohr .and. &
+                  !     rjs_0_mbd(k3+1) .le. (2.d0*rcut_mbd+rcut_loc)/Bohr ) then
+                  !  rb = (rjs_0_mbd(k3+1)*Bohr-2.d0*rcut_mbd-rcut_loc+r_buf_mbd)/r_buf_mbd
+                  !  dAT_mult(p) = &
+                  !          ( - 6.d0 * rb &
+                  !            + 6.d0 * rb**2) &
+                  !            * ( -xyz_0_mbd(c3,k3+1)/rjs_0_mbd(k3+1)/(r_buf_mbd/Bohr))      
+                  !end if
+                  !dAT_mult(p) = 0.d0
                   i2 = mbd_neighbors_list(k3+1)
                   G_mat(3*(p-1)+1:3*(p-1)+3,:,j) = G_mat(3*(p-1)+1:3*(p-1)+3,:,j) + &
                     a_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) * &
@@ -4269,29 +4315,48 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                     AT_mult(p) * T_LR(3*(p-1)+1:3*(p-1)+3,:) + &
                     a_mbd(k3+1) * (2.d0 * omegas_mbd(j)**2 * o_mbd(k3+1)) * &
                     do_mbd(k3+1) / ( o_mbd(k3+1)**2 + omegas_mbd(j)**2 )**2 * &
-                    AT_mult(p) * T_LR(3*(p-1)+1:3*(p-1)+3,:) + &
-                    a_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) * &
-                    dAT_mult(p) * T_LR(3*(p-1)+1:3*(p-1)+3,:)
-                    !if ( i == 1 .and. c3 == 1 .and. p == 236 .and. j == 1 ) then
-                    !  write(*,*) "a_mbd", a_mbd(k3+1)
-                    !  write(*,*) "da_mbd", da_mbd(k3+1)
-                    !  write(*,*) "o_mbd", o_mbd(k3+1)
-                    !  write(*,*) "do_mbd", do_mbd(k3+1)
-                    !  write(*,*) "T_LR", T_LR(3*(p-1)+1,3*(267-1)+1)
-                    !  write(*,*) "dT_LR", dT_LR(3*(p-1)+1,3*(267-1)+1)
-                    !  write(*,*) "AT_mult", AT_mult(p)
-                    !  write(*,*) "dAT_mult", dAT_mult(p)
-                    !  write(*,*) "G_mat", G_mat(3*(p-1)+1,3*(267-1)+1,1)
-                    !  write(*,*) "rjs_0_mbd", k3+1, rjs_0_mbd(k3+1)*Bohr
-                    !end if
-                    !if ( i == 1 .and. c3 == 1 .and. j == 1 ) then
-                    !  write(*,*) dAT_mult(p)
-                    !end if
+                    AT_mult(p) * T_LR(3*(p-1)+1:3*(p-1)+3,:)
+                  !do j3 = 2, n_mbd_neigh(p)
+                  !  q = p_mbd(k3+j3)
+                  !  do c1 = 1, 3
+                  !    do c2 = 1, 3
+                  !      integrand(j) = integrand(j) + AT(3*(p-1)+c1,3*(q-1)+c2,j) * G_mat(3*(q-1)+c2,3*(p-1)+c1,j)
+                  !    end do
+                  !  end do
+                  !end do
+                  end if
                   if ( p .ne. n_mbd_sites ) then
                     k3 = k3+n_mbd_neigh(p)
                   end if
                 end do
               end do
+
+              do j = 1, n_freq
+                k3 = n_mbd_neigh(1)
+                do p = 2, n_mbd_sites
+                  if ( rjs_0_mbd(k3+1) .le. (rcut_mbd+rcut_loc)/Bohr ) then
+                    do j3 = 2, n_mbd_neigh(p)
+                      q = p_mbd(k3+j3)
+                      do c1 = 1, 3
+                        do c2 = 1, 3
+                          !integrand(j) = integrand(j) + a_mbd(k3+1)/(1.d0 + &
+                          !   (omegas_mbd(j)/o_mbd(k3+1))**2) * T_LR(3*(p-1)+c1,3*(q-1)+c2) * G_mat(3*(q-1)+c2,3*(p-1)+c1,j)
+                          integrand(j) = integrand(j) + AT(3*(p-1)+c1,3*(q-1)+c2,j) * G_mat(3*(q-1)+c2,3*(p-1)+c1,j)
+                        end do
+                      end do
+                    end do
+                  end if
+                  if ( p .ne. n_mbd_sites ) then
+                    k3 = k3+n_mbd_neigh(p)
+                  end if
+                end do
+              end do
+
+              write(*,*) "short integrand", integrand
+
+              call cpu_time(time2)
+              
+              write(*,*) "G_mat construction timing", time2-time1
 
               !if ( i == 1 .and. c3 == 1 ) then
               !  write(*,*) "G_mat"
@@ -4307,11 +4372,10 @@ if ( abs(rcut_2b) < 1.d-10 ) then
               !  close(89)
               !  write(*,*) "G_mat done"
               !end if
+              
+              call cpu_time(time1)
 
-              integrand = 0.d0
-              !if ( c3 == 1 .and. do_total_energy ) then
-              !  total_integrand = 0.d0
-              !end if
+              !integrand = 0.d0
 
               allocate( temp_mat(1:3*n_mbd_sites,1:3*n_mbd_sites) )
               temp_mat = 0.d0
@@ -4353,7 +4417,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 call psb_spins(nnz, ia(1:nnz), ja(1:nnz), val(1:nnz,j), A_sp, desc_a, info_psb)
                 call psb_cdasb(desc_a, info_psb)
                 call psb_spasb(A_sp, desc_a, info_psb)
-                do p = 1, n_mbd_sites
+                do p = 1, 1 !n_mbd_sites
                   i2 = mbd_neighbors_list(k3+1)
                   do c1 = 1, 3
                     if ( rjs_0_mbd(k3+1) .le. (rcut_mbd+rcut_loc)/Bohr ) then
@@ -4364,11 +4428,13 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                       !  dot_product(G_mat(3*(p-1)+c1,:,j),force_series(:,3*(p-1)+c1))
                       at_vec = G_mat(:,3*(p-1)+c1,j)
                       !write(*,*) "at_vec", at_vec
-                      if ( n_order > 2 ) then
+                      if ( n_order > 2 .and. p == 1 ) then
                         do k2 = 1, n_order-2
+                          call cpu_time(time3)
                           call psb_spmm(1.d0, A_sp, at_vec, 0.d0, at_n_vec, desc_a, info_psb, 'N')
+                          call cpu_time(time4)
+                          !write(*,*) "Sparse matrix vector multiplication timing", time4-time3, j, p, c1, k2
                           at_vec = at_n_vec
-                          !integrand_sp(j) = integrand_sp(j) + at_n_vec(3*(p-1)+c1)
                           integrand(j) = integrand(j) + at_n_vec(3*(p-1)+c1)
                         end do
                       else
@@ -4376,8 +4442,10 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                       end if
                       !integrand_sp(j) = integrand_sp(j) + a_mbd(k3+1)/(1.d0 + &
                       !        (omegas_mbd(j)/o_mbd(k3+1))**2) * dot_product(T_LR(3*(p-1)+c1,:),at_n_vec)
+                      !if ( p .ne. 1 ) then
                       integrand(j) = integrand(j) + a_mbd(k3+1)/(1.d0 + &
                               (omegas_mbd(j)/o_mbd(k3+1))**2) * dot_product(T_LR(3*(p-1)+c1,:),at_n_vec)
+                      !end if
                       !if ( c3 == 1 .and. do_total_energy ) then
                       !  total_integrand(j) = total_integrand(j) + a_mbd(k3+1) / &
                       !        (1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) * AT_mult(p) &
@@ -4390,6 +4458,8 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 end do
               end do
               
+              write(*,*) "full integrand", integrand
+              
               !if ( i == 1 .and. c3 == 1 ) then
               !  write(*,*) "force integrand", integrand
               !  write(*,*) "force intgrand_sp", integrand_sp
@@ -4397,6 +4467,12 @@ if ( abs(rcut_2b) < 1.d-10 ) then
               
               deallocate( integrand_sp, myidx, at_vec, at_n_vec )
               deallocate ( G_mat, temp_mat )
+              
+              call cpu_time(time2)
+              
+              write(*,*) "Force integrand timing", time2-time1
+              
+              call cpu_time(time1)
 
               if ( n_order > 1 ) then
 
@@ -4497,6 +4573,10 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 write(*,*) "Total force", i, c3, forces0(c3,i)
 
               end if
+              
+              call cpu_time(time2)
+              
+              write(*,*) "Timing for the rest of force calculation", time2-time1
             
             end if ! om loop(?)
             
