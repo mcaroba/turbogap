@@ -121,7 +121,7 @@ module types
     character*16 :: optimize = "vv", mc_relax_opt = "gd", mc_hybrid_opt = "vv"
     character*32 :: barostat = "none", thermostat = "none",&
          & barostat_sym = "isotropic", mc_species = "none",&
-         & xps_force_type = "similarity"
+         & xps_force_type = "similarity", similarity_type = "none"
     logical :: do_md = .false., do_mc = .false., do_prediction =&
          & .false., do_forces = .false., do_derivatives = .false.,&
          & do_derivatives_fd = .false., write_soap = .false.,&

@@ -2607,7 +2607,7 @@ program turbogap
                             & local_properties(:,core_be_lp_index),&
                             & params%xps_sigma, params%xps_n_samples,&
                             & sim_exp_pred, x_i_exp, y_i_exp,&
-                            & x_i_pred, y_i_pred, .false. )
+                            & x_i_pred, y_i_pred, .false., params%similarity_type )
 
                        if (sim_exp_pred > sim_exp_prev)then
                           p_accept = 1.d0
@@ -2772,7 +2772,7 @@ program turbogap
                             &%local_property_models(xids_lp)%data, local_properties(:,core_be_lp_index),&
                             & params%xps_sigma, params%xps_n_samples, sim_exp_pred,&
                             & x_i_exp, y_i_exp, x_i_pred, y_i_pred,&
-                            & .true. )
+                            & .true., params%similarity_type )
                        sim_exp_prev = sim_exp_pred
                     end if
 

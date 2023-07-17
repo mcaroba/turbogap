@@ -490,7 +490,7 @@ module xps_utils
     subroutine compare_exp_to_pred_spectra(data, core_electron_be, &
          & sigma, n_samples, sim_exp_pred,&
          & x_i_exp, y_i_exp, x_i_pred, y_i_pred,&
-         & get_exp )
+         & get_exp, similarity_type )
       implicit none
       real*8, allocatable, intent(in) :: data(:,:)
       real*8, intent(in) :: sigma, core_electron_be(:)
@@ -499,6 +499,7 @@ module xps_utils
       real*8, intent(out) :: sim_exp_pred
       integer, intent(in) :: n_samples
       logical, intent(in) :: get_exp
+      character*32, intent(in) :: similarity_type
 
       if (get_exp)then
          ! Get interpolated experimental spectra
@@ -513,7 +514,11 @@ module xps_utils
            & .true.)
 
       ! Now get the similarity
-      sim_exp_pred = (x_i_exp(2) - x_i_exp(1) ) * dot_product(y_i_exp, y_i_pred)
+      if (similarity_type == "lsquares")then
+         sim_exp_pred = 1.0d0 - (x_i_exp(2) - x_i_exp(1) ) * dot_product(y_i_exp - y_i_pred, y_i_exp - y_i_pred)
+      else
+         sim_exp_pred = (x_i_exp(2) - x_i_exp(1) ) * dot_product(y_i_exp, y_i_pred)
+      end if
 
     end subroutine compare_exp_to_pred_spectra
 

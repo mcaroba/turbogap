@@ -841,6 +841,9 @@ end if
       else if(keyword=='print_lp_forces')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%print_lp_forces
+      else if(keyword=='similarity_type')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%similarity_type
       else if(keyword=='write_xyz')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%write_xyz
