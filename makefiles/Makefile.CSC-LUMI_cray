@@ -1,0 +1,34 @@
+# Copyright (c) 2020-2021 by Albert Bartók and Miguel Caro
+
+# This is an important note for those building TurboGAP on CSC's Mahti
+# supercomputer with this Makefile. Before compiling, make sure you have
+# loaded the correct module environment:
+#
+#     module reset
+#     module load gcc
+#     module load openblas
+#     module load openmpi
+#     module load cuda
+#
+# When you run TurboGAP, make sure to load this same environment at the top
+# of your Slurm submission script.
+
+# User-modifiable variables below
+
+# Compiler, preprocessor directives, etc.
+F90=ftn # -hlist=m
+CU=hipcc -munsafe-fp-atomics #-save-temps #  #-ffp-model=precise #-munsafe-fp-atomics
+PP=-e Z -D _MPIF90
+F90_MOD_DIR_OPT=-J
+
+# Optimization flags (uncomment second option to enable debugging tools)
+F90_OPTS= -fPIC -O3 -L/appl/lumi/SW/LUMI-22.08/G/EB/rocm/5.3.3/lib -lamdhip64 -lhipblas -lhiprand
+CUDA_OPTS=   -I/appl/lumi/SW/LUMI-22.08/G/EB/rocm/5.3.3/include -L/appl/lumi/SW/LUMI-22.08/G/EB/rocm/5.3.3/lib -lhipblas -lhiprand --offload-arch=gfx90a
+# gdwarf-4 needed for getting line information when sampling 
+#F90_OPTS+= -gdwarf-4
+#CUDA_OPTS+= -Xcompiler -gdwarf-4 
+#CUDA_OPTS+= -g -G 
+#F90_OPTS+= -pg -fPIC -O3 -fcheck=bounds -g -fcheck=all   -fbacktrace #-Wall
+
+# BLAS and LAPACK libraries
+LIBS= -L/opt/cray/pe/libsci/22.12.1.1/CRAY/9.0/x86_64/lib -lsci_cray
