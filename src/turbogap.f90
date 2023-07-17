@@ -1696,9 +1696,9 @@ program turbogap
               if (.not. params%do_mc )then
                  call write_local_property_data(x_i_exp, y_i_pred, md_istep == 0, "xps_prediction.dat")
                  call write_local_property_data(x_i_exp, y_i_exp, md_istep == 0, "xps_exp.dat")
-              else
-                 call write_local_property_data(x_i_exp, y_i_pred, mc_istep == 0, "xps_prediction.dat" )
-                 call write_local_property_data(x_i_exp, y_i_exp, mc_istep == 0, "xps_exp.dat" )
+              ! else
+              !    call write_local_property_data(x_i_exp, y_i_pred, mc_istep == 0, "xps_prediction.dat" )
+              !    call write_local_property_data(x_i_exp, y_i_exp, mc_istep == 0, "xps_exp.dat" )
               end if
            end if
 
@@ -2680,10 +2680,21 @@ program turbogap
                        open(unit=200, file="mc.log", status="old", position="append")
                     end if
 
-                    write(200, "(I8, 1X, A, 1X, L4, 1X, F20.8, 1X, F20.8, 1X, I8, 1X, I8, 1X)") &
-                         mc_istep, mc_move, p_accept > ranf, energy + E_kinetic, &
-                         images(i_current_image)%energy + images(i_current_image)%e_kin, &
-                         images(i_trial_image)%n_sites, n_mc_species
+                    if ( .not. params%mc_opt_spectra )then
+                       write(200, "(I8, 1X, A, 1X, L4, 1X, F20.8, 1X, F20.8, 1X, I8, 1X, I8, 1X)") &
+                            mc_istep, mc_move, p_accept > ranf, energy + E_kinetic, &
+                            images(i_current_image)%energy + images(i_current_image)%e_kin, &
+                            images(i_trial_image)%n_sites, n_mc_species
+                    else
+                       write(200, "(I8, 1X, A, 1X, L4, 1X, L4, 1X, F20.8, 1X,  F20.8, 1X, F20.8, 1X,&
+                            & F20.8, 1X, I8, 1X, I8, 1X)") mc_istep, mc_move,&
+                            & p_accept > ranf, sim_exp_pred > sim_exp_prev, sim_exp_pred,&
+                            & sim_exp_prev , energy + E_kinetic,&
+                            & images(i_current_image)%energy +&
+                            & images(i_current_image)%e_kin,&
+                            & images(i_trial_image)%n_sites,&
+                            & n_mc_species
+                    end if
 
                     close(200)
 

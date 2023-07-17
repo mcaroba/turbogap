@@ -513,7 +513,7 @@ module xps_utils
            & .true.)
 
       ! Now get the similarity
-      sim_exp_pred = dot_product(y_i_exp, y_i_pred)
+      sim_exp_pred = (x_i_exp(2) - x_i_exp(1) ) * dot_product(y_i_exp, y_i_pred)
 
     end subroutine compare_exp_to_pred_spectra
 

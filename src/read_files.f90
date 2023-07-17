@@ -800,13 +800,7 @@ end if
       else if(keyword=='mc_hybrid_opt')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_hybrid_opt
-      else if(keyword=='n_exp_opt')then
-        backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%n_exp_opt
-      else if(keyword=='do_exp_opt')then
-        backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%do_exp_opt
-      else if(keyword=='mc_acceptance')then
+     else if(keyword=='mc_acceptance')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, (params%mc_acceptance(nw),nw=1,params%n_mc_types)
         ! The acceptance probability is based on this sum and normalised

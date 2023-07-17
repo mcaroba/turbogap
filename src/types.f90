@@ -110,7 +110,7 @@ module types
     integer :: md_nsteps = 1, mc_nsteps = 1, write_xyz = 0, write_thermo = 1, which_atom = 0, &
                vdw_mbd_nfreq = 11, n_mc_types = 0, n_nested = 0,&
                & mc_idx = 1, mc_nrelax=0, n_local_properties=0,&
-               & xps_n_samples=200, n_moments=0. n_mc_swaps = 0
+               & xps_n_samples=200, n_moments=0, n_mc_swaps = 0
     integer, allocatable :: mc_swaps_id(:)
 
     character*1024 :: atoms_file

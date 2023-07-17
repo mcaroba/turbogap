@@ -356,7 +356,7 @@ module mc
          & length_prev, l_prop, ranf, ranv(1:3), kB = 8.6173303d-5
     real*8, intent(inout) :: disp(1:3), mc_min_dist, d_disp,&
          & E_kinetic, instant_temp, t_beg
-
+    integer, intent(in) :: n_lp
     integer, intent(inout) :: n_mc_species, n_sites, md_istep, mc_id, n_mc_swaps
     integer, allocatable, intent(inout) :: species(:), mc_swaps_id(:)
     integer, allocatable, intent(in) ::  im_species(:)
