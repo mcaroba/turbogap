@@ -51,7 +51,8 @@ module gap_interface
                           xyz_species, xyz_species_supercell, alphas, Qs, all_atoms, &
                           which_atom, indices, soap, soap_cart_der, der_neighbors, der_neighbors_list, &
                           has_vdw, vdw_Qs, vdw_alphas, vdw_zeta, vdw_delta, vdw_V0, &
-                          energies0, forces0, hirshfeld_v0, hirshfeld_v_cart_der0, virial, solo_time_soap, time_get_soap )
+                          energies0, forces0, hirshfeld_v0, hirshfeld_v_cart_der0, virial, solo_time_soap, &
+                          time_get_soap) !,cublas_handle )
 
     implicit none
 
@@ -95,10 +96,12 @@ module gap_interface
     real*8 :: time1, time2
     real*8 :: ttt(2)
     type(c_ptr) :: soap_cart_der_d, soap_d
+    type(c_ptr) :: cublas_handle, gpu_stream
 
     call mpi_comm_rank(MPI_COMM_WORLD, rank, ierr)
-    call gpu_set_device(rank) ! Every node has 4 GPUs. Even if there are more than 1 nodes used. This will assing the ranks to GPU in a roundbin fashion
-
+    ! call gpu_set_device(rank) ! Every node has 4 GPUs. Even if there are more than 1 nodes used. This will assing the ranks to GPU in a roundbin fashion
+    
+    call create_cublas_handle(cublas_handle, gpu_stream)
     n_sites_supercell = size(xyz_species_supercell)
 
 
@@ -204,7 +207,7 @@ module gap_interface
           k = k + 1
 !         We fold neighbors in the supercell back to the central unit cell
           j3 = mod(neighbors_list0(k)-1, n_total_sites)+1
-          if( rjs0(k) < rcut_max .and. species_multiplicity_supercell(j3) > 0 )then
+          if( rjs0(k) <= rcut_max .and. species_multiplicity_supercell(j3) > 0 )then
             j2 = j2 + 1
             k2 = k2 + 1
             rjs(k2) = rjs0(k)
@@ -248,7 +251,7 @@ module gap_interface
                     atom_sigma_r, atom_sigma_r_scaling, atom_sigma_t, atom_sigma_t_scaling, &
                     amplitude_scaling, radial_enhancement, central_weight, basis, scaling_mode, do_timing, &
                     do_derivatives, compress_soap, compress_soap_indices, soap, soap_cart_der, time_get_soap, &
-                    soap_d,  soap_cart_der_d)
+                    soap_d,  soap_cart_der_d, gpu_stream)
 !      call cpu_time(ttt(2))
     end if
 
@@ -299,7 +302,7 @@ module gap_interface
         call get_soap_energy_and_forces(soap, soap_cart_der, alphas, delta, zeta, 0.d0, Qs, &
                                         n_neigh, neighbors_list, xyz, do_forces, do_timing, &
                                         energies, forces, virial, solo_time_soap,  &
-                                         soap_d,  soap_cart_der_d)
+                                        soap_d,  soap_cart_der_d, cublas_handle, gpu_stream)
       end if
 
       do i = 1, n_sites
@@ -359,7 +362,7 @@ module gap_interface
     if( do_derivatives .and. .not. write_derivatives )then
       deallocate( soap_cart_der )
     end if
-
+  call destroy_cublas_handle(cublas_handle, gpu_stream)
   end subroutine
 !**************************************************************************
 

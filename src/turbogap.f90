@@ -128,6 +128,7 @@ program turbogap
                           n_sparse_mpi_angle_3b(:), n_mpi_core_pot(:), vdw_n_sparse_mpi_soap_turbo(:), &
                           n_neigh_local(:)
   logical, allocatable :: compress_soap_mpi(:)
+  type(c_ptr) :: cublas_handle
 !**************************************************************************
 
 ! integer :: n_ii,i_ii, j_jj,k_ii
@@ -169,6 +170,9 @@ program turbogap
 !**************************************************************************
 
 
+
+  call gpu_set_device(rank) 
+  !call create_cublas_handle(cublas_handle)
 
 
 ! write(*,*) "Starting dummy kernel"
@@ -1080,7 +1084,7 @@ program turbogap
                             soap_turbo_hypers(i)%has_vdw, soap_turbo_hypers(i)%vdw_Qs, soap_turbo_hypers(i)%vdw_alphas, &
                             soap_turbo_hypers(i)%vdw_zeta, soap_turbo_hypers(i)%vdw_delta, soap_turbo_hypers(i)%vdw_V0, &
                             this_energies, this_forces, this_hirshfeld_v_pt, this_hirshfeld_v_cart_der_pt, &
-                            this_virial, solo_time_soap, time_get_soap)
+                            this_virial, solo_time_soap, time_get_soap) !, cublas_handle)
 
           energies_soap = energies_soap + this_energies
           if( soap_turbo_hypers(i)%has_vdw )then
@@ -1092,6 +1096,12 @@ program turbogap
           if( params%do_forces )then
             forces_soap = forces_soap + this_forces
             virial_soap = virial_soap + this_virial
+            
+            ! write(*,*) 
+            ! write(*,*) this_virial(1,:)
+            ! write(*,*) this_virial(2,:)
+            ! write(*,*) this_virial(3,:) 
+            ! write(*,*)
           end if
         end do
         !call cpu_time(soap_time_soap(2))
@@ -1857,6 +1867,7 @@ end if
   if( allocated(angle_3b_hypers) )deallocate(angle_3b_hypers)
   if( allocated(core_pot_hypers) )deallocate(core_pot_hypers)
 
+  !call destroy_cublas_handle(cublas_handle)
   call gpu_device_reset()
 
 ! write(*,*) "Starting dummy kernel"

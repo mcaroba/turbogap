@@ -16,21 +16,19 @@
 # User-modifiable variables below
 
 # Compiler, preprocessor directives, etc.
-F90=mpif90
-CU=nvcc
-PP=-cpp -D _MPIF90
+F90=ftn -hlist=m
+CU=hipcc -munsafe-fp-atomics #-save-temps #  #-ffp-model=precise #-munsafe-fp-atomics
+PP=-e Z -D _MPIF90
 F90_MOD_DIR_OPT=-J
 
 # Optimization flags (uncomment second option to enable debugging tools)
-F90_OPTS= -fPIC -O2 -lcudart   -lcublas -lcurand  #-ffpe-trap=invalid,zero,overflow #-Wall -Wuninitialized
-CUDA_OPTS=  -lcublas -lcurand -arch=sm_80 --ptxas-options=-v
+F90_OPTS= -fPIC -O3 -L/appl/lumi/SW/LUMI-22.08/G/EB/rocm/5.3.3/lib -lamdhip64 -lhipblas -lhiprand
+CUDA_OPTS=   -I/appl/lumi/SW/LUMI-22.08/G/EB/rocm/5.3.3/include -L/appl/lumi/SW/LUMI-22.08/G/EB/rocm/5.3.3/lib -lhipblas -lhiprand --offload-arch=gfx90a
 # gdwarf-4 needed for getting line information when sampling 
 #F90_OPTS+= -gdwarf-4
 #CUDA_OPTS+= -Xcompiler -gdwarf-4 
 #CUDA_OPTS+= -g -G 
-#F90_OPTS+= -g -ffpe-trap=zero,invalid,overflow,underflow -Wall -Wextra -Warray-temporaries -Wconversion -fimplicit-none -fbacktrace -ffree-line-length-0 -fcheck=all  -finit-real=nan
-
-#F90_OPTS+= -fbacktrace -fcheck=bounds -g -fcheck=all   -fbacktrace -Wall
+#F90_OPTS+= -pg -fPIC -O3 -fcheck=bounds -g -fcheck=all   -fbacktrace #-Wall
 
 # BLAS and LAPACK libraries
-LIBS= -lopenblas
+LIBS= -L/opt/cray/pe/libsci/22.12.1.1/CRAY/9.0/x86_64/lib -lsci_cray
