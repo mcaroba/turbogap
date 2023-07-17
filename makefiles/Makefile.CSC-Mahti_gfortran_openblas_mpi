@@ -22,13 +22,15 @@ PP=-cpp -D _MPIF90
 F90_MOD_DIR_OPT=-J
 
 # Optimization flags (uncomment second option to enable debugging tools)
-F90_OPTS= -fPIC -O2 -lcudart   -lcublas -lcurand 
+F90_OPTS= -fPIC -O2 -lcudart   -lcublas -lcurand  #-ffpe-trap=invalid,zero,overflow #-Wall -Wuninitialized
 CUDA_OPTS=  -lcublas -lcurand -arch=sm_80 --ptxas-options=-v
 # gdwarf-4 needed for getting line information when sampling 
 #F90_OPTS+= -gdwarf-4
 #CUDA_OPTS+= -Xcompiler -gdwarf-4 
-CUDA_OPTS+= -g -G 
-F90_OPTS+= -pg -fPIC -O3 -fcheck=bounds -g -fcheck=all   -fbacktrace #-Wall
+#CUDA_OPTS+= -g -G 
+#F90_OPTS+= -g -ffpe-trap=zero,invalid,overflow,underflow -Wall -Wextra -Warray-temporaries -Wconversion -fimplicit-none -fbacktrace -ffree-line-length-0 -fcheck=all  -finit-real=nan
+
+#F90_OPTS+= -fbacktrace -fcheck=bounds -g -fcheck=all   -fbacktrace -Wall
 
 # BLAS and LAPACK libraries
 LIBS= -lopenblas
