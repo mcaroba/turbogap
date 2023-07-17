@@ -7,7 +7,8 @@
 ! HND X   TurboGAP is published and distributed under the
 ! HND X      Academic Software License v1.0 (ASL)
 ! HND X
-! HND X   This file, turbogap.f90, is copyright (c) 2019-2023, Miguel A. Caro
+! HND X   This file, turbogap.f90, is copyright (c) 2019-2023, Miguel A. Caro and
+! HND X   Tigany Zarrouk
 ! HND X
 ! HND X   TurboGAP is distributed in the hope that it will be useful for non-commercial
 ! HND X   academic research, but WITHOUT ANY WARRANTY; without even the implied
@@ -79,7 +80,7 @@ program turbogap
 
   real*8, allocatable :: all_energies(:,:), all_forces(:,:,:), all_virial(:,:,:)
   real*8, allocatable :: all_this_energies(:,:), all_this_forces(:,:,:), all_this_virial(:,:,:)
-  real*8 :: instant_temp, kB = 8.6173303d-5, E_kinetic, time1, time2, time3, time_neigh, &
+  real*8 :: instant_temp, kB = 8.6173303d-5, E_kinetic=0.d0, E_kinetic_prev, time1, time2, time3, time_neigh, &
        time_gap, time_soap(1:3), time_2b(1:3), time_3b(1:3), time_read_input(1:3), time_read_xyz(1:3), &
        time_mpi(1:3) = 0.d0, time_core_pot(1:3), time_vdw(1:3), instant_pressure, lv(1:3,1:3), &
        time_mpi_positions(1:3) = 0.d0, time_mpi_ef(1:3) = 0.d0, time_md(3) = 0.d0, &
@@ -107,7 +108,7 @@ program turbogap
   integer :: iostatus, counter = 0, counter2
   integer :: which_atom = 0, n_species = 1, n_xyz, indices(1:3)
   integer :: radial_enhancement = 0
-  integer :: md_istep, mc_istep, mc_id, n_mc, n_mc_species
+  integer :: md_istep, mc_istep, mc_id=1, n_mc, n_mc_species
 
   character*1024, allocatable ::  local_property_labels(:), local_property_labels_temp(:)
   logical :: repeat_xyz = .true., overwrite = .false., check_species, valid_local_properties=.false.
@@ -117,7 +118,7 @@ program turbogap
   character*64 :: keyword
   character*16 :: lattice_string(1:9)
   character*8 :: i_char
-  character*8, allocatable :: species_types(:), xyz_species(:), xyz_species_supercell(:), &
+  character*8, allocatable ::  xyz_species(:), xyz_species_supercell(:), &
        species_type_temp(:)
 
   character*1 :: keyword_first
@@ -210,44 +211,45 @@ program turbogap
 #ifdef _MPIF90
   IF( rank == 0 )THEN
 #endif
-     write(*,*)'_________________________________________________________________ '
-     write(*,*)'                             _                                   \'
-     write(*,*)' ___________            __   \\ /\        _____     ___   _____  |'
-     write(*,*)'/____  ____/           / / /\|*\|*\/\    / ___ \   /   | |  _  \ |'
-     write(*,*)'    / / __  __  __    / /  \********/   / /  /_/  / /| | | / | | |'
-     write(*,*)'   / / / / / / / /_  / /__  \**__**/   / / ____  / / | | | |_/ / |'
-     write(*,*)'  / / / / / / / __/ / ___ \ /*/  \*\  / / /_  / / /__| | |  __/  |'
-     write(*,*)' / / / /_/ / / /   / /__/ / \ \__/ / / /___/ / / ____  | | |     |'
-     write(*,*)'/_/_/_____/_/_/___/______/___\____/__\______/_/_/____|_|_|_|____ |'
-     write(*,*)'_____________________________________________________________  / |'
-     write(*,*)'*************************************************************|/  |'
-     write(*,*)'                     Welcome to TurboGAP v0.1                    |'
-     write(*,*)'                    Written and maintained by                    |'
-     write(*,*)'                                                                 |'
-     write(*,*)'                         Miguel A. Caro                          |'
-     write(*,*)'                       mcaroba@gmail.com                         |'
-     write(*,*)'                      miguel.caro@aalto.fi                       |'
-     write(*,*)'                                                                 |'
-     write(*,*)'          Department of Chemistry and Materials Science          |'
-     write(*,*)'                     Aalto University, Finland                   |'
-     write(*,*)'                                                                 |'
-     write(*,*)'.................................................................|'
-     write(*,*)'                                                                 |'
-     write(*,*)'====================>>>>>  turbogap.fi  <<<<<====================|'
-     write(*,*)'                                                                 |'
-     write(*,*)'.................................................................|'
-     write(*,*)'                                                                 |'
-     write(*,*)'Contributors (code and methodology) in chronological order:      |'
-     write(*,*)'                                                                 |'
-     write(*,*)'Miguel A. Caro, Patricia Hernández-León, Suresh Kondati          |'
-     write(*,*)'Natarajan, Albert P. Bartók, Eelis V. Mielonen, Heikki Muhli     |'
-     write(*,*)'Mikhail Kuklin, Gábor Csányi, Jan Kloppenburg, Richard Jana      |'
-     write(*,*)'Tigany Zarrouk                                                   |'
-     write(*,*)'.................................................................|'
-     write(*,*)'                                                                 |'
-     write(*,*)'                     Last updated: Mar. 2023                     |'
-     write(*,*)'                                        _________________________/'
-     write(*,*)'.......................................|'
+  write(*,*)'_________________________________________________________________ '
+  write(*,*)'                             _                                   \'
+  write(*,*)' ___________            __   \\ /\        _____     ___   _____  |'
+  write(*,*)'/____  ____/           / / /\|*\|*\/\    / ___ \   /   | |  _  \ |'
+  write(*,*)'    / / __  __  __    / /  \********/   / /  /_/  / /| | | / | | |'
+  write(*,*)'   / / / / / / / /_  / /__  \**__**/   / / ____  / / | | | |_/ / |'
+  write(*,*)'  / / / / / / / __/ / ___ \ /*/  \*\  / / /_  / / /__| | |  __/  |'
+  write(*,*)' / / / /_/ / / /   / /__/ / \ \__/ / / /___/ / / ____  | | |     |'
+  write(*,*)'/_/_/_____/_/_/___/______/___\____/__\______/_/_/____|_|_|_|____ |'
+  write(*,*)'_____________________________________________________________  / |'
+  write(*,*)'*************************************************************|/  |'
+  write(*,*)'                  Welcome to the TurboGAP code                   |'
+  write(*,*)'                         Maintained by                           |'
+  write(*,*)'                                                                 |'
+  write(*,*)'                         Miguel A. Caro                          |'
+  write(*,*)'                       mcaroba@gmail.com                         |'
+  write(*,*)'                      miguel.caro@aalto.fi                       |'
+  write(*,*)'                                                                 |'
+  write(*,*)'          Department of Chemistry and Materials Science          |'
+  write(*,*)'                     Aalto University, Finland                   |'
+  write(*,*)'                                                                 |'
+  write(*,*)'.................................................................|'
+  write(*,*)'                                                                 |'
+  write(*,*)'====================>>>>>  turbogap.fi  <<<<<====================|'
+  write(*,*)'                                                                 |'
+  write(*,*)'.................................................................|'
+  write(*,*)'                                                                 |'
+  write(*,*)'Contributors (code and methodology) in chronological order:      |'
+  write(*,*)'                                                                 |'
+  write(*,*)'Miguel A. Caro, Patricia Hernández-León, Suresh Kondati          |'
+  write(*,*)'Natarajan, Albert P. Bartók, Eelis V. Mielonen, Heikki Muhli,    |'
+  write(*,*)'Mikhail Kuklin, Gábor Csányi, Jan Kloppenburg, Richard Jana,     |'
+  write(*,*)'Tigany Zarrouk                                                   |'
+  write(*,*)'                                                                 |'
+  write(*,*)'.................................................................|'
+  write(*,*)'                                                                 |'
+  write(*,*)'                     Last updated: June. 2023                     |'
+  write(*,*)'                                        _________________________/'
+  write(*,*)'.......................................|'
 #ifdef _MPIF90
      write(*,*)'                                       |'
      write(*,*)'Running TurboGAP with MPI support:     |'
@@ -1043,13 +1045,35 @@ program turbogap
         n_pos = size(positions,2)
         n_sp = size(xyz_species,1)
         n_sp_sc = size(xyz_species_supercell,1)
+        if ( params%do_mc .and. (mc_move /= "md" .or. md_istep == 0) .and. params%mc_hamiltonian )then
+           if(mc_istep > 0) E_kinetic_prev = E_kinetic
+           call random_number( velocities )
+           call remove_cm_vel(velocities(1:3,1:n_sites), masses(1:n_sites))
+           E_kinetic = 0.d0
+           do i = 1, n_sites
+              E_kinetic = E_kinetic + 0.5d0 * masses(i) * dot_product(velocities(1:3, i), velocities(1:3, i))
+           end do
+           instant_temp = 2.d0/3.d0/dfloat(n_sites-1)/kB*E_kinetic
+           velocities = velocities * dsqrt(params%t_beg/instant_temp)
+           if (mc_istep > 0)then
+              E_kinetic = E_kinetic_prev
+              instant_temp = 2.d0/3.d0/dfloat(n_sites-1)/kB*E_kinetic
+              ! Reversing as we want it to be at the instant temp and not at t_beg
+              velocities = velocities * dsqrt(instant_temp / params%t_beg)
+           else
+              E_kinetic = E_kinetic * params%t_beg/instant_temp
+           end if
+        end if
+
      END IF
      call cpu_time(time_mpi(1))
      call mpi_bcast(n_pos, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(n_sp, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(n_sp_sc, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+     call mpi_bcast(n_sites, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call cpu_time(time_mpi(2))
      time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
+
      IF( rank /= 0 )THEN
         if(allocated(positions))deallocate(positions)
         allocate( positions(1:3, n_pos) )
@@ -1059,8 +1083,8 @@ program turbogap
            !      allocate( masses(n_pos) )
            if(allocated( masses ))deallocate( masses )
            allocate( masses(1:n_sp) )
-           if(allocated( fix_atom ))deallocate( fix_atom )
-           allocate( fix_atom(1:3, 1:n_sp) )
+           ! if(allocated( fix_atom ))deallocate( fix_atom )
+           ! allocate( fix_atom(1:3, 1:n_sp) )
         end if
         if(allocated( xyz_species ))deallocate( xyz_species )
         allocate( xyz_species(1:n_sp) )
@@ -1071,12 +1095,12 @@ program turbogap
         if(allocated( species_supercell ))deallocate( species_supercell )
         allocate( species_supercell(1:n_sp_sc) )
         if(allocated( fix_atom ))deallocate( fix_atom )
-        allocate( fix_atom(1:3,1:n_pos) )
+        allocate( fix_atom(1:3,1:n_sp) )
 
      END IF
      call cpu_time(time_mpi_positions(1))
      call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-     if( params%do_md .or. params%do_nested_sampling .or. params%do_mc )then
+     if( params%do_md .or. params%do_nested_sampling .or. params%do_mc .or. params%mc_hamiltonian)then
         call mpi_bcast(velocities, 3*n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
         call mpi_bcast(masses, n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
         call mpi_bcast(fix_atom, 3*n_sp, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
@@ -1089,7 +1113,6 @@ program turbogap
      call mpi_bcast(a_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(b_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(c_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-     call mpi_bcast(n_sites, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call cpu_time(time_mpi_positions(2))
      time_mpi_positions(3) = time_mpi_positions(3) + time_mpi_positions(2) - time_mpi_positions(1)
 #endif
@@ -2222,7 +2245,7 @@ program turbogap
                    & params %write_local_properties,&
                    & local_property_labels, local_properties,&
                    & fix_atom(1:3, 1:n_sites), "trajectory_out.xyz",&
-                   & .false. )
+                   & md_istep == 0 )
            else if( md_istep == params%md_nsteps .and. params%do_nested_sampling )then
               write(cjunk,'(I8)') i_image
               write(filename,'(A,A,A)') "walkers/", trim(adjustl(cjunk)), ".xyz"
@@ -2520,10 +2543,15 @@ program turbogap
               end if
 
 
-              if ( .not. exit_loop .and. ( (params%do_mc .and. (md_istep == params%md_nsteps) &
-                   .and. mc_move == "md" )&
+              if ( .not. exit_loop .and. &
+                   ( &
+                   (params%do_mc .and. (md_istep == params%md_nsteps) &
+                   .and. mc_move == "md" ) .or. &
+                   (params%do_mc .and. (abs(energy-energy_prev) < params%e_tol*dfloat(n_sites)) .and. &
+                   (maxval(forces) < params%f_tol) .and. (mc_move == "md" .or. params%mc_relax) .and. &
+                   md_istep > 0) &
                    .or. ((params%do_mc .and. params%mc_relax .and.  &
-                   (md_istep == params%mc_nrelax ) ))&
+                            (md_istep == params%mc_nrelax ) ))&
                    .or. (params%do_mc .and. (md_istep == -1) ) ))then
                  !       Now we do a monte-carlo step: we choose what the steps are from the available list and then choose a random number
                  !       -- We have the list of move types in params%mc_types and the number params%n_mc_types --
@@ -2542,6 +2570,8 @@ program turbogap
                     end if
 
 
+                    if (.not. params%mc_hamiltonian) E_kinetic = 0.d0
+
                     call from_properties_to_image(images(i_trial_image), positions, velocities, masses, &
                          forces, a_box, b_box, c_box,  energy, energies, E_kinetic, &
                          species, species_supercell, n_sites, indices, fix_atom, &
@@ -2550,19 +2580,24 @@ program turbogap
                     write(*,*)'.......................................|'
                     write(*,'(A,1X,I0)')   ' MC Iteration:', mc_istep
                     write(*,'(A,1X,A)')    '    Move type:', mc_move
-                    write(*,'(A,1X,F22.8)')'    Etot_prev:', images(i_current_image)%energy
-                    write(*,'(A,1X,F22.8)')'    Etot_new :', images(i_trial_image)%energy
+                    write(*,'(A,1X,F22.8)')'    Etot_prev:', images(i_current_image)%energy + images(i_current_image)%e_kin
+                    write(*,'(A,1X,F22.8)')'    Etot_new :', images(i_trial_image)%energy + images(i_trial_image)%e_kin
 
                     v_uc = dot_product( cross_product(a_box, b_box), c_box ) / (dfloat(indices(1)*indices(2)*indices(3)))
 
 
 
-                    call get_mc_acceptance(mc_move, p_accept, energy, images(i_current_image)%energy, params%t_beg, &
+                    call get_mc_acceptance(mc_move, p_accept, &
+                         energy + E_kinetic, &
+                         images(i_current_image)%energy + images(i_current_image)%e_kin, &
+                         params%t_beg, &
                          params%mc_mu, n_mc_species, v_uc, v_uc_prev, params%masses_types(mc_id), params%p_beg)
 
 
                     call random_number(ranf)
 
+                    if (mc_move == "insertion") n_mc_species = n_mc_species +1
+                    if (mc_move == "removal"  ) n_mc_species = n_mc_species -1
 
                     ! Here, put in the optimize xps spectra
                     if (params%mc_opt_spectra .and. valid_xps)then
@@ -2589,8 +2624,6 @@ program turbogap
                          'accepted?', p_accept > ranf, ' p_accept =', p_accept, ' ranf = ', ranf
                     if (p_accept > ranf)then
                        !             Accept
-                       if (mc_move == "insertion") n_mc_species = n_mc_species +1
-                       if (mc_move == "removal"  ) n_mc_species = n_mc_species -1
 
                        if ((mc_istep == 0 .or. mc_istep == params%mc_nsteps .or. &
                             modulo(mc_istep, params%write_xyz) == 0))then
@@ -2648,7 +2681,8 @@ program turbogap
                     end if
 
                     write(200, "(I8, 1X, A, 1X, L4, 1X, F20.8, 1X, F20.8, 1X, I8, 1X, I8, 1X)") &
-                         mc_istep, mc_move, p_accept > ranf, energy, images(i_current_image)%energy, &
+                         mc_istep, mc_move, p_accept > ranf, energy + E_kinetic, &
+                         images(i_current_image)%energy + images(i_current_image)%e_kin, &
                          images(i_trial_image)%n_sites, n_mc_species
 
                     close(200)
@@ -2679,6 +2713,11 @@ program turbogap
                     do i = 1, params%n_mc_types
                        write(*,'(1X,A,1X,F12.8,1X,A)') '   ', params%mc_acceptance(i), '                      |'
                     end do
+                    write(*,'(1X,A,1X,I8,1X,A)')    'n_mc_swaps    = ', params%n_mc_swaps, '             |'
+                    write(*,'(1X,A)') 'mc_swaps:                              |'
+                    do i = 1, 2*params%n_mc_swaps
+                       write(*,'(1X,A,1X,A,1X,A)') '   ', params%mc_swaps(i), '                      |'
+                    end do
                     write(*,'(1X,A,1X,F17.8,1X,A)') 'mc_move_max   = ', params%mc_move_max,  'A   |'
                     write(*,'(1X,A,1X,F17.8,1X,A)') 'mc_mu         = ', params%mc_mu,        'eV  |'
                     write(*,'(1X,A,1X,A,1X,A)')     'mc_species    = ', trim(params%mc_species),   '                    |'
@@ -2703,6 +2742,8 @@ program turbogap
                     do i = 1, n_species
                        if (params%species_types(i) == params%mc_species ) mc_id=i
                     end do
+
+
 
                     !       Now use the image construct to store this as the image to compare to
                     call from_properties_to_image(images(i_current_image), positions, velocities, masses, &
@@ -2773,7 +2814,6 @@ program turbogap
 
                  end if
 
-
                  !  Now start the mc logic: first, use the stored images properties
                  call from_image_to_properties(images(i_current_image), positions, velocities, masses, &
                       forces, a_box, b_box, c_box, energy, energies, E_kinetic, &
@@ -2787,15 +2827,17 @@ program turbogap
                       images(i_current_image)%local_properties, energies,&
                       & forces, forces_prev, n_sites, n_mc_species,&
                       & mc_move, params %mc_species,&
-                      & params%mc_move_max, params%mc_min_dist, params&
+                      & params%mc_move_max, params%mc_min_dist, params%mc_lnvol_max, params&
                       &%mc_types, params%masses_types, species_idx,&
                       & images(i_current_image)%positions,&
                       & images(i_current_image)%species,&
                       & images(i_current_image)%xyz_species,&
                       & images(i_current_image)%fix_atom,&
-                      & images(i_current_image)%masses, a_box, b_box,&
-                      & c_box, indices, params%do_md, params%mc_relax,&
-                      & md_istep, mc_id, E_kinetic, instant_temp, params%t_beg )
+                      & images(i_current_image)%masses, a_box(1:3), b_box(1:3),&
+                      & c_box(1:3), indices, params%do_md, params%mc_relax,&
+                      & md_istep, mc_id, E_kinetic, instant_temp, params%t_beg,&
+                      & params%n_mc_swaps, params%mc_swaps, params%mc_swaps_id, &
+                      & params%species_types, params%mc_hamiltonian)
 
                  rebuild_neighbors_list = .true.
                  ! end if
@@ -2841,7 +2883,6 @@ program turbogap
                  end if
                  ! As we have moved/added/removed, we must check the supercell and  broadcast the results
 
-
                  call read_xyz(mc_file, .true., params%all_atoms, params%do_timing, &
                       n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
                       positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
@@ -2851,8 +2892,14 @@ program turbogap
 
               else
                  if( mc_move == 'md')then
-                    write(*,'(1X,A,1X,F20.8,1X,A,1X,I8,1X,A,1X,I8)')"Hybrid md step: energy = ", energy, &
-                         ", iteration ", md_istep, "/", params%md_nsteps
+                    if (params%mc_hamiltonian)then
+                       write(*,'(1X,A,1X,F20.8,1X,A,1X,I8,1X,A,1X,I8)')"Hybrid md step: H = T + V = ", energy + E_kinetic, &
+                            ", iteration ", md_istep, "/", params%md_nsteps
+                    else
+                       write(*,'(1X,A,1X,F20.8,1X,A,1X,I8,1X,A,1X,I8)')"Hybrid md step: energy = ", energy , &
+                            ", iteration ", md_istep, "/", params%md_nsteps
+                    end if
+
                     write(*,'(A,1X,F22.8,1X,A)')' SOAP energy:', sum(energies_soap), 'eV |'
                     write(*,'(A,1X,F24.8,1X,A)')' 2b energy:', sum(energies_2b), 'eV |'
                     write(*,'(A,1X,F24.8,1X,A)')' 3b energy:', sum(energies_3b), 'eV |'
@@ -2916,7 +2963,6 @@ program turbogap
         if( params%do_md .or. params%do_nested_sampling  .or. params%do_mc)then
            if(allocated(velocities))deallocate(velocities)
            allocate( velocities(1:3, n_sp) )
-           !      allocate( masses(n_pos) )
            if(allocated(masses))deallocate(masses)
            allocate( masses(1:n_sp) )
            if(allocated(fix_atom))deallocate(fix_atom)
@@ -2945,7 +2991,7 @@ program turbogap
      if( params%do_md .or. params%do_nested_sampling .or. params%do_mc )then
         call mpi_bcast(velocities, 3*n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
         call mpi_bcast(masses, n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(fix_atom, 3*n_pos, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(fix_atom, 3*n_sp, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
      end if
      call mpi_bcast(xyz_species, 8*n_sp, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(xyz_species_supercell, 8*n_sp_sc, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)

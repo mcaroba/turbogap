@@ -7,7 +7,8 @@
 ! HND X   TurboGAP is published and distributed under the
 ! HND X      Academic Software License v1.0 (ASL)
 ! HND X
-! HND X   This file, types.f90, is copyright (c) 2019-2022, Miguel A. Caro
+! HND X   This file, types.f90, is copyright (c) 2019-2022, Miguel A. Caro and
+! HND X   Tigany Zarrouk
 ! HND X
 ! HND X   TurboGAP is distributed in the hope that it will be useful for non-commercial
 ! HND X   academic research, but WITHOUT ANY WARRANTY; without even the implied
@@ -108,13 +109,15 @@ module types
 
     integer :: md_nsteps = 1, mc_nsteps = 1, write_xyz = 0, write_thermo = 1, which_atom = 0, &
                vdw_mbd_nfreq = 11, n_mc_types = 0, n_nested = 0,&
-               & mc_idx = 1, mc_nrelax=0, n_local_properties=0, xps_n_samples=200, n_moments=0
+               & mc_idx = 1, mc_nrelax=0, n_local_properties=0,&
+               & xps_n_samples=200, n_moments=0. n_mc_swaps = 0
+    integer, allocatable :: mc_swaps_id(:)
 
     character*1024 :: atoms_file
     character*1024, allocatable :: compute_local_properties(:)
     character*32 :: vdw_type = "none"
     character*32, allocatable ::  mc_types(:)
-    character*8, allocatable :: species_types(:)
+    character*8, allocatable :: species_types(:), mc_swaps(:)
     character*16 :: optimize = "vv", mc_relax_opt = "gd", mc_hybrid_opt = "vv"
     character*32 :: barostat = "none", thermostat = "none",&
          & barostat_sym = "isotropic", mc_species = "none",&
@@ -133,7 +136,7 @@ module types
          & variable_time_step = .false., vdw_mbd_grad = .false.,&
          & do_nested_sampling = .false., scale_box_nested = .false.,&
          & mc_write_xyz = .false., mc_relax = .false., mc_opt_spectra&
-         &=.false., optimize_exp_data=.false., print_lp_forces=.false.
+         &=.false., optimize_exp_data=.false., print_lp_forces=.false., mc_hamiltonian = .false.
     logical, allocatable :: write_local_properties(:)
 
   end type input_parameters

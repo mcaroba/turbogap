@@ -7,7 +7,8 @@
 ! HND X   TurboGAP is published and distributed under the
 ! HND X      Academic Software License v1.0 (ASL)
 ! HND X
-! HND X   This file, read_files.f90, is copyright (c) 2019-2023, Miguel A. Caro
+! HND X   This file, read_files.f90, is copyright (c) 2019-2023, Miguel A. Caro and
+! HND X   Tigany Zarrouk
 ! HND X
 ! HND X   TurboGAP is distributed in the hope that it will be useful for non-commercial
 ! HND X   academic research, but WITHOUT ANY WARRANTY; without even the implied
@@ -581,7 +582,7 @@ end if
     character*64 :: keyword, cjunk
     character*32 :: implemented_thermostats(1:3)
     character*32 :: implemented_barostats(1:2)
-    character*32 :: implemented_mc_types(1:6)
+    character*32 :: implemented_mc_types(1:8)
     character*2 :: element
     character*1 :: keyword_first
     logical :: are_vdw_refs_read(1:3), valid_choice, masses_in_input_file = .false.
@@ -599,6 +600,8 @@ end if
     implemented_mc_types(4) = "removal"
     implemented_mc_types(5) = "relax"
     implemented_mc_types(6) = "md"
+    implemented_mc_types(7) = "swap"
+    implemented_mc_types(7) = "volume"
 
     k = 0.d0
 
@@ -714,12 +717,41 @@ end if
         allocate( params%mc_types(1:params%n_mc_types) )
         allocate( params%mc_acceptance(1:params%n_mc_types) )
         params%mc_acceptance = 1.d0 / params%n_mc_types
+      else if(keyword=='n_mc_swaps')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%n_mc_swaps
+        allocate( params%mc_swaps(1:2*params%n_mc_swaps) )
+        allocate( params%mc_swaps_id(1:2*params%n_mc_swaps) )
+      else if(keyword=='mc_swaps')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, (params%mc_swaps(nw),nw=1,2*params%n_mc_swaps)
+        !       Need the check the implemented types
+        valid_choice = .false.
+        do j = 1, 2*params%n_mc_swaps
+           valid_choice = .false.
+           do i = 1, n_species
+              if( trim(params%species_types(i)) == trim(params%mc_swaps(j)) )then
+                 params%mc_swaps_id(i) = i
+                 valid_choice = .true.
+              end if
+           end do
+           if( .not. valid_choice )then
+              if( rank == 0 )then
+                 write(*,*) "ERROR -> Invalid mc_swaps species keyword:", params%mc_swaps(j)
+                 write(*,*) "This is a list of valid options:"
+                 write(*,*) params%species_types
+              end if
+              stop
+           end if
+        end do
+
       else if(keyword=='mc_types')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, (params%mc_types(nw),nw=1,params%n_mc_types)
         !       Need the check the implemented types
         valid_choice = .false.
         do j = 1, params%n_mc_types
+           call upper_to_lower_case(params%mc_types(j))
            valid_choice = .false.
            do i = 1, size(implemented_mc_types)
               if( trim(params%mc_types(j)) == trim(implemented_mc_types(i)) )then
@@ -753,6 +785,9 @@ end if
       else if(keyword=='mc_write_xyz')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_write_xyz
+      else if(keyword=='mc_hamiltonian')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_hamiltonian
       else if(keyword=='mc_relax')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_relax
@@ -765,6 +800,12 @@ end if
       else if(keyword=='mc_hybrid_opt')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_hybrid_opt
+      else if(keyword=='n_exp_opt')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%n_exp_opt
+      else if(keyword=='do_exp_opt')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%do_exp_opt
       else if(keyword=='mc_acceptance')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, (params%mc_acceptance(nw),nw=1,params%n_mc_types)
@@ -1184,6 +1225,23 @@ end if
                 write(*,*)'steps!!                                |'
              end if
           end if
+
+          if (params%mc_types(i) == "volume")then
+             if( params%p_beg == 1.0d0 )then
+                write(*,*)'                                       |'
+                write(*,*)'WARNING: p_beg is the default          |  <-- WARNING'
+                write(*,*)'value of 1.0 bar. For MC volume moves  |'
+                write(*,*)'please make sure this is specified!!   |'
+             end if
+           if( params%mc_lnvol_max == 0.01d0 )then
+                write(*,*)'                                       |'
+                write(*,*)'WARNING: mc_lnvol_max is the default   |  <-- WARNING'
+                write(*,*)'value of 0.01. For MC volume moves     |'
+                write(*,*)'please make sure this is specified!!   |'
+             end if
+
+          end if
+
 
        end do
 
