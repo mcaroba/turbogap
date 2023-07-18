@@ -25,7 +25,7 @@ F90_MOD_DIR_OPT=-J
 F90_OPTS= -fPIC -O3 -L/appl/lumi/SW/LUMI-22.08/G/EB/rocm/5.3.3/lib -lamdhip64 -lhipblas -lhiprand
 CUDA_OPTS=   -I/appl/lumi/SW/LUMI-22.08/G/EB/rocm/5.3.3/include -L/appl/lumi/SW/LUMI-22.08/G/EB/rocm/5.3.3/lib -lhipblas -lhiprand --offload-arch=gfx90a
 # gdwarf-4 needed for getting line information when sampling 
-#F90_OPTS+= -gdwarf-4
+#F90_OPTS+= -g # -gdwarf-4
 #CUDA_OPTS+= -Xcompiler -gdwarf-4 
 #CUDA_OPTS+= -g -G 
 #F90_OPTS+= -pg -fPIC -O3 -fcheck=bounds -g -fcheck=all   -fbacktrace #-Wall
