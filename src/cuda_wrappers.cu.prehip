@@ -1,16 +1,15 @@
-#include "hip/hip_runtime.h"
 // wrappers file
 // compile with:
 // rm cuda_wrappers.o; nvcc -lcublas -lcurand -arch=sm_80 src/cuda_wrappers.cu -c;
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
-#include <hip/hip_runtime.h>
-#include <hip/hip_runtime.h>
-#include <hipblas.h>
-#include <hiprand.h>
+#include <cuda.h>
+#include <cuda_runtime.h>
+#include <cublas_v2.h>
+#include <curand.h>
 #include <assert.h>
-#include <hip/hip_complex.h>
+#include <cuComplex.h>
 
 #define tpb 64 // optimize for best performance & check the effect on each kernel which used tpb for the shared memory
 #define tpb_get_soap_der_one 128
@@ -36,11 +35,11 @@ int counter=0;
 
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
-inline void gpuAssert(hipError_t code, const char *file, int line, bool abort=true)
+inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
 {
-   if (code != hipSuccess)
+   if (code != cudaSuccess)
    {
-      fprintf(stderr,"GPUassert: %s %s %d\n", hipGetErrorString(code), file, line);
+      fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
       if (abort) exit(code);
    }
 }
@@ -52,40 +51,40 @@ __global__ void vect_dble(double *a, int N)
 }
 
 
-extern "C" void cuda_malloc_all(void **a_d, size_t Np, hipStream_t *stream )
+extern "C" void cuda_malloc_all(void **a_d, size_t Np, cudaStream_t *stream )
 {
   
 
-  gpuErrchk(hipMallocAsync((void **) a_d,  Np ,stream[0]));
-  //gpuErrchk(hipMalloc((void **) a_d,  Np ));
-/*   hipError_t err;
-  hipDeviceSynchronize();
-  err = hipGetLastError();
-  if (err != hipSuccess) {
-    printf("CUDA error: %s\n", hipGetErrorString(err));
+  gpuErrchk(cudaMallocAsync((void **) a_d,  Np ,stream[0]));
+  //gpuErrchk(cudaMalloc((void **) a_d,  Np ));
+/*   cudaError_t err;
+  cudaDeviceSynchronize();
+  err = cudaGetLastError();
+  if (err != cudaSuccess) {
+    printf("CUDA error: %s\n", cudaGetErrorString(err));
 } */
    return;
 }
 
 extern "C" void cuda_malloc_all_blocking(void **a_d, size_t Np)
 {
-  gpuErrchk(hipMalloc( (void **) a_d,  Np ));
+  gpuErrchk(cudaMalloc( (void **) a_d,  Np ));
    return;
 }
 extern "C" void cuda_device_reset(){
-  hipDeviceReset();
+  cudaDeviceReset();
 }
 extern "C" void cuda_free(void **a_d)
 {
-  gpuErrchk(hipFree(*a_d));
+  gpuErrchk(cudaFree(*a_d));
    //printf("GPU memory freed \n");
    //hipDeviceReset();
    return;
 }
 
-extern "C" void cuda_free_async(void **a_d, hipStream_t *stream )
+extern "C" void cuda_free_async(void **a_d, cudaStream_t *stream )
 {
-  gpuErrchk(hipFreeAsync(*a_d, stream[0]));
+  gpuErrchk(cudaFreeAsync(*a_d, stream[0]));
    return;
 }
 
@@ -105,72 +104,72 @@ extern "C" void cuda_free_async(void **a_d, hipStream_t *stream )
 }
 */
 
-extern "C" void cuda_cpy_htod(void *a, void *a_d, size_t N, hipStream_t *stream )
+extern "C" void cuda_cpy_htod(void *a, void *a_d, size_t N, cudaStream_t *stream )
 {
-  gpuErrchk(hipMemcpyAsync(a_d, a, N, hipMemcpyHostToDevice,stream[0] ));
-  //gpuErrchk(hipMemcpy(a_d, a, N, hipMemcpyHostToDevice));
+  gpuErrchk(cudaMemcpyAsync(a_d, a, N, cudaMemcpyHostToDevice,stream[0] ));
+  //gpuErrchk(cudaMemcpy(a_d, a, N, cudaMemcpyHostToDevice));
    return;
 }
 extern "C" void cuda_cpy_htod_blocking(void *a, void *a_d, size_t N)
 {;
-  gpuErrchk(hipMemcpy(a_d, a, N, hipMemcpyHostToDevice));
+  gpuErrchk(cudaMemcpy(a_d, a, N, cudaMemcpyHostToDevice));
    return;
 }
 
-extern "C" void cuda_cpy_dtod(void *b_d, void *a_d,size_t N, hipStream_t* stream )
+extern "C" void cuda_cpy_dtod(void *b_d, void *a_d,size_t N, cudaStream_t* stream )
 {
-  gpuErrchk(hipMemcpyAsync( a_d, b_d, N, hipMemcpyDeviceToDevice,stream[0]));
-  //gpuErrchk(hipMemcpy( a_d, b_d, N, hipMemcpyDeviceToDevice));
+  gpuErrchk(cudaMemcpyAsync( a_d, b_d, N, cudaMemcpyDeviceToDevice,stream[0]));
+  //gpuErrchk(cudaMemcpy( a_d, b_d, N, cudaMemcpyDeviceToDevice));
    return;
 }
 
-extern "C" void cuda_cpy_dtoh(void *a_d, void *a, size_t N, hipStream_t *stream )
+extern "C" void cuda_cpy_dtoh(void *a_d, void *a, size_t N, cudaStream_t *stream )
 {
-  gpuErrchk(hipMemcpyAsync(a, a_d,  N, hipMemcpyDeviceToHost,stream[0]));
-  //gpuErrchk(hipMemcpy(a, a_d,  N, hipMemcpyDeviceToHost));
+  gpuErrchk(cudaMemcpyAsync(a, a_d,  N, cudaMemcpyDeviceToHost,stream[0]));
+  //gpuErrchk(cudaMemcpy(a, a_d,  N, cudaMemcpyDeviceToHost));
    return;
 }
 
 extern "C" void cuda_cpy_dtoh_blocking(void *a_d, void *a, size_t N)
 {
-  gpuErrchk(hipMemcpy(a, a_d,  N, hipMemcpyDeviceToHost));
+  gpuErrchk(cudaMemcpy(a, a_d,  N, cudaMemcpyDeviceToHost));
    return;
 }
 
 
 /* extern "C" void cuda_cpy_double_htod(double *a, double *a_d, int N)
 {
-  gpuErrchk(hipMemcpy(a_d, a, sizeof(double) * N, hipMemcpyHostToDevice));
+  gpuErrchk(cudaMemcpy(a_d, a, sizeof(double) * N, cudaMemcpyHostToDevice));
    return;
 } */
 /* 
 extern "C" void cuda_cpy_bool_htod(bool *a, double *a_d, int N)
 {
-  gpuErrchk(hipMemcpy(a_d, a, sizeof(bool) * N, hipMemcpyHostToDevice));
-   //gpuErrchk(hipMemcpyAsync(a_d, a, sizeof(bool) * N, hipMemcpyHostToDevice));
+  gpuErrchk(cudaMemcpy(a_d, a, sizeof(bool) * N, cudaMemcpyHostToDevice));
+   //gpuErrchk(cudaMemcpyAsync(a_d, a, sizeof(bool) * N, cudaMemcpyHostToDevice));
    return;
 } */
 /* 
 extern "C" void cuda_cpy_bool_dtoh(bool *a_d, bool *a, int N)
 {
-  gpuErrchk(hipMemcpy(a, a_d, sizeof(bool) * N, hipMemcpyDeviceToHost));
+  gpuErrchk(cudaMemcpy(a, a_d, sizeof(bool) * N, cudaMemcpyDeviceToHost));
    return;
 } */
 
-/* extern "C" void cuda_cpy_double_complex_htod(hipDoubleComplex *a, hipDoubleComplex *a_d, int N)
+/* extern "C" void cuda_cpy_double_complex_htod(cuDoubleComplex *a, cuDoubleComplex *a_d, int N)
 {
    
-   gpuErrchk(hipMemcpy(a_d, a, sizeof(hipDoubleComplex) * N, hipMemcpyHostToDevice));
-   //gpuErrchk(hipMemcpyAsync(a_d, a, sizeof(hipDoubleComplex) * N, hipMemcpyHostToDevice));
+   gpuErrchk(cudaMemcpy(a_d, a, sizeof(cuDoubleComplex) * N, cudaMemcpyHostToDevice));
+   //gpuErrchk(cudaMemcpyAsync(a_d, a, sizeof(cuDoubleComplex) * N, cudaMemcpyHostToDevice));
    return;
 } */
 
 
 /* 
-extern "C" void cuda_cpy_double_complex_dtoh(hipDoubleComplex *a_d, hipDoubleComplex *a ,int N)
+extern "C" void cuda_cpy_double_complex_dtoh(cuDoubleComplex *a_d, cuDoubleComplex *a ,int N)
 {
-  //hipMemcpyAsync( a, a_d, sizeof(double) * N, hipMemcpyDeviceToHost );
-  gpuErrchk(hipMemcpy( a, a_d, sizeof(hipDoubleComplex) * N, hipMemcpyDeviceToHost ));
+  //cudaMemcpyAsync( a, a_d, sizeof(double) * N, cudaMemcpyDeviceToHost );
+  gpuErrchk(cudaMemcpy( a, a_d, sizeof(cuDoubleComplex) * N, cudaMemcpyDeviceToHost ));
    //printf("\nTest cpy D to H \n");
    
    return;
@@ -179,41 +178,41 @@ extern "C" void cuda_cpy_double_complex_dtoh(hipDoubleComplex *a_d, hipDoubleCom
 /* extern "C" void cuda_cpy_int_htod(int *a, int *a_d, int N)
 {
 
-   gpuErrchk(hipMemcpy(a_d, a, sizeof(int) * N, hipMemcpyHostToDevice ));
-   //gpuErrchk(hipMemcpyAsync(a_d, a, sizeof(int) * N, hipMemcpyHostToDevice ));
+   gpuErrchk(cudaMemcpy(a_d, a, sizeof(int) * N, cudaMemcpyHostToDevice ));
+   //gpuErrchk(cudaMemcpyAsync(a_d, a, sizeof(int) * N, cudaMemcpyHostToDevice ));
    return;
 }
  */
 /* 
 extern "C" void cuda_cpy_double_dtoh(double *a_d, double *a ,int N)
 {
-  gpuErrchk(hipMemcpy( a, a_d, sizeof(double) * N, hipMemcpyDeviceToHost ));
+  gpuErrchk(cudaMemcpy( a, a_d, sizeof(double) * N, cudaMemcpyDeviceToHost ));
    
    return;
 } */
 /* 
 extern "C" void cuda_cpy_double_dtod(double *b_d, double *a_d,int N)
 {
-  gpuErrchk(hipMemcpy( a_d, b_d, sizeof(double) * N, hipMemcpyDeviceToDevice ));
+  gpuErrchk(cudaMemcpy( a_d, b_d, sizeof(double) * N, cudaMemcpyDeviceToDevice ));
    return;
 }
  */
 
-extern "C" void create_cublas_handle(hipblasHandle_t *handle,hipStream_t *stream )
+extern "C" void create_cublas_handle(cublasHandle_t *handle,cudaStream_t *stream )
 {
- 	  hipblasCreate(handle);
-    hipStreamCreate(stream);
-    hipblasSetStream(*handle, *stream);
+ 	  cublasCreate(handle);
+    cudaStreamCreate(stream);
+    cublasSetStream(*handle, *stream);
    //printf("\n cublas handle created \n");
 
    return;
 }
 
-extern "C" void destroy_cublas_handle(hipblasHandle_t *handle,hipStream_t *stream )
+extern "C" void destroy_cublas_handle(cublasHandle_t *handle,cudaStream_t *stream )
 {
  	 // Destroy the handle
-   hipblasDestroy(*handle);
-   hipStreamDestroy(*stream);
+   cublasDestroy(*handle);
+   cudaStreamDestroy(*stream);
    //printf("\n cublas handle destroyed \n");
    return;
 }
@@ -228,17 +227,17 @@ __global__ void gpu_pow(double *a,double *b, double zeta, int N)
  }
 }
 
-extern "C" void gpu_kernels_pow(double *a,double *b, double zeta, int size, hipStream_t *stream )
+extern "C" void gpu_kernels_pow(double *a,double *b, double zeta, int size, cudaStream_t *stream )
 {
   int ntpb=256;
   int nblocks=(size+ntpb-1)/ntpb;
   gpu_pow<<<nblocks, ntpb,0, stream[0]>>>(a,b,zeta, size);
-  // gpuErrchk( hipPeekAtLastError() );
-  // gpuErrchk( hipDeviceSynchronize() );
+  // gpuErrchk( cudaPeekAtLastError() );
+  // gpuErrchk( cudaDeviceSynchronize() );
   return;
 }
 
-extern "C" void gpu_blas_mmul_t_n(hipblasHandle_t handle, const double *Qs_d, const double *soap_d, double *kernels_d, const int n_sparse, const int n_soap, const int n_sites)
+extern "C" void gpu_blas_mmul_t_n(cublasHandle_t handle, const double *Qs_d, const double *soap_d, double *kernels_d, const int n_sparse, const int n_soap, const int n_sites)
 //                                                           const double *A,     const double *B,         double *C,       const int nAx,
 // const int nAy,      const int nBy,double *b, double zeta, int N)
 {
@@ -252,12 +251,12 @@ extern "C" void gpu_blas_mmul_t_n(hipblasHandle_t handle, const double *Qs_d, co
 // call dgemm( "t", "n", n_sites, n_sparse, n_soap, 1.d0, soap, n_soap, Qs, n_soap, 0.d0, kernels, n_sites)
 
 	// Do the actual multiplication
-  hipblasDgemm(handle, HIPBLAS_OP_T, HIPBLAS_OP_N, n_sites, n_sparse, n_soap, &alf, soap_d, n_soap, Qs_d, n_soap, &bet, kernels_d, n_sites);
+  cublasDgemm(handle, CUBLAS_OP_T, CUBLAS_OP_N, n_sites, n_sparse, n_soap, &alf, soap_d, n_soap, Qs_d, n_soap, &bet, kernels_d, n_sites);
 
   return;
 }
 
-extern "C" void gpu_blas_mvmul_n(hipblasHandle_t handle,  double *kernels_copy_d, const double *alphas_d, double *energies_d, const int n_sites, const int n_sparse)
+extern "C" void gpu_blas_mvmul_n(cublasHandle_t handle,  double *kernels_copy_d, const double *alphas_d, double *energies_d, const int n_sites, const int n_sparse)
 {
 
 	const double alf = 1;
@@ -266,7 +265,7 @@ extern "C" void gpu_blas_mvmul_n(hipblasHandle_t handle,  double *kernels_copy_d
 	const double *beta = &bet;
 
 	// Do the actual multiplication
-  hipblasDgemv(handle, HIPBLAS_OP_N, n_sites,n_sparse, alpha, kernels_copy_d, n_sites, alphas_d, 1, beta, energies_d, 1);
+  cublasDgemv(handle, CUBLAS_OP_N, n_sites,n_sparse, alpha, kernels_copy_d, n_sites, alphas_d, 1, beta, energies_d, 1);
  return;
 }
 
@@ -281,7 +280,7 @@ __global__ void gpu_simpleaxpc(double *a, double dccc, double e0, int N)
  }
 }
 
-extern "C" void gpu_axpc(double *a, double dccc, double e0, int size, hipStream_t *stream )
+extern "C" void gpu_axpc(double *a, double dccc, double e0, int size, cudaStream_t *stream )
 {
   int ntpb=256;
   int nblocks=(size+ntpb-1)/ntpb;
@@ -300,19 +299,19 @@ extern "C" void gpu_axpc(double *a, double dccc, double e0, int size, hipStream_
 // 	hipblasHandle_t handle;
 // 	hipblasCreate(&handle);
 //   double *kernels_d, *kernels_copy_d, *soap_d, *Qs_d, *energies_d;
-//   hipMalloc( &kernels_d, sizeof(double) * size_kernels );
-//   hipMalloc( &kernels_copy_d, sizeof(double) * size_kernels );
-//   hipMalloc( &soap_d, sizeof(double) * size_soap );
-//   hipMalloc( &Qs_d, sizeof(double) * size_Qs );
-//   hipMalloc( &energies_d, sizeof(double)*size_energies);
+//   cudaMalloc( &kernels_d, sizeof(double) * size_kernels );
+//   cudaMalloc( &kernels_copy_d, sizeof(double) * size_kernels );
+//   cudaMalloc( &soap_d, sizeof(double) * size_soap );
+//   cudaMalloc( &Qs_d, sizeof(double) * size_Qs );
+//   cudaMalloc( &energies_d, sizeof(double)*size_energies);
 
 
 //   const double alf = 1;
 //   const double bet = 0;
 
-//   hipMemcpy(kernels_d, kernels, sizeof(double) * size_kernels, hipMemcpyHostToDevice );
-//   hipMemcpy(soap_d, soap, sizeof(double) * size_soap, hipMemcpyHostToDevice );
-//   hipMemcpy(Qs_d, Qs, sizeof(double) * size_Qs, hipMemcpyHostToDevice );
+//   cudaMemcpy(kernels_d, kernels, sizeof(double) * size_kernels, cudaMemcpyHostToDevice );
+//   cudaMemcpy(soap_d, soap, sizeof(double) * size_soap, cudaMemcpyHostToDevice );
+//   cudaMemcpy(Qs_d, Qs, sizeof(double) * size_Qs, cudaMemcpyHostToDevice );
 //   // Do the actual multiplication
 
 //   hipblasDgemm(handle, HIPBLAS_OP_T, HIPBLAS_OP_N, n_sites, n_sparse, n_soap, &alf, soap_d, n_soap, Qs_d, n_soap, &bet, kernels_d, n_sites);
@@ -321,9 +320,9 @@ extern "C" void gpu_axpc(double *a, double dccc, double e0, int size, hipStream_
 //   // gpu_blas_mmul_t_n(cubhandle,     A,     B,      C,         nAx,      nAy,       nBy,             bb, zeta, N)
 //   // gpu_blas_mmul_t_n(cublas_handle, Qs_d, soap_d, kernels_d, n_sparse, n_soap, n_sites, kernels_copy_d, zeta, size_kernels)
 
-//   hipMemcpy( kernels, kernels_d, sizeof(double) * size_kernels, hipMemcpyDeviceToHost );
+//   cudaMemcpy( kernels, kernels_d, sizeof(double) * size_kernels, cudaMemcpyDeviceToHost );
 //   hipLaunchKernelGGL(gpu_pow, dim3(nblocks,1,1), dim3(ntpb,1,1), 0, 0, kernels_d,kernels_copy_d, zeta, size_kernels);
-//   hipMemcpy( kernels_copy, kernels_copy_d, sizeof(double) * size_kernels, hipMemcpyDeviceToHost );
+//   cudaMemcpy( kernels_copy, kernels_copy_d, sizeof(double) * size_kernels, cudaMemcpyDeviceToHost );
 // 	// Destroy the handle
 // 	hipblasDestroy(handle);
 //   hipFree(kernels_d);
@@ -341,8 +340,8 @@ extern "C" void cuda_set_device( int my_rank)
 {
 
   int  num_gpus=0;
-  gpuErrchk(hipGetDeviceCount(&num_gpus));
-  gpuErrchk(hipSetDevice(my_rank%num_gpus));
+  gpuErrchk(cudaGetDeviceCount(&num_gpus));
+  gpuErrchk(cudaSetDevice(my_rank%num_gpus));
   //printf("\n Seta Aset at %d %d \n", num_gpus, my_rank%num_gpus);
   return;
 }
@@ -359,7 +358,7 @@ __global__ void matvect_kernels(double *kernels_d, double *alphas_d,int  n_sites
  }
 }
 
-extern "C" void cuda_matvect_kernels(double *kernels_d, double *alphas_d,int  n_sites, int n_sparse, hipStream_t *stream )
+extern "C" void cuda_matvect_kernels(double *kernels_d, double *alphas_d,int  n_sites, int n_sparse, cudaStream_t *stream )
 {
   int  ntpb=256;
   int nblocks=(n_sites*n_sparse+ntpb-1)/ntpb;
@@ -382,7 +381,7 @@ __global__ void matvect_qs(double *qs_d,double *qs_copy_d, double *alphas_d,int 
  }
 }
 
-extern "C" void cuda_matvect_qs(double *qs_d,double *qs_copy_d, double *alphas_d,int  n_soap, int n_sparse, hipStream_t *stream )
+extern "C" void cuda_matvect_qs(double *qs_d,double *qs_copy_d, double *alphas_d,int  n_soap, int n_sparse, cudaStream_t *stream )
 {
   /*
   alphas(n_sparse)
@@ -401,7 +400,7 @@ extern "C" void cuda_matvect_qs(double *qs_d,double *qs_copy_d, double *alphas_d
 
 
 // gpu_blas_mmul_n_t(cubhandle, kernels_der_d, Qs_copy_d, Qss_d, n_sparse, n_soap, n_sites, cdelta)
-extern "C" void gpu_blas_mmul_n_t(hipblasHandle_t handle, const double *kernels_der_d, const double *Qs_copy_d, 
+extern "C" void gpu_blas_mmul_n_t(cublasHandle_t handle, const double *kernels_der_d, const double *Qs_copy_d, 
                        double *Qss_d, const int n_sparse, const int n_soap, const int n_sites, double cdelta)
 {
 
@@ -419,7 +418,7 @@ extern "C" void gpu_blas_mmul_n_t(hipblasHandle_t handle, const double *kernels_
 // allocate( Qs_copy(1:n_soap, 1:n_sparse) ))
 // allocate( Qss(1:n_sites, 1:n_soap) )
 // call dgemm("n", "t", n_sites, n_soap, n_sparse, cdelta, kernels_der, n_sites, Qs_copy, n_soap, 0.d0, Qss, n_sites)
-  hipblasDgemm(handle, HIPBLAS_OP_N, HIPBLAS_OP_T, n_sites,  n_soap, n_sparse, alpha,  kernels_der_d, n_sites,
+  cublasDgemm(handle, CUBLAS_OP_N, CUBLAS_OP_T, n_sites,  n_soap, n_sparse, alpha,  kernels_der_d, n_sites,
                          Qs_copy_d, n_soap, beta, Qss_d, n_sites);
 }
 
@@ -531,14 +530,14 @@ extern "C" void gpu_final_soap_forces_virial(int n_sites,
                                              double3 *soap_der_d,
                                              double3 *xyz_d, double *virial_d,
                                              int n_sites0, 
-                                             double *forces_d, int n_pairs, hipStream_t *stream )
+                                             double *forces_d, int n_pairs, cudaStream_t *stream )
 {
   dim3 nblocks(n_pairs,1);
 
   /*double *this_force_d; 
-  hipMalloc((void**)&this_force_d,sizeof(double)*n_pairs*3);*/
-  hipMemsetAsync(forces_d,0, 3*n_sites0*sizeof(double),0);
-  hipMemsetAsync(virial_d,0, 9*sizeof(double),0);
+  cudaMalloc((void**)&this_force_d,sizeof(double)*n_pairs*3);*/
+  cudaMemsetAsync(forces_d,0, 3*n_sites0*sizeof(double),0);
+  cudaMemsetAsync(virial_d,0, 9*sizeof(double),0);
      
   cuda_soap_forces_virial_two<<< nblocks, tpb,0, stream[0]>>>(n_sites,
                                               Qss_d,n_soap, l_index_d, j2_index_d,
@@ -552,7 +551,7 @@ extern "C" void gpu_final_soap_forces_virial(int n_sites,
 }
 
 __global__ void cuda_get_soap_p(double *soap_d, double *sqrt_dot_p_d, double *multiplicity_array_d, 
-                           hipDoubleComplex *cnk_d, bool *skip_soap_component_d,
+                           cuDoubleComplex *cnk_d, bool *skip_soap_component_d,
                            int n_sites, int n_soap, int n_max, int l_max)
 {
    int i_site = threadIdx.x+blockIdx.x*blockDim.x;
@@ -574,8 +573,8 @@ __global__ void cuda_get_soap_p(double *soap_d, double *sqrt_dot_p_d, double *mu
             for(int m=0;m<=l; m++){
               int k=1+l*(l+1)/2+m; //k = 1 + l*(l+1)/2 + m
               counter2++;
-              hipDoubleComplex tmp_1_cnk_d=cnk_d[i_site+n_sites*((k-1)+(n-1)*k_max)];  //cnk_d[k-1+k_max*(n-1 +i_site*n_max)];
-              hipDoubleComplex tmp_2_cnk_d=cnk_d[i_site+n_sites*((k-1)+(np-1)*k_max)]; //cnk_d[k-1+k_max*(np-1+i_site*n_max)];
+              cuDoubleComplex tmp_1_cnk_d=cnk_d[i_site+n_sites*((k-1)+(n-1)*k_max)];  //cnk_d[k-1+k_max*(n-1 +i_site*n_max)];
+              cuDoubleComplex tmp_2_cnk_d=cnk_d[i_site+n_sites*((k-1)+(np-1)*k_max)]; //cnk_d[k-1+k_max*(np-1+i_site*n_max)];
               my_soap+=multiplicity_array_d[counter2-1]*(tmp_1_cnk_d.x*tmp_2_cnk_d.x+tmp_1_cnk_d.y*tmp_2_cnk_d.y); 
 /*               if(isnan(my_soap)){
                 printf("\n my_soap is nan %lf %lf %lf %lf %lf!!\n", multiplicity_array_d[counter2-1], tmp_1_cnk_d.x, tmp_1_cnk_d.y,tmp_2_cnk_d.x,tmp_2_cnk_d.y);
@@ -597,8 +596,8 @@ __global__ void cuda_get_soap_p(double *soap_d, double *sqrt_dot_p_d, double *mu
 }
 
 extern "C" void gpu_get_sqrt_dot_p(double *sqrt_dot_d, double *soap_d, double *multiplicity_array_d, 
-                                   hipDoubleComplex *cnk_d, bool *skip_soap_component_d, 
-                                   int n_sites, int n_soap, int n_max, int l_max, hipStream_t *stream )
+                                   cuDoubleComplex *cnk_d, bool *skip_soap_component_d, 
+                                   int n_sites, int n_soap, int n_max, int l_max, cudaStream_t *stream )
 {
   dim3 nblocks=dim3((n_sites-1+tpb)/tpb,1,1);
   dim3 nthreads=dim3(tpb,1,1);
@@ -612,8 +611,8 @@ extern "C" void gpu_get_sqrt_dot_p(double *sqrt_dot_d, double *soap_d, double *m
 __global__ void cuda_get_soap_der_one(double *soap_rad_der_d, double *soap_azi_der_d, double *soap_pol_der_d, 
                                       double *multiplicity_array_d, 
                                       double *trans_soap_rad_der_d, double *trans_soap_azi_der_d,double *trans_soap_pol_der_d,
-                                      hipDoubleComplex *cnk_d, 
-                                      hipDoubleComplex *cnk_rad_der_d, hipDoubleComplex *cnk_azi_der_d, hipDoubleComplex *cnk_pol_der_d,
+                                      cuDoubleComplex *cnk_d, 
+                                      cuDoubleComplex *cnk_rad_der_d, cuDoubleComplex *cnk_azi_der_d, cuDoubleComplex *cnk_pol_der_d,
                                       int *k2_i_site_d, bool *skip_soap_component_d, 
                                       int n_sites, int n_atom_pairs, int n_soap, int k_max, int n_max, int l_max)
 {
@@ -636,14 +635,14 @@ __global__ void cuda_get_soap_der_one(double *soap_rad_der_d, double *soap_azi_d
               /* if(threadIdx.x==121 && blockIdx.x==154){
                 printf("\n Pair  %d \n" , k2, i_site);              
               } */
-              hipDoubleComplex tmp_1_cnk_d=cnk_d[i_site+n_sites*(k-1+(n-1)*k_max)]; //trans_cnk_d[i_site+n_sites*(k-1+(n-1)*k_max)];  //cnk_d[k-1+ k_max*(n-1 +i_site*n_max)];
-              hipDoubleComplex tmp_2_cnk_d=cnk_d[i_site+n_sites*(k-1+(np-1)*k_max)]; //trans_cnk_d[i_site+n_sites*(k-1+(np-1)*k_max)]; //cnk_d[k-1+k_max*(np-1+i_site*n_max)];
-              hipDoubleComplex tmp_1_cnk_rad_d=cnk_rad_der_d[k2+n_atom_pairs*(k-1+(n-1)*k_max) ]; //trans_cnk_rad_der_d[k2+n_atom_pairs*(k-1+(n-1)*k_max) ]; // cnk_rad_der_d[k-1+k_max*(n-1 +k2*n_max)];
-              hipDoubleComplex tmp_2_cnk_rad_d=cnk_rad_der_d[k2+n_atom_pairs*(k-1+(np-1)*k_max)]; //trans_cnk_rad_der_d[k2+n_atom_pairs*(k-1+(np-1)*k_max)]; // cnk_rad_der_d[k-1+k_max*(np-1+k2*n_max)];
-              hipDoubleComplex tmp_1_cnk_azi_d=cnk_azi_der_d[k2+n_atom_pairs*(k-1+(n-1)*k_max) ]; //trans_cnk_azi_der_d[k2+n_atom_pairs*(k-1+(n-1)*k_max) ]; //cnk_azi_der_d[k-1+k_max*(n-1 +k2*n_max)];
-              hipDoubleComplex tmp_2_cnk_azi_d=cnk_azi_der_d[k2+n_atom_pairs*(k-1+(np-1)*k_max)]; //trans_cnk_azi_der_d[k2+n_atom_pairs*(k-1+(np-1)*k_max)]; //cnk_azi_der_d[k-1+k_max*(np-1+k2*n_max)];
-              hipDoubleComplex tmp_1_cnk_pol_d=cnk_pol_der_d[k2+n_atom_pairs*(k-1+(n-1)*k_max) ]; //trans_cnk_pol_der_d[k2+n_atom_pairs*(k-1+(n-1)*k_max) ]; //cnk_pol_der_d[k-1+k_max*(n-1 +k2*n_max)];
-              hipDoubleComplex tmp_2_cnk_pol_d=cnk_pol_der_d[k2+n_atom_pairs*(k-1+(np-1)*k_max)]; //trans_cnk_pol_der_d[k2+n_atom_pairs*(k-1+(np-1)*k_max)]; //cnk_pol_der_d[k-1+k_max*(np-1+k2*n_max)];
+              cuDoubleComplex tmp_1_cnk_d=cnk_d[i_site+n_sites*(k-1+(n-1)*k_max)]; //trans_cnk_d[i_site+n_sites*(k-1+(n-1)*k_max)];  //cnk_d[k-1+ k_max*(n-1 +i_site*n_max)];
+              cuDoubleComplex tmp_2_cnk_d=cnk_d[i_site+n_sites*(k-1+(np-1)*k_max)]; //trans_cnk_d[i_site+n_sites*(k-1+(np-1)*k_max)]; //cnk_d[k-1+k_max*(np-1+i_site*n_max)];
+              cuDoubleComplex tmp_1_cnk_rad_d=cnk_rad_der_d[k2+n_atom_pairs*(k-1+(n-1)*k_max) ]; //trans_cnk_rad_der_d[k2+n_atom_pairs*(k-1+(n-1)*k_max) ]; // cnk_rad_der_d[k-1+k_max*(n-1 +k2*n_max)];
+              cuDoubleComplex tmp_2_cnk_rad_d=cnk_rad_der_d[k2+n_atom_pairs*(k-1+(np-1)*k_max)]; //trans_cnk_rad_der_d[k2+n_atom_pairs*(k-1+(np-1)*k_max)]; // cnk_rad_der_d[k-1+k_max*(np-1+k2*n_max)];
+              cuDoubleComplex tmp_1_cnk_azi_d=cnk_azi_der_d[k2+n_atom_pairs*(k-1+(n-1)*k_max) ]; //trans_cnk_azi_der_d[k2+n_atom_pairs*(k-1+(n-1)*k_max) ]; //cnk_azi_der_d[k-1+k_max*(n-1 +k2*n_max)];
+              cuDoubleComplex tmp_2_cnk_azi_d=cnk_azi_der_d[k2+n_atom_pairs*(k-1+(np-1)*k_max)]; //trans_cnk_azi_der_d[k2+n_atom_pairs*(k-1+(np-1)*k_max)]; //cnk_azi_der_d[k-1+k_max*(np-1+k2*n_max)];
+              cuDoubleComplex tmp_1_cnk_pol_d=cnk_pol_der_d[k2+n_atom_pairs*(k-1+(n-1)*k_max) ]; //trans_cnk_pol_der_d[k2+n_atom_pairs*(k-1+(n-1)*k_max) ]; //cnk_pol_der_d[k-1+k_max*(n-1 +k2*n_max)];
+              cuDoubleComplex tmp_2_cnk_pol_d=cnk_pol_der_d[k2+n_atom_pairs*(k-1+(np-1)*k_max)]; //trans_cnk_pol_der_d[k2+n_atom_pairs*(k-1+(np-1)*k_max)]; //cnk_pol_der_d[k-1+k_max*(np-1+k2*n_max)];
               my_soap_rad_der+=multiplicity_array_d[counter2-1]*(tmp_1_cnk_rad_d.x*tmp_2_cnk_d.x+tmp_1_cnk_rad_d.y*tmp_2_cnk_d.y+
                                                                  tmp_1_cnk_d.x*tmp_2_cnk_rad_d.x+tmp_1_cnk_d.y*tmp_2_cnk_rad_d.y);
               my_soap_azi_der+=multiplicity_array_d[counter2-1]*(tmp_1_cnk_azi_d.x*tmp_2_cnk_d.x+tmp_1_cnk_azi_d.y*tmp_2_cnk_d.y+
@@ -814,15 +813,15 @@ __global__ void naive_transpose_soap_rad_azi_pol(double *soap_rad_der_d,
 }
 
 
-__global__ void naive_transpose_cnk_arrays(hipDoubleComplex *C,
-                                           hipDoubleComplex *tran_C, 
+__global__ void naive_transpose_cnk_arrays(cuDoubleComplex *C,
+                                           cuDoubleComplex *tran_C, 
                                            int k_max, int n_max, int n_sites)
 {
   // in Fortran is cnk( 1:k_max, 1:n_max, 1:n_sites) --> (1:n_sites,1:k_max, 1:n_max)
   //       cnk_rad_der( 1:k_max, 1:n_max, 1:n_atom_pairs) )
   int i_g = threadIdx.x+blockIdx.x*blockDim.x;
   if(i_g<k_max*n_max*n_sites){
-    hipDoubleComplex loc_C=C[i_g];  // i_g=i_k+k_max*(i_n+i_site*n_max)
+    cuDoubleComplex loc_C=C[i_g];  // i_g=i_k+k_max*(i_n+i_site*n_max)
     int i_k=i_g%k_max;
     int i_z=i_g/k_max;
     int i_n=i_z%n_max;
@@ -836,10 +835,10 @@ extern "C" void gpu_get_soap_der(double *soap_d, double *sqrt_dot_d, double3 *so
                                  double *soap_rad_der_d, double *soap_azi_der_d, double *soap_pol_der_d, 
                                  double *thetas_d, double *phis_d, double *rjs_d, 
                                  double *multiplicity_array_d,
-                                 hipDoubleComplex *cnk_d, 
-                                 hipDoubleComplex *cnk_rad_der_d, hipDoubleComplex *cnk_azi_der_d, hipDoubleComplex *cnk_pol_der_d, 
+                                 cuDoubleComplex *cnk_d, 
+                                 cuDoubleComplex *cnk_rad_der_d, cuDoubleComplex *cnk_azi_der_d, cuDoubleComplex *cnk_pol_der_d, 
                                  int *n_neigh_d, int *i_k2_start_d, int *k2_i_site_d, int *k3_index_d, bool *skip_soap_component_d, 
-                                 int n_sites, int n_atom_pairs, int n_soap, int k_max, int n_max, int l_max, int maxneigh, hipStream_t *stream )
+                                 int n_sites, int n_atom_pairs, int n_soap, int k_max, int n_max, int l_max, int maxneigh, cudaStream_t *stream )
 {
   dim3 nblocks=dim3((n_atom_pairs-1+tpb)/tpb,1,1);
   dim3 nthreads=dim3(tpb,1,1);
@@ -850,15 +849,15 @@ extern "C" void gpu_get_soap_der(double *soap_d, double *sqrt_dot_d, double3 *so
   //hipMemGetInfo(&mf, &ma);
   //printf("\n free: %zu total: %zu", mf, ma);
   double *tdotoprod_der_rad,*tdotoprod_der_azi,*tdotoprod_der_pol; 
-  hipMallocAsync((void**)&tdotoprod_der_rad,sizeof(double)*n_atom_pairs*n_soap,stream[0]);
-  hipMallocAsync((void**)&tdotoprod_der_azi,sizeof(double)*n_atom_pairs*n_soap,stream[0]);
-  hipMallocAsync((void**)&tdotoprod_der_pol,sizeof(double)*n_atom_pairs*n_soap,stream[0]);
+  cudaMallocAsync((void**)&tdotoprod_der_rad,sizeof(double)*n_atom_pairs*n_soap,stream[0]);
+  cudaMallocAsync((void**)&tdotoprod_der_azi,sizeof(double)*n_atom_pairs*n_soap,stream[0]);
+  cudaMallocAsync((void**)&tdotoprod_der_pol,sizeof(double)*n_atom_pairs*n_soap,stream[0]);
   
 
    double *trans_soap_rad_der_d, *trans_soap_azi_der_d, *trans_soap_pol_der_d;
-  hipMallocAsync((void **)&trans_soap_rad_der_d, sizeof(double)*n_atom_pairs*n_soap,stream[0]);
-  hipMallocAsync((void **)&trans_soap_azi_der_d, sizeof(double)*n_atom_pairs*n_soap,stream[0]);
-  hipMallocAsync((void **)&trans_soap_pol_der_d, sizeof(double)*n_atom_pairs*n_soap,stream[0]);
+  cudaMallocAsync((void **)&trans_soap_rad_der_d, sizeof(double)*n_atom_pairs*n_soap,stream[0]);
+  cudaMallocAsync((void **)&trans_soap_azi_der_d, sizeof(double)*n_atom_pairs*n_soap,stream[0]);
+  cudaMallocAsync((void **)&trans_soap_pol_der_d, sizeof(double)*n_atom_pairs*n_soap,stream[0]);
 
                                             
   cuda_get_soap_der_one<<< nblocks_get_soap_der_one, nthreads_get_soap_der_one,0, stream[0]>>>(soap_rad_der_d,soap_azi_der_d, soap_pol_der_d, multiplicity_array_d, 
@@ -906,13 +905,13 @@ extern "C" void gpu_get_soap_der(double *soap_d, double *sqrt_dot_d, double3 *so
                                                          n_neigh_d, i_k2_start_d, k2_i_site_d, k3_index_d, 
                                                          n_sites,  n_atom_pairs, n_soap,  k_max, n_max, l_max, maxneigh);                                                       
   //printf("\n YOLO \n");
-  hipFreeAsync(tdotoprod_der_rad,   stream[0]);hipFreeAsync(tdotoprod_der_azi,   stream[0]);hipFreeAsync(tdotoprod_der_pol,   stream[0]);
-  hipFreeAsync(trans_soap_rad_der_d,stream[0]);hipFreeAsync(trans_soap_azi_der_d,stream[0]);hipFreeAsync(trans_soap_pol_der_d,stream[0]);
-  /* hipFreeAsync(trans_cnk_d,0); */
-  /* hipFreeAsync(trans_cnk_rad_der_d,0);hipFreeAsync(trans_cnk_azi_der_d,0);hipFreeAsync(trans_cnk_pol_der_d,0); */
+  cudaFreeAsync(tdotoprod_der_rad,   stream[0]);cudaFreeAsync(tdotoprod_der_azi,   stream[0]);cudaFreeAsync(tdotoprod_der_pol,   stream[0]);
+  cudaFreeAsync(trans_soap_rad_der_d,stream[0]);cudaFreeAsync(trans_soap_azi_der_d,stream[0]);cudaFreeAsync(trans_soap_pol_der_d,stream[0]);
+  /* cudaFreeAsync(trans_cnk_d,0); */
+  /* cudaFreeAsync(trans_cnk_rad_der_d,0);cudaFreeAsync(trans_cnk_azi_der_d,0);cudaFreeAsync(trans_cnk_pol_der_d,0); */
   
-  // hipError_t code=hipDeviceSynchronize() ;
-  // printf("\n %s \n", hipGetErrorString(code));
+  // cudaError_t code=cudaDeviceSynchronize() ;
+  // printf("\n %s \n", cudaGetErrorString(code));
   // gpuErrchk( code );
   return;
 }
@@ -927,13 +926,13 @@ __global__ void cuda_soap_normalize(double *soap_d, double *sqrt_dot_d, int n_so
     soap_d[s+i_site*n_soap]=my_soap_final;
   }
 }
-extern "C" void gpu_soap_normalize(double *soap_d, double *sqrt_dot_d, int n_soap, int n_sites, hipStream_t *stream ){
+extern "C" void gpu_soap_normalize(double *soap_d, double *sqrt_dot_d, int n_soap, int n_sites, cudaStream_t *stream ){
   cuda_soap_normalize<<< n_sites, tpb,0,stream[0]>>> (soap_d, sqrt_dot_d, n_soap,n_sites);
 }
 /* 
-__global__ void cuda_get_derivatives(double *radial_exp_coeff_d, hipDoubleComplex *angular_exp_coeff_d, double *radial_exp_coeff_der_d, 
-                                   hipDoubleComplex *angular_exp_coeff_rad_der_d, hipDoubleComplex *angular_exp_coeff_azi_der_d, hipDoubleComplex *angular_exp_coeff_pol_der_d,
-                                   hipDoubleComplex *cnk_rad_der_d, hipDoubleComplex *cnk_azi_der_d, hipDoubleComplex *cnk_pol_der_d,
+__global__ void cuda_get_derivatives(double *radial_exp_coeff_d, cuDoubleComplex *angular_exp_coeff_d, double *radial_exp_coeff_der_d, 
+                                   cuDoubleComplex *angular_exp_coeff_rad_der_d, cuDoubleComplex *angular_exp_coeff_azi_der_d, cuDoubleComplex *angular_exp_coeff_pol_der_d,
+                                   cuDoubleComplex *cnk_rad_der_d, cuDoubleComplex *cnk_azi_der_d, cuDoubleComplex *cnk_pol_der_d,
                                    double *rjs_d, 
                                    double rcut_max,
                                    int n_atom_pairs, int n_sites, int n_soap, int k_max, int n_max, int l_max)
@@ -952,16 +951,16 @@ __global__ void cuda_get_derivatives(double *radial_exp_coeff_d, hipDoubleComple
         for(int  l=0;l<=l_max;l++){
           for(int m=0;m<=l;m++){
             int k=1+l*(l+1)/2+m;
-            hipDoubleComplex my_cnk_rad_der;hipDoubleComplex my_cnk_azi_der;hipDoubleComplex my_cnk_pol_der;
+            cuDoubleComplex my_cnk_rad_der;cuDoubleComplex my_cnk_azi_der;cuDoubleComplex my_cnk_pol_der;
 
-            hipDoubleComplex my_ang_exp_c;
+            cuDoubleComplex my_ang_exp_c;
             my_ang_exp_c=angular_exp_coeff_d[k2+n_atom_pairs*(k-1)]; //angular_exp_coeff_d[k-1+k2*k_max];
 
-            hipDoubleComplex my_ang_exp_c_rad_der;
+            cuDoubleComplex my_ang_exp_c_rad_der;
             my_ang_exp_c_rad_der=angular_exp_coeff_rad_der_d[k2+(k-1)*n_atom_pairs]; //angular_exp_coeff_rad_der_d[k-1+k2*k_max];
-            hipDoubleComplex my_ang_exp_c_azi_der;
+            cuDoubleComplex my_ang_exp_c_azi_der;
             my_ang_exp_c_azi_der=angular_exp_coeff_azi_der_d[k2+(k-1)*n_atom_pairs]; //angular_exp_coeff_azi_der_d[k-1+k2*k_max];
-            hipDoubleComplex my_ang_exp_c_pol_der;
+            cuDoubleComplex my_ang_exp_c_pol_der;
             my_ang_exp_c_pol_der=angular_exp_coeff_pol_der_d[k2+(k-1)*n_atom_pairs]; //angular_exp_coeff_pol_der_d[k-1+k2*k_max];
 
             my_cnk_rad_der.x=Pi*(my_ang_exp_c.x*my_radial_exp_c_der+my_ang_exp_c_rad_der.x*my_radial_exp_c);
@@ -984,9 +983,9 @@ __global__ void cuda_get_derivatives(double *radial_exp_coeff_d, hipDoubleComple
 }
  */
 /* 
-__global__ void cuda_get_derivatives_new(double *radial_exp_coeff_d, hipDoubleComplex *angular_exp_coeff_d, double *radial_exp_coeff_der_d, 
-                                   hipDoubleComplex *angular_exp_coeff_rad_der_d, hipDoubleComplex *angular_exp_coeff_azi_der_d, hipDoubleComplex *angular_exp_coeff_pol_der_d,
-                                   hipDoubleComplex *cnk_rad_der_d, hipDoubleComplex *cnk_azi_der_d, hipDoubleComplex *cnk_pol_der_d,
+__global__ void cuda_get_derivatives_new(double *radial_exp_coeff_d, cuDoubleComplex *angular_exp_coeff_d, double *radial_exp_coeff_der_d, 
+                                   cuDoubleComplex *angular_exp_coeff_rad_der_d, cuDoubleComplex *angular_exp_coeff_azi_der_d, cuDoubleComplex *angular_exp_coeff_pol_der_d,
+                                   cuDoubleComplex *cnk_rad_der_d, cuDoubleComplex *cnk_azi_der_d, cuDoubleComplex *cnk_pol_der_d,
                                    double *rjs_d, 
                                    double rcut_max,
                                    int n_atom_pairs, int n_sites, int n_soap, int k_max, int n_max, int l_max)
@@ -1005,15 +1004,15 @@ __global__ void cuda_get_derivatives_new(double *radial_exp_coeff_d, hipDoubleCo
       my_radial_exp_c_der=radial_exp_coeff_der_d[n-1+k2*n_max];
       //int k=1+l*(l+1)/2+m;
       
-      hipDoubleComplex my_cnk_rad_der;hipDoubleComplex my_cnk_azi_der;  hipDoubleComplex my_cnk_pol_der;
+      cuDoubleComplex my_cnk_rad_der;cuDoubleComplex my_cnk_azi_der;  cuDoubleComplex my_cnk_pol_der;
       
-      hipDoubleComplex my_ang_exp_c; my_ang_exp_c=angular_exp_coeff_d[k2+n_atom_pairs*(k-1)]; //angular_exp_coeff_d[k-1+k2*k_max];
+      cuDoubleComplex my_ang_exp_c; my_ang_exp_c=angular_exp_coeff_d[k2+n_atom_pairs*(k-1)]; //angular_exp_coeff_d[k-1+k2*k_max];
       
-      hipDoubleComplex my_ang_exp_c_rad_der;  my_ang_exp_c_rad_der=angular_exp_coeff_rad_der_d[k2+(k-1)*n_atom_pairs]; //angular_exp_coeff_rad_der_d[k-1+k2*k_max];
+      cuDoubleComplex my_ang_exp_c_rad_der;  my_ang_exp_c_rad_der=angular_exp_coeff_rad_der_d[k2+(k-1)*n_atom_pairs]; //angular_exp_coeff_rad_der_d[k-1+k2*k_max];
       
-      hipDoubleComplex my_ang_exp_c_azi_der;  my_ang_exp_c_azi_der=angular_exp_coeff_azi_der_d[k2+(k-1)*n_atom_pairs]; //angular_exp_coeff_azi_der_d[k-1+k2*k_max];
+      cuDoubleComplex my_ang_exp_c_azi_der;  my_ang_exp_c_azi_der=angular_exp_coeff_azi_der_d[k2+(k-1)*n_atom_pairs]; //angular_exp_coeff_azi_der_d[k-1+k2*k_max];
       
-      hipDoubleComplex my_ang_exp_c_pol_der;  my_ang_exp_c_pol_der=angular_exp_coeff_pol_der_d[k2+(k-1)*n_atom_pairs]; //angular_exp_coeff_pol_der_d[k-1+k2*k_max];
+      cuDoubleComplex my_ang_exp_c_pol_der;  my_ang_exp_c_pol_der=angular_exp_coeff_pol_der_d[k2+(k-1)*n_atom_pairs]; //angular_exp_coeff_pol_der_d[k-1+k2*k_max];
       
       my_cnk_rad_der.x=Pi*(my_ang_exp_c.x*my_radial_exp_c_der+my_ang_exp_c_rad_der.x*my_radial_exp_c);
       my_cnk_rad_der.y=Pi*(my_ang_exp_c.y*my_radial_exp_c_der+my_ang_exp_c_rad_der.y*my_radial_exp_c);
@@ -1032,9 +1031,9 @@ __global__ void cuda_get_derivatives_new(double *radial_exp_coeff_d, hipDoubleCo
 }
  */
 
-__global__ void cuda_get_derivatives_new_new(double *radial_exp_coeff_d, hipDoubleComplex *angular_exp_coeff_d, double *radial_exp_coeff_der_d, 
-                                   hipDoubleComplex *angular_exp_coeff_rad_der_d, hipDoubleComplex *angular_exp_coeff_azi_der_d, hipDoubleComplex *angular_exp_coeff_pol_der_d,
-                                   hipDoubleComplex *cnk_rad_der_d, hipDoubleComplex *cnk_azi_der_d, hipDoubleComplex *cnk_pol_der_d,
+__global__ void cuda_get_derivatives_new_new(double *radial_exp_coeff_d, cuDoubleComplex *angular_exp_coeff_d, double *radial_exp_coeff_der_d, 
+                                   cuDoubleComplex *angular_exp_coeff_rad_der_d, cuDoubleComplex *angular_exp_coeff_azi_der_d, cuDoubleComplex *angular_exp_coeff_pol_der_d,
+                                   cuDoubleComplex *cnk_rad_der_d, cuDoubleComplex *cnk_azi_der_d, cuDoubleComplex *cnk_pol_der_d,
                                    double *rjs_d, 
                                    double rcut_max,
                                    int n_atom_pairs,int n_sites, int n_soap, int k_max, int n_max, int l_max)
@@ -1051,11 +1050,11 @@ __global__ void cuda_get_derivatives_new_new(double *radial_exp_coeff_d, hipDoub
       double my_radial_exp_c_der;
       my_radial_exp_c_der=radial_exp_coeff_der_d[n-1+k2*n_max];
       //int k=1+l*(l+1)/2+m;
-      hipDoubleComplex my_cnk_rad_der;hipDoubleComplex my_cnk_azi_der;hipDoubleComplex my_cnk_pol_der;
-      hipDoubleComplex my_ang_exp_c; my_ang_exp_c=angular_exp_coeff_d[k2+n_atom_pairs*(k-1)]; //angular_exp_coeff_d[k-1+k2*k_max];
-      hipDoubleComplex my_ang_exp_c_rad_der;my_ang_exp_c_rad_der=angular_exp_coeff_rad_der_d[k2+(k-1)*n_atom_pairs]; //angular_exp_coeff_rad_der_d[k-1+k2*k_max];
-      hipDoubleComplex my_ang_exp_c_azi_der;my_ang_exp_c_azi_der=angular_exp_coeff_azi_der_d[k2+(k-1)*n_atom_pairs]; //angular_exp_coeff_azi_der_d[k-1+k2*k_max];
-      hipDoubleComplex my_ang_exp_c_pol_der;my_ang_exp_c_pol_der=angular_exp_coeff_pol_der_d[k2+(k-1)*n_atom_pairs]; //angular_exp_coeff_pol_der_d[k-1+k2*k_max];
+      cuDoubleComplex my_cnk_rad_der;cuDoubleComplex my_cnk_azi_der;cuDoubleComplex my_cnk_pol_der;
+      cuDoubleComplex my_ang_exp_c; my_ang_exp_c=angular_exp_coeff_d[k2+n_atom_pairs*(k-1)]; //angular_exp_coeff_d[k-1+k2*k_max];
+      cuDoubleComplex my_ang_exp_c_rad_der;my_ang_exp_c_rad_der=angular_exp_coeff_rad_der_d[k2+(k-1)*n_atom_pairs]; //angular_exp_coeff_rad_der_d[k-1+k2*k_max];
+      cuDoubleComplex my_ang_exp_c_azi_der;my_ang_exp_c_azi_der=angular_exp_coeff_azi_der_d[k2+(k-1)*n_atom_pairs]; //angular_exp_coeff_azi_der_d[k-1+k2*k_max];
+      cuDoubleComplex my_ang_exp_c_pol_der;my_ang_exp_c_pol_der=angular_exp_coeff_pol_der_d[k2+(k-1)*n_atom_pairs]; //angular_exp_coeff_pol_der_d[k-1+k2*k_max];
       
       my_cnk_rad_der.x=Pi*(my_ang_exp_c.x*my_radial_exp_c_der+my_ang_exp_c_rad_der.x*my_radial_exp_c);
       my_cnk_rad_der.y=Pi*(my_ang_exp_c.y*my_radial_exp_c_der+my_ang_exp_c_rad_der.y*my_radial_exp_c);
@@ -1075,11 +1074,11 @@ __global__ void cuda_get_derivatives_new_new(double *radial_exp_coeff_d, hipDoub
 }
 
 
-extern "C" void gpu_get_derivatives(double *radial_exp_coeff_d, hipDoubleComplex *angular_exp_coeff_d, double *radial_exp_coeff_der_d, 
-                                    hipDoubleComplex *angular_exp_coeff_rad_der_d, hipDoubleComplex *angular_exp_coeff_azi_der_d, hipDoubleComplex *angular_exp_coeff_pol_der_d,
-                                    hipDoubleComplex *cnk_rad_der_d, hipDoubleComplex *cnk_azi_der_d, hipDoubleComplex *cnk_pol_der_d,
+extern "C" void gpu_get_derivatives(double *radial_exp_coeff_d, cuDoubleComplex *angular_exp_coeff_d, double *radial_exp_coeff_der_d, 
+                                    cuDoubleComplex *angular_exp_coeff_rad_der_d, cuDoubleComplex *angular_exp_coeff_azi_der_d, cuDoubleComplex *angular_exp_coeff_pol_der_d,
+                                    cuDoubleComplex *cnk_rad_der_d, cuDoubleComplex *cnk_azi_der_d, cuDoubleComplex *cnk_pol_der_d,
                                     double *rjs_d, double rcut_max,
-                                    int n_atom_pairs, int n_sites, int n_soap, int k_max, int n_max, int l_max, hipStream_t *stream )
+                                    int n_atom_pairs, int n_sites, int n_soap, int k_max, int n_max, int l_max, cudaStream_t *stream )
 {
   /*dim3 nblocks=dim3((n_atom_pairs-1+tpb)/tpb,1,1);
   dim3 nthreads=dim3(tpb,1,1);
@@ -1129,7 +1128,7 @@ extern "C" void gpu_get_derivatives(double *radial_exp_coeff_d, hipDoubleComplex
                                               
 }
 
-__global__ void cuda_get_cnk_one(hipDoubleComplex *cnk_d, double *radial_exp_coeff_d, hipDoubleComplex *angular_exp_coeff_d,                             
+__global__ void cuda_get_cnk_one(cuDoubleComplex *cnk_d, double *radial_exp_coeff_d, cuDoubleComplex *angular_exp_coeff_d,                             
                                  int *n_neigh_d, int  *k2_start_d, 
                                  int n_atom_pairs, int n_sites, int k_max, int n_max, int l_max)
 {
@@ -1150,8 +1149,8 @@ __global__ void cuda_get_cnk_one(hipDoubleComplex *cnk_d, double *radial_exp_coe
           for(int m=0; m<=l; m++)
           {
             int k=1+l*(l+1)/2+m; //k=1+
-            hipDoubleComplex loc_cnk=cnk_d[i_site+n_sites*((k-1)+(n-1)*k_max)]; //cnk_d[k-1+k_max*(n-1+n_max*i_site)];
-            hipDoubleComplex loc_ang_exp_coeff=angular_exp_coeff_d[k2-1+n_atom_pairs*(k-1)];  // angular_exp_coeff_d[k-1+k_max*(k2-1)];
+            cuDoubleComplex loc_cnk=cnk_d[i_site+n_sites*((k-1)+(n-1)*k_max)]; //cnk_d[k-1+k_max*(n-1+n_max*i_site)];
+            cuDoubleComplex loc_ang_exp_coeff=angular_exp_coeff_d[k2-1+n_atom_pairs*(k-1)];  // angular_exp_coeff_d[k-1+k_max*(k2-1)];
             loc_cnk.x+=pi*loc_rad_exp_coeff*loc_ang_exp_coeff.x;
             loc_cnk.y+=pi*loc_rad_exp_coeff*loc_ang_exp_coeff.y;
             cnk_d[i_site+n_sites*((k-1)+(n-1)*k_max)]=loc_cnk; //cnk_d[k-1+k_max*(n-1+n_max*i_site)]=loc_cnk;
@@ -1162,7 +1161,7 @@ __global__ void cuda_get_cnk_one(hipDoubleComplex *cnk_d, double *radial_exp_coe
   }
 }
 
-__global__ void cuda_get_cnk_one_new_new(hipDoubleComplex *cnk_d, double *radial_exp_coeff_d, hipDoubleComplex *angular_exp_coeff_d,                             
+__global__ void cuda_get_cnk_one_new_new(cuDoubleComplex *cnk_d, double *radial_exp_coeff_d, cuDoubleComplex *angular_exp_coeff_d,                             
                                  int *n_neigh_d, int  *k2_start_d, 
                                  int n_atom_pairs, int n_sites, int k_max, int n_max, int l_max)
 {
@@ -1173,7 +1172,7 @@ __global__ void cuda_get_cnk_one_new_new(hipDoubleComplex *cnk_d, double *radial
   if(i_site<n_sites){
     int k2=k2_start_d[i_site];
     int my_n_neigh=n_neigh_d[i_site];
-    hipDoubleComplex loc_cnk;
+    cuDoubleComplex loc_cnk;
     loc_cnk.x=0.0; loc_cnk.y=0.0;
     /*if(k<=k_max){
        cnk_d[k-1+k_max*(n-1+n_max*i_site)]; // coalesced???
@@ -1182,7 +1181,7 @@ __global__ void cuda_get_cnk_one_new_new(hipDoubleComplex *cnk_d, double *radial
         k2++;
         double loc_rad_exp_coeff=radial_exp_coeff_d[n-1+n_max*(k2-1)]; //coalesced ???
         //int k=1+l*(l+1)/2+m;
-        hipDoubleComplex loc_ang_exp_coeff=angular_exp_coeff_d[k2-1+n_atom_pairs*(k-1)];  // angular_exp_coeff_d[k-1+k_max*(k2-1)]; //coalesced ??
+        cuDoubleComplex loc_ang_exp_coeff=angular_exp_coeff_d[k2-1+n_atom_pairs*(k-1)];  // angular_exp_coeff_d[k-1+k_max*(k2-1)]; //coalesced ??
         loc_cnk.x+=pi*loc_rad_exp_coeff*loc_ang_exp_coeff.x;
         loc_cnk.y+=pi*loc_rad_exp_coeff*loc_ang_exp_coeff.y;
 /*         if(isnan(loc_cnk.x)||isnan(loc_cnk.y)){
@@ -1201,7 +1200,7 @@ __global__ void cuda_get_cnk_one_new_new(hipDoubleComplex *cnk_d, double *radial
   }
 }
 
-__global__ void cuda_get_cnk_two(hipDoubleComplex *cnk_d, double *atom_sigma_r, double *atom_sigma_t, double *rcut_hard, double *central_weight,  
+__global__ void cuda_get_cnk_two(cuDoubleComplex *cnk_d, double *atom_sigma_r, double *atom_sigma_t, double *rcut_hard, double *central_weight,  
                                  int *species, int *i_beg, int *i_end, int radial_enhancement, int *species_multiplicity,
                                  double *W, double *S,
                                  int n_sites, int k_max, int n_max, int size_species_1)
@@ -1243,7 +1242,7 @@ __global__ void cuda_get_cnk_two(hipDoubleComplex *cnk_d, double *atom_sigma_r, 
             printf("%d %d %d %d\n", i_site, l, d, n_max);
           }*/
         }
-        hipDoubleComplex l_cnk=cnk_d[i_site+n_sites*((n-1)*k_max)]; //cnk_d[k_max*(n-1+n_max*i_site)];
+        cuDoubleComplex l_cnk=cnk_d[i_site+n_sites*((n-1)*k_max)]; //cnk_d[k_max*(n-1+n_max*i_site)];
         l_cnk.x +=amplitude * central_weight_j * sqrt(4.0*pi)*sqrt(sqrt(pi))*  
                   sqrt(atom_sigma_r_j/2.0)*
                  (rcut_hard_j*rcut_hard_j*rcut_hard_j)/(atom_sigma_t_j*atom_sigma_t_j)/
@@ -1254,17 +1253,17 @@ __global__ void cuda_get_cnk_two(hipDoubleComplex *cnk_d, double *atom_sigma_r, 
   }
 }
 
-extern "C" void gpu_get_cnk(double *radial_exp_coeff_d, hipDoubleComplex *angular_exp_coeff_d,
-                            hipDoubleComplex *cnk_d, 
+extern "C" void gpu_get_cnk(double *radial_exp_coeff_d, cuDoubleComplex *angular_exp_coeff_d,
+                            cuDoubleComplex *cnk_d, 
                             int *n_neigh_d, int  *k2_start_d,
                             int n_sites, int n_atom_pairs, int n_soap, int k_max, int n_max, int l_max,
                             int bintybint,
                             double *atom_sigma_r_d, double *atom_sigma_t_d, double *rcut_hard_d, 
                             double *central_weight_d,  int *species_d, int *i_beg_d, int *i_end_d, 
                             int radial_enhancement, int *species_multiplicity_d,
-                            double *W_d, double *S_d, int size_species_1, hipStream_t *stream )
+                            double *W_d, double *S_d, int size_species_1, cudaStream_t *stream )
 {
-  //hipMemsetAsync(cnk_d,0, k_max*n_max*n_sites*sizeof(hipDoubleComplex));
+  //cudaMemsetAsync(cnk_d,0, k_max*n_max*n_sites*sizeof(cuDoubleComplex));
   /*hipEvent_t start, stop;
   hipEventCreate(&start);
   hipEventCreate(&stop);
@@ -1338,7 +1337,7 @@ __global__ void cuda_get_plm_arrays_one(double *plm_array_global_d,int kmax, int
 }
 
 extern "C" void  gpu_get_plm_array_global(double *plm_array_global_d, int n_atom_pairs, int kmax, 
-                                     int lmax, double *thetas_d, hipStream_t *stream )
+                                     int lmax, double *thetas_d, cudaStream_t *stream )
 {
   dim3 nblocks=dim3((n_atom_pairs-1+tpb)/tpb,1,1);
   dim3 nthreads=dim3(tpb,1,1);
@@ -1346,11 +1345,11 @@ extern "C" void  gpu_get_plm_array_global(double *plm_array_global_d, int n_atom
 }
 
 
-__global__ void cuda_get_exp_coeff_one(hipDoubleComplex *eimphi_global_d, double *rjs_d, double *phis_d,
+__global__ void cuda_get_exp_coeff_one(cuDoubleComplex *eimphi_global_d, double *rjs_d, double *phis_d,
                                       bool *mask_d, double *atom_sigma_in_d, double *atom_sigma_scaling_d,
                                       double rcut, int n_atom_pairs, int n_species, int lmax, int kmax,
-                                      double *prefl_global_d, hipDoubleComplex *prefm_global_d, double *preflm_d, 
-                                      double *plm_array_global_d, hipDoubleComplex *exp_coeff_d) //, double *fact_array_d)
+                                      double *prefl_global_d, cuDoubleComplex *prefm_global_d, double *preflm_d, 
+                                      double *plm_array_global_d, cuDoubleComplex *exp_coeff_d) //, double *fact_array_d)
 {
   int k_ij=threadIdx.x+blockIdx.x*blockDim.x;
   double xcut = 1.0e-7;
@@ -1391,7 +1390,7 @@ __global__ void cuda_get_exp_coeff_one(hipDoubleComplex *eimphi_global_d, double
       double sinm2 = -sin(phi);
       double cosm1 = 1.0;
       double sinm1 = 0.0;
-      hipDoubleComplex  loc_prefm;
+      cuDoubleComplex  loc_prefm;
       loc_prefm.x= 1.0;
       loc_prefm.y=0.0; /// (1.d0, 0.d0)*/
       prefm_global_d[k_ij] = loc_prefm;
@@ -1443,12 +1442,12 @@ __global__ void cuda_get_exp_coeff_one(hipDoubleComplex *eimphi_global_d, double
         }
         prefl_global_d[k_ij+l*n_atom_pairs]=ilexp;
         for(int m=0;m<=l;m++){
-          hipDoubleComplex loc_emphi;
-          hipDoubleComplex tmp_prefm=prefm_global_d[k_ij+m*n_atom_pairs];
+          cuDoubleComplex loc_emphi;
+          cuDoubleComplex tmp_prefm=prefm_global_d[k_ij+m*n_atom_pairs];
           loc_emphi.x=ilexp*tmp_prefm.x;
           loc_emphi.y=ilexp*tmp_prefm.y;
           eimphi_global_d[k_ij+k*n_atom_pairs]=loc_emphi;
-          hipDoubleComplex loc_exp_coeff;
+          cuDoubleComplex loc_exp_coeff;
           loc_exp_coeff.x=amplitude*preflm_d[k]*plm_array_global_d[k_ij+k*n_atom_pairs]*loc_emphi.x;
           loc_exp_coeff.y=amplitude*preflm_d[k]*plm_array_global_d[k_ij+k*n_atom_pairs]*loc_emphi.y;
           exp_coeff_d[k_ij+k*n_atom_pairs]=loc_exp_coeff; 
@@ -1476,15 +1475,15 @@ __global__ void cuda_get_exp_coeff_one(hipDoubleComplex *eimphi_global_d, double
 
 
 
-__global__ void cuda_get_exp_coeff_der_one(hipDoubleComplex *eimphi_global_d, double *rjs_d, double *phis_d,
+__global__ void cuda_get_exp_coeff_der_one(cuDoubleComplex *eimphi_global_d, double *rjs_d, double *phis_d,
                                       bool *mask_d, double *atom_sigma_in_d, double *atom_sigma_scaling_d,
                                       double rcut, int n_atom_pairs, int n_species, int lmax, int kmax,
-                                      double *prefl_global_d, hipDoubleComplex *prefm_global_d, double *preflm_d, 
+                                      double *prefl_global_d, cuDoubleComplex *prefm_global_d, double *preflm_d, 
                                       double *prefl_global_der_d, 
-                                      double *plm_array_global_d, double *plm_array_global_der_d, hipDoubleComplex *exp_coeff_d,
-                                      hipDoubleComplex *eimphi_rad_der_global_d, hipDoubleComplex *eimphi_azi_der_global_d,
+                                      double *plm_array_global_d, double *plm_array_global_der_d, cuDoubleComplex *exp_coeff_d,
+                                      cuDoubleComplex *eimphi_rad_der_global_d, cuDoubleComplex *eimphi_azi_der_global_d,
                                       double *plm_array_div_sin, double *plm_array_der_mul_sin, 
-                                      hipDoubleComplex *exp_coeff_rad_der_d, hipDoubleComplex *exp_coeff_azi_der_d, hipDoubleComplex *exp_coeff_pol_der_d) 
+                                      cuDoubleComplex *exp_coeff_rad_der_d, cuDoubleComplex *exp_coeff_azi_der_d, cuDoubleComplex *exp_coeff_pol_der_d) 
 {
   int k_ij=threadIdx.x+blockIdx.x*blockDim.x;
 
@@ -1509,7 +1508,7 @@ __global__ void cuda_get_exp_coeff_der_one(hipDoubleComplex *eimphi_global_d, do
 
       double coeff1 = 2.0*rj/(atom_sigma*atom_sigma);
       double coeff2 = 1.0 - scaling*rj/atom_sigma;
-      //hipDoubleComplex  loc_prefm;
+      //cuDoubleComplex  loc_prefm;
       //double ilexp=-500000;// no need for this, just makig sure the next lines were working
       
 
@@ -1530,21 +1529,21 @@ __global__ void cuda_get_exp_coeff_der_one(hipDoubleComplex *eimphi_global_d, do
         ilexp_der*=coeff2;
         prefl_global_der_d[k_ij+l*n_atom_pairs]=ilexp_der;
         for(int m=0;m<=l;m++){
-          hipDoubleComplex loc_exp_coeff=exp_coeff_d[k_ij+k*n_atom_pairs];
+          cuDoubleComplex loc_exp_coeff=exp_coeff_d[k_ij+k*n_atom_pairs];
           double loc_preflm=preflm_d[k];
-          hipDoubleComplex loc_emphi=eimphi_global_d[k_ij+k*n_atom_pairs];
-          hipDoubleComplex tmp_prefm=prefm_global_d[k_ij+m*n_atom_pairs];
-          hipDoubleComplex loc_emphi_rad_der;
+          cuDoubleComplex loc_emphi=eimphi_global_d[k_ij+k*n_atom_pairs];
+          cuDoubleComplex tmp_prefm=prefm_global_d[k_ij+m*n_atom_pairs];
+          cuDoubleComplex loc_emphi_rad_der;
           loc_emphi_rad_der.x=ilexp_der*tmp_prefm.x;
           loc_emphi_rad_der.y=ilexp_der*tmp_prefm.y;
           eimphi_rad_der_global_d[k_ij+k*n_atom_pairs]=loc_emphi_rad_der;
 
-          hipDoubleComplex loc_emphi_azi_der;
+          cuDoubleComplex loc_emphi_azi_der;
           loc_emphi_azi_der.x=-loc_emphi.y;
           loc_emphi_azi_der.y= loc_emphi.x;
           eimphi_azi_der_global_d[k_ij+k*n_atom_pairs]=loc_emphi_azi_der;
 
-          hipDoubleComplex loc_e_c_rad_der,loc_e_c_azi_der, loc_e_c_pol_der;
+          cuDoubleComplex loc_e_c_rad_der,loc_e_c_azi_der, loc_e_c_pol_der;
           loc_e_c_rad_der.x=amplitude*loc_preflm*plm_array_global_d[k_ij+k*n_atom_pairs]*loc_emphi_rad_der.x-
                             2.0* atom_sigma_scaling_d[i_sp-1]/atom_sigma*loc_exp_coeff.x;
           loc_e_c_rad_der.y=amplitude*loc_preflm*plm_array_global_d[k_ij+k*n_atom_pairs]*loc_emphi_rad_der.y-
@@ -1628,23 +1627,23 @@ __global__ void cuda_get_plm_arrays_der_one(double *plm_array_global_der_d,int k
   }
 }
 
-extern "C" void  gpu_get_exp_coeff_array(hipDoubleComplex *eimphi_global_d, double *rjs_d,  double *phis_d,  double *thetas_d, 
+extern "C" void  gpu_get_exp_coeff_array(cuDoubleComplex *eimphi_global_d, double *rjs_d,  double *phis_d,  double *thetas_d, 
                                              bool *mask_d, double *atom_sigma_in_d, double *atom_sigma_scaling_d, 
                                              double rcut, int n_atom_pairs, int n_species, int lmax, int kmax, 
                                              double *prefl_global_d, double *plm_array_global_d,double *plm_array_global_der_d, 
                                              double *prefl_global_der_d,
-                                             double *preflm_d, hipDoubleComplex *exp_coeff_d, 
+                                             double *preflm_d, cuDoubleComplex *exp_coeff_d, 
                                              bool c_do_derivatives, 
-                                             hipDoubleComplex *eimphi_rad_der_global_d, hipDoubleComplex *eimphi_azi_der_global_d,
+                                             cuDoubleComplex *eimphi_rad_der_global_d, cuDoubleComplex *eimphi_azi_der_global_d,
                                              double *plm_array_div_sin, double *plm_array_der_mul_sin, 
-                                             hipDoubleComplex *exp_coeff_rad_der_d, hipDoubleComplex *exp_coeff_azi_der_d, hipDoubleComplex *exp_coeff_pol_der_d, hipStream_t *stream )
+                                             cuDoubleComplex *exp_coeff_rad_der_d, cuDoubleComplex *exp_coeff_azi_der_d, cuDoubleComplex *exp_coeff_pol_der_d, cudaStream_t *stream )
 {
   dim3 nblocks=dim3((n_atom_pairs-1+tpb)/tpb,1,1);
   dim3 nthreads=dim3(tpb,1,1);
 
-  hipDoubleComplex *prefm_global_d;
+  cuDoubleComplex *prefm_global_d;
    
-  gpuErrchk(hipMallocAsync(&prefm_global_d,  n_atom_pairs*(lmax+1)*sizeof(hipDoubleComplex) ,stream[0]));
+  gpuErrchk(cudaMallocAsync(&prefm_global_d,  n_atom_pairs*(lmax+1)*sizeof(cuDoubleComplex) ,stream[0]));
   
   cuda_get_exp_coeff_one<<<nblocks, nthreads,0,stream[0]>>>(eimphi_global_d,rjs_d, phis_d,
                                                    mask_d, atom_sigma_in_d, atom_sigma_scaling_d,
@@ -1678,7 +1677,7 @@ extern "C" void  gpu_get_exp_coeff_array(hipDoubleComplex *eimphi_global_d, doub
   hipMemGetInfo(& free, & total);
   counter++; 
   printf("\nFree memory %zu, from %zu in iteration %d\n", free/1024/1024, total/1024/1024, counter); */
-  gpuErrchk(hipFreeAsync(prefm_global_d,stream[0]));
+  gpuErrchk(cudaFreeAsync(prefm_global_d,stream[0]));
 }
 
 
@@ -1729,7 +1728,7 @@ extern "C" void  gpu_get_radial_exp_coeff(double *radial_exp_coeff_d, double *ra
                                           int *i_beg_d, int *i_end_d, double *global_scaling_d,
                                           int size_radial_exp_coeff_one, int size_radial_exp_coeff_two, int n_species, 
                                           bool c_do_derivatives, int bintybint,
-                                          double *rcut_hard_d, hipStream_t *stream ){
+                                          double *rcut_hard_d, cudaStream_t *stream ){
  
   dim3 nblocks=dim3((size_radial_exp_coeff_two-1+tpb)/tpb,1,1);
   dim3 nthreads=dim3(tpb,1,1); 
@@ -1755,22 +1754,22 @@ extern "C" void  gpu_get_radial_exp_coeff(double *radial_exp_coeff_d, double *ra
 /* 
 extern "C" void cuda_malloc_double(double **a_d, int Np)
 {
-   gpuErrchk(hipMalloc( (void **) a_d, sizeof(double) * Np ));
+   gpuErrchk(cudaMalloc( (void **) a_d, sizeof(double) * Np ));
    return;
 } */
 
-/* extern "C" void cuda_malloc_double_complex(hipDoubleComplex **a_d, int Np)
+/* extern "C" void cuda_malloc_double_complex(cuDoubleComplex **a_d, int Np)
 {
 
-  gpuErrchk(hipMalloc((void **)  a_d, sizeof(hipDoubleComplex) * Np));
-  //gpuErrchk(hipMallocAsync( a_d, sizeof(hipDoubleComplex) * Np,0));
+  gpuErrchk(cudaMalloc((void **)  a_d, sizeof(cuDoubleComplex) * Np));
+  //gpuErrchk(cudaMallocAsync( a_d, sizeof(cuDoubleComplex) * Np,0));
    return;
 } */
 
 /* extern "C" void cuda_malloc_int(int **a_d, int Np)
 {
    // Allocate memory on GPU
-   gpuErrchk(hipMalloc( (void **) a_d, sizeof(int) * Np ));
+   gpuErrchk(cudaMalloc( (void **) a_d, sizeof(int) * Np ));
    return;
 }
  */
@@ -1778,7 +1777,7 @@ extern "C" void cuda_malloc_double(double **a_d, int Np)
 /* extern "C" void cuda_malloc_bool(void **a_d, int Np)
 {
    // Allocate memory on GPU
-   gpuErrchk(hipMalloc( (void **) a_d, sizeof(bool) * Np ));
+   gpuErrchk(cudaMalloc( (void **) a_d, sizeof(bool) * Np ));
    return;
 }
  */

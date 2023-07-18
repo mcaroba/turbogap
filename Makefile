@@ -5,8 +5,9 @@ SHELL = /bin/sh
 # Include user-modifiable variables from a customizable file.
 # Check the makefiles/ directory for a list of tested architectures
 
-#include makefiles/Makefile.CSC-Mahti_gfortran_openblas_mpi	
-include makefiles/Makefile.CSC-LUMI_cray
+include makefiles/Makefile.CSC-LUMI_cray	
+#include makefiles/Makefile.LUMI_gnu	
+
 
 # Default locations for various files
 BUILD_DIR=build
@@ -23,10 +24,10 @@ PROGRAMS := turbogap
 
 SRC_CUDA := cuda_wrappers.cu
 SRC := splines.f90 types.f90 neighbors.f90 gap.f90 vdw.f90 read_files.f90 md.f90 \
-       gap_interface.f90 mpi.f90 xyz.f90 fortran_cuda_interfaces.f90
+       gap_interface.f90 mpi.f90 xyz.f90 
 SRC_TP_BT := resamplekin.f90 fortran_cuda_interfaces.f90
 SRC_ST := soap_turbo_functions.f90 soap_turbo_radial.f90 soap_turbo_angular.f90 \
-          soap_turbo.f90 soap_turbo_compress.f90 fortran_cuda_interfaces.f90
+          soap_turbo.f90 soap_turbo_compress.f90 
 
 OBJ_CUDA := $(addprefix $(BUILD_DIR)/,$(patsubst %.cu,%.o,$(SRC_CUDA)))
 OBJ := $(addprefix $(BUILD_DIR)/,$(patsubst %.f90,%.o,$(SRC)))
