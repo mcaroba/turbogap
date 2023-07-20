@@ -161,10 +161,10 @@ module mc
        !     Not implemented the volume bias yet
     else if (mc_move == "insertion")then
        call monte_carlo_insertion(p_accept, energy, energy_prev, temp, mu, &
-            mass, v_uc, 1.0d0, n_mc_species)
+            mass, v_a_uc, 1.0d0, n_mc_species)
     else if (mc_move == "removal")then
        call monte_carlo_removal(p_accept, energy, energy_prev, temp, mu, &
-            mass, v_uc, 1.0d0, n_mc_species)
+            mass, v_a_uc, 1.0d0, n_mc_species)
     else if (mc_move == "volume")then
        call monte_carlo_volume(p_accept, energy, energy_prev, temp, &
             v_uc, v_uc_prev, v_a_uc, v_a_uc_prev, pressure, n_mc_species)

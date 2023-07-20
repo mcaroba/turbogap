@@ -2589,6 +2589,7 @@ program turbogap
 
                     if (params%accessible_volume)then
                        call get_accessible_volume(v_uc, v_a_uc, species, params%radii)
+                       write(*,'(A,F12.6,A,F12.6,1X,A)') ' V_acc new: ', v_a_uc, ' A^3 V_acc old ', v_a_uc_prev, 'A^3 |'
                     else
                        v_a_uc = v_uc
                     end if
