@@ -57,7 +57,7 @@ program turbogap
   real*8 :: rcut_max, a_box(1:3), b_box(1:3), c_box(1:3), max_displacement, energy, energy_prev
   real*8 :: virial(1:3, 1:3), this_virial(1:3, 1:3), virial_soap(1:3, 1:3), virial_2b(1:3, 1:3), &
        virial_3b(1:3,1:3), virial_core_pot(1:3, 1:3), virial_vdw(1:3, 1:3), &
-       this_virial_vdw(1:3, 1:3), v_uc, v_uc_prev, eVperA3tobar = 1602176.6208d0, &
+       this_virial_vdw(1:3, 1:3), v_uc, v_uc_prev, v_a_uc, v_a_uc_prev, eVperA3tobar = 1602176.6208d0, &
        ranf, ranv(1:3), disp(1:3), d_disp,  e_mc_prev, p_accept, virial_prev(1:3, 1:3)
   real*8, allocatable :: energies(:), forces(:,:), energies_soap(:), forces_soap(:,:), this_energies(:), &
        this_forces(:,:), &
@@ -1554,11 +1554,7 @@ program turbogap
               write(*,'(A,1X,F24.8,1X,A)')' 3b energy:', sum(energies_3b), 'eV |'
               write(*,'(A,1X,F18.8,1X,A)')' core_pot energy:', sum(energies_core_pot), 'eV |'
               write(*,'(A,1X,F23.8,1X,A)')' vdw energy:', sum(energies_vdw), 'eV |'
-              if (.not. params%do_mc .or. mc_istep <= 1)then
-                 write(*,'(A,1X,F21.8,1X,A)')' Total energy:', sum(energies), 'eV |'
-              else
-                 write(*,'(A,1X,F21.8,1X,A)')' Total energy:', sum(images(i_trial_image)%energies), 'eV |'
-              end if
+              write(*,'(A,1X,F21.8,1X,A)')' Total energy:', sum(energies), 'eV |'
 
               if ( .not. params%do_mc)then
                  write(*,*)'                                       |'
@@ -2130,13 +2126,20 @@ program turbogap
 
                     v_uc = dot_product( cross_product(a_box, b_box), c_box ) / (dfloat(indices(1)*indices(2)*indices(3)))
 
-
+                    if (params%accessible_volume)then
+                       call get_accessible_volume(v_uc, v_a_uc, species, params%radii)
+                       write(*,'(A,F12.6,A,F12.6,1X,A)') ' V_acc new: ', v_a_uc, ' A^3 V_acc old ', v_a_uc_prev, 'A^3 |'
+                    else
+                       v_a_uc = v_uc
+                    end if
 
                     call get_mc_acceptance(mc_move, p_accept, &
                          energy + E_kinetic, &
                          images(i_current_image)%energy + images(i_current_image)%e_kin, &
                          params%t_beg, &
-                         params%mc_mu, n_mc_species, v_uc, v_uc_prev, params%masses_types(mc_id), params%p_beg)
+                         params%mc_mu, n_mc_species, v_uc, v_uc_prev,&
+                         & v_a_uc, v_a_uc_prev, params&
+                         &%masses_types(mc_id), params%p_beg)
 
 
                     call random_number(ranf)
@@ -2200,6 +2203,7 @@ program turbogap
                        ! Set variables
                        n_sites_prev = n_sites
                        v_uc_prev = v_uc
+                       v_a_uc_prev = v_a_uc
                        virial_prev = virial
                        !   Assigning the default image with the accepted one
                        images(i_current_image) = images(i_trial_image)
@@ -2290,6 +2294,13 @@ program turbogap
                             images(i_current_image)%masses, images(i_current_image)%hirshfeld_v, &
                             params%write_property, params%write_array_property, images(i_current_image)%fix_atom, &
                             "mc_all.xyz", .true. )
+
+                       v_uc_prev = dot_product( cross_product(a_box, b_box), c_box ) / (dfloat(indices(1)*indices(2)*indices(3)))
+                       if (params%accessible_volume)then
+                          call get_accessible_volume(v_uc_prev, v_a_uc_prev, species, params%radii)
+                       else
+                          v_a_uc_prev = v_uc_prev
+                       end if
 
 
                     end if

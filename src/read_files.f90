@@ -558,12 +558,14 @@ end if
 !   Let's allocate some arrays:
     allocate( params%species_types(1:n_species) )
     allocate( params%masses_types(1:n_species) )
+    allocate( params%radii(1:n_species) )
     allocate( params%e0(1:n_species) )
     allocate( params%vdw_c6_ref(1:n_species) )
     allocate( params%vdw_r0_ref(1:n_species) )
     allocate( params%vdw_alpha0_ref(1:n_species) )
 !   Some defaults before reading from file
     params%masses_types = 0.d0
+    params%radii = 0.5d0
     params%e0 = 0.d0
     params%vdw_c6_ref = 0.d0
     params%vdw_r0_ref = 0.d0
@@ -749,7 +751,9 @@ end if
         do i=1, params%n_mc_types
            params%mc_acceptance(i) = params%mc_acceptance(i) / k
         end do
-
+      else if(keyword=='accessible_volume')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%accessible_volume
       else if(keyword=='write_xyz')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%write_xyz
@@ -866,6 +870,9 @@ end if
 !       We convert the masses in amu to eV*fs^2/A^2
         params%masses_types = params%masses_types * 103.6426965268d0
         masses_in_input_file = .true.
+      else if(keyword=='radii')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%radii(1:n_species)
       else if(keyword=='e0')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%e0(1:n_species)
@@ -1120,9 +1127,17 @@ end if
              end if
 
           end if
-
-
        end do
+
+       do i = 1, n_species
+          if( params%accessible_volume .and. (params%radii(i) == 0.5d0 ))then
+             write(*,*)'                                       |'
+             write(*,*)'WARNING: radii for accessible volume   |  <-- WARNING'
+             write(*,*)'is the default value of 0.5A.          |'
+             write(*,*)'please make sure this correct!!        |'
+          end if
+       end do
+
 
     end if
 
