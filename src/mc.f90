@@ -34,6 +34,29 @@ module mc
 
   contains
 
+    subroutine get_accessible_volume(v_tot, v, species, radii)
+      implicit none
+      real*8, intent(in) :: v_tot
+      real*8, intent(out) :: v
+      real*8, allocatable, intent(in) :: radii(:)
+      integer, allocatable, intent(in) :: species(:)
+      integer :: n, i
+      real*8 :: v_atoms, r, pi=3.14159265359
+
+
+      n = size(species, 1)
+
+      v_atoms = 0.d0
+
+      do i = 1, n
+         r = radii( species(i) )
+         v_atoms = v_atoms + ( 4.d0 / 3.d0 ) * pi * r**3
+      end do
+
+      v = v_tot - v_atoms
+    end subroutine get_accessible_volume
+
+
 !   These are the routines for calculating the monte-carlo acceptance criteria for different move types
   subroutine monte_carlo_insertion(p_accept, e_new, e_prev, temp, mu, m, volume, volume_bias, N_exch)
     implicit none
@@ -82,10 +105,12 @@ module mc
 
   end subroutine monte_carlo_move
 
-  subroutine monte_carlo_volume(p_accept, e_new, e_prev, temp, V_new, V_prev, P, N_exch)
+  subroutine monte_carlo_volume(p_accept, e_new, e_prev, temp, V_new,&
+       & V_prev, V_avail_new, V_avail_prev, P, N_exch)
     implicit none
 
-    real*8, intent(in) :: e_new, e_prev, temp, V_new, V_prev, P
+    real*8, intent(in) :: e_new, e_prev, temp, V_new, V_prev,&
+         & V_avail_new, V_avail_prev, P
     real*8 :: kB = 8.617333262e-5, beta, eVperA3tobar = 1602176.6208d0
     integer, intent(in) :: N_exch
     real*8, intent(out) :: p_accept
@@ -93,7 +118,7 @@ module mc
     beta = (1./(kB * temp))
     p_accept = exp( - beta * ( (e_new - e_prev) + &
                       (P / eVperA3tobar) * ( V_new-V_prev ) + &
-                      -(N_exch+1) * log( V_new/V_prev )/ beta ) )
+                      -(N_exch+1) * log( V_avail_new/V_avail_prev )/ beta ) )
 
   end subroutine monte_carlo_volume
 
@@ -119,13 +144,13 @@ module mc
     
 
   subroutine get_mc_acceptance(mc_move, p_accept, energy, energy_prev, temp, &
-       mu, n_mc_species, v_uc, v_uc_prev, mass, pressure)
+       mu, n_mc_species, v_uc, v_uc_prev, v_a_uc, v_a_uc_prev, mass, pressure)
     implicit none
 
     character*32, intent(in) :: mc_move
     real*8, intent(out) :: p_accept
     real*8, intent(in) ::  energy, energy_prev, temp, &
-         mu, v_uc, v_uc_prev, mass, pressure
+         mu, v_uc, v_uc_prev, v_a_uc, v_a_uc_prev, mass, pressure
     integer, intent(in) :: n_mc_species
 
 
@@ -142,7 +167,7 @@ module mc
             mass, v_uc, 1.0d0, n_mc_species)
     else if (mc_move == "volume")then
        call monte_carlo_volume(p_accept, energy, energy_prev, temp, &
-            v_uc, v_uc_prev, pressure, n_mc_species)
+            v_uc, v_uc_prev, v_a_uc, v_a_uc_prev, pressure, n_mc_species)
     end if
 
     p_accept = min(1.0, p_accept)

@@ -58,9 +58,11 @@ program turbogap
   real*8 :: rcut_max, a_box(1:3), b_box(1:3), c_box(1:3), max_displacement, energy, energy_prev
   real*8 :: virial(1:3, 1:3), this_virial(1:3, 1:3), virial_soap(1:3, 1:3), virial_2b(1:3, 1:3), &
        virial_3b(1:3,1:3), virial_core_pot(1:3, 1:3), virial_vdw(1:3, 1:3), virial_lp(1:3,1:3), &
-       this_virial_vdw(1:3, 1:3), this_virial_lp(1:3, 1:3), v_uc, v_uc_prev, eVperA3tobar = 1602176.6208d0, &
-       ranf, ranv(1:3), disp(1:3), d_disp,  e_mc_prev, p_accept,&
-       & virial_prev(1:3, 1:3), sim_exp_pred, sim_exp_prev, sim_exp_pred_der(1:3)
+       this_virial_vdw(1:3, 1:3), this_virial_lp(1:3, 1:3), v_uc,&
+       & v_uc_prev, v_a_uc, v_a_uc_prev, eVperA3tobar =&
+       & 1602176.6208d0, ranf, ranv(1:3), disp(1:3), d_disp, &
+       & e_mc_prev, p_accept, virial_prev(1:3, 1:3), sim_exp_pred,&
+       & sim_exp_prev, sim_exp_pred_der(1:3)
   real*8, allocatable :: energies(:), forces(:,:), energies_soap(:),&
        & forces_soap(:,:), this_energies(:), this_forces(:,:),&
        & energies_2b(:), forces_2b(:,:), energies_3b(:), forces_3b(:&
@@ -2585,13 +2587,19 @@ program turbogap
 
                     v_uc = dot_product( cross_product(a_box, b_box), c_box ) / (dfloat(indices(1)*indices(2)*indices(3)))
 
-
+                    if (params%accessible_volume)then
+                       call get_accessible_volume(v_uc, v_a_uc, species, params%radii)
+                    else
+                       v_a_uc = v_uc
+                    end if
 
                     call get_mc_acceptance(mc_move, p_accept, &
                          energy + E_kinetic, &
                          images(i_current_image)%energy + images(i_current_image)%e_kin, &
                          params%t_beg, &
-                         params%mc_mu, n_mc_species, v_uc, v_uc_prev, params%masses_types(mc_id), params%p_beg)
+                         params%mc_mu, n_mc_species, v_uc, v_uc_prev,&
+                         & v_a_uc, v_a_uc_prev, params&
+                         &%masses_types(mc_id), params%p_beg)
 
 
                     call random_number(ranf)
@@ -2702,6 +2710,7 @@ program turbogap
                        ! Set variables
                        n_sites_prev = n_sites
                        v_uc_prev = v_uc
+                       v_a_uc_prev = v_a_uc
                        virial_prev = virial
                        if (params%mc_opt_spectra .and. valid_xps) sim_exp_prev = sim_exp_pred
                        !   Assigning the default image with the accepted one
@@ -2818,6 +2827,13 @@ program turbogap
                        if (params%mc_opt_spectra .and. valid_xps)then
                           call write_local_property_data(x_i_pred, y_i_pred, .true., "xps_prediction.dat")
                           call write_local_property_data(x_i_exp, y_i_exp, .true., "xps_exp.dat")
+                       end if
+
+                       v_uc_prev = dot_product( cross_product(a_box, b_box), c_box ) / (dfloat(indices(1)*indices(2)*indices(3)))
+                       if (params%accessible_volume)then
+                          call get_accessible_volume(v_uc_prev, v_a_uc_prev, species, params%radii)
+                       else
+                          v_a_uc_prev = v_uc_prev
                        end if
 
                     end if

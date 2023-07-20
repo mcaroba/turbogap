@@ -94,7 +94,7 @@ module types
 ! These is the type for the input parameters
   type input_parameters
      real*8, allocatable :: masses_types(:), e0(:), vdw_c6_ref(:), vdw_r0_ref(:), vdw_alpha0_ref(:), &
-          mc_acceptance(:), energy_scales_opt_exp_data(:)
+          mc_acceptance(:), energy_scales_opt_exp_data(:), radii(:)
     real*8 :: t_beg = 300.d0, t_end = 300.d0, tau_t = 100.d0, md_step = 1.d0, &
               neighbors_buffer = 0.d0, max_GBytes_per_process = 1.d0, e_tol = 1.d-6, &
               vdw_sr = 0.94d0, vdw_d = 20.d0, vdw_rcut = 10.d0, &
@@ -136,7 +136,9 @@ module types
          & variable_time_step = .false., vdw_mbd_grad = .false.,&
          & do_nested_sampling = .false., scale_box_nested = .false.,&
          & mc_write_xyz = .false., mc_relax = .false., mc_opt_spectra&
-         &=.false., optimize_exp_data=.false., print_lp_forces=.false., mc_hamiltonian = .false.
+         &=.false., optimize_exp_data=.false., print_lp_forces&
+         &=.false., mc_hamiltonian = .false., accessible_volume =&
+         & .false.
     logical, allocatable :: write_local_properties(:)
 
   end type input_parameters
