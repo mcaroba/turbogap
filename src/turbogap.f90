@@ -2127,7 +2127,7 @@ program turbogap
                     v_uc = dot_product( cross_product(a_box, b_box), c_box ) / (dfloat(indices(1)*indices(2)*indices(3)))
 
                     if (params%accessible_volume)then
-                       call get_accessible_volume(v_uc, v_a_uc, species, params%radii)
+                       call get_accessible_volume(v_uc, v_a_uc, species, params%radii )
                        write(*,'(A,F12.6,A,F12.6,1X,A)') ' V_acc new: ', v_a_uc, ' A^3 V_acc old ', v_a_uc_prev, 'A^3 |'
                     else
                        v_a_uc = v_uc
