@@ -32,11 +32,11 @@ program turbogap
   use gap
   use read_files
   use md
-  use adaptive_time				! for adaptive time simulation (added by Uttiyoarnab Saha)
-  use electronic_stopping		! for electronic stopping correction in radiation cascades (added by Uttiyoarnab Saha)
-  use eph_fdm					! for T - dependent parameters - elec. stop. - eph model (added by Uttiyoarnab Saha)
-  use eph_beta					! for the atomic electronic densities  - elec. stop. - eph model (added by Uttiyoarnab Saha)
-  use eph_electronic_stopping	! for electronic stopping based in radiation cascades on the eph model (added by Uttiyoarnab Saha)
+  use adaptive_time				! for adaptive time simulation (TurboGAP will use these five modules for radiation cascades)
+  use electronic_stopping		! for electronic stopping correction in radiation cascades
+  use eph_fdm					! for T - dependent parameters - elec. stop. - eph model
+  use eph_beta					! for the atomic electronic densities  - elec. stop. - eph model
+  use eph_electronic_stopping	! for electronic stopping based in radiation cascades on the eph model
   use gap_interface
   use types
   use vdw
@@ -87,6 +87,7 @@ program turbogap
   real*8, allocatable :: allelstopdata(:)
   type (EPH_Beta_class) :: ephbeta
   type (EPH_FDM_class) :: ephfdm
+  type (EPH_LangevinSpatialCorrelation_class) :: ephlsc
 
 ! Clean up these variables after code refactoring !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   integer, allocatable :: n_neigh(:), neighbors_list(:), alpha_max(:), species(:), species_supercell(:), &
@@ -328,7 +329,7 @@ program turbogap
   call read_input_file(n_species, mode, params, rank)
 
 ! If electronic stopping is required to be done, then read the stopping data file for once
-! Reading and storing the elctronic stopping data		---- by Uttiyoarnab Saha  
+! Reading and storing the elctronic stopping data 
   if ( params%electronic_stopping ) then
 		call read_electronic_stopping_file (n_species,params%species_types,params%estop_filename,nrows,allelstopdata)
   end if
@@ -567,20 +568,24 @@ program turbogap
   time_read_input(3) = time_read_input(3) + time_read_input(2) - time_read_input(1)
 !**************************************************************************
 
-! If electronic stopping based on eph model is to be calculated, these data structures are required to be
-! initialized first.
+!! If electronic stopping based on eph model is to be calculated, these data structures are required to be
+!! initialized first.
   if ( params%nonadiabatic_processes ) then
 	if ( params%eph_Tinfile /= "NULL" ) then
-		call ephfdm%EPH_FDM_input_file(params%eph_fdm_option,params%eph_Tinfile,params%eph_md_last_step)
+		call ephfdm%EPH_FDM_input_file(params%eph_Tinfile,params%eph_md_last_step)
 	end if
 	if ( params%eph_Tinfile == "NULL" ) then
-		call ephfdm%EPH_FDM_input_params(params%eph_fdm_option,params%eph_gsx, params%eph_gsy, params%eph_gsz, &
-		params%in_x0, params%in_x1, params%in_y0, params%in_y1, params%in_z0, params%in_z1, &
-		params%eph_Ti_e, params%eph_C_e, params%eph_rho_e, params%eph_kappa_e, params%eph_fdm_steps)
+		call ephfdm%EPH_FDM_input_params(params%eph_md_last_step, params%eph_gsx, &
+		params%eph_gsy, params%eph_gsz, params%in_x0, params%in_x1, params%in_y0, params%in_y1, &
+		params%in_z0, params%in_z1, params%eph_Ti_e, params%eph_C_e, params%eph_rho_e, &
+		params%eph_kappa_e, params%eph_fdm_steps)
 	end if
 	call ephbeta%beta_parameters(params%eph_betafile,n_species)
+	call ephlsc%eph_InitialValues (params%eph_friction_option, params%eph_random_option, params%eph_fdm_option, &
+			params%eph_Toutfile, params%eph_freq_Tout, params%eph_freq_mesh_Tout, params%model_eph, &
+			params%eph_E_prev_time, params%eph_md_prev_time)	
   end if
-! ! -------------------------						---- untill here for initializing eph model elec. stopping
+!! -------------------------						---- untill here for initializing eph model elec. stopping
 
 
 
@@ -1516,7 +1521,7 @@ end if
                            forces, energies(1:n_sites), masses, hirshfeld_v, &
                            params%write_property, params%write_array_property, fix_atom )
                            
-        !******** time is actually the md_time not md_istep*dt since dt changes, so md_time is put in the trajectory_out.xyz file (by Uttiyoarnab Saha)
+        !******** time is actually the md_time not md_istep*dt since dt changes, so md_time is put in the trajectory_out.xyz file
         
         
 #ifdef _MPIF90
@@ -1569,7 +1574,7 @@ end if
                                 params%target_pos_step, params%tau_dt, params%md_step, time_step)
       end if
       
-! ------- option for doing simulation with adaptive time step						********* added here by Uttiyoarnab Saha
+!! ------- option for doing simulation with adaptive time step
 	  
 	  if ( params%adaptive_time ) then
 		if (MOD(md_istep, params%adapt_tstep_interval) == 0) then
@@ -1579,9 +1584,9 @@ end if
 		end if
 	  end if
 
-! ---------------------------------------------------------							******** until here for adaptive time
+!! ---------------------------------------------------------			******** until here for adaptive time
 
-! ------- option for radiation cascade simulation with electronic stopping			********* added here by Uttiyoarnab Saha
+!! ------- option for radiation cascade simulation with electronic stopping
 
 	  if ( params%electronic_stopping ) then
 		call electron_stopping_velocity_dependent (md_istep, n_species, params%eel_cut, &
@@ -1589,20 +1594,19 @@ end if
 					params%masses_types, time_step, md_time, nrows, allelstopdata)		
 	  end if
 
-! ---------------------------------------------------------			******** until here for electronic stopping
+!! ---------------------------------------------------------			******** until here for electronic stopping
 
-! ------- option for electronic stopping based on eph model			********* added here by Uttiyoarnab Saha
+!! ------- option for electronic stopping based on eph model
 
 	  if ( params%nonadiabatic_processes ) then
-		call eph_Langevin_spatial_correlation (params%eph_friction_option, params%eph_random_option, &
-		velocities(1:3, 1:n_sites),forces(1:3, 1:n_sites), masses(1:n_sites),params%masses_types, &
-		md_istep,time_step,md_time, positions(1:3, 1:n_sites), neighbors_list, n_neigh, n_species, &
-		params%eph_Toutfile, params%eph_freq_Tout, params%eph_freq_mesh_Tout, params%model_eph, ephbeta, ephfdm)	
+		call ephlsc%eph_LangevinForces (velocities(1:3, 1:n_sites), forces(1:3, 1:n_sites), &
+					masses(1:n_sites), params%masses_types, md_istep, time_step, md_time, &
+					positions(1:3, 1:n_sites), n_species, ephbeta, ephfdm)	
 	  end if
 
-! ---------------------------------------------------------			******** until here for electronic stopping basd on eph model
+!! ---------------------------------------------------------			******** until here for electronic stopping basd on eph model
 
-      
+
 !     This takes care of NVE
 !     Velocity Verlet takes positions for t, positions_prev for t-dt, and velocities for t-dt and returns everything
 !     dt later. forces are taken at t, and forces_prev at t-dt. forces is left unchanged by the routine, and
@@ -1635,6 +1639,16 @@ end if
         positions_prev(1:3, 1:n_sites) = positions(1:3, 1:n_sites)
         forces_prev(1:3, 1:n_sites) = forces(1:3, 1:n_sites)
       end if
+
+!! ------- option for electronic stopping based on eph model
+
+	  if ( params%nonadiabatic_processes ) then
+		call ephlsc%eph_LangevinEnergyDissipation (md_istep, md_time, velocities(1:3, 1:n_sites), &
+				positions(1:3, 1:n_sites), time_step, ephfdm)	
+	  end if
+
+!! ---------------------------------------------------------			******** until here for electronic stopping basd on eph model
+
       
 !     Compute kinetic energy from current velocities. Because Velocity Verlet
 !     works with the velocities at t-dt (except for the first time step) we
@@ -1655,14 +1669,14 @@ end if
 !     Here we write thermodynamic information -> THIS NEEDS CLEAN UP AND IMPROVEMENT
       if( md_istep == 0 )then
         open(unit=10, file="thermo.log", status="unknown")
-        write(10,*) "Step, Time, Temp, Kin_E, Pot_E, Pres"			! ------ added this heading to thermo.log file (Uttiyoarnab Saha)
+        write(10,*) "Step, Time, Temp, Kin_E, Pot_E, Pres"			!! ------ added this heading to thermo.log file (Uttiyoarnab Saha)
       else
         open(unit=10, file="thermo.log", status="old", position="append")
       end if
       if( md_istep == 0 .or. md_istep == params%md_nsteps .or. modulo(md_istep, params%write_thermo) == 0 )then
 !       Organize this better so that the user can have more freedom about what gets printed to thermo.log
 !       There should also be a header preceded by # specifying what gets printed
-        write(10, "(I10, 1X, E13.6, 1X, F16.4, 1X, F20.8, 1X, F20.8, 1X, F20.8)", advance="no") &				!! **** changed md_time format from F16.4 to E13.6 to observe precise time (Uttiyoarnab Saha)
+        write(10, "(I10, 1X, E13.6, 1X, F16.4, 1X, F20.8, 1X, F20.8, 1X, F20.8)", advance="no") &			!! **** changed md_time format from F16.4 to E13.6 to observe precise time
              md_istep, md_time, instant_temp, E_kinetic, sum(energies), instant_pressure
         if( params%write_lv )then
           write(10, "(1X, 9F20.8)", advance="no") a_box(1:3)/dfloat(indices(1)), &
@@ -1703,7 +1717,7 @@ end if
                            forces, energies(1:n_sites), masses, hirshfeld_v, &
                            params%write_property, params%write_array_property, fix_atom(1:3, 1:n_sites) )
          
-       !******** time is actually the md_time not md_istep*dt since dt changes, so md_time is put in the trajectory_out.xyz file (by Uttiyoarnab Saha)                  
+   !! time is actually the md_time not md_istep*dt since dt changes, so md_time is put in the trajectory_out.xyz file (Uttiyoarnab Saha)
          
       end if
 !

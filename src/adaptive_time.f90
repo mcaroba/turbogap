@@ -7,7 +7,7 @@
 ! HND X   TurboGAP is published and distributed under the
 ! HND X      Academic Software License v1.0 (ASL)
 ! HND X
-! HND X   This file, eph_adaptive_time.f90, is copyright (c) 2023, Uttiyoarnab Saha
+! HND X   This file, adaptive_time.f90, is copyright (c) 2023, Uttiyoarnab Saha
 ! HND X
 ! HND X   TurboGAP is distributed in the hope that it will be useful for non-commercial
 ! HND X   academic research, but WITHOUT ANY WARRANTY; without even the implied
@@ -65,9 +65,7 @@ subroutine variable_time_step_adaptive (init, vel, forces, masses, tmin, tmax, x
 
 	dtmin = 1.0E+20
 	
-	! When velocities of all atoms are set to 0 initially, the temperature
-	! changes to unrealistic values.
-	! So, initializing time steps to choose the minimum from a proper set
+	! Initializing time steps to choose the minimum from a proper set
 	! of values of times and avoid getting 0.
 	
 	if ( init ) then

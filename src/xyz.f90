@@ -74,7 +74,7 @@ module xyz_module
 !   In variables:
     real*8, intent(in) :: dt, temperature, pressure, a_cell(1:3), b_cell(1:3), c_cell(1:3), virial(1:3,1:3)
     real*8, intent(in) :: forces(:,:), velocities(:,:), positions(:,:), local_energies(:), masses(:)
-    real*8, intent(in) :: hirshfeld_v(:), md_time	! **** md_time is put to be printed in the trajectory file (by Uttiyoarnab Saha)
+    real*8, intent(in) :: hirshfeld_v(:), md_time	! **** md_time is put to be printed in the trajectory file
     integer, intent(in) :: Nat, md_istep
     character(len=*), intent(in) :: species(:)
     logical, intent(in) :: write_property(:), write_array_property(:), fix_atom(:,:)
@@ -205,7 +205,7 @@ module xyz_module
 !   Time
     if( write_property(6) )then
     
-    !******** time is actually the md_time not md_istep*dt since dt changes, so md_time is put in the trajectory_out.xyz file (by Uttiyoarnab Saha)
+    !******** time is actually the md_time not md_istep*dt since dt changes, so md_time is put in the trajectory_out.xyz file
     
       write(temp_string, "(E13.6)") md_time			!dfloat(md_istep)*dt
       write(10, "(1X,2A)", advance="no") "time=", trim(adjustl(temp_string))

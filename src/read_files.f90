@@ -710,7 +710,7 @@ end if
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%write_lv
       
-! ------- option for doing simulation with adaptive time step				********* added here by Uttiyoarnab Saha
+! ------- option for doing simulation with adaptive time step
 	  
 	  else if (keyword == 'adaptive_time') then
 		backspace(10)
@@ -746,10 +746,11 @@ end if
 			write(*,*) "ERROR: Maximum energy transfer in a time step should be positive."
 			stop
 		end if
-! ---------------------------------------------------------					******** until here for adaptive time
+
+! ---------------------------------------------------------				******** until here for adaptive time
 
 
-! ------- option for radiation cascade simulation with electronic stopping				********* added here by Uttiyoarnab Saha
+! ------- option for radiation cascade simulation with electronic stopping
 
 	  else if (keyword == 'electronic_stopping') then
 		backspace(10)
@@ -765,9 +766,10 @@ end if
 		backspace(10)
 		read(10, *, iostat = iostatus) cjunk, cjunk, params%estop_filename
 
-! ---------------------------------------------------------						******** until here for electronic stopping
+! ---------------------------------------------------------				******** until here for electronic stopping
 
-! ------- option for radiation cascade simulation with EPH model				********* added here by Uttiyoarnab Saha
+! ------- option for radiation cascade simulation with EPH model
+
 	  else if (keyword == 'nonadiabatic_processes') then
 		backspace(10)
 		read(10,*, iostat = iostatus) cjunk, cjunk, params%nonadiabatic_processes
@@ -789,6 +791,12 @@ end if
 	  else if (keyword == 'eph_md_last_step') then
 		backspace(10)
 		read(10,*, iostat = iostatus) cjunk, cjunk, params%eph_md_last_step
+	  else if (keyword == 'eph_md_prev_time') then
+		backspace(10)
+		read(10,*, iostat = iostatus) cjunk, cjunk, params%eph_md_prev_time
+	  else if (keyword == 'eph_e_prev_time') then
+		backspace(10)
+		read(10,*, iostat = iostatus) cjunk, cjunk, params%eph_E_prev_time
 	  else if (keyword == 'eph_toutfile') then
 		backspace(10)
 		read(10,*, iostat = iostatus) cjunk, cjunk, params%eph_Toutfile
@@ -832,7 +840,7 @@ end if
 		backspace(10)
 		read(10,*, iostat = iostatus) cjunk, cjunk, params%eph_Ti_e
 
-! ---------------------------------------------------------						******** until here for electronic stopping based on EPH model
+! ---------------------------------------------------------				******** until here for electronic stopping based on EPH model
       
       else if(keyword=='box_scaling_factor')then
         backspace(10)
@@ -940,9 +948,8 @@ end if
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%optimize
         if( params%optimize == "vv" .or. params%optimize == "gd" .or. params%optimize == "gd-box" .or. &
-            params%optimize == "gd-box-ortho" .or. params%optimize == "e-heat-bath")then
+            params%optimize == "gd-box-ortho")then
           continue
-          ! "electron-heat-bath" is added here to thermalize the system with electronic heat bath and not run velocity verlet
         else
           write(*,*) "ERROR: optimize algorithm not implemented:", params%optimize
           stop
@@ -1082,7 +1089,8 @@ end if
 
 
 !**************************************************************************
-! ------- option for radiation cascade simulation with electronic stopping				********* added here by Uttiyoarnab Saha
+! ------- option for radiation cascade simulation with electronic stopping			
+! ********* added here by Uttiyoarnab Saha
 
 subroutine read_electronic_stopping_file (n_species, species_types, estopfilename, nrows, allelstopdata)
 ! read the given electronic stopping file 
