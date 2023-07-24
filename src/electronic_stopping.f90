@@ -42,7 +42,7 @@
 ! stopping values (eV/Ang) like E_1 dE/dx(element 1) dE/dx(element 2) .. (.. 3) ..
 !								E_2  "   (.. 1)			" (.. 2)	   " (.. 3) ..
 !								..	..		..			..				..		..
-!********* by Uttiyoarnab Saha
+!- by Uttiyoarnab Saha
 
 !**************************************************************************
 
@@ -61,19 +61,19 @@ integer, intent(in) :: md_istep, nrows
 integer :: Np, i, j, itype
 real*8 :: vsq,energy,Se, Se_lo, Se_hi, E_lo, E_hi, factor, vabs, SeLoss
 
-! Data from the user-given input script file
+!! Data from the user-given input script file
 
 integer, intent(in) :: natomtypes
 real*8, intent(in) :: Ecut,  masses(:), type_mass(:)
 
-! To receive stopping data from file to array containers
+!! To receive stopping data from file to array containers
 
 integer :: ncols, ndata, irow		!icol 
 real*8, allocatable, intent(in) :: allelstopdata(:)
 real*8, allocatable :: En_elstopfile(:), elstop(:,:)
 character*1024 :: infoline
 
-! To write the electronic energy loss data to a file after evaluation at each time step
+!! To write the electronic energy loss data to a file after evaluation at each time step
 
 if( md_istep == 0 .or. md_istep == -1 )then
 	open (unit = 100, file = "ElectronicEnergyLoss.txt", status = "unknown")
@@ -116,12 +116,12 @@ do i = 1, Np
 		write (*,*) "ERROR: Kinetic energy of atom is higher than electron stopping data"
 		stop
 	end if
-	! Here the condition for matching the region can be given
-	! .... like a particular group atoms only .....
-	! .... !
+	!! Here the condition for matching the region can be given
+	!! .... like a particular group atoms only .....
+	!! .... !
 	
-	! Find position of atom K.E in the data file and then corresponding electronic stopping
-	! to apply the friction to the current forces
+	!! Find position of atom K.E in the data file and then corresponding electronic stopping
+	!! to apply the friction to the current forces
 	
 	do j = 1, nrows-1
 		if (energy == En_elstopfile(j)) then 
@@ -145,12 +145,12 @@ do i = 1, Np
 	vabs = sqrt(vsq)
 	factor = -Se / vabs
 	
-	! The current forces get modified (reduced) 
+	!! The current forces get modified (reduced) 
 	forces(1,i) = forces(1,i) + vel(1,i) * factor
 	forces(2,i) = forces(2,i) + vel(2,i) * factor
 	forces(3,i) = forces(3,i) + vel(3,i) * factor
 
-	! roughly, E += (dE/dx) * (dx) = (Se) * (vabs*dt)
+	!! roughly, E += (dE/dx) * (dx) = (Se) * (vabs*dt)
 	SeLoss = SeLoss + (Se * vabs * dt)
 end do
 
