@@ -146,8 +146,8 @@ module xps_utils
       ! We then broaden y to get the actual spectra
       y = 0.d0
       do i = 1, n_sites
-         call broaden_spectrum(x, core_electron_be(i), y_all(1:n_samples,i), sigma)
-         y(1:n_samples) = y(1:n_samples) + y_all(1:n_samples,i)
+         call broaden_spectrum(x, core_electron_be(i), y, y_all, i, sigma)
+         !         y(1:n_samples) = y(1:n_samples) + y_all(1:n_samples,i)
       end do
 
       ! and then we normalise
@@ -232,7 +232,7 @@ module xps_utils
                k = k + 1
                j2 = modulo(neighbors_list(k)-1, n_sites0) + 1
                !             SOAP neighbors
-               ! MAY NEED TO CHANGE THIS TO ACCOUNT FOR MACHINE PRECISIO
+               ! MAY NEED TO CHANGE THIS TO ACCOUNT FOR MACHINE PRECISIOv
                if( .not. all(core_electron_be_der(1:3, k) == 0.d0) )then
                   ! force comes from a sum of all the moment forces
                   this_force = 0.d0
@@ -305,82 +305,54 @@ module xps_utils
 
     subroutine get_exp_pred_spectra_energies_forces(data, energy_scale, core_electron_be, core_electron_be_der,&
          & n_neigh, neighbors_list, neighbor_species, &
-         & sigma, n_samples, &
-         & x_i_exp, y_i_exp,  y_i_pred, get_exp, do_forces, rjs, xyz,&
-         & n_tot, energies_lp, forces0, virial)
+         & sigma, n_samples, mag, &
+         & x, y_exp,  y, y_all, get_exp, do_forces, rjs, xyz,&
+         & n_tot, energies_lp, forces0, virial, similarity_type, rank)
       implicit none
       real*8, allocatable, intent(in) :: data(:,:)
       integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:)
-      real*8, intent(in) :: sigma, core_electron_be(:), core_electron_be_der(:,:), rjs(:), xyz(:,:), energy_scale
+      real*8, intent(in) :: sigma, core_electron_be(:),&
+           & core_electron_be_der(:,:), rjs(:), xyz(:,:),&
+           & energy_scale, mag
       real*8, allocatable, intent(inout) :: forces0(:,:)
-      real*8, allocatable, intent(out) :: x_i_exp(:), y_i_exp(:), y_i_pred(:)
+      real*8, allocatable, intent(in) :: x(:), y_exp(:), y(:)
+      real*8, intent(in) :: y_all(:,:)
+      real*8, allocatable :: der_sum(:)
       real*8, intent(inout) :: energies_lp(:)
       real*8, intent(inout) :: virial(1:3,1:3)
-      real*8 ::  this_force(1:3), mag, t
-      real*8, allocatable :: x(:), y(:), x_exp(:), y_exp(:), y_all(:,:), y_der(:,:)
-      integer, intent(in) :: n_samples, n_tot
+      real*8 ::  this_force(1:3), t
+      real*8, allocatable ::  y_der(:,:), prefactor(:)
+      integer, intent(in) :: n_samples, n_tot, rank
       logical, intent(in) :: get_exp, do_forces
       integer :: n_sites, n_pairs, n_pairs_soap, n_species, n_sites0
       integer :: i, j, i2, j2, k, n_in_buffer, k1, k2, mag_force_i
       real*8 :: x_val, x_min, x_max, x_range, max_force, mag_force, max_mag_force, similarity, dx
+      character*32, intent(in) :: similarity_type
+
 
       n_sites = size(n_neigh)
       n_pairs = size(neighbors_list)
       n_sites0 = size(forces0, 2)
 
-
+      dx = x(2) - x(1)
       ! This is essentially the same as the procedure for the hirshfeld gradients as in vdw.f90
-      allocate(x(1:n_samples))
-      allocate(y(1:n_samples))
-      allocate(y_all(1:n_samples, 1:n_sites))
-      allocate(y_der(1:3, 1:n_sites))
-      allocate(x_exp(1:n_samples))
-      allocate(y_exp(1:n_samples))
+      allocate(y_der(1:3, 1:n_samples))
 
-
-
-      x_min = data(1,1)
-      x_max = data(1,size(data,2))
-      x_range = x_max - x_min
-      dx = x_range / real(n_samples)
-
-      do i = 1, n_samples
-         t = (real(i-1) / real(n_samples-1))
-         x(i) = (1.d0 - t) * x_min  +  t * x_max !range
-      end do
-
-
-      ! Interpolate, this gets more x from xi
-      call lerp(x, y, data(1,:), data(2,:))
-      x_exp = x
-      y_exp = y
-      y_der = 0.d0
-      y_all = 0.d0
-
-
-      ! We then broaden y to get the actual spectra
-      y = 0.d0
-      do i = 1, n_sites
-         call broaden_spectrum(x, core_electron_be(i), y_all(1:n_samples,i), sigma)
-         y(1:n_samples) = y(1:n_samples) + y_all(1:n_samples,i)
-      end do
-
-      ! The normalised sum of the y_all
-
-      ! and then we normalise
-      mag = sum(y * dx) ! real(n_tot) !sqrt( dot_product(y, y) )
-      y = y / mag
-      y_all = y_all / mag
-      y_exp = y_exp / sum(y_exp * dx)  !sqrt( dot_product(y_exp, y_exp) )
-      similarity = dot_product( y, y_exp * dx )
-
-      print *, " Similarity: ", similarity
 
       ! The energetic contribution to this would then be, e_scale * ( 1 - \sum_i S_i ), this can be done after mpi_reduce
       ! S_i =  dot_product( y_all(:,i), y_exp )
-      do i = 1, n_sites
-         energies_lp(i) = energy_scale * ((1.d0/ real(n_tot))  -  dot_product( y_all(:,i), y_exp * dx))
-      end do
+
+      if( similarity_type == 'similarity' .or. similarity_type == 'overlap' )then
+         do i = 1, n_sites
+            energies_lp(i) = - energy_scale * ( dot_product( y_all(:,i), y_exp * dx))
+         end do
+      else if (similarity_type == 'lsquares')then
+         energies_lp = + energy_scale / n_sites0 * ( dx * dot_product( (y - y_exp), (y - y_exp) ) )
+
+         ! Get the other terms for the lsquares expression
+         allocate(prefactor(1:n_samples))
+         prefactor =  2.d0 * ( y - y_exp )
+      end if
 
 
       ! Now, the full similarity is the overlap integral between the
@@ -407,6 +379,7 @@ module xps_utils
          !     First, we compute the forces acting on all the "SOAP-neighbors" of atom i
          !     (including i itself) due to the gradients of i's Hirshfeld volume wrt the
          !     positions of its neighbors
+
          k = 0
          do i = 1, n_sites
             ! k is the index which keeps a number of the atom pairs
@@ -421,10 +394,23 @@ module xps_utils
                ! MAY NEED TO CHANGE THIS TO ACCOUNT FOR MACHINE PRECISIO
                if( .not. all(core_electron_be_der(1:3, k) == 0.d0) )then
 
-                  call broaden_spectrum_derivative(x,&
+                  y_der = 0.d0
+                  call broaden_spectrum_derivative(x(1:n_samples),&
                        & core_electron_be(i),&
                        & core_electron_be_der(1:3, k),&
                        & y_der(1:3,1:n_samples ), sigma, y_exp(1:n_samples), this_force(1:3), mag, dx)
+
+                  if( similarity_type == 'lsquares' )then
+
+                     y_der(1, 1:n_samples) = y_der(1, 1:n_samples) * prefactor(1:n_samples)
+                     y_der(2, 1:n_samples) = y_der(2, 1:n_samples) * prefactor(1:n_samples)
+                     y_der(3, 1:n_samples) = y_der(3, 1:n_samples) * prefactor(1:n_samples)
+
+                     this_force(1) =  - sum( y_der(1,:) ) * dx
+                     this_force(2) =  - sum( y_der(2,:) ) * dx
+                     this_force(3) =  - sum( y_der(3,:) ) * dx
+
+                  end if
 
                   this_force(1:3) =  - energy_scale *  this_force(1:3)
 
@@ -462,23 +448,12 @@ module xps_utils
             end do
          end do
 
-         print *, "MAX FORCE FROM LOCAL PROP ", forces0(1:3,mag_force_i)
+         print *, rank, "MAX FORCE FROM LOCAL PROP ", forces0(1:3,mag_force_i)
+         deallocate(y_der)
+         if(allocated(prefactor)) deallocate(prefactor)
+
       end if
 
-      allocate(x_i_exp(1:n_samples))
-      allocate(y_i_exp(1:n_samples))
-      allocate(y_i_pred(1:n_samples))
-
-      x_i_exp = x
-      y_i_exp = y_exp
-      y_i_pred = y
-
-      deallocate(x)
-      deallocate(y)
-      deallocate(y_all)
-      deallocate(y_der)
-      deallocate(x_exp)
-      deallocate(y_exp)
 
 
     end subroutine get_exp_pred_spectra_energies_forces
@@ -488,29 +463,29 @@ module xps_utils
 
 
     subroutine compare_exp_to_pred_spectra(data, core_electron_be, &
-         & sigma, n_samples, sim_exp_pred,&
-         & x_i_exp, y_i_exp, x_i_pred, y_i_pred,&
+         & sigma, n_samples, sim_exp_pred, mag, &
+         & x_i_exp, y_i_exp, x_i_pred, y_i_pred, y_i_pred_all, &
          & get_exp, similarity_type )
       implicit none
       real*8, allocatable, intent(in) :: data(:,:)
       real*8, intent(in) :: sigma, core_electron_be(:)
       real*8, allocatable, intent(inout) :: x_i_exp(:), y_i_exp(:), x_i_pred(:),&
-           & y_i_pred(:)
-      real*8, intent(out) :: sim_exp_pred
+           & y_i_pred(:), y_i_pred_all(:,:)
+      real*8, intent(out) :: sim_exp_pred, mag
       integer, intent(in) :: n_samples
       logical, intent(in) :: get_exp
       character*32, intent(in) :: similarity_type
 
       if (get_exp)then
          ! Get interpolated experimental spectra
-         call get_xps_spectra(data(1,:), data(2,:), sigma, n_samples,&
-              & x_i_exp,  y_i_exp,  core_electron_be,&
+         call get_xps_spectra(data(1,:), data(2,:), sigma, n_samples, mag,&
+              & x_i_exp,  y_i_exp, y_i_pred_all, core_electron_be,&
               &  .false.)
       end if
 
       ! Get interpolated predicted spectra
-      call get_xps_spectra(data(1,:), data(2,:), sigma, n_samples,&
-           & x_i_pred, y_i_pred, core_electron_be,&
+      call get_xps_spectra(data(1,:), data(2,:), sigma, n_samples, mag,&
+           & x_i_pred, y_i_pred, y_i_pred_all, core_electron_be,&
            & .true.)
 
       ! Now get the similarity
@@ -523,22 +498,23 @@ module xps_utils
     end subroutine compare_exp_to_pred_spectra
 
 
-    subroutine broaden_spectrum(x, x0, y, sigma)
+    subroutine broaden_spectrum(x, x0, y, y_all, idx, sigma)
       implicit none
       real*8, allocatable, intent(in) :: x(:)
-      real*8,  intent(inout) :: y(:)
+      real*8,  intent(inout) :: y(:), y_all(:,:)
       real*8, intent(in) :: x0, sigma
       real*8 :: norm_fac
       integer :: i,idx
       norm_fac = 1.d0 / ( sqrt(2.d0 * 3.14159265359) * sigma )
       do i = 1, size(x)
          y(i) = y(i) +  exp( -( x(i) - x0 )**2 / (2*sigma**2) )
+         y_all(idx, i) = exp( -( x(i) - x0 )**2 / (2*sigma**2) )
       end do
 
     end subroutine broaden_spectrum
 
 
-    subroutine get_xps_spectra(xi, yi, sigma, n_samples, x, y,&
+    subroutine get_xps_spectra(xi, yi, sigma, n_samples, mag, x, y, y_all,&
          & core_electron_be, broaden)
       ! This just gets the broadened spectra
       ! xi are the predicted core electron binding energies and x is
@@ -546,14 +522,16 @@ module xps_utils
       implicit none
       real*8, intent(in) :: xi(:), yi(:), core_electron_be(:)
       integer, intent(in) :: n_samples
-      real*8, allocatable, intent(out) :: x(:), y(:)
+      real*8, allocatable, intent(out) :: x(:), y(:), y_all(:,:)
       real*8, intent(in) :: sigma
       integer :: i
-      real*8 :: x_val, x_min, x_max, x_range, t, mag, dx
+      real*8 :: x_val, x_min, x_max, x_range, t, dx
+      real*8, intent(out) :: mag
       logical, intent(in) :: broaden
 
       allocate(x(1:n_samples))
       allocate(y(1:n_samples))
+      allocate(y_all(1:size(core_electron_be), 1:n_samples))
 
       x_min = xi(1)
       x_max = xi(size(xi))
@@ -572,21 +550,24 @@ module xps_utils
          y=0.d0
 
          do i = 1, size(core_electron_be)
-            call broaden_spectrum(x, core_electron_be(i), y, sigma)
+            call broaden_spectrum(x, core_electron_be(i), y, y_all, i, sigma)
          end do
 
       end if
 
       mag = sum(y * dx) !sqrt(dot_product(y, y))
       y = y / mag
+      y_all = y_all / mag
 
     end subroutine get_xps_spectra
 
 
+
     subroutine broaden_spectrum_derivative(x, x0, x0_der, y, sigma, y_exp, y_tot, mag, dx)
       implicit none
-      real*8, allocatable, intent(in) :: x(:)
-      real*8, intent(inout) :: y(:, :), y_exp(:)
+      real*8, intent(in) :: x(:)
+      real*8, intent(inout) :: y(:, :)
+      real*8, intent(in) ::  y_exp(:)
       real*8, intent(in) :: x0, x0_der(:), sigma, mag, dx
       real*8 :: f
       real*8, allocatable :: g(:,:)
@@ -596,6 +577,7 @@ module xps_utils
       norm_fac = 1.d0 / ( sqrt(2.d0 * 3.14159265359) * sigma )
 
       y = 0.d0
+
       do i = 1, size(x)
          f = - ( ( x(i) - x0 ) / (sigma**2) ) * exp( -( x(i) - x0 )**2 / (2*sigma**2) ) * y_exp(i) / mag
          y(1:3,i) = y(1:3,i) + x0_der * f
@@ -604,24 +586,6 @@ module xps_utils
       y_tot(1) =  sum(  y(1,:) ) * dx
       y_tot(2) =  sum(  y(2,:) ) * dx
       y_tot(3) =  sum(  y(3,:) ) * dx
-
-      ! Above is the first part of the sum, we know that we have a
-      ! dependency on the normalisation condition, hence we must take
-      ! it's derivative too
-      !allocate(g(1:3,1:size(x)))
-      ! g = 0.d0
-      ! y = 0.d0
-      ! do i = 1, size(x)
-      !    f = - ( ( x(i) - x0 ) / (sigma**2) ) * exp( -( x(i) - x0 )**2 / (2*sigma**2) )
-      !    f = f * exp( -( x(i) - x0 )**2 / (2*sigma**2) )
-      !    ! this is then sum( f' * f )
-      !    y(1:3,i) = y(1:3,i) + x0_der * f
-      ! end do
-
-      ! y_tot(1) = y_tot(1)/mag ! - 2.d0 * ( dot_product(y(1,:) , y_exp) ) / (mag * mag)
-      ! y_tot(2) = y_tot(2)/mag ! - 2.d0 * ( dot_product(y(2,:) , y_exp) ) / (mag * mag)
-      ! y_tot(3) = y_tot(3)/mag ! - 2.d0 * ( dot_product(y(3,:) , y_exp) ) / (mag * mag)
-
 
     end subroutine broaden_spectrum_derivative
 

@@ -78,7 +78,7 @@ program turbogap
   real*8, pointer :: hirshfeld_v(:), hirshfeld_v_cart_der(:,:)
   real*8, allocatable, target :: this_local_properties(:,:), this_local_properties_cart_der(:,:,:)
   real*8, pointer :: this_local_properties_pt(:), this_local_properties_cart_der_pt(:,:)
-  real*8, allocatable ::  x_i_exp(:), y_i_exp(:), x_i_pred(:), y_i_pred(:), moments(:), moments_exp(:)
+  real*8, allocatable ::  x_i_exp(:), y_i_exp(:), x_i_pred(:), y_i_pred(:), y_i_pred_all(:,:), moments(:), moments_exp(:)
 
   real*8, allocatable :: all_energies(:,:), all_forces(:,:,:), all_virial(:,:,:)
   real*8, allocatable :: all_this_energies(:,:), all_this_forces(:,:,:), all_this_virial(:,:,:)
@@ -158,7 +158,7 @@ program turbogap
   logical, allocatable :: compress_soap_mpi(:)
 
   ! Nested sampling
-  real*8 :: e_max, e_kin, rand, rand_scale(1:6)
+  real*8 :: e_max, e_kin, rand, rand_scale(1:6), mag
   integer :: i_nested, i_max, i_image, i_current_image=1, i_trial_image=2
   type(image), allocatable :: images(:), images_temp(:)
   !**************************************************************************
@@ -444,6 +444,8 @@ program turbogap
                              xids = j
                              xids_lp = k
                              soap_turbo_hypers(j)%local_property_models(k)%do_derivatives = .true.
+                             if(params%mc_opt_spectra) soap_turbo_hypers(j)%local_property_models(k)%do_derivatives = .false.
+
                           end if
                        end if
                     end if
@@ -1582,6 +1584,7 @@ program turbogap
            local_properties = this_local_properties
            !           call mpi_bcast(hirshfeld_v, n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
            call mpi_bcast(local_properties, n_sites*params%n_local_properties, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+
            call cpu_time(time_mpi(2))
            time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
         end if
@@ -1658,21 +1661,31 @@ program turbogap
            !            call get_ts_energy_and_forces( hirshfeld_v(i_beg:i_end), hirshfeld_v_cart_der(1:3, j_beg:j_end), &
 
            if (params%xps_force_type == "similarity")then
-              print *, "Calculating similarity spectra energies and forces"
-           call get_exp_pred_spectra_energies_forces(&
+
+              call compare_exp_to_pred_spectra(&
+                   & soap_turbo_hypers(xids)&
+                   &%local_property_models(xids_lp)%data,&
+                   & local_properties(:,core_be_lp_index),&
+                   & params%xps_sigma, params%xps_n_samples, mag,&
+                   & sim_exp_pred, x_i_exp, y_i_exp,&
+                   & x_i_pred, y_i_pred, y_i_pred_all, .not. allocated(x_i_exp), params%similarity_type )
+
+              print *, "similarity  ", sim_exp_pred
+
+              call get_exp_pred_spectra_energies_forces(&
                 & soap_turbo_hypers(xids)&
                 &%local_property_models(xids_lp)%data, params%energy_scales_opt_exp_data(core_be_lp_index),&
                 & local_properties(i_beg:i_end,core_be_lp_index),&
                 & local_properties_cart_der(1:3, j_beg:j_end, core_be_lp_index ), &
                 n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
                 neighbor_species(j_beg:j_end), &
-                & params%xps_sigma, params%xps_n_samples,&
-                & x_i_exp, y_i_exp, y_i_pred,.true., params%do_forces,  rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), &
+                & params%xps_sigma, params%xps_n_samples, mag, &
+                & x_i_exp, y_i_exp, y_i_pred, y_i_pred_all(i_beg:i_end, 1:params%xps_n_samples), .true., params%do_forces, &
+                & rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), &
 #ifdef _MPIF90
-                n_sites, this_energies_lp(i_beg:i_end), this_forces_lp, this_virial_lp )
-
+                n_sites, this_energies_lp(i_beg:i_end), this_forces_lp, this_virial_lp, params%similarity_type, rank )
 #else
-           n_sites, energies_lp(i_beg:i_end), forces_lp, virial_lp )
+           n_sites, energies_lp(i_beg:i_end), forces_lp, virial_lp, params%similarity_type, rank )
 #endif
         else if ( params%xps_force_type == "moments")then
            call get_moment_spectra_energies_forces(&
@@ -1705,7 +1718,8 @@ program turbogap
            end if
 
 
-           deallocate(x_i_exp, y_i_exp, y_i_pred)
+           deallocate( x_i_pred, y_i_pred )
+           if (allocated(y_i_pred_all)) deallocate(y_i_pred_all)
            ! sim_exp_pred would be an energy if multiplied by some energy scale \gamma * ( 1 - sim )
            ! sim_exp_pred_der would be the array of forces if multiplied by (- \gamma )
            deallocate(v_neigh_lp)
@@ -2537,6 +2551,7 @@ program turbogap
 #ifdef _MPIF90
         IF( rank == 0 )THEN
 #endif
+
            if(params%do_mc)then
               if (mc_istep == params%mc_nsteps) then
                  exit_loop = .true.
@@ -2614,9 +2629,9 @@ program turbogap
                             & soap_turbo_hypers(xids)&
                             &%local_property_models(xids_lp)%data,&
                             & local_properties(:,core_be_lp_index),&
-                            & params%xps_sigma, params%xps_n_samples,&
+                            & params%xps_sigma, params%xps_n_samples, mag,&
                             & sim_exp_pred, x_i_exp, y_i_exp,&
-                            & x_i_pred, y_i_pred, .false., params%similarity_type )
+                            & x_i_pred, y_i_pred, y_i_pred_all,  .false., params%similarity_type )
 
                        if (sim_exp_pred > sim_exp_prev)then
                           p_accept = 1.d0
@@ -2676,6 +2691,9 @@ program turbogap
                            if (params%mc_opt_spectra .and. valid_xps)then
                               call write_local_property_data(x_i_pred, y_i_pred, .false., "xps_prediction.dat")
                               call write_local_property_data(x_i_exp, y_i_exp, .false., "xps_exp.dat")
+                              deallocate( x_i_pred, y_i_pred )
+                              if (allocated(y_i_pred_all)) deallocate(y_i_pred_all)
+
                            end if
 
                        end if
@@ -2780,8 +2798,8 @@ program turbogap
                     if (params%mc_opt_spectra .and. valid_xps)then
                        call compare_exp_to_pred_spectra(soap_turbo_hypers(xids)&
                             &%local_property_models(xids_lp)%data, local_properties(:,core_be_lp_index),&
-                            & params%xps_sigma, params%xps_n_samples, sim_exp_pred,&
-                            & x_i_exp, y_i_exp, x_i_pred, y_i_pred,&
+                            & params%xps_sigma, params%xps_n_samples, mag, sim_exp_pred,&
+                            & x_i_exp, y_i_exp, x_i_pred, y_i_pred, y_i_pred_all,&
                             & .true., params%similarity_type )
                        sim_exp_prev = sim_exp_pred
                     end if
@@ -2828,6 +2846,8 @@ program turbogap
                        if (params%mc_opt_spectra .and. valid_xps)then
                           call write_local_property_data(x_i_pred, y_i_pred, .true., "xps_prediction.dat")
                           call write_local_property_data(x_i_exp, y_i_exp, .true., "xps_exp.dat")
+                          deallocate( x_i_pred, y_i_pred )
+                          if (allocated(y_i_pred_all)) deallocate(y_i_pred_all)
                        end if
 
                        v_uc_prev = dot_product( cross_product(a_box, b_box), c_box ) / (dfloat(indices(1)*indices(2)*indices(3)))
@@ -3075,6 +3095,13 @@ program turbogap
         if( allocated(forces_prev)) deallocate(forces_prev)
         if( allocated(positions_prev)) deallocate(positions_prev)
      end if
+
+     if( params%optimize_exp_data .and. (md_istep == params%md_nsteps .or.&
+          & mc_istep == params%mc_nsteps .or. exit_loop) .and. rank &
+          &== 0 )then
+        if( allocated(x_i_exp)) deallocate(x_i_exp, y_i_exp)
+     end if
+
 
      if (.not. params%do_mc )n_sites_prev = n_sites
      n_atom_pairs_by_rank_prev = n_atom_pairs_by_rank(rank+1)
