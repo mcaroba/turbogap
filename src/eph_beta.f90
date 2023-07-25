@@ -41,27 +41,21 @@ type EPH_Beta_class
 	character*128 :: beta_infile
 	character*2, dimension(5) :: line
 	character*2, allocatable :: element_name(:)
-	integer :: n_elements, n_points_rho, n_points_beta
-	real*8 :: dr, drho, r_cutoff, rho_cutoff
+	integer :: n_elements, n_points_rho, n_points_beta, n_species
+	real*8 :: dr, r_cutoff, drho, rho_cutoff
 	integer, allocatable :: element_number(:)
-	real*8, allocatable :: r(:), data_rho(:,:), rho(:), data_beta(:,:), data_alpha(:,:)
-	real*8, allocatable :: y2rho(:,:), y2beta(:,:), y2alpha(:,:), y2rho_r_sq(:,:)
-	integer :: n_species
-	
-	! --------------------------------------------------------------------
-	! ** Doing with rho as a function of r²**
-	real*8 :: dr_sq, r_cutoff_sq
-	real*8, allocatable :: data_rho_rsq(:,:), r_sq(:)
-	! --------------------------------------------------------------------
-	
+	real*8, allocatable :: r(:), data_rho(:,:), rho(:), &
+	data_beta(:,:), data_alpha(:,:)
+	real*8, allocatable :: y2rho(:,:), y2beta(:,:), y2alpha(:,:)
+
 	contains
-	procedure :: beta_parameters, spline_int, spline
+	procedure :: beta_parameters, spline_int, splineDerivatives
 
 end type EPH_Beta_class
 
 contains
 
-! Get the rho, beta and alpha data from .beta file 
+!! Get the rho, beta and alpha data from .beta file 
 subroutine beta_parameters(this,beta_infile,n_species)
 	implicit none
 	class (EPH_Beta_class) :: this
@@ -75,7 +69,7 @@ subroutine beta_parameters(this,beta_infile,n_species)
 	this%beta_infile = beta_infile
 	
 	open (unit = 10, file = beta_infile)
-	! First 3 lines are comments		
+	!! First 3 lines are comments		
 	read(10,*)
 	read(10,*)
 	read(10,*)
@@ -88,12 +82,12 @@ subroutine beta_parameters(this,beta_infile,n_species)
 
 	allocate(this%element_name(this%n_elements), this%element_number(this%n_elements))
 
-	! read the number of elements and their names
+	!! read the number of elements and their names
 	do i = 1, this%n_elements
 		this%element_name(i) = this%line(i+1)
 	end do
 	
-	! Read r, rho and beta parameters from the beta file
+	!! Read r, rho and beta parameters from the beta file
 	read(10,*) this%n_points_rho, this%dr, this%n_points_beta, this%drho, &
 	this%r_cutoff
 	
@@ -103,18 +97,18 @@ subroutine beta_parameters(this,beta_infile,n_species)
 		this%data_beta(this%n_elements,this%n_points_beta), &
 			this%data_alpha(this%n_elements,this%n_points_beta))
 
-	! It is assumed that data in the beta file for different elements is
-	! according to the corresponding types of the species as specified in 
-	! the input file of TurboGAP.
+	!! It is assumed that data in the beta file for different elements is
+	!! according to the corresponding types of the species as specified in 
+	!! the input file of TurboGAP.
 	
-	write(*,*) ' -- MESSAGE from eph_beta.f90 --'
-	write(*,*) 'It is assumed that data in the'
-	write(*,*) '.beta file for different elements'
-	write(*,*) 'are in the order of species in'
-	write(*,*) 'the input file. Please check it.'
+	!write(*,*) ' -- MESSAGE from eph_beta.f90 --'
+	!write(*,*) 'It is assumed that data in the'
+	!write(*,*) '.beta file for different elements'
+	!write(*,*) 'are in the same order of the species'
+	!write(*,*) 'in the input file. Please check it.'
 	
-	this%data_rho = 0
-	this%data_beta = 0
+	this%data_rho = 0.0d0
+	this%data_beta = 0.0d0
 	do i = 1, this%n_elements
 		read(10,*) this%element_number(i)
 		do j = 1, this%n_points_rho
@@ -127,29 +121,29 @@ subroutine beta_parameters(this,beta_infile,n_species)
 	end do
 	close(unit = 10)
 
-	! find the values of alpha from beta
+	!! find the values of alpha from beta
 	do i = 1, this%n_elements
 		do j = 1, this%n_points_beta
 			this%data_alpha(i,j) = sqrt(this%data_beta(i,j))
 		end do
 	end do
 	
-	! create the array with values of r for rho vs. r from data in beta file
+	!! create the array with values of r for rho vs. r from data in beta file
 	if (.not. allocated(this%r)) allocate(this%r(this%n_points_rho))
-	this%r(1) = 0.0
+	this%r(1) = 0.0d0
 	do i = 2, this%n_points_rho
 		this%r(i) = this%r(i-1) + this%dr
 	end do
 	
-	! create the array with values of rho for beta vs. rho from data in beta file
+	!! create the array with values of rho for beta vs. rho from data in beta file
 	if (.not. allocated(this%rho)) allocate(this%rho(this%n_points_beta))
-	this%rho(1) = 0.0
+	this%rho(1) = 0.0d0
 	do i = 2, this%n_points_beta
 		this%rho(i) = this%rho(i-1) + this%drho
 	end do
 	
-	! Have the y"(x) in y2rho and y2beta for cubic spline interpolation 
-	! for all types of atoms and use them as and when needed afterwards
+	!! Have the y"(x) in y2rho and y2beta for cubic spline interpolation 
+	!! for all types of atoms and use them as and when needed afterwards
 	
 	allocate(this%y2rho(this%n_elements,this%n_points_rho), y2(this%n_points_rho))
 	
@@ -157,78 +151,23 @@ subroutine beta_parameters(this,beta_infile,n_species)
 				this%y2alpha(this%n_elements,this%n_points_beta), w2(this%n_points_beta))
 
 	do i = 1, this%n_elements
-		y2 = 0
-		call this%spline (this%r,this%data_rho(i,:),this%n_points_rho,bignum,bignum,y2)
+		y2 = 0.0d0
+		call this%splineDerivatives (this%r,this%data_rho(i,:),this%n_points_rho,bignum,bignum,y2)
 		this%y2rho(i,:) = y2(:)
-		z2 = 0
-		call this%spline (this%rho,this%data_beta(i,:),this%n_points_beta,bignum,bignum,z2)
+		z2 = 0.0d0
+		call this%splineDerivatives (this%rho,this%data_beta(i,:),this%n_points_beta,bignum,bignum,z2)
 		this%y2beta(i,:) = z2(:)
-		w2 = 0
-		call this%spline (this%rho, this%data_alpha(i,:),this%n_points_beta,bignum,bignum,w2)
+		w2 = 0.0d0
+		call this%splineDerivatives (this%rho, this%data_alpha(i,:),this%n_points_beta,bignum,bignum,w2)
 		this%y2alpha(i,:) = w2(:)
 	end do
-	
-	
-	! ------------------------------------------------------------------------
-	! ** Doing by function rho(r²) versus r² **
-	
-	this%r_cutoff_sq = this%r_cutoff * this%r_cutoff
-	this%dr_sq = this%r_cutoff_sq / (this%n_points_rho - 1)
-	
-	! create the array with values of r²
-	if (.not. allocated(this%r_sq)) allocate(this%r_sq(this%n_points_rho))
-	this%r_sq(1) = 0.0
-	do i = 2, this%n_points_rho
-		this%r_sq(i) = this%r_sq(i-1) + this%dr_sq
-	end do
-	
-	if (.not. allocated(this%data_rho_rsq)) &
-		allocate(this%data_rho_rsq(this%n_elements,this%n_points_rho))
-	
-	do i = 1, this%n_elements
-		do j = 1, this%n_points_rho
-			call this%spline_int (this%r, this%data_rho(i,:), this%y2rho(i,:), &
-					this%n_points_rho, sqrt((j-1)*this%dr_sq), this%data_rho_rsq(i,j))
-		end do
-	end do
-	
-	
-	! keep y"(x) for data_rho_rsq
-	
-	allocate(this%y2rho_r_sq(this%n_elements,this%n_points_rho), y2r2(this%n_points_rho))
-	
-	do i = 1, this%n_elements
-		y2r2 = 0
-		call this%spline (this%r_sq,this%data_rho_rsq(i,:),this%n_points_rho,bignum,bignum,y2r2)
-		this%y2rho_r_sq(i,:) = y2r2(:)
-	end do
-	! ------------------------------------------------------------------------
-	
-	
-	! -------------------------------------------------
-	! To check rho-r data that is read
-	
-	!open(unit = 300, file = "rho-data.txt")
-	!
-	!write(300,*) 'rho versus r'
-	!do i = 1, this%n_points_rho
-	!	if (this%r(i) < this%r_cutoff) write(300,*) this%r(i), '', this%data_rho(1,i) 
-	!end do
-	!write(300,*) '======================================='
-	!write(300,*) 'rho_r_sq versus r_sq'
-	!do i = 1, this%n_points_rho
-	!	if (this%r_sq(i) < this%r_cutoff_sq) write(300,*) this%r_sq(i), '', this%data_rho_rsq(1,i)
-	!end do
-	!close(unit = 300)
 
-	! -------------------------------------------------
-	
-	
 end subroutine beta_parameters
 
-! Find the interpolated value of y corresponding to a given value of x.
-! Data arrays are xarr(1:n) and yarr(1:n). Second derivative of ya is y2arr(1:n).
-! For a given value of x, y is the cubic-spline interpolated value.
+
+!! Find the interpolated value of y corresponding to a given value of x.
+!! Data arrays are xarr(1:n) and yarr(1:n). Second derivative of ya is y2arr(1:n).
+!! For a given value of x, y is the cubic-spline interpolated value.
 subroutine spline_int(this,xarr,yarr,y2arr,n,x,y)
 	implicit none
 	class (EPH_Beta_class) :: this
@@ -237,7 +176,7 @@ subroutine spline_int(this,xarr,yarr,y2arr,n,x,y)
 	integer :: indx, hiindx, loindx
 	real*8 :: xwidth, A, B, C, D
 	
-	! Interpolate by method of bisection. Find the index limits within which x lies.
+	!! Interpolate by method of bisection. Find the index limits within which x lies.
 	
 	loindx = 1
 	hiindx = n
@@ -251,16 +190,16 @@ subroutine spline_int(this,xarr,yarr,y2arr,n,x,y)
 		end if
 	end do
 	
-	! Cubic spline polynomial value of y for given x.
-	! y = Ay_j + By_j+1 + Cy2_j + Dy2_j+1
-	! A = (x_j+1 - x) / (x_j+1 - x_j)
-	! B = 1 - A
-	! xwidth = x_j+1 - x_j
-	! C = (A³ - A) * xwidth² / 6
-	! D = (B³ - B) * xwidth² / 6
+	!! Cubic spline polynomial value of y for given x.
+	!! y = Ay_j + By_j+1 + Cy2_j + Dy2_j+1
+	!! A = (x_j+1 - x) / (x_j+1 - x_j)
+	!! B = 1 - A
+	!! xwidth = x_j+1 - x_j
+	!! C = (A³ - A) * xwidth² / 6
+	!! D = (B³ - B) * xwidth² / 6
 	
 	xwidth = xarr(hiindx) - xarr(loindx)
-	if (xwidth == 0.0) then 
+	if (xwidth == 0.0d0) then 
 		write(*,*) 'ERROR: The x-values in function for spline interpolation are not distinct.'
 		stop
 	end if
@@ -275,11 +214,11 @@ subroutine spline_int(this,xarr,yarr,y2arr,n,x,y)
 end subroutine spline_int
 
 
-! Cubic spline interpolation 
-! (Ref. Numerical recipes in F77, vol. 1, W.H. Press et al.)
-! Find the second derivatives of the interpolating function at tabulated points (x)
-! Find the array of second derivatives of y(x).
-subroutine spline(this,x,y,n,yp1,ypn,y2)
+!! Cubic spline interpolation 
+!! (Ref. Numerical recipes in F77, vol. 1, W.H. Press et al.)
+!! Find the second derivatives of the interpolating function at tabulated points (x)
+!! Find the array of second derivatives of y(x).
+subroutine splineDerivatives(this,x,y,n,yp1,ypn,y2)
 	implicit none
 	class (EPH_Beta_class) :: this
 	integer :: n
@@ -287,43 +226,43 @@ subroutine spline(this,x,y,n,yp1,ypn,y2)
 	integer :: i, k
 	real*8 :: p, qn, sig, un, u(n)
 	
-	! The lower boundary condition is set either to be “natural”, else to have a specified first derivative.
-	! The first derivative is not known, so it is set high value --> natural.
+	!! The lower boundary condition is set either to be “natural”, else to have a specified first derivative.
+	!! The first derivative is not known, so it is set high value --> natural.
 	if (yp1 > 0.99e30) then
-		y2(1) = 0.0
-		u(1) = 0.0
+		y2(1) = 0.0d0
+		u(1) = 0.0d0
 	else
-		y2(1) = -0.5
-		u(1) = (3.0/(x(2)-x(1)))*((y(2)-y(1))/(x(2)-x(1))-yp1)
+		y2(1) = -0.5d0
+		u(1) = (3.0d0/(x(2)-x(1)))*((y(2)-y(1))/(x(2)-x(1))-yp1)
 	end if
 	
-	! This is the decomposition loop of the tridiagonal
-	! algorithm. y2 and u are used for temporary
-	! storage of the decomposed factors.
+	!! This is the decomposition loop of the tridiagonal
+	!! algorithm. y2 and u are used for temporary
+	!! storage of the decomposed factors.
 	do i = 2, n-1
 		sig = (x(i)-x(i-1))/(x(i+1)-x(i-1))
-		p = sig*y2(i-1) + 2.0
-		y2(i) = (sig-1.0)/p
-		u(i) = (6.0*(( y(i+1)-y(i) ) / (x(i+1)-x(i))-(y(i)-y(i-1)) / &
+		p = sig*y2(i-1) + 2.0d0
+		y2(i) = (sig-1.0d0)/p
+		u(i) = (6.0d0*(( y(i+1)-y(i) ) / (x(i+1)-x(i))-(y(i)-y(i-1)) / &
 		( x(i) - x(i-1) ))/( x(i+1) - x(i-1) )-sig*u(i-1)) / p
 	end do
 	
-	! The upper boundary condition is set either to be “natural”, else to have a specified first derivative.
-	! The first derivative is not known, so it is set high value --> natural.
+	!! The upper boundary condition is set either to be “natural”, else to have a specified first derivative.
+	!! The first derivative is not known, so it is set high value --> natural.
 	if (ypn > 0.99e30) then 
-		qn = 0.0
-		un = 0.0
+		qn = 0.0d0
+		un = 0.0d0
 	else
-		qn = 0.5
-		un = (3.0/(x(n)-x(n-1)))*(ypn-(y(n)-y(n-1))/(x(n)-x(n-1)))
+		qn = 0.5d0
+		un = (3.0d0/(x(n)-x(n-1)))*(ypn-(y(n)-y(n-1))/(x(n)-x(n-1)))
 	end if
-	y2(n) = (un - qn*u(n-1))/(qn*y2(n-1) + 1.0)
+	y2(n) = (un - qn*u(n-1))/(qn*y2(n-1) + 1.0d0)
 	
-	!This is the backsubstitution loop of the tridiagonal algorithm.
+	!! This is the backsubstitution loop of the tridiagonal algorithm.
 	do k = n-1,1,-1
 		y2(k) = y2(k)*y2(k+1) + u(k)
 	end do
 
-end subroutine spline
+end subroutine splineDerivatives
 
 end module eph_beta
