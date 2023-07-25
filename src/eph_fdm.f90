@@ -303,14 +303,6 @@ subroutine heatDiffusionSolve(this, dt)
 	!! Numerical Recipes: The Art of Scientific Computing)	
 	
 	factor = inner_dt*e_kappa_max*sum_invd / (e_sp_heat_min*e_rho_min)
-	
-	!stability = 1.0 - 2.0*factor
-	
-	!if (stability < 0.0) then
-	!	inner_dt = 0.5*e_kappa_max*sum_invd / (e_sp_heat_min*e_rho_min)
-	!	new_steps = int(dt/inner_dt) + 1
-	!	inner_dt = dt/new_steps
-	!end if
 
 	if (factor > 0.4d0 .or. factor < 0.0d0) then	!! also works with 0.5
 		inner_dt = 0.4d0*inner_dt / factor		!! also works with 0.5
