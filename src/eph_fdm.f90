@@ -285,7 +285,6 @@ subroutine heatDiffusionSolve(this, dt)
 	integer :: i,j,k, new_steps, n, indx
 	real*8 :: inner_dt, e_sp_heat_min, e_rho_min, e_kappa_max, grad_sq_T, &
 	stability, invdx2, invdy2, invdz2, sum_invd, factor, multiply_factor
-	!real*8, allocatable :: T_e_prev(:,:,:)
 	integer :: xback, xfront, yback, yfront, zback, zfront
 	
 	new_steps = 1
@@ -313,16 +312,13 @@ subroutine heatDiffusionSolve(this, dt)
 	!	inner_dt = dt/new_steps
 	!end if
 
-	if (factor > 0.4d0 .or. factor < 0.0d0) then	! also works with 0.5, to see in details
-		inner_dt = 0.4d0*inner_dt / factor		! also works with 0.5. to see in details
+	if (factor > 0.4d0 .or. factor < 0.0d0) then	!! also works with 0.5
+		inner_dt = 0.4d0*inner_dt / factor		!! also works with 0.5
 		new_steps = max(int(dt/inner_dt),1)
 		inner_dt = dt/new_steps
 	end if
 	
-	!allocate(T_e_prev(this%nx,this%ny,this%nz))
-	
 	do n = 1, new_steps
-		!T_e_prev = this%T_e
 		do k = 1, this%nz
 			do j = 1, this%ny
 				do i = 1, this%nx
