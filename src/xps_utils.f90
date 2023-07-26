@@ -463,7 +463,7 @@ module xps_utils
 
 
     subroutine compare_exp_to_pred_spectra(data, core_electron_be, &
-         & sigma, n_samples, sim_exp_pred, mag, &
+         & sigma, n_samples, mag, sim_exp_pred, &
          & x_i_exp, y_i_exp, x_i_pred, y_i_pred, y_i_pred_all, &
          & get_exp, similarity_type )
       implicit none
@@ -492,7 +492,7 @@ module xps_utils
       if (similarity_type == "lsquares")then
          sim_exp_pred = 1.0d0 - (x_i_exp(2) - x_i_exp(1) ) * dot_product(y_i_exp - y_i_pred, y_i_exp - y_i_pred)
       else
-         sim_exp_pred = (x_i_exp(2) - x_i_exp(1) ) * dot_product(y_i_exp, y_i_pred)
+         sim_exp_pred =  dot_product(y_i_exp, y_i_pred)
       end if
 
     end subroutine compare_exp_to_pred_spectra
@@ -533,6 +533,10 @@ module xps_utils
       allocate(y(1:n_samples))
       allocate(y_all(1:size(core_electron_be), 1:n_samples))
 
+      x = 0.d0
+      y = 0.d0
+      y_all = 0.d0
+
       x_min = xi(1)
       x_max = xi(size(xi))
       x_range = x_max - x_min
@@ -555,7 +559,7 @@ module xps_utils
 
       end if
 
-      mag = sum(y * dx) !sqrt(dot_product(y, y))
+      mag = sqrt(dot_product(y,y)) !sum(y * dx) !sqrt(dot_product(y, y))
       y = y / mag
       y_all = y_all / mag
 

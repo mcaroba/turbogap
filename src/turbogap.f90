@@ -1670,7 +1670,6 @@ program turbogap
                    & sim_exp_pred, x_i_exp, y_i_exp,&
                    & x_i_pred, y_i_pred, y_i_pred_all, .not. allocated(x_i_exp), params%similarity_type )
 
-              print *, "similarity  ", sim_exp_pred
 
               call get_exp_pred_spectra_energies_forces(&
                 & soap_turbo_hypers(xids)&
@@ -2631,7 +2630,7 @@ program turbogap
                             & local_properties(:,core_be_lp_index),&
                             & params%xps_sigma, params%xps_n_samples, mag,&
                             & sim_exp_pred, x_i_exp, y_i_exp,&
-                            & x_i_pred, y_i_pred, y_i_pred_all,  .false., params%similarity_type )
+                            & x_i_pred, y_i_pred, y_i_pred_all, .not. allocated(x_i_exp), params%similarity_type )
 
                        if (sim_exp_pred > sim_exp_prev)then
                           p_accept = 1.d0
@@ -2800,7 +2799,7 @@ program turbogap
                             &%local_property_models(xids_lp)%data, local_properties(:,core_be_lp_index),&
                             & params%xps_sigma, params%xps_n_samples, mag, sim_exp_pred,&
                             & x_i_exp, y_i_exp, x_i_pred, y_i_pred, y_i_pred_all,&
-                            & .true., params%similarity_type )
+                            & .not. allocated(x_i_exp), params%similarity_type )
                        sim_exp_prev = sim_exp_pred
                     end if
 
