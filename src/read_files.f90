@@ -816,6 +816,12 @@ end if
       else if(keyword=='mc_opt_spectra')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_opt_spectra
+      else if(keyword=='mc_reverse')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_reverse
+      else if(keyword=='mc_reverse_lambda')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_reverse_lambda
       else if(keyword=='accessible_volume')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%accessible_volume

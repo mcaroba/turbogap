@@ -2608,7 +2608,8 @@ program turbogap
                        v_a_uc = v_uc
                     end if
 
-                    call get_mc_acceptance(mc_move, p_accept, &
+
+                    if (.not. params%mc_reverse) call get_mc_acceptance(mc_move, p_accept, &
                          energy + E_kinetic, &
                          images(i_current_image)%energy + images(i_current_image)%e_kin, &
                          params%t_beg, &
@@ -2632,11 +2633,24 @@ program turbogap
                             & sim_exp_pred, x_i_exp, y_i_exp,&
                             & x_i_pred, y_i_pred, y_i_pred_all, .not. allocated(x_i_exp), params%similarity_type )
 
+                       if (params%mc_reverse) then
+                          sim_exp_pred = sim_exp_pred - params%mc_reverse_lambda * ( energy +&
+                               & E_kinetic )
+                          write(*, "(A,1X,F8.3,1X,A,1X,F8.3,1X)") " Reverse MC similarities ",&
+                               & sim_exp_prev, ' => ', sim_exp_pred
+
+
+                       end if
+
                        if (sim_exp_pred > sim_exp_prev)then
                           p_accept = 1.d0
                           write(*, "(A,1X,F8.3,1X,A,1X,F8.3,1X,A)") " XPS spectra similarity increased from",&
                                & sim_exp_prev, ' to ', sim_exp_pred ,&
                                & "setting p_accept to 1"
+
+                       else if (params%mc_reverse)then
+                          ! Use the similaritu
+                          p_accept = exp( + ( sim_exp_pred - sim_exp_prev ) / 2.d0 )
                        end if
                     end if
 
@@ -2767,8 +2781,29 @@ program turbogap
                     write(*,'(1X,A,1X,A,1X,A)')     'mc_relax_opt  = ', params%mc_relax_opt, '     |'
                     write(*,'(1X,A,1X,A,1X,A)')     'mc_hybrid_opt = ', params%mc_hybrid_opt,'     |'
                     write(*,'(1X,A,1X,L8,1X,A)')    'mc_opt_spectra = ', params%mc_opt_spectra,'  |'
+                    write(*,'(1X,A,1X,L8,1X,A)')    'mc_hamiltonian = ', params%mc_hamiltonian,'  |'
+                    write(*,'(1X,A,1X,L8,1X,A)')     'mc_reverse    = ', params%mc_reverse,'     |'
+                    write(*,'(1X,A,1X,F12.6,1X,A)') 'mc_reverse_lambda = ', params%mc_reverse_lambda,'|'
+
                     write(*,*) '                                       |'
                     ! t_beg must
+
+                    if (params%optimize_exp_data)then
+                       write(*,*) 'Optimizing exp. data, using parameters:   |'
+                       write(*,*) '                                       |'
+
+                       write(*,'(1X,A,1X,F17.8,1X,A)') 'xps_sigma'      , params%xps_sigma, '    |'
+                       write(*,'(1X,A,1X,F17.8,1X,A)') 'xps_n_samples'  , params%xps_n_samples, '    |'
+                       write(*,'(1X,A,1X,F17.8,1X,A)') 'xps_force_type' , params%xps_force_type, '    |'
+                       write(*,'(1X,A,1X,L8,1X,A)') 'print_lp_forces', params%print_lp_forces, '    |'
+                       write(*,'(1X,A,1X,A,1X,A)') 'similarity_type', params%similarity_type, '    |'
+                       write(*,'(1X,A)') 'energy_scales_opt_exp_data:                       |'
+                       do i = 1, size(params%energy_scales_opt_exp_data)
+                          write(*,'(1X,A,1X,F12.8,1X,A)') '   ', params%energy_scales_opt_exp_data(i), '                      |'
+                       end do
+
+                       write(*,*) '                                       |'
+                    end if
 
                     if( .not. allocated( images ) .and. .not. params%do_nested_sampling )then
                        allocate( images(1:2) )
@@ -2800,6 +2835,11 @@ program turbogap
                             & params%xps_sigma, params%xps_n_samples, mag, sim_exp_pred,&
                             & x_i_exp, y_i_exp, x_i_pred, y_i_pred, y_i_pred_all,&
                             & .not. allocated(x_i_exp), params%similarity_type )
+
+                       if (params%mc_reverse) then
+                          sim_exp_pred = sim_exp_pred - params%mc_reverse_lambda * ( energy + E_kinetic )
+                       end if
+
                        sim_exp_prev = sim_exp_pred
                     end if
 

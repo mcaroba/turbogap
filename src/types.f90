@@ -105,7 +105,7 @@ module types
               gamma0 = 0.01d0, max_opt_step = 0.1d0, vdw_scs_rcut = 4.d0, f_tol = 0.01d0, p_tol = 0.01d0, &
               max_opt_step_eps = 0.05d0, mc_mu = 0.0d0, t_extra = 0.d0, p_nested = 0.d0, &
               nested_max_strain = 0.d0, nested_max_volume_change = 0.d0, mc_move_max = 1.d0, &
-              mc_lnvol_max = 0.01d0, mc_min_dist = 0.2d0, xps_sigma=0.4d0
+              mc_lnvol_max = 0.01d0, mc_min_dist = 0.2d0, xps_sigma=0.4d0, mc_reverse_lambda = 1.d0
 
     integer :: md_nsteps = 1, mc_nsteps = 1, write_xyz = 0, write_thermo = 1, which_atom = 0, &
                vdw_mbd_nfreq = 11, n_mc_types = 0, n_nested = 0,&
@@ -138,7 +138,7 @@ module types
          & mc_write_xyz = .false., mc_relax = .false., mc_opt_spectra&
          &=.false., optimize_exp_data=.false., print_lp_forces&
          &=.false., mc_hamiltonian = .false., accessible_volume =&
-         & .false.
+         & .false., mc_reverse = .true.
     logical, allocatable :: write_local_properties(:)
 
   end type input_parameters
