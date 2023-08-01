@@ -94,7 +94,7 @@ module types
 ! These is the type for the input parameters
   type input_parameters
      real*8, allocatable :: masses_types(:), e0(:), vdw_c6_ref(:), vdw_r0_ref(:), vdw_alpha0_ref(:), &
-          mc_acceptance(:), energy_scales_opt_exp_data(:), radii(:)
+          mc_acceptance(:), energy_scales_exp_data(:), radii(:)
     real*8 :: t_beg = 300.d0, t_end = 300.d0, tau_t = 100.d0, md_step = 1.d0, &
               neighbors_buffer = 0.d0, max_GBytes_per_process = 1.d0, e_tol = 1.d-6, &
               vdw_sr = 0.94d0, vdw_d = 20.d0, vdw_rcut = 10.d0, &
@@ -105,7 +105,7 @@ module types
               gamma0 = 0.01d0, max_opt_step = 0.1d0, vdw_scs_rcut = 4.d0, f_tol = 0.01d0, p_tol = 0.01d0, &
               max_opt_step_eps = 0.05d0, mc_mu = 0.0d0, t_extra = 0.d0, p_nested = 0.d0, &
               nested_max_strain = 0.d0, nested_max_volume_change = 0.d0, mc_move_max = 1.d0, &
-              mc_lnvol_max = 0.01d0, mc_min_dist = 0.2d0, xps_sigma=0.4d0, mc_reverse_lambda = 1.d0
+              mc_lnvol_max = 0.01d0, mc_min_dist = 0.2d0, xps_sigma=0.4d0, mc_reverse_lambda = 0.d0
 
     integer :: md_nsteps = 1, mc_nsteps = 1, write_xyz = 0, write_thermo = 1, which_atom = 0, &
                vdw_mbd_nfreq = 11, n_mc_types = 0, n_nested = 0,&

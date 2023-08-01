@@ -490,7 +490,7 @@ module xps_utils
 
       ! Now get the similarity
       if (similarity_type == "lsquares")then
-         sim_exp_pred = 1.0d0 - (x_i_exp(2) - x_i_exp(1) ) * dot_product(y_i_exp - y_i_pred, y_i_exp - y_i_pred)
+         sim_exp_pred = - (x_i_exp(2) - x_i_exp(1) ) * dot_product(y_i_exp - y_i_pred, y_i_exp - y_i_pred)
       else
          sim_exp_pred =  dot_product(y_i_exp, y_i_pred)
       end if

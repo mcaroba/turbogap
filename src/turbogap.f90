@@ -475,7 +475,9 @@ program turbogap
      ! exist, just as for the thermostats or mc moves in
      ! read_files.f90, but keeping it simple right now!
      if (.not. valid_xps .and. (params%mc_opt_spectra .or. params%optimize_exp_data) )then
-        write(*,*) 'FATAL: optimize_spectra option chosen, but there was no core_electron_be model specified in the gap file! '
+        write(*,*) 'FATAL: mc_opt_spectra / optimize_exp_data option&
+             & chosen, but there was no core_electron_be model&
+             & specified in the gap file! '
         stop
      end if
 
@@ -1673,7 +1675,7 @@ program turbogap
 
               call get_exp_pred_spectra_energies_forces(&
                 & soap_turbo_hypers(xids)&
-                &%local_property_models(xids_lp)%data, params%energy_scales_opt_exp_data(core_be_lp_index),&
+                &%local_property_models(xids_lp)%data, params%energy_scales_exp_data(core_be_lp_index),&
                 & local_properties(i_beg:i_end,core_be_lp_index),&
                 & local_properties_cart_der(1:3, j_beg:j_end, core_be_lp_index ), &
                 n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
@@ -1689,7 +1691,7 @@ program turbogap
         else if ( params%xps_force_type == "moments")then
            call get_moment_spectra_energies_forces(&
                 & soap_turbo_hypers(xids)&
-                &%local_property_models(xids_lp)%data, params%energy_scales_opt_exp_data,&
+                &%local_property_models(xids_lp)%data, params%energy_scales_exp_data,&
                 & local_properties(i_beg:i_end,core_be_lp_index),&
                 & local_properties_cart_der(1:3, j_beg:j_end, core_be_lp_index ), &
                 n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
@@ -2609,21 +2611,6 @@ program turbogap
                     end if
 
 
-                    if (.not. params%mc_reverse) call get_mc_acceptance(mc_move, p_accept, &
-                         energy + E_kinetic, &
-                         images(i_current_image)%energy + images(i_current_image)%e_kin, &
-                         params%t_beg, &
-                         params%mc_mu, n_mc_species, v_uc, v_uc_prev,&
-                         & v_a_uc, v_a_uc_prev, params&
-                         &%masses_types(mc_id), params%p_beg)
-
-
-                    call random_number(ranf)
-
-                    if (mc_move == "insertion") n_mc_species = n_mc_species +1
-                    if (mc_move == "removal"  ) n_mc_species = n_mc_species -1
-
-                    ! Here, put in the optimize xps spectra
                     if (params%mc_opt_spectra .and. valid_xps)then
                        call compare_exp_to_pred_spectra(&
                             & soap_turbo_hypers(xids)&
@@ -2632,15 +2619,47 @@ program turbogap
                             & params%xps_sigma, params%xps_n_samples, mag,&
                             & sim_exp_pred, x_i_exp, y_i_exp,&
                             & x_i_pred, y_i_pred, y_i_pred_all, .not. allocated(x_i_exp), params%similarity_type )
-
-                       if (params%mc_reverse) then
-                          sim_exp_pred = sim_exp_pred - params%mc_reverse_lambda * ( energy +&
-                               & E_kinetic )
-                          write(*, "(A,1X,F8.3,1X,A,1X,F8.3,1X)") " Reverse MC similarities ",&
-                               & sim_exp_prev, ' => ', sim_exp_pred
+                    end if
 
 
-                       end if
+                    if ( params%mc_reverse)then
+                       ! The "energy" used is actually the similarity
+                       ! metric, we have the 'constraints' of the fact
+                       ! that the potential should be minimized
+
+                       print *, " sim term reverse mc ", params%energy_scales_exp_data(1)*sim_exp_pred
+                       print *, " energy term reverse mc ", - params%mc_reverse_lambda * ( energy + E_kinetic )
+
+                       sim_exp_pred = params%energy_scales_exp_data(1)*sim_exp_pred&
+                            & - params%mc_reverse_lambda * ( energy + E_kinetic )
+                       call get_mc_acceptance(mc_move, p_accept, &
+                         -sim_exp_pred, &
+                         -sim_exp_prev, &
+                         params%t_beg, &
+                         params%mc_mu, n_mc_species, v_uc, v_uc_prev,&
+                         & v_a_uc, v_a_uc_prev, params&
+                         &%masses_types(mc_id), params%p_beg)
+                       write(*, "(A,1X,F8.3,1X,A,1X,F8.3,1X)") " Reverse MC similarities: current:  ",&
+                               & sim_exp_prev, ', trial: ', sim_exp_pred
+
+                    else
+                       call get_mc_acceptance(mc_move, p_accept, &
+                         energy + E_kinetic, &
+                         images(i_current_image)%energy + images(i_current_image)%e_kin, &
+                         params%t_beg, &
+                         params%mc_mu, n_mc_species, v_uc, v_uc_prev,&
+                         & v_a_uc, v_a_uc_prev, params&
+                         &%masses_types(mc_id), params%p_beg)
+                    end if
+
+
+                    call random_number(ranf)
+
+                    if (mc_move == "insertion") n_mc_species = n_mc_species +1
+                    if (mc_move == "removal"  ) n_mc_species = n_mc_species -1
+
+                    ! Here, put in the optimize xps spectra
+                    if (params%mc_opt_spectra .and. valid_xps .and. .not. params%mc_reverse )then
 
                        if (sim_exp_pred > sim_exp_prev)then
                           p_accept = 1.d0
@@ -2648,9 +2667,9 @@ program turbogap
                                & sim_exp_prev, ' to ', sim_exp_pred ,&
                                & "setting p_accept to 1"
 
-                       else if (params%mc_reverse)then
-                          ! Use the similaritu
-                          p_accept = exp( + ( sim_exp_pred - sim_exp_prev ) / 2.d0 )
+                       ! else if (params%mc_reverse)then
+                       !    ! Use the similaritu
+                       !    p_accept = exp( + ( sim_exp_pred - sim_exp_prev ) / 2.d0 )
                        end if
                     end if
 
@@ -2797,9 +2816,9 @@ program turbogap
                        write(*,'(1X,A,1X,F17.8,1X,A)') 'xps_force_type' , params%xps_force_type, '    |'
                        write(*,'(1X,A,1X,L8,1X,A)') 'print_lp_forces', params%print_lp_forces, '    |'
                        write(*,'(1X,A,1X,A,1X,A)') 'similarity_type', params%similarity_type, '    |'
-                       write(*,'(1X,A)') 'energy_scales_opt_exp_data:                       |'
-                       do i = 1, size(params%energy_scales_opt_exp_data)
-                          write(*,'(1X,A,1X,F12.8,1X,A)') '   ', params%energy_scales_opt_exp_data(i), '                      |'
+                       write(*,'(1X,A)') 'energy_scales_exp_data:                       |'
+                       do i = 1, size(params%energy_scales_exp_data)
+                          write(*,'(1X,A,1X,F12.8,1X,A)') '   ', params%energy_scales_exp_data(i), '                      |'
                        end do
 
                        write(*,*) '                                       |'
@@ -2837,7 +2856,11 @@ program turbogap
                             & .not. allocated(x_i_exp), params%similarity_type )
 
                        if (params%mc_reverse) then
-                          sim_exp_pred = sim_exp_pred - params%mc_reverse_lambda * ( energy + E_kinetic )
+                          print *, " sim term reverse mc ", params%energy_scales_exp_data(1)*sim_exp_pred
+                          print *, " energy term reverse mc ", - params%mc_reverse_lambda * ( energy + E_kinetic )
+
+                          sim_exp_pred = params%energy_scales_exp_data(1)*sim_exp_pred&
+                               & - params%mc_reverse_lambda * ( energy + E_kinetic )
                        end if
 
                        sim_exp_prev = sim_exp_pred

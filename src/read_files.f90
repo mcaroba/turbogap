@@ -828,15 +828,15 @@ end if
       else if(keyword=='optimize_exp_data')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%optimize_exp_data
-      else if(keyword=='energy_scales_opt_exp_data')then
+      else if(keyword=='energy_scales_exp_data')then
          backspace(10)
          if (params%n_moments > 0)then
             read(10, *, iostat=iostatus) cjunk, cjunk, (params&
-             &%energy_scales_opt_exp_data(nw),nw=1,params&
+             &%energy_scales_exp_data(nw),nw=1,params&
              &%n_moments)
          else
             read(10, *, iostat=iostatus) cjunk, cjunk, (params&
-                 &%energy_scales_opt_exp_data(nw),nw=1,params&
+                 &%energy_scales_exp_data(nw),nw=1,params&
                  &%n_local_properties)
          end if
 
@@ -891,7 +891,7 @@ end if
         read(10, *, iostat=iostatus) cjunk, cjunk, params%n_local_properties
         allocate( params%write_local_properties(1:params%n_local_properties) )
         allocate( params%compute_local_properties(1:params%n_local_properties) )
-        allocate( params%energy_scales_opt_exp_data(1:params%n_local_properties) )
+        allocate( params%energy_scales_exp_data(1:params%n_local_properties) )
         params%write_local_properties = .true.
       else if(keyword=='compute_local_properties')then
         backspace(10)
@@ -902,8 +902,8 @@ end if
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%n_moments
 
-        if(allocated(params%energy_scales_opt_exp_data)) deallocate(params%energy_scales_opt_exp_data)
-        allocate(params%energy_scales_opt_exp_data(1:params%n_moments))
+        if(allocated(params%energy_scales_exp_data)) deallocate(params%energy_scales_exp_data)
+        allocate(params%energy_scales_exp_data(1:params%n_moments))
         ! One needs to see if these match up with those in the actual gap file
       else if(keyword=='write_velocities')then
         backspace(10)
