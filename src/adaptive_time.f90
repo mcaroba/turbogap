@@ -62,11 +62,13 @@ subroutine variable_time_step_adaptive (init, vel, forces, masses, tmin, tmax, x
     else
       allocate( d(1:Np) )
     end if
-
+	
+	!! this will finally keep the smallest time-step required
+	
 	dtmin = 1.0E+20
 	
-	! Initializing time steps to choose the minimum from a proper set
-	! of values of times and avoid getting 0.
+	!! Initializing time steps to choose the minimum from a proper set
+	!! of values of times and avoid getting 0.
 	
 	if ( init ) then
 		dtv = dt0; dtf = dt0; dte = dt0
@@ -87,9 +89,9 @@ subroutine variable_time_step_adaptive (init, vel, forces, masses, tmin, tmax, x
 			dt = min(dt, dte)
 		end if
 		
-		! finally check the allowed maximum displacement per time-step
-		! if the allowance in displacement is too large, then the criteria for 
-		! maximum energy transfer per time-step will determine the value of time-step, dt 
+		!! finally check the allowed maximum displacement per time-step
+		!! if the allowance in displacement is too large, then the criteria for 
+		!! maximum energy transfer per time-step will determine the value of time-step, dt 
 		
 		d(i) = sqrt( dot_product( vel(1:3, i)*dt + 0.5d0*forces(1:3, i)/masses(i)*dt**2, &
 					vel(1:3, i)*dt + 0.5d0*forces(1:3, i)/masses(i)*dt**2 ) )
@@ -97,10 +99,12 @@ subroutine variable_time_step_adaptive (init, vel, forces, masses, tmin, tmax, x
 		if (d(i) > xmax) dt = dt * xmax / d(i)
 		
 		dtmin = min(dtmin, dt)
-		
-		if (tmin .ne. 0) dt = max(dt, tmin)
-		if (tmax .ne. 0) dt = min(dt, tmax)
 	end do
+	
+	!! time-step is always within the maximum and minimum specified limits
+	
+	if (tmin .ne. 0) dt = max(dtmin, tmin)
+	if (tmax .ne. 0) dt = min(dtmin, tmax)
 
 !	If we're at the first step (init) we use new dt as estimated above
 !	and the initial time-step, dt0
