@@ -1573,18 +1573,7 @@ end if
         call variable_time_step(md_istep == 0, velocities(1:3, 1:n_sites), forces(1:3, 1:n_sites), masses(1:n_sites), &
                                 params%target_pos_step, params%tau_dt, params%md_step, time_step)
       end if
-      
-!! ------- option for doing simulation with adaptive time step
-	  
-	  if ( params%adaptive_time ) then
-		if (MOD(md_istep, params%adapt_tstep_interval) == 0) then
-			call variable_time_step_adaptive (md_istep == 0, velocities(1:3, 1:n_sites), forces(1:3, 1:n_sites), &
-						masses(1:n_sites), params%adapt_tmin, params%adapt_tmax, params%adapt_xmax, &
-						params%adapt_emax, params%md_step, time_step)
-		end if
-	  end if
 
-!! ---------------------------------------------------------			******** until here for adaptive time
 
 !! ------- option for radiation cascade simulation with electronic stopping
 
@@ -1595,6 +1584,7 @@ end if
 	  end if
 
 !! ---------------------------------------------------------			******** until here for electronic stopping
+
 
 !! ------- option for electronic stopping based on eph model
 
@@ -1639,6 +1629,19 @@ end if
         positions_prev(1:3, 1:n_sites) = positions(1:3, 1:n_sites)
         forces_prev(1:3, 1:n_sites) = forces(1:3, 1:n_sites)
       end if
+
+!! ------- option for doing simulation with adaptive time step
+	  
+	  if ( params%adaptive_time ) then
+		if (MOD(md_istep, params%adapt_tstep_interval) == 0) then
+			call variable_time_step_adaptive (md_istep == 0, velocities(1:3, 1:n_sites), forces(1:3, 1:n_sites), &
+						masses(1:n_sites), params%adapt_tmin, params%adapt_tmax, params%adapt_xmax, &
+						params%adapt_emax, params%md_step, time_step)
+		end if
+	  end if
+
+!! ---------------------------------------------------------			******** until here for adaptive time
+
 
 !! ------- option for electronic stopping based on eph model
 
