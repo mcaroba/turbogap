@@ -43,25 +43,49 @@ contains
 
 subroutine variable_time_step_adaptive (init, vel, forces, masses, tmin, tmax, xmax, emax, dt0, dt)
 
-    implicit none
+	implicit none
 
-    real*8, intent(inout) :: dt
-    real*8, intent(in) :: vel(:,:), dt0, forces(:,:), masses(:), tmin, tmax, xmax, emax
-    logical, intent(in) :: init
-    real*8, allocatable :: d(:)
-    real*8 :: dtmin, vsq, fsq, dte, dtf, dtv
-    integer :: Np, i
+	real*8, intent(inout) :: dt
+	real*8, intent(in) :: vel(:,:), dt0, forces(:,:), masses(:), tmin, tmax, xmax, emax
+	logical, intent(in) :: init
+	real*8, allocatable :: d(:)
+	real*8 :: dtmin, vsq, fsq, dte, dtf, dtv
+	integer :: Np, i
 
-    Np = size(vel, 2)
+	!! checking the input values of calculation parameters
+	
+	if (xmax <= 0.0) then
+		write(*,*) "ERROR: value of xmax must be greater than 0."
+		stop
+	end if
+	if (emax <= 0.0) then
+		write(*,*) "WARNING: value of emax is given less or equal to 0."
+		write(*,*) "Assuming default value for emax = 10.0 eV."
+	end if
+	if (tmax <= 0.0) then
+		write(*,*) "ERROR: value of tmax must be greater than 0."
+		stop
+	end if
+	if (tmin <= 0.0) then
+		write(*,*) "ERROR: value of tmin must be greater than 0."
+		stop
+	end if
+	if (tmax <= tmin) then
+		write(*,*) "ERROR: tmax must be greater than tmin."
+		stop
+	end if
+	
+	
+	Np = size(vel, 2)
 
-    if( allocated( d ) )then
-      if( size(d) /= Np )then
-        deallocate( d )
-        allocate( d(1:Np) )
-      end if
-    else
-      allocate( d(1:Np) )
-    end if
+	if ( allocated( d ) ) then
+		if ( size(d) /= Np ) then
+			deallocate( d )
+			allocate( d(1:Np) )
+		end if
+	else
+		allocate( d(1:Np) )
+	end if
 	
 	!! this will finally keep the smallest time-step required
 	
@@ -105,6 +129,18 @@ subroutine variable_time_step_adaptive (init, vel, forces, masses, tmin, tmax, x
 	
 	if (tmin .ne. 0) dt = max(dtmin, tmin)
 	if (tmax .ne. 0) dt = min(dtmin, tmax)
+	
+	!! warnings for specified time limits
+	
+	if (dtmin < tmin) then
+		write(*,*) "WARNING: given xmax or emax criterion demands even lower value of tmin,"
+		write(*,*) "		 doing with tmin ...."
+	end if
+	
+	if (dtmin > tmax) then
+		write(*,*) "WARNING: given xmax or emax criterion demands even larger value of tmax,"
+		write(*,*) "		 doing with tmax ...."
+	end if
 
 !	If we're at the first step (init) we use new dt as estimated above
 !	and the initial time-step, dt0
