@@ -134,12 +134,12 @@ subroutine variable_time_step_adaptive (init, vel, forces, masses, tmin, tmax, x
 	
 	if (dtmin < tmin) then
 		write(*,*) "WARNING: given xmax or emax criterion demands even lower value of tmin,"
-		write(*,*) "		 doing with tmin ...."
+		write(*,*) "(", dtmin, ")", "but doing with tmin ...."
 	end if
 	
 	if (dtmin > tmax) then
 		write(*,*) "WARNING: given xmax or emax criterion demands even larger value of tmax,"
-		write(*,*) "		 doing with tmax ...."
+		write(*,*) "(", dtmin, ")", "but doing with tmax ...."
 	end if
 
 !	If we're at the first step (init) we use new dt as estimated above
