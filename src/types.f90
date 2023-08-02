@@ -111,7 +111,7 @@ module types
                write_array_property(1:8) = .true., write_masses = .false., write_fixes = .true., &
                variable_time_step = .false., vdw_mbd_grad = .false., do_nested_sampling = .false., &
                scale_box_nested = .false., mc_write_xyz = .false., mc_relax = .false., do_exp_opt = .false., &
-               mc_hamiltonian = .false., accessible_volume = .false.
+               mc_hamiltonian = .false., accessible_volume = .false., print_vdw_forces = .false.
 
   end type input_parameters
 

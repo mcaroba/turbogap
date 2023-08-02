@@ -1278,6 +1278,8 @@ program turbogap
                  v_neigh_vdw(k) = hirshfeld_v(j2)
               end do
            end do
+           ! i_beg : i_end is split over the sites which are for each process to deal with
+           ! j_beg : j_end is 1 : n_atom_pairs_by_rank(rank+1)
            call get_ts_energy_and_forces( hirshfeld_v(i_beg:i_end), hirshfeld_v_cart_der(1:3, j_beg:j_end), &
                 n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
                 neighbor_species(j_beg:j_end), &
@@ -1577,6 +1579,16 @@ program turbogap
         if( params%do_forces )then
            forces = forces_soap + forces_2b + forces_3b + forces_core_pot + forces_vdw
            virial = virial_soap + virial_2b + virial_3b + virial_core_pot + virial_vdw
+
+           if ( params%print_vdw_forces )then
+              open(unit=90, file="forces_vdw", status="unknown")
+              do i = 1, n_sites
+                 write(90, "(F20.8, 1X, F20.8, 1X, F20.8)") &
+                      forces_vdw(1,i), forces_vdw(2,i), forces_vdw(3,i)
+              end do
+              close(90)
+           end if
+
         end if
 
 

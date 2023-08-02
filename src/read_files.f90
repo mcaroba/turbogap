@@ -993,6 +993,9 @@ end if
       else if( keyword == "vdw_mbd_grad" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_grad
+      else if( keyword == "print_vdw_forces" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%print_vdw_forces
       else if( keyword == "core_pot_cutoff" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%core_pot_cutoff
