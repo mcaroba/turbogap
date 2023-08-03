@@ -425,8 +425,9 @@ subroutine eph_LangevinEnergyDissipation (this, md_istep, md_time, vel, position
 			write(100,1) md_time, 0.0, 0.0, 0.0, sum(fdm%T_e)/fdm%ntotal 
 		end if
 		
-		else
-			open (unit = 100, file = "eph-EnergySharingData.txt", status = "old", position = "append")
+	else
+		if (MOD(md_istep, this%T_out_freq) == 0) open (unit = 100, file = "eph-EnergySharingData.txt", &
+											status = "old", position = "append")
 	end if
 	
 	
@@ -510,9 +511,10 @@ subroutine eph_LangevinEnergyDissipation (this, md_istep, md_time, vel, position
 	if (MOD(md_istep, this%T_out_freq) == 0) then
 		write(100,1) md_time + this%md_prev_time, Energy_val_fric, Energy_val_rnd, &
 					this%E_eph_cumulative, sum(fdm%T_e)/fdm%ntotal
+		close(unit=100)
 	end if
-1	format(1E13.6,3E14.6,1E13.6)	
-	close(unit=100)
+
+1	format(1E13.6,3E14.6,1E13.6)
 	
 	call fdm%beforeNextFeedback()
 	
