@@ -331,7 +331,12 @@ program turbogap
 ! If electronic stopping is required to be done, then read the stopping data file for once
 ! Reading and storing the elctronic stopping data 
   if ( params%electronic_stopping ) then
-		call read_electronic_stopping_file (n_species,params%species_types,params%estop_filename,nrows,allelstopdata)
+		if (params%estop_filename == 'NULL') then
+			write(*,*) "ERROR: No stopping data file is provided."
+			stop
+		else
+			call read_electronic_stopping_file (n_species,params%species_types,params%estop_filename,nrows,allelstopdata)
+		end if
   end if
 ! -------------------------							---- untill here for reading stopping data
 
@@ -1578,7 +1583,7 @@ end if
 !! ------- option for radiation cascade simulation with electronic stopping
 
 	  if ( params%electronic_stopping ) then
-		call electron_stopping_velocity_dependent (md_istep, n_species, params%eel_cut,  params%eel_freq_out, &
+		call electron_stopping_velocity_dependent (md_istep, n_species, params%eel_cut, params%eel_freq_out, &
 					velocities(1:3, 1:n_sites), forces(1:3, 1:n_sites), masses(1:n_sites), &
 					params%masses_types, time_step, md_time, nrows, allelstopdata)		
 	  end if

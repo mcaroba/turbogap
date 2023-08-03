@@ -101,24 +101,20 @@ module types
                write_array_property(1:8) = .true., write_masses = .false., write_fixes = .true., &
                variable_time_step = .false., vdw_mbd_grad = .false.
   
-! ------- option for doing simulation with adaptive time step
-
+!! ------- option for doing simulation with adaptive time step
 	logical :: adaptive_time = .false.
 	integer :: adapt_tstep_interval = 1
 	real*8 :: adapt_tmin = 1.0d-3, adapt_tmax = 1.0d0, adapt_xmax = 1.0d-1, adapt_emax = 1.0d+1
+!! ---------------------------------------------------------				******** until here for adaptive time
 
-! ---------------------------------------------------------				******** until here for adaptive time
-
-! ------- option for radiation cascade simulation with electronic stopping 
-
+!! ------- option for radiation cascade simulation with electronic stopping
 	logical :: electronic_stopping = .false.
 	real*8 :: eel_cut = 1.0d0
 	integer :: eel_freq_out = 1
-	character*1024 :: estop_filename
+	character*1024 :: estop_filename = 'NULL'
+!! ---------------------------------------------------------				******** until here for electronic stopping
 
-! ---------------------------------------------------------				******** until here for electronic stopping
-
-! ------- option for non-adiabatic processes of energy exchange through EPH model
+!! ------- option for non-adiabatic processes of energy exchange through EPH model
 
 	logical :: nonadiabatic_processes = .false.
 	integer :: eph_fdm_option = 1, eph_friction_option = 1, eph_random_option = 1
@@ -135,7 +131,7 @@ module types
 	character*128 :: eph_Toutfile = 'NULL'
 	character*128 :: eph_betafile = 'NULL'
 	
-! ---------------------------------------------------------				******** until here for electronic stopping based on EPH model
+!! ---------------------------------------------------------				******** until here for electronic stopping based on EPH model
 
   end type input_parameters
 
