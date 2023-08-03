@@ -113,6 +113,7 @@ module types
 
 	logical :: electronic_stopping = .false.
 	real*8 :: eel_cut = 1.0d0
+	integer :: eel_freq_out = 1
 	character*1024 :: estop_filename
 
 ! ---------------------------------------------------------				******** until here for electronic stopping

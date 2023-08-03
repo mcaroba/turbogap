@@ -759,9 +759,12 @@ end if
 		backspace(10)
 		read(10, *, iostat = iostatus) cjunk, cjunk, params%eel_cut
 		if (params%eel_cut <= 0) then
-			write(*,*) "ERROR: Cutoff energy should be positive, order of few tens of eV!"
+			write(*,*) "ERROR: Cut off energy for electronic stopping should be positive, few tens of eV!"
 			stop
 		end if
+	  else if (keyword == 'eel_freq_out') then
+		backspace(10)
+		read(10, *, iostat = iostatus) cjunk, cjunk, params%eel_freq_out
 	  else if (keyword == 'estop_filename') then
 		backspace(10)
 		read(10, *, iostat = iostatus) cjunk, cjunk, params%estop_filename

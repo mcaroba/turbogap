@@ -1578,7 +1578,7 @@ end if
 !! ------- option for radiation cascade simulation with electronic stopping
 
 	  if ( params%electronic_stopping ) then
-		call electron_stopping_velocity_dependent (md_istep, n_species, params%eel_cut, &
+		call electron_stopping_velocity_dependent (md_istep, n_species, params%eel_cut,  params%eel_freq_out, &
 					velocities(1:3, 1:n_sites), forces(1:3, 1:n_sites), masses(1:n_sites), &
 					params%masses_types, time_step, md_time, nrows, allelstopdata)		
 	  end if
