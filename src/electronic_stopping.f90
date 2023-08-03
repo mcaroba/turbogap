@@ -106,7 +106,7 @@ subroutine electron_stopping_velocity_dependent (md_istep, natomtypes, Ecut, eel
 		SeLoss = 0.0
 		
 		do i = 1, Np
-		
+			Se = 0.0
 			do j = 1, natomtypes
 				if (masses(i) == type_mass(j)) then
 					itype = j
@@ -162,10 +162,10 @@ subroutine electron_stopping_velocity_dependent (md_istep, natomtypes, Ecut, eel
 		end do
 		
 		if (MOD(md_istep, eel_freq_out) == 0) then
-			write(100, 1) md_time, abs(SeLoss)
+			write(100, 1) md_time, SeLoss
 			close(unit = 100)
 		end if
-1 FORMAT (2E13.6)
+1 FORMAT (E13.6, E14.6)
 
 	end if 	!! when md_time > 0.0
 
