@@ -398,7 +398,7 @@ contains
     logical, allocatable:: fix_atom(:,:)
     logical, allocatable, intent(in) :: im_fix_atom(:,:)
     logical, intent(inout) :: do_md, mc_relax, mc_hamiltonian
-    real*8 :: f(3,3), identity(3,3) = reshape([1.d0, 0.d0, 0.d0, 0.d0, 1.d0, 0.d0, 0.d0, 0.d0, 1.d0], [3,3]), gamma(3,3)
+    real*8 :: gamma(1:6)
     !    n_sites = size(positions, 2)
     ! Count the mc species (no multi species mc just yet)
     n_mc_species = 0
@@ -516,16 +516,20 @@ contains
        write(*,'(A,1X,F22.8)')'               V_prev             ', v_uc
        write(*,'(A,1X,F22.8)')'               V_new              ', vn
 
-       gamma = reshape([l_prop - 1.d0, 0.d0, 0.d0, 0.d0, l_prop - 1.d0, 0.d0, 0.d0, 0.d0, l_prop - 1.d0], [3,3])
-       positions = positions + matmul(gamma, positions)
-       f = identity + (gamma)
-       a_box = matmul(f, a_box)
-       b_box = matmul(f, b_box)
-       c_box = matmul(f, c_box)
+       ! Voigt Notation
+       gamma = (/ l_prop - 1.d0, l_prop - 1.d0, l_prop - 1.d0, 0.d0, 0.d0, 0.d0 /)
 
-       write(*,'(A,1X,F22.8,1X,F22.8,1X,F22.8)')'               a_box = ', a_box(1),  a_box(2),  a_box(3)
-       write(*,'(A,1X,F22.8,1X,F22.8,1X,F22.8)')'               b_box = ', b_box(1),  b_box(2),  b_box(3)
-       write(*,'(A,1X,F22.8,1X,F22.8,1X,F22.8)')'               c_box = ', c_box(1),  c_box(2),  c_box(3)
+       call modify_box(positions, gamma, a_box, b_box, c_box )
+
+       write(*,'(A,1X,F22.8,1X,F22.8,1X,F22.8)')'               a_box&
+            & = ', a_box(1)/dfloat(indices(1)),  a_box(2)&
+            &/dfloat(indices(1)),  a_box(3)/dfloat(indices(1))
+       write(*,'(A,1X,F22.8,1X,F22.8,1X,F22.8)')'               b_box&
+            & = ', b_box(1)/dfloat(indices(2)),  b_box(2)&
+            &/dfloat(indices(2)),  b_box(3)/dfloat(indices(2))
+       write(*,'(A,1X,F22.8,1X,F22.8,1X,F22.8)')'               c_box&
+            & = ', c_box(1)/dfloat(indices(3)),  c_box(2)&
+            &/dfloat(indices(3)),  c_box(3)/dfloat(indices(3))
 
     end if
 
@@ -635,6 +639,51 @@ contains
   ! Implement this to make condition checking more clear
   ! subroutine get_mc_conditions()
   ! end subroutine get_mc_conditions
+  subroutine modify_box(positions, eps, a_box, b_box, c_box )
+    implicit none
+!   Input variables
+    real*8, intent(inout) :: positions(:,:), a_box(1:3), b_box(1:3), c_box(1:3)
+    real*8, intent(in) :: eps(1:6)
+!   Internal variables
+    real*8 ::t_eps(1:3, 1:3)
+    real*8, allocatable :: frac_pos(:,:)
+    real*8 :: a_box0(1:3), b_box0(1:3), c_box0(1:3)
+    integer :: n_sites, i
+
+
+    n_sites = size(positions,2)
+
+    allocate( frac_pos(1:3, 1:n_sites) )
+    a_box0 = a_box
+    b_box0 = b_box
+    c_box0 = c_box
+
+!   Transform positions to fractional coordinate system
+    call get_fractional_coordinates(positions, a_box, b_box, c_box, frac_pos)
+
+    do i = 1, n_sites
+      positions(1:3, i) = frac_pos(1, i) * a_box(1:3) + frac_pos(2, i) * b_box(1:3) + &
+                          frac_pos(3, i) * c_box(1:3)
+    end do
+
+    t_eps(1:3, 1) = [1.d0 + eps(1), eps(6)/2.d0, eps(5)/2.d0]
+    t_eps(1:3, 2) = [eps(6)/2.d0, 1.d0 + eps(2), eps(4)/2.d0]
+    t_eps(1:3, 3) = [eps(5)/2.d0, eps(4)/2.d0, 1.d0 + eps(3)]
+    a_box = matmul( t_eps, a_box0 )
+    b_box = matmul( t_eps, b_box0 )
+    c_box = matmul( t_eps, c_box0 )
+
+    do i = 1, n_sites
+      positions(1:3, i) = frac_pos(1, i) * a_box(1:3) + frac_pos(2, i) * b_box(1:3) + &
+                          frac_pos(3, i) * c_box(1:3)
+    end do
+
+
+    deallocate( frac_pos )
+
+  end subroutine
+!**************************************************************************
+
 
 
 end module mc

@@ -2168,6 +2168,12 @@ program turbogap
                        if ((mc_istep == 0 .or. mc_istep == params%mc_nsteps .or. &
                             modulo(mc_istep, params%write_xyz) == 0))then
                           write(*,'(1X,A)')' Writing mc_current.xyz and mc_all.xyz '
+
+                          call wrap_pbc(images(i_current_image)%positions(1:3, 1:images(i_current_image)%n_sites), &
+                               images(i_current_image)%a_box/dfloat(indices(1)), &
+                               images(i_current_image)%b_box/dfloat(indices(2)),&
+                               images(i_current_image)%c_box/dfloat(indices(3)))
+
                           call write_extxyz( images(i_current_image)%n_sites, 0, 1.0d0, 0.0d0, 0.0d0, &
                                images(i_current_image)%a_box/dfloat(indices(1)), &
                                images(i_current_image)%b_box/dfloat(indices(2)), &
@@ -2281,6 +2287,11 @@ program turbogap
                     if ((mc_istep == 0 .or. mc_istep == params%mc_nsteps .or. &
                          modulo(mc_istep, params%write_xyz) == 0))then
                        write(*,'(1X,A)')' Writing mc_current.xyz and mc_all.xyz '
+                       call wrap_pbc(images(i_current_image)%positions(1:3, 1:images(i_current_image)%n_sites), &
+                            images(i_current_image)%a_box/dfloat(indices(1)), &
+                            images(i_current_image)%b_box/dfloat(indices(2)),&
+                            images(i_current_image)%c_box/dfloat(indices(3)))
+
                        call write_extxyz( images(i_current_image)%n_sites, 0, 1.0d0, 0.0d0, 0.0d0, &
                             images(i_current_image)%a_box/dfloat(indices(1)), &
                             images(i_current_image)%b_box/dfloat(indices(2)), &
@@ -2375,6 +2386,10 @@ program turbogap
 
                  if ((params%mc_write_xyz .or. mc_istep == 0 .or. mc_istep == params%mc_nsteps .or. &
                       modulo(mc_istep, params%write_xyz) == 0))then
+
+                    call wrap_pbc(positions(1:3,1:n_sites), a_box&
+                         &/dfloat(indices(1)), b_box/dfloat(indices(2)),&
+                         & c_box/dfloat(indices(3)))
 
                     call write_extxyz( n_sites, 0, 1.0d0, 0.0d0, 0.0d0, &
                          a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &

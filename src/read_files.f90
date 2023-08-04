@@ -252,6 +252,8 @@ end if
 
 !   Now we construct a supercell of the required size to accommodate the given rcut_max
 !   This needs to be done when the simulation box cannot accommodate one cutoff sphere
+
+
     a_box = a_box/dfloat(indices_prev(1))
     b_box = b_box/dfloat(indices_prev(2))
     c_box = c_box/dfloat(indices_prev(3))
