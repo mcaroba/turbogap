@@ -51,13 +51,14 @@ module electronic_stopping
 contains
 
 subroutine electron_stopping_velocity_dependent (md_istep, natomtypes, Ecut, eel_freq_out, &
-			vel, forces, masses, type_mass, dt, md_time, nrows, allelstopdata)
+			vel, forces, masses, type_mass, dt, md_time, nrows, allelstopdata, to_calculate)
 
 	implicit none
 	
 	real*8, intent(in) :: vel(:,:), dt, md_time 
 	real*8, intent(inout) :: forces(:,:)
 	integer, intent(in) :: md_istep, nrows, eel_freq_out
+	character*6, intent(in) :: to_calculate
 	integer :: Np, i, j, itype
 	real*8 :: vsq, energy, Se, Se_lo, Se_hi, E_lo, E_hi, factor, vabs, SeLoss
 	
@@ -80,8 +81,10 @@ subroutine electron_stopping_velocity_dependent (md_istep, natomtypes, Ecut, eel
 		write(100,*) 'Time (fs)  Electronic energy loss (eV)'
 		write(100,1) md_time, 0.0
 	else
-		if (MOD(md_istep, eel_freq_out) == 0) open (unit = 100, file = "ElectronicEnergyLoss.txt", &
-													status = "old", position = "append")
+		if ((to_calculate == 'energy') .and. &
+				(MOD(md_istep, eel_freq_out) == 0)) &
+					open (unit = 100, file = "ElectronicEnergyLoss.txt", &
+											status = "old", position = "append")
 	end if
 
 
@@ -130,21 +133,17 @@ subroutine electron_stopping_velocity_dependent (md_istep, natomtypes, Ecut, eel
 			!! Find position of atom K.E in the data file and then corresponding electronic stopping
 			!! to apply the friction to the current forces
 			
-			do j = 1, nrows-1
+			do j = 1, nrows
 				if (energy == En_elstopfile(j)) then 
 					Se = elstop(j, itype)
 					exit
 				end if
-				if (En_elstopfile(j) < energy .and. energy <= En_elstopfile(j+1)) then
-					if (energy == En_elstopfile(j+1)) then
-						Se =  elstop(j+1, itype)
-					else
-						Se_lo = elstop(j, itype)
-						Se_hi = elstop(j+1, itype)
-						E_lo = En_elstopfile(j)
-						E_hi = En_elstopfile(j+1)
-						Se = Se_lo + (Se_hi - Se_lo) / (E_hi - E_lo) * (energy - E_lo)
-					end if
+				if (En_elstopfile(j) < energy .and. energy < En_elstopfile(j+1)) then
+					Se_lo = elstop(j, itype)
+					Se_hi = elstop(j+1, itype)
+					E_lo = En_elstopfile(j)
+					E_hi = En_elstopfile(j+1)
+					Se = Se_lo + (Se_hi - Se_lo) / (E_hi - E_lo) * (energy - E_lo)
 					exit
 				end if
 			end do
@@ -152,16 +151,21 @@ subroutine electron_stopping_velocity_dependent (md_istep, natomtypes, Ecut, eel
 			vabs = sqrt(vsq)
 			factor = -Se / vabs
 			
-			!! The current forces get modified (reduced) 
-			forces(1,i) = forces(1,i) + vel(1,i) * factor
-			forces(2,i) = forces(2,i) + vel(2,i) * factor
-			forces(3,i) = forces(3,i) + vel(3,i) * factor
-		
-			!! roughly, E = E + (dE/dx) * (dx) = (Se) * (vabs*dt)
-			SeLoss = SeLoss + (Se * vabs * dt)
+			if (to_calculate == 'forces') then
+				!! The current forces get modified (reduced) 
+				forces(1,i) = forces(1,i) + vel(1,i) * factor
+				forces(2,i) = forces(2,i) + vel(2,i) * factor
+				forces(3,i) = forces(3,i) + vel(3,i) * factor
+			end if
+			
+			if (to_calculate == 'energy') then
+				!! roughly, E = E + (dE/dx) * (dx) = (Se) * (vabs*dt)
+				SeLoss = SeLoss + (Se * vabs * dt)
+			end if
 		end do
 		
-		if (MOD(md_istep, eel_freq_out) == 0) then
+		if ((to_calculate == 'energy') .and. &
+							(MOD(md_istep, eel_freq_out) == 0)) then
 			write(100, 1) md_time, SeLoss
 			close(unit = 100)
 		end if
