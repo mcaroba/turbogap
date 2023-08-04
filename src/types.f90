@@ -138,7 +138,7 @@ module types
          & mc_write_xyz = .false., mc_relax = .false., mc_opt_spectra&
          &=.false., optimize_exp_data=.false., print_lp_forces&
          &=.false., mc_hamiltonian = .false., accessible_volume =&
-         & .false., mc_reverse = .true.
+         & .false., mc_reverse = .false.
     logical, allocatable :: write_local_properties(:)
 
   end type input_parameters

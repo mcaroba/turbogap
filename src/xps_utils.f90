@@ -325,7 +325,7 @@ module xps_utils
       integer, intent(in) :: n_samples, n_tot, rank
       logical, intent(in) :: get_exp, do_forces
       integer :: n_sites, n_pairs, n_pairs_soap, n_species, n_sites0
-      integer :: i, j, i2, j2, k, n_in_buffer, k1, k2, mag_force_i
+      integer :: i, j, i2, j2, k, l,  n_in_buffer, k1, k2, mag_force_i
       real*8 :: x_val, x_min, x_max, x_range, max_force, mag_force, max_mag_force, similarity, dx
       character*32, intent(in) :: similarity_type
 
@@ -344,11 +344,11 @@ module xps_utils
 
       if( similarity_type == 'similarity' .or. similarity_type == 'overlap' )then
          do i = 1, n_sites
-            energies_lp(i) = - energy_scale * ( dot_product( y_all(:,i), y_exp * dx))
+            energies_lp(i) = - energy_scale * ( dot_product( y_all(:,i), y_exp ))
          end do
       else if (similarity_type == 'lsquares')then
          energies_lp = + energy_scale / n_sites0 * ( dx * dot_product( (y - y_exp), (y - y_exp) ) )
-
+         print *, "energies lp 1 ", energies_lp(1)*n_sites0
          ! Get the other terms for the lsquares expression
          allocate(prefactor(1:n_samples))
          prefactor =  2.d0 * ( y - y_exp )
@@ -392,23 +392,28 @@ module xps_utils
                j2 = modulo(neighbors_list(k)-1, n_sites0) + 1
                !             SOAP neighbors
                ! MAY NEED TO CHANGE THIS TO ACCOUNT FOR MACHINE PRECISIO
+
                if( .not. all(core_electron_be_der(1:3, k) == 0.d0) )then
 
                   y_der = 0.d0
-                  call broaden_spectrum_derivative(x(1:n_samples),&
-                       & core_electron_be(i),&
-                       & core_electron_be_der(1:3, k),&
-                       & y_der(1:3,1:n_samples ), sigma, y_exp(1:n_samples), this_force(1:3), mag, dx)
 
                   if( similarity_type == 'lsquares' )then
 
-                     y_der(1, 1:n_samples) = y_der(1, 1:n_samples) * prefactor(1:n_samples)
-                     y_der(2, 1:n_samples) = y_der(2, 1:n_samples) * prefactor(1:n_samples)
-                     y_der(3, 1:n_samples) = y_der(3, 1:n_samples) * prefactor(1:n_samples)
+                     do l = 1, n_samples
+                        y_der(1:3, l) = core_electron_be_der(1:3, k) * &
+                             & ( ( x(l) - core_electron_be(i) ) / (sigma**2) ) * &
+                             & exp( - ( x(l) - core_electron_be(i) )**2 / (2.d0 * sigma**2) ) / mag
+                     end do
 
-                     this_force(1) =  - sum( y_der(1,:) ) * dx
-                     this_force(2) =  - sum( y_der(2,:) ) * dx
-                     this_force(3) =  - sum( y_der(3,:) ) * dx
+                     this_force(1) =   dot_product( y_der(1, 1:n_samples), prefactor(1:n_samples) ) * dx
+                     this_force(2) =   dot_product( y_der(2, 1:n_samples), prefactor(1:n_samples) ) * dx
+                     this_force(3) =   dot_product( y_der(3, 1:n_samples), prefactor(1:n_samples) ) * dx
+
+                  else
+                     call broaden_spectrum_derivative(x(1:n_samples),&
+                          & core_electron_be(i),&
+                          & core_electron_be_der(1:3, k),&
+                          & y_der(1:3,1:n_samples ), sigma, y_exp(1:n_samples), this_force(1:3), mag, dx)
 
                   end if
 
@@ -583,7 +588,7 @@ module xps_utils
       y = 0.d0
 
       do i = 1, size(x)
-         f = - ( ( x(i) - x0 ) / (sigma**2) ) * exp( -( x(i) - x0 )**2 / (2*sigma**2) ) * y_exp(i) / mag
+         f = ( ( x(i) - x0 ) / (sigma**2) ) * exp( -( x(i) - x0 )**2 / (2*sigma**2) ) * y_exp(i) / mag
          y(1:3,i) = y(1:3,i) + x0_der * f
       end do
 

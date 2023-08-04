@@ -1672,7 +1672,6 @@ program turbogap
                    & sim_exp_pred, x_i_exp, y_i_exp,&
                    & x_i_pred, y_i_pred, y_i_pred_all, .not. allocated(x_i_exp), params%similarity_type )
 
-
               call get_exp_pred_spectra_energies_forces(&
                 & soap_turbo_hypers(xids)&
                 &%local_property_models(xids_lp)%data, params%energy_scales_exp_data(core_be_lp_index),&
@@ -2035,15 +2034,15 @@ program turbogap
            forces =  (forces_soap + forces_2b + forces_3b + forces_core_pot + forces_vdw) + forces_lp
            virial = virial_soap + virial_2b + virial_3b + virial_core_pot + virial_vdw + virial_lp
 
-           if ( params%print_lp_forces )then
+
+           if ( rank == 0 .and. params%print_lp_forces )then
               open(unit=90, file="forces_lp", status="unknown")
               do i = 1, n_sites
                  write(90, "(F20.8, 1X, F20.8, 1X, F20.8)") &
                       forces_lp(1,i), forces_lp(2,i), forces_lp(3,i)
               end do
+              close(90)
            end if
-
-
         end if
         ! For debugging the virial implementation
         if( rank == 0 .and. .false. )then
@@ -2684,6 +2683,11 @@ program turbogap
                        if ((mc_istep == 0 .or. mc_istep == params%mc_nsteps .or. &
                             modulo(mc_istep, params%write_xyz) == 0))then
                           write(*,'(1X,A)')' Writing mc_current.xyz and mc_all.xyz '
+                          call wrap_pbc(images(i_current_image)%positions(1:3, 1:images(i_current_image)%n_sites), &
+                               images(i_current_image)%a_box/dfloat(indices(1)), &
+                               images(i_current_image)%b_box/dfloat(indices(2)),&
+                               images(i_current_image)%c_box/dfloat(indices(3)))
+
                           call write_extxyz( images(i_current_image)%n_sites, 0, 1.0d0, 0.0d0, 0.0d0, &
                                images(i_current_image)%a_box/dfloat(indices(1)), &
                                images(i_current_image)%b_box/dfloat(indices(2)), &
@@ -2870,6 +2874,11 @@ program turbogap
                     if ((mc_istep == 0 .or. mc_istep == params%mc_nsteps .or. &
                          modulo(mc_istep, params%write_xyz) == 0))then
                        write(*,'(1X,A)')' Writing mc_current.xyz and mc_all.xyz '
+                          call wrap_pbc(images(i_current_image)%positions(1:3, 1:images(i_current_image)%n_sites), &
+                               images(i_current_image)%a_box/dfloat(indices(1)), &
+                               images(i_current_image)%b_box/dfloat(indices(2)),&
+                               images(i_current_image)%c_box/dfloat(indices(3)))
+
                        call write_extxyz( images(i_current_image)%n_sites, 0, 1.0d0, 0.0d0, 0.0d0, &
                             images(i_current_image)%a_box/dfloat(indices(1)), &
                             images(i_current_image)%b_box/dfloat(indices(2)), &
@@ -2979,6 +2988,9 @@ program turbogap
 
                  if ((params%mc_write_xyz .or. mc_istep == 0 .or. mc_istep == params%mc_nsteps .or. &
                       modulo(mc_istep, params%write_xyz) == 0))then
+
+                    call wrap_pbc(positions(1:3,1:n_sites), &
+                         a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)))
 
                     call write_extxyz( n_sites, 0, 1.0d0, 0.0d0, 0.0d0, &
                          a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
