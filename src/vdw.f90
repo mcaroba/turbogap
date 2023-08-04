@@ -1094,7 +1094,9 @@ module vdw
                            f_damp_SCS_2b_tot(:), hirshfeld_2b_tot_neigh(:), a_2b_tot(:), o_2b_tot(:), &
                            r0_ii_SCS_2b_tot(:), c6_2b_tot(:), r6_mult_2b_tot(:), r6_mult_0i(:), r6_mult_0j(:), &
                            dr6_mult_0i(:), dr6_mult_0j(:), dT_LR_mult_ij0(:), AT_mult(:), E_mult(:), dAT_mult(:), dE_mult(:), &
-                           temp_mat(:,:)
+                           temp_mat(:,:), &
+                           ! Eigenvalue stuff
+                           AT_copy(:,:), WR(:), WI(:), VL(:,:), VR(:,:), work_mbd(:), VR_inv(:,:), ipiv_mbd(:)
     real*8 :: a_mbd_i, a_mbd_j, o_mbd_i, da_i, da_j, pol1, E_TS, f_damp_der_2b, dr_vdw_i, &
               dr_vdw_j, forces_TS, dC6_2b, mult1_i, mult1_j, mult2, dmult1_i(1:3), dmult1_j(1:3), dmult2(1:3), hv_p_der, &
               hv_q_der, do_pref, rb, inner_damp_der, rjs_0_i, rcut_forces, o_i, o_j, do_i, do_j, T_LR_mult_i, T_LR_mult_j, &
@@ -1115,7 +1117,7 @@ module vdw
     integer, allocatable :: ind_nnls(:)
     real*8 :: res_nnls, E_tot, denom
     integer :: mode_nnls
-    logical :: do_total_energy = .false. ! Finite difference testing purposes
+    logical :: do_total_energy = .true. ! Finite difference testing purposes
 
     !PSBLAS stuff:
     type(psb_ctxt_type) :: icontxt
@@ -4400,6 +4402,8 @@ if ( abs(rcut_2b) < 1.d-10 ) then
               end if
 
               !write(*,*) "p, c1, rjs_0_mbd, integrand(p), a_mbd, da_mbd"
+! COMMENTING OUT SERIES EXPANSION FOR LOG
+if ( .false. ) then
               do j = 1, n_freq
               
                 !force_series = 0.d0
@@ -4474,6 +4478,8 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                   k3 = k3 + n_mbd_neigh(p)
                 end do
               end do
+              deallocate( G_mat )
+end if
               
               !write(*,*) "full integrand", integrand
               
@@ -4483,7 +4489,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
               !end if
               
               deallocate( integrand_sp, myidx, at_vec, at_n_vec, g_vec, g_n_vec )
-              deallocate ( G_mat, temp_mat )
+              deallocate ( temp_mat )
               
               call cpu_time(time2)
               
@@ -4580,12 +4586,81 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 end if
 
                 end if
-
+!if ( .false. ) then
+                ! Diagonalization stuff:
+                allocate( AT_copy(1:3*n_mbd_sites,1:3*n_mbd_sites) )
+                allocate( WR(1:3*n_mbd_sites) )
+                allocate( WI(1:3*n_mbd_sites) )
+                !allocate( VL(1,1) )
+                allocate( VR(1:3*n_mbd_sites,1:3*n_mbd_sites) )
+                allocate( VR_inv(1:3*n_mbd_sites,1:3*n_mbd_sites) )
+                allocate( work_mbd(1:12*n_mbd_sites) )
+                allocate( ipiv_mbd(1:3*n_mbd_sites) )
+                allocate( temp_mat(1:3*n_mbd_sites,1:3*n_mbd_sites) )
+                do i2 = 1, n_freq
+                  if ( c3 == 1 .and. do_total_energy ) then
+                  AT_copy = AT(:,:,i2)
+                  call dgeev('N', 'V', 3*n_mbd_sites, AT_copy, 3*n_mbd_sites, WR, WI, VL, 1, VR, 3*n_mbd_sites, &
+                              work_mbd, 12*n_mbd_sites, info)
+                  !write(*,*) "dgeev info", info
+                  VR_inv = VR
+                  call dgetrf( 3*n_mbd_sites, 3*n_mbd_sites, VR_inv, 3*n_mbd_sites, ipiv_mbd, info ) 
+                  !write(*,*) "dgetrf info", info
+                  call dgetri( 3*n_mbd_sites, VR_inv, 3*n_mbd_sites, ipiv_mbd, work_mbd, 12*n_mbd_sites, info )
+                  !write(*,*) "dgetri info", info	
+                  AT_copy = 0.d0
+                  do p = 1, 3*n_mbd_sites
+                    AT_copy(p,p) = log(1.d0-WR(p))
+                    !write(*,*) p, WR(p)
+                  end do
+                  call dgemm( 'N', 'N', 3*n_mbd_sites, 3*n_mbd_sites, 3*n_mbd_sites, 1.d0, AT_copy, 3*n_mbd_sites, &
+                          VR_inv, 3*n_mbd_sites, 0.d0, temp_mat, 3*n_mbd_sites)
+                  AT_copy = temp_mat
+                  call dgemm( 'N', 'N', 3*n_mbd_sites, 3*n_mbd_sites, 3*n_mbd_sites, 1.d0, VR, 3*n_mbd_sites, &
+                          AT_copy, 3*n_mbd_sites, 0.d0, temp_mat, 3*n_mbd_sites)
+                  !write(*,*) "matrix multiplication done"
+                  !write(*,*) maxval(abs(AT(:,:,1)-temp_mat))
+                  do p = 1, 3*n_mbd_sites
+                    total_integrand(i2) = total_integrand(i2) + temp_mat(p,p)
+                  end do
+                  end if
+                  AT_copy = -AT(:,:,i2)
+                  do p = 1, 3*n_mbd_sites
+                    AT_copy(p,p) = AT_copy(p,p) + 1.d0
+                  end do
+                  call dgetrf( 3*n_mbd_sites, 3*n_mbd_sites, AT_copy, 3*n_mbd_sites, ipiv_mbd, info )
+                  call dgetri( 3*n_mbd_sites, AT_copy, 3*n_mbd_sites, ipiv_mbd, work_mbd, 12*n_mbd_sites, info )
+                  call dgemm( 'N', 'N', 3*n_mbd_sites, 3*n_mbd_sites, 3*n_mbd_sites, 1.d0, AT_copy, 3*n_mbd_sites, &
+                          G_mat, 3*n_mbd_sites, 0.d0, temp_mat, 3*n_mbd_sites)
+                  do p = 1, 3*n_mbd_sites
+                    integrand(i2) = integrand(i2) + temp_mat(p,p)
+                  end do
+                end do
+                deallocate( AT_copy, WR, WI, VR, VR_inv, work_mbd, ipiv_mbd, temp_mat, G_mat )
+!end if
+                ! AT_copy, because AT changes in the process
+                ! WR for eigenvalue real part
+                ! WI for eigenvalue imag part
+                ! VL arbitrary array (left eigenvectors not needed)
+                ! VR eigenvectors
+                ! work_arr dim: 1:12*n_mbd_sites or more
+                ! info, integer, if 0, successful
+!if ( .false. ) then
+                integral = 0.d0
+                call integrate("trapezoidal", omegas_mbd, integrand, omegas_mbd(1), omegas_mbd(n_freq), integral)
+!end if
                 forces0(c3,i) = forces0(c3,i) + (1.d0/(2.d0*pi) * integral + forces_TS) * Hartree/Bohr
-                
+
                 if ( c3 == 1 .and. do_total_energy ) then
+!if ( .false. ) then
+                  E_tot = 0.d0
+                  E_TS_tot = 0.d0
+                  call integrate("trapezoidal", omegas_mbd, total_integrand, omegas_mbd(1), omegas_mbd(n_freq), E_tot)
+                  E_tot = (E_tot/(2.d0*pi) + E_TS_tot) * Hartree
+!end if
                   write(*,*) "Total energy of sphere", i, E_tot
                 end if
+!ALL COMMENTS UP TO THIS POINT ARE TO SEPARATE SERIES EXPANSION FROM LOG
 
                 !write(*,*) "MBD force", i, c3, 1.d0/(2.d0*pi) * integral * Hartree/Bohr
                 write(*,*) & !"Total force",
