@@ -1027,7 +1027,7 @@ module vdw
 
       
 !******************************************************************************************
-! This is where you would break this into get_scs and get_mbd for two separate subroutines:
+! This is where you would break this into get_scs and 'get_mbd for two separate subroutines:
 ! Store central_pol and central_omega and pass them to get_mbd
 !******************************************************************************************
 
@@ -1117,7 +1117,7 @@ module vdw
     integer, allocatable :: ind_nnls(:)
     real*8 :: res_nnls, E_tot, denom
     integer :: mode_nnls
-    logical :: do_total_energy = .true. ! Finite difference testing purposes
+    logical :: do_total_energy = .false. ! Finite difference testing purposes
 
     !PSBLAS stuff:
     type(psb_ctxt_type) :: icontxt
@@ -4594,44 +4594,53 @@ end if
                 !allocate( VL(1,1) )
                 allocate( VR(1:3*n_mbd_sites,1:3*n_mbd_sites) )
                 allocate( VR_inv(1:3*n_mbd_sites,1:3*n_mbd_sites) )
-                allocate( work_mbd(1:12*n_mbd_sites) )
+                allocate( work_mbd(1:24*n_mbd_sites) )
                 allocate( ipiv_mbd(1:3*n_mbd_sites) )
                 allocate( temp_mat(1:3*n_mbd_sites,1:3*n_mbd_sites) )
                 do i2 = 1, n_freq
                   if ( c3 == 1 .and. do_total_energy ) then
-                  AT_copy = AT(:,:,i2)
-                  call dgeev('N', 'V', 3*n_mbd_sites, AT_copy, 3*n_mbd_sites, WR, WI, VL, 1, VR, 3*n_mbd_sites, &
-                              work_mbd, 12*n_mbd_sites, info)
-                  !write(*,*) "dgeev info", info
-                  VR_inv = VR
-                  call dgetrf( 3*n_mbd_sites, 3*n_mbd_sites, VR_inv, 3*n_mbd_sites, ipiv_mbd, info ) 
-                  !write(*,*) "dgetrf info", info
-                  call dgetri( 3*n_mbd_sites, VR_inv, 3*n_mbd_sites, ipiv_mbd, work_mbd, 12*n_mbd_sites, info )
-                  !write(*,*) "dgetri info", info	
-                  AT_copy = 0.d0
-                  do p = 1, 3*n_mbd_sites
-                    AT_copy(p,p) = log(1.d0-WR(p))
-                    !write(*,*) p, WR(p)
-                  end do
-                  call dgemm( 'N', 'N', 3*n_mbd_sites, 3*n_mbd_sites, 3*n_mbd_sites, 1.d0, AT_copy, 3*n_mbd_sites, &
-                          VR_inv, 3*n_mbd_sites, 0.d0, temp_mat, 3*n_mbd_sites)
-                  AT_copy = temp_mat
-                  call dgemm( 'N', 'N', 3*n_mbd_sites, 3*n_mbd_sites, 3*n_mbd_sites, 1.d0, VR, 3*n_mbd_sites, &
-                          AT_copy, 3*n_mbd_sites, 0.d0, temp_mat, 3*n_mbd_sites)
-                  !write(*,*) "matrix multiplication done"
-                  !write(*,*) maxval(abs(AT(:,:,1)-temp_mat))
-                  do p = 1, 3*n_mbd_sites
-                    total_integrand(i2) = total_integrand(i2) + temp_mat(p,p)
-                  end do
+                    AT_copy = -AT(:,:,i2)
+                    do p = 1, 3*n_mbd_sites
+                      AT_copy(p,p) = AT_copy(p,p) + 1.d0
+                    end do
+                    call dgeev('N', 'V', 3*n_mbd_sites, AT_copy, 3*n_mbd_sites, WR, WI, VL, 1, VR, 3*n_mbd_sites, &
+                                work_mbd, 24*n_mbd_sites, info)
+                    VR_inv = VR
+                    ipiv_mbd = 0
+                    call dgetrf( 3*n_mbd_sites, 3*n_mbd_sites, VR_inv, 3*n_mbd_sites, ipiv_mbd, info ) 
+                    call dgetri( 3*n_mbd_sites, VR_inv, 3*n_mbd_sites, ipiv_mbd, work_mbd, 24*n_mbd_sites, info )
+                    AT_copy = 0.d0
+                    do p = 1, 3*n_mbd_sites
+                      AT_copy(p,p) = log(WR(p))
+                    end do
+                    call dgemm( 'N', 'N', 3*n_mbd_sites, 3*n_mbd_sites, 3*n_mbd_sites, 1.d0, AT_copy, 3*n_mbd_sites, &
+                            VR_inv, 3*n_mbd_sites, 0.d0, temp_mat, 3*n_mbd_sites)
+                    AT_copy = temp_mat
+                    call dgemm( 'N', 'N', 3*n_mbd_sites, 3*n_mbd_sites, 3*n_mbd_sites, 1.d0, VR, 3*n_mbd_sites, &
+                            AT_copy, 3*n_mbd_sites, 0.d0, temp_mat, 3*n_mbd_sites)
+                    do p = 1, 3*n_mbd_sites
+                      total_integrand(i2) = total_integrand(i2) + temp_mat(p,p)
+                    end do
                   end if
                   AT_copy = -AT(:,:,i2)
                   do p = 1, 3*n_mbd_sites
                     AT_copy(p,p) = AT_copy(p,p) + 1.d0
                   end do
+                  ipiv_mbd = 0
                   call dgetrf( 3*n_mbd_sites, 3*n_mbd_sites, AT_copy, 3*n_mbd_sites, ipiv_mbd, info )
-                  call dgetri( 3*n_mbd_sites, AT_copy, 3*n_mbd_sites, ipiv_mbd, work_mbd, 12*n_mbd_sites, info )
+                  call dgetri( 3*n_mbd_sites, AT_copy, 3*n_mbd_sites, ipiv_mbd, work_mbd, 24*n_mbd_sites, info )
+                  VR = -AT(:,:,i2)
+                  do p = 1, 3*n_mbd_sites
+                    VR(p,p) = VR(p,p) + 1.d0
+                  end do
                   call dgemm( 'N', 'N', 3*n_mbd_sites, 3*n_mbd_sites, 3*n_mbd_sites, 1.d0, AT_copy, 3*n_mbd_sites, &
-                          G_mat, 3*n_mbd_sites, 0.d0, temp_mat, 3*n_mbd_sites)
+                          VR, 3*n_mbd_sites, 0.d0, temp_mat, 3*n_mbd_sites)
+                  VR = 0.d0
+                  do p = 1, 3*n_mbd_sites
+                    VR(p,p) = 1.d0
+                  end do
+                  call dgemm( 'N', 'N', 3*n_mbd_sites, 3*n_mbd_sites, 3*n_mbd_sites, 1.d0, AT_copy, 3*n_mbd_sites, &
+                          G_mat(:,:,i2), 3*n_mbd_sites, 0.d0, temp_mat, 3*n_mbd_sites)
                   do p = 1, 3*n_mbd_sites
                     integrand(i2) = integrand(i2) + temp_mat(p,p)
                   end do
