@@ -51,12 +51,12 @@ module electronic_stopping
 contains
 
 subroutine electron_stopping_velocity_dependent (md_istep, natomtypes, Ecut, eel_freq_out, &
-			vel, forces, masses, type_mass, dt, md_time, nrows, allelstopdata, to_calculate)
+			vel, forces, masses, type_mass, dt, md_time, nrows, allelstopdata, cum_EEL, to_calculate)
 
 	implicit none
 	
 	real*8, intent(in) :: vel(:,:), dt, md_time 
-	real*8, intent(inout) :: forces(:,:)
+	real*8, intent(inout) :: cum_EEL, forces(:,:)
 	integer, intent(in) :: md_istep, nrows, eel_freq_out
 	character*6, intent(in) :: to_calculate
 	integer :: Np, i, j, itype
@@ -76,17 +76,17 @@ subroutine electron_stopping_velocity_dependent (md_istep, natomtypes, Ecut, eel
 	
 	!! To write the electronic energy loss data to a file after evaluation at each time step
 	
-	if( md_istep == 0 .or. md_istep == -1 )then
-		open (unit = 100, file = "ElectronicEnergyLoss.txt", status = "unknown")
-		write(100,*) 'Time (fs)  Electronic energy loss (eV)'
-		write(100,1) md_time, 0.0
-	else
-		if ((to_calculate == 'energy') .and. &
-				(MOD(md_istep, eel_freq_out) == 0)) &
-					open (unit = 100, file = "ElectronicEnergyLoss.txt", &
-											status = "old", position = "append")
+	if (to_calculate == 'energy') then
+		if( md_istep == 0 .or. md_istep == -1 )then
+			open (unit = 100, file = "ElectronicEnergyLoss.txt", status = "unknown")
+			write(100,*) 'Time (fs)  Electronic energy loss (eV) Cumulative EEL (eV)'
+			write(100,1) md_time, 0.0, 0.0 
+		else
+			if ((MOD(md_istep, eel_freq_out) == 0)) &
+						open (unit = 100, file = "ElectronicEnergyLoss.txt", &
+												status = "old", position = "append")
+		end if
 	end if
-
 
 	!! Do all calculations for MD time greater than 0
 	
@@ -106,70 +106,117 @@ subroutine electron_stopping_velocity_dependent (md_istep, natomtypes, Ecut, eel
 		
 		Np = size(vel, 2)
 		
-		SeLoss = 0.0
+		!! Finding the forces after friction
 		
-		do i = 1, Np
-			Se = 0.0
-			do j = 1, natomtypes
-				if (masses(i) == type_mass(j)) then
-					itype = j
-					exit
+		if (to_calculate == 'forces') then
+			do i = 1, Np
+				Se = 0.0
+				do j = 1, natomtypes
+					if (masses(i) == type_mass(j)) then
+						itype = j
+						exit
+					end if
+				end do
+				
+				vsq = dot_product (vel(1:3, i), vel(1:3, i))
+				energy = 0.5 * masses(i) * vsq
+			
+				if (energy < Ecut) continue
+				if (energy < En_elstopfile(1)) continue
+				if (energy > En_elstopfile(nrows)) then
+					write (*,*) "ERROR: Kinetic energy of atom is higher than electron stopping data"
+					stop
 				end if
-			end do
-			
-			vsq = dot_product (vel(1:3, i), vel(1:3, i))
-			energy = 0.5 * masses(i) * vsq
-		
-			if (energy < Ecut) continue
-			if (energy < En_elstopfile(1)) continue
-			if (energy > En_elstopfile(nrows)) then
-				write (*,*) "ERROR: Kinetic energy of atom is higher than electron stopping data"
-				stop
-			end if
-			!! Here the condition for matching the region can be given
-			!! .... like a particular group atoms only .....
-			!! .... !
-			
-			!! Find position of atom K.E in the data file and then corresponding electronic stopping
-			!! to apply the friction to the current forces
-			
-			do j = 1, nrows
-				if (energy == En_elstopfile(j)) then 
-					Se = elstop(j, itype)
-					exit
-				end if
-				if (En_elstopfile(j) < energy .and. energy < En_elstopfile(j+1)) then
-					Se_lo = elstop(j, itype)
-					Se_hi = elstop(j+1, itype)
-					E_lo = En_elstopfile(j)
-					E_hi = En_elstopfile(j+1)
-					Se = Se_lo + (Se_hi - Se_lo) / (E_hi - E_lo) * (energy - E_lo)
-					exit
-				end if
-			end do
-			
-			vabs = sqrt(vsq)
-			factor = -Se / vabs
-			
-			if (to_calculate == 'forces') then
+				!! Here the condition for matching the region can be given
+				!! .... like a particular group atoms only .....
+				!! .... !
+				
+				!! Find position of atom K.E in the data file and then corresponding electronic stopping
+				!! to apply the friction to the current forces
+				
+				do j = 1, nrows
+					if (energy == En_elstopfile(j)) then 
+						Se = elstop(j, itype)
+						exit
+					end if
+					if (En_elstopfile(j) < energy .and. energy < En_elstopfile(j+1)) then
+						Se_lo = elstop(j, itype)
+						Se_hi = elstop(j+1, itype)
+						E_lo = En_elstopfile(j)
+						E_hi = En_elstopfile(j+1)
+						Se = Se_lo + (Se_hi - Se_lo) / (E_hi - E_lo) * (energy - E_lo)
+						exit
+					end if
+				end do
+				
+				vabs = sqrt(vsq)
+				factor = -Se / vabs
+				
 				!! The current forces get modified (reduced) 
 				forces(1,i) = forces(1,i) + vel(1,i) * factor
 				forces(2,i) = forces(2,i) + vel(2,i) * factor
 				forces(3,i) = forces(3,i) + vel(3,i) * factor
-			end if
+			end do
+		end if
+		
+		!! Finding the electronic energy loss
+		
+		if (to_calculate == 'energy') then
+			SeLoss = 0.0	
+			do i = 1, Np
+				Se = 0.0
+				do j = 1, natomtypes
+					if (masses(i) == type_mass(j)) then
+						itype = j
+						exit
+					end if
+				end do
+				
+				vsq = dot_product (vel(1:3, i), vel(1:3, i))
+				energy = 0.5 * masses(i) * vsq
 			
-			if (to_calculate == 'energy') then
+				if (energy < Ecut) continue
+				if (energy < En_elstopfile(1)) continue
+				if (energy > En_elstopfile(nrows)) then
+					write (*,*) "ERROR: Kinetic energy of atom is higher than electron stopping data"
+					stop
+				end if
+				!! Here the condition for matching the region can be given
+				!! .... like a particular group atoms only .....
+				!! .... !
+				
+				!! Find position of atom K.E in the data file and then corresponding electronic stopping
+				!! to apply the friction to the current forces
+				
+				do j = 1, nrows
+					if (energy == En_elstopfile(j)) then 
+						Se = elstop(j, itype)
+						exit
+					end if
+					if (En_elstopfile(j) < energy .and. energy < En_elstopfile(j+1)) then
+						Se_lo = elstop(j, itype)
+						Se_hi = elstop(j+1, itype)
+						E_lo = En_elstopfile(j)
+						E_hi = En_elstopfile(j+1)
+						Se = Se_lo + (Se_hi - Se_lo) / (E_hi - E_lo) * (energy - E_lo)
+						exit
+					end if
+				end do
+				
+				vabs = sqrt(vsq)
 				!! roughly, E = E + (dE/dx) * (dx) = (Se) * (vabs*dt)
 				SeLoss = SeLoss + (Se * vabs * dt)
+			end do
+			
+			cum_EEL = cum_EEL + SeLoss
+			
+			if (MOD(md_istep, eel_freq_out) == 0) then
+				write(100, 1) md_time, SeLoss, cum_EEL
+				close(unit = 100)
 			end if
-		end do
-		
-		if ((to_calculate == 'energy') .and. &
-							(MOD(md_istep, eel_freq_out) == 0)) then
-			write(100, 1) md_time, SeLoss
-			close(unit = 100)
 		end if
-1 FORMAT (E13.6, E14.6)
+		
+1 FORMAT (E13.6, E14.6, E14.6)
 
 	end if 	!! when md_time > 0.0
 
