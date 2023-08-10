@@ -2605,6 +2605,7 @@ program turbogap
 
                           call get_data_similarity(params%exp_data(i)%x, params%exp_data(i)%y, &
                                & params%exp_data(i)%y_pred, params%exp_data(i)%similarity, params%similarity_type)
+
                        end if
                     end do
 

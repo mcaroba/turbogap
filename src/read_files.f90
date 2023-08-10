@@ -837,7 +837,7 @@ end if
          else
             read(10, *, iostat=iostatus) cjunk, cjunk, (params&
                  &%energy_scales_exp_data(nw),nw=1,params&
-                 &%n_local_properties)
+                 &%n_exp_data)
          end if
 
       else if(keyword=='xps_sigma')then
