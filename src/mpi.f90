@@ -35,25 +35,23 @@ module mpi_helper
 
 
   subroutine allocate_soap_turbo_hypers(n_soap_turbo, n_species, n_sparse, dim, compress_P_nonzero, &
-       local_properties_n_sparse, local_properties_dim, local_properties_has_data, &
-       local_properties_n_data, has_local_properties, n_local_properties, &
+       local_properties_n_sparse, local_properties_dim, has_local_properties, n_local_properties, &
        compress_soap, desc)
 
 !   Input variables
     integer, intent(in) :: n_soap_turbo, n_species(:), n_sparse(:), dim(:), local_properties_n_sparse(:), &
-                           compress_P_nonzero(:), n_local_properties(:), local_properties_n_data(:), local_properties_dim(:)
-    logical, intent(in) :: compress_soap(:), has_local_properties(:), local_properties_has_data(:)
+                           compress_P_nonzero(:), n_local_properties(:), local_properties_dim(:)
+    logical, intent(in) :: compress_soap(:), has_local_properties(:)
 
 !   Output_variables
     type(soap_turbo), allocatable, intent(out) :: desc(:)
 
 !   Internal variables
 
-    integer :: i, n_sp, d, cPnz, counter, counter2
+    integer :: i, n_sp, d, cPnz, counter
 
     allocate( desc(1:n_soap_turbo) )
     counter = 1
-    counter2 = 1
     do i = 1, n_soap_turbo
       n_sp = n_species(i)
       desc(i)%n_species = n_sp
@@ -97,12 +95,6 @@ module mpi_helper
             ! Assuming same dimension as from vdw implementation
             ! will just change d to the actual one read in
             allocate( desc(i)%local_property_models(j)%Qs(1:d, 1:n_sp) )
-            desc(i)%local_property_models(j)%has_data = local_properties_has_data(counter)
-            if (desc(i)%local_property_models(j)%has_data)then
-               n_sp = local_properties_n_data(counter2)
-               allocate( desc(i)%local_property_models(j)%data(1:2,1:n_sp) )
-               counter2 = counter2 + 1
-            end if
             counter = counter + 1
          end do
       end if

@@ -31,13 +31,21 @@ module types
   implicit none
 
   ! GAP+descriptor data structure for SOAP
+  type exp_data_container
+     character*1024      :: file_data="none", label
+     integer             :: n_data, n_samples=200, n_parameters
+     logical             :: compute=.true.
+     real*8, allocatable :: data(:,:), x(:), y(:), y_pred(:), parameters(:)
+     real*8              :: similarity
+  end type exp_data_container
+
 
   type local_property_soap_turbo
-     real*8, allocatable :: Qs(:,:), alphas(:), cutoff(:), data(:,:)
+     real*8, allocatable :: Qs(:,:), alphas(:), cutoff(:)
      real*8              :: zeta, delta, V0
-     character*1024      :: file_data="none", file_alphas, file_desc, label
-     integer             :: n_sparse, n_data, dim
-     logical             :: has_data = .false., do_derivatives = .false., compute=.true.
+     character*1024      :: file_alphas, file_desc, label
+     integer             :: n_sparse, dim
+     logical             :: do_derivatives = .false., compute=.true.
   end type local_property_soap_turbo
 
 
@@ -105,12 +113,13 @@ module types
               gamma0 = 0.01d0, max_opt_step = 0.1d0, vdw_scs_rcut = 4.d0, f_tol = 0.01d0, p_tol = 0.01d0, &
               max_opt_step_eps = 0.05d0, mc_mu = 0.0d0, t_extra = 0.d0, p_nested = 0.d0, &
               nested_max_strain = 0.d0, nested_max_volume_change = 0.d0, mc_move_max = 1.d0, &
-              mc_lnvol_max = 0.01d0, mc_min_dist = 0.2d0, xps_sigma=0.4d0, mc_reverse_lambda = 0.d0
+              mc_lnvol_max = 0.01d0, mc_min_dist = 0.2d0, xps_sigma=0.4d0, mc_reverse_lambda = 0.d0, &
+              xrd_wavelength = 1.5405981d0, xrd_damping=0.04, xrd_alpha=1.01d0
 
     integer :: md_nsteps = 1, mc_nsteps = 1, write_xyz = 0, write_thermo = 1, which_atom = 0, &
                vdw_mbd_nfreq = 11, n_mc_types = 0, n_nested = 0,&
                & mc_idx = 1, mc_nrelax=0, n_local_properties=0,&
-               & xps_n_samples=200, n_moments=0, n_mc_swaps = 0
+               & n_moments=0, n_mc_swaps = 0, xps_idx, xrd_idx, saxs_idx, n_exp_data=0
     integer, allocatable :: mc_swaps_id(:)
 
     character*1024 :: atoms_file
@@ -121,7 +130,7 @@ module types
     character*16 :: optimize = "vv", mc_relax_opt = "gd", mc_hybrid_opt = "vv"
     character*32 :: barostat = "none", thermostat = "none",&
          & barostat_sym = "isotropic", mc_species = "none",&
-         & xps_force_type = "similarity", similarity_type = "none"
+         & xps_force_type = "similarity", similarity_type = "none", xrd_method = ""
     logical :: do_md = .false., do_mc = .false., do_prediction =&
          & .false., do_forces = .false., do_derivatives = .false.,&
          & do_derivatives_fd = .false., write_soap = .false.,&
@@ -138,9 +147,9 @@ module types
          & mc_write_xyz = .false., mc_relax = .false., mc_opt_spectra&
          &=.false., optimize_exp_data=.false., print_lp_forces&
          &=.false., mc_hamiltonian = .false., accessible_volume =&
-         & .false., mc_reverse = .false.
+         & .false., mc_reverse = .false., xrd_iwasa = .true.
     logical, allocatable :: write_local_properties(:)
-
+    type(exp_data_container), allocatable :: exp_data(:)
   end type input_parameters
 
 

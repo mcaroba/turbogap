@@ -387,7 +387,7 @@ end if
 
 
 !**************************************************************************
-  subroutine read_local_property_data(file_data, n_points, data)
+  subroutine read_exp_data(file_data, n_points, data)
 
     implicit none
 
@@ -419,15 +419,15 @@ end if
     end do
     close(unit_number)
 
-  end subroutine read_local_property_data
+  end subroutine read_exp_data
 
 
-  subroutine write_local_property_data(x, y, overwrite, filename)
+  subroutine write_exp_data(x, y, overwrite, filename, label)
 
     implicit none
 
 !   Input variables
-    character(len = *), intent(in) :: filename
+    character(len = *), intent(in) :: filename, label
 !   Output variables
     real*8, allocatable, intent(in) :: x(:), y(:)
     logical, intent(in) :: overwrite
@@ -436,7 +436,7 @@ end if
 
     if( overwrite )then
        open(unit=200, file=filename, status="unknown")
-       write(200,*) '#  Core_Electron_Binding_Energies[eV]  Distribution '
+       write(200,'(A,1X,A)') '# ', label
     else
        open(unit=200, file=filename, status="old", position="append")
        write(200,*) ' '
@@ -447,7 +447,7 @@ end if
     end do
     close(200)
 
-  end subroutine write_local_property_data
+  end subroutine write_exp_data
 
 
 !**************************************************************************
@@ -843,9 +843,6 @@ end if
       else if(keyword=='xps_sigma')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%xps_sigma
-      else if(keyword=='xps_n_samples')then
-        backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%xps_n_samples
       else if(keyword=='xps_force_type')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%xps_force_type
@@ -855,6 +852,21 @@ end if
       else if(keyword=='similarity_type')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%similarity_type
+      else if(keyword=='xrd_alpha')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%xrd_alpha
+      else if(keyword=='xrd_damping')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%xrd_damping
+      else if(keyword=='xrd_wavelength')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%xrd_wavelength
+      else if(keyword=='xrd_method')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%xrd_method
+      else if(keyword=='xrd_iwasa')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%xrd_iwasa
       else if(keyword=='write_xyz')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%write_xyz
@@ -891,20 +903,47 @@ end if
         read(10, *, iostat=iostatus) cjunk, cjunk, params%n_local_properties
         allocate( params%write_local_properties(1:params%n_local_properties) )
         allocate( params%compute_local_properties(1:params%n_local_properties) )
-        allocate( params%energy_scales_exp_data(1:params%n_local_properties) )
         params%write_local_properties = .true.
       else if(keyword=='compute_local_properties')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, (params&
              &%compute_local_properties(nw),nw=1 ,params&
              &%n_local_properties)
-      else if(keyword=='n_moments')then
+      else if(keyword=='n_exp_data')then
         backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%n_moments
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%n_exp_data
+        allocate( params%exp_data(1:params%n_exp_data) )
+        allocate( params%energy_scales_exp_data(1:params%n_exp_data) )
+      else if( keyword == "exp_data_labels" )then
+         backspace(10)
+         read(10, *, iostat=iostatus) cjunk, cjunk, &
+              (params%exp_data(nw)%label, nw=1, params%n_exp_data)
+         do nw=1, params%n_exp_data
+            call upper_to_lower_case(params%exp_data(nw)%label)
+            if(     trim(params%exp_data(nw)%label) == "xps")then
+               params%xps_idx = nw
+            else if(trim(params%exp_data(nw)%label) == "xrd")then
+               params%xrd_idx = nw
+            else if(trim(params%exp_data(nw)%label) == "saxs")then
+               params%saxs_idx = nw
+            end if
+         end do
+      else if( keyword == "exp_data_files" )then
+         backspace(10)
+         read(10, *, iostat=iostatus) cjunk, cjunk, &
+              (params%exp_data(nw)%file_data, nw=1, params%n_exp_data)
 
-        if(allocated(params%energy_scales_exp_data)) deallocate(params%energy_scales_exp_data)
-        allocate(params%energy_scales_exp_data(1:params%n_moments))
-        ! One needs to see if these match up with those in the actual gap file
+         do nw = 1, params%n_exp_data
+            call read_exp_data(&
+                 params%exp_data(nw)%file_data,&
+                 params%exp_data(nw)%n_data,&
+                 params%exp_data(nw)%data)
+         end do
+      else if( keyword == "exp_data_n_samples" )then
+         backspace(10)
+         read(10, *, iostat=iostatus) cjunk, cjunk, &
+              (params%exp_data(nw)%n_samples, nw=1, params%n_exp_data)
+
       else if(keyword=='write_velocities')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%write_velocities
@@ -1676,23 +1715,6 @@ end if
                    (soap_turbo_hypers(n_soap_turbo)%local_property_models(nw)&
                    &%file_alphas,nw=1&
                    &,soap_turbo_hypers(n_soap_turbo)%n_local_properties)
-            else if( keyword == "local_property_data" )then
-              backspace(10)
-              read(10, *, iostat=iostatus) cjunk, cjunk, &
-                   (soap_turbo_hypers(n_soap_turbo)%local_property_models(nw)&
-                   &%file_data ,nw=1&
-                   &,soap_turbo_hypers(n_soap_turbo) %n_local_properties)
-
-              do i = 1, soap_turbo_hypers(n_soap_turbo)%n_local_properties
-                 if (soap_turbo_hypers(n_soap_turbo)&
-                      &%local_property_models(i)&
-                      &%file_data /= "none")then
-
-                    soap_turbo_hypers(n_soap_turbo)&
-                         &%local_property_models(i)%has_data = .true.
-                 end if
-              end do
-
             else if( keyword == "local_property_zetas" )then
               backspace(10)
               read(10, *, iostat=iostatus) cjunk, cjunk,&
@@ -1766,13 +1788,6 @@ end if
                        &%local_property_models(j)%Qs,1)
 
 
-                  if(soap_turbo_hypers(n_soap_turbo)&
-                       &%local_property_models(j)%has_data)then
-                     call read_local_property_data(&
-                          soap_turbo_hypers(n_soap_turbo)%local_property_models(j)%file_data,&
-                          soap_turbo_hypers(n_soap_turbo)%local_property_models(j)%n_data,&
-                          soap_turbo_hypers(n_soap_turbo)%local_property_models(j)%data)
-                  end if
 
                end do
             end if
