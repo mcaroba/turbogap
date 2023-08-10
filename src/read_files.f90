@@ -436,7 +436,7 @@ end if
 
     if( overwrite )then
        open(unit=200, file=filename, status="unknown")
-       write(200,'(A,1X,A)') '# ', label
+       write(200,'(A,1X,A)') '# ', trim(label)
     else
        open(unit=200, file=filename, status="old", position="append")
        write(200,*) ' '

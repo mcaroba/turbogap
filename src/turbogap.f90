@@ -1576,7 +1576,7 @@ program turbogap
                 params%vdw_sr, params%vdw_d, params%vdw_c6_ref, params%vdw_r0_ref, &
                 params%vdw_alpha0_ref, params%do_forces, &
 #ifdef _MPIF90
-                this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw )
+                this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw)
 #else
            energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
 #endif
@@ -1659,28 +1659,8 @@ program turbogap
         end if
 
 
-           if (rank == 0)then
-              if (.not. params%do_mc )then
-
-                 do i = 1, params%n_exp_data
-                    if ( trim(params%exp_data(i)%label) == 'xrd' .or. trim(params%exp_data(i)%label) == 'saxs' )then
-                       call get_xrd( positions, xyz_species, params%xrd_wavelength, params%xrd_damping, params%xrd_alpha, &
-                            & params%exp_data(i)%label, params%xrd_iwasa, params%exp_data(i)%data, params%exp_data(i)%n_samples, &
-                            params%exp_data(i)%x, params%exp_data(i)%y, params%exp_data(i)%y_pred)
-                       call get_data_similarity(params%exp_data(i)%x, params%exp_data(i)%y, &
-                            & params%exp_data(i)%y_pred, params%exp_data(i)%similarity, params%similarity_type)
-                    end if
-                    write(filename,'(A,A)') trim(params%exp_data(i)%label), "_prediction.dat"
-                    call write_exp_data(params%exp_data(i)%x, params%exp_data(i)%y_pred, md_istep == 0, &
-                         filename, params%exp_data(i)%label)
-                    write(filename,'(A,A)') trim(params%exp_data(i)%label), "_exp.dat"
-                    call write_exp_data(params%exp_data(i)%x, params%exp_data(i)%y, md_istep == 0, &
-                         & filename, params%exp_data(i)%label)
-
-                    ! We can deallocate as we do not care about optimisation, we are just predicting
-                    deallocate(params%exp_data(i)%x, params%exp_data(i)%y, params%exp_data(i)%y_pred)
-                 end do
-
+        if (rank == 0)then
+           if (.not. params%do_mc )then
 
                  call write_exp_data(params%exp_data(xps_idx)%x, params%exp_data(xps_idx)%y_pred,&
                       & md_istep == 0, "xps_prediction.dat", params%exp_data(xps_idx)%label)
@@ -1698,8 +1678,29 @@ program turbogap
            ! sim_exp_pred would be an energy if multiplied by some energy scale \gamma * ( 1 - sim )
            ! sim_exp_pred_der would be the array of forces if multiplied by (- \gamma )
            deallocate(v_neigh_lp)
+
         end if
 
+        if (rank == 0 .and. .not. params%do_mc)then
+           do i = 1, params%n_exp_data
+              if ( trim(params%exp_data(i)%label) == 'xrd' .or. trim(params%exp_data(i)%label) == 'saxs' )then
+                 call get_xrd( positions, xyz_species, params%xrd_wavelength, params%xrd_damping, params%xrd_alpha, &
+                      & params%exp_data(i)%label, params%xrd_iwasa, params%exp_data(i)%data, params%exp_data(i)%n_samples, &
+                      params%exp_data(i)%x, params%exp_data(i)%y, params%exp_data(i)%y_pred)
+                 call get_data_similarity(params%exp_data(i)%x, params%exp_data(i)%y, &
+                      & params%exp_data(i)%y_pred, params%exp_data(i)%similarity, params%similarity_type)
+              write(filename,'(A,A)') trim(params%exp_data(i)%label), "_prediction.dat"
+              call write_exp_data(params%exp_data(i)%x, params%exp_data(i)%y_pred, md_istep == 0, &
+                   filename, params%exp_data(i)%label)
+              write(filename,'(A,A)') trim(params%exp_data(i)%label), "_exp.dat"
+              call write_exp_data(params%exp_data(i)%x, params%exp_data(i)%y, md_istep == 0, &
+                   & filename, params%exp_data(i)%label)
+
+              ! We can deallocate as we do not care about optimisation, we are just predicting
+              deallocate(params%exp_data(i)%x, params%exp_data(i)%y, params%exp_data(i)%y_pred)
+           end if
+           end do
+        end if
 
 
 
@@ -2605,13 +2606,6 @@ program turbogap
                           call get_data_similarity(params%exp_data(i)%x, params%exp_data(i)%y, &
                                & params%exp_data(i)%y_pred, params%exp_data(i)%similarity, params%similarity_type)
                        end if
-                       write(filename,'(A,A)') trim(params%exp_data(i)%label), "_prediction.dat"
-                       call write_exp_data(params%exp_data(i)%x, params%exp_data(i)%y_pred, md_istep == 0,&
-                            filename, params%exp_data(i)%label)
-                       write(filename,'(A,A)') trim(params%exp_data(i)%label), "_exp.dat"
-                       call write_exp_data(params%exp_data(i)%x, params%exp_data(i)%y, md_istep == 0,&
-                            filename, params%exp_data(i)%label)
-
                     end do
 
 
@@ -2646,13 +2640,6 @@ program turbogap
                          & v_a_uc, v_a_uc_prev, params&
                          &%masses_types(mc_id), params%p_beg)
                     end if
-
-                    ! Deallocate exp data if used
-                    do i = 1, params%n_exp_data
-                       if (allocated(params%exp_data(i)%x))then
-                          deallocate( params%exp_data(i)%x, params%exp_data(i)%y, params%exp_data(i)%y_pred  )
-                       end if
-                    end do
 
 
                     call random_number(ranf)
@@ -2741,7 +2728,22 @@ program turbogap
 
                            end if
 
-                       end if
+
+                           do i = 1, params%n_exp_data
+                              ! Deallocate exp data if used
+                              if (trim(params%exp_data(i)%label) == "xrd" .or. trim(params%exp_data(i)%label) == "saxs")then
+                                 write(filename,'(A,A)') trim(params%exp_data(i)%label), "_prediction.dat"
+                                 call write_exp_data(params%exp_data(i)%x, params%exp_data(i)%y_pred, .false., &
+                                      filename, params%exp_data(i)%label)
+                                 write(filename,'(A,A)') trim(params%exp_data(i)%label), "_exp.dat"
+                                 call write_exp_data(params%exp_data(i)%x, params%exp_data(i)%y, .false., &
+                                      filename, params%exp_data(i)%label)
+                              end if
+                              if (allocated(params%exp_data(i)%x))then
+                                 deallocate( params%exp_data(i)%x, params%exp_data(i)%y, params%exp_data(i)%y_pred  )
+                              end if
+                           end do
+                        end if
 
                     end if
                     !          Add acceptance to the log file else dont
@@ -2881,12 +2883,12 @@ program turbogap
                                & params%exp_data(i)%y_pred, params%exp_data(i)%similarity, params%similarity_type)
 
                        end if
-                       write(filename,'(A,A)') trim(params%exp_data(i)%label), "_prediction.dat"
-                       call write_exp_data(params%exp_data(i)%x, params%exp_data(i)%y_pred, md_istep == 0,&
-                            filename, params%exp_data(i)%label)
-                       write(filename,'(A,A)') trim(params%exp_data(i)%label), "_exp.dat"
-                       call write_exp_data(params%exp_data(i)%x, params%exp_data(i)%y, md_istep == 0, &
-                            filename, params%exp_data(i)%label)
+                       ! write(filename,'(A,A)') trim(params%exp_data(i)%label), "_prediction.dat"
+                       ! call write_exp_data(params%exp_data(i)%x, params%exp_data(i)%y_pred, md_istep == 0,&
+                       !      filename, params%exp_data(i)%label)
+                       ! write(filename,'(A,A)') trim(params%exp_data(i)%label), "_exp.dat"
+                       ! call write_exp_data(params%exp_data(i)%x, params%exp_data(i)%y, md_istep == 0, &
+                       !      filename, params%exp_data(i)%label)
 
                     end do
 
@@ -2951,10 +2953,10 @@ program turbogap
                        do i = 1, params%n_exp_data
                           ! Deallocate exp data if used
                           write(filename,'(A,A)') trim(params%exp_data(i)%label), "_prediction.dat"
-                          call write_exp_data(params%exp_data(i)%x, params%exp_data(i)%y_pred, md_istep == 0, &
+                          call write_exp_data(params%exp_data(i)%x, params%exp_data(i)%y_pred, .true., &
                                filename, params%exp_data(i)%label)
                           write(filename,'(A,A)') trim(params%exp_data(i)%label), "_exp.dat"
-                          call write_exp_data(params%exp_data(i)%x, params%exp_data(i)%y, md_istep == 0, &
+                          call write_exp_data(params%exp_data(i)%x, params%exp_data(i)%y, .true., &
                                filename, params%exp_data(i)%label)
 
                           if (allocated(params%exp_data(i)%x))then
