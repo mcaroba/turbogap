@@ -118,10 +118,10 @@ module types
           & exp_energy_scales_final(:), radii(:), t_hold(:)
     real*8 :: t_beg = 300.d0, t_end = 300.d0, tau_t = 100.d0, md_step&
          & = 1.d0, neighbors_buffer = 0.d0, max_GBytes_per_process =&
-         & 1.d0, e_tol = 1.d-6, vdw_sr = 0.94d0, vdw_d = 20.d0,&
-         & vdw_rcut = 10.d0, vdw_buffer = 1.d0, vdw_rcut_inner =&
-         & 0.5d0, vdw_buffer_inner = 0.5d0, tau_p = 1000.d0, p_beg =&
-         & 1.d0, p_end = 1.d0, gamma_p = 1.d0, box_scaling_factor(3&
+         & 1.d0, e_tol = 1.d-6, vdw_sr = 0.94d0, vdw_d = 20.d0, vdw_rcut = 10.d0, &
+         & vdw_buffer = 1.d0, vdw_rcut_inner = 0.5d0, vdw_buffer_inner = 0.5d0, &
+         & estat_rcut = 10.0_dp, estat_rcut_inner = 4.0_dp, estat_rcut_width = 1.0_dp, &
+         & tau_p = 1000.d0, p_beg = 1.d0, p_end = 1.d0, gamma_p = 1.d0, box_scaling_factor(3&
          &,3) = reshape([1.d0, 0.d0, 0.d0, 0.d0, 1.d0, 0.d0, 0.d0,&
          & 0.d0, 1.d0], [3,3]), core_pot_cutoff = 1.d10,&
          & core_pot_buffer = 1.d0, tau_dt = 100.d0, target_pos_step,&
@@ -153,8 +153,9 @@ module types
     character*8, allocatable :: species_types(:), mc_swaps(:), mc_species(:)
     character*16 :: optimize = "vv", mc_relax_opt = "gd", mc_hybrid_opt = "vv"
     character*32 :: barostat = "none", thermostat = "none", barostat_sym = "isotropic",&
-         & xps_force_type = "similarity", exp_similarity_type =&
-         & "squared_diff", xrd_method = "xrd", q_units="q", xrd_output="xrd", sf_output="xrd", nd_output="xrd", pair_distribution_output = "pdf"
+         & xps_force_type = "similarity", exp_similarity_type = "squared_diff", &
+         & estat_method = "none", xrd_method = "xrd", q_units="q", xrd_output="xrd", &
+         & sf_output="xrd", nd_output="xrd", pair_distribution_output = "pdf"
     logical :: do_md = .false., do_mc = .false., do_prediction = .false., do_forces = .false., do_derivatives = .false., &
                do_derivatives_fd = .false., write_soap = .false., write_derivatives = .false., &
                do_timing = .false., all_atoms = .true., print_progress = .true., scale_box = .false., &

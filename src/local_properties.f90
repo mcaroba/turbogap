@@ -250,6 +250,7 @@ module local_prop
     V = V + V0
 
 !   Make sure all V are >= 0
+!TODO turn this off for other properties, like charges
     do i = 1, size(V)
       if( V(i) < 0.d0 )then
         V(i) = 0.d0

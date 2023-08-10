@@ -1651,6 +1651,24 @@ end if
       else if( keyword == "print_vdw_forces" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%print_vdw_forces
+      else if( keyword == "estat_method" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%estat_method
+        params%estat_method = upper_to_lower_case(trim(params%estat_method))
+        if (params%estat_method /= "direct" .and. params%estat_method /= "none") then
+          write(*,*) "ERROR: electrostatic method not implemented: ", params%estat_method
+          write(*,*) "       Currently implemented methods are: direct"
+          stop
+        end if
+      else if( keyword == "estat_rcut" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%estat_rcut
+      else if( keyword == "estat_rcut_inner" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%estat_rcut_inner
+      else if( keyword == "estat_inner_width" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%estat_inner_width
       else if( keyword == "core_pot_cutoff" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%core_pot_cutoff
