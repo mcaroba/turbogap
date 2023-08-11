@@ -52,7 +52,7 @@ module gap_interface
                           which_atom, indices, soap, soap_cart_der, der_neighbors, der_neighbors_list, &
                           has_vdw, vdw_Qs, vdw_alphas, vdw_zeta, vdw_delta, vdw_V0, &
                           energies0, forces0, hirshfeld_v0, hirshfeld_v_cart_der0, virial, solo_time_soap, &
-                          time_get_soap) !,cublas_handle )
+                          time_get_soap,cublas_handle , gpu_stream)
 
     implicit none
 
@@ -101,7 +101,7 @@ module gap_interface
     call mpi_comm_rank(MPI_COMM_WORLD, rank, ierr)
     ! call gpu_set_device(rank) ! Every node has 4 GPUs. Even if there are more than 1 nodes used. This will assing the ranks to GPU in a roundbin fashion
     
-    call create_cublas_handle(cublas_handle, gpu_stream)
+    !call create_cublas_handle(cublas_handle, gpu_stream)
     n_sites_supercell = size(xyz_species_supercell)
 
 
@@ -362,7 +362,7 @@ module gap_interface
     if( do_derivatives .and. .not. write_derivatives )then
       deallocate( soap_cart_der )
     end if
-  call destroy_cublas_handle(cublas_handle, gpu_stream)
+  !call destroy_cublas_handle(cublas_handle, gpu_stream)
   end subroutine
 !**************************************************************************
 

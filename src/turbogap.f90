@@ -44,6 +44,7 @@ program turbogap
 #endif
   use bussi
   use xyz_module
+  use F_B_C
 
   implicit none
 
@@ -128,9 +129,10 @@ program turbogap
                           n_sparse_mpi_angle_3b(:), n_mpi_core_pot(:), vdw_n_sparse_mpi_soap_turbo(:), &
                           n_neigh_local(:)
   logical, allocatable :: compress_soap_mpi(:)
-  type(c_ptr) :: cublas_handle
+  type(c_ptr) :: cublas_handle, gpu_stream
 !**************************************************************************
 
+  call create_cublas_handle(cublas_handle, gpu_stream)
 ! integer :: n_ii,i_ii, j_jj,k_ii
 ! real*8 :: CC(1:1024,1:1024), BB(1:1024,1:1024), AA(1:1024,1:1024), dut1, dut2
 
@@ -1084,7 +1086,7 @@ program turbogap
                             soap_turbo_hypers(i)%has_vdw, soap_turbo_hypers(i)%vdw_Qs, soap_turbo_hypers(i)%vdw_alphas, &
                             soap_turbo_hypers(i)%vdw_zeta, soap_turbo_hypers(i)%vdw_delta, soap_turbo_hypers(i)%vdw_V0, &
                             this_energies, this_forces, this_hirshfeld_v_pt, this_hirshfeld_v_cart_der_pt, &
-                            this_virial, solo_time_soap, time_get_soap) !, cublas_handle)
+                            this_virial, solo_time_soap, time_get_soap, cublas_handle, gpu_stream)
 
           energies_soap = energies_soap + this_energies
           if( soap_turbo_hypers(i)%has_vdw )then
@@ -1907,5 +1909,6 @@ write(*,*) "    - lin__turbo:", solo_time_soap, rank
   call mpi_finalize(ierr)
 #endif
 
+!call destroy_cublas_handle(cublas_handle, gpu_stream)
 
 end program turbogap

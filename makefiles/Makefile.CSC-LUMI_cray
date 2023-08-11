@@ -17,13 +17,13 @@
 
 # Compiler, preprocessor directives, etc.
 F90=ftn # -hlist=m
-CU=hipcc -munsafe-fp-atomics #-save-temps #  #-ffp-model=precise #-munsafe-fp-atomics
+CU=hipcc -munsafe-fp-atomics -g -ggdb #-save-temps #  #-ffp-model=precise #-munsafe-fp-atomics
 PP=-e Z -D _MPIF90
 F90_MOD_DIR_OPT=-J
 
 # Optimization flags (uncomment second option to enable debugging tools)
 F90_OPTS= -fPIC -O3 -L/appl/lumi/SW/LUMI-22.08/G/EB/rocm/5.3.3/lib -lamdhip64 -lhipblas -lhiprand
-CUDA_OPTS=   -I/appl/lumi/SW/LUMI-22.08/G/EB/rocm/5.3.3/include -L/appl/lumi/SW/LUMI-22.08/G/EB/rocm/5.3.3/lib -lhipblas -lhiprand --offload-arch=gfx90a
+CUDA_OPTS=   -I/appl/lumi/SW/LUMI-22.08/G/EB/rocm/5.3.3/include -L/appl/lumi/SW/LUMI-22.08/G/EB/rocm/5.3.3/lib -lhipblas -lhiprand --offload-arch=gfx90a 
 # gdwarf-4 needed for getting line information when sampling 
 #F90_OPTS+= -g # -gdwarf-4
 #CUDA_OPTS+= -Xcompiler -gdwarf-4 
