@@ -104,10 +104,16 @@ subroutine variable_time_step_adaptive (init, vel, forces, masses, tmin, tmax, x
 	do i = 1, Np
 		vsq = dot_product (vel(1:3, i), vel(1:3, i))
 		fsq = dot_product (forces(1:3, i), forces(1:3, i))
+		
+		!! time from the velocity, x = vt
 		if (vsq > 0.0) dtv = xmax / sqrt(vsq)
+		
+		!! time from the acceleration, x = 1/2at²
 		if (fsq > 0.0) dtf = sqrt(2.0 * xmax * masses(i)/ (sqrt(fsq)))
+		
 		dt = min(dtv, dtf)
 		
+		!! time from the energy, t = e/(fv)
 		if ((emax > 0.0) .and. (vsq*fsq > 0.0)) then
 			dte = emax / sqrt(vsq*fsq)
 			dt = min(dt, dte)
