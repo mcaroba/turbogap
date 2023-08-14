@@ -1684,7 +1684,8 @@ program turbogap
         if (rank == 0 .and. .not. params%do_mc)then
            do i = 1, params%n_exp_data
               if ( trim(params%exp_data(i)%label) == 'xrd' .or. trim(params%exp_data(i)%label) == 'saxs' )then
-                 call get_xrd( positions, xyz_species, params%xrd_wavelength, params%xrd_damping, params%xrd_alpha, &
+                 call get_xrd( positions, n_species, params%species_types, species, params%xrd_wavelength,&
+                      & params%xrd_damping, params%xrd_alpha, &
                       & params%exp_data(i)%label, params%xrd_iwasa, params%exp_data(i)%data, params%exp_data(i)%n_samples, &
                       params%exp_data(i)%x, params%exp_data(i)%y, params%exp_data(i)%y_pred)
                  call get_data_similarity(params%exp_data(i)%x, params%exp_data(i)%y, &
@@ -2598,7 +2599,8 @@ program turbogap
 
                     do i = 1, params%n_exp_data
                        if ( trim(params%exp_data(i)%label) == 'xrd' .or. trim(params%exp_data(i)%label) == 'saxs' )then
-                          call get_xrd( positions, xyz_species, params%xrd_wavelength, params%xrd_damping, params%xrd_alpha, &
+                          call get_xrd( positions, n_species, params%species_types, species,&
+                               & params%xrd_wavelength, params%xrd_damping, params%xrd_alpha, &
                                & params%exp_data(i)%label, params%xrd_iwasa, params%exp_data(i)%data, &
                                & params%exp_data(i)%n_samples, params%exp_data(i)%x, params%exp_data(i)%y, &
                                & params%exp_data(i)%y_pred)
@@ -2875,7 +2877,8 @@ program turbogap
 
                     do i = 1, params%n_exp_data
                        if ( trim(params%exp_data(i)%label) == 'xrd' .or. trim(params%exp_data(i)%label) == 'saxs' )then
-                          call get_xrd( positions, xyz_species, params%xrd_wavelength, params%xrd_damping, params%xrd_alpha, &
+                          call get_xrd( positions, n_species, params%species_types, species, params%xrd_wavelength,&
+                               & params%xrd_damping, params%xrd_alpha, &
                                & params%exp_data(i)%label, params%xrd_iwasa, params%exp_data(i)%data, &
                                & params%exp_data(i)%n_samples, params%exp_data(i)%x, params%exp_data(i)%y,&
                                & params%exp_data(i)%y_pred)
