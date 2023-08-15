@@ -111,7 +111,6 @@ module exp_utils
 
          do i = 1, n_species
             call get_waasmaier(species_types(i), s(l), wfac_species(i))
-            print *, species_types(i), wfac_species(i)
          end do
 
          do i = 1, n_sites
@@ -139,7 +138,7 @@ module exp_utils
                   diff(1:3) = positions(1:3,i) - positions(1:3,j)
                   rij = sqrt( dot_product(diff, diff))
                   ! Now should
-                  intensity = intensity + wfac(i) * wfac(j) * ( sinc( 2.d0 * s(l) * rij ) )!/ ( 2.d0 * s(l) * rij ))
+                  intensity = intensity + wfac(i) * wfac(j) * ( sinc( 2.d0 * s(l) * rij ) )
           !     end if
             end do
          end do
@@ -850,6 +849,8 @@ module exp_utils
       x_min = xi(1)        !minval(xi)
       x_max = xi(size(xi)) !maxval(xi)
       x_range = x_max - x_min
+
+      y = 0.d0
 
       do i = 1, size(x)-1
          idx = int( (((x(i)-x_min) / x_range) * real(size(xi))) + 1 )
