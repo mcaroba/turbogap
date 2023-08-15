@@ -12,7 +12,7 @@ from scipy.special import erf
 db0 = read("../db2.xyz", index=":")
 
 db = []
-
+cluster = []
 for k in range(0, len(db0)):
     atoms = db0[k]
     medoid = atoms.get_array("clmds_medoid")
@@ -24,6 +24,7 @@ for k in range(0, len(db0)):
             atoms2 = atoms.copy()
             atoms2.set_array("clmds_medoid", this_medoid)
             db.append(atoms2)
+            cluster.append(atoms2.arrays["clmds_cluster"][i])
 
 for k in range(0, len(db)):
     atoms = db[k].copy()
@@ -109,5 +110,5 @@ for k in range(0, len(db)):
     vp.type = Viewport.Type.Perspective
     vp.camera_dir = -direction
     vp.camera_pos = atoms.get_center_of_mass() + direction + direction / np.dot(direction,direction)**0.5 * dist
-    vp.render_image(filename = "sites_png/%i.png" % (k+1), size=(120,120), alpha=False, renderer=tachyon)
+    vp.render_image(filename = "sites_png/%i.png" % (cluster[k]+1), size=(120,120), alpha=False, renderer=tachyon)
     pipeline.remove_from_scene()
