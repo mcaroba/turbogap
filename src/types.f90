@@ -35,7 +35,7 @@ module types
      character*1024      :: file_data="none", label
      integer             :: n_data, n_samples=200, n_parameters
      logical             :: compute=.true.
-     real*8, allocatable :: data(:,:), x(:), y(:), y_pred(:), parameters(:)
+     real*8, allocatable :: data(:,:), x(:), y(:), y_pred(:),  y_pred_prev(:)
      real*8              :: similarity
   end type exp_data_container
 

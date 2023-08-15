@@ -682,7 +682,7 @@ module exp_utils
       real*8, intent(out) :: sim_exp_pred
 
       if (similarity_type == "lsquares")then
-         sim_exp_pred = - (x(2) - x(1) ) * dot_product(y - y_pred, y - y_pred)
+         sim_exp_pred = - dot_product(y - y_pred, y - y_pred)
       else
          sim_exp_pred =  dot_product(y, y_pred)
       end if

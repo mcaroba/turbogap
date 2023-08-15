@@ -2670,10 +2670,58 @@ program turbogap
                     !    ACCEPT OR REJECT
                     write(*, '(A,1X,A,1X,A,L4,1X,A,ES12.6,1X,A,1X,ES12.6)') 'Is ', trim(mc_move), &
                          'accepted?', p_accept > ranf, ' p_accept =', p_accept, ' ranf = ', ranf
+
+                    if ( mc_istep == 1 )then
+                       open(unit=200, file="mc.log", status="unknown")
+                    end if
+                    if ( mc_istep > 1  )then
+                       open(unit=200, file="mc.log", status="old", position="append")
+                    end if
+
+                    if ( .not. params%mc_opt_spectra )then
+                       write(200, "(I8, 1X, A, 1X, L4, 1X, F20.8, 1X, F20.8, 1X, I8, 1X, I8, 1X)") &
+                            mc_istep, mc_move, p_accept > ranf, energy + E_kinetic, &
+                            images(i_current_image)%energy + images(i_current_image)%e_kin, &
+                            images(i_trial_image)%n_sites, n_mc_species
+                    else
+                       write(200, "(I8, 1X, A, 1X, L4, 1X, L4, 1X, F20.8, 1X,  F20.8, 1X, F20.8, 1X,&
+                            & F20.8, 1X, I8, 1X, I8, 1X)") mc_istep, mc_move,&
+                            & p_accept > ranf, sim_exp_pred > sim_exp_prev, sim_exp_pred,&
+                            & sim_exp_prev , energy + E_kinetic,&
+                            & images(i_current_image)%energy +&
+                            & images(i_current_image)%e_kin,&
+                            & images(i_trial_image)%n_sites,&
+                            & n_mc_species
+                    end if
+
+                    close(200)
+
+
                     if (p_accept > ranf)then
                        !             Accept
+                       ! Set variables
+                       n_sites_prev = n_sites
+                       v_uc_prev = v_uc
+                       v_a_uc_prev = v_a_uc
+                       virial_prev = virial
+                       if (params%mc_opt_spectra )then
+                          sim_exp_prev = sim_exp_pred
 
-                       if ((mc_istep == 0 .or. mc_istep == params%mc_nsteps .or. &
+                          do i = 1, params%n_exp_data
+                             if (.not. allocated(params%exp_data(i)%y_pred_prev)) then
+                                allocate( params%exp_data(i)%y_pred_prev(1:size(params%exp_data(i)%y_pred,1)) )
+                             end if
+
+                             params%exp_data(i) % y_pred_prev = params%exp_data(i) % y_pred
+                          end do
+                       end if
+
+                       !   Assigning the default image with the accepted one
+                       images(i_current_image) = images(i_trial_image)
+
+                    end if
+
+                    if ((params%mc_write_xyz .or. mc_istep == 0 .or. mc_istep == params%mc_nsteps .or. &
                             modulo(mc_istep, params%write_xyz) == 0))then
                           write(*,'(1X,A)')' Writing mc_current.xyz and mc_all.xyz '
                           call wrap_pbc(images(i_current_image)%positions(1:3, 1:images(i_current_image)%n_sites), &
@@ -2720,7 +2768,7 @@ program turbogap
                            if (params%mc_opt_spectra .and. valid_xps)then
                               call write_exp_data(params&
                                    &%exp_data(xps_idx)%x, params&
-                                   &%exp_data(xps_idx)%y_pred,&
+                                   &%exp_data(xps_idx)%y_pred_prev,&
                                    & .false., "xps_prediction.dat", params%exp_data(xps_idx)%label)
                               call write_exp_data(params&
                                    &%exp_data(xps_idx)%x, params&
@@ -2748,43 +2796,8 @@ program turbogap
                            end do
                         end if
 
-                    end if
                     !          Add acceptance to the log file else dont
-                    if ( mc_istep == 1 )then
-                       open(unit=200, file="mc.log", status="unknown")
-                    end if
-                    if ( mc_istep > 1  )then
-                       open(unit=200, file="mc.log", status="old", position="append")
-                    end if
 
-                    if ( .not. params%mc_opt_spectra )then
-                       write(200, "(I8, 1X, A, 1X, L4, 1X, F20.8, 1X, F20.8, 1X, I8, 1X, I8, 1X)") &
-                            mc_istep, mc_move, p_accept > ranf, energy + E_kinetic, &
-                            images(i_current_image)%energy + images(i_current_image)%e_kin, &
-                            images(i_trial_image)%n_sites, n_mc_species
-                    else
-                       write(200, "(I8, 1X, A, 1X, L4, 1X, L4, 1X, F20.8, 1X,  F20.8, 1X, F20.8, 1X,&
-                            & F20.8, 1X, I8, 1X, I8, 1X)") mc_istep, mc_move,&
-                            & p_accept > ranf, sim_exp_pred > sim_exp_prev, sim_exp_pred,&
-                            & sim_exp_prev , energy + E_kinetic,&
-                            & images(i_current_image)%energy +&
-                            & images(i_current_image)%e_kin,&
-                            & images(i_trial_image)%n_sites,&
-                            & n_mc_species
-                    end if
-
-                    close(200)
-
-                    if (p_accept > ranf)then
-                       ! Set variables
-                       n_sites_prev = n_sites
-                       v_uc_prev = v_uc
-                       v_a_uc_prev = v_a_uc
-                       virial_prev = virial
-                       if (params%mc_opt_spectra ) sim_exp_prev = sim_exp_pred
-                       !   Assigning the default image with the accepted one
-                       images(i_current_image) = images(i_trial_image)
-                    end if
 
 
 
@@ -2887,6 +2900,13 @@ program turbogap
                                & params%exp_data(i)%y_pred, params%exp_data(i)%similarity, params%similarity_type)
 
                        end if
+
+
+                       if (.not. allocated(params%exp_data(i)%y_pred_prev)) then
+                          allocate( params%exp_data(i)%y_pred_prev(1:size(params%exp_data(i)%y_pred,1)) )
+                       end if
+                       params%exp_data(i) % y_pred_prev = params%exp_data(i) % y_pred
+
                        ! write(filename,'(A,A)') trim(params%exp_data(i)%label), "_prediction.dat"
                        ! call write_exp_data(params%exp_data(i)%x, params%exp_data(i)%y_pred, md_istep == 0,&
                        !      filename, params%exp_data(i)%label)
