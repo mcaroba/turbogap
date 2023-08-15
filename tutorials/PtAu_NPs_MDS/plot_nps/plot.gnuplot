@@ -8,7 +8,8 @@ set size ratio -1
 set format x ""
 set format y ""
 
-unset tics
+unset xtics
+unset ytics
 
 set key right box
 

@@ -8,7 +8,8 @@ set size ratio -1
 set format x ""
 set format y ""
 
-unset tics
+unset xtics
+unset ytics
 
 set key right box opaque
 
@@ -23,8 +24,6 @@ plot "../mds_sites.dat" u 1:(stringcolumn(7) eq "Pt" && stringcolumn(5) eq "True
      "../mds_sites.dat" u 1:(stringcolumn(7) eq "Au" && stringcolumn(5) eq "True" ? $2 : 1/0) pt 7 t "Au (surface)", \
      "../mds_sites.dat" u 1:(stringcolumn(7) eq "Au" && stringcolumn(5) eq "False" ? $2 : 1/0) pt 7 t "Au (bulk)", \
      "" u (stringcolumn(4) eq "True" ? $1 : 1/0):2 pt 6 ps 1.4 lw 4 lc "green" t "Medoids"
-
-set tics
 
 set title "Local site energy"
 set cblabel "Local GAP energy (eV/atom)"

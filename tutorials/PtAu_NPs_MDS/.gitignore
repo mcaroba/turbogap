@@ -3,8 +3,6 @@ hulls/*.png
 hulls/*.dat
 mds.dat
 mds_sites.dat
-db1.xyz
-db2.xyz
 plot_nps/np_png/*.png
 plot_sites/sites_png/*.png
 plot_nps/*.png
