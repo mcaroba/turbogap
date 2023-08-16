@@ -1654,7 +1654,8 @@ end if
       else if( keyword == "estat_method" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%estat_method
-        params%estat_method = upper_to_lower_case(trim(params%estat_method))
+        params%estat_method = trim(params%estat_method)
+        call upper_to_lower_case(params%estat_method)
         if (params%estat_method /= "direct" .and. params%estat_method /= "none") then
           write(*,*) "ERROR: electrostatic method not implemented: ", params%estat_method
           write(*,*) "       Currently implemented methods are: direct"

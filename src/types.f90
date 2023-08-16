@@ -31,6 +31,10 @@ module types
 
   implicit none
 
+  ! Defining our real precision -- ideally this wouldn't be hardcoded as 8 everywhere
+  ! (note the 'real*8' notation is deprecated: https://fortranwiki.org/fortran/show/Real+precision)
+  integer, parameter, public :: dp = kind(1.0d0)
+
   ! GAP+descriptor data structure for SOAP
   type exp_data_container
      character*1024      :: file_data="none", label, input="default"
@@ -120,7 +124,6 @@ module types
          & = 1.d0, neighbors_buffer = 0.d0, max_GBytes_per_process =&
          & 1.d0, e_tol = 1.d-6, vdw_sr = 0.94d0, vdw_d = 20.d0, vdw_rcut = 10.d0, &
          & vdw_buffer = 1.d0, vdw_rcut_inner = 0.5d0, vdw_buffer_inner = 0.5d0, &
-         & estat_rcut = 10.0_dp, estat_rcut_inner = 4.0_dp, estat_rcut_width = 1.0_dp, &
          & tau_p = 1000.d0, p_beg = 1.d0, p_end = 1.d0, gamma_p = 1.d0, box_scaling_factor(3&
          &,3) = reshape([1.d0, 0.d0, 0.d0, 0.d0, 1.d0, 0.d0, 0.d0,&
          & 0.d0, 1.d0], [3,3]), core_pot_cutoff = 1.d10,&
@@ -136,6 +139,10 @@ module types
          &, q_range_min=1.0, q_range_max=5.d0, r_range_min=1.0,&
          & r_range_max=5.d0, pair_distribution_rcut=4.d0,&
          & pair_distribution_kde_sigma=0.d0
+
+    ! Avoid accidentally mixing precision - unlikely but would be confusing
+    real(dp) :: estat_rcut = 10.0_dp, estat_rcut_inner = 4.0_dp, estat_inner_width = 1.0_dp
+
     integer :: md_nsteps = 1, mc_nsteps = 1, write_xyz = 0,&
          & write_thermo = 1, which_atom = 0, vdw_mbd_nfreq = 11,&
          & n_mc_types = 0, n_nested = 0, mc_idx = 1, mc_nrelax=0,&

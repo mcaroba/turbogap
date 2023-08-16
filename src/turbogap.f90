@@ -1793,7 +1793,6 @@ program turbogap
               !THIS
               !
               ! if (soap_turbo_hypers(i)%has_local_properties)then
-
               !    ! only iterating over the computed properties
               !    this_local_properties = 0.d0
               !    if( params%do_forces )then
@@ -2046,7 +2045,7 @@ program turbogap
         end if
 
         !     Compute ELECTROSTATIC energies and forces
-        if ((params%estat_method ~= "none") .and. params%do_prediction) then
+        if ((params%estat_method /= "none") .and. params%do_prediction) then
            !TODO do timing
 #ifdef _MPIF90
            allocate( this_energies_estat(1:n_sites) )
@@ -2068,12 +2067,12 @@ program turbogap
               end do
            end do
            ! Prepare to call electrostatics subroutine!
-           call compute_coulomb_direct(
+           call compute_coulomb_direct(&
                     local_properties(i_beg:i_end, charge_lp_index), &
                     local_properties_cart_der(1:3, i_beg:i_end, charge_lp_index), &
                     n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
                     params%estat_rcut, params%estat_rcut_inner, params%estat_inner_width, &
-                    rjs(j_beg:j_end), xyzj(1:3, j_beg:j_end), chg_neigh_estat,
+                    rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), chg_neigh_estat, &
                     params%do_forces,&
 #ifdef _MPIF90
                     this_energies_estat(i_beg:i_end), this_forces_estat, this_virial_estat)
