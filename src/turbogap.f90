@@ -92,7 +92,7 @@ program turbogap
   integer :: radial_enhancement = 0
   integer :: md_istep, mc_istep, mc_id=1, n_mc, n_mc_species
 
-  logical :: repeat_xyz = .true., overwrite = .false., check_species, skip_mc
+  logical :: repeat_xyz = .true., overwrite = .false., check_species, skip_mc, do_mc_relax = .false.
 
   character*1024 :: filename, cjunk, file_compress_soap, file_alphas, file_soap, file_2b, file_alphas_2b, &
        file_3b, file_alphas_3b, file_gap = "none", mc_file = "mc_trial.xyz"
@@ -2101,9 +2101,9 @@ program turbogap
                    (params%do_mc .and. (md_istep == params%md_nsteps) &
                    .and. mc_move == "md" ) .or. &
                    (params%do_mc .and. (abs(energy-energy_prev) < params%e_tol*dfloat(n_sites)) .and. &
-                   (maxval(forces) < params%f_tol) .and. (mc_move == "md" .or. params%mc_relax) .and. &
+                   (maxval(forces) < params%f_tol) .and. (mc_move == "md" .or. params%mc_relax .or. do_mc_relax ) .and. &
                    md_istep > 0) &
-                   .or. ((params%do_mc .and. params%mc_relax .and.  &
+                   .or. ((params%do_mc .and. params%mc_relax .and. do_mc_relax .and.  &
                             (md_istep == params%mc_nrelax ) ))&
                    .or. (params%do_mc .and. (md_istep == -1) ) ))then
                  !       Now we do a monte-carlo step: we choose what the steps are from the available list and then choose a random number
@@ -2116,7 +2116,7 @@ program turbogap
                     !       > We care about comparing e_store to the energy of the new configuration based on the mc_movw
 
                     ! Reset the parameters for md / relaxation
-                    if (mc_move == "relax" .or. mc_move == "md" .or. params%mc_relax)then
+                    if (mc_move == "relax" .or. mc_move == "md" .or. (params%mc_relax .and. do_mc_relax) )then
                        md_istep = -1
                        params%do_md = .false.
                        ! Assume that the number of steps has already been set.
@@ -2162,46 +2162,6 @@ program turbogap
                     !    ACCEPT OR REJECT
                     write(*, '(A,1X,A,1X,A,L4,1X,A,ES12.6,1X,A,1X,ES12.6)') 'Is ', trim(mc_move), &
                          'accepted?', p_accept > ranf, ' p_accept =', p_accept, ' ranf = ', ranf
-                    if (p_accept > ranf)then
-                       !             Accept
-
-                       if ((mc_istep == 0 .or. mc_istep == params%mc_nsteps .or. &
-                            modulo(mc_istep, params%write_xyz) == 0))then
-                          write(*,'(1X,A)')' Writing mc_current.xyz and mc_all.xyz '
-
-                          call wrap_pbc(images(i_current_image)%positions(1:3, 1:images(i_current_image)%n_sites), &
-                               images(i_current_image)%a_box/dfloat(indices(1)), &
-                               images(i_current_image)%b_box/dfloat(indices(2)),&
-                               images(i_current_image)%c_box/dfloat(indices(3)))
-
-                          call write_extxyz( images(i_current_image)%n_sites, 0, 1.0d0, 0.0d0, 0.0d0, &
-                               images(i_current_image)%a_box/dfloat(indices(1)), &
-                               images(i_current_image)%b_box/dfloat(indices(2)), &
-                               images(i_current_image)%c_box/dfloat(indices(3)), &
-                               virial_prev, images(i_current_image)%xyz_species, &
-                               images(i_current_image)%positions(1:3, 1:images(i_current_image)%n_sites),&
-                               images(i_current_image)%velocities, &
-                               images(i_current_image)%forces, &
-                               images(i_current_image)%energies(1:images(i_current_image)%n_sites), &
-                               images(i_current_image)%masses, images(i_current_image)%hirshfeld_v, &
-                               params%write_property, params%write_array_property, images(i_current_image)%fix_atom, &
-                               "mc_current.xyz", .true. )
-
-                          call write_extxyz( images(i_current_image)%n_sites, 1, 1.0d0, 0.0d0, 0.0d0, &
-                               images(i_current_image)%a_box/dfloat(indices(1)), &
-                               images(i_current_image)%b_box/dfloat(indices(2)), &
-                               images(i_current_image)%c_box/dfloat(indices(3)), &
-                               virial_prev, images(i_current_image)%xyz_species, &
-                               images(i_current_image)%positions(1:3, 1:images(i_current_image)%n_sites),&
-                               images(i_current_image)%velocities, &
-                               images(i_current_image)%forces, &
-                               images(i_current_image)%energies(1:images(i_current_image)%n_sites), &
-                               images(i_current_image)%masses, images(i_current_image)%hirshfeld_v, &
-                               params%write_property, params%write_array_property, images(i_current_image)%fix_atom, &
-                               "mc_all.xyz", .false. )
-                       end if
-
-                    end if
                     !          Add acceptance to the log file else dont
                     if ( mc_istep == 1 )then
                        open(unit=200, file="mc.log", status="unknown")
@@ -2227,6 +2187,42 @@ program turbogap
                        images(i_current_image) = images(i_trial_image)
                     end if
 
+
+                    if ((mc_istep == 0 .or. mc_istep == params%mc_nsteps .or. &
+                         modulo(mc_istep, params%write_xyz) == 0))then
+                       write(*,'(1X,A)')' Writing mc_current.xyz and mc_all.xyz '
+
+                       call wrap_pbc(images(i_current_image)%positions(1:3, 1:images(i_current_image)%n_sites), &
+                            images(i_current_image)%a_box/dfloat(indices(1)), &
+                            images(i_current_image)%b_box/dfloat(indices(2)),&
+                            images(i_current_image)%c_box/dfloat(indices(3)))
+
+                       call write_extxyz( images(i_current_image)%n_sites, 0, 1.0d0, 0.0d0, 0.0d0, &
+                            images(i_current_image)%a_box/dfloat(indices(1)), &
+                            images(i_current_image)%b_box/dfloat(indices(2)), &
+                            images(i_current_image)%c_box/dfloat(indices(3)), &
+                            virial_prev, images(i_current_image)%xyz_species, &
+                            images(i_current_image)%positions(1:3, 1:images(i_current_image)%n_sites),&
+                            images(i_current_image)%velocities, &
+                            images(i_current_image)%forces, &
+                            images(i_current_image)%energies(1:images(i_current_image)%n_sites), &
+                            images(i_current_image)%masses, images(i_current_image)%hirshfeld_v, &
+                            params%write_property, params%write_array_property, images(i_current_image)%fix_atom, &
+                            "mc_current.xyz", .true. )
+
+                       call write_extxyz( images(i_current_image)%n_sites, 1, 1.0d0, 0.0d0, 0.0d0, &
+                            images(i_current_image)%a_box/dfloat(indices(1)), &
+                            images(i_current_image)%b_box/dfloat(indices(2)), &
+                            images(i_current_image)%c_box/dfloat(indices(3)), &
+                            virial_prev, images(i_current_image)%xyz_species, &
+                            images(i_current_image)%positions(1:3, 1:images(i_current_image)%n_sites),&
+                            images(i_current_image)%velocities, &
+                            images(i_current_image)%forces, &
+                            images(i_current_image)%energies(1:images(i_current_image)%n_sites), &
+                            images(i_current_image)%masses, images(i_current_image)%hirshfeld_v, &
+                            params%write_property, params%write_array_property, images(i_current_image)%fix_atom, &
+                            "mc_all.xyz", .false. )
+                    end if
 
 
                  else ! if (mc_istep == 0)
@@ -2354,7 +2350,9 @@ program turbogap
                       & c_box(1:3), indices, params%do_md, params%mc_relax,&
                       & md_istep, mc_id, E_kinetic, instant_temp, params%t_beg,&
                       & params%n_mc_swaps, params%mc_swaps, params%mc_swaps_id, &
-                      & params%species_types, params%mc_hamiltonian)
+                      & params%species_types, params%mc_hamiltonian,&
+                      & params%n_mc_relax_after, params&
+                      &%mc_relax_after, do_mc_relax)
 
                  rebuild_neighbors_list = .true.
                  ! end if
@@ -2367,7 +2365,7 @@ program turbogap
                  ! not done that.
 
                  ! Now, if relaxing every step then
-                 if(params%mc_relax)then
+                 if(params%mc_relax .and. do_mc_relax)then
                     ! Set the parameters for relaxatrino
                     md_istep = -1
                     params%do_md = .true.

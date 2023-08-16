@@ -535,7 +535,7 @@ end if
     implemented_mc_types(5) = "relax"
     implemented_mc_types(6) = "md"
     implemented_mc_types(7) = "swap"
-    implemented_mc_types(7) = "volume"
+    implemented_mc_types(8) = "volume"
 
     k = 0.d0
 
@@ -727,6 +727,13 @@ end if
       else if(keyword=='mc_relax')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_relax
+      else if(keyword=='n_mc_relax_after')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%n_mc_relax_after
+        allocate(params%mc_relax_after(1:params%n_mc_relax_after))
+      else if(keyword=='mc_relax_after')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, (params%mc_relax_after(nw),nw=1,params%n_mc_relax_after)
       else if(keyword=='mc_nrelax')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_nrelax

@@ -93,12 +93,12 @@ module types
 
     integer :: md_nsteps = 1, mc_nsteps = 1, write_xyz = 0, write_thermo = 1, which_atom = 0, &
          vdw_mbd_nfreq = 11, n_mc_types = 0, n_nested = 0, mc_idx = 1, mc_nrelax=0, n_exp_opt=0,&
-         n_mc_swaps = 0
+         n_mc_swaps = 0, n_mc_relax_after = 0
     integer, allocatable :: mc_swaps_id(:)
 
     character*1024 :: atoms_file
     character*32 :: vdw_type = "none"
-    character*32, allocatable ::  mc_types(:)
+    character*32, allocatable ::  mc_types(:), mc_relax_after(:)
     character*8, allocatable :: species_types(:), mc_swaps(:)
     character*16 :: optimize = "vv", mc_relax_opt = "gd", mc_hybrid_opt = "vv"
     character*32 :: barostat = "none", thermostat = "none", barostat_sym = "isotropic", mc_species = "none"

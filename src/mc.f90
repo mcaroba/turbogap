@@ -367,7 +367,7 @@ contains
        &, im_masses, a_box, b_box, c_box, indices, do_md, mc_relax,&
        & md_istep, mc_id, E_kinetic, instant_temp, t_beg,&
        & n_mc_swaps, mc_swaps, mc_swaps_id, species_types,&
-       & mc_hamiltonian)
+       & mc_hamiltonian, n_mc_relax_after, mc_relax_after, do_mc_relax)
 
     implicit none
 
@@ -380,7 +380,7 @@ contains
     real*8, intent(inout) :: disp(1:3), mc_min_dist, d_disp,&
          & E_kinetic, instant_temp, t_beg
 
-    integer, intent(inout) :: n_mc_species, n_sites, md_istep, mc_id, n_mc_swaps
+    integer, intent(inout) :: n_mc_species, n_sites, md_istep, mc_id, n_mc_swaps, n_mc_relax_after
     integer, allocatable, intent(inout) :: species(:), mc_swaps_id(:)
     integer, allocatable, intent(in) ::  im_species(:)
     character*8, allocatable, intent(inout) :: species_types(:),&
@@ -388,7 +388,7 @@ contains
     character*8, allocatable, intent(in) :: im_xyz_species(:)
     character*32, intent(inout) :: mc_move, mc_species
     character*8 ::  swap_species_1, swap_species_2
-    character*32, allocatable, intent(in) ::  mc_types(:)
+    character*32, allocatable, intent(in) ::  mc_types(:), mc_relax_after(:)
     integer :: idx, i, swap_id_1, swap_id_2, n_spec_swap_1, n_spec_swap_2, &
          swap_atom_id_1, swap_atom_id_2
     integer, allocatable :: swap_idx_1(:), swap_idx_2(:)
@@ -397,7 +397,7 @@ contains
     real*8, intent(inout):: a_box(1:3), b_box(1:3), c_box(1:3)
     logical, allocatable:: fix_atom(:,:)
     logical, allocatable, intent(in) :: im_fix_atom(:,:)
-    logical, intent(inout) :: do_md, mc_relax, mc_hamiltonian
+    logical, intent(inout) :: do_md, mc_relax, mc_hamiltonian, do_mc_relax
     real*8 :: gamma(1:6)
     !    n_sites = size(positions, 2)
     ! Count the mc species (no multi species mc just yet)
@@ -480,7 +480,18 @@ contains
     end if
 
 
-    if (mc_move == "relax" .or. mc_move == "md" .or. mc_relax)then
+    do_mc_relax = .false.
+    if (allocated(mc_relax_after) .and. mc_relax)then
+       do i = 1, n_mc_relax_after
+          if (trim(mc_relax_after(i)) == trim(mc_move))then
+             do_mc_relax = .true.
+          end if
+       end do
+    else if (mc_move == "relax" .or. mc_move == "md" .or. mc_relax)then
+       do_mc_relax = .true.
+    end if
+
+    if (do_mc_relax)then
        md_istep = -1
        do_md = .true.
        if(allocated(forces_prev))deallocate(forces_prev)
@@ -491,9 +502,10 @@ contains
        allocate( positions_prev(1:3, 1:n_sites) )
 
        positions_diff = 0.d0
+    end if
+
 
        ! Assume that the number of steps has already been set.
-    end if
 
     if (mc_move == "volume")then
        ! Only the "center-of-mass" positions of the particles should
