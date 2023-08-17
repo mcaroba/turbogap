@@ -60,7 +60,7 @@ module types
      real*8              :: zeta, delta, V0
      character*1024      :: file_alphas, file_desc, label
      integer             :: n_sparse, dim
-     logical             :: do_derivatives = .false., compute=.true.
+     logical             :: do_derivatives = .false., compute=.true., zero_trunc = .false.
   end type local_property_soap_turbo
 
 

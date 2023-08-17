@@ -176,8 +176,9 @@ module local_prop
     ! end subroutine get_local_property_details
 
 
-  subroutine local_property_predict( soap, Qs, alphas, V0, delta, zeta, V, &
-                                do_derivatives, soap_cart_der, n_neigh, V_der )
+  subroutine local_property_predict(soap, Qs, alphas, V0, delta, zeta, V, &
+                                    do_derivatives, soap_cart_der, n_neigh, V_der, &
+                                    do_zero_floor)
 
     implicit none
 
@@ -185,12 +186,18 @@ module local_prop
     real*8, intent(in) :: soap(:,:), Qs(:,:), alphas(:), V0, delta, zeta, soap_cart_der(:,:,:)
     integer, intent(in) :: n_neigh(:)
     logical, intent(in) :: do_derivatives
+    logical, intent(in), optional :: do_zero_floor
 !   Output variables
     real*8, intent(out) :: V(:), V_der(:,:)
 !   Internal variables
     real*8, allocatable :: K(:,:), K_der(:,:), Qss(:,:), Qs_copy(:,:)
     integer :: n_sites, n_soap, n_sparse, zeta_int, n_pairs
     integer :: i, j, i2, cart
+
+    ! The default behaviour should be _not_ to truncate predictions to zero!
+    if (.not. present(do_zero_floor)) then
+        do_zero_floor = .false.
+    end if
 
     n_sparse = size(alphas)
     n_soap = size(soap, 1)
@@ -249,13 +256,14 @@ module local_prop
     end if
     V = V + V0
 
-!   Make sure all V are >= 0
-!TODO turn this off for other properties, like charges
-    do i = 1, size(V)
-      if( V(i) < 0.d0 )then
-        V(i) = 0.d0
-      end if
-    end do
+    !   Make sure all V are >= 0, if requested
+    if (do_zero_floor)
+      do i = 1, size(V)
+        if( V(i) < 0.d0 )then
+          V(i) = 0.d0
+        end if
+      end do
+    end if
 
     if( do_derivatives)then
       if( n_sites > 0 )then

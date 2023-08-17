@@ -577,7 +577,7 @@ program turbogap
                           else
                              soap_turbo_hypers(j)%local_property_models(k)%do_derivatives = .false.
                           end if
-
+                          soap_turbo_hypersj(j)%local_property_models(k)%zero_trunc = .true.
                        end if
                     end do
 
@@ -595,6 +595,8 @@ program turbogap
                           else
                              soap_turbo_hypers(j)%local_property_models(k)%do_derivatives = .false.
                           end if
+                          ! This is important -- no truncating the charges; it doesn't make sense here!
+                          soap_turbo_hypers(j)%local_property_models(k)%zero_trunc = .false.
                        end if
                     end do
                  end if
@@ -616,6 +618,7 @@ program turbogap
                                    soap_turbo_hypers(j)%local_property_models(k)%do_derivatives = .true.
                                 end if
                              end if
+                             soap_turbo_hypers(j)%local_property_models(k)%zero_trunc = .true.
                           end do
                        end if
                     end do
