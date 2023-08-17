@@ -1117,7 +1117,11 @@ module vdw
     integer, allocatable :: ind_nnls(:)
     real*8 :: res_nnls, E_tot, denom
     integer :: mode_nnls
-    logical :: do_total_energy = .false. ! Finite difference testing purposes
+    logical :: do_total_energy = .true., series_expansion = .false. ! Finite difference testing purposes
+    real*8, allocatable :: b_vec(:), Ab(:), I_mat(:,:), l_vals(:), log_vals(:), lsq_mat(:,:), res_mat(:), log_exp(:,:), &
+                           AT_power(:,:), log_integrand(:)
+    integer*8, allocatable :: ipiv_lsq(:)
+    real*8 :: b_norm, l_dom, l_min, l_max
 
     !PSBLAS stuff:
     type(psb_ctxt_type) :: icontxt
@@ -2495,6 +2499,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
           !TEST!!!!!!!!!!!!!!!!!
           
           call cpu_time(time1)
+if ( series_expansion ) then
 
           allocate( myidx(1:3*n_mbd_sites) )
           
@@ -2549,7 +2554,102 @@ if ( abs(rcut_2b) < 1.d-10 ) then
           !write(*,*) "integrand_sp", integrand_sp
 
           deallocate( integrand_sp, myidx, at_vec, at_n_vec )
-          
+else
+          integrand = 0.d0
+          allocate( b_vec(1:3*n_mbd_sites) )
+          allocate( Ab(1:3*n_mbd_sites) )
+          allocate( I_mat(1:3*n_mbd_sites,1:3*n_mbd_sites) )
+          allocate( l_vals(1:1001) )
+          allocate( log_vals(1:1001) )
+          allocate( lsq_mat(1:n_order+1,1:n_order+1) )
+          allocate( res_mat(1:n_order+1) )
+          allocate( ipiv_lsq(1:n_order+1) )
+          allocate( log_exp(1:3*n_mbd_sites,1:3*n_mbd_sites) )
+          allocate( AT_power(1:3*n_mbd_sites,1:3*n_mbd_sites) )
+          allocate( temp_mat(1:3*n_mbd_sites,1:3*n_mbd_sites) )
+                allocate( AT_copy(1:3*n_mbd_sites,1:3*n_mbd_sites) )
+                allocate( WR(1:3*n_mbd_sites) )
+                allocate( WI(1:3*n_mbd_sites) )
+                allocate( VR(1:3*n_mbd_sites,1:3*n_mbd_sites) )
+                allocate( VR_inv(1:3*n_mbd_sites,1:3*n_mbd_sites) )
+                allocate( work_mbd(1:24*n_mbd_sites) )
+                allocate( ipiv_mbd(1:3*n_mbd_sites) )
+                allocate( log_integrand(1:n_freq) )
+          log_integrand = 0.d0
+          I_mat = 0.d0
+          do p = 1, 3*n_mbd_sites
+            I_mat(p,p) = 1.d0
+          end do
+          do i2 = 1, n_freq
+            call power_iteration( AT(:,:,i2), 50, b_vec )       
+            b_norm = dot_product(b_vec,b_vec)
+            call dgemm('N', 'N',  3*n_mbd_sites, 1, 3*n_mbd_sites, 1.d0, AT(:,:,i2), 3*n_mbd_sites, b_vec, &
+                          3*n_mbd_sites, 0.d0, Ab, 3*n_mbd_sites)
+            l_dom = dot_product(b_vec,Ab)/b_norm
+            if ( l_dom < 0.d0 ) then
+              l_min = l_dom - 0.01d0
+            else
+              l_max = l_dom + 0.01d0
+            end if
+            call power_iteration( AT(:,:,i2)-l_dom*I_mat, 50, b_vec )
+            b_norm = dot_product(b_vec,b_vec)
+            call dgemm('N', 'N',  3*n_mbd_sites, 1, 3*n_mbd_sites, 1.d0, AT(:,:,i2)-l_dom*I_mat, &
+                       3*n_mbd_sites, b_vec, 3*n_mbd_sites, 0.d0, Ab, 3*n_mbd_sites)
+            if ( l_dom < 0.d0 ) then
+              l_max = dot_product(b_vec,Ab)/b_norm + l_dom + 0.01d0
+            else
+              l_min = dot_product(b_vec,Ab)/b_norm + l_dom - 0.01d0
+            end if
+            l_vals(1) = l_min
+            do k2 = 2, 1001
+              l_vals(k2) = l_min + (k2-1)*(l_max-l_min)/1000
+            end do
+            log_vals = log(1.d0-l_vals)
+            do j2 = 1, n_order+1
+              res_mat(j2) = sum(log_vals*l_vals**(j2-1))
+              do k2 = 1, n_order+1
+                lsq_mat(j2,k2) = sum(l_vals**(j2-1+k2-1))
+              end do
+            end do
+            call dgesv( n_order+1, 1, lsq_mat, n_order+1, ipiv_lsq, res_mat, n_order+1, info )
+            log_exp = res_mat(1) + res_mat(2)*AT(:,:,i2)
+            AT_power = AT(:,:,i2)
+            do k2 = 3, n_order+1
+              call dgemm('N', 'N', 3*n_mbd_sites, 3*n_mbd_sites, 3*n_mbd_sites, 1.d0, AT_power, &
+                         3*n_mbd_sites, AT(:,:,i2), 3*n_mbd_sites, 0.d0, temp_mat, 3*n_mbd_sites)
+              AT_power = temp_mat
+              log_exp = log_exp + res_mat(k2) * AT_power
+            end do
+            do p = 1, 3
+              integrand(i2) = integrand(i2) + log_exp(p,p)
+            end do
+! TEST COMPARISON WITH LOG
+            AT_copy = -AT(:,:,i2)
+            do p = 1, 3*n_mbd_sites
+              AT_copy(p,p) = AT_copy(p,p) + 1.d0
+            end do
+            call dgeev('N', 'V', 3*n_mbd_sites, AT_copy, 3*n_mbd_sites, WR, WI, VL, 1, VR, 3*n_mbd_sites, &
+                        work_mbd, 24*n_mbd_sites, info)
+            VR_inv = VR
+            ipiv_mbd = 0
+            call dgetrf( 3*n_mbd_sites, 3*n_mbd_sites, VR_inv, 3*n_mbd_sites, ipiv_mbd, info )
+            call dgetri( 3*n_mbd_sites, VR_inv, 3*n_mbd_sites, ipiv_mbd, work_mbd, 24*n_mbd_sites, info )
+            AT_copy = 0.d0
+            do p = 1, 3*n_mbd_sites
+              AT_copy(p,p) = log(WR(p))
+            end do
+            call dgemm( 'N', 'N', 3*n_mbd_sites, 3*n_mbd_sites, 3*n_mbd_sites, 1.d0, AT_copy, 3*n_mbd_sites, &
+                       VR_inv, 3*n_mbd_sites, 0.d0, temp_mat, 3*n_mbd_sites)
+            AT_copy = temp_mat
+            call dgemm( 'N', 'N', 3*n_mbd_sites, 3*n_mbd_sites, 3*n_mbd_sites, 1.d0, VR, 3*n_mbd_sites, &
+                       AT_copy, 3*n_mbd_sites, 0.d0, temp_mat, 3*n_mbd_sites)
+            do p = 1, 3
+              log_integrand(i2) = log_integrand(i2) + temp_mat(p,p)
+            end do
+          end do
+          deallocate( b_vec, Ab, I_mat, l_vals, log_vals, lsq_mat, res_mat, ipiv_lsq, log_exp, AT_power, temp_mat, &
+                      AT_copy, WR, WI, VR, VR_inv, work_mbd, ipiv_mbd )
+end if      
           call cpu_time(time2)
           
           !write(*,*) "Integrand calculation timing", time2-time1
@@ -2618,7 +2718,15 @@ if ( abs(rcut_2b) < 1.d-10 ) then
           end if ! do_nnls
 
           energies(i) = (integral + E_TS) * Hartree
-          !write(*,*) "MBD energy", i, energies(i)
+          write(*,*) "MBD energy", i, energies(i)
+
+if ( .not. series_expansion ) then
+integral = 0.d0
+call integrate("trapezoidal", omegas_mbd, log_integrand, omegas_mbd(1), omegas_mbd(n_freq), integral)
+integral = integral/(2.d0*pi)
+write(*,*) "Exact log energy", i, integral * Hartree
+deallocate( log_integrand )
+end if
           E_MBD = E_MBD + energies(i)          
           
           call cpu_time(time2)
@@ -4345,6 +4453,20 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 end do
               end do
 
+              !if ( i == 1 .and. om == 2 .and. c3 == 1 ) then
+                
+              !open(unit=79, file="G_mat.dat", status="new")
+              !write(*,*) "G_mat"
+              !do p = 1, 3*n_mbd_sites
+              !  write(79,*) G_mat(p,:,1)
+              !end do
+              !close(79)
+
+
+
+
+              !end if
+
               ! 2b for non-central atoms
               !do j = 1, n_freq
               !  k3 = n_mbd_neigh(1)
@@ -4403,7 +4525,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
 
               !write(*,*) "p, c1, rjs_0_mbd, integrand(p), a_mbd, da_mbd"
 ! COMMENTING OUT SERIES EXPANSION FOR LOG
-if ( .false. ) then
+if ( series_expansion ) then
               do j = 1, n_freq
               
                 !force_series = 0.d0
@@ -4586,7 +4708,7 @@ end if
                 end if
 
                 end if
-!if ( .false. ) then
+if ( .not. series_expansion ) then
                 ! Diagonalization stuff:
                 allocate( AT_copy(1:3*n_mbd_sites,1:3*n_mbd_sites) )
                 allocate( WR(1:3*n_mbd_sites) )
@@ -4603,8 +4725,13 @@ end if
                     do p = 1, 3*n_mbd_sites
                       AT_copy(p,p) = AT_copy(p,p) + 1.d0
                     end do
+                    call cpu_time(time3)
                     call dgeev('N', 'V', 3*n_mbd_sites, AT_copy, 3*n_mbd_sites, WR, WI, VL, 1, VR, 3*n_mbd_sites, &
                                 work_mbd, 24*n_mbd_sites, info)
+                    !call dgeev('N', 'N', 3*n_mbd_sites, AT_copy, 3*n_mbd_sites, WR, WI, VL, 1, VR, 3*n_mbd_sites, &
+                    !           work_mbd, 24*n_mbd_sites, info)
+                    call cpu_time(time4)
+                    write(*,*) "dgeev timing", time4-time3
                     VR_inv = VR
                     ipiv_mbd = 0
                     call dgetrf( 3*n_mbd_sites, 3*n_mbd_sites, VR_inv, 3*n_mbd_sites, ipiv_mbd, info ) 
@@ -4646,7 +4773,7 @@ end if
                   end do
                 end do
                 deallocate( AT_copy, WR, WI, VR, VR_inv, work_mbd, ipiv_mbd, temp_mat, G_mat )
-!end if
+end if
                 ! AT_copy, because AT changes in the process
                 ! WR for eigenvalue real part
                 ! WI for eigenvalue imag part
@@ -4654,19 +4781,19 @@ end if
                 ! VR eigenvectors
                 ! work_arr dim: 1:12*n_mbd_sites or more
                 ! info, integer, if 0, successful
-!if ( .false. ) then
+if ( .not. series_expansion ) then
                 integral = 0.d0
                 call integrate("trapezoidal", omegas_mbd, integrand, omegas_mbd(1), omegas_mbd(n_freq), integral)
-!end if
+end if
                 forces0(c3,i) = forces0(c3,i) + (1.d0/(2.d0*pi) * integral + forces_TS) * Hartree/Bohr
 
                 if ( c3 == 1 .and. do_total_energy ) then
-!if ( .false. ) then
+if ( .not. series_expansion ) then
                   E_tot = 0.d0
                   E_TS_tot = 0.d0
                   call integrate("trapezoidal", omegas_mbd, total_integrand, omegas_mbd(1), omegas_mbd(n_freq), E_tot)
                   E_tot = (E_tot/(2.d0*pi) + E_TS_tot) * Hartree
-!end if
+end if
                   write(*,*) "Total energy of sphere", i, E_tot
                 end if
 !ALL COMMENTS UP TO THIS POINT ARE TO SEPARATE SERIES EXPANSION FROM LOG

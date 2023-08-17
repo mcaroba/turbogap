@@ -121,4 +121,35 @@ module misc
 
   end subroutine
 
+  subroutine power_iteration(A, n_iter, b)
+
+    implicit none
+
+!   Input variables
+    real*8, intent(in) :: A(:,:)
+    integer, intent(in) :: n_iter
+!   Output variables
+    real*8, intent(inout) :: b(:)
+!   Internal variables
+    integer :: k, N
+    real*8, allocatable :: b_k(:), b_k1(:)
+    real*8 :: b_k1_norm
+
+    N = size(A,2)
+    allocate( b_k(1:N) )
+    allocate( b_k1(1:N) )
+
+    call random_number( b_k )
+
+    do k = 1, n_iter
+      call dgemm('N', 'N', size(A,1), 1, size(A,2), 1.d0, A, size(A,1), b_k, size(A,2), 0.d0, b_k1, size(A,1))
+      b_k1_norm = sqrt(dot_product(b_k1,b_k1))
+      b_k = b_k1 / b_k1_norm
+    end do
+
+    b = b_k
+    deallocate( b_k )
+
+  end subroutine
+
 end module
