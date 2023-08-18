@@ -185,19 +185,13 @@ module local_prop
 !   Input variables
     real*8, intent(in) :: soap(:,:), Qs(:,:), alphas(:), V0, delta, zeta, soap_cart_der(:,:,:)
     integer, intent(in) :: n_neigh(:)
-    logical, intent(in) :: do_derivatives
-    logical, intent(in), optional :: do_zero_floor
+    logical, intent(in) :: do_derivatives, do_zero_floor
 !   Output variables
     real*8, intent(out) :: V(:), V_der(:,:)
 !   Internal variables
     real*8, allocatable :: K(:,:), K_der(:,:), Qss(:,:), Qs_copy(:,:)
     integer :: n_sites, n_soap, n_sparse, zeta_int, n_pairs
     integer :: i, j, i2, cart
-
-    ! The default behaviour should be _not_ to truncate predictions to zero!
-    if (.not. present(do_zero_floor)) then
-        do_zero_floor = .false.
-    end if
 
     n_sparse = size(alphas)
     n_soap = size(soap, 1)
@@ -257,7 +251,7 @@ module local_prop
     V = V + V0
 
     !   Make sure all V are >= 0, if requested
-    if (do_zero_floor)
+    if (do_zero_floor) then
       do i = 1, size(V)
         if( V(i) < 0.d0 )then
           V(i) = 0.d0
