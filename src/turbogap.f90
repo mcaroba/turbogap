@@ -1983,7 +1983,7 @@ program turbogap
               write(*,'(A,1X,F24.8,1X,A)')' 3b energy:', sum(energies_3b), 'eV |'
               write(*,'(A,1X,F18.8,1X,A)')' core_pot energy:', sum(energies_core_pot), 'eV |'
               write(*,'(A,1X,F23.8,1X,A)')' vdw energy:', sum(energies_vdw), 'eV |'
-              write(*,'(A,1X,F23.8,1X,A)')' l_prop energy:', sum(energies_lp), 'eV |'
+              write(*,'(A,1X,F20.8,1X,A)')' l_prop energy:', sum(energies_lp), 'eV |'
               if (.not. params%do_mc .or. mc_istep <= 1)then
                  write(*,'(A,1X,F21.8,1X,A)')' Total energy:', sum(energies), 'eV |'
               else

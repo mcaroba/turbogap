@@ -517,7 +517,7 @@ module exp_utils
 
     subroutine get_exp_pred_spectra_energies_forces(data, energy_scale, core_electron_be, core_electron_be_der,&
          & n_neigh, neighbors_list, neighbor_species, &
-         & sigma, n_samples, mag, &
+         & sigma, n_samples, norm, &
          & x, y_exp,  y, y_all, get_exp, do_forces, rjs, xyz,&
          & n_tot, energies_lp, forces0, virial, similarity_type, rank)
       implicit none
@@ -525,7 +525,7 @@ module exp_utils
       integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:)
       real*8, intent(in) :: sigma, core_electron_be(:),&
            & core_electron_be_der(:,:), rjs(:), xyz(:,:),&
-           & energy_scale, mag
+           & energy_scale, norm
       real*8, allocatable, intent(inout) :: forces0(:,:)
       real*8, allocatable, intent(in) :: x(:), y_exp(:), y(:)
       real*8, intent(in) :: y_all(:,:)
@@ -533,12 +533,13 @@ module exp_utils
       real*8, intent(inout) :: energies_lp(:)
       real*8, intent(inout) :: virial(1:3,1:3)
       real*8 ::  this_force(1:3), t
-      real*8, allocatable ::  y_der(:,:), prefactor(:)
+      real*8, allocatable ::  y_der(:,:), der_factor(:,:), der_vec(:,:,:), prefactor(:)
       integer, intent(in) :: n_samples, n_tot, rank
       logical, intent(in) :: get_exp, do_forces
       integer :: n_sites, n_pairs, n_pairs_soap, n_species, n_sites0
       integer :: i, j, i2, j2, k, l,  n_in_buffer, k1, k2, mag_force_i
-      real*8 :: x_val, x_min, x_max, x_range, max_force, mag_force, max_mag_force, similarity, dx
+      real*8 :: x_val, x_min, x_max, x_range, max_force, mag_force, max_mag_force, similarity, dx, &
+           sum_d1, sum_d2, sum_d3, yv
       character*32, intent(in) :: similarity_type
 
 
@@ -548,7 +549,6 @@ module exp_utils
 
       dx = x(2) - x(1)
       ! This is essentially the same as the procedure for the hirshfeld gradients as in vdw.f90
-      allocate(y_der(1:3, 1:n_samples))
 
 
       ! The energetic contribution to this would then be, e_scale * ( 1 - \sum_i S_i ), this can be done after mpi_reduce
@@ -560,7 +560,6 @@ module exp_utils
          end do
       else if (similarity_type == 'lsquares')then
          energies_lp = + energy_scale / n_sites0 * ( dx * dot_product( (y - y_exp), (y - y_exp) ) )
-         print *, "energies lp 1 ", energies_lp(1)*n_sites0
          ! Get the other terms for the lsquares expression
          allocate(prefactor(1:n_samples))
          prefactor =  2.d0 * ( y - y_exp )
@@ -588,9 +587,52 @@ module exp_utils
          mag_force_i  = 0
          forces0 = 0.d0
          virial = 0.d0
+
+         allocate(y_der(1:3, 1:n_samples))
+         allocate(der_factor(1:n_samples, 1:n_sites))
+
+         ! This is the vector which has all the derivatives in for all the betas
+         allocate(der_vec(1:3, 1:n_pairs, 1:n_samples))
+
+         ! First get the derivative factors, to reduce multiplications
+
+         der_factor = 0.d0
+
+         do i = 1, n_samples
+            do j = 1, n_sites
+               yv = ( x(i) - core_electron_be(j) )
+               der_factor(i,j) = yv  * exp( - yv**2 / (2.d0 * sigma**2)  ) / sigma**2
+            end do
+         end do
+
+
          !     First, we compute the forces acting on all the "SOAP-neighbors" of atom i
          !     (including i itself) due to the gradients of i's Hirshfeld volume wrt the
          !     positions of its neighbors
+
+         ! First, have the derivatives of the normalisation factor in place
+
+         der_vec = 0.d0
+
+
+         do l = 1, n_samples
+            k = 0
+            do i = 1, n_sites
+               i2 = modulo(neighbors_list(k+1)-1, n_sites0) + 1
+               do j = 1, n_neigh(i)
+                  k = k + 1
+                  j2 = modulo(neighbors_list(k)-1, n_sites0) + 1
+                  if( .not. all(core_electron_be_der(1:3, k) == 0.d0) )then
+                     if( similarity_type == 'lsquares' )then
+                        ! (xi - cb(i)) * dxi_drka * exp( -(xi-cb(i))/2/sigma^2 )
+                        der_vec(1:3, k, l) =  der_vec(1:3,k,l) + der_factor(l,i) * core_electron_be_der(1:3, k)
+                        !                         if (l==1) print *, "i2=", i2, " j2=", j2, " cb(1:3,k)=", core_electron_be_der(1:3, k)
+                     end if
+                  end if
+               end do
+            end do
+         end do
+
 
          k = 0
          do i = 1, n_sites
@@ -611,27 +653,32 @@ module exp_utils
 
                   if( similarity_type == 'lsquares' )then
 
+                     sum_d1 = dot_product( y, der_vec(1,k,1:n_samples) )
+                     sum_d2 = dot_product( y, der_vec(2,k,1:n_samples) )
+                     sum_d3 = dot_product( y, der_vec(3,k,1:n_samples) )
+
                      do l = 1, n_samples
-                        y_der(1:3, l) = core_electron_be_der(1:3, k) * &
-                             & ( ( x(l) - core_electron_be(i) ) / (sigma**2) ) * &
-                             & exp( - ( x(l) - core_electron_be(i) )**2 / (2.d0 * sigma**2) ) / mag
+                        y_der(1, l) =  ( der_vec(1,k,l)  - y(l) * sum_d1) / norm
+                        y_der(2, l) =  ( der_vec(2,k,l)  - y(l) * sum_d2) / norm
+                        y_der(3, l) =  ( der_vec(3,k,l)  - y(l) * sum_d3) / norm
                      end do
 
-                     this_force(1) =   dot_product( y_der(1, 1:n_samples), prefactor(1:n_samples) ) * dx
-                     this_force(2) =   dot_product( y_der(2, 1:n_samples), prefactor(1:n_samples) ) * dx
-                     this_force(3) =   dot_product( y_der(3, 1:n_samples), prefactor(1:n_samples) ) * dx
+                     this_force(1) =  dot_product( y_der(1, 1:n_samples), prefactor(1:n_samples) )
+                     this_force(2) =  dot_product( y_der(2, 1:n_samples), prefactor(1:n_samples) )
+                     this_force(3) =  dot_product( y_der(3, 1:n_samples), prefactor(1:n_samples) )
 
                   else
                      call broaden_spectrum_derivative(x(1:n_samples),&
                           & core_electron_be(i),&
                           & core_electron_be_der(1:3, k),&
-                          & y_der(1:3,1:n_samples ), sigma, y_exp(1:n_samples), this_force(1:3), mag, dx)
+                          & y_der(1:3,1:n_samples ), sigma, y_exp(1:n_samples), this_force(1:3), norm, dx)
 
                   end if
 
                   this_force(1:3) =  - energy_scale *  this_force(1:3)
 
                   forces0(1:3, j2) = forces0(1:3, j2) + this_force(1:3)
+
 
                   mag_force = norm2(forces0(1:3,j2))
                   if (mag_force > max_mag_force)then
@@ -650,24 +697,23 @@ module exp_utils
                end if
 
                !           There is no net force acting on i2 from its periodic replicas...
-               if( j2 /= i2 )then
-                  forces0(1:3,i2) = forces0(1:3,i2) + this_force(1:3)
-               end if
+               ! if( j2 /= i2 )then
+               !    forces0(1:3,i2) = forces0(1:3,i2) + this_force(1:3)
+               ! end if
                !           ... but the periodic replicas DO contribute to the virial
                !           Sign is minus because this force is acting on i2. Factor of 1/2 is because this is
                !           derived from a pair energy
                !            virial = virial - 0.5d0 * dot_product(this_force(1:3), xyz(1:3,k))
-               do k1 = 1, 3
-                  do k2 =1, 3
-                     virial(k1, k2) = virial(k1, k2) - 0.25d0 * (this_force(k1)*xyz(k2,k) + this_force(k2)*xyz(k1,k))
-                  end do
-               end do
+               ! do k1 = 1, 3
+               !    do k2 =1, 3
+               !       virial(k1, k2) = virial(k1, k2) - 0.25d0 * (this_force(k1)*xyz(k2,k) + this_force(k2)*xyz(k1,k))
+               !    end do
+               ! end do
             end do
          end do
-
-         print *, rank, "MAX FORCE FROM LOCAL PROP ", forces0(1:3,mag_force_i)
          deallocate(y_der)
          if(allocated(prefactor)) deallocate(prefactor)
+         deallocate(der_vec, der_factor)
 
       end if
 
@@ -682,7 +728,7 @@ module exp_utils
       real*8, intent(out) :: sim_exp_pred
 
       if (similarity_type == "lsquares")then
-         sim_exp_pred = - dot_product(y - y_pred, y - y_pred)
+         sim_exp_pred = - (x(2) - x(1) ) * dot_product(y - y_pred, y - y_pred)
       else
          sim_exp_pred =  dot_product(y, y_pred)
       end if
