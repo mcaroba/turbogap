@@ -2595,6 +2595,11 @@ program turbogap
                             & params%exp_data(xps_idx)%similarity, params%exp_data(xps_idx)%x, params%exp_data(xps_idx)%y,&
                             & params%exp_data(xps_idx)%y_pred, y_i_pred_all,&
                             .not. allocated(params%exp_data(xps_idx)%x), params%similarity_type )
+
+
+                       call get_data_similarity(params%exp_data(xps_idx)%x, params%exp_data(xps_idx)%y, &
+                            & params%exp_data(xps_idx)%y_pred, params%exp_data(xps_idx)%similarity, params%similarity_type)
+
                     end if
 
                     do i = 1, params%n_exp_data
@@ -2885,6 +2890,15 @@ program turbogap
                             & params%exp_data(xps_idx)%x, params%exp_data(xps_idx)%y,&
                             & params%exp_data(xps_idx)%y_pred, y_i_pred_all, &
                             & .not. allocated(params%exp_data(xps_idx)%x), params%similarity_type )
+
+                       if (.not. allocated(params%exp_data(xps_idx)%y_pred_prev)) then
+                          allocate( params%exp_data(xps_idx)%y_pred_prev(1:size(params%exp_data(xps_idx)%y_pred,1)) )
+                       end if
+                       params%exp_data(xps_idx) % y_pred_prev = params%exp_data(xps_idx) % y_pred
+
+                       call get_data_similarity(params%exp_data(xps_idx)%x, params%exp_data(xps_idx)%y, &
+                            & params%exp_data(xps_idx)%y_pred, params%exp_data(xps_idx)%similarity, params%similarity_type)
+
 
                     end if
 
