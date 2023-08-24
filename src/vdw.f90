@@ -1096,7 +1096,8 @@ module vdw
                            dr6_mult_0i(:), dr6_mult_0j(:), dT_LR_mult_ij0(:), AT_mult(:), E_mult(:), dAT_mult(:), dE_mult(:), &
                            temp_mat(:,:), &
                            ! Eigenvalue stuff
-                           AT_copy(:,:), WR(:), WI(:), VL(:,:), VR(:,:), work_mbd(:), VR_inv(:,:), ipiv_mbd(:)
+                           AT_copy(:,:), WR(:), WI(:), VL(:,:), VR(:,:), work_mbd(:), VR_inv(:,:), ipiv_mbd(:), &
+                           temp_mat_full(:,:)
     real*8 :: a_mbd_i, a_mbd_j, o_mbd_i, da_i, da_j, pol1, E_TS, f_damp_der_2b, dr_vdw_i, &
               dr_vdw_j, forces_TS, dC6_2b, mult1_i, mult1_j, mult2, dmult1_i(1:3), dmult1_j(1:3), dmult2(1:3), hv_p_der, &
               hv_q_der, do_pref, rb, inner_damp_der, rjs_0_i, rcut_forces, o_i, o_j, do_i, do_j, T_LR_mult_i, T_LR_mult_j, &
@@ -2564,9 +2565,9 @@ else
           allocate( lsq_mat(1:n_order+1,1:n_order+1) )
           allocate( res_mat(1:n_order+1) )
           allocate( ipiv_lsq(1:n_order+1) )
-          allocate( log_exp(1:3*n_mbd_sites,1:3*n_mbd_sites) )
-          allocate( AT_power(1:3*n_mbd_sites,1:3*n_mbd_sites) )
-          allocate( temp_mat(1:3*n_mbd_sites,1:3*n_mbd_sites) )
+          !allocate( log_exp(1:3,1:3*n_mbd_sites) )
+          allocate( AT_power(1:3,1:3*n_mbd_sites) )
+          allocate( temp_mat(1:3,1:3*n_mbd_sites) )
                 allocate( AT_copy(1:3*n_mbd_sites,1:3*n_mbd_sites) )
                 allocate( WR(1:3*n_mbd_sites) )
                 allocate( WI(1:3*n_mbd_sites) )
@@ -2575,6 +2576,7 @@ else
                 allocate( work_mbd(1:24*n_mbd_sites) )
                 allocate( ipiv_mbd(1:3*n_mbd_sites) )
                 allocate( log_integrand(1:n_freq) )
+                allocate( temp_mat_full(1:3*n_mbd_sites,1:3*n_mbd_sites) )
           log_integrand = 0.d0
           I_mat = 0.d0
           do p = 1, 3*n_mbd_sites
@@ -2612,16 +2614,23 @@ else
               end do
             end do
             call dgesv( n_order+1, 1, lsq_mat, n_order+1, ipiv_lsq, res_mat, n_order+1, info )
-            log_exp = res_mat(1) + res_mat(2)*AT(:,:,i2)
-            AT_power = AT(:,:,i2)
-            do k2 = 3, n_order+1
-              call dgemm('N', 'N', 3*n_mbd_sites, 3*n_mbd_sites, 3*n_mbd_sites, 1.d0, AT_power, &
-                         3*n_mbd_sites, AT(:,:,i2), 3*n_mbd_sites, 0.d0, temp_mat, 3*n_mbd_sites)
-              AT_power = temp_mat
-              log_exp = log_exp + res_mat(k2) * AT_power
+            !log_exp = res_mat(1)*I_mat(1:3,:) + res_mat(2)*AT(1:3,:,i2)
+            do c1 = 1, 3
+              integrand(i2) = integrand(i2) + res_mat(1) + res_mat(2)*AT(c1,c1,i2)
             end do
-            do p = 1, 3
-              integrand(i2) = integrand(i2) + log_exp(p,p)
+            AT_power = AT(1:3,:,i2)
+            do k2 = 3, n_order
+              call dgemm('N', 'N', 3, 3*n_mbd_sites, 3*n_mbd_sites, 1.d0, AT_power, &
+                         3, AT(:,:,i2), 3*n_mbd_sites, 0.d0, temp_mat, 3)
+              AT_power = temp_mat
+              !log_exp = log_exp + res_mat(k2) * AT_power
+              do c1 = 1, 3
+                integrand(i2) = integrand(i2) + res_mat(k2)*AT_power(c1,c1)
+              end do
+            end do
+            do c1 = 1, 3
+              integrand(i2) = integrand(i2) + &
+                              res_mat(n_order+1)*dot_product(AT_power(c1,:),AT(:,c1,i2))
             end do
 ! TEST COMPARISON WITH LOG
             AT_copy = -AT(:,:,i2)
@@ -2639,16 +2648,17 @@ else
               AT_copy(p,p) = log(WR(p))
             end do
             call dgemm( 'N', 'N', 3*n_mbd_sites, 3*n_mbd_sites, 3*n_mbd_sites, 1.d0, AT_copy, 3*n_mbd_sites, &
-                       VR_inv, 3*n_mbd_sites, 0.d0, temp_mat, 3*n_mbd_sites)
-            AT_copy = temp_mat
+                       VR_inv, 3*n_mbd_sites, 0.d0, temp_mat_full, 3*n_mbd_sites)
+            AT_copy = temp_mat_full
             call dgemm( 'N', 'N', 3*n_mbd_sites, 3*n_mbd_sites, 3*n_mbd_sites, 1.d0, VR, 3*n_mbd_sites, &
-                       AT_copy, 3*n_mbd_sites, 0.d0, temp_mat, 3*n_mbd_sites)
+                       AT_copy, 3*n_mbd_sites, 0.d0, temp_mat_full, 3*n_mbd_sites)
             do p = 1, 3
-              log_integrand(i2) = log_integrand(i2) + temp_mat(p,p)
+              log_integrand(i2) = log_integrand(i2) + temp_mat_full(p,p)
             end do
           end do
-          deallocate( b_vec, Ab, I_mat, l_vals, log_vals, lsq_mat, res_mat, ipiv_lsq, log_exp, AT_power, temp_mat, &
-                      AT_copy, WR, WI, VR, VR_inv, work_mbd, ipiv_mbd )
+          deallocate( b_vec, Ab, I_mat, l_vals, log_vals, lsq_mat, res_mat, ipiv_lsq, AT_power, temp_mat, &
+                      AT_copy, WR, WI, VR, VR_inv, work_mbd, ipiv_mbd, temp_mat_full )
+          !deallocate( log_exp )
 end if      
           call cpu_time(time2)
           
