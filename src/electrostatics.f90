@@ -87,6 +87,7 @@ module electrostatics
 
         do center_i = 1, n_sites
             ! First we precompute q_i/4πε_0
+            ! TODO this is where we add an effective dielectric constant to scale the interaction
             center_term = charges(center_i) * COUL_CONSTANT
             local_energies(center_i) = 0.0_dp
             do neigh_seq = 1, n_neigh(center_i)
@@ -98,6 +99,7 @@ module electrostatics
                 if (rij > rcut) then
                     continue
                 end if
+                ! TODO do we iterate over i==j? Then we need to exclude it
                 ! Technically half the pair energy, since we double-count
                 pair_energy = 0.5 * center_term * neighbor_charges(neigh_id) / rij
                 local_energies(center_i) = local_energies(center_i) + pair_energy
@@ -111,6 +113,15 @@ module electrostatics
                     ! on the pair interaction.
                     ! Each SOAP neighbor's effects should be additive via the chain rule
                     ! Review previous notes on this!
+                    !
+                    ! Pseudocode: This should work if I can get the indexing figured out
+                    ! do k : soap_neighbours(center_i)
+                    !     ! we need to find the gradient of charge i w.r.t. atom k. how is this stored??
+                    !     fik_vec = charges(j) * charge_gradients(:, i, k) / rij
+                    !     ! warning: k could be outside the current process/domain. make sure this still works as expected
+                    !     forces(:, k) = forces(:, k) + fik_vec
+                    !     virial = virial + outer_prod(fik_vec, xyz(:, k))
+                    ! end do
                     forces(:,center_i) = forces(:,center_i) + fij_vec
                     ! TODO symmetrize like it's done elsewhere in the code?
                     virial = virial + outer_prod(fij_vec, rij_vec)
