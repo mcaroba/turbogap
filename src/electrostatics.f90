@@ -38,6 +38,7 @@ module electrostatics
     ! it will probably just be Hartree / Bohr, since the charges are
     ! expressed in atomic units but the lengths in angstroms
     real(dp), parameter :: COUL_CONSTANT = HARTREE_EV / BOHR_ANG
+    real(dp), parameter :: FLOAT_ZERO = 10*EPSILON(1.0_dp)
 
     contains
 
@@ -78,16 +79,18 @@ module electrostatics
         real(dp), intent(out), dimension(:,:) :: forces
         real(dp), intent(out), dimension(3,3) :: virial
 
-        integer :: center_i, neigh_id, neigh_offset, neigh_seq, n_sites, pair_counter
+        integer :: center_i, neigh_id, neigh_seq, n_sites_this, pair_counter, soap_pair_counter
         real :: rij, center_term, pair_energy
         real(dp), dimension(3) :: rij_vec, fij_vec, chg_grad_force
 
-        n_sites = size(n_neigh)
-        neigh_offset = 0
+        n_sites_this = size(n_neigh)
+        n_sites_global = size(forces, 2)
 
         pair_counter = 0
+        soap_pair_counter = 0
         do center_i = 1, n_sites
             pair_counter = pair_counter + 1
+            !soap_pair_counter = soap_pair_counter + 1
             ! First we precompute q_i/4πε_0
             ! TODO this is where we add an effective dielectric constant to scale the interaction
             center_term = charges(center_i) * COUL_CONSTANT
@@ -102,6 +105,7 @@ module electrostatics
                 neigh_id = neighbors_list(pair_counter)
                 rij = rjs(pair_counter)
                 rij_vec = xyz(:, pair_counter)
+                neigh_charge = neighbor_charges(pair_counter)
                 ! Sharp cutoff -- for smooth cutoff, use the DSF method instead
                 if (rij > rcut) then
                     continue
@@ -110,8 +114,25 @@ module electrostatics
                 pair_energy = 0.5 * center_term * neighbor_charges(pair_counter) / rij
                 local_energies(center_i) = local_energies(center_i) + pair_energy
                 if (do_gradients) then
-                    fij_vec = -2.0 * pair_energy * rij_vec / rij**2
-                    ! Add the extra term due to the charge gradients
+                    fij_vec = -2.0 * pair_energy * rij_vec / rij**3
+                    forces(:,center_i) = forces(:,center_i) + fij_vec
+                    ! TODO symmetrize like it's done elsewhere in the code?
+                    virial = virial + outer_prod(fij_vec, rij_vec)
+                    ! Third-order iteration over SOAP neighbours of center i
+                    ! TODO there should be a way to get out of having to do an inner iteration
+                    ! (check the vdW code)
+                    do soap_neigh_seq = 1, n_neigh(center_i)
+                        soap_pair_counter = soap_pair_counter + 1
+                        soap_neigh_id = neighbour_list(soap_pair_counter)
+                        ! Avoid computing grad contribution for neighbours that are not in SOAP cutoff
+                        if(all(abs(charge_gradients(:, soap_pair_counter)) < FLOAT_ZERO) ) then
+                            continue
+                        end if
+                        fik_vec = neigh_charge * charge_gradients(:, soap_pair_counter) / rij
+                        forces(:, soap_neigh_id) = forces(:, soap_neigh_id) + fik_vec !TODO check sign
+                        virial = virial + outer_prod(fik_vec, xyz(:, soap_pair_counter)
+                    end do
+
                     ! chg_grad_force = neigh_charges(neigh_id) * charge_gradients(1:3,center_i) / rij
                     ! TODO we actually need to loop through a third index, representing
                     ! the SOAP neighbors of the central atom, and compute the effect of
@@ -128,9 +149,6 @@ module electrostatics
                     !     forces(:, k) = forces(:, k) + fik_vec
                     !     virial = virial + outer_prod(fik_vec, xyz(:, k))
                     ! end do
-                    forces(:,center_i) = forces(:,center_i) + fij_vec
-                    ! TODO symmetrize like it's done elsewhere in the code?
-                    virial = virial + outer_prod(fij_vec, rij_vec)
                 end if
             end do
             neigh_offset = neigh_offset + n_neigh(center_i)
