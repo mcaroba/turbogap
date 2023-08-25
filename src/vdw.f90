@@ -1065,7 +1065,7 @@ module vdw
                            a_SCS(:,:), da_SCS(:,:), b_der(:,:), dB_mat(:,:), &
                            neighbor_sigma(:), hirshfeld_v_sub_der(:,:), inner_damp(:)
     real*8 :: time1, time2, time3, time4, this_force(1:3), Bohr, Hartree, &
-              omega, pi, integral, E_MBD, R_vdW_SCS_ij, S_vdW_ij, dS_vdW_ij, exp_term, &
+              omega, pi, integral, total_integral, E_MBD, R_vdW_SCS_ij, S_vdW_ij, dS_vdW_ij, exp_term, &
               r_vdw_i, r_vdw_j, t1, t2, r_buf_scs, r_buf_mbd, r_buf_2b, r_buf_loc, &
               sigma_ij, coeff_h_der, dg, dh, s_i, s_j, terms, omega_ref, xyz_i(1:3), xyz_j(1:3), rjs_i, rjs_j
     integer, allocatable :: ipiv(:)
@@ -1120,7 +1120,7 @@ module vdw
     integer :: mode_nnls
     logical :: do_total_energy = .true., series_expansion = .false. ! Finite difference testing purposes
     real*8, allocatable :: b_vec(:), Ab(:), I_mat(:,:), l_vals(:), log_vals(:), lsq_mat(:,:), res_mat(:), log_exp(:,:), &
-                           AT_power(:,:), log_integrand(:)
+                           AT_power(:,:), log_integrand(:), AT_power_full(:,:)
     integer*8, allocatable :: ipiv_lsq(:)
     real*8 :: b_norm, l_dom, l_min, l_max
 
@@ -2568,15 +2568,23 @@ else
           !allocate( log_exp(1:3,1:3*n_mbd_sites) )
           allocate( AT_power(1:3,1:3*n_mbd_sites) )
           allocate( temp_mat(1:3,1:3*n_mbd_sites) )
-                allocate( AT_copy(1:3*n_mbd_sites,1:3*n_mbd_sites) )
-                allocate( WR(1:3*n_mbd_sites) )
-                allocate( WI(1:3*n_mbd_sites) )
-                allocate( VR(1:3*n_mbd_sites,1:3*n_mbd_sites) )
-                allocate( VR_inv(1:3*n_mbd_sites,1:3*n_mbd_sites) )
-                allocate( work_mbd(1:24*n_mbd_sites) )
-                allocate( ipiv_mbd(1:3*n_mbd_sites) )
-                allocate( log_integrand(1:n_freq) )
-                allocate( temp_mat_full(1:3*n_mbd_sites,1:3*n_mbd_sites) )
+          ! Log stuff:
+          allocate( AT_copy(1:3*n_mbd_sites,1:3*n_mbd_sites) )
+          allocate( WR(1:3*n_mbd_sites) )
+          allocate( WI(1:3*n_mbd_sites) )
+          allocate( VR(1:3*n_mbd_sites,1:3*n_mbd_sites) )
+          allocate( VR_inv(1:3*n_mbd_sites,1:3*n_mbd_sites) )
+          allocate( work_mbd(1:24*n_mbd_sites) )
+          allocate( ipiv_mbd(1:3*n_mbd_sites) )
+          allocate( log_integrand(1:n_freq) )
+          allocate( temp_mat_full(1:3*n_mbd_sites,1:3*n_mbd_sites) )
+          ! Total energy stuff:
+          if ( do_derivatives ) then
+            allocate( AT_power_full(1:3*n_mbd_sites,1:3*n_mbd_sites) )
+            if ( do_total_energy ) then
+              total_integrand = 0.d0
+            end if
+          end if
           log_integrand = 0.d0
           I_mat = 0.d0
           do p = 1, 3*n_mbd_sites
@@ -2619,6 +2627,24 @@ else
               integrand(i2) = integrand(i2) + res_mat(1) + res_mat(2)*AT(c1,c1,i2)
             end do
             AT_power = AT(1:3,:,i2)
+            if ( do_derivatives ) then
+              AT_power_full = AT(:,:,i2)
+              ! Calculate the derivative of the polynomial here! Multiply by the derivative of the matrix later in the code
+              if ( do_total_energy ) then
+                k3 = 0
+                do p = 1, n_mbd_sites
+                  !if ( rjs_0_mbd(k3+1) .le. (rcut_mbd+rcut_loc)/Bohr ) then
+                    do c1 = 1, 3
+                      total_integrand(i2) = total_integrand(i2) + res_mat(1) + &
+                        res_mat(2)*AT(3*(p-1)+c1,3*(p-1)+c1,i2)
+                    end do
+                  !end if
+                  if ( p .ne. n_mbd_sites ) then
+                    k3 = k3 + n_mbd_neigh(p)
+                  end if
+                end do
+              end if
+            end if
             do k2 = 3, n_order
               call dgemm('N', 'N', 3, 3*n_mbd_sites, 3*n_mbd_sites, 1.d0, AT_power, &
                          3, AT(:,:,i2), 3*n_mbd_sites, 0.d0, temp_mat, 3)
@@ -2627,11 +2653,47 @@ else
               do c1 = 1, 3
                 integrand(i2) = integrand(i2) + res_mat(k2)*AT_power(c1,c1)
               end do
+              if ( do_derivatives ) then
+                call dgemm('N', 'N', 3*n_mbd_sites, 3*n_mbd_sites, 3*n_mbd_sites, 1.d0, &
+                            AT_power_full, 3*n_mbd_sites, AT(:,:,i2), 3*n_mbd_sites, 0.d0, &
+                            temp_mat_full, 3*n_mbd_sites)
+                AT_power_full = temp_mat_full
+                if ( do_total_energy ) then
+                  k3 = 0
+                  do p = 1, n_mbd_sites
+                    !if ( rjs_0_mbd(k3+1) .le. (rcut_mbd+rcut_loc)/Bohr ) then
+                      do c1 = 1, 3
+                        total_integrand(i2) = total_integrand(i2) + &
+                          res_mat(k2)*AT_power_full(3*(p-1)+c1,3*(p-1)+c1)
+                      end do
+                    !end if
+                    if ( p .ne. n_mbd_sites ) then
+                      k3 = k3 + n_mbd_neigh(p)
+                    end if
+                  end do
+                end if
+              end if
             end do
             do c1 = 1, 3
               integrand(i2) = integrand(i2) + &
                               res_mat(n_order+1)*dot_product(AT_power(c1,:),AT(:,c1,i2))
             end do
+            if ( do_derivatives ) then
+              if ( do_total_energy ) then
+                k3 = 0
+                do p = 1, n_mbd_sites
+                  !if ( rjs_0_mbd(k3+1) .le. (rcut_mbd+rcut_loc)/Bohr ) then
+                    do c1 = 1, 3
+                      total_integrand(i2) = total_integrand(i2) + &
+                        res_mat(n_order+1)*dot_product(AT_power_full(3*(p-1)+c1,:),AT(:,3*(p-1)+c1,i2))
+                    end do
+                  !end if
+                  if ( p .ne. n_mbd_sites ) then
+                    k3 = k3 + n_mbd_neigh(p)
+                  end if
+                end do
+              end if
+            end if
 ! TEST COMPARISON WITH LOG
             AT_copy = -AT(:,:,i2)
             do p = 1, 3*n_mbd_sites
@@ -2659,6 +2721,9 @@ else
           deallocate( b_vec, Ab, I_mat, l_vals, log_vals, lsq_mat, res_mat, ipiv_lsq, AT_power, temp_mat, &
                       AT_copy, WR, WI, VR, VR_inv, work_mbd, ipiv_mbd, temp_mat_full )
           !deallocate( log_exp )
+          if ( do_derivatives .and. do_total_energy ) then
+            deallocate( AT_power_full )
+          end if
 end if      
           call cpu_time(time2)
           
@@ -2724,6 +2789,13 @@ end if
           integral = 0.d0
           call integrate("trapezoidal", omegas_mbd, integrand, omegas_mbd(1), omegas_mbd(n_freq), integral)
           integral = integral/(2.d0*pi)
+          if ( do_derivatives ) then
+            if ( do_total_energy ) then
+              total_integral = 0.d0
+              call integrate("trapezoidal", omegas_mbd, total_integrand, omegas_mbd(1), omegas_mbd(n_freq), total_integral)
+              total_integral = total_integral/(2.d0*pi)
+            end if
+          end if
 
           end if ! do_nnls
 
@@ -2737,6 +2809,13 @@ integral = integral/(2.d0*pi)
 write(*,*) "Exact log energy", i, integral * Hartree
 deallocate( log_integrand )
 end if
+
+          if ( do_derivatives ) then
+            if ( do_total_energy ) then
+              write(*,*) "Total energy", i, total_integral * Hartree
+            end if
+          end if
+
           E_MBD = E_MBD + energies(i)          
           
           call cpu_time(time2)
