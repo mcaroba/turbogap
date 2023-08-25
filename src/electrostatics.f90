@@ -78,30 +78,36 @@ module electrostatics
         real(dp), intent(out), dimension(:,:) :: forces
         real(dp), intent(out), dimension(3,3) :: virial
 
-        integer :: center_i, neigh_id, neigh_offset, neigh_seq, n_sites
+        integer :: center_i, neigh_id, neigh_offset, neigh_seq, n_sites, pair_counter
         real :: rij, center_term, pair_energy
         real(dp), dimension(3) :: rij_vec, fij_vec, chg_grad_force
 
         n_sites = size(n_neigh)
         neigh_offset = 0
 
+        pair_counter = 0
         do center_i = 1, n_sites
+            pair_counter = pair_counter + 1
             ! First we precompute q_i/4πε_0
             ! TODO this is where we add an effective dielectric constant to scale the interaction
             center_term = charges(center_i) * COUL_CONSTANT
             local_energies(center_i) = 0.0_dp
-            do neigh_seq = 1, n_neigh(center_i)
+            ! Apparently the first neighbour is the center itself?
+            do neigh_seq = 2, n_neigh(center_i)
+                pair_counter = pair_counter + 1 ! ???
                 ! I _think_ this is how the neighbourlist indexing works...
-                neigh_id = neigh_seq + neigh_offset
-                rij = rjs(neigh_id)
-                rij_vec = xyz(:, neigh_id)
+                ! BEEEEP it's not. the neighbourlist is indexed by pair ID. This needs to be
+                ! counted and updated MANUALLY (ughhhh) while iterating through pairs.
+                ! (there are so, so many ways that this could go wrong....)
+                neigh_id = neighbors_list(pair_counter)
+                rij = rjs(pair_counter)
+                rij_vec = xyz(:, pair_counter)
                 ! Sharp cutoff -- for smooth cutoff, use the DSF method instead
                 if (rij > rcut) then
                     continue
                 end if
-                ! TODO do we iterate over i==j? Then we need to exclude it
                 ! Technically half the pair energy, since we double-count
-                pair_energy = 0.5 * center_term * neighbor_charges(neigh_id) / rij
+                pair_energy = 0.5 * center_term * neighbor_charges(pair_counter) / rij
                 local_energies(center_i) = local_energies(center_i) + pair_energy
                 if (do_gradients) then
                     fij_vec = -2.0 * pair_energy * rij_vec / rij**2
