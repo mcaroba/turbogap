@@ -75,31 +75,33 @@ module electrostatics
         real(dp), intent(in) :: rcut, rcut_in, rcin_width
         logical, intent(in) :: do_gradients
 
-        real(dp), intent(out), dimension(:) :: local_energies
-        real(dp), intent(out), dimension(:,:) :: forces
-        real(dp), intent(out), dimension(3,3) :: virial
+        ! inout because they are initialized outside this procedure and filled with zeros
+        real(dp), intent(inout), dimension(:) :: local_energies
+        real(dp), intent(inout), dimension(:,:) :: forces
+        real(dp), intent(inout), dimension(3,3) :: virial
 
-        integer :: center_i, neigh_id, neigh_seq, n_sites_this, pair_counter, soap_pair_counter
-        real :: rij, center_term, pair_energy
-        real(dp), dimension(3) :: rij_vec, fij_vec, chg_grad_force
+        integer :: center_i, neigh_id, soap_neigh_id, neigh_seq, soap_neigh_seq
+        integer :: n_sites_global, n_sites_this, pair_counter, soap_pair_counter
+        real :: rij, center_term, pair_energy, neigh_charge
+        real(dp), dimension(3) :: rij_vec, fij_vec, fki_vec
+        real(dp), dimension(:), allocatable :: vc_grad_prefactor
 
         n_sites_this = size(n_neigh)
         n_sites_global = size(forces, 2)
+        allocate(vc_grad_prefactor(1:n_sites_this))
+        vc_grad_prefactor = 0.0_dp
 
         pair_counter = 0
         soap_pair_counter = 0
-        do center_i = 1, n_sites
+        do center_i = 1, n_sites_this
             pair_counter = pair_counter + 1
-            !soap_pair_counter = soap_pair_counter + 1
+            !soap_pair_counter = soap_pair_counter + 1 ! No, because we include the center as a SOAP neighbour
             ! First we precompute q_i/4πε_0
             ! TODO this is where we add an effective dielectric constant to scale the interaction
             center_term = charges(center_i) * COUL_CONSTANT
-            local_energies(center_i) = 0.0_dp
-            ! Apparently the first neighbour is the center itself?
             do neigh_seq = 2, n_neigh(center_i)
                 pair_counter = pair_counter + 1 ! ???
-                ! I _think_ this is how the neighbourlist indexing works...
-                ! BEEEEP it's not. the neighbourlist is indexed by pair ID. This needs to be
+                ! so... the neighbourlist is indexed by pair ID. This needs to be
                 ! counted and updated MANUALLY (ughhhh) while iterating through pairs.
                 ! (there are so, so many ways that this could go wrong....)
                 neigh_id = neighbors_list(pair_counter)
@@ -110,49 +112,44 @@ module electrostatics
                 if (rij > rcut) then
                     continue
                 end if
-                ! Technically half the pair energy, since we double-count
-                pair_energy = 0.5 * center_term * neighbor_charges(pair_counter) / rij
-                local_energies(center_i) = local_energies(center_i) + pair_energy
+                pair_energy = center_term * neighbor_charges(pair_counter) / rij
+                ! We use half the pair energy here, since we double-count
+                local_energies(center_i) = local_energies(center_i) + 0.5_dp * pair_energy
                 if (do_gradients) then
-                    fij_vec = -2.0 * pair_energy * rij_vec / rij**3
-                    forces(:,center_i) = forces(:,center_i) + fij_vec
-                    ! TODO symmetrize like it's done elsewhere in the code?
-                    virial = virial + outer_prod(fij_vec, rij_vec)
-                    ! Third-order iteration over SOAP neighbours of center i
-                    ! TODO there should be a way to get out of having to do an inner iteration
-                    ! (check the vdW code)
-                    do soap_neigh_seq = 1, n_neigh(center_i)
-                        soap_pair_counter = soap_pair_counter + 1
-                        soap_neigh_id = neighbour_list(soap_pair_counter)
-                        ! Avoid computing grad contribution for neighbours that are not in SOAP cutoff
-                        if(all(abs(charge_gradients(:, soap_pair_counter)) < FLOAT_ZERO) ) then
-                            continue
-                        end if
-                        fik_vec = neigh_charge * charge_gradients(:, soap_pair_counter) / rij
-                        forces(:, soap_neigh_id) = forces(:, soap_neigh_id) + fik_vec !TODO check sign
-                        virial = virial + outer_prod(fik_vec, xyz(:, soap_pair_counter)
-                    end do
-
-                    ! chg_grad_force = neigh_charges(neigh_id) * charge_gradients(1:3,center_i) / rij
-                    ! TODO we actually need to loop through a third index, representing
-                    ! the SOAP neighbors of the central atom, and compute the effect of
-                    ! the central atom's charge gradient _w.r.t. that neighbor_
-                    ! on the pair interaction.
-                    ! Each SOAP neighbor's effects should be additive via the chain rule
-                    ! Review previous notes on this!
-                    !
-                    ! Pseudocode: This should work if I can get the indexing figured out
-                    ! do k : soap_neighbours(center_i)
-                    !     ! we need to find the gradient of charge i w.r.t. atom k. how is this stored??
-                    !     fik_vec = charges(j) * charge_gradients(:, i, k) / rij
-                    !     ! warning: k could be outside the current process/domain. make sure this still works as expected
-                    !     forces(:, k) = forces(:, k) + fik_vec
-                    !     virial = virial + outer_prod(fik_vec, xyz(:, k))
-                    ! end do
+                    fij_vec = -1.0_dp * pair_energy * rij_vec / rij**2
+                    ! TODO omit forces on periodic replicas? They should cancel in any case.
+                    forces(:, center_i) = forces(:, center_i) + fij_vec
+                    ! TODO check virial sign convention
+                    ! This convention aligns with more positive virials indicating greater internal pressure
+                    virial = virial - outer_prod(fij_vec, rij_vec)
+                    ! Accumulate ij-pair prefactor for variable-charge gradient term
+                    vc_grad_prefactor(center_i) = vc_grad_prefactor(center_i) + neigh_charge / rij
                 end if
             end do
-            neigh_offset = neigh_offset + n_neigh(center_i)
+            ! Now add the variable-charge gradient contribution
+            ! This time they are added to the neighbours, not the centers
+            if (do_gradients) then
+                ! Now we iterate over SOAP neighbours only, but _including_ the center atom
+                do soap_neigh_seq = 1, n_neigh(center_i)
+                    soap_pair_counter = soap_pair_counter + 1
+                    soap_neigh_id = neighbors_list(soap_pair_counter)
+                    ! Avoid computing grad contribution for neighbours that are not in SOAP cutoff
+                    if(all(abs(charge_gradients(:, soap_pair_counter)) < FLOAT_ZERO) ) then
+                        continue
+                    end if
+                    ! uses gradient _of_ charge i (center) w.r.t. atom k (soap neighbour)
+                    fki_vec = -1.0_dp * vc_grad_prefactor(center_i) * charge_gradients(:, soap_pair_counter)
+                    forces(:, soap_neigh_id) = forces(:, soap_neigh_id) + fki_vec
+                    ! Different sign than above because the position vector is reversed
+                    ! (f_ki versus r_ik)
+                    virial = virial + outer_prod(fki_vec, xyz(:, soap_pair_counter))
+                end do
+            end if
         end do
+        ! Symmetrize the viral (is this necessary?)
+        virial = 0.5_dp * (virial + transpose(virial))
+
+        if(allocated(vc_grad_prefactor)) deallocate(vc_grad_prefactor)
 
     end subroutine
 
