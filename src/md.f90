@@ -2,12 +2,12 @@
 ! HND X
 ! HND X   TurboGAP
 ! HND X
-! HND X   TurboGAP is copyright (c) 2019-2023, Miguel A. Caro and others
+! HND X   TurboGAP is copyright (c) 2019-2022, Miguel A. Caro and others
 ! HND X
 ! HND X   TurboGAP is published and distributed under the
 ! HND X      Academic Software License v1.0 (ASL)
 ! HND X
-! HND X   This file, md.f90, is copyright (c) 2019-2023, Miguel A. Caro
+! HND X   This file, md.f90, is copyright (c) 2019-2022, Miguel A. Caro
 ! HND X
 ! HND X   TurboGAP is distributed in the hope that it will be useful for non-commercial
 ! HND X   academic research, but WITHOUT ANY WARRANTY; without even the implied
@@ -92,14 +92,14 @@ module md
 
 !**************************************************************************
   subroutine velocity_verlet(positions, positions_prev, velocities, &
-                             forces, forces_prev, masses, dt, &
+                             forces, forces_prev, masses, dt, dt_prev, &
                              first_step, a_box, b_box, c_box, fix_atom)
 
     implicit none
 
 !   Input variables
     real*8, intent(inout) :: positions(:,:), positions_prev(:,:), velocities(:,:), &
-                             forces_prev(:,:)
+                             forces_prev(:,:), dt_prev
     real*8, intent(in) :: forces(:,:), masses(:), dt, a_box(1:3), b_box(1:3), &
                           c_box(1:3)
     logical, intent(in) :: first_step, fix_atom(:,:)
@@ -117,7 +117,7 @@ module md
 !        velocities(1:3, i) = velocities(1:3, i) + 0.5d0 * (forces(1:3, i) + forces_prev(1:3, i))/masses(i) * dt
         do j = 1, 3
           if( .not. fix_atom(j, i) )then
-            velocities(j, i) = velocities(j, i) + 0.5d0 * (forces(j, i) + forces_prev(j, i))/masses(i) * dt
+            velocities(j, i) = velocities(j, i) + 0.5d0 * (forces(j, i) + forces_prev(j, i))/masses(i) * dt_prev	! dt
           else
             velocities(j, i) = 0.d0
           end if
@@ -135,9 +135,38 @@ module md
         end if
       end do
     end do
-
+    
+    dt_prev = dt
+    
+    !! ----- Notes -----
+    !! This subroutine with dt used in the valocity calculation step cannot handle variable time step. 
+    !! This is due to the way the present structure of the main TurboGAP has been made and the flow of 
+    !! computation that occurs at every time step. So, this subroutine is slightly modified with a 
+    !! small change of using 'dt_prev' instead of 'dt' in velocity computation step so that it can 
+    !! handle variable time steps. 
+    !! A detail explanation with steps in the VV algorithm is given below.
+    !! Actual VV algorithm:
+    !! Step 1:: x(t + dt) = x(t) + v(t)dt + 0.5*a(t)*dt^2
+    !! Step 2:: Derive a(t + dt) from V(x(t + dt))
+    !! Step 3:: v(t + dt) = v(t) + 0.5*(a(t) + a(t + dt))*dt
+    
+    !! VV algorithm followed here:
+    !! Time step 0 --> Step 1
+    !! Time step 1, 2, .... --> (Step 2), Step 3, Step 1	[Step 2 is done outside]
+    
+    !! Note that the value of dt in Step 3 in any time step should actually be the value of dt of the preceeding time step.
+    !! Using just dt here is alright when a constant dt is used in simulation, but not in simulations when dt may change
+    !! in subseuent time steps, i.e. a variable time step simulation is done.
+    
+    !! This slight modification of using dt_prev may be over-ruled in future with two options. If the algorithm 
+    !! (1) can use the half-timestep velocity way of VV (sometimes seen to be better in energy conservation),
+    !! (2) can use the present way of the VV but all Steps 1, 2 and 3 done in the particular time step. 
+    !! Both these options however would require modifying the structure in main TurboGAP.
+    
   end subroutine
 !**************************************************************************
+
+
 
 
 
@@ -314,6 +343,7 @@ module md
 
   end subroutine 
 !**************************************************************************
+
 
 
 
@@ -642,65 +672,4 @@ module md
     end if
   end subroutine
 !**************************************************************************
-
-
-
-
-!**************************************************************************
-  subroutine get_atomic_mass( element, mass, is_in_database )
-
-    implicit none
-
-!   Input variables
-    character*8, intent(in) :: element
-!   Output variables
-    real*8, intent(out) :: mass
-    logical, intent(out) :: is_in_database
-!   Internal variables
-    real*8 :: masses(1:96)
-    character*8 :: elements(1:96)
-    integer :: i
-
-    elements = [" H", "He", "Li", "Be", " B", " C", " N", " O", &
-                " F", "Ne", "Na", "Mg", "Al", "Si", " P", " S", &
-                "Cl", " K", "Ar", "Ca", "Sc", "Ti", " V", "Cr", &
-                "Mn", "Fe", "Ni", "Co", "Cu", "Zn", "Ga", "Ge", &
-                "As", "Se", "Br", "Kr", "Rb", "Sr", " Y", "Zr", &
-                "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Ag", "Cd", &
-                "In", "Sn", "Sb", " I", "Te", "Xe", "Cs", "Ba", &
-                "La", "Ce", "Pr", "Nd", "Pm", "Sm", "Eu", "Gd", &
-                "Tb", "Dy", "Ho", "Er", "Tm", "Yb", "Lu", "Hf", &
-                "Ta", " W", "Re", "Os", "Ir", "Pt", "Au", "Hg", &
-                "Th", "Pb", "Bi", "Po", "At", "Rn", "Fr", "Ra", &
-                "Ac", "Pa", "Th", "Np", " U", "Pu", "Am", "Cm"]
-
-    masses = [  1.00797,   4.00260,  6.941,    9.01218, 10.81,    12.011,  14.0067,  15.9994, &
-               18.998403, 20.179,   22.98977, 24.305,   26.98154, 28.0855, 30.97376, 32.06, &
-               35.453,    39.0983,  39.948,   40.08,    44.9559,  47.90,   50.9415,  51.996, &
-               54.9380,   55.847,   58.70,    58.9332,  63.546,   65.38,   69.72,    72.59, &
-               74.9216,   78.96,    79.904,   83.80,    85.4678,  87.62,   88.9059,  91.22, &
-               92.9064,   95.94,    98.,     101.07,   102.9055, 106.4,   107.868,  112.41, &
-              114.82,    118.69,   121.75,   126.9045, 127.60,   131.30,  132.9054, 137.33, &
-              138.9055,  140.12,   140.9077, 144.24,   145.,     150.4,   151.96,   157.25, &
-              158.9254,  162.50,   164.9304, 167.26,   168.9342, 173.04,  174.967,  178.49, &
-              180.9479,  183.85,   186.207,  190.2,    192.22,   195.09,  196.9665,  200.59, &
-              204.37,    207.2,    208.9804, 209.,     210.,     222.,    223.,      226.0254, &
-              227.0278,  231.0359, 232.0381, 237.0482, 238.029,  244.,    243.,      247.]
-
-    is_in_database = .false.
-
-    mass = 0.d0
-    do i = 1, size(elements, 1)
-      if( trim(adjustl(elements(i))) == trim(adjustl(element)) )then
-        mass = masses(i)
-        is_in_database = .true.
-        exit
-      end if
-    end do
-
-  end subroutine
-!**************************************************************************
-
-
-
 end module

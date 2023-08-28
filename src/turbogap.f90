@@ -82,7 +82,9 @@ program turbogap
   logical :: rebuild_neighbors_list = .true., exit_loop = .true., gd_box_do_pos = .true., restart_box_optim = .false.
   character*1 :: creturn = achar(13)
 
-  ! these decalarations are for electronic stopping by different methods    ------- by Uttiyoarnab Saha  
+!! these decalarations are for time step and electronic stopping by different methods ----- by Uttiyoarnab Saha  
+  
+  real*8 :: time_step_prev
   integer :: nrows
   real*8 :: cum_EEL = 0.0d0
   real*8, allocatable :: allelstopdata(:)
@@ -1620,8 +1622,12 @@ end if
 !     dt later. forces are taken at t, and forces_prev at t-dt. forces is left unchanged by the routine, and
 !     forces_prev is returned as equal to forces (both arrays contain the same information on return)
       if( params%optimize == "vv" )then
+        if ( md_istep == 0 ) then
+			forces_prev = forces
+			time_step_prev = time_step
+		end if
         call velocity_verlet(positions(1:3, 1:n_sites), positions_prev(1:3, 1:n_sites), velocities(1:3, 1:n_sites), &
-                             forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), time_step, &
+                             forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), time_step, time_step_prev, &
                              md_istep == 0, a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
                              fix_atom(1:3, 1:n_sites))
       else if( params%optimize == "gd" )then
