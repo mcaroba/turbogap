@@ -1120,7 +1120,8 @@ module vdw
     integer :: mode_nnls
     logical :: do_total_energy = .true., series_expansion = .false. ! Finite difference testing purposes
     real*8, allocatable :: b_vec(:), Ab(:), I_mat(:,:), l_vals(:), log_vals(:), lsq_mat(:,:), res_mat(:), log_exp(:,:), &
-                           AT_power(:,:), log_integrand(:), AT_power_full(:,:)
+                           AT_power(:,:), log_integrand(:), AT_power_full(:,:), pol_grad(:,:,:), pol_inv(:,:,:), inv_vals(:), &
+                           res_inv(:), lsq_inv(:,:), integrand_pol(:)
     integer*8, allocatable :: ipiv_lsq(:)
     real*8 :: b_norm, l_dom, l_min, l_max
 
@@ -2581,6 +2582,14 @@ else
           ! Total energy stuff:
           if ( do_derivatives ) then
             allocate( AT_power_full(1:3*n_mbd_sites,1:3*n_mbd_sites) )
+            allocate( pol_grad(1:3*n_mbd_sites,1:3*n_mbd_sites,1:n_freq) )
+            allocate( pol_inv(1:3*n_mbd_sites,1:3*n_mbd_sites,1:n_freq) )
+            allocate( inv_vals(1:1001) )
+            allocate( res_inv(1:n_order+1) )
+            allocate( lsq_inv(1:n_order+1,1:n_order+1) )
+            pol_grad = 0.d0
+            pol_inv = 0.d0
+            inv_vals = 0.d0
             if ( do_total_energy ) then
               total_integrand = 0.d0
             end if
@@ -2597,18 +2606,18 @@ else
                           3*n_mbd_sites, 0.d0, Ab, 3*n_mbd_sites)
             l_dom = dot_product(b_vec,Ab)/b_norm
             if ( l_dom < 0.d0 ) then
-              l_min = l_dom - 0.01d0
+              l_min = l_dom - 0.1d0
             else
-              l_max = l_dom + 0.01d0
+              l_max = l_dom + 0.1d0
             end if
             call power_iteration( AT(:,:,i2)-l_dom*I_mat, 50, b_vec )
             b_norm = dot_product(b_vec,b_vec)
             call dgemm('N', 'N',  3*n_mbd_sites, 1, 3*n_mbd_sites, 1.d0, AT(:,:,i2)-l_dom*I_mat, &
                        3*n_mbd_sites, b_vec, 3*n_mbd_sites, 0.d0, Ab, 3*n_mbd_sites)
             if ( l_dom < 0.d0 ) then
-              l_max = dot_product(b_vec,Ab)/b_norm + l_dom + 0.01d0
+              l_max = dot_product(b_vec,Ab)/b_norm + l_dom + 0.1d0
             else
-              l_min = dot_product(b_vec,Ab)/b_norm + l_dom - 0.01d0
+              l_min = dot_product(b_vec,Ab)/b_norm + l_dom - 0.1d0
             end if
             l_vals(1) = l_min
             do k2 = 2, 1001
@@ -2622,13 +2631,27 @@ else
               end do
             end do
             call dgesv( n_order+1, 1, lsq_mat, n_order+1, ipiv_lsq, res_mat, n_order+1, info )
+            if ( do_derivatives ) then
+              inv_vals = 1.d0/(1.d0-l_vals)
+              do j2 = 1, n_order+1
+                res_inv(j2) = sum(inv_vals*l_vals**(j2-1))
+                do k2 = 1, n_order+1
+                  lsq_inv(j2,k2) = sum(l_vals**(j2-1+k2-1))  
+                end do
+              end do
+              call dgesv( n_order+1, 1, lsq_inv, n_order+1, ipiv_lsq, res_inv, n_order+1, info )
+            end if
             !log_exp = res_mat(1)*I_mat(1:3,:) + res_mat(2)*AT(1:3,:,i2)
+            write(*,*) "l_min, l_max", l_min, l_max
+            write(*,*) "res_mat", res_mat
             do c1 = 1, 3
               integrand(i2) = integrand(i2) + res_mat(1) + res_mat(2)*AT(c1,c1,i2)
             end do
             AT_power = AT(1:3,:,i2)
             if ( do_derivatives ) then
               AT_power_full = AT(:,:,i2)
+              pol_grad(:,:,i2) = -res_mat(2)*I_mat - 2*res_mat(3)*AT(:,:,i2)
+              pol_inv(:,:,i2) = res_inv(1)*I_mat + res_inv(2)*AT(:,:,i2)
               ! Calculate the derivative of the polynomial here! Multiply by the derivative of the matrix later in the code
               if ( do_total_energy ) then
                 k3 = 0
@@ -2658,6 +2681,8 @@ else
                             AT_power_full, 3*n_mbd_sites, AT(:,:,i2), 3*n_mbd_sites, 0.d0, &
                             temp_mat_full, 3*n_mbd_sites)
                 AT_power_full = temp_mat_full
+                pol_grad(:,:,i2) = pol_grad(:,:,i2) - k2 * res_mat(k2+1) * AT_power_full
+                pol_inv(:,:,i2) = pol_inv(:,:,i2) + res_inv(k2) * AT_power_full
                 if ( do_total_energy ) then
                   k3 = 0
                   do p = 1, n_mbd_sites
@@ -2674,6 +2699,13 @@ else
                 end if
               end if
             end do
+            if ( do_derivatives ) then
+              call dgemm('N', 'N', 3*n_mbd_sites, 3*n_mbd_sites, 3*n_mbd_sites, 1.d0, &
+                            AT_power_full, 3*n_mbd_sites, AT(:,:,i2), 3*n_mbd_sites, 0.d0, &
+                            temp_mat_full, 3*n_mbd_sites)
+              AT_power_full = temp_mat_full
+              pol_inv(:,:,i2) = pol_inv(:,:,i2) + res_inv(n_order+1) * AT_power_full
+            end if
             do c1 = 1, 3
               integrand(i2) = integrand(i2) + &
                               res_mat(n_order+1)*dot_product(AT_power(c1,:),AT(:,c1,i2))
@@ -2721,8 +2753,8 @@ else
           deallocate( b_vec, Ab, I_mat, l_vals, log_vals, lsq_mat, res_mat, ipiv_lsq, AT_power, temp_mat, &
                       AT_copy, WR, WI, VR, VR_inv, work_mbd, ipiv_mbd, temp_mat_full )
           !deallocate( log_exp )
-          if ( do_derivatives .and. do_total_energy ) then
-            deallocate( AT_power_full )
+          if ( do_derivatives ) then
+            deallocate( AT_power_full, inv_vals, lsq_inv )
           end if
 end if      
           call cpu_time(time2)
@@ -4808,6 +4840,11 @@ if ( .not. series_expansion ) then
                 allocate( work_mbd(1:24*n_mbd_sites) )
                 allocate( ipiv_mbd(1:3*n_mbd_sites) )
                 allocate( temp_mat(1:3*n_mbd_sites,1:3*n_mbd_sites) )
+                allocate( log_integrand(1:n_freq) )
+                allocate( integrand_pol(1:n_freq) )
+                integrand = 0.d0
+                log_integrand = 0.d0
+                integrand_pol = 0.d0
                 do i2 = 1, n_freq
                   if ( c3 == 1 .and. do_total_energy ) then
                     AT_copy = -AT(:,:,i2)
@@ -4858,7 +4895,17 @@ if ( .not. series_expansion ) then
                   call dgemm( 'N', 'N', 3*n_mbd_sites, 3*n_mbd_sites, 3*n_mbd_sites, 1.d0, AT_copy, 3*n_mbd_sites, &
                           G_mat(:,:,i2), 3*n_mbd_sites, 0.d0, temp_mat, 3*n_mbd_sites)
                   do p = 1, 3*n_mbd_sites
-                    integrand(i2) = integrand(i2) + temp_mat(p,p)
+                    log_integrand(i2) = log_integrand(i2) + temp_mat(p,p)
+                  end do
+                  k3 = 0
+                  do p = 1, n_mbd_sites
+                    if ( rjs_0_mbd(k3+1) .le. (rcut_mbd+rcut_loc)/Bohr ) then
+                      do c1 = 1, 3
+                        integrand_pol(i2) = integrand_pol(i2) + dot_product(G_mat(3*(p-1)+c1,:,i2), pol_grad(:,3*(p-1)+c1,i2))
+                        integrand(i2) = integrand(i2) + dot_product(G_mat(3*(p-1)+c1,:,i2), pol_inv(:,3*(p-1)+c1,i2))
+                      end do
+                    end if
+                    k3 = k3 + n_mbd_neigh(p)
                   end do
                 end do
                 deallocate( AT_copy, WR, WI, VR, VR_inv, work_mbd, ipiv_mbd, temp_mat, G_mat )
@@ -4872,7 +4919,15 @@ end if
                 ! info, integer, if 0, successful
 if ( .not. series_expansion ) then
                 integral = 0.d0
+                call integrate("trapezoidal", omegas_mbd, log_integrand, omegas_mbd(1), omegas_mbd(n_freq), integral)
+                write(*,*) "Log force", i, c3, integral/(2.d0*pi) * Hartree/Bohr
+                integral = 0.d0
+                call integrate("trapezoidal", omegas_mbd, integrand_pol, omegas_mbd(1), omegas_mbd(n_freq), integral)
+                write(*,*) "Polynomial derivative force", i, c3, integral/(2.d0*pi) * Hartree/Bohr
+                deallocate( log_integrand, integrand_pol )
+                integral = 0.d0
                 call integrate("trapezoidal", omegas_mbd, integrand, omegas_mbd(1), omegas_mbd(n_freq), integral)
+                write(*,*) "Inverse force", i, c3, integral/(2.d0*pi) * Hartree/Bohr
 end if
                 forces0(c3,i) = forces0(c3,i) + (1.d0/(2.d0*pi) * integral + forces_TS) * Hartree/Bohr
 
@@ -4936,6 +4991,9 @@ if ( abs(rcut_2b) < 1.d-10 ) then
           end if
           if ( do_hirshfeld_gradients ) then
             deallocate( hirshfeld_v_mbd_der )
+          end if
+          if ( .not. series_expansion ) then
+            deallocate( pol_grad, pol_inv, res_inv )
           end if
         end if
 end if

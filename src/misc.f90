@@ -139,7 +139,8 @@ module misc
     allocate( b_k(1:N) )
     allocate( b_k1(1:N) )
 
-    call random_number( b_k )
+    !call random_number( b_k )
+    b_k = 0.5d0
 
     do k = 1, n_iter
       call dgemm('N', 'N', size(A,1), 1, size(A,2), 1.d0, A, size(A,1), b_k, size(A,2), 0.d0, b_k1, size(A,1))
