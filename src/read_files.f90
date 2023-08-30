@@ -1960,7 +1960,6 @@ end if
 
 !**************************************************************************
 ! ------- option for radiation cascade simulation with electronic stopping			
-! ********* added here by Uttiyoarnab Saha
 
 subroutine read_electronic_stopping_file (n_species, species_types, estopfilename, nrows, allelstopdata)
 ! read the given electronic stopping file 
