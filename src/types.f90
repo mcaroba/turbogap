@@ -9,6 +9,7 @@
 ! HND X
 ! HND X   This file, types.f90, is copyright (c) 2019-2022, Miguel A. Caro and
 ! HND X   Tigany Zarrouk
+! HND X   Uttiyoarnab saha
 ! HND X
 ! HND X   TurboGAP is distributed in the hope that it will be useful for non-commercial
 ! HND X   academic research, but WITHOUT ANY WARRANTY; without even the implied
@@ -113,6 +114,38 @@ module types
                scale_box_nested = .false., mc_write_xyz = .false., mc_relax = .false., do_exp_opt = .false., &
                mc_hamiltonian = .false., accessible_volume = .false., print_vdw_forces = .false.
 
+     !! ------- option for doing simulation with adaptive time step
+	logical :: adaptive_time = .false.
+	integer :: adapt_tstep_interval = 1
+	real*8 :: adapt_tmin = 1.0d-3, adapt_tmax = 1.0d0, adapt_xmax = 1.0d-1, adapt_emax = 1.0d+1
+     !! ----------------------------------------------		******** until here for adaptive time
+
+     !! ------- option for radiation cascade simulation with electronic stopping
+	logical :: electronic_stopping = .false.
+	real*8 :: eel_cut = 1.0d0
+	integer :: eel_freq_out = 1
+	character*1024 :: estop_filename = 'NULL'
+     !! ----------------------------------------------		******** until here for electronic stopping
+
+     !! ------- option for non-adiabatic processes of energy exchange through EPH model
+
+	logical :: nonadiabatic_processes = .false.
+	integer :: eph_fdm_option = 1, eph_friction_option = 1, eph_random_option = 1
+	integer :: eph_md_last_step = 0, eph_freq_Tout = 1, eph_freq_mesh_Tout = 1 
+	integer :: eph_fdm_steps = 1, eph_gsx = 1, eph_gsy = 1, eph_gsz = 1
+	integer :: model_eph = 1
+	real*8 :: eph_rho_e = 1.0
+	real*8 :: eph_C_e = 1.0
+	real*8 :: eph_kappa_e = 1.0
+	real*8 :: eph_Ti_e = 300.0, &
+	in_x0, in_x1, in_y0, in_y1, in_z0, in_z1, box_limits(6), &
+	eph_E_prev_time = 0.0d0, eph_md_prev_time = 0.0d0
+	character*128 :: eph_Tinfile = 'NULL'
+	character*128 :: eph_Toutfile = 'NULL'
+	character*128 :: eph_betafile = 'NULL'
+	
+     !! ---------------------------------------------		******** until here for electronic stopping based on EPH model
+     
   end type input_parameters
 
 ! This is a container for atomic images

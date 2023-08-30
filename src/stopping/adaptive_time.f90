@@ -102,7 +102,9 @@ subroutine variable_time_step_adaptive (init, vel, forces, masses, tmin, tmax, x
 	
 	
 	do i = 1, Np
+		!! velocity is needed for both xmax and emax criteria
 		vsq = dot_product (vel(1:3, i), vel(1:3, i))
+		!! force is needed for emax criteria
 		fsq = dot_product (forces(1:3, i), forces(1:3, i))
 		
 		!! time from the velocity, x = vt

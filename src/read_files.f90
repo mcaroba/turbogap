@@ -9,6 +9,7 @@
 ! HND X
 ! HND X   This file, read_files.f90, is copyright (c) 2019-2023, Miguel A. Caro and
 ! HND X   Tigany Zarrouk
+! HND X   Uttiyoarnab saha
 ! HND X
 ! HND X   TurboGAP is distributed in the hope that it will be useful for non-commercial
 ! HND X   academic research, but WITHOUT ANY WARRANTY; without even the implied
@@ -906,6 +907,130 @@ end if
       else if(keyword=='write_lv')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%write_lv
+      
+      !! ------- option for doing simulation with adaptive time step
+	  
+	  else if (keyword == 'adaptive_time') then
+		backspace(10)
+		read(10, *, iostat = iostatus) cjunk, cjunk, params%adaptive_time
+	  else if (keyword == 'adapt_tstep_interval') then
+		backspace(10)
+		read(10, *, iostat = iostatus) cjunk, cjunk, params%adapt_tstep_interval
+		if (params%adapt_tstep_interval <= 0) then
+			write(*,*) "ERROR: Interval of timesteps in adaptive time-step must be positive."
+			stop
+		end if
+	  else if (keyword == 'adapt_tmin') then
+		backspace(10)
+		read(10, *, iostat = iostatus) cjunk, cjunk, params%adapt_tmin
+	  else if (keyword == 'adapt_tmax') then
+		backspace(10)
+		read(10, *, iostat = iostatus) cjunk, cjunk, params%adapt_tmax
+	  else if (keyword == 'adapt_xmax') then
+		backspace(10)
+		read(10, *, iostat = iostatus) cjunk, cjunk, params%adapt_xmax
+	  else if (keyword == 'adapt_emax') then
+		backspace(10)
+		read(10, *, iostat = iostatus) cjunk, cjunk, params%adapt_emax
+
+	!! --------------------------			******** until here for adaptive time
+
+
+	!! ------- option for radiation cascade simulation with electronic stopping
+
+	  else if (keyword == 'electronic_stopping') then
+		backspace(10)
+		read(10, *, iostat = iostatus) cjunk, cjunk, params%electronic_stopping
+	  else if (keyword == 'eel_cut') then
+		backspace(10)
+		read(10, *, iostat = iostatus) cjunk, cjunk, params%eel_cut
+		if (params%eel_cut <= 0) then
+			write(*,*) "ERROR: Cut off energy for electronic stopping should be positive, few tens of eV!"
+			stop
+		end if
+	  else if (keyword == 'eel_freq_out') then
+		backspace(10)
+		read(10, *, iostat = iostatus) cjunk, cjunk, params%eel_freq_out
+	  else if (keyword == 'estop_filename') then
+		backspace(10)
+		read(10, *, iostat = iostatus) cjunk, cjunk, params%estop_filename
+
+	!! -------------------------------		******** until here for electronic stopping
+
+	!! ------- option for radiation cascade simulation with EPH model
+
+	  else if (keyword == 'nonadiabatic_processes') then
+		backspace(10)
+		read(10,*, iostat = iostatus) cjunk, cjunk, params%nonadiabatic_processes
+	  else if (keyword == 'eph_fdm_option') then
+		backspace(10)
+		read(10,*, iostat = iostatus) cjunk, cjunk, params%eph_fdm_option
+	  else if (keyword == 'eph_friction_option') then
+		backspace(10)
+		read(10,*, iostat = iostatus) cjunk, cjunk, params%eph_friction_option
+	  else if (keyword == 'eph_random_option') then
+		backspace(10)
+		read(10,*, iostat = iostatus) cjunk, cjunk, params%eph_random_option
+	  else if (keyword == 'eph_tinfile') then
+		backspace(10)
+		read(10,*, iostat = iostatus) cjunk, cjunk, params%eph_Tinfile
+	  else if (keyword == 'model_eph') then
+		backspace(10)
+		read(10,*, iostat = iostatus) cjunk, cjunk, params%model_eph
+	  else if (keyword == 'eph_md_last_step') then
+		backspace(10)
+		read(10,*, iostat = iostatus) cjunk, cjunk, params%eph_md_last_step
+	  else if (keyword == 'eph_md_prev_time') then
+		backspace(10)
+		read(10,*, iostat = iostatus) cjunk, cjunk, params%eph_md_prev_time
+	  else if (keyword == 'eph_e_prev_time') then
+		backspace(10)
+		read(10,*, iostat = iostatus) cjunk, cjunk, params%eph_E_prev_time
+	  else if (keyword == 'eph_toutfile') then
+		backspace(10)
+		read(10,*, iostat = iostatus) cjunk, cjunk, params%eph_Toutfile
+	  else if (keyword == 'eph_fdm_steps') then
+	    backspace(10)
+	    read(10,*, iostat = iostatus) cjunk, cjunk, params%eph_fdm_steps
+	  else if (keyword == 'eph_freq_tout') then
+	    backspace(10)
+	    read(10,*, iostat = iostatus) cjunk, cjunk, params%eph_freq_Tout
+	  else if (keyword == 'eph_freq_mesh_tout') then
+		backspace(10)
+		read(10,*, iostat = iostatus) cjunk, cjunk, params%eph_freq_mesh_Tout
+	  else if (keyword == 'eph_betafile') then
+		backspace(10)
+		read(10,*, iostat = iostatus) cjunk, cjunk, params%eph_betafile
+	  else if (keyword == 'box_limits') then
+		backspace(10)
+		read(10,*, iostat = iostatus) cjunk, cjunk, (params%box_limits(i), i = 1, 6)
+		params%in_x0 = params%box_limits(1); params%in_x1 = params%box_limits(2)
+		params%in_y0 = params%box_limits(3); params%in_y1 = params%box_limits(4)
+		params%in_z0 = params%box_limits(5); params%in_z1 = params%box_limits(6)
+	  else if (keyword == 'eph_gsx') then
+		backspace(10)
+		read(10,*, iostat = iostatus) cjunk, cjunk, params%eph_gsx
+	  else if (keyword == 'eph_gsy') then
+		backspace(10)
+		read(10,*, iostat = iostatus) cjunk, cjunk, params%eph_gsy
+	  else if (keyword == 'eph_gsz') then
+		backspace(10)
+		read(10,*, iostat = iostatus) cjunk, cjunk, params%eph_gsz
+	  else if (keyword == 'eph_rho_e') then
+		backspace(10)
+		read(10,*, iostat = iostatus) cjunk, cjunk, params%eph_rho_e
+	  else if (keyword == 'eph_c_e') then
+		backspace(10)
+		read(10,*, iostat = iostatus) cjunk, cjunk, params%eph_c_e
+	  else if (keyword == 'eph_kappa_e') then
+		backspace(10)
+		read(10,*, iostat = iostatus) cjunk, cjunk, params%eph_kappa_e
+	  else if (keyword == 'eph_ti_e') then
+		backspace(10)
+		read(10,*, iostat = iostatus) cjunk, cjunk, params%eph_Ti_e
+
+	!! --------------------			******** until here for electronic stopping based on EPH model
+      
       else if(keyword=='box_scaling_factor')then
         backspace(10)
         read(10, '(A)', iostat=iostatus) long_line
@@ -1829,6 +1954,55 @@ end if
 
   end subroutine
 !**************************************************************************
+
+
+
+
+!**************************************************************************
+! ------- option for radiation cascade simulation with electronic stopping			
+! ********* added here by Uttiyoarnab Saha
+
+subroutine read_electronic_stopping_file (n_species, species_types, estopfilename, nrows, allelstopdata)
+! read the given electronic stopping file 
+! send the data for required calculations
+! also give error messages if the data in the file is not in proper format
+implicit none
+
+character*1024, intent(in) :: estopfilename
+integer, intent(in) :: n_species
+character*8, intent(in) :: species_types(n_species)
+integer, intent(out) :: nrows
+real*8, allocatable :: allelstopdata(:)
+character*8, allocatable :: infoline(:)
+integer :: i, ncols, ndata
+	
+open (unit = 1000, file = estopfilename)
+! first line gives information
+! second line gives number of energy-stopping data points, i.e no. of rows of data
+read(1000,*)
+read(1000,*) nrows
+if (nrows <= 0) then
+	write(*,*) "ERROR: Number of data rows in stopping file is 0 or less."
+	stop
+end if
+ncols = n_species + 1
+allocate(infoline(ncols))
+! third line gives energy units, names of elements in order of the atom species types in input file
+read(1000,*) (infoline(i), i = 1, ncols)
+do i = 2, ncols
+	if (trim(infoline(i)) /= trim(species_types(i-1))) then
+		write(*,*) "ERROR: Stopping powers for Elements are not given in order."
+		stop
+	end if
+end do
+ndata = nrows*ncols
+allocate (allelstopdata(ndata))
+read(1000,*) (allelstopdata(i), i = 1, ndata)
+
+close(unit = 1000)
+end subroutine read_electronic_stopping_file
+!**************************************************************************
+
 
 
 

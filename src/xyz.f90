@@ -7,7 +7,8 @@
 ! HND X   TurboGAP is published and distributed under the
 ! HND X      Academic Software License v1.0 (ASL)
 ! HND X
-! HND X   This file, xyz.f90, is copyright (c) 2021-2022, Miguel A. Caro
+! HND X   This file, xyz.f90, is copyright (c) 2021-2022, Miguel A. Caro and
+! HND X   Uttiyoarnab saha
 ! HND X
 ! HND X   TurboGAP is distributed in the hope that it will be useful for non-commercial
 ! HND X   academic research, but WITHOUT ANY WARRANTY; without even the implied
@@ -65,7 +66,7 @@ module xyz_module
 ! If the corresponding write_property(i) or write_array_property(i)
 ! is .true., we write out the corresponding property
 !
-  subroutine write_extxyz( Nat, md_istep, dt, temperature, pressure, a_cell, b_cell, c_cell, virial, &
+  subroutine write_extxyz( Nat, md_istep, dt, md_time, temperature, pressure, a_cell, b_cell, c_cell, virial, &
                            species, positions, velocities, forces, local_energies, masses, &
                            hirshfeld_v, write_property, write_array_property, fix_atom, &
                            filename, overwrite )
@@ -75,7 +76,7 @@ module xyz_module
 !   In variables:
     real*8, intent(in) :: dt, temperature, pressure, a_cell(1:3), b_cell(1:3), c_cell(1:3), virial(1:3,1:3)
     real*8, intent(in) :: forces(:,:), velocities(:,:), positions(:,:), local_energies(:), masses(:)
-    real*8, intent(in) :: hirshfeld_v(:)
+    real*8, intent(in) :: hirshfeld_v(:), md_time
     integer, intent(in) :: Nat, md_istep
     character(len=*), intent(in) :: species(:), filename
     logical, intent(in) :: write_property(:), write_array_property(:), fix_atom(:,:), overwrite
@@ -205,7 +206,9 @@ module xyz_module
 !
 !   Time
     if( write_property(6) )then
-      write(temp_string, "(F16.4)") dfloat(md_istep)*dt
+          !******** time is actually the md_time not md_istep*dt since dt changes, so md_time is put in the trajectory_out.xyz file
+    
+      write(temp_string, "(F16.6)") md_time			!dfloat(md_istep)*dt
       write(10, "(1X,2A)", advance="no") "time=", trim(adjustl(temp_string))
     end if
 !

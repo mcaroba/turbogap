@@ -9,6 +9,7 @@
 ! HND X
 ! HND X   This file, turbogap.f90, is copyright (c) 2019-2023, Miguel A. Caro and
 ! HND X   Tigany Zarrouk
+! HND X   Uttiyoarnab saha
 ! HND X
 ! HND X   TurboGAP is distributed in the hope that it will be useful for non-commercial
 ! HND X   academic research, but WITHOUT ANY WARRANTY; without even the implied
@@ -33,6 +34,11 @@ program turbogap
   use gap
   use read_files
   use md
+  use adaptive_time			! for adaptive time simulation (TurboGAP will use these five modules for radiation cascades)
+  use electronic_stopping		! for electronic stopping correction in radiation cascades
+  use eph_fdm				! for T - dependent parameters - elec. stop. - eph model
+  use eph_beta				! for the atomic electronic densities  - elec. stop. - eph model
+  use eph_electronic_stopping		! for electronic stopping based in radiation cascades on the eph model
   use mc
   use gap_interface
   use types
@@ -79,6 +85,16 @@ program turbogap
   logical, allocatable :: do_list(:), has_vdw_mpi(:), fix_atom(:,:)
   logical :: rebuild_neighbors_list = .true., exit_loop = .true., gd_box_do_pos = .true., restart_box_optim = .false.
   character*1 :: creturn = achar(13)
+
+  !! these decalarations are for time step and electronic stopping by different methods
+  real*8 :: time_step_prev
+  integer :: nrows
+  real*8 :: cum_EEL = 0.0d0
+  real*8, allocatable :: allelstopdata(:)
+  type (EPH_Beta_class) :: ephbeta
+  type (EPH_FDM_class) :: ephfdm
+  type (EPH_LangevinSpatialCorrelation_class) :: ephlsc
+  
   ! Clean up these variables after code refactoring !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   integer, allocatable :: n_neigh(:), neighbors_list(:), alpha_max(:), species(:), species_supercell(:), &
        neighbor_species(:), sph_temp_int(:), der_neighbors(:), der_neighbors_list(:), &
@@ -317,6 +333,19 @@ program turbogap
   ! Let's look for those and other options in the input file
   rewind(10)
   call read_input_file(n_species, mode, params, rank)
+
+!! If electronic stopping is required to be done, then read the stopping data file for once
+!! Reading and storing the elctronic stopping data 
+  if ( params%electronic_stopping ) then
+		if (params%estop_filename == 'NULL') then
+			write(*,*) "ERROR: No stopping data file is provided."
+			stop
+		else
+			call read_electronic_stopping_file (n_species,params%species_types,params%estop_filename,nrows,allelstopdata)
+		end if
+  end if
+!! -----------------------------				---- untill here for reading stopping data
+
   ! TEMPORARY ERROR, FIX THE UNDERLYING ISSUE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 #ifdef _MPIF90
   IF( rank == 0 .and. ntasks > 1 .and. (params%write_soap .or. params%write_derivatives) )THEN
@@ -553,6 +582,24 @@ program turbogap
   time_read_input(3) = time_read_input(3) + time_read_input(2) - time_read_input(1)
   !**************************************************************************
 
+!! If electronic stopping based on eph model is to be calculated, these data structures are required to be
+!! initialized first.
+  if ( params%nonadiabatic_processes ) then
+	if ( params%eph_Tinfile /= "NULL" ) then
+		call ephfdm%EPH_FDM_input_file(params%eph_Tinfile,params%eph_md_last_step)
+	end if
+	if ( params%eph_Tinfile == "NULL" ) then
+		call ephfdm%EPH_FDM_input_params(params%eph_md_last_step, params%eph_gsx, &
+		params%eph_gsy, params%eph_gsz, params%in_x0, params%in_x1, params%in_y0, params%in_y1, &
+		params%in_z0, params%in_z1, params%eph_Ti_e, params%eph_C_e, params%eph_rho_e, &
+		params%eph_kappa_e, params%eph_fdm_steps)
+	end if
+	call ephbeta%beta_parameters(params%eph_betafile,n_species)
+	call ephlsc%eph_InitialValues (params%eph_friction_option, params%eph_random_option, params%eph_fdm_option, &
+			params%eph_Toutfile, params%eph_freq_Tout, params%eph_freq_mesh_Tout, params%model_eph, &
+			params%eph_E_prev_time, params%eph_md_prev_time)	
+  end if
+!! -------------------------				---- untill here for initializing eph model elec. stopping
 
 
 
@@ -1614,7 +1661,7 @@ program turbogap
               call wrap_pbc(positions(1:3,1:n_sites), a_box&
                    &/dfloat(indices(1)), b_box/dfloat(indices(2)),&
                    & c_box/dfloat(indices(3)))
-              call write_extxyz( n_sites, -n_xyz, time_step,&
+              call write_extxyz( n_sites, -n_xyz, time_step, md_time, &
                    & instant_temp, instant_pressure, a_box&
                    &/dfloat(indices(1)), b_box/dfloat(indices(2)),&
                    & c_box/dfloat(indices(3)), virial, xyz_species,&
@@ -1622,6 +1669,7 @@ program turbogap
                    & energies(1:n_sites), masses, hirshfeld_v, params&
                    &%write_property, params%write_array_property,&
                    & fix_atom, "trajectory_out.xyz", .false.)
+          !***** time is actually the md_time not md_istep*dt since dt changes, so md_time is put in the trajectory_out.xyz file
 #ifdef _MPIF90
            END IF
 #endif
@@ -1674,13 +1722,53 @@ program turbogap
               call variable_time_step(md_istep == 0, velocities(1:3, 1:n_sites), forces(1:3, 1:n_sites), masses(1:n_sites), &
                    params%target_pos_step, params%tau_dt, params%md_step, time_step)
            end if
+           
+           !! ------- option for doing simulation with adaptive time step
+
+	  if ( params%adaptive_time ) then
+		if (MOD(md_istep, params%adapt_tstep_interval) == 0) then
+			call variable_time_step_adaptive (md_istep == 0, velocities(1:3, 1:n_sites), forces(1:3, 1:n_sites), &
+						masses(1:n_sites), params%adapt_tmin, params%adapt_tmax, params%adapt_xmax, &
+						params%adapt_emax, params%md_step, time_step)
+		end if
+	  end if
+
+	   !! ----------------------------------	******** until here for adaptive time
+
+
+	   !! ------- option for radiation cascade simulation with electronic stopping
+
+	  if ( params%electronic_stopping ) then
+		call electron_stopping_velocity_dependent (md_istep, n_species, params%eel_cut, params%eel_freq_out, &
+					velocities(1:3, 1:n_sites), forces(1:3, 1:n_sites), masses(1:n_sites), &
+					params%masses_types, time_step, md_time, nrows, allelstopdata, cum_EEL, 'forces')		
+	  end if
+
+	   !! -----------------------------------	******** until here for electronic stopping
+
+
+	   !! ------- option for electronic stopping based on eph model
+
+	  if ( params%nonadiabatic_processes ) then
+		call ephlsc%eph_LangevinForces (velocities(1:3, 1:n_sites), forces(1:3, 1:n_sites), &
+					masses(1:n_sites), params%masses_types, md_istep, time_step, md_time, &
+					positions(1:3, 1:n_sites), n_species, ephbeta, ephfdm)	
+	  end if
+
+	  !! -----------------------------------	******** until here for electronic stopping basd on eph model
+
+           
            !     This takes care of NVE
            !     Velocity Verlet takes positions for t, positions_prev for t-dt, and velocities for t-dt and returns everything
            !     dt later. forces are taken at t, and forces_prev at t-dt. forces is left unchanged by the routine, and
            !     forces_prev is returned as equal to forces (both arrays contain the same information on return)
            if( params%optimize == "vv")then
+              if ( md_istep == 0 ) then
+		forces_prev = forces
+		time_step_prev = time_step
+	      end if
               call velocity_verlet(positions(1:3, 1:n_sites), positions_prev(1:3, 1:n_sites), velocities(1:3, 1:n_sites), &
-                   forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), time_step, &
+                   forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), time_step, time_step_prev, &
                    md_istep == 0, a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
                    fix_atom(1:3, 1:n_sites))
            else if( params%optimize == "gd" )then
@@ -1714,6 +1802,27 @@ program turbogap
               positions_prev(1:3, 1:n_sites) = positions(1:3, 1:n_sites)
               forces_prev(1:3, 1:n_sites) = forces(1:3, 1:n_sites)
            end if
+           
+	!! ------- option for radiation cascade simulation with electronic stopping
+
+	  if ( params%electronic_stopping ) then
+		call electron_stopping_velocity_dependent (md_istep, n_species, params%eel_cut, params%eel_freq_out, &
+					velocities(1:3, 1:n_sites), forces(1:3, 1:n_sites), masses(1:n_sites), &
+					params%masses_types, time_step, md_time, nrows, allelstopdata, cum_EEL, 'energy')
+	  end if
+
+	!! -----------------------------------		******** until here for electronic stopping
+
+
+	!! ------- option for electronic stopping based on eph model
+
+	  if ( params%nonadiabatic_processes ) then
+		call ephlsc%eph_LangevinEnergyDissipation (md_istep, md_time, velocities(1:3, 1:n_sites), &
+				positions(1:3, 1:n_sites), time_step, ephfdm)	
+	  end if
+
+	!! -----------------------------------		******** until here for electronic stopping basd on eph model
+
            !     Compute kinetic energy from current velocities. Because Velocity Verlet
            !     works with the velocities at t-dt (except for the first time step) we
            !     have to compute the velocities after call Verlet
@@ -1738,8 +1847,10 @@ program turbogap
            !     Here we write thermodynamic information -> THIS NEEDS CLEAN UP AND IMPROVEMENT
            if( md_istep == 0 .and. .not. params%do_nested_sampling )then
               open(unit=10, file="thermo.log", status="unknown")
+              write(10,*) "Step, Time, Temp, Kin_E, Pot_E, Pres"		!! ------ added this heading to thermo.log file
            else if( md_istep == 0 .and. i_nested == 1 )then
               open(unit=10, file="thermo.log", status="unknown")
+              write(10,*) "Step, Time, Temp, Kin_E, Pot_E, Pres"		!! ------ added this heading to thermo.log file
            else
               open(unit=10, file="thermo.log", status="old", position="append")
            end if
@@ -1747,7 +1858,7 @@ program turbogap
                 .or. modulo(md_istep, params%write_thermo) == 0) )then
               !       Organize this better so that the user can have more freedom about what gets printed to thermo.log
               !       There should also be a header preceded by # specifying what gets printed
-              write(10, "(I10, 1X, F16.4, 1X, F16.4, 1X, F20.8, 1X, F20.8, 1X, F20.8)", advance="no") &
+              write(10, "(I10, 1X, F16.6, 1X, F16.4, 1X, F20.8, 1X, F20.8, 1X, F20.8)", advance="no") &
                    md_istep, md_time, instant_temp, E_kinetic, sum(energies), instant_pressure
               if( params%write_lv )then
                  write(10, "(1X, 9F20.8)", advance="no") a_box(1:3)/dfloat(indices(1)), &
@@ -1792,7 +1903,7 @@ program turbogap
               call wrap_pbc(positions_prev(1:3,1:n_sites), a_box&
                    &/dfloat(indices(1)), b_box/dfloat(indices(2)),&
                    & c_box/dfloat(indices(3)))
-              call write_extxyz( n_sites, md_istep, time_step,&
+              call write_extxyz( n_sites, md_istep, time_step, md_time, &
                    & instant_temp, instant_pressure, a_box&
                    &/dfloat(indices(1)), b_box/dfloat(indices(2)),&
                    & c_box/dfloat(indices(3)), virial, xyz_species,&
@@ -1806,7 +1917,7 @@ program turbogap
               write(filename,'(A,A,A)') "walkers/", trim(adjustl(cjunk)), ".xyz"
               call wrap_pbc(positions_prev(1:3,1:n_sites), &
                    a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)))
-              call write_extxyz( n_sites, md_istep, time_step, instant_temp, instant_pressure, &
+              call write_extxyz( n_sites, md_istep, time_step, md_time, instant_temp, instant_pressure, &
                    a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
                    virial, xyz_species, &
                    positions_prev(1:3, 1:n_sites), velocities, &
@@ -2197,7 +2308,7 @@ program turbogap
                             images(i_current_image)%b_box/dfloat(indices(2)),&
                             images(i_current_image)%c_box/dfloat(indices(3)))
 
-                       call write_extxyz( images(i_current_image)%n_sites, 0, 1.0d0, 0.0d0, 0.0d0, &
+                       call write_extxyz( images(i_current_image)%n_sites, 0, 1.0d0, md_time, 0.0d0, 0.0d0, &
                             images(i_current_image)%a_box/dfloat(indices(1)), &
                             images(i_current_image)%b_box/dfloat(indices(2)), &
                             images(i_current_image)%c_box/dfloat(indices(3)), &
@@ -2210,7 +2321,7 @@ program turbogap
                             params%write_property, params%write_array_property, images(i_current_image)%fix_atom, &
                             "mc_current.xyz", .true. )
 
-                       call write_extxyz( images(i_current_image)%n_sites, 1, 1.0d0, 0.0d0, 0.0d0, &
+                       call write_extxyz( images(i_current_image)%n_sites, 1, 1.0d0, md_time, 0.0d0, 0.0d0, &
                             images(i_current_image)%a_box/dfloat(indices(1)), &
                             images(i_current_image)%b_box/dfloat(indices(2)), &
                             images(i_current_image)%c_box/dfloat(indices(3)), &
@@ -2288,7 +2399,7 @@ program turbogap
                             images(i_current_image)%b_box/dfloat(indices(2)),&
                             images(i_current_image)%c_box/dfloat(indices(3)))
 
-                       call write_extxyz( images(i_current_image)%n_sites, 0, 1.0d0, 0.0d0, 0.0d0, &
+                       call write_extxyz( images(i_current_image)%n_sites, 0, 1.0d0, md_time, 0.0d0, 0.0d0, &
                             images(i_current_image)%a_box/dfloat(indices(1)), &
                             images(i_current_image)%b_box/dfloat(indices(2)), &
                             images(i_current_image)%c_box/dfloat(indices(3)), &
@@ -2301,7 +2412,7 @@ program turbogap
                             params%write_property, params%write_array_property, images(i_current_image)%fix_atom, &
                             "mc_current.xyz", .true. )
 
-                       call write_extxyz( images(i_current_image)%n_sites, 1, 1.0d0, 0.0d0, 0.0d0, &
+                       call write_extxyz( images(i_current_image)%n_sites, 1, 1.0d0, md_time, 0.0d0, 0.0d0, &
                             images(i_current_image)%a_box/dfloat(indices(1)), &
                             images(i_current_image)%b_box/dfloat(indices(2)), &
                             images(i_current_image)%c_box/dfloat(indices(3)), &
@@ -2389,7 +2500,7 @@ program turbogap
                          &/dfloat(indices(1)), b_box/dfloat(indices(2)),&
                          & c_box/dfloat(indices(3)))
 
-                    call write_extxyz( n_sites, 0, 1.0d0, 0.0d0, 0.0d0, &
+                    call write_extxyz( n_sites, 0, 1.0d0, md_time, 0.0d0, 0.0d0, &
                          a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
                          virial, xyz_species, &
                          positions(1:3, 1:n_sites), velocities, &
