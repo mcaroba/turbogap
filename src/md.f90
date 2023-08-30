@@ -8,7 +8,6 @@
 ! HND X      Academic Software License v1.0 (ASL)
 ! HND X
 ! HND X   This file, md.f90, is copyright (c) 2019-2023, Miguel A. Caro
-! HND X   Uttiyoarnab saha
 ! HND X
 ! HND X   TurboGAP is distributed in the hope that it will be useful for non-commercial
 ! HND X   academic research, but WITHOUT ANY WARRANTY; without even the implied
@@ -137,32 +136,7 @@ module md
       end do
     end do
     
-    dt_prev = dt
-    
-    !! ----- Notes -----
-    !! This subroutine with dt used in the valocity calculation step cannot handle variable time step. 
-    !! This is due to the way the present structure of the main TurboGAP has been made and the flow of 
-    !! computation that occurs at every time step. So, this subroutine is slightly modified with a 
-    !! small change of using 'dt_prev' instead of 'dt' in velocity computation step so that it can 
-    !! handle variable time steps. 
-    !! A detail explanation with steps in the VV algorithm is given below.
-    !! Actual VV algorithm:
-    !! Step 1:: x(t + dt) = x(t) + v(t)dt + 0.5*a(t)*dt^2
-    !! Step 2:: Derive a(t + dt) from V(x(t + dt))
-    !! Step 3:: v(t + dt) = v(t) + 0.5*(a(t) + a(t + dt))*dt
-    
-    !! VV algorithm followed here:
-    !! Time step 0 --> Step 1
-    !! Time step 1, 2, .... --> (Step 2), Step 3, Step 1	[Step 2 is done outside]
-    
-    !! Note that the value of dt in Step 3 in any time step should actually be the value of dt of the preceeding time step.
-    !! Using just dt here is alright when a constant dt is used in simulation, but not in simulations when dt may change
-    !! in subseuent time steps, i.e. a variable time step simulation is done.
-    
-    !! This slight modification of using dt_prev may be over-ruled in future with two options. If the algorithm 
-    !! (1) can use the half-timestep velocity way of VV (sometimes seen to be better in energy conservation),
-    !! (2) can use the present way of the VV but all Steps 1, 2 and 3 done in the particular time step. 
-    !! Both these options however would require modifying the structure in main TurboGAP.
+    dt_prev = dt	!! minimum modification for variable time-step situations 
 
   end subroutine
 !**************************************************************************
