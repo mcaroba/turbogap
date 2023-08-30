@@ -1118,7 +1118,7 @@ module vdw
     integer, allocatable :: ind_nnls(:)
     real*8 :: res_nnls, E_tot, denom
     integer :: mode_nnls
-    logical :: do_total_energy = .false., series_expansion = .false., do_log = .false. ! Finite difference testing purposes
+    logical :: do_total_energy = .false., series_expansion = .false., do_log = .true. ! Finite difference testing purposes
     real*8, allocatable :: b_vec(:), Ab(:), I_mat(:,:), l_vals(:), log_vals(:), lsq_mat(:,:), res_mat(:), log_exp(:,:), &
                            AT_power(:,:), log_integrand(:), AT_power_full(:,:), pol_grad(:,:,:), pol_inv(:,:,:), inv_vals(:), &
                            res_inv(:), lsq_inv(:,:), integrand_pol(:)
@@ -2642,8 +2642,12 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 call dgesv( n_order+1, 1, lsq_inv, n_order+1, ipiv_lsq, res_inv, n_order+1, info )
               end if
               !log_exp = res_mat(1)*I_mat(1:3,:) + res_mat(2)*AT(1:3,:,i2)
-              !write(*,*) "l_min, l_max", l_min, l_max
-              !write(*,*) "res_mat", res_mat
+              write(*,*) "l_min, l_max", l_min, l_max
+              integral = log(1.d0-l_min)
+              do k2 = 2, 3*n_mbd_sites
+                integral = integral + log(1.d0 -(l_min + (k2-1)*(l_max-l_min)/(3*n_mbd_sites))) 
+              end do
+              write(*,*) "sum of eig val linspace", integral
               do c1 = 1, 3
                 integrand(i2) = integrand(i2) + res_mat(1) + res_mat(2)*AT(c1,c1,i2)
               end do
@@ -2749,6 +2753,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                            AT_copy, 3*n_mbd_sites, 0.d0, temp_mat_full, 3*n_mbd_sites)
                 do p = 1, 3
                   log_integrand(i2) = log_integrand(i2) + temp_mat_full(p,p)
+                  !log_integrand(i2) = log_integrand(i2) + log(WR(p))            ! Unfortunately this works only for full energy of the sphere; the eigenvalues are "delocalized"
                 end do
               end if
             end do
@@ -2794,6 +2799,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
             end do
 
             call nnls(A_nnls, n_freq, n_order+1, b_nnls, coeff_nnls, res_nnls, work_nnls, ind_nnls, mode_nnls)
+            write(*,*) "nnls mode", mode_nnls
 
             integrand_nnls = 1.d0
             omegas_nnls = 0.d0
@@ -4649,6 +4655,8 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                   end do
                 
                   call nnls(A_nnls, n_freq, n_order+3, b_nnls, coeff_nnls, res_nnls, work_nnls, ind_nnls, mode_nnls)
+                  write(*,*) "nnls mode forces", mode_nnls
+                  write(*,*) "coeff", coeff_nnls
 
                   if ( integrand(1) < 0.d0 ) then
                     integrand_nnls = -coeff_nnls(1)
