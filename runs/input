@@ -28,5 +28,5 @@ vdw_mbd_norder = 6        ! Contributions up to n-body interactions (i.e. cut-of
 vdw_mbd_grad = .true.     ! Calculate MBD forces. Type: LOGICAL
 vdw_hirsh_grad = .true.   ! Include Hirshfeld gradients in the forces. Type: LOGICAL
 vdw_polynomial = .false.  ! Use polynomial approximation for inverse matrices. Type: LOGICAL
-do_nnls = .false.          ! Use non-negative least squares fitting for integrand
+do_nnls = .true.          ! Use non-negative least squares fitting for integrand
 vdw_omega_ref = 4.d0
