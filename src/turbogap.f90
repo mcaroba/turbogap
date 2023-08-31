@@ -1722,18 +1722,6 @@ program turbogap
               call variable_time_step(md_istep == 0, velocities(1:3, 1:n_sites), forces(1:3, 1:n_sites), masses(1:n_sites), &
                    params%target_pos_step, params%tau_dt, params%md_step, time_step)
            end if
-           
-           !! ------- option for doing simulation with adaptive time step
-
-	  if ( params%adaptive_time ) then
-		if (MOD(md_istep, params%adapt_tstep_interval) == 0) then
-			call variable_time_step_adaptive (md_istep == 0, velocities(1:3, 1:n_sites), forces(1:3, 1:n_sites), &
-						masses(1:n_sites), params%adapt_tmin, params%adapt_tmax, params%adapt_xmax, &
-						params%adapt_emax, params%md_step, time_step)
-		end if
-	  end if
-
-	   !! ----------------------------------	******** until here for adaptive time
 
 
 	   !! ------- option for radiation cascade simulation with electronic stopping
@@ -1757,16 +1745,24 @@ program turbogap
 
 	  !! -----------------------------------	******** until here for electronic stopping basd on eph model
 
+
+	  !! ------- option for doing simulation with adaptive time step
+
+	  if ( params%adaptive_time ) then
+		if (MOD(md_istep, params%adapt_tstep_interval) == 0) then
+			call variable_time_step_adaptive (md_istep == 0, velocities(1:3, 1:n_sites), forces(1:3, 1:n_sites), &
+						masses(1:n_sites), params%adapt_tmin, params%adapt_tmax, params%adapt_xmax, &
+						params%adapt_emax, params%md_step, time_step)
+		end if
+	  end if
+
+	  !! ----------------------------------	******** until here for adaptive time
            
            !     This takes care of NVE
            !     Velocity Verlet takes positions for t, positions_prev for t-dt, and velocities for t-dt and returns everything
            !     dt later. forces are taken at t, and forces_prev at t-dt. forces is left unchanged by the routine, and
            !     forces_prev is returned as equal to forces (both arrays contain the same information on return)
            if( params%optimize == "vv")then
-              if ( md_istep == 0 ) then
-		forces_prev = forces
-		time_step_prev = time_step
-	      end if
               call velocity_verlet(positions(1:3, 1:n_sites), positions_prev(1:3, 1:n_sites), velocities(1:3, 1:n_sites), &
                    forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), time_step, time_step_prev, &
                    md_istep == 0, a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
