@@ -1,4 +1,4 @@
-atoms_file = 'atoms_vacuum.xyz'
+atoms_file = '2829.xyz'
 !atoms_file = 'c60_dimer_8.2.xyz'
 pot_file = 'gap_files/carbon.gap'
 
