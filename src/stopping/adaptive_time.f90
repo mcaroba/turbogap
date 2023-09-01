@@ -107,6 +107,8 @@ subroutine variable_time_step_adaptive (init, vel, forces, masses, tmin, tmax, x
 		!! force is needed for emax criteria
 		fsq = dot_product (forces(1:3, i), forces(1:3, i))
 		
+		!! obtain the smaller dt between xmax/v and sqrt(2xmax/a)
+		
 		!! time from the velocity, x = vt
 		if (vsq > 0.0) dtv = xmax / sqrt(vsq)
 		
@@ -115,6 +117,7 @@ subroutine variable_time_step_adaptive (init, vel, forces, masses, tmin, tmax, x
 		
 		dt = min(dtv, dtf)
 		
+		!! apply the criterion emax
 		!! time from the energy, t = e/(fv)
 		if ((emax > 0.0) .and. (vsq*fsq > 0.0)) then
 			dte = emax / sqrt(vsq*fsq)
@@ -125,9 +128,12 @@ subroutine variable_time_step_adaptive (init, vel, forces, masses, tmin, tmax, x
 		!! if the allowance in displacement is too large, then the criteria for 
 		!! maximum energy transfer per time-step will determine the value of time-step, dt 
 		
+		!! calculate the distance that an atom moves with the present v, f, dt
 		d(i) = sqrt( dot_product( vel(1:3, i)*dt + 0.5d0*forces(1:3, i)/masses(i)*dt**2, &
 					vel(1:3, i)*dt + 0.5d0*forces(1:3, i)/masses(i)*dt**2 ) )
 		
+		!! apply the criterion xmax, if necessary
+		!! rescale dt by the xmax when the above calculated distance is larger than xmax  
 		if (d(i) > xmax) dt = dt * xmax / d(i)
 		
 		dtmin = min(dtmin, dt)
@@ -138,7 +144,7 @@ subroutine variable_time_step_adaptive (init, vel, forces, masses, tmin, tmax, x
 	if (tmin .ne. 0) dt = max(dtmin, tmin)
 	if (tmax .ne. 0) dt = min(dtmin, tmax)
 	
-	!! warnings for specified time limits
+	!! warnings for specified time limits, based on the warnings user can change the min. and max. t-limits
 	
 	if (dtmin < tmin) then
 		write(*,*) "WARNING: given xmax or emax criterion demands even lower value of tmin,"
