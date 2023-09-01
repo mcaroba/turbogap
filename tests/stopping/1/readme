@@ -1,0 +1,15 @@
+Description ::
+This test runs a binary collision simulation of two Si atoms.
+Two atoms are placed initially at 3 Å separation each with v_x = 1 Å/fs directed in opposite ways.
+It runs with time-steps that are adaptively modified.
+There is also frictional force due to electronic stopping activated here. Switch On/Off using true/false. 
+It uses the stopping data from 'Si-in-Si-el-stopping.txt' file.
+
+Run command ::
+Run this test with command "../path-to-turbogap-executable/turbogap md" command.
+
+Results ::
+It will produce the results as in the thermo.log and ElectronicEnergyLoss.txt files. The system can be visualized from file trajectory_out.xyz. 
+
+Plot ::
+Then you can plot the required results and see the same as shown in the Fig.# files.
