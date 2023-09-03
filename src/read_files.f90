@@ -1001,12 +1001,12 @@ end if
 	  else if (keyword == 'eph_betafile') then
 		backspace(10)
 		read(10,*, iostat = iostatus) cjunk, cjunk, params%eph_betafile
-	  else if (keyword == 'box_limits') then
+	  else if (keyword == 'eph_box_limits') then
 		backspace(10)
-		read(10,*, iostat = iostatus) cjunk, cjunk, (params%box_limits(i), i = 1, 6)
-		params%in_x0 = params%box_limits(1); params%in_x1 = params%box_limits(2)
-		params%in_y0 = params%box_limits(3); params%in_y1 = params%box_limits(4)
-		params%in_z0 = params%box_limits(5); params%in_z1 = params%box_limits(6)
+		read(10,*, iostat = iostatus) cjunk, cjunk, (params%eph_box_limits(i), i = 1, 6)
+		params%in_x0 = params%eph_box_limits(1); params%in_x1 = params%eph_box_limits(2)
+		params%in_y0 = params%eph_box_limits(3); params%in_y1 = params%eph_box_limits(4)
+		params%in_z0 = params%eph_box_limits(5); params%in_z1 = params%eph_box_limits(6)
 	  else if (keyword == 'eph_gsx') then
 		backspace(10)
 		read(10,*, iostat = iostatus) cjunk, cjunk, params%eph_gsx
