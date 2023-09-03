@@ -117,7 +117,7 @@ module types
      !! ------- option for doing simulation with adaptive time step
 	logical :: adaptive_time = .false.
 	integer :: adapt_tstep_interval = 1
-	real*8 :: adapt_tmin = 1.0d-3, adapt_tmax = 1.0d0, adapt_xmax = 1.0d-1, adapt_emax = 1.0d+1
+	real*8 :: adapt_tmin = 1.0d-3, adapt_tmax = 1.0d0, adapt_xmax = 1.0d-2, adapt_emax = 1.0d+1
      !! ----------------------------------------------		******** until here for adaptive time
 
      !! ------- option for radiation cascade simulation with electronic stopping
@@ -138,8 +138,9 @@ module types
 	real*8 :: eph_C_e = 1.0
 	real*8 :: eph_kappa_e = 1.0
 	real*8 :: eph_Ti_e = 300.0, &
-	in_x0, in_x1, in_y0, in_y1, in_z0, in_z1, box_limits(6), &
+	in_x0 = -100.0, in_x1 = 100.0, in_y0 = -100.0, in_y1 = 100.0, in_z0 = -100.0, in_z1 = 100.0, &
 	eph_E_prev_time = 0.0d0, eph_md_prev_time = 0.0d0
+	real*8, dimension(6) :: eph_box_limits = (/ -100.0, 100.0, -100.0, 100.0, -100.0, 100.0 /)
 	character*128 :: eph_Tinfile = 'NULL'
 	character*128 :: eph_Toutfile = 'NULL'
 	character*128 :: eph_betafile = 'NULL'
