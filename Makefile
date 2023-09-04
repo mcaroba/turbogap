@@ -5,7 +5,7 @@ SHELL = /bin/sh
 # Include user-modifiable variables from a customizable file.
 # Check the makefiles/ directory for a list of tested architectures
 
-include makefiles/Makefile.CSC-LUMI_cray	
+include makefiles/Makefile.CSC-LUMI_omp_cray	
 #include makefiles/Makefile.LUMI_gnu	
 
 
