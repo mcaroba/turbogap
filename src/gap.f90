@@ -329,6 +329,7 @@ module gap
   ttt(2)=MPI_Wtime()
   solo_time_soap=solo_time_soap+ttt(2)-ttt(1)
   !stop
+  !write(*,*) "Nsites", n_sites
   end subroutine
 
 
@@ -641,7 +642,7 @@ module gap
     real*8, allocatable :: r(:), drdq(:,:), kernel(:), drdx1(:,:), drdx2(:,:), drdx3(:,:), pref(:), &
                            kernel_der(:)
     integer :: n_sparse, i, j, k, k2, n_sites, n_atom_pairs, s, j2, i3, j3, k3, l, sp0, sp1, sp2, n_sites0, k1, k4
-
+    !write(*,*) "3B"
     if( do_timing )then
       call cpu_time(time1)
     end if

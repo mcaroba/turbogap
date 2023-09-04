@@ -204,7 +204,8 @@ extern "C" void create_cublas_handle(hipblasHandle_t *handle,hipStream_t *stream
  	  hipblasCreate(handle);
     hipStreamCreate(stream);
     hipblasSetStream(*handle, *stream);
-   //printf("\n cublas handle created \n");
+    /*printf("\n cublas handle created \n");
+    exit(0);*/
 
    return;
 }
@@ -214,7 +215,7 @@ extern "C" void destroy_cublas_handle(hipblasHandle_t *handle,hipStream_t *strea
  	 // Destroy the handle
    hipblasDestroy(*handle);
    hipStreamDestroy(*stream);
-   //printf("\n cublas handle destroyed \n");
+   printf("\n cublas handle destroyed. \n The End? \n");
    return;
 }
 
@@ -341,9 +342,12 @@ extern "C" void cuda_set_device( int my_rank)
 {
 
   int  num_gpus=0;
+  int mygpuid;
   gpuErrchk(hipGetDeviceCount(&num_gpus));
   gpuErrchk(hipSetDevice(my_rank%num_gpus));
-  //printf("\n Seta Aset at %d %d \n", num_gpus, my_rank%num_gpus);
+  gpuErrchk(hipGetDevice(&mygpuid));
+  printf("\n Seta Aset at %d %d %d %d\n", num_gpus, my_rank%num_gpus,my_rank, mygpuid);
+  //exit(0);
   return;
 }
 

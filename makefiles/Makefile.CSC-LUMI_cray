@@ -22,8 +22,8 @@ PP=-e Z -D _MPIF90
 F90_MOD_DIR_OPT=-J
 
 # Optimization flags (uncomment second option to enable debugging tools)
-F90_OPTS= -fPIC -O3 -L/appl/lumi/SW/LUMI-22.08/G/EB/rocm/5.3.3/lib -lamdhip64 -lhipblas -lhiprand
-CUDA_OPTS=   -I/appl/lumi/SW/LUMI-22.08/G/EB/rocm/5.3.3/include -L/appl/lumi/SW/LUMI-22.08/G/EB/rocm/5.3.3/lib -lhipblas -lhiprand --offload-arch=gfx90a 
+F90_OPTS= -fPIC -O3 -lamdhip64 -lhipblas -lhiprand
+CUDA_OPTS=    -lhipblas -lhiprand --offload-arch=gfx90a 
 # gdwarf-4 needed for getting line information when sampling 
 #F90_OPTS+= -g # -gdwarf-4
 #CUDA_OPTS+= -Xcompiler -gdwarf-4 
@@ -31,4 +31,4 @@ CUDA_OPTS=   -I/appl/lumi/SW/LUMI-22.08/G/EB/rocm/5.3.3/include -L/appl/lumi/SW/
 #F90_OPTS+= -pg -fPIC -O3 -fcheck=bounds -g -fcheck=all   -fbacktrace #-Wall
 
 # BLAS and LAPACK libraries
-LIBS= -L/opt/cray/pe/libsci/22.12.1.1/CRAY/9.0/x86_64/lib -lsci_cray
+LIBS=  -lsci_cray

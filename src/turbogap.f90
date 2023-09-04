@@ -132,7 +132,6 @@ program turbogap
   type(c_ptr) :: cublas_handle, gpu_stream
 !**************************************************************************
 
-  call create_cublas_handle(cublas_handle, gpu_stream)
 ! integer :: n_ii,i_ii, j_jj,k_ii
 ! real*8 :: CC(1:1024,1:1024), BB(1:1024,1:1024), AA(1:1024,1:1024), dut1, dut2
 
@@ -173,7 +172,9 @@ program turbogap
 
 
 
-  call gpu_set_device(rank) 
+  call gpu_set_device(rank) ! This works when each GPU has only 1 visible device. This is done in the slurm submission script
+
+  call create_cublas_handle(cublas_handle, gpu_stream)
   !call create_cublas_handle(cublas_handle)
 
 
@@ -1870,7 +1871,6 @@ end if
   if( allocated(core_pot_hypers) )deallocate(core_pot_hypers)
 
   !call destroy_cublas_handle(cublas_handle)
-  call gpu_device_reset()
 
 ! write(*,*) "Starting dummy kernel"
 
@@ -1909,6 +1909,7 @@ write(*,*) "    - lin__turbo:", solo_time_soap, rank
   call mpi_finalize(ierr)
 #endif
 
-!call destroy_cublas_handle(cublas_handle, gpu_stream)
+call destroy_cublas_handle(cublas_handle, gpu_stream)
+call gpu_device_reset()
 
 end program turbogap
