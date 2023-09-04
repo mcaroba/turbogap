@@ -958,7 +958,7 @@ program turbogap
     allocate(j_beg_omp(1:n_omp))
     allocate(j_end_omp(1:n_omp))
 
-    omp_n_sites = i_end - i_beg
+    omp_n_sites = i_end - i_beg + 1
     
 !$omp parallel private(omp_task, k)
 !$ omp_task = omp_get_thread_num()
@@ -971,7 +971,7 @@ program turbogap
     end if
 
     if( omp_task < mod( omp_n_sites, n_omp ) )then
-       i_end_omp(omp_task+1) = i_beg + (omp_task+1)*(omp_n_sites / n_omp + 1)
+       i_end_omp(omp_task+1) = i_beg + (omp_task+1)*(omp_n_sites / n_omp + 1) - 1
     else
        i_end_omp(omp_task+1) = i_beg_omp(omp_task+1) + omp_n_sites/n_omp - 1
     end if
