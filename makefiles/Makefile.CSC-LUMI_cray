@@ -17,7 +17,7 @@
 
 # Compiler, preprocessor directives, etc.
 F90=ftn # -hlist=m
-CU=hipcc -munsafe-fp-atomics -g -ggdb #-save-temps #  #-ffp-model=precise #-munsafe-fp-atomics
+CU=hipcc -munsafe-fp-atomics #-g -ggdb #-save-temps #  #-ffp-model=precise #-munsafe-fp-atomics
 PP=-e Z -D _MPIF90
 F90_MOD_DIR_OPT=-J
 

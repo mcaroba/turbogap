@@ -1902,7 +1902,7 @@ end if
 #endif
 
 
-write(*,*) "    - lin__turbo:", solo_time_soap, rank
+!write(*,*) "    - lin__turbo:", solo_time_soap, rank
 
 
 #ifdef _MPIF90

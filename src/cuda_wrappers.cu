@@ -215,7 +215,7 @@ extern "C" void destroy_cublas_handle(hipblasHandle_t *handle,hipStream_t *strea
  	 // Destroy the handle
    hipblasDestroy(*handle);
    hipStreamDestroy(*stream);
-   printf("\n cublas handle destroyed. \n The End? \n");
+   //printf("\n cublas handle destroyed. \n The End? \n");
    return;
 }
 

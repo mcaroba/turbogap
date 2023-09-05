@@ -97,6 +97,7 @@ module gap_interface
     real*8 :: ttt(2)
     type(c_ptr) :: soap_cart_der_d, soap_d
     type(c_ptr) :: cublas_handle, gpu_stream
+    type(c_ptr) ::  k2_i_site_d, n_neigh_d
 
     call mpi_comm_rank(MPI_COMM_WORLD, rank, ierr)
     ! call gpu_set_device(rank) ! Every node has 4 GPUs. Even if there are more than 1 nodes used. This will assing the ranks to GPU in a roundbin fashion
@@ -251,10 +252,10 @@ module gap_interface
                     atom_sigma_r, atom_sigma_r_scaling, atom_sigma_t, atom_sigma_t_scaling, &
                     amplitude_scaling, radial_enhancement, central_weight, basis, scaling_mode, do_timing, &
                     do_derivatives, compress_soap, compress_soap_indices, soap, soap_cart_der, time_get_soap, &
-                    soap_d,  soap_cart_der_d, gpu_stream)
+                    soap_d,  soap_cart_der_d, n_neigh_d, k2_i_site_d, gpu_stream)
 !      call cpu_time(ttt(2))
     end if
-
+   ! write(*,*) "n_total_sites", n_total_sites, "n_sites", n_sites, "nsites0", n_sites0
    !time_get_soap=time_get_soap+ttt(2)-ttt(1)
 
     if( has_vdw )then
@@ -302,7 +303,7 @@ module gap_interface
         call get_soap_energy_and_forces(soap, soap_cart_der, alphas, delta, zeta, 0.d0, Qs, &
                                         n_neigh, neighbors_list, xyz, do_forces, do_timing, &
                                         energies, forces, virial, solo_time_soap,  &
-                                        soap_d,  soap_cart_der_d, cublas_handle, gpu_stream)
+                                        soap_d,  soap_cart_der_d, n_neigh_d, k2_i_site_d, cublas_handle, gpu_stream)
       end if
 
       do i = 1, n_sites

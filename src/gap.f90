@@ -33,13 +33,11 @@ module gap
   use mpi
 
   contains
-  !call get_soap_energy_and_forces(soap, soap_cart_der, alphas, delta, zeta, 0.d0, Qs, &
-  !                                n_neigh, neighbors_list, xyz, do_forces, do_timing, &
-  !                                energies, forces, virial, solo_time_soap)
+
   subroutine get_soap_energy_and_forces(soap, soap_der, alphas, delta, zeta0, e0, Qs, &
                                         n_neigh, neighbors_list, xyz, do_forces, do_timing, &
                                         energies, forces, virial,  solo_time_soap, soap_d, &
-                                        soap_der_d,cublas_handle, gpu_stream)
+                                        soap_der_d, n_neigh_d, k2_i_site_d, cublas_handle, gpu_stream)
 !   **********************************************
 !   soap(1:n_soap, 1:n_sites)
 
@@ -58,7 +56,7 @@ module gap
     real(c_double) ::  zeta, cdelta_ene,cdelta_force, mzetam
     integer(c_int) :: n_sites, n_sparse, n_soap, i, j, k, l, j2, zeta_int, n_sites0, k1, k2
     logical :: is_zeta_int = .false.
-    type(c_ptr), intent(inout) :: cublas_handle, gpu_stream
+    type(c_ptr), intent(inout) :: cublas_handle, gpu_stream,k2_i_site_d
     type(c_ptr) :: kernels_copy_d, kernels_d, Qs_d, energies_d, alphas_d
     type(c_ptr) :: kernels_der_d, Qss_d, Qs_copy_d !, this_Qss_d
     integer(c_int) :: size_kernels, size_soap, size_Qs, size_alphas, size_energies,maxnn
@@ -67,10 +65,10 @@ module gap
     integer(c_int) :: rank, ierr
     integer(c_int) :: n_pairs
     integer(c_int), allocatable, target :: neighbors_beg(:), neighbors_end(:)
-    type(c_ptr) :: virial_d, n_neigh_d, l_index_d, j2_index_d, this_force_d
+    type(c_ptr) :: virial_d, n_neigh_d, j2_index_d, this_force_d , l_index_d
     type(c_ptr) :: neighbors_beg_d, neighbors_end_d, xyz_d,  neighbors_list_d, forces_d
     real*8, intent(inout) :: solo_time_soap
-    integer(c_int), allocatable, target :: l_index(:), j2_index(:)
+    integer(c_int), allocatable, target :: j2_index(:) ,  l_index(:)
     type(c_ptr), intent(inout) :: soap_der_d, soap_d
     real*8 :: ttt(2)
     integer(c_size_t) :: st_alphas, st_Qs, st_kernels, st_energies, st_soap
@@ -181,18 +179,19 @@ module gap
       end do
       n_pairs=l
 
-      allocate(l_index(1:n_pairs))
+    !    allocate(l_index(1:n_pairs))
+    !    !write(*,*) "N pairs", n_pairs
 
-      l = 0
-      do i = 1, n_sites
-        do j = 1, n_neigh(i)
-          l = l + 1
-          l_index(l) = i
-        end do
-      end do
-    st_n_pairs=n_pairs*sizeof(l_index(1))
-    call gpu_malloc_all(l_index_d, st_n_pairs, gpu_stream)
-    call cpy_htod(c_loc(l_index),l_index_d,st_n_pairs, gpu_stream) 
+    !   l = 0
+    !   do i = 1, n_sites
+    !     do j = 1, n_neigh(i)
+    !       l = l + 1
+    !       l_index(l) = i
+    !     end do
+    !   end do
+    ! st_n_pairs=n_pairs*sizeof(l_index(1))
+    ! call gpu_malloc_all(l_index_d, st_n_pairs, gpu_stream)
+    ! call cpy_htod(c_loc(l_index),l_index_d,st_n_pairs, gpu_stream) 
 
     allocate(j2_index(1:n_pairs))
     l = 0
@@ -203,6 +202,7 @@ module gap
           j2_index(l)=j2
         end do
       end do
+    st_n_pairs=n_pairs*sizeof(j2_index(1))
     call gpu_malloc_all(j2_index_d, st_n_pairs, gpu_stream)
     call cpy_htod(c_loc(j2_index),j2_index_d, st_n_pairs, gpu_stream) !call cpy_int_htod(c_loc(j2_index),j2_index_d,n_pairs)
 
@@ -253,8 +253,8 @@ module gap
     st_virial=size_virial*sizeof(virial(1,1))
     call gpu_malloc_all(virial_d,st_virial, gpu_stream) 
     st_neigh=n_sites*sizeof(n_neigh(1))
-    call gpu_malloc_all(n_neigh_d,st_neigh, gpu_stream)
-    call cpy_htod(c_loc( n_neigh), n_neigh_d,st_neigh, gpu_stream)
+    !call gpu_malloc_all(n_neigh_d,st_neigh, gpu_stream)
+    !call cpy_htod(c_loc( n_neigh), n_neigh_d,st_neigh, gpu_stream)
 
     st_neigh_end=n_sites*sizeof(neighbors_end(1))
     call gpu_malloc_all(neighbors_end_d,st_neigh_end, gpu_stream)
@@ -266,7 +266,7 @@ module gap
     
                                 
     call   gpu_final_soap_forces_virial(n_sites, &
-                                        Qss_d,n_soap, l_index_d, j2_index_d, &
+                                        Qss_d,n_soap, k2_i_site_d, j2_index_d, &
                                         soap_der_d, &
                                         xyz_d, virial_d, &
                                         n_sites0, &
@@ -304,8 +304,9 @@ module gap
   call gpu_free_async(kernels_copy_d,gpu_stream)
   call gpu_free_async(Qs_d,gpu_stream)
   call gpu_free_async(alphas_d,gpu_stream)
-  call gpu_free_async(l_index_d,gpu_stream)
-  call gpu_free_async(j2_index_d,gpu_stream)
+  call gpu_free_async(k2_i_site_d,gpu_stream) 
+  ! call gpu_free_async(l_index_d,gpu_stream)
+  call gpu_free_async(j2_index_d,gpu_stream) 
   !call destroy_cublas_handle(cublas_handle)
   call gpu_free_async(forces_d,gpu_stream)
   call gpu_free_async(energies_d,gpu_stream)
