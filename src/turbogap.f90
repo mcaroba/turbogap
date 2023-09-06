@@ -46,6 +46,8 @@ program turbogap
   use xyz_module
   use F_B_C
 
+!$  use omp_lib
+
   implicit none
 
 
@@ -130,6 +132,9 @@ program turbogap
                           n_neigh_local(:)
   logical, allocatable :: compress_soap_mpi(:)
   type(c_ptr) :: cublas_handle, gpu_stream
+  integer :: i_beg, i_end, n_sites_mpi, j_beg, j_end, size_soap_turbo &
+       , size_distance_2b, size_angle_3b, n_omp, omp_task, omp_n_sites
+  integer, allocatable :: i_beg_omp(:), i_end_omp(:), j_beg_omp(:), j_end_omp(:)
 !**************************************************************************
 
 ! integer :: n_ii,i_ii, j_jj,k_ii
@@ -172,7 +177,7 @@ program turbogap
 
 
 
-  call gpu_set_device(rank) ! This works when each GPU has only 1 visible device. This is done in the slurm submission script
+  call gpu_set_device(0) ! This works when each GPU has only 1 visible device. This is done in the slurm submission script
 
   call create_cublas_handle(cublas_handle, gpu_stream)
   !call create_cublas_handle(cublas_handle)
@@ -922,6 +927,87 @@ program turbogap
     j_end = n_atom_pairs
     n_atom_pairs_by_rank(rank+1) = n_atom_pairs
 #endif
+
+
+
+    ! ### --- OPENMP Parallelization --- ###    
+    
+    ! Now we split the neighbours that each omp_task will run
+    
+    ! > We know the total number of atom_pairs that each rank has,
+    ! > so lets get the number of neighbours for the number of atoms
+    ! > in the task
+    
+    ! We need to loop over the neighbours with the k index
+    ! We want the total number of neighbours and the split the neighbour indices accordingly
+    ! Set a pseudo number of omp tasks
+    ! > n_omp: The number of omp tasks
+
+    n_omp = 1
+    omp_task = 0
+    
+!$omp parallel      
+!$ n_omp = omp_get_num_threads()
+!$omp end parallel     
+
+    allocate(i_beg_omp(1:n_omp))
+    allocate(i_end_omp(1:n_omp))
+    allocate(j_beg_omp(1:n_omp))
+    allocate(j_end_omp(1:n_omp))
+
+    omp_n_sites = i_end - i_beg + 1
+
+    i_beg_omp = i_beg
+    i_end_omp = i_end
+    
+    j_beg_omp = 1
+    j_end_omp = n_atom_pairs_by_rank(rank+1)
+    
+!$omp parallel private(omp_task, k)
+!$ omp_task = omp_get_thread_num()
+    
+    print *, "Allocated omp index arrays"
+    if( omp_task < mod( omp_n_sites, n_omp ) )then
+       i_beg_omp(omp_task+1) = i_beg + omp_task*(omp_n_sites / n_omp + 1)
+    else
+       i_beg_omp(omp_task+1) = i_beg + mod(omp_n_sites, n_omp)*(omp_n_sites / n_omp + 1) + (omp_task - mod( omp_n_sites, n_omp))*(omp_n_sites / n_omp)
+    end if
+
+    if( omp_task < mod( omp_n_sites, n_omp ) )then
+       i_end_omp(omp_task+1) = i_beg + (omp_task+1)*(omp_n_sites / n_omp + 1) - 1
+    else
+       i_end_omp(omp_task+1) = i_beg_omp(omp_task+1) + omp_n_sites/n_omp - 1
+    end if
+
+    print *,"omp_task = ", omp_task,  " i_beg_omp = ", i_beg_omp(omp_task+1)
+    print *,"omp_task = ", omp_task,  " i_end_omp = ", i_end_omp(omp_task+1)
+
+    
+! --- Allocating the neighbors indices for reach openmp task 
+    
+
+    k = 0
+    do i = i_beg, i_end
+       if( i == i_beg_omp(omp_task+1) ) then 
+          j_beg_omp(omp_task+1) = k+1
+       end if
+
+       k = k + n_neigh(i)
+
+       if( i == i_end_omp(omp_task+1)) then 
+          j_end_omp(omp_task+1) = k                       
+       end if
+
+    end do
+
+
+    print *, "omp_task = ", omp_task, " j_beg_omp = ", j_beg_omp(omp_task+1)
+    print *, "omp_task = ", omp_task, " j_end_omp = ", j_end_omp(omp_task+1)
+    print *, "omp_task = ", omp_task, " k         = ", k
+    print *, "omp_task = ", omp_task, " n_at_per_r= ", n_atom_pairs_by_rank(rank+1)
+!$omp end parallel     
+    
+
 !   Compute the volume of the "primitive" unit cell
     v_uc = dot_product( cross_product(a_box, b_box), c_box ) / (dfloat(indices(1)*indices(2)*indices(3)))
     !call cpu_time(time2)
@@ -1263,6 +1349,10 @@ program turbogap
 
       if( params%do_prediction )then
 !       Loop through distance_2b descriptors
+
+
+         print *, "doing omp parallel, with omp_task ", omp_task  
+         !stop
         do i = 1, n_distance_2b
           !call cpu_time(time_2b(1))
           time_2b(1)=MPI_Wtime()
@@ -1271,15 +1361,50 @@ program turbogap
             this_forces = 0.d0
             this_virial = 0.d0
           end if
-          call get_2b_energy_and_forces(rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), distance_2b_hypers(i)%alphas, &
-                                        distance_2b_hypers(i)%cutoff, &
-                                        distance_2b_hypers(i)%rcut, 0.5d0, distance_2b_hypers(i)%delta, &
-                                        distance_2b_hypers(i)%sigma, 0.d0, distance_2b_hypers(i)%Qs(:,1), &
-                                        n_neigh(i_beg:i_end), params%do_forces, params%do_timing, &
-                                        species(i_beg:i_end), neighbor_species(j_beg:j_end), &
-                                        distance_2b_hypers(i)%species1, distance_2b_hypers(i)%species2, &
-                                        params%species_types, this_energies(i_beg:i_end), this_forces(1:3, i_beg:i_end), &
-                                        this_virial )
+
+
+         !$omp parallel reduction(+: this_energies, this_forces, this_virial)
+         !$ omp_task = omp_get_thread_num()
+          call get_2b_energy_and_forces(rjs(j_beg_omp(omp_task&
+               &+1):j_end_omp(omp_task+1)), xyz(1:3,&
+               & j_beg_omp(omp_task+1):j_end_omp(omp_task+1)),&
+               & distance_2b_hypers(i)%alphas, distance_2b_hypers(i)&
+               &%cutoff, distance_2b_hypers(i)%rcut, 0.5d0,&
+               & distance_2b_hypers(i)%delta, distance_2b_hypers(i)&
+               &%sigma, 0.d0, distance_2b_hypers(i)%Qs(:,1),&
+               & n_neigh(i_beg_omp(omp_task+1):i_end_omp(omp_task+1))&
+               &, params%do_forces, params%do_timing,&
+               & species(i_beg_omp(omp_task+1):i_end_omp(omp_task+1))&
+               &, neighbor_species(j_beg_omp(omp_task&
+               &+1):j_end_omp(omp_task+1)), distance_2b_hypers(i)&
+               &%species1, distance_2b_hypers(i)%species2, params&
+               &%species_types, this_energies(i_beg_omp(omp_task&
+               &+1):i_end_omp(omp_task+1)), this_forces(1:3,&
+               & i_beg_omp(omp_task+1):i_end_omp(omp_task+1)),&
+               & this_virial )
+
+          !$omp end parallel
+
+!          print *, " 2b energies array, n = ",i
+          ! print *, " 2b virial array, n = ",i          
+
+          ! do j = 1,3
+          !    do l = 1,3
+          !       print *, "j = ", j, " l = ", l, this_virial(j,l)
+          !    end do
+          ! end do
+          
+            
+
+          ! call get_2b_energy_and_forces(rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), distance_2b_hypers(i)%alphas, &
+          !                               distance_2b_hypers(i)%cutoff, &
+          !                               distance_2b_hypers(i)%rcut, 0.5d0, distance_2b_hypers(i)%delta, &
+          !                               distance_2b_hypers(i)%sigma, 0.d0, distance_2b_hypers(i)%Qs(:,1), &
+          !                               n_neigh(i_beg:i_end), params%do_forces, params%do_timing, &
+          !                               species(i_beg:i_end), neighbor_species(j_beg:j_end), &
+          !                               distance_2b_hypers(i)%species1, distance_2b_hypers(i)%species2, &
+          !                               params%species_types, this_energies(i_beg:i_end), this_forces(1:3, i_beg:i_end), &
+          !                               this_virial )
           energies_2b = energies_2b + this_energies
           if( params%do_forces )then
             forces_2b = forces_2b + this_forces
@@ -1333,15 +1458,39 @@ program turbogap
             this_forces = 0.d0
             this_virial = 0.d0
           end if
-          call get_3b_energy_and_forces(rjs(j_beg:j_end), xyz(1:3,j_beg:j_end), angle_3b_hypers(i)%alphas, &
-                                        angle_3b_hypers(i)%cutoff, &
-                                        angle_3b_hypers(i)%rcut, 0.5d0, angle_3b_hypers(i)%delta, &
-                                        angle_3b_hypers(i)%sigma, 0.d0, angle_3b_hypers(i)%Qs, n_neigh(i_beg:i_end), &
-                                        neighbors_list(j_beg:j_end), &
-                                        params%do_forces, params%do_timing, angle_3b_hypers(i)%kernel_type, &
-                                        species(i_beg:i_end), neighbor_species(j_beg:j_end), angle_3b_hypers(i)%species_center, &
-                                        angle_3b_hypers(i)%species1, angle_3b_hypers(i)%species2, params%species_types, &
-                                        this_energies(i_beg:i_end), this_forces, this_virial)
+
+          !$omp parallel reduction(+: this_energies, this_forces, this_virial)
+         !$ omp_task = omp_get_thread_num()
+
+         call get_3b_energy_and_forces(rjs(j_beg_omp(omp_task&
+              &+1):j_end_omp(omp_task+1)), xyz(1:3,j_beg_omp(omp_task&
+              &+1):j_end_omp(omp_task+1)), angle_3b_hypers(i)%alphas,&
+              & angle_3b_hypers(i)%cutoff, angle_3b_hypers(i)%rcut,&
+              & 0.5d0, angle_3b_hypers(i)%delta, angle_3b_hypers(i)&
+              &%sigma, 0.d0, angle_3b_hypers(i)%Qs,&
+              & n_neigh(i_beg_omp(omp_task+1):i_end_omp(omp_task+1)),&
+              & neighbors_list(j_beg_omp(omp_task&
+              &+1):j_end_omp(omp_task+1)), params%do_forces, params&
+              &%do_timing, angle_3b_hypers(i)%kernel_type,&
+              & species(i_beg_omp(omp_task+1):i_end_omp(omp_task+1)),&
+              & neighbor_species(j_beg_omp(omp_task&
+              &+1):j_end_omp(omp_task+1)), angle_3b_hypers(i)&
+              &%species_center, angle_3b_hypers(i)%species1,&
+              & angle_3b_hypers(i)%species2, params%species_types,&
+              & this_energies(i_beg_omp(omp_task&
+              &+1):i_end_omp(omp_task+1)), this_forces, this_virial)
+
+         !$omp end parallel
+
+          ! call get_3b_energy_and_forces(rjs(j_beg:j_end), xyz(1:3,j_beg:j_end), angle_3b_hypers(i)%alphas, &
+          !                               angle_3b_hypers(i)%cutoff, &
+          !                               angle_3b_hypers(i)%rcut, 0.5d0, angle_3b_hypers(i)%delta, &
+          !                               angle_3b_hypers(i)%sigma, 0.d0, angle_3b_hypers(i)%Qs, n_neigh(i_beg:i_end), &
+          !                               neighbors_list(j_beg:j_end), &
+          !                               params%do_forces, params%do_timing, angle_3b_hypers(i)%kernel_type, &
+          !                               species(i_beg:i_end), neighbor_species(j_beg:j_end), angle_3b_hypers(i)%species_center, &
+          !                               angle_3b_hypers(i)%species1, angle_3b_hypers(i)%species2, params%species_types, &
+          !                               this_energies(i_beg:i_end), this_forces, this_virial)
           energies_3b = energies_3b + this_energies
           if( params%do_forces )then
             forces_3b = forces_3b + this_forces

@@ -21,8 +21,9 @@ CU=hipcc -munsafe-fp-atomics #-g -ggdb #-save-temps #  #-ffp-model=precise #-mun
 PP=-e Z -D _MPIF90
 F90_MOD_DIR_OPT=-J
 
+# -h flex_mp=intolerant Should be used per file otherwise 2b AND 3b will run 2 time slower
 # Optimization flags (uncomment second option to enable debugging tools)
-F90_OPTS= -fPIC -O3 -lamdhip64 -lhipblas -lhiprand
+F90_OPTS= -fPIC -h flex_mp=intolerant -O3 -lamdhip64 -lhipblas -lhiprand -homp  # -fsanitize=address -fsanitize=thread #-homp # -Rb
 CUDA_OPTS=    -lhipblas -lhiprand --offload-arch=gfx90a 
 # gdwarf-4 needed for getting line information when sampling 
 #F90_OPTS+= -g # -gdwarf-4
