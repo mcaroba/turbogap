@@ -948,7 +948,7 @@ program turbogap
 
     n_omp = 1
     omp_task = 0
-
+    
 !$omp parallel      
 !$ n_omp = omp_get_num_threads()
 !$omp end parallel     
@@ -959,6 +959,12 @@ program turbogap
     allocate(j_end_omp(1:n_omp))
 
     omp_n_sites = i_end - i_beg + 1
+
+    i_beg_omp = i_beg
+    i_end_omp = i_end
+    
+    j_beg_omp = 1
+    j_end_omp = n_atom_pairs_by_rank(rank+1)
     
 !$omp parallel private(omp_task, k)
 !$ omp_task = omp_get_thread_num()
@@ -982,8 +988,6 @@ program turbogap
     
 ! --- Allocating the neighbors indices for reach openmp task 
     
-    j_beg_omp = 1
-    j_end_omp = n_atom_pairs_by_rank(rank+1)
 
     k = 0
     do i = i_beg, i_end
@@ -1346,7 +1350,11 @@ program turbogap
 
 
       if( params%do_prediction )then
-!       Loop through distance_2b descriptors
+         !       Loop through distance_2b descriptors
+
+         !
+         print *, "doing omp parallel, with omp_task ", omp_task  
+         
         do i = 1, n_distance_2b
           !call cpu_time(time_2b(1))
           time_2b(1)=MPI_Wtime()
@@ -1356,16 +1364,38 @@ program turbogap
             this_virial = 0.d0
          end if
 
-         
-          call get_2b_energy_and_forces(rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), distance_2b_hypers(i)%alphas, &
-                                        distance_2b_hypers(i)%cutoff, &
-                                        distance_2b_hypers(i)%rcut, 0.5d0, distance_2b_hypers(i)%delta, &
-                                        distance_2b_hypers(i)%sigma, 0.d0, distance_2b_hypers(i)%Qs(:,1), &
-                                        n_neigh(i_beg:i_end), params%do_forces, params%do_timing, &
-                                        species(i_beg:i_end), neighbor_species(j_beg:j_end), &
-                                        distance_2b_hypers(i)%species1, distance_2b_hypers(i)%species2, &
-                                        params%species_types, this_energies(i_beg:i_end), this_forces(1:3, i_beg:i_end), &
-                                        this_virial )
+         !$omp parallel reduction(+: this_energies, this_forces, this_virial)
+         !$ omp_task = omp_get_thread_num()
+          call get_2b_energy_and_forces(rjs(j_beg_omp(omp_task&
+               &+1):j_end_omp(omp_task+1)), xyz(1:3,&
+               & j_beg_omp(omp_task+1):j_end_omp(omp_task+1)),&
+               & distance_2b_hypers(i)%alphas, distance_2b_hypers(i)&
+               &%cutoff, distance_2b_hypers(i)%rcut, 0.5d0,&
+               & distance_2b_hypers(i)%delta, distance_2b_hypers(i)&
+               &%sigma, 0.d0, distance_2b_hypers(i)%Qs(:,1),&
+               & n_neigh(i_beg_omp(omp_task+1):i_end_omp(omp_task+1))&
+               &, params%do_forces, params%do_timing,&
+               & species(i_beg_omp(omp_task+1):i_end_omp(omp_task+1))&
+               &, neighbor_species(j_beg_omp(omp_task&
+               &+1):j_end_omp(omp_task+1)), distance_2b_hypers(i)&
+               &%species1, distance_2b_hypers(i)%species2, params&
+               &%species_types, this_energies(i_beg_omp(omp_task&
+               &+1):i_end_omp(omp_task+1)), this_forces(1:3,&
+               & i_beg_omp(omp_task+1):i_end_omp(omp_task+1)),&
+               & this_virial )
+
+          !$omp end parallel
+
+!          print *, " 2b energies array, n = ",i
+          ! print *, " 2b virial array, n = ",i          
+
+          ! do j = 1,3
+          !    do l = 1,3
+          !       print *, "j = ", j, " l = ", l, this_virial(j,l)
+          !    end do
+          ! end do
+          
+                
           energies_2b = energies_2b + this_energies
           if( params%do_forces )then
             forces_2b = forces_2b + this_forces
@@ -1388,15 +1418,22 @@ program turbogap
           if( params%do_forces )then
             this_forces = 0.d0
             this_virial = 0.d0
-          end if
-          call get_core_pot_energy_and_forces(rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), &
+         end if
+
+         !$omp parallel reduction(+: this_energies, this_forces, this_virial)
+         !$ omp_task = omp_get_thread_num()
+
+          call get_core_pot_energy_and_forces(rjs(j_beg_omp(omp_task+1):j_end_omp(omp_task+1)), xyz(1:3, j_beg_omp(omp_task+1):j_end_omp(omp_task+1)), &
                                               core_pot_hypers(i)%x, core_pot_hypers(i)%V, &
                                               core_pot_hypers(i)%yp1, core_pot_hypers(i)%ypn, &
-                                              core_pot_hypers(i)%dVdx2, n_neigh(i_beg:i_end), params%do_forces, &
-                                              params%do_timing, species(i_beg:i_end), neighbor_species(j_beg:j_end), &
+                                              core_pot_hypers(i)%dVdx2, n_neigh(i_beg_omp(omp_task+1):i_end_omp(omp_task+1)), params%do_forces, &
+                                              params%do_timing, species(i_beg_omp(omp_task+1):i_end_omp(omp_task+1)), neighbor_species(j_beg_omp(omp_task+1):j_end_omp(omp_task+1)), &
                                               core_pot_hypers(i)%species1, core_pot_hypers(i)%species2, &
-                                              params%species_types, this_energies(i_beg:i_end), this_forces(1:3, i_beg:i_end), &
+                                              params%species_types, this_energies(i_beg_omp(omp_task+1):i_end_omp(omp_task+1)), this_forces(1:3, i_beg_omp(omp_task+1):i_end_omp(omp_task+1)), &
                                               this_virial )
+
+          !$omp end parallel
+          
           energies_core_pot = energies_core_pot + this_energies
           if( params%do_forces )then
             forces_core_pot = forces_core_pot + this_forces
@@ -1422,10 +1459,9 @@ program turbogap
 
          ! Create custom indices to check that splitting into the specific indices works for openmp
 
-         !
          !$omp parallel reduction(+: this_energies, this_forces, this_virial)
          !$ omp_task = omp_get_thread_num()
-         print *, "doing omp parallel, with omp_task ", omp_task  
+
          call get_3b_energy_and_forces(rjs(j_beg_omp(omp_task&
               &+1):j_end_omp(omp_task+1)), xyz(1:3,j_beg_omp(omp_task&
               &+1):j_end_omp(omp_task+1)), angle_3b_hypers(i)%alphas,&
@@ -1443,7 +1479,9 @@ program turbogap
               & angle_3b_hypers(i)%species2, params%species_types,&
               & this_energies(i_beg_omp(omp_task&
               &+1):i_end_omp(omp_task+1)), this_forces, this_virial)
-       !$omp end parallel
+
+         !$omp end parallel
+
          
             ! call get_3b_energy_and_forces(rjs(j_beg:j_end), xyz(1:3,j_beg:j_end), angle_3b_hypers(i)%alphas, &
             !                             angle_3b_hypers(i)%cutoff, &
@@ -1464,8 +1502,6 @@ program turbogap
           time_3b(2)=MPI_Wtime()
           time_3b(3) = time_3b(3) + time_3b(2) - time_3b(1)
         end do
-
-
         !call cpu_time(time2)
         time2=MPI_Wtime()
         time_gap = time_gap + time2 - time1
