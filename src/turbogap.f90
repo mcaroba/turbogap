@@ -1152,6 +1152,7 @@ program turbogap
               this_hirshfeld_v_cart_der_pt => this_hirshfeld_v_cart_der(1:3, this_j_beg:this_j_end)
             end if
           end if
+          write(*,*) "Before get_gap_soap"
           call get_gap_soap(n_sites, this_n_sites_mpi, n_neigh(this_i_beg:this_i_end), neighbors_list(this_j_beg:this_j_end), &
                             soap_turbo_hypers(i)%n_species, soap_turbo_hypers(i)%species_types, &
                             rjs(this_j_beg:this_j_end), thetas(this_j_beg:this_j_end), phis(this_j_beg:this_j_end), &
@@ -1362,7 +1363,7 @@ program turbogap
             this_virial = 0.d0
           end if
 
-
+          write(*,*) "Before doing 2b"
          !$omp parallel reduction(+: this_energies, this_forces, this_virial)
          !$ omp_task = omp_get_thread_num()
           call get_2b_energy_and_forces(rjs(j_beg_omp(omp_task&
@@ -1458,7 +1459,7 @@ program turbogap
             this_forces = 0.d0
             this_virial = 0.d0
           end if
-
+          write(*,*) "Before doing 3b"
           !$omp parallel reduction(+: this_energies, this_forces, this_virial)
          !$ omp_task = omp_get_thread_num()
 

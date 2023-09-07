@@ -361,7 +361,7 @@ module gap
     if( do_timing )then
       call cpu_time(time1)
     end if
-
+    write(*,*) "DOING 2B"
     pi = dacos(-1.d0)
 
     n_sparse = size(alphas)
@@ -647,7 +647,7 @@ module gap
     if( do_timing )then
       call cpu_time(time1)
     end if
-
+    WRITE(*,*) "Doing 3B"
     pi = dacos(-1.d0)
 
     n_sparse = size(alphas)
