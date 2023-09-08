@@ -1,0 +1,43 @@
+ SOAP energy:      -2370984.63698446 eV |
+ 2b energy:         2282314.47794328 eV |
+ 3b energy:             -19.93929739 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:              0.00000000 eV |
+ Total energy:      -173299.97365121 eV |
+
+  SOAP energy:      -2370984.63698446 eV |
+ 2b energy:         2282314.47794328 eV |
+ 3b energy:             -19.93927860 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:              0.00000000 eV |
+ Total energy:      -173299.97363241 eV |
+
+  SOAP energy:      -2370984.63698446 eV |
+ 2b energy:         2282314.47794328 eV |
+ 3b energy:             -19.93927860 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:              0.00000000 eV |
+ Total energy:      -173299.97363241 eV |
+
+ SOAP energy:      -2370984.63698446 eV |
+ 2b energy:         2282313.38634445 eV |
+ 3b energy:             -19.93927860 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:              0.00000000 eV |
+ Total energy:      -173301.06523124 eV |
+
+ SOAP energy:      -2370984.63698446 eV |
+ 2b energy:         2282314.47794328 eV |
+ 3b energy:             -19.93929082 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:              0.00000000 eV |
+ Total energy:      -173299.97364464 eV |
+
+With flexmp=intolerant
+
+ SOAP energy:      -2370984.78599244 eV |
+ 2b energy:         2282314.47794257 eV |
+ 3b energy:             -19.93927860 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:              0.00000000 eV |
+ Total energy:      -173300.12264076 eV |
