@@ -279,13 +279,13 @@ MODULE F_B_C
       type(c_ptr), value :: plm_array_div_sin_d, plm_array_der_mul_sin_d
       end subroutine
 
-      subroutine gpu_get_radial_exp_coeff(radial_exp_coeff_d, radial_exp_coeff_der_d, &
+      subroutine gpu_get_radial_exp_coeff_poly3gauss(radial_exp_coeff_d, radial_exp_coeff_der_d, &
                                       i_beg_d, i_end_d,&
                                       global_scaling_d, &
                                       size_radial_exp_coeff_one, size_radial_exp_coeff_two, n_species, &
                                       c_do_derivatives, bintybint, & 
                                       rcut_hard_d, gpu_stream) &
-                                      bind(C,name="gpu_get_radial_exp_coeff")
+                                      bind(C,name="gpu_get_radial_exp_coeff_poly3gauss")
       use iso_c_binding
       type(c_ptr), value :: radial_exp_coeff_d, radial_exp_coeff_der_d, i_beg_d, i_end_d, global_scaling_d
       type(c_ptr), value :: rcut_hard_d

@@ -15,6 +15,7 @@
 #define tpb 64 // optimize for best performance & check the effect on each kernel which used tpb for the shared memory
 #define tpb_get_soap_der_one 128
 #define tpbcnk 64 // this is because k_max is 45???
+#define static_alphamax 8
 int counter=0;
 /*__device__ double atomicDoubleAdd(double* address, double val)
 {
@@ -1730,7 +1731,7 @@ void cuda_global_scaling(double *radial_exp_coeff_d,
   }
 }
 
-extern "C" void  gpu_get_radial_exp_coeff(double *radial_exp_coeff_d, double *radial_exp_coeff_der_d, 
+extern "C" void  gpu_get_radial_exp_coeff_poly3gauss(double *radial_exp_coeff_d, double *radial_exp_coeff_der_d, 
                                           int *i_beg_d, int *i_end_d, double *global_scaling_d,
                                           int size_radial_exp_coeff_one, int size_radial_exp_coeff_two, int n_species, 
                                           bool c_do_derivatives, int bintybint,
