@@ -27,6 +27,11 @@
 
 module misc
 
+  use psb_base_mod
+  use psb_prec_mod
+  use psb_krylov_mod
+  use psb_util_mod
+
   contains
 
   subroutine integrate(method, x, y, a, b, integral)
@@ -121,29 +126,45 @@ module misc
 
   end subroutine
 
-  subroutine power_iteration(A, n_iter, b)
+  subroutine power_iteration(val, ia, ja, myidx, nnz, n_iter, b)
 
     implicit none
 
 !   Input variables
-    real*8, intent(in) :: A(:,:)
+    real(psb_dpk_), intent(in) :: val(:)
+    integer(psb_lpk_), intent(in) :: ia(:), ja(:), myidx(:)
+    integer, intent(in) :: nnz
     integer, intent(in) :: n_iter
 !   Output variables
     real*8, intent(inout) :: b(:)
 !   Internal variables
     integer :: k, N
     real*8, allocatable :: b_k(:), b_k1(:)
-    real*8 :: b_k1_norm
+    real*8 :: b_k1_norm, time1, time2
+    
+    type(psb_ctxt_type) :: icontxt
+    integer(psb_ipk_) ::  iam, np, ip, jp, idummy, nr, info_psb
+    type(psb_desc_type) :: desc_a
+    type(psb_dspmat_type) :: A_sp
 
-    N = size(A,2)
+    N = size(b,1)
     allocate( b_k(1:N) )
     allocate( b_k1(1:N) )
 
     call random_number( b_k )
 !    b_k = 0.5d0
 
+      call psb_init(icontxt)
+      call psb_cdall(icontxt, desc_a, info_psb, vl=myidx)
+      call psb_spall(A_sp, desc_a, info_psb, nnz=nnz)
+      call psb_spins(nnz, ia(1:nnz), ja(1:nnz), val(1:nnz), A_sp, desc_a, info_psb)
+      call psb_cdasb(desc_a, info_psb)
+      call psb_spasb(A_sp, desc_a, info_psb)
+
     do k = 1, n_iter
-      call dgemm('N', 'N', size(A,1), 1, size(A,2), 1.d0, A, size(A,1), b_k, size(A,2), 0.d0, b_k1, size(A,1))
+
+      call psb_spmm(1.d0, A_sp, b_k, 0.d0, b_k1, desc_a, info_psb, 'N')
+      !call dgemm('N', 'N', size(A,1), 1, size(A,2), 1.d0, A, size(A,1), b_k, size(A,2), 0.d0, b_k1, size(A,1))
       b_k1_norm = sqrt(dot_product(b_k1,b_k1))
       b_k = b_k1 / b_k1_norm
     end do

@@ -1,17 +1,21 @@
-atoms_file = '2829.xyz'
+#> c60_dimer_mbd_edisp.dat
+for i in $(seq 10.0 0.2 12.0); do
+echo $i
+cat <<EOF > input
+atoms_file = 'c60_dimer_$i.xyz'
 pot_file = 'gap_files/carbon.gap'
 
 ! Species info
 n_species = 1 !2
 species = C !H
-e0 = -.16138053
+!e0 = -.16138053
 masses = 12.01 1.00784
 
 ! van der Waals info
 vdw_type = mbd
 vdw_sr = 0.83 !0.97
 vdw_d = 6. !20.            ! Use d = 20 for TS(SCS) and d = 6 for MBD
-vdw_rcut = 16.
+vdw_rcut = 20.
 vdw_r0_ref = 1.900 !1.64
 vdw_alpha0_ref = 1.778 !0.667
 vdw_c6_ref = 27.8 !3.88
@@ -20,7 +24,7 @@ vdw_c6_ref = 27.8 !3.88
 vdw_buffer = 0.5          ! Buffer for transitions between cut-off regions. Type: REAL
 vdw_scs_rcut = 5.        ! vdw_scs_rcut > vdw_buffer. Type: REAL
 vdw_loc_rcut = 5.
-vdw_mbd_rcut = 8.        ! Cut-off for atoms to include for local MBD energy (vdw_mbd_rcut >= vdw_scs_rcut + vdw_buffer). Type: REAL
+vdw_mbd_rcut = 10.        ! Cut-off for atoms to include for local MBD energy (vdw_mbd_rcut >= vdw_scs_rcut + vdw_buffer). Type: REAL
 vdw_2b_rcut = 0.          ! Cut-off for local TS-SCS (vdw_2b_rcut >= vdw_mbd_rcut + vdw_buffer), Type: REAL
 vdw_mbd_nfreq = 7        ! Number of frequency values for MBD integration. Type: INT
 vdw_mbd_norder = 6        ! Contributions up to n-body interactions (i.e. cut-off degree for Taylor expansion of ln(I-AT)). Type: INT
@@ -29,3 +33,6 @@ vdw_hirsh_grad = .false.   ! Include Hirshfeld gradients in the forces. Type: LO
 vdw_polynomial = .false.  ! Use polynomial approximation for inverse matrices. Type: LOGICAL
 vdw_omega_ref = 1.3d0
 do_nnls = .true.
+EOF
+../bin/turbogap predict | grep "vdw energy" | awk '{print $3}' >> c60_dimer_mbd_edisp.dat
+done

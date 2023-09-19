@@ -1,9 +1,9 @@
 import numpy as np
 from ase.io import read, write
 
-d_arr = np.linspace(8,15,36)
+d_arr = np.linspace(8,12,41)
 
-atoms1 = read("dimer.xyz")
+atoms1 = read("c60.xyz")
 
 for d in d_arr:
     atoms2 = read("c60.xyz")

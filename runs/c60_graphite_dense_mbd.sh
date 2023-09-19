@@ -1,10 +1,14 @@
-atoms_file = '2829.xyz'
+> c60_graphite_dense_mbd.dat
+for i in $(seq 2.4 0.1 4); do
+echo $i
+cat <<EOF > input
+atoms_file = 'c60_graphite_$i.xyz'
 pot_file = 'gap_files/carbon.gap'
 
 ! Species info
 n_species = 1 !2
 species = C !H
-e0 = -.16138053
+!e0 = -.16138053
 masses = 12.01 1.00784
 
 ! van der Waals info
@@ -27,5 +31,9 @@ vdw_mbd_norder = 6        ! Contributions up to n-body interactions (i.e. cut-of
 vdw_mbd_grad = .false.     ! Calculate MBD forces. Type: LOGICAL
 vdw_hirsh_grad = .false.   ! Include Hirshfeld gradients in the forces. Type: LOGICAL
 vdw_polynomial = .false.  ! Use polynomial approximation for inverse matrices. Type: LOGICAL
-vdw_omega_ref = 1.3d0
+vdw_omega_ref = 4.d0
 do_nnls = .true.
+
+EOF
+../bin/turbogap predict | grep "Total energy" | awk '{print $3}' >> c60_graphite_dense_mbd.dat
+done
