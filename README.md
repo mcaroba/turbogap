@@ -23,6 +23,7 @@ statement at the beginning).
 * **Jan Kloppenburg** (Aalto University)
 * **Richard Jana** (Aalto University)
 * **Tigany Zarrouk** (Aalto University)
+* **Uttiyoarnab Saha** (Aalto University)
 
 **TurboGAP** is licensed under the Academic Software License (ASL), an "available source"
 non-commercial license. This means that you are free to use and distribute the code for
