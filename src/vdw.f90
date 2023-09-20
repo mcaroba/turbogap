@@ -1102,7 +1102,7 @@ module vdw
               dr_vdw_j, forces_TS, dC6_2b, mult1_i, mult1_j, mult2, dmult1_i(1:3), dmult1_j(1:3), dmult2(1:3), hv_p_der, &
               hv_q_der, do_pref, rb, inner_damp_der, rjs_0_i, rcut_forces, o_i, o_j, do_i, do_j, T_LR_mult_i, T_LR_mult_j, &
               dT_LR_mult_i, dT_LR_mult_j, dT_LR_mult_0ij_2, dT_LR_mult_0ji_2, a_i, a_j, E_TS_tot, r6_der, ac2, ac3, ac4, &
-              r_buf_ij, log_integral, rcut_mbd2
+              r_buf_ij, log_integral, rcut_mbd2, rcut_tot
               
     integer :: n_mbd_sites, n_mbd_pairs, n_2b_sites, n_2b_tot_sites, n_2b_tot_pairs, n_ene_sites, n_force_sites
     integer, allocatable :: n_mbd_neigh(:), mbd_neighbors_list(:), p_mbd(:), sub_2b_tot_list(:), n_2b_tot_neigh(:), &
@@ -1256,6 +1256,9 @@ ac2 = 3.d0 + ac4
     end if
     
     rcut_mbd2 = 5.d0
+
+    rcut_tot = maxval((/2.d0*rcut_mbd2+rcut_loc,rcut_mbd+rcut_mbd2/))
+    write(*,*) "rcut_tot", rcut_tot
 
     r_buf_mbd = 0.5d0
     r_buf_ij = r_buffer
@@ -1869,10 +1872,10 @@ if ( abs(rcut_2b) < 1.d-10 ) then
           do i3 = 1, n_neigh(i)
             k_i = k_i + 1
             !if (rjs(n_tot+k_i) .le. rcut_mbd ) then
-            if (rjs(n_tot+k_i) .le. rcut_mbd+rcut_mbd2+rcut_loc ) then
+            if (rjs(n_tot+k_i) .le. rcut_tot ) then
               n_mbd_sites = n_mbd_sites + 1
               n_mbd_pairs = n_mbd_pairs + 1
-              if ( rjs(n_tot+k_i) .le. rcut_mbd+rcut_loc ) then
+              if ( rjs(n_tot+k_i) .le. rcut_mbd2+rcut_loc ) then
                 n_force_sites = n_force_sites + 1
               end if
               !if ( rjs(n_tot+k_i) .le. rcut_mbd ) then
@@ -1884,7 +1887,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 k_j = k_j + 1
                 !if ( rjs(n_tot+k_j) .le. rcut_mbd ) then
                 if ( i3 == 1 ) then
-                  if ( rjs(n_tot+k_j) .le. rcut_mbd+rcut_mbd2+rcut_loc ) then
+                  if ( rjs(n_tot+k_j) .le. rcut_tot ) then
                     if (i3 .ne. j3) then
                       xyz_j = xyz(:,n_tot+k_j)/Bohr
                       if ( sqrt(sum((xyz_j-xyz_i)**2)) .le. (rcut_mbd)/Bohr ) then
@@ -1895,7 +1898,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                     end if
                   end if                
                 else
-                  if ( rjs(n_tot+k_j) .le. rcut_mbd+rcut_mbd2+rcut_loc ) then
+                  if ( rjs(n_tot+k_j) .le. rcut_tot ) then
                     if (i3 .ne. j3 .and. j3 .ne. 1 ) then
                       xyz_j = xyz(:,n_tot+k_j)/Bohr
                       if ( sqrt(sum((xyz_j-xyz_i)**2)) .le. (rcut_mbd2)/Bohr ) then
@@ -2053,7 +2056,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
             i2 = neighbors_list(n_tot+k_i)
             i1 = modulo(i2-1, n_sites0) + 1
             !if ( rjs(n_tot+k_i) .le. rcut_mbd ) then
-            if ( rjs(n_tot+k_i) .le. rcut_mbd+rcut_mbd2+rcut_loc ) then
+            if ( rjs(n_tot+k_i) .le. rcut_tot ) then
               p = p+1
               k2 = k2+1
               s = neighbor_species(n_tot+k_i)
@@ -2122,7 +2125,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 k_j = k_j+1
                 !if ( rjs(n_tot+k_j) .le. rcut_mbd ) then
                 if ( i3 == 1 ) then
-                if ( rjs(n_tot+k_j) .le. rcut_mbd+rcut_mbd2+rcut_loc ) then
+                if ( rjs(n_tot+k_j) .le. rcut_tot ) then
                   q = q+1
                   if (i3 .ne. j3) then
                     xyz_j = xyz(:,n_tot+k_j)/Bohr
@@ -2179,7 +2182,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                                 ( + 10.d0 *rb**3 &
                                - 15.d0 * rb**4 &
                                + 6.d0 * rb**5)
-                      else if ( rjs(n_tot+k_j) > rcut_loc .and. rjs(n_tot+k_j) .le. rcut_mbd+rcut_mbd2+rcut_loc) then
+                      else if ( rjs(n_tot+k_j) > rcut_loc .and. rjs(n_tot+k_j) .le. rcut_tot) then
                         a_mbd(k2) = central_pol(j1) 
                                     !neighbor_alpha0_mbd(k2) * hirshfeld_mbd_neigh(k2)
                         o_mbd(k2) = central_omega(j1)
@@ -2242,7 +2245,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                   end if
                 end if
                 else
-                if ( rjs(n_tot+k_j) .le. rcut_mbd+rcut_mbd2+rcut_loc ) then
+                if ( rjs(n_tot+k_j) .le. rcut_tot ) then
                   q = q+1
                   if (i3 .ne. j3 .and. j3 .ne. 1) then
                     xyz_j = xyz(:,n_tot+k_j)/Bohr
@@ -2299,7 +2302,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                                 ( + 10.d0 *rb**3 &
                                - 15.d0 * rb**4 &
                                + 6.d0 * rb**5)
-                      else if ( rjs(n_tot+k_j) > rcut_loc .and. rjs(n_tot+k_j) .le. rcut_mbd+rcut_mbd2+rcut_loc) then
+                      else if ( rjs(n_tot+k_j) > rcut_loc .and. rjs(n_tot+k_j) .le. rcut_tot) then
                         a_mbd(k2) = central_pol(j1) 
                                     !neighbor_alpha0_mbd(k2) * hirshfeld_mbd_neigh(k2)
                         o_mbd(k2) = central_omega(j1)
@@ -2495,24 +2498,25 @@ if ( abs(rcut_2b) < 1.d-10 ) then
 
           call cpu_time(time1)
 
-          AT_mult = 1.d0
+          !AT_mult = 1.d0
           do i2 = 1, n_freq
             k3 = 0
             do p = 1, n_mbd_sites
-              if ( rjs_0_mbd(k3+1) > (2.d0*rcut_mbd+rcut_loc-r_buf_mbd)/Bohr .and. &
-                   rjs_0_mbd(k3+1) .le. (2.d0*rcut_mbd+rcut_loc)/Bohr ) then
-                rb = (rjs_0_mbd(k3+1)*Bohr-2.d0*rcut_mbd-rcut_loc+r_buf_mbd)/r_buf_mbd
-                        !rb = (rjs_mbd(k2)*Bohr+rjs(n_tot+k_i)+rjs(n_tot+k_j)-2.d0*(rcut_mbd-r_buf_mbd) &
-                        !     + r_buf_ij)/(r_buf_ij)
-                AT_mult(p) = (1.d0 &
-                            - 3.d0 * rb**2 &
-                            + 2.d0 * rb**3)
-              else if ( rjs_0_mbd(k3+1) > (2.d0*rcut_mbd+rcut_loc)/Bohr ) then
-                AT_mult(p) = 0.d0
-              end if
-              AT_mult(p) = 1.d0
+              !if ( rjs_0_mbd(k3+1) > (2.d0*rcut_mbd+rcut_loc-r_buf_mbd)/Bohr .and. &
+              !     rjs_0_mbd(k3+1) .le. (2.d0*rcut_mbd+rcut_loc)/Bohr ) then
+              !  rb = (rjs_0_mbd(k3+1)*Bohr-2.d0*rcut_mbd-rcut_loc+r_buf_mbd)/r_buf_mbd
+              !          !rb = (rjs_mbd(k2)*Bohr+rjs(n_tot+k_i)+rjs(n_tot+k_j)-2.d0*(rcut_mbd-r_buf_mbd) &
+              !          !     + r_buf_ij)/(r_buf_ij)
+              !  AT_mult(p) = (1.d0 &
+              !              - 3.d0 * rb**2 &
+              !              + 2.d0 * rb**3)
+              !else if ( rjs_0_mbd(k3+1) > (2.d0*rcut_mbd+rcut_loc)/Bohr ) then
+              !  AT_mult(p) = 0.d0
+              !end if
+              !AT_mult(p) = 1.d0
               AT(3*(p-1)+1:3*(p-1)+3,:,i2) = a_mbd(k3+1)/(1.d0+(omegas_mbd(i2)/o_mbd(k3+1))**2) &
-                                             * AT_mult(p) * T_LR(3*(p-1)+1:3*(p-1)+3,:)
+                                             * T_LR(3*(p-1)+1:3*(p-1)+3,:)
+                                             ! * AT_mult(p)
               if ( p .ne. n_mbd_sites ) then
                 k3 = k3 + n_mbd_neigh(p)
               end if
@@ -2827,7 +2831,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 q = 0
                 !call cpu_time(time1)
                 do p = 1, n_mbd_sites
-                  if ( rjs_0_mbd(k3+1) .le. (rcut_mbd+rcut_loc)/Bohr ) then
+                  if ( rjs_0_mbd(k3+1) .le. (rcut_mbd2+rcut_loc)/Bohr ) then
                     q = q+1
                     do c1 = 1, 3
                       if ( do_total_energy ) then
@@ -2880,7 +2884,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                     k3 = 0
                     q = 0
                     do p = 1, n_mbd_sites
-                      if ( rjs_0_mbd(k3+1) .le. (rcut_mbd+rcut_loc)/Bohr ) then
+                      if ( rjs_0_mbd(k3+1) .le. (rcut_mbd2+rcut_loc)/Bohr ) then
                         q = q + 1
                         do c1 = 1, 3
                           total_integrand(i2) = total_integrand(i2) + &
@@ -2912,7 +2916,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 if ( do_total_energy ) then
                   k3 = 0
                   do p = 1, n_mbd_sites
-                    if ( rjs_0_mbd(k3+1) .le. (rcut_mbd+rcut_loc)/Bohr ) then
+                    if ( rjs_0_mbd(k3+1) .le. (rcut_mbd2+rcut_loc)/Bohr ) then
                       do c1 = 1, 3
                         total_integrand(i2) = total_integrand(i2) + &
                           res_mat(n_order+1)*AT_power_full(3*(p-1)+c1,3*(p-1)+c1)
@@ -2928,7 +2932,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 if ( do_total_energy ) then
                   k3 = 0
                   do p = 1, n_mbd_sites
-                    if ( rjs_0_mbd(k3+1) .le. (rcut_mbd+rcut_loc)/Bohr ) then
+                    if ( rjs_0_mbd(k3+1) .le. (rcut_mbd2+rcut_loc)/Bohr ) then
                       do c1 = 1, 3
                         total_integrand(i2) = total_integrand(i2) + &
                           res_mat(n_order+1)*dot_product(AT(3*(p-1)+c1,:,i2),AT(:,3*(p-1)+c1,i2))
