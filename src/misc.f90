@@ -151,8 +151,8 @@ module misc
     allocate( b_k(1:N) )
     allocate( b_k1(1:N) )
 
-    call random_number( b_k )
-!    b_k = 0.5d0
+!    call random_number( b_k )
+    b_k = 0.5d0
 
       call psb_init(icontxt)
       call psb_cdall(icontxt, desc_a, info_psb, vl=myidx)
