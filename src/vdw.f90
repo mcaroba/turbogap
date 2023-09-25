@@ -2108,7 +2108,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                                 ( + 10.d0 *rb**3 &
                                - 15.d0 * rb**4 &
                                + 6.d0 * rb**5)
-              else if ( rjs(n_tot+k_i) > rcut_loc .and. rjs(n_tot+k_i) .le. rcut_mbd+rcut_mbd2+rcut_loc ) then
+              else if ( rjs(n_tot+k_i) > rcut_loc .and. rjs(n_tot+k_i) .le. rcut_tot ) then
                 a_mbd(k2) =  central_pol(i1)
                              !neighbor_alpha0_mbd(k2) * hirshfeld_mbd_neigh(k2)
                 o_mbd(k2) = central_omega(i1)
@@ -2371,13 +2371,13 @@ if ( abs(rcut_2b) < 1.d-10 ) then
 
           if ( .false. ) then
 
-            !open(unit=89, file="T_LR.dat", status="new")
+            open(unit=89, file="T_LR.dat", status="new")
             write(*,*) "T_LR"
             !  write(*,*) "n_mbd_sites", n_mbd_sites
             !  write(*,*) "size of AT", size(AT(:,:,1))
             !  write(*,*) "T_LR"
             do p = 1, 3*n_mbd_sites
-              write(*,*) T_LR(p,:)
+              write(89,*) T_LR(p,:)
             !    write(*,*) T_LR(p,:)
             end do
               !write(*,*) "ia"
@@ -2386,9 +2386,9 @@ if ( abs(rcut_2b) < 1.d-10 ) then
               !write(*,*) ja
               !write(*,*) "val"
               !write(*,*) val
-            !close(89)
+            close(89)
             write(*,*) "T_LR done"
-            write(*,*) val(:,1)
+            !write(*,*) val(:,1)
 
 
           end if
@@ -2586,12 +2586,16 @@ if ( abs(rcut_2b) < 1.d-10 ) then
 
           !write(*,*) "n_mbd_sites", n_mbd_sites
 
-          !if ( i == 1 .and. om == 2 ) then
-          !  write(*,*) "AT"
-          !  do p = 1, 3*n_mbd_sites
-          !    write(*,*) AT(p,:,1)
-          !  end do
-          !end if
+          if ( .false. ) then
+            open(unit=89, file="AT.dat", status="new")
+
+            write(*,*) "AT"
+            do p = 1, 3*n_mbd_sites
+              write(89,*) AT(p,:,1)
+            end do
+            close(89)
+            write(*,*) "AT done"
+          end if
           
           !TEST!!!!!!!!!!!!!!!!!
           !allocate( V_int(1:3*n_mbd_sites,1:3*n_mbd_sites) )
@@ -2756,7 +2760,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
             do i2 = 1, n_freq
               !if ( i2 == 1 ) then
               call cpu_time(time5)
-              call power_iteration( val(:,i2), ia, ja, myidx, nnz, 20, b_vec )
+              call power_iteration( val(:,i2), ia, ja, myidx, nnz, 1000, b_vec )
               call cpu_time(time6)
               write(*,*) "Power iteration timing", time6-time5       
               b_norm = dot_product(b_vec,b_vec)
@@ -2774,9 +2778,9 @@ if ( abs(rcut_2b) < 1.d-10 ) then
               write(*,*) "AT-Ab mult timing", time6-time5
               l_dom = dot_product(b_vec,Ab)/b_norm
               if ( l_dom < 0.d0 ) then
-                l_min = l_dom - 0.01d0
+                l_min = l_dom !- 0.01d0
               else
-                l_max = l_dom + 0.01d0
+                l_max = l_dom !+ 0.01d0
               end if
               nnz2 = nnz+3*n_mbd_sites
               ia2(1:nnz) = ia
@@ -2788,7 +2792,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 val2(nnz+p) = -l_dom
               end do
               call cpu_time(time5)
-              call power_iteration( val2, ia2, ja2, myidx, nnz2, 20, b_vec )
+              call power_iteration( val2, ia2, ja2, myidx, nnz2, 1000, b_vec )
               call cpu_time(time6)
               write(*,*) "Power iteration timing second", time6-time5
               !call power_iteration( AT(:,:,i2)-l_dom*I_mat, 50, b_vec )
@@ -2806,9 +2810,9 @@ if ( abs(rcut_2b) < 1.d-10 ) then
               call cpu_time(time6)
               write(*,*) "AT-Ab 2nd mult timing", time6-time5
               if ( l_dom < 0.d0 ) then
-                l_max = dot_product(b_vec,Ab)/b_norm + l_dom + 0.01d0
+                l_max = dot_product(b_vec,Ab)/b_norm + l_dom !+ 0.01d0
               else
-                l_min = dot_product(b_vec,Ab)/b_norm + l_dom - 0.01d0
+                l_min = dot_product(b_vec,Ab)/b_norm + l_dom !- 0.01d0
               end if
               write(*,*) "l_min, l_max", l_min, l_max
               l_vals(1) = l_min
@@ -3844,7 +3848,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
               
               !write(*,*) "dT_LR construction timing", time2-time1
               
-              if ( i == 7 .and. c3 == 1 ) then
+              if ( .false. ) then
                 write(*,*) "dT_LR"
                 open(unit=89, file="dT_LR.dat", status="new")
                 do p = 1, 3*n_mbd_sites
@@ -4626,8 +4630,16 @@ if ( abs(rcut_2b) < 1.d-10 ) then
 
               integrand = 0.d0
 
-              !allocate( temp_mat(1:3*n_mbd_sites,1:3*n_mbd_sites) )
-              !temp_mat = 0.d0
+              if ( .false. ) then
+
+              write(*,*) "G_mat"
+              open(unit=89, file="G_mat.dat", status="new")
+              do p = 1, 3*n_mbd_sites
+                write(89,*) G_mat(p,:,1)
+              end do
+              close(89)
+              write(*,*) "G_mat done"
+              end if
               
               allocate( myidx(1:3*n_mbd_sites) )
           
