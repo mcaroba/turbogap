@@ -179,19 +179,19 @@ module gap
       end do
       n_pairs=l
 
-    !    allocate(l_index(1:n_pairs))
-    !    !write(*,*) "N pairs", n_pairs
+       allocate(l_index(1:n_pairs))
+       !write(*,*) "N pairs", n_pairs
 
-    !   l = 0
-    !   do i = 1, n_sites
-    !     do j = 1, n_neigh(i)
-    !       l = l + 1
-    !       l_index(l) = i
-    !     end do
-    !   end do
-    ! st_n_pairs=n_pairs*sizeof(l_index(1))
-    ! call gpu_malloc_all(l_index_d, st_n_pairs, gpu_stream)
-    ! call cpy_htod(c_loc(l_index),l_index_d,st_n_pairs, gpu_stream) 
+      l = 0
+      do i = 1, n_sites
+        do j = 1, n_neigh(i)
+          l = l + 1
+          l_index(l) = i
+        end do
+      end do
+    st_n_pairs=n_pairs*sizeof(l_index(1))
+    call gpu_malloc_all(l_index_d, st_n_pairs, gpu_stream)
+    call cpy_htod(c_loc(l_index),l_index_d,st_n_pairs, gpu_stream) 
 
     allocate(j2_index(1:n_pairs))
     l = 0
@@ -266,7 +266,8 @@ module gap
     
                                 
     call   gpu_final_soap_forces_virial(n_sites, &
-                                        Qss_d,n_soap, k2_i_site_d, j2_index_d, &
+                                        ! Qss_d,n_soap, k2_i_site_d, j2_index_d, &
+                                        Qss_d,n_soap, l_index_d, j2_index_d, &
                                         soap_der_d, &
                                         xyz_d, virial_d, &
                                         n_sites0, &

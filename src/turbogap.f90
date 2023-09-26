@@ -1362,28 +1362,28 @@ program turbogap
             this_virial = 0.d0
           end if
 
-          write(*,*) "Before doing 2b"
-         !$omp parallel reduction(+: this_energies, this_forces, this_virial)
-         !$ omp_task = omp_get_thread_num()
-          call get_2b_energy_and_forces(rjs(j_beg_omp(omp_task&
-               &+1):j_end_omp(omp_task+1)), xyz(1:3,&
-               & j_beg_omp(omp_task+1):j_end_omp(omp_task+1)),&
-               & distance_2b_hypers(i)%alphas, distance_2b_hypers(i)&
-               &%cutoff, distance_2b_hypers(i)%rcut, 0.5d0,&
-               & distance_2b_hypers(i)%delta, distance_2b_hypers(i)&
-               &%sigma, 0.d0, distance_2b_hypers(i)%Qs(:,1),&
-               & n_neigh(i_beg_omp(omp_task+1):i_end_omp(omp_task+1))&
-               &, params%do_forces, params%do_timing,&
-               & species(i_beg_omp(omp_task+1):i_end_omp(omp_task+1))&
-               &, neighbor_species(j_beg_omp(omp_task&
-               &+1):j_end_omp(omp_task+1)), distance_2b_hypers(i)&
-               &%species1, distance_2b_hypers(i)%species2, params&
-               &%species_types, this_energies(i_beg_omp(omp_task&
-               &+1):i_end_omp(omp_task+1)), this_forces(1:3,&
-               & i_beg_omp(omp_task+1):i_end_omp(omp_task+1)),&
-               & this_virial )
+        !   write(*,*) "Before doing 2b"
+        !  !$omp parallel reduction(+: this_energies, this_forces, this_virial)
+        !  !$ omp_task = omp_get_thread_num()
+        !   call get_2b_energy_and_forces(rjs(j_beg_omp(omp_task&
+        !        &+1):j_end_omp(omp_task+1)), xyz(1:3,&
+        !        & j_beg_omp(omp_task+1):j_end_omp(omp_task+1)),&
+        !        & distance_2b_hypers(i)%alphas, distance_2b_hypers(i)&
+        !        &%cutoff, distance_2b_hypers(i)%rcut, 0.5d0,&
+        !        & distance_2b_hypers(i)%delta, distance_2b_hypers(i)&
+        !        &%sigma, 0.d0, distance_2b_hypers(i)%Qs(:,1),&
+        !        & n_neigh(i_beg_omp(omp_task+1):i_end_omp(omp_task+1))&
+        !        &, params%do_forces, params%do_timing,&
+        !        & species(i_beg_omp(omp_task+1):i_end_omp(omp_task+1))&
+        !        &, neighbor_species(j_beg_omp(omp_task&
+        !        &+1):j_end_omp(omp_task+1)), distance_2b_hypers(i)&
+        !        &%species1, distance_2b_hypers(i)%species2, params&
+        !        &%species_types, this_energies(i_beg_omp(omp_task&
+        !        &+1):i_end_omp(omp_task+1)), this_forces(1:3,&
+        !        & i_beg_omp(omp_task+1):i_end_omp(omp_task+1)),&
+        !        & this_virial )
 
-          !$omp end parallel
+        !   !$omp end parallel
 
 !          print *, " 2b energies array, n = ",i
           ! print *, " 2b virial array, n = ",i          
@@ -1396,15 +1396,15 @@ program turbogap
           
             
 
-          ! call get_2b_energy_and_forces(rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), distance_2b_hypers(i)%alphas, &
-          !                               distance_2b_hypers(i)%cutoff, &
-          !                               distance_2b_hypers(i)%rcut, 0.5d0, distance_2b_hypers(i)%delta, &
-          !                               distance_2b_hypers(i)%sigma, 0.d0, distance_2b_hypers(i)%Qs(:,1), &
-          !                               n_neigh(i_beg:i_end), params%do_forces, params%do_timing, &
-          !                               species(i_beg:i_end), neighbor_species(j_beg:j_end), &
-          !                               distance_2b_hypers(i)%species1, distance_2b_hypers(i)%species2, &
-          !                               params%species_types, this_energies(i_beg:i_end), this_forces(1:3, i_beg:i_end), &
-          !                               this_virial )
+          call get_2b_energy_and_forces(rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), distance_2b_hypers(i)%alphas, &
+                                        distance_2b_hypers(i)%cutoff, &
+                                        distance_2b_hypers(i)%rcut, 0.5d0, distance_2b_hypers(i)%delta, &
+                                        distance_2b_hypers(i)%sigma, 0.d0, distance_2b_hypers(i)%Qs(:,1), &
+                                        n_neigh(i_beg:i_end), params%do_forces, params%do_timing, &
+                                        species(i_beg:i_end), neighbor_species(j_beg:j_end), &
+                                        distance_2b_hypers(i)%species1, distance_2b_hypers(i)%species2, &
+                                        params%species_types, this_energies(i_beg:i_end), this_forces(1:3, i_beg:i_end), &
+                                        this_virial )
           energies_2b = energies_2b + this_energies
           if( params%do_forces )then
             forces_2b = forces_2b + this_forces
@@ -1458,39 +1458,39 @@ program turbogap
             this_forces = 0.d0
             this_virial = 0.d0
           end if
-          write(*,*) "Before doing 3b"
-          !$omp parallel reduction(+: this_energies, this_forces, this_virial)
-         !$ omp_task = omp_get_thread_num()
+!          write(*,*) "Before doing 3b"
+!          !$omp parallel reduction(+: this_energies, this_forces, this_virial)
+        !  !$ omp_task = omp_get_thread_num()
 
-         call get_3b_energy_and_forces(rjs(j_beg_omp(omp_task&
-              &+1):j_end_omp(omp_task+1)), xyz(1:3,j_beg_omp(omp_task&
-              &+1):j_end_omp(omp_task+1)), angle_3b_hypers(i)%alphas,&
-              & angle_3b_hypers(i)%cutoff, angle_3b_hypers(i)%rcut,&
-              & 0.5d0, angle_3b_hypers(i)%delta, angle_3b_hypers(i)&
-              &%sigma, 0.d0, angle_3b_hypers(i)%Qs,&
-              & n_neigh(i_beg_omp(omp_task+1):i_end_omp(omp_task+1)),&
-              & neighbors_list(j_beg_omp(omp_task&
-              &+1):j_end_omp(omp_task+1)), params%do_forces, params&
-              &%do_timing, angle_3b_hypers(i)%kernel_type,&
-              & species(i_beg_omp(omp_task+1):i_end_omp(omp_task+1)),&
-              & neighbor_species(j_beg_omp(omp_task&
-              &+1):j_end_omp(omp_task+1)), angle_3b_hypers(i)&
-              &%species_center, angle_3b_hypers(i)%species1,&
-              & angle_3b_hypers(i)%species2, params%species_types,&
-              & this_energies(i_beg_omp(omp_task&
-              &+1):i_end_omp(omp_task+1)), this_forces, this_virial)
+        !  call get_3b_energy_and_forces(rjs(j_beg_omp(omp_task&
+        !       &+1):j_end_omp(omp_task+1)), xyz(1:3,j_beg_omp(omp_task&
+        !       &+1):j_end_omp(omp_task+1)), angle_3b_hypers(i)%alphas,&
+        !       & angle_3b_hypers(i)%cutoff, angle_3b_hypers(i)%rcut,&
+        !       & 0.5d0, angle_3b_hypers(i)%delta, angle_3b_hypers(i)&
+        !       &%sigma, 0.d0, angle_3b_hypers(i)%Qs,&
+        !       & n_neigh(i_beg_omp(omp_task+1):i_end_omp(omp_task+1)),&
+        !       & neighbors_list(j_beg_omp(omp_task&
+        !       &+1):j_end_omp(omp_task+1)), params%do_forces, params&
+        !       &%do_timing, angle_3b_hypers(i)%kernel_type,&
+        !       & species(i_beg_omp(omp_task+1):i_end_omp(omp_task+1)),&
+        !       & neighbor_species(j_beg_omp(omp_task&
+        !       &+1):j_end_omp(omp_task+1)), angle_3b_hypers(i)&
+        !       &%species_center, angle_3b_hypers(i)%species1,&
+        !       & angle_3b_hypers(i)%species2, params%species_types,&
+        !       & this_energies(i_beg_omp(omp_task&
+        !       &+1):i_end_omp(omp_task+1)), this_forces, this_virial)
 
-         !$omp end parallel
+        !  !$omp end parallel
 
-          ! call get_3b_energy_and_forces(rjs(j_beg:j_end), xyz(1:3,j_beg:j_end), angle_3b_hypers(i)%alphas, &
-          !                               angle_3b_hypers(i)%cutoff, &
-          !                               angle_3b_hypers(i)%rcut, 0.5d0, angle_3b_hypers(i)%delta, &
-          !                               angle_3b_hypers(i)%sigma, 0.d0, angle_3b_hypers(i)%Qs, n_neigh(i_beg:i_end), &
-          !                               neighbors_list(j_beg:j_end), &
-          !                               params%do_forces, params%do_timing, angle_3b_hypers(i)%kernel_type, &
-          !                               species(i_beg:i_end), neighbor_species(j_beg:j_end), angle_3b_hypers(i)%species_center, &
-          !                               angle_3b_hypers(i)%species1, angle_3b_hypers(i)%species2, params%species_types, &
-          !                               this_energies(i_beg:i_end), this_forces, this_virial)
+          call get_3b_energy_and_forces(rjs(j_beg:j_end), xyz(1:3,j_beg:j_end), angle_3b_hypers(i)%alphas, &
+                                        angle_3b_hypers(i)%cutoff, &
+                                        angle_3b_hypers(i)%rcut, 0.5d0, angle_3b_hypers(i)%delta, &
+                                        angle_3b_hypers(i)%sigma, 0.d0, angle_3b_hypers(i)%Qs, n_neigh(i_beg:i_end), &
+                                        neighbors_list(j_beg:j_end), &
+                                        params%do_forces, params%do_timing, angle_3b_hypers(i)%kernel_type, &
+                                        species(i_beg:i_end), neighbor_species(j_beg:j_end), angle_3b_hypers(i)%species_center, &
+                                        angle_3b_hypers(i)%species1, angle_3b_hypers(i)%species2, params%species_types, &
+                                        this_energies(i_beg:i_end), this_forces, this_virial)
           energies_3b = energies_3b + this_energies
           if( params%do_forces )then
             forces_3b = forces_3b + this_forces

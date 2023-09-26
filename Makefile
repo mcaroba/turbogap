@@ -6,7 +6,7 @@ SHELL = /bin/sh
 # Check the makefiles/ directory for a list of tested architectures
 
 include makefiles/Makefile.CSC-LUMI_cray	
-#include makefiles/Makefile.LUMI_gnu	
+#include makefiles/Makefile.CSC-LUMI_gnu	
 
 
 # Default locations for various files
