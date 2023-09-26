@@ -1038,7 +1038,7 @@ module vdw
 !**************************************************************************
   subroutine get_mbd_energies_and_forces( hirshfeld_v_cart_der_ji, &
                                        n_neigh, neighbors_list, neighbor_species, &
-                                       rcut, rcut_loc, rcut_mbd, rcut_2b, r_buffer, rjs, xyz, &
+                                       rcut, rcut_loc, rcut_mbd, rcut_mbd2, rcut_2b, r_buffer, rjs, xyz, &
                                        hirshfeld_v_neigh, sR, d, c6_ref, r0_ref, alpha0_ref, do_derivatives, &
                                        do_hirshfeld_gradients, polynomial_expansion, do_nnls, n_freq, n_order, &
                                        vdw_omega_ref, central_pol, central_omega, &
@@ -1048,7 +1048,7 @@ module vdw
 
 !   Input variables
     real*8, intent(in) :: rcut, r_buffer, &
-                          rjs(:), xyz(:,:), sR, d, c6_ref(:), r0_ref(:), rcut_loc, rcut_mbd, rcut_2b, &
+                          rjs(:), xyz(:,:), sR, d, c6_ref(:), r0_ref(:), rcut_loc, rcut_mbd, rcut_mbd2, rcut_2b, &
                           hirshfeld_v_cart_der_ji(:,:), &
                           alpha0_ref(:), vdw_omega_ref !, hirshfeld_v(:), hirshfeld_v_neigh(:) !NOTE: uncomment this in final implementation
     integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:), n_freq, n_order
@@ -1102,7 +1102,7 @@ module vdw
               dr_vdw_j, forces_TS, dC6_2b, mult1_i, mult1_j, mult2, dmult1_i(1:3), dmult1_j(1:3), dmult2(1:3), hv_p_der, &
               hv_q_der, do_pref, rb, inner_damp_der, rjs_0_i, rcut_forces, o_i, o_j, do_i, do_j, T_LR_mult_i, T_LR_mult_j, &
               dT_LR_mult_i, dT_LR_mult_j, dT_LR_mult_0ij_2, dT_LR_mult_0ji_2, a_i, a_j, E_TS_tot, r6_der, ac2, ac3, ac4, &
-              r_buf_ij, log_integral, rcut_mbd2, rcut_tot
+              r_buf_ij, log_integral, rcut_tot
               
     integer :: n_mbd_sites, n_mbd_pairs, n_2b_sites, n_2b_tot_sites, n_2b_tot_pairs, n_ene_sites, n_force_sites
     integer, allocatable :: n_mbd_neigh(:), mbd_neighbors_list(:), p_mbd(:), sub_2b_tot_list(:), n_2b_tot_neigh(:), &
@@ -1248,20 +1248,23 @@ ac2 = 3.d0 + ac4
     else
       r_buf_loc = r_buffer
     end if
-    
+    !r_buf_loc = 0.5d0    
+
     if ( rcut_mbd < r_buffer ) then
       r_buf_mbd = rcut_mbd
     else
       r_buf_mbd = r_buffer
     end if
     
-    rcut_mbd2 = 8.d0
+    !rcut_mbd2 = 8.d0
 
     rcut_tot = maxval((/2.d0*rcut_mbd2+rcut_loc,rcut_mbd+rcut_mbd2/))
     write(*,*) "rcut_tot", rcut_tot
 
-    r_buf_mbd = 0.5d0
+    !r_buf_mbd = r_buffer
+    r_buf_mbd = r_buffer
     r_buf_ij = r_buffer
+    !r_buf_ij = 0.d0
     
     !if ( rcut_2b-rcut_mbd < r_buffer ) then
     !  r_buf_2b = rcut_2b-rcut_mbd
@@ -1364,7 +1367,7 @@ ac2 = 3.d0 + ac4
       !d_dmult_i = 0.d0
       !d_dmult_o = 0.d0
       call cpu_time(time2)
-      write(*,*) "Initialization timing", time2-time1
+      !write(*,*) "Initialization timing", time2-time1
 
       do om = 1, 2
 
@@ -1648,7 +1651,7 @@ ac2 = 3.d0 + ac4
 
         call cpu_time(time2)
 
-        write(*,*) "B_mat timing", time2-time1
+        !write(*,*) "B_mat timing", time2-time1
 
         !if ( i == 1 .and. om == 2 ) then
         !  write(*,*) "d_vec"
@@ -1851,7 +1854,7 @@ ac2 = 3.d0 + ac4
         
         call cpu_time(time2)
         
-        write(*,*) "Polarizabilities timing", time2-time1
+        !write(*,*) "Polarizabilities timing", time2-time1
 
         if ( om == 2 ) then
 
@@ -1990,7 +1993,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
           allocate( val(1:9*(n_mbd_pairs-n_mbd_sites),1:n_freq) )
 
           call cpu_time(time2)
-          write(*,*) "MBD initialization timing", time2-time1
+          !write(*,*) "MBD initialization timing", time2-time1
 
 end if
 
@@ -2361,11 +2364,11 @@ if ( abs(rcut_2b) < 1.d-10 ) then
             end if
           end do
           nnz = k4
-          write(*,*) "k2 / n_mbd_pairs", k2, "/", n_mbd_pairs
+          !write(*,*) "k2 / n_mbd_pairs", k2, "/", n_mbd_pairs
           
           call cpu_time(time2)
           
-          write(*,*) "Matrix construction timing", time2-time1
+          !write(*,*) "Matrix construction timing", time2-time1
 
           call cpu_time(time5)
 
@@ -2633,8 +2636,8 @@ if ( abs(rcut_2b) < 1.d-10 ) then
           !TEST!!!!!!!!!!!!!!!!!
 
           call cpu_time(time6)
-          write(*,*) "AT and other stuff timing", time6-time5
-          write(*,*) "AT timing", time2-time1          
+          !write(*,*) "AT and other stuff timing", time6-time5
+          !write(*,*) "AT timing", time2-time1          
 
           call cpu_time(time1)
           if ( series_expansion ) then
@@ -2756,13 +2759,13 @@ if ( abs(rcut_2b) < 1.d-10 ) then
               I_mat(p,p) = 1.d0
             end do
             call cpu_time(time6)
-            write(*,*) "Integrand initialization timing", time6-time5
+            !write(*,*) "Integrand initialization timing", time6-time5
             do i2 = 1, n_freq
               !if ( i2 == 1 ) then
               call cpu_time(time5)
               call power_iteration( val(:,i2), ia, ja, myidx, nnz, 1000, b_vec )
               call cpu_time(time6)
-              write(*,*) "Power iteration timing", time6-time5       
+              !write(*,*) "Power iteration timing", time6-time5       
               b_norm = dot_product(b_vec,b_vec)
               call cpu_time(time5)
               !call dgemm('N', 'N',  3*n_mbd_sites, 1, 3*n_mbd_sites, 1.d0, AT(:,:,i2), 3*n_mbd_sites, b_vec, &
@@ -2775,12 +2778,12 @@ if ( abs(rcut_2b) < 1.d-10 ) then
               call psb_spasb(A_sp, desc_a, info_psb)
               call psb_spmm(1.d0, A_sp, b_vec, 0.d0, Ab, desc_a, info_psb, 'N')
               call cpu_time(time6)
-              write(*,*) "AT-Ab mult timing", time6-time5
+              !write(*,*) "AT-Ab mult timing", time6-time5
               l_dom = dot_product(b_vec,Ab)/b_norm
               if ( l_dom < 0.d0 ) then
-                l_min = l_dom !- 0.01d0
+                l_min = l_dom - 0.01d0
               else
-                l_max = l_dom !+ 0.01d0
+                l_max = l_dom + 0.01d0
               end if
               nnz2 = nnz+3*n_mbd_sites
               ia2(1:nnz) = ia
@@ -2794,7 +2797,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
               call cpu_time(time5)
               call power_iteration( val2, ia2, ja2, myidx, nnz2, 1000, b_vec )
               call cpu_time(time6)
-              write(*,*) "Power iteration timing second", time6-time5
+              !write(*,*) "Power iteration timing second", time6-time5
               !call power_iteration( AT(:,:,i2)-l_dom*I_mat, 50, b_vec )
               b_norm = dot_product(b_vec,b_vec)
               call cpu_time(time5)
@@ -2808,11 +2811,11 @@ if ( abs(rcut_2b) < 1.d-10 ) then
               call psb_spasb(A_sp, desc_a, info_psb)
               call psb_spmm(1.d0, A_sp, b_vec, 0.d0, Ab, desc_a, info_psb, 'N')
               call cpu_time(time6)
-              write(*,*) "AT-Ab 2nd mult timing", time6-time5
+              !write(*,*) "AT-Ab 2nd mult timing", time6-time5
               if ( l_dom < 0.d0 ) then
-                l_max = dot_product(b_vec,Ab)/b_norm + l_dom !+ 0.01d0
+                l_max = dot_product(b_vec,Ab)/b_norm + l_dom + 0.01d0
               else
-                l_min = dot_product(b_vec,Ab)/b_norm + l_dom !- 0.01d0
+                l_min = dot_product(b_vec,Ab)/b_norm + l_dom - 0.01d0
               end if
               write(*,*) "l_min, l_max", l_min, l_max
               l_vals(1) = l_min
@@ -2830,7 +2833,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
               call dgesv( n_order+1, 1, lsq_mat, n_order+1, ipiv_lsq, res_mat, n_order+1, info )
               !write(*,*) "coeff", res_mat
               call cpu_time(time6)
-              write(*,*) "dgesv timing", time6-time5
+              !write(*,*) "dgesv timing", time6-time5
               call psb_init(icontxt)
               call psb_cdall(icontxt, desc_a, info_psb, vl=myidx)
               call psb_spall(A_sp, desc_a, info_psb, nnz=nnz)
@@ -2955,7 +2958,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 integrand(i2) = integrand(i2) + &
                                 res_mat(n_order+1)*dot_product(AT(c1,:,i2),AT_power(:,c1))
                 call cpu_time(time6)
-                write(*,*) "Dot product timing", time6-time5
+                !write(*,*) "Dot product timing", time6-time5
               end do
               if ( do_derivatives ) then
                 if ( do_total_energy ) then
@@ -3031,7 +3034,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
           end if      
           call cpu_time(time2)
           
-          write(*,*) "Integrand calculation timing", time2-time1
+          !write(*,*) "Integrand calculation timing", time2-time1
           
           call cpu_time(time1)
 
@@ -3107,7 +3110,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
               log_integral = 0.d0
               call integrate("trapezoidal", omegas_mbd, log_integrand, omegas_mbd(1), omegas_mbd(n_freq), log_integral)
               log_integral = log_integral/(2.d0*pi)
-              write(*,*) "Exact log energy", i, log_integral * Hartree
+              !write(*,*) "Exact log energy", i, log_integral * Hartree
               deallocate( log_integrand )
             end if
   
@@ -3117,17 +3120,17 @@ if ( abs(rcut_2b) < 1.d-10 ) then
 
           call cpu_time(time2)
 
-          write(*,*) "Integration timing", time2-time1
+          !write(*,*) "Integration timing", time2-time1
 
           E_TS = 0.d0
           !write(*,*) "integral, E_TS", integral, E_TS
           energies(i) = (integral + E_TS) * Hartree
-          write(*,*) "MBD energy", i, energies(i)
+          !write(*,*) "MBD energy", i, energies(i)
 
 
           if ( do_derivatives ) then
             if ( do_total_energy ) then
-              write(*,*) "Total energy", i, total_integral * Hartree
+              !write(*,*) "Total energy", i, total_integral * Hartree
             end if
           end if
 
@@ -3639,6 +3642,11 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                   end if
                   do_mbd(k2) = 0.d0
                 end if
+                !THIS SHIT
+                da_mbd(k2) = 0.d0
+                do_mbd(k2) = 0.d0
+                dr0_ii_SCS(k2) = 0.d0
+                !THIS SHIT
                 T_LR_mult_i = T_LR_mult_0i(k2)
                 dT_LR_mult_i = dT_LR_mult_0i(k2)
                 dr_vdw_i = dr0_ii_SCS(k2)
@@ -3744,6 +3752,11 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                     end if
                     do_mbd(k2) = 0.d0
                   end if
+                  !THIS SHIT
+                  da_mbd(k2) = 0.d0
+                  do_mbd(k2) = 0.d0
+                  dr0_ii_SCS(k2) = 0.d0
+                  !THIS SHIT
                   T_LR_mult_j = T_LR_mult_0j(k2)
                   dT_LR_mult_j = dT_LR_mult_0j(k2)
                   dr_vdw_j = dr0_ii_SCS(k2)
@@ -3857,7 +3870,6 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 write(*,*) "dT_LR done"
                 close(89)
               end if
-
 
 
 end if
@@ -4633,11 +4645,14 @@ if ( abs(rcut_2b) < 1.d-10 ) then
               if ( .false. ) then
 
               write(*,*) "G_mat"
-              open(unit=89, file="G_mat.dat", status="new")
+              !open(unit=89, file="G_mat.dat", status="new")
+              open(unit=79, file="pol_grad.dat", status="new")
               do p = 1, 3*n_mbd_sites
-                write(89,*) G_mat(p,:,1)
+                !write(89,*) G_mat(p,:,3)
+                write(79,*) pol_grad(p,:,3)
               end do
-              close(89)
+              !close(89)
+              close(79)
               write(*,*) "G_mat done"
               end if
               
@@ -4734,7 +4749,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                   !E_TS_tot = 0.d0
                   call integrate("trapezoidal", omegas_mbd, total_integrand, omegas_mbd(1), omegas_mbd(n_freq), E_tot)
                   E_tot = (E_tot/(2.d0*pi) + E_TS_tot) * Hartree
-                  write(*,*) "Total energy of sphere", i, E_tot
+                  !write(*,*) "Total energy of sphere", i, E_tot
                 end if
               else
                 ! Diagonalization stuff:
@@ -4825,7 +4840,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                   !E_TS_tot = 0.d0
                   call integrate("trapezoidal", omegas_mbd, total_integrand, omegas_mbd(1), omegas_mbd(n_freq), E_tot)
                   E_tot = (E_tot/(2.d0*pi) + E_TS_tot) * Hartree
-                  write(*,*) "Total energy of sphere", i, E_tot
+                  !write(*,*) "Total energy of sphere", i, E_tot
                 end if
               end if           
               
@@ -4927,20 +4942,22 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 if ( .not. series_expansion ) then
                   integral = 0.d0
                   call integrate("trapezoidal", omegas_mbd, log_integrand, omegas_mbd(1), omegas_mbd(n_freq), integral)
-                  write(*,*) "Log force", i, c3, integral/(2.d0*pi) * Hartree/Bohr
+                  !write(*,*) "Log force", write(*,*) i, c3, integral/(2.d0*pi) * Hartree/Bohr
                   integral = 0.d0
+                  !write(*,*) "integrand pol", integrand_pol
                   call integrate("trapezoidal", omegas_mbd, integrand_pol, omegas_mbd(1), omegas_mbd(n_freq), integral)
-                  write(*,*) "Polynomial derivative force", i, c3, integral/(2.d0*pi) * Hartree/Bohr
+                  !write(*,*) "Polynomial derivative force", 
+                  write(*,*) i, c3, integral/(2.d0*pi) * Hartree/Bohr
                   deallocate( log_integrand, integrand_pol )
                   integral = 0.d0
                   call integrate("trapezoidal", omegas_mbd, integrand, omegas_mbd(1), omegas_mbd(n_freq), integral)
-                  write(*,*) "Inverse force", i, c3, integral/(2.d0*pi) * Hartree/Bohr
+                  !write(*,*) "Inverse force", i, c3, integral/(2.d0*pi) * Hartree/Bohr
                 end if
                 forces0(c3,i) = forces0(c3,i) + (1.d0/(2.d0*pi) * integral + forces_TS) * Hartree/Bohr
 
-                !write(*,*) "MBD force", i, c3, 1.d0/(2.d0*pi) * integral * Hartree/Bohr
-                write(*,*) & !"Total force",
-                           i, c3, forces0(c3,i)
+                !!!!!!write(*,*) "MBD force", i, c3, 1.d0/(2.d0*pi) * integral * Hartree/Bohr
+                !write(*,*) & !"Total force",
+                !           i, c3, forces0(c3,i)
 
               end if
               
@@ -5015,7 +5032,7 @@ end if
       end if
            
       call cpu_time(time4)
-      write(*,*) "time per atom", time4-time3
+      !write(*,*) "time per atom", time4-time3
 
     end do
 

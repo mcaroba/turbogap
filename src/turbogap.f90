@@ -1394,7 +1394,7 @@ call cpu_time(time1)
                                          n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
                                          neighbor_species(j_beg:j_end), &
                                          params%vdw_scs_rcut, params%vdw_loc_rcut, params%vdw_mbd_rcut, &
-                                         params%vdw_2b_rcut, params%vdw_buffer, &
+                                         params%vdw_mbd_rcut2, params%vdw_2b_rcut, params%vdw_buffer, &
                                          rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), v_neigh_vdw, &
                                          params%vdw_sr, params%vdw_d, params%vdw_c6_ref, params%vdw_r0_ref, &
                                          params%vdw_alpha0_ref, params%vdw_mbd_grad, params%vdw_hirsh_grad, &
