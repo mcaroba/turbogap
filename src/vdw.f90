@@ -1248,7 +1248,7 @@ ac2 = 3.d0 + ac4
     else
       r_buf_loc = r_buffer
     end if
-    !r_buf_loc = 0.5d0    
+    r_buf_loc = rcut_loc    
 
     if ( rcut_mbd < r_buffer ) then
       r_buf_mbd = rcut_mbd
@@ -3597,7 +3597,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                               - 30.d0 * rb**4) &
                                * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_loc/Bohr)) + &
                                 r0_ii_mbd(k2) &
-                                * (central_pol(i1)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0) * &
+                               * (central_pol(i1)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0) * &
                                 !* (hirshfeld_mbd_neigh(k2))**(1.d0/3.d0) * &
                               (+30.d0 * rb**2 &
                               - 60.d0 * rb**3 &
@@ -3643,9 +3643,9 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                   do_mbd(k2) = 0.d0
                 end if
                 !THIS SHIT
-                da_mbd(k2) = 0.d0
-                do_mbd(k2) = 0.d0
-                dr0_ii_SCS(k2) = 0.d0
+                !da_mbd(k2) = 0.d0
+                !do_mbd(k2) = 0.d0
+                !dr0_ii_SCS(k2) = 0.d0
                 !THIS SHIT
                 T_LR_mult_i = T_LR_mult_0i(k2)
                 dT_LR_mult_i = dT_LR_mult_0i(k2)
@@ -3707,7 +3707,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                               - 30.d0 * rb**4) &
                                * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_loc/Bohr)) + &
                                 r0_ii_mbd(k2) &
-                                * (central_pol(j1)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0) * & 
+                               * (central_pol(j1)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0) * & 
                                 !* (hirshfeld_mbd_neigh(k2))**(1.d0/3.d0) * &
                               (+30.d0 * rb**2 &
                               - 60.d0 * rb**3 &
@@ -3735,7 +3735,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                               + 60.d0 * rb**3 &
                               - 30.d0 * rb**4) &
                                  * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_loc/Bohr)) + &
-                                 central_omega(j1) * &
+                                central_omega(j1) * &
                                   ( +30.d0 * rb**2 &
                               - 60.d0 * rb**3 &
                               + 30.d0 * rb**4) &
@@ -3753,9 +3753,9 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                     do_mbd(k2) = 0.d0
                   end if
                   !THIS SHIT
-                  da_mbd(k2) = 0.d0
-                  do_mbd(k2) = 0.d0
-                  dr0_ii_SCS(k2) = 0.d0
+                  !da_mbd(k2) = 0.d0
+                  !do_mbd(k2) = 0.d0
+                  !dr0_ii_SCS(k2) = 0.d0
                   !THIS SHIT
                   T_LR_mult_j = T_LR_mult_0j(k2)
                   dT_LR_mult_j = dT_LR_mult_0j(k2)
