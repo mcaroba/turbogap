@@ -1100,7 +1100,7 @@ module vdw
                            temp_mat_full(:,:), temp_mat_forces(:,:)
     real*8 :: a_mbd_i, a_mbd_j, o_mbd_i, da_i, da_j, pol1, E_TS, f_damp_der_2b, dr_vdw_i, &
               dr_vdw_j, forces_TS, dC6_2b, mult1_i, mult1_j, mult2, dmult1_i(1:3), dmult1_j(1:3), dmult2(1:3), hv_p_der, &
-              hv_q_der, do_pref, rb, inner_damp_der, rjs_0_i, rcut_forces, o_i, o_j, do_i, do_j, T_LR_mult_i, T_LR_mult_j, &
+              hv_q_der, do_pref, rb, inner_damp_der, rjs_0_i, rcut_force, o_i, o_j, do_i, do_j, T_LR_mult_i, T_LR_mult_j, &
               dT_LR_mult_i, dT_LR_mult_j, dT_LR_mult_0ij_2, dT_LR_mult_0ji_2, a_i, a_j, E_TS_tot, r6_der, ac2, ac3, ac4, &
               r_buf_ij, log_integral, rcut_tot, sym_integral
               
@@ -1118,7 +1118,7 @@ module vdw
     integer, allocatable :: ind_nnls(:)
     real*8 :: res_nnls, E_tot, denom
     integer :: mode_nnls
-    logical :: do_total_energy = .true., series_expansion = .false., do_log = .false., cent_appr = .true.  ! Finite difference testing purposes
+    logical :: do_total_energy = .true., series_expansion = .false., do_log = .false., cent_appr = .false.  ! Finite difference testing purposes
     real*8, allocatable :: b_vec(:), Ab(:), I_mat(:,:), l_vals(:), log_vals(:), lsq_mat(:,:), res_mat(:), log_exp(:,:), &
                            AT_power(:,:), log_integrand(:), AT_power_full(:,:), pol_grad(:,:,:), pol_inv(:,:,:), inv_vals(:), &
                            res_inv(:), lsq_inv(:,:), integrand_pol(:), AT_sym(:,:,:), G_sym(:,:,:), pol_sym(:,:,:), res_sym(:), &
@@ -1260,6 +1260,7 @@ ac2 = 3.d0 + ac4
     !rcut_mbd2 = 8.d0
 
     rcut_tot = maxval((/2.d0*rcut_mbd2+rcut_loc,rcut_mbd+rcut_mbd2/))
+    rcut_force = maxval((/rcut_mbd2+rcut_loc,rcut_mbd/))
     write(*,*) "rcut_tot", rcut_tot
 
     !r_buf_mbd = r_buffer
@@ -1879,7 +1880,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
             if (rjs(n_tot+k_i) .le. rcut_tot ) then
               n_mbd_sites = n_mbd_sites + 1
               n_mbd_pairs = n_mbd_pairs + 1
-              if ( rjs(n_tot+k_i) .le. rcut_mbd2+rcut_loc ) then
+              if ( rjs(n_tot+k_i) .le. rcut_force ) then
                 n_force_sites = n_force_sites + 1
               end if
               !if ( rjs(n_tot+k_i) .le. rcut_mbd ) then
@@ -2562,9 +2563,11 @@ if ( abs(rcut_2b) < 1.d-10 ) then
             end if
             k3 = 0
             do p = 1, n_mbd_sites
+              if ( .not. cent_appr ) then
               AT(3*(p-1)+1:3*(p-1)+3,:,i2) = a_mbd(k3+1)/(1.d0+(omegas_mbd(i2)/o_mbd(k3+1))**2) &
                                              * T_LR(3*(p-1)+1:3*(p-1)+3,:)
                                              ! * AT_mult(p)
+              end if
               if ( cent_appr ) then
                 AT_sym(3*(p-1)+1:3*(p-1)+3,:,i2) = sqrt( a_mbd(k3+1)/(1.d0+(omegas_mbd(i2)/o_mbd(k3+1))**2) ) * &
                                            AT_sym(3*(p-1)+1:3*(p-1)+3,:,i2) 
@@ -2759,100 +2762,102 @@ if ( abs(rcut_2b) < 1.d-10 ) then
             !write(*,*) "Integrand initialization timing", time6-time5
             do i2 = 1, n_freq
               !if ( i2 == 1 ) then
-              call cpu_time(time5)
-              call power_iteration( val(:,i2), ia, ja, myidx, nnz, 1000, b_vec )
-              call cpu_time(time6)
-              !write(*,*) "Power iteration timing", time6-time5       
-              b_norm = dot_product(b_vec,b_vec)
-              call cpu_time(time5)
-              !call dgemm('N', 'N',  3*n_mbd_sites, 1, 3*n_mbd_sites, 1.d0, AT(:,:,i2), 3*n_mbd_sites, b_vec, &
-              !              3*n_mbd_sites, 0.d0, Ab, 3*n_mbd_sites)
-              call psb_init(icontxt)
-              call psb_cdall(icontxt, desc_a, info_psb, vl=myidx)
-              call psb_spall(A_sp, desc_a, info_psb, nnz=nnz)
-              call psb_spins(nnz, ia(1:nnz), ja(1:nnz), val(1:nnz,i2), A_sp, desc_a, info_psb)
-              call psb_cdasb(desc_a, info_psb)
-              call psb_spasb(A_sp, desc_a, info_psb)
-              call psb_spmm(1.d0, A_sp, b_vec, 0.d0, Ab, desc_a, info_psb, 'N')
-              call cpu_time(time6)
-              !write(*,*) "AT-Ab mult timing", time6-time5
-              l_dom = dot_product(b_vec,Ab)/b_norm
-              if ( l_dom < 0.d0 ) then
-                l_min = l_dom - 0.01d0
-              else
-                l_max = l_dom + 0.01d0
-              end if
-              nnz2 = nnz+3*n_mbd_sites
-              ia2(1:nnz) = ia
-              ja2(1:nnz) = ja
-              val2(1:nnz) = val(1:nnz,i2)
-              do p = 1, 3*n_mbd_sites
-                ia2(nnz+p) = p
-                ja2(nnz+p) = p
-                val2(nnz+p) = -l_dom
-              end do
-              call cpu_time(time5)
-              call power_iteration( val2, ia2, ja2, myidx, nnz2, 1000, b_vec )
-              call cpu_time(time6)
-              !write(*,*) "Power iteration timing second", time6-time5
-              !call power_iteration( AT(:,:,i2)-l_dom*I_mat, 50, b_vec )
-              b_norm = dot_product(b_vec,b_vec)
-              call cpu_time(time5)
-              !call dgemm('N', 'N',  3*n_mbd_sites, 1, 3*n_mbd_sites, 1.d0, AT(:,:,i2)-l_dom*I_mat, &
-              !           3*n_mbd_sites, b_vec, 3*n_mbd_sites, 0.d0, Ab, 3*n_mbd_sites)
-              call psb_init(icontxt)
-              call psb_cdall(icontxt, desc_a, info_psb, vl=myidx)
-              call psb_spall(A_sp, desc_a, info_psb, nnz=nnz2)
-              call psb_spins(nnz2, ia2(1:nnz2), ja2(1:nnz2), val2(1:nnz2), A_sp, desc_a, info_psb)
-              call psb_cdasb(desc_a, info_psb)
-              call psb_spasb(A_sp, desc_a, info_psb)
-              call psb_spmm(1.d0, A_sp, b_vec, 0.d0, Ab, desc_a, info_psb, 'N')
-              call cpu_time(time6)
-              !write(*,*) "AT-Ab 2nd mult timing", time6-time5
-              if ( l_dom < 0.d0 ) then
-                l_max = dot_product(b_vec,Ab)/b_norm + l_dom + 0.01d0
-              else
-                l_min = dot_product(b_vec,Ab)/b_norm + l_dom - 0.01d0
-              end if
-              write(*,*) "l_min, l_max", l_min, l_max
-              l_vals(1) = l_min
-              do k2 = 2, 1001
-                l_vals(k2) = l_min + (k2-1)*(l_max-l_min)/1000
-              end do
-              log_vals = log(1.d0-l_vals)
-              do j2 = 1, n_order+1
-                res_mat(j2) = sum(log_vals*l_vals**(j2-1))
-                do k2 = 1, n_order+1
-                  lsq_mat(j2,k2) = sum(l_vals**(j2-1+k2-1))
+              if ( .not. cent_appr ) then
+                call cpu_time(time5)
+                call power_iteration( val(:,i2), ia, ja, myidx, nnz, 20, b_vec )
+                call cpu_time(time6)
+                !write(*,*) "Power iteration timing", time6-time5       
+                b_norm = dot_product(b_vec,b_vec)
+                call cpu_time(time5)
+                !call dgemm('N', 'N',  3*n_mbd_sites, 1, 3*n_mbd_sites, 1.d0, AT(:,:,i2), 3*n_mbd_sites, b_vec, &
+                !              3*n_mbd_sites, 0.d0, Ab, 3*n_mbd_sites)
+                call psb_init(icontxt)
+                call psb_cdall(icontxt, desc_a, info_psb, vl=myidx)
+                call psb_spall(A_sp, desc_a, info_psb, nnz=nnz)
+                call psb_spins(nnz, ia(1:nnz), ja(1:nnz), val(1:nnz,i2), A_sp, desc_a, info_psb)
+                call psb_cdasb(desc_a, info_psb)
+                call psb_spasb(A_sp, desc_a, info_psb)
+                call psb_spmm(1.d0, A_sp, b_vec, 0.d0, Ab, desc_a, info_psb, 'N')
+                call cpu_time(time6)
+                !write(*,*) "AT-Ab mult timing", time6-time5
+                l_dom = dot_product(b_vec,Ab)/b_norm
+                if ( l_dom < 0.d0 ) then
+                  l_min = l_dom - 0.01d0
+                else
+                  l_max = l_dom + 0.01d0
+                end if
+                nnz2 = nnz+3*n_mbd_sites
+                ia2(1:nnz) = ia
+                ja2(1:nnz) = ja
+                val2(1:nnz) = val(1:nnz,i2)
+                do p = 1, 3*n_mbd_sites
+                  ia2(nnz+p) = p
+                  ja2(nnz+p) = p
+                  val2(nnz+p) = -l_dom
                 end do
-              end do
-              call cpu_time(time5)
-              call dgesv( n_order+1, 1, lsq_mat, n_order+1, ipiv_lsq, res_mat, n_order+1, info )
-              !write(*,*) "coeff", res_mat
-              call cpu_time(time6)
-              !write(*,*) "dgesv timing", time6-time5
-              call psb_init(icontxt)
-              call psb_cdall(icontxt, desc_a, info_psb, vl=myidx)
-              call psb_spall(A_sp, desc_a, info_psb, nnz=nnz)
-              call psb_spins(nnz, ia(1:nnz), ja(1:nnz), val(1:nnz,i2), A_sp, desc_a, info_psb)
-              call psb_cdasb(desc_a, info_psb)
-              call psb_spasb(A_sp, desc_a, info_psb)
-              if ( do_derivatives ) then
-                inv_vals = 1.d0/(1.d0-l_vals)
+                call cpu_time(time5)
+                call power_iteration( val2, ia2, ja2, myidx, nnz2, 20, b_vec )
+                call cpu_time(time6)
+                !write(*,*) "Power iteration timing second", time6-time5
+                !call power_iteration( AT(:,:,i2)-l_dom*I_mat, 50, b_vec )
+                b_norm = dot_product(b_vec,b_vec)
+                call cpu_time(time5)
+                !call dgemm('N', 'N',  3*n_mbd_sites, 1, 3*n_mbd_sites, 1.d0, AT(:,:,i2)-l_dom*I_mat, &
+                !           3*n_mbd_sites, b_vec, 3*n_mbd_sites, 0.d0, Ab, 3*n_mbd_sites)
+                call psb_init(icontxt)
+                call psb_cdall(icontxt, desc_a, info_psb, vl=myidx)
+                call psb_spall(A_sp, desc_a, info_psb, nnz=nnz2)
+                call psb_spins(nnz2, ia2(1:nnz2), ja2(1:nnz2), val2(1:nnz2), A_sp, desc_a, info_psb)
+                call psb_cdasb(desc_a, info_psb)
+                call psb_spasb(A_sp, desc_a, info_psb)
+                call psb_spmm(1.d0, A_sp, b_vec, 0.d0, Ab, desc_a, info_psb, 'N')
+                call cpu_time(time6)
+                !write(*,*) "AT-Ab 2nd mult timing", time6-time5
+                if ( l_dom < 0.d0 ) then
+                  l_max = dot_product(b_vec,Ab)/b_norm + l_dom + 0.01d0
+                else
+                  l_min = dot_product(b_vec,Ab)/b_norm + l_dom - 0.01d0
+                end if
+                write(*,*) "l_min, l_max", l_min, l_max
+                l_vals(1) = l_min
+                do k2 = 2, 1001
+                  l_vals(k2) = l_min + (k2-1)*(l_max-l_min)/1000
+                end do
+                log_vals = log(1.d0-l_vals)
                 do j2 = 1, n_order+1
-                  res_inv(j2) = sum(inv_vals*l_vals**(j2-1))
+                  res_mat(j2) = sum(log_vals*l_vals**(j2-1))
                   do k2 = 1, n_order+1
-                    lsq_inv(j2,k2) = sum(l_vals**(j2-1+k2-1))  
+                    lsq_mat(j2,k2) = sum(l_vals**(j2-1+k2-1))
                   end do
                 end do
-                !call cpu_time(time1)
-                call dgesv( n_order+1, 1, lsq_inv, n_order+1, ipiv_lsq, res_inv, n_order+1, info )
-                !call cpu_time(time2)
-                !write(*,*) "dgesv timing", time2-time1
+                call cpu_time(time5)
+                call dgesv( n_order+1, 1, lsq_mat, n_order+1, ipiv_lsq, res_mat, n_order+1, info )
+                !write(*,*) "coeff", res_mat
+                call cpu_time(time6)
+                !write(*,*) "dgesv timing", time6-time5
+                call psb_init(icontxt)
+                call psb_cdall(icontxt, desc_a, info_psb, vl=myidx)
+                call psb_spall(A_sp, desc_a, info_psb, nnz=nnz)
+                call psb_spins(nnz, ia(1:nnz), ja(1:nnz), val(1:nnz,i2), A_sp, desc_a, info_psb)
+                call psb_cdasb(desc_a, info_psb)
+                call psb_spasb(A_sp, desc_a, info_psb)
+                if ( do_derivatives ) then
+                  inv_vals = 1.d0/(1.d0-l_vals)
+                  do j2 = 1, n_order+1
+                    res_inv(j2) = sum(inv_vals*l_vals**(j2-1))
+                    do k2 = 1, n_order+1
+                      lsq_inv(j2,k2) = sum(l_vals**(j2-1+k2-1))  
+                    end do
+                  end do
+                  !call cpu_time(time1)
+                  call dgesv( n_order+1, 1, lsq_inv, n_order+1, ipiv_lsq, res_inv, n_order+1, info )
+                  !call cpu_time(time2)
+                  !write(*,*) "dgesv timing", time2-time1
+                end if
               end if
               if ( cent_appr ) then
                 call cpu_time(time5)
-                call power_iteration( val_sym(:,i2), ia, ja, myidx, nnz, 1000, b_vec )
+                call power_iteration( val_sym(:,i2), ia, ja, myidx, nnz, 20, b_vec )
                 call cpu_time(time6)
                 !write(*,*) "Power iteration timing", time6-time5       
                 b_norm = dot_product(b_vec,b_vec)
@@ -2884,7 +2889,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                   val2(nnz+p) = -l_dom
                 end do
                 call cpu_time(time5)
-                call power_iteration( val2, ia2, ja2, myidx, nnz2, 1000, b_vec )
+                call power_iteration( val2, ia2, ja2, myidx, nnz2, 20, b_vec )
                 call cpu_time(time6)
                 !write(*,*) "Power iteration timing second", time6-time5
                 !call power_iteration( AT(:,:,i2)-l_dom*I_mat, 50, b_vec )
@@ -2936,8 +2941,9 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                   pol_sym(:,:,i2) = -res_sym(2)*I_mat(:,1:3) - 2*res_sym(3)*AT_sym(:,:,i2)
                 end if
                 AT_sym_power = AT_sym(:,:,i2)
-              end if
+              end if !cent_appr
               !end if ! if ( i2 == 1 ) then
+              if ( .not. cent_appr ) then
               do c1 = 1, 3
                 integrand(i2) = integrand(i2) + res_mat(1) + res_mat(2)*AT(c1,c1,i2)
               end do
@@ -2952,7 +2958,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 q = 0
                 !call cpu_time(time1)
                 do p = 1, n_mbd_sites
-                  if ( rjs_0_mbd(k3+1) .le. (rcut_mbd2+rcut_loc)/Bohr ) then
+                  if ( rjs_0_mbd(k3+1) .le. (rcut_force)/Bohr ) then
                     q = q+1
                     do c1 = 1, 3
                       if ( do_total_energy ) then
@@ -2974,8 +2980,10 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 !write(*,*) "init timing", time2-time1
                 !end if
               end if
+              end if !.not. cent_appr
               if ( n_order > 2 ) then
               do k2 = 3, n_order
+                if (.not. cent_appr ) then
                 !write(*,*) "i2, k2", i2, k2
                 !call dgemm('N', 'N', 3, 3*n_mbd_sites, 3*n_mbd_sites, 1.d0, AT_power, &
                 !           3, AT(:,:,i2), 3*n_mbd_sites, 0.d0, temp_mat, 3)
@@ -2997,6 +3005,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 !do c1 = 1, 3
                 !  integrand(i2) = integrand(i2) + res_mat(k2)*AT_power(c1,c1)
                 !end do
+                end if ! .not. cent_appr
                 if ( cent_appr ) then
                   call psb_spmm(1.d0, A_sp_sym, AT_sym_power, 0.d0, temp_mat, desc_a, info_psb, 'N')
                   AT_sym_power = temp_mat
@@ -3007,6 +3016,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                     pol_sym(:,:,i2) = pol_sym(:,:,i2) - k2 * res_sym(k2+1) * AT_sym_power
                   end if
                 end if
+                if (.not. cent_appr) then
                 if ( do_derivatives ) then
                   !call cpu_time(time5)
                   !call dgemm('N', 'N', 3*n_mbd_sites, 3*n_force_sites, 3*n_mbd_sites, 1.d0, &
@@ -3022,7 +3032,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                     k3 = 0
                     q = 0
                     do p = 1, n_mbd_sites
-                      if ( rjs_0_mbd(k3+1) .le. (rcut_mbd2+rcut_loc)/Bohr ) then
+                      if ( rjs_0_mbd(k3+1) .le. (rcut_force)/Bohr ) then
                         q = q + 1
                         do c1 = 1, 3
                           total_integrand(i2) = total_integrand(i2) + &
@@ -3035,6 +3045,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                     end do
                   end if
                 end if
+                end if !.not. cent_appr
               end do
               if ( cent_appr ) then
                 do c1 = 1, 3
@@ -3042,6 +3053,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                     dot_product(AT_sym(:,c1,i2), AT_sym_power(:,c1))
                 end do
               end if
+              if ( .not. cent_appr ) then
               if ( do_derivatives ) then
                 !call cpu_time(time1)
                 !call dgemm('N', 'N', 3*n_mbd_sites, 3*n_force_sites, 3*n_mbd_sites, 1.d0, &
@@ -3065,7 +3077,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                   k3 = 0
                   q = 0
                   do p = 1, n_mbd_sites
-                    if ( rjs_0_mbd(k3+1) .le. (rcut_mbd2+rcut_loc)/Bohr ) then
+                    if ( rjs_0_mbd(k3+1) .le. (rcut_force)/Bohr ) then
                       q = q+1
                       do c1 = 1, 3
                         total_integrand(i2) = total_integrand(i2) + &
@@ -3078,11 +3090,13 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                   end do
                 end if
               end if
+              end if !.not. cent_appr
               else ! n_order = 2
+                if (.not. cent_appr ) then
                 if ( do_total_energy ) then
                   k3 = 0
                   do p = 1, n_mbd_sites
-                    if ( rjs_0_mbd(k3+1) .le. (rcut_mbd2+rcut_loc)/Bohr ) then
+                    if ( rjs_0_mbd(k3+1) .le. (rcut_force)/Bohr ) then
                       do c1 = 1, 3
                         total_integrand(i2) = total_integrand(i2) + &
                           res_mat(n_order+1)*dot_product(AT(3*(p-1)+c1,:,i2),AT(:,3*(p-1)+c1,i2))
@@ -3092,7 +3106,8 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                       k3 = k3 + n_mbd_neigh(p)
                     end if
                   end do
-                end if  
+                end if
+                end if !.not. cent_appr  
               end if
               ! Test comparison with exact log
               if ( do_log ) then
@@ -4721,10 +4736,15 @@ end if
 if ( abs(rcut_2b) < 1.d-10 ) then
 
               call cpu_time(time1)
-        
+
+              if ( .not. cent_appr ) then        
               allocate( G_mat(1:3*n_mbd_sites,1:3*n_mbd_sites,1:n_freq) )
 
               G_mat = 0.d0
+              end if
+              if ( cent_appr ) then
+              G_sym = 0.d0
+              end if
               integrand = 0.d0
 
               !write(*,*) "AT_mult"
@@ -4739,8 +4759,10 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 end if
                 dAT_mult = 0.d0
                 do p = 1, n_mbd_sites
-                  if ( rjs_0_mbd(k3+1) .le. (rcut_mbd2+rcut_loc)/Bohr ) then
+                  !if ( rjs_0_mbd(k3+1) .le. (rcut_mbd2+rcut_loc)/Bohr ) then
+                  if ( rjs_0_mbd(k3+1) .le. (rcut_force)/Bohr ) then
                     i2 = mbd_neighbors_list(k3+1)
+                    if ( .not. cent_appr ) then
                     G_mat(3*(p-1)+1:3*(p-1)+3,:,j) = G_mat(3*(p-1)+1:3*(p-1)+3,:,j) + &
                       a_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) * &
                       dT_LR(3*(p-1)+1:3*(p-1)+3,:) + &
@@ -4749,9 +4771,16 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                       a_mbd(k3+1) * (2.d0 * omegas_mbd(j)**2 * o_mbd(k3+1)) * &
                       do_mbd(k3+1) / ( o_mbd(k3+1)**2 + omegas_mbd(j)**2 )**2 * &
                       T_LR(3*(p-1)+1:3*(p-1)+3,:)
+                    end if
                     if ( cent_appr ) then
                       G_sym(:,3*(p-1)+1:3*(p-1)+3,j) = G_sym(:,3*(p-1)+1:3*(p-1)+3,j) * &
-                        sqrt( a_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) )
+                        sqrt( a_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) ) !+ &                 ! This is if you want to include non-central gradients for the central rows only
+                        !1.d0/2.d0 * 1.d0/sqrt(a_mbd(k3+1)/(1.d0+(omegas_mbd(j)/o_mbd(k3+1))**2)) * &
+                        !( da_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) + &
+                        !a_mbd(k3+1) * (2.d0 * omegas_mbd(j)**2 * o_mbd(k3+1)) * &
+                        !do_mbd(k3+1) / ( o_mbd(k3+1)**2 + omegas_mbd(j)**2 )**2 ) * &
+                        !T_LR(1:3,3*(p-1)+1:3*(p-1)+3) * &
+                        !sqrt( a_mbd(1)/(1.d0 + (omegas_mbd(j)/o_mbd(1))**2) )
                     end if
                   end if
                   if ( p .ne. n_mbd_sites ) then
@@ -4765,13 +4794,15 @@ if ( abs(rcut_2b) < 1.d-10 ) then
               if ( .false. ) then
 
               write(*,*) "G_mat"
-              !open(unit=89, file="G_mat.dat", status="new")
-              open(unit=79, file="pol_grad.dat", status="new")
+              open(unit=89, file="G_mat.dat", status="new")
+              open(unit=79, file="G_sym.dat", status="new")
               do p = 1, 3*n_mbd_sites
-                !write(89,*) G_mat(p,:,3)
-                write(79,*) pol_grad(p,:,3)
+                write(89,*) G_mat(p,:,1)
               end do
-              !close(89)
+              do p = 1, 3
+                write(79,*) G_sym(p,:,1)
+              end do
+              close(89)
               close(79)
               write(*,*) "G_mat done"
               end if
@@ -4811,7 +4842,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                   call psb_spasb(A_sp, desc_a, info_psb)
                   do p = 1, n_mbd_sites ! 1, n_mbd_sites ! This should loop only over p = 1 to include MBD for central atom and 2b for everything else
                     i2 = mbd_neighbors_list(k3+1)
-                    if ( rjs_0_mbd(k3+1) .le. (rcut_mbd2+rcut_loc)/Bohr ) then
+                    if ( rjs_0_mbd(k3+1) .le. (rcut_force)/Bohr ) then
                       do c1 = 1, 3
                     
                         !if ( j == 1 ) then
@@ -4887,7 +4918,9 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 integrand = 0.d0
                 log_integrand = 0.d0
                 integrand_pol = 0.d0
-                integrand_sym = 0.d0
+                if ( cent_appr ) then
+                  integrand_sym = 0.d0
+                end if
                 do i2 = 1, n_freq
                   if ( do_log ) then
                     if ( c3 == 1 .and. do_total_energy ) then
@@ -4942,10 +4975,11 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                       log_integrand(i2) = log_integrand(i2) + temp_mat(p,p)
                     end do
                   end if ! do_log
+                  if ( .not. cent_appr ) then
                   k3 = 0
                   q = 0
                   do p = 1, n_mbd_sites
-                    if ( rjs_0_mbd(k3+1) .le. (rcut_mbd2+rcut_loc)/Bohr ) then
+                    if ( rjs_0_mbd(k3+1) .le. (rcut_force)/Bohr ) then
                       q = q + 1
                       do c1 = 1, 3
                         integrand_pol(i2) = integrand_pol(i2) + dot_product(G_mat(3*(p-1)+c1,:,i2), pol_grad(:,3*(q-1)+c1,i2))
@@ -4954,13 +4988,17 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                     end if
                     k3 = k3 + n_mbd_neigh(p)
                   end do
+                  end if !.not. cent_appr
                   if ( cent_appr ) then
                     do c1 = 1, 3
                       integrand_sym(i2) = integrand_sym(i2) + dot_product(G_sym(c1,:,i2), pol_sym(:,c1,i2))
                     end do
                   end if
                 end do
-                deallocate( AT_copy, WR, WI, VR, VR_inv, work_mbd, ipiv_mbd, temp_mat, G_mat )
+                deallocate( AT_copy, WR, WI, VR, VR_inv, work_mbd, ipiv_mbd, temp_mat )
+                if ( .not. cent_appr ) then
+                  deallocate( G_mat )
+                end if
                 if ( c3 == 1 .and. do_total_energy .and. do_log ) then
                   E_tot = 0.d0
                   !E_TS_tot = 0.d0
@@ -5066,6 +5104,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 
 
                 if ( .not. series_expansion ) then
+                  if ( .not. cent_appr ) then
                   integral = 0.d0
                   call integrate("trapezoidal", omegas_mbd, log_integrand, omegas_mbd(1), omegas_mbd(n_freq), integral)
                   !write(*,*) "Log force", write(*,*) i, c3, integral/(2.d0*pi) * Hartree/Bohr
@@ -5073,10 +5112,11 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                   !write(*,*) "integrand pol", integrand_pol
                   call integrate("trapezoidal", omegas_mbd, integrand_pol, omegas_mbd(1), omegas_mbd(n_freq), integral)
                   write(*,*) "Polynomial derivative force", i, c3, integral/(2.d0*pi) * Hartree/Bohr
-                  deallocate( log_integrand, integrand_pol )
                   integral = 0.d0
                   call integrate("trapezoidal", omegas_mbd, integrand, omegas_mbd(1), omegas_mbd(n_freq), integral)
                   !write(*,*) "Inverse force", i, c3, integral/(2.d0*pi) * Hartree/Bohr
+                  end if ! .not. cent_appr
+                  deallocate( log_integrand, integrand_pol )
                   if ( cent_appr ) then
                     sym_integral = 0.d0
                     call integrate("trapezoidal", omegas_mbd, integrand_sym, omegas_mbd(1), omegas_mbd(n_freq), sym_integral)

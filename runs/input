@@ -19,7 +19,7 @@ vdw_c6_ref = 27.8 !3.88
 ! If two cutoffs are equal, there is no buffer region between them!
 vdw_buffer = 0.5          ! Buffer for transitions between cut-off regions. Type: REAL
 vdw_scs_rcut = 6.        ! vdw_scs_rcut > vdw_buffer. Type: REAL
-vdw_loc_rcut = 0.01        ! Something funky happening when this is lower than vdw_scs_rcut (probably just get rid of this and replace with vdw_scs_rcut in the code)
+vdw_loc_rcut = 0.        ! Something funky happening when this is lower than vdw_scs_rcut (probably just get rid of this and replace with vdw_scs_rcut in the code)
 vdw_mbd_rcut = 10.        ! Cut-off for atoms to include for local MBD energy (vdw_mbd_rcut >= vdw_scs_rcut + vdw_buffer). Type: REAL
 vdw_mbd_rcut2 = 5.
 vdw_2b_rcut = 0.          ! Cut-off for local TS-SCS (vdw_2b_rcut >= vdw_mbd_rcut + vdw_buffer), Type: REAL
