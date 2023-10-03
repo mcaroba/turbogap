@@ -1,0 +1,15 @@
+Description ::
+This test runs full EPH model along with FDM update of T_e in a Si system. It demonstrates T-dependent electronic parameters data and presence of heat source.
+The atomic system is at 0 K and the electronic system at 400 K initially.
+The "T_infile.fdm" is used to include heat source and T-dependent electronic parameters.
+C_e(T_e) and K_e(T_e) data are given through the file "Te-dependent_e-parameters.txt".
+The source is switched ON/OFF with 1/0 in a 'flag'.
+
+Run command ::
+Copy gap_files folder from ../1. Run this test with command "../path-to-turbogap-executable/turbogap md" command.
+
+Results ::
+The T_e maps are produced at specified MD steps with and without the source.
+
+Plot ::
+The T_e values can be plotted as shown in the Fig.# files.
