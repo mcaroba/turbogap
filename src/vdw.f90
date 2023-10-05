@@ -1122,7 +1122,7 @@ module vdw
     real*8, allocatable :: b_vec(:), Ab(:), I_mat(:,:), l_vals(:), log_vals(:), lsq_mat(:,:), res_mat(:), log_exp(:,:), &
                            AT_power(:,:), log_integrand(:), AT_power_full(:,:), pol_grad(:,:,:), pol_inv(:,:,:), inv_vals(:), &
                            res_inv(:), lsq_inv(:,:), integrand_pol(:), AT_sym(:,:,:), G_sym(:,:,:), pol_sym(:,:,:), res_sym(:), &
-                           AT_sym_power(:,:), integrand_sym(:)
+                           AT_sym_power(:,:), integrand_sym(:), T_LR_sym(:,:), dT_LR_sym(:,:)
     integer*8, allocatable :: ipiv_lsq(:)
     real*8 :: b_norm, l_dom, l_min, l_max
 
@@ -1944,10 +1944,14 @@ end if
 
 if ( abs(rcut_2b) < 1.d-10 ) then
 
-          allocate( T_LR(1:3*n_mbd_sites,1:3*n_mbd_sites) )
+          if ( .not. cent_appr ) then
+            allocate( T_LR(1:3*n_mbd_sites,1:3*n_mbd_sites) )
+          end if
           allocate( r0_ii_SCS(1:n_mbd_pairs) )
           allocate( f_damp_SCS(1:n_mbd_pairs) )
-          allocate( AT(1:3*n_mbd_sites,1:3*n_mbd_sites,1:n_freq) )
+          if ( .not. cent_appr ) then
+            allocate( AT(1:3*n_mbd_sites,1:3*n_mbd_sites,1:n_freq) )
+          end if
           !allocate( AT_n(1:3*n_mbd_sites,1:3,n_order-1,1:n_freq) )
           !allocate( energy_series(1:3*n_mbd_sites,1:3) )
           allocate( omegas_mbd(1:n_freq) )
@@ -1979,7 +1983,9 @@ if ( abs(rcut_2b) < 1.d-10 ) then
             allocate( dT_mbd(1:9*n_mbd_pairs) )
             allocate( f_damp_der_mbd(1:n_mbd_pairs) )
             allocate( f_damp_der_SCS(1:n_mbd_pairs) )
-            allocate( dT_LR(1:3*n_mbd_sites,1:3*n_mbd_sites) )
+            if ( .not. cent_appr ) then
+              allocate( dT_LR(1:3*n_mbd_sites,1:3*n_mbd_sites) )
+            end if
             !allocate( force_series(1:3*n_mbd_sites,1:3*n_mbd_sites) )
             if ( do_total_energy ) then
             !  allocate( total_energy_series(1:3*n_mbd_sites,1:3*n_mbd_sites) )
@@ -2008,8 +2014,10 @@ if ( abs(rcut_2b) < 1.d-10 ) then
             allocate( AT_sym(1:3*n_mbd_sites,1:3,1:n_freq) )
             allocate( pol_sym(1:3*n_mbd_sites,1:3,1:n_freq) )
             allocate( integrand_sym(1:n_freq) )
+            allocate( T_LR_sym(1:3,1:3*n_mbd_sites) )
             integrand_sym = 0.d0
             if ( do_derivatives ) then
+              allocate( dT_LR_sym(1:3,1:3*n_mbd_sites) )
               allocate( G_sym(1:3,1:3*n_mbd_sites,1:n_freq) )
             end if
           end if
@@ -2049,8 +2057,10 @@ if ( abs(rcut_2b) < 1.d-10 ) then
             omegas_mbd(i2) = (i2-1)**2 * omega/(n_freq-1)**2
           end do
 
-          T_LR = 0.d0
-          AT = 0.d0
+          if ( .not. cent_appr ) then
+            T_LR = 0.d0
+            AT = 0.d0
+          end if
           !AT_n = 0.d0
           r0_ii_SCS = 0.d0
           f_damp_SCS = 0.d0
@@ -2077,8 +2087,10 @@ if ( abs(rcut_2b) < 1.d-10 ) then
           k4 = 0
           val_sym = 0.d0
 
-          AT_sym = 0.d0
-          G_sym = 0.d0
+          if ( cent_appr ) then
+            AT_sym = 0.d0
+            T_LR_sym = 0.d0
+          end if
 
           k2 = 0
           k_i = 0
@@ -2242,10 +2254,16 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                           else
                             T_mbd(k3) = (3*xyz_mbd(c1,k2) * xyz_mbd(c2,k2))/rjs_mbd(k2)**5
                           end if
+                          if ( .not. cent_appr ) then
                           T_LR(3*(p-1)+c1,3*(q-1)+c2) = f_damp_SCS(k2) * T_mbd(k3) * T_LR_mult_i * T_LR_mult_j &
                                                         * T_LR_mult_ij(k2)
                           T_LR(3*(q-1)+c1,3*(p-1)+c2) = f_damp_SCS(k2) * T_mbd(k3) * T_LR_mult_i * T_LR_mult_j &
                                                         * T_LR_mult_ij(k2)
+                          end if
+                          if ( cent_appr ) then
+                          T_LR_sym(3*(p-1)+c1,3*(q-1)+c2) = f_damp_SCS(k2) * T_mbd(k3) * T_LR_mult_i * T_LR_mult_j &
+                                                        * T_LR_mult_ij(k2)
+                          end if
                           if ( abs(f_damp_SCS(k2) * T_mbd(k3) * T_LR_mult_i * T_LR_mult_j &
                                                         * T_LR_mult_ij(k2)) > 1.d-20 ) then
                             k4 = k4 + 1
@@ -2383,8 +2401,10 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                           else
                             T_mbd(k3) = (3*xyz_mbd(c1,k2) * xyz_mbd(c2,k2))/rjs_mbd(k2)**5
                           end if
+                          if ( .not. cent_appr ) then
                           T_LR(3*(p-1)+c1,3*(q-1)+c2) = f_damp_SCS(k2) * T_mbd(k3) * T_LR_mult_i * T_LR_mult_j &
                                                         * T_LR_mult_ij(k2)
+                          end if
                           if ( abs(f_damp_SCS(k2) * T_mbd(k3) * T_LR_mult_i * T_LR_mult_j &
                                                         * T_LR_mult_ij(k2)) > 1.d-20 ) then
                             k4 = k4 + 1
@@ -2407,7 +2427,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                             end do 
                           end if
                           !if ( i == 1 .and. p == 8 .and. q == 4 .and. c1 == 1 .and. c2 == 2 ) then
-                          !  write(*,*) "T_LR", T_LR(3*(p-1)+c1,3*(q-1)+c2)
+                          !  write(*,*) w"T_LR", T_LR(3*(p-1)+c1,3*(q-1)+c2)
                           !  write(*,*) "T_mbd", T_mbd(k3)
                           !  write(*,*) "f_damp_SCS", f_damp_SCS(k2)
                           !  write(*,*) "T_LR_mult", T_LR_mult_i, T_LR_mult_j, T_LR_mult_ij(k2)
@@ -2435,13 +2455,13 @@ if ( abs(rcut_2b) < 1.d-10 ) then
 
           if ( .false. ) then
 
-            open(unit=89, file="T_LR.dat", status="new")
-            write(*,*) "T_LR"
+            open(unit=89, file="T_LR_sym.dat", status="new")
+            write(*,*) "T_LR_sym"
             !  write(*,*) "n_mbd_sites", n_mbd_sites
             !  write(*,*) "size of AT", size(AT(:,:,1))
             !  write(*,*) "T_LR"
-            do p = 1, 3*n_mbd_sites
-              write(89,*) T_LR(p,:)
+            do p = 1, 3
+              write(89,*) T_LR_sym(p,:)
             !    write(*,*) T_LR(p,:)
             end do
               !write(*,*) "ia"
@@ -2451,7 +2471,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
               !write(*,*) "val"
               !write(*,*) val
             close(89)
-            write(*,*) "T_LR done"
+            write(*,*) "T_LR_sym done"
             !write(*,*) val(:,1)
 
 
@@ -2574,7 +2594,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
           !AT_mult = 1.d0
           do i2 = 1, n_freq
             if ( cent_appr ) then
-              AT_sym(:,:,i2) = sqrt( a_mbd(1)/(1.d0+(omegas_mbd(i2)/o_mbd(1))**2) ) * T_LR(:,1:3) 
+              AT_sym(:,:,i2) = sqrt( a_mbd(1)/(1.d0+(omegas_mbd(i2)/o_mbd(1))**2) ) * transpose(T_LR_sym) 
             end if
             k3 = 0
             do p = 1, n_mbd_sites
@@ -3328,7 +3348,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
           if ( cent_appr ) then
             energies(i) = (sym_integral + E_TS) * Hartree
           end if
-          !write(*,*) "MBD energy", i, energies(i)
+          write(*,*) "MBD energy", i, energies(i)
 
 
           if ( do_derivatives ) then
@@ -3735,7 +3755,12 @@ if ( abs(rcut_2b) < 1.d-10 ) then
               f_damp_der_SCS = 0.d0
               f_damp_der_mbd = 0.d0 ! This is cleared so we can recalculate it with SCS values
               dT_mbd = 0.d0
-              dT_LR = 0.d0
+              if ( .not. cent_appr ) then
+                dT_LR = 0.d0
+              end if
+              if ( cent_appr ) then
+                dT_LR_sym = 0.d0
+              end if
               dT_LR_mult_0i = 0.d0
               dT_LR_mult_0j = 0.d0
               dT_LR_mult_ij = 0.d0
@@ -3974,6 +3999,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                   do c1 = 1, 3
                     do c2 = 1, 3
                       k3 = k3+1
+                      if ( .not. cent_appr ) then
                       dT_LR(3*(p-1)+c1,3*(q-1)+c2) = dT_LR(3*(p-1)+c1,3*(q-1)+c2) + &
                                         T_mbd(k3) * f_damp_der_SCS(k2) * T_LR_mult_i * &
                                         T_LR_mult_j * T_LR_mult_ij(k2) + &
@@ -3983,6 +4009,18 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                                         T_LR_mult_i * dT_LR_mult_j + &
                                         T_mbd(k3) * f_damp_SCS(k2) * T_LR_mult_i * &
                                         T_LR_mult_j * dT_LR_mult_ij0(k2)
+                      end if
+                      if ( cent_appr .and. p == 1 ) then
+                      dT_LR_sym(3*(p-1)+c1,3*(q-1)+c2) = dT_LR_sym(3*(p-1)+c1,3*(q-1)+c2) + &
+                                        T_mbd(k3) * f_damp_der_SCS(k2) * T_LR_mult_i * &
+                                        T_LR_mult_j * T_LR_mult_ij(k2) + &
+                                        f_damp_SCS(k2) * T_mbd(k3) * T_LR_mult_ij(k2) * &
+                                        T_LR_mult_j * dT_LR_mult_i + &
+                                        f_damp_SCS(k2) * T_mbd(k3) * T_LR_mult_ij(k2) * &
+                                        T_LR_mult_i * dT_LR_mult_j + &
+                                        T_mbd(k3) * f_damp_SCS(k2) * T_LR_mult_i * &
+                                        T_LR_mult_j * dT_LR_mult_ij0(k2)
+                      end if
                     end do
                   end do
                   if (i == i2 .or. i == j) then
@@ -4035,23 +4073,41 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                         if (c1 == c3) then
                           dT_mbd(k3) = dT_mbd(k3) + 3.d0/rjs_mbd(k2)**5 * xyz_mbd(c2,k2)
                         end if
+                        if ( .not. cent_appr ) then
                         if (i == i2) then
                           dT_LR(3*(p-1)+c1,3*(q-1)+c2) = dT_LR(3*(p-1)+c1,3*(q-1)+c2) - &
                                              (T_mbd(k3) * f_damp_der_mbd(k2) + &
                                              dT_mbd(k3) * f_damp_SCS(k2)) * &
-                                             (T_LR_mult_i * T_LR_mult_j * T_LR_mult_ij(k2))
+                                             (T_LR_mult_ij(k2))
                         else if (i == j) then
                           dT_LR(3*(p-1)+c1,3*(q-1)+c2) = dT_LR(3*(p-1)+c1,3*(q-1)+c2) + &
                                              (T_mbd(k3) * f_damp_der_mbd(k2) + &
                                              dT_mbd(k3) * f_damp_SCS(k2)) * &
-                                             (T_LR_mult_i * T_LR_mult_j * T_LR_mult_ij(k2))
+                                             (T_LR_mult_ij(k2))
                         end if
                         dT_LR(3*(p-1)+c1,3*(q-1)+c2) = dT_LR(3*(p-1)+c1,3*(q-1)+c2) + &
-                                             f_damp_SCS(k2) * T_mbd(k3) * T_LR_mult_i * &
-                                             T_LR_mult_j * dT_LR_mult_ij(k2)
+                                             f_damp_SCS(k2) * T_mbd(k3) * &
+                                             dT_LR_mult_ij(k2)
+                        end if
+                        if ( cent_appr .and. p == 1 ) then
+                        if (i == i2) then
+                          dT_LR_sym(3*(p-1)+c1,3*(q-1)+c2) = dT_LR_sym(3*(p-1)+c1,3*(q-1)+c2) - &
+                                             (T_mbd(k3) * f_damp_der_mbd(k2) + &
+                                             dT_mbd(k3) * f_damp_SCS(k2)) * &
+                                             (T_LR_mult_ij(k2))
+                        else if (i == j) then
+                          dT_LR_sym(3*(p-1)+c1,3*(q-1)+c2) = dT_LR_sym(3*(p-1)+c1,3*(q-1)+c2) + &
+                                             (T_mbd(k3) * f_damp_der_mbd(k2) + &
+                                             dT_mbd(k3) * f_damp_SCS(k2)) * &
+                                             (T_LR_mult_ij(k2))
+                        end if
+                        dT_LR_sym(3*(p-1)+c1,3*(q-1)+c2) = dT_LR_sym(3*(p-1)+c1,3*(q-1)+c2) + &
+                                             f_damp_SCS(k2) * T_mbd(k3) * &
+                                             dT_LR_mult_ij(k2)
+                        end if
                       end do
                     end do
-                    if ( p_mbd(k2+1) == -1 ) then
+                    if ( .not. cent_appr .and. k2+1 < n_mbd_pairs .and. p_mbd(k2+1) == -1 ) then
                       dT_LR(3*(q-1)+1:3*(q-1)+3,3*(p-1)+1:3*(p-1)+3) = &
                         dT_LR(3*(p-1)+1:3*(p-1)+3,3*(q-1)+1:3*(q-1)+3)
                     end if
@@ -4065,12 +4121,12 @@ if ( abs(rcut_2b) < 1.d-10 ) then
               !write(*,*) "dT_LR construction timing", time2-time1
               
               if ( .false. ) then
-                write(*,*) "dT_LR"
-                open(unit=89, file="dT_LR.dat", status="new")
-                do p = 1, 3*n_mbd_sites
-                  write(89,*) dT_LR(p,:)
+                write(*,*) "dT_LR_sym"
+                open(unit=89, file="dT_LR_sym.dat", status="new")
+                do p = 1, 3
+                  write(89,*) dT_LR_sym(p,:)
                 end do
-                write(*,*) "dT_LR done"
+                write(*,*) "dT_LR_sym done"
                 close(89)
               end if
 
@@ -4822,7 +4878,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
               G_mat = 0.d0
               end if
               if ( cent_appr ) then
-              G_sym = 0.d0
+                G_sym = 0.d0
               end if
               integrand = 0.d0
 
@@ -4833,8 +4889,8 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                   G_sym(:,:,j) = 1.d0/2.d0 * 1.d0/sqrt(a_mbd(1)/(1.d0+(omegas_mbd(j)/o_mbd(1))**2)) * &
                     ( da_mbd(1)/(1.d0 + (omegas_mbd(j)/o_mbd(1))**2) + &
                       a_mbd(1) * (2.d0 * omegas_mbd(j)**2 * o_mbd(1)) * &
-                      do_mbd(1) / ( o_mbd(1)**2 + omegas_mbd(j)**2 )**2 ) * T_LR(1:3,:) + &
-                      sqrt(a_mbd(1)/(1.d0 + (omegas_mbd(j)/o_mbd(1))**2)) * dT_LR(1:3,:) 
+                      do_mbd(1) / ( o_mbd(1)**2 + omegas_mbd(j)**2 )**2 ) * T_LR_sym(1:3,:) + &
+                      sqrt(a_mbd(1)/(1.d0 + (omegas_mbd(j)/o_mbd(1))**2)) * dT_LR_sym(1:3,:) 
                 end if
                 dAT_mult = 0.d0
                 do p = 1, n_mbd_sites
@@ -4858,7 +4914,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                         ( da_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) + &
                         a_mbd(k3+1) * (2.d0 * omegas_mbd(j)**2 * o_mbd(k3+1)) * &
                         do_mbd(k3+1) / ( o_mbd(k3+1)**2 + omegas_mbd(j)**2 )**2 ) * &
-                        T_LR(1:3,3*(p-1)+1:3*(p-1)+3) * &
+                        T_LR_sym(1:3,3*(p-1)+1:3*(p-1)+3) * &
                         sqrt( a_mbd(1)/(1.d0 + (omegas_mbd(j)/o_mbd(1))**2) )
                     end if
                   end if
@@ -4874,15 +4930,15 @@ if ( abs(rcut_2b) < 1.d-10 ) then
 
               write(*,*) "G_mat"
               open(unit=89, file="G_mat.dat", status="new")
-              open(unit=79, file="G_sym.dat", status="new")
+              !open(unit=79, file="G_sym.dat", status="new")
               do p = 1, 3*n_mbd_sites
                 write(89,*) G_mat(p,:,1)
               end do
-              do p = 1, 3
-                write(79,*) G_sym(p,:,1)
-              end do
+              !do p = 1, 3
+              !  write(79,*) G_sym(p,:,1)
+              !end do
               close(89)
-              close(79)
+              !close(79)
               write(*,*) "G_mat done"
               end if
               
@@ -5244,24 +5300,30 @@ end if
       
 if ( abs(rcut_2b) < 1.d-10 ) then  
         if ( om == 2 ) then
-          deallocate( T_LR, r0_ii_SCS, f_damp_SCS, AT, omegas_mbd, integrand, n_mbd_neigh, &
+          deallocate( r0_ii_SCS, f_damp_SCS, omegas_mbd, integrand, n_mbd_neigh, &
                       mbd_neighbors_list, p_mbd, r0_ii_mbd, neighbor_alpha0_mbd, xyz_mbd, rjs_mbd, T_mbd, a_mbd, &
                       rjs_0_mbd, xyz_0_mbd, o_mbd, hirshfeld_mbd_neigh, &
                       T_LR_mult_0i, T_LR_mult_0j, T_LR_mult_ij, T_LR_mult_0ij, T_LR_mult_0ji, AT_mult, E_mult, &
                       ia, ja, val )
+          if ( .not. cent_appr ) then
+            deallocate( T_LR, AT )
+          end if
           if ( cent_appr ) then
-            deallocate( AT_sym, val_sym, integrand_sym )
+            deallocate( AT_sym, T_LR_sym, val_sym, integrand_sym )
             if ( do_derivatives ) then
-              deallocate( G_sym )
+              deallocate( G_sym, dT_LR_sym )
             end if
           end if
           !deallocate( AT_n, energy_series )
         end if
                     
         if ( do_derivatives .and. om == 2 ) then
-          deallocate( da_mbd, dT_mbd, f_damp_der_mbd, f_damp_der_SCS, dT_LR, &
+          deallocate( da_mbd, dT_mbd, f_damp_der_mbd, f_damp_der_SCS, &
                       do_mbd, dr0_ii_SCS, dT_LR_mult_0i, dT_LR_mult_0j,&
                       dT_LR_mult_ij, dT_LR_mult_0ij, dT_LR_mult_0ji, dT_LR_mult_ij0, dAT_mult, dE_mult )
+          if ( .not. cent_appr ) then
+            deallocate( dT_LR )
+          end if
           !deallocate( AT_n_f, force_series )
           if ( do_total_energy ) then
           !  deallocate( total_energy_series, total_integrand )

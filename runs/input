@@ -1,4 +1,4 @@
-atoms_file = 'atoms_vacuum.xyz'
+atoms_file = '2829.xyz'
 pot_file = 'gap_files/carbon.gap'
 
 ! Species info
@@ -26,7 +26,7 @@ vdw_2b_rcut = 0.          ! Cut-off for local TS-SCS (vdw_2b_rcut >= vdw_mbd_rcu
 vdw_mbd_nfreq = 7        ! Number of frequency values for MBD integration. Type: INT
 vdw_mbd_norder = 6        ! Contributions up to n-body interactions (i.e. cut-off degree for Taylor expansion of ln(I-AT)). Type: INT
 vdw_mbd_grad = .true.     ! Calculate MBD forces. Type: LOGICAL
-vdw_hirsh_grad = .true.   ! Include Hirshfeld gradients in the forces. Type: LOGICAL
+vdw_hirsh_grad = .false.   ! Include Hirshfeld gradients in the forces. Type: LOGICAL
 vdw_polynomial = .false.  ! Use polynomial approximation for inverse matrices. Type: LOGICAL
 vdw_omega_ref = 1.3d0
 do_nnls = .false.
