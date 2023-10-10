@@ -329,4 +329,78 @@ module misc
 
   end subroutine
 
+
+  subroutine lanczos_algorithm(val, ia, ja, dim, n_iter, l_min, l_max) !, myidx, nnz, n_iter, b)
+
+    implicit none
+
+!   Input variables
+    !real(psb_dpk_), 
+    real*8, intent(in) :: val(:)
+    !integer(psb_lpk_),
+    integer*8, intent(in) :: ia(:), ja(:) !, myidx(:)
+    integer, intent(in) :: dim !, nnz
+    integer, intent(in) :: n_iter
+!   Output variables
+    !real*8, intent(inout) :: b(:)
+    real*8, intent(inout) :: l_min, l_max
+!   Internal variables
+    integer :: k, N, info
+    real*8, allocatable :: v(:,:), w(:,:), alpha(:), beta(:), T(:,:), work_arr(:)
+    real*8 :: b_k1_norm, time1, time2
+
+    allocate( w(1:dim,1:n_iter) )
+    allocate( v(1:dim,1:n_iter) )
+    allocate( alpha(1:n_iter) )
+    allocate( beta(2:n_iter) )
+    allocate( T(1:n_iter,1:n_iter) )
+    allocate( work_arr(1:4*n_iter) )
+
+    call random_number(v(:,1))
+    v(:,1) = v(:,1)-0.5d0
+    v(:,1) = v(:,1)/norm2(v(:,1))
+
+    call sparse_mul(val, v(:,1), dim, ia, ja, w(:,1))
+    alpha(1) = dot_product(v(:,1),w(:,1))
+    w(:,1) = w(:,1) - alpha(1) * v(:,1)
+
+    do k = 2, n_iter     
+      beta(k) = norm2(w(:,k-1))
+      if ( beta(k) .ne. 0.d0 ) then
+        v(:,k) = w(:,k-1)/beta(k)
+      else
+        call random_number(v(:,k))
+        v(:,k) = v(:,k)-0.5d0
+        v(:,k) = v(:,k)/norm2(v(:,k))
+      end if
+      call sparse_mul(val, v(:,k), dim, ia, ja, w(:,k))
+      alpha(k) = dot_product(v(:,k),w(:,k))
+      w(:,k) = w(:,k) - alpha(k) * v(:,k) - beta(k) * v(:,k-1)
+    end do
+
+    T(1,1) = alpha(1)
+    T(1,2) = beta(2)
+
+    do k = 2, n_iter-1
+      T(k,k) = alpha(k)
+      T(k,k-1) = beta(k)
+      T(k,k+1) = beta(k+1)
+    end do
+
+    T(n_iter,n_iter) = alpha(n_iter)
+    T(n_iter,n_iter-1) = beta(n_iter)    
+
+    call dpteqr( 'N', n_iter, alpha, beta, 0.d0, 1, work_arr ,info )
+
+    !write(*,*) "dpteqr info", info
+    !write(*,*) "Lanczos eigs", alpha-1.d0
+
+    l_min = minval(alpha)
+    l_max = maxval(alpha)
+
+    deallocate( w, v, alpha, beta, T, work_arr)
+
+
+  end subroutine
+
 end module

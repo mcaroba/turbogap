@@ -1118,7 +1118,8 @@ module vdw
     integer, allocatable :: ind_nnls(:)
     real*8 :: res_nnls, E_tot, denom
     integer :: mode_nnls
-    logical :: do_total_energy = .true., series_expansion = .false., do_log = .false., cent_appr = .true., do_timing = .true.  ! Finite difference testing purposes
+    logical :: do_total_energy = .true., series_expansion = .false., do_log = .false., cent_appr = .true., lanczos = .true., &
+               do_timing = .true.  ! Finite difference testing purposes
     real*8, allocatable :: b_vec(:), Ab(:), I_mat(:,:), l_vals(:), log_vals(:), lsq_mat(:,:), res_mat(:), log_exp(:,:), &
                            AT_power(:,:), log_integrand(:), AT_power_full(:,:), pol_grad(:,:,:), pol_inv(:,:,:), inv_vals(:), &
                            res_inv(:), lsq_inv(:,:), integrand_pol(:), AT_sym(:,:,:), G_sym(:,:,:), pol_sym(:,:,:), res_sym(:), &
@@ -2806,7 +2807,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
               !if ( i2 == 1 ) then
               if ( .not. cent_appr ) then
                 call cpu_time(time5)
-                call power_iteration( val(:,i2), ia, ja, 3*n_mbd_sites, 20, b_vec ) !myidx, nnz, 20, b_vec )
+                call power_iteration( val(:,i2), ia, ja, 3*n_mbd_sites, 10, b_vec ) !myidx, nnz, 20, b_vec )
                 call cpu_time(time6)
                 !write(*,*) "Power iteration timing", time6-time5       
                 b_norm = dot_product(b_vec,b_vec)
@@ -2839,7 +2840,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                   val2(nnz+p) = -l_dom
                 end do
                 call cpu_time(time5)
-                call power_iteration( val2, ia2, ja2, 3*n_mbd_sites, 20, b_vec) !myidx, nnz2, 20, b_vec )
+                call power_iteration( val2, ia2, ja2, 3*n_mbd_sites, 10, b_vec) !myidx, nnz2, 20, b_vec )
                 call cpu_time(time6)
                 !write(*,*) "Power iteration timing second", time6-time5
                 !call power_iteration( AT(:,:,i2)-l_dom*I_mat, 50, b_vec )
@@ -2900,8 +2901,9 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 end if
               end if
               if ( cent_appr ) then
+                if ( .not. lanczos ) then
                 call cpu_time(time5)
-                call power_iteration( val_sym(:,i2), ia, ja, 3*n_mbd_sites, 20, b_vec ) !myidx, nnz, 20, b_vec )
+                call power_iteration( val_sym(:,i2), ia, ja, 3*n_mbd_sites, 10, b_vec ) !myidx, nnz, 20, b_vec )
                 call cpu_time(time6)
                 if ( do_timing ) then
                 write(*,*) "Power iteration timing", time6-time5
@@ -2936,7 +2938,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                   val2(nnz+p) = -l_dom
                 end do
                 call cpu_time(time5)
-                call power_iteration( val2, ia2, ja2, 3*n_mbd_sites, 20, b_vec ) !myidx, nnz2, 20, b_vec )
+                call power_iteration( val2, ia2, ja2, 3*n_mbd_sites, 10, b_vec ) !myidx, nnz2, 20, b_vec )
                 call cpu_time(time6)
                 if ( do_timing ) then
                 write(*,*) "Power iteration timing second", time6-time5
@@ -2961,7 +2963,31 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 else
                   l_min = dot_product(b_vec,Ab)/b_norm + l_dom - 0.01d0
                 end if
-                !write(*,*) "l_min, l_max", l_min, l_max
+                end if ! .not. lanczos
+                if ( lanczos ) then
+
+                nnz2 = nnz+3*n_mbd_sites
+                ia2(1:nnz) = ia
+                ja2(1:nnz) = ja
+                val2(1:nnz) = val_sym(1:nnz,i2)
+                do p = 1, 3*n_mbd_sites
+                  ia2(nnz+p) = p
+                  ja2(nnz+p) = p
+                  val2(nnz+p) = 1.d0
+                end do
+                call cpu_time(time5)
+                call lanczos_algorithm( val2(:), ia2, ja2, 3*n_mbd_sites, 10, l_min, l_max )
+                call cpu_time(time6)
+                write(*,*) "Lanczos timing", time6-time5
+
+                l_max = l_max - 1.d0
+                l_min = l_min - 1.d0
+                l_max = l_max + 0.01d0
+                l_min = l_min - 0.01d0
+
+                end if
+
+                write(*,*) "l_min, l_max", l_min, l_max
                 l_vals(1) = l_min
                 do k2 = 2, 1001
                   l_vals(k2) = l_min + (k2-1)*(l_max-l_min)/1000
