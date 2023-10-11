@@ -2013,11 +2013,12 @@ if ( abs(rcut_2b) < 1.d-10 ) then
           if ( cent_appr ) then
             allocate( val_sym(1:9*(n_mbd_pairs-n_mbd_sites),1:n_freq) )
             allocate( AT_sym(1:3*n_mbd_sites,1:3,1:n_freq) )
-            allocate( pol_sym(1:3*n_mbd_sites,1:3,1:n_freq) )
+            !allocate( pol_sym(1:3*n_mbd_sites,1:3,1:n_freq) )
             allocate( integrand_sym(1:n_freq) )
             allocate( T_LR_sym(1:3,1:3*n_mbd_sites) )
             integrand_sym = 0.d0
             if ( do_derivatives ) then
+              allocate( pol_sym(1:3*n_mbd_sites,1:3,1:n_freq) )
               allocate( dT_LR_sym(1:3,1:3*n_mbd_sites) )
               allocate( G_sym(1:3,1:3*n_mbd_sites,1:n_freq) )
             end if
@@ -2714,7 +2715,8 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 if ( n_order > 2 ) then
                   do k2 = 1, n_order-2
                     !call psb_spmm(1.d0, A_sp, at_vec, 0.d0, at_n_vec, desc_a, info_psb, 'N')
-                    call sparse_mul(val(1:nnz,i2), at_vec, 3*n_mbd_sites, ia, ja, at_n_vec)
+                    call sparse_mul(val(1:nnz,i2), at_vec, 3*n_mbd_sites, ia(1:nnz), &
+                                        ja(1:nnz), at_n_vec)
                     !write(*,*) "at_n_vec", at_n_vec
                     at_vec = at_n_vec
                     !integrand_sp(i2) = integrand_sp(i2) - 1.d0/(k2+1) * at_n_vec(c1)
@@ -2807,7 +2809,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
               !if ( i2 == 1 ) then
               if ( .not. cent_appr ) then
                 call cpu_time(time5)
-                call power_iteration( val(:,i2), ia, ja, 3*n_mbd_sites, 10, b_vec ) !myidx, nnz, 20, b_vec )
+                call power_iteration( val(1:nnz,i2), ia(1:nnz), ja(1:nnz), 3*n_mbd_sites, 10, b_vec ) !myidx, nnz, 20, b_vec )
                 call cpu_time(time6)
                 !write(*,*) "Power iteration timing", time6-time5       
                 b_norm = dot_product(b_vec,b_vec)
@@ -2821,7 +2823,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 !call psb_cdasb(desc_a, info_psb)
                 !call psb_spasb(A_sp, desc_a, info_psb)
                 !call psb_spmm(1.d0, A_sp, b_vec, 0.d0, Ab, desc_a, info_psb, 'N')
-                call sparse_mul(val(1:nnz,i2), b_vec, 3*n_mbd_sites, ia, ja, Ab)
+                call sparse_mul(val(1:nnz,i2), b_vec, 3*n_mbd_sites, ia(1:nnz), ja(1:nnz), Ab)
                 call cpu_time(time6)
                 !write(*,*) "AT-Ab mult timing", time6-time5
                 l_dom = dot_product(b_vec,Ab)/b_norm
@@ -2840,7 +2842,8 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                   val2(nnz+p) = -l_dom
                 end do
                 call cpu_time(time5)
-                call power_iteration( val2, ia2, ja2, 3*n_mbd_sites, 10, b_vec) !myidx, nnz2, 20, b_vec )
+                call power_iteration( val2(1:nnz2), ia2(1:nnz2), ja2(1:nnz2), &
+                                      3*n_mbd_sites, 10, b_vec) !myidx, nnz2, 20, b_vec )
                 call cpu_time(time6)
                 !write(*,*) "Power iteration timing second", time6-time5
                 !call power_iteration( AT(:,:,i2)-l_dom*I_mat, 50, b_vec )
@@ -2855,7 +2858,8 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 !call psb_cdasb(desc_a, info_psb)
                 !call psb_spasb(A_sp, desc_a, info_psb)
                 !call psb_spmm(1.d0, A_sp, b_vec, 0.d0, Ab, desc_a, info_psb, 'N')
-                call sparse_mul(val2(1:nnz2), b_vec, 3*n_mbd_sites, ia2, ja2, Ab)
+                call sparse_mul(val2(1:nnz2), b_vec, 3*n_mbd_sites, ia2(1:nnz2), &
+                                ja2(1:nnz2), Ab)
                 call cpu_time(time6)
                 !write(*,*) "AT-Ab 2nd mult timing", time6-time5
                 if ( l_dom < 0.d0 ) then
@@ -2903,7 +2907,8 @@ if ( abs(rcut_2b) < 1.d-10 ) then
               if ( cent_appr ) then
                 if ( .not. lanczos ) then
                 call cpu_time(time5)
-                call power_iteration( val_sym(:,i2), ia, ja, 3*n_mbd_sites, 10, b_vec ) !myidx, nnz, 20, b_vec )
+                call power_iteration( val_sym(1:nnz,i2), ia(1:nnz), ja(1:nnz), &
+                                      3*n_mbd_sites, 10, b_vec ) !myidx, nnz, 20, b_vec )
                 call cpu_time(time6)
                 if ( do_timing ) then
                 write(*,*) "Power iteration timing", time6-time5
@@ -2919,7 +2924,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 !call psb_cdasb(desc_a, info_psb)
                 !call psb_spasb(A_sp_sym, desc_a, info_psb)
                 !call psb_spmm(1.d0, A_sp_sym, b_vec, 0.d0, Ab, desc_a, info_psb, 'N')
-                call sparse_mul(val_sym(1:nnz,i2), b_vec, 3*n_mbd_sites, ia, ja, Ab)
+                call sparse_mul(val_sym(1:nnz,i2), b_vec, 3*n_mbd_sites, ia(1:nnz), ja(1:nnz), Ab)
                 call cpu_time(time6)
                 !write(*,*) "AT-Ab mult timing", time6-time5
                 l_dom = dot_product(b_vec,Ab)/b_norm
@@ -2938,7 +2943,8 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                   val2(nnz+p) = -l_dom
                 end do
                 call cpu_time(time5)
-                call power_iteration( val2, ia2, ja2, 3*n_mbd_sites, 10, b_vec ) !myidx, nnz2, 20, b_vec )
+                call power_iteration( val2(1:nnz2), ia2(1:nnz2), ja2(1:nnz2), &
+                                      3*n_mbd_sites, 10, b_vec ) !myidx, nnz2, 20, b_vec )
                 call cpu_time(time6)
                 if ( do_timing ) then
                 write(*,*) "Power iteration timing second", time6-time5
@@ -2955,7 +2961,8 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 !call psb_cdasb(desc_a, info_psb)
                 !call psb_spasb(A_sp_sym, desc_a, info_psb)
                 !call psb_spmm(1.d0, A_sp_sym, b_vec, 0.d0, Ab, desc_a, info_psb, 'N')
-                call sparse_mul(val2(1:nnz2), b_vec, 3*n_mbd_sites, ia2, ja2, Ab)
+                call sparse_mul(val2(1:nnz2), b_vec, 3*n_mbd_sites, ia2(1:nnz2), &
+                                ja2(1:nnz2), Ab)
                 call cpu_time(time6)
                 !write(*,*) "AT-Ab 2nd mult timing", time6-time5
                 if ( l_dom < 0.d0 ) then
@@ -2976,7 +2983,8 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                   val2(nnz+p) = 1.d0
                 end do
                 call cpu_time(time5)
-                call lanczos_algorithm( val2(:), ia2, ja2, 3*n_mbd_sites, 10, l_min, l_max )
+                call lanczos_algorithm( val2(1:nnz2), ia2(1:nnz2), ja2(1:nnz2), &
+                                        3*n_mbd_sites, 10, l_min, l_max )
                 call cpu_time(time6)
                 if ( do_timing ) then
                   write(*,*) "Lanczos timing", time6-time5
@@ -3005,7 +3013,9 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 call dgesv( n_order+1, 1, lsq_mat, n_order+1, ipiv_lsq, res_sym, n_order+1, info )
                 !write(*,*) "coeff", res_mat
                 call cpu_time(time6)
-                !write(*,*) "dgesv timing", time6-time5
+                if ( do_timing ) then
+                  write(*,*) "dgesv timing", time6-time5
+                end if
                 !call psb_init(icontxt)
                 !call psb_cdall(icontxt, desc_a, info_psb, vl=myidx)
                 !call psb_spall(A_sp_sym, desc_a, info_psb, nnz=nnz)
@@ -3067,7 +3077,8 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 !           3, AT(:,:,i2), 3*n_mbd_sites, 0.d0, temp_mat, 3)
                 !call psb_spmm(1.d0, A_sp, AT_power, 0.d0, temp_mat, desc_a, info_psb, 'N')
                 do c1 = 1, 3
-                  call sparse_mul(val(1:nnz,i2), AT_power(:,c1), 3*n_mbd_sites, ia, ja, temp_mat(:,c1))
+                  call sparse_mul(val(1:nnz,i2), AT_power(:,c1), 3*n_mbd_sites, &
+                                  ia(1:nnz), ja(1:nnz), temp_mat(:,c1))
                 end do
                 !do c1 = 1, 3
                 !  call cpu_time(time5)
@@ -3091,7 +3102,8 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                   call cpu_time(time5)
                   !call psb_spmm(1.d0, A_sp_sym, AT_sym_power, 0.d0, temp_mat, desc_a, info_psb, 'N')
                   do c1 = 1, 3
-                    call sparse_mul(val_sym(1:nnz,i2), AT_sym_power(:,c1), 3*n_mbd_sites, ia, ja, temp_mat(:,c1))
+                    call sparse_mul(val_sym(1:nnz,i2), AT_sym_power(:,c1), 3*n_mbd_sites, &
+                                    ia(1:nnz), ja(1:nnz), temp_mat(:,c1))
                   end do
                   AT_sym_power = temp_mat
                   do c1 = 1, 3
@@ -3118,7 +3130,8 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                     if ( rjs_0_mbd(k3+1) .le. (rcut_force)/Bohr ) then
                       q = q + 1
                       do c1 = 1, 3
-                        call sparse_mul(val(1:nnz,i2), AT_power_full(:,3*(p-1)+c1), 3*n_mbd_sites, ia, ja, &
+                        call sparse_mul(val(1:nnz,i2), AT_power_full(:,3*(p-1)+c1), &
+                                    3*n_mbd_sites, ia(1:nnz), ja(1:nnz), &
                                     temp_mat_forces(:,3*(q-1)+c1))
                       end do
                     end if
@@ -3169,7 +3182,8 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                     if ( rjs_0_mbd(k3+1) .le. (rcut_force)/Bohr ) then
                       q = q + 1
                       do c1 = 1, 3
-                        call sparse_mul(val(1:nnz,i2), AT_power_full(:,3*(p-1)+c1), 3*n_mbd_sites, ia, ja, &
+                        call sparse_mul(val(1:nnz,i2), AT_power_full(:,3*(p-1)+c1), &
+                                    3*n_mbd_sites, ia(1:nnz), ja(1:nnz), &
                                     temp_mat_forces(:,3*(q-1)+c1))
                       end do
                     end if
@@ -5023,14 +5037,16 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                           do k2 = 1, n_order-2
                             !call cpu_time(time3)
                             !call psb_spmm(1.d0, A_sp, g_vec, 0.d0, g_n_vec, desc_a, info_psb, 'N')
-                            call sparse_mul(val(1:nnz,j), g_vec, 3*n_mbd_sites, ia, ja, g_n_vec)
+                            call sparse_mul(val(1:nnz,j), g_vec, 3*n_mbd_sites, ia(1:nnz), &
+                                            ja(1:nnz), g_n_vec)
                             !call cpu_time(time4)
                             !write(*,*) "Sparse matrix vector multiplication timing", time4-time3, j, p, c1, k2
                             g_vec = g_n_vec
                             integrand(j) = integrand(j) + g_n_vec(3*(p-1)+c1)
                             if ( c3 == 1 .and. do_total_energy ) then
                               !call psb_spmm(1.d0, A_sp, at_vec, 0.d0, at_n_vec, desc_a, info_psb, 'N')
-                              call sparse_mul(val(1:nnz,j), at_vec, 3*n_mbd_sites, ia, ja, at_n_vec)
+                              call sparse_mul(val(1:nnz,j), at_vec, 3*n_mbd_sites, ia(1:nnz), &
+                                              ja(1:nnz), at_n_vec)
                               at_vec = at_n_vec
                               total_integrand(j) = total_integrand(j) - at_n_vec(3*(p-1)+c1)/(k2+1)
                             end if

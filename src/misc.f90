@@ -134,7 +134,7 @@ module misc
   integer, intent(in) :: dim
   real*8, intent(inout) :: res(:)
   integer*8, intent(in) :: iA(:), jA(:)
-  real*8, allocatable :: resd(:), ress(:)
+  !real*8, allocatable :: resd(:), ress(:)
   real*8, allocatable :: A_CSR(:), this_v(:)
   integer, allocatable :: j_CSR(:), i_CSR(:), ipointer(:)
   real*8 :: t1, t2, td, ts, tcsr, s
@@ -149,8 +149,8 @@ module misc
   n = size(iA,1)
 
   !allocate( res(1:dim2) )
-  allocate( resd(1:dim2) )
-  allocate( ress(1:dim2) )
+  !allocate( resd(1:dim2) )
+  !allocate( ress(1:dim2) )
 
   allocate( ipointer(1:dim1) )
 
@@ -180,7 +180,6 @@ module misc
   !i_CSR(dim1+1) = k
   !call cpu_time(t2)
   !write(*,*) t2-t1, "seconds to make A_CSR from dense matrix"
-
 
   !call cpu_time(t1)
   ipointer = 0
@@ -219,14 +218,13 @@ module misc
 
 
 
-
 ! Dense A calculation
 !  call cpu_time(t1)
 !  res = matmul(A_dense, v)
 !  call cpu_time(t2)
 !  write(*, *) "dense matmul in", t2-t1, "seconds"
 
-  resd = res
+  !resd = res
 
   !td=t2-t1
 
@@ -241,7 +239,7 @@ module misc
 !  call cpu_time(t2)
 !  write(*, *) "naive sparse matmul in", t2-t1, "seconds"
 
-  ress = res
+  !ress = res
 
   !ts=t2-t1
 
@@ -256,6 +254,7 @@ module misc
     end do
     res(i) = s
   end do
+
   !call cpu_time(t2)
   !write(*, *) "CSR sparse matmul in", t2-t1, "seconds"
 
@@ -271,8 +270,7 @@ module misc
   !  write(*,*) resd(i), ress(i), res(i)
   !end do
 
-  deallocate( resd, ress, ipointer, A_CSR, j_CSR, i_CSR )
-
+  deallocate( ipointer, A_CSR, j_CSR, i_CSR )
 
   end subroutine
 

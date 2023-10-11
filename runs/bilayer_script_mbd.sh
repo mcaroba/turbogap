@@ -1,4 +1,8 @@
-atoms_file = 'A.xyz'
+> bilayer_mbd.dat
+for i in $(seq 1.6 0.1 5.0); do
+echo $i
+cat <<EOF > input
+atoms_file = 'bilayer_$i.xyz'
 pot_file = 'gap_files/carbon.gap'
 
 ! Species info
@@ -30,3 +34,6 @@ vdw_hirsh_grad = .false.   ! Include Hirshfeld gradients in the forces. Type: LO
 vdw_polynomial = .false.  ! Use polynomial approximation for inverse matrices. Type: LOGICAL
 vdw_omega_ref = 1.3d0
 do_nnls = .false.
+EOF
+../bin/turbogap predict | grep "Total energy" | awk '{print $3}' >> bilayer_mbd.dat
+done
