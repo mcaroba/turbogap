@@ -998,15 +998,15 @@ module vdw
 
     end do 
 
-        write(*,*) "ref alpha", alpha0_ref(1)/Bohr**3
-        write(*,*) "Central polarizabilities"
-        k2 = 0
-        do i = 1, n_sites
-          write(*,*) central_pol(i), hirshfeld_v_neigh(k2+1)
-          if ( i < n_sites ) then
-            k2 = k2 + n_neigh(i)
-          end if
-        end do
+     !   write(*,*) "ref alpha", alpha0_ref(1)/Bohr**3
+     !   write(*,*) "Central polarizabilities"
+     !   k2 = 0
+     !   do i = 1, n_sites
+     !     write(*,*) central_pol(i), hirshfeld_v_neigh(k2+1)
+     !     if ( i < n_sites ) then
+     !       k2 = k2 + n_neigh(i)
+     !     end if
+     !   end do
 
 
 
@@ -1119,7 +1119,7 @@ module vdw
     real*8 :: res_nnls, E_tot, denom
     integer :: mode_nnls
     logical :: do_total_energy = .true., series_expansion = .false., do_log = .false., cent_appr = .true., lanczos = .true., &
-               do_timing = .true.  ! Finite difference testing purposes
+               do_timing = .false.  ! Finite difference testing purposes
     real*8, allocatable :: b_vec(:), Ab(:), I_mat(:,:), l_vals(:), log_vals(:), lsq_mat(:,:), res_mat(:), log_exp(:,:), &
                            AT_power(:,:), log_integrand(:), AT_power_full(:,:), pol_grad(:,:,:), pol_inv(:,:,:), inv_vals(:), &
                            res_inv(:), lsq_inv(:,:), integrand_pol(:), AT_sym(:,:,:), G_sym(:,:,:), pol_sym(:,:,:), res_sym(:), &
@@ -2978,7 +2978,9 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 call cpu_time(time5)
                 call lanczos_algorithm( val2(:), ia2, ja2, 3*n_mbd_sites, 10, l_min, l_max )
                 call cpu_time(time6)
-                write(*,*) "Lanczos timing", time6-time5
+                if ( do_timing ) then
+                  write(*,*) "Lanczos timing", time6-time5
+                end if
 
                 l_max = l_max - 1.d0
                 l_min = l_min - 1.d0
@@ -2987,7 +2989,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
 
                 end if
 
-                write(*,*) "l_min, l_max", l_min, l_max
+                !write(*,*) "l_min, l_max", l_min, l_max
                 l_vals(1) = l_min
                 do k2 = 2, 1001
                   l_vals(k2) = l_min + (k2-1)*(l_max-l_min)/1000
@@ -3374,7 +3376,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
           if ( cent_appr ) then
             energies(i) = (sym_integral + E_TS) * Hartree
           end if
-          write(*,*) "MBD energy", i, energies(i)
+          !write(*,*) "MBD energy", i, energies(i)
 
 
           if ( do_derivatives ) then
@@ -3778,6 +3780,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
 
               call cpu_time(time1)
             
+              !call cpu_time(time5)
               f_damp_der_SCS = 0.d0
               f_damp_der_mbd = 0.d0 ! This is cleared so we can recalculate it with SCS values
               dT_mbd = 0.d0
@@ -4144,8 +4147,10 @@ if ( abs(rcut_2b) < 1.d-10 ) then
               
               call cpu_time(time2)
               
-              !write(*,*) "dT_LR construction timing", time2-time1
-              
+              if ( do_timing ) then
+              write(*,*) "dT_LR construction timing", time2-time1
+              end if              
+
               if ( .false. ) then
                 write(*,*) "dT_LR_sym"
                 open(unit=89, file="dT_LR_sym.dat", status="new")
@@ -5286,7 +5291,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                     sym_integral = 0.d0
                     call integrate("trapezoidal", omegas_mbd, integrand_sym, omegas_mbd(1), omegas_mbd(n_freq), sym_integral)
                     !write(*,*) "Sym force", 
-                    write(*,*) i, c3, sym_integral/pi * Hartree/Bohr
+                    !write(*,*) i, c3, sym_integral/pi * Hartree/Bohr
                   end if
                 end if
                 if ( .not. cent_appr ) then
