@@ -1693,41 +1693,71 @@ void check_nan(double *G, int Nt ){
 
  int id=threadIdx.x+threadIdx.x+blockIdx.x*blockDim.x;
  {
-  if(isnan(G[id])){
+  if(isnan(G[id])&& id<Nt){
     printf("Is nan %lf at %d", G[id],id);
   }
  }
 
 }
 
+
+
 __global__
 void cuda_global_scaling(double *radial_exp_coeff_d, 
                     int *i_beg_d, int *i_end_d, double *global_scaling_d,
                     int n_max, int n_atom_pairs, int n_species,
-                    double *rcut_hard_d, int divide ){
+                    double *rcut_hard_d, int *k2_i_site_d, int *k2_start_d, int divide ){
                       
   int i_ij=threadIdx.x+blockIdx.x*blockDim.x;
   if(i_ij<n_atom_pairs){
-    int i_one=0;
-    for(int i=0;i<n_species; i++){
-      for(int ii=i_beg_d[i];ii<=i_end_d[i]; ii++){
-        double loc_rad_exp_coeff=radial_exp_coeff_d[i_one+i_ij*n_max]*global_scaling_d[i]; //radial_exp_coeff_d[i_ij+i_one*size_radial_exp_coeff_two]*global_scaling_d[i];
-      
-/*         if(isnan(loc_rad_exp_coeff)){
-          printf("\n loc_rad_exp_coeff is nan %lf %lf %lf %d %d %d %d %d %d\n",loc_rad_exp_coeff,global_scaling_d[i],sqrt(rcut_hard_d[i] ),i_ij, i_one, i_ij+i_one*n_atom_pairs,n_max,n_atom_pairs,n_atom_pairs*n_max);
-        }  */
-
-        if(divide==0){
-          loc_rad_exp_coeff*=sqrt(rcut_hard_d[i]);
+    //int i_site=k2_i_site_d[i_ij];
+    //int k2start=k2_start_d[i_site-1];
+    //if(i_ij!=k2start)
+    {
+      int i_one=0;
+      for(int i=0;i<n_species; i++){
+        for(int ii=i_beg_d[i];ii<=i_end_d[i]; ii++){
+          double loc_rad_exp_coeff=radial_exp_coeff_d[i_one+i_ij*n_max]*global_scaling_d[i]; //radial_exp_coeff_d[i_ij+i_one*size_radial_exp_coeff_two]*global_scaling_d[i];
+          if(divide==0){
+            loc_rad_exp_coeff*=sqrt(rcut_hard_d[i]);
+          }
+          if(divide==1){
+            loc_rad_exp_coeff*=1.0/sqrt(rcut_hard_d[i]);
+          } 
+          radial_exp_coeff_d[i_one+i_ij*n_max]=loc_rad_exp_coeff; //radial_exp_coeff_d[i_ij+i_one*size_radial_exp_coeff_two]=loc_rad_exp_coeff;
+          
+          i_one++;
         }
-        if(divide==1){
-          loc_rad_exp_coeff*=1.0/sqrt(rcut_hard_d[i]);
-        } 
-        radial_exp_coeff_d[i_one+i_ij*n_max]=loc_rad_exp_coeff; //radial_exp_coeff_d[i_ij+i_one*size_radial_exp_coeff_two]=loc_rad_exp_coeff;
+      }  
+    }
+  }
+}
 
-        i_one++;
-      }
-    }  
+
+__global__
+void cuda_poly3gauss_one(double *radial_exp_coeff_d, bool *mask_d, double *rjs_d,
+                    int *i_beg_d, int *i_end_d, double *global_scaling_d,
+                    int n_max, int n_atom_pairs, int n_species,
+                    double *rcut_hard_d, int *k2_i_site_d, int *k2_start_d){
+                      
+  int i_ij=threadIdx.x+blockIdx.x*blockDim.x;
+  if(i_ij<n_atom_pairs){
+    int i_site=k2_i_site_d[i_ij];
+    int k2start=k2_start_d[i_site-1];
+    if(i_ij!=k2start)
+    {
+      int i_one=0;
+      for(int i=0;i<n_species; i++){
+        for(int ii=i_beg_d[i];ii<=i_end_d[i]; ii++){
+          double loc_rad_exp_coeff=0.0; //loc_rad_exp_coeff=radial_exp_coeff_d[i_one+i_ij*n_max]*global_scaling_d[i]; //radial_exp_coeff_d[i_ij+i_one*size_radial_exp_coeff_two]*global_scaling_d[i];
+          
+          loc_rad_exp_coeff*=sqrt(rcut_hard_d[i]);
+          
+          //radial_exp_coeff_d[i_one+i_ij*n_max]=loc_rad_exp_coeff; //radial_exp_coeff_d[i_ij+i_one*size_radial_exp_coeff_two]=loc_rad_exp_coeff;          
+          i_one++;
+        }
+      }  
+    }
   }
 }
 
@@ -1735,22 +1765,27 @@ extern "C" void  gpu_get_radial_exp_coeff_poly3gauss(double *radial_exp_coeff_d,
                                           int *i_beg_d, int *i_end_d, double *global_scaling_d,
                                           int size_radial_exp_coeff_one, int size_radial_exp_coeff_two, int n_species, 
                                           bool c_do_derivatives, int bintybint,
-                                          double *rcut_hard_d, hipStream_t *stream ){
+                                          double *rcut_hard_d,
+                                          int *k2_i_site_d, int *k_2start_d,
+                                          hipStream_t *stream ){
  
   dim3 nblocks=dim3((size_radial_exp_coeff_two-1+tpb)/tpb,1,1);
   dim3 nthreads=dim3(tpb,1,1); 
+  cuda_poly3gauss_one<<<nblocks, nthreads,0,stream[0]>>>(radial_exp_coeff_d, i_beg_d,i_end_d,global_scaling_d, 
+                                          size_radial_exp_coeff_one, size_radial_exp_coeff_two, n_species,
+                                          rcut_hard_d, k2_i_site_d, k_2start_d); 
   int divide;
   divide=0;
   cuda_global_scaling<<<nblocks, nthreads,0,stream[0]>>>(radial_exp_coeff_d, i_beg_d,i_end_d,global_scaling_d, 
                                           size_radial_exp_coeff_one, size_radial_exp_coeff_two, n_species,
-                                          rcut_hard_d, divide);  
+                                          rcut_hard_d, k2_i_site_d, k_2start_d, divide);  
   /* gpuErrchk( hipPeekAtLastError() );
   gpuErrchk( hipDeviceSynchronize() ); */
   if(c_do_derivatives){
     divide=1;
     cuda_global_scaling<<< nblocks, nthreads,0,stream[0] >>>(radial_exp_coeff_der_d, i_beg_d,i_end_d,global_scaling_d, 
                                 size_radial_exp_coeff_one, size_radial_exp_coeff_two, n_species,
-                                rcut_hard_d, divide);    
+                                rcut_hard_d, k2_i_site_d, k_2start_d, divide);    
   } 
   /* gpuErrchk( hipPeekAtLastError() );
   gpuErrchk( hipDeviceSynchronize() );   */                          

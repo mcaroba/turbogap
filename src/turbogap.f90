@@ -44,7 +44,6 @@ program turbogap
 #endif
   use bussi
   use xyz_module
-  use F_B_C
 
 !$  use omp_lib
 
@@ -965,6 +964,7 @@ program turbogap
 !$omp parallel private(omp_task, k)
 !$ omp_task = omp_get_thread_num()
     
+    write(*,*) 
     print *, "Allocated omp index arrays"
     if( omp_task < mod( omp_n_sites, n_omp ) )then
        i_beg_omp(omp_task+1) = i_beg + omp_task*(omp_n_sites / n_omp + 1)

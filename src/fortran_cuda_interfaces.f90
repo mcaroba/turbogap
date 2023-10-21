@@ -284,11 +284,13 @@ MODULE F_B_C
                                       global_scaling_d, &
                                       size_radial_exp_coeff_one, size_radial_exp_coeff_two, n_species, &
                                       c_do_derivatives, bintybint, & 
-                                      rcut_hard_d, gpu_stream) &
+                                      rcut_hard_d, &
+                                      k2_i_site_d, k_2start_d,&
+                                      gpu_stream) &
                                       bind(C,name="gpu_get_radial_exp_coeff_poly3gauss")
       use iso_c_binding
       type(c_ptr), value :: radial_exp_coeff_d, radial_exp_coeff_der_d, i_beg_d, i_end_d, global_scaling_d
-      type(c_ptr), value :: rcut_hard_d
+      type(c_ptr), value :: rcut_hard_d, k2_i_site_d, k_2start_d
       type(c_ptr) :: gpu_stream
       integer(c_int), value :: size_radial_exp_coeff_one, size_radial_exp_coeff_two, n_species
       integer(c_int), value :: bintybint
