@@ -828,7 +828,7 @@ module exp_utils
 
       end if
 
-      mag = sqrt(dot_product(y,y)) !sum(y * dx) !sqrt(dot_product(y, y))
+      mag = sum(y * dx) !sqrt(dot_product(y, y))
       y = y / mag
       y_all = y_all / mag
 
