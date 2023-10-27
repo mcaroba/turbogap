@@ -297,6 +297,24 @@ MODULE F_B_C
       logical(c_bool), value :: c_do_derivatives
       end subroutine
 
+      subroutine gpu_put_recipr_energies(this_d, locv_d, in_to_out_site_d,  N,&
+                                      gpu_stream) &
+                                      bind(C,name="gpu_put_recipr_energies")
+      use iso_c_binding
+      type(c_ptr), value :: this_d, locv_d, in_to_out_site_d
+      type(c_ptr) :: gpu_stream
+      integer(c_int), value :: N
+      end subroutine
+
+      subroutine gpu_put_recipr_forces(this_d, locv_d, in_to_out_site_d,  N,&
+                                      gpu_stream) &
+                                      bind(C,name="gpu_put_recipr_forces")
+      use iso_c_binding
+      type(c_ptr), value :: this_d, locv_d, in_to_out_site_d
+      type(c_ptr) :: gpu_stream
+      integer(c_int), value :: N
+      end subroutine
+
     END INTERFACE
   END MODULE F_B_C
 

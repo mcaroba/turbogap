@@ -7,8 +7,8 @@
 #include <ctime>
 #include <hip/hip_runtime.h>
 #include <hip/hip_runtime.h>
-#include <hipblas.h>
-#include <hiprand.h>
+#include <hipblas/hipblas.h>
+// #include <hiprand.h>
 #include <assert.h>
 #include <hip/hip_complex.h>
 
@@ -347,8 +347,8 @@ extern "C" void cuda_set_device( int my_rank)
  /*gpuErrchk(hipGetDeviceCount(&num_gpus));
   gpuErrchk(hipSetDevice(my_rank%num_gpus));
   gpuErrchk(hipGetDevice(&mygpuid));*/
-  gpuErrchk(hipSetDevice(0));
-  printf("\n Seta Aset at %d %d %d %d\n", num_gpus, my_rank%num_gpus,my_rank, mygpuid);
+  gpuErrchk(hipSetDevice( my_rank));
+  // printf("\n Seta Aset at %d %d %d %d\n", num_gpus, my_rank%num_gpus,my_rank, mygpuid);
   //exit(0);
   return;
 }
@@ -608,6 +608,7 @@ extern "C" void gpu_get_sqrt_dot_p(double *sqrt_dot_d, double *soap_d, double *m
 {
   dim3 nblocks=dim3((n_sites-1+tpb)/tpb,1,1);
   dim3 nthreads=dim3(tpb,1,1);
+  // hipMemsetAsync()
   cuda_get_soap_p<<< nblocks, nthreads,0 , stream[0]>>>(soap_d,sqrt_dot_d, multiplicity_array_d, cnk_d, skip_soap_component_d, 
                                          n_sites, n_soap, n_max, l_max);                                    
   return;
@@ -1771,9 +1772,9 @@ extern "C" void  gpu_get_radial_exp_coeff_poly3gauss(double *radial_exp_coeff_d,
  
   dim3 nblocks=dim3((size_radial_exp_coeff_two-1+tpb)/tpb,1,1);
   dim3 nthreads=dim3(tpb,1,1); 
-  cuda_poly3gauss_one<<<nblocks, nthreads,0,stream[0]>>>(radial_exp_coeff_d, i_beg_d,i_end_d,global_scaling_d, 
+/*   cuda_poly3gauss_one<<<nblocks, nthreads,0,stream[0]>>>(radial_exp_coeff_d, i_beg_d,i_end_d,global_scaling_d, 
                                           size_radial_exp_coeff_one, size_radial_exp_coeff_two, n_species,
-                                          rcut_hard_d, k2_i_site_d, k_2start_d); 
+                                          rcut_hard_d, k2_i_site_d, k_2start_d);  */
   int divide;
   divide=0;
   cuda_global_scaling<<<nblocks, nthreads,0,stream[0]>>>(radial_exp_coeff_d, i_beg_d,i_end_d,global_scaling_d, 
@@ -1791,8 +1792,36 @@ extern "C" void  gpu_get_radial_exp_coeff_poly3gauss(double *radial_exp_coeff_d,
   gpuErrchk( hipDeviceSynchronize() );   */                          
 }
 
+__global__ 
+void cuda_put_recipr_energies(double *this_d, double *locv_d, int *in_to_out_site_d, int  N){
+  int i=threadIdx.x+blockIdx.x*blockDim.x;
+  if(i<N){
+    int i2=in_to_out_site_d[i];
+    this_d[i2-1]=locv_d[i];
+  }
+}
+extern "C" void gpu_put_recipr_energies(double *this_d, double *locv_d, int *in_to_out_site_d, 
+                                     int  N, hipStream_t *stream){
+  dim3 nblocks=dim3((N-1+tpb)/tpb,1,1);
+  dim3 nthreads=dim3(tpb,1,1); 
+  cuda_put_recipr_energies<<<nblocks, nthreads,0,stream[0] >>>(this_d,locv_d,in_to_out_site_d,N);
+}
 
 
+__global__ 
+void cuda_put_recipr_forces(double3 *this_d, double3 *locv_d, int *in_to_out_site_d, int  N){
+  int i=threadIdx.x+blockIdx.x*blockDim.x;
+  if(i<N){
+    int i2=in_to_out_site_d[i];
+    this_d[i2-1]=locv_d[i];
+  }
+}
+extern "C" void gpu_put_recipr_forces(double3 *this_d, double3 *locv_d, int *in_to_out_site_d, 
+                                     int  N, hipStream_t *stream){
+  dim3 nblocks=dim3((N-1+tpb)/tpb,1,1);
+  dim3 nthreads=dim3(tpb,1,1); 
+  cuda_put_recipr_forces<<<nblocks, nthreads,0,stream[0] >>>(this_d,locv_d,in_to_out_site_d,N);
+}
 /* 
 extern "C" void cuda_malloc_double(double **a_d, int Np)
 {

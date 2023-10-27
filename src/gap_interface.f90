@@ -77,13 +77,15 @@ module gap_interface
     real*8, intent(inout)  :: solo_time_soap, time_get_soap
 
 !   Inout variables
-    real*8, intent(inout) :: energies0(:), forces0(:,:), hirshfeld_v0(:), hirshfeld_v_cart_der0(:,:)
+    real*8, target, intent(inout) :: energies0(:), forces0(:,:)
+    real*8, intent(inout) :: hirshfeld_v0(:), hirshfeld_v_cart_der0(:,:)
 
 !   Internal variables
     real*8, allocatable :: rjs(:), thetas(:), phis(:), energies(:), forces(:,:), soap_temp(:,:), &
                            hirshfeld_v(:), hirshfeld_v_cart_der(:,:), xyz(:,:)
     real*8 :: rcut_max
-    integer, allocatable :: in_to_out_site(:), n_neigh(:), neighbors_list(:), species_multiplicity(:), &
+    integer, target, allocatable :: in_to_out_site(:)
+    integer, allocatable :: n_neigh(:), neighbors_list(:), species_multiplicity(:), &
                             species(:,:), species0(:,:), species_multiplicity0(:), out_to_in_site(:), &
                             der_neighbors(:), der_neighbors_list(:), in_to_out_pairs(:)
     integer, allocatable :: species_multiplicity_supercell(:)
@@ -97,7 +99,13 @@ module gap_interface
     real*8 :: ttt(2)
     type(c_ptr) :: soap_cart_der_d, soap_d
     type(c_ptr) :: cublas_handle, gpu_stream
-    type(c_ptr) ::  k2_i_site_d, n_neigh_d
+    type(c_ptr) ::  k2_i_site_d, n_neigh_d, in_to_out_site_d
+    type(c_ptr) :: this_energies_d, this_forces_d, this_virial_d 
+    type(c_ptr) :: energies_d, forces_d, virial_d
+    real(c_double), target, allocatable :: tmp_energies(:), tmp_forces(:,:), tmp_virial(:,:)
+    integer(c_size_t) :: st_virial,st_forces, st_energies
+    integer(c_size_t) :: st_in_to_out_site
+    integer(c_size_t) :: st_this_virial,st_this_forces, st_this_energies
 
     call mpi_comm_rank(MPI_COMM_WORLD, rank, ierr)
     ! call gpu_set_device(rank) ! Every node has 4 GPUs. Even if there are more than 1 nodes used. This will assing the ranks to GPU in a roundbin fashion
@@ -288,34 +296,69 @@ module gap_interface
 !call cpu_time(time2)
 !write(*,*) "hirshfeld_v time =", time2-time1, "seconds"
     end if
-
+   
 
 
     if( do_prediction )then
 !     Get energies and forces
       allocate( energies(1:n_sites) )
+      allocate( tmp_energies(1:n_sites) )
       energies = 0.d0
+
+      st_energies=size(energies)*(sizeof(energies(1)))
+      call gpu_malloc_all(energies_d,st_energies, gpu_stream)
       if( do_forces )then
         allocate( forces(1:3, 1:n_all_sites) )
+        allocate( tmp_forces(1:size(forces,1), 1:size(forces,2)) )
+        allocate(tmp_virial(1:3,1:3))
+        st_forces=size(forces,1)*size(forces,2)*sizeof(forces(1,1))
+        st_virial=size(virial,1)*size(virial,2)*sizeof(virial(1,1))
+        call gpu_malloc_all(forces_d,st_forces, gpu_stream)
+        call gpu_malloc_all(virial_d,st_virial, gpu_stream)
         forces = 0.d0
       end if
       if( n_sites > 0 )then
         call get_soap_energy_and_forces(soap, soap_cart_der, alphas, delta, zeta, 0.d0, Qs, &
                                         n_neigh, neighbors_list, xyz, do_forces, do_timing, &
                                         energies, forces, virial, solo_time_soap,  &
-                                        soap_d,  soap_cart_der_d, n_neigh_d, k2_i_site_d, cublas_handle, gpu_stream)
+                                        soap_d,  soap_cart_der_d, n_neigh_d, k2_i_site_d, &
+                                        energies_d, forces_d, virial_d, &
+                                        cublas_handle, gpu_stream)
+        call cpy_dtoh(forces_d,c_loc(tmp_forces), st_forces,gpu_stream)
+        call cpy_dtoh(virial_d,c_loc(tmp_virial), st_virial,gpu_stream)
+        call cpy_dtoh(energies_d,c_loc(tmp_energies),st_energies,gpu_stream)
+        forces=tmp_forces
+        virial=tmp_virial
+        energies=tmp_energies
+    end if
+      st_in_to_out_site=size(in_to_out_site,1)*sizeof(in_to_out_site(1)) 
+      call gpu_malloc_all(in_to_out_site_d,st_in_to_out_site, gpu_stream)
+      call cpy_htod(c_loc(in_to_out_site), in_to_out_site_d, st_in_to_out_site, gpu_stream)
+      ! do i = 1, n_sites
+      !   i2 = in_to_out_site(i)
+      !   energies0(i2) = energies(i)
+      ! end do
+      
+      st_this_energies=size(energies0,1)*sizeof(energies0(1)) 
+      call gpu_malloc_all(this_energies_d,st_this_energies, gpu_stream)
+      call cpy_htod(c_loc(energies0), this_energies_d,st_this_energies, gpu_stream)
+      call gpu_put_recipr_energies(this_energies_d, energies_d, in_to_out_site_d, n_sites,&
+                                      gpu_stream)
+      call cpy_dtoh(this_energies_d,c_loc(energies0),st_this_energies, gpu_stream)
+
+      if( do_forces )then
+        ! do i = 1, n_all_sites
+        !   i2 = in_to_out_site(i)
+        !   forces0(1:3, i2) = forces(1:3, i)
+        ! end do 
+          st_this_forces=size(forces0,1)*size(forces0,1)*sizeof(forces0(1,1)) 
+          call gpu_malloc_all(this_forces_d,st_this_forces, gpu_stream)
+          call cpy_htod(c_loc(forces0), this_forces_d, st_this_forces, gpu_stream)
+          call gpu_put_recipr_forces(this_forces_d, forces_d, in_to_out_site_d, n_all_sites, &
+                                      gpu_stream)
+          call cpy_dtoh(this_forces_d, c_loc(forces0), st_this_forces, gpu_stream)
       end if
 
-      do i = 1, n_sites
-        i2 = in_to_out_site(i)
-        energies0(i2) = energies(i)
-      end do
-      if( do_forces )then
-        do i = 1, n_all_sites
-          i2 = in_to_out_site(i)
-          forces0(1:3, i2) = forces(1:3, i)
-        end do
-      end if
     end if
 
 !   This is slow, but writing to disk is even slower so who cares
@@ -363,6 +406,16 @@ module gap_interface
     if( do_derivatives .and. .not. write_derivatives )then
       deallocate( soap_cart_der )
     end if
+  call gpu_free_async(this_forces_d,gpu_stream)
+  call gpu_free_async(this_energies_d,gpu_stream)
+  call gpu_free_async(forces_d,gpu_stream)
+  call gpu_free_async(energies_d,gpu_stream)
+  call gpu_free_async(virial_d,gpu_stream)
+  call gpu_free_async(in_to_out_site_d, gpu_stream)
+  deallocate(tmp_energies)
+  if(do_forces) then
+    deallocate(tmp_forces,tmp_virial)
+  endif
   !call destroy_cublas_handle(cublas_handle, gpu_stream)
   end subroutine
 !**************************************************************************

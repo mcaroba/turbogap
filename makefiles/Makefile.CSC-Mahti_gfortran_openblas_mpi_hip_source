@@ -30,7 +30,6 @@ CUDA_OPTS=  -lcublas -lcurand -arch=sm_80 --ptxas-options=-v
 #CUDA_OPTS+= -Xcompiler -gdwarf-4 
 #CUDA_OPTS+= -g -G 
 #F90_OPTS+= -g -ffpe-trap=zero,invalid,overflow,underflow -Wall -Wextra -Warray-temporaries -Wconversion -fimplicit-none -fbacktrace -ffree-line-length-0 -fcheck=all  -finit-real=nan
-
 #F90_OPTS+= -fbacktrace -fcheck=bounds -g -fcheck=all   -fbacktrace -Wall
 
 # BLAS and LAPACK libraries

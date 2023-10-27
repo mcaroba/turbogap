@@ -37,7 +37,9 @@ module gap
   subroutine get_soap_energy_and_forces(soap, soap_der, alphas, delta, zeta0, e0, Qs, &
                                         n_neigh, neighbors_list, xyz, do_forces, do_timing, &
                                         energies, forces, virial,  solo_time_soap, soap_d, &
-                                        soap_der_d, n_neigh_d, k2_i_site_d, cublas_handle, gpu_stream)
+                                        soap_der_d, n_neigh_d, k2_i_site_d, &
+                                        energies_d, forces_d, virial_d, &
+                                        cublas_handle, gpu_stream)
 !   **********************************************
 !   soap(1:n_soap, 1:n_sites)
 
@@ -125,7 +127,7 @@ module gap
   
   call gpu_malloc_all(alphas_d,st_alphas, gpu_stream)
 
-  call gpu_malloc_all(energies_d,st_energies, gpu_stream)
+  ! call gpu_malloc_all(energies_d,st_energies, gpu_stream)
 
   call cpy_htod(c_loc(Qs), Qs_d ,st_Qs, gpu_stream) !call cpy_double_htod(c_loc(Qs), Qs_d ,size_Qs)
   call cpy_htod(c_loc(alphas),alphas_d,st_alphas, gpu_stream) !call cpy_double_htod(c_loc(alphas),alphas_d,size_alphas)
@@ -249,9 +251,9 @@ module gap
     call cpy_htod(c_loc(neighbors_list), neighbors_list_d, st_nnlist, gpu_stream) !call cpy_int_htod(c_loc(neighbors_list), neighbors_list_d, size_nnlist)
 
     st_forces=size_forces*sizeof(forces(1,1))
-    call gpu_malloc_all(forces_d,st_forces, gpu_stream)
+    ! call gpu_malloc_all(forces_d,st_forces, gpu_stream)
     st_virial=size_virial*sizeof(virial(1,1))
-    call gpu_malloc_all(virial_d,st_virial, gpu_stream) 
+    ! call gpu_malloc_all(virial_d,st_virial, gpu_stream) 
     st_neigh=n_sites*sizeof(n_neigh(1))
     !call gpu_malloc_all(n_neigh_d,st_neigh, gpu_stream)
     !call cpy_htod(c_loc( n_neigh), n_neigh_d,st_neigh, gpu_stream)
@@ -275,16 +277,16 @@ module gap
                                         n_pairs, gpu_stream)
 
     
-    call cpy_dtoh(forces_d,c_loc(tmp_forces), st_forces,gpu_stream)
-    call cpy_dtoh(virial_d,c_loc(tmp_virial), st_virial,gpu_stream)
-    forces=tmp_forces
-    virial=tmp_virial
+    ! call cpy_dtoh(forces_d,c_loc(tmp_forces), st_forces,gpu_stream)
+    ! call cpy_dtoh(virial_d,c_loc(tmp_virial), st_virial,gpu_stream)
+    ! forces=tmp_forces
+    ! virial=tmp_virial
 
   endif
 
   
-  call cpy_dtoh(energies_d,c_loc(tmp_energies),st_energies,gpu_stream)
-  energies=tmp_energies
+  ! call cpy_dtoh(energies_d,c_loc(tmp_energies),st_energies,gpu_stream)
+  ! energies=tmp_energies
 
   !write(*,*) tmp_energies
 
@@ -309,11 +311,11 @@ module gap
   ! call gpu_free_async(l_index_d,gpu_stream)
   call gpu_free_async(j2_index_d,gpu_stream) 
   !call destroy_cublas_handle(cublas_handle)
-  call gpu_free_async(forces_d,gpu_stream)
-  call gpu_free_async(energies_d,gpu_stream)
-  call gpu_free_async(virial_d,gpu_stream)
+  ! call gpu_free_async(forces_d,gpu_stream)
+  ! call gpu_free_async(energies_d,gpu_stream)
+  ! call gpu_free_async(virial_d,gpu_stream)
   call gpu_free_async(soap_d,gpu_stream)
-  call gpu_free(soap_der_d)
+  call gpu_free_async(soap_der_d,gpu_stream)
   ! write(*,*) energies
   ! stop
   
