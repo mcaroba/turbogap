@@ -8,7 +8,6 @@
 #include <hip/hip_runtime.h>
 #include <hip/hip_runtime.h>
 #include <hipblas.h>
-#include <hiprand.h>
 #include <assert.h>
 #include <hip/hip_complex.h>
 
@@ -1735,7 +1734,7 @@ void cuda_global_scaling(double *radial_exp_coeff_d,
 
 
 __global__
-void cuda_poly3gauss_one(double *radial_exp_coeff_d, bool *mask_d, double *rjs_d,
+void cuda_poly3gauss_one(double *radial_exp_coeff_d,
                     int *i_beg_d, int *i_end_d, double *global_scaling_d,
                     int n_max, int n_atom_pairs, int n_species,
                     double *rcut_hard_d, int *k2_i_site_d, int *k2_start_d){
