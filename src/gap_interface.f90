@@ -52,7 +52,9 @@ module gap_interface
                           which_atom, indices, soap, soap_cart_der, der_neighbors, der_neighbors_list, &
                           has_vdw, vdw_Qs, vdw_alphas, vdw_zeta, vdw_delta, vdw_V0, &
                           energies0, forces0, hirshfeld_v0, hirshfeld_v_cart_der0, virial, solo_time_soap, &
-                          time_get_soap,cublas_handle , gpu_stream)
+                          time_get_soap, &
+                          this_energies_d, this_forces_d, virial_d, &
+                          cublas_handle, gpu_stream)
 
     implicit none
 
@@ -100,12 +102,12 @@ module gap_interface
     type(c_ptr) :: soap_cart_der_d, soap_d
     type(c_ptr) :: cublas_handle, gpu_stream
     type(c_ptr) ::  k2_i_site_d, n_neigh_d, in_to_out_site_d
-    type(c_ptr) :: this_energies_d, this_forces_d, this_virial_d 
+    type(c_ptr) :: this_energies_d, this_forces_d
     type(c_ptr) :: energies_d, forces_d, virial_d
     real(c_double), target, allocatable :: tmp_energies(:), tmp_forces(:,:), tmp_virial(:,:)
     integer(c_size_t) :: st_virial,st_forces, st_energies
     integer(c_size_t) :: st_in_to_out_site
-    integer(c_size_t) :: st_this_virial,st_this_forces, st_this_energies
+    integer(c_size_t) :: st_this_forces, st_this_energies
 
     call mpi_comm_rank(MPI_COMM_WORLD, rank, ierr)
     ! call gpu_set_device(rank) ! Every node has 4 GPUs. Even if there are more than 1 nodes used. This will assing the ranks to GPU in a roundbin fashion
@@ -307,14 +309,17 @@ module gap_interface
 
       st_energies=size(energies)*(sizeof(energies(1)))
       call gpu_malloc_all(energies_d,st_energies, gpu_stream)
+      call gpu_memset_zero(energies_d,st_energies, gpu_stream)
       if( do_forces )then
         allocate( forces(1:3, 1:n_all_sites) )
         allocate( tmp_forces(1:size(forces,1), 1:size(forces,2)) )
         allocate(tmp_virial(1:3,1:3))
         st_forces=size(forces,1)*size(forces,2)*sizeof(forces(1,1))
-        st_virial=size(virial,1)*size(virial,2)*sizeof(virial(1,1))
+         st_virial=size(virial,1)*size(virial,2)*sizeof(virial(1,1))
         call gpu_malloc_all(forces_d,st_forces, gpu_stream)
-        call gpu_malloc_all(virial_d,st_virial, gpu_stream)
+        ! call gpu_malloc_all(virial_d,st_virial, gpu_stream)
+        call gpu_memset_zero(forces_d,st_forces, gpu_stream)
+        ! call gpu_memset_zero(virial_d,st_virial, gpu_stream)
         forces = 0.d0
       end if
       if( n_sites > 0 )then
@@ -324,14 +329,18 @@ module gap_interface
                                         soap_d,  soap_cart_der_d, n_neigh_d, k2_i_site_d, &
                                         energies_d, forces_d, virial_d, &
                                         cublas_handle, gpu_stream)
-        call cpy_dtoh(forces_d,c_loc(tmp_forces), st_forces,gpu_stream)
-        call cpy_dtoh(virial_d,c_loc(tmp_virial), st_virial,gpu_stream)
-        call cpy_dtoh(energies_d,c_loc(tmp_energies),st_energies,gpu_stream)
-        forces=tmp_forces
-        virial=tmp_virial
-        energies=tmp_energies
+        ! call cpy_dtoh(forces_d,c_loc(tmp_forces), st_forces,gpu_stream)
+        ! call cpy_dtoh(virial_d,c_loc(tmp_virial), st_virial,gpu_stream)
+        ! call cpy_dtoh(energies_d,c_loc(tmp_energies),st_energies,gpu_stream)
+        ! forces=tmp_forces
+        ! virial=tmp_virial
+        ! energies=tmp_energies
     end if
       st_in_to_out_site=size(in_to_out_site,1)*sizeof(in_to_out_site(1)) 
+      ! write(*,*)
+      ! write(*,*) size(in_to_out_site,1), n_all_sites
+      ! write(*,*) 
+      
       call gpu_malloc_all(in_to_out_site_d,st_in_to_out_site, gpu_stream)
       call cpy_htod(c_loc(in_to_out_site), in_to_out_site_d, st_in_to_out_site, gpu_stream)
       ! do i = 1, n_sites
@@ -340,23 +349,23 @@ module gap_interface
       ! end do
       
       st_this_energies=size(energies0,1)*sizeof(energies0(1)) 
-      call gpu_malloc_all(this_energies_d,st_this_energies, gpu_stream)
-      call cpy_htod(c_loc(energies0), this_energies_d,st_this_energies, gpu_stream)
+      ! call gpu_malloc_all(this_energies_d,st_this_energies, gpu_stream)
+      ! call gpu_memset_zero(this_energies_d,st_this_energies, gpu_stream)
       call gpu_put_recipr_energies(this_energies_d, energies_d, in_to_out_site_d, n_sites,&
                                       gpu_stream)
-      call cpy_dtoh(this_energies_d,c_loc(energies0),st_this_energies, gpu_stream)
+      ! call cpy_dtoh(this_energies_d,c_loc(energies0),st_this_energies, gpu_stream)
 
       if( do_forces )then
         ! do i = 1, n_all_sites
         !   i2 = in_to_out_site(i)
         !   forces0(1:3, i2) = forces(1:3, i)
         ! end do 
-          st_this_forces=size(forces0,1)*size(forces0,1)*sizeof(forces0(1,1)) 
-          call gpu_malloc_all(this_forces_d,st_this_forces, gpu_stream)
-          call cpy_htod(c_loc(forces0), this_forces_d, st_this_forces, gpu_stream)
+           st_this_forces=size(forces0,1)*size(forces0,2)*sizeof(forces0(1,1)) 
+          ! call gpu_malloc_all(this_forces_d,st_this_forces, gpu_stream)
+          ! call gpu_memset_zero(this_forces_d,st_this_forces, gpu_stream)
           call gpu_put_recipr_forces(this_forces_d, forces_d, in_to_out_site_d, n_all_sites, &
                                       gpu_stream)
-          call cpy_dtoh(this_forces_d, c_loc(forces0), st_this_forces, gpu_stream)
+          ! call cpy_dtoh(this_forces_d, c_loc(forces0), st_this_forces, gpu_stream)
       end if
 
     end if
@@ -406,11 +415,11 @@ module gap_interface
     if( do_derivatives .and. .not. write_derivatives )then
       deallocate( soap_cart_der )
     end if
-  call gpu_free_async(this_forces_d,gpu_stream)
-  call gpu_free_async(this_energies_d,gpu_stream)
+  ! call gpu_free_async(this_forces_d,gpu_stream)
+  ! call gpu_free_async(this_energies_d,gpu_stream)
+  ! call gpu_free_async(virial_d,gpu_stream)
   call gpu_free_async(forces_d,gpu_stream)
   call gpu_free_async(energies_d,gpu_stream)
-  call gpu_free_async(virial_d,gpu_stream)
   call gpu_free_async(in_to_out_site_d, gpu_stream)
   deallocate(tmp_energies)
   if(do_forces) then

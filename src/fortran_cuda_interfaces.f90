@@ -13,12 +13,12 @@ MODULE F_B_C
         integer(c_size_t),value :: n
       end subroutine
 
-      subroutine gpu_malloc_all_blocking(a_d,n) bind(C,name="cuda_malloc_all_blocking")
-        use iso_c_binding
-        implicit none
-        type(c_ptr) :: a_d
-        integer(c_size_t),value :: n
-      end subroutine
+      ! subroutine gpu_malloc_all_blocking(a_d,n) bind(C,name="cuda_malloc_all_blocking")
+      !   use iso_c_binding
+      !   implicit none
+      !   type(c_ptr) :: a_d
+      !   integer(c_size_t),value :: n
+      ! end subroutine
       
       subroutine gpu_device_reset() bind(C,name="cuda_device_reset")
         use iso_c_binding
@@ -45,12 +45,12 @@ MODULE F_B_C
         integer(c_size_t),value :: n
       end subroutine
 
-      subroutine cpy_htod_blocking(a,a_d,n) bind(C,name="cuda_cpy_htod_blocking")
-        use iso_c_binding
-        implicit none
-        type(c_ptr),value :: a_d,a
-        integer(c_size_t),value :: n
-      end subroutine
+      ! subroutine cpy_htod_blocking(a,a_d,n) bind(C,name="cuda_cpy_htod_blocking")
+      !   use iso_c_binding
+      !   implicit none
+      !   type(c_ptr),value :: a_d,a
+      !   integer(c_size_t),value :: n
+      ! end subroutine
 
       subroutine cpy_dtod(b_d,a_d,n, gpu_stream) bind(C,name="cuda_cpy_dtod")
         use iso_c_binding
@@ -69,12 +69,12 @@ MODULE F_B_C
       end subroutine
       
 
-      subroutine cpy_dtoh_blocking(a_d,a,n) bind(C,name="cuda_cpy_dtoh_blocking")
-        use iso_c_binding
-        implicit none
-        type(c_ptr),value :: a_d,a
-        integer(c_size_t),value :: n
-      end subroutine
+      ! subroutine cpy_dtoh_blocking(a_d,a,n) bind(C,name="cuda_cpy_dtoh_blocking")
+      !   use iso_c_binding
+      !   implicit none
+      !   type(c_ptr),value :: a_d,a
+      !   integer(c_size_t),value :: n
+      ! end subroutine
       subroutine gpu_vector_fill_curand(a_d,n,c) bind(C,name="GPU_fill_rand")
         use iso_c_binding
         implicit none
@@ -315,7 +315,22 @@ MODULE F_B_C
       integer(c_int), value :: N
       end subroutine
 
+      subroutine gpu_memset_zero(this_d, N, gpu_stream) &
+                                      bind(C,name="gpu_memset_zero")
+      use iso_c_binding
+      type(c_ptr), value :: this_d
+      type(c_ptr) :: gpu_stream
+      integer(c_size_t),value :: N
+      end subroutine
+
+      subroutine gpu_stream_synchronize(gpu_stream) &
+                                      bind(C,name="gpu_stream_synchronize")
+      use iso_c_binding
+      type(c_ptr) :: gpu_stream
+      end subroutine
+      
     END INTERFACE
+
   END MODULE F_B_C
 
 

@@ -57,11 +57,12 @@ program turbogap
   real*8, allocatable :: positions(:,:), positions_prev(:,:), soap(:,:), soap_cart_der(:,:,:), &
                          positions_diff(:,:), forces_prev(:,:)
   real*8 :: rcut_max, a_box(1:3), b_box(1:3), c_box(1:3), max_displacement, energy, energy_prev
-  real*8 :: virial(1:3, 1:3), this_virial(1:3, 1:3), virial_soap(1:3, 1:3), virial_2b(1:3, 1:3), &
+  real*8, target :: this_virial(1:3, 1:3) 
+  real*8, target, allocatable :: this_forces(:,:), this_energies(:)
+  real*8 :: virial(1:3, 1:3), virial_soap(1:3, 1:3), virial_2b(1:3, 1:3), &
             virial_3b(1:3,1:3), virial_core_pot(1:3, 1:3), virial_vdw(1:3, 1:3), &
             this_virial_vdw(1:3, 1:3), v_uc, eVperA3tobar = 1602176.6208d0
-  real*8, allocatable :: energies(:), forces(:,:), energies_soap(:), forces_soap(:,:), this_energies(:), &
-                         this_forces(:,:), &
+  real*8, allocatable :: energies(:), forces(:,:), energies_soap(:), forces_soap(:,:),  &
                          energies_2b(:), forces_2b(:,:), energies_3b(:), forces_3b(:,:), &
                          energies_core_pot(:), forces_core_pot(:,:), &
                          velocities(:,:), masses_types(:), masses(:), hirshfeld_v(:), &
@@ -130,9 +131,13 @@ program turbogap
                           n_sparse_mpi_angle_3b(:), n_mpi_core_pot(:), vdw_n_sparse_mpi_soap_turbo(:), &
                           n_neigh_local(:)
   logical, allocatable :: compress_soap_mpi(:)
-  type(c_ptr) :: cublas_handle, gpu_stream
   integer :: n_omp, omp_task, omp_n_sites
-  integer, allocatable :: i_beg_omp(:), i_end_omp(:), j_beg_omp(:), j_end_omp(:)
+  integer, allocatable :: i_beg_omp(:), i_end_omp(:), j_beg_omp(:), j_end_omp(:)   
+  integer, parameter :: nstr=8,n_soap_slices=500 ! n_soap_slices should correlate with size(i_beg_list)
+  integer :: istr 
+  integer(c_size_t) :: st_virial,st_this_forces, st_this_energies
+  type(c_ptr) :: this_energies_d(nstr), this_forces_d(nstr), virial_d(nstr)
+  type(c_ptr) :: cublas_handle(nstr), gpu_stream(nstr)
 !**************************************************************************
 
 ! integer :: n_ii,i_ii, j_jj,k_ii
@@ -175,9 +180,11 @@ program turbogap
 
 
 
-  call gpu_set_device(0) ! This works when each GPU has only 1 visible device. This is done in the slurm submission script
+  call gpu_set_device(rank) ! This works when each GPU has only 1 visible device. This is done in the slurm submission script
 
-  call create_cublas_handle(cublas_handle, gpu_stream)
+  do istr=1,nstr
+    call create_cublas_handle(cublas_handle(istr), gpu_stream(istr))
+  enddo
   !call create_cublas_handle(cublas_handle)
 
 
@@ -948,10 +955,12 @@ program turbogap
 !$ n_omp = omp_get_num_threads()
 !$omp end parallel     
 
+    if (.not. allocated(i_beg_omp)) then 
     allocate(i_beg_omp(1:n_omp))
     allocate(i_end_omp(1:n_omp))
     allocate(j_beg_omp(1:n_omp))
     allocate(j_end_omp(1:n_omp))
+    endif
 
     omp_n_sites = i_end - i_beg + 1
 
@@ -1132,7 +1141,34 @@ program turbogap
         call get_number_of_atom_pairs( n_neigh(i_beg:i_end), rjs(j_beg:j_end), soap_turbo_hypers(i)%rcut_max, &
                                        soap_turbo_hypers(i)%l_max, soap_turbo_hypers(i)%n_max, &
                                        params%max_Gbytes_per_process, i_beg_list, i_end_list, j_beg_list, j_end_list )
+        if(size(i_beg_list)>n_soap_slices) then
+          write(*,*)
+          write(*,*) "Error!!!!!!  size(i_beg_list)>n_soap_slices"
+          write(*,*) "Size of i_beg_list is ", size(i_beg_list), "while n_soap_slices is ", n_soap_slices
+          write(*,*) "Increase  n_soap_slices!"
+          write(*,*)
+        endif
+
+        do istr = 1, nstr
+          
+        st_virial=size(this_virial,1)*size(this_virial,2)*sizeof(this_virial(1,1))
+        call gpu_malloc_all(virial_d(istr),st_virial, gpu_stream(istr))
+        call gpu_memset_zero(virial_d(istr),st_virial, gpu_stream(istr))
+
+        st_this_energies=size(this_energies,1)*sizeof(this_energies(1)) 
+        call gpu_malloc_all(this_energies_d(istr),st_this_energies, gpu_stream(istr))
+        call gpu_memset_zero(this_energies_d(istr),st_this_energies, gpu_stream(istr))
+
+        st_this_forces=size(this_forces,1)*size(this_forces,2)*sizeof(this_forces(1,1)) 
+        call gpu_malloc_all(this_forces_d(istr),st_this_forces, gpu_stream(istr))
+        call gpu_memset_zero(this_forces_d(istr),st_this_forces, gpu_stream(istr))
+      enddo
+
         do j = 1, size(i_beg_list)
+          istr=mod(j,nstr)+1
+          ! write(*,*) 
+          ! write(*,*) "Before get_gap_soap. in stream ", istr
+          ! write(*,*) 
           this_i_beg = i_beg - 1 + i_beg_list(j)
           this_i_end = i_beg - 1 + i_end_list(j)
           this_j_beg = j_beg - 1 + j_beg_list(j)
@@ -1151,7 +1187,18 @@ program turbogap
               this_hirshfeld_v_cart_der_pt => this_hirshfeld_v_cart_der(1:3, this_j_beg:this_j_end)
             end if
           end if
-          !write(*,*) "Before get_gap_soap"
+        ! st_virial=size(this_virial,1)*size(this_virial,2)*sizeof(this_virial(1,1))
+        ! call gpu_malloc_all(virial_d(j),st_virial, gpu_stream(istr))
+        ! call gpu_memset_zero(virial_d(j),st_virial, gpu_stream(istr))
+
+        ! st_this_energies=size(this_energies,1)*sizeof(this_energies(1)) 
+        ! call gpu_malloc_all(this_energies_d(j),st_this_energies, gpu_stream(istr))
+        ! call gpu_memset_zero(this_energies_d(j),st_this_energies, gpu_stream(istr))
+
+        ! st_this_forces=size(this_forces,1)*size(this_forces,2)*sizeof(this_forces(1,1)) 
+        ! call gpu_malloc_all(this_forces_d(j),st_this_forces, gpu_stream(istr))
+        ! call gpu_memset_zero(this_forces_d(j),st_this_forces, gpu_stream(istr))
+
           call get_gap_soap(n_sites, this_n_sites_mpi, n_neigh(this_i_beg:this_i_end), neighbors_list(this_j_beg:this_j_end), &
                             soap_turbo_hypers(i)%n_species, soap_turbo_hypers(i)%species_types, &
                             rjs(this_j_beg:this_j_end), thetas(this_j_beg:this_j_end), phis(this_j_beg:this_j_end), &
@@ -1173,26 +1220,62 @@ program turbogap
                             soap_turbo_hypers(i)%has_vdw, soap_turbo_hypers(i)%vdw_Qs, soap_turbo_hypers(i)%vdw_alphas, &
                             soap_turbo_hypers(i)%vdw_zeta, soap_turbo_hypers(i)%vdw_delta, soap_turbo_hypers(i)%vdw_V0, &
                             this_energies, this_forces, this_hirshfeld_v_pt, this_hirshfeld_v_cart_der_pt, &
-                            this_virial, solo_time_soap, time_get_soap, cublas_handle, gpu_stream)
+                            this_virial, solo_time_soap, time_get_soap, &
+                            this_energies_d(istr), this_forces_d(istr), virial_d(istr), &
+                            cublas_handle(istr), gpu_stream(istr))
 
-          energies_soap = energies_soap + this_energies
+          ! call cpy_dtoh(this_energies_d(j),c_loc(this_energies),st_this_energies, gpu_stream(istr))
+          ! call cpy_dtoh(this_forces_d(j), c_loc(this_forces), st_this_forces, gpu_stream(istr))
+          ! call cpy_dtoh(virial_d(j),c_loc( this_virial), st_virial,gpu_stream(istr))
+
+          ! call gpu_free_async(this_forces_d(j),gpu_stream(istr))
+          ! call gpu_free_async(this_energies_d(j),gpu_stream(istr))
+          ! call gpu_free_async(virial_d(j),gpu_stream(istr))
+          ! call gpu_stream_synchronize(gpu_stream(istr))
+
+          ! energies_soap = energies_soap + this_energies
           if( soap_turbo_hypers(i)%has_vdw )then
             hirshfeld_v = hirshfeld_v + this_hirshfeld_v
             if( params%do_forces )then
               hirshfeld_v_cart_der = hirshfeld_v_cart_der + this_hirshfeld_v_cart_der
             end if
           end if
+          ! if( params%do_forces )then
+          !   forces_soap = forces_soap + this_forces
+          !   virial_soap = virial_soap + this_virial
+          ! end if 
+        end do
+        
+        do istr=1,nstr
+          ! this_i_beg = i_beg - 1 + i_beg_list(j)
+          ! this_i_end = i_beg - 1 + i_end_list(j)
+          ! this_j_beg = j_beg - 1 + j_beg_list(j)
+          ! this_j_end = j_beg - 1 + j_end_list(j)
+          ! this_n_sites_mpi = this_i_end - this_i_beg + 1
+          this_energies = 0.d0
+          if( params%do_forces )then
+            this_forces = 0.d0
+            this_virial = 0.d0
+          end if
+
+          call cpy_dtoh(this_energies_d(istr),c_loc(this_energies),st_this_energies, gpu_stream(istr))
+          call cpy_dtoh(this_forces_d(istr), c_loc(this_forces), st_this_forces, gpu_stream(istr))
+          call cpy_dtoh(virial_d(istr),c_loc( this_virial), st_virial,gpu_stream(istr))
+
+          call gpu_free_async(this_forces_d(istr),gpu_stream(istr))
+          call gpu_free_async(this_energies_d(istr),gpu_stream(istr))
+          call gpu_free_async(virial_d(istr),gpu_stream(istr))
+
+          call gpu_stream_synchronize(gpu_stream(istr))
+
+          energies_soap = energies_soap + this_energies
           if( params%do_forces )then
             forces_soap = forces_soap + this_forces
-            virial_soap = virial_soap + this_virial
-            
-            ! write(*,*) 
-            ! write(*,*) this_virial(1,:)
-            ! write(*,*) this_virial(2,:)
-            ! write(*,*) this_virial(3,:) 
-            ! write(*,*)
-          end if
+            virial_soap = virial_soap + this_virial            
+          end if 
         end do
+
+
         !call cpu_time(soap_time_soap(2))
         soap_time_soap(2)=MPI_Wtime()
         deallocate( i_beg_list, i_end_list, j_beg_list, j_end_list )
@@ -2058,7 +2141,10 @@ end if
   call mpi_finalize(ierr)
 #endif
 
-call destroy_cublas_handle(cublas_handle, gpu_stream)
+
+  do istr=1,nstr
+    call destroy_cublas_handle(cublas_handle(istr), gpu_stream(istr))
+  enddo
 call gpu_device_reset()
 
 end program turbogap

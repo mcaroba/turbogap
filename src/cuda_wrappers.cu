@@ -543,8 +543,8 @@ extern "C" void gpu_final_soap_forces_virial(int n_sites,
 
   /*double *this_force_d; 
   hipMalloc((void**)&this_force_d,sizeof(double)*n_pairs*3);*/
-  hipMemsetAsync(forces_d,0, 3*n_sites0*sizeof(double),0);
-  hipMemsetAsync(virial_d,0, 9*sizeof(double),0);
+  //hipMemsetAsync(forces_d,0, 3*n_sites0*sizeof(double),0);
+  //hipMemsetAsync(virial_d,0, 9*sizeof(double),0);
      
   cuda_soap_forces_virial_two<<< nblocks, tpb,0, stream[0]>>>(n_sites,
                                               Qss_d,n_soap, l_index_d, j2_index_d,
@@ -1796,8 +1796,8 @@ __global__
 void cuda_put_recipr_energies(double *this_d, double *locv_d, int *in_to_out_site_d, int  N){
   int i=threadIdx.x+blockIdx.x*blockDim.x;
   if(i<N){
-    int i2=in_to_out_site_d[i];
-    this_d[i2-1]=locv_d[i];
+    int i2=in_to_out_site_d[i]; // substract -1 if the indeces in in_to_out_site_d are for fortran
+    this_d[i2-1]+=locv_d[i];
   }
 }
 extern "C" void gpu_put_recipr_energies(double *this_d, double *locv_d, int *in_to_out_site_d, 
@@ -1812,7 +1812,12 @@ __global__
 void cuda_put_recipr_forces(double3 *this_d, double3 *locv_d, int *in_to_out_site_d, int  N){
   int i=threadIdx.x+blockIdx.x*blockDim.x;
   if(i<N){
-    int i2=in_to_out_site_d[i];
+    int i2=in_to_out_site_d[i]; // substract -1 if the indeces in in_to_out_site_d are for fortran
+    double3 loc_this_d=this_d[i2-1];
+    double3 loc_locv_d=locv_d[i];
+    loc_this_d.x+=loc_locv_d.x;
+    loc_this_d.y+=loc_locv_d.y;
+    loc_this_d.z+=loc_locv_d.z;
     this_d[i2-1]=locv_d[i];
   }
 }
@@ -1821,6 +1826,13 @@ extern "C" void gpu_put_recipr_forces(double3 *this_d, double3 *locv_d, int *in_
   dim3 nblocks=dim3((N-1+tpb)/tpb,1,1);
   dim3 nthreads=dim3(tpb,1,1); 
   cuda_put_recipr_forces<<<nblocks, nthreads,0,stream[0] >>>(this_d,locv_d,in_to_out_site_d,N);
+}
+extern "C" void gpu_memset_zero(void *a_d, size_t Np, hipStream_t *stream ){
+  hipMemsetAsync(a_d,0, Np,stream[0]);
+}
+
+extern "C" void gpu_stream_synchronize(hipStream_t *stream){
+  hipStreamSynchronize(stream[0]);
 }
 /* 
 extern "C" void cuda_malloc_double(double **a_d, int Np)
