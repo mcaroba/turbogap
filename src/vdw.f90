@@ -1118,7 +1118,7 @@ module vdw
     integer, allocatable :: ind_nnls(:)
     real*8 :: res_nnls, E_tot, denom
     integer :: mode_nnls
-    logical :: do_total_energy = .true., series_expansion = .false., do_log = .false., cent_appr = .true., lanczos = .true., &
+    logical :: do_total_energy = .true., series_expansion = .false., do_log = .false., cent_appr = .true., lanczos = .false., &
                do_timing = .false.  ! Finite difference testing purposes
     real*8, allocatable :: b_vec(:), Ab(:), I_mat(:,:), l_vals(:), log_vals(:), lsq_mat(:,:), res_mat(:), log_exp(:,:), &
                            AT_power(:,:), log_integrand(:), AT_power_full(:,:), pol_grad(:,:,:), pol_inv(:,:,:), inv_vals(:), &
@@ -1841,12 +1841,17 @@ ac2 = 3.d0 + ac4
             end do
           end if
 
-          !if (i == 1 .and. om == 2) then
-          !  write(*,*) "a_iso"
-          !  do p = 1, n_sub_sites
-          !    write(*,*) a_iso(p,2)
-          !  end do
-          !end if
+          if ( .false. ) then
+            !write(*,*) "a_iso"
+            k2 = 0
+            do p = 1, n_sub_sites
+              j2 = sub_neighbors_list(k2+1)
+              if ( j2 == 5 ) then
+                write(*,*) "a_iso", a_iso(p,2), central_pol(j2)
+              end if
+              k2 = k2 + n_sub_neigh(p)
+            end do
+          end if
 
           !do c1 = 1, 3
           !  do c2 = 1, 3
@@ -2984,7 +2989,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 end do
                 call cpu_time(time5)
                 call lanczos_algorithm( val2(1:nnz2), ia2(1:nnz2), ja2(1:nnz2), &
-                                        3*n_mbd_sites, 10, l_min, l_max )
+                                        3*n_mbd_sites, 20, l_min, l_max )
                 call cpu_time(time6)
                 if ( do_timing ) then
                   write(*,*) "Lanczos timing", time6-time5
@@ -2997,7 +3002,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
 
                 end if
 
-                !write(*,*) "l_min, l_max", l_min, l_max
+                !write(*,*) "l_min, l_max", i, l_min, l_max
                 l_vals(1) = l_min
                 do k2 = 2, 1001
                   l_vals(k2) = l_min + (k2-1)*(l_max-l_min)/1000
@@ -3011,7 +3016,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 end do
                 call cpu_time(time5)
                 call dgesv( n_order+1, 1, lsq_mat, n_order+1, ipiv_lsq, res_sym, n_order+1, info )
-                !write(*,*) "coeff", res_mat
+                !write(*,*) "coeff", res_sym
                 call cpu_time(time6)
                 if ( do_timing ) then
                   write(*,*) "dgesv timing", time6-time5

@@ -1,0 +1,38 @@
+atoms_file = 'db.xyz'
+pot_file = 'gap_files/CH.gap'
+
+! Species info
+n_species = 2
+species = C H
+e0 = -0.16138053 -0.056534
+masses = 12.01 1.00784
+
+! van der Waals info
+vdw_type = none
+vdw_sr = 0.83
+vdw_d = 6.            ! Use d = 20 for TS(SCS) and d = 6 for MBD
+vdw_rcut = 40.
+vdw_r0_ref = 1.900 1.64
+vdw_alpha0_ref = 1.778 0.667
+vdw_c6_ref = 27.8 3.88
+! The order of the cutoffs is vdw_scs_rcut < vdw_mbd_rcut < vdw_2b_rcut
+! If two cutoffs are equal, there is no buffer region between them!
+vdw_buffer = 0.5          ! Buffer for transitions between cut-off regions. Type: REAL
+vdw_scs_rcut = 6.        ! vdw_scs_rcut > vdw_buffer. Type: REAL
+vdw_loc_rcut = 0.
+vdw_mbd_rcut = 20.        ! Cut-off for atoms to include for local MBD energy (vdw_mbd_rcut >= vdw_scs_rcut + vdw_buffer). Type: REAL
+vdw_mbd_rcut2 = 20.
+vdw_2b_rcut = 0.          ! Cut-off for local TS-SCS (vdw_2b_rcut >= vdw_mbd_rcut + vdw_buffer), Type: REAL
+vdw_mbd_nfreq = 11        ! Number of frequency values for MBD integration. Type: INT
+vdw_mbd_norder = 6        ! Contributions up to n-body interactions (i.e. cut-off degree for Taylor expansion of ln(I-AT)). Type: INT
+vdw_mbd_grad = .false.     ! Calculate MBD forces. Type: LOGICAL
+vdw_hirsh_grad = .false.   ! Include Hirshfeld gradients in the forces. Type: LOGICAL
+vdw_polynomial = .false.  ! Use polynomial approximation for inverse matrices. Type: LOGICAL
+vdw_omega_ref = 1.3d0
+do_nnls = .false.
+
+!optimize = "gd"    ! Do gradient descent minimization
+!e_tol = 1.e-6      ! Energy threshold for convergence (per atom)
+!f_tol = 0.01       ! Maximum force on any given atom for convergence
+!md_nsteps = 1000   ! Maximum number of iterations (it will break earlier if convergence to e_tol is reached)
+!max_opt_step = 0.1 ! Angstrom

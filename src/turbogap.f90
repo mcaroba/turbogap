@@ -1314,7 +1314,7 @@ program turbogap
           this_forces_vdw = 0.d0
         end if
 #endif
-        allocate(v_neigh_vdw(1:j_end-j_beg+1))
+        if( .not. allocated(v_neigh_vdw) )allocate(v_neigh_vdw(1:j_end-j_beg+1))
         v_neigh_vdw = 0.d0
         k = 0
         do i = i_beg, i_end
@@ -1341,6 +1341,7 @@ program turbogap
 #else
                                          energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
 #endif
+          deallocate(v_neigh_vdw)
         else if ( params%vdw_type == "mbd" ) then
           allocate( alpha_SCS(1:n_sites) )
           allocate( this_alpha_SCS(1:n_sites) )
@@ -1434,7 +1435,8 @@ call cpu_time(time2)
 
 
 
-          deallocate(v_neigh_vdw, alpha_SCS, omega_SCS, alpha_SCS_grad, c6_scs, r0_scs, alpha0_scs)
+          deallocate(v_neigh_vdw, alpha_SCS, omega_SCS, alpha_SCS_grad, c6_scs, r0_scs, alpha0_scs, &
+                     this_alpha_SCS, this_omega_SCS)
         end if
         call cpu_time(time_vdw(2))
         time_vdw(3) = time_vdw(2) - time_vdw(1)

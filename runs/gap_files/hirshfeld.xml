@@ -123,7 +123,7 @@
   </GAP_data>
   <gpSparse label="GAP_2021_3_9_120_9_59_51_575" n_coordinate="1">
     <gpCoordinates label="GAP_2021_3_9_120_9_59_51_5751" dimensions="72" signal_variance="1.0000000000000000" signal_mean=".00000000000000000E+000" sparsified="T" n_permutations="1" covariance_type="2" zeta="6.0000000000000000" n_sparseX="2000" sparseX_filename="hirshfeld.xml.sparseX.GAP_2021_3_9_120_9_59_51_5751" sparseX_md5sum="ec4a80ff0718eb6d2970a5b896d43e02">
-      <descriptor> soap_turbo l_max=8 alpha_max={8} atom_sigma_r={0.5} atom_sigma_t={0.5} atom_sigma_r_scaling={0.} atom_sigma_t_scaling={0.} zeta=6 rcut_hard=4.5 rcut_soft=4.0 basis=poly3gauss scaling_mode=polynomial amplitude_scaling={1.0} n_species=1 species_Z=6 central_index=1 radial_enhancement={1} compress_file=compress.dat central_weight={1.0} n_sparse=2000 delta=1.0 f0=0.0 covariance_type=dot_product sparse_method=cur_points add_species=F</descriptor>
+      <descriptor> soap_turbo l_max=8 alpha_max={8} atom_sigma_r={0.5} atom_sigma_t={0.5} atom_sigma_r_scaling={0.} atom_sigma_t_scaling={0.} zeta=6 rcut_hard=4.5 rcut_soft=4.0 basis=poly3gauss scaling_mode=polynomial amplitude_scaling={1.0} n_species=1 species_Z=6 central_index=1 radial_enhancement={1} compress_mode=trivial central_weight={1.0} n_sparse=2000 delta=1.0 f0=0.0 covariance_type=dot_product sparse_method=cur_points add_species=F</descriptor>
       <permutation i="1">1  </permutation>
       <sparseX i="1" alpha="22.348941919128201" sparseCutoff="1.0000000000000000"/>
       <sparseX i="2" alpha="-11.017832780575503" sparseCutoff="1.0000000000000000"/>
@@ -2127,6 +2127,6 @@
       <sparseX i="2000" alpha="-22.305870269493788" sparseCutoff="1.0000000000000000"/>
     </gpCoordinates>
   </gpSparse>
-  <command_line><![CDATA[ atoms_filename=train.xyz gap={ soap_turbo l_max=8 alpha_max={{8}} atom_sigma_r={{0.5}} atom_sigma_t={{0.5}} atom_sigma_r_scaling={{0.}} atom_sigma_t_scaling={{0.}} zeta=6 rcut_hard=4.5 rcut_soft=4.0 basis=poly3gauss scaling_mode=polynomial amplitude_scaling={{1.0}} n_species=1 species_Z={6} central_index=1 radial_enhancement={{1}} compress_file=compress.dat central_weight={{1.0}} n_sparse=2000 delta=1.0 f0=0.0 covariance_type=dot_product sparse_method=cur_points add_species=F } default_sigma={0.001 0.2 0.2 0.2} local_property0=0.9 default_local_property_sigma=0.002 local_property_parameter_name=hirshfeld_v sparse_jitter=1.0e-8 e0=0. do_copy_at_file=F sparse_separate_file=T gp_file=hirshfeld.xml]]></command_line>
+  <command_line><![CDATA[ atoms_filename=train.xyz gap={ soap_turbo l_max=8 alpha_max={{8}} atom_sigma_r={{0.5}} atom_sigma_t={{0.5}} atom_sigma_r_scaling={{0.}} atom_sigma_t_scaling={{0.}} zeta=6 rcut_hard=4.5 rcut_soft=4.0 basis=poly3gauss scaling_mode=polynomial amplitude_scaling={{1.0}} n_species=1 species_Z={6} central_index=1 radial_enhancement={{1}} compress_mode=trivial central_weight={{1.0}} n_sparse=2000 delta=1.0 f0=0.0 covariance_type=dot_product sparse_method=cur_points add_species=F } default_sigma={0.001 0.2 0.2 0.2} local_property0=0.9 default_local_property_sigma=0.002 local_property_parameter_name=hirshfeld_v sparse_jitter=1.0e-8 e0=0. do_copy_at_file=F sparse_separate_file=T gp_file=hirshfeld.xml]]></command_line>
 </GAP_params>
 </GAP_2021_3_9_120_9_59_51_575>
