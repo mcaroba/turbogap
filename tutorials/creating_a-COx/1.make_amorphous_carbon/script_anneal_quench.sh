@@ -37,6 +37,10 @@ tau_t = 100.
 
 write_thermo = 1
 write_xyz = 200
+
+core_pot_cutoff = 1.
+neighbors_buffer = 0.5
+
 EOF
 
 echo "> Running: Turbogap for $sim_name"

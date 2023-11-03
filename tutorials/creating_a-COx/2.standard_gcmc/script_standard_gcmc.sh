@@ -32,7 +32,7 @@ species = C O
 masses = 12.01 15.99
 
 
-mc_nsteps = 10000                         ! Number of mc trial steps to be performed
+mc_nsteps = 10000                        ! Number of mc trial steps to be performed
 
 n_mc_types = 3                           ! Number of mc trial types
 mc_types = 'move' 'insertion' 'removal'  ! MC types can be: 'insertion' 'removal' 'md' 'swap' 'move'
@@ -41,7 +41,7 @@ mc_acceptance = 1 1 1                    ! Ratios for choosing the respective tr
 
 mc_move_max = 0.2                        ! Maximum distance for the move of a particular particle
 
-mc_mu = ${mu}                              ! gcmc: Chemical potential [eV]
+mc_mu = ${mu}                            ! gcmc: Chemical potential [eV]
 mc_species = 'O'                         ! gcmc: species to insert / remove 
 mc_min_dist = 0.1                        ! gcmc: minimum distance between particles for insertion
 

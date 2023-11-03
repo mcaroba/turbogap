@@ -27,7 +27,7 @@ species = C O
 masses = 12.01 15.99
 
 ! MD options
-optimize = gd-box-ortho       ! optimize option allows us to specify the type of relaxation
+optimize = gd                 ! optimize option allows us to specify the type of relaxation
                               !  Here we keep the orthogonality of the box 
 
 ! e_tol = 1.d-6               ! Default energy/force tolerances used 
@@ -35,6 +35,10 @@ optimize = gd-box-ortho       ! optimize option allows us to specify the type of
 md_nsteps = 2000
 
 write_xyz = 200
+
+core_pot_cutoff = 1.
+neighbors_buffer = 0.5
+
 EOF
 
 echo "> Running: Turbogap for $sim_name"

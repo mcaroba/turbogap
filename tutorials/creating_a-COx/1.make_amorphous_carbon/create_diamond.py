@@ -17,9 +17,6 @@ atoms = Atoms("C8", positions = positions, cell = cell, pbc=True)
 # If you want a bigger or smaller system, adjust these numbers below
 atoms *= (5,5,5)
 
-# Randomize the velocities at the beginning
-vel = 0.01 * (np.random.sample([len(atoms),3])-0.5)
-atoms.set_array("vel", vel)
 
 # Change the density
 target_density = 2.0 # g/cm^3
@@ -41,5 +38,10 @@ mass = len(atoms) * 12.01 * 1.6605402e-27 * 1000  # g
 rho = mass / V  # g/cm^3
 print(f"> Atoms: V = {V}cm^3, mass = {mass}g,  density = {rho} g/cm^3")
 
+
+# Randomize the velocities at the beginning
+# > Necessary for Bussi thermostat
+vel = 0.01 * (np.random.sample([len(atoms),3])-0.5)
+atoms.set_array("vel", vel)
 
 write("diamond.xyz", atoms)

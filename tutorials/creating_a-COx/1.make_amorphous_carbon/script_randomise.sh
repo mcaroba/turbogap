@@ -25,17 +25,24 @@ masses = 12.01 15.99
 ! MD options		       
 md_nsteps = 5000	       ! Number of MD steps (5ps randomise - actual time in paper is 20ps)
 md_step = 1		       ! MD timestep [fs]
-thermostat = berendsen	       ! Either berendsen / bussi
+thermostat = bussi	       ! Either bussi / berendsen
 
 t_beg = 9000		       ! Initial temperature [K]
 t_end = 9000		       ! Final temperature   [K]
-tau_t = 100.		       ! Time constant for berendsen [fs]
+tau_t = 100.		       ! Time constant [fs]
 
 ! Output
 write_thermo = 1	       ! Write thermodynamic information every step 
                                !       (Step, Time, Temp, Kin_E, Pot_E, Pres)
 
 write_xyz = 200                ! Write extended xyz trajectory (trajectory_out.xyz) every 200 steps
+
+! Core potential cutoff
+core_pot_cutoff = 1.
+
+! Neighbors buffer for rebuilding the neighbor list
+neighbors_buffer = 0.5
+
 EOF
 
 echo "> Running: Turbogap for $sim_name"
