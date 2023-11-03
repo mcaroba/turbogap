@@ -1,0 +1,16 @@
+#!/usr/bin/python3
+
+import numpy as np
+
+
+# Read the mc.log file to see the acceptance and get averages
+
+n_O = np.loadtxt("mc.log", usecols(6,))
+
+
+with open("mc.log", "r") as f:
+
+    # We want obtain averages from MC, so we can read whether the move was accepted, and then 
+
+
+
