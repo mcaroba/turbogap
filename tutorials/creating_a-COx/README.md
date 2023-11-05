@@ -20,11 +20,11 @@ Please see the Turbogap wiki [Creating oxygenated amorphous carbon](https://turb
 ## If you are using this locally
 - Copy the directory `turbogap/tutorials/creating_a-COx` to where you
   want to run.
-- Change `sample_submit_script.sh` by removing the `module load`
-  lines, and change the `PATH` environment variable to where you've
-  installed `turbogap/bin`.
-- Change the `srun turbogap` commands in the `script_*.sh` files to
-  how you run mpi commands (e.g. `mpirun -np $N turbogap`).
+- You can run `bash change_to_local.sh` (which you can customise
+  yourself to your number of processors etc) to change the scripts to
+  run locally.
+- You must change the `PATH` environment variable in this file to
+  where you've installed `turbogap/bin` yourself.
 - Make sure your local python installation/venv has `numpy` and ASE
   installed `pip install ase`.
 - In each of the directories enumerated with "1.,2., etc", run the
