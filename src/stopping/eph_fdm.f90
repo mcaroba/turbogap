@@ -31,8 +31,8 @@
 ! based on electron-phonon coupling model.
 ! This module provides the required data from the FDM input file or the input
 ! parameters such as the number of grids, their dimensions, T_e, C_e, K_e, etc. 
-! that are provided by the user. This data will be used for the calculation 
-! of electronic stopping according to eph model.				
+! that are provided by the user. This data will be used for the electronic
+! system in the calculation of electronic stopping according to the eph model.				
 !********* by Uttiyoarnab Saha
 
 !**************************************************************************

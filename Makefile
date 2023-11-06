@@ -26,7 +26,7 @@ SRC_TP_BT := resamplekin.f90
 SRC_ST := soap_turbo_functions.f90 soap_turbo_radial.f90 soap_turbo_angular.f90 \
           soap_turbo.f90 soap_turbo_compress.f90
 SRC_STOP := adaptive_time.f90 electronic_stopping.f90 eph_beta.f90 eph_fdm.f90 \
-            eph_electronic_stopping.f90
+            eph_electronic_stopping.f90 groups.f90
 
 OBJ := $(addprefix $(BUILD_DIR)/,$(patsubst %.f90,%.o,$(SRC)))
 OBJ_TP_BT := $(addprefix $(BUILD_DIR)/,$(patsubst %.f90,%.o,$(SRC_TP_BT)))

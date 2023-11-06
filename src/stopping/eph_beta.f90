@@ -165,6 +165,8 @@ subroutine beta_parameters(this,beta_infile,n_species)
 end subroutine beta_parameters
 
 
+!! Cubic spline interpolation 
+!! (Ref. Numerical recipes in F77, vol. 1, W.H. Press et al.)
 !! Find the interpolated value of y corresponding to a given value of x.
 !! Data arrays are xarr(1:n) and yarr(1:n). Second derivative of ya is y2arr(1:n).
 !! For a given value of x, y is the cubic-spline interpolated value.
@@ -214,8 +216,6 @@ subroutine spline_int(this,xarr,yarr,y2arr,n,x,y)
 end subroutine spline_int
 
 
-!! Cubic spline interpolation 
-!! (Ref. Numerical recipes in F77, vol. 1, W.H. Press et al.)
 !! Find the second derivatives of the interpolating function at tabulated points (x)
 !! Find the array of second derivatives of y(x).
 subroutine splineDerivatives(this,x,y,n,yp1,ypn,y2)

@@ -44,6 +44,7 @@ program turbogap
   use types
   use vdw
   use soap_turbo_functions
+  use groups			! definition of groups of atoms
 #ifdef _MPIF90
   use mpi
   use mpi_helper
@@ -95,6 +96,18 @@ program turbogap
   type (EPH_FDM_class) :: ephfdm
   type (EPH_LangevinSpatialCorrelation_class) :: ephlsc
   
+  !! These declarations are for groups of atoms (add new ones here)
+  !! ---- Containers of group-specific atoms ----
+  type (groups_class) :: forgroups
+  integer, allocatable :: optimize_for_atoms(:), thermostat_for_atoms(:), eph_for_atoms(:), eel_for_atoms(:), &
+	adapt_time_for_atoms(:)
+  !! ---- for handling groups declared as dynamic ----
+  logical :: optimize_group_dynamic = .false., thermostat_group_dynamic = .false., &
+  eph_group_dynamic = .false., eel_group_dynamic = .false., adapt_time_group_dynamic = .false.
+
+  integer :: optimize_group_update_interval, thermostat_group_update_interval, eph_group_update_interval, &
+  eel_group_update_interval, adapt_time_group_update_interval
+ 
   ! Clean up these variables after code refactoring !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   integer, allocatable :: n_neigh(:), neighbors_list(:), alpha_max(:), species(:), species_supercell(:), &
        neighbor_species(:), sph_temp_int(:), der_neighbors(:), der_neighbors_list(:), &
@@ -332,7 +345,8 @@ program turbogap
   end do
   ! Let's look for those and other options in the input file
   rewind(10)
-  call read_input_file(n_species, mode, params, rank)
+
+  call read_input_file(n_species, mode, params, forgroups, rank)
 
 !! If electronic stopping is required to be done, then read the stopping data file for once
 !! Reading and storing the elctronic stopping data 
@@ -341,10 +355,12 @@ program turbogap
 			write(*,*) "ERROR: No stopping data file is provided."
 			stop
 		else
-			call read_electronic_stopping_file (n_species,params%species_types,params%estop_filename,nrows,allelstopdata)
+			call read_electronic_stopping_file (n_species,params%species_types, &
+					params%estop_filename,nrows,allelstopdata)
 		end if
   end if
 !! -----------------------------				---- untill here for reading stopping data
+
 
   ! TEMPORARY ERROR, FIX THE UNDERLYING ISSUE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 #ifdef _MPIF90
@@ -769,6 +785,36 @@ program turbogap
                    params%write_array_property(6), .false. )
 
            end if
+
+           !! ------------- Get specific groups of atoms for different processes ----------
+		   !! Before starting MD, the containers for groups of atoms must be initialized for once.
+		   !! Any process that is undergoing will be meant for certain groups of atoms, so when a new
+		   !! process is added and it needs to act for specific atoms their set must be defined here
+		   !! (similarly just appending to this) and passed to the process when it is called during MD.
+
+		   call forgroups%makeGroups ( n_sites, positions(1:3, 1:n_sites), masses(1:n_sites), &
+										params%species_types, params%masses_types )
+		   if ( params%optimize_groupID /= '' ) &
+				call forgroups%getAtomsInGroups (params%optimize_groupID, optimize_group_dynamic, &
+					optimize_group_update_interval, 0, optimize_for_atoms)
+		   if ( params%thermostat /= "none" .and. params%thermostat_groupID /= '' ) &
+				call forgroups%getAtomsInGroups (params%thermostat_groupID, thermostat_group_dynamic, &
+					thermostat_group_update_interval, 0, thermostat_for_atoms)
+           if ( params%nonadiabatic_processes .and. params%eph_groupID /= '' ) &
+				call forgroups%getAtomsInGroups (params%eph_groupID, eph_group_dynamic, &
+					eph_group_update_interval, 0, eph_for_atoms)
+		   if ( params%electronic_stopping .and. params%eel_groupID /= '' ) &
+				call forgroups%getAtomsInGroups (params%eel_groupID, eel_group_dynamic, &
+					eel_group_update_interval, 0, eel_for_atoms)
+		   if ( params%adaptive_time .and. params%adapt_time_groupID /= '' ) &
+				call forgroups%getAtomsInGroups (params%adapt_time_groupID, adapt_time_group_dynamic, &
+					adapt_time_group_update_interval, 0, adapt_time_for_atoms)
+
+		   !! after all calls such as above
+		   call forgroups%freeGroupsRegister()
+           
+           !! ----------------- until here for getting specific groups of atoms ----------
+           
 
            ! call read_xyz(params%atoms_file, .true., params%all_atoms, params%do_timing, &
            !               n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
@@ -1701,7 +1747,7 @@ program turbogap
 #ifdef _MPIF90
      IF( rank == 0 )THEN
 #endif
-        if( params%do_md .and. md_istep > -1)then
+        if( params%do_md .and. md_istep > -1)then           
            call cpu_time(time_md(1))
            !     Define the time_step and md_time prior to possible scaling (see variable_time_step below)
            if( md_istep > 0 )then
@@ -1723,24 +1769,52 @@ program turbogap
                    params%target_pos_step, params%tau_dt, params%md_step, time_step)
            end if
 
+	  !! ------- check if processes act on dynamic groups, then update those groups (add for newly included processes here)
+	  
+	  if (forgroups%presence_of_dynamic_groups) then
+		do i = 1, size(forgroups%dynamic_update_steps)
+			if ( mod(md_istep, forgroups%dynamic_update_steps(i)) == 0 ) &
+				call forgroups%updateDynamicGroups(i, positions(1:3, 1:n_sites))
+		end do
+	  end if
+	  
+	  if ( eel_group_dynamic .and. md_istep /=0 .and. (mod(md_istep, eel_group_update_interval) == 0) ) &
+				call forgroups%getAtomsInGroups (params%eel_groupID, eel_group_dynamic, &
+					eel_group_update_interval, md_istep, eel_for_atoms)
 
-	   !! ------- option for radiation cascade simulation with electronic stopping
+	  if ( eph_group_dynamic .and. md_istep /=0 .and. (mod(md_istep, eph_group_update_interval) == 0) ) &
+				call forgroups%getAtomsInGroups (params%eph_groupID, eph_group_dynamic, &
+					eph_group_update_interval, md_istep, eph_for_atoms)
+
+	  if ( adapt_time_group_dynamic .and. md_istep /=0 .and. (mod(md_istep, adapt_time_group_update_interval) == 0) ) &
+				call forgroups%getAtomsInGroups (params%adapt_time_groupID, adapt_time_group_dynamic, &
+					adapt_time_group_update_interval, md_istep, adapt_time_for_atoms)
+
+	  if ( optimize_group_dynamic .and. md_istep /=0 .and. (mod(md_istep, optimize_group_update_interval) == 0) ) &
+				call forgroups%getAtomsInGroups (params%optimize_groupID, optimize_group_dynamic, &
+					optimize_group_update_interval, md_istep, optimize_for_atoms)
+
+	  if ( thermostat_group_dynamic .and. md_istep /=0 .and. (mod(md_istep, thermostat_group_update_interval) == 0) ) &
+				call forgroups%getAtomsInGroups (params%thermostat_groupID, thermostat_group_dynamic, &
+					thermostat_group_update_interval, md_istep, thermostat_for_atoms)
+
+	  !! ------- option for radiation cascade simulation with electronic stopping
 
 	  if ( params%electronic_stopping ) then
 		call electron_stopping_velocity_dependent (md_istep, n_species, params%eel_cut, params%eel_freq_out, &
 					velocities(1:3, 1:n_sites), forces(1:3, 1:n_sites), masses(1:n_sites), &
-					params%masses_types, time_step, md_time, nrows, allelstopdata, cum_EEL, 'forces')		
+					params%masses_types, time_step, md_time, nrows, allelstopdata, cum_EEL, eel_for_atoms, 'forces')		
 	  end if
 
 	   !! -----------------------------------	******** until here for electronic stopping
 
 
-	   !! ------- option for electronic stopping based on eph model
+	  !! ------- option for electronic stopping based on eph model
 
 	  if ( params%nonadiabatic_processes ) then
 		call ephlsc%eph_LangevinForces (velocities(1:3, 1:n_sites), forces(1:3, 1:n_sites), &
 					masses(1:n_sites), params%masses_types, md_istep, time_step, md_time, &
-					positions(1:3, 1:n_sites), n_species, ephbeta, ephfdm)	
+					positions(1:3, 1:n_sites), n_species, eph_for_atoms, ephbeta, ephfdm)
 	  end if
 
 	  !! -----------------------------------	******** until here for electronic stopping basd on eph model
@@ -1752,7 +1826,7 @@ program turbogap
 		if (MOD(md_istep, params%adapt_tstep_interval) == 0) then
 			call variable_time_step_adaptive (md_istep == 0, velocities(1:3, 1:n_sites), forces(1:3, 1:n_sites), &
 						masses(1:n_sites), params%adapt_tmin, params%adapt_tmax, params%adapt_xmax, &
-						params%adapt_emax, params%md_step, time_step)
+						params%adapt_emax, params%md_step, time_step, adapt_time_for_atoms)
 		end if
 	  end if
 
@@ -1766,7 +1840,7 @@ program turbogap
               call velocity_verlet(positions(1:3, 1:n_sites), positions_prev(1:3, 1:n_sites), velocities(1:3, 1:n_sites), &
                    forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), time_step, time_step_prev, &
                    md_istep == 0, a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
-                   fix_atom(1:3, 1:n_sites))
+                   fix_atom(1:3, 1:n_sites), optimize_for_atoms)
            else if( params%optimize == "gd" )then
               call gradient_descent(positions(1:3, 1:n_sites), positions_prev(1:3, 1:n_sites), velocities(1:3, 1:n_sites), &
                    forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), &
@@ -1803,8 +1877,8 @@ program turbogap
 
 	  if ( params%electronic_stopping ) then
 		call electron_stopping_velocity_dependent (md_istep, n_species, params%eel_cut, params%eel_freq_out, &
-					velocities(1:3, 1:n_sites), forces(1:3, 1:n_sites), masses(1:n_sites), &
-					params%masses_types, time_step, md_time, nrows, allelstopdata, cum_EEL, 'energy')
+				velocities(1:3, 1:n_sites), forces(1:3, 1:n_sites), masses(1:n_sites), params%masses_types, &
+				time_step, md_time, nrows, allelstopdata, cum_EEL, eel_for_atoms, 'energy')
 	  end if
 
 	!! -----------------------------------		******** until here for electronic stopping
@@ -1814,7 +1888,8 @@ program turbogap
 
 	  if ( params%nonadiabatic_processes ) then
 		call ephlsc%eph_LangevinEnergyDissipation (md_istep, md_time, velocities(1:3, 1:n_sites), &
-				positions(1:3, 1:n_sites), time_step, ephfdm)	
+				positions(1:3, 1:n_sites), masses(1:n_sites), energies(1:n_sites), &
+				time_step, eph_for_atoms, ephfdm)	
 	  end if
 
 	!! -----------------------------------		******** until here for electronic stopping basd on eph model
@@ -1971,7 +2046,7 @@ program turbogap
            if( params%thermostat == "berendsen" )then
               call berendsen_thermostat(velocities(1:3, 1:n_sites), &
                    params%t_beg + (params%t_end-params%t_beg)*dfloat(md_istep+1)/float(params%md_nsteps), &
-                   instant_temp, params%tau_t, time_step)
+                   instant_temp, params%tau_t, time_step, thermostat_for_atoms)
            else if( params%thermostat == "bussi" )then
               velocities(1:3, 1:n_sites) = velocities(1:3, 1:n_sites) * dsqrt(resamplekin(E_kinetic, &
                    params%t_beg + (params%t_end-params%t_beg)*dfloat(md_istep+1)/float(params%md_nsteps), &

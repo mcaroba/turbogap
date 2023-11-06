@@ -51,16 +51,19 @@ module electronic_stopping
 contains
 
 subroutine electron_stopping_velocity_dependent (md_istep, natomtypes, Ecut, eel_freq_out, &
-			vel, forces, masses, type_mass, dt, md_time, nrows, allelstopdata, cum_EEL, to_calculate)
+			vel, forces, masses, type_mass, dt, md_time, nrows, allelstopdata, &
+			cum_EEL, eel_for_atoms, to_calculate)
 
 	implicit none
 	
 	real*8, intent(in) :: vel(:,:), dt, md_time 
 	real*8, intent(inout) :: cum_EEL, forces(:,:)
-	integer, intent(in) :: md_istep, nrows, eel_freq_out
+	integer, intent(in) :: md_istep, nrows, eel_freq_out, eel_for_atoms(:)
 	character*6, intent(in) :: to_calculate
-	integer :: Np, i, j, itype
-	real*8 :: vsq, energy, Se, Se_lo, Se_hi, E_lo, E_hi, factor, vabs, SeLoss
+	integer :: Np, ki, i, j, itype
+	real*8 :: vsq, energy, Se, Se_lo, Se_hi, E_lo, E_hi, factor = 0.0d0, vabs, SeLoss, &
+	E_kinetic_atoms, instant_temp_atoms
+	real*8, parameter :: boltzconst = 8.61733326E-05
 	
 	!! Data from the user-given input script file
 	
@@ -69,18 +72,28 @@ subroutine electron_stopping_velocity_dependent (md_istep, natomtypes, Ecut, eel
 	
 	!! To receive stopping data from file to array containers
 	
-	integer :: ncols, ndata, irow		!icol 
+	integer :: ncols, ndata, irow 
 	real*8, allocatable, intent(in) :: allelstopdata(:)
 	real*8, allocatable :: En_elstopfile(:), elstop(:,:)
 	character*1024 :: infoline
-	
+
+	Np = size(eel_for_atoms)	!! number of atoms in specified group
+
 	!! To write the electronic energy loss data to a file after evaluation at each time step
-	
+
 	if (to_calculate == 'energy') then
 		if( md_istep == 0 .or. md_istep == -1 )then
+			E_kinetic_atoms = 0.0d0
+			do ki = 1, Np
+				i = eel_for_atoms(ki)
+				E_kinetic_atoms = E_kinetic_atoms + &
+								0.5d0 * masses(i) * dot_product(vel(1:3, i), vel(1:3, i))
+			end do
+			instant_temp_atoms = 2.d0/3.d0/dfloat(Np-1)/boltzconst*E_kinetic_atoms
+
 			open (unit = 100, file = "ElectronicEnergyLoss.txt", status = "unknown")
-			write(100,*) 'Time (fs)  Electronic energy loss (eV) Cumulative EEL (eV)'
-			write(100,1) md_time, 0.0, 0.0 
+			write(100,*) 'Time (fs) / Electronic energy loss (eV) / Cumulative EEL (eV) / Kin.E_a (eV) / T_a (K)'
+			write(100,1) md_time, 0.0, 0.0, E_kinetic_atoms, instant_temp_atoms
 		else
 			if ((MOD(md_istep, eel_freq_out) == 0)) &
 						open (unit = 100, file = "ElectronicEnergyLoss.txt", &
@@ -103,13 +116,12 @@ subroutine electron_stopping_velocity_dependent (md_istep, natomtypes, Ecut, eel
 			elstop(irow,:) = allelstopdata(i+1:i+natomtypes)
 			irow = irow + 1	
 		end do
-		
-		Np = size(vel, 2)
-		
+
 		!! Finding the forces after friction
-		
+
 		if (to_calculate == 'forces') then
-			do i = 1, Np
+			do ki = 1, Np
+				i = eel_for_atoms(ki)
 				Se = 0.0
 				do j = 1, natomtypes
 					if (masses(i) == type_mass(j)) then
@@ -117,23 +129,20 @@ subroutine electron_stopping_velocity_dependent (md_istep, natomtypes, Ecut, eel
 						exit
 					end if
 				end do
-				
+
 				vsq = dot_product (vel(1:3, i), vel(1:3, i))
-				energy = 0.5 * masses(i) * vsq
-			
+				energy = 0.5d0 * masses(i) * vsq
+
 				if (energy < Ecut) continue
 				if (energy < En_elstopfile(1)) continue
 				if (energy > En_elstopfile(nrows)) then
 					write (*,*) "ERROR: Kinetic energy of atom is higher than electron stopping data"
 					stop
 				end if
-				!! Here the condition for matching the region can be given
-				!! .... like a particular group atoms only .....
-				!! .... !
-				
+
 				!! Find position of atom K.E in the data file and then corresponding electronic stopping
 				!! to apply the friction to the current forces
-				
+
 				do j = 1, nrows
 					if (energy == En_elstopfile(j)) then 
 						Se = elstop(j, itype)
@@ -148,22 +157,24 @@ subroutine electron_stopping_velocity_dependent (md_istep, natomtypes, Ecut, eel
 						exit
 					end if
 				end do
-				
+
 				vabs = sqrt(vsq)
-				factor = -Se / vabs
-				
+				if (vabs /= 0.0d0) factor = -Se / vabs
+
 				!! The current forces get modified (reduced) 
 				forces(1,i) = forces(1,i) + vel(1,i) * factor
 				forces(2,i) = forces(2,i) + vel(2,i) * factor
 				forces(3,i) = forces(3,i) + vel(3,i) * factor
 			end do
 		end if
-		
+
 		!! Finding the electronic energy loss
-		
+
 		if (to_calculate == 'energy') then
-			SeLoss = 0.0	
-			do i = 1, Np
+			SeLoss = 0.0d0
+			E_kinetic_atoms = 0.0d0	
+			do ki = 1, Np
+				i = eel_for_atoms(ki)
 				Se = 0.0
 				do j = 1, natomtypes
 					if (masses(i) == type_mass(j)) then
@@ -171,23 +182,21 @@ subroutine electron_stopping_velocity_dependent (md_istep, natomtypes, Ecut, eel
 						exit
 					end if
 				end do
-				
+
 				vsq = dot_product (vel(1:3, i), vel(1:3, i))
-				energy = 0.5 * masses(i) * vsq
-			
+				energy = 0.5d0 * masses(i) * vsq
+				E_kinetic_atoms = E_kinetic_atoms + energy
+
 				if (energy < Ecut) continue
 				if (energy < En_elstopfile(1)) continue
 				if (energy > En_elstopfile(nrows)) then
 					write (*,*) "ERROR: Kinetic energy of atom is higher than electron stopping data"
 					stop
 				end if
-				!! Here the condition for matching the region can be given
-				!! .... like a particular group atoms only .....
-				!! .... !
-				
+
 				!! Find position of atom K.E in the data file and then corresponding electronic stopping
 				!! to apply the friction to the current forces
-				
+
 				do j = 1, nrows
 					if (energy == En_elstopfile(j)) then 
 						Se = elstop(j, itype)
@@ -202,21 +211,22 @@ subroutine electron_stopping_velocity_dependent (md_istep, natomtypes, Ecut, eel
 						exit
 					end if
 				end do
-				
+
 				vabs = sqrt(vsq)
 				!! roughly, E = E + (dE/dx) * (dx) = (Se) * (vabs*dt)
 				SeLoss = SeLoss + (Se * vabs * dt)
 			end do
-			
+
+			instant_temp_atoms = 2.d0/3.d0/dfloat(Np-1)/boltzconst*E_kinetic_atoms
 			cum_EEL = cum_EEL + SeLoss
-			
+
 			if (MOD(md_istep, eel_freq_out) == 0) then
-				write(100, 1) md_time, SeLoss, cum_EEL
+				write(100, 1) md_time, SeLoss, cum_EEL, E_kinetic_atoms, instant_temp_atoms
 				close(unit = 100)
 			end if
 		end if
-		
-1 FORMAT (E13.6, E14.6, E14.6)
+
+1 FORMAT (E13.6, 4E14.6)
 
 	end if 	!! when md_time > 0.0
 

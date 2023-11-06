@@ -7,7 +7,8 @@
 ! HND X   TurboGAP is published and distributed under the
 ! HND X      Academic Software License v1.0 (ASL)
 ! HND X
-! HND X   This file, md.f90, is copyright (c) 2019-2023, Miguel A. Caro
+! HND X   This file, md.f90, is copyright (c) 2019-2023, Miguel A. Caro,
+! HND X	  Uttiyoarnab Saha
 ! HND X
 ! HND X   TurboGAP is distributed in the hope that it will be useful for non-commercial
 ! HND X   academic research, but WITHOUT ANY WARRANTY; without even the implied
@@ -93,7 +94,7 @@ module md
 !**************************************************************************
   subroutine velocity_verlet(positions, positions_prev, velocities, &
                              forces, forces_prev, masses, dt, dt_prev, &
-                             first_step, a_box, b_box, c_box, fix_atom)
+                             first_step, a_box, b_box, c_box, fix_atom, optimize_for_atoms)
 
     implicit none
 
@@ -103,8 +104,11 @@ module md
     real*8, intent(in) :: forces(:,:), masses(:), dt, a_box(1:3), b_box(1:3), &
                           c_box(1:3)
     logical, intent(in) :: first_step, fix_atom(:,:)
+    
+    integer, intent(in) :: optimize_for_atoms(:)
+    
 !   Internal variables
-    integer :: n_sites, i, j
+    integer :: n_sites, i, j, k
 
     n_sites = size(masses)
 
@@ -113,7 +117,9 @@ module md
 
 !   velocities are given at t-dt (except for the first step, when they're given for t); compute for t
     if( .not. first_step )then
-      do i = 1, n_sites
+      do k = 1, size(optimize_for_atoms)	!! do vv only for specified group of atoms
+		i = optimize_for_atoms(k)
+      !do i = 1, n_sites
 !        velocities(1:3, i) = velocities(1:3, i) + 0.5d0 * (forces(1:3, i) + forces_prev(1:3, i))/masses(i) * dt
         do j = 1, 3
           if( .not. fix_atom(j, i) )then
@@ -127,7 +133,9 @@ module md
 !   positions are given at t; compute for t+dt
     positions_prev = positions
     forces_prev = forces
-    do i = 1, n_sites
+    do k = 1, size(optimize_for_atoms)	!! do vv only for specified group of atoms
+		i = optimize_for_atoms(k)
+      !do i = 1, n_sites
 !     positions(1:3, i) = positions(1:3, i) + velocities(1:3, i)*dt + 0.5d0*forces(1:3, i)/masses(i)*dt**2
       do j = 1, 3
         if( .not. fix_atom(j, i) )then
@@ -148,21 +156,24 @@ module md
 !**************************************************************************
 ! Berendsen's velocity rescaling thermostat
 !
-  subroutine berendsen_thermostat(vel, T0, T, tau, dt)
+  subroutine berendsen_thermostat(vel, T0, T, tau, dt, thermostat_for_atoms)
 
     implicit none
 
     real*8, intent(inout) :: vel(:,:)
     real*8, intent(in) :: T0, T, tau, dt
+    integer, intent(in) :: thermostat_for_atoms(:)
     real*8 :: f
-    integer :: Np, i
+    integer :: Np, i, k
 
     Np = size(vel, 2)
 
     f = dsqrt(1.d0 + dt/tau * (T0/T - 1.d0))
 
     if( T > 0.d0 )then
-      do i = 1, Np
+	  do k = 1, size(thermostat_for_atoms)	!! thermostat only specified group of atoms
+		i = thermostat_for_atoms(k)
+      !do i = 1, Np
         vel(1:3, i) = vel(1:3, i) * f
       end do
     end if
