@@ -789,6 +789,9 @@ end if
       else if( keyword == "vdw_2b_rcut" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_2b_rcut
+      else if( keyword == "vdw_2b_rcut2" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_2b_rcut2
       else if( keyword == "vdw_polynomial" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_polynomial

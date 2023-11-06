@@ -995,6 +995,7 @@ module vdw
         
       deallocate( b_i, d_vec )
       !deallocate( ia, ja, val )        
+      !write(*,*) "central pol", i, central_pol(i)
 
     end do 
 
@@ -1038,7 +1039,7 @@ module vdw
 !**************************************************************************
   subroutine get_mbd_energies_and_forces( hirshfeld_v_cart_der_ji, &
                                        n_neigh, neighbors_list, neighbor_species, &
-                                       rcut, rcut_loc, rcut_mbd, rcut_mbd2, rcut_2b, r_buffer, rjs, xyz, &
+                                       rcut, rcut_loc, rcut_mbd, rcut_mbd2, rcut_2b, rcut_2b2, r_buffer, rjs, xyz, &
                                        hirshfeld_v_neigh, sR, d, c6_ref, r0_ref, alpha0_ref, do_derivatives, &
                                        do_hirshfeld_gradients, polynomial_expansion, do_nnls, n_freq, n_order, &
                                        vdw_omega_ref, central_pol, central_omega, &
@@ -1049,7 +1050,7 @@ module vdw
 !   Input variables
     real*8, intent(in) :: rcut, r_buffer, &
                           rjs(:), xyz(:,:), sR, d, c6_ref(:), r0_ref(:), rcut_loc, rcut_mbd, rcut_mbd2, rcut_2b, &
-                          hirshfeld_v_cart_der_ji(:,:), &
+                          rcut_2b2, hirshfeld_v_cart_der_ji(:,:), &
                           alpha0_ref(:), vdw_omega_ref !, hirshfeld_v(:), hirshfeld_v_neigh(:) !NOTE: uncomment this in final implementation
     integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:), n_freq, n_order
     logical, intent(in) :: do_derivatives, do_hirshfeld_gradients, polynomial_expansion, do_nnls
@@ -1102,7 +1103,7 @@ module vdw
               dr_vdw_j, forces_TS, dC6_2b, mult1_i, mult1_j, mult2, dmult1_i(1:3), dmult1_j(1:3), dmult2(1:3), hv_p_der, &
               hv_q_der, do_pref, rb, inner_damp_der, rjs_0_i, rcut_force, o_i, o_j, do_i, do_j, T_LR_mult_i, T_LR_mult_j, &
               dT_LR_mult_i, dT_LR_mult_j, dT_LR_mult_0ij_2, dT_LR_mult_0ji_2, a_i, a_j, E_TS_tot, r6_der, ac2, ac3, ac4, &
-              r_buf_ij, log_integral, rcut_tot, sym_integral
+              r_buf_ij, log_integral, rcut_tot, sym_integral, rcut_tsscs, r_buf_tsscs
               
     integer :: n_mbd_sites, n_mbd_pairs, n_2b_sites, n_2b_tot_sites, n_2b_tot_pairs, n_ene_sites, n_force_sites
     integer, allocatable :: n_mbd_neigh(:), mbd_neighbors_list(:), p_mbd(:), sub_2b_tot_list(:), n_2b_tot_neigh(:), &
@@ -1119,7 +1120,7 @@ module vdw
     real*8 :: res_nnls, E_tot, denom
     integer :: mode_nnls
     logical :: do_total_energy = .true., series_expansion = .false., do_log = .false., cent_appr = .true., lanczos = .false., &
-               do_timing = .false.  ! Finite difference testing purposes
+               do_timing = .false., default_coeff = .true.  ! Finite difference testing purposes
     real*8, allocatable :: b_vec(:), Ab(:), I_mat(:,:), l_vals(:), log_vals(:), lsq_mat(:,:), res_mat(:), log_exp(:,:), &
                            AT_power(:,:), log_integrand(:), AT_power_full(:,:), pol_grad(:,:,:), pol_inv(:,:,:), inv_vals(:), &
                            res_inv(:), lsq_inv(:,:), integrand_pol(:), AT_sym(:,:,:), G_sym(:,:,:), pol_sym(:,:,:), res_sym(:), &
@@ -1148,6 +1149,9 @@ module vdw
 ac4 = 8.d0*(2.d0)**(1.d0/2.d0) - 8.d0
 ac3 = -2.d0*ac4 -2.d0
 ac2 = 3.d0 + ac4
+
+rcut_tsscs = 0.d0
+r_buf_tsscs = 0.d0
 
 !central_omega(1:size(central_omega)/3) = 0.5d0
 !central_omega(size(central_omega)/3:2*size(central_omega)/3) = 0.8d0
@@ -1272,11 +1276,11 @@ ac2 = 3.d0 + ac4
     r_buf_ij = r_buffer
     !r_buf_ij = 0.d0
     
-    !if ( rcut_2b-rcut_mbd < r_buffer ) then
-    !  r_buf_2b = rcut_2b-rcut_mbd
-    !else
-    !  r_buf_2b = r_buffer
-    !end if
+    if ( rcut_2b-rcut_mbd < r_buffer ) then
+      r_buf_2b = rcut_2b-rcut_mbd
+    else
+      r_buf_2b = r_buffer
+    end if
 
     !call cpu_time(time3)
 
@@ -1876,7 +1880,7 @@ ac2 = 3.d0 + ac4
 
         if ( om == 2 ) then
 
-if ( abs(rcut_2b) < 1.d-10 ) then
+if ( abs(rcut_tsscs) < 1.d-10 ) then
 
           call cpu_time(time1)
 
@@ -1940,7 +1944,7 @@ end if
           n_2b_sites = 0
           do j2 = 1, n_neigh(i)
             k_i = k_i + 1
-            if (rjs(n_tot+k_i) .le. rcut_2b .and. rjs(n_tot+k_i) > rcut_mbd-r_buf_mbd) then
+            if (rjs(n_tot+k_i) .le. rcut_tsscs .and. rjs(n_tot+k_i) > rcut_mbd-r_buf_mbd) then
               n_2b_sites = n_2b_sites + 1
             end if
           end do
@@ -1948,7 +1952,7 @@ end if
           !n_order = 4
           !n_freq = 12
 
-if ( abs(rcut_2b) < 1.d-10 ) then
+if ( abs(rcut_tsscs) < 1.d-10 ) then
 
           if ( .not. cent_appr ) then
             allocate( T_LR(1:3*n_mbd_sites,1:3*n_mbd_sites) )
@@ -2051,7 +2055,7 @@ end if
           allocate( C6_2b(1:n_2b_sites) )
           allocate( r6_mult(1:n_2b_sites) )
 
-if ( abs(rcut_2b) < 1.d-10 ) then
+if ( abs(rcut_tsscs) < 1.d-10 ) then
 
           call cpu_time(time1)
 
@@ -2491,7 +2495,7 @@ end if
           !write(*,*) "a_mbd", a_mbd
           !write(*,*) "o_mbd", o_mbd
         
-if ( abs(rcut_2b) > 1.d-10 ) then
+if ( abs(rcut_tsscs) > 1.d-10 ) then
 
           E_TS = 0.d0
           k2 = 0
@@ -2514,7 +2518,7 @@ if ( abs(rcut_2b) > 1.d-10 ) then
             k_i = k_i+1
             i2 = neighbors_list(n_tot+k_i)
             i1 = modulo(i2-1, n_sites0) + 1
-            if ( rjs(n_tot+k_i) .le. rcut_2b .and. rjs(n_tot+k_i) > rcut_mbd-r_buf_mbd ) then
+            if ( rjs(n_tot+k_i) .le. rcut_tsscs .and. rjs(n_tot+k_i) > rcut_mbd-r_buf_mbd ) then
               k2 = k2+1
               s = neighbor_species(n_tot+k_i)
               sub_2b_list(k2) = neighbors_list(n_tot+k_i)
@@ -2572,8 +2576,8 @@ if ( abs(rcut_2b) > 1.d-10 ) then
                 r6_mult(k2) = ( + 10.d0 *rb**3 &
                                - 15.d0 * rb**4 &
                                + 6.d0 * rb**5)
-              else if ( rjs(n_tot+k_i) > rcut_2b-r_buf_2b .and. rjs(n_tot+k_i) .le. rcut_2b) then
-                rb = (rjs(n_tot+k_i)-rcut_2b+r_buf_2b)/(r_buf_2b)
+              else if ( rjs(n_tot+k_i) > rcut_tsscs-r_buf_tsscs .and. rjs(n_tot+k_i) .le. rcut_tsscs) then
+                rb = (rjs(n_tot+k_i)-rcut_tsscs+r_buf_tsscs)/(r_buf_tsscs)
                 r6_mult(k2) = (1.d0 - 10.d0 * rb**3 &
                                + 15.d0 * rb**4 &
                                - 6.d0 * rb**5)
@@ -2592,7 +2596,7 @@ if ( abs(rcut_2b) > 1.d-10 ) then
 
 end if
 
-if ( abs(rcut_2b) < 1.d-10 ) then
+if ( abs(rcut_tsscs) < 1.d-10 ) then
 
           call cpu_time(time1)
 
@@ -2813,6 +2817,12 @@ if ( abs(rcut_2b) < 1.d-10 ) then
             do i2 = 1, n_freq
               !if ( i2 == 1 ) then
               if ( .not. cent_appr ) then
+                if ( default_coeff ) then
+                  res_mat(1) = 0.d0
+                  do k2 = 2, n_order+1
+                    res_mat(k2) = -1.d0/(k2-1) 
+                  end do
+                else
                 call cpu_time(time5)
                 call power_iteration( val(1:nnz,i2), ia(1:nnz), ja(1:nnz), 3*n_mbd_sites, 10, b_vec ) !myidx, nnz, 20, b_vec )
                 call cpu_time(time6)
@@ -2833,9 +2843,9 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 !write(*,*) "AT-Ab mult timing", time6-time5
                 l_dom = dot_product(b_vec,Ab)/b_norm
                 if ( l_dom < 0.d0 ) then
-                  l_min = l_dom - 0.01d0
+                  l_min = l_dom !- 0.01d0
                 else
-                  l_max = l_dom + 0.01d0
+                  l_max = l_dom !+ 0.01d0
                 end if
                 nnz2 = nnz+3*n_mbd_sites
                 ia2(1:nnz) = ia
@@ -2868,9 +2878,9 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 call cpu_time(time6)
                 !write(*,*) "AT-Ab 2nd mult timing", time6-time5
                 if ( l_dom < 0.d0 ) then
-                  l_max = dot_product(b_vec,Ab)/b_norm + l_dom + 0.01d0
+                  l_max = dot_product(b_vec,Ab)/b_norm + l_dom !+ 0.01d0
                 else
-                  l_min = dot_product(b_vec,Ab)/b_norm + l_dom - 0.01d0
+                  l_min = dot_product(b_vec,Ab)/b_norm + l_dom !- 0.01d0
                 end if
                 !write(*,*) "l_min, l_max", l_min, l_max
                 l_vals(1) = l_min
@@ -2908,12 +2918,19 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                   !call cpu_time(time2)
                   !write(*,*) "dgesv timing", time2-time1
                 end if
+                end if
               end if
               if ( cent_appr ) then
+                if ( default_coeff ) then
+                  res_sym(1) = 0.d0
+                  do k2 = 2, n_order+1
+                    res_sym(k2) = -1.d0/(k2-1)
+                  end do
+                else
                 if ( .not. lanczos ) then
                 call cpu_time(time5)
                 call power_iteration( val_sym(1:nnz,i2), ia(1:nnz), ja(1:nnz), &
-                                      3*n_mbd_sites, 10, b_vec ) !myidx, nnz, 20, b_vec )
+                                      3*n_mbd_sites, 100, b_vec ) !myidx, nnz, 20, b_vec )
                 call cpu_time(time6)
                 if ( do_timing ) then
                 write(*,*) "Power iteration timing", time6-time5
@@ -2934,9 +2951,9 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 !write(*,*) "AT-Ab mult timing", time6-time5
                 l_dom = dot_product(b_vec,Ab)/b_norm
                 if ( l_dom < 0.d0 ) then
-                  l_min = l_dom - 0.01d0
+                  l_min = l_dom !- 0.01d0
                 else
-                  l_max = l_dom + 0.01d0
+                  l_max = l_dom !+ 0.01d0
                 end if
                 nnz2 = nnz+3*n_mbd_sites
                 ia2(1:nnz) = ia
@@ -2949,7 +2966,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 end do
                 call cpu_time(time5)
                 call power_iteration( val2(1:nnz2), ia2(1:nnz2), ja2(1:nnz2), &
-                                      3*n_mbd_sites, 10, b_vec ) !myidx, nnz2, 20, b_vec )
+                                      3*n_mbd_sites, 100, b_vec ) !myidx, nnz2, 20, b_vec )
                 call cpu_time(time6)
                 if ( do_timing ) then
                 write(*,*) "Power iteration timing second", time6-time5
@@ -2971,9 +2988,9 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 call cpu_time(time6)
                 !write(*,*) "AT-Ab 2nd mult timing", time6-time5
                 if ( l_dom < 0.d0 ) then
-                  l_max = dot_product(b_vec,Ab)/b_norm + l_dom + 0.01d0
+                  l_max = dot_product(b_vec,Ab)/b_norm + l_dom !+ 0.01d0
                 else
-                  l_min = dot_product(b_vec,Ab)/b_norm + l_dom - 0.01d0
+                  l_min = dot_product(b_vec,Ab)/b_norm + l_dom !- 0.01d0
                 end if
                 end if ! .not. lanczos
                 if ( lanczos ) then
@@ -2997,12 +3014,12 @@ if ( abs(rcut_2b) < 1.d-10 ) then
 
                 l_max = l_max - 1.d0
                 l_min = l_min - 1.d0
-                l_max = l_max + 0.01d0
-                l_min = l_min - 0.01d0
+                !l_max = l_max + 0.01d0
+                !l_min = l_min - 0.01d0
 
                 end if
 
-                !write(*,*) "l_min, l_max", i, l_min, l_max
+                write(*,*) "l_min, l_max", i, l_min, l_max
                 l_vals(1) = l_min
                 do k2 = 2, 1001
                   l_vals(k2) = l_min + (k2-1)*(l_max-l_min)/1000
@@ -3027,6 +3044,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
                 !call psb_spins(nnz, ia(1:nnz), ja(1:nnz), val_sym(1:nnz,i2), A_sp_sym, desc_a, info_psb)
                 !call psb_cdasb(desc_a, info_psb)
                 !call psb_spasb(A_sp_sym, desc_a, info_psb)
+                end if ! default_coeff
                 do c1 = 1, 3
                   integrand_sym(i2) = integrand_sym(i2) + res_sym(1) + res_sym(2)*AT_sym(c1,c1,i2)
                 end do
@@ -3228,7 +3246,17 @@ if ( abs(rcut_2b) < 1.d-10 ) then
               end if
               end if !.not. cent_appr
               else ! n_order = 2
+                if ( cent_appr ) then
+                 do c1 = 1, 3
+                    integrand_sym(i2) = integrand_sym(i2) + res_sym(n_order+1) * &
+                      dot_product(AT_sym(:,c1,i2), AT_sym(:,c1,i2))
+                  end do
+                end if
                 if (.not. cent_appr ) then
+                do c1 = 1, 3
+                  integrand(i2) = integrand(i2) + res_mat(n_order+1)*dot_product(AT(c1,:,i2), &
+                                  AT(:,c1,i2))
+                end do
                 if ( do_total_energy ) then
                   k3 = 0
                   do p = 1, n_mbd_sites
@@ -3395,7 +3423,7 @@ if ( abs(rcut_2b) < 1.d-10 ) then
           if ( cent_appr ) then
             energies(i) = (sym_integral + E_TS) * Hartree
           end if
-          !write(*,*) "MBD energy", i, energies(i)
+          write(*,*) "MBD energy", i, energies(i)
 
 
           if ( do_derivatives ) then
@@ -3795,7 +3823,7 @@ end if
 
             if ( om == 2 ) then
 
-if ( abs(rcut_2b) < 1.d-10 ) then
+if ( abs(rcut_tsscs) < 1.d-10 ) then
 
               call cpu_time(time1)
             
@@ -4189,7 +4217,7 @@ end if
               k_i = 0
               do i3 = 1, n_neigh(i)
                 k_i = k_i + 1
-                if (rjs(n_tot+k_i) .le. rcut_2b ) then
+                if (rjs(n_tot+k_i) .le. rcut_tsscs ) then
                   n_2b_tot_sites = n_2b_tot_sites + 1
                   n_2b_tot_pairs = n_2b_tot_pairs + 1
                   xyz_i = xyz(:,n_tot+k_i)/Bohr
@@ -4197,19 +4225,19 @@ end if
                   do j3 = 1, n_neigh(i)
                     k_j = k_j + 1
                     if ( rjs(n_tot+k_i) .le. rcut_mbd-r_buf_mbd) then
-                      !if ( rjs(n_tot+k_j) .le. rcut_2b .and. rjs(n_tot+k_j) > rcut_mbd-r_buf_mbd ) then
+                      !if ( rjs(n_tot+k_j) .le. rcut_tsscs .and. rjs(n_tot+k_j) > rcut_mbd-r_buf_mbd ) then
                         if (i3 .ne. j3) then
                           xyz_j = xyz(:,n_tot+k_j)/Bohr
-                          if ( sqrt(sum((xyz_j-xyz_i)**2)) .le. rcut_2b/Bohr ) then
+                          if ( sqrt(sum((xyz_j-xyz_i)**2)) .le. rcut_tsscs/Bohr ) then
                             n_2b_tot_pairs = n_2b_tot_pairs + 1
                           end if
                         end if
                       !end if
                     else
-                      !if ( rjs(n_tot+k_j) .le. rcut_2b ) then
+                      !if ( rjs(n_tot+k_j) .le. rcut_tsscs ) then
                         if (i3 .ne. j3) then
                           xyz_j = xyz(:,n_tot+k_j)/Bohr
-                          if ( sqrt(sum((xyz_j-xyz_i)**2)) .le. rcut_2b/Bohr ) then
+                          if ( sqrt(sum((xyz_j-xyz_i)**2)) .le. rcut_tsscs/Bohr ) then
                             n_2b_tot_pairs = n_2b_tot_pairs + 1
                           end if
                         end if
@@ -4278,7 +4306,7 @@ end if
                 k_i = k_i+1
                 i2 = neighbors_list(n_tot+k_i)
                 i1 = modulo(i2-1, n_sites0) + 1
-                if ( rjs(n_tot+k_i) .le. rcut_2b ) then
+                if ( rjs(n_tot+k_i) .le. rcut_tsscs ) then
                   k2 = k2+1
                   s = neighbor_species(n_tot+k_i)
                   sub_2b_tot_list(k2) = neighbors_list(n_tot+k_i)
@@ -4425,8 +4453,8 @@ end if
                   !  r6_mult_2b_tot(k2) = ( + 10.d0 *rb**3 &
                   !                - 15.d0 * rb**4 &
                   !                + 6.d0 * rb**5)
-                  !else if ( rjs(n_tot+k_i) > rcut_2b-r_buf_2b .and. rjs(n_tot+k_i) .le. rcut_2b) then
-                  !  rb = (rjs(n_tot+k_i)-rcut_2b+r_buf_2b)/(r_buf_2b)
+                  !else if ( rjs(n_tot+k_i) > rcut_tsscs-r_buf_tsscs .and. rjs(n_tot+k_i) .le. rcut_tsscs) then
+                  !  rb = (rjs(n_tot+k_i)-rcut_tsscs+r_buf_tsscs)/(r_buf_tsscs)
                   !  r6_mult_2b_tot(k2) = (1.d0 - 10.d0 * rb**3 &
                   !                 + 15.d0 * rb**4 &
                   !                 - 6.d0 * rb**5)
@@ -4443,11 +4471,11 @@ end if
                     j2 = neighbors_list(n_tot+k_j)
                     j1 = modulo(j2-1, n_sites0) + 1
                     if (.false.) then
-                    !if ( rjs(n_tot+k_i) .le. rcut_mbd .and. rjs(n_tot+k_j) .le. rcut_2b &
+                    !if ( rjs(n_tot+k_i) .le. rcut_mbd .and. rjs(n_tot+k_j) .le. rcut_tsscs &
                     !     .and. rjs(n_tot+k_j) > rcut_mbd-r_buf_mbd ) then
                         if (i3 .ne. j3) then
                           xyz_j = xyz(:,n_tot+k_j)/Bohr
-                          if ( sqrt(sum((xyz_j-xyz_i)**2)) .le. rcut_2b/Bohr ) then
+                          if ( sqrt(sum((xyz_j-xyz_i)**2)) .le. rcut_tsscs/Bohr ) then
                             k2 = k2+1
                             s = neighbor_species(n_tot+k_j)
                             sub_2b_tot_list(k2) = neighbors_list(n_tot+k_j)
@@ -4587,8 +4615,8 @@ end if
                               end if
                               do_2b(k2) = 0.d0
                             end if
-                            if ( rjs_2b_tot(k2)*Bohr > rcut_2b-r_buf_2b .and. rjs_2b_tot(k2)*Bohr .le. rcut_2b) then
-                              rb = (rjs_2b_tot(k2)*Bohr-rcut_2b+r_buf_2b)/(r_buf_2b)
+                            if ( rjs_2b_tot(k2)*Bohr > rcut_tsscs-r_buf_tsscs .and. rjs_2b_tot(k2)*Bohr .le. rcut_tsscs) then
+                              rb = (rjs_2b_tot(k2)*Bohr-rcut_tsscs+r_buf_tsscs)/(r_buf_tsscs)
                               r6_mult_2b_tot(k2) = (1.d0 - 10.d0 * rb**3 &
                                       + 15.d0 * rb**4 &
                                       - 6.d0 * rb**5)
@@ -4596,12 +4624,12 @@ end if
                                 dr6_mult(k2) = (- 30.d0 * rb**2 &
                                    + 60.d0 * rb**3 &
                                    - 30.d0 * rb**4) &
-                                   * ( -xyz_2b_tot(c3,k2)/rjs_2b_tot(k2)/(r_buf_2b/Bohr))
+                                   * ( -xyz_2b_tot(c3,k2)/rjs_2b_tot(k2)/(r_buf_tsscs/Bohr))
                               else if ( j2 == i ) then
                                 dr6_mult(k2) = (- 30.d0 * rb**2 &
                                    + 60.d0 * rb**3 &
                                    - 30.d0 * rb**4) &
-                                   * (xyz_2b_tot(c3,k2)/rjs_2b_tot(k2)/(r_buf_2b/Bohr))
+                                   * (xyz_2b_tot(c3,k2)/rjs_2b_tot(k2)/(r_buf_tsscs/Bohr))
                               end if
                             end if
                             if ( rjs(n_tot+k_j) .le. rcut_mbd .and. rjs(n_tot+k_j) > rcut_mbd-r_buf_mbd ) then
@@ -4613,15 +4641,15 @@ end if
                                       - 60.d0 * rb**3 &
                                       + 30.d0 * rb**4) * &
                                       (-xyz(c3,n_tot+k_j)/rjs(n_tot+k_j)/(r_buf_mbd/Bohr))                                      
-                            else if ( rjs(n_tot+k_j) .le. rcut_2b .and. rjs(n_tot+k_j) > rcut_2b-r_buf_2b ) then
-                              rb = (rjs(n_tot+k_j)-rcut_2b+r_buf_2b)/(r_buf_2b)
+                            else if ( rjs(n_tot+k_j) .le. rcut_tsscs .and. rjs(n_tot+k_j) > rcut_tsscs-r_buf_tsscs ) then
+                              rb = (rjs(n_tot+k_j)-rcut_tsscs+r_buf_tsscs)/(r_buf_tsscs)
                               r6_mult_0j(k2) = (1.d0 - 10.d0 * rb**3 &
                                       + 15.d0 * rb**4 &
                                       - 6.d0 * rb**5)
                               !dr6_mult_0j(k2) = (-30.d0 * rb**2 &
                               !        + 60.d0 * rb**3 &
                               !        - 30.d0 * rb**4) * &
-                              !        (-xyz(c3,n_tot+k_j)/rjs(n_tot+k_j)/(r_buf_2b/Bohr))
+                              !        (-xyz(c3,n_tot+k_j)/rjs(n_tot+k_j)/(r_buf_tsscs/Bohr))
                             end if
                             if ( rjs(n_tot+k_i) .le. rcut_mbd .and. rjs(n_tot+k_i) > rcut_mbd-r_buf_mbd ) then
                               rb = (rjs(n_tot+k_i)-rcut_mbd+r_buf_mbd)/(r_buf_mbd)
@@ -4691,12 +4719,12 @@ end if
                           end if
                         end if
                       !end if
-                    !else if ( rjs(n_tot+k_i) .le. rcut_2b .and. rjs(n_tot+k_i) > rcut_mbd-r_buf_mbd .and. &
-                    !          rjs(n_tot+k_j) .le. rcut_2b ) then
-                    else if ( rjs(n_tot+k_i) .le. rcut_2b ) then
+                    !else if ( rjs(n_tot+k_i) .le. rcut_tsscs .and. rjs(n_tot+k_i) > rcut_mbd-r_buf_mbd .and. &
+                    !          rjs(n_tot+k_j) .le. rcut_tsscs ) then
+                    else if ( rjs(n_tot+k_i) .le. rcut_tsscs ) then
                         if (i3 .ne. j3) then
                           xyz_j = xyz(:,n_tot+k_j)/Bohr
-                          if ( sqrt(sum((xyz_j-xyz_i)**2)) .le. rcut_2b/Bohr ) then
+                          if ( sqrt(sum((xyz_j-xyz_i)**2)) .le. rcut_tsscs/Bohr ) then
                             k2 = k2+1
                             s = neighbor_species(n_tot+k_j)
                             sub_2b_tot_list(k2) = neighbors_list(n_tot+k_j)
@@ -4836,8 +4864,8 @@ end if
                               end if
                               do_2b(k2) = 0.d0
                             end if
-                            if ( rjs_2b_tot(k2)*Bohr > rcut_2b-r_buf_2b .and. rjs_2b_tot(k2)*Bohr .le. rcut_2b) then
-                              rb = (rjs_2b_tot(k2)*Bohr-rcut_2b+r_buf_2b)/(r_buf_2b)
+                            if ( rjs_2b_tot(k2)*Bohr > rcut_tsscs-r_buf_tsscs .and. rjs_2b_tot(k2)*Bohr .le. rcut_tsscs) then
+                              rb = (rjs_2b_tot(k2)*Bohr-rcut_tsscs+r_buf_tsscs)/(r_buf_tsscs)
                               r6_mult_2b_tot(k2) = (1.d0 - 10.d0 * rb**3 &
                                       + 15.d0 * rb**4 &
                                       - 6.d0 * rb**5)
@@ -4845,12 +4873,12 @@ end if
                                 dr6_mult(k2) = (- 30.d0 * rb**2 &
                                    + 60.d0 * rb**3 &
                                    - 30.d0 * rb**4) &
-                                   * ( -xyz_2b_tot(c3,k2)/rjs_2b_tot(k2)/(r_buf_2b/Bohr))
+                                   * ( -xyz_2b_tot(c3,k2)/rjs_2b_tot(k2)/(r_buf_tsscs/Bohr))
                               else if ( j2 == i ) then
                                 dr6_mult(k2) = (- 30.d0 * rb**2 &
                                    + 60.d0 * rb**3 &
                                    - 30.d0 * rb**4) &
-                                   * (xyz_2b_tot(c3,k2)/rjs_2b_tot(k2)/(r_buf_2b/Bohr))
+                                   * (xyz_2b_tot(c3,k2)/rjs_2b_tot(k2)/(r_buf_tsscs/Bohr))
                               end if
                             end if
                             a_j = a_2b_tot(k2)
@@ -4918,7 +4946,7 @@ end if
                           a_2b_tot, o_2b_tot, r0_ii_SCS_2b_tot, c6_2b_tot, r6_mult_2b_tot, dr6_mult, da_2b, &
                           do_2b, dr0_ii_SCS_2b, r6_mult_0i, r6_mult_0j, dr6_mult_0i, dr6_mult_0j )
       
-if ( abs(rcut_2b) < 1.d-10 ) then
+if ( abs(rcut_tsscs) < 1.d-10 ) then
 
               call cpu_time(time1)
 
@@ -5350,7 +5378,7 @@ end if
         end if
 
       
-if ( abs(rcut_2b) < 1.d-10 ) then  
+if ( abs(rcut_tsscs) < 1.d-10 ) then  
         if ( om == 2 ) then
           deallocate( r0_ii_SCS, f_damp_SCS, omegas_mbd, integrand, n_mbd_neigh, &
                       mbd_neighbors_list, p_mbd, r0_ii_mbd, neighbor_alpha0_mbd, xyz_mbd, rjs_mbd, T_mbd, a_mbd, &
