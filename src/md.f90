@@ -100,9 +100,9 @@ module md
 
 !   Input variables
     real*8, intent(inout) :: positions(:,:), positions_prev(:,:), velocities(:,:), &
-                             forces_prev(:,:), dt_prev
+                             forces_prev(:,:)
     real*8, intent(in) :: forces(:,:), masses(:), dt, a_box(1:3), b_box(1:3), &
-                          c_box(1:3)
+                          c_box(1:3), dt_prev
     logical, intent(in) :: first_step, fix_atom(:,:)
     
     integer, intent(in) :: optimize_for_atoms(:)
@@ -143,8 +143,18 @@ module md
         end if
       end do
     end do
-    
-    dt_prev = dt	!! minimum modification for variable time-step situations 
+	
+    !! Modification dt_prev instead of dt is needed for variable time-step situations
+    !! since the steps in VV algorithm is followeed like this 
+    !! 1; 2,3,1; 2,3,1; 2,3,1; ...... for every MD step. Here 1 of VV is of current MD step
+    !! but 2,3 of the VV are of the previous MD step. [2 and 3 of VV of MD step 0 is from the
+    !! given input atom_file].
+
+    !! So, in its original way the adaptively modified time step could not be handled properly.
+    !! Also, all the processes that are dependent on
+    !! the time step and velocities, called after the VV algorithm here has to use the previous
+    !! time step, not the current time step because step 3 of VV where velocity is calculated
+    !! uses the previous time step.  
 
   end subroutine
 !**************************************************************************
@@ -166,14 +176,16 @@ module md
     real*8 :: f
     integer :: Np, i, k
 
-    Np = size(vel, 2)
+	!! thermostat only specified group of atoms
+    Np = size(thermostat_for_atoms)
+    !Np = size(vel, 2)
+    !do i = 1, Np
 
     f = dsqrt(1.d0 + dt/tau * (T0/T - 1.d0))
 
     if( T > 0.d0 )then
-	  do k = 1, size(thermostat_for_atoms)	!! thermostat only specified group of atoms
+	  do k = 1, Np
 		i = thermostat_for_atoms(k)
-      !do i = 1, Np
         vel(1:3, i) = vel(1:3, i) * f
       end do
     end if

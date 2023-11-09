@@ -1830,6 +1830,8 @@ program turbogap
 		end if
 	  end if
 
+	  if (md_istep == 0) time_step_prev = time_step
+
 	  !! ----------------------------------	******** until here for adaptive time
            
            !     This takes care of NVE
@@ -1878,7 +1880,7 @@ program turbogap
 	  if ( params%electronic_stopping ) then
 		call electron_stopping_velocity_dependent (md_istep, n_species, params%eel_cut, params%eel_freq_out, &
 				velocities(1:3, 1:n_sites), forces(1:3, 1:n_sites), masses(1:n_sites), params%masses_types, &
-				time_step, md_time, nrows, allelstopdata, cum_EEL, eel_for_atoms, 'energy')
+				time_step_prev, md_time, nrows, allelstopdata, cum_EEL, eel_for_atoms, 'energy')
 	  end if
 
 	!! -----------------------------------		******** until here for electronic stopping
@@ -1889,7 +1891,7 @@ program turbogap
 	  if ( params%nonadiabatic_processes ) then
 		call ephlsc%eph_LangevinEnergyDissipation (md_istep, md_time, velocities(1:3, 1:n_sites), &
 				positions(1:3, 1:n_sites), masses(1:n_sites), energies(1:n_sites), &
-				time_step, eph_for_atoms, ephfdm)	
+				time_step_prev, eph_for_atoms, ephfdm)	
 	  end if
 
 	!! -----------------------------------		******** until here for electronic stopping basd on eph model
@@ -2008,13 +2010,13 @@ program turbogap
               lv(1:3, 3) = c_box(1:3)
               call berendsen_barostat(lv(1:3,1:3), &
                    params%p_beg + (params%p_end-params%p_beg)*dfloat(md_istep+1)/float(params%md_nsteps), &
-                   instant_pressure_tensor, params%barostat_sym, params%tau_p, params%gamma_p, time_step)
+                   instant_pressure_tensor, params%barostat_sym, params%tau_p, params%gamma_p, time_step_prev)
               a_box(1:3) = lv(1:3, 1)
               b_box(1:3) = lv(1:3, 2)
               c_box(1:3) = lv(1:3, 3)
               call berendsen_barostat(positions(1:3, 1:n_sites), &
                    params%p_beg + (params%p_end-params%p_beg)*dfloat(md_istep+1)/float(params%md_nsteps), &
-                   instant_pressure_tensor, params%barostat_sym, params%tau_p, params%gamma_p, time_step)
+                   instant_pressure_tensor, params%barostat_sym, params%tau_p, params%gamma_p, time_step_prev)
            else if( (params%optimize == "gd-box" .or. params%optimize == "gd-box-ortho") &
                 .and. .not. gd_box_do_pos )then
               if( gd_istep > 1 .and. ( ( abs(energy-energy_prev) < params%e_tol*dfloat(n_sites) &
@@ -2046,12 +2048,16 @@ program turbogap
            if( params%thermostat == "berendsen" )then
               call berendsen_thermostat(velocities(1:3, 1:n_sites), &
                    params%t_beg + (params%t_end-params%t_beg)*dfloat(md_istep+1)/float(params%md_nsteps), &
-                   instant_temp, params%tau_t, time_step, thermostat_for_atoms)
+                   instant_temp, params%tau_t, time_step_prev, thermostat_for_atoms)
            else if( params%thermostat == "bussi" )then
               velocities(1:3, 1:n_sites) = velocities(1:3, 1:n_sites) * dsqrt(resamplekin(E_kinetic, &
                    params%t_beg + (params%t_end-params%t_beg)*dfloat(md_istep+1)/float(params%md_nsteps), &
-                   3*n_sites-3,params%tau_t, time_step) / E_kinetic)
+                   3*n_sites-3,params%tau_t, time_step_prev) / E_kinetic)
            end if
+          !! Since no other process is called below this which does calculation based on the velocities
+		  !! and time step, the time_step_prev is given the current value here.
+		   time_step_prev = time_step
+
            !     Check what's the maximum atomic displacement since last neighbors build
            positions_diff = positions_diff + positions(1:3, 1:n_sites) - positions_prev(1:3, 1:n_sites)
            rebuild_neighbors_list = .false.
