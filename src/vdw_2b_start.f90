@@ -775,8 +775,8 @@ module vdw
                     s_j = neighbor_sigma(k2)
                     sigma_ij = sqrt(s_i**2 + s_j**2)
                     g_func(k2) = erf(rjs_H(k2)/sigma_ij) - 2.d0/sqrt(pi) * (rjs_H(k2)/sigma_ij) * exp(-rjs_H(k2)**2.d0/sigma_ij**2)
-                    if ( rjs_H(k2)*Bohr < 2.d0 .and. rjs(n_tot+k_j) > rcut-r_buf ) then
-                      rb = (rjs_H(k2)*Bohr)/2.d0
+                    if ( rjs_H(k2)*Bohr < 2.d0 .and. rjs(n_tot+k_j) > rcut-r_buf ) then ! NOTE THAT THE INNER DAMP ONLY DAMPS THE FIXED TS POLARIZABILITIES
+                      rb = (rjs_H(k2)*Bohr)/2.d0                                        ! They can be very large compared to the SCS polarizabilities in the vicinity
                       inner_damp(k2) = 10.d0*rb**3-15.d0*rb**4+6.d0*rb**5
                     end if
                     k3 = 9*(k2-1)
@@ -1036,6 +1036,9 @@ module vdw
 !central_pol = 10.d0
 !central_omega = 0.5d0
 
+! REMEMBER THAT THE INNER DAMPING FOR SCS POLARIZABILITIES IS FIXED AT 1.5 Å!
+! This should be changed to something else at some point.
+
 !**************************************************************************
   subroutine get_mbd_energies_and_forces( hirshfeld_v_cart_der_ji, &
                                        n_neigh, neighbors_list, neighbor_species, &
@@ -1049,8 +1052,8 @@ module vdw
 
 !   Input variables
     real*8, intent(in) :: rcut, r_buffer, &
-                          rjs(:), xyz(:,:), sR, d, c6_ref(:), r0_ref(:), rcut_loc, rcut_mbd, rcut_mbd2, rcut_2b, &
-                          rcut_2b2, hirshfeld_v_cart_der_ji(:,:), &
+                          rjs(:), xyz(:,:), sR, d, c6_ref(:), r0_ref(:), rcut_loc, rcut_mbd, rcut_mbd2, &
+                          hirshfeld_v_cart_der_ji(:,:), &
                           alpha0_ref(:), vdw_omega_ref !, hirshfeld_v(:), hirshfeld_v_neigh(:) !NOTE: uncomment this in final implementation
     integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:), n_freq, n_order
     logical, intent(in) :: do_derivatives, do_hirshfeld_gradients, polynomial_expansion, do_nnls
@@ -1058,7 +1061,7 @@ module vdw
     real*8, intent(out) :: virial(1:3, 1:3)
 !   In-Out variables
     real*8, intent(inout) :: energies(:), forces0(:,:), central_pol(:), central_omega(:), &
-                             hirshfeld_v_neigh(:)
+                             hirshfeld_v_neigh(:), rcut_2b, rcut_2b2
 !   Internal variables
     real*8, allocatable :: neighbor_c6_ii(:), r0_ii(:), f_damp(:), neighbor_alpha0(:), T_func(:), h_func(:), g_func(:), &
                            omegas(:), B_mat(:,:), rjs_H(:), xyz_H(:,:), work_arr(:), dT(:), f_damp_der(:), &
@@ -1098,14 +1101,16 @@ module vdw
                            temp_mat(:,:), &
                            ! Eigenvalue stuff
                            AT_copy(:,:), WR(:), WI(:), VL(:,:), VR(:,:), work_mbd(:), VR_inv(:,:), ipiv_mbd(:), &
-                           temp_mat_full(:,:), temp_mat_forces(:,:)
+                           temp_mat_full(:,:), temp_mat_forces(:,:), T_LR_2b(:,:), AT_2b(:,:,:), dT_LR_2b(:,:), &
+                           pol_2b(:,:,:), G_2b(:,:,:)
     real*8 :: a_mbd_i, a_mbd_j, o_mbd_i, da_i, da_j, pol1, E_TS, f_damp_der_2b, dr_vdw_i, &
               dr_vdw_j, forces_TS, dC6_2b, mult1_i, mult1_j, mult2, dmult1_i(1:3), dmult1_j(1:3), dmult2(1:3), hv_p_der, &
               hv_q_der, do_pref, rb, inner_damp_der, rjs_0_i, rcut_force, o_i, o_j, do_i, do_j, T_LR_mult_i, T_LR_mult_j, &
               dT_LR_mult_i, dT_LR_mult_j, dT_LR_mult_0ij_2, dT_LR_mult_0ji_2, a_i, a_j, E_TS_tot, r6_der, ac2, ac3, ac4, &
-              r_buf_ij, log_integral, rcut_tot, sym_integral, rcut_tsscs, r_buf_tsscs
+              r_buf_ij, log_integral, rcut_tot, sym_integral, rcut_tsscs, r_buf_tsscs, rcut_tot_mbd, rcut_force_mbd
               
-    integer :: n_mbd_sites, n_mbd_pairs, n_2b_sites, n_2b_tot_sites, n_2b_tot_pairs, n_ene_sites, n_force_sites
+    integer :: n_mbd_sites, n_mbd_pairs, n_2b_sites, n_2b_tot_sites, n_2b_tot_pairs, n_ene_sites, n_force_sites, n_2b_pairs, &
+               n_mbd_force_sites
     integer, allocatable :: n_mbd_neigh(:), mbd_neighbors_list(:), p_mbd(:), sub_2b_tot_list(:), n_2b_tot_neigh(:), &
                             p_2b_tot(:)
     real*8 :: polyfit(1:15)
@@ -1119,8 +1124,8 @@ module vdw
     integer, allocatable :: ind_nnls(:)
     real*8 :: res_nnls, E_tot, denom
     integer :: mode_nnls
-    logical :: do_total_energy = .true., series_expansion = .false., do_log = .false., cent_appr = .false., lanczos = .false., &
-               do_timing = .true., default_coeff = .true.  ! Finite difference testing purposes
+    logical :: do_total_energy = .true., series_expansion = .false., do_log = .false., cent_appr = .true., lanczos = .false., &
+               do_timing = .false., default_coeff = .false.  ! Finite difference testing purposes
     real*8, allocatable :: b_vec(:), Ab(:), I_mat(:,:), l_vals(:), log_vals(:), lsq_mat(:,:), res_mat(:), log_exp(:,:), &
                            AT_power(:,:), log_integrand(:), AT_power_full(:,:), pol_grad(:,:,:), pol_inv(:,:,:), inv_vals(:), &
                            res_inv(:), lsq_inv(:,:), integrand_pol(:), AT_sym(:,:,:), G_sym(:,:,:), pol_sym(:,:,:), res_sym(:), &
@@ -1136,9 +1141,9 @@ module vdw
     !type(psb_dspmat_type) :: A_sp, A_sp_sym
     !type(psb_d_vect_type) :: x_vec, b_vec
     !integer(psb_lpk_), 
-    integer*8, allocatable :: ia(:), ja(:), ia2(:), ja2(:) !, myidx(:)
+    integer*8, allocatable :: ia(:), ja(:), ia2(:), ja2(:), ia_2b(:), ja_2b(:) !, myidx(:)
     !real(psb_dpk_), 
-    real*8, allocatable :: val(:,:), val2(:), val_sym(:,:) !, val_xv(:,:), b_i(:,:), d_vec(:,:)
+    real*8, allocatable :: val(:,:), val2(:), val_sym(:,:), val_2b(:,:), val_sym_2b(:,:) !, val_xv(:,:), b_i(:,:), d_vec(:,:)
 
 
 !central_pol = 10.d0
@@ -1267,8 +1272,18 @@ r_buf_tsscs = 0.d0
     
     !rcut_mbd2 = 8.d0
 
-    rcut_tot = maxval((/2.d0*rcut_mbd2+rcut_loc,rcut_mbd+rcut_mbd2/))
-    rcut_force = maxval((/rcut_mbd2+rcut_loc,rcut_mbd/))
+!   This assumes that rcut_2b > rcut_mbd because otherwise it does not make sense:
+!   less two-body than higher order interactions
+    if ( rcut_2b < rcut_mbd ) then
+      rcut_2b = rcut_mbd
+    end if
+    if ( rcut_2b2 < rcut_mbd2 ) then
+      rcut_2b2 = rcut_mbd2
+    end if
+    rcut_tot = maxval((/2.d0*rcut_2b2+rcut_loc,rcut_2b+rcut_2b2/))
+    rcut_tot_mbd = maxval((/2.d0*rcut_mbd2+rcut_loc,rcut_mbd+rcut_mbd2/))
+    rcut_force = maxval((/rcut_2b2+rcut_loc,rcut_2b/))
+    rcut_force_mbd = maxval((/rcut_mbd2+rcut_loc,rcut_mbd/))
     !write(*,*) "rcut_tot", rcut_tot
 
     !r_buf_mbd = r_buffer
@@ -1892,20 +1907,30 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
           n_mbd_pairs = 0
           n_force_sites = 0
           !n_ene_sites = 0
+          n_2b_sites = 0
+          !n_2b_pairs = 0
+          n_mbd_force_sites = 0
         
           k_i = 0
           do i3 = 1, n_neigh(i)
             k_i = k_i + 1
             !if (rjs(n_tot+k_i) .le. rcut_mbd ) then
             if (rjs(n_tot+k_i) .le. rcut_tot ) then
-              n_mbd_sites = n_mbd_sites + 1
+              n_2b_sites = n_2b_sites + 1
               n_mbd_pairs = n_mbd_pairs + 1
               if ( rjs(n_tot+k_i) .le. rcut_force ) then
                 n_force_sites = n_force_sites + 1
               end if
-              !if ( rjs(n_tot+k_i) .le. rcut_mbd ) then
-              !  n_ene_sites = n_ene_sites + 1
-              !end if
+              if (rjs(n_tot+k_i) .le. rcut_tot_mbd ) then
+                n_mbd_sites = n_mbd_sites + 1
+                !n_mbd_pairs = n_mbd_pairs + 1
+                if ( rjs(n_tot+k_i) .le. rcut_force_mbd ) then
+                  n_mbd_force_sites = n_mbd_force_sites + 1
+                end if
+                !if ( rjs(n_tot+k_i) .le. rcut_mbd ) then
+                !  n_ene_sites = n_ene_sites + 1
+                !end if
+              end if
               xyz_i = xyz(:,n_tot+k_i)/Bohr
               k_j = 0
               do j3 = 1, n_neigh(i)
@@ -1915,18 +1940,28 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                   if ( rjs(n_tot+k_j) .le. rcut_tot ) then
                     if (i3 .ne. j3) then
                       xyz_j = xyz(:,n_tot+k_j)/Bohr
-                      if ( sqrt(sum((xyz_j-xyz_i)**2)) .le. (rcut_mbd)/Bohr ) then
+                      !if ( sqrt(sum((xyz_j-xyz_i)**2)) .le. (rcut_mbd)/Bohr ) then
+                      !if ( rjs(n_tot+k_i) + rjs(n_tot+k_j) + sqrt(sum((xyz_j-xyz_i)**2))*Bohr .le. 2.d0*rcut_mbd ) then
+                      !  n_mbd_pairs = n_mbd_pairs + 2
+                      !end if
+                     ! end if
+                      if ( sqrt(sum((xyz_j-xyz_i)**2)) .le. (rcut_2b)/Bohr ) then
                       !if ( rjs(n_tot+k_i) + rjs(n_tot+k_j) + sqrt(sum((xyz_j-xyz_i)**2))*Bohr .le. 2.d0*rcut_mbd ) then
                         n_mbd_pairs = n_mbd_pairs + 2
                       end if
                      ! end if
                     end if
-                  end if                
+                  end if
                 else
                   if ( rjs(n_tot+k_j) .le. rcut_tot ) then
                     if (i3 .ne. j3 .and. j3 .ne. 1 ) then
                       xyz_j = xyz(:,n_tot+k_j)/Bohr
-                      if ( sqrt(sum((xyz_j-xyz_i)**2)) .le. (rcut_mbd2)/Bohr ) then
+                      !if ( sqrt(sum((xyz_j-xyz_i)**2)) .le. (rcut_mbd2)/Bohr ) then
+                      !if ( rjs(n_tot+k_i) + rjs(n_tot+k_j) + sqrt(sum((xyz_j-xyz_i)**2))*Bohr .le. 2.d0*rcut_mbd ) then
+                      !  n_mbd_pairs = n_mbd_pairs + 1
+                      !end if
+                     ! end if
+                      if ( sqrt(sum((xyz_j-xyz_i)**2)) .le. (rcut_2b2)/Bohr ) then
                       !if ( rjs(n_tot+k_i) + rjs(n_tot+k_j) + sqrt(sum((xyz_j-xyz_i)**2))*Bohr .le. 2.d0*rcut_mbd ) then
                         n_mbd_pairs = n_mbd_pairs + 1
                       end if
@@ -1938,16 +1973,18 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
             end if
           end do
         
+          write(*,*) "n_mbd_sites, pairs", n_mbd_sites, n_mbd_pairs
+          write(*,*) "n_2b_sites, pairs", n_2b_sites
 end if
 
-          k_i = 0
-          n_2b_sites = 0
-          do j2 = 1, n_neigh(i)
-            k_i = k_i + 1
-            if (rjs(n_tot+k_i) .le. rcut_tsscs .and. rjs(n_tot+k_i) > rcut_mbd-r_buf_mbd) then
-              n_2b_sites = n_2b_sites + 1
-            end if
-          end do
+          !k_i = 0
+          !n_2b_sites = 0
+          !do j2 = 1, n_neigh(i)
+          !  k_i = k_i + 1
+          !  if (rjs(n_tot+k_i) .le. rcut_tsscs .and. rjs(n_tot+k_i) > rcut_mbd-r_buf_mbd) then
+          !    n_2b_sites = n_2b_sites + 1
+          !  end if
+          !end do
 
           !n_order = 4
           !n_freq = 12
@@ -1956,17 +1993,19 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
 
           if ( .not. cent_appr ) then
             allocate( T_LR(1:3*n_mbd_sites,1:3*n_mbd_sites) )
+            allocate( T_LR_2b(1:3*n_2b_sites,1:3) )
           end if
           allocate( r0_ii_SCS(1:n_mbd_pairs) )
           allocate( f_damp_SCS(1:n_mbd_pairs) )
           if ( .not. cent_appr ) then
             allocate( AT(1:3*n_mbd_sites,1:3*n_mbd_sites,1:n_freq) )
+            allocate( AT_2b(1:3*n_2b_sites,1:3,1:n_freq) )
           end if
           !allocate( AT_n(1:3*n_mbd_sites,1:3,n_order-1,1:n_freq) )
           !allocate( energy_series(1:3*n_mbd_sites,1:3) )
           allocate( omegas_mbd(1:n_freq) )
           allocate( integrand(1:n_freq) )
-          allocate( n_mbd_neigh(1:n_mbd_sites) )
+          allocate( n_mbd_neigh(1:n_2b_sites) )
           allocate( mbd_neighbors_list(1:n_mbd_pairs) )
           allocate( p_mbd(1:n_mbd_pairs) )
           allocate( r0_ii_mbd(1:n_mbd_pairs) )
@@ -1984,8 +2023,8 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
           allocate( T_LR_mult_ij(1:n_mbd_pairs) )
           allocate( T_LR_mult_0ij(1:n_mbd_pairs) )
           allocate( T_LR_mult_0ji(1:n_mbd_pairs) )
-          allocate( AT_mult(1:n_mbd_sites) )
-          allocate( E_mult(1:n_mbd_sites) )
+          allocate( AT_mult(1:n_2b_sites) )
+          allocate( E_mult(1:n_2b_sites) )
           hirshfeld_mbd_neigh = 0.d0
           if ( do_derivatives ) then
             allocate( da_mbd(1:n_mbd_pairs) )
@@ -1995,6 +2034,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
             allocate( f_damp_der_SCS(1:n_mbd_pairs) )
             if ( .not. cent_appr ) then
               allocate( dT_LR(1:3*n_mbd_sites,1:3*n_mbd_sites) )
+              allocate( dT_LR_2b(1:3*n_2b_sites,1:3*n_2b_sites) )
             end if
             !allocate( force_series(1:3*n_mbd_sites,1:3*n_mbd_sites) )
             if ( do_total_energy ) then
@@ -2009,27 +2049,36 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
             allocate( dT_LR_mult_0ij(1:n_mbd_pairs) )
             allocate( dT_LR_mult_0ji(1:n_mbd_pairs) )
             allocate( dT_LR_mult_ij0(1:n_mbd_pairs) )
-            allocate( dAT_mult(1:n_mbd_sites) )
-            allocate( dE_mult(1:n_mbd_sites) )
+            allocate( dAT_mult(1:n_2b_sites) )
+            allocate( dE_mult(1:n_2b_sites) )
           end if
           if ( do_derivatives .and. do_hirshfeld_gradients ) then
             allocate( hirshfeld_v_mbd_der(1:3,1:n_mbd_pairs) )
             hirshfeld_v_mbd_der = 0.d0
           end if
-          allocate( ia(1:9*(n_mbd_pairs-n_mbd_sites)) )
-          allocate( ja(1:9*(n_mbd_pairs-n_mbd_sites)) )
-          allocate( val(1:9*(n_mbd_pairs-n_mbd_sites),1:n_freq) )
+          allocate( ia(1:9*(n_mbd_pairs-n_2b_sites)) )
+          allocate( ja(1:9*(n_mbd_pairs-n_2b_sites)) )
+          allocate( val(1:9*(n_mbd_pairs-n_2b_sites),1:n_freq) )
+          allocate( ia_2b(1:9*(n_mbd_pairs-n_2b_sites)) )
+          allocate( ja_2b(1:9*(n_mbd_pairs-n_2b_sites)) )
+          allocate( val_2b(1:9*(n_mbd_pairs-n_2b_sites),1:n_freq) )
           if ( cent_appr ) then
-            allocate( val_sym(1:9*(n_mbd_pairs-n_mbd_sites),1:n_freq) )
+            allocate( val_sym(1:9*(n_mbd_pairs-n_2b_sites),1:n_freq) )
+            allocate( val_sym_2b(1:9*(n_mbd_pairs-n_2b_sites),1:n_freq) )
             allocate( AT_sym(1:3*n_mbd_sites,1:3,1:n_freq) )
+            allocate( AT_2b(1:3*n_2b_sites,1:3,1:n_freq) )
             !allocate( pol_sym(1:3*n_mbd_sites,1:3,1:n_freq) )
             allocate( integrand_sym(1:n_freq) )
             allocate( T_LR_sym(1:3,1:3*n_mbd_sites) )
+            allocate( T_LR_2b(1:3*n_2b_sites,1:3) )
             integrand_sym = 0.d0
             if ( do_derivatives ) then
               allocate( pol_sym(1:3*n_mbd_sites,1:3,1:n_freq) )
+              allocate( pol_2b(1:3*n_2b_sites,1:3,1:n_freq) )
               allocate( dT_LR_sym(1:3,1:3*n_mbd_sites) )
+              allocate( dT_LR_2b(1:3,1:3*n_2b_sites) )
               allocate( G_sym(1:3,1:3*n_mbd_sites,1:n_freq) )
+              allocate( G_2b(1:3,1:3*n_2b_sites,1:n_freq) )
             end if
           end if
 
@@ -2042,18 +2091,18 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
 end if
 
         
-          allocate( sub_2b_list(1:n_2b_sites) )
-          allocate( xyz_2b(1:3,1:n_2b_sites) )
-          allocate( rjs_2b(1:n_2b_sites) )
-          allocate( r0_ii_2b(1:n_2b_sites) )
-          allocate( neighbor_alpha0_2b(1:n_2b_sites) )
-          allocate( hirshfeld_2b_neigh(1:n_2b_sites) )
-          allocate( a_2b(1:n_2b_sites) )
-          allocate( o_2b(1:n_2b_sites) )
-          allocate( r0_ii_SCS_2b(1:n_2b_sites) )
-          allocate( f_damp_SCS_2b(1:n_2b_sites) )
-          allocate( C6_2b(1:n_2b_sites) )
-          allocate( r6_mult(1:n_2b_sites) )
+          !allocate( sub_2b_list(1:n_2b_sites) )
+          !allocate( xyz_2b(1:3,1:n_2b_sites) )
+          !allocate( rjs_2b(1:n_2b_sites) )
+          !allocate( r0_ii_2b(1:n_2b_sites) )
+          !allocate( neighbor_alpha0_2b(1:n_2b_sites) )
+          !allocate( hirshfeld_2b_neigh(1:n_2b_sites) )
+          !allocate( a_2b(1:n_2b_sites) )
+          !allocate( o_2b(1:n_2b_sites) )
+          !allocate( r0_ii_SCS_2b(1:n_2b_sites) )
+          !allocate( f_damp_SCS_2b(1:n_2b_sites) )
+          !allocate( C6_2b(1:n_2b_sites) )
+          !allocate( r6_mult(1:n_2b_sites) )
 
 if ( abs(rcut_tsscs) < 1.d-10 ) then
 
@@ -2172,7 +2221,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
               end if
               a_mbd_i = a_mbd(k2)
               o_mbd_i = o_mbd(k2)
-              T_LR_mult_i = T_LR_mult_0i(k2)
+              !T_LR_mult_i = T_LR_mult_0i(k2)
               r_vdw_i = r0_ii_SCS(k2)
               k_j = 0
               q = 0
@@ -2244,7 +2293,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                         r0_ii_SCS(k2) = r0_ii_mbd(k2)  * (central_pol(j1)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0)
                                               ! * (hirshfeld_mbd_neigh(k2))**(1.d0/3.d0)
                       end if
-                      T_LR_mult_j = T_LR_mult_0j(k2)
+                      !T_LR_mult_j = T_LR_mult_0j(k2)
                       if ( rjs_mbd(k2)*Bohr > rcut_mbd-r_buf_ij &
                           .and. rjs_mbd(k2)*Bohr .le. rcut_mbd ) then
                         rb = (rjs_mbd(k2)*Bohr-rcut_mbd+r_buf_ij)/r_buf_ij
@@ -2266,32 +2315,29 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                             T_mbd(k3) = (3*xyz_mbd(c1,k2) * xyz_mbd(c2,k2))/rjs_mbd(k2)**5
                           end if
                           if ( .not. cent_appr ) then
-                          T_LR(3*(p-1)+c1,3*(q-1)+c2) = f_damp_SCS(k2) * T_mbd(k3) * T_LR_mult_i * T_LR_mult_j &
+                          T_LR(3*(p-1)+c1,3*(q-1)+c2) = f_damp_SCS(k2) * T_mbd(k3) & !T_LR_mult_i * T_LR_mult_j &
                                                         * T_LR_mult_ij(k2)
-                          T_LR(3*(q-1)+c1,3*(p-1)+c2) = f_damp_SCS(k2) * T_mbd(k3) * T_LR_mult_i * T_LR_mult_j &
+                          T_LR(3*(q-1)+c1,3*(p-1)+c2) = f_damp_SCS(k2) * T_mbd(k3) & !T_LR_mult_i * T_LR_mult_j &
                                                         * T_LR_mult_ij(k2)
                           end if
                           if ( cent_appr ) then
-                          T_LR_sym(3*(p-1)+c1,3*(q-1)+c2) = f_damp_SCS(k2) * T_mbd(k3) * T_LR_mult_i * T_LR_mult_j &
+                          T_LR_sym(3*(p-1)+c1,3*(q-1)+c2) = f_damp_SCS(k2) * T_mbd(k3) & !T_LR_mult_i * T_LR_mult_j &
                                                         * T_LR_mult_ij(k2)
                           end if
-                          if ( abs(f_damp_SCS(k2) * T_mbd(k3) * T_LR_mult_i * T_LR_mult_j &
+                          if ( abs(f_damp_SCS(k2) * T_mbd(k3) & !T_LR_mult_i * T_LR_mult_j &
                                                         * T_LR_mult_ij(k2)) > 1.d-20 ) then
                             k4 = k4 + 1
                             ia(k4) = 3*(p-1)+c1
                             ja(k4) = 3*(q-1)+c2
-                            val(k4,1) = sqrt(a_mbd_i) * sqrt(a_mbd(k2)) * &
-                                              f_damp_SCS(k2) * T_mbd(k3) * T_LR_mult_i * T_LR_mult_j &
+                            val(k4,1) = a_mbd_i * f_damp_SCS(k2) * T_mbd(k3) & !T_LR_mult_i * T_LR_mult_j &
                                                         * T_LR_mult_ij(k2)
                             if ( cent_appr ) then
                               val_sym(k4,1) = sqrt(a_mbd_i) * sqrt(a_mbd(k2)) * &
-                                              f_damp_SCS(k2) * T_mbd(k3) * T_LR_mult_i * T_LR_mult_j &
+                                              f_damp_SCS(k2) * T_mbd(k3) & !T_LR_mult_i * T_LR_mult_j &
                                                         * T_LR_mult_ij(k2)
                             end if
                             do i_om = 2, n_freq
-                              val(k4,i_om) = sqrt(1.d0/(1.d0+(omegas_mbd(i_om)/o_mbd_i)**2)) * &
-                                                   sqrt(1.d0/(1.d0+(omegas_mbd(i_om)/o_mbd(k2))**2)) * &
-                                                   val(k4,1)
+                              val(k4,i_om) = 1.d0/(1.d0+(omegas_mbd(i_om)/o_mbd_i)**2) * val(k4,1)
                               if ( cent_appr ) then
                                 val_sym(k4,i_om) = sqrt(1.d0/(1.d0+(omegas_mbd(i_om)/o_mbd_i)**2)) * &
                                                    sqrt(1.d0/(1.d0+(omegas_mbd(i_om)/o_mbd(k2))**2)) * &
@@ -2299,23 +2345,20 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                               end if
                             end do 
                           end if
-                          if ( abs(f_damp_SCS(k2) * T_mbd(k3) * T_LR_mult_i * T_LR_mult_j &
-                                                        * T_LR_mult_ij(k2)) > 1.d-20 ) then
+                          if ( abs(f_damp_SCS(k2) * T_mbd(k3) & !T_LR_mult_i * T_LR_mult_j &
+                                                        * T_LR_mult_ij(k2)) > 1.d-20 ) then  ! Symmetric equivalent
                             k4 = k4 + 1
-                            ia(k4) = 3*(q-1)+c1
+                            ia(k4) = 3*(q-1)+c1 ! Switch p and q from previous if statement
                             ja(k4) = 3*(p-1)+c2
-                            val(k4,1) = sqrt(a_mbd_i) * sqrt(a_mbd(k2)) * &
-                                              f_damp_SCS(k2) * T_mbd(k3) * T_LR_mult_i * T_LR_mult_j &
+                            val(k4,1) = a_mbd(k2) * f_damp_SCS(k2) * T_mbd(k3) & !T_LR_mult_i * T_LR_mult_j &
                                                         * T_LR_mult_ij(k2)
                             if ( cent_appr ) then
                               val_sym(k4,1) = sqrt(a_mbd_i) * sqrt(a_mbd(k2)) * &
-                                              f_damp_SCS(k2) * T_mbd(k3) * T_LR_mult_i * T_LR_mult_j &
+                                              f_damp_SCS(k2) * T_mbd(k3) & !T_LR_mult_i * T_LR_mult_j &
                                                         * T_LR_mult_ij(k2)
                             end if
                             do i_om = 2, n_freq
-                              val(k4,i_om) = sqrt(1.d0/(1.d0+(omegas_mbd(i_om)/o_mbd_i)**2)) * &
-                                                   sqrt(1.d0/(1.d0+(omegas_mbd(i_om)/o_mbd(k2))**2)) * &
-                                                   val(k4,1)
+                              val(k4,i_om) = 1.d0/(1.d0+(omegas_mbd(i_om)/o_mbd(k2))**2) * val(k4,1)
                               if ( cent_appr ) then
                                 val_sym(k4,i_om) = sqrt(1.d0/(1.d0+(omegas_mbd(i_om)/o_mbd_i)**2)) * &
                                                    sqrt(1.d0/(1.d0+(omegas_mbd(i_om)/o_mbd(k2))**2)) * &
@@ -2427,8 +2470,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                             k4 = k4 + 1
                             ia(k4) = 3*(p-1)+c1
                             ja(k4) = 3*(q-1)+c2
-                            val(k4,1) = sqrt(a_mbd_i) * sqrt(a_mbd(k2)) * &
-                                               f_damp_SCS(k2) * T_mbd(k3) * T_LR_mult_i * T_LR_mult_j &
+                            val(k4,1) = a_mbd_i * f_damp_SCS(k2) * T_mbd(k3) * T_LR_mult_i * T_LR_mult_j &
                                                         * T_LR_mult_ij(k2)
                             if ( cent_appr ) then
                               val_sym(k4,1) = sqrt(a_mbd_i) * sqrt(a_mbd(k2)) * &
@@ -2436,9 +2478,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                                                         * T_LR_mult_ij(k2)
                             end if
                             do i_om = 2, n_freq
-                              val(k4,i_om) = sqrt(1.d0/(1.d0+(omegas_mbd(i_om)/o_mbd_i)**2)) * &
-                                                   sqrt(1.d0/(1.d0+(omegas_mbd(i_om)/o_mbd(k2))**2)) * &
-                                                   val(k4,1)
+                              val(k4,i_om) = 1.d0/(1.d0+(omegas_mbd(i_om)/o_mbd_i)**2) * val(k4,1)
                               if ( cent_appr ) then
                                 val_sym(k4,i_om) = sqrt(1.d0/(1.d0+(omegas_mbd(i_om)/o_mbd_i)**2)) * &
                                                    sqrt(1.d0/(1.d0+(omegas_mbd(i_om)/o_mbd(k2))**2)) * &
@@ -2619,12 +2659,9 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
             k3 = 0
             do p = 1, n_mbd_sites
               if ( .not. cent_appr ) then
-              !AT(3*(p-1)+1:3*(p-1)+3,:,i2) = a_mbd(k3+1)/(1.d0+(omegas_mbd(i2)/o_mbd(k3+1))**2) &        ! First two lines only: non-symmetric working correctly
-              !                               * T_LR(3*(p-1)+1:3*(p-1)+3,:)
-                AT(3*(p-1)+1:3*(p-1)+3,:,i2) = sqrt( a_mbd(k3+1)/(1.d0+(omegas_mbd(i2)/o_mbd(k3+1))**2) ) &
-                                               * T_LR(3*(p-1)+1:3*(p-1)+3,:)
-              !  AT(:,3*(p-1)+1:3*(p-1)+3,i2) = sqrt( a_mbd(k3+1)/(1.d0+(omegas_mbd(i2)/o_mbd(k3+1))**2) ) &
-              !                                 * AT(:,3*(p-1)+1:3*(p-1)+3,i2)
+              AT(3*(p-1)+1:3*(p-1)+3,:,i2) = a_mbd(k3+1)/(1.d0+(omegas_mbd(i2)/o_mbd(k3+1))**2) &
+                                             * T_LR(3*(p-1)+1:3*(p-1)+3,:)
+                                             ! * AT_mult(p)
               end if
               if ( cent_appr ) then
                 AT_sym(3*(p-1)+1:3*(p-1)+3,:,i2) = sqrt( a_mbd(k3+1)/(1.d0+(omegas_mbd(i2)/o_mbd(k3+1))**2) ) * &
@@ -2634,16 +2671,6 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 k3 = k3 + n_mbd_neigh(p)
               end if
             end do
-            if ( .not. cent_appr ) then
-              k3 = 0
-              do p = 1, n_mbd_sites
-                AT(:,3*(p-1)+1:3*(p-1)+3,i2) = sqrt( a_mbd(k3+1)/(1.d0+(omegas_mbd(i2)/o_mbd(k3+1))**2) ) &
-                                               * AT(:,3*(p-1)+1:3*(p-1)+3,i2)
-                if ( p .ne. n_mbd_sites ) then
-                  k3 = k3 + n_mbd_neigh(p)
-                end if
-              end do
-            end if
 
           end do
           
@@ -2839,10 +2866,8 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
             do i2 = 1, n_freq
               !if ( i2 == 1 ) then
               if ( .not. cent_appr ) then
-                write(*,*) "what1"
                 if ( default_coeff ) then
                   res_mat(1) = 0.d0
-                  !res_mat(2) = 0.d0
                   do k2 = 2, n_order+1
                     res_mat(k2) = -1.d0/(k2-1) 
                   end do
@@ -2943,7 +2968,6 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                   !write(*,*) "dgesv timing", time2-time1
                 end if
                 end if
-                write(*,*) "what2"
               end if
               if ( cent_appr ) then
                 if ( default_coeff ) then
@@ -3058,7 +3082,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 end do
                 call cpu_time(time5)
                 call dgesv( n_order+1, 1, lsq_mat, n_order+1, ipiv_lsq, res_sym, n_order+1, info )
-                !write(*,*) "coeff", res_sym
+                write(*,*) "coeff", res_sym
                 call cpu_time(time6)
                 if ( do_timing ) then
                   write(*,*) "dgesv timing", time6-time5
@@ -3080,7 +3104,6 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
               end if !cent_appr
               !end if ! if ( i2 == 1 ) then
               if ( .not. cent_appr ) then
-              write(*,*) "what3"
               do c1 = 1, 3
                 integrand(i2) = integrand(i2) + res_mat(1) + res_mat(2)*AT(c1,c1,i2)
               end do
@@ -3117,11 +3140,9 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 !write(*,*) "init timing", time2-time1
                 !end if
               end if
-              write(*,*) "what4"
               end if !.not. cent_appr
               if ( n_order > 2 ) then
               do k2 = 3, n_order
-                write(*,*) "what5"
                 if (.not. cent_appr ) then
                 !write(*,*) "i2, k2", i2, k2
                 !call dgemm('N', 'N', 3, 3*n_mbd_sites, 3*n_mbd_sites, 1.d0, AT_power, &
@@ -3149,7 +3170,6 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 !  integrand(i2) = integrand(i2) + res_mat(k2)*AT_power(c1,c1)
                 !end do
                 end if ! .not. cent_appr
-                write(*,*) "what6"
                 if ( cent_appr ) then
                   call cpu_time(time5)
                   !call psb_spmm(1.d0, A_sp_sym, AT_sym_power, 0.d0, temp_mat, desc_a, info_psb, 'N')
@@ -3170,7 +3190,6 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                   end if
                 end if
                 if (.not. cent_appr) then
-                write(*,*) "what7"
                 if ( do_derivatives ) then
                   !call cpu_time(time5)
                   !call dgemm('N', 'N', 3*n_mbd_sites, 3*n_force_sites, 3*n_mbd_sites, 1.d0, &
@@ -3183,7 +3202,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                     if ( rjs_0_mbd(k3+1) .le. (rcut_force)/Bohr ) then
                       q = q + 1
                       do c1 = 1, 3
-                        call sparse_mul(val(1:nnz,i2), AT_power_full(:,3*(q-1)+c1), &
+                        call sparse_mul(val(1:nnz,i2), AT_power_full(:,3*(p-1)+c1), &
                                     3*n_mbd_sites, ia(1:nnz), ja(1:nnz), &
                                     temp_mat_forces(:,3*(q-1)+c1))
                       end do
@@ -3214,7 +3233,6 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                     end do
                   end if
                 end if
-                write(*,*) "what8"
                 end if !.not. cent_appr
               end do
               if ( cent_appr ) then
@@ -3224,7 +3242,6 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 end do
               end if
               if ( .not. cent_appr ) then
-              write(*,*) "what9"
               if ( do_derivatives ) then
                 !call cpu_time(time1)
                 !call dgemm('N', 'N', 3*n_mbd_sites, 3*n_force_sites, 3*n_mbd_sites, 1.d0, &
@@ -3237,7 +3254,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                     if ( rjs_0_mbd(k3+1) .le. (rcut_force)/Bohr ) then
                       q = q + 1
                       do c1 = 1, 3
-                        call sparse_mul(val(1:nnz,i2), AT_power_full(:,3*(q-1)+c1), &
+                        call sparse_mul(val(1:nnz,i2), AT_power_full(:,3*(p-1)+c1), &
                                     3*n_mbd_sites, ia(1:nnz), ja(1:nnz), &
                                     temp_mat_forces(:,3*(q-1)+c1))
                       end do
@@ -3276,7 +3293,6 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                   end do
                 end if
               end if
-              write(*,*) "what10"
               end if !.not. cent_appr
               else ! n_order = 2
                 if ( cent_appr ) then
@@ -4985,10 +5001,6 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
 
               if ( .not. cent_appr ) then        
               allocate( G_mat(1:3*n_mbd_sites,1:3*n_mbd_sites,1:n_freq) )
-              allocate( temp_mat(1:3*n_mbd_sites,1:3*n_mbd_sites) )
-              allocate( temp_mat_forces(1:3*n_mbd_sites,1:3*n_mbd_sites) )
-              !temp_mat = 0.d0
-              !temp_mat_forces = 0.d0
 
               G_mat = 0.d0
               end if
@@ -4999,10 +5011,6 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
 
               !write(*,*) "AT_mult"
               do j = 1, n_freq
-                if ( .not. cent_appr ) then
-                  temp_mat = 0.d0
-                  temp_mat_forces = 0.d0
-                end if
                 k3 = 0
                 if ( cent_appr ) then
                   G_sym(:,:,j) = 1.d0/2.d0 * 1.d0/sqrt(a_mbd(1)/(1.d0+(omegas_mbd(j)/o_mbd(1))**2)) * &
@@ -5015,25 +5023,16 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 do p = 1, n_mbd_sites
                   !if ( rjs_0_mbd(k3+1) .le. (rcut_mbd2+rcut_loc)/Bohr ) then
                   if ( rjs_0_mbd(k3+1) .le. (rcut_force)/Bohr ) then
-                    !i2 = mbd_neighbors_list(k3+1)
+                    i2 = mbd_neighbors_list(k3+1)
                     if ( .not. cent_appr ) then
-                      !G_mat(3*(p-1)+1:3*(p-1)+3,:,j) = G_mat(3*(p-1)+1:3*(p-1)+3,:,j) + &
-                      !  a_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) * &
-                      !  dT_LR(3*(p-1)+1:3*(p-1)+3,:) + &
-                      !  da_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) * &
-                      !  T_LR(3*(p-1)+1:3*(p-1)+3,:) + &
-                      !  a_mbd(k3+1) * (2.d0 * omegas_mbd(j)**2 * o_mbd(k3+1)) * &
-                      !  do_mbd(k3+1) / ( o_mbd(k3+1)**2 + omegas_mbd(j)**2 )**2 * &
-                      !  T_LR(3*(p-1)+1:3*(p-1)+3,:)
-                      temp_mat(3*(p-1)+1:3*(p-1)+3,:) = 1.d0/2.d0 * &
-                        1.d0/sqrt(a_mbd(k3+1)/(1.d0+(omegas_mbd(j)/o_mbd(k3+1))**2)) * &
-                        ( da_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) + &
-                        a_mbd(k3+1) * (2.d0 * omegas_mbd(j)**2 * o_mbd(k3+1)) * &
-                        do_mbd(k3+1) / ( o_mbd(k3+1)**2 + omegas_mbd(j)**2 )**2 ) * T_LR(3*(p-1)+1:3*(p-1)+3,:)
-                      temp_mat_forces(3*(p-1)+1:3*(p-1)+3,:) = sqrt( a_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) ) * &
-                        T_LR(3*(p-1)+1:3*(p-1)+3,:)
-                      G_mat(3*(p-1)+1:3*(p-1)+3,:,j) = sqrt( a_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) ) * &
-                        dT_LR(3*(p-1)+1:3*(p-1)+3,:)
+                    G_mat(3*(p-1)+1:3*(p-1)+3,:,j) = G_mat(3*(p-1)+1:3*(p-1)+3,:,j) + &
+                      a_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) * &
+                      dT_LR(3*(p-1)+1:3*(p-1)+3,:) + &
+                      da_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) * &
+                      T_LR(3*(p-1)+1:3*(p-1)+3,:) + &
+                      a_mbd(k3+1) * (2.d0 * omegas_mbd(j)**2 * o_mbd(k3+1)) * &
+                      do_mbd(k3+1) / ( o_mbd(k3+1)**2 + omegas_mbd(j)**2 )**2 * &
+                      T_LR(3*(p-1)+1:3*(p-1)+3,:)
                     end if
                     if ( cent_appr ) then
                       G_sym(:,3*(p-1)+1:3*(p-1)+3,j) = G_sym(:,3*(p-1)+1:3*(p-1)+3,j) * &
@@ -5050,41 +5049,17 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                     k3 = k3+n_mbd_neigh(p)
                   end if
                 end do
-                if ( .not. cent_appr ) then
-                  k3 = 0
-                  do p = 1, n_mbd_sites
-                    if ( rjs_0_mbd(k3+1) .le. (rcut_force)/Bohr ) then
-                      temp_mat(:,3*(p-1)+1:3*(p-1)+3) = sqrt( a_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) ) * &
-                        temp_mat(:,3*(p-1)+1:3*(p-1)+3)
-                      temp_mat_forces(:,3*(p-1)+1:3*(p-1)+3) = 1.d0/2.d0 * &
-                        1.d0/sqrt(a_mbd(k3+1)/(1.d0+(omegas_mbd(j)/o_mbd(k3+1))**2)) * &
-                        ( da_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) + &
-                        a_mbd(k3+1) * (2.d0 * omegas_mbd(j)**2 * o_mbd(k3+1)) * &
-                        do_mbd(k3+1) / ( o_mbd(k3+1)**2 + omegas_mbd(j)**2 )**2 ) * temp_mat_forces(:,3*(p-1)+1:3*(p-1)+3)
-                      G_mat(:,3*(p-1)+1:3*(p-1)+3,j) = sqrt( a_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) ) * &
-                        G_mat(:,3*(p-1)+1:3*(p-1)+3,j)
-                    end if
-                    if ( p .ne. n_mbd_sites ) then
-                      k3 = k3+n_mbd_neigh(p)
-                    end if
-                  end do
-                end if
-                G_mat(:,:,j) = G_mat(:,:,j) + temp_mat + temp_mat_forces
               end do
-
-              if ( .not. cent_appr ) then
-              deallocate( temp_mat, temp_mat_forces )
-              end if
 
               integrand = 0.d0
 
               if ( .false. ) then
 
               write(*,*) "G_mat"
-              !open(unit=89, file="G_mat.dat", status="new")
-              open(unit=89, file="pol_grad.dat", status="new")
+              open(unit=89, file="G_mat.dat", status="new")
+              !open(unit=79, file="G_sym.dat", status="new")
               do p = 1, 3*n_mbd_sites
-                write(89,*) pol_grad(p,:,1)
+                write(89,*) G_mat(p,:,1)
               end do
               !do p = 1, 3
               !  write(79,*) G_sym(p,:,1)
@@ -5403,8 +5378,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                   integral = 0.d0
                   !write(*,*) "integrand pol", integrand_pol
                   call integrate("trapezoidal", omegas_mbd, integrand_pol, omegas_mbd(1), omegas_mbd(n_freq), integral)
-                  write(*,*) "integrand_pol", integrand_pol
-                  write(*,*) "Polynomial derivative force" 
+                  !write(*,*) "Polynomial derivative force", 
                   write(*,*) i, c3, integral/(2.d0*pi) * Hartree/Bohr
                   integral = 0.d0
                   call integrate("trapezoidal", omegas_mbd, integrand, omegas_mbd(1), omegas_mbd(n_freq), integral)
@@ -5414,8 +5388,8 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                   if ( cent_appr ) then
                     sym_integral = 0.d0
                     call integrate("trapezoidal", omegas_mbd, integrand_sym, omegas_mbd(1), omegas_mbd(n_freq), sym_integral)
-                    write(*,*) "Sym force" 
-                    write(*,*) i, c3, sym_integral/pi * Hartree/Bohr
+                    !write(*,*) "Sym force", 
+                    !write(*,*) i, c3, sym_integral/pi * Hartree/Bohr
                   end if
                 end if
                 if ( .not. cent_appr ) then
@@ -5447,10 +5421,10 @@ end if
         end if ! do_derivatives
       
       
-        if ( om == 2 ) then
-          deallocate( sub_2b_list, xyz_2b, rjs_2b, r0_ii_2b, neighbor_alpha0_2b, &
-                      hirshfeld_2b_neigh, a_2b, o_2b, r0_ii_SCS_2b, f_damp_SCS_2b, C6_2b, r6_mult )
-        end if
+        !if ( om == 2 ) then
+          !deallocate( sub_2b_list, xyz_2b, rjs_2b, r0_ii_2b, neighbor_alpha0_2b, &
+           !           hirshfeld_2b_neigh, a_2b, o_2b, r0_ii_SCS_2b, f_damp_SCS_2b, C6_2b, r6_mult )
+        !end if
 
       
 if ( abs(rcut_tsscs) < 1.d-10 ) then  
@@ -5459,14 +5433,14 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                       mbd_neighbors_list, p_mbd, r0_ii_mbd, neighbor_alpha0_mbd, xyz_mbd, rjs_mbd, T_mbd, a_mbd, &
                       rjs_0_mbd, xyz_0_mbd, o_mbd, hirshfeld_mbd_neigh, &
                       T_LR_mult_0i, T_LR_mult_0j, T_LR_mult_ij, T_LR_mult_0ij, T_LR_mult_0ji, AT_mult, E_mult, &
-                      ia, ja, val )
+                      ia, ja, val, ia_2b, ja_2b, val_2b, T_LR_2b )
           if ( .not. cent_appr ) then
-            deallocate( T_LR, AT )
+            deallocate( T_LR, AT, AT_2b )
           end if
           if ( cent_appr ) then
-            deallocate( AT_sym, T_LR_sym, val_sym, integrand_sym )
+            deallocate( AT_sym, T_LR_sym, val_sym, integrand_sym, val_sym_2b, AT_2b )
             if ( do_derivatives ) then
-              deallocate( G_sym, dT_LR_sym )
+              deallocate( G_sym, dT_LR_sym, dT_LR_2b, G_2b, pol_2b )
             end if
           end if
           !deallocate( AT_n, energy_series )
@@ -5477,7 +5451,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                       do_mbd, dr0_ii_SCS, dT_LR_mult_0i, dT_LR_mult_0j,&
                       dT_LR_mult_ij, dT_LR_mult_0ij, dT_LR_mult_0ji, dT_LR_mult_ij0, dAT_mult, dE_mult )
           if ( .not. cent_appr ) then
-            deallocate( dT_LR )
+            deallocate( dT_LR, dT_LR_2b )
           end if
           !deallocate( AT_n_f, force_series )
           if ( do_total_energy ) then
