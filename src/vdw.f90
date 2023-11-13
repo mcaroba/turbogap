@@ -1270,6 +1270,7 @@ r_buf_tsscs = 0.d0
     rcut_tot = maxval((/2.d0*rcut_mbd2+rcut_loc,rcut_mbd+rcut_mbd2/))
     rcut_force = maxval((/rcut_mbd2+rcut_loc,rcut_mbd/))
     !write(*,*) "rcut_tot", rcut_tot
+    !rcut_force = rcut_tot
 
     !r_buf_mbd = r_buffer
     r_buf_mbd = r_buffer
@@ -2067,6 +2068,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
           do i2 = 1, n_freq
             omegas_mbd(i2) = (i2-1)**2 * omega/(n_freq-1)**2
           end do
+          write(*,*) "omegas_mbd", omegas_mbd
 
           if ( .not. cent_appr ) then
             T_LR = 0.d0
@@ -2656,11 +2658,11 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
           !write(*,*) "n_mbd_sites", n_mbd_sites
 
           if ( .false. ) then
-            open(unit=89, file="AT.dat", status="new")
+            open(unit=89, file="AT_sym.dat", status="new")
 
             write(*,*) "AT"
             do p = 1, 3*n_mbd_sites
-              write(89,*) AT(p,:,1)
+              write(89,*) AT_sym(p,:,1)
             end do
             close(89)
             write(*,*) "AT done"
@@ -2839,7 +2841,6 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
             do i2 = 1, n_freq
               !if ( i2 == 1 ) then
               if ( .not. cent_appr ) then
-                write(*,*) "what1"
                 if ( default_coeff ) then
                   res_mat(1) = 0.d0
                   !res_mat(2) = 0.d0
@@ -2943,7 +2944,6 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                   !write(*,*) "dgesv timing", time2-time1
                 end if
                 end if
-                write(*,*) "what2"
               end if
               if ( cent_appr ) then
                 if ( default_coeff ) then
@@ -3080,7 +3080,6 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
               end if !cent_appr
               !end if ! if ( i2 == 1 ) then
               if ( .not. cent_appr ) then
-              write(*,*) "what3"
               do c1 = 1, 3
                 integrand(i2) = integrand(i2) + res_mat(1) + res_mat(2)*AT(c1,c1,i2)
               end do
@@ -3117,11 +3116,9 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 !write(*,*) "init timing", time2-time1
                 !end if
               end if
-              write(*,*) "what4"
               end if !.not. cent_appr
               if ( n_order > 2 ) then
               do k2 = 3, n_order
-                write(*,*) "what5"
                 if (.not. cent_appr ) then
                 !write(*,*) "i2, k2", i2, k2
                 !call dgemm('N', 'N', 3, 3*n_mbd_sites, 3*n_mbd_sites, 1.d0, AT_power, &
@@ -3149,7 +3146,6 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 !  integrand(i2) = integrand(i2) + res_mat(k2)*AT_power(c1,c1)
                 !end do
                 end if ! .not. cent_appr
-                write(*,*) "what6"
                 if ( cent_appr ) then
                   call cpu_time(time5)
                   !call psb_spmm(1.d0, A_sp_sym, AT_sym_power, 0.d0, temp_mat, desc_a, info_psb, 'N')
@@ -3170,7 +3166,6 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                   end if
                 end if
                 if (.not. cent_appr) then
-                write(*,*) "what7"
                 if ( do_derivatives ) then
                   !call cpu_time(time5)
                   !call dgemm('N', 'N', 3*n_mbd_sites, 3*n_force_sites, 3*n_mbd_sites, 1.d0, &
@@ -3214,7 +3209,6 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                     end do
                   end if
                 end if
-                write(*,*) "what8"
                 end if !.not. cent_appr
               end do
               if ( cent_appr ) then
@@ -3224,7 +3218,6 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 end do
               end if
               if ( .not. cent_appr ) then
-              write(*,*) "what9"
               if ( do_derivatives ) then
                 !call cpu_time(time1)
                 !call dgemm('N', 'N', 3*n_mbd_sites, 3*n_force_sites, 3*n_mbd_sites, 1.d0, &
@@ -3276,7 +3269,6 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                   end do
                 end if
               end if
-              write(*,*) "what10"
               end if !.not. cent_appr
               else ! n_order = 2
                 if ( cent_appr ) then
@@ -5014,7 +5006,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 dAT_mult = 0.d0
                 do p = 1, n_mbd_sites
                   !if ( rjs_0_mbd(k3+1) .le. (rcut_mbd2+rcut_loc)/Bohr ) then
-                  if ( rjs_0_mbd(k3+1) .le. (rcut_force)/Bohr ) then
+                  !if ( rjs_0_mbd(k3+1) .le. (rcut_force)/Bohr ) then
                     !i2 = mbd_neighbors_list(k3+1)
                     if ( .not. cent_appr ) then
                       !G_mat(3*(p-1)+1:3*(p-1)+3,:,j) = G_mat(3*(p-1)+1:3*(p-1)+3,:,j) + &
@@ -5045,7 +5037,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                         T_LR_sym(1:3,3*(p-1)+1:3*(p-1)+3) * &
                         sqrt( a_mbd(1)/(1.d0 + (omegas_mbd(j)/o_mbd(1))**2) )
                     end if
-                  end if
+                  !end if
                   if ( p .ne. n_mbd_sites ) then
                     k3 = k3+n_mbd_neigh(p)
                   end if
@@ -5053,7 +5045,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 if ( .not. cent_appr ) then
                   k3 = 0
                   do p = 1, n_mbd_sites
-                    if ( rjs_0_mbd(k3+1) .le. (rcut_force)/Bohr ) then
+                    !if ( rjs_0_mbd(k3+1) .le. (rcut_force)/Bohr ) then
                       temp_mat(:,3*(p-1)+1:3*(p-1)+3) = sqrt( a_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) ) * &
                         temp_mat(:,3*(p-1)+1:3*(p-1)+3)
                       temp_mat_forces(:,3*(p-1)+1:3*(p-1)+3) = 1.d0/2.d0 * &
@@ -5063,7 +5055,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                         do_mbd(k3+1) / ( o_mbd(k3+1)**2 + omegas_mbd(j)**2 )**2 ) * temp_mat_forces(:,3*(p-1)+1:3*(p-1)+3)
                       G_mat(:,3*(p-1)+1:3*(p-1)+3,j) = sqrt( a_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) ) * &
                         G_mat(:,3*(p-1)+1:3*(p-1)+3,j)
-                    end if
+                    !end if
                     if ( p .ne. n_mbd_sites ) then
                       k3 = k3+n_mbd_neigh(p)
                     end if
@@ -5082,9 +5074,9 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
 
               write(*,*) "G_mat"
               !open(unit=89, file="G_mat.dat", status="new")
-              open(unit=89, file="pol_grad.dat", status="new")
-              do p = 1, 3*n_mbd_sites
-                write(89,*) pol_grad(p,:,1)
+              open(unit=89, file="G_sym.dat", status="new")
+              do p = 1, 3 !*n_mbd_sites
+                write(89,*) G_sym(p,:,1)
               end do
               !do p = 1, 3
               !  write(79,*) G_sym(p,:,1)
@@ -5274,8 +5266,16 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                       q = q + 1
                       do c1 = 1, 3
                         integrand_pol(i2) = integrand_pol(i2) + dot_product(G_mat(3*(p-1)+c1,:,i2), pol_grad(:,3*(q-1)+c1,i2))
+                        !if ( p == 1 ) then
+                        !integrand_pol(i2) = integrand_pol(i2) + dot_product(dT_LR(3*(p-1)+c1,:), AT(:,3*(p-1)+c1,i2))
+                        !end if
                         integrand(i2) = integrand(i2) + dot_product(G_mat(3*(p-1)+c1,:,i2), pol_inv(:,3*(q-1)+c1,i2))
                       end do
+                    !else
+                    !  write(*,*) "G_mat"
+                    !  do c1 = 1, 3
+                    !    write(*,*) G_mat(3*(p-1)+c1,:,i2)
+                    !  end do
                     end if
                     k3 = k3 + n_mbd_neigh(p)
                   end do
