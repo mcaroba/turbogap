@@ -195,20 +195,20 @@ contains
 
 
 
-  subroutine get_mc_move(n_sites, n_mc_species, mc_types, mc_move, acceptance,&
+  subroutine get_mc_move(n_sites, n_mc_mu, n_mc_species, mc_types, mc_move, acceptance,&
        & n_spec_swap_1, n_spec_swap_2, species_types, n_mc_swaps,&
-       & mc_swaps_id, species, swap_id_1, swap_id_2, swap_species_1, swap_species_2)
+       & mc_swaps_id, species, swap_id_1, swap_id_2, swap_species_1, swap_species_2, mc_mu_id)
     implicit none
 
-    integer, intent(in) :: n_sites, n_mc_species
+    integer, intent(in) :: n_sites, n_mc_mu
     integer :: n_mc, i
     character*32, intent(in) ::  mc_types(:)
     character*32, intent(out) :: mc_move
     real*8 :: ranf, acceptance(:), k
     logical :: invalid_move, cant_remove, cant_swap=.false.
     integer, intent(inout) :: n_spec_swap_1, n_spec_swap_2,&
-         & n_mc_swaps, swap_id_1, swap_id_2
-    integer, allocatable, intent(inout) :: species(:), mc_swaps_id(:)
+         & n_mc_swaps, swap_id_1, swap_id_2, mc_mu_id
+    integer, allocatable, intent(inout) :: species(:), mc_swaps_id(:), n_mc_species(:)
     character*8, allocatable :: species_types(:)
     character*8, intent(inout) :: swap_species_1, swap_species_2
 
@@ -238,8 +238,18 @@ contains
           cant_swap = (n_spec_swap_1 < 1 .or. n_spec_swap_2 < 1)
        end if
 
-! If there are none of the gc species to remove, then we can't remove!!
-       cant_remove =  (n_mc_species == 0 .and. mc_move == "removal" )
+       ! If there are none of the gc species to remove, then we can't remove!!
+       ! > First one must choose which one of the species to
+       call random_number(ranf)
+       k = 0.d0
+       do i = 1, n_mc_mu
+          mc_mu_id = i
+          k = k + 1.0 / dfloat(n_mc_mu)
+          if( ranf < k )then
+             exit
+          end if
+       end do
+       cant_remove =  (n_mc_species(mc_mu_id) == 0 .and. mc_move == "removal" )
 
        ! Also, if it is a swap and there are no species to swap
        if(cant_remove .or. cant_swap)then
@@ -361,7 +371,7 @@ contains
        & positions, species, xyz_species, masses, fix_atom,&
        & velocities, positions_prev, positions_diff, disp, d_disp,&
        & mc_acceptance, hirshfeld_v, im_hirshfeld_v, energies,&
-       & forces, forces_prev, n_sites, n_mc_species, mc_move, mc_species,&
+       & forces, forces_prev, n_sites, n_mc_mu, mc_mu_id, n_mc_species, mc_move, mc_species,&
        & mc_move_max, mc_min_dist, ln_vol_max, mc_types, masses_types,&
        & species_idx, im_pos, im_species, im_xyz_species, im_fix_atom&
        &, im_masses, a_box, b_box, c_box, indices, do_md, mc_relax,&
@@ -380,16 +390,16 @@ contains
     real*8, intent(inout) :: disp(1:3), mc_min_dist, d_disp,&
          & E_kinetic, instant_temp, t_beg
 
-    integer, intent(inout) :: n_mc_species, n_sites, md_istep, mc_id, n_mc_swaps, n_mc_relax_after
-    integer, allocatable, intent(inout) :: species(:), mc_swaps_id(:)
+    integer, intent(inout) :: n_sites, md_istep,  n_mc_swaps, n_mc_relax_after, n_mc_mu, mc_mu_id
+    integer, allocatable, intent(inout) :: species(:), mc_swaps_id(:), n_mc_species(:), mc_id(:)
     integer, allocatable, intent(in) ::  im_species(:)
     character*8, allocatable, intent(inout) :: species_types(:),&
-         & xyz_species(:),  mc_swaps(:)
+         & xyz_species(:),  mc_swaps(:), mc_species(:)
     character*8, allocatable, intent(in) :: im_xyz_species(:)
-    character*32, intent(inout) :: mc_move, mc_species
+    character*32, intent(inout) :: mc_move
     character*8 ::  swap_species_1, swap_species_2
     character*32, allocatable, intent(in) ::  mc_types(:), mc_relax_after(:)
-    integer :: idx, i, swap_id_1, swap_id_2, n_spec_swap_1, n_spec_swap_2, &
+    integer :: idx, i, j, swap_id_1, swap_id_2, n_spec_swap_1, n_spec_swap_2, &
          swap_atom_id_1, swap_atom_id_2
     integer, allocatable :: swap_idx_1(:), swap_idx_2(:)
     integer, allocatable, intent(inout) :: species_idx(:)
@@ -402,17 +412,19 @@ contains
     !    n_sites = size(positions, 2)
     ! Count the mc species (no multi species mc just yet)
     n_mc_species = 0
-    do i = 1, n_sites
-       if (xyz_species(i) == mc_species)then
-          n_mc_species = n_mc_species + 1
-       end if
+    do j = 1, n_mc_mu
+       do i = 1, n_sites
+          if (xyz_species(i) == mc_species(j))then
+             n_mc_species(j) = n_mc_species(j) + 1
+          end if
+       end do
     end do
 
     !  Get the mc move type using a random number
-    call get_mc_move(n_sites, n_mc_species, mc_types, mc_move,&
+    call get_mc_move(n_sites, n_mc_mu, n_mc_species, mc_types, mc_move,&
          & mc_acceptance, n_spec_swap_1, n_spec_swap_2, species_types&
          &, n_mc_swaps, mc_swaps_id, species, swap_id_1, swap_id_2,&
-         & swap_species_1, swap_species_2)
+         & swap_species_1, swap_species_2, mc_mu_id)
 
     write(*,'(1X,A,1X,A)') " Next MC Move: ", mc_move
 
@@ -552,13 +564,14 @@ contains
        !   Allocate temporary storage arrays
 
        if( allocated(species_idx))deallocate(species_idx)
-       allocate( species_idx(1:n_mc_species) )
+       allocate( species_idx(1:n_mc_species(mc_mu_id)) )
 
-       n_mc_species = 0
+
+       n_mc_species(mc_mu_id) = 0
        do i = 1, n_sites
-          if (xyz_species(i) == mc_species)then
-             n_mc_species = n_mc_species + 1
-             species_idx(n_mc_species) = i
+          if (xyz_species(i) == mc_species(mc_mu_id))then
+             n_mc_species(mc_mu_id) = n_mc_species(mc_mu_id) + 1
+             species_idx(n_mc_species(mc_mu_id)) = i
           end if
        end do
 
@@ -569,7 +582,7 @@ contains
           n_sites = n_sites - 1
           call  random_number(ranf)
           ! Index of atom to remove
-          idx = species_idx( floor( ranf * n_mc_species ) + 1 )
+          idx = species_idx( floor( ranf * n_mc_species(mc_mu_id) ) + 1 )
        end if
 
        if( allocated(energies) )deallocate( energies, positions, velocities, &
@@ -587,7 +600,7 @@ contains
        energies= 0.0d0
 
        if (mc_move == "insertion")then
-          call mc_insert_site(mc_species, mc_id, positions,&
+          call mc_insert_site(mc_species(mc_mu_id), mc_id(mc_mu_id), positions,&
                & im_pos, idx, n_sites,&
                & a_box, b_box, c_box, indices, species,&
                & im_species, xyz_species,&
@@ -596,7 +609,7 @@ contains
           deallocate(masses)
           allocate(masses(1:n_sites))
           masses(1:n_sites-1) = im_masses(1:n_sites-1)
-          masses(n_sites) = masses_types(mc_id)
+          masses(n_sites) = masses_types(mc_id(mc_mu_id))
 
           if (allocated(hirshfeld_v))then
              deallocate(hirshfeld_v)

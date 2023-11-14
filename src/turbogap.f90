@@ -98,7 +98,7 @@ program turbogap
   ! Clean up these variables after code refactoring !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   integer, allocatable :: n_neigh(:), neighbors_list(:), alpha_max(:), species(:), species_supercell(:), &
        neighbor_species(:), sph_temp_int(:), der_neighbors(:), der_neighbors_list(:), &
-       i_beg_list(:), i_end_list(:), j_beg_list(:), j_end_list(:), species_idx(:)
+       i_beg_list(:), i_end_list(:), j_beg_list(:), j_end_list(:), species_idx(:), mc_id(:), n_mc_species(:)
   integer :: n_sites, i, j, k, i2, j2, n_soap, k2, k3, l, n_sites_this, ierr, rank, ntasks, dim, n_sp, &
        n_pos, n_sp_sc, this_i_beg, this_i_end, this_j_beg, this_j_end, this_n_sites_mpi, n_sites_prev = 0, &
        n_atom_pairs_by_rank_prev, cPnz
@@ -106,12 +106,12 @@ program turbogap
   integer :: iostatus, counter = 0, counter2
   integer :: which_atom = 0, n_species = 1, n_xyz, indices(1:3)
   integer :: radial_enhancement = 0
-  integer :: md_istep, mc_istep, mc_id=1, n_mc, n_mc_species
+  integer :: md_istep, mc_istep, mc_mu_id=1, n_mc
 
   logical :: repeat_xyz = .true., overwrite = .false., check_species, skip_mc, do_mc_relax = .false.
 
   character*1024 :: filename, cjunk, file_compress_soap, file_alphas, file_soap, file_2b, file_alphas_2b, &
-       file_3b, file_alphas_3b, file_gap = "none", mc_file = "mc_trial.xyz"
+       file_3b, file_alphas_3b, file_gap = "none", mc_file = "mc_trial.xyz", temp_string, temp_string2
   character*64 :: keyword
   character*16 :: lattice_string(1:9)
   character*8 :: i_char
@@ -2240,6 +2240,11 @@ program turbogap
                     write(*,*)'.......................................|'
                     write(*,'(A,1X,I0)')   ' MC Iteration:', mc_istep
                     write(*,'(A,1X,A)')    '    Move type:', mc_move
+                    if (trim(mc_move) == "insertion" .or. trim(mc_move) == "removal")then
+                       write(*,'(A,1X,A)')    '      Species:', params%mc_species(mc_mu_id)
+                       write(*,'(A,1X,F12.6)')    '           Mu:', params%mc_mu(mc_mu_id)
+                    end if
+
                     write(*,'(A,1X,F22.8)')'    Etot_prev:', images(i_current_image)%energy + images(i_current_image)%e_kin
                     write(*,'(A,1X,F22.8)')'    Etot_new :', images(i_trial_image)%energy + images(i_trial_image)%e_kin
 
@@ -2256,15 +2261,19 @@ program turbogap
                          energy + E_kinetic, &
                          images(i_current_image)%energy + images(i_current_image)%e_kin, &
                          params%t_beg, &
-                         params%mc_mu, n_mc_species, v_uc, v_uc_prev,&
+                         params%mc_mu(mc_mu_id), n_mc_species(mc_mu_id), v_uc, v_uc_prev,&
                          & v_a_uc, v_a_uc_prev, params&
-                         &%masses_types(mc_id), params%p_beg)
+                         &%masses_types(mc_id(mc_mu_id)), params%p_beg)
 
+                    ! Things to do:
+                    ! > n_mc_species should depend on the number n_mc_mu
+                    ! > mc_id should be an array which depends on n_mc_mu
+                    !
 
                     call random_number(ranf)
 
-                    if (mc_move == "insertion") n_mc_species = n_mc_species +1
-                    if (mc_move == "removal"  ) n_mc_species = n_mc_species -1
+                    if (mc_move == "insertion") n_mc_species(mc_mu_id) = n_mc_species(mc_mu_id) +1
+                    if (mc_move == "removal"  ) n_mc_species(mc_mu_id) = n_mc_species(mc_mu_id) -1
 
                     !    ACCEPT OR REJECT
                     write(*, '(A,1X,A,1X,A,L4,1X,A,ES12.6,1X,A,1X,ES12.6)') 'Is ', trim(mc_move), &
@@ -2277,10 +2286,20 @@ program turbogap
                        open(unit=200, file="mc.log", status="old", position="append")
                     end if
 
-                    write(200, "(I8, 1X, A, 1X, L4, 1X, F20.8, 1X, F20.8, 1X, I8, 1X, I8, 1X)") &
+                    ! collect the strings for the species etc
+                    temp_string = ""
+                    temp_string2 = ""
+
+                    do i = 1, params%n_mc_mu
+                       temp_string=""
+                       write(temp_string, "(A,1X,I8)")  trim(params%mc_species(i)), n_mc_species(i)
+                       temp_string2 = trim(temp_string2) // " " // trim(temp_string)
+                    end do
+
+                    write(200, "(I8, 1X, A, 1X, L4, 1X, F20.8, 1X, F20.8, 1X, I8, 1X, A )") &
                          mc_istep, mc_move, p_accept > ranf, energy + E_kinetic, &
                          images(i_current_image)%energy + images(i_current_image)%e_kin, &
-                         images(i_trial_image)%n_sites, n_mc_species
+                         images(i_trial_image)%n_sites, trim(temp_string2)
 
                     close(200)
 
@@ -2352,8 +2371,12 @@ program turbogap
                        write(*,'(1X,A,1X,A,1X,A)') '   ', params%mc_swaps(i), '                      |'
                     end do
                     write(*,'(1X,A,1X,F17.8,1X,A)') 'mc_move_max   = ', params%mc_move_max,  'A   |'
-                    write(*,'(1X,A,1X,F17.8,1X,A)') 'mc_mu         = ', params%mc_mu,        'eV  |'
-                    write(*,'(1X,A,1X,A,1X,A)')     'mc_species    = ', trim(params%mc_species),   '                    |'
+
+                    do i = 1, params%n_mc_mu
+                       write(*,'(1X,A,1X,F17.8,1X,A)') 'mc_mu         = ', params%mc_mu(1),        'eV  |'
+                       write(*,'(1X,A,1X,A,1X,A)')     'mc_species    = ', trim(params%mc_species(i)),   '                    |'
+                    end do
+
                     write(*,'(1X,A,1X,F17.8,1X,A)') 'mc_min_dist   = ', params%mc_min_dist,  'A   |'
                     write(*,'(1X,A,1X,F17.8,1X,A)') 'mc_lnvol_max  = ', params%mc_lnvol_max, '    |'
                     write(*,'(1X,A,1X,L8,1X,A)')    'mc_write_xyz  = ', params%mc_write_xyz, '             |'
@@ -2370,9 +2393,22 @@ program turbogap
                        allocate(images(1:2*i_image))
                     end if
 
-                    !    get the mc species type
-                    do i = 1, n_species
-                       if (params%species_types(i) == params%mc_species ) mc_id=i
+                    if( .not. allocated(mc_id)) then
+                       allocate(mc_id(1:params%n_mc_mu))
+                       allocate(n_mc_species(1:params%n_mc_mu))
+                    end if
+
+                    mc_id = 1
+                    n_mc_species = 0
+
+                    !    get the mc species types
+
+                    do j = 1, params%n_mc_mu
+                       do i = 1, n_species
+                          if (params%species_types(i) == params%mc_species(j) )then
+                             mc_id(j)=i
+                          end if
+                       end do
                     end do
 
 
@@ -2445,7 +2481,7 @@ program turbogap
                       & velocities, positions_prev, positions_diff, disp, d_disp,&
                       & params%mc_acceptance, hirshfeld_v, &
                       images(i_current_image)%hirshfeld_v, energies,&
-                      & forces, forces_prev, n_sites, n_mc_species,&
+                      & forces, forces_prev, n_sites, params%n_mc_mu, mc_mu_id, n_mc_species,&
                       & mc_move, params %mc_species,&
                       & params%mc_move_max, params%mc_min_dist, params%mc_lnvol_max, params&
                       &%mc_types, params%masses_types, species_idx,&

@@ -713,12 +713,17 @@ end if
       else if(keyword=='mc_lnvol_max')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_lnvol_max
+      else if(keyword=='n_mc_mu')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%n_mc_mu
+        allocate(params%mc_mu(1:params%n_mc_mu))
+        allocate(params%mc_species(1:params%n_mc_mu))
       else if(keyword=='mc_mu')then
         backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_mu
+        read(10, *, iostat=iostatus) cjunk, cjunk, (params%mc_mu(nw),nw=1,params%n_mc_mu)
       else if(keyword=='mc_species')then
-        backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_species
+         backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, (params%mc_species(nw),nw=1,params%n_mc_mu)
       else if(keyword=='mc_write_xyz')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_write_xyz
