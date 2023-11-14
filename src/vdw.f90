@@ -1120,7 +1120,7 @@ module vdw
     real*8 :: res_nnls, E_tot, denom
     integer :: mode_nnls
     logical :: do_total_energy = .true., series_expansion = .false., do_log = .false., cent_appr = .false., lanczos = .false., &
-               do_timing = .true., default_coeff = .true.  ! Finite difference testing purposes
+               do_timing = .false., default_coeff = .true.  ! Finite difference testing purposes
     real*8, allocatable :: b_vec(:), Ab(:), I_mat(:,:), l_vals(:), log_vals(:), lsq_mat(:,:), res_mat(:), log_exp(:,:), &
                            AT_power(:,:), log_integrand(:), AT_power_full(:,:), pol_grad(:,:,:), pol_inv(:,:,:), inv_vals(:), &
                            res_inv(:), lsq_inv(:,:), integrand_pol(:), AT_sym(:,:,:), G_sym(:,:,:), pol_sym(:,:,:), res_sym(:), &
@@ -1257,7 +1257,7 @@ r_buf_tsscs = 0.d0
     else
       r_buf_loc = r_buffer
     end if
-    r_buf_loc = rcut_loc    
+    !r_buf_loc = rcut_loc    
 
     if ( rcut_mbd < r_buffer ) then
       r_buf_mbd = rcut_mbd
@@ -2068,7 +2068,6 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
           do i2 = 1, n_freq
             omegas_mbd(i2) = (i2-1)**2 * omega/(n_freq-1)**2
           end do
-          write(*,*) "omegas_mbd", omegas_mbd
 
           if ( .not. cent_appr ) then
             T_LR = 0.d0
@@ -3453,7 +3452,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
 
           if ( do_derivatives ) then
             if ( do_total_energy ) then
-              !write(*,*) "Total energy", i, total_integral * Hartree
+              write(*,*) "Total energy", i, total_integral * Hartree
             end if
           end if
 
@@ -5403,7 +5402,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                   integral = 0.d0
                   !write(*,*) "integrand pol", integrand_pol
                   call integrate("trapezoidal", omegas_mbd, integrand_pol, omegas_mbd(1), omegas_mbd(n_freq), integral)
-                  write(*,*) "integrand_pol", integrand_pol
+                  !write(*,*) "integrand_pol", integrand_pol
                   write(*,*) "Polynomial derivative force" 
                   write(*,*) i, c3, integral/(2.d0*pi) * Hartree/Bohr
                   integral = 0.d0
