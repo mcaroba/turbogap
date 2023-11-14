@@ -122,6 +122,7 @@ program turbogap
                           i_receive(:), j_receive(:), this_i_receive(:), this_j_receive(:), hirshfeld_disp(:), &
                           k_start(:)
   integer :: jx, jy, jz
+  logical :: include_2b
 
 ! MPI stuff
   real*8, allocatable :: temp_1d(:), temp_1d_bis(:), temp_2d(:,:)
@@ -1391,24 +1392,65 @@ call cpu_time(time2)
 !end do
 call cpu_time(time1)
 !write(*,*) "scs timing", time1-time2
+if ( params%vdw_2b_rcut > params%vdw_mbd_rcut ) then
+include_2b = .true.
+          call get_mbd_energies_and_forces( hirshfeld_v_cart_der_ji(1:3,j_beg:j_end), &
+                                         n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
+                                         neighbor_species(j_beg:j_end), &
+                                         params%vdw_scs_rcut, params%vdw_loc_rcut, params%vdw_2b_rcut, &
+                                         params%vdw_2b_rcut2, &
+                                         params%vdw_buffer, &
+                                         rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), v_neigh_vdw, &
+                                         params%vdw_sr, params%vdw_d, params%vdw_c6_ref, params%vdw_r0_ref, &
+                                         params%vdw_alpha0_ref, params%vdw_mbd_grad, params%vdw_hirsh_grad, &
+                                         params%vdw_polynomial, params%do_nnls, params%vdw_mbd_nfreq, &
+                                         2, &
+                                         params%vdw_omega_ref, alpha_SCS, omega_SCS, include_2b, &
+#ifdef _MPIF90
+                                         this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw )
+#else
+                                         energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
+#endif
+if ( params%vdw_mbd_norder > 2 ) then
+include_2b = .false.
           call get_mbd_energies_and_forces( hirshfeld_v_cart_der_ji(1:3,j_beg:j_end), &
                                          n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
                                          neighbor_species(j_beg:j_end), &
                                          params%vdw_scs_rcut, params%vdw_loc_rcut, params%vdw_mbd_rcut, &
-                                         params%vdw_mbd_rcut2, params%vdw_2b_rcut, params%vdw_2b_rcut2, &
+                                         params%vdw_mbd_rcut2, &
                                          params%vdw_buffer, &
                                          rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), v_neigh_vdw, &
                                          params%vdw_sr, params%vdw_d, params%vdw_c6_ref, params%vdw_r0_ref, &
                                          params%vdw_alpha0_ref, params%vdw_mbd_grad, params%vdw_hirsh_grad, &
                                          params%vdw_polynomial, params%do_nnls, params%vdw_mbd_nfreq, &
                                          params%vdw_mbd_norder, &
-                                         params%vdw_omega_ref, alpha_SCS, omega_SCS, &
+                                         params%vdw_omega_ref, alpha_SCS, omega_SCS, include_2b, &
 #ifdef _MPIF90
                                          this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw )
 #else
                                          energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
 #endif
-
+end if
+else
+include_2b = .true.
+          call get_mbd_energies_and_forces( hirshfeld_v_cart_der_ji(1:3,j_beg:j_end), &
+                                         n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
+                                         neighbor_species(j_beg:j_end), &
+                                         params%vdw_scs_rcut, params%vdw_loc_rcut, params%vdw_mbd_rcut, &
+                                         params%vdw_mbd_rcut2, &
+                                         params%vdw_buffer, &
+                                         rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), v_neigh_vdw, &
+                                         params%vdw_sr, params%vdw_d, params%vdw_c6_ref, params%vdw_r0_ref, &
+                                         params%vdw_alpha0_ref, params%vdw_mbd_grad, params%vdw_hirsh_grad, &
+                                         params%vdw_polynomial, params%do_nnls, params%vdw_mbd_nfreq, &
+                                         params%vdw_mbd_norder, &
+                                         params%vdw_omega_ref, alpha_SCS, omega_SCS, include_2b, &
+#ifdef _MPIF90
+                                         this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw )
+#else
+                                         energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
+#endif
+end if
 call cpu_time(time2)
 !write(*,*) "MBD timing", time2-time1
 

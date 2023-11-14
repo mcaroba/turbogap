@@ -1039,21 +1039,21 @@ module vdw
 !**************************************************************************
   subroutine get_mbd_energies_and_forces( hirshfeld_v_cart_der_ji, &
                                        n_neigh, neighbors_list, neighbor_species, &
-                                       rcut, rcut_loc, rcut_mbd, rcut_mbd2, rcut_2b, rcut_2b2, r_buffer, rjs, xyz, &
+                                       rcut, rcut_loc, rcut_mbd, rcut_mbd2, r_buffer, rjs, xyz, &
                                        hirshfeld_v_neigh, sR, d, c6_ref, r0_ref, alpha0_ref, do_derivatives, &
                                        do_hirshfeld_gradients, polynomial_expansion, do_nnls, n_freq, n_order, &
-                                       vdw_omega_ref, central_pol, central_omega, &
+                                       vdw_omega_ref, central_pol, central_omega, include_2b, &
                                        energies, forces0, virial )
 
     implicit none
 
 !   Input variables
     real*8, intent(in) :: rcut, r_buffer, &
-                          rjs(:), xyz(:,:), sR, d, c6_ref(:), r0_ref(:), rcut_loc, rcut_mbd, rcut_mbd2, rcut_2b, &
-                          rcut_2b2, hirshfeld_v_cart_der_ji(:,:), &
+                          rjs(:), xyz(:,:), sR, d, c6_ref(:), r0_ref(:), rcut_loc, rcut_mbd, rcut_mbd2, &
+                          hirshfeld_v_cart_der_ji(:,:), &
                           alpha0_ref(:), vdw_omega_ref !, hirshfeld_v(:), hirshfeld_v_neigh(:) !NOTE: uncomment this in final implementation
     integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:), n_freq, n_order
-    logical, intent(in) :: do_derivatives, do_hirshfeld_gradients, polynomial_expansion, do_nnls
+    logical, intent(in) :: do_derivatives, do_hirshfeld_gradients, polynomial_expansion, do_nnls, include_2b
 !   Output variables
     real*8, intent(out) :: virial(1:3, 1:3)
 !   In-Out variables
@@ -1277,11 +1277,11 @@ r_buf_tsscs = 0.d0
     r_buf_ij = r_buffer
     !r_buf_ij = 0.d0
     
-    if ( rcut_2b-rcut_mbd < r_buffer ) then
-      r_buf_2b = rcut_2b-rcut_mbd
-    else
-      r_buf_2b = r_buffer
-    end if
+    !if ( rcut_2b-rcut_mbd < r_buffer ) then
+    !  r_buf_2b = rcut_2b-rcut_mbd
+    !else
+    !  r_buf_2b = r_buffer
+    !end if
 
     !call cpu_time(time3)
 
@@ -2031,6 +2031,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
               allocate( pol_sym(1:3*n_mbd_sites,1:3,1:n_freq) )
               allocate( dT_LR_sym(1:3,1:3*n_mbd_sites) )
               allocate( G_sym(1:3,1:3*n_mbd_sites,1:n_freq) )
+              pol_sym = 0.d0
             end if
           end if
 
@@ -2842,8 +2843,8 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
               if ( .not. cent_appr ) then
                 if ( default_coeff ) then
                   res_mat(1) = 0.d0
-                  !res_mat(2) = 0.d0
-                  do k2 = 2, n_order+1
+                  res_mat(2) = 0.d0
+                  do k2 = 3, n_order+1
                     res_mat(k2) = -1.d0/(k2-1) 
                   end do
                 else
@@ -2947,7 +2948,8 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
               if ( cent_appr ) then
                 if ( default_coeff ) then
                   res_sym(1) = 0.d0
-                  do k2 = 2, n_order+1
+                  res_sym(1) = 0.d0
+                  do k2 = 3, n_order+1
                     res_sym(k2) = -1.d0/(k2-1)
                   end do
                 else
@@ -3069,20 +3071,30 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 !call psb_cdasb(desc_a, info_psb)
                 !call psb_spasb(A_sp_sym, desc_a, info_psb)
                 end if ! default_coeff
-                do c1 = 1, 3
-                  integrand_sym(i2) = integrand_sym(i2) + res_sym(1) + res_sym(2)*AT_sym(c1,c1,i2)
-                end do
-                if ( do_derivatives ) then
-                  pol_sym(:,:,i2) = -res_sym(2)*I_mat(:,1:3) - 2*res_sym(3)*AT_sym(:,:,i2)
+                if ( .not. default_coeff ) then
+                  do c1 = 1, 3
+                    integrand_sym(i2) = integrand_sym(i2) + res_sym(1) + res_sym(2)*AT_sym(c1,c1,i2)
+                  end do
+                  if ( do_derivatives ) then
+                    pol_sym(:,:,i2) = -res_sym(2)*I_mat(:,1:3) - 2*res_sym(3)*AT_sym(:,:,i2)
+                  end if
+                else
+                  if ( do_derivatives ) then
+                    if ( include_2b ) then
+                      pol_sym(:,:,i2) = -2*res_sym(3)*AT_sym(:,:,i2)
+                    end if
+                  end if
                 end if
                 AT_sym_power = AT_sym(:,:,i2)
               end if !cent_appr
               !end if ! if ( i2 == 1 ) then
               if ( .not. cent_appr ) then
-              do c1 = 1, 3
-                integrand(i2) = integrand(i2) + res_mat(1) + res_mat(2)*AT(c1,c1,i2)
-              end do
               AT_power = AT(:,1:3,i2)
+              if ( .not. default_coeff ) then
+                do c1 = 1, 3
+                  integrand(i2) = integrand(i2) + res_mat(1) + res_mat(2)*AT(c1,c1,i2)
+                end do
+              end if
               if ( do_derivatives ) then
                 !AT_power_full = AT(:,:,i2)
                 !pol_grad(:,:,i2) = -res_mat(2)*I_mat - 2*res_mat(3)*AT(:,:,i2)
@@ -3092,6 +3104,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 k3 = 0
                 q = 0
                 !call cpu_time(time1)
+                if ( .not. default_coeff ) then
                 do p = 1, n_mbd_sites
                   if ( rjs_0_mbd(k3+1) .le. (rcut_force)/Bohr ) then
                     q = q+1
@@ -3111,6 +3124,22 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                     k3 = k3 + n_mbd_neigh(p)
                   end if
                 end do
+                else ! default_coeff
+                    do p = 1, n_mbd_sites
+                      if ( rjs_0_mbd(k3+1) .le. (rcut_force)/Bohr ) then
+                        q = q+1
+                        do c1 = 1, 3
+                          AT_power_full(:,3*(q-1)+c1) = AT(:,3*(p-1)+c1,i2)
+                          if ( include_2b ) then
+                            pol_grad(:,3*(q-1)+c1,i2) = -2*res_mat(3)*AT(:,3*(p-1)+c1,i2)
+                          end if
+                        end do
+                      end if
+                      if ( p .ne. n_mbd_sites ) then
+                        k3 = k3 + n_mbd_neigh(p)
+                      end if
+                    end do
+                end if
                 !call cpu_time(time2)
                 !write(*,*) "init timing", time2-time1
                 !end if
@@ -3118,7 +3147,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
               end if !.not. cent_appr
               if ( n_order > 2 ) then
               do k2 = 3, n_order
-                if (.not. cent_appr ) then
+                if ( .not. cent_appr ) then
                 !write(*,*) "i2, k2", i2, k2
                 !call dgemm('N', 'N', 3, 3*n_mbd_sites, 3*n_mbd_sites, 1.d0, AT_power, &
                 !           3, AT(:,:,i2), 3*n_mbd_sites, 0.d0, temp_mat, 3)
@@ -3442,10 +3471,10 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
           E_TS = 0.d0
           !write(*,*) "integral, E_TS", integral, E_TS
           if ( .not. cent_appr ) then
-            energies(i) = (integral + E_TS) * Hartree
+            energies(i) = energies(i) + (integral + E_TS) * Hartree
           end if
           if ( cent_appr ) then
-            energies(i) = (sym_integral + E_TS) * Hartree
+            energies(i) = energies(i) + (sym_integral + E_TS) * Hartree
           end if
           write(*,*) "MBD energy", i, energies(i)
 
@@ -4962,7 +4991,7 @@ end if
               end do
               E_TS_tot = 1.d0/2.d0 * E_TS_tot
               forces_TS = 1.d0/2.d0 * forces_TS
-              forces0(c3,i) = forces0(c3,i) + forces_TS * Hartree/Bohr
+              !forces0(c3,i) = forces0(c3,i) + forces_TS * Hartree/Bohr
               
 
               deallocate( sub_2b_tot_list, n_2b_tot_neigh, p_2b_tot, xyz_2b_tot, rjs_2b_tot, r0_ii_2b_tot, &
