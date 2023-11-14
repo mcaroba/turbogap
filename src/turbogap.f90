@@ -133,7 +133,7 @@ program turbogap
   logical, allocatable :: compress_soap_mpi(:)
   integer :: n_omp, omp_task, omp_n_sites
   integer, allocatable :: i_beg_omp(:), i_end_omp(:), j_beg_omp(:), j_end_omp(:)   
-  integer, parameter :: nstr=8,n_soap_slices=500 ! n_soap_slices should correlate with size(i_beg_list)
+  integer, parameter :: nstr=4 !,n_soap_slices=500 ! n_soap_slices should correlate with size(i_beg_list)
   integer :: istr 
   integer(c_size_t) :: st_virial,st_this_forces, st_this_energies
   type(c_ptr) :: this_energies_d(nstr), this_forces_d(nstr), virial_d(nstr)
@@ -180,7 +180,7 @@ program turbogap
 
 
 
-  call gpu_set_device(rank) ! This works when each GPU has only 1 visible device. This is done in the slurm submission script
+  call gpu_set_device(rank) ! Using 0 only works when each GPU has only 1 visible device. This is done in the slurm submission script
 
   do istr=1,nstr
     call create_cublas_handle(cublas_handle(istr), gpu_stream(istr))
@@ -1141,13 +1141,6 @@ program turbogap
         call get_number_of_atom_pairs( n_neigh(i_beg:i_end), rjs(j_beg:j_end), soap_turbo_hypers(i)%rcut_max, &
                                        soap_turbo_hypers(i)%l_max, soap_turbo_hypers(i)%n_max, &
                                        params%max_Gbytes_per_process, i_beg_list, i_end_list, j_beg_list, j_end_list )
-        if(size(i_beg_list)>n_soap_slices) then
-          write(*,*)
-          write(*,*) "Error!!!!!!  size(i_beg_list)>n_soap_slices"
-          write(*,*) "Size of i_beg_list is ", size(i_beg_list), "while n_soap_slices is ", n_soap_slices
-          write(*,*) "Increase  n_soap_slices!"
-          write(*,*)
-        endif
 
         do istr = 1, nstr
           
@@ -1164,8 +1157,11 @@ program turbogap
         call gpu_memset_zero(this_forces_d(istr),st_this_forces, gpu_stream(istr))
       enddo
 
+!$omp parallel do DEFAULT(firstPRIVATE)
         do j = 1, size(i_beg_list)
-          istr=mod(j,nstr)+1
+          !istr=mod(j,nstr)+1
+          istr=omp_get_thread_num()+1
+          !write(*,*) j, istr
           ! write(*,*) 
           ! write(*,*) "Before get_gap_soap. in stream ", istr
           ! write(*,*) 
@@ -1174,6 +1170,9 @@ program turbogap
           this_j_beg = j_beg - 1 + j_beg_list(j)
           this_j_end = j_beg - 1 + j_end_list(j)
           this_n_sites_mpi = this_i_end - this_i_beg + 1
+          ! write(*,*) j, istr, this_i_beg , this_i_end, this_j_beg , this_j_end , this_n_sites_mpi 
+          ! write(*,*) i_beg, i_beg_list(j),i_end_list(j), j_beg, j_beg_list(j),j_end_list(j)
+          ! write(*,*) 
           this_energies = 0.d0
           if( params%do_forces )then
             this_forces = 0.d0
@@ -1245,7 +1244,8 @@ program turbogap
           !   virial_soap = virial_soap + this_virial
           ! end if 
         end do
-        
+!$OMP END PARALLEL DO 
+
         do istr=1,nstr
           ! this_i_beg = i_beg - 1 + i_beg_list(j)
           ! this_i_end = i_beg - 1 + i_end_list(j)

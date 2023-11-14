@@ -17,7 +17,7 @@
 
 # Compiler, preprocessor directives, etc.
 HOP_ROOT=/users/cristian/TurboGAP/hop
-F90=mpif90
+F90=mpif90 -finstrument-functions -fopenmp
 CU=nvcc -x cu -I$(HOP_ROOT) -I$(HOP_ROOT)/source/hip  -DHOP_TARGET_CUDA
 PP=-cpp -D _MPIF90
 F90_MOD_DIR_OPT=-J
