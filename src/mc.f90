@@ -195,7 +195,7 @@ contains
 
 
 
-  subroutine get_mc_move(n_sites, n_mc_mu, n_mc_species, mc_types, mc_move, acceptance,&
+  subroutine get_mc_move(n_sites, n_mc_mu, n_mc_species, mc_types, mc_move, acceptance, mu_acceptance,&
        & n_spec_swap_1, n_spec_swap_2, species_types, n_mc_swaps,&
        & mc_swaps_id, species, swap_id_1, swap_id_2, swap_species_1, swap_species_2, mc_mu_id)
     implicit none
@@ -204,7 +204,7 @@ contains
     integer :: n_mc, i
     character*32, intent(in) ::  mc_types(:)
     character*32, intent(out) :: mc_move
-    real*8 :: ranf, acceptance(:), k
+    real*8 :: ranf, acceptance(:), mu_acceptance(:), k
     logical :: invalid_move, cant_remove, cant_swap=.false.
     integer, intent(inout) :: n_spec_swap_1, n_spec_swap_2,&
          & n_mc_swaps, swap_id_1, swap_id_2, mc_mu_id
@@ -244,7 +244,7 @@ contains
        k = 0.d0
        do i = 1, n_mc_mu
           mc_mu_id = i
-          k = k + 1.0 / dfloat(n_mc_mu)
+          k = k + mu_acceptance(i)
           if( ranf < k )then
              exit
           end if
@@ -370,7 +370,7 @@ contains
   subroutine perform_mc_step(&
        & positions, species, xyz_species, masses, fix_atom,&
        & velocities, positions_prev, positions_diff, disp, d_disp,&
-       & mc_acceptance, hirshfeld_v, im_hirshfeld_v, energies,&
+       & mc_acceptance, mc_mu_acceptance, hirshfeld_v, im_hirshfeld_v, energies,&
        & forces, forces_prev, n_sites, n_mc_mu, mc_mu_id, n_mc_species, mc_move, mc_species,&
        & mc_move_max, mc_min_dist, ln_vol_max, mc_types, masses_types,&
        & species_idx, im_pos, im_species, im_xyz_species, im_fix_atom&
@@ -383,7 +383,7 @@ contains
 
     real*8, allocatable, intent(inout) :: positions(:,:), masses(:), hirshfeld_v(:),&
          forces_prev(:,:), positions_prev(:,:), positions_diff(:,:),&
-         mc_acceptance(:), im_hirshfeld_v(:), velocities(:,:), &
+         mc_acceptance(:), mc_mu_acceptance(:), im_hirshfeld_v(:), velocities(:,:), &
          energies(:), forces(:,:), masses_types(:), im_pos(:,:), im_masses(:)
     real*8 :: mc_move_max, ln_vol_max, lnvn, vn, v_uc, length,&
          & length_prev, l_prop, ranf, ranv(1:3), kB = 8.6173303d-5
@@ -422,7 +422,7 @@ contains
 
     !  Get the mc move type using a random number
     call get_mc_move(n_sites, n_mc_mu, n_mc_species, mc_types, mc_move,&
-         & mc_acceptance, n_spec_swap_1, n_spec_swap_2, species_types&
+         & mc_acceptance, mc_mu_acceptance, n_spec_swap_1, n_spec_swap_2, species_types&
          &, n_mc_swaps, mc_swaps_id, species, swap_id_1, swap_id_2,&
          & swap_species_1, swap_species_2, mc_mu_id)
 

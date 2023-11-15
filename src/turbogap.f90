@@ -2479,7 +2479,7 @@ program turbogap
                  call perform_mc_step(&
                       & positions, species, xyz_species, masses, fix_atom,&
                       & velocities, positions_prev, positions_diff, disp, d_disp,&
-                      & params%mc_acceptance, hirshfeld_v, &
+                      & params%mc_acceptance, params%mc_mu_acceptance, hirshfeld_v, &
                       images(i_current_image)%hirshfeld_v, energies,&
                       & forces, forces_prev, n_sites, params%n_mc_mu, mc_mu_id, n_mc_species,&
                       & mc_move, params %mc_species,&
