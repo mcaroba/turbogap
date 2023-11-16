@@ -1138,7 +1138,7 @@ module vdw
     !integer(psb_lpk_), 
     integer*8, allocatable :: ia(:), ja(:), ia2(:), ja2(:) !, myidx(:)
     !real(psb_dpk_), 
-    real*8, allocatable :: val(:,:), val2(:), val_sym(:,:), dval(:,:) !, val_xv(:,:), b_i(:,:), d_vec(:,:)
+    real*8, allocatable :: val(:,:), val2(:), val_sym(:,:), dval(:,:), val_sym_test(:,:)  !, val_xv(:,:), b_i(:,:), d_vec(:,:)
 
 
 !central_pol = 10.d0
@@ -2034,6 +2034,8 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
               if ( include_2b ) then
                 allocate( dval(1:9*(n_mbd_pairs-n_mbd_sites),1:n_freq) )
                 dval = 0.d0
+                allocate( val_sym_test(1:9*(n_mbd_pairs-n_mbd_sites),1:n_freq) )
+                val_sym_test = 0.d0
               end if
               pol_sym = 0.d0
             end if
@@ -2102,9 +2104,9 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
           ja = 0
           val = 0.d0
           k4 = 0
-          val_sym = 0.d0
 
           if ( cent_appr ) then
+            val_sym = 0.d0
             AT_sym = 0.d0
             T_LR_sym = 0.d0
           end if
@@ -4173,12 +4175,24 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                                         !T_mbd(k3) * f_damp_SCS(k2) * T_LR_mult_i * &
                                         !T_LR_mult_j * dT_LR_mult_ij0(k2)
                         end if
-                        dT_LR_val = dT_LR_val(c1,c2) + &
+                        dT_LR_val(c1,c2) = dT_LR_val(c1,c2) + &
                                           T_mbd(k3) * f_damp_der_SCS(k2) * &
                                           T_LR_mult_ij(k2)
                       end if
                     end do
                   end do
+                  if ( .not. cent_appr .and. p == 1 .and. q == 2 ) then
+                    write(*,*) "dT_LR"
+                    write(*,*) dT_LR(3*(p-1)+1,3*(q-1)+1:3*(q-1)+3)
+                    write(*,*) dT_LR(3*(p-1)+2,3*(q-1)+1:3*(q-1)+3)
+                    write(*,*) dT_LR(3*(p-1)+3,3*(q-1)+1:3*(q-1)+3)
+                  end if
+                  if ( cent_appr .and. p == 1 .and. q == 2 ) then
+                    write(*,*) "dT_LR_val"
+                    write(*,*) dT_LR_val(1,1:3)
+                    write(*,*) dT_LR_val(2,1:3)
+                    write(*,*) dT_LR_val(3,1:3)
+                  end if
                   if (i == i2 .or. i == j) then
                     f_damp_der_mbd(k2) = d/S_vdW_ij * f_damp_SCS(k2)**2 * &
                                      exp( -d*(rjs_mbd(k2)/S_vdW_ij - 1.d0) ) * xyz_mbd(c3,k2)/rjs_mbd(k2)
@@ -4281,6 +4295,18 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                       end do
                     end do
                   end if
+                  if ( .not. cent_appr .and. p == 1 .and. q == 2 ) then
+                    write(*,*) "dT_LR final"
+                    write(*,*) dT_LR(3*(p-1)+1,3*(q-1)+1:3*(q-1)+3)
+                    write(*,*) dT_LR(3*(p-1)+2,3*(q-1)+1:3*(q-1)+3)
+                    write(*,*) dT_LR(3*(p-1)+3,3*(q-1)+1:3*(q-1)+3)
+                  end if
+                  if ( cent_appr .and. p == 1 .and. q == 2 ) then
+                    write(*,*) "dT_LR_val final"
+                    write(*,*) dT_LR_val(1,1:3)
+                    write(*,*) dT_LR_val(2,1:3)
+                    write(*,*) dT_LR_val(3,1:3)
+                  end if
                   if ( cent_appr .and. include_2b ) then
                     k3 = 9*(k2-1)
                     do c1 = 1, 3
@@ -4291,7 +4317,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                             k4 = k4 + 1
                             do i_om = 1, n_freq
                               dval(k4,i_om) = sqrt(a_mbd_i/(1.d0+(omegas_mbd(i_om)/o_mbd_i)**2)) * &
-                                                   sqrt(a_mbd_j/(1.d0+(omegas_mbd(i_om)/o_mbd(k2))**2)) * &
+                                                   sqrt(a_mbd_j/(1.d0+(omegas_mbd(i_om)/o_mbd_j)**2)) * &
                                                    dT_LR_val(c1,c2) + &
                                               1.d0/2.d0 * &
                                                    1.d0/sqrt(a_mbd_i/(1.d0+(omegas_mbd(i_om)/o_mbd_i)**2)) * &
@@ -4308,32 +4334,48 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                                                    do_mbd_j / ( o_mbd_j**2 + omegas_mbd(i_om)**2 )**2 ) * &
                                                    sqrt(a_mbd_i/(1.d0+(omegas_mbd(i_om)/o_mbd_i)**2)) * &
                                                    f_damp_SCS(k2) * T_mbd(k3)  &
-                                                        * T_LR_mult_ij(k2) 
+                                                        * T_LR_mult_ij(k2)
+                              val_sym_test(k4,i_om) = sqrt(a_mbd_i/(1.d0+(omegas_mbd(i_om)/o_mbd_i)**2)) * &
+                                                   sqrt(a_mbd_j/(1.d0+(omegas_mbd(i_om)/o_mbd_j)**2)) * &
+                                                      f_damp_SCS(k2) * T_mbd(k3)  &
+                                                       * T_LR_mult_ij(k2)
                             end do
+                            if ( k2+1 < n_mbd_pairs ) then
+                              if ( p_mbd(k2+1) == -1 ) then 
+                              k4 = k4 + 1
+                              do i_om = 1, n_freq
+                                dval(k4,i_om) = dval(k4-1,i_om)
+                                val_sym_test(k4,i_om) = val_sym_test(k4-1,i_om)
+                              end do
+                              end if
+                            end if
                           end if
                       end do
                     end do
                   end if
-                  if ( k2+1 < n_mbd_pairs .and. p_mbd(k2+1) == -1 ) then
+                  if ( k2+1 < n_mbd_pairs ) then
+                    if ( p_mbd(k2+1) == -1 ) then
                     if ( .not. cent_appr ) then
                       dT_LR(3*(q-1)+1:3*(q-1)+3,3*(p-1)+1:3*(p-1)+3) = &
                         dT_LR(3*(p-1)+1:3*(p-1)+3,3*(q-1)+1:3*(q-1)+3)
                     end if
-                    if ( cent_appr .and. include_2b ) then
-                      k3 = 9*(k2-1)
-                      do c1 = 1, 3
-                        do c2 = 1, 3
-                          k3 = k3+1
-                          if ( abs(f_damp_SCS(k2) * T_mbd(k3)  &
-                                                        * T_LR_mult_ij(k2)) > 1.d-20 ) then
-                            k4 = k4 + 1
-                            do i_om = 1, n_freq
-                              dval(k4,i_om) = dval(k4-9,i_om)
-                            end do
-                          end if
-                        end do
-                      end do
                     end if
+                    !if ( cent_appr .and. include_2b ) then
+                    !  k3 = 9*(k2-1)
+                    !  do c1 = 1, 3
+                    !    do c2 = 1, 3
+                    !      k3 = k3+1
+                    !      if ( abs(f_damp_SCS(k2) * T_mbd(k3)  &
+                    !                                    * T_LR_mult_ij(k2)) > 1.d-20 ) then
+                    !        k4 = k4 + 1
+                    !        do i_om = 1, n_freq
+                    !          dval(k4,i_om) = dval(k4-9,i_om)
+                    !          val_sym_test(k4,i_om) = val_sym_test(k4-9,i_om)
+                    !        end do
+                    !      end if
+                    !    end do
+                    !  end do
+                    !end if
                   end if
                   end if ! q .ne. -1
                 end do
@@ -5128,7 +5170,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 dAT_mult = 0.d0
                 do p = 1, n_mbd_sites
                   !if ( rjs_0_mbd(k3+1) .le. (rcut_mbd2+rcut_loc)/Bohr ) then
-                  !if ( rjs_0_mbd(k3+1) .le. (rcut_force)/Bohr ) then
+                  if ( rjs_0_mbd(k3+1) .le. (rcut_force)/Bohr ) then
                     !i2 = mbd_neighbors_list(k3+1)
                     if ( .not. cent_appr ) then
                       !G_mat(3*(p-1)+1:3*(p-1)+3,:,j) = G_mat(3*(p-1)+1:3*(p-1)+3,:,j) + &
@@ -5159,7 +5201,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                         T_LR_sym(1:3,3*(p-1)+1:3*(p-1)+3) * &
                         sqrt( a_mbd(1)/(1.d0 + (omegas_mbd(j)/o_mbd(1))**2) )
                     end if
-                  !end if
+                  end if
                   if ( p .ne. n_mbd_sites ) then
                     k3 = k3+n_mbd_neigh(p)
                   end if
@@ -5167,7 +5209,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 if ( .not. cent_appr ) then
                   k3 = 0
                   do p = 1, n_mbd_sites
-                    !if ( rjs_0_mbd(k3+1) .le. (rcut_force)/Bohr ) then
+                    if ( rjs_0_mbd(k3+1) .le. (rcut_force)/Bohr ) then
                       temp_mat(:,3*(p-1)+1:3*(p-1)+3) = sqrt( a_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) ) * &
                         temp_mat(:,3*(p-1)+1:3*(p-1)+3)
                       temp_mat_forces(:,3*(p-1)+1:3*(p-1)+3) = 1.d0/2.d0 * &
@@ -5177,24 +5219,89 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                         do_mbd(k3+1) / ( o_mbd(k3+1)**2 + omegas_mbd(j)**2 )**2 ) * temp_mat_forces(:,3*(p-1)+1:3*(p-1)+3)
                       G_mat(:,3*(p-1)+1:3*(p-1)+3,j) = sqrt( a_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) ) * &
                         G_mat(:,3*(p-1)+1:3*(p-1)+3,j)
-                    !end if
+                    end if
                     if ( p .ne. n_mbd_sites ) then
                       k3 = k3+n_mbd_neigh(p)
                     end if
                   end do
+                  G_mat(:,:,j) = G_mat(:,:,j) + &
+                            temp_mat + temp_mat_forces
                 end if
-                G_mat(:,:,j) = G_mat(:,:,j) + temp_mat + temp_mat_forces
               end do
 
               if ( .false. ) then
               !if ( cent_appr .and. include_2b .and. i == 1 .and. c3 == 1 ) then
-                write(*,*) "dval"
-                open(unit=89, file="dval.dat", status="new")
+                write(*,*) "val_sym"
+                open(unit=89, file="val_sym.dat", status="new")
                 do k2 = 1, nnz
-                  write(89,*) dval(k2,1)
+                  write(89,*) val_sym(k2,1)
                 end do
-                write(*,*) "dval done"
+                write(*,*) "val_sym done"
                 close(89)
+                write(*,*) "val_sym_test"
+                open(unit=89, file="val_sym_test.dat", status="new")
+                do k2 = 1, nnz
+                  write(89,*) val_sym_test(k2,1)
+                end do
+                write(*,*) "val_sym_test done"
+                close(89)
+
+              end if
+
+              !if ( i == 1 .and. c3 == 1 ) then
+              if ( .false. ) then
+
+              write(*,*) "G_sparse"
+              open(unit=89, file="G_sparse.dat", status="new")
+              !open(unit=89, file="dval.dat", status="new")
+
+              k2 = 0
+              k4 = 0
+              do p = 1, n_mbd_sites
+                k2 = k2+1
+                do j3 = 2, n_mbd_neigh(p)
+                  k2 = k2+1
+                  q = p_mbd(k2)
+                  if ( q .ne. -1 ) then
+                    k3 = 9*(k2-1)
+                    do c1 = 1, 3
+                      do c2 = 1, 3
+                        k3 = k3+1
+                        if ( abs(f_damp_SCS(k2) * T_mbd(k3)  &
+                                      * T_LR_mult_ij(k2)) > 1.d-20 ) then
+                          k4 = k4 + 1
+                          write(89,*) G_mat(3*(p-1)+c1,3*(q-1)+c2,1)
+                          !write(89,*) dval(k4,1)
+                          if ( k2+1 < n_mbd_pairs ) then
+                          if ( p_mbd(k2+1) == -1 ) then 
+                            k4 = k4 + 1
+                            write(89,*) G_mat(3*(q-1)+c1,3*(p-1)+c2,1)
+                            !write(89,*) dval(k4,1)
+                          end if
+                          end if
+                        end if
+                      end do
+                    end do
+                  end if ! q .ne. -1
+                end do
+              end do
+              write(*,*) "k4", k4
+
+              close(89)
+              write(*,*) "G_sparse done"
+
+
+
+
+
+
+
+
+
+
+
+
+
               end if
 
               if ( cent_appr .and. include_2b ) then
@@ -5609,7 +5716,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
             if ( do_derivatives ) then
               deallocate( G_sym, dT_LR_sym )
               if ( include_2b ) then
-                deallocate( dval )
+                deallocate( dval, val_sym_test )
               end if
             end if
           end if
