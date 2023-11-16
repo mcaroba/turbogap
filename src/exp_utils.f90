@@ -533,11 +533,12 @@ module exp_utils
       real*8, intent(inout) :: energies_lp(:)
       real*8, intent(inout) :: virial(1:3,1:3)
       real*8 ::  this_force(1:3), t
-      real*8, allocatable ::  y_der(:,:), der_factor(:,:), der_vec(:,:,:), prefactor(:)
+      real*8, allocatable ::  y_der(:,:), der_factor(:,:), der_vec(:,:,:), prefactor(:), dxa(:)
       integer, intent(in) :: n_samples, n_tot, rank
       logical, intent(in) :: get_exp, do_forces
       integer :: n_sites, n_pairs, n_pairs_soap, n_species, n_sites0
       integer :: i, j, i2, j2, k, l,  n_in_buffer, k1, k2, mag_force_i
+      logical :: vector_norm = .false.
       real*8 :: x_val, x_min, x_max, x_range, max_force, mag_force, max_mag_force, similarity, dx, &
            sum_d1, sum_d2, sum_d3, yv
       character*32, intent(in) :: similarity_type
@@ -561,6 +562,8 @@ module exp_utils
       else if (similarity_type == 'lsquares')then
          energies_lp = + energy_scale / n_sites0 * ( dx * dot_product( (y - y_exp), (y - y_exp) ) )
          ! Get the other terms for the lsquares expression
+
+
          allocate(prefactor(1:n_samples))
          prefactor =  2.d0 * ( y - y_exp )
       end if
@@ -653,19 +656,39 @@ module exp_utils
 
                   if( similarity_type == 'lsquares' )then
 
-                     sum_d1 = dot_product( y, der_vec(1,k,1:n_samples) )
-                     sum_d2 = dot_product( y, der_vec(2,k,1:n_samples) )
-                     sum_d3 = dot_product( y, der_vec(3,k,1:n_samples) )
+                     if (vector_norm) then
+                        sum_d1 = dot_product( y, der_vec(1,k,1:n_samples) )
+                        sum_d2 = dot_product( y, der_vec(2,k,1:n_samples) )
+                        sum_d3 = dot_product( y, der_vec(3,k,1:n_samples) )
 
-                     do l = 1, n_samples
-                        y_der(1, l) =  ( der_vec(1,k,l)  - y(l) * sum_d1) / norm
-                        y_der(2, l) =  ( der_vec(2,k,l)  - y(l) * sum_d2) / norm
-                        y_der(3, l) =  ( der_vec(3,k,l)  - y(l) * sum_d3) / norm
-                     end do
+                        do l = 1, n_samples
+                           y_der(1, l) =  ( der_vec(1,k,l)  - y(l) * sum_d1) / norm
+                           y_der(2, l) =  ( der_vec(2,k,l)  - y(l) * sum_d2) / norm
+                           y_der(3, l) =  ( der_vec(3,k,l)  - y(l) * sum_d3) / norm
+                        end do
 
-                     this_force(1) =  dot_product( y_der(1, 1:n_samples), prefactor(1:n_samples) )
-                     this_force(2) =  dot_product( y_der(2, 1:n_samples), prefactor(1:n_samples) )
-                     this_force(3) =  dot_product( y_der(3, 1:n_samples), prefactor(1:n_samples) )
+                        this_force(1) =  dot_product( y_der(1, 1:n_samples), prefactor(1:n_samples) )
+                        this_force(2) =  dot_product( y_der(2, 1:n_samples), prefactor(1:n_samples) )
+                        this_force(3) =  dot_product( y_der(3, 1:n_samples), prefactor(1:n_samples) )
+
+                     else
+                        ! do sum
+                        sum_d1 = dx * sum( der_vec(1,k,1:n_samples) )
+                        sum_d2 = dx * sum( der_vec(2,k,1:n_samples) )
+                        sum_d3 = dx * sum( der_vec(3,k,1:n_samples) )
+
+                        do l = 1, n_samples
+                           y_der(1, l) =  ( der_vec(1,k,l)  - y(l) * sum_d1 / norm) / norm
+                           y_der(2, l) =  ( der_vec(2,k,l)  - y(l) * sum_d2 / norm) / norm
+                           y_der(3, l) =  ( der_vec(3,k,l)  - y(l) * sum_d3 / norm) / norm
+                        end do
+
+                        this_force(1) =  dot_product( y_der(1, 1:n_samples), prefactor(1:n_samples) )
+                        this_force(2) =  dot_product( y_der(2, 1:n_samples), prefactor(1:n_samples) )
+                        this_force(3) =  dot_product( y_der(3, 1:n_samples), prefactor(1:n_samples) )
+
+                     end if
+
 
                   else
                      call broaden_spectrum_derivative(x(1:n_samples),&
@@ -714,6 +737,7 @@ module exp_utils
          deallocate(y_der)
          if(allocated(prefactor)) deallocate(prefactor)
          deallocate(der_vec, der_factor)
+         if(allocated(dxa)) deallocate(dxa)
 
       end if
 
