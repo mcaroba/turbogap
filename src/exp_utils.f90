@@ -678,9 +678,9 @@ module exp_utils
                         sum_d3 = dx * sum( der_vec(3,k,1:n_samples) )
 
                         do l = 1, n_samples
-                           y_der(1, l) =  ( der_vec(1,k,l)  - y(l) * sum_d1 / norm) / norm
-                           y_der(2, l) =  ( der_vec(2,k,l)  - y(l) * sum_d2 / norm) / norm
-                           y_der(3, l) =  ( der_vec(3,k,l)  - y(l) * sum_d3 / norm) / norm
+                           y_der(1, l) =  ( der_vec(1,k,l)  - y(l) * sum_d1 ) / norm
+                           y_der(2, l) =  ( der_vec(2,k,l)  - y(l) * sum_d2 ) / norm
+                           y_der(3, l) =  ( der_vec(3,k,l)  - y(l) * sum_d3 ) / norm
                         end do
 
                         this_force(1) =  dot_product( y_der(1, 1:n_samples), prefactor(1:n_samples) )
