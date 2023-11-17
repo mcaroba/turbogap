@@ -714,7 +714,7 @@ program turbogap
      end if
 
      !   Update progress bar
-     if( params%print_progress .and. counter == update_bar )then
+     if( params%print_progress .and. counter == update_bar .and. (.not. params%do_mc) )then
 #ifdef _MPIF90
         IF( rank == 0 )THEN
 #endif
@@ -1843,10 +1843,10 @@ program turbogap
            !     Here we write thermodynamic information -> THIS NEEDS CLEAN UP AND IMPROVEMENT
            if( md_istep == 0 .and. .not. params%do_nested_sampling )then
               open(unit=10, file="thermo.log", status="unknown")
-              write(10,*) "Step, Time, Temp, Kin_E, Pot_E, Pres"		!! ------ added this heading to thermo.log file
+              write(10,"(A)") "#     Step             Time      Temperature                E_kin                     E_pot             Pressure" !! ------ added this heading to thermo.log file
            else if( md_istep == 0 .and. i_nested == 1 )then
               open(unit=10, file="thermo.log", status="unknown")
-              write(10,*) "Step, Time, Temp, Kin_E, Pot_E, Pres"		!! ------ added this heading to thermo.log file
+              write(10,"(A)") "#     Step             Time      Temperature                E_kin                     E_pot             Pressure" !! ------ added this heading to thermo.log file
            else
               open(unit=10, file="thermo.log", status="old", position="append")
            end if
@@ -2252,6 +2252,7 @@ program turbogap
                        v_a_uc = v_uc
                     end if
 
+
                     call get_mc_acceptance(mc_move, p_accept, &
                          energy + E_kinetic, &
                          images(i_current_image)%energy + images(i_current_image)%e_kin, &
@@ -2530,14 +2531,43 @@ program turbogap
                     write(*,'(A,1X,F23.8,1X,A)')' vdw energy:', sum(energies_vdw), 'eV |'
 
                  else
-                    write(*,'(1X,A,1X,F20.8,1X,A,1X,I8,1X,A,1X,I8)')"MC Relax md step: energy = ", energy, &
-                         ", iteration ", md_istep, "/", params%mc_nrelax
-                    write(*,'(A,1X,F22.8,1X,A)')' SOAP energy:', sum(energies_soap), 'eV |'
-                    write(*,'(A,1X,F24.8,1X,A)')' 2b energy:', sum(energies_2b), 'eV |'
-                    write(*,'(A,1X,F24.8,1X,A)')' 3b energy:', sum(energies_3b), 'eV |'
-                    write(*,'(A,1X,F18.8,1X,A)')' core_pot energy:', sum(energies_core_pot), 'eV |'
-                    write(*,'(A,1X,F23.8,1X,A)')' vdw energy:', sum(energies_vdw), 'eV |'
-
+!                    write(*,'(1X,A,1X,F20.8,1X,A,1X,I8,1X,A,1X,I8)')"MC Relax md step: energy = ", energy, &
+!                         ", iteration ", md_istep, "/", params%mc_nrelax
+!                    write(*,'(A,1X,F22.8,1X,A)')' SOAP energy:', sum(energies_soap), 'eV |'
+!                    write(*,'(A,1X,F24.8,1X,A)')' 2b energy:', sum(energies_2b), 'eV |'
+!                    write(*,'(A,1X,F24.8,1X,A)')' 3b energy:', sum(energies_3b), 'eV |'
+!                    write(*,'(A,1X,F18.8,1X,A)')' core_pot energy:', sum(energies_core_pot), 'eV |'
+!                    write(*,'(A,1X,F23.8,1X,A)')' vdw energy:', sum(energies_vdw), 'eV |'
+                   if( params%print_progress .and. md_istep == 0 )then
+                     write(*,*)'                                       |'
+                     write(*,*)'Progress:                              |'
+                     write(*,*)'                                       |'
+                     write(*,'(1X,A)',advance='no')'[                                    ] |'
+                     update_bar = params%mc_nrelax/36
+                     if( update_bar < 1 )then
+                       update_bar = 1
+                     end if
+                     counter = 1
+                   else if( md_istep == params%mc_nrelax-1 .or. &
+                           (abs(energy-energy_prev) < params%e_tol*dfloat(n_sites) .and. &
+                            maxval(forces) < params%f_tol) .and. md_istep > 0 )then
+                     write(*,*)
+                   else if( params%print_progress .and. counter == update_bar .and. md_istep < params%mc_nrelax-1 )then
+                     do j = 1, 36+3
+                       write(*,"(A)", advance="no") creturn
+                     end do
+                     write (*,"(1X,A)",advance="no") "["
+                     do i = 1, 36*(md_istep+1)/params%mc_nrelax
+                       write (*,"(A)",advance="no") "."
+                     end do
+                     do i = 36*(md_istep+1)/params%mc_nrelax+1, 36
+                       write (*,"(A)",advance="no") " "
+                     end do
+                     write (*,"(A)",advance="no") "] |"
+                     counter = 1
+                   else
+                     counter = counter + 1
+                   end if
                  end if
               end if
            end if

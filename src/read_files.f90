@@ -1340,7 +1340,7 @@ end if
     end if
 
 !   Get masses from database
-    if( params%do_md .and. .not. masses_in_input_file )then
+    if( (params%do_md .or. params%do_mc) .and. .not. masses_in_input_file )then
       if( rank == 0 )then
         write(*,*)'                                       |'
         write(*,*)'WARNING: you have not provided masses  |  <-- WARNING'
