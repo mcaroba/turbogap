@@ -1392,7 +1392,7 @@ call cpu_time(time2)
 !end do
 call cpu_time(time1)
 !write(*,*) "scs timing", time1-time2
-if ( params%vdw_2b_rcut > params%vdw_mbd_rcut ) then
+if ( params%vdw_2b_rcut > params%vdw_mbd_rcut ) then ! Call 2b version if primary 2b cut-off is larger than primary mbd cut-off
 include_2b = .true.
           call get_mbd_energies_and_forces( hirshfeld_v_cart_der_ji(1:3,j_beg:j_end), &
                                          n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
@@ -1411,7 +1411,7 @@ include_2b = .true.
 #else
                                          energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
 #endif
-if ( params%vdw_mbd_norder > 2 ) then
+if ( params%vdw_mbd_norder > 2 ) then ! Call 3b+ version if maximum body order > 2, otherwise only 2b with SCS polarizabilities is included
 include_2b = .false.
           call get_mbd_energies_and_forces( hirshfeld_v_cart_der_ji(1:3,j_beg:j_end), &
                                          n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
@@ -1431,7 +1431,7 @@ include_2b = .false.
                                          energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
 #endif
 end if
-else
+else ! If 2b cut-off <= mbd cut-off, just execute normally with 2b and 3b+ for same cut-off
 include_2b = .true.
           call get_mbd_energies_and_forces( hirshfeld_v_cart_der_ji(1:3,j_beg:j_end), &
                                          n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &

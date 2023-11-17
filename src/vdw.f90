@@ -1119,7 +1119,7 @@ module vdw
     integer, allocatable :: ind_nnls(:)
     real*8 :: res_nnls, E_tot, denom
     integer :: mode_nnls
-    logical :: do_total_energy = .true., series_expansion = .false., do_log = .false., cent_appr = .false., lanczos = .false., &
+    logical :: do_total_energy = .false., series_expansion = .false., do_log = .false., cent_appr = .true., lanczos = .false., &
                do_timing = .false., default_coeff = .true.  ! Finite difference testing purposes
     real*8, allocatable :: b_vec(:), Ab(:), I_mat(:,:), l_vals(:), log_vals(:), lsq_mat(:,:), res_mat(:), log_exp(:,:), &
                            AT_power(:,:), log_integrand(:), AT_power_full(:,:), pol_grad(:,:,:), pol_inv(:,:,:), inv_vals(:), &
@@ -1138,7 +1138,7 @@ module vdw
     !integer(psb_lpk_), 
     integer*8, allocatable :: ia(:), ja(:), ia2(:), ja2(:) !, myidx(:)
     !real(psb_dpk_), 
-    real*8, allocatable :: val(:,:), val2(:), val_sym(:,:), dval(:,:), val_sym_test(:,:)  !, val_xv(:,:), b_i(:,:), d_vec(:,:)
+    real*8, allocatable :: val(:,:), val2(:), val_sym(:,:), dval(:,:) !, val_sym_test(:,:)  !, val_xv(:,:), b_i(:,:), d_vec(:,:)
 
 
 !central_pol = 10.d0
@@ -2034,8 +2034,8 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
               if ( include_2b ) then
                 allocate( dval(1:9*(n_mbd_pairs-n_mbd_sites),1:n_freq) )
                 dval = 0.d0
-                allocate( val_sym_test(1:9*(n_mbd_pairs-n_mbd_sites),1:n_freq) )
-                val_sym_test = 0.d0
+                !allocate( val_sym_test(1:9*(n_mbd_pairs-n_mbd_sites),1:n_freq) )
+                !val_sym_test = 0.d0
               end if
               pol_sym = 0.d0
             end if
@@ -3084,12 +3084,12 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                   if ( do_derivatives ) then
                     pol_sym(:,:,i2) = -res_sym(2)*I_mat(:,1:3) - 2*res_sym(3)*AT_sym(:,:,i2)
                   end if
-                else
-                  if ( do_derivatives ) then
-                    if ( include_2b ) then
-                      pol_sym(:,:,i2) = -2*res_sym(3)*AT_sym(:,:,i2)
-                    end if
-                  end if
+                !else
+                !  if ( do_derivatives ) then
+                !    if ( include_2b ) then
+                !      pol_sym(:,:,i2) = -2*res_sym(3)*AT_sym(:,:,i2)
+                !    end if
+                !  end if
                 end if
                 AT_sym_power = AT_sym(:,:,i2)
               end if !cent_appr
@@ -3194,9 +3194,9 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                   do c1 = 1, 3
                     integrand_sym(i2) = integrand_sym(i2) + res_sym(k2)*AT_sym_power(c1,c1)
                   end do
+                  end if
                   if ( do_derivatives ) then
                     pol_sym(:,:,i2) = pol_sym(:,:,i2) - k2 * res_sym(k2+1) * AT_sym_power
-                  end if
                   end if
                   call cpu_time(time6)
                   if ( do_timing ) then
@@ -3228,10 +3228,11 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                   !call cpu_time(time6)
                   !write(*,*) "dgemm der timing", time6-time5
                   AT_power_full = temp_mat_forces
-                  if ( k2 > 3 ) then
+                  !if ( k2 > 3 ) then
                   pol_grad(:,:,i2) = pol_grad(:,:,i2) - k2 * res_mat(k2+1) * AT_power_full
                   pol_inv(:,:,i2) = pol_inv(:,:,i2) + res_inv(k2) * AT_power_full
                   if ( do_total_energy ) then
+                    if ( k2 > 3 ) then
                     k3 = 0
                     q = 0
                     do p = 1, n_mbd_sites
@@ -3246,8 +3247,9 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                         k3 = k3 + n_mbd_neigh(p)
                       end if
                     end do
+                    end if
                   end if
-                  end if
+                  !end if
                 end if
                 end if !.not. cent_appr
               end do
@@ -4043,6 +4045,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                       write(*,*) "WARNING: frequency dependency failure. Use larger vdw_omega_ref."
                       do_pref = 0.d0
                     end if
+                    do_mbd(k2) = do_pref
                     dr0_ii_SCS(k2) = r0_ii_mbd(k2) * (a_iso(r,2)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0) / &
                                    (3.d0 * a_iso(r,2)) * da_iso(r,c3,2)
                   else if ( rjs_0_mbd(k2) > (rcut_loc-r_buf_loc)/Bohr .and. rjs_0_mbd(k2) .le. rcut_loc/Bohr ) then
@@ -4181,18 +4184,6 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                       end if
                     end do
                   end do
-                  if ( .not. cent_appr .and. p == 1 .and. q == 2 ) then
-                    write(*,*) "dT_LR"
-                    write(*,*) dT_LR(3*(p-1)+1,3*(q-1)+1:3*(q-1)+3)
-                    write(*,*) dT_LR(3*(p-1)+2,3*(q-1)+1:3*(q-1)+3)
-                    write(*,*) dT_LR(3*(p-1)+3,3*(q-1)+1:3*(q-1)+3)
-                  end if
-                  if ( cent_appr .and. p == 1 .and. q == 2 ) then
-                    write(*,*) "dT_LR_val"
-                    write(*,*) dT_LR_val(1,1:3)
-                    write(*,*) dT_LR_val(2,1:3)
-                    write(*,*) dT_LR_val(3,1:3)
-                  end if
                   if (i == i2 .or. i == j) then
                     f_damp_der_mbd(k2) = d/S_vdW_ij * f_damp_SCS(k2)**2 * &
                                      exp( -d*(rjs_mbd(k2)/S_vdW_ij - 1.d0) ) * xyz_mbd(c3,k2)/rjs_mbd(k2)
@@ -4295,18 +4286,6 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                       end do
                     end do
                   end if
-                  if ( .not. cent_appr .and. p == 1 .and. q == 2 ) then
-                    write(*,*) "dT_LR final"
-                    write(*,*) dT_LR(3*(p-1)+1,3*(q-1)+1:3*(q-1)+3)
-                    write(*,*) dT_LR(3*(p-1)+2,3*(q-1)+1:3*(q-1)+3)
-                    write(*,*) dT_LR(3*(p-1)+3,3*(q-1)+1:3*(q-1)+3)
-                  end if
-                  if ( cent_appr .and. p == 1 .and. q == 2 ) then
-                    write(*,*) "dT_LR_val final"
-                    write(*,*) dT_LR_val(1,1:3)
-                    write(*,*) dT_LR_val(2,1:3)
-                    write(*,*) dT_LR_val(3,1:3)
-                  end if
                   if ( cent_appr .and. include_2b ) then
                     k3 = 9*(k2-1)
                     do c1 = 1, 3
@@ -4335,17 +4314,41 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                                                    sqrt(a_mbd_i/(1.d0+(omegas_mbd(i_om)/o_mbd_i)**2)) * &
                                                    f_damp_SCS(k2) * T_mbd(k3)  &
                                                         * T_LR_mult_ij(k2)
-                              val_sym_test(k4,i_om) = sqrt(a_mbd_i/(1.d0+(omegas_mbd(i_om)/o_mbd_i)**2)) * &
-                                                   sqrt(a_mbd_j/(1.d0+(omegas_mbd(i_om)/o_mbd_j)**2)) * &
-                                                      f_damp_SCS(k2) * T_mbd(k3)  &
-                                                       * T_LR_mult_ij(k2)
+                              !val_sym_test(k4,i_om) = sqrt(a_mbd_i/(1.d0+(omegas_mbd(i_om)/o_mbd_i)**2)) * &
+                              !                     sqrt(a_mbd_j/(1.d0+(omegas_mbd(i_om)/o_mbd_j)**2)) * &
+                              !                        f_damp_SCS(k2) * T_mbd(k3)  &
+                              !                         * T_LR_mult_ij(k2)
+                              !if ( i == 1 .and. c3 == 1 .and. k4 == 26938 .and. i_om == 2 ) then
+                                !write(*,*) "p", p
+                                !write(*,*) "q", q
+                                !write(*,*) "c1", c1
+                                !write(*,*) "c2", c2
+                                !write(*,*) "dval", dval(k4,i_om)
+                                !write(*,*) "dA p", 1.d0/2.d0 * &
+                                !                   1.d0/sqrt(a_mbd_i/(1.d0+(omegas_mbd(i_om)/o_mbd_i)**2)) * &
+                                !                   ( da_mbd_i/(1.d0 + (omegas_mbd(i_om)/o_mbd_i)**2) + &
+                                !                   a_mbd_i * (2.d0 * omegas_mbd(i_om)**2 * o_mbd_i) * &
+                                !                   do_mbd_i / ( o_mbd_i**2 + omegas_mbd(i_om)**2 )**2 )
+                              !  write(*,*) "dA q", 1.d0/2.d0 * &
+                              !                     1.d0/sqrt(a_mbd_j/(1.d0+(omegas_mbd(i_om)/o_mbd_j)**2)) * &
+                              !                     ( da_mbd_j/(1.d0 + (omegas_mbd(i_om)/o_mbd_j)**2) + &
+                              !                     a_mbd_j * (2.d0 * omegas_mbd(i_om)**2 * o_mbd_j) * &
+                              !                     do_mbd_j / ( o_mbd_j**2 + omegas_mbd(i_om)**2 )**2 )
+                                !write(*,*) "A p", sqrt(a_mbd_i/(1.d0+(omegas_mbd(i_om)/o_mbd_i)**2))
+                                !write(*,*) "A q", sqrt(a_mbd_j/(1.d0+(omegas_mbd(i_om)/o_mbd_j)**2))
+                              !  write(*,*) "a_mbd", a_mbd_j
+                              !  write(*,*) "o_mbd", o_mbd_j
+                              !  write(*,*) "da_mbd", da_mbd_j
+                              !  write(*,*) "do_mbd", do_mbd_j
+                              !  write(*,*) "rjs_0_mbd", rjs_0_mbd(k2)*Bohr              
+                              !end if
                             end do
                             if ( k2+1 < n_mbd_pairs ) then
                               if ( p_mbd(k2+1) == -1 ) then 
                               k4 = k4 + 1
                               do i_om = 1, n_freq
                                 dval(k4,i_om) = dval(k4-1,i_om)
-                                val_sym_test(k4,i_om) = val_sym_test(k4-1,i_om)
+                                !val_sym_test(k4,i_om) = val_sym_test(k4-1,i_om)
                               end do
                               end if
                             end if
@@ -5148,7 +5151,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
 
               G_mat = 0.d0
               end if
-              if ( cent_appr ) then
+              if ( cent_appr .and. n_order > 2 ) then
                 G_sym = 0.d0
               end if
               integrand = 0.d0
@@ -5160,7 +5163,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                   temp_mat_forces = 0.d0
                 end if
                 k3 = 0
-                if ( cent_appr ) then
+                if ( cent_appr .and. n_order > 2 ) then
                   G_sym(:,:,j) = 1.d0/2.d0 * 1.d0/sqrt(a_mbd(1)/(1.d0+(omegas_mbd(j)/o_mbd(1))**2)) * &
                     ( da_mbd(1)/(1.d0 + (omegas_mbd(j)/o_mbd(1))**2) + &
                       a_mbd(1) * (2.d0 * omegas_mbd(j)**2 * o_mbd(1)) * &
@@ -5191,7 +5194,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                       G_mat(3*(p-1)+1:3*(p-1)+3,:,j) = sqrt( a_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) ) * &
                         dT_LR(3*(p-1)+1:3*(p-1)+3,:)
                     end if
-                    if ( cent_appr ) then
+                    if ( cent_appr .and. n_order > 2 ) then
                       G_sym(:,3*(p-1)+1:3*(p-1)+3,j) = G_sym(:,3*(p-1)+1:3*(p-1)+3,j) * &
                         sqrt( a_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) ) + &                 ! This is if you want to include non-central gradients for the central rows only
                         1.d0/2.d0 * 1.d0/sqrt(a_mbd(k3+1)/(1.d0+(omegas_mbd(j)/o_mbd(k3+1))**2)) * &
@@ -5219,6 +5222,18 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                         do_mbd(k3+1) / ( o_mbd(k3+1)**2 + omegas_mbd(j)**2 )**2 ) * temp_mat_forces(:,3*(p-1)+1:3*(p-1)+3)
                       G_mat(:,3*(p-1)+1:3*(p-1)+3,j) = sqrt( a_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) ) * &
                         G_mat(:,3*(p-1)+1:3*(p-1)+3,j)
+                      !if ( i == 1 .and. c3 == 1 .and. j == 2 .and. p == 35 ) then
+                      !  write(*,*) "dA q", 1.d0/2.d0 * &
+                      !  1.d0/sqrt(a_mbd(k3+1)/(1.d0+(omegas_mbd(j)/o_mbd(k3+1))**2)) * &
+                      !  ( da_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) + &
+                      !  a_mbd(k3+1) * (2.d0 * omegas_mbd(j)**2 * o_mbd(k3+1)) * &
+                      !  do_mbd(k3+1) / ( o_mbd(k3+1)**2 + omegas_mbd(j)**2 )**2 )
+                      !  write(*,*) "a_mbd", a_mbd(k3+1)
+                      !  write(*,*) "o_mbd", o_mbd(k3+1)
+                      !  write(*,*) "da_mbd", da_mbd(k3+1)
+                      !  write(*,*) "do_mbd", do_mbd(k3+1)
+                      !  write(*,*) "rjs_0_mbd", rjs_0_mbd(k3+1)*Bohr
+                      !end if
                     end if
                     if ( p .ne. n_mbd_sites ) then
                       k3 = k3+n_mbd_neigh(p)
@@ -5240,9 +5255,9 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 close(89)
                 write(*,*) "val_sym_test"
                 open(unit=89, file="val_sym_test.dat", status="new")
-                do k2 = 1, nnz
-                  write(89,*) val_sym_test(k2,1)
-                end do
+                !do k2 = 1, nnz
+                !  write(89,*) val_sym_test(k2,1)
+                !end do
                 write(*,*) "val_sym_test done"
                 close(89)
 
@@ -5270,13 +5285,13 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                         if ( abs(f_damp_SCS(k2) * T_mbd(k3)  &
                                       * T_LR_mult_ij(k2)) > 1.d-20 ) then
                           k4 = k4 + 1
-                          write(89,*) G_mat(3*(p-1)+c1,3*(q-1)+c2,1)
-                          !write(89,*) dval(k4,1)
+                          write(89,*) G_mat(3*(p-1)+c1,3*(q-1)+c2,2)
+                          !write(89,*) dval(k4,2)
                           if ( k2+1 < n_mbd_pairs ) then
                           if ( p_mbd(k2+1) == -1 ) then 
                             k4 = k4 + 1
-                            write(89,*) G_mat(3*(q-1)+c1,3*(p-1)+c2,1)
-                            !write(89,*) dval(k4,1)
+                            write(89,*) G_mat(3*(q-1)+c1,3*(p-1)+c2,2)
+                            !write(89,*) dval(k4,2)
                           end if
                           end if
                         end if
@@ -5304,11 +5319,11 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
 
               end if
 
-              if ( cent_appr .and. include_2b ) then
-                do i_om = 1, n_freq
-                  write(*,*) "2b sym integrand", sum(val_sym(:,i_om)*dval(:,i_om))
-                end do
-              end if
+              !if ( cent_appr .and. include_2b ) then
+              !  do i_om = 1, n_freq
+              !    write(*,*) "2b sym integrand", sum(val_sym(:,i_om)*dval(:,i_om))
+              !  end do
+              !end if
 
               if ( .not. cent_appr ) then
               deallocate( temp_mat, temp_mat_forces )
@@ -5527,9 +5542,14 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                   end do
                   end if !.not. cent_appr
                   if ( cent_appr ) then
-                    do c1 = 1, 3
-                      integrand_sym(i2) = integrand_sym(i2) + dot_product(G_sym(c1,:,i2), pol_sym(:,c1,i2))
-                    end do
+                    if ( include_2b ) then
+                      integrand_sym(i2) = integrand_sym(i2) + sum(val_sym(:,i2)*dval(:,i2))
+                    end if
+                    if ( n_order > 2 ) then
+                      do c1 = 1, 3
+                        integrand_sym(i2) = integrand_sym(i2) + 2.d0*dot_product(G_sym(c1,:,i2), pol_sym(:,c1,i2))
+                      end do
+                    end if
                   end if
                 end do
                 deallocate( AT_copy, WR, WI, VR, VR_inv, work_mbd, ipiv_mbd, temp_mat )
@@ -5647,13 +5667,13 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                   call integrate("trapezoidal", omegas_mbd, log_integrand, omegas_mbd(1), omegas_mbd(n_freq), integral)
                   !write(*,*) "Log force", write(*,*) i, c3, integral/(2.d0*pi) * Hartree/Bohr
                   integral = 0.d0
-                  do i_om = 1, n_freq
-                    write(*,*) "integrand pol", integrand_pol(i_om)
-                  end do
+                  !do i_om = 1, n_freq
+                  !  write(*,*) "integrand pol", integrand_pol(i_om)
+                  !end do
                   call integrate("trapezoidal", omegas_mbd, integrand_pol, omegas_mbd(1), omegas_mbd(n_freq), integral)
                   !write(*,*) "integrand_pol", integrand_pol
-                  write(*,*) "Polynomial derivative force" 
-                  write(*,*) i, c3, integral/(2.d0*pi) * Hartree/Bohr
+                  !write(*,*) "Polynomial derivative force" 
+                  !write(*,*) i, c3, integral/(2.d0*pi) * Hartree/Bohr
                   integral = 0.d0
                   call integrate("trapezoidal", omegas_mbd, integrand, omegas_mbd(1), omegas_mbd(n_freq), integral)
                   !write(*,*) "Inverse force", i, c3, integral/(2.d0*pi) * Hartree/Bohr
@@ -5663,14 +5683,14 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                     sym_integral = 0.d0
                     call integrate("trapezoidal", omegas_mbd, integrand_sym, omegas_mbd(1), omegas_mbd(n_freq), sym_integral)
                     write(*,*) "Sym force" 
-                    write(*,*) i, c3, sym_integral/pi * Hartree/Bohr
+                    write(*,*) i, c3, sym_integral/(2.d0*pi) * Hartree/Bohr
                   end if
                 end if
                 if ( .not. cent_appr ) then
                   forces0(c3,i) = forces0(c3,i) + (1.d0/(2.d0*pi) * integral) * Hartree/Bohr
                 end if
                 if ( cent_appr ) then
-                  forces0(c3,i) = forces0(c3,i) + (1.d0/pi * sym_integral) * Hartree/Bohr
+                  forces0(c3,i) = forces0(c3,i) + (1.d0/(2.d0*pi) * sym_integral) * Hartree/Bohr
                 end if
 
                 !!!!!!write(*,*) "MBD force", i, c3, 1.d0/(2.d0*pi) * integral * Hartree/Bohr
@@ -5716,7 +5736,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
             if ( do_derivatives ) then
               deallocate( G_sym, dT_LR_sym )
               if ( include_2b ) then
-                deallocate( dval, val_sym_test )
+                deallocate( dval ) !, val_sym_test )
               end if
             end if
           end if
