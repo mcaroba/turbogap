@@ -1843,10 +1843,12 @@ program turbogap
            !     Here we write thermodynamic information -> THIS NEEDS CLEAN UP AND IMPROVEMENT
            if( md_istep == 0 .and. .not. params%do_nested_sampling )then
               open(unit=10, file="thermo.log", status="unknown")
-              write(10,"(A)") "#     Step             Time      Temperature                E_kin                     E_pot             Pressure" !! ------ added this heading to thermo.log file
+              write(10,"(A,A)") "#     Step             Time      Temperature                E_kin                     E_pot", &
+                                "             Pressure"
            else if( md_istep == 0 .and. i_nested == 1 )then
               open(unit=10, file="thermo.log", status="unknown")
-              write(10,"(A)") "#     Step             Time      Temperature                E_kin                     E_pot             Pressure" !! ------ added this heading to thermo.log file
+              write(10,"(A,A)") "#     Step             Time      Temperature                E_kin                     E_pot", &
+                                "             Pressure"
            else
               open(unit=10, file="thermo.log", status="old", position="append")
            end if
