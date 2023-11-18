@@ -162,7 +162,7 @@ def write_descriptor_to_output(output_file, gpCoordinates, index):
                 output.write(f" {4}")
             output.write("\n")
             output.write(f"central_weight = {desc_dict['central_weight'].strip('{}')}\n")
-            output.write(f"scaling mode = {desc_dict['scaling_mode']}\n")
+            output.write(f"scaling_mode = {desc_dict['scaling_mode']}\n")
             output.write("basis = " + '"' + desc_dict['basis'] + '"' + "\n")
             output.write(f"radial_enhancement = {desc_dict['radial_enhancement'].strip('{}')}\n")
             output.write(f"zeta = {desc_dict['zeta']}\n")
