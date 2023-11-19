@@ -114,14 +114,7 @@ subroutine eph_LangevinForces (this, vel, forces, masses, type_mass, &
 
 	Np = size(eph_for_atoms)	!! Number of atoms in specified group
 	!! The size of arrays should be same as the total number of atoms because
-	!! the specified group of atoms contain their ids.  
-	!! generate uncorrelated random vectors
-	allocate(rand_vec(3,size(vel,2)))
-	call randomGaussianArray(size(vel,2), 0.0d0, 1.0d0, rand_vec(1,:))
-	call randomGaussianArray(size(vel,2), 0.0d0, 1.0d0, rand_vec(2,:))
-	call randomGaussianArray(size(vel,2), 0.0d0, 1.0d0, rand_vec(3,:))
-	
-	correl_factor_eta = sqrt(2.0d0*boltzconst*1000.0d0/dt)	!! time units fs ----> ps
+	!! the specified group of atoms contain their ids.
 
 	if (.not. allocated(this%forces_fric)) allocate(this%forces_fric(3,size(vel,2)))
 	if (.not. allocated(this%forces_rnd)) allocate(this%forces_rnd(3,size(vel,2)))
@@ -175,6 +168,12 @@ subroutine eph_LangevinForces (this, vel, forces, masses, type_mass, &
 		!! -------------------------------------------------
 		
 		if (this%israndom == 1) then
+			!! generate uncorrelated random vectors
+			allocate(rand_vec(3,size(vel,2)))
+			call randomGaussianArray(size(vel,2), 0.0d0, 1.0d0, rand_vec(1,:))
+			call randomGaussianArray(size(vel,2), 0.0d0, 1.0d0, rand_vec(2,:))
+			call randomGaussianArray(size(vel,2), 0.0d0, 1.0d0, rand_vec(3,:))
+			correl_factor_eta = sqrt(2.0d0*boltzconst*1000.0d0/dt)	!! time units fs ----> ps
 
 			do ki = 1, Np
 				i = eph_for_atoms(ki)
@@ -237,6 +236,7 @@ subroutine eph_LangevinForces (this, vel, forces, masses, type_mass, &
 				this%forces_rnd(2,i) = this%forces_rnd(2,i) * correl_factor_eta * sqrt(v_Te)
 				this%forces_rnd(3,i) = this%forces_rnd(3,i) * correl_factor_eta * sqrt(v_Te)
 			end do
+			if ( allocated(rand_vec) ) deallocate(rand_vec)
 		end if	!! for condition (this%israndom == 1)
 	
 		!! -------------------------------------------------
