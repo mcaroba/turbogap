@@ -716,12 +716,18 @@ end if
       else if(keyword=='mc_lnvol_max')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_lnvol_max
+      else if(keyword=='n_mc_mu')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%n_mc_mu
+        allocate(params%mc_mu(1:params%n_mc_mu))
+        allocate(params%mc_species(1:params%n_mc_mu))
+        allocate(params%mc_mu_acceptance(1:params%n_mc_mu))
       else if(keyword=='mc_mu')then
         backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_mu
+        read(10, *, iostat=iostatus) cjunk, cjunk, (params%mc_mu(nw),nw=1,params%n_mc_mu)
       else if(keyword=='mc_species')then
-        backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_species
+         backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, (params%mc_species(nw),nw=1,params%n_mc_mu)
       else if(keyword=='mc_write_xyz')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_write_xyz
@@ -764,6 +770,18 @@ end if
         do i=1, params%n_mc_types
            params%mc_acceptance(i) = params%mc_acceptance(i) / k
         end do
+      else if(keyword=='mc_mu_acceptance')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, (params%mc_mu_acceptance(nw),nw=1,params%n_mc_types)
+        ! The acceptance probability is based on this sum and normalised
+        do i=1, params%n_mc_mu
+           k = k + params%mc_mu_acceptance(i)
+        end do
+
+        do i=1, params%n_mc_mu
+           params%mc_mu_acceptance(i) = params%mc_mu_acceptance(i) / k
+        end do
+
       else if(keyword=='accessible_volume')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%accessible_volume
@@ -1522,7 +1540,7 @@ end if
     end if
 
 !   Get masses from database
-    if( params%do_md .and. .not. masses_in_input_file )then
+    if( (params%do_md .or. params%do_mc) .and. .not. masses_in_input_file )then
       if( rank == 0 )then
         write(*,*)'                                       |'
         write(*,*)'WARNING: you have not provided masses  |  <-- WARNING'
