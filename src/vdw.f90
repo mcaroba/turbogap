@@ -1257,7 +1257,11 @@ r_buf_tsscs = 0.d0
     else
       r_buf_loc = r_buffer
     end if
-    !r_buf_loc = rcut_loc    
+    r_buf_loc = rcut_loc ! Comment this to do finite difference comparison. The purpose of this is to smoothen
+                         ! the polarizabilities towards the boundary of the SCS sphere because they are unstable.
+                         ! rcut_loc is used just for gradients of the SCS polarizabilities, so the larger your
+                         ! cut-off, the better your SCS gradients but the whole cut-off is used as the buffer
+                         ! region for stability reasons.    
 
     if ( rcut_mbd < r_buffer ) then
       r_buf_mbd = rcut_mbd
@@ -3331,7 +3335,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                     if ( rjs_0_mbd(k3+1) .le. (rcut_force)/Bohr ) then
                       do c1 = 1, 3
                         total_integrand(i2) = total_integrand(i2) + &
-                          res_mat(3)*dot_product(AT(3*(p-1)+c1,:,i2),AT(:,3*(p-1)+c1,i2))
+                            res_mat(3)*dot_product(AT(3*(p-1)+c1,:,i2),AT(:,3*(p-1)+c1,i2))
                       end do
                     end if
                     if ( p .ne. n_mbd_sites ) then
@@ -3491,7 +3495,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
           if ( cent_appr ) then
             energies(i) = energies(i) + (sym_integral + E_TS) * Hartree
           end if
-          write(*,*) "MBD energy", i, energies(i)
+          !write(*,*) "MBD energy", i, energies(i)
 
 
           if ( do_derivatives ) then
@@ -4032,6 +4036,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                   j = mbd_neighbors_list(k2)
                   j1 = modulo(j-1, n_sites0) + 1
                   q = p_mbd(k2)
+
                   if ( q .ne. -1 ) then
                   rjs_j = rjs_0_mbd(k2)
                   xyz_j = xyz_0_mbd(:,k2)
@@ -5193,6 +5198,19 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                         T_LR(3*(p-1)+1:3*(p-1)+3,:)
                       G_mat(3*(p-1)+1:3*(p-1)+3,:,j) = sqrt( a_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) ) * &
                         dT_LR(3*(p-1)+1:3*(p-1)+3,:)
+                      !if ( i == 1 .and. c3 == 1 .and. p == 24 .and. j == 1 ) then
+                      !  write(*,*) "p", p, 3*(p-1)+1
+                      !  write(*,*) "k3", k3
+                      !  write(*,*) "rjs_0_mbd", rjs_0_mbd(k3+1)*Bohr
+                      !  write(*,*) "a_mbd", sqrt( a_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) )
+                      !  write(*,*) "da_mbd", 1.d0/2.d0 * &
+                      !  1.d0/sqrt(a_mbd(k3+1)/(1.d0+(omegas_mbd(j)/o_mbd(k3+1))**2)) * &
+                      !  ( da_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) + &
+                      !  a_mbd(k3+1) * (2.d0 * omegas_mbd(j)**2 * o_mbd(k3+1)) * &
+                      !  do_mbd(k3+1) / ( o_mbd(k3+1)**2 + omegas_mbd(j)**2 )**2 )
+                      !  write(*,*) "T_LR", T_LR(3*(p-1)+1,3*(56-1)+1)
+                      !  write(*,*) "dT_LR", dT_LR(3*(p-1)+1,3*(56-1)+1)
+                      !end if
                     end if
                     if ( cent_appr .and. n_order > 2 ) then
                       G_sym(:,3*(p-1)+1:3*(p-1)+3,j) = G_sym(:,3*(p-1)+1:3*(p-1)+3,j) * &
@@ -5233,6 +5251,15 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                       !  write(*,*) "da_mbd", da_mbd(k3+1)
                       !  write(*,*) "do_mbd", do_mbd(k3+1)
                       !  write(*,*) "rjs_0_mbd", rjs_0_mbd(k3+1)*Bohr
+                      !end if
+                      !if ( i == 1 .and. c3 == 1 .and. p == 56 .and. j == 1 ) then
+                      !  write(*,*) "q", p, 3*(p-1)+1
+                      !  write(*,*) "a_mbd", sqrt( a_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) )
+                      !  write(*,*) "da_mbd", 1.d0/2.d0 * &
+                      !  1.d0/sqrt(a_mbd(k3+1)/(1.d0+(omegas_mbd(j)/o_mbd(k3+1))**2)) * &
+                      !  ( da_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) + &
+                      !  a_mbd(k3+1) * (2.d0 * omegas_mbd(j)**2 * o_mbd(k3+1)) * &
+                      !  do_mbd(k3+1) / ( o_mbd(k3+1)**2 + omegas_mbd(j)**2 )**2 )
                       !end if
                     end if
                     if ( p .ne. n_mbd_sites ) then
@@ -5333,17 +5360,41 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
 
               if ( .false. ) then
 
-              write(*,*) "G_mat"
+              write(*,*) "AT"
               !open(unit=89, file="G_mat.dat", status="new")
-              open(unit=89, file="G_mat.dat", status="new")
+              open(unit=89, file="AT.dat", status="new")
               do p = 1, 3*n_mbd_sites
-                write(89,*) G_mat(p,:,1)
+                write(89,*) AT(p,:,1)
               end do
               !do p = 1, 3
               !  write(79,*) G_sym(p,:,1)
               !end do
               close(89)
               !close(79)
+              write(*,*) "AT done"
+
+              end if
+
+              if ( .false. ) then
+              !if ( i == 1 .and. c3 == 1 .and. .not. include_2b ) then
+
+              write(*,*) "G_mat"
+              open(unit=79, file="pol_grad.dat", status="new")
+              open(unit=89, file="G_mat.dat", status="new")
+              !open(unit=79, file="pol_sym.dat", status="new")
+              !open(unit=89, file="G_sym.dat", status="new")
+
+              do p = 1, 3 !*n_mbd_sites
+                write(89,*) G_mat(p,:,1)
+              end do
+              do p = 1, 3*n_mbd_sites
+                write(79,*) pol_grad(p,1:3,1)
+              end do
+              !do p = 1, 3
+              !  write(79,*) G_sym(p,:,1)
+              !end do
+              close(89)
+              close(79)
               write(*,*) "G_mat done"
               end if
               
@@ -5682,8 +5733,8 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                   if ( cent_appr ) then
                     sym_integral = 0.d0
                     call integrate("trapezoidal", omegas_mbd, integrand_sym, omegas_mbd(1), omegas_mbd(n_freq), sym_integral)
-                    write(*,*) "Sym force" 
-                    write(*,*) i, c3, sym_integral/(2.d0*pi) * Hartree/Bohr
+                    !write(*,*) "Sym force" 
+                    !write(*,*) i, c3, sym_integral/(2.d0*pi) * Hartree/Bohr
                   end if
                 end if
                 if ( .not. cent_appr ) then
