@@ -1115,7 +1115,7 @@ module vdw
     
     real*8, allocatable :: A_nnls(:,:), b_nnls(:), coeff_nnls(:), work_nnls(:), omegas_nnls(:), integrand_nnls(:), &
                            total_integrand_nnls(:), work_integrand(:), trace_nnls(:), force_series0(:,:), full_integrand(:), &
-                           integrand_sp(:), at_n_vec(:), at_vec(:), g_vec(:), g_n_vec(:)
+                           integrand_sp(:), at_n_vec(:), at_vec(:), g_vec(:), g_n_vec(:), denom_nnls(:)
     integer, allocatable :: ind_nnls(:)
     real*8 :: res_nnls, E_tot, denom
     integer :: mode_nnls
@@ -3397,13 +3397,15 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
 
           if ( do_nnls ) then
 
-            allocate( A_nnls(1:n_freq,1:n_order+1) )
+            allocate( A_nnls(1:n_freq,1:3*n_order+1) )
             allocate( b_nnls(1:n_freq) )
-            allocate( coeff_nnls(1:n_order+1) )
-            allocate( work_nnls(1:n_order+1) )
-            allocate( ind_nnls(1:n_order+1) )
+            allocate( coeff_nnls(1:3*n_order+1) )
+            allocate( work_nnls(1:3*n_order+1) )
+            allocate( work_integrand(1:n_freq) )
+            allocate( ind_nnls(1:3*n_order+1) )
             allocate( omegas_nnls(1:201) )
             allocate( integrand_nnls(1:201) )
+            allocate( denom_nnls(1:201) )
 
             A_nnls = 0.d0
             b_nnls = 0.d0
@@ -3412,33 +3414,111 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
             work_nnls = 0.d0
             ind_nnls = 0.d0
 
-            do i2 = 1, n_freq
-              b_nnls(i2) = abs(integrand(i2))
-              do j2 = 1, n_order+1
-                if ( j2 == 1 ) then
-                  A_nnls(i2,j2) = 1.d0
-                else
-                  A_nnls(i2,j2) = -abs(integrand(i2))*omegas_mbd(i2)**(2*(j2-1))
-                end if
-              end do
+            if ( .not. cent_appr ) then
+            !do i2 = 1, n_freq
+            !  b_nnls(i2) = abs(integrand(i2))
+            !  do j2 = 1, n_order+1
+            !    if ( j2 == 1 ) then
+            !      A_nnls(i2,j2) = 1.d0
+            !    else
+            !      A_nnls(i2,j2) = -abs(integrand(i2))*omegas_mbd(i2)**(2*(j2-1))
+            !    end if
+            !  end do
+            !end do
+            if ( integrand(1) < 0.d0 ) then
+              work_integrand = -integrand
+            else
+              work_integrand = integrand
+            end if
+
+            b_nnls = work_integrand
+            A_nnls(:,1) = 1.d0
+            do j2 = 1, n_order
+              A_nnls(:,j2+1) = (omegas_mbd)**j2
+              A_nnls(:,n_order+1+j2) = -omegas_mbd**j2
+              A_nnls(:,2*n_order+1+j2) = -omegas_mbd**(2*j2)*work_integrand
+            end do 
+            end if
+
+            if ( cent_appr ) then
+            !do i2 = 1, n_freq
+            !  b_nnls(i2) = abs(integrand_sym(i2))
+            !  do j2 = 1, n_order+1
+            !    if ( j2 == 1 ) then
+            !      A_nnls(i2,j2) = 1.d0
+            !    else
+            !      A_nnls(i2,j2) = -abs(integrand_sym(i2))*omegas_mbd(i2)**(2*(j2-1))
+            !    end if
+            !  end do
+            !end do
+
+            if ( integrand_sym(1) < 0.d0 ) then
+              work_integrand = -integrand_sym
+            else
+              work_integrand = integrand_sym
+            end if
+
+            b_nnls = work_integrand
+            A_nnls(:,1) = 1.d0
+            do j2 = 1, n_order
+              A_nnls(:,j2+1) = (omegas_mbd)**j2
+              A_nnls(:,n_order+1+j2) = -omegas_mbd**j2
+              A_nnls(:,2*n_order+1+j2) = -omegas_mbd**(2*j2)*work_integrand
             end do
 
-            call nnls(A_nnls, n_freq, n_order+1, b_nnls, coeff_nnls, res_nnls, work_nnls, ind_nnls, mode_nnls)
+            end if
+
+            call nnls(A_nnls, n_freq, 3*n_order+1, b_nnls, coeff_nnls, res_nnls, work_nnls, ind_nnls, mode_nnls)
             !write(*,*) "nnls mode", mode_nnls
+            write(*,*) "nnls mode", mode_nnls
+            write(*,*) "omegas_mbd", omegas_mbd
+            if ( .not. cent_appr ) then
+            write(*,*) "integrand", integrand
+            end if
+            if ( cent_appr ) then
+            write(*,*) "sym integrand", integrand_sym
+            end if
+            write(*,*) "coeff_nnls", coeff_nnls
 
-            integrand_nnls = 1.d0
+            !integrand_nnls = 1.d0
+            !omegas_nnls = 0.d0
+
+            if ( .not. cent_appr ) then
+            !do j2 = 2, n_order+1
+            !  integrand_nnls(1) = integrand_nnls(1) + coeff_nnls(j2)*omegas_nnls(1)**(2.d0*(j2-1))
+            !end do
+            !integrand_nnls(1) = sign(coeff_nnls(1),integrand(1))/integrand_nnls(1)
+            !do i2 = 2, 201
+            !  omegas_nnls(i2) = omegas_nnls(i2-1)+0.02d0
+            !  do j2 = 2, n_order+1
+            !    integrand_nnls(i2) = integrand_nnls(i2) + coeff_nnls(j2)*omegas_nnls(i2)**(2.d0*(j2-1)) 
+            !  end do
+            !  integrand_nnls(i2) = sign(coeff_nnls(1),integrand(1))/integrand_nnls(i2)
+            !end do
+
+            !integral = 0.d0
+            !call cpu_time(time1)
+            !call integrate("trapezoidal", omegas_nnls, integrand_nnls, omegas_nnls(1), omegas_nnls(size(omegas_nnls)), integral)
+            !call cpu_time(time2)
+            !write(*,*) "Integration time", time2-time1
+            !integral = integral/(2.d0*pi)
+            integrand_nnls = coeff_nnls(1)
             omegas_nnls = 0.d0
-            do j2 = 2, n_order+1
-              integrand_nnls(1) = integrand_nnls(1) + coeff_nnls(j2)*omegas_nnls(1)**(2.d0*(j2-1))
-            end do
-            integrand_nnls(1) = sign(coeff_nnls(1),integrand(1))/integrand_nnls(1)
             do i2 = 2, 201
               omegas_nnls(i2) = omegas_nnls(i2-1)+0.02d0
-              do j2 = 2, n_order+1
-                integrand_nnls(i2) = integrand_nnls(i2) + coeff_nnls(j2)*omegas_nnls(i2)**(2.d0*(j2-1)) 
-              end do
-              integrand_nnls(i2) = sign(coeff_nnls(1),integrand(1))/integrand_nnls(i2)
             end do
+            do j2 = 1, n_order
+              integrand_nnls = integrand_nnls + coeff_nnls(j2+1)*(omegas_nnls)**j2 - coeff_nnls(n_order+1+j2)*omegas**j2
+            end do
+            denom_nnls = 1.d0
+            do j2 = 1, n_order
+              denom_nnls = denom_nnls + coeff_nnls(2*n_order+1+j2)*omegas_nnls**(2*j2)
+            end do
+            if ( integrand(1) < 0.d0 ) then
+              integrand_nnls = -integrand_nnls/denom_nnls
+            else
+              integrand_nnls = integrand_nnls/denom_nnls
+            end if
 
             integral = 0.d0
             !call cpu_time(time1)
@@ -3446,8 +3526,60 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
             !call cpu_time(time2)
             !write(*,*) "Integration time", time2-time1
             integral = integral/(2.d0*pi)
-         
-            deallocate( A_nnls, b_nnls, coeff_nnls, work_nnls, ind_nnls, omegas_nnls, integrand_nnls )
+
+            end if
+
+            if ( cent_appr ) then
+            !do j2 = 2, n_order+1
+            !  integrand_nnls(1) = integrand_nnls(1) + coeff_nnls(j2)*omegas_nnls(1)**(2.d0*(j2-1))
+            !end do
+            !integrand_nnls(1) = sign(coeff_nnls(1),integrand_sym(1))/integrand_nnls(1)
+            !do i2 = 2, 201
+            !  omegas_nnls(i2) = omegas_nnls(i2-1)+0.02d0
+            !  do j2 = 2, n_order+1
+            !    integrand_nnls(i2) = integrand_nnls(i2) + coeff_nnls(j2)*omegas_nnls(i2)**(2.d0*(j2-1))
+            !  end do
+            !  integrand_nnls(i2) = sign(coeff_nnls(1),integrand_sym(1))/integrand_nnls(i2)
+            !end do
+
+            !sym_integral = 0.d0
+            !call cpu_time(time1)
+            !call integrate("trapezoidal", omegas_nnls, integrand_nnls, omegas_nnls(1), &
+            !                omegas_nnls(size(omegas_nnls)), sym_integral)
+            !call cpu_time(time2)
+            !write(*,*) "Integration time", time2-time1
+            !sym_integral = sym_integral/(2.d0*pi)
+
+            integrand_nnls = coeff_nnls(1)
+            omegas_nnls = 0.d0
+            do i2 = 2, 201
+              omegas_nnls(i2) = omegas_nnls(i2-1)+0.02d0
+            end do
+            do j2 = 1, n_order
+              integrand_nnls = integrand_nnls + coeff_nnls(j2+1)*(omegas_nnls)**j2 - coeff_nnls(n_order+1+j2)*omegas**j2
+            end do
+            denom_nnls = 1.d0
+            do j2 = 1, n_order
+              denom_nnls = denom_nnls + coeff_nnls(2*n_order+1+j2)*omegas_nnls**(2*j2)
+            end do
+            if ( integrand_sym(1) < 0.d0 ) then
+              integrand_nnls = -integrand_nnls/denom_nnls
+            else
+              integrand_nnls = integrand_nnls/denom_nnls
+            end if
+
+            sym_integral = 0.d0
+            !call cpu_time(time1)
+            call integrate("trapezoidal", omegas_nnls, integrand_nnls, omegas_nnls(1), &
+                            omegas_nnls(size(omegas_nnls)), sym_integral)
+            !call cpu_time(time2)
+            !write(*,*) "Integration time", time2-time1
+            sym_integral = sym_integral/(2.d0*pi)
+
+            end if
+
+            deallocate( A_nnls, b_nnls, coeff_nnls, work_nnls, ind_nnls, omegas_nnls, &
+                        work_integrand, integrand_nnls, denom_nnls )
 
           else
 
@@ -3495,7 +3627,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
           if ( cent_appr ) then
             energies(i) = energies(i) + (sym_integral + E_TS) * Hartree
           end if
-          !write(*,*) "MBD energy", i, energies(i)
+          write(*,*) "MBD energy", i, energies(i)
 
 
           if ( do_derivatives ) then
@@ -5629,14 +5761,89 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
 
                 if ( do_nnls ) then
                
-                  allocate( A_nnls(1:n_freq,1:2*n_order+1) )
+                  !allocate( A_nnls(1:n_freq,1:2*n_order+1) )
+                  !allocate( b_nnls(1:n_freq) )
+                  !allocate( coeff_nnls(1:2*n_order+1) )
+                  !allocate( work_nnls(1:2*n_order+1) )
+                  !allocate( ind_nnls(1:2*n_order+1) )
+                  !allocate( omegas_nnls(1:21) )
+                  !allocate( integrand_nnls(1:21) )
+                  !allocate( work_integrand(1:size(integrand)) )
+
+                  !A_nnls = 0.d0
+                  !b_nnls = 0.d0
+                  !coeff_nnls = 0.d0
+                  !res_nnls = 0.d0
+                  !work_nnls = 0.d0
+                  !ind_nnls = 0.d0
+                
+                  !if (integrand(1) < 0.d0 ) then
+                  !  work_integrand = -integrand
+                  !else
+                  !  work_integrand = integrand
+                  !end if
+
+                  !do i2 = 1, n_freq
+                  !  b_nnls(i2) = work_integrand(i2)
+                  ! A_nnls(i2,1) = 1.d0
+                  !  do j2 = 1, n_order
+                  !    A_nnls(i2,j2+1) = (-1.d0 * omegas_mbd(i2))**j2
+                  !    A_nnls(i2,n_order+j2+1) = -work_integrand(i2) * omegas_mbd(i2)**(2*j2)
+                  !  end do
+                  !end do
+                
+                  !call nnls(A_nnls, n_freq, n_order+3, b_nnls, coeff_nnls, res_nnls, work_nnls, ind_nnls, mode_nnls)
+                  !write(*,*) "nnls mode forces", mode_nnls
+                  !write(*,*) "coeff", coeff_nnls
+
+                  !if ( integrand(1) < 0.d0 ) then
+                  !  integrand_nnls = -coeff_nnls(1)
+                  !else
+                  ! integrand_nnls = coeff_nnls(1)
+                  !end if
+                  !omegas_nnls = 0.d0
+                  !do j2 = 1, n_order
+                  !  if ( integrand(1) < 0.d0 ) then
+                  !    integrand_nnls(1) = integrand_nnls(1) - coeff_nnls(j2+1)*(-1.d0*omegas_nnls(1))**j2
+                  !  else
+                  !    integrand_nnls(1) = integrand_nnls(1) + coeff_nnls(j2+1)*(-1.d0*omegas_nnls(1))**j2
+                  !  end if
+                  !end do
+                  !denom = 1.d0
+                  !do j2 = 1, n_order
+                  !  denom = denom + coeff_nnls(n_order+j2+1) * omegas_nnls(1)**(2**j2)
+                  !end do
+                  !integrand_nnls(1) = integrand_nnls(1)/denom
+                  !do i2 = 2, 21
+                  !  omegas_nnls(i2) = omegas_nnls(i2-1)+0.2d0
+                  !  do j2 = 1, n_order
+                  !    if ( integrand(1) < 0.d0 ) then
+                  !      integrand_nnls(i2) = integrand_nnls(i2) - coeff_nnls(j2+1)*(-1.d0*omegas_nnls(i2))**j2
+                  !    else
+                  !      integrand_nnls(i2) = integrand_nnls(i2) + coeff_nnls(j2+1)*(-1.d0*omegas_nnls(i2))**j2
+                  !    end if
+                  !  end do
+                  !  denom = 1.d0
+                  !  do j2 = 1, n_order
+                  !   denom = denom + coeff_nnls(n_order+j2+1) * omegas_nnls(i2)**(2**j2)
+                  !  end do
+                  !  integrand_nnls(i2) = integrand_nnls(i2)/denom
+                  !end do
+
+                  !integral = 0.d0
+                  !call integrate("trapezoidal", omegas_nnls, integrand_nnls, omegas_nnls(1), &
+                  !               omegas_nnls(size(omegas_nnls)), integral)
+
+                  !deallocate( A_nnls, b_nnls, coeff_nnls, work_nnls, ind_nnls, omegas_nnls, integrand_nnls, work_integrand )
+                  allocate( A_nnls(1:n_freq,1:3*n_order+1) )
                   allocate( b_nnls(1:n_freq) )
-                  allocate( coeff_nnls(1:2*n_order+1) )
-                  allocate( work_nnls(1:2*n_order+1) )
-                  allocate( ind_nnls(1:2*n_order+1) )
-                  allocate( omegas_nnls(1:21) )
-                  allocate( integrand_nnls(1:21) )
-                  allocate( work_integrand(1:size(integrand)) )
+                  allocate( coeff_nnls(1:3*n_order+1) )
+                  allocate( work_nnls(1:3*n_order+1) )
+                  allocate( work_integrand(1:n_freq) )
+                  allocate( ind_nnls(1:3*n_order+1) )
+                  allocate( omegas_nnls(1:201) )
+                  allocate( integrand_nnls(1:201) )
+                  allocate( denom_nnls(1:201) )
 
                   A_nnls = 0.d0
                   b_nnls = 0.d0
@@ -5644,75 +5851,126 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                   res_nnls = 0.d0
                   work_nnls = 0.d0
                   ind_nnls = 0.d0
-                
-                  if (integrand(1) < 0.d0 ) then
+
+                  if ( .not. cent_appr ) then
+      
+                  if ( integrand_pol(1) < 0.d0 ) then
                     work_integrand = -integrand
                   else
                     work_integrand = integrand
                   end if
 
-                  do i2 = 1, n_freq
-                    b_nnls(i2) = work_integrand(i2)
-                    A_nnls(i2,1) = 1.d0
-                    do j2 = 1, n_order
-                      A_nnls(i2,j2+1) = (-1.d0 * omegas_mbd(i2))**j2
-                      A_nnls(i2,n_order+j2+1) = -work_integrand(i2) * omegas_mbd(i2)**(2*j2)
-                    end do
-                  end do
-                
-                  call nnls(A_nnls, n_freq, n_order+3, b_nnls, coeff_nnls, res_nnls, work_nnls, ind_nnls, mode_nnls)
-                  write(*,*) "nnls mode forces", mode_nnls
-                  write(*,*) "coeff", coeff_nnls
-
-                  if ( integrand(1) < 0.d0 ) then
-                    integrand_nnls = -coeff_nnls(1)
-                  else
-                    integrand_nnls = coeff_nnls(1)
+                  b_nnls = work_integrand
+                  A_nnls(:,1) = 1.d0
+                  do j2 = 1, n_order
+                    A_nnls(:,j2+1) = (omegas_mbd)**j2
+                    A_nnls(:,n_order+1+j2) = -(omegas_mbd)**j2
+                    A_nnls(:,2*n_order+1+j2) = -omegas_mbd**(2*j2)*work_integrand
+                  end do 
                   end if
+
+                  if ( cent_appr ) then
+      
+                  if ( integrand_sym(1) < 0.d0 ) then
+                    work_integrand = -integrand_sym
+                  else
+                    work_integrand = integrand_sym
+                  end if
+
+                  b_nnls = work_integrand
+                  A_nnls(:,1) = 1.d0
+                  do j2 = 1, n_order
+                    A_nnls(:,j2+1) = (omegas_mbd)**j2
+                    A_nnls(:,n_order+1+j2) = -(omegas_mbd)**j2
+                    A_nnls(:,2*n_order+1+j2) = -omegas_mbd**(2*j2)*work_integrand
+                  end do
+
+                  end if
+
+                  call nnls(A_nnls, n_freq, 3*n_order+1, b_nnls, coeff_nnls, res_nnls, work_nnls, ind_nnls, mode_nnls)
+                  !write(*,*) "nnls mode", mode_nnls
+                  write(*,*) "nnls mode", mode_nnls
+                  write(*,*) "omegas_mbd", omegas_mbd
+                  if ( .not. cent_appr ) then
+                  write(*,*) "integrand", integrand_pol
+                  end if
+                  if ( cent_appr ) then
+                  write(*,*) "sym integrand", integrand_sym
+                  end if
+                  write(*,*) "coeff_nnls", coeff_nnls
+
+                  if ( .not. cent_appr ) then
+            
+                  integrand_nnls = coeff_nnls(1)
                   omegas_nnls = 0.d0
+                  do i2 = 2, 201
+                    omegas_nnls(i2) = omegas_nnls(i2-1)+0.02d0
+                  end do
                   do j2 = 1, n_order
-                    if ( integrand(1) < 0.d0 ) then
-                      integrand_nnls(1) = integrand_nnls(1) - coeff_nnls(j2+1)*(-1.d0*omegas_nnls(1))**j2
-                    else
-                      integrand_nnls(1) = integrand_nnls(1) + coeff_nnls(j2+1)*(-1.d0*omegas_nnls(1))**j2
-                    end if
+                    integrand_nnls = integrand_nnls + coeff_nnls(j2+1)*omegas_nnls**j2 - coeff_nnls(n_order+1+j2)*omegas**j2
                   end do
-                  denom = 1.d0
+                  denom_nnls = 1.d0
                   do j2 = 1, n_order
-                    denom = denom + coeff_nnls(n_order+j2+1) * omegas_nnls(1)**(2**j2)
+                    denom_nnls = denom_nnls + coeff_nnls(2*n_order+1+j2)*omegas_nnls**(2*j2)
                   end do
-                  integrand_nnls(1) = integrand_nnls(1)/denom
-                  do i2 = 2, 21
-                    omegas_nnls(i2) = omegas_nnls(i2-1)+0.2d0
-                    do j2 = 1, n_order
-                      if ( integrand(1) < 0.d0 ) then
-                        integrand_nnls(i2) = integrand_nnls(i2) - coeff_nnls(j2+1)*(-1.d0*omegas_nnls(i2))**j2
-                      else
-                        integrand_nnls(i2) = integrand_nnls(i2) + coeff_nnls(j2+1)*(-1.d0*omegas_nnls(i2))**j2
-                      end if
-                    end do
-                    denom = 1.d0
-                    do j2 = 1, n_order
-                      denom = denom + coeff_nnls(n_order+j2+1) * omegas_nnls(i2)**(2**j2)
-                    end do
-                    integrand_nnls(i2) = integrand_nnls(i2)/denom
-                  end do
-
+                  if ( integrand_pol(1) < 0.d0 ) then
+                    integrand_nnls = -integrand_nnls/denom_nnls
+                  else
+                    integrand_nnls = integrand_nnls/denom_nnls
+                  end if
+      
                   integral = 0.d0
+                  !call cpu_time(time1)
                   call integrate("trapezoidal", omegas_nnls, integrand_nnls, omegas_nnls(1), &
-                                 omegas_nnls(size(omegas_nnls)), integral)
+                                  omegas_nnls(size(omegas_nnls)), integral)
+                  !call cpu_time(time2)
+                  !write(*,*) "Integration time", time2-time1
+                  integral = integral/(2.d0*pi)
 
-                  deallocate( A_nnls, b_nnls, coeff_nnls, work_nnls, ind_nnls, omegas_nnls, integrand_nnls, work_integrand )
+                  end if
+
+                  if ( cent_appr ) then
+
+                  integrand_nnls = coeff_nnls(1)
+                  omegas_nnls = 0.d0
+                  do i2 = 2, 201
+                    omegas_nnls(i2) = omegas_nnls(i2-1)+0.02d0
+                  end do
+                  do j2 = 1, n_order
+                    integrand_nnls = integrand_nnls + coeff_nnls(j2+1)*omegas_nnls**j2 - coeff_nnls(n_order+1+j2)*omegas**j2
+                  end do
+                  denom_nnls = 1.d0
+                  do j2 = 1, n_order
+                    denom_nnls = denom_nnls + coeff_nnls(2*n_order+1+j2)*omegas_nnls**(2*j2)
+                  end do
+                  if ( integrand_sym(1) < 0.d0 ) then
+                    integrand_nnls = -integrand_nnls/denom_nnls
+                  else
+                    integrand_nnls = integrand_nnls/denom_nnls
+                  end if
+
+                  sym_integral = 0.d0
+                  !call cpu_time(time1)
+                  call integrate("trapezoidal", omegas_nnls, integrand_nnls, omegas_nnls(1), &
+                                  omegas_nnls(size(omegas_nnls)), sym_integral)
+                  !call cpu_time(time2)
+                  !write(*,*) "Integration time", time2-time1
+                  sym_integral = sym_integral/(2.d0*pi)
+      
+                  end if
+
+                  deallocate( A_nnls, b_nnls, coeff_nnls, work_nnls, ind_nnls, omegas_nnls, &
+                        work_integrand, integrand_nnls, denom_nnls )
           
                 else
 
-                  integral = 0.d0
-                  call integrate("trapezoidal", omegas_mbd, integrand, omegas_mbd(1), omegas_mbd(n_freq), integral)
+!                  integral = 0.d0
+!                  call integrate("trapezoidal", omegas_mbd, integrand, omegas_mbd(1), omegas_mbd(n_freq), integral)
 
-                end if
+!                end if
                 
 
-                if ( .not. series_expansion ) then
+!                if ( .not. series_expansion ) then
                   if ( .not. cent_appr ) then
                   integral = 0.d0
                   call integrate("trapezoidal", omegas_mbd, log_integrand, omegas_mbd(1), omegas_mbd(n_freq), integral)
@@ -5723,18 +5981,18 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                   !end do
                   call integrate("trapezoidal", omegas_mbd, integrand_pol, omegas_mbd(1), omegas_mbd(n_freq), integral)
                   !write(*,*) "integrand_pol", integrand_pol
-                  !write(*,*) "Polynomial derivative force" 
-                  !write(*,*) i, c3, integral/(2.d0*pi) * Hartree/Bohr
+                  write(*,*) "Polynomial derivative force" 
+                  write(*,*) i, c3, integral/(2.d0*pi) * Hartree/Bohr
                   integral = 0.d0
                   call integrate("trapezoidal", omegas_mbd, integrand, omegas_mbd(1), omegas_mbd(n_freq), integral)
                   !write(*,*) "Inverse force", i, c3, integral/(2.d0*pi) * Hartree/Bohr
                   end if ! .not. cent_appr
-                  deallocate( log_integrand, integrand_pol )
+                  !deallocate( log_integrand, integrand_pol )
                   if ( cent_appr ) then
                     sym_integral = 0.d0
                     call integrate("trapezoidal", omegas_mbd, integrand_sym, omegas_mbd(1), omegas_mbd(n_freq), sym_integral)
-                    !write(*,*) "Sym force" 
-                    !write(*,*) i, c3, sym_integral/(2.d0*pi) * Hartree/Bohr
+                    write(*,*) "Sym force" 
+                    write(*,*) i, c3, sym_integral/(2.d0*pi) * Hartree/Bohr
                   end if
                 end if
                 if ( .not. cent_appr ) then
@@ -5747,6 +6005,8 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 !!!!!!write(*,*) "MBD force", i, c3, 1.d0/(2.d0*pi) * integral * Hartree/Bohr
                 !write(*,*) & !"Total force",
                 !           i, c3, forces0(c3,i)
+
+                deallocate( log_integrand, integrand_pol )
 
               end if
               
