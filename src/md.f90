@@ -7,8 +7,7 @@
 ! HND X   TurboGAP is published and distributed under the
 ! HND X      Academic Software License v1.0 (ASL)
 ! HND X
-! HND X   This file, md.f90, is copyright (c) 2019-2023, Miguel A. Caro,
-! HND X	  Uttiyoarnab Saha
+! HND X   This file, md.f90, is copyright (c) 2019-2023, Miguel A. Caro
 ! HND X
 ! HND X   TurboGAP is distributed in the hope that it will be useful for non-commercial
 ! HND X   academic research, but WITHOUT ANY WARRANTY; without even the implied
@@ -142,19 +141,7 @@ module md
           positions(j, i) = positions(j, i) + velocities(j, i)*dt + 0.5d0*forces(j, i)/masses(i)*dt**2
         end if
       end do
-    end do
-	
-    !! Modification dt_prev instead of dt is needed for variable time-step situations
-    !! since the steps in VV algorithm is followeed like this 
-    !! 1; 2,3,1; 2,3,1; 2,3,1; ...... for every MD step. Here 1 of VV is of current MD step
-    !! but 2,3 of the VV are of the previous MD step. [2 and 3 of VV of MD step 0 is from the
-    !! given input atom_file].
-
-    !! So, in its original way the adaptively modified time step could not be handled properly.
-    !! Also, all the processes that are dependent on
-    !! the time step and velocities, called after the VV algorithm here has to use the previous
-    !! time step, not the current time step because step 3 of VV where velocity is calculated
-    !! uses the previous time step.  
+    end do 
 
   end subroutine
 !**************************************************************************

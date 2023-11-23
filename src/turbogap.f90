@@ -1890,7 +1890,7 @@ program turbogap
 
 	  if ( params%nonadiabatic_processes ) then
 		call ephlsc%eph_LangevinEnergyDissipation (md_istep, md_time, velocities(1:3, 1:n_sites), &
-				positions(1:3, 1:n_sites), masses(1:n_sites), energies(1:n_sites), &
+				positions_prev(1:3, 1:n_sites), masses(1:n_sites), energies(1:n_sites), &
 				time_step_prev, eph_for_atoms, ephfdm)	
 	  end if
 

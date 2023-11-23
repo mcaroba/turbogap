@@ -188,13 +188,12 @@ subroutine eph_LangevinForces (this, vel, forces, masses, type_mass, &
 						r_ij = get_distance(xi,yi,zi,xj,yj,zj)
 						
 						r_ij_sq = r_ij*r_ij
-						
-						call getAtomType(j,natomtypes,masses,type_mass,atom_type)
-						jtype = atom_type
-						
+
 						if (r_ij < beta%r_cutoff) then
 							call relativeVector(positions(:,j), positions(:,i), rel_ij)
-							
+
+							call getAtomType(j,natomtypes,masses,type_mass,atom_type)
+							jtype = atom_type
 							!! find rho_J
 							rho_ij = 0.0d0
 							call beta%spline_int (beta%r,beta%data_rho(jtype,:),beta%y2rho(jtype,:), &
@@ -404,7 +403,7 @@ end subroutine eph_LangevinForces
 !! Calculate the energies that will be transferred between the atomic and electronic systems
 !! due to the forces that have been modified according to the Langevin spatial correlations 
 subroutine eph_LangevinEnergyDissipation (this, md_istep, md_time, vel, &
-				positions, masses, energies, dt, eph_for_atoms, fdm)
+				positions_prev, masses, energies, dt, eph_for_atoms, fdm)
 
 	implicit none
 
@@ -413,7 +412,7 @@ subroutine eph_LangevinEnergyDissipation (this, md_istep, md_time, vel, &
 	type (EPH_FDM_class), intent(inout) :: fdm
 
 	integer, intent(in) :: md_istep, eph_for_atoms(:)
-	real*8, intent(in) :: dt, md_time, vel(:,:), positions(:,:), masses(:), energies(:)
+	real*8, intent(in) :: dt, md_time, vel(:,:), positions_prev(:,:), masses(:), energies(:)
 	integer :: Np, i, j, ki
 	real*8 :: xi, yi, zi, Energy_val_fric, Energy_val_rnd, &
 	E_val_i_fric, E_val_i_eph, E_val_i_rnd, E_kinetic_atoms, &
@@ -470,7 +469,7 @@ subroutine eph_LangevinEnergyDissipation (this, md_istep, md_time, vel, &
 		do ki = 1, Np
 			i = eph_for_atoms(ki)
 			E_val_i_fric = 0.0d0; E_val_i_rnd = 0.0d0; E_val_i_eph = 0.0d0
-			xi = positions(1,i); yi = positions(2,i); zi = positions(3,i)
+			xi = positions_prev(1,i); yi = positions_prev(2,i); zi = positions_prev(3,i)
 			E_val_i_fric = E_val_i_fric - dt*dot_product(this%forces_fric(1:3,i), vel(1:3,i))
 			E_val_i_rnd = E_val_i_rnd - dt*dot_product(this%forces_rnd(1:3,i), vel(1:3,i))
 
@@ -487,7 +486,7 @@ subroutine eph_LangevinEnergyDissipation (this, md_istep, md_time, vel, &
 		do ki = 1, Np
 			i = eph_for_atoms(ki)
 			E_val_i_fric = 0.0d0
-			xi = positions(1,i); yi = positions(2,i); zi = positions(3,i)
+			xi = positions_prev(1,i); yi = positions_prev(2,i); zi = positions_prev(3,i)
 			E_val_i_fric = E_val_i_fric - dt*dot_product(this%forces_fric(1:3,i), vel(1:3,i))
 
 			if (this%fdm_option == 1) call fdm%feedback_ei_energy(xi, yi, zi, E_val_i_fric, dt)
@@ -499,7 +498,7 @@ subroutine eph_LangevinEnergyDissipation (this, md_istep, md_time, vel, &
 		do ki = 1, Np
 			i = eph_for_atoms(ki)
 			E_val_i_rnd = 0.0d0
-			xi = positions(1,i); yi = positions(2,i); zi = positions(3,i)
+			xi = positions_prev(1,i); yi = positions_prev(2,i); zi = positions_prev(3,i)
 			E_val_i_rnd = E_val_i_rnd - dt*dot_product(this%forces_rnd(1:3,i), vel(1:3,i))
 
 			if (this%fdm_option == 1) call fdm%feedback_ei_energy(xi, yi, zi, E_val_i_rnd, dt)
@@ -510,7 +509,7 @@ subroutine eph_LangevinEnergyDissipation (this, md_istep, md_time, vel, &
 	else if (this%isfriction == 0 .and. this%israndom == 0) then
 		do ki = 1, Np
 			i = eph_for_atoms(ki)
-			xi = positions(1,i); yi = positions(2,i); zi = positions(3,i)
+			xi = positions_prev(1,i); yi = positions_prev(2,i); zi = positions_prev(3,i)
 			if (this%fdm_option == 1) call fdm%feedback_ei_energy(xi, yi, zi, 0.0d0, dt)
 		end do
 	end if
