@@ -75,7 +75,7 @@ IF (m <= 0 .OR. n <= 0) THEN
   RETURN
 END IF
 iter = 0
-itmax = 3*n
+itmax = 30*n
 
 !                    INITIALIZE THE ARRAYS indx() AND X().
 

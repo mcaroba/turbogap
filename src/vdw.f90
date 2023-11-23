@@ -2078,6 +2078,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
           ! Using non-uniform distribution because the polarizabilities change more rapidly with low frequency values:
           do i2 = 1, n_freq
             omegas_mbd(i2) = (i2-1)**2 * omega/(n_freq-1)**2
+            !omegas_mbd(i2) = (i2-1) * omega/(n_freq-1)
           end do
 
           if ( .not. cent_appr ) then
@@ -3470,15 +3471,18 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
 
             call nnls(A_nnls, n_freq, 3*n_order+1, b_nnls, coeff_nnls, res_nnls, work_nnls, ind_nnls, mode_nnls)
             !write(*,*) "nnls mode", mode_nnls
-            write(*,*) "nnls mode", mode_nnls
-            write(*,*) "omegas_mbd", omegas_mbd
-            if ( .not. cent_appr ) then
-            write(*,*) "integrand", integrand
+            !write(*,*) "nnls mode", mode_nnls
+            !write(*,*) "omegas_mbd", omegas_mbd
+            !if ( .not. cent_appr ) then
+            !write(*,*) "integrand", integrand
+            !end if
+            !if ( cent_appr ) then
+            !write(*,*) "sym integrand", integrand_sym
+            !end if
+            !write(*,*) "coeff_nnls", coeff_nnls
+            if ( mode_nnls .ne. 1 ) then
+              write(*,*) "nnls failed"
             end if
-            if ( cent_appr ) then
-            write(*,*) "sym integrand", integrand_sym
-            end if
-            write(*,*) "coeff_nnls", coeff_nnls
 
             !integrand_nnls = 1.d0
             !omegas_nnls = 0.d0
@@ -5889,15 +5893,18 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
 
                   call nnls(A_nnls, n_freq, 3*n_order+1, b_nnls, coeff_nnls, res_nnls, work_nnls, ind_nnls, mode_nnls)
                   !write(*,*) "nnls mode", mode_nnls
-                  write(*,*) "nnls mode", mode_nnls
-                  write(*,*) "omegas_mbd", omegas_mbd
-                  if ( .not. cent_appr ) then
-                  write(*,*) "integrand", integrand_pol
+                  !write(*,*) "nnls mode", mode_nnls
+                  !write(*,*) "omegas_mbd", omegas_mbd
+                  !if ( .not. cent_appr ) then
+                  !write(*,*) "integrand", integrand_pol
+                  !end if
+                  !if ( cent_appr ) then
+                  !write(*,*) "sym integrand", integrand_sym
+                  !end if
+                  !write(*,*) "coeff_nnls", coeff_nnls
+                  if ( mode_nnls .ne. 1 ) then
+                    write(*,*) "nnls failed"
                   end if
-                  if ( cent_appr ) then
-                  write(*,*) "sym integrand", integrand_sym
-                  end if
-                  write(*,*) "coeff_nnls", coeff_nnls
 
                   if ( .not. cent_appr ) then
             
@@ -5925,7 +5932,9 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                                   omegas_nnls(size(omegas_nnls)), integral)
                   !call cpu_time(time2)
                   !write(*,*) "Integration time", time2-time1
-                  integral = integral/(2.d0*pi)
+                  !integral = integral/(2.d0*pi)
+                  write(*,*) "Polynomial derivative force"
+                  write(*,*) i, c3, integral/(2.d0*pi) * Hartree/Bohr
 
                   end if
 
@@ -5955,8 +5964,10 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                                   omegas_nnls(size(omegas_nnls)), sym_integral)
                   !call cpu_time(time2)
                   !write(*,*) "Integration time", time2-time1
-                  sym_integral = sym_integral/(2.d0*pi)
+                  !sym_integral = sym_integral/(2.d0*pi)
       
+                  write(*,*) "Sym force"
+                  write(*,*) i, c3, sym_integral/(2.d0*pi) * Hartree/Bohr
                   end if
 
                   deallocate( A_nnls, b_nnls, coeff_nnls, work_nnls, ind_nnls, omegas_nnls, &
