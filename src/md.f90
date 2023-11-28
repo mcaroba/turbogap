@@ -143,6 +143,16 @@ module md
       end do
     end do 
 
+    !! Modification dt_prev instead of dt is needed for variable time-step situations
+    !! since the steps in VV algorithm is followeed like this 
+    !! 1; 2,3,1; 2,3,1; 2,3,1; ...... for every MD step. Here 1 of VV is of current MD step
+    !! but 2,3 of the VV are of the previous MD step. [2 and 3 of VV of MD step 0 is from the
+    !! given input atom_file].
+
+    !! Also, all the processes that are dependent on
+    !! the time step and velocities, called after the VV algorithm here has to use the previous
+    !! time step, not the current time step because step 3 of VV where velocity is calculated
+    !! uses the previous time step.
   end subroutine
 !**************************************************************************
 
