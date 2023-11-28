@@ -41,6 +41,7 @@ module eph_electronic_stopping
 
 use eph_fdm
 use eph_beta
+USE OMP_LIB
 
 type EPH_LangevinSpatialCorrelation_class
 	
@@ -141,6 +142,9 @@ subroutine eph_LangevinForces (this, vel, forces, masses, type_mass, &
 
 		allocate(rho_I(size(vel,2)))
 		rho_I = 0.0d0
+
+!$OMP PARALLEL
+!$OMP DO
 		do ki = 1, Np
 			i = eph_for_atoms(ki)
 			xi = positions(1,i); yi = positions(2,i); zi = positions(3,i)
@@ -156,12 +160,14 @@ subroutine eph_LangevinForces (this, vel, forces, masses, type_mass, &
 						rho_ij = 0.0d0
 						call beta%spline_int (beta%r,beta%data_rho(jtype,:), &
 						beta%y2rho(jtype,:),beta%n_points_rho, r_ij, rho_ij)
-						
+
 						rho_I(i) = rho_I(i) + rho_ij
 					end if
 				end if
 			end do
 		end do
+!$OMP END DO
+!$OMP END PARALLEL
 
 		!! -------------------------------------------------
 		!! When random forces need to be calculated
@@ -174,13 +180,14 @@ subroutine eph_LangevinForces (this, vel, forces, masses, type_mass, &
 			call randomGaussianArray(size(vel,2), 0.0d0, 1.0d0, rand_vec(2,:))
 			call randomGaussianArray(size(vel,2), 0.0d0, 1.0d0, rand_vec(3,:))
 			correl_factor_eta = sqrt(2.0d0*boltzconst*1000.0d0/dt)	!! time units fs ----> ps
-
+!$OMP PARALLEL
+!$OMP DO
 			do ki = 1, Np
 				i = eph_for_atoms(ki)
 				call getAtomType(i,natomtypes,masses,type_mass,atom_type)
 				itype = atom_type
 				xi = positions(1,i); yi = positions(2,i); zi = positions(3,i)
-				
+
 				do kj = 1, Np
 					j = eph_for_atoms(kj)
 					if (i /= j) then
@@ -223,7 +230,7 @@ subroutine eph_LangevinForces (this, vel, forces, masses, type_mass, &
 							multiply_factor2 = alpha_J * rho_ij * multiply_factor2 / r_ij_sq / rho_I(j)
 							
 							multiply_factor = multiply_factor1 - multiply_factor2
-							
+
 							this%forces_rnd(1,i) = this%forces_rnd(1,i) + multiply_factor*rel_ij(1)
 							this%forces_rnd(2,i) = this%forces_rnd(2,i) + multiply_factor*rel_ij(2)
 							this%forces_rnd(3,i) = this%forces_rnd(3,i) + multiply_factor*rel_ij(3)
@@ -235,6 +242,8 @@ subroutine eph_LangevinForces (this, vel, forces, masses, type_mass, &
 				this%forces_rnd(2,i) = this%forces_rnd(2,i) * correl_factor_eta * sqrt(v_Te)
 				this%forces_rnd(3,i) = this%forces_rnd(3,i) * correl_factor_eta * sqrt(v_Te)
 			end do
+!$OMP END DO
+!$OMP END PARALLEL
 			if ( allocated(rand_vec) ) deallocate(rand_vec)
 		end if	!! for condition (this%israndom == 1)
 	
@@ -247,7 +256,8 @@ subroutine eph_LangevinForces (this, vel, forces, masses, type_mass, &
 			!! Find auxillary set w_I
 			allocate(w_I(3,size(vel,2)))
 			w_I = 0.0d0
-
+!$OMP PARALLEL
+!$OMP DO
 			do ki = 1, Np
 				i = eph_for_atoms(ki)
 				call getAtomType(i,natomtypes,masses,type_mass,atom_type)
@@ -258,7 +268,6 @@ subroutine eph_LangevinForces (this, vel, forces, masses, type_mass, &
 				alpha_I = 0.0d0
 				call beta%spline_int (beta%rho, beta%data_alpha(itype,:), &
 					beta%y2alpha(itype,:), beta%n_points_beta, rho_I(i), alpha_I)
-
 				do kj = 1, Np
 					j = eph_for_atoms(kj)
 					if (i /= j) then
@@ -290,9 +299,13 @@ subroutine eph_LangevinForces (this, vel, forces, masses, type_mass, &
 					end if
 				end do
 			end do
+!$OMP END DO
+!$OMP END PARALLEL
 
 			!! Find sig_I --> F_fric
 
+!$OMP PARALLEL
+!$OMP DO
 			do ki = 1, Np
 				i = eph_for_atoms(ki)
 				call getAtomType(i,natomtypes,masses,type_mass,atom_type)
@@ -350,7 +363,9 @@ subroutine eph_LangevinForces (this, vel, forces, masses, type_mass, &
 						end if
 					end if
 				end do
-			end do	
+			end do
+!$OMP END DO
+!$OMP END PARALLEL
 		end if	!! for condition (this%isfriction == 1)
 
 	end if	!! for condition (this%isfriction == 1 .or. this%israndom == 1)
@@ -360,31 +375,40 @@ subroutine eph_LangevinForces (this, vel, forces, masses, type_mass, &
 	!! Different cases of switching ON/OFF the friction and random forces	 
 	!! this is the full model
 	if (this%isfriction == 1 .and. this%israndom == 1) then
+!$OMP PARALLEL
+!$OMP DO
 		do ki = 1, Np
 			i = eph_for_atoms(ki)
 			forces(1,i) = forces(1,i) + this%forces_rnd(1,i) + this%forces_fric(1,i)
 			forces(2,i) = forces(2,i) + this%forces_rnd(2,i) + this%forces_fric(2,i)
 			forces(3,i) = forces(3,i) + this%forces_rnd(3,i) + this%forces_fric(3,i)
 		end do
-
+!$OMP END DO
+!$OMP END PARALLEL
 	!! this is with only friction
 	else if (this%isfriction == 1 .and. this%israndom == 0) then
+!$OMP PARALLEL
+!$OMP DO
 		do ki = 1, Np
 			i = eph_for_atoms(ki)
 			forces(1,i) = forces(1,i) + this%forces_fric(1,i)
 			forces(2,i) = forces(2,i) + this%forces_fric(2,i)
 			forces(3,i) = forces(3,i) + this%forces_fric(3,i)
 		end do
-
+!$OMP END DO
+!$OMP END PARALLEL
 	!! this is with only random	
 	else if (this%isfriction == 0 .and. this%israndom == 1) then			
+!$OMP PARALLEL
+!$OMP DO
 		do ki = 1, Np
 			i = eph_for_atoms(ki)
 			forces(1,i) = forces(1,i) + this%forces_rnd(1,i)
 			forces(2,i) = forces(2,i) + this%forces_rnd(2,i)
 			forces(3,i) = forces(3,i) + this%forces_rnd(3,i)
 		end do
-
+!$OMP END DO
+!$OMP END PARALLEL
 	!! this is for not including friction and random, this is definitely not needed
 	else if (this%isfriction == 0 .and. this%israndom == 0) then
 		do ki = 1, Np

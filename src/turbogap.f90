@@ -95,7 +95,7 @@ program turbogap
   type (EPH_Beta_class) :: ephbeta
   type (EPH_FDM_class) :: ephfdm
   type (EPH_LangevinSpatialCorrelation_class) :: ephlsc
-  
+
   !! These declarations are for groups of atoms (add new ones here)
   !! ---- Containers of group-specific atoms ----
   type (groups_class) :: forgroups
