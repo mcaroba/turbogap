@@ -3631,7 +3631,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
           if ( cent_appr ) then
             energies(i) = energies(i) + (sym_integral + E_TS) * Hartree
           end if
-          write(*,*) "MBD energy", i, energies(i)
+          !write(*,*) "MBD energy", i, energies(i)
 
 
           if ( do_derivatives ) then
@@ -5966,8 +5966,8 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                   !write(*,*) "Integration time", time2-time1
                   !sym_integral = sym_integral/(2.d0*pi)
       
-                  write(*,*) "Sym force"
-                  write(*,*) i, c3, sym_integral/(2.d0*pi) * Hartree/Bohr
+                  !write(*,*) "Sym force"
+                  !write(*,*) i, c3, sym_integral/(2.d0*pi) * Hartree/Bohr
                   end if
 
                   deallocate( A_nnls, b_nnls, coeff_nnls, work_nnls, ind_nnls, omegas_nnls, &

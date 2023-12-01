@@ -4,6 +4,12 @@ from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 
 plt.rcParams['text.usetex'] = True
 
+font = {'weight' : 'bold',
+        'size'   : 16}
+
+plt.rc('font', **font)
+
+
 ene_ts = np.loadtxt("c60_dimer_ts.dat")
 ene_none = np.loadtxt("c60_dimer_none.dat")
 ene_mbd = np.loadtxt("c60_dimer_mbd.dat")
@@ -35,7 +41,7 @@ ene_dft = ene_dft-2*c60_dft #+ene_dft_edisp-2*c60_dft_edisp
 #d2 = np.linspace(10,12,11)
 #d = np.append(d1,d2)
 d = np.linspace(8,12,41)
-d_dft = np.array([9.6,9.7,9.8,9.9,10.0])
+d_dft = np.array([9.6,9.7,9.8,9.9,10.0,10.1,10.2,10.3,10.4])
 
 #plt.figure(figsize=(12,6))
 plt.figure()
@@ -51,8 +57,8 @@ plt.legend()
 #plt.plot(d_dft,ene_dft_edisp,'c*-')
 plt.show()
 
-#plt.figure(figsize=(12,6))
-plt.figure()
+plt.figure(figsize=(8,6))
+#plt.figure()
 ax = plt.subplot(111)
 ax.plot(d[12:],ene_none[12:],'r.-',label="GAP+None")
 ax.plot(d[12:],ene_ts[12:],'b.-',label="GAP+TS")
@@ -63,8 +69,8 @@ ax.set_xlabel("Distance between C60 centers [Å]")
 ax.set_ylabel("Interaction energy [eV]")
 ax.set_title("Interaction energy for C60 dimer")
 arr_img = plt.imread('c60_dimer.png')
-im = OffsetImage(arr_img, zoom=.13)
-ab = AnnotationBbox(im, (0.5, 0.7), xycoords='axes fraction', bboxprops=dict(alpha=0.0))
+im = OffsetImage(arr_img, zoom=.2)
+ab = AnnotationBbox(im, (0.37, 0.7), xycoords='axes fraction', bboxprops=dict(alpha=0.0))
 ax.add_artist(ab)
 ax.legend()
 plt.show()

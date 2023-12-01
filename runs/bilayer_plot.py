@@ -3,6 +3,12 @@ import matplotlib.pyplot as plt
 
 plt.rcParams['text.usetex'] = True
 
+font = {'weight' : 'bold',
+        'size'   : 16}
+
+plt.rc('font', **font)
+
+
 graphene = -36.91333179
 graphene_ts = -37.09438465
 graphene_mbd = -37.23697460
@@ -23,7 +29,7 @@ ene_dft = ene_dft - 2*graphene_dft
 
 d = np.linspace(1.6,5.0,35)
 
-#plt.figure(figsize=(12,6))
+plt.figure(figsize=(8,6))
 plt.plot(d[9:],ene[9:],'r.-',label="None")
 plt.plot(d[9:],ene_ts[9:],'b.-',label="TS")
 plt.plot(d[9:],ene_mbd[9:],'c.-',label="MBD (10+5)")
