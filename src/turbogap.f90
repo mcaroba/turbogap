@@ -1058,6 +1058,10 @@ program turbogap
         energies_core_pot = 0.d0
         energies_vdw = 0.d0
         if( any( soap_turbo_hypers(:)%has_vdw ) )then
+!          Write Hirshfeld volumes unless the user has disabled it
+           if( params%write_hirshfeld_v )then
+             params%write_array_property(7) = .true.
+           end if
            if( n_sites /= n_sites_prev .or.  params%do_mc  )then
               if( allocated(hirshfeld_v) )then
                  nullify( this_hirshfeld_v_pt )
