@@ -602,6 +602,10 @@ module neighbors
     allocate( j_beg_list(1:n_chunks) )
     allocate( j_end_list(1:n_chunks) )
 
+    if( n_chunks == 0 )then
+      return
+    end if
+
     i_beg_list(1) = 1
     j_beg_list(1) = 1
     i_end_list(n_chunks) = n_sites
