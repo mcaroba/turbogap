@@ -84,7 +84,7 @@ def descriptor_to_dict(descriptor):
     return dict
 
 def compare_descriptors(descriptor1, descriptor2):
-    ignore_fields = ['config_type_n_sparse', 'n_sparse']
+    ignore_fields = ['config_type_n_sparse', 'n_sparse', 'zeta', 'delta']
     dict1 = descriptor_to_dict(descriptor1)
     dict2 = descriptor_to_dict(descriptor2)
     keys = list(set(dict1.keys()).union(set(dict2.keys())) - set(ignore_fields))
