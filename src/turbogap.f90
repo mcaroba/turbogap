@@ -1882,8 +1882,7 @@ END IF
 	  call mpi_bcast(md_time, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
 	  call mpi_bcast(time_step, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
 	  
-	!! This part is only when groups are declared to as dynamic
-
+	  !! This part is for groups declared as dynamic
 	  if ( eel_group_dynamic .and. md_istep /=0 .and. (mod(md_istep, eel_group_update_interval) == 0) ) then
 		call mpi_bcast (num_eel_atoms, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
 		IF ( rank /= 0 ) THEN
