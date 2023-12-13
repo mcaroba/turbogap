@@ -267,7 +267,7 @@ end if
       allocate( positions_supercell(1:3, 1:n_sites_supercell) )
 !     We need to comment this out here for nested sampling
 !      if( do_md )then
-      if( .true. )then
+      if( allocated(velocities) )then
         allocate( velocities_supercell(1:3, 1:n_sites_supercell) )
       end if
 !      allocate( species_supercell(1:max_species_multiplicity, 1:n_sites_supercell) )
@@ -289,7 +289,7 @@ end if
                                                                     + dfloat(k2-1)*c_box(1:3)
 !             We need to comment this out here for nested sampling
 !              if( do_md )then
-              if( .true. )then
+              if( allocated(velocities) )then
                 velocities_supercell(1:3, counter) = velocities(1:3, i)
               end if
 !              species_supercell(:, counter) = species(:, i)
@@ -305,7 +305,7 @@ end if
       deallocate( positions_supercell )
 !     We need to comment this out here for nested sampling
 !      if( do_md )then
-      if( .true. )then
+      if( allocated(velocities) )then
         deallocate( velocities )
         allocate( velocities(1:3, 1:n_sites_supercell) )
         velocities(1:3, 1:n_sites_supercell) = velocities_supercell(1:3, 1:n_sites_supercell)
@@ -333,7 +333,7 @@ end if
         deallocate( positions_supercell )
 !       We need to comment this out here for nested sampling
 !        if( do_md )then
-        if( .true. )then
+        if( allocated(velocities) )then
           allocate( velocities_supercell(1:3, 1:n_sites_supercell) )
           velocities_supercell = velocities(1:3, 1:n_sites_supercell)
           deallocate( velocities )
