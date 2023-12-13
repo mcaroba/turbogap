@@ -41,24 +41,24 @@ module eph_electronic_stopping
 
 use eph_fdm
 use eph_beta
-USE OMP_LIB
+use mpi
 
 type EPH_LangevinSpatialCorrelation_class
-	
+
 	character*128 :: T_outfile
 	integer :: T_out_freq, isfriction, israndom, model_eph, T_out_mesh_freq, &
 			fdm_option
 	real*8, allocatable :: forces_fric(:,:), forces_rnd(:,:)
 	real*8 :: E_eph_cumulative, md_prev_time
-	
+
 	contains
 	procedure :: eph_InitialValues	
 	procedure :: eph_LangevinForces, eph_LangevinEnergyDissipation
-	
+	procedure :: eph_InitialValues_broadcastQuantities
+
 end type EPH_LangevinSpatialCorrelation_class
 
 contains
-
 
 !! Initialize some required variables
 subroutine eph_InitialValues (this, isfriction, israndom, fdm_option, T_outfile, &
@@ -67,9 +67,9 @@ subroutine eph_InitialValues (this, isfriction, israndom, fdm_option, T_outfile,
 	
 	class (EPH_LangevinSpatialCorrelation_class) :: this
 	character*128, intent(in) :: T_outfile
-	integer :: T_out_freq, isfriction, israndom, fdm_option, model_eph, T_out_mesh_freq
-	real*8 :: E_eph_cumulative_prev, md_prev_time
-	
+	integer, intent(in) :: T_out_freq, isfriction, israndom, fdm_option, model_eph, T_out_mesh_freq
+	real*8, intent(in) :: E_eph_cumulative_prev, md_prev_time
+
 	this%T_outfile = T_outfile
 	this%T_out_freq = T_out_freq
 	this%isfriction = isfriction 
@@ -79,76 +79,99 @@ subroutine eph_InitialValues (this, isfriction, israndom, fdm_option, T_outfile,
 	this%T_out_mesh_freq = T_out_mesh_freq
 	this%E_eph_cumulative = E_eph_cumulative_prev + 0.0d0	!! cumulative energy transferred
 	this%md_prev_time = md_prev_time		!! MD time from previous run
-	
+
 end subroutine eph_InitialValues
 
+!! broadcast required quantities
+subroutine eph_InitialValues_broadcastQuantities (this, ierr)
+	implicit none
+	class (EPH_LangevinSpatialCorrelation_class) :: this
+	integer :: ierr
+
+	call mpi_bcast (this%isfriction, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+	call mpi_bcast (this%israndom, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+	call mpi_bcast (this%model_eph, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+	call mpi_bcast (this%fdm_option, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+	call mpi_bcast (this%E_eph_cumulative, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+
+end subroutine eph_InitialValues_broadcastQuantities
 
 !! Calculate the friction and random forces according to the Langevin spatial correlations
 !! and then correct the forces obtained using the interatomic potential. 
 subroutine eph_LangevinForces (this, vel, forces, masses, type_mass, &
-			md_istep, dt, md_time, positions, natomtypes, eph_for_atoms, beta, fdm)
+			md_istep, dt, md_time, positions, natomtypes, eph_for_atoms, Np, beta, fdm, & 
+			rank, ntasks, ierr)
 	implicit none
-	
+
 	class (eph_LangevinSpatialCorrelation_class) :: this
 	
 	type (EPH_Beta_class), intent(in) :: beta
-	type (EPH_FDM_class), intent(in) :: fdm
+	type (EPH_FDM_class), intent(in) :: fdm 
 	
-	integer, intent(in) :: natomtypes, md_istep, eph_for_atoms(:)
+	integer, intent(in) :: natomtypes, md_istep, eph_for_atoms(:), Np, &
+	rank, ntasks
 	real*8, intent(in) :: vel(:,:), positions(:,:), masses(:), &
 	type_mass(:), dt, md_time
 	
 	real*8, intent(inout) :: forces(:,:)
 	
-	integer :: Np, i, j, ki, kj, itype, jtype, atom_type
-	
+	integer ::  Np_all, i, j, ki, kj, itype, jtype, atom_type
+	integer :: start_index, stop_index, istart, istop, ierr
+
 	real*8 :: xi, yi, zi, xj, yj, zj, r_ij, alpha_I, alpha_J, rho_ij, v_Te, rel_ij(3), &
 	rel_v_ij(3), r_ij_sq, correl_factor_eta, multiply_factor, multiply_factor1, &
 	multiply_factor2
 
 	real*8, allocatable :: rand_vec(:,:), rho_I(:), w_I(:,:)
 	real*8, parameter :: boltzconst = 8.61733326E-05
+	integer, allocatable :: atoms_pair_consider(:), num_neighbours(:)
 
 	!! Do all calculations for MD time greater than 0
 	
 	if ( .not. (md_istep == 0 .or. md_istep == -1) ) then
-
-	Np = size(eph_for_atoms)	!! Number of atoms in specified group
-	!! The size of arrays should be same as the total number of atoms because
-	!! the specified group of atoms contain their ids.
-
-	if (.not. allocated(this%forces_fric)) allocate(this%forces_fric(3,size(vel,2)))
-	if (.not. allocated(this%forces_rnd)) allocate(this%forces_rnd(3,size(vel,2)))
+		Np_all = size(vel,2)
+	if (.not. allocated(this%forces_fric)) allocate(this%forces_fric(3,Np_all))
+	if (.not. allocated(this%forces_rnd)) allocate(this%forces_rnd(3,Np_all))
 
 	this%forces_fric = 0.0d0
 	this%forces_rnd = 0.0d0
-	
-	!! --------------------------------------------
-	!! 					 Definitions 
-	!! --------------------------------------------
-	!! *-*-*-*- -*-*-*-*
-	!! Implementation of random forces and friction forces 
-	!! according to PRL 120, 185501 (2018)
-	!!		----------------------------	
-	
-	!! ---------------------------------------------------
-	!! To find forces sigma_I and eta_I ......
-	!! ---------------------------------------------------
+IF (rank /= 0) forces = 0.0d0
+
+		if (this%isfriction == 1 .or. this%israndom == 1) then
+			!! make list of the atom pairs
+			allocate(num_neighbours(Np_all), atoms_pair_consider(0))
+			num_neighbours = 0
+			!! Find total atomic electronic densities at all sites limited by the 
+			!! value of r_cutoff given in the beta file.
+			allocate(rho_I(Np_all))
+			rho_I = 0.0d0
+		end if
+		if (this%israndom == 1) then
+			!! generate uncorrelated random vectors
+			allocate(rand_vec(3,Np_all))
+IF (rank == 0) THEN
+			call randomGaussianArray (Np_all, 0.0d0, 1.0d0, rand_vec(1,:))
+			call randomGaussianArray (Np_all, 0.0d0, 1.0d0, rand_vec(2,:))
+			call randomGaussianArray (Np_all, 0.0d0, 1.0d0, rand_vec(3,:))
+END IF
+			call mpi_bcast (rand_vec, 3*Np_all, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+			correl_factor_eta = sqrt(2.0d0*boltzconst*1000.0d0/dt)	!! time units fs ----> ps
+		end if
+
+		if (this%isfriction == 1) then
+			!! Find auxillary set w_I
+			allocate(w_I(3,Np_all))
+			w_I = 0.0d0
+		end if
+
+	call iterationRangesToProcesses (1, Np, ntasks, rank, istart, istop)
 
 	if (this%isfriction == 1 .or. this%israndom == 1) then
 
-		! Find total atomic electronic densities at all sites limited by the 
-		! value of r_cutoff given in the beta file.
-
-		allocate(rho_I(size(vel,2)))
-		rho_I = 0.0d0
-
-!$OMP PARALLEL
-!$OMP DO
-		do ki = 1, Np
+		do ki = istart, istop
 			i = eph_for_atoms(ki)
 			xi = positions(1,i); yi = positions(2,i); zi = positions(3,i)
-			
+
 			do kj = 1, Np
 				j = eph_for_atoms(kj)
 				if (i /= j) then
@@ -162,103 +185,91 @@ subroutine eph_LangevinForces (this, vel, forces, masses, type_mass, &
 						beta%y2rho(jtype,:),beta%n_points_rho, r_ij, rho_ij)
 
 						rho_I(i) = rho_I(i) + rho_ij
+						atoms_pair_consider = [atoms_pair_consider, j]
+						num_neighbours(i) = num_neighbours(i) + 1
 					end if
 				end if
 			end do
 		end do
-!$OMP END DO
-!$OMP END PARALLEL
+
+		call mpi_allreduce (MPI_IN_PLACE, rho_I, Np_all, MPI_DOUBLE_PRECISION, &
+					MPI_SUM, MPI_COMM_WORLD, ierr)
 
 		!! -------------------------------------------------
 		!! When random forces need to be calculated
 		!! -------------------------------------------------
 		
 		if (this%israndom == 1) then
-			!! generate uncorrelated random vectors
-			allocate(rand_vec(3,size(vel,2)))
-			call randomGaussianArray(size(vel,2), 0.0d0, 1.0d0, rand_vec(1,:))
-			call randomGaussianArray(size(vel,2), 0.0d0, 1.0d0, rand_vec(2,:))
-			call randomGaussianArray(size(vel,2), 0.0d0, 1.0d0, rand_vec(3,:))
-			correl_factor_eta = sqrt(2.0d0*boltzconst*1000.0d0/dt)	!! time units fs ----> ps
-!$OMP PARALLEL
-!$OMP DO
-			do ki = 1, Np
+
+			do ki = istart, istop
 				i = eph_for_atoms(ki)
 				call getAtomType(i,natomtypes,masses,type_mass,atom_type)
 				itype = atom_type
 				xi = positions(1,i); yi = positions(2,i); zi = positions(3,i)
+				start_index = sum(num_neighbours(1:i-1)) + 1
+				stop_index = sum(num_neighbours(1:i))
+				do kj = start_index, stop_index
+					j = atoms_pair_consider(kj)
+					xj = positions(1,j); yj = positions(2,j); zj = positions(3,j) 
+					r_ij = get_distance(xi,yi,zi,xj,yj,zj)
+					r_ij_sq = r_ij*r_ij
 
-				do kj = 1, Np
-					j = eph_for_atoms(kj)
-					if (i /= j) then
-						xj = positions(1,j); yj = positions(2,j); zj = positions(3,j) 
-						r_ij = get_distance(xi,yi,zi,xj,yj,zj)
-						
-						r_ij_sq = r_ij*r_ij
+					call relativeVector(positions(:,j), positions(:,i), rel_ij)
 
-						if (r_ij < beta%r_cutoff) then
-							call relativeVector(positions(:,j), positions(:,i), rel_ij)
+					call getAtomType(j,natomtypes,masses,type_mass,atom_type)
+					jtype = atom_type
+					!! find rho_J
+					rho_ij = 0.0d0
+					call beta%spline_int (beta%r,beta%data_rho(jtype,:),beta%y2rho(jtype,:), &
+									beta%n_points_rho, r_ij, rho_ij)
+					
+					!! find alpha_I	
+					alpha_I = 0.0d0
+					call beta%spline_int (beta%rho, beta%data_alpha(itype,:), &
+							beta%y2alpha(itype,:),beta%n_points_beta, rho_I(i), alpha_I)
 
-							call getAtomType(j,natomtypes,masses,type_mass,atom_type)
-							jtype = atom_type
-							!! find rho_J
-							rho_ij = 0.0d0
-							call beta%spline_int (beta%r,beta%data_rho(jtype,:),beta%y2rho(jtype,:), &
-											beta%n_points_rho, r_ij, rho_ij)
-							
-							!! find alpha_I	
-							alpha_I = 0.0d0
-							call beta%spline_int (beta%rho, beta%data_alpha(itype,:), &
-									beta%y2alpha(itype,:),beta%n_points_beta, rho_I(i), alpha_I)
+					multiply_factor1 = dot_product( rel_ij, rand_vec(:,i) )
+					
+					multiply_factor1 = alpha_I * rho_ij * multiply_factor1 / r_ij_sq / rho_I(i)
+					
+					!! find rho_I
+					rho_ij = 0.0d0
+					call beta%spline_int (beta%r,beta%data_rho(itype,:),beta%y2rho(itype,:), &
+									beta%n_points_rho, r_ij, rho_ij)
+					
+					! find alpha_J
+					alpha_J = 0.0d0
+					call beta%spline_int (beta%rho, beta%data_alpha(jtype,:), &
+							beta%y2alpha(jtype,:), beta%n_points_beta, rho_I(j), alpha_J)
+					
+					multiply_factor2 = dot_product( rel_ij, rand_vec(:,j) )
+					
+					multiply_factor2 = alpha_J * rho_ij * multiply_factor2 / r_ij_sq / rho_I(j)
+					
+					multiply_factor = multiply_factor1 - multiply_factor2
 
-							multiply_factor1 = dot_product( rel_ij, rand_vec(:,i) )
-							
-							multiply_factor1 = alpha_I * rho_ij * multiply_factor1 / r_ij_sq / rho_I(i)
-							
-							!! find rho_I
-							rho_ij = 0.0d0
-							call beta%spline_int (beta%r,beta%data_rho(itype,:),beta%y2rho(itype,:), &
-											beta%n_points_rho, r_ij, rho_ij)
-							
-							! find alpha_J
-							alpha_J = 0.0d0
-							call beta%spline_int (beta%rho, beta%data_alpha(jtype,:), &
-									beta%y2alpha(jtype,:), beta%n_points_beta, rho_I(j), alpha_J)
-							
-							multiply_factor2 = dot_product( rel_ij, rand_vec(:,j) )
-							
-							multiply_factor2 = alpha_J * rho_ij * multiply_factor2 / r_ij_sq / rho_I(j)
-							
-							multiply_factor = multiply_factor1 - multiply_factor2
-
-							this%forces_rnd(1,i) = this%forces_rnd(1,i) + multiply_factor*rel_ij(1)
-							this%forces_rnd(2,i) = this%forces_rnd(2,i) + multiply_factor*rel_ij(2)
-							this%forces_rnd(3,i) = this%forces_rnd(3,i) + multiply_factor*rel_ij(3)
-						end if
-					end if
+					this%forces_rnd(1,i) = this%forces_rnd(1,i) + multiply_factor*rel_ij(1)
+					this%forces_rnd(2,i) = this%forces_rnd(2,i) + multiply_factor*rel_ij(2)
+					this%forces_rnd(3,i) = this%forces_rnd(3,i) + multiply_factor*rel_ij(3)
 				end do
 				v_Te = fdm%Collect_Te(xi,yi,zi)
 				this%forces_rnd(1,i) = this%forces_rnd(1,i) * correl_factor_eta * sqrt(v_Te)
 				this%forces_rnd(2,i) = this%forces_rnd(2,i) * correl_factor_eta * sqrt(v_Te)
 				this%forces_rnd(3,i) = this%forces_rnd(3,i) * correl_factor_eta * sqrt(v_Te)
 			end do
-!$OMP END DO
-!$OMP END PARALLEL
-			if ( allocated(rand_vec) ) deallocate(rand_vec)
+
+			call mpi_allreduce (MPI_IN_PLACE, this%forces_rnd, 3*Np_all, MPI_DOUBLE_PRECISION, &
+					MPI_SUM, MPI_COMM_WORLD, ierr)
+
 		end if	!! for condition (this%israndom == 1)
-	
+
 		!! -------------------------------------------------
 		!! When friction forces need to be calculated
 		!! -------------------------------------------------
 	
 		if (this%isfriction == 1) then
 
-			!! Find auxillary set w_I
-			allocate(w_I(3,size(vel,2)))
-			w_I = 0.0d0
-!$OMP PARALLEL
-!$OMP DO
-			do ki = 1, Np
+			do ki = istart, istop
 				i = eph_for_atoms(ki)
 				call getAtomType(i,natomtypes,masses,type_mass,atom_type)
 				itype = atom_type
@@ -268,45 +279,43 @@ subroutine eph_LangevinForces (this, vel, forces, masses, type_mass, &
 				alpha_I = 0.0d0
 				call beta%spline_int (beta%rho, beta%data_alpha(itype,:), &
 					beta%y2alpha(itype,:), beta%n_points_beta, rho_I(i), alpha_I)
-				do kj = 1, Np
-					j = eph_for_atoms(kj)
-					if (i /= j) then
-						xj = positions(1,j); yj = positions(2,j); zj = positions(3,j) 
-						r_ij = get_distance(xi,yi,zi,xj,yj,zj)
-						r_ij_sq = r_ij*r_ij	
-						if (r_ij < beta%r_cutoff) then
 
-							call getAtomType(j,natomtypes,masses,type_mass,atom_type)
-							jtype = atom_type
+				start_index = sum(num_neighbours(1:i-1)) + 1
+				stop_index = sum(num_neighbours(1:i))
+				do kj = start_index, stop_index
+					j = atoms_pair_consider(kj) 
+					xj = positions(1,j); yj = positions(2,j); zj = positions(3,j) 
+					r_ij = get_distance(xi,yi,zi,xj,yj,zj)
+					r_ij_sq = r_ij*r_ij
 
-							!! find rho_J
-							rho_ij = 0.0d0
-							call beta%spline_int (beta%r,beta%data_rho(jtype,:), &
-									beta%y2rho(jtype,:), beta%n_points_rho, r_ij, rho_ij)
+					call getAtomType(j,natomtypes,masses,type_mass,atom_type)
+					jtype = atom_type
 
-							call relativeVector(positions(:,j), positions(:,i), rel_ij)
-							call relativeVector(vel(:,i), vel(:,j), rel_v_ij)
+					!! find rho_J
+					rho_ij = 0.0d0
+					call beta%spline_int (beta%r,beta%data_rho(jtype,:), &
+							beta%y2rho(jtype,:), beta%n_points_rho, r_ij, rho_ij)
 
-							rel_v_ij = rel_v_ij*1000.0d0		! A/fs ----> A/ps
-							multiply_factor = alpha_I * rho_ij * dot_product( rel_v_ij, rel_ij )
+					call relativeVector(positions(:,j), positions(:,i), rel_ij)
+					call relativeVector(vel(:,i), vel(:,j), rel_v_ij)
 
-							multiply_factor = multiply_factor / rho_I(i) / r_ij_sq
+					rel_v_ij = rel_v_ij*1000.0d0		! A/fs ----> A/ps
+					multiply_factor = alpha_I * rho_ij * dot_product( rel_v_ij, rel_ij )
 
-							w_I(1,i) = w_I(1,i) + multiply_factor * rel_ij(1)
-							w_I(2,i) = w_I(2,i) + multiply_factor * rel_ij(2)
-							w_I(3,i) = w_I(3,i) + multiply_factor * rel_ij(3)
-						end if
-					end if
+					multiply_factor = multiply_factor / rho_I(i) / r_ij_sq
+
+					w_I(1,i) = w_I(1,i) + multiply_factor * rel_ij(1)
+					w_I(2,i) = w_I(2,i) + multiply_factor * rel_ij(2)
+					w_I(3,i) = w_I(3,i) + multiply_factor * rel_ij(3)
 				end do
 			end do
-!$OMP END DO
-!$OMP END PARALLEL
+
+			call mpi_allreduce (MPI_IN_PLACE, w_I, 3*Np_all, MPI_DOUBLE_PRECISION, &
+					MPI_SUM, MPI_COMM_WORLD, ierr)
 
 			!! Find sig_I --> F_fric
 
-!$OMP PARALLEL
-!$OMP DO
-			do ki = 1, Np
+			do ki = istart, istop
 				i = eph_for_atoms(ki)
 				call getAtomType(i,natomtypes,masses,type_mass,atom_type)
 				itype = atom_type
@@ -317,98 +326,91 @@ subroutine eph_LangevinForces (this, vel, forces, masses, type_mass, &
 				call beta%spline_int (beta%rho, beta%data_alpha(itype,:), &
 						beta%y2alpha(itype,:), beta%n_points_beta, rho_I(i), alpha_I)
 
-				do kj = 1, Np
-					j = eph_for_atoms(kj)
-					if (i /= j) then
+				start_index = sum(num_neighbours(1:i-1)) + 1
+				stop_index = sum(num_neighbours(1:i))
+				do kj = start_index, stop_index
+					j = atoms_pair_consider(kj)
+					xj = positions(1,j); yj = positions(2,j); zj = positions(3,j) 
+					r_ij = get_distance(xi,yi,zi,xj,yj,zj)
+					r_ij_sq = r_ij*r_ij
 
-						xj = positions(1,j); yj = positions(2,j); zj = positions(3,j) 
-						r_ij = get_distance(xi,yi,zi,xj,yj,zj)
-						r_ij_sq = r_ij*r_ij
+					call getAtomType(j,natomtypes,masses,type_mass,atom_type)
+					jtype = atom_type
 
-						if (r_ij < beta%r_cutoff) then
+					!! find rho_J
+					rho_ij = 0.0d0
+					call beta%spline_int (beta%r, beta%data_rho(jtype,:), &
+							beta%y2rho(jtype,:), beta%n_points_rho, r_ij, rho_ij)
 
-							call getAtomType(j,natomtypes,masses,type_mass,atom_type)
-							jtype = atom_type
+					call relativeVector(positions(:,j), positions(:,i), rel_ij)
 
-							!! find rho_J
-							rho_ij = 0.0d0
-							call beta%spline_int (beta%r, beta%data_rho(jtype,:), &
-									beta%y2rho(jtype,:), beta%n_points_rho, r_ij, rho_ij)
+					multiply_factor1 = alpha_I * rho_ij * dot_product( w_I(:,i), rel_ij )
 
-							call relativeVector(positions(:,j), positions(:,i), rel_ij)
+					multiply_factor1 = multiply_factor1 / rho_I(i) / r_ij_sq
 
-							multiply_factor1 = alpha_I * rho_ij * dot_product( w_I(:,i), rel_ij )
+					!! alpha_J for the jtype atom
+					alpha_J = 0.0d0
+					call beta%spline_int (beta%rho, beta%data_alpha(jtype,:), &
+						beta%y2alpha(jtype,:), beta%n_points_beta, rho_I(j), alpha_J)
 
-							multiply_factor1 = multiply_factor1 / rho_I(i) / r_ij_sq
+					!! find rho_I
+					rho_ij = 0.0d0
+					call beta%spline_int (beta%r, beta%data_rho(itype,:), &
+							beta%y2rho(itype,:), beta%n_points_rho, r_ij, rho_ij)
 
-							!! alpha_J for the jtype atom
-							alpha_J = 0.0d0
-							call beta%spline_int (beta%rho, beta%data_alpha(jtype,:), &
-								beta%y2alpha(jtype,:), beta%n_points_beta, rho_I(j), alpha_J)
+					multiply_factor2 = alpha_J * rho_ij * dot_product( w_I(:,j), rel_ij )
 
-							!! find rho_I
-							rho_ij = 0.0d0
-							call beta%spline_int (beta%r, beta%data_rho(itype,:), &
-									beta%y2rho(itype,:), beta%n_points_rho, r_ij, rho_ij)
-
-							multiply_factor2 = alpha_J * rho_ij * dot_product( w_I(:,j), rel_ij )
-
-							multiply_factor2 = multiply_factor2 / rho_I(j) / r_ij_sq
+					multiply_factor2 = multiply_factor2 / rho_I(j) / r_ij_sq
 	
-							multiply_factor = multiply_factor1 - multiply_factor2
+					multiply_factor = multiply_factor1 - multiply_factor2
 
-							this%forces_fric(1,i) = this%forces_fric(1,i) - multiply_factor * rel_ij(1) 
-							this%forces_fric(2,i) = this%forces_fric(2,i) - multiply_factor * rel_ij(2) 
-							this%forces_fric(3,i) = this%forces_fric(3,i) - multiply_factor * rel_ij(3)
-						end if
-					end if
+					this%forces_fric(1,i) = this%forces_fric(1,i) - multiply_factor * rel_ij(1) 
+					this%forces_fric(2,i) = this%forces_fric(2,i) - multiply_factor * rel_ij(2) 
+					this%forces_fric(3,i) = this%forces_fric(3,i) - multiply_factor * rel_ij(3)
 				end do
 			end do
-!$OMP END DO
-!$OMP END PARALLEL
+
+			call mpi_allreduce (MPI_IN_PLACE, this%forces_fric, 3*Np_all, MPI_DOUBLE_PRECISION, &
+					MPI_SUM, MPI_COMM_WORLD, ierr)
+
 		end if	!! for condition (this%isfriction == 1)
 
 	end if	!! for condition (this%isfriction == 1 .or. this%israndom == 1)
+
 
 	!! ----- The current forces get modified -------------------
 
 	!! Different cases of switching ON/OFF the friction and random forces	 
 	!! this is the full model
 	if (this%isfriction == 1 .and. this%israndom == 1) then
-!$OMP PARALLEL
-!$OMP DO
-		do ki = 1, Np
+
+		do ki = istart, istop
 			i = eph_for_atoms(ki)
 			forces(1,i) = forces(1,i) + this%forces_rnd(1,i) + this%forces_fric(1,i)
 			forces(2,i) = forces(2,i) + this%forces_rnd(2,i) + this%forces_fric(2,i)
 			forces(3,i) = forces(3,i) + this%forces_rnd(3,i) + this%forces_fric(3,i)
 		end do
-!$OMP END DO
-!$OMP END PARALLEL
+
 	!! this is with only friction
 	else if (this%isfriction == 1 .and. this%israndom == 0) then
-!$OMP PARALLEL
-!$OMP DO
-		do ki = 1, Np
+
+		do ki = istart, istop
 			i = eph_for_atoms(ki)
 			forces(1,i) = forces(1,i) + this%forces_fric(1,i)
 			forces(2,i) = forces(2,i) + this%forces_fric(2,i)
 			forces(3,i) = forces(3,i) + this%forces_fric(3,i)
 		end do
-!$OMP END DO
-!$OMP END PARALLEL
+
 	!! this is with only random	
-	else if (this%isfriction == 0 .and. this%israndom == 1) then			
-!$OMP PARALLEL
-!$OMP DO
-		do ki = 1, Np
+	else if (this%isfriction == 0 .and. this%israndom == 1) then
+
+		do ki = istart, istop
 			i = eph_for_atoms(ki)
 			forces(1,i) = forces(1,i) + this%forces_rnd(1,i)
 			forces(2,i) = forces(2,i) + this%forces_rnd(2,i)
 			forces(3,i) = forces(3,i) + this%forces_rnd(3,i)
 		end do
-!$OMP END DO
-!$OMP END PARALLEL
+
 	!! this is for not including friction and random, this is definitely not needed
 	else if (this%isfriction == 0 .and. this%israndom == 0) then
 		do ki = 1, Np
@@ -419,6 +421,9 @@ subroutine eph_LangevinForces (this, vel, forces, masses, type_mass, &
 		end do
 	end if
 
+	call mpi_allreduce (MPI_IN_PLACE, forces, 3*Np_all, MPI_DOUBLE_PRECISION, &
+						MPI_SUM, MPI_COMM_WORLD, ierr)
+
 	end if 	!! when md_time > 0.0
 
 end subroutine eph_LangevinForces
@@ -427,7 +432,7 @@ end subroutine eph_LangevinForces
 !! Calculate the energies that will be transferred between the atomic and electronic systems
 !! due to the forces that have been modified according to the Langevin spatial correlations 
 subroutine eph_LangevinEnergyDissipation (this, md_istep, md_time, vel, &
-				positions_prev, masses, energies, dt, eph_for_atoms, fdm)
+				positions_prev, masses, energies, dt, eph_for_atoms, Np, fdm, rank, ntasks, ierr)
 
 	implicit none
 
@@ -435,16 +440,17 @@ subroutine eph_LangevinEnergyDissipation (this, md_istep, md_time, vel, &
 
 	type (EPH_FDM_class), intent(inout) :: fdm
 
-	integer, intent(in) :: md_istep, eph_for_atoms(:)
+	integer, intent(in) :: md_istep, eph_for_atoms(:), Np
 	real*8, intent(in) :: dt, md_time, vel(:,:), positions_prev(:,:), masses(:), energies(:)
-	integer :: Np, i, j, ki
+	integer :: i, j, ki, Np_all
 	real*8 :: xi, yi, zi, Energy_val_fric, Energy_val_rnd, &
 	E_val_i_fric, E_val_i_eph, E_val_i_rnd, E_kinetic_atoms, &
-	E_pot_atoms, instant_temp_atoms
+	E_pot_atoms, instant_temp_atoms, Energy_val_fric_temp, Energy_val_rnd_temp
 	real*8, parameter :: boltzconst = 8.61733326E-05
+	integer :: istart, istop, ierr
+	integer, intent(in) :: rank, ntasks
 
-	Np = size(eph_for_atoms)	!! Number of atoms in specified group
-
+IF (rank == 0) THEN
 	E_kinetic_atoms = 0.0d0
 	E_pot_atoms = 0.0d0
 	do ki = 1, Np
@@ -455,7 +461,6 @@ subroutine eph_LangevinEnergyDissipation (this, md_istep, md_time, vel, &
 	instant_temp_atoms = 2.d0/3.d0/dfloat(Np-1)/boltzconst*E_kinetic_atoms
 
 	if ( md_istep == 0 .or. md_istep == -1 ) then
-
 		!! To write x, y, z, T_e, other quantities mesh map
 		if ( fdm%md_last_step == 0 ) then
 			open (unit=300, file = this%T_outfile, status = "unknown")
@@ -477,25 +482,27 @@ subroutine eph_LangevinEnergyDissipation (this, md_istep, md_time, vel, &
 		if (MOD(md_istep, this%T_out_freq) == 0) open (unit = 100, file = "eph-EnergySharingData.txt", &
 											status = "old", position = "append")
 	end if
+END IF
 
 	!! Do all calculations for MD time greater than 0
 
 	if ( .not. (md_istep == 0 .or. md_istep == -1) ) then
-
+		Np_all = size(vel,2)
 	!! ----- Calculate the energies for exchange ----------
 
 	!! Different cases of switching ON/OFF the friction and random forces
 
 	Energy_val_fric = 0.0d0; Energy_val_rnd = 0.0d0
 
+	call iterationRangesToProcesses (1, Np, ntasks, rank, istart, istop)
+
 	!! this is the full model
 	if (this%isfriction == 1 .and. this%israndom == 1) then
-		do ki = 1, Np
+		do ki = istart, istop
 			i = eph_for_atoms(ki)
-			E_val_i_fric = 0.0d0; E_val_i_rnd = 0.0d0; E_val_i_eph = 0.0d0
 			xi = positions_prev(1,i); yi = positions_prev(2,i); zi = positions_prev(3,i)
-			E_val_i_fric = E_val_i_fric - dt*dot_product(this%forces_fric(1:3,i), vel(1:3,i))
-			E_val_i_rnd = E_val_i_rnd - dt*dot_product(this%forces_rnd(1:3,i), vel(1:3,i))
+			E_val_i_fric = - dt*dot_product(this%forces_fric(1:3,i), vel(1:3,i))
+			E_val_i_rnd = - dt*dot_product(this%forces_rnd(1:3,i), vel(1:3,i))
 
 			E_val_i_eph = E_val_i_fric + E_val_i_rnd
 
@@ -504,46 +511,59 @@ subroutine eph_LangevinEnergyDissipation (this, md_istep, md_time, vel, &
 			Energy_val_fric = Energy_val_fric + E_val_i_fric
 			Energy_val_rnd = Energy_val_rnd + E_val_i_rnd		
 		end do
+		call mpi_reduce (Energy_val_fric, Energy_val_fric_temp, 1, MPI_DOUBLE_PRECISION, &
+							MPI_SUM, 0,MPI_COMM_WORLD, ierr)
+		Energy_val_fric = Energy_val_fric_temp
+
+		call mpi_reduce (Energy_val_rnd, Energy_val_rnd_temp, 1, MPI_DOUBLE_PRECISION, &
+							MPI_SUM, 0,MPI_COMM_WORLD, ierr)
+		Energy_val_rnd = Energy_val_rnd_temp
 
 	!! this is with only friction
 	else if (this%isfriction == 1 .and. this%israndom == 0) then
-		do ki = 1, Np
+		do ki = istart, istop
 			i = eph_for_atoms(ki)
-			E_val_i_fric = 0.0d0
 			xi = positions_prev(1,i); yi = positions_prev(2,i); zi = positions_prev(3,i)
-			E_val_i_fric = E_val_i_fric - dt*dot_product(this%forces_fric(1:3,i), vel(1:3,i))
+			E_val_i_fric = - dt*dot_product(this%forces_fric(1:3,i), vel(1:3,i))
 
 			if (this%fdm_option == 1) call fdm%feedback_ei_energy(xi, yi, zi, E_val_i_fric, dt)
 			Energy_val_fric = Energy_val_fric + E_val_i_fric
 		end do
+		call mpi_reduce (Energy_val_fric, Energy_val_fric_temp, 1, MPI_DOUBLE_PRECISION, &
+							MPI_SUM, 0,MPI_COMM_WORLD, ierr)
+		Energy_val_fric = Energy_val_fric_temp
 
 	!! this is with only random	
 	else if (this%isfriction == 0 .and. this%israndom == 1) then	
-		do ki = 1, Np
+		do ki = istart, istop
 			i = eph_for_atoms(ki)
-			E_val_i_rnd = 0.0d0
 			xi = positions_prev(1,i); yi = positions_prev(2,i); zi = positions_prev(3,i)
-			E_val_i_rnd = E_val_i_rnd - dt*dot_product(this%forces_rnd(1:3,i), vel(1:3,i))
+			E_val_i_rnd = - dt*dot_product(this%forces_rnd(1:3,i), vel(1:3,i))
 
 			if (this%fdm_option == 1) call fdm%feedback_ei_energy(xi, yi, zi, E_val_i_rnd, dt)
 			Energy_val_rnd = Energy_val_rnd + E_val_i_rnd
 		end do
+		call mpi_reduce (Energy_val_rnd, Energy_val_rnd_temp, 1, MPI_DOUBLE_PRECISION, &
+							MPI_SUM, 0,MPI_COMM_WORLD, ierr)
+		Energy_val_rnd = Energy_val_rnd_temp
 
 	!! this is for not including friction and random, this is definitely not needed
 	else if (this%isfriction == 0 .and. this%israndom == 0) then
-		do ki = 1, Np
+		do ki = istart, istop
 			i = eph_for_atoms(ki)
 			xi = positions_prev(1,i); yi = positions_prev(2,i); zi = positions_prev(3,i)
 			if (this%fdm_option == 1) call fdm%feedback_ei_energy(xi, yi, zi, 0.0d0, dt)
 		end do
 	end if
 
-	!! To calculate electronic temperature
+	call mpi_allreduce (MPI_IN_PLACE, fdm%Q_ei, fdm%ntotal, MPI_DOUBLE_PRECISION, &
+						MPI_SUM, MPI_COMM_WORLD, ierr)
 
-	if (this%fdm_option == 1) call fdm%heatDiffusionSolve (dt)
+	!! To calculate electronic temperature
+IF (rank == 0 .and. this%fdm_option == 1) call fdm%heatDiffusionSolve (dt)
 
 	!! To write the electronic mesh temperatures
-
+IF (rank == 0) THEN
 	if (this%T_out_mesh_freq /= 0) then
 		if (MOD(md_istep, this%T_out_mesh_freq) == 0) then
 			call fdm%saveOutputToFile ( this%T_outfile, md_istep, dt )
@@ -561,9 +581,14 @@ subroutine eph_LangevinEnergyDissipation (this, md_istep, md_time, vel, &
 		close(unit=100)
 	end if
 
-1	format(1E13.6,3E14.6,3E13.6,1E14.6)
+1	format(1E13.6,3E14.6,3E13.6, F20.8)
+END IF
 
-	call fdm%beforeNextFeedback()
+	if (this%fdm_option == 1) then
+		call mpi_bcast (fdm%T_e,fdm%ntotal,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
+		call fdm%beforeNextFeedback()
+		call mpi_bcast (fdm%Q_ei,fdm%ntotal,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
+	end if
 
 	end if 	!! when md_time > 0.0
 
@@ -642,5 +667,24 @@ subroutine randomGaussianArray(Np, mean, standard_deviation, rand_array)
 		rand_array(i) = rand_array(i) * standard_deviation/sd_actual
 	end do
 end subroutine randomGaussianArray
+
+!! delegate tasks to processes 
+subroutine iterationRangesToProcesses (nstart, nstop, nprocs, myid, istart, istop)
+
+	implicit none
+	integer, intent(in) :: nstart, nstop, nprocs, myid
+	integer, intent(out) :: istart, istop
+	integer :: value1, value2
+	!! this is for ideal equal division
+	value1 = (nstop - nstart + 1)/nprocs
+	!! this is for the excess to be distributed 
+	value2 = mod( (nstop - nstart + 1), nprocs )
+
+	istart = myid*value1 + nstart + min(myid, value2)
+	istop = istart + value1 - 1
+	!! ranks lower than the excess value gets one additional task each
+	if (value2 > myid) istop = istop + 1
+
+end subroutine iterationRangesToProcesses
 
 end module eph_electronic_stopping

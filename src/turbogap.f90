@@ -89,9 +89,7 @@ program turbogap
 
   !! these decalarations are for time step and electronic stopping by different methods
   real*8 :: time_step_prev
-  integer :: nrows
-  real*8 :: cum_EEL = 0.0d0
-  real*8, allocatable :: allelstopdata(:)
+  type (electronic_stopping_scalar_class) :: ESscalar
   type (EPH_Beta_class) :: ephbeta
   type (EPH_FDM_class) :: ephfdm
   type (EPH_LangevinSpatialCorrelation_class) :: ephlsc
@@ -101,6 +99,8 @@ program turbogap
   type (groups_class) :: forgroups
   integer, allocatable :: optimize_for_atoms(:), thermostat_for_atoms(:), eph_for_atoms(:), eel_for_atoms(:), &
 	adapt_time_for_atoms(:)
+  integer :: num_optimize_atoms, num_thermostat_atoms, num_eph_atoms, num_eel_atoms, num_adapttime_atoms
+
   !! ---- for handling groups declared as dynamic ----
   logical :: optimize_group_dynamic = .false., thermostat_group_dynamic = .false., &
   eph_group_dynamic = .false., eel_group_dynamic = .false., adapt_time_group_dynamic = .false.
@@ -348,19 +348,6 @@ program turbogap
 
   call read_input_file(n_species, mode, params, forgroups, rank)
 
-!! If electronic stopping is required to be done, then read the stopping data file for once
-!! Reading and storing the elctronic stopping data 
-  if ( params%electronic_stopping ) then
-		if (params%estop_filename == 'NULL') then
-			write(*,*) "ERROR: No stopping data file is provided."
-			stop
-		else
-			call read_electronic_stopping_file (n_species,params%species_types, &
-					params%estop_filename,nrows,allelstopdata)
-		end if
-  end if
-!! -----------------------------				---- untill here for reading stopping data
-
 
   ! TEMPORARY ERROR, FIX THE UNDERLYING ISSUE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 #ifdef _MPIF90
@@ -598,23 +585,57 @@ program turbogap
   time_read_input(3) = time_read_input(3) + time_read_input(2) - time_read_input(1)
   !**************************************************************************
 
-!! If electronic stopping based on eph model is to be calculated, these data structures are required to be
-!! initialized first.
+
+!! If electronic stopping is required to be done, then some initializations are needed first 
+
+  if ( params%electronic_stopping ) then
+	if (params%estop_filename == 'NULL') then
+			write(*,*) "ERROR: No stopping data file is provided."
+			stop
+		else
+			call ESscalar%read_electronic_stopping_file (n_species,params%species_types, &
+					params%estop_filename)
+	end if
+#ifdef _MPIF90
+	call mpi_bcast (n_species, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+	call mpi_bcast (params%species_types, n_species, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
+	call ESscalar%electronic_stopping_scalar_broadcast (ierr)
+#endif
+  end if
+!! -----------------------------				---- untill here for reading stopping data
+
+
+!! If electronic stopping based on eph model is to be calculated, these initializations
+!! are needed first.
+
   if ( params%nonadiabatic_processes ) then
 	if ( params%eph_Tinfile /= "NULL" ) then
-		call ephfdm%EPH_FDM_input_file(params%eph_Tinfile,params%eph_md_last_step)
+		call ephfdm%EPH_FDM_input_file (params%eph_Tinfile, params%eph_md_last_step)
+#ifdef _MPIF90
+		call ephfdm%EPH_FDM_broadcastQuantities (params%eph_random_option, params%eph_fdm_option, ierr)
+#endif
 	end if
 	if ( params%eph_Tinfile == "NULL" ) then
-		call ephfdm%EPH_FDM_input_params(params%eph_md_last_step, params%eph_gsx, &
+		call ephfdm%EPH_FDM_input_params (params%eph_md_last_step, params%eph_gsx, &
 		params%eph_gsy, params%eph_gsz, params%in_x0, params%in_x1, params%in_y0, params%in_y1, &
 		params%in_z0, params%in_z1, params%eph_Ti_e, params%eph_C_e, params%eph_rho_e, &
 		params%eph_kappa_e, params%eph_fdm_steps)
+#ifdef _MPIF90
+		call ephfdm%EPH_FDM_broadcastQuantities (params%eph_random_option, params%eph_fdm_option, ierr)
+#endif
 	end if
-	call ephbeta%beta_parameters(params%eph_betafile,n_species)
+	call ephbeta%beta_parameters (params%eph_betafile, n_species)
+#ifdef _MPIF90
+	call ephbeta%beta_parameters_broadcastQuantities (ierr)
+#endif
 	call ephlsc%eph_InitialValues (params%eph_friction_option, params%eph_random_option, params%eph_fdm_option, &
 			params%eph_Toutfile, params%eph_freq_Tout, params%eph_freq_mesh_Tout, params%model_eph, &
-			params%eph_E_prev_time, params%eph_md_prev_time)	
+			params%eph_E_prev_time, params%eph_md_prev_time)
+#ifdef _MPIF90
+	call ephlsc%eph_InitialValues_broadcastQuantities (ierr)
+#endif
   end if
+
 !! -------------------------				---- untill here for initializing eph model elec. stopping
 
 
@@ -794,21 +815,31 @@ program turbogap
 
 		   call forgroups%makeGroups ( n_sites, positions(1:3, 1:n_sites), masses(1:n_sites), &
 										params%species_types, params%masses_types )
-		   if ( params%optimize_groupID /= '' ) &
+		   if ( params%optimize_groupID /= '' ) then
 				call forgroups%getAtomsInGroups (params%optimize_groupID, optimize_group_dynamic, &
 					optimize_group_update_interval, 0, optimize_for_atoms)
-		   if ( params%thermostat /= "none" .and. params%thermostat_groupID /= '' ) &
+				num_optimize_atoms = size(optimize_for_atoms)
+		   end if
+		   if ( params%thermostat /= "none" .and. params%thermostat_groupID /= '' ) then
 				call forgroups%getAtomsInGroups (params%thermostat_groupID, thermostat_group_dynamic, &
 					thermostat_group_update_interval, 0, thermostat_for_atoms)
-           if ( params%nonadiabatic_processes .and. params%eph_groupID /= '' ) &
+				num_thermostat_atoms = size(thermostat_for_atoms)
+		   end if
+           if ( params%nonadiabatic_processes .and. params%eph_groupID /= '' ) then
 				call forgroups%getAtomsInGroups (params%eph_groupID, eph_group_dynamic, &
 					eph_group_update_interval, 0, eph_for_atoms)
-		   if ( params%electronic_stopping .and. params%eel_groupID /= '' ) &
+				num_eph_atoms = size(eph_for_atoms)
+		   end if
+		   if ( params%electronic_stopping .and. params%eel_groupID /= '' ) then
 				call forgroups%getAtomsInGroups (params%eel_groupID, eel_group_dynamic, &
 					eel_group_update_interval, 0, eel_for_atoms)
-		   if ( params%adaptive_time .and. params%adapt_time_groupID /= '' ) &
+				num_eel_atoms = size(eel_for_atoms)
+		   end if
+		   if ( params%adaptive_time .and. params%adapt_time_groupID /= '' ) then
 				call forgroups%getAtomsInGroups (params%adapt_time_groupID, adapt_time_group_dynamic, &
 					adapt_time_group_update_interval, 0, adapt_time_for_atoms)
+				num_adapttime_atoms = size(adapt_time_for_atoms)
+		   end if
 
 		   !! after all calls such as above
 		   call forgroups%freeGroupsRegister()
@@ -832,6 +863,34 @@ program turbogap
 #ifdef _MPIF90
         END IF
 #endif
+		if( (params%do_md .and. md_istep == 0) )then
+#ifdef _MPIF90
+	call mpi_bcast (num_adapttime_atoms, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+	call mpi_bcast (num_eel_atoms, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+	call mpi_bcast (num_eph_atoms, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+	IF ( rank /= 0 ) THEN
+		if ( allocated(adapt_time_for_atoms) ) deallocate(adapt_time_for_atoms)
+        allocate( adapt_time_for_atoms(num_adapttime_atoms) )
+        if ( allocated(eel_for_atoms) ) deallocate(eel_for_atoms)
+        allocate( eel_for_atoms(num_eel_atoms) )
+        if ( allocated(eph_for_atoms) ) deallocate(eph_for_atoms)
+        allocate( eph_for_atoms(num_eph_atoms) )
+        if ( allocated(params%masses_types) ) deallocate(params%masses_types)
+        allocate ( params%masses_types(n_species) )
+    END IF
+    call mpi_bcast(adapt_time_for_atoms, num_adapttime_atoms, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+    call mpi_bcast(eel_for_atoms, num_eel_atoms, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+	call mpi_bcast(eph_for_atoms, num_eph_atoms, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+	call mpi_bcast(params%masses_types, n_species, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+	call mpi_bcast (eel_group_dynamic, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+	call mpi_bcast (eph_group_dynamic, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+	call mpi_bcast (adapt_time_group_dynamic, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+	call mpi_bcast (eel_group_update_interval, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+	call mpi_bcast (eph_group_update_interval, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+	call mpi_bcast (adapt_time_group_update_interval, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+#endif
+		end if
+
         call cpu_time(time_read_xyz(2))
         time_read_xyz(3) = time_read_xyz(3) + time_read_xyz(2) - time_read_xyz(1)
         !     If we're doing MD, we don't read beyond the first snapshot in the XYZ file
@@ -1744,10 +1803,12 @@ program turbogap
 
      !**************************************************************************
      !   Do MD stuff here
+
+     if( params%do_md .and. md_istep > -1)then
+
 #ifdef _MPIF90
      IF( rank == 0 )THEN
-#endif
-        if( params%do_md .and. md_istep > -1)then           
+#endif                   
            call cpu_time(time_md(1))
            !     Define the time_step and md_time prior to possible scaling (see variable_time_step below)
            if( md_istep > 0 )then
@@ -1778,43 +1839,93 @@ program turbogap
 		end do
 	  end if
 	  
-	  if ( eel_group_dynamic .and. md_istep /=0 .and. (mod(md_istep, eel_group_update_interval) == 0) ) &
-				call forgroups%getAtomsInGroups (params%eel_groupID, eel_group_dynamic, &
+	  if ( eel_group_dynamic .and. md_istep /=0 .and. (mod(md_istep, eel_group_update_interval) == 0) ) then
+			call forgroups%getAtomsInGroups (params%eel_groupID, eel_group_dynamic, &
 					eel_group_update_interval, md_istep, eel_for_atoms)
+			num_eel_atoms = size(eel_for_atoms)
+	  end if
 
-	  if ( eph_group_dynamic .and. md_istep /=0 .and. (mod(md_istep, eph_group_update_interval) == 0) ) &
-				call forgroups%getAtomsInGroups (params%eph_groupID, eph_group_dynamic, &
+	  if ( eph_group_dynamic .and. md_istep /=0 .and. (mod(md_istep, eph_group_update_interval) == 0) ) then
+			call forgroups%getAtomsInGroups (params%eph_groupID, eph_group_dynamic, &
 					eph_group_update_interval, md_istep, eph_for_atoms)
+			num_eph_atoms = size(eph_for_atoms)
+	  end if
 
-	  if ( adapt_time_group_dynamic .and. md_istep /=0 .and. (mod(md_istep, adapt_time_group_update_interval) == 0) ) &
-				call forgroups%getAtomsInGroups (params%adapt_time_groupID, adapt_time_group_dynamic, &
+	  if ( adapt_time_group_dynamic .and. md_istep /=0 .and. (mod(md_istep, adapt_time_group_update_interval) == 0) ) then
+			call forgroups%getAtomsInGroups (params%adapt_time_groupID, adapt_time_group_dynamic, &
 					adapt_time_group_update_interval, md_istep, adapt_time_for_atoms)
+			num_adapttime_atoms = size(adapt_time_for_atoms)
+	  end if
 
-	  if ( optimize_group_dynamic .and. md_istep /=0 .and. (mod(md_istep, optimize_group_update_interval) == 0) ) &
-				call forgroups%getAtomsInGroups (params%optimize_groupID, optimize_group_dynamic, &
+	  if ( optimize_group_dynamic .and. md_istep /=0 .and. (mod(md_istep, optimize_group_update_interval) == 0) ) then
+			call forgroups%getAtomsInGroups (params%optimize_groupID, optimize_group_dynamic, &
 					optimize_group_update_interval, md_istep, optimize_for_atoms)
+			num_optimize_atoms = size(optimize_for_atoms)
+	  end if
 
-	  if ( thermostat_group_dynamic .and. md_istep /=0 .and. (mod(md_istep, thermostat_group_update_interval) == 0) ) &
-				call forgroups%getAtomsInGroups (params%thermostat_groupID, thermostat_group_dynamic, &
+	  if ( thermostat_group_dynamic .and. md_istep /=0 .and. (mod(md_istep, thermostat_group_update_interval) == 0) ) then
+			call forgroups%getAtomsInGroups (params%thermostat_groupID, thermostat_group_dynamic, &
 					thermostat_group_update_interval, md_istep, thermostat_for_atoms)
+			num_thermostat_atoms = size(thermostat_for_atoms)
+	  end if
+
+#ifdef _MPIF90
+END IF
+#endif
+
+#ifdef _MPIF90
+
+	  call mpi_bcast(md_istep, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+	  call mpi_bcast(forces, 3*n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+	  call mpi_bcast(positions, 3*n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+	  call mpi_bcast(velocities, 3*n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+	  call mpi_bcast(md_time, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+	  call mpi_bcast(time_step, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+	  
+	!! This part is only when groups are declared to as dynamic
+
+	  if ( eel_group_dynamic .and. md_istep /=0 .and. (mod(md_istep, eel_group_update_interval) == 0) ) then
+		call mpi_bcast (num_eel_atoms, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+		IF ( rank /= 0 ) THEN
+			if ( allocated(eel_for_atoms) ) deallocate(eel_for_atoms)
+			allocate( eel_for_atoms(num_eel_atoms) )
+		END IF
+		call mpi_bcast(eel_for_atoms, num_eel_atoms, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+	  end if
+	  if ( eph_group_dynamic .and. md_istep /=0 .and. (mod(md_istep, eph_group_update_interval) == 0) ) then
+		call mpi_bcast (num_eph_atoms, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+		IF ( rank /= 0 ) THEN
+			if ( allocated(eph_for_atoms) ) deallocate(eph_for_atoms)
+			allocate( eph_for_atoms(num_eph_atoms) )
+		END IF
+		call mpi_bcast(eph_for_atoms, num_eph_atoms, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+	  end if
+	  if ( adapt_time_group_dynamic .and. md_istep /=0 .and. (mod(md_istep, adapt_time_group_update_interval) == 0) ) then
+		call mpi_bcast (num_adapttime_atoms, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+		IF ( rank /= 0 ) THEN
+			if ( allocated(adapt_time_for_atoms) ) deallocate(adapt_time_for_atoms)
+			allocate( adapt_time_for_atoms(num_adapttime_atoms) )
+		END IF
+		call mpi_bcast(adapt_time_for_atoms, num_adapttime_atoms, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+	  end if
+
+	!! ----- upto here ------
 
 	  !! ------- option for radiation cascade simulation with electronic stopping
 
 	  if ( params%electronic_stopping ) then
-		call electron_stopping_velocity_dependent (md_istep, n_species, params%eel_cut, params%eel_freq_out, &
+		call ESscalar%electron_stopping_velocity_dependent (md_istep, n_species, params%eel_cut, params%eel_freq_out, &
 					velocities(1:3, 1:n_sites), forces(1:3, 1:n_sites), masses(1:n_sites), &
-					params%masses_types, time_step, md_time, nrows, allelstopdata, cum_EEL, eel_for_atoms, 'forces')		
+					params%masses_types, time_step, md_time, eel_for_atoms, num_eel_atoms, 'forces', rank, ntasks, ierr)		
 	  end if
 
 	   !! -----------------------------------	******** until here for electronic stopping
 
-
 	  !! ------- option for electronic stopping based on eph model
-
 	  if ( params%nonadiabatic_processes ) then
-		call ephlsc%eph_LangevinForces (velocities(1:3, 1:n_sites), forces(1:3, 1:n_sites), &
-					masses(1:n_sites), params%masses_types, md_istep, time_step, md_time, &
-					positions(1:3, 1:n_sites), n_species, eph_for_atoms, ephbeta, ephfdm)
+		call ephlsc%eph_LangevinForces (velocities(1:3, 1:n_sites), forces(1:3, 1:n_sites), masses(1:n_sites), &
+				params%masses_types, md_istep, time_step, md_time, positions(1:3, 1:n_sites), n_species, &
+				eph_for_atoms, num_eph_atoms, ephbeta, ephfdm, rank, ntasks, ierr)
 	  end if
 
 	  !! -----------------------------------	******** until here for electronic stopping basd on eph model
@@ -1826,14 +1937,21 @@ program turbogap
 		if (MOD(md_istep, params%adapt_tstep_interval) == 0) then
 			call variable_time_step_adaptive (md_istep == 0, velocities(1:3, 1:n_sites), forces(1:3, 1:n_sites), &
 						masses(1:n_sites), params%adapt_tmin, params%adapt_tmax, params%adapt_xmax, &
-						params%adapt_emax, params%md_step, time_step, adapt_time_for_atoms)
+						params%adapt_emax, params%md_step, time_step, adapt_time_for_atoms, &
+						num_adapttime_atoms, rank, ntasks, ierr)
 		end if
 	  end if
 
 	  if (md_istep == 0) time_step_prev = time_step
 
 	  !! ----------------------------------	******** until here for adaptive time
-           
+
+#endif
+
+#ifdef _MPIF90
+     IF( rank == 0 )THEN
+#endif
+          
            !     This takes care of NVE
            !     Velocity Verlet takes positions for t, positions_prev for t-dt, and velocities for t-dt and returns everything
            !     dt later. forces are taken at t, and forces_prev at t-dt. forces is left unchanged by the routine, and
@@ -1874,28 +1992,43 @@ program turbogap
               positions_prev(1:3, 1:n_sites) = positions(1:3, 1:n_sites)
               forces_prev(1:3, 1:n_sites) = forces(1:3, 1:n_sites)
            end if
+#ifdef _MPIF90
+	END IF
+#endif
+
+#ifdef _MPIF90
+ 
+IF ( rank /= 0 ) THEN
+	if ( allocated(positions_prev) ) deallocate(positions_prev)
+	allocate( positions_prev(3,n_sites) )
+END IF
+	call mpi_bcast (positions_prev, 3*n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+	call mpi_bcast (time_step_prev, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+	call mpi_bcast (velocities, 3*n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
            
 	!! ------- option for radiation cascade simulation with electronic stopping
 
 	  if ( params%electronic_stopping ) then
-		call electron_stopping_velocity_dependent (md_istep, n_species, params%eel_cut, params%eel_freq_out, &
+		call ESscalar%electron_stopping_velocity_dependent (md_istep, n_species, params%eel_cut, params%eel_freq_out, &
 				velocities(1:3, 1:n_sites), forces(1:3, 1:n_sites), masses(1:n_sites), params%masses_types, &
-				time_step_prev, md_time, nrows, allelstopdata, cum_EEL, eel_for_atoms, 'energy')
+				time_step_prev, md_time, eel_for_atoms, num_eel_atoms, 'energy', rank, ntasks, ierr)
 	  end if
 
 	!! -----------------------------------		******** until here for electronic stopping
 
 
 	!! ------- option for electronic stopping based on eph model
-
 	  if ( params%nonadiabatic_processes ) then
 		call ephlsc%eph_LangevinEnergyDissipation (md_istep, md_time, velocities(1:3, 1:n_sites), &
 				positions_prev(1:3, 1:n_sites), masses(1:n_sites), energies(1:n_sites), &
-				time_step_prev, eph_for_atoms, ephfdm)	
+				time_step_prev, eph_for_atoms, num_eph_atoms, ephfdm, rank, ntasks, ierr)
 	  end if
-
 	!! -----------------------------------		******** until here for electronic stopping basd on eph model
-
+#endif
+!
+#ifdef _MPIF90
+     IF( rank == 0 )THEN
+#endif
            !     Compute kinetic energy from current velocities. Because Velocity Verlet
            !     works with the velocities at t-dt (except for the first time step) we
            !     have to compute the velocities after call Verlet
@@ -2101,9 +2234,12 @@ program turbogap
            end do
            call cpu_time(time_md(2))
            time_md(3) = time_md(3) + time_md(2) - time_md(1)
-        end if
 #ifdef _MPIF90
      END IF
+#endif
+  end if
+
+#ifdef _MPIF90
      call mpi_bcast(rebuild_neighbors_list, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
 #endif
      !   Make sure all ranks have correct positions and velocities

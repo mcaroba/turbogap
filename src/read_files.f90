@@ -2159,55 +2159,6 @@ end if
 
 
 !**************************************************************************
-! ------- option for radiation cascade simulation with electronic stopping			
-
-subroutine read_electronic_stopping_file (n_species, species_types, estopfilename, nrows, allelstopdata)
-	! read the given electronic stopping file 
-	! send the data for required calculations
-	! also give error messages if the data in the file is not in proper format
-	implicit none
-	
-	character*1024, intent(in) :: estopfilename
-	integer, intent(in) :: n_species
-	character*8, intent(in) :: species_types(n_species)
-	integer, intent(out) :: nrows
-	real*8, allocatable :: allelstopdata(:)
-	character*8, allocatable :: infoline(:)
-	integer :: i, ncols, ndata
-		
-	open (unit = 1000, file = estopfilename)
-	! first line gives information
-	! second line gives number of energy-stopping data points, i.e no. of rows of data
-	read(1000,*)
-	read(1000,*) nrows
-	if (nrows <= 0) then
-		write(*,*) "ERROR: Number of data rows in stopping file is 0 or less."
-		stop
-	end if
-	ncols = n_species + 1
-	allocate(infoline(ncols))
-	! third line gives energy units, names of elements in order of the atom species types in input file
-	read(1000,*) (infoline(i), i = 1, ncols)
-	do i = 2, ncols
-		if (trim(infoline(i)) /= trim(species_types(i-1))) then
-			write(*,*) "ERROR: Stopping powers for Elements are not given in order."
-			stop
-		end if
-	end do
-	ndata = nrows*ncols
-	allocate (allelstopdata(ndata))
-	read(1000,*) (allelstopdata(i), i = 1, ndata)
-	
-	close(unit = 1000)
-
-end subroutine read_electronic_stopping_file
-!**************************************************************************
-
-
-
-
-
-!**************************************************************************
   subroutine upper_to_lower_case(string)
 
     implicit none

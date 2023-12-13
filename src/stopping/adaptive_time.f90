@@ -38,23 +38,24 @@
 !**************************************************************************
 
 module adaptive_time
+use mpi
 
 contains
 
 subroutine variable_time_step_adaptive (init, vel, forces, masses, &
-			tmin, tmax, xmax, emax, dt0, dt, adapt_time_for_atoms)
+			tmin, tmax, xmax, emax, dt0, dt, adapt_time_for_atoms, Np, rank, ntasks, ierr)
 
 	implicit none
 
 	real*8, intent(inout) :: dt
 	real*8, intent(in) :: vel(:,:), dt0, forces(:,:), masses(:), tmin, tmax, xmax, emax
 	logical, intent(in) :: init
-	integer, intent(in) :: adapt_time_for_atoms(:)
+	integer, intent(in) :: adapt_time_for_atoms(:), Np, rank, ntasks
 	real*8 :: dist, dtmin, vsq, fsq, dte, dtf, dtv
-	integer :: Np, ki, i
+	integer :: ki, i, istart, istop, ierr
 
 	!! checking the input values of calculation parameters
-	
+
 	if (xmax <= 0.0) then
 		write(*,*) "ERROR: value of xmax must be greater than 0."
 		stop
@@ -75,24 +76,22 @@ subroutine variable_time_step_adaptive (init, vel, forces, masses, &
 		write(*,*) "ERROR: tmax must be greater than tmin."
 		stop
 	end if
-	
-	
-	Np = size(adapt_time_for_atoms)		!! number of atoms in specified group
-	
+
 	!! this will finally keep the smallest time-step required
-	
+
 	dtmin = 1.0E+20
-	
+
 	!! Initializing time steps to choose the minimum from a proper set
 	!! of values of times and avoid getting 0.
-	
+
 	if ( init ) then
 		dtv = dt0; dtf = dt0; dte = dt0
 	else
 		dtv = dt; dtf = dt; dte = dt
 	end if
 
-	do ki = 1, Np
+	call iterationRangesToProcesses (1, Np, ntasks, rank, istart, istop)
+	do ki = istart, istop
 		i = adapt_time_for_atoms(ki)
 		!! velocity is needed for both xmax and emax criteria
 		vsq = dot_product (vel(1:3, i), vel(1:3, i))
@@ -130,11 +129,12 @@ subroutine variable_time_step_adaptive (init, vel, forces, masses, &
 
 		dtmin = min(dtmin, dt)
 	end do
-	
+
+	call mpi_allreduce (dtmin, dt, 1, MPI_DOUBLE_PRECISION, MPI_MIN, MPI_COMM_WORLD, ierr)
 	!! time-step is always within the maximum and minimum specified limits
 	
-	if (tmin .ne. 0) dt = max(dtmin, tmin)
-	if (tmax .ne. 0) dt = min(dtmin, tmax)
+	if (tmin .ne. 0) dt = max(dt, tmin)
+	if (tmax .ne. 0) dt = min(dt, tmax)
 	
 	!! warnings for specified time limits, based on the warnings user can change the min. and max. t-limits
 	!! no need to print these warnings as these consumes time
@@ -151,12 +151,29 @@ subroutine variable_time_step_adaptive (init, vel, forces, masses, &
 
 !!	If we're at the first step (init) we use new dt as estimated above
 !!	and the initial time-step, dt0
-   
-    if ( init ) dt = min(dt, dt0)
+
+	if ( init ) dt = min(dt, dt0)
 
 end subroutine variable_time_step_adaptive
 
-end module adaptive_time
+!! delegate tasks to processes 
+subroutine iterationRangesToProcesses (nstart, nstop, nprocs, myid, istart, istop)
 
-!******** until here for adaptive time
+	implicit none
+	integer, intent(in) :: nstart, nstop, nprocs, myid
+	integer, intent(out) :: istart, istop
+	integer :: value1, value2
+	!! this is for ideal equal division
+	value1 = (nstop - nstart + 1)/nprocs
+	!! this is for the excess to be distributed 
+	value2 = mod( (nstop - nstart + 1), nprocs )
+
+	istart = myid*value1 + nstart + min(myid, value2)
+	istop = istart + value1 - 1
+	!! ranks lower than the excess value gets one additional task each
+	if (value2 > myid) istop = istop + 1
+
+end subroutine iterationRangesToProcesses
+
+end module adaptive_time
 
