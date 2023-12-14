@@ -449,12 +449,23 @@ module vdw
     else if( element == "C" )then
 !     This is the value provided by VASP, for which they give "private comm."
 !     as reference in the TS implementation paper:
+!      R0 = 3.590 * Bohr
       R0 = 1.900d0
 !     This is the one given by Grimme (J Comput Chem 27, 1787 [2006]):
 !      R0 = 1.452d0
 !     These values are given by Chu and Dalgarno (J Chem Phys 121, 4083 [2004])
       alpha0 = 12.d0 * Bohr**3
       C6 = 46.6d0 * Hartree * Bohr**6
+    else if( element == "P" )then
+!     This is the value provided by VASP, for which they give "private comm."
+!     as reference in the TS implementation paper:
+!      R0 = 4.006d0 * Bohr
+      R0 = 2.120d0
+!     This is the one given by Grimme (J Comput Chem 27, 1787 [2006]):
+!      R0 = 1.705d0
+!     These values are given by Chu and Dalgarno (J Chem Phys 121, 4083 [2004])
+      alpha0 = 25.d0 * Bohr**3
+      C6 = 185.d0 * Hartree * Bohr**6
     else
       if( rank == 0 )then
         write(*,*)'                                       |'
