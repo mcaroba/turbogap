@@ -1067,8 +1067,8 @@ module vdw
                            neighbor_sigma(:), hirshfeld_v_sub_der(:,:), inner_damp(:)
     real*8 :: time1, time2, time3, time4, time5, time6, this_force(1:3), Bohr, Hartree, &
               omega, pi, integral, total_integral, E_MBD, R_vdW_SCS_ij, S_vdW_ij, dS_vdW_ij, exp_term, &
-              r_vdw_i, r_vdw_j, t1, t2, r_buf_scs, r_buf_mbd, r_buf_2b, r_buf_loc, &
-              sigma_ij, coeff_h_der, dg, dh, s_i, s_j, terms, omega_ref, xyz_i(1:3), xyz_j(1:3), rjs_i, rjs_j
+              r_vdw_i, r_vdw_j, t1, t2, r_buf_scs, r_buf_mbd, r_buf_2b, r_buf_loc, time_tot, time_tot2, time_tot3, &
+              time_tot4, sigma_ij, coeff_h_der, dg, dh, s_i, s_j, terms, omega_ref, xyz_i(1:3), xyz_j(1:3), rjs_i, rjs_j
     integer, allocatable :: ipiv(:)
     integer :: n_sites, n_pairs, n_species, n_sites0, info, om, n_tot
     integer :: i, i0, i1, i2, i3, j, j1, j2, j3, k, k2, k3, k4, i_om, a, a2, c1, c2, c3, lwork, b, p, q, r, k_i, k_j
@@ -1103,8 +1103,8 @@ module vdw
               dr_vdw_j, forces_TS, dC6_2b, mult1_i, mult1_j, mult2, dmult1_i(1:3), dmult1_j(1:3), dmult2(1:3), hv_p_der, &
               hv_q_der, do_pref, rb, inner_damp_der, rjs_0_i, rcut_force, o_i, o_j, do_i, do_j, T_LR_mult_i, T_LR_mult_j, &
               dT_LR_mult_i, dT_LR_mult_j, dT_LR_mult_0ij_2, dT_LR_mult_0ji_2, a_i, a_j, E_TS_tot, r6_der, ac2, ac3, ac4, &
-              r_buf_ij, log_integral, rcut_tot, sym_integral, rcut_tsscs, r_buf_tsscs, dT_LR_val(1:3,1:3), do_mbd_i, do_mbd_j
-              
+              r_buf_ij, log_integral, rcut_tot, sym_integral, rcut_tsscs, r_buf_tsscs, dT_LR_val(1:3,1:3), do_mbd_i, do_mbd_j, &
+              rcut_mbd_sqrd, rcut_mbd2_sqrd              
     integer :: n_mbd_sites, n_mbd_pairs, n_2b_sites, n_2b_tot_sites, n_2b_tot_pairs, n_ene_sites, n_force_sites
     integer, allocatable :: n_mbd_neigh(:), mbd_neighbors_list(:), p_mbd(:), sub_2b_tot_list(:), n_2b_tot_neigh(:), &
                             p_2b_tot(:)
@@ -1943,6 +1943,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
             end if
           end do
         
+          !write(*,*) "n_mbd_pairs", n_mbd_pairs
 end if
 
           k_i = 0
@@ -1958,6 +1959,7 @@ end if
           !n_freq = 12
 
 if ( abs(rcut_tsscs) < 1.d-10 ) then
+
 
           if ( .not. cent_appr ) then
             allocate( T_LR(1:3*n_mbd_sites,1:3*n_mbd_sites) )
@@ -2045,6 +2047,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
             end if
           end if
 
+
           call cpu_time(time2)
 
           if ( do_timing ) then
@@ -2116,6 +2119,14 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
             T_LR_sym = 0.d0
           end if
 
+          time_tot = 0.d0
+          time_tot2 = 0.d0
+          time_tot3 = 0.d0
+          time_tot4 = 0.d0
+
+          rcut_mbd_sqrd = (rcut_mbd/Bohr)**2
+          rcut_mbd2_sqrd = (rcut_mbd2/Bohr)**2
+
           k2 = 0
           k_i = 0
           p = 0
@@ -2125,6 +2136,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
             i1 = modulo(i2-1, n_sites0) + 1
             !if ( rjs(n_tot+k_i) .le. rcut_mbd ) then
             if ( rjs(n_tot+k_i) .le. rcut_tot ) then
+              call cpu_time(time3)
               p = p+1
               k2 = k2+1
               s = neighbor_species(n_tot+k_i)
@@ -2142,6 +2154,9 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
               xyz_0_mbd(:,k2) = xyz(:,n_tot+k_i)/Bohr
               hirshfeld_mbd_neigh(k2) = hirshfeld_v_neigh(n_tot+k_i)
               neighbor_alpha0_mbd(k2) = alpha0_ref(s) / Bohr**3 ! * hirshfeld_v_neigh(n_tot+k_i)
+              call cpu_time(time4)
+              time_tot4 = time_tot4 + time4-time3
+              call cpu_time(time3)
               if ( rjs(n_tot+k_i) .le. rcut_loc-r_buf_loc ) then
                 r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),i2,1)
                 a_mbd(k2) = a_iso(r,2)
@@ -2183,12 +2198,17 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 r0_ii_SCS(k2) = r0_ii_mbd(k2) * (central_pol(i1)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0) 
                                              !* (hirshfeld_mbd_neigh(k2))**(1.d0/3.d0)
               end if
+              call cpu_time(time4)
+              time_tot2 = time_tot2 + time4-time3
+              call cpu_time(time3)
               a_mbd_i = a_mbd(k2)
               o_mbd_i = o_mbd(k2)
               T_LR_mult_i = T_LR_mult_0i(k2)
               r_vdw_i = r0_ii_SCS(k2)
               k_j = 0
               q = 0
+              call cpu_time(time4)
+              time_tot4 = time_tot4 + time4-time3
               do j3 = 1, n_neigh(i)
                 k_j = k_j+1
                 !if ( rjs(n_tot+k_j) .le. rcut_mbd ) then
@@ -2197,8 +2217,10 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                   q = q+1
                   if (i3 .ne. j3) then
                     xyz_j = xyz(:,n_tot+k_j)/Bohr
-                    if ( sqrt(sum((xyz_j-xyz_i)**2)) .le. (rcut_mbd)/Bohr ) then
+                    !if ( sqrt(sum((xyz_j-xyz_i)**2)) .le. (rcut_mbd)/Bohr ) then
+                    if ( sum((xyz_j-xyz_i)**2) .le. rcut_mbd_sqrd ) then
                     !if ( rjs(n_tot+k_i) + rjs(n_tot+k_j) + sqrt(sum((xyz_j-xyz_i)**2))*Bohr .le. 2.d0*rcut_mbd ) then
+                      call cpu_time(time3)
                       n_mbd_neigh(p) = n_mbd_neigh(p) + 1
                       j = neighbors_list(n_tot+k_j)
                       j1 = modulo(j-1, n_sites0) + 1
@@ -2216,6 +2238,9 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                       xyz_0_mbd(:,k2) = xyz(:,n_tot+k_j)/Bohr
                       hirshfeld_mbd_neigh(k2) = hirshfeld_v_neigh(n_tot+k_j)
                       neighbor_alpha0_mbd(k2) = alpha0_ref(s) / Bohr**3 !* hirshfeld_v_neigh(n_tot+k_j)
+                      call cpu_time(time4)
+                      time_tot4 = time_tot4 + time4-time3
+                      call cpu_time(time3)
                       if ( rjs(n_tot+k_j) .le. rcut_loc-r_buf_loc ) then
                         r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),j,1)
                         a_mbd(k2) = a_iso(r,2)
@@ -2257,6 +2282,9 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                         r0_ii_SCS(k2) = r0_ii_mbd(k2)  * (central_pol(j1)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0)
                                               ! * (hirshfeld_mbd_neigh(k2))**(1.d0/3.d0)
                       end if
+                      call cpu_time(time4)
+                      time_tot2 = time_tot2 + time4-time3
+                      call cpu_time(time3)
                       T_LR_mult_j = T_LR_mult_0j(k2)
                       if ( rjs_mbd(k2)*Bohr > rcut_mbd-r_buf_ij &
                           .and. rjs_mbd(k2)*Bohr .le. rcut_mbd ) then
@@ -2269,7 +2297,11 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                       end if
                       r_vdw_j = r0_ii_SCS(k2)
                       f_damp_SCS(k2) = 1.d0/( 1.d0 + exp( -d*( rjs_mbd(k2)/(sR*(r_vdw_i + r_vdw_j)) - 1.d0 ) ) )
+                      time_tot3 = time_tot3 + time4-time3
                       k3 = 9*(k2-1)
+                      call cpu_time(time4)
+                      time_tot4 = time_tot4 + time4-time3
+                      call cpu_time(time3)
                       do c1 = 1, 3
                         do c2 = 1, 3
                           k3 = k3 + 1
@@ -2338,6 +2370,8 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                           end if
                         end do
                       end do
+                      call cpu_time(time4)
+                      time_tot = time_tot + time4-time3
                       k2 = k2+1
                       p_mbd(k2) = -1 ! This signals that we construct the symmetric element for dT_LR later, switching p and q
                       n_mbd_neigh(p) = n_mbd_neigh(p) + 1
@@ -2350,8 +2384,10 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                   q = q+1
                   if (i3 .ne. j3 .and. j3 .ne. 1) then
                     xyz_j = xyz(:,n_tot+k_j)/Bohr
-                    if ( sqrt(sum((xyz_j-xyz_i)**2)) .le. (rcut_mbd2)/Bohr ) then
+                    !if ( sqrt(sum((xyz_j-xyz_i)**2)) .le. (rcut_mbd2)/Bohr ) then
+                    if ( sum((xyz_j-xyz_i)**2) .le. rcut_mbd2_sqrd ) then
                     !if ( rjs(n_tot+k_i) + rjs(n_tot+k_j) + sqrt(sum((xyz_j-xyz_i)**2))*Bohr .le. 2.d0*rcut_mbd ) then
+                      call cpu_time(time3)
                       n_mbd_neigh(p) = n_mbd_neigh(p) + 1
                       j = neighbors_list(n_tot+k_j)
                       j1 = modulo(j-1, n_sites0) + 1
@@ -2369,6 +2405,9 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                       xyz_0_mbd(:,k2) = xyz(:,n_tot+k_j)/Bohr
                       hirshfeld_mbd_neigh(k2) = hirshfeld_v_neigh(n_tot+k_j)
                       neighbor_alpha0_mbd(k2) = alpha0_ref(s) / Bohr**3 !* hirshfeld_v_neigh(n_tot+k_j)
+                      call cpu_time(time4)
+                      time_tot4 = time_tot4 + time4-time3
+                      call cpu_time(time3)
                       if ( rjs(n_tot+k_j) .le. rcut_loc-r_buf_loc ) then
                         r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),j,1)
                         a_mbd(k2) = a_iso(r,2)
@@ -2410,6 +2449,9 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                         r0_ii_SCS(k2) = r0_ii_mbd(k2)  * (central_pol(j1)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0)
                                               ! * (hirshfeld_mbd_neigh(k2))**(1.d0/3.d0)
                       end if
+                      call cpu_time(time4)
+                      time_tot2 = time_tot2 + time4-time3
+                      call cpu_time(time3)
                       T_LR_mult_j = T_LR_mult_0j(k2)
                       if ( rjs_mbd(k2)*Bohr > rcut_mbd2-r_buf_ij &
                           .and. rjs_mbd(k2)*Bohr .le. rcut_mbd2 ) then
@@ -2423,6 +2465,9 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                       r_vdw_j = r0_ii_SCS(k2)
                       f_damp_SCS(k2) = 1.d0/( 1.d0 + exp( -d*( rjs_mbd(k2)/(sR*(r_vdw_i + r_vdw_j)) - 1.d0 ) ) )
                       k3 = 9*(k2-1)
+                      call cpu_time(time4)
+                      time_tot4 = time_tot4 + time4-time3
+                      call cpu_time(time3)
                       do c1 = 1, 3
                         do c2 = 1, 3
                           k3 = k3 + 1
@@ -2467,6 +2512,8 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                           !end if
                         end do
                       end do
+                      call cpu_time(time4)
+                      time_tot = time_tot + time4-time3
                     end if
                     !end if
                   end if
@@ -2481,6 +2528,11 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
           call cpu_time(time2)
           
           if ( do_timing ) then
+          write(*,*) "k_i, k_j, k2", k_i, k_j, k2
+          write(*,*) "the rest timing", time_tot4
+          !write(*,*) "f_damp timing", time_tot3
+          write(*,*) "Range dependent polarizability time", time_tot2
+          write(*,*) "Total T_LR inner loop time", time_tot
           write(*,*) "Matrix construction timing", time2-time1
           end if
 
@@ -2824,25 +2876,30 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
             allocate( ipiv_mbd(1:3*n_mbd_sites) )
             if ( do_log ) then
               allocate( log_integrand(1:n_freq) )
+              allocate( temp_mat_full(1:3*n_mbd_sites,1:3*n_mbd_sites) )
               log_integrand = 0.d0
             end if
-            allocate( temp_mat_full(1:3*n_mbd_sites,1:3*n_mbd_sites) )
+            !write(*,*) "n_mbd_sites", n_mbd_sites
+            !write(*,*) "n_force_sites", n_force_sites
             ! Total energy stuff:
             if ( do_derivatives ) then
-              allocate( AT_power_full(1:3*n_mbd_sites,1:3*n_force_sites) )
-              allocate( pol_grad(1:3*n_mbd_sites,1:3*n_force_sites,1:n_freq) )
-              allocate( pol_inv(1:3*n_mbd_sites,1:3*n_force_sites,1:n_freq) )
-              allocate( temp_mat_forces(1:3*n_mbd_sites,1:3*n_force_sites) )
-              allocate( inv_vals(1:1001) )
-              allocate( res_inv(1:n_order+1) )
-              allocate( lsq_inv(1:n_order+1,1:n_order+1) )
-              pol_grad = 0.d0
-              pol_inv = 0.d0
-              inv_vals = 0.d0
+              if ( .not. cent_appr ) then
+                allocate( AT_power_full(1:3*n_mbd_sites,1:3*n_force_sites) )
+                allocate( pol_grad(1:3*n_mbd_sites,1:3*n_force_sites,1:n_freq) )
+                allocate( pol_inv(1:3*n_mbd_sites,1:3*n_force_sites,1:n_freq) )
+                allocate( temp_mat_forces(1:3*n_mbd_sites,1:3*n_force_sites) )
+                allocate( inv_vals(1:1001) )
+                allocate( res_inv(1:n_order+1) )
+                allocate( lsq_inv(1:n_order+1,1:n_order+1) )
+                pol_grad = 0.d0
+                pol_inv = 0.d0
+                inv_vals = 0.d0
+              end if
               if ( do_total_energy ) then
                 total_integrand = 0.d0
               end if
             end if
+
             I_mat = 0.d0
             do p = 1, 3*n_mbd_sites
               I_mat(p,p) = 1.d0
@@ -3375,14 +3432,19 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
             end do
 
             deallocate( b_vec, Ab, I_mat, l_vals, log_vals, lsq_mat, res_mat, ipiv_lsq, AT_power, temp_mat, &
-                        AT_copy, WR, WI, VR, VR_inv, work_mbd, ipiv_mbd, temp_mat_full, ia2, ja2, val2 )
+                        AT_copy, WR, WI, VR, VR_inv, work_mbd, ipiv_mbd, ia2, ja2, val2 )
+            if ( do_log ) then
+              deallocate( temp_mat_full )
+            end if
             ! deallocate( myidx )
             if ( cent_appr ) then
               deallocate( AT_sym_power, res_sym )
             end if
               !deallocate( log_exp )
             if ( do_derivatives ) then
-              deallocate( AT_power_full, inv_vals, lsq_inv, temp_mat_forces )
+              if ( .not. cent_appr ) then
+                deallocate( AT_power_full, inv_vals, lsq_inv, temp_mat_forces )
+              end if
             end if
           end if ! n_order < 2
           !call cpu_time(time2)
@@ -6002,8 +6064,8 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                   if ( cent_appr ) then
                     sym_integral = 0.d0
                     call integrate("trapezoidal", omegas_mbd, integrand_sym, omegas_mbd(1), omegas_mbd(n_freq), sym_integral)
-                    write(*,*) "Sym force" 
-                    write(*,*) i, c3, sym_integral/(2.d0*pi) * Hartree/Bohr
+                    !write(*,*) "Sym force" 
+                    !write(*,*) i, c3, sym_integral/(2.d0*pi) * Hartree/Bohr
                   end if
                 end if
                 if ( .not. cent_appr ) then
@@ -6081,7 +6143,9 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
             deallocate( hirshfeld_v_mbd_der )
           end if
           if ( .not. series_expansion ) then
-            deallocate( pol_grad, pol_inv, res_inv )
+            if ( .not. cent_appr ) then
+              deallocate( pol_grad, pol_inv, res_inv )
+            end if
             if ( cent_appr ) then
               deallocate( pol_sym )
             end if
