@@ -863,32 +863,49 @@ program turbogap
 #ifdef _MPIF90
         END IF
 #endif
-		if( (params%do_md .and. md_istep == 0) )then
+		if ( (params%do_md .and. md_istep == 0) ) then
+			if (params%adaptive_time) then
 #ifdef _MPIF90
 	call mpi_bcast (num_adapttime_atoms, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-	call mpi_bcast (num_eel_atoms, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-	call mpi_bcast (num_eph_atoms, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
 	IF ( rank /= 0 ) THEN
 		if ( allocated(adapt_time_for_atoms) ) deallocate(adapt_time_for_atoms)
         allocate( adapt_time_for_atoms(num_adapttime_atoms) )
-        if ( allocated(eel_for_atoms) ) deallocate(eel_for_atoms)
+    END IF
+    call mpi_bcast (adapt_time_for_atoms, num_adapttime_atoms, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+    call mpi_bcast (adapt_time_group_dynamic, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+	call mpi_bcast (adapt_time_group_update_interval, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+#endif
+			end if
+			if (params%electronic_stopping) then
+#ifdef _MPIF90
+	call mpi_bcast (num_eel_atoms, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+	IF ( rank /= 0 ) THEN
+		if ( allocated(eel_for_atoms) ) deallocate(eel_for_atoms)
         allocate( eel_for_atoms(num_eel_atoms) )
+		if ( allocated(params%masses_types) ) deallocate(params%masses_types)
+        allocate ( params%masses_types(n_species) )
+    END IF
+    call mpi_bcast(eel_for_atoms, num_eel_atoms, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+	call mpi_bcast(params%masses_types, n_species, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+	call mpi_bcast (eel_group_dynamic, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+	call mpi_bcast (eel_group_update_interval, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+#endif
+			end if
+			if (params%nonadiabatic_processes) then
+#ifdef _MPIF90
+	call mpi_bcast (num_eph_atoms, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+	IF ( rank /= 0 ) THEN
         if ( allocated(eph_for_atoms) ) deallocate(eph_for_atoms)
         allocate( eph_for_atoms(num_eph_atoms) )
         if ( allocated(params%masses_types) ) deallocate(params%masses_types)
         allocate ( params%masses_types(n_species) )
     END IF
-    call mpi_bcast(adapt_time_for_atoms, num_adapttime_atoms, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-    call mpi_bcast(eel_for_atoms, num_eel_atoms, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
 	call mpi_bcast(eph_for_atoms, num_eph_atoms, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
 	call mpi_bcast(params%masses_types, n_species, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-	call mpi_bcast (eel_group_dynamic, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
 	call mpi_bcast (eph_group_dynamic, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
-	call mpi_bcast (adapt_time_group_dynamic, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
-	call mpi_bcast (eel_group_update_interval, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
 	call mpi_bcast (eph_group_update_interval, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-	call mpi_bcast (adapt_time_group_update_interval, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
 #endif
+			end if
 		end if
 
         call cpu_time(time_read_xyz(2))
@@ -1877,6 +1894,8 @@ program turbogap
 END IF
 #endif
 
+	!! since all other MD parts are working in serial otherwise, adding this condition
+	if (params%adaptive_time .or. params%electronic_stopping .or. params%nonadiabatic_processes) then
 #ifdef _MPIF90
 
 	  call mpi_bcast(md_istep, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
@@ -1885,7 +1904,7 @@ END IF
 	  call mpi_bcast(velocities, 3*n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
 	  call mpi_bcast(md_time, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
 	  call mpi_bcast(time_step, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-	  
+
 	  !! This part is for groups declared as dynamic
 	  if ( eel_group_dynamic .and. md_istep /=0 .and. (mod(md_istep, eel_group_update_interval) == 0) ) then
 		call mpi_bcast (num_eel_atoms, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
@@ -1913,6 +1932,10 @@ END IF
 	  end if
 
 	!! ----- upto here ------
+#endif
+	end if
+
+#ifdef _MPIF90
 
 	  !! ------- option for radiation cascade simulation with electronic stopping
 
@@ -1999,8 +2022,9 @@ END IF
 	END IF
 #endif
 
+	!! since all other MD parts are working in serial otherwise, adding this condition
+	if ( params%electronic_stopping .or. params%nonadiabatic_processes ) then
 #ifdef _MPIF90
- 
 IF ( rank /= 0 ) THEN
 	if ( allocated(positions_prev) ) deallocate(positions_prev)
 	allocate( positions_prev(3,n_sites) )
@@ -2008,7 +2032,11 @@ END IF
 	call mpi_bcast (positions_prev, 3*n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
 	call mpi_bcast (time_step_prev, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
 	call mpi_bcast (velocities, 3*n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-           
+#endif
+	end if
+
+#ifdef _MPIF90
+
 	!! ------- option for radiation cascade simulation with electronic stopping
 
 	  if ( params%electronic_stopping ) then
@@ -2028,7 +2056,7 @@ END IF
 	  end if
 	!! -----------------------------------		******** until here for electronic stopping basd on eph model
 #endif
-!
+
 #ifdef _MPIF90
      IF( rank == 0 )THEN
 #endif
