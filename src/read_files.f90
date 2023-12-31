@@ -37,8 +37,8 @@ module read_files
   use soap_turbo_compress_module
   use xyz_module
   use md
-
-
+  use groups
+  
   contains
 
 
@@ -378,8 +378,7 @@ end if
       write(*,*)'                                       |'
       write(*,*)'.......................................|'
     end if
-
-
+	
   end subroutine
 !**************************************************************************
 
@@ -498,7 +497,7 @@ end if
 
 !**************************************************************************
 ! This reads the input file
-  subroutine read_input_file(n_species, mode, params, rank)
+  subroutine read_input_file(n_species, mode, params, forgroups, rank)
 
     implicit none
 
@@ -508,6 +507,7 @@ end if
 
 !   Output variables
     type(input_parameters), intent(out) :: params
+    type (groups_class), intent(out) :: forgroups
 
 !   Internal variables
     real*8 :: c6_ref, r0_ref, alpha0_ref, bsf, k
@@ -521,6 +521,9 @@ end if
     character*2 :: element
     character*1 :: keyword_first
     logical :: are_vdw_refs_read(1:3), valid_choice, masses_in_input_file = .false.
+
+!!	makes default group
+	call forgroups%defaultInitialGroups()
 
     implemented_thermostats(1) = "none"
     implemented_thermostats(2) = "berendsen"
@@ -983,12 +986,24 @@ end if
 	  else if (keyword == 'eph_fdm_option') then
 		backspace(10)
 		read(10,*, iostat = iostatus) cjunk, cjunk, params%eph_fdm_option
+		if (params%eph_fdm_option /= 0 .and. params%eph_fdm_option /= 1) then
+			write(*,*) 'ERROR: eph_fdm_option can be only 0/1.'
+			stop
+		end if
 	  else if (keyword == 'eph_friction_option') then
 		backspace(10)
 		read(10,*, iostat = iostatus) cjunk, cjunk, params%eph_friction_option
+		if (params%eph_friction_option /= 0 .and. params%eph_friction_option /= 1) then
+			write(*,*) 'ERROR: eph_friction_option can be only 0/1.'
+			stop
+		end if
 	  else if (keyword == 'eph_random_option') then
 		backspace(10)
 		read(10,*, iostat = iostatus) cjunk, cjunk, params%eph_random_option
+		if (params%eph_random_option /= 0 .and. params%eph_random_option /= 1) then
+			write(*,*) 'ERROR: eph_random_option can be only 0/1.'
+			stop
+		end if
 	  else if (keyword == 'eph_tinfile') then
 		backspace(10)
 		read(10,*, iostat = iostatus) cjunk, cjunk, params%eph_Tinfile
@@ -1048,7 +1063,174 @@ end if
 		read(10,*, iostat = iostatus) cjunk, cjunk, params%eph_Ti_e
 
 	!! --------------------			******** until here for electronic stopping based on EPH model
-      
+	
+	!! -------- define groups of atoms in simulation system
+     
+      else if (keyword == 'make_group') then
+		backspace(10)
+		params%group_style_value = 0
+		read(10,*, iostat = iostatus) cjunk,cjunk, params%group_ID, params%group_style, params%group_style_value
+		call upper_to_lower_case(params%group_style)
+		params%group_style = trim(params%group_style)
+		call forgroups%checkValidGroupStyle ( params%group_style )
+		if ( params%group_ID == 'all' ) then
+			write(*,*) 'ERROR: group id "all" is already present, cannot be made.'
+			stop
+		end if
+		if ( params%group_style == 'all' ) then
+			write(*,*) 'ERROR: group all cannot be "all".'
+			stop
+		end if
+
+		if ( params%group_style == 'block' ) then
+			if ( params%group_style_value < 6 ) then
+				write(*,*) 'ERROR: insufficient limits for group type block'
+				stop
+			end if
+			allocate( params%group_style_limits(params%group_style_value) )
+			backspace(10)
+			read(10,*, iostat = iostatus) cjunk, cjunk, cjunk, cjunk, params%group_style_value, &
+					(params%group_style_limits(i), i = 1, params%group_style_value)
+
+			call forgroups%recordGroups (params%group_ID, params%group_style, params%group_style_value, &
+				params%group_style_IDs, params%group_atom_IDs, params%group_style_limits, params%group_atom_types)
+
+			deallocate( params%group_style_limits )
+
+		else if ( params%group_style == 'add' ) then
+			if ( params%group_style_value < 2 ) then
+				write(*,*) 'ERROR: not enough groups to add'
+				stop
+			end if
+			allocate( params%group_style_IDs(params%group_style_value) )
+			backspace(10)
+			read(10,*, iostat = iostatus) cjunk, cjunk, cjunk, cjunk, params%group_style_value, &
+					(params%group_style_IDs(i), i = 1, params%group_style_value)
+
+			call forgroups%recordGroups (params%group_ID, params%group_style, params%group_style_value, &
+				params%group_style_IDs, params%group_atom_IDs, params%group_style_limits, params%group_atom_types)
+
+			deallocate( params%group_style_IDs )
+
+		else if ( params%group_style == 'subtract' ) then
+			if ( params%group_style_value < 2 ) then
+				write(*,*) 'ERROR: not enough groups to subtract'
+				stop
+			end if
+			allocate( params%group_style_IDs(params%group_style_value) )
+			backspace(10)
+			read(10,*, iostat = iostatus) cjunk, cjunk, cjunk, cjunk, params%group_style_value, &
+					(params%group_style_IDs(i), i = 1, params%group_style_value)
+
+			call forgroups%recordGroups (params%group_ID, params%group_style, params%group_style_value, &
+				params%group_style_IDs, params%group_atom_IDs, params%group_style_limits, params%group_atom_types)
+
+			deallocate( params%group_style_IDs )
+
+		else if ( params%group_style == 'id' ) then
+			if ( params%group_style_value < 1 ) then
+				write(*,*) 'ERROR: insufficient atoms to group by ID.'
+				stop
+			end if
+			allocate( params%group_atom_IDs(params%group_style_value) )
+			backspace(10)
+			read(10,*, iostat = iostatus) cjunk, cjunk, cjunk, cjunk, params%group_style_value, &
+					(params%group_atom_IDs(i), i = 1, params%group_style_value)
+
+			call forgroups%recordGroups (params%group_ID, params%group_style, params%group_style_value, &
+				params%group_style_IDs, params%group_atom_IDs, params%group_style_limits, params%group_atom_types)
+
+			deallocate( params%group_atom_IDs )
+
+		else if ( params%group_style == 'atomtype') then
+			if ( params%group_style_value < 1 ) then
+				write(*,*) 'ERROR: insufficient atoms to group by type.'
+				stop
+			else if ( params%group_style_value > n_species ) then
+				write(*,*) 'ERROR: group by type number cannot be greater than number of species.'
+				stop
+			end if
+			allocate( params%group_atom_types(params%group_style_value) )
+			backspace(10)
+			read(10,*, iostat = iostatus) cjunk, cjunk, cjunk, cjunk, params%group_style_value, &
+					(params%group_atom_types(i), i = 1, params%group_style_value)
+			do i = 1, params%group_style_value
+				if ( findloc(params%species_types, params%group_atom_types(i), dim = 1) == 0 ) then
+					write(*,*) 'ERROR: species not in system from group by atom type.'
+					stop
+				end if
+			end do 
+			
+			call forgroups%recordGroups (params%group_ID, params%group_style, params%group_style_value, &
+				params%group_style_IDs, params%group_atom_IDs, params%group_style_limits, params%group_atom_types)
+
+			deallocate( params%group_atom_types )
+
+		else if ( params%group_style == 'sphere' ) then
+			if ( params%group_style_value /= 4 ) then
+				write(*,*) 'ERROR: 4, radius, three centre coordinates are required for group type sphere.'
+				stop
+			end if
+			allocate( params%group_style_limits(4) )
+			backspace(10)
+			read(10,*, iostat = iostatus) cjunk, cjunk, cjunk, cjunk, params%group_style_value, &
+					(params%group_style_limits(i), i = 1, 4)
+
+			call forgroups%recordGroups (params%group_ID, params%group_style, params%group_style_value, &
+				params%group_style_IDs, params%group_atom_IDs, params%group_style_limits, params%group_atom_types)
+
+			deallocate( params%group_style_limits )
+
+		else if ( params%group_style == 'dynamic' ) then
+			if ( params%group_ID == 'all' ) then
+				write(*,*) 'ERROR: group id "all" need not be made dynamic.'
+				stop
+			end if
+			write(*,*) 'Warning: Dynamic groups can make computation slower ....'
+			call forgroups%checkValidGroupID (params%group_ID)
+			if ( params%group_style_value < 1 ) then
+				write(*,*) 'ERROR: Group update step must be integer greater than 1.'
+				stop
+			else if (params%group_style_value == 1) then
+				write(*,*) 'Warning: Dynamic group updating step set 1 leads to expensive computation.'
+			end if
+
+			call forgroups%recordGroups (params%group_ID, params%group_style, params%group_style_value, &
+				params%group_style_IDs, params%group_atom_IDs, params%group_style_limits, params%group_atom_types)
+
+		end if
+
+     !! -------------------------       ******** until here to define groups 
+     
+     !! ------------ define groups for specific processes
+	  
+	  else if (keyword == 'optimize_groupid') then
+		backspace(10)
+		read(10,*, iostat = iostatus) cjunk, cjunk, params%optimize_groupID
+		call forgroups%checkValidGroupID (params%optimize_groupID)
+	  
+	  else if (keyword == 'thermostat_groupid') then
+		backspace(10)
+		read(10,*, iostat = iostatus) cjunk, cjunk, params%thermostat_groupID
+		call forgroups%checkValidGroupID (params%thermostat_groupID)
+
+	  else if (keyword == 'eph_groupid') then
+		backspace(10)
+		read(10,*, iostat = iostatus) cjunk, cjunk, params%eph_groupID
+		call forgroups%checkValidGroupID (params%eph_groupID)
+
+	  else if (keyword == 'eel_groupid') then
+		backspace(10)
+		read(10,*, iostat = iostatus) cjunk, cjunk, params%eel_groupID
+		call forgroups%checkValidGroupID (params%eel_groupID)
+
+	  else if (keyword == 'adapt_time_groupid') then
+		backspace(10)
+		read(10,*, iostat = iostatus) cjunk, cjunk, params%adapt_time_groupID
+		call forgroups%checkValidGroupID (params%adapt_time_groupID)
+
+     !! -------------------------       ******** until here for groups for specific processes
+     
       else if(keyword=='box_scaling_factor')then
         backspace(10)
         read(10, '(A)', iostat=iostatus) long_line
@@ -1972,54 +2154,6 @@ end if
 
   end subroutine
 !**************************************************************************
-
-
-
-
-!**************************************************************************
-! ------- option for radiation cascade simulation with electronic stopping			
-
-subroutine read_electronic_stopping_file (n_species, species_types, estopfilename, nrows, allelstopdata)
-! read the given electronic stopping file 
-! send the data for required calculations
-! also give error messages if the data in the file is not in proper format
-implicit none
-
-character*1024, intent(in) :: estopfilename
-integer, intent(in) :: n_species
-character*8, intent(in) :: species_types(n_species)
-integer, intent(out) :: nrows
-real*8, allocatable :: allelstopdata(:)
-character*8, allocatable :: infoline(:)
-integer :: i, ncols, ndata
-	
-open (unit = 1000, file = estopfilename)
-! first line gives information
-! second line gives number of energy-stopping data points, i.e no. of rows of data
-read(1000,*)
-read(1000,*) nrows
-if (nrows <= 0) then
-	write(*,*) "ERROR: Number of data rows in stopping file is 0 or less."
-	stop
-end if
-ncols = n_species + 1
-allocate(infoline(ncols))
-! third line gives energy units, names of elements in order of the atom species types in input file
-read(1000,*) (infoline(i), i = 1, ncols)
-do i = 2, ncols
-	if (trim(infoline(i)) /= trim(species_types(i-1))) then
-		write(*,*) "ERROR: Stopping powers for Elements are not given in order."
-		stop
-	end if
-end do
-ndata = nrows*ncols
-allocate (allelstopdata(ndata))
-read(1000,*) (allelstopdata(i), i = 1, ndata)
-
-close(unit = 1000)
-end subroutine read_electronic_stopping_file
-!**************************************************************************
-
 
 
 

@@ -147,6 +147,21 @@ module types
 	
      !! ---------------------------------------------		******** until here for electronic stopping based on EPH model
      
+     !! -------- define groups in simulation system
+     character*16 :: group_ID, group_style
+     integer :: group_style_value
+     real*8, allocatable :: group_style_limits(:)		! for block and sphere types
+     character*16, allocatable :: group_style_IDs(:)		! for add and subtract types
+     character*8, allocatable :: group_atom_types(:)
+     integer, allocatable :: group_atom_IDs(:)
+     
+     !! keywords for process-specific groups of atoms (add new ones here)
+     
+     character*16 :: optimize_groupID = 'all', thermostat_groupID = 'all', &
+     eph_groupID = 'all', eel_groupID = 'all', adapt_time_groupID = 'all'
+
+     !! ---------------------------------------------       ******** until here to define groups 
+     
   end type input_parameters
 
 ! This is a container for atomic images

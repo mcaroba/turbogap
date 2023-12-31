@@ -29,7 +29,7 @@
 
 ! ------- option for doing simulation with adaptive time step			
 ! Adaptive Time Step for Upgrading from the existing variable time step 
-! algorithm in TurboGap. The fix is applied after every specified number of
+! algorithm in TurboGap. The is applied after every specified number of
 ! time step(s). It checks whether the displacement (and the energy transfer)
 ! between atoms in a time step is below a limit specified by the user and 
 ! modifies the time step, i.e. dt, if these are not so.
@@ -38,22 +38,24 @@
 !**************************************************************************
 
 module adaptive_time
+use mpi
 
 contains
 
-subroutine variable_time_step_adaptive (init, vel, forces, masses, tmin, tmax, xmax, emax, dt0, dt)
+subroutine variable_time_step_adaptive (init, vel, forces, masses, &
+			tmin, tmax, xmax, emax, dt0, dt, adapt_time_for_atoms, Np, rank, ntasks, ierr)
 
 	implicit none
 
 	real*8, intent(inout) :: dt
 	real*8, intent(in) :: vel(:,:), dt0, forces(:,:), masses(:), tmin, tmax, xmax, emax
 	logical, intent(in) :: init
-	real*8, allocatable :: d(:)
-	real*8 :: dtmin, vsq, fsq, dte, dtf, dtv
-	integer :: Np, i
+	integer, intent(in) :: adapt_time_for_atoms(:), Np, rank, ntasks
+	real*8 :: dist, dtmin, vsq, fsq, dte, dtf, dtv
+	integer :: ki, i, istart, istop, ierr
 
 	!! checking the input values of calculation parameters
-	
+
 	if (xmax <= 0.0) then
 		write(*,*) "ERROR: value of xmax must be greater than 0."
 		stop
@@ -74,34 +76,23 @@ subroutine variable_time_step_adaptive (init, vel, forces, masses, tmin, tmax, x
 		write(*,*) "ERROR: tmax must be greater than tmin."
 		stop
 	end if
-	
-	
-	Np = size(vel, 2)
 
-	if ( allocated( d ) ) then
-		if ( size(d) /= Np ) then
-			deallocate( d )
-			allocate( d(1:Np) )
-		end if
-	else
-		allocate( d(1:Np) )
-	end if
-	
 	!! this will finally keep the smallest time-step required
-	
+
 	dtmin = 1.0E+20
-	
+
 	!! Initializing time steps to choose the minimum from a proper set
 	!! of values of times and avoid getting 0.
-	
+
 	if ( init ) then
 		dtv = dt0; dtf = dt0; dte = dt0
 	else
 		dtv = dt; dtf = dt; dte = dt
 	end if
-	
-	
-	do i = 1, Np
+
+	call iterationRangesToProcesses (1, Np, ntasks, rank, istart, istop)
+	do ki = istart, istop
+		i = adapt_time_for_atoms(ki)
 		!! velocity is needed for both xmax and emax criteria
 		vsq = dot_product (vel(1:3, i), vel(1:3, i))
 		!! force is needed for emax criteria
@@ -129,43 +120,60 @@ subroutine variable_time_step_adaptive (init, vel, forces, masses, tmin, tmax, x
 		!! maximum energy transfer per time-step will determine the value of time-step, dt 
 		
 		!! calculate the distance that an atom moves with the present v, f, dt
-		d(i) = sqrt( dot_product( vel(1:3, i)*dt + 0.5d0*forces(1:3, i)/masses(i)*dt**2, &
+		dist = sqrt( dot_product( vel(1:3, i)*dt + 0.5d0*forces(1:3, i)/masses(i)*dt**2, &
 					vel(1:3, i)*dt + 0.5d0*forces(1:3, i)/masses(i)*dt**2 ) )
 		
 		!! apply the criterion xmax, if necessary
 		!! rescale dt by the xmax when the above calculated distance is larger than xmax  
-		if (d(i) > xmax) dt = dt * xmax / d(i)
-		
+		if (dist > xmax) dt = dt * xmax / dist
+
 		dtmin = min(dtmin, dt)
 	end do
-	
+
+	call mpi_allreduce (dtmin, dt, 1, MPI_DOUBLE_PRECISION, MPI_MIN, MPI_COMM_WORLD, ierr)
 	!! time-step is always within the maximum and minimum specified limits
 	
-	if (tmin .ne. 0) dt = max(dtmin, tmin)
-	if (tmax .ne. 0) dt = min(dtmin, tmax)
+	if (tmin .ne. 0) dt = max(dt, tmin)
+	if (tmax .ne. 0) dt = min(dt, tmax)
 	
 	!! warnings for specified time limits, based on the warnings user can change the min. and max. t-limits
+	!! no need to print these warnings as these consumes time
 	
-	if (dtmin < tmin) then
-		write(*,*) "WARNING: given xmax or emax criterion demands even lower value of tmin,"
-		write(*,*) "(", dtmin, ")", " but doing with tmin ...."
-	end if
-	
-	if (dtmin > tmax) then
-		write(*,*) "WARNING: given xmax or emax criterion demands even larger value of tmax,"
-		write(*,*) "(", dtmin, ")", " but doing with tmax ...."
-	end if
+	!if (dtmin < tmin) then
+	!	write(*,*) "WARNING: given xmax or emax criterion demands even lower value of tmin,"
+	!	write(*,*) "(", dtmin, ")", " but doing with tmin ...."
+	!end if
+	!
+	!if (dtmin > tmax) then
+	!	write(*,*) "WARNING: given xmax or emax criterion demands even larger value of tmax,"
+	!	write(*,*) "(", dtmin, ")", " but doing with tmax ...."
+	!end if
 
-!	If we're at the first step (init) we use new dt as estimated above
-!	and the initial time-step, dt0
-   
-    if ( init ) dt = min(dt, dt0)
+!!	If we're at the first step (init) we use new dt as estimated above
+!!	and the initial time-step, dt0
+
+	if ( init ) dt = min(dt, dt0)
 
 end subroutine variable_time_step_adaptive
 
-!**************************************************************************
+!! delegate tasks to processes 
+subroutine iterationRangesToProcesses (nstart, nstop, nprocs, myid, istart, istop)
+
+	implicit none
+	integer, intent(in) :: nstart, nstop, nprocs, myid
+	integer, intent(out) :: istart, istop
+	integer :: value1, value2
+	!! this is for ideal equal division
+	value1 = (nstop - nstart + 1)/nprocs
+	!! this is for the excess to be distributed 
+	value2 = mod( (nstop - nstart + 1), nprocs )
+
+	istart = myid*value1 + nstart + min(myid, value2)
+	istop = istart + value1 - 1
+	!! ranks lower than the excess value gets one additional task each
+	if (value2 > myid) istop = istop + 1
+
+end subroutine iterationRangesToProcesses
 
 end module adaptive_time
-
-!******** until here for adaptive time
 

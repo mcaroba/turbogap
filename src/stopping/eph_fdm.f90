@@ -31,14 +31,14 @@
 ! based on electron-phonon coupling model.
 ! This module provides the required data from the FDM input file or the input
 ! parameters such as the number of grids, their dimensions, T_e, C_e, K_e, etc. 
-! that are provided by the user. This data will be used for the calculation 
-! of electronic stopping according to eph model.				
+! that are provided by the user. This data will be used for the electronic
+! system in the calculation of electronic stopping according to the eph model.				
 !********* by Uttiyoarnab Saha
 
 !**************************************************************************
 
 module eph_fdm
-
+use mpi
 type EPH_FDM_class
 	character*128 :: FDM_infile
 	integer, allocatable :: x_mesh(:), y_mesh(:), z_mesh(:)
@@ -58,6 +58,7 @@ type EPH_FDM_class
 	procedure :: edgesOf3DGrids, feedback_ei_energy, heatDiffusionSolve
 	procedure :: whichGrid, Collect_Te, saveOutputToFile, beforeNextFeedback
 	procedure :: splineDerivatives, spline_int
+	procedure :: EPH_FDM_broadcastQuantities
 	
 end type EPH_FDM_class
 
@@ -71,7 +72,8 @@ subroutine EPH_FDM_input_params (this, md_last_step, &
 	class (EPH_FDM_class) :: this
 	integer, intent(in) :: in_nx, in_ny, in_nz, in_steps
 	integer, intent(in) :: md_last_step
-	real*8, intent(in) :: in_x0,in_x1,in_y0,in_y1,in_z0,in_z1,in_T_e,in_C_e,in_rho_e,in_kappa_e
+	real*8, intent(in) :: in_x0, in_x1, in_y0, in_y1, in_z0, in_z1, in_T_e, &
+	in_C_e,in_rho_e,in_kappa_e
 	integer :: i,j,k,loc
 
 	this%nx = in_nx; this%ny = in_ny; this%nz = in_nz
@@ -81,21 +83,20 @@ subroutine EPH_FDM_input_params (this, md_last_step, &
 	this%ntotal = in_nx*in_ny*in_nz
 	this%steps = in_steps
 	this%md_last_step = md_last_step
-	
+
 	allocate(this%x_mesh(this%ntotal), this%y_mesh(this%ntotal), this%z_mesh(this%ntotal))
 	
 	call this%edgesOf3DGrids(in_nx,in_ny,in_nz,in_x0,in_x1,in_y0,in_y1,in_z0,in_z1)
-	
-	allocate(this%T_e(in_nx,in_ny,in_nz),this%S_e(in_nx,in_ny,in_nz),this%rho_e(in_nx,in_ny,in_nz), &
-	this%C_e(in_nx,in_ny,in_nz), this%kappa_e(in_nx,in_ny,in_nz),this%flag(in_nx,in_ny,in_nz), &
-	this%T_dynamic_flag(in_nx,in_ny,in_nz))
-	allocate(this%Q_ei(in_nx,in_ny,in_nz)) 		!! for electron-ion energy exchanges
-	
 	call this%setMeshIndices()
+
+	allocate(this%T_e(in_nx,in_ny,in_nz), this%S_e(in_nx,in_ny,in_nz), &
+	this%rho_e(in_nx,in_ny,in_nz), this%C_e(in_nx,in_ny,in_nz), &
+	this%kappa_e(in_nx,in_ny,in_nz), this%flag(in_nx,in_ny,in_nz), &
+	this%T_dynamic_flag(in_nx,in_ny,in_nz), this%Q_ei(in_nx,in_ny,in_nz))
 	
 	this%S_e = 0.0d0
 	this%Q_ei = 0.0d0
-	this%T_e = in_T_e 
+	this%T_e = in_T_e
 	this%rho_e = in_rho_e
 	this%C_e = in_C_e 
 	this%kappa_e = in_kappa_e/1000.0d0		!! 1000.0 is for ps <---> fs
@@ -118,7 +119,7 @@ subroutine EPH_FDM_input_file (this, FDM_infile, md_last_step)
 	
 	this%FDM_infile = FDM_infile
 	this%md_last_step = md_last_step
-	
+
 	open (unit = 10, file = FDM_infile)
 	!! First 3 lines are comments		
 	read(10,*)
@@ -201,7 +202,8 @@ subroutine EPH_FDM_input_file (this, FDM_infile, md_last_step)
 		do i = 1, this%Num_K_e
 			read(10,*) this%file_T_for_kappae(i), this%file_kappa_e_T(i)
 		end do
-		
+		close(unit = 10)
+
 		this%file_kappa_e_T = this%file_kappa_e_T/1000.0d0	 	!! 1000.0 is for ps <---> fs
 		
 		!! If there is only one or less data point for both C_e(T_e) and K_e(T_e)
@@ -229,8 +231,41 @@ subroutine EPH_FDM_input_file (this, FDM_infile, md_last_step)
 		call this%splineDerivatives (this%file_T_for_kappae,this%file_kappa_e_T,this%Num_K_e, &
 		bignum,bignum,this%K_e_T_deriv)
 	end if
+
 end subroutine EPH_FDM_input_file
 
+
+!! broadcast required quantities
+subroutine EPH_FDM_broadcastQuantities (this, eph_random_option, eph_fdm_option, ierr)
+	implicit none
+	class (EPH_FDM_class) :: this
+	integer :: eph_random_option, eph_fdm_option, ierr
+
+	if (eph_random_option == 1 .or. eph_fdm_option == 1) then
+		call mpi_bcast (this%ntotal, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+		call mpi_bcast (this%nx, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+		call mpi_bcast (this%ny, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+		call mpi_bcast (this%nz, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+		call mpi_bcast (this%x0, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+		call mpi_bcast (this%x1, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+		call mpi_bcast (this%y0, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+		call mpi_bcast (this%y1, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+		call mpi_bcast (this%z0, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+		call mpi_bcast (this%z1, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+		call mpi_bcast (this%dx, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+		call mpi_bcast (this%dy, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+		call mpi_bcast (this%dz, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+		call mpi_bcast (this%dV, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+		call mpi_bcast (this%x_mesh, this%ntotal, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+		call mpi_bcast (this%y_mesh, this%ntotal, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+		call mpi_bcast (this%z_mesh, this%ntotal, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+		call mpi_bcast (this%T_e, this%ntotal, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+	end if
+	if (eph_fdm_option == 1) then
+		call mpi_bcast (this%Q_ei, this%ntotal, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+	end if
+
+end subroutine EPH_FDM_broadcastQuantities
 
 !! set the i,j,k of the coarse mesh
 subroutine setMeshIndices(this)
@@ -273,19 +308,19 @@ integer function whichGrid (this, x, y, z)	result (indx)
 	class (EPH_FDM_class) :: this
 	real*8, intent(in) :: x, y, z
 	integer :: lx, px, ly, py, lz, pz
-	
+
 	lx = floor((x-this%x0) / this%dx)
 	px = floor(real(lx / this%nx))
 	lx = lx - px * this%nx
-	
+
 	ly = floor((y-this%y0) / this%dy)
 	py = floor(real(ly / this%ny))
 	ly = ly - py * this%ny
-	
+
 	lz = floor((z-this%z0) / this%dz);
 	pz = floor(real(lz / this%nz));
 	lz = lz - pz * this%nz
-	
+
 	indx = 1 + lx + ly*this%nx + lz*this%nx*this%ny
 end function whichGrid
 
@@ -338,7 +373,7 @@ subroutine heatDiffusionSolve(this, dt)
 	grad_kappa_grad_T, stability, invdx2, invdy2, invdz2, &
 	sum_invd, factor, multiply_factor
 	integer :: xback, xfront, yback, yfront, zback, zfront
-	
+
 	new_steps = 1
 	inner_dt = dt / this%steps
 	new_steps = dt / inner_dt
@@ -670,7 +705,8 @@ subroutine heatDiffusionSolve(this, dt)
 				end do
 			end do
 		end do
-	end if
+	end if	
+	
 end subroutine heatDiffusionSolve
 
 

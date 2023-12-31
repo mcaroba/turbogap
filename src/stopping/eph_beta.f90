@@ -36,44 +36,44 @@
 
 !**************************************************************************
 module eph_beta
-
+use mpi
 type EPH_Beta_class
 	character*128 :: beta_infile
 	character*2, dimension(5) :: line
 	character*2, allocatable :: element_name(:)
-	integer :: n_elements, n_points_rho, n_points_beta, n_species
+	integer :: n_elements, n_points_rho, n_points_beta
 	real*8 :: dr, r_cutoff, drho, rho_cutoff
 	integer, allocatable :: element_number(:)
 	real*8, allocatable :: r(:), data_rho(:,:), rho(:), &
 	data_beta(:,:), data_alpha(:,:)
-	real*8, allocatable :: y2rho(:,:), y2beta(:,:), y2alpha(:,:)
+	real*8, allocatable :: y2rho(:,:), y2alpha(:,:)
 
 	contains
 	procedure :: beta_parameters, spline_int, splineDerivatives
+	procedure :: beta_parameters_broadcastQuantities
 
 end type EPH_Beta_class
 
 contains
 
 !! Get the rho, beta and alpha data from .beta file 
-subroutine beta_parameters(this,beta_infile,n_species)
+subroutine beta_parameters(this, beta_infile, n_species)
 	implicit none
 	class (EPH_Beta_class) :: this
 	integer, intent(in) :: n_species
 	integer :: i, j
 	character*128, intent(in) :: beta_infile
-	real*8, allocatable :: y2(:), z2(:), w2(:), y2r2(:)
+	real*8, allocatable :: y2(:), w2(:) 
 	real*8, parameter :: bignum = 1.1e30
-	
-	this%n_species = n_species
+
 	this%beta_infile = beta_infile
-	
+
 	open (unit = 10, file = beta_infile)
 	!! First 3 lines are comments		
 	read(10,*)
 	read(10,*)
 	read(10,*)
-	read(10,*) (this%line(i), i = 1, (this%n_species+1))
+	read(10,*) (this%line(i), i = 1, (n_species+1))
 	read(this%line(1),'(I2)') this%n_elements
 	if (this%n_elements <= 0) then
 		write(*,*) "ERROR: Negative or 0 elements in the density file"
@@ -90,12 +90,12 @@ subroutine beta_parameters(this,beta_infile,n_species)
 	!! Read r, rho and beta parameters from the beta file
 	read(10,*) this%n_points_rho, this%dr, this%n_points_beta, this%drho, &
 	this%r_cutoff
-	
+
 	this%rho_cutoff = this%drho * (this%n_points_beta - 1)
-	
+
 	allocate(this%data_rho(this%n_elements,this%n_points_rho), &
-		this%data_beta(this%n_elements,this%n_points_beta), &
-			this%data_alpha(this%n_elements,this%n_points_beta))
+			this%data_alpha(this%n_elements,this%n_points_beta), &
+			this%data_beta(this%n_elements,this%n_points_beta))
 
 	!! It is assumed that data in the beta file for different elements is
 	!! according to the corresponding types of the species as specified in 
@@ -109,6 +109,7 @@ subroutine beta_parameters(this,beta_infile,n_species)
 	
 	this%data_rho = 0.0d0
 	this%data_beta = 0.0d0
+
 	do i = 1, this%n_elements
 		read(10,*) this%element_number(i)
 		do j = 1, this%n_points_rho
@@ -127,7 +128,7 @@ subroutine beta_parameters(this,beta_infile,n_species)
 			this%data_alpha(i,j) = sqrt(this%data_beta(i,j))
 		end do
 	end do
-	
+
 	!! create the array with values of r for rho vs. r from data in beta file
 	if (.not. allocated(this%r)) allocate(this%r(this%n_points_rho))
 	this%r(1) = 0.0d0
@@ -145,26 +146,43 @@ subroutine beta_parameters(this,beta_infile,n_species)
 	!! Have the y"(x) in y2rho and y2beta for cubic spline interpolation 
 	!! for all types of atoms and use them as and when needed afterwards
 	
-	allocate(this%y2rho(this%n_elements,this%n_points_rho), y2(this%n_points_rho))
-	
-	allocate(this%y2beta(this%n_elements,this%n_points_beta), z2(this%n_points_beta), &
-				this%y2alpha(this%n_elements,this%n_points_beta), w2(this%n_points_beta))
+	allocate(this%y2rho(this%n_elements,this%n_points_rho), y2(this%n_points_rho), &
+			this%y2alpha(this%n_elements,this%n_points_beta), w2(this%n_points_beta))
 
 	do i = 1, this%n_elements
 		y2 = 0.0d0
 		call this%splineDerivatives (this%r,this%data_rho(i,:),this%n_points_rho,bignum,bignum,y2)
 		this%y2rho(i,:) = y2(:)
-		z2 = 0.0d0
-		call this%splineDerivatives (this%rho,this%data_beta(i,:),this%n_points_beta,bignum,bignum,z2)
-		this%y2beta(i,:) = z2(:)
 		w2 = 0.0d0
 		call this%splineDerivatives (this%rho, this%data_alpha(i,:),this%n_points_beta,bignum,bignum,w2)
 		this%y2alpha(i,:) = w2(:)
 	end do
+if (allocated(this%data_beta)) deallocate(this%data_beta)
+if (allocated(y2)) deallocate(y2)
+if (allocated(w2)) deallocate(w2)
 
 end subroutine beta_parameters
 
+!! broadcast required quantities
+subroutine beta_parameters_broadcastQuantities (this, ierr)
+	implicit none
+	class (EPH_Beta_class) :: this
+	integer :: ierr
 
+	call mpi_bcast (this%n_elements, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+	call mpi_bcast (this%n_points_rho, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+	call mpi_bcast (this%n_points_beta, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+	call mpi_bcast (this%r_cutoff, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+	call mpi_bcast (this%rho_cutoff, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+	call mpi_bcast (this%data_rho, this%n_elements*this%n_points_rho, &
+								MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+	call mpi_bcast (this%data_alpha, this%n_elements*this%n_points_beta, &
+						MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+
+end subroutine beta_parameters_broadcastQuantities
+
+!! Cubic spline interpolation 
+!! (Ref. Numerical recipes in F77, vol. 1, W.H. Press et al.)
 !! Find the interpolated value of y corresponding to a given value of x.
 !! Data arrays are xarr(1:n) and yarr(1:n). Second derivative of ya is y2arr(1:n).
 !! For a given value of x, y is the cubic-spline interpolated value.
@@ -214,8 +232,6 @@ subroutine spline_int(this,xarr,yarr,y2arr,n,x,y)
 end subroutine spline_int
 
 
-!! Cubic spline interpolation 
-!! (Ref. Numerical recipes in F77, vol. 1, W.H. Press et al.)
 !! Find the second derivatives of the interpolating function at tabulated points (x)
 !! Find the array of second derivatives of y(x).
 subroutine splineDerivatives(this,x,y,n,yp1,ypn,y2)
