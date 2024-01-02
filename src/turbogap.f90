@@ -1338,7 +1338,7 @@ program turbogap
                                          params%vdw_sr, params%vdw_d, params%vdw_c6_ref, params%vdw_r0_ref, &
                                          params%vdw_alpha0_ref, c6_scs, r0_scs, alpha0_scs, params%do_forces, &
 #ifdef _MPIF90
-                                         this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw )
+                                         this_energies_vdw(i_beg:i_end), this_forces_vdw(1:3,i_beg:i_end), this_virial_vdw )
 #else
                                          energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
 #endif
@@ -1368,7 +1368,7 @@ call cpu_time(time1)
                                          params%vdw_polynomial, params%vdw_omega_ref, &
                                          alpha_SCS(i_beg:i_end), omega_SCS(i_beg:i_end), &
 #ifdef _MPIF90
-                                         this_forces_vdw )
+                                         this_forces_vdw(1:3,i_beg:i_end) )
 #else
                                          forces_vdw )
 #endif
@@ -1388,7 +1388,7 @@ call cpu_time(time2)
 
 !write(*,*) "alpha_SCS"
 !do i = 1, n_sites
-!  write(*,*) i, alpha_SCS(i)
+!  write(*,*) i, alpha_SCS(i), omega_SCS(i)
 !end do
 call cpu_time(time1)
 !write(*,*) "scs timing", time1-time2
@@ -1407,7 +1407,7 @@ include_2b = .true.
                                          2, &
                                          params%vdw_omega_ref, alpha_SCS, omega_SCS, include_2b, &
 #ifdef _MPIF90
-                                         this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw )
+                                         this_energies_vdw(i_beg:i_end), this_forces_vdw(1:3,i_beg:i_end), this_virial_vdw )
 #else
                                          energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
 #endif
@@ -1426,7 +1426,7 @@ include_2b = .false.
                                          params%vdw_mbd_norder, &
                                          params%vdw_omega_ref, alpha_SCS, omega_SCS, include_2b, &
 #ifdef _MPIF90
-                                         this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw )
+                                         this_energies_vdw(i_beg:i_end), this_forces_vdw(1:3,i_beg:i_end), this_virial_vdw )
 #else
                                          energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
 #endif
@@ -1446,7 +1446,7 @@ include_2b = .true.
                                          params%vdw_mbd_norder, &
                                          params%vdw_omega_ref, alpha_SCS, omega_SCS, include_2b, &
 #ifdef _MPIF90
-                                         this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw )
+                                         this_energies_vdw(i_beg:i_end), this_forces_vdw(1:3,i_beg:i_end), this_virial_vdw )
 #else
                                          energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
 #endif
@@ -1477,6 +1477,10 @@ call cpu_time(time2)
           !              params%vdw_mbd_grad, energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
 
 
+          write(*,*) "vdw forces"
+          do i = 1, n_sites
+            write(*,*) forces_vdw(1:3,i), this_forces_vdw(1:3,i), energies_vdw(i), this_energies_vdw(i)
+          end do
 
           deallocate(v_neigh_vdw, alpha_SCS, omega_SCS, alpha_SCS_grad, c6_scs, r0_scs, alpha0_scs, &
                      this_alpha_SCS, this_omega_SCS)
@@ -1743,7 +1747,6 @@ call cpu_time(time2)
 #endif
       end if
 
-
       if( params%do_forces )then
         forces = forces_soap + forces_2b + forces_3b + forces_core_pot + forces_vdw
         virial = virial_soap + virial_2b + virial_3b + virial_core_pot + virial_vdw
@@ -1751,12 +1754,18 @@ call cpu_time(time2)
 
 
 ! For debugging the virial implementation
-if( rank == 0 .and. .false. )then
+!if( rank == 0 .and. .false. )then
+if( rank == 0 .and. .true. )then
 write(*,*) "pressure_soap: ", virial_soap / 3.d0 / v_uc
 write(*,*) "pressure_vdw: ", virial_vdw / 3.d0 / v_uc
 write(*,*) "pressure_2b: ", virial_2b / 3.d0 / v_uc
 write(*,*) "pressure_3b: ", virial_3b / 3.d0 / v_uc
 write(*,*) "pressure_core_pot: ", virial_core_pot / 3.d0 / v_uc
+      write(*,*) "full vdw forces"
+      do i = 1, n_sites
+        write(*,*) forces_vdw(1:3,i)
+      end do
+
 end if
 
 
