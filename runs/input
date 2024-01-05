@@ -25,16 +25,16 @@ vdw_c6_ref = 27.8 !3.88
 ! neighbor lists: vdw_loc_rcut = vdw_scs_rcut and vdw_2b_rcut2 = vdw_2b_rcut
 ! to get results that are equivalent to normal TS.
 vdw_buffer = 0.5          ! Buffer for transitions between cut-off regions. Type: REAL
-vdw_scs_rcut = 5.         ! SCS cut-off for polarizabilities. Type: REAL
-vdw_loc_rcut = 5.         ! Cut-off for including polarizability gradients in force calculation (vdw_loc_rcut <= vdw_scs_rcut).
-vdw_mbd_rcut = 10.         ! Cut-off for atoms to include for local MBD energy (cut-off for central atom). Type: REAL
-vdw_mbd_rcut2 = 5.        ! Secondary MBD cut-off (cut-off sphere for neighbors)
-vdw_2b_rcut = 10.          ! Primary 2b cut-off (cut-off for central atom). Type: REAL
-vdw_2b_rcut2 = 5.         ! Secondary 2b cut-off (cut-off sphere for neighbors). 
+vdw_scs_rcut = 1.5         ! SCS cut-off for polarizabilities. Type: REAL
+vdw_loc_rcut = 1.5         ! Cut-off for including polarizability gradients in force calculation (vdw_loc_rcut <= vdw_scs_rcut).
+vdw_mbd_rcut = 1.5         ! Cut-off for atoms to include for local MBD energy (cut-off for central atom). Type: REAL
+vdw_mbd_rcut2 = 1.        ! Secondary MBD cut-off (cut-off sphere for neighbors)
+vdw_2b_rcut = 1.5          ! Primary 2b cut-off (cut-off for central atom). Type: REAL
+vdw_2b_rcut2 = 1.         ! Secondary 2b cut-off (cut-off sphere for neighbors). 
 vdw_mbd_nfreq = 13        ! Number of frequency values for MBD integration. Type: INT
-vdw_mbd_norder = 6        ! Contributions up to n-body interactions (i.e. cut-off degree for Taylor expansion of ln(I-AT)). Type: INT
+vdw_mbd_norder = 3        ! Contributions up to n-body interactions (i.e. cut-off degree for Taylor expansion of ln(I-AT)). Type: INT
 vdw_mbd_grad = .true.     ! Calculate MBD forces. Type: LOGICAL
-vdw_hirsh_grad = .true.   ! Include Hirshfeld gradients in the forces. Type: LOGICAL
+vdw_hirsh_grad = .false.   ! Include Hirshfeld gradients in the forces. Type: LOGICAL
 vdw_polynomial = .false.  ! Use polynomial approximation for inverse matrices. Type: LOGICAL. OBSOLETE!!!
 vdw_omega_ref = 1.3d0     ! Reference frequency value used for SCS characteristic frequency calculation. Might depend on the material (for now).
-do_nnls = .true.         ! NNLS for frequency fitting to avoid calculating many frequency points. Use at least vdw_mbd_nfreq = 2*vdw_mbd_norder+1 or it might be unstable (overfitting). 
+do_nnls = .false.         ! NNLS for frequency fitting to avoid calculating many frequency points. Use at least vdw_mbd_nfreq = 2*vdw_mbd_norder+1 or it might be unstable (overfitting). 

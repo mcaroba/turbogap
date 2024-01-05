@@ -1183,6 +1183,9 @@ r_buf_tsscs = 0.d0
     n_pairs = size(neighbors_list)
     n_species = size(c6_ref)
     n_sites0 = size(forces0, 2)
+    forces0 = 0.d0
+
+    write(*,*) "n_sites, n_sites0", n_sites, n_sites0
 
     ! HACK FOR HIRSHFELD DERIVATIVES
     allocate( hirshfeld_v_cart_der_H(1:3, n_pairs) )
@@ -1561,14 +1564,14 @@ r_buf_tsscs = 0.d0
                                        (1.d0 - 10.d0 * rb**3 &
                                + 15.d0 * rb**4 &
                                - 6.d0 * rb**5 )
-                        if ( i2 == i ) then
+                        if ( i2 == i0 ) then
                           rb = (rjs_H(k2)-(rcut-r_buf_scs)/Bohr)/(r_buf_scs/Bohr)
                           dmult2 = (-30.d0 * rb**2 &
                               + 60.d0 * rb**3 &
                               - 30.d0 * rb**4 ) &
                             * ( -xyz_H(:,k2)/rjs_H(k2)/(r_buf_scs/Bohr))
                         end if
-                        if ( j == i ) then
+                        if ( j == i0 ) then
                           rb = (rjs_H(k2)-(rcut-r_buf_scs)/Bohr)/(r_buf_scs/Bohr)
                           dmult2 = (-30.d0 * rb**2 &
                               + 60.d0 * rb**3 &
@@ -1579,6 +1582,9 @@ r_buf_tsscs = 0.d0
                       T_SR_mult(k2) = mult1_i * mult1_j * mult2
                       dT_SR_mult(k2,:) = dmult1_i * mult1_j * mult2 + mult1_i * dmult1_j * mult2 + &
                                          mult1_i * mult1_j * dmult2
+                      if ( (i == 1 .or. i == 31 ) .and. c3 == 1 .and. om == 2 .and. k2 == 2 ) then
+                        write(*,*) "dT_SR_mult", i, dT_SR_mult(k2,c3)
+                      end if
                       d_mult_i(k2) = mult1_i * ( 1.d0 - mult1_j ) * mult2
                       d_dmult_i(k2,:) = dmult1_i * (1.d0 - mult1_j ) * mult2 + mult1_i * (-dmult1_j) * mult2 &
                                       + mult1_i * ( 1.d0 - mult1_j ) * dmult2
@@ -1604,14 +1610,14 @@ r_buf_tsscs = 0.d0
                                       (1.d0 - 10.d0 * rb**3 &
                                + 15.d0 * rb**4 &
                                - 6.d0 * rb**5 )
-                        if ( i2 == i ) then
+                        if ( i2 == i0 ) then
                           rb = (rjs_H(k2)-(rcut-r_buf_scs)/Bohr)/(r_buf_scs/Bohr)
                           dmult2 = (-30.d0 * rb**2 &
                               + 60.d0 * rb**3 &
                               - 30.d0 * rb**4 ) &
                             * ( -xyz_H(:,k2)/rjs_H(k2)/(r_buf_scs/Bohr))
                         end if
-                        if ( j == i ) then
+                        if ( j == i0 ) then
                           rb = (rjs_H(k2)-(rcut-r_buf_scs)/Bohr)/(r_buf_scs/Bohr)
                           dmult2 = (-30.d0 * rb**2 &
                               + 60.d0 * rb**3 &
@@ -3756,7 +3762,10 @@ end if
             end do
                 
             ! Derivatives are always w.r.t. the central atom:
-            a = i
+            a = i0
+            if ( (i == 1 .or. i == 31) .and. c3 == 1 .and. om == 2 ) then
+              write(*,*) "i, a, i0", i, a, i0
+            end if
 
             !dB_mat = 0.d0
             f_damp_der = 0.d0
@@ -3832,6 +3841,9 @@ end if
                                                             h_func_der(k4) * (1.d0 - f_damp(k3))) * d_mult_i(k3) * &
                                                             neighbor_alpha0(k3) * inner_damp(k3) - d_arr_i(k4) * &
                                                             d_mult_i(k3) * inner_damp_der
+                          !if ( (i == 1 .or. i == 31) .and. c3 == 1 .and. om == 2 .and. 3*(p-1)+c1 == 1 .and. 3*(q-1)+c2 == 4 ) then
+                          !  write(*,*) "dB_mat", dB_mat(3*(p-1)+c1,3*(q-1)+c2)
+                          !end if
                         else
                           b_der(3*(p-1)+c1,:) = b_der(3*(p-1)+c1,:) + (f_damp_der(k3) * T_func(k4) * &
                                                             g_func(k3) - (1.d0 - f_damp(k3)) * dT(k4) * &
@@ -3878,6 +3890,10 @@ end if
                 end if
               end do
             end do
+
+            !if ( ( i == 1 .or. i == 31 ) .and. c3 == 1 .and. om == 2 ) then
+            !  write(*,*) "dB_mat", i, dB_mat(1,4)
+            !end if
 
             if (do_hirshfeld_gradients) then
 
@@ -4009,6 +4025,9 @@ end if
                   do c2 = 1, 3
                     k4 = k4+1
                     if ( rjs_0(k3) .le. rcut ) then
+                      if ( ( i == 1 .or. i == 31 ) .and. c3 == 1 .and. om == 2 .and. 3*(p-1)+c1 == 1 .and. 3*(q-1)+c2 == 4 ) then
+                        write(*,*) "dT_SR_mult", k3, k4, dT_SR_mult(k3,c3), T_SR(k4)
+                      end if
                       dB_mat(3*(p-1)+c1,3*(q-1)+c2) = dB_mat(3*(p-1)+c1,3*(q-1)+c2) + &
                           dT_SR_mult(k3,c3) * T_SR(k4)
                       b_der(3*(p-1)+c1,:) = b_der(3*(p-1)+c1,:) + dT_SR_mult(k3,c3) * T_SR(k4) * &
@@ -4042,7 +4061,10 @@ end if
 
             b_der = -b_der+d_der
 
-            !call cpu_time(time1)
+            call cpu_time(time1)
+            !if ( (i == 1 .or. i == 31) .and. c3 == 1 .and. om == 2 ) then
+            !  write(*,*) "dB_mat", i, dB_mat(1,4)
+            !end if
 
             if ( polynomial_expansion ) then
             
@@ -4126,6 +4148,11 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 if ( rjs_0_mbd(k2) .le. (rcut_loc-r_buf_loc)/Bohr ) then
                   r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),i2,1)
                   da_mbd(k2) = da_iso(r,c3,2)
+                  if ( ( i == 1 .or. i == 31 ) .and. c3 == 1 ) then
+                    if ( k2 == 1 ) then
+                      write(*,*) "da_mbd loop", r, da_mbd(k2)
+                    end if
+                  end if
                   if ( a_iso(r,2) > a_iso(r,1) ) then
                     do_pref = -0.5d0*vdw_omega_ref*omega_ref * (a_iso(r,1) * da_iso(r,c3,2) - a_iso(r,2) * da_iso(r,c3,1)) / &
                                  ( a_iso(r,1)**2 * (a_iso(r,2)/a_iso(r,1) - 1.d0)**(3.d0/2.d0) )
@@ -4387,19 +4414,19 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                       end if
                     end do
                   end do
-                  if (i == i2 .or. i == j) then
+                  if (i0 == i2 .or. i0 == j) then
                     f_damp_der_mbd(k2) = d/S_vdW_ij * f_damp_SCS(k2)**2 * &
                                      exp( -d*(rjs_mbd(k2)/S_vdW_ij - 1.d0) ) * xyz_mbd(c3,k2)/rjs_mbd(k2)
                     if ( p == 1 ) then
                       if ( rjs_mbd(k2) > (rcut_mbd-r_buf_ij)/Bohr &
                           .and. rjs_mbd(k2) .le. rcut_mbd/Bohr ) then
                         rb = (rjs_mbd(k2)*Bohr-rcut_mbd+r_buf_ij)/r_buf_ij
-                        if ( i == i2 ) then
+                        if ( i0 == i2 ) then
                           dT_LR_mult_ij(k2) = &
                                     ( - 6.d0 * rb &
                                       + 6.d0 * rb**2) & 
                                 * ( -xyz_mbd(c3,k2)/rjs_mbd(k2)/(r_buf_ij/Bohr))
-                        else if ( i == j ) then
+                        else if ( i0 == j ) then
                           dT_LR_mult_ij(k2) = &
                                     ( - 6.d0 * rb &
                                       + 6.d0 * rb**2) & 
@@ -4409,7 +4436,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                         if ( rjs_mbd(k2) > (rcut_mbd2-r_buf_ij)/Bohr &
                             .and. rjs_mbd(k2) .le. rcut_mbd2/Bohr ) then
                           rb = (rjs_mbd(k2)*Bohr-rcut_mbd2+r_buf_ij)/r_buf_ij
-                          if ( i == i2 ) then
+                          if ( i0 == i2 ) then
                             dT_LR_mult_ij(k2) = &
                                       ( - 6.d0 * rb &
                                         + 6.d0 * rb**2) &
@@ -4438,7 +4465,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                           dT_mbd(k3) = dT_mbd(k3) + 3.d0/rjs_mbd(k2)**5 * xyz_mbd(c2,k2)
                         end if
                         if ( .not. cent_appr ) then
-                        if (i == i2) then
+                        if (i0 == i2) then
                           dT_LR(3*(p-1)+c1,3*(q-1)+c2) = dT_LR(3*(p-1)+c1,3*(q-1)+c2) - &
                                              (T_mbd(k3) * f_damp_der_mbd(k2) + &
                                              dT_mbd(k3) * f_damp_SCS(k2)) * &
@@ -4454,7 +4481,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                                              dT_LR_mult_ij(k2)
                         end if
                         if ( cent_appr ) then
-                        if (i == i2) then
+                        if (i0 == i2) then
                           if ( p == 1 ) then
                           dT_LR_sym(3*(p-1)+c1,3*(q-1)+c2) = dT_LR_sym(3*(p-1)+c1,3*(q-1)+c2) - &
                                              (T_mbd(k3) * f_damp_der_mbd(k2) + &
@@ -5015,12 +5042,12 @@ end if
                               r6_mult_2b_tot(k2) = (1.d0 - 10.d0 * rb**3 &
                                       + 15.d0 * rb**4 &
                                       - 6.d0 * rb**5)
-                              if ( i2 == i ) then 
+                              if ( i2 == i0 ) then 
                                 dr6_mult(k2) = (- 30.d0 * rb**2 &
                                    + 60.d0 * rb**3 &
                                    - 30.d0 * rb**4) &
                                    * ( -xyz_2b_tot(c3,k2)/rjs_2b_tot(k2)/(r_buf_tsscs/Bohr))
-                              else if ( j2 == i ) then
+                              else if ( j2 == i0 ) then
                                 dr6_mult(k2) = (- 30.d0 * rb**2 &
                                    + 60.d0 * rb**3 &
                                    - 30.d0 * rb**4) &
@@ -5084,19 +5111,19 @@ end if
                                         exp( -20.d0*( rjs_2b_tot(k2)/(0.97d0*(r_vdw_i + r_vdw_j)) - 1.d0 ) ) &
                                         * (- rjs_2b_tot(k2)/0.97d0 * 1.d0/(r_vdw_i+r_vdw_j)**2 &
                                         * (dr_vdw_i + dr_vdw_j))
-                            if ( i2 == i ) then        
+                            if ( i2 == i0 ) then        
                               f_damp_der_2b = f_damp_der_2b + 20.d0 * f_damp_SCS_2b_tot(k2)**2 * &
                                         exp( -20.d0*( rjs_2b_tot(k2)/(0.97d0*(r_vdw_i + r_vdw_j)) - 1.d0 ) ) &
                                         * (1.d0/(0.97d0 * (r_vdw_i+r_vdw_j)) * (-xyz_2b_tot(c3,k2)/rjs_2b_tot(k2)))
-                            else if ( j2 == i ) then
+                            else if ( j2 == i0 ) then
                               f_damp_der_2b = f_damp_der_2b + 20.d0 * f_damp_SCS_2b_tot(k2)**2 * &
                                         exp( -20.d0*( rjs_2b_tot(k2)/(0.97d0*(r_vdw_i + r_vdw_j)) - 1.d0 ) ) &
                                         * (1.d0/(0.97d0 * (r_vdw_i+r_vdw_j)) * (xyz_2b_tot(c3,k2)/rjs_2b_tot(k2)))
                             end if
                             r6_der = 0.d0
-                            if ( i2 == i ) then
+                            if ( i2 == i0 ) then
                               r6_der = 6.d0/rjs_2b_tot(k2)**8 * xyz_2b_tot(c3,k2)
-                            else if ( j2 == i ) then
+                            else if ( j2 == i0 ) then
                               r6_der = -6.d0/rjs_2b_tot(k2)**8 * xyz_2b_tot(c3,k2)
                             end if
                             forces_TS = forces_TS + dC6_2b * f_damp_SCS_2b_tot(k2) / rjs_2b_tot(k2)**6 * r6_mult_2b_tot(k2) &
@@ -5264,12 +5291,12 @@ end if
                               r6_mult_2b_tot(k2) = (1.d0 - 10.d0 * rb**3 &
                                       + 15.d0 * rb**4 &
                                       - 6.d0 * rb**5)
-                              if ( i2 == i ) then 
+                              if ( i2 == i0 ) then 
                                 dr6_mult(k2) = (- 30.d0 * rb**2 &
                                    + 60.d0 * rb**3 &
                                    - 30.d0 * rb**4) &
                                    * ( -xyz_2b_tot(c3,k2)/rjs_2b_tot(k2)/(r_buf_tsscs/Bohr))
-                              else if ( j2 == i ) then
+                              else if ( j2 == i0 ) then
                                 dr6_mult(k2) = (- 30.d0 * rb**2 &
                                    + 60.d0 * rb**3 &
                                    - 30.d0 * rb**4) &
@@ -5297,19 +5324,19 @@ end if
                                         exp( -20.d0*( rjs_2b_tot(k2)/(0.97d0*(r_vdw_i + r_vdw_j)) - 1.d0 ) ) &
                                         * (- rjs_2b_tot(k2)/0.97d0 * 1.d0/(r_vdw_i+r_vdw_j)**2 &
                                         * (dr_vdw_i + dr_vdw_j))
-                            if ( i2 == i ) then        
+                            if ( i2 == i0 ) then        
                               f_damp_der_2b = f_damp_der_2b + 20.d0 * f_damp_SCS_2b_tot(k2)**2 * &
                                         exp( -20.d0*( rjs_2b_tot(k2)/(0.97d0*(r_vdw_i + r_vdw_j)) - 1.d0 ) ) &
                                         * (1.d0/(0.97d0 * (r_vdw_i+r_vdw_j)) * (-xyz_2b_tot(c3,k2)/rjs_2b_tot(k2)))
-                            else if ( j2 == i ) then
+                            else if ( j2 == i0 ) then
                               f_damp_der_2b = f_damp_der_2b + 20.d0 * f_damp_SCS_2b_tot(k2)**2 * &
                                         exp( -20.d0*( rjs_2b_tot(k2)/(0.97d0*(r_vdw_i + r_vdw_j)) - 1.d0 ) ) &
                                         * (1.d0/(0.97d0 * (r_vdw_i+r_vdw_j)) * (xyz_2b_tot(c3,k2)/rjs_2b_tot(k2)))
                             end if
                             r6_der = 0.d0
-                            if ( i2 == i ) then
+                            if ( i2 == i0 ) then
                               r6_der = 6.d0/rjs_2b_tot(k2)**8 * xyz_2b_tot(c3,k2)                    
-                            else if ( j2 == i ) then
+                            else if ( j2 == i0 ) then
                               r6_der = -6.d0/rjs_2b_tot(k2)**8 * xyz_2b_tot(c3,k2)
                             end if
                             forces_TS = forces_TS + dC6_2b * f_damp_SCS_2b_tot(k2) / rjs_2b_tot(k2)**6 * r6_mult_2b_tot(k2) &
@@ -5486,6 +5513,14 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 write(*,*) "val_sym_test done"
                 close(89)
 
+              end if
+
+              if ( (i == 1 .or. i == 31) .and. c3 == 1 ) then
+                write(*,*) "G_sym" 
+                do c1 = 1, 3
+                  write(*,*) G_sym(c1,1:6,1)
+                end do
+                write(*,*) "da_mbd, a_mbd", da_mbd(1), a_mbd(1)
               end if
 
               !if ( i == 1 .and. c3 == 1 ) then
@@ -6068,11 +6103,15 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                     !write(*,*) i, c3, sym_integral/(2.d0*pi) * Hartree/Bohr
                   end if
                 end if
+                i1 = modulo(neighbors_list(n_tot+1)-1, n_sites0) + 1
                 if ( .not. cent_appr ) then
-                  forces0(c3,i) = forces0(c3,i) + (1.d0/(2.d0*pi) * integral) * Hartree/Bohr
+                  forces0(c3,i1) = forces0(c3,i1) + (1.d0/(2.d0*pi) * integral) * Hartree/Bohr
                 end if
                 if ( cent_appr ) then
-                  forces0(c3,i) = forces0(c3,i) + (1.d0/(2.d0*pi) * sym_integral) * Hartree/Bohr
+                  if ( (i == 1 .or. i == 31) .and. c3 == 1 ) then
+                    write(*,*) "integrand_sym", i, c3, integrand_sym
+                  end if
+                  forces0(c3,i0) = forces0(c3,i0) + (1.d0/(2.d0*pi) * sym_integral) * Hartree/Bohr
                 end if
 
                 !!!!!!write(*,*) "MBD force", i, c3, 1.d0/(2.d0*pi) * integral * Hartree/Bohr

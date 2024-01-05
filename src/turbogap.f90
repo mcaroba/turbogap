@@ -1368,7 +1368,7 @@ call cpu_time(time1)
                                          params%vdw_polynomial, params%vdw_omega_ref, &
                                          alpha_SCS(i_beg:i_end), omega_SCS(i_beg:i_end), &
 #ifdef _MPIF90
-                                         this_forces_vdw(1:3,i_beg:i_end) )
+                                         this_forces_vdw )
 #else
                                          forces_vdw )
 #endif
@@ -1407,7 +1407,7 @@ include_2b = .true.
                                          2, &
                                          params%vdw_omega_ref, alpha_SCS, omega_SCS, include_2b, &
 #ifdef _MPIF90
-                                         this_energies_vdw(i_beg:i_end), this_forces_vdw(1:3,i_beg:i_end), this_virial_vdw )
+                                         this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw )
 #else
                                          energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
 #endif
@@ -1426,7 +1426,7 @@ include_2b = .false.
                                          params%vdw_mbd_norder, &
                                          params%vdw_omega_ref, alpha_SCS, omega_SCS, include_2b, &
 #ifdef _MPIF90
-                                         this_energies_vdw(i_beg:i_end), this_forces_vdw(1:3,i_beg:i_end), this_virial_vdw )
+                                         this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw )
 #else
                                          energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
 #endif
@@ -1446,7 +1446,7 @@ include_2b = .true.
                                          params%vdw_mbd_norder, &
                                          params%vdw_omega_ref, alpha_SCS, omega_SCS, include_2b, &
 #ifdef _MPIF90
-                                         this_energies_vdw(i_beg:i_end), this_forces_vdw(1:3,i_beg:i_end), this_virial_vdw )
+                                         this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw )
 #else
                                          energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
 #endif
@@ -1763,7 +1763,7 @@ write(*,*) "pressure_3b: ", virial_3b / 3.d0 / v_uc
 write(*,*) "pressure_core_pot: ", virial_core_pot / 3.d0 / v_uc
       write(*,*) "full vdw forces"
       do i = 1, n_sites
-        write(*,*) forces_vdw(1:3,i)
+        write(*,*) i, forces_vdw(1:3,i)
       end do
 
 end if
