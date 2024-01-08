@@ -1185,8 +1185,6 @@ r_buf_tsscs = 0.d0
     n_sites0 = size(forces0, 2)
     forces0 = 0.d0
 
-    write(*,*) "n_sites, n_sites0", n_sites, n_sites0
-
     ! HACK FOR HIRSHFELD DERIVATIVES
     allocate( hirshfeld_v_cart_der_H(1:3, n_pairs) )
 
@@ -1582,9 +1580,6 @@ r_buf_tsscs = 0.d0
                       T_SR_mult(k2) = mult1_i * mult1_j * mult2
                       dT_SR_mult(k2,:) = dmult1_i * mult1_j * mult2 + mult1_i * dmult1_j * mult2 + &
                                          mult1_i * mult1_j * dmult2
-                      if ( (i == 1 .or. i == 31 ) .and. c3 == 1 .and. om == 2 .and. k2 == 2 ) then
-                        write(*,*) "dT_SR_mult", i, dT_SR_mult(k2,c3)
-                      end if
                       d_mult_i(k2) = mult1_i * ( 1.d0 - mult1_j ) * mult2
                       d_dmult_i(k2,:) = dmult1_i * (1.d0 - mult1_j ) * mult2 + mult1_i * (-dmult1_j) * mult2 &
                                       + mult1_i * ( 1.d0 - mult1_j ) * dmult2
@@ -1861,9 +1856,6 @@ r_buf_tsscs = 0.d0
             k2 = 0
             do p = 1, n_sub_sites
               j2 = sub_neighbors_list(k2+1)
-              if ( j2 == 5 ) then
-                write(*,*) "a_iso", a_iso(p,2), central_pol(j2)
-              end if
               k2 = k2 + n_sub_neigh(p)
             end do
           end if
@@ -3119,7 +3111,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
 
                 end if
 
-                write(*,*) "l_min, l_max", i, l_min, l_max
+                !write(*,*) "l_min, l_max", i, l_min, l_max
                 l_vals(1) = l_min
                 do k2 = 2, 1001
                   l_vals(k2) = l_min + (k2-1)*(l_max-l_min)/1000
@@ -3726,8 +3718,8 @@ end if
         
           allocate( da_SCS(1:3*n_sub_sites,1:3) )
           allocate( dT(1:9*n_sub_pairs) )
-          allocate( dB_mat(1:3*n_sub_sites,1:3*n_sub_sites) )
-          dB_mat = 0.d0
+          !allocate( dB_mat(1:3*n_sub_sites,1:3*n_sub_sites) )
+          !dB_mat = 0.d0
           allocate( b_der(1:3*n_sub_sites,1:3) )
           allocate( f_damp_der(1:n_sub_pairs) )
           allocate( g_func_der(1:n_sub_pairs) )
@@ -3763,9 +3755,9 @@ end if
                 
             ! Derivatives are always w.r.t. the central atom:
             a = i0
-            if ( (i == 1 .or. i == 31) .and. c3 == 1 .and. om == 2 ) then
-              write(*,*) "i, a, i0", i, a, i0
-            end if
+            !if ( (i == 1 .or. i == 31) .and. c3 == 1 .and. om == 2 ) then
+            !  write(*,*) "i, a, i0", i, a, i0
+            !end if
 
             !dB_mat = 0.d0
             f_damp_der = 0.d0
@@ -3829,11 +3821,11 @@ end if
                                                             T_func(k4) - f_damp_der(k3) * h_func(k4) + &
                                                             h_func_der(k4) * (1.d0 - f_damp(k3))) * &
                                                             T_SR_mult(k3) * a_SCS(3*(q-1)+c2,:)
-                          dB_mat(3*(p-1)+c1,3*(q-1)+c2) = dB_mat(3*(p-1)+c1,3*(q-1)+c2) - (f_damp_der(k3) * T_func(k4) * &
-                                                            g_func(k3) - (1.d0 - f_damp(k3)) * dT(k4) * &
-                                                            g_func(k3) - g_func_der(k3) * (1.d0 - f_damp(k3)) * &
-                                                            T_func(k4) - f_damp_der(k3) * h_func(k4) + &
-                                                            h_func_der(k4) * (1.d0 - f_damp(k3))) * T_SR_mult(k3)                   
+                          !dB_mat(3*(p-1)+c1,3*(q-1)+c2) = dB_mat(3*(p-1)+c1,3*(q-1)+c2) - (f_damp_der(k3) * T_func(k4) * &
+                          !                                  g_func(k3) - (1.d0 - f_damp(k3)) * dT(k4) * &
+                          !                                  g_func(k3) - g_func_der(k3) * (1.d0 - f_damp(k3)) * &
+                          !                                  T_func(k4) - f_damp_der(k3) * h_func(k4) + &
+                          !                                  h_func_der(k4) * (1.d0 - f_damp(k3))) * T_SR_mult(k3)                   
                           d_der(3*(p-1)+c1,c2) = d_der(3*(p-1)+c1,c2) + (f_damp_der(k3) * T_func(k4) * &
                                                             g_func(k3) - (1.d0 - f_damp(k3)) * dT(k4) * &
                                                             g_func(k3) - g_func_der(k3) * (1.d0 - f_damp(k3)) * &
@@ -3851,11 +3843,11 @@ end if
                                                             T_func(k4) - f_damp_der(k3) * h_func(k4) + &
                                                             h_func_der(k4) * (1.d0 - f_damp(k3))) * &
                                                             T_SR_mult(k3) * a_SCS(3*(q-1)+c2,:)
-                          dB_mat(3*(p-1)+c1,3*(q-1)+c2) = dB_mat(3*(p-1)+c1,3*(q-1)+c2) + (f_damp_der(k3) * T_func(k4) * &
-                                                            g_func(k3) - (1.d0 - f_damp(k3)) * dT(k4) * &
-                                                            g_func(k3) - g_func_der(k3) * (1.d0 - f_damp(k3)) * &
-                                                            T_func(k4) - f_damp_der(k3) * h_func(k4) + &
-                                                            h_func_der(k4) * (1.d0 - f_damp(k3))) * T_SR_mult(k3)
+                          !dB_mat(3*(p-1)+c1,3*(q-1)+c2) = dB_mat(3*(p-1)+c1,3*(q-1)+c2) + (f_damp_der(k3) * T_func(k4) * &
+                          !                                  g_func(k3) - (1.d0 - f_damp(k3)) * dT(k4) * &
+                          !                                  g_func(k3) - g_func_der(k3) * (1.d0 - f_damp(k3)) * &
+                          !                                  T_func(k4) - f_damp_der(k3) * h_func(k4) + &
+                          !                                  h_func_der(k4) * (1.d0 - f_damp(k3))) * T_SR_mult(k3)
                           d_der(3*(p-1)+c1,c2) = d_der(3*(p-1)+c1,c2) - (f_damp_der(k3) * T_func(k4) * &
                                                             g_func(k3) - (1.d0 - f_damp(k3)) * dT(k4) * &
                                                             g_func(k3) - g_func_der(k3) * (1.d0 - f_damp(k3)) * &
@@ -3945,9 +3937,9 @@ end if
                 do c1 = 1, 3
                   b_der(3*(p-1)+c1,:) = b_der(3*(p-1)+c1,:) - 1.d0/(neighbor_alpha0(k3+1) * hirshfeld_sub_neigh(k3+1)) * &
                                         hirshfeld_v_sub_der(c3,k3+1)*Bohr * a_SCS(3*(p-1)+c1,:) 
-                  dB_mat(3*(p-1)+c1,3*(p-1)+c1) = dB_mat(3*(p-1)+c1,3*(p-1)+c1) - 1.d0/(neighbor_alpha0(k3+1) &
-                                        * hirshfeld_sub_neigh(k3+1)) * &
-                                        hirshfeld_v_sub_der(c3,k3+1)*Bohr
+                  !dB_mat(3*(p-1)+c1,3*(p-1)+c1) = dB_mat(3*(p-1)+c1,3*(p-1)+c1) - 1.d0/(neighbor_alpha0(k3+1) &
+                  !                      * hirshfeld_sub_neigh(k3+1)) * &
+                  !                      hirshfeld_v_sub_der(c3,k3+1)*Bohr
                 end do
                 do j2 = 2, n_sub_neigh(p)
                   j = sub_neighbors_list(k3+j2)
@@ -3972,13 +3964,13 @@ end if
                           coeff_fdamp(k4) * r_vdw_j/hirshfeld_sub_neigh(k3+j2)) * &
                           hv_q_der) * &
                           a_SCS(3*(q-1)+c2,:) * T_SR_mult(k3+j2)
-                        dB_mat(3*(p-1)+c1,3*(q-1)+c2) = dB_mat(3*(p-1)+c1,3*(q-1)+c2) + &
-                          ((coeff_der(k4) * s_i**2/hirshfeld_sub_neigh(k3+1) + &
-                          coeff_fdamp(k4) * r_vdw_i/hirshfeld_sub_neigh(k3+1)) * &
-                          hv_p_der + &
-                          (coeff_der(k4) * s_j**2/hirshfeld_sub_neigh(k3+j2) + &
-                          coeff_fdamp(k4) * r_vdw_j/hirshfeld_sub_neigh(k3+j2)) * &
-                          hv_q_der) * T_SR_mult(k3+j2)
+                        !dB_mat(3*(p-1)+c1,3*(q-1)+c2) = dB_mat(3*(p-1)+c1,3*(q-1)+c2) + &
+                        !  ((coeff_der(k4) * s_i**2/hirshfeld_sub_neigh(k3+1) + &
+                        !  coeff_fdamp(k4) * r_vdw_i/hirshfeld_sub_neigh(k3+1)) * &
+                        !  hv_p_der + &
+                        !  (coeff_der(k4) * s_j**2/hirshfeld_sub_neigh(k3+j2) + &
+                        !  coeff_fdamp(k4) * r_vdw_j/hirshfeld_sub_neigh(k3+j2)) * &
+                        !  hv_q_der) * T_SR_mult(k3+j2)
                         d_der(3*(p-1)+c1,c2) = d_der(3*(p-1)+c1,c2) - &
                           ((coeff_der(k4) * s_i**2/hirshfeld_sub_neigh(k3+1) + &
                           coeff_fdamp(k4) * r_vdw_i/hirshfeld_sub_neigh(k3+1)) * &
@@ -4025,11 +4017,8 @@ end if
                   do c2 = 1, 3
                     k4 = k4+1
                     if ( rjs_0(k3) .le. rcut ) then
-                      if ( ( i == 1 .or. i == 31 ) .and. c3 == 1 .and. om == 2 .and. 3*(p-1)+c1 == 1 .and. 3*(q-1)+c2 == 4 ) then
-                        write(*,*) "dT_SR_mult", k3, k4, dT_SR_mult(k3,c3), T_SR(k4)
-                      end if
-                      dB_mat(3*(p-1)+c1,3*(q-1)+c2) = dB_mat(3*(p-1)+c1,3*(q-1)+c2) + &
-                          dT_SR_mult(k3,c3) * T_SR(k4)
+                      !dB_mat(3*(p-1)+c1,3*(q-1)+c2) = dB_mat(3*(p-1)+c1,3*(q-1)+c2) + &
+                      !    dT_SR_mult(k3,c3) * T_SR(k4)
                       b_der(3*(p-1)+c1,:) = b_der(3*(p-1)+c1,:) + dT_SR_mult(k3,c3) * T_SR(k4) * &
                                             a_SCS(3*(q-1)+c2,:) 
                       d_der(3*(p-1)+c1,c2) = d_der(3*(p-1)+c1,c2) - d_dmult_i(k3,c3) * d_arr_i(k4) * &
@@ -4148,11 +4137,6 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 if ( rjs_0_mbd(k2) .le. (rcut_loc-r_buf_loc)/Bohr ) then
                   r = findloc(sub_neighbors_list(1:n_sub_neigh(1)),i2,1)
                   da_mbd(k2) = da_iso(r,c3,2)
-                  if ( ( i == 1 .or. i == 31 ) .and. c3 == 1 ) then
-                    if ( k2 == 1 ) then
-                      write(*,*) "da_mbd loop", r, da_mbd(k2)
-                    end if
-                  end if
                   if ( a_iso(r,2) > a_iso(r,1) ) then
                     do_pref = -0.5d0*vdw_omega_ref*omega_ref * (a_iso(r,1) * da_iso(r,c3,2) - a_iso(r,2) * da_iso(r,c3,1)) / &
                                  ( a_iso(r,1)**2 * (a_iso(r,2)/a_iso(r,1) - 1.d0)**(3.d0/2.d0) )
@@ -5515,13 +5499,13 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
 
               end if
 
-              if ( (i == 1 .or. i == 31) .and. c3 == 1 ) then
-                write(*,*) "G_sym" 
-                do c1 = 1, 3
-                  write(*,*) G_sym(c1,1:6,1)
-                end do
-                write(*,*) "da_mbd, a_mbd", da_mbd(1), a_mbd(1)
-              end if
+              !if ( (i == 1 .or. i == 31) .and. c3 == 1 ) then
+              !  write(*,*) "G_sym" 
+              !  do c1 = 1, 3
+              !    write(*,*) G_sym(c1,1:6,1)
+              !  end do
+              !  write(*,*) "da_mbd, a_mbd", da_mbd(1), a_mbd(1)
+              !end if
 
               !if ( i == 1 .and. c3 == 1 ) then
               if ( .false. ) then
@@ -6103,14 +6087,14 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                     !write(*,*) i, c3, sym_integral/(2.d0*pi) * Hartree/Bohr
                   end if
                 end if
-                i1 = modulo(neighbors_list(n_tot+1)-1, n_sites0) + 1
+                !i1 = modulo(neighbors_list(n_tot+1)-1, n_sites0) + 1
                 if ( .not. cent_appr ) then
-                  forces0(c3,i1) = forces0(c3,i1) + (1.d0/(2.d0*pi) * integral) * Hartree/Bohr
+                  forces0(c3,i0) = forces0(c3,i0) + (1.d0/(2.d0*pi) * integral) * Hartree/Bohr
                 end if
                 if ( cent_appr ) then
-                  if ( (i == 1 .or. i == 31) .and. c3 == 1 ) then
-                    write(*,*) "integrand_sym", i, c3, integrand_sym
-                  end if
+                  !if ( (i == 1 .or. i == 31) .and. c3 == 1 ) then
+                  !  write(*,*) "integrand_sym", i, c3, integrand_sym
+                  !end if
                   forces0(c3,i0) = forces0(c3,i0) + (1.d0/(2.d0*pi) * sym_integral) * Hartree/Bohr
                 end if
 
@@ -6133,7 +6117,7 @@ end if
           end do ! c3 loop
         
           deallocate( da_SCS, dT, b_der, g_func_der, h_func_der, d_der, f_damp_der )
-          deallocate( dB_mat )
+          !deallocate( dB_mat )
 
         end if ! do_derivatives
       

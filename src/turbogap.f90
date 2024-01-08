@@ -1477,10 +1477,10 @@ call cpu_time(time2)
           !              params%vdw_mbd_grad, energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
 
 
-          write(*,*) "vdw forces"
-          do i = 1, n_sites
-            write(*,*) forces_vdw(1:3,i), this_forces_vdw(1:3,i), energies_vdw(i), this_energies_vdw(i)
-          end do
+          !write(*,*) "vdw forces"
+          !do i = 1, n_sites
+          !  write(*,*) forces_vdw(1:3,i), this_forces_vdw(1:3,i), energies_vdw(i), this_energies_vdw(i)
+          !end do
 
           deallocate(v_neigh_vdw, alpha_SCS, omega_SCS, alpha_SCS_grad, c6_scs, r0_scs, alpha0_scs, &
                      this_alpha_SCS, this_omega_SCS)
@@ -1754,8 +1754,8 @@ call cpu_time(time2)
 
 
 ! For debugging the virial implementation
-!if( rank == 0 .and. .false. )then
-if( rank == 0 .and. .true. )then
+if( rank == 0 .and. .false. )then
+!if( rank == 0 .and. .true. )then
 write(*,*) "pressure_soap: ", virial_soap / 3.d0 / v_uc
 write(*,*) "pressure_vdw: ", virial_vdw / 3.d0 / v_uc
 write(*,*) "pressure_2b: ", virial_2b / 3.d0 / v_uc
