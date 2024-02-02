@@ -401,23 +401,30 @@ end if
     integer :: i, j, iostatus, dim, unit_number
 
 
-    !   Read data file to figure out data file size
-    open(newunit=unit_number, file=file_data, status="old")
-    iostatus = 0
-    n_points = -1
-    do while(iostatus == 0)
-       read(unit_number, *, iostat=iostatus)
-       n_points = n_points + 1
-    end do
-    close(unit_number)
+    ! if the file_data == none then we allocate and exit
+    if ( trim(file_data) == "none" )then
+       n_points = 1
+       allocate( data(1:2,1:n_points) )
+    else
 
-    allocate( data(1:2,1:n_points) )
-    !     Read local_property data
-    open(newunit=unit_number, file=file_data, status="old")
-    do i = 1, n_points
-       read(unit_number, *)  data(1,i), data(2,i)
-    end do
-    close(unit_number)
+       !   Read data file to figure out data file size
+       open(newunit=unit_number, file=file_data, status="old")
+       iostatus = 0
+       n_points = -1
+       do while(iostatus == 0)
+          read(unit_number, *, iostat=iostatus)
+          n_points = n_points + 1
+       end do
+       close(unit_number)
+
+       allocate( data(1:2,1:n_points) )
+       !     Read local_property data
+       open(newunit=unit_number, file=file_data, status="old")
+       do i = 1, n_points
+          read(unit_number, *)  data(1,i), data(2,i)
+       end do
+       close(unit_number)
+    end if
 
   end subroutine read_exp_data
 
@@ -583,6 +590,7 @@ end if
     character*32 :: implemented_thermostats(1:3)
     character*32 :: implemented_barostats(1:2)
     character*32 :: implemented_mc_types(1:8)
+    character*32 :: implemented_exp_observables(1:3)
     character*2 :: element
     character*1 :: keyword_first
     logical :: are_vdw_refs_read(1:3), valid_choice, masses_in_input_file = .false.
@@ -601,7 +609,12 @@ end if
     implemented_mc_types(5) = "relax"
     implemented_mc_types(6) = "md"
     implemented_mc_types(7) = "swap"
-    implemented_mc_types(7) = "volume"
+    implemented_mc_types(8) = "volume"
+
+    implemented_exp_observables(1) = "xrd"
+    implemented_exp_observables(2) = "saxs"
+    implemented_exp_observables(3) = "pair_correlation"
+
 
     k = 0.d0
 
@@ -813,9 +826,9 @@ end if
         do i=1, params%n_mc_types
            params%mc_acceptance(i) = params%mc_acceptance(i) / k
         end do
-      else if(keyword=='mc_opt_spectra')then
+      else if(keyword=='mc_optimize_exp')then
         backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_opt_spectra
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_optimize_exp
       else if(keyword=='mc_reverse')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_reverse
@@ -825,19 +838,22 @@ end if
       else if(keyword=='accessible_volume')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%accessible_volume
-      else if(keyword=='optimize_exp_data')then
+      else if(keyword=='exp_forces')then
         backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%optimize_exp_data
-      else if(keyword=='energy_scales_exp_data')then
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%exp_forces
+! do experimental
+        params%do_exp = .true.
+
+      else if(keyword=='exp_energy_scales')then
          backspace(10)
          if (params%n_moments > 0)then
             read(10, *, iostat=iostatus) cjunk, cjunk, (params&
-             &%energy_scales_exp_data(nw),nw=1,params&
+             &%exp_energy_scales(nw),nw=1,params&
              &%n_moments)
          else
             read(10, *, iostat=iostatus) cjunk, cjunk, (params&
-                 &%energy_scales_exp_data(nw),nw=1,params&
-                 &%n_exp_data)
+                 &%exp_energy_scales(nw),nw=1,params&
+                 &%n_exp)
          end if
 
       else if(keyword=='xps_sigma')then
@@ -849,9 +865,9 @@ end if
       else if(keyword=='print_lp_forces')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%print_lp_forces
-      else if(keyword=='similarity_type')then
+      else if(keyword=='exp_similarity_type')then
         backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%similarity_type
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%exp_similarity_type
       else if(keyword=='xrd_alpha')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%xrd_alpha
@@ -909,16 +925,24 @@ end if
         read(10, *, iostat=iostatus) cjunk, cjunk, (params&
              &%compute_local_properties(nw),nw=1 ,params&
              &%n_local_properties)
-      else if(keyword=='n_exp_data')then
+      else if(keyword=='do_exp')then
         backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%n_exp_data
-        allocate( params%exp_data(1:params%n_exp_data) )
-        allocate( params%energy_scales_exp_data(1:params%n_exp_data) )
-      else if( keyword == "exp_data_labels" )then
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%do_exp
+
+      else if(keyword=='n_exp')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%n_exp
+        allocate( params%exp_data(1:params%n_exp) )
+        allocate( params%exp_energy_scales(1:params%n_exp) )
+
+        ! Turning on exp prediction
+        params%do_exp = .true.
+
+      else if( keyword == "exp_labels" )then
          backspace(10)
          read(10, *, iostat=iostatus) cjunk, cjunk, &
-              (params%exp_data(nw)%label, nw=1, params%n_exp_data)
-         do nw=1, params%n_exp_data
+              (params%exp_data(nw)%label, nw=1, params%n_exp)
+         do nw=1, params%n_exp
             call upper_to_lower_case(params%exp_data(nw)%label)
             if(     trim(params%exp_data(nw)%label) == "xps")then
                params%xps_idx = nw
@@ -931,18 +955,46 @@ end if
       else if( keyword == "exp_data_files" )then
          backspace(10)
          read(10, *, iostat=iostatus) cjunk, cjunk, &
-              (params%exp_data(nw)%file_data, nw=1, params%n_exp_data)
+              (params%exp_data(nw)%file_data, nw=1, params%n_exp)
 
-         do nw = 1, params%n_exp_data
-            call read_exp_data(&
-                 params%exp_data(nw)%file_data,&
-                 params%exp_data(nw)%n_data,&
-                 params%exp_data(nw)%data)
+         do nw = 1, params%n_exp
+            if ( trim( params%exp_data(nw)%file_data ) == "none" )then
+               ! Make sure that no type of exp data is written
+               params%exp_data(nw)%compute_exp = .false.
+               params%exp_data(nw)%compute_similarity = .false.
+               ! If the compute exp is false, then a user range must be specified
+               params%exp_data(nw)%wrote_exp = .true.
+            else
+
+               call read_exp_data(&
+                    params%exp_data(nw)%file_data,&
+                    params%exp_data(nw)%n_data,&
+                    params%exp_data(nw)%data)
+
+               params%exp_data(nw)%compute_exp = .true.
+               params%exp_data(nw)%compute_similarity = .true.
+               params%exp_data(nw)%range_min = params%exp_data(nw)%data(1,1)
+               params%exp_data(nw)%range_max = params&
+                    &%exp_data(nw)%data(1,params%exp_data(nw)%n_data)
+            end if
+
          end do
-      else if( keyword == "exp_data_n_samples" )then
+      else if( keyword == "exp_n_samples" )then
          backspace(10)
          read(10, *, iostat=iostatus) cjunk, cjunk, &
-              (params%exp_data(nw)%n_samples, nw=1, params%n_exp_data)
+              (params%exp_data(nw)%n_samples, nw=1, params%n_exp)
+
+      else if( keyword(1:5) == "range" )then
+         backspace(10)
+         ! Check, if allocated exp data and see if the user range is valid
+         do nw = 1, params%n_exp
+            ! See if the keyword matches any exp observables
+            if ( keyword == "range_"//trim(params%exp_data(nw)%label) )then
+               ! Expect two values which are in order of lower higher for the range to do the prediction
+               params%exp_data(nw)%user_range = .true.
+               read(10, *, iostat=iostatus) cjunk, cjunk, params%exp_data(nw)%range_min, params%exp_data(nw)%range_max
+            end if
+         end do
 
       else if(keyword=='write_velocities')then
         backspace(10)
@@ -1257,7 +1309,58 @@ end if
       call system("mkdir -p walkers/")
     end if
 
-!   Monte-carlo checkes checks
+
+!   Experimental prediction checks
+    if( params%do_exp )then
+       write(*,*)'                                       |'
+       write(*,*)' Experimental prediction mode          |'
+       do i = 1, params%n_exp
+          ! check if a user range has been submitted
+          write(*,*)'                                       |'
+
+          if (params%exp_data(i)%user_range)then
+             write(*,'(A,1X,A,1X,A)')'User exp. range specified for:', trim(params%exp_data(i)%label),'     |'
+          else
+             write(*,'(A,1X,A,1X,A)')'Exp data range will be used for:', trim(params%exp_data(i)%label),' |'
+             write(*,'(A,1X,A,1X,A)')' from the file:', trim(params%exp_data(i)%file_data),' |'
+
+          end if
+
+
+          if( params%exp_data(i)%range_min == 0.d0 .and. params%exp_data(i)%range_max == 1.d0 )then
+             write(*,*)'                                       |'
+             write(*,*)'WARNING: Data range being used for exp.|'
+             write(*,*)' observable is the default (0.0, 1.0)! |'
+             write(*,*)'                                       |'
+             write(*,*)' To modify specify:                    |'
+             write(*,'(A,1X,A,1X,A)')'  `range_',trim(params%exp_data(i)%label),  ' = {lower_bound} {upper_bound}` |'
+             write(*,*)' In the input file.                    |'
+             write(*,*)'                                       |'
+          end if
+
+          write(*,'(A,1X,F12.6,1X,A,F12.6,1X,A)')' min =', params&
+               &%exp_data(i)%range_min, ' max =', params%exp_data(i)&
+               &%range_max, ' |'
+
+          write(*,'(A,1X,I8,1X,A)')' n_samples =', params%exp_data(i)%n_samples,'                     |'
+
+
+          if (.not. allocated(params%exp_energy_scales) .and. ( params%exp_forces .or. params%mc_optimize_exp ) )then
+             write(*,*)'WARNING: No energy scales set for exp .|'
+             write(*,*)' optimisation by forces / MC!          |'
+             write(*,*)'                                       |'
+             write(*,*)' To modify specify:                    |'
+             write(*,'(A)')'  `exp_energy_scales = {E1} {E2}`  |'
+             write(*,*)' In the input file.                    |'
+             write(*,*)' (example above is for n_exp = 2)      |'
+             write(*,*)'                                       |'
+          end if
+
+       end do
+    end if
+
+
+!   Monte-carlo checks
     if( params%do_mc )then
        do i = 1, params%n_mc_types
           if (params%mc_types(i) == "md")then

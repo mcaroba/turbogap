@@ -31,41 +31,219 @@ module exp_utils
 
   contains
 
-    subroutine get_all_similarities( n_exp_data, exp_data, energy_scales, s_tot )
+    subroutine get_all_similarities( n_exp, exp_data, energy_scales, s_tot )
       implicit none
-      integer, intent(in) :: n_exp_data
+      integer, intent(in) :: n_exp
       type(exp_data_container), allocatable, intent(in) :: exp_data(:)
       real*8, allocatable :: energy_scales(:)
       integer :: i
       real*8, intent(out) :: s_tot
 
       s_tot = 0.d0
-      do i = 1, n_exp_data
-         print *, " sim term reverse mc, ", trim(exp_data(i)%label), energy_scales(i) ,  exp_data(i)%similarity
-         s_tot = s_tot +  energy_scales(i) * exp_data(i)%similarity
+      do i = 1, n_exp
+         if (exp_data(i)%compute_similarity)then
+
+            write(*,'(A,1X,A,1X,F12.6,1X,F12.6)') " Exp similarity&
+                 & (label, escale, similarity) ", trim(exp_data(i)&
+                 &%label), energy_scales(i) ,  exp_data(i)%similarity
+
+            s_tot = s_tot +  energy_scales(i) * exp_data(i)%similarity
+         end if
       end do
 
     end subroutine get_all_similarities
 
 
+    subroutine get_pair_correlation( n_pairs, rjs, r_min, r_max, n_samples, x, pair_correlation )
+      implicit none
+      real*8, allocatable, intent(in) :: rjs(:)
+      real*8 :: r_min, r_max
+      integer, intent(in) :: n_pairs, n_samples
+      integer :: i, k, ind_bin_l, ind_bin_h
+      real*8, allocatable, intent(out) :: pair_correlation(:), x(:)
+      real*8, allocatable :: bin_edges(:), dV(:) ! spherical shell volume
+      real*8 :: r
+      real*8, parameter :: pi = acos(-1.0)
+
+      ! First allocate the pair correlation function array
+      if ( allocated(pair_correlation) )then
+         deallocate(pair_correlation)
+      end if
+
+      if ( allocated(x) )then
+         deallocate(x)
+      end if
+
+      allocate(pair_correlation(1:n_samples))
+      allocate(x(1:n_samples))
+      allocate(dV(1:n_samples))
+      allocate(bin_edges(1:n_samples+1))
+
+      x = 0.d0
+      bin_edges = 0.d0
+      pair_correlation = 0.d0
+
+
+      ! check that r_min is less than r_max
+      if (r_min > r_max)then
+         print *, "!!! Given r_min is less than r_max! swapping these values!"
+         r = r_max
+         r_max = r_min
+         r_min = r
+      end if
+
+
+      do i = 1, n_samples + 1
+         bin_edges(i) = r_min  +  ( real( (i-1) ) /  real(n_samples) ) * (r_max - r_min)
+      end do
+
+      do i = 1, n_samples
+         x(i) = (bin_edges(i) + bin_edges(i+1)) / 2.d0
+         dV(i) = 4.d0 * pi * (bin_edges(i+1)**3 - bin_edges(i)**3)
+      end do
+
+
+      do k = 1, n_pairs
+         ! Now see whether the distance r is in some type of range, binary search.
+
+         r = rjs(k) ! atom pair distance
+
+         if (r < 1e-3)then
+            cycle
+         end if
+
+
+         ! edge cases where r is not in range
+         if (r < r_min)then
+!            print *, "pair_correlation_function: Given r is less than r_min! Continuing loop "
+            cycle
+         end if
+
+         if (r > r_max)then
+!            print *, "pair_correlation_function: Given r is more than r_max! Continuing loop "
+            cycle
+         end if
+
+         call binary_search_real( r, bin_edges, 1, n_samples+1, ind_bin_l, ind_bin_h )
+
+         pair_correlation(ind_bin_l) = pair_correlation(ind_bin_l) +  1.d0
+      end do
+
+      ! Remember that this is done for each process, so then the final
+      ! result should be a reduction summation of all of these
+      ! pair_correlation arrays multiplied by the 1/density factor ( pair_correlation *  (V / n_sites) )
+
+      pair_correlation =  pair_correlation / dV
+
+      deallocate(bin_edges)
+      deallocate(dV)
+
+    end subroutine get_pair_correlation
+
+
+    subroutine binary_search_real( xs, x, lin, hin, l, h )
+      ! give delimiting indices (lout, hout) of array of x (which is a set of delimited bins) where xs (x search) is in range
+      real*8, allocatable, intent(in) :: x(:)
+      real*8, intent(in) :: xs
+      real*8 :: xi
+      integer, intent(in) :: lin, hin
+      integer, intent(out) :: l, h
+      integer :: m
+      logical :: found = .false.
+
+      l = lin
+      h = hin
+
+      ! Check that lower index, l is less than upper index, h
+      if (l > h)then
+         print *, "binary_search_real: lower bound of search is greater than higher bound, swapping"
+         m = h
+         h = l
+         l = h
+      end if
+
+      m = int( real(l + h) / 2.d0 )
+
+      found = .false.
+      do while( .not. found  )
+         xi = x(m)
+
+         if ( xs < xi )then
+            ! its in the lower segment
+            h = m
+            m = int( real(h + l) / 2.d0 )
+         end if
+
+         if ( xs > xi )then
+            ! its in the upper segment
+            l = m
+            m = int( real(h + l) / 2.d0 )
+         end if
+
+
+!         print *, " h - l = ", h - l
+         if ( h - l == 1 ) then
+            ! terminate the search
+            found = .true.
+         end if
+      end do
+
+    end subroutine binary_search_real
+
+
+    !**************************************************************************
+    subroutine calculate_exp_interpolation(x, y, n_samples, data)
+      implicit none
+      real*8, allocatable, intent(in) ::  data(:,:)
+      integer, intent(in) :: n_samples
+      real*8, allocatable, intent(inout) :: x(:), y(:)
+      real*8 :: dx
+
+      allocate(x(1:n_samples))
+      allocate(y(1:n_samples))
+
+      x = 0.d0
+      y = 0.d0
+
+      call interpolate_data( x, y, data(1,:), data(2,:), n_samples, dx )
+
+    end subroutine calculate_exp_interpolation
+
+
+!     subroutine get_experimental_forces( g,  )
+!       ! This is a routine which calculates the experimental forces,
+!       ! and they do not depend on any SOAP properties
+!       ! g is the unnormalized vector of the quantity, is is defined for the whole range
+
+
+! ! \[ \frac{ \partial (\mathbf{g}_{\rm {pred}})_{\beta}
+! ! }{\partial r^{\alpha}_k}  =  \left( \frac{\partial  (\mathbf{\tilde{g}}_{\rm pred})_{\beta} }{\partial
+! ! r^{\alpha}_k}  - (\mathbf{g}_{\rm {pred}})_{\beta} \left\{
+! ! \mathbf{g}_{\rm pred} \cdot \frac{\partial \mathbf{\tilde{g}}_{\rm pred}}{\partial
+! ! r^{\alpha}_k} \right\}  \right) \left( {\mathbf{\tilde{g}}_{\rm pred} \cdot
+! ! \mathbf{\tilde{g}}_{\rm pred}} \right)^{-1/2}
+! !  \]
+
+!       implicit none
+
+
 
     !**************************************************************************
     subroutine get_xrd( positions, n_species, species_types, species, wavelength, damping, alpha, &
-                      & method, use_iwasa, data,  n_samples, x_i_exp, y_i_exp, y_i_pred)
+                      & method, use_iwasa, x_min, x_max,  n_samples, x_i_exp, y_i_pred)
       implicit none
       real*8, allocatable, intent(in) :: positions(:,:)
-      real*8, intent(in) :: damping, wavelength, alpha
+      real*8, intent(in) :: damping, wavelength, alpha, x_min, x_max
       integer, intent(in) :: species(:)
-      real*8, allocatable, intent(in) :: data(:,:)
       real*8, allocatable :: x(:), y(:), s(:), x_exp(:), y_exp(:), wfac(:), wfac_species(:)
-      real*8, allocatable, intent(out) :: x_i_exp(:), y_i_exp(:), y_i_pred(:)
+      real*8, allocatable, intent(inout) :: x_i_exp(:), y_i_pred(:)
       logical, intent(in) :: use_iwasa
       integer, intent(in) :: n_samples, n_species
       character*8, allocatable :: species_types(:)
       character*32, intent(in) :: method
       real*8 :: prefactor, p, c, c2, rij, diff(1:3), intensity, mag, sth
       integer :: i, j, k, l, n, n_sites
-      real*8 :: x_val, x_min, x_max, x_range, dx, pi=3.14159265359
+      real*8 :: x_val, x_range, dx, pi=3.14159265359
 
       ! Was going to use the rijs for this, but we want the /full/
       ! spectra, so we need the scattering contribution from all atoms
@@ -73,18 +251,11 @@ module exp_utils
       n_sites = size(positions, 2)
 
       ! This is essentially the same as the procedure for the hirshfeld gradients as in vdw.f90
-      allocate(x_exp(1:n_samples))
-      allocate(y_exp(1:n_samples))
 
-      call interpolate_data( x, y, data(1,:), data(2,:), n_samples, dx )
-
-      mag = sqrt(dot_product(y,y))
-      y = y / mag
-
-      x_exp = x
-      y_exp = y
+      call linspace( x, x_min, x_max, n_samples, dx )
 
       ! We then broaden y to get the actual spectra
+      allocate(y(1:n_samples))
       y = 0.d0
       n = size(x)
 
@@ -94,7 +265,7 @@ module exp_utils
 
 
       ! x is in units of 2θ for XRD and in units of q for SAXS
-      if (trim(method) == "SAXS")then
+      if (trim(method) == "saxs")then
          do i = 1, n
             s(i) =  x(i) / 2.d0 / pi
          end do
@@ -151,7 +322,6 @@ module exp_utils
       y = y / mag
 
       x_i_exp = x
-      y_i_exp = y_exp
       y_i_pred = y
 
 
@@ -160,8 +330,6 @@ module exp_utils
       deallocate(s)
       deallocate(wfac_species)
       deallocate(wfac)
-      deallocate(x_exp)
-      deallocate(y_exp)
 
     end subroutine get_xrd
 
@@ -240,35 +408,58 @@ module exp_utils
 
     end subroutine get_waasmaier
 
+    subroutine linspace( x, x_min, x_max, n_samples, dx )
+      implicit none
+      real*8, allocatable, intent(inout) :: x(:)
+      real*8, intent(in) :: x_min, x_max
+      real*8, intent(out) :: dx
+      integer, intent(in) :: n_samples
+      real*8 :: t, x_range
+      integer :: i
+
+      if(allocated(x)) deallocate(x)
+
+      allocate(x(1:n_samples))
+
+      x_range = x_max - x_min
+      dx = x_range / real(n_samples)
+
+      do i = 1, n_samples
+         t = (real(i-1) / real(n_samples-1))
+         x(i) = (1.d0 - t) * x_min  +  t * x_max !range
+      end do
+
+    end subroutine linspace
 
 
-      subroutine interpolate_data( x, y, xi, yi, n_samples, dx )
-        implicit none
-        real*8,  intent(in) :: xi(:), yi(:)
-        real*8, allocatable, intent(inout) :: x(:), y(:)
-        real*8, intent(out) :: dx
-        integer, intent(in) :: n_samples
-        real*8 :: t, x_min, x_max, x_range
-        integer :: i
 
-        if(allocated(x)) deallocate(x)
-        if(allocated(y)) deallocate(y)
+    subroutine interpolate_data( x, y, xi, yi, n_samples, dx )
+      implicit none
+      real*8,  intent(in) :: xi(:), yi(:)
+      real*8, allocatable, intent(inout) :: x(:), y(:)
+      real*8, intent(out) :: dx
+      integer, intent(in) :: n_samples
+      real*8 :: t, x_min, x_max, x_range
+      integer :: i
 
-        allocate(x(1:n_samples))
-        allocate(y(1:n_samples))
+      if(allocated(x)) deallocate(x)
+      if(allocated(y)) deallocate(y)
 
-        x_min = xi(1)
-        x_max = xi(size(xi))
-        x_range = x_max - x_min
-        dx = x_range / real(n_samples)
+      allocate(x(1:n_samples))
+      allocate(y(1:n_samples))
 
-        do i = 1, n_samples
-           t = (real(i-1) / real(n_samples-1))
-           x(i) = (1.d0 - t) * x_min  +  t * x_max !range
-        end do
-        ! Interpolate, this gets more x from xi
-        call lerp(x, y, xi, yi)
-      end subroutine interpolate_data
+      x_min = xi(1)
+      x_max = xi(size(xi))
+      x_range = x_max - x_min
+      dx = x_range / real(n_samples)
+
+      do i = 1, n_samples
+         t = (real(i-1) / real(n_samples-1))
+         x(i) = (1.d0 - t) * x_min  +  t * x_max !range
+      end do
+      ! Interpolate, this gets more x from xi
+      call lerp(x, y, xi, yi)
+    end subroutine interpolate_data
 
 
       !************************************
@@ -293,7 +484,7 @@ module exp_utils
       ! was going to make the other moments central, but for now, just make them normal !
 
       ! could actually have the reference be the mean of the
-      ! experimental distribution which would simplify the mathematics
+      ! exp distribution which would simplify the mathematics
 
       xp = 1.d0
       do i = 1, n_moments
@@ -519,7 +710,7 @@ module exp_utils
          & n_neigh, neighbors_list, neighbor_species, &
          & sigma, n_samples, norm, &
          & x, y_exp,  y, y_all, get_exp, do_forces, rjs, xyz,&
-         & n_tot, energies_lp, forces0, virial, similarity_type, rank)
+         & n_tot, energies_lp, forces0, virial, exp_similarity_type, rank)
       implicit none
       real*8, allocatable, intent(in) :: data(:,:)
       integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:)
@@ -541,7 +732,7 @@ module exp_utils
       logical :: vector_norm = .false.
       real*8 :: x_val, x_min, x_max, x_range, max_force, mag_force, max_mag_force, similarity, dx, &
            sum_d1, sum_d2, sum_d3, yv
-      character*32, intent(in) :: similarity_type
+      character*32, intent(in) :: exp_similarity_type
 
 
       n_sites = size(n_neigh)
@@ -555,13 +746,13 @@ module exp_utils
       ! The energetic contribution to this would then be, e_scale * ( 1 - \sum_i S_i ), this can be done after mpi_reduce
       ! S_i =  dot_product( y_all(:,i), y_exp )
 
-      if( similarity_type == 'similarity' .or. similarity_type == 'overlap' )then
+      if( exp_similarity_type == 'similarity' .or. exp_similarity_type == 'overlap' )then
          do i = 1, n_sites
             energies_lp(i) = - energy_scale * ( dot_product( y_all(:,i), y_exp ))
          end do
-      else if (similarity_type == 'lsquares')then
+      else if (exp_similarity_type == 'squared_diff')then
          energies_lp = + energy_scale / n_sites0 * ( dx * dot_product( (y - y_exp), (y - y_exp) ) )
-         ! Get the other terms for the lsquares expression
+         ! Get the other terms for the squared_diff expression
 
 
          allocate(prefactor(1:n_samples))
@@ -626,7 +817,7 @@ module exp_utils
                   k = k + 1
                   j2 = modulo(neighbors_list(k)-1, n_sites0) + 1
                   if( .not. all(core_electron_be_der(1:3, k) == 0.d0) )then
-                     if( similarity_type == 'lsquares' )then
+                     if( exp_similarity_type == 'squared_diff' )then
                         ! (xi - cb(i)) * dxi_drka * exp( -(xi-cb(i))/2/sigma^2 )
                         der_vec(1:3, k, l) =  der_vec(1:3,k,l) + der_factor(l,i) * core_electron_be_der(1:3, k)
                         !                         if (l==1) print *, "i2=", i2, " j2=", j2, " cb(1:3,k)=", core_electron_be_der(1:3, k)
@@ -654,7 +845,7 @@ module exp_utils
 
                   y_der = 0.d0
 
-                  if( similarity_type == 'lsquares' )then
+                  if( exp_similarity_type == 'squared_diff' )then
 
                      if (vector_norm) then
                         sum_d1 = dot_product( y, der_vec(1,k,1:n_samples) )
@@ -745,13 +936,13 @@ module exp_utils
 
 
 
-    subroutine get_data_similarity(x, y, y_pred, sim_exp_pred, similarity_type)
+    subroutine get_data_similarity(x, y, y_pred, sim_exp_pred, exp_similarity_type)
       implicit none
       real*8, allocatable, intent(in) :: x(:), y(:), y_pred(:)
-      character*32, intent(in) :: similarity_type
+      character*32, intent(in) :: exp_similarity_type
       real*8, intent(out) :: sim_exp_pred
 
-      if (similarity_type == "lsquares")then
+      if (exp_similarity_type == "squared_diff")then
          sim_exp_pred = - (x(2) - x(1) ) * dot_product(y - y_pred, y - y_pred)
       else
          sim_exp_pred =  dot_product(y, y_pred)
@@ -763,7 +954,7 @@ module exp_utils
     subroutine get_compare_xps_spectra(data, core_electron_be, &
          & sigma, n_samples, mag, sim_exp_pred, &
          & x_i_exp, y_i_exp,  y_i_pred, y_i_pred_all, &
-         & get_exp, similarity_type )
+         & get_exp, exp_similarity_type )
       implicit none
       real*8, allocatable, intent(in) :: data(:,:)
       real*8, intent(in) :: sigma, core_electron_be(:)
@@ -772,10 +963,10 @@ module exp_utils
       real*8, intent(out) :: sim_exp_pred, mag
       integer, intent(in) :: n_samples
       logical, intent(in) :: get_exp
-      character*32, intent(in) :: similarity_type
+      character*32, intent(in) :: exp_similarity_type
 
       if (get_exp)then
-         ! Get interpolated experimental spectra
+         ! Get interpolated exp spectra
          call get_xps_spectra(data(1,:), data(2,:), sigma, n_samples, mag,&
               & x_i_exp,  y_i_exp, y_i_pred_all, core_electron_be,&
               &  .false.)
@@ -786,7 +977,7 @@ module exp_utils
            & x_i_exp, y_i_pred, y_i_pred_all, core_electron_be,&
            & .true.)
 
-      call get_data_similarity(x_i_exp, y_i_exp, y_i_pred, sim_exp_pred, similarity_type)
+      call get_data_similarity(x_i_exp, y_i_exp, y_i_pred, sim_exp_pred, exp_similarity_type)
 
     end subroutine get_compare_xps_spectra
 
@@ -852,7 +1043,7 @@ module exp_utils
 
       end if
 
-      mag = sum(y * dx) !sqrt(dot_product(y, y))
+      mag = sqrt(dot_product(y, y)) * dx !sum(y * dx) !
       y = y / mag
       y_all = y_all / mag
 
