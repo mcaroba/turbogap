@@ -116,7 +116,7 @@ module types
               max_opt_step_eps = 0.05d0, mc_mu = 0.0d0, t_extra = 0.d0, p_nested = 0.d0, &
               nested_max_strain = 0.d0, nested_max_volume_change = 0.d0, mc_move_max = 1.d0, &
               mc_lnvol_max = 0.01d0, mc_min_dist = 0.2d0, xps_sigma=0.4d0, mc_reverse_lambda = 0.d0, &
-              xrd_wavelength = 1.5405981d0, xrd_damping=0.04, xrd_alpha=1.01d0
+              xrd_wavelength = 1.5405981d0, xrd_damping=0.04, xrd_alpha=1.01d0, xrd_rcut=4.d0, pair_correlation_rcut=4.d0
 
     integer :: md_nsteps = 1, mc_nsteps = 1, write_xyz = 0, write_thermo = 1, which_atom = 0, &
                vdw_mbd_nfreq = 11, n_mc_types = 0, n_nested = 0,&
@@ -149,7 +149,9 @@ module types
          & mc_write_xyz = .false., do_exp = .false., mc_relax = .false., mc_optimize_exp&
          &=.false., exp_forces=.false., print_lp_forces&
          &=.false., mc_hamiltonian = .false., accessible_volume =&
-         & .false., mc_reverse = .false., xrd_iwasa = .true.
+         & .false., mc_reverse = .false., xrd_iwasa = .true., pair_correlation_partial=.false.,&
+         % structure_factor_window = .true.
+
     logical, allocatable :: write_local_properties(:)
     type(exp_data_container), allocatable :: exp_data(:)
   end type input_parameters

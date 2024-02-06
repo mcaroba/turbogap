@@ -590,7 +590,7 @@ end if
     character*32 :: implemented_thermostats(1:3)
     character*32 :: implemented_barostats(1:2)
     character*32 :: implemented_mc_types(1:8)
-    character*32 :: implemented_exp_observables(1:3)
+    character*32 :: implemented_exp_observables(1:4)
     character*2 :: element
     character*1 :: keyword_first
     logical :: are_vdw_refs_read(1:3), valid_choice, masses_in_input_file = .false.
@@ -611,9 +611,10 @@ end if
     implemented_mc_types(7) = "swap"
     implemented_mc_types(8) = "volume"
 
-    implemented_exp_observables(1) = "xrd"
-    implemented_exp_observables(2) = "saxs"
-    implemented_exp_observables(3) = "pair_correlation"
+    implemented_exp_observables(1) = "xps"
+    implemented_exp_observables(2) = "xrd"
+    implemented_exp_observables(3) = "saxs"
+    implemented_exp_observables(4) = "pair_correlation"
 
 
     k = 0.d0
@@ -948,8 +949,12 @@ end if
                params%xps_idx = nw
             else if(trim(params%exp_data(nw)%label) == "xrd")then
                params%xrd_idx = nw
+               ! Must be set to true to find the partial structure factors
+               params%pair_correlation_partial = .true.
             else if(trim(params%exp_data(nw)%label) == "saxs")then
                params%saxs_idx = nw
+               ! Must be set to true to find the partial structure factors
+               params%pair_correlation_partial = .true.
             end if
          end do
       else if( keyword == "exp_data_files" )then
@@ -979,20 +984,61 @@ end if
             end if
 
          end do
+
+      else if( keyword == "xrd_rcut" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%xrd_rcut
+
+      else if( keyword == "pair_correlation_rcut" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%pair_correlation_rcut
+
+      else if( keyword == "pair_correlation_partial" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%pair_correlation_partial
+
+
       else if( keyword == "exp_n_samples" )then
          backspace(10)
          read(10, *, iostat=iostatus) cjunk, cjunk, &
               (params%exp_data(nw)%n_samples, nw=1, params%n_exp)
 
-      else if( keyword(1:5) == "range" )then
+      else if( params%n_exp > 1 )then
          backspace(10)
-         ! Check, if allocated exp data and see if the user range is valid
+         ! Check if experimental range or data files are specified
          do nw = 1, params%n_exp
             ! See if the keyword matches any exp observables
-            if ( keyword == "range_"//trim(params%exp_data(nw)%label) )then
+            if ( keyword == trim(params%exp_data(nw)%label)//"_range")then
                ! Expect two values which are in order of lower higher for the range to do the prediction
                params%exp_data(nw)%user_range = .true.
                read(10, *, iostat=iostatus) cjunk, cjunk, params%exp_data(nw)%range_min, params%exp_data(nw)%range_max
+            elseif ( keyword == trim(params%exp_data(nw)%label)//"_file_data")then
+
+               read(10, *, iostat=iostatus) cjunk, cjunk, params%exp_data(nw)%file_data
+
+
+               if ( trim( params%exp_data(nw)%file_data ) /= "none" )then
+
+                  call read_exp_data(&
+                       params%exp_data(nw)%file_data,&
+                       params%exp_data(nw)%n_data,&
+                       params%exp_data(nw)%data)
+
+                  params%exp_data(nw)%wrote_exp = .false.
+                  params%exp_data(nw)%compute_exp = .true.
+                  params%exp_data(nw)%compute_similarity = .true.
+                  params%exp_data(nw)%range_min = params%exp_data(nw)%data(1,1)
+                  params%exp_data(nw)%range_max = params&
+                       &%exp_data(nw)%data(1,params%exp_data(nw)%n_data)
+               elseif ( trim( params%exp_data(nw)%file_data ) == "none" )then
+                  ! Make sure that no type of exp data is written
+                  params%exp_data(nw)%compute_exp = .false.
+                  params%exp_data(nw)%compute_similarity = .false.
+                  ! If the compute exp is false, then a user range must be specified
+                  params%exp_data(nw)%wrote_exp = .true.
+
+               end if
+
             end if
          end do
 
