@@ -150,7 +150,7 @@ module types
          &=.false., exp_forces=.false., print_lp_forces&
          &=.false., mc_hamiltonian = .false., accessible_volume =&
          & .false., mc_reverse = .false., xrd_iwasa = .true., pair_correlation_partial=.false.,&
-         % structure_factor_window = .true.
+         & structure_factor_window = .true.
 
     logical, allocatable :: write_local_properties(:)
     type(exp_data_container), allocatable :: exp_data(:)

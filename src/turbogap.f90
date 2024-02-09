@@ -145,8 +145,8 @@ program turbogap
   real*8, allocatable :: v_neigh_lp(:), energies_lp(:), forces_lp(:,:), this_energies_lp(:), this_forces_lp(:,:)
   ! MPI stuff
   real*8, allocatable :: temp_1d(:), temp_1d_bis(:), temp_2d(:,:),&
-       & pair_correlation_partial(:,:,:)&
-       & pair_correlation_partial_temp(:,:,:), n_atoms_of_species(:)
+       & pair_correlation_partial(:,:,:), &
+       & pair_correlation_partial_temp(:,:,:), n_atoms_of_species(:), n_atoms_of_species_temp(:)
   integer, allocatable :: temp_1d_int(:), n_atom_pairs_by_rank(:),&
        & displ(:)
   integer, allocatable :: n_species_mpi(:), n_sparse_mpi_soap_turbo(:), dim_mpi(:), n_sparse_mpi_distance_2b(:), &
@@ -159,7 +159,7 @@ program turbogap
   logical, allocatable :: compress_soap_mpi(:)
 
   ! Nested sampling
-  real*8 :: e_max, e_kin, rand, rand_scale(1:6), mag
+  real*8 :: e_max, e_kin, rand, rand_scale(1:6), mag, n_total_cutoff, n_total_cutoff_temp
   integer :: i_nested, i_max, i_image, i_current_image=1, i_trial_image=2
   type(image), allocatable :: images(:), images_temp(:)
   type(exp_data_container) :: temp_exp_container
@@ -1709,7 +1709,8 @@ program turbogap
                       &%n_samples, params%exp_data(i)%data)
               end if
 
-              if ( .not.  params%exp_data(i)%wrote_exp .and. rank == 0 ) then
+              if ( params%exp_data(i)%compute_exp .and. .not.  params&
+                   &%exp_data(i)%wrote_exp .and. rank == 0  ) then
 
                  write(filename,'(A,A)') trim(params&
                       &%exp_data(i)%label), "_exp.dat"
@@ -1753,6 +1754,10 @@ program turbogap
               ! in the literature, however, we shall use similar ones
               ! to those in the paper of Gutierrez
               !
+              ! > Not sure why, but we seem to get the full
+              ! > correlation function out correctly, but the partial
+              ! > ones are not correct...
+              !
               ! R(r)    = Radial Distribution Function     === A histogram of atomic distances divided by N, goes as r^2
               ! g(r)    = Pair Distribution Function (PCF) === Scales R(r) by 1/(4 pi r^2) such that it lays flat, converges to 1.
               !         = (N_{r_l < r < r_h} / N) / ( 4 pi r^2 dr ) * ( V / N )
@@ -1777,8 +1782,8 @@ program turbogap
 
                  ! first allocate the necessary arrays for the
                  ! calculation of the pair correlation function
-                 if allocated( params%exp_data(i)%x) deallocate(params%exp_data(i)%x)
-                 if allocated( params%exp_data(i)%y_pred) deallocate(params%exp_data(i)%y_pred)
+                 if (allocated( params%exp_data(i)%x)) deallocate(params%exp_data(i)%x)
+                 if (allocated( params%exp_data(i)%y_pred)) deallocate(params%exp_data(i)%y_pred)
 
 
                  allocate( params%exp_data(i)%x( 1: params%exp_data(i)%n_samples) )
@@ -1789,7 +1794,7 @@ program turbogap
                     allocate( pair_correlation_partial(1:params&
                          &%exp_data(i)%n_samples, 1 : n_species , 1 :&
                          & n_species) )
-                    allocate(n_atoms_of_species(1:n_species)
+                    allocate(n_atoms_of_species(1:n_species))
                     pair_correlation_partial = 0.d0
                  end if
 
@@ -1804,21 +1809,25 @@ program turbogap
                     pair_correlation_partial_temp = 0.0d0
                  end if
 
+                 allocate(n_atoms_of_species_temp(1:n_species))
+                 n_atoms_of_species_temp = 0.d0
                  allocate( temp_exp_container%y_pred( 1: params%exp_data(i)%n_samples) )
                  temp_exp_container%y_pred = 0.d0
 
 #endif
 
                  if ( params%pair_correlation_partial )then
+                    n_total_cutoff = 0.d0
                     do j = 1, n_species
                        do k = 1, n_species
 
                           !                          if (j > k)then
                           if (.false.)then
-                             pair_correlation_partial(1:n_samples, j, k) = pair_correlation_partial(1:n_samples, k, j)
+                             pair_correlation_partial(1:params%exp_data(i)%n_samples, j, k) = &
+                                  & pair_correlation_partial(1:params%exp_data(i)%n_samples, k, j)
 
                              n_atoms_of_species(j) = 0.d0
-                             do i2 = 1:n_sites
+                             do i2 = 1, n_sites
                                 if ( species(i2) == j)then
                                    n_atoms_of_species(j) = n_atoms_of_species(j) + 1.d0
                                 end if
@@ -1826,17 +1835,42 @@ program turbogap
 
                           else
                              call get_pair_correlation( n_sites, &
-                                  & neighbors_list, n_neigh,&
-                                  & neighbor_species, rjs, params&
+                                  & neighbors_list(j_beg:j_end), n_neigh(i_beg:i_end),&
+                                  & neighbor_species(j_beg:j_end), rjs(j_beg:j_end), params&
                                   &%exp_data(i)%range_min, params&
                                   &%exp_data(i)%range_max, params&
                                   &%exp_data(i)%n_samples, params%exp_data(i)%x,&
-                                  & pair_correlation_partial(1:n_samples, j, k), params&
+                                  & pair_correlation_partial(1:params%exp_data(i)%n_samples, j, k), params&
                                   &%pair_correlation_rcut, .false.,&
                                   & params%pair_correlation_partial, j, k, n_atoms_of_species(j) )
+
+                             n_atoms_of_species(j) = 0.d0
+                             do i2 = 1, n_sites
+                                if ( species(i2) == j)then
+                                   n_atoms_of_species(j) = n_atoms_of_species(j) + 1.d0
+                                end if
+                             end do
+
+                             if (rank == 0) print *,  " n atoms of&
+                                  & type&
+                                  & ", trim(params&
+                                  &%species_types(j)) , '&
+                                  & ',&
+                                  & n_atoms_of_species(j)
+
                           end if
                        end do
+                       ! n_atoms_of_species(j) = 0.d0
+                       ! do i2 = 1, n_sites
+                       !    if ( species(i2) == j)then
+                       !       n_atoms_of_species(j) = n_atoms_of_species(j) + 1.d0
+                       !    end if
+                       ! end do
+                       ! n_atoms_of_species(j) = max(1.d0, n_atoms_of_species(j))
+                       n_total_cutoff = n_total_cutoff + n_atoms_of_species(j)
+
                     end do
+
                  else
                     call get_pair_correlation( n_sites, &
                          & neighbors_list, n_neigh,&
@@ -1857,6 +1891,18 @@ program turbogap
 
 #ifdef _MPIF90
 
+                 ! call mpi_reduce(n_total_cutoff,&
+                 !      & n_total_cutoff_temp,  1, MPI_DOUBLE_PRECISION, MPI_SUM, 0,&
+                 !      & MPI_COMM_WORLD, ierr)
+                 ! n_total_cutoff = n_total_cutoff_temp
+
+                 ! call mpi_reduce(n_atoms_of_species,&
+                 !      & n_atoms_of_species_temp,  n_species, MPI_DOUBLE_PRECISION, MPI_SUM, 0,&
+                 !      & MPI_COMM_WORLD, ierr)
+
+                 ! n_atoms_of_species = n_atoms_of_species_temp
+                 ! deallocate(n_atoms_of_species_temp)
+
                  if ( params%pair_correlation_partial )then
                     call mpi_reduce(pair_correlation_partial,&
                          & pair_correlation_partial_temp, params%exp_data(i)&
@@ -1873,23 +1919,68 @@ program turbogap
                     params%exp_data(i)%y_pred = 0.d0
                     do j = 1, n_species
                        do k = 1, n_species
-                          pair_correlation_partial(1:params%exp_data(i)%n_samples, j, k) = &
-                               & pair_correlation_partial(1:params%exp_data(i)%n_samples, j, k) * &
-                               & dot_product( cross_product(a_box, b_box),&
-                               & c_box ) / (dfloat(indices(1)*indices(2)&
-                               &*indices(3))) / real(n_sites) / n_atoms_of_species(k)
+
+                          pair_correlation_partial(1:params&
+                               &%exp_data(i)%n_samples, j, k) =&
+                               & pair_correlation_partial(1:params&
+                               &%exp_data(i)%n_samples, j, k) *&
+                               & dot_product( cross_product(a_box,&
+                               & b_box), c_box ) / (&
+                               & dfloat(indices(1)*indices(2)&
+                               &*indices(3)) ) /  n_atoms_of_species(j) /  n_atoms_of_species(k) !real(n_sites)
+
                        end do
                     end do
 
                     do j = 1, n_species
                        do k = 1, n_species
+                          ! params%exp_data(i)%y_pred(1:params%exp_data(i)%n_samples) = &
+                          !      & params%exp_data(i)%y_pred(1:params%exp_data(i)%n_samples)  +  &
+                          !      & (n_atoms_of_species(j) * n_atoms_of_species(k))**(0.5) * &
+                          !      & pair_correlation_partial(1:params%exp_data(i)%n_samples, j, k) &
+                          !      &  / real(n_sites)
+
                           params%exp_data(i)%y_pred(1:params%exp_data(i)%n_samples) = &
                                & params%exp_data(i)%y_pred(1:params%exp_data(i)%n_samples)  +  &
-                               & (n_atoms_of_species(j) * n_atoms_of_species(k))**(0.5) *&
-                               & pair_correlation_partial(1:params%exp_data(i)%n_samples, j, k) / real(n_sites)
+                               & (n_atoms_of_species(j) * n_atoms_of_species(k)) * &
+                               & pair_correlation_partial(1:params%exp_data(i)%n_samples, j, k) &
+                               &  /  real(n_sites) / real(n_sites)
+
                        end do
                     end do
 
+                    ! Write out the partial pair correlation functions
+                    if (rank == 0) then
+
+                       do j = 1, n_species
+                          do k = 1, n_species
+
+                             write(filename,'(A)')&
+                                  & 'pair_correlation_' // trim(params&
+                                  &%species_types(j)) // '_' // trim(params&
+                                  &%species_types(k)) //&
+                                  & "_prediction.dat"
+                             call write_exp_datan(params%exp_data(i)&
+                                  &%x(1:params%exp_data(i)%n_samples)&
+                                  &,&
+                                  & pair_correlation_partial(1:params&
+                                  &%exp_data(i)%n_samples, j, k),&
+                                  & md_istep <= 0, filename, params &
+                                  &%exp_data(i)%label)
+
+                          end do
+                       end do
+                       write(filename,'(A)')&
+                            & "pair_correlation_total.dat"
+                       call write_exp_datan(params%exp_data(i)&
+                            &%x(1:params%exp_data(i)%n_samples)&
+                            &,&
+                            & params%exp_data(i)%y_pred(1:params&
+                            &%exp_data(i)%n_samples),&
+                            & md_istep <= 0, filename, params &
+                            &%exp_data(i)%label)
+
+                    end if
 
                  else
                     call mpi_reduce(params%exp_data(i)%y_pred,&
@@ -1910,7 +2001,6 @@ program turbogap
                       & c_box ) / (dfloat(indices(1)*indices(2)&
                       &*indices(3))) / real(n_sites) / real(n_sites)
 
-
                  !########################################!
                  !###---   XRD / SAXS Calculation   ---###!
                  !########################################!
@@ -1925,14 +2015,14 @@ program turbogap
                  temp_exp_container%y_pred= 0.0d0
 #endif
 
-                 call get_xrd( n_neigh, neighbors_list, neighbor_species, rjs, &
-                      & positions, n_species, params%species_types, species, params%xrd_wavelength&
-                      &, params%xrd_damping, params%xrd_alpha, params&
-                      &%exp_data(i)%label, params%xrd_iwasa,&
-                      & params%exp_data(i)%range_min, params%exp_data(i)%range_max, params&
-                      &%exp_data(i)%n_samples, params&
-                      &%exp_data(i)%x, params&
-                      &%exp_data(i)%y_pred, params%xrd_rcut )
+                 ! call get_xrd( n_neigh, neighbors_list, neighbor_species, rjs, &
+                 !      & positions, n_species, params%species_types, species, params%xrd_wavelength&
+                 !      &, params%xrd_damping, params%xrd_alpha, params&
+                 !      &%exp_data(i)%label, params%xrd_iwasa,&
+                 !      & params%exp_data(i)%range_min, params%exp_data(i)%range_max, params&
+                 !      &%exp_data(i)%n_samples, params&
+                 !      &%exp_data(i)%x, params&
+                 !      &%exp_data(i)%y_pred, params%xrd_rcut )
 
 #ifdef _MPIF90
 
@@ -2937,14 +3027,14 @@ program turbogap
                     do i = 1, params%n_exp
                        if ( trim(params%exp_data(i)%label) == 'xrd' .or. trim(params%exp_data(i)%label) == 'saxs' )then
 
-                          call get_xrd( positions, n_species, params&
-                               &%species_types, species, params%xrd_wavelength&
-                               &, params%xrd_damping, params%xrd_alpha, params&
-                               &%exp_data(i)%label, params%xrd_iwasa,&
-                               & params%exp_data(i)%range_min, params%exp_data(i)%range_max, params&
-                               &%exp_data(i)%n_samples, params&
-                               &%exp_data(i)%x, params&
-                               &%exp_data(i)%y_pred)
+                          ! call get_xrd( positions, n_species, params&
+                          !      &%species_types, species, params%xrd_wavelength&
+                          !      &, params%xrd_damping, params%xrd_alpha, params&
+                          !      &%exp_data(i)%label, params%xrd_iwasa,&
+                          !      & params%exp_data(i)%range_min, params%exp_data(i)%range_max, params&
+                          !      &%exp_data(i)%n_samples, params&
+                          !      &%exp_data(i)%x, params&
+                          !      &%exp_data(i)%y_pred)
 
                           call get_data_similarity(params%exp_data(i)%x, params%exp_data(i)%y, &
                                & params%exp_data(i)%y_pred, params%exp_data(i)%similarity, params%exp_similarity_type)
@@ -3267,14 +3357,14 @@ program turbogap
 
                     do i = 1, params%n_exp
                        if ( trim(params%exp_data(i)%label) == 'xrd' .or. trim(params%exp_data(i)%label) == 'saxs' )then
-                          call get_xrd( positions, n_species, params&
-                               &%species_types, species, params%xrd_wavelength&
-                               &, params%xrd_damping, params%xrd_alpha, params&
-                               &%exp_data(i)%label, params%xrd_iwasa,&
-                               & params%exp_data(i)%range_min, params%exp_data(i)%range_max, params&
-                               &%exp_data(i)%n_samples, params&
-                               &%exp_data(i)%x, params&
-                               &%exp_data(i)%y_pred)
+                          ! call get_xrd( positions, n_species, params&
+                          !      &%species_types, species, params%xrd_wavelength&
+                          !      &, params%xrd_damping, params%xrd_alpha, params&
+                          !      &%exp_data(i)%label, params%xrd_iwasa,&
+                          !      & params%exp_data(i)%range_min, params%exp_data(i)%range_max, params&
+                          !      &%exp_data(i)%n_samples, params&
+                          !      &%exp_data(i)%x, params&
+                          !      &%exp_data(i)%y_pred)
 
                           call get_data_similarity(params&
                                &%exp_data(i)%x, params&

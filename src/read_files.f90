@@ -456,6 +456,34 @@ end if
 
   end subroutine write_exp_data
 
+  subroutine write_exp_datan(x, y, overwrite, filename, label)
+
+    implicit none
+
+!   Input variables
+    character(len = *), intent(in) :: filename, label
+!   Output variables
+    real*8, intent(in) :: x(:), y(:)
+    logical, intent(in) :: overwrite
+!   Internal variables
+    integer :: i
+
+    if( overwrite )then
+       open(unit=200, file=filename, status="unknown")
+       write(200,'(A,1X,A)') '# ', trim(label)
+    else
+       open(unit=200, file=filename, status="old", position="append")
+       write(200,*) ' '
+    end if
+
+    do i = 1, size(x)
+       write(200, '(1X,F20.8,1X,F20.8)') x(i), y(i)
+    end do
+    close(200)
+
+  end subroutine write_exp_datan
+
+
 
 !**************************************************************************
 
@@ -583,7 +611,7 @@ end if
 
 !   Internal variables
     real*8 :: c6_ref, r0_ref, alpha0_ref, bsf, k
-    integer :: iostatus, i, j, nw, iostatus2
+    integer :: iostatus, i, j, i2,  nw, iostatus2
     character*1024 :: long_line
     character*128, allocatable :: long_line_items(:)
     character*64 :: keyword, cjunk
@@ -657,10 +685,12 @@ end if
 
 !   Read the input file now
     iostatus = 0
+    i2 = 0
     do while(iostatus==0)
       read(10, *, iostat=iostatus) keyword
       call upper_to_lower_case(keyword)
       keyword = trim(keyword)
+      i2 = len(trim(keyword))
       if(iostatus/=0)then
         exit
       end if
@@ -982,7 +1012,6 @@ end if
                params%exp_data(nw)%range_max = params&
                     &%exp_data(nw)%data(1,params%exp_data(nw)%n_data)
             end if
-
          end do
 
       else if( keyword == "xrd_rcut" )then
@@ -1003,7 +1032,8 @@ end if
          read(10, *, iostat=iostatus) cjunk, cjunk, &
               (params%exp_data(nw)%n_samples, nw=1, params%n_exp)
 
-      else if( params%n_exp > 1 )then
+      else if (keyword(i2-4:i2) == "range" .or.  keyword(i2-8:i2) ==&
+           & "file_data" .or. keyword(i2-8:i2) == "n_samples"  )then
          backspace(10)
          ! Check if experimental range or data files are specified
          do nw = 1, params%n_exp
@@ -1015,8 +1045,6 @@ end if
             elseif ( keyword == trim(params%exp_data(nw)%label)//"_file_data")then
 
                read(10, *, iostat=iostatus) cjunk, cjunk, params%exp_data(nw)%file_data
-
-
                if ( trim( params%exp_data(nw)%file_data ) /= "none" )then
 
                   call read_exp_data(&
@@ -1038,7 +1066,8 @@ end if
                   params%exp_data(nw)%wrote_exp = .true.
 
                end if
-
+            elseif ( keyword == trim(params%exp_data(nw)%label)//"_n_samples")then
+               read(10, *, iostat=iostatus) cjunk, cjunk, params%exp_data(nw)%n_samples
             end if
          end do
 
@@ -1292,7 +1321,7 @@ end if
       else
         write(*,*)"ERROR: I do not recognize the input file keyword", keyword
         stop
-      end if
+     end if
     end do
 
 !   Do some checks
@@ -1388,7 +1417,8 @@ end if
                &%exp_data(i)%range_min, ' max =', params%exp_data(i)&
                &%range_max, ' |'
 
-          write(*,'(A,1X,I8,1X,A)')' n_samples =', params%exp_data(i)%n_samples,'                     |'
+          write(*,'(A,1X,I8,1X,A)')' n_samples   =', params%exp_data(i)%n_samples,'                |'
+          write(*,'(A,1X,L4,1X,A)')' compute_exp =', params%exp_data(i)%compute_exp,'                    |'
 
 
           if (.not. allocated(params%exp_energy_scales) .and. ( params%exp_forces .or. params%mc_optimize_exp ) )then
