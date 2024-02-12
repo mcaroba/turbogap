@@ -146,7 +146,10 @@ program turbogap
   ! MPI stuff
   real*8, allocatable :: temp_1d(:), temp_1d_bis(:), temp_2d(:,:),&
        & pair_correlation_partial(:,:,:), &
-       & pair_correlation_partial_temp(:,:,:), n_atoms_of_species(:), n_atoms_of_species_temp(:)
+       & pair_correlation_partial_temp(:,:,:), n_atoms_of_species(:), structure_factor_partial(:,:,:), &
+       & structure_factor_partial_temp(:,:,:), x_pair_correlation(:), y_pair_correlation(:), y_pair_correlation_temp(:), &
+       & x_structure_factor(:), y_structure_factor(:),&
+       & y_structure_factor_temp(:), x_xrd(:), y_xrd(:), y_xrd_temp(:)
   integer, allocatable :: temp_1d_int(:), n_atom_pairs_by_rank(:),&
        & displ(:)
   integer, allocatable :: n_species_mpi(:), n_sparse_mpi_soap_turbo(:), dim_mpi(:), n_sparse_mpi_distance_2b(:), &
@@ -155,11 +158,11 @@ program turbogap
        & local_properties_dim_mpi_soap_turbo(:), n_neigh_local(:),&
        & compress_P_nonzero_mpi(:)
   integer :: i_beg, i_end, n_sites_mpi, j_beg, j_end, size_soap_turbo, size_distance_2b, size_angle_3b
-  integer :: n_nonzero
+  integer :: n_nonzero, q_beg, q_end
   logical, allocatable :: compress_soap_mpi(:)
 
   ! Nested sampling
-  real*8 :: e_max, e_kin, rand, rand_scale(1:6), mag, n_total_cutoff, n_total_cutoff_temp
+  real*8 :: e_max, e_kin, rand, rand_scale(1:6), mag, n_total_cutoff, n_total_cutoff_temp, dq
   integer :: i_nested, i_max, i_image, i_current_image=1, i_trial_image=2
   type(image), allocatable :: images(:), images_temp(:)
   type(exp_data_container) :: temp_exp_container
@@ -1690,6 +1693,358 @@ program turbogap
 
         end if
 
+        !##############################################################!
+        !###---   (Partial) Pair correlation functions and XRD   ---###!
+        !##############################################################!
+
+        ! We use these to calculate the (partial) structure factors, which
+        ! can be used for X-Ray scattering and (in the future)
+        ! neutron scattering.
+        !
+        ! > We use the formalism which was detailed by
+        !   Gutierrez and Johansson, Physical Review B, Volume 65, 104202 (2002)
+        !   such that there is consistency between the rdfs and the scattering we calculate.
+
+        !   (The ASE implementation of XRD intensity is problematic and
+        !   uses the sinc function implemented by DSP
+        !   (sin(pi*x)/(pi*x)) which is not what is in the
+        !   literature).
+
+        ! ***--- Steps for calculation ---***
+        ! 1) We calculate the partial pair distribution functions g_ab
+        ! 2) Partial static structure factors S_ab are then calculated from this by Fourier transform
+        !    > This calculation can includes a window function ( sin(pi*rij/r_cut) / (pi*rij/r_cut) )
+        !      such that termination effects of large sinusoids which come from the cutoff are removed.
+        ! 3) If X-Ray Diffraction (xrd) is specified, then the intensity is
+        !    calculated from these partial structure factors by the
+        !    inclusion of the X-Ray form factors.
+        !
+        ! ***--- Definitions ---***
+        ! There are many definitions of these various functions
+        ! in the literature, however, we shall use similar ones
+        ! to those in the paper of Gutierrez
+        !
+        ! > Not sure why, but we seem to get the full
+        ! > correlation function out correctly, but the partial
+        ! > ones are not correct...
+        !
+        ! R(r)    = Radial Distribution Function     === A histogram of atomic distances divided by N, goes as r^2
+        ! g(r)    = Pair Distribution Function (PCF) === Scales R(r) by 1/(4 pi r^2) such that it lays flat, converges to 1.
+        !         = (N_{r_l < r < r_h} / N) / ( 4 pi r^2 dr ) * ( V / N )
+        !         = n_{r_l < r < r_h} / ( dV * rho_0 )
+        !           > n_{r_l < r < r_h} is the average number of particles between r_l and r_h
+        !           > rho_0 is the density
+        !           > dV is the differential volume between shells
+        !
+        ! g_ab(r) = Partial Pair Distribution Func.  === Same as above but only for particles a and b
+        !         =  (N^{b}_{r_l < r < r_h} / N_b ) / ( 4 pi r^2 dr ) * ( V / N_a )
+        !
+        !           The full pair correlation function is given by the sum (say for the binary system, with a, b atoms)
+        !             g(r) = (N_a/N) * g_aa(r) + 2(N_a/N * N_b/N)g_ab + (N_b/N)g_bb
+        !
+        ! S_ab(q) = delta_ab + 4 pi rho (ca cb)^1/2 int_0^r_cut dr r^2 [ g_ab(r) - 1 ] sin(qr)/(qr) * sin( pi r / R )/ (pi r /R)
+
+        if (params%do_pair_correlation .or. params%do_structure_factor .or. params%do_xrd)then
+           ! first allocate the necessary arrays for the
+           ! calculation of the pair correlation function
+           if (allocated( x_pair_correlation)) deallocate(x_pair_correlation)
+           if (allocated( y_pair_correlation)) deallocate(y_pair_correlation)
+
+           allocate( x_pair_correlation( 1: params%pair_correlation_n_samples) )
+           allocate( y_pair_correlation( 1: params%pair_correlation_n_samples) )
+
+           if (params%pair_correlation_partial)then
+              if (allocated(pair_correlation_partial))  deallocate(pair_correlation_partial)
+              allocate( pair_correlation_partial(1:params%pair_correlation_n_samples,&
+                   & 1 : n_species , 1 : n_species) )
+              allocate(n_atoms_of_species(1:n_species))
+              pair_correlation_partial = 0.d0
+           end if
+
+
+#ifdef _MPIF90
+           if (params%pair_correlation_partial)then
+              allocate( pair_correlation_partial_temp(1:params%pair_correlation_n_samples, 1 : n_species , 1 :&
+                   & n_species) )
+
+              pair_correlation_partial_temp = 0.0d0
+           end if
+
+           allocate( y_pair_correlation_temp( 1: params%pair_correlation_n_samples) )
+           y_pair_correlation_temp = 0.d0
+
+#endif
+
+           if ( params%pair_correlation_partial )then
+              do j = 1, n_species
+                 n_atoms_of_species(j) = 0.d0
+                 do i2 = 1, n_sites
+                    if ( species(i2) == j)then
+                       n_atoms_of_species(j) = n_atoms_of_species(j) + 1.d0
+                    end if
+                 end do
+
+                 do k = 1, n_species
+
+                    if (j > k)then
+                       ! we have already calculated the pair correlation function!
+                       pair_correlation_partial(1:params%pair_correlation_n_samples, j, k) = &
+                            & pair_correlation_partial(1:params%pair_correlation_n_samples, k, j)
+
+                    else
+                       call get_pair_correlation( n_sites, &
+                            & neighbors_list(j_beg:j_end), n_neigh(i_beg:i_end),&
+                            & neighbor_species(j_beg:j_end), rjs(j_beg:j_end), params&
+                            &%r_range_min, params%r_range_max, params%pair_correlation_n_samples, x_pair_correlation,&
+                            & pair_correlation_partial(1:params%pair_correlation_n_samples, j, k), params&
+                            &%pair_correlation_rcut, .false.,&
+                            & params%pair_correlation_partial, j, k, params%pair_correlation_kde_sigma)
+
+                    end if
+                 end do
+              end do
+
+           else
+              call get_pair_correlation( n_sites, &
+                   & neighbors_list(j_beg:j_end), n_neigh(i_beg:i_end),&
+                   & neighbor_species(j_beg:j_end), rjs(j_beg:j_end),&
+                   & params%r_range_min, params%r_range_max, params &
+                   &%pair_correlation_n_samples, x_pair_correlation,&
+                   & y_pair_correlation, params &
+                   &%pair_correlation_rcut, .false., .false., 1, 1,&
+                   & params%pair_correlation_kde_sigma)
+           end if
+
+
+           if ( params%pair_correlation_partial )then
+#ifdef _MPIF90
+              call mpi_reduce(pair_correlation_partial,&
+                   & pair_correlation_partial_temp, params&
+                   &%pair_correlation_n_samples * n_species *&
+                   & n_species, MPI_DOUBLE_PRECISION, MPI_SUM,&
+                   & 0, MPI_COMM_WORLD, ierr)
+
+              ! Now store the FULL pair correlation function which comes from these partial pair distribution functions
+              ! Note, we have only so far divided by 4 pi r^2 dr
+              ! Therefore, we must scale by the density
+
+              pair_correlation_partial =  pair_correlation_partial_temp
+              deallocate( pair_correlation_partial_temp )
+#endif
+              y_pair_correlation = 0.d0
+              do j = 1, n_species
+                 do k = 1, n_species
+
+                    pair_correlation_partial(1:params%pair_correlation_n_samples, j, k) =&
+                         & pair_correlation_partial(1:params&
+                         &%pair_correlation_n_samples, j, k) *&
+                         & dot_product( cross_product(a_box,&
+                         & b_box), c_box ) / (&
+                         & dfloat(indices(1)*indices(2)&
+                         &*indices(3)) ) /  n_atoms_of_species(j) /  n_atoms_of_species(k) !real(n_sites)
+
+                 end do
+              end do
+
+              do j = 1, n_species
+                 do k = 1, n_species
+
+                    y_pair_correlation(1:params%pair_correlation_n_samples) = &
+                         &y_pair_correlation(1:params%pair_correlation_n_samples)  +  &
+                         & (n_atoms_of_species(j) * n_atoms_of_species(k)) * &
+                         & pair_correlation_partial(1:params%pair_correlation_n_samples, j, k) &
+                         &  /  dfloat(n_sites) / dfloat(n_sites)
+
+                 end do
+              end do
+
+#ifdef _MPIF90
+
+              call mpi_bcast(pair_correlation_partial, params&
+                   &%pair_correlation_n_samples * n_species *&
+                   & n_species, MPI_DOUBLE_PRECISION, 0,&
+                   & MPI_COMM_WORLD, ierr)
+
+#endif
+              ! Write out the partial pair correlation functions
+              if (rank == 0 .and. params%write_pair_correlation) then
+
+                 do j = 1, n_species
+                    do k = 1, n_species
+
+                       write(filename,'(A)')&
+                            & 'pair_correlation_' // trim(params&
+                            &%species_types(j)) // '_' // trim(params&
+                            &%species_types(k)) //&
+                            & "_prediction.dat"
+                       call write_exp_datan(x_pair_correlation(1:params%pair_correlation_n_samples),&
+                            & pair_correlation_partial(1:params%pair_correlation_n_samples, j, k),&
+                            & md_istep <= 0, filename, 'pair_correlation')
+
+                    end do
+                 end do
+                 write(filename,'(A)')&
+                      & "pair_correlation_total.dat"
+                 call write_exp_datan(x_pair_correlation(1:params%pair_correlation_n_samples),&
+                      &y_pair_correlation(1:params%pair_correlation_n_samples),&
+                      & md_istep <= 0, filename, "pair_correlation")
+
+              end if
+
+           else
+#ifdef _MPIF90
+              call mpi_reduce(y_pair_correlation,&
+                   & y_pair_correlation_temp, params&
+                   &%pair_correlation_n_samples,&
+                   & MPI_DOUBLE_PRECISION, MPI_SUM, 0,&
+                   & MPI_COMM_WORLD, ierr)
+
+              y_pair_correlation =  y_pair_correlation_temp
+              deallocate( y_pair_correlation_temp )
+#endif
+           end if
+
+
+           ! Multiplying by the 1/density factor (V/n_sites)
+           ! Still need to check that the integral ( 4 * pi * density * ( int dr r^2 g(r) ) ~= N_sites )
+
+           if (.not. params%pair_correlation_partial) then
+              y_pair_correlation =y_pair_correlation * &
+                   & dot_product( cross_product(a_box, b_box),&
+                   & c_box ) / (dfloat(indices(1)*indices(2)&
+                   &*indices(3))) / dfloat(n_sites) / dfloat(n_sites)
+           end if
+
+
+           ! Now calculate the structure factors
+           if (params%do_structure_factor .or. params%do_xrd .and. params%pair_correlation_partial)then
+              q_beg = 1
+              q_end = params%structure_factor_n_samples ! change this to n_samples for structure factor
+#ifdef _MPIF90
+              ! We need to do an integral for each q value
+              ! This can be split among the processes
+
+              ! Split each q the integrals among each of the
+              ! processes, just like we do with the atoms,
+              ! and then collect accordingly
+
+
+              if( rank < mod( params%structure_factor_n_samples, ntasks ) )then
+                 q_beg = 1 + rank*(params%structure_factor_n_samples / ntasks + 1)
+              else
+                 q_beg = 1 + mod(params%structure_factor_n_samples, ntasks)*(params&
+                      &%structure_factor_n_samples / ntasks + 1) &
+                      &+ (rank - mod(params%structure_factor_n_samples, ntasks))*(params&
+                      &%structure_factor_n_samples / ntasks)
+              end if
+              if( rank < mod( params%structure_factor_n_samples, ntasks ) )then
+                 q_end = (rank+1)*(params%structure_factor_n_samples / ntasks + 1)
+              else
+                 q_end = q_beg + params%structure_factor_n_samples/ntasks - 1
+              end if
+
+#endif
+
+
+              if (allocated(structure_factor_partial))  deallocate(structure_factor_partial)
+              allocate( structure_factor_partial(1:params&
+                   &%structure_factor_n_samples, 1 : n_species , 1 :&
+                   & n_species) )
+              structure_factor_partial = 0.d0
+
+              if (allocated(y_structure_factor))deallocate(y_structure_factor)
+              allocate(y_structure_factor(1:params%structure_factor_n_samples))
+
+#ifdef _MPIF90
+              allocate( structure_factor_partial_temp(1:params&
+                   &%structure_factor_n_samples, 1 : n_species , 1 :&
+                   & n_species) )
+
+              structure_factor_partial_temp = 0.0d0
+#endif
+
+              if (allocated(x_structure_factor)) deallocate(x_structure_factor)
+              call linspace( x_structure_factor, params&
+                   &%q_range_min, params%q_range_max, params&
+                   &%structure_factor_n_samples, dq )
+
+              call get_partial_structure_factor(&
+                   & structure_factor_partial(q_beg:q_end&
+                   &,1:n_species,1:n_species) ,&
+                   & pair_correlation_partial,&
+                   & x_structure_factor(q_beg:q_end) ,&
+                   & x_pair_correlation, params%pair_correlation_rcut,&
+                   & params %pair_correlation_n_samples, params&
+                   &%structure_factor_n_samples, n_species,&
+                   & n_atoms_of_species, n_sites, params%structure_factor_window)
+
+#ifdef _MPIF90
+              call mpi_reduce(structure_factor_partial,&
+                   & structure_factor_partial_temp, params&
+                   &%structure_factor_n_samples * n_species *&
+                   & n_species, MPI_DOUBLE_PRECISION, MPI_SUM, 0,&
+                   & MPI_COMM_WORLD, ierr)
+              structure_factor_partial = structure_factor_partial_temp
+              deallocate(structure_factor_partial_temp)
+#endif
+
+
+              do j = 1, n_species
+                 do k = 1, n_species
+
+                    y_structure_factor(1:params%structure_factor_n_samples) = &
+                         & y_structure_factor(1:params%structure_factor_n_samples)  +  &
+                         & (n_atoms_of_species(j) * n_atoms_of_species(k)) * &
+                         & structure_factor_partial(1:params%structure_factor_n_samples, j, k) &
+                         &  /  dfloat(n_sites) / dfloat(n_sites)
+
+                 end do
+              end do
+
+
+              ! Write out the partial pair correlation functions
+              if (rank == 0 .and. params%write_structure_factor) then
+
+                 do j = 1, n_species
+                    do k = 1, n_species
+
+                       write(filename,'(A)')&
+                            & 'structure_factor_' // trim(params&
+                            &%species_types(j)) // '_' // trim(params&
+                            &%species_types(k)) //&
+                            & "_prediction.dat"
+                       call write_exp_datan(x_structure_factor(1:params%structure_factor_n_samples)&
+                            &,&
+                            & structure_factor_partial(1:params&
+                            &%structure_factor_n_samples, j, k),&
+                            & md_istep <= 0, filename, "structure_factor")
+
+                    end do
+                 end do
+
+                 write(filename,'(A)')&
+                      & 'structure_factor_total.dat'
+                 call write_exp_datan(x_structure_factor(1:params%structure_factor_n_samples),&
+                      & y_structure_factor(1:params&
+                      &%structure_factor_n_samples),&
+                      & md_istep <= 0, filename, "structure_factor")
+
+
+              end if
+
+
+              if ( params%do_xrd )then
+                 ! Get the XRD from the partial structure factors!
+
+              end if
+
+
+           end if
+        end if
+
+
+
+
         if ( params%do_exp )then
            do i = 1, params%n_exp
 
@@ -1723,290 +2078,14 @@ program turbogap
 
               end if
 
-              !##############################################################!
-              !###---   (Partial) Pair correlation functions and XRD   ---###!
-              !##############################################################!
-
-              ! We use these to calculate the (partial) structure factors, which
-              ! can be used for X-Ray scattering and (in the future)
-              ! neutron scattering.
-              !
-              ! > We use the formalism which was detailed by
-              !   Gutierrez and Johansson, Physical Review B, Volume 65, 104202 (2002)
-              !   such that there is consistency between the rdfs and the scattering we calculate.
-
-              !   (The ASE implementation of XRD intensity is problematic and
-              !   uses the sinc function implemented by DSP
-              !   (sin(pi*x)/(pi*x)) which is not what is in the
-              !   literature).
-
-              ! ***--- Steps for calculation ---***
-              ! 1) We calculate the partial pair distribution functions g_ab
-              ! 2) Partial static structure factors S_ab are then calculated from this by Fourier transform
-              !    > This calculation can includes a window function ( sin(pi*rij/r_cut) / (pi*rij/r_cut) )
-              !      such that termination effects of large sinusoids which come from the cutoff are removed.
-              ! 3) If X-Ray Diffraction (xrd) is specified, then the intensity is
-              !    calculated from these partial structure factors by the
-              !    inclusion of the X-Ray form factors.
-              !
-              ! ***--- Definitions ---***
-              ! There are many definitions of these various functions
-              ! in the literature, however, we shall use similar ones
-              ! to those in the paper of Gutierrez
-              !
-              ! > Not sure why, but we seem to get the full
-              ! > correlation function out correctly, but the partial
-              ! > ones are not correct...
-              !
-              ! R(r)    = Radial Distribution Function     === A histogram of atomic distances divided by N, goes as r^2
-              ! g(r)    = Pair Distribution Function (PCF) === Scales R(r) by 1/(4 pi r^2) such that it lays flat, converges to 1.
-              !         = (N_{r_l < r < r_h} / N) / ( 4 pi r^2 dr ) * ( V / N )
-              !         = n_{r_l < r < r_h} / ( dV * rho_0 )
-              !           > n_{r_l < r < r_h} is the average number of particles between r_l and r_h
-              !           > rho_0 is the density
-              !           > dV is the differential volume between shells
-              !
-              ! g_ab(r) = Partial Pair Distribution Func.  === Same as above but only for particles a and b
-              !         =  (N^{b}_{r_l < r < r_h} / N ) / ( 4 pi r^2 dr ) * ( V / N )
-              !
-              !           The full pair correlation function is given by the sum (say for the binary system, with a, b atoms)
-              !             g(r) = (N_a/N) * g_aa(r) + 2(N_a/N * N_b/N)^(1/2)g_ab + (N_b/N)g_bb
-              !
-              ! S_ab(q) =
-
-              if ( trim(params%exp_data(i)%label) ==&
-                   & 'pair_correlation'.or. trim(params%exp_data(i)&
-                   &%label) == 'xrd' .or. trim(params%exp_data(i)&
-                   &%label) == 'saxs' .or. trim(params%exp_data(i)&
-                   &%label) == 'structure_factor')then
-
-                 ! first allocate the necessary arrays for the
-                 ! calculation of the pair correlation function
-                 if (allocated( params%exp_data(i)%x)) deallocate(params%exp_data(i)%x)
-                 if (allocated( params%exp_data(i)%y_pred)) deallocate(params%exp_data(i)%y_pred)
 
 
-                 allocate( params%exp_data(i)%x( 1: params%exp_data(i)%n_samples) )
-                 allocate( params%exp_data(i)%y_pred( 1: params%exp_data(i)%n_samples) )
-
-                 if (params%pair_correlation_partial)then
-                    if (allocated(pair_correlation_partial))  deallocate(pair_correlation_partial)
-                    allocate( pair_correlation_partial(1:params&
-                         &%exp_data(i)%n_samples, 1 : n_species , 1 :&
-                         & n_species) )
-                    allocate(n_atoms_of_species(1:n_species))
-                    pair_correlation_partial = 0.d0
-                 end if
+              !########################################!
+              !###---   XRD / SAXS Calculation   ---###!
+              !########################################!
 
 
-
-#ifdef _MPIF90
-                 if (params%pair_correlation_partial)then
-                    allocate( pair_correlation_partial_temp(1:params&
-                         &%exp_data(i)%n_samples, 1 : n_species , 1 :&
-                         & n_species) )
-
-                    pair_correlation_partial_temp = 0.0d0
-                 end if
-
-                 allocate(n_atoms_of_species_temp(1:n_species))
-                 n_atoms_of_species_temp = 0.d0
-                 allocate( temp_exp_container%y_pred( 1: params%exp_data(i)%n_samples) )
-                 temp_exp_container%y_pred = 0.d0
-
-#endif
-
-                 if ( params%pair_correlation_partial )then
-                    n_total_cutoff = 0.d0
-                    do j = 1, n_species
-                       do k = 1, n_species
-
-                          !                          if (j > k)then
-                          if (.false.)then
-                             pair_correlation_partial(1:params%exp_data(i)%n_samples, j, k) = &
-                                  & pair_correlation_partial(1:params%exp_data(i)%n_samples, k, j)
-
-                             n_atoms_of_species(j) = 0.d0
-                             do i2 = 1, n_sites
-                                if ( species(i2) == j)then
-                                   n_atoms_of_species(j) = n_atoms_of_species(j) + 1.d0
-                                end if
-                             end do
-
-                          else
-                             call get_pair_correlation( n_sites, &
-                                  & neighbors_list(j_beg:j_end), n_neigh(i_beg:i_end),&
-                                  & neighbor_species(j_beg:j_end), rjs(j_beg:j_end), params&
-                                  &%exp_data(i)%range_min, params&
-                                  &%exp_data(i)%range_max, params&
-                                  &%exp_data(i)%n_samples, params%exp_data(i)%x,&
-                                  & pair_correlation_partial(1:params%exp_data(i)%n_samples, j, k), params&
-                                  &%pair_correlation_rcut, .false.,&
-                                  & params%pair_correlation_partial, j, k, n_atoms_of_species(j) )
-
-                             n_atoms_of_species(j) = 0.d0
-                             do i2 = 1, n_sites
-                                if ( species(i2) == j)then
-                                   n_atoms_of_species(j) = n_atoms_of_species(j) + 1.d0
-                                end if
-                             end do
-
-                             if (rank == 0) print *,  " n atoms of&
-                                  & type&
-                                  & ", trim(params&
-                                  &%species_types(j)) , '&
-                                  & ',&
-                                  & n_atoms_of_species(j)
-
-                          end if
-                       end do
-                       ! n_atoms_of_species(j) = 0.d0
-                       ! do i2 = 1, n_sites
-                       !    if ( species(i2) == j)then
-                       !       n_atoms_of_species(j) = n_atoms_of_species(j) + 1.d0
-                       !    end if
-                       ! end do
-                       ! n_atoms_of_species(j) = max(1.d0, n_atoms_of_species(j))
-                       n_total_cutoff = n_total_cutoff + n_atoms_of_species(j)
-
-                    end do
-
-                 else
-                    call get_pair_correlation( n_sites, &
-                         & neighbors_list, n_neigh,&
-                         & neighbor_species, rjs, params&
-                         &%exp_data(i)%range_min, params&
-                         &%exp_data(i)%range_max, params&
-                         &%exp_data(i)%n_samples, params%exp_data(i)%x,&
-                         & params%exp_data(i)%y_pred, params&
-                         &%pair_correlation_rcut, .false.,&
-                         & .false., 1, 1, n_atoms_of_species(1) )
-                 end if
-
-                 ! call get_pair_correlation( j_end, rjs, params&
-                 !      &%exp_data(i)%range_min, params%exp_data(i)&
-                 !      &%range_max, params%exp_data(i)%n_samples,&
-                 !      & params%exp_data(i)%x, params%exp_data(i)&
-                 !      &%y_pred, params%pair_correlation_rcut  )
-
-#ifdef _MPIF90
-
-                 ! call mpi_reduce(n_total_cutoff,&
-                 !      & n_total_cutoff_temp,  1, MPI_DOUBLE_PRECISION, MPI_SUM, 0,&
-                 !      & MPI_COMM_WORLD, ierr)
-                 ! n_total_cutoff = n_total_cutoff_temp
-
-                 ! call mpi_reduce(n_atoms_of_species,&
-                 !      & n_atoms_of_species_temp,  n_species, MPI_DOUBLE_PRECISION, MPI_SUM, 0,&
-                 !      & MPI_COMM_WORLD, ierr)
-
-                 ! n_atoms_of_species = n_atoms_of_species_temp
-                 ! deallocate(n_atoms_of_species_temp)
-
-                 if ( params%pair_correlation_partial )then
-                    call mpi_reduce(pair_correlation_partial,&
-                         & pair_correlation_partial_temp, params%exp_data(i)&
-                         &%n_samples * n_species * n_species, MPI_DOUBLE_PRECISION, MPI_SUM, 0,&
-                         & MPI_COMM_WORLD, ierr)
-
-                    ! Now store the FULL pair correlation function which comes from these partial pair distribution functions
-                    ! Note, we have only so far divided by 4 pi r^2 dr
-                    ! Therefore, we must scale by the density
-
-                    pair_correlation_partial =  pair_correlation_partial_temp
-                    deallocate( pair_correlation_partial_temp )
-
-                    params%exp_data(i)%y_pred = 0.d0
-                    do j = 1, n_species
-                       do k = 1, n_species
-
-                          pair_correlation_partial(1:params&
-                               &%exp_data(i)%n_samples, j, k) =&
-                               & pair_correlation_partial(1:params&
-                               &%exp_data(i)%n_samples, j, k) *&
-                               & dot_product( cross_product(a_box,&
-                               & b_box), c_box ) / (&
-                               & dfloat(indices(1)*indices(2)&
-                               &*indices(3)) ) /  n_atoms_of_species(j) /  n_atoms_of_species(k) !real(n_sites)
-
-                       end do
-                    end do
-
-                    do j = 1, n_species
-                       do k = 1, n_species
-                          ! params%exp_data(i)%y_pred(1:params%exp_data(i)%n_samples) = &
-                          !      & params%exp_data(i)%y_pred(1:params%exp_data(i)%n_samples)  +  &
-                          !      & (n_atoms_of_species(j) * n_atoms_of_species(k))**(0.5) * &
-                          !      & pair_correlation_partial(1:params%exp_data(i)%n_samples, j, k) &
-                          !      &  / real(n_sites)
-
-                          params%exp_data(i)%y_pred(1:params%exp_data(i)%n_samples) = &
-                               & params%exp_data(i)%y_pred(1:params%exp_data(i)%n_samples)  +  &
-                               & (n_atoms_of_species(j) * n_atoms_of_species(k)) * &
-                               & pair_correlation_partial(1:params%exp_data(i)%n_samples, j, k) &
-                               &  /  real(n_sites) / real(n_sites)
-
-                       end do
-                    end do
-
-                    ! Write out the partial pair correlation functions
-                    if (rank == 0) then
-
-                       do j = 1, n_species
-                          do k = 1, n_species
-
-                             write(filename,'(A)')&
-                                  & 'pair_correlation_' // trim(params&
-                                  &%species_types(j)) // '_' // trim(params&
-                                  &%species_types(k)) //&
-                                  & "_prediction.dat"
-                             call write_exp_datan(params%exp_data(i)&
-                                  &%x(1:params%exp_data(i)%n_samples)&
-                                  &,&
-                                  & pair_correlation_partial(1:params&
-                                  &%exp_data(i)%n_samples, j, k),&
-                                  & md_istep <= 0, filename, params &
-                                  &%exp_data(i)%label)
-
-                          end do
-                       end do
-                       write(filename,'(A)')&
-                            & "pair_correlation_total.dat"
-                       call write_exp_datan(params%exp_data(i)&
-                            &%x(1:params%exp_data(i)%n_samples)&
-                            &,&
-                            & params%exp_data(i)%y_pred(1:params&
-                            &%exp_data(i)%n_samples),&
-                            & md_istep <= 0, filename, params &
-                            &%exp_data(i)%label)
-
-                    end if
-
-                 else
-                    call mpi_reduce(params%exp_data(i)%y_pred,&
-                         & temp_exp_container%y_pred, params %exp_data(i)&
-                         &%n_samples, MPI_DOUBLE_PRECISION, MPI_SUM, 0,&
-                         & MPI_COMM_WORLD, ierr)
-
-                    params%exp_data(i)%y_pred =  temp_exp_container%y_pred
-                    deallocate( temp_exp_container%y_pred )
-                 end if
-
-#endif
-                 ! Multiplying by the 1/density factor (V/n_sites)
-                 ! Still need to check that the integral ( 4 * pi * density * ( int dr r^2 g(r) ) ~= N_sites )
-
-                 params%exp_data(i)%y_pred = params%exp_data(i)%y_pred * &
-                      & dot_product( cross_product(a_box, b_box),&
-                      & c_box ) / (dfloat(indices(1)*indices(2)&
-                      &*indices(3))) / real(n_sites) / real(n_sites)
-
-                 !########################################!
-                 !###---   XRD / SAXS Calculation   ---###!
-                 !########################################!
-
-
-              elseif ( trim(params%exp_data(i)%label) == 'xrd'&
+              if ( trim(params%exp_data(i)%label) == 'xrd'&
                    & .or. trim(params%exp_data(i)%label) ==&
                    & 'saxs' )then
 
@@ -2111,11 +2190,11 @@ program turbogap
 
 
         !       ! Not deallocating the experimental results
-        !       deallocate(params%exp_data(i)%x,  params%exp_data(i)%y_pred)
+        !       deallocate(x_pair_correlation,  params%exp_data(i)%y_pred)
 
         !       ! We can deallocate as we do not care about optimisation, we are just predicting
         !       ! if ( .not. params%exp_data(i)%compute_exp )then
-        !       !    deallocate(params%exp_data(i)%x,  params%exp_data(i)%y_pred)
+        !       !    deallocate(x_pair_correlation,  params%exp_data(i)%y_pred)
         !       ! else
         !       !    deallocate(params%exp_data(i)%x, params&
         !       !         &%exp_data(i)%y, params&

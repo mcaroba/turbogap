@@ -65,30 +65,98 @@ module exp_utils
       end do
     end subroutine check_species_in_list
 
+    subroutine get_partial_structure_factor( structure_factor_partial&
+         &, pair_correlation_partial, q_list , rs, r_cut,&
+         & n_samples_pc, n_samples_sf, n_species, n_atoms_of_species,&
+         & n_sites, window)
+      implicit none
+      real*8 , intent(in), allocatable :: n_atoms_of_species(:)
+      real*8, intent(out) :: structure_factor_partial(:,:,:),&
+           & pair_correlation_partial(:,:,:), q_list(:), rs(:), r_cut
+      integer, intent(in) :: n_samples_pc, n_samples_sf, n_species, n_sites
+      real*8 :: r, q, dr, ca, cb, cabh, w
+      integer :: i, j, k, l,  n
+      real*8, parameter :: pi = acos(-1.0)
+      logical, intent(in) :: window
+
+      ! S_ab(q) = delta_ab + 4 pi rho (ca cb)^0.5
+      !                  * int_0^r_cut dr r^2 [ g_ab(r) - 1 ] sin(qr)/(qr) * sin( pi r / R )/ (pi r /R)
+      ! window corresponds to sin(pi r / R) / (pi r / R)
+      ! rs has size n_samples_pc
+
+      structure_factor_partial = 0.d0
+      n = size(q_list)
+
+      dr = rs(2) - rs(1)
+
+      w = 1.d0
+
+      do i = 1, n_species
+         ca = n_atoms_of_species(i) / dfloat( n_sites )
+         do j = 1, n_species
+
+            if (i > j) then
+               ! We'e calculated the structure factor
+               structure_factor_partial(1:n, i, j ) = structure_factor_partial(1:n, j, i )
+               cycle
+            end if
+
+            cb = n_atoms_of_species(j) / dfloat( n_sites )
+            cabh = ( ca * cb )**(0.5)
+
+            ! Iterate through each q
+            do k = 1, n
+               q = q_list(k)
+
+               do l = 1, n_samples_pc
+                  ! do the integral
+                  if (window) w = sinc( pi * rs(l) / r_cut )
+
+                  structure_factor_partial(k,i,j) = structure_factor_partial(k,i,j) + &
+                       & dr * rs(l)**2 &
+                       & * ( pair_correlation_partial(l, i, j) - 1.d0 ) &
+                       & * sinc( q * rs(l) ) * w
+               end do
+
+               structure_factor_partial(k,i,j) = 4.d0 * pi * cabh * structure_factor_partial(k,i,j)
+
+               if (i == j)then
+                  structure_factor_partial(k,i,j)  = structure_factor_partial(k,i,j)  + 1.d0
+               end if
+            end do
+         end do
+      end do
+
+    end subroutine get_partial_structure_factor
+
+
 
     subroutine get_pair_correlation(  n_sites0, &
          & neighbors_list, n_neigh, neighbor_species, rjs, r_min, r_max, n_samples, x,&
          & pair_correlation, r_cut, return_histogram,&
-         & partial_rdf, species_1, species_2, n_atoms_of_species )
+         & partial_rdf, species_1, species_2, kde_sigma )
       implicit none
-      real*8,  intent(in) :: rjs(:)
+      real*8,  intent(in) :: rjs(:), kde_sigma
       real*8 :: r_min, r_max, r_cut
       integer, intent(in) :: neighbors_list(:), n_neigh(:), neighbor_species(:)
       integer, intent(in) :: n_sites0, n_samples, species_1, species_2
-      integer :: n_sites, n_pairs, count_species_1, count_species_2
+      integer :: n_sites, n_pairs, count, count_species_1
       integer :: i, j, k, i2, j2, l, ind_bin_l, ind_bin_h, species_i, species_j
       real*8,  intent(inout) :: pair_correlation(1:n_samples), x(1:n_samples)
-      real*8, intent(out) :: n_atoms_of_species
-      real*8, allocatable :: bin_edges(:), dV(:), n_atoms_in_cutoff(:) ! spherical shell volume
-      real*8 :: r
+      real*8, allocatable :: bin_edges(:), dV(:), kde(:)
+      real*8 :: r, n_pc
       real*8, parameter :: pi = acos(-1.0)
       logical, intent(in) :: partial_rdf
       logical :: return_histogram, species_in_list, counted_1=.false.
-
       ! First allocate the pair correlation function array
 
       allocate(bin_edges(1:n_samples+1))
       if ( .not. return_histogram ) allocate(dV(1:n_samples))
+
+      if (kde_sigma > 0.d0)then
+         allocate(kde(1:n_samples))
+         kde = 0.d0
+      end if
 
       n_sites = size(n_neigh)
       n_pairs = size(neighbors_list)
@@ -96,8 +164,6 @@ module exp_utils
       x = 0.d0
       bin_edges = 0.d0
       pair_correlation = 0.d0
-
-      n_atoms_of_species = 0.d0
 
       ! check that r_min is less than r_max
       if (r_min > r_max)then
@@ -116,19 +182,13 @@ module exp_utils
          x(i) = (bin_edges(i) + bin_edges(i+1)) / 2.d0
 
          if ( .not. return_histogram )then
-            ! 4 pi dV
-            !            dV(i) = 4.d0 * pi * (bin_edges(i+1)**3 - bin_edges(i)**3)
-            ! 4 pi r^2 dr
             dV(i) = 4.d0 * pi * (bin_edges(i)**2 * (bin_edges(i+1) - bin_edges(i)) )
          end if
 
       end do
 
-      allocate(n_atoms_in_cutoff(1:n_sites))
-      n_atoms_in_cutoff = 0.d0
+      count = 0
       count_species_1 = 0
-      count_species_2 = 0
-
       k = 0
       do i = 1, n_sites
          ! k is the index which keeps a number of the atom pairs
@@ -136,7 +196,6 @@ module exp_utils
          i2 = modulo(neighbors_list(k+1)-1, n_sites0) + 1
          species_i = neighbor_species(k+1)
 
-         counted_1 = .false.
          do j = 1, n_neigh(i)
             ! Loop through the neighbors of atom i
             ! j2 is the index of a neighboring atom to i
@@ -146,20 +205,17 @@ module exp_utils
             species_j = neighbor_species(k)
 
             if (partial_rdf)then
-               if (species_i /= species_1) cycle
+               if (species_i /= species_1) then
+                  cycle
+               elseif(j == 1)then
+                  count_species_1 = count_species_1 + 1
+               end if
+
             end if
 
             if (partial_rdf)then
                if (species_j /= species_2) cycle
             end if
-
-            if (.not. counted_1)then
-               count_species_1 = count_species_1 + 1
-               counted_1 = .true.
-            end if
-
-            count_species_2 = count_species_2 + 1
-            n_atoms_in_cutoff(i) = n_atoms_in_cutoff(i) + 1.d0
 
             r = rjs(k) ! atom pair distance
 
@@ -178,12 +234,36 @@ module exp_utils
                cycle
             end if
 
-         
-            call binary_search_real( r, bin_edges, 1, n_samples+1, ind_bin_l, ind_bin_h )
+            if (kde_sigma > 0.d0)then
+               ! do a kernel density estimate
+               count = count + 1
+               kde = 0.d0
+               do l = 1,n_samples
+                  kde(l) = kde(l) +  exp( -( (x(l) - r) / kde_sigma )**2 / 2.d0 )
+               end do
+               pair_correlation(1:n_samples) = pair_correlation(1:n_samples) + &
+                    & kde(1:n_samples)
+            else
 
-            pair_correlation(ind_bin_l) = pair_correlation(ind_bin_l) +  1.d0
+               call binary_search_real( r, bin_edges, 1, n_samples+1, ind_bin_l, ind_bin_h )
+               pair_correlation(ind_bin_l) = pair_correlation(ind_bin_l) +  1.d0
+            end if
+
          end do
       end do
+
+
+      ! I don't know why the factor of 1 / n_samples / 0.1 works, but
+      ! it seems to do so for all values of sigma and samples checked
+      ! for...
+
+      if (kde_sigma>0.d0)then
+         pair_correlation(1:n_samples) =&
+              & pair_correlation(1:n_samples) / sqrt(2.d0 * pi) /&
+              & (kde_sigma) / dfloat(n_samples) / 0.1d0
+      end if
+
+      !( dfloat(count_species_1) )
 
       ! Remember that this is done for each process, so then the final
       ! result should be a reduction summation of all of these
@@ -196,16 +276,7 @@ module exp_utils
       end if
 
       deallocate(bin_edges)
-
-      ! print *, count_species_1
-      ! n_atoms_of_species = 0.d0
-      ! do i = 1, n_sites
-      !    n_atoms_of_species = n_atoms_of_species + n_atoms_in_cutoff(i) !/ dfloat(count_species_1)
-      ! end do
-
-      n_atoms_of_species = dfloat(count_species_1)
-      n_atoms_of_species = max(1.d0 , n_atoms_of_species)
-      deallocate(n_atoms_in_cutoff)
+      if (kde_sigma>0.d0) deallocate(kde)
 
     end subroutine get_pair_correlation
 
@@ -520,6 +591,75 @@ module exp_utils
 
     end subroutine get_experimental_forces
 
+
+    subroutine get_xrd_from_partial_structure_factors(&
+         & structure_factor_partial, n_species, species_types,&
+         & species, wavelength, damping, alpha, method, use_iwasa,&
+         & x, y, n_atoms_of_species )
+      implicit none
+      real*8, intent(in) :: damping, wavelength, alpha, structure_factor_partial(:,:,:)
+      integer, intent(in) :: species(:)
+      logical, intent(in) :: use_iwasa
+      integer, intent(in) :: n_species
+      character*8, allocatable :: species_types(:)
+      character*32, intent(in) :: method
+      real*8 :: prefactor, p, c, c2, rij, diff(1:3), intensity, mag, sth, wfaci, wfacj, wfac_n, ntot
+      integer :: i, j, k, l, n
+      real*8 , intent(in), allocatable :: n_atoms_of_species(:)
+      real*8, intent(in) :: x(:)
+      real*8, intent(out) :: y(:)
+      real*8, parameter :: pi = acos(-1.0)
+      real*8, allocatable :: s(:)
+
+      y = 0.d0
+      n = size(x)
+
+      allocate(s(1:n))
+
+      ! x is in units of 2θ for XRD and in units of q for SAXS
+      if (trim(method) == "saxs")then
+         do i = 1, n
+            s(i) =  x(i) / 2.d0 / pi
+         end do
+      else
+         ! Do XRD
+         do i = 1, n
+            s(i) = 2.d0 * sin( x(i) * pi / 180.d0 / 2.d0 ) / wavelength
+         end do
+      end if
+
+      ntot = sum(n_atoms_of_species)
+
+      do l = 1, n
+         prefactor = exp( - damping * s(l)**(2.d0) / 2.d0 )
+         if (use_iwasa)then
+            sth = ( wavelength * s(l) / 2.0d0 )
+            p = 1.0d0 - sth * sth
+            if (p < 0) p = 0.0d0
+            c = sqrt(p)
+            c2 = cos(2.0d0 * acos(c))
+            prefactor = prefactor  *  c / (1.0d0 + alpha * c2**(2.d0))
+         end if
+
+         wfac_n = 0.d0
+         do i = 1, n_species
+            call get_waasmaier(species_types(i), s(l), wfaci)
+            wfac_n = wfac_n + wfaci*wfaci*( n_atoms_of_species(i) / ntot )
+
+            do j = 1, n_species
+               call get_waasmaier(species_types(j), s(l), wfacj)
+
+
+               y(l) = wfaci * wfacj * ( n_atoms_of_species(i) / ntot ) * ( n_atoms_of_species(j) / ntot ) &
+                    & * structure_factor_partial(l,i,j)
+            end do
+         end do
+         y(l) = y(l) / wfac_n
+      end do
+
+
+      
+    end subroutine get_xrd_from_partial_structure_factors
 
 
     ! subroutine get_xrd( n_neigh, neighbors_list, neighbor_species, rjs, xyz, &
@@ -870,13 +1010,11 @@ module exp_utils
 
     end subroutine get_xrd_single_process
 
-
     function sinc(x) !sinc function as used in DSP
       implicit none
       real*8 :: sinc
       real*8 :: x
       real*8, parameter :: pi = acos(-1.0)
-      x = x*pi
       sinc = 1.0
       if (x /= 0.0) sinc = sin(x)/x
     end function sinc
@@ -886,10 +1024,30 @@ module exp_utils
       real*8 :: cosc
       real*8 :: x
       real*8, parameter :: pi = acos(-1.0)
-      x = x*pi
       cosc = 1.0
       if (x /= 0.0) cosc = cos(x)/x
     end function cosc
+
+
+    function sincp(x) !sinc function as used in DSP
+      implicit none
+      real*8 :: sincp
+      real*8 :: x
+      real*8, parameter :: pi = acos(-1.0)
+      x = x*pi
+      sincp = 1.0
+      if (x /= 0.0) sincp = sin(x)/x
+    end function sincp
+
+    function coscp(x)
+      implicit none
+      real*8 :: coscp
+      real*8 :: x
+      real*8, parameter :: pi = acos(-1.0)
+      x = x*pi
+      coscp = 1.0
+      if (x /= 0.0) coscp = cos(x)/x
+    end function coscp
 
     
     subroutine get_waasmaier(element, s, f)

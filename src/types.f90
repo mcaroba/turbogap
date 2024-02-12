@@ -33,13 +33,21 @@ module types
   ! GAP+descriptor data structure for SOAP
   type exp_data_container
      character*1024      :: file_data="none", label
-     integer             :: n_data, n_samples=200, n_parameters
+     integer             :: n_data, n_samples=200
      logical             :: compute_similarity=.false., compute_exp=.false.,&
           & wrote_exp=.false., user_range=.false., compute_forces=.false.
      real*8, allocatable :: data(:,:), x(:), y(:), y_pred(:), &
           & y_pred_prev(:)
      real*8              :: similarity, range_min=0.d0, range_max=1.d0
   end type exp_data_container
+
+  type exp_pred_container
+     integer             :: n_samples=200
+     logical             :: write=.false.
+     real*8, allocatable :: x(:), y(:)
+     real*8              :: range_min=0.d0, range_max=1.d0
+  end type exp_pred_container
+
 
 
   type local_property_soap_turbo
@@ -116,12 +124,15 @@ module types
               max_opt_step_eps = 0.05d0, mc_mu = 0.0d0, t_extra = 0.d0, p_nested = 0.d0, &
               nested_max_strain = 0.d0, nested_max_volume_change = 0.d0, mc_move_max = 1.d0, &
               mc_lnvol_max = 0.01d0, mc_min_dist = 0.2d0, xps_sigma=0.4d0, mc_reverse_lambda = 0.d0, &
-              xrd_wavelength = 1.5405981d0, xrd_damping=0.04, xrd_alpha=1.01d0, xrd_rcut=4.d0, pair_correlation_rcut=4.d0
-
-    integer :: md_nsteps = 1, mc_nsteps = 1, write_xyz = 0, write_thermo = 1, which_atom = 0, &
-               vdw_mbd_nfreq = 11, n_mc_types = 0, n_nested = 0,&
-               & mc_idx = 1, mc_nrelax=0, n_local_properties=0,&
-               & n_moments=0, n_mc_swaps = 0, xps_idx, xrd_idx, saxs_idx, n_exp=0
+              xrd_wavelength = 1.5405981d0, xrd_damping=0.04,&
+              & xrd_alpha=1.01d0, xrd_rcut=4.d0, q_range_min=1.0, q_range_max=5.d0,&
+              & r_range_min=1.0, r_range_max=5.d0, pair_correlation_rcut=4.d0, pair_correlation_kde_sigma=0.d0
+    integer :: md_nsteps = 1, mc_nsteps = 1, write_xyz = 0,&
+         & write_thermo = 1, which_atom = 0, vdw_mbd_nfreq = 11,&
+         & n_mc_types = 0, n_nested = 0, mc_idx = 1, mc_nrelax=0,&
+         & n_local_properties=0, n_moments=0, n_mc_swaps = 0, xps_idx&
+         &, xrd_idx, saxs_idx, n_exp=0, pair_correlation_n_samples&
+         &=200, structure_factor_n_samples=200, xrd_n_samples=200
     integer, allocatable :: mc_swaps_id(:)
 
     character*1024 :: atoms_file
@@ -150,10 +161,12 @@ module types
          &=.false., exp_forces=.false., print_lp_forces&
          &=.false., mc_hamiltonian = .false., accessible_volume =&
          & .false., mc_reverse = .false., xrd_iwasa = .true., pair_correlation_partial=.false.,&
-         & structure_factor_window = .true.
+         & structure_factor_window = .true., write_pair_correlation=.false., write_structure_factor=.false.,&
+         & do_pair_correlation = .false., do_structure_factor=.false., do_xrd=.false.
 
     logical, allocatable :: write_local_properties(:)
     type(exp_data_container), allocatable :: exp_data(:)
+    type(exp_pred_container) :: pair_correlation_params, structure_factor_params, xrd_params
   end type input_parameters
 
 
