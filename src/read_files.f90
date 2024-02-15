@@ -966,8 +966,7 @@ end if
         read(10, *, iostat=iostatus) cjunk, cjunk, params%do_structure_factor
         if (params%do_structure_factor)then
            params%do_pair_correlation = .true.
-           params%pair_correlation_partial = .true.
-        end if
+         end if
 
       else if(keyword=='structure_factor_window')then
         backspace(10)
@@ -979,8 +978,7 @@ end if
 
         if (params%do_xrd)then
            params%do_pair_correlation = .true.
-           params%pair_correlation_partial = .true.
-           params%do_structure_factor = .true.
+!           params%do_structure_factor = .true.
         end if
 
       else if(keyword=='do_exp')then
@@ -1053,6 +1051,10 @@ end if
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%pair_correlation_partial
 
+      else if( keyword == "structure_factor_partial" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%structure_factor_partial
+
 
       else if( keyword == "pair_correlation_kde_sigma" )then
         backspace(10)
@@ -1065,6 +1067,10 @@ end if
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%write_structure_factor
 
+      else if( keyword == "write_xrd" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%write_xrd
+
 
       else if( keyword == "pair_correlation_n_samples" )then
         backspace(10)
@@ -1074,6 +1080,7 @@ end if
       else if( keyword == "structure_factor_n_samples" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%structure_factor_n_samples
+
 
       else if( keyword == "xrd_n_samples" )then
         backspace(10)
@@ -1096,6 +1103,10 @@ end if
       else if( keyword == "q_range_max" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%q_range_max
+
+      else if( keyword == "q_units" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%q_units
 
       else if( keyword == "exp_n_samples" )then
          backspace(10)

@@ -143,7 +143,7 @@ module types
     character*16 :: optimize = "vv", mc_relax_opt = "gd", mc_hybrid_opt = "vv"
     character*32 :: barostat = "none", thermostat = "none",&
          & barostat_sym = "isotropic", mc_species = "none",&
-         & xps_force_type = "similarity", exp_similarity_type = "squared_diff", xrd_method = ""
+         & xps_force_type = "similarity", exp_similarity_type = "squared_diff", xrd_method = "", q_units="q"
     logical :: do_md = .false., do_mc = .false., do_prediction =&
          & .false., do_forces = .false., do_derivatives = .false.,&
          & do_derivatives_fd = .false., write_soap = .false.,&
@@ -161,8 +161,9 @@ module types
          &=.false., exp_forces=.false., print_lp_forces&
          &=.false., mc_hamiltonian = .false., accessible_volume =&
          & .false., mc_reverse = .false., xrd_iwasa = .true., pair_correlation_partial=.false.,&
+         & structure_factor_partial=.false.,&
          & structure_factor_window = .true., write_pair_correlation=.false., write_structure_factor=.false.,&
-         & do_pair_correlation = .false., do_structure_factor=.false., do_xrd=.false.
+         & do_pair_correlation = .false., do_structure_factor=.false., do_xrd=.false., write_xrd=.false.
 
     logical, allocatable :: write_local_properties(:)
     type(exp_data_container), allocatable :: exp_data(:)
