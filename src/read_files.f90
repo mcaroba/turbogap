@@ -618,7 +618,7 @@ end if
     character*32 :: implemented_thermostats(1:3)
     character*32 :: implemented_barostats(1:2)
     character*32 :: implemented_mc_types(1:8)
-    character*32 :: implemented_exp_observables(1:4)
+    character*32 :: implemented_exp_observables(1:5)
     character*2 :: element
     character*1 :: keyword_first
     logical :: are_vdw_refs_read(1:3), valid_choice, masses_in_input_file = .false.
@@ -642,7 +642,8 @@ end if
     implemented_exp_observables(1) = "xps"
     implemented_exp_observables(2) = "xrd"
     implemented_exp_observables(3) = "saxs"
-    implemented_exp_observables(4) = "pair_correlation"
+    implemented_exp_observables(4) = "pair_distribution"
+    implemented_exp_observables(5) = "structure_factor"
 
 
     k = 0.d0
@@ -957,15 +958,15 @@ end if
              &%compute_local_properties(nw),nw=1 ,params&
              &%n_local_properties)
 
-      else if(keyword=='do_pair_correlation')then
+      else if(keyword=='do_pair_distribution')then
         backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%do_pair_correlation
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%do_pair_distribution
 
       else if(keyword=='do_structure_factor')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%do_structure_factor
         if (params%do_structure_factor)then
-           params%do_pair_correlation = .true.
+           params%do_pair_distribution = .true.
          end if
 
       else if(keyword=='structure_factor_window')then
@@ -977,7 +978,7 @@ end if
         read(10, *, iostat=iostatus) cjunk, cjunk, params%do_xrd
 
         if (params%do_xrd)then
-           params%do_pair_correlation = .true.
+           params%do_pair_distribution = .true.
 !           params%do_structure_factor = .true.
         end if
 
@@ -1005,11 +1006,17 @@ end if
             else if(trim(params%exp_data(nw)%label) == "xrd")then
                params%xrd_idx = nw
                ! Must be set to true to find the partial structure factors
-               params%pair_correlation_partial = .true.
+               ! params%pair_distribution_partial = .true.
             else if(trim(params%exp_data(nw)%label) == "saxs")then
                params%saxs_idx = nw
                ! Must be set to true to find the partial structure factors
-               params%pair_correlation_partial = .true.
+               ! params%pair_distribution_partial = .true.
+            else if(trim(params%exp_data(nw)%label) == "pair_distribution")then
+               params%pdf_idx = nw
+
+            else if(trim(params%exp_data(nw)%label) == "structure_factor")then
+               params%sf_idx = nw
+
             end if
          end do
       else if( keyword == "exp_data_files" )then
@@ -1043,26 +1050,26 @@ end if
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%xrd_rcut
 
-      else if( keyword == "pair_correlation_rcut" )then
+      else if( keyword == "pair_distribution_rcut" )then
         backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%pair_correlation_rcut
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%pair_distribution_rcut
 
-      else if( keyword == "pair_correlation_partial" )then
+      else if( keyword == "pair_distribution_partial" )then
         backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%pair_correlation_partial
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%pair_distribution_partial
 
-      else if( keyword == "structure_factor_partial" )then
+      else if( keyword == "structure_factor_from_rdf" )then
         backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%structure_factor_partial
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%structure_factor_from_rdf
 
 
-      else if( keyword == "pair_correlation_kde_sigma" )then
+      else if( keyword == "pair_distribution_kde_sigma" )then
         backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%pair_correlation_kde_sigma
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%pair_distribution_kde_sigma
 
-      else if( keyword == "write_pair_correlation" )then
+      else if( keyword == "write_pair_distribution" )then
         backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%write_pair_correlation
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%write_pair_distribution
       else if( keyword == "write_structure_factor" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%write_structure_factor
@@ -1072,9 +1079,9 @@ end if
         read(10, *, iostat=iostatus) cjunk, cjunk, params%write_xrd
 
 
-      else if( keyword == "pair_correlation_n_samples" )then
+      else if( keyword == "pair_distribution_n_samples" )then
         backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%pair_correlation_n_samples
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%pair_distribution_n_samples
 
 
       else if( keyword == "structure_factor_n_samples" )then
@@ -1493,6 +1500,23 @@ end if
              write(*,*)' In the input file.                    |'
              write(*,*)'                                       |'
           end if
+
+          ! if ( trim(params%exp_data(i)%label) == 'pair_distribution')then
+          !    write(*,'(A,1X,A,1X,A)') trim(params%exp_data(i)%label), ' found, setting r_range_min/max ', '     |'
+          !    params%r_range_min = params%exp_data(i)%range_min
+          !    params%r_range_max = params%exp_data(i)%range_max
+          ! elseif ( trim(params%exp_data(i)%label) == 'xrd')then
+          !    write(*,'(A,1X,A,1X,A)') trim(params%exp_data(i)%label), ' found, setting q_range_min/max with q_units = "twotheta"', ' |'
+          !    params%q_range_min = params%exp_data(i)%range_min
+          !    params%q_range_max = params%exp_data(i)%range_max
+          !    params%q_units = 'twotheta'
+          ! elseif ( trim(params%exp_data(i)%label) == 'saxs')then
+          !    write(*,'(A,1X,A,1X,A)') trim(params%exp_data(i)%label), ' found, setting q_range_min/max with q_units = "q"', ' |'
+          !    params%q_range_min = params%exp_data(i)%range_min
+          !    params%q_range_max = params%exp_data(i)%range_max
+          !    params%q_units = 'q'
+          ! end if
+
 
           write(*,'(A,1X,F12.6,1X,A,F12.6,1X,A)')' min =', params&
                &%exp_data(i)%range_min, ' max =', params%exp_data(i)&

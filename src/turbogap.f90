@@ -68,7 +68,7 @@ program turbogap
        & energies_2b(:), forces_2b(:,:), energies_3b(:), forces_3b(:&
        &,:), energies_core_pot(:), forces_core_pot(:,:), velocities(:&
        &,:), masses_types(:), masses(:),  hirshfeld_v_temp(:),&
-       & masses_temp(:)
+       & masses_temp(:), sf_parameters(:,:)
 !  real*8, allocatable, target :: this_hirshfeld_v(:), this_hirshfeld_v_cart_der(:,:)
 !  real*8, pointer :: this_hirshfeld_v_pt(:), this_hirshfeld_v_cart_der_pt(:,:)
 
@@ -146,9 +146,9 @@ program turbogap
   real*8, allocatable :: v_neigh_lp(:), energies_lp(:), forces_lp(:,:), this_energies_lp(:), this_forces_lp(:,:)
   ! MPI stuff
   real*8, allocatable :: temp_1d(:), temp_1d_bis(:), temp_2d(:,:),&
-       & pair_correlation_partial(:,:,:), &
-       & pair_correlation_partial_temp(:,:,:), n_atoms_of_species(:), structure_factor_partial(:,:,:), &
-       & structure_factor_partial_temp(:,:,:), x_pair_correlation(:), y_pair_correlation(:), y_pair_correlation_temp(:), &
+       & pair_distribution_partial(:,:,:), &
+       & pair_distribution_partial_temp(:,:,:), n_atoms_of_species(:), structure_factor_partial(:,:,:), &
+       & structure_factor_partial_temp(:,:,:), x_pair_distribution(:), y_pair_distribution(:), y_pair_distribution_temp(:), &
        & x_structure_factor(:), x_structure_factor_temp(:), y_structure_factor(:),&
        & y_structure_factor_temp(:), x_xrd(:), x_xrd_temp(:), y_xrd(:), y_xrd_temp(:)
   integer, allocatable :: temp_1d_int(:), n_atom_pairs_by_rank(:),&
@@ -167,6 +167,14 @@ program turbogap
   integer :: i_nested, i_max, i_image, i_current_image=1, i_trial_image=2
   type(image), allocatable :: images(:), images_temp(:)
   type(exp_data_container) :: temp_exp_container
+  character*32 :: implemented_exp_observables(1:5)
+
+  implemented_exp_observables(1) = "xps"
+  implemented_exp_observables(2) = "xrd"
+  implemented_exp_observables(3) = "saxs"
+  implemented_exp_observables(4) = "pair_distribution"
+  implemented_exp_observables(5) = "structure_factor"
+
   !**************************************************************************
 
   !**************************************************************************
@@ -402,8 +410,8 @@ program turbogap
         if( params%xrd_rcut > rcut_max )then
            rcut_max = params%xrd_rcut
         end if
-        if( params%pair_correlation_rcut > rcut_max )then
-           rcut_max = params%pair_correlation_rcut
+        if( params%pair_distribution_rcut > rcut_max )then
+           rcut_max = params%pair_distribution_rcut
         end if
 
         !   We increase rcut_max by the neighbors buffer
@@ -1612,6 +1620,36 @@ program turbogap
 !     > experimental_forces = .true. will add forces to the calculation
 !     > exp_
 
+        if ( params%do_exp )then
+           do i = 1, params%n_exp
+
+              !####################################################!
+              !###---   Compute Experimental Interpolation   ---###!
+              !####################################################!
+
+              ! If we want to compute the experimental interpolation, we do it now.
+              if ( params%exp_data(i)%compute_exp )then
+                 call calculate_exp_interpolation(params%exp_data(i)&
+                      &%x, params%exp_data(i)%y, params%exp_data(i)&
+                      &%n_samples, params%exp_data(i)%data)
+              end if
+
+              if ( params%exp_data(i)%compute_exp .and. .not.  params&
+                   &%exp_data(i)%wrote_exp .and. rank == 0  ) then
+
+                 write(filename,'(A,A)') trim(params&
+                      &%exp_data(i)%label), "_exp.dat"
+                 call write_exp_data(params&
+                      &%exp_data(i)%x, params&
+                      &%exp_data(i)%y, md_istep <= 0,&
+                      & filename, params%exp_data(i)%label)
+
+                 params%exp_data(i)%wrote_exp = .true.
+
+              end if
+           end do
+        end if
+
 
         !     Compute core_electron_be energies and forces
         if( any( soap_turbo_hypers(:)%has_core_electron_be ) .and.( params%do_prediction ) &
@@ -1705,12 +1743,17 @@ program turbogap
         ! > We use the formalism which was detailed by
         !   Gutierrez and Johansson, Physical Review B, Volume 65, 104202 (2002)
         !   such that there is consistency between the rdfs and the scattering we calculate.
-
+        !
+        ! > Furthermore, calculating the pair correlation function and
+        !   the structure factor/XRD become much faster, as there is just
+        !   a sum over species rather than a double sum over all the
+        !   atomic species.
+        !
         !   (The ASE implementation of XRD intensity is problematic and
         !   uses the sinc function implemented by DSP
         !   (sin(pi*x)/(pi*x)) which is not what is in the
         !   literature).
-
+        !
         ! ***--- Steps for calculation ---***
         ! 1) We calculate the partial pair distribution functions g_ab
         ! 2) Partial static structure factors S_ab are then calculated from this by Fourier transform
@@ -1748,104 +1791,113 @@ program turbogap
         !
         ! S_ab(q) = delta_ab + 4 pi rho (ca cb)^1/2 int_0^r_cut dr r^2 [ g_ab(r) - 1 ] sin(qr)/(qr) * sin( pi r / R )/ (pi r /R)
 
-        if (params%do_pair_correlation .or. params%do_structure_factor .or. params%do_xrd)then
+        if (params%do_pair_distribution)then
            ! first allocate the necessary arrays for the
            ! calculation of the pair correlation function
-           if (allocated( x_pair_correlation)) deallocate(x_pair_correlation)
-           if (allocated( y_pair_correlation)) deallocate(y_pair_correlation)
+           if (allocated( x_pair_distribution)) deallocate(x_pair_distribution)
+           if (allocated( y_pair_distribution)) deallocate(y_pair_distribution)
 
-           allocate( x_pair_correlation( 1: params%pair_correlation_n_samples) )
-           allocate( y_pair_correlation( 1: params%pair_correlation_n_samples) )
+           allocate( x_pair_distribution( 1: params%pair_distribution_n_samples) )
+           allocate( y_pair_distribution( 1: params%pair_distribution_n_samples) )
 
-           if (params%pair_correlation_partial)then
-              if (allocated(pair_correlation_partial))  deallocate(pair_correlation_partial)
-              allocate( pair_correlation_partial(1:params%pair_correlation_n_samples,&
+           if (params%pair_distribution_partial)then
+              if (allocated(pair_distribution_partial))  deallocate(pair_distribution_partial)
+              allocate( pair_distribution_partial(1:params%pair_distribution_n_samples,&
                    & 1 : n_species , 1 : n_species) )
-              allocate(n_atoms_of_species(1:n_species))
-              pair_correlation_partial = 0.d0
+
+              pair_distribution_partial = 0.d0
            end if
+
+           if(allocated(n_atoms_of_species)) deallocate(n_atoms_of_species)
+           allocate(n_atoms_of_species(1:n_species))
+
+           do j = 1, n_species
+              n_atoms_of_species(j) = 0.d0
+              do i2 = 1, n_sites
+                 if ( species(i2) == j)then
+                    n_atoms_of_species(j) = n_atoms_of_species(j) + 1.d0
+                 end if
+              end do
+           end do
 
 
 #ifdef _MPIF90
-           if (params%pair_correlation_partial)then
-              allocate( pair_correlation_partial_temp(1:params%pair_correlation_n_samples, 1 : n_species , 1 :&
+           if (params%pair_distribution_partial)then
+              allocate( pair_distribution_partial_temp(1:params%pair_distribution_n_samples, 1 : n_species , 1 :&
                    & n_species) )
 
-              pair_correlation_partial_temp = 0.0d0
+              pair_distribution_partial_temp = 0.0d0
            end if
 
-           allocate( y_pair_correlation_temp( 1: params%pair_correlation_n_samples) )
-           y_pair_correlation_temp = 0.d0
+           allocate( y_pair_distribution_temp( 1: params%pair_distribution_n_samples) )
+           y_pair_distribution_temp = 0.d0
 
 #endif
+           v_uc = dot_product( cross_product(a_box,&
+                & b_box), c_box ) / (&
+                & dfloat(indices(1)*indices(2)&
+                &*indices(3)) )
 
-           if ( params%pair_correlation_partial )then
+           if ( params%pair_distribution_partial )then
               do j = 1, n_species
-                 n_atoms_of_species(j) = 0.d0
-                 do i2 = 1, n_sites
-                    if ( species(i2) == j)then
-                       n_atoms_of_species(j) = n_atoms_of_species(j) + 1.d0
-                    end if
-                 end do
-
                  do k = 1, n_species
 
                     if (j > k)then
                        ! we have already calculated the pair correlation function!
-                       pair_correlation_partial(1:params%pair_correlation_n_samples, j, k) = &
-                            & pair_correlation_partial(1:params%pair_correlation_n_samples, k, j)
+                       pair_distribution_partial(1:params%pair_distribution_n_samples, j, k) = &
+                            & pair_distribution_partial(1:params%pair_distribution_n_samples, k, j)
 
                     else
-                       call get_pair_correlation( n_sites, &
+                       call get_pair_distribution( n_sites, &
                             & neighbors_list(j_beg:j_end), n_neigh(i_beg:i_end),&
                             & neighbor_species(j_beg:j_end), rjs(j_beg:j_end), params&
-                            &%r_range_min, params%r_range_max, params%pair_correlation_n_samples, x_pair_correlation,&
-                            & pair_correlation_partial(1:params%pair_correlation_n_samples, j, k), params&
-                            &%pair_correlation_rcut, .false.,&
-                            & params%pair_correlation_partial, j, k, params%pair_correlation_kde_sigma)
+                            &%r_range_min, params%r_range_max, params%pair_distribution_n_samples, x_pair_distribution,&
+                            & pair_distribution_partial(1:params%pair_distribution_n_samples, j, k), params&
+                            &%pair_distribution_rcut, .false.,&
+                            & params%pair_distribution_partial, j, k,&
+                            & params%pair_distribution_kde_sigma,&
+                            & dfloat(n_sites)/v_uc)
 
                     end if
                  end do
               end do
 
            else
-              call get_pair_correlation( n_sites, &
+              call get_pair_distribution( n_sites, &
                    & neighbors_list(j_beg:j_end), n_neigh(i_beg:i_end),&
                    & neighbor_species(j_beg:j_end), rjs(j_beg:j_end),&
                    & params%r_range_min, params%r_range_max, params &
-                   &%pair_correlation_n_samples, x_pair_correlation,&
-                   & y_pair_correlation, params &
-                   &%pair_correlation_rcut, .false., .false., 1, 1,&
-                   & params%pair_correlation_kde_sigma)
+                   &%pair_distribution_n_samples, x_pair_distribution,&
+                   & y_pair_distribution, params &
+                   &%pair_distribution_rcut, .false., .false., 1, 1,&
+                   & params%pair_distribution_kde_sigma, dfloat(n_sites)/v_uc)
            end if
 
 
-           if ( params%pair_correlation_partial )then
+           if ( params%pair_distribution_partial )then
 #ifdef _MPIF90
-              call mpi_reduce(pair_correlation_partial,&
-                   & pair_correlation_partial_temp, params&
-                   &%pair_correlation_n_samples * n_species *&
+              call mpi_reduce(pair_distribution_partial,&
+                   & pair_distribution_partial_temp, params&
+                   &%pair_distribution_n_samples * n_species *&
                    & n_species, MPI_DOUBLE_PRECISION, MPI_SUM,&
                    & 0, MPI_COMM_WORLD, ierr)
 
-              ! Now store the FULL pair correlation function which comes from these partial pair distribution functions
+              ! Now store the FULL pair distribution function which comes from these partial pair distribution functions
               ! Note, we have only so far divided by 4 pi r^2 dr
               ! Therefore, we must scale by the density
 
-              pair_correlation_partial =  pair_correlation_partial_temp
-              deallocate( pair_correlation_partial_temp )
+              pair_distribution_partial =  pair_distribution_partial_temp
+              deallocate( pair_distribution_partial_temp )
 #endif
-              y_pair_correlation = 0.d0
+
+              y_pair_distribution = 0.d0
               do j = 1, n_species
                  do k = 1, n_species
 
-                    pair_correlation_partial(1:params%pair_correlation_n_samples, j, k) =&
-                         & pair_correlation_partial(1:params&
-                         &%pair_correlation_n_samples, j, k) *&
-                         & dot_product( cross_product(a_box,&
-                         & b_box), c_box ) / (&
-                         & dfloat(indices(1)*indices(2)&
-                         &*indices(3)) ) /  n_atoms_of_species(j) /  n_atoms_of_species(k) !real(n_sites)
+                    pair_distribution_partial(1:params%pair_distribution_n_samples, j, k) =&
+                         & pair_distribution_partial(1:params&
+                         &%pair_distribution_n_samples, j, k) * v_uc &
+                         &  /  n_atoms_of_species(j) /  n_atoms_of_species(k) !real(n_sites)
 
 
                  end do
@@ -1854,10 +1906,10 @@ program turbogap
               do j = 1, n_species
                  do k = 1, n_species
 
-                    y_pair_correlation(1:params%pair_correlation_n_samples) = &
-                         &y_pair_correlation(1:params%pair_correlation_n_samples)  +  &
+                    y_pair_distribution(1:params%pair_distribution_n_samples) = &
+                         &y_pair_distribution(1:params%pair_distribution_n_samples)  +  &
                          & (n_atoms_of_species(j) * n_atoms_of_species(k)) * &
-                         & pair_correlation_partial(1:params%pair_correlation_n_samples, j, k) &
+                         & pair_distribution_partial(1:params%pair_distribution_n_samples, j, k) &
                          &  /  dfloat(n_sites) / dfloat(n_sites)
 
                  end do
@@ -1865,96 +1917,116 @@ program turbogap
 
 #ifdef _MPIF90
 
-              call mpi_bcast(pair_correlation_partial, params&
-                   &%pair_correlation_n_samples * n_species *&
+              call mpi_bcast(pair_distribution_partial, params&
+                   &%pair_distribution_n_samples * n_species *&
                    & n_species, MPI_DOUBLE_PRECISION, 0,&
                    & MPI_COMM_WORLD, ierr)
 
+              call mpi_bcast(y_pair_distribution, params&
+                   &%pair_distribution_n_samples, MPI_DOUBLE_PRECISION, 0,&
+                   & MPI_COMM_WORLD, ierr)
+
+
 #endif
-              ! Write out the partial pair correlation functions
-              if (rank == 0 .and. params%write_pair_correlation) then
-
-                 do j = 1, n_species
-                    do k = 1, n_species
-
-                       write(filename,'(A)')&
-                            & 'pair_correlation_' // trim(params&
-                            &%species_types(j)) // '_' // trim(params&
-                            &%species_types(k)) //&
-                            & "_prediction.dat"
-                       call write_exp_datan(x_pair_correlation(1:params%pair_correlation_n_samples),&
-                            & pair_correlation_partial(1:params%pair_correlation_n_samples, j, k),&
-                            & md_istep <= 0, filename, '# pair_correlation')
-
-                    end do
-                 end do
-                 write(filename,'(A)')&
-                      & "pair_correlation_total.dat"
-                 call write_exp_datan(x_pair_correlation(1:params%pair_correlation_n_samples),&
-                      &y_pair_correlation(1:params%pair_correlation_n_samples),&
-                      & md_istep <= 0, filename, "# pair_correlation")
-
-              end if
 
            else
 #ifdef _MPIF90
-              call mpi_reduce(y_pair_correlation,&
-                   & y_pair_correlation_temp, params&
-                   &%pair_correlation_n_samples,&
+              call mpi_reduce(y_pair_distribution,&
+                   & y_pair_distribution_temp, params&
+                   &%pair_distribution_n_samples,&
                    & MPI_DOUBLE_PRECISION, MPI_SUM, 0,&
                    & MPI_COMM_WORLD, ierr)
 
-              y_pair_correlation =  y_pair_correlation_temp
-              deallocate( y_pair_correlation_temp )
+              y_pair_distribution =  y_pair_distribution_temp
+              deallocate( y_pair_distribution_temp )
+
+              call mpi_bcast(y_pair_distribution, params&
+                   &%pair_distribution_n_samples, MPI_DOUBLE_PRECISION, 0,&
+                   & MPI_COMM_WORLD, ierr)
+
 #endif
            end if
+
 
 
            ! Multiplying by the 1/density factor (V/n_sites)
            ! Still need to check that the integral ( 4 * pi * density * ( int dr r^2 g(r) ) ~= N_sites )
 
-           if (.not. params%pair_correlation_partial) then
-              y_pair_correlation =y_pair_correlation * &
+           if (.not. params%pair_distribution_partial) then
+              y_pair_distribution =y_pair_distribution * &
                    & dot_product( cross_product(a_box, b_box),&
                    & c_box ) / (dfloat(indices(1)*indices(2)&
                    &*indices(3))) / dfloat(n_sites) / dfloat(n_sites)
            end if
 
 
-           ! Now calculate the structure factors
-           if (params%do_structure_factor .or. params%do_xrd )then
+           ! Write out the partial pair distribution functions
+           if (rank == 0 .and. params%write_pair_distribution) then
 
-              if (params%structure_factor_partial) then
-                 q_beg = 1
-                 q_end = params%structure_factor_n_samples ! change this to n_samples for structure factor
+              if (params%pair_distribution_partial)then
+                 do j = 1, n_species
+                    do k = 1, n_species
+
+                       write(filename,'(A)')&
+                            & 'pair_distribution_' // trim(params&
+                            &%species_types(j)) // '_' // trim(params&
+                            &%species_types(k)) //&
+                            & "_prediction.dat"
+                       call write_exp_datan(x_pair_distribution(1:params%pair_distribution_n_samples),&
+                            & pair_distribution_partial(1:params%pair_distribution_n_samples, j, k),&
+                            & md_istep <= 0, filename, 'pair_distribution')
+
+                    end do
+                 end do
+              end if
+
+              write(filename,'(A)')&
+                   & "pair_distribution_total.dat"
+              call write_exp_datan(x_pair_distribution(1:params%pair_distribution_n_samples),&
+                   &y_pair_distribution(1:params%pair_distribution_n_samples),&
+                   & md_istep <= 0, filename, "pair_distribution")
+
+           end if
+        end if
+
+
+        !##############################################!
+        !###---   Structure Factor Calculation   ---###!
+        !##############################################!
+
+
+        ! Now calculate the structure factors
+        if (params%do_structure_factor )then
+
+           if (params%structure_factor_from_rdf) then
+              q_beg = 1
+              q_end = params%structure_factor_n_samples
 #ifdef _MPIF90
-                 ! We need to do an integral for each q value
-                 ! This can be split among the processes
+              ! We need to do an integral for each q value
+              ! This can be split among the processes
 
-                 ! Split each q the integrals among each of the
-                 ! processes, just like we do with the atoms,
-                 ! and then collect accordingly
+              ! Split each q the integrals among each of the
+              ! processes, just like we do with the atoms,
+              ! and then collect accordingly
 
 
-                 if( rank < mod( params%structure_factor_n_samples, ntasks ) )then
-                    q_beg = 1 + rank*(params%structure_factor_n_samples / ntasks + 1)
-                 else
-                    q_beg = 1 + mod(params%structure_factor_n_samples, ntasks)*(params&
-                         &%structure_factor_n_samples / ntasks + 1) &
-                         &+ (rank - mod(params%structure_factor_n_samples, ntasks))*(params&
-                         &%structure_factor_n_samples / ntasks)
-                 end if
-                 if( rank < mod( params%structure_factor_n_samples, ntasks ) )then
-                    q_end = (rank+1)*(params%structure_factor_n_samples / ntasks + 1)
-                 else
-                    q_end = q_beg + params%structure_factor_n_samples/ntasks - 1
-                 end if
+              if( rank < mod( params%structure_factor_n_samples, ntasks ) )then
+                 q_beg = 1 + rank*(params%structure_factor_n_samples / ntasks + 1)
+              else
+                 q_beg = 1 + mod(params%structure_factor_n_samples, ntasks)*(params&
+                      &%structure_factor_n_samples / ntasks + 1) &
+                      &+ (rank - mod(params%structure_factor_n_samples, ntasks))*(params&
+                      &%structure_factor_n_samples / ntasks)
+              end if
+              if( rank < mod( params%structure_factor_n_samples, ntasks ) )then
+                 q_end = (rank+1)*(params%structure_factor_n_samples / ntasks + 1)
+              else
+                 q_end = q_beg + params%structure_factor_n_samples/ntasks - 1
+              end if
 
 
 #endif
-
-
-
+              if (params%pair_distribution_partial)then
                  if (allocated(structure_factor_partial))  deallocate(structure_factor_partial)
                  allocate( structure_factor_partial(1:params&
                       &%structure_factor_n_samples, 1 : n_species , 1 :&
@@ -1962,337 +2034,329 @@ program turbogap
                  structure_factor_partial = 0.d0
               end if
 
-              if (allocated(y_structure_factor))deallocate(y_structure_factor)
-              allocate(y_structure_factor(1:params%structure_factor_n_samples))
-              y_structure_factor = 0.d0
-
-              if (params%structure_factor_partial) then
-#ifdef _MPIF90
-                 allocate( structure_factor_partial_temp(1:params&
-                      &%structure_factor_n_samples, 1 : n_species , 1 :&
-                      & n_species) )
-
-                 structure_factor_partial_temp = 0.0d0
-#endif
-
-              else
-
-#ifdef _MPIF90
-                 allocate( y_structure_factor_temp(1:params&
-                      &%structure_factor_n_samples) )
-
-                 y_structure_factor_temp = 0.0d0
-#endif
-
-              end if
-
-              if (allocated(x_structure_factor)) deallocate(x_structure_factor)
-              if (allocated(x_structure_factor_temp)) deallocate(x_structure_factor_temp)
-              call linspace( x_structure_factor, params&
-                   &%q_range_min, params%q_range_max, params&
-                   &%structure_factor_n_samples, dq )
-
-              call linspace( x_structure_factor_temp, params&
-                   &%q_range_min, params%q_range_max, params&
-                   &%structure_factor_n_samples, dq )
-
-              if( trim(params%q_units) == "xrd" .or. params%q_units == "twotheta")then
-                 ! assume that theta is given for the Q range
-                 do i = 1, params%structure_factor_n_samples
-                    ! This gives s, but Q  = 2 pi * s = 4pi sin(theta) / lambda
-                    x_structure_factor(i) = 2.d0 * sin( pi *&
-                         & x_structure_factor(i) /180.d0 / 2.d0 ) /&
-                         & params%xrd_wavelength
-                 end do
-              elseif (trim(params%q_units) == "saxs" .or. params%q_units == "q")then
-                 do i = 1, params%structure_factor_n_samples
-                    x_structure_factor(i) =  x_structure_factor(i)  / 2.d0 / pi
-                 end do
-              end if
-
-              ! Here the units of q range are that called Q (1/A) in
-              ! the literature, small q in the literature are =
-              ! 2sin(theta)/lambda = Q/2/pi
-
-              if (params%structure_factor_partial) then
-
-                 call get_partial_structure_factor(q_beg, q_end, &
-                      & structure_factor_partial(1:params%structure_factor_n_samples &
-                      &,1:n_species,1:n_species) ,&
-                      & pair_correlation_partial,&
-                      & x_structure_factor(1:params%structure_factor_n_samples) ,&
-                      & x_pair_correlation, params%pair_correlation_rcut,&
-                      & params %pair_correlation_n_samples, params&
-                      &%structure_factor_n_samples, n_species,&
-                      & n_atoms_of_species, n_sites, params%structure_factor_window)
-
-#ifdef _MPIF90
-                 call mpi_reduce(structure_factor_partial,&
-                      & structure_factor_partial_temp, params&
-                      &%structure_factor_n_samples * n_species *&
-                      & n_species, MPI_DOUBLE_PRECISION, MPI_SUM, 0,&
-                      & MPI_COMM_WORLD, ierr)
-                 structure_factor_partial = structure_factor_partial_temp
-                 deallocate(structure_factor_partial_temp)
-
-                 call mpi_bcast(structure_factor_partial, params&
-                      &%structure_factor_n_samples * n_species *&
-                      & n_species, MPI_DOUBLE_PRECISION, 0,&
-                      & MPI_COMM_WORLD, ierr)
-
-#endif
-
-                 ! using dq as a temp variable
-                 dq = 0.d0
-                 do j = 1, n_species
-                    dq = dq + (n_atoms_of_species(j) / dfloat(n_sites))
-                    do k = 1, n_species
-
-                       y_structure_factor(1:params%structure_factor_n_samples) = &
-                            & y_structure_factor(1:params%structure_factor_n_samples)  +  &
-                            & ( n_atoms_of_species(j) * n_atoms_of_species(k) )**0.5 * &
-                            &  (structure_factor_partial(1:params%structure_factor_n_samples, j, k) &
-                            &  )/ dfloat(n_sites)
-
-                    end do
-                 end do
-                 y_structure_factor(1:params%structure_factor_n_samples)&
-                      & = y_structure_factor(1:params&
-                      &%structure_factor_n_samples) / dq
-
-
-              else
-
-                 call get_structure_factor_explicit( n_sites, &
-                      & neighbors_list(j_beg:j_end), n_neigh(i_beg:i_end),&
-                      & neighbor_species(j_beg:j_end), rjs(j_beg:j_end),&
-                      & params%structure_factor_n_samples,&
-                      & x_structure_factor(1:params&
-                      &%structure_factor_n_samples), y_structure_factor(1:params&
-                      &%structure_factor_n_samples),params%r_range_min, params%r_range_max,&
-                      & params%pair_correlation_rcut, .false., 1&
-                      &, 1, params%structure_factor_window )
-
-
-#ifdef _MPIF90
-                 call mpi_reduce(y_structure_factor,&
-                      & y_structure_factor_temp, params&
-                      &%structure_factor_n_samples, MPI_DOUBLE_PRECISION, MPI_SUM, 0,&
-                      & MPI_COMM_WORLD, ierr)
-                 ! adding 1.d0 to make it match with debyer output
-                 y_structure_factor = y_structure_factor_temp + 1.d0
-                 deallocate(y_structure_factor_temp)
-
-                 call mpi_bcast(y_structure_factor, params&
-                      &%structure_factor_n_samples, MPI_DOUBLE_PRECISION, 0,&
-                      & MPI_COMM_WORLD, ierr)
-
-#endif
-              end if
-
-              ! Write out the partial pair correlation functions
-              if (rank == 0 .and. params%write_structure_factor) then
-
-                 if (params%structure_factor_partial)then
-                    do j = 1, n_species
-                       do k = 1, n_species
-                          ! write with the temp data
-                          write(filename,'(A)')&
-                               & 'structure_factor_' // trim(params&
-                               &%species_types(j)) // '_' // trim(params&
-                               &%species_types(k)) //&
-                               & "_prediction.dat"
-                          call write_exp_datan(x_structure_factor_temp(1:params%structure_factor_n_samples)&
-                               &,&
-                               & structure_factor_partial(1:params&
-                               &%structure_factor_n_samples, j, k),&
-                               & md_istep <= 0, filename, "# structure_factor: units of "// trim(params%q_units) )
-
-                       end do
-                    end do
-                 end if
-
-                 write(filename,'(A)')&
-                      & 'structure_factor_total.dat'
-                 call write_exp_datan(x_structure_factor_temp(1:params%structure_factor_n_samples),&
-                      & y_structure_factor(1:params&
-                      &%structure_factor_n_samples),&
-                      & md_istep <= 0, filename, "# structure_factor: units of "// trim(params%q_units))
-
-
-              end if
-
-
-              if ( params%do_xrd )then
-                 ! Get the XRD from the partial structure factors!
-                 if (allocated(x_xrd)) deallocate(x_xrd)
-                 allocate(x_xrd(1:params%structure_factor_n_samples))
-                 if (allocated(x_xrd_temp)) deallocate(x_xrd_temp)
-                 allocate(x_xrd_temp(1:params%structure_factor_n_samples))
-
-                 x_xrd = x_structure_factor
-                 x_xrd_temp = x_structure_factor_temp
-
-
-                 if (allocated(y_xrd)) deallocate(y_xrd)
-                 allocate(y_xrd(1:params%structure_factor_n_samples))
-                 y_xrd = 0.d0
-
-#ifdef _MPIF90
-                 allocate( y_xrd_temp(1:params&
-                      &%structure_factor_n_samples ))
-
-                 y_xrd_temp = 0.0d0
-#endif
-
-                 ! Have the same range for the xrd as the structure factor
-
-                 if (params%structure_factor_partial) then
-                    call get_xrd_from_partial_structure_factors(q_beg, q_end, &
-                         & structure_factor_partial(1:params&
-                         &%structure_factor_n_samples,1:n_species&
-                         &,1:n_species), n_species, params%species_types&
-                         &, species, params%xrd_wavelength, params &
-                         &%xrd_damping, params%xrd_alpha, params &
-                         &%xrd_method, params%xrd_iwasa, x_xrd(1:params&
-                         &%structure_factor_n_samples), y_xrd(1:params&
-                         &%structure_factor_n_samples),&
-                         & n_atoms_of_species )
-
-                 else
-
-                    call get_xrd_explicit( n_sites, params%species_types, &
-                         & neighbors_list(j_beg:j_end), n_neigh(i_beg:i_end),&
-                         & neighbor_species(j_beg:j_end), rjs(j_beg:j_end),&
-                         & params%structure_factor_n_samples,&
-                         & x_xrd(1:params&
-                         &%structure_factor_n_samples), y_xrd(1:params&
-                         &%structure_factor_n_samples),params%r_range_min, params%r_range_max,&
-                         & params%pair_correlation_rcut, .false., 1&
-                         &, 1, params%structure_factor_window )
-
-
-                    do j = 1, params%structure_factor_n_samples
-                       wfac = 0.d0
-                       do k = 1, n_sites
-                          call get_scattering_factor( params&
-                               &%species_types(species(k)), x_xrd(j)&
-                               &/2.d0, wfac_temp )
-                          wfac = wfac + wfac_temp * wfac_temp
-                       end do
-                       y_xrd(j) = y_xrd(j) / wfac
-                    end do
-
-                 end if
-
-#ifdef _MPIF90
-
-                 call mpi_reduce(y_xrd,&
-                      & y_xrd_temp, params&
-                      &%structure_factor_n_samples, MPI_DOUBLE_PRECISION, MPI_SUM, 0,&
-                      & MPI_COMM_WORLD, ierr)
-                 y_xrd = y_xrd_temp
-                 deallocate(y_xrd_temp)
-
-                 call mpi_bcast(y_xrd, params&
-                      &%structure_factor_n_samples, MPI_DOUBLE_PRECISION, 0,&
-                      & MPI_COMM_WORLD, ierr)
-
-#endif
-
-                 if (rank == 0 .and. params%write_xrd) then
-
-                    write(filename,'(A)')&
-                         & 'xrd_prediction.dat'
-                    call write_exp_datan(x_xrd_temp(1:params%structure_factor_n_samples),&
-                         & y_xrd(1:params&
-                         &%structure_factor_n_samples),&
-                         & md_istep <= 0, filename, "# xrd: units of "// trim(params%q_units))
-
-                 end if
-
-
-              end if
            end if
+
+           if (allocated(y_structure_factor))deallocate(y_structure_factor)
+           allocate(y_structure_factor(1:params%structure_factor_n_samples))
+           y_structure_factor = 0.d0
+
+           if (params%structure_factor_from_rdf .and. params%pair_distribution_partial) then
+#ifdef _MPIF90
+              allocate( structure_factor_partial_temp(1:params&
+                   &%structure_factor_n_samples, 1 : n_species , 1 :&
+                   & n_species) )
+
+              structure_factor_partial_temp = 0.0d0
+#endif
+
+           else
+
+#ifdef _MPIF90
+              allocate( y_structure_factor_temp(1:params&
+                   &%structure_factor_n_samples) )
+
+              y_structure_factor_temp = 0.0d0
+#endif
+
+           end if
+
+           if (allocated(x_structure_factor)) deallocate(x_structure_factor)
+           if (allocated(x_structure_factor_temp)) deallocate(x_structure_factor_temp)
+           call linspace( x_structure_factor, params&
+                &%q_range_min, params%q_range_max, params&
+                &%structure_factor_n_samples, dq )
+
+           call linspace( x_structure_factor_temp, params&
+                &%q_range_min, params%q_range_max, params&
+                &%structure_factor_n_samples, dq )
+
+           if( trim(params%q_units) == "xrd" .or. params%q_units == "twotheta")then
+              ! assume that theta is given for the Q range
+              do i = 1, params%structure_factor_n_samples
+                 ! This gives s, but Q  = 2 pi * s = 4pi sin(theta) / lambda
+                 x_structure_factor(i) = 2.d0 * sin( pi *&
+                      & x_structure_factor(i) /180.d0 / 2.d0 ) /&
+                      & params%xrd_wavelength
+              end do
+           elseif (trim(params%q_units) == "saxs" .or. params%q_units == "q")then
+              do i = 1, params%structure_factor_n_samples
+                 x_structure_factor(i) =  x_structure_factor(i)  / 2.d0 / pi
+              end do
+           end if
+
+           ! Here the units of q range are that called Q (1/A) in
+           ! the literature, small q in the literature are =
+           ! 2sin(theta)/lambda = Q/2/pi
+
+           if (params%structure_factor_from_rdf .and. params%pair_distribution_partial) then
+
+              v_uc = dot_product( cross_product(a_box,&
+                   & b_box), c_box ) / (&
+                   & dfloat(indices(1)*indices(2)&
+                   &*indices(3)) )
+
+
+              call get_partial_structure_factor(q_beg, q_end, &
+                   & structure_factor_partial(1:params%structure_factor_n_samples &
+                   &,1:n_species,1:n_species) ,&
+                   & pair_distribution_partial,&
+                   & x_structure_factor(1:params%structure_factor_n_samples) ,&
+                   & x_pair_distribution, params%pair_distribution_rcut,&
+                   & params %pair_distribution_n_samples, params&
+                   &%structure_factor_n_samples, n_species,&
+                   & n_atoms_of_species, n_sites, dfloat(n_sites)/v_uc,  params%structure_factor_window)
+
+
+              
+#ifdef _MPIF90
+              call mpi_reduce(structure_factor_partial,&
+                   & structure_factor_partial_temp, params&
+                   &%structure_factor_n_samples * n_species *&
+                   & n_species, MPI_DOUBLE_PRECISION, MPI_SUM, 0,&
+                   & MPI_COMM_WORLD, ierr)
+              structure_factor_partial = structure_factor_partial_temp
+              deallocate(structure_factor_partial_temp)
+
+              call mpi_bcast(structure_factor_partial, params&
+                   &%structure_factor_n_samples * n_species *&
+                   & n_species, MPI_DOUBLE_PRECISION, 0,&
+                   & MPI_COMM_WORLD, ierr)
+
+#endif
+
+              ! using dq as a temp variable
+              dq = 0.d0
+              do j = 1, n_species
+                 dq = dq + (n_atoms_of_species(j) / dfloat(n_sites))
+                 do k = 1, n_species
+
+                    y_structure_factor(1:params%structure_factor_n_samples) = &
+                         & y_structure_factor(1:params%structure_factor_n_samples)  +  &
+                         & ( n_atoms_of_species(j) * n_atoms_of_species(k) )**0.5 * &
+                         &  (structure_factor_partial(1:params%structure_factor_n_samples, j, k) &
+                         &  )/ dfloat(n_sites) !/ dfloat(n_sites)
+
+                 end do
+              end do
+              y_structure_factor(1:params%structure_factor_n_samples)&
+                   & = y_structure_factor(1:params&
+                   &%structure_factor_n_samples) !/ dq
+
+
+           elseif (params%structure_factor_from_rdf)then
+
+              v_uc = dot_product( cross_product(a_box,&
+                   & b_box), c_box ) / (&
+                   & dfloat(indices(1)*indices(2)&
+                   &*indices(3)) )
+
+              call get_structure_factor_from_rdf(q_beg, q_end, &
+                   & y_structure_factor(1:params%structure_factor_n_samples) ,&
+                   & y_pair_distribution,&
+                   & x_structure_factor(1:params%structure_factor_n_samples) ,&
+                   & x_pair_distribution, params%pair_distribution_rcut,&
+                   & params %pair_distribution_n_samples, params&
+                   &%structure_factor_n_samples, n_species,&
+                   & n_atoms_of_species, n_sites, dfloat(n_sites) / v_uc,  params%structure_factor_window)
+
+           else
+
+              call get_structure_factor_explicit( n_sites, &
+                   & neighbors_list(j_beg:j_end), n_neigh(i_beg:i_end),&
+                   & neighbor_species(j_beg:j_end), rjs(j_beg:j_end),&
+                   & params%structure_factor_n_samples,&
+                   & x_structure_factor(1:params&
+                   &%structure_factor_n_samples), y_structure_factor(1:params&
+                   &%structure_factor_n_samples),params%r_range_min, params%r_range_max,&
+                   & params%pair_distribution_rcut, .false., 1&
+                   &, 1, params%structure_factor_window )
+           end if
+
+
+           if (.not. (params%structure_factor_from_rdf .and. params%pair_distribution_partial))then
+#ifdef _MPIF90
+
+              call mpi_reduce(y_structure_factor,&
+                   & y_structure_factor_temp, params&
+                   &%structure_factor_n_samples, MPI_DOUBLE_PRECISION, MPI_SUM, 0,&
+                   & MPI_COMM_WORLD, ierr)
+
+
+              y_structure_factor = y_structure_factor_temp
+              deallocate(y_structure_factor_temp)
+#endif
+              y_structure_factor =  y_structure_factor + 1.d0
+
+#ifdef _MPIF90
+              call mpi_bcast(y_structure_factor, params &
+                   &%structure_factor_n_samples,&
+                   & MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+#endif
+
+           end if
+
+           ! Write out the partial structure functions
+           if (rank == 0 .and. params%write_structure_factor) then
+
+              if (params%structure_factor_from_rdf .and. params%pair_distribution_partial)then
+                 do j = 1, n_species
+                    do k = 1, n_species
+                       ! write with the temp data
+                       write(filename,'(A)')&
+                            & 'structure_factor_' // trim(params&
+                            &%species_types(j)) // '_' // trim(params&
+                            &%species_types(k)) //&
+                            & "_prediction.dat"
+                       call write_exp_datan(x_structure_factor_temp(1:params%structure_factor_n_samples)&
+                            &,&
+                            & structure_factor_partial(1:params&
+                            &%structure_factor_n_samples, j, k),&
+                            & md_istep <= 0, filename, "structure_factor: units of "// trim(params%q_units) )
+
+                    end do
+                 end do
+              end if
+
+              write(filename,'(A)')&
+                   & 'structure_factor_total.dat'
+              call write_exp_datan(x_structure_factor_temp(1:params%structure_factor_n_samples),&
+                   & y_structure_factor(1:params&
+                   &%structure_factor_n_samples),&
+                   & md_istep <= 0, filename, "structure_factor: units of "// trim(params%q_units))
+
+
+           end if
+
+        end if
+
+        if ( params%do_xrd )then
+           ! Get the XRD from the partial structure factors!
+           if (allocated(x_xrd)) deallocate(x_xrd)
+           allocate(x_xrd(1:params%structure_factor_n_samples))
+           if (allocated(x_xrd_temp)) deallocate(x_xrd_temp)
+           allocate(x_xrd_temp(1:params%structure_factor_n_samples))
+
+           x_xrd = x_structure_factor
+           x_xrd_temp = x_structure_factor_temp
+
+
+           if (allocated(y_xrd)) deallocate(y_xrd)
+           allocate(y_xrd(1:params%structure_factor_n_samples))
+           y_xrd = 0.d0
+
+           ! allocate for the structure factor parameters, so we don't have to look through the horrible list
+
+
+
+#ifdef _MPIF90
+           allocate( y_xrd_temp(1:params&
+                &%structure_factor_n_samples ))
+
+           y_xrd_temp = 0.0d0
+#endif
+
+           ! Have the same range for the xrd as the structure factor
+
+           if (params%structure_factor_from_rdf .and. params%pair_distribution_partial) then
+              call get_xrd_from_partial_structure_factors(q_beg, q_end, &
+                   & structure_factor_partial(1:params&
+                   &%structure_factor_n_samples,1:n_species&
+                   &,1:n_species), n_species, params%species_types&
+                   &, species, params%xrd_wavelength, params &
+                   &%xrd_damping, params%xrd_alpha, params &
+                   &%xrd_method, params%xrd_iwasa, x_xrd(1:params&
+                   &%structure_factor_n_samples), y_xrd(1:params&
+                   &%structure_factor_n_samples),&
+                   & n_atoms_of_species )
+
+           else
+
+              call get_xrd_explicit( n_sites, params%species_types, n_species,  &
+                   & neighbors_list(j_beg:j_end), n_neigh(i_beg:i_end),&
+                   & neighbor_species(j_beg:j_end), rjs(j_beg:j_end),&
+                   & params%structure_factor_n_samples,&
+                   & x_xrd(1:params&
+                   &%structure_factor_n_samples), y_xrd(1:params&
+                   &%structure_factor_n_samples),params%r_range_min, params%r_range_max,&
+                   & params%pair_distribution_rcut, .false., 1&
+                   &, 1, params%structure_factor_window )
+
+
+           end if
+
+           !###################################################################################!
+           !###---   Can calculate the Structure factors related to XRD / Neutron here   ---###!
+           !###################################################################################!
+
+
+           ! if (allocated(sf_parameters) ) deallocate( sf_parameters )
+           ! allocate( sf_parameters(1:9,1:n_species))
+           ! sf_parameters = 0.d0
+           ! do i = 1, n_species
+           !    call get_scattering_factor_params(params%species_types(i), sf_parameters(1:9,i))
+           ! end do
+
+
+
+           ! do j = 1, params%structure_factor_n_samples
+           !    wfac = 0.d0
+           !    do k = 1, n_species
+           !       call get_scattering_factor(wfac_temp, sf_parameters(1:9,k), x_xrd(j)/2.d0 )
+           !       wfac = wfac + wfac_temp*wfac_temp *n_atoms_of_species(k)  / dfloat(n_sites)
+           !    end do
+           !    print *, wfac
+           !    y_xrd(j) = y_xrd(j) / (wfac)
+           ! end do
+
+
+
+#ifdef _MPIF90
+
+           call mpi_reduce(y_xrd,&
+                & y_xrd_temp, params&
+                &%structure_factor_n_samples, MPI_DOUBLE_PRECISION, MPI_SUM, 0,&
+                & MPI_COMM_WORLD, ierr)
+           y_xrd = y_xrd_temp
+           deallocate(y_xrd_temp)
+
+           call mpi_bcast(y_xrd, params&
+                &%structure_factor_n_samples, MPI_DOUBLE_PRECISION, 0,&
+                & MPI_COMM_WORLD, ierr)
+
+#endif
+
+           if (rank == 0 .and. params%write_xrd) then
+
+              write(filename,'(A)')&
+                   & 'xrd_prediction.dat'
+              call write_exp_datan(x_xrd_temp(1:params%structure_factor_n_samples),&
+                   & y_xrd(1:params&
+                   &%structure_factor_n_samples),&
+                   & md_istep <= 0, filename, "xrd: units of "// trim(params%q_units))
+
+           end if
+
+
         end if
 
 
+        !################################################################!
+        !###---   Compute similarity of experimental predictions   ---###!
+        !################################################################!
 
 
         if ( params%do_exp )then
            do i = 1, params%n_exp
+              ! First normalize the spectrum if it matches some type of experimental data
 
-              if ( trim(params%exp_data(i)%label) == "xps" )then
-                 cycle
-              end if
+              ! do j = 1, size(implemented_exp_observables)
+              !    if ( trim( params%exp_data(i)%label ) == trim( implemented_exp_observables(j) ) )then
+              !       ! Normalize the spectrum and assign y_pred to this prediction
 
-
-              !####################################################!
-              !###---   Compute Experimental Interpolation   ---###!
-              !####################################################!
-
-              ! If we want to compute the experimental interpolation, we do it now.
-              if ( params%exp_data(i)%compute_exp )then
-                 call calculate_exp_interpolation(params%exp_data(i)&
-                      &%x, params%exp_data(i)%y, params%exp_data(i)&
-                      &%n_samples, params%exp_data(i)%data)
-              end if
-
-              if ( params%exp_data(i)%compute_exp .and. .not.  params&
-                   &%exp_data(i)%wrote_exp .and. rank == 0  ) then
-
-                 write(filename,'(A,A)') trim(params&
-                      &%exp_data(i)%label), "_exp.dat"
-                 call write_exp_data(params&
-                      &%exp_data(i)%x, params&
-                      &%exp_data(i)%y, md_istep <= 0,&
-                      & filename, params%exp_data(i)%label)
-
-                 params%exp_data(i)%wrote_exp = .true.
-
-              end if
+              !       params%exp_data(i)%mag = sqrt(dot_product(y, y))
 
 
-
-              !########################################!
-              !###---   XRD / SAXS Calculation   ---###!
-              !########################################!
-
-
-              if ( trim(params%exp_data(i)%label) == 'xrd'&
-                   & .or. trim(params%exp_data(i)%label) ==&
-                   & 'saxs' )then
-
-#ifdef _MPIF90
-                 allocate(temp_exp_container%y_pred(1:params%exp_data(i)%n_samples))
-                 temp_exp_container%y_pred= 0.0d0
-#endif
-
-                 ! call get_xrd( n_neigh, neighbors_list, neighbor_species, rjs, &
-                 !      & positions, n_species, params%species_types, species, params%xrd_wavelength&
-                 !      &, params%xrd_damping, params%xrd_alpha, params&
-                 !      &%exp_data(i)%label, params%xrd_iwasa,&
-                 !      & params%exp_data(i)%range_min, params%exp_data(i)%range_max, params&
-                 !      &%exp_data(i)%n_samples, params&
-                 !      &%exp_data(i)%x, params&
-                 !      &%exp_data(i)%y_pred, params%xrd_rcut )
-
-#ifdef _MPIF90
-
-                 call mpi_reduce(params%exp_data(i)%y_pred,&
-                      & temp_exp_container%y_pred, params %exp_data(i)&
-                      &%n_samples, MPI_DOUBLE_PRECISION, MPI_SUM, 0,&
-                      & MPI_COMM_WORLD, ierr)
-
-                 params%exp_data(i)%y_pred =  temp_exp_container%y_pred
-                 deallocate( temp_exp_container%y_pred )
-#endif
-                 ! Now we can normalize the spectrum once we have all the summed components
-                 mag = sqrt( dot_product( params%exp_data(i)%y_pred, params%exp_data(i)%y_pred ) )
-                 params%exp_data(i)%y_pred = params%exp_data(i)%y_pred / mag
-
-
-              end if
+              
 
 
               if ( params%exp_data(i)%compute_similarity .and. allocated(params%exp_data(i)%y) )then
@@ -2301,19 +2365,6 @@ program turbogap
                       &%exp_data(i)%y_pred, params&
                       &%exp_data(i)%similarity, params&
                       &%exp_similarity_type)
-              end if
-
-              if ( rank == 0 ) then
-
-                 write(filename,'(A,A)') trim(params&
-                      &%exp_data(i)%label), "_prediction.dat"
-                 call write_exp_data(params&
-                      &%exp_data(i)%x, params&
-                      &%exp_data(i)%y_pred, md_istep <= 0,&
-                      & filename, params%exp_data(i)%label)
-
-                 params%exp_data(i)%wrote_exp = .true.
-
               end if
 
 
@@ -2364,11 +2415,11 @@ program turbogap
 
 
         !       ! Not deallocating the experimental results
-        !       deallocate(x_pair_correlation,  params%exp_data(i)%y_pred)
+        !       deallocate(x_pair_distribution,  params%exp_data(i)%y_pred)
 
         !       ! We can deallocate as we do not care about optimisation, we are just predicting
         !       ! if ( .not. params%exp_data(i)%compute_exp )then
-        !       !    deallocate(x_pair_correlation,  params%exp_data(i)%y_pred)
+        !       !    deallocate(x_pair_distribution,  params%exp_data(i)%y_pred)
         !       ! else
         !       !    deallocate(params%exp_data(i)%x, params&
         !       !         &%exp_data(i)%y, params&

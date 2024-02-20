@@ -29,41 +29,208 @@
 module exp_utils
   use types
 
-  contains
+contains
 
-    subroutine get_all_similarities( n_exp, exp_data, energy_scales, s_tot )
+
+
+    subroutine get_pair_distribution(  n_sites0, &
+         & neighbors_list, n_neigh, neighbor_species, rjs, r_min, r_max, n_samples, x,&
+         & pair_distribution, r_cut, return_histogram,&
+         & partial_rdf, species_1, species_2, kde_sigma, rho )
       implicit none
-      integer, intent(in) :: n_exp
-      type(exp_data_container), allocatable, intent(in) :: exp_data(:)
-      real*8, allocatable :: energy_scales(:)
-      integer :: i
-      real*8, intent(out) :: s_tot
+      real*8,  intent(in) :: rjs(:), kde_sigma, rho
+      real*8 :: r_min, r_max, r_cut
+      integer, intent(in) :: neighbors_list(:), n_neigh(:), neighbor_species(:)
+      integer, intent(in) :: n_sites0, n_samples, species_1, species_2
+      integer :: n_sites, n_pairs, count, count_species_1
+      integer :: i, j, k, i2, j2, l, ind_bin_l, ind_bin_h, species_i, species_j
+      real*8,  intent(inout) :: pair_distribution(1:n_samples), x(1:n_samples)
+      real*8, allocatable :: bin_edges(:), dV(:), kde(:)
+      real*8 :: r, n_pc
+      real*8, parameter :: pi = acos(-1.0)
+      logical, intent(in) :: partial_rdf
+      logical :: return_histogram, species_in_list, counted_1=.false.
+      ! First allocate the pair correlation function array
 
-      s_tot = 0.d0
-      do i = 1, n_exp
-         if (exp_data(i)%compute_similarity)then
+      allocate(bin_edges(1:n_samples+1))
+      if ( .not. return_histogram ) allocate(dV(1:n_samples))
 
-            write(*,'(A,1X,A,1X,F12.6,1X,F12.6)') " Exp similarity&
-                 & (label, escale, similarity) ", trim(exp_data(i)&
-                 &%label), energy_scales(i) ,  exp_data(i)%similarity
+      if (kde_sigma > 0.d0)then
+         allocate(kde(1:n_samples))
+         kde = 0.d0
+      end if
 
-            s_tot = s_tot +  energy_scales(i) * exp_data(i)%similarity
+      n_sites = size(n_neigh)
+      n_pairs = size(neighbors_list)
+
+      x = 0.d0
+      bin_edges = 0.d0
+      pair_distribution = 0.d0
+
+      ! check that r_min is less than r_max
+      if (r_min > r_max)then
+         print *, "!!! Given r_min is less than r_max! swapping these values!"
+         r = r_max
+         r_max = r_min
+         r_min = r
+      end if
+
+
+      do i = 1, n_samples + 1
+         bin_edges(i) = r_min  +  ( real( (i-1) ) /  real(n_samples) ) * (r_max - r_min)
+      end do
+
+      do i = 1, n_samples
+         x(i) = (bin_edges(i) + bin_edges(i+1)) / 2.d0
+
+         if ( .not. return_histogram )then
+            dV(i) = 4.d0 * pi * (bin_edges(i)**2 * (bin_edges(i+1) - bin_edges(i)) )
+         end if
+
+      end do
+
+      count = 0
+      count_species_1 = 0
+      k = 0
+      do i = 1, n_sites
+         ! k is the index which keeps a number of the atom pairs
+         ! i2 is the index of a particular atom
+         i2 = modulo(neighbors_list(k+1)-1, n_sites0) + 1
+         species_i = neighbor_species(k+1)
+
+         do j = 1, n_neigh(i)
+            ! Loop through the neighbors of atom i
+            ! j2 is the index of a neighboring atom to i
+            k = k + 1
+            j2 = modulo(neighbors_list(k)-1, n_sites0) + 1
+
+            species_j = neighbor_species(k)
+
+            if (partial_rdf)then
+               if (species_i /= species_1) then
+                  cycle
+               elseif(j == 1)then
+                  count_species_1 = count_species_1 + 1
+               end if
+
+            end if
+
+            if (partial_rdf)then
+               if (species_j /= species_2) cycle
+            end if
+
+            r = rjs(k) ! atom pair distance
+
+            if ( r < 1e-3 .or. r > r_cut)then
+               cycle
+            end if
+
+            ! edge cases where r is not in range
+            if (r < r_min)then
+               !            print *, "pair_distribution_function: Given r is less than r_min! Continuing loop "
+               cycle
+            end if
+
+            if (r > r_max)then
+               !            print *, "pair_distribution_function: Given r is more than r_max! Continuing loop "
+               cycle
+            end if
+
+            if (kde_sigma > 0.d0)then
+               ! do a kernel density estimate
+               count = count + 1
+               kde = 0.d0
+               do l = 1,n_samples
+                  kde(l) = kde(l) +  exp( -( (x(l) - r) / kde_sigma )**2 / 2.d0 )
+               end do
+               pair_distribution(1:n_samples) = pair_distribution(1:n_samples) + &
+                    & kde(1:n_samples)
+            else
+
+               call binary_search_real( r, bin_edges, 1, n_samples+1, ind_bin_l, ind_bin_h )
+               pair_distribution(ind_bin_l) = pair_distribution(ind_bin_l) +  1.d0
+            end if
+
+         end do
+      end do
+
+
+      ! The factor of 1 / ( n_samples * kde_sigma * sqrt(2 pi) )
+      !   is for the kernel density estimate.
+      ! Not sure exactly why multiplying by (r_max - r_min) works
+      !   pdf = kde * dr / norm
+      if (kde_sigma>0.d0)then
+         pair_distribution(1:n_samples) =&
+              & pair_distribution(1:n_samples) * ( ( r_max - r_min) / dfloat(n_samples) ) &
+              & / ( sqrt( 2.d0 * pi) * kde_sigma)
+      end if
+
+      !( dfloat(count_species_1) )
+
+      ! Remember that this is done for each process, so then the final
+      ! result should be a reduction summation of all of these
+      ! pair_distribution arrays multiplied by the 1/density factor ( pair_distribution *  (V / n_sites) )
+
+      if ( .not. return_histogram )then
+         ! Instead of giving the Radial distribution function (which goes as r^2), we give the pair distribution function
+         pair_distribution =  pair_distribution / dV
+         deallocate(dV)
+      end if
+
+      deallocate(bin_edges)
+      if (kde_sigma>0.d0) deallocate(kde)
+
+    end subroutine get_pair_distribution
+
+
+    subroutine binary_search_real( xs, x, lin, hin, l, h )
+      ! give delimiting indices (lout, hout) of array of x (which is a set of delimited bins) where xs (x search) is in range
+      real*8, allocatable, intent(in) :: x(:)
+      real*8, intent(in) :: xs
+      real*8 :: xi
+      integer, intent(in) :: lin, hin
+      integer, intent(out) :: l, h
+      integer :: m
+      logical :: found = .false.
+
+      l = lin
+      h = hin
+
+      ! Check that lower index, l is less than upper index, h
+      if (l > h)then
+         print *, "binary_search_real: lower bound of search is greater than higher bound, swapping"
+         m = h
+         h = l
+         l = h
+      end if
+
+      m = int( real(l + h) / 2.d0 )
+
+      found = .false.
+      do while( .not. found  )
+         xi = x(m)
+
+         if ( xs < xi )then
+            ! its in the lower segment
+            h = m
+            m = int( real(h + l) / 2.d0 )
+         end if
+
+         if ( xs > xi )then
+            ! its in the upper segment
+            l = m
+            m = int( real(h + l) / 2.d0 )
+         end if
+
+
+!         print *, " h - l = ", h - l
+         if ( h - l == 1 ) then
+            ! terminate the search
+            found = .true.
          end if
       end do
 
-    end subroutine get_all_similarities
-
-    subroutine check_species_in_list( species_i, allowed_species, species_in_list )
-      implicit none
-      integer, allocatable, intent(in) :: allowed_species(:)
-      integer, intent(in) :: species_i
-      logical, intent(out) :: species_in_list
-      integer :: l
-      species_in_list = .false.
-      do l = 1, size(allowed_species)
-         if (allowed_species(l) == species_i) species_in_list = .true.
-      end do
-    end subroutine check_species_in_list
+    end subroutine binary_search_real
 
 
     subroutine get_structure_factor_explicit( n_sites0, &
@@ -128,12 +295,12 @@ module exp_utils
 
             ! edge cases where r is not in range
             if (r < r_min)then
-               !            print *, "pair_correlation_function: Given r is less than r_min! Continuing loop "
+               !            print *, "pair_distribution_function: Given r is less than r_min! Continuing loop "
                cycle
             end if
 
             if (r > r_max)then
-               !            print *, "pair_correlation_function: Given r is more than r_max! Continuing loop "
+               !            print *, "pair_distribution_function: Given r is more than r_max! Continuing loop "
                cycle
             end if
 
@@ -152,7 +319,125 @@ module exp_utils
     end subroutine get_structure_factor_explicit
 
 
-    subroutine get_xrd_explicit( n_sites0, species_types, &
+
+    subroutine get_structure_factor_from_rdf( q_beg, q_end, structure_factor&
+         &, pair_distribution, q_list , rs, r_cut,&
+         & n_samples_pc, n_samples_sf, n_species, n_atoms_of_species,&
+         & n_sites, rho, window)
+      implicit none
+      real*8 , intent(in), allocatable :: n_atoms_of_species(:)
+      real*8, intent(out) :: structure_factor(:)
+      real*8 , intent(in) ::  pair_distribution(:), q_list(:), rs(:), r_cut
+      integer, intent(in) :: n_samples_pc, n_samples_sf, n_species, n_sites, q_beg, q_end
+      real*8 :: r, q, dr, ca, cb, cabh, w, rho
+      integer :: i, j, k, l, idx,  n
+      real*8, parameter :: pi = acos(-1.0)
+      logical, intent(in) :: window
+
+      ! S_ab(q) = delta_ab + 4 pi rho (ca cb)^0.5
+      !                  * int_0^r_cut dr r^2 [ g_ab(r) - 1 ] sin(qr)/(qr) * sin( pi r / R )/ (pi r /R)
+      ! window corresponds to sin(pi r / R) / (pi r / R)
+      ! rs has size n_samples_pc
+
+      structure_factor = 0.d0
+      ! n = q_end - q_beg + 1 !size(q_list)
+
+      dr = rs(2) - rs(1)
+
+      w = 1.d0
+
+      ! Iterate through each q
+      do k = q_beg, q_end
+         q = q_list(k) * 2.d0 * pi
+
+         do l = 1, n_samples_pc
+            ! do the integral
+            if (window) w = sinc( pi * rs(l) / r_cut )
+
+            structure_factor(k) = structure_factor(k) + &
+                 & dr * rs(l)**2 &
+                 & * ( pair_distribution(l) - 1.d0 ) &
+                 & * sinc( q * rs(l) ) * w
+         end do
+
+         structure_factor(k) = 4.d0 * pi * rho * structure_factor(k)
+
+      end do
+
+    end subroutine get_structure_factor_from_rdf
+
+
+    subroutine get_partial_structure_factor( q_beg, q_end, structure_factor_partial&
+         &, pair_distribution_partial, q_list , rs, r_cut,&
+         & n_samples_pc, n_samples_sf, n_species, n_atoms_of_species,&
+         & n_sites, rho,  window)
+      implicit none
+      real*8 , intent(in), allocatable :: n_atoms_of_species(:)
+      real*8, intent(in) :: pair_distribution_partial(:,:,:), q_list(:), rs(:), r_cut
+      real*8, intent(out) :: structure_factor_partial(:,:,:)
+      integer, intent(in) :: n_samples_pc, n_samples_sf, n_species, n_sites, q_beg, q_end
+      real*8 :: r, q, dr, ca, cb, cabh, w
+      integer :: i, j, k, l, idx,  n
+      real*8, parameter :: pi = acos(-1.0)
+      real*8, intent(in) ::  rho
+      logical, intent(in) :: window
+
+      ! S_ab(q) = delta_ab + 4 pi rho (ca cb)^0.5
+      !                  * int_0^r_cut dr r^2 [ g_ab(r) - 1 ] sin(qr)/(qr) * sin( pi r / R )/ (pi r /R)
+      ! window corresponds to sin(pi r / R) / (pi r / R)
+      ! rs has size n_samples_pc
+
+      structure_factor_partial = 0.d0
+      ! n = q_end - q_beg + 1 !size(q_list)
+
+      dr = rs(2) - rs(1)
+
+      w = 1.d0
+
+      do i = 1, n_species
+         ca = n_atoms_of_species(i) / dfloat( n_sites )
+         do j = 1, n_species
+
+            if (i > j) then
+               ! We'e calculated the structure factor
+               structure_factor_partial(q_beg:q_end, i, j ) = structure_factor_partial(q_beg:q_end, j, i )
+               cycle
+            else
+
+               cb = n_atoms_of_species(j) / dfloat( n_sites )
+               cabh = ( ca * cb )**(0.5)
+
+               ! Iterate through each q
+               do k = q_beg, q_end
+                  q = q_list(k) * 2.d0 * pi
+
+
+                  do l = 1, n_samples_pc
+                     ! do the integral
+                     if (window) w = sinc( pi * rs(l) / r_cut )
+
+                     structure_factor_partial(k,i,j) = structure_factor_partial(k,i,j) + &
+                          & dr * rs(l)**2 &
+                          & * ( pair_distribution_partial(l, i, j) - 1.d0 ) &
+                          & * sinc( q * rs(l) ) * w
+                  end do
+
+                  structure_factor_partial(k,i,j) = 4.d0 * pi * cabh * rho * structure_factor_partial(k,i,j)
+
+                  if (i == j)then
+                     structure_factor_partial(k,i,j)  = structure_factor_partial(k,i,j)  + 1.d0
+                  end if
+               end do
+            end if
+
+         end do
+      end do
+
+    end subroutine get_partial_structure_factor
+
+
+
+    subroutine get_xrd_explicit( n_sites0, species_types, n_species,  &
          & neighbors_list, n_neigh, neighbor_species, rjs, n_samples, q_list,&
          & structure_factor, r_min, r_max, r_cut,&
          & partial, species_1, species_2, window)
@@ -161,11 +446,12 @@ module exp_utils
       real*8 :: r_min, r_max, r_cut
       character*8, allocatable :: species_types(:)
       integer, intent(in) :: neighbors_list(:), n_neigh(:), neighbor_species(:)
-      integer, intent(in) :: n_sites0, n_samples, species_1, species_2
+      integer, intent(in) :: n_sites0, n_samples, species_1, species_2, n_species
       integer :: n_sites, n_pairs, count, count_species_1
       integer :: i, j, k, i2, j2, l, ind_bin_l, ind_bin_h, species_i, species_j
       real*8,  intent(inout) :: structure_factor(1:n_samples), q_list(1:n_samples)
       real*8 :: r, n_pc, w, wfaci, wfacj
+      real*8, allocatable :: sf_parameters(:,:)
       real*8, parameter :: pi = acos(-1.0)
       logical, intent(in) :: partial, window
       logical ::  species_in_list, counted_1=.false.
@@ -173,6 +459,14 @@ module exp_utils
 
       n_sites = size(n_neigh)
       n_pairs = size(neighbors_list)
+
+      allocate( sf_parameters(1:9,1:n_species) )
+
+
+      sf_parameters = 0.d0
+      do i = 1, n_species
+         call get_scattering_factor_params(species_types(i), sf_parameters(1:9,i))
+      end do
 
       structure_factor = 0.d0
 
@@ -216,302 +510,136 @@ module exp_utils
 
             ! edge cases where r is not in range
             if (r < r_min)then
-               !            print *, "pair_correlation_function: Given r is less than r_min! Continuing loop "
+               !            print *, "pair_distribution_function: Given r is less than r_min! Continuing loop "
                cycle
             end if
 
             if (r > r_max)then
-               !            print *, "pair_correlation_function: Given r is more than r_max! Continuing loop "
+               !            print *, "pair_distribution_function: Given r is more than r_max! Continuing loop "
                cycle
             end if
 
 
 
             do l = 1, n_samples
-               call get_scattering_factor(species_types(species_i), q_list(l)/2.d0, wfaci)
-               call get_scattering_factor(species_types(species_j), q_list(l)/2.d0, wfacj)
+               call get_scattering_factor(wfaci, sf_parameters(1:9,species_i), q_list(l)/2.d0)
+               call get_scattering_factor(wfacj, sf_parameters(1:9,species_j), q_list(l)/2.d0)
 
                if (window) w = sinc( pi * r / r_cut )
 
                structure_factor(l) = structure_factor(l) +  wfaci * wfacj * sinc(&
-                    & 2.d0 * pi * q_list(l) * r  ) * w
+                    & 2.d0 * pi * q_list(l) * r  ) * w / dfloat(n_sites0)
             end do
 
 
          end do
       end do
 
+      deallocate(sf_parameters)
 
     end subroutine get_xrd_explicit
 
 
-    subroutine get_partial_structure_factor( q_beg, q_end, structure_factor_partial&
-         &, pair_correlation_partial, q_list , rs, r_cut,&
-         & n_samples_pc, n_samples_sf, n_species, n_atoms_of_species,&
-         & n_sites, window)
+    subroutine get_xrd_from_partial_structure_factors(q_beg, q_end, &
+         & structure_factor_partial, n_species, species_types,&
+         & species, wavelength, damping, alpha, method, use_iwasa,&
+         & x, y, n_atoms_of_species )
       implicit none
+      real*8, intent(in) :: damping, wavelength, alpha, structure_factor_partial(:,:,:)
+      integer, intent(in) :: species(:)
+      logical, intent(in) :: use_iwasa
+      integer, intent(in) :: n_species, q_beg, q_end
+      character*8, allocatable :: species_types(:)
+      character*32, intent(in) :: method
+      real*8 :: prefactor, p, c, c2, rij, diff(1:3), intensity, mag, sth, wfaci, wfacj, wfac_n, ntot
+      integer :: i, j, k, l, n
       real*8 , intent(in), allocatable :: n_atoms_of_species(:)
-      real*8, intent(out) :: structure_factor_partial(:,:,:),&
-           & pair_correlation_partial(:,:,:), q_list(:), rs(:), r_cut
-      integer, intent(in) :: n_samples_pc, n_samples_sf, n_species, n_sites, q_beg, q_end
-      real*8 :: r, q, dr, ca, cb, cabh, w
-      integer :: i, j, k, l, idx,  n
+      real*8, allocatable :: sf_parameters(:,:)
+      real*8, intent(in) :: x(:)
+      real*8, intent(out) :: y(:)
       real*8, parameter :: pi = acos(-1.0)
-      logical, intent(in) :: window
 
-      ! S_ab(q) = delta_ab + 4 pi rho (ca cb)^0.5
-      !                  * int_0^r_cut dr r^2 [ g_ab(r) - 1 ] sin(qr)/(qr) * sin( pi r / R )/ (pi r /R)
-      ! window corresponds to sin(pi r / R) / (pi r / R)
-      ! rs has size n_samples_pc
+      y = 0.d0
+      n = q_end - q_beg + 1 !size(x)
 
-      structure_factor_partial = 0.d0
-      ! n = q_end - q_beg + 1 !size(q_list)
+      allocate( sf_parameters(1:9,1:n_species) )
 
-      dr = rs(2) - rs(1)
-
-      w = 1.d0
-
+      sf_parameters = 0.d0
       do i = 1, n_species
-         ca = n_atoms_of_species(i) / dfloat( n_sites )
-         do j = 1, n_species
-
-            if (i > j) then
-               ! We'e calculated the structure factor
-               structure_factor_partial(q_beg:q_end, i, j ) = structure_factor_partial(q_beg:q_end, j, i )
-               cycle
-            else
-
-               cb = n_atoms_of_species(j) / dfloat( n_sites )
-               cabh = ( ca * cb )**(0.5)
-
-               ! Iterate through each q
-               do k = q_beg, q_end
-                  q = q_list(k) * 2.d0 * pi
-
-
-                  do l = 1, n_samples_pc
-                     ! do the integral
-                     if (window) w = sinc( pi * rs(l) / r_cut )
-
-                     structure_factor_partial(k,i,j) = structure_factor_partial(k,i,j) + &
-                          & dr * rs(l)**2 &
-                          & * ( pair_correlation_partial(l, i, j) - 1.d0 ) &
-                          & * sinc( q * rs(l) ) * w
-                  end do
-
-                  structure_factor_partial(k,i,j) = 4.d0 * pi * cabh * structure_factor_partial(k,i,j)
-
-                  if (i == j)then
-                     structure_factor_partial(k,i,j)  = structure_factor_partial(k,i,j)  + 1.d0
-                  end if
-               end do
-            end if
-
-         end do
+         call get_scattering_factor_params(species_types(i), sf_parameters(1:9,i))
       end do
 
-    end subroutine get_partial_structure_factor
+      ntot = sum(n_atoms_of_species)
 
+      do l = q_beg, q_end
+         ! prefactor = exp( - damping * x(l)**2 / 2.d0 )
+         ! if (use_iwasa)then
+         !    sth = ( wavelength * x(l) / 2.0d0 )
+         !    p = 1.0d0 - sth * sth
+         !    if (p < 0) p = 0.0d0
+         !    c = sqrt(p)
+         !    c2 = cos(2.0d0 * acos(c))
+         !    prefactor = prefactor  *  c / (1.0d0 + alpha * c2**2 )
+         ! end if
 
+         do i = 1, n_species
+            call get_scattering_factor(wfaci, sf_parameters(1:9,i), x(l)/2.d0)
 
-    subroutine get_pair_correlation(  n_sites0, &
-         & neighbors_list, n_neigh, neighbor_species, rjs, r_min, r_max, n_samples, x,&
-         & pair_correlation, r_cut, return_histogram,&
-         & partial_rdf, species_1, species_2, kde_sigma )
+            do j = 1, n_species
+               call get_scattering_factor(wfacj, sf_parameters(1:9,j), x(l)/2.d0)
+               !               call get_scattering_factor(species_types(j), x(l)/2.d0, wfacj)
+
+               y(l) = wfaci * wfacj * (( n_atoms_of_species(i) / ntot ) * ( n_atoms_of_species(j) / ntot ))**0.5 &
+                    & * structure_factor_partial(l,i,j)
+
+            end do
+         end do
+!         y(l) = y(l)
+      end do
+
+      deallocate(sf_parameters)
+
+    end subroutine get_xrd_from_partial_structure_factors
+
+    
+    !#############################################################!
+    !###---   Experimental Interpolation and Similarities   ---###!
+    !#############################################################!
+
+    subroutine get_all_similarities( n_exp, exp_data, energy_scales, s_tot )
       implicit none
-      real*8,  intent(in) :: rjs(:), kde_sigma
-      real*8 :: r_min, r_max, r_cut
-      integer, intent(in) :: neighbors_list(:), n_neigh(:), neighbor_species(:)
-      integer, intent(in) :: n_sites0, n_samples, species_1, species_2
-      integer :: n_sites, n_pairs, count, count_species_1
-      integer :: i, j, k, i2, j2, l, ind_bin_l, ind_bin_h, species_i, species_j
-      real*8,  intent(inout) :: pair_correlation(1:n_samples), x(1:n_samples)
-      real*8, allocatable :: bin_edges(:), dV(:), kde(:)
-      real*8 :: r, n_pc
-      real*8, parameter :: pi = acos(-1.0)
-      logical, intent(in) :: partial_rdf
-      logical :: return_histogram, species_in_list, counted_1=.false.
-      ! First allocate the pair correlation function array
+      integer, intent(in) :: n_exp
+      type(exp_data_container), allocatable, intent(in) :: exp_data(:)
+      real*8, allocatable :: energy_scales(:)
+      integer :: i
+      real*8, intent(out) :: s_tot
 
-      allocate(bin_edges(1:n_samples+1))
-      if ( .not. return_histogram ) allocate(dV(1:n_samples))
+      s_tot = 0.d0
+      do i = 1, n_exp
+         if (exp_data(i)%compute_similarity)then
 
-      if (kde_sigma > 0.d0)then
-         allocate(kde(1:n_samples))
-         kde = 0.d0
-      end if
+            write(*,'(A,1X,A,1X,F12.6,1X,F12.6)') " Exp similarity&
+                 & (label, escale, similarity) ", trim(exp_data(i)&
+                 &%label), energy_scales(i) ,  exp_data(i)%similarity
 
-      n_sites = size(n_neigh)
-      n_pairs = size(neighbors_list)
-
-      x = 0.d0
-      bin_edges = 0.d0
-      pair_correlation = 0.d0
-
-      ! check that r_min is less than r_max
-      if (r_min > r_max)then
-         print *, "!!! Given r_min is less than r_max! swapping these values!"
-         r = r_max
-         r_max = r_min
-         r_min = r
-      end if
-
-
-      do i = 1, n_samples + 1
-         bin_edges(i) = r_min  +  ( real( (i-1) ) /  real(n_samples) ) * (r_max - r_min)
-      end do
-
-      do i = 1, n_samples
-         x(i) = (bin_edges(i) + bin_edges(i+1)) / 2.d0
-
-         if ( .not. return_histogram )then
-            dV(i) = 4.d0 * pi * (bin_edges(i)**2 * (bin_edges(i+1) - bin_edges(i)) )
-         end if
-
-      end do
-
-      count = 0
-      count_species_1 = 0
-      k = 0
-      do i = 1, n_sites
-         ! k is the index which keeps a number of the atom pairs
-         ! i2 is the index of a particular atom
-         i2 = modulo(neighbors_list(k+1)-1, n_sites0) + 1
-         species_i = neighbor_species(k+1)
-
-         do j = 1, n_neigh(i)
-            ! Loop through the neighbors of atom i
-            ! j2 is the index of a neighboring atom to i
-            k = k + 1
-            j2 = modulo(neighbors_list(k)-1, n_sites0) + 1
-
-            species_j = neighbor_species(k)
-
-            if (partial_rdf)then
-               if (species_i /= species_1) then
-                  cycle
-               elseif(j == 1)then
-                  count_species_1 = count_species_1 + 1
-               end if
-
-            end if
-
-            if (partial_rdf)then
-               if (species_j /= species_2) cycle
-            end if
-
-            r = rjs(k) ! atom pair distance
-
-            if ( r < 1e-3 .or. r > r_cut)then
-               cycle
-            end if
-
-            ! edge cases where r is not in range
-            if (r < r_min)then
-               !            print *, "pair_correlation_function: Given r is less than r_min! Continuing loop "
-               cycle
-            end if
-
-            if (r > r_max)then
-               !            print *, "pair_correlation_function: Given r is more than r_max! Continuing loop "
-               cycle
-            end if
-
-            if (kde_sigma > 0.d0)then
-               ! do a kernel density estimate
-               count = count + 1
-               kde = 0.d0
-               do l = 1,n_samples
-                  kde(l) = kde(l) +  exp( -( (x(l) - r) / kde_sigma )**2 / 2.d0 )
-               end do
-               pair_correlation(1:n_samples) = pair_correlation(1:n_samples) + &
-                    & kde(1:n_samples)
-            else
-
-               call binary_search_real( r, bin_edges, 1, n_samples+1, ind_bin_l, ind_bin_h )
-               pair_correlation(ind_bin_l) = pair_correlation(ind_bin_l) +  1.d0
-            end if
-
-         end do
-      end do
-
-
-      ! I don't know why the factor of 1 / n_samples / 0.1 works, but
-      ! it seems to do so for all values of sigma and samples checked
-      ! for but for rcut it changes...
-
-      if (kde_sigma>0.d0)then
-         pair_correlation(1:n_samples) =&
-              & pair_correlation(1:n_samples) / sqrt(2.d0 * pi) /&
-              & (kde_sigma) / dfloat(n_samples) / kde_sigma !/ 0.1d0
-      end if
-
-      !( dfloat(count_species_1) )
-
-      ! Remember that this is done for each process, so then the final
-      ! result should be a reduction summation of all of these
-      ! pair_correlation arrays multiplied by the 1/density factor ( pair_correlation *  (V / n_sites) )
-
-      if ( .not. return_histogram )then
-         ! Instead of giving the Radial distribution function (which goes as r^2), we give the pair distribution function
-         pair_correlation =  pair_correlation / dV
-         deallocate(dV)
-      end if
-
-      deallocate(bin_edges)
-      if (kde_sigma>0.d0) deallocate(kde)
-
-    end subroutine get_pair_correlation
-
-
-    subroutine binary_search_real( xs, x, lin, hin, l, h )
-      ! give delimiting indices (lout, hout) of array of x (which is a set of delimited bins) where xs (x search) is in range
-      real*8, allocatable, intent(in) :: x(:)
-      real*8, intent(in) :: xs
-      real*8 :: xi
-      integer, intent(in) :: lin, hin
-      integer, intent(out) :: l, h
-      integer :: m
-      logical :: found = .false.
-
-      l = lin
-      h = hin
-
-      ! Check that lower index, l is less than upper index, h
-      if (l > h)then
-         print *, "binary_search_real: lower bound of search is greater than higher bound, swapping"
-         m = h
-         h = l
-         l = h
-      end if
-
-      m = int( real(l + h) / 2.d0 )
-
-      found = .false.
-      do while( .not. found  )
-         xi = x(m)
-
-         if ( xs < xi )then
-            ! its in the lower segment
-            h = m
-            m = int( real(h + l) / 2.d0 )
-         end if
-
-         if ( xs > xi )then
-            ! its in the upper segment
-            l = m
-            m = int( real(h + l) / 2.d0 )
-         end if
-
-
-!         print *, " h - l = ", h - l
-         if ( h - l == 1 ) then
-            ! terminate the search
-            found = .true.
+            s_tot = s_tot +  energy_scales(i) * exp_data(i)%similarity
          end if
       end do
 
-    end subroutine binary_search_real
+    end subroutine get_all_similarities
+
+    subroutine check_species_in_list( species_i, allowed_species, species_in_list )
+      implicit none
+      integer, allocatable, intent(in) :: allowed_species(:)
+      integer, intent(in) :: species_i
+      logical, intent(out) :: species_in_list
+      integer :: l
+      species_in_list = .false.
+      do l = 1, size(allowed_species)
+         if (allowed_species(l) == species_i) species_in_list = .true.
+      end do
+    end subroutine check_species_in_list
+
 
 
     !**************************************************************************
@@ -532,6 +660,179 @@ module exp_utils
 
     end subroutine calculate_exp_interpolation
 
+
+
+    subroutine get_data_similarity(x, y, y_pred, sim_exp_pred, exp_similarity_type)
+      implicit none
+      real*8, allocatable, intent(in) :: x(:), y(:), y_pred(:)
+      character*32, intent(in) :: exp_similarity_type
+      real*8, intent(out) :: sim_exp_pred
+
+      if (exp_similarity_type == "squared_diff")then
+         sim_exp_pred = -  dot_product(y - y_pred, y - y_pred)
+      else
+         sim_exp_pred =  dot_product(y, y_pred)
+      end if
+    end subroutine get_data_similarity
+
+
+    !########################################!
+    !###---   XPS spectrum utilities   ---###!
+    !########################################!
+
+
+    subroutine get_compare_xps_spectra(data, core_electron_be, &
+         & sigma, n_samples, mag, sim_exp_pred, &
+         & x_i_exp, y_i_exp,  y_i_pred, y_i_pred_all, &
+         & get_exp, exp_similarity_type )
+      implicit none
+      real*8, allocatable, intent(in) :: data(:,:)
+      real*8, intent(in) :: sigma, core_electron_be(:)
+      real*8, allocatable, intent(inout) :: x_i_exp(:), y_i_exp(:), &
+           & y_i_pred(:), y_i_pred_all(:,:)
+      real*8, intent(out) :: sim_exp_pred, mag
+      integer, intent(in) :: n_samples
+      logical, intent(in) :: get_exp
+      character*32, intent(in) :: exp_similarity_type
+
+      if (get_exp)then
+         ! Get interpolated exp spectra
+         call get_xps_spectra(data(1,:), data(2,:), sigma, n_samples, mag,&
+              & x_i_exp,  y_i_exp, y_i_pred_all, core_electron_be,&
+              &  .false.)
+      end if
+
+      ! Get interpolated predicted spectra
+      call get_xps_spectra(data(1,:), data(2,:), sigma, n_samples, mag,&
+           & x_i_exp, y_i_pred, y_i_pred_all, core_electron_be,&
+           & .true.)
+
+      call get_data_similarity(x_i_exp, y_i_exp, y_i_pred, sim_exp_pred, exp_similarity_type)
+
+    end subroutine get_compare_xps_spectra
+
+
+    subroutine broaden_spectrum(x, x0, y, y_all, idx, sigma)
+      implicit none
+      real*8, allocatable, intent(in) :: x(:)
+      real*8,  intent(inout) :: y(:), y_all(:,:)
+      real*8, intent(in) :: x0, sigma
+      real*8 :: norm_fac
+      integer :: i,idx
+      norm_fac = 1.d0 / ( sqrt(2.d0 * 3.14159265359) * sigma )
+      do i = 1, size(x)
+         y(i) = y(i) +  exp( -( x(i) - x0 )**2 / (2*sigma**2) )
+         y_all(idx, i) = exp( -( x(i) - x0 )**2 / (2*sigma**2) )
+      end do
+
+    end subroutine broaden_spectrum
+
+
+    subroutine get_xps_spectra(xi, yi, sigma, n_samples, mag, x, y, y_all,&
+         & core_electron_be, broaden)
+      ! This just gets the broadened spectra
+      ! xi are the predicted core electron binding energies and x is
+      ! the one
+      implicit none
+      real*8, intent(in) :: xi(:), yi(:), core_electron_be(:)
+      integer, intent(in) :: n_samples
+      real*8, allocatable, intent(out) :: x(:), y(:), y_all(:,:)
+      real*8, intent(in) :: sigma
+      integer :: i
+      real*8 :: x_val, x_min, x_max, x_range, t, dx
+      real*8, intent(out) :: mag
+      logical, intent(in) :: broaden
+
+      allocate(x(1:n_samples))
+      allocate(y(1:n_samples))
+      allocate(y_all(1:size(core_electron_be), 1:n_samples))
+
+      x = 0.d0
+      y = 0.d0
+      y_all = 0.d0
+
+      x_min = xi(1)
+      x_max = xi(size(xi))
+      x_range = x_max - x_min
+      dx = x_range / real(n_samples)
+
+      do i = 1, n_samples
+         t = ((i-1) / real(n_samples-1))
+         x(i) = (1.d0 - t) * x_min  +  t * x_max !range
+      end do
+
+      ! Interpolate
+      call lerp(x, y, xi, yi)
+
+      if (broaden) then
+         y=0.d0
+
+         do i = 1, size(core_electron_be)
+            call broaden_spectrum(x, core_electron_be(i), y, y_all, i, sigma)
+         end do
+
+      end if
+
+      mag = sqrt(dot_product(y, y)) * dx !sum(y * dx) !
+      y = y / mag
+      y_all = y_all / mag
+
+    end subroutine get_xps_spectra
+
+
+
+    subroutine broaden_spectrum_derivative(x, x0, x0_der, y, sigma, y_exp, y_tot, mag, dx)
+      implicit none
+      real*8, intent(in) :: x(:)
+      real*8, intent(inout) :: y(:, :)
+      real*8, intent(in) ::  y_exp(:)
+      real*8, intent(in) :: x0, x0_der(:), sigma, mag, dx
+      real*8 :: f
+      real*8, allocatable :: g(:,:)
+      real*8, intent(out) :: y_tot(1:3)
+      integer :: i,idx
+      real*8 :: norm_fac
+      norm_fac = 1.d0 / ( sqrt(2.d0 * 3.14159265359) * sigma )
+
+      y = 0.d0
+
+      do i = 1, size(x)
+         f = ( ( x(i) - x0 ) / (sigma**2) ) * exp( -( x(i) - x0 )**2 / (2*sigma**2) ) * y_exp(i) / mag
+         y(1:3,i) = y(1:3,i) + x0_der * f
+      end do
+
+      y_tot(1) =  sum(  y(1,:) ) * dx
+      y_tot(2) =  sum(  y(2,:) ) * dx
+      y_tot(3) =  sum(  y(3,:) ) * dx
+
+    end subroutine broaden_spectrum_derivative
+
+
+    subroutine get_xps_weights(weights, decay, positions)
+      implicit none
+      real*8, allocatable, intent(in) :: positions(:,:), decay
+      real*8, allocatable, intent(out) :: weights(:)
+      real*8 :: z_max, z
+      integer :: n, i
+
+      n = size(positions,2)
+      allocate(weights(1:n))
+      weights = 1.d0
+      z_max = maxval(positions(3,1:n))
+
+      if ( decay > 1e-5 )then
+         do i = 1, n
+            z = positions(3,i)
+            weights(i) = exp( -(z_max - z) / decay )
+         end do
+      end if
+
+    end subroutine get_xps_weights
+
+
+    !#####################################!
+    !###---   Experimental Forces   ---###!
+    !#####################################!
 
     subroutine get_experimental_this_force(this_force, y, der_vec, y_der, norm, prefactor, n_samples, k)
       implicit none
@@ -597,6 +898,7 @@ module exp_utils
       n_sites0 = size(forces0, 2)
 
       if (exp_similarity_type == 'squared_diff')then
+
          energies_lp = + energy_scale / n_sites0 * ( dx * dot_product( (y - y_exp), (y - y_exp) ) )
          allocate(prefactor(1:n_samples))
          prefactor =  2.d0 * ( y - y_exp )
@@ -774,71 +1076,6 @@ module exp_utils
 
     end subroutine get_experimental_forces
 
-
-    subroutine get_xrd_from_partial_structure_factors(q_beg, q_end, &
-         & structure_factor_partial, n_species, species_types,&
-         & species, wavelength, damping, alpha, method, use_iwasa,&
-         & x, y, n_atoms_of_species )
-      implicit none
-      real*8, intent(in) :: damping, wavelength, alpha, structure_factor_partial(:,:,:)
-      integer, intent(in) :: species(:)
-      logical, intent(in) :: use_iwasa
-      integer, intent(in) :: n_species, q_beg, q_end
-      character*8, allocatable :: species_types(:)
-      character*32, intent(in) :: method
-      real*8 :: prefactor, p, c, c2, rij, diff(1:3), intensity, mag, sth, wfaci, wfacj, wfac_n, ntot
-      integer :: i, j, k, l, n
-      real*8 , intent(in), allocatable :: n_atoms_of_species(:)
-      real*8, intent(in) :: x(:)
-      real*8, intent(out) :: y(:)
-      real*8, parameter :: pi = acos(-1.0)
-
-      y = 0.d0
-      n = q_end - q_beg + 1 !size(x)
-
-      ! ! x is in units of 2θ for XRD and in units of q for SAXS
-      ! if (trim(method) == "saxs")then
-      !    do i = 1, n
-      !       s(i) =  x(i) / 2.d0 / pi
-      !    end do
-      ! else
-      !    ! Do XRD
-      !    do i = 1, n
-      !       s(i) = 2.d0 * sin( x(i) * pi / 180.d0 / 2.d0 ) / wavelength
-      !    end do
-      ! end if
-
-      ntot = sum(n_atoms_of_species)
-
-      do l = q_beg, q_end
-         prefactor = exp( - damping * x(l)**2 / 2.d0 )
-         if (use_iwasa)then
-            sth = ( wavelength * x(l) / 2.0d0 )
-            p = 1.0d0 - sth * sth
-            if (p < 0) p = 0.0d0
-            c = sqrt(p)
-            c2 = cos(2.0d0 * acos(c))
-            prefactor = prefactor  *  c / (1.0d0 + alpha * c2**2 )
-         end if
-
-         wfac_n = 0.d0
-         do i = 1, n_species
-            call get_scattering_factor(species_types(i), x(l) /2.d0, wfaci)
-            wfac_n = wfac_n + wfaci*wfaci*( n_atoms_of_species(i) / ntot )
-
-            do j = 1, n_species
-               call get_scattering_factor(species_types(j), x(l)/2.d0, wfacj)
-
-               y(l) = wfaci * wfacj * (( n_atoms_of_species(i) / ntot ) * ( n_atoms_of_species(j) / ntot ))**0.5 &
-                    & * structure_factor_partial(l,i,j)
-            end do
-         end do
-         y(l) = y(l) / wfac_n
-      end do
-
-
-      
-    end subroutine get_xrd_from_partial_structure_factors
 
 
     ! subroutine get_xrd( n_neigh, neighbors_list, neighbor_species, rjs, xyz, &
@@ -1134,7 +1371,7 @@ module exp_utils
          prefactor = exp( - damping * s(l)**(2.d0) / 2.d0 )
 
          do i = 1, n_species
-            call get_scattering_factor(species_types(i), s(l)/2.d0, wfac_species(i))
+!            call get_scattering_factor(species_types(i), s(l)/2.d0, wfac_species(i))
          end do
 
          do i = 1, n_sites
@@ -1317,7 +1554,12 @@ module exp_utils
             energies_lp(i) = - energy_scale * ( dot_product( y_all(:,i), y_exp ))
          end do
       else if (exp_similarity_type == 'squared_diff')then
-         energies_lp = + energy_scale / n_sites0 * ( dx * dot_product( (y - y_exp), (y - y_exp) ) )
+         do i = 1, n_sites
+            energies_lp(i) = - energy_scale * ( 1.d0 / dfloat( n_sites0 ) -  dot_product( y_all(:,i), y_exp ))
+         end do
+
+
+         !energies_lp = + energy_scale / n_sites0 * ( dot_product( (y - y_exp), (y - y_exp) ) )
          ! Get the other terms for the squared_diff expression
 
 
@@ -1430,9 +1672,9 @@ module exp_utils
 
                      else
                         ! do sum
-                        sum_d1 = dx * sum( der_vec(1,k,1:n_samples) )
-                        sum_d2 = dx * sum( der_vec(2,k,1:n_samples) )
-                        sum_d3 = dx * sum( der_vec(3,k,1:n_samples) )
+                        sum_d1 =  sum( der_vec(1,k,1:n_samples) )
+                        sum_d2 =  sum( der_vec(2,k,1:n_samples) )
+                        sum_d3 =  sum( der_vec(3,k,1:n_samples) )
 
                         do l = 1, n_samples
                            y_der(1, l) =  ( der_vec(1,k,l)  - y(l) * sum_d1 ) / norm
@@ -1501,169 +1743,6 @@ module exp_utils
     end subroutine get_exp_pred_spectra_energies_forces
 
 
-
-    subroutine get_data_similarity(x, y, y_pred, sim_exp_pred, exp_similarity_type)
-      implicit none
-      real*8, allocatable, intent(in) :: x(:), y(:), y_pred(:)
-      character*32, intent(in) :: exp_similarity_type
-      real*8, intent(out) :: sim_exp_pred
-
-      if (exp_similarity_type == "squared_diff")then
-         sim_exp_pred = - (x(2) - x(1) ) * dot_product(y - y_pred, y - y_pred)
-      else
-         sim_exp_pred =  dot_product(y, y_pred)
-      end if
-    end subroutine get_data_similarity
-
-
-
-    subroutine get_compare_xps_spectra(data, core_electron_be, &
-         & sigma, n_samples, mag, sim_exp_pred, &
-         & x_i_exp, y_i_exp,  y_i_pred, y_i_pred_all, &
-         & get_exp, exp_similarity_type )
-      implicit none
-      real*8, allocatable, intent(in) :: data(:,:)
-      real*8, intent(in) :: sigma, core_electron_be(:)
-      real*8, allocatable, intent(inout) :: x_i_exp(:), y_i_exp(:), &
-           & y_i_pred(:), y_i_pred_all(:,:)
-      real*8, intent(out) :: sim_exp_pred, mag
-      integer, intent(in) :: n_samples
-      logical, intent(in) :: get_exp
-      character*32, intent(in) :: exp_similarity_type
-
-      if (get_exp)then
-         ! Get interpolated exp spectra
-         call get_xps_spectra(data(1,:), data(2,:), sigma, n_samples, mag,&
-              & x_i_exp,  y_i_exp, y_i_pred_all, core_electron_be,&
-              &  .false.)
-      end if
-
-      ! Get interpolated predicted spectra
-      call get_xps_spectra(data(1,:), data(2,:), sigma, n_samples, mag,&
-           & x_i_exp, y_i_pred, y_i_pred_all, core_electron_be,&
-           & .true.)
-
-      call get_data_similarity(x_i_exp, y_i_exp, y_i_pred, sim_exp_pred, exp_similarity_type)
-
-    end subroutine get_compare_xps_spectra
-
-
-    subroutine broaden_spectrum(x, x0, y, y_all, idx, sigma)
-      implicit none
-      real*8, allocatable, intent(in) :: x(:)
-      real*8,  intent(inout) :: y(:), y_all(:,:)
-      real*8, intent(in) :: x0, sigma
-      real*8 :: norm_fac
-      integer :: i,idx
-      norm_fac = 1.d0 / ( sqrt(2.d0 * 3.14159265359) * sigma )
-      do i = 1, size(x)
-         y(i) = y(i) +  exp( -( x(i) - x0 )**2 / (2*sigma**2) )
-         y_all(idx, i) = exp( -( x(i) - x0 )**2 / (2*sigma**2) )
-      end do
-
-    end subroutine broaden_spectrum
-
-
-    subroutine get_xps_spectra(xi, yi, sigma, n_samples, mag, x, y, y_all,&
-         & core_electron_be, broaden)
-      ! This just gets the broadened spectra
-      ! xi are the predicted core electron binding energies and x is
-      ! the one
-      implicit none
-      real*8, intent(in) :: xi(:), yi(:), core_electron_be(:)
-      integer, intent(in) :: n_samples
-      real*8, allocatable, intent(out) :: x(:), y(:), y_all(:,:)
-      real*8, intent(in) :: sigma
-      integer :: i
-      real*8 :: x_val, x_min, x_max, x_range, t, dx
-      real*8, intent(out) :: mag
-      logical, intent(in) :: broaden
-
-      allocate(x(1:n_samples))
-      allocate(y(1:n_samples))
-      allocate(y_all(1:size(core_electron_be), 1:n_samples))
-
-      x = 0.d0
-      y = 0.d0
-      y_all = 0.d0
-
-      x_min = xi(1)
-      x_max = xi(size(xi))
-      x_range = x_max - x_min
-      dx = x_range / real(n_samples)
-
-      do i = 1, n_samples
-         t = ((i-1) / real(n_samples-1))
-         x(i) = (1.d0 - t) * x_min  +  t * x_max !range
-      end do
-
-      ! Interpolate
-      call lerp(x, y, xi, yi)
-
-      if (broaden) then
-         y=0.d0
-
-         do i = 1, size(core_electron_be)
-            call broaden_spectrum(x, core_electron_be(i), y, y_all, i, sigma)
-         end do
-
-      end if
-
-      mag = sqrt(dot_product(y, y)) * dx !sum(y * dx) !
-      y = y / mag
-      y_all = y_all / mag
-
-    end subroutine get_xps_spectra
-
-
-
-    subroutine broaden_spectrum_derivative(x, x0, x0_der, y, sigma, y_exp, y_tot, mag, dx)
-      implicit none
-      real*8, intent(in) :: x(:)
-      real*8, intent(inout) :: y(:, :)
-      real*8, intent(in) ::  y_exp(:)
-      real*8, intent(in) :: x0, x0_der(:), sigma, mag, dx
-      real*8 :: f
-      real*8, allocatable :: g(:,:)
-      real*8, intent(out) :: y_tot(1:3)
-      integer :: i,idx
-      real*8 :: norm_fac
-      norm_fac = 1.d0 / ( sqrt(2.d0 * 3.14159265359) * sigma )
-
-      y = 0.d0
-
-      do i = 1, size(x)
-         f = ( ( x(i) - x0 ) / (sigma**2) ) * exp( -( x(i) - x0 )**2 / (2*sigma**2) ) * y_exp(i) / mag
-         y(1:3,i) = y(1:3,i) + x0_der * f
-      end do
-
-      y_tot(1) =  sum(  y(1,:) ) * dx
-      y_tot(2) =  sum(  y(2,:) ) * dx
-      y_tot(3) =  sum(  y(3,:) ) * dx
-
-    end subroutine broaden_spectrum_derivative
-
-
-    subroutine get_xps_weights(weights, decay, positions)
-      implicit none
-      real*8, allocatable, intent(in) :: positions(:,:), decay
-      real*8, allocatable, intent(out) :: weights(:)
-      real*8 :: z_max, z
-      integer :: n, i
-
-      n = size(positions,2)
-      allocate(weights(1:n))
-      weights = 1.d0
-      z_max = maxval(positions(3,1:n))
-
-      if ( decay > 1e-5 )then
-         do i = 1, n
-            z = positions(3,i)
-            weights(i) = exp( -(z_max - z) / decay )
-         end do
-      end if
-
-    end subroutine get_xps_weights
 
     subroutine lerp(x, y, xi, yi)
       implicit none
@@ -1952,9 +2031,9 @@ module exp_utils
     end subroutine get_waasmaier
 
 
-    subroutine get_scattering_factor(element, s, f)
+    subroutine get_scattering_factor_params(element, wout)
       implicit none
-      real*8, intent(in) :: s ! scattering vector: s = q / 2pi [1/A]
+      !      real*8, intent(in) :: s ! scattering vector: s = q / 2pi [1/A]
       real*8 :: w(1:9,1:215)
       character*20 :: elements(1:215)
       !   Input variables
@@ -1962,8 +2041,7 @@ module exp_utils
       !   Output variables
       logical :: is_in_database = .false.
       !   Internal variables
-      real*8 ::  s_sq
-      real*8, intent(out) :: f
+      real*8, intent(out) :: wout(1:9)
       integer :: i, j
 
       elements = ['    H', "   H'", '    D', '  H1-', '   He', '  &
@@ -2002,7 +2080,7 @@ module exp_utils
            &+', '   Np', ' Np3+', ' Np4+', ' Np6+', '   Pu', ' Pu3+',&
            & ' Pu4+', ' Pu6+', '   Am', '   Cm', '   Bk', '   Cf']
 
-
+      ! 9 rows with 215 columns. Each column corresponds to a given species.
       w(1:9,1:215) = reshape( &
      & (/ & ! a1, a2, a3, a4                  b1, b2, b3, b4,               c
  &  0.493002, 0.322912, 0.140191, 0.040810,   10.5109, 26.1257, 3.14236, 57.7997,  0.003038, & ! H
@@ -2228,13 +2306,13 @@ module exp_utils
       outer: do i = 1, size(elements, 1)
          if( trim(adjustl(elements(i))) == trim(adjustl(element)) )then
             is_in_database = .true.
-            f = w(9, i)
-            s_sq = s * s
+            wout(1:9) = w(1:9, i)
+            ! f = w(9, i)
+            ! s_sq = s * s
 
-            do j = 1, 4
-               print *, j, " ", trim(element), " a = ", w(j, i) , " b = ", w( 4 + j, i)
-               f = f + w(j, i) * exp( - w( 4 + j, i ) * s_sq  )
-            end do
+            ! do j = 1, 4
+            !    f = f + w(j, i) * exp( - w( 4 + j, i ) * s_sq  )
+            ! end do
             exit outer
          end if
       end do outer
@@ -2243,9 +2321,22 @@ module exp_utils
          write(*,'(A,1X,A,1X,A)') '!!! XRD Warning !!! The element ', element, ' is not in the scattering factor database! '
       end if
 
+    end subroutine get_scattering_factor_params
+
+    subroutine get_scattering_factor(f, w, s )
+      implicit none
+      real*8, intent(in) :: w(1:9), s
+      real*8, intent(out) :: f
+      real*8 :: s_sq
+      integer :: j
+
+      f = w(9)
+      s_sq = s * s
+
+      do j = 1, 4
+         f = f + w(j) * exp( - w( 4 + j) * s_sq  )
+      end do
     end subroutine get_scattering_factor
-
-
 
 
   end module exp_utils
