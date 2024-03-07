@@ -616,6 +616,8 @@ program turbogap
 #endif
 	end if
 	if ( params%eph_Tinfile == "NULL" ) then
+		write(*,*) "~MESSAGE~: eph_Tinfile value found NULL,"
+		write(*,*) "using given/default input parameters!"
 		call ephfdm%EPH_FDM_input_params (params%eph_md_last_step, params%eph_gsx, &
 		params%eph_gsy, params%eph_gsz, params%in_x0, params%in_x1, params%in_y0, params%in_y1, &
 		params%in_z0, params%in_z1, params%eph_Ti_e, params%eph_C_e, params%eph_rho_e, &
