@@ -479,7 +479,16 @@ subroutine heatDiffusionSolve(this, dt)
 							call this%spline_int (this%file_T_for_kappae,this%file_kappa_e_T, &
 						this%K_e_T_deriv, this%Num_K_e, this%T_e(zback,j,i), this%kappa_e(zback,j,i))
 						end if
-						
+
+						if (this%T_e(k,j,i) <= this%file_T_for_kappae(1)) then
+							this%kappa_e(k,j,i) =  this%file_kappa_e_T(1)
+						else if (this%T_e(k,j,i) >= this%file_T_for_kappae(this%Num_K_e)) then 
+							this%kappa_e(k,j,i) =  this%file_kappa_e_T(this%Num_K_e)
+						else
+							call this%spline_int (this%file_T_for_kappae,this%file_kappa_e_T, &
+						this%K_e_T_deriv, this%Num_K_e, this%T_e(k,j,i), this%kappa_e(k,j,i))
+						end if
+
 						!! interpolate for C_e(T) which are not on boundaries
 						
 						if (this%T_e(k,j,i) <= this%file_T_for_Ce(1)) then
@@ -595,7 +604,16 @@ subroutine heatDiffusionSolve(this, dt)
 							call this%spline_int (this%file_T_for_kappae,this%file_kappa_e_T, &
 						this%K_e_T_deriv, this%Num_K_e, this%T_e(zback,j,i), this%kappa_e(zback,j,i))
 						end if
-						
+
+						if (this%T_e(k,j,i) <= this%file_T_for_kappae(1)) then
+							this%kappa_e(k,j,i) =  this%file_kappa_e_T(1)
+						else if (this%T_e(k,j,i) >= this%file_T_for_kappae(this%Num_K_e)) then 
+							this%kappa_e(k,j,i) =  this%file_kappa_e_T(this%Num_K_e)
+						else
+							call this%spline_int (this%file_T_for_kappae,this%file_kappa_e_T, &
+						this%K_e_T_deriv, this%Num_K_e, this%T_e(k,j,i), this%kappa_e(k,j,i))
+						end if
+
 						!! interpolate for C_e(T) which are not on boundaries
 						
 						if (this%T_e(k,j,i) <= this%file_T_for_Ce(1)) then
@@ -629,7 +647,7 @@ subroutine heatDiffusionSolve(this, dt)
 	end if
 	
 	!! when parameters are not T-dependent and there is additional source term
-					
+
 	if ( (.not. this%T_dependent_parameters) .and. this%Source_term ) then
 		do n = 1, new_steps
 			do k = 1, this%nz
@@ -649,24 +667,24 @@ subroutine heatDiffusionSolve(this, dt)
 						if (xfront > this%nx) xfront = 1
 						if (yfront > this%ny) yfront = 1
 						if (zfront > this%nz) zfront = 1
-						
+
 						grad_sq_T = &
 						(this%T_e(k,j,xback) - 2.0d0*this%T_e(k,j,i) + this%T_e(k,j,xfront))*invdx2 + &
 						(this%T_e(k,yback,i) - 2.0d0*this%T_e(k,j,i) + this%T_e(k,yfront,i))*invdy2 + &
 						(this%T_e(zback,j,i) - 2.0d0*this%T_e(k,j,i) + this%T_e(zfront,j,i))*invdz2
-							
+
 						multiply_factor = inner_dt/(this%C_e(k,j,i) * this%rho_e(k,j,i))
-	
+
 						this%T_e(k,j,i) = this%T_e(k,j,i) + multiply_factor * &
 							( this%Q_ei(k,j,i) + (this%kappa_e(k,j,i) * grad_sq_T) + this%S_e(k,j,i) )
-	
+
 						if (this%T_e(k,j,i) < 0.0d0) this%T_e(k,j,i) = 0.0d0
 					end do
 				end do
 			end do
 		end do
 	end if
-	
+
 	!! when parameters are not T-dependent and there is no additional source term
 	!! this case is most often used	
 
@@ -731,7 +749,7 @@ subroutine saveOutputToFile (this, outputfile, md_istep, dt)
 		end do
 	end do
 	close(unit = 300)
-1 	format(3I3,5e13.6,2I2)
+1 	format(3I6,5e13.6,2I2)
 end subroutine saveOutputToFile
 
 
