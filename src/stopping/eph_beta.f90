@@ -57,10 +57,10 @@ end type EPH_Beta_class
 contains
 
 !! Get the rho, beta and alpha data from .beta file 
-subroutine beta_parameters(this, beta_infile, n_species)
+subroutine beta_parameters(this, rank, beta_infile, n_species)
 	implicit none
 	class (EPH_Beta_class) :: this
-	integer, intent(in) :: n_species
+	integer, intent(in) :: rank, n_species
 	integer :: i, j
 	character*128, intent(in) :: beta_infile
 	real*8, allocatable :: y2(:), w2(:) 
@@ -76,7 +76,7 @@ subroutine beta_parameters(this, beta_infile, n_species)
 	read(10,*) (this%line(i), i = 1, (n_species+1))
 	read(this%line(1),'(I2)') this%n_elements
 	if (this%n_elements <= 0) then
-		write(*,*) "ERROR: Negative or 0 elements in the density file"
+		if (rank == 0) write(*,*) "ERROR: Negative or 0 elements in the density file"
 	stop
 	end if
 
@@ -186,9 +186,10 @@ end subroutine beta_parameters_broadcastQuantities
 !! Find the interpolated value of y corresponding to a given value of x.
 !! Data arrays are xarr(1:n) and yarr(1:n). Second derivative of ya is y2arr(1:n).
 !! For a given value of x, y is the cubic-spline interpolated value.
-subroutine spline_int(this,xarr,yarr,y2arr,n,x,y)
+subroutine spline_int(this,rank,xarr,yarr,y2arr,n,x,y)
 	implicit none
 	class (EPH_Beta_class) :: this
+	integer, intent(in) :: rank
 	integer :: n
 	real*8 :: x, y, xarr(n), yarr(n), y2arr(n)
 	integer :: indx, hiindx, loindx
@@ -218,7 +219,7 @@ subroutine spline_int(this,xarr,yarr,y2arr,n,x,y)
 	
 	xwidth = xarr(hiindx) - xarr(loindx)
 	if (xwidth == 0.0d0) then 
-		write(*,*) 'ERROR: The x-values in function for spline interpolation are not distinct.'
+		if (rank == 0) write(*,*) 'ERROR: The x-values in function for spline interpolation are not distinct.'
 		stop
 	end if
 	

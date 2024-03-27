@@ -181,7 +181,7 @@ END IF
 						call getAtomType(j,natomtypes,masses,type_mass,atom_type)
 						jtype = atom_type
 						rho_ij = 0.0d0
-						call beta%spline_int (beta%r,beta%data_rho(jtype,:), &
+						call beta%spline_int (rank,beta%r,beta%data_rho(jtype,:), &
 						beta%y2rho(jtype,:),beta%n_points_rho, r_ij, rho_ij)
 
 						rho_I(i) = rho_I(i) + rho_ij
@@ -220,12 +220,12 @@ END IF
 					jtype = atom_type
 					!! find rho_J
 					rho_ij = 0.0d0
-					call beta%spline_int (beta%r,beta%data_rho(jtype,:),beta%y2rho(jtype,:), &
+					call beta%spline_int (rank,beta%r,beta%data_rho(jtype,:),beta%y2rho(jtype,:), &
 									beta%n_points_rho, r_ij, rho_ij)
 					
 					!! find alpha_I	
 					alpha_I = 0.0d0
-					call beta%spline_int (beta%rho, beta%data_alpha(itype,:), &
+					call beta%spline_int (rank,beta%rho, beta%data_alpha(itype,:), &
 							beta%y2alpha(itype,:),beta%n_points_beta, rho_I(i), alpha_I)
 
 					multiply_factor1 = dot_product( rel_ij, rand_vec(:,i) )
@@ -234,12 +234,12 @@ END IF
 					
 					!! find rho_I
 					rho_ij = 0.0d0
-					call beta%spline_int (beta%r,beta%data_rho(itype,:),beta%y2rho(itype,:), &
+					call beta%spline_int (rank,beta%r,beta%data_rho(itype,:),beta%y2rho(itype,:), &
 									beta%n_points_rho, r_ij, rho_ij)
 					
 					! find alpha_J
 					alpha_J = 0.0d0
-					call beta%spline_int (beta%rho, beta%data_alpha(jtype,:), &
+					call beta%spline_int (rank,beta%rho, beta%data_alpha(jtype,:), &
 							beta%y2alpha(jtype,:), beta%n_points_beta, rho_I(j), alpha_J)
 					
 					multiply_factor2 = dot_product( rel_ij, rand_vec(:,j) )
@@ -277,7 +277,7 @@ END IF
 
 				!! alpha_I for the itype atom
 				alpha_I = 0.0d0
-				call beta%spline_int (beta%rho, beta%data_alpha(itype,:), &
+				call beta%spline_int (rank,beta%rho, beta%data_alpha(itype,:), &
 					beta%y2alpha(itype,:), beta%n_points_beta, rho_I(i), alpha_I)
 
 				start_index = sum(num_neighbours(1:i-1)) + 1
@@ -293,7 +293,7 @@ END IF
 
 					!! find rho_J
 					rho_ij = 0.0d0
-					call beta%spline_int (beta%r,beta%data_rho(jtype,:), &
+					call beta%spline_int (rank,beta%r,beta%data_rho(jtype,:), &
 							beta%y2rho(jtype,:), beta%n_points_rho, r_ij, rho_ij)
 
 					call relativeVector(positions(:,j), positions(:,i), rel_ij)
@@ -323,7 +323,7 @@ END IF
 
 				!! alpha_I for the itype atom
 				alpha_I = 0.0d0
-				call beta%spline_int (beta%rho, beta%data_alpha(itype,:), &
+				call beta%spline_int (rank,beta%rho, beta%data_alpha(itype,:), &
 						beta%y2alpha(itype,:), beta%n_points_beta, rho_I(i), alpha_I)
 
 				start_index = sum(num_neighbours(1:i-1)) + 1
@@ -339,7 +339,7 @@ END IF
 
 					!! find rho_J
 					rho_ij = 0.0d0
-					call beta%spline_int (beta%r, beta%data_rho(jtype,:), &
+					call beta%spline_int (rank,beta%r, beta%data_rho(jtype,:), &
 							beta%y2rho(jtype,:), beta%n_points_rho, r_ij, rho_ij)
 
 					call relativeVector(positions(:,j), positions(:,i), rel_ij)
@@ -350,12 +350,12 @@ END IF
 
 					!! alpha_J for the jtype atom
 					alpha_J = 0.0d0
-					call beta%spline_int (beta%rho, beta%data_alpha(jtype,:), &
+					call beta%spline_int (rank,beta%rho, beta%data_alpha(jtype,:), &
 						beta%y2alpha(jtype,:), beta%n_points_beta, rho_I(j), alpha_J)
 
 					!! find rho_I
 					rho_ij = 0.0d0
-					call beta%spline_int (beta%r, beta%data_rho(itype,:), &
+					call beta%spline_int (rank,beta%r, beta%data_rho(itype,:), &
 							beta%y2rho(itype,:), beta%n_points_rho, r_ij, rho_ij)
 
 					multiply_factor2 = alpha_J * rho_ij * dot_product( w_I(:,j), rel_ij )

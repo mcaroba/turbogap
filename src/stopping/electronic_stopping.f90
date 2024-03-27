@@ -64,13 +64,13 @@ contains
 
 !! read and store all electronic stopping power data
 !! also give error messages if the data in the file is not in proper format
-subroutine read_electronic_stopping_file (this, n_species, species_types, estopfilename)
+subroutine read_electronic_stopping_file (this, rank, n_species, species_types, estopfilename)
 
 	implicit none
 	class (electronic_stopping_scalar_class) :: this
 	
 	character*1024, intent(in) :: estopfilename
-	integer, intent(in) :: n_species
+	integer, intent(in) :: rank, n_species
 	character*8, intent(in) :: species_types(n_species)
 	real*8, allocatable :: allelstopdata(:)
 	
@@ -83,7 +83,7 @@ subroutine read_electronic_stopping_file (this, n_species, species_types, estopf
 	read(1000,*)
 	read(1000,*) this%nrows_esdata
 	if (this%nrows_esdata <= 0) then
-		write(*,*) "ERROR: Number of data rows in stopping file is 0 or less."
+		if (rank == 0) write(*,*) "ERROR: Number of data rows in stopping file is 0 or less."
 		stop
 	end if
 	this%ncols_esdata = n_species + 1
@@ -92,7 +92,7 @@ subroutine read_electronic_stopping_file (this, n_species, species_types, estopf
 	read(1000,*) (infoline(i), i = 1, this%ncols_esdata)
 	do i = 2, this%ncols_esdata
 		if (trim(infoline(i)) /= trim(species_types(i-1))) then
-			write(*,*) "ERROR: Stopping powers for Elements are not given in order."
+			if (rank == 0) write(*,*) "ERROR: Stopping powers for Elements are not given in order."
 			stop
 		end if
 	end do
@@ -203,7 +203,7 @@ IF (rank /= 0) forces = 0.0d0
 				if (energy < Ecut) continue
 				if (energy < this%En_elstopfile(1)) continue
 				if (energy > this%En_elstopfile(this%nrows_esdata)) then
-					write (*,*) "ERROR: Kinetic energy ", energy, &
+					if (rank == 0) write (*,*) "ERROR: Kinetic energy ", energy, &
 								"eV of atom is higher than electron stopping data"
 					stop
 				end if
@@ -264,7 +264,7 @@ IF (rank /= 0) forces = 0.0d0
 				if (energy < Ecut) continue
 				if (energy < this%En_elstopfile(1)) continue
 				if (energy > this%En_elstopfile(this%nrows_esdata)) then
-					write (*,*) "ERROR: Kinetic energy ", energy, &
+					if (rank == 0) write (*,*) "ERROR: Kinetic energy ", energy, &
 								"eV of atom is higher than electron stopping data"
 					stop
 				end if

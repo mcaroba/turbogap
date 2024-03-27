@@ -65,13 +65,13 @@ end type EPH_FDM_class
 contains
 
 !! The calculation is based on the parameters provided in the input file ....
-subroutine EPH_FDM_input_params (this, md_last_step, &
+subroutine EPH_FDM_input_params (this, rank, md_last_step, &
 			in_nx, in_ny, in_nz, in_x0, in_x1, in_y0, in_y1, in_z0, &
 			in_z1,in_T_e, in_C_e, in_rho_e, in_kappa_e, in_steps)
 	implicit none
 	class (EPH_FDM_class) :: this
 	integer, intent(in) :: in_nx, in_ny, in_nz, in_steps
-	integer, intent(in) :: md_last_step
+	integer, intent(in) :: rank, md_last_step
 	real*8, intent(in) :: in_x0, in_x1, in_y0, in_y1, in_z0, in_z1, in_T_e, &
 	in_C_e,in_rho_e,in_kappa_e
 	integer :: i,j,k,loc
@@ -86,7 +86,7 @@ subroutine EPH_FDM_input_params (this, md_last_step, &
 
 	allocate(this%x_mesh(this%ntotal), this%y_mesh(this%ntotal), this%z_mesh(this%ntotal))
 	
-	call this%edgesOf3DGrids(in_nx,in_ny,in_nz,in_x0,in_x1,in_y0,in_y1,in_z0,in_z1)
+	call this%edgesOf3DGrids(rank, in_nx,in_ny,in_nz,in_x0,in_x1,in_y0,in_y1,in_z0,in_z1)
 	call this%setMeshIndices()
 
 	allocate(this%T_e(in_nx,in_ny,in_nz), this%S_e(in_nx,in_ny,in_nz), &
@@ -107,11 +107,11 @@ end subroutine EPH_FDM_input_params
 
 
 !! The calculation is based on the FDM parameters provided through a mesh in parameter file ....
-subroutine EPH_FDM_input_file (this, FDM_infile, md_last_step)
+subroutine EPH_FDM_input_file (this, rank, FDM_infile, md_last_step)
 	implicit none
 	class (EPH_FDM_class) :: this
 	character*128, intent(in) :: FDM_infile
-	integer, intent(in) :: md_last_step
+	integer, intent(in) :: rank, md_last_step
 	integer :: i
 	real*8 :: T_e_val, S_e_val, rho_e_val, C_e_val, kappa_e_val
 	integer :: T_dynamic_flag_val, flag_val
@@ -133,7 +133,7 @@ subroutine EPH_FDM_input_file (this, FDM_infile, md_last_step)
 	read(10,*) this%z0,this%z1
 	read(10,*)		!! Column headers (i j k T_e S_e rho_e C_e K_e flag T_dyn_flag)
 	
-	call this%edgesOf3DGrids(this%nx,this%ny,this%nz,this%x0,this%x1,this%y0,this%y1, &
+	call this%edgesOf3DGrids(rank, this%nx,this%ny,this%nz,this%x0,this%x1,this%y0,this%y1, &
 	this%z0,this%z1)
 	
 	this%ntotal = this%nx*this%ny*this%nz
@@ -159,14 +159,16 @@ subroutine EPH_FDM_input_file (this, FDM_infile, md_last_step)
 		!! bad mesh index
 		if ((this%x_mesh(i) < 1).or.(this%x_mesh(i) > this%nx).or.(this%y_mesh(i) < 1).or. &
 		(this%y_mesh(i) > this%ny).or.(this%z_mesh(i) < 1).or.(this%z_mesh(i) > this%nz)) then
-			write(*,*) "ERROR: Index of FDM grid is invalid."
-			write(*,*) i, this%x_mesh(i), this%y_mesh(i), this%z_mesh(i)
+			if (rank == 0) then
+				write(*,*) "ERROR: Index of FDM grid is invalid."
+				write(*,*) i, this%x_mesh(i), this%y_mesh(i), this%z_mesh(i)
+			end if
 			stop
 		end if
 		!! unphysical parameters
 		if (T_e_val<0 .or. rho_e_val<0 .or. C_e_val<0 .or. &
 		kappa_e_val<0 .or. flag_val<0 .or. T_dynamic_flag_val<0) then
-			write(*,*) "ERROR: Negative electronic parameters found."
+			if (rank == 0) write(*,*) "ERROR: Negative electronic parameters found."
 			stop
 		end if
 
@@ -211,13 +213,17 @@ subroutine EPH_FDM_input_file (this, FDM_infile, md_last_step)
 		!! then stop and do with T-independent option.
 		
 		if (this%Num_C_e <= 1 .and. this%Num_K_e <= 1) then
-			write(*,*) 'Not enough data for C_e(T_e) and K_e(T_e).'
-			write(*,*) 'Try doing with all T_dyn_flag set to 0.'
+			if (rank == 0) then
+				write(*,*) 'Not enough data for C_e(T_e) and K_e(T_e).'
+				write(*,*) 'Try doing with all T_dyn_flag set to 0.'
+			end if
 			stop
 		end if
 		if (this%Num_C_e == 0 .or. this%Num_K_e == 0) then
-			write(*,*) 'Not a single data found for C_e(T_e) or K_e(T_e).'
-			write(*,*) 'Try doing with all T_dyn_flag set to 0.'
+			if (rank == 0) then
+				write(*,*) 'Not a single data found for C_e(T_e) or K_e(T_e).'
+				write(*,*) 'Try doing with all T_dyn_flag set to 0.'
+			end if
 			stop
 		end if
 		
@@ -286,13 +292,13 @@ end subroutine setMeshIndices
 
 
 !! set the dimensions of the grids in box
-subroutine edgesOf3DGrids (this,nx,ny,nz,x0,x1,y0,y1,z0,z1)
+subroutine edgesOf3DGrids (this,rank,nx,ny,nz,x0,x1,y0,y1,z0,z1)
 	implicit none
-	integer, intent(in) :: nx, ny, nz
+	integer, intent(in) :: rank, nx, ny, nz
 	real*8, intent(in) :: x0,x1,y0,y1,z0,z1
 	class (EPH_FDM_class) :: this
 	if (x0 >= x1 .or. y0 >= y1 .or. z0 >= z1) then
-		write(*,*) "ERROR: Mesh boundaries are not correct in input or in file"
+		if (rank == 0) write(*,*) "ERROR: Mesh boundaries are not correct in input or in file"
 		stop
 	end if
 	this%dx = (x1 - x0)/nx

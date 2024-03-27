@@ -57,23 +57,23 @@ subroutine variable_time_step_adaptive (init, vel, forces, masses, &
 	!! checking the input values of calculation parameters
 
 	if (xmax <= 0.0) then
-		write(*,*) "ERROR: value of xmax must be greater than 0."
+		if ( rank == 0 ) write(*,*) "ERROR: value of xmax must be greater than 0."
 		stop
 	end if
 	if (emax <= 0.0) then
-		write(*,*) "WARNING: value of emax is given less or equal to 0."
-		write(*,*) "Assuming default value for emax = 10.0 eV."
+		if ( rank == 0 ) write(*,*) "WARNING: value of emax is given less or equal to 0."
+		if ( rank == 0 ) write(*,*) "Assuming default value for emax = 10.0 eV."
 	end if
 	if (tmax <= 0.0) then
-		write(*,*) "ERROR: value of tmax must be greater than 0."
+		if ( rank == 0 ) write(*,*) "ERROR: value of tmax must be greater than 0."
 		stop
 	end if
 	if (tmin <= 0.0) then
-		write(*,*) "ERROR: value of tmin must be greater than 0."
+		if ( rank == 0 ) write(*,*) "ERROR: value of tmin must be greater than 0."
 		stop
 	end if
 	if (tmax <= tmin) then
-		write(*,*) "ERROR: tmax must be greater than tmin."
+		if ( rank == 0 ) write(*,*) "ERROR: tmax must be greater than tmin."
 		stop
 	end if
 

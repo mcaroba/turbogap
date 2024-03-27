@@ -102,11 +102,12 @@ end subroutine defaultInitialGroups
 
 
 !! To check if invoked type of group is in the implemented list
-subroutine checkValidGroupStyle (this, used_group_style)
+subroutine checkValidGroupStyle (this, rank, used_group_style)
 
 	implicit none
 	class (groups_class) :: this
 	character*16, intent(in) :: used_group_style
+	integer, intent(in) :: rank
 	character*16, allocatable :: implemented_group_styles(:)
 	logical :: groupstyle_validity = .true.
 
@@ -117,8 +118,10 @@ subroutine checkValidGroupStyle (this, used_group_style)
 	if ( findloc(implemented_group_styles(2:size(implemented_group_styles)), &
 			used_group_style, dim = 1) == 0 ) groupstyle_validity = .false.
 	if (.not. groupstyle_validity) then
-		write(*,*) 'ERROR: Group type ', trim(used_group_style), ' is not possible.'
-		write(*,*) 'See list of possible group styles.'
+		if (rank == 0) then
+			write(*,*) 'ERROR: Group type ', trim(used_group_style), ' is not possible.'
+			write(*,*) 'See list of possible group styles.'
+		end if
 		stop
 	end if
 
@@ -126,16 +129,17 @@ end subroutine checkValidGroupStyle
 
 
 !! To checck if given group name is valid for use in any calculation
-subroutine checkValidGroupID (this, used_groupID)
+subroutine checkValidGroupID (this, rank, used_groupID)
 
 	implicit none
 	class (groups_class) :: this
 	character*16, intent(in) :: used_groupID
+	integer, intent(in) :: rank
 	logical :: groupID_validity = .true.
 
 	if ( findloc(this%group_IDs, used_groupID, dim = 1) == 0 ) groupID_validity = .false.
 	if (.not. groupID_validity) then
-		write(*,*) 'ERROR: checkValidGroupID: Group ID ', trim(used_groupID), ' is not known.'
+		if (rank == 0) write(*,*) 'ERROR: checkValidGroupID: Group ID ', trim(used_groupID), ' is not known.'
 		stop
 	end if 
 
@@ -143,7 +147,7 @@ end subroutine checkValidGroupID
 
 
 !! Records all the groups made when called after reading input file
-subroutine recordGroups (this, group_ID, group_style, group_style_value, &
+subroutine recordGroups (this, rank, group_ID, group_style, group_style_value, &
 	group_style_IDs, group_atom_IDs, group_style_limits, group_atom_types)
 
 	implicit none
@@ -152,7 +156,7 @@ subroutine recordGroups (this, group_ID, group_style, group_style_value, &
 	character*16, intent(in) :: group_ID, group_style, group_style_IDs(:)
 	character*8, intent(in) :: group_atom_types(:)
 	real*8, intent(in) :: group_style_limits(:)
-	integer, intent(in) :: group_style_value, group_atom_IDs(:)
+	integer, intent(in) :: rank, group_style_value, group_atom_IDs(:)
 	logical :: is_group_dynamic = .false.
 	integer :: i, group_label
 
@@ -202,11 +206,11 @@ subroutine recordGroups (this, group_ID, group_style, group_style_value, &
 				this%group_styles = [this%group_styles, group_style]
 				this%count_groups = size(this%group_IDs)
 			else
-				write(*,*) 'ERROR: Group ID cannot be repeated or blank.'
+				if (rank == 0)  write(*,*) 'ERROR: Group ID cannot be repeated or blank.'
 				stop
 			end if
 		else
-			write(*,*) 'ERROR: Too many groups are already made.'
+			if (rank == 0) write(*,*) 'ERROR: Too many groups are already made.'
 			stop
 		end if
 
@@ -225,7 +229,7 @@ subroutine recordGroups (this, group_ID, group_style, group_style_value, &
 			end do
 			this%group_add_values = [this%group_add_values, group_style_value]
 			do i = 1, group_style_value
-				call checkValidGroupID (this, group_style_IDs(i))
+				call checkValidGroupID (this, rank, group_style_IDs(i))
 			end do
 			this%group_add_IDs = [this%group_add_IDs, group_style_IDs]
 	
@@ -235,7 +239,7 @@ subroutine recordGroups (this, group_ID, group_style, group_style_value, &
 			end do
 			this%group_subtract_values = [this%group_subtract_values, group_style_value]
 			do i = 1, group_style_value
-				call checkValidGroupID (this, group_style_IDs(i))
+				call checkValidGroupID (this, rank, group_style_IDs(i))
 			end do
 			this%group_subtract_IDs = [this%group_subtract_IDs, group_style_IDs]
 	
@@ -275,11 +279,11 @@ end subroutine recordGroups
 !! It uses the registered data of its class and form all the groups at one call.
 
 !! Makes all the groups at once when called from main turbogap.f90 
-subroutine makeGroups(this, n_sites, positions, masses, species_types, species_mass)
+subroutine makeGroups(this, rank, n_sites, positions, masses, species_types, species_mass)
 
 	implicit none
 	class (groups_class) :: this
-	integer, intent(in) :: n_sites
+	integer, intent(in) :: rank, n_sites
 	real*8, intent(in) :: positions(:,:), masses(:), species_mass(:)
 	character*8, intent(in) :: species_types(:)
 	integer :: i, lower_index, higher_index
@@ -299,7 +303,7 @@ subroutine makeGroups(this, n_sites, positions, masses, species_types, species_m
 		if ( this%group_styles(i) == 'block' ) then
 			lower_index = sum( this%group_block_values(1:i-1) ) + 1
 			higher_index = sum( this%group_block_values(1:i) )
-			call makeGroupBlock ( this, positions, i, this%group_block_values(i), &
+			call makeGroupBlock ( this, rank, positions, i, this%group_block_values(i), &
 								this%group_block_limits(lower_index:higher_index) )
 		else if ( this%group_styles(i) == 'add' ) then
 			lower_index = sum( this%group_add_values(1:i-1) ) + 1
@@ -312,7 +316,7 @@ subroutine makeGroups(this, n_sites, positions, masses, species_types, species_m
 		else if ( this%group_styles(i) == 'id' ) then
 			lower_index = sum( this%group_ID_values(1:i-1) ) + 1
 			higher_index = sum( this%group_ID_values(1:i) )
-			call makeGroupID ( this, i, this%group_ID_values(i), this%group_atom_IDs(lower_index:higher_index) )
+			call makeGroupID ( this, rank, i, this%group_ID_values(i), this%group_atom_IDs(lower_index:higher_index) )
 		else if ( this%group_styles(i) == 'sphere' ) then
 			lower_index = sum( this%group_sphere_values(1:i-1) ) + 1
 			higher_index = lower_index + 3
@@ -325,17 +329,17 @@ subroutine makeGroups(this, n_sites, positions, masses, species_types, species_m
 		end if
 	end do
 
-	if (this%count_groups > 1) call printNumberOfAtomsInGroups(this)
+	if (this%count_groups > 1) call printNumberOfAtomsInGroups(this, rank)
 
 end subroutine makeGroups
 
 
 !! Update dynamic groups
-subroutine updateDynamicGroups (this, at_index, positions)
+subroutine updateDynamicGroups (this, rank, at_index, positions)
 
 	implicit none
 	class (groups_class) :: this
-	integer, intent(in) :: at_index
+	integer, intent(in) :: rank, at_index
 	real*8, intent(in) :: positions(:,:)
 	integer :: group_label, lower_index, higher_index
 
@@ -348,7 +352,7 @@ subroutine updateDynamicGroups (this, at_index, positions)
 	if ( this%group_styles(group_label) == 'block' ) then
 		lower_index = sum( this%group_block_values(1:group_label-1) ) + 1
 		higher_index = sum( this%group_block_values(1:group_label) )
-		call makeGroupBlock ( this, positions, group_label, this%group_block_values(group_label), &
+		call makeGroupBlock ( this, rank, positions, group_label, this%group_block_values(group_label), &
 				this%group_block_limits(lower_index:higher_index) )
 
 	else if ( this%group_styles(group_label) == 'add' ) then
@@ -371,7 +375,9 @@ subroutine updateDynamicGroups (this, at_index, positions)
 	!! atom types and ids do not change dynamically, so no need to update groups made based on them
 	end if
 
-	write(*,*)sum(this%group_atoms_tallies(:,group_label)), ' atoms in dynamic group ',this%group_IDs(group_label)
+	if ( rank == 0 ) then
+		write(*,*)sum(this%group_atoms_tallies(:,group_label)), ' atoms in dynamic group ',this%group_IDs(group_label)
+	end if
 
 end subroutine updateDynamicGroups
 
@@ -389,12 +395,12 @@ end subroutine makeGroupAll
 
 
 !! Makes block type group of atoms
-subroutine makeGroupBlock (this, positions, group_label, num_values, group_dimensions)
+subroutine makeGroupBlock (this, rank, positions, group_label, num_values, group_dimensions)
 
 	implicit none
 	class (groups_class) :: this
 	real*8, intent(in) :: positions(:,:), group_dimensions(:)
-	integer, intent(in) :: group_label, num_values
+	integer, intent(in) :: rank, group_label, num_values
 	real*8 :: group_xlow, group_xhigh, group_ylow, group_yhigh, group_zlow, group_zhigh
 	integer :: i, j
 
@@ -408,7 +414,7 @@ subroutine makeGroupBlock (this, positions, group_label, num_values, group_dimen
 
 		if ( group_xlow > group_xhigh .or. &
 			group_ylow > group_yhigh .or. group_zlow > group_zhigh) then
-			write(*,*) 'ERROR: Lower limit is larger than higher limit in group dimensions.'
+			if ( rank == 0 ) write(*,*) 'ERROR: Lower limit is larger than higher limit in group dimensions.'
 			stop
 		end if
 		
@@ -474,15 +480,15 @@ end subroutine makeGroupSubtract
 
 
 !! Makes group by the ids of atoms
-subroutine makeGroupID (this, group_label, num_values, ids_of_atoms)
+subroutine makeGroupID (this, rank, group_label, num_values, ids_of_atoms)
 	
 	implicit none
 	class (groups_class) :: this
-	integer, intent(in) :: ids_of_atoms(:), group_label, num_values
+	integer, intent(in) :: rank, ids_of_atoms(:), group_label, num_values
 	integer :: i
 	
 	if (minval(ids_of_atoms) < 1 .or. maxval(ids_of_atoms) > this%n_sites) then
-		write(*,*) 'ERROR: Atom id not found for grouping.'
+		if ( rank == 0 ) write(*,*) 'ERROR: Atom id not found for grouping.'
 		stop
 	end if
 
@@ -601,15 +607,16 @@ end subroutine freeGroupsRegister
 
 
 !! count and print out number of atoms in groups after (static) groups are made
-subroutine printNumberOfAtomsInGroups (this)
+subroutine printNumberOfAtomsInGroups (this, rank)
 
 	implicit none
 	class (groups_class) :: this
+	integer, intent(in) :: rank
 	integer :: i
 
 	write(*,*)
 	do i = 2, size(this%group_IDs)
-		write(*,*) sum(this%group_atoms_tallies(:,i)),' atoms in group ',this%group_IDs(i) 
+		if ( rank == 0 ) write(*,*) sum(this%group_atoms_tallies(:,i)),' atoms in group ',this%group_IDs(i) 
 	end do
 
 end subroutine printNumberOfAtomsInGroups

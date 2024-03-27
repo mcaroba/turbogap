@@ -938,7 +938,9 @@ end if
 		backspace(10)
 		read(10, *, iostat = iostatus) cjunk, cjunk, params%adapt_tstep_interval
 		if (params%adapt_tstep_interval <= 0) then
-			write(*,*) "ERROR: Interval of timesteps in adaptive time-step must be positive."
+			if( rank == 0 )then
+				write(*,*) "ERROR: Interval of timesteps in adaptive time-step must be positive."
+			end if
 			stop
 		end if
 	  else if (keyword == 'adapt_tmin') then
@@ -966,7 +968,10 @@ end if
 		backspace(10)
 		read(10, *, iostat = iostatus) cjunk, cjunk, params%eel_cut
 		if (params%eel_cut <= 0) then
-			write(*,*) "ERROR: Cut off energy for electronic stopping should be positive, few tens of eV!"
+			if( rank == 0 )then
+				write(*,*) "ERROR: Cut off energy for electronic stopping"
+				write(*,*) "should be positive, few tens of eV!"
+			end if
 			stop
 		end if
 	  else if (keyword == 'eel_freq_out') then
@@ -987,21 +992,21 @@ end if
 		backspace(10)
 		read(10,*, iostat = iostatus) cjunk, cjunk, params%eph_fdm_option
 		if (params%eph_fdm_option /= 0 .and. params%eph_fdm_option /= 1) then
-			write(*,*) 'ERROR: eph_fdm_option can be only 0/1.'
+			if( rank == 0 ) write(*,*) 'ERROR: eph_fdm_option can be only 0/1.'
 			stop
 		end if
 	  else if (keyword == 'eph_friction_option') then
 		backspace(10)
 		read(10,*, iostat = iostatus) cjunk, cjunk, params%eph_friction_option
 		if (params%eph_friction_option /= 0 .and. params%eph_friction_option /= 1) then
-			write(*,*) 'ERROR: eph_friction_option can be only 0/1.'
+			if( rank == 0 ) write(*,*) 'ERROR: eph_friction_option can be only 0/1.'
 			stop
 		end if
 	  else if (keyword == 'eph_random_option') then
 		backspace(10)
 		read(10,*, iostat = iostatus) cjunk, cjunk, params%eph_random_option
 		if (params%eph_random_option /= 0 .and. params%eph_random_option /= 1) then
-			write(*,*) 'ERROR: eph_random_option can be only 0/1.'
+			if( rank == 0 ) write(*,*) 'ERROR: eph_random_option can be only 0/1.'
 			stop
 		end if
 	  else if (keyword == 'eph_tinfile') then
@@ -1072,19 +1077,19 @@ end if
 		read(10,*, iostat = iostatus) cjunk,cjunk, params%group_ID, params%group_style, params%group_style_value
 		call upper_to_lower_case(params%group_style)
 		params%group_style = trim(params%group_style)
-		call forgroups%checkValidGroupStyle ( params%group_style )
+		call forgroups%checkValidGroupStyle ( rank, params%group_style )
 		if ( params%group_ID == 'all' ) then
-			write(*,*) 'ERROR: group id "all" is already present, cannot be made.'
+			if( rank == 0 ) write(*,*) 'ERROR: group id "all" is already present, cannot be made.'
 			stop
 		end if
 		if ( params%group_style == 'all' ) then
-			write(*,*) 'ERROR: group all cannot be "all".'
+			if( rank == 0 ) write(*,*) 'ERROR: group all cannot be "all".'
 			stop
 		end if
 
 		if ( params%group_style == 'block' ) then
 			if ( params%group_style_value < 6 ) then
-				write(*,*) 'ERROR: insufficient limits for group type block'
+				if( rank == 0 ) write(*,*) 'ERROR: insufficient limits for group type block'
 				stop
 			end if
 			allocate( params%group_style_limits(params%group_style_value) )
@@ -1092,14 +1097,14 @@ end if
 			read(10,*, iostat = iostatus) cjunk, cjunk, cjunk, cjunk, params%group_style_value, &
 					(params%group_style_limits(i), i = 1, params%group_style_value)
 
-			call forgroups%recordGroups (params%group_ID, params%group_style, params%group_style_value, &
+			call forgroups%recordGroups (rank, params%group_ID, params%group_style, params%group_style_value, &
 				params%group_style_IDs, params%group_atom_IDs, params%group_style_limits, params%group_atom_types)
 
 			deallocate( params%group_style_limits )
 
 		else if ( params%group_style == 'add' ) then
 			if ( params%group_style_value < 2 ) then
-				write(*,*) 'ERROR: not enough groups to add'
+				if( rank == 0 ) write(*,*) 'ERROR: not enough groups to add'
 				stop
 			end if
 			allocate( params%group_style_IDs(params%group_style_value) )
@@ -1107,14 +1112,14 @@ end if
 			read(10,*, iostat = iostatus) cjunk, cjunk, cjunk, cjunk, params%group_style_value, &
 					(params%group_style_IDs(i), i = 1, params%group_style_value)
 
-			call forgroups%recordGroups (params%group_ID, params%group_style, params%group_style_value, &
+			call forgroups%recordGroups (rank, params%group_ID, params%group_style, params%group_style_value, &
 				params%group_style_IDs, params%group_atom_IDs, params%group_style_limits, params%group_atom_types)
 
 			deallocate( params%group_style_IDs )
 
 		else if ( params%group_style == 'subtract' ) then
 			if ( params%group_style_value < 2 ) then
-				write(*,*) 'ERROR: not enough groups to subtract'
+				if( rank == 0 ) write(*,*) 'ERROR: not enough groups to subtract'
 				stop
 			end if
 			allocate( params%group_style_IDs(params%group_style_value) )
@@ -1122,14 +1127,14 @@ end if
 			read(10,*, iostat = iostatus) cjunk, cjunk, cjunk, cjunk, params%group_style_value, &
 					(params%group_style_IDs(i), i = 1, params%group_style_value)
 
-			call forgroups%recordGroups (params%group_ID, params%group_style, params%group_style_value, &
+			call forgroups%recordGroups (rank, params%group_ID, params%group_style, params%group_style_value, &
 				params%group_style_IDs, params%group_atom_IDs, params%group_style_limits, params%group_atom_types)
 
 			deallocate( params%group_style_IDs )
 
 		else if ( params%group_style == 'id' ) then
 			if ( params%group_style_value < 1 ) then
-				write(*,*) 'ERROR: insufficient atoms to group by ID.'
+				if( rank == 0 ) write(*,*) 'ERROR: insufficient atoms to group by ID.'
 				stop
 			end if
 			allocate( params%group_atom_IDs(params%group_style_value) )
@@ -1137,17 +1142,17 @@ end if
 			read(10,*, iostat = iostatus) cjunk, cjunk, cjunk, cjunk, params%group_style_value, &
 					(params%group_atom_IDs(i), i = 1, params%group_style_value)
 
-			call forgroups%recordGroups (params%group_ID, params%group_style, params%group_style_value, &
+			call forgroups%recordGroups (rank, params%group_ID, params%group_style, params%group_style_value, &
 				params%group_style_IDs, params%group_atom_IDs, params%group_style_limits, params%group_atom_types)
 
 			deallocate( params%group_atom_IDs )
 
 		else if ( params%group_style == 'atomtype') then
 			if ( params%group_style_value < 1 ) then
-				write(*,*) 'ERROR: insufficient atoms to group by type.'
+				if( rank == 0 ) write(*,*) 'ERROR: insufficient atoms to group by type.'
 				stop
 			else if ( params%group_style_value > n_species ) then
-				write(*,*) 'ERROR: group by type number cannot be greater than number of species.'
+				if( rank == 0 ) write(*,*) 'ERROR: group by type number cannot be greater than number of species.'
 				stop
 			end if
 			allocate( params%group_atom_types(params%group_style_value) )
@@ -1156,19 +1161,21 @@ end if
 					(params%group_atom_types(i), i = 1, params%group_style_value)
 			do i = 1, params%group_style_value
 				if ( findloc(params%species_types, params%group_atom_types(i), dim = 1) == 0 ) then
-					write(*,*) 'ERROR: species not in system from group by atom type.'
+					if( rank == 0 ) write(*,*) 'ERROR: species not in system from group by atom type.'
 					stop
 				end if
 			end do 
 			
-			call forgroups%recordGroups (params%group_ID, params%group_style, params%group_style_value, &
+			call forgroups%recordGroups (rank, params%group_ID, params%group_style, params%group_style_value, &
 				params%group_style_IDs, params%group_atom_IDs, params%group_style_limits, params%group_atom_types)
 
 			deallocate( params%group_atom_types )
 
 		else if ( params%group_style == 'sphere' ) then
 			if ( params%group_style_value /= 4 ) then
-				write(*,*) 'ERROR: 4, radius, three centre coordinates are required for group type sphere.'
+				if( rank == 0 ) then 
+					write(*,*) 'ERROR: 4 values, radius and three centre coordinates are required for group type sphere.'
+				end if
 				stop
 			end if
 			allocate( params%group_style_limits(4) )
@@ -1176,26 +1183,26 @@ end if
 			read(10,*, iostat = iostatus) cjunk, cjunk, cjunk, cjunk, params%group_style_value, &
 					(params%group_style_limits(i), i = 1, 4)
 
-			call forgroups%recordGroups (params%group_ID, params%group_style, params%group_style_value, &
+			call forgroups%recordGroups (rank, params%group_ID, params%group_style, params%group_style_value, &
 				params%group_style_IDs, params%group_atom_IDs, params%group_style_limits, params%group_atom_types)
 
 			deallocate( params%group_style_limits )
 
 		else if ( params%group_style == 'dynamic' ) then
 			if ( params%group_ID == 'all' ) then
-				write(*,*) 'ERROR: group id "all" need not be made dynamic.'
+				if( rank == 0 ) write(*,*) 'ERROR: group id "all" need not be made dynamic.'
 				stop
 			end if
-			write(*,*) 'Warning: Dynamic groups can make computation slower ....'
-			call forgroups%checkValidGroupID (params%group_ID)
+			if( rank == 0 ) write(*,*) 'Warning: Dynamic groups can make computation slower ....'
+			call forgroups%checkValidGroupID (rank, params%group_ID)
 			if ( params%group_style_value < 1 ) then
-				write(*,*) 'ERROR: Group update step must be integer greater than 1.'
+				if( rank == 0 ) write(*,*) 'ERROR: Group update step must be integer greater than 1.'
 				stop
 			else if (params%group_style_value == 1) then
-				write(*,*) 'Warning: Dynamic group updating step set 1 leads to expensive computation.'
+				if( rank == 0 ) write(*,*) 'Warning: Dynamic group updating step set 1 leads to expensive computation.'
 			end if
 
-			call forgroups%recordGroups (params%group_ID, params%group_style, params%group_style_value, &
+			call forgroups%recordGroups (rank, params%group_ID, params%group_style, params%group_style_value, &
 				params%group_style_IDs, params%group_atom_IDs, params%group_style_limits, params%group_atom_types)
 
 		end if
@@ -1207,27 +1214,27 @@ end if
 	  else if (keyword == 'optimize_groupid') then
 		backspace(10)
 		read(10,*, iostat = iostatus) cjunk, cjunk, params%optimize_groupID
-		call forgroups%checkValidGroupID (params%optimize_groupID)
+		call forgroups%checkValidGroupID (rank, params%optimize_groupID)
 	  
 	  else if (keyword == 'thermostat_groupid') then
 		backspace(10)
 		read(10,*, iostat = iostatus) cjunk, cjunk, params%thermostat_groupID
-		call forgroups%checkValidGroupID (params%thermostat_groupID)
+		call forgroups%checkValidGroupID (rank, params%thermostat_groupID)
 
 	  else if (keyword == 'eph_groupid') then
 		backspace(10)
 		read(10,*, iostat = iostatus) cjunk, cjunk, params%eph_groupID
-		call forgroups%checkValidGroupID (params%eph_groupID)
+		call forgroups%checkValidGroupID (rank, params%eph_groupID)
 
 	  else if (keyword == 'eel_groupid') then
 		backspace(10)
 		read(10,*, iostat = iostatus) cjunk, cjunk, params%eel_groupID
-		call forgroups%checkValidGroupID (params%eel_groupID)
+		call forgroups%checkValidGroupID (rank, params%eel_groupID)
 
 	  else if (keyword == 'adapt_time_groupid') then
 		backspace(10)
 		read(10,*, iostat = iostatus) cjunk, cjunk, params%adapt_time_groupID
-		call forgroups%checkValidGroupID (params%adapt_time_groupID)
+		call forgroups%checkValidGroupID (rank, params%adapt_time_groupID)
 
      !! -------------------------       ******** until here for groups for specific processes
      
