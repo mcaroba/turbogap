@@ -102,12 +102,13 @@ end subroutine defaultInitialGroups
 
 
 !! To check if invoked type of group is in the implemented list
-subroutine checkValidGroupStyle (this, rank, used_group_style)
+subroutine checkValidGroupStyle (this, rank, ierr, used_group_style)
 
 	implicit none
 	class (groups_class) :: this
 	character*16, intent(in) :: used_group_style
 	integer, intent(in) :: rank
+	integer :: ierr
 	character*16, allocatable :: implemented_group_styles(:)
 	logical :: groupstyle_validity = .true.
 
@@ -122,6 +123,7 @@ subroutine checkValidGroupStyle (this, rank, used_group_style)
 			write(*,*) 'ERROR: Group type ', trim(used_group_style), ' is not possible.'
 			write(*,*) 'See list of possible group styles.'
 		end if
+		call mpi_finalize(ierr)
 		stop
 	end if
 
@@ -129,17 +131,19 @@ end subroutine checkValidGroupStyle
 
 
 !! To checck if given group name is valid for use in any calculation
-subroutine checkValidGroupID (this, rank, used_groupID)
+subroutine checkValidGroupID (this, rank, ierr, used_groupID)
 
 	implicit none
 	class (groups_class) :: this
 	character*16, intent(in) :: used_groupID
 	integer, intent(in) :: rank
+	integer :: ierr
 	logical :: groupID_validity = .true.
 
 	if ( findloc(this%group_IDs, used_groupID, dim = 1) == 0 ) groupID_validity = .false.
 	if (.not. groupID_validity) then
 		if (rank == 0) write(*,*) 'ERROR: checkValidGroupID: Group ID ', trim(used_groupID), ' is not known.'
+		call mpi_finalize(ierr)
 		stop
 	end if 
 
@@ -147,7 +151,7 @@ end subroutine checkValidGroupID
 
 
 !! Records all the groups made when called after reading input file
-subroutine recordGroups (this, rank, group_ID, group_style, group_style_value, &
+subroutine recordGroups (this, rank, ierr, group_ID, group_style, group_style_value, &
 	group_style_IDs, group_atom_IDs, group_style_limits, group_atom_types)
 
 	implicit none
@@ -157,9 +161,9 @@ subroutine recordGroups (this, rank, group_ID, group_style, group_style_value, &
 	character*8, intent(in) :: group_atom_types(:)
 	real*8, intent(in) :: group_style_limits(:)
 	integer, intent(in) :: rank, group_style_value, group_atom_IDs(:)
+	integer :: ierr
 	logical :: is_group_dynamic = .false.
 	integer :: i, group_label
-
 
 	!! the following arrays will contain the corresponding sizes and dimensions 
 	!! respective to the group types of different
@@ -207,10 +211,12 @@ subroutine recordGroups (this, rank, group_ID, group_style, group_style_value, &
 				this%count_groups = size(this%group_IDs)
 			else
 				if (rank == 0)  write(*,*) 'ERROR: Group ID cannot be repeated or blank.'
+				call mpi_finalize(ierr)
 				stop
 			end if
 		else
 			if (rank == 0) write(*,*) 'ERROR: Too many groups are already made.'
+			call mpi_finalize(ierr)
 			stop
 		end if
 
@@ -229,7 +235,7 @@ subroutine recordGroups (this, rank, group_ID, group_style, group_style_value, &
 			end do
 			this%group_add_values = [this%group_add_values, group_style_value]
 			do i = 1, group_style_value
-				call checkValidGroupID (this, rank, group_style_IDs(i))
+				call checkValidGroupID (this, rank, ierr, group_style_IDs(i))
 			end do
 			this%group_add_IDs = [this%group_add_IDs, group_style_IDs]
 	
@@ -239,7 +245,7 @@ subroutine recordGroups (this, rank, group_ID, group_style, group_style_value, &
 			end do
 			this%group_subtract_values = [this%group_subtract_values, group_style_value]
 			do i = 1, group_style_value
-				call checkValidGroupID (this, rank, group_style_IDs(i))
+				call checkValidGroupID (this, rank, ierr, group_style_IDs(i))
 			end do
 			this%group_subtract_IDs = [this%group_subtract_IDs, group_style_IDs]
 	
@@ -279,7 +285,7 @@ end subroutine recordGroups
 !! It uses the registered data of its class and form all the groups at one call.
 
 !! Makes all the groups at once when called from main turbogap.f90 
-subroutine makeGroups(this, rank, n_sites, positions, masses, species_types, species_mass)
+subroutine makeGroups(this, rank, ierr, n_sites, positions, masses, species_types, species_mass)
 
 	implicit none
 	class (groups_class) :: this
@@ -287,6 +293,7 @@ subroutine makeGroups(this, rank, n_sites, positions, masses, species_types, spe
 	real*8, intent(in) :: positions(:,:), masses(:), species_mass(:)
 	character*8, intent(in) :: species_types(:)
 	integer :: i, lower_index, higher_index
+	integer :: ierr
 
 	this%n_sites = n_sites
 
@@ -303,7 +310,7 @@ subroutine makeGroups(this, rank, n_sites, positions, masses, species_types, spe
 		if ( this%group_styles(i) == 'block' ) then
 			lower_index = sum( this%group_block_values(1:i-1) ) + 1
 			higher_index = sum( this%group_block_values(1:i) )
-			call makeGroupBlock ( this, rank, positions, i, this%group_block_values(i), &
+			call makeGroupBlock ( this, rank, ierr, positions, i, this%group_block_values(i), &
 								this%group_block_limits(lower_index:higher_index) )
 		else if ( this%group_styles(i) == 'add' ) then
 			lower_index = sum( this%group_add_values(1:i-1) ) + 1
@@ -316,7 +323,7 @@ subroutine makeGroups(this, rank, n_sites, positions, masses, species_types, spe
 		else if ( this%group_styles(i) == 'id' ) then
 			lower_index = sum( this%group_ID_values(1:i-1) ) + 1
 			higher_index = sum( this%group_ID_values(1:i) )
-			call makeGroupID ( this, rank, i, this%group_ID_values(i), this%group_atom_IDs(lower_index:higher_index) )
+			call makeGroupID ( this, rank, ierr, i, this%group_ID_values(i), this%group_atom_IDs(lower_index:higher_index) )
 		else if ( this%group_styles(i) == 'sphere' ) then
 			lower_index = sum( this%group_sphere_values(1:i-1) ) + 1
 			higher_index = lower_index + 3
@@ -335,12 +342,13 @@ end subroutine makeGroups
 
 
 !! Update dynamic groups
-subroutine updateDynamicGroups (this, rank, at_index, positions)
+subroutine updateDynamicGroups (this, rank, ierr, at_index, positions)
 
 	implicit none
 	class (groups_class) :: this
 	integer, intent(in) :: rank, at_index
 	real*8, intent(in) :: positions(:,:)
+	integer :: ierr
 	integer :: group_label, lower_index, higher_index
 
 	group_label = this%dynamic_group_tallies(at_index)
@@ -352,7 +360,7 @@ subroutine updateDynamicGroups (this, rank, at_index, positions)
 	if ( this%group_styles(group_label) == 'block' ) then
 		lower_index = sum( this%group_block_values(1:group_label-1) ) + 1
 		higher_index = sum( this%group_block_values(1:group_label) )
-		call makeGroupBlock ( this, rank, positions, group_label, this%group_block_values(group_label), &
+		call makeGroupBlock ( this, rank, ierr, positions, group_label, this%group_block_values(group_label), &
 				this%group_block_limits(lower_index:higher_index) )
 
 	else if ( this%group_styles(group_label) == 'add' ) then
@@ -395,14 +403,14 @@ end subroutine makeGroupAll
 
 
 !! Makes block type group of atoms
-subroutine makeGroupBlock (this, rank, positions, group_label, num_values, group_dimensions)
+subroutine makeGroupBlock (this, rank, ierr, positions, group_label, num_values, group_dimensions)
 
 	implicit none
 	class (groups_class) :: this
 	real*8, intent(in) :: positions(:,:), group_dimensions(:)
 	integer, intent(in) :: rank, group_label, num_values
 	real*8 :: group_xlow, group_xhigh, group_ylow, group_yhigh, group_zlow, group_zhigh
-	integer :: i, j
+	integer :: i, j, ierr
 
 	do i = 1, num_values, 6
 		group_xlow = group_dimensions(i)
@@ -415,6 +423,7 @@ subroutine makeGroupBlock (this, rank, positions, group_label, num_values, group
 		if ( group_xlow > group_xhigh .or. &
 			group_ylow > group_yhigh .or. group_zlow > group_zhigh) then
 			if ( rank == 0 ) write(*,*) 'ERROR: Lower limit is larger than higher limit in group dimensions.'
+			call mpi_finalize(ierr)
 			stop
 		end if
 		
@@ -480,15 +489,16 @@ end subroutine makeGroupSubtract
 
 
 !! Makes group by the ids of atoms
-subroutine makeGroupID (this, rank, group_label, num_values, ids_of_atoms)
+subroutine makeGroupID (this, rank, ierr, group_label, num_values, ids_of_atoms)
 	
 	implicit none
 	class (groups_class) :: this
 	integer, intent(in) :: rank, ids_of_atoms(:), group_label, num_values
-	integer :: i
+	integer :: i, ierr
 	
 	if (minval(ids_of_atoms) < 1 .or. maxval(ids_of_atoms) > this%n_sites) then
 		if ( rank == 0 ) write(*,*) 'ERROR: Atom id not found for grouping.'
+		call mpi_finalize(ierr)
 		stop
 	end if
 

@@ -58,6 +58,7 @@ subroutine variable_time_step_adaptive (init, vel, forces, masses, &
 
 	if (xmax <= 0.0) then
 		if ( rank == 0 ) write(*,*) "ERROR: value of xmax must be greater than 0."
+		call mpi_finalize(ierr)
 		stop
 	end if
 	if (emax <= 0.0) then
@@ -66,14 +67,17 @@ subroutine variable_time_step_adaptive (init, vel, forces, masses, &
 	end if
 	if (tmax <= 0.0) then
 		if ( rank == 0 ) write(*,*) "ERROR: value of tmax must be greater than 0."
+		call mpi_finalize(ierr)
 		stop
 	end if
 	if (tmin <= 0.0) then
 		if ( rank == 0 ) write(*,*) "ERROR: value of tmin must be greater than 0."
+		call mpi_finalize(ierr)
 		stop
 	end if
 	if (tmax <= tmin) then
 		if ( rank == 0 ) write(*,*) "ERROR: tmax must be greater than tmin."
+		call mpi_finalize(ierr)
 		stop
 	end if
 

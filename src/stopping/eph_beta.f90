@@ -57,11 +57,11 @@ end type EPH_Beta_class
 contains
 
 !! Get the rho, beta and alpha data from .beta file 
-subroutine beta_parameters(this, rank, beta_infile, n_species)
+subroutine beta_parameters(this, rank, ierr, beta_infile, n_species)
 	implicit none
 	class (EPH_Beta_class) :: this
 	integer, intent(in) :: rank, n_species
-	integer :: i, j
+	integer :: i, j, ierr
 	character*128, intent(in) :: beta_infile
 	real*8, allocatable :: y2(:), w2(:) 
 	real*8, parameter :: bignum = 1.1e30
@@ -77,6 +77,7 @@ subroutine beta_parameters(this, rank, beta_infile, n_species)
 	read(this%line(1),'(I2)') this%n_elements
 	if (this%n_elements <= 0) then
 		if (rank == 0) write(*,*) "ERROR: Negative or 0 elements in the density file"
+	call mpi_finalize(ierr)
 	stop
 	end if
 
@@ -186,20 +187,21 @@ end subroutine beta_parameters_broadcastQuantities
 !! Find the interpolated value of y corresponding to a given value of x.
 !! Data arrays are xarr(1:n) and yarr(1:n). Second derivative of ya is y2arr(1:n).
 !! For a given value of x, y is the cubic-spline interpolated value.
-subroutine spline_int(this,rank,xarr,yarr,y2arr,n,x,y)
+subroutine spline_int(this,rank,ierr,xarr,yarr,y2arr,n,x,y)
 	implicit none
 	class (EPH_Beta_class) :: this
 	integer, intent(in) :: rank
+	integer :: ierr
 	integer :: n
 	real*8 :: x, y, xarr(n), yarr(n), y2arr(n)
 	integer :: indx, hiindx, loindx
 	real*8 :: xwidth, A, B, C, D
-	
+
 	!! Interpolate by method of bisection. Find the index limits within which x lies.
-	
+
 	loindx = 1
 	hiindx = n
-	
+
 	do while ((hiindx - loindx) > 1)
 		indx = (hiindx + loindx)/2
 		if (xarr(indx) > x) then
@@ -220,6 +222,7 @@ subroutine spline_int(this,rank,xarr,yarr,y2arr,n,x,y)
 	xwidth = xarr(hiindx) - xarr(loindx)
 	if (xwidth == 0.0d0) then 
 		if (rank == 0) write(*,*) 'ERROR: The x-values in function for spline interpolation are not distinct.'
+		call mpi_finalize(ierr)
 		stop
 	end if
 	

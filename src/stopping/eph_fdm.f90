@@ -65,7 +65,7 @@ end type EPH_FDM_class
 contains
 
 !! The calculation is based on the parameters provided in the input file ....
-subroutine EPH_FDM_input_params (this, rank, md_last_step, &
+subroutine EPH_FDM_input_params (this, rank, ierr, md_last_step, &
 			in_nx, in_ny, in_nz, in_x0, in_x1, in_y0, in_y1, in_z0, &
 			in_z1,in_T_e, in_C_e, in_rho_e, in_kappa_e, in_steps)
 	implicit none
@@ -74,7 +74,7 @@ subroutine EPH_FDM_input_params (this, rank, md_last_step, &
 	integer, intent(in) :: rank, md_last_step
 	real*8, intent(in) :: in_x0, in_x1, in_y0, in_y1, in_z0, in_z1, in_T_e, &
 	in_C_e,in_rho_e,in_kappa_e
-	integer :: i,j,k,loc
+	integer :: i,j,k,loc, ierr
 
 	this%nx = in_nx; this%ny = in_ny; this%nz = in_nz
 	this%x0 = in_x0; this%x1 = in_x1; this%y0 = in_y0; this%y1 = in_y1
@@ -85,15 +85,15 @@ subroutine EPH_FDM_input_params (this, rank, md_last_step, &
 	this%md_last_step = md_last_step
 
 	allocate(this%x_mesh(this%ntotal), this%y_mesh(this%ntotal), this%z_mesh(this%ntotal))
-	
-	call this%edgesOf3DGrids(rank, in_nx,in_ny,in_nz,in_x0,in_x1,in_y0,in_y1,in_z0,in_z1)
+
+	call this%edgesOf3DGrids(rank, ierr, in_nx,in_ny,in_nz,in_x0,in_x1,in_y0,in_y1,in_z0,in_z1)
 	call this%setMeshIndices()
 
 	allocate(this%T_e(in_nx,in_ny,in_nz), this%S_e(in_nx,in_ny,in_nz), &
 	this%rho_e(in_nx,in_ny,in_nz), this%C_e(in_nx,in_ny,in_nz), &
 	this%kappa_e(in_nx,in_ny,in_nz), this%flag(in_nx,in_ny,in_nz), &
 	this%T_dynamic_flag(in_nx,in_ny,in_nz), this%Q_ei(in_nx,in_ny,in_nz))
-	
+
 	this%S_e = 0.0d0
 	this%Q_ei = 0.0d0
 	this%T_e = in_T_e
@@ -107,12 +107,12 @@ end subroutine EPH_FDM_input_params
 
 
 !! The calculation is based on the FDM parameters provided through a mesh in parameter file ....
-subroutine EPH_FDM_input_file (this, rank, FDM_infile, md_last_step)
+subroutine EPH_FDM_input_file (this, rank, ierr, FDM_infile, md_last_step)
 	implicit none
 	class (EPH_FDM_class) :: this
 	character*128, intent(in) :: FDM_infile
 	integer, intent(in) :: rank, md_last_step
-	integer :: i
+	integer :: i, ierr
 	real*8 :: T_e_val, S_e_val, rho_e_val, C_e_val, kappa_e_val
 	integer :: T_dynamic_flag_val, flag_val
 	real*8, parameter :: bignum = 1.1e30
@@ -125,28 +125,28 @@ subroutine EPH_FDM_input_file (this, rank, FDM_infile, md_last_step)
 	read(10,*)
 	read(10,*)
 	read(10,*)
-	      
+
 	!! Grid size is given in next line
 	read(10,*) this%nx, this%ny, this%nz, this%steps
 	read(10,*) this%x0,this%x1
 	read(10,*) this%y0,this%y1
 	read(10,*) this%z0,this%z1
 	read(10,*)		!! Column headers (i j k T_e S_e rho_e C_e K_e flag T_dyn_flag)
-	
-	call this%edgesOf3DGrids(rank, this%nx,this%ny,this%nz,this%x0,this%x1,this%y0,this%y1, &
+
+	call this%edgesOf3DGrids(rank, ierr, this%nx,this%ny,this%nz,this%x0,this%x1,this%y0,this%y1, &
 	this%z0,this%z1)
-	
+
 	this%ntotal = this%nx*this%ny*this%nz
-	
+
 	!! read grid values
 	allocate(this%T_e(this%nx,this%ny,this%nz),this%S_e(this%nx,this%ny,this%nz), &
 	this%rho_e(this%nx,this%ny,this%nz), this%C_e(this%nx,this%ny,this%nz), &
 	this%kappa_e(this%nx,this%ny,this%nz),this%flag(this%nx,this%ny,this%nz), &
 	this%T_dynamic_flag(this%nx,this%ny,this%nz))
-	
+
 	allocate(this%Q_ei(this%nx,this%ny,this%nz)) 	!! for electron-ion energy exchanges  
 	this%Q_ei = 0.0d0
-	
+
 	allocate(this%x_mesh(this%ntotal), this%y_mesh(this%ntotal), this%z_mesh(this%ntotal))
 
 	do i = 1, this%ntotal
@@ -163,12 +163,14 @@ subroutine EPH_FDM_input_file (this, rank, FDM_infile, md_last_step)
 				write(*,*) "ERROR: Index of FDM grid is invalid."
 				write(*,*) i, this%x_mesh(i), this%y_mesh(i), this%z_mesh(i)
 			end if
+			call mpi_finalize(ierr)
 			stop
 		end if
 		!! unphysical parameters
 		if (T_e_val<0 .or. rho_e_val<0 .or. C_e_val<0 .or. &
 		kappa_e_val<0 .or. flag_val<0 .or. T_dynamic_flag_val<0) then
 			if (rank == 0) write(*,*) "ERROR: Negative electronic parameters found."
+			call mpi_finalize(ierr)
 			stop
 		end if
 
@@ -217,6 +219,7 @@ subroutine EPH_FDM_input_file (this, rank, FDM_infile, md_last_step)
 				write(*,*) 'Not enough data for C_e(T_e) and K_e(T_e).'
 				write(*,*) 'Try doing with all T_dyn_flag set to 0.'
 			end if
+			call mpi_finalize(ierr)
 			stop
 		end if
 		if (this%Num_C_e == 0 .or. this%Num_K_e == 0) then
@@ -224,6 +227,7 @@ subroutine EPH_FDM_input_file (this, rank, FDM_infile, md_last_step)
 				write(*,*) 'Not a single data found for C_e(T_e) or K_e(T_e).'
 				write(*,*) 'Try doing with all T_dyn_flag set to 0.'
 			end if
+			call mpi_finalize(ierr)
 			stop
 		end if
 		
@@ -292,13 +296,15 @@ end subroutine setMeshIndices
 
 
 !! set the dimensions of the grids in box
-subroutine edgesOf3DGrids (this,rank,nx,ny,nz,x0,x1,y0,y1,z0,z1)
+subroutine edgesOf3DGrids (this,rank,ierr,nx,ny,nz,x0,x1,y0,y1,z0,z1)
 	implicit none
 	integer, intent(in) :: rank, nx, ny, nz
+	integer :: ierr
 	real*8, intent(in) :: x0,x1,y0,y1,z0,z1
 	class (EPH_FDM_class) :: this
 	if (x0 >= x1 .or. y0 >= y1 .or. z0 >= z1) then
 		if (rank == 0) write(*,*) "ERROR: Mesh boundaries are not correct in input or in file"
+		call mpi_finalize(ierr)
 		stop
 	end if
 	this%dx = (x1 - x0)/nx
