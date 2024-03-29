@@ -122,8 +122,8 @@ module types
 
      !! ------- option for radiation cascade simulation with electronic stopping
 	logical :: electronic_stopping = .false.
-	real*8 :: eel_cut = 1.0d0
-	integer :: eel_freq_out = 1
+	real*8 :: eel_cut = 1.0d0, eel_E_prev_time = 0.0d0, eel_md_prev_time = 0.0d0
+	integer :: eel_freq_out = 1, eel_md_last_step = 0
 	character*1024 :: estop_filename = 'NULL'
      !! ----------------------------------------------		******** until here for electronic stopping
 

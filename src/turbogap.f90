@@ -346,7 +346,7 @@ program turbogap
   ! Let's look for those and other options in the input file
   rewind(10)
 
-  call read_input_file(n_species, mode, params, forgroups, rank)
+  call read_input_file(n_species, mode, params, forgroups, rank, ierr)
 
 
   ! TEMPORARY ERROR, FIX THE UNDERLYING ISSUE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -590,10 +590,15 @@ program turbogap
 
   if ( params%electronic_stopping ) then
 	if (params%estop_filename == 'NULL') then
-			write(*,*) "ERROR: No stopping data file is provided."
+			if (rank == 0) write(*,*) "ERROR: No stopping data file is provided."
+#ifdef _MPIF90
+			call mpi_finalize(ierr)
+#endif
 			stop
 		else
-			call ESscalar%read_electronic_stopping_file (rank, n_species,params%species_types, &
+			call ESscalar%electronic_stopping_InitialValues(params%eel_E_prev_time, &
+							params%eel_md_last_step, params%eel_md_prev_time)
+			call ESscalar%read_electronic_stopping_file (rank, ierr, n_species,params%species_types, &
 					params%estop_filename)
 	end if
 #ifdef _MPIF90
@@ -610,7 +615,7 @@ program turbogap
 
   if ( params%nonadiabatic_processes ) then
 	if ( params%eph_Tinfile /= "NULL" ) then
-		call ephfdm%EPH_FDM_input_file (rank,params%eph_Tinfile, params%eph_md_last_step)
+		call ephfdm%EPH_FDM_input_file (rank,ierr,params%eph_Tinfile, params%eph_md_last_step)
 #ifdef _MPIF90
 		call ephfdm%EPH_FDM_broadcastQuantities (params%eph_random_option, params%eph_fdm_option, ierr)
 #endif
@@ -624,7 +629,7 @@ program turbogap
 #ifdef _MPIF90
      END IF
 #endif
-		call ephfdm%EPH_FDM_input_params (rank,params%eph_md_last_step, params%eph_gsx, &
+		call ephfdm%EPH_FDM_input_params (rank,ierr,params%eph_md_last_step, params%eph_gsx, &
 		params%eph_gsy, params%eph_gsz, params%in_x0, params%in_x1, params%in_y0, params%in_y1, &
 		params%in_z0, params%in_z1, params%eph_Ti_e, params%eph_C_e, params%eph_rho_e, &
 		params%eph_kappa_e, params%eph_fdm_steps)
@@ -632,7 +637,7 @@ program turbogap
 		call ephfdm%EPH_FDM_broadcastQuantities (params%eph_random_option, params%eph_fdm_option, ierr)
 #endif
 	end if
-	call ephbeta%beta_parameters (rank, params%eph_betafile, n_species)
+	call ephbeta%beta_parameters (rank, ierr, params%eph_betafile, n_species)
 #ifdef _MPIF90
 	call ephbeta%beta_parameters_broadcastQuantities (ierr)
 #endif
@@ -821,7 +826,7 @@ program turbogap
 		   !! process is added and it needs to act for specific atoms their set must be defined here
 		   !! (similarly just appending to this) and passed to the process when it is called during MD.
 
-		   call forgroups%makeGroups ( rank, n_sites, positions(1:3, 1:n_sites), masses(1:n_sites), &
+		   call forgroups%makeGroups ( rank, ierr, n_sites, positions(1:3, 1:n_sites), masses(1:n_sites), &
 										params%species_types, params%masses_types )
 		   if ( params%optimize_groupID /= '' ) then
 				call forgroups%getAtomsInGroups (params%optimize_groupID, optimize_group_dynamic, &
@@ -1864,7 +1869,7 @@ program turbogap
 	  if (forgroups%presence_of_dynamic_groups) then
 		do i = 1, size(forgroups%dynamic_update_steps)
 			if ( mod(md_istep, forgroups%dynamic_update_steps(i)) == 0 ) &
-				call forgroups%updateDynamicGroups(rank, i, positions(1:3, 1:n_sites))
+				call forgroups%updateDynamicGroups(rank, ierr, i, positions(1:3, 1:n_sites))
 		end do
 	  end if
 	  

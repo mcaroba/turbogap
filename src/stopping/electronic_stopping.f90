@@ -51,26 +51,38 @@ module electronic_stopping
 use mpi
 
 type electronic_stopping_scalar_class
-	integer :: nrows_esdata, ncols_esdata
+	integer :: nrows_esdata, ncols_esdata, md_last_step
 	real*8, allocatable :: En_elstopfile(:), elstop(:,:)
-	real*8 :: cum_EEL = 0.0d0
+	real*8 :: cum_EEL, md_prev_time
 	contains
 	procedure :: read_electronic_stopping_file, electron_stopping_velocity_dependent
 	procedure :: electronic_stopping_scalar_broadcast
+	procedure :: electronic_stopping_InitialValues
 end type electronic_stopping_scalar_class
 
 contains
 
+!! initial values
+subroutine electronic_stopping_InitialValues(this, E_eel_cumulative_prev, md_last_step, md_prev_time)
+	implicit none
+	class (electronic_stopping_scalar_class) :: this
+	integer, intent(in) :: md_last_step
+	real*8, intent(in) :: E_eel_cumulative_prev, md_prev_time
+	this%cum_EEL = E_eel_cumulative_prev + 0.0d0
+	this%md_last_step = md_last_step
+	this%md_prev_time = md_prev_time
+end subroutine electronic_stopping_InitialValues
 
 !! read and store all electronic stopping power data
 !! also give error messages if the data in the file is not in proper format
-subroutine read_electronic_stopping_file (this, rank, n_species, species_types, estopfilename)
+subroutine read_electronic_stopping_file (this, rank, ierr, n_species, species_types, estopfilename)
 
 	implicit none
 	class (electronic_stopping_scalar_class) :: this
 	
 	character*1024, intent(in) :: estopfilename
 	integer, intent(in) :: rank, n_species
+	integer :: ierr
 	character*8, intent(in) :: species_types(n_species)
 	real*8, allocatable :: allelstopdata(:)
 	
@@ -84,6 +96,7 @@ subroutine read_electronic_stopping_file (this, rank, n_species, species_types, 
 	read(1000,*) this%nrows_esdata
 	if (this%nrows_esdata <= 0) then
 		if (rank == 0) write(*,*) "ERROR: Number of data rows in stopping file is 0 or less."
+		call mpi_finalize(ierr)
 		stop
 	end if
 	this%ncols_esdata = n_species + 1
@@ -93,6 +106,7 @@ subroutine read_electronic_stopping_file (this, rank, n_species, species_types, 
 	do i = 2, this%ncols_esdata
 		if (trim(infoline(i)) /= trim(species_types(i-1))) then
 			if (rank == 0) write(*,*) "ERROR: Stopping powers for Elements are not given in order."
+			call mpi_finalize(ierr)
 			stop
 		end if
 	end do
@@ -126,6 +140,7 @@ subroutine electronic_stopping_scalar_broadcast(this, ierr)
 					MPI_COMM_WORLD, ierr)
 	call mpi_bcast (this%elstop, this%nrows_esdata*(this%ncols_esdata-1), MPI_DOUBLE_PRECISION, 0, &
 					MPI_COMM_WORLD, ierr)
+	call mpi_bcast (this%cum_EEL, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
 
 end subroutine electronic_stopping_scalar_broadcast
 
@@ -166,19 +181,21 @@ IF (rank == 0) THEN
 			end do
 			instant_temp_atoms = 2.d0/3.d0/dfloat(Np-1)/boltzconst*E_kinetic_atoms
 
-			open (unit = 100, file = "ElectronicEnergyLoss.txt", status = "unknown")
-			write(100,*) 'Time (fs) / Electronic energy loss (eV) / Cumulative EEL (eV) / Kin.E_a (eV) / T_a (K)'
-			write(100,1) md_time, 0.0, 0.0, E_kinetic_atoms, instant_temp_atoms
+			if ( this%md_last_step == 0 ) then
+				open (unit = 100, file = "ElectronicEnergyLoss.txt", status = "unknown")
+				write(100,*) 'Time (fs) / EEL (eV) / Cum.EEL (eV) / Kin.E_a (eV) / T_a (K)'
+				write(100,1) md_time, 0.0, 0.0, E_kinetic_atoms, instant_temp_atoms
+			end if
 		else
 			if ((MOD(md_istep, eel_freq_out) == 0)) &
-						open (unit = 100, file = "ElectronicEnergyLoss.txt", &
+				open (unit = 100, file = "ElectronicEnergyLoss.txt", &
 												status = "old", position = "append")
 		end if
 	end if
 END IF
 
 	!! Do all calculations for MD time greater than 0
-	
+
 	if ( .not. (md_istep == 0 .or. md_istep == -1) ) then
 
 		!! Finding the forces after friction
@@ -205,6 +222,7 @@ IF (rank /= 0) forces = 0.0d0
 				if (energy > this%En_elstopfile(this%nrows_esdata)) then
 					if (rank == 0) write (*,*) "ERROR: Kinetic energy ", energy, &
 								"eV of atom is higher than electron stopping data"
+					call mpi_finalize(ierr)
 					stop
 				end if
 
@@ -266,6 +284,7 @@ IF (rank /= 0) forces = 0.0d0
 				if (energy > this%En_elstopfile(this%nrows_esdata)) then
 					if (rank == 0) write (*,*) "ERROR: Kinetic energy ", energy, &
 								"eV of atom is higher than electron stopping data"
+					call mpi_finalize(ierr)
 					stop
 				end if
 
@@ -306,7 +325,8 @@ IF (rank == 0) THEN
 			this%cum_EEL = this%cum_EEL + SeLoss
 
 			if (MOD(md_istep, eel_freq_out) == 0) then
-				write(100, 1) md_time, SeLoss, this%cum_EEL, E_kinetic_atoms, instant_temp_atoms
+				write(100, 1) md_time + this%md_prev_time, SeLoss, this%cum_EEL, &
+							E_kinetic_atoms, instant_temp_atoms
 				close(unit = 100)
 			end if
 END IF
