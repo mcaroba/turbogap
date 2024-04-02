@@ -431,7 +431,7 @@ end subroutine eph_LangevinForces
 
 !! Calculate the energies that will be transferred between the atomic and electronic systems
 !! due to the forces that have been modified according to the Langevin spatial correlations 
-subroutine eph_LangevinEnergyDissipation (this, md_istep, md_time, vel, &
+subroutine eph_LangevinEnergyDissipation (this, md_istep, num_md_steps, md_time, vel, &
 				positions_prev, masses, energies, dt, eph_for_atoms, Np, fdm, rank, ntasks, ierr)
 
 	implicit none
@@ -440,7 +440,7 @@ subroutine eph_LangevinEnergyDissipation (this, md_istep, md_time, vel, &
 
 	type (EPH_FDM_class), intent(inout) :: fdm
 
-	integer, intent(in) :: md_istep, eph_for_atoms(:), Np
+	integer, intent(in) :: md_istep, num_md_steps, eph_for_atoms(:), Np
 	real*8, intent(in) :: dt, md_time, vel(:,:), positions_prev(:,:), masses(:), energies(:)
 	integer :: i, j, ki, Np_all
 	real*8 :: xi, yi, zi, Energy_val_fric, Energy_val_rnd, &
@@ -479,8 +479,8 @@ IF (rank == 0) THEN
 		end if
 
 	else
-		if (MOD(md_istep, this%T_out_freq) == 0) open (unit = 100, file = "eph-EnergySharingData.txt", &
-											status = "old", position = "append")
+		if ((MOD(md_istep, this%T_out_freq) == 0) .or. md_istep == num_md_steps) &
+			open (unit = 100, file = "eph-EnergySharingData.txt", status = "old", position = "append")
 	end if
 END IF
 
@@ -565,7 +565,7 @@ IF (rank == 0 .and. this%fdm_option == 1) call fdm%heatDiffusionSolve (dt)
 	!! To write the electronic mesh temperatures
 IF (rank == 0) THEN
 	if (this%T_out_mesh_freq /= 0) then
-		if (MOD(md_istep, this%T_out_mesh_freq) == 0) then
+		if (MOD(md_istep, this%T_out_mesh_freq) == 0 .or. md_istep == num_md_steps) then
 			call fdm%saveOutputToFile ( this%T_outfile, md_istep, dt )
 		end if
 	end if
@@ -574,7 +574,7 @@ IF (rank == 0) THEN
 
 	this%E_eph_cumulative = this%E_eph_cumulative + Energy_val_fric + Energy_val_rnd
 
-	if (MOD(md_istep, this%T_out_freq) == 0) then
+	if (MOD(md_istep, this%T_out_freq) == 0 .or. md_istep == num_md_steps) then
 		write(100,1) md_time + this%md_prev_time, Energy_val_fric, Energy_val_rnd, &
 					this%E_eph_cumulative, sum(fdm%T_e)/fdm%ntotal, instant_temp_atoms, &
 					E_kinetic_atoms, E_pot_atoms

@@ -146,14 +146,14 @@ end subroutine electronic_stopping_scalar_broadcast
 
 
 !! find forces after electronic stopping and electronic energy loss
-subroutine electron_stopping_velocity_dependent (this, md_istep, natomtypes, Ecut, eel_freq_out, &
+subroutine electron_stopping_velocity_dependent (this, md_istep, num_md_steps, natomtypes, Ecut, eel_freq_out, &
 			vel, forces, masses, type_mass, dt, md_time, eel_for_atoms, Np, to_calculate, rank, ntasks, ierr)
 
 	implicit none
 	class (electronic_stopping_scalar_class) :: this
 	real*8, intent(in) :: vel(:,:), dt, md_time 
 	real*8, intent(inout) :: forces(:,:)
-	integer, intent(in) :: md_istep, eel_freq_out, eel_for_atoms(:), Np, rank, ntasks
+	integer, intent(in) :: md_istep, num_md_steps, eel_freq_out, eel_for_atoms(:), Np, rank, ntasks
 	character*6, intent(in) :: to_calculate
 	integer :: Np_all, ki, i, j, itype
 	real*8 :: vsq, energy, Se, Se_lo, Se_hi, E_lo, E_hi, factor = 0.0d0, vabs, SeLoss, &
@@ -187,7 +187,7 @@ IF (rank == 0) THEN
 				write(100,1) md_time, 0.0, 0.0, E_kinetic_atoms, instant_temp_atoms
 			end if
 		else
-			if ((MOD(md_istep, eel_freq_out) == 0)) &
+			if ((MOD(md_istep, eel_freq_out) == 0) .or. md_istep == num_md_steps) &
 				open (unit = 100, file = "ElectronicEnergyLoss.txt", &
 												status = "old", position = "append")
 		end if
@@ -324,7 +324,7 @@ IF (rank /= 0) forces = 0.0d0
 IF (rank == 0) THEN
 			this%cum_EEL = this%cum_EEL + SeLoss
 
-			if (MOD(md_istep, eel_freq_out) == 0) then
+			if (MOD(md_istep, eel_freq_out) == 0 .or. md_istep == num_md_steps) then
 				write(100, 1) md_time + this%md_prev_time, SeLoss, this%cum_EEL, &
 							E_kinetic_atoms, instant_temp_atoms
 				close(unit = 100)

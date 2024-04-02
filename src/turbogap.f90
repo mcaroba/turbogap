@@ -1953,7 +1953,7 @@ END IF
 	  !! ------- option for radiation cascade simulation with electronic stopping
 
 	  if ( params%electronic_stopping ) then
-		call ESscalar%electron_stopping_velocity_dependent (md_istep, n_species, params%eel_cut, params%eel_freq_out, &
+		call ESscalar%electron_stopping_velocity_dependent (md_istep, params%md_nsteps, n_species, params%eel_cut, params%eel_freq_out, &
 					velocities(1:3, 1:n_sites), forces(1:3, 1:n_sites), masses(1:n_sites), &
 					params%masses_types, time_step, md_time, eel_for_atoms, num_eel_atoms, 'forces', rank, ntasks, ierr)		
 	  end if
@@ -2053,8 +2053,8 @@ END IF
 	!! ------- option for radiation cascade simulation with electronic stopping
 
 	  if ( params%electronic_stopping ) then
-		call ESscalar%electron_stopping_velocity_dependent (md_istep, n_species, params%eel_cut, params%eel_freq_out, &
-				velocities(1:3, 1:n_sites), forces(1:3, 1:n_sites), masses(1:n_sites), params%masses_types, &
+		call ESscalar%electron_stopping_velocity_dependent (md_istep, params%md_nsteps, n_species, params%eel_cut, &
+				params%eel_freq_out,velocities(1:3, 1:n_sites), forces(1:3, 1:n_sites), masses(1:n_sites), params%masses_types, &
 				time_step_prev, md_time, eel_for_atoms, num_eel_atoms, 'energy', rank, ntasks, ierr)
 	  end if
 
@@ -2063,7 +2063,7 @@ END IF
 
 	!! ------- option for electronic stopping based on eph model
 	  if ( params%nonadiabatic_processes ) then
-		call ephlsc%eph_LangevinEnergyDissipation (md_istep, md_time, velocities(1:3, 1:n_sites), &
+		call ephlsc%eph_LangevinEnergyDissipation (md_istep, params%md_nsteps, md_time, velocities(1:3, 1:n_sites), &
 				positions_prev(1:3, 1:n_sites), masses(1:n_sites), energies(1:n_sites), &
 				time_step_prev, eph_for_atoms, num_eph_atoms, ephfdm, rank, ntasks, ierr)
 	  end if
