@@ -1942,6 +1942,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
           end do
         
           !write(*,*) "n_mbd_pairs", n_mbd_pairs
+          !write(*,*) "n_pairs", n_pairs
 end if
 
           k_i = 0
@@ -2915,7 +2916,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                   end do
                 else
                 call cpu_time(time5)
-                call power_iteration( val(1:nnz,i2), ia(1:nnz), ja(1:nnz), 3*n_mbd_sites, 10, b_vec ) !myidx, nnz, 20, b_vec )
+                call power_iteration( val(1:nnz,i2), ia(1:nnz), ja(1:nnz), 3*n_mbd_sites, 60, b_vec ) !myidx, nnz, 20, b_vec )
                 call cpu_time(time6)
                 !write(*,*) "Power iteration timing", time6-time5       
                 b_norm = dot_product(b_vec,b_vec)
@@ -2934,9 +2935,9 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 !write(*,*) "AT-Ab mult timing", time6-time5
                 l_dom = dot_product(b_vec,Ab)/b_norm
                 if ( l_dom < 0.d0 ) then
-                  l_min = l_dom !- 0.01d0
+                  l_min = l_dom - 0.01d0
                 else
-                  l_max = l_dom !+ 0.01d0
+                  l_max = l_dom + 0.01d0
                 end if
                 nnz2 = nnz+3*n_mbd_sites
                 ia2(1:nnz) = ia
@@ -2949,7 +2950,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 end do
                 call cpu_time(time5)
                 call power_iteration( val2(1:nnz2), ia2(1:nnz2), ja2(1:nnz2), &
-                                      3*n_mbd_sites, 10, b_vec) !myidx, nnz2, 20, b_vec )
+                                      3*n_mbd_sites, 60, b_vec) !myidx, nnz2, 20, b_vec )
                 call cpu_time(time6)
                 !write(*,*) "Power iteration timing second", time6-time5
                 !call power_iteration( AT(:,:,i2)-l_dom*I_mat, 50, b_vec )
@@ -2969,9 +2970,9 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 call cpu_time(time6)
                 !write(*,*) "AT-Ab 2nd mult timing", time6-time5
                 if ( l_dom < 0.d0 ) then
-                  l_max = dot_product(b_vec,Ab)/b_norm + l_dom !+ 0.01d0
+                  l_max = dot_product(b_vec,Ab)/b_norm + l_dom + 0.01d0
                 else
-                  l_min = dot_product(b_vec,Ab)/b_norm + l_dom !- 0.01d0
+                  l_min = dot_product(b_vec,Ab)/b_norm + l_dom - 0.01d0
                 end if
                 !write(*,*) "l_min, l_max", l_min, l_max
                 l_vals(1) = l_min
@@ -3022,7 +3023,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 if ( .not. lanczos ) then
                 call cpu_time(time5)
                 call power_iteration( val_sym(1:nnz,i2), ia(1:nnz), ja(1:nnz), &
-                                      3*n_mbd_sites, 10, b_vec ) !myidx, nnz, 20, b_vec )
+                                      3*n_mbd_sites, 60, b_vec ) !myidx, nnz, 20, b_vec )
                 call cpu_time(time6)
                 if ( do_timing ) then
                 write(*,*) "Power iteration timing", time6-time5
@@ -3043,9 +3044,9 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 !write(*,*) "AT-Ab mult timing", time6-time5
                 l_dom = dot_product(b_vec,Ab)/b_norm
                 if ( l_dom < 0.d0 ) then
-                  l_min = l_dom !- 0.01d0
+                  l_min = l_dom - 0.01d0
                 else
-                  l_max = l_dom !+ 0.01d0
+                  l_max = l_dom + 0.01d0
                 end if
                 nnz2 = nnz+3*n_mbd_sites
                 ia2(1:nnz) = ia
@@ -3058,7 +3059,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 end do
                 call cpu_time(time5)
                 call power_iteration( val2(1:nnz2), ia2(1:nnz2), ja2(1:nnz2), &
-                                      3*n_mbd_sites, 10, b_vec ) !myidx, nnz2, 20, b_vec )
+                                      3*n_mbd_sites, 60, b_vec ) !myidx, nnz2, 20, b_vec )
                 call cpu_time(time6)
                 if ( do_timing ) then
                 write(*,*) "Power iteration timing second", time6-time5
@@ -3080,9 +3081,9 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 call cpu_time(time6)
                 !write(*,*) "AT-Ab 2nd mult timing", time6-time5
                 if ( l_dom < 0.d0 ) then
-                  l_max = dot_product(b_vec,Ab)/b_norm + l_dom !+ 0.01d0
+                  l_max = dot_product(b_vec,Ab)/b_norm + l_dom + 0.01d0
                 else
-                  l_min = dot_product(b_vec,Ab)/b_norm + l_dom !- 0.01d0
+                  l_min = dot_product(b_vec,Ab)/b_norm + l_dom - 0.01d0
                 end if
                 end if ! .not. lanczos
                 if ( lanczos ) then
@@ -3111,7 +3112,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
 
                 end if
 
-                !write(*,*) "l_min, l_max", i, l_min, l_max
+                !write(*,*) "l_min, l_max", i, l_min+0.01d0, l_max-0.01d0
                 l_vals(1) = l_min
                 do k2 = 2, 1001
                   l_vals(k2) = l_min + (k2-1)*(l_max-l_min)/1000
@@ -3123,6 +3124,9 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                     lsq_mat(j2,k2) = sum(l_vals**(j2-1+k2-1))
                   end do
                 end do
+                !do j2 = 1, n_order+1
+                !  write(*,*) "lsq_mat", lsq_mat(j2,:)
+                !end do
                 call cpu_time(time5)
                 call dgesv( n_order+1, 1, lsq_mat, n_order+1, ipiv_lsq, res_sym, n_order+1, info )
                 !write(*,*) "coeff", res_sym
@@ -3620,7 +3624,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
               omegas_nnls(i2) = omegas_nnls(i2-1)+0.02d0
             end do
             do j2 = 1, n_order
-              integrand_nnls = integrand_nnls + coeff_nnls(j2+1)*(omegas_nnls)**j2 - coeff_nnls(n_order+1+j2)*omegas**j2
+              integrand_nnls = integrand_nnls + coeff_nnls(j2+1)*(omegas_nnls)**j2 - coeff_nnls(n_order+1+j2)*omegas_nnls**j2
             end do
             denom_nnls = 1.d0
             do j2 = 1, n_order
@@ -3669,7 +3673,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
               log_integral = 0.d0
               call integrate("trapezoidal", omegas_mbd, log_integrand, omegas_mbd(1), omegas_mbd(n_freq), log_integral)
               log_integral = log_integral/(2.d0*pi)
-              !write(*,*) "Exact log energy", i, log_integral * Hartree
+              write(*,*) "Exact log energy", i, log_integral * Hartree
               deallocate( log_integrand )
             end if
   

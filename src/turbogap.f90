@@ -1305,6 +1305,7 @@ program turbogap
 
 
 !     Compute vdW energies and forces
+      write(*,*) "has_vdw", any(soap_turbo_hypers(:)%has_vdw)
       if( any( soap_turbo_hypers(:)%has_vdw ) .and. params%do_prediction )then
         call cpu_time(time_vdw(1))
 #ifdef _MPIF90
