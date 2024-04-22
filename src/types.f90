@@ -163,7 +163,9 @@ module types
          & .false., mc_reverse = .false., xrd_iwasa = .true., pair_distribution_partial=.false.,&
          & structure_factor_from_rdf=.false.,&
          & structure_factor_window = .true., write_pair_distribution=.false., write_structure_factor=.false.,&
-         & do_pair_distribution = .false., do_structure_factor=.false., do_xrd=.false., write_xrd=.false.
+         & do_pair_distribution = .false., do_structure_factor&
+         &=.false., do_xrd=.false., write_xrd=.false.,&
+         & structure_factor_matrix=.false.
 
     logical, allocatable :: write_local_properties(:)
     type(exp_data_container), allocatable :: exp_data(:)

@@ -1061,6 +1061,9 @@ end if
       else if( keyword == "structure_factor_from_rdf" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%structure_factor_from_rdf
+      else if( keyword == "structure_factor_matrix" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%structure_factor_matrix
 
 
       else if( keyword == "pair_distribution_kde_sigma" )then
