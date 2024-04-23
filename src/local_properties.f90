@@ -49,7 +49,6 @@ module local_prop
     real*8, allocatable :: K(:,:), K_der(:,:), Qss(:,:), Qs_copy(:,:)
     integer :: n_sites, n_soap, n_sparse, zeta_int, n_pairs
     integer :: i, j, i2, cart
-    logical :: is_zeta_int = .false.
 
     n_sparse = size(alphas)
     n_soap = size(soap, 1)

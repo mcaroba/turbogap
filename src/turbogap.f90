@@ -1623,21 +1623,20 @@ program turbogap
 
 
 !----------------------------------------------------!
-!--- EXP SPECTRUM CALCULATION AND FORCES ---!
+!--- EXPERIMENTAL SPECTRUM CALCULATION AND FORCES ---!
 !----------------------------------------------------!
 
 ! --- Changing the implementation:
 !     > All experimental prediction should be done here
 !     > do_exp is the variable which says whether calculation should be done
 !     > experimental_forces = .true. will add forces to the calculation
-!     > exp_
+
+        !#########################################################!
+        !###---   Compute Experimental Data Interpolation   ---###!
+        !#########################################################!
 
         if ( params%do_exp )then
            do i = 1, params%n_exp
-
-              !####################################################!
-              !###---   Compute Experimental Interpolation   ---###!
-              !####################################################!
 
               ! If we want to compute the experimental interpolation, we do it now.
               if ( params%exp_data(i)%compute_exp )then
@@ -1662,6 +1661,10 @@ program turbogap
            end do
         end if
 
+
+        !###################################################!
+        !###---   XPS Forces and Spectra Prediction   ---###!
+        !###################################################!
 
         !     Compute core_electron_be energies and forces
         if( any( soap_turbo_hypers(:)%has_core_electron_be ) .and.( params%do_prediction ) &
@@ -1697,22 +1700,20 @@ program turbogap
                 & y_i_pred_all, .not. allocated(params&
                 &%exp_data(xps_idx)%x), params%exp_similarity_type )
 
-           call get_exp_pred_spectra_energies_forces(&
-                & params%exp_data(xps_idx)%data, params%exp_energy_scales(core_be_lp_index),&
+           call get_exp_pred_spectra_energies_forces( params%exp_energy_scales(core_be_lp_index),&
                 & local_properties(i_beg:i_end,core_be_lp_index),&
                 & local_properties_cart_der(1:3, j_beg:j_end, core_be_lp_index ), &
                 & n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
-                & neighbor_species(j_beg:j_end), &
                 & params%xps_sigma, params%exp_data(xps_idx)%n_samples, mag, &
                 & params%exp_data(xps_idx)%x, params&
                 &%exp_data(xps_idx)%y, params%exp_data(xps_idx)&
                 &%y_pred, y_i_pred_all(i_beg:i_end, 1:params&
-                &%exp_data(xps_idx)%n_samples), .true., params&
-                &%do_forces, rjs(j_beg:j_end), xyz(1:3, j_beg:j_end),&
+                &%exp_data(xps_idx)%n_samples), params&
+                &%do_forces,  xyz(1:3, j_beg:j_end),&
 #ifdef _MPIF90
-                n_sites, this_energies_lp(i_beg:i_end), this_forces_lp, this_virial_lp, params%exp_similarity_type, rank )
+                this_energies_lp(i_beg:i_end), this_forces_lp, this_virial_lp, params%exp_similarity_type, rank )
 #else
-           n_sites, energies_lp(i_beg:i_end), forces_lp, virial_lp, params%exp_similarity_type, rank )
+                energies_lp(i_beg:i_end), forces_lp, virial_lp, params%exp_similarity_type, rank )
 #endif
 
 
@@ -1803,8 +1804,13 @@ program turbogap
         !             g(r) = (N_a/N) * g_aa(r) + 2(N_a/N * N_b/N)g_ab + (N_b/N)g_bb
         !
         ! S_ab(q) = delta_ab + 4 pi rho (ca cb)^1/2 int_0^r_cut dr r^2 [ g_ab(r) - 1 ] sin(qr)/(qr) * sin( pi r / R )/ (pi r /R)
-
-
+        !
+        !
+        ! XRD(q) = 1/N ( d cross_section/ d Omega )
+        !
+        ! Total scattering function F^X(q)
+        ! F^x(q) = [ XRD(q) - \sum_n c_i f_i(q)^2 ] / [ \sum_n c_i f_i(q) ]^2
+        !
 
         if (params%do_pair_distribution)then
            call cpu_time(time_pdf(1))
@@ -1823,20 +1829,25 @@ program turbogap
            time_pdf(3) = time_pdf(3) + time_pdf(2) - time_pdf(1)
            print *, "TIMEPDF = ", time_pdf(3)
 
-           ! Allocations
-           if ( params%pair_distribution_partial .and. .not. ( params%do_structure_factor .or. params%do_xrd ) ) then
-              deallocate( pair_distribution_partial )
-              deallocate( x_pair_distribution  )
-              deallocate( y_pair_distribution  )
-              deallocate( n_atoms_of_species  )
+           ! Will go through the allocations in detail another time,
+           ! first, we will naively take care of the arrays by
+           ! deallocating them naively if structure factors/xrd is not
+           ! needed.
 
-              if (params%exp_forces)then
-                 deallocate( pair_distribution_partial_der )
-                 if (allocated( params%exp_energy_scales ))then
-                    if ( allocated( forces_pair_distribution ) ) deallocate( forces_pair_distribution )
-                 end if
-              end if
-           end if
+           ! Allocations
+           ! if ( params%pair_distribution_partial .and. .not. ( params%do_structure_factor .or. params%do_xrd ) ) then
+           !    deallocate( pair_distribution_partial )
+           !    deallocate( x_pair_distribution  )
+           !    deallocate( y_pair_distribution  )
+           !    deallocate( n_atoms_of_species  )
+
+           !    if (params%exp_forces)then
+           !       deallocate( pair_distribution_partial_der )
+           !       if (allocated( params%exp_energy_scales ))then
+           !          if ( allocated( forces_pair_distribution ) ) deallocate( forces_pair_distribution )
+           !       end if
+           !    end if
+           ! end if
 
            ! temp is taken care of
 
@@ -1860,18 +1871,18 @@ program turbogap
 
            print *, "TIMESF = ", time_sf(3)
 
-           if ( params%pair_distribution_partial .and. .not. (  params%do_xrd ) ) then
-              deallocate( pair_distribution_partial )
-              deallocate( structure_factor_partial )
+           ! if ( params%pair_distribution_partial .and. .not. (  params%do_xrd ) ) then
+           !    deallocate( pair_distribution_partial )
+           !    deallocate( structure_factor_partial )
 
-              if ( params%structure_factor_matrix ) deallocate( sinc_factor_matrix )
-              ! if (params%exp_forces)then
-              !    deallocate( pair_distribution_partial_der )
-              !    if (allocated( params%exp_energy_scales ))then
-              !       if ( allocated( forces_pair_distribution ) ) deallocate( forces_pair_distribution )
-              !    end if
-              !    end if
-           end if
+           !    if ( params%structure_factor_matrix ) deallocate( sinc_factor_matrix )
+           !    ! if (params%exp_forces)then
+           !    !    deallocate( pair_distribution_partial_der )
+           !    !    if (allocated( params%exp_energy_scales ))then
+           !    !       if ( allocated( forces_pair_distribution ) ) deallocate( forces_pair_distribution )
+           !    !    end if
+           !    !    end if
+           ! end if
 
 
 
@@ -1888,6 +1899,40 @@ program turbogap
         end if
 
 
+
+
+        !##############################################!
+        !###---   Finalize experimental arrays   ---###!
+        !##############################################!
+
+        if (params%do_pair_distribution)then
+           call finalize_pair_distribution( params, x_pair_distribution&
+                &, y_pair_distribution, y_pair_distribution_temp,&
+                & pair_distribution_partial, pair_distribution_partial_temp, params&
+                &%exp_forces, pair_distribution_der,&
+                & pair_distribution_partial_der,&
+                & pair_distribution_partial_temp_der, forces_pair_distribution, n_atoms_of_species, rank)
+
+        end if
+
+        ! Now calculate the structure factors
+        if (params%do_structure_factor )then
+
+           call finalize_structure_factor( params, x_structure_factor, x_structure_factor_temp,&
+                & y_structure_factor, y_structure_factor_temp,&
+                & structure_factor_partial, structure_factor_partial_temp,&
+                & x_pair_distribution, y_pair_distribution, &
+                & pair_distribution_partial, sinc_factor_matrix)
+
+        end if
+
+        if ( params%do_xrd )then
+           call finalize_xrd( params, x_xrd, x_xrd_temp,&
+                & y_xrd, y_xrd_temp, x_structure_factor, x_structure_factor_temp,&
+                & structure_factor_partial, structure_factor_partial_temp)
+        end if
+
+
         !################################################################!
         !###---   Compute similarity of experimental predictions   ---###!
         !################################################################!
@@ -1897,19 +1942,8 @@ program turbogap
            do i = 1, params%n_exp
               ! First normalize the spectrum if it matches some type of experimental data
 
-              ! do j = 1, size(implemented_exp_observables)
-              !    if ( trim( params%exp_data(i)%label ) == trim( implemented_exp_observables(j) ) )then
-              !       ! Normalize the spectrum and assign y_pred to this prediction
-
-              !       params%exp_data(i)%mag = sqrt(dot_product(y, y))
-
-
-              
-
-
               if ( params%exp_data(i)%compute_similarity .and. allocated(params%exp_data(i)%y) )then
-                 call get_data_similarity(params%exp_data(i)&
-                      &%x, params%exp_data(i)%y, params&
+                 call get_data_similarity(params%exp_data(i)%y, params&
                       &%exp_data(i)%y_pred, params&
                       &%exp_data(i)%similarity, params&
                       &%exp_similarity_type)
@@ -1918,6 +1952,10 @@ program turbogap
 
            end do
         end if
+
+
+
+
 
 
         ! if (rank == 0 .and. .not. params%do_mc)then
@@ -2871,7 +2909,7 @@ program turbogap
                             .not. allocated(params%exp_data(xps_idx)%x), params%exp_similarity_type )
 
 
-                       call get_data_similarity(params%exp_data(xps_idx)%x, params%exp_data(xps_idx)%y, &
+                       call get_data_similarity( params%exp_data(xps_idx)%y, &
                             & params%exp_data(xps_idx)%y_pred, params%exp_data(xps_idx)%similarity, params%exp_similarity_type)
 
                     end if
@@ -2888,7 +2926,7 @@ program turbogap
                           !      &%exp_data(i)%x, params&
                           !      &%exp_data(i)%y_pred)
 
-                          call get_data_similarity(params%exp_data(i)%x, params%exp_data(i)%y, &
+                          call get_data_similarity(params%exp_data(i)%y, &
                                & params%exp_data(i)%y_pred, params%exp_data(i)%similarity, params%exp_similarity_type)
 
                        end if
@@ -3197,8 +3235,7 @@ program turbogap
                        end if
                        params%exp_data(xps_idx) % y_pred_prev = params%exp_data(xps_idx) % y_pred
 
-                       call get_data_similarity(params&
-                            &%exp_data(xps_idx)%x, params&
+                       call get_data_similarity( params&
                             &%exp_data(xps_idx)%y, params&
                             &%exp_data(xps_idx)%y_pred,&
                             & params%exp_data(xps_idx)&
@@ -3218,8 +3255,7 @@ program turbogap
                           !      &%exp_data(i)%x, params&
                           !      &%exp_data(i)%y_pred)
 
-                          call get_data_similarity(params&
-                               &%exp_data(i)%x, params&
+                          call get_data_similarity( params&
                                &%exp_data(i)%y, params&
                                &%exp_data(i)%y_pred, params&
                                &%exp_data(i)%similarity,&

@@ -117,9 +117,9 @@ contains
 
 
        if (.not. allocated(pair_distribution_partial))then   !deallocate(pair_distribution_partial)
-       allocate( pair_distribution_partial(1:params%pair_distribution_n_samples,&
-            & 1 : n_dim_partial) )
-    end if
+          allocate( pair_distribution_partial(1:params%pair_distribution_n_samples,&
+               & 1 : n_dim_partial) )
+       end if
 
        pair_distribution_partial = 0.d0
 
@@ -171,48 +171,39 @@ contains
          &*indices(3)) )
 
 
+    !#####################################################################!
+    !###---   Calculating the partial pair distribution functions   ---###!
+    !#####################################################################!
+
     if ( params%pair_distribution_partial )then
        n_dim_idx = 1
        outer1: do j = 1, n_species
           do k = 1, n_species
 
-             if (j > k) cycle
-
-             ! if (j > k)then
-             !    ! we have already calculated the pair correlation function!
-             !    pair_distribution_partial(1:params%pair_distribution_n_samples, j, k) = &
-             !         & pair_distribution_partial(1:params%pair_distribution_n_samples, k, j)
-
-             !    pair_distribution_partial_der(1:params%pair_distribution_n_samples, j, k, 1:3, j_beg:j_end) = &
-             !         & pair_distribution_partial_der(1:params%pair_distribution_n_samples, k, j, 1:3,  j_beg:j_end)
-
-             !             else
+             if (j > k) cycle ! We have already calculated the pair correlation function!
 
              ! Note that with the calculation of the derivatives here,
              ! this is without the -2 *delta_ik (r_j^alpha - r_i^alpha)
              ! factor, which allows for some freeing of memory
 
-                call get_pair_distribution( n_sites, &
-                     & neighbors_list(j_beg:j_end), n_neigh(i_beg:i_end),&
-                     & neighbor_species(j_beg:j_end), rjs(j_beg:j_end), xyz(1:3,j_beg:j_end), params&
-                     &%r_range_min, params%r_range_max, params%pair_distribution_n_samples, x_pair_distribution,&
-                     & pair_distribution_partial(1:params%pair_distribution_n_samples, n_dim_idx), params&
-                     &%pair_distribution_rcut, .false.,&
-                     & params%pair_distribution_partial, j, k,&
-                     & params%pair_distribution_kde_sigma,&
-                     & dfloat(n_sites)/v_uc,  do_derivatives,&
-                     & pair_distribution_partial_der(1:params&
-                     &%pair_distribution_n_samples, n_dim_idx, &
-                     & j_beg:j_end) )
+             call get_pair_distribution( n_sites, &
+                  & neighbors_list(j_beg:j_end), n_neigh(i_beg:i_end),&
+                  & neighbor_species(j_beg:j_end), rjs(j_beg:j_end), xyz(1:3,j_beg:j_end), params&
+                  &%r_range_min, params%r_range_max, params%pair_distribution_n_samples, x_pair_distribution,&
+                  & pair_distribution_partial(1:params%pair_distribution_n_samples, n_dim_idx), params&
+                  &%pair_distribution_rcut, .false.,&
+                  & params%pair_distribution_partial, j, k,&
+                  & params%pair_distribution_kde_sigma,&
+                  & dfloat(n_sites)/v_uc,  do_derivatives,&
+                  & pair_distribution_partial_der(1:params&
+                  &%pair_distribution_n_samples, n_dim_idx, &
+                  & j_beg:j_end) )
 
+             n_dim_idx = n_dim_idx + 1
 
-                n_dim_idx = n_dim_idx + 1
-
-
-                if ( n_dim_idx > n_dim_partial )then
-                   exit outer1
-                end if
-
+             if ( n_dim_idx > n_dim_partial )then
+                exit outer1
+             end if
 
           end do
        end do outer1
@@ -227,10 +218,12 @@ contains
             &%pair_distribution_rcut, .false., .false., 1, 1,&
             & params%pair_distribution_kde_sigma, dfloat(n_sites)&
             &/v_uc, do_derivatives, pair_distribution_der(1:params&
-                     &%pair_distribution_n_samples,&
-                     & j_beg:j_end))
+            &%pair_distribution_n_samples,&
+            & j_beg:j_end))
     end if
 
+
+    ! --- MPI communication is here  ---
 
     if ( params%pair_distribution_partial )then
 #ifdef _MPIF90
@@ -245,6 +238,12 @@ contains
 
        pair_distribution_partial =  pair_distribution_partial_temp
        deallocate( pair_distribution_partial_temp )
+
+
+       call mpi_bcast(pair_distribution_partial, params&
+            &%pair_distribution_n_samples * n_dim_partial, MPI_DOUBLE_PRECISION, 0,&
+            & MPI_COMM_WORLD, ierr)
+
 
        ! Now, we have the derivatives of the partial pair distribution
        ! function with respect to the atom pairs in that rank
@@ -336,9 +335,10 @@ contains
 
 #ifdef _MPIF90
 
-       call mpi_bcast(pair_distribution_partial, params&
-            &%pair_distribution_n_samples * n_dim_idx, MPI_DOUBLE_PRECISION, 0,&
-            & MPI_COMM_WORLD, ierr)
+       ! No need to broadcast tbe pair distribution partials again as each process has done the calculation
+       ! call mpi_bcast(pair_distribution_partial, params&
+       !      &%pair_distribution_n_samples * n_dim_idx, MPI_DOUBLE_PRECISION, 0,&
+       !      & MPI_COMM_WORLD, ierr)
 
        call mpi_bcast(y_pair_distribution, params&
             &%pair_distribution_n_samples, MPI_DOUBLE_PRECISION, 0,&
@@ -346,6 +346,11 @@ contains
 
 
 #endif
+
+       !##################################################################!
+       !###---   If not doing partial pair distribution functions   ---###!
+       !##################################################################!
+
 
     else
 #ifdef _MPIF90
@@ -383,6 +388,7 @@ contains
     end if
 
 
+    if (params%pair_distribution_partial .and. allocated(factors)) deallocate(factors)
 
     ! Multiplying by the 1/density factor (V/n_sites)
     ! Still need to check that the integral ( 4 * pi * density * ( int dr r^2 g(r) ) ~= N_sites )
@@ -432,6 +438,41 @@ contains
     end if
 
   end subroutine calculate_pair_distribution
+
+
+  subroutine finalize_pair_distribution(params, x_pair_distribution&
+       &, y_pair_distribution, y_pair_distribution_temp,&
+       & pair_distribution_partial, pair_distribution_partial_temp,&
+       & do_derivatives, pair_distribution_der, pair_distribution_partial_der,&
+       & pair_distribution_partial_temp_der, forces_pair_distribution, n_atoms_of_species, rank)
+    implicit none
+    type(input_parameters), intent(in) :: params
+    integer, intent(in) :: rank
+    real*8, allocatable, intent(inout) :: x_pair_distribution(:),&
+         & y_pair_distribution(:), pair_distribution_partial(:,:),&
+         & n_atoms_of_species(:), pair_distribution_partial_temp(:,:),&
+         & y_pair_distribution_temp(:), pair_distribution_der(:,:),&
+         & pair_distribution_partial_der(:,:,:), &
+         & pair_distribution_partial_temp_der(:,:,:), forces_pair_distribution(:,:)
+    logical, intent(in) :: do_derivatives
+
+    ! Naive finalization, include the logic of how things are actually
+    ! allocated above rather then allocating and deallocating
+
+    if ( allocated( x_pair_distribution )               ) deallocate(x_pair_distribution)
+    if ( allocated( y_pair_distribution )               ) deallocate(y_pair_distribution)
+    if ( allocated( y_pair_distribution_temp )          ) deallocate(y_pair_distribution_temp)
+    if ( allocated( pair_distribution_partial )         ) deallocate(pair_distribution_partial)
+    if ( allocated( pair_distribution_partial_temp )    ) deallocate(pair_distribution_partial_temp)
+    if ( allocated( pair_distribution_der )             ) deallocate(pair_distribution_der)
+    if ( allocated( pair_distribution_partial_der )     ) deallocate(pair_distribution_partial_der)
+    if ( allocated( pair_distribution_partial_temp_der )) deallocate(pair_distribution_partial_temp_der)
+    if ( allocated( forces_pair_distribution )          ) deallocate(forces_pair_distribution)
+    if ( allocated( n_atoms_of_species )          ) deallocate(n_atoms_of_species)
+
+
+  end subroutine finalize_pair_distribution
+
 
 
   subroutine calculate_structure_factor( params, x_structure_factor, x_structure_factor_temp,&
@@ -797,6 +838,36 @@ contains
   end subroutine calculate_structure_factor
 
 
+  subroutine finalize_structure_factor( params, x_structure_factor, x_structure_factor_temp,&
+       & y_structure_factor, y_structure_factor_temp,&
+       & structure_factor_partial, structure_factor_partial_temp,&
+       & x_pair_distribution, y_pair_distribution, &
+       & pair_distribution_partial, sinc_factor_matrix)
+    implicit none
+    type(input_parameters), intent(in) :: params
+    real*8, allocatable, intent(inout) :: x_structure_factor(:), x_structure_factor_temp(:), &
+         & y_structure_factor(:), structure_factor_partial(:,:),&
+         &  structure_factor_partial_temp(:,:),&
+         & y_structure_factor_temp(:)
+    real*8,  intent(inout), allocatable :: x_pair_distribution(:), y_pair_distribution(:),&
+         & pair_distribution_partial(:,:)
+    real*8, allocatable, intent(inout) :: sinc_factor_matrix(:,:)
+
+    if (allocated(x_structure_factor)) deallocate(x_structure_factor)
+    if (allocated(x_structure_factor_temp)) deallocate(x_structure_factor_temp)
+    if (allocated(y_structure_factor)) deallocate(y_structure_factor)
+    if (allocated(structure_factor_partial)) deallocate(structure_factor_partial)
+    if (allocated(structure_factor_partial_temp)) deallocate(structure_factor_partial_temp)
+    if (allocated(y_structure_factor_temp)) deallocate(y_structure_factor_temp)
+    if (allocated(x_pair_distribution)) deallocate(x_pair_distribution)
+    if (allocated(y_pair_distribution)) deallocate(y_pair_distribution)
+    if (allocated(pair_distribution_partial)) deallocate(pair_distribution_partial)
+    if (allocated(sinc_factor_matrix)) deallocate(sinc_factor_matrix)
+
+  end subroutine finalize_structure_factor
+
+
+
 
   subroutine calculate_xrd( params, x_xrd, x_xrd_temp,&
        & y_xrd, y_xrd_temp, x_structure_factor, x_structure_factor_temp,&
@@ -933,6 +1004,27 @@ contains
     end if
 
   end subroutine calculate_xrd
+
+
+  subroutine finalize_xrd( params, x_xrd, x_xrd_temp,&
+       & y_xrd, y_xrd_temp, x_structure_factor, x_structure_factor_temp,&
+       & structure_factor_partial, structure_factor_partial_temp)
+    implicit none
+    type(input_parameters), intent(in) :: params
+    real*8, allocatable, intent(inout) :: x_xrd(:), x_xrd_temp(:), &
+         & y_xrd(:), y_xrd_temp(:)
+    real*8, allocatable, intent(inout) :: structure_factor_partial(:,:),&
+         &  structure_factor_partial_temp(:,:), x_structure_factor(:), x_structure_factor_temp(:)
+
+    if (allocated(x_xrd)) deallocate(x_xrd)
+    if (allocated(x_xrd_temp)) deallocate(x_xrd_temp)
+    if (allocated(y_xrd)) deallocate(y_xrd)
+    if (allocated(y_xrd_temp)) deallocate(y_xrd_temp)
+    if (allocated(x_structure_factor)) deallocate(x_structure_factor)
+    if (allocated(x_structure_factor_temp)) deallocate(x_structure_factor_temp)
+    if (allocated(structure_factor_partial)) deallocate(structure_factor_partial)
+    if (allocated(structure_factor_partial_temp)) deallocate(structure_factor_partial_temp)
+  end subroutine finalize_xrd
 
 
 

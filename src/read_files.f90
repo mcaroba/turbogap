@@ -1500,7 +1500,7 @@ end if
              write(*,*)'                                       |'
              write(*,*)' To modify specify:                    |'
              write(*,'(A,1X,A,1X,A)')'  `range_',trim(params%exp_data(i)%label),  ' = {lower_bound} {upper_bound}` |'
-             write(*,*)' In the input file.                    |'
+             write(*,*)' in the input file.                    |'
              write(*,*)'                                       |'
           end if
 

@@ -849,8 +849,8 @@ contains
     integer, intent(in) :: n_species, q_beg, q_end
     character*8, allocatable :: species_types(:)
     character*32, intent(in) :: method
-    real*8 :: prefactor, p, c, c2, rij, diff(1:3), intensity, mag, sth, wfaci, wfacj, wfac_n, ntot, f, delta
-    integer :: i, j, k, l, n, n_dim_idx, n_dim_partial
+    real*8 :: prefactor, p, c, c2, rij, diff(1:3), mag, sth, wfaci, wfacj, wfac_n, ntot, f, delta
+    integer :: i, j, l, n, n_dim_idx, n_dim_partial
     real*8 , intent(in), allocatable :: n_atoms_of_species(:)
     real*8, allocatable :: sf_parameters(:,:)
     real*8, intent(in) :: x(:)
@@ -971,9 +971,9 @@ contains
 
 
 
-  subroutine get_data_similarity(x, y, y_pred, sim_exp_pred, exp_similarity_type)
+  subroutine get_data_similarity( y, y_pred, sim_exp_pred, exp_similarity_type)
     implicit none
-    real*8, allocatable, intent(in) :: x(:), y(:), y_pred(:)
+    real*8, allocatable, intent(in) ::  y(:), y_pred(:)
     character*32, intent(in) :: exp_similarity_type
     real*8, intent(out) :: sim_exp_pred
 
@@ -1016,7 +1016,7 @@ contains
          & x_i_exp, y_i_pred, y_i_pred_all, core_electron_be,&
          & .true.)
 
-    call get_data_similarity(x_i_exp, y_i_exp, y_i_pred, sim_exp_pred, exp_similarity_type)
+    call get_data_similarity( y_i_exp, y_i_pred, sim_exp_pred, exp_similarity_type)
 
   end subroutine get_compare_xps_spectra
 
@@ -1048,7 +1048,7 @@ contains
     real*8, allocatable, intent(out) :: x(:), y(:), y_all(:,:)
     real*8, intent(in) :: sigma
     integer :: i
-    real*8 :: x_val, x_min, x_max, x_range, t, dx
+    real*8 ::  x_min, x_max, x_range, t, dx
     real*8, intent(out) :: mag
     logical, intent(in) :: broaden
 
@@ -1097,9 +1097,8 @@ contains
     real*8, intent(in) ::  y_exp(:)
     real*8, intent(in) :: x0, x0_der(:), sigma, mag, dx
     real*8 :: f
-    real*8, allocatable :: g(:,:)
     real*8, intent(out) :: y_tot(1:3)
-    integer :: i,idx
+    integer :: i
     real*8 :: norm_fac
     norm_fac = 1.d0 / ( sqrt(2.d0 * 3.14159265359) * sigma )
 
@@ -1172,31 +1171,28 @@ contains
   end subroutine get_experimental_this_force
 
 
-  subroutine get_experimental_forces(data, energy_scale, core_electron_be, core_electron_be_der,&
-       & n_neigh, neighbors_list, neighbor_species, &
+  subroutine get_experimental_forces(energy_scale, core_electron_be, core_electron_be_der,&
+       & n_neigh, neighbors_list,  &
        & sigma, n_samples, norm, &
-       & x, y_exp,  y, y_all, get_exp, do_forces, rjs, xyz,&
-       & n_tot, energies_lp, forces0, virial, exp_similarity_type, quantity_name, rank)
+       & x, y_exp,  y,  do_forces,  xyz,&
+       & energies_lp, forces0, virial, exp_similarity_type, quantity_name, rank, dx)
     implicit none
-    real*8, allocatable, intent(in) :: data(:,:)
-    integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:)
+    integer, intent(in) :: n_neigh(:), neighbors_list(:)
     real*8, intent(in) :: sigma, core_electron_be(:),&
-         & core_electron_be_der(:,:), rjs(:), xyz(:,:),&
+         & core_electron_be_der(:,:), xyz(:,:),&
          & energy_scale, norm
     real*8, allocatable, intent(inout) :: forces0(:,:)
     real*8, allocatable, intent(in) :: x(:), y_exp(:), y(:)
-    real*8, intent(in) :: y_all(:,:)
-    real*8, allocatable :: der_sum(:)
-    real*8, intent(inout) :: energies_lp(:)
+    real*8, intent(inout) :: energies_lp(:), dx
     real*8, intent(inout) :: virial(1:3,1:3)
-    real*8 ::  this_force(1:3), t
+    real*8 ::  this_force(1:3)
     real*8, allocatable ::  y_der(:,:), der_factor(:,:), der_vec(:,:,:), prefactor(:), dxa(:)
-    integer, intent(in) :: n_samples, n_tot, rank
-    logical, intent(in) :: get_exp, do_forces
-    integer :: n_sites, n_pairs, n_pairs_soap, n_species, n_sites0
-    integer :: i, j, i2, j2, k, l,  n_in_buffer, k1, k2, mag_force_i
+    integer, intent(in) :: n_samples, rank
+    logical, intent(in) :: do_forces
+    integer :: n_sites, n_pairs, n_sites0
+    integer :: i, j, i2, j2, k, l,  k1, k2, mag_force_i
     logical :: vector_norm = .false.
-    real*8 :: x_val, x_min, x_max, x_range, max_force, mag_force, max_mag_force, similarity, dx, &
+    real*8 :: mag_force, max_mag_force, &
          sum_d1, sum_d2, sum_d3, yv
     character*32, intent(in) :: exp_similarity_type
     character*1024, intent(in) :: quantity_name
@@ -1628,21 +1624,20 @@ contains
 
 
   !**************************************************************************
-  subroutine get_xrd_single_process( positions, n_species, species_types, species, wavelength, damping, alpha, &
+  subroutine get_xrd_single_process( positions, n_species,  species, wavelength, damping, alpha, &
        & method, use_iwasa, x_min, x_max,  n_samples, x_i_exp, y_i_pred )
     implicit none
     real*8, allocatable, intent(in) :: positions(:,:)
     real*8, intent(in) :: damping, wavelength, alpha, x_min, x_max
     integer, intent(in) :: species(:)
-    real*8, allocatable :: x(:), y(:), s(:), x_exp(:), y_exp(:), wfac(:), wfac_species(:)
+    real*8, allocatable :: x(:), y(:), s(:),  wfac(:), wfac_species(:)
     real*8, allocatable, intent(inout) :: x_i_exp(:), y_i_pred(:)
     logical, intent(in) :: use_iwasa
     integer, intent(in) :: n_samples, n_species
-    character*8, allocatable :: species_types(:)
     character*32, intent(in) :: method
     real*8 :: prefactor, p, c, c2, rij, diff(1:3), intensity, mag, sth, wfac_n
-    integer :: i, j, k, l, n, n_sites
-    real*8 :: x_val, x_range, dx, pi=3.14159265359
+    integer :: i, j, l, n, n_sites
+    real*8 ::  dx, pi=3.14159265359
 
     ! Was going to use the rijs for this, but we want the /full/
     ! spectra, so we need the scattering contribution from all atoms
@@ -1787,7 +1782,7 @@ contains
     real*8, allocatable :: xp(:)
     real*8, intent(in) :: dx, mean_reference
     integer, intent(in) :: n_moments
-    integer :: i, m, n
+    integer :: i
     ! Moments are defined at mu^p = \int dx x^p f(x)
 
     allocate(moments(1:n_moments))
@@ -1818,31 +1813,29 @@ contains
 
 
 
-  subroutine get_exp_pred_spectra_energies_forces(data, energy_scale, core_electron_be, core_electron_be_der,&
-       & n_neigh, neighbors_list, neighbor_species, &
+  subroutine get_exp_pred_spectra_energies_forces(energy_scale, core_electron_be, core_electron_be_der,&
+       & n_neigh, neighbors_list, &
        & sigma, n_samples, norm, &
-       & x, y_exp,  y, y_all, get_exp, do_forces, rjs, xyz,&
-       & n_tot, energies_lp, forces0, virial, exp_similarity_type, rank)
+       & x, y_exp,  y, y_all, do_forces,  xyz,&
+       &  energies_lp, forces0, virial, exp_similarity_type, rank)
     implicit none
-    real*8, allocatable, intent(in) :: data(:,:)
-    integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:)
+    integer, intent(in) :: n_neigh(:), neighbors_list(:)
     real*8, intent(in) :: sigma, core_electron_be(:),&
-         & core_electron_be_der(:,:), rjs(:), xyz(:,:),&
+         & core_electron_be_der(:,:), xyz(:,:),&
          & energy_scale, norm
     real*8, allocatable, intent(inout) :: forces0(:,:)
     real*8, allocatable, intent(in) :: x(:), y_exp(:), y(:)
     real*8, intent(in) :: y_all(:,:)
-    real*8, allocatable :: der_sum(:)
     real*8, intent(inout) :: energies_lp(:)
     real*8, intent(inout) :: virial(1:3,1:3)
-    real*8 ::  this_force(1:3), t
+    real*8 ::  this_force(1:3)
     real*8, allocatable ::  y_der(:,:), der_factor(:,:), der_vec(:,:,:), prefactor(:), dxa(:)
-    integer, intent(in) :: n_samples, n_tot, rank
-    logical, intent(in) :: get_exp, do_forces
-    integer :: n_sites, n_pairs, n_pairs_soap, n_species, n_sites0
-    integer :: i, j, i2, j2, k, l,  n_in_buffer, k1, k2, mag_force_i
+    integer, intent(in) :: n_samples, rank
+    logical, intent(in) ::  do_forces
+    integer :: n_sites, n_pairs, n_sites0
+    integer :: i, j, i2, j2, k, l, k1, k2, mag_force_i
     logical :: vector_norm = .false.
-    real*8 :: x_val, x_min, x_max, x_range, max_force, mag_force, max_mag_force, similarity, dx, &
+    real*8 :: mag_force, max_mag_force,  dx, &
          sum_d1, sum_d2, sum_d3, yv
     character*32, intent(in) :: exp_similarity_type
 
@@ -2119,12 +2112,13 @@ contains
     allocate(x(1:n_samples))
 
     x_range = x_max - x_min
-    dx = x_range / real(n_samples)
 
     do i = 1, n_samples
-       t = (real(i-1) / real(n_samples-1))
+       t = (dfloat(i-1) / dfloat(n_samples-1))
        x(i) = (1.d0 - t) * x_min  +  t * x_max !range
     end do
+
+    dx = x(2) - x(1)
 
   end subroutine linspace
 
@@ -2351,7 +2345,7 @@ contains
     logical :: is_in_database = .false.
     !   Internal variables
     real*8, intent(out) :: wout(1:9)
-    integer :: i, j
+    integer :: i
 
     elements = ['    H', "   H'", '    D', '  H1-', '   He', '  &
          & Li', ' Li1+', '   Be', ' Be2+', '    B', '    C', '&
