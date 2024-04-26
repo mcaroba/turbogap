@@ -38,7 +38,7 @@
 module eph_beta
 use mpi
 type EPH_Beta_class
-	character*128 :: beta_infile
+	character*1024 :: beta_infile
 	character*2, dimension(5) :: line
 	character*2, allocatable :: element_name(:)
 	integer :: n_elements, n_points_rho, n_points_beta
@@ -62,7 +62,7 @@ subroutine beta_parameters(this, rank, ierr, beta_infile, n_species)
 	class (EPH_Beta_class) :: this
 	integer, intent(in) :: rank, n_species
 	integer :: i, j, ierr
-	character*128, intent(in) :: beta_infile
+	character*1024, intent(in) :: beta_infile
 	real*8, allocatable :: y2(:), w2(:) 
 	real*8, parameter :: bignum = 1.1e30
 

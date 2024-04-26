@@ -45,7 +45,7 @@ use mpi
 
 type EPH_LangevinSpatialCorrelation_class
 
-	character*128 :: T_outfile
+	character*1024 :: T_outfile
 	integer :: T_out_freq, isfriction, israndom, model_eph, T_out_mesh_freq, &
 			fdm_option
 	real*8, allocatable :: forces_fric(:,:), forces_rnd(:,:)
@@ -66,7 +66,7 @@ subroutine eph_InitialValues (this, isfriction, israndom, fdm_option, T_outfile,
 	implicit none
 	
 	class (EPH_LangevinSpatialCorrelation_class) :: this
-	character*128, intent(in) :: T_outfile
+	character*1024, intent(in) :: T_outfile
 	integer, intent(in) :: T_out_freq, isfriction, israndom, fdm_option, model_eph, T_out_mesh_freq
 	real*8, intent(in) :: E_eph_cumulative_prev, md_prev_time
 

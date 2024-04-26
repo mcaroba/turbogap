@@ -40,7 +40,7 @@
 module eph_fdm
 use mpi
 type EPH_FDM_class
-	character*128 :: FDM_infile
+	character*1024 :: FDM_infile
 	integer, allocatable :: x_mesh(:), y_mesh(:), z_mesh(:)
 	integer :: nx, ny, nz, steps, ntotal, md_last_step
 	real*8 :: dx, dy, dz, dV
@@ -110,7 +110,7 @@ end subroutine EPH_FDM_input_params
 subroutine EPH_FDM_input_file (this, rank, ierr, FDM_infile, md_last_step)
 	implicit none
 	class (EPH_FDM_class) :: this
-	character*128, intent(in) :: FDM_infile
+	character*1024, intent(in) :: FDM_infile
 	integer, intent(in) :: rank, md_last_step
 	integer :: i, ierr
 	real*8 :: T_e_val, S_e_val, rho_e_val, C_e_val, kappa_e_val

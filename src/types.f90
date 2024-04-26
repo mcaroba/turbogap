@@ -141,9 +141,9 @@ module types
 	in_x0 = -100.0, in_x1 = 100.0, in_y0 = -100.0, in_y1 = 100.0, in_z0 = -100.0, in_z1 = 100.0, &
 	eph_E_prev_time = 0.0d0, eph_md_prev_time = 0.0d0
 	real*8, dimension(6) :: eph_box_limits = (/ -100.0, 100.0, -100.0, 100.0, -100.0, 100.0 /)
-	character*128 :: eph_Tinfile = 'NULL'
-	character*128 :: eph_Toutfile = 'NULL'
-	character*128 :: eph_betafile = 'NULL'
+	character*1024 :: eph_Tinfile = 'NULL'
+	character*1024 :: eph_Toutfile = 'NULL'
+	character*1024 :: eph_betafile = 'NULL'
 	
      !! ---------------------------------------------		******** until here for electronic stopping based on EPH model
      
