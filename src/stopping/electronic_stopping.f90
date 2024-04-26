@@ -217,8 +217,8 @@ IF (rank /= 0) forces = 0.0d0
 				vsq = dot_product (vel(1:3, i), vel(1:3, i))
 				energy = 0.5d0 * masses(i) * vsq
 
-				if (energy < Ecut) continue
-				if (energy < this%En_elstopfile(1)) continue
+				if (energy < Ecut) cycle
+				if (energy < this%En_elstopfile(1)) cycle
 				if (energy > this%En_elstopfile(this%nrows_esdata)) then
 					if (rank == 0) write (*,*) "ERROR: Kinetic energy ", energy, &
 								"eV of atom is higher than electron stopping data"
@@ -279,8 +279,8 @@ IF (rank /= 0) forces = 0.0d0
 				energy = 0.5d0 * masses(i) * vsq
 				E_kinetic_atoms = E_kinetic_atoms + energy
 
-				if (energy < Ecut) continue
-				if (energy < this%En_elstopfile(1)) continue
+				if (energy < Ecut) cycle
+				if (energy < this%En_elstopfile(1)) cycle
 				if (energy > this%En_elstopfile(this%nrows_esdata)) then
 					if (rank == 0) write (*,*) "ERROR: Kinetic energy ", energy, &
 								"eV of atom is higher than electron stopping data"
