@@ -462,7 +462,7 @@ contains
 
 
 
-  subroutine get_structure_factor_from_rdf( q_beg, q_end, structure_factor&
+  subroutine get_structure_factor_from_pdf( q_beg, q_end, structure_factor&
        &, pair_distribution, q_list , rs, r_cut,&
        & n_samples_pc, n_samples_sf, n_species, n_atoms_of_species,&
        & n_sites, rho, window)
@@ -506,7 +506,7 @@ contains
 
     end do
 
-  end subroutine get_structure_factor_from_rdf
+  end subroutine get_structure_factor_from_pdf
 
   subroutine get_sinc_factor_matrix( q_beg, q_end, q_list, rs, r_cut,&
        & n_samples_pc, n_samples_sf, window, sinc_factor_matrix )
@@ -840,7 +840,7 @@ contains
 
   subroutine get_xrd_from_partial_structure_factors(q_beg, q_end, &
        & structure_factor_partial, n_species, species_types,&
-       & species, wavelength, damping, alpha, method, use_iwasa,&
+       & species, wavelength, damping, alpha, method, use_iwasa, output, &
        & x, y, n_atoms_of_species )
     implicit none
     real*8, intent(in) :: damping, wavelength, alpha, structure_factor_partial(:,:)
@@ -848,7 +848,7 @@ contains
     logical, intent(in) :: use_iwasa
     integer, intent(in) :: n_species, q_beg, q_end
     character*8, allocatable :: species_types(:)
-    character*32, intent(in) :: method
+    character*32, intent(in) :: method, output
     real*8 :: prefactor, p, c, c2, rij, diff(1:3), mag, sth, wfaci, wfacj, wfac_n, ntot, f, delta
     integer :: i, j, l, n, n_dim_idx, n_dim_partial
     real*8 , intent(in), allocatable :: n_atoms_of_species(:)
@@ -898,10 +898,20 @@ contains
           end do
        end do outer
 
-       do i = 1, n_species
-          call get_scattering_factor(wfaci, sf_parameters(1:9,i), x(l)/2.d0)
-          y(l) = y(l) + ( n_atoms_of_species(i) / ntot ) * wfaci * wfaci
-       end do
+       if ( trim(output) == "xrd" )then
+          ! default !
+          do i = 1, n_species
+             call get_scattering_factor(wfaci, sf_parameters(1:9,i), x(l)/2.d0)
+             y(l) = y(l) + ( n_atoms_of_species(i) / ntot ) * wfaci * wfaci
+          end do
+       elseif ( trim(output) == "qi")then
+          ! output q * i(q) === q * F_x(q)
+          y(l) = x(l) * y(l)
+       else
+          ! do nothing,
+          ! Output the total scattering functon, i(q) === F_x(q)
+
+       end if
 
 
     end do
@@ -978,7 +988,7 @@ contains
     real*8, intent(out) :: sim_exp_pred
 
     if (exp_similarity_type == "squared_diff")then
-       sim_exp_pred = -  dot_product(y - y_pred, y - y_pred)
+       sim_exp_pred = - 0.5 * dot_product(y - y_pred, y - y_pred)
     else
        sim_exp_pred =  dot_product(y, y_pred)
     end if

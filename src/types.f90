@@ -143,7 +143,8 @@ module types
     character*16 :: optimize = "vv", mc_relax_opt = "gd", mc_hybrid_opt = "vv"
     character*32 :: barostat = "none", thermostat = "none",&
          & barostat_sym = "isotropic", mc_species = "none",&
-         & xps_force_type = "similarity", exp_similarity_type = "squared_diff", xrd_method = "", q_units="q"
+         & xps_force_type = "similarity", exp_similarity_type =&
+         & "squared_diff", xrd_method = "xrd", q_units="q", xrd_output="xrd", pair_distribution_output="pdf"
     logical :: do_md = .false., do_mc = .false., do_prediction =&
          & .false., do_forces = .false., do_derivatives = .false.,&
          & do_derivatives_fd = .false., write_soap = .false.,&
@@ -157,15 +158,16 @@ module types
          & .true., write_masses = .false., write_fixes = .true.,&
          & variable_time_step = .false., vdw_mbd_grad = .false.,&
          & do_nested_sampling = .false., scale_box_nested = .false.,&
-         & mc_write_xyz = .false., do_exp = .false., mc_relax = .false., mc_optimize_exp&
-         &=.false., exp_forces=.false., print_lp_forces&
-         &=.false., mc_hamiltonian = .false., accessible_volume =&
-         & .false., mc_reverse = .false., xrd_iwasa = .true., pair_distribution_partial=.false.,&
-         & structure_factor_from_rdf=.false.,&
-         & structure_factor_window = .true., write_pair_distribution=.false., write_structure_factor=.false.,&
-         & do_pair_distribution = .false., do_structure_factor&
-         &=.false., do_xrd=.false., write_xrd=.false.,&
-         & structure_factor_matrix=.false.
+         & mc_write_xyz = .false., do_exp = .false., mc_relax =&
+         & .false., mc_optimize_exp =.false., exp_forces=.false.,&
+         & print_lp_forces =.false., mc_hamiltonian = .false.,&
+         & accessible_volume = .false., mc_reverse = .false.,&
+         & xrd_iwasa = .true., pair_distribution_partial=.false.,&
+         & structure_factor_from_pdf=.false., structure_factor_window&
+         & = .true., write_pair_distribution=.false.,&
+         & write_structure_factor=.false., do_pair_distribution =&
+         & .false., do_structure_factor =.false., do_xrd=.false.,&
+         & write_xrd=.false., structure_factor_matrix=.false., write_exp=.true.
 
     logical, allocatable :: write_local_properties(:)
     type(exp_data_container), allocatable :: exp_data(:)

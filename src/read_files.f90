@@ -912,6 +912,15 @@ end if
       else if(keyword=='xrd_method')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%xrd_method
+      else if(keyword=='xrd_output')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%xrd_output
+
+     else if(keyword=='pair_distribution_output')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%xrd_output
+
+
       else if(keyword=='xrd_iwasa')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%xrd_iwasa
@@ -1058,9 +1067,9 @@ end if
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%pair_distribution_partial
 
-      else if( keyword == "structure_factor_from_rdf" )then
+      else if( keyword == "structure_factor_from_pdf" )then
         backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%structure_factor_from_rdf
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%structure_factor_from_pdf
       else if( keyword == "structure_factor_matrix" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%structure_factor_matrix
@@ -1081,6 +1090,9 @@ end if
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%write_xrd
 
+      else if( keyword == "write_exp" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%write_exp
 
       else if( keyword == "pair_distribution_n_samples" )then
         backspace(10)
@@ -1486,6 +1498,9 @@ end if
 
           if (params%exp_data(i)%user_range)then
              write(*,'(A,1X,A,1X,A)')'User exp. range specified for:', trim(params%exp_data(i)%label),'     |'
+             write(*,*)'                                       |'
+             write(*,*)' WARNING!! This feature is obselete    |'
+             write(*,*)'                                       |'
           else
              write(*,'(A,1X,A,1X,A)')'Exp data range will be used for:', trim(params%exp_data(i)%label),' |'
              write(*,'(A,1X,A,1X,A)')' from the file:', trim(params%exp_data(i)%file_data),' |'
@@ -1504,21 +1519,74 @@ end if
              write(*,*)'                                       |'
           end if
 
-          ! if ( trim(params%exp_data(i)%label) == 'pair_distribution')then
-          !    write(*,'(A,1X,A,1X,A)') trim(params%exp_data(i)%label), ' found, setting r_range_min/max ', '     |'
-          !    params%r_range_min = params%exp_data(i)%range_min
-          !    params%r_range_max = params%exp_data(i)%range_max
-          ! elseif ( trim(params%exp_data(i)%label) == 'xrd')then
-          !    write(*,'(A,1X,A,1X,A)') trim(params%exp_data(i)%label), ' found, setting q_range_min/max with q_units = "twotheta"', ' |'
-          !    params%q_range_min = params%exp_data(i)%range_min
-          !    params%q_range_max = params%exp_data(i)%range_max
-          !    params%q_units = 'twotheta'
-          ! elseif ( trim(params%exp_data(i)%label) == 'saxs')then
-          !    write(*,'(A,1X,A,1X,A)') trim(params%exp_data(i)%label), ' found, setting q_range_min/max with q_units = "q"', ' |'
-          !    params%q_range_min = params%exp_data(i)%range_min
-          !    params%q_range_max = params%exp_data(i)%range_max
-          !    params%q_units = 'q'
-          ! end if
+          if ( trim(params%exp_data(i)%label) == 'pair_distribution')then
+             write(*,'(A,1X,A,1X,A)') trim(params%exp_data(i)%label),&
+                  & ' found, setting r_range_min/max ', '     |'
+             ! Note: for consistency with the implementation, we can
+             ! change the value of r_min/r_max such that the x_i
+             ! generated
+             ! by the bin_edges of the pair_distribution function
+             ! match those
+             ! of the actual experimental data
+
+             params%do_pair_distribution = .true.
+
+             params%r_range_min = params%exp_data(i)%range_min - &
+                  & ( params%exp_data(i)%range_max - params%exp_data(i)%range_min ) / &
+                  & ( dfloat( 2 * (params%exp_data(i)%n_samples - 1) ) )
+
+             params%r_range_max = params%exp_data(i)%range_min + &
+                  & ( dfloat( 2 * params%exp_data(i)%n_samples - 1 ) * &
+                  & ( params%exp_data(i)%range_max - params%exp_data(i)%range_min ) / &
+                  & ( dfloat( 2 * (params%exp_data(i)%n_samples - 1) ) ) )
+
+             params%pair_distribution_n_samples = params%exp_data(i)%n_samples
+          elseif ( trim(params%exp_data(i)%label) == 'xrd')then
+             write(*,'(A,1X,A,1X,A)') trim(params%exp_data(i)%label),&
+                  & ' found, setting q_range_min/max with q_units =&
+                  & "twotheta"', ' |'
+
+             params%do_pair_distribution = .true.
+             params%pair_distribution_partial = .true.
+             params%do_structure_factor = .true.
+             params%structure_factor_from_pdf = .true.
+             params%do_xrd = .true.
+
+             params%q_range_min = params%exp_data(i)%range_min
+             params%q_range_max = params%exp_data(i)%range_max
+             params%q_units = 'twotheta'
+             params%xrd_n_samples = params%exp_data(i)%n_samples
+             params%structure_factor_n_samples = params%exp_data(i)%n_samples
+          elseif ( trim(params%exp_data(i)%label) == 'saxs')then
+             write(*,'(A,1X,A,1X,A)') trim(params%exp_data(i)%label), ' found, setting q_range_min/max with q_units = "q"', ' |'
+
+             params%do_pair_distribution = .true.
+             params%pair_distribution_partial = .true.
+             params%do_structure_factor = .true.
+             params%structure_factor_from_pdf = .true.
+             params%do_xrd = .true.
+
+             params%q_range_min = params%exp_data(i)%range_min
+             params%q_range_max = params%exp_data(i)%range_max
+             params%q_units = 'q'
+             params%xrd_n_samples = params%exp_data(i)%n_samples
+             params%structure_factor_n_samples = params%exp_data(i)%n_samples
+          elseif ( trim(params%exp_data(i)%label) == 'structure_factor')then
+             write(*,'(A,1X,A,1X,A)') trim(params%exp_data(i)%label),&
+                  & ' found, setting q_range_min/max with q_units =&
+                  & "q"', ' |'
+
+             params%do_pair_distribution = .true.
+             params%pair_distribution_partial = .true.
+             params%do_structure_factor = .true.
+             params%structure_factor_from_pdf = .true.
+
+             params%q_range_min = params%exp_data(i)%range_min
+             params%q_range_max = params%exp_data(i)%range_max
+             params%q_units = 'q'
+             params%structure_factor_n_samples = params%exp_data(i)%n_samples
+             params%xrd_n_samples = params%exp_data(i)%n_samples
+          end if
 
 
           write(*,'(A,1X,F12.6,1X,A,F12.6,1X,A)')' min =', params&

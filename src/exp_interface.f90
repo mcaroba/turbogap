@@ -44,6 +44,39 @@ contains
 
   ! end subroutine calculate_forces_from_pdf
 
+  subroutine preprocess_exp_data(params, x, y, label, n_sites, V)
+    implicit none
+    type(input_parameters), intent(in) :: params
+    real*8, intent(in), allocatable :: x(:)
+    real*8, intent(in) :: V
+    real*8, intent(inout), allocatable :: y(:)
+    integer, intent(in) :: n_sites
+    character*1024, intent(in) :: label
+    real*8, parameter :: pi = acos(-1.0)
+    real*8 :: mag, dx, rho
+
+    dx = x(2) - x(1)
+    rho = dfloat(n_sites) / V
+
+    if     ( trim(label) == "xps" )then
+       ! calculate the magnitude and normalize
+       mag = sqrt(dot_product(y, y)) * dx
+       y = y / mag
+
+    elseif ( trim(label) == "pair_distribution" )then
+       if ( trim(params%pair_distribution_output) == "D(r)" )then
+          ! D(r) = 4pi rho * r * G(r)
+          ! G(r) = total pair distribution function
+          y = 4.d0 * pi * rho * x * y
+       end if
+    elseif ( trim(label) == "xrd" )then
+       if ( trim(params%xrd_output) == "q*i(q)" .and. params%q_units == "q" )then
+          y = x * y
+       end if
+    end if
+  end subroutine preprocess_exp_data
+
+
   subroutine calculate_pair_distribution( params, x_pair_distribution&
        &, y_pair_distribution, y_pair_distribution_temp,&
        & pair_distribution_partial, pair_distribution_partial_temp, &
@@ -90,6 +123,15 @@ contains
 
     allocate( x_pair_distribution( 1: params%pair_distribution_n_samples) )
     allocate( y_pair_distribution( 1: params%pair_distribution_n_samples) )
+
+    if (params%n_exp > 0)then
+       do i = 1, params%n_exp
+          if ( trim( params%exp_data(i)%label ) == 'pair_distribution' )then
+             x_pair_distribution = params%exp_data(i)%x
+          end if
+       end do
+    end if
+
 
 
     if (params%pair_distribution_partial)then
@@ -508,7 +550,7 @@ contains
     character*1024 :: filename
 
 
-    if (params%structure_factor_from_rdf) then
+    if (params%structure_factor_from_pdf) then
        q_beg = 1
        q_end = params%structure_factor_n_samples
 #ifdef _MPIF90
@@ -536,7 +578,7 @@ contains
 
 
 #endif
-       if (params%structure_factor_from_rdf .and. params%pair_distribution_partial)then
+       if (params%structure_factor_from_pdf .and. params%pair_distribution_partial)then
 
           n_dim_partial = n_species * ( n_species + 1 ) / 2
 
@@ -552,7 +594,7 @@ contains
     allocate(y_structure_factor(1:params%structure_factor_n_samples))
     y_structure_factor = 0.d0
 
-    if (params%structure_factor_from_rdf .and. params%pair_distribution_partial) then
+    if (params%structure_factor_from_pdf .and. params%pair_distribution_partial) then
 #ifdef _MPIF90
        allocate( structure_factor_partial_temp(1:params&
             &%structure_factor_n_samples, 1 : n_dim_partial) )
@@ -599,7 +641,7 @@ contains
     ! the literature, small q in the literature are =
     ! 2sin(theta)/lambda = Q/2/pi
 
-    if (params%structure_factor_from_rdf .and. params%pair_distribution_partial) then
+    if (params%structure_factor_from_pdf .and. params%pair_distribution_partial) then
 
        v_uc = dot_product( cross_product(a_box,&
             & b_box), c_box ) / (&
@@ -745,14 +787,14 @@ contains
             &%structure_factor_n_samples) !/ dq
 
 
-    elseif (params%structure_factor_from_rdf)then
+    elseif (params%structure_factor_from_pdf)then
 
        v_uc = dot_product( cross_product(a_box,&
             & b_box), c_box ) / (&
             & dfloat(indices(1)*indices(2)&
             &*indices(3)) )
 
-       call get_structure_factor_from_rdf(q_beg, q_end, &
+       call get_structure_factor_from_pdf(q_beg, q_end, &
             & y_structure_factor(1:params%structure_factor_n_samples) ,&
             & y_pair_distribution,&
             & x_structure_factor(1:params%structure_factor_n_samples) ,&
@@ -775,7 +817,7 @@ contains
     end if
 
 
-    if (.not. (params%structure_factor_from_rdf .and. params%pair_distribution_partial))then
+    if (.not. (params%structure_factor_from_pdf .and. params%pair_distribution_partial))then
 #ifdef _MPIF90
 
        call mpi_reduce(y_structure_factor,&
@@ -800,7 +842,7 @@ contains
     ! Write out the partial structure functions
     if (rank == 0 .and. params%write_structure_factor) then
 
-       if (params%structure_factor_from_rdf .and. params%pair_distribution_partial)then
+       if (params%structure_factor_from_pdf .and. params%pair_distribution_partial)then
           n_dim_idx = 1
           outer3: do j = 1, n_species
              do k = 1, n_species
@@ -925,13 +967,13 @@ contains
 
     ! Have the same range for the xrd as the structure factor
 
-    if (params%structure_factor_from_rdf .and. params%pair_distribution_partial) then
+    if (params%structure_factor_from_pdf .and. params%pair_distribution_partial) then
        call get_xrd_from_partial_structure_factors(q_beg, q_end, &
             & structure_factor_partial(1:params&
             &%structure_factor_n_samples,1:n_dim_partial), n_species, params%species_types&
             &, species, params%xrd_wavelength, params &
             &%xrd_damping, params%xrd_alpha, params &
-            &%xrd_method, params%xrd_iwasa, x_xrd(1:params&
+            &%xrd_method, params%xrd_iwasa, params%xrd_output, x_xrd(1:params&
             &%structure_factor_n_samples), y_xrd(1:params&
             &%structure_factor_n_samples),&
             & n_atoms_of_species )
