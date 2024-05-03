@@ -59,7 +59,9 @@ program turbogap
   real*8 :: rcut_max, a_box(1:3), b_box(1:3), c_box(1:3), max_displacement, energy, energy_prev
   real*8 :: virial(1:3, 1:3), this_virial(1:3, 1:3), virial_soap(1:3, 1:3), virial_2b(1:3, 1:3), &
        virial_3b(1:3,1:3), virial_core_pot(1:3, 1:3), virial_vdw(1:3, 1:3), virial_lp(1:3,1:3), &
-       this_virial_vdw(1:3, 1:3), this_virial_lp(1:3, 1:3), v_uc,&
+       this_virial_vdw(1:3, 1:3), this_virial_lp(1:3, 1:3), virial_pdf(1:3,1:3), this_virial_pdf(1:3,1:3), v_uc,&
+       & virial_sf(1:3,1:3), this_virial_sf(1:3,1:3), &
+       & virial_xrd(1:3,1:3), this_virial_xrd(1:3,1:3), &
        & v_uc_prev, v_a_uc, v_a_uc_prev, eVperA3tobar =&
        & 1602176.6208d0, ranf, ranv(1:3), disp(1:3), d_disp, &
        & e_mc_prev, p_accept, virial_prev(1:3, 1:3), sim_exp_pred,&
@@ -69,7 +71,7 @@ program turbogap
        & energies_2b(:), forces_2b(:,:), energies_3b(:), forces_3b(:&
        &,:), energies_core_pot(:), forces_core_pot(:,:), velocities(:&
        &,:), masses_types(:), masses(:),  hirshfeld_v_temp(:),&
-       & masses_temp(:), forces_pair_distribution(:,:), forces_sf(:,:), forces_xrd(:,:), sinc_factor_matrix(:,:)
+       & masses_temp(:), sinc_factor_matrix(:,:)
 !  real*8, allocatable, target :: this_hirshfeld_v(:), this_hirshfeld_v_cart_der(:,:)
 !  real*8, pointer :: this_hirshfeld_v_pt(:), this_hirshfeld_v_cart_der_pt(:,:)
 
@@ -93,7 +95,7 @@ program turbogap
   logical, allocatable :: do_list(:), has_local_properties_mpi(:), fix_atom(:,:)
   logical :: rebuild_neighbors_list = .true., exit_loop = .true.,&
        & gd_box_do_pos = .true., restart_box_optim = .false.,&
-       & valid_xps=.false.
+       & valid_xps=.false., write_condition=.false.
   character*1 :: creturn = achar(13)
   ! Clean up these variables after code refactoring !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   integer, allocatable :: n_neigh(:), neighbors_list(:), alpha_max(:), species(:), species_supercell(:), &
@@ -145,9 +147,9 @@ program turbogap
   !vdw crap
   real*8, allocatable :: v_neigh_vdw(:), energies_vdw(:), forces_vdw(:,:), this_energies_vdw(:), this_forces_vdw(:,:)
   real*8, allocatable :: v_neigh_lp(:), energies_lp(:), forces_lp(:,:), this_energies_lp(:), this_forces_lp(:,:)
-  real*8, allocatable :: energies_pdf(:) !, forces_pdf(:,:), this_energies_pdf(:), this_forces_pdf(:,:)
-  real*8, allocatable :: energies_sf(:) !, forces_sf(:,:), this_energies_sf(:), this_forces_sf(:,:)
-  real*8, allocatable :: energies_xrd(:)!, forces_xrd(:,:), this_energies_xrd(:), this_forces_xrd(:,:)
+  real*8, allocatable :: energies_pdf(:) , forces_pdf(:,:), this_energies_pdf(:), this_forces_pdf(:,:)
+  real*8, allocatable :: energies_sf(:) , forces_sf(:,:), this_energies_sf(:), this_forces_sf(:,:)
+  real*8, allocatable :: energies_xrd(:), forces_xrd(:,:), this_energies_xrd(:), this_forces_xrd(:,:)
   ! MPI stuff
   real*8, allocatable :: temp_1d(:), temp_1d_bis(:), temp_2d(:,:),&
        & pair_distribution_partial(:,:), pair_distribution_der(:,:), pair_distribution_partial_der(:,:,:), &
@@ -1234,6 +1236,24 @@ program turbogap
            allocate( energies_core_pot(1:n_sites) )
            allocate( energies_vdw(1:n_sites) )
            allocate( energies_lp(1:n_sites) )
+
+           if (params%exp_forces .and. params%valid_pdf)then
+              if ( allocated( energies_pdf ) ) deallocate(energies_pdf)
+              allocate( energies_pdf(1:n_sites) )
+              energies_pdf = 0.d0
+           end if
+
+           if (params%exp_forces .and. params%valid_sf)then
+              if ( allocated( energies_sf ) ) deallocate(energies_sf)
+              allocate( energies_sf(1:n_sites) )
+              energies_sf = 0.d0
+           end if
+
+           if (params%exp_forces .and. params%valid_xrd)then
+              if ( allocated( energies_xrd ) ) deallocate(energies_xrd)
+              allocate( energies_xrd(1:n_sites) )
+              energies_xrd = 0.d0
+           end if
            !       This needs to be allocated even if no force prediction is needed:
            allocate( this_forces(1:3, 1:n_sites) )
         end if
@@ -1300,6 +1320,25 @@ program turbogap
               allocate( forces_core_pot(1:3, 1:n_sites) )
               allocate( forces_vdw(1:3,1:n_sites) )
               allocate( forces_lp(1:3,1:n_sites) )
+
+              if (params%exp_forces .and. params%valid_pdf)then
+                 if ( allocated( forces_pdf ) ) deallocate(forces_pdf)
+                 allocate( forces_pdf(1:3,1:n_sites) )
+                 forces_pdf = 0.d0
+              end if
+
+              if (params%exp_forces .and. params%valid_sf)then
+                 if ( allocated( forces_sf ) ) deallocate(forces_sf)
+                 allocate( forces_sf(1:3,1:n_sites) )
+                 forces_sf = 0.d0
+              end if
+
+              if (params%exp_forces .and. params%valid_xrd)then
+                 if ( allocated( forces_xrd ) ) deallocate(forces_xrd)
+                 allocate( forces_xrd(1:3,1:n_sites) )
+                 forces_xrd = 0.d0
+              end if
+
            end if
            forces = 0.d0
            forces_soap = 0.d0
@@ -1643,15 +1682,15 @@ program turbogap
                  call calculate_exp_interpolation(params%exp_data(i)&
                       &%x, params%exp_data(i)%y, params%exp_data(i)&
                       &%n_samples, params%exp_data(i)%data)
+
+
+                 call preprocess_exp_data(params, params%exp_data(i)%x,&
+                      & params%exp_data(i)%y, params%exp_data(i)%label,&
+                      & n_sites, dot_product( cross_product(a_box,&
+                      & b_box), c_box ) / (dfloat(indices(1)*indices(2) &
+                      &*indices(3)) ))
+
               end if
-
-              call preprocess_exp_data(params, params%exp_data(i)%x,&
-                   & params%exp_data(i)%y, params%exp_data(i)%label,&
-                   & n_sites, dot_product( cross_product(a_box,&
-                   & b_box), c_box ) / (dfloat(indices(1)*indices(2) &
-                   &*indices(3)) ))
-
-
               if ( params%exp_data(i)%compute_exp .and. .not.  params&
                    &%exp_data(i)%wrote_exp .and. rank == 0  ) then
 
@@ -1795,7 +1834,7 @@ program turbogap
         !
         ! R(r)    = Radial Distribution Function     === A histogram of atomic distances divided by N, goes as r^2
         ! g(r)    = Pair Distribution Function (PCF) === Scales R(r) by 1/(4 pi r^2) such that it lays flat, converges to 1.
-        !         = (N_{r_l < r < r_h} / N) / ( 4 pi r^2 dr ) * ( V / N )
+        !         = (N_{r_l < r < r_h} / N) / ( 4 pi r^2 dr  * ( N / V ) )
         !         = n_{r_l < r < r_h} / ( dV * rho_0 )
         !           > n_{r_l < r < r_h} is the average number of particles between r_l and r_h
         !           > rho_0 is the density
@@ -1830,11 +1869,37 @@ program turbogap
                 & n_neigh, neighbor_species, species, rank, params&
                 &%exp_forces, pair_distribution_der,&
                 & pair_distribution_partial_der,&
-                & pair_distribution_partial_temp_der, forces_pair_distribution)
+#ifdef _MPIF90
+                & pair_distribution_partial_temp_der, this_energies_pdf, this_forces_pdf, this_virial_pdf)
+#else
+                & pair_distribution_partial_temp_der, energies_pdf, forces_pdf, virial_pdf)
+#endif
+
+
 
            call cpu_time(time_pdf(2))
            time_pdf(3) = time_pdf(3) + time_pdf(2) - time_pdf(1)
            print *, "TIMEPDF = ", time_pdf(3)
+
+
+           ! Now need to collate the forces
+
+           ! print *, "Checking sum of pair diff "
+
+           ! wfac_temp = 0.d0
+           ! wfac = dfloat(n_sites) / ( dot_product( cross_product(a_box,&
+           !         & b_box), c_box ) / (dfloat(indices(1)*indices(2) &
+           !         &*indices(3)) ) )
+           ! do i = 1, params%pair_distribution_n_samples
+           !    wfac_temp = wfac_temp  +  (x_pair_distribution(2) -&
+           !         & x_pair_distribution(1) ) * 4 * pi * wfac *&
+           !         & x_pair_distribution(i)**2 * y_pair_distribution(i)
+           ! end do
+
+           ! print *, " Calculated N_tot / N ", wfac_temp
+
+
+
 
            ! Will go through the allocations in detail another time,
            ! first, we will naively take care of the arrays by
@@ -1842,7 +1907,8 @@ program turbogap
            ! needed.
 
            ! Allocations
-           ! if ( params%pair_distribution_partial .and. .not. ( params%do_structure_factor .or. params%do_xrd ) ) then
+           ! if ( params%pair_distribution_partial .and. .not. (
+              ! params%do_structure_factor .or. params%do_xrd ) ) then
            !    deallocate( pair_distribution_partial )
            !    deallocate( x_pair_distribution  )
            !    deallocate( y_pair_distribution  )
@@ -1851,7 +1917,8 @@ program turbogap
            !    if (params%exp_forces)then
            !       deallocate( pair_distribution_partial_der )
            !       if (allocated( params%exp_energy_scales ))then
-           !          if ( allocated( forces_pair_distribution ) ) deallocate( forces_pair_distribution )
+           !          if ( allocated( forces_pair_distribution ) )
+              !          deallocate( forces_pair_distribution )
            !       end if
            !    end if
            ! end if
@@ -1942,8 +2009,16 @@ program turbogap
                  write(filename,'(A)')&
                       & trim(params%exp_data(i)%label) // "_fit.dat"
 
+                 if (params%do_mc)then
+                    write_condition = (modulo(mc_istep, params%write_xyz) == 0)
+                 elseif (params%do_md)then
+                    write_condition = (modulo(md_istep, params%write_xyz) == 0)
+                 else
+                    write_condition = .true.
+                 end if
+
                  call write_exp_data(params%exp_data(i)%x, params%exp_data(i)%y_pred,&
-                      & md_istep == 0 .or. mc_istep == 0, trim(params%exp_data(i)%label) // "_fit.dat", params%exp_data(i)%label)
+                      & write_condition, trim(params%exp_data(i)%label) // "_fit.dat", params%exp_data(i)%label)
 
               end if
 
@@ -1973,7 +2048,7 @@ program turbogap
                 & pair_distribution_partial, pair_distribution_partial_temp, params&
                 &%exp_forces, pair_distribution_der,&
                 & pair_distribution_partial_der,&
-                & pair_distribution_partial_temp_der, forces_pair_distribution, n_atoms_of_species, rank)
+                & pair_distribution_partial_temp_der, n_atoms_of_species, rank)
 
         end if
 
@@ -2160,6 +2235,15 @@ program turbogap
            if( allocated(this_energies_lp) )then
               counter2 = counter2 + 1
            end if
+           if( allocated(this_energies_pdf) )then
+              counter2 = counter2 + 1
+           end if
+           if( allocated(this_energies_sf) )then
+              counter2 = counter2 + 1
+           end if
+           if( allocated(this_energies_xrd) )then
+              counter2 = counter2 + 1
+           end if
            if( n_distance_2b > 0 )then
               counter2 = counter2 + 1
            end if
@@ -2206,8 +2290,39 @@ program turbogap
                  all_forces(1:3, 1:n_sites, counter2) = this_forces_lp(1:3, 1:n_sites)
                  all_virial(1:3, 1:3, counter2) = this_virial_lp(1:3, 1:3)
               end if
-
            end if
+
+           if( allocated(this_energies_pdf) )then
+              counter2 = counter2 + 1
+              !         Note the vdw things have "this" in front
+              all_energies(1:n_sites, counter2) = this_energies_pdf(1:n_sites)
+              if( params%do_forces )then
+                 all_forces(1:3, 1:n_sites, counter2) = this_forces_pdf(1:3, 1:n_sites)
+                 all_virial(1:3, 1:3, counter2) = this_virial_pdf(1:3, 1:3)
+              end if
+           end if
+
+           if( allocated(this_energies_sf) )then
+              counter2 = counter2 + 1
+              !         Note the vdw things have "this" in front
+              all_energies(1:n_sites, counter2) = this_energies_sf(1:n_sites)
+              if( params%do_forces )then
+                 all_forces(1:3, 1:n_sites, counter2) = this_forces_sf(1:3, 1:n_sites)
+                 all_virial(1:3, 1:3, counter2) = this_virial_sf(1:3, 1:3)
+              end if
+           end if
+
+           if( allocated(this_energies_xrd) )then
+              counter2 = counter2 + 1
+              !         Note the vdw things have "this" in front
+              all_energies(1:n_sites, counter2) = this_energies_xrd(1:n_sites)
+              if( params%do_forces )then
+                 all_forces(1:3, 1:n_sites, counter2) = this_forces_xrd(1:3, 1:n_sites)
+                 all_virial(1:3, 1:3, counter2) = this_virial_xrd(1:3, 1:3)
+              end if
+           end if
+
+
            if( n_distance_2b > 0 )then
               counter2 = counter2 + 1
               all_energies(1:n_sites, counter2) = energies_2b(1:n_sites)
@@ -2278,6 +2393,40 @@ program turbogap
                  deallocate(this_forces_lp)
               end if
            end if
+           if( allocated(this_energies_pdf) )then
+              counter2 = counter2 + 1
+              !         Note the lp things DO NOT have "this" in front anymore
+              energies_pdf(1:n_sites) = all_this_energies(1:n_sites, counter2)
+              deallocate(this_energies_pdf)
+              if( params%do_forces )then
+                 forces_pdf(1:3, 1:n_sites) = all_this_forces(1:3, 1:n_sites, counter2)
+                 virial_pdf(1:3, 1:3) = all_this_virial(1:3, 1:3, counter2)
+                 deallocate(this_forces_pdf)
+              end if
+           end if
+           if( allocated(this_energies_sf) )then
+              counter2 = counter2 + 1
+              !         Note the lp things DO NOT have "this" in front anymore
+              energies_sf(1:n_sites) = all_this_energies(1:n_sites, counter2)
+              deallocate(this_energies_sf)
+              if( params%do_forces )then
+                 forces_sf(1:3, 1:n_sites) = all_this_forces(1:3, 1:n_sites, counter2)
+                 virial_sf(1:3, 1:3) = all_this_virial(1:3, 1:3, counter2)
+                 deallocate(this_forces_sf)
+              end if
+           end if
+           if( allocated(this_energies_xrd) )then
+              counter2 = counter2 + 1
+              !         Note the lp things DO NOT have "this" in front anymore
+              energies_xrd(1:n_sites) = all_this_energies(1:n_sites, counter2)
+              deallocate(this_energies_xrd)
+              if( params%do_forces )then
+                 forces_xrd(1:3, 1:n_sites) = all_this_forces(1:3, 1:n_sites, counter2)
+                 virial_xrd(1:3, 1:3) = all_this_virial(1:3, 1:3, counter2)
+                 deallocate(this_forces_xrd)
+              end if
+           end if
+
            if( n_distance_2b > 0 )then
               counter2 = counter2 + 1
               energies_2b(1:n_sites) = all_this_energies(1:n_sites, counter2)
@@ -2363,6 +2512,11 @@ program turbogap
            virial = virial_soap + virial_2b + virial_3b + virial_core_pot + virial_vdw + virial_lp
 
 
+           if (params%exp_forces .and. params%valid_pdf) forces = forces + forces_pdf
+           if (params%exp_forces .and. params%valid_sf ) forces = forces + forces_sf
+           if (params%exp_forces .and. params%valid_xrd) forces = forces + forces_xrd
+
+
            if ( rank == 0 .and. params%print_lp_forces )then
               open(unit=90, file="forces_lp", status="unknown")
               do i = 1, n_sites
@@ -2370,6 +2524,33 @@ program turbogap
                       forces_lp(1,i), forces_lp(2,i), forces_lp(3,i)
               end do
               close(90)
+
+              if (params%exp_forces .and. params%valid_pdf)then
+                 open(unit=90, file="forces_pdf", status="unknown")
+                 do i = 1, n_sites
+                    write(90, "(F20.8, 1X, F20.8, 1X, F20.8)") &
+                         forces_pdf(1,i), forces_pdf(2,i), forces_pdf(3,i)
+                 end do
+                 close(90)
+              end if
+
+              if (params%exp_forces .and. params%valid_sf)then
+                 open(unit=90, file="forces_sf", status="unknown")
+                 do i = 1, n_sites
+                    write(90, "(F20.8, 1X, F20.8, 1X, F20.8)") &
+                         forces_sf(1,i), forces_sf(2,i), forces_sf(3,i)
+                 end do
+                 close(90)
+              end if
+
+              if (params%exp_forces .and. params%valid_xrd)then
+                 open(unit=90, file="forces_xrd", status="unknown")
+                 do i = 1, n_sites
+                    write(90, "(F20.8, 1X, F20.8, 1X, F20.8)") &
+                         forces_xrd(1,i), forces_xrd(2,i), forces_xrd(3,i)
+                 end do
+                 close(90)
+              end if
            end if
         end if
         ! For debugging the virial implementation
@@ -3624,9 +3805,13 @@ program turbogap
      end if
 
      if( params%exp_forces .and. (md_istep == params%md_nsteps .or.&
-          & mc_istep == params%mc_nsteps .or. exit_loop) .and. rank &
-          &== 0 )then
-        if( allocated(params%exp_data(xps_idx)%x)) deallocate(params%exp_data(xps_idx)%x, params%exp_data(xps_idx)%y)
+          & mc_istep == params%mc_nsteps .or. exit_loop) )then
+        do i = 1, params%n_exp
+           if( allocated(params%exp_data(i)%x)) deallocate(params%exp_data(i)%x)
+           if( allocated(params%exp_data(i)%y)) deallocate(params%exp_data(i)%y)
+           if( allocated(params%exp_data(i)%y_pred)) deallocate(params%exp_data(i)%y_pred)
+        end do
+
      end if
 
 

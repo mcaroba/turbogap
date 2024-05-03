@@ -1014,18 +1014,20 @@ end if
                params%xps_idx = nw
             else if(trim(params%exp_data(nw)%label) == "xrd")then
                params%xrd_idx = nw
+               params%valid_xrd = .true.
                ! Must be set to true to find the partial structure factors
                ! params%pair_distribution_partial = .true.
             else if(trim(params%exp_data(nw)%label) == "saxs")then
                params%saxs_idx = nw
+               params%valid_xrd = .true.
                ! Must be set to true to find the partial structure factors
                ! params%pair_distribution_partial = .true.
             else if(trim(params%exp_data(nw)%label) == "pair_distribution")then
                params%pdf_idx = nw
-
+               params%valid_pdf = .true.
             else if(trim(params%exp_data(nw)%label) == "structure_factor")then
                params%sf_idx = nw
-
+               params%valid_sf = .true.
             end if
          end do
       else if( keyword == "exp_data_files" )then

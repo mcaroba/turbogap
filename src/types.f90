@@ -167,7 +167,8 @@ module types
          & = .true., write_pair_distribution=.false.,&
          & write_structure_factor=.false., do_pair_distribution =&
          & .false., do_structure_factor =.false., do_xrd=.false.,&
-         & write_xrd=.false., structure_factor_matrix=.false., write_exp=.true.
+         & write_xrd=.false., structure_factor_matrix=.false., write_exp=.true., &
+         & valid_pdf=.false., valid_sf=.false., valid_xrd=.false.
 
     logical, allocatable :: write_local_properties(:)
     type(exp_data_container), allocatable :: exp_data(:)

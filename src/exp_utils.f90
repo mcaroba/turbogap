@@ -35,9 +35,9 @@ contains
   subroutine get_pair_distribution_forces(  n_sites0, energy_scale, y_exp, forces0, virial,  &
        & neighbors_list, n_neigh, neighbor_species, rjs, xyz, r_min, r_max, n_samples,&
        & pair_distribution, r_cut,&
-       &  species_1, species_2,  pair_distribution_der, partial_rdf )
+       &  species_1, species_2,  pair_distribution_der, partial_rdf, kde_sigma, c_factor )
     implicit none
-    real*8,  intent(in) :: rjs(:), xyz(:,:), y_exp(:), energy_scale
+    real*8,  intent(in) :: rjs(:), xyz(:,:), y_exp(:), energy_scale,  kde_sigma, c_factor
     integer, intent(in) :: n_sites0
     real*8 :: r_min, r_max, r_cut
     integer, intent(in) :: neighbors_list(:), n_neigh(:), neighbor_species(:)
@@ -59,7 +59,7 @@ contains
 
     allocate( prefactor( 1:n_samples ) )
 
-    prefactor =  2.d0 * ( pair_distribution - y_exp )
+    prefactor =  ( pair_distribution - y_exp )
 
     ! Not reinitalizing the forces as these will be added to for each partial
     !    forces0 = 0.d0
@@ -86,11 +86,12 @@ contains
 
           if (r < 1e-3 .or. r > r_cut) cycle
           if (r < r_min) cycle
-          if (r > r_max) cycle
+          if (r > r_max + kde_sigma*6.d0) cycle
 
 
           if ( .not. all( xyz( 1:3, k ) == 0.d0 ) )then
              ! Actual derivative of the pair distribution function given here, no normalisation needed I think
+
 
              this_force(1) = dot_product( - 2.d0 * xyz( 1, k ) *&
                   & pair_distribution_der(1:n_samples,  k),&
@@ -104,10 +105,10 @@ contains
                   & pair_distribution_der(1:n_samples,  k),&
                   & prefactor(1:n_samples))
 
-             if (i == j) f = 1.d0
-             if (i /= j) f = 2.d0
+             if (species_1 == species_2) f = 1.d0
+             if (species_1 /= species_2) f = 2.d0
 
-             this_force(1:3) =  - f *  energy_scale *  this_force(1:3)
+             this_force(1:3) =  - f * energy_scale * c_factor * this_force(1:3)
 
              forces0(1:3, j2) = forces0(1:3, j2) + this_force(1:3)
 
@@ -227,7 +228,8 @@ contains
 
           r = rjs(k) ! atom pair distance
 
-          if ( r < 1e-3 .or. r > r_cut)then
+          if ( r < 1e-3 .or. r > r_cut )then
+             ! if i2 == j2 or r out of range
              cycle
           end if
 
@@ -237,7 +239,7 @@ contains
              cycle
           end if
 
-          if (r > r_max)then
+          if (r > r_max + kde_sigma*6.d0 )then
              !            print *, "pair_distribution_function: Given r is more than r_max! Continuing loop "
              cycle
           end if
@@ -275,7 +277,7 @@ contains
                 !    pair_distribution_der(1:n_samples, i4, k) = - 2.d0 * xyz( i4, k ) * kde
                 ! end do
 
-                pair_distribution_der(1:n_samples,  k) =  kde
+                pair_distribution_der(1:n_samples,  k) =  pair_distribution_der(1:n_samples,  k) + kde(1:n_samples)
 
 
              end if
@@ -898,20 +900,20 @@ contains
           end do
        end do outer
 
-       if ( trim(output) == "xrd" )then
+       ! if ( trim(output) == "xrd" )then
           ! default !
           do i = 1, n_species
              call get_scattering_factor(wfaci, sf_parameters(1:9,i), x(l)/2.d0)
              y(l) = y(l) + ( n_atoms_of_species(i) / ntot ) * wfaci * wfaci
           end do
-       elseif ( trim(output) == "qi")then
-          ! output q * i(q) === q * F_x(q)
-          y(l) = x(l) * y(l)
-       else
+       ! elseif ( trim(output) == "qi")then
+       !    ! output q * i(q) === q * F_x(q)
+       !    y(l) = x(l) * y(l)
+       ! else
           ! do nothing,
           ! Output the total scattering functon, i(q) === F_x(q)
 
-       end if
+       ! end if
 
 
     end do
@@ -969,13 +971,18 @@ contains
     real*8, allocatable, intent(inout) :: x(:), y(:)
     real*8 :: dx
 
-    allocate(x(1:n_samples))
-    allocate(y(1:n_samples))
+    if (.not. allocated(x) )then
+       allocate(x(1:n_samples))
+       allocate(y(1:n_samples))
 
-    x = 0.d0
-    y = 0.d0
+       x = 0.d0
+       y = 0.d0
 
-    call interpolate_data( x, y, data(1,:), data(2,:), n_samples, dx )
+       call interpolate_data( x, y, data(1,:), data(2,:), n_samples, dx )
+    else
+       dx = x(2) - x(1)
+    end if
+
 
   end subroutine calculate_exp_interpolation
 

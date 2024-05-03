@@ -84,7 +84,7 @@ contains
        & indices, md_istep, i_beg, i_end, j_beg, j_end, ierr, rjs, xyz, &
        & neighbors_list, n_neigh, neighbor_species, species, rank,&
        & do_derivatives, pair_distribution_der, pair_distribution_partial_der,&
-       & pair_distribution_partial_temp_der, forces_pair_distribution)
+       & pair_distribution_partial_temp_der, energies_pair_distribution, forces_pair_distribution, virial)
     implicit none
     type(input_parameters), intent(inout) :: params
     real*8, allocatable, intent(out) :: x_pair_distribution(:),&
@@ -92,12 +92,13 @@ contains
          & n_atoms_of_species(:), pair_distribution_partial_temp(:,:),&
          & y_pair_distribution_temp(:), pair_distribution_der(:,:),&
          & pair_distribution_partial_der(:,:,:), &
-         & pair_distribution_partial_temp_der(:,:,:), forces_pair_distribution(:,:)
+         & pair_distribution_partial_temp_der(:,:,:), energies_pair_distribution(:), forces_pair_distribution(:,:)
     real*8,  intent(in), allocatable :: rjs(:), xyz(:,:)
     integer, intent(in), allocatable :: neighbors_list(:), n_neigh(:)&
          &, neighbor_species(:), species(:)
     real*8,  intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3)
-    real*8 :: v_uc, f, virial(1:3,1:3)
+    real*8, intent(inout) :: virial(1:3,1:3)
+    real*8 :: v_uc, f
     integer, intent(in) :: n_species, n_sites, i_beg, i_end, j_beg, j_end
     integer, intent(in) :: indices(1:3), md_istep, rank
     integer, intent(inout) :: ierr
@@ -312,6 +313,9 @@ contains
 
 
        if ( params%exp_forces )then
+          allocate(energies_pair_distribution(1:n_sites))
+          energies_pair_distribution = 0.d0
+
           allocate(forces_pair_distribution(1:3,1:n_sites))
           forces_pair_distribution = 0.d0
        end if
@@ -337,6 +341,13 @@ contains
                      & %pair_distribution_n_samples, n_dim_idx, &
                      & j_beg:j_end) * v_uc /  n_atoms_of_species(j) / &
                      & n_atoms_of_species(k) !real(n_sites)
+
+                ! if (j /= k) then
+                !    print *, rank, j_beg, j_end,  pair_distribution_partial_der(1:params&
+                !      &%pair_distribution_n_samples, n_dim_idx, &
+                !      & j_beg:j_end)
+                ! end if
+
              end if
 
              
@@ -346,6 +357,7 @@ contains
                   &  factors(n_dim_idx) * (n_atoms_of_species(j) * n_atoms_of_species(k)) * &
                   & pair_distribution_partial(1:params%pair_distribution_n_samples, n_dim_idx) &
                   &  /  dfloat(n_sites) / dfloat(n_sites)
+
 
 
              if (do_derivatives .and.  params%exp_forces .and. allocated( params%exp_energy_scales ))then
@@ -360,8 +372,12 @@ contains
                      &%pair_distribution_n_samples, n_dim_idx), params%pair_distribution_rcut&
                      &, j, k, pair_distribution_partial_der(1:params &
                      &%pair_distribution_n_samples, n_dim_idx,&
-                     & j_beg:j_end), params%pair_distribution_partial&
-                     & )
+                     & j_beg:j_end), params%pair_distribution_partial,&
+                     & params%pair_distribution_kde_sigma,&
+                     & ( (n_atoms_of_species(j) *&
+                     & n_atoms_of_species(k)) /  dfloat(n_sites) /&
+                     & dfloat(n_sites) ) )
+
              end if
 
 
@@ -486,7 +502,7 @@ contains
        &, y_pair_distribution, y_pair_distribution_temp,&
        & pair_distribution_partial, pair_distribution_partial_temp,&
        & do_derivatives, pair_distribution_der, pair_distribution_partial_der,&
-       & pair_distribution_partial_temp_der, forces_pair_distribution, n_atoms_of_species, rank)
+       & pair_distribution_partial_temp_der,  n_atoms_of_species, rank)
     implicit none
     type(input_parameters), intent(in) :: params
     integer, intent(in) :: rank
@@ -495,7 +511,7 @@ contains
          & n_atoms_of_species(:), pair_distribution_partial_temp(:,:),&
          & y_pair_distribution_temp(:), pair_distribution_der(:,:),&
          & pair_distribution_partial_der(:,:,:), &
-         & pair_distribution_partial_temp_der(:,:,:), forces_pair_distribution(:,:)
+         & pair_distribution_partial_temp_der(:,:,:)
     logical, intent(in) :: do_derivatives
 
     ! Naive finalization, include the logic of how things are actually
@@ -509,7 +525,7 @@ contains
     if ( allocated( pair_distribution_der )             ) deallocate(pair_distribution_der)
     if ( allocated( pair_distribution_partial_der )     ) deallocate(pair_distribution_partial_der)
     if ( allocated( pair_distribution_partial_temp_der )) deallocate(pair_distribution_partial_temp_der)
-    if ( allocated( forces_pair_distribution )          ) deallocate(forces_pair_distribution)
+    !    if ( allocated( forces_pair_distribution )          ) deallocate(forces_pair_distribution)
     if ( allocated( n_atoms_of_species )          ) deallocate(n_atoms_of_species)
 
 
