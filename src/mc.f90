@@ -197,12 +197,12 @@ module mc
 
 
 
-  subroutine get_mc_move(n_sites, n_mc_species, mc_types, mc_move, acceptance,&
+  subroutine get_mc_move(n_sites, n_mc_species, n_mc_types,  mc_types, mc_move, acceptance,&
        & n_spec_swap_1, n_spec_swap_2, species_types, n_mc_swaps,&
        & mc_swaps_id, species, swap_id_1, swap_id_2, swap_species_1, swap_species_2)
     implicit none
 
-    integer, intent(in) :: n_sites, n_mc_species
+    integer, intent(in) :: n_sites, n_mc_species, n_mc_types
     integer :: n_mc, i
     character*32, intent(in) ::  mc_types(:)
     character*32, intent(out) :: mc_move
@@ -222,7 +222,8 @@ module mc
        ! Now choose the move based on the acceptance ratios
 
        k = 0.d0
-       do i = 1, size(mc_types)
+
+       do i = 1, n_mc_types
           n_mc = i
           k = k + acceptance(i)
           if( ranf < k )then
@@ -363,7 +364,7 @@ module mc
        & positions, species, xyz_species, masses, fix_atom,&
        & velocities, positions_prev, positions_diff, disp, d_disp,&
        & mc_acceptance, n_lp, local_properties, im_local_properties, energies,&
-       & forces, forces_prev, n_sites, n_mc_species, mc_move, mc_species,&
+       & forces, forces_prev, n_sites, n_mc_types, n_mc_species, mc_move, mc_species,&
        & mc_move_max, mc_min_dist, ln_vol_max, mc_types, masses_types,&
        & species_idx, im_pos, im_species, im_xyz_species, im_fix_atom&
        &, im_masses, a_box, b_box, c_box, indices, do_md, mc_relax,&
@@ -381,7 +382,7 @@ module mc
          & length_prev, l_prop, ranf, ranv(1:3), kB = 8.6173303d-5
     real*8, intent(inout) :: disp(1:3), mc_min_dist, d_disp,&
          & E_kinetic, instant_temp, t_beg
-    integer, intent(in) :: n_lp
+    integer, intent(in) :: n_lp, n_mc_types
     integer, intent(inout) :: n_mc_species, n_sites, md_istep, mc_id, n_mc_swaps
     integer, allocatable, intent(inout) :: species(:), mc_swaps_id(:)
     integer, allocatable, intent(in) ::  im_species(:)
@@ -412,7 +413,7 @@ module mc
     end do
 
     !  Get the mc move type using a random number
-    call get_mc_move(n_sites, n_mc_species, mc_types, mc_move,&
+    call get_mc_move(n_sites, n_mc_species, n_mc_types,  mc_types, mc_move,&
          & mc_acceptance, n_spec_swap_1, n_spec_swap_2, species_types&
          &, n_mc_swaps, mc_swaps_id, species, swap_id_1, swap_id_2,&
          & swap_species_1, swap_species_2)

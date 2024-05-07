@@ -32,6 +32,9 @@ module exp_utils
 contains
 
 
+
+
+
   subroutine get_pair_distribution_forces(  n_sites0, energy_scale, y_exp, forces0, virial,  &
        & neighbors_list, n_neigh, neighbor_species, rjs, xyz, r_min, r_max, n_samples,&
        & pair_distribution, r_cut,&
@@ -92,7 +95,6 @@ contains
           if ( .not. all( xyz( 1:3, k ) == 0.d0 ) )then
              ! Actual derivative of the pair distribution function given here, no normalisation needed I think
 
-
              this_force(1) = dot_product( - 2.d0 * xyz( 1, k ) *&
                   & pair_distribution_der(1:n_samples,  k),&
                   & prefactor(1:n_samples))
@@ -108,7 +110,7 @@ contains
              if (species_1 == species_2) f = 1.d0
              if (species_1 /= species_2) f = 2.d0
 
-             this_force(1:3) =  - f * energy_scale * c_factor * this_force(1:3)
+             this_force(1:3) =  - f * energy_scale * this_force(1:3)
 
              forces0(1:3, j2) = forces0(1:3, j2) + this_force(1:3)
 
@@ -134,16 +136,16 @@ contains
   subroutine get_pair_distribution(  n_sites0, &
        & neighbors_list, n_neigh, neighbor_species, rjs, xyz, r_min, r_max, n_samples, x,&
        & pair_distribution, r_cut, return_histogram,&
-       & partial_rdf, species_1, species_2, kde_sigma, rho, do_derivatives, pair_distribution_der )
+       & partial_rdf, species_1, species_2, kde_sigma, rho, do_derivatives, pair_distribution_der, n_dim_idx, j_beg, j_end )
     implicit none
     real*8,  intent(in) :: rjs(:), kde_sigma, rho, xyz(:,:)
     real*8 :: r_min, r_max, r_cut
     integer, intent(in) :: neighbors_list(:), n_neigh(:), neighbor_species(:)
-    integer, intent(in) :: n_sites0, n_samples, species_1, species_2
+    integer, intent(in) :: n_sites0, n_samples, species_1, species_2, n_dim_idx, j_beg, j_end
     integer :: n_sites, n_pairs, count, count_species_1
     integer :: i, j, k, ki,  i2, j2, l, ii, jj, kk, i3, j3, i4, ind_bin_l, ind_bin_h, species_i, species_j
     real*8,  intent(inout) :: pair_distribution(1:n_samples), x(1:n_samples)
-    real*8,  intent(inout) :: pair_distribution_der(:,:)
+    real*8,  intent(inout), allocatable :: pair_distribution_der(:,:,:)
     real*8, allocatable :: bin_edges(:), dV(:), kde(:)
     real*8 :: r, n_pc, ri_vec(1:3), rj_vec(1:3)
     real*8, parameter :: pi = acos(-1.0)
@@ -228,7 +230,7 @@ contains
 
           r = rjs(k) ! atom pair distance
 
-          if ( r < 1e-3 .or. r > r_cut )then
+          if ( r > r_cut )then
              ! if i2 == j2 or r out of range
              cycle
           end if
@@ -251,13 +253,13 @@ contains
              do l = 1,n_samples
                 kde(l) = kde(l) +  exp( -( (x(l) - r) / kde_sigma )**2 / 2.d0 )
              end do
-             pair_distribution(1:n_samples) = pair_distribution(1:n_samples) + &
+             if (k /= 1) pair_distribution(1:n_samples) = pair_distribution(1:n_samples) + &
                   & kde(1:n_samples)
 
              if (do_derivatives)then
                 ! reuse kde to get the derivatives
                 do l = 1,n_samples
-                   kde(l) = kde(l)  *  ( (x(l) - r) / kde_sigma**2 ) / r
+                   kde(l) = kde(l)  *  ( (x(l) - r) / kde_sigma**2 ) / r / dV(l)
                 end do
 
                 ! the first term is ( delta_jk - delta_ik )*( r_j^alpha - r_i^alpha )
@@ -277,7 +279,9 @@ contains
                 !    pair_distribution_der(1:n_samples, i4, k) = - 2.d0 * xyz( i4, k ) * kde
                 ! end do
 
-                pair_distribution_der(1:n_samples,  k) =  pair_distribution_der(1:n_samples,  k) + kde(1:n_samples)
+                pair_distribution_der(1:n_samples, n_dim_idx,  k) = &
+                     & pair_distribution_der(1:n_samples, n_dim_idx, &
+                     & k) + kde(1:n_samples)
 
 
              end if
@@ -302,8 +306,8 @@ contains
             & / ( sqrt( 2.d0 * pi) * kde_sigma)
 
        if ( do_derivatives )then
-          pair_distribution_der(1:n_samples,1:n_pairs) =&
-               & pair_distribution_der(1:n_samples,1:n_pairs) * ( ( r_max - r_min) / dfloat(n_samples) ) &
+          pair_distribution_der(1:n_samples,n_dim_idx, 1:n_pairs) =&
+               & pair_distribution_der(1:n_samples, n_dim_idx, 1:n_pairs) * ( ( r_max - r_min) / dfloat(n_samples) ) &
                & / ( sqrt( 2.d0 * pi) * kde_sigma)
        end if
 
@@ -843,7 +847,7 @@ contains
   subroutine get_xrd_from_partial_structure_factors(q_beg, q_end, &
        & structure_factor_partial, n_species, species_types,&
        & species, wavelength, damping, alpha, method, use_iwasa, output, &
-       & x, y, n_atoms_of_species )
+       & x, y, n_atoms_of_species, y_sub )
     implicit none
     real*8, intent(in) :: damping, wavelength, alpha, structure_factor_partial(:,:)
     integer, intent(in) :: species(:)
@@ -856,12 +860,13 @@ contains
     real*8 , intent(in), allocatable :: n_atoms_of_species(:)
     real*8, allocatable :: sf_parameters(:,:)
     real*8, intent(in) :: x(:)
-    real*8, intent(out) :: y(:)
+    real*8, intent(out) :: y(:), y_sub(:)
     real*8, parameter :: pi = acos(-1.0)
 
     n_dim_partial = n_species * ( n_species + 1 ) / 2
 
     y = 0.d0
+    y_sub = 0.d0
     n = q_end - q_beg + 1 !size(x)
 
     allocate( sf_parameters(1:9,1:n_species) )
@@ -901,17 +906,19 @@ contains
        end do outer
 
        ! if ( trim(output) == "xrd" )then
-          ! default !
+       !    !          default !
           do i = 1, n_species
              call get_scattering_factor(wfaci, sf_parameters(1:9,i), x(l)/2.d0)
-             y(l) = y(l) + ( n_atoms_of_species(i) / ntot ) * wfaci * wfaci
+             y_sub(l) = ( n_atoms_of_species(i) / ntot ) * wfaci * wfaci
+             y(l) = y(l) + y_sub(l)
           end do
-       ! elseif ( trim(output) == "qi")then
+       ! elseif ( trim(output) == "q*i(q)" .or. trim(output) == "q*F(q)")then
+       !    ! we now handlw this case in preprocess experimental data
        !    ! output q * i(q) === q * F_x(q)
        !    y(l) = x(l) * y(l)
-       ! else
-          ! do nothing,
-          ! Output the total scattering functon, i(q) === F_x(q)
+       ! elseif( trim(output) == "F(q)" .or. trim(output) == "i(q)")
+       !    ! do nothing,
+       !    ! Output the total scattering functon, i(q) === F_x(q)
 
        ! end if
 
@@ -1047,8 +1054,8 @@ contains
     integer :: i,idx
     norm_fac = 1.d0 / ( sqrt(2.d0 * 3.14159265359) * sigma )
     do i = 1, size(x)
-       y(i) = y(i) +  exp( -( x(i) - x0 )**2 / (2*sigma**2) )
-       y_all(idx, i) = exp( -( x(i) - x0 )**2 / (2*sigma**2) )
+       y_all(idx, i) = exp( -( x(i) - x0 )**2 / (2.d0 * sigma**2) )
+       y(i) = y(i) + y_all(idx, i) !  exp( -( x(i) - x0 )**2 / (2.d0 * sigma**2) )
     end do
 
   end subroutine broaden_spectrum
@@ -1068,6 +1075,10 @@ contains
     real*8 ::  x_min, x_max, x_range, t, dx
     real*8, intent(out) :: mag
     logical, intent(in) :: broaden
+
+    if (allocated(x)) deallocate(x)
+    if (allocated(y)) deallocate(y)
+    if (allocated(y_all)) deallocate(y_all)
 
     allocate(x(1:n_samples))
     allocate(y(1:n_samples))
@@ -1099,7 +1110,7 @@ contains
 
     end if
 
-    mag = sqrt(dot_product(y, y)) * dx !sum(y * dx) !
+    mag = sqrt(dot_product(y, y) * dx)  !sum(y * dx) !
     y = y / mag
     y_all = y_all / mag
 
@@ -1870,11 +1881,11 @@ contains
 
     if( exp_similarity_type == 'similarity' .or. exp_similarity_type == 'overlap' )then
        do i = 1, n_sites
-          energies_lp(i) = - energy_scale * ( dot_product( y_all(:,i), y_exp ))
+          energies_lp(i) = - energy_scale * ( dot_product( y_all(i,:), y_exp ))
        end do
     else if (exp_similarity_type == 'squared_diff')then
        do i = 1, n_sites
-          energies_lp(i) = - energy_scale * ( 1.d0 / dfloat( n_sites0 ) -  dot_product( y_all(:,i), y_exp ))
+          energies_lp(i) = - energy_scale * ( 1.d0 / dfloat( n_sites0 ) -  dot_product( y_all(i,:), y_exp ))
        end do
 
 
@@ -2078,7 +2089,7 @@ contains
     y = 0.d0
 
     do i = 1, size(x)-1
-       idx = int( (((x(i)-x_min) / x_range) * real(size(xi))) + 1 )
+       idx = int( (((x(i)-x_min) / x_range) * dfloat(size(xi))) + 1 )
 
        !         print *, x(i), x(idx), x(idx+1)
 
@@ -2110,6 +2121,7 @@ contains
     end do
 
     x(size(x)) = x_max
+    y(size(x)) = yi(size(yi))
 
   end subroutine lerp
 

@@ -912,13 +912,19 @@ end if
       else if(keyword=='xrd_method')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%xrd_method
-      else if(keyword=='xrd_output')then
+
+     else if(keyword=='xrd_output')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%xrd_output
 
+     ! else if(keyword=='xrd_input')then
+     !    backspace(10)
+     !    read(10, *, iostat=iostatus) cjunk, cjunk, params%xrd_output
+
+
      else if(keyword=='pair_distribution_output')then
         backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%xrd_output
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%pair_distribution_output
 
 
       else if(keyword=='xrd_iwasa')then
@@ -1545,8 +1551,7 @@ end if
              params%pair_distribution_n_samples = params%exp_data(i)%n_samples
           elseif ( trim(params%exp_data(i)%label) == 'xrd')then
              write(*,'(A,1X,A,1X,A)') trim(params%exp_data(i)%label),&
-                  & ' found, setting q_range_min/max with q_units =&
-                  & "twotheta"', ' |'
+                  & ' found, setting q_range_min/max with q_units = ' // trim(params%q_units) , ' |'
 
              params%do_pair_distribution = .true.
              params%pair_distribution_partial = .true.
@@ -1556,7 +1561,7 @@ end if
 
              params%q_range_min = params%exp_data(i)%range_min
              params%q_range_max = params%exp_data(i)%range_max
-             params%q_units = 'twotheta'
+             ! params%q_units = 'twotheta'
              params%xrd_n_samples = params%exp_data(i)%n_samples
              params%structure_factor_n_samples = params%exp_data(i)%n_samples
           elseif ( trim(params%exp_data(i)%label) == 'saxs')then

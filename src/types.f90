@@ -144,7 +144,7 @@ module types
     character*32 :: barostat = "none", thermostat = "none",&
          & barostat_sym = "isotropic", mc_species = "none",&
          & xps_force_type = "similarity", exp_similarity_type =&
-         & "squared_diff", xrd_method = "xrd", q_units="q", xrd_output="xrd", pair_distribution_output="pdf"
+         & "squared_diff", xrd_method = "xrd", q_units="q", xrd_output="xrd", pair_distribution_output = "pdf"
     logical :: do_md = .false., do_mc = .false., do_prediction =&
          & .false., do_forces = .false., do_derivatives = .false.,&
          & do_derivatives_fd = .false., write_soap = .false.,&
