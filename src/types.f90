@@ -32,7 +32,7 @@ module types
 
   ! GAP+descriptor data structure for SOAP
   type exp_data_container
-     character*1024      :: file_data="none", label
+     character*1024      :: file_data="none", label, input="default"
      integer             :: n_data, n_samples=200
      logical             :: compute_similarity=.false., compute_exp=.false.,&
           & wrote_exp=.false., user_range=.false., compute_forces=.false.

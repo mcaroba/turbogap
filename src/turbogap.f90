@@ -110,7 +110,7 @@ program turbogap
   integer :: l_max, n_atom_pairs, n_max, ijunk, central_species = 0,&
        & n_atom_pairs_total
   integer :: iostatus, counter = 0, counter2
-  integer :: which_atom = 0, n_species = 1, n_xyz, indices(1:3)
+  integer :: which_atom = 0, n_species = 1, n_species_actual, n_xyz, indices(1:3)
   integer :: radial_enhancement = 0
   integer :: md_istep, mc_istep, mc_id=1, n_mc, n_mc_species
 
@@ -1711,7 +1711,7 @@ program turbogap
                       & params%exp_data(i)%y, params%exp_data(i)%label,&
                       & n_sites, dot_product( cross_product(a_box,&
                       & b_box), c_box ) / (dfloat(indices(1)*indices(2) &
-                      &*indices(3)) ), exp_output)
+                      &*indices(3)) ), params%exp_data(i)%input, exp_output, .true. )
 
               end if
 
@@ -1958,7 +1958,12 @@ program turbogap
         !
         ! Total scattering function F^X(q)
         ! F^x(q) = [ XRD(q) - \sum_n c_i f_i(q)^2 ] / [ \sum_n c_i f_i(q) ]^2
-        !
+
+        ! First get the number of species in actuality
+        n_species_actual = 1
+        do i = 1, n_sites
+           if (species(i) > n_species_actual) n_species_actual = n_species_actual + 1
+        end do
 
         if (params%do_pair_distribution)then
            call cpu_time(time_pdf(1))
@@ -1977,7 +1982,7 @@ program turbogap
            call calculate_pair_distribution( params, x_pair_distribution&
                 &, y_pair_distribution, y_pair_distribution_temp,&
                 & pair_distribution_partial, pair_distribution_partial_temp, &
-                & n_species, n_atoms_of_species, n_sites, a_box,&
+                & n_species_actual, n_atoms_of_species, n_sites, a_box,&
                 & b_box, c_box, indices, md_istep, mc_istep, i_beg, i_end,&
                 & j_beg, j_end, ierr , rjs, xyz, neighbors_list,&
                 & n_neigh, neighbor_species, species, rank, params%exp_forces, &
@@ -2049,7 +2054,7 @@ program turbogap
                 & y_structure_factor, y_structure_factor_temp,&
                 & structure_factor_partial, structure_factor_partial_temp,&
                 & x_pair_distribution, y_pair_distribution, &
-                & pair_distribution_partial, n_species, n_atoms_of_species,&
+                & pair_distribution_partial, n_species_actual, n_atoms_of_species,&
                 & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep, i_beg,&
                 & i_end, j_beg, j_end, ierr, rjs, neighbors_list, n_neigh,&
                 & neighbor_species, species, rank , q_beg, q_end, ntasks, sinc_factor_matrix)
@@ -2080,7 +2085,7 @@ program turbogap
            call calculate_xrd( params, x_xrd, x_xrd_temp,&
                 & y_xrd, y_xrd_temp, x_structure_factor, x_structure_factor_temp,&
                 & structure_factor_partial, structure_factor_partial_temp,&
-                & n_species, n_atoms_of_species,&
+                & n_species_actual, n_atoms_of_species,&
                 & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep, i_beg,&
                 & i_end, j_beg, j_end, ierr, rjs, neighbors_list, n_neigh,&
                 & neighbor_species, species, rank , q_beg, q_end, ntasks)
@@ -2114,7 +2119,7 @@ program turbogap
                    & params%exp_data(i)%y_pred, params%exp_data(i)%label,&
                    & n_sites, dot_product( cross_product(a_box,&
                    & b_box), c_box ) / (dfloat(indices(1)*indices(2) &
-                   &*indices(3)) ), exp_output)
+                   &*indices(3)) ), params%exp_data(i)%input,  exp_output, .false.)
 
               call get_write_condition( params%do_mc, params%do_md&
                    &, mc_istep, md_istep, params%write_xyz,&

@@ -888,6 +888,11 @@ end if
                  &%n_exp)
          end if
 
+      else if(keyword=='exp_input_type')then
+         backspace(10)
+         read(10, *, iostat=iostatus) cjunk, cjunk, &
+              (params%exp_data(nw)%input, nw=1, params%n_exp)
+
       else if(keyword=='xps_sigma')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%xps_sigma

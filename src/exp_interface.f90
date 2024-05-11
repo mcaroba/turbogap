@@ -69,6 +69,53 @@ contains
   end subroutine get_overwrite_condition
 
 
+  subroutine write_partial_exp(do_mc, do_md, mc_istep, md_istep,&
+       & write_xyz, has_partials, n_species, n_samples, n_dim_partial&
+       &, x, y, partials, species_types, name )
+    implicit none
+    logical, intent(in) :: do_mc, do_md, has_partials
+    integer, intent(in) :: mc_istep, md_istep, write_xyz, n_species, n_samples, n_dim_partial
+    real*8, intent(in) :: x(:), y(:), partials(:,:)
+    character*8, allocatable :: species_types(:)
+    character(len = *), intent(in) :: name
+    integer :: j, k, n_dim_idx
+    character*1024 :: filename
+    logical :: write_condition, overwrite_condition
+
+    call get_overwrite_condition( do_mc, do_md&
+         &, mc_istep, md_istep, write_xyz,&
+         & overwrite_condition)
+
+    if (has_partials)then
+       n_dim_idx = 1
+       outer: do j = 1, n_species
+          do k = 1, n_species
+
+             if (j > k) cycle
+
+             write(filename,'(A)')&
+                  & name // '_' // trim(species_types(j)) // '_' // trim(species_types(k)) //&
+                  & "_prediction.dat"
+             call write_exp_datan(x(1:n_samples),&
+                  & partials(1:n_samples, n_dim_idx),&
+                  & overwrite_condition, filename, name)
+
+             n_dim_idx = n_dim_idx + 1
+             if ( n_dim_idx > n_dim_partial )then
+                exit outer
+             end if
+
+          end do
+       end do outer
+    end if
+
+    write(filename,'(A)')&
+         & name // "_total.dat"
+    call write_exp_datan(x(1:n_samples),&
+         &y(1:n_samples),&
+         & overwrite_condition, filename, name)
+  end subroutine write_partial_exp
+
 
   subroutine get_pdf_sf_xrd_explicitly_kde( v_uc, n_sites0, n_species, species, species_types, &
        & neighbors_list, n_neigh, neighbor_species, rjs, xyz, r_cut, &
@@ -379,7 +426,7 @@ contains
   ! end subroutine get_this_exp_force
 
 
-  subroutine preprocess_exp_data(params, x, y, label, n_sites, V, output)
+  subroutine preprocess_exp_data(params, x, y, label, n_sites, V, input, output, exp)
     implicit none
     type(input_parameters), intent(in) :: params
     real*8, intent(in), allocatable :: x(:)
@@ -389,7 +436,9 @@ contains
     character*1024, intent(in) :: label
     real*8, parameter :: pi = acos(-1.0)
     real*8 :: mag, dx, rho
+    logical, intent(in) :: exp
     character*32, intent(inout) :: output
+    character*1024, intent(inout) :: input
 
     dx = x(2) - x(1)
     rho = dfloat(n_sites) / V
@@ -402,7 +451,7 @@ contains
 
     elseif ( trim(label) == "pair_distribution" )then
        output = params%pair_distribution_output
-       if ( trim(params%pair_distribution_output) == "D(r)" )then
+       if ( trim(params%pair_distribution_output) == "D(r)" .and. .not. ( exp .and. trim(input) == "D(r)" ) )then
           ! D(r) = 4pi rho * r * G(r)
           ! G(r) = total pair distribution function
           y = 4.d0 * pi * rho * x * (y - 1.d0)
@@ -413,8 +462,11 @@ contains
        ! mag = sqrt(dot_product(y, y)) * dx
        ! y = y / mag
 
-       if ( trim(params%xrd_output) == "q*i(q)" .and. params%q_units == "q" )then
-          y = x * y
+       if ( trim(params%xrd_output) == "q*i(q)" .and. params%q_units &
+            &== "q" )then
+          if ( exp .and. trim(input) == "i(q)" )then
+             y = x * (y - 1.d0)
+          end if
        end if
     end if
   end subroutine preprocess_exp_data
@@ -445,7 +497,7 @@ contains
     integer, intent(in) :: n_species, n_sites, i_beg, i_end, j_beg, j_end
     integer, intent(in) :: indices(1:3), md_istep, mc_istep,  rank
     integer, intent(inout) :: ierr
-    real, allocatable :: factors(:), forces_pair_distribution_temp(:,:)
+    real*8, allocatable :: factors(:), pair_distribution_der_temp(:)
     integer :: i, j, k, l, i2, n_dim_partial, n_dim_idx
     logical, intent(in) :: do_derivatives
     logical :: write_condition, overwrite_condition
@@ -544,8 +596,6 @@ contains
        allocate( pair_distribution_partial_temp(1:params%pair_distribution_n_samples, 1 : n_dim_partial) )
 
        pair_distribution_partial_temp = 0.0d0
-
-
     end if
 
     allocate( y_pair_distribution_temp( 1: params%pair_distribution_n_samples) )
@@ -593,6 +643,7 @@ contains
 
           end do
        end do outer1
+
 
     else
        call get_pair_distribution( n_sites, &
@@ -663,6 +714,11 @@ contains
        end if
 
 
+       !####################################!
+       !###---   Accumulate the PDF   ---###!
+       !####################################!
+
+
        y_pair_distribution = 0.d0
        n_dim_idx = 1
        outer2: do j = 1, n_species
@@ -673,8 +729,7 @@ contains
              pair_distribution_partial(1:params%pair_distribution_n_samples, n_dim_idx) =&
                   & pair_distribution_partial(1:params&
                   &%pair_distribution_n_samples, n_dim_idx) * v_uc &
-                  &  /  n_atoms_of_species(j) /  n_atoms_of_species(k) !real(n_sites)
-
+                  &  /  n_atoms_of_species(j) /  n_atoms_of_species(k) / factors(n_dim_idx) !real(n_sites)
 
              if (do_derivatives) then
                 pair_distribution_partial_der(1:params&
@@ -682,46 +737,15 @@ contains
                      & j_beg:j_end) =  pair_distribution_partial_der(1:params&
                      & %pair_distribution_n_samples, n_dim_idx, &
                      & j_beg:j_end) * v_uc /  n_atoms_of_species(j) / &
-                     & n_atoms_of_species(k) !real(n_sites)
-
-                ! if (j /= k) then
-                !    print *, rank, j_beg, j_end,  pair_distribution_partial_der(1:params&
-                !      &%pair_distribution_n_samples, n_dim_idx, &
-                !      & j_beg:j_end)
-                ! end if
+                     & n_atoms_of_species(k) / factors(n_dim_idx)!real(n_sites)
 
              end if
-
-             
 
              y_pair_distribution(1:params%pair_distribution_n_samples) = &
                   & y_pair_distribution(1:params%pair_distribution_n_samples)  +  &
                   &  factors(n_dim_idx) * (n_atoms_of_species(j) * n_atoms_of_species(k)) * &
                   & pair_distribution_partial(1:params%pair_distribution_n_samples, n_dim_idx) &
                   &  /  dfloat(n_sites) / dfloat(n_sites)
-
-
-
-             if (do_derivatives .and.  params%exp_forces .and. allocated( params%exp_energy_scales ))then
-                call get_pair_distribution_forces(  n_sites, params%exp_energy_scales(params%pdf_idx),&
-                     & params%exp_data(params%pdf_idx)%y,&
-                     & forces_pair_distribution, virial,&
-                     & neighbors_list(j_beg:j_end), n_neigh(i_beg:i_end),&
-                     & neighbor_species(j_beg:j_end), rjs(j_beg:j_end), xyz(1:3,j_beg:j_end), params&
-                     &%r_range_min, params%r_range_max, params&
-                     &%pair_distribution_n_samples,&
-                     & pair_distribution_partial(1:params&
-                     &%pair_distribution_n_samples, n_dim_idx), params%pair_distribution_rcut&
-                     &, j, k, pair_distribution_partial_der(1:params &
-                     &%pair_distribution_n_samples, n_dim_idx,&
-                     & j_beg:j_end), params%pair_distribution_partial,&
-                     & params%pair_distribution_kde_sigma,&
-                     & ( (n_atoms_of_species(j) *&
-                     & n_atoms_of_species(k)) /  dfloat(n_sites) /&
-                     & dfloat(n_sites) ))
-
-             end if
-
 
              n_dim_idx = n_dim_idx + 1
 
@@ -733,25 +757,20 @@ contains
        end do outer2
 
 
-#ifdef _MPIF90
-
-       ! No need to broadcast tbe pair distribution partials again as each process has done the calculation
-       ! call mpi_bcast(pair_distribution_partial, params&
-       !      &%pair_distribution_n_samples * n_dim_idx, MPI_DOUBLE_PRECISION, 0,&
-       !      & MPI_COMM_WORLD, ierr)
-
-       call mpi_bcast(y_pair_distribution, params&
-            &%pair_distribution_n_samples, MPI_DOUBLE_PRECISION, 0,&
-            & MPI_COMM_WORLD, ierr)
+       !######################################!
+       !###---   Calculate the forces   ---###!
+       !######################################!
 
 
-#endif
-
-       ! Do the forces!
        if (do_derivatives .and.  params%exp_forces .and. allocated( params%exp_energy_scales ))then
+          forces_pair_distribution = 0.d0
+          allocate( pair_distribution_der_temp( 1:params%pair_distribution_n_samples ) )
+          pair_distribution_der_temp = 0.d0
+
           n_dim_idx = 1
-          outerf: do j = 1, n_species
+          outerforces: do j = 1, n_species
              do k = 1, n_species
+
                 if (j > k) cycle
 
                 call get_pair_distribution_forces(  n_sites, params%exp_energy_scales(params%pdf_idx),&
@@ -761,26 +780,118 @@ contains
                      & neighbor_species(j_beg:j_end), rjs(j_beg:j_end), xyz(1:3,j_beg:j_end), params&
                      &%r_range_min, params%r_range_max, params&
                      &%pair_distribution_n_samples,&
-                     & pair_distribution_partial(1:params&
-                     &%pair_distribution_n_samples, n_dim_idx), params%pair_distribution_rcut&
+                     & y_pair_distribution(1:params&
+                     &%pair_distribution_n_samples), params%pair_distribution_rcut&
                      &, j, k, pair_distribution_partial_der(1:params &
                      &%pair_distribution_n_samples, n_dim_idx,&
                      & j_beg:j_end), params%pair_distribution_partial,&
                      & params%pair_distribution_kde_sigma,&
                      & ( (n_atoms_of_species(j) *&
                      & n_atoms_of_species(k)) /  dfloat(n_sites) /&
-                     & dfloat(n_sites) ))
+                     & dfloat(n_sites) ), pair_distribution_der_temp, n_dim_idx)
 
                 n_dim_idx = n_dim_idx + 1
 
                 if ( n_dim_idx > n_dim_partial )then
-                   exit outerf
+                   exit outerforces
                 end if
 
              end do
-          end do outerf
+          end do outerforces
 
+          ! do i = 1, params%pair_distribution_n_samples
+          !    print *,  "ppd ", 100, pair_distribution_der_temp( 1 ), pair_distribution_partial_der( 1, 2, 100:102 )
+          ! end do
+
+          open(unit=1234, file="grad", status="unknown")
+          do i = 100, 110
+             write(1234,  '(A,1X,I8,1X,F20.8)'), "dg_dr_0^1 ", i, pair_distribution_der_temp( i )
+          end do
+          close(unit=1234)
+
+          deallocate( pair_distribution_der_temp)
        end if
+
+       !##############################################!
+       !###---   Checking gradient for k == 1   ---###!
+       !##############################################!
+
+       ! n_dim_idx = 1
+       ! outerc: do j = 1, n_species
+       !    do k = 1, n_species
+
+       !       if (j > k) cycle
+
+
+       !       pair_distribution_der_temp( 1:params&
+       !            &%pair_distribution_n_samples ) =&
+       !            & pair_distribution_der_temp( 1:params&
+       !            &%pair_distribution_n_samples )  - 2.d0 * xyz(&
+       !            & 1, 2 ) * factors(n_dim_idx) * (&
+       !            & (n_atoms_of_species(j) *&
+       !            & n_atoms_of_species(k)) /  dfloat(n_sites) /&
+       !            & dfloat(n_sites) ) *&
+       !            & pair_distribution_partial_der(1:params%pair_distribution_n_samples, n_dim_idx,  2)
+
+       !       n_dim_idx = n_dim_idx + 1
+
+       !       if ( n_dim_idx > n_dim_partial )then
+       !          exit outerc
+       !       end if
+
+       !    end do
+       ! end do outerc
+
+       ! deallocate( pair_distribution_der_temp)
+
+! #ifdef _MPIF90
+
+!        ! No need to broadcast tbe pair distribution partials again as each process has done the calculation
+!        ! call mpi_bcast(pair_distribution_partial, params&
+!        !      &%pair_distribution_n_samples * n_dim_idx, MPI_DOUBLE_PRECISION, 0,&
+!        !      & MPI_COMM_WORLD, ierr)
+
+!        call mpi_bcast(y_pair_distribution, params&
+!             &%pair_distribution_n_samples, MPI_DOUBLE_PRECISION, 0,&
+!             & MPI_COMM_WORLD, ierr)
+
+
+! #endif
+
+!        ! Do the forces!
+!        if (do_derivatives .and.  params%exp_forces .and. allocated( params%exp_energy_scales ))then
+!           n_dim_idx = 1
+!           outerf: do j = 1, n_species
+!              do k = 1, n_species
+!                 if (j > k) cycle
+
+!                 call get_pair_distribution_forces(  n_sites, params%exp_energy_scales(params%pdf_idx),&
+!                      & params%exp_data(params%pdf_idx)%y,&
+!                      & forces_pair_distribution, virial,&
+!                      & neighbors_list(j_beg:j_end), n_neigh(i_beg:i_end),&
+!                      & neighbor_species(j_beg:j_end), rjs(j_beg:j_end), xyz(1:3,j_beg:j_end), params&
+!                      &%r_range_min, params%r_range_max, params&
+!                      &%pair_distribution_n_samples,&
+!                      & pair_distribution_partial(1:params&
+!                      &%pair_distribution_n_samples, n_dim_idx), params%pair_distribution_rcut&
+!                      &, j, k, pair_distribution_partial_der(1:params &
+!                      &%pair_distribution_n_samples, n_dim_idx,&
+!                      & j_beg:j_end), params%pair_distribution_partial,&
+!                      & params%pair_distribution_kde_sigma,&
+!                      & ( (n_atoms_of_species(j) *&
+!                      & n_atoms_of_species(k)) /  dfloat(n_sites) /&
+!                      & dfloat(n_sites) ))
+
+!                 n_dim_idx = n_dim_idx + 1
+
+!                 if ( n_dim_idx > n_dim_partial )then
+!                    exit outerf
+!                 end if
+
+!              end do
+!           end do outerf
+
+!        end if
        !##################################################################!
        !###---   If not doing partial pair distribution functions   ---###!
        !##################################################################!
@@ -801,38 +912,33 @@ contains
             &%pair_distribution_n_samples, MPI_DOUBLE_PRECISION, 0,&
             & MPI_COMM_WORLD, ierr)
 
-       if ( do_derivatives .and. params%exp_forces .and. allocated( params%exp_energy_scales ) )then
-          allocate( forces_pair_distribution_temp(1:3, 1:n_sites) )
-          forces_pair_distribution_temp = 0.d0
+       ! if ( do_derivatives .and. params%exp_forces .and. allocated( params%exp_energy_scales ) )then
+       !    allocate( forces_pair_distribution_temp(1:3, 1:n_sites) )
+       !    forces_pair_distribution_temp = 0.d0
 
-          call mpi_reduce(forces_pair_distribution,&
-               & forces_pair_distribution_temp, 3 * n_sites,&
-               & MPI_DOUBLE_PRECISION, MPI_SUM, 0,&
-               & MPI_COMM_WORLD, ierr)
+       !    call mpi_reduce(forces_pair_distribution,&
+       !         & forces_pair_distribution_temp, 3 * n_sites,&
+       !         & MPI_DOUBLE_PRECISION, MPI_SUM, 0,&
+       !         & MPI_COMM_WORLD, ierr)
 
-          forces_pair_distribution = forces_pair_distribution_temp
-          deallocate( forces_pair_distribution_temp )
+       !    forces_pair_distribution = forces_pair_distribution_temp
+       !    deallocate( forces_pair_distribution_temp )
 
-          call mpi_bcast(forces_pair_distribution, 3*n_sites, MPI_DOUBLE_PRECISION, 0,&
-               & MPI_COMM_WORLD, ierr)
+       !    call mpi_bcast(forces_pair_distribution, 3*n_sites, MPI_DOUBLE_PRECISION, 0,&
+       !         & MPI_COMM_WORLD, ierr)
 
-       end if
+       ! end if
 
 #endif
-    end if
-
-
-    if (params%pair_distribution_partial .and. allocated(factors)) deallocate(factors)
-
-    ! Multiplying by the 1/density factor (V/n_sites)
-    ! Still need to check that the integral ( 4 * pi * density * ( int dr r^2 g(r) ) ~= N_sites )
-
-    if (.not. params%pair_distribution_partial) then
        y_pair_distribution =y_pair_distribution * &
             & dot_product( cross_product(a_box, b_box),&
             & c_box ) / (dfloat(indices(1)*indices(2)&
             &*indices(3))) / dfloat(n_sites) / dfloat(n_sites)
+
     end if
+
+
+    if (params%pair_distribution_partial .and. allocated(factors)) deallocate(factors)
 
 
     ! Write out the partial pair distribution functions
@@ -842,42 +948,50 @@ contains
 
 
     if (rank == 0 .and. params%write_pair_distribution .and. write_condition) then
+       call write_partial_exp(params%do_mc, params%do_md, mc_istep, md_istep,&
+            & params%write_xyz, params%pair_distribution_partial,&
+            & n_species, params%pair_distribution_n_samples,&
+            & n_dim_partial , x_pair_distribution(1:params&
+            &%pair_distribution_n_samples), y_pair_distribution(1:params&
+            &%pair_distribution_n_samples), pair_distribution_partial(1:params &
+            &%pair_distribution_n_samples, 1:n_dim_partial),&
+            & params%species_types , 'pair_distribution' )
 
-       call get_overwrite_condition( params%do_mc, params%do_md&
-                   &, mc_istep, md_istep, params%write_xyz,&
-                   & overwrite_condition)
+       ! call get_overwrite_condition( params%do_mc, params%do_md ,&
+       !      & mc_istep, md_istep, params%write_xyz,&
+       !      & overwrite_condition)
 
 
-       if (params%pair_distribution_partial)then
-          n_dim_idx = 1
-          outer3: do j = 1, n_species
-             do k = 1, n_species
+       ! if (params%pair_distribution_partial)then
+       !    n_dim_idx = 1
+       !    outer3: do j = 1, n_species
+       !       do k = 1, n_species
 
-                if (j > k) cycle
+       !          if (j > k) cycle
 
-                write(filename,'(A)')&
-                     & 'pair_distribution_' // trim(params&
-                     &%species_types(j)) // '_' // trim(params&
-                     &%species_types(k)) //&
-                     & "_prediction.dat"
-                call write_exp_datan(x_pair_distribution(1:params%pair_distribution_n_samples),&
-                     & pair_distribution_partial(1:params%pair_distribution_n_samples, n_dim_idx),&
-                     & overwrite_condition, filename, 'pair_distribution')
+       !          write(filename,'(A)')&
+       !               & 'pair_distribution_' // trim(params&
+       !               &%species_types(j)) // '_' // trim(params&
+       !               &%species_types(k)) //&
+       !               & "_prediction.dat"
+       !          call write_exp_datan(x_pair_distribution(1:params%pair_distribution_n_samples),&
+       !               & pair_distribution_partial(1:params%pair_distribution_n_samples, n_dim_idx),&
+       !               & overwrite_condition, filename, 'pair_distribution')
 
-                n_dim_idx = n_dim_idx + 1
-                if ( n_dim_idx > n_dim_partial )then
-                   exit outer3
-                end if
+       !          n_dim_idx = n_dim_idx + 1
+       !          if ( n_dim_idx > n_dim_partial )then
+       !             exit outer3
+       !          end if
 
-             end do
-          end do outer3
-       end if
+       !       end do
+       !    end do outer3
+       ! end if
 
-       write(filename,'(A)')&
-            & "pair_distribution_total.dat"
-       call write_exp_datan(x_pair_distribution(1:params%pair_distribution_n_samples),&
-            &y_pair_distribution(1:params%pair_distribution_n_samples),&
-            & overwrite_condition, filename, "pair_distribution")
+       ! write(filename,'(A)')&
+       !      & "pair_distribution_total.dat"
+       ! call write_exp_datan(x_pair_distribution(1:params%pair_distribution_n_samples),&
+       !      &y_pair_distribution(1:params%pair_distribution_n_samples),&
+       !      & overwrite_condition, filename, "pair_distribution")
 
     end if
 

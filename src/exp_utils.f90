@@ -36,20 +36,21 @@ contains
 
 
   subroutine get_pair_distribution_forces(  n_sites0, energy_scale, y_exp, forces0, virial,  &
-       & neighbors_list, n_neigh, neighbor_species, rjs, xyz, r_min, r_max, n_samples,&
-       & pair_distribution, r_cut,&
-       &  species_1, species_2,  pair_distribution_der, partial_rdf, kde_sigma, c_factor )
+       & neighbors_list, n_neigh, neighbor_species, rjs, xyz, r_min,&
+       & r_max, n_samples, pair_distribution, r_cut, species_1,&
+       & species_2,  pair_distribution_der, partial_rdf, kde_sigma,&
+       & c_factor, pair_distribution_der_temp, n_dim_idx )
     implicit none
     real*8,  intent(in) :: rjs(:), xyz(:,:), y_exp(:), energy_scale,  kde_sigma, c_factor
     integer, intent(in) :: n_sites0
     real*8 :: r_min, r_max, r_cut
     integer, intent(in) :: neighbors_list(:), n_neigh(:), neighbor_species(:)
-    integer, intent(in) :: n_samples, species_1, species_2
+    integer, intent(in) :: n_samples, species_1, species_2, n_dim_idx
     integer :: n_sites, n_pairs, count, count_species_1
     integer :: i, j, k, ki, k1, k2,  i2, j2, l, ii, jj, kk, i3, j3, i4,  species_i, species_j
     real*8,  intent(in) :: pair_distribution(1:n_samples)
     real*8,  intent(in) :: pair_distribution_der(:,:)
-    real*8,  intent(inout) :: forces0(:,:), virial(1:3,1:3)
+    real*8,  intent(inout) :: forces0(:,:), virial(1:3,1:3), pair_distribution_der_temp(:)
     real*8, allocatable ::  prefactor(:)
     real*8 :: r, n_pc, this_force(1:3), f
     real*8, parameter :: pi = acos(-1.0)
@@ -62,7 +63,7 @@ contains
 
     allocate( prefactor( 1:n_samples ) )
 
-    prefactor =  ( pair_distribution - y_exp )
+    prefactor =  ( pair_distribution  - y_exp )
 
     ! Not reinitalizing the forces as these will be added to for each partial
     !    forces0 = 0.d0
@@ -72,7 +73,8 @@ contains
        ! i2 is the index of a particular atom
        i2 = modulo(neighbors_list(k+1)-1, n_sites0) + 1
        species_i = neighbor_species(k+1)
-       do j = 1, n_neigh(i)
+       k = k + 1
+       do j = 2, n_neigh(i)
           ! Loop through the neighbors of atom i
           ! j2 is the index of a neighboring atom to i
           k = k + 1
@@ -81,8 +83,13 @@ contains
           species_j = neighbor_species(k)
 
           if (partial_rdf)then
-             if (species_i /= species_1) cycle
-             if (species_j /= species_2) cycle
+             ! if (species_i /= species_1) cycle
+             ! if (species_j /= species_2) cycle
+
+             if (( (species_i /= species_1) .or. ( species_j /= species_2) )) then
+                if ( .not. (species_i == species_2 .and. species_j == species_1)) cycle
+             end if
+
           end if
 
           r = rjs(k) ! atom pair distance
@@ -94,23 +101,33 @@ contains
 
           if ( .not. all( xyz( 1:3, k ) == 0.d0 ) )then
              ! Actual derivative of the pair distribution function given here, no normalisation needed I think
-
-             this_force(1) = dot_product( - 2.d0 * xyz( 1, k ) *&
-                  & pair_distribution_der(1:n_samples,  k),&
-                  & prefactor(1:n_samples))
-
-             this_force(2) = dot_product( - 2.d0 * xyz( 2, k ) *&
-                  & pair_distribution_der(1:n_samples,  k),&
-                  & prefactor(1:n_samples))
-
-             this_force(3) = dot_product( - 2.d0 * xyz( 3, k ) *&
-                  & pair_distribution_der(1:n_samples,  k),&
-                  & prefactor(1:n_samples))
-
              if (species_1 == species_2) f = 1.d0
              if (species_1 /= species_2) f = 2.d0
 
-             this_force(1:3) =  - f * energy_scale * this_force(1:3)
+             this_force(1) = dot_product( - 2.d0 * xyz( 1, k ) * f * c_factor * &
+                  & pair_distribution_der(1:n_samples,  k),&
+                  & prefactor(1:n_samples))
+
+             this_force(2) = dot_product( - 2.d0 * xyz( 2, k ) * f * c_factor * &
+                  & pair_distribution_der(1:n_samples,  k),&
+                  & prefactor(1:n_samples))
+
+             this_force(3) = dot_product( - 2.d0 * xyz( 3, k ) * f * c_factor * &
+                  & pair_distribution_der(1:n_samples,  k),&
+                  & prefactor(1:n_samples))
+
+             !#########################################################################!
+             !###---   Check for the gradient of the partial pair distribution   ---###!
+             !#########################################################################!
+             if ( i2 == 1 .and. n_dim_idx == 2)then
+                pair_distribution_der_temp(1:n_samples) =&
+                     & pair_distribution_der_temp(1:n_samples) + -&
+                     & 2.d0 * xyz( 2, k ) * f * c_factor *&
+                     & pair_distribution_der(1:n_samples,  k)
+
+             end if
+
+             this_force(1:3) =  - energy_scale * this_force(1:3)
 
              forces0(1:3, j2) = forces0(1:3, j2) + this_force(1:3)
 
@@ -207,7 +224,8 @@ contains
        ! i2 is the index of a particular atom
        i2 = modulo(neighbors_list(k+1)-1, n_sites0) + 1
        species_i = neighbor_species(k+1)
-       do j = 1, n_neigh(i)
+       k = k + 1
+       do j = 2, n_neigh(i)
           ! Loop through the neighbors of atom i
           ! j2 is the index of a neighboring atom to i
           k = k + 1
@@ -216,17 +234,22 @@ contains
           species_j = neighbor_species(k)
 
           if (partial_rdf)then
-             if (species_i /= species_1) then
-                cycle
-             elseif(j == 1)then
-                count_species_1 = count_species_1 + 1
+
+             if (( (species_i /= species_1) .or. ( species_j /= species_2) )) then
+                if ( .not. (species_i == species_2 .and. species_j == species_1)) cycle
              end if
 
+             ! if (species_i /= species_1) then
+             !    cycle
+             ! elseif(j == 1)then
+             !    count_species_1 = count_species_1 + 1
+             ! end if
+
           end if
 
-          if (partial_rdf)then
-             if (species_j /= species_2) cycle
-          end if
+          ! if (partial_rdf)then
+          !    if (species_j /= species_2) cycle
+          ! end if
 
           r = rjs(k) ! atom pair distance
 
@@ -253,7 +276,7 @@ contains
              do l = 1,n_samples
                 kde(l) = kde(l) +  exp( -( (x(l) - r) / kde_sigma )**2 / 2.d0 )
              end do
-             if (k /= 1) pair_distribution(1:n_samples) = pair_distribution(1:n_samples) + &
+             pair_distribution(1:n_samples) = pair_distribution(1:n_samples) + &
                   & kde(1:n_samples)
 
              if (do_derivatives)then
@@ -279,10 +302,16 @@ contains
                 !    pair_distribution_der(1:n_samples, i4, k) = - 2.d0 * xyz( i4, k ) * kde
                 ! end do
 
+
+
                 pair_distribution_der(1:n_samples, n_dim_idx,  k) = &
                      & pair_distribution_der(1:n_samples, n_dim_idx, &
                      & k) + kde(1:n_samples)
 
+                if (n_dim_idx == 2 .and. pair_distribution_der(100,&
+                     & n_dim_idx, k ) > 0.001 ) print *, "der ", 100,&
+                     & n_dim_idx, k,  pair_distribution_der(100,&
+                     & n_dim_idx, k )
 
              end if
           else
@@ -306,7 +335,7 @@ contains
             & / ( sqrt( 2.d0 * pi) * kde_sigma)
 
        if ( do_derivatives )then
-          pair_distribution_der(1:n_samples,n_dim_idx, 1:n_pairs) =&
+          pair_distribution_der(1:n_samples, n_dim_idx, 1:n_pairs) =&
                & pair_distribution_der(1:n_samples, n_dim_idx, 1:n_pairs) * ( ( r_max - r_min) / dfloat(n_samples) ) &
                & / ( sqrt( 2.d0 * pi) * kde_sigma)
        end if
@@ -905,22 +934,37 @@ contains
           end do
        end do outer
 
-       ! if ( trim(output) == "xrd" )then
-       !    !          default !
+       if ( trim(output) == "xrd" )then
+          !          default !
           do i = 1, n_species
              call get_scattering_factor(wfaci, sf_parameters(1:9,i), x(l)/2.d0)
              y_sub(l) = ( n_atoms_of_species(i) / ntot ) * wfaci * wfaci
              y(l) = y(l) + y_sub(l)
           end do
-       ! elseif ( trim(output) == "q*i(q)" .or. trim(output) == "q*F(q)")then
-       !    ! we now handlw this case in preprocess experimental data
-       !    ! output q * i(q) === q * F_x(q)
-       !    y(l) = x(l) * y(l)
-       ! elseif( trim(output) == "F(q)" .or. trim(output) == "i(q)")
-       !    ! do nothing,
-       !    ! Output the total scattering functon, i(q) === F_x(q)
+       elseif ( trim(output) == "q*i(q)" .or. trim(output) == "q*F(q)")then
+          ! we now handlw this case in preprocess experimental data
+          ! output q * i(q) === q * F_x(q)
+          sth = 0.d0
+          do i = 1, n_species
+             call get_scattering_factor(wfaci, sf_parameters(1:9,i), x(l)/2.d0)
+             sth = sth + ( n_atoms_of_species(i) / ntot ) * wfaci !* wfaci
+          end do
 
-       ! end if
+          y(l) = y(l) / sth**2 !+ 1.d0
+
+          y(l) = x(l) * y(l)
+
+       elseif( trim(output) == "F(q)" .or. trim(output) == "i(q)")then
+          ! Output the total scattering functon, i(q) === F_x(q)
+          sth = 0.d0
+          do i = 1, n_species
+             call get_scattering_factor(wfaci, sf_parameters(1:9,i), x(l)/2.d0)
+             sth = sth + ( n_atoms_of_species(i) / ntot ) * wfaci !* wfaci
+          end do
+
+          y(l) = y(l) / sth**2 + 1.d0
+
+       end if
 
 
     end do
