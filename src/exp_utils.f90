@@ -32,25 +32,292 @@ module exp_utils
 contains
 
 
+  ! subroutine get_single_partial_structure_factor_derivative(sinc_factor_matrix,&
+  !      & n_samples_pc, n_samples_sf, n_dim_idx,  alpha, k,  xyz, &
+  !      & pair_distribution_partial_der, structure_factor_partial_der, c_factor)
+  !   implicit none
+  !   real*8, allocatable :: sinc_factor_matrix(:,:), pair_distribution_partial_der(:)
+  !   integer, intent(in) :: n_samples_pc, n_samples_sf, n_dim_idx, alpha, k
+  !   real*8, intent(out) :: structure_factor_partial_der(1:n_samples_sf)
+  !   real*8, intent(in)  :: xyz(:), c_factor
+  !   integer :: n, m, l, i, j
+
+  !   n = n_samples_sf
+  !   m = n_samples_pc
+
+  !   call dgemv("N",  n,  m, -2.d0 * xyz(alpha, k) * c_factor, sinc_factor_matrix, n,&
+  !        &  pair_distribution_partial_der, m, 0.d0,&
+  !        & structure_factor_partial_der, n)
+
+  ! end subroutine get_single_partial_structure_factor_derivative
+
+
+  ! subroutine get_partial_structure_factor_derivative(sinc_factor_matrix,&
+  !      & n_samples_pc, n_samples_sf, n_dim_partial, n_species, alpha, k,  xyz, &
+  !      & pair_distribution_partial_der, structure_factor_der,&
+  !      & n_sites, n_atoms_of_species, rho, do_xrd,&
+  !      & all_scattering_factors)
+  !   implicit none
+  !   real*8, allocatable :: sinc_factor_matrix(:,:), pair_distribution_partial_der(:,:,:)
+  !   integer, intent(in) :: n_samples_pc, n_samples_sf, n_dim_partial, alpha, k, n_species, n_sites
+  !   real*8 :: structure_factor_partial_der(1:n_samples_sf,1:n_dim_partial)
+  !   real*8, intent(out) :: structure_factor_der(1:n_samples_sf)
+  !   real*8, intent(in)  :: xyz(:), n_atoms_of_species(:), rho
+  !   real*8, intent(in) allocatable :: all_scattering_factors(:,:)
+  !   real*8, parameter :: pi = acos(-1.0)
+  !   real*8 :: f, cacb, delta
+  !   integer :: n, m, l, i, j
+
+  !   n = n_samples_sf
+  !   m = n_samples_pc
+  !   l = n_dim_partial
+
+  !   call dgemm("N", "N", n, l, m, -2.d0 * xyz(alpha, k), sinc_factor_matrix, n,&
+  !        &  pair_distribution_partial_der(1:n_samples_pc, 1:n_dim_partial, k ), m, 0.d0,&
+  !        & structure_factor_partial_der, n)
+
+  !   structure_factor_der = 0.d0
+  !   n_dim_idx = 1
+  !   outer: do i = 1, n_species
+  !      do j = 1, n_species
+
+  !         if (i > j) cycle
+
+  !         if (i == j) f = 1.d0
+  !         if (i /= j) f = 2.d0
+
+  !         ! if (i == j) delta = 1.d0
+  !         ! if (i /= j) delta = 0.d0
+
+  !         ! (ca*cb)^(0.5) * (ca*cb)^(0.5)
+  !         cacb = ( n_atoms_of_species(i) * n_atoms_of_species(j) ) / (dfloat(n_sites**2))
+
+  !         if (do_xrd)then
+  !            structure_factor_der = structure_factor_der + &
+  !                 & 4.d0 * pi * cacb * f * all_scattering_factors(1:n_samples_sf, n_dim_idx) * &
+  !                 & structure_factor_partial_der(1:n_samples_sf, n_dim_idx)
+  !         else
+  !            structure_factor_der = structure_factor_der + &
+  !                 & 4.d0 * pi * cacb * f * structure_factor_partial_der(1:n_samples_sf, n_dim_idx)
+  !         end if
+
+
+  !         n_dim_idx = n_dim_idx + 1
+
+  !         if (n_dim_idx > n_dim_partial) exit outer
+
+  !      end do
+  !   end do outer
 
 
 
-  subroutine get_pair_distribution_forces(  n_sites0, energy_scale, y_exp, forces0, virial,  &
-       & neighbors_list, n_neigh, neighbor_species, rjs, xyz, r_min,&
-       & r_max, n_samples, pair_distribution, r_cut, species_1,&
+  !   ! call dgemv("N",  n,  m, -2.d0 * xyz(alpha, k), sinc_factor_matrix, n,&
+  !   !      &  pair_distribution_partial_der(1:n_samples_pc, n_dim_idx, k ), m, 0.d0,&
+  !   !      & structure_factor_partial_der, n)
+
+
+  ! end subroutine get_partial_structure_factor_derivative
+
+  ! subroutine get_all_scattering_factors(n_species, n_samples_sf, n_dim_partial, all_scattering_factors, qs, species_types)
+  !   implicit none
+  !   integer, intent(in) :: n_species, n_samples_sf, n_dim_partial
+  !   real*8, intent(in) :: qs(:)
+  !   real*8, allocatable, intent(out) :: all_scattering_factors(:,:)
+  !   character*8, allocatable, intent(in) :: species_types(:)
+  !   real*8 :: wfaci, wfacj
+  !   real*8, allocatable :: sf_parameters(:,:)
+  !   integer :: i, j, k, n_dim_idx
+
+  !   allocate( sf_parameters(1:9,1:n_species) )
+  !   allocate( all_scattering_factors(1:n_samples_sf, 1:n_dim_partial) )
+
+  !   sf_parameters = 0.d0
+  !   do i = 1, n_species
+  !      call get_scattering_factor_params(species_types(i), sf_parameters(1:9,i))
+  !   end do
+
+
+  !   do i = 1, n_samples_sf
+  !      n_dim_idx = 1
+  !      outer: do j = 1, n_species
+  !         do k = 1, n_species
+  !            if (j > k) cycle
+
+  !            call get_scattering_factor(wfaci, sf_parameters(1:9, j), qs(i)/2.d0)
+  !            call get_scattering_factor(wfacj, sf_parameters(1:9, k), qs(i)/2.d0)
+
+  !            all_scattering_factors(i, n_dim_idx) = wfaci * wfacj
+
+  !            n_dim_idx = n_dim_idx + 1
+  !            if (n_dim_idx > n_dim_partial) exit outer
+
+  !         end do
+  !      end do outer
+  !   end do
+
+
+  ! end subroutine get_all_scattering_factors
+
+
+  subroutine get_structure_factor_forces(  n_sites0, energy_scale, y_exp, forces0, virial,  &
+       & neighbors_list, n_neigh, neighbor_species, species_types, rjs, xyz, r_min,&
+       & r_max, n_samples, n_samples_sf, n_species,  x_structure_factor, structure_factor, r_cut, species_1,&
        & species_2,  pair_distribution_der, partial_rdf, kde_sigma,&
-       & c_factor, pair_distribution_der_temp, n_dim_idx )
+       & c_factor, sinc_factor_matrix, n_dim_idx, do_xrd)
     implicit none
-    real*8,  intent(in) :: rjs(:), xyz(:,:), y_exp(:), energy_scale,  kde_sigma, c_factor
-    integer, intent(in) :: n_sites0
+    real*8,  intent(in) :: rjs(:), xyz(:,:), y_exp(:), energy_scale,  kde_sigma, c_factor, sinc_factor_matrix(:,:)
+    integer, intent(in) :: n_sites0, n_samples_sf, n_species
+    character*8, allocatable, intent(in) :: species_types(:)
     real*8 :: r_min, r_max, r_cut
     integer, intent(in) :: neighbors_list(:), n_neigh(:), neighbor_species(:)
     integer, intent(in) :: n_samples, species_1, species_2, n_dim_idx
     integer :: n_sites, n_pairs, count, count_species_1
     integer :: i, j, k, ki, k1, k2,  i2, j2, l, ii, jj, kk, i3, j3, i4,  species_i, species_j
+    real*8,  intent(in) :: x_structure_factor(:), structure_factor(:)
+    real*8,  intent(in) :: pair_distribution_der(:,:)
+    real*8,  intent(inout) :: forces0(:,:), virial(1:3,1:3)
+    real*8, allocatable ::  prefactor(:), all_scattering_factors(:), sf_parameters(:,:), structure_factor_der(:)
+    real*8 :: r, n_pc, this_force(1:3), f, wfaci, wfacj
+    real*8, parameter :: pi = acos(-1.0)
+    logical, intent(in) :: partial_rdf, do_xrd
+    logical :: species_in_list, counted_1=.false.
+    ! First allocate the pair correlation function array
+
+    n_sites = size(n_neigh)
+    n_pairs = size(neighbors_list)
+
+    allocate( prefactor( 1:n_samples_sf ) )
+    prefactor =  ( structure_factor  - y_exp )
+
+    allocate( structure_factor_der( 1:n_samples_sf ) )
+
+    if (do_xrd)then
+       allocate( sf_parameters(1:9,1:n_species) )
+       allocate( all_scattering_factors(1:n_samples_sf) )
+
+       sf_parameters = 0.d0
+       do i = 1, n_species
+          call get_scattering_factor_params(species_types(i), sf_parameters(1:9,i))
+       end do
+
+       do i = 1, n_samples_sf
+          call get_scattering_factor(wfaci, sf_parameters(1:9,species_i), x_structure_factor(i)/2.d0)
+          call get_scattering_factor(wfacj, sf_parameters(1:9,species_j), x_structure_factor(i)/2.d0)
+          all_scattering_factors(i) = wfaci * wfacj
+       end do
+
+    end if
+
+    ! Not reinitalizing the forces as these will be added to for each partial
+    !    forces0 = 0.d0
+    k = 0
+    do i = 1, n_sites
+       ! k is the index which keeps a number of the atom pairs
+       ! i2 is the index of a particular atom
+       i2 = modulo(neighbors_list(k+1)-1, n_sites0) + 1
+       species_i = neighbor_species(k+1)
+       k = k + 1
+       do j = 2, n_neigh(i)
+          ! Loop through the neighbors of atom i
+          ! j2 is the index of a neighboring atom to i
+          k = k + 1
+          j2 = modulo(neighbors_list(k)-1, n_sites0) + 1
+
+          species_j = neighbor_species(k)
+
+          if (partial_rdf)then
+
+             if (( (species_i /= species_1) .or. ( species_j /= species_2) )) then
+                if ( .not. (species_i == species_2 .and. species_j == species_1)) cycle
+             end if
+
+          end if
+
+          r = rjs(k) ! atom pair distance
+
+          if (r < 1e-3 .or. r > r_cut) cycle
+          if (r < r_min) cycle
+          if (r > r_max + kde_sigma*6.d0) cycle
+
+
+          if ( .not. all( xyz( 1:3, k ) == 0.d0 ) )then
+             ! Actual derivative of the pair distribution function given here, no normalisation needed I think
+
+             ! call get_single_partial_structure_factor_derivative(sinc_factor_matrix,&
+       !            & n_samples_pc, n_samples_sf, n_dim_idx,  alpha, k,  xyz, &
+             ! & pair_distribution_partial_der, structure_factor_partial_der, c_factor)
+
+
+             structure_factor_der = 0.d0
+             !
+             call dgemv("N", n_samples_sf,  n_samples, 1.d0 , sinc_factor_matrix, n_samples_sf,&
+                  & -2.d0 * xyz(1, k) * c_factor * pair_distribution_der(1:n_samples, k ), 1, 0.d0,&
+                  & structure_factor_der, 1)
+
+             if (do_xrd) structure_factor_der = all_scattering_factors * structure_factor_der
+             this_force(1) = dot_product(structure_factor_der(1:n_samples_sf), prefactor(1:n_samples_sf))
+
+             structure_factor_der = 0.d0
+             call dgemv("N", n_samples_sf,  n_samples, 1.d0 , sinc_factor_matrix, n_samples_sf,&
+                  &  -2.d0 * xyz(2, k) * c_factor * pair_distribution_der(1:n_samples,  k ), 1, 0.d0,&
+                  & structure_factor_der, 1)
+
+             if (do_xrd) structure_factor_der = all_scattering_factors * structure_factor_der
+             this_force(2) = dot_product(structure_factor_der(1:n_samples_sf), prefactor(1:n_samples_sf))
+
+             structure_factor_der = 0.d0
+             call dgemv("N", n_samples_sf,  n_samples, 1.d0 , sinc_factor_matrix, n_samples_sf,&
+                  &  -2.d0 * xyz(3, k) * c_factor * pair_distribution_der(1:n_samples, k ), 1, 0.d0,&
+                  & structure_factor_der, 1)
+
+             if (do_xrd) structure_factor_der = all_scattering_factors * structure_factor_der
+             this_force(3) = dot_product(structure_factor_der(1:n_samples_sf), prefactor(1:n_samples_sf))
+
+
+             this_force(1:3) =   energy_scale * this_force(1:3)
+
+             forces0(1:3, j2) = forces0(1:3, j2) + this_force(1:3)
+
+             ! if ( all( forces0(1:3, j2) > 0.01d0) ) print *, forces0(1:3, j2)
+             !             Sign is plus because this force is acting on j2. Factor of one is because this is
+             !             derived from a local energy
+             !              virial = virial + dot_product(this_force(1:3), xyz(1:3,k))
+             do k1 = 1, 3
+                do k2 =1, 3
+                   virial(k1, k2) = virial(k1, k2) + 0.5d0 * (this_force(k1)*xyz(k2,k) + this_force(k2)*xyz(k1,k))
+                end do
+             end do
+          end if
+
+       end do
+    end do
+
+
+    if (do_xrd) deallocate( all_scattering_factors )
+    if (do_xrd) deallocate( sf_parameters )
+    deallocate(structure_factor_der)
+    deallocate(prefactor)
+
+
+  end subroutine get_structure_factor_forces
+
+  
+  subroutine get_pair_distribution_forces(  n_sites0, energy_scale, y_exp, forces0, virial,  &
+       & neighbors_list, n_neigh, neighbor_species, rjs, xyz, r_min,&
+       & r_max, n_samples, pair_distribution, r_cut, species_1,&
+       & species_2,  pair_distribution_der, partial_rdf, kde_sigma,&
+       & c_factor)
+    implicit none
+    real*8,  intent(in) :: rjs(:), xyz(:,:), y_exp(:), energy_scale,  kde_sigma, c_factor
+    integer, intent(in) :: n_sites0
+    real*8 :: r_min, r_max, r_cut
+    integer, intent(in) :: neighbors_list(:), n_neigh(:), neighbor_species(:)
+    integer, intent(in) :: n_samples, species_1, species_2
+    integer :: n_sites, n_pairs, count, count_species_1
+    integer :: i, j, k, ki, k1, k2,  i2, j2, l, ii, jj, kk, i3, j3, i4,  species_i, species_j
     real*8,  intent(in) :: pair_distribution(1:n_samples)
     real*8,  intent(in) :: pair_distribution_der(:,:)
-    real*8,  intent(inout) :: forces0(:,:), virial(1:3,1:3), pair_distribution_der_temp(:)
+    real*8,  intent(inout) :: forces0(:,:), virial(1:3,1:3)
     real*8, allocatable ::  prefactor(:)
     real*8 :: r, n_pc, this_force(1:3), f
     real*8, parameter :: pi = acos(-1.0)
@@ -116,18 +383,7 @@ contains
                   & pair_distribution_der(1:n_samples,  k),&
                   & prefactor(1:n_samples))
 
-             !#########################################################################!
-             !###---   Check for the gradient of the partial pair distribution   ---###!
-             !#########################################################################!
-             if ( i2 == 1 .and. n_dim_idx == 2)then
-                pair_distribution_der_temp(1:n_samples) =&
-                     & pair_distribution_der_temp(1:n_samples) + -&
-                     & 2.d0 * xyz( 2, k ) * f * c_factor *&
-                     & pair_distribution_der(1:n_samples,  k)
-
-             end if
-
-             this_force(1:3) =  - energy_scale * this_force(1:3)
+             this_force(1:3) =   energy_scale * this_force(1:3)
 
              forces0(1:3, j2) = forces0(1:3, j2) + this_force(1:3)
 
@@ -302,16 +558,9 @@ contains
                 !    pair_distribution_der(1:n_samples, i4, k) = - 2.d0 * xyz( i4, k ) * kde
                 ! end do
 
-
-
                 pair_distribution_der(1:n_samples, n_dim_idx,  k) = &
                      & pair_distribution_der(1:n_samples, n_dim_idx, &
                      & k) + kde(1:n_samples)
-
-                if (n_dim_idx == 2 .and. pair_distribution_der(100,&
-                     & n_dim_idx, k ) > 0.001 ) print *, "der ", 100,&
-                     & n_dim_idx, k,  pair_distribution_der(100,&
-                     & n_dim_idx, k )
 
              end if
           else

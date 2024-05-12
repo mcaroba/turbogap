@@ -567,6 +567,12 @@ contains
           allocate( pair_distribution_partial_der(1:params%pair_distribution_n_samples,&
             & 1 : n_dim_partial, j_beg : j_end  ))
           pair_distribution_partial_der = 0.d0
+
+          write(*, '(A,1X,F7.4,1X,A)') "GBytes: partial pdfders = ", dfloat(params&
+               &%pair_distribution_n_samples * n_dim_partial * j_end)&
+               & * 8.d0 / (dfloat(1024*1024*1024)), " GB  |"
+          write(*,*)'                                       |'
+
        end if
     else
        if (do_derivatives)then
@@ -631,7 +637,7 @@ contains
                   &%pair_distribution_rcut, .false.,&
                   & params%pair_distribution_partial, j, k,&
                   & params%pair_distribution_kde_sigma,&
-                  & dfloat(n_sites)/v_uc,  do_derivatives,&
+                  & dfloat(n_sites)/v_uc,  params%exp_forces,&
                   & pair_distribution_partial_der, n_dim_idx, &
                   & j_beg, j_end )
 
@@ -705,7 +711,7 @@ contains
 #endif
 
 
-       if ( params%exp_forces )then
+       if ( params%exp_forces .and. params%valid_pdf )then
           allocate(energies_pair_distribution(1:n_sites))
           energies_pair_distribution = 0.d0
 
@@ -762,10 +768,10 @@ contains
        !######################################!
 
 
-       if (do_derivatives .and.  params%exp_forces .and. allocated( params%exp_energy_scales ))then
-          forces_pair_distribution = 0.d0
-          allocate( pair_distribution_der_temp( 1:params%pair_distribution_n_samples ) )
-          pair_distribution_der_temp = 0.d0
+       if (do_derivatives .and.  params%exp_forces .and. allocated( params%exp_energy_scales ) .and. params%valid_pdf)then
+          ! forces_pair_distribution = 0.d0
+          ! allocate( pair_distribution_der_temp( 1:params%pair_distribution_n_samples ) )
+          ! pair_distribution_der_temp = 0.d0
 
           n_dim_idx = 1
           outerforces: do j = 1, n_species
@@ -788,7 +794,7 @@ contains
                      & params%pair_distribution_kde_sigma,&
                      & ( (n_atoms_of_species(j) *&
                      & n_atoms_of_species(k)) /  dfloat(n_sites) /&
-                     & dfloat(n_sites) ), pair_distribution_der_temp, n_dim_idx)
+                     & dfloat(n_sites) ))
 
                 n_dim_idx = n_dim_idx + 1
 
@@ -803,13 +809,13 @@ contains
           !    print *,  "ppd ", 100, pair_distribution_der_temp( 1 ), pair_distribution_partial_der( 1, 2, 100:102 )
           ! end do
 
-          open(unit=1234, file="grad", status="unknown")
-          do i = 100, 110
-             write(1234,  '(A,1X,I8,1X,F20.8)'), "dg_dr_0^1 ", i, pair_distribution_der_temp( i )
-          end do
-          close(unit=1234)
+          ! open(unit=1234, file="grad", status="unknown")
+          ! do i = 100, 110
+          !    write(1234,  '(A,1X,I8,1X,F20.8)'), "dg_dr_0^1 ", i, pair_distribution_der_temp( i )
+          ! end do
+          ! close(unit=1234)
 
-          deallocate( pair_distribution_der_temp)
+          ! deallocate( pair_distribution_der_temp)
        end if
 
        !##############################################!
@@ -1039,21 +1045,24 @@ contains
        & x_pair_distribution, y_pair_distribution, &
        & pair_distribution_partial, n_species, n_atoms_of_species,&
        & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep,  i_beg,&
-       & i_end, j_beg, j_end, ierr, rjs, neighbors_list, n_neigh,&
-       & neighbor_species, species, rank , q_beg, q_end, ntasks, sinc_factor_matrix)
+       & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
+       & neighbor_species, species, rank , q_beg, q_end, ntasks,&
+       & sinc_factor_matrix, do_derivatives, pair_distribution_partial_der,&
+       & energies_sf, forces_sf, virial_sf)
     implicit none
     type(input_parameters), intent(in) :: params
     real*8, allocatable, intent(out) :: x_structure_factor(:), x_structure_factor_temp(:), &
          & y_structure_factor(:), structure_factor_partial(:,:),&
          &  structure_factor_partial_temp(:,:),&
          & y_structure_factor_temp(:)
-    real*8,  intent(in), allocatable :: rjs(:),&
+    real*8,  intent(in), allocatable :: rjs(:), xyz(:,:),&
          & x_pair_distribution(:), y_pair_distribution(:),&
-         & pair_distribution_partial(:,:), n_atoms_of_species(:)
+         & pair_distribution_partial(:,:), n_atoms_of_species(:), pair_distribution_partial_der(:,:,:)
     integer, intent(in), allocatable :: neighbors_list(:), n_neigh(:)&
          &, neighbor_species(:), species(:)
     real*8,  intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3)
-    real*8, allocatable, intent(inout) :: sinc_factor_matrix(:,:)
+    real*8, allocatable, intent(inout) :: sinc_factor_matrix(:,:), energies_sf(:), forces_sf(:,:)
+    real*8, intent(inout) :: virial_sf(1:3,1:3)
     real*8, allocatable :: sinc_factor_matrix_temp(:,:), temp_pdf(:,:)
     real*8 :: v_uc
     integer, intent(in) :: n_species, n_sites, i_beg, i_end, j_beg, j_end, ntasks
@@ -1065,8 +1074,12 @@ contains
     real*8, parameter :: pi = acos(-1.0)
     character*1024 :: filename
     logical :: overwrite_condition, write_condition
+    logical, intent(in) :: do_derivatives
 
-
+    v_uc = dot_product( cross_product(a_box,&
+            & b_box), c_box ) / (&
+            & dfloat(indices(1)*indices(2)&
+            &*indices(3)) )
 
     if (params%structure_factor_from_pdf) then
        q_beg = 1
@@ -1247,6 +1260,13 @@ contains
                & pair_distribution_partial - 1.d0, m, 0.d0,&
                & structure_factor_partial, n)
 
+          !##################################!
+          !###---   Do derivatives!    ---###!
+          !##################################!
+
+          ! Should do this smartly with memory allocation
+
+
 
           ! All processes do this calculation, so they have the whole of the partial structure factors to work with.
           n_dim_idx = 1
@@ -1315,16 +1335,63 @@ contains
 
           end do
        end do outer2
+
+
+
+       if (params%exp_forces .and. params%valid_sf) then
+
+          allocate(energies_sf(1:n_sites))
+          energies_sf = 0.d0
+
+          allocate(forces_sf(1:3,1:n_sites))
+          forces_sf = 0.d0
+
+          n_dim_idx = 1
+          outerf: do j = 1, n_species
+             do k = 1, n_species
+
+                if (j > k) cycle
+
+                if (j == k) f = 1.d0
+                if (j /= k) f = 2.d0
+
+                call get_structure_factor_forces(  n_sites, params%exp_energy_scales(params%sf_idx),&
+                     & params%exp_data(params%sf_idx)%y,&
+                     & forces_sf, virial_sf,&
+                     & neighbors_list(j_beg:j_end), n_neigh(i_beg:i_end),&
+                     & neighbor_species(j_beg:j_end), params&
+                     &%species_types, rjs(j_beg:j_end), xyz(1:3,j_beg:j_end), params&
+                     &%r_range_min, params%r_range_max, params&
+                     &%pair_distribution_n_samples, params&
+                     &%structure_factor_n_samples, n_species,&
+                     & x_structure_factor(1:params&
+                     &%structure_factor_n_samples), y_structure_factor(1:params&
+                     &%structure_factor_n_samples), params%pair_distribution_rcut&
+                     &, j, k, pair_distribution_partial_der(1:params &
+                     &%pair_distribution_n_samples, n_dim_idx,&
+                     & j_beg:j_end), params%pair_distribution_partial,&
+                     & params%pair_distribution_kde_sigma,&
+                     & 4.d0 * pi * f * ( (n_atoms_of_species(j) *&
+                     & n_atoms_of_species(k)) /  dfloat(n_sites) /&
+                     & dfloat(n_sites) ) * ( dfloat(n_sites) / v_uc ), sinc_factor_matrix, n_dim_idx, .false.)
+
+
+                n_dim_idx = n_dim_idx + 1
+
+                if (n_dim_idx > n_dim_partial) exit outerf
+
+             end do
+          end do outerf
+       end if
+
+
        ! y_structure_factor(1:params%structure_factor_n_samples)&
        !      & = y_structure_factor(1:params&
        !      &%structure_factor_n_samples) !/ dq
 
 
     elseif (params%structure_factor_from_pdf)then
-       v_uc = dot_product( cross_product(a_box,&
-            & b_box), c_box ) / (&
-            & dfloat(indices(1)*indices(2)&
-            &*indices(3)) )
+
 
        call get_structure_factor_from_pdf(q_beg, q_end, &
             & y_structure_factor(1:params%structure_factor_n_samples) ,&

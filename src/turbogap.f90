@@ -87,7 +87,7 @@ program turbogap
   real*8, allocatable :: all_this_energies(:,:), all_this_forces(:,:,:), all_this_virial(:,:,:)
   real*8 :: instant_temp, kB = 8.6173303d-5, E_kinetic=0.d0, E_kinetic_prev, time1, time2, time3, time_neigh, &
        time_gap, time_soap(1:3), time_2b(1:3), time_3b(1:3), time_read_input(1:3), time_read_xyz(1:3), &
-       time_mpi(1:3) = 0.d0, time_core_pot(1:3), time_vdw(1:3), time_pdf(1:3), time_sf(1:3), instant_pressure, lv(1:3,1:3), &
+       time_mpi(1:3) = 0.d0, time_core_pot(1:3), time_vdw(1:3), time_pdf(1:3), time_sf(1:3), time_xrd(1:3),  instant_pressure, lv(1:3,1:3), &
        time_mpi_positions(1:3) = 0.d0, time_mpi_ef(1:3) = 0.d0, time_md(3) = 0.d0, &
        instant_pressure_tensor(1:3, 1:3), time_step, md_time, instant_pressure_prev, wfac, wfac_temp
   integer, allocatable :: displs(:), displs2(:), counts(:), counts2(:), in_to_out_pairs(:), in_to_out_site(:)
@@ -841,8 +841,9 @@ program turbogap
   time_core_pot = 0.d0
   time_vdw = 0.d0
   time_read_xyz = 0.d0
-  time_sf = 0.d0
   time_pdf = 0.d0
+  time_sf = 0.d0
+  time_xrd = 0.d0
 
   if( params%do_md )then
 #ifdef _MPIF90
@@ -1995,10 +1996,9 @@ program turbogap
 #endif
 
 
-
            call cpu_time(time_pdf(2))
            time_pdf(3) = time_pdf(3) + time_pdf(2) - time_pdf(1)
-           if (rank == 0) print *, rank, " TIMEPDF = ", time_pdf(3)
+           if (rank == 0) print *, rank, " TIME_PDF = ", time_pdf(3)
 
 
            ! Now need to collate the forces
@@ -2056,13 +2056,19 @@ program turbogap
                 & x_pair_distribution, y_pair_distribution, &
                 & pair_distribution_partial, n_species_actual, n_atoms_of_species,&
                 & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep, i_beg,&
-                & i_end, j_beg, j_end, ierr, rjs, neighbors_list, n_neigh,&
-                & neighbor_species, species, rank , q_beg, q_end, ntasks, sinc_factor_matrix)
+                & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
+                & neighbor_species, species, rank , q_beg, q_end, ntasks, sinc_factor_matrix, params%exp_forces, &
+#ifdef _MPIF90
+                & pair_distribution_partial_der, this_energies_sf, this_forces_sf, this_virial_sf)
+#else
+                & pair_distribution_partial_der, energies_sf, forces_sf, virial_sf)
+#endif
+
 
            call cpu_time(time_sf(2))
            time_sf(3) = time_sf(3) + time_sf(2) - time_sf(1)
 
-           if (rank == 0) print *, rank, " TIMESF = ", time_sf(3)
+           if (rank == 0) print *, rank, " TIME_SF = ", time_sf(3)
 
            ! if ( params%pair_distribution_partial .and. .not. (  params%do_xrd ) ) then
            !    deallocate( pair_distribution_partial )
@@ -2082,6 +2088,7 @@ program turbogap
         end if
 
         if ( params%do_xrd )then
+           call cpu_time(time_xrd(1))
            call calculate_xrd( params, x_xrd, x_xrd_temp,&
                 & y_xrd, y_xrd_temp, x_structure_factor, x_structure_factor_temp,&
                 & structure_factor_partial, structure_factor_partial_temp,&
@@ -2089,6 +2096,12 @@ program turbogap
                 & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep, i_beg,&
                 & i_end, j_beg, j_end, ierr, rjs, neighbors_list, n_neigh,&
                 & neighbor_species, species, rank , q_beg, q_end, ntasks)
+
+           call cpu_time(time_xrd(2))
+           time_xrd(3) = time_xrd(3) + time_xrd(2) - time_xrd(1)
+
+           if (rank == 0) print *, rank, " TIME_XRD = ", time_xrd(3)
+
         end if
 
 
@@ -2356,13 +2369,13 @@ program turbogap
            if( allocated(this_energies_lp) )then
               counter2 = counter2 + 1
            end if
-           if( allocated(this_energies_pdf) )then
+           if( allocated(this_energies_pdf) .and. params%valid_pdf )then
               counter2 = counter2 + 1
            end if
-           if( allocated(this_energies_sf) )then
+           if( allocated(this_energies_sf) .and. params%valid_sf)then
               counter2 = counter2 + 1
            end if
-           if( allocated(this_energies_xrd) )then
+           if( allocated(this_energies_xrd) .and. params%valid_xrd)then
               counter2 = counter2 + 1
            end if
            if( n_distance_2b > 0 )then
@@ -2413,7 +2426,7 @@ program turbogap
               end if
            end if
 
-           if( allocated(this_energies_pdf) )then
+           if( allocated(this_energies_pdf) .and. params%valid_pdf )then
               counter2 = counter2 + 1
               !         Note the vdw things have "this" in front
               all_energies(1:n_sites, counter2) = this_energies_pdf(1:n_sites)
@@ -2423,7 +2436,7 @@ program turbogap
               end if
            end if
 
-           if( allocated(this_energies_sf) )then
+           if( allocated(this_energies_sf) .and. params%valid_sf)then
               counter2 = counter2 + 1
               !         Note the vdw things have "this" in front
               all_energies(1:n_sites, counter2) = this_energies_sf(1:n_sites)
@@ -2433,7 +2446,7 @@ program turbogap
               end if
            end if
 
-           if( allocated(this_energies_xrd) )then
+           if( allocated(this_energies_xrd) .and. params%valid_xrd )then
               counter2 = counter2 + 1
               !         Note the vdw things have "this" in front
               all_energies(1:n_sites, counter2) = this_energies_xrd(1:n_sites)
@@ -2514,7 +2527,7 @@ program turbogap
                  deallocate(this_forces_lp)
               end if
            end if
-           if( allocated(this_energies_pdf) )then
+           if( allocated(this_energies_pdf) .and. params%valid_pdf)then
               counter2 = counter2 + 1
               !         Note the lp things DO NOT have "this" in front anymore
               energies_pdf(1:n_sites) = all_this_energies(1:n_sites, counter2)
@@ -2525,7 +2538,7 @@ program turbogap
                  deallocate(this_forces_pdf)
               end if
            end if
-           if( allocated(this_energies_sf) )then
+           if( allocated(this_energies_sf) .and. params%valid_sf)then
               counter2 = counter2 + 1
               !         Note the lp things DO NOT have "this" in front anymore
               energies_sf(1:n_sites) = all_this_energies(1:n_sites, counter2)
@@ -2536,7 +2549,7 @@ program turbogap
                  deallocate(this_forces_sf)
               end if
            end if
-           if( allocated(this_energies_xrd) )then
+           if( allocated(this_energies_xrd) .and. params%valid_xrd)then
               counter2 = counter2 + 1
               !         Note the lp things DO NOT have "this" in front anymore
               energies_xrd(1:n_sites) = all_this_energies(1:n_sites, counter2)
@@ -2850,11 +2863,6 @@ program turbogap
            if( params%do_md .and. params%optimize == "gd" .and. md_istep > 0 .and. &
                 abs(energy-energy_prev) < params%e_tol*dfloat(n_sites) .and. &
                 maxval(forces) < params%f_tol .and. rank == 0 )then
-              print *, "energy", energy, "energy_prev", energy_prev,&
-                   & "abs diff", abs(energy-energy_prev),"etol",&
-                   & params%e_tol*dfloat(n_sites)
-              print *, "maxval forces", maxval(forces), "ftol",&
-                   & params%f_tol
               exit_loop = .true.
               if (params%do_mc) exit_loop=.false.
               !     THIS CONDITION ON INSTANT PRESSURE WILL NEED TO BE FINE TUNED, TO ACCOUNT FOR ARBITRARY TARGET PRESSURES
