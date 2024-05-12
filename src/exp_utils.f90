@@ -196,13 +196,13 @@ contains
        allocate( all_scattering_factors(1:n_samples_sf) )
 
        sf_parameters = 0.d0
-       do i = 1, n_species
+       do i = 1, size(species_types)
           call get_scattering_factor_params(species_types(i), sf_parameters(1:9,i))
        end do
 
        do i = 1, n_samples_sf
-          call get_scattering_factor(wfaci, sf_parameters(1:9,species_i), x_structure_factor(i)/2.d0)
-          call get_scattering_factor(wfacj, sf_parameters(1:9,species_j), x_structure_factor(i)/2.d0)
+          call get_scattering_factor(wfaci, sf_parameters(1:9,species_1), x_structure_factor(i)/2.d0)
+          call get_scattering_factor(wfacj, sf_parameters(1:9,species_2), x_structure_factor(i)/2.d0)
           all_scattering_factors(i) = wfaci * wfacj
        end do
 

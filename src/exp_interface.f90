@@ -1523,15 +1523,21 @@ contains
        & structure_factor_partial, structure_factor_partial_temp,&
        & n_species, n_atoms_of_species,&
        & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep, i_beg,&
-       & i_end, j_beg, j_end, ierr, rjs, neighbors_list, n_neigh,&
-       & neighbor_species, species, rank , q_beg, q_end, ntasks)
+       & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
+       & neighbor_species, species, rank , q_beg, q_end, ntasks,&
+       & sinc_factor_matrix, do_derivatives, pair_distribution_partial_der,&
+       & energies_xrd, forces_xrd, virial_xrd)
     implicit none
     type(input_parameters), intent(in) :: params
     real*8, allocatable, intent(out) :: x_xrd(:), x_xrd_temp(:), &
-         & y_xrd(:), y_xrd_temp(:)
+         & y_xrd(:), y_xrd_temp(:), energies_xrd(:), forces_xrd(:,:)
     real*8, allocatable, intent(in) :: structure_factor_partial(:,:),&
-         &  structure_factor_partial_temp(:,:), x_structure_factor(:), x_structure_factor_temp(:)
-    real*8,  intent(in), allocatable :: rjs(:), n_atoms_of_species(:)
+         &  structure_factor_partial_temp(:,:), x_structure_factor(:)&
+         &, x_structure_factor_temp(:), sinc_factor_matrix(:,:),&
+         & pair_distribution_partial_der(:,:,:)
+    real*8,  intent(in), allocatable :: rjs(:), xyz(:,:),&
+         & n_atoms_of_species(:)
+    real*8, intent(out) :: virial_xrd(1:3,1:3)
     integer, intent(in), allocatable :: neighbors_list(:), n_neigh(:)&
          &, neighbor_species(:), species(:)
     real*8,  intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3)
@@ -1542,10 +1548,17 @@ contains
     integer, intent(out) :: ierr
     real*8, allocatable :: y_sub(:)
     integer :: i, j, k, l, i2, n_dim_idx, n_dim_partial
-    real*8 :: dq
+    real*8 :: dq, f
     real*8, parameter :: pi = acos(-1.0)
     character*1024 :: filename
     logical :: write_condition, overwrite_condition
+    logical, intent(in) :: do_derivatives
+
+
+    v_uc = dot_product( cross_product(a_box,&
+         & b_box), c_box ) / (&
+         & dfloat(indices(1)*indices(2)&
+         &*indices(3)) )
 
     n_dim_partial = n_species * (n_species + 1 ) / 2
 
@@ -1645,6 +1658,58 @@ contains
          & MPI_COMM_WORLD, ierr)
 
 #endif
+
+
+    if ( allocated(sinc_factor_matrix) )then
+       if (params%exp_forces .and. params%valid_xrd) then
+
+          allocate(energies_xrd(1:n_sites))
+          energies_xrd = 0.d0
+
+          allocate(forces_xrd(1:3,1:n_sites))
+          forces_xrd = 0.d0
+
+          n_dim_idx = 1
+          outerf: do j = 1, n_species
+             do k = 1, n_species
+
+                if (j > k) cycle
+
+                if (j == k) f = 1.d0
+                if (j /= k) f = 2.d0
+
+                call get_structure_factor_forces(  n_sites, params%exp_energy_scales(params%xrd_idx),&
+                     & params%exp_data(params%xrd_idx)%y,&
+                     & forces_xrd, virial_xrd,&
+                     & neighbors_list(j_beg:j_end), n_neigh(i_beg:i_end),&
+                     & neighbor_species(j_beg:j_end), params&
+                     &%species_types, rjs(j_beg:j_end), xyz(1:3,j_beg:j_end), params&
+                     &%r_range_min, params%r_range_max, params&
+                     &%pair_distribution_n_samples, params&
+                     &%structure_factor_n_samples, n_species,&
+                     & x_xrd(1:params&
+                     &%structure_factor_n_samples), y_xrd(1:params&
+                     &%structure_factor_n_samples), params%pair_distribution_rcut&
+                     &, j, k, pair_distribution_partial_der(1:params &
+                     &%pair_distribution_n_samples, n_dim_idx,&
+                     & j_beg:j_end), params%pair_distribution_partial,&
+                     & params%pair_distribution_kde_sigma,&
+                     & 4.d0 * pi * f * ( (n_atoms_of_species(j) *&
+                     & n_atoms_of_species(k)) /  dfloat(n_sites) /&
+                     & dfloat(n_sites) ) * ( dfloat(n_sites) / v_uc ), sinc_factor_matrix, n_dim_idx, .true.)
+
+
+                n_dim_idx = n_dim_idx + 1
+
+                if (n_dim_idx > n_dim_partial) exit outerf
+
+             end do
+          end do outerf
+       end if
+    end if
+
+
+
 
     call get_write_condition( params%do_mc, params%do_md&
          &, mc_istep, md_istep, params%write_xyz,&
