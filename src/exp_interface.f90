@@ -464,7 +464,7 @@ contains
 
        if ( trim(params%xrd_output) == "q*i(q)" .and. params%q_units &
             &== "q" )then
-          if ( exp .and. trim(input) == "i(q)" )then
+          if ( exp .and. ( trim(input) == "i(q)" .or. trim(input) == "F(q)") )then
              y = x * (y - 1.d0)
           end if
        end if
@@ -475,7 +475,7 @@ contains
   subroutine calculate_pair_distribution( params, x_pair_distribution&
        &, y_pair_distribution, y_pair_distribution_temp,&
        & pair_distribution_partial, pair_distribution_partial_temp, &
-       & n_species, n_atoms_of_species, n_sites, a_box, b_box, c_box,&
+       & n_species, species_types,  n_atoms_of_species, n_sites, a_box, b_box, c_box,&
        & indices, md_istep, mc_istep, i_beg, i_end, j_beg, j_end, ierr, rjs, xyz, &
        & neighbors_list, n_neigh, neighbor_species, species, rank,&
        & do_derivatives, pair_distribution_der, pair_distribution_partial_der,&
@@ -488,6 +488,7 @@ contains
          & y_pair_distribution_temp(:), pair_distribution_der(:,:),&
          & pair_distribution_partial_der(:,:,:), &
          & pair_distribution_partial_temp_der(:,:,:), energies_pair_distribution(:), forces_pair_distribution(:,:)
+    character*8, allocatable, intent(in) :: species_types(:)
     real*8,  intent(in), allocatable :: rjs(:), xyz(:,:)
     integer, intent(in), allocatable :: neighbors_list(:), n_neigh(:)&
          &, neighbor_species(:), species(:)
@@ -569,10 +570,10 @@ contains
             & 1 : n_dim_partial, j_beg : j_end  ))
           pair_distribution_partial_der = 0.d0
 
-          if (rank == 0) write(*, '(A,1X,F7.4,1X,A)') "Gb/core: partial pdfder = ", dfloat(params&
+          if (rank == 0 .and. md_istep == 0) write(*, '(A,1X,F7.4,1X,A)') "Gb/core: partial pdfder = ", dfloat(params&
                &%pair_distribution_n_samples * n_dim_partial * j_end)&
                & * 8.d0 / (dfloat(1024*1024*1024)), " Gb  |"
-          if (rank == 0) write(*,*)'                                       |'
+          if (rank == 0 .and. md_istep == 0) write(*,*)'                                       |'
 
        end if
     else
@@ -892,50 +893,51 @@ contains
 
 
     if (rank == 0 .and. params%write_pair_distribution .and. write_condition) then
-       call write_partial_exp(params%do_mc, params%do_md, mc_istep, md_istep,&
-            & params%write_xyz, params%pair_distribution_partial,&
-            & n_species, params%pair_distribution_n_samples,&
-            & n_dim_partial , x_pair_distribution(1:params&
-            &%pair_distribution_n_samples), y_pair_distribution(1:params&
-            &%pair_distribution_n_samples), pair_distribution_partial(1:params &
-            &%pair_distribution_n_samples, 1:n_dim_partial),&
-            & params%species_types , 'pair_distribution' )
+       ! call write_partial_exp(params%do_mc, params%do_md, mc_istep, md_istep,&
+       !      & params%write_xyz, params%pair_distribution_partial,&
+       !      & n_species, params%pair_distribution_n_samples,&
+       !      & n_dim_partial , x_pair_distribution(1:params&
+       !      &%pair_distribution_n_samples), y_pair_distribution(1:params&
+       !      &%pair_distribution_n_samples), pair_distribution_partial(1:params &
+       !      &%pair_distribution_n_samples, 1:n_dim_partial),&
+       !      & species_types , 'pair_distribution')
 
-       ! call get_overwrite_condition( params%do_mc, params%do_md ,&
-       !      & mc_istep, md_istep, params%write_xyz,&
-       !      & overwrite_condition)
+       call get_overwrite_condition( params%do_mc, params%do_md ,&
+            & mc_istep, md_istep, params%write_xyz,&
+            & overwrite_condition)
 
 
-       ! if (params%pair_distribution_partial)then
-       !    n_dim_idx = 1
-       !    outer3: do j = 1, n_species
-       !       do k = 1, n_species
+       if (params%pair_distribution_partial)then
+          n_dim_idx = 1
+          outer3: do j = 1, n_species
+             do k = 1, n_species
 
-       !          if (j > k) cycle
+                if (j > k) cycle
 
-       !          write(filename,'(A)')&
-       !               & 'pair_distribution_' // trim(params&
-       !               &%species_types(j)) // '_' // trim(params&
-       !               &%species_types(k)) //&
-       !               & "_prediction.dat"
-       !          call write_exp_datan(x_pair_distribution(1:params%pair_distribution_n_samples),&
-       !               & pair_distribution_partial(1:params%pair_distribution_n_samples, n_dim_idx),&
-       !               & overwrite_condition, filename, 'pair_distribution')
+                write(filename,'(A)')&
+                     & 'pair_distribution_' // trim(params&
+                     &%species_types(j)) // '_' // trim(params&
+                     &%species_types(k)) //&
+                     & "_prediction.dat"
+                call write_exp_datan(x_pair_distribution(1:params%pair_distribution_n_samples),&
+                     & pair_distribution_partial(1:params%pair_distribution_n_samples, n_dim_idx),&
+                     & overwrite_condition, filename, 'pair_distribution')
 
-       !          n_dim_idx = n_dim_idx + 1
-       !          if ( n_dim_idx > n_dim_partial )then
-       !             exit outer3
-       !          end if
+                n_dim_idx = n_dim_idx + 1
+                if ( n_dim_idx > n_dim_partial )then
+                   exit outer3
+                end if
 
-       !       end do
-       !    end do outer3
-       ! end if
+             end do
+          end do outer3
+       end if
 
-       ! write(filename,'(A)')&
-       !      & "pair_distribution_total.dat"
-       ! call write_exp_datan(x_pair_distribution(1:params%pair_distribution_n_samples),&
-       !      &y_pair_distribution(1:params%pair_distribution_n_samples),&
-       !      & overwrite_condition, filename, "pair_distribution")
+       write(filename,'(A)')&
+            & "pair_distribution_total.dat"
+       call write_exp_datan(x_pair_distribution(1:params%pair_distribution_n_samples),&
+            &y_pair_distribution(1:params%pair_distribution_n_samples),&
+            & overwrite_condition, filename, "pair_distribution  output: " // trim( params&
+            &%pair_distribution_output ))
 
     end if
 
@@ -981,7 +983,7 @@ contains
        & y_structure_factor, y_structure_factor_temp,&
        & structure_factor_partial, structure_factor_partial_temp,&
        & x_pair_distribution, y_pair_distribution, &
-       & pair_distribution_partial, n_species, n_atoms_of_species,&
+       & pair_distribution_partial, n_species, species_types, n_atoms_of_species,&
        & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep,  i_beg,&
        & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
        & neighbor_species, species, rank , q_beg, q_end, ntasks,&
@@ -998,6 +1000,7 @@ contains
          & pair_distribution_partial(:,:), n_atoms_of_species(:), pair_distribution_partial_der(:,:,:)
     integer, intent(in), allocatable :: neighbors_list(:), n_neigh(:)&
          &, neighbor_species(:), species(:)
+    character*8, allocatable, intent(in) :: species_types(:)
     real*8,  intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3)
     real*8, allocatable, intent(inout) :: sinc_factor_matrix(:,:), energies_sf(:), forces_sf(:,:)
     real*8, intent(inout) :: virial_sf(1:3,1:3)
@@ -1274,6 +1277,7 @@ contains
           end do
        end do outer2
 
+       y_structure_factor = y_structure_factor + 1.d0
        ! --- Preprocess the structure factor according to the output --- !
        if ( trim( params%xrd_output ) == "q*i(q)" )then
           y_structure_factor = x_structure_factor * (y_structure_factor - 1.d0)
@@ -1314,8 +1318,7 @@ contains
                         & params%exp_data(params%sf_idx)%x,  params%exp_data(params%sf_idx)%y,&
                         & forces_sf, virial_sf,&
                         & neighbors_list(j_beg:j_end), n_neigh(i_beg:i_end),&
-                        & neighbor_species(j_beg:j_end), params&
-                        &%species_types, rjs(j_beg:j_end), xyz(1:3,j_beg:j_end), params&
+                        & neighbor_species(j_beg:j_end), species_types, rjs(j_beg:j_end), xyz(1:3,j_beg:j_end), params&
                         &%r_range_min, params%r_range_max, params&
                         &%pair_distribution_n_samples, params&
                         &%structure_factor_n_samples, n_species,&
@@ -1328,7 +1331,10 @@ contains
                         & params%pair_distribution_kde_sigma,&
                         & 4.d0 * pi * f * ( (n_atoms_of_species(j) *&
                         & n_atoms_of_species(k)) /  dfloat(n_sites) /&
-                        & dfloat(n_sites) ) * ( dfloat(n_sites) / v_uc ), sinc_factor_matrix, n_dim_idx, .false., params%xrd_output)
+                        & dfloat(n_sites) ) * ( dfloat(n_sites) /&
+                        & v_uc ), sinc_factor_matrix, n_dim_idx,&
+                        & .false., params%xrd_output,&
+                        & n_atoms_of_species)
 
 
                    n_dim_idx = n_dim_idx + 1
@@ -1415,9 +1421,7 @@ contains
 
                 ! write with the temp data
                 write(filename,'(A)')&
-                     & 'structure_factor_' // trim(params&
-                     &%species_types(j)) // '_' // trim(params&
-                     &%species_types(k)) //&
+                     & 'structure_factor_' // trim(species_types(j)) // '_' // trim(species_types(k)) //&
                      & "_prediction.dat"
                 call write_exp_datan(x_structure_factor_temp(1:params%structure_factor_n_samples)&
                      &,&
@@ -1437,7 +1441,9 @@ contains
        call write_exp_datan(x_structure_factor_temp(1:params%structure_factor_n_samples),&
             & y_structure_factor(1:params&
             &%structure_factor_n_samples),&
-            & overwrite_condition, filename, "structure_factor: units of "// trim(params%q_units))
+            & overwrite_condition, filename, "structure_factor: units&
+            & of "// trim(params%q_units) // " output: " // trim( params&
+            &%xrd_output ))
 
 
     end if
@@ -1478,7 +1484,7 @@ contains
   subroutine calculate_xrd( params, x_xrd, x_xrd_temp,&
        & y_xrd, y_xrd_temp, x_structure_factor, x_structure_factor_temp,&
        & structure_factor_partial, structure_factor_partial_temp,&
-       & n_species, n_atoms_of_species,&
+       & n_species, species_types,  n_atoms_of_species,&
        & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep, i_beg,&
        & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
        & neighbor_species, species, rank , q_beg, q_end, ntasks,&
@@ -1498,6 +1504,7 @@ contains
     integer, intent(in), allocatable :: neighbors_list(:), n_neigh(:)&
          &, neighbor_species(:), species(:)
     real*8,  intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3)
+    character*8, allocatable, intent(in) :: species_types(:)
     real*8 :: v_uc
     integer, intent(in) :: n_species, n_sites, i_beg, i_end, j_beg, j_end, ntasks
     integer, intent(out) :: q_beg, q_end
@@ -1552,7 +1559,7 @@ contains
     if (params%structure_factor_from_pdf .and. params%pair_distribution_partial) then
        call get_xrd_from_partial_structure_factors(q_beg, q_end, &
             & structure_factor_partial(1:params&
-            &%structure_factor_n_samples,1:n_dim_partial), n_species, params%species_types&
+            &%structure_factor_n_samples,1:n_dim_partial), n_species, species_types&
             &, species, params%xrd_wavelength, params &
             &%xrd_damping, params%xrd_alpha, params &
             &%xrd_method, params%xrd_iwasa, params%xrd_output, x_xrd(1:params&
@@ -1562,7 +1569,7 @@ contains
 
     else
 
-       call get_xrd_explicit( n_sites, params%species_types, n_species,  &
+       call get_xrd_explicit( n_sites, species_types, n_species,  &
             & neighbors_list(j_beg:j_end), n_neigh(i_beg:i_end),&
             & neighbor_species(j_beg:j_end), rjs(j_beg:j_end),&
             & params%structure_factor_n_samples,&
@@ -1616,10 +1623,11 @@ contains
 
 #endif
 
-           ! --- Preprocess the structure factor according to the output --- !
-    if ( trim( params%xrd_output ) == "q*i(q)" )then
-       y_xrd = x_xrd * (y_xrd - 1.d0)
-    end if
+    ! Already preprocessed the xrd !
+    ! --- Preprocess the structure factor according to the output --- !
+    ! if ( trim( params%xrd_output ) == "q*i(q)" )then
+    !    y_xrd = 2.d0 * pi * x_xrd * ( y_xrd )
+    ! end if
 
 
     if ( allocated(sinc_factor_matrix) )then
@@ -1653,11 +1661,10 @@ contains
                    if (j /= k) f = 2.d0
 
                    call get_structure_factor_forces(  n_sites, params%exp_energy_scales(params%xrd_idx),&
-                        & params%exp_data(params%xrd_idx)%x, params%exp_data(params%xrd_idx)%y,&
+                        & x_xrd, params%exp_data(params%xrd_idx)%y,&
                         & forces_xrd, virial_xrd,&
                         & neighbors_list(j_beg:j_end), n_neigh(i_beg:i_end),&
-                        & neighbor_species(j_beg:j_end), params&
-                        &%species_types, rjs(j_beg:j_end), xyz(1:3,j_beg:j_end), params&
+                        & neighbor_species(j_beg:j_end), species_types, rjs(j_beg:j_end), xyz(1:3,j_beg:j_end), params&
                         &%r_range_min, params%r_range_max, params&
                         &%pair_distribution_n_samples, params&
                         &%structure_factor_n_samples, n_species,&
@@ -1672,7 +1679,7 @@ contains
                         & n_atoms_of_species(k)) /  dfloat(n_sites) /&
                         & dfloat(n_sites) ) * ( dfloat(n_sites) /&
                         & v_uc ), sinc_factor_matrix, n_dim_idx,&
-                        & .true., params%xrd_output)
+                        & .true., params%xrd_output, n_atoms_of_species)
 
 
                    n_dim_idx = n_dim_idx + 1
@@ -1705,7 +1712,9 @@ contains
        call write_exp_datan(x_xrd_temp(1:params%structure_factor_n_samples),&
             & y_xrd(1:params&
             &%structure_factor_n_samples),&
-            & overwrite_condition, filename, "xrd: units of "// trim(params%q_units))
+            & overwrite_condition, filename, "xrd: units of "//&
+            & trim(params%q_units) // " output: " // trim( params&
+            &%xrd_output ))
 
     end if
 

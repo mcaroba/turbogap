@@ -163,7 +163,7 @@ contains
        & neighbors_list, n_neigh, neighbor_species, species_types, rjs, xyz, r_min,&
        & r_max, n_samples, n_samples_sf, n_species,  x_structure_factor, structure_factor, r_cut, species_1,&
        & species_2,  pair_distribution_der, partial_rdf, kde_sigma,&
-       & c_factor, sinc_factor_matrix, n_dim_idx, do_xrd, output)
+       & c_factor, sinc_factor_matrix, n_dim_idx, do_xrd, output, n_atoms_of_species)
     implicit none
     real*8,  intent(in) :: rjs(:), xyz(:,:), y_exp(:), energy_scale,  kde_sigma, c_factor, sinc_factor_matrix(:,:), x(:)
     integer, intent(in) :: n_sites0, n_samples_sf, n_species
@@ -173,12 +173,12 @@ contains
     integer, intent(in) :: n_samples, species_1, species_2, n_dim_idx
     integer :: n_sites, n_pairs, count, count_species_1
     integer :: i, j, k, ki, k1, k2,  i2, j2, l, ii, jj, kk, i3, j3, i4,  species_i, species_j
-    real*8,  intent(in) :: x_structure_factor(:), structure_factor(:)
+    real*8,  intent(in) :: x_structure_factor(:), structure_factor(:), n_atoms_of_species(:)
     real*8,  intent(in) :: pair_distribution_der(:,:)
     real*8,  intent(inout) :: forces0(:,:), virial(1:3,1:3)
     character*32, intent(in) :: output
     real*8, allocatable ::  prefactor(:), all_scattering_factors(:), sf_parameters(:,:), structure_factor_der(:)
-    real*8 :: r, n_pc, this_force(1:3), f, wfaci, wfacj, temp(1:n_samples_sf)
+    real*8 :: r, n_pc, this_force(1:3), f, wfaci, wfacj, temp(1:n_samples_sf), sth
     real*8, parameter :: pi = acos(-1.0)
     logical, intent(in) :: partial_rdf, do_xrd
     logical :: species_in_list, counted_1=.false.
@@ -205,6 +205,31 @@ contains
           call get_scattering_factor(wfaci, sf_parameters(1:9,species_1), x_structure_factor(i)/2.d0)
           call get_scattering_factor(wfacj, sf_parameters(1:9,species_2), x_structure_factor(i)/2.d0)
           all_scattering_factors(i) = wfaci * wfacj
+
+          if ( trim(output) == "q*i(q)" .or. trim(output) == "q*F(q)")then
+             ! we now handlw this case in preprocess experimental data
+             ! output q * i(q) === q * F_x(q)
+             sth = 0.d0
+             do j = 1, n_species
+                call get_scattering_factor(wfaci, sf_parameters(1:9,j), x_structure_factor(i)/2.d0)
+                sth = sth + ( n_atoms_of_species(j) / dfloat(n_sites0) ) * wfaci !* wfaci
+             end do
+
+             all_scattering_factors(i) =  2.d0 * pi * x(i) * all_scattering_factors(i) / sth**2 !+ 1.d0
+
+          elseif( trim(output) == "F(q)" .or. trim(output) == "i(q)")then
+             ! Output the total scattering functon, i(q) === F_x(q)
+             sth = 0.d0
+             do j = 1, n_species
+                call get_scattering_factor(wfaci, sf_parameters(1:9,j), x_structure_factor(i)/2.d0)
+                sth = sth + ( n_atoms_of_species(j) / dfloat(n_sites0) ) * wfaci !* wfaci
+             end do
+
+             all_scattering_factors(i) = all_scattering_factors(i) / sth**2 !+ 1.d0
+
+          end if
+
+
        end do
 
     end if
@@ -257,7 +282,7 @@ contains
                   & structure_factor_der, 1)
 
              if (do_xrd) structure_factor_der = all_scattering_factors * structure_factor_der
-             if (trim(output) == "q*i(q)") structure_factor_der = x * structure_factor_der
+             !if (trim(output) == "q*i(q)") structure_factor_der = 2.d0 * pi * x * structure_factor_der
              this_force(1) = dot_product(structure_factor_der(1:n_samples_sf), prefactor(1:n_samples_sf))
 
 
@@ -267,7 +292,7 @@ contains
                   & structure_factor_der, 1)
 
              if (do_xrd) structure_factor_der = all_scattering_factors * structure_factor_der
-             if (trim(output) == "q*i(q)") structure_factor_der = x * structure_factor_der
+             !if (trim(output) == "q*i(q)") structure_factor_der = 2.d0 * pi * x * structure_factor_der
              this_force(2) = dot_product(structure_factor_der(1:n_samples_sf), prefactor(1:n_samples_sf))
 
 
@@ -277,7 +302,7 @@ contains
                   & structure_factor_der, 1)
 
              if (do_xrd) structure_factor_der = all_scattering_factors * structure_factor_der
-             if (trim(output) == "q*i(q)") structure_factor_der = x * structure_factor_der
+             !if (trim(output) == "q*i(q)") structure_factor_der = 2.d0 * pi * x * structure_factor_der
              this_force(3) = dot_product(structure_factor_der(1:n_samples_sf), prefactor(1:n_samples_sf))
 
 
@@ -1219,7 +1244,7 @@ contains
 
           y(l) = y(l) / sth**2 !+ 1.d0
 
-          y(l) = x(l) * y(l)
+          y(l) = 2.d0 * pi * x(l) * y(l)
 
        elseif( trim(output) == "F(q)" .or. trim(output) == "i(q)")then
           ! Output the total scattering functon, i(q) === F_x(q)
@@ -1727,7 +1752,8 @@ contains
        end do
     else if (exp_similarity_type == 'squared_diff')then
        do i = 1, n_sites
-          energies_lp(i) =  energy_scale * ( 1.d0 / dfloat( n_sites0 ) -  dot_product( y_all(i,:), y_exp ))
+          !energies_lp(i) =  energy_scale * ( 1.d0 / dfloat( n_sites0 ) -  dot_product( y_all(i,:), y_exp ))
+          energies_lp(i) =  0.5d0 * energy_scale * (  dot_product( y - y_exp, y - y_exp ))
        end do
 
 
@@ -1736,7 +1762,7 @@ contains
 
 
        allocate(prefactor(1:n_samples))
-       prefactor =   ( y - y_exp )
+       prefactor =  ( y - y_exp )
     end if
 
 

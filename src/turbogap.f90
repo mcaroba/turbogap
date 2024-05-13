@@ -116,7 +116,7 @@ program turbogap
   integer :: which_atom = 0, n_species = 1, n_species_actual, n_xyz, indices(1:3)
   integer :: radial_enhancement = 0
   integer :: md_istep, mc_istep, mc_id=1, n_mc, n_mc_species
-
+  character*8, allocatable :: species_types_actual(:)
   character*1024, allocatable ::  local_property_labels(:), local_property_labels_temp(:)
   logical :: repeat_xyz = .true., overwrite = .false., check_species, valid_local_properties=.false.
 
@@ -1699,6 +1699,13 @@ program turbogap
                       &%x, params%exp_data(i)%y, params%exp_data(i)&
                       &%n_samples, params%exp_data(i)%data)
 
+
+                 call preprocess_exp_data(params, params%exp_data(i)%x,&
+                      & params%exp_data(i)%y, params%exp_data(i)%label,&
+                      & n_sites, dot_product( cross_product(a_box,&
+                      & b_box), c_box ) / (dfloat(indices(1)*indices(2) &
+                      &*indices(3)) ), params%exp_data(i)%input, exp_output, .true. )
+
                  if (params%write_exp .and. .not.  params&
                    &%exp_data(i)%wrote_exp .and. rank == 0 .and. write_condition ) then
 
@@ -1712,12 +1719,6 @@ program turbogap
                          & "_exp.dat", params%exp_data(i) %label  )
                  end if
 
-
-                 call preprocess_exp_data(params, params%exp_data(i)%x,&
-                      & params%exp_data(i)%y, params%exp_data(i)%label,&
-                      & n_sites, dot_product( cross_product(a_box,&
-                      & b_box), c_box ) / (dfloat(indices(1)*indices(2) &
-                      &*indices(3)) ), params%exp_data(i)%input, exp_output, .true. )
 
               end if
 
@@ -1833,6 +1834,8 @@ program turbogap
               call get_overwrite_condition( params%do_mc, params%do_md&
                    &, mc_istep, md_istep, params%write_xyz, overwrite_condition)
 
+
+
               call write_exp_datan(params%exp_data(xps_idx)&
                    &%x(1:params%exp_data(xps_idx)%n_samples), params&
                    &%exp_data(xps_idx)%y_pred(1:params&
@@ -1841,6 +1844,13 @@ program turbogap
                    & params%exp_data(xps_idx)%label)
 
               if ( .not.  params%exp_data(xps_idx)%wrote_exp ) then
+
+
+                 call preprocess_exp_data(params, params%exp_data(xps_idx)%x,&
+                      & params%exp_data(xps_idx)%y, params%exp_data(xps_idx)%label,&
+                      & n_sites, dot_product( cross_product(a_box,&
+                      & b_box), c_box ) / (dfloat(indices(1)*indices(2) &
+                      &*indices(3)) ), params%exp_data(xps_idx)%input, exp_output, .true. )
 
                  call write_exp_datan(params%exp_data(xps_idx)&
                       &%x(1:params%exp_data(xps_idx)%n_samples),&
@@ -1867,7 +1877,7 @@ program turbogap
 
            call cpu_time(time_xps(2))
            time_xps(3) = time_xps(3) + time_xps(2) - time_xps(1)
-           if (rank == 0) print *, rank, " TIME_XPS = ", time_xps(3)
+!           if (rank == 0) print *, rank, " TIME_XPS = ", time_xps(3)
 
         end if
 
@@ -1938,10 +1948,25 @@ program turbogap
         ! F^x(q) = [ XRD(q) - \sum_n c_i f_i(q)^2 ] / [ \sum_n c_i f_i(q) ]^2
 
         ! First get the number of species in actuality
-        n_species_actual = 1
+        n_species_actual = 0
         do i = 1, n_sites
            if (species(i) > n_species_actual) n_species_actual = n_species_actual + 1
         end do
+
+        ! Now find the unique species ids
+        if (allocated( species_types_actual)) deallocate( species_types_actual )
+        allocate(species_types_actual(1:n_species_actual))
+
+        n_species_actual = 0
+        do i = 1, n_sites
+           if (species(i) > n_species_actual)then
+              n_species_actual = n_species_actual + 1
+              species_types_actual(n_species_actual) = params%species_types( species(i) )
+           end if
+        end do
+
+
+
 
         if (params%do_pair_distribution)then
            call cpu_time(time_pdf(1))
@@ -1960,7 +1985,7 @@ program turbogap
            call calculate_pair_distribution( params, x_pair_distribution&
                 &, y_pair_distribution, y_pair_distribution_temp,&
                 & pair_distribution_partial, pair_distribution_partial_temp, &
-                & n_species_actual, n_atoms_of_species, n_sites, a_box,&
+                & n_species_actual, species_types_actual, n_atoms_of_species, n_sites, a_box,&
                 & b_box, c_box, indices, md_istep, mc_istep, i_beg, i_end,&
                 & j_beg, j_end, ierr , rjs, xyz, neighbors_list,&
                 & n_neigh, neighbor_species, species, rank, params%exp_forces, &
@@ -1974,7 +1999,7 @@ program turbogap
 
            call cpu_time(time_pdf(2))
            time_pdf(3) = time_pdf(3) + time_pdf(2) - time_pdf(1)
-           if (rank == 0) print *, rank, " TIME_PDF = ", time_pdf(3)
+!           if (rank == 0) print *, rank, " TIME_PDF = ", time_pdf(3)
 
 
 
@@ -1987,7 +2012,7 @@ program turbogap
                 & y_structure_factor, y_structure_factor_temp,&
                 & structure_factor_partial, structure_factor_partial_temp,&
                 & x_pair_distribution, y_pair_distribution, &
-                & pair_distribution_partial, n_species_actual, n_atoms_of_species,&
+                & pair_distribution_partial, n_species_actual, species_types_actual, n_atoms_of_species,&
                 & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep, i_beg,&
                 & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
                 & neighbor_species, species, rank , q_beg, q_end, ntasks, sinc_factor_matrix, params%exp_forces, &
@@ -2001,7 +2026,7 @@ program turbogap
            call cpu_time(time_sf(2))
            time_sf(3) = time_sf(3) + time_sf(2) - time_sf(1)
 
-           if (rank == 0) print *, rank, " TIME_SF = ", time_sf(3)
+!           if (rank == 0) print *, rank, " TIME_SF = ", time_sf(3)
 
            ! if ( params%pair_distribution_partial .and. .not. (  params%do_xrd ) ) then
            !    deallocate( pair_distribution_partial )
@@ -2025,7 +2050,7 @@ program turbogap
            call calculate_xrd( params, x_xrd, x_xrd_temp,&
                 & y_xrd, y_xrd_temp, x_structure_factor, x_structure_factor_temp,&
                 & structure_factor_partial, structure_factor_partial_temp,&
-                & n_species_actual, n_atoms_of_species,&
+                & n_species_actual, species_types_actual, n_atoms_of_species,&
                 & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep, i_beg,&
                 & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
                 & neighbor_species, species, rank , q_beg, q_end, ntasks, sinc_factor_matrix, params%exp_forces, &
@@ -2039,7 +2064,7 @@ program turbogap
            call cpu_time(time_xrd(2))
            time_xrd(3) = time_xrd(3) + time_xrd(2) - time_xrd(1)
 
-           if (rank == 0) print *, rank, " TIME_XRD = ", time_xrd(3)
+!           if (rank == 0) print *, rank, " TIME_XRD = ", time_xrd(3)
 
         end if
 
@@ -2073,24 +2098,24 @@ program turbogap
               !      & b_box), c_box ) / (dfloat(indices(1)*indices(2) &
               !      &*indices(3)) ), params%exp_data(i)%input,  exp_output, .false.)
 
-              call get_write_condition( params%do_mc, params%do_md&
-                   &, mc_istep, md_istep, params%write_xyz,&
-                   & write_condition)
+              ! call get_write_condition( params%do_mc, params%do_md&
+              !      &, mc_istep, md_istep, params%write_xyz,&
+              !      & write_condition)
 
-              if (params%write_exp .and. write_condition .and. rank == 0) then
-                 write(filename,'(A)')&
-                      & trim(params%exp_data(i)%label) // "_fit.dat"
+              ! if (params%write_exp .and. write_condition .and. rank == 0) then
+              !    write(filename,'(A)')&
+              !         & trim(params%exp_data(i)%label) // "_fit.dat"
 
-                 call get_overwrite_condition( params%do_mc, params%do_md&
-                      &, mc_istep, md_istep, params%write_xyz,&
-                      & overwrite_condition)
+              !    call get_overwrite_condition( params%do_mc, params%do_md&
+              !         &, mc_istep, md_istep, params%write_xyz,&
+              !         & overwrite_condition)
 
-                 call write_exp_data(params%exp_data(i)%x, params%exp_data(i)%y_pred,&
-                      & overwrite_condition, trim(params%exp_data(i)&
-                      &%label) // "_fit.dat", trim(params%exp_data(i)&
-                      &%label) // " : output = " // trim( exp_output ))
+              !    call write_exp_data(params%exp_data(i)%x, params%exp_data(i)%y_pred,&
+              !         & overwrite_condition, trim(params%exp_data(i)&
+              !         &%label) // "_fit.dat", trim(params%exp_data(i)&
+              !         &%label) // " : output = " // trim( exp_output ))
 
-              end if
+              ! end if
 
 
               if ( params%exp_data(i)%compute_similarity .and. allocated(params%exp_data(i)%y) )then
@@ -2142,6 +2167,7 @@ program turbogap
                 & structure_factor_partial, structure_factor_partial_temp)
         end if
 
+        deallocate(species_types_actual)
 
 
 
@@ -2623,7 +2649,8 @@ program turbogap
 
 
            if ( rank == 0 .and. params%print_lp_forces )then
-              open(unit=90, file="forces_lp", status="unknown")
+              write(filename, '(I8)') md_istep
+              open(unit=90, file="forces_lp_"//trim(adjustl(filename)), status="unknown")
               do i = 1, n_sites
                  write(90, "(F20.8, 1X, F20.8, 1X, F20.8)") &
                       forces_lp(1,i), forces_lp(2,i), forces_lp(3,i)
@@ -2631,7 +2658,9 @@ program turbogap
               close(90)
 
               if (params%exp_forces .and. params%valid_pdf)then
-                 open(unit=90, file="forces_pdf", status="unknown")
+              write(filename, '(I8)') md_istep
+              open(unit=90, file="forces_pdf_"//trim(adjustl(filename)), status="unknown")
+                 open(unit=90, file=filename, status="unknown")
                  do i = 1, n_sites
                     write(90, "(F20.8, 1X, F20.8, 1X, F20.8)") &
                          forces_pdf(1,i), forces_pdf(2,i), forces_pdf(3,i)
@@ -2640,7 +2669,9 @@ program turbogap
               end if
 
               if (params%exp_forces .and. params%valid_sf)then
-                 open(unit=90, file="forces_sf", status="unknown")
+              write(filename, '(I8)') md_istep
+              open(unit=90, file="forces_sf_"//trim(adjustl(filename)), status="unknown")
+                 open(unit=90, file=filename, status="unknown")
                  do i = 1, n_sites
                     write(90, "(F20.8, 1X, F20.8, 1X, F20.8)") &
                          forces_sf(1,i), forces_sf(2,i), forces_sf(3,i)
@@ -2649,7 +2680,8 @@ program turbogap
               end if
 
               if (params%exp_forces .and. params%valid_xrd)then
-                 open(unit=90, file="forces_xrd", status="unknown")
+                 write(filename, '(I8)') md_istep
+                 open(unit=90, file="forces_xrd_"//trim(adjustl(filename)), status="unknown")
                  do i = 1, n_sites
                     write(90, "(F20.8, 1X, F20.8, 1X, F20.8)") &
                          forces_xrd(1,i), forces_xrd(2,i), forces_xrd(3,i)
@@ -3985,7 +4017,12 @@ program turbogap
         write(*,'(A,F13.3,A)') '     -         3b:', time_3b(3), ' seconds |'
         write(*,'(A,F13.3,A)') '     -   core_pot:', time_core_pot(3), ' seconds |'
         write(*,'(A,F13.3,A)') '     -        vdw:', time_vdw(3), ' seconds |'
-        if( valid_xps ) write(*,'(A,F13.3,A)') '     -        xps:', time_xps(3), ' seconds |'
+        if (valid_xps .or. params%do_pair_distribution .or. params&
+             &%do_structure_factor .or. params%do_xrd) write(*,'(A&
+             &,F13.3,A)')      ' *  Exp. pred.   :', time_pdf(3) + time_sf(3) + time_xrd(3), ' seconds&
+             & |'
+        if( valid_xps ) write(*,'(A,F13.3,A)') '     -        xps:',&
+             & time_xps(3), ' seconds |'
         if( params%do_pair_distribution ) write(*,'(A,F13.3,A)') '     -        pdf:', time_pdf(3), ' seconds |'
         if( params%do_structure_factor  ) write(*,'(A,F13.3,A)') '     -         sf:', time_sf(3), ' seconds |'
         if( params%do_xrd  )              write(*,'(A,F13.3,A)') '     -        xrd:', time_xrd(3), ' seconds |'
@@ -4003,10 +4040,13 @@ program turbogap
         write(*,'(A,F13.3,A)') '     - E & F brc.:', time_mpi_ef(3), ' seconds |'
         write(*,'(A,F13.3,A)') '     -  MPI misc.:', time_mpi(3), ' seconds |'
         write(*,'(A,F13.3,A)') ' *  Miscellaneous:', time2-time3 - time_neigh - time_gap - time_read_input(3) &
-             - time_read_xyz(3) - time_mpi(3) - time_mpi_positions(3) - time_mpi_ef(3) - time_md(3), ' seconds |'
+             - time_read_xyz(3) - time_mpi(3) - time_mpi_positions(3)&
+             & - time_mpi_ef(3) - time_md(3) - time_xps(3) -&
+             & time_pdf(3) - time_sf(3) - time_xrd(3), ' seconds |'
 #else
         write(*,'(A,F13.3,A)') ' *  Miscellaneous:', time2-time3 - time_neigh - time_gap - time_read_input(3) &
-             - time_read_xyz(3) - time_md(3), ' seconds |'
+             - time_read_xyz(3) - time_md(3)- time_xps(3) -&
+             & time_pdf(3) - time_sf(3) - time_xrd(3), ' seconds |'
 #endif
         write(*,*)'                                       |'
         write(*,'(A,F13.3,A)') ' *     Total time:', time2-time3, ' seconds |'
