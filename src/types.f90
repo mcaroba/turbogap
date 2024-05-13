@@ -159,7 +159,7 @@ module types
          & variable_time_step = .false., vdw_mbd_grad = .false.,&
          & do_nested_sampling = .false., scale_box_nested = .false.,&
          & mc_write_xyz = .false., do_exp = .false., mc_relax =&
-         & .false., mc_optimize_exp =.false., exp_forces=.false.,&
+         & .false., mc_optimize_exp =.false., exp_forces=.false., exp_energies=.true.,&
          & print_lp_forces =.false., mc_hamiltonian = .false.,&
          & accessible_volume = .false., mc_reverse = .false.,&
          & xrd_iwasa = .true., pair_distribution_partial=.false.,&

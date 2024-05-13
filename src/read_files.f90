@@ -876,6 +876,12 @@ end if
 ! do experimental
         params%do_exp = .true.
 
+      else if(keyword=='exp_energies')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%exp_energies
+! do experimental
+        params%do_exp = .true.
+
       else if(keyword=='exp_energy_scales')then
          backspace(10)
          if (params%n_moments > 0)then
@@ -976,7 +982,7 @@ end if
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, (params&
              &%compute_local_properties(nw),nw=1 ,params&
-             &%n_local_properties)
+            &%n_local_properties)
 
       else if(keyword=='do_pair_distribution')then
         backspace(10)
@@ -1023,22 +1029,28 @@ end if
             call upper_to_lower_case(params%exp_data(nw)%label)
             if(     trim(params%exp_data(nw)%label) == "xps")then
                params%xps_idx = nw
+               write(*,*)' - Valid exp. XPS found                |'
+
             else if(trim(params%exp_data(nw)%label) == "xrd")then
                params%xrd_idx = nw
                params%valid_xrd = .true.
+               write(*,*)' - Valid exp. XRD found                |'
                ! Must be set to true to find the partial structure factors
                ! params%pair_distribution_partial = .true.
             else if(trim(params%exp_data(nw)%label) == "saxs")then
                params%saxs_idx = nw
                params%valid_xrd = .true.
+               write(*,*)' - Valid exp. XRD found                |'
                ! Must be set to true to find the partial structure factors
                ! params%pair_distribution_partial = .true.
             else if(trim(params%exp_data(nw)%label) == "pair_distribution")then
                params%pdf_idx = nw
                params%valid_pdf = .true.
+               write(*,*)' - Valid exp. pair distribution found  |'
             else if(trim(params%exp_data(nw)%label) == "structure_factor")then
                params%sf_idx = nw
                params%valid_sf = .true.
+               write(*,*)' - Valid exp. structure factor found   |'
             end if
          end do
       else if( keyword == "exp_data_files" )then

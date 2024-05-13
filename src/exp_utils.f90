@@ -159,13 +159,13 @@ contains
   ! end subroutine get_all_scattering_factors
 
 
-  subroutine get_structure_factor_forces(  n_sites0, energy_scale, y_exp, forces0, virial,  &
+  subroutine get_structure_factor_forces(  n_sites0, energy_scale, x, y_exp, forces0, virial,  &
        & neighbors_list, n_neigh, neighbor_species, species_types, rjs, xyz, r_min,&
        & r_max, n_samples, n_samples_sf, n_species,  x_structure_factor, structure_factor, r_cut, species_1,&
        & species_2,  pair_distribution_der, partial_rdf, kde_sigma,&
-       & c_factor, sinc_factor_matrix, n_dim_idx, do_xrd)
+       & c_factor, sinc_factor_matrix, n_dim_idx, do_xrd, output)
     implicit none
-    real*8,  intent(in) :: rjs(:), xyz(:,:), y_exp(:), energy_scale,  kde_sigma, c_factor, sinc_factor_matrix(:,:)
+    real*8,  intent(in) :: rjs(:), xyz(:,:), y_exp(:), energy_scale,  kde_sigma, c_factor, sinc_factor_matrix(:,:), x(:)
     integer, intent(in) :: n_sites0, n_samples_sf, n_species
     character*8, allocatable, intent(in) :: species_types(:)
     real*8 :: r_min, r_max, r_cut
@@ -176,8 +176,9 @@ contains
     real*8,  intent(in) :: x_structure_factor(:), structure_factor(:)
     real*8,  intent(in) :: pair_distribution_der(:,:)
     real*8,  intent(inout) :: forces0(:,:), virial(1:3,1:3)
+    character*32, intent(in) :: output
     real*8, allocatable ::  prefactor(:), all_scattering_factors(:), sf_parameters(:,:), structure_factor_der(:)
-    real*8 :: r, n_pc, this_force(1:3), f, wfaci, wfacj
+    real*8 :: r, n_pc, this_force(1:3), f, wfaci, wfacj, temp(1:n_samples_sf)
     real*8, parameter :: pi = acos(-1.0)
     logical, intent(in) :: partial_rdf, do_xrd
     logical :: species_in_list, counted_1=.false.
@@ -240,7 +241,9 @@ contains
           if (r > r_max + kde_sigma*6.d0) cycle
 
 
-          if ( .not. all( xyz( 1:3, k ) == 0.d0 ) )then
+          if (   (.not. all( xyz( 1:3, k ) == 0.d0 ) ) .and. &
+               & (.not. all( pair_distribution_der(1:n_samples, k ) == 0.d0 )) )then
+
              ! Actual derivative of the pair distribution function given here, no normalisation needed I think
 
              ! call get_single_partial_structure_factor_derivative(sinc_factor_matrix,&
@@ -249,28 +252,32 @@ contains
 
 
              structure_factor_der = 0.d0
-             !
-             call dgemv("N", n_samples_sf,  n_samples, 1.d0 , sinc_factor_matrix, n_samples_sf,&
-                  & -2.d0 * xyz(1, k) * c_factor * pair_distribution_der(1:n_samples, k ), 1, 0.d0,&
+             call dgemv("N", n_samples_sf,  n_samples, -2.d0 * xyz(1, k) * c_factor , sinc_factor_matrix, n_samples_sf,&
+                  &  pair_distribution_der(1:n_samples, k ), 1, 0.d0,&
                   & structure_factor_der, 1)
 
              if (do_xrd) structure_factor_der = all_scattering_factors * structure_factor_der
+             if (trim(output) == "q*i(q)") structure_factor_der = x * structure_factor_der
              this_force(1) = dot_product(structure_factor_der(1:n_samples_sf), prefactor(1:n_samples_sf))
 
+
              structure_factor_der = 0.d0
-             call dgemv("N", n_samples_sf,  n_samples, 1.d0 , sinc_factor_matrix, n_samples_sf,&
-                  &  -2.d0 * xyz(2, k) * c_factor * pair_distribution_der(1:n_samples,  k ), 1, 0.d0,&
+             call dgemv("N", n_samples_sf,  n_samples,  -2.d0 * xyz(2, k) * c_factor, sinc_factor_matrix, n_samples_sf,&
+                  & pair_distribution_der(1:n_samples,  k ), 1, 0.d0,&
                   & structure_factor_der, 1)
 
              if (do_xrd) structure_factor_der = all_scattering_factors * structure_factor_der
+             if (trim(output) == "q*i(q)") structure_factor_der = x * structure_factor_der
              this_force(2) = dot_product(structure_factor_der(1:n_samples_sf), prefactor(1:n_samples_sf))
 
+
              structure_factor_der = 0.d0
-             call dgemv("N", n_samples_sf,  n_samples, 1.d0 , sinc_factor_matrix, n_samples_sf,&
-                  &  -2.d0 * xyz(3, k) * c_factor * pair_distribution_der(1:n_samples, k ), 1, 0.d0,&
+             call dgemv("N", n_samples_sf,  n_samples, -2.d0 * xyz(3, k) * c_factor , sinc_factor_matrix, n_samples_sf,&
+                  &  pair_distribution_der(1:n_samples, k ), 1, 0.d0,&
                   & structure_factor_der, 1)
 
              if (do_xrd) structure_factor_der = all_scattering_factors * structure_factor_der
+             if (trim(output) == "q*i(q)") structure_factor_der = x * structure_factor_der
              this_force(3) = dot_product(structure_factor_der(1:n_samples_sf), prefactor(1:n_samples_sf))
 
 
@@ -302,24 +309,25 @@ contains
   end subroutine get_structure_factor_forces
 
   
-  subroutine get_pair_distribution_forces(  n_sites0, energy_scale, y_exp, forces0, virial,  &
+  subroutine get_pair_distribution_forces(  n_sites0, energy_scale, x, y_exp, forces0, virial,  &
        & neighbors_list, n_neigh, neighbor_species, rjs, xyz, r_min,&
        & r_max, n_samples, pair_distribution, r_cut, species_1,&
        & species_2,  pair_distribution_der, partial_rdf, kde_sigma,&
-       & c_factor)
+       & c_factor, rho, output)
     implicit none
-    real*8,  intent(in) :: rjs(:), xyz(:,:), y_exp(:), energy_scale,  kde_sigma, c_factor
+    real*8,  intent(in) :: rjs(:), xyz(:,:), x(:), y_exp(:), energy_scale,  kde_sigma, c_factor
     integer, intent(in) :: n_sites0
     real*8 :: r_min, r_max, r_cut
     integer, intent(in) :: neighbors_list(:), n_neigh(:), neighbor_species(:)
     integer, intent(in) :: n_samples, species_1, species_2
     integer :: n_sites, n_pairs, count, count_species_1
     integer :: i, j, k, ki, k1, k2,  i2, j2, l, ii, jj, kk, i3, j3, i4,  species_i, species_j
-    real*8,  intent(in) :: pair_distribution(1:n_samples)
+    character*32, intent(in) :: output
+    real*8,  intent(in) :: pair_distribution(1:n_samples), rho
     real*8,  intent(in) :: pair_distribution_der(:,:)
     real*8,  intent(inout) :: forces0(:,:), virial(1:3,1:3)
     real*8, allocatable ::  prefactor(:)
-    real*8 :: r, n_pc, this_force(1:3), f
+    real*8 :: r, n_pc, this_force(1:3), f, temp(1:n_samples)
     real*8, parameter :: pi = acos(-1.0)
     logical, intent(in) :: partial_rdf
     logical :: species_in_list, counted_1=.false.
@@ -330,6 +338,7 @@ contains
 
     allocate( prefactor( 1:n_samples ) )
 
+    ! Already preprocessed the pair distribution
     prefactor =  ( pair_distribution  - y_exp )
 
     ! Not reinitalizing the forces as these will be added to for each partial
@@ -371,17 +380,26 @@ contains
              if (species_1 == species_2) f = 1.d0
              if (species_1 /= species_2) f = 2.d0
 
-             this_force(1) = dot_product( - 2.d0 * xyz( 1, k ) * f * c_factor * &
-                  & pair_distribution_der(1:n_samples,  k),&
-                  & prefactor(1:n_samples))
+             temp = - 2.d0 * xyz( 1, k ) * f * c_factor * pair_distribution_der(1:n_samples,  k)
+             if (trim(output) == "D(r)") temp = 4.d0 * pi * rho * x * temp
+             this_force(1) = dot_product(temp, prefactor(1:n_samples))
 
-             this_force(2) = dot_product( - 2.d0 * xyz( 2, k ) * f * c_factor * &
-                  & pair_distribution_der(1:n_samples,  k),&
-                  & prefactor(1:n_samples))
+             temp = - 2.d0 * xyz( 2, k ) * f * c_factor * pair_distribution_der(1:n_samples,  k)
+             if (trim(output) == "D(r)") temp = 4.d0 * pi * rho * x * temp
+             this_force(2) = dot_product(temp, prefactor(1:n_samples))
 
-             this_force(3) = dot_product( - 2.d0 * xyz( 3, k ) * f * c_factor * &
-                  & pair_distribution_der(1:n_samples,  k),&
-                  & prefactor(1:n_samples))
+             temp = - 2.d0 * xyz( 3, k ) * f * c_factor * pair_distribution_der(1:n_samples,  k)
+             if (trim(output) == "D(r)") temp = 4.d0 * pi * rho * x * temp
+             this_force(3) = dot_product(temp, prefactor(1:n_samples))
+
+
+             ! this_force(2) = dot_product( - 2.d0 * xyz( 2, k ) * f * c_factor * &
+             !      & pair_distribution_der(1:n_samples,  k),&
+             !      & prefactor(1:n_samples))
+
+             ! this_force(3) = dot_product( - 2.d0 * xyz( 3, k ) * f * c_factor * &
+             !      & pair_distribution_der(1:n_samples,  k),&
+             !      & prefactor(1:n_samples))
 
              this_force(1:3) =   energy_scale * this_force(1:3)
 
@@ -1403,7 +1421,7 @@ contains
 
     end if
 
-    mag = sqrt(dot_product(y, y) * dx)  !sum(y * dx) !
+    mag = sqrt(dot_product(y, y) )  !sum(y * dx) !
     y = y / mag
     y_all = y_all / mag
 
@@ -1458,490 +1476,6 @@ contains
 
   end subroutine get_xps_weights
 
-
-  !#####################################!
-  !###---   Experimental Forces   ---###!
-  !#####################################!
-
-  subroutine get_experimental_this_force(this_force, y, der_vec, y_der, norm, prefactor, n_samples, k)
-    implicit none
-    real*8, allocatable, intent(in) :: y(:)
-    real*8, intent(in) :: norm
-    real*8 :: sum_d1, sum_d2, sum_d3
-    real*8, allocatable, intent(out) ::  y_der(:,:)
-    real*8, allocatable, intent(in)  ::  der_vec(:,:,:), prefactor(:)
-    integer, intent(in) :: n_samples, k
-    integer :: l
-    real*8, intent(out)  ::  this_force(1:3)
-
-
-    sum_d1 = dot_product( y, der_vec(1,k,1:n_samples) )
-    sum_d2 = dot_product( y, der_vec(2,k,1:n_samples) )
-    sum_d3 = dot_product( y, der_vec(3,k,1:n_samples) )
-
-    do l = 1, n_samples
-       y_der(1, l) =  ( der_vec(1,k,l)  - y(l) * sum_d1) / norm
-       y_der(2, l) =  ( der_vec(2,k,l)  - y(l) * sum_d2) / norm
-       y_der(3, l) =  ( der_vec(3,k,l)  - y(l) * sum_d3) / norm
-    end do
-
-    this_force(1) =  dot_product( y_der(1, 1:n_samples), prefactor(1:n_samples) )
-    this_force(2) =  dot_product( y_der(2, 1:n_samples), prefactor(1:n_samples) )
-    this_force(3) =  dot_product( y_der(3, 1:n_samples), prefactor(1:n_samples) )
-
-  end subroutine get_experimental_this_force
-
-
-  subroutine get_experimental_forces(energy_scale, core_electron_be, core_electron_be_der,&
-       & n_neigh, neighbors_list,  &
-       & sigma, n_samples, norm, &
-       & x, y_exp,  y,  do_forces,  xyz,&
-       & energies_lp, forces0, virial, exp_similarity_type, quantity_name, rank, dx)
-    implicit none
-    integer, intent(in) :: n_neigh(:), neighbors_list(:)
-    real*8, intent(in) :: sigma, core_electron_be(:),&
-         & core_electron_be_der(:,:), xyz(:,:),&
-         & energy_scale, norm
-    real*8, allocatable, intent(inout) :: forces0(:,:)
-    real*8, allocatable, intent(in) :: x(:), y_exp(:), y(:)
-    real*8, intent(inout) :: energies_lp(:), dx
-    real*8, intent(inout) :: virial(1:3,1:3)
-    real*8 ::  this_force(1:3)
-    real*8, allocatable ::  y_der(:,:), der_factor(:,:), der_vec(:,:,:), prefactor(:), dxa(:)
-    integer, intent(in) :: n_samples, rank
-    logical, intent(in) :: do_forces
-    integer :: n_sites, n_pairs, n_sites0
-    integer :: i, j, i2, j2, k, l,  k1, k2, mag_force_i
-    logical :: vector_norm = .false.
-    real*8 :: mag_force, max_mag_force, &
-         sum_d1, sum_d2, sum_d3, yv
-    character*32, intent(in) :: exp_similarity_type
-    character*1024, intent(in) :: quantity_name
-
-
-    n_sites = size(n_neigh)
-    n_pairs = size(neighbors_list)
-    n_sites0 = size(forces0, 2)
-
-    if (exp_similarity_type == 'squared_diff')then
-
-       energies_lp = + energy_scale / n_sites0 * ( dx * dot_product( (y - y_exp), (y - y_exp) ) )
-       allocate(prefactor(1:n_samples))
-       prefactor =  2.d0 * ( y - y_exp )
-    end if
-
-
-    ! Now, the full similarity is the overlap integral between the
-    ! predicted, broadened spectra and experiment.
-
-    ! The change of position of atom i, which has neighbours
-    ! (j,k,l...,m) results in a change in the soap descriptors of
-    ! (j,k,l,...m).
-    ! Hence, the neighbors,
-    ! number_of_neighbours = n_neigh(i)
-    ! Index of the neighbour list for i => idx_i = sum_j=1^i( n_neigh(j) )
-    ! Indexes of the neighbours => neighbor_list(idx_i: idx_i + n_neigh(i))
-
-    ! We compute the expression
-    !   Compute xps forces
-    if( do_forces )then
-       max_mag_force = 0.0
-       mag_force_i  = 0
-       forces0 = 0.d0
-       virial = 0.d0
-
-       allocate(y_der(1:3, 1:n_samples))
-       allocate(der_factor(1:n_samples, 1:n_sites))
-
-       ! This is the vector which has all the derivatives in for all the betas
-       allocate(der_vec(1:3, 1:n_pairs, 1:n_samples))
-
-       ! First get the derivative factors, to reduce multiplications
-
-       der_factor = 0.d0
-
-       do i = 1, n_samples
-          do j = 1, n_sites
-             yv = ( x(i) - core_electron_be(j) )
-             der_factor(i,j) = yv  * exp( - yv**2 / (2.d0 * sigma**2)  ) / sigma**2
-          end do
-       end do
-
-
-       !     First, we compute the forces acting on all the "SOAP-neighbors" of atom i
-       !     (including i itself) due to the gradients of i's Hirshfeld volume wrt the
-       !     positions of its neighbors
-
-       ! First, have the derivatives of the normalisation factor in place
-
-       der_vec = 0.d0
-
-
-       do l = 1, n_samples
-          k = 0
-          do i = 1, n_sites
-             i2 = modulo(neighbors_list(k+1)-1, n_sites0) + 1
-             do j = 1, n_neigh(i)
-                k = k + 1
-                j2 = modulo(neighbors_list(k)-1, n_sites0) + 1
-                if( .not. all(core_electron_be_der(1:3, k) == 0.d0) )then
-                   if( exp_similarity_type == 'squared_diff' )then
-                      ! (xi - cb(i)) * dxi_drka * exp( -(xi-cb(i))/2/sigma^2 )
-                      der_vec(1:3, k, l) =  der_vec(1:3,k,l) + der_factor(l,i) * core_electron_be_der(1:3, k)
-                      !                         if (l==1) print *, "i2=", i2, " j2=", j2, " cb(1:3,k)=", core_electron_be_der(1:3, k)
-                   end if
-                end if
-             end do
-          end do
-       end do
-
-
-       k = 0
-       do i = 1, n_sites
-          ! k is the index which keeps a number of the atom pairs
-          ! i2 is the index of a particular atom
-          i2 = modulo(neighbors_list(k+1)-1, n_sites0) + 1
-          do j = 1, n_neigh(i)
-             ! Loop through the neighbors of atom i
-             ! j2 is the index of a neighboring atom to i
-             k = k + 1
-             j2 = modulo(neighbors_list(k)-1, n_sites0) + 1
-             !             SOAP neighbors
-             ! MAY NEED TO CHANGE THIS TO ACCOUNT FOR MACHINE PRECISIO
-
-             if( .not. all(core_electron_be_der(1:3, k) == 0.d0) )then
-
-                y_der = 0.d0
-
-                if( exp_similarity_type == 'squared_diff' )then
-
-                   if (vector_norm) then
-                      sum_d1 = dot_product( y, der_vec(1,k,1:n_samples) )
-                      sum_d2 = dot_product( y, der_vec(2,k,1:n_samples) )
-                      sum_d3 = dot_product( y, der_vec(3,k,1:n_samples) )
-
-                      do l = 1, n_samples
-                         y_der(1, l) =  ( der_vec(1,k,l)  - y(l) * sum_d1) / norm
-                         y_der(2, l) =  ( der_vec(2,k,l)  - y(l) * sum_d2) / norm
-                         y_der(3, l) =  ( der_vec(3,k,l)  - y(l) * sum_d3) / norm
-                      end do
-
-                      this_force(1) =  dot_product( y_der(1, 1:n_samples), prefactor(1:n_samples) )
-                      this_force(2) =  dot_product( y_der(2, 1:n_samples), prefactor(1:n_samples) )
-                      this_force(3) =  dot_product( y_der(3, 1:n_samples), prefactor(1:n_samples) )
-
-                   else
-                      ! do sum
-                      sum_d1 = dx * sum( der_vec(1,k,1:n_samples) )
-                      sum_d2 = dx * sum( der_vec(2,k,1:n_samples) )
-                      sum_d3 = dx * sum( der_vec(3,k,1:n_samples) )
-
-                      do l = 1, n_samples
-                         y_der(1, l) =  ( der_vec(1,k,l)  - y(l) * sum_d1 ) / norm
-                         y_der(2, l) =  ( der_vec(2,k,l)  - y(l) * sum_d2 ) / norm
-                         y_der(3, l) =  ( der_vec(3,k,l)  - y(l) * sum_d3 ) / norm
-                      end do
-
-                      this_force(1) =  dot_product( y_der(1, 1:n_samples), prefactor(1:n_samples) )
-                      this_force(2) =  dot_product( y_der(2, 1:n_samples), prefactor(1:n_samples) )
-                      this_force(3) =  dot_product( y_der(3, 1:n_samples), prefactor(1:n_samples) )
-
-                   end if
-
-
-                else
-                   call broaden_spectrum_derivative(x(1:n_samples),&
-                        & core_electron_be(i),&
-                        & core_electron_be_der(1:3, k),&
-                        & y_der(1:3,1:n_samples ), sigma, y_exp(1:n_samples), this_force(1:3), norm, dx)
-
-                end if
-
-                this_force(1:3) =  - energy_scale *  this_force(1:3)
-
-                forces0(1:3, j2) = forces0(1:3, j2) + this_force(1:3)
-
-
-                mag_force = norm2(forces0(1:3,j2))
-                if (mag_force > max_mag_force)then
-                   mag_force_i = j2
-                   max_mag_force = mag_force
-                end if
-
-                !             Sign is plus because this force is acting on j2. Factor of one is because this is
-                !             derived from a local energy
-                !              virial = virial + dot_product(this_force(1:3), xyz(1:3,k))
-                do k1 = 1, 3
-                   do k2 =1, 3
-                      virial(k1, k2) = virial(k1, k2) + 0.5d0 * (this_force(k1)*xyz(k2,k) + this_force(k2)*xyz(k1,k))
-                   end do
-                end do
-             end if
-
-             !           There is no net force acting on i2 from its periodic replicas...
-             ! if( j2 /= i2 )then
-             !    forces0(1:3,i2) = forces0(1:3,i2) + this_force(1:3)
-             ! end if
-             !           ... but the periodic replicas DO contribute to the virial
-             !           Sign is minus because this force is acting on i2. Factor of 1/2 is because this is
-             !           derived from a pair energy
-             !            virial = virial - 0.5d0 * dot_product(this_force(1:3), xyz(1:3,k))
-             ! do k1 = 1, 3
-             !    do k2 =1, 3
-             !       virial(k1, k2) = virial(k1, k2) - 0.25d0 * (this_force(k1)*xyz(k2,k) + this_force(k2)*xyz(k1,k))
-             !    end do
-             ! end do
-          end do
-       end do
-       deallocate(y_der)
-       if(allocated(prefactor)) deallocate(prefactor)
-       deallocate(der_vec, der_factor)
-       if(allocated(dxa)) deallocate(dxa)
-
-    end if
-
-  end subroutine get_experimental_forces
-
-
-
-  ! subroutine get_xrd( n_neigh, neighbors_list, neighbor_species, rjs, xyz, &
-  !      & positions, n_species, species_types, species, wavelength,&
-  !      & damping, alpha, method, use_iwasa, x_min, x_max, &
-  !      & n_samples, x_i_exp, y_i_pred, r_cut, forces0 )
-  !   implicit none
-  !   real*8, allocatable, intent(in) :: positions(:,:)
-  !   integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:)
-  !   real*8, intent(in) :: damping, wavelength, alpha, x_min, x_max, r_cut
-  !   integer, intent(in) :: species(:)
-  !   real*8, allocatable :: x(:), y(:), s(:), x_exp(:), y_exp(:), wfac(:), wfac_species(:), der_vec(:,:,:)
-  !   real*8, allocatable, intent(inout) :: x_i_exp(:), y_i_pred(:)
-  !   real*8, allocatable, intent(in) :: rjs(:), xyz(:)
-  !   real*8, allocatable, intent(inout) :: forces0(:,:)
-  !   logical, intent(in) :: use_iwasa
-  !   integer, intent(in) :: n_samples, n_species
-  !   character*8, allocatable :: species_types(:)
-  !   character*32, intent(in) :: method
-  !   real*8 :: prefactor, p, c, c2, rij, diff(1:3), intensity, mag, sth, wfaci, wfacj, kron
-  !   integer :: i, j, k, l, n, n_sites, j2, i2, i3, j3, k3,  j4
-  !   real*8 :: x_val, x_range, dx, pi=3.14159265359, ri(1:3), rj(1:3)
-
-  !   ! Was going to use the rijs for this, but we want the /full/
-  !   ! spectra, so we need the scattering contribution from all atoms
-
-
-
-  !   n_sites = size(n_neigh)
-  !   n_pairs = size(neighbors_list)
-  !   n_sites0 = size(forces0, 2)
-
-  !   dx = x(2) - x(1)
-
-  !   ! This is essentially the same as the procedure for the hirshfeld gradients as in vdw.f90
-
-  !   call linspace( x, x_min, x_max, n_samples, dx )
-
-  !   ! We then broaden y to get the actual spectra
-  !   allocate(y(1:n_samples))
-  !   y = 0.d0
-  !   n = size(x)
-
-  !   allocate(s(1:n))
-  !   allocate(wfac(1:n_sites))
-  !   allocate(wfac_species(1:n_species))
-
-  !   if (do_forces)then
-  !      allocate(der_vec(1:3, 1:n_pairs, 1:n_samples))
-  !      der_vec = 0.d0
-  !   end if
-
-
-  !   ! x is in units of 2θ for XRD and in units of q for SAXS
-  !   if (trim(method) == "saxs")then
-  !      do i = 1, n
-  !         s(i) =  x(i) / 2.d0 / pi
-  !      end do
-  !   else
-  !      ! Do XRD
-  !      do i = 1, n
-  !         s(i) = 2.d0 * sin( x(i) * pi / 180.d0 / 2.d0 ) / wavelength
-  !      end do
-  !   end if
-
-
-
-  !   do l = 1, n
-
-  !      prefactor = exp( - damping * s(l)**(2.d0) / 2.d0 )
-
-  !      do i = 1, n_species
-  !         call get_waasmaier(species_types(i), s(l), wfac_species(i))
-  !      end do
-
-  !      do i = 1, n_sites
-  !         do j = 1, n_species
-  !            if (species(i) == j)then
-  !               wfac(i) = wfac_species(j)
-  !            end if
-  !         end do
-  !      end do
-
-  !      if (use_iwasa)then
-  !         sth = ( wavelength * s(l) / 2.0d0 )
-  !         p = 1.0d0 - sth * sth
-  !         if (p < 0) p = 0.0d0
-  !         c = sqrt(p)
-  !         c2 = cos(2.0d0 * acos(c))
-  !         prefactor = prefactor  *  c / (1.0d0 + alpha * c2**(2.d0))
-  !      end if
-
-
-  !      intensity = 0.d0
-
-  !      k = 0
-  !      do i = 1, n_sites
-  !         i2 = modulo(neighbors_list(k+1)-1, n_sites0) + 1
-  !         ri = xyz(1:3, k+1)
-
-  !         do j = 1, n_neigh(i)
-  !            k = k + 1
-  !            j2 = modulo(neighbors_list(k)-1, n_sites0) + 1
-
-  !            rj = xyz(1:3, k)
-
-  !            rij = rjs(k)
-
-  !            if (rij > r_cut) cycle
-
-  !            wfaci = wfac(i)
-  !            ! Get the scattering factor of the neighbor species
-  !            wfacj = wfac_species(neighbor_species(k))
-
-  !            intensity = intensity + wfaci * wfacj * ( sinc( 2.d0 * s(l) * rij ) )
-
-  !            if (do_forces)then
-  !               if (rij < 1e-3) cycle
-
-  !               ! Now we must cycle through the neighbours again to elucidate the derivative dependence
-  !               do i3 = 1, n_sites
-  !                  i4 = modulo(neighbors_list(k2+1)-1, n_sites0) + 1
-  !                  do j3 = 1, n_neigh(i3)
-  !                     k2 = k2 + 1
-  !                     j4 = modulo(neighbors_list(k2)-1, n_sites0) + 1
-
-  !                     ! we have a kronecker delta dependence
-  !                     ! ( delta_jk - delta_ik )
-  !                     ! Therefore, we must check the atomic indices to see what this factor is
-
-  !                     if ( j4 /= i2 .and. j4 /= j2 ) cycle
-  !                     if ( j4 == i2 .and. j4 == j2 ) cycle
-  !                     if ( j4 /= i2 .and. j4 == j2 ) kron =  1.d0
-  !                     if ( j4 == i2 .and. j4 /= j2 ) kron = -1.d0
-
-  !                     ! the initial atom has index i2
-  !                     ! the neighbour has index j2
-  !                     ! j3 is the index of another atom
-  !                     ! k is the index of another atom which is a neighbour
-  !                     der_vec(1:3, k2, l) =  der_vec(1:3,k2,l) + &
-  !                          & (1.d0 / rij) * ( 2.d0 * s(l) ) * wfaci * wfacj * kron * ( rj - ri ) * &
-  !                          &   ( cosc(2.d0 * s(l) * rij) - sinc( 2.d0 * s(l) * rij ) / (2.d0 * s(l) * rij) )
-
-
-  !                  end do
-  !               end do
-
-  !            end if
-
-
-
-  !         end do
-  !      end do
-
-  !      y(l) = prefactor * intensity
-  !      der_vec(1:3, 1:n_pairs, l) = prefactor * der_vec(1:3, 1:n_pairs, l)
-
-
-  !   end do
-
-  !   ! We wont actually calculate the forces here, we need to collect all the components together to obtain the forces
-  !   if( do_forces )then
-  !      forces0 = 0.d0
-  !      virial = 0.d0
-
-  !      k = 0
-  !      do i = 1, n_sites
-  !         ! k is the index which keeps a number of the atom pairs
-  !         ! i2 is the index of a particular atom
-  !         i2 = modulo(neighbors_list(k+1)-1, n_sites0) + 1
-  !         do j = 1, n_neigh(i)
-  !            ! Loop through the neighbors of atom i
-  !            ! j2 is the index of a neighboring atom to i
-  !            k = k + 1
-  !            j2 = modulo(neighbors_list(k)-1, n_sites0) + 1
-
-
-  !            sum_d1 = dot_product( y, der_vec(1,k,1:n_samples) )
-  !            sum_d2 = dot_product( y, der_vec(2,k,1:n_samples) )
-  !            sum_d3 = dot_product( y, der_vec(3,k,1:n_samples) )
-
-  !            do l = 1, n_samples
-  !               y_der(1, l) =  ( der_vec(1,k,l)  - y(l) * sum_d1) / norm
-  !               y_der(2, l) =  ( der_vec(2,k,l)  - y(l) * sum_d2) / norm
-  !               y_der(3, l) =  ( der_vec(3,k,l)  - y(l) * sum_d3) / norm
-  !            end do
-
-  !            this_force(1) =  dot_product( y_der(1, 1:n_samples), prefactor(1:n_samples) )
-  !            this_force(2) =  dot_product( y_der(2, 1:n_samples), prefactor(1:n_samples) )
-  !            this_force(3) =  dot_product( y_der(3, 1:n_samples), prefactor(1:n_samples) )
-
-  !               this_force(1:3) =  - energy_scale *  this_force(1:3)
-
-  !               forces0(1:3, j2) = forces0(1:3, j2) + this_force(1:3)
-
-  !               !             Sign is plus because this force is acting on j2. Factor of one is because this is
-  !               !             derived from a local energy
-  !               !              virial = virial + dot_product(this_force(1:3), xyz(1:3,k))
-  !               do k1 = 1, 3
-  !                  do k2 =1, 3
-  !                     virial(k1, k2) = virial(k1, k2) + 0.5d0 * (this_force(k1)*xyz(k2,k) + this_force(k2)*xyz(k1,k))
-  !                  end do
-  !               end do
-  !            end if
-
-  !            !           There is no net force acting on i2 from its periodic replicas...
-  !            ! if( j2 /= i2 )then
-  !            !    forces0(1:3,i2) = forces0(1:3,i2) + this_force(1:3)
-  !            ! end if
-  !            !           ... but the periodic replicas DO contribute to the virial
-  !            !           Sign is minus because this force is acting on i2. Factor of 1/2 is because this is
-  !            !           derived from a pair energy
-  !            !            virial = virial - 0.5d0 * dot_product(this_force(1:3), xyz(1:3,k))
-  !            ! do k1 = 1, 3
-  !            !    do k2 =1, 3
-  !            !       virial(k1, k2) = virial(k1, k2) - 0.25d0 * (this_force(k1)*xyz(k2,k) + this_force(k2)*xyz(k1,k))
-  !            !    end do
-  !            ! end do
-  !         end do
-  !      end do
-  !      deallocate(y_der)
-  !      deallocate(der_vec)
-
-  !   end if
-
-
-  !   ! get the magnitude after
-  !   ! mag = sqrt(dot_product(y,y))
-  !   ! y = y / mag
-  !   x_i_exp = x
-  !   y_i_pred = y
-
-
-  !   deallocate(x)
-  !   deallocate(y)
-  !   deallocate(s)
-  !   deallocate(wfac_species)
-  !   deallocate(wfac)
-
-  ! end subroutine get_xrd
 
 
   !**************************************************************************
@@ -2131,6 +1665,21 @@ contains
   end subroutine get_moments_of_distribution
 
 
+  subroutine get_exp_energies(energy_scale, y_exp, y_pred, n_samples, n_sites, energies)
+    implicit none
+    real*8, intent(in) :: energy_scale
+    real*8, intent(in) :: y_exp(:), y_pred(:)
+    integer, intent(in) :: n_samples, n_sites
+    real*8, intent(inout) :: energies(:)
+    real*8 :: f, e_tot, diff(1:n_samples)
+
+    ! We use the sum of squared differences for the energy, ideally we'd have a component resolved thing but alas.
+
+    diff = ( y_pred(1:n_samples) -  y_exp(1:n_samples) )
+    e_tot = 0.5d0 * energy_scale * dot_product( diff, diff )
+    energies = e_tot / dfloat( n_sites )
+
+  end subroutine get_exp_energies
 
 
 
@@ -2155,7 +1704,7 @@ contains
     logical, intent(in) ::  do_forces
     integer :: n_sites, n_pairs, n_sites0
     integer :: i, j, i2, j2, k, l, k1, k2, mag_force_i
-    logical :: vector_norm = .false.
+    logical :: vector_norm = .true.
     real*8 :: mag_force, max_mag_force,  dx, &
          sum_d1, sum_d2, sum_d3, yv
     character*32, intent(in) :: exp_similarity_type
@@ -2178,7 +1727,7 @@ contains
        end do
     else if (exp_similarity_type == 'squared_diff')then
        do i = 1, n_sites
-          energies_lp(i) = - energy_scale * ( 1.d0 / dfloat( n_sites0 ) -  dot_product( y_all(i,:), y_exp ))
+          energies_lp(i) =  energy_scale * ( 1.d0 / dfloat( n_sites0 ) -  dot_product( y_all(i,:), y_exp ))
        end do
 
 
@@ -2187,7 +1736,7 @@ contains
 
 
        allocate(prefactor(1:n_samples))
-       prefactor =  2.d0 * ( y - y_exp )
+       prefactor =   ( y - y_exp )
     end if
 
 
@@ -2223,8 +1772,8 @@ contains
 
        der_factor = 0.d0
 
-       do i = 1, n_samples
-          do j = 1, n_sites
+       do j = 1, n_sites
+          do i = 1, n_samples
              yv = ( x(i) - core_electron_be(j) )
              der_factor(i,j) = yv  * exp( - yv**2 / (2.d0 * sigma**2)  ) / sigma**2
           end do
