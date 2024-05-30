@@ -39,8 +39,8 @@ module eph_beta
 use mpi
 type EPH_Beta_class
 	character*1024 :: beta_infile
-	character*2, dimension(5) :: line
-	character*2, allocatable :: element_name(:)
+	character*3, allocatable :: line(:)
+	character*3, allocatable :: element_name(:)
 	integer :: n_elements, n_points_rho, n_points_beta
 	real*8 :: dr, r_cutoff, drho, rho_cutoff
 	integer, allocatable :: element_number(:)
@@ -57,10 +57,11 @@ end type EPH_Beta_class
 contains
 
 !! Get the rho, beta and alpha data from .beta file 
-subroutine beta_parameters(this, rank, ierr, beta_infile, n_species)
+subroutine beta_parameters(this, rank, ierr, beta_infile, n_species, species_types)
 	implicit none
 	class (EPH_Beta_class) :: this
 	integer, intent(in) :: rank, n_species
+	character*8, intent(in) :: species_types(n_species)
 	integer :: i, j, ierr
 	character*1024, intent(in) :: beta_infile
 	real*8, allocatable :: y2(:), w2(:) 
@@ -73,12 +74,20 @@ subroutine beta_parameters(this, rank, ierr, beta_infile, n_species)
 	read(10,*)
 	read(10,*)
 	read(10,*)
+	allocate(this%line(n_species+1))
 	read(10,*) (this%line(i), i = 1, (n_species+1))
+	do i = 2, n_species+1
+		if (trim(this%line(i)) /= trim(species_types(i-1))) then
+			if (rank == 0) write(*,*) "ERROR: Stopping powers for Elements are not given in order."
+			call mpi_finalize(ierr)
+			stop
+		end if
+	end do
 	read(this%line(1),'(I2)') this%n_elements
 	if (this%n_elements <= 0) then
 		if (rank == 0) write(*,*) "ERROR: Negative or 0 elements in the density file"
-	call mpi_finalize(ierr)
-	stop
+		call mpi_finalize(ierr)
+		stop
 	end if
 
 	allocate(this%element_name(this%n_elements), this%element_number(this%n_elements))

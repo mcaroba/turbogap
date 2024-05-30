@@ -86,7 +86,7 @@ subroutine read_electronic_stopping_file (this, rank, ierr, n_species, species_t
 	character*8, intent(in) :: species_types(n_species)
 	real*8, allocatable :: allelstopdata(:)
 	
-	character*8, allocatable :: infoline(:)
+	character*6, allocatable :: infoline(:)
 	integer :: i, irow, ndata_esdata
 		
 	open (unit = 1000, file = estopfilename)
@@ -117,12 +117,12 @@ subroutine read_electronic_stopping_file (this, rank, ierr, n_species, species_t
 	close(unit = 1000)
 
 	allocate (this%En_elstopfile(this%nrows_esdata), this%elstop(this%nrows_esdata, this%ncols_esdata-1))
-		irow = 1
-		do i = 1, ndata_esdata, this%ncols_esdata
-			this%En_elstopfile(irow) = allelstopdata(i)
-			this%elstop(irow,:) = allelstopdata(i+1:i+n_species)
-			irow = irow + 1
-		end do
+	irow = 1
+	do i = 1, ndata_esdata, this%ncols_esdata
+		this%En_elstopfile(irow) = allelstopdata(i)
+		this%elstop(irow,:) = allelstopdata(i+1:i+n_species)
+		irow = irow + 1
+	end do
 
 end subroutine read_electronic_stopping_file
 

@@ -637,7 +637,7 @@ program turbogap
 		call ephfdm%EPH_FDM_broadcastQuantities (params%eph_random_option, params%eph_fdm_option, ierr)
 #endif
 	end if
-	call ephbeta%beta_parameters (rank, ierr, params%eph_betafile, n_species)
+	call ephbeta%beta_parameters (rank, ierr, params%eph_betafile, n_species, params%species_types)
 #ifdef _MPIF90
 	call ephbeta%beta_parameters_broadcastQuantities (ierr)
 #endif
