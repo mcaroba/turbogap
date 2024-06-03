@@ -62,6 +62,7 @@ program turbogap
        this_virial_vdw(1:3, 1:3), this_virial_lp(1:3, 1:3), virial_pdf(1:3,1:3), this_virial_pdf(1:3,1:3), v_uc,&
        & virial_sf(1:3,1:3), this_virial_sf(1:3,1:3), &
        & virial_xrd(1:3,1:3), this_virial_xrd(1:3,1:3), &
+       & virial_nd(1:3,1:3), this_virial_nd(1:3,1:3), &
        & v_uc_prev, v_a_uc, v_a_uc_prev, eVperA3tobar =&
        & 1602176.6208d0, ranf, ranv(1:3), disp(1:3), d_disp, &
        & e_mc_prev, p_accept, virial_prev(1:3, 1:3), sim_exp_pred,&
@@ -71,7 +72,7 @@ program turbogap
        & energies_2b(:), forces_2b(:,:), energies_3b(:), forces_3b(:&
        &,:), energies_core_pot(:), forces_core_pot(:,:), velocities(:&
        &,:), masses_types(:), masses(:),  hirshfeld_v_temp(:),&
-       & masses_temp(:), sinc_factor_matrix(:,:)
+       & masses_temp(:), sinc_factor_matrix(:,:), energies_exp(:)
 !  real*8, allocatable, target :: this_hirshfeld_v(:), this_hirshfeld_v_cart_der(:,:)
 !  real*8, pointer :: this_hirshfeld_v_pt(:), this_hirshfeld_v_cart_der_pt(:,:)
 
@@ -88,11 +89,11 @@ program turbogap
   real*8 :: instant_temp, kB = 8.6173303d-5, E_kinetic=0.d0, E_kinetic_prev, time1, time2, time3, time_neigh, &
        time_gap, time_soap(1:3), time_2b(1:3), time_3b(1:3), time_read_input(1:3), time_read_xyz(1:3), &
        time_mpi(1:3) = 0.d0, time_core_pot(1:3), time_vdw(1:3),&
-       & time_pdf(1:3), time_sf(1:3), time_xrd(1:3), time_xps(1:3), time_mc(1:3), &
+       & time_pdf(1:3), time_sf(1:3), time_xrd(1:3), time_nd(1:3), time_xps(1:3), time_mc(1:3), &
        & instant_pressure, lv(1:3,1:3), time_mpi_positions(1:3) =&
        & 0.d0, time_mpi_ef(1:3) = 0.d0, time_md(3) = 0.d0,&
        & instant_pressure_tensor(1:3, 1:3), time_step, md_time,&
-       & instant_pressure_prev, wfac, wfac_temp
+       & instant_pressure_prev, wfac, wfac_temp, energy_exp
   integer, allocatable :: displs(:), displs2(:), counts(:), counts2(:), in_to_out_pairs(:), in_to_out_site(:)
   integer :: update_bar, n_sparse, idx, gd_istep = 0
   logical, allocatable :: do_list(:), has_local_properties_mpi(:), fix_atom(:,:)
@@ -121,7 +122,7 @@ program turbogap
   logical :: repeat_xyz = .true., overwrite = .false., check_species, valid_local_properties=.false.
 
   character*1024 :: filename, cjunk, file_compress_soap, file_alphas, file_soap, file_2b, file_alphas_2b, &
-       file_3b, file_alphas_3b, file_gap = "none", mc_file = "mc_trial.xyz"
+       file_3b, file_alphas_3b, file_gap = "none", mc_file = "mc_trial.xyz", string
   character*64 :: keyword
   character*16 :: lattice_string(1:9)
   character*8 :: i_char
@@ -145,14 +146,13 @@ program turbogap
   type(angle_3b), allocatable :: angle_3b_hypers(:)
   type(core_pot), allocatable :: core_pot_hypers(:)
 
-
-
   !vdw crap
   real*8, allocatable :: v_neigh_vdw(:), energies_vdw(:), forces_vdw(:,:), this_energies_vdw(:), this_forces_vdw(:,:)
   real*8, allocatable :: v_neigh_lp(:), energies_lp(:), forces_lp(:,:), this_energies_lp(:), this_forces_lp(:,:)
   real*8, allocatable :: energies_pdf(:) , forces_pdf(:,:), this_energies_pdf(:), this_forces_pdf(:,:)
   real*8, allocatable :: energies_sf(:) , forces_sf(:,:), this_energies_sf(:), this_forces_sf(:,:)
   real*8, allocatable :: energies_xrd(:), forces_xrd(:,:), this_energies_xrd(:), this_forces_xrd(:,:)
+  real*8, allocatable :: energies_nd(:), forces_nd(:,:), this_energies_nd(:), this_forces_nd(:,:)
   ! MPI stuff
   real*8, allocatable :: temp_1d(:), temp_1d_bis(:), temp_2d(:,:),&
        & pair_distribution_partial(:,:), pair_distribution_der(:,:), pair_distribution_partial_der(:,:,:), &
@@ -163,8 +163,9 @@ program turbogap
        & structure_factor_partial_temp_der(:,:), x_pair_distribution(:)&
        &, y_pair_distribution(:), y_pair_distribution_temp(:),&
        & x_structure_factor(:), x_structure_factor_temp(:),&
-       & y_structure_factor(:), y_structure_factor_temp(:), x_xrd(:),&
-       & x_xrd_temp(:), y_xrd(:), y_xrd_temp(:), y_xrd_der(:,:,:), y_xrd_temp_der(:,:,:)
+       & y_structure_factor(:), y_structure_factor_temp(:),&
+       x_xrd(:), x_xrd_temp(:), y_xrd(:), y_xrd_temp(:), y_xrd_der(:,:,:), y_xrd_temp_der(:,:,:), &
+       x_nd(:), x_nd_temp(:), y_nd(:), y_nd_temp(:), y_nd_der(:,:,:), y_nd_temp_der(:,:,:)
   integer, allocatable :: temp_1d_int(:), n_atom_pairs_by_rank(:),&
        & displ(:)
   integer, allocatable :: n_species_mpi(:), n_sparse_mpi_soap_turbo(:), dim_mpi(:), n_sparse_mpi_distance_2b(:), &
@@ -424,6 +425,9 @@ program turbogap
         if( params%xrd_rcut > rcut_max )then
            rcut_max = params%xrd_rcut
         end if
+        if( params%nd_rcut > rcut_max )then
+           rcut_max = params%nd_rcut
+        end if
         if( params%pair_distribution_rcut > rcut_max )then
            rcut_max = params%pair_distribution_rcut
         end if
@@ -469,7 +473,10 @@ program turbogap
                     if (trim(params%compute_local_properties(i)) == trim(soap_turbo_hypers(j)%local_property_models(k)%label) )then
                        soap_turbo_hypers(j)%local_property_models(i)%compute = .true.
                        valid_local_properties=.true.
-                       if (trim(params%compute_local_properties(i)) == "hirshfeld_v") vdw_lp_index=i
+                       if (trim(params%compute_local_properties(i)) == "hirshfeld_v")then
+                          vdw_lp_index=i
+                          soap_turbo_hypers(j)%has_vdw = .true.
+                       end if
                        if (trim(params%compute_local_properties(i)) == "core_electron_be")then
                           core_be_lp_index=i
                           do i2 = 1, params%n_exp
@@ -848,6 +855,7 @@ program turbogap
   time_sf = 0.d0
   time_mc = 0.d0
   time_xrd = 0.d0
+  time_nd = 0.d0
   time_xps = 0.d0
 
   if( params%do_md )then
@@ -1245,6 +1253,7 @@ program turbogap
            allocate( energies_core_pot(1:n_sites) )
            allocate( energies_vdw(1:n_sites) )
            allocate( energies_lp(1:n_sites) )
+           allocate( energies_exp(1:n_sites) )
 
            if (params%do_pair_distribution .and. params%valid_pdf)then
               if ( allocated( energies_pdf ) ) deallocate(energies_pdf)
@@ -1263,6 +1272,13 @@ program turbogap
               allocate( energies_xrd(1:n_sites) )
               energies_xrd = 0.d0
            end if
+
+           if (params%do_nd .and. params%valid_nd)then
+              if ( allocated( energies_nd ) ) deallocate(energies_nd)
+              allocate( energies_nd(1:n_sites) )
+              energies_nd = 0.d0
+           end if
+
            !       This needs to be allocated even if no force prediction is needed:
            allocate( this_forces(1:3, 1:n_sites) )
         end if
@@ -1273,6 +1289,7 @@ program turbogap
         energies_core_pot = 0.d0
         energies_vdw = 0.d0
         energies_lp = 0.d0
+        energies_exp = 0.d0
 
 ! Adding allocation of local properties
 
@@ -1346,6 +1363,12 @@ program turbogap
                  if ( allocated( forces_xrd ) ) deallocate(forces_xrd)
                  allocate( forces_xrd(1:3,1:n_sites) )
                  forces_xrd = 0.d0
+              end if
+
+              if (params%do_nd .and. params%exp_forces .and. params%valid_nd)then
+                 if ( allocated( forces_nd ) ) deallocate(forces_nd)
+                 allocate( forces_nd(1:3,1:n_sites) )
+                 forces_nd = 0.d0
               end if
 
            end if
@@ -1648,7 +1671,7 @@ program turbogap
                  v_neigh_vdw(k) = local_properties(j2, vdw_lp_index)
               end do
            end do
-!            call get_ts_energy_and_forces( hirshfeld_v(i_beg:i_end), hirshfeld_v_cart_der(1:3, j_beg:j_end), &
+           !            call get_ts_energy_and_forces( hirshfeld_v(i_beg:i_end), hirshfeld_v_cart_der(1:3, j_beg:j_end), &
            call get_ts_energy_and_forces( local_properties(i_beg:i_end, vdw_lp_index), &
                 & local_properties_cart_der(1:3, j_beg:j_end, vdw_lp_index), &
                 n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
@@ -1799,21 +1822,29 @@ program turbogap
            !      &%exp_data(xps_idx)%x), params%exp_similarity_type )
 
            ! print *, params%exp_data(xps_idx)%n_samples, xps_idx
+           call get_energy_scale( params%do_md, params%do_mc,&
+                & md_istep, params%md_nsteps, mc_istep, params&
+                &%mc_nsteps, params &
+                &%exp_energy_scales_initial(xps_idx), params &
+                &%exp_energy_scales_final(xps_idx), params &
+                &%exp_energy_scales(xps_idx) )
 
-           call get_exp_pred_spectra_energies_forces( params%exp_energy_scales(xps_idx),&
+           call get_exp_pred_spectra_energies_forces( params&
+                &%exp_energy_scales(xps_idx),&
                 & local_properties(i_beg:i_end,core_be_lp_index),&
-                & local_properties_cart_der(1:3, j_beg:j_end, core_be_lp_index ), &
-                & n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
-                & params%xps_sigma, params%exp_data(xps_idx)%n_samples, mag, &
-                & params%exp_data(xps_idx)%x, params&
-                &%exp_data(xps_idx)%y, params%exp_data(xps_idx)&
-                &%y_pred, y_i_pred_all(i_beg:i_end, 1:params&
-                &%exp_data(xps_idx)%n_samples), params&
-                &%do_forces,  xyz(1:3, j_beg:j_end),&
+                & local_properties_cart_der(1:3, j_beg:j_end,&
+                & core_be_lp_index ), n_neigh(i_beg:i_end),&
+                & neighbors_list(j_beg:j_end), params%xps_sigma,&
+                & params%exp_data(xps_idx)%n_samples, mag, params&
+                &%exp_data(xps_idx)%x, params %exp_data(xps_idx)%y,&
+                & params%exp_data(xps_idx) %y_pred,&
+                & y_i_pred_all(i_beg:i_end, 1:params &
+                &%exp_data(xps_idx)%n_samples), params %do_forces, &
+                & xyz(1:3, j_beg:j_end),&
 #ifdef _MPIF90
-                this_energies_lp(i_beg:i_end), this_forces_lp, this_virial_lp, params%exp_similarity_type, rank )
+           & this_energies_lp(i_beg:i_end), this_forces_lp, this_virial_lp, params%exp_similarity_type, rank )
 #else
-                energies_lp(i_beg:i_end), forces_lp, virial_lp, params%exp_similarity_type, rank )
+           & energies_lp(i_beg:i_end), forces_lp, virial_lp, params%exp_similarity_type, rank )
 #endif
 
            ! if (rank == 0)then
@@ -2055,9 +2086,9 @@ program turbogap
                 & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
                 & neighbor_species, species, rank , q_beg, q_end, ntasks, sinc_factor_matrix, params%exp_forces, &
 #ifdef _MPIF90
-                & pair_distribution_partial_der, this_energies_xrd, this_forces_xrd, this_virial_xrd)
+                & pair_distribution_partial_der, this_energies_xrd, this_forces_xrd, this_virial_xrd, .false.)
 #else
-                & pair_distribution_partial_der, energies_xrd, forces_xrd, virial_xrd)
+                & pair_distribution_partial_der, energies_xrd, forces_xrd, virial_xrd, .false. )
 #endif
 
 
@@ -2068,6 +2099,29 @@ program turbogap
 
         end if
 
+
+        if ( params%do_nd )then
+           call cpu_time(time_nd(1))
+           call calculate_xrd( params, x_nd, x_nd_temp,&
+                & y_nd, y_nd_temp, x_structure_factor, x_structure_factor_temp,&
+                & structure_factor_partial, structure_factor_partial_temp,&
+                & n_species_actual, species_types_actual, n_atoms_of_species,&
+                & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep, i_beg,&
+                & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
+                & neighbor_species, species, rank , q_beg, q_end, ntasks, sinc_factor_matrix, params%exp_forces, &
+#ifdef _MPIF90
+                & pair_distribution_partial_der, this_energies_nd, this_forces_nd, this_virial_nd, .true.)
+#else
+                & pair_distribution_partial_der, energies_nd, forces_nd, virial_nd, .true. )
+#endif
+
+
+           call cpu_time(time_nd(2))
+           time_nd(3) = time_nd(3) + time_nd(2) - time_nd(1)
+
+!           if (rank == 0) print *, rank, " TIME_XRD = ", time_xrd(3)
+
+        end if
 
 
         !################################################################!
@@ -2089,6 +2143,8 @@ program turbogap
                  params%exp_data(i)%y_pred = y_structure_factor
               elseif ( trim(params%exp_data(i)%label) == 'xrd' )then
                  params%exp_data(i)%y_pred = y_xrd
+              elseif ( trim(params%exp_data(i)%label) == 'nd' )then
+                 params%exp_data(i)%y_pred = y_nd
               end if
 
 
@@ -2164,6 +2220,12 @@ program turbogap
         if ( params%do_xrd )then
            call finalize_xrd( params, x_xrd, x_xrd_temp,&
                 & y_xrd, y_xrd_temp, x_structure_factor, x_structure_factor_temp,&
+                & structure_factor_partial, structure_factor_partial_temp)
+        end if
+
+        if ( params%do_nd )then
+           call finalize_xrd( params, x_nd, x_nd_temp,&
+                & y_nd, y_nd_temp, x_structure_factor, x_structure_factor_temp,&
                 & structure_factor_partial, structure_factor_partial_temp)
         end if
 
@@ -2342,6 +2404,9 @@ program turbogap
            if( allocated(this_energies_xrd) .and. params%valid_xrd)then
               counter2 = counter2 + 1
            end if
+           if( allocated(this_energies_nd) .and. params%valid_nd)then
+              counter2 = counter2 + 1
+           end if
            if( n_distance_2b > 0 )then
               counter2 = counter2 + 1
            end if
@@ -2417,6 +2482,16 @@ program turbogap
               if( params%do_forces .and. params%exp_forces )then
                  all_forces(1:3, 1:n_sites, counter2) = this_forces_xrd(1:3, 1:n_sites)
                  all_virial(1:3, 1:3, counter2) = this_virial_xrd(1:3, 1:3)
+              end if
+           end if
+
+           if( allocated(this_energies_nd) .and. params%valid_nd )then
+              counter2 = counter2 + 1
+              !         Note the vdw things have "this" in front
+              all_energies(1:n_sites, counter2) = this_energies_nd(1:n_sites)
+              if( params%do_forces .and. params%exp_forces )then
+                 all_forces(1:3, 1:n_sites, counter2) = this_forces_nd(1:3, 1:n_sites)
+                 all_virial(1:3, 1:3, counter2) = this_virial_nd(1:3, 1:3)
               end if
            end if
 
@@ -2524,6 +2599,17 @@ program turbogap
                  deallocate(this_forces_xrd)
               end if
            end if
+           if( allocated(this_energies_nd) .and. params%valid_nd)then
+              counter2 = counter2 + 1
+              !         Note the lp things DO NOT have "this" in front anymore
+              energies_nd(1:n_sites) = all_this_energies(1:n_sites, counter2)
+              deallocate(this_energies_nd)
+              if( params%do_forces  .and. params%exp_forces)then
+                 forces_nd(1:3, 1:n_sites) = all_this_forces(1:3, 1:n_sites, counter2)
+                 virial_nd(1:3, 1:3) = all_this_virial(1:3, 1:3, counter2)
+                 deallocate(this_forces_nd)
+              end if
+           end if
 
            if( n_distance_2b > 0 )then
               counter2 = counter2 + 1
@@ -2565,28 +2651,19 @@ program turbogap
            energies = energies + energies_soap + energies_2b +&
                 & energies_3b + energies_core_pot + energies_vdw !+energies_lp
 
-           if (params%exp_energies) then
-              if ( valid_xps )then
-                 energies = energies + energies_lp
-              end if
+           if ( valid_xps )                                          energies_exp = energies_exp + energies_lp
+           if ( params%valid_pdf .and. params%do_pair_distribution ) energies_exp = energies_exp + energies_pdf
+           if ( params%valid_sf .and. params%do_structure_factor )   energies_exp = energies_exp + energies_sf
+           if ( params%valid_xrd .and. params%do_xrd )               energies_exp = energies_exp + energies_xrd
+           if ( params%valid_nd .and. params%do_nd )               energies_exp = energies_exp + energies_nd
 
-              if ( params%valid_pdf .and. params%do_pair_distribution )then
-                 energies = energies + energies_pdf
-              end if
-
-              if ( params%valid_sf .and. params%do_structure_factor )then
-                 energies = energies + energies_sf
-              end if
-
-              if ( params%valid_xrd .and. params%do_xrd )then
-                 energies = energies + energies_xrd
-              end if
-           end if
-
+           if (params%exp_energies) energies = energies + energies_exp
 
            energy_prev = energy
            instant_pressure_prev = instant_pressure
            energy = sum(energies)
+           energy_exp = sum( energies_exp )
+
         end if
 
 
@@ -2600,6 +2677,7 @@ program turbogap
               write(*,'(A,1X,F24.8,1X,A)')' 3b energy:', sum(energies_3b), 'eV |'
               write(*,'(A,1X,F18.8,1X,A)')' core_pot energy:', sum(energies_core_pot), 'eV |'
               write(*,'(A,1X,F23.8,1X,A)')' vdw energy:', sum(energies_vdw), 'eV |'
+              write(*,'(A,1X,F22.8,1X,A)')' Exp. energy:', sum(energies_exp), 'eV |'
               write(*,'(A,1X,F20.8,1X,A)')' l_prop energy:', sum(energies_lp), 'eV |'
               if ( params%valid_pdf .and. params%do_pair_distribution )&
                    & write(*,'(A,1X,F23.8,1X,A)')' pdf energy:',&
@@ -2610,8 +2688,12 @@ program turbogap
               if ( params%valid_xrd .and. params%do_xrd )&
                    & write(*,'(A,1X,F23.8,1X,A)')' xrd energy:',&
                    & sum(energies_xrd), 'eV |'
+              if ( params%valid_nd .and. params%do_nd )&
+                   & write(*,'(A,1X,F23.8,1X,A)')' nd energy:',&
+                   & sum(energies_nd), 'eV |'
 
-              if (.not. params%do_mc .or. mc_istep <= 1)then
+
+              if (.not. params%do_mc .or. (params%do_mc .and.  mc_istep <= 1 ))then
                  write(*,'(A,1X,F21.8,1X,A)')' Total energy:', sum(energies), 'eV |'
               else
                  write(*,'(A,1X,F21.8,1X,A)')' Total energy:', sum(images(i_trial_image)%energies), 'eV |'
@@ -2646,6 +2728,9 @@ program turbogap
 
            if (params%exp_forces .and. params%valid_xrd) forces = forces + forces_xrd
            if (params%exp_forces .and. params%valid_xrd) virial = virial + virial_xrd
+
+           if (params%exp_forces .and. params%valid_nd) forces = forces + forces_nd
+           if (params%exp_forces .and. params%valid_nd) virial = virial + virial_nd
 
 
            if ( rank == 0 .and. params%print_lp_forces )then
@@ -2688,6 +2773,17 @@ program turbogap
                  end do
                  close(90)
               end if
+
+              if (params%exp_forces .and. params%valid_nd)then
+                 write(filename, '(I8)') md_istep
+                 open(unit=90, file="forces_nd_"//trim(adjustl(filename)), status="unknown")
+                 do i = 1, n_sites
+                    write(90, "(F20.8, 1X, F20.8, 1X, F20.8)") &
+                         forces_nd(1,i), forces_nd(2,i), forces_nd(3,i)
+                 end do
+                 close(90)
+              end if
+
            end if
         end if
         ! For debugging the virial implementation
@@ -2713,6 +2809,12 @@ program turbogap
               call wrap_pbc(positions(1:3,1:n_sites), a_box&
                    &/dfloat(indices(1)), b_box/dfloat(indices(2)),&
                    & c_box/dfloat(indices(3)))
+              call get_xyz_energy_string(energies_soap, energies_2b,&
+                   & energies_3b, energies_core_pot, energies_vdw, energies_exp&
+                   &, energies_lp, energies_pdf, energies_sf, energies_xrd, energies_nd,&
+                   & params%valid_pdf, params%valid_sf, params%valid_xrd, params%valid_nd, params%do_pair_distribution,&
+                   & params%do_structure_factor, params%do_xrd, params%do_nd, string)
+
               call write_extxyz( n_sites, -n_xyz, time_step,&
                    & instant_temp, instant_pressure, a_box&
                    &/dfloat(indices(1)), b_box/dfloat(indices(2)),&
@@ -2721,7 +2823,7 @@ program turbogap
                    & energies(1:n_sites), masses, params&
                    &%write_property, params%write_array_property,&
                    & params%write_local_properties, local_property_labels, local_properties, &
-                   & fix_atom, "trajectory_out.xyz", .false.)
+                   & fix_atom, "trajectory_out.xyz", string, .false.)
 #ifdef _MPIF90
            END IF
 #endif
@@ -2845,8 +2947,14 @@ program turbogap
                 .or. modulo(md_istep, params%write_thermo) == 0) )then
               !       Organize this better so that the user can have more freedom about what gets printed to thermo.log
               !       There should also be a header preceded by # specifying what gets printed
-              write(10, "(I10, 1X, F16.4, 1X, F16.4, 1X, F20.8, 1X, F20.8, 1X, F20.8)", advance="no") &
-                   md_istep, md_time, instant_temp, E_kinetic, sum(energies), instant_pressure
+              if (params%do_exp) then
+                 write(10, "(I10, 1X, F16.4, 1X, F16.4, 1X, F20.8, 1X, F20.8, 1X, F20.8, 1X, F20.8)", advance="no") &
+                      md_istep, md_time, instant_temp, E_kinetic, sum(energies), sum(energies_exp), instant_pressure
+              else
+                 write(10, "(I10, 1X, F16.4, 1X, F16.4, 1X, F20.8, 1X, F20.8, 1X, F20.8)", advance="no") &
+                      md_istep, md_time, instant_temp, E_kinetic, sum(energies), instant_pressure
+              end if
+
               if( params%write_lv )then
                  write(10, "(1X, 9F20.8)", advance="no") a_box(1:3)/dfloat(indices(1)), &
                       b_box(1:3)/dfloat(indices(2)), &
@@ -2890,6 +2998,12 @@ program turbogap
               call wrap_pbc(positions_prev(1:3,1:n_sites), a_box&
                    &/dfloat(indices(1)), b_box/dfloat(indices(2)),&
                    & c_box/dfloat(indices(3)))
+              call get_xyz_energy_string(energies_soap, energies_2b,&
+                   & energies_3b, energies_core_pot, energies_vdw, energies_exp&
+                   &, energies_lp, energies_pdf, energies_sf, energies_xrd, energies_nd,&
+                   & params%valid_pdf, params%valid_sf, params%valid_xrd, params%valid_nd, params%do_pair_distribution,&
+                   & params%do_structure_factor, params%do_xrd, params%do_nd, string)
+
               call write_extxyz( n_sites, md_istep, time_step,&
                    & instant_temp, instant_pressure, a_box&
                    &/dfloat(indices(1)), b_box/dfloat(indices(2)),&
@@ -2899,13 +3013,19 @@ program turbogap
                    &%write_property, params %write_array_property,&
                    & params %write_local_properties,&
                    & local_property_labels, local_properties,&
-                   & fix_atom(1:3, 1:n_sites), "trajectory_out.xyz",&
+                   & fix_atom(1:3, 1:n_sites), "trajectory_out.xyz", string, &
                    & md_istep == 0 )
            else if( md_istep == params%md_nsteps .and. params%do_nested_sampling )then
               write(cjunk,'(I8)') i_image
               write(filename,'(A,A,A)') "walkers/", trim(adjustl(cjunk)), ".xyz"
               call wrap_pbc(positions_prev(1:3,1:n_sites), &
                    a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)))
+              call get_xyz_energy_string(energies_soap, energies_2b,&
+                   & energies_3b, energies_core_pot, energies_vdw, energies_exp&
+                   &, energies_lp, energies_pdf, energies_sf, energies_xrd, energies_nd,&
+                   & params%valid_pdf, params%valid_sf, params%valid_xrd, params%valid_nd, params%do_pair_distribution,&
+                   & params%do_structure_factor, params%do_xrd, params%do_nd, string)
+
               call write_extxyz( n_sites, md_istep, time_step, instant_temp, instant_pressure, &
                    a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
                    virial, xyz_species, &
@@ -2914,7 +3034,7 @@ program turbogap
                    params%write_property, params%write_array_property&
                    &,params%write_local_properties,&
                    & local_property_labels, local_properties,&
-                   & fix_atom(1:3, 1:n_sites), filename, .true. )
+                   & fix_atom(1:3, 1:n_sites), filename, string, .true. )
 
            end if
            !
@@ -3402,6 +3522,14 @@ program turbogap
                                images(i_current_image)%a_box/dfloat(indices(1)), &
                                images(i_current_image)%b_box/dfloat(indices(2)),&
                                images(i_current_image)%c_box/dfloat(indices(3)))
+                          call get_xyz_energy_string(energies_soap, energies_2b,&
+                               & energies_3b, energies_core_pot, energies_vdw, energies_exp&
+                               &, energies_lp, energies_pdf, energies_sf, energies_xrd, energies_nd,&
+                               & params%valid_pdf, params%valid_sf,&
+                               & params%valid_xrd, params%valid_nd,&
+                               & params%do_pair_distribution, params&
+                               &%do_structure_factor, params%do_xrd,&
+                               & params%do_nd, string)
 
                           call write_extxyz( images(i_current_image)%n_sites, 0, 1.0d0, 0.0d0, 0.0d0, &
                                images(i_current_image)%a_box/dfloat(indices(1)), &
@@ -3419,7 +3547,7 @@ program turbogap
                                & local_property_labels,&
                                & images(i_current_image)%local_properties&
                                &,images(i_current_image)%fix_atom,&
-                               & "mc_current.xyz", .true. )
+                               & "mc_current.xyz",string, .true. )
 
                           call write_extxyz( images(i_current_image)%n_sites, 1, 1.0d0, 0.0d0, 0.0d0, &
                                images(i_current_image)%a_box/dfloat(indices(1)), &
@@ -3437,7 +3565,7 @@ program turbogap
                                & local_property_labels,&
                                & images(i_current_image)%local_properties,&
                                & images(i_current_image)%fix_atom,&
-                               & "mc_all.xyz", .false. )
+                               & "mc_all.xyz", string, .false. )
 
                           if (params%mc_optimize_exp )then
 
@@ -3607,10 +3735,15 @@ program turbogap
                     if ((mc_istep == 0 .or. mc_istep == params%mc_nsteps .or. &
                          modulo(mc_istep, params%write_xyz) == 0))then
                        write(*,'(1X,A)')' Writing mc_current.xyz and mc_all.xyz '
-                          call wrap_pbc(images(i_current_image)%positions(1:3, 1:images(i_current_image)%n_sites), &
-                               images(i_current_image)%a_box/dfloat(indices(1)), &
-                               images(i_current_image)%b_box/dfloat(indices(2)),&
-                               images(i_current_image)%c_box/dfloat(indices(3)))
+                       call wrap_pbc(images(i_current_image)%positions(1:3, 1:images(i_current_image)%n_sites), &
+                            images(i_current_image)%a_box/dfloat(indices(1)), &
+                            images(i_current_image)%b_box/dfloat(indices(2)),&
+                            images(i_current_image)%c_box/dfloat(indices(3)))
+                       call get_xyz_energy_string(energies_soap, energies_2b,&
+                            & energies_3b, energies_core_pot, energies_vdw, energies_exp&
+                            &, energies_lp, energies_pdf, energies_sf, energies_xrd, energies_nd,&
+                            & params%valid_pdf, params%valid_sf, params%valid_xrd, params%valid_nd, params%do_pair_distribution,&
+                            & params%do_structure_factor, params%do_xrd, params%do_nd, string)
 
                        call write_extxyz( images(i_current_image)%n_sites, 0, 1.0d0, 0.0d0, 0.0d0, &
                             images(i_current_image)%a_box/dfloat(indices(1)), &
@@ -3627,7 +3760,7 @@ program turbogap
                             &%write_local_properties,&
                             & local_property_labels, images(i_current_image)%local_properties&
                             &, images(i_current_image)%fix_atom,&
-                            & "mc_current.xyz", .true. )
+                            & "mc_current.xyz", string, .true. )
 
                        call write_extxyz( images(i_current_image)%n_sites, 1, 1.0d0, 0.0d0, 0.0d0, &
                             images(i_current_image)%a_box/dfloat(indices(1)), &
@@ -3644,7 +3777,7 @@ program turbogap
                             &%write_local_properties,&
                             & local_property_labels, images(i_current_image)%local_properties&
                             &, images(i_current_image)%fix_atom,&
-                            & "mc_all.xyz", .true. )
+                            & "mc_all.xyz", string, .true. )
 
 
                        if (params%mc_optimize_exp) then
@@ -3762,6 +3895,11 @@ program turbogap
 
                     call wrap_pbc(positions(1:3,1:n_sites), &
                          a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)))
+                    call get_xyz_energy_string(energies_soap, energies_2b,&
+                         & energies_3b, energies_core_pot, energies_vdw, energies_exp&
+                         &, energies_lp, energies_pdf, energies_sf, energies_xrd, energies_nd,&
+                         & params%valid_pdf, params%valid_sf, params%valid_xrd, params%valid_nd, params%do_pair_distribution,&
+                         & params%do_structure_factor, params%do_xrd, params%do_nd, string)
 
                     call write_extxyz( n_sites, 0, 1.0d0, 0.0d0, 0.0d0, &
                          a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
@@ -3772,7 +3910,7 @@ program turbogap
                          &%write_array_property, params&
                          &%write_local_properties,&
                          & local_property_labels, local_properties&
-                         &,fix_atom, mc_file, .true. )
+                         &,fix_atom, mc_file, string,  .true. )
                  end if
                  ! As we have moved/added/removed, we must check the supercell and  broadcast the results
 
@@ -3809,6 +3947,10 @@ program turbogap
                     if ( params%valid_xrd .and. params%do_xrd )&
                          & write(*,'(A,1X,F23.8,1X,A)')' xrd energy:',&
                          & sum(energies_xrd), 'eV |'
+                    if ( params%valid_nd .and. params%do_nd )&
+                         & write(*,'(A,1X,F23.8,1X,A)')' nd energy:',&
+                         & sum(energies_nd), 'eV |'
+
 
 
                  else
@@ -3830,6 +3972,9 @@ program turbogap
                     if ( params%valid_xrd .and. params%do_xrd )&
                          & write(*,'(A,1X,F23.8,1X,A)')' xrd energy:',&
                          & sum(energies_xrd), 'eV |'
+                    if ( params%valid_nd .and. params%do_nd )&
+                         & write(*,'(A,1X,F23.8,1X,A)')' nd energy:',&
+                         & sum(energies_nd), 'eV |'
 
                  end if
               end if
@@ -4018,14 +4163,15 @@ program turbogap
         write(*,'(A,F13.3,A)') '     -   core_pot:', time_core_pot(3), ' seconds |'
         write(*,'(A,F13.3,A)') '     -        vdw:', time_vdw(3), ' seconds |'
         if (valid_xps .or. params%do_pair_distribution .or. params&
-             &%do_structure_factor .or. params%do_xrd) write(*,'(A&
-             &,F13.3,A)')      ' *  Exp. pred.   :', time_pdf(3) + time_sf(3) + time_xrd(3), ' seconds&
+             &%do_structure_factor .or. params%do_xrd .or. params%do_nd) write(*,'(A&
+             &,F13.3,A)')      ' *  Exp. pred.   :', time_pdf(3) + time_sf(3) + time_xrd(3) + time_nd(3), ' seconds&
              & |'
         if( valid_xps ) write(*,'(A,F13.3,A)') '     -        xps:',&
              & time_xps(3), ' seconds |'
         if( params%do_pair_distribution ) write(*,'(A,F13.3,A)') '     -        pdf:', time_pdf(3), ' seconds |'
         if( params%do_structure_factor  ) write(*,'(A,F13.3,A)') '     -         sf:', time_sf(3), ' seconds |'
         if( params%do_xrd  )              write(*,'(A,F13.3,A)') '     -        xrd:', time_xrd(3), ' seconds |'
+        if( params%do_nd  )              write(*,'(A,F13.3,A)') '     -         nd:', time_nd(3), ' seconds |'
 
         if( params%do_md )then
            write(*,'(A,F13.3,A)') ' *  MD algorithms:', time_md(3), ' seconds |'
@@ -4042,11 +4188,11 @@ program turbogap
         write(*,'(A,F13.3,A)') ' *  Miscellaneous:', time2-time3 - time_neigh - time_gap - time_read_input(3) &
              - time_read_xyz(3) - time_mpi(3) - time_mpi_positions(3)&
              & - time_mpi_ef(3) - time_md(3) - time_xps(3) -&
-             & time_pdf(3) - time_sf(3) - time_xrd(3), ' seconds |'
+             & time_pdf(3) - time_sf(3) - time_xrd(3) - time_nd(3), ' seconds |'
 #else
         write(*,'(A,F13.3,A)') ' *  Miscellaneous:', time2-time3 - time_neigh - time_gap - time_read_input(3) &
              - time_read_xyz(3) - time_md(3)- time_xps(3) -&
-             & time_pdf(3) - time_sf(3) - time_xrd(3), ' seconds |'
+             & time_pdf(3) - time_sf(3) - time_xrd(3)  - time_nd(3), ' seconds |'
 #endif
         write(*,*)'                                       |'
         write(*,'(A,F13.3,A)') ' *     Total time:', time2-time3, ' seconds |'

@@ -468,6 +468,18 @@ contains
              y = x * (y - 1.d0)
           end if
        end if
+    elseif ( trim(label) == "nd" )then
+       output = params%nd_output
+       ! mag = sqrt(dot_product(y, y)) * dx
+       ! y = y / mag
+
+       if ( trim(params%nd_output) == "q*i(q)" .and. params%q_units &
+            &== "q" )then
+          if ( exp .and. ( trim(input) == "i(q)" .or. trim(input) == "F(q)") )then
+             y = x * (y - 1.d0)
+          end if
+       end if
+
     end if
   end subroutine preprocess_exp_data
 
@@ -779,50 +791,59 @@ contains
        !######################################!
 
        if ( params%valid_pdf .and. allocated( params%exp_energy_scales ))then
+
+          call get_energy_scale( params%do_md, params%do_mc,&
+               & md_istep, params%md_nsteps, mc_istep, params&
+               &%mc_nsteps, params &
+               &%exp_energy_scales_initial(params%pdf_idx), params &
+               &%exp_energy_scales_final(params%pdf_idx), params &
+               &%exp_energy_scales(params%pdf_idx) )
+
           call get_exp_energies(params%exp_energy_scales(params&
                &%pdf_idx), params%exp_data(params%pdf_idx)%y&
                &, y_pair_distribution,&
                & params%pair_distribution_n_samples, n_sites,&
                & energies_pair_distribution(i_beg:i_end))
-       end if
 
 
-       if (params%do_forces .and.  params%exp_forces .and. allocated( params%exp_energy_scales ) .and. params%valid_pdf)then
-          ! forces_pair_distribution = 0.d0
-          ! allocate( pair_distribution_der_temp( 1:params%pair_distribution_n_samples ) )
-          ! pair_distribution_der_temp = 0.d0
 
-          n_dim_idx = 1
-          outerforces: do j = 1, n_species
-             do k = 1, n_species
+          if (params%do_forces .and.  params%exp_forces )then
+             ! forces_pair_distribution = 0.d0
+             ! allocate( pair_distribution_der_temp( 1:params%pair_distribution_n_samples ) )
+             ! pair_distribution_der_temp = 0.d0
 
-                if (j > k) cycle
+             n_dim_idx = 1
+             outerforces: do j = 1, n_species
+                do k = 1, n_species
 
-                call get_pair_distribution_forces(  n_sites, params%exp_energy_scales(params%pdf_idx),&
-                     & params%exp_data(params%pdf_idx)%x, params%exp_data(params%pdf_idx)%y,&
-                     & forces_pair_distribution, virial,&
-                     & neighbors_list(j_beg:j_end), n_neigh(i_beg:i_end),&
-                     & neighbor_species(j_beg:j_end), rjs(j_beg:j_end), xyz(1:3,j_beg:j_end), params&
-                     &%r_range_min, params%r_range_max, params&
-                     &%pair_distribution_n_samples,&
-                     & y_pair_distribution(1:params&
-                     &%pair_distribution_n_samples), params%pair_distribution_rcut&
-                     &, j, k, pair_distribution_partial_der(1:params &
-                     &%pair_distribution_n_samples, n_dim_idx,&
-                     & j_beg:j_end), params%pair_distribution_partial,&
-                     & params%pair_distribution_kde_sigma,&
-                     & ( (n_atoms_of_species(j) *&
-                     & n_atoms_of_species(k)) /  dfloat(n_sites) /&
-                     & dfloat(n_sites) ), ( dfloat(n_sites) / v_uc ), params%pair_distribution_output)
+                   if (j > k) cycle
 
-                n_dim_idx = n_dim_idx + 1
+                   call get_pair_distribution_forces(  n_sites, params%exp_energy_scales(params%pdf_idx),&
+                        & params%exp_data(params%pdf_idx)%x, params%exp_data(params%pdf_idx)%y,&
+                        & forces_pair_distribution, virial,&
+                        & neighbors_list(j_beg:j_end), n_neigh(i_beg:i_end),&
+                        & neighbor_species(j_beg:j_end), rjs(j_beg:j_end), xyz(1:3,j_beg:j_end), params&
+                        &%r_range_min, params%r_range_max, params&
+                        &%pair_distribution_n_samples,&
+                        & y_pair_distribution(1:params&
+                        &%pair_distribution_n_samples), params%pair_distribution_rcut&
+                        &, j, k, pair_distribution_partial_der(1:params &
+                        &%pair_distribution_n_samples, n_dim_idx,&
+                        & j_beg:j_end), params%pair_distribution_partial,&
+                        & params%pair_distribution_kde_sigma,&
+                        & ( (n_atoms_of_species(j) *&
+                        & n_atoms_of_species(k)) /  dfloat(n_sites) /&
+                        & dfloat(n_sites) ), ( dfloat(n_sites) / v_uc ), params%pair_distribution_output)
 
-                if ( n_dim_idx > n_dim_partial )then
-                   exit outerforces
-                end if
+                   n_dim_idx = n_dim_idx + 1
 
-             end do
-          end do outerforces
+                   if ( n_dim_idx > n_dim_partial )then
+                      exit outerforces
+                   end if
+
+                end do
+             end do outerforces
+          end if
 
           ! do i = 1, params%pair_distribution_n_samples
           !    print *,  "ppd ", 100, pair_distribution_der_temp( 1 ), pair_distribution_partial_der( 1, 2, 100:102 )
@@ -990,7 +1011,7 @@ contains
        & sinc_factor_matrix, do_derivatives, pair_distribution_partial_der,&
        & energies_sf, forces_sf, virial_sf)
     implicit none
-    type(input_parameters), intent(in) :: params
+    type(input_parameters), intent(inout) :: params
     real*8, allocatable, intent(out) :: x_structure_factor(:), x_structure_factor_temp(:), &
          & y_structure_factor(:), structure_factor_partial(:,:),&
          &  structure_factor_partial_temp(:,:),&
@@ -1292,59 +1313,66 @@ contains
 
 
           if ( params%valid_sf .and. allocated( params%exp_energy_scales ))then
+
+             call get_energy_scale( params%do_md, params%do_mc,&
+                  & md_istep, params%md_nsteps, mc_istep, params&
+                  &%mc_nsteps, params%exp_energy_scales_initial(params%sf_idx), &
+                  & params%exp_energy_scales_final(params%sf_idx), &
+                  & params%exp_energy_scales(params%sf_idx) )
+
              call get_exp_energies(params%exp_energy_scales(params&
                   &%sf_idx), params%exp_data(params%sf_idx)%y&
                   &, y_structure_factor,&
                   & params%structure_factor_n_samples, n_sites,&
                   & energies_sf(i_beg:i_end))
+
+
+
+             if (params%do_forces .and. params%exp_forces)then
+
+                allocate(forces_sf(1:3,1:n_sites))
+                forces_sf = 0.d0
+
+                n_dim_idx = 1
+                outerf: do j = 1, n_species
+                   do k = 1, n_species
+
+                      if (j > k) cycle
+
+                      if (j == k) f = 1.d0
+                      if (j /= k) f = 2.d0
+
+                      call get_structure_factor_forces(  n_sites, params%exp_energy_scales(params%sf_idx),&
+                           & params%exp_data(params%sf_idx)%x,  params%exp_data(params%sf_idx)%y,&
+                           & forces_sf, virial_sf,&
+                           & neighbors_list(j_beg:j_end), n_neigh(i_beg:i_end),&
+                           & neighbor_species(j_beg:j_end), species_types, rjs(j_beg:j_end), xyz(1:3,j_beg:j_end), params&
+                           &%r_range_min, params%r_range_max, params&
+                           &%pair_distribution_n_samples, params&
+                           &%structure_factor_n_samples, n_species,&
+                           & x_structure_factor(1:params&
+                           &%structure_factor_n_samples), y_structure_factor(1:params&
+                           &%structure_factor_n_samples), params%pair_distribution_rcut&
+                           &, j, k, pair_distribution_partial_der(1:params &
+                           &%pair_distribution_n_samples, n_dim_idx,&
+                           & j_beg:j_end), params%pair_distribution_partial,&
+                           & params%pair_distribution_kde_sigma,&
+                           & 4.d0 * pi * f * ( (n_atoms_of_species(j) *&
+                           & n_atoms_of_species(k)) /  dfloat(n_sites) /&
+                           & dfloat(n_sites) ) * ( dfloat(n_sites) /&
+                           & v_uc ), sinc_factor_matrix, n_dim_idx,&
+                           & .false., params%xrd_output,&
+                           & n_atoms_of_species, .false. )
+
+
+                      n_dim_idx = n_dim_idx + 1
+
+                      if (n_dim_idx > n_dim_partial) exit outerf
+
+                   end do
+                end do outerf
+             end if
           end if
-
-
-          if (params%do_forces .and. params%exp_forces)then
-
-             allocate(forces_sf(1:3,1:n_sites))
-             forces_sf = 0.d0
-
-             n_dim_idx = 1
-             outerf: do j = 1, n_species
-                do k = 1, n_species
-
-                   if (j > k) cycle
-
-                   if (j == k) f = 1.d0
-                   if (j /= k) f = 2.d0
-
-                   call get_structure_factor_forces(  n_sites, params%exp_energy_scales(params%sf_idx),&
-                        & params%exp_data(params%sf_idx)%x,  params%exp_data(params%sf_idx)%y,&
-                        & forces_sf, virial_sf,&
-                        & neighbors_list(j_beg:j_end), n_neigh(i_beg:i_end),&
-                        & neighbor_species(j_beg:j_end), species_types, rjs(j_beg:j_end), xyz(1:3,j_beg:j_end), params&
-                        &%r_range_min, params%r_range_max, params&
-                        &%pair_distribution_n_samples, params&
-                        &%structure_factor_n_samples, n_species,&
-                        & x_structure_factor(1:params&
-                        &%structure_factor_n_samples), y_structure_factor(1:params&
-                        &%structure_factor_n_samples), params%pair_distribution_rcut&
-                        &, j, k, pair_distribution_partial_der(1:params &
-                        &%pair_distribution_n_samples, n_dim_idx,&
-                        & j_beg:j_end), params%pair_distribution_partial,&
-                        & params%pair_distribution_kde_sigma,&
-                        & 4.d0 * pi * f * ( (n_atoms_of_species(j) *&
-                        & n_atoms_of_species(k)) /  dfloat(n_sites) /&
-                        & dfloat(n_sites) ) * ( dfloat(n_sites) /&
-                        & v_uc ), sinc_factor_matrix, n_dim_idx,&
-                        & .false., params%xrd_output,&
-                        & n_atoms_of_species)
-
-
-                   n_dim_idx = n_dim_idx + 1
-
-                   if (n_dim_idx > n_dim_partial) exit outerf
-
-                end do
-             end do outerf
-          end if
-
        end if
 
 
@@ -1489,9 +1517,9 @@ contains
        & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
        & neighbor_species, species, rank , q_beg, q_end, ntasks,&
        & sinc_factor_matrix, do_derivatives, pair_distribution_partial_der,&
-       & energies_xrd, forces_xrd, virial_xrd)
+       & energies_xrd, forces_xrd, virial_xrd, neutron)
     implicit none
-    type(input_parameters), intent(in) :: params
+    type(input_parameters), intent(inout) :: params
     real*8, allocatable, intent(out) :: x_xrd(:), x_xrd_temp(:), &
          & y_xrd(:), y_xrd_temp(:), energies_xrd(:), forces_xrd(:,:)
     real*8, allocatable, intent(in) :: structure_factor_partial(:,:),&
@@ -1515,8 +1543,19 @@ contains
     real*8 :: dq, f
     real*8, parameter :: pi = acos(-1.0)
     character*1024 :: filename
-    logical :: write_condition, overwrite_condition
-    logical, intent(in) :: do_derivatives
+    logical :: write_condition, overwrite_condition, valid_xrd
+    logical, intent(in) :: do_derivatives, neutron
+    integer :: xrd_idx
+    character*32 :: xrd_output
+
+    if ( neutron ) xrd_idx = params%nd_idx
+    if ( .not. neutron ) xrd_idx = params%xrd_idx
+
+    if ( neutron ) xrd_output = params%nd_output
+    if ( .not. neutron ) xrd_output = params%xrd_output
+
+    if ( neutron) valid_xrd = params%valid_nd
+    if (.not. neutron) valid_xrd = params%valid_xrd
 
 
     v_uc = dot_product( cross_product(a_box,&
@@ -1562,10 +1601,10 @@ contains
             &%structure_factor_n_samples,1:n_dim_partial), n_species, species_types&
             &, species, params%xrd_wavelength, params &
             &%xrd_damping, params%xrd_alpha, params &
-            &%xrd_method, params%xrd_iwasa, params%xrd_output, x_xrd(1:params&
+            &%xrd_method, params%xrd_iwasa, xrd_output, x_xrd(1:params&
             &%structure_factor_n_samples), y_xrd(1:params&
             &%structure_factor_n_samples),&
-            & n_atoms_of_species, y_sub)
+            & n_atoms_of_species, y_sub, neutron)
 
     else
 
@@ -1631,66 +1670,70 @@ contains
 
 
     if ( allocated(sinc_factor_matrix) )then
-       if (params%valid_xrd) then
+       if (valid_xrd) then
 
           allocate(energies_xrd(1:n_sites))
           energies_xrd = 0.d0
 
-          if ( params%valid_xrd .and. allocated( params%exp_energy_scales ))then
-             call get_exp_energies(params%exp_energy_scales(params&
-                  &%xrd_idx), params%exp_data(params%xrd_idx)%y&
+          if ( valid_xrd .and. allocated( params%exp_energy_scales ))then
+             call get_energy_scale( params%do_md, params%do_mc,&
+                  & md_istep, params%md_nsteps, mc_istep, params&
+                  &%mc_nsteps, params%exp_energy_scales_initial(xrd_idx), &
+                  & params%exp_energy_scales_final(xrd_idx), &
+                  & params%exp_energy_scales(xrd_idx) )
+
+             call get_exp_energies(params%exp_energy_scales(xrd_idx), params%exp_data(xrd_idx)%y&
                   &, y_xrd,&
                   & params%structure_factor_n_samples, n_sites,&
                   & energies_xrd(i_beg:i_end))
-          end if
 
 
 
-          if (params%do_forces .and. params%exp_forces)then
+             if (params%do_forces .and. params%exp_forces)then
 
-             allocate(forces_xrd(1:3,1:n_sites))
-             forces_xrd = 0.d0
+                allocate(forces_xrd(1:3,1:n_sites))
+                forces_xrd = 0.d0
 
-             n_dim_idx = 1
-             outerf: do j = 1, n_species
-                do k = 1, n_species
+                n_dim_idx = 1
+                outerf: do j = 1, n_species
+                   do k = 1, n_species
 
-                   if (j > k) cycle
+                      if (j > k) cycle
 
-                   if (j == k) f = 1.d0
-                   if (j /= k) f = 2.d0
+                      if (j == k) f = 1.d0
+                      if (j /= k) f = 2.d0
 
-                   call get_structure_factor_forces(  n_sites, params%exp_energy_scales(params%xrd_idx),&
-                        & x_xrd, params%exp_data(params%xrd_idx)%y,&
-                        & forces_xrd, virial_xrd,&
-                        & neighbors_list(j_beg:j_end), n_neigh(i_beg:i_end),&
-                        & neighbor_species(j_beg:j_end), species_types, rjs(j_beg:j_end), xyz(1:3,j_beg:j_end), params&
-                        &%r_range_min, params%r_range_max, params&
-                        &%pair_distribution_n_samples, params&
-                        &%structure_factor_n_samples, n_species,&
-                        & x_xrd(1:params&
-                        &%structure_factor_n_samples), y_xrd(1:params&
-                        &%structure_factor_n_samples), params%pair_distribution_rcut&
-                        &, j, k, pair_distribution_partial_der(1:params &
-                        &%pair_distribution_n_samples, n_dim_idx,&
-                        & j_beg:j_end), params%pair_distribution_partial,&
-                        & params%pair_distribution_kde_sigma,&
-                        & 4.d0 * pi * f * ( (n_atoms_of_species(j) *&
-                        & n_atoms_of_species(k)) /  dfloat(n_sites) /&
-                        & dfloat(n_sites) ) * ( dfloat(n_sites) /&
-                        & v_uc ), sinc_factor_matrix, n_dim_idx,&
-                        & .true., params%xrd_output, n_atoms_of_species)
+                      call get_structure_factor_forces(  n_sites, params%exp_energy_scales(xrd_idx),&
+                           & x_xrd, params%exp_data(xrd_idx)%y,&
+                           & forces_xrd, virial_xrd,&
+                           & neighbors_list(j_beg:j_end), n_neigh(i_beg:i_end),&
+                           & neighbor_species(j_beg:j_end), species_types, rjs(j_beg:j_end), xyz(1:3,j_beg:j_end), params&
+                           &%r_range_min, params%r_range_max, params&
+                           &%pair_distribution_n_samples, params&
+                           &%structure_factor_n_samples, n_species,&
+                           & x_xrd(1:params&
+                           &%structure_factor_n_samples), y_xrd(1:params&
+                           &%structure_factor_n_samples), params%pair_distribution_rcut&
+                           &, j, k, pair_distribution_partial_der(1:params &
+                           &%pair_distribution_n_samples, n_dim_idx,&
+                           & j_beg:j_end), params%pair_distribution_partial,&
+                           & params%pair_distribution_kde_sigma,&
+                           & 4.d0 * pi * f * ( (n_atoms_of_species(j) *&
+                           & n_atoms_of_species(k)) /  dfloat(n_sites) /&
+                           & dfloat(n_sites) ) * ( dfloat(n_sites) /&
+                           & v_uc ), sinc_factor_matrix, n_dim_idx,&
+                           & .true., xrd_output, n_atoms_of_species, neutron)
 
 
-                   n_dim_idx = n_dim_idx + 1
+                      n_dim_idx = n_dim_idx + 1
 
-                   if (n_dim_idx > n_dim_partial) exit outerf
+                      if (n_dim_idx > n_dim_partial) exit outerf
 
-                end do
-             end do outerf
+                   end do
+                end do outerf
+             end if
           end if
        end if
-
     end if
 
 
@@ -1700,21 +1743,30 @@ contains
          &, mc_istep, md_istep, params%write_xyz,&
          & write_condition)
 
-    if (rank == 0 .and. params%write_xrd .and. write_condition) then
+    if (rank == 0 .and. ( params%write_xrd .or.  params%write_nd)  .and. write_condition) then
 
        call get_overwrite_condition( params%do_mc, params%do_md&
          &, mc_istep, md_istep, params%write_xyz,&
          & overwrite_condition)
 
 
-       write(filename,'(A)')&
-            & 'xrd_prediction.dat'
-       call write_exp_datan(x_xrd_temp(1:params%structure_factor_n_samples),&
-            & y_xrd(1:params&
-            &%structure_factor_n_samples),&
-            & overwrite_condition, filename, "xrd: units of "//&
-            & trim(params%q_units) // " output: " // trim( params&
-            &%xrd_output ))
+       if (.not. neutron) then
+          write(filename,'(A)')&
+               & 'xrd_prediction.dat'
+          call write_exp_datan(x_xrd_temp(1:params%structure_factor_n_samples),&
+               & y_xrd(1:params&
+               &%structure_factor_n_samples),&
+               & overwrite_condition, filename, "xrd: units of "//&
+               & trim(params%q_units) // " output: " // trim( xrd_output ))
+       else
+          write(filename,'(A)')&
+               & 'nd_prediction.dat'
+          call write_exp_datan(x_xrd_temp(1:params%structure_factor_n_samples),&
+               & y_xrd(1:params&
+               &%structure_factor_n_samples),&
+               & overwrite_condition, filename, "nd: units of "//&
+               & trim(params%q_units) // " output: " // trim( xrd_output ))
+       end if
 
     end if
 

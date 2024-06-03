@@ -882,7 +882,9 @@ end if
 ! do experimental
         params%do_exp = .true.
 
-      else if(keyword=='exp_energy_scales')then
+      else if(keyword=='exp_energy_scales' .or. keyword&
+           &=='exp_energy_scales_initial' .or. keyword&
+           &=='exp_energy_scales_beg')then
          backspace(10)
          if (params%n_moments > 0)then
             read(10, *, iostat=iostatus) cjunk, cjunk, (params&
@@ -892,7 +894,28 @@ end if
             read(10, *, iostat=iostatus) cjunk, cjunk, (params&
                  &%exp_energy_scales(nw),nw=1,params&
                  &%n_exp)
+
+            ! Set the final gamma to the initial in case
+            do nw = 1, params%n_exp
+               params%exp_energy_scales_initial(nw) = params%exp_energy_scales(nw)
+               params%exp_energy_scales_final(nw) = params%exp_energy_scales(nw)
+            end do
+
          end if
+
+
+      else if(keyword=='exp_energy_scales_final' .or. keyword=='exp_energy_scales_end')then
+         backspace(10)
+         if (params%n_moments > 0)then
+            read(10, *, iostat=iostatus) cjunk, cjunk, (params&
+             &%exp_energy_scales_final(nw),nw=1,params&
+             &%n_moments)
+         else
+            read(10, *, iostat=iostatus) cjunk, cjunk, (params&
+                 &%exp_energy_scales_final(nw),nw=1,params&
+                 &%n_exp)
+         end if
+
 
       else if(keyword=='exp_input_type')then
          backspace(10)
@@ -924,9 +947,17 @@ end if
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%xrd_method
 
+      else if(keyword=='nd_wavelength')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%nd_wavelength
+
      else if(keyword=='xrd_output')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%xrd_output
+
+     else if(keyword=='nd_output')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%nd_output
 
      ! else if(keyword=='xrd_input')then
      !    backspace(10)
@@ -1008,6 +1039,15 @@ end if
 !           params%do_structure_factor = .true.
         end if
 
+      else if(keyword=='do_nd')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%do_nd
+
+        if (params%do_nd)then
+           params%do_pair_distribution = .true.
+!           params%do_structure_factor = .true.
+        end if
+
       else if(keyword=='do_exp')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%do_exp
@@ -1017,6 +1057,8 @@ end if
         read(10, *, iostat=iostatus) cjunk, cjunk, params%n_exp
         allocate( params%exp_data(1:params%n_exp) )
         allocate( params%exp_energy_scales(1:params%n_exp) )
+        allocate( params%exp_energy_scales_initial(1:params%n_exp) )
+        allocate( params%exp_energy_scales_final(1:params%n_exp) )
 
         ! Turning on exp prediction
         params%do_exp = .true.
@@ -1037,6 +1079,13 @@ end if
                write(*,*)' - Valid exp. XRD found                |'
                ! Must be set to true to find the partial structure factors
                ! params%pair_distribution_partial = .true.
+            else if(trim(params%exp_data(nw)%label) == "nd")then
+               params%nd_idx = nw
+               params%valid_nd = .true.
+               write(*,*)' - Valid exp. ND found                |'
+               ! Must be set to true to find the partial structure factors
+               ! params%pair_distribution_partial = .true.
+
             else if(trim(params%exp_data(nw)%label) == "saxs")then
                params%saxs_idx = nw
                params%valid_xrd = .true.
@@ -1084,6 +1133,10 @@ end if
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%xrd_rcut
 
+      else if( keyword == "nd_rcut" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%nd_rcut
+
       else if( keyword == "pair_distribution_rcut" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%pair_distribution_rcut
@@ -1115,6 +1168,10 @@ end if
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%write_xrd
 
+      else if( keyword == "write_nd" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%write_nd
+
       else if( keyword == "write_exp" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%write_exp
@@ -1133,6 +1190,11 @@ end if
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%xrd_n_samples
         params%structure_factor_n_samples = params%xrd_n_samples
+
+      else if( keyword == "nd_n_samples" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%xrd_n_samples
+        params%structure_factor_n_samples = params%nd_n_samples
 
       else if( keyword == "r_range_min" )then
         backspace(10)
@@ -1581,6 +1643,23 @@ end if
              ! params%q_units = 'twotheta'
              params%xrd_n_samples = params%exp_data(i)%n_samples
              params%structure_factor_n_samples = params%exp_data(i)%n_samples
+
+          elseif ( trim(params%exp_data(i)%label) == 'nd')then
+             write(*,'(A,1X,A,1X,A)') trim(params%exp_data(i)%label),&
+                  & ' found, setting q_range_min/max with q_units = ' // trim(params%q_units) , ' |'
+
+             params%do_pair_distribution = .true.
+             params%pair_distribution_partial = .true.
+             params%do_structure_factor = .true.
+             params%structure_factor_from_pdf = .true.
+             params%do_nd = .true.
+
+             params%q_range_min = params%exp_data(i)%range_min
+             params%q_range_max = params%exp_data(i)%range_max
+             ! params%q_units = 'twotheta'
+             params%nd_n_samples = params%exp_data(i)%n_samples
+             params%structure_factor_n_samples = params%exp_data(i)%n_samples
+
           elseif ( trim(params%exp_data(i)%label) == 'saxs')then
              write(*,'(A,1X,A,1X,A)') trim(params%exp_data(i)%label), ' found, setting q_range_min/max with q_units = "q"', ' |'
 
@@ -2367,6 +2446,7 @@ end if
           open(20, file=core_pot_hypers(n_core_pot)%core_pot_file, status="unknown")
           read(20, *) core_pot_hypers(n_core_pot)%n, core_pot_hypers(n_core_pot)%yp1, core_pot_hypers(n_core_pot)%ypn
           n = core_pot_hypers(n_core_pot)%n
+
           allocate( V(1:n) )
           allocate( x(1:n) )
           counter = 0

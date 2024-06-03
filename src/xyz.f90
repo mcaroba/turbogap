@@ -65,13 +65,74 @@ module xyz_module
 ! If the corresponding write_property(i) or write_array_property(i)
 ! is .true., we write out the corresponding property
 !
+
+    subroutine get_xyz_energy_string(energies_soap, energies_2b,&
+         & energies_3b, energies_core_pot, energies_vdw, energies_exp&
+         &, energies_lp, energies_pdf, energies_sf, energies_xrd, energies_nd,&
+         & valid_pdf, valid_sf, valid_xrd, valid_nd,  do_pair_distribution,&
+         & do_structure_factor, do_xrd, do_nd, string)
+      implicit none
+      real*8, intent(in), allocatable :: energies_soap(:), energies_2b(:),&
+           & energies_3b(:), energies_core_pot(:), energies_vdw(:),&
+           & energies_exp(:), energies_lp(:), energies_pdf(:), energies_sf(:),&
+           & energies_xrd(:), energies_nd(:)
+      logical, intent(in) :: valid_pdf, valid_sf, valid_xrd, valid_nd, do_pair_distribution,&
+           & do_structure_factor, do_xrd, do_nd
+      character*1024, intent(out) :: string
+      character*32 :: temp_string
+
+
+      write(temp_string, "(F16.8)") sum(energies_soap)
+      write(string, "(1X,A)") "energy_soap=" // trim(adjustl(temp_string))
+
+      write(temp_string, "(F16.8)") sum(energies_2b)
+      write(string, "(A)") adjustl(trim(string)) // " energy_2b=" // trim(adjustl(temp_string))
+
+      write(temp_string, "(F16.8)") sum(energies_3b)
+      write(string, "(A)") adjustl(trim(string)) // " energy_3b=" // trim(adjustl(temp_string))
+
+      write(temp_string, "(F16.8)") sum(energies_core_pot)
+      write(string, "(A)") adjustl(trim(string)) // " energy_core_pot=" // trim(adjustl(temp_string))
+
+      write(temp_string, "(F16.8)") sum(energies_vdw)
+      write(string, "(A)") adjustl(trim(string)) // " energy_vdw=" // trim(adjustl(temp_string))
+
+      write(temp_string, "(F16.8)") sum(energies_exp)
+      write(string, "(A)") adjustl(trim(string)) // " energy_exp=" // trim(adjustl(temp_string))
+
+      write(temp_string, "(F16.8)") sum(energies_lp)
+      write(string, "(A)") adjustl(trim(string)) // " energy_lp=" // trim(adjustl(temp_string))
+
+      if ( valid_pdf .and. do_pair_distribution )then
+         write(temp_string, "(F16.8)") sum(energies_pdf)
+         write(string, "(A)") adjustl(trim(string)) // " energy_pdf=" // trim(adjustl(temp_string))
+      end if
+      if ( valid_sf .and. do_structure_factor )then
+         write(temp_string, "(F16.8)") sum(energies_sf)
+         write(string, "(A)") adjustl(trim(string)) // " energy_sf=" // trim(adjustl(temp_string))
+      end if
+      if ( valid_xrd .and. do_xrd )then
+         write(temp_string, "(F16.8)") sum(energies_xrd)
+         write(string, "(A)") adjustl(trim(string)) // " energy_xrd=" // trim(adjustl(temp_string))
+      end if
+      if ( valid_nd .and. do_nd )then
+         write(temp_string, "(F16.8)") sum(energies_nd)
+         write(string, "(A)") adjustl(trim(string)) // " energy_nd=" // trim(adjustl(temp_string))
+      end if
+
+    end subroutine get_xyz_energy_string
+
+
+
+
+    
   subroutine write_extxyz( Nat, md_istep, dt, temperature, pressure, a_cell, b_cell, c_cell, virial, &
                            species, positions, velocities, forces, local_energies, masses, &
                            write_property,&
                            & write_array_property,&
                            & write_local_properties,&
                            & local_property_labels, local_properties, fix_atom,&
-                           & filename , overwrite )
+                           & filename , string,  overwrite )
 
     implicit none
 
@@ -80,7 +141,7 @@ module xyz_module
     real*8, intent(in) :: forces(:,:), velocities(:,:), positions(:,:), local_energies(:), masses(:)
     real*8, intent(in) :: local_properties(:,:)
     integer, intent(in) :: Nat, md_istep
-    character(len=*), intent(in) :: species(:), filename
+    character(len=*), intent(in) :: species(:), filename, string
     logical, intent(in) :: write_property(:), write_array_property(:), fix_atom(:,:), overwrite
     logical, allocatable, intent(in) :: write_local_properties(:)
     character*1024, allocatable, intent(in) :: local_property_labels(:)
@@ -281,7 +342,10 @@ module xyz_module
         write(10, "(1X,2A)", advance="no") "i_config=", trim(adjustl(temp_string))
       end if
     end if
-!
+    !
+    write(10, "(1X,A)", advance="no") trim(adjustl(string))
+
+
 !   Advance
     write(10,*)
 

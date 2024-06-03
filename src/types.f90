@@ -112,7 +112,7 @@ module types
 ! These is the type for the input parameters
   type input_parameters
      real*8, allocatable :: masses_types(:), e0(:), vdw_c6_ref(:), vdw_r0_ref(:), vdw_alpha0_ref(:), &
-          mc_acceptance(:), exp_energy_scales(:), radii(:)
+          mc_acceptance(:), exp_energy_scales(:), exp_energy_scales_initial(:), exp_energy_scales_final(:), radii(:)
     real*8 :: t_beg = 300.d0, t_end = 300.d0, tau_t = 100.d0, md_step = 1.d0, &
               neighbors_buffer = 0.d0, max_GBytes_per_process = 1.d0, e_tol = 1.d-6, &
               vdw_sr = 0.94d0, vdw_d = 20.d0, vdw_rcut = 10.d0, &
@@ -124,15 +124,15 @@ module types
               max_opt_step_eps = 0.05d0, mc_mu = 0.0d0, t_extra = 0.d0, p_nested = 0.d0, &
               nested_max_strain = 0.d0, nested_max_volume_change = 0.d0, mc_move_max = 1.d0, &
               mc_lnvol_max = 0.01d0, mc_min_dist = 0.2d0, xps_sigma=0.4d0, mc_reverse_lambda = 0.d0, &
-              xrd_wavelength = 1.5405981d0, xrd_damping=0.0d0,&
-              & xrd_alpha=1.01d0, xrd_rcut=4.d0, q_range_min=1.0, q_range_max=5.d0,&
+              xrd_wavelength = 1.5405981d0, xrd_damping=0.0d0, nd_wavelength = 1.5405981d0,&
+              & xrd_alpha=1.01d0, xrd_rcut=4.d0, nd_rcut=4.d0, q_range_min=1.0, q_range_max=5.d0,&
               & r_range_min=1.0, r_range_max=5.d0, pair_distribution_rcut=4.d0, pair_distribution_kde_sigma=0.d0
     integer :: md_nsteps = 1, mc_nsteps = 1, write_xyz = 0,&
          & write_thermo = 1, which_atom = 0, vdw_mbd_nfreq = 11,&
          & n_mc_types = 0, n_nested = 0, mc_idx = 1, mc_nrelax=0,&
          & n_local_properties=0, n_moments=0, n_mc_swaps = 0, xps_idx&
-         &, xrd_idx, saxs_idx, pdf_idx, sf_idx, n_exp=0, pair_distribution_n_samples&
-         &=200, structure_factor_n_samples=200, xrd_n_samples=200
+         &, xrd_idx, saxs_idx, pdf_idx, sf_idx, nd_idx, n_exp=0, pair_distribution_n_samples&
+         &=200, structure_factor_n_samples=200, xrd_n_samples=200, nd_n_samples=200
     integer, allocatable :: mc_swaps_id(:)
 
     character*1024 :: atoms_file
@@ -144,7 +144,7 @@ module types
     character*32 :: barostat = "none", thermostat = "none",&
          & barostat_sym = "isotropic", mc_species = "none",&
          & xps_force_type = "similarity", exp_similarity_type =&
-         & "squared_diff", xrd_method = "xrd", q_units="q", xrd_output="xrd", pair_distribution_output = "pdf"
+         & "squared_diff", xrd_method = "xrd", q_units="q", xrd_output="xrd", nd_output="xrd", pair_distribution_output = "pdf"
     logical :: do_md = .false., do_mc = .false., do_prediction =&
          & .false., do_forces = .false., do_derivatives = .false.,&
          & do_derivatives_fd = .false., write_soap = .false.,&
@@ -161,14 +161,14 @@ module types
          & mc_write_xyz = .false., do_exp = .false., mc_relax =&
          & .false., mc_optimize_exp =.false., exp_forces=.false., exp_energies=.true.,&
          & print_lp_forces =.false., mc_hamiltonian = .false.,&
-         & accessible_volume = .false., mc_reverse = .false.,&
+         & accessible_volume = .false., mc_reverse = .false., &
          & xrd_iwasa = .true., pair_distribution_partial=.false.,&
          & structure_factor_from_pdf=.false., structure_factor_window&
          & = .true., write_pair_distribution=.false.,&
          & write_structure_factor=.false., do_pair_distribution =&
-         & .false., do_structure_factor =.false., do_xrd=.false.,&
-         & write_xrd=.false., structure_factor_matrix=.false., write_exp=.true., &
-         & valid_pdf=.false., valid_sf=.false., valid_xrd=.false.
+         & .false., do_structure_factor =.false., do_xrd=.false., do_nd=.false.,&
+         & write_xrd=.false., write_nd=.false., structure_factor_matrix=.false., write_exp=.true., &
+         & valid_pdf=.false., valid_sf=.false., valid_xrd=.false.,  valid_nd=.false.
 
     logical, allocatable :: write_local_properties(:)
     type(exp_data_container), allocatable :: exp_data(:)

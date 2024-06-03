@@ -158,12 +158,52 @@ contains
 
   ! end subroutine get_all_scattering_factors
 
+  function clamp(x, low, high)
+    implicit none
+    real*8, intent(in) :: x, low, high
+    real*8 :: clamp
+    clamp = x
+    if (x < low) clamp = low
+    if (x > high) clamp = high
+  end function clamp
+
+  subroutine energy_scale( current_step, total_steps, escale_initial, escale_final, escale )
+    implicit none
+    integer, intent(in) :: current_step, total_steps
+    real*8, intent(in) :: escale_initial, escale_final
+    real*8, intent(out) :: escale
+    real*8 :: t
+
+    t = clamp( dfloat( current_step ) / dfloat( total_steps ), 0.d0, 1.d0)
+    escale = (1.d0 - t) * escale_initial + t * escale_final
+  end subroutine energy_scale
+
+  subroutine get_energy_scale( do_md, do_mc, md_istep, md_nsteps,&
+       & mc_istep, mc_nsteps,  escale_initial, escale_final, escale )
+    implicit none
+    logical, intent(in) :: do_md, do_mc
+    integer, intent(in) :: md_istep, md_nsteps, mc_istep, mc_nsteps
+    real*8, intent(in) :: escale_initial, escale_final
+    real*8, intent(out) :: escale
+    real*8 :: t
+
+    if (do_md .and. .not. do_mc)then
+       call energy_scale( md_istep, md_nsteps, escale_initial, escale_final, escale )
+    elseif (do_mc)then
+       call energy_scale( mc_istep, mc_nsteps, escale_initial, escale_final, escale )
+    else
+       call energy_scale( 1, 1,  escale_initial, escale_final, escale )
+    end if
+
+  end subroutine get_energy_scale
+
+
 
   subroutine get_structure_factor_forces(  n_sites0, energy_scale, x, y_exp, forces0, virial,  &
        & neighbors_list, n_neigh, neighbor_species, species_types, rjs, xyz, r_min,&
        & r_max, n_samples, n_samples_sf, n_species,  x_structure_factor, structure_factor, r_cut, species_1,&
        & species_2,  pair_distribution_der, partial_rdf, kde_sigma,&
-       & c_factor, sinc_factor_matrix, n_dim_idx, do_xrd, output, n_atoms_of_species)
+       & c_factor, sinc_factor_matrix, n_dim_idx, do_xrd, output, n_atoms_of_species, neutron)
     implicit none
     real*8,  intent(in) :: rjs(:), xyz(:,:), y_exp(:), energy_scale,  kde_sigma, c_factor, sinc_factor_matrix(:,:), x(:)
     integer, intent(in) :: n_sites0, n_samples_sf, n_species
@@ -180,8 +220,9 @@ contains
     real*8, allocatable ::  prefactor(:), all_scattering_factors(:), sf_parameters(:,:), structure_factor_der(:)
     real*8 :: r, n_pc, this_force(1:3), f, wfaci, wfacj, temp(1:n_samples_sf), sth
     real*8, parameter :: pi = acos(-1.0)
-    logical, intent(in) :: partial_rdf, do_xrd
+    logical, intent(in) :: partial_rdf, do_xrd, neutron
     logical :: species_in_list, counted_1=.false.
+
     ! First allocate the pair correlation function array
 
     n_sites = size(n_neigh)
@@ -193,44 +234,81 @@ contains
     allocate( structure_factor_der( 1:n_samples_sf ) )
 
     if (do_xrd)then
-       allocate( sf_parameters(1:9,1:n_species) )
-       allocate( all_scattering_factors(1:n_samples_sf) )
+       if (.not. neutron) then
+          allocate( sf_parameters(1:9,1:n_species) )
+          allocate( all_scattering_factors(1:n_samples_sf) )
 
-       sf_parameters = 0.d0
-       do i = 1, size(species_types)
-          call get_scattering_factor_params(species_types(i), sf_parameters(1:9,i))
-       end do
-
-       do i = 1, n_samples_sf
-          call get_scattering_factor(wfaci, sf_parameters(1:9,species_1), x_structure_factor(i)/2.d0)
-          call get_scattering_factor(wfacj, sf_parameters(1:9,species_2), x_structure_factor(i)/2.d0)
-          all_scattering_factors(i) = wfaci * wfacj
-
-          if ( trim(output) == "q*i(q)" .or. trim(output) == "q*F(q)")then
-             ! we now handlw this case in preprocess experimental data
-             ! output q * i(q) === q * F_x(q)
-             sth = 0.d0
-             do j = 1, n_species
-                call get_scattering_factor(wfaci, sf_parameters(1:9,j), x_structure_factor(i)/2.d0)
-                sth = sth + ( n_atoms_of_species(j) / dfloat(n_sites0) ) * wfaci !* wfaci
-             end do
-
-             all_scattering_factors(i) =  2.d0 * pi * x(i) * all_scattering_factors(i) / sth**2 !+ 1.d0
-
-          elseif( trim(output) == "F(q)" .or. trim(output) == "i(q)")then
-             ! Output the total scattering functon, i(q) === F_x(q)
-             sth = 0.d0
-             do j = 1, n_species
-                call get_scattering_factor(wfaci, sf_parameters(1:9,j), x_structure_factor(i)/2.d0)
-                sth = sth + ( n_atoms_of_species(j) / dfloat(n_sites0) ) * wfaci !* wfaci
-             end do
-
-             all_scattering_factors(i) = all_scattering_factors(i) / sth**2 !+ 1.d0
-
-          end if
+          sf_parameters = 0.d0
+          do i = 1, size(species_types)
+             call get_scattering_factor_params(species_types(i), sf_parameters(1:9,i))
+          end do
 
 
-       end do
+          do i = 1, n_samples_sf
+             call get_scattering_factor(wfaci, sf_parameters(1:9,species_1), x_structure_factor(i)/2.d0)
+             call get_scattering_factor(wfacj, sf_parameters(1:9,species_2), x_structure_factor(i)/2.d0)
+             all_scattering_factors(i) = wfaci * wfacj
+
+             if ( trim(output) == "q*i(q)" .or. trim(output) == "q*F(q)")then
+                ! we now handlw this case in preprocess experimental data
+                ! output q * i(q) === q * F_x(q)
+                sth = 0.d0
+                do j = 1, n_species
+                   call get_scattering_factor(wfaci, sf_parameters(1:9,j), x_structure_factor(i)/2.d0)
+                   sth = sth + ( n_atoms_of_species(j) / dfloat(n_sites0) ) * wfaci !* wfaci
+                end do
+
+                all_scattering_factors(i) =  2.d0 * pi * x(i) * all_scattering_factors(i) / sth**2 !+ 1.d0
+
+             elseif( trim(output) == "F(q)" .or. trim(output) == "i(q)")then
+                ! Output the total scattering functon, i(q) === F_x(q)
+                sth = 0.d0
+                do j = 1, n_species
+                   call get_scattering_factor(wfaci, sf_parameters(1:9,j), x_structure_factor(i)/2.d0)
+                   sth = sth + ( n_atoms_of_species(j) / dfloat(n_sites0) ) * wfaci !* wfaci
+                end do
+
+                all_scattering_factors(i) = all_scattering_factors(i) / sth**2 !+ 1.d0
+
+             end if
+
+
+          end do
+       else
+          allocate( sf_parameters(1:9,1:n_species) )
+          allocate( all_scattering_factors(1:n_samples_sf) )
+          do i = 1, n_samples_sf
+             call get_neutron_scattering_length(species_types(species_1), wfaci)
+             call get_neutron_scattering_length(species_types(species_2), wfacj)
+             all_scattering_factors(i) = wfaci * wfacj
+
+             if ( trim(output) == "q*i(q)" .or. trim(output) == "q*F(q)")then
+                ! we now handlw this case in preprocess experimental data
+                ! output q * i(q) === q * F_x(q)
+                sth = 0.d0
+                do j = 1, n_species
+                   call get_neutron_scattering_length(species_types(j), wfacj)
+                   sth = sth + ( n_atoms_of_species(j) / dfloat(n_sites0) ) * wfaci !* wfaci
+                end do
+
+                all_scattering_factors(i) =  2.d0 * pi * x(i) * all_scattering_factors(i) / sth**2 !+ 1.d0
+
+             elseif( trim(output) == "F(q)" .or. trim(output) == "i(q)")then
+                ! Output the total scattering functon, i(q) === F_x(q)
+                sth = 0.d0
+                do j = 1, n_species
+                   call get_neutron_scattering_length(species_types(j), wfacj)
+                   sth = sth + ( n_atoms_of_species(j) / dfloat(n_sites0) ) * wfaci !* wfaci
+                end do
+
+                all_scattering_factors(i) = all_scattering_factors(i) / sth**2 !+ 1.d0
+
+             end if
+
+
+          end do
+
+       end if
 
     end if
 
@@ -1168,7 +1246,7 @@ contains
   subroutine get_xrd_from_partial_structure_factors(q_beg, q_end, &
        & structure_factor_partial, n_species, species_types,&
        & species, wavelength, damping, alpha, method, use_iwasa, output, &
-       & x, y, n_atoms_of_species, y_sub )
+       & x, y, n_atoms_of_species, y_sub, neutron )
     implicit none
     real*8, intent(in) :: damping, wavelength, alpha, structure_factor_partial(:,:)
     integer, intent(in) :: species(:)
@@ -1183,6 +1261,7 @@ contains
     real*8, intent(in) :: x(:)
     real*8, intent(out) :: y(:), y_sub(:)
     real*8, parameter :: pi = acos(-1.0)
+    logical, intent(in) :: neutron
 
     n_dim_partial = n_species * ( n_species + 1 ) / 2
 
@@ -1193,9 +1272,12 @@ contains
     allocate( sf_parameters(1:9,1:n_species) )
 
     sf_parameters = 0.d0
-    do i = 1, n_species
-       call get_scattering_factor_params(species_types(i), sf_parameters(1:9,i))
-    end do
+
+    if (.not. neutron) then
+       do i = 1, n_species
+          call get_scattering_factor_params(species_types(i), sf_parameters(1:9,i))
+       end do
+    end if
 
     ntot = sum(n_atoms_of_species)
 
@@ -1203,10 +1285,19 @@ contains
 
        n_dim_idx = 1
        outer: do i = 1, n_species
-          call get_scattering_factor(wfaci, sf_parameters(1:9,i), x(l)/2.d0)
+          if (.not. neutron) then
+             call get_scattering_factor(wfaci, sf_parameters(1:9,i), x(l)/2.d0)
+          else
+             call get_neutron_scattering_length(species_types(i), wfaci)
+          end if
 
           do j = 1, n_species
-             call get_scattering_factor(wfacj, sf_parameters(1:9,j), x(l)/2.d0)
+             if (.not. neutron) then
+                call get_scattering_factor(wfacj, sf_parameters(1:9,j), x(l)/2.d0)
+             else
+                call get_neutron_scattering_length(species_types(j), wfacj)
+             end if
+
              !               call get_scattering_factor(species_types(j), x(l)/2.d0, wfacj)
 
              if ( i > j ) cycle
@@ -1229,7 +1320,12 @@ contains
        if ( trim(output) == "xrd" )then
           !          default !
           do i = 1, n_species
-             call get_scattering_factor(wfaci, sf_parameters(1:9,i), x(l)/2.d0)
+             if (.not. neutron)then
+                call get_scattering_factor(wfaci, sf_parameters(1:9,i), x(l)/2.d0)
+             else
+                call get_neutron_scattering_length(species_types(i), wfaci)
+             end if
+
              y_sub(l) = ( n_atoms_of_species(i) / ntot ) * wfaci * wfaci
              y(l) = y(l) + y_sub(l)
           end do
@@ -1238,7 +1334,13 @@ contains
           ! output q * i(q) === q * F_x(q)
           sth = 0.d0
           do i = 1, n_species
-             call get_scattering_factor(wfaci, sf_parameters(1:9,i), x(l)/2.d0)
+             if (.not. neutron)then
+                call get_scattering_factor(wfaci, sf_parameters(1:9,i), x(l)/2.d0)
+             else
+                call get_neutron_scattering_length(species_types(i), wfaci)
+             end if
+
+             !             call get_scattering_factor(wfaci, sf_parameters(1:9,i), x(l)/2.d0)
              sth = sth + ( n_atoms_of_species(i) / ntot ) * wfaci !* wfaci
           end do
 
@@ -1250,7 +1352,12 @@ contains
           ! Output the total scattering functon, i(q) === F_x(q)
           sth = 0.d0
           do i = 1, n_species
-             call get_scattering_factor(wfaci, sf_parameters(1:9,i), x(l)/2.d0)
+             if (.not. neutron)then
+                call get_scattering_factor(wfaci, sf_parameters(1:9,i), x(l)/2.d0)
+             else
+                call get_neutron_scattering_length(species_types(i), wfaci)
+             end if
+
              sth = sth + ( n_atoms_of_species(i) / ntot ) * wfaci !* wfaci
           end do
 
@@ -2537,6 +2644,134 @@ contains
        f = f + w(j) * exp( - w( j + 4 ) * s_sq  )
     end do
   end subroutine get_scattering_factor
+
+  subroutine get_neutron_scattering_length(element, b)
+    implicit none
+    character*8, intent(in) :: element
+    character*8 :: elements(1:86)
+    real*8 :: w(1:3,1:86)
+    real*8, intent(out) :: b
+    logical :: is_in_database = .false.
+    integer :: i
+
+
+
+    elements = ["H ", "D ", "He", "Li", "Be", "B ", "C ", "N ", "O ",&
+         & "F ", "Ne", "Na", "Mg", "Al", "Si", "P ", "S ", "Cl", "Ar"&
+         &, "K ", "Ca", "Sc", "Ti", "V ", "Cr", "Mn", "Fe", "Co",&
+         & "Ni", "Cu", "Zn", "Ga", "Ge", "As", "Se", "Br", "Kr", "Rb"&
+         &, "Sr", "Y ", "Zr", "Nb", "Mo", "Tc", "Ru", "Rh", "Pd",&
+         & "Ag", "Cd", "In", "Sn", "Sb", "Te", "I ", "Xe", "Cs", "Ba"&
+         &, "La", "Ce", "Pr", "Nd", "Pm", "Sm", "Eu", "Gd", "Tb",&
+         & "Dy", "Ho", "Er", "Tm", "Yb", "Lu", "Hf", "Ta", "W ", "Re"&
+         &, "Os", "Ir", "Pt", "Au", "Hg", "Tl", "Pb", "Bi", "Th", "U&
+         & "]
+
+    w(1:3,1:86) = reshape( &
+        &  (/ &
+        &    -3.7390d0, 0.d0,      0.3326d0,   &     !  "H",
+        &    6.671d0,   0.d0,      0.000519d0,   &   !  "D",
+        &    3.26d0,    0.d0,      0.00747d0,   &    !  "He",
+        &    -1.90d0,   0.d0,      70.5d0,   &       !  "Li",
+        &    7.79d0,    0.d0,      0.0076d0,   &     !  "Be",
+        &    5.30d0,    -0.213d0, 767.d0,   &       !  "B",
+        &    6.6460d0,  0.d0,      0.0035d0,   &     !  "C",
+        &    9.36d0,    0.d0,      1.9d0,   &        !  "N",
+        &    5.803d0,   0.d0,      0.00019d0,   &    !  "O",
+        &    5.654d0,   0.d0,      0.0096d0,   &     !  "F",
+        &    4.566d0,   0.d0,      0.039d0,   &      !  "Ne",
+        &    3.63d0,    0.d0,      0.53d0,   &       !  "Na",
+        &    5.375d0,   0.d0,      0.063d0,   &      !  "Mg",
+        &    3.449d0,   0.d0,      0.231d0,   &      !  "Al",
+        &    4.1491d0,  0.d0,      0.171d0,   &      !  "Si",
+        &    5.13d0,    0.d0,      0.172d0,   &      !  "P",
+        &    2.847d0,   0.d0,      0.53d0,   &       !  "S",
+        &    9.5770d0,  0.d0,      33.5d0,   &       !  "Cl",
+        &    1.909d0,   0.d0,      0.675d0,   &      !  "Ar",
+        &    3.67d0,    0.d0,      2.1d0,   &        !  "K",
+        &    4.70d0,    0.d0,      0.43d0,   &       !  "Ca",
+        &    12.29d0,   0.d0,      27.5d0,   &       !  "Sc",
+        &    -3.438d0,  0.d0,      6.09d0,   &       !  "Ti",
+        &    -0.3824d0, 0.d0,      5.08d0,   &       !  "V",
+        &    3.635d0,   0.d0,      3.05d0,   &       !  "Cr",
+        &    -3.73d0,   0.d0,      13.3d0,   &       !  "Mn",
+        &    9.45d0,    0.d0,      2.56d0,   &       !  "Fe",
+        &    2.49d0,    0.d0,      37.18d0,   &      !  "Co",
+        &    10.3d0,    0.d0,      4.49d0,   &       !  "Ni",
+        &    7.718d0,   0.d0,      3.78d0,   &       !  "Cu",
+        &    5.680d0,   0.d0,      1.11d0,   &       !  "Zn",
+        &    7.288d0,   0.d0,      2.75d0,   &       !  "Ga",
+        &    8.185d0,   0.d0,      2.2d0,   &        !  "Ge",
+        &    6.58d0,    0.d0,      4.5d0,   &        !  "As",
+        &    7.970d0,   0.d0,      11.7d0,   &       !  "Se",
+        &    6.795d0,   0.d0,      6.9d0,   &        !  "Br",
+        &    7.81d0,    0.d0,      25.d0,   &        !  "Kr",
+        &    7.09d0,    0.d0,      0.38d0,   &       !  "Rb",
+        &    7.02d0,    0.d0,      1.28d0,   &       !  "Sr",
+        &    7.75d0,    0.d0,      1.28d0,   &       !  "Y",
+        &    7.16d0,    0.d0,      0.185d0,   &      !  "Zr",
+        &    7.054d0,   0.d0,      1.15d0,   &       !  "Nb",
+        &    6.715d0,   0.d0,      2.48d0,   &       !  "Mo",
+        &    6.8d0,     0.d0,      20.d0,   &        !  "Tc",
+        &    7.03d0,    0.d0,      2.56d0,   &       !  "Ru",
+        &    5.88d0,    0.d0,      144.8d0,   &      !  "Rh",
+        &    5.91d0,    0.d0,      6.9d0,   &        !  "Pd",
+        &    5.922d0,   0.d0,      63.3d0,   &       !  "Ag",
+        &    4.87d0,    -0.70d0,  2520.d0,   &      !  "Cd",
+        &    4.065d0,   -0.0539d0,193.8d0,   &      !  "In",
+        &    6.225d0,   0.d0,      0.626d0,   &      !  "Sn",
+        &    5.57d0,    0.d0,      4.91d0,   &       !  "Sb",
+        &    5.80d0,    0.d0,      4.7d0,   &        !  "Te",
+        &    5.28d0,    0.d0,      6.15d0,   &       !  "I",
+        &    4.92d0,    0.d0,      23.9d0,   &       !  "Xe",
+        &    5.42d0,    0.d0,      29.0d0,   &       !  "Cs",
+        &    5.07d0,    0.d0,      1.1d0,   &        !  "Ba",
+        &    8.24d0,    0.d0,      8.97d0,   &       !  "La",
+        &    4.84d0,    0.d0,      0.63d0,   &       !  "Ce",
+        &    4.58d0,    0.d0,      11.5d0,   &       !  "Pr",
+        &    7.69d0,    0.d0,      50.5d0,   &       !  "Nd",
+        &    12.6d0,    0.d0,      168.4d0,   &      !  "Pm",
+        &    0.80d0,    -1.65d0,  5922.d0,   &      !  "Sm",
+        &    7.22d0,    -1.26d0,  4530.d0,   &      !  "Eu",
+        &    6.5d0,     -13.82d0, 49700.d0,   &     !  "Gd",
+        &    7.38d0,    0.d0,      23.4d0,   &       !  "Tb",
+        &    16.9d0,    -0.276d0, 994.d0,   &       !  "Dy",
+        &    8.01d0,    0.d0,      64.7d0,   &       !  "Ho",
+        &    7.79d0,    0.d0,      159.d0,   &       !  "Er",
+        &    7.07d0,    0.d0,      100.d0,   &       !  "Tm",
+        &    12.43d0,   0.d0,      34.8d0,   &       !  "Yb",
+        &    7.21d0,    0.d0,      74.d0,   &        !  "Lu",
+        &    7.7d0,     0.d0,      104.1d0,   &      !  "Hf",
+        &    6.91d0,    0.d0,      20.6d0,   &       !  "Ta",
+        &    4.86d0,    0.d0,      18.3d0,   &       !  "W",
+        &    9.2d0,     0.d0,      89.7d0,   &       !  "Re",
+        &    10.7d0,    0.d0,      16d0,   &         !  "Os",
+        &    10.6d0,    0.d0,      425.d0,   &       !  "Ir",
+        &    9.60d0,    0.d0,      10.3d0,   &       !  "Pt",
+        &    7.63d0,    0.d0,      98.65d0,   &      !  "Au",
+        &    12.692d0,  0.d0,      372.3d0,   &      !  "Hg",
+        &    8.776d0,   0.d0,      3.43d0,   &       !  "Tl",
+        &    9.405d0,   0.d0,      0.171d0,   &      !  "Pb",
+        &    8.532d0,   0.d0,      0.0338d0,   &     !  "Bi",
+        &    10.31d0,   0.d0,      7.37d0,   &       !  "Th",
+        &    8.417d0,   0.d0,      7.57d0 /) , [3,86] )!  "U",
+
+
+
+    outer: do i = 1, size(elements, 1)
+       if( trim(adjustl(elements(i))) == trim(adjustl(element)) )then
+          is_in_database = .true.
+          b = w(1, i)
+          exit outer
+       end if
+    end do outer
+
+    if ( .not. is_in_database )then
+       write(*,'(A,1X,A,1X,A)') '!!! ND Warning !!! The element ', element, ' is not in the ND factor database! '
+    end if
+  end subroutine get_neutron_scattering_length
+
+
 
 
 end module exp_utils
