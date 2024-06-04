@@ -460,11 +460,11 @@ program turbogap
 
               n_local_properties_tot = n_local_properties_tot + soap_turbo_hypers(j)%n_local_properties
               do k = 1, soap_turbo_hypers(j)%n_local_properties
-                 write(*,*)' Local property found                  |'
-                 write(*,'(A,1X,I8,1X,A,1X,A)')' Descriptor ', i,&
+                 if (rank == 0) write(*,*)' Local property found                  |'
+                 if (rank == 0) write(*,'(A,1X,I8,1X,A,1X,A)')' Descriptor ', i,&
                       & trim(soap_turbo_hypers(j)&
                       &%local_property_models(k)%label),  ' |'
-                 write(*,*)'                                       |'
+                 if (rank == 0) write(*,*)'                                       |'
                  valid_local_properties = .false.
 
                  ! set compute to false and then switch on if seen
@@ -476,6 +476,7 @@ program turbogap
                        if (trim(params%compute_local_properties(i)) == "hirshfeld_v")then
                           vdw_lp_index=i
                           soap_turbo_hypers(j)%has_vdw = .true.
+                          if( params%do_derivatives) soap_turbo_hypers(j)%local_property_models(i)%do_derivatives = .true.
                        end if
                        if (trim(params%compute_local_properties(i)) == "core_electron_be")then
                           core_be_lp_index=i
@@ -484,7 +485,11 @@ program turbogap
                                   .not. ( trim(params%exp_data(i2)%file_data) == "none" )))then
                                 valid_xps = .true.
                                 soap_turbo_hypers(j)%local_property_models(k)%do_derivatives = .false.
-                                if( params%exp_forces) soap_turbo_hypers(j)%local_property_models(k)%do_derivatives = .true.
+                                if( params%exp_forces .and. params&
+                                     &%do_derivatives)&
+                                     & soap_turbo_hypers(j)&
+                                     &%local_property_models(k)&
+                                     &%do_derivatives = .true.
                              end if
                           end do
                        end if
@@ -1291,6 +1296,12 @@ program turbogap
         energies_lp = 0.d0
         energies_exp = 0.d0
 
+        if (params%do_pair_distribution .and. params%valid_pdf) energies_pdf = 0.d0
+        if (params%do_structure_factor  .and. params%valid_sf)  energies_sf = 0.d0
+        if (params%do_xrd .and. params%valid_xrd)               energies_xrd = 0.d0
+        if (params%do_nd  .and. params%valid_nd)                energies_nd = 0.d0
+
+
 ! Adding allocation of local properties
 
         ! Now one could use pointers such that hirshfeld_v(:) acts as an alias for local_properties(vdw_index,:)...
@@ -1350,25 +1361,21 @@ program turbogap
               if (params%do_pair_distribution .and. params%exp_forces .and. params%valid_pdf)then
                  if ( allocated( forces_pdf ) ) deallocate(forces_pdf)
                  allocate( forces_pdf(1:3,1:n_sites) )
-                 forces_pdf = 0.d0
               end if
 
               if (params%do_structure_factor .and. params%exp_forces .and. params%valid_sf)then
                  if ( allocated( forces_sf ) ) deallocate(forces_sf)
                  allocate( forces_sf(1:3,1:n_sites) )
-                 forces_sf = 0.d0
               end if
 
               if (params%do_xrd .and. params%exp_forces .and. params%valid_xrd)then
                  if ( allocated( forces_xrd ) ) deallocate(forces_xrd)
                  allocate( forces_xrd(1:3,1:n_sites) )
-                 forces_xrd = 0.d0
               end if
 
               if (params%do_nd .and. params%exp_forces .and. params%valid_nd)then
                  if ( allocated( forces_nd ) ) deallocate(forces_nd)
                  allocate( forces_nd(1:3,1:n_sites) )
-                 forces_nd = 0.d0
               end if
 
            end if
@@ -1385,6 +1392,28 @@ program turbogap
            virial_3b = 0.d0
            virial_core_pot = 0.d0
            virial_vdw = 0.d0
+
+           if (params%do_pair_distribution .and. params%exp_forces .and. params%valid_pdf)then
+              forces_pdf = 0.d0
+              virial_pdf = 0.d0
+           end if
+
+           if (params%do_structure_factor .and. params%exp_forces .and. params%valid_sf)then
+              forces_sf = 0.d0
+              virial_sf = 0.d0
+           end if
+
+           if (params%do_xrd .and. params%exp_forces .and. params%valid_xrd)then
+              forces_xrd = 0.d0
+              virial_xrd = 0.d0
+           end if
+
+           if (params%do_nd .and. params%exp_forces .and. params%valid_nd)then
+              forces_nd = 0.d0
+              virial_nd = 0.d0
+           end if
+
+
         end if
 
         if( params%do_prediction )then
@@ -1497,17 +1526,19 @@ program turbogap
                             this_local_properties_cart_der_pt, n_pairs,&
                             & in_to_out_pairs, n_all_sites,&
                             & in_to_out_site,  n_sites_out )
+
+
+                       nullify(this_local_properties_pt)
+                       nullify(this_local_properties_cart_der_pt)
                     end if
-
-                    nullify(this_local_properties_pt)
-                    nullify(this_local_properties_cart_der_pt)
-
                  end do
                  ! Now deallocate the arrays which were not deallocated in get_gap_soap
-                 deallocate(in_to_out_pairs, in_to_out_site, n_neigh_out, soap)
+                 deallocate( in_to_out_site, in_to_out_pairs, n_neigh_out )
 
-                 if (any(soap_turbo_hypers(i)%local_property_models(:)%do_derivatives))then
-                    deallocate(soap_cart_der)
+                 if( .not. params%write_soap  ) deallocate( soap )
+
+                 if( params%do_derivatives .and. .not. params%write_derivatives)then
+                    deallocate( soap_cart_der )
                  end if
               end if
 
@@ -1523,8 +1554,7 @@ program turbogap
                  local_properties(:,:) = local_properties(:,:) + this_local_properties(:,:)
                  if( params%do_forces )then
                     if (soap_turbo_hypers(i)%has_vdw .or.&
-                         & (soap_turbo_hypers(i)%has_core_electron_be&
-                         & .and. params%exp_forces) )then
+                         & (soap_turbo_hypers(i)%has_core_electron_be) )then
 
                        local_properties_cart_der(:,:,:) =&
                             & local_properties_cart_der(:,:,:) +&
@@ -1657,6 +1687,7 @@ program turbogap
            if( params%do_forces )then
               allocate( this_forces_vdw(1:3,1:n_sites) )
               this_forces_vdw = 0.d0
+              this_virial_vdw = 0.d0
            end if
 #endif
            allocate(v_neigh_vdw(1:j_end-j_beg+1))
@@ -1788,6 +1819,7 @@ program turbogap
            if( params%do_forces )then
               allocate( this_forces_lp(1:3,1:n_sites) )
               this_forces_lp = 0.d0
+              this_virial_lp = 0.d0
            end if
 #endif
            allocate(v_neigh_lp(1:j_end-j_beg+1))
@@ -2719,6 +2751,9 @@ program turbogap
         if( params%do_forces )then
            forces =  (forces_soap + forces_2b + forces_3b + forces_core_pot + forces_vdw) + forces_lp
            virial = virial_soap + virial_2b + virial_3b + virial_core_pot + virial_vdw + virial_lp
+
+           if (params%exp_forces .and. valid_xps)        forces = forces + forces_lp
+           if (params%exp_forces .and. valid_xps)        virial = virial + virial_lp
 
            if (params%exp_forces .and. params%valid_pdf) forces = forces + forces_pdf
            if (params%exp_forces .and. params%valid_pdf) virial = virial + virial_pdf

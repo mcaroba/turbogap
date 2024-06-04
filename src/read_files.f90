@@ -1071,35 +1071,35 @@ end if
             call upper_to_lower_case(params%exp_data(nw)%label)
             if(     trim(params%exp_data(nw)%label) == "xps")then
                params%xps_idx = nw
-               write(*,*)' - Valid exp. XPS found                |'
+               if (rank == 0) write(*,*)' - Valid exp. XPS found                |'
 
             else if(trim(params%exp_data(nw)%label) == "xrd")then
                params%xrd_idx = nw
                params%valid_xrd = .true.
-               write(*,*)' - Valid exp. XRD found                |'
+               if (rank == 0) write(*,*)' - Valid exp. XRD found                |'
                ! Must be set to true to find the partial structure factors
                ! params%pair_distribution_partial = .true.
             else if(trim(params%exp_data(nw)%label) == "nd")then
                params%nd_idx = nw
                params%valid_nd = .true.
-               write(*,*)' - Valid exp. ND found                |'
+               if (rank == 0) write(*,*)' - Valid exp. ND found                |'
                ! Must be set to true to find the partial structure factors
                ! params%pair_distribution_partial = .true.
 
             else if(trim(params%exp_data(nw)%label) == "saxs")then
                params%saxs_idx = nw
                params%valid_xrd = .true.
-               write(*,*)' - Valid exp. XRD found                |'
+               if (rank == 0) write(*,*)' - Valid exp. XRD found                |'
                ! Must be set to true to find the partial structure factors
                ! params%pair_distribution_partial = .true.
             else if(trim(params%exp_data(nw)%label) == "pair_distribution")then
                params%pdf_idx = nw
                params%valid_pdf = .true.
-               write(*,*)' - Valid exp. pair distribution found  |'
+               if (rank == 0) write(*,*)' - Valid exp. pair distribution found  |'
             else if(trim(params%exp_data(nw)%label) == "structure_factor")then
                params%sf_idx = nw
                params%valid_sf = .true.
-               write(*,*)' - Valid exp. structure factor found   |'
+               if (rank == 0) write(*,*)' - Valid exp. structure factor found   |'
             end if
          end do
       else if( keyword == "exp_data_files" )then
@@ -1577,37 +1577,37 @@ end if
 
 !   Experimental prediction checks
     if( params%do_exp )then
-       write(*,*)'                                       |'
-       write(*,*)' Experimental prediction mode          |'
+       if (rank == 0) write(*,*)'                                       |'
+       if (rank == 0) write(*,*)' Experimental prediction mode          |'
        do i = 1, params%n_exp
           ! check if a user range has been submitted
           write(*,*)'                                       |'
 
           if (params%exp_data(i)%user_range)then
-             write(*,'(A,1X,A,1X,A)')'User exp. range specified for:', trim(params%exp_data(i)%label),'     |'
-             write(*,*)'                                       |'
-             write(*,*)' WARNING!! This feature is obselete    |'
-             write(*,*)'                                       |'
+             if (rank == 0) write(*,'(A,1X,A,1X,A)')'User exp. range specified for:', trim(params%exp_data(i)%label),'     |'
+             if (rank == 0) write(*,*)'                                       |'
+             if (rank == 0) write(*,*)' WARNING!! This feature is obselete    |'
+             if (rank == 0) write(*,*)'                                       |'
           else
-             write(*,'(A,1X,A,1X,A)')'Exp data range will be used for:', trim(params%exp_data(i)%label),' |'
-             write(*,'(A,1X,A,1X,A)')' from the file:', trim(params%exp_data(i)%file_data),' |'
+             if (rank == 0) write(*,'(A,1X,A,1X,A)')'Exp data range will be used for:', trim(params%exp_data(i)%label),' |'
+             if (rank == 0) write(*,'(A,1X,A,1X,A)')' from the file:', trim(params%exp_data(i)%file_data),' |'
 
           end if
 
 
           if( params%exp_data(i)%range_min == 0.d0 .and. params%exp_data(i)%range_max == 1.d0 )then
-             write(*,*)'                                       |'
-             write(*,*)'WARNING: Data range being used for exp.|'
-             write(*,*)' observable is the default (0.0, 1.0)! |'
-             write(*,*)'                                       |'
-             write(*,*)' To modify specify:                    |'
-             write(*,'(A,1X,A,1X,A)')'  `range_',trim(params%exp_data(i)%label),  ' = {lower_bound} {upper_bound}` |'
-             write(*,*)' in the input file.                    |'
-             write(*,*)'                                       |'
+             if (rank == 0) write(*,*)'                                       |'
+             if (rank == 0) write(*,*)'WARNING: Data range being used for exp.|'
+             if (rank == 0) write(*,*)' observable is the default (0.0, 1.0)! |'
+             if (rank == 0) write(*,*)'                                       |'
+             if (rank == 0) write(*,*)' To modify specify:                    |'
+             if (rank == 0) write(*,'(A,1X,A,1X,A)')'  `range_',trim(params%exp_data(i)%label),  ' = {lower_bound} {upper_bound}` |'
+             if (rank == 0) write(*,*)' in the input file.                    |'
+             if (rank == 0) write(*,*)'                                       |'
           end if
 
           if ( trim(params%exp_data(i)%label) == 'pair_distribution')then
-             write(*,'(A,1X,A,1X,A)') trim(params%exp_data(i)%label),&
+             if (rank == 0) write(*,'(A,1X,A,1X,A)') trim(params%exp_data(i)%label),&
                   & ' found, setting r_range_min/max ', '     |'
              ! Note: for consistency with the implementation, we can
              ! change the value of r_min/r_max such that the x_i
@@ -1629,7 +1629,7 @@ end if
 
              params%pair_distribution_n_samples = params%exp_data(i)%n_samples
           elseif ( trim(params%exp_data(i)%label) == 'xrd')then
-             write(*,'(A,1X,A,1X,A)') trim(params%exp_data(i)%label),&
+             if (rank == 0) write(*,'(A,1X,A,1X,A)') trim(params%exp_data(i)%label),&
                   & ' found, setting q_range_min/max with q_units = ' // trim(params%q_units) , ' |'
 
              params%do_pair_distribution = .true.
@@ -1645,7 +1645,7 @@ end if
              params%structure_factor_n_samples = params%exp_data(i)%n_samples
 
           elseif ( trim(params%exp_data(i)%label) == 'nd')then
-             write(*,'(A,1X,A,1X,A)') trim(params%exp_data(i)%label),&
+             if (rank == 0) write(*,'(A,1X,A,1X,A)') trim(params%exp_data(i)%label),&
                   & ' found, setting q_range_min/max with q_units = ' // trim(params%q_units) , ' |'
 
              params%do_pair_distribution = .true.
@@ -1661,7 +1661,9 @@ end if
              params%structure_factor_n_samples = params%exp_data(i)%n_samples
 
           elseif ( trim(params%exp_data(i)%label) == 'saxs')then
-             write(*,'(A,1X,A,1X,A)') trim(params%exp_data(i)%label), ' found, setting q_range_min/max with q_units = "q"', ' |'
+             if (rank == 0) write(*,'(A,1X,A,1X,A)') trim(params&
+                  &%exp_data(i)%label), ' found, setting q_range_min&
+                  &/max with q_units = "q"', ' |'
 
              params%do_pair_distribution = .true.
              params%pair_distribution_partial = .true.
@@ -1675,7 +1677,7 @@ end if
              params%xrd_n_samples = params%exp_data(i)%n_samples
              params%structure_factor_n_samples = params%exp_data(i)%n_samples
           elseif ( trim(params%exp_data(i)%label) == 'structure_factor')then
-             write(*,'(A,1X,A,1X,A)') trim(params%exp_data(i)%label),&
+             if (rank == 0) write(*,'(A,1X,A,1X,A)') trim(params%exp_data(i)%label),&
                   & ' found, setting q_range_min/max with q_units =&
                   & "q"', ' |'
 
@@ -1692,23 +1694,23 @@ end if
           end if
 
 
-          write(*,'(A,1X,F12.6,1X,A,F12.6,1X,A)')' min =', params&
+          if (rank == 0) write(*,'(A,1X,F12.6,1X,A,F12.6,1X,A)')' min =', params&
                &%exp_data(i)%range_min, ' max =', params%exp_data(i)&
                &%range_max, ' |'
 
-          write(*,'(A,1X,I8,1X,A)')' n_samples   =', params%exp_data(i)%n_samples,'                |'
-          write(*,'(A,1X,L4,1X,A)')' compute_exp =', params%exp_data(i)%compute_exp,'                    |'
+          if (rank == 0) write(*,'(A,1X,I8,1X,A)')' n_samples   =', params%exp_data(i)%n_samples,'                |'
+          if (rank == 0) write(*,'(A,1X,L4,1X,A)')' compute_exp =', params%exp_data(i)%compute_exp,'                    |'
 
 
           if (.not. allocated(params%exp_energy_scales) .and. ( params%exp_forces .or. params%mc_optimize_exp ) )then
-             write(*,*)'WARNING: No energy scales set for exp .|'
-             write(*,*)' optimisation by forces / MC!          |'
-             write(*,*)'                                       |'
-             write(*,*)' To modify specify:                    |'
-             write(*,'(A)')'  `exp_energy_scales = {E1} {E2}`  |'
-             write(*,*)' In the input file.                    |'
-             write(*,*)' (example above is for n_exp = 2)      |'
-             write(*,*)'                                       |'
+             if (rank == 0) write(*,*)'WARNING: No energy scales set for exp .|'
+             if (rank == 0) write(*,*)' optimisation by forces / MC!          |'
+             if (rank == 0) write(*,*)'                                       |'
+             if (rank == 0) write(*,*)' To modify specify:                    |'
+             if (rank == 0) write(*,'(A)')'  `exp_energy_scales = {E1} {E2}`  |'
+             if (rank == 0) write(*,*)' In the input file.                    |'
+             if (rank == 0) write(*,*)' (example above is for n_exp = 2)      |'
+             if (rank == 0) write(*,*)'                                       |'
           end if
 
        end do
@@ -1720,33 +1722,33 @@ end if
        do i = 1, params%n_mc_types
           if (params%mc_types(i) == "md")then
              if( params%thermostat == "none" )then
-                write(*,*)'                                       |'
-                write(*,*)'WARNING: You need to specify a         |  <-- WARNING'
-                write(*,*)'thermostat when using md type mc steps!|'
+                if (rank == 0) write(*,*)'                                       |'
+                if (rank == 0) write(*,*)'WARNING: You need to specify a         |  <-- WARNING'
+                if (rank == 0) write(*,*)'thermostat when using md type mc steps!|'
              end if
           end if
 
           if (params%mc_types(i) == "relax")then
              if( params%optimize == "none" )then
-                write(*,*)'                                       |'
-                write(*,*)'WARNING: You need to specify an        |  <-- WARNING'
-                write(*,*)'optimizer when using relax type mc     |'
-                write(*,*)'steps!!                                |'
+                if (rank == 0) write(*,*)'                                       |'
+                if (rank == 0) write(*,*)'WARNING: You need to specify an        |  <-- WARNING'
+                if (rank == 0) write(*,*)'optimizer when using relax type mc     |'
+                if (rank == 0) write(*,*)'steps!!                                |'
              end if
           end if
 
           if (params%mc_types(i) == "volume")then
              if( params%p_beg == 1.0d0 )then
-                write(*,*)'                                       |'
-                write(*,*)'WARNING: p_beg is the default          |  <-- WARNING'
-                write(*,*)'value of 1.0 bar. For MC volume moves  |'
-                write(*,*)'please make sure this is specified!!   |'
+                if (rank == 0) write(*,*)'                                       |'
+                if (rank == 0) write(*,*)'WARNING: p_beg is the default          |  <-- WARNING'
+                if (rank == 0) write(*,*)'value of 1.0 bar. For MC volume moves  |'
+                if (rank == 0) write(*,*)'please make sure this is specified!!   |'
              end if
              if( params%mc_lnvol_max == 0.01d0 )then
-                write(*,*)'                                       |'
-                write(*,*)'WARNING: mc_lnvol_max is the default   |  <-- WARNING'
-                write(*,*)'value of 0.01. For MC volume moves     |'
-                write(*,*)'please make sure this is specified!!   |'
+                if (rank == 0) write(*,*)'                                       |'
+                if (rank == 0) write(*,*)'WARNING: mc_lnvol_max is the default   |  <-- WARNING'
+                if (rank == 0) write(*,*)'value of 0.01. For MC volume moves     |'
+                if (rank == 0) write(*,*)'please make sure this is specified!!   |'
              end if
 
           end if
@@ -1754,10 +1756,10 @@ end if
 
        do i = 1, n_species
           if( params%accessible_volume .and. (params%radii(i) == 0.5d0 ))then
-             write(*,*)'                                       |'
-             write(*,*)'WARNING: radii for accessible volume   |  <-- WARNING'
-             write(*,*)'is the default value of 0.5A.          |'
-             write(*,*)'please make sure this correct!!        |'
+             if (rank == 0) write(*,*)'                                       |'
+             if (rank == 0) write(*,*)'WARNING: radii for accessible volume   |  <-- WARNING'
+             if (rank == 0) write(*,*)'is the default value of 0.5A.          |'
+             if (rank == 0) write(*,*)'please make sure this correct!!        |'
           end if
        end do
 

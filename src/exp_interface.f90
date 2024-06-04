@@ -577,7 +577,7 @@ contains
        pair_distribution_partial = 0.d0
 
 
-       if (params%do_forces)then
+       if (params%do_forces .and. params%exp_forces)then
           allocate( pair_distribution_partial_der(1:params%pair_distribution_n_samples,&
             & 1 : n_dim_partial, j_beg : j_end  ))
           pair_distribution_partial_der = 0.d0
@@ -589,7 +589,7 @@ contains
 
        end if
     else
-       if (params%do_forces)then
+       if (params%do_forces .and. params%exp_forces)then
           allocate( pair_distribution_partial_der(1:params%pair_distribution_n_samples, 1:1, &
             &  j_beg : j_end  ))
           pair_distribution_partial_der = 0.d0
@@ -674,7 +674,7 @@ contains
             & y_pair_distribution, params &
             &%pair_distribution_rcut, .false., .false., 1, 1,&
             & params%pair_distribution_kde_sigma, dfloat(n_sites)&
-            &/v_uc, params%do_forces, pair_distribution_partial_der, 1, &
+            &/v_uc, params%do_forces .and. params%exp_forces, pair_distribution_partial_der, 1, &
             & j_beg, j_end)
     end if
 
@@ -754,7 +754,7 @@ contains
                   &%pair_distribution_n_samples, n_dim_idx) * v_uc &
                   &  /  n_atoms_of_species(j) /  n_atoms_of_species(k) / factors(n_dim_idx) !real(n_sites)
 
-             if (params%do_forces) then
+             if (params%do_forces .and. params%exp_forces) then
                 pair_distribution_partial_der(1:params&
                      &%pair_distribution_n_samples, n_dim_idx, &
                      & j_beg:j_end) =  pair_distribution_partial_der(1:params&
