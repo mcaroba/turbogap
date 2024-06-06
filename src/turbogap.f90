@@ -104,11 +104,15 @@ program turbogap
   ! Clean up these variables after code refactoring !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   integer, allocatable :: n_neigh(:), neighbors_list(:), alpha_max(:), species(:), species_supercell(:), &
        neighbor_species(:), sph_temp_int(:), der_neighbors(:), der_neighbors_list(:), &
-       i_beg_list(:), i_end_list(:), j_beg_list(:), j_end_list(:), species_idx(:), n_neigh_out(:), n_local_properties_mpi(:), local_property_indexes(:)
-  integer :: n_sites, i, j, k, i2, j2, n_soap, k2, k3, l, n_sites_this, ierr, rank, ntasks, dim, n_sp, &
-       n_pos, n_sp_sc, this_i_beg, this_i_end, this_j_beg, this_j_end, this_n_sites_mpi, n_sites_prev = 0, &
-       n_atom_pairs_by_rank_prev=0, cPnz, n_pairs, n_all_sites,&
-       & n_sites_out, n_local_properties_tot=0, n_lp_count=0, &
+       i_beg_list(:), i_end_list(:), j_beg_list(:), j_end_list(:),&
+       & species_idx(:), n_neigh_out(:), n_local_properties_mpi(:),&
+       & local_property_indexes(:)
+  integer :: n_sites, i, j, k, i2, j2, n_soap, k2, k3, l,&
+       & n_sites_this, ierr, rank, ntasks, dim, n_sp, n_pos, n_sp_sc,&
+       & this_i_beg, this_i_end, this_j_beg, this_j_end,&
+       & this_n_sites_mpi, n_sites_prev = 0,&
+       & n_atom_pairs_by_rank_prev=0, cPnz, n_pairs, n_all_sites,&
+       & n_sites_out, n_local_properties_tot=0, n_lp_count=0,&
        & vdw_lp_index, core_be_lp_index, xps_idx
 
   integer :: l_max, n_atom_pairs, n_max, ijunk, central_species = 0,&
@@ -1291,7 +1295,7 @@ program turbogap
      call cpu_time(time_mpi_positions(1))
      call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
      if( params%do_md .or. params%do_nested_sampling .or. params%do_mc .or. params%mc_hamiltonian)then
-        call mpi_bcast(velocities, 3*n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
         call mpi_bcast(masses, n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
         call mpi_bcast(fix_atom, 3*n_sp, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
      end if
@@ -1362,7 +1366,6 @@ program turbogap
      do_list = .false.
      do_list(i_beg:i_end) = .true.
 
-     print *, rank , " ibeg iend ", i_beg, i_end
 !      if( rebuild_neighbors_list )then
 !         if(allocated( rjs))deallocate( rjs)
 !         if(allocated( xyz))deallocate( xyz)
@@ -1705,10 +1708,6 @@ program turbogap
                    & local_property_indexes, this_i_beg, this_i_end, this_j_beg, this_j_end, &
                    & this_virial, i2 )
 
-              print *, " "
-              print '(1X,A,1X,i8,1X,A,1X,F12.6,1X,F12.6,1X,F12.6)',&
-                   & "RANK ", rank, "this_virial ", this_virial(1,1),&
-                   & this_virial(1,2), this_virial(1,3)
 
               i2 = i2 + soap_turbo_hypers(i)%n_local_properties
 
@@ -2136,8 +2135,6 @@ program turbogap
               call get_overwrite_condition( params%do_mc, params%do_md&
                    &, mc_istep, md_istep, params%write_xyz, overwrite_condition)
 
-
-
               call write_exp_datan(params%exp_data(xps_idx)&
                    &%x(1:params%exp_data(xps_idx)%n_samples), params&
                    &%exp_data(xps_idx)%y_pred(1:params&
@@ -2266,8 +2263,6 @@ program turbogap
               species_types_actual(n_species_actual) = params%species_types( species(i) )
            end if
         end do
-
-
 
 
         if (params%do_pair_distribution)then
@@ -2578,7 +2573,6 @@ program turbogap
               counter2 = counter2 + 1
            end if
 
-           print *, rank, counter2
 
            !       It would probably be faster to use pointers for this
            allocate( all_energies(1:n_sites, 1:counter2) )
@@ -3367,7 +3361,7 @@ program turbogap
         call cpu_time(time_mpi_positions(1))
         n_pos = size(positions,2)
         call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(velocities, 3*n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
         call cpu_time(time_mpi_positions(2))
         time_mpi_positions(3) = time_mpi_positions(3) + time_mpi_positions(2) - time_mpi_positions(1)
      end if
@@ -3579,87 +3573,37 @@ program turbogap
                          species, species_supercell, n_sites, indices, fix_atom, &
                          xyz_species, xyz_species_supercell, local_properties)
 
-                    write(*,*)'.......................................|'
-                    write(*,'(A,1X,I0)')   ' MC Iteration:', mc_istep
-                    write(*,'(A,1X,A)')    '    Move type:', mc_move
-                    write(*,'(A,1X,F22.8)')'    Etot_prev:', images(i_current_image)%energy + images(i_current_image)%e_kin
-                    write(*,'(A,1X,F22.8)')'    Etot_new :', images(i_trial_image)%energy + images(i_trial_image)%e_kin
+                    if (params%verb > 50) write(*,*)'.......................................|'
+                    if (params%verb > 50) write(*,'(A,1X,I0)')   ' MC Iteration:', mc_istep
+                    if (params%verb > 50) write(*,'(A,1X,A)')    '    Move type:', mc_move
+                    if (params%verb > 50) write(*,'(A,1X,F22.8)')'   &
+                         & Etot_prev:', images(i_current_image)&
+                         &%energy + images(i_current_image)%e_kin
+                    if (params%verb > 50) write(*,'(A,1X,F22.8)')'   &
+                         & Etot_new :', images(i_trial_image)%energy &
+                         &+ images(i_trial_image)%e_kin
 
                     v_uc = dot_product( cross_product(a_box, b_box), c_box ) / (dfloat(indices(1)*indices(2)*indices(3)))
 
                     if (params%accessible_volume)then
                        call get_accessible_volume(v_uc, v_a_uc, species, params%radii)
-                       write(*,'(A,F12.6,A,F12.6,1X,A)') ' V_acc new: ', v_a_uc, ' A^3 V_acc old ', v_a_uc_prev, 'A^3 |'
+                       if (params%verb > 50) write(*,'(A,F12.6,A,F12.6&
+                            &,1X,A)') ' V_acc new: ', v_a_uc, ' A^3&
+                            & V_acc old ', v_a_uc_prev, 'A^3 |'
                     else
                        v_a_uc = v_uc
                     end if
 
 
-                    ! if (params%mc_optimize_exp .and. valid_xps)then
-                    !    call get_compare_xps_spectra(&
-                    !         & params%exp_data(xps_idx)%data,&
-                    !         & local_properties(:,core_be_lp_index),&
-                    !         & params%xps_sigma, params%exp_data(xps_idx)%n_samples, mag,&
-                    !         & params%exp_data(xps_idx)%similarity, params%exp_data(xps_idx)%x, params%exp_data(xps_idx)%y,&
-                    !         & params%exp_data(xps_idx)%y_pred, y_i_pred_all,&
-                    !         .not. allocated(params%exp_data(xps_idx)%x), params%exp_similarity_type )
-
-
-                    !    call get_data_similarity( params%exp_data(xps_idx)%y, &
-                    !         & params%exp_data(xps_idx)%y_pred, params%exp_data(xps_idx)%similarity, params%exp_similarity_type)
-
-                    ! end if
-
-                    ! do i = 1, params%n_exp
-                    !    if ( trim(params%exp_data(i)%label) == 'xrd' .or. trim(params%exp_data(i)%label) == 'saxs' )then
-
-                    !       ! call get_xrd( positions, n_species, params&
-                    !       !      &%species_types, species, params%xrd_wavelength&
-                    !       !      &, params%xrd_damping, params%xrd_alpha, params&
-                    !       !      &%exp_data(i)%label, params%xrd_iwasa,&
-                    !       !      & params%exp_data(i)%range_min, params%exp_data(i)%range_max, params&
-                    !       !      &%exp_data(i)%n_samples, params&
-                    !       !      &%exp_data(i)%x, params&
-                    !       !      &%exp_data(i)%y_pred)
-
-                    !       call get_data_similarity(params%exp_data(i)%y, &
-                    !            & params%exp_data(i)%y_pred, params%exp_data(i)%similarity, params%exp_similarity_type)
-
-                    !    end if
-                    ! end do
-
-
-                    if ( params%mc_reverse)then
-                       ! The "energy" used is actually the similarity
-                       ! metric, we have the 'constraints' of the fact
-                       ! that the potential should be minimized
-
-                       call get_all_similarities( params%n_exp, params%exp_data, params%exp_energy_scales, sim_exp_pred )
-
-                       print *, " energy term reverse mc ", - params%mc_reverse_lambda * ( energy + E_kinetic )
-
-                       sim_exp_pred = sim_exp_pred - params%mc_reverse_lambda * ( energy + E_kinetic )
-
-
-                       call get_mc_acceptance(mc_move, p_accept, &
-                         -sim_exp_pred, &
-                         -sim_exp_prev, &
-                         params%t_beg, &
-                         params%mc_mu, n_mc_species, v_uc, v_uc_prev,&
-                         & v_a_uc, v_a_uc_prev, params&
-                         &%masses_types(mc_id), params%p_beg)
-                       write(*, "(A,1X,F8.3,1X,A,1X,F8.3,1X)") " Reverse MC similarities: current:  ",&
-                               & sim_exp_prev, ', trial: ', sim_exp_pred
-
-                    else
-                       call get_mc_acceptance(mc_move, p_accept, &
+                    ! Experimental energies are added to energies by
+                    ! default, so we can just use this as it is
+                    call get_mc_acceptance(mc_move, p_accept, &
                          energy + E_kinetic, &
                          images(i_current_image)%energy + images(i_current_image)%e_kin, &
                          params%t_beg, &
                          params%mc_mu, n_mc_species, v_uc, v_uc_prev,&
                          & v_a_uc, v_a_uc_prev, params&
                          &%masses_types(mc_id), params%p_beg)
-                    end if
 
 
                     call random_number(ranf)
@@ -3667,26 +3611,12 @@ program turbogap
                     if (mc_move == "insertion") n_mc_species = n_mc_species +1
                     if (mc_move == "removal"  ) n_mc_species = n_mc_species -1
 
-                    ! Here, put in the optimize xps spectra
-                    if (params%mc_optimize_exp .and. valid_xps .and. .not. params%mc_reverse )then
-
-                       if (sim_exp_pred > sim_exp_prev)then
-                          p_accept = 1.d0
-                          write(*, "(A,1X,F8.3,1X,A,1X,F8.3,1X,A)") " XPS spectra similarity increased from",&
-                               & sim_exp_prev, ' to ', sim_exp_pred ,&
-                               & "setting p_accept to 1"
-
-                       ! else if (params%mc_reverse)then
-                       !    ! Use the similaritu
-                       !    p_accept = exp( + ( sim_exp_pred - sim_exp_prev ) / 2.d0 )
-                       end if
-                    end if
-
-
-
                     !    ACCEPT OR REJECT
-                    write(*, '(A,1X,A,1X,A,L4,1X,A,ES12.6,1X,A,1X,ES12.6)') 'Is ', trim(mc_move), &
-                         'accepted?', p_accept > ranf, ' p_accept =', p_accept, ' ranf = ', ranf
+                    if (params%verb > 50) write(*, '(A,1X,A,1X,A,L4,1X&
+                         &,A,ES12.6,1X,A,1X,ES12.6)') 'Is ',&
+                         & trim(mc_move), 'accepted?', p_accept >&
+                         & ranf, ' p_accept =', p_accept, ' ranf = ',&
+                         & ranf
 
                     if ( mc_istep == 1 )then
                        open(unit=200, file="mc.log", status="unknown")
@@ -3695,21 +3625,10 @@ program turbogap
                        open(unit=200, file="mc.log", status="old", position="append")
                     end if
 
-                    if ( .not. params%mc_optimize_exp )then
-                       write(200, "(I8, 1X, A, 1X, L4, 1X, F20.8, 1X, F20.8, 1X, I8, 1X, I8, 1X)") &
-                            mc_istep, mc_move, p_accept > ranf, energy + E_kinetic, &
-                            images(i_current_image)%energy + images(i_current_image)%e_kin, &
-                            images(i_trial_image)%n_sites, n_mc_species
-                    else
-                       write(200, "(I8, 1X, A, 1X, L4, 1X, L4, 1X, F20.8, 1X,  F20.8, 1X, F20.8, 1X,&
-                            & F20.8, 1X, I8, 1X, I8, 1X)") mc_istep, mc_move,&
-                            & p_accept > ranf, sim_exp_pred > sim_exp_prev, sim_exp_pred,&
-                            & sim_exp_prev , energy + E_kinetic,&
-                            & images(i_current_image)%energy +&
-                            & images(i_current_image)%e_kin,&
-                            & images(i_trial_image)%n_sites,&
-                            & n_mc_species
-                    end if
+                    write(200, "(I8, 1X, A, 1X, L4, 1X, F20.8, 1X, F20.8, 1X, I8, 1X, I8, 1X)") &
+                         mc_istep, mc_move, p_accept > ranf, energy + E_kinetic, &
+                         images(i_current_image)%energy + images(i_current_image)%e_kin, &
+                         images(i_trial_image)%n_sites, n_mc_species
 
                     if (mc_istep >= 1 ) close(200)
 
@@ -3721,18 +3640,6 @@ program turbogap
                        v_uc_prev = v_uc
                        v_a_uc_prev = v_a_uc
                        virial_prev = virial
-                       if (params%mc_optimize_exp )then
-                          sim_exp_prev = sim_exp_pred
-
-                          do i = 1, params%n_exp
-                             if (.not. allocated(params%exp_data(i)%y_pred_prev)) then
-                                allocate( params%exp_data(i)%y_pred_prev(1:size(params%exp_data(i)%y_pred,1)) )
-                             end if
-
-                             params%exp_data(i) % y_pred_prev = params%exp_data(i) % y_pred
-                          end do
-                       end if
-
                        !   Assigning the default image with the accepted one
                        images(i_current_image) = images(i_trial_image)
 
@@ -3740,11 +3647,18 @@ program turbogap
 
                     if ((params%mc_write_xyz .or. mc_istep == 0 .or. mc_istep == params%mc_nsteps .or. &
                             modulo(mc_istep, params%write_xyz) == 0))then
-                          write(*,'(1X,A)')' Writing mc_current.xyz and mc_all.xyz '
-                          call wrap_pbc(images(i_current_image)%positions(1:3, 1:images(i_current_image)%n_sites), &
-                               images(i_current_image)%a_box/dfloat(indices(1)), &
-                               images(i_current_image)%b_box/dfloat(indices(2)),&
-                               images(i_current_image)%c_box/dfloat(indices(3)))
+                          if (params%verb > 50) write(*,'(1X,A)')'&
+                               & Writing mc_current.xyz and&
+                               & mc_all.xyz '
+                          call wrap_pbc(images(i_current_image)&
+                               &%positions(1:3,&
+                               & 1:images(i_current_image)%n_sites),&
+                               & images(i_current_image)%a_box&
+                               &/dfloat(indices(1)),&
+                               & images(i_current_image)%b_box&
+                               &/dfloat(indices(2)),&
+                               & images(i_current_image)%c_box&
+                               &/dfloat(indices(3)))
                           call get_xyz_energy_string(energies_soap, energies_2b,&
                                & energies_3b, energies_core_pot, energies_vdw, energies_exp&
                                &, energies_lp, energies_pdf, energies_sf, energies_xrd, energies_nd,&
@@ -3790,60 +3704,14 @@ program turbogap
                                & images(i_current_image)%fix_atom,&
                                & "mc_all.xyz", string, .false. )
 
-                          if (params%mc_optimize_exp )then
-
-                              if (valid_xps)then
-                                ! call write_exp_data(params& !
-                                !      &%exp_data(xps_idx)%x, params&
-                                !      &%exp_data(xps_idx)%y_pred_prev,&
-                                !      & .false., "xps_prediction.dat", params%exp_data(xps_idx)%label)
-
-                                ! if ( .not.  params%exp_data(xps_idx)%wrote_exp ) then
-
-                                !    call write_exp_data(params&
-                                !         &%exp_data(xps_idx)%x, params&
-                                !         &%exp_data(xps_idx)%y, .false.,&
-                                !         & "xps_exp.dat", params%exp_data(xps_idx)%label)
-                                !    params%exp_data(i)%wrote_exp = .true.
-                                ! end if
-
-                                ! deallocate( params%exp_data(xps_idx)%x, params%exp_data(xps_idx)%y_pred )
-                                ! if (allocated(y_i_pred_all)) deallocate(y_i_pred_all)
-
-                              end if
-
-
-                             do i = 1, params%n_exp
-                                ! Deallocate exp data if used
-                                if (trim(params%exp_data(i)%label) /= "xps" )then
-                                   write(filename,'(A,A)') trim(params%exp_data(i)%label), "_prediction.dat"
-                                   call write_exp_data(params%exp_data(i)%x, params%exp_data(i)%y_pred, .false., &
-                                        filename, params%exp_data(i)%label)
-
-                                   if ( .not.  params%exp_data(i)%wrote_exp ) then
-
-                                      write(filename,'(A,A)') trim(params%exp_data(i)%label), "_exp.dat"
-                                      call write_exp_data(params%exp_data(i)%x, params%exp_data(i)%y, .false., &
-                                           filename, params%exp_data(i)%label)
-
-                                      params%exp_data(i)%wrote_exp = .true.
-                                   end if
-                                end if
-
-                                if (allocated(params%exp_data(i)%x))then
-                                   deallocate( params%exp_data(i)%x, params%exp_data(i)%y, params%exp_data(i)%y_pred  )
-                                end if
-                             end do
-                          end if
-
-                        end if
+                       end if
 
                     !          Add acceptance to the log file else dont
                         call cpu_time(time_mc(2))
                         time_mc(3) = time_mc(3) + time_mc(2) - time_mc(1)
 
 
-                 else ! if (mc_istep == 0)
+                  else ! if (mc_istep == 0)
                     write(*,*) '                                       |'
                     write(*,*) 'Starting MC, using parameters:         |'
                     write(*,*) '                                       |'
@@ -3880,24 +3748,6 @@ program turbogap
                     write(*,*) '                                       |'
                     ! t_beg must
 
-                    if (params%exp_forces)then
-                       write(*,*) 'Optimizing exp. data, using parameters:   |'
-                       write(*,*) '                                       |'
-
-
-                       ! write(*,'(1X,A,1X,F17.8,1X,A)') 'xps_sigma'      , params%xps_sigma, '    |'
-                       ! write(*,'(1X,A,1X,F17.8,1X,A)') 'xps_n_samples'  , params%exp_data(xps_idx)%n_samples, '    |'
-                       ! write(*,'(1X,A,1X,F17.8,1X,A)') 'xps_force_type' , params%xps_force_type, '    |'
-                       write(*,'(1X,A,1X,L8,1X,A)') 'print_lp_forces', params%print_lp_forces, '    |'
-                       write(*,'(1X,A,1X,A,1X,A)') 'exp_similarity_type', params%exp_similarity_type, '    |'
-                       write(*,'(1X,A)') 'exp_energy_scales:                       |'
-                       do i = 1, size(params%exp_energy_scales)
-                          write(*,'(1X,A,1X,F12.8,1X,A)') '   ', params%exp_energy_scales(i), '                      |'
-                       end do
-
-                       write(*,*) '                                       |'
-                    end if
-
                     if( .not. allocated( images ) .and. .not. params%do_nested_sampling )then
                        allocate( images(1:2) )
                     else if (.not. allocated(images) .and. params%do_nested_sampling )then
@@ -3910,54 +3760,16 @@ program turbogap
                     end do
 
 
-
                     !       Now use the image construct to store this as the image to compare to
                     call from_properties_to_image(images(i_current_image), positions, velocities, masses, &
                          forces, a_box, b_box, c_box,  energy, energies, E_kinetic, &
                          species, species_supercell, n_sites, indices, fix_atom, &
                          xyz_species, xyz_species_supercell, local_properties)
-                    !  >>> This is the dumb implementation where we will
-                    !  >>> write to an xyz every iteration. This is slow so
-                    !  >>> once validated it should be reommovwd
-                    ! setting "md_istep" to 0 to overwrite
-
-                    ! Here, put in the optimize xps spectra
-                    if (params%mc_optimize_exp)then
-
-                       do i = 1, params%n_exp
-
-                          if (.not. allocated(params%exp_data(i)%y_pred_prev)) then
-                             allocate( params%exp_data(i)&
-                                  &%y_pred_prev(1:size(params&
-                                  &%exp_data(i)%y_pred,1)) )
-                          end if
-                          params%exp_data(i) % y_pred_prev = params%exp_data(i) % y_pred
-
-                       end do
-
-
-                       if (params%mc_reverse) then
-
-                          call get_all_similarities( params&
-                               &%n_exp, params&
-                               &%exp_data, params&
-                               &%exp_energy_scales,&
-                               & sim_exp_pred )
-
-                          print *, " energy term reverse mc ", - params%mc_reverse_lambda * ( energy + E_kinetic )
-
-                          sim_exp_pred = sim_exp_pred - params%mc_reverse_lambda * ( energy + E_kinetic )
-
-                          sim_exp_prev = sim_exp_pred
-                       end if
-                    end if
-
-
 
 
                     if ((mc_istep == 0 .or. mc_istep == params%mc_nsteps .or. &
                          modulo(mc_istep, params%write_xyz) == 0))then
-                       write(*,'(1X,A)')' Writing mc_current.xyz and mc_all.xyz '
+                       if (params%verb > 50) write(*,'(1X,A)')' Writing mc_current.xyz and mc_all.xyz '
                        call wrap_pbc(images(i_current_image)%positions(1:3, 1:images(i_current_image)%n_sites), &
                             images(i_current_image)%a_box/dfloat(indices(1)), &
                             images(i_current_image)%b_box/dfloat(indices(2)),&
@@ -4001,51 +3813,6 @@ program turbogap
                             & local_property_labels, images(i_current_image)%local_properties&
                             &, images(i_current_image)%fix_atom,&
                             & "mc_all.xyz", string, .true. )
-
-
-                       if (params%mc_optimize_exp) then
-                          do i = 1, params%n_exp
-                             ! Deallocate exp data if used
-                             write(filename,'(A,A)') trim(params%exp_data(i)%label), "_prediction.dat"
-                             call write_exp_data(params&
-                                  &%exp_data(i)%x, params&
-                                  &%exp_data(i)%y_pred, .true.,&
-                                  & filename, params&
-                                  &%exp_data(i)%label)
-
-                             if ( .not.  params%exp_data(i)%wrote_exp ) then
-                                write(filename,'(A,A)') trim(params%exp_data(i)%label), "_exp.dat"
-                                call write_exp_data(params&
-                                     &%exp_data(i)%x, params&
-                                     &%exp_data(i)%y, .true.,&
-                                     & filename, params&
-                                     &%exp_data(i)%label)
-                                params%exp_data(i)%wrote_exp = .true.
-                             end if
-
-                             if (allocated(params%exp_data(i)%x))then
-                                deallocate( params%exp_data(i)&
-                                     &%x, params%exp_data(i)%y,&
-                                     & params%exp_data(i)&
-                                     &%y_pred  )
-                             end if
-                          end do
-                       end if
-
-                       
-                       ! if (params%mc_optimize_exp .and. valid_xps)then
-                       !    call write_exp_data(params&
-                       !         &%exp_data(xps_idx)%x, params&
-                       !         &%exp_data(xps_idx)%y_pred, .true.,&
-                       !         & "xps_prediction.dat")
-                       !    call write_exp_data(params&
-                       !         &%exp_data(xps_idx)%x, params&
-                       !         &%exp_data(xps_idx)%y, .true.,&
-                       !         & "xps_exp.dat")
-                       !    deallocate( params%exp_data(xps_idx)%x, params%exp_data(xps_idx)%y_pred )
-                       !    if (allocated(y_i_pred_all)) deallocate(y_i_pred_all)
-                       ! end if
-
 
 
                        v_uc_prev = dot_product( cross_product(a_box, b_box), c_box ) / (dfloat(indices(1)*indices(2)*indices(3)))
@@ -4273,7 +4040,7 @@ program turbogap
      call cpu_time(time_mpi_positions(1))
      call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
      if( params%do_md .or. params%do_nested_sampling .or. params%do_mc )then
-        call mpi_bcast(velocities, 3*n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
         call mpi_bcast(masses, n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
         call mpi_bcast(fix_atom, 3*n_sp, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
      end if

@@ -132,7 +132,7 @@ module types
          & n_mc_types = 0, n_nested = 0, mc_idx = 1, mc_nrelax=0,&
          & n_local_properties=0, n_moments=0, n_mc_swaps = 0, xps_idx&
          &, xrd_idx, saxs_idx, pdf_idx, sf_idx, nd_idx, n_exp=0, pair_distribution_n_samples&
-         &=200, structure_factor_n_samples=200, xrd_n_samples=200, nd_n_samples=200
+         &=200, structure_factor_n_samples=200, xrd_n_samples=200, nd_n_samples=200, verb=0
     integer, allocatable :: mc_swaps_id(:)
 
     character*1024 :: atoms_file

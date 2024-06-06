@@ -704,6 +704,9 @@ end if
       else if(keyword=='do_mc')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%do_mc
+      else if(keyword=='verbosity' .or. keyword=='verb')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%verb
       else if(keyword=='do_prediction')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%do_prediction
