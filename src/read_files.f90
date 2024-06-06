@@ -931,6 +931,9 @@ end if
       else if(keyword=='print_lp_forces')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%print_lp_forces
+      else if(keyword=='print_vdw_forces')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%print_vdw_forces
       else if(keyword=='exp_similarity_type')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%exp_similarity_type
@@ -2242,10 +2245,12 @@ end if
                   ! broadcasted. But this way, all the files are
                   ! specified in the .gap file rather than in the
                   ! input file.
-                  soap_turbo_hypers(n_soap_turbo)&
-                       &%local_property_models(j)%dim =&
-                       & size(soap_turbo_hypers(n_soap_turbo)&
-                       &%local_property_models(j)%Qs,1)
+
+
+                  ! soap_turbo_hypers(n_soap_turbo)&
+                  !      &%local_property_models(j)%dim =&
+                  !      & size(soap_turbo_hypers(n_soap_turbo)&
+                  !      &%local_property_models(j)%Qs,1)
 
 
 
@@ -2328,11 +2333,11 @@ end if
                          "compress_mode are defined!"
               stop
             end if
-          else
+         else
             soap_turbo_hypers(n_soap_turbo)%dim = soap_turbo_hypers(n_soap_turbo)%n_max * &
                                                   (soap_turbo_hypers(n_soap_turbo)%n_max+1)/2 * &
                                                   (soap_turbo_hypers(n_soap_turbo)%l_max+1)
-          end if
+         end if
 !       distance_2b definitions here
         else if( keyword == "distance_2b" )then
           n_distance_2b = n_distance_2b + 1

@@ -32,7 +32,149 @@ module local_prop
   contains
 
 
-    !**************************************************************************
+    ! !**************************************************************************
+    ! subroutine get_local_property_details( n_soap_turbo, soap_turbo_hypers, n_local_properties_tot, local_property_labels, write_local_properties )
+    !   implicit none
+    !   integer, intent(in) :: n_soap_turbo
+    !   integer, intent(out) :: n_local_properties_tot
+    !   character*1024, allocatable, intent(inout) ::  local_property_labels(:)
+    !   character*1024, allocatable :: local_property_labels_temp(:), local_property_labels_temp2(:)
+    !   integer :: i, j, k, i2
+
+    !  i2 = 1 ! using this as a counter for the labels
+    !  do j = 1, n_soap_turbo
+    !     if( soap_turbo_hypers(j)%has_local_properties )then
+    !        ! This property has the labels of the quantities to
+    !        ! compute. We must specify the number of local properties, for the sake of coding simplicity
+
+    !        n_local_properties_tot = n_local_properties_tot + soap_turbo_hypers(j)%n_local_properties
+
+    !        if(.not. allocated(local_property_labels))then
+    !           allocate(local_property_labels(1:n_local_properties_tot))
+    !           do i = 1, n_local_properties_tot
+    !              local_property_labels(i) = soap_turbo_hypers(j)%local_property_models(i)%label
+    !              write(*,*)' Local property found                  |'
+    !              write(*,'(A,1X,I8,1X,A,1X,A)')' Descriptor ', j,&
+    !                   & trim(soap_turbo_hypers(j)&
+    !                   &%local_property_models(i)%label),  ' |'
+    !           end do
+    !        else
+    !           allocate( local_property_labels_temp( 1:n_local_properties_tot - soap_turbo_hypers(j)%n_local_properties ))
+    !           local_property_labels_temp = local_property_labels
+    !           deallocate(local_property_labels)
+    !           allocate(local_property_labels(1:n_local_properties_tot))
+
+    !           nprop = soap_turbo_hypers(j)%n_local_properties
+    !           do i = 1, n_local_properties_tot - nprop
+    !              local_property_labels(i) = local_property_labels_temp(i)
+    !           end do
+
+    !           deallocate(local_property_labels_temp)
+
+    !           do i = 1, nprop
+    !              local_property_labels(i + n_local_properties_tot -&
+    !                   & nprop) = soap_turbo_hypers(j)&
+    !                   &%local_property_models(i)%label
+    !              write(*,*)' Local property found                  |'
+    !              write(*,'(A,1X,I8,1X,A,1X,A)')' Descriptor ', j,&
+    !                   & trim(soap_turbo_hypers(j)&
+    !                   &%local_property_models(i)%label),  ' |'
+
+    !           end do
+    !        end if
+    !     end if
+    !  end do
+
+    !  ! Now we create an irreducible list of the labels
+    !  if (n_local_properties_tot > 0)then
+    !     allocate( local_property_labels_temp( 1:1 ))
+    !     local_property_labels_temp(1) = local_property_labels(1)
+    !     i2 = 1
+    !     if (n_local_properties_tot > 1)then
+    !        do i = 2, n_local_properties_tot
+    !           label_in_list = .false.
+    !           ! Iterate through irreducible list to see if there is a mismatch
+    !           do j = 1, size( local_property_labels_temp, 1 )
+    !              if (trim( local_property_labels_temp(j) ) == trim( local_property_labels(i) )) label_in_list = .true.
+    !           end do
+    !           if (.not. label_in_list) then
+    !              i2 = i2 + 1
+    !              allocate(local_property_labels_temp2(1:i2))
+    !              local_property_labels_temp2(1:i2-1) = local_property_labels_temp(1:i2-1)
+    !              local_property_labels_temp2(i2)     = local_property_labels(i)
+    !              deallocate(local_property_labels_temp)
+    !              allocate(local_property_labels_temp(1:i2))
+    !              local_property_labels_temp(1:i2) = local_property_labels_temp2(1:i2)
+    !              deallocate(local_property_labels_temp2)
+    !           end if
+    !        end do
+    !     end if
+
+    !     params%n_local_properties = i2
+
+    !     ! Now we can have an array which has a soap turbo index as an input and it can give us the corresponding label
+    !     allocate(local_property_indexes(1:n_local_properties_tot))
+    !     i2 = 1
+    !     do i = 1, params%n_local_properties
+    !        do j = 1, n_local_properties_tot
+    !           if ( trim(local_property_labels(j)) == trim( local_property_labels_temp(i) ) )then
+
+    !              local_property_indexes(j) = i
+
+
+    !              if ( trim(local_property_labels(j)) == "hirshfeld_v" )then
+    !                 vdw_lp_index = i
+    !                 valid_vdw = .true.
+    !              end if
+
+
+    !              if ( trim(local_property_labels(j)) == "core_electron_be" )then
+    !                 core_be_lp_index = i
+
+    !                 ! Check if there is experimental data for one to do xps fitting
+    !                 do i2 = 1, params%n_exp
+    !                    if(( trim(params%exp_data(i2)%label) == "xps" .and.  &
+    !                         .not. ( trim(params%exp_data(i2)%file_data) == "none" )))then
+    !                       valid_xps = .true.
+    !                       do k = 1, soap_turbo_hypers(j)%n_local_properties
+    !                          if (trim(soap_turbo_hypers(j)%local_property_models(k)%label) == "xps")then
+    !                             soap_turbo_hypers(j)%local_property_models(k)%do_derivatives = .false.
+    !                             if( params%exp_forces .and. params%do_derivatives)then
+    !                                soap_turbo_hypers(j)%local_property_models(k)%do_derivatives = .true.
+    !                             end if
+    !                          end if
+    !                       end do
+    !                    end if
+    !                 end do
+    !              end if
+
+
+    !           end if
+    !        end do
+    !     end do
+
+    !     print *, "n_local_properties ", params%n_local_properties
+    !     print *, "n_local_properties_tot ", n_local_properties_tot
+    !     ! print *, "local_property_labels ", local_property_labels
+    !     ! print *, "local_property_labels_temp (irreducible) ", local_property_labels_temp
+
+    !     deallocate(local_property_labels)
+    !     allocate(local_property_labels(1:size(local_property_labels_temp,1)))
+    !     local_property_labels = local_property_labels_temp
+    !     deallocate(local_property_labels_temp)
+
+    !     do i = 1, params%n_local_properties
+    !        write(*,*)' Irreducible local properties                   |'
+    !        write(*,'(1X,A)') trim( local_property_labels(i) )
+    !     end do
+
+    !     allocate( params%write_local_properties(1:params%n_local_properties) )
+    !     params%write_local_properties = .true.
+    !  end if
+
+
+    ! end subroutine get_local_property_details
+
 
   subroutine local_property_predict( soap, Qs, alphas, V0, delta, zeta, V, &
                                 do_derivatives, soap_cart_der, n_neigh, V_der )
