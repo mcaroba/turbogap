@@ -759,7 +759,40 @@ module md
       end if
     end do
 
-  end subroutine
+  end subroutine get_atomic_mass
+
+
+  subroutine get_target_temp( t_beg, t_end, md_istep, md_nsteps, n_t_hold, t_hold, target_temp )
+    implicit none
+    real*8, intent(in) :: t_beg, t_end
+    integer, intent(in) :: md_istep, md_nsteps, n_t_hold
+    real*8, intent(in), allocatable :: t_hold(:)
+    real*8, intent(out) ::  target_temp
+    real*8 :: t_h, n_start, n_end, n_end_prev=0
+    integer :: i, n_end_tot=0
+
+    ! This all assumes t_hold is in order
+    target_temp = t_beg + (t_end-t_beg)*dfloat(md_istep+1)/float(md_nsteps)
+    if (n_t_hold > 0)then
+       do i = 1, n_t_hold
+          t_h = t_hold((i-1)*3 + 1)
+          n_start = t_hold((i-1)*3 + 2)
+          n_end = t_hold((i-1)*3 + 3)
+
+          n_end_tot = n_end_tot + n_end
+          if (dfloat(md_istep+1) > n_start .and. dfloat(md_istep+1) <= n_end ) then
+             target_temp = t_beg + (t_end-t_beg)*((n_start)/float(md_nsteps))
+          elseif ( dfloat(md_istep+1) >= n_end )then
+             t_h = t_beg + (t_end-t_beg)*((n_start)/float(md_nsteps))
+             target_temp = t_h + (t_end - t_h) * ( dfloat(md_istep+1) - n_end ) /( float(md_nsteps) - n_end )
+          end if
+          n_end_prev = n_end
+       end do
+    end if
+  end subroutine get_target_temp
+
+
+
 !**************************************************************************
 
 end module

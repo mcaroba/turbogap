@@ -749,6 +749,13 @@ end if
       else if(keyword=='tau_p')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%tau_p
+      else if(keyword=='n_t_hold')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%n_t_hold
+        allocate( params%t_hold( 1:params%n_t_hold*3 ) )
+      else if(keyword=='t_hold')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, (params%t_hold(nw),nw=1,params%n_t_hold*3)
       else if(keyword=='gamma_p')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%gamma_p
@@ -885,27 +892,19 @@ end if
 ! do experimental
         params%do_exp = .true.
 
-      else if(keyword=='exp_energy_scales' .or. keyword&
-           &=='exp_energy_scales_initial' .or. keyword&
-           &=='exp_energy_scales_beg')then
-         backspace(10)
-         if (params%n_moments > 0)then
-            read(10, *, iostat=iostatus) cjunk, cjunk, (params&
+     else if(keyword=='exp_energy_scales' .or. keyword&
+          &=='exp_energy_scales_initial' .or. keyword&
+          &=='exp_energy_scales_beg')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, (params&
              &%exp_energy_scales(nw),nw=1,params&
-             &%n_moments)
-         else
-            read(10, *, iostat=iostatus) cjunk, cjunk, (params&
-                 &%exp_energy_scales(nw),nw=1,params&
-                 &%n_exp)
+             &%n_exp)
 
-            ! Set the final gamma to the initial in case
-            do nw = 1, params%n_exp
-               params%exp_energy_scales_initial(nw) = params%exp_energy_scales(nw)
-               params%exp_energy_scales_final(nw) = params%exp_energy_scales(nw)
-            end do
-
-         end if
-
+        ! Set the final gamma to the initial in case
+        do nw = 1, params%n_exp
+           params%exp_energy_scales_initial(nw) = params%exp_energy_scales(nw)
+           params%exp_energy_scales_final(nw) = params%exp_energy_scales(nw)
+        end do
 
       else if(keyword=='exp_energy_scales_final' .or. keyword=='exp_energy_scales_end')then
          backspace(10)

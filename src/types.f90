@@ -112,7 +112,7 @@ module types
 ! These is the type for the input parameters
   type input_parameters
      real*8, allocatable :: masses_types(:), e0(:), vdw_c6_ref(:), vdw_r0_ref(:), vdw_alpha0_ref(:), &
-          mc_acceptance(:), exp_energy_scales(:), exp_energy_scales_initial(:), exp_energy_scales_final(:), radii(:)
+          mc_acceptance(:), exp_energy_scales(:), exp_energy_scales_initial(:), exp_energy_scales_final(:), radii(:), t_hold(:)
     real*8 :: t_beg = 300.d0, t_end = 300.d0, tau_t = 100.d0, md_step = 1.d0, &
               neighbors_buffer = 0.d0, max_GBytes_per_process = 1.d0, e_tol = 1.d-6, &
               vdw_sr = 0.94d0, vdw_d = 20.d0, vdw_rcut = 10.d0, &
@@ -132,7 +132,7 @@ module types
          & n_mc_types = 0, n_nested = 0, mc_idx = 1, mc_nrelax=0,&
          & n_local_properties=0, n_moments=0, n_mc_swaps = 0, xps_idx&
          &, xrd_idx, saxs_idx, pdf_idx, sf_idx, nd_idx, n_exp=0, pair_distribution_n_samples&
-         &=200, structure_factor_n_samples=200, xrd_n_samples=200, nd_n_samples=200, verb=0
+         &=200, structure_factor_n_samples=200, xrd_n_samples=200, nd_n_samples=200, verb=0, n_t_hold=0
     integer, allocatable :: mc_swaps_id(:)
 
     character*1024 :: atoms_file
@@ -180,7 +180,7 @@ module types
   type image
     real*8, allocatable :: positions(:,:), positions_prev(:,:), velocities(:,:), masses(:), &
                            forces(:,:), forces_prev(:,:), energies(:), local_properties(:,:)
-    real*8 :: a_box(1:3), b_box(1:3), c_box(1:3), energy, e_kin
+    real*8 :: a_box(1:3), b_box(1:3), c_box(1:3), energy, e_kin, energy_exp
     integer, allocatable :: species(:), species_supercell(:)
     integer :: n_sites, indices(1:3)
     logical, allocatable :: fix_atom(:,:)
@@ -198,14 +198,14 @@ module types
 ! This provides a way to pass all the individual arrays/variables in the main code to an image container
 ! In time I should make the image data type the default way to store these properties!!!!!!!
   subroutine from_properties_to_image(this_image, positions, velocities, masses, &
-                                      forces, a_box, b_box, c_box, energy, energies, e_kin, &
+                                      forces, a_box, b_box, c_box, energy, energies, energy_exp,  e_kin, &
                                       species, species_supercell, n_sites, indices, fix_atom, &
                                       xyz_species, xyz_species_supercell, local_properties)
     implicit none
 
 !   Input variables
     real*8, intent(in) :: positions(:,:), velocities(:,:), masses(:), energies(:), &
-         forces(:,:), a_box(1:3), b_box(1:3), c_box(1:3), energy, e_kin
+         forces(:,:), a_box(1:3), b_box(1:3), c_box(1:3), energy, e_kin, energy_exp
     real*8, allocatable, intent(in) :: local_properties(:,:)
     integer, intent(in) :: species(:), species_supercell(:), n_sites, indices(1:3)
     logical, intent(in) :: fix_atom(:,:)
@@ -248,6 +248,8 @@ module types
     this_image%c_box = c_box
 
     this_image%energy = energy
+
+    this_image%energy_exp = energy_exp
 
     this_image%e_kin = e_kin
 
@@ -297,7 +299,7 @@ module types
 
 !**************************************************************************
   subroutine from_image_to_properties(this_image, positions, velocities, masses, &
-                                      forces, a_box, b_box, c_box, energy, energies, e_kin, &
+                                      forces, a_box, b_box, c_box, energy, energies, energy_exp, e_kin, &
                                       species, species_supercell, n_sites, indices, fix_atom, &
                                       xyz_species, xyz_species_supercell, local_properties)
     implicit none
@@ -308,7 +310,7 @@ module types
     real*8, allocatable, intent(out) :: positions(:,:), velocities(:,:), masses(:), &
          forces(:,:), energies(:)
     real*8, allocatable, intent(out) :: local_properties(:,:)
-    real*8, intent(out) :: a_box(1:3), b_box(1:3), c_box(1:3), energy, e_kin
+    real*8, intent(out) :: a_box(1:3), b_box(1:3), c_box(1:3), energy, e_kin, energy_exp
     integer, allocatable, intent(out) :: species(:), species_supercell(:)
     integer, intent(out) :: n_sites, indices(1:3)
     logical, allocatable, intent(out) :: fix_atom(:,:)
@@ -342,6 +344,8 @@ module types
     b_box = this_image%b_box
 
     c_box = this_image%c_box
+
+    energy_exp = this_image%energy_exp
 
     energy = this_image%energy
 
