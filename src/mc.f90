@@ -56,7 +56,6 @@ contains
       v = v_tot - v_atoms
     end subroutine get_accessible_volume
 
-
 !   These are the routines for calculating the monte-carlo acceptance criteria for different move types
   subroutine monte_carlo_insertion(p_accept, e_new, e_prev, temp, mu, m, volume, volume_bias, N_exch)
     implicit none
@@ -105,10 +104,12 @@ contains
 
   end subroutine monte_carlo_move
 
-  subroutine monte_carlo_volume(p_accept, e_new, e_prev, temp, V_new, V_prev, V_a_new, V_a_prev, P, N_exch)
+  subroutine monte_carlo_volume(p_accept, e_new, e_prev, temp, V_new,&
+       & V_prev, V_avail_new, V_avail_prev, P, N_exch)
     implicit none
 
-    real*8, intent(in) :: e_new, e_prev, temp, V_new, V_prev, V_a_new, V_a_prev, P
+    real*8, intent(in) :: e_new, e_prev, temp, V_new, V_prev,&
+         & V_avail_new, V_avail_prev, P
     real*8 :: kB = 8.617333262e-5, beta, eVperA3tobar = 1602176.6208d0
     integer, intent(in) :: N_exch
     real*8, intent(out) :: p_accept
@@ -116,7 +117,8 @@ contains
     beta = (1./(kB * temp))
     p_accept = exp( - beta * ( (e_new - e_prev) + &
                       (P / eVperA3tobar) * ( V_new-V_prev ) + &
-                      -(N_exch+1) * log( V_a_new/V_a_prev )/ beta ) )
+                      -(N_exch+1) * log( V_avail_new/V_avail_prev )/ beta ) )
+
 
   end subroutine monte_carlo_volume
 
@@ -208,10 +210,12 @@ contains
     logical :: invalid_move, cant_remove, cant_swap=.false.
     integer, intent(inout) :: n_spec_swap_1, n_spec_swap_2,&
          & n_mc_swaps, swap_id_1, swap_id_2, mc_mu_id
+    integer :: n_mc_types
     integer, allocatable, intent(inout) :: species(:), mc_swaps_id(:), n_mc_species(:)
     character*8, allocatable :: species_types(:)
     character*8, intent(inout) :: swap_species_1, swap_species_2
 
+    n_mc_types = size( mc_types, 1)
 
     invalid_move = .true.
     do while( invalid_move )
@@ -220,7 +224,8 @@ contains
        ! Now choose the move based on the acceptance ratios
 
        k = 0.d0
-       do i = 1, size(mc_types)
+
+       do i = 1, n_mc_types
           n_mc = i
           k = k + acceptance(i)
           if( ranf < k )then
@@ -370,27 +375,27 @@ contains
   subroutine perform_mc_step(&
        & positions, species, xyz_species, masses, fix_atom,&
        & velocities, positions_prev, positions_diff, disp, d_disp,&
-       & mc_acceptance, mc_mu_acceptance, hirshfeld_v, im_hirshfeld_v, energies,&
+       & n_lp, mc_acceptance, mc_mu_acceptance, local_properties, im_local_properties, energies,&
        & forces, forces_prev, n_sites, n_mc_mu, mc_mu_id, n_mc_species, mc_move, mc_species,&
-       & mc_move_max, mc_min_dist, ln_vol_max, mc_types, masses_types,&
+       & mc_move_max, mc_min_dist, ln_vol_max,  mc_types, masses_types,&
        & species_idx, im_pos, im_species, im_xyz_species, im_fix_atom&
        &, im_masses, a_box, b_box, c_box, indices, do_md, mc_relax,&
        & md_istep, mc_id, E_kinetic, instant_temp, t_beg,&
        & n_mc_swaps, mc_swaps, mc_swaps_id, species_types,&
-       & mc_hamiltonian, n_mc_relax_after, mc_relax_after, do_mc_relax)
+       & mc_hamiltonian, n_mc_relax_after, mc_relax_after, do_mc_relax, verb)
 
     implicit none
 
-    real*8, allocatable, intent(inout) :: positions(:,:), masses(:), hirshfeld_v(:),&
+    real*8, allocatable, intent(inout) :: positions(:,:), masses(:), local_properties(:,:),&
          forces_prev(:,:), positions_prev(:,:), positions_diff(:,:),&
-         mc_acceptance(:), mc_mu_acceptance(:), im_hirshfeld_v(:), velocities(:,:), &
-         energies(:), forces(:,:), masses_types(:), im_pos(:,:), im_masses(:)
+         mc_acceptance(:), mc_mu_acceptance(:), im_local_properties(:,:), velocities(:,:), &
+         & energies(:), forces(:,:), masses_types(:), im_pos(:,:), im_masses(:)
     real*8 :: mc_move_max, ln_vol_max, lnvn, vn, v_uc, length,&
          & length_prev, l_prop, ranf, ranv(1:3), kB = 8.6173303d-5
     real*8, intent(inout) :: disp(1:3), mc_min_dist, d_disp,&
          & E_kinetic, instant_temp, t_beg
-
-    integer, intent(inout) :: n_sites, md_istep,  n_mc_swaps, n_mc_relax_after, n_mc_mu, mc_mu_id
+    integer, intent(in) :: n_lp, verb
+    integer, intent(inout) :: n_sites, md_istep, n_mc_swaps, n_mc_relax_after, n_mc_mu, mc_mu_id
     integer, allocatable, intent(inout) :: species(:), mc_swaps_id(:), n_mc_species(:), mc_id(:)
     integer, allocatable, intent(in) ::  im_species(:)
     character*8, allocatable, intent(inout) :: species_types(:),&
@@ -410,6 +415,7 @@ contains
     logical, intent(inout) :: do_md, mc_relax, mc_hamiltonian, do_mc_relax
     real*8 :: gamma(1:6)
     !    n_sites = size(positions, 2)
+
     ! Count the mc species (no multi species mc just yet)
     n_mc_species = 0
     do j = 1, n_mc_mu
@@ -426,11 +432,11 @@ contains
          &, n_mc_swaps, mc_swaps_id, species, swap_id_1, swap_id_2,&
          & swap_species_1, swap_species_2, mc_mu_id)
 
-    write(*,'(1X,A,1X,A)') " Next MC Move: ", mc_move
+    if (verb>50) write(*,'(1X,A,1X,A)') " Next MC Move: ", mc_move
 
     if (mc_move == "move")then
        call mc_get_atom_disp(n_sites, mc_move_max, idx, disp, d_disp)
-       write(*,'(A,1X,I8,1X,A,F22.8,1X,A)')'    MC Move: atom ', idx, ' distance = ', d_disp, 'A '
+       if (verb>50) write(*,'(A,1X,I8,1X,A,F22.8,1X,A)')'    MC Move: atom ', idx, ' distance = ', d_disp, 'A '
        positions(1:3, idx) = positions(1:3, idx) + disp
     end if
 
@@ -486,7 +492,7 @@ contains
        deallocate(swap_idx_1)
        deallocate(swap_idx_2)
 
-       write(*,'(A,1X,I8,1X,A,1X,I8,1X,A)')'    MC Swap: ',&
+       if (verb>50) write(*,'(A,1X,I8,1X,A,1X,I8,1X,A)')'    MC Swap: ',&
             & swap_atom_id_1, trim(swap_species_1), swap_atom_id_2,&
             & trim(swap_species_2)
     end if
@@ -534,24 +540,24 @@ contains
        length = vn**( 1.0d0 / 3.0d0)
        length_prev = ( v_uc )**(1.0d0 / 3.0d0)
        l_prop = ( length / length_prev )
-       write(*,'(A,1X,F22.8)')'    MC Volume: Cube L_prev        ', length_prev
-       write(*,'(A,1X,F22.8)')'               Cube L_new         ', length
-       write(*,'(A,1X,F22.8)')'               Cube L_new/L_prev  ', l_prop
-       write(*,'(A,1X,F22.8)')'               V_prev             ', v_uc
-       write(*,'(A,1X,F22.8)')'               V_new              ', vn
+       if (verb>50) write(*,'(A,1X,F22.8)')'    MC Volume: Cube L_prev        ', length_prev
+       if (verb>50) write(*,'(A,1X,F22.8)')'               Cube L_new         ', length
+       if (verb>50) write(*,'(A,1X,F22.8)')'               Cube L_new/L_prev  ', l_prop
+       if (verb>50) write(*,'(A,1X,F22.8)')'               V_prev             ', v_uc
+       if (verb>50) write(*,'(A,1X,F22.8)')'               V_new              ', vn
 
        ! Voigt Notation
        gamma = (/ l_prop - 1.d0, l_prop - 1.d0, l_prop - 1.d0, 0.d0, 0.d0, 0.d0 /)
 
        call modify_box(positions, gamma, a_box, b_box, c_box )
 
-       write(*,'(A,1X,F22.8,1X,F22.8,1X,F22.8)')'               a_box&
+       if (verb>50) write(*,'(A,1X,F22.8,1X,F22.8,1X,F22.8)')'               a_box&
             & = ', a_box(1)/dfloat(indices(1)),  a_box(2)&
             &/dfloat(indices(1)),  a_box(3)/dfloat(indices(1))
-       write(*,'(A,1X,F22.8,1X,F22.8,1X,F22.8)')'               b_box&
+       if (verb>50) write(*,'(A,1X,F22.8,1X,F22.8,1X,F22.8)')'               b_box&
             & = ', b_box(1)/dfloat(indices(2)),  b_box(2)&
             &/dfloat(indices(2)),  b_box(3)/dfloat(indices(2))
-       write(*,'(A,1X,F22.8,1X,F22.8,1X,F22.8)')'               c_box&
+       if (verb>50) write(*,'(A,1X,F22.8,1X,F22.8,1X,F22.8)')'               c_box&
             & = ', c_box(1)/dfloat(indices(3)),  c_box(2)&
             &/dfloat(indices(3)),  c_box(3)/dfloat(indices(3))
 
@@ -611,21 +617,21 @@ contains
           masses(1:n_sites-1) = im_masses(1:n_sites-1)
           masses(n_sites) = masses_types(mc_id(mc_mu_id))
 
-          if (allocated(hirshfeld_v))then
-             deallocate(hirshfeld_v)
-             allocate(hirshfeld_v(1:n_sites))
-             hirshfeld_v(1:n_sites-1) = im_hirshfeld_v(1:n_sites-1)
+          if (allocated(local_properties))then
+             deallocate(local_properties)
+             allocate(local_properties(1:n_sites, n_lp))
+             local_properties(1:n_sites-1,1:n_lp) = im_local_properties(1:n_sites-1,1:n_lp)
              ! ignoring the hirshfeld v just want to get rough implementation done
-             hirshfeld_v(n_sites) = hirshfeld_v(n_sites-1)
+             local_properties(n_sites,1:n_lp) = 0.d0 ! local_properties(n_sites-1)
           end if
 
        else if (mc_move == "removal")then
           deallocate(masses)
           allocate(masses(1:n_sites))
 
-          if (allocated(hirshfeld_v))then
-             deallocate(hirshfeld_v)
-             allocate(hirshfeld_v(1:n_sites))
+          if (allocated(local_properties))then
+             deallocate(local_properties)
+             allocate(local_properties(1:n_sites,1:n_lp))
           end if
 
           do i = 1, n_sites
@@ -638,14 +644,14 @@ contains
                 masses(i)= im_masses(i)
                 fix_atom(1:3,i)= im_fix_atom(1:3,i)
 
-                if (allocated(hirshfeld_v))hirshfeld_v(i) = im_hirshfeld_v(i)
+                if (allocated(local_properties))local_properties(i,1:n_lp) = im_local_properties(i,1:n_lp)
              else
                 positions(1:3,i) = im_pos(1:3,i+1)
                 xyz_species(i)           = im_xyz_species(i+1)
                 species(i)               = im_species(i+1)
                 masses(i)= im_masses(i+1)
                 fix_atom(1:3,i)= im_fix_atom(1:3,i+1)
-                if (allocated(hirshfeld_v))hirshfeld_v(i) = im_hirshfeld_v(i+1)
+                if (allocated(local_properties))local_properties(i,1:n_lp) = im_local_properties(i+1,1:n_lp)
              end if
           end do
        end if
@@ -707,6 +713,7 @@ contains
     deallocate( frac_pos )
 
   end subroutine
+!**************************************************************************
 !**************************************************************************
 
 

@@ -59,32 +59,99 @@ module xyz_module
 !  4 -> Forces
 !  5 -> Local energy
 !  6 -> Masses
-!  7 -> Hirshfeld volumes
+!  7 -> Hirshfeld volumes || Note, this is being replaced by the local properties
 !  8 -> Fix atoms
 !
 ! If the corresponding write_property(i) or write_array_property(i)
 ! is .true., we write out the corresponding property
 !
-  subroutine write_extxyz( Nat, md_istep, dt, md_time, temperature, pressure, a_cell, b_cell, c_cell, virial, &
+
+    subroutine get_xyz_energy_string(energies_soap, energies_2b,&
+         & energies_3b, energies_core_pot, energies_vdw, energies_exp&
+         &, energies_lp, energies_pdf, energies_sf, energies_xrd, energies_nd,&
+         & valid_pdf, valid_sf, valid_xrd, valid_nd,  do_pair_distribution,&
+         & do_structure_factor, do_xrd, do_nd, string)
+      implicit none
+      real*8, intent(in), allocatable :: energies_soap(:), energies_2b(:),&
+           & energies_3b(:), energies_core_pot(:), energies_vdw(:),&
+           & energies_exp(:), energies_lp(:), energies_pdf(:), energies_sf(:),&
+           & energies_xrd(:), energies_nd(:)
+      logical, intent(in) :: valid_pdf, valid_sf, valid_xrd, valid_nd, do_pair_distribution,&
+           & do_structure_factor, do_xrd, do_nd
+      character*1024, intent(out) :: string
+      character*32 :: temp_string
+
+
+      write(temp_string, "(F16.8)") sum(energies_soap)
+      write(string, "(1X,A)") "energy_soap=" // trim(adjustl(temp_string))
+
+      write(temp_string, "(F16.8)") sum(energies_2b)
+      write(string, "(A)") adjustl(trim(string)) // " energy_2b=" // trim(adjustl(temp_string))
+
+      write(temp_string, "(F16.8)") sum(energies_3b)
+      write(string, "(A)") adjustl(trim(string)) // " energy_3b=" // trim(adjustl(temp_string))
+
+      write(temp_string, "(F16.8)") sum(energies_core_pot)
+      write(string, "(A)") adjustl(trim(string)) // " energy_core_pot=" // trim(adjustl(temp_string))
+
+      write(temp_string, "(F16.8)") sum(energies_vdw)
+      write(string, "(A)") adjustl(trim(string)) // " energy_vdw=" // trim(adjustl(temp_string))
+
+      write(temp_string, "(F16.8)") sum(energies_exp)
+      write(string, "(A)") adjustl(trim(string)) // " energy_exp=" // trim(adjustl(temp_string))
+
+      write(temp_string, "(F16.8)") sum(energies_lp)
+      write(string, "(A)") adjustl(trim(string)) // " energy_lp=" // trim(adjustl(temp_string))
+
+      if ( valid_pdf .and. do_pair_distribution )then
+         write(temp_string, "(F16.8)") sum(energies_pdf)
+         write(string, "(A)") adjustl(trim(string)) // " energy_pdf=" // trim(adjustl(temp_string))
+      end if
+      if ( valid_sf .and. do_structure_factor )then
+         write(temp_string, "(F16.8)") sum(energies_sf)
+         write(string, "(A)") adjustl(trim(string)) // " energy_sf=" // trim(adjustl(temp_string))
+      end if
+      if ( valid_xrd .and. do_xrd )then
+         write(temp_string, "(F16.8)") sum(energies_xrd)
+         write(string, "(A)") adjustl(trim(string)) // " energy_xrd=" // trim(adjustl(temp_string))
+      end if
+      if ( valid_nd .and. do_nd )then
+         write(temp_string, "(F16.8)") sum(energies_nd)
+         write(string, "(A)") adjustl(trim(string)) // " energy_nd=" // trim(adjustl(temp_string))
+      end if
+
+    end subroutine get_xyz_energy_string
+
+
+
+
+    
+  subroutine write_extxyz( Nat, md_istep, md_time, dt, temperature, pressure, a_cell, b_cell, c_cell, virial, &
+
                            species, positions, velocities, forces, local_energies, masses, &
-                           hirshfeld_v, write_property, write_array_property, fix_atom, &
-                           filename, overwrite )
+                           write_property,&
+                           & write_array_property,&
+                           & write_local_properties,&
+                           & local_property_labels, local_properties, fix_atom,&
+                           & filename , string,  overwrite )
 
     implicit none
 
 !   In variables:
-    real*8, intent(in) :: dt, temperature, pressure, a_cell(1:3), b_cell(1:3), c_cell(1:3), virial(1:3,1:3)
+    real*8, intent(in) :: md_time, dt, temperature, pressure, a_cell(1:3), b_cell(1:3), c_cell(1:3), virial(1:3,1:3)
     real*8, intent(in) :: forces(:,:), velocities(:,:), positions(:,:), local_energies(:), masses(:)
-    real*8, intent(in) :: hirshfeld_v(:), md_time
+    real*8, intent(in) :: local_properties(:,:)
     integer, intent(in) :: Nat, md_istep
-    character(len=*), intent(in) :: species(:), filename
+    character(len=*), intent(in) :: species(:), filename, string
     logical, intent(in) :: write_property(:), write_array_property(:), fix_atom(:,:), overwrite
-
+    logical, allocatable, intent(in) :: write_local_properties(:)
+    character*1024, allocatable, intent(in) :: local_property_labels(:)
 !   Internal variables:
     real*8 :: vol
-    integer :: n_properties, n_array_properties, i, j
+    integer :: n_properties, n_array_properties, i, j, k
     character*1024 :: properties_string
     character*16 :: lattice_string(1:16), temp_string
+
 
     n_properties = 0
     do i = 1, size( write_property )
@@ -99,6 +166,15 @@ module xyz_module
         n_array_properties = n_array_properties + 1
       end if
     end do
+    ! Adding in for the local properties
+    if(allocated(write_local_properties))then
+       do i = 1, size( write_local_properties )
+          if( write_local_properties(i) )then
+             n_array_properties = n_array_properties + 1
+          end if
+       end do
+    end if
+
 
     if( md_istep == 0 .or. md_istep == -1 .or. overwrite)then
       open(unit=10, file=filename, status="unknown")
@@ -156,14 +232,29 @@ module xyz_module
         if( i < n_array_properties )then
           write(properties_string, "(A)") trim(adjustl(properties_string)) // ":"
         end if
-      end if
-      if( write_array_property(7) )then
-        write(properties_string, "(A)") trim(adjustl(properties_string)) // "hirshfeld_v:R:1"
-        i = i + 1
-        if( i < n_array_properties )then
-          write(properties_string, "(A)") trim(adjustl(properties_string)) // ":"
-        end if
-      end if
+     end if
+     ! Now we write in the local properties of those which are passed in
+     if(allocated(write_local_properties))then
+
+        do k=1, size(write_local_properties,1)
+           if( write_local_properties(k) )then
+              write(properties_string, "(A)") trim(adjustl(properties_string)) // trim(local_property_labels(k)) // ":R:1"
+              i = i + 1
+              if( i < n_array_properties )then
+                 write(properties_string, "(A)") trim(adjustl(properties_string)) // ":"
+              end if
+           end if
+        end do
+     end if
+
+! Not removing yet for compatibility
+      ! if( write_array_property(7) )then
+      !   write(properties_string, "(A)") trim(adjustl(properties_string)) // "hirshfeld_v:R:1"
+      !   i = i + 1
+      !   if( i < n_array_properties )then
+      !     write(properties_string, "(A)") trim(adjustl(properties_string)) // ":"
+      !   end if
+      ! end if
       if( write_array_property(8) )then
         write(properties_string, "(A)") trim(adjustl(properties_string)) // "fix_atoms:S:3"
         i = i + 1
@@ -254,7 +345,10 @@ module xyz_module
         write(10, "(1X,2A)", advance="no") "i_config=", trim(adjustl(temp_string))
       end if
     end if
-!
+    !
+    write(10, "(1X,A)", advance="no") trim(adjustl(string))
+
+
 !   Advance
     write(10,*)
 
@@ -287,9 +381,16 @@ module xyz_module
         write(10, "(1X,F16.8)", advance="no") masses(i)/103.6426965268d0
       end if
 !     Hirshfeld volumes
-      if( write_array_property(7) )then
-        write(10, "(1X,F16.8)", advance="no") hirshfeld_v(i)
-      end if
+     !  if( write_array_property(7) )then
+     !    write(10, "(1X,F16.8)", advance="no") hirshfeld_v(i)
+     ! end if
+! Local properties
+     if( allocated(write_local_properties ))then
+        do j = 1, size(local_properties, 2)
+           write(10, "(1X,F16.8)", advance="no") local_properties(i, j)
+        end do
+     end if
+
 !     Fix atoms
       if( write_array_property(8) )then
         write(10, "(1X,L1,1X,L1,1X,L1)", advance="no") fix_atom(1:3, i)

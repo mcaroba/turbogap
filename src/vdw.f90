@@ -48,7 +48,6 @@ module vdw
     real*8, allocatable :: K(:,:), K_der(:,:), Qss(:,:), Qs_copy(:,:)
     integer :: n_sites, n_soap, n_sparse, zeta_int, n_pairs
     integer :: i, j, i2, cart
-    logical :: is_zeta_int = .false.
 
     n_sparse = size(alphas)
     n_soap = size(soap, 1)
@@ -169,15 +168,18 @@ module vdw
                            pref_force1(:), pref_force2(:), r6(:), r6_der(:)
     real*8 :: time1, time2, c6_ii, c6_jj, r0_i, r0_j, alpha0_i, alpha0_j, rbuf, this_force(1:3)
     integer, allocatable:: i_buffer(:)
-    integer :: n_sites, n_pairs, n_pairs_soap, n_species, n_sites0
+    integer :: n_sites, n_pairs, n_species, n_sites0
     integer :: i, j, i2, j2, k, n_in_buffer, k1, k2
     logical, allocatable :: is_in_buffer(:)
     logical :: do_timing = .false.
+
+
 
     n_sites = size(n_neigh)
     n_pairs = size(neighbors_list)
     n_species = size(c6_ref)
     n_sites0 = size(forces0, 2)
+
 
 !   We precompute the C6 coefficients of all the neighbors
     allocate( neighbor_c6_ii(1:n_pairs) )

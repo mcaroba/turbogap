@@ -43,6 +43,8 @@ program turbogap
   use gap_interface
   use types
   use vdw
+  use exp_utils
+  use exp_interface
   use soap_turbo_functions
 #ifdef _MPIF90
   use mpi
@@ -62,28 +64,49 @@ program turbogap
        positions_diff(:,:), forces_prev(:,:), frac_positions(:,:)
   real*8 :: rcut_max, a_box(1:3), b_box(1:3), c_box(1:3), max_displacement, energy, energy_prev
   real*8 :: virial(1:3, 1:3), this_virial(1:3, 1:3), virial_soap(1:3, 1:3), virial_2b(1:3, 1:3), &
-       virial_3b(1:3,1:3), virial_core_pot(1:3, 1:3), virial_vdw(1:3, 1:3), &
-       this_virial_vdw(1:3, 1:3), v_uc, v_uc_prev, v_a_uc, v_a_uc_prev, eVperA3tobar = 1602176.6208d0, &
-       ranf, ranv(1:3), disp(1:3), d_disp,  e_mc_prev, p_accept, virial_prev(1:3, 1:3)
-  real*8, allocatable :: energies(:), forces(:,:), energies_soap(:), forces_soap(:,:), this_energies(:), &
-       this_forces(:,:), &
-       energies_2b(:), forces_2b(:,:), energies_3b(:), forces_3b(:,:), &
-       energies_core_pot(:), forces_core_pot(:,:), &
-       velocities(:,:), masses_types(:), masses(:), hirshfeld_v(:), hirshfeld_v_temp(:), &
-       hirshfeld_v_cart_der(:,:), masses_temp(:)
-  real*8, allocatable, target :: this_hirshfeld_v(:), this_hirshfeld_v_cart_der(:,:)
-  real*8, pointer :: this_hirshfeld_v_pt(:), this_hirshfeld_v_cart_der_pt(:,:)
+       virial_3b(1:3,1:3), virial_core_pot(1:3, 1:3), virial_vdw(1:3, 1:3), virial_lp(1:3,1:3), &
+       this_virial_vdw(1:3, 1:3), this_virial_lp(1:3, 1:3), virial_pdf(1:3,1:3), this_virial_pdf(1:3,1:3), v_uc,&
+       & virial_sf(1:3,1:3), this_virial_sf(1:3,1:3), &
+       & virial_xrd(1:3,1:3), this_virial_xrd(1:3,1:3), &
+       & virial_nd(1:3,1:3), this_virial_nd(1:3,1:3), &
+       & v_uc_prev, v_a_uc, v_a_uc_prev, eVperA3tobar =&
+       & 1602176.6208d0, ranf, ranv(1:3), disp(1:3), d_disp, &
+       & e_mc_prev, p_accept, virial_prev(1:3, 1:3), sim_exp_pred,&
+       & sim_exp_prev, sim_exp_pred_der(1:3)
+  real*8, allocatable :: energies(:), forces(:,:), energies_soap(:),&
+       & forces_soap(:,:), this_energies(:), this_forces(:,:),&
+       & energies_2b(:), forces_2b(:,:), energies_3b(:), forces_3b(:&
+       &,:), energies_core_pot(:), forces_core_pot(:,:), velocities(:&
+       &,:), masses_types(:), masses(:),  hirshfeld_v_temp(:),&
+       & masses_temp(:), sinc_factor_matrix(:,:), energies_exp(:)
+!  real*8, allocatable, target :: this_hirshfeld_v(:), this_hirshfeld_v_cart_der(:,:)
+!  real*8, pointer :: this_hirshfeld_v_pt(:), this_hirshfeld_v_cart_der_pt(:,:)
+
+  real*8, allocatable, target :: local_properties(:,:), local_properties_cart_der(:,:,:)
+  ! Have one rank lower for the pointer, such that it just relates to a sub array of the local properties/cart_der
+  real*8, pointer :: local_properties_pt(:), local_properties_cart_der_pt(:,:)
+  real*8, pointer :: hirshfeld_v(:), hirshfeld_v_cart_der(:,:)
+  real*8, allocatable, target :: this_local_properties(:,:), this_local_properties_cart_der(:,:,:)
+  real*8, pointer :: this_local_properties_pt(:,:), this_local_properties_cart_der_pt(:,:,:)
+  real*8, allocatable ::  y_i_pred_all(:,:), moments(:), moments_exp(:)
+
+
   real*8, allocatable :: all_energies(:,:), all_forces(:,:,:), all_virial(:,:,:)
   real*8, allocatable :: all_this_energies(:,:), all_this_forces(:,:,:), all_this_virial(:,:,:)
   real*8 :: instant_temp, kB = 8.6173303d-5, E_kinetic=0.d0, E_kinetic_prev, time1, time2, time3, time_neigh, &
        time_gap, time_soap(1:3), time_2b(1:3), time_3b(1:3), time_read_input(1:3), time_read_xyz(1:3), &
-       time_mpi(1:3) = 0.d0, time_core_pot(1:3), time_vdw(1:3), instant_pressure, lv(1:3,1:3), &
-       time_mpi_positions(1:3) = 0.d0, time_mpi_ef(1:3) = 0.d0, time_md(3) = 0.d0, &
-       instant_pressure_tensor(1:3, 1:3), time_step, md_time, instant_pressure_prev
-  integer, allocatable :: displs(:), displs2(:), counts(:), counts2(:)
-  integer :: update_bar, n_sparse, idx, gd_istep = 0
-  logical, allocatable :: do_list(:), has_vdw_mpi(:), fix_atom(:,:)
-  logical :: rebuild_neighbors_list = .true., exit_loop = .true., gd_box_do_pos = .true., restart_box_optim = .false.
+       time_mpi(1:3) = 0.d0, time_core_pot(1:3), time_vdw(1:3),&
+       & time_pdf(1:3), time_sf(1:3), time_xrd(1:3), time_nd(1:3), time_xps(1:3), time_mc(1:3), &
+       & instant_pressure, lv(1:3,1:3), time_mpi_positions(1:3) =&
+       & 0.d0, time_mpi_ef(1:3) = 0.d0, time_md(3) = 0.d0,&
+       & instant_pressure_tensor(1:3, 1:3), time_step, md_time,&
+       & instant_pressure_prev, wfac, wfac_temp, energy_exp
+  integer, allocatable :: displs(:), displs2(:), counts(:), counts2(:), in_to_out_pairs(:), in_to_out_site(:), mc_id(:)
+  integer :: update_bar, n_sparse, idx, gd_istep = 0, nprop
+  logical, allocatable :: do_list(:), has_local_properties_mpi(:), fix_atom(:,:)
+  logical :: rebuild_neighbors_list = .true., exit_loop = .true.,&
+       & gd_box_do_pos = .true., restart_box_optim = .false.,&
+       & valid_xps=.false., valid_vdw=.false.,  write_condition=.false., overwrite_condition=.false.
   character*1 :: creturn = achar(13)
 
   !! these decalarations are for time step and electronic stopping by different methods
@@ -98,20 +121,31 @@ program turbogap
   ! Clean up these variables after code refactoring !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   integer, allocatable :: n_neigh(:), neighbors_list(:), alpha_max(:), species(:), species_supercell(:), &
        neighbor_species(:), sph_temp_int(:), der_neighbors(:), der_neighbors_list(:), &
-       i_beg_list(:), i_end_list(:), j_beg_list(:), j_end_list(:), species_idx(:), mc_id(:), n_mc_species(:)
-  integer :: n_sites, i, j, k, i2, j2, n_soap, k2, k3, l, n_sites_this, ierr, rank, ntasks, dim, n_sp, &
-       n_pos, n_sp_sc, this_i_beg, this_i_end, this_j_beg, this_j_end, this_n_sites_mpi, n_sites_prev = 0, &
-       n_atom_pairs_by_rank_prev, cPnz
-  integer :: l_max, n_atom_pairs, n_max, ijunk, central_species = 0, n_atom_pairs_total
+       i_beg_list(:), i_end_list(:), j_beg_list(:), j_end_list(:),&
+       & species_idx(:), n_neigh_out(:), n_local_properties_mpi(:),&
+       & local_property_indexes(:), n_mc_species(:), n_mc_species_prev(:)
+  integer :: n_sites, i, j, k, i2, j2, n_soap, k2, k3, l,&
+       & n_sites_this, ierr, rank, ntasks, dim, n_sp, n_pos, n_sp_sc,&
+       & this_i_beg, this_i_end, this_j_beg, this_j_end,&
+       & this_n_sites_mpi, n_sites_prev = 0,&
+       & n_atom_pairs_by_rank_prev=0, cPnz, n_pairs, n_all_sites,&
+       & n_sites_out, n_local_properties_tot=0, n_lp_count=0,&
+       & vdw_lp_index, core_be_lp_index, xps_idx
+
+  integer :: l_max, n_atom_pairs, n_max, ijunk, central_species = 0,&
+       & n_atom_pairs_total
   integer :: iostatus, counter = 0, counter2
-  integer :: which_atom = 0, n_species = 1, n_xyz, indices(1:3)
+  integer :: which_atom = 0, n_species = 1, n_species_actual, n_xyz, indices(1:3)
   integer :: radial_enhancement = 0
   integer :: md_istep, mc_istep, mc_mu_id=1, n_mc
-
-  logical :: repeat_xyz = .true., overwrite = .false., check_species, skip_mc, do_mc_relax = .false.
+  character*8, allocatable :: species_types_actual(:)
+  character*1024, allocatable ::  local_property_labels(:), local_property_labels_temp(:), local_property_labels_temp2(:)
+  logical :: repeat_xyz = .true., overwrite = .false., check_species,&
+       & valid_local_properties=.false., label_in_list, do_mc_relax&
+       &=.false.
 
   character*1024 :: filename, cjunk, file_compress_soap, file_alphas, file_soap, file_2b, file_alphas_2b, &
-       file_3b, file_alphas_3b, file_gap = "none", mc_file = "mc_trial.xyz", temp_string, temp_string2
+       file_3b, file_alphas_3b, file_gap = "none", mc_file = "mc_trial.xyz", string, temp_string, temp_string2
   character*64 :: keyword
   character*16 :: lattice_string(1:9)
   character*8 :: i_char
@@ -122,13 +156,14 @@ program turbogap
 
   ! This is the mode in which we run TurboGAP
   character*16 :: mode = "none"
-  character*32 :: mc_move = "none"
+  character*32 :: mc_move = "none", exp_output="none"
 
   ! Here we store the input parameters
   type(input_parameters) :: params
 
   ! These are the containers for the hyperparameters of descriptors and GAPs
-  integer :: n_soap_turbo = 0, n_distance_2b = 0, n_angle_3b = 0, n_core_pot = 0
+  integer :: n_soap_turbo = 0, n_distance_2b = 0, n_angle_3b = 0, n_core_pot = 0, counter_lp_names=0
+  real*8, parameter :: pi = acos(-1.0)
   type(soap_turbo), allocatable :: soap_turbo_hypers(:)
   type(distance_2b), allocatable :: distance_2b_hypers(:)
   type(angle_3b), allocatable :: angle_3b_hypers(:)
@@ -136,20 +171,48 @@ program turbogap
 
   !vdw crap
   real*8, allocatable :: v_neigh_vdw(:), energies_vdw(:), forces_vdw(:,:), this_energies_vdw(:), this_forces_vdw(:,:)
+  real*8, allocatable :: v_neigh_lp(:), energies_lp(:), forces_lp(:,:), this_energies_lp(:), this_forces_lp(:,:)
+  real*8, allocatable :: energies_pdf(:) , forces_pdf(:,:), this_energies_pdf(:), this_forces_pdf(:,:)
+  real*8, allocatable :: energies_sf(:) , forces_sf(:,:), this_energies_sf(:), this_forces_sf(:,:)
+  real*8, allocatable :: energies_xrd(:), forces_xrd(:,:), this_energies_xrd(:), this_forces_xrd(:,:)
+  real*8, allocatable :: energies_nd(:), forces_nd(:,:), this_energies_nd(:), this_forces_nd(:,:)
   ! MPI stuff
-  real*8, allocatable :: temp_1d(:), temp_1d_bis(:), temp_2d(:,:)
-  integer, allocatable :: temp_1d_int(:), n_atom_pairs_by_rank(:), displ(:)
+  real*8, allocatable :: temp_1d(:), temp_1d_bis(:), temp_2d(:,:),&
+       & pair_distribution_partial(:,:), pair_distribution_der(:,:), pair_distribution_partial_der(:,:,:), &
+       & pair_distribution_partial_temp(:,:),&
+       & pair_distribution_partial_temp_der(:,:,:),&
+       & n_atoms_of_species(:), structure_factor_partial(:,:),&
+       & structure_factor_partial_temp(:,:), structure_factor_partial_der(:,:,:),&
+       & structure_factor_partial_temp_der(:,:), x_pair_distribution(:)&
+       &, y_pair_distribution(:), y_pair_distribution_temp(:),&
+       & x_structure_factor(:), x_structure_factor_temp(:),&
+       & y_structure_factor(:), y_structure_factor_temp(:),&
+       x_xrd(:), x_xrd_temp(:), y_xrd(:), y_xrd_temp(:), y_xrd_der(:,:,:), y_xrd_temp_der(:,:,:), &
+       x_nd(:), x_nd_temp(:), y_nd(:), y_nd_temp(:), y_nd_der(:,:,:), y_nd_temp_der(:,:,:)
+  integer, allocatable :: temp_1d_int(:), n_atom_pairs_by_rank(:),&
+       & displ(:)
   integer, allocatable :: n_species_mpi(:), n_sparse_mpi_soap_turbo(:), dim_mpi(:), n_sparse_mpi_distance_2b(:), &
-       n_sparse_mpi_angle_3b(:), n_mpi_core_pot(:), vdw_n_sparse_mpi_soap_turbo(:), &
-       n_neigh_local(:), compress_P_nonzero_mpi(:)
+       n_sparse_mpi_angle_3b(:), n_mpi_core_pot(:),&
+       & local_properties_n_sparse_mpi_soap_turbo(:),&
+       & local_properties_dim_mpi_soap_turbo(:), n_neigh_local(:),&
+       & compress_P_nonzero_mpi(:)
   integer :: i_beg, i_end, n_sites_mpi, j_beg, j_end, size_soap_turbo, size_distance_2b, size_angle_3b
-  integer :: n_nonzero
+  integer :: n_nonzero, q_beg, q_end
   logical, allocatable :: compress_soap_mpi(:)
 
   ! Nested sampling
-  real*8 :: e_max, e_kin, rand, rand_scale(1:6)
+  real*8 :: e_max, e_kin, rand, rand_scale(1:6), mag, n_total_cutoff, n_total_cutoff_temp, dq, target_temp
   integer :: i_nested, i_max, i_image, i_current_image=1, i_trial_image=2
   type(image), allocatable :: images(:), images_temp(:)
+  type(exp_data_container) :: temp_exp_container
+  character*32 :: implemented_exp_observables(1:5)
+
+  implemented_exp_observables(1) = "xps"
+  implemented_exp_observables(2) = "xrd"
+  implemented_exp_observables(3) = "saxs"
+  implemented_exp_observables(4) = "pair_distribution"
+  implemented_exp_observables(5) = "structure_factor"
+
   !**************************************************************************
 
   !**************************************************************************
@@ -171,15 +234,13 @@ program turbogap
   !  allocate( displs2(1:ntasks) )
   !  allocate( counts(1:ntasks) )
   !  allocate( counts2(1:ntasks) )
-  allocate( displ(1:ntasks) )
+  ! allocate( displ(1:ntasks) )
 #else
   rank = 0
   ntasks = 1
 #endif
   allocate( n_atom_pairs_by_rank(1:ntasks) )
   !**************************************************************************
-
-
 
 
 
@@ -397,8 +458,254 @@ program turbogap
         if( params%vdw_rcut > rcut_max )then
            rcut_max = params%vdw_rcut
         end if
+        if( params%xrd_rcut > rcut_max )then
+           rcut_max = params%xrd_rcut
+        end if
+        if( params%nd_rcut > rcut_max )then
+           rcut_max = params%nd_rcut
+        end if
+        if( params%pair_distribution_rcut > rcut_max )then
+           rcut_max = params%pair_distribution_rcut
+        end if
+
         !   We increase rcut_max by the neighbors buffer
         rcut_max = rcut_max + params%neighbors_buffer
+
+     ! Check that the local properties we want to compute are valid,
+     ! so things are commensurate between input file and .gap model
+
+     ! Need to set the number of local properties, and get an array of labels and sizes for broadcasting
+
+
+     write(*,*)'                                       |'
+     write(*,*)'.......................................|'
+     write(*,*)'                                       |'
+
+     n_local_properties_tot = 0
+     i2 = 1 ! using this as a counter for the labels
+     do j = 1, n_soap_turbo
+        if( soap_turbo_hypers(j)%has_local_properties )then
+           ! This property has the labels of the quantities to
+           ! compute. We must specify the number of local properties, for the sake of coding simplicity
+
+           n_local_properties_tot = n_local_properties_tot + soap_turbo_hypers(j)%n_local_properties
+
+           if(.not. allocated(local_property_labels))then
+              allocate(local_property_labels(1:n_local_properties_tot))
+              do i = 1, n_local_properties_tot
+                 local_property_labels(i) = soap_turbo_hypers(j)%local_property_models(i)%label
+                 write(*,*)' Local property found                  |'
+                 write(*,'(A,1X,I8,1X,A,1X,A)')' Descriptor ', j,&
+                      & trim(soap_turbo_hypers(j)&
+                      &%local_property_models(i)%label),  ' |'
+              end do
+           else
+              allocate( local_property_labels_temp( 1:n_local_properties_tot - soap_turbo_hypers(j)%n_local_properties ))
+              local_property_labels_temp = local_property_labels
+              deallocate(local_property_labels)
+              allocate(local_property_labels(1:n_local_properties_tot))
+
+              nprop = soap_turbo_hypers(j)%n_local_properties
+              do i = 1, n_local_properties_tot - nprop
+                 local_property_labels(i) = local_property_labels_temp(i)
+              end do
+
+              deallocate(local_property_labels_temp)
+
+              do i = 1, nprop
+                 local_property_labels(i + n_local_properties_tot -&
+                      & nprop) = soap_turbo_hypers(j)&
+                      &%local_property_models(i)%label
+                 write(*,*)' Local property found                  |'
+                 write(*,'(A,1X,I8,1X,A,1X,A)')' Descriptor ', j,&
+                      & trim(soap_turbo_hypers(j)&
+                      &%local_property_models(i)%label),  ' |'
+
+              end do
+           end if
+        end if
+     end do
+
+     ! Now we create an irreducible list of the labels
+     if (n_local_properties_tot > 0)then
+        allocate( local_property_labels_temp( 1:1 ))
+        local_property_labels_temp(1) = local_property_labels(1)
+        i2 = 1
+        if (n_local_properties_tot > 1)then
+           do i = 2, n_local_properties_tot
+              label_in_list = .false.
+              ! Iterate through irreducible list to see if there is a mismatch
+              do j = 1, size( local_property_labels_temp, 1 )
+                 if (trim( local_property_labels_temp(j) ) == trim( local_property_labels(i) )) label_in_list = .true.
+              end do
+              if (.not. label_in_list) then
+                 i2 = i2 + 1
+                 allocate(local_property_labels_temp2(1:i2))
+                 local_property_labels_temp2(1:i2-1) = local_property_labels_temp(1:i2-1)
+                 local_property_labels_temp2(i2)     = local_property_labels(i)
+                 deallocate(local_property_labels_temp)
+                 allocate(local_property_labels_temp(1:i2))
+                 local_property_labels_temp(1:i2) = local_property_labels_temp2(1:i2)
+                 deallocate(local_property_labels_temp2)
+              end if
+           end do
+        end if
+
+        params%n_local_properties = i2
+
+        ! Now we can have an array which has a soap turbo index as an input and it can give us the corresponding label
+        allocate(local_property_indexes(1:n_local_properties_tot))
+        i2 = 1
+        do i = 1, params%n_local_properties
+           do j = 1, n_local_properties_tot
+              if ( trim(local_property_labels(j)) == trim( local_property_labels_temp(i) ) )then
+
+                 local_property_indexes(j) = i
+
+
+                 if ( trim(local_property_labels(j)) == "hirshfeld_v" )then
+                    vdw_lp_index = i
+                    valid_vdw = .true.
+                    do k = 1, soap_turbo_hypers(j)%n_local_properties
+                       if (trim(soap_turbo_hypers(j)%local_property_models(k)%label) == "hirshfeld_v")then
+                          if( params%do_derivatives .or. params%do_forces)then
+                             soap_turbo_hypers(j)%local_property_models(k)%do_derivatives = .true.
+                          else
+                             soap_turbo_hypers(j)%local_property_models(k)%do_derivatives = .false.
+                          end if
+
+                       end if
+                    end do
+
+                 end if
+
+
+                 if ( trim(local_property_labels(j)) == "core_electron_be" )then
+                    core_be_lp_index = i
+
+                    ! Check if there is experimental data for one to do xps fitting
+                    do i2 = 1, params%n_exp
+                       if(( trim(params%exp_data(i2)%label) == "xps" .and.  &
+                            .not. ( trim(params%exp_data(i2)%file_data) == "none" )))then
+                          valid_xps = .true.
+                          xps_idx = i2
+                          do k = 1, soap_turbo_hypers(j)%n_local_properties
+                             if (trim(soap_turbo_hypers(j)%local_property_models(k)%label) == "core_electron_be")then
+                                soap_turbo_hypers(j)%local_property_models(k)%do_derivatives = .false.
+                                if( params%exp_forces .and. params%do_derivatives)then
+                                   soap_turbo_hypers(j)%local_property_models(k)%do_derivatives = .true.
+                                end if
+                             end if
+                          end do
+                       end if
+                    end do
+                 end if
+
+
+              end if
+           end do
+        end do
+
+        deallocate(local_property_labels)
+        allocate(local_property_labels(1:size(local_property_labels_temp,1)))
+        local_property_labels = local_property_labels_temp
+        deallocate(local_property_labels_temp)
+
+        write(*,*)'                                        |'
+        write(*,*)' Irreducible local properties:           |'
+        do i = 1, params%n_local_properties
+           write(*,'(1X,A)') trim( local_property_labels(i) )
+        end do
+
+        allocate( params%write_local_properties(1:params%n_local_properties) )
+        params%write_local_properties = .true.
+     end if
+
+
+     ! Now, we have n_soap_turbo descriptors
+     ! - Each of these will have a number of local properties
+     ! - When iterate over soap turbos, we can have the index pointing to the index which should correspond to
+
+
+     ! i2 = 1 ! using this as a counter for the labels
+     ! do j = 1, n_soap_turbo
+     !    if( soap_turbo_hypers(j)%has_local_properties )then
+     !       ! This property has the labels of the quantities to
+     !       ! compute. We must specify the number of local properties, for the sake of coding simplicity
+     !       if(allocated(params%compute_local_properties))then
+
+     !          if(.not. allocated(local_property_labels))then
+     !             allocate(local_property_labels(1:size(params%compute_local_properties)))
+     !             local_property_labels = params%compute_local_properties
+     !          end if
+
+     !          n_local_properties_tot = n_local_properties_tot + soap_turbo_hypers(j)%n_local_properties
+     !          do k = 1, soap_turbo_hypers(j)%n_local_properties
+     !             if (rank == 0) write(*,*)' Local property found                  |'
+     !             if (rank == 0) write(*,'(A,1X,I8,1X,A,1X,A)')' Descriptor ', j,&
+     !                  & trim(soap_turbo_hypers(j)&
+     !                  &%local_property_models(k)%label),  ' |'
+     !             if (rank == 0) write(*,*)'                                       |'
+     !             valid_local_properties = .false.
+
+     !             ! set compute to false and then switch on if seen
+     !             soap_turbo_hypers(j)%local_property_models(k)%compute = .false.
+     !             do i = 1, params%n_local_properties
+     !                if (trim(params%compute_local_properties(i)) == trim(soap_turbo_hypers(j)%local_property_models(k)%label) )then
+     !                   soap_turbo_hypers(j)%local_property_models(i)%compute = .true.
+     !                   valid_local_properties=.true.
+     !                   if (trim(params%compute_local_properties(i)) == "hirshfeld_v")then
+     !                      valid_vdw = .true.
+     !                      vdw_lp_index=i
+     !                      soap_turbo_hypers(j)%has_vdw = .true.
+     !                      if( params%do_derivatives) soap_turbo_hypers(j)%local_property_models(i)%do_derivatives = .true.
+     !                   end if
+     !                   if (trim(params%compute_local_properties(i)) == "core_electron_be")then
+     !                      core_be_lp_index=i
+     !                      do i2 = 1, params%n_exp
+     !                         if(( trim(params%exp_data(i2)%label) == "xps" .and.  &
+     !                              .not. ( trim(params%exp_data(i2)%file_data) == "none" )))then
+     !                            valid_xps = .true.
+     !                            soap_turbo_hypers(j)%local_property_models(k)%do_derivatives = .false.
+     !                            if( params%exp_forces .and. params&
+     !                                 &%do_derivatives)&
+     !                                 & soap_turbo_hypers(j)&
+     !                                 &%local_property_models(k)&
+     !                                 &%do_derivatives = .true.
+     !                         end if
+     !                      end do
+     !                   end if
+     !                end if
+     !             end do
+
+
+     !             if (.not. valid_local_properties )then
+     !                write(*,*) 'FATAL: Local properties to compute in the input file do not match those in the descriptor'
+     !                write(*,*) params%compute_local_properties
+     !                write(*,*) 'does not match what is in the gap file'
+     !                write(*,*) soap_turbo_hypers(j)%local_property_models(:)%label
+     !                stop
+     !             end if
+     !          end do
+     !       end if
+     !    end if
+     ! end do
+
+
+
+
+     ! This can be generalised by having an
+     ! implemented_spectra_options array and then seeing if they
+     ! exist, just as for the thermostats or mc moves in
+     ! read_files.f90, but keeping it simple right now!
+     ! if (.not. valid_xps .and. (params%mc_optimize_exp .or. params%exp_forces) )then
+     !    write(*,*) 'FATAL: mc_optimize_exp / exp_forces option&
+     !         & chosen, but there was no core_electron_be model&
+     !         & specified in the gap file! '
+     !    stop
+     ! end if
+
+
 #ifdef _MPIF90
      END IF
 #endif
@@ -410,16 +717,29 @@ program turbogap
      call mpi_bcast(n_distance_2b, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(n_angle_3b, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(n_core_pot, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+     call mpi_bcast(n_local_properties_tot, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+     call mpi_bcast(params%n_local_properties, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      !   Broadcast the maximum cutoff distance
      call mpi_bcast(rcut_max, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+     call mpi_bcast(valid_xps, 1,&
+          & MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+     call mpi_bcast(valid_vdw, 1,&
+          & MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+
      !   Processes other than 0 need to allocate the data structures on their own
      call cpu_time(time_mpi(2))
      time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
      allocate( n_species_mpi(1:n_soap_turbo) )
      allocate( n_sparse_mpi_soap_turbo(1:n_soap_turbo) )
      allocate( dim_mpi(1:n_soap_turbo) )
-     allocate( vdw_n_sparse_mpi_soap_turbo(1:n_soap_turbo) )
-     allocate( has_vdw_mpi(1:n_soap_turbo) )
+     allocate( n_local_properties_mpi(1:n_soap_turbo))
+     if (n_local_properties_tot > 0) then
+        allocate( local_properties_n_sparse_mpi_soap_turbo(1:n_local_properties_tot))
+        allocate( local_properties_dim_mpi_soap_turbo(1:n_local_properties_tot))
+        if (rank /= 0) allocate( local_property_indexes(1:n_local_properties_tot))
+        if (rank /= 0) allocate( params%write_local_properties(1:params%n_local_properties))
+     end if
+     allocate( has_local_properties_mpi(1:n_soap_turbo) )
      allocate( compress_soap_mpi(1:n_soap_turbo) )
      allocate( n_sparse_mpi_distance_2b(1:n_distance_2b) )
      allocate( n_sparse_mpi_angle_3b(1:n_angle_3b) )
@@ -429,20 +749,66 @@ program turbogap
         n_species_mpi = soap_turbo_hypers(1:n_soap_turbo)%n_species
         n_sparse_mpi_soap_turbo = soap_turbo_hypers(1:n_soap_turbo)%n_sparse
         dim_mpi = soap_turbo_hypers(1:n_soap_turbo)%dim
-        vdw_n_sparse_mpi_soap_turbo = soap_turbo_hypers(1:n_soap_turbo)%vdw_n_sparse
-        has_vdw_mpi = soap_turbo_hypers(1:n_soap_turbo)%has_vdw
         compress_soap_mpi = soap_turbo_hypers(1:n_soap_turbo)%compress_soap
         n_sparse_mpi_distance_2b = distance_2b_hypers(1:n_distance_2b)%n_sparse
         n_sparse_mpi_angle_3b = angle_3b_hypers(1:n_angle_3b)%n_sparse
         n_mpi_core_pot = core_pot_hypers(1:n_core_pot)%n
         compress_P_nonzero_mpi = soap_turbo_hypers(1:n_soap_turbo)%compress_P_nonzero
+
+        has_local_properties_mpi = soap_turbo_hypers(1:n_soap_turbo)%has_local_properties
+        n_local_properties_mpi = soap_turbo_hypers(1:n_soap_turbo)%n_local_properties
+
+
+        ! Allocate the arrays have n_sparse and n_data
+        if( any( soap_turbo_hypers(:)%has_local_properties ))then
+           n_lp_count = 0
+           do i = 1, n_soap_turbo
+              if (n_local_properties_mpi(i) > 0)then
+                 do j = 1, n_local_properties_mpi(i)
+                    n_lp_count = n_lp_count + 1
+                    local_properties_n_sparse_mpi_soap_turbo(n_lp_count) = &
+                         & soap_turbo_hypers(i)%local_property_models(j)&
+                         &%n_sparse
+
+                    soap_turbo_hypers(i)%local_property_models(j)%dim = soap_turbo_hypers(i)%dim
+                    local_properties_dim_mpi_soap_turbo(n_lp_count) = soap_turbo_hypers(i)%dim
+
+                    ! Changing the dim to that of the descriptor, silly !
+                    ! &
+                    !      & soap_turbo_hypers(i)%local_property_models(j)&
+                    !      &%dim
+
+                 end do
+              end if
+           end do
+        end if
+
      END IF
      call cpu_time(time_mpi(1))
      call mpi_bcast(n_species_mpi, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(n_sparse_mpi_soap_turbo, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(dim_mpi, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-     call mpi_bcast(vdw_n_sparse_mpi_soap_turbo, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-     call mpi_bcast(has_vdw_mpi, n_soap_turbo, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+
+
+     if (n_local_properties_tot > 0)then
+        call mpi_bcast(local_properties_n_sparse_mpi_soap_turbo,&
+             & n_local_properties_tot, MPI_INTEGER, 0,&
+             & MPI_COMM_WORLD, ierr)
+        call mpi_bcast(local_properties_dim_mpi_soap_turbo,&
+             & n_local_properties_tot, MPI_INTEGER, 0,&
+             & MPI_COMM_WORLD, ierr)
+        call mpi_bcast(local_property_indexes,&
+             & n_local_properties_tot, MPI_INTEGER, 0,&
+             & MPI_COMM_WORLD, ierr)
+        call mpi_bcast(params%write_local_properties,&
+             & params%n_local_properties, MPI_LOGICAL, 0,&
+             & MPI_COMM_WORLD, ierr)
+     end if
+
+     call mpi_bcast(has_local_properties_mpi, n_soap_turbo,&
+          & MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+
+     call mpi_bcast(n_local_properties_mpi, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(compress_soap_mpi, n_soap_turbo, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(n_sparse_mpi_distance_2b, n_distance_2b, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(n_sparse_mpi_angle_3b, n_angle_3b, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
@@ -450,10 +816,14 @@ program turbogap
      call mpi_bcast(compress_P_nonzero_mpi, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call cpu_time(time_mpi(2))
      time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
+
      IF( rank /= 0 )THEN
         call allocate_soap_turbo_hypers(n_soap_turbo, n_species_mpi, n_sparse_mpi_soap_turbo, dim_mpi, &
-             compress_P_nonzero_mpi, vdw_n_sparse_mpi_soap_turbo, &
-             has_vdw_mpi, compress_soap_mpi, soap_turbo_hypers)
+             compress_P_nonzero_mpi,&
+             & local_properties_n_sparse_mpi_soap_turbo,&
+             & local_properties_dim_mpi_soap_turbo,&
+             & has_local_properties_mpi, n_local_properties_mpi,&
+             & compress_soap_mpi, soap_turbo_hypers)
         call allocate_distance_2b_hypers(n_distance_2b, n_sparse_mpi_distance_2b, distance_2b_hypers)
         call allocate_angle_3b_hypers(n_angle_3b, n_sparse_mpi_angle_3b, angle_3b_hypers)
         call allocate_core_pot_hypers(n_core_pot, n_mpi_core_pot, core_pot_hypers)
@@ -508,39 +878,96 @@ program turbogap
            call mpi_bcast(soap_turbo_hypers(i)%compress_P_i(1:cPnz), cPnz, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
            call mpi_bcast(soap_turbo_hypers(i)%compress_P_j(1:cPnz), cPnz, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
         end if
+        call mpi_bcast(soap_turbo_hypers(i)%has_local_properties, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(soap_turbo_hypers(i)%has_core_electron_be, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+        if (valid_xps) call mpi_bcast(core_be_lp_index, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+        if (valid_vdw) call mpi_bcast(vdw_lp_index, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+
         call mpi_bcast(soap_turbo_hypers(i)%has_vdw, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
-        if( soap_turbo_hypers(i)%has_vdw )then
-           n_sparse = soap_turbo_hypers(i)%vdw_n_sparse
-           call mpi_bcast(soap_turbo_hypers(i)%vdw_delta, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-           call mpi_bcast(soap_turbo_hypers(i)%vdw_zeta, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-           call mpi_bcast(soap_turbo_hypers(i)%vdw_V0, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-           call mpi_bcast(soap_turbo_hypers(i)%vdw_alphas(1:n_sparse)&
-                &, n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD,&
-                & ierr)
-           call mpi_bcast(soap_turbo_hypers(i)%vdw_Qs(1:dim,&
-                & 1:n_sparse), n_sparse*dim, MPI_DOUBLE_PRECISION, 0,&
-                & MPI_COMM_WORLD, ierr)
+        call mpi_bcast(soap_turbo_hypers(i)%n_local_properties, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+        if( soap_turbo_hypers(i)%has_local_properties )then
+           do j = 1, soap_turbo_hypers(i)%n_local_properties
+              call mpi_bcast(soap_turbo_hypers(i)&
+                   &%local_property_models(j)%n_sparse, 1,&
+                   & MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+              call mpi_bcast(soap_turbo_hypers(i)&
+                   &%local_property_models(j)%label, 1024,&
+                   & MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
+              call mpi_bcast(soap_turbo_hypers(i)&
+                   &%local_property_models(j)%delta, 1,&
+                   & MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+              call mpi_bcast(soap_turbo_hypers(i)&
+                   &%local_property_models(j)%zeta, 1,&
+                   & MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+              call mpi_bcast(soap_turbo_hypers(i)&
+                   &%local_property_models(j)%V0, 1,&
+                   & MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+              call mpi_bcast(soap_turbo_hypers(i)&
+                   &%local_property_models(j)%dim, 1, MPI_INTEGER, 0,&
+                   & MPI_COMM_WORLD, ierr)
+              n_sparse = soap_turbo_hypers(i)&
+                   &%local_property_models(j)%n_sparse
+              dim = soap_turbo_hypers(i)%local_property_models(j)%dim
+              call mpi_bcast(soap_turbo_hypers(i)&
+                   &%local_property_models(j)%alphas(1:n_sparse) ,&
+                   & n_sparse, MPI_DOUBLE_PRECISION, 0,&
+                   & MPI_COMM_WORLD, ierr)
+! Fortran runtime warning: An array temporary was created for
+              ! argument 'buffer' of procedure 'mpi_bcast'
+              call mpi_bcast(soap_turbo_hypers(i) &
+                   &%local_property_models(j)%Qs(1:dim, 1:n_sparse),&
+                   & n_sparse*dim, MPI_DOUBLE_PRECISION, 0,&
+                   & MPI_COMM_WORLD, ierr)
+              call mpi_bcast(soap_turbo_hypers(i)%local_property_models(j)%do_derivatives, &
+                      & 1, MPI_LOGICAL, 0,&
+                      & MPI_COMM_WORLD, ierr)
+
+              call mpi_bcast(soap_turbo_hypers(i)%local_property_models(j)%compute, &
+                      & 1, MPI_LOGICAL, 0,&
+                      & MPI_COMM_WORLD, ierr)
+
+           end do
         end if
      end do
      do i = 1, n_distance_2b
         n_sparse = distance_2b_hypers(i)%n_sparse
-        call mpi_bcast(distance_2b_hypers(i)%alphas(1:n_sparse), n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(distance_2b_hypers(i)%cutoff(1:n_sparse), n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(distance_2b_hypers(i)%Qs(1:n_sparse, 1:1), n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(distance_2b_hypers(i)%delta, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(distance_2b_hypers(i)%sigma, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(distance_2b_hypers(i)%rcut, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(distance_2b_hypers(i)%buffer, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(distance_2b_hypers(i)%species1, 8, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(distance_2b_hypers(i)%species2, 8, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(distance_2b_hypers(i)%alphas(1:n_sparse),&
+             & n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD,&
+             & ierr)
+        call mpi_bcast(distance_2b_hypers(i)%cutoff(1:n_sparse),&
+             & n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD,&
+             & ierr)
+        call mpi_bcast(distance_2b_hypers(i)%Qs(1:n_sparse, 1:1),&
+             & n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD,&
+             & ierr)
+        call mpi_bcast(distance_2b_hypers(i)%delta, 1,&
+             & MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(distance_2b_hypers(i)%sigma, 1,&
+             & MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(distance_2b_hypers(i)%rcut, 1,&
+             & MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(distance_2b_hypers(i)%buffer, 1,&
+             & MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(distance_2b_hypers(i)%species1, 8,&
+             & MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(distance_2b_hypers(i)%species2, 8,&
+             & MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
      end do
      do i = 1, n_angle_3b
         n_sparse = angle_3b_hypers(i)%n_sparse
-        call mpi_bcast(angle_3b_hypers(i)%alphas(1:n_sparse), n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(angle_3b_hypers(i)%cutoff(1:n_sparse), n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(angle_3b_hypers(i)%Qs(1:n_sparse, 1:3), 3*n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(angle_3b_hypers(i)%delta, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(angle_3b_hypers(i)%sigma(1:3), 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(angle_3b_hypers(i)%alphas(1:n_sparse),&
+             & n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD,&
+             & ierr)
+        call mpi_bcast(angle_3b_hypers(i)%cutoff(1:n_sparse),&
+             & n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD,&
+             & ierr)
+        call mpi_bcast(angle_3b_hypers(i)%Qs(1:n_sparse, 1:3), 3&
+             &*n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD,&
+             & ierr)
+        call mpi_bcast(angle_3b_hypers(i)%delta, 1,&
+             & MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(angle_3b_hypers(i)%sigma(1:3), 3,&
+             & MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
         call mpi_bcast(angle_3b_hypers(i)%rcut, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
         call mpi_bcast(angle_3b_hypers(i)%buffer, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
         call mpi_bcast(angle_3b_hypers(i)%species_center, 8, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
@@ -562,7 +989,10 @@ program turbogap
      time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
      !   Clean up
      deallocate( n_species_mpi, n_sparse_mpi_soap_turbo, dim_mpi, compress_soap_mpi, n_sparse_mpi_distance_2b, &
-          n_sparse_mpi_angle_3b, n_mpi_core_pot, compress_P_nonzero_mpi )
+          n_sparse_mpi_angle_3b, n_mpi_core_pot, compress_P_nonzero_mpi, n_local_properties_mpi, has_local_properties_mpi )
+     if (allocated(local_properties_dim_mpi_soap_turbo)) deallocate(&
+          & local_properties_dim_mpi_soap_turbo,&
+          & local_properties_n_sparse_mpi_soap_turbo )
 #endif
   else
 #ifdef _MPIF90
@@ -600,7 +1030,6 @@ program turbogap
 			params%eph_E_prev_time, params%eph_md_prev_time)	
   end if
 !! -------------------------				---- untill here for initializing eph model elec. stopping
-
 
 
 
@@ -656,6 +1085,21 @@ program turbogap
   time_core_pot = 0.d0
   time_vdw = 0.d0
   time_read_xyz = 0.d0
+  time_pdf = 0.d0
+  time_sf = 0.d0
+  time_mc = 0.d0
+  time_xrd = 0.d0
+  time_nd = 0.d0
+  time_xps = 0.d0
+
+  xps_idx = params%xps_idx
+  md_istep = -1
+  mc_istep = -1
+  n_xyz = 0
+  i_nested = 0
+  i_image = 0
+
+
   if( params%do_md )then
 #ifdef _MPIF90
      IF( rank == 0 )THEN
@@ -684,17 +1128,11 @@ program turbogap
 
 
 
-
   !**************************************************************************
   !**************************************************************************
   !**************************************************************************
   ! This checks if we need to do the SOAP calculation more than once, if there are several concatenated
   ! structures in the xyz file provided or we're doing molecular dynamics
-  md_istep = -1
-  mc_istep = -1
-  n_xyz = 0
-  i_nested = 0
-  i_image = 0
 
   do while( repeat_xyz .or. ( params%do_md .and. md_istep < params%md_nsteps) &
        .or. ( params%do_mc .and. mc_istep < params%mc_nsteps))
@@ -845,6 +1283,8 @@ program turbogap
      !   species, species_supercell, indices, a_box, b_box, c_box and n_sites. I should put this into a module!!!!!!!
 
 
+
+
 #ifdef _MPIF90
      IF( rank == 0 )THEN
         n_pos = size(positions,2)
@@ -884,7 +1324,7 @@ program turbogap
         allocate( positions(1:3, n_pos) )
         if( params%do_md .or. params%do_nested_sampling .or. params%do_mc )then
            if(allocated(velocities))deallocate(velocities)
-           allocate( velocities(1:3, n_sp) )
+           allocate( velocities(1:3, n_pos) )
            !      allocate( masses(n_pos) )
            if(allocated( masses ))deallocate( masses )
            allocate( masses(1:n_sp) )
@@ -906,7 +1346,7 @@ program turbogap
      call cpu_time(time_mpi_positions(1))
      call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
      if( params%do_md .or. params%do_nested_sampling .or. params%do_mc .or. params%mc_hamiltonian)then
-        call mpi_bcast(velocities, 3*n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
         call mpi_bcast(masses, n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
         call mpi_bcast(fix_atom, 3*n_sp, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
      end if
@@ -976,6 +1416,7 @@ program turbogap
 
      do_list = .false.
      do_list(i_beg:i_end) = .true.
+
 !      if( rebuild_neighbors_list )then
 !         if(allocated( rjs))deallocate( rjs)
 !         if(allocated( xyz))deallocate( xyz)
@@ -1028,19 +1469,16 @@ program turbogap
 
 
 
-
-
-
-
      !**************************************************************************
      !   If we are doing prediction, we run this chunk of code
      if( params%do_prediction .or. params%write_soap .or. params%write_derivatives)then
         call cpu_time(time1)
 
         !     We only need to reallocate the arrays if the number of sites changes
+        ! REMOVE TRUE FROM IF STATEMENT
         if( n_sites /= n_sites_prev .or. params%do_mc  )then
            if( allocated(energies) )deallocate( energies, energies_soap, energies_2b, energies_3b, energies_core_pot, &
-                this_energies, energies_vdw, this_forces )
+                this_energies, energies_vdw, this_forces, energies_lp, energies_exp  )
            allocate( energies(1:n_sites) )
            allocate( this_energies(1:n_sites) )
            allocate( energies_soap(1:n_sites) )
@@ -1048,6 +1486,29 @@ program turbogap
            allocate( energies_3b(1:n_sites) )
            allocate( energies_core_pot(1:n_sites) )
            allocate( energies_vdw(1:n_sites) )
+           allocate( energies_lp(1:n_sites) )
+           allocate( energies_exp(1:n_sites) )
+
+           if (params%do_pair_distribution .and. params%valid_pdf)then
+              if ( allocated( energies_pdf ) ) deallocate(energies_pdf)
+              allocate( energies_pdf(1:n_sites) )
+           end if
+
+           if (params%do_structure_factor .and. params%valid_sf)then
+              if ( allocated( energies_sf ) ) deallocate(energies_sf)
+              allocate( energies_sf(1:n_sites) )
+           end if
+
+           if (params%do_xrd .and. params%valid_xrd)then
+              if ( allocated( energies_xrd ) ) deallocate(energies_xrd)
+              allocate( energies_xrd(1:n_sites) )
+           end if
+
+           if (params%do_nd .and. params%valid_nd)then
+              if ( allocated( energies_nd ) ) deallocate(energies_nd)
+              allocate( energies_nd(1:n_sites) )
+           end if
+
            !       This needs to be allocated even if no force prediction is needed:
            allocate( this_forces(1:3, 1:n_sites) )
         end if
@@ -1057,50 +1518,99 @@ program turbogap
         energies_3b = 0.d0
         energies_core_pot = 0.d0
         energies_vdw = 0.d0
-        if( any( soap_turbo_hypers(:)%has_vdw ) )then
-!          Write Hirshfeld volumes unless the user has disabled it
-           if( params%write_hirshfeld_v )then
-             params%write_array_property(7) = .true.
-           end if
+        energies_lp = 0.d0
+        energies_exp = 0.d0
+
+        if (params%do_pair_distribution .and. params%valid_pdf) energies_pdf = 0.d0
+        if (params%do_structure_factor  .and. params%valid_sf)  energies_sf = 0.d0
+        if (params%do_xrd .and. params%valid_xrd)               energies_xrd = 0.d0
+        if (params%do_nd  .and. params%valid_nd)                energies_nd = 0.d0
+
+
+        ! Adding allocation of local properties
+
+        ! Now one could use pointers such that hirshfeld_v(:) acts as an alias for local_properties(vdw_index,:)...
+
+        if( any( soap_turbo_hypers(:)%has_local_properties ) )then
            if( n_sites /= n_sites_prev .or.  params%do_mc  )then
-              if( allocated(hirshfeld_v) )then
-                 nullify( this_hirshfeld_v_pt )
-                 deallocate( this_hirshfeld_v, hirshfeld_v )
+              if( allocated(local_properties) )then
+                 nullify( this_local_properties_pt )
+                 deallocate( this_local_properties, local_properties )
                  if( params%do_forces )then
-                    nullify( this_hirshfeld_v_cart_der_pt )
-                    deallocate( this_hirshfeld_v_cart_der, hirshfeld_v_cart_der )
+                    nullify( this_local_properties_cart_der_pt )
+                    deallocate( this_local_properties_cart_der, local_properties_cart_der )
                  end if
               end if
-              allocate( hirshfeld_v(1:n_sites) )
-              allocate( this_hirshfeld_v(1:n_sites) )
+              allocate( local_properties(1:n_sites, 1:params%n_local_properties) )
+              allocate( this_local_properties(1:n_sites, 1:params%n_local_properties) )
+              this_local_properties_pt => this_local_properties
+
               !         I don't remember why this needs a pointer <----------------------------------------- CHECK
-              this_hirshfeld_v_pt => this_hirshfeld_v
+
            end if
-           hirshfeld_v = 0.d0
+           local_properties = 0.d0
+
+
            if( params%do_forces )then
-              if( n_atom_pairs_by_rank(rank+1) /= n_atom_pairs_by_rank_prev )then
-                 if( allocated(hirshfeld_v_cart_der) )deallocate( hirshfeld_v_cart_der, this_hirshfeld_v_cart_der )
-                 allocate( hirshfeld_v_cart_der(1:3, 1:n_atom_pairs_by_rank(rank+1)) )
-                 allocate( this_hirshfeld_v_cart_der(1:3, 1:n_atom_pairs_by_rank(rank+1)) )
+              if( n_atom_pairs_by_rank(rank+1) /= n_atom_pairs_by_rank_prev  )then
+                 if( allocated(local_properties_cart_der) )deallocate( local_properties_cart_der, this_local_properties_cart_der )
+                 allocate( local_properties_cart_der(1:3, 1:n_atom_pairs_by_rank(rank+1), 1:params%n_local_properties) )
+                 allocate( this_local_properties_cart_der(1:3, 1:n_atom_pairs_by_rank(rank+1), 1:params%n_local_properties) )
               end if
-              if ( .not. allocated(hirshfeld_v_cart_der)) allocate(&
-                   & hirshfeld_v_cart_der(1:3,&
-                   & 1:n_atom_pairs_by_rank(rank+1)) )
-              if ( .not. allocated(this_hirshfeld_v_cart_der))&
-                   & allocate( this_hirshfeld_v_cart_der(1:3,&
-                   & 1:n_atom_pairs_by_rank(rank+1)) )
-              hirshfeld_v_cart_der = 0.d0
+              if(.not. allocated(local_properties_cart_der) )then
+                 allocate( local_properties_cart_der(1:3, 1:n_atom_pairs_by_rank(rank+1), 1:params%n_local_properties) )
+                 allocate( this_local_properties_cart_der(1:3, 1:n_atom_pairs_by_rank(rank+1), 1:params%n_local_properties) )
+              end if
+
+              local_properties_cart_der = 0.d0
+              this_local_properties_cart_der_pt =>&
+                   & this_local_properties_cart_der(1:3,&
+                   & 1:n_atom_pairs_by_rank(rank+1), 1:params&
+                   &%n_local_properties)
            end if
         end if
+
+        ! Now go through the soap turbo hypers, and see if any are vdw or
+        ! otherwise, if vdw, one can have pointers to point to the data
+        ! structures such that it makes things clearer. One needs to check
+        ! that this allocation still works iwth if(allocated(hirsh_v))
+        ! statements
+
+
+
         if( params%do_forces )then
            if( n_sites /= n_sites_prev .or.  params%do_mc )then
-              if( allocated(forces) )deallocate( forces, forces_soap, forces_2b, forces_3b, forces_core_pot, forces_vdw )
+              if( allocated(forces) )deallocate( forces, forces_soap, forces_2b, forces_3b, forces_core_pot, forces_vdw,&
+                   & forces_lp )
               allocate( forces(1:3, 1:n_sites) )
               allocate( forces_soap(1:3, 1:n_sites) )
               allocate( forces_2b(1:3, 1:n_sites) )
               allocate( forces_3b(1:3, 1:n_sites) )
               allocate( forces_core_pot(1:3, 1:n_sites) )
               allocate( forces_vdw(1:3,1:n_sites) )
+              allocate( forces_lp(1:3,1:n_sites) )
+
+              if (params%do_pair_distribution .and. params%exp_forces .and. params%valid_pdf)then
+                 if ( allocated( forces_pdf ) ) deallocate(forces_pdf)
+                 allocate( forces_pdf(1:3,1:n_sites) )
+              end if
+
+              if (params%do_structure_factor .and. params%exp_forces .and. params%valid_sf)then
+                 if ( allocated( forces_sf ) ) deallocate(forces_sf)
+                 allocate( forces_sf(1:3,1:n_sites) )
+              end if
+
+              if (params%do_xrd .and. params%exp_forces .and. params%valid_xrd)then
+                 if ( allocated( forces_xrd ) ) deallocate(forces_xrd)
+                 allocate( forces_xrd(1:3,1:n_sites) )
+              end if
+
+              if (params%do_nd .and. params%exp_forces .and. params%valid_nd)then
+                 if ( allocated( forces_nd ) ) deallocate(forces_nd)
+                 allocate( forces_nd(1:3,1:n_sites) )
+              end if
+
+
            end if
            forces = 0.d0
            forces_soap = 0.d0
@@ -1108,12 +1618,36 @@ program turbogap
            forces_3b = 0.d0
            forces_core_pot = 0.d0
            forces_vdw = 0.d0
+           forces_lp = 0.d0
            virial = 0.d0
            virial_soap = 0.d0
            virial_2b = 0.d0
            virial_3b = 0.d0
            virial_core_pot = 0.d0
            virial_vdw = 0.d0
+           virial_lp = 0.d0
+
+           if (params%do_pair_distribution .and. params%exp_forces .and. params%valid_pdf)then
+              forces_pdf = 0.d0
+              virial_pdf = 0.d0
+           end if
+
+           if (params%do_structure_factor .and. params%exp_forces .and. params%valid_sf)then
+              forces_sf = 0.d0
+              virial_sf = 0.d0
+           end if
+
+           if (params%do_xrd .and. params%exp_forces .and. params%valid_xrd)then
+              forces_xrd = 0.d0
+              virial_xrd = 0.d0
+           end if
+
+           if (params%do_nd .and. params%exp_forces .and. params%valid_nd)then
+              forces_nd = 0.d0
+              virial_nd = 0.d0
+           end if
+
+
         end if
 
         if( params%do_prediction )then
@@ -1137,6 +1671,7 @@ program turbogap
 #endif
 
         !     Loop through soap_turbo descriptors - we always call this routine, even if we don't want to do prediction
+        n_lp_count = 0 ! This counts the local properties
         do i = 1, n_soap_turbo
            call cpu_time(time_soap(1))
            !       Compute number of pairs for this SOAP. SOAP has in general a different cutoff than overall max
@@ -1158,14 +1693,44 @@ program turbogap
                  this_forces = 0.d0
                  this_virial = 0.d0
               end if
-              if( soap_turbo_hypers(i)%has_vdw )then
-                 this_hirshfeld_v = 0.d0
+              if( soap_turbo_hypers(i)%has_local_properties )then
+                 this_local_properties = 0.d0
                  if( params%do_forces )then
-                    this_hirshfeld_v_cart_der = 0.d0
+                    this_local_properties_cart_der = 0.d0
                     !             I don't remember why this needs a pointer <----------------------------------------- CHECK
-                    this_hirshfeld_v_cart_der_pt => this_hirshfeld_v_cart_der(1:3, this_j_beg:this_j_end)
+                    nullify(this_local_properties_cart_der_pt)
+                    this_local_properties_cart_der_pt =>&
+                         & this_local_properties_cart_der(1:3,&
+                         & this_j_beg:this_j_end, 1:params&
+                         &%n_local_properties)
                  end if
               end if
+
+
+              ! call get_gap_soap(n_sites, this_n_sites_mpi, n_neigh(this_i_beg:this_i_end), neighbors_list(this_j_beg:this_j_end), &
+              !      soap_turbo_hypers(i)%n_species, soap_turbo_hypers(i)%species_types, &
+              !      rjs(this_j_beg:this_j_end), thetas(this_j_beg:this_j_end), phis(this_j_beg:this_j_end), &
+              !      xyz(1:3, this_j_beg:this_j_end), &
+              !      soap_turbo_hypers(i)%alpha_max, &
+              !      soap_turbo_hypers(i)%l_max, soap_turbo_hypers(i)%dim, soap_turbo_hypers(i)%rcut_hard, &
+              !      soap_turbo_hypers(i)%rcut_soft, soap_turbo_hypers(i)%nf, soap_turbo_hypers(i)%global_scaling, &
+              !      soap_turbo_hypers(i)%atom_sigma_r, soap_turbo_hypers(i)%atom_sigma_r_scaling, &
+              !      soap_turbo_hypers(i)%atom_sigma_t, soap_turbo_hypers(i)%atom_sigma_t_scaling, &
+              !      soap_turbo_hypers(i)%amplitude_scaling, soap_turbo_hypers(i)%radial_enhancement, &
+              !      soap_turbo_hypers(i)%central_weight, soap_turbo_hypers(i)%basis, &
+              !      soap_turbo_hypers(i)%scaling_mode, params%do_timing, params%do_derivatives, params%do_forces, &
+              !      params%do_prediction, params%write_soap, params%write_derivatives, &
+              !      soap_turbo_hypers(i)%compress_soap, soap_turbo_hypers(i)%compress_P_nonzero, &
+              !      soap_turbo_hypers(i)%compress_P_i, soap_turbo_hypers(i)%compress_P_j, &
+              !      soap_turbo_hypers(i)%compress_P_el, &
+              !      soap_turbo_hypers(i)%delta, soap_turbo_hypers(i)%zeta, soap_turbo_hypers(i)%central_species, &
+              !      xyz_species(this_i_beg:this_i_end), xyz_species_supercell, soap_turbo_hypers(i)%alphas, &
+              !      soap_turbo_hypers(i)%Qs, params%all_atoms, params%which_atom, indices, soap, soap_cart_der, &
+              !      der_neighbors, der_neighbors_list, &
+              !      this_energies, this_forces, &
+              !      this_virial, soap_turbo_hypers(i)&
+              !      &%has_local_properties, n_pairs, in_to_out_pairs, n_all_sites, in_to_out_site, n_neigh_out, n_sites_out )
+
               call get_gap_soap(n_sites, this_n_sites_mpi, n_neigh(this_i_beg:this_i_end), neighbors_list(this_j_beg:this_j_end), &
                    soap_turbo_hypers(i)%n_species, soap_turbo_hypers(i)%species_types, &
                    rjs(this_j_beg:this_j_end), thetas(this_j_beg:this_j_end), phis(this_j_beg:this_j_end), &
@@ -1186,23 +1751,111 @@ program turbogap
                    xyz_species(this_i_beg:this_i_end), xyz_species_supercell, soap_turbo_hypers(i)%alphas, &
                    soap_turbo_hypers(i)%Qs, params%all_atoms, params%which_atom, indices, soap, soap_cart_der, &
                    der_neighbors, der_neighbors_list, &
-                   soap_turbo_hypers(i)%has_vdw, soap_turbo_hypers(i)%vdw_Qs, soap_turbo_hypers(i)%vdw_alphas, &
-                   soap_turbo_hypers(i)%vdw_zeta, soap_turbo_hypers(i)%vdw_delta, soap_turbo_hypers(i)%vdw_V0, &
-                   this_energies, this_forces, this_hirshfeld_v_pt, this_hirshfeld_v_cart_der_pt, &
-                   this_virial )
+                   & soap_turbo_hypers(i)%has_local_properties,&
+                   & soap_turbo_hypers(i)%n_local_properties,&
+                   & soap_turbo_hypers(i)%local_property_models,&
+                   & this_energies, this_forces, this_local_properties_pt,&
+                   & this_local_properties_cart_der_pt,&
+                   & local_property_indexes, this_i_beg, this_i_end, this_j_beg, this_j_end, &
+                   & this_virial, n_lp_count )
+
+
+              ! We can have a pointer to specific parts of this_local_properties array to then
+
+
+              ! if (soap_turbo_hypers(i)%has_local_properties)then
+
+              !    ! only iterating over the computed properties
+              !    this_local_properties = 0.d0
+              !    if( params%do_forces )then
+              !       this_local_properties_cart_der = 0.d0
+              !    end if
+
+              !    do l = 1, soap_turbo_hypers(i)%n_local_properties
+              !       ! We can increment the counter for the local properties
+              !       i2 = i2 + 1
+              !       if (soap_turbo_hypers(i)%local_property_models(l)%compute)then
+              !          ! compute the local property!
+              !          ! Above the local properties passes are this_local_properties so one must change
+              !          !
+              !          ! Allocate the pointer
+
+              !          this_local_properties_pt =>&
+              !               & this_local_properties(1:n_sites,&
+              !               & local_property_indexes(i2))
+              !             !             I don't remember why this
+              !          !             needs a pointer
+              !          !
+              !          !<-----------------------------------------
+              !          !CHECK
+              !          this_local_properties_cart_der_pt =>&
+              !               & this_local_properties_cart_der(1:3,&
+              !               & this_j_beg:this_j_end,&
+              !               & local_property_indexes(i2))
+
+              !          call get_local_properties( soap, &
+              !               soap_turbo_hypers(i)%local_property_models(l)%Qs, &
+              !               soap_turbo_hypers(i)%local_property_models(l)%alphas, &
+              !               soap_turbo_hypers(i)%local_property_models(l)%V0, &
+              !               soap_turbo_hypers(i)%local_property_models(l)%delta, &
+              !               soap_turbo_hypers(i)%local_property_models(l)%zeta, &
+              !               this_local_properties_pt, &
+              !               soap_turbo_hypers(i)%local_property_models(l)%do_derivatives, &
+              !               soap_cart_der, &
+              !               n_neigh_out, &
+              !               this_local_properties_cart_der_pt, n_pairs,&
+              !               & in_to_out_pairs, n_all_sites,&
+              !               & in_to_out_site,  n_sites_out )
+
+
+              !          nullify(this_local_properties_pt)
+              !          nullify(this_local_properties_cart_der_pt)
+              !       end if
+              !    end do
+              !    ! Now deallocate the arrays which were not deallocated in get_gap_soap
+              !    deallocate( in_to_out_site, in_to_out_pairs, n_neigh_out )
+
+              !    if( .not. params%write_soap  ) deallocate( soap )
+
+              !    if( params%do_derivatives .and. .not. params%write_derivatives)then
+              !       deallocate( soap_cart_der )
+              !    end if
+              ! end if
+
+
 
               energies_soap = energies_soap + this_energies
-              if( soap_turbo_hypers(i)%has_vdw )then
-                 hirshfeld_v = hirshfeld_v + this_hirshfeld_v
-                 if( params%do_forces )then
-                    hirshfeld_v_cart_der = hirshfeld_v_cart_der + this_hirshfeld_v_cart_der
+
+              if( soap_turbo_hypers(i)%has_local_properties )then
+
+                 local_properties(:,:) = local_properties(:,:) + this_local_properties(:,:)
+                 if(  any(soap_turbo_hypers(i)&
+                      &%local_property_models(:)%do_derivatives) &
+                      & .and. params%do_derivatives)then
+                    local_properties_cart_der(:,:,:) =&
+                         & local_properties_cart_der(:,:,:) +&
+                         & this_local_properties_cart_der(:,:,:)
                  end if
+
+
+                 if( soap_turbo_hypers(i)%has_vdw )then
+                    hirshfeld_v => local_properties( :, vdw_lp_index)
+                    if (any(soap_turbo_hypers(i)&
+                         &%local_property_models(:)%do_derivatives)&
+                         & .and. params%do_derivatives)&
+                         & hirshfeld_v_cart_der =>&
+                         & local_properties_cart_der( :, :,&
+                         & vdw_lp_index)
+                 end if
+
               end if
               if( params%do_forces )then
                  forces_soap = forces_soap + this_forces
                  virial_soap = virial_soap + this_virial
               end if
            end do
+           n_lp_count = n_lp_count + soap_turbo_hypers(i)%n_local_properties
+
            deallocate( i_beg_list, i_end_list, j_beg_list, j_end_list )
 
 
@@ -1282,15 +1935,23 @@ program turbogap
 
            call cpu_time(time_soap(2))
            time_soap(3) = time_soap(3) + time_soap(2) - time_soap(1)
+
+           call cpu_time(time2)
+           time_gap = time_gap + time2 - time1
+
         end do
 
 
 #ifdef _MPIF90
-        if( any( soap_turbo_hypers(:)%has_vdw ) )then
+        if( any( soap_turbo_hypers(:)%has_local_properties) )then
            call cpu_time(time_mpi(1))
-           call mpi_reduce(hirshfeld_v, this_hirshfeld_v, n_sites,&
+           call mpi_reduce(local_properties, this_local_properties, n_sites*params%n_local_properties,&
                 & MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD,&
                 & ierr)
+           !           if( any( soap_turbo_hypers(:)%has_vdw ) )then
+           ! call mpi_reduce(hirshfeld_v, this_hirshfeld_v, n_sites,&
+           !      & MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD,&
+           !      & ierr)
            !        if( params%do_forces )then
            !         I'm not sure if this is necessary at all... CHECK
            !          call mpi_reduce(hirshfeld_v_cart_der,
@@ -1299,8 +1960,11 @@ program turbogap
            !          MPI_COMM_WORLD, ierr)
            !          hirshfeld_v_cart_der = this_hirshfeld_v_cart_der
            !        end if
-           hirshfeld_v = this_hirshfeld_v
-           call mpi_bcast(hirshfeld_v, n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+           !            hirshfeld_v = this_hirshfeld_v
+           local_properties = this_local_properties
+           !           call mpi_bcast(hirshfeld_v, n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+           call mpi_bcast(local_properties, n_sites*params%n_local_properties, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+
            call cpu_time(time_mpi(2))
            time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
         end if
@@ -1316,6 +1980,7 @@ program turbogap
            if( params%do_forces )then
               allocate( this_forces_vdw(1:3,1:n_sites) )
               this_forces_vdw = 0.d0
+              this_virial_vdw = 0.d0
            end if
 #endif
            allocate(v_neigh_vdw(1:j_end-j_beg+1))
@@ -1326,12 +1991,13 @@ program turbogap
                  !           I'm not sure if this is necessary or neighbors_list is already bounded between 1 and n_sites -> CHECK THIS
                  j2 = mod(neighbors_list(j_beg + k)-1, n_sites) + 1
                  k = k + 1
-                 v_neigh_vdw(k) = hirshfeld_v(j2)
+                 !                 v_neigh_vdw(k) = hirshfeld_v(j2)
+                 v_neigh_vdw(k) = local_properties(j2, vdw_lp_index)
               end do
            end do
-           ! i_beg : i_end is split over the sites which are for each process to deal with
-           ! j_beg : j_end is 1 : n_atom_pairs_by_rank(rank+1)
-           call get_ts_energy_and_forces( hirshfeld_v(i_beg:i_end), hirshfeld_v_cart_der(1:3, j_beg:j_end), &
+
+           call get_ts_energy_and_forces( local_properties(i_beg:i_end, vdw_lp_index), &
+                & local_properties_cart_der(1:3, j_beg:j_end, vdw_lp_index), &
                 n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
                 neighbor_species(j_beg:j_end), &
                 params%vdw_rcut, params%vdw_buffer, &
@@ -1340,7 +2006,7 @@ program turbogap
                 params%vdw_sr, params%vdw_d, params%vdw_c6_ref, params%vdw_r0_ref, &
                 params%vdw_alpha0_ref, params%do_forces, &
 #ifdef _MPIF90
-                this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw )
+                this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw)
 #else
            energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
 #endif
@@ -1351,11 +2017,496 @@ program turbogap
         end if
 
 
+        !----------------------------------------------------!
+        !--- EXPERIMENTAL SPECTRUM CALCULATION AND FORCES ---!
+        !----------------------------------------------------!
+
+        ! --- Changing the implementation:
+        !     > All experimental prediction should be done here
+        !     > do_exp is the variable which says whether calculation should be done
+        !     > experimental_forces = .true. will add forces to the calculation
+
+        !#########################################################!
+        !###---   Compute Experimental Data Interpolation   ---###!
+        !#########################################################!
+
+        if ( params%do_exp )then
+           do i = 1, params%n_exp
+              ! If we want to compute the experimental interpolation, we do it now.
+
+              call get_write_condition( params%do_mc, params%do_md&
+                   &, mc_istep, md_istep, params%write_xyz,&
+                   & write_condition)
+
+
+              if ( params%exp_data(i)%compute_exp )then
+                 if (allocated(params%exp_data(i)%x)) deallocate(params%exp_data(i)%x)
+                 if (allocated(params%exp_data(i)%y)) deallocate(params%exp_data(i)%y)
+                 call calculate_exp_interpolation(params%exp_data(i)&
+                      &%x, params%exp_data(i)%y, params%exp_data(i)&
+                      &%n_samples, params%exp_data(i)%data)
+
+
+                 call preprocess_exp_data(params, params%exp_data(i)%x,&
+                      & params%exp_data(i)%y, params%exp_data(i)%label,&
+                      & n_sites, dot_product( cross_product(a_box,&
+                      & b_box), c_box ) / (dfloat(indices(1)*indices(2) &
+                      &*indices(3)) ), params%exp_data(i)%input, exp_output, .true. )
+
+                 if (params%write_exp .and. .not.  params&
+                      &%exp_data(i)%wrote_exp .and. rank == 0 .and. write_condition ) then
+
+                    call get_overwrite_condition( params%do_mc,&
+                         & params%do_md, mc_istep, md_istep, params&
+                         &%write_xyz, overwrite_condition)
+
+                    call write_exp_data(params%exp_data(i)%x, params&
+                         &%exp_data(i)%y, overwrite_condition,&
+                         & trim(params%exp_data(i) %label) //&
+                         & "_exp.dat", params%exp_data(i) %label  )
+                 end if
+
+
+              end if
+
+              if ( params%exp_data(i)%compute_exp .and. .not.  params&
+                   &%exp_data(i)%wrote_exp .and. rank == 0  .and. write_condition) then
+
+                 if (params%write_exp) then
+                    write(filename,'(A)')&
+                         & trim(params%exp_data(i)%label) // "_exp_fit.dat"
+
+                    call get_overwrite_condition( params%do_mc,&
+                         & params%do_md, mc_istep, md_istep, params&
+                         &%write_xyz, overwrite_condition)
+
+                    call write_exp_data(params%exp_data(i)%x, params%exp_data(i)%y,&
+                         & overwrite_condition, trim(params&
+                         &%exp_data(i)%label) // "_exp_fit.dat",&
+                         & trim(params%exp_data(i)%label) // " : output = "&
+                         & // trim( exp_output ))
+
+                 end if
+
+              end if
+
+              params%exp_data(i)%wrote_exp = .true.
+              params%exp_data(i)%compute_exp = .true.
+
+           end do
+        end if
+
+
+        !###################################################!
+        !###---   XPS Forces and Spectra Prediction   ---###!
+        !###################################################!
+
+        !     Compute core_electron_be energies and forces
+        if( any( soap_turbo_hypers(:)%has_core_electron_be ) .and.( params%do_prediction ) &
+             .and. valid_xps )then
+           call cpu_time(time_xps(1))
+
+#ifdef _MPIF90
+           allocate( this_energies_lp(1:n_sites) )
+           this_energies_lp = 0.d0
+           if( params%do_forces )then
+              allocate( this_forces_lp(1:3,1:n_sites) )
+              this_forces_lp = 0.d0
+              this_virial_lp = 0.d0
+           end if
+#endif
+           allocate(v_neigh_lp(1:j_end-j_beg+1))
+           v_neigh_lp = 0.d0
+           k = 0
+           do i = i_beg, i_end
+              do j = 1, n_neigh(i)
+                 !           I'm not sure if this is necessary or neighbors_list is already bounded between 1 and n_sites -> CHECK THIS
+                 j2 = mod(neighbors_list(j_beg + k)-1, n_sites) + 1
+                 k = k + 1
+                 !                 v_neigh_lp(k) = hirshfeld_v(j2)
+                 v_neigh_lp(k) = local_properties(j2, core_be_lp_index)
+              end do
+           end do
+
+           call get_xps_spectra(params%exp_data(xps_idx)%data(1,:),&
+                & params%exp_data(xps_idx)%data(2,:), params&
+                &%xps_sigma, params%exp_data(xps_idx)%n_samples, mag,&
+                & params%exp_data(xps_idx)%x, params&
+                &%exp_data(xps_idx)%y_pred, y_i_pred_all,&
+                & local_properties(1:n_sites, core_be_lp_index),&
+                & .true.)
+
+
+           ! call get_compare_xps_spectra(params%exp_data(xps_idx)%data&
+           !      & , local_properties(1:n_sites, core_be_lp_index),&
+           !      & params%xps_sigma, params%exp_data(xps_idx) &
+           !      &%n_samples, mag, params%exp_data(xps_idx)%similarity&
+           !      & , params%exp_data(xps_idx)%x, params &
+           !      &%exp_data(xps_idx)%y, params%exp_data(xps_idx) &
+           !      &%y_pred, y_i_pred_all, .not. allocated(params &
+           !      &%exp_data(xps_idx)%x), params%exp_similarity_type )
+
+           ! print *, params%exp_data(xps_idx)%n_samples, xps_idx
+           call get_energy_scale( params%do_md, params%do_mc,&
+                & md_istep, params%md_nsteps, mc_istep, params&
+                &%mc_nsteps, params &
+                &%exp_energy_scales_initial(xps_idx), params &
+                &%exp_energy_scales_final(xps_idx), params &
+                &%exp_energy_scales(xps_idx) )
+
+           call get_exp_pred_spectra_energies_forces( params&
+                &%exp_energy_scales(xps_idx),&
+                & local_properties(i_beg:i_end,core_be_lp_index),&
+                & local_properties_cart_der(1:3, j_beg:j_end,&
+                & core_be_lp_index ), n_neigh(i_beg:i_end),&
+                & neighbors_list(j_beg:j_end), params%xps_sigma,&
+                & params%exp_data(xps_idx)%n_samples, mag, params&
+                &%exp_data(xps_idx)%x, params %exp_data(xps_idx)%y,&
+                & params%exp_data(xps_idx) %y_pred,&
+                & y_i_pred_all(i_beg:i_end, 1:params &
+                &%exp_data(xps_idx)%n_samples), params %do_forces, &
+                & xyz(1:3, j_beg:j_end),&
+#ifdef _MPIF90
+                & this_energies_lp(i_beg:i_end), this_forces_lp, this_virial_lp, params%exp_similarity_type, rank )
+#else
+           & energies_lp(i_beg:i_end), forces_lp, virial_lp, params%exp_similarity_type, rank )
+#endif
+
+           ! if (rank == 0)then
+           !    open(unit=11, file="tg_xps.dat", status="unknown")
+           !    do i = 1, params%exp_data(xps_idx)%n_samples
+           !       write(11, '(1X,F20.8,1X,F20.8)') params%exp_data(xps_idx)%x(i), params%exp_data(xps_idx)%y_pred(i)
+           !    end do
+           !    close(11)
+           ! end if
+
+
+           call get_write_condition( params%do_mc, params%do_md&
+                &, mc_istep, md_istep, params%write_xyz,&
+                & write_condition)
+
+           if (rank == 0 .and. params%write_exp .and. write_condition)then
+
+              call get_overwrite_condition( params%do_mc, params%do_md&
+                   &, mc_istep, md_istep, params%write_xyz, overwrite_condition)
+
+              call write_exp_datan(params%exp_data(xps_idx)&
+                   &%x(1:params%exp_data(xps_idx)%n_samples), params&
+                   &%exp_data(xps_idx)%y_pred(1:params&
+                   &%exp_data(xps_idx)%n_samples),&
+                   & overwrite_condition, "xps_prediction.dat",&
+                   & params%exp_data(xps_idx)%label)
+
+              if ( .not.  params%exp_data(xps_idx)%wrote_exp ) then
+
+
+                 call preprocess_exp_data(params, params%exp_data(xps_idx)%x,&
+                      & params%exp_data(xps_idx)%y, params%exp_data(xps_idx)%label,&
+                      & n_sites, dot_product( cross_product(a_box,&
+                      & b_box), c_box ) / (dfloat(indices(1)*indices(2) &
+                      &*indices(3)) ), params%exp_data(xps_idx)%input, exp_output, .true. )
+
+                 call write_exp_datan(params%exp_data(xps_idx)&
+                      &%x(1:params%exp_data(xps_idx)%n_samples),&
+                      & params%exp_data(xps_idx)%y(1:params&
+                      &%exp_data(xps_idx)%n_samples),&
+                      & overwrite_condition, "xps_exp.dat" , params&
+                      &%exp_data(xps_idx)%label)
+                 params%exp_data(xps_idx)%wrote_exp = .true.
+              end if
+
+              ! else
+              !    call write_exp_data(params%exp_data(xps_idx)%x, params%exp_data(xps_idx)%y_pred, mc_istep == 0, "xps_prediction.dat" )
+              !    call write_exp_data(params%exp_data(xps_idx)%x, params%exp_data(xps_idx)%y, mc_istep == 0, "xps_exp.dat" )
+
+           end if
+
+
+           !deallocate( params%exp_data(xps_idx)%y_pred )
+           if (allocated(y_i_pred_all)) deallocate(y_i_pred_all)
+           ! sim_exp_pred would be an energy if multiplied by some energy scale \gamma * ( 1 - sim )
+           ! sim_exp_pred_der would be the array of forces if multiplied by (- \gamma )
+           deallocate(v_neigh_lp)
+
+
+           call cpu_time(time_xps(2))
+           time_xps(3) = time_xps(3) + time_xps(2) - time_xps(1)
+           !           if (rank == 0) print *, rank, " TIME_XPS = ", time_xps(3)
+
+        end if
+
+        !##############################################################!
+        !###---   (Partial) Pair distribution functions and XRD   ---###!
+        !##############################################################!
+
+        ! We use these to calculate the (partial) structure factors, which
+        ! can be used for X-Ray scattering and (in the future)
+        ! neutron scattering.
+        !
+        ! > We use the formalism which was detailed by
+        !   Gutierrez and Johansson, Physical Review B, Volume 65, 104202 (2002)
+        !   such that there is consistency between the rdfs and the scattering we calculate.
+        !
+        ! > Furthermore, calculating the pair distribution function and
+        !   the structure factor/XRD becomes much faster, as there is just
+        !   a sum over species rather than a double sum over all the
+        !   atomic species.
+        !
+        !   (The ASE implementation of XRD intensity is problematic and
+        !   uses the sinc function implemented by DSP
+        !   (sin(pi*x)/(pi*x)) which is not what is in the
+        !   literature).
+        !
+        ! ***--- Steps for calculation ---***
+        ! 1) We calculate the partial pair distribution functions g_ab
+        ! 2) Partial static structure factors S_ab are then calculated from this by Fourier transform
+        !    > This calculation can includes a window function ( sin(pi*rij/r_cut) / (pi*rij/r_cut) )
+        !      such that termination effects of large sinusoids which come from the cutoff are removed.
+        ! 3) If X-Ray Diffraction (xrd) is specified, then the intensity is
+        !    calculated from these partial structure factors by the
+        !    inclusion of the X-Ray form factors.
+        !
+        ! ***--- Definitions ---***
+        ! There are many definitions of these various functions
+        ! in the literature, however, we shall use similar ones
+        ! to those in the paper of Gutierrez
+        !
+        ! Definiton of the structure factors given by Ashcroft and Langreth
+        ! N. W. Ashcroft and D. C. Langreth. Phys. Rev., 156(3):685-692 (1967)
+        !
+        ! PDFs can be smoothed by using a kernel density estimate by a gaussian function when kde_sigma > 0.d0
+        !
+        ! R(r)    = Radial Distribution Function     === A histogram of atomic distances divided by N, goes as r^2
+        ! g(r)    = Pair Distribution Function (PCF) === Scales R(r) by 1/(4 pi r^2) such that it lays flat, converges to 1.
+        !         = (N_{r_l < r < r_h} / N) / ( 4 pi r^2 dr  * ( N / V ) )
+        !         = n_{r_l < r < r_h} / ( dV * rho_0 )
+        !           > n_{r_l < r < r_h} is the average number of particles between r_l and r_h
+        !           > rho_0 is the density
+        !           > dV is the differential volume between shells
+        !
+        ! g_ab(r) = Partial Pair Distribution Func.  === Same as above but only for particles a and b
+        !         =  (N^{b}_{r_l < r < r_h} / N_b ) / ( 4 pi r^2 dr ) * ( N_a / V )
+        !         With kde
+        !         =  ( sum_i sum_i/=j exp( - (r - r_ij)^2 / sigma^2 / 2 ) / N_b ) / ( 4 pi r^2 dr ) * ( V / N_a ) &
+        !              & * ( (r_max - r_min) / sigma / sqrt(2pi) )
+        !
+        !           The full pair distribution function is given by the sum (say for the binary system, with a, b atoms)
+        !             g(r) = (N_a/N) * g_aa(r) + 2(N_a/N * N_b/N)g_ab + (N_b/N)g_bb
+        !
+        ! S_ab(q) = delta_ab + 4 pi rho (ca cb)^1/2 int_0^r_cut dr r^2 [ g_ab(r) - 1 ] sin(qr)/(qr) * sin( pi r / R )/ (pi r /R)
+        !
+        !
+        ! XRD(q) = 1/N ( d cross_section/ d Omega )
+        !
+        ! Total scattering function F^X(q)
+        ! F^x(q) = [ XRD(q) - \sum_n c_i f_i(q)^2 ] / [ \sum_n c_i f_i(q) ]^2
+
+        ! First get the number of species in actuality
+        n_species_actual = 0
+        do i = 1, n_sites
+           if (species(i) > n_species_actual) n_species_actual = n_species_actual + 1
+        end do
+
+        ! Now find the unique species ids
+        if (allocated( species_types_actual)) deallocate( species_types_actual )
+        allocate(species_types_actual(1:n_species_actual))
+
+        n_species_actual = 0
+        do i = 1, n_sites
+           if (species(i) > n_species_actual)then
+              n_species_actual = n_species_actual + 1
+              species_types_actual(n_species_actual) = params%species_types( species(i) )
+           end if
+        end do
+
+
+        if (params%do_pair_distribution)then
+           call cpu_time(time_pdf(1))
+
+           call calculate_pair_distribution( params, x_pair_distribution&
+                &, y_pair_distribution, y_pair_distribution_temp,&
+                & pair_distribution_partial, pair_distribution_partial_temp, &
+                & n_species_actual, species_types_actual, n_atoms_of_species, n_sites, a_box,&
+                & b_box, c_box, indices, md_istep, mc_istep, i_beg, i_end,&
+                & j_beg, j_end, ierr , rjs, xyz, neighbors_list,&
+                & n_neigh, neighbor_species, species, rank, params%exp_forces, &
+                & pair_distribution_der,&
+                & pair_distribution_partial_der,&
+#ifdef _MPIF90
+                & pair_distribution_partial_temp_der, this_energies_pdf, this_forces_pdf, this_virial_pdf)
+#else
+           & pair_distribution_partial_temp_der, energies_pdf, forces_pdf, virial_pdf)
+#endif
+
+           call cpu_time(time_pdf(2))
+           time_pdf(3) = time_pdf(3) + time_pdf(2) - time_pdf(1)
+           !           if (rank == 0) print *, rank, " TIME_PDF = ", time_pdf(3)
+
+
+
+        end if
+
+        ! Now calculate the structure factors
+        if (params%do_structure_factor )then
+           call cpu_time(time_sf(1))
+           call calculate_structure_factor( params, x_structure_factor, x_structure_factor_temp,&
+                & y_structure_factor, y_structure_factor_temp,&
+                & structure_factor_partial, structure_factor_partial_temp,&
+                & x_pair_distribution, y_pair_distribution, &
+                & pair_distribution_partial, n_species_actual, species_types_actual, n_atoms_of_species,&
+                & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep, i_beg,&
+                & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
+                & neighbor_species, species, rank , q_beg, q_end, ntasks, sinc_factor_matrix, params%exp_forces, &
+#ifdef _MPIF90
+                & pair_distribution_partial_der, this_energies_sf, this_forces_sf, this_virial_sf)
+#else
+           & pair_distribution_partial_der, energies_sf, forces_sf, virial_sf)
+#endif
+
+
+           call cpu_time(time_sf(2))
+           time_sf(3) = time_sf(3) + time_sf(2) - time_sf(1)
+
+
+
+        end if
+
+        if ( params%do_xrd )then
+           call cpu_time(time_xrd(1))
+           call calculate_xrd( params, x_xrd, x_xrd_temp,&
+                & y_xrd, y_xrd_temp, x_structure_factor, x_structure_factor_temp,&
+                & structure_factor_partial, structure_factor_partial_temp,&
+                & n_species_actual, species_types_actual, n_atoms_of_species,&
+                & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep, i_beg,&
+                & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
+                & neighbor_species, species, rank , q_beg, q_end, ntasks, sinc_factor_matrix, params%exp_forces, &
+#ifdef _MPIF90
+                & pair_distribution_partial_der, this_energies_xrd, this_forces_xrd, this_virial_xrd, .false.)
+#else
+           & pair_distribution_partial_der, energies_xrd, forces_xrd, virial_xrd, .false. )
+#endif
+
+
+           call cpu_time(time_xrd(2))
+           time_xrd(3) = time_xrd(3) + time_xrd(2) - time_xrd(1)
+
+           !           if (rank == 0) print *, rank, " TIME_XRD = ", time_xrd(3)
+
+        end if
+
+
+        if ( params%do_nd )then
+           call cpu_time(time_nd(1))
+           call calculate_xrd( params, x_nd, x_nd_temp,&
+                & y_nd, y_nd_temp, x_structure_factor, x_structure_factor_temp,&
+                & structure_factor_partial, structure_factor_partial_temp,&
+                & n_species_actual, species_types_actual, n_atoms_of_species,&
+                & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep, i_beg,&
+                & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
+                & neighbor_species, species, rank , q_beg, q_end, ntasks, sinc_factor_matrix, params%exp_forces, &
+#ifdef _MPIF90
+                & pair_distribution_partial_der, this_energies_nd, this_forces_nd, this_virial_nd, .true.)
+#else
+           & pair_distribution_partial_der, energies_nd, forces_nd, virial_nd, .true. )
+#endif
+
+
+           call cpu_time(time_nd(2))
+           time_nd(3) = time_nd(3) + time_nd(2) - time_nd(1)
+
+           !           if (rank == 0) print *, rank, " TIME_XRD = ", time_xrd(3)
+
+        end if
+
+
+        !################################################################!
+        !###---   Compute similarity of experimental predictions   ---###!
+        !################################################################!
+
+        if ( params%do_exp )then
+           do i = 1, params%n_exp
+              ! First normalize the spectrum if it matches some type of experimental data
+
+              ! Allocate the prediction data
+              ! if (.not. allocated( params%exp_data(i)%y_pred ) )then
+              !    allocate( params%exp_data(i)%y_pred( 1:size(params%exp_data(i)%y, 1) ))
+              ! end if
+
+              if ( trim(params%exp_data(i)%label) == 'pair_distribution' )then
+                 params%exp_data(i)%y_pred = y_pair_distribution
+              elseif ( trim(params%exp_data(i)%label) == 'structure_factor' )then
+                 params%exp_data(i)%y_pred = y_structure_factor
+              elseif ( trim(params%exp_data(i)%label) == 'xrd' )then
+                 params%exp_data(i)%y_pred = y_xrd
+              elseif ( trim(params%exp_data(i)%label) == 'nd' )then
+                 params%exp_data(i)%y_pred = y_nd
+              end if
+
+              if ( params%exp_data(i)%compute_similarity .and. allocated(params%exp_data(i)%y) )then
+                 call get_data_similarity(params%exp_data(i)%y, params&
+                      &%exp_data(i)%y_pred, params&
+                      &%exp_data(i)%similarity, params&
+                      &%exp_similarity_type)
+              end if
+
+              ! deallocate(params%exp_data(i)%x)
+              ! deallocate(params%exp_data(i)%y)
+              ! deallocate(params%exp_data(i)%y_pred)
+
+           end do
+        end if
+
+
+
+
+
+        !##############################################!
+        !###---   Finalize experimental arrays   ---###!
+        !##############################################!
+
+        if (params%do_pair_distribution)then
+           call finalize_pair_distribution( params, x_pair_distribution&
+                &, y_pair_distribution, y_pair_distribution_temp,&
+                & pair_distribution_partial, pair_distribution_partial_temp, params&
+                &%exp_forces, pair_distribution_der,&
+                & pair_distribution_partial_der,&
+                & pair_distribution_partial_temp_der, n_atoms_of_species, rank)
+
+        end if
+
+        ! Now calculate the structure factors
+        if (params%do_structure_factor )then
+
+           call finalize_structure_factor( params, x_structure_factor, x_structure_factor_temp,&
+                & y_structure_factor, y_structure_factor_temp,&
+                & structure_factor_partial, structure_factor_partial_temp,&
+                & x_pair_distribution, y_pair_distribution, &
+                & pair_distribution_partial, sinc_factor_matrix)
+
+        end if
+
+        if ( params%do_xrd )then
+           call finalize_xrd( params, x_xrd, x_xrd_temp,&
+                & y_xrd, y_xrd_temp, x_structure_factor, x_structure_factor_temp,&
+                & structure_factor_partial, structure_factor_partial_temp)
+        end if
+
+        if ( params%do_nd )then
+           call finalize_xrd( params, x_nd, x_nd_temp,&
+                & y_nd, y_nd_temp, x_structure_factor, x_structure_factor_temp,&
+                & structure_factor_partial, structure_factor_partial_temp)
+        end if
+
+        deallocate(species_types_actual)
+
+
 
 
 
         if( params%do_prediction )then
            !       Loop through distance_2b descriptors
+           call cpu_time(time1)
+
            do i = 1, n_distance_2b
               call cpu_time(time_2b(1))
               this_energies = 0.d0
@@ -1443,9 +2594,8 @@ program turbogap
            call cpu_time(time2)
            time_gap = time_gap + time2 - time1
 
-
-
-           !       Communicate all energies and forces here for all terms
+           !       Communicate all energies and forces here for all
+           !       terms
 #ifdef _MPIF90
            call cpu_time(time_mpi_ef(1))
            counter2 = 0
@@ -1453,6 +2603,21 @@ program turbogap
               counter2 = counter2 + 1
            end if
            if( allocated(this_energies_vdw) )then
+              counter2 = counter2 + 1
+           end if
+           if( allocated(this_energies_lp) )then
+              counter2 = counter2 + 1
+           end if
+           if( allocated(this_energies_pdf) .and. params%valid_pdf )then
+              counter2 = counter2 + 1
+           end if
+           if( allocated(this_energies_sf) .and. params%valid_sf)then
+              counter2 = counter2 + 1
+           end if
+           if( allocated(this_energies_xrd) .and. params%valid_xrd)then
+              counter2 = counter2 + 1
+           end if
+           if( allocated(this_energies_nd) .and. params%valid_nd)then
               counter2 = counter2 + 1
            end if
            if( n_distance_2b > 0 )then
@@ -1464,6 +2629,7 @@ program turbogap
            if( n_angle_3b > 0 )then
               counter2 = counter2 + 1
            end if
+
 
            !       It would probably be faster to use pointers for this
            allocate( all_energies(1:n_sites, 1:counter2) )
@@ -1492,6 +2658,53 @@ program turbogap
                  all_virial(1:3, 1:3, counter2) = this_virial_vdw(1:3, 1:3)
               end if
            end if
+
+           if( allocated(this_energies_lp) )then
+              counter2 = counter2 + 1
+              all_energies(1:n_sites, counter2) = this_energies_lp(1:n_sites)
+              if( params%do_forces )then
+                 all_forces(1:3, 1:n_sites, counter2) = this_forces_lp(1:3, 1:n_sites)
+                 all_virial(1:3, 1:3, counter2) = this_virial_lp(1:3, 1:3)
+              end if
+           end if
+
+           if( allocated(this_energies_pdf) .and. params%valid_pdf )then
+              counter2 = counter2 + 1
+              all_energies(1:n_sites, counter2) = this_energies_pdf(1:n_sites)
+              if( params%do_forces .and. params%exp_forces)then
+                 all_forces(1:3, 1:n_sites, counter2) = this_forces_pdf(1:3, 1:n_sites)
+                 all_virial(1:3, 1:3, counter2) = this_virial_pdf(1:3, 1:3)
+              end if
+           end if
+
+           if( allocated(this_energies_sf) .and. params%valid_sf)then
+              counter2 = counter2 + 1
+              all_energies(1:n_sites, counter2) = this_energies_sf(1:n_sites)
+              if( params%do_forces .and. params%exp_forces)then
+                 all_forces(1:3, 1:n_sites, counter2) = this_forces_sf(1:3, 1:n_sites)
+                 all_virial(1:3, 1:3, counter2) = this_virial_sf(1:3, 1:3)
+              end if
+           end if
+
+           if( allocated(this_energies_xrd) .and. params%valid_xrd )then
+              counter2 = counter2 + 1
+              all_energies(1:n_sites, counter2) = this_energies_xrd(1:n_sites)
+              if( params%do_forces .and. params%exp_forces )then
+                 all_forces(1:3, 1:n_sites, counter2) = this_forces_xrd(1:3, 1:n_sites)
+                 all_virial(1:3, 1:3, counter2) = this_virial_xrd(1:3, 1:3)
+              end if
+           end if
+
+           if( allocated(this_energies_nd) .and. params%valid_nd )then
+              counter2 = counter2 + 1
+              all_energies(1:n_sites, counter2) = this_energies_nd(1:n_sites)
+              if( params%do_forces .and. params%exp_forces )then
+                 all_forces(1:3, 1:n_sites, counter2) = this_forces_nd(1:3, 1:n_sites)
+                 all_virial(1:3, 1:3, counter2) = this_virial_nd(1:3, 1:3)
+              end if
+           end if
+
+
            if( n_distance_2b > 0 )then
               counter2 = counter2 + 1
               all_energies(1:n_sites, counter2) = energies_2b(1:n_sites)
@@ -1551,10 +2764,61 @@ program turbogap
                  deallocate(this_forces_vdw)
               end if
            end if
+           if( allocated(this_energies_lp) )then
+              counter2 = counter2 + 1
+              energies_lp(1:n_sites) = all_this_energies(1:n_sites, counter2)
+              deallocate(this_energies_lp)
+              if( params%do_forces )then
+                 forces_lp(1:3, 1:n_sites) = all_this_forces(1:3, 1:n_sites, counter2)
+                 virial_lp(1:3, 1:3) = all_this_virial(1:3, 1:3, counter2)
+                 deallocate(this_forces_lp)
+              end if
+           end if
+           if( allocated(this_energies_pdf) .and. params%valid_pdf)then
+              counter2 = counter2 + 1
+              energies_pdf(1:n_sites) = all_this_energies(1:n_sites, counter2)
+              deallocate(this_energies_pdf)
+              if( params%do_forces .and. params%exp_forces)then
+                 forces_pdf(1:3, 1:n_sites) = all_this_forces(1:3, 1:n_sites, counter2)
+                 virial_pdf(1:3, 1:3) = all_this_virial(1:3, 1:3, counter2)
+                 deallocate(this_forces_pdf)
+              end if
+           end if
+           if( allocated(this_energies_sf) .and. params%valid_sf)then
+              counter2 = counter2 + 1
+              energies_sf(1:n_sites) = all_this_energies(1:n_sites, counter2)
+              deallocate(this_energies_sf)
+              if( params%do_forces .and. params%exp_forces)then
+                 forces_sf(1:3, 1:n_sites) = all_this_forces(1:3, 1:n_sites, counter2)
+                 virial_sf(1:3, 1:3) = all_this_virial(1:3, 1:3, counter2)
+                 deallocate(this_forces_sf)
+              end if
+           end if
+           if( allocated(this_energies_xrd) .and. params%valid_xrd)then
+              counter2 = counter2 + 1
+              energies_xrd(1:n_sites) = all_this_energies(1:n_sites, counter2)
+              deallocate(this_energies_xrd)
+              if( params%do_forces  .and. params%exp_forces)then
+                 forces_xrd(1:3, 1:n_sites) = all_this_forces(1:3, 1:n_sites, counter2)
+                 virial_xrd(1:3, 1:3) = all_this_virial(1:3, 1:3, counter2)
+                 deallocate(this_forces_xrd)
+              end if
+           end if
+           if( allocated(this_energies_nd) .and. params%valid_nd)then
+              counter2 = counter2 + 1
+              energies_nd(1:n_sites) = all_this_energies(1:n_sites, counter2)
+              deallocate(this_energies_nd)
+              if( params%do_forces  .and. params%exp_forces)then
+                 forces_nd(1:3, 1:n_sites) = all_this_forces(1:3, 1:n_sites, counter2)
+                 virial_nd(1:3, 1:3) = all_this_virial(1:3, 1:3, counter2)
+                 deallocate(this_forces_nd)
+              end if
+           end if
+
            if( n_distance_2b > 0 )then
               counter2 = counter2 + 1
               energies_2b(1:n_sites) = all_this_energies(1:n_sites, counter2)
-              if( params%do_forces )then
+              if( params%do_forces)then
                  forces_2b(1:3, 1:n_sites) = all_this_forces(1:3, 1:n_sites, counter2)
                  virial_2b(1:3, 1:3) = all_this_virial(1:3, 1:3, counter2)
               end if
@@ -1587,13 +2851,23 @@ program turbogap
 #endif
 
 
-
-
            !       Add up all the energy terms
-           energies = energies + energies_soap + energies_2b + energies_3b + energies_core_pot + energies_vdw
+           energies = energies + energies_soap + energies_2b +&
+                & energies_3b + energies_core_pot + energies_vdw !+energies_lp
+
+           if ( valid_xps )                                          energies_exp = energies_exp + energies_lp
+           if ( params%valid_pdf .and. params%do_pair_distribution ) energies_exp = energies_exp + energies_pdf
+           if ( params%valid_sf .and. params%do_structure_factor )   energies_exp = energies_exp + energies_sf
+           if ( params%valid_xrd .and. params%do_xrd )               energies_exp = energies_exp + energies_xrd
+           if ( params%valid_nd .and. params%do_nd )               energies_exp = energies_exp + energies_nd
+
+           if (params%exp_energies) energies = energies + energies_exp
+
            energy_prev = energy
            instant_pressure_prev = instant_pressure
            energy = sum(energies)
+           energy_exp = sum( energies_exp )
+
         end if
 
 
@@ -1607,7 +2881,27 @@ program turbogap
               write(*,'(A,1X,F24.8,1X,A)')' 3b energy:', sum(energies_3b), 'eV |'
               write(*,'(A,1X,F18.8,1X,A)')' core_pot energy:', sum(energies_core_pot), 'eV |'
               write(*,'(A,1X,F23.8,1X,A)')' vdw energy:', sum(energies_vdw), 'eV |'
-              write(*,'(A,1X,F21.8,1X,A)')' Total energy:', sum(energies), 'eV |'
+              write(*,'(A,1X,F22.8,1X,A)')' Exp. energy:', sum(energies_exp), 'eV |'
+              write(*,'(A,1X,F20.8,1X,A)')' l_prop energy:', sum(energies_lp), 'eV |'
+              if ( params%valid_pdf .and. params%do_pair_distribution )&
+                   & write(*,'(A,1X,F23.8,1X,A)')' pdf energy:',&
+                   & sum(energies_pdf), 'eV |'
+              if ( params%valid_sf .and. params%do_structure_factor )&
+                   & write(*,'(A,1X,F24.8,1X,A)')' sf energy:',&
+                   & sum(energies_sf), 'eV |'
+              if ( params%valid_xrd .and. params%do_xrd )&
+                   & write(*,'(A,1X,F23.8,1X,A)')' xrd energy:',&
+                   & sum(energies_xrd), 'eV |'
+              if ( params%valid_nd .and. params%do_nd )&
+                   & write(*,'(A,1X,F23.8,1X,A)')' nd energy:',&
+                   & sum(energies_nd), 'eV |'
+
+
+              if (.not. params%do_mc .or. (params%do_mc .and.  mc_istep <= 1 ))then
+                 write(*,'(A,1X,F21.8,1X,A)')' Total energy:', sum(energies), 'eV |'
+              else
+                 write(*,'(A,1X,F21.8,1X,A)')' Total energy:', sum(images(i_trial_image)%energies), 'eV |'
+              end if
 
               if ( .not. params%do_mc)then
                  write(*,*)'                                       |'
@@ -1626,10 +2920,24 @@ program turbogap
 #endif
         end if
 
-
         if( params%do_forces )then
            forces = forces_soap + forces_2b + forces_3b + forces_core_pot + forces_vdw
            virial = virial_soap + virial_2b + virial_3b + virial_core_pot + virial_vdw
+
+           if (params%exp_forces .and. valid_xps)        forces = forces + forces_lp
+           if (params%exp_forces .and. valid_xps)        virial = virial + virial_lp
+
+           if (params%exp_forces .and. params%valid_pdf) forces = forces + forces_pdf
+           if (params%exp_forces .and. params%valid_pdf) virial = virial + virial_pdf
+
+           if (params%exp_forces .and. params%valid_sf ) forces = forces + forces_sf
+           if (params%exp_forces .and. params%valid_sf ) virial = virial + virial_sf
+
+           if (params%exp_forces .and. params%valid_xrd) forces = forces + forces_xrd
+           if (params%exp_forces .and. params%valid_xrd) virial = virial + virial_xrd
+
+           if (params%exp_forces .and. params%valid_nd) forces = forces + forces_nd
+           if (params%exp_forces .and. params%valid_nd) virial = virial + virial_nd
 
            if ( params%print_vdw_forces )then
               open(unit=90, file="forces_vdw", status="unknown")
@@ -1638,15 +2946,15 @@ program turbogap
                       forces_vdw(1,i), forces_vdw(2,i), forces_vdw(3,i)
               end do
               close(90)
+
            end if
 
         end if
-
-
         ! For debugging the virial implementation
         if( rank == 0 .and. .false. )then
            write(*,*) "pressure_soap: ", virial_soap / 3.d0 / v_uc
            write(*,*) "pressure_vdw: ", virial_vdw / 3.d0 / v_uc
+           write(*,*) "pressure_lp: ", virial_lp / 3.d0 / v_uc
            write(*,*) "pressure_2b: ", virial_2b / 3.d0 / v_uc
            write(*,*) "pressure_3b: ", virial_3b / 3.d0 / v_uc
            write(*,*) "pressure_core_pot: ", virial_core_pot / 3.d0 / v_uc
@@ -1665,15 +2973,22 @@ program turbogap
               call wrap_pbc(positions(1:3,1:n_sites), a_box&
                    &/dfloat(indices(1)), b_box/dfloat(indices(2)),&
                    & c_box/dfloat(indices(3)))
-              call write_extxyz( n_sites, -n_xyz, time_step, md_time, &
+              call get_xyz_energy_string(energies_soap, energies_2b,&
+                   & energies_3b, energies_core_pot, energies_vdw, energies_exp&
+                   &, energies_lp, energies_pdf, energies_sf, energies_xrd, energies_nd,&
+                   & params%valid_pdf, params%valid_sf, params%valid_xrd, params%valid_nd, params%do_pair_distribution,&
+                   & params%do_structure_factor, params%do_xrd, params%do_nd, string)
+
+              call write_extxyz( n_sites, -n_xyz, md_time, time_step,&
                    & instant_temp, instant_pressure, a_box&
                    &/dfloat(indices(1)), b_box/dfloat(indices(2)),&
                    & c_box/dfloat(indices(3)), virial, xyz_species,&
                    & positions(1:3, 1:n_sites), velocities, forces,&
-                   & energies(1:n_sites), masses, hirshfeld_v, params&
+                   & energies(1:n_sites), masses, params&
                    &%write_property, params%write_array_property,&
-                   & fix_atom, "trajectory_out.xyz", .false.)
-          !***** time is actually the md_time not md_istep*dt since dt changes, so md_time is put in the trajectory_out.xyz file
+                   & params%write_local_properties, local_property_labels, local_properties, &
+                   & fix_atom, "trajectory_out.xyz", string, .false.)
+
 #ifdef _MPIF90
            END IF
 #endif
@@ -1692,8 +3007,6 @@ program turbogap
 #endif
      end if
      !**************************************************************************
-
-
 
 
 
@@ -1860,8 +3173,14 @@ program turbogap
                 .or. modulo(md_istep, params%write_thermo) == 0) )then
               !       Organize this better so that the user can have more freedom about what gets printed to thermo.log
               !       There should also be a header preceded by # specifying what gets printed
-              write(10, "(I10, 1X, F16.6, 1X, F16.4, 1X, F20.8, 1X, F20.8, 1X, F20.8)", advance="no") &
-                   md_istep, md_time, instant_temp, E_kinetic, sum(energies), instant_pressure
+              if (params%do_exp) then
+                 write(10, "(I10, 1X, F16.4, 1X, F16.4, 1X, F20.8, 1X, F20.8, 1X, F20.8, 1X, F20.8)", advance="no") &
+                      md_istep, md_time, instant_temp, E_kinetic, sum(energies), sum(energies_exp), instant_pressure
+              else
+                 write(10, "(I10, 1X, F16.4, 1X, F16.4, 1X, F20.8, 1X, F20.8, 1X, F20.8)", advance="no") &
+                      md_istep, md_time, instant_temp, E_kinetic, sum(energies), instant_pressure
+              end if
+
               if( params%write_lv )then
                  write(10, "(1X, 9F20.8)", advance="no") a_box(1:3)/dfloat(indices(1)), &
                       b_box(1:3)/dfloat(indices(2)), &
@@ -1905,27 +3224,43 @@ program turbogap
               call wrap_pbc(positions_prev(1:3,1:n_sites), a_box&
                    &/dfloat(indices(1)), b_box/dfloat(indices(2)),&
                    & c_box/dfloat(indices(3)))
-              call write_extxyz( n_sites, md_istep, time_step, md_time, &
+              call get_xyz_energy_string(energies_soap, energies_2b,&
+                   & energies_3b, energies_core_pot, energies_vdw, energies_exp&
+                   &, energies_lp, energies_pdf, energies_sf, energies_xrd, energies_nd,&
+                   & params%valid_pdf, params%valid_sf, params%valid_xrd, params%valid_nd, params%do_pair_distribution,&
+                   & params%do_structure_factor, params%do_xrd, params%do_nd, string)
+
+              call write_extxyz( n_sites, md_istep, md_time, time_step,&
                    & instant_temp, instant_pressure, a_box&
                    &/dfloat(indices(1)), b_box/dfloat(indices(2)),&
                    & c_box/dfloat(indices(3)), virial, xyz_species,&
                    & positions_prev(1:3, 1:n_sites), velocities,&
-                   & forces, energies(1:n_sites), masses, hirshfeld_v&
-                   &, params%write_property, params&
-                   &%write_array_property, fix_atom(1:3, 1:n_sites),&
-                   & "trajectory_out.xyz", md_istep == 0)
+                   & forces, energies(1:n_sites), masses, params&
+                   &%write_property, params %write_array_property,&
+                   & params %write_local_properties,&
+                   & local_property_labels, local_properties,&
+                   & fix_atom(1:3, 1:n_sites), "trajectory_out.xyz", string, &
+                   & md_istep == 0 )
            else if( md_istep == params%md_nsteps .and. params%do_nested_sampling )then
               write(cjunk,'(I8)') i_image
               write(filename,'(A,A,A)') "walkers/", trim(adjustl(cjunk)), ".xyz"
               call wrap_pbc(positions_prev(1:3,1:n_sites), &
                    a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)))
-              call write_extxyz( n_sites, md_istep, time_step, md_time, instant_temp, instant_pressure, &
+              call get_xyz_energy_string(energies_soap, energies_2b,&
+                   & energies_3b, energies_core_pot, energies_vdw, energies_exp&
+                   &, energies_lp, energies_pdf, energies_sf, energies_xrd, energies_nd,&
+                   & params%valid_pdf, params%valid_sf, params%valid_xrd, params%valid_nd, params%do_pair_distribution,&
+                   & params%do_structure_factor, params%do_xrd, params%do_nd, string)
+
+              call write_extxyz( n_sites, md_istep, md_time, time_step, instant_temp, instant_pressure, &
                    a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
                    virial, xyz_species, &
                    positions_prev(1:3, 1:n_sites), velocities, &
-                   forces, energies(1:n_sites), masses, hirshfeld_v, &
-                   params%write_property, params%write_array_property, fix_atom(1:3, 1:n_sites), &
-                   filename, .false. )
+                   forces, energies(1:n_sites), masses, &
+                   params%write_property, params%write_array_property&
+                   &,params%write_local_properties,&
+                   & local_property_labels, local_properties,&
+                   & fix_atom(1:3, 1:n_sites), filename, string, .true. )
 
            end if
            !
@@ -1975,12 +3310,18 @@ program turbogap
            end if
            !     If there are thermostating operations they happen here
            if( params%thermostat == "berendsen" )then
+              call get_target_temp(  params%t_beg,  params%t_end,&
+                   & md_istep,  params%md_nsteps,  params%n_t_hold, &
+                   & params%t_hold, target_temp )
               call berendsen_thermostat(velocities(1:3, 1:n_sites), &
-                   params%t_beg + (params%t_end-params%t_beg)*dfloat(md_istep+1)/float(params%md_nsteps), &
+                   target_temp, &
                    instant_temp, params%tau_t, time_step)
            else if( params%thermostat == "bussi" )then
+              call get_target_temp(  params%t_beg,  params%t_end,&
+                   & md_istep,  params%md_nsteps,  params%n_t_hold, &
+                   & params%t_hold, target_temp )
               velocities(1:3, 1:n_sites) = velocities(1:3, 1:n_sites) * dsqrt(resamplekin(E_kinetic, &
-                   params%t_beg + (params%t_end-params%t_beg)*dfloat(md_istep+1)/float(params%md_nsteps), &
+                   target_temp, &
                    3*n_sites-3,params%tau_t, time_step) / E_kinetic)
            end if
            !     Check what's the maximum atomic displacement since last neighbors build
@@ -2035,7 +3376,7 @@ program turbogap
         call cpu_time(time_mpi_positions(1))
         n_pos = size(positions,2)
         call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(velocities, 3*n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
         call cpu_time(time_mpi_positions(2))
         time_mpi_positions(3) = time_mpi_positions(3) + time_mpi_positions(2) - time_mpi_positions(1)
      end if
@@ -2061,9 +3402,9 @@ program turbogap
         !     Save initial pool of structures
         velocities = 0.d0
         call from_properties_to_image(images(i_image), positions, velocities, masses, &
-             forces, a_box, b_box, c_box, energy, energies, E_kinetic, &
+             forces, a_box, b_box, c_box, energy, energies, energy_exp,  E_kinetic, &
              species, species_supercell, n_sites, indices, fix_atom, &
-             xyz_species, xyz_species_supercell, hirshfeld_v)
+             xyz_species, xyz_species_supercell, local_properties)
      end if
 
      !   This handles the nested sampling iterations after all images have
@@ -2094,9 +3435,9 @@ program turbogap
            !       We check enthalpy, not internal energy (they are the same for P = 0)
            if( energy + E_kinetic + params%p_nested/eVperA3tobar*v_uc < e_max )then
               call from_properties_to_image(images(i_image), positions, velocities, masses, &
-                   forces, a_box, b_box, c_box, energy, energies, E_kinetic, &
+                   forces, a_box, b_box, c_box, energy, energies, energy_exp,  E_kinetic, &
                    species, species_supercell, n_sites, indices, fix_atom, &
-                   xyz_species, xyz_species_supercell, hirshfeld_v)
+                   xyz_species, xyz_species_supercell, local_properties)
            end if
         end if
         !     This selects the highest energy image from the pool
@@ -2136,9 +3477,9 @@ program turbogap
               write(*,'(A,F15.7,A)') " - Max. enthalpy: ", e_max, " eV |"
            end if
            call from_image_to_properties(images(i), positions, velocities, masses, &
-                forces, a_box, b_box, c_box, energy, energies, E_kinetic, &
+                forces, a_box, b_box, c_box, energy, energies, energy_exp,  E_kinetic, &
                 species, species_supercell, n_sites, indices, fix_atom, &
-                xyz_species, xyz_species_supercell, hirshfeld_v)
+                xyz_species, xyz_species_supercell, local_properties)
            v_uc = dot_product( cross_product(images(i)%a_box, images(i)%b_box), images(i)%c_box ) / &
                 (dfloat(images(i)%indices(1)*images(i)%indices(2)*images(i)%indices(3)))
            !       This only gets triggered if we are doing box rescaling, i.e., if the target nested sampling pressure (*not* the
@@ -2199,14 +3540,15 @@ program turbogap
      !    end if
 
 #ifdef _MPIF90
-        IF( rank == 0 )THEN
+     IF( rank == 0 )THEN
 #endif
-           if(params%do_mc)then
-              if (mc_istep == params%mc_nsteps) then
-                 exit_loop = .true.
-              else
-                 exit_loop = .false.
-              end if
+
+        if(params%do_mc)then
+           if (mc_istep == params%mc_nsteps) then
+              exit_loop = .true.
+           else
+              exit_loop = .false.
+           end if
 
 
               if ( .not. exit_loop .and. &
@@ -2223,187 +3565,295 @@ program turbogap
                  !       -- We have the list of move types in params%mc_types and the number params%n_mc_types --
                  !       >> First generate a random number in the range of the number of
 
-                 if (mc_istep > 0)then
-                    !       Evaluate the conditions for acceptance
-                    !       > We have the mc conditions in mc.f90
-                    !       > We care about comparing e_store to the energy of the new configuration based on the mc_movw
 
-                    ! Reset the parameters for md / relaxation
-                    if (mc_move == "relax" .or. mc_move == "md" .or. (params%mc_relax .and. do_mc_relax) )then
-                       md_istep = -1
-                       params%do_md = .false.
-                       ! Assume that the number of steps has already been set.
-                    end if
+              call cpu_time(time_mc(1))
 
 
-                    if (.not. params%mc_hamiltonian) E_kinetic = 0.d0
+              !       Now we do a monte-carlo step: we choose what the steps are from the available list and then choose a random number
+              !       -- We have the list of move types in params%mc_types and the number params%n_mc_types --
+              !       >> First generate a random number in the range of the number of
 
-                    call from_properties_to_image(images(i_trial_image), positions, velocities, masses, &
-                         forces, a_box, b_box, c_box,  energy, energies, E_kinetic, &
-                         species, species_supercell, n_sites, indices, fix_atom, &
-                         xyz_species, xyz_species_supercell, hirshfeld_v)
+              if (mc_istep > 0)then
+                 !       Evaluate the conditions for acceptance
+                 !       > We have the mc conditions in mc.f90
+                 !       > We care about comparing e_store to the energy of the new configuration based on the mc_movw
 
-                    write(*,*)'.......................................|'
-                    write(*,'(A,1X,I0)')   ' MC Iteration:', mc_istep
-                    write(*,'(A,1X,A)')    '    Move type:', mc_move
-                    if (trim(mc_move) == "insertion" .or. trim(mc_move) == "removal")then
-                       write(*,'(A,1X,A)')    '      Species:', params%mc_species(mc_mu_id)
-                       write(*,'(A,1X,F12.6)')    '           Mu:', params%mc_mu(mc_mu_id)
-                    end if
+                 ! Reset the parameters for md / relaxation
+                 if (mc_move == "relax" .or. mc_move == "md" .or. params%mc_relax)then
+                    md_istep = -1
+                    params%do_md = .false.
+                    ! Assume that the number of steps has already been set.
+                 end if
 
-                    write(*,'(A,1X,F22.8)')'    Etot_prev:', images(i_current_image)%energy + images(i_current_image)%e_kin
-                    write(*,'(A,1X,F22.8)')'    Etot_new :', images(i_trial_image)%energy + images(i_trial_image)%e_kin
 
-                    v_uc = dot_product( cross_product(a_box, b_box), c_box ) / (dfloat(indices(1)*indices(2)*indices(3)))
+                 if (.not. params%mc_hamiltonian) E_kinetic = 0.d0
 
-                    if (params%accessible_volume)then
-                       call get_accessible_volume(v_uc, v_a_uc, species, params%radii )
-                       write(*,'(A,F12.6,A,F12.6,1X,A)') ' V_acc new: ', v_a_uc, ' A^3 V_acc old ', v_a_uc_prev, 'A^3 |'
+                 call from_properties_to_image(images(i_trial_image), positions, velocities, masses, &
+                      forces, a_box, b_box, c_box,  energy, energies, energy_exp, E_kinetic, &
+                      species, species_supercell, n_sites, indices, fix_atom, &
+                      xyz_species, xyz_species_supercell, local_properties)
+
+                 if (params%verb > 50) write(*,*)'.......................................|'
+                 if (params%verb > 50) write(*,'(A,1X,I0)')   ' MC Iteration:', mc_istep
+                 if (params%verb > 50) write(*,'(A,1X,A)')    '    Move type:', mc_move
+                 if (params%verb > 50) write(*,'(A,1X,F22.8)')'   &
+                      & Etot_prev:', images(i_current_image)&
+                      &%energy + images(i_current_image)%e_kin
+                 if (params%verb > 50) write(*,'(A,1X,F22.8)')'   &
+                      & Etot_new :', images(i_trial_image)%energy &
+                      &+ images(i_trial_image)%e_kin
+
+                 v_uc = dot_product( cross_product(a_box, b_box), c_box ) / (dfloat(indices(1)*indices(2)*indices(3)))
+
+                 if (params%accessible_volume)then
+                    call get_accessible_volume(v_uc, v_a_uc, species, params%radii)
+                    if (params%verb > 50) write(*,'(A,F12.6,A,F12.6&
+                         &,1X,A)') ' V_acc new: ', v_a_uc, ' A^3&
+                         & V_acc old ', v_a_uc_prev, 'A^3 |'
+                 else
+                    v_a_uc = v_uc
+                 end if
+
+
+                 call get_mc_acceptance(mc_move, p_accept, &
+                      energy + E_kinetic, &
+                      images(i_current_image)%energy + images(i_current_image)%e_kin, &
+                      params%t_beg, &
+                      params%mc_mu(mc_mu_id), n_mc_species(mc_mu_id), v_uc, v_uc_prev,&
+                      & v_a_uc, v_a_uc_prev, params&
+                      &%masses_types(mc_id(mc_mu_id)), params%p_beg)
+
+
+                 call random_number(ranf)
+
+                 if (mc_move == "insertion") n_mc_species(mc_mu_id) = n_mc_species(mc_mu_id) +1
+                 if (mc_move == "removal"  ) n_mc_species(mc_mu_id) = n_mc_species(mc_mu_id) -1
+
+                 !    ACCEPT OR REJECT
+                 if (params%verb > 50) write(*, '(A,1X,A,1X,A,L4,1X&
+                      &,A,ES12.6,1X,A,1X,ES12.6)') 'Is ',&
+                      & trim(mc_move), 'accepted?', p_accept >&
+                      & ranf, ' p_accept =', p_accept, ' ranf = ',&
+                      & ranf
+
+                 if ( mc_istep == 1 )then
+                    open(unit=200, file="mc.log", status="unknown")
+                    if (energy_exp > 0.d0)then
+                       write(200, '(A)') '# mc_istep  mc_move  accepted  E_tot  E_exp  N_tot  N_mc_species'
                     else
-                       v_a_uc = v_uc
+                       write(200, '(A)') '# mc_istep  mc_move  accepted  E_tot  N_tot  N_mc_species'
                     end if
 
+                 end if
+                 if ( mc_istep > 1  )then
+                    open(unit=200, file="mc.log", status="old", position="append")
+                 end if
 
-                    call get_mc_acceptance(mc_move, p_accept, &
-                         energy + E_kinetic, &
-                         images(i_current_image)%energy + images(i_current_image)%e_kin, &
-                         params%t_beg, &
-                         params%mc_mu(mc_mu_id), n_mc_species(mc_mu_id), v_uc, v_uc_prev,&
-                         & v_a_uc, v_a_uc_prev, params&
-                         &%masses_types(mc_id(mc_mu_id)), params%p_beg)
+                 ! collect the strings for the species etc
+                 temp_string = ""
+                 temp_string2 = ""
 
-                    ! Things to do:
-                    ! > n_mc_species should depend on the number n_mc_mu
-                    ! > mc_id should be an array which depends on n_mc_mu
-                    !
+                 do i = 1, params%n_mc_mu
+                    temp_string=""
+                    write(temp_string, "(A,1X,I8)")  trim(params%mc_species(i)), n_mc_species(i)
+                    temp_string2 = trim(temp_string2) // " " // trim(temp_string)
+                 end do
 
-                    call random_number(ranf)
+                 if (energy_exp > 0.d0 )then
 
-                    if (mc_move == "insertion") n_mc_species(mc_mu_id) = n_mc_species(mc_mu_id) +1
-                    if (mc_move == "removal"  ) n_mc_species(mc_mu_id) = n_mc_species(mc_mu_id) -1
-
-                    !    ACCEPT OR REJECT
-                    write(*, '(A,1X,A,1X,A,L4,1X,A,ES12.6,1X,A,1X,ES12.6)') 'Is ', trim(mc_move), &
-                         'accepted?', p_accept > ranf, ' p_accept =', p_accept, ' ranf = ', ranf
-                    !          Add acceptance to the log file else dont
-                    if ( mc_istep == 1 )then
-                       open(unit=200, file="mc.log", status="unknown")
-                    end if
-                    if ( mc_istep > 1  )then
-                       open(unit=200, file="mc.log", status="old", position="append")
-                    end if
-
-                    ! collect the strings for the species etc
-                    temp_string = ""
-                    temp_string2 = ""
-
-                    do i = 1, params%n_mc_mu
-                       temp_string=""
-                       write(temp_string, "(A,1X,I8)")  trim(params%mc_species(i)), n_mc_species(i)
-                       temp_string2 = trim(temp_string2) // " " // trim(temp_string)
-                    end do
-
-                    write(200, "(I8, 1X, A, 1X, L4, 1X, F20.8, 1X, F20.8, 1X, I8, 1X, A )") &
+                    write(200, "(I8, 1X, A, 1X, L4, 1X, F20.8, 1X, F20.8, 1X, F20.8, 1X, I8, 1X, I8, 1X)") &
+                         mc_istep, mc_move, p_accept > ranf, energy + E_kinetic, &
+                         images(i_current_image)%energy + images(i_current_image)%e_kin, energy_exp, &
+                         images(i_trial_image)%n_sites, trim(temp_string2)
+                 else
+                    write(200, "(I8, 1X, A, 1X, L4, 1X, F20.8, 1X, F20.8, 1X, I8, 1X, I8, 1X)") &
                          mc_istep, mc_move, p_accept > ranf, energy + E_kinetic, &
                          images(i_current_image)%energy + images(i_current_image)%e_kin, &
-                         images(i_trial_image)%n_sites, trim(temp_string2)
+                         images(i_trial_image)%n_sites,  trim(temp_string2)
 
-                    close(200)
+                 end if
 
-                    if (p_accept > ranf)then
-                       ! Set variables
-                       n_sites_prev = n_sites
-                       v_uc_prev = v_uc
-                       v_a_uc_prev = v_a_uc
-                       virial_prev = virial
-                       !   Assigning the default image with the accepted one
-                       images(i_current_image) = images(i_trial_image)
+
+                 if (mc_istep >= 1 ) close(200)
+
+
+                 if (p_accept > ranf)then
+                    !             Accept
+                    ! Set variables
+                    n_sites_prev = n_sites
+                    v_uc_prev = v_uc
+                    v_a_uc_prev = v_a_uc
+                    virial_prev = virial
+                    !   Assigning the default image with the accepted one
+                    images(i_current_image) = images(i_trial_image)
+
+                    if (params%n_mc_mu > 0)then
+                       n_mc_species_prev = n_mc_species
                     end if
 
 
-                    if ((mc_istep == 0 .or. mc_istep == params%mc_nsteps .or. &
-                         modulo(mc_istep, params%write_xyz) == 0))then
-                       write(*,'(1X,A)')' Writing mc_current.xyz and mc_all.xyz '
-
-                       call wrap_pbc(images(i_current_image)%positions(1:3, 1:images(i_current_image)%n_sites), &
-                            images(i_current_image)%a_box/dfloat(indices(1)), &
-                            images(i_current_image)%b_box/dfloat(indices(2)),&
-                            images(i_current_image)%c_box/dfloat(indices(3)))
-
-                       call write_extxyz( images(i_current_image)%n_sites, 0, 1.0d0, md_time, 0.0d0, 0.0d0, &
-                            images(i_current_image)%a_box/dfloat(indices(1)), &
-                            images(i_current_image)%b_box/dfloat(indices(2)), &
-                            images(i_current_image)%c_box/dfloat(indices(3)), &
-                            virial_prev, images(i_current_image)%xyz_species, &
-                            images(i_current_image)%positions(1:3, 1:images(i_current_image)%n_sites),&
-                            images(i_current_image)%velocities, &
-                            images(i_current_image)%forces, &
-                            images(i_current_image)%energies(1:images(i_current_image)%n_sites), &
-                            images(i_current_image)%masses, images(i_current_image)%hirshfeld_v, &
-                            params%write_property, params%write_array_property, images(i_current_image)%fix_atom, &
-                            "mc_current.xyz", .true. )
-
-                       call write_extxyz( images(i_current_image)%n_sites, 1, 1.0d0, md_time, 0.0d0, 0.0d0, &
-                            images(i_current_image)%a_box/dfloat(indices(1)), &
-                            images(i_current_image)%b_box/dfloat(indices(2)), &
-                            images(i_current_image)%c_box/dfloat(indices(3)), &
-                            virial_prev, images(i_current_image)%xyz_species, &
-                            images(i_current_image)%positions(1:3, 1:images(i_current_image)%n_sites),&
-                            images(i_current_image)%velocities, &
-                            images(i_current_image)%forces, &
-                            images(i_current_image)%energies(1:images(i_current_image)%n_sites), &
-                            images(i_current_image)%masses, images(i_current_image)%hirshfeld_v, &
-                            params%write_property, params%write_array_property, images(i_current_image)%fix_atom, &
-                            "mc_all.xyz", .false. )
-                    end if
+                 end if
+                 instant_temp = 2.d0/3.d0/dfloat(n_sites-1)/kB*E_kinetic
+                 instant_pressure = (kB*dfloat(n_sites-1)*instant_temp&
+                      &+(virial(1,1) + virial(2,2) + virial(3,3))/3.d0)&
+                      &/v_uc*eVperA3tobar
 
 
-                 else ! if (mc_istep == 0)
-                    write(*,*) '                                       |'
-                    write(*,*) 'Starting MC, using parameters:         |'
-                    write(*,*) '                                       |'
-                    write(*,'(1X,A,1X,I8,1X,A)')    'mc_nsteps     = ', params%mc_nsteps, '             |'
-                    write(*,'(1X,A,1X,I8,1X,A)')    'n_mc_types    = ', params%n_mc_types, '             |'
-                    write(*,'(1X,A)') 'mc_types:                              |'
-                    do i = 1, params%n_mc_types
-                       write(*,'(1X,A,1X,A,1X,A)') '     ', params%mc_types(i), '|'
-                    end do
-                    write(*,'(1X,A)') 'mc_accept_ratio:                       |'
-                    do i = 1, params%n_mc_types
-                       write(*,'(1X,A,1X,F12.8,1X,A)') '   ', params%mc_acceptance(i), '                      |'
-                    end do
-                    write(*,'(1X,A,1X,I8,1X,A)')    'n_mc_swaps    = ', params%n_mc_swaps, '             |'
-                    write(*,'(1X,A)') 'mc_swaps:                              |'
-                    do i = 1, 2*params%n_mc_swaps
-                       write(*,'(1X,A,1X,A,1X,A)') '   ', params%mc_swaps(i), '                      |'
-                    end do
-                    write(*,'(1X,A,1X,F17.8,1X,A)') 'mc_move_max   = ', params%mc_move_max,  'A   |'
+                 if ((params%mc_write_xyz .or. mc_istep == 0 .or. mc_istep == params%mc_nsteps .or. &
+                      modulo(mc_istep, params%write_xyz) == 0))then
+                    if (params%verb > 50) write(*,'(1X,A)')'&
+                         & Writing mc_current.xyz and&
+                         & mc_all.xyz '
+                    call wrap_pbc(images(i_current_image)&
+                         &%positions(1:3,&
+                         & 1:images(i_current_image)%n_sites),&
+                         & images(i_current_image)%a_box&
+                         &/dfloat(indices(1)),&
+                         & images(i_current_image)%b_box&
+                         &/dfloat(indices(2)),&
+                         & images(i_current_image)%c_box&
+                         &/dfloat(indices(3)))
+                    call get_xyz_energy_string(energies_soap, energies_2b,&
+                         & energies_3b, energies_core_pot, energies_vdw, energies_exp&
+                         &, energies_lp, energies_pdf, energies_sf, energies_xrd, energies_nd,&
+                         & params%valid_pdf, params%valid_sf,&
+                         & params%valid_xrd, params%valid_nd,&
+                         & params%do_pair_distribution, params&
+                         &%do_structure_factor, params%do_xrd,&
+                         & params%do_nd, string)
 
-                    do i = 1, params%n_mc_mu
-                       write(*,'(1X,A,1X,F17.8,1X,A)') 'mc_mu         = ', params%mc_mu(1),        'eV  |'
-                       write(*,'(1X,A,1X,A,1X,A)')     'mc_species    = ', trim(params%mc_species(i)),   '                    |'
-                    end do
+                    call write_extxyz( images(i_current_image)%n_sites, 0, 1.0d0, 0.d0, instant_temp, instant_pressure, &
+                         images(i_current_image)%a_box/dfloat(indices(1)), &
+                         images(i_current_image)%b_box/dfloat(indices(2)), &
+                         images(i_current_image)%c_box/dfloat(indices(3)), &
+                         virial_prev, images(i_current_image)%xyz_species, &
+                         images(i_current_image)%positions(1:3, 1:images(i_current_image)%n_sites),&
+                         images(i_current_image)%velocities, &
+                         images(i_current_image)%forces, &
+                         images(i_current_image)%energies(1:images(i_current_image)%n_sites), &
+                         images(i_current_image)%masses,  &
+                         params%write_property, params&
+                         &%write_array_property, params&
+                         &%write_local_properties,&
+                         & local_property_labels,&
+                         & images(i_current_image)%local_properties&
+                         &,images(i_current_image)%fix_atom,&
+                         & "mc_current.xyz", string, .true. )
 
-                    write(*,'(1X,A,1X,F17.8,1X,A)') 'mc_min_dist   = ', params%mc_min_dist,  'A   |'
-                    write(*,'(1X,A,1X,F17.8,1X,A)') 'mc_lnvol_max  = ', params%mc_lnvol_max, '    |'
-                    write(*,'(1X,A,1X,L8,1X,A)')    'mc_write_xyz  = ', params%mc_write_xyz, '             |'
-                    write(*,'(1X,A,1X,L8,1X,A)')    'mc_relax      = ', params%mc_relax,     '             |'
-                    write(*,'(1X,A,1X,I8,1X,A)')    'mc_nrelax     = ', params%mc_nrelax,    '             |'
-                    write(*,'(1X,A,1X,A,1X,A)')     'mc_relax_opt  = ', params%mc_relax_opt, '     |'
-                    write(*,'(1X,A,1X,A,1X,A)')     'mc_hybrid_opt = ', params%mc_hybrid_opt,'     |'
-                    write(*,*) '                                       |'
-                    ! t_beg must
+                    call write_extxyz( images(i_current_image)%n_sites, 1, 1.0d0, 0.d0, instant_temp, instant_pressure, &
+                         images(i_current_image)%a_box/dfloat(indices(1)), &
+                         images(i_current_image)%b_box/dfloat(indices(2)), &
+                         images(i_current_image)%c_box/dfloat(indices(3)), &
+                         virial_prev, images(i_current_image)%xyz_species, &
+                         images(i_current_image)%positions(1:3, 1:images(i_current_image)%n_sites),&
+                         images(i_current_image)%velocities, &
+                         images(i_current_image)%forces, &
+                         images(i_current_image)%energies(1:images(i_current_image)%n_sites), &
+                         images(i_current_image)%masses, &
+                         params%write_property, params&
+                         &%write_array_property, params&
+                         &%write_local_properties,&
+                         & local_property_labels,&
+                         & images(i_current_image)%local_properties,&
+                         & images(i_current_image)%fix_atom,&
+                         & "mc_all.xyz", string, .false. )
 
-                    if( .not. allocated( images ) .and. .not. params%do_nested_sampling )then
-                       allocate( images(1:2) )
-                    else if (.not. allocated(images) .and. params%do_nested_sampling )then
-                       allocate(images(1:2*i_image))
-                    end if
+                 end if
 
-                    if( .not. allocated(mc_id)) then
-                       allocate(mc_id(1:params%n_mc_mu))
-                       allocate(n_mc_species(1:params%n_mc_mu))
-                    end if
+                 !          Add acceptance to the log file else dont
+                 call cpu_time(time_mc(2))
+                 time_mc(3) = time_mc(3) + time_mc(2) - time_mc(1)
+
+
+              else ! if (mc_istep == 0)
+                 if (params%verb > 50) write(*,*) '                                       |'
+                 if (params%verb > 50) write(*,*) 'Starting MC, using parameters:         |'
+                 if (params%verb > 50) write(*,*) '                                       |'
+                 if (params%verb > 50) write(*,'(1X,A,1X,I8,1X,A)')  &
+                      &  'mc_nsteps     = ', params%mc_nsteps, '     &
+                      &        |'
+                 if (params%verb > 50) write(*,'(1X,A,1X,I8,1X,A)')  &
+                      &  'n_mc_types    = ', params%n_mc_types, '    &
+                      &         |'
+                 if (params%verb > 50) write(*,'(1X,A)') 'mc_types:                              |'
+                 do i = 1, params%n_mc_types
+                    if (params%verb > 50) write(*,'(1X,A,1X,A,1X,A)')&
+                         & '     ', params%mc_types(i), '|'
+                 end do
+                 if (params%verb > 50) write(*,'(1X,A)') 'mc_accept_ratio:                       |'
+                 do i = 1, params%n_mc_types
+                    if (params%verb > 50) write(*,'(1X,A,1X,F12.8,1X&
+                         &,A)') '   ', params%mc_acceptance(i), '    &
+                         &                  |'
+                 end do
+                 if (params%verb > 50) write(*,'(1X,A,1X,I8,1X,A)')  &
+                      &  'n_mc_swaps    = ', params%n_mc_swaps, '    &
+                      &         |'
+                 if (params%verb > 50) write(*,'(1X,A)') 'mc_swaps:  &
+                      &                            |'
+                 do i = 1, 2*params%n_mc_swaps
+                    if (params%verb > 50) write(*,'(1X,A,1X,A,1X,A)')&
+                         & '   ', params%mc_swaps(i), '              &
+                         &        |'
+                 end do
+                 if (params%verb > 50) write(*,'(1X,A,1X,F17.8,1X&
+                      &,A)') 'mc_move_max   = ', params%mc_move_max, &
+                      & 'A   |'
+
+
+                 do i = 1, params%n_mc_mu
+                    write(*,'(1X,A,1X,F17.8,1X,A)') 'mc_mu         = ', params%mc_mu(1),        'eV  |'
+                    write(*,'(1X,A,1X,A,1X,A)')     'mc_species    = ', trim(params%mc_species(i)),   '                    |'
+                 end do
+
+                 if (params%verb > 50) write(*,'(1X,A,1X,F17.8,1X&
+                      &,A)') 'mc_min_dist   = ', params%mc_min_dist, &
+                      & 'A   |'
+                 if (params%verb > 50) write(*,'(1X,A,1X,F17.8,1X&
+                      &,A)') 'mc_lnvol_max  = ', params%mc_lnvol_max,&
+                      & '    |'
+                 if (params%verb > 50) write(*,'(1X,A,1X,L8,1X,A)')  &
+                      &  'mc_write_xyz  = ', params%mc_write_xyz, '  &
+                      &           |'
+                 if (params%verb > 50) write(*,'(1X,A,1X,L8,1X,A)')  &
+                      &  'mc_relax      = ', params%mc_relax,     '  &
+                      &           |'
+                 if (params%verb > 50) write(*,'(1X,A,1X,I8,1X,A)')  &
+                      &  'mc_nrelax     = ', params%mc_nrelax,    '  &
+                      &           |'
+                 if (params%verb > 50) write(*,'(1X,A,1X,A,1X,A)')   &
+                      &  'mc_relax_opt  = ', params%mc_relax_opt, '  &
+                      &   |'
+                 if (params%verb > 50) write(*,'(1X,A,1X,A,1X,A)')   &
+                      &  'mc_hybrid_opt = ', params%mc_hybrid_opt,'  &
+                      &   |'
+                 if (params%verb > 50) write(*,'(1X,A,1X,L8,1X,A)')  &
+                      &  'mc_optimize_exp = ', params%mc_optimize_exp&
+                      &,'  |'
+                 if (params%verb > 50) write(*,'(1X,A,1X,L8,1X,A)')  &
+                      &  'mc_hamiltonian = ', params%mc_hamiltonian,'&
+                      &  |'
+                 if (params%verb > 50) write(*,'(1X,A,1X,L8,1X,A)')  &
+                      &   'mc_reverse    = ', params%mc_reverse,'    &
+                      & |'
+                 if (params%verb > 50) write(*,'(1X,A,1X,F12.6,1X&
+                      &,A)') 'mc_reverse_lambda = ', params&
+                      &%mc_reverse_lambda,'|'
+
+                 if (params%verb > 50) write(*,*) '                                       |'
+                 ! t_beg must
+
+                 if( .not. allocated( images ) .and. .not. params%do_nested_sampling )then
+                    allocate( images(1:2) )
+                 else if (.not. allocated(images) .and. params%do_nested_sampling )then
+                    allocate(images(1:2*i_image))
+                 end if
+
+
+                 if( .not. allocated(mc_id) .and. params%n_mc_mu > 0) then
+                    allocate(mc_id(1:params%n_mc_mu))
+                    allocate(n_mc_species(1:params%n_mc_mu))
+                    allocate(n_mc_species_prev(1:params%n_mc_mu))
 
                     mc_id = 1
                     n_mc_species = 0
@@ -2417,77 +3867,91 @@ program turbogap
                           end if
                        end do
                     end do
-
-
-
-                    !       Now use the image construct to store this as the image to compare to
-                    call from_properties_to_image(images(i_current_image), positions, velocities, masses, &
-                         forces, a_box, b_box, c_box,  energy, energies, E_kinetic, &
-                         species, species_supercell, n_sites, indices, fix_atom, &
-                         xyz_species, xyz_species_supercell, hirshfeld_v)
-                    !  >>> This is the dumb implementation where we will
-                    !  >>> write to an xyz every iteration. This is slow so
-                    !  >>> once validated it should be reommovwd
-                    ! setting "md_istep" to 0 to overwrite
-
-                    if ((mc_istep == 0 .or. mc_istep == params%mc_nsteps .or. &
-                         modulo(mc_istep, params%write_xyz) == 0))then
-                       write(*,'(1X,A)')' Writing mc_current.xyz and mc_all.xyz '
-                       call wrap_pbc(images(i_current_image)%positions(1:3, 1:images(i_current_image)%n_sites), &
-                            images(i_current_image)%a_box/dfloat(indices(1)), &
-                            images(i_current_image)%b_box/dfloat(indices(2)),&
-                            images(i_current_image)%c_box/dfloat(indices(3)))
-
-                       call write_extxyz( images(i_current_image)%n_sites, 0, 1.0d0, md_time, 0.0d0, 0.0d0, &
-                            images(i_current_image)%a_box/dfloat(indices(1)), &
-                            images(i_current_image)%b_box/dfloat(indices(2)), &
-                            images(i_current_image)%c_box/dfloat(indices(3)), &
-                            virial_prev, images(i_current_image)%xyz_species, &
-                            images(i_current_image)%positions(1:3, 1:images(i_current_image)%n_sites),&
-                            images(i_current_image)%velocities, &
-                            images(i_current_image)%forces, &
-                            images(i_current_image)%energies(1:images(i_current_image)%n_sites), &
-                            images(i_current_image)%masses, images(i_current_image)%hirshfeld_v, &
-                            params%write_property, params%write_array_property, images(i_current_image)%fix_atom, &
-                            "mc_current.xyz", .true. )
-
-                       call write_extxyz( images(i_current_image)%n_sites, 1, 1.0d0, md_time, 0.0d0, 0.0d0, &
-                            images(i_current_image)%a_box/dfloat(indices(1)), &
-                            images(i_current_image)%b_box/dfloat(indices(2)), &
-                            images(i_current_image)%c_box/dfloat(indices(3)), &
-                            virial_prev, images(i_current_image)%xyz_species, &
-                            images(i_current_image)%positions(1:3, 1:images(i_current_image)%n_sites),&
-                            images(i_current_image)%velocities, &
-                            images(i_current_image)%forces, &
-                            images(i_current_image)%energies(1:images(i_current_image)%n_sites), &
-                            images(i_current_image)%masses, images(i_current_image)%hirshfeld_v, &
-                            params%write_property, params%write_array_property, images(i_current_image)%fix_atom, &
-                            "mc_all.xyz", .true. )
-
-                       v_uc_prev = dot_product( cross_product(a_box, b_box), c_box ) / (dfloat(indices(1)*indices(2)*indices(3)))
-                       if (params%accessible_volume)then
-                          call get_accessible_volume(v_uc_prev, v_a_uc_prev, species, params%radii)
-                       else
-                          v_a_uc_prev = v_uc_prev
-                       end if
-
-
-                    end if
-
-
                  end if
 
-                 !  Now start the mc logic: first, use the stored images properties
-                 call from_image_to_properties(images(i_current_image), positions, velocities, masses, &
-                      forces, a_box, b_box, c_box, energy, energies, E_kinetic, &
+                 !       Now use the image construct to store this as the image to compare to
+                 call from_properties_to_image(images(i_current_image), positions, velocities, masses, &
+                      forces, a_box, b_box, c_box,  energy, energies, energy_exp, E_kinetic, &
                       species, species_supercell, n_sites, indices, fix_atom, &
-                      xyz_species, xyz_species_supercell, hirshfeld_v)
+                      xyz_species, xyz_species_supercell, local_properties)
+
+
+                 instant_temp = 2.d0/3.d0/dfloat(n_sites-1)/kB*E_kinetic
+                 instant_pressure = (kB*dfloat(n_sites-1)*instant_temp&
+                      &+(virial(1,1) + virial(2,2) + virial(3,3))/3.d0)&
+                      &/v_uc*eVperA3tobar
+
+                 if ((mc_istep == 0 .or. mc_istep == params%mc_nsteps .or. &
+                      modulo(mc_istep, params%write_xyz) == 0))then
+                    if (params%verb > 50) write(*,'(1X,A)')' Writing mc_current.xyz and mc_all.xyz '
+                    call wrap_pbc(images(i_current_image)%positions(1:3, 1:images(i_current_image)%n_sites), &
+                         images(i_current_image)%a_box/dfloat(indices(1)), &
+                         images(i_current_image)%b_box/dfloat(indices(2)),&
+                         images(i_current_image)%c_box/dfloat(indices(3)))
+                    call get_xyz_energy_string(energies_soap, energies_2b,&
+                         & energies_3b, energies_core_pot, energies_vdw, energies_exp&
+                         &, energies_lp, energies_pdf, energies_sf, energies_xrd, energies_nd,&
+                         & params%valid_pdf, params%valid_sf, params%valid_xrd, params%valid_nd, params%do_pair_distribution,&
+                         & params%do_structure_factor, params%do_xrd, params%do_nd, string)
+
+                    call write_extxyz( images(i_current_image)%n_sites, 0, 1.0d0, 0.0d0, instant_temp, instant_pressure, &
+                         images(i_current_image)%a_box/dfloat(indices(1)), &
+                         images(i_current_image)%b_box/dfloat(indices(2)), &
+                         images(i_current_image)%c_box/dfloat(indices(3)), &
+                         virial_prev, images(i_current_image)%xyz_species, &
+                         images(i_current_image)%positions(1:3, 1:images(i_current_image)%n_sites),&
+                         images(i_current_image)%velocities, &
+                         images(i_current_image)%forces, &
+                         images(i_current_image)%energies(1:images(i_current_image)%n_sites), &
+                         images(i_current_image)%masses,  &
+                         params%write_property, params&
+                         &%write_array_property, params&
+                         &%write_local_properties,&
+                         & local_property_labels, images(i_current_image)%local_properties&
+                         &, images(i_current_image)%fix_atom,&
+                         & "mc_current.xyz", string, .true. )
+
+                    call write_extxyz( images(i_current_image)%n_sites, 1, 1.0d0, 0.0d0,  instant_temp, instant_pressure, &
+                         images(i_current_image)%a_box/dfloat(indices(1)), &
+                         images(i_current_image)%b_box/dfloat(indices(2)), &
+                         images(i_current_image)%c_box/dfloat(indices(3)), &
+                         virial_prev, images(i_current_image)%xyz_species, &
+                         images(i_current_image)%positions(1:3, 1:images(i_current_image)%n_sites),&
+                         images(i_current_image)%velocities, &
+                         images(i_current_image)%forces, &
+                         images(i_current_image)%energies(1:images(i_current_image)%n_sites), &
+                         images(i_current_image)%masses, &
+                         params%write_property, params&
+                         &%write_array_property, params&
+                         &%write_local_properties,&
+                         & local_property_labels, images(i_current_image)%local_properties&
+                         &, images(i_current_image)%fix_atom,&
+                         & "mc_all.xyz", string, .true. )
+
+
+                    v_uc_prev = dot_product( cross_product(a_box, b_box), c_box ) / (dfloat(indices(1)*indices(2)*indices(3)))
+                    if (params%accessible_volume)then
+                       call get_accessible_volume(v_uc_prev, v_a_uc_prev, species, params%radii)
+                    else
+                       v_a_uc_prev = v_uc_prev
+                    end if
+                 end if
+
+
+              end if
+
+              !  Now start the mc logic: first, use the stored images properties
+              call from_image_to_properties(images(i_current_image), positions, velocities, masses, &
+                   forces, a_box, b_box, c_box, energy, energies, energy_exp,  E_kinetic, &
+                   species, species_supercell, n_sites, indices, fix_atom, &
+                   xyz_species, xyz_species_supercell, local_properties)
+
 
                  call perform_mc_step(&
                       & positions, species, xyz_species, masses, fix_atom,&
-                      & velocities, positions_prev, positions_diff, disp, d_disp,&
-                      & params%mc_acceptance, params%mc_mu_acceptance, hirshfeld_v, &
-                      images(i_current_image)%hirshfeld_v, energies,&
+                      & velocities, positions_prev, positions_diff, disp, d_disp, params%n_local_properties,&
+                      & params%mc_acceptance, params%mc_mu_acceptance, local_properties, &
+                      images(i_current_image)%local_properties, energies,&
                       & forces, forces_prev, n_sites, params%n_mc_mu, mc_mu_id, n_mc_species,&
                       & mc_move, params %mc_species,&
                       & params%mc_move_max, params%mc_min_dist, params%mc_lnvol_max, params&
@@ -2502,141 +3966,192 @@ program turbogap
                       & params%n_mc_swaps, params%mc_swaps, params%mc_swaps_id, &
                       & params%species_types, params%mc_hamiltonian,&
                       & params%n_mc_relax_after, params&
-                      &%mc_relax_after, do_mc_relax)
+                      &%mc_relax_after, do_mc_relax, params%verb)
 
-                 rebuild_neighbors_list = .true.
-                 ! end if
 
-                 ! NOTE: the species_supercell and xyz_species_supercell are
-                 ! not commensurate with the new image as these have not been
-                 ! calculated. If reading from an outputted xyz file, then it
-                 ! should be okay but really the new atoms should be added to
-                 ! the supercell in the usual way, but for convenience, one has
-                 ! not done that.
+              rebuild_neighbors_list = .true.
+              ! end if
 
-                 ! Now, if relaxing every step then
-                 if(params%mc_relax .and. do_mc_relax)then
-                    ! Set the parameters for relaxatrino
-                    md_istep = -1
-                    params%do_md = .true.
-                    params%optimize = params%mc_relax_opt
-                    ! Note, that this may override md steps if the same is chosen! More testing needed
+              ! NOTE: the species_supercell and xyz_species_supercell are
+              ! not commensurate with the new image as these have not been
+              ! calculated. If reading from an outputted xyz file, then it
+              ! should be okay but really the new atoms should be added to
+              ! the supercell in the usual way, but for convenience, one has
+              ! not done that.
+
+
+              if(params%mc_relax)then
+                 ! Set the parameters for relaxatrino
+                 md_istep = -1
+                 params%do_md = .true.
+                 params%optimize = params%mc_relax_opt
+                 ! Note, that this may override md steps if the same is chosen! More testing needed
+              end if
+              ! If doing md, don't relax
+              if( mc_move == 'md')then
+                 ! Set the parameters for relaxatrino
+                 md_istep = -1
+                 params%do_md = .true.
+                 params%optimize = params%mc_hybrid_opt
+                 ! Note, that this may override md steps if the same is chosen! More testing needed
+              end if
+
+
+              if ((params%mc_write_xyz .or. mc_istep == 0 .or. mc_istep == params%mc_nsteps .or. &
+                   modulo(mc_istep, params%write_xyz) == 0))then
+
+                 call wrap_pbc(positions(1:3,1:n_sites), &
+                      a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)))
+                 call get_xyz_energy_string(energies_soap, energies_2b,&
+                      & energies_3b, energies_core_pot, energies_vdw, energies_exp&
+                      &, energies_lp, energies_pdf, energies_sf, energies_xrd, energies_nd,&
+                      & params%valid_pdf, params%valid_sf, params%valid_xrd, params%valid_nd, params%do_pair_distribution,&
+                      & params%do_structure_factor, params%do_xrd, params%do_nd, string)
+
+                 call write_extxyz( n_sites, 0, 1.0d0, 0.0d0, instant_temp, instant_pressure, &
+                      a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
+                      virial, xyz_species, &
+                      positions(1:3, 1:n_sites), velocities, &
+                      forces, energies(1:n_sites), masses, &
+                      params%write_property, params&
+                      &%write_array_property, params&
+                      &%write_local_properties,&
+                      & local_property_labels, local_properties&
+                      &,fix_atom, mc_file, string,  .true. )
+              end if
+              ! As we have moved/added/removed, we must check the supercell and  broadcast the results
+
+              call read_xyz(mc_file, .true., params%all_atoms, params%do_timing, &
+                   n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
+                   positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
+                   xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
+                   n_sites, .true., fix_atom, params%t_beg, &
+                   params%write_array_property(6), .true. )
+
+           else
+              if( mc_move == 'md')then
+                 if( params%print_progress .and. md_istep == 0 )then
+                    write(*,*)'                                       |'
+                    write(*,*)'Progress:                              |'
+                    write(*,*)'                                       |'
+                    write(*,'(1X,A)',advance='no')'[                                    ] |'
+                    update_bar = params%mc_nrelax/36
+                    if( update_bar < 1 )then
+                       update_bar = 1
+                    end if
+                    counter = 1
+                 else if( md_istep == params%mc_nrelax-1 .or. &
+                      (abs(energy-energy_prev) < params%e_tol*dfloat(n_sites) .and. &
+                      maxval(forces) < params%f_tol) .and. md_istep > 0 )then
+                    write(*,*)
+                 else if( params%print_progress .and. counter == update_bar .and. md_istep < params%mc_nrelax-1 )then
+                    do j = 1, 36+3
+                       write(*,"(A)", advance="no") creturn
+                    end do
+                    write (*,"(1X,A)",advance="no") "["
+                    do i = 1, 36*(md_istep+1)/params%mc_nrelax
+                       write (*,"(A)",advance="no") "."
+                    end do
+                    do i = 36*(md_istep+1)/params%mc_nrelax+1, 36
+                       write (*,"(A)",advance="no") " "
+                    end do
+                    write (*,"(A)",advance="no") "] |"
+                    counter = 1
+                 else
+                    counter = counter + 1
                  end if
-                 ! If doing md, don't relax
-                 if( mc_move == 'md')then
-                    ! Set the parameters for relaxatrino
-                    md_istep = -1
-                    params%do_md = .true.
-                    params%optimize = params%mc_hybrid_opt
-                    ! Note, that this may override md steps if the same is chosen! More testing needed
+
+
+                 if (params%mc_hamiltonian)then
+                    if (params%verb > 50) write(*,'(1X,A,1X,F20.8,1X&
+                         &,A,1X,I8,1X,A,1X,I8)')"Hybrid md step: H =&
+                         & T + V = ", energy + E_kinetic, ",&
+                         & iteration ", md_istep, "/", params&
+                         &%md_nsteps
+                 else
+                    if (params%verb > 50) write(*,'(1X,A,1X,F20.8,1X&
+                         &,A,1X,I8,1X,A,1X,I8)')"Hybrid md step:&
+                         & energy = ", energy , ", iteration ",&
+                         & md_istep, "/", params%md_nsteps
                  end if
 
+                 if (params%verb > 50) write(*,'(A,1X,F22.8,1X,A)')' SOAP energy:', sum(energies_soap), 'eV |'
+                 if (params%verb > 50) write(*,'(A,1X,F24.8,1X,A)')' 2b energy:', sum(energies_2b), 'eV |'
+                 if (params%verb > 50) write(*,'(A,1X,F24.8,1X,A)')' 3b energy:', sum(energies_3b), 'eV |'
+                 if (params%verb > 50) write(*,'(A,1X,F18.8,1X,A)')'&
+                      & core_pot energy:', sum(energies_core_pot),&
+                      & 'eV |'
+                 if (params%verb > 50) write(*,'(A,1X,F23.8,1X,A)')'&
+                      & vdw energy:', sum(energies_vdw), 'eV |'
+                 if (params%verb > 50) write(*,'(A,1X,F20.8,1X,A)')' l_prop energy:', sum(energies_lp), 'eV |'
 
-                 if ((params%mc_write_xyz .or. mc_istep == 0 .or. mc_istep == params%mc_nsteps .or. &
-                      modulo(mc_istep, params%write_xyz) == 0))then
+                 if ( params%valid_pdf .and. params%do_pair_distribution .and. params%verb > 50)&
+                      & write(*,'(A,1X,F23.8,1X,A)')' pdf energy:',&
+                      & sum(energies_pdf), 'eV |'
+                 if ( params%valid_sf .and. params%do_structure_factor .and. params%verb > 50)&
+                      & write(*,'(A,1X,F24.8,1X,A)')' sf energy:',&
+                      & sum(energies_sf), 'eV |'
+                 if ( params%valid_xrd .and. params%do_xrd .and. params%verb > 50)&
+                      & write(*,'(A,1X,F23.8,1X,A)')' xrd energy:',&
+                      & sum(energies_xrd), 'eV |'
+                 if ( params%valid_nd .and. params%do_nd .and. params%verb > 50)&
+                      & write(*,'(A,1X,F23.8,1X,A)')' nd energy:',&
+                      & sum(energies_nd), 'eV |'
 
-                    call wrap_pbc(positions(1:3,1:n_sites), a_box&
-                         &/dfloat(indices(1)), b_box/dfloat(indices(2)),&
-                         & c_box/dfloat(indices(3)))
 
-                    call write_extxyz( n_sites, 0, 1.0d0, md_time, 0.0d0, 0.0d0, &
-                         a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
-                         virial, xyz_species, &
-                         positions(1:3, 1:n_sites), velocities, &
-                         forces, energies(1:n_sites), masses, hirshfeld_v, &
-                         params%write_property, params%write_array_property, fix_atom, &
-                         mc_file, .true. )
-                 end if
-                 ! As we have moved/added/removed, we must check the supercell and  broadcast the results
-
-                 call read_xyz(mc_file, .true., params%all_atoms, params%do_timing, &
-                      n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
-                      positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
-                      xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
-                      n_sites, .true., fix_atom, params%t_beg, &
-                      params%write_array_property(6), .true. )
 
               else
-                 if( mc_move == 'md')then
-                    if (params%mc_hamiltonian)then
-                       write(*,'(1X,A,1X,F20.8,1X,A,1X,I8,1X,A,1X,I8)')"Hybrid md step: H = T + V = ", energy + E_kinetic, &
-                            ", iteration ", md_istep, "/", params%md_nsteps
-                    else
-                       write(*,'(1X,A,1X,F20.8,1X,A,1X,I8,1X,A,1X,I8)')"Hybrid md step: energy = ", energy , &
-                            ", iteration ", md_istep, "/", params%md_nsteps
-                    end if
+                 if (params%verb > 50) write(*,'(1X,A,1X,F20.8,1X,A&
+                      &,1X,I8,1X,A,1X,I8)')"MC Relax md step: energy &
+                      &= ", energy, ", iteration ", md_istep, "/",&
+                      & params%mc_nrelax
+                 if (params%verb > 50) write(*,'(A,1X,F22.8,1X,A)')' SOAP energy:', sum(energies_soap), 'eV |'
+                 if (params%verb > 50) write(*,'(A,1X,F24.8,1X,A)')' 2b energy:', sum(energies_2b), 'eV |'
+                 if (params%verb > 50) write(*,'(A,1X,F24.8,1X,A)')' 3b energy:', sum(energies_3b), 'eV |'
+                 if (params%verb > 50) write(*,'(A,1X,F18.8,1X,A)')' core_pot energy:', sum(energies_core_pot), 'eV |'
+                 if (params%verb > 50) write(*,'(A,1X,F23.8,1X,A)')' vdw energy:', sum(energies_vdw), 'eV |'
+                 if (params%verb > 50) write(*,'(A,1X,F20.8,1X,A)')' l_prop energy:', sum(energies_lp), 'eV |'
 
-                    write(*,'(A,1X,F22.8,1X,A)')' SOAP energy:', sum(energies_soap), 'eV |'
-                    write(*,'(A,1X,F24.8,1X,A)')' 2b energy:', sum(energies_2b), 'eV |'
-                    write(*,'(A,1X,F24.8,1X,A)')' 3b energy:', sum(energies_3b), 'eV |'
-                    write(*,'(A,1X,F18.8,1X,A)')' core_pot energy:', sum(energies_core_pot), 'eV |'
-                    write(*,'(A,1X,F23.8,1X,A)')' vdw energy:', sum(energies_vdw), 'eV |'
+                 if ( params%valid_pdf .and. params%do_pair_distribution .and. params%verb > 50)&
+                      & write(*,'(A,1X,F23.8,1X,A)')' pdf energy:',&
+                      & sum(energies_pdf), 'eV |'
+                 if ( params%valid_sf .and. params%do_structure_factor .and. params%verb > 50)&
+                      & write(*,'(A,1X,F24.8,1X,A)')' sf energy:',&
+                      & sum(energies_sf), 'eV |'
+                 if ( params%valid_xrd .and. params%do_xrd .and. params%verb > 50)&
+                      & write(*,'(A,1X,F23.8,1X,A)')' xrd energy:',&
+                      & sum(energies_xrd), 'eV |'
+                 if ( params%valid_nd .and. params%do_nd .and. params%verb > 50)&
+                      & write(*,'(A,1X,F23.8,1X,A)')' nd energy:',&
+                      & sum(energies_nd), 'eV |'
 
-                 else
-!                    write(*,'(1X,A,1X,F20.8,1X,A,1X,I8,1X,A,1X,I8)')"MC Relax md step: energy = ", energy, &
-!                         ", iteration ", md_istep, "/", params%mc_nrelax
-!                    write(*,'(A,1X,F22.8,1X,A)')' SOAP energy:', sum(energies_soap), 'eV |'
-!                    write(*,'(A,1X,F24.8,1X,A)')' 2b energy:', sum(energies_2b), 'eV |'
-!                    write(*,'(A,1X,F24.8,1X,A)')' 3b energy:', sum(energies_3b), 'eV |'
-!                    write(*,'(A,1X,F18.8,1X,A)')' core_pot energy:', sum(energies_core_pot), 'eV |'
-!                    write(*,'(A,1X,F23.8,1X,A)')' vdw energy:', sum(energies_vdw), 'eV |'
-                   if( params%print_progress .and. md_istep == 0 )then
-                     write(*,*)'                                       |'
-                     write(*,*)'Progress:                              |'
-                     write(*,*)'                                       |'
-                     write(*,'(1X,A)',advance='no')'[                                    ] |'
-                     update_bar = params%mc_nrelax/36
-                     if( update_bar < 1 )then
-                       update_bar = 1
-                     end if
-                     counter = 1
-                   else if( md_istep == params%mc_nrelax-1 .or. &
-                           (abs(energy-energy_prev) < params%e_tol*dfloat(n_sites) .and. &
-                            maxval(forces) < params%f_tol) .and. md_istep > 0 )then
-                     write(*,*)
-                   else if( params%print_progress .and. counter == update_bar .and. md_istep < params%mc_nrelax-1 )then
-                     do j = 1, 36+3
-                       write(*,"(A)", advance="no") creturn
-                     end do
-                     write (*,"(1X,A)",advance="no") "["
-                     do i = 1, 36*(md_istep+1)/params%mc_nrelax
-                       write (*,"(A)",advance="no") "."
-                     end do
-                     do i = 36*(md_istep+1)/params%mc_nrelax+1, 36
-                       write (*,"(A)",advance="no") " "
-                     end do
-                     write (*,"(A)",advance="no") "] |"
-                     counter = 1
-                   else
-                     counter = counter + 1
-                   end if
-                 end if
               end if
            end if
+        end if
 
 #ifdef _MPIF90
-        END IF
+     END IF
 #endif
 
-! NOTE!! One tried for far far too long to be smart and implement some
-! sort of conditional broadcasting: having a logical array named
-! broadcast, which perform_mc_step would then to set values to
-! true. Specific indexes referenced specific quantities to be
-! broadcasted, which allowed for the broadcasting amount to be
-! dependent on the step, e.g. if it were an insertion step then
-! positions, masses, n_sites, etc would have to be broadcast, whereas
-! for a simple move only positions had to be broadcasted. This array
-! would then subsequently be broadcast to all other ranks, thereby
-! allowing for the minimum number of allocations and
-! communication. BUT, for some reason, this led to segfaults
-! (corrupted unsorted chunks or something of that sort).
+     ! NOTE!! One tried for far far too long to be smart and implement some
+     ! sort of conditional broadcasting: having a logical array named
+     ! broadcast, which perform_mc_step would then to set values to
+     ! true. Specific indexes referenced specific quantities to be
+     ! broadcasted, which allowed for the broadcasting amount to be
+     ! dependent on the step, e.g. if it were an insertion step then
+     ! positions, masses, n_sites, etc would have to be broadcast, whereas
+     ! for a simple move only positions had to be broadcasted. This array
+     ! would then subsequently be broadcast to all other ranks, thereby
+     ! allowing for the minimum number of allocations and
+     ! communication. BUT, for some reason, this led to segfaults
+     ! (corrupted unsorted chunks or something of that sort).
 
-! This doesn't make sense to be as all ranks have the same broadcast
-! array (as it is broadcasted before) so it seems like it should work
-! but it does not! Hence, in the following broadcasting, everything is
-! transmitted.
+     ! This doesn't make sense to be as all ranks have the same broadcast
+     ! array (as it is broadcasted before) so it seems like it should work
+     ! but it does not! Hence, in the following broadcasting, everything is
+     ! transmitted.
 
-! This can be optimised, so please do if you are smarter than me
+     ! This can be optimised, so please do if you are smarter than me
 
 #ifdef _MPIF90
      IF( params%do_mc .and. md_istep == -1 .and. rank == 0 )THEN
@@ -2684,7 +4199,7 @@ program turbogap
      call cpu_time(time_mpi_positions(1))
      call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
      if( params%do_md .or. params%do_nested_sampling .or. params%do_mc )then
-        call mpi_bcast(velocities, 3*n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
         call mpi_bcast(masses, n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
         call mpi_bcast(fix_atom, 3*n_sp, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
      end if
@@ -2743,6 +4258,16 @@ program turbogap
         if( allocated(positions_prev)) deallocate(positions_prev)
      end if
 
+     if( params%exp_forces .and. (md_istep == params%md_nsteps .or.&
+          & mc_istep == params%mc_nsteps .or. exit_loop) )then
+        do i = 1, params%n_exp
+           if( allocated(params%exp_data(i)%x)) deallocate(params%exp_data(i)%x)
+           if( allocated(params%exp_data(i)%y)) deallocate(params%exp_data(i)%y)
+           if( allocated(params%exp_data(i)%y_pred)) deallocate(params%exp_data(i)%y_pred)
+        end do
+     end if
+
+
      if (.not. params%do_mc )n_sites_prev = n_sites
      n_atom_pairs_by_rank_prev = n_atom_pairs_by_rank(rank+1)
 
@@ -2785,19 +4310,37 @@ program turbogap
         write(*,'(A,F13.3,A)') '     -         3b:', time_3b(3), ' seconds |'
         write(*,'(A,F13.3,A)') '     -   core_pot:', time_core_pot(3), ' seconds |'
         write(*,'(A,F13.3,A)') '     -        vdw:', time_vdw(3), ' seconds |'
+        if (valid_xps .or. params%do_pair_distribution .or. params&
+             &%do_structure_factor .or. params%do_xrd .or. params%do_nd) write(*,'(A&
+             &,F13.3,A)')      ' *  Exp. pred.   :', time_pdf(3) + time_sf(3) + time_xrd(3) + time_nd(3), ' seconds&
+             & |'
+        if( valid_xps ) write(*,'(A,F13.3,A)') '     -        xps:',&
+             & time_xps(3), ' seconds |'
+        if( params%do_pair_distribution ) write(*,'(A,F13.3,A)') '     -        pdf:', time_pdf(3), ' seconds |'
+        if( params%do_structure_factor  ) write(*,'(A,F13.3,A)') '     -         sf:', time_sf(3), ' seconds |'
+        if( params%do_xrd  )              write(*,'(A,F13.3,A)') '     -        xrd:', time_xrd(3), ' seconds |'
+        if( params%do_nd  )               write(*,'(A,F13.3,A)') '     -         nd:', time_nd(3), ' seconds |'
+
         if( params%do_md )then
            write(*,'(A,F13.3,A)') ' *  MD algorithms:', time_md(3), ' seconds |'
         end if
+        if( params%do_mc )then
+           write(*,'(A,F13.3,A)') ' *  MC algorithms:', time_mc(3), ' seconds |'
+        end if
+
 #ifdef _MPIF90
         write(*,'(A,F13.3,A)') ' *  MPI comms.   :', time_mpi(3) + time_mpi_positions(3) + time_mpi_ef(3), ' seconds |'
         write(*,'(A,F13.3,A)') '     -  pos & vel:', time_mpi_positions(3), ' seconds |'
         write(*,'(A,F13.3,A)') '     - E & F brc.:', time_mpi_ef(3), ' seconds |'
         write(*,'(A,F13.3,A)') '     -  MPI misc.:', time_mpi(3), ' seconds |'
         write(*,'(A,F13.3,A)') ' *  Miscellaneous:', time2-time3 - time_neigh - time_gap - time_read_input(3) &
-             - time_read_xyz(3) - time_mpi(3) - time_mpi_positions(3) - time_mpi_ef(3) - time_md(3), ' seconds |'
+             - time_read_xyz(3) - time_mpi(3) - time_mpi_positions(3)&
+             & - time_mpi_ef(3) - time_md(3) - time_xps(3) -&
+             & time_pdf(3) - time_sf(3) - time_xrd(3) - time_nd(3), ' seconds |'
 #else
         write(*,'(A,F13.3,A)') ' *  Miscellaneous:', time2-time3 - time_neigh - time_gap - time_read_input(3) &
-             - time_read_xyz(3) - time_md(3), ' seconds |'
+             - time_read_xyz(3) - time_md(3)- time_xps(3) -&
+             & time_pdf(3) - time_sf(3) - time_xrd(3)  - time_nd(3), ' seconds |'
 #endif
         write(*,*)'                                       |'
         write(*,'(A,F13.3,A)') ' *     Total time:', time2-time3, ' seconds |'
@@ -2808,7 +4351,59 @@ program turbogap
 #endif
   end if
 
+  if ( allocated( fix_atom ))    deallocate( fix_atom )
+  if ( allocated( positions ))    deallocate( positions )
+  if ( allocated( velocities ))    deallocate( velocities )
+  if ( allocated( positions_diff ))    deallocate( positions_diff )
 
+  if ( allocated( energies ))          deallocate( energies )
+  if ( allocated( energies_soap) )     deallocate( energies_soap )
+  if ( allocated( energies_2b) )       deallocate( energies_2b )
+  if ( allocated( energies_3b) )       deallocate( energies_3b )
+  if ( allocated( energies_core_pot) ) deallocate( energies_core_pot )
+  if ( allocated( energies_vdw) )      deallocate( energies_vdw )
+  if ( allocated( energies_exp) )      deallocate( energies_exp )
+  if ( allocated( energies_lp) )       deallocate( energies_lp )
+  if ( allocated( energies_pdf ) )     deallocate( energies_pdf)
+  if ( allocated( energies_sf ) )      deallocate( energies_sf)
+  if ( allocated( energies_xrd ) )     deallocate( energies_xrd)
+  if ( allocated( energies_nd ) )      deallocate( energies_nd)
+
+  if ( allocated( this_energies ))          deallocate( this_energies )
+  if ( allocated( this_energies_vdw) )      deallocate( this_energies_vdw )
+  if ( allocated( this_energies_lp) )       deallocate( this_energies_lp )
+  if ( allocated( this_energies_pdf ) )     deallocate( this_energies_pdf)
+  if ( allocated( this_energies_sf ) )      deallocate( this_energies_sf)
+  if ( allocated( this_energies_xrd ) )     deallocate( this_energies_xrd)
+  if ( allocated( this_energies_nd ) )      deallocate( this_energies_nd)
+
+
+
+  if ( allocated( forces ))          deallocate( forces )
+  if ( allocated( forces_soap) )     deallocate( forces_soap )
+  if ( allocated( forces_2b) )       deallocate( forces_2b )
+  if ( allocated( forces_3b) )       deallocate( forces_3b )
+  if ( allocated( forces_core_pot) ) deallocate( forces_core_pot )
+  if ( allocated( forces_vdw) )      deallocate( forces_vdw )
+  if ( allocated( forces_lp) )       deallocate( forces_lp )
+  if ( allocated( forces_pdf ) )     deallocate( forces_pdf)
+  if ( allocated( forces_sf ) )      deallocate( forces_sf)
+  if ( allocated( forces_xrd ) )     deallocate( forces_xrd)
+  if ( allocated( forces_nd ) )      deallocate( forces_nd)
+
+  if ( allocated( this_forces ))          deallocate( this_forces )
+  if ( allocated( this_forces_vdw) )      deallocate( this_forces_vdw )
+  if ( allocated( this_forces_lp) )       deallocate( this_forces_lp )
+  if ( allocated( this_forces_pdf ) )     deallocate( this_forces_pdf)
+  if ( allocated( this_forces_sf ) )      deallocate( this_forces_sf)
+  if ( allocated( this_forces_xrd ) )     deallocate( this_forces_xrd)
+  if ( allocated( this_forces_nd ) )      deallocate( this_forces_nd)
+
+
+  if( allocated(local_properties) ) deallocate(local_properties)
+  if( allocated(local_properties_cart_der) ) deallocate(local_properties_cart_der)
+  if( allocated(this_local_properties) ) deallocate(this_local_properties)
+  if( allocated(this_local_properties_cart_der) ) deallocate(this_local_properties_cart_der)
 
 
   if( allocated(soap_turbo_hypers) )deallocate(soap_turbo_hypers)
@@ -2816,8 +4411,16 @@ program turbogap
   if( allocated(angle_3b_hypers) )deallocate(angle_3b_hypers)
   if( allocated(core_pot_hypers) )deallocate(core_pot_hypers)
 
+  deallocate( n_atom_pairs_by_rank )
+  if( allocated( n_local_properties_mpi ) ) deallocate( n_local_properties_mpi )
+  if( allocated( local_properties_n_sparse_mpi_soap_turbo ) ) deallocate( local_properties_n_sparse_mpi_soap_turbo )
+  if( allocated( local_properties_dim_mpi_soap_turbo ) ) deallocate( local_properties_dim_mpi_soap_turbo )
+  if( allocated( has_local_properties_mpi ) ) deallocate( has_local_properties_mpi )
 
-
+  if (allocated(local_property_labels) ) deallocate( local_property_labels)
+  if (allocated(local_property_indexes) ) deallocate( local_property_indexes)
+  if( allocated(do_list))deallocate(do_list)
+  if (allocated( params%write_local_properties )) deallocate(params%write_local_properties)
 
 #ifdef _MPIF90
   IF( rank == 0 )then
