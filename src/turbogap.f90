@@ -107,6 +107,9 @@ program turbogap
 
   integer :: optimize_group_update_interval, thermostat_group_update_interval, eph_group_update_interval, &
   eel_group_update_interval, adapt_time_group_update_interval
+
+  !! ---- variables for timing estimation ----
+  real*8 :: time_eph = 0.0d0, time_eel = 0.0d0, time_start, time_stop 
  
   ! Clean up these variables after code refactoring !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   integer, allocatable :: n_neigh(:), neighbors_list(:), alpha_max(:), species(:), species_supercell(:), &
@@ -1953,18 +1956,24 @@ END IF
 	  !! ------- option for radiation cascade simulation with electronic stopping
 
 	  if ( params%electronic_stopping ) then
+		call cpu_time(time_start)
 		call ESscalar%electron_stopping_velocity_dependent (md_istep, params%md_nsteps, n_species, params%eel_cut, params%eel_freq_out, &
 					velocities(1:3, 1:n_sites), forces(1:3, 1:n_sites), masses(1:n_sites), &
-					params%masses_types, time_step, md_time, eel_for_atoms, num_eel_atoms, 'forces', rank, ntasks, ierr)		
+					params%masses_types, time_step, md_time, eel_for_atoms, num_eel_atoms, 'forces', rank, ntasks, ierr)
+		call cpu_time(time_stop)
+		time_eel = time_eel + (time_stop - time_start)		
 	  end if
 
 	   !! -----------------------------------	******** until here for electronic stopping
 
 	  !! ------- option for electronic stopping based on eph model
 	  if ( params%nonadiabatic_processes ) then
+		call cpu_time(time_start)
 		call ephlsc%eph_LangevinForces (velocities(1:3, 1:n_sites), forces(1:3, 1:n_sites), masses(1:n_sites), &
 				params%masses_types, md_istep, time_step, md_time, positions(1:3, 1:n_sites), n_species, &
 				eph_for_atoms, num_eph_atoms, ephbeta, ephfdm, rank, ntasks, ierr)
+		call cpu_time(time_stop)
+		time_eph = time_eph + (time_stop - time_start)
 	  end if
 
 	  !! -----------------------------------	******** until here for electronic stopping basd on eph model
@@ -2053,9 +2062,12 @@ END IF
 	!! ------- option for radiation cascade simulation with electronic stopping
 
 	  if ( params%electronic_stopping ) then
+		call cpu_time(time_start)
 		call ESscalar%electron_stopping_velocity_dependent (md_istep, params%md_nsteps, n_species, params%eel_cut, &
 				params%eel_freq_out,velocities(1:3, 1:n_sites), forces(1:3, 1:n_sites), masses(1:n_sites), params%masses_types, &
 				time_step_prev, md_time, eel_for_atoms, num_eel_atoms, 'energy', rank, ntasks, ierr)
+		call cpu_time(time_stop)
+		time_eel = time_eel + (time_stop - time_start)
 	  end if
 
 	!! -----------------------------------		******** until here for electronic stopping
@@ -2063,9 +2075,12 @@ END IF
 
 	!! ------- option for electronic stopping based on eph model
 	  if ( params%nonadiabatic_processes ) then
+		call cpu_time(time_start)
 		call ephlsc%eph_LangevinEnergyDissipation (md_istep, params%md_nsteps, md_time, velocities(1:3, 1:n_sites), &
 				positions_prev(1:3, 1:n_sites), masses(1:n_sites), energies(1:n_sites), &
 				time_step_prev, eph_for_atoms, num_eph_atoms, ephfdm, rank, ntasks, ierr)
+		call cpu_time(time_stop)
+		time_eph = time_eph + (time_stop - time_start)
 	  end if
 	!! -----------------------------------		******** until here for electronic stopping basd on eph model
 #endif
@@ -3044,6 +3059,12 @@ END IF
         write(*,'(A,F13.3,A)') '     -        vdw:', time_vdw(3), ' seconds |'
         if( params%do_md )then
            write(*,'(A,F13.3,A)') ' *  MD algorithms:', time_md(3), ' seconds |'
+        end if
+        if ( params%nonadiabatic_processes ) then
+			write(*, '(A,F13.3,A)') '    - e-ph calcul:', time_eph, ' seconds |'
+        end if
+        if ( params%electronic_stopping ) then
+			write(*, '(A,F13.3,A)') '    -  eel calcul:', time_eel, ' seconds |'
         end if
 #ifdef _MPIF90
         write(*,'(A,F13.3,A)') ' *  MPI comms.   :', time_mpi(3) + time_mpi_positions(3) + time_mpi_ef(3), ' seconds |'
