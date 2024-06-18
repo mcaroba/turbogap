@@ -154,7 +154,7 @@ module types
     character*16 :: optimize = "vv", mc_relax_opt = "gd", mc_hybrid_opt = "vv"
     character*32 :: barostat = "none", thermostat = "none", barostat_sym = "isotropic",&
          & xps_force_type = "similarity", exp_similarity_type =&
-         & "squared_diff", xrd_method = "xrd", q_units="q", xrd_output="xrd", nd_output="xrd", pair_distribution_output = "pdf"
+         & "squared_diff", xrd_method = "xrd", q_units="q", xrd_output="xrd", sf_output="xrd", nd_output="xrd", pair_distribution_output = "pdf"
     logical :: do_md = .false., do_mc = .false., do_prediction = .false., do_forces = .false., do_derivatives = .false., &
                do_derivatives_fd = .false., write_soap = .false., write_derivatives = .false., &
                do_timing = .false., all_atoms = .true., print_progress = .true., scale_box = .false., &
@@ -167,13 +167,16 @@ module types
          & .false., mc_optimize_exp =.false., exp_forces=.false., exp_energies=.true.,&
          & print_lp_forces =.false., print_vdw_forces =.false., mc_hamiltonian = .false.,&
          & accessible_volume = .false., mc_reverse = .false., &
-         & xrd_iwasa = .true., pair_distribution_partial=.false.,&
-         & structure_factor_from_pdf=.false., structure_factor_window&
+         & xrd_iwasa = .true., pair_distribution_partial=.true.,&
+         & structure_factor_from_pdf=.true., structure_factor_window&
          & = .true., write_pair_distribution=.false.,&
          & write_structure_factor=.false., do_pair_distribution =&
          & .false., do_structure_factor =.false., do_xrd=.false., do_nd=.false.,&
-         & write_xrd=.false., write_nd=.false., structure_factor_matrix=.false., write_exp=.true., &
-         & valid_pdf=.false., valid_sf=.false., valid_xrd=.false.,  valid_nd=.false.
+         & write_xrd=.false., write_nd=.false.,&
+         & structure_factor_matrix=.true.,&
+         & structure_factor_matrix_forces=.true., write_exp=.true.,&
+         & valid_pdf=.false., valid_sf=.false., valid_xrd=.false., &
+         & valid_nd=.false.
 
     logical, allocatable :: write_local_properties(:)
     type(exp_data_container), allocatable :: exp_data(:)

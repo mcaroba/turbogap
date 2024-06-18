@@ -162,7 +162,7 @@ program turbogap
   type(input_parameters) :: params
 
   ! These are the containers for the hyperparameters of descriptors and GAPs
-  integer :: n_soap_turbo = 0, n_distance_2b = 0, n_angle_3b = 0, n_core_pot = 0, counter_lp_names=0
+  integer :: n_soap_turbo = 0, n_distance_2b = 0, n_angle_3b = 0, n_core_pot = 0, counter_lp_names=0, temp_md_nsteps
   real*8, parameter :: pi = acos(-1.0)
   type(soap_turbo), allocatable :: soap_turbo_hypers(:)
   type(distance_2b), allocatable :: distance_2b_hypers(:)
@@ -2358,9 +2358,9 @@ program turbogap
                 & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
                 & neighbor_species, species, rank , q_beg, q_end, ntasks, sinc_factor_matrix, params%exp_forces, &
 #ifdef _MPIF90
-                & pair_distribution_partial_der, this_energies_sf, this_forces_sf, this_virial_sf)
+                & pair_distribution_partial_der, this_energies_sf, this_forces_sf, this_virial_sf, params%structure_factor_matrix_forces)
 #else
-           & pair_distribution_partial_der, energies_sf, forces_sf, virial_sf)
+           & pair_distribution_partial_der, energies_sf, forces_sf, virial_sf,params%structure_factor_matrix_forces)
 #endif
 
 
@@ -2381,9 +2381,13 @@ program turbogap
                 & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
                 & neighbor_species, species, rank , q_beg, q_end, ntasks, sinc_factor_matrix, params%exp_forces, &
 #ifdef _MPIF90
-                & pair_distribution_partial_der, this_energies_xrd, this_forces_xrd, this_virial_xrd, .false.)
+                & pair_distribution_partial_der, this_energies_xrd,&
+                & this_forces_xrd, this_virial_xrd, .false., params&
+                &%structure_factor_matrix_forces)
 #else
-           & pair_distribution_partial_der, energies_xrd, forces_xrd, virial_xrd, .false. )
+           & pair_distribution_partial_der, energies_xrd, forces_xrd,&
+                & virial_xrd, .false., params&
+                &%structure_factor_matrix_forces )
 #endif
 
 
@@ -2405,9 +2409,13 @@ program turbogap
                 & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
                 & neighbor_species, species, rank , q_beg, q_end, ntasks, sinc_factor_matrix, params%exp_forces, &
 #ifdef _MPIF90
-                & pair_distribution_partial_der, this_energies_nd, this_forces_nd, this_virial_nd, .true.)
+                & pair_distribution_partial_der, this_energies_nd,&
+                & this_forces_nd, this_virial_nd, .true., params&
+                &%structure_factor_matrix_forces)
 #else
-           & pair_distribution_partial_der, energies_nd, forces_nd, virial_nd, .true. )
+           & pair_distribution_partial_der, energies_nd, forces_nd,&
+                & virial_nd, .true., params&
+                &%structure_factor_matrix_forces )
 #endif
 
 
@@ -2871,7 +2879,7 @@ program turbogap
         end if
 
 
-        if( .not. params%do_md) then
+        if( .not. params%do_md .and. .not. params%do_mc) then
 #ifdef _MPIF90
            IF( rank == 0 )then
 #endif
@@ -2882,7 +2890,7 @@ program turbogap
               write(*,'(A,1X,F18.8,1X,A)')' core_pot energy:', sum(energies_core_pot), 'eV |'
               write(*,'(A,1X,F23.8,1X,A)')' vdw energy:', sum(energies_vdw), 'eV |'
               write(*,'(A,1X,F22.8,1X,A)')' Exp. energy:', sum(energies_exp), 'eV |'
-              write(*,'(A,1X,F20.8,1X,A)')' l_prop energy:', sum(energies_lp), 'eV |'
+              if (valid_xps) write(*,'(A,1X,F23.8,1X,A)')' xps energy:', sum(energies_lp), 'eV |'
               if ( params%valid_pdf .and. params%do_pair_distribution )&
                    & write(*,'(A,1X,F23.8,1X,A)')' pdf energy:',&
                    & sum(energies_pdf), 'eV |'
@@ -3551,16 +3559,12 @@ program turbogap
            end if
 
 
-              if ( .not. exit_loop .and. &
-                   ( &
-                   (params%do_mc .and. (md_istep == params%md_nsteps) &
-                   .and. mc_move == "md" ) .or. &
-                   (params%do_mc .and. (abs(energy-energy_prev) < params%e_tol*dfloat(n_sites)) .and. &
-                   (maxval(forces) < params%f_tol) .and. (mc_move == "md" .or. params%mc_relax .or. do_mc_relax ) .and. &
-                   md_istep > 0) &
-                   .or. ((params%do_mc .and. params%mc_relax .and. do_mc_relax .and.  &
-                            (md_istep == params%mc_nrelax ) ))&
-                   .or. (params%do_mc .and. (md_istep == -1) ) ))then
+           if ( .not. exit_loop .and. ( &
+                (md_istep == -1) .or. &
+                ( params%do_md .and. ( &
+                   (md_istep == params%md_nsteps)  .or. &
+                   ( (abs(energy-energy_prev) < params%e_tol*dfloat(n_sites)) .and. (maxval(forces) < params%f_tol) ) &
+                   ) ) ) ) then
                  !       Now we do a monte-carlo step: we choose what the steps are from the available list and then choose a random number
                  !       -- We have the list of move types in params%mc_types and the number params%n_mc_types --
                  !       >> First generate a random number in the range of the number of
@@ -3579,9 +3583,10 @@ program turbogap
                  !       > We care about comparing e_store to the energy of the new configuration based on the mc_movw
 
                  ! Reset the parameters for md / relaxation
-                 if (mc_move == "relax" .or. mc_move == "md" .or. params%mc_relax)then
+                 if (params%do_md)then
                     md_istep = -1
                     params%do_md = .false.
+                    do_mc_relax = .false.
                     ! Assume that the number of steps has already been set.
                  end if
 
@@ -3639,9 +3644,14 @@ program turbogap
                  if ( mc_istep == 1 )then
                     open(unit=200, file="mc.log", status="unknown")
                     if (energy_exp > 0.d0)then
-                       write(200, '(A)') '# mc_istep  mc_move  accepted  E_tot  E_exp  N_tot  N_mc_species'
+                       write(200, '(A)') '# mc_istep  mc_move &
+                            & accepted  E_trial              E_current             E_exp_trial&
+                            &          E_exp_current  N_tot_trial &
+                            & N_mc_species_trial'
                     else
-                       write(200, '(A)') '# mc_istep  mc_move  accepted  E_tot  N_tot  N_mc_species'
+                       write(200, '(A)') '# mc_istep  mc_move &
+                            & accepted  E_trial              E_current &
+                            &          N_tot_trial  N_mc_species_trial'
                     end if
 
                  end if
@@ -3661,13 +3671,16 @@ program turbogap
 
                  if (energy_exp > 0.d0 )then
 
-                    write(200, "(I8, 1X, A, 1X, L4, 1X, F20.8, 1X, F20.8, 1X, F20.8, 1X, I8, 1X, I8, 1X)") &
-                         mc_istep, mc_move, p_accept > ranf, energy + E_kinetic, &
-                         images(i_current_image)%energy + images(i_current_image)%e_kin, energy_exp, &
-                         images(i_trial_image)%n_sites, trim(temp_string2)
+                    write(200, "(I8, 1X, A10, 1X, L4, 1X, F20.8, 1X, F20.8, 1X, F20.8, 1X, F20.8, 1X, I8, 1X, A)") &
+                         mc_istep, trim(adjustl(mc_move)), p_accept > ranf, energy + E_kinetic, &
+                         images(i_current_image)%energy +&
+                         & images(i_current_image)%e_kin, energy_exp,&
+                         & images(i_current_image)%energy_exp,&
+                         & images(i_trial_image)%n_sites,&
+                         & trim(temp_string2)
                  else
-                    write(200, "(I8, 1X, A, 1X, L4, 1X, F20.8, 1X, F20.8, 1X, I8, 1X, I8, 1X)") &
-                         mc_istep, mc_move, p_accept > ranf, energy + E_kinetic, &
+                    write(200, "(I8, 1X, A10, 1X, L4, 1X, F20.8, 1X, F20.8, 1X, I8, 1X, A)") &
+                         mc_istep, trim(adjustl(mc_move)), p_accept > ranf, energy + E_kinetic, &
                          images(i_current_image)%energy + images(i_current_image)%e_kin, &
                          images(i_trial_image)%n_sites,  trim(temp_string2)
 
@@ -3766,6 +3779,7 @@ program turbogap
 
 
               else ! if (mc_istep == 0)
+                 temp_md_nsteps = params%md_nsteps
                  if (params%verb > 50) write(*,*) '                                       |'
                  if (params%verb > 50) write(*,*) 'Starting MC, using parameters:         |'
                  if (params%verb > 50) write(*,*) '                                       |'
@@ -3980,11 +3994,12 @@ program turbogap
               ! not done that.
 
 
-              if(params%mc_relax)then
+              if(params%mc_relax .and. do_mc_relax)then
                  ! Set the parameters for relaxatrino
                  md_istep = -1
                  params%do_md = .true.
                  params%optimize = params%mc_relax_opt
+                 params%md_nsteps = params%mc_nrelax
                  ! Note, that this may override md steps if the same is chosen! More testing needed
               end if
               ! If doing md, don't relax
@@ -3993,6 +4008,7 @@ program turbogap
                  md_istep = -1
                  params%do_md = .true.
                  params%optimize = params%mc_hybrid_opt
+                 params%md_nsteps = temp_md_nsteps
                  ! Note, that this may override md steps if the same is chosen! More testing needed
               end if
 
@@ -4035,24 +4051,24 @@ program turbogap
                     write(*,*)'Progress:                              |'
                     write(*,*)'                                       |'
                     write(*,'(1X,A)',advance='no')'[                                    ] |'
-                    update_bar = params%mc_nrelax/36
+                    update_bar = params%md_nsteps/36
                     if( update_bar < 1 )then
                        update_bar = 1
                     end if
                     counter = 1
-                 else if( md_istep == params%mc_nrelax-1 .or. &
+                 else if( md_istep == params%md_nsteps-1 .or. &
                       (abs(energy-energy_prev) < params%e_tol*dfloat(n_sites) .and. &
                       maxval(forces) < params%f_tol) .and. md_istep > 0 )then
                     write(*,*)
-                 else if( params%print_progress .and. counter == update_bar .and. md_istep < params%mc_nrelax-1 )then
+                 else if( params%print_progress .and. counter == update_bar .and. md_istep < params%md_nsteps-1 )then
                     do j = 1, 36+3
                        write(*,"(A)", advance="no") creturn
                     end do
                     write (*,"(1X,A)",advance="no") "["
-                    do i = 1, 36*(md_istep+1)/params%mc_nrelax
+                    do i = 1, 36*(md_istep+1)/params%md_nsteps
                        write (*,"(A)",advance="no") "."
                     end do
-                    do i = 36*(md_istep+1)/params%mc_nrelax+1, 36
+                    do i = 36*(md_istep+1)/params%md_nsteps+1, 36
                        write (*,"(A)",advance="no") " "
                     end do
                     write (*,"(A)",advance="no") "] |"
@@ -4083,7 +4099,7 @@ program turbogap
                       & 'eV |'
                  if (params%verb > 50) write(*,'(A,1X,F23.8,1X,A)')'&
                       & vdw energy:', sum(energies_vdw), 'eV |'
-                 if (params%verb > 50) write(*,'(A,1X,F20.8,1X,A)')' l_prop energy:', sum(energies_lp), 'eV |'
+                 if (params%verb > 50 .and. valid_xps) write(*,'(A,1X,F23.8,1X,A)')' xps energy:', sum(energies_lp), 'eV |'
 
                  if ( params%valid_pdf .and. params%do_pair_distribution .and. params%verb > 50)&
                       & write(*,'(A,1X,F23.8,1X,A)')' pdf energy:',&
@@ -4101,7 +4117,37 @@ program turbogap
 
 
               else
-                 if (params%verb > 50) write(*,'(1X,A,1X,F20.8,1X,A&
+                 if( params%print_progress .and. mc_istep == 0 )then
+                    write(*,*)'                                       |'
+                    write(*,*)'Progress:                              |'
+                    write(*,*)'                                       |'
+                    write(*,'(1X,A)',advance='no')'[                                    ] |'
+                    update_bar = params%mc_nsteps/36
+                    if( update_bar < 1 )then
+                       update_bar = 1
+                    end if
+                    counter = 1
+                 else if( mc_istep == params%mc_nsteps-1 .and. mc_istep > 0 )then
+                    write(*,*)
+                 else if( params%print_progress .and. counter == update_bar .and. mc_istep < params%mc_nsteps-1 )then
+                    do j = 1, 36+3
+                       write(*,"(A)", advance="no") creturn
+                    end do
+                    write (*,"(1X,A)",advance="no") "["
+                    do i = 1, 36*(mc_istep+1)/params%mc_nsteps
+                       write (*,"(A)",advance="no") "."
+                    end do
+                    do i = 36*(mc_istep+1)/params%mc_nsteps+1, 36
+                       write (*,"(A)",advance="no") " "
+                    end do
+                    write (*,"(A)",advance="no") "] |"
+                    counter = 1
+                 else
+                    counter = counter + 1
+                 end if
+
+
+                 if (params%verb > 50 .and. do_mc_relax) write(*,'(1X,A,1X,F20.8,1X,A&
                       &,1X,I8,1X,A,1X,I8)')"MC Relax md step: energy &
                       &= ", energy, ", iteration ", md_istep, "/",&
                       & params%mc_nrelax
@@ -4110,7 +4156,7 @@ program turbogap
                  if (params%verb > 50) write(*,'(A,1X,F24.8,1X,A)')' 3b energy:', sum(energies_3b), 'eV |'
                  if (params%verb > 50) write(*,'(A,1X,F18.8,1X,A)')' core_pot energy:', sum(energies_core_pot), 'eV |'
                  if (params%verb > 50) write(*,'(A,1X,F23.8,1X,A)')' vdw energy:', sum(energies_vdw), 'eV |'
-                 if (params%verb > 50) write(*,'(A,1X,F20.8,1X,A)')' l_prop energy:', sum(energies_lp), 'eV |'
+                 if (params%verb > 50 .and. valid_xps) write(*,'(A,1X,F23.8,1X,A)')' xps energy:', sum(energies_lp), 'eV |'
 
                  if ( params%valid_pdf .and. params%do_pair_distribution .and. params%verb > 50)&
                       & write(*,'(A,1X,F23.8,1X,A)')' pdf energy:',&

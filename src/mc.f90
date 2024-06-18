@@ -280,7 +280,7 @@ contains
     integer, intent(inout) :: species(:), mc_id
     character*8, intent(in) :: ref_xyz_species(:)
     character*8, intent(inout) :: xyz_species(:)
-    character*32, intent(in) :: mc_species
+    character*8, intent(in) :: mc_species
     logical :: too_close
 
     positions(1:3,1:n_sites-1) = ref_positions(1:3,1:n_sites-1)

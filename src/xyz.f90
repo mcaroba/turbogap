@@ -101,7 +101,7 @@ module xyz_module
       write(string, "(A)") adjustl(trim(string)) // " energy_exp=" // trim(adjustl(temp_string))
 
       write(temp_string, "(F16.8)") sum(energies_lp)
-      write(string, "(A)") adjustl(trim(string)) // " energy_lp=" // trim(adjustl(temp_string))
+      write(string, "(A)") adjustl(trim(string)) // " energy_xps=" // trim(adjustl(temp_string))
 
       if ( valid_pdf .and. do_pair_distribution )then
          write(temp_string, "(F16.8)") sum(energies_pdf)
@@ -306,6 +306,9 @@ module xyz_module
     if( write_property(7) )then
       write(temp_string, "(F16.6)") sum(local_energies)
       write(10, "(1X,2A)", advance="no") "energy=", trim(adjustl(temp_string))
+
+      write(10, "(1X,A)", advance="no") trim(adjustl(string))
+
     end if
 !
 !   Virial tensor
@@ -346,7 +349,6 @@ module xyz_module
       end if
     end if
     !
-    write(10, "(1X,A)", advance="no") trim(adjustl(string))
 
 
 !   Advance

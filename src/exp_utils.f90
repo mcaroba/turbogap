@@ -411,6 +411,291 @@ contains
 
   end subroutine get_structure_factor_forces
 
+
+  subroutine get_structure_factor_forces_matrix(  n_sites0, energy_scale, x, y_exp, forces0, virial,  &
+       & neighbors_list, n_neigh, neighbor_species, species_types, rjs, xyz, r_min,&
+       & r_max, n_samples, n_samples_sf, n_species,  x_structure_factor, structure_factor, r_cut, species_1,&
+       & species_2,  pair_distribution_der, partial_rdf, kde_sigma,&
+       & c_factor, sinc_factor_matrix, n_dim_idx, do_xrd, output, n_atoms_of_species, neutron)
+    implicit none
+    real*8,  intent(in) :: rjs(:), xyz(:,:), y_exp(:), energy_scale,  kde_sigma, c_factor, sinc_factor_matrix(:,:), x(:)
+    integer, intent(in) :: n_sites0, n_samples_sf, n_species
+    character*8, allocatable, intent(in) :: species_types(:)
+    real*8 :: r_min, r_max, r_cut
+    integer, intent(in) :: neighbors_list(:), n_neigh(:), neighbor_species(:)
+    integer, intent(in) :: n_samples, species_1, species_2, n_dim_idx
+    integer :: n_sites, n_pairs, count, count_species_1
+    integer :: i, j, k, ki, k1, k2,  i2, j2, l, ii, jj, kk, i3, j3, i4,  species_i, species_j, n_k
+    real*8,  intent(in) :: x_structure_factor(:), structure_factor(:), n_atoms_of_species(:)
+    real*8,  intent(in) :: pair_distribution_der(:,:)
+    real*8,  intent(inout) :: forces0(:,:), virial(1:3,1:3)
+    character*32, intent(in) :: output
+    real*8, allocatable ::  prefactor(:), all_scattering_factors(:), sf_parameters(:,:), structure_factor_der(:)
+    real*8 :: r, n_pc, this_force(1:3), f, wfaci, wfacj, temp(1:n_samples_sf), sth, time(1:3)
+    real*8, parameter :: pi = acos(-1.0)
+    logical, intent(in) :: partial_rdf, do_xrd, neutron
+    logical :: species_in_list, counted_1=.false.
+    real*8, allocatable ::  xyz_k(:,:), Gk(:,:), Gka(:,:), dermat(:,:), fi(:,:)
+    integer, allocatable :: k_list(:), i2_list(:), j2_list(:)
+
+
+
+    ! First allocate the pair correlation function array
+
+    n_sites = size(n_neigh)
+    n_pairs = size(neighbors_list)
+
+    allocate( prefactor( 1:n_samples_sf ) )
+    prefactor =  ( structure_factor  - y_exp )
+
+    if (do_xrd)then
+       if (.not. neutron) then
+          allocate( sf_parameters(1:9,1:n_species) )
+          allocate( all_scattering_factors(1:n_samples_sf) )
+
+          sf_parameters = 0.d0
+          do i = 1, size(species_types)
+             call get_scattering_factor_params(species_types(i), sf_parameters(1:9,i))
+          end do
+
+
+          do i = 1, n_samples_sf
+             call get_scattering_factor(wfaci, sf_parameters(1:9,species_1), x_structure_factor(i)/2.d0)
+             call get_scattering_factor(wfacj, sf_parameters(1:9,species_2), x_structure_factor(i)/2.d0)
+             all_scattering_factors(i) = wfaci * wfacj
+
+             if ( trim(output) == "q*i(q)" .or. trim(output) == "q*F(q)")then
+                ! we now handlw this case in preprocess experimental data
+                ! output q * i(q) === q * F_x(q)
+                sth = 0.d0
+                do j = 1, n_species
+                   call get_scattering_factor(wfaci, sf_parameters(1:9,j), x_structure_factor(i)/2.d0)
+                   sth = sth + ( n_atoms_of_species(j) / dfloat(n_sites0) ) * wfaci !* wfaci
+                end do
+
+                all_scattering_factors(i) =  2.d0 * pi * x(i) * all_scattering_factors(i) / sth**2 !+ 1.d0
+
+             elseif( trim(output) == "F(q)" .or. trim(output) == "i(q)")then
+                ! Output the total scattering functon, i(q) === F_x(q)
+                sth = 0.d0
+                do j = 1, n_species
+                   call get_scattering_factor(wfaci, sf_parameters(1:9,j), x_structure_factor(i)/2.d0)
+                   sth = sth + ( n_atoms_of_species(j) / dfloat(n_sites0) ) * wfaci !* wfaci
+                end do
+
+                all_scattering_factors(i) = all_scattering_factors(i) / sth**2 !+ 1.d0
+
+             end if
+
+
+          end do
+       else
+          allocate( sf_parameters(1:9,1:n_species) )
+          allocate( all_scattering_factors(1:n_samples_sf) )
+          do i = 1, n_samples_sf
+             call get_neutron_scattering_length(species_types(species_1), wfaci)
+             call get_neutron_scattering_length(species_types(species_2), wfacj)
+             all_scattering_factors(i) = wfaci * wfacj
+
+             if ( trim(output) == "q*i(q)" .or. trim(output) == "q*F(q)")then
+                ! we now handlw this case in preprocess experimental data
+                ! output q * i(q) === q * F_x(q)
+                sth = 0.d0
+                do j = 1, n_species
+                   call get_neutron_scattering_length(species_types(j), wfacj)
+                   sth = sth + ( n_atoms_of_species(j) / dfloat(n_sites0) ) * wfaci !* wfaci
+                end do
+
+                all_scattering_factors(i) =  2.d0 * pi * x(i) * all_scattering_factors(i) / sth**2 !+ 1.d0
+
+             elseif( trim(output) == "F(q)" .or. trim(output) == "i(q)")then
+                ! Output the total scattering functon, i(q) === F_x(q)
+                sth = 0.d0
+                do j = 1, n_species
+                   call get_neutron_scattering_length(species_types(j), wfacj)
+                   sth = sth + ( n_atoms_of_species(j) / dfloat(n_sites0) ) * wfaci !* wfaci
+                end do
+
+                all_scattering_factors(i) = all_scattering_factors(i) / sth**2 !+ 1.d0
+
+             end if
+
+
+          end do
+
+       end if
+
+    end if
+
+    ! First loop to get the number of valid k indexes
+!    call cpu_time(time(1))
+    n_k = 0
+    k = 0
+    do i = 1, n_sites
+       i2 = modulo(neighbors_list(k+1)-1, n_sites0) + 1
+       species_i = neighbor_species(k+1)
+       k = k + 1
+       do j = 2, n_neigh(i)
+          k = k + 1
+          j2 = modulo(neighbors_list(k)-1, n_sites0) + 1
+          species_j = neighbor_species(k)
+
+          if (( (species_i /= species_1) .or. ( species_j /= species_2) )) then
+             if ( .not. (species_i == species_2 .and. species_j == species_1)) cycle
+          end if
+
+          r = rjs(k) ! atom pair distance
+          if (r < 1e-3 .or. r > r_cut) cycle
+          if (r < r_min) cycle
+          if (r > r_max + kde_sigma*6.d0) cycle
+          if (   (.not. all( xyz( 1:3, k ) == 0.d0 ) ) .and. &
+               & (.not. all( pair_distribution_der(1:n_samples, k ) == 0.d0 )) )then
+             n_k = n_k + 1
+          end if
+       end do
+    end do
+    ! call cpu_time(time(2))
+    ! print *, " Time first loop = ", time(2) - time(1)
+
+    ! print *, " Structure factor forces Matrix: ", species_1, species_2
+    ! write(*, '(A,1X,F7.4,1X,A)') "Gb/core: SFM = ", dfloat(n_k * ( 2 * n_samples + 6 + n_samples_sf ))&
+    !            & * 8.d0 / (dfloat(1024*1024*1024)), " Gb  |"
+
+    allocate(k_list(1:n_k))
+    allocate(j2_list(1:n_k))
+    allocate(xyz_k(1:3,1:n_k))
+    allocate(Gk(1:n_samples, 1:n_k))
+    allocate(Gka(1:n_samples, 1:n_k))
+    allocate(fi(1:n_k,1:3)) ! We use the opposite dimensions for non temporary arrays
+    allocate(dermat(1:n_samples_sf, 1:n_k))
+
+
+    ! [sinc_factor_matrix] = n_samples_sf * n_samples_pc  ( N x M )
+    ! [g_ab]               = n_samples_pc * n_dim_partial ( M x K )
+    ! [S_ab]               = n_samples_sf * n_dim_partial ( N x K )
+    ! S_ab = [sinc_factor_matrix] x [g_ab - 1]
+    !      = ( N x M ) . ( M x K ) -> ( N x K )
+    ! alpha * (A * B) + beta * C
+    ! A === sinc_factor_partial
+    ! B === [g_ab - 1]
+    ! C === S_ab
+    !   TRANS_A, TRANS_B  N_ROWS_A  N_COLS_B  N_COLS_A ( == N_ROWS_B ) alpha,
+    !                                                   A,  first_dim_A,    B,      first_dim_B,  beta,  C, first_dim_C
+
+    ! We will eventually do sinc_factor_matrix * Gk
+
+    ! Now we loop again to allocate the arrays
+!    call cpu_time(time(1))
+    n_k = 0
+    k = 0
+    do i = 1, n_sites
+       i2 = modulo(neighbors_list(k+1)-1, n_sites0) + 1
+       species_i = neighbor_species(k+1)
+       k = k + 1
+       do j = 2, n_neigh(i)
+          k = k + 1
+          j2 = modulo(neighbors_list(k)-1, n_sites0) + 1
+          species_j = neighbor_species(k)
+
+          if (( (species_i /= species_1) .or. ( species_j /= species_2) )) then
+             if ( .not. (species_i == species_2 .and. species_j == species_1)) cycle
+          end if
+
+          r = rjs(k) ! atom pair distance
+          if (r < 1e-3 .or. r > r_cut) cycle
+          if (r < r_min) cycle
+          if (r > r_max + kde_sigma*6.d0) cycle
+          if (   (.not. all( xyz( 1:3, k ) == 0.d0 ) ) .and. &
+               & (.not. all( pair_distribution_der(1:n_samples, k ) == 0.d0 )) )then
+             n_k = n_k + 1
+             k_list(n_k) = k
+             j2_list(n_k) = j2
+             xyz_k(1:3,n_k) = xyz(1:3,k)
+             Gk(1:n_samples, n_k) =  -2.d0 *  c_factor * pair_distribution_der(1:n_samples,  k )
+          end if
+       end do
+    end do
+!    call cpu_time(time(2))
+!    print *, " Time allocation loop = ", time(2) - time(1)
+
+!    call cpu_time(time(1))
+    do i = 1,3
+
+       do j = 1, n_samples
+          Gka(j, :) = xyz_k(i, :) * Gk(j, :)
+       end do
+
+       call dgemm("N", "N", n_samples_sf, n_k, n_samples, 1.d0, sinc_factor_matrix, n_samples_sf,&
+         & Gka, n_samples, 0.d0,&
+         & dermat, n_samples_sf)
+       ! call my_dgemm(sinc_factor_matrix(1:n_samples_sf, 1:n_samples),&
+       !      & Gka(1:n_samples,1:n_k), dermat(1:n_samples_sf,1:n_k),&
+       !      & n_samples_sf, n_k, n_samples)
+
+       !dermat = matmul(sinc_factor_matrix, Gka)
+
+       if (do_xrd)then
+          do j = 1, n_k
+             dermat(1:n_samples_sf, j) =   all_scattering_factors * dermat(1:n_samples_sf, j)
+          end do
+       end if
+
+       ! Now we take the dot products by matrix vector
+       call dgemv("T", n_samples_sf,  n_k, 1.d0 , dermat, n_samples_sf,&
+            &  prefactor, 1, 0.d0, fi(:,i), 1)
+
+    end do
+!    call cpu_time(time(2))
+!    print *, " Time Matrix loop = ", time(2) - time(1)
+
+
+!    call cpu_time(time(1))
+    do j = 1, n_k
+       this_force(1:3) = energy_scale * fi(j,1:3)
+       forces0(1:3, j2_list(j)) = forces0(1:3, j2_list(j)) + this_force(1:3)
+
+       do k1 = 1, 3
+          do k2 =1, 3
+             virial(k1, k2) = virial(k1, k2) + 0.5d0 * (this_force(k1)*xyz(k2,k) + this_force(k2)*xyz(k1,k))
+          end do
+       end do
+    end do
+!    call cpu_time(time(2))
+!    print *, " Time Forces loop = ", time(2) - time(1)
+!    print *, " "
+
+    deallocate(dermat, fi, Gka, Gk, xyz_k, j2_list, k_list )
+    if (do_xrd) deallocate( all_scattering_factors )
+    if (do_xrd) deallocate( sf_parameters )
+    deallocate(prefactor)
+
+
+  end subroutine get_structure_factor_forces_matrix
+
+
+  subroutine my_dgemm(A, B, C, M, N, K)
+    implicit none
+    real*8, intent(in) :: A(:,:), B(:,:)
+    real*8, intent(out) :: C(:,:)
+    integer, intent(in) :: N, M, K
+    real*8 :: temp
+    integer :: i, j, l
+    ! A = M x K
+    ! B = K x N
+    ! C = M x N
+
+    do j = 1, N       ! loop over B columns
+       do i = 1, M    ! loop over A rows
+          temp = 0.d0
+          do l = 1, K ! loop over B rows / A columns
+             temp = temp + A(i,l) * B(l,j)
+          end do
+          C(i,j) = temp
+       end do
+    end do
+  end subroutine my_dgemm
+
+
   
   subroutine get_pair_distribution_forces(  n_sites0, energy_scale, x, y_exp, forces0, virial,  &
        & neighbors_list, n_neigh, neighbor_species, rjs, xyz, r_min,&

@@ -777,7 +777,7 @@ end if
         read(10, *, iostat=iostatus) cjunk, cjunk, params%n_mc_types
         allocate( params%mc_types(1:params%n_mc_types) )
         allocate( params%mc_acceptance(1:params%n_mc_types) )
-        params%mc_acceptance = 1.d0 / params%n_mc_types
+        params%mc_acceptance = 1.d0 / dfloat( params%n_mc_types )
       else if(keyword=='n_mc_swaps')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%n_mc_swaps
@@ -843,6 +843,8 @@ end if
         allocate(params%mc_mu(1:params%n_mc_mu))
         allocate(params%mc_species(1:params%n_mc_mu))
         allocate(params%mc_mu_acceptance(1:params%n_mc_mu))
+        params%mc_mu_acceptance = 1.d0 / dfloat( params%n_mc_mu )
+
       else if(keyword=='mc_mu')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, (params%mc_mu(nw),nw=1,params%n_mc_mu)
@@ -993,6 +995,9 @@ end if
      else if(keyword=='xrd_output')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%xrd_output
+     else if(keyword=='sf_output')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%sf_output
 
      else if(keyword=='nd_output')then
         backspace(10)
@@ -1190,6 +1195,9 @@ end if
       else if( keyword == "structure_factor_matrix" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%structure_factor_matrix
+      else if( keyword == "structure_factor_matrix_forces" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%structure_factor_matrix_forces
 
 
       else if( keyword == "pair_distribution_kde_sigma" )then

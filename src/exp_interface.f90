@@ -1009,7 +1009,7 @@ contains
        & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
        & neighbor_species, species, rank , q_beg, q_end, ntasks,&
        & sinc_factor_matrix, do_derivatives, pair_distribution_partial_der,&
-       & energies_sf, forces_sf, virial_sf)
+       & energies_sf, forces_sf, virial_sf, use_matrix_forces)
     implicit none
     type(input_parameters), intent(inout) :: params
     real*8, allocatable, intent(out) :: x_structure_factor(:), x_structure_factor_temp(:), &
@@ -1032,11 +1032,11 @@ contains
     integer, intent(in) :: indices(1:3), md_istep, mc_istep, rank
     integer, intent(out) :: ierr
     integer :: i, j, k, l, i2, n_dim_partial, n_dim_idx, n, m
-    real*8 :: dq, f, cabh
+    real*8 :: dq, f, cabh, delta
     real*8, parameter :: pi = acos(-1.0)
     character*1024 :: filename
     logical :: overwrite_condition, write_condition
-    logical, intent(in) :: do_derivatives
+    logical, intent(in) :: do_derivatives, use_matrix_forces
 
     v_uc = dot_product( cross_product(a_box,&
             & b_box), c_box ) / (&
@@ -1285,11 +1285,14 @@ contains
              if (j == k) f = 1.d0
              if (j /= k) f = 2.d0
 
+             if (j == k) delta = 1.d0
+             if (j /= k) delta = 0.d0
+
              y_structure_factor(1:params%structure_factor_n_samples) = &
                   & y_structure_factor(1:params%structure_factor_n_samples)  +  &
                   & f * ( n_atoms_of_species(j) * n_atoms_of_species(k) )**0.5 * &
                   &  (structure_factor_partial(1:params%structure_factor_n_samples, n_dim_idx) &
-                  &  )/ dfloat(n_sites) !/ dfloat(n_sites)
+                  &  - delta)/ dfloat(n_sites) !/ dfloat(n_sites)
 
              n_dim_idx = n_dim_idx + 1
 
@@ -1300,7 +1303,7 @@ contains
 
        y_structure_factor = y_structure_factor + 1.d0
        ! --- Preprocess the structure factor according to the output --- !
-       if ( trim( params%xrd_output ) == "q*i(q)" )then
+       if ( trim( params%sf_output ) == "q*i(q)" )then
           y_structure_factor = x_structure_factor * (y_structure_factor - 1.d0)
        end if
 
@@ -1342,27 +1345,51 @@ contains
                       if (j == k) f = 1.d0
                       if (j /= k) f = 2.d0
 
-                      call get_structure_factor_forces(  n_sites, params%exp_energy_scales(params%sf_idx),&
-                           & params%exp_data(params%sf_idx)%x,  params%exp_data(params%sf_idx)%y,&
-                           & forces_sf, virial_sf,&
-                           & neighbors_list(j_beg:j_end), n_neigh(i_beg:i_end),&
-                           & neighbor_species(j_beg:j_end), species_types, rjs(j_beg:j_end), xyz(1:3,j_beg:j_end), params&
-                           &%r_range_min, params%r_range_max, params&
-                           &%pair_distribution_n_samples, params&
-                           &%structure_factor_n_samples, n_species,&
-                           & x_structure_factor(1:params&
-                           &%structure_factor_n_samples), y_structure_factor(1:params&
-                           &%structure_factor_n_samples), params%pair_distribution_rcut&
-                           &, j, k, pair_distribution_partial_der(1:params &
-                           &%pair_distribution_n_samples, n_dim_idx,&
-                           & j_beg:j_end), params%pair_distribution_partial,&
-                           & params%pair_distribution_kde_sigma,&
-                           & 4.d0 * pi * f * ( (n_atoms_of_species(j) *&
-                           & n_atoms_of_species(k)) /  dfloat(n_sites) /&
-                           & dfloat(n_sites) ) * ( dfloat(n_sites) /&
-                           & v_uc ), sinc_factor_matrix, n_dim_idx,&
-                           & .false., params%xrd_output,&
-                           & n_atoms_of_species, .false. )
+                      if (use_matrix_forces)then
+                         call get_structure_factor_forces_matrix(  n_sites, params%exp_energy_scales(params%sf_idx),&
+                              & params%exp_data(params%sf_idx)%x,  params%exp_data(params%sf_idx)%y,&
+                              & forces_sf, virial_sf,&
+                              & neighbors_list(j_beg:j_end), n_neigh(i_beg:i_end),&
+                              & neighbor_species(j_beg:j_end), species_types, rjs(j_beg:j_end), xyz(1:3,j_beg:j_end), params&
+                              &%r_range_min, params%r_range_max, params&
+                              &%pair_distribution_n_samples, params&
+                              &%structure_factor_n_samples, n_species,&
+                              & x_structure_factor(1:params&
+                              &%structure_factor_n_samples), y_structure_factor(1:params&
+                              &%structure_factor_n_samples), params%pair_distribution_rcut&
+                              &, j, k, pair_distribution_partial_der(1:params &
+                              &%pair_distribution_n_samples, n_dim_idx,&
+                              & j_beg:j_end), params%pair_distribution_partial,&
+                              & params%pair_distribution_kde_sigma,&
+                              & 4.d0 * pi * f * ( (n_atoms_of_species(j) *&
+                              & n_atoms_of_species(k)) /  dfloat(n_sites) /&
+                              & dfloat(n_sites) ) * ( dfloat(n_sites) /&
+                              & v_uc ), sinc_factor_matrix, n_dim_idx,&
+                              & .false., params%xrd_output,&
+                              & n_atoms_of_species, .false. )
+                      else
+                         call get_structure_factor_forces(  n_sites, params%exp_energy_scales(params%sf_idx),&
+                              & params%exp_data(params%sf_idx)%x,  params%exp_data(params%sf_idx)%y,&
+                              & forces_sf, virial_sf,&
+                              & neighbors_list(j_beg:j_end), n_neigh(i_beg:i_end),&
+                              & neighbor_species(j_beg:j_end), species_types, rjs(j_beg:j_end), xyz(1:3,j_beg:j_end), params&
+                              &%r_range_min, params%r_range_max, params&
+                              &%pair_distribution_n_samples, params&
+                              &%structure_factor_n_samples, n_species,&
+                              & x_structure_factor(1:params&
+                              &%structure_factor_n_samples), y_structure_factor(1:params&
+                              &%structure_factor_n_samples), params%pair_distribution_rcut&
+                              &, j, k, pair_distribution_partial_der(1:params &
+                              &%pair_distribution_n_samples, n_dim_idx,&
+                              & j_beg:j_end), params%pair_distribution_partial,&
+                              & params%pair_distribution_kde_sigma,&
+                              & 4.d0 * pi * f * ( (n_atoms_of_species(j) *&
+                              & n_atoms_of_species(k)) /  dfloat(n_sites) /&
+                              & dfloat(n_sites) ) * ( dfloat(n_sites) /&
+                              & v_uc ), sinc_factor_matrix, n_dim_idx,&
+                              & .false., params%xrd_output,&
+                              & n_atoms_of_species, .false. )
+                      end if
 
 
                       n_dim_idx = n_dim_idx + 1
@@ -1517,7 +1544,7 @@ contains
        & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
        & neighbor_species, species, rank , q_beg, q_end, ntasks,&
        & sinc_factor_matrix, do_derivatives, pair_distribution_partial_der,&
-       & energies_xrd, forces_xrd, virial_xrd, neutron)
+       & energies_xrd, forces_xrd, virial_xrd, neutron, use_matrix_forces )
     implicit none
     type(input_parameters), intent(inout) :: params
     real*8, allocatable, intent(out) :: x_xrd(:), x_xrd_temp(:), &
@@ -1544,7 +1571,7 @@ contains
     real*8, parameter :: pi = acos(-1.0)
     character*1024 :: filename
     logical :: write_condition, overwrite_condition, valid_xrd
-    logical, intent(in) :: do_derivatives, neutron
+    logical, intent(in) :: do_derivatives, neutron, use_matrix_forces
     integer :: xrd_idx
     character*32 :: xrd_output
 
@@ -1703,26 +1730,50 @@ contains
                       if (j == k) f = 1.d0
                       if (j /= k) f = 2.d0
 
-                      call get_structure_factor_forces(  n_sites, params%exp_energy_scales(xrd_idx),&
-                           & x_xrd, params%exp_data(xrd_idx)%y,&
-                           & forces_xrd, virial_xrd,&
-                           & neighbors_list(j_beg:j_end), n_neigh(i_beg:i_end),&
-                           & neighbor_species(j_beg:j_end), species_types, rjs(j_beg:j_end), xyz(1:3,j_beg:j_end), params&
-                           &%r_range_min, params%r_range_max, params&
-                           &%pair_distribution_n_samples, params&
-                           &%structure_factor_n_samples, n_species,&
-                           & x_xrd(1:params&
-                           &%structure_factor_n_samples), y_xrd(1:params&
-                           &%structure_factor_n_samples), params%pair_distribution_rcut&
-                           &, j, k, pair_distribution_partial_der(1:params &
-                           &%pair_distribution_n_samples, n_dim_idx,&
-                           & j_beg:j_end), params%pair_distribution_partial,&
-                           & params%pair_distribution_kde_sigma,&
-                           & 4.d0 * pi * f * ( (n_atoms_of_species(j) *&
-                           & n_atoms_of_species(k)) /  dfloat(n_sites) /&
-                           & dfloat(n_sites) ) * ( dfloat(n_sites) /&
-                           & v_uc ), sinc_factor_matrix, n_dim_idx,&
-                           & .true., xrd_output, n_atoms_of_species, neutron)
+                      if (use_matrix_forces) then
+
+                         call get_structure_factor_forces_matrix(  n_sites, params%exp_energy_scales(xrd_idx),&
+                              & x_xrd, params%exp_data(xrd_idx)%y,&
+                              & forces_xrd, virial_xrd,&
+                              & neighbors_list(j_beg:j_end), n_neigh(i_beg:i_end),&
+                              & neighbor_species(j_beg:j_end), species_types, rjs(j_beg:j_end), xyz(1:3,j_beg:j_end), params&
+                              &%r_range_min, params%r_range_max, params&
+                              &%pair_distribution_n_samples, params&
+                              &%structure_factor_n_samples, n_species,&
+                              & x_xrd(1:params&
+                              &%structure_factor_n_samples), y_xrd(1:params&
+                              &%structure_factor_n_samples), params%pair_distribution_rcut&
+                              &, j, k, pair_distribution_partial_der(1:params &
+                              &%pair_distribution_n_samples, n_dim_idx,&
+                              & j_beg:j_end), params%pair_distribution_partial,&
+                              & params%pair_distribution_kde_sigma,&
+                              & 4.d0 * pi * f * ( (n_atoms_of_species(j) *&
+                              & n_atoms_of_species(k)) /  dfloat(n_sites) /&
+                              & dfloat(n_sites) ) * ( dfloat(n_sites) /&
+                              & v_uc ), sinc_factor_matrix, n_dim_idx,&
+                              & .true., xrd_output, n_atoms_of_species, neutron)
+                      else
+                         call get_structure_factor_forces(  n_sites, params%exp_energy_scales(xrd_idx),&
+                              & x_xrd, params%exp_data(xrd_idx)%y,&
+                              & forces_xrd, virial_xrd,&
+                              & neighbors_list(j_beg:j_end), n_neigh(i_beg:i_end),&
+                              & neighbor_species(j_beg:j_end), species_types, rjs(j_beg:j_end), xyz(1:3,j_beg:j_end), params&
+                              &%r_range_min, params%r_range_max, params&
+                              &%pair_distribution_n_samples, params&
+                              &%structure_factor_n_samples, n_species,&
+                              & x_xrd(1:params&
+                              &%structure_factor_n_samples), y_xrd(1:params&
+                              &%structure_factor_n_samples), params%pair_distribution_rcut&
+                              &, j, k, pair_distribution_partial_der(1:params &
+                              &%pair_distribution_n_samples, n_dim_idx,&
+                              & j_beg:j_end), params%pair_distribution_partial,&
+                              & params%pair_distribution_kde_sigma,&
+                              & 4.d0 * pi * f * ( (n_atoms_of_species(j) *&
+                              & n_atoms_of_species(k)) /  dfloat(n_sites) /&
+                              & dfloat(n_sites) ) * ( dfloat(n_sites) /&
+                              & v_uc ), sinc_factor_matrix, n_dim_idx,&
+                              & .true., xrd_output, n_atoms_of_species, neutron)
+                      end if
 
 
                       n_dim_idx = n_dim_idx + 1
