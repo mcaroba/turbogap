@@ -1,0 +1,41 @@
+! Species-specific info
+atoms_file = 'atoms.xyz'
+pot_file = 'gap_files/CO.gap'
+n_species = 2
+species = C O
+masses = 12.01 15.99
+e0 = -.16138053 0.
+
+! Monte-carlo options
+mc_nsteps = 1000                          # Number of Monte-Carlo Steps 
+n_mc_types = 3                           # Number of MC move types 
+mc_types = 'move' 'insertion' 'removal'  # MC move types (move/insertion/removal/volume/swap/md)
+mc_move_max = 0.5                        # Maximum distance for MC displacement ("move") type moves
+
+! - GCMC Options 
+n_mc_mu = 1              # Number of chemical potentials to add 
+mc_mu = 0                # Chemical potential(s) [eV] 
+mc_species = 'O'         # GCMC species types  
+mc_min_dist = 0.1        # GCMC minimum insertion distance 
+
+
+# > Now we don't actually need the below options to run a standard
+#   GCMC calculation, but to get output of the experimental energy in
+#   the MC output without optimizing the spectrum we can set
+#   'exp_energies = .false.'. This means we do not add the
+#   experimental energy to the total energy.
+
+! Experimental data options 
+n_exp = 1                                  # Number of experimental observables 
+exp_labels = 'xps'                         # Experimental observable types (xps/xrd/nd/pdf)
+exp_data_files = 'xps_spectra_interp.dat'  # Experimental data files (Note: the range of resulting XPS prediction will be the same as the experimental range.) 
+exp_n_samples = 501                        # Number of interpolations samples over the experimental range. 
+exp_energy_scales = 1.0                    # Energy scale (gamma) [eV]
+
+# XPS smearing
+xps_sigma = 0.4 
+
+# Turn off MC XPS optimization but still get "experimental energy" wrt. the exp data.  
+exp_energies = .false.
+
+write_xyz = 10           # Write to the xyz files, in this case mc_all.xyz / mc_current.xyz / mc_trial.xyz every 10 MC steps

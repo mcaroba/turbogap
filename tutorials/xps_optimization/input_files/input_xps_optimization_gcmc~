@@ -1,0 +1,31 @@
+! Species-specific info
+atoms_file = 'atoms.xyz'
+pot_file = 'gap_files/CO.gap'
+n_species = 2
+species = C O
+masses = 12.01 15.99
+e0 = -.16138053 0.
+
+! Experimental data options 
+n_exp = 1                                  # Number of experimental observables 
+exp_labels = 'xps'                         # Experimental observable types (xps/xrd/nd/pdf)
+exp_data_files = 'xps_spectra_interp.dat'  # Experimental data files (Note: the range of resulting XPS prediction will be the same as the experimental range.) 
+exp_n_samples = 501                        # Number of interpolations samples over the experimental range. 
+exp_energy_scales = 1.0                    # Energy scale (gamma) [eV]
+
+# XPS smearing
+xps_sigma = 0.4 
+
+! Monte-carlo options
+mc_nsteps = 1000
+n_mc_types = 3                           
+mc_types = 'move' 'insertion' 'removal'  
+mc_move_max = 0.5
+
+! - GCMC Options 
+n_mc_mu = 1              # Number of chemical potentials to add 
+mc_mu = 0                # Chemical potential(s) [eV] 
+mc_species = 'O'         # GCMC species types  
+mc_min_dist = 0.1        # GCMC minimum insertion distance 
+
+write_xyz = 10           # Write to the xyz files, in this case mc_all.xyz / mc_current.xyz / mc_trial.xyz every 10 MC steps

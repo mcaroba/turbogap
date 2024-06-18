@@ -1,0 +1,60 @@
+import numpy as np
+import sys
+import matplotlib.pyplot as plt
+
+if len(sys.argv) > 1:
+    plot_type = sys.argv[1]
+else:
+    plot_type = "standard_gcmc"
+
+#          i    E_tot_current   E_exp_current   N_atoms
+columns = (0,   4,              6,               7 )
+plots = [ "Total Energy", "Exp. Energy", "N" ]
+
+# Get the mc data
+data = np.loadtxt( "mc.log", usecols=columns, skiprows=1 )
+mc_time, mc_total_energy, mc_exp_energy, n_atoms  = data[:,0], data[:,1], data[:,2], data[:,3]
+
+# Get the XPS data
+n_samples_xps = 501
+xps_pred_data = np.loadtxt("xps_prediction.dat", skiprows=1)
+# We split for the outputted data data based on the number of samples
+n_xps_pred = int( xps_pred_data.shape[0] / n_samples_xps )
+xps_pred_data = xps_pred_data.reshape(n_xps_pred, n_samples_xps, 2  )
+
+exp_data = np.loadtxt("xps_exp.dat", skiprows=1)
+
+fig, (ax_mc, ax_xps) = plt.subplots(1, 2, figsize=(12,6))
+
+ax_mc2 = ax_mc.twinx()
+plot_name = (plot_type.replace('_', ' ' )).title()
+fig.suptitle(f'{plot_name} Simulation with Predicted XPS Spectrum')
+
+# Plot the MC data
+ax_mc.set_xlabel("MC step")
+ax_mc.set_ylabel("Energy [eV]")
+ax_mc2.set_ylabel("N_atoms")
+
+if plot_type == "standard_gcmc":
+    ax_mc.plot( mc_time, ( mc_total_energy - mc_total_energy[0] ) / n_atoms, label = "(E_GAP-E_GAP_0) per atom" )
+else:
+    ax_mc.plot( mc_time, ( mc_total_energy - mc_total_energy[0] - ( mc_exp_energy - mc_exp_energy[0]) ) / n_atoms, label = "(E_GAP-E_GAP_0) per atom" )
+
+ax_mc.plot( mc_time, ( mc_exp_energy - mc_exp_energy[0]) / n_atoms, label = "(E_spectra-E_spectra_0) per atom" )
+ax_mc2.plot( mc_time, n_atoms, label = "N_atoms", linestyle='dashed', color='black' )
+
+ax_mc.legend()
+ax_mc2.legend()
+# Plot the XPS data
+
+for i in range(n_xps_pred):
+    if i + 1 == n_xps_pred:
+        ax_xps.plot(xps_pred_data[i,:,0], xps_pred_data[i,:,1], color=plt.cm.magma(i/n_xps_pred), label="XPS prediction")
+    else:
+        ax_xps.plot(xps_pred_data[i,:,0], xps_pred_data[i,:,1], color=plt.cm.magma(i/n_xps_pred))
+
+ax_xps.plot(exp_data[:,0], exp_data[:,1], color='black', linewidth=2, linestyle='dashed', label = 'XPS Exp. ')
+ax_xps.set_xlim(282, 292)
+ax_xps.legend()
+fig.savefig(f"{plot_type}.png")
+plt.show()
