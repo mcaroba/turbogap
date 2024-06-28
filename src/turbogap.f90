@@ -1158,6 +1158,11 @@ program turbogap
         call mpi_bcast(hirshfeld_v, n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !       HERE WE TRANSFER THE HIRSHFELD VOLUME GRADIENTS IF NEEDED FOR SCS
+!       Putting this outside the if condition to avoid segfaults for vdw_hirsh_grad = .false.
+        if( allocated(hirshfeld_v_cart_der_ji) )deallocate( hirshfeld_v_cart_der_ji )
+          allocate( hirshfeld_v_cart_der_ji(1:3, 1:n_atom_pairs_by_rank(rank+1)) )
+          hirshfeld_v_cart_der_ji = 0.d0
+!!!!!!!!!!!!!!!!!
         if( params%do_forces .and. params%vdw_hirsh_grad )then
           allocate( hirshfeld_transfer(1:ntasks, 1:ntasks) )
           allocate( this_hirshfeld_transfer(1:ntasks) )
@@ -1278,9 +1283,9 @@ program turbogap
             k = k + n_neigh(i)
           end do
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! FIX: PUT THE DEALLOCATION AFTER MBD COMPUTATION
-          if( allocated(hirshfeld_v_cart_der_ji) )deallocate( hirshfeld_v_cart_der_ji )
-          allocate( hirshfeld_v_cart_der_ji(1:3, 1:n_atom_pairs_by_rank(rank+1)) )
-          hirshfeld_v_cart_der_ji = 0.d0
+          !if( allocated(hirshfeld_v_cart_der_ji) )deallocate( hirshfeld_v_cart_der_ji )
+          !allocate( hirshfeld_v_cart_der_ji(1:3, 1:n_atom_pairs_by_rank(rank+1)) )
+          !hirshfeld_v_cart_der_ji = 0.d0
           do k2 = 1, size(i_receive)
 !           These indices are inverted here
             j = i_receive(k2)
@@ -1305,7 +1310,7 @@ program turbogap
 
 
 !     Compute vdW energies and forces
-      write(*,*) "has_vdw", any(soap_turbo_hypers(:)%has_vdw)
+!      write(*,*) "has_vdw", any(soap_turbo_hypers(:)%has_vdw)
       if( any( soap_turbo_hypers(:)%has_vdw ) .and. params%do_prediction )then
         call cpu_time(time_vdw(1))
 #ifdef _MPIF90
@@ -1755,7 +1760,7 @@ call cpu_time(time2)
 
 
 ! For debugging the virial implementation
-if( rank == 0 .and. .false. )then
+if( rank == 0 .and. .true. )then
 !if( rank == 0 .and. .true. )then
 write(*,*) "pressure_soap: ", virial_soap / 3.d0 / v_uc
 write(*,*) "pressure_vdw: ", virial_vdw / 3.d0 / v_uc

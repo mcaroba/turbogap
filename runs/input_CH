@@ -1,5 +1,6 @@
 !atoms_file = 'c60_dimer_vacuum.xyz'
-atoms_file = 'methane.xyz'
+atoms_file = 'benzene_dimer_vacuum.xyz'
+!atoms_file = 'methane.xyz'
 pot_file = 'gap_files/CH.gap'
 !pot_file = 'gap_files/carbon.gap'
 
@@ -10,10 +11,10 @@ e0 = -.16138474 -.56534000000000001E-001
 masses = 12.01 1.00784
 
 ! van der Waals info
-vdw_type = none
-vdw_sr = 0.94 !0.83 !0.97
-vdw_d = 20. !6. !20.            ! Use d = 20 for TS(SCS) and d = 6 for MBD
-vdw_rcut = 50. !48.
+vdw_type = mbd
+vdw_sr = 0.83 !0.97
+vdw_d = 6. !20.            ! Use d = 20 for TS(SCS) and d = 6 for MBD
+vdw_rcut = 30.
 vdw_r0_ref = 1.900 1.64
 vdw_alpha0_ref = 1.778 0.667
 vdw_c6_ref = 27.8 3.88
