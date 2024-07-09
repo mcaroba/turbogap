@@ -2358,7 +2358,8 @@ program turbogap
                 & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
                 & neighbor_species, species, rank , q_beg, q_end, ntasks, sinc_factor_matrix, params%exp_forces, &
 #ifdef _MPIF90
-                & pair_distribution_partial_der, this_energies_sf, this_forces_sf, this_virial_sf, params%structure_factor_matrix_forces)
+                & pair_distribution_partial_der, this_energies_sf, this_forces_sf, this_virial_sf, &
+                & params%structure_factor_matrix_forces)
 #else
            & pair_distribution_partial_der, energies_sf, forces_sf, virial_sf,params%structure_factor_matrix_forces)
 #endif
