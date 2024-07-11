@@ -279,7 +279,7 @@ MODULE F_B_C
       type(c_ptr), value :: plm_array_div_sin_d, plm_array_der_mul_sin_d
       end subroutine
 
-      subroutine gpu_get_radial_exp_coeff_poly3gauss(radial_exp_coeff_d, radial_exp_coeff_der_d, &
+      subroutine  gpu_get_radial_exp_coeff_scaling(radial_exp_coeff_d, radial_exp_coeff_der_d, &
                                       i_beg_d, i_end_d,&
                                       global_scaling_d, &
                                       size_radial_exp_coeff_one, size_radial_exp_coeff_two, n_species, &
@@ -287,7 +287,7 @@ MODULE F_B_C
                                       rcut_hard_d, &
                                       k2_i_site_d, k_2start_d,&
                                       gpu_stream) &
-                                      bind(C,name="gpu_get_radial_exp_coeff_poly3gauss")
+                                      bind(C,name="gpu_get_radial_exp_coeff_scaling")
       use iso_c_binding
       type(c_ptr), value :: radial_exp_coeff_d, radial_exp_coeff_der_d, i_beg_d, i_end_d, global_scaling_d
       type(c_ptr), value :: rcut_hard_d, k2_i_site_d, k_2start_d
@@ -295,6 +295,66 @@ MODULE F_B_C
       integer(c_int), value :: size_radial_exp_coeff_one, size_radial_exp_coeff_two, n_species
       integer(c_int), value :: bintybint
       logical(c_bool), value :: c_do_derivatives
+      end subroutine
+
+      
+      subroutine gpu_radial_poly3gauss(n_atom_pairs, n_species, mask_d, rjs_d, rcut_hard_d, n_sites, n_neigh_d, n_max, &
+                                       ntemp, do_derivatives, exp_coeff_d, exp_coeff_der_d, rcut_soft_d, atom_sigma_d, &
+                                       exp_coeff_temp1_d, exp_coeff_temp2_d, exp_coeff_der_temp_d, i_beg, i_end, &
+                                       atom_sigma_scaling_d, mode, radial_enhancement, amplitude_scaling_d, alpha_max_d, &
+                                       nf_d, ntemp_der_d, W_d, gpu_stream) &
+                                       bind(C,name="gpu_radial_poly3gauss")
+      use iso_c_binding
+      type(c_ptr), value :: mask_d, rjs_d, rcut_hard_d, n_neigh_d,exp_coeff_d, exp_coeff_der_d
+      type(c_ptr), value :: rcut_soft_d, atom_sigma_d, exp_coeff_temp1_d, exp_coeff_temp2_d
+      type(c_ptr), value :: exp_coeff_der_temp_d, i_beg, i_end, atom_sigma_scaling_d, amplitude_scaling_d
+      type(c_ptr), value :: alpha_max_d, nf_d, W_d
+      type(c_ptr) :: gpu_stream
+      integer(c_int), value :: n_atom_pairs, n_species, n_sites, ntemp, n_max, mode, radial_enhancement, ntemp_der_d
+      logical(c_bool), value :: do_derivatives
+      end subroutine
+
+      subroutine gpu_radial_poly3(n_atom_pairs, n_species, mask_d, rjs_d, rcut_hard_d, n_sites, n_neigh_d, n_max, &
+                                  ntemp, do_derivatives, exp_coeff_d, exp_coeff_der_d, rcut_soft_d, atom_sigma_d, &
+                                  exp_coeff_temp1_d, exp_coeff_temp2_d, exp_coeff_der_temp_d, i_beg, i_end, &
+                                  atom_sigma_scaling_d, mode, radial_enhancement, amplitude_scaling_d, alpha_max_d, &
+                                  nf_d, ntemp_der_d, W_d, do_central_d, central_weight_d,gpu_stream) &
+                                  bind(C,name="gpu_radial_poly3")
+      use iso_c_binding
+      type(c_ptr), value :: mask_d, rjs_d, rcut_hard_d, n_neigh_d,exp_coeff_d, exp_coeff_der_d
+      type(c_ptr), value :: rcut_soft_d, atom_sigma_d, exp_coeff_temp1_d, exp_coeff_temp2_d
+      type(c_ptr), value :: exp_coeff_der_temp_d, i_beg, i_end, atom_sigma_scaling_d, amplitude_scaling_d
+      type(c_ptr), value :: alpha_max_d, nf_d, W_d,do_central_d, central_weight_d
+      type(c_ptr) :: gpu_stream
+      integer(c_int), value :: n_atom_pairs, n_species, n_sites, ntemp, n_max, mode, radial_enhancement, ntemp_der_d
+      logical(c_bool), value :: do_derivatives
+      end subroutine
+
+      subroutine gpu_get_2b_forces_energies(i_beg, i_end, n_sparse, energies_d, e0, n_neigh_d, do_forces, forces_d, virial_d, &
+                                            rjs_d, rcut, species_d, neighbor_species_d, sp1, sp2, buffer, delta, cutoff_d,    &
+                                            Qs_d, sigma, alphas_d, xyz_d,  gpu_stream )                                       &
+                                            bind(C,name="gpu_get_2b_forces_energies")
+      use iso_c_binding
+      type(c_ptr), value :: energies_d, n_neigh_d, forces_d, virial_d, rjs_d, species_d, neighbor_species_d, cutoff_d
+      type(c_ptr), value :: Qs_d, alphas_d, xyz_d
+      type(c_ptr) :: gpu_stream
+      integer(c_int), value :: i_beg, i_end, n_sparse, sp1, sp2
+      logical(c_bool), value :: do_forces
+      real(c_double), value :: e0, rcut, buffer, delta, sigma
+      end subroutine
+
+
+      subroutine gpu_get_core_pot_energy_and_forces(i_beg, i_end, do_forces, species_d, sp1, sp2, n_neigh_d, neighbor_species_d,&
+                                                    rjs_d, n_sparse, x_d, V_d, dVdx2_d, yp1, ypn, xyz_d, forces_d, virial_d,    &
+                                                    energies_d, gpu_stream)                                                     &
+                                                    bind(C,name="gpu_get_core_pot_energy_and_forces")
+      use iso_c_binding
+      type(c_ptr), value :: species_d, n_neigh_d, neighbor_species_d, rjs_d, x_d, V_d, dVdx2_d, xyz_d
+      type(c_ptr), value :: forces_d, virial_d, energies_d
+      type(c_ptr) :: gpu_stream
+      integer(c_int), value :: i_beg, i_end, sp1, sp2, n_sparse
+      logical(c_bool), value :: do_forces
+      real(c_double), value :: yp1, ypn
       end subroutine
 
     END INTERFACE

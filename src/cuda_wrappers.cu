@@ -6,7 +6,6 @@
 #include <cstdlib>
 #include <ctime>
 #include <hip/hip_runtime.h>
-#include <hip/hip_runtime.h>
 #include <hipblas.h>
 #include <assert.h>
 #include <hip/hip_complex.h>
@@ -15,6 +14,7 @@
 #define tpb_get_soap_der_one 128
 #define tpbcnk 64 // this is because k_max is 45???
 #define static_alphamax 8
+#define mode_polynomial 1
 int counter=0;
 /*__device__ double atomicDoubleAdd(double* address, double val)
 {
@@ -45,6 +45,60 @@ inline void gpuAssert(hipError_t code, const char *file, int line, bool abort=tr
    }
 }
 
+__device__ double N_a (double rcut, int a) {
+  const int b = 2*a + 5;
+  return sqrt( rcut / static_cast<double>(b) );
+}
+
+__device__ double gpu_spline(int nx, double r, double *x, double *y, double *y2, double rcut, 
+		           double yp1, double ypn){
+   int j;
+   double s = 0.0;
+   if( r < rcut ){
+     if( r < x[0] ){
+       s = y[0] + (r - x[0]) * yp1;
+     } else if( r > x[nx-1] ){
+       s = y[nx-1] + (r - x[nx-1]) * ypn;
+     } else {
+       for(j=0;j<nx-1; j++)
+         if( r < x[j+1] ) break;
+       double h = x[j+1] - x[j];
+       double h26 = pow(h,2) / 6.0;
+       double A = (x[j+1] - r) / h;
+       double B = 1.0 - A;
+       double C = (pow(A,3) - A) * h26;
+       double D = (pow(B,3) - B) * h26;
+       s = A*y[j] + B*y[j+1] + C*y2[j] + D*y2[j+1];
+     }
+   }
+   return s;
+}
+
+__device__ double gpu_spline_der(int nx, double r, double *x, double *y, double *y2, double rcut,
+                           double yp1, double ypn){
+   int j;
+   double ds = 0.0;
+   if( r < rcut ){
+     if( r < x[0] ){
+       ds = yp1;
+     } else if( r > x[nx-1] ){
+       ds = ypn;
+     } else {
+       for(j=0;j<nx-1; j++)
+         if( r < x[j+1] ) break;
+       double h = x[j+1] - x[j];
+       double h6 = h / 6.0;
+       double A = (x[j+1] - r) / h;
+       double B = 1.0 - A;
+       double dAdx = -1.0 / h;
+       double dBdx = -dAdx;
+       double dCdx = (1.0 - 3.0*pow(A,2)) * h6;
+       double dDdx = (3.0*pow(B,2) - 1.0) * h6;
+       ds = dAdx*y[j] + dBdx*y[j+1] + dCdx*y2[j] + dDdx*y2[j+1];
+     }
+   }
+   return ds;
+}
 __global__ void vect_dble(double *a, int N)
 {
    int idx = threadIdx.x+blockIdx.x*gridDim.x;
@@ -1760,7 +1814,7 @@ void cuda_poly3gauss_one(double *radial_exp_coeff_d,
   }
 }
 
-extern "C" void  gpu_get_radial_exp_coeff_poly3gauss(double *radial_exp_coeff_d, double *radial_exp_coeff_der_d, 
+extern "C" void  gpu_get_radial_exp_coeff_scaling(double *radial_exp_coeff_d, double *radial_exp_coeff_der_d, 
                                           int *i_beg_d, int *i_end_d, double *global_scaling_d,
                                           int size_radial_exp_coeff_one, int size_radial_exp_coeff_two, int n_species, 
                                           bool c_do_derivatives, int bintybint,
@@ -1790,6 +1844,563 @@ extern "C" void  gpu_get_radial_exp_coeff_poly3gauss(double *radial_exp_coeff_d,
   gpuErrchk( hipDeviceSynchronize() );   */                          
 }
 
+
+__global__
+void kernel_get_radial_poly3gauss(int n_atom_pairs, int n_species, bool *mask_d, double *rjs_d, double *rcut_hard_d, 
+		                  int n_sites, int *n_neigh_d, int n_max, int n_temp, bool do_derivatives, double *exp_coeff_d, 
+				  double *exp_coeff_der_d, double *rcut_soft_d, double *atom_sigma_d, double *exp_coeff_temp1_d,
+				  double *exp_coeff_temp2_d,double *exp_coeff_der_temp_d, int *i_beg_d, int *i_end_d,
+				  double *atom_sigma_scaling_d, int mode, int radial_enhancement, double *amplitude_scaling_d, 
+				  int *alpha_max_d, double *nf_d, int n_temp_der, double *W_d){
+
+  int n,d,k;
+  double  ampli_tude, ampli_tude_der, atom_sigma_scaled, amplitude_scaling, C1, C2, W_exp, nf, atom_sigma_f, rj_f, sf2;
+  double tmp1, tmp2, tmp3, tmp4, tmp5,tmp6,tmp7;
+
+  int k_ij=threadIdx.x+blockIdx.x*blockDim.x;
+  if(k_ij<n_atom_pairs){
+    double rjs=rjs_d[k_ij];
+    for(int i_sp=0;i_sp<n_species; i_sp++){
+      if(mask_d[k_ij+i_sp*n_atom_pairs]){
+        double rcut_hard_in = rcut_hard_d[i_sp];
+        if(rjs<=rcut_hard_in){
+	  int alpha_max = alpha_max_d[i_sp];
+          int alpha_max_der = alpha_max;
+          if (do_derivatives) alpha_max_der += 2;
+          int j=0;
+          int j1=0;
+          for (n=0; n<n_sites; n++){
+            j1 += n_neigh_d[n];
+            if (k_ij<j1) break;
+            j=j1;
+          }
+          if (k_ij>j) {
+            double pi = acos(-1.0);
+            double sq2 = sqrt(2.0);
+	    double rcut_soft_in = rcut_soft_d[i_sp];
+            double rcut_soft = rcut_soft_in/rcut_hard_in;
+            double rcut_hard = 1.0;
+	    double atom_sigma_in=atom_sigma_d[i_sp];
+            double atom_sigma = atom_sigma_in/rcut_hard_in;
+            double dr = 1.0 - rcut_soft_in/rcut_hard_in;
+            double N_gauss = sqrt(2.0/atom_sigma) / pow(pi,0.25);
+            double pref_f = 0.0;
+            for (n=0; n<alpha_max_der; n++) {
+              exp_coeff_temp1_d[k_ij*n_temp+n] = 0.0;
+              exp_coeff_temp2_d[k_ij*n_temp+n] = 0.0;
+            }
+            if (do_derivatives)
+               for (n=0; n<alpha_max; n++) exp_coeff_der_temp_d[k_ij*n_temp_der+n] = 0.0;
+            double rj = rjs/rcut_hard_in;
+	    double atom_sigma_scaling=atom_sigma_scaling_d[i_sp];
+            double atom_sigma_scaled = atom_sigma + atom_sigma_scaling*rj;
+            double s2 = pow(atom_sigma_scaled,2);
+	    double amplitude_scaling = amplitude_scaling_d[i_sp];
+	    tmp1 = 1.0 + rj * rj * (2.0 * rj - 3.0);
+            tmp2 = atom_sigma_scaling / atom_sigma_scaled;
+	    tmp3 = 6.0 / atom_sigma_scaled * rj * (rj - 1.0);
+	    if (mode==mode_polynomial) {
+              if( amplitude_scaling == 0.0 ){
+                ampli_tude = 1.0 / atom_sigma_scaled;
+                ampli_tude_der = - atom_sigma_scaling / s2;
+              } else if( tmp1 <= 1.e-10 ){
+                ampli_tude = 0.0;
+                ampli_tude_der = 0.0;
+              } else {
+                if( amplitude_scaling == 1.0 ){
+                  ampli_tude = 1.0 / atom_sigma_scaled * tmp1;
+                  ampli_tude_der = tmp3 - tmp2 * ampli_tude;
+                } else {
+                  ampli_tude = 1.0 / atom_sigma_scaled * pow(tmp1,amplitude_scaling);
+                  ampli_tude_der = amplitude_scaling * tmp3 * pow(tmp1,amplitude_scaling - 1.0) - tmp2 -ampli_tude;
+                }
+              }
+            }
+	    tmp3 = rj + sqrt(2.0/pi)*atom_sigma_scaled;
+            tmp4 = sqrt(8.0/pi)*atom_sigma_scaled;
+            tmp5 = rj*rj + s2 + tmp4*rj;
+            if( radial_enhancement == 1 ){
+              ampli_tude_der = ampli_tude * ( 1.0 + sqrt(2.0/pi)*atom_sigma_scaling ) + ampli_tude_der * tmp3;
+              ampli_tude = ampli_tude * tmp3;
+            } else if( radial_enhancement == 2 ){
+              ampli_tude_der = ampli_tude*( 2.0*rj + 2.0*atom_sigma_scaled*atom_sigma_scaling + tmp4 + sqrt(8.0/pi)*rj*atom_sigma_scaling )
+                               + ampli_tude_der*tmp5;
+              ampli_tude = ampli_tude * tmp5;
+            }
+	    double I_n = 0.0;
+            double N_n = 1.0;
+            double N_np1 = N_a(rcut_hard, -2);
+            double I_np1 = sqrt(pi/2.0) * atom_sigma_scaled * ( erf( (rcut_soft-rj)/sq2/atom_sigma_scaled ) - erf( (-rj)/sq2/atom_sigma_scaled ) ) / N_np1;
+	    double I_np2, N_np2;
+	    C1 = (rcut_hard_in == rcut_soft_in) ? 0.0 : s2 / dr * exp(-0.5 * pow(rcut_soft - rj,2) / s2);
+            C2 = s2 / rcut_hard * exp(-0.5 * pow(rj,2) / s2);
+            for (n = -1; n<=alpha_max_der-1;n++){
+              C1 = C1 * dr;
+              C2 = C2 * rcut_hard;
+              N_np2 = N_a(rcut_hard, n);
+              I_np2 = s2 * double(n+1) * N_n/ N_np2 * I_n - N_np1 * (rj - rcut_hard) / N_np2 * I_np1 + C1 / N_np2  - C2 / N_np2;
+              if(n > 0) exp_coeff_temp1_d[k_ij*n_temp+n-1] = I_np2;
+              N_n = N_np1;
+              N_np1 = N_np2;
+              I_n = I_np1;
+              I_np1 = I_np2;
+	    }
+	    if( do_derivatives ) {
+              tmp1 = atom_sigma_scaling * (rj - rcut_hard) / atom_sigma_scaled;
+              tmp2 = (rj - rcut_hard) / s2 * (tmp1 - 1.0);
+              tmp3 = rcut_hard * ( 2.0 * tmp1 - 1.0 ) / s2;
+              tmp4 = atom_sigma_scaling * rcut_hard * rcut_hard / pow(atom_sigma_scaled,3);
+	      tmp5 = exp_coeff_temp1_d[k_ij*n_temp];
+	      tmp6 = exp_coeff_temp1_d[k_ij*n_temp+1];
+              for (n = 1; n<=alpha_max-1; n++){
+	        tmp7 = exp_coeff_temp1_d[k_ij*n_temp+n+1];
+                exp_coeff_der_temp_d[k_ij*n_temp_der+n-1] = tmp2 * tmp5 + tmp3 * N_a(rcut_hard, n+1) / N_a(rcut_hard, n) * tmp6 +
+                                                            tmp4 * N_a(rcut_hard, n+2) / N_a(rcut_hard, n) * tmp7;
+		tmp5 = tmp6;
+		tmp6 = tmp7;
+	      }
+            }
+            if (false || (rcut_soft - rj) < 4.0*atom_sigma_scaled) {
+	      nf = nf_d[i_sp];
+              tmp1 = dr * dr / nf / nf;
+              atom_sigma_f = atom_sigma_scaled * dr / nf / sqrt(s2 + tmp1);
+              rj_f = (s2 * rcut_soft + tmp1 * rj) / (s2 + tmp1);
+              sf2 = pow(atom_sigma_f,2);
+              pref_f = exp( -0.5 * pow(rcut_soft-rj,2) / ( s2 + tmp1) );
+              I_n = 0.0;
+              N_n = 1.0;
+              N_np1 = N_a(rcut_hard, -2);
+              I_np1 = sqrt(pi/2.0) * atom_sigma_f * ( erf( (rcut_hard-rj_f)/sq2/atom_sigma_f ) - erf( (rcut_soft-rj_f)/sq2/atom_sigma_f ) ) / N_np1;
+              C2 = sf2 / dr * exp(-0.5 * pow(rcut_soft - rj_f,2) / sf2);
+              for (n = -1; n<=alpha_max_der-1; n++){
+                C2 *= dr;
+                double N_np2 = N_a(rcut_hard, n);
+                double I_np2 = sf2 * double(n+1) * N_n/ N_np2 * I_n - N_np1 * (rj_f - rcut_hard) / N_np2 * I_np1  - C2 / N_np2;
+                if(n > 0) exp_coeff_temp2_d[k_ij*n_temp+n-1] += I_np2;
+                N_n = N_np1;
+                N_np1 = N_np2;
+                I_n = I_np1;
+                I_np1 = I_np2;
+              }
+	      if (do_derivatives) {
+                double denom = s2 + tmp1;
+                double der_pref_f = pref_f * ( (rcut_soft - rj) / denom + pow(rcut_soft - rj,2) / pow(denom,2)* atom_sigma_scaled * atom_sigma_scaling );
+                double der_rjf_rj = (2.0*atom_sigma_scaled*rcut_soft*atom_sigma_scaling + tmp1) / denom - (s2*rcut_soft + tmp1 * rj) * 2.0 * 
+			            atom_sigma_scaled * atom_sigma_scaling / pow(denom,2);
+                double der_sjf_rj = atom_sigma_scaling * dr/nf / sqrt(denom) * (1.0 - pow(atom_sigma_scaled,2)/denom);
+                tmp2 = (rj_f - rcut_hard) / sf2 * ( der_sjf_rj * (rj_f - rcut_hard) / atom_sigma_f - der_rjf_rj );
+                tmp3 = rcut_hard / sf2 * ( 2.0 * der_sjf_rj * (rj_f - rcut_hard) / atom_sigma_f - der_rjf_rj );
+                tmp4 = der_sjf_rj * rcut_hard * rcut_hard / pow(atom_sigma_f,3);
+		tmp5 = exp_coeff_temp2_d[k_ij*n_temp];
+		tmp6 = exp_coeff_temp2_d[k_ij*n_temp+1];
+                for (n = 1; n <=alpha_max-1;n++){
+	          tmp7 = exp_coeff_temp2_d[k_ij*n_temp+n+1];
+                  exp_coeff_der_temp_d[k_ij*n_temp_der+n-1] += pref_f * ( tmp2 * tmp5 + tmp3 * N_a(rcut_hard, n+1) / N_a(rcut_hard, n) * tmp6 +
+                                                              tmp4 * N_a(rcut_hard, n+2) / N_a(rcut_hard, n) * tmp7) + der_pref_f * tmp5;
+		  tmp5 = tmp6;
+		  tmp6 = tmp7;
+		}
+              }
+            }
+	    exp_coeff_temp1_d[k_ij*n_temp+alpha_max-1] = 0.0;
+            exp_coeff_temp2_d[k_ij*n_temp+alpha_max-1] = 0.0;
+            if (false || rj < 4.0*(atom_sigma+atom_sigma_scaled)) {
+              double sigma_star = sqrt(pow(atom_sigma,2) + s2);
+	      exp_coeff_temp1_d[k_ij*n_temp+alpha_max-1]= exp(- 0.5 * pow(rj,2) / pow(sigma_star,2) ) * sqrt(pi/2.0) * 
+                                                          atom_sigma_scaled*atom_sigma / sigma_star * ( 1.0 + 
+						          erf(atom_sigma/atom_sigma_scaled*rj/sq2/sigma_star) )* N_gauss;
+              if (do_derivatives)
+                exp_coeff_der_temp_d[k_ij*n_temp_der+alpha_max-1] = ( pow(rj,2) * atom_sigma_scaling / pow(atom_sigma_scaled,3) - 
+				                                    rj/pow(sigma_star,2) + atom_sigma_scaling*pow(rj,2)*pow(atom_sigma,4)/
+								    pow(atom_sigma_scaled,3)/pow(sigma_star,4) + atom_sigma_scaling*
+								    pow(atom_sigma,2)/atom_sigma_scaled/pow(sigma_star,2) - 2.0*pow(rj,2)*
+								    atom_sigma_scaling*pow(atom_sigma,2)/pow(atom_sigma_scaled,3)/
+								    pow(sigma_star,2) ) * exp_coeff_temp1_d[k_ij*n_temp+alpha_max-1]+
+                                                                    (1./s2 - 2.0*rj*atom_sigma_scaling/pow(atom_sigma_scaled,3)) * s2 * 
+								    pow(atom_sigma,2) / pow(sigma_star,2) * sqrt(2.0/atom_sigma) / 
+								    pow(pi,0.25) * exp(-0.5 * pow(rj,2) / pow(sigma_star,2) * (1.0 + 
+								    pow(atom_sigma,2) / s2) ) + sqrt(2.0/atom_sigma) / pow(pi,0.25) * exp(-0.5*
+								    pow( rj,2) / pow(sigma_star,2) * (1.0 + pow(atom_sigma,2) / s2) ) * 
+								    atom_sigma_scaling / atom_sigma_scaled * rj*pow(atom_sigma,4)/pow(sigma_star,4);
+            }
+	    if (do_derivatives) {
+              for (n=0; n<alpha_max; n++)
+                exp_coeff_der_temp_d[k_ij*n_temp_der+n] = ampli_tude * exp_coeff_der_temp_d[k_ij*n_temp_der+n] +
+                                                          ampli_tude_der * (exp_coeff_temp1_d[k_ij*n_temp+n] + pref_f * exp_coeff_temp2_d[k_ij*n_temp+n]);
+	      for (d=i_beg_d[i_sp]; d<=i_end_d[i_sp]; d++){
+	        W_exp = 0.0;
+		k = 0;
+		for (n=i_beg_d[i_sp]; n<=i_end_d[i_sp];n++){
+	          W_exp += W_d[(n-1)*n_max+d-1]* exp_coeff_der_temp_d[k_ij*n_temp_der+k];
+		  k +=1;
+		}
+		exp_coeff_der_d[k_ij*n_max+d-1]=W_exp;
+              }
+            }
+  	    for (d=i_beg_d[i_sp]; d<=i_end_d[i_sp]; d++){
+	      W_exp = 0.0;
+	      k=0;
+	      for (n=i_beg_d[i_sp]; n<=i_end_d[i_sp];n++){
+	        W_exp += W_d[(n-1)*n_max+d-1]*(exp_coeff_temp1_d[k_ij*n_temp+k]+ pref_f*exp_coeff_temp2_d[k_ij*n_temp+k]);
+		k+=1;
+	      }
+	      exp_coeff_d[k_ij*n_max+d-1]=ampli_tude*W_exp;
+            }
+	  }
+	}
+      }
+    }
+  }
+}
+
+extern "C" void  gpu_radial_poly3gauss(int n_atom_pairs, int n_species, bool *mask_d, double *rjs_d, double *rcut_hard_d, 
+		                       int n_sites, int *n_neigh_d, int n_max, int n_temp, bool do_derivatives, double *exp_coeff_d,
+                                       double *exp_coeff_der_d, double *rcut_soft_d, double *atom_sigma_d, double *exp_coeff_temp1_d,
+                                       double *exp_coeff_temp2_d,double *exp_coeff_der_temp_d, int *i_beg, int *i_end, 
+				       double *atom_sigma_scaling_d, int mode, int radial_enhancement, double *amplitude_scaling_d, 
+				       int *alpha_max_d, double *nf_d, int n_temp_der, double *W_d,hipStream_t *stream ){
+
+  dim3 nblocks=dim3((n_atom_pairs-1+tpb)/tpb,1,1);
+  dim3 nthreads=dim3(tpb,1,1);
+
+  kernel_get_radial_poly3gauss<<<nblocks,nthreads,0,stream[0] >>>(n_atom_pairs,n_species,mask_d,rjs_d,rcut_hard_d,n_sites,
+	                                                          n_neigh_d, n_max, n_temp, do_derivatives, exp_coeff_d,
+                                                                  exp_coeff_der_d, rcut_soft_d, atom_sigma_d, exp_coeff_temp1_d,
+                                                                  exp_coeff_temp2_d, exp_coeff_der_temp_d, i_beg, i_end,
+							          atom_sigma_scaling_d, mode, radial_enhancement, amplitude_scaling_d,
+							          alpha_max_d, nf_d, n_temp_der, W_d);
+}
+
+__global__
+void kernel_get_radial_poly3(int n_atom_pairs, int n_species, bool *mask_d, double *rjs_d, double *rcut_hard_d,
+                                  int n_sites, int *n_neigh_d, int n_max, int n_temp, bool do_derivatives, double *exp_coeff_d,
+                                  double *exp_coeff_der_d, double *rcut_soft_d, double *atom_sigma_d, double *exp_coeff_temp1_d,
+                                  double *exp_coeff_temp2_d,double *exp_coeff_der_temp_d, int *i_beg_d, int *i_end_d,
+                                  double *atom_sigma_scaling_d, int mode, int radial_enhancement, double *amplitude_scaling_d,
+                                  int *alpha_max_d, double *nf_d, int n_temp_der, double *W_d, bool *do_central_d, double *central_weight_d){
+
+  int n,d,k;
+  double  ampli_tude, ampli_tude_der, atom_sigma_scaled, amplitude_scaling, C1, C2, W_exp, nf, atom_sigma_f, rj_f, sf2;
+  double tmp1, tmp2, tmp3, tmp4, tmp5, tmp6, tmp7;
+
+  int k_ij=threadIdx.x+blockIdx.x*blockDim.x;
+  if(k_ij<n_atom_pairs){
+    double rjs=rjs_d[k_ij];
+    for(int i_sp=0;i_sp<n_species; i_sp++){
+      if(mask_d[k_ij+i_sp*n_atom_pairs]){
+        double rcut_hard_in = rcut_hard_d[i_sp];
+        if(rjs<=rcut_hard_in){
+          int alpha_max = alpha_max_d[i_sp];
+          int alpha_max_der = alpha_max;
+          if (do_derivatives) alpha_max_der += 2;
+          int j=0;
+          int j1=0;
+          for (n=0; n<n_sites; n++){
+            j1 += n_neigh_d[n];
+            if (k_ij<j1) break;
+            j=j1;
+          }
+          if (k_ij>j || do_central_d[i_sp] ) {
+            double pi = acos(-1.0);
+            double sq2 = sqrt(2.0);
+            double rcut_soft_in = rcut_soft_d[i_sp];
+            double rcut_soft = rcut_soft_in/rcut_hard_in;
+            double rcut_hard = 1.0;
+            double atom_sigma_in=atom_sigma_d[i_sp];
+            double atom_sigma = atom_sigma_in/rcut_hard_in;
+            double dr = 1.0 - rcut_soft_in/rcut_hard_in;
+            double pref_f = 0.0;
+            for (n=0; n<alpha_max_der; n++) {
+              exp_coeff_temp1_d[k_ij*n_temp+n] = 0.0;
+              exp_coeff_temp2_d[k_ij*n_temp+n] = 0.0;
+	    }
+            if (do_derivatives)
+               for (n=0; n<alpha_max; n++) exp_coeff_der_temp_d[k_ij*n_temp_der+n] = 0.0;
+            double rj = rjs/rcut_hard_in;
+            double atom_sigma_scaling=atom_sigma_scaling_d[i_sp];
+            double atom_sigma_scaled = atom_sigma + atom_sigma_scaling*rj;
+            double s2 = pow(atom_sigma_scaled,2);
+            double amplitude_scaling = amplitude_scaling_d[i_sp];
+	    tmp1 = 1.0 + rj * rj * (2.0 * rj - 3.0);
+            tmp2 = atom_sigma_scaling / atom_sigma_scaled;
+	    tmp3 = 6.0 / atom_sigma_scaled * rj * (rj - 1.0);
+            if (mode==mode_polynomial) {
+              if( amplitude_scaling == 0.0 ){
+                ampli_tude = 1.0 / atom_sigma_scaled;
+                ampli_tude_der = - atom_sigma_scaling / s2;
+              } else if( tmp1 <= 1.e-10 ){
+                ampli_tude = 0.0;
+                ampli_tude_der = 0.0;
+              } else {
+                if( amplitude_scaling == 1.0 ){
+                  ampli_tude = 1.0 / atom_sigma_scaled * tmp1;
+                  ampli_tude_der = tmp3 - tmp2 * ampli_tude;
+                } else {
+                  ampli_tude = 1.0 / atom_sigma_scaled * pow(tmp1,amplitude_scaling);
+                  ampli_tude_der = tmp3 * amplitude_scaling * pow(tmp1,amplitude_scaling - 1.0) - tmp2 * ampli_tude;
+                }
+              }
+            }
+	    if (k_ij==j) {
+              ampli_tude = central_weight_d[i_sp] * ampli_tude;
+              ampli_tude_der = central_weight_d[i_sp] * ampli_tude_der;
+	    }
+	    tmp3 = rj + sqrt(2.0/pi)*atom_sigma_scaled;
+            tmp4 = sqrt(8.0/pi)*atom_sigma_scaled;
+            tmp5 = rj*rj + s2 + tmp4*rj;
+            if( radial_enhancement == 1 ){
+              ampli_tude_der = ampli_tude * ( 1.0 + sqrt(2.0/pi)*atom_sigma_scaling ) + ampli_tude_der * tmp3;
+              ampli_tude = ampli_tude * tmp3;
+            } else if( radial_enhancement == 2 ){
+              ampli_tude_der = ampli_tude*( 2.0*rj + 2.0*atom_sigma_scaled*atom_sigma_scaling + tmp4 + sqrt(8.0/pi)*rj*atom_sigma_scaling )
+                               + ampli_tude_der*tmp5;
+              ampli_tude = ampli_tude * tmp5;
+            }
+            double I_n = 0.0;
+            double N_n = 1.0;
+            double N_np1 = N_a(rcut_hard, -2);
+            double I_np1 = sqrt(pi/2.0) * atom_sigma_scaled * ( erf( (rcut_soft-rj)/sq2/atom_sigma_scaled ) - erf( (-rj)/sq2/atom_sigma_scaled ) ) / N_np1;
+            double I_np2, N_np2;
+	    C1 = (rcut_hard_in == rcut_soft_in) ? 0.0 : s2 / dr * exp(-0.5 * pow(rcut_soft - rj,2) / s2);
+            C2 = s2 / rcut_hard * exp(-0.5 * pow(rj,2) / s2);
+            for (n = -1; n<=alpha_max_der;n++){
+              C1 *= dr;
+              C2 *= rcut_hard;
+              N_np2 = N_a(rcut_hard, n);
+              I_np2 = s2 * double(n+1) * N_n/ N_np2 * I_n - N_np1 * (rj - rcut_hard) / N_np2 * I_np1 + C1 / N_np2  - C2 / N_np2;
+              if(n > 0) exp_coeff_temp1_d[k_ij*n_temp+n-1] = I_np2;
+              N_n = N_np1;
+              N_np1 = N_np2;
+              I_n = I_np1;
+              I_np1 = I_np2;
+            }
+	    if( do_derivatives ) {
+	      tmp1 = atom_sigma_scaling * (rj - rcut_hard) / atom_sigma_scaled;
+              tmp2 = (rj - rcut_hard) / s2 * (tmp1 - 1.0);
+              tmp3 = rcut_hard * ( 2.0 * tmp1 - 1.0 ) / s2;
+              tmp4 = atom_sigma_scaling * rcut_hard * rcut_hard / pow(atom_sigma_scaled,3);
+              tmp5 = exp_coeff_temp1_d[k_ij*n_temp];
+              tmp6 = exp_coeff_temp1_d[k_ij*n_temp+1];
+              for (n = 1; n<=alpha_max-1; n++) {
+		tmp7 = exp_coeff_temp1_d[k_ij*n_temp+n+1];
+                exp_coeff_der_temp_d[k_ij*n_temp_der+n-1] = tmp2 * tmp5 + tmp3 * N_a(rcut_hard, n+1) / N_a(rcut_hard, n) * tmp6 +
+                                                            tmp4 * N_a(rcut_hard, n+2) / N_a(rcut_hard, n) * tmp7;
+                tmp5 = tmp6;
+                tmp6 = tmp7;
+              }
+            }
+            if (false || (rcut_soft - rj) < 4.0*atom_sigma_scaled) {
+	      nf = nf_d[i_sp];
+              tmp1 = dr * dr / nf / nf;
+              atom_sigma_f = atom_sigma_scaled * dr / nf / sqrt(s2 + tmp1);
+              rj_f = (s2 * rcut_soft + tmp1 * rj) / (s2 + tmp1);
+              sf2 = pow(atom_sigma_f,2);
+              pref_f = exp( -0.5 * pow(rcut_soft-rj,2) / ( s2 + tmp1) );
+              I_n = 0.0;
+              N_n = 1.0;
+              N_np1 = N_a(rcut_hard, -2);
+              I_np1 = sqrt(pi/2.0) * atom_sigma_f * ( erf( (rcut_hard-rj_f)/sq2/atom_sigma_f ) - erf( (rcut_soft-rj_f)/sq2/atom_sigma_f ) ) / N_np1;
+              C2 = sf2 / dr * exp(-0.5 * pow(rcut_soft - rj_f,2) / sf2);
+              for (n = -1; n<=alpha_max_der-1; n++){
+                C2 *= dr;
+                double N_np2 = N_a(rcut_hard, n);
+                double I_np2 = sf2 * double(n+1) * N_n/ N_np2 * I_n - N_np1 * (rj_f - rcut_hard) / N_np2 * I_np1  - C2 / N_np2;
+                if(n > 0) exp_coeff_temp2_d[k_ij*n_temp+n-1] += I_np2;
+                N_n = N_np1;
+                N_np1 = N_np2;
+                I_n = I_np1;
+                I_np1 = I_np2;
+              }
+	      if (do_derivatives) {
+                double denom = s2 + tmp1;
+                double der_pref_f = pref_f * ( (rcut_soft - rj) / denom + pow(rcut_soft - rj,2) / pow(denom,2)* atom_sigma_scaled * atom_sigma_scaling );
+                double der_rjf_rj = (2.0*atom_sigma_scaled*rcut_soft*atom_sigma_scaling + tmp1) / denom - (s2*rcut_soft + tmp1 * rj) * 2.0 *
+                                    atom_sigma_scaled * atom_sigma_scaling / pow(denom,2);
+                double der_sjf_rj = atom_sigma_scaling * dr/nf / sqrt(denom) * (1.0 - pow(atom_sigma_scaled,2)/denom);
+
+		tmp2 = (rj_f - rcut_hard) / sf2 * ( der_sjf_rj * (rj_f - rcut_hard) / atom_sigma_f - der_rjf_rj );
+                tmp3 = rcut_hard / sf2 * ( 2.0 * der_sjf_rj * (rj_f - rcut_hard) / atom_sigma_f - der_rjf_rj );
+                tmp4 = der_sjf_rj * rcut_hard * rcut_hard / pow(atom_sigma_f,3);
+                tmp5 = exp_coeff_temp2_d[k_ij*n_temp];
+                tmp6 = exp_coeff_temp2_d[k_ij*n_temp+1];
+                for (n = 1; n <=alpha_max-1;n++){
+                  tmp7 = exp_coeff_temp2_d[k_ij*n_temp+n+1];
+                  exp_coeff_der_temp_d[k_ij*n_temp_der+n-1] += pref_f * ( tmp2 * tmp5 + tmp3 * N_a(rcut_hard, n+1) / N_a(rcut_hard, n) * tmp6 +
+                                                              tmp4 * N_a(rcut_hard, n+2) / N_a(rcut_hard, n) * tmp7) + der_pref_f * tmp5;
+                  tmp5 = tmp6;
+                  tmp6 = tmp7;
+                }
+              }
+            }
+            if (do_derivatives) {
+              for (n=0; n<alpha_max; n++)
+                exp_coeff_der_temp_d[k_ij*n_temp_der+n] = ampli_tude * exp_coeff_der_temp_d[k_ij*n_temp_der+n] +
+                                                          ampli_tude_der * (exp_coeff_temp1_d[k_ij*n_temp+n] + pref_f * exp_coeff_temp2_d[k_ij*n_temp+n]);
+              for (d=i_beg_d[i_sp]; d<=i_end_d[i_sp]; d++){
+                W_exp = 0.0;
+                k = 0;
+                for (n=i_beg_d[i_sp]; n<=i_end_d[i_sp];n++){
+                  W_exp += W_d[(n-1)*n_max+d-1]* exp_coeff_der_temp_d[k_ij*n_temp_der+k];
+                  k +=1;
+                }
+                exp_coeff_der_d[k_ij*n_max+d-1]=W_exp;
+              }
+            }
+            for (d=i_beg_d[i_sp]; d<=i_end_d[i_sp]; d++){
+              W_exp = 0.0;
+              k=0;
+              for (n=i_beg_d[i_sp]; n<=i_end_d[i_sp];n++){
+                W_exp += W_d[(n-1)*n_max+d-1]*(exp_coeff_temp1_d[k_ij*n_temp+k]+ pref_f*exp_coeff_temp2_d[k_ij*n_temp+k]);
+                k+=1;
+              }
+              exp_coeff_d[k_ij*n_max+d-1]=ampli_tude*W_exp;
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+extern "C" void  gpu_radial_poly3(int n_atom_pairs, int n_species, bool *mask_d, double *rjs_d, double *rcut_hard_d,
+                                  int n_sites, int *n_neigh_d, int n_max, int n_temp, bool do_derivatives, double *exp_coeff_d,
+                                  double *exp_coeff_der_d, double *rcut_soft_d, double *atom_sigma_d, double *exp_coeff_temp1_d,
+                                  double *exp_coeff_temp2_d,double *exp_coeff_der_temp_d, int *i_beg, int *i_end,
+                                  double *atom_sigma_scaling_d, int mode, int radial_enhancement, double *amplitude_scaling_d,
+                                  int *alpha_max_d, double *nf_d, int n_temp_der, double *W_d, bool *do_central_d, 
+				  double *central_weight_d, hipStream_t *stream ){
+
+  dim3 nblocks=dim3((n_atom_pairs-1+tpb)/tpb,1,1);
+  dim3 nthreads=dim3(tpb,1,1);
+
+  kernel_get_radial_poly3<<<nblocks,nthreads,0,stream[0] >>>(n_atom_pairs,n_species,mask_d,rjs_d,rcut_hard_d,n_sites,
+                                                             n_neigh_d, n_max, n_temp, do_derivatives, exp_coeff_d,
+                                                             exp_coeff_der_d, rcut_soft_d, atom_sigma_d, exp_coeff_temp1_d,
+                                                             exp_coeff_temp2_d, exp_coeff_der_temp_d, i_beg, i_end,
+                                                             atom_sigma_scaling_d, mode, radial_enhancement, amplitude_scaling_d,
+                                                             alpha_max_d, nf_d, n_temp_der, W_d, do_central_d, central_weight_d);
+}
+
+__global__
+void kernel_get_2b(int i_beg, int i_end, int n_sparse, double *energies_d, double e0, int *n_neigh_d, bool do_forces, double *forces_d,
+	           double *virial_d, double *rjs_d, double rcut, int *species_d, int *neighbor_species_d, int sp1, int sp2,double buffer, 
+		   double delta, double *cutoff_d, double *Qs_d, double sigma, double *alphas_d, double *xyz_d){
+
+  int i_site=i_beg-1+threadIdx.x+blockIdx.x*blockDim.x;
+  double forces_loc[3], virial_loc[9],energies_loc;
+  int i,j,k,s,k1,k2;
+  double rjs_k,fcut,dfcut,pi,sigma2,delta2,tmp;
+  if(i_site<i_end){
+    energies_loc = e0;
+    if( do_forces ){
+      for (i=0; i <3; i++) forces_loc[i] = 0.0;
+      for (i=0; i <9; i++) virial_loc[i] = 0.0;
+    }
+    if( species_d[i_site] == sp1 ||  species_d[i_site] == sp2 ) {
+      pi = acos(-1.0);
+      k=0;
+      for (i=i_beg-1; i<i_site; i++) k += n_neigh_d[i];
+      for (j=2; j<=n_neigh_d[i_site]; j++) {
+        k +=1;
+        if( !((species_d[i_site]==sp1 && neighbor_species_d[k]==sp2) || (species_d[i_site]==sp2 && neighbor_species_d[k]==sp1)) ) continue;
+        rjs_k = rjs_d[k];
+        if( rjs_k < rcut ) {
+	  fcut=( rjs_k<rcut-buffer) ? 1.0 : (cos(pi*(rjs_k-rcut+buffer)/buffer)+1.0)/2.0;
+	  if( do_forces ) dfcut=( rjs_k<rcut-buffer) ? 0.0 : pi/2.0/buffer*sin(pi*(rjs_k-rcut+buffer)/buffer);
+	  sigma2=sigma*sigma;
+	  delta2=delta*delta;
+          for (s = 0;s<n_sparse;s++){
+            tmp = delta2*alphas_d[s]*cutoff_d[s]* exp(-0.5*pow(rjs_k-Qs_d[s],2)/sigma2);
+            energies_loc += tmp*fcut;
+            if( do_forces) {
+              for (i=0;i<3;i++){
+                forces_loc[i] = -2.0*tmp*xyz_d[3*k+i]/rjs_k*((rjs_k-Qs_d[s])/sigma2*fcut+dfcut);
+                forces_d[3*i_site+i] += forces_loc[i];
+	      }
+              for (k2=0; k2<3; k2++)
+                for (k1=0; k1<3; k1++)
+                  virial_loc[3*k2+k1] += -0.5*(forces_loc[k1]*xyz_d[3*k+k2]+forces_loc[k2]*xyz_d[3*k+k1]);
+            }
+          }
+        }
+      }
+    }
+    energies_d[i_site] = energies_loc;
+    for (k1=0;k1<9;k1++) atomicAdd(&virial_d[k1],0.5*virial_loc[k1]);
+  }
+}
+
+extern "C" void  gpu_get_2b_forces_energies(int i_beg, int i_end, int n_sparse, double *energies_d, double e0, int *n_neigh_d, bool do_forces,
+                                            double *forces_d, double *virial_d,double *rjs_d, double rcut, int *species_d,
+                                            int *neighbor_species_d, int sp1, int sp2, double buffer, double delta, double *cutoff_d, 
+					    double *Qs_d, double sigma, double *alphas_d, double *xyz_d, hipStream_t *stream ){
+
+  dim3 nblocks=dim3((i_end-i_beg+tpb)/tpb,1,1);
+  dim3 nthreads=dim3(tpb,1,1);
+
+  kernel_get_2b<<<nblocks, nthreads,0,stream[0] >>>(i_beg, i_end, n_sparse, energies_d, e0, n_neigh_d, do_forces, forces_d, virial_d, 
+		                                    rjs_d, rcut, species_d, neighbor_species_d, sp1, sp2, buffer, delta, cutoff_d, 
+						    Qs_d, sigma, alphas_d, xyz_d);
+}
+
+__global__
+void kernel_get_core_pot(int i_beg, int i_end, bool do_forces, int *species_d, int sp1, int sp2, int *n_neigh_d, int *neighbor_species_d, 
+		         double *rjs_d, int n_sparse, double *x_d, double *V_d, double *dVdx2_d, double yp1, double ypn, double *xyz_d, 
+			 double *forces_d, double *virial_d, double *energies_d){
+
+  int i_site=i_beg-1+threadIdx.x+blockIdx.x*blockDim.x;
+  double forces_loc[3], virial_loc[9],energies_loc;
+  int i,j,k,k1,k2;
+  double rjs_k, rcut, Vint, d_Vint;
+
+  if(i_site<i_end){
+    energies_loc = 0.0;
+    if( do_forces ){
+      for (i=0; i <3; i++) forces_loc[i] = 0.0;
+      for (i=0; i <9; i++) virial_loc[i] = 0.0;
+    }
+    if( species_d[i_site] == sp1 ||  species_d[i_site] == sp2 ) {
+      k=0;
+      for (i=i_beg-1; i<i_site; i++) k += n_neigh_d[i];
+      for (j=2; j<=n_neigh_d[i_site]; j++) {
+        k +=1;
+	if( !((species_d[i_site]==sp1 && neighbor_species_d[k]==sp2) || (species_d[i_site]==sp2 && neighbor_species_d[k]==sp1)) ) continue;
+        rjs_k = rjs_d[k];
+        rcut=x_d[0];
+        for (i=1; i<n_sparse; i++)
+	  if (rcut>=x_d[i]) rcut=x_d[i];
+        if( rjs_k < rcut ) {
+	  energies_loc += 0.5 * gpu_spline(n_sparse, rjs_k, x_d, V_d, dVdx2_d, rcut, yp1, ypn);
+          if( do_forces) {
+	    d_Vint=gpu_spline_der(n_sparse, rjs_k, x_d, V_d, dVdx2_d, rcut, yp1, ypn);
+            for (i=0; i<3; i++) {
+              forces_loc[i] = d_Vint * xyz_d[3*k+i] / rjs_k;
+              forces_d[3*i_site+i] += forces_loc[i];
+            }
+            for (k2=0; k2<3; k2++)
+              for (k1=0; k1<3; k1++)
+                virial_d[3*k2+k1] += - 0.5 * (forces_loc[k1]*xyz_d[3*k+k2] + forces_loc[k2]*xyz_d[3*k+k1]);
+          }
+        }
+      }
+    }
+    energies_d[i_site] = energies_loc;
+    for (k1=0;k1<9;k1++) atomicAdd(&virial_d[k1],0.5*virial_loc[k1]);
+  }
+}
+
+extern "C" void  gpu_get_core_pot_energy_and_forces(int i_beg, int i_end, bool do_forces, int *species_d, int sp1, int sp2, int *n_neigh_d, 
+		                                    int *neighbor_species_d, double *rjs_d, int n_sparse, double *x_d, double *V_d, 
+						    double *dVdx2_d, double yp1, double ypn, double *xyz_d, double *forces_d, 
+						    double *virial_d, double *energies_d, hipStream_t *stream){
+
+  dim3 nblocks=dim3((i_end-i_beg+tpb)/tpb,1,1);
+  dim3 nthreads=dim3(tpb,1,1);
+
+  kernel_get_core_pot<<<nblocks, nthreads,0,stream[0] >>>(i_beg, i_end, do_forces, species_d, sp1, sp2, n_neigh_d, neighbor_species_d,
+                                                          rjs_d, n_sparse, x_d, V_d, dVdx2_d, yp1, ypn, xyz_d, forces_d, virial_d, 
+							                                            energies_d);
+}
 
 
 /* 
