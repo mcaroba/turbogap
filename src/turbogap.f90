@@ -175,7 +175,7 @@ program turbogap
 
 
 
-  call gpu_set_device(0) ! This works when each GPU has only 1 visible device. This is done in the slurm submission script
+  call gpu_set_device(rank) ! This works when each GPU has only 1 visible device. This is done in the slurm submission script
 
   call create_cublas_handle(cublas_handle, gpu_stream)
   !call create_cublas_handle(cublas_handle)
