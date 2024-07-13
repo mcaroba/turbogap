@@ -12,6 +12,14 @@ MODULE F_B_C
         type(c_ptr) :: a_d,gpu_stream
         integer(c_size_t),value :: n
       end subroutine
+      
+      subroutine gpu_memset_async(a_d,valuetoset,n,gpu_stream) bind(C,name="cuda_memset_async")
+        use iso_c_binding
+        implicit none
+        type(c_ptr) :: a_d,gpu_stream
+        integer(c_size_t),value :: n
+        integer(c_int),value :: valuetoset
+      end subroutine
 
       subroutine gpu_malloc_all_blocking(a_d,n) bind(C,name="cuda_malloc_all_blocking")
         use iso_c_binding
@@ -279,7 +287,7 @@ MODULE F_B_C
       type(c_ptr), value :: plm_array_div_sin_d, plm_array_der_mul_sin_d
       end subroutine
 
-      subroutine  gpu_get_radial_exp_coeff_scaling(radial_exp_coeff_d, radial_exp_coeff_der_d, &
+      subroutine gpu_get_radial_exp_coeff_poly3gauss(radial_exp_coeff_d, radial_exp_coeff_der_d, &
                                       i_beg_d, i_end_d,&
                                       global_scaling_d, &
                                       size_radial_exp_coeff_one, size_radial_exp_coeff_two, n_species, &
@@ -287,7 +295,7 @@ MODULE F_B_C
                                       rcut_hard_d, &
                                       k2_i_site_d, k_2start_d,&
                                       gpu_stream) &
-                                      bind(C,name="gpu_get_radial_exp_coeff_scaling")
+                                      bind(C,name="gpu_get_radial_exp_coeff_poly3gauss")
       use iso_c_binding
       type(c_ptr), value :: radial_exp_coeff_d, radial_exp_coeff_der_d, i_beg_d, i_end_d, global_scaling_d
       type(c_ptr), value :: rcut_hard_d, k2_i_site_d, k_2start_d
@@ -297,7 +305,7 @@ MODULE F_B_C
       logical(c_bool), value :: c_do_derivatives
       end subroutine
 
-      
+
       subroutine gpu_radial_poly3gauss(n_atom_pairs, n_species, mask_d, rjs_d, rcut_hard_d, n_sites, n_neigh_d, n_max, &
                                        ntemp, do_derivatives, exp_coeff_d, exp_coeff_der_d, rcut_soft_d, atom_sigma_d, &
                                        exp_coeff_temp1_d, exp_coeff_temp2_d, exp_coeff_der_temp_d, i_beg, i_end, &
@@ -356,6 +364,76 @@ MODULE F_B_C
       logical(c_bool), value :: do_forces
       real(c_double), value :: yp1, ypn
       end subroutine
+
+      subroutine get_orthonormalization_matrix_poly3_gpu(alpha_max, S, W, handle, stream) bind(C,name="get_orthonormalization_matrix_poly3")
+        use iso_c_binding
+        type(c_ptr), value :: S, W
+        type(c_ptr)        :: handle, stream
+        integer(c_int), value :: alpha_max
+      end subroutine
+
+      subroutine get_orthonormalization_matrix_poly3gauss_gpu(alpha_max, atom_sigma_in, rcut_hard_in, S, W,handle,stream) bind(C,name="get_orthonormalization_matrix_poly3gauss")
+        use iso_c_binding
+        type(c_ptr), value :: S,W
+        type(c_ptr)        :: handle, stream
+        integer(c_int), value :: alpha_max
+        real(c_double), value :: atom_sigma_in, rcut_hard_in
+      end subroutine
+
+      subroutine orthonormalization_copy_to_global_matrix(src, dest,src_rowsize, dest_start, dest_rowsize, stream) bind(C,name="copy_to_global_matrix")
+        use iso_c_binding
+        type(c_ptr), value :: src,dest
+        type(c_ptr)        :: stream
+        integer(c_int), value :: src_rowsize, dest_start, dest_rowsize
+      end subroutine
+
+      subroutine gpu_3b(n_sparse, n_sites, n_atom_pairs, n_sites0, sp0, sp1, sp2, alpha, delta, e0, cutoff, stream, rjs, xyz, n_neigh, species, neighbors_list, neighbor_species, do_forces, rcut,buffer, sigma,qs,str,i_beg, i_end, energy_d, forces_d, virials_d, kappas_array_d) bind(C,name="gpu_3b")
+        use iso_c_binding
+        implicit none
+        type(c_ptr),value :: alpha, cutoff
+        type(c_ptr) :: stream
+        integer(c_int),value :: n_sparse, n_sites, n_atom_pairs, n_sites0, sp0, sp1, sp2,i_beg,i_end
+        real(c_double),value :: delta,e0, rcut,buffer
+        type(c_ptr),value :: rjs,xyz,n_neigh,species,neighbors_list,neighbor_species,sigma,qs,energy_d,forces_d,virials_d,kappas_array_d
+        logical(c_bool), value :: do_forces
+        character(kind=c_char), dimension(*) :: str
+      end subroutine
+      
+      subroutine gpu_create_kappas(kappas_array_d, n_neigh_host,stream,n_sites) bind(C,name="create_kappas_cwrap")
+        use iso_c_binding
+        type(c_ptr), value :: kappas_array_d, n_neigh_host
+        type(c_ptr)        :: stream
+        integer(c_int), value :: n_sites
+      end subroutine
+      
+      subroutine gpu_setup_3bresult_arrays(energy_3b_d, forces_3b_d, virials_3b_d,stream,do_forces, n_sites, n_sites0) bind(C,name="setup_3bresult_arrays_cwrap")
+        use iso_c_binding
+        type(c_ptr) :: energy_3b_d, forces_3b_d, virials_3b_d
+        type(c_ptr) :: stream
+        logical(c_bool), value :: do_forces
+	integer(c_int), value :: n_sites, n_sites0
+      end subroutine
+      
+      subroutine gpu_cleanup_3bresult_arrays(energy_3b_d, forces_3b_d, virials_3b_d,energy_3b_h,forces_3b_h,virials_3b_h,stream,do_forces, n_sites, n_sites0) bind(C,name="cleanup_3bresult_arrays_cwrap")
+        use iso_c_binding
+        type(c_ptr) :: energy_3b_d, forces_3b_d, virials_3b_d,energy_3b_h,forces_3b_h,virials_3b_h
+        type(c_ptr) :: stream
+        logical(c_bool), value :: do_forces
+	integer(c_int), value :: n_sites, n_sites0
+      end subroutine
+!
+!      subroutine gpu_2b(n_sparse, n_sites, sp1, sp2, alpha, delta, cutoff, stream, rjs, xyz, n_neigh, species, neighbor_species, do_forces, rcut,buffer, sigma,qs,n_neigh_host) bind(C,name="gpu_2b")
+!        use iso_c_binding
+!        implicit none
+!        type(c_ptr),value :: alpha, cutoff
+!        type(c_ptr) :: stream
+!        integer(c_int),value :: n_sparse, n_sites, sp1, sp2
+!        real(c_double),value :: delta, rcut,buffer,sigma
+!        type(c_ptr),value :: rjs,xyz,n_neigh,species,neighbor_species,qs,n_neigh_host
+!        logical(c_bool), value :: do_forces
+!      end subroutine
+
+
 
     END INTERFACE
   END MODULE F_B_C
