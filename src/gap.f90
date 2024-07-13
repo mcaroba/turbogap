@@ -34,7 +34,7 @@ module gap
 
   contains
 
-  subroutine get_soap_energy_and_forces(soap, soap_der, alphas, delta, zeta0, e0, Qs, &
+  subroutine get_soap_energy_and_forces(n_sparse, soap, soap_der, alphas_d, delta, zeta0, e0, Qs_d, &
                                         n_neigh, neighbors_list, xyz, do_forces, do_timing, &
                                         energies, forces, virial,  solo_time_soap, soap_d, &
                                         soap_der_d, n_neigh_d, k2_i_site_d, cublas_handle, gpu_stream)
@@ -44,7 +44,9 @@ module gap
     !use mpi
     implicit none
 
-    real(c_double), intent(in),target :: soap(:,:), soap_der(:,:,:), alphas(:), delta, Qs(:,:), e0, zeta0, xyz(:,:)
+    integer(c_int), intent(in) :: n_sparse
+!   real(c_double), intent(in),target :: soap(:,:), soap_der(:,:,:), alphas(:), delta, Qs(:,:), e0, zeta0, xyz(:,:)
+    real(c_double), intent(in),target :: soap(:,:), soap_der(:,:,:), delta, e0, zeta0, xyz(:,:)
     real(c_double), intent(out):: energies(:), forces(:,:), virial(1:3,1:3)
     real(c_double), target, allocatable :: tmp_energies(:), tmp_forces(:,:), tmp_virial(:,:)
     integer(c_int), intent(in), target :: n_neigh(:), neighbors_list(:)
@@ -54,10 +56,11 @@ module gap
                            kernels_copy(:,:), this_force_h(:,:)
     real(c_double) :: time1, time2, time3, energies_time, forces_time, this_force(1:3)
     real(c_double) ::  zeta, cdelta_ene,cdelta_force, mzetam
-    integer(c_int) :: n_sites, n_sparse, n_soap, i, j, k, l, j2, zeta_int, n_sites0, k1, k2
+    integer(c_int) :: n_sites, n_soap, i, j, k, l, j2, zeta_int, n_sites0, k1, k2
     logical :: is_zeta_int = .false.
-    type(c_ptr), intent(inout) :: cublas_handle, gpu_stream,k2_i_site_d
-    type(c_ptr) :: kernels_copy_d, kernels_d, Qs_d, energies_d, alphas_d
+    type(c_ptr), intent(inout) :: cublas_handle, gpu_stream,k2_i_site_d, alphas_d, Qs_d
+!   type(c_ptr) :: kernels_copy_d, kernels_d, Qs_d, energies_d, alphas_d
+    type(c_ptr) :: kernels_copy_d, kernels_d, energies_d
     type(c_ptr) :: kernels_der_d, Qss_d, Qs_copy_d !, this_Qss_d
     integer(c_int) :: size_kernels, size_soap, size_Qs, size_alphas, size_energies,maxnn
     integer(c_int) :: size_nnlist, size_xyz, n1xyz, n2xyz, n1forces,n2forces, n1virial,n2virial
@@ -97,7 +100,7 @@ module gap
       time3 = time1
     end if
 
-  n_sparse = size(alphas)
+! n_sparse = size(alphas)
   n_soap = size(soap, 1)
   n_sites = size(soap, 2)
   n_sites0 = size(forces, 2)
@@ -109,26 +112,26 @@ module gap
   size_kernels=n_sites*n_sparse
   size_soap=n_soap*n_sites
   size_Qs = n_soap*n_sparse
-  size_alphas=n_sparse
+! size_alphas=n_sparse
 
   size_energies=n_sites
 
   st_kernels=size_kernels*(sizeof(kernels(1,1)))
-  st_Qs=size_Qs*(sizeof(Qs(1,1)))
-  st_alphas=size_alphas*(sizeof(alphas(1)))
+  st_Qs=size_Qs*(sizeof(e0))
+! st_alphas=size_alphas*(sizeof(alphas(1)))
   st_energies=size_energies*(sizeof(energies(1)))
 
   call gpu_malloc_all(kernels_d,st_kernels, gpu_stream)
   call gpu_malloc_all(kernels_copy_d,st_kernels, gpu_stream)
-  call gpu_malloc_all(Qs_d,st_Qs, gpu_stream)
+! call gpu_malloc_all(Qs_d,st_Qs, gpu_stream)
 
   
-  call gpu_malloc_all(alphas_d,st_alphas, gpu_stream)
+! call gpu_malloc_all(alphas_d,st_alphas, gpu_stream)
 
   call gpu_malloc_all(energies_d,st_energies, gpu_stream)
 
-  call cpy_htod(c_loc(Qs), Qs_d ,st_Qs, gpu_stream) !call cpy_double_htod(c_loc(Qs), Qs_d ,size_Qs)
-  call cpy_htod(c_loc(alphas),alphas_d,st_alphas, gpu_stream) !call cpy_double_htod(c_loc(alphas),alphas_d,size_alphas)
+! call cpy_htod(c_loc(Qs), Qs_d ,st_Qs, gpu_stream) !call cpy_double_htod(c_loc(Qs), Qs_d ,size_Qs)
+! call cpy_htod(c_loc(alphas),alphas_d,st_alphas, gpu_stream) !call cpy_double_htod(c_loc(alphas),alphas_d,size_alphas)
 
  ! call create_cublas_handle(cublas_handle) ! blocking???
  
@@ -303,8 +306,8 @@ module gap
   call gpu_free_async(n_neigh_d,gpu_stream)
   call gpu_free_async(kernels_d,gpu_stream)
   call gpu_free_async(kernels_copy_d,gpu_stream)
-  call gpu_free_async(Qs_d,gpu_stream)
-  call gpu_free_async(alphas_d,gpu_stream)
+! call gpu_free_async(Qs_d,gpu_stream)
+! call gpu_free_async(alphas_d,gpu_stream)
   call gpu_free_async(k2_i_site_d,gpu_stream) 
   ! call gpu_free_async(l_index_d,gpu_stream)
   call gpu_free_async(j2_index_d,gpu_stream) 
@@ -612,10 +615,38 @@ module gap
 
 
 
+!*****************************************************************
 
+  subroutine setup_3b_gpu(kernel_type, species_center, species1, species2, species_types,c_name,sp0, sp1, sp2)
+  implicit none
+    character(kind=c_char,len=4) :: c_name
+    character*3, intent(in) :: kernel_type
+    character*8, intent(in) :: species_center, species1, species2, species_types(:)
+    integer, intent(out) :: sp0, sp1, sp2
+    integer :: i
 
+    c_name = trim(kernel_type)//c_null_char
+    !Map species to index
+    do i = 1, size(species_types)
+      if( species_center == species_types(i) )then
+        sp0 = i
+        exit
+      end if
+    end do
+    do i = 1, size(species_types)
+      if( species1 == species_types(i) )then
+        sp1 = i
+        exit
+      end if
+    end do
+    do i = 1, size(species_types)
+      if( species2 == species_types(i) )then
+        sp2 = i
+        exit
+      end if
+    end do
 
-
+  end subroutine
 
 
 !**************************************************************************

@@ -5,8 +5,14 @@
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
+
+#include <cmath>
+
+#include <hip/hip_runtime.h>
 #include <hip/hip_runtime.h>
 #include <hipblas.h>
+#include <hipsolver.h>
+#include <hiprand.h>
 #include <assert.h>
 #include <hip/hip_complex.h>
 
@@ -14,7 +20,9 @@
 #define tpb_get_soap_der_one 128
 #define tpbcnk 64 // this is because k_max is 45???
 #define static_alphamax 8
+
 #define mode_polynomial 1
+
 int counter=0;
 /*__device__ double atomicDoubleAdd(double* address, double val)
 {
@@ -46,9 +54,10 @@ inline void gpuAssert(hipError_t code, const char *file, int line, bool abort=tr
 }
 
 __device__ double N_a (double rcut, int a) {
-  const int b = 2*a + 5;
-  return sqrt( rcut / static_cast<double>(b) );
+   const int b = 2*a + 5;
+   return sqrt( rcut / static_cast<double>(b) );
 }
+
 
 __device__ double gpu_spline(int nx, double r, double *x, double *y, double *y2, double rcut, 
 		           double yp1, double ypn){
@@ -99,6 +108,7 @@ __device__ double gpu_spline_der(int nx, double r, double *x, double *y, double 
    }
    return ds;
 }
+   
 __global__ void vect_dble(double *a, int N)
 {
    int idx = threadIdx.x+blockIdx.x*gridDim.x;
@@ -112,15 +122,34 @@ extern "C" void cuda_malloc_all(void **a_d, size_t Np, hipStream_t *stream )
 
   gpuErrchk(hipMallocAsync((void **) a_d,  Np ,stream[0]));
   //gpuErrchk(hipMalloc((void **) a_d,  Np ));
-/*   hipError_t err;
+   hipError_t err;
+  hipDeviceSynchronize();
+  err = hipGetLastError();
+//  if (err != hipSuccess) {
+//} 
+   return;
+}
+
+extern "C" void cuda_memset_async(void **a_d, int value,  size_t Np, hipStream_t *stream )
+{
+  hipError_t err;
   hipDeviceSynchronize();
   err = hipGetLastError();
   if (err != hipSuccess) {
     printf("CUDA error: %s\n", hipGetErrorString(err));
-} */
+} 
+  fflush(stdout); 
+  hipDeviceSynchronize();
+  //gpuErrchk(hipMemsetAsync((void **) a_d, value , Np ,stream[0]));
+  hipMemsetAsync( *a_d, value , Np ,stream[0]);
+  //gpuErrchk(hipMalloc((void **) a_d,  Np ));
+  hipDeviceSynchronize();
+  err = hipGetLastError();
+  if (err != hipSuccess) {
+    printf("CUDA error: %s\n", hipGetErrorString(err));
+} 
    return;
 }
-
 extern "C" void cuda_malloc_all_blocking(void **a_d, size_t Np)
 {
   gpuErrchk(hipMalloc( (void **) a_d,  Np ));
@@ -258,6 +287,8 @@ extern "C" void create_cublas_handle(hipblasHandle_t *handle,hipStream_t *stream
  	  hipblasCreate(handle);
     hipStreamCreate(stream);
     hipblasSetStream(*handle, *stream);
+    hipsolverCreate(handle);
+    hipsolverSetStream(*handle,*stream);
     /*printf("\n cublas handle created \n");
     exit(0);*/
 
@@ -1418,11 +1449,8 @@ __global__ void cuda_get_exp_coeff_one(hipDoubleComplex *eimphi_global_d, double
     double phi=phis_d[k_ij];
     if(rj<rcut){
       int i_sp=1;
-      for(i_sp=1;i_sp<=n_species; i_sp++){
-        if(mask_d[k_ij+(i_sp-1)*n_atom_pairs]){
-          break;
-        }
-      }
+      for(i_sp=1;i_sp<=n_species; i_sp++)
+        if(mask_d[k_ij+(i_sp-1)*n_atom_pairs]) break;
       double atom_sigma=atom_sigma_in_d[i_sp-1] + atom_sigma_scaling_d[i_sp-1]*rj;
       double scaling=atom_sigma_scaling_d[i_sp-1];
       double rjbysigma=rj/atom_sigma;
@@ -1431,16 +1459,13 @@ __global__ void cuda_get_exp_coeff_one(hipDoubleComplex *eimphi_global_d, double
       double x2=x*x;
       double x4=x2*x2;
       double flm2, flm1,fl; 
-
       double coeff1 = 2.0*rj/atom_sigma*atom_sigma;
       double coeff2 = 1.0 - scaling*rj/atom_sigma;
       
       if(x>0){
         flm2=fabs((1.0-exp(-2.0*x2))/2.0/x2);
         flm1=fabs((x2-1.0+exp(-2.0*x2)*(x2+1.0))/2.0/x4);
-      }
-      else
-      {
+      } else {
         flm2=1.0;
         flm1=0.0;
       }
@@ -1452,39 +1477,25 @@ __global__ void cuda_get_exp_coeff_one(hipDoubleComplex *eimphi_global_d, double
       double sinm1 = 0.0;
       hipDoubleComplex  loc_prefm;
       loc_prefm.x= 1.0;
-      loc_prefm.y=0.0; /// (1.d0, 0.d0)*/
+      loc_prefm.y=0.0; // (1.d0, 0.d0)*
       prefm_global_d[k_ij] = loc_prefm;
       double ilexp=-500000;// no need for this, just makig sure the next lines were working
       
       double fact=1.0;
       int k=0;
       for(int l=0;l<=lmax; l++){
-        if(l>0){
-          fact=fact*(2.0*l+1.0);
-        }
+        if(l>0) fact=fact*(2.0*l+1.0);
         if(l==0){
-          if(x< xcut) {
-            ilexp=1.0-x2;
-          }
-          else{
-            ilexp=flm2;
-          }
+          if(x< xcut) ilexp=1.0-x2;
+          else ilexp=flm2;
         }
         else if(l==1){
-          if(x2/1000.0<xcut){
-            ilexp=(x2-x4)/fact; //fact_array_d[l-1];
-          }
-          else{
-            ilexp=flm1;
-          }
+          if(x2/1000.0<xcut) ilexp=(x2-x4)/fact; //fact_array_d[l-1];
+          else ilexp=flm1;
         }
         else{
-          if(pow(x2,l)/fact*l<xcut){ // if(pow(x2,l)/fact_array_d[l-1]*l<xcut){
-            fl=pow(x2,l)/fact;
-          }
-          else{
-            fl=fabs(flm2-(2.0*l-1.0)/x2*flm1);
-          }
+          if(pow(x2,l)/fact*l<xcut) fl=pow(x2,l)/fact;
+          else fl=fabs(flm2-(2.0*l-1.0)/x2*flm1);
           flm2=flm1;
           flm1=fl;
           ilexp=fl;
@@ -1814,7 +1825,7 @@ void cuda_poly3gauss_one(double *radial_exp_coeff_d,
   }
 }
 
-extern "C" void  gpu_get_radial_exp_coeff_scaling(double *radial_exp_coeff_d, double *radial_exp_coeff_der_d, 
+extern "C" void  gpu_get_radial_exp_coeff_poly3gauss(double *radial_exp_coeff_d, double *radial_exp_coeff_der_d, 
                                           int *i_beg_d, int *i_end_d, double *global_scaling_d,
                                           int size_radial_exp_coeff_one, int size_radial_exp_coeff_two, int n_species, 
                                           bool c_do_derivatives, int bintybint,
@@ -1843,7 +1854,6 @@ extern "C" void  gpu_get_radial_exp_coeff_scaling(double *radial_exp_coeff_d, do
   /* gpuErrchk( hipPeekAtLastError() );
   gpuErrchk( hipDeviceSynchronize() );   */                          
 }
-
 
 __global__
 void kernel_get_radial_poly3gauss(int n_atom_pairs, int n_species, bool *mask_d, double *rjs_d, double *rcut_hard_d, 
@@ -2341,6 +2351,8 @@ extern "C" void  gpu_get_2b_forces_energies(int i_beg, int i_end, int n_sparse, 
   kernel_get_2b<<<nblocks, nthreads,0,stream[0] >>>(i_beg, i_end, n_sparse, energies_d, e0, n_neigh_d, do_forces, forces_d, virial_d, 
 		                                    rjs_d, rcut, species_d, neighbor_species_d, sp1, sp2, buffer, delta, cutoff_d, 
 						    Qs_d, sigma, alphas_d, xyz_d);
+  //temporary, to measure timings
+  hipStreamSynchronize(stream[0]);
 }
 
 __global__
@@ -2399,9 +2411,8 @@ extern "C" void  gpu_get_core_pot_energy_and_forces(int i_beg, int i_end, bool d
 
   kernel_get_core_pot<<<nblocks, nthreads,0,stream[0] >>>(i_beg, i_end, do_forces, species_d, sp1, sp2, n_neigh_d, neighbor_species_d,
                                                           rjs_d, n_sparse, x_d, V_d, dVdx2_d, yp1, ypn, xyz_d, forces_d, virial_d, 
-							                                            energies_d);
+							  energies_d);
 }
-
 
 /* 
 extern "C" void cuda_malloc_double(double **a_d, int Np)

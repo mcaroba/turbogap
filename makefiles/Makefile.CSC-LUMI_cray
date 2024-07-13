@@ -18,13 +18,16 @@
 # Compiler, preprocessor directives, etc.
 F90=ftn # -hlist=m
 CU=hipcc -munsafe-fp-atomics #-g -ggdb #-save-temps #  #-ffp-model=precise #-munsafe-fp-atomics
-PP=-e Z -D _MPIF90
+#CU=CC -x hip #-munsafe-fp-atomics #-g -ggdb #-save-temps #  #-ffp-model=precise #-munsafe-fp-atomics
+CC=CC 
+PP=-eZ -D_MPIF90
 F90_MOD_DIR_OPT=-J
 
 # -h flex_mp=intolerant Should be used per file otherwise 2b AND 3b will run 2 time slower
 # Optimization flags (uncomment second option to enable debugging tools)
-F90_OPTS= -fPIC  -h flex_mp=intolerant -O3 -lamdhip64 -lhipblas -lhiprand # -homp  # -fsanitize=address -fsanitize=thread #-homp # -Rb
-CUDA_OPTS=    -lhipblas -lhiprand --offload-arch=gfx90a 
+F90_OPTS= -fPIC -h noomp -h flex_mp=intolerant -O3  # -homp  # -fsanitize=address -fsanitize=thread #-homp # -Rb
+CUDA_OPTS=   --offload-arch=gfx90a -O3
+CC_OPTS=-xhip -std=c++20 -O3 
 # gdwarf-4 needed for getting line information when sampling 
 #F90_OPTS+= -g # -gdwarf-4
 #CUDA_OPTS+= -Xcompiler -gdwarf-4 
@@ -33,8 +36,5 @@ CUDA_OPTS=    -lhipblas -lhiprand --offload-arch=gfx90a
 
 # BLAS and LAPACK libraries
 
-#LIBS= -L/scratch/project_462000007/cristian/BLASSOURCE/lib -lopenblas_nonthreaded
-##  export LD_LIBRARY_PATH=/scratch/project_462000007/cristian/BLASSOURCE/lib:$LD_LIBRARY_PATH
-#LIBS= -L/scratch/project_462000007/cristian/BLASSPACK/23.03/0.20.0/openblas-0.3.18-mde53ew/lib -lopenblas
-##export LD_LIBRARY_PATH=/scratch/project_462000007/cristian/BLASSPACK/23.03/0.20.0/openblas-0.3.18-mde53ew/lib:$LD_LIBRARY_PATH
-LIBS=  -lsci_cray
+#LIBS= -L/scratch/project_462000007/cristian/BLASSPACK/23.03/0.20.0/openblas-0.3.18-mde53ew/lib -lopenblas #-lsci_gnu
+LIBS=  -L/$(ROCM_PATH)/lib -lamdhip64 -lhiprand -lsci_cray -lhipblas -lhipsolver 

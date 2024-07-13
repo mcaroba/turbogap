@@ -40,15 +40,15 @@ module gap_interface
 
 
 !**************************************************************************
-  subroutine get_gap_soap(n_total_sites, n_sites0, n_neigh0, neighbors_list0, n_species, species_types, &
-                          rjs0, thetas0, phis0, xyz0, alpha_max, l_max, n_soap, &
-                          rcut_hard, rcut_soft, nf, global_scaling, atom_sigma_r, &
-                          atom_sigma_r_scaling, atom_sigma_t, atom_sigma_t_scaling, &
-                          amplitude_scaling, radial_enhancement, central_weight, basis, &
+  subroutine get_gap_soap(n_sparse, n_total_sites, n_sites0, n_neigh0, neighbors_list0, n_species, species_types, &
+                          rjs0, thetas0, phis0, xyz0, alpha_max_d, alpha_max, l_max, n_soap, &
+                          rcut_hard_d, rcut_hard, rcut_soft_d, nf_d, global_scaling_d, atom_sigma_r_d, &
+                          atom_sigma_r, atom_sigma_r_scaling_d, atom_sigma_t_d, atom_sigma_t_scaling_d, &
+                          amplitude_scaling_d, radial_enhancement, central_weight_d, central_weight, basis, &
                           scaling_mode, do_timing, do_derivatives, do_forces, do_prediction, &
                           write_soap, write_derivatives, compress_soap, &
                           compress_soap_indices, delta, zeta, central_species, &
-                          xyz_species, xyz_species_supercell, alphas, Qs, all_atoms, &
+                          xyz_species, xyz_species_supercell, alphas_d, Qs_d, all_atoms, &
                           which_atom, indices, soap, soap_cart_der, der_neighbors, der_neighbors_list, &
                           has_vdw, vdw_Qs, vdw_alphas, vdw_zeta, vdw_delta, vdw_V0, &
                           energies0, forces0, hirshfeld_v0, hirshfeld_v_cart_der0, virial, solo_time_soap, &
@@ -57,14 +57,17 @@ module gap_interface
     implicit none
 
 !   Input variables
-    real*8, intent(in) :: rjs0(:), thetas0(:), phis0(:), xyz0(:,:), rcut_hard(:), rcut_soft(:), &
-                          nf(:), global_scaling(:), atom_sigma_r(:), atom_sigma_r_scaling(:), &
-                          atom_sigma_t(:), atom_sigma_t_scaling(:), amplitude_scaling(:), &
-                          central_weight(:), delta, zeta, alphas(:), Qs(:,:), vdw_Qs(:,:), &
+!   real*8, intent(in) :: rjs0(:), thetas0(:), phis0(:), xyz0(:,:), rcut_hard(:), rcut_soft(:), &
+    real*8, intent(in) :: rjs0(:), thetas0(:), phis0(:), xyz0(:,:), rcut_hard(:), &
+!                         nf(:), global_scaling(:), atom_sigma_r(:), atom_sigma_r_scaling(:), &
+                          atom_sigma_r(:), &
+!                         atom_sigma_t(:), atom_sigma_t_scaling(:), amplitude_scaling(:), &
+!                         central_weight(:), delta, zeta, Qs(:,:), vdw_Qs(:,:), &
+                          central_weight(:), delta, zeta, vdw_Qs(:,:), &
                           vdw_alphas(:), vdw_zeta, vdw_delta, vdw_V0
     integer, intent(in) :: n_sites0, n_neigh0(:), neighbors_list0(:), n_species, central_species, &
                            radial_enhancement, compress_soap_indices(:), which_atom, &
-                           indices(1:3), alpha_max(:), l_max, n_total_sites
+                           indices(1:3), alpha_max(:), l_max, n_total_sites, n_sparse
     logical, intent(in) :: do_timing, do_derivatives, compress_soap, do_forces, do_prediction, &
                            all_atoms, write_soap, write_derivatives, has_vdw
     character*64, intent(in) :: basis
@@ -82,7 +85,6 @@ module gap_interface
 !   Internal variables
     real*8, allocatable :: rjs(:), thetas(:), phis(:), energies(:), forces(:,:), soap_temp(:,:), &
                            hirshfeld_v(:), hirshfeld_v_cart_der(:,:), xyz(:,:)
-    real*8 :: rcut_max
     integer, allocatable :: in_to_out_site(:), n_neigh(:), neighbors_list(:), species_multiplicity(:), &
                             species(:,:), species0(:,:), species_multiplicity0(:), out_to_in_site(:), &
                             der_neighbors(:), der_neighbors_list(:), in_to_out_pairs(:)
@@ -93,9 +95,10 @@ module gap_interface
     logical, allocatable :: mask(:,:)
     logical, allocatable ::  mask0(:,:), is_atom_seen(:)
 !   CLEAN THIS UP
-    real*8 :: time1, time2
+    real*8 :: time1, time2, rcut_max
     real*8 :: ttt(2)
-    type(c_ptr) :: soap_cart_der_d, soap_d
+    type(c_ptr) :: soap_cart_der_d, soap_d, nf_d, rcut_hard_d, rcut_soft_d, global_scaling_d, atom_sigma_r_d, atom_sigma_r_scaling_d
+    type(c_ptr) :: atom_sigma_t_d, atom_sigma_t_scaling_d, amplitude_scaling_d, alpha_max_d, central_weight_d, alphas_d,Qs_d
     type(c_ptr) :: cublas_handle, gpu_stream
     type(c_ptr) ::  k2_i_site_d, n_neigh_d
 
@@ -130,7 +133,6 @@ module gap_interface
 !   We need to sort out which atoms from the general neighbors list we actually keep
 !
 !   First, we just count the number of sites to keep and the number of atom pairs for allocation purposes
-    rcut_max = maxval(rcut_hard)
     n_sites = 0
 !   n_all_sites are all the sites (central or else) to which this descriptor is not blind (including neighbors)
 !   and on which forces might be acting
@@ -139,6 +141,7 @@ module gap_interface
     k = 0
     allocate( is_atom_seen(1:n_total_sites) )
     is_atom_seen = .false.
+    rcut_max=maxval(rcut_hard)
     do i = 1, n_sites0
       if( species0(1, i) == central_species .or. central_species == 0 )then
         n_sites = n_sites + 1
@@ -248,11 +251,11 @@ module gap_interface
     if( n_sites > 0 )then
 !      call cpu_time(ttt(1))
       call get_soap(n_sites, n_neigh, n_species, species, species_multiplicity, n_atom_pairs, mask, rjs, &
-                    thetas, phis, alpha_max, l_max, rcut_hard, rcut_soft, nf, global_scaling, &
-                    atom_sigma_r, atom_sigma_r_scaling, atom_sigma_t, atom_sigma_t_scaling, &
-                    amplitude_scaling, radial_enhancement, central_weight, basis, scaling_mode, do_timing, &
+                    thetas, phis, alpha_max_d, alpha_max, l_max, rcut_hard_d, rcut_hard, rcut_soft_d, nf_d, global_scaling_d, &
+                    atom_sigma_r_d, atom_sigma_r, atom_sigma_r_scaling_d, atom_sigma_t_d, atom_sigma_t_scaling_d, &
+                    amplitude_scaling_d, radial_enhancement, central_weight_d, central_weight, basis, scaling_mode, do_timing, &
                     do_derivatives, compress_soap, compress_soap_indices, soap, soap_cart_der, time_get_soap, &
-                    soap_d,  soap_cart_der_d, n_neigh_d, k2_i_site_d, gpu_stream)
+                    soap_d,  soap_cart_der_d, n_neigh_d, k2_i_site_d, cublas_handle, gpu_stream)
 !      call cpu_time(ttt(2))
     end if
    ! write(*,*) "n_total_sites", n_total_sites, "n_sites", n_sites, "nsites0", n_sites0
@@ -300,7 +303,7 @@ module gap_interface
         forces = 0.d0
       end if
       if( n_sites > 0 )then
-        call get_soap_energy_and_forces(soap, soap_cart_der, alphas, delta, zeta, 0.d0, Qs, &
+        call get_soap_energy_and_forces(n_sparse, soap, soap_cart_der, alphas_d, delta, zeta, 0.d0, Qs_d, &
                                         n_neigh, neighbors_list, xyz, do_forces, do_timing, &
                                         energies, forces, virial, solo_time_soap,  &
                                         soap_d,  soap_cart_der_d, n_neigh_d, k2_i_site_d, cublas_handle, gpu_stream)
