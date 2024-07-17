@@ -130,25 +130,9 @@ extern "C" void cuda_malloc_all(void **a_d, size_t Np, hipStream_t *stream )
    return;
 }
 
-extern "C" void cuda_memset_async(void **a_d, int value,  size_t Np, hipStream_t *stream )
+extern "C" void cuda_memset_async(void *a_d, int value,  size_t Np, hipStream_t *stream )
 {
-  hipError_t err;
-  hipDeviceSynchronize();
-  err = hipGetLastError();
-  if (err != hipSuccess) {
-    printf("CUDA error: %s\n", hipGetErrorString(err));
-} 
-  fflush(stdout); 
-  hipDeviceSynchronize();
-  //gpuErrchk(hipMemsetAsync((void **) a_d, value , Np ,stream[0]));
-  hipMemsetAsync( *a_d, value , Np ,stream[0]);
-  //gpuErrchk(hipMalloc((void **) a_d,  Np ));
-  hipDeviceSynchronize();
-  err = hipGetLastError();
-  if (err != hipSuccess) {
-    printf("CUDA error: %s\n", hipGetErrorString(err));
-} 
-   return;
+  hipMemsetAsync( a_d, value , Np ,stream[0]);
 }
 extern "C" void cuda_malloc_all_blocking(void **a_d, size_t Np)
 {
@@ -627,8 +611,8 @@ extern "C" void gpu_final_soap_forces_virial(int n_sites,
 
   /*double *this_force_d; 
   hipMalloc((void**)&this_force_d,sizeof(double)*n_pairs*3);*/
-  hipMemsetAsync(forces_d,0, 3*n_sites0*sizeof(double),0);
-  hipMemsetAsync(virial_d,0, 9*sizeof(double),0);
+  hipMemsetAsync(forces_d,0, 3*n_sites0*sizeof(double), stream[0]);
+  hipMemsetAsync(virial_d,0, 9*sizeof(double), stream[0]);
      
   cuda_soap_forces_virial_two<<< nblocks, tpb,0, stream[0]>>>(n_sites,
                                               Qss_d,n_soap, l_index_d, j2_index_d,
@@ -1354,7 +1338,7 @@ extern "C" void gpu_get_cnk(double *radial_exp_coeff_d, hipDoubleComplex *angula
                             int radial_enhancement, int *species_multiplicity_d,
                             double *W_d, double *S_d, int size_species_1, hipStream_t *stream )
 {
-  //hipMemsetAsync(cnk_d,0, k_max*n_max*n_sites*sizeof(hipDoubleComplex));
+  //hipMemsetAsync(cnk_d,0, k_max*n_max*n_sites*sizeof(hipDoubleComplex),stream[0]);
   /*hipEvent_t start, stop;
   hipEventCreate(&start);
   hipEventCreate(&stop);

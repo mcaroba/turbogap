@@ -16,7 +16,8 @@ MODULE F_B_C
       subroutine gpu_memset_async(a_d,valuetoset,n,gpu_stream) bind(C,name="cuda_memset_async")
         use iso_c_binding
         implicit none
-        type(c_ptr) :: a_d,gpu_stream
+        type(c_ptr),value :: a_d
+        type(c_ptr) :: gpu_stream
         integer(c_size_t),value :: n
         integer(c_int),value :: valuetoset
       end subroutine

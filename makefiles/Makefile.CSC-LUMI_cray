@@ -17,7 +17,7 @@
 
 # Compiler, preprocessor directives, etc.
 F90=ftn # -hlist=m
-CU=hipcc -munsafe-fp-atomics #-g -ggdb #-save-temps #  #-ffp-model=precise #-munsafe-fp-atomics
+CU=cc -xhip -munsafe-fp-atomics #-g -ggdb #-save-temps #  #-ffp-model=precise #-munsafe-fp-atomics
 #CU=CC -x hip #-munsafe-fp-atomics #-g -ggdb #-save-temps #  #-ffp-model=precise #-munsafe-fp-atomics
 CC=CC 
 PP=-eZ -D_MPIF90
@@ -25,7 +25,7 @@ F90_MOD_DIR_OPT=-J
 
 # -h flex_mp=intolerant Should be used per file otherwise 2b AND 3b will run 2 time slower
 # Optimization flags (uncomment second option to enable debugging tools)
-F90_OPTS= -fPIC -h noomp -h flex_mp=intolerant -O3  # -homp  # -fsanitize=address -fsanitize=thread #-homp # -Rb
+F90_OPTS= -fPIC -h noomp -h flex_mp=intolerant -O3   # -homp  # -fsanitize=address -fsanitize=thread #-homp # -Rb
 CUDA_OPTS=   --offload-arch=gfx90a -O3
 CC_OPTS=-xhip -std=c++20 -O3 
 # gdwarf-4 needed for getting line information when sampling 
