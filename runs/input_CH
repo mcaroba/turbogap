@@ -1,5 +1,5 @@
 !atoms_file = 'c60_dimer_vacuum.xyz'
-atoms_file = 'benzene_dimer_vacuum.xyz'
+atoms_file = 'methane_dimer_vacuum.xyz'
 !atoms_file = 'methane.xyz'
 pot_file = 'gap_files/CH.gap'
 !pot_file = 'gap_files/carbon.gap'
@@ -36,8 +36,8 @@ vdw_2b_rcut = 10.0          ! Primary 2b cut-off (cut-off for central atom). Typ
 vdw_2b_rcut2 = 10.0         ! Secondary 2b cut-off (cut-off sphere for neighbors).
 vdw_mbd_nfreq = 13        ! Number of frequency values for MBD integration. Type: INT
 vdw_mbd_norder = 6        ! Contributions up to n-body interactions (i.e. cut-off degree for Taylor expansion of ln(I-AT)). Type: INT
-vdw_mbd_grad = .false.     ! Calculate MBD forces. Type: LOGICAL
-vdw_hirsh_grad = .true.   ! Include Hirshfeld gradients in the forces. Type: LOGICAL
+vdw_mbd_grad = .true.     ! Calculate MBD forces. Type: LOGICAL
+vdw_hirsh_grad = .false.   ! Include Hirshfeld gradients in the forces. Type: LOGICAL
 vdw_polynomial = .false.  ! Use polynomial approximation for inverse matrices. Type: LOGICAL. OBSOLETE!!!
 vdw_omega_ref = 1.3d0     ! Reference frequency value used for SCS characteristic frequency calculation. Might depend on the material (for now).
-do_nnls = .true.         ! NNLS for frequency fitting to avoid calculating many frequency points. Use at least vdw_mbd_nfreq = 2*vdw_mbd_norder+1 or it might be unstable (overfitting)
+do_nnls = .false.         ! NNLS for frequency fitting to avoid calculating many frequency points. Use at least vdw_mbd_nfreq = 2*vdw_mbd_norder+1 or it might be unstable (overfitting)

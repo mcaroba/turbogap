@@ -1764,6 +1764,10 @@ if( rank == 0 .and. .true. )then
 !if( rank == 0 .and. .true. )then
 write(*,*) "pressure_soap: ", virial_soap / 3.d0 / v_uc
 write(*,*) "pressure_vdw: ", virial_vdw / 3.d0 / v_uc
+do i = 1, 3
+  write(*,*) virial_vdw(i,:)/v_uc
+end do
+write(*,*) "Trace of vdw pressure:", (virial_vdw(1,1)+virial_vdw(2,2)+virial_vdw(3,3))/3.d0/v_uc
 write(*,*) "pressure_2b: ", virial_2b / 3.d0 / v_uc
 write(*,*) "pressure_3b: ", virial_3b / 3.d0 / v_uc
 write(*,*) "pressure_core_pot: ", virial_core_pot / 3.d0 / v_uc
