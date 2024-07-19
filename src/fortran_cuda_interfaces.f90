@@ -420,7 +420,12 @@ MODULE F_B_C
         type(c_ptr) :: energy_3b_d, forces_3b_d, virials_3b_d,energy_3b_h,forces_3b_h,virials_3b_h
         type(c_ptr) :: stream
         logical(c_bool), value :: do_forces
-	integer(c_int), value :: n_sites, n_sites0
+	      integer(c_int), value :: n_sites, n_sites0
+      end subroutine
+
+      subroutine gpu_device_sync() bind(C,name="gpu_device_sync")
+        use iso_c_binding
+        implicit none
       end subroutine
 !
 !      subroutine gpu_2b(n_sparse, n_sites, sp1, sp2, alpha, delta, cutoff, stream, rjs, xyz, n_neigh, species, neighbor_species, do_forces, rcut,buffer, sigma,qs,n_neigh_host) bind(C,name="gpu_2b")

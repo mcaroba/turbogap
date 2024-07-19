@@ -52,11 +52,13 @@ module gap_interface
                           which_atom, indices, soap, soap_cart_der, der_neighbors, der_neighbors_list, &
                           has_vdw, vdw_Qs, vdw_alphas, vdw_zeta, vdw_delta, vdw_V0, &
                           energies0, forces0, hirshfeld_v0, hirshfeld_v_cart_der0, virial, solo_time_soap, &
-                          time_get_soap,cublas_handle , gpu_stream)
+                          time_get_soap,cublas_handle , gpu_stream, &
+                          time_misca,time_get_rad, time_get_ang, time_get_cart)
 
     implicit none
 
 !   Input variables
+    real*8, intent(inout) ::  time_misca,time_get_rad, time_get_ang, time_get_cart
 !   real*8, intent(in) :: rjs0(:), thetas0(:), phis0(:), xyz0(:,:), rcut_hard(:), rcut_soft(:), &
     real*8, intent(in) :: rjs0(:), thetas0(:), phis0(:), xyz0(:,:), rcut_hard(:), &
 !                         nf(:), global_scaling(:), atom_sigma_r(:), atom_sigma_r_scaling(:), &
@@ -242,10 +244,10 @@ module gap_interface
 
 !   Get SOAP vectors and derivatives:
     allocate( soap(1:n_soap, 1:n_sites) )
-    soap = 0.d0
+    !soap = 0.d0
     if( do_derivatives )then
       allocate( soap_cart_der(1:3, 1:n_soap, 1:n_atom_pairs) )
-      soap_cart_der = 0.d0
+      !soap_cart_der = 0.d0
     end if
 
     if( n_sites > 0 )then
@@ -255,7 +257,8 @@ module gap_interface
                     atom_sigma_r_d, atom_sigma_r, atom_sigma_r_scaling_d, atom_sigma_t_d, atom_sigma_t_scaling_d, &
                     amplitude_scaling_d, radial_enhancement, central_weight_d, central_weight, basis, scaling_mode, do_timing, &
                     do_derivatives, compress_soap, compress_soap_indices, soap, soap_cart_der, time_get_soap, &
-                    soap_d,  soap_cart_der_d, n_neigh_d, k2_i_site_d, cublas_handle, gpu_stream)
+                    soap_d,  soap_cart_der_d, n_neigh_d, k2_i_site_d, cublas_handle, gpu_stream, &
+                    time_misca,time_get_rad, time_get_ang,time_get_cart)
 !      call cpu_time(ttt(2))
     end if
    ! write(*,*) "n_total_sites", n_total_sites, "n_sites", n_sites, "nsites0", n_sites0

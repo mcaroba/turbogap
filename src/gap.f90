@@ -121,6 +121,7 @@ module gap
 ! st_alphas=size_alphas*(sizeof(alphas(1)))
   st_energies=size_energies*(sizeof(energies(1)))
 
+  ! call gpu_malloc_all_blocking(kernels_d,st_kernels) !
   call gpu_malloc_all(kernels_d,st_kernels, gpu_stream)
   call gpu_malloc_all(kernels_copy_d,st_kernels, gpu_stream)
 ! call gpu_malloc_all(Qs_d,st_Qs, gpu_stream)

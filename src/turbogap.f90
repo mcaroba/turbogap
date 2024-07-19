@@ -149,7 +149,7 @@ program turbogap
   type(c_ptr) :: energy_3b_d, forces_3b_d, virials_3b_d
   type(c_ptr) :: kappas_array_d, sigma_d, neighbors_list_d 
   integer(c_size_t) :: size_maxnp_bytes, size_maxnp_qs_bytes, size_alphas_bytes, size_energy3b, size_forces3b, size_virial3b
-
+  real*8 ::  time_misca,time_get_rad=0.0, time_get_ang=0.0, time_get_cart=0.0
 !**************************************************************************
 
 
@@ -1227,7 +1227,8 @@ program turbogap
                             soap_turbo_hypers(i)%has_vdw, soap_turbo_hypers(i)%vdw_Qs, soap_turbo_hypers(i)%vdw_alphas, &
                             soap_turbo_hypers(i)%vdw_zeta, soap_turbo_hypers(i)%vdw_delta, soap_turbo_hypers(i)%vdw_V0, &
                             this_energies, this_forces, this_hirshfeld_v_pt, this_hirshfeld_v_cart_der_pt, &
-                            this_virial, solo_time_soap, time_get_soap, cublas_handle, gpu_stream)
+                            this_virial, solo_time_soap, time_get_soap, cublas_handle, gpu_stream, &
+                            time_misca,time_get_rad, time_get_ang, time_get_cart)
 
           energies_soap = energies_soap + this_energies
           if( soap_turbo_hypers(i)%has_vdw )then
@@ -1259,7 +1260,7 @@ program turbogap
         call gpu_free_async(alpha_max_d,gpu_stream)
         call gpu_free_async(central_weight_d,gpu_stream)
         call gpu_free_async(alphas_d,gpu_stream)
-        call gpu_free_async(Qs_d,gpu_stream)
+        call gpu_free(Qs_d) ! call gpu_free_async(Qs_d,gpu_stream)
         !call cpu_time(soap_time_soap(2))
         soap_time_soap(2)=MPI_Wtime()
         deallocate( i_beg_list, i_end_list, j_beg_list, j_end_list )
@@ -2202,6 +2203,10 @@ end if
     write(*,'(A,F13.3,A)') '     - soap_turbo:', time_soap(3), ' seconds |'
     write(*,'(A,F13.3,A)') '     - lolo__soap:', soap_time_soap(3), ' seconds |'
     write(*,'(A,F13.3,A)') '     - get___soap:', time_get_soap, ' seconds |'
+    write(*,'(A,F13.3,A)') '     - time_misca:', time_misca, ' seconds |'
+    write(*,'(A,F13.3,A)') '     - get_radial:', time_get_rad, ' seconds |'
+    write(*,'(A,F13.3,A)') '     - get_angula:', time_get_ang, ' seconds |'
+    write(*,'(A,F13.3,A)') '     - get_cartez:', time_get_cart, ' seconds |'
     write(*,'(A,F13.3,A)') '     - lin__turbo:', solo_time_soap, ' seconds |'
     write(*,'(A,F13.3,A)') '     -         2b:', time_2b(3), ' seconds |'
     write(*,'(A,F13.3,A)') '     -         3b:', time_3b(3), ' seconds |'
