@@ -1,0 +1,32 @@
+#+TITLE: Running Standard and XPS-optimized GCMC
+#+author: Tigany Zarrouk
+
+* How to run this tutorial
+TLDR;
+#+begin_src bash
+  calc_type=xps_optimzation_gcmc   # calc_type is either 'standard_gcmc' or 'xps_optimzation_gcmc'
+  bash run.sh $calc_type           # Run calculation
+
+  cd runs/${calc_type}/            # Navigate to run directory
+
+  # View the atoms
+  ase gui mc_all.xyz               # View atoms
+
+  python plot_data.py ${calc_type} # Look at the data
+#+end_src
+
+After installing /TurboGAP/ we can run a standard gcmc calculation by running the bash script 'run.sh' with an argument specifying the calculation type. The arguments for this tutorial are ("prediction", 'standard_gcmc' or 'xps_optimization_gcmc')
+
+/e.g./ Running
+#+begin_src bash
+  bash run.sh standard_gcmc
+#+end_src
+will perform a /TurboGAP/ GCMC calculation to create an oxygenated amorphous carbon structure in 'runs/standard_gcmc' directory.
+
+This will create multiple files
+- ~mc.log~ :: A log file for the GCMC run which has energies, experimental energies, and other quantities.
+- ~mc_all.xyz~ :: An xyz file which is written to every write_xyz = N steps
+- ~mc_current.xyz~ :: An xyz file which saves current configuration every write_xyz = N steps
+- ~mc_trial.xyz~ :: A file which shows the last trial move done every write_xyz = N steps
+- ~xps_prediction.dat~ :: A data file which contains the XPS data of the prediction, written to every write_xyz = N steps. A blank line demarcates each section of data.
+- ~xps_exp.dat~ :: The experimental data which is read in by /TurboGAP/.

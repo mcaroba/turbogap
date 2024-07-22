@@ -1,6 +1,6 @@
 # The TurboGAP code
 
-**TurboGAP** (c) 2018-2021 by **Miguel A. Caro** and others (see "contributors" below
+**TurboGAP** (c) 2018-2023 by **Miguel A. Caro** and others (see "contributors" below
 for detailed authorship info).
 
 [www.turbogap.fi](http://www.turbogap.fi)
@@ -14,13 +14,16 @@ statement at the beginning).
 
 * **Miguel A. Caro** (Aalto University)
 * Patricia Hernández-León (Aalto University)
-* Suresh Kondati Natarajan (now @ QuantumWise, formerly @ Aalto)
+* Suresh Kondati Natarajan (formerly @ Aalto University)
 * **Albert P. Bartók-Pártay** (Warwick University)
-* Eelis V. Mielonen (now @ EPFL, formerly @ Aalto)
+* Eelis V. Mielonen (formerly @ Aalto University)
 * **Heikki Muhli** (Aalto University)
-* **Mikhail Kuklin** (Aalto University)
+* **Mikhail Kuklin** (formerly @ Aalto University)
 * Gábor Csányi (University of Cambridge)
 * **Jan Kloppenburg** (Aalto University)
+* **Richard Jana** (Aalto University)
+* **Tigany Zarrouk** (Aalto University)
+* **Uttiyoarnab Saha** (Aalto University)
 
 **TurboGAP** is licensed under the Academic Software License (ASL), an "available source"
 non-commercial license. This means that you are free to use and distribute the code for
@@ -81,7 +84,7 @@ To get the **TurboGAP** code and the necessary **soap_turbo** routines, do a rec
     git clone --recursive http://github.com/mcaroba/turbogap.git /turbogap/source/directory
 
 Where `/turbogap/source/directory` is the directory where you're putting the **TurboGAP**
-source code. To build the **TubogGAP** binary and library, you need to select the options
+source code. To build the **TurboGAP** binary and library, you need to select the options
 that best match your architecture, by editing this line in the `Makefile`:
 
     include makefiles/Makefile.Ubuntu_gfortran_mpi

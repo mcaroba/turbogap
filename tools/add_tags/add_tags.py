@@ -2,12 +2,12 @@
 # HND X
 # HND X   TurboGAP
 # HND X
-# HND X   TurboGAP is copyright (c) 2019-2021, Miguel A. Caro and others
+# HND X   TurboGAP is copyright (c) 2019-2023, Miguel A. Caro and others
 # HND X
 # HND X   TurboGAP is published and distributed under the
 # HND X      Academic Software License v1.0 (ASL)
 # HND X
-# HND X   This file, add_tags.py, is copyright (c) 2019-2021, Miguel A. Caro
+# HND X   This file, add_tags.py, is copyright (c) 2019-2023, Miguel A. Caro
 # HND X
 # HND X   TurboGAP is distributed in the hope that it will be useful for non-commercial
 # HND X   academic research, but WITHOUT ANY WARRANTY; without even the implied
@@ -55,8 +55,7 @@ sigma_v = {"default": 0.1}
 # Force regularization options. The force fraction will determine how many forces are masked
 # randomly out of the database.
 # must be 0. <= force_fraction <= 1.
-force_fraction = {"default": 1.,
-                  "unrelaxed_CNTs": 1.}
+force_fraction = {"default": 1.}
 sigma_f_min = 0.1 # minimum force regularization in eV/Angstrom
 f_scale = 0.1 # scaling factor: sigma_f = f_scale * f (if sigma_f > sigma_f_min)
 force_parameter_name = "forces" # what is the force array called?

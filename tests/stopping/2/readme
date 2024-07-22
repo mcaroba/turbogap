@@ -1,0 +1,13 @@
+Description ::
+This test runs the full EPH model to equilibrate a Si system.
+The atomic system is at 0 K and electronic system is at 50 K initially.
+It constructs the electronic mesh from the parameters given in the input file.
+
+Run command ::
+Copy gap_files folder from ../1. Run this test with command "../path-to-turbogap-executable/turbogap md" command.
+
+Results ::
+It will produce the results as in the thermo.log (for atomic system) and eph-EnergySharingData.txt (for electronic system) files. The system can be visualized from file trajectory_out.xyz.
+
+Plot ::
+Then you can plot the temperatures and energies and see the same as shown in the Fig.# files.

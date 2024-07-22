@@ -2,12 +2,12 @@
 ! HND X
 ! HND X   TurboGAP
 ! HND X
-! HND X   TurboGAP is copyright (c) 2019-2021, Miguel A. Caro and others
+! HND X   TurboGAP is copyright (c) 2019-2023, Miguel A. Caro and others
 ! HND X
 ! HND X   TurboGAP is published and distributed under the
 ! HND X      Academic Software License v1.0 (ASL)
 ! HND X
-! HND X   This file, md.f90, is copyright (c) 2019-2021, Miguel A. Caro
+! HND X   This file, md.f90, is copyright (c) 2019-2023, Miguel A. Caro
 ! HND X
 ! HND X   TurboGAP is distributed in the hope that it will be useful for non-commercial
 ! HND X   academic research, but WITHOUT ANY WARRANTY; without even the implied
@@ -92,14 +92,14 @@ module md
 
 !**************************************************************************
   subroutine velocity_verlet(positions, positions_prev, velocities, &
-                             forces, forces_prev, masses, dt, &
+                             forces, forces_prev, masses, dt, dt_prev, &
                              first_step, a_box, b_box, c_box, fix_atom)
 
     implicit none
 
 !   Input variables
     real*8, intent(inout) :: positions(:,:), positions_prev(:,:), velocities(:,:), &
-                             forces_prev(:,:)
+                             forces_prev(:,:), dt_prev
     real*8, intent(in) :: forces(:,:), masses(:), dt, a_box(1:3), b_box(1:3), &
                           c_box(1:3)
     logical, intent(in) :: first_step, fix_atom(:,:)
@@ -117,7 +117,7 @@ module md
 !        velocities(1:3, i) = velocities(1:3, i) + 0.5d0 * (forces(1:3, i) + forces_prev(1:3, i))/masses(i) * dt
         do j = 1, 3
           if( .not. fix_atom(j, i) )then
-            velocities(j, i) = velocities(j, i) + 0.5d0 * (forces(j, i) + forces_prev(j, i))/masses(i) * dt
+            velocities(j, i) = velocities(j, i) + 0.5d0 * (forces(j, i) + forces_prev(j, i))/masses(i) * dt_prev	! dt
           else
             velocities(j, i) = 0.d0
           end if
@@ -135,6 +135,8 @@ module md
         end if
       end do
     end do
+    
+    dt_prev = dt	!! minimum modification for variable time-step situations 
 
   end subroutine
 !**************************************************************************
@@ -393,28 +395,25 @@ module md
 
 
 
-
-
-
 !**************************************************************************
   subroutine gradient_descent(positions, positions_prev, velocities, &
-                              forces, forces_prev, masses, gamma0, max_opt_step, &
+                              forces, forces_prev, masses, max_opt_step, &
                               first_step, a_box, b_box, c_box, fix_atom, energy)
 
     implicit none
 
 !   Input variables
     real*8, intent(inout) :: positions(:,:), positions_prev(:,:), velocities(:,:), &
-                             forces_prev(:,:)
-    real*8, intent(in) :: forces(:,:), masses(:), a_box(1:3), b_box(1:3), &
-                          c_box(1:3), max_opt_step, gamma0, energy
+                             forces_prev(:,:), forces(:,:)
+    real*8, intent(in) :: masses(:), a_box(1:3), b_box(1:3), &
+                          c_box(1:3), max_opt_step, energy
     logical, intent(in) :: fix_atom(:,:), first_step
 !   Internal variables
     real*8 :: gamma, max_force, this_force, pos(1:3), d
-    real*8, save :: gamma_prev, energy0, m_prev
-    real*8, allocatable, save :: positions0(:,:)
+    real*8, save :: gamma_prev, energy0, m_prev, gamma_back0
+    real*8, allocatable, save :: positions0(:,:), forces0(:,:)
     integer :: n_sites, i, j, i_shift(1:3)
-    logical, save :: backtracking = .true.
+    logical, save :: backtracking, initialized = .false.
 
     n_sites = size(masses)
 
@@ -422,8 +421,11 @@ module md
     velocities = 0.d0
 
     if( first_step )then
-      allocate( positions0(1:3, 1:size(positions,2)) )
+      backtracking = .true.
+      if( .not. allocated(positions0) )allocate( positions0(1:3, 1:size(positions,2)) )
+      if( .not. allocated(forces0) )allocate( forces0(1:3, 1:size(positions,2)) )
       positions0 = positions
+      forces0 = forces
       energy0 = energy
 !     The first step is (over)estimated from user provided values
       max_force = 0.d0
@@ -432,9 +434,12 @@ module md
         if( this_force > max_force )then
           max_force = this_force
         end if
-      end do
+     end do
+
       if( max_force == 0.d0 )then
         gamma = 0.d0
+      else if( initialized )then
+        gamma = gamma_back0
       else
 !        gamma = max(gamma0, max_opt_step/max_force)
         gamma = max_opt_step/max_force
@@ -444,11 +449,14 @@ module md
 !     Armijo-Goldstein condition
       if( energy <= energy0 - gamma_prev*0.5d0*m_prev )then
         backtracking = .false.
+        initialized = .true.
+        gamma_back0 = gamma_prev
       else
 !       If the condition is not fulfilled, we restore the original positions and decrease
 !       the step by half
         gamma = gamma_prev * 0.5d0
-        positions = positions0 
+        positions = positions0
+        forces = forces0
       end if
     end if
 
@@ -470,9 +478,10 @@ module md
     do i = 1, n_sites
       do j = 1, 3
         if( .not. fix_atom(j, i) )then
-          positions(j, i) = positions_prev(j, i) + gamma*forces_prev(j, i)
+           positions(j, i) = positions_prev(j, i) + gamma*forces_prev(j, i)
         end if
-      end do
+     end do
+
     end do
 
     gamma_prev = gamma
@@ -480,4 +489,312 @@ module md
 
   end subroutine
 !**************************************************************************
+
+
+
+
+
+
+!**************************************************************************
+  subroutine volume_preserving_strain_transformation(a_box, b_box, c_box, gamma)
+
+    implicit none
+
+    real*8, intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3)
+    real*8, intent(inout) :: gamma(3,3)
+    real*8 :: identity(3,3) = reshape([1.d0, 0.d0, 0.d0, 0.d0, 1.d0, 0.d0, 0.d0, 0.d0, 1.d0], [3,3]), &
+              a(1:3), b(1:3), c(1:3), vol, vol_p, vol_ratio
+
+    a = a_box + matmul(gamma-identity, a_box)
+    b = b_box + matmul(gamma-identity, b_box)
+    c = c_box + matmul(gamma-identity, c_box)
+
+    vol = dot_product(cross_product(a_box, b_box), c_box)
+    vol_p = dot_product(cross_product(a, b), c)
+
+    vol_ratio = (vol / vol_p)**(1.d0/3.d0)
+
+    gamma = gamma * vol_ratio
+
+  end subroutine
+!**************************************************************************
+
+
+
+
+
+
+
+!**************************************************************************
+  subroutine get_ns_unbiased_volume_proposal(V1, V2, n_sites, V)
+
+!   V1 is the minimal volume, V2 is the maximal volume, V is the volume proposal
+!   The likelihood of a volume proposal should scale as V^n_sites. Therefore
+!   larger volumes are favored. We use a homogeneous random distribution within
+!   (0,1) and scale it so that the integrated probability density matches that
+!   of V^n_sites within [V1, V2], before making the assignment between the two
+    !   distributions
+
+    implicit none
+    real*8, intent(in) :: V1, V2
+    integer, intent(in) :: n_sites
+!   Output variables
+    real*8, intent(out) :: V
+!   Internal variables
+    real*8 :: rand, log_V_V2, v_ratio
+
+    call random_number( rand )
+
+    v_ratio = (V1/V2)**(n_sites+1)
+
+    log_V_V2 = dlog(rand + (1.d0-rand)*v_ratio) / dfloat(n_sites + 1)
+
+    V = V2 * dexp(log_V_V2)
+
+  end subroutine
+
+
+
+
+
+
+  subroutine gradient_descent_box(positions, positions_prev, velocities, &
+                                  forces, forces_prev, masses, max_opt_step_eps, &
+                                  first_step, a_box, b_box, c_box, energy, &
+                                  virial, optim_mode, restart )
+!                                  virial, optim_mode, n_restart, restart )
+    implicit none
+!   Input variables
+    real*8, intent(inout) :: positions(:,:), positions_prev(:,:), velocities(:,:), &
+                             forces_prev(:,:), a_box(1:3), b_box(1:3), c_box(1:3)
+    real*8, intent(in) :: forces(:,:), masses(:), max_opt_step_eps, energy, virial(1:6)
+!    integer, intent(inout) :: n_restart
+    integer :: n_restart
+    logical, intent(in) :: first_step
+    character*16, intent(in) :: optim_mode
+!   Output variables
+    logical :: restart
+!   Internal variables
+    real*8 :: max_force, this_force, pos(1:3), d, gamma_eps, t_eps(1:3, 1:3)
+    real*8, allocatable, save :: frac_pos(:,:), frac_pos_prev(:,:)
+    real*8, save :: energy0, m_prev, a_box0(1:3), b_box0(1:3), c_box0(1:3), &
+                    eps(1:6), eps_prev(1:6), gamma_eps_prev, &
+                    m_eps_prev, virial_prev(1:6), virial0(1:6), this_virial(1:6), &
+                    gamma_back0
+    real*8, allocatable, save :: positions0(:,:)
+    integer :: n_sites, i, j, i_shift(1:3)
+    integer, save :: i_restart
+    logical, save :: backtracking, initialized = .false.
+
+    n_sites = size(masses)
+
+!   Here we always set the velocities to zero
+    velocities = 0.d0
+
+    this_virial = virial
+
+!   HARDCODED FOR NOW
+    n_restart = 10
+    if( n_restart < 2 )then
+      n_restart = 2
+    end if
+
+    if( first_step )then
+      i_restart = 0
+      backtracking = .true.
+      if( .not. allocated(frac_pos) )allocate( frac_pos(1:3, 1:n_sites) )
+      if( .not. allocated(frac_pos_prev) )allocate( frac_pos_prev(1:3, 1:n_sites) )
+      if( .not. allocated(positions0) )allocate( positions0(1:3, 1:size(positions,2)) )
+      positions0 = positions
+      virial0 = this_virial
+      energy0 = energy
+      a_box0 = a_box
+      b_box0 = b_box
+      c_box0 = c_box
+      eps = 0.d0
+!     The first step is (over)estimated from user-provided values
+      max_force = 0.d0
+      do i = 1, 6
+        this_force = sqrt( this_virial(i)**2 )
+        if( this_force > max_force )then
+          max_force = this_force
+        end if
+      end do
+      if( max_force == 0.d0 )then
+        gamma_eps = 0.d0
+      else if( initialized )then
+        gamma_eps = gamma_back0
+      else
+        gamma_eps = max_opt_step_eps / max_force
+      end if
+    else if( backtracking )then
+!     After the first step, we perform backtracking line search until fullfilling the
+!     Armijo-Goldstein condition
+      if( energy <= energy0 - gamma_eps_prev*0.5d0*m_eps_prev )then
+        backtracking = .false.
+        initialized = .true.
+        gamma_back0 = gamma_eps_prev
+      else
+!       If the condition is not fulfilled, we restore the original positions and decrease
+!       the step by half
+        gamma_eps = gamma_eps_prev * 0.5d0
+        gamma_back0 = gamma_eps
+        a_box = a_box0
+        b_box = b_box0
+        c_box = c_box0
+        eps = 0.d0
+        positions = positions0
+        this_virial = virial0
+      end if
+    end if
+
+!   Transform positions to fractional coordinate system
+    call get_fractional_coordinates(positions, a_box, b_box, c_box, frac_pos)
+
+    if( .not. first_step .and. .not. backtracking )then
+!     Make sure we use the same image convention for positions and positions_prev
+      do i = 1, n_sites
+        call get_distance(frac_pos_prev(1:3, i), frac_pos(1:3, i), [1.d0, 0.d0, 0.d0], [0.d0, 1.d0, 0.d0], &
+                          [0.d0, 0.d0, 1.d0], [.true., .true., .true.], pos(1:3), d, i_shift(1:3))
+        frac_pos_prev(1:3, i) = frac_pos(1:3, i) - pos(1:3)
+      end do
+!     Barzilai–Borwein method for finding gamma
+      gamma_eps = sum( (eps(:)-eps_prev(:)) * (this_virial(:)-virial_prev(:)) ) / &
+                  sum( (this_virial(:)-virial_prev(:))**2 )
+      gamma_eps = abs( gamma_eps )
+    end if
+
+    virial_prev = this_virial
+    eps_prev = eps
+    frac_pos_prev = frac_pos
+    do i = 1, n_sites
+      positions(1:3, i) = frac_pos(1, i) * a_box(1:3) + frac_pos(2, i) * b_box(1:3) + &
+                          frac_pos(3, i) * c_box(1:3)
+    end do
+
+    positions_prev = positions
+    forces_prev = forces
+
+    eps(1:6) = eps_prev(1:6) + gamma_eps * virial_prev(1:6)
+    gamma_eps_prev = gamma_eps
+    m_eps_prev = sum( virial_prev(1:6)**2 )
+
+    if( optim_mode == "gd-box-ortho" )then
+      eps(4) = 0.d0
+      eps(5) = 0.d0
+      eps(6) = 0.d0
+    end if
+
+    t_eps(1:3, 1) = [1.d0 + eps(1), eps(6)/2.d0, eps(5)/2.d0]
+    t_eps(1:3, 2) = [eps(6)/2.d0, 1.d0 + eps(2), eps(4)/2.d0]
+    t_eps(1:3, 3) = [eps(5)/2.d0, eps(4)/2.d0, 1.d0 + eps(3)]
+    a_box = matmul( t_eps, a_box0 )
+    b_box = matmul( t_eps, b_box0 )
+    c_box = matmul( t_eps, c_box0 )
+
+    do i = 1, n_sites
+      positions(1:3, i) = frac_pos(1, i) * a_box(1:3) + frac_pos(2, i) * b_box(1:3) + &
+                          frac_pos(3, i) * c_box(1:3)
+    end do
+
+    i_restart = i_restart + 1
+    if( i_restart >= n_restart .and. energy < energy0 )then
+      restart = .true.
+    else
+      restart = .false.
+    end if
+  end subroutine
+!**************************************************************************
+
+
+
+
+!**************************************************************************
+  subroutine get_atomic_mass( element, mass, is_in_database )
+
+    implicit none
+
+!   Input variables
+    character*8, intent(in) :: element
+!   Output variables
+    real*8, intent(out) :: mass
+    logical, intent(out) :: is_in_database
+!   Internal variables
+    real*8 :: masses(1:96)
+    character*8 :: elements(1:96)
+    integer :: i
+
+    elements = [" H", "He", "Li", "Be", " B", " C", " N", " O", &
+                " F", "Ne", "Na", "Mg", "Al", "Si", " P", " S", &
+                "Cl", " K", "Ar", "Ca", "Sc", "Ti", " V", "Cr", &
+                "Mn", "Fe", "Ni", "Co", "Cu", "Zn", "Ga", "Ge", &
+                "As", "Se", "Br", "Kr", "Rb", "Sr", " Y", "Zr", &
+                "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Ag", "Cd", &
+                "In", "Sn", "Sb", " I", "Te", "Xe", "Cs", "Ba", &
+                "La", "Ce", "Pr", "Nd", "Pm", "Sm", "Eu", "Gd", &
+                "Tb", "Dy", "Ho", "Er", "Tm", "Yb", "Lu", "Hf", &
+                "Ta", " W", "Re", "Os", "Ir", "Pt", "Au", "Hg", &
+                "Th", "Pb", "Bi", "Po", "At", "Rn", "Fr", "Ra", &
+                "Ac", "Pa", "Th", "Np", " U", "Pu", "Am", "Cm"]
+
+    masses = [  1.00797,   4.00260,  6.941,    9.01218, 10.81,    12.011,  14.0067,  15.9994, &
+               18.998403, 20.179,   22.98977, 24.305,   26.98154, 28.0855, 30.97376, 32.06, &
+               35.453,    39.0983,  39.948,   40.08,    44.9559,  47.90,   50.9415,  51.996, &
+               54.9380,   55.847,   58.70,    58.9332,  63.546,   65.38,   69.72,    72.59, &
+               74.9216,   78.96,    79.904,   83.80,    85.4678,  87.62,   88.9059,  91.22, &
+               92.9064,   95.94,    98.,     101.07,   102.9055, 106.4,   107.868,  112.41, &
+              114.82,    118.69,   121.75,   126.9045, 127.60,   131.30,  132.9054, 137.33, &
+              138.9055,  140.12,   140.9077, 144.24,   145.,     150.4,   151.96,   157.25, &
+              158.9254,  162.50,   164.9304, 167.26,   168.9342, 173.04,  174.967,  178.49, &
+              180.9479,  183.85,   186.207,  190.2,    192.22,   195.09,  196.9665,  200.59, &
+              204.37,    207.2,    208.9804, 209.,     210.,     222.,    223.,      226.0254, &
+              227.0278,  231.0359, 232.0381, 237.0482, 238.029,  244.,    243.,      247.]
+
+    is_in_database = .false.
+
+    mass = 0.d0
+    do i = 1, size(elements, 1)
+      if( trim(adjustl(elements(i))) == trim(adjustl(element)) )then
+        mass = masses(i)
+        is_in_database = .true.
+        exit
+      end if
+    end do
+
+  end subroutine get_atomic_mass
+
+
+  subroutine get_target_temp( t_beg, t_end, md_istep, md_nsteps, n_t_hold, t_hold, target_temp )
+    implicit none
+    real*8, intent(in) :: t_beg, t_end
+    integer, intent(in) :: md_istep, md_nsteps, n_t_hold
+    real*8, intent(in), allocatable :: t_hold(:)
+    real*8, intent(out) ::  target_temp
+    real*8 :: t_h, n_start, n_end, n_end_prev=0
+    integer :: i, n_end_tot=0
+
+    ! This all assumes t_hold is in order
+    target_temp = t_beg + (t_end-t_beg)*dfloat(md_istep+1)/float(md_nsteps)
+    if (n_t_hold > 0)then
+       do i = 1, n_t_hold
+          t_h = t_hold((i-1)*3 + 1)
+          n_start = t_hold((i-1)*3 + 2)
+          n_end = t_hold((i-1)*3 + 3)
+
+          n_end_tot = n_end_tot + n_end
+          if (dfloat(md_istep+1) > n_start .and. dfloat(md_istep+1) <= n_end ) then
+             target_temp = t_beg + (t_end-t_beg)*((n_start)/float(md_nsteps))
+          elseif ( dfloat(md_istep+1) >= n_end )then
+             t_h = t_beg + (t_end-t_beg)*((n_start)/float(md_nsteps))
+             target_temp = t_h + (t_end - t_h) * ( dfloat(md_istep+1) - n_end ) /( float(md_nsteps) - n_end )
+          end if
+          n_end_prev = n_end
+       end do
+    end if
+  end subroutine get_target_temp
+
+
+
+!**************************************************************************
+
 end module

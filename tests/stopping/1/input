@@ -1,0 +1,28 @@
+! Species-specific info
+atoms_file = 'silicon2atoms-TurboGAP.xyz'
+pot_file = 'gap_files/silicon.gap'
+n_species = 1
+species = Si
+masses = 28
+
+! MD options
+
+e0 = -158.54496821
+
+md_nsteps = 3000
+md_step = 0.01
+
+adaptive_time = .true.
+adapt_tstep_interval = 1
+adapt_tmin = 1.0E-07
+adapt_tmax = 1.0E-00
+adapt_xmax = 1.0E-02
+adapt_emax = 0.5
+
+electronic_stopping = .false.	! true
+eel_cut = 10.0
+eel_freq_out = 10
+estop_filename = 'Si-in-Si-el-stopping.txt'
+
+write_thermo = 1
+write_xyz = 1000

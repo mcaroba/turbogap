@@ -2,12 +2,12 @@
 ! HND X
 ! HND X   TurboGAP
 ! HND X
-! HND X   TurboGAP is copyright (c) 2019-2021, Miguel A. Caro and others
+! HND X   TurboGAP is copyright (c) 2019-2023, Miguel A. Caro and others
 ! HND X
 ! HND X   TurboGAP is published and distributed under the
 ! HND X      Academic Software License v1.0 (ASL)
 ! HND X
-! HND X   This file, vdw.f90, is copyright (c) 2019-2021, Miguel A. Caro and Heikki
+! HND X   This file, vdw.f90, is copyright (c) 2019-2022, Miguel A. Caro and Heikki
 ! HND X   Muhli
 ! HND X
 ! HND X   TurboGAP is distributed in the hope that it will be useful for non-commercial
@@ -48,7 +48,6 @@ module vdw
     real*8, allocatable :: K(:,:), K_der(:,:), Qss(:,:), Qs_copy(:,:)
     integer :: n_sites, n_soap, n_sparse, zeta_int, n_pairs
     integer :: i, j, i2, cart
-    logical :: is_zeta_int = .false.
 
     n_sparse = size(alphas)
     n_soap = size(soap, 1)
@@ -62,8 +61,10 @@ module vdw
       allocate( Qs_copy(1:n_soap, 1:n_sparse) )
     end if    
 
-    call dgemm( "t", "n", n_sites, n_sparse, n_soap, 1.d0, soap, n_soap, Qs, n_soap, 0.d0, &
-              K, n_sites)
+    if( n_sites > 0 )then
+      call dgemm( "t", "n", n_sites, n_sparse, n_soap, 1.d0, soap, n_soap, Qs, n_soap, 0.d0, &
+                K, n_sites)
+    end if
 
     zeta_int = nint(zeta)
     if( dabs( dfloat(zeta_int) - zeta ) < 1.d-10 )then
@@ -99,7 +100,9 @@ module vdw
     end if
 
 !    V = delta**2 * matmul( K, alphas ) + V0
-    call dgemm( "n", "n", n_sites, 1, n_sparse, delta**2, K, n_sites, alphas, n_sparse, 0.d0, V, n_sites)
+    if( n_sites > 0 )then
+      call dgemm( "n", "n", n_sites, 1, n_sparse, delta**2, K, n_sites, alphas, n_sparse, 0.d0, V, n_sites)
+    end if
     V = V + V0
 
 !   Make sure all V are >= 0
@@ -110,8 +113,10 @@ module vdw
     end do
 
     if( do_derivatives)then
-      call dgemm("n", "t", n_sites, n_soap, n_sparse, delta**2, K_der, n_sites, &
-                 Qs_copy, n_soap, 0.d0, Qss, n_sites)
+      if( n_sites > 0 )then
+        call dgemm("n", "t", n_sites, n_soap, n_sparse, delta**2, K_der, n_sites, &
+                   Qs_copy, n_soap, 0.d0, Qss, n_sites)
+      end if
       j = 1
       do i = 1, n_sites
         do i2 = 1, n_neigh(i)
@@ -163,15 +168,18 @@ module vdw
                            pref_force1(:), pref_force2(:), r6(:), r6_der(:)
     real*8 :: time1, time2, c6_ii, c6_jj, r0_i, r0_j, alpha0_i, alpha0_j, rbuf, this_force(1:3)
     integer, allocatable:: i_buffer(:)
-    integer :: n_sites, n_pairs, n_pairs_soap, n_species, n_sites0
+    integer :: n_sites, n_pairs, n_species, n_sites0
     integer :: i, j, i2, j2, k, n_in_buffer, k1, k2
     logical, allocatable :: is_in_buffer(:)
     logical :: do_timing = .false.
+
+
 
     n_sites = size(n_neigh)
     n_pairs = size(neighbors_list)
     n_species = size(c6_ref)
     n_sites0 = size(forces0, 2)
+
 
 !   We precompute the C6 coefficients of all the neighbors
     allocate( neighbor_c6_ii(1:n_pairs) )
@@ -443,12 +451,23 @@ module vdw
     else if( element == "C" )then
 !     This is the value provided by VASP, for which they give "private comm."
 !     as reference in the TS implementation paper:
+!      R0 = 3.590 * Bohr
       R0 = 1.900d0
 !     This is the one given by Grimme (J Comput Chem 27, 1787 [2006]):
 !      R0 = 1.452d0
 !     These values are given by Chu and Dalgarno (J Chem Phys 121, 4083 [2004])
       alpha0 = 12.d0 * Bohr**3
       C6 = 46.6d0 * Hartree * Bohr**6
+    else if( element == "P" )then
+!     This is the value provided by VASP, for which they give "private comm."
+!     as reference in the TS implementation paper:
+!      R0 = 4.006d0 * Bohr
+      R0 = 2.120d0
+!     This is the one given by Grimme (J Comput Chem 27, 1787 [2006]):
+!      R0 = 1.705d0
+!     These values are given by Chu and Dalgarno (J Chem Phys 121, 4083 [2004])
+      alpha0 = 25.d0 * Bohr**3
+      C6 = 185.d0 * Hartree * Bohr**6
     else
       if( rank == 0 )then
         write(*,*)'                                       |'

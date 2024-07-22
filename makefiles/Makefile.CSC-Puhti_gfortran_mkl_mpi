@@ -5,8 +5,7 @@
 # loaded the correct module environment:
 #
 #     module reset
-#     module load gcc/9.1.0
-#     module load intel-mkl/2019.0.4
+#     module load gcc/11.3.0
 #
 # We you run TurboGAP, make sure to load this same environment at the top
 # of your Slurm submission script.

@@ -1,0 +1,9 @@
+init_xyz/*
+hulls/*.png
+hulls/*.dat
+mds.dat
+mds_sites.dat
+plot_nps/np_png/*.png
+plot_sites/sites_png/*.png
+plot_nps/*.png
+plot_sites/*.png

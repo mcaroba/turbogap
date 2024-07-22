@@ -9,7 +9,7 @@ F90_MOD_DIR_OPT=-J
 
 # Optimization flags (uncomment second option to enable debugging tools)
 F90_OPTS=-fPIC -O3
-#F90_OPTS=-fPIC -O3 -fcheck=bounds -g -fcheck=all -Wall
+#F90_OPTS=-fPIC -O0 -fcheck=bounds -g -fcheck=all -Wall -fbacktrace 
 
 # BLAS and LAPACK libraries
 LIBS=-llapack -lblas

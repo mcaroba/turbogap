@@ -1,0 +1,37 @@
+! Species-specific info
+atoms_file = 'silicon.xyz'
+pot_file = 'gap_files/silicon.gap'
+n_species = 1
+species = Si
+masses = 28
+
+! MD options
+
+! e0 = -158.54496821
+
+md_nsteps = 180000
+md_step = 0.1
+
+nonadiabatic_processes = .true.
+eph_fdm_option = 1
+eph_friction_option = 1
+eph_random_option = 1
+eph_betafile = 'Si_PRB2021_constant.beta'
+! eph_Tinfile = 'T_input.fdm'
+box_limits = -30.0 30.0 -30.0 30.0 -30.0 30.0
+eph_rho_e = 1.0
+eph_C_e = 3.5E-07
+eph_kappa_e = 0.1248
+eph_Ti_e = 50.0
+eph_gsx = 4
+eph_gsy = 4
+eph_gsz = 4
+eph_fdm_steps = 1
+eph_md_last_step = 0
+eph_md_prev_time = 0.0
+eph_E_prev_time = 0.0
+eph_freq_Tout = 10
+eph_freq_mesh_Tout = 1000
+eph_Toutfile = 'T-Si-Ta0Te50.out'
+write_thermo = 10
+write_xyz = 1000
