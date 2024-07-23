@@ -2398,6 +2398,10 @@ extern "C" void  gpu_get_core_pot_energy_and_forces(int i_beg, int i_end, bool d
 							  energies_d);
 }
 
+extern "C" void gpu_device_sync()
+{
+  gpuErrchk( hipDeviceSynchronize() );
+}
 /* 
 extern "C" void cuda_malloc_double(double **a_d, int Np)
 {

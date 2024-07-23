@@ -52,7 +52,7 @@ default: libturbogap programs
 all: default
 
 clean:
-	rm -rf $(OBJ_CUDA) $(OBJ_CC) $(OBJ_TP_BT) $(OBJ_ST)  $(OBJ) $(INC_DIR)/*.mod $(PROG)
+	rm -rf $(OBJ_CUDA) $(OBJ_CC) $(OBJ_TP_BT) $(OBJ_ST) $(OBJ_STOP) $(OBJ) $(INC_DIR)/*.mod $(PROG)
 
 deepclean:
 	rm -rf $(BUILD_DIR) $(BIN_DIR) ${INC_DIR} ${LIB_DIR}
@@ -70,8 +70,8 @@ $(BUILD_DIR)/cuda_%.o: src/cuda_%.cu
 	$(CU) $(CUDA_OPTS) -c $< -o $@
 $(BUILD_DIR)/%.o: src/%.cc
 	$(CC) $(CC_OPTS) -c $< -o $@
-$(BIN_DIR)/%: src/%.f90 $(OBJ_TP_BT) $(OBJ_ST)  $(OBJ) $(OBJ_CUDA) $(OBJ_CC) | $$(@D)
-	$(F90) $(PP) $(F90_OPTS) $< -o $@ $(OBJ_TP_BT) $(OBJ_ST) $(OBJ) $(OBJ_CUDA) $(OBJ_CC) $(LIBS)
+$(BIN_DIR)/%: src/%.f90 $(OBJ_TP_BT) $(OBJ_ST) $(OBJ_STOP) $(OBJ) $(OBJ_CUDA) $(OBJ_CC) | $$(@D)
+	$(F90) $(PP) $(F90_OPTS) $< -o $@ $(OBJ_TP_BT) $(OBJ_ST) $(OBJ_STOP) $(OBJ) $(OBJ_CUDA) $(OBJ_CC) $(LIBS)
 
 $(BUILD_DIR)/%.o: src/stopping/%.f90 | $$(@D)
 	$(F90) $(PP) $(F90_OPTS) -c $< -o $@

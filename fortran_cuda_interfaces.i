@@ -1,9 +1,11 @@
+# 1 "src/fortran_cuda_interfaces.f90"
 
 ! module load gcc/10.3.0 openblas openmpi cuda
 ! rm cuda_wrappers.o ; nvcc -arch=sm_70 -c src/cuda_wrappers.cu ; make clean; make -B
 !  srun  --time=00:10:00 --partition=gputest --account=project_2000634 --nodes=1 --ntasks-per-node=4  --cpus-per-task=1 --gres=gpu:a100:4  ../turbogap_dev/bin/turbogap md
 ! gnupot
 !plot "< paste trajectory_out.xyz_64k_oiriginal trajectory_out.xyz | awk 'NR>2{print $5,$13}'", x
+# 7
 MODULE F_B_C
     INTERFACE
       subroutine gpu_malloc_all(a_d,n,gpu_stream) bind(C,name="cuda_malloc_all")
@@ -420,12 +422,7 @@ MODULE F_B_C
         type(c_ptr) :: energy_3b_d, forces_3b_d, virials_3b_d,energy_3b_h,forces_3b_h,virials_3b_h
         type(c_ptr) :: stream
         logical(c_bool), value :: do_forces
-	      integer(c_int), value :: n_sites, n_sites0
-      end subroutine
-
-      subroutine gpu_device_sync() bind(C,name="gpu_device_sync")
-        use iso_c_binding
-        implicit none
+	integer(c_int), value :: n_sites, n_sites0
       end subroutine
 !
 !      subroutine gpu_2b(n_sparse, n_sites, sp1, sp2, alpha, delta, cutoff, stream, rjs, xyz, n_neigh, species, neighbor_species, do_forces, rcut,buffer, sigma,qs,n_neigh_host) bind(C,name="gpu_2b")

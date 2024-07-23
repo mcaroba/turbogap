@@ -1,3 +1,4 @@
+# 1 "src/turbogap.f90"
 ! HND XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 ! HND X
 ! HND X   TurboGAP
@@ -27,6 +28,7 @@
 ! HND X
 ! HND XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
+# 30
 program turbogap
 
   use neighbors
@@ -48,10 +50,12 @@ program turbogap
   use soap_turbo_functions
   use F_B_C
   use iso_c_binding
-#ifdef _MPIF90
+
+# 52
   use mpi
   use mpi_helper
-#endif
+
+# 55
   use bussi
   use xyz_module
 
@@ -258,7 +262,8 @@ program turbogap
 
   !**************************************************************************
   ! MPI stuff
-#ifdef _MPIF90
+
+# 262
   call mpi_init(ierr)
   call mpi_comm_size(MPI_COMM_WORLD, ntasks, ierr)
   call mpi_comm_rank(MPI_COMM_WORLD, rank, ierr)
@@ -272,10 +277,11 @@ program turbogap
 !  allocate( counts2(1:ntasks) )
 
 
-#else
-  rank = 0
-  ntasks = 1
-#endif
+
+
+
+
+# 279
   allocate( n_atom_pairs_by_rank(1:ntasks) )
   !**************************************************************************
 
@@ -327,9 +333,11 @@ program turbogap
   !**************************************************************************
   ! Prints some welcome message and reads in the input file
   !
-#ifdef _MPIF90
+
+# 331
   IF( rank == 0 )THEN
-#endif
+
+# 333
   write(*,*)'_________________________________________________________________ '
   write(*,*)'                             _                                   \'
   write(*,*)' ___________            __   \\ /\        _____     ___   _____  |'
@@ -369,22 +377,24 @@ program turbogap
   write(*,*)'                     Last updated: June. 2023                     |'
   write(*,*)'                                        _________________________/'
   write(*,*)'.......................................|'
-#ifdef _MPIF90
+
+# 373
      write(*,*)'                                       |'
      write(*,*)'Running TurboGAP with MPI+GPU support: |'
      write(*,*)'                                       |'
      write(*,'(A,I6,A)')' Running TurboGAP on ', ntasks, ' MPI tasks   |'
      write(*,*)'                                       |'
      write(*,*)'.......................................|'
-#else
-     write(*,*)'                                       |'
-     write(*,*)'Running the serial version of TurboGAP |'
-     write(*,*)'                                       |'
-     write(*,*)'.......................................|'
-#endif
-#ifdef _MPIF90
+
+
+
+
+
+
+
+# 386
   END IF
-#endif
+
   !**************************************************************************
 
 
@@ -396,24 +406,31 @@ program turbogap
   !**************************************************************************
   ! Read input file and other files
   !
+# 399
   time_read_input(3) = 0.d0
   !call cpu_time(time_read_input(1))
   time_read_input(1)=MPI_Wtime()
   open(unit=10,file='input',status='old',iostat=iostatus)
   ! Check for existence of input file
-#ifdef _MPIF90
+
+# 405
   IF( rank == 0 )THEN
-#endif
+
+# 407
      write(*,*)'                                       |'
      write(*,*)'Checking input file...                 |'
-#ifdef _MPIF90
+
+# 410
   END IF
-#endif
+
+# 412
   if(iostatus/=0)then
      close(10)
-#ifdef _MPIF90
+
+# 415
      IF( rank == 0 )THEN
-#endif
+
+# 417
         write(*,*)'                                       |'
         write(*,*)'ERROR: input file could not be found   |  <-- ERROR'
         write(*,*)'                                       |'
@@ -421,10 +438,12 @@ program turbogap
         write(*,*)'                                       |'
         write(*,*)'End of execution                       |'
         write(*,*)'_______________________________________/'
-#ifdef _MPIF90
+
+# 425
      END IF
      call mpi_finalize(ierr)
-#endif
+
+# 428
      stop
   end if
   !
@@ -442,17 +461,21 @@ program turbogap
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, n_species
         if( n_species < 1 )then
-#ifdef _MPIF90
+
+# 446
            IF( rank == 0 )THEN
-#endif
+
+# 448
               write(*,*)'                                       |'
               write(*,*)'ERROR: n_species must be > 0           |  <-- ERROR'
               write(*,*)'                                       |'
               write(*,*)'.......................................|'
-#ifdef _MPIF90
+
+# 453
            END IF
            call mpi_finalize(ierr)
-#endif
+
+# 456
            stop
         end if
      end if
@@ -474,7 +497,8 @@ program turbogap
 !! -----------------------------				---- untill here for reading stopping data
 
   ! TEMPORARY ERROR, FIX THE UNDERLYING ISSUE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-#ifdef _MPIF90
+
+# 478
   IF( rank == 0 .and. ntasks > 1 .and. (params%write_soap .or. params%write_derivatives) )THEN
      write(*,*)'                                       |'
      write(*,*)'ERROR: writing of SOAP and/or SOAP     |  <-- ERROR'
@@ -487,9 +511,10 @@ program turbogap
      write(*,*)'End of execution                       |'
      write(*,*)'_______________________________________/'
   END IF
-#endif
+
   !
   ! Second, we look for pot_file, which contains the GAP difinitions
+# 493
   rewind(10)
   iostatus = 0
   do while(iostatus==0)
@@ -510,9 +535,11 @@ program turbogap
   close(10)
   ! Now, read file_gap and register each GAP, including the hypers for its descriptor
   if( file_gap /= "none" )then
-#ifdef _MPIF90
+
+# 514
      IF( rank == 0 )then
-#endif
+
+# 516
         call read_gap_hypers(file_gap, &
              n_soap_turbo, soap_turbo_hypers, &
              n_distance_2b, distance_2b_hypers, &
@@ -772,13 +799,15 @@ program turbogap
      ! end if
 
 
-#ifdef _MPIF90
+
+# 776
      END IF
-#endif
+
      !   THIS CHUNK HERE DISTRIBUTES THE INPUT DATA AMONG ALL THE PROCESSES
      !   Broadcast number of descriptors to other processes
-#ifdef _MPIF90
 
+
+# 782
      time_mpi(1)=MPI_Wtime()
      call mpi_bcast(n_soap_turbo, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(n_distance_2b, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
@@ -1061,19 +1090,24 @@ program turbogap
           & local_properties_dim_mpi_soap_turbo,&
           & local_properties_n_sparse_mpi_soap_turbo )
 
-#endif
+
+# 1065
   else
-#ifdef _MPIF90
+
+# 1067
      IF( rank == 0 )THEN
-#endif
+
+# 1069
         write(*,*)'                                       |'
         write(*,*)'ERROR: you must provide a "pot_file"   |  <-- ERROR'
         write(*,*)'                                       |'
         write(*,*)'.......................................|'
-#ifdef _MPIF90
+
+# 1074
      END IF
      call mpi_finalize(ierr)
-#endif
+
+# 1077
      stop
   end if
   !call cpu_time(time_read_input(2))
@@ -1105,10 +1139,12 @@ program turbogap
 
   !**************************************************************************
   ! <----------------------------------------------------------------------------------------------- Finish printouts
-#ifdef _MPIF90
+
+# 1109
   IF( rank == 0 )THEN
-#endif
+
      ! Print out chosen options:
+# 1112
      write(*,*)'                                       |'
      write(*,'(1X,A)')'You specified the following options:   |'
      write(*,*)'                                       |'
@@ -1130,9 +1166,10 @@ program turbogap
      write(*,*)'---------------------------------      |'
      write(*,*)'                                       |'
      write(*,*)'.......................................|'
-#ifdef _MPIF90
+
+# 1134
   END IF
-#endif
+
   !**************************************************************************
 
 
@@ -1146,6 +1183,7 @@ program turbogap
 
   !**************************************************************************
   ! Print progress bar and initialize timers
+# 1149
   time_neigh = 0.d0
   time_gap = 0.d0
   time_soap = 0.d0
@@ -1170,9 +1208,11 @@ program turbogap
 
 
   if( params%do_md )then
-#ifdef _MPIF90
+
+# 1174
      IF( rank == 0 )THEN
-#endif
+
+# 1176
         write(*,*)'                                       |'
         write(*,*)'Doing molecular dynamics...            |'
         if( params%print_progress .and. md_istep > 0 )then
@@ -1181,9 +1221,11 @@ program turbogap
            write(*,*)'                                       |'
            write(*,'(1X,A)',advance='no')'[                                    ] |'
         end if
-#ifdef _MPIF90
+
+# 1185
      END IF
-#endif
+
+# 1187
      update_bar = params%md_nsteps/36
      if( update_bar < 1 )then
         update_bar = 1
@@ -1223,9 +1265,11 @@ program turbogap
 
      !   Update progress bar
      if( params%print_progress .and. counter == update_bar .and. (.not. params%do_mc) )then
-#ifdef _MPIF90
+
+# 1227
         IF( rank == 0 )THEN
-#endif
+
+# 1229
            do j = 1, 36+3
               write(*,"(A)", advance="no") creturn
            end do
@@ -1241,9 +1285,11 @@ program turbogap
               write(*,*)
            end if
 
-#ifdef _MPIF90
+
+# 1245
         END IF
-#endif
+
+# 1247
         counter = 1
      else
         counter = counter + 1
@@ -1258,9 +1304,11 @@ program turbogap
 
      if( (params%do_md .and. md_istep == 0) )then
         call cpu_time(time_read_xyz(1))
-#ifdef _MPIF90
+
+# 1262
         IF( rank == 0 )THEN
-#endif
+
+# 1264
            if(mc_istep > 0)then
               call read_xyz(mc_file, .true., params%all_atoms, params%do_timing, &
                    n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
@@ -1293,35 +1341,45 @@ program turbogap
            if(.not. allocated(positions_diff))allocate( positions_diff(1:3, 1:n_sites) )
            positions_diff = 0.d0
            rebuild_neighbors_list = .true.
-#ifdef _MPIF90
+
+# 1297
         END IF
-#endif
+
+# 1299
         call cpu_time(time_read_xyz(2))
         time_read_xyz(3) = time_read_xyz(3) + time_read_xyz(2) - time_read_xyz(1)
         !     If we're doing MD, we don't read beyond the first snapshot in the XYZ file
         repeat_xyz = .false.
         !     At the moment, we can't do prediction if the unit cell doesn't fit a whole cutoff sphere
-#ifdef _MPIF90
+
+# 1305
         IF( rank == 0 )THEN
-#endif
+
            !     CLEAN THIS UP <------------------------------------------------------------------- LOOK HERE
            !      if( size(positions,2) /= n_sites )then
+# 1309
            if( .false. )then
               write(*,*) "Sorry, at the moment TurboGAP can't do MD for unit cells smaller than ", &
                    "a cutoff sphere <-- ERROR"
-#ifdef _MPIF90
+
+# 1313
               call mpi_finalize(ierr)
-#endif
+
+# 1315
               stop
            end if
-#ifdef _MPIF90
+
+# 1318
         END IF
-#endif
+
+# 1320
      else if( .not. params%do_md )then
         call cpu_time(time_read_xyz(1))
-#ifdef _MPIF90
+
+# 1323
         IF( rank == 0 )THEN
-#endif
+
+# 1325
            if(mc_istep > 0)then
               call read_xyz(mc_file, .true., params%all_atoms, params%do_timing, &
                    n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
@@ -1338,19 +1396,23 @@ program turbogap
                    n_sites, .false., fix_atom, params%t_beg, params%write_array_property(6), &
                    .false. )
            end if
-#ifdef _MPIF90
+
+# 1342
         END IF
-#endif
+
+# 1344
         call cpu_time(time_read_xyz(2))
         time_read_xyz(3) = time_read_xyz(3) + time_read_xyz(2) - time_read_xyz(1)
-#ifdef _MPIF90
 
+
+# 1348
         time_mpi(1)=MPI_Wtime()
         call mpi_bcast(repeat_xyz, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
         time_mpi(2)=MPI_Wtime()
 
         time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
-#endif
+
+# 1354
         rebuild_neighbors_list = .true.
      end if
      !   Broadcast the info in the XYZ file: positions, velocities, masses, xyz_species, xyz_species_supercell,
@@ -1359,7 +1421,8 @@ program turbogap
 
 
 
-#ifdef _MPIF90
+
+# 1363
      IF( rank == 0 )THEN
         n_pos = size(positions,2)
         n_sp = size(xyz_species,1)
@@ -1434,8 +1497,9 @@ program turbogap
      call mpi_bcast(c_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
      call cpu_time(time_mpi_positions(2))
      time_mpi_positions(3) = time_mpi_positions(3) + time_mpi_positions(2) - time_mpi_positions(1)
-#endif
+
      !   Now that all ranks know the size of n_sites, we allocate do_list
+# 1439
      if( .not. params%do_md .or. (params%do_md .and. md_istep == 0) .or. &
           ( params%do_mc ) )then
         if( allocated(do_list))deallocate(do_list)
@@ -1444,10 +1508,11 @@ program turbogap
      end if
      !
      call cpu_time(time1)
-#ifdef _MPIF90
+
      !   Parallel neighbors list build
+# 1449
      call mpi_bcast(rebuild_neighbors_list, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
-#endif
+
 
 
      !   If we're using a box rescaling algorithm or a barostat, then the box size can
@@ -1457,6 +1522,7 @@ program turbogap
      !   is smaller -> makes computations slower) or default back to the primitive unit cell
      !   (i.e., the box was smaller and now is bigger -> makes computations faster).
      !   We only need to check if rebuild_neighbors_list = .true.
+# 1460
      if( rebuild_neighbors_list .and.  params%do_mc .and. mc_istep > 0 )then
         call read_xyz(mc_file, .true., params%all_atoms, params%do_timing, &
              n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
@@ -1474,10 +1540,11 @@ program turbogap
 
      end if
 
-#ifdef _MPIF90
+
      !   Overlapping domain decomposition with subcommunicators goes here <------------------- TO DO
 
      !   This is some trivial MPI parallelization to make sure the code works fine
+# 1481
      if( rank < mod( n_sites, ntasks ) )then
         i_beg = 1 + rank*(n_sites / ntasks + 1)
      else
@@ -1523,18 +1590,18 @@ program turbogap
         j_beg = 1
         j_end = n_atom_pairs_by_rank(rank+1)
      end if
-#else
-     call build_neighbors_list(positions, a_box, b_box, c_box, params%do_timing, &
-          species_supercell, rcut_max, n_atom_pairs, rjs, &
-          thetas, phis, xyz, n_neigh, neighbors_list, neighbor_species, n_sites, indices, &
-          rebuild_neighbors_list, do_list, rank )
-     i_beg = 1
-     i_end = n_sites
-     n_sites_mpi = n_sites
-     j_beg = 1
-     j_end = n_atom_pairs
-     n_atom_pairs_by_rank(rank+1) = n_atom_pairs
-#endif
+
+
+
+
+
+
+
+
+
+
+
+
 
 
     ! ### --- OPENMP Parallelization --- ###
@@ -1550,6 +1617,7 @@ program turbogap
     ! Set a pseudo number of omp tasks
     ! > n_omp: The number of omp tasks
 
+# 1553
     n_omp = 1
     omp_task = 0
 
@@ -1819,17 +1887,19 @@ program turbogap
            end do
         end if
         !     Collect all energies
-#ifdef _MPIF90
+
+# 1823
         call cpu_time(time_mpi_ef(1))
         call mpi_reduce(energies, this_energies, n_sites, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
         call cpu_time(time_mpi_ef(2))
 
         time_mpi_ef(3) = time_mpi_ef(3) + time_mpi_ef(2) - time_mpi_ef(1)
         energies = this_energies
-#endif
+
 
 
         !     Loop through soap_turbo descriptors - we always call this routine, even if we don't want to do prediction
+# 1833
         n_lp_count = 0 ! This counts the local properties
         do i = 1, n_soap_turbo
            call cpu_time(time_soap(1))
@@ -2118,10 +2188,12 @@ program turbogap
            ! THIS WON'T WORK! THE SOAP AND SOAP DERIVATIVES NEED TO BE COLLECTED FROM ALL RANKS <--------------------- FIX THIS!!!!
            ! AT THE MOMENT I'M MAKING THE CODE PRINT AN ERROR MESSAGE AND STOP EXECUTION IF THE USER TRIES TO WRITE OUT THESE
            ! FILES WITH MORE THAN ONE MPI TASK
-#ifdef _MPIF90
+
+# 2122
            IF( rank == 0 )THEN
-#endif
+
               !       Write out stuff - THIS SHOULD PROBABLY BE PUT IN A MODULE
+# 2125
               if( n_soap_turbo == 1 )then
                  i_char = ""
               else
@@ -2185,10 +2257,12 @@ program turbogap
               if( params%write_derivatives )then
                  deallocate( soap_cart_der, der_neighbors, der_neighbors_list )
               end if
-#ifdef _MPIF90
-           END IF
-#endif
 
+# 2189
+           END IF
+
+
+# 2192
            call cpu_time(time_soap(2))
            time_soap(3) = time_soap(3) + time_soap(2) - time_soap(1)
 
@@ -2197,7 +2271,8 @@ program turbogap
 
         end do
 
-#ifdef _MPIF90
+
+# 2201
         if( any( soap_turbo_hypers(:)%has_local_properties) )then
            time_mpi(1)=MPI_Wtime()
            call mpi_reduce(local_properties, this_local_properties, n_sites*params%n_local_properties,&
@@ -2223,14 +2298,16 @@ program turbogap
            time_mpi(2)=MPI_Wtime()
            time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
         end if
-#endif
+
 
         !     Compute vdW energies and forces
+# 2229
         if( any( soap_turbo_hypers(:)%has_vdw ) .and.( params%do_prediction ) &
              .and. params%vdw_type == "ts" )then
            call cpu_time(time_vdw(1))
-#ifdef _MPIF90
 
+
+# 2234
            allocate( this_energies_vdw(1:n_sites) )
            this_energies_vdw = 0.d0
            if( params%do_forces )then
@@ -2238,7 +2315,8 @@ program turbogap
               this_forces_vdw = 0.d0
               this_virial_vdw = 0.d0
            end if
-#endif
+
+# 2242
            allocate(v_neigh_vdw(1:j_end-j_beg+1))
            v_neigh_vdw = 0.d0
            k = 0
@@ -2261,11 +2339,13 @@ program turbogap
                 rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), v_neigh_vdw, &
                 params%vdw_sr, params%vdw_d, params%vdw_c6_ref, params%vdw_r0_ref, &
                 params%vdw_alpha0_ref, params%do_forces, &
-#ifdef _MPIF90
+
+# 2265
                 this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw)
-#else
-           energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
-#endif
+
+
+
+# 2269
            call cpu_time(time_vdw(2))
            time_vdw(3) = time_vdw(2) - time_vdw(1)
 
@@ -2362,7 +2442,8 @@ program turbogap
              .and. valid_xps )then
            call cpu_time(time_xps(1))
 
-#ifdef _MPIF90
+
+# 2366
            allocate( this_energies_lp(1:n_sites) )
            this_energies_lp = 0.d0
            if( params%do_forces )then
@@ -2370,7 +2451,8 @@ program turbogap
               this_forces_lp = 0.d0
               this_virial_lp = 0.d0
            end if
-#endif
+
+# 2374
            allocate(v_neigh_lp(1:j_end-j_beg+1))
            v_neigh_lp = 0.d0
            k = 0
@@ -2422,11 +2504,12 @@ program turbogap
                 & y_i_pred_all(i_beg:i_end, 1:params &
                 &%exp_data(xps_idx)%n_samples), params %do_forces, &
                 & xyz(1:3, j_beg:j_end),&
-#ifdef _MPIF90
+
+# 2426
                 & this_energies_lp(i_beg:i_end), this_forces_lp, this_virial_lp, params%exp_similarity_type, rank )
-#else
-           & energies_lp(i_beg:i_end), forces_lp, virial_lp, params%exp_similarity_type, rank )
-#endif
+
+
+
 
            ! if (rank == 0)then
            !    open(unit=11, file="tg_xps.dat", status="unknown")
@@ -2437,6 +2520,7 @@ program turbogap
            ! end if
 
 
+# 2440
            call get_write_condition( params%do_mc, params%do_md&
                 &, mc_istep, md_istep, params%write_xyz,&
                 & write_condition)
@@ -2588,12 +2672,14 @@ program turbogap
                 & n_neigh, neighbor_species, species, rank, params%exp_forces, &
                 & pair_distribution_der,&
                 & pair_distribution_partial_der,&
-#ifdef _MPIF90
-                & pair_distribution_partial_temp_der, this_energies_pdf, this_forces_pdf, this_virial_pdf)
-#else
-           & pair_distribution_partial_temp_der, energies_pdf, forces_pdf, virial_pdf)
-#endif
 
+# 2592
+                & pair_distribution_partial_temp_der, this_energies_pdf, this_forces_pdf, this_virial_pdf)
+
+
+
+
+# 2597
            call cpu_time(time_pdf(2))
            time_pdf(3) = time_pdf(3) + time_pdf(2) - time_pdf(1)
            !           if (rank == 0) print *, rank, " TIME_PDF = ", time_pdf(3)
@@ -2613,14 +2699,16 @@ program turbogap
                 & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep, i_beg,&
                 & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
                 & neighbor_species, species, rank , q_beg, q_end, ntasks, sinc_factor_matrix, params%exp_forces, &
-#ifdef _MPIF90
+
+# 2617
                 & pair_distribution_partial_der, this_energies_sf, this_forces_sf, this_virial_sf, &
                 & params%structure_factor_matrix_forces)
-#else
-           & pair_distribution_partial_der, energies_sf, forces_sf, virial_sf,params%structure_factor_matrix_forces)
-#endif
 
 
+
+
+
+# 2624
            call cpu_time(time_sf(2))
            time_sf(3) = time_sf(3) + time_sf(2) - time_sf(1)
 
@@ -2637,17 +2725,19 @@ program turbogap
                 & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep, i_beg,&
                 & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
                 & neighbor_species, species, rank , q_beg, q_end, ntasks, sinc_factor_matrix, params%exp_forces, &
-#ifdef _MPIF90
+
+# 2641
                 & pair_distribution_partial_der, this_energies_xrd,&
                 & this_forces_xrd, this_virial_xrd, .false., params&
                 &%structure_factor_matrix_forces)
-#else
-           & pair_distribution_partial_der, energies_xrd, forces_xrd,&
-                & virial_xrd, .false., params&
-                &%structure_factor_matrix_forces )
-#endif
 
 
+
+
+
+
+
+# 2651
            call cpu_time(time_xrd(2))
            time_xrd(3) = time_xrd(3) + time_xrd(2) - time_xrd(1)
 
@@ -2665,17 +2755,19 @@ program turbogap
                 & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep, i_beg,&
                 & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
                 & neighbor_species, species, rank , q_beg, q_end, ntasks, sinc_factor_matrix, params%exp_forces, &
-#ifdef _MPIF90
+
+# 2669
                 & pair_distribution_partial_der, this_energies_nd,&
                 & this_forces_nd, this_virial_nd, .true., params&
                 &%structure_factor_matrix_forces)
-#else
-           & pair_distribution_partial_der, energies_nd, forces_nd,&
-                & virial_nd, .true., params&
-                &%structure_factor_matrix_forces )
-#endif
 
 
+
+
+
+
+
+# 2679
            call cpu_time(time_nd(2))
            time_nd(3) = time_nd(3) + time_nd(2) - time_nd(1)
 
@@ -3126,7 +3218,8 @@ program turbogap
 
            !       Communicate all energies and forces here for all
            !       terms
-#ifdef _MPIF90
+
+# 3130
            call cpu_time(time_mpi_ef(1))
            counter2 = 0
            if( n_soap_turbo > 0 )then
@@ -3378,10 +3471,11 @@ program turbogap
 
            call cpu_time(time_mpi_ef(2))
            time_mpi_ef(3) = time_mpi_ef(3) + time_mpi_ef(2) - time_mpi_ef(1)
-#endif
+
 
 
            !       Add up all the energy terms
+# 3385
            energies = energies + energies_soap + energies_2b +&
                 & energies_3b + energies_core_pot + energies_vdw !+energies_lp
 
@@ -3402,9 +3496,11 @@ program turbogap
 
 
         if( .not. params%do_md .and. .not. params%do_mc) then
-#ifdef _MPIF90
+
+# 3406
            IF( rank == 0 )then
-#endif
+
+# 3408
               write(*,*)'                                       |'
               write(*,'(A,1X,F22.8,1X,A)')' SOAP energy:', sum(energies_soap), 'eV |'
               write(*,'(A,1X,F24.8,1X,A)')' 2b energy:', sum(energies_2b), 'eV |'
@@ -3445,9 +3541,11 @@ program turbogap
                  write(*,*)'               "mc_all.xyz"            |'
                  write(*,*)'.......................................|'
               end if
-#ifdef _MPIF90
+
+# 3449
            END IF
-#endif
+
+# 3451
         end if
 
         if( params%do_forces )then
@@ -3493,13 +3591,15 @@ program turbogap
 
 
         if( params%do_prediction .and. .not. params%do_md .and. .not. params%do_mc)then
-#ifdef _MPIF90
+
+# 3497
            IF( rank == 0 )then
-#endif
+
               !       Write energy and forces if we're just doing static predictions
               !       The masses should be divided by 103.6426965268d0 to have amu units, but
               !       since masses is not allocated for single point calculations, it would
               !       likely lead to a segfault
+# 3503
               call wrap_pbc(positions(1:3,1:n_sites), a_box&
                    &/dfloat(indices(1)), b_box/dfloat(indices(2)),&
                    & c_box/dfloat(indices(3)))
@@ -3519,22 +3619,28 @@ program turbogap
                    & params%write_local_properties, local_property_labels, local_properties, &
                    & fix_atom, "trajectory_out.xyz", string, .false.)
 
-#ifdef _MPIF90
+
+# 3523
            END IF
-#endif
+
+# 3525
         end if
      else
-#ifdef _MPIF90
+
+# 3528
         IF( rank == 0 )then
-#endif
+
            !     Do nothing
+# 3531
            write(*,*)'                                       |'
            write(*,*)'You didn''t ask me to do anything!      |'
            write(*,*)'                                       |'
            write(*,*)'.......................................|'
-#ifdef _MPIF90
+
+# 3536
         END IF
-#endif
+
+# 3538
      end if
      !**************************************************************************
 
@@ -3545,9 +3651,11 @@ program turbogap
 
      !**************************************************************************
      !   Do MD stuff here
-#ifdef _MPIF90
+
+# 3549
      IF( rank == 0 )THEN
-#endif
+
+# 3551
         if( params%do_md .and. md_istep > -1)then
            call cpu_time(time_md(1))
            !     Define the time_step and md_time prior to possible scaling (see variable_time_step below)
@@ -3896,12 +4004,14 @@ program turbogap
            call cpu_time(time_md(2))
            time_md(3) = time_md(3) + time_md(2) - time_md(1)
         end if
-#ifdef _MPIF90
+
+# 3900
      END IF
      call mpi_bcast(rebuild_neighbors_list, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
-#endif
+
      !   Make sure all ranks have correct positions and velocities
-#ifdef _MPIF90
+
+# 3905
      if( params%do_md )then
         call cpu_time(time_mpi_positions(1))
         n_pos = size(positions,2)
@@ -3910,13 +4020,14 @@ program turbogap
         call cpu_time(time_mpi_positions(2))
         time_mpi_positions(3) = time_mpi_positions(3) + time_mpi_positions(2) - time_mpi_positions(1)
      end if
-#endif
+
 
      !**************************************************************************
      !   Nested sampling
      !   PUT THIS INTO A MODULE!!!!!!!!!!!!!!
 
      !   This runs at the beginning to read in the initial images
+# 3920
      if( params%do_nested_sampling .and. n_xyz > i_image .and. .not. params%do_md )then
         i_image = i_image + 1
         if( .not. allocated( images ) )then
@@ -4034,9 +4145,11 @@ program turbogap
                    1.d0+params%nested_max_volume_change, n_sites, rand)
               params%box_scaling_factor = params%box_scaling_factor * (rand)**(1.d0/3.d0)
               ! Each MPI process has a different set of random numbers so we need to broadcast
-#ifdef _MPIF90
+
+# 4038
               call mpi_bcast(params%box_scaling_factor, 9, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-#endif
+
+# 4040
            end if
            !       This is the so-called total enthalpy Hamiltonian Montecarlo approach (with physical masses)
            !       We do not need to broadcast the velocities here since they get broadcasted later on; otherwise
@@ -4072,10 +4185,12 @@ program turbogap
      !      end if
      !    end if
 
-#ifdef _MPIF90
-     IF( rank == 0 )THEN
-#endif
 
+# 4076
+     IF( rank == 0 )THEN
+
+
+# 4079
         if(params%do_mc)then
            if (mc_istep == params%mc_nsteps) then
               exit_loop = .true.
@@ -4700,9 +4815,10 @@ program turbogap
            end if
         end if
 
-#ifdef _MPIF90
+
+# 4704
      END IF
-#endif
+
 
      ! NOTE!! One tried for far far too long to be smart and implement some
      ! sort of conditional broadcasting: having a logical array named
@@ -4724,7 +4840,8 @@ program turbogap
 
      ! This can be optimised, so please do if you are smarter than me
 
-#ifdef _MPIF90
+
+# 4728
      IF( params%do_mc .and. md_istep == -1 .and. rank == 0 )THEN
         n_pos = size(positions,2)
         n_sp = size(xyz_species,1)
@@ -4785,8 +4902,9 @@ program turbogap
      call mpi_bcast(n_sites, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call cpu_time(time_mpi_positions(2))
      time_mpi_positions(3) = time_mpi_positions(3) + time_mpi_positions(2) - time_mpi_positions(1)
-#endif
+
      !   Now that all ranks know the size of n_sites, we allocate do_list
+# 4790
      if( .not. params%do_md .or. (params%do_md .and. md_istep == 0) .or. &
           ( params%do_mc ) )then
         if( allocated(do_list))deallocate(do_list)
@@ -4795,18 +4913,22 @@ program turbogap
      end if
      !
      call cpu_time(time1)
-#ifdef _MPIF90
+
      !   Parallel neighbors list build
+# 4800
      call mpi_bcast(rebuild_neighbors_list, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
-#endif
 
 
+
+# 4804
      if( rebuild_neighbors_list )then
         deallocate( rjs, xyz, thetas, phis, neighbor_species )
         deallocate( neighbors_list, n_neigh )
-#ifdef _MPIF90
+
+# 4808
         deallocate( n_neigh_local )
-#endif
+
+# 4810
      end if
      if( ( params%do_nested_sampling .and. .not. params%do_mc) .and. &
           (params%do_md .and. (md_istep == params%md_nsteps .or. exit_loop)))then
@@ -4842,9 +4964,11 @@ program turbogap
      if (.not. params%do_mc )n_sites_prev = n_sites
      n_atom_pairs_by_rank_prev = n_atom_pairs_by_rank(rank+1)
 
-#ifdef _MPIF90
+
+# 4846
      call mpi_bcast(exit_loop, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
-#endif
+
+# 4848
      if( exit_loop )exit
      ! End of loop through structures in the xyz file or MD steps
   end do
@@ -4854,10 +4978,12 @@ program turbogap
   if( params%do_md .or. params%do_prediction .or. params%do_mc)then
     time2=MPI_Wtime()
 
-#ifdef _MPIF90
-     IF( rank == 0 )then
-#endif
 
+# 4858
+     IF( rank == 0 )then
+
+
+# 4861
         if( params%do_md .and. .not. params%do_nested_sampling )then
            !      write(*,'(A)')'] |'
            !      write(*,*)
@@ -4904,7 +5030,8 @@ program turbogap
            write(*,'(A,F13.3,A)') ' *  MC algorithms:', time_mc(3), ' seconds |'
         end if
 
-#ifdef _MPIF90
+
+# 4908
         write(*,'(A,F13.3,A)') ' *  MPI comms.   :', time_mpi(3) + time_mpi_positions(3) + time_mpi_ef(3), ' seconds |'
         write(*,'(A,F13.3,A)') '     -  pos & vel:', time_mpi_positions(3), ' seconds |'
         write(*,'(A,F13.3,A)') '     - E & F brc.:', time_mpi_ef(3), ' seconds |'
@@ -4913,18 +5040,21 @@ program turbogap
              - time_read_xyz(3) - time_mpi(3) - time_mpi_positions(3)&
              & - time_mpi_ef(3) - time_md(3) - time_xps(3) -&
              & time_pdf(3) - time_sf(3) - time_xrd(3) - time_nd(3), ' seconds |'
-#else
-        write(*,'(A,F13.3,A)') ' *  Miscellaneous:', time2-time3 - time_neigh - time_gap - time_read_input(3) &
-             - time_read_xyz(3) - time_md(3)- time_xps(3) -&
-             & time_pdf(3) - time_sf(3) - time_xrd(3)  - time_nd(3), ' seconds |'
-#endif
+
+
+
+
+
+# 4921
         write(*,*)'                                       |'
         write(*,'(A,F13.3,A)') ' *     Total time:', time2-time3, ' seconds |'
         write(*,*)'                                       |'
         write(*,*)'.......................................|'
-#ifdef _MPIF90
+
+# 4926
      END IF
-#endif
+
+# 4928
   end if
 
   if ( allocated( fix_atom ))    deallocate( fix_atom )
@@ -5021,24 +5151,29 @@ program turbogap
   if (allocated( params%write_local_properties )) deallocate(params%write_local_properties)
 
 
-#ifdef _MPIF90
+
+# 5025
   IF( rank == 0 )then
-#endif
+
+# 5027
      write(*,*)'                                       |'
      write(*,*)'End of execution                       |'
      write(*,*)'_______________________________________/'
-#ifdef _MPIF90
+
+# 5031
   END IF
-#endif
+
 
 
 !write(*,*) "    - lin__turbo:", solo_time_soap, rank
 
 
-#ifdef _MPIF90
-  call mpi_finalize(ierr)
-#endif
 
+# 5039
+  call mpi_finalize(ierr)
+
+
+# 5042
 call destroy_cublas_handle(cublas_handle, gpu_stream)
 call gpu_device_reset()
 

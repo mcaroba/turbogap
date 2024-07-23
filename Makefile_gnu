@@ -5,8 +5,8 @@ SHELL = /bin/sh
 # Include user-modifiable variables from a customizable file.
 # Check the makefiles/ directory for a list of tested architectures
 
-include makefiles/Makefile.CSC-LUMI_cray	
-#include makefiles/Makefile.CSC-LUMI_gnu	
+#include makefiles/Makefile.CSC-LUMI_cray	
+include makefiles/Makefile.CSC-LUMI_gnu	
 
 
 # Default locations for various files
@@ -70,7 +70,7 @@ $(BUILD_DIR)/cuda_%.o: src/cuda_%.cu
 	$(CU) $(CUDA_OPTS) -c $< -o $@
 $(BUILD_DIR)/%.o: src/%.cc
 	$(CC) $(CC_OPTS) -c $< -o $@
-$(BIN_DIR)/%: src/%.f90 $(OBJ_TP_BT) $(OBJ_ST)  $(OBJ) $(OBJ_CUDA) $(OBJ_CC) | $$(@D)
+$(BIN_DIR)/%: src/%.f90 $(OBJ_TP_BT) $(OBJ_ST) $(OBJ) $(OBJ_CUDA) $(OBJ_CC) | $$(@D)
 	$(F90) $(PP) $(F90_OPTS) $< -o $@ $(OBJ_TP_BT) $(OBJ_ST) $(OBJ) $(OBJ_CUDA) $(OBJ_CC) $(LIBS)
 
 $(BUILD_DIR)/%.o: src/stopping/%.f90 | $$(@D)
