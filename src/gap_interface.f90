@@ -30,11 +30,10 @@ module gap_interface
   use soap_turbo_desc
   use gap
   use read_files
-
+  use types
+  use local_prop
   use F_B_C
   use iso_c_binding
-  use local_prop
-  use types
   use mpi
 
 
@@ -265,6 +264,8 @@ module gap_interface
       soap_cart_der = 0.d0
     end if
 
+    print *, " starting get soap "
+    
     if( n_sites > 0 )then
 !      call cpu_time(ttt(1))
       call get_soap(n_sites, n_neigh, n_species, species, species_multiplicity, n_atom_pairs, mask, rjs, &
@@ -286,7 +287,7 @@ module gap_interface
     !###########################################!
     !###---   Local property prediction   ---###!
     !###########################################!
-
+    print *, " starting local properties (cpu) "
     !--- TODO: CONVERT THIS FUNCTION INTO GPU KERNEL ---!
     if( has_local_properties )then
        !call cpu_time(time1)
