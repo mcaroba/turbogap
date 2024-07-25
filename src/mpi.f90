@@ -34,13 +34,13 @@ module mpi_helper
   contains
 
 
-  subroutine allocate_soap_turbo_hypers(n_soap_turbo, n_species, n_sparse, dim, compress_P_nonzero, &
+  subroutine allocate_soap_turbo_hypers(n_soap_turbo, n_species, n_sparse, dim,&! compress_P_nonzero, &
        local_properties_n_sparse, local_properties_dim, has_local_properties, n_local_properties, &
        compress_soap, desc)
 
 !   Input variables
     integer, intent(in) :: n_soap_turbo, n_species(:), n_sparse(:), dim(:), local_properties_n_sparse(:), &
-                           compress_P_nonzero(:), n_local_properties(:), local_properties_dim(:)
+                            n_local_properties(:), local_properties_dim(:) ! compress_P_nonzero(:),
     logical, intent(in) :: compress_soap(:), has_local_properties(:)
 
 !   Output_variables
@@ -71,17 +71,21 @@ module mpi_helper
        desc(i)%n_sparse = n_sp
        d = dim(i)
        desc(i)%dim = d
-       cPnz = compress_P_nonzero(i)
-       desc(i)%compress_P_nonzero = cPnz
+!       cPnz = compress_P_nonzero(i)
+!       desc(i)%compress_P_nonzero = cPnz
        allocate( desc(i)%alphas(1:n_sp) )
        allocate( desc(i)%Qs(1:d, 1:n_sp) )
        !     Currently the cutoff does not get allocated
        !      allocate( desc(i)%cutoff(1:n_sp) )
-       if( compress_soap(i) )then
-          allocate( desc(i)%compress_P_el(1:cPnz) )
-          allocate( desc(i)%compress_P_i(1:cPnz) )
-          allocate( desc(i)%compress_P_j(1:cPnz) )
-       end if
+      if( compress_soap(i) )then
+        allocate( desc(i)%compress_soap_indices(1:d) )
+      end if
+       
+       ! if( compress_soap(i) )then
+       !    allocate( desc(i)%compress_P_el(1:cPnz) )
+       !    allocate( desc(i)%compress_P_i(1:cPnz) )
+       !    allocate( desc(i)%compress_P_j(1:cPnz) )
+       ! end if
        if( has_local_properties(i) )then
           desc(i)%n_local_properties = n_local_properties(i)
           allocate( desc(i)%local_property_models(1:n_local_properties(i)))

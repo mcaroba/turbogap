@@ -2327,7 +2327,7 @@ end if
                  if(trim(soap_turbo_hypers(n_soap_turbo)%local_property_models(nw)&
                       &%label) == "hirshfeld_v")then
                     soap_turbo_hypers(n_soap_turbo)%has_vdw=.true.
-                    soap_turbo_hypers(n_soap_turbo)%local_property_models(nw)%do_derivatives=.true.
+!                    soap_turbo_hypers(n_soap_turbo)%local_property_models(nw)%do_derivatives=.true.
                     soap_turbo_hypers(n_soap_turbo)%vdw_index=nw
                  end if
 
@@ -2399,6 +2399,9 @@ end if
 
             ! end if
 
+            print *, "allocated Qs ", allocated(soap_turbo_hypers(n_soap_turbo)%Qs)
+            print *, "allocated alphas ", allocated(soap_turbo_hypers(n_soap_turbo)%alphas)            
+            
             if( soap_turbo_hypers(n_soap_turbo)%has_local_properties )then
                do j=1, soap_turbo_hypers(n_soap_turbo)%n_local_properties
 
@@ -2482,7 +2485,7 @@ end if
           !               close(20)
           if( soap_turbo_hypers(n_soap_turbo)%compress_soap )then
 !           A compress file takes priority over compress mode
-            if( soap_turbo_hypers(n_soap_turbo)%file_compress /= "none" )then
+             if( soap_turbo_hypers(n_soap_turbo)%file_compress /= "none" )then
               open(unit=20, file=soap_turbo_hypers(n_soap_turbo)%file_compress, status="old")
               read(20, *) (ijunk, i=1,n_species), ijunk, soap_turbo_hypers(n_soap_turbo)%dim
               allocate( soap_turbo_hypers(n_soap_turbo)%compress_soap_indices(1:soap_turbo_hypers(n_soap_turbo)%dim) )
@@ -2504,28 +2507,8 @@ end if
                                          soap_turbo_hypers(n_soap_turbo)%dim, &
                                          soap_turbo_hypers(n_soap_turbo)%compress_soap_indices, &
                                          "set_indices" )              
-              ! call get_compress_indices( soap_turbo_hypers(n_soap_turbo)%compress_mode, &
-              !                            soap_turbo_hypers(n_soap_turbo)%alpha_max, &
-              !                            soap_turbo_hypers(n_soap_turbo)%l_max, &
-              !                            soap_turbo_hypers(n_soap_turbo)%dim, &
-              !                            soap_turbo_hypers(n_soap_turbo)%compress_P_nonzero, &
-              !                            soap_turbo_hypers(n_soap_turbo)%compress_P_i, &
-              !                            soap_turbo_hypers(n_soap_turbo)%compress_P_j, &
-              !                            soap_turbo_hypers(n_soap_turbo)%compress_P_el, &
-              !                            "get_dim" )
-              ! allocate( soap_turbo_hypers(n_soap_turbo)%compress_P_i(1:soap_turbo_hypers(n_soap_turbo)%compress_P_nonzero) )
-              ! allocate( soap_turbo_hypers(n_soap_turbo)%compress_P_j(1:soap_turbo_hypers(n_soap_turbo)%compress_P_nonzero) )
-              ! allocate( soap_turbo_hypers(n_soap_turbo)%compress_P_el(1:soap_turbo_hypers(n_soap_turbo)%compress_P_nonzero) )
-              ! call get_compress_indices( soap_turbo_hypers(n_soap_turbo)%compress_mode, &
-              !                            soap_turbo_hypers(n_soap_turbo)%alpha_max, &
-              !                            soap_turbo_hypers(n_soap_turbo)%l_max, &
-              !                            soap_turbo_hypers(n_soap_turbo)%dim, &
-              !                            soap_turbo_hypers(n_soap_turbo)%compress_P_nonzero, &
-              !                            soap_turbo_hypers(n_soap_turbo)%compress_P_i, &
-              !                            soap_turbo_hypers(n_soap_turbo)%compress_P_j, &
-              !                            soap_turbo_hypers(n_soap_turbo)%compress_P_el, &
-              !                            "set_indices" )
-            else
+
+           else
               write(*,*) "ERROR: you're trying to use compression but neither a file_compress_soap nor", &
                          "compress_mode are defined!"
               stop

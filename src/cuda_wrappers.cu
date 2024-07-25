@@ -122,10 +122,10 @@ extern "C" void cuda_malloc_all(void **a_d, size_t Np, hipStream_t *stream )
 
   gpuErrchk(hipMallocAsync((void **) a_d,  Np ,stream[0]));
   //gpuErrchk(hipMalloc((void **) a_d,  Np ));
-   hipError_t err;
+  hipError_t err;
   hipDeviceSynchronize();
   err = hipGetLastError();
-//  if (err != hipSuccess) {
+//  if (err != hipSuccess) {  
 //} 
    return;
 }

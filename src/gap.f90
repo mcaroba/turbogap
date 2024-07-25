@@ -315,9 +315,12 @@ module gap
   !call destroy_cublas_handle(cublas_handle)
   call gpu_free_async(forces_d,gpu_stream)
   call gpu_free_async(energies_d,gpu_stream)
-  call gpu_free_async(virial_d,gpu_stream)
-  call gpu_free_async(soap_d,gpu_stream)
-  call gpu_free(soap_der_d)
+  call gpu_free(virial_d)
+
+  ! call gpu_free_async(soap_d,gpu_stream)
+  ! call gpu_free(soap_der_d)
+
+  
   ! write(*,*) energies
   ! stop
   
@@ -336,7 +339,7 @@ module gap
   solo_time_soap=solo_time_soap+ttt(2)-ttt(1)
   !stop
   !write(*,*) "Nsites", n_sites
-  end subroutine
+end subroutine get_soap_energy_and_forces
 
 
 
