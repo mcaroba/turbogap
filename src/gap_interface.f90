@@ -293,61 +293,7 @@ module gap_interface
    !time_get_soap=time_get_soap+ttt(2)-ttt(1)
 
 
-    !###########################################!
-    !###---   Local property prediction   ---###!
-    !###########################################!
-    print *, " starting local properties (cpu) "
-    !--- TODO: CONVERT THIS FUNCTION INTO GPU KERNEL ---!
-    if( has_local_properties )then
-       !call cpu_time(time1)
-       ! We need to iterate over the number of local properties
-       allocate( local_properties( 1:n_sites ) )
-       if( do_derivatives )then
-          allocate( local_properties_cart_der(1:3, 1:n_atom_pairs) )
-       end if
 
-       do i4 = 1, n_local_properties
-          local_properties = 0.d0
-          if( do_derivatives )then
-             local_properties_cart_der = 0.d0
-          end if
-
-          call local_property_predict( soap,&
-               & local_property_models(i4)%Qs,&
-               & local_property_models(i4)%alphas,&
-               & local_property_models(i4)%V0,&
-               & local_property_models(i4)%delta,&
-               & local_property_models(i4)%zeta, local_properties,&
-               & do_derivatives, soap_cart_der, n_neigh,&
-               & local_properties_cart_der )
-
-          ! call local_property_predict( soap, Qs, alphas, V0, delta, zeta, &
-          !      local_property, do_derivatives, soap_cart_der, n_neigh_out, &
-          !      local_property_cart_der )
-
-          do i = 1, n_sites
-             i2 = in_to_out_site(i)
-             local_properties0(i2, local_property_indexes(lp_index + i4)) = local_properties(i)
-          end do
-          if( do_derivatives )then
-             do k = 1, n_atom_pairs
-                k2 = in_to_out_pairs(k)
-                local_properties_cart_der0(1:3,  k2, local_property_indexes(lp_index + i4)) &
-                     & = local_properties_cart_der(1:3, k)
-             end do
-          end if
-       end do
-
-       deallocate( local_properties )
-       if( do_derivatives )then
-          deallocate( local_properties_cart_der )
-       end if
-
-
-
-!call cpu_time(time2)
-!write(*,*) "local_properties time =", time2-time1, "seconds"
-    end if
 
 
 
