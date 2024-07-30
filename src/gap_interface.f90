@@ -65,7 +65,7 @@ module gap_interface
 
 
     !   Input variables
-    type(local_property_soap_turbo), allocatable, intent(in) :: local_property_models(:)
+    type(local_property_soap_turbo), allocatable :: local_property_models(:)
 
 !   real*8, intent(in) :: rjs0(:), thetas0(:), phis0(:), xyz0(:,:), rcut_hard(:), rcut_soft(:), &
     real*8, intent(in) :: rjs0(:), thetas0(:), phis0(:), xyz0(:,:), rcut_hard(:), &
@@ -117,7 +117,8 @@ module gap_interface
     type(c_ptr) ::  k2_i_site_d, n_neigh_d
 
     ! For local properties
-    type(c_ptr) :: alphas_lp_d, Qs_lp_d    
+    type(c_ptr) :: alphas_lp_d, Qs_lp_d, l_index_d, local_properties_d, local_properties_cart_der_d
+    integer(c_int) :: n_pairs
 
     ! Check for lp prediction
     integer :: n_sparse_lp, dim_lp
@@ -309,7 +310,7 @@ module gap_interface
         call get_soap_energy_and_forces(n_sparse, soap, soap_cart_der, alphas_d, delta, zeta, 0.d0, Qs_d, &
                                         n_neigh, neighbors_list, xyz, do_forces, do_timing, &
                                         energies, forces, virial, solo_time_soap,  &
-                                        soap_d,  soap_cart_der_d, n_neigh_d, k2_i_site_d, cublas_handle, gpu_stream)
+                                        soap_d,  soap_cart_der_d, n_neigh_d, k2_i_site_d, n_pairs, l_index_d,  cublas_handle, gpu_stream )
         
       end if
 
@@ -330,6 +331,8 @@ module gap_interface
     !###########################################!
     !###---   Local property prediction   ---###!
     !###########################################!
+
+    
     
     print *, " starting local properties (cpu) "
     !--- TODO: CONVERT THIS FUNCTION INTO GPU KERNEL ---!
@@ -341,69 +344,84 @@ module gap_interface
           allocate( local_properties_cart_der(1:3, 1:n_atom_pairs) )
        end if
 
+       ! Allocate the arrays here so we dont have to reallocate 
+       ! Allocate gpu memory
+       st_size_nf = n_sites * sizeof( local_properties(1) )
+       call gpu_malloc_all(local_properties_d, st_size_nf, gpu_stream)
+       st_size_nf = n_atom_pairs * 3 * sizeof( local_properties_cart_der(1,1) )
+       call gpu_malloc_all(local_properties_cart_der_d, st_size_nf, gpu_stream)
+       
+       
        ! We need to iterate over the number of local properties       
        do i4 = 1, n_local_properties
 
-          local_properties = 0.d0
-          if( do_derivatives )then
-             local_properties_cart_der = 0.d0
-          end if
-
-          ! Allocate gpu memory
-
-          n_sparse_lp = local_property_models(i4)%n_sparse
-          st_size_nf = n_sparse_lp * sizeof(local_property_models(i4)%alphas(1))
-          call gpu_malloc_all(alphas_lp_d, st_size_nf, gpu_stream)
-          call cpy_htod(c_loc(local_property_models(i4)%alphas), alphas_lp_d, st_size_nf, gpu_stream)
-
-          dim_lp = local_property_models(i4)%dim
-          st_size_nf = n_sparse_lp * dim_lp * sizeof(local_property_models(i4)%Qs(1))
-          call gpu_malloc_all(Qs_lp_d, st_size_nf, gpu_stream)
-          call cpy_htod(c_loc(local_property_models(i4)%Qs), Qs_lp_d, st_size_nf, gpu_stream)
+          ! local_properties = 0.d0
+          ! if( do_derivatives )then
+          !    local_properties_cart_der = 0.d0
+          ! end if
 
 
-          call gpu_local_property_predict_single( n_sparse_lp, soap,&
-               & soap_d, Qs_lp_d, alphas_lp_d, local_property_models(i4)%V0, &
+          ! n_sparse_lp = local_property_models(i4)%n_sparse
+          ! st_size_nf = n_sparse_lp * sizeof(local_property_models(i4)%alphas(1))
+          ! call gpu_malloc_all(alphas_lp_d, st_size_nf, gpu_stream)
+          ! call cpy_htod(c_loc(local_property_models(i4)%alphas), alphas_lp_d, st_size_nf, gpu_stream)
+
+          ! dim_lp = local_property_models(i4)%dim
+          ! st_size_nf = n_sparse_lp * dim_lp * sizeof(local_property_models(i4)%Qs(1))
+          ! call gpu_malloc_all(Qs_lp_d, st_size_nf, gpu_stream)
+          ! call cpy_htod(c_loc(local_property_models(i4)%Qs), Qs_lp_d, st_size_nf, gpu_stream)
+
+
+          
+          call gpu_local_property_predict( local_property_models(i4)%n_sparse, soap,&
+               & soap_d, local_property_models(i4)%Qs_d,&
+               & local_property_models(i4)%alphas_d,&
+               & local_property_models(i4)%V0,&
                & local_property_models(i4)%delta,&
-               & local_property_models(i4)%zeta, local_properties,&
+               & local_property_models(i4)%zeta, local_properties, local_properties_d,&
+               & do_derivatives, soap_cart_der_d,&
+               & local_properties_cart_der,&
+               & local_properties_cart_der_d, n_pairs, l_index_d ,&
                & cublas_handle, gpu_stream )
 
-          ! call gpu_local_property_predict( soap,&
-          !      & local_property_models(i4)%Qs,&
-          !      & local_property_models(i4)%alphas,&
-          !      & local_property_models(i4)%V0,&
-          !      & local_property_models(i4)%delta,&
-          !      & local_property_models(i4)%zeta, local_properties,&
-          !      & do_derivatives, soap_cart_der, n_neigh,&
-          !      & local_properties_cart_der )
 
-          ! call local_property_predict( soap, Qs, alphas, V0, delta, zeta, &
-          !      local_property, do_derivatives, soap_cart_der, n_neigh_out, &
-          !      local_property_cart_der )
-
-          call gpu_free_async(alphas_lp_d, gpu_stream)
-          call gpu_free(Qs_lp_d)
+          ! call gpu_local_property_predict_single( n_sparse_lp,
+          ! soap, & soap_d, Qs_lp_d, alphas_lp_d,
+          ! local_property_models(i4)%V0, &
+          ! local_property_models(i4)%delta, &
+          ! local_property_models(i4)%zeta, local_properties, &
+          ! cublas_handle, gpu_stream )
 
           do i = 1, n_sites
              i2 = in_to_out_site(i)
              local_properties0(i2, local_property_indexes(lp_index + i4)) = local_properties(i)
+!             print *,  "rank ", rank, "lp, index  ", i2, " : ", local_properties0(i2, local_property_indexes(lp_index + i4))  
           end do
-          ! if( do_derivatives )then
-          !    do k = 1, n_atom_pairs
-          !       k2 = in_to_out_pairs(k)
-          !       local_properties_cart_der0(1:3,  k2, local_property_indexes(lp_index + i4)) &
-          !            & = local_properties_cart_der(1:3, k)
-          !    end do
-          ! end if
+          if( do_derivatives )then
+             do k = 1, n_atom_pairs
+                k2 = in_to_out_pairs(k)
+                local_properties_cart_der0(1:3,  k2, local_property_indexes(lp_index + i4)) &
+                     & = local_properties_cart_der(1:3, k)
+                ! print *, "rank ", rank,  "lpder, index  ", k2, " : ",&
+                !      & local_properties_cart_der(1, k),&
+                !      & local_properties_cart_der(2, k),&
+                !      & local_properties_cart_der(3, k)
+             end do
+          end if
        end do
 
        deallocate( local_properties )
+       call gpu_free_async(local_properties_d, gpu_stream)
        if( do_derivatives )then
           deallocate( local_properties_cart_der )
+          call gpu_free_async(local_properties_cart_der_d, gpu_stream)
        end if
 
     end if
 
+
+    call gpu_free_async(l_index_d,gpu_stream)
+!    call gpu_free_async(j2_index_d,gpu_stream) 
     call gpu_free_async(soap_d,gpu_stream)
     call gpu_free(soap_cart_der_d)
 

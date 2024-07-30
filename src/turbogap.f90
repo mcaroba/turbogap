@@ -1848,25 +1848,6 @@ program turbogap
 
            n_sp = soap_turbo_hypers(i)%n_species
 
-        print *, rank, " Allocating GPU arrays, checking they are allocated "           
-        !--- ALLOCATING GPU MEMORY FOR SOAP ---!
-
-        print *, rank, " allocated soap_turbo_hypers(i)%nf? ", allocated( soap_turbo_hypers(i)%nf ), size(soap_turbo_hypers(i)%nf)
-        print *, rank, " allocated soap_turbo_hypers(i)%rcut_hard? ", allocated( soap_turbo_hypers(i)%rcut_hard ), size(soap_turbo_hypers(i)%rcut_hard)
-        print *, rank, " allocated soap_turbo_hypers(i)%rcut_soft? ", allocated( soap_turbo_hypers(i)%rcut_soft ), size(soap_turbo_hypers(i)%rcut_soft)
-        print *, rank, " allocated soap_turbo_hypers(i)%global_scaling? ", allocated( soap_turbo_hypers(i)%global_scaling ), size(soap_turbo_hypers(i)%global_scaling)
-        print *, rank, " allocated soap_turbo_hypers(i)%atom_sigma_r? ", allocated( soap_turbo_hypers(i)%atom_sigma_r ), size(soap_turbo_hypers(i)%atom_sigma_r)
-        print *, rank, " allocated soap_turbo_hypers(i)%atom_sigma_r_scaling? ", allocated( soap_turbo_hypers(i)%atom_sigma_r_scaling ), size(soap_turbo_hypers(i)%atom_sigma_r_scaling)
-        print *, rank, " allocated soap_turbo_hypers(i)%atom_sigma_t? ", allocated( soap_turbo_hypers(i)%atom_sigma_t ), size(soap_turbo_hypers(i)%atom_sigma_t)
-        print *, rank, " allocated soap_turbo_hypers(i)%atom_sigma_t_scaling? ", allocated( soap_turbo_hypers(i)%atom_sigma_t_scaling ), size(soap_turbo_hypers(i)%atom_sigma_t_scaling)
-        print *, rank, " allocated soap_turbo_hypers(i)%amplitude_scaling? ", allocated( soap_turbo_hypers(i)%amplitude_scaling ), size(soap_turbo_hypers(i)%amplitude_scaling)
-        print *, rank, " allocated soap_turbo_hypers(i)%central_weight? ", allocated( soap_turbo_hypers(i)%central_weight ), size(soap_turbo_hypers(i)%central_weight)
-        print *, rank, " allocated soap_turbo_hypers(i)%alpha_max? ", allocated( soap_turbo_hypers(i)%alpha_max ), size(soap_turbo_hypers(i)%alpha_max)
-        print *, rank, " allocated soap_turbo_hypers(i)%alphas? ", allocated( soap_turbo_hypers(i)%alphas ), size(soap_turbo_hypers(i)%alphas)
-        print *, rank, " allocated soap_turbo_hypers(i)%Qs? ", allocated( soap_turbo_hypers(i)%Qs ), size(soap_turbo_hypers(i)%Qs)
-
-        
-
         
            st_size_nf=n_sp*sizeof(soap_turbo_hypers(i)%nf(1))
         call gpu_malloc_all(nf_d,st_size_nf, gpu_stream)
@@ -1901,14 +1882,39 @@ program turbogap
         call gpu_malloc_all(Qs_d,st_size_nf, gpu_stream)
         call cpy_htod(c_loc(soap_turbo_hypers(i)%Qs),Qs_d,st_size_nf, gpu_stream)
 
+        
+        
         if ( soap_turbo_hypers(i)%has_local_properties )then
            ! Allocate gpu memory
+           do j = 1, soap_turbo_hypers(i)%n_local_properties
+              soap_turbo_hypers(i)%local_property_models(j)%st_size_alphas = &
+                   soap_turbo_hypers(i)%local_property_models(j)%n_sparse * &
+                   sizeof(soap_turbo_hypers(i)%local_property_models(j)%alphas(1))
+              call gpu_malloc_all(soap_turbo_hypers(i)%local_property_models(j)%alphas_d, &
+                   soap_turbo_hypers(i)%local_property_models(j)%st_size_alphas, gpu_stream)
+              call cpy_htod(c_loc(soap_turbo_hypers(i)&
+                   &%local_property_models(j)%alphas), &
+                   & soap_turbo_hypers(i)%local_property_models(j)&
+                   &%alphas_d, soap_turbo_hypers(i)&
+                   &%local_property_models(j)%st_size_alphas,&
+                   & gpu_stream)
 
-           ! > At the moment there is a constant allocation and
-           ! > deallocation of the soap alphas and Qs, and this is
-           ! > inefficient. It would be better to somehow allocate all
-           ! > of the Qs and alphas at once and then split them but
-           ! > this is more tricky.
+              soap_turbo_hypers(i)%local_property_models(j)%st_size_Qs = &
+                   soap_turbo_hypers(i)%local_property_models(j)%n_sparse * &
+                   soap_turbo_hypers(i)%local_property_models(j)%dim * &
+                   sizeof(soap_turbo_hypers(i)%local_property_models(j)%Qs(1,1))
+
+              call gpu_malloc_all(soap_turbo_hypers(i)%local_property_models(j)%Qs_d, &
+                   soap_turbo_hypers(i)%local_property_models(j)%st_size_Qs, gpu_stream)
+              call cpy_htod(c_loc(soap_turbo_hypers(i)&
+                   &%local_property_models(j)%Qs), &
+                   & soap_turbo_hypers(i)%local_property_models(j)&
+                   &%Qs_d, soap_turbo_hypers(i)&
+                   &%local_property_models(j)%st_size_Qs,&
+                   & gpu_stream)
+                            
+           end do
+           
         end if
 
 
@@ -2115,8 +2121,18 @@ program turbogap
            call gpu_free_async(alpha_max_d,gpu_stream)
            call gpu_free_async(central_weight_d,gpu_stream)
            call gpu_free_async(alphas_d,gpu_stream)
-           call gpu_free(Qs_d) ! call gpu_free_async(Qs_d,gpu_stream)
-              print *, rank, " > finished freeing gpu memory "                                 
+
+        if ( soap_turbo_hypers(i)%has_local_properties )then
+           do j = 1, soap_turbo_hypers(i)%n_local_properties
+              call gpu_free_async(soap_turbo_hypers(i)%local_property_models(j)&
+                   &%alphas_d, gpu_stream)
+              call gpu_free_async(soap_turbo_hypers(i)%local_property_models(j)&
+                   &%Qs_d, gpu_stream)                            
+           end do
+        end if
+           
+        call gpu_free(Qs_d) ! call gpu_free_async(Qs_d,gpu_stream)
+        print *, rank, " > finished freeing gpu memory "                                 
         !call cpu_time(soap_time_soap(2))
         soap_time_soap(2)=MPI_Wtime()
            deallocate( i_beg_list, i_end_list, j_beg_list, j_end_list )

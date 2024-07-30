@@ -37,7 +37,10 @@ module gap
   subroutine get_soap_energy_and_forces(n_sparse, soap, soap_der, alphas_d, delta, zeta0, e0, Qs_d, &
                                         n_neigh, neighbors_list, xyz, do_forces, do_timing, &
                                         energies, forces, virial,  solo_time_soap, soap_d, &
-                                        soap_der_d, n_neigh_d, k2_i_site_d, cublas_handle, gpu_stream)
+                                        soap_der_d, n_neigh_d,&
+                                        & k2_i_site_d, n_pairs,&
+                                        & l_index_d,  cublas_handle,&
+                                        & gpu_stream )
 !   **********************************************
 !   soap(1:n_soap, 1:n_sites)
 
@@ -66,12 +69,13 @@ module gap
     integer(c_int) :: size_nnlist, size_xyz, n1xyz, n2xyz, n1forces,n2forces, n1virial,n2virial
     integer(c_int) :: size_forces, size_virial, size_soap_der,n1soap_der,n2soap_der,n3soap_der
     integer(c_int) :: rank, ierr
-    integer(c_int) :: n_pairs
+    integer(c_int), intent(inout) :: n_pairs
     integer(c_int), allocatable, target :: neighbors_beg(:), neighbors_end(:)
-    type(c_ptr) :: virial_d, n_neigh_d, j2_index_d, this_force_d , l_index_d
+    type(c_ptr) :: virial_d, n_neigh_d,  this_force_d, j2_index_d
+    type(c_ptr), intent(inout) :: l_index_d
     type(c_ptr) :: neighbors_beg_d, neighbors_end_d, xyz_d,  neighbors_list_d, forces_d
     real*8, intent(inout) :: solo_time_soap
-    integer(c_int), allocatable, target :: j2_index(:) ,  l_index(:)
+    integer(c_int), allocatable, target :: j2_index(:),  l_index(:)    
     type(c_ptr), intent(inout) :: soap_der_d, soap_d
     real*8 :: ttt(2)
     integer(c_size_t) :: st_alphas, st_Qs, st_kernels, st_energies, st_soap
@@ -164,9 +168,6 @@ module gap
       call gpu_blas_mmul_n_t(cublas_handle, kernels_der_d, Qs_copy_d, Qss_d, n_sparse, &
                                   n_soap, n_sites, cdelta_force)
     
-
-
-
       allocate( neighbors_beg(1:n_sites) )
       allocate( neighbors_end(1:n_sites) )
       l = 0
@@ -281,14 +282,13 @@ module gap
     
     call cpy_dtoh(forces_d,c_loc(tmp_forces), st_forces,gpu_stream)
     call cpy_dtoh(virial_d,c_loc(tmp_virial), st_virial,gpu_stream)
-    forces=tmp_forces
-    virial=tmp_virial
+    ! forces=tmp_forces
+    ! virial=tmp_virial
 
   endif
 
   
   call cpy_dtoh(energies_d,c_loc(tmp_energies),st_energies,gpu_stream)
-  energies=tmp_energies
 
   !write(*,*) tmp_energies
 
@@ -297,6 +297,8 @@ module gap
         forces_time = time2 - time1
       end if
 
+! Now moving deallocation outside of routine so that local properties can use them. 
+      
   call gpu_free_async(neighbors_list_d,gpu_stream)
   call gpu_free_async(neighbors_end_d,gpu_stream)
   call gpu_free_async(neighbors_beg_d,gpu_stream)
@@ -311,12 +313,17 @@ module gap
 ! call gpu_free_async(alphas_d,gpu_stream)
   call gpu_free_async(k2_i_site_d,gpu_stream) 
   ! call gpu_free_async(l_index_d,gpu_stream)
-  call gpu_free_async(j2_index_d,gpu_stream) 
+   call gpu_free_async(j2_index_d,gpu_stream) 
   !call destroy_cublas_handle(cublas_handle)
   call gpu_free_async(forces_d,gpu_stream)
   call gpu_free_async(energies_d,gpu_stream)
   call gpu_free(virial_d)
 
+    energies=tmp_energies
+    forces=tmp_forces
+    virial=tmp_virial
+
+  
   ! call gpu_free_async(soap_d,gpu_stream)
   ! call gpu_free(soap_der_d)
 

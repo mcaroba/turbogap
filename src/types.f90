@@ -28,6 +28,7 @@
 ! HND XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
 module types
+  use iso_c_binding
 
   implicit none
 
@@ -57,6 +58,9 @@ module types
      character*1024      :: file_alphas, file_desc, label
      integer             :: n_sparse, dim
      logical             :: do_derivatives = .false., compute=.true.
+     type(c_ptr)         :: Qs_d, alphas_d
+     integer(c_int)      :: n_sparse_d
+     integer(c_size_t)   :: st_size_alphas, st_size_Qs
   end type local_property_soap_turbo
 
 

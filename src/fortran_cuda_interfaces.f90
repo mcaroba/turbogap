@@ -173,6 +173,20 @@ MODULE F_B_C
         integer(c_int), value :: n_sites,n_soap, n_sites0, n_pairs
       end subroutine
 
+      subroutine gpu_local_property_derivatives(n_sites, &
+                                              Qss_d,n_soap, l_index_d, &
+                                              soap_der_d, &
+                                              local_property_cart_der_d, &
+                                              n_pairs, gpu_stream) &
+                  bind(C,name="gpu_local_property_derivatives")
+        use iso_c_binding
+        type(c_ptr), value :: Qss_d, l_index_d
+        type(c_ptr), value :: local_property_cart_der_d, soap_der_d
+        type(c_ptr) :: gpu_stream
+        integer(c_int), value :: n_sites, n_soap, n_pairs
+      end subroutine
+
+      
       subroutine gpu_get_sqrt_dot_p(sqrt_dot_d, soap_d, multiplicity_array_d, &
                                     cnk_d, skip_soap_component_d,  &
                                     n_sites, n_soap, n_max,l_max, gpu_stream) &
