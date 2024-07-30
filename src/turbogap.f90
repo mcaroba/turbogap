@@ -1312,6 +1312,12 @@ program turbogap
 !     Compute vdW energies and forces
 !      write(*,*) "has_vdw", any(soap_turbo_hypers(:)%has_vdw)
       if( any( soap_turbo_hypers(:)%has_vdw ) .and. params%do_prediction )then
+
+        !write(*,*) "START HV_DER"
+        !do i = 1, n_neigh(1)
+        !  write(*,*) neighbors_list(i), hirshfeld_v_cart_der(:,i)
+        !end do
+        !write(*,*) "END"
         call cpu_time(time_vdw(1))
 #ifdef _MPIF90
         allocate( this_energies_vdw(1:n_sites) )
@@ -1344,7 +1350,8 @@ program turbogap
                                          params%vdw_sr, params%vdw_d, params%vdw_c6_ref, params%vdw_r0_ref, &
                                          params%vdw_alpha0_ref, c6_scs, r0_scs, alpha0_scs, params%do_forces, &
 #ifdef _MPIF90
-                                         this_energies_vdw(i_beg:i_end), this_forces_vdw(1:3,i_beg:i_end), this_virial_vdw )
+                                        ! this_energies_vdw(i_beg:i_end), this_forces_vdw(1:3,i_beg:i_end), this_virial_vdw )
+                                         this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw )
 #else
                                          energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
 #endif

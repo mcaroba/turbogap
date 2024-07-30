@@ -1202,13 +1202,13 @@ r_buf_tsscs = 0.d0
     !  end do
     !end do
 
-    write(*,*) "hirshfeld_v_cart_der_ji"
-    open(unit=79, file="hv_der.dat", status="new")
-    do i = 1, n_neigh(1)
-      write(79,*) hirshfeld_v_cart_der_ji(1:3,i)
-    end do
-    close(79)
-    write(*,*) "der done"
+    !write(*,*) "hirshfeld_v_cart_der_ji"
+    !open(unit=79, file="hv_der.dat", status="new")
+    !do i = 1, n_neigh(1)
+    !  write(79,*) neighbors_list(i), hirshfeld_v_cart_der_ji(1:3,i)
+    !end do
+    !close(79)
+    !write(*,*) "der done"
 
     !do i = 1, n_neigh(1)
     !  write(*,*) hirshfeld_v_cart_der_H(1:3,i), hirshfeld_v_cart_der_ji(1:3,i)
@@ -4281,7 +4281,8 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                               - 60.d0 * rb**3 &
                               + 30.d0 * rb**4) &
                                * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_loc/Bohr))
-                  if ( do_hirshfeld_gradients ) then
+                  !if ( do_hirshfeld_gradients ) then
+                  if ( .false. ) then
                     da_mbd(k2) = da_mbd(k2) + neighbor_alpha0_mbd(k2) * &
                                     hirshfeld_v_mbd_der(c3,k2)*Bohr * &
                               (+ 10.d0 *rb**3 &
@@ -4308,8 +4309,22 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                               - 60.d0 * rb**3 &
                               + 30.d0 * rb**4) &
                                  * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_loc/Bohr))
+                  if ( k2 == 273 .and. i == 1 .and. c3 == 2 ) then
+                    write(*,*) "********************************HERE*******************************"
+                    write(*,*) "rjs_0_mbd", rjs_0_mbd(k2)*Bohr
+                    write(*,*) "f_buffer", (1.d0 - 10.d0 * rb**3 &
+                               + 15.d0 * rb**4 &
+                               - 6.d0 * rb**5)
+                    write(*,*) "f_buffer der", (-30.d0 * rb**2 &
+                              + 60.d0 * rb**3 &
+                              - 30.d0 * rb**4) &
+                               * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_loc/Bohr))
+                    write(*,*) "a_mbd", a_mbd(k2)
+                    write(*,*) "da_mbd", da_mbd(k2)
+                  end if
                 else if ( rjs_0_mbd(k2) > rcut_loc/Bohr .and. rjs_0_mbd(k2) .le. rcut_tot/Bohr ) then
-                  if ( do_hirshfeld_gradients ) then
+                  !if ( do_hirshfeld_gradients ) then
+                  if ( .false. ) then
                     da_mbd(k2) = neighbor_alpha0_mbd(k2) * &
                                     hirshfeld_v_mbd_der(c3,k2)*Bohr
                     dr0_ii_SCS(k2) = r0_ii_mbd(k2) * (hirshfeld_mbd_neigh(k2))**(-2.d0/3.d0)/3.d0 * &
@@ -4396,7 +4411,8 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                               - 60.d0 * rb**3 &
                               + 30.d0 * rb**4) &
                                * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_loc/Bohr))
-                    if ( do_hirshfeld_gradients ) then
+                    !if ( do_hirshfeld_gradients ) then
+                    if ( .false. ) then
                       da_mbd(k2) = da_mbd(k2) + neighbor_alpha0_mbd(k2) * &
                                     hirshfeld_v_mbd_der(c3,k2)*Bohr * &
                               (+ 10.d0 *rb**3 &
@@ -4424,7 +4440,8 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                               + 30.d0 * rb**4) &
                                    * ( -xyz_0_mbd(c3,k2)/rjs_0_mbd(k2)/(r_buf_loc/Bohr))
                   else if ( rjs_0_mbd(k2) > rcut_loc/Bohr .and. rjs_0_mbd(k2) .le. rcut_mbd/Bohr ) then
-                    if ( do_hirshfeld_gradients ) then
+                    !if ( do_hirshfeld_gradients ) then
+                    if ( .false. ) then
                       da_mbd(k2) = neighbor_alpha0_mbd(k2) * &
                                     hirshfeld_v_mbd_der(c3,k2)*Bohr
                       dr0_ii_SCS(k2) = r0_ii_mbd(k2) * (hirshfeld_mbd_neigh(k2))**(-2.d0/3.d0)/3.d0 * &
@@ -4933,7 +4950,8 @@ end if
                               - 60.d0 * rb**3 &
                               + 30.d0 * rb**4) &
                                * ( -xyz(c3,n_tot+k_i)/rjs(n_tot+k_i)/(r_buf_loc/Bohr))
-                    if ( do_hirshfeld_gradients ) then
+                    !if ( do_hirshfeld_gradients ) then
+                    if ( .false. ) then
                       da_2b(k2) = da_2b(k2) + neighbor_alpha0_2b_tot(k2) * &
                                     hirshfeld_v_2b_der(c3,k2)*Bohr * &
                               (+ 10.d0 *rb**3 &
@@ -4968,7 +4986,8 @@ end if
                     r0_ii_SCS_2b_tot(k2) = r0_ii_2b_tot(k2) * &
                             (central_pol(i1)/neighbor_alpha0_2b_tot(k2))**(1.d0/3.d0) 
                             !(hirshfeld_2b_tot_neigh(k2))**(1.d0/3.d0)
-                    if ( do_hirshfeld_gradients ) then
+                    !if ( do_hirshfeld_gradients ) then
+                    if ( .false. ) then
                       da_2b(k2) = neighbor_alpha0_2b_tot(k2) * hirshfeld_v_2b_der(c3,k2)*Bohr
                       dr0_ii_SCS_2b(k2) = r0_ii_2b_tot(k2) * &
                               (hirshfeld_2b_tot_neigh(k2))**(-2.d0/3.d0)/3.d0 * hirshfeld_v_2b_der(c3,k2)*Bohr
@@ -5102,7 +5121,8 @@ end if
                                   - 60.d0 * rb**3 &
                                   + 30.d0 * rb**4) &
                                   * ( -xyz(c3,n_tot+k_j)/rjs(n_tot+k_j)/(r_buf_loc/Bohr))
-                              if ( do_hirshfeld_gradients ) then
+                              !if ( do_hirshfeld_gradients ) then
+                              if ( .false. ) then
                                 da_2b(k2) = da_2b(k2) + neighbor_alpha0_2b_tot(k2) * &
                                     hirshfeld_v_2b_der(c3,k2)*Bohr * &
                                     (+ 10.d0 *rb**3 &
@@ -5137,7 +5157,8 @@ end if
                               r0_ii_SCS_2b_tot(k2) = r0_ii_2b_tot(k2) &
                                            * (central_pol(j1)/neighbor_alpha0_2b_tot(k2))**(1.d0/3.d0)
                                            !* (hirshfeld_2b_tot_neigh(k2))**(1.d0/3.d0)
-                              if ( do_hirshfeld_gradients ) then
+                              !if ( do_hirshfeld_gradients ) then
+                              if ( .false. ) then
                                 da_2b(k2) = neighbor_alpha0_2b_tot(k2) * hirshfeld_v_2b_der(c3,k2)*Bohr
                                 dr0_ii_SCS_2b(k2) = r0_ii_2b_tot(k2) * &
                                      (hirshfeld_2b_tot_neigh(k2))**(-2.d0/3.d0)/3.d0 * hirshfeld_v_2b_der(c3,k2)*Bohr
@@ -5353,7 +5374,8 @@ end if
                                   - 60.d0 * rb**3 &
                                   + 30.d0 * rb**4) &
                                   * ( -xyz(c3,n_tot+k_j)/rjs(n_tot+k_j)/(r_buf_loc/Bohr))
-                              if ( do_hirshfeld_gradients ) then
+                              !if ( do_hirshfeld_gradients ) then
+                              if ( .false. ) then
                                 da_2b(k2) = da_2b(k2) + neighbor_alpha0_2b_tot(k2) * &
                                     hirshfeld_v_2b_der(c3,k2)*Bohr * &
                                     (+ 10.d0 *rb**3 &
@@ -5388,7 +5410,8 @@ end if
                               r0_ii_SCS_2b_tot(k2) = r0_ii_2b_tot(k2) * &
                                    (central_pol(j1)/neighbor_alpha0_2b_tot(k2))**(1.d0/3.d0)
                                    !(hirshfeld_2b_tot_neigh(k2))**(1.d0/3.d0)
-                              if ( do_hirshfeld_gradients ) then
+                              !if ( do_hirshfeld_gradients ) then
+                              if ( .false. ) then
                                 da_2b(k2) = neighbor_alpha0_2b_tot(k2) * hirshfeld_v_2b_der(c3,k2)*Bohr
                                 dr0_ii_SCS_2b(k2) = r0_ii_2b_tot(k2) * &
                                      (hirshfeld_2b_tot_neigh(k2))**(-2.d0/3.d0)/3.d0 * hirshfeld_v_2b_der(c3,k2)*Bohr
@@ -5577,6 +5600,13 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                         do_mbd(k3+1) / ( o_mbd(k3+1)**2 + omegas_mbd(j)**2 )**2 ) * temp_mat_forces(:,3*(p-1)+1:3*(p-1)+3)
                       G_mat(:,3*(p-1)+1:3*(p-1)+3,j) = sqrt( a_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) ) * &
                         G_mat(:,3*(p-1)+1:3*(p-1)+3,j)
+                      !if ( p == 83 .and. i == 1 .and. c3 == 2 ) then
+                      !  write(*,*) "G_MAT******************************************************************************"
+                      !  write(*,*) "rjs_0_mbd", rjs_0_mbd(k3+1)*Bohr
+                      !  write(*,*) "k3+1", k3+1
+                      !  write(*,*) "a_mbd", a_mbd(k3+1)
+                      !  write(*,*) "da_mbd", da_mbd(k3+1)
+                      !end if
                       !if ( i == 1 .and. c3 == 1 .and. j == 2 .and. p == 35 ) then
                       !  write(*,*) "dA q", 1.d0/2.d0 * &
                       !  1.d0/sqrt(a_mbd(k3+1)/(1.d0+(omegas_mbd(j)/o_mbd(k3+1))**2)) * &
