@@ -1098,13 +1098,13 @@ module vdw
                            temp_mat(:,:), &
                            ! Eigenvalue stuff
                            AT_copy(:,:), WR(:), WI(:), VL(:,:), VR(:,:), work_mbd(:), VR_inv(:,:), ipiv_mbd(:), &
-                           temp_mat_full(:,:), temp_mat_forces(:,:)
+                           temp_mat_full(:,:), temp_mat_forces(:,:), virial_integrand(:,:)
     real*8 :: a_mbd_i, a_mbd_j, o_mbd_i, o_mbd_j, da_mbd_i, da_mbd_j, da_i, da_j, pol1, E_TS, f_damp_der_2b, dr_vdw_i, &
               dr_vdw_j, forces_TS, dC6_2b, mult1_i, mult1_j, mult2, dmult1_i(1:3), dmult1_j(1:3), dmult2(1:3), hv_p_der, &
               hv_q_der, do_pref, rb, inner_damp_der, rjs_0_i, rcut_force, o_i, o_j, do_i, do_j, T_LR_mult_i, T_LR_mult_j, &
               dT_LR_mult_i, dT_LR_mult_j, dT_LR_mult_0ij_2, dT_LR_mult_0ji_2, a_i, a_j, E_TS_tot, r6_der, ac2, ac3, ac4, &
               r_buf_ij, log_integral, rcut_tot, sym_integral, rcut_tsscs, r_buf_tsscs, dT_LR_val(1:3,1:3), do_mbd_i, do_mbd_j, &
-              rcut_mbd_sqrd, rcut_mbd2_sqrd              
+              rcut_mbd_sqrd, rcut_mbd2_sqrd, f_ki, virial_integral(1:3)              
     integer :: n_mbd_sites, n_mbd_pairs, n_2b_sites, n_2b_tot_sites, n_2b_tot_pairs, n_ene_sites, n_force_sites
     integer, allocatable :: n_mbd_neigh(:), mbd_neighbors_list(:), p_mbd(:), sub_2b_tot_list(:), n_2b_tot_neigh(:), &
                             p_2b_tot(:)
@@ -5886,9 +5886,11 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 allocate( temp_mat(1:3*n_mbd_sites,1:3*n_mbd_sites) )
                 allocate( log_integrand(1:n_freq) )
                 allocate( integrand_pol(1:n_freq) )
+                allocate( virial_integrand(1:3,1:n_freq) )
                 integrand = 0.d0
                 log_integrand = 0.d0
                 integrand_pol = 0.d0
+                virial_integrand = 0.d0
                 if ( cent_appr ) then
                   integrand_sym = 0.d0
                 end if
@@ -5952,12 +5954,17 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                   do p = 1, n_mbd_sites
                     if ( rjs_0_mbd(k3+1) .le. (rcut_force)/Bohr ) then
                       q = q + 1
+                      f_ki = 0.d0
                       do c1 = 1, 3
                         integrand_pol(i2) = integrand_pol(i2) + dot_product(G_mat(3*(p-1)+c1,:,i2), pol_grad(:,3*(q-1)+c1,i2))
                         !if ( p == 1 ) then
                         !integrand_pol(i2) = integrand_pol(i2) + dot_product(dT_LR(3*(p-1)+c1,:), AT(:,3*(p-1)+c1,i2))
                         !end if
                         integrand(i2) = integrand(i2) + dot_product(G_mat(3*(p-1)+c1,:,i2), pol_inv(:,3*(q-1)+c1,i2))
+                        f_ki = f_ki + dot_product(G_mat(3*(p-1)+c1,:,i2), pol_grad(:,3*(q-1)+c1,i2))
+                      end do
+                      do c1 = 1, 3
+                        virial_integrand(c1,i2) = virial_integrand(c1,i2) + 0.5d0 * xyz_0_mbd(c1,k3+1) * f_ki
                       end do
                     !else
                     !  write(*,*) "G_mat"
@@ -6237,6 +6244,11 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                   !integral = 0.d0
                   !call integrate("trapezoidal", omegas_mbd, integrand, omegas_mbd(1), omegas_mbd(n_freq), integral)
                   !write(*,*) "Inverse force", i, c3, integral/(2.d0*pi) * Hartree/Bohr
+                  virial_integral = 0.d0
+                  do c1 = 1, 3
+                    call integrate("trapezoidal", omegas_mbd, virial_integrand(c1,:), omegas_mbd(1), &
+                                   omegas_mbd(n_freq), virial_integral(c1))
+                  end do
                   end if ! .not. cent_appr
                   !deallocate( log_integrand, integrand_pol )
                   if ( cent_appr ) then
@@ -6249,6 +6261,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 !i1 = modulo(neighbors_list(n_tot+1)-1, n_sites0) + 1
                 if ( .not. cent_appr ) then
                   forces0(c3,i0) = forces0(c3,i0) + (1.d0/(2.d0*pi) * integral) * Hartree/Bohr
+                  virial(:,c3) = virial(:,c3) + (1.d0/2.d0*pi) * virial_integral * Hartree
                 end if
                 if ( cent_appr ) then
                   !if ( (i == 1 .or. i == 31) .and. c3 == 1 ) then
@@ -6261,7 +6274,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 !write(*,*) & !"Total force",
                 !           i, c3, forces0(c3,i)
 
-                deallocate( log_integrand, integrand_pol )
+                deallocate( log_integrand, integrand_pol, virial_integrand )
 
               end if
               
