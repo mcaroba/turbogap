@@ -132,7 +132,7 @@ program turbogap
        neighbor_species(:), sph_temp_int(:), der_neighbors(:), der_neighbors_list(:), &
        i_beg_list(:), i_end_list(:), j_beg_list(:), j_end_list(:),&
        & species_idx(:), n_neigh_out(:), n_local_properties_mpi(:),&
-       & local_property_indexes(:), n_mc_species(:), n_mc_species_prev(:)
+       & local_property_indexes(:), n_mc_species(:), n_mc_species_prev(:), kappas(:)
   integer :: n_sites, i, j, k, i2, j2, n_soap, k2, k3, l,&
        & n_sites_this, ierr, rank, ntasks, dim, n_sp, n_pos, n_sp_sc,&
        & this_i_beg, this_i_end, this_j_beg, this_j_end,&
@@ -1578,7 +1578,7 @@ program turbogap
 !$ omp_task = omp_get_thread_num()
 
     write(*,*)
-    print *, "Allocated omp index arrays"
+!    print *, "Allocated omp index arrays"
     if( omp_task < mod( omp_n_sites, n_omp ) )then
        i_beg_omp(omp_task+1) = i_beg + omp_task*(omp_n_sites / n_omp + 1)
     else
@@ -1591,8 +1591,8 @@ program turbogap
        i_end_omp(omp_task+1) = i_beg_omp(omp_task+1) + omp_n_sites/n_omp - 1
     end if
 
-    print *,"omp_task = ", omp_task,  " i_beg_omp = ", i_beg_omp(omp_task+1)
-    print *,"omp_task = ", omp_task,  " i_end_omp = ", i_end_omp(omp_task+1)
+    ! print *,"omp_task = ", omp_task,  " i_beg_omp = ", i_beg_omp(omp_task+1)
+    ! print *,"omp_task = ", omp_task,  " i_end_omp = ", i_end_omp(omp_task+1)
 
 
 ! --- Allocating the neighbors indices for reach openmp task
@@ -1613,10 +1613,10 @@ program turbogap
     end do
 
 
-    print *, "omp_task = ", omp_task, " j_beg_omp = ", j_beg_omp(omp_task+1)
-    print *, "omp_task = ", omp_task, " j_end_omp = ", j_end_omp(omp_task+1)
-    print *, "omp_task = ", omp_task, " k         = ", k
-    print *, "omp_task = ", omp_task, " n_at_per_r= ", n_atom_pairs_by_rank(rank+1)
+    ! print *, "omp_task = ", omp_task, " j_beg_omp = ", j_beg_omp(omp_task+1)
+    ! print *, "omp_task = ", omp_task, " j_end_omp = ", j_end_omp(omp_task+1)
+    ! print *, "omp_task = ", omp_task, " k         = ", k
+    ! print *, "omp_task = ", omp_task, " n_at_per_r= ", n_atom_pairs_by_rank(rank+1)
 !$omp end parallel
 
 
@@ -1635,7 +1635,7 @@ program turbogap
      if( params%do_prediction .or. params%write_soap .or. params%write_derivatives)then
         call cpu_time(time1)
 
-        print *, rank, " Allocating prediction arrays"
+!        print *, rank, " Allocating prediction arrays"
         !     We only need to reallocate the arrays if the number of sites changes
         ! REMOVE TRUE FROM IF STATEMENT
         if( n_sites /= n_sites_prev .or. params%do_mc  )then
@@ -1693,7 +1693,7 @@ program turbogap
 
 
         ! Now one could use pointers such that hirshfeld_v(:) acts as an alias for local_properties(vdw_index,:)...
-        print *, rank, " Associating local properties "
+!        print *, rank, " Associating local properties "
         if( any( soap_turbo_hypers(:)%has_local_properties ) )then
            if( n_sites /= n_sites_prev .or.  params%do_mc  )then
               if( allocated(local_properties) )then
@@ -1942,9 +1942,9 @@ program turbogap
                  end if
               end if
 
-         print *, rank, " compress soap indices "
-         print *, rank, " > actual size ", size(soap_turbo_hypers(i)%compress_soap_indices)
-         print *, rank, " > expected size ", soap_turbo_hypers(i)%dim
+         ! print *, rank, " compress soap indices "
+         ! print *, rank, " > actual size ", size(soap_turbo_hypers(i)%compress_soap_indices)
+         ! print *, rank, " > expected size ", soap_turbo_hypers(i)%dim
               !--- TODO: PORT OLD VERSION OF GPU GET GAP SOAP WITH NEW CPU VERSION
               !--- OLD GPU VERSION OF GET GAP SOAP ---!
               print *, rank, " > GET GAP SOAP < "           
@@ -1981,7 +1981,7 @@ program turbogap
                    & local_property_indexes,&
                    this_virial, solo_time_soap, time_get_soap, cublas_handle, gpu_stream)
 
-              print *, rank, " > finished GET GAP SOAP < "                         
+              print *, rank, " >>--- Finished GET GAP SOAP ---<< "                         
               ! !--- NEW CPU VERSION OF GET GAP SOAP ---!
               ! call get_gap_soap(n_sites, this_n_sites_mpi, n_neigh(this_i_beg:this_i_end), neighbors_list(this_j_beg:this_j_end), &
               !      soap_turbo_hypers(i)%n_species, soap_turbo_hypers(i)%species_types, &
@@ -2108,7 +2108,7 @@ program turbogap
            end do
            n_lp_count = n_lp_count + soap_turbo_hypers(i)%n_local_properties
 
-              print *, rank, " > freeing gpu memory  "                      
+           print *, rank, " >> Freeing gpu memory  "                      
            call gpu_free_async(nf_d,gpu_stream)
            call gpu_free_async(rcut_hard_d,gpu_stream)
            call gpu_free_async(rcut_soft_d,gpu_stream)
@@ -2131,8 +2131,8 @@ program turbogap
            end do
         end if
            
-        call gpu_free(Qs_d) ! call gpu_free_async(Qs_d,gpu_stream)
-        print *, rank, " > finished freeing gpu memory "                                 
+        call gpu_free(Qs_d) 
+        print *, rank, " >>~~~ Finished freeing gpu memory ~~~<< "                                 
         !call cpu_time(soap_time_soap(2))
         soap_time_soap(2)=MPI_Wtime()
            deallocate( i_beg_list, i_end_list, j_beg_list, j_end_list )
@@ -2275,6 +2275,8 @@ program turbogap
               end do
            end do
 
+           print *, rank, "> TS energies forces"
+           
            call get_ts_energy_and_forces( local_properties(i_beg:i_end, vdw_lp_index), &
                 & local_properties_cart_der(1:3, j_beg:j_end, vdw_lp_index), &
                 n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
@@ -2291,7 +2293,7 @@ program turbogap
 #endif
            call cpu_time(time_vdw(2))
            time_vdw(3) = time_vdw(2) - time_vdw(1)
-
+           print *, rank, ">>--- Finiahed TS energies forces ---<<"
            deallocate(v_neigh_vdw)
         end if
 
@@ -2793,9 +2795,9 @@ program turbogap
 
         if( params%do_prediction )then
 !       Loop through distance_2b descriptors
+           print *, rank, " > Starting 2b prediction"
 
-
-        print *, "doing omp parallel, with omp_task ", omp_task  
+!        print *, "doing omp parallel, with omp_task ", omp_task  
         do i = 1, size(params%species_types)
           if( distance_2b_hypers(i)%species1 == params%species_types(i) )then   
            sp1 = i
@@ -2809,15 +2811,22 @@ program turbogap
           end if
         end do
         c_do_forces = logical( params%do_forces, kind=c_bool )
-        st_n_sites_int=n_sites*sizeof(n_neigh(1))
+
+        ! Optimization of kernels by the amount of memory being sent is possible here:
+        ! > Only parts of n_neigh is necessary to be sent along with
+        ! > the species. Leaving this optimization for later.
+        
+        st_n_sites_int = n_sites*sizeof(n_neigh(1)) ! (i_end - i_beg + 1)
+        print *, rank, " >> Allocating 2b on gpu"        
         call gpu_malloc_all(n_neigh_d,st_n_sites_int,gpu_stream)
         call cpy_htod(c_loc(n_neigh),n_neigh_d, st_n_sites_int,gpu_stream)
         call gpu_malloc_all(species_d,st_n_sites_int,gpu_stream)
         call cpy_htod(c_loc(species),species_d, st_n_sites_int,gpu_stream)
-        st_n_atom_pairs_int=n_atom_pairs*sizeof(neighbor_species(1))
+        ! Changed n_atom_pairs to n_atom_pairs_by_rank
+        st_n_atom_pairs_int = j_end * sizeof(neighbor_species(1))
         call gpu_malloc_all(neighbor_species_d,st_n_atom_pairs_int,gpu_stream)
         call cpy_htod(c_loc(neighbor_species),neighbor_species_d, st_n_atom_pairs_int,gpu_stream)
-        st_n_atom_pairs_double=n_atom_pairs*sizeof(rjs(1))
+        st_n_atom_pairs_double = j_end*sizeof(rjs(1))
         call gpu_malloc_all(rjs_d,st_n_atom_pairs_double,gpu_stream)
         call cpy_htod(c_loc(rjs),rjs_d, st_n_atom_pairs_double,gpu_stream)
         call gpu_malloc_all(xyz_d,3*st_n_atom_pairs_double,gpu_stream)
@@ -2831,6 +2840,8 @@ program turbogap
         call gpu_malloc_all(virial_2b_d,st_virial,gpu_stream)
         call cpy_htod(c_loc(virial_2b),virial_2b_d, st_virial,gpu_stream)
 
+
+        
         do i = 1, n_distance_2b
           time_2b(1)=MPI_Wtime()
           n_sparse = distance_2b_hypers(i)%n_sparse
@@ -2898,12 +2909,15 @@ program turbogap
 !           virial_2b = virial_2b + this_virial
 !         end if
 
+          print *, rank, " >>--- Finished allocating 2b on gpu ---"
+          print *, rank, " > Starting 2b energies forces on gpu "                            
           t1=MPI_Wtime()
           call gpu_get_2b_forces_energies(i_beg, i_end, n_sparse, energies_2b_d, 0.0d0, n_neigh_d, c_do_forces, forces_2b_d,   & 
                                           virial_2b_d, rjs_d, distance_2b_hypers(i)%rcut, species_d, neighbor_species_d, sp1,  &
                                           sp2, 0.5d0, distance_2b_hypers(i)%delta, cutoff_d, qs_d, distance_2b_hypers(i)%sigma,&
                                           alphas_d, xyz_d, gpu_stream)
           !call cpu_time(time_2b(2))
+          print *, rank, " >>--- Finished 2b energies forces on gpu ---"
           call gpu_free_async(alphas_d,gpu_stream)
           call gpu_free_async(cutoff_d,gpu_stream)
           call gpu_free_async(qs_d,gpu_stream)
@@ -2915,8 +2929,10 @@ program turbogap
         call cpy_dtoh(virial_2b_d, c_loc(virial_2b),st_virial, gpu_stream)
         call gpu_free_async(energies_2b_d,gpu_stream)
         call gpu_free_async(forces_2b_d,gpu_stream)
-        call gpu_free_async(virial_2b_d,gpu_stream)
+        call gpu_free(virial_2b_d)!,gpu_stream)
+        print *, rank, " >>~~~ Finished freeing 2b energies forces on gpu ~~~<<"
 
+        print *, rank, " > Allocating core_pot on gpu "
         st_n_sites_double=n_sites*sizeof(energies_core_pot(1))
         call gpu_malloc_all(energies_core_pot_d,st_n_sites_double,gpu_stream)
         call cpy_htod(c_loc(energies_core_pot),energies_core_pot_d, st_n_sites_double,gpu_stream)
@@ -2957,9 +2973,14 @@ program turbogap
 !           virial_core_pot = virial_core_pot + this_virial
 !         end if
           !call cpu_time(time_core_pot(2))
+
+          print *, rank, " >>--- Finished allocating core_pot on gpu ---"
+          print *, rank, " > Starting core_pot energies forces on gpu "                            
+          
           call gpu_get_core_pot_energy_and_forces(i_beg, i_end, c_do_forces, species_d, sp1, sp2, n_neigh_d, neighbor_species_d,&
                                                   rjs_d, n_sparse, x_d, V_d, dVdx2_d, core_pot_hypers(i)%yp1, core_pot_hypers(i)%ypn,&
                                                   xyz_d, forces_core_pot_d, virial_core_pot_d, energies_core_pot_d, gpu_stream)
+          print *, rank, " >>--- Finished core_pot energies forces on gpu ---<<"                                      
           call gpu_free_async(x_d,gpu_stream)
           call gpu_free_async(V_d,gpu_stream)
           call gpu_free_async(dVdx2_d,gpu_stream)
@@ -2972,12 +2993,15 @@ program turbogap
         call cpy_dtoh(virial_core_pot_d, c_loc(virial_core_pot),st_virial, gpu_stream)
         call gpu_free_async(energies_core_pot_d,gpu_stream)
         call gpu_free_async(forces_core_pot_d,gpu_stream)
-        call gpu_free_async(virial_core_pot_d,gpu_stream)
+        call gpu_free(virial_core_pot_d)!,gpu_stream)
         
-
+          print *, rank, " >>~~~ Finished freeing core_pot on gpu ~~~<<"
         !3b preparations:
         !setup a couple of parameters before calling gpu (kernel type and c_bool do_force)
 
+
+          print *, rank, " > Starting allocation 3b on gpu "                            
+          
 !       write(*,*) "allocating energy, force and virial for 3b"
         size_energy3b = size(n_neigh)*c_double
         call gpu_malloc_all(energy_3b_d,size_energy3b, gpu_stream)
@@ -2991,7 +3015,34 @@ program turbogap
 
         size_maxnp_bytes = size(n_neigh)* c_int
         call gpu_malloc_all(kappas_array_d,size_maxnp_bytes,gpu_stream)
-        call gpu_create_kappas(kappas_array_d, c_loc(n_neigh),gpu_stream, size(n_neigh))
+
+        
+        
+        allocate(kappas(1:n_sites))
+
+        
+        k = 0
+        do i = i_beg, i_end 
+           kappas( i ) = k            
+           do j = 1, n_neigh(i)
+              k = k + 1
+           end do
+        end do
+        
+        
+        ! do i = 1, size(n_neigh)
+        !    if( i == 1 )then
+        !       kappas( i ) = 0
+        !    else
+        !       kappas( i ) = n_neigh( i-1 ) + kappas( i-1 )
+        !    end if
+        ! end do
+        
+        call cpy_htod(c_loc(kappas), kappas_array_d, size_maxnp_bytes, gpu_stream )
+        call gpu_device_sync()
+        deallocate(kappas)
+        
+!        call gpu_create_kappas(kappas_array_d, c_loc(n_neigh),gpu_stream, size(n_neigh))
         
         size_maxnp_bytes = size(neighbors_list) * c_int 
         call gpu_malloc_all(neighbors_list_d,size_maxnp_bytes, gpu_stream)
@@ -3067,10 +3118,18 @@ program turbogap
           call cpy_htod(c_loc(angle_3b_hypers(i)%qs),qs_d,size_maxnp_qs_bytes,gpu_stream)
           call cpy_htod(c_loc(angle_3b_hypers(i)%alphas),alphas_d,size_maxnp_bytes,gpu_stream)
 
+          print *, rank, " >> Finished allocation 3b on gpu "
+          print *, rank, " >> Starting setup 3b on gpu "                                                
           call setup_3b_gpu(angle_3b_hypers(i)%kernel_type,angle_3b_hypers(i)%species_center,angle_3b_hypers(i)%species1, angle_3b_hypers(i)%species2,params%species_types, c_name_3b, sp0_3b, sp1_3b, sp2_3b)
-!          call gpu_3b(n_sparse, n_sites, n_atom_pairs, n_sites0, sp0_3b, sp1_3b, sp2_3b, alphas_d, delta, e0, cutoff_d, stream, rjs_d, xyz_d, n_neigh_d,species_d,neighbors_list_d,neighbor_species_d, c_do_forces, rcut, buffer, sigma_d, qs_d, c_name_3b, i_beg, i_end, energy_3b_d, forces_3b_d, virials_3b_d, kappas_array_d)
-          call gpu_3b(size(angle_3b_hypers(i)%alphas),  size(n_neigh), size(rjs), size(forces,2), sp0_3b, sp1_3b, sp2_3b, alphas_d, angle_3b_hypers(i)%delta, 0.d0, cutoff_d, gpu_stream, rjs_d, xyz_d, n_neigh_d,species_d,neighbors_list_d,neighbor_species_d, c_do_forces, angle_3b_hypers(i)%rcut, 0.5d0, sigma_d, qs_d, c_name_3b, i_beg, i_end, energy_3b_d, forces_3b_d, virials_3b_d, kappas_array_d)
+          print *, rank, " >> Finished setup 3b on gpu "                                                          
+          !          call gpu_3b(n_sparse, n_sites, n_atom_pairs, n_sites0, sp0_3b, sp1_3b, sp2_3b, alphas_d, delta, e0, cutoff_d, stream, rjs_d, xyz_d, n_neigh_d,species_d,neighbors_list_d,neighbor_species_d, c_do_forces, rcut, buffer, sigma_d, qs_d, c_name_3b, i_beg, i_end, energy_3b_d, forces_3b_d, virials_3b_d, kappas_array_d)
+          print *, rank, " > Starting 3b on gpu "                                                          
+          ! call gpu_3b(size(angle_3b_hypers(i)%alphas),  size(n_neigh), size(rjs), size(forces,2), sp0_3b, sp1_3b, sp2_3b, alphas_d, angle_3b_hypers(i)%delta, 0.d0, cutoff_d, gpu_stream, rjs_d, xyz_d, n_neigh_d,species_d,neighbors_list_d,neighbor_species_d, c_do_forces, angle_3b_hypers(i)%rcut, 0.5d0, sigma_d, qs_d, c_name_3b, i_beg, i_end, energy_3b_d, forces_3b_d, virials_3b_d, kappas_array_d)
 
+          call gpu_3b(size(angle_3b_hypers(i)%alphas),  i_end-i_beg+1, size(rjs), size(forces,2), sp0_3b, sp1_3b, sp2_3b, alphas_d, angle_3b_hypers(i)%delta, 0.d0, cutoff_d, gpu_stream, rjs_d, xyz_d, n_neigh_d,species_d,neighbors_list_d,neighbor_species_d, c_do_forces, angle_3b_hypers(i)%rcut, 0.5d0, sigma_d, qs_d, c_name_3b, i_beg, i_end, energy_3b_d, forces_3b_d, virials_3b_d, kappas_array_d)
+
+          
+          print *, rank, " >>--- Finished 3b on gpu ---<<"
 !         energies_3b = energies_3b + this_energies
 !         if( params%do_forces )then
 !           forces_3b = forces_3b + this_forces
@@ -3080,7 +3139,7 @@ program turbogap
           time_3b(2)=MPI_Wtime()
           time_3b(3) = time_3b(3) + time_3b(2) - time_3b(1)
         end do
-        
+          print *, rank, " >> Starting freeing memory 3b on gpu"        
         call cpy_dtoh(energy_3b_d, c_loc(energies_3b),size_energy3b, gpu_stream)
         call cpy_dtoh(forces_3b_d, c_loc(forces_3b),size_forces3b, gpu_stream)
         call cpy_dtoh(virials_3b_d, c_loc(virial_3b),size_virial3b, gpu_stream)
@@ -3095,9 +3154,11 @@ program turbogap
         call gpu_free_async(xyz_d,gpu_stream)
         call gpu_free_async(energy_3b_d,gpu_stream)
         call gpu_free_async(forces_3b_d,gpu_stream)
-        call gpu_free_async(virials_3b_d,gpu_stream)
+        call gpu_free_async(kappas_array_d, gpu_stream)
+        call gpu_free_async(neighbors_list_d, gpu_stream)        
+        call gpu_free(virials_3b_d) !,gpu_stream)
 
-
+!           print *, rank, " >>~~~ Finished freeing memory 3b on gpu ~~~<<"        
         !call cpu_time(time2)
         time2=MPI_Wtime()
         time_gap = time_gap + time2 - time1

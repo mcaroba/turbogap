@@ -395,17 +395,17 @@ module gap_interface
           do i = 1, n_sites
              i2 = in_to_out_site(i)
              local_properties0(i2, local_property_indexes(lp_index + i4)) = local_properties(i)
-!             print *,  "rank ", rank, "lp, index  ", i2, " : ", local_properties0(i2, local_property_indexes(lp_index + i4))  
+!             write(*,'(A,1X,I8,1X,A,1X,I8,1X,A,1X,F20.12)')  "rank ", rank, "lp, index  ", i2, " : ", local_properties0(i2, local_property_indexes(lp_index + i4))  
           end do
           if( do_derivatives )then
              do k = 1, n_atom_pairs
                 k2 = in_to_out_pairs(k)
                 local_properties_cart_der0(1:3,  k2, local_property_indexes(lp_index + i4)) &
                      & = local_properties_cart_der(1:3, k)
-                ! print *, "rank ", rank,  "lpder, index  ", k2, " : ",&
-                !      & local_properties_cart_der(1, k),&
-                !      & local_properties_cart_der(2, k),&
-                !      & local_properties_cart_der(3, k)
+!                write(*,'(A,1X,I8,1X,A,1X,I8,1X,A,1X,F20.12,1X,F20.12,1X,F20.12)')  "rank ", rank,  "lpder, index  ", k2, " : ",&
+                     ! & local_properties_cart_der(1, k),&
+                     ! & local_properties_cart_der(2, k),&
+                     ! & local_properties_cart_der(3, k)
              end do
           end if
        end do
