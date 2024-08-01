@@ -5964,7 +5964,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                         f_ki = f_ki + dot_product(G_mat(3*(p-1)+c1,:,i2), pol_grad(:,3*(q-1)+c1,i2))
                       end do
                       do c1 = 1, 3
-                        virial_integrand(c1,i2) = virial_integrand(c1,i2) + 0.5d0 * xyz_0_mbd(c1,k3+1) * f_ki
+                        virial_integrand(c1,i2) = virial_integrand(c1,i2) - 0.5d0 * xyz_0_mbd(c1,k3+1) * f_ki
                       end do
                     !else
                     !  write(*,*) "G_mat"
@@ -6261,7 +6261,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 !i1 = modulo(neighbors_list(n_tot+1)-1, n_sites0) + 1
                 if ( .not. cent_appr ) then
                   forces0(c3,i0) = forces0(c3,i0) + (1.d0/(2.d0*pi) * integral) * Hartree/Bohr
-                  virial(:,c3) = virial(:,c3) + (1.d0/2.d0*pi) * virial_integral * Hartree
+                  virial(:,c3) = virial(:,c3) + (1.d0/(pi) * virial_integral) * Hartree
                 end if
                 if ( cent_appr ) then
                   !if ( (i == 1 .or. i == 31) .and. c3 == 1 ) then

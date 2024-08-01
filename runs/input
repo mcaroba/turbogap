@@ -1,4 +1,4 @@
-atoms_file = 'bp_2x_scell_ym.xyz'  ! REMEMBER: EXPLICIT REPLICA FINITE DIFFERENCE REQUIRES A SUPERCELL!!!!!
+atoms_file = 'bp_2x_scell_strain.xyz'  ! REMEMBER: EXPLICIT REPLICA FINITE DIFFERENCE REQUIRES A SUPERCELL!!!!!
 !atoms_file = 'black_phosphorus_10.50.xyz'
 !atoms_file = 'all_poscars.xyz'
 pot_file = 'gap_files/phosphorus.gap'
