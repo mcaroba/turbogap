@@ -2453,15 +2453,18 @@ void kernel_get_core_pot(int i_beg, int i_end, bool do_forces, int *species_d, i
     if( species_d[i_site] == sp1 ||  species_d[i_site] == sp2 ) {
       k=0;
       for (i=i_beg-1; i<i_site; i++) k += n_neigh_d[i];
-      for (j=2; j<=n_neigh_d[i_site]; j++) {
+      for (j=1; j < n_neigh_d[i_site]; j++) {
         k +=1;
 	if( !((species_d[i_site]==sp1 && neighbor_species_d[k]==sp2) || (species_d[i_site]==sp2 && neighbor_species_d[k]==sp1)) ) continue;
         rjs_k = rjs_d[k];
         rcut=x_d[0];
         for (i=1; i<n_sparse; i++)
-	  if (rcut>=x_d[i]) rcut=x_d[i];
+	  if (rcut<=x_d[i]) rcut=x_d[i];
+
+	//	printf("GPU_CORE_POT: rjs_k = %lf, k = %d, rcut = %lf, i_site = %d \n",rjs_k, k, rcut,  i_site);    	  	
         if( rjs_k < rcut ) {
 	  energies_loc += 0.5 * gpu_spline(n_sparse, rjs_k, x_d, V_d, dVdx2_d, rcut, yp1, ypn);
+
           if( do_forces) {
 	    d_Vint=gpu_spline_der(n_sparse, rjs_k, x_d, V_d, dVdx2_d, rcut, yp1, ypn);
             for (i=0; i<3; i++) {
@@ -2470,7 +2473,7 @@ void kernel_get_core_pot(int i_beg, int i_end, bool do_forces, int *species_d, i
             }
             for (k2=0; k2<3; k2++)
               for (k1=0; k1<3; k1++)
-                virial_d[3*k2+k1] += - 0.5 * (forces_loc[k1]*xyz_d[3*k+k2] + forces_loc[k2]*xyz_d[3*k+k1]);
+                virial_loc[3*k2+k1] += - 0.5 * (forces_loc[k1]*xyz_d[3*k+k2] + forces_loc[k2]*xyz_d[3*k+k1]);
           }
         }
       }

@@ -454,11 +454,11 @@ __global__ void kernel_2nd_try(
     }
     __syncthreads();
 
-    if ( r_shmem[0] < 0.0001 )
-      {
-	if (tid==0)
-	  printf("tid %d, i_beg = %d,  rjs[k] %lf, k %d, j %d \n", tid, i_beg, rjs[k], k, j );
-      }
+    // if ( r_shmem[0] < 0.0001 )
+    //   {
+    // 	if (tid==0)
+    // 	  printf("tid %d, i_beg = %d,  rjs[k] %lf, k %d, j %d \n", tid, i_beg, rjs[k], k, j );
+    //   }
 	    
     
     if((neighbor_species[k] != sp1 && neighbor_species[k] != sp2) || r_shmem[0] > rcut )	  
@@ -832,8 +832,8 @@ const int* kappas_array_d
     }
  }
   hip_check_error( hipDeviceSynchronize());
-   printf("################### C interface after init energy #############\n");
-   fflush(stdout);
+   // printf("################### C interface after init energy #############\n");
+   // fflush(stdout);
 
 
 //  int* kappas_array_d;
