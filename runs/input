@@ -1,24 +1,23 @@
-atoms_file = 'bp_2x_scell_strain.xyz'  ! REMEMBER: EXPLICIT REPLICA FINITE DIFFERENCE REQUIRES A SUPERCELL!!!!!
-!atoms_file = 'black_phosphorus_10.50.xyz'
-!atoms_file = 'all_poscars.xyz'
-pot_file = 'gap_files/phosphorus.gap'
+!atoms_file = 'c60_dimer_10.0.xyz'
+!atoms_file = 'c60_dimer_large.xyz'
+atoms_file = 'atoms_vacuum.xyz'
+!atoms_file = 'graphite_2.50.xyz'
+pot_file = 'gap_files/carbon.gap'
 
 ! Species info
 n_species = 1 !2
-species = P !C !H
-!e0 = -.16138053
-e0 = -0.52375977
-masses = 30.97 !12.01 !1.00784
+species = C !H
+e0 = -.16138053
+masses = 12.01 1.00784
 
 ! van der Waals info
-!vdw_type = ts
 vdw_type = mbd
 vdw_sr = 0.83 !0.97
 vdw_d = 6. !20.            ! Use d = 20 for TS(SCS) and d = 6 for MBD
-vdw_rcut = 15.
-vdw_r0_ref = 2.12 !1.900 !1.64
-vdw_alpha0_ref = 3.7046 !1.778 !0.667
-vdw_c6_ref = 110.54 !27.8 !3.88
+vdw_rcut = 30.
+vdw_r0_ref = 1.900 !1.64
+vdw_alpha0_ref = 1.778 !0.667
+vdw_c6_ref = 27.8 !3.88
 ! The order of the cutoffs is vdw_scs_rcut < vdw_mbd_rcut < vdw_2b_rcut
 ! Also: vdw_mbd_rcut => vdw_mbd_rcut2, vdw_2b_rcut => vdw_2b_rcut2
 ! If two cutoffs are equal, there is no buffer region between them!
@@ -28,17 +27,17 @@ vdw_c6_ref = 110.54 !27.8 !3.88
 ! For forces you need vdw_2b_rcut2 > 0 and vdw_loc_rcut > 0 which require larger
 ! neighbor lists: vdw_loc_rcut = vdw_scs_rcut and vdw_2b_rcut2 = vdw_2b_rcut
 ! to get results that are equivalent to normal TS.
-vdw_buffer = 0.0          ! Buffer for transitions between cut-off regions. Type: REAL
-vdw_scs_rcut = 5.         ! SCS cut-off for polarizabilities. Type: REAL
-vdw_loc_rcut = 5.         ! Cut-off for including polarizability gradients in force calculation (vdw_loc_rcut <= vdw_scs_rcut).
-vdw_mbd_rcut = 5.0         ! Cut-off for atoms to include for local MBD energy (cut-off for central atom). Type: REAL
-vdw_mbd_rcut2 = 5.0        ! Secondary MBD cut-off (cut-off sphere for neighbors)
-vdw_2b_rcut = 5.0          ! Primary 2b cut-off (cut-off for central atom). Type: REAL
-vdw_2b_rcut2 = 5.0         ! Secondary 2b cut-off (cut-off sphere for neighbors).
+vdw_buffer = 0.5          ! Buffer for transitions between cut-off regions. Type: REAL
+vdw_scs_rcut = 10.0         ! SCS cut-off for polarizabilities. Type: REAL
+vdw_loc_rcut = 10.0         ! Cut-off for including polarizability gradients in force calculation (vdw_loc_rcut <= vdw_scs_rcut).
+vdw_mbd_rcut = 10.0         ! Cut-off for atoms to include for local MBD energy (cut-off for central atom). Type: REAL
+vdw_mbd_rcut2 = 10.0        ! Secondary MBD cut-off (cut-off sphere for neighbors)
+vdw_2b_rcut = 10.0          ! Primary 2b cut-off (cut-off for central atom). Type: REAL
+vdw_2b_rcut2 = 10.0         ! Secondary 2b cut-off (cut-off sphere for neighbors). 
 vdw_mbd_nfreq = 13        ! Number of frequency values for MBD integration. Type: INT
 vdw_mbd_norder = 6        ! Contributions up to n-body interactions (i.e. cut-off degree for Taylor expansion of ln(I-AT)). Type: INT
 vdw_mbd_grad = .true.     ! Calculate MBD forces. Type: LOGICAL
 vdw_hirsh_grad = .true.   ! Include Hirshfeld gradients in the forces. Type: LOGICAL
 vdw_polynomial = .false.  ! Use polynomial approximation for inverse matrices. Type: LOGICAL. OBSOLETE!!!
 vdw_omega_ref = 1.3d0     ! Reference frequency value used for SCS characteristic frequency calculation. Might depend on the material (for now).
-do_nnls = .false.         ! NNLS for frequency fitting to avoid calculating many frequency points. Use at least vdw_mbd_nfreq = 2*vdw_mbd_norder+1 or it might be unstable (overfitting)
+do_nnls = .false.         ! NNLS for frequency fitting to avoid calculating many frequency points. Use at least vdw_mbd_nfreq = 2*vdw_mbd_norder+1 or it might be unstable (overfitting). 
