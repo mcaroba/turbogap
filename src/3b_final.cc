@@ -662,8 +662,10 @@ void setup_3bresult_arrays(void** energies,void** forces,void** virial,const hip
     hip_check_error( hipMallocAsync(virial, 9*sizeof(double), s));
     hip_check_error( hipMemsetAsync(virial, 0, 9*sizeof(double), s));      
   }
-  hip_check_error(hipMallocAsync(energies, n_sites* n_sites *sizeof(double), s));
-  hip_check_error(hipMemsetAsync(energies, 0, n_sites*n_sites*sizeof(double), s));      
+  hip_check_error(hipMallocAsync(energies,  n_sites *sizeof(double), s));
+  hip_check_error(hipMemsetAsync(energies, 0, n_sites*sizeof(double), s)); 
+  // hip_check_error(hipMallocAsync(energies, n_sites* n_sites *sizeof(double), s));
+  // hip_check_error(hipMemsetAsync(energies, 0, n_sites*n_sites*sizeof(double), s));      
   printf("allocated energies at address %p \n",energies);
   {
     //using scope to override "global" threads, since this values are only used for initialization.

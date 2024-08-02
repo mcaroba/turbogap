@@ -53,7 +53,10 @@ module gap_interface
                           has_vdw, vdw_Qs, vdw_alphas, vdw_zeta, vdw_delta, vdw_V0, &
                           energies0, forces0, hirshfeld_v0, hirshfeld_v_cart_der0, virial, solo_time_soap, &
                           time_get_soap,cublas_handle , gpu_stream, &
-                          time_misca,time_get_rad, time_get_ang, time_get_cart)
+                          time_misca,time_get_rad, time_get_ang, time_get_cart, &
+                          tmp_energies0_d, st_size_tmp_energies0, & 
+                          tmp_forces0_d, st_size_tmp_forces0, &
+                          virial_d,st_virial)
 
     implicit none
 
@@ -103,8 +106,16 @@ module gap_interface
     type(c_ptr) :: atom_sigma_t_d, atom_sigma_t_scaling_d, amplitude_scaling_d, alpha_max_d, central_weight_d, alphas_d,Qs_d
     type(c_ptr) :: cublas_handle, gpu_stream
     type(c_ptr) ::  k2_i_site_d, n_neigh_d
+    type(c_ptr) :: tmp_in_to_out_site_d
+    type(c_ptr),intent(inout) :: tmp_energies0_d, tmp_forces0_d, virial_d
+    integer(c_size_t)::st_size_in_to_out_site
+    integer(c_size_t), intent(in)::  st_size_tmp_energies0, st_size_tmp_forces0, st_virial
+    !real(c_double), target, allocatable :: tmp_forces0(:,:) ! tmp_energies0(:),
+    integer(c_int),allocatable, target :: tmp_in_to_out_site(:)
+    !real(c_double), target, allocatable ::  tmp_virial(:,:)
+    integer(c_int) :: size_energies0,size_forces0,size_in_to_out_site
 
-    call mpi_comm_rank(MPI_COMM_WORLD, rank, ierr)
+    ! call mpi_comm_rank(MPI_COMM_WORLD, rank, ierr)
     ! call gpu_set_device(rank) ! Every node has 4 GPUs. Even if there are more than 1 nodes used. This will assing the ranks to GPU in a roundbin fashion
     
     !call create_cublas_handle(cublas_handle, gpu_stream)
@@ -259,10 +270,8 @@ module gap_interface
                     do_derivatives, compress_soap, compress_soap_indices, soap, soap_cart_der, time_get_soap, &
                     soap_d,  soap_cart_der_d, n_neigh_d, k2_i_site_d, cublas_handle, gpu_stream, &
                     time_misca,time_get_rad, time_get_ang,time_get_cart)
-!      call cpu_time(ttt(2))
+
     end if
-   ! write(*,*) "n_total_sites", n_total_sites, "n_sites", n_sites, "nsites0", n_sites0
-   !time_get_soap=time_get_soap+ttt(2)-ttt(1)
 
     if( has_vdw )then
 !call cpu_time(time1)
@@ -305,22 +314,32 @@ module gap_interface
         allocate( forces(1:3, 1:n_all_sites) )
         forces = 0.d0
       end if
+ 
+      st_size_in_to_out_site=size(in_to_out_site,1)*c_int
+
+   size_in_to_out_site=size(in_to_out_site,1)
+   size_energies0=size(energies0,1)
+   size_forces0=size(forces0,1)*size(forces0,2)
+   
+   size_in_to_out_site=size(in_to_out_site,1)
+   allocate(tmp_in_to_out_site(1:size_in_to_out_site))
+   do i=1,size_in_to_out_site
+    tmp_in_to_out_site(i)=in_to_out_site(i)
+   end do
+   
+   call gpu_malloc_all(tmp_in_to_out_site_d,st_size_in_to_out_site,gpu_stream)
+   call cpy_htod(c_loc(tmp_in_to_out_site),tmp_in_to_out_site_d,st_size_in_to_out_site,gpu_stream)
+
       if( n_sites > 0 )then
         call get_soap_energy_and_forces(n_sparse, soap, soap_cart_der, alphas_d, delta, zeta, 0.d0, Qs_d, &
                                         n_neigh, neighbors_list, xyz, do_forces, do_timing, &
                                         energies, forces, virial, solo_time_soap,  &
-                                        soap_d,  soap_cart_der_d, n_neigh_d, k2_i_site_d, cublas_handle, gpu_stream)
-      end if
-
-      do i = 1, n_sites
-        i2 = in_to_out_site(i)
-        energies0(i2) = energies(i)
-      end do
-      if( do_forces )then
-        do i = 1, n_all_sites
-          i2 = in_to_out_site(i)
-          forces0(1:3, i2) = forces(1:3, i)
-        end do
+                                        soap_d,  soap_cart_der_d, n_neigh_d, k2_i_site_d, cublas_handle, gpu_stream, &
+                                        n_sites, n_all_sites, in_to_out_site, energies0, forces0, &
+                                        tmp_in_to_out_site_d, st_size_in_to_out_site, &
+                                        tmp_energies0_d, st_size_tmp_energies0, & 
+                                        tmp_forces0_d, st_size_tmp_forces0, &
+                                        virial_d,st_virial)
       end if
     end if
 
@@ -369,7 +388,6 @@ module gap_interface
     if( do_derivatives .and. .not. write_derivatives )then
       deallocate( soap_cart_der )
     end if
-  !call destroy_cublas_handle(cublas_handle, gpu_stream)
   end subroutine
 !**************************************************************************
 

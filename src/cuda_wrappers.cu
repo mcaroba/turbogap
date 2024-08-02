@@ -118,21 +118,15 @@ __global__ void vect_dble(double *a, int N)
 
 extern "C" void cuda_malloc_all(void **a_d, size_t Np, hipStream_t *stream )
 {
-  
-
-  gpuErrchk(hipMallocAsync((void **) a_d,  Np ,stream[0]));
+   gpuErrchk(hipMallocAsync((void **) a_d,  Np ,stream[0]));//hipMallocAsync((void **) a_d,  Np ,stream[0]); 
   //gpuErrchk(hipMalloc((void **) a_d,  Np ));
-   hipError_t err;
-  hipDeviceSynchronize();
-  err = hipGetLastError();
-//  if (err != hipSuccess) {
-//} 
+
    return;
 }
 
 extern "C" void cuda_memset_async(void *a_d, int value,  size_t Np, hipStream_t *stream )
 {
-  hipMemsetAsync( a_d, value , Np ,stream[0]);
+  gpuErrchk(hipMemsetAsync( a_d, value , Np ,stream[0]));
 }
 extern "C" void cuda_malloc_all_blocking(void **a_d, size_t Np)
 {
@@ -611,8 +605,8 @@ extern "C" void gpu_final_soap_forces_virial(int n_sites,
 
   /*double *this_force_d; 
   hipMalloc((void**)&this_force_d,sizeof(double)*n_pairs*3);*/
-  hipMemsetAsync(forces_d,0, 3*n_sites0*sizeof(double), stream[0]);
-  hipMemsetAsync(virial_d,0, 9*sizeof(double), stream[0]);
+  // hipMemsetAsync(forces_d,0, 3*n_sites0*sizeof(double), stream[0]);
+  // hipMemsetAsync(virial_d,0, 9*sizeof(double), stream[0]);
      
   cuda_soap_forces_virial_two<<< nblocks, tpb,0, stream[0]>>>(n_sites,
                                               Qss_d,n_soap, l_index_d, j2_index_d,
@@ -696,6 +690,9 @@ __global__ void cuda_get_soap_der_one(double *soap_rad_der_d, double *soap_azi_d
     int i_site=k2_i_site_d[k2]-1;
     int counter=0;
     int counter2=0; 
+    if(trans_soap_rad_der_d==NULL || trans_soap_azi_der_d==NULL || trans_soap_pol_der_d==NULL){
+      printf("\n cuda_get_soap_der_one %p %p %p", trans_soap_rad_der_d,trans_soap_azi_der_d,trans_soap_pol_der_d);
+    }
     for(int n=1;n<=n_max;n++){
       for(int np=n;np<=n_max;np++){
         for(int l=0;l<=l_max;l++){
@@ -1118,6 +1115,21 @@ __global__ void cuda_get_derivatives_new_new(double *radial_exp_coeff_d, hipDoub
   int k=blockIdx.z+1;
   double Pi=4.0*acos(-1.0);
   if(k2<n_atom_pairs){
+
+  if( (angular_exp_coeff_rad_der_d==NULL || 
+    angular_exp_coeff_azi_der_d==NULL || 
+    angular_exp_coeff_d==NULL || 
+    radial_exp_coeff_d==NULL || 
+    angular_exp_coeff_azi_der_d==NULL ||
+    angular_exp_coeff_pol_der_d==NULL || 
+    cnk_rad_der_d==NULL || 
+    cnk_azi_der_d==NULL ||
+    cnk_pol_der_d==NULL || 
+    rjs_d==NULL)){
+ printf("\n get_derivatives_new_new %p %p %p %p %p %p %p %p %p %p \n", 
+ radial_exp_coeff_d, angular_exp_coeff_d, radial_exp_coeff_der_d, angular_exp_coeff_rad_der_d, 
+ angular_exp_coeff_azi_der_d,angular_exp_coeff_pol_der_d, cnk_rad_der_d, cnk_azi_der_d, cnk_pol_der_d, rjs_d);
+}
     double my_rjs=rjs_d[k2];
     if(my_rjs<rcut_max){
       double my_radial_exp_c;
@@ -2402,33 +2414,57 @@ extern "C" void gpu_device_sync()
 {
   gpuErrchk( hipDeviceSynchronize() );
 }
-/* 
-extern "C" void cuda_malloc_double(double **a_d, int Np)
+__global__ void krnl_collect_energies(double *sum, double *tmp, int *index, int size )
 {
-   gpuErrchk(hipMalloc( (void **) a_d, sizeof(double) * Np ));
-   return;
-} */
-
-/* extern "C" void cuda_malloc_double_complex(hipDoubleComplex **a_d, int Np)
-{
-
-  gpuErrchk(hipMalloc((void **)  a_d, sizeof(hipDoubleComplex) * Np));
-  //gpuErrchk(hipMallocAsync( a_d, sizeof(hipDoubleComplex) * Np,0));
-   return;
-} */
-
-/* extern "C" void cuda_malloc_int(int **a_d, int Np)
-{
-   // Allocate memory on GPU
-   gpuErrchk(hipMalloc( (void **) a_d, sizeof(int) * Np ));
-   return;
+  int i=threadIdx.x+blockIdx.x*blockDim.x;
+  if(i<size)
+  {
+    int i2=index[i]-1;
+    sum[i2]+=tmp[i];
+    // printf("In energies %d %d %lf %lf\n",i, i2,sum[i2], tmp[i]);
+/*     i2 = in_to_out_site(i)
+    energies0(i2) = energies(i) */
+  }
 }
- */
 
-/* extern "C" void cuda_malloc_bool(void **a_d, int Np)
+extern "C" void gpu_collect_energies(double *sum, double *temp, int *index, int sieze, hipStream_t *stream)
 {
-   // Allocate memory on GPU
-   gpuErrchk(hipMalloc( (void **) a_d, sizeof(bool) * Np ));
-   return;
+  //printf("\n %d \n",sieze);
+  int ntpb=256;
+  int nblocks=(sieze+ntpb-1)/ntpb;
+  krnl_collect_energies<<<nblocks, ntpb,0, stream[0]>>>(sum,temp,index, sieze);
+  //gpuErrchk( hipDeviceSynchronize() );
 }
- */
+
+
+__global__ void krnl_collect_forces(double3 *sum, double3 *tmp, int *index, int size,int size_globo )
+{
+  int i=threadIdx.x+blockIdx.x*blockDim.x;
+  if(i<size)
+  {
+    int i2=index[i]-1;
+    if(i2>=size_globo){
+      printf("Alert!!!!!");
+    }
+    double3 loctmp=tmp[i];
+    double3 locsum=sum[i2];
+    locsum.x+=loctmp.x;
+    locsum.y+=loctmp.y;
+    locsum.z+=loctmp.z;
+    sum[i2]=locsum;
+    // printf("In forcess %d %d %lf %lf %lf %lf %lf %lf\n",i, i2,sum[i2].x, tmp[i].x,sum[i2].y, tmp[i].y,sum[i2].z, tmp[i].z);
+  }
+}
+
+extern "C" void gpu_collect_forces(double3 *sum, double3 *temp, int *index, int sieze, int sieze_global, hipStream_t *stream)
+{
+  //printf("\n %d \n",sieze);
+  int ntpb=256;
+  int nblocks=(sieze+ntpb-1)/ntpb;
+  krnl_collect_forces<<<nblocks, ntpb,0, stream[0]>>>(sum,temp,index, sieze, sieze_global);
+  gpuErrchk( hipDeviceSynchronize() );
+}
+
+extern "C" void gpu_stream_synchronize(hipStream_t *stream){
+  hipStreamSynchronize(stream[0]);
+}

@@ -427,6 +427,30 @@ MODULE F_B_C
         use iso_c_binding
         implicit none
       end subroutine
+
+      subroutine gpu_collect_energies(sum,temp, index, size, stream) &
+                                  bind(C,name="gpu_collect_energies")
+        use iso_c_binding
+        implicit none
+        type(c_ptr), value :: sum,temp, index
+        integer(c_int), value :: size
+        type(c_ptr) :: stream
+      end subroutine
+
+      subroutine gpu_collect_forces(sum,temp, index, size, size_globo, stream) &
+                                  bind(C,name="gpu_collect_forces")
+        use iso_c_binding
+        implicit none
+        type(c_ptr), value :: sum,temp, index
+        integer(c_int), value :: size, size_globo
+        type(c_ptr) :: stream
+      end subroutine
+
+      subroutine gpu_stream_synchronize(gpu_stream) &
+                                      bind(C,name="gpu_stream_synchronize")
+      use iso_c_binding
+      type(c_ptr) :: gpu_stream
+      end subroutine
 !
 !      subroutine gpu_2b(n_sparse, n_sites, sp1, sp2, alpha, delta, cutoff, stream, rjs, xyz, n_neigh, species, neighbor_species, do_forces, rcut,buffer, sigma,qs,n_neigh_host) bind(C,name="gpu_2b")
 !        use iso_c_binding
