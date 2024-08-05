@@ -1042,7 +1042,7 @@ module vdw
                                        rcut, rcut_loc, rcut_mbd, rcut_mbd2, r_buffer, rjs, xyz, &
                                        hirshfeld_v_neigh, sR, d, c6_ref, r0_ref, alpha0_ref, do_derivatives, &
                                        do_hirshfeld_gradients, polynomial_expansion, do_nnls, n_freq, n_order, &
-                                       vdw_omega_ref, central_pol, central_omega, include_2b, &
+                                       cent_appr, vdw_omega_ref, central_pol, central_omega, include_2b, &
                                        energies, forces0, virial )
 
     implicit none
@@ -1053,7 +1053,7 @@ module vdw
                           hirshfeld_v_cart_der_ji(:,:), &
                           alpha0_ref(:), vdw_omega_ref !, hirshfeld_v(:), hirshfeld_v_neigh(:) !NOTE: uncomment this in final implementation
     integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:), n_freq, n_order
-    logical, intent(in) :: do_derivatives, do_hirshfeld_gradients, polynomial_expansion, do_nnls, include_2b
+    logical, intent(in) :: do_derivatives, do_hirshfeld_gradients, polynomial_expansion, do_nnls, include_2b, cent_appr
 !   Output variables
     real*8, intent(out) :: virial(1:3, 1:3)
 !   In-Out variables
@@ -1119,7 +1119,8 @@ module vdw
     integer, allocatable :: ind_nnls(:)
     real*8 :: res_nnls, E_tot, denom
     integer :: mode_nnls
-    logical :: do_total_energy = .false., series_expansion = .false., do_log = .false., cent_appr = .false., lanczos = .false., &
+    logical :: do_total_energy = .false., series_expansion = .false., do_log = .false., & !cent_appr = .true.,
+               lanczos = .false., &
                do_timing = .false., default_coeff = .true.  ! Finite difference testing purposes
     real*8, allocatable :: b_vec(:), Ab(:), I_mat(:,:), l_vals(:), log_vals(:), lsq_mat(:,:), res_mat(:), log_exp(:,:), &
                            AT_power(:,:), log_integrand(:), AT_power_full(:,:), pol_grad(:,:,:), pol_inv(:,:,:), inv_vals(:), &
@@ -1141,8 +1142,8 @@ module vdw
     real*8, allocatable :: val(:,:), val2(:), val_sym(:,:), dval(:,:) !, val_sym_test(:,:)  !, val_xv(:,:), b_i(:,:), d_vec(:,:)
 
 
-central_pol = 10.d0
-central_omega = 0.5d0
+!central_pol = 10.d0
+!central_omega = 0.5d0
 
 !hirshfeld_v_neigh = 1.d0
 
@@ -1266,7 +1267,7 @@ r_buf_tsscs = 0.d0
     else
       r_buf_loc = r_buffer
     end if
-    !r_buf_loc = rcut_loc ! Comment this to do finite difference comparison. The purpose of this is to smoothen
+    r_buf_loc = rcut_loc ! Comment this to do finite difference comparison. The purpose of this is to smoothen
                          ! the polarizabilities towards the boundary of the SCS sphere because they are unstable.
                          ! rcut_loc is used just for gradients of the SCS polarizabilities, so the larger your
                          ! cut-off, the better your SCS gradients but the whole cut-off is used as the buffer

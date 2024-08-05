@@ -1417,7 +1417,7 @@ include_2b = .true.
                                          params%vdw_sr, params%vdw_d, params%vdw_c6_ref, params%vdw_r0_ref, &
                                          params%vdw_alpha0_ref, params%vdw_mbd_grad, params%vdw_hirsh_grad, &
                                          params%vdw_polynomial, params%do_nnls, params%vdw_mbd_nfreq, &
-                                         2, &
+                                         2, params%vdw_mbd_cent_appr, &
                                          params%vdw_omega_ref, alpha_SCS, omega_SCS, include_2b, &
 #ifdef _MPIF90
                                          this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw )
@@ -1436,7 +1436,7 @@ include_2b = .false.
                                          params%vdw_sr, params%vdw_d, params%vdw_c6_ref, params%vdw_r0_ref, &
                                          params%vdw_alpha0_ref, params%vdw_mbd_grad, params%vdw_hirsh_grad, &
                                          params%vdw_polynomial, params%do_nnls, params%vdw_mbd_nfreq, &
-                                         params%vdw_mbd_norder, &
+                                         params%vdw_mbd_norder, params%vdw_mbd_cent_appr, &
                                          params%vdw_omega_ref, alpha_SCS, omega_SCS, include_2b, &
 #ifdef _MPIF90
                                          this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw )
@@ -1456,7 +1456,7 @@ include_2b = .true.
                                          params%vdw_sr, params%vdw_d, params%vdw_c6_ref, params%vdw_r0_ref, &
                                          params%vdw_alpha0_ref, params%vdw_mbd_grad, params%vdw_hirsh_grad, &
                                          params%vdw_polynomial, params%do_nnls, params%vdw_mbd_nfreq, &
-                                         params%vdw_mbd_norder, &
+                                         params%vdw_mbd_norder, params%vdw_mbd_cent_appr, &
                                          params%vdw_omega_ref, alpha_SCS, omega_SCS, include_2b, &
 #ifdef _MPIF90
                                          this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw )
