@@ -118,8 +118,8 @@ subroutine eph_LangevinForces (this, vel, forces, masses, type_mass, &
 	integer ::  Np_all, i, j, ki, kj, itype, jtype, atom_type
 	integer :: start_index, stop_index, istart, istop, ierr
 
-	real*8 :: xi, yi, zi, xj, yj, zj, r_ij, alpha_I, alpha_J, rho_ij, v_Te, rel_ij(3), &
-	rel_v_ij(3), r_ij_sq, correl_factor_eta, multiply_factor, multiply_factor1, &
+	real*8 :: xi, yi, zi, xj, yj, zj, r_ij, alpha_I, alpha_J, rho_ij, rho_ij_i, rho_ij_j, &
+	v_Te, rel_ij(3), rel_v_ij(3), r_ij_sq, correl_factor_eta, multiply_factor, multiply_factor1, &
 	multiply_factor2
 
 	real*8, allocatable :: rand_vec(:,:), rho_I(:), w_I(:,:)
@@ -196,77 +196,9 @@ END IF
 					MPI_SUM, MPI_COMM_WORLD, ierr)
 
 		!! -------------------------------------------------
-		!! When random forces need to be calculated
-		!! -------------------------------------------------
-		
-		if (this%israndom == 1) then
-
-			do ki = istart, istop
-				i = eph_for_atoms(ki)
-				call getAtomType(i,natomtypes,masses,type_mass,atom_type)
-				itype = atom_type
-				xi = positions(1,i); yi = positions(2,i); zi = positions(3,i)
-				start_index = sum(num_neighbours(1:i-1)) + 1
-				stop_index = sum(num_neighbours(1:i))
-				do kj = start_index, stop_index
-					j = atoms_pair_consider(kj)
-					xj = positions(1,j); yj = positions(2,j); zj = positions(3,j) 
-					r_ij = get_distance(xi,yi,zi,xj,yj,zj)
-					r_ij_sq = r_ij*r_ij
-
-					call relativeVector(positions(:,j), positions(:,i), rel_ij)
-
-					call getAtomType(j,natomtypes,masses,type_mass,atom_type)
-					jtype = atom_type
-					!! find rho_J
-					rho_ij = 0.0d0
-					call beta%spline_int (rank,ierr,beta%r,beta%data_rho(jtype,:),beta%y2rho(jtype,:), &
-									beta%n_points_rho, r_ij, rho_ij)
-					
-					!! find alpha_I	
-					alpha_I = 0.0d0
-					call beta%spline_int (rank,ierr,beta%rho, beta%data_alpha(itype,:), &
-							beta%y2alpha(itype,:),beta%n_points_beta, rho_I(i), alpha_I)
-
-					multiply_factor1 = dot_product( rel_ij, rand_vec(:,i) )
-					
-					multiply_factor1 = alpha_I * rho_ij * multiply_factor1 / r_ij_sq / rho_I(i)
-					
-					!! find rho_I
-					rho_ij = 0.0d0
-					call beta%spline_int (rank,ierr,beta%r,beta%data_rho(itype,:),beta%y2rho(itype,:), &
-									beta%n_points_rho, r_ij, rho_ij)
-					
-					! find alpha_J
-					alpha_J = 0.0d0
-					call beta%spline_int (rank,ierr,beta%rho, beta%data_alpha(jtype,:), &
-							beta%y2alpha(jtype,:), beta%n_points_beta, rho_I(j), alpha_J)
-					
-					multiply_factor2 = dot_product( rel_ij, rand_vec(:,j) )
-					
-					multiply_factor2 = alpha_J * rho_ij * multiply_factor2 / r_ij_sq / rho_I(j)
-					
-					multiply_factor = multiply_factor1 - multiply_factor2
-
-					this%forces_rnd(1,i) = this%forces_rnd(1,i) + multiply_factor*rel_ij(1)
-					this%forces_rnd(2,i) = this%forces_rnd(2,i) + multiply_factor*rel_ij(2)
-					this%forces_rnd(3,i) = this%forces_rnd(3,i) + multiply_factor*rel_ij(3)
-				end do
-				v_Te = fdm%Collect_Te(xi,yi,zi)
-				this%forces_rnd(1,i) = this%forces_rnd(1,i) * correl_factor_eta * sqrt(v_Te)
-				this%forces_rnd(2,i) = this%forces_rnd(2,i) * correl_factor_eta * sqrt(v_Te)
-				this%forces_rnd(3,i) = this%forces_rnd(3,i) * correl_factor_eta * sqrt(v_Te)
-			end do
-
-			call mpi_allreduce (MPI_IN_PLACE, this%forces_rnd, 3*Np_all, MPI_DOUBLE_PRECISION, &
-					MPI_SUM, MPI_COMM_WORLD, ierr)
-
-		end if	!! for condition (this%israndom == 1)
-
-		!! -------------------------------------------------
 		!! When friction forces need to be calculated
 		!! -------------------------------------------------
-	
+
 		if (this%isfriction == 1) then
 
 			do ki = istart, istop
@@ -313,67 +245,92 @@ END IF
 			call mpi_allreduce (MPI_IN_PLACE, w_I, 3*Np_all, MPI_DOUBLE_PRECISION, &
 					MPI_SUM, MPI_COMM_WORLD, ierr)
 
-			!! Find sig_I --> F_fric
+		end if	!! for condition (this%isfriction == 1)
 
-			do ki = istart, istop
-				i = eph_for_atoms(ki)
-				call getAtomType(i,natomtypes,masses,type_mass,atom_type)
-				itype = atom_type
-				xi = positions(1,i); yi = positions(2,i); zi = positions(3,i)
 
-				!! alpha_I for the itype atom
-				alpha_I = 0.0d0
-				call beta%spline_int (rank,ierr,beta%rho, beta%data_alpha(itype,:), &
-						beta%y2alpha(itype,:), beta%n_points_beta, rho_I(i), alpha_I)
+		!! --------------------------------------------------------------------------
+		!! Do friction when this%isfriction == 1; Do random when this%israndom == 1
+		!! --------------------------------------------------------------------------
 
-				start_index = sum(num_neighbours(1:i-1)) + 1
-				stop_index = sum(num_neighbours(1:i))
-				do kj = start_index, stop_index
-					j = atoms_pair_consider(kj)
-					xj = positions(1,j); yj = positions(2,j); zj = positions(3,j) 
-					r_ij = get_distance(xi,yi,zi,xj,yj,zj)
-					r_ij_sq = r_ij*r_ij
+		do ki = istart, istop
+			i = eph_for_atoms(ki)
+			call getAtomType(i,natomtypes,masses,type_mass,atom_type)
+			itype = atom_type
+			xi = positions(1,i); yi = positions(2,i); zi = positions(3,i)
 
-					call getAtomType(j,natomtypes,masses,type_mass,atom_type)
-					jtype = atom_type
+			!! alpha_I for the itype atom
+			alpha_I = 0.0d0
+			call beta%spline_int (rank,ierr,beta%rho, beta%data_alpha(itype,:), &
+					beta%y2alpha(itype,:), beta%n_points_beta, rho_I(i), alpha_I)
 
-					!! find rho_J
-					rho_ij = 0.0d0
-					call beta%spline_int (rank,ierr,beta%r, beta%data_rho(jtype,:), &
-							beta%y2rho(jtype,:), beta%n_points_rho, r_ij, rho_ij)
+			start_index = sum(num_neighbours(1:i-1)) + 1
+			stop_index = sum(num_neighbours(1:i))
+			do kj = start_index, stop_index
+				j = atoms_pair_consider(kj)
+				xj = positions(1,j); yj = positions(2,j); zj = positions(3,j) 
+				r_ij = get_distance(xi,yi,zi,xj,yj,zj)
+				r_ij_sq = r_ij*r_ij
 
-					call relativeVector(positions(:,j), positions(:,i), rel_ij)
+				call getAtomType(j,natomtypes,masses,type_mass,atom_type)
+				jtype = atom_type
 
-					multiply_factor1 = alpha_I * rho_ij * dot_product( w_I(:,i), rel_ij )
+				call relativeVector(positions(:,j), positions(:,i), rel_ij)
 
+				!! find rho_J
+				rho_ij_j = 0.0d0
+				call beta%spline_int (rank,ierr,beta%r, beta%data_rho(jtype,:), &
+						beta%y2rho(jtype,:), beta%n_points_rho, r_ij, rho_ij_j)
+
+				!! alpha_J for the jtype atom
+				alpha_J = 0.0d0
+				call beta%spline_int (rank,ierr,beta%rho, beta%data_alpha(jtype,:), &
+					beta%y2alpha(jtype,:), beta%n_points_beta, rho_I(j), alpha_J)
+
+				!! find rho_I
+				rho_ij_i = 0.0d0
+				call beta%spline_int (rank,ierr,beta%r, beta%data_rho(itype,:), &
+						beta%y2rho(itype,:), beta%n_points_rho, r_ij, rho_ij_i)
+
+				if (this%isfriction == 1) then
+					multiply_factor1 = alpha_I * rho_ij_j * dot_product( w_I(:,i), rel_ij )
 					multiply_factor1 = multiply_factor1 / rho_I(i) / r_ij_sq
-
-					!! alpha_J for the jtype atom
-					alpha_J = 0.0d0
-					call beta%spline_int (rank,ierr,beta%rho, beta%data_alpha(jtype,:), &
-						beta%y2alpha(jtype,:), beta%n_points_beta, rho_I(j), alpha_J)
-
-					!! find rho_I
-					rho_ij = 0.0d0
-					call beta%spline_int (rank,ierr,beta%r, beta%data_rho(itype,:), &
-							beta%y2rho(itype,:), beta%n_points_rho, r_ij, rho_ij)
-
-					multiply_factor2 = alpha_J * rho_ij * dot_product( w_I(:,j), rel_ij )
-
+					multiply_factor2 = alpha_J * rho_ij_i * dot_product( w_I(:,j), rel_ij )
 					multiply_factor2 = multiply_factor2 / rho_I(j) / r_ij_sq
-	
 					multiply_factor = multiply_factor1 - multiply_factor2
-
+	
 					this%forces_fric(1,i) = this%forces_fric(1,i) - multiply_factor * rel_ij(1) 
 					this%forces_fric(2,i) = this%forces_fric(2,i) - multiply_factor * rel_ij(2) 
 					this%forces_fric(3,i) = this%forces_fric(3,i) - multiply_factor * rel_ij(3)
-				end do
+				end if
+
+				if (this%israndom == 1) then
+					multiply_factor1 = dot_product( rel_ij, rand_vec(:,i) )
+					multiply_factor1 = alpha_I * rho_ij_j * multiply_factor1 / r_ij_sq / rho_I(i)
+					multiply_factor2 = dot_product( rel_ij, rand_vec(:,j) )
+					multiply_factor2 = alpha_J * rho_ij_i * multiply_factor2 / r_ij_sq / rho_I(j)
+					multiply_factor = multiply_factor1 - multiply_factor2
+
+					this%forces_rnd(1,i) = this%forces_rnd(1,i) + multiply_factor*rel_ij(1)
+					this%forces_rnd(2,i) = this%forces_rnd(2,i) + multiply_factor*rel_ij(2)
+					this%forces_rnd(3,i) = this%forces_rnd(3,i) + multiply_factor*rel_ij(3)
+				end if
 			end do
+			if (this%israndom == 1) then
+				v_Te = fdm%Collect_Te(xi,yi,zi)
+				this%forces_rnd(1,i) = this%forces_rnd(1,i) * correl_factor_eta * sqrt(v_Te)
+				this%forces_rnd(2,i) = this%forces_rnd(2,i) * correl_factor_eta * sqrt(v_Te)
+				this%forces_rnd(3,i) = this%forces_rnd(3,i) * correl_factor_eta * sqrt(v_Te)
+			end if
+		end do
 
+		if (this%isfriction == 1) then
 			call mpi_allreduce (MPI_IN_PLACE, this%forces_fric, 3*Np_all, MPI_DOUBLE_PRECISION, &
-					MPI_SUM, MPI_COMM_WORLD, ierr)
-
-		end if	!! for condition (this%isfriction == 1)
+				MPI_SUM, MPI_COMM_WORLD, ierr)
+		end if
+		if (this%israndom == 1) then
+			call mpi_allreduce (MPI_IN_PLACE, this%forces_rnd, 3*Np_all, MPI_DOUBLE_PRECISION, &
+				MPI_SUM, MPI_COMM_WORLD, ierr)
+		end if
 
 	end if	!! for condition (this%isfriction == 1 .or. this%israndom == 1)
 
