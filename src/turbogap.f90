@@ -1554,63 +1554,63 @@ program turbogap
     ! Set a pseudo number of omp tasks
     ! > n_omp: The number of omp tasks
 
-    n_omp = 1
-    omp_task = 0
+!     n_omp = 1
+!     omp_task = 0
 
-!$omp parallel
-!$ n_omp = omp_get_num_threads()
-!$omp end parallel
+! !$omp parallel
+! !$ n_omp = omp_get_num_threads()
+! !$omp end parallel
 
-    allocate(i_beg_omp(1:n_omp))
-    allocate(i_end_omp(1:n_omp))
-    allocate(j_beg_omp(1:n_omp))
-    allocate(j_end_omp(1:n_omp))
+!     allocate(i_beg_omp(1:n_omp))
+!     allocate(i_end_omp(1:n_omp))
+!     allocate(j_beg_omp(1:n_omp))
+!     allocate(j_end_omp(1:n_omp))
 
-    omp_n_sites = i_end - i_beg + 1
+!     omp_n_sites = i_end - i_beg + 1
 
-    i_beg_omp = i_beg
-    i_end_omp = i_end
+!     i_beg_omp = i_beg
+!     i_end_omp = i_end
 
-    j_beg_omp = 1
-    j_end_omp = n_atom_pairs_by_rank(rank+1)
+!     j_beg_omp = 1
+!     j_end_omp = n_atom_pairs_by_rank(rank+1)
 
-!$omp parallel private(omp_task, k)
-!$ omp_task = omp_get_thread_num()
+! !$omp parallel private(omp_task, k)
+! !$ omp_task = omp_get_thread_num()
 
-    write(*,*)
-!    print *, "Allocated omp index arrays"
-    if( omp_task < mod( omp_n_sites, n_omp ) )then
-       i_beg_omp(omp_task+1) = i_beg + omp_task*(omp_n_sites / n_omp + 1)
-    else
-       i_beg_omp(omp_task+1) = i_beg + mod(omp_n_sites, n_omp)*(omp_n_sites / n_omp + 1) + (omp_task - mod( omp_n_sites, n_omp))*(omp_n_sites / n_omp)
-    end if
+!     write(*,*)
+! !    print *, "Allocated omp index arrays"
+!     if( omp_task < mod( omp_n_sites, n_omp ) )then
+!        i_beg_omp(omp_task+1) = i_beg + omp_task*(omp_n_sites / n_omp + 1)
+!     else
+!        i_beg_omp(omp_task+1) = i_beg + mod(omp_n_sites, n_omp)*(omp_n_sites / n_omp + 1) + (omp_task - mod( omp_n_sites, n_omp))*(omp_n_sites / n_omp)
+!     end if
 
-    if( omp_task < mod( omp_n_sites, n_omp ) )then
-       i_end_omp(omp_task+1) = i_beg + (omp_task+1)*(omp_n_sites / n_omp + 1) - 1
-    else
-       i_end_omp(omp_task+1) = i_beg_omp(omp_task+1) + omp_n_sites/n_omp - 1
-    end if
+!     if( omp_task < mod( omp_n_sites, n_omp ) )then
+!        i_end_omp(omp_task+1) = i_beg + (omp_task+1)*(omp_n_sites / n_omp + 1) - 1
+!     else
+!        i_end_omp(omp_task+1) = i_beg_omp(omp_task+1) + omp_n_sites/n_omp - 1
+!     end if
 
-    ! print *,"omp_task = ", omp_task,  " i_beg_omp = ", i_beg_omp(omp_task+1)
-    ! print *,"omp_task = ", omp_task,  " i_end_omp = ", i_end_omp(omp_task+1)
-
-
-! --- Allocating the neighbors indices for reach openmp task
+!     ! print *,"omp_task = ", omp_task,  " i_beg_omp = ", i_beg_omp(omp_task+1)
+!     ! print *,"omp_task = ", omp_task,  " i_end_omp = ", i_end_omp(omp_task+1)
 
 
-    k = 0
-    do i = i_beg, i_end
-       if( i == i_beg_omp(omp_task+1) ) then
-          j_beg_omp(omp_task+1) = k+1
-       end if
+! ! --- Allocating the neighbors indices for reach openmp task
 
-       k = k + n_neigh(i)
 
-       if( i == i_end_omp(omp_task+1)) then
-          j_end_omp(omp_task+1) = k
-       end if
+!     k = 0
+!     do i = i_beg, i_end
+!        if( i == i_beg_omp(omp_task+1) ) then
+!           j_beg_omp(omp_task+1) = k+1
+!        end if
 
-    end do
+!        k = k + n_neigh(i)
+
+!        if( i == i_end_omp(omp_task+1)) then
+!           j_end_omp(omp_task+1) = k
+!        end if
+
+!     end do
 
 
     ! print *, "omp_task = ", omp_task, " j_beg_omp = ", j_beg_omp(omp_task+1)

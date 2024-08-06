@@ -355,24 +355,6 @@ module gap_interface
        ! We need to iterate over the number of local properties       
        do i4 = 1, n_local_properties
 
-          ! local_properties = 0.d0
-          ! if( do_derivatives )then
-          !    local_properties_cart_der = 0.d0
-          ! end if
-
-
-          ! n_sparse_lp = local_property_models(i4)%n_sparse
-          ! st_size_nf = n_sparse_lp * sizeof(local_property_models(i4)%alphas(1))
-          ! call gpu_malloc_all(alphas_lp_d, st_size_nf, gpu_stream)
-          ! call cpy_htod(c_loc(local_property_models(i4)%alphas), alphas_lp_d, st_size_nf, gpu_stream)
-
-          ! dim_lp = local_property_models(i4)%dim
-          ! st_size_nf = n_sparse_lp * dim_lp * sizeof(local_property_models(i4)%Qs(1))
-          ! call gpu_malloc_all(Qs_lp_d, st_size_nf, gpu_stream)
-          ! call cpy_htod(c_loc(local_property_models(i4)%Qs), Qs_lp_d, st_size_nf, gpu_stream)
-
-
-          
           call gpu_local_property_predict( local_property_models(i4)%n_sparse, soap,&
                & soap_d, local_property_models(i4)%Qs_d,&
                & local_property_models(i4)%alphas_d,&
@@ -384,13 +366,6 @@ module gap_interface
                & local_properties_cart_der_d, n_pairs, l_index_d ,&
                & cublas_handle, gpu_stream )
 
-
-          ! call gpu_local_property_predict_single( n_sparse_lp,
-          ! soap, & soap_d, Qs_lp_d, alphas_lp_d,
-          ! local_property_models(i4)%V0, &
-          ! local_property_models(i4)%delta, &
-          ! local_property_models(i4)%zeta, local_properties, &
-          ! cublas_handle, gpu_stream )
 
           do i = 1, n_sites
              i2 = in_to_out_site(i)

@@ -330,6 +330,8 @@ module gap
   
   ! write(*,*) energies
   ! stop
+
+  deallocate( kernels, kernels_copy )
   
   deallocate( neighbors_beg, neighbors_end )
   deallocate(tmp_energies)
