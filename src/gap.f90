@@ -38,7 +38,7 @@ module gap
                                         n_neigh, neighbors_list, xyz, do_forces, do_timing, &
                                         energies, forces, virial,  solo_time_soap, soap_d, &
                                         soap_der_d, n_neigh_d,&
-                                        & k2_i_site_d, n_pairs,&
+                                        & n_pairs,&
                                         & l_index_d,  cublas_handle,&
                                         & gpu_stream )
 !   **********************************************
@@ -61,7 +61,7 @@ module gap
     real(c_double) ::  zeta, cdelta_ene,cdelta_force, mzetam
     integer(c_int) :: n_sites, n_soap, i, j, k, l, j2, zeta_int, n_sites0, k1, k2
     logical :: is_zeta_int = .false.
-    type(c_ptr), intent(inout) :: cublas_handle, gpu_stream,k2_i_site_d, alphas_d, Qs_d
+    type(c_ptr), intent(inout) :: cublas_handle, gpu_stream, alphas_d, Qs_d
 !   type(c_ptr) :: kernels_copy_d, kernels_d, Qs_d, energies_d, alphas_d
     type(c_ptr) :: kernels_copy_d, kernels_d, energies_d
     type(c_ptr) :: kernels_der_d, Qss_d, Qs_copy_d !, this_Qss_d

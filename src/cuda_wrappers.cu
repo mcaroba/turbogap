@@ -130,6 +130,20 @@ extern "C" void cuda_malloc_all(void **a_d, size_t Np, hipStream_t *stream )
    return;
 }
 
+//  extern "C" void cuda_malloc_all(void **a_d, size_t Np, hipStream_t *stream )
+// {
+  
+
+//   //gpuErrchk(hipMallocAsync((void **) a_d,  Np ,stream[0]));
+//   gpuErrchk(hipMalloc((void **) a_d,  Np ));
+//   hipError_t err;
+//   hipDeviceSynchronize();
+//   err = hipGetLastError();
+// //  if (err != hipSuccess) {  
+// //} 
+//    return;
+// }
+
 extern "C" void cuda_memset_async(void *a_d, int value,  size_t Np, hipStream_t *stream )
 {
   hipMemsetAsync( a_d, value , Np ,stream[0]);
@@ -149,6 +163,14 @@ extern "C" void cuda_free(void **a_d)
    //hipDeviceReset();
    return;
 }
+
+
+// extern "C" void cuda_free_async(void **a_d, hipStream_t *stream )
+// {
+//   //gpuErrchk(hipFreeAsync(*a_d, stream[0]));
+//   gpuErrchk(hipFree(*a_d));
+//    return;
+// }
 
 extern "C" void cuda_free_async(void **a_d, hipStream_t *stream )
 {

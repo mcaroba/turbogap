@@ -859,10 +859,10 @@ const int* kappas_array_d
   hip_check_error( hipStreamSynchronize(s));
   hip_check_error( hipDeviceSynchronize());
   auto err = 	hipPeekAtLastError();
-  std::cout<< "3b reported error is " <<	hipGetErrorString(err) <<std::flush << std::endl;
-  printf("launching kernel\n");
-  fflush(stdout);
-  printf("starting kernel\n");
+  //  std::cout<< "3b reported error is " <<	hipGetErrorString(err) <<std::flush << std::endl;
+  //  printf("launching kernel\n");
+  //  fflush(stdout);
+  //  printf("starting kernel\n");
 
   auto clock_start = std::chrono::system_clock::now();
   switch(kernel_type)
@@ -887,8 +887,9 @@ const int* kappas_array_d
   // sanity_check<<<1,1>>>(n_sparse, n_sites, n_atom_pairs, n_sites0, sp0, sp1, sp2, alpha, delta, cutoff, rjs, xyz, n_neigh, species, neighbors_list, neighbor_species, kappas_array_d, rcut, buffer, /*e0,*/ sigma, qs, pref_d, energies, forces, virial);
 
   hip_check_error( hipDeviceSynchronize());
- printf("outta loops\n");
- fflush(stdout);
+  //  hip_check_error(hipMallocAsync((void**)&pref_d, n_sparse*sizeof(double), s));
+  // printf("outta loops\n");
+  // fflush(stdout);
   auto clock_now = std::chrono::system_clock::now();
   float currentTime = float(std::chrono::duration_cast <std::chrono::microseconds> (clock_now - clock_start).count());
 //  std::cout << "Elapsed Time: " << currentTime /1000000 << " S \n";
@@ -926,6 +927,7 @@ const int* kappas_array_d
 //    std::cout<< Double(virials_h[i])<<",";
 //  }
 //  printf("\n");
+  hip_check_error( hipFree(pref_d) );  
 
 
 }

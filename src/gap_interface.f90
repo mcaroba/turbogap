@@ -59,7 +59,9 @@ module gap_interface
                           energies0, forces0, local_properties0,&
                           & local_properties_cart_der0,&
                           & local_property_indexes,  virial, solo_time_soap, &
-                          time_get_soap,cublas_handle , gpu_stream)
+                          time_get_soap, W_d, S_d, multiplicity_array_d,&
+                          & st_W_d, st_S_d, st_multiplicity_array_d,&
+                          & recompute_basis,cublas_handle , gpu_stream)
 
     implicit none
 
@@ -114,15 +116,19 @@ module gap_interface
     type(c_ptr) :: soap_cart_der_d, soap_d, nf_d, rcut_hard_d, rcut_soft_d, global_scaling_d, atom_sigma_r_d, atom_sigma_r_scaling_d
     type(c_ptr) :: atom_sigma_t_d, atom_sigma_t_scaling_d, amplitude_scaling_d, alpha_max_d, central_weight_d, alphas_d,Qs_d
     type(c_ptr) :: cublas_handle, gpu_stream
-    type(c_ptr) ::  k2_i_site_d, n_neigh_d
+    type(c_ptr) :: n_neigh_d
 
+    type(c_ptr), intent(inout) :: W_d, S_d, multiplicity_array_d
+    integer(c_size_t), intent(inout) :: st_W_d, st_S_d, st_multiplicity_array_d
+    logical, intent(inout) ::  recompute_basis
+    
     ! For local properties
     type(c_ptr) :: alphas_lp_d, Qs_lp_d, l_index_d, local_properties_d, local_properties_cart_der_d
     integer(c_int) :: n_pairs
 
     ! Check for lp prediction
     integer :: n_sparse_lp, dim_lp
-    integer(c_size_t) :: st_soap, st_soap_der, st_size_nf
+    integer(c_size_t) :: st_soap, st_soap_cart_der, st_size_nf
 
 
 
@@ -270,9 +276,15 @@ module gap_interface
 !   Get SOAP vectors and derivatives:
     allocate( soap(1:n_soap, 1:n_sites) )
     soap = 0.d0
+    st_soap=n_soap*n_sites*sizeof(soap(1,1))
+    call gpu_malloc_all(soap_d, st_soap, gpu_stream)
+
+    
     if( do_derivatives )then
       allocate( soap_cart_der(1:3, 1:n_soap, 1:n_atom_pairs) )
       soap_cart_der = 0.d0
+      st_soap_cart_der =   3*n_soap*n_atom_pairs*sizeof(soap_cart_der(1,1,1))
+      call gpu_malloc_all(soap_cart_der_d, st_soap_cart_der, gpu_stream) !call gpu_malloc_all_blocking(soap_cart_der_d, st_soap_cart_de      
     end if
 
     print *, " starting get soap "
@@ -285,8 +297,12 @@ module gap_interface
                     amplitude_scaling_d, radial_enhancement, central_weight_d, central_weight, basis, scaling_mode, do_timing, &
                     do_derivatives, compress_soap, compress_soap_indices, soap,&
                     & soap_cart_der, time_get_soap, soap_d, &
-                    & soap_cart_der_d, n_neigh_d, k2_i_site_d,&
+                    & soap_cart_der_d, n_neigh_d, W_d, S_d, multiplicity_array_d,&
+                    & st_W_d, st_S_d, st_multiplicity_array_d,&
+                    & recompute_basis, &
                     & cublas_handle, gpu_stream)
+
+
 !      call cpu_time(ttt(2))
 
     end if
@@ -310,7 +326,7 @@ module gap_interface
         call get_soap_energy_and_forces(n_sparse, soap, soap_cart_der, alphas_d, delta, zeta, 0.d0, Qs_d, &
                                         n_neigh, neighbors_list, xyz, do_forces, do_timing, &
                                         energies, forces, virial, solo_time_soap,  &
-                                        soap_d,  soap_cart_der_d, n_neigh_d, k2_i_site_d, n_pairs, l_index_d,  cublas_handle, gpu_stream )
+                                        soap_d,  soap_cart_der_d, n_neigh_d, n_pairs, l_index_d,  cublas_handle, gpu_stream )
         
       end if
 
@@ -328,9 +344,9 @@ module gap_interface
 
 
 
-    !###########################################!
-    !###---   Local property prediction   ---###!
-    !###########################################!
+!     !###########################################!
+!     !###---   Local property prediction   ---###!
+!     !###########################################!
 
     
     
@@ -396,6 +412,10 @@ module gap_interface
 
 
     call gpu_free_async(l_index_d,gpu_stream)
+
+
+!! commenting out to here 
+    
 !    call gpu_free_async(j2_index_d,gpu_stream) 
     call gpu_free_async(soap_d,gpu_stream)
     call gpu_free(soap_cart_der_d)

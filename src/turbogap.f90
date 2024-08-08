@@ -63,7 +63,7 @@ program turbogap
   !**************************************************************************
   ! Variable definitions
   !
-  real*8, allocatable :: rjs(:), thetas(:), phis(:), xyz(:,:), sph_temp(:), sph_temp3(:,:)
+  real*8, allocatable, target :: rjs(:), thetas(:), phis(:), xyz(:,:), sph_temp(:), sph_temp3(:,:)
   real*8, allocatable :: positions(:,:), positions_prev(:,:), soap(:,:), soap_cart_der(:,:,:), &
        positions_diff(:,:), forces_prev(:,:), frac_positions(:,:)
   real*8 :: rcut_max, a_box(1:3), b_box(1:3), c_box(1:3), max_displacement, energy, energy_prev
@@ -77,7 +77,7 @@ program turbogap
        & 1602176.6208d0, ranf, ranv(1:3), disp(1:3), d_disp, &
        & e_mc_prev, p_accept, virial_prev(1:3, 1:3), sim_exp_pred,&
        & sim_exp_prev, sim_exp_pred_der(1:3)
-  real*8, allocatable :: energies(:), forces(:,:), energies_soap(:),&
+  real*8, allocatable, target :: energies(:), forces(:,:), energies_soap(:),&
        & forces_soap(:,:), this_energies(:), this_forces(:,:),&
        & energies_2b(:), forces_2b(:,:), energies_3b(:), forces_3b(:&
        &,:), energies_core_pot(:), forces_core_pot(:,:), velocities(:&
@@ -128,7 +128,7 @@ program turbogap
   ! type (EPH_LangevinSpatialCorrelation_class) :: ephlsc
   
   ! Clean up these variables after code refactoring !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  integer, allocatable :: n_neigh(:), neighbors_list(:), alpha_max(:), species(:), species_supercell(:), &
+  integer, allocatable, target :: n_neigh(:), neighbors_list(:), alpha_max(:), species(:), species_supercell(:), &
        neighbor_species(:), sph_temp_int(:), der_neighbors(:), der_neighbors_list(:), &
        i_beg_list(:), i_end_list(:), j_beg_list(:), j_end_list(:),&
        & species_idx(:), n_neigh_out(:), n_local_properties_mpi(:),&
@@ -173,10 +173,10 @@ program turbogap
   ! These are the containers for the hyperparameters of descriptors and GAPs
   integer :: n_soap_turbo = 0, n_distance_2b = 0, n_angle_3b = 0, n_core_pot = 0, counter_lp_names=0, temp_md_nsteps
   real*8, parameter :: pi = acos(-1.0)
-  type(soap_turbo), allocatable :: soap_turbo_hypers(:)
-  type(distance_2b), allocatable :: distance_2b_hypers(:)
-  type(angle_3b), allocatable :: angle_3b_hypers(:)
-  type(core_pot), allocatable :: core_pot_hypers(:)
+  type(soap_turbo), allocatable, target :: soap_turbo_hypers(:)
+  type(distance_2b), allocatable, target :: distance_2b_hypers(:)
+  type(angle_3b), allocatable, target :: angle_3b_hypers(:)
+  type(core_pot), allocatable, target :: core_pot_hypers(:)
 
   !vdw crap
   real*8, allocatable :: v_neigh_vdw(:), energies_vdw(:), forces_vdw(:,:), this_energies_vdw(:), this_forces_vdw(:,:)
@@ -249,6 +249,7 @@ program turbogap
 
 !**************************************************************************
 ! Start recording the time
+
   call cpu_time(time1)
   time3 = time1
   ! Start random seed
@@ -397,7 +398,9 @@ program turbogap
   ! Read input file and other files
   !
   time_read_input(3) = 0.d0
-  !call cpu_time(time_read_input(1))
+
+!time_read_input(1) = MPI_wtime()
+!time_read_input(1 = MPI_wtime()
   time_read_input(1)=MPI_Wtime()
   open(unit=10,file='input',status='old',iostat=iostatus)
   ! Check for existence of input file
@@ -1080,7 +1083,8 @@ program turbogap
 #endif
      stop
   end if
-  !call cpu_time(time_read_input(2))
+
+
   time_read_input(2)=MPI_Wtime()
   time_read_input(3) = time_read_input(3) + time_read_input(2) - time_read_input(1)
   !**************************************************************************
@@ -1261,7 +1265,8 @@ program turbogap
 
 
      if( (params%do_md .and. md_istep == 0) )then
-        call cpu_time(time_read_xyz(1))
+
+        time_read_xyz(1) = MPI_wtime()
 #ifdef _MPIF90
         IF( rank == 0 )THEN
 #endif
@@ -1300,7 +1305,9 @@ program turbogap
 #ifdef _MPIF90
         END IF
 #endif
-        call cpu_time(time_read_xyz(2))
+
+
+        time_read_xyz(2) = MPI_wtime()
         time_read_xyz(3) = time_read_xyz(3) + time_read_xyz(2) - time_read_xyz(1)
         !     If we're doing MD, we don't read beyond the first snapshot in the XYZ file
         repeat_xyz = .false.
@@ -1322,7 +1329,8 @@ program turbogap
         END IF
 #endif
      else if( .not. params%do_md )then
-        call cpu_time(time_read_xyz(1))
+
+        time_read_xyz(1) = MPI_wtime()
 #ifdef _MPIF90
         IF( rank == 0 )THEN
 #endif
@@ -1345,7 +1353,8 @@ program turbogap
 #ifdef _MPIF90
         END IF
 #endif
-        call cpu_time(time_read_xyz(2))
+
+        time_read_xyz(2) = MPI_wtime()
         time_read_xyz(3) = time_read_xyz(3) + time_read_xyz(2) - time_read_xyz(1)
 #ifdef _MPIF90
 
@@ -1421,7 +1430,8 @@ program turbogap
         allocate( fix_atom(1:3,1:n_sp) )
 
      END IF
-     call cpu_time(time_mpi_positions(1))
+
+     time_mpi_positions(1) = MPI_wtime()
      call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
      if( params%do_md .or. params%do_nested_sampling .or. params%do_mc .or. params%mc_hamiltonian)then
         call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
@@ -1436,7 +1446,8 @@ program turbogap
      call mpi_bcast(a_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(b_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(c_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-     call cpu_time(time_mpi_positions(2))
+
+     time_mpi_positions(2) = MPI_wtime()
      time_mpi_positions(3) = time_mpi_positions(3) + time_mpi_positions(2) - time_mpi_positions(1)
 #endif
      !   Now that all ranks know the size of n_sites, we allocate do_list
@@ -1447,6 +1458,8 @@ program turbogap
         do_list = .true.
      end if
      !
+
+!     call cpu_time(time1)
      call cpu_time(time1)
 #ifdef _MPIF90
      !   Parallel neighbors list build
@@ -1622,7 +1635,8 @@ program turbogap
 
 !   Compute the volume of the "primitive" unit cell
     v_uc = dot_product( cross_product(a_box, b_box), c_box ) / (dfloat(indices(1)*indices(2)*indices(3)))
-    !call cpu_time(time2)
+
+    call cpu_time(time2)
     time2=MPI_Wtime()
     time_neigh = time_neigh + time2 - time1
 !**************************************************************************
@@ -1633,6 +1647,7 @@ program turbogap
      !**************************************************************************
      !   If we are doing prediction, we run this chunk of code
      if( params%do_prediction .or. params%write_soap .or. params%write_derivatives)then
+
         call cpu_time(time1)
 
 !        print *, rank, " Allocating prediction arrays"
@@ -1824,9 +1839,11 @@ program turbogap
         end if
         !     Collect all energies
 #ifdef _MPIF90
-        call cpu_time(time_mpi_ef(1))
+
+        time_mpi_ef(1) = MPI_wtime()
         call mpi_reduce(energies, this_energies, n_sites, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
-        call cpu_time(time_mpi_ef(2))
+
+        time_mpi_ef(2) = MPI_wtime()
 
         time_mpi_ef(3) = time_mpi_ef(3) + time_mpi_ef(2) - time_mpi_ef(1)
         energies = this_energies
@@ -1835,8 +1852,11 @@ program turbogap
 
         !     Loop through soap_turbo descriptors - we always call this routine, even if we don't want to do prediction
         n_lp_count = 0 ! This counts the local properties
+
+!!! COMMENTING OUT 
         do i = 1, n_soap_turbo
-           call cpu_time(time_soap(1))
+
+           time_soap(1) = MPI_wtime()
            !       Compute number of pairs for this SOAP. SOAP has in general a different cutoff than overall max
            !       cutoff, so the number of pairs may be a lot smaller for the SOAP subset.
            !       This subroutine splits the load optimally so as to not use more memory per MPI process than available.
@@ -1979,7 +1999,10 @@ program turbogap
                    this_local_properties_pt,&
                    & this_local_properties_cart_der_pt,&
                    & local_property_indexes,&
-                   this_virial, solo_time_soap, time_get_soap, cublas_handle, gpu_stream)
+                   this_virial, solo_time_soap, time_get_soap, &
+                   soap_turbo_hypers(i)%W_d, soap_turbo_hypers(i)%S_d, soap_turbo_hypers(i)%multiplicity_array_d, &
+                   soap_turbo_hypers(i)%st_W_d, soap_turbo_hypers(i)%st_S_d, soap_turbo_hypers(i)%st_multiplicity_array_d,&
+                   soap_turbo_hypers(i)%recompute_basis, cublas_handle, gpu_stream)
 
               print *, rank, " >>--- Finished GET GAP SOAP ---<< "                         
               ! !--- NEW CPU VERSION OF GET GAP SOAP ---!
@@ -2106,9 +2129,11 @@ program turbogap
                  virial_soap = virial_soap + this_virial
               end if
            end do
+
+           
            n_lp_count = n_lp_count + soap_turbo_hypers(i)%n_local_properties
 
-           print *, rank, " >> Freeing gpu memory  "                      
+!           print *, rank, " >> Freeing gpu memory  "                      
            call gpu_free_async(nf_d,gpu_stream)
            call gpu_free_async(rcut_hard_d,gpu_stream)
            call gpu_free_async(rcut_soft_d,gpu_stream)
@@ -2124,16 +2149,15 @@ program turbogap
 
         if ( soap_turbo_hypers(i)%has_local_properties )then
            do j = 1, soap_turbo_hypers(i)%n_local_properties
-              call gpu_free_async(soap_turbo_hypers(i)%local_property_models(j)&
-                   &%alphas_d, gpu_stream)
-              call gpu_free_async(soap_turbo_hypers(i)%local_property_models(j)&
-                   &%Qs_d, gpu_stream)                            
+              call gpu_free_async(soap_turbo_hypers(i)%local_property_models(j)%alphas_d, gpu_stream)
+              call gpu_free_async(soap_turbo_hypers(i)%local_property_models(j)%Qs_d, gpu_stream)                            
            end do
         end if
            
         call gpu_free(Qs_d) 
-        print *, rank, " >>~~~ Finished freeing gpu memory ~~~<< "                                 
-        !call cpu_time(soap_time_soap(2))
+!        print *, rank, " >>~~~ Finished freeing gpu memory ~~~<< "                                 
+
+!        soap_time_soap(2 = MPI_wtime()
         soap_time_soap(2)=MPI_Wtime()
            deallocate( i_beg_list, i_end_list, j_beg_list, j_end_list )
            soap_time_soap(3)=soap_time_soap(3)+soap_time_soap(2)-soap_time_soap(1)
@@ -2212,8 +2236,10 @@ program turbogap
            END IF
 #endif
 
-           call cpu_time(time_soap(2))
+
+           time_soap(2) = MPI_wtime()
            time_soap(3) = time_soap(3) + time_soap(2) - time_soap(1)
+
 
            call cpu_time(time2)
            time_gap = time_gap + time2 - time1
@@ -2251,7 +2277,8 @@ program turbogap
         !     Compute vdW energies and forces
         if( any( soap_turbo_hypers(:)%has_vdw ) .and.( params%do_prediction ) &
              .and. params%vdw_type == "ts" )then
-           call cpu_time(time_vdw(1))
+
+           time_vdw(1) = MPI_wtime()
 #ifdef _MPIF90
 
            allocate( this_energies_vdw(1:n_sites) )
@@ -2275,7 +2302,7 @@ program turbogap
               end do
            end do
 
-           print *, rank, "> TS energies forces"
+!           print *, rank, "> TS energies forces"
            
            call get_ts_energy_and_forces( local_properties(i_beg:i_end, vdw_lp_index), &
                 & local_properties_cart_der(1:3, j_beg:j_end, vdw_lp_index), &
@@ -2291,9 +2318,10 @@ program turbogap
 #else
            energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
 #endif
-           call cpu_time(time_vdw(2))
+
+           time_vdw(2) = MPI_wtime()
            time_vdw(3) = time_vdw(2) - time_vdw(1)
-           print *, rank, ">>--- Finiahed TS energies forces ---<<"
+!           print *, rank, ">>--- Finiahed TS energies forces ---<<"
            deallocate(v_neigh_vdw)
         end if
 
@@ -2385,7 +2413,8 @@ program turbogap
         !     Compute core_electron_be energies and forces
         if( any( soap_turbo_hypers(:)%has_core_electron_be ) .and.( params%do_prediction ) &
              .and. valid_xps )then
-           call cpu_time(time_xps(1))
+
+           time_xps(1) = MPI_wtime()
 
 #ifdef _MPIF90
            allocate( this_energies_lp(1:n_sites) )
@@ -2510,7 +2539,8 @@ program turbogap
            deallocate(v_neigh_lp)
 
 
-           call cpu_time(time_xps(2))
+
+           time_xps(2) = MPI_wtime()
            time_xps(3) = time_xps(3) + time_xps(2) - time_xps(1)
            !           if (rank == 0) print *, rank, " TIME_XPS = ", time_xps(3)
 
@@ -2602,7 +2632,8 @@ program turbogap
 
 
         if (params%do_pair_distribution)then
-           call cpu_time(time_pdf(1))
+
+           time_pdf(1) = MPI_wtime()
 
            call calculate_pair_distribution( params, x_pair_distribution&
                 &, y_pair_distribution, y_pair_distribution_temp,&
@@ -2619,7 +2650,8 @@ program turbogap
            & pair_distribution_partial_temp_der, energies_pdf, forces_pdf, virial_pdf)
 #endif
 
-           call cpu_time(time_pdf(2))
+
+           time_pdf(2) = MPI_wtime()
            time_pdf(3) = time_pdf(3) + time_pdf(2) - time_pdf(1)
            !           if (rank == 0) print *, rank, " TIME_PDF = ", time_pdf(3)
 
@@ -2629,7 +2661,8 @@ program turbogap
 
         ! Now calculate the structure factors
         if (params%do_structure_factor )then
-           call cpu_time(time_sf(1))
+
+           time_sf(1) = MPI_wtime()
            call calculate_structure_factor( params, x_structure_factor, x_structure_factor_temp,&
                 & y_structure_factor, y_structure_factor_temp,&
                 & structure_factor_partial, structure_factor_partial_temp,&
@@ -2646,7 +2679,8 @@ program turbogap
 #endif
 
 
-           call cpu_time(time_sf(2))
+
+           time_sf(2) = MPI_wtime()
            time_sf(3) = time_sf(3) + time_sf(2) - time_sf(1)
 
 
@@ -2654,7 +2688,8 @@ program turbogap
         end if
 
         if ( params%do_xrd )then
-           call cpu_time(time_xrd(1))
+
+           time_xrd(1) = MPI_wtime()
            call calculate_xrd( params, x_xrd, x_xrd_temp,&
                 & y_xrd, y_xrd_temp, x_structure_factor, x_structure_factor_temp,&
                 & structure_factor_partial, structure_factor_partial_temp,&
@@ -2673,7 +2708,8 @@ program turbogap
 #endif
 
 
-           call cpu_time(time_xrd(2))
+
+           time_xrd(2) = MPI_wtime()
            time_xrd(3) = time_xrd(3) + time_xrd(2) - time_xrd(1)
 
            !           if (rank == 0) print *, rank, " TIME_XRD = ", time_xrd(3)
@@ -2682,7 +2718,8 @@ program turbogap
 
 
         if ( params%do_nd )then
-           call cpu_time(time_nd(1))
+
+           time_nd(1) = MPI_wtime()
            call calculate_xrd( params, x_nd, x_nd_temp,&
                 & y_nd, y_nd_temp, x_structure_factor, x_structure_factor_temp,&
                 & structure_factor_partial, structure_factor_partial_temp,&
@@ -2701,7 +2738,8 @@ program turbogap
 #endif
 
 
-           call cpu_time(time_nd(2))
+
+           time_nd(2) = MPI_wtime()
            time_nd(3) = time_nd(3) + time_nd(2) - time_nd(1)
 
            !           if (rank == 0) print *, rank, " TIME_XRD = ", time_xrd(3)
@@ -2817,7 +2855,7 @@ program turbogap
         ! > the species. Leaving this optimization for later.
         
         st_n_sites_int = n_sites*sizeof(n_neigh(1)) ! (i_end - i_beg + 1)
-        print *, rank, " >> Allocating 2b on gpu"        
+!        print *, rank, " >> Allocating 2b on gpu"        
         call gpu_malloc_all(n_neigh_d,st_n_sites_int,gpu_stream)
         call cpy_htod(c_loc(n_neigh),n_neigh_d, st_n_sites_int,gpu_stream)
         call gpu_malloc_all(species_d,st_n_sites_int,gpu_stream)
@@ -2853,7 +2891,8 @@ program turbogap
           call gpu_malloc_all(qs_d,st_n_sparse_double,gpu_stream)
           call cpy_htod(c_loc(distance_2b_hypers(i)%Qs(:,1)),qs_d,st_n_sparse_double,gpu_stream)
 
-          !call cpu_time(time_2b(1))
+
+          time_2b(1) = MPI_wtime()
 !          this_energies = 0.d0
 !          if( params%do_forces )then
 !           this_forces = 0.d0
@@ -2916,8 +2955,9 @@ program turbogap
                                           virial_2b_d, rjs_d, distance_2b_hypers(i)%rcut, species_d, neighbor_species_d, sp1,  &
                                           sp2, 0.5d0, distance_2b_hypers(i)%delta, cutoff_d, qs_d, distance_2b_hypers(i)%sigma,&
                                           alphas_d, xyz_d, gpu_stream)
-          !call cpu_time(time_2b(2))
-          print *, rank, " >>--- Finished 2b energies forces on gpu ---"
+
+          time_2b(2) = MPI_wtime()
+!          print *, rank, " >>--- Finished 2b energies forces on gpu ---"
           call gpu_free_async(alphas_d,gpu_stream)
           call gpu_free_async(cutoff_d,gpu_stream)
           call gpu_free_async(qs_d,gpu_stream)
@@ -2940,11 +2980,11 @@ program turbogap
         call gpu_free_async(energies_2b_d,gpu_stream)
         call gpu_free_async(forces_2b_d,gpu_stream)
         call gpu_free(virial_2b_d)!,gpu_stream)
-        print *, rank, " >>~~~ Finished freeing 2b energies forces on gpu ~~~<<"
+!        print *, rank, " >>~~~ Finished freeing 2b energies forces on gpu ~~~<<"
 
 
         
-        print *, rank, " > Allocating core_pot on gpu "
+!        print *, rank, " > Allocating core_pot on gpu "
         st_n_sites_double=n_sites*sizeof(energies_core_pot(1))
         call gpu_malloc_all(energies_core_pot_d,st_n_sites_double,gpu_stream)
         call cpy_htod(c_loc(energies_core_pot),energies_core_pot_d, st_n_sites_double,gpu_stream)
@@ -2957,7 +2997,7 @@ program turbogap
 !       Loop through core_pot descriptors
         do i = 1, n_core_pot
 
-           print *, " > Getting core potential"
+!           print *, " > Getting core potential"
            
           n_sparse = core_pot_hypers(i)%n
           st_n_sparse_double=n_sparse*sizeof( core_pot_hypers(i)%x(1))
@@ -2967,7 +3007,8 @@ program turbogap
           call cpy_htod(c_loc(core_pot_hypers(i)%V),V_d,st_n_sparse_double,gpu_stream)
           call gpu_malloc_all(dVdx2_d,st_n_sparse_double,gpu_stream)
           call cpy_htod(c_loc(core_pot_hypers(i)%dVdx2),dVdx2_d,st_n_sparse_double,gpu_stream)
-          !call cpu_time(time_core_pot(1))
+
+!          time_core_pot(1 = MPI_wtime()
           time_core_pot(1)=MPI_Wtime()
 !         this_energies = 0.d0
 !         if( params%do_forces )then
@@ -2987,15 +3028,16 @@ program turbogap
 !           forces_core_pot = forces_core_pot + this_forces
 !           virial_core_pot = virial_core_pot + this_virial
 !         end if
-          !call cpu_time(time_core_pot(2))
 
-          print *, rank, " >>--- Finished allocating core_pot on gpu ---"
-          print *, rank, " > Starting core_pot energies forces on gpu "                            
+          time_core_pot(2) = MPI_wtime()
+
+         print *, rank, " >>--- Finished allocating core_pot on gpu ---"
+         print *, rank, " > Starting core_pot energies forces on gpu "                            
           
           call gpu_get_core_pot_energy_and_forces(i_beg, i_end, c_do_forces, species_d, sp1, sp2, n_neigh_d, neighbor_species_d,&
                                                   rjs_d, n_sparse, x_d, V_d, dVdx2_d, core_pot_hypers(i)%yp1, core_pot_hypers(i)%ypn,&
                                                   xyz_d, forces_core_pot_d, virial_core_pot_d, energies_core_pot_d, gpu_stream)
-          print *, rank, " >>--- Finished core_pot energies forces on gpu ---<<"                                      
+!          print *, rank, " >>--- Finished core_pot energies forces on gpu ---<<"                                      
           call gpu_free_async(x_d,gpu_stream)
           call gpu_free_async(V_d,gpu_stream)
           call gpu_free_async(dVdx2_d,gpu_stream)
@@ -3097,7 +3139,8 @@ program turbogap
 
 !       Loop through angle_3b descriptors
         do i = 1, n_angle_3b
-          !call cpu_time(time_3b(1))
+
+!           time_3b(1 = MPI_wtime()
           time_3b(1)=MPI_Wtime()
 !          this_energies = 0.d0
 !          if( params%do_forces )then
@@ -3174,7 +3217,8 @@ program turbogap
 !           forces_3b = forces_3b + this_forces
 !            virial_3b = virial_3b + this_virial
 !          end if
-          !call cpu_time(time_3b(2))
+!
+!          time_3b(2 = MPI_wtime()
           time_3b(2)=MPI_Wtime()
           time_3b(3) = time_3b(3) + time_3b(2) - time_3b(1)
         end do
@@ -3198,13 +3242,15 @@ program turbogap
         call gpu_free(virial_3b_d) !,gpu_stream)
 
 !           print *, rank, " >>~~~ Finished freeing memory 3b on gpu ~~~<<"        
-        !call cpu_time(time2)
+
+!        call cpu_time(time2)
         time2=MPI_Wtime()
         time_gap = time_gap + time2 - time1
            !       Communicate all energies and forces here for all
            !       terms
 #ifdef _MPIF90
-           call cpu_time(time_mpi_ef(1))
+
+        time_mpi_ef(1) = MPI_wtime()
            counter2 = 0
            if( n_soap_turbo > 0 )then
               counter2 = counter2 + 1
@@ -3453,7 +3499,8 @@ program turbogap
               deallocate( all_forces, all_this_forces, all_virial, all_this_virial )
            end if
 
-           call cpu_time(time_mpi_ef(2))
+
+           time_mpi_ef(2) = MPI_wtime()
            time_mpi_ef(3) = time_mpi_ef(3) + time_mpi_ef(2) - time_mpi_ef(1)
 #endif
 
@@ -3658,7 +3705,8 @@ program turbogap
      IF( rank == 0 )THEN
 #endif
         if( params%do_md .and. md_istep > -1)then
-           call cpu_time(time_md(1))
+
+           time_md(1) = MPI_wtime()
            !     Define the time_step and md_time prior to possible scaling (see variable_time_step below)
            if( md_istep > 0 )then
               md_time = md_time + time_step
@@ -4002,7 +4050,8 @@ program turbogap
                  end do
               end do
            end do
-           call cpu_time(time_md(2))
+
+           time_md(2) = MPI_wtime()
            time_md(3) = time_md(3) + time_md(2) - time_md(1)
         end if
 #ifdef _MPIF90
@@ -4012,11 +4061,13 @@ program turbogap
      !   Make sure all ranks have correct positions and velocities
 #ifdef _MPIF90
      if( params%do_md )then
-        call cpu_time(time_mpi_positions(1))
+
+        time_mpi_positions(1) = MPI_wtime()
         n_pos = size(positions,2)
         call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
         call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        call cpu_time(time_mpi_positions(2))
+
+        time_mpi_positions(2) = MPI_wtime()
         time_mpi_positions(3) = time_mpi_positions(3) + time_mpi_positions(2) - time_mpi_positions(1)
      end if
 #endif
@@ -4204,7 +4255,8 @@ program turbogap
                  !       >> First generate a random number in the range of the number of
 
 
-              call cpu_time(time_mc(1))
+
+              time_mc(1) = MPI_wtime()
 
 
               !       Now we do a monte-carlo step: we choose what the steps are from the available list and then choose a random number
@@ -4408,7 +4460,8 @@ program turbogap
                  end if
 
                  !          Add acceptance to the log file else dont
-                 call cpu_time(time_mc(2))
+
+                 time_mc(2) = MPI_wtime()
                  time_mc(3) = time_mc(3) + time_mc(2) - time_mc(1)
 
 
@@ -4876,7 +4929,8 @@ program turbogap
         if(allocated(species_supercell))deallocate(species_supercell)
         allocate( species_supercell(1:n_sp_sc) )
      END IF
-     call cpu_time(time_mpi_positions(1))
+
+     time_mpi_positions(1) = MPI_wtime()
      call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
      if( params%do_md .or. params%do_nested_sampling .or. params%do_mc )then
         call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
@@ -4892,7 +4946,8 @@ program turbogap
      call mpi_bcast(b_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(c_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(n_sites, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-     call cpu_time(time_mpi_positions(2))
+
+     time_mpi_positions(2) = MPI_wtime()
      time_mpi_positions(3) = time_mpi_positions(3) + time_mpi_positions(2) - time_mpi_positions(1)
 #endif
      !   Now that all ranks know the size of n_sites, we allocate do_list
@@ -4903,6 +4958,7 @@ program turbogap
         do_list = .true.
      end if
      !
+
      call cpu_time(time1)
 #ifdef _MPIF90
      !   Parallel neighbors list build
@@ -5036,6 +5092,15 @@ program turbogap
 #endif
   end if
 
+  do i = 1, n_soap_turbo
+     if( .not. soap_turbo_hypers(i)%recompute_basis )then 
+        call gpu_free_async( soap_turbo_hypers(i)%W_d, gpu_stream )
+        call gpu_free_async( soap_turbo_hypers(i)%S_d, gpu_stream )
+        call gpu_free_async( soap_turbo_hypers(i)%multiplicity_array_d, gpu_stream )
+     end if
+  end do
+  
+  
   if ( allocated( fix_atom ))    deallocate( fix_atom )
   if ( allocated( positions ))    deallocate( positions )
   if ( allocated( velocities ))    deallocate( velocities )

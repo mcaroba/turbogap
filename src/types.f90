@@ -86,8 +86,10 @@ module types
     character*32 :: scaling_mode = "polynomial"
     character*8, allocatable :: species_types(:)
     logical :: compress_soap = .false., has_vdw = .false.,&
-         & has_core_electron_be=.false., has_local_properties = .false.
+         & has_core_electron_be=.false., has_local_properties = .false., recompute_basis=.true.
     type(local_property_soap_turbo), allocatable :: local_property_models(:)
+    type(c_ptr) :: W_d, S_d, multiplicity_array_d
+    integer(c_size_t) :: st_W_d, st_S_d, st_multiplicity_array_d    
   end type soap_turbo
 
 
