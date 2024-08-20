@@ -29,6 +29,7 @@ module neighbors
 
 
   use soap_turbo_functions
+  use mpi
 
 
   contains
@@ -251,6 +252,34 @@ module neighbors
     logical :: is_box_square, is_box_small
     logical, save :: print_cutoff_warning = .true., print_shape_warning = .true.
 
+
+! integer :: n_ii,i_ii, j_jj,k_ii
+! real*8 :: CC(1:1024,1:1024), BB(1:1024,1:1024), AA(1:1024,1:1024), dut1, dut2
+
+
+! call random_number(AA)
+! call random_number(BB)
+ 
+
+   
+! write(*,*) "Starting dummy kernel"
+
+! dut1= MPI_Wtime()
+! do n_ii=1,3
+     
+!      do i_ii=1, 1024
+!      do j_jj=1,1024
+!      CC(i_ii,j_jj)=0.0
+!      do k_ii=1,1024
+!      CC(i_ii,j_jj)=CC(i,j)+AA(i_ii,k_ii)*BB(k_ii,j_jj)
+!      enddo
+!      enddo
+!      enddo
+! enddo 
+! dut2= MPI_Wtime()
+! write(*,*) "Ending dummy region"
+! write(*,*) "Time spent in dummy region", dut2-dut1
+   
 
     if( do_timing )then
       call cpu_time(time1)

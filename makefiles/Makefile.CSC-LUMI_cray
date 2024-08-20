@@ -1,0 +1,40 @@
+# Copyright (c) 2020-2021 by Albert Bartók and Miguel Caro
+
+# This is an important note for those building TurboGAP on CSC's Mahti
+# supercomputer with this Makefile. Before compiling, make sure you have
+# loaded the correct module environment:
+#
+#     module reset
+#     module load gcc
+#     module load openblas
+#     module load openmpi
+#     module load cuda
+#
+# When you run TurboGAP, make sure to load this same environment at the top
+# of your Slurm submission script.
+
+# User-modifiable variables below
+
+# Compiler, preprocessor directives, etc.
+F90=ftn -g # -hlist=m
+CU=cc -xhip -munsafe-fp-atomics -g -ggdb #-save-temps #  #-ffp-model=precise #-munsafe-fp-atomics
+#CU=CC -x hip #-munsafe-fp-atomics #-g -ggdb #-save-temps #  #-ffp-model=precise #-munsafe-fp-atomics
+CC=CC 
+PP=-eZ -D_MPIF90
+F90_MOD_DIR_OPT=-J
+
+# -h flex_mp=intolerant Should be used per file otherwise 2b AND 3b will run 2 time slower
+# Optimization flags (uncomment second option to enable debugging tools)
+F90_OPTS= -fPIC -h noomp -h flex_mp=intolerant -O0   # -homp  # -fsanitize=address -fsanitize=thread #-homp # -Rb
+CUDA_OPTS=   --offload-arch=gfx90a -O3
+CC_OPTS=-xhip -std=c++20 -O3 -g -ggdb
+# gdwarf-4 needed for getting line information when sampling 
+#F90_OPTS+= -g # -gdwarf-4
+#CUDA_OPTS+= -Xcompiler -gdwarf-4 
+#CUDA_OPTS+= -g -G 
+#F90_OPTS+= -pg -fPIC -O3 -fcheck=bounds -g -fcheck=all   -fbacktrace #-Wall
+
+# BLAS and LAPACK libraries
+
+#LIBS= -L/scratch/project_462000007/cristian/BLASSPACK/23.03/0.20.0/openblas-0.3.18-mde53ew/lib -lopenblas #-lsci_gnu
+LIBS=  -L/$(ROCM_PATH)/lib -lamdhip64 -lhiprand -lsci_cray -lhipblas -lhipsolver 

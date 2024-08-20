@@ -28,153 +28,413 @@
 
 module local_prop
 
+  use F_B_C
+  use iso_c_binding
 
   contains
 
+    subroutine gpu_local_property_predict( n_sparse, soap, soap_d, &
+         & Qs_d, alphas_d, e0, delta, zeta0, local_properties, local_properties_d, &
+         & do_derivatives, soap_der_d, local_properties_cart_der,&
+         & local_properties_cart_der_d, n_pairs, l_index_d,&
+         & cublas_handle, gpu_stream  )
 
-    ! !**************************************************************************
-    ! subroutine get_local_property_details( n_soap_turbo, soap_turbo_hypers, n_local_properties_tot, local_property_labels, write_local_properties )
-    !   implicit none
-    !   integer, intent(in) :: n_soap_turbo
-    !   integer, intent(out) :: n_local_properties_tot
-    !   character*1024, allocatable, intent(inout) ::  local_property_labels(:)
-    !   character*1024, allocatable :: local_property_labels_temp(:), local_property_labels_temp2(:)
-    !   integer :: i, j, k, i2
+    implicit none
 
-    !  i2 = 1 ! using this as a counter for the labels
-    !  do j = 1, n_soap_turbo
-    !     if( soap_turbo_hypers(j)%has_local_properties )then
-    !        ! This property has the labels of the quantities to
-    !        ! compute. We must specify the number of local properties, for the sake of coding simplicity
+    !   Input variables
+    integer(c_int), intent(in) :: n_sparse
+    real(c_double), intent(in), target :: soap(:,:), delta, e0, zeta0
+    type(c_ptr), intent(in) :: soap_d, soap_der_d
+    logical, intent(in) :: do_derivatives 
+    type(c_ptr), intent(inout) :: cublas_handle, gpu_stream, alphas_d, Qs_d
+    real(c_double), intent(out),target:: local_properties(:), local_properties_cart_der(:,:)
+    
+    real(c_double) ::  zeta, cdelta_ene, mzetam, cdelta_force
+    logical :: is_zeta_int = .false.
+    integer(c_int) :: n_sites, n_soap, i, j, k, l, j2, zeta_int, n_sites0, k1, k2
 
-    !        n_local_properties_tot = n_local_properties_tot + soap_turbo_hypers(j)%n_local_properties
+    integer(c_int), intent(in) :: n_pairs 
+    real(c_double), allocatable, target :: kernels(:,:), &
+                            Qss(:,:), Qs_copy(:,:), this_Qss(:), &
+                           kernels_copy(:,:), this_force_h(:,:)
+    integer(c_size_t) :: st_alphas, st_Qs, st_kernels, st_local_properties, st_soap, st_local_properties_cart_der
 
-    !        if(.not. allocated(local_property_labels))then
-    !           allocate(local_property_labels(1:n_local_properties_tot))
-    !           do i = 1, n_local_properties_tot
-    !              local_property_labels(i) = soap_turbo_hypers(j)%local_property_models(i)%label
-    !              write(*,*)' Local property found                  |'
-    !              write(*,'(A,1X,I8,1X,A,1X,A)')' Descriptor ', j,&
-    !                   & trim(soap_turbo_hypers(j)&
-    !                   &%local_property_models(i)%label),  ' |'
-    !           end do
-    !        else
-    !           allocate( local_property_labels_temp( 1:n_local_properties_tot - soap_turbo_hypers(j)%n_local_properties ))
-    !           local_property_labels_temp = local_property_labels
-    !           deallocate(local_property_labels)
-    !           allocate(local_property_labels(1:n_local_properties_tot))
+    integer(c_int) :: size_kernels, size_soap, size_Qs, size_alphas, size_local_properties, size_local_properties_cart_der, maxnn
+    type(c_ptr) :: kernels_copy_d, kernels_d
+    type(c_ptr), intent(inout) :: local_properties_d, local_properties_cart_der_d
+    type(c_ptr) :: kernels_der_d, Qss_d, Qs_copy_d !, this_Qss_d
+    type(c_ptr), intent(inout) :: l_index_d
+    integer :: n1local_properties_cart_der, n2local_properties_cart_der
 
-    !           nprop = soap_turbo_hypers(j)%n_local_properties
-    !           do i = 1, n_local_properties_tot - nprop
-    !              local_property_labels(i) = local_property_labels_temp(i)
-    !           end do
+    
+    cdelta_ene=delta*delta
+    if( dabs(zeta0-dfloat(int(zeta0))) < 1.d-5 )then
+      is_zeta_int = .true.
+      zeta_int = int(zeta0)
+      zeta = dfloat(zeta_int)
+    else
+      zeta = zeta0
+    end if
 
-    !           deallocate(local_property_labels_temp)
+    ! n_sparse = size(alphas)
+    n_soap = size(soap, 1)
+    n_sites = size(soap, 2)
+!    n_sites0 = size(forces, 2)
 
-    !           do i = 1, nprop
-    !              local_property_labels(i + n_local_properties_tot -&
-    !                   & nprop) = soap_turbo_hypers(j)&
-    !                   &%local_property_models(i)%label
-    !              write(*,*)' Local property found                  |'
-    !              write(*,'(A,1X,I8,1X,A,1X,A)')' Descriptor ', j,&
-    !                   & trim(soap_turbo_hypers(j)&
-    !                   &%local_property_models(i)%label),  ' |'
+    allocate( kernels(1:n_sites, 1:n_sparse) )
+    kernels = 0.d0
+    allocate( kernels_copy(1:n_sites, 1:n_sparse) )
 
-    !           end do
-    !        end if
-    !     end if
-    !  end do
+    size_kernels = n_sites * n_sparse
+    size_soap    = n_soap  * n_sites
+    size_Qs      = n_soap  * n_sparse
+    ! size_alphas=n_sparse
 
-    !  ! Now we create an irreducible list of the labels
-    !  if (n_local_properties_tot > 0)then
-    !     allocate( local_property_labels_temp( 1:1 ))
-    !     local_property_labels_temp(1) = local_property_labels(1)
-    !     i2 = 1
-    !     if (n_local_properties_tot > 1)then
-    !        do i = 2, n_local_properties_tot
-    !           label_in_list = .false.
-    !           ! Iterate through irreducible list to see if there is a mismatch
-    !           do j = 1, size( local_property_labels_temp, 1 )
-    !              if (trim( local_property_labels_temp(j) ) == trim( local_property_labels(i) )) label_in_list = .true.
-    !           end do
-    !           if (.not. label_in_list) then
-    !              i2 = i2 + 1
-    !              allocate(local_property_labels_temp2(1:i2))
-    !              local_property_labels_temp2(1:i2-1) = local_property_labels_temp(1:i2-1)
-    !              local_property_labels_temp2(i2)     = local_property_labels(i)
-    !              deallocate(local_property_labels_temp)
-    !              allocate(local_property_labels_temp(1:i2))
-    !              local_property_labels_temp(1:i2) = local_property_labels_temp2(1:i2)
-    !              deallocate(local_property_labels_temp2)
-    !           end if
-    !        end do
-    !     end if
+    size_local_properties=n_sites
 
-    !     params%n_local_properties = i2
+    st_kernels=size_kernels*(sizeof(kernels(1,1)))
+    st_Qs=size_Qs*(sizeof(e0))
+    ! st_alphas=size_alphas*(sizeof(alphas(1)))
+    st_local_properties=size_local_properties*(sizeof(local_properties(1)))
 
-    !     ! Now we can have an array which has a soap turbo index as an input and it can give us the corresponding label
-    !     allocate(local_property_indexes(1:n_local_properties_tot))
-    !     i2 = 1
-    !     do i = 1, params%n_local_properties
-    !        do j = 1, n_local_properties_tot
-    !           if ( trim(local_property_labels(j)) == trim( local_property_labels_temp(i) ) )then
+    call gpu_malloc_all(kernels_d, st_kernels, gpu_stream)
+    call gpu_malloc_all(kernels_copy_d, st_kernels, gpu_stream)
+    !call gpu_malloc_all(local_properties_d, st_local_properties, gpu_stream)
 
-    !              local_property_indexes(j) = i
+    call gpu_blas_mmul_t_n(cublas_handle, Qs_d, soap_d, kernels_d, n_sparse, n_soap, n_sites)
+    call gpu_kernels_pow( kernels_d, kernels_copy_d,  zeta, size_kernels, gpu_stream)
+    call gpu_blas_mvmul_n(cublas_handle, kernels_copy_d, alphas_d, local_properties_d, n_sites, n_sparse)
 
+    call gpu_axpe(local_properties_d, cdelta_ene, e0, size_local_properties, gpu_stream)
 
-    !              if ( trim(local_property_labels(j)) == "hirshfeld_v" )then
-    !                 vdw_lp_index = i
-    !                 valid_vdw = .true.
-    !              end if
+    call cpy_dtoh(local_properties_d, c_loc(local_properties), st_local_properties, gpu_stream)
 
+    ! Now we do the derivatives
+    if(do_derivatives) then
 
-    !              if ( trim(local_property_labels(j)) == "core_electron_be" )then
-    !                 core_be_lp_index = i
+       
+       
+      call gpu_malloc_all(kernels_der_d, st_kernels, gpu_stream)
+      st_soap = size_soap * sizeof(local_properties(1))
+      call gpu_malloc_all(Qss_d, st_soap, gpu_stream)
+      call gpu_malloc_all(Qs_copy_d, st_Qs, gpu_stream)
+      call cpy_dtod(Qs_d, Qs_copy_d, st_Qs, gpu_stream) 
+      
+      mzetam=zeta-1
+      call gpu_kernels_pow( kernels_d, kernels_der_d,  mzetam, size_kernels, gpu_stream)
 
-    !                 ! Check if there is experimental data for one to do xps fitting
-    !                 do i2 = 1, params%n_exp
-    !                    if(( trim(params%exp_data(i2)%label) == "xps" .and.  &
-    !                         .not. ( trim(params%exp_data(i2)%file_data) == "none" )))then
-    !                       valid_xps = .true.
-    !                       do k = 1, soap_turbo_hypers(j)%n_local_properties
-    !                          if (trim(soap_turbo_hypers(j)%local_property_models(k)%label) == "xps")then
-    !                             soap_turbo_hypers(j)%local_property_models(k)%do_derivatives = .false.
-    !                             if( params%exp_forces .and. params%do_derivatives)then
-    !                                soap_turbo_hypers(j)%local_property_models(k)%do_derivatives = .true.
-    !                             end if
-    !                          end if
-    !                       end do
-    !                    end if
-    !                 end do
-    !              end if
+      if(n_sites<n_soap) then
+        call gpu_matvect(kernels_der_d, alphas_d, n_sites, n_sparse, gpu_stream)
+      else
+        call gpu_matvect(Qs_copy_d, alphas_d, n_soap, n_sparse, gpu_stream)
+      endif
+
+      
+      cdelta_force=-zeta*delta**2 
+      call gpu_blas_mmul_n_t(cublas_handle, kernels_der_d, Qs_copy_d, Qss_d, n_sparse, &
+           n_soap, n_sites, cdelta_force)
 
 
-    !           end if
-    !        end do
-    !     end do
+      local_properties_cart_der = 0.d0
 
-    !     print *, "n_local_properties ", params%n_local_properties
-    !     print *, "n_local_properties_tot ", n_local_properties_tot
-    !     ! print *, "local_property_labels ", local_property_labels
-    !     ! print *, "local_property_labels_temp (irreducible) ", local_property_labels_temp
+      n1local_properties_cart_der = size(local_properties_cart_der, 1)
+      n2local_properties_cart_der = size(local_properties_cart_der, 2)
+      size_local_properties_cart_der=n1local_properties_cart_der*n2local_properties_cart_der
+      
+      st_local_properties_cart_der = size_local_properties_cart_der*sizeof(local_properties_cart_der(1,1))
+      !call gpu_malloc_all(local_properties_cart_der_d, st_local_properties_cart_der, gpu_stream)
 
-    !     deallocate(local_property_labels)
-    !     allocate(local_property_labels(1:size(local_property_labels_temp,1)))
-    !     local_property_labels = local_property_labels_temp
-    !     deallocate(local_property_labels_temp)
+      call gpu_local_property_derivatives(n_sites, &
+                                              Qss_d, n_soap, l_index_d, &
+                                              soap_der_d, &
+                                              local_properties_cart_der_d, &
+                                              n_pairs, gpu_stream)
 
-    !     do i = 1, params%n_local_properties
-    !        write(*,*)' Irreducible local properties                   |'
-    !        write(*,'(1X,A)') trim( local_property_labels(i) )
-    !     end do
+      
+      call cpy_dtoh(local_properties_cart_der_d, c_loc(local_properties_cart_der), st_local_properties_cart_der, gpu_stream)
 
-    !     allocate( params%write_local_properties(1:params%n_local_properties) )
-    !     params%write_local_properties = .true.
-    !  end if
+      call gpu_free_async(kernels_der_d, gpu_stream)
+      call gpu_free_async(Qss_d, gpu_stream)
+      call gpu_free_async(Qs_copy_d, gpu_stream)
+   end if
 
 
-    ! end subroutine get_local_property_details
 
+   call gpu_free_async(kernels_d, gpu_stream)
+   call gpu_free(kernels_copy_d)
+
+
+   deallocate( kernels, kernels_copy )
+
+  end subroutine gpu_local_property_predict
+
+    subroutine gpu_local_property_predict_single( n_sparse, soap, soap_d, &
+         & Qs_d, alphas_d, e0, delta, zeta0, local_properties,&
+         & cublas_handle, gpu_stream )
+
+    implicit none
+
+    !   Input variables
+    integer(c_int), intent(in) :: n_sparse
+    real(c_double), intent(in), target :: soap(:,:), delta, e0, zeta0
+    type(c_ptr), intent(in) :: soap_d
+    
+    type(c_ptr), intent(inout) :: cublas_handle, gpu_stream, alphas_d, Qs_d
+    real(c_double), intent(out), target :: local_properties(:)
+    
+    real(c_double) ::  zeta, cdelta_ene
+    logical :: is_zeta_int = .false.
+    integer(c_int) :: n_sites, n_soap, i, j, k, l, j2, zeta_int, n_sites0, k1, k2
+
+    real(c_double), allocatable, target :: kernels(:,:), &
+                            Qss(:,:), Qs_copy(:,:), this_Qss(:), &
+                           kernels_copy(:,:), this_force_h(:,:)
+    integer(c_size_t) :: st_alphas, st_Qs, st_kernels, st_local_properties, st_soap
+
+    integer(c_int) :: size_kernels, size_soap, size_Qs, size_alphas, size_local_properties, maxnn
+    type(c_ptr) :: kernels_copy_d, kernels_d, local_properties_d
+    type(c_ptr) :: kernels_der_d, Qss_d, Qs_copy_d !, this_Qss_d
+        
+    cdelta_ene=delta*delta
+    if( dabs(zeta0-dfloat(int(zeta0))) < 1.d-5 )then
+      is_zeta_int = .true.
+      zeta_int = int(zeta0)
+      zeta = dfloat(zeta_int)
+    else
+      zeta = zeta0
+    end if
+
+    ! n_sparse = size(alphas)
+    n_soap = size(soap, 1)
+    n_sites = size(soap, 2)
+!    n_sites0 = size(forces, 2)
+
+    allocate( kernels(1:n_sites, 1:n_sparse) )
+    kernels = 0.d0
+    allocate( kernels_copy(1:n_sites, 1:n_sparse) )
+
+    size_kernels = n_sites * n_sparse
+    size_soap    = n_soap  * n_sites
+    size_Qs      = n_soap  * n_sparse
+    ! size_alphas=n_sparse
+
+    size_local_properties=n_sites
+
+    st_kernels=size_kernels*(sizeof(kernels(1,1)))
+    st_Qs=size_Qs*(sizeof(e0))
+    ! st_alphas=size_alphas*(sizeof(alphas(1)))
+    st_local_properties=size_local_properties*(sizeof(local_properties(1)))
+
+    call gpu_malloc_all(kernels_d, st_kernels, gpu_stream)
+    call gpu_malloc_all(kernels_copy_d, st_kernels, gpu_stream)
+    call gpu_malloc_all(local_properties_d, st_local_properties, gpu_stream)
+
+
+    call gpu_blas_mmul_t_n(cublas_handle, Qs_d, soap_d, kernels_d, n_sparse, n_soap, n_sites)
+    call gpu_kernels_pow( kernels_d, kernels_copy_d,  zeta, size_kernels, gpu_stream)
+    call gpu_blas_mvmul_n(cublas_handle, kernels_copy_d, alphas_d, local_properties_d, n_sites, n_sparse)
+
+    call gpu_axpe(local_properties_d, cdelta_ene, e0, size_local_properties, gpu_stream)
+
+    call cpy_dtoh(local_properties_d, c_loc(local_properties), st_local_properties, gpu_stream)
+
+    call gpu_free_async(kernels_d, gpu_stream)
+    call gpu_free_async(kernels_copy_d, gpu_stream)
+    call gpu_free(local_properties_d)
+
+    deallocate( kernels, kernels_copy )
+
+  end subroutine gpu_local_property_predict_single
+!**************************************************************************
+
+    
+
+!     subroutine gpu_local_property_predict( n_sparse, soap, Qs_d, alphas_d, e0, delta, zeta0, local_properties, &
+!          do_derivatives, soap_der, n_neigh, local_properties_der, soap_d, &
+!          soap_der_d, cublas_handle, gpu_stream )
+
+!     implicit none
+
+!     !   Input variables
+!     integer(c_int), intent(in) :: n_sparse
+!     real(c_double), intent(in), target :: soap(:,:), soap_der(:,:,:), delta, e0, zeta0
+!     logical, intent(in) :: do_derivatives
+    
+!     type(c_ptr), intent(inout) :: cublas_handle, gpu_stream, k2_i_site_d, alphas_d, Qs_d
+!     real(c_double), intent(out):: local_properties(:)
+
+!     real(c_double) ::  zeta, cdelta_ene, cdelta_force, mzetam
+!     logical :: is_zeta_int = .false.
+!     integer(c_int) :: n_sites, n_soap, i, j, k, l, j2, zeta_int, n_sites0, k1, k2
+
+    
+!     real(c_double), allocatable, target :: kernels(:,:), kernels_der(:,:), &
+!                             Qss(:,:), Qs_copy(:,:), this_Qss(:), &
+!                            kernels_copy(:,:), this_force_h(:,:)
+!     integer(c_size_t) :: st_alphas, st_Qs, st_kernels, st_local_properties, st_soap
+
+!     integer(c_int) :: size_kernels, size_soap, size_Qs, size_alphas, size_local_properties, maxnn
+!     type(c_ptr) :: kernels_copy_d, kernels_d, local_properties_d
+!     type(c_ptr) :: kernels_der_d, Qss_d, Qs_copy_d !, this_Qss_d
+
+
+    
+!     ! real*8, intent(in) :: soap(:,:), Qs(:,:), alphas(:), V0, delta, zeta, soap_cart_der(:,:,:)
+! !     integer, intent(in) :: n_neigh(:)
+! !     logical, intent(in) :: do_derivatives
+! ! !   Output variables
+! !     real*8, intent(out) :: V(:), V_der(:,:)
+! ! !   Internal variables
+! !     real*8, allocatable :: K(:,:), K_der(:,:), Qss(:,:), Qs_copy(:,:)
+
+! !     integer :: i, j, i2, cart
+
+        
+!     cdelta_ene=delta*delta
+!     if( dabs(zeta0-dfloat(int(zeta0))) < 1.d-5 )then
+!       is_zeta_int = .true.
+!       zeta_int = int(zeta0)
+!       zeta = dfloat(zeta_int)
+!     else
+!       zeta = zeta0
+!     end if
+
+!     ! n_sparse = size(alphas)
+!     n_soap = size(soap, 1)
+!     n_sites = size(soap, 2)
+! !    n_sites0 = size(forces, 2)
+
+!     allocate( kernels(1:n_sites, 1:n_sparse) )
+!     kernels = 0.d0
+!     allocate( kernels_copy(1:n_sites, 1:n_sparse) )
+
+!     size_kernels=n_sites*n_sparse
+!     size_soap=n_soap*n_sites
+!     size_Qs = n_soap*n_sparse
+!     ! size_alphas=n_sparse
+
+!     size_local_properties=n_sites
+
+!     st_kernels=size_kernels*(sizeof(kernels(1,1)))
+!     st_Qs=size_Qs*(sizeof(e0))
+!     ! st_alphas=size_alphas*(sizeof(alphas(1)))
+!     st_local_properties=size_local_properties*(sizeof(local_properties(1)))
+
+!     call gpu_malloc_all(kernels_d,st_kernels, gpu_stream)
+!     call gpu_malloc_all(kernels_copy_d,st_kernels, gpu_stream)
+
+!     call gpu_malloc_all(local_properties_d,st_local_properties, gpu_stream)
+
+
+!     call gpu_blas_mmul_t_n(cublas_handle, Qs_d, soap_d, kernels_d, n_sparse, n_soap, n_sites)
+!     call gpu_kernels_pow( kernels_d, kernels_copy_d,  zeta, size_kernels, gpu_stream)
+!     call gpu_blas_mvmul_n(cublas_handle, kernels_copy_d, alphas_d, local_properties_d, n_sites, n_sparse)
+
+!     call gpu_axpe(local_properties_d, cdelta_ene, e0, size_local_properties, gpu_stream)
+
+!     call cpy_dtoh(local_properties_d, c_loc(local_properties),st_local_properties, gpu_stream)
+
+!     call gpu_free_async(kernels_d, gpu_stream)
+!     call gpu_free_async(kernels_copy_d, gpu_stream)
+!     call gpu_free_async(local_properties_d, gpu_stream)
+
+    
+!     ! call cpy_dtoh(energies_d,c_loc(tmp_energies),st_energies,gpu_stream)
+!     ! energies=tmp_energies
+    
+    
+! !     n_sparse = size(alphas)
+! !     n_soap = size(soap, 1)
+! !     n_sites = size(soap, 2)
+
+! !     allocate( K(1:n_sites, 1:n_sparse) )
+! !     if( do_derivatives )then
+! !       n_pairs = size(soap_cart_der, 3)
+! !       allocate( K_der(1:n_sites, 1:n_sparse) )
+! !       allocate( Qss(1:n_sites, 1:n_soap) )
+! !       allocate( Qs_copy(1:n_soap, 1:n_sparse) )
+! !     end if
+
+
+! !     if( n_sites > 0 )then
+! !       call dgemm( "t", "n", n_sites, n_sparse, n_soap, 1.d0, soap, n_soap, Qs, n_soap, 0.d0, &
+! !                 K, n_sites)
+! !     end if
+
+! !     zeta_int = nint(zeta)
+! !     if( dabs( dfloat(zeta_int) - zeta ) < 1.d-10 )then
+! !       if( do_derivatives )then
+! !         K_der = zeta_int*K**(zeta_int-1)
+! !         if( n_sites < n_soap)then
+! !           do i = 1, n_sites
+! !             K_der(i,:) = K_der(i,:) * alphas(:)
+! !             Qs_copy = Qs
+! !           end do
+! !         else
+! !           do i = 1, n_soap
+! !             Qs_copy(i,:) = Qs(i,:) * alphas(:)
+! !           end do
+! !         end if
+! !       end if
+! !       K = K**zeta_int
+! !     else
+! !       if( do_derivatives )then
+! !         K_der = zeta*K**(zeta-1.d0)
+! !         if( n_sites < n_soap)then
+! !           do i = 1, n_sites
+! !             K_der(i,:) = K_der(i,:) * alphas(:)
+! !             Qs_copy = Qs
+! !           end do
+! !         else
+! !           do i = 1, n_soap
+! !             Qs_copy(i,:) = Qs(i,:) * alphas(:)
+! !           end do
+! !         end if
+! !       end if
+! !       K = K**zeta
+! !     end if
+
+! ! !    V = delta**2 * matmul( K, alphas ) + V0
+! !     if( n_sites > 0 )then
+! !       call dgemm( "n", "n", n_sites, 1, n_sparse, delta**2, K, n_sites, alphas, n_sparse, 0.d0, V, n_sites)
+! !     end if
+! !     V = V + V0
+
+! ! !   Make sure all V are >= 0
+! !     do i = 1, size(V)
+! !       if( V(i) < 0.d0 )then
+! !         V(i) = 0.d0
+! !       end if
+! !     end do
+
+! !     if( do_derivatives)then
+! !       if( n_sites > 0 )then
+! !         call dgemm("n", "t", n_sites, n_soap, n_sparse, delta**2, K_der, n_sites, &
+! !                    Qs_copy, n_soap, 0.d0, Qss, n_sites)
+! !       end if
+! !       j = 1
+! !       do i = 1, n_sites
+! !         do i2 = 1, n_neigh(i)
+! !           if( V(i) == 0.d0 )then
+! !             V_der(1:3, j) = 0.d0
+! !           else
+! !              do cart = 1, 3
+! !                 V_der(cart, j) = dot_product( Qss(i,:), soap_cart_der(cart, :, j) )
+! !             end do
+! !           end if
+! !           j = j + 1
+! !         end do
+! !       end do
+! !       deallocate(Qs_copy)
+! !       deallocate(Qss)
+! !       deallocate(K_der)
+! !     end if
+! !   deallocate(K)
+
+! end subroutine gpu_local_property_predict
+! !**************************************************************************
+
+  
 
   subroutine local_property_predict( soap, Qs, alphas, V0, delta, zeta, V, &
                                 do_derivatives, soap_cart_der, n_neigh, V_der )

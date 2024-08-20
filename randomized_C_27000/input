@@ -1,0 +1,15 @@
+! Species-specific info
+atoms_file = 'atoms.xyz'
+pot_file = 'gap_files/carbon.gap'
+n_species = 1
+species = C 
+masses = 12.01 
+e0 = -.16138053 
+max_gbytes_per_process = 1
+
+md_nsteps = 10
+t_beg = 300.0
+
+core_pot_cutoff = 15.0001
+# core_pot_buffer = 2.
+
