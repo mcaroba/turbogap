@@ -1090,8 +1090,8 @@ module vdw
                            hirshfeld_sub_neigh(:), o_2b(:), do_2b(:), hirshfeld_v_mbd_der(:,:), hirshfeld_mbd_neigh(:), &
                            hirshfeld_v_2b_der(:,:), dr0_ii_SCS(:), dr0_ii_SCS_2b(:), V_int(:,:), T_LR_mult_0i(:), &
                            T_LR_mult_0j(:), T_LR_mult_ij(:), dT_LR_mult_0i(:), dT_LR_mult_0j(:), dT_LR_mult_ij(:), &
-                           r6_mult(:), dr6_mult(:), T_LR_mult_0ij(:), T_LR_mult_0ji(:), dT_LR_mult_0ij(:), &
-                           dT_LR_mult_0ji(:), xyz_2b_tot(:,:), rjs_2b_tot(:), r0_ii_2b_tot(:), neighbor_alpha0_2b_tot(:), &
+                           r6_mult(:), dr6_mult(:), T_LR_mult_0ij(:), T_LR_mult_0ji(:), &
+                           xyz_2b_tot(:,:), rjs_2b_tot(:), r0_ii_2b_tot(:), neighbor_alpha0_2b_tot(:), &
                            f_damp_SCS_2b_tot(:), hirshfeld_2b_tot_neigh(:), a_2b_tot(:), o_2b_tot(:), &
                            r0_ii_SCS_2b_tot(:), c6_2b_tot(:), r6_mult_2b_tot(:), r6_mult_0i(:), r6_mult_0j(:), &
                            dr6_mult_0i(:), dr6_mult_0j(:), dT_LR_mult_ij0(:), AT_mult(:), E_mult(:), dAT_mult(:), dE_mult(:), &
@@ -1337,6 +1337,7 @@ r_buf_tsscs = 0.d0
       end do
       
       allocate( sub_neighbors_list(1:n_sub_pairs) )
+      sub_neighbors_list = 0
       allocate( n_sub_neigh(1:n_sub_sites) )
       allocate( p_list(1:n_sub_pairs) )
       allocate( xyz_H(1:3,1:n_sub_pairs) )
@@ -1345,6 +1346,7 @@ r_buf_tsscs = 0.d0
       allocate( neighbor_alpha0(1:n_sub_pairs) )
       allocate( neighbor_sigma(1:n_sub_pairs) )
       allocate( omegas(1:n_sub_pairs) )
+      omegas = 0.d0
       allocate( T_func(1:9*n_sub_pairs) )
       allocate( B_mat(1:3*n_sub_sites,1:3*n_sub_sites) )
       allocate( f_damp(1:n_sub_pairs) )
@@ -1353,10 +1355,14 @@ r_buf_tsscs = 0.d0
       allocate( h_func(1:9*n_sub_pairs) )
       allocate( a_SCS(1:3*n_sub_sites,1:3) )
       allocate( ipiv(1:3*n_sub_sites) )
+      ipiv = 0
       allocate( work_arr(1:12*n_sub_sites) )
+      work_arr = 0.d0
       allocate( rjs_0(1:n_sub_pairs) )
+      rjs_0 = 0.d0
       allocate( a_iso(1:n_sub_sites,1:2) )
       allocate( o_p(1:n_sub_sites) )
+      o_p = 0.d0
       allocate( T_SR(1:9*n_sub_pairs) )
       allocate( T_SR_mult(1:n_sub_pairs) )
       allocate( d_arr_i(1:9*n_sub_pairs) )
@@ -1383,6 +1389,7 @@ r_buf_tsscs = 0.d0
       allocate( d_vec(1:3*n_sub_sites,1:3) )
       if ( polynomial_expansion ) then
         allocate( B_pol(1:3*n_sub_sites,1:3*n_sub_sites) )
+        B_pol = 0.d0
       end if
 
       a_iso = 0.d0
@@ -2003,8 +2010,8 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
           allocate( T_LR_mult_ij(1:n_mbd_pairs) )
           allocate( T_LR_mult_0ij(1:n_mbd_pairs) )
           allocate( T_LR_mult_0ji(1:n_mbd_pairs) )
-          allocate( AT_mult(1:n_mbd_sites) )
-          allocate( E_mult(1:n_mbd_sites) )
+          !allocate( AT_mult(1:n_mbd_sites) )
+          !allocate( E_mult(1:n_mbd_sites) )
           hirshfeld_mbd_neigh = 0.d0
           if ( do_derivatives ) then
             allocate( da_mbd(1:n_mbd_pairs) )
@@ -2025,11 +2032,11 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
             allocate( dT_LR_mult_0i(1:n_mbd_pairs) )
             allocate( dT_LR_mult_0j(1:n_mbd_pairs) )
             allocate( dT_LR_mult_ij(1:n_mbd_pairs) )
-            allocate( dT_LR_mult_0ij(1:n_mbd_pairs) )
-            allocate( dT_LR_mult_0ji(1:n_mbd_pairs) )
+            !allocate( dT_LR_mult_0ij(1:n_mbd_pairs) )
+            !allocate( dT_LR_mult_0ji(1:n_mbd_pairs) )
             allocate( dT_LR_mult_ij0(1:n_mbd_pairs) )
-            allocate( dAT_mult(1:n_mbd_sites) )
-            allocate( dE_mult(1:n_mbd_sites) )
+            !allocate( dAT_mult(1:n_mbd_sites) )
+            !allocate( dE_mult(1:n_mbd_sites) )
           end if
           if ( do_derivatives .and. do_hirshfeld_gradients ) then
             allocate( hirshfeld_v_mbd_der(1:3,1:n_mbd_pairs) )
@@ -2048,8 +2055,10 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
             if ( do_derivatives ) then
               allocate( pol_sym(1:3*n_mbd_sites,1:3,1:n_freq) )
               allocate( dT_LR_sym(1:3,1:3*n_mbd_sites) )
-              allocate( G_sym(1:3,1:3*n_mbd_sites,1:n_freq) )
-              if ( include_2b ) then
+              if ( n_order > 2 ) then
+                allocate( G_sym(1:3,1:3*n_mbd_sites,1:n_freq) )
+              end if
+              if ( cent_appr .and. include_2b ) then
                 allocate( dval(1:9*(n_mbd_pairs-n_mbd_sites),1:n_freq) )
                 dval = 0.d0
                 !allocate( val_sym_test(1:9*(n_mbd_pairs-n_mbd_sites),1:n_freq) )
@@ -2070,25 +2079,14 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
 end if
 
         
-          allocate( sub_2b_list(1:n_2b_sites) )
-          allocate( xyz_2b(1:3,1:n_2b_sites) )
-          allocate( rjs_2b(1:n_2b_sites) )
-          allocate( r0_ii_2b(1:n_2b_sites) )
-          allocate( neighbor_alpha0_2b(1:n_2b_sites) )
-          allocate( hirshfeld_2b_neigh(1:n_2b_sites) )
-          allocate( a_2b(1:n_2b_sites) )
-          allocate( o_2b(1:n_2b_sites) )
-          allocate( r0_ii_SCS_2b(1:n_2b_sites) )
-          allocate( f_damp_SCS_2b(1:n_2b_sites) )
-          allocate( C6_2b(1:n_2b_sites) )
-          allocate( r6_mult(1:n_2b_sites) )
 
 if ( abs(rcut_tsscs) < 1.d-10 ) then
 
           call cpu_time(time1)
 
           a_mbd = 0.d0
-        
+          o_mbd = 0.d0        
+
           omegas_mbd = 0.d0
           omega = 4.d0 ! Max frequency for integration
           ! Using non-uniform distribution because the polarizabilities change more rapidly with low frequency values:
@@ -2120,6 +2118,8 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
           xyz_mbd = 0.d0
           rjs_mbd = 0.d0
           T_mbd = 0.d0
+          rjs_0_mbd = 0.d0
+          xyz_0_mbd = 0.d0
 
           ia = 0
           ja = 0
@@ -2593,6 +2593,21 @@ end if
         
 if ( abs(rcut_tsscs) > 1.d-10 ) then
 
+          allocate( sub_2b_list(1:n_2b_sites) )
+          allocate( xyz_2b(1:3,1:n_2b_sites) )
+          allocate( rjs_2b(1:n_2b_sites) )
+          allocate( r0_ii_2b(1:n_2b_sites) )
+          allocate( neighbor_alpha0_2b(1:n_2b_sites) )
+          allocate( hirshfeld_2b_neigh(1:n_2b_sites) )
+          allocate( a_2b(1:n_2b_sites) )
+          allocate( o_2b(1:n_2b_sites) )
+          allocate( r0_ii_SCS_2b(1:n_2b_sites) )
+          allocate( f_damp_SCS_2b(1:n_2b_sites) )
+          allocate( C6_2b(1:n_2b_sites) )
+          allocate( r6_mult(1:n_2b_sites) )
+
+
+
           E_TS = 0.d0
           k2 = 0
           k_i = 0
@@ -2691,6 +2706,10 @@ if ( abs(rcut_tsscs) > 1.d-10 ) then
           E_TS = 1.d0/2.d0 * E_TS
           !write(*,*) "E_TS", E_TS
           energies(i) = E_TS * Hartree
+          
+          deallocate( sub_2b_list, xyz_2b, rjs_2b, r0_ii_2b, neighbor_alpha0_2b, &
+                      hirshfeld_2b_neigh, a_2b, o_2b, r0_ii_SCS_2b, f_damp_SCS_2b, C6_2b, r6_mult )
+          
 
 end if
 
@@ -2814,6 +2833,8 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
             allocate( at_vec(1:3*n_mbd_sites) )
             allocate( at_n_vec(1:3*n_mbd_sites) )
             integrand_sp = 0.d0
+            at_vec = 0.d0
+            at_n_vec = 0.d0
 
             integrand = 0.d0
             do i2 = 1, n_freq
@@ -2874,34 +2895,56 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
             allocate( ia2(1:nnz+3*n_mbd_sites) )
             allocate( ja2(1:nnz+3*n_mbd_sites) )
             allocate( val2(1:nnz+3*n_mbd_sites) )
+            ia2 = 0
+            ja2 = 0
+            val2 = 0.d0
             if ( cent_appr ) then
               allocate( res_sym(1:n_order+1) )
               allocate( AT_sym_power(1:3*n_mbd_sites,1:3) )
+              res_sym = 0.d0
+              AT_sym_power = 0.d0
             end if
             integrand = 0.d0
             allocate( b_vec(1:3*n_mbd_sites) )
             allocate( Ab(1:3*n_mbd_sites) )
+            b_vec = 0.d0
+            Ab = 0.d0
             allocate( I_mat(1:3*n_mbd_sites,1:3*n_mbd_sites) )
             allocate( l_vals(1:1001) )
             allocate( log_vals(1:1001) )
+            l_vals = 0.d0
+            log_vals = 0.d0
             allocate( lsq_mat(1:n_order+1,1:n_order+1) )
             allocate( res_mat(1:n_order+1) )
+            lsq_mat = 0.d0
+            res_mat = 0.d0
             allocate( ipiv_lsq(1:n_order+1) )
+            ipiv_lsq = 0
             !allocate( log_exp(1:3,1:3*n_mbd_sites) )
             allocate( AT_power(1:3*n_mbd_sites,1:3) )
             allocate( temp_mat(1:3*n_mbd_sites,1:3) )
+            AT_power = 0.d0
+            temp_mat = 0.d0
             ! Log stuff:
             allocate( AT_copy(1:3*n_mbd_sites,1:3*n_mbd_sites) )
+            AT_copy = 0.d0
             allocate( WR(1:3*n_mbd_sites) )
             allocate( WI(1:3*n_mbd_sites) )
             allocate( VR(1:3*n_mbd_sites,1:3*n_mbd_sites) )
             allocate( VR_inv(1:3*n_mbd_sites,1:3*n_mbd_sites) )
             allocate( work_mbd(1:24*n_mbd_sites) )
             allocate( ipiv_mbd(1:3*n_mbd_sites) )
+            WR = 0.d0
+            WI = 0.d0
+            VR = 0.d0
+            VR_inv = 0.d0
+            work_mbd = 0.d0
+            ipiv_mbd = 0
             if ( do_log ) then
               allocate( log_integrand(1:n_freq) )
               allocate( temp_mat_full(1:3*n_mbd_sites,1:3*n_mbd_sites) )
               log_integrand = 0.d0
+              temp_mat_full = 0.d0
             end if
             !write(*,*) "n_mbd_sites", n_mbd_sites
             !write(*,*) "n_force_sites", n_force_sites
@@ -2915,9 +2958,13 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 allocate( inv_vals(1:1001) )
                 allocate( res_inv(1:n_order+1) )
                 allocate( lsq_inv(1:n_order+1,1:n_order+1) )
+                AT_power_full = 0.d0
+                temp_mat_forces = 0.d0
                 pol_grad = 0.d0
                 pol_inv = 0.d0
                 inv_vals = 0.d0
+                res_inv = 0.d0
+                lsq_inv = 0.d0
               end if
               if ( do_total_energy ) then
                 total_integrand = 0.d0
@@ -3755,6 +3802,9 @@ end if
           allocate( h_func_der(1:9*n_sub_pairs) )
           allocate( d_der(1:3*n_sub_sites,1:3) )        
 
+          da_SCS = 0.d0
+
+
           do c3 = 1, 3
           
             dT = 0.d0
@@ -3965,7 +4015,7 @@ end if
                 s_i = neighbor_sigma(k3+1)
                 do c1 = 1, 3
                   b_der(3*(p-1)+c1,:) = b_der(3*(p-1)+c1,:) - 1.d0/(neighbor_alpha0(k3+1) * hirshfeld_sub_neigh(k3+1)) * &
-                                        hirshfeld_v_sub_der(c3,k3+1)*Bohr * a_SCS(3*(p-1)+c1,:) 
+                                        hirshfeld_v_sub_der(c3,k3+1)*Bohr * a_SCS(3*(p-1)+c1,:)
                   !dB_mat(3*(p-1)+c1,3*(p-1)+c1) = dB_mat(3*(p-1)+c1,3*(p-1)+c1) - 1.d0/(neighbor_alpha0(k3+1) &
                   !                      * hirshfeld_sub_neigh(k3+1)) * &
                   !                      hirshfeld_v_sub_der(c3,k3+1)*Bohr
@@ -3984,7 +4034,7 @@ end if
                   do c1 = 1, 3
                     do c2 = 1, 3
                       k4 = k4+1
-                      if ( rjs_0(k3+j2) .le. rcut ) then                      
+                      if ( rjs_0(k3+j2) .le. rcut ) then
                         b_der(3*(p-1)+c1,:) = b_der(3*(p-1)+c1,:) + &
                           ((coeff_der(k4) * s_i**2/hirshfeld_sub_neigh(k3+1) + &
                           coeff_fdamp(k4) * r_vdw_i/hirshfeld_sub_neigh(k3+1)) * &
@@ -4049,7 +4099,7 @@ end if
                       !dB_mat(3*(p-1)+c1,3*(q-1)+c2) = dB_mat(3*(p-1)+c1,3*(q-1)+c2) + &
                       !    dT_SR_mult(k3,c3) * T_SR(k4)
                       b_der(3*(p-1)+c1,:) = b_der(3*(p-1)+c1,:) + dT_SR_mult(k3,c3) * T_SR(k4) * &
-                                            a_SCS(3*(q-1)+c2,:) 
+                                            a_SCS(3*(q-1)+c2,:)
                       d_der(3*(p-1)+c1,c2) = d_der(3*(p-1)+c1,c2) - d_dmult_i(k3,c3) * d_arr_i(k4) * &
                                                   inner_damp(k3)
                     else
@@ -4086,7 +4136,6 @@ end if
             !  end do
             !end if
 
-
             b_der = -b_der+d_der
 
             call cpu_time(time1)
@@ -4102,7 +4151,6 @@ end if
             !    end do
             !  end do
             !end if
-
 
             if ( polynomial_expansion ) then
             
@@ -4679,6 +4727,8 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
 
 
 end if
+
+if ( abs(rcut_tsscs) > 1.d-10 ) then
 
               n_tot = sum(n_neigh(1:i))-n_neigh(i)
               n_2b_tot_sites = 0
@@ -5424,6 +5474,8 @@ end if
                           neighbor_alpha0_2b_tot, f_damp_SCS_2b_tot, hirshfeld_2b_tot_neigh, hirshfeld_v_2b_der, &
                           a_2b_tot, o_2b_tot, r0_ii_SCS_2b_tot, c6_2b_tot, r6_mult_2b_tot, dr6_mult, da_2b, &
                           do_2b, dr0_ii_SCS_2b, r6_mult_0i, r6_mult_0j, dr6_mult_0i, dr6_mult_0j )
+
+end if
       
 if ( abs(rcut_tsscs) < 1.d-10 ) then
 
@@ -5433,8 +5485,8 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
               allocate( G_mat(1:3*n_mbd_sites,1:3*n_mbd_sites,1:n_freq) )
               allocate( temp_mat(1:3*n_mbd_sites,1:3*n_mbd_sites) )
               allocate( temp_mat_forces(1:3*n_mbd_sites,1:3*n_mbd_sites) )
-              !temp_mat = 0.d0
-              !temp_mat_forces = 0.d0
+              temp_mat = 0.d0
+              temp_mat_forces = 0.d0
 
               G_mat = 0.d0
               end if
@@ -5457,7 +5509,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                       do_mbd(1) / ( o_mbd(1)**2 + omegas_mbd(j)**2 )**2 ) * T_LR_sym(1:3,:) + &
                       sqrt(a_mbd(1)/(1.d0 + (omegas_mbd(j)/o_mbd(1))**2)) * dT_LR_sym(1:3,:) 
                 end if
-                dAT_mult = 0.d0
+                !dAT_mult = 0.d0
                 do p = 1, n_mbd_sites
                   !if ( rjs_0_mbd(k3+1) .le. (rcut_mbd2+rcut_loc)/Bohr ) then
                   if ( rjs_0_mbd(k3+1) .le. (rcut_force)/Bohr ) then
@@ -5712,6 +5764,10 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
               allocate( g_vec(1:3*n_mbd_sites) )
               allocate( g_n_vec(1:3*n_mbd_sites) )
               integrand_sp = 0.d0
+              at_vec = 0.d0
+              at_n_vec = 0.d0
+              g_vec = 0.d0
+              g_n_vec = 0.d0
               if ( c3 == 1 .and. do_total_energy ) then
                 total_integrand = 0.d0
               end if
@@ -5800,12 +5856,19 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 allocate( AT_copy(1:3*n_mbd_sites,1:3*n_mbd_sites) )
                 allocate( WR(1:3*n_mbd_sites) )
                 allocate( WI(1:3*n_mbd_sites) )
+                AT_copy = 0.d0
+                WR = 0.d0
+                WI = 0.d0
                 !allocate( VL(1,1) )
                 allocate( VR(1:3*n_mbd_sites,1:3*n_mbd_sites) )
                 allocate( VR_inv(1:3*n_mbd_sites,1:3*n_mbd_sites) )
                 allocate( work_mbd(1:24*n_mbd_sites) )
+                VR = 0.d0
+                VR_inv = 0.d0
+                work_mbd = 0.d0
                 allocate( ipiv_mbd(1:3*n_mbd_sites) )
                 allocate( temp_mat(1:3*n_mbd_sites,1:3*n_mbd_sites) )
+                temp_mat = 0.d0
                 allocate( log_integrand(1:n_freq) )
                 allocate( integrand_pol(1:n_freq) )
                 allocate( virial_integrand(1:3,1:n_freq) )
@@ -6044,6 +6107,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                   res_nnls = 0.d0
                   work_nnls = 0.d0
                   ind_nnls = 0.d0
+                  omegas_nnls = 0.d0
 
                   if ( .not. cent_appr ) then
       
@@ -6239,16 +6303,23 @@ end if
 
           end do ! c3 loop
         
-          deallocate( da_SCS, dT, b_der, g_func_der, h_func_der, d_der, f_damp_der )
+          deallocate( da_SCS )
+          deallocate( dT )
+          deallocate( d_der )
+          deallocate( b_der )
+          deallocate( g_func_der )
+          deallocate( h_func_der )
+          deallocate( f_damp_der )
           !deallocate( dB_mat )
 
         end if ! do_derivatives
       
-      
-        if ( om == 2 ) then
-          deallocate( sub_2b_list, xyz_2b, rjs_2b, r0_ii_2b, neighbor_alpha0_2b, &
-                      hirshfeld_2b_neigh, a_2b, o_2b, r0_ii_SCS_2b, f_damp_SCS_2b, C6_2b, r6_mult )
-        end if
+!if ( abs(rcut_tsscs) > 1.d-10 ) then      
+!        if ( om == 2 ) then
+!          deallocate( sub_2b_list, xyz_2b, rjs_2b, r0_ii_2b, neighbor_alpha0_2b, &
+!                      hirshfeld_2b_neigh, a_2b, o_2b, r0_ii_SCS_2b, f_damp_SCS_2b, C6_2b, r6_mult )
+!        end if
+!end if
 
       
 if ( abs(rcut_tsscs) < 1.d-10 ) then  
@@ -6256,7 +6327,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
           deallocate( r0_ii_SCS, f_damp_SCS, omegas_mbd, integrand, n_mbd_neigh, &
                       mbd_neighbors_list, p_mbd, r0_ii_mbd, neighbor_alpha0_mbd, xyz_mbd, rjs_mbd, T_mbd, a_mbd, &
                       rjs_0_mbd, xyz_0_mbd, o_mbd, hirshfeld_mbd_neigh, &
-                      T_LR_mult_0i, T_LR_mult_0j, T_LR_mult_ij, T_LR_mult_0ij, T_LR_mult_0ji, AT_mult, E_mult, &
+                      T_LR_mult_0i, T_LR_mult_0j, T_LR_mult_ij, T_LR_mult_0ij, T_LR_mult_0ji, &
                       ia, ja, val )
           if ( .not. cent_appr ) then
             deallocate( T_LR, AT )
@@ -6264,8 +6335,11 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
           if ( cent_appr ) then
             deallocate( AT_sym, T_LR_sym, val_sym, integrand_sym )
             if ( do_derivatives ) then
-              deallocate( G_sym, dT_LR_sym )
-              if ( include_2b ) then
+              if ( n_order > 2 ) then
+                deallocate( G_sym )
+              end if 
+              deallocate( dT_LR_sym )
+              if ( cent_appr .and. include_2b ) then
                 deallocate( dval, virial_integrand_2b ) !, val_sym_test )
               end if
             end if
@@ -6276,7 +6350,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
         if ( do_derivatives .and. om == 2 ) then
           deallocate( da_mbd, dT_mbd, f_damp_der_mbd, f_damp_der_SCS, &
                       do_mbd, dr0_ii_SCS, dT_LR_mult_0i, dT_LR_mult_0j,&
-                      dT_LR_mult_ij, dT_LR_mult_0ij, dT_LR_mult_0ji, dT_LR_mult_ij0, dAT_mult, dE_mult )
+                      dT_LR_mult_ij, dT_LR_mult_ij0 )
           if ( .not. cent_appr ) then
             deallocate( dT_LR )
           end if
