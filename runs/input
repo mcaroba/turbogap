@@ -29,7 +29,7 @@ vdw_c6_ref = 110.54 !27.8 !3.88
 ! For forces you need vdw_2b_rcut2 > 0 and vdw_loc_rcut > 0 which require larger
 ! neighbor lists: vdw_loc_rcut = vdw_scs_rcut and vdw_2b_rcut2 = vdw_2b_rcut
 ! to get results that are equivalent to normal TS.
-vdw_buffer = 0.0          ! Buffer for transitions between cut-off regions. Type: REAL
+vdw_buffer = 0.5          ! Buffer for transitions between cut-off regions. Type: REAL
 vdw_scs_rcut = 5.         ! SCS cut-off for polarizabilities. Type: REAL
 vdw_loc_rcut = 5.         ! Cut-off for including polarizability gradients in force calculation (vdw_loc_rcut <= vdw_scs_rcut).
 vdw_mbd_rcut = 10.0         ! Cut-off for atoms to include for local MBD energy (cut-off for central atom). Type: REAL
@@ -43,4 +43,5 @@ vdw_hirsh_grad = .true.   ! Include Hirshfeld gradients in the forces. Type: LOG
 vdw_polynomial = .false.  ! Use polynomial approximation for inverse matrices. Type: LOGICAL. OBSOLETE!!!
 vdw_omega_ref = 1.3d0     ! Reference frequency value used for SCS characteristic frequency calculation. Might depend on the material (for now).
 do_nnls = .false.         ! NNLS for frequency fitting to avoid calculating many frequency points. Use at least vdw_mbd_nfreq = 2*vdw_mbd_norder+1 or it might be unstable (overfitting)
-vdw_mbd_cent_appr = .false.
+vdw_mbd_cent_appr = .true.
+

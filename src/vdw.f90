@@ -1191,6 +1191,10 @@ r_buf_tsscs = 0.d0
 
     hirshfeld_v_cart_der_H = 0.d0
 
+    if ( do_derivatives ) then
+      virial = 0.d0
+    end if
+
     !write(*,*) "dv"
     !k = 0
     !do i = 1, n_sites
@@ -4190,6 +4194,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                                  ( a_iso(r,1)**2 * (a_iso(r,2)/a_iso(r,1) - 1.d0)**(3.d0/2.d0) )
                   else
                     write(*,*) "WARNING: frequency dependency failure. Use larger vdw_omega_ref."
+                    write(*,*) "a_iso(r,2), a_iso(r,1)", a_iso(r,2), a_iso(r,1)
                     do_pref = 0.d0
                   end if
                   do_mbd(k2) = do_pref
