@@ -28,7 +28,9 @@
 
 module exp_utils
   use types
-
+  use F_B_C
+  use iso_c_binding
+  
 contains
 
 
@@ -412,32 +414,46 @@ contains
   end subroutine get_structure_factor_forces
 
 
-  subroutine get_structure_factor_forces_matrix(  n_sites0, energy_scale, x, y_exp, forces0, virial,  &
-       & neighbors_list, n_neigh, neighbor_species, species_types, rjs, xyz, r_min,&
+  subroutine get_structure_factor_forces_matrix(i_beg, i_end,  n_sites0, energy_scale, x, y_exp, forces0, virial,  &
+       & neighbors_list, n_neigh, neighbor_species, species_types, species,  rjs, xyz, r_min,&
        & r_max, n_samples, n_samples_sf, n_species,  x_structure_factor, structure_factor, r_cut, species_1,&
        & species_2,  pair_distribution_der, partial_rdf, kde_sigma,&
-       & c_factor, sinc_factor_matrix, n_dim_idx, do_xrd, output, n_atoms_of_species, neutron)
+       & c_factor, sinc_factor_matrix, n_dim_idx, do_xrd, output, n_atoms_of_species, neutron, cublas_handle, gpu_stream)
     implicit none
-    real*8,  intent(in) :: rjs(:), xyz(:,:), y_exp(:), energy_scale,  kde_sigma, c_factor, sinc_factor_matrix(:,:), x(:)
+    real*8,  intent(in), target :: rjs(:), xyz(:,:), y_exp(:), energy_scale,  kde_sigma, c_factor, sinc_factor_matrix(:,:), x(:)
     integer, intent(in) :: n_sites0, n_samples_sf, n_species
     character*8, allocatable, intent(in) :: species_types(:)
-    real*8 :: r_min, r_max, r_cut
-    integer, intent(in) :: neighbors_list(:), n_neigh(:), neighbor_species(:)
-    integer, intent(in) :: n_samples, species_1, species_2, n_dim_idx
-    integer :: n_sites, n_pairs, count, count_species_1
+    real*8 :: r_min, r_max, r_cut, alpha, beta
+    integer, intent(in), target :: neighbors_list(:), n_neigh(:), neighbor_species(:), species(:)
+    integer, intent(in) :: n_samples, species_1, species_2, n_dim_idx, i_beg, i_end
+    integer :: n_sites, n_pairs, count, count_species_1, n_k_all
+    integer, target :: nk_temp(1)
+    integer, allocatable, target :: nk_sum_flags_host(:)
     integer :: i, j, k, ki, k1, k2,  i2, j2, l, ii, jj, kk, i3, j3, i4,  species_i, species_j, n_k
     real*8,  intent(in) :: x_structure_factor(:), structure_factor(:), n_atoms_of_species(:)
     real*8,  intent(in) :: pair_distribution_der(:,:)
-    real*8,  intent(inout) :: forces0(:,:), virial(1:3,1:3)
+    real*8,  intent(inout), target :: forces0(:,:), virial(1:3,1:3)
     character*32, intent(in) :: output
-    real*8, allocatable ::  prefactor(:), all_scattering_factors(:), sf_parameters(:,:), structure_factor_der(:)
+    real*8, allocatable, target ::  prefactor(:), all_scattering_factors(:), sf_parameters(:,:), structure_factor_der(:)
     real*8 :: r, n_pc, this_force(1:3), f, wfaci, wfacj, temp(1:n_samples_sf), sth, time(1:3)
     real*8, parameter :: pi = acos(-1.0)
     logical, intent(in) :: partial_rdf, do_xrd, neutron
     logical :: species_in_list, counted_1=.false.
-    real*8, allocatable ::  xyz_k(:,:), Gk(:,:), Gka(:,:), dermat(:,:), fi(:,:)
-    integer, allocatable :: k_list(:), i2_list(:), j2_list(:)
+    real*8, allocatable, target ::  xyz_k(:,:), Gk(:,:), Gka(:,:), dermat(:,:), fi(:,:), fi_temp(:,:)
+    integer, allocatable, target :: k_list(:), i2_list(:), j2_list(:)
 
+    ! GPU VARIABLES
+    type(c_ptr) :: forces0_d, fi_d, j2_list_d, virial_d, xyz_k_d,&
+         & dermat_d, prefactor_d, all_scattering_factors_d,&
+         & sinc_factor_matrix_d, Gka_d, Gk_d, nk_d, nk_flags_d, nk_flags_sum_d,&
+         & xyz_all_d, neighbors_list_d, neighbor_species_d, species_d,&
+         & n_neigh_d, rjs_d, k_index_d, j2_index_d
+    integer(c_size_t) :: st_forces0_d, st_fi_d, st_j2_list_d,&
+         & st_virial_d, st_xyz_k_d, st_dermat_d, st_prefactor_d,&
+         & st_all_scattering_factors_d , st_sinc_factor_matrix_d,&
+         & st_Gka_d, st_Gk_d, st_nk_flags, st_nk_temp,&
+         & st_n_atom_pairs_double, st_n_atom_pairs_int, st_n_sites_int, st_k_index_d
+    type(c_ptr) :: cublas_handle, gpu_stream
 
 
     ! First allocate the pair correlation function array
@@ -529,37 +545,91 @@ contains
 
     ! First loop to get the number of valid k indexes
 !    call cpu_time(time(1))
-    n_k = 0
-    k = 0
-    do i = 1, n_sites
-       i2 = modulo(neighbors_list(k+1)-1, n_sites0) + 1
-       species_i = neighbor_species(k+1)
-       k = k + 1
-       do j = 2, n_neigh(i)
-          k = k + 1
-          j2 = modulo(neighbors_list(k)-1, n_sites0) + 1
-          species_j = neighbor_species(k)
+    ! n_k = 0
+    ! k = 0
+    ! do i = 1, n_sites
+    !    i2 = modulo(neighbors_list(k+1)-1, n_sites0) + 1
+    !    species_i = neighbor_species(k+1)
+    !    k = k + 1
+    !    do j = 2, n_neigh(i)
+    !       k = k + 1
+    !       j2 = modulo(neighbors_list(k)-1, n_sites0) + 1
+    !       species_j = neighbor_species(k)
 
-          if (( (species_i /= species_1) .or. ( species_j /= species_2) )) then
-             if ( .not. (species_i == species_2 .and. species_j == species_1)) cycle
-          end if
+    !       if (( (species_i /= species_1) .or. ( species_j /= species_2) )) then
+    !          if ( .not. (species_i == species_2 .and. species_j == species_1)) cycle
+    !       end if
 
-          r = rjs(k) ! atom pair distance
-          if (r < 1e-3 .or. r > r_cut) cycle
-          if (r < r_min) cycle
-          if (r > r_max + kde_sigma*6.d0) cycle
-          if (   (.not. all( xyz( 1:3, k ) == 0.d0 ) ) .and. &
-               & (.not. all( pair_distribution_der(1:n_samples, k ) == 0.d0 )) )then
-             n_k = n_k + 1
-          end if
-       end do
-    end do
-    ! call cpu_time(time(2))
-    ! print *, " Time first loop = ", time(2) - time(1)
+    !       r = rjs(k) ! atom pair distance
+    !       if (r < 1e-3 .or. r > r_cut) cycle
+    !       if (r < r_min) cycle
+    !       if (r > r_max + kde_sigma*6.d0) cycle
+    !       ! if (   (.not. all( xyz( 1:3, k ) == 0.d0 ) ) .and. &
+    !       !      & (.not. all( pair_distribution_der(1:n_samples, k ) == 0.d0 )) )then
+    !       n_k = n_k + 1
+    !       !end if
+    !    end do
+    ! end do
 
-    ! print *, " Structure factor forces Matrix: ", species_1, species_2
-    ! write(*, '(A,1X,F7.4,1X,A)') "Gb/core: SFM = ", dfloat(n_k * ( 2 * n_samples + 6 + n_samples_sf ))&
-    !            & * 8.d0 / (dfloat(1024*1024*1024)), " Gb  |"
+    ! n_k_all = n_k
+    ! print *, " > n_k = ", n_k, "  n_pairs = ", sum(n_neigh)
+    
+    st_n_sites_int = n_sites*sizeof(n_neigh(1)) 
+    call gpu_malloc_all(n_neigh_d,st_n_sites_int,gpu_stream)
+    call cpy_htod(c_loc(n_neigh),n_neigh_d, st_n_sites_int,gpu_stream)
+    call gpu_malloc_all(species_d,st_n_sites_int,gpu_stream)
+    call cpy_htod(c_loc(species),species_d, st_n_sites_int,gpu_stream)
+    st_n_atom_pairs_int = n_pairs * sizeof(neighbor_species(1))
+
+    call gpu_malloc_all(neighbor_species_d,st_n_atom_pairs_int,gpu_stream)
+    call cpy_htod(c_loc(neighbor_species),neighbor_species_d, st_n_atom_pairs_int,gpu_stream)
+    call gpu_malloc_all(neighbors_list_d,st_n_atom_pairs_int,gpu_stream)
+    call cpy_htod(c_loc(neighbors_list),neighbors_list_d, st_n_atom_pairs_int,gpu_stream)
+
+    st_n_atom_pairs_double = n_pairs*sizeof(rjs(1))
+    call gpu_malloc_all(xyz_all_d,3*st_n_atom_pairs_double,gpu_stream)
+    call cpy_htod(c_loc(xyz),xyz_all_d,3*st_n_atom_pairs_double,gpu_stream)
+
+    call gpu_malloc_all(rjs_d,st_n_atom_pairs_double,gpu_stream)
+    call cpy_htod(c_loc(rjs),rjs_d,st_n_atom_pairs_double,gpu_stream)
+
+
+    
+    st_nk_temp = 1*c_int
+    call gpu_malloc_all(nk_d, st_nk_temp, gpu_stream)                          
+    st_nk_flags = n_pairs * c_int
+    call gpu_malloc_all(nk_flags_d,      st_nk_flags, gpu_stream)
+    call gpu_memset_async(nk_flags_d, 0, st_nk_flags, gpu_stream)
+    call gpu_malloc_all(nk_flags_sum_d,      st_nk_flags, gpu_stream)                 
+    call gpu_memset_async(nk_flags_sum_d, 0, st_nk_flags, gpu_stream)
+    call gpu_device_sync()
+    
+    call gpu_get_pair_distribution_nk(1, n_sites, n_pairs, n_sites0, neighbors_list_d,&
+         n_neigh_d, neighbor_species_d, species_d,&
+         & rjs_d, xyz_all_d, r_min, r_max, r_cut, 6.d0*kde_sigma,&
+         & nk_d, nk_flags_d, nk_flags_sum_d, species_1, species_2, gpu_stream)
+    call gpu_device_sync()
+    st_nk_temp = 1*c_int
+    call cpy_dtoh(nk_d, c_loc(nk_temp), st_nk_temp, gpu_stream)
+    call gpu_device_sync()
+    print *, "nk temp ", nk_temp(1)
+    n_k = nk_temp(1)
+
+    ! ! Checking nk_sum_flags
+    
+    ! ! allocate( nk_sum_flags_host(1:n_pairs) )
+    ! ! call cpy_dtoh(nk_flags_sum_d , c_loc(nk_sum_flags_host), st_nk_flags, gpu_stream)
+    ! ! call gpu_device_sync()    
+    ! ! print *, "n_sum_flags_d[ n_pairs - 1 ] == nk - 1 = ", nk_sum_flags_host( n_pairs - 1  )
+    ! ! deallocate( nk_sum_flags_host )    
+
+
+    ! ! call cpu_time(time(2))
+    ! ! print *, " Time first loop = ", time(2) - time(1)
+
+    ! ! print *, " Structure factor forces Matrix: ", species_1, species_2
+    ! ! write(*, '(A,1X,F7.4,1X,A)') "Gb/core: SFM = ", dfloat(n_k * ( 2 * n_samples + 6 + n_samples_sf ))&
+    ! !            & * 8.d0 / (dfloat(1024*1024*1024)), " Gb  |"
 
     allocate(k_list(1:n_k))
     allocate(j2_list(1:n_k))
@@ -567,6 +637,7 @@ contains
     allocate(Gk(1:n_samples, 1:n_k))
     allocate(Gka(1:n_samples, 1:n_k))
     allocate(fi(1:n_k,1:3)) ! We use the opposite dimensions for non temporary arrays
+    allocate(fi_temp(1:n_k,1:3)) ! We use the opposite dimensions for non temporary arrays    
     allocate(dermat(1:n_samples_sf, 1:n_k))
 
 
@@ -605,22 +676,122 @@ contains
           if (r < 1e-3 .or. r > r_cut) cycle
           if (r < r_min) cycle
           if (r > r_max + kde_sigma*6.d0) cycle
-          if (   (.not. all( xyz( 1:3, k ) == 0.d0 ) ) .and. &
-               & (.not. all( pair_distribution_der(1:n_samples, k ) == 0.d0 )) )then
+          ! if (   (.not. all( xyz( 1:3, k ) == 0.d0 ) ) .and. &
+          !      & (.not. all( pair_distribution_der(1:n_samples, k ) == 0.d0 )) )then
              n_k = n_k + 1
              k_list(n_k) = k
              j2_list(n_k) = j2
              xyz_k(1:3,n_k) = xyz(1:3,k)
              Gk(1:n_samples, n_k) =  -2.d0 *  c_factor * pair_distribution_der(1:n_samples,  k )
-          end if
+!          end if
        end do
     end do
 !    call cpu_time(time(2))
 !    print *, " Time allocation loop = ", time(2) - time(1)
 
-!    call cpu_time(time(1))
+    !    call cpu_time(time(1))
+
+    
+    ! allocate(k_index_single(1:nk(n_dim_idx)))
+    st_k_index_d = n_k * c_int
+    call gpu_malloc_all(k_index_d, st_k_index_d, gpu_stream)             
+    call gpu_memset_async(k_index_d, 0, st_k_index_d, gpu_stream)
+    call cpy_htod(c_loc( k_list), k_index_d, st_k_index_d, gpu_stream)               
+
+    call gpu_malloc_all(j2_list_d, st_k_index_d, gpu_stream)             
+    call gpu_memset_async(j2_list_d, 0, st_k_index_d, gpu_stream)
+    call cpy_htod(c_loc( j2_list), j2_list_d, st_k_index_d, gpu_stream)           
+
+    st_Gk_d = size( Gk, 1) * size( Gk, 2) * c_double    
+    call gpu_malloc_all(Gk_d, st_Gk_d, gpu_stream)
+    call cpy_htod(c_loc( Gk ), Gk_d, st_Gk_d, gpu_stream)       
+
+    st_xyz_k_d = size(xyz_k,2) * size( xyz_k, 1) * c_double
+    call gpu_malloc_all(xyz_k_d, st_xyz_k_d, gpu_stream)
+    call cpy_htod(c_loc( xyz_k ),     xyz_k_d,     st_xyz_k_d,     gpu_stream)
+    
+
+
+
+    ! call gpu_meminfo()
+
+    ! print *, "-- Memory for nk_flags =  ", dfloat(j_end*8)/(dfloat(1024*1024*1024)), " Gb"
+    ! print *, "-- Memory for xyz_k_d  =  ", dfloat(nk(n_dim_idx)*3*8)/(dfloat(1024*1024*1024)), " Gb"                           
+
+    print *, "Starting set host "
+    call gpu_device_sync()
+    ! call gpu_setup_matrix_forces(1, n_sites, n_pairs, n_sites0, neighbors_list_d,&
+    !      & xyz_all_d, k_index_d, j2_list_d,&
+    !      &  xyz_k_d, nk_flags_d, nk_flags_sum_d,&
+    !      & gpu_stream)
+    call gpu_device_sync()
+
+    print *, "Finished setting the gpu arrays "
+
+
+
+
+    
+    call gpu_free_async(k_index_d, gpu_stream)                              
+    
+    call gpu_free_async(n_neigh_d,gpu_stream)
+    call gpu_free_async(species_d,gpu_stream)
+    call gpu_free_async(neighbor_species_d,gpu_stream)
+    call gpu_free_async(neighbors_list_d,gpu_stream)
+    call gpu_free_async(xyz_all_d,gpu_stream)
+    call gpu_free_async(rjs_d,gpu_stream)
+    call gpu_free_async(nk_d, gpu_stream)
+    call gpu_free_async(nk_flags_sum_d, gpu_stream)                              
+    call gpu_free_async(nk_flags_d, gpu_stream)             
+
+
+    
+
+    st_sinc_factor_matrix_d = size( sinc_factor_matrix, 1) * size( sinc_factor_matrix, 2) * c_double
+    call gpu_malloc_all(sinc_factor_matrix_d, st_sinc_factor_matrix_d, gpu_stream)
+    call cpy_htod(c_loc( sinc_factor_matrix ), sinc_factor_matrix_d, st_sinc_factor_matrix_d, gpu_stream)       
+
+
+    st_dermat_d = size(dermat,2) * size( dermat, 1) * sizeof( dermat(1,1) )
+    call gpu_malloc_all(dermat_d, st_dermat_d, gpu_stream)
+
+    st_fi_d = size(fi,2) * size( fi, 1) * sizeof( fi(1,1) )
+    call gpu_malloc_all(fi_d, st_fi_d, gpu_stream)
+    call gpu_memset_async(fi_d, 0, st_fi_d, gpu_stream)
+    
+    st_prefactor_d = size( prefactor, 1) * sizeof( prefactor(1) )
+    call gpu_malloc_all(prefactor_d, st_prefactor_d, gpu_stream)
+    call cpy_htod(c_loc( prefactor ), prefactor_d, st_prefactor_d, gpu_stream)
+    
+    st_all_scattering_factors_d = size( all_scattering_factors, 1) * sizeof( all_scattering_factors(1) )
+    call gpu_malloc_all(all_scattering_factors_d, st_all_scattering_factors_d, gpu_stream)
+    call cpy_htod(c_loc( all_scattering_factors ), all_scattering_factors_d, st_all_scattering_factors_d, gpu_stream)       
+
+    
+    alpha = 1.d0
+    beta  = 0.d0    
+
+    st_Gka_d = size( Gka, 1) * size( Gka, 2) * c_double    
+    call gpu_malloc_all(Gka_d, st_Gka_d, gpu_stream)
+
+    ! call gpu_meminfo()
+    call gpu_device_sync()    
     do i = 1,3
 
+       call gpu_get_Gka(i, n_k, n_samples, Gka_d, Gk_d, xyz_k_d, gpu_stream )
+       call gpu_device_sync()
+
+       call gpu_dgemm_n_n(n_samples_sf, n_k, n_samples, alpha, sinc_factor_matrix_d, n_samples_sf,&
+            & Gka_d, n_samples, beta, dermat_d, n_samples_sf, cublas_handle)       
+       call gpu_device_sync()
+       
+       if( do_xrd )then
+          call gpu_hadamard_vec_mat_product(n_samples_sf, n_k, all_scattering_factors_d, dermat_d, gpu_stream )
+          call gpu_device_sync()
+       end if
+
+
+       
        do j = 1, n_samples
           Gka(j, :) = xyz_k(i, :) * Gk(j, :)
        end do
@@ -640,30 +811,105 @@ contains
           end do
        end if
 
-       ! Now we take the dot products by matrix vector
+       ! ! Now we take the dot products by matrix vector
        call dgemv("T", n_samples_sf,  n_k, 1.d0 , dermat, n_samples_sf,&
             &  prefactor, 1, 0.d0, fi(:,i), 1)
 
+
+       ! call cpy_htod(c_loc( dermat ), dermat_d, st_dermat_d, gpu_stream)
+       ! !call cpy_htod(c_loc( fi ), fi_d, st_fi_d, gpu_stream)       
+       ! call gpu_device_sync()
+
+       
+       call gpu_get_fi_dgemv( i, n_samples_sf, n_k, dermat_d, prefactor_d, fi_d, cublas_handle, gpu_stream )
+       call gpu_device_sync()
+
+       call cpy_dtoh(fi_d, c_loc( fi_temp ), st_fi_d, gpu_stream)       
+       call gpu_device_sync()
+       
+       do j = 1, n_k
+          if ( modulo(j-1, 10000)+1 == 1 )then
+             write(*, "(I8,1X,I8,1X,A,1X,F10.4, 1X, F10.4, 1X, F10.4,1X,A,1X,F10.4, 1X, F10.4, 1X, F10.4)") i, j, " Host fi: ",  fi(j,1),fi(j,2),fi(j,3), &
+                  " Device fi: ",  fi_temp(j,1),fi_temp(j,2),fi_temp(j,3)
+          end if
+       end do
+       
+       
+       
+       !call cpy_dtoh(fi_d, c_loc(fi), st_fi_d, gpu_stream)
+       !       call gpu_device_sync()
+       
     end do
+    
+
+    call gpu_free_async( Gk_d, gpu_stream )                    
+    call gpu_free_async( Gka_d, gpu_stream )                
+    call gpu_free_async( sinc_factor_matrix_d, gpu_stream )            
+    call gpu_free_async( all_scattering_factors_d, gpu_stream )        
+    call gpu_free_async( prefactor_d, gpu_stream )    
+    call gpu_free( dermat_d )
+    
 !    call cpu_time(time(2))
 !    print *, " Time Matrix loop = ", time(2) - time(1)
 
 
-!    call cpu_time(time(1))
-    do j = 1, n_k
-       this_force(1:3) = energy_scale * fi(j,1:3)
-       forces0(1:3, j2_list(j)) = forces0(1:3, j2_list(j)) + this_force(1:3)
+    !    call cpu_time(time(1))
 
-       do k1 = 1, 3
-          do k2 =1, 3
-             virial(k1, k2) = virial(k1, k2) + 0.5d0 * (this_force(k1)*xyz(k2,k) + this_force(k2)*xyz(k1,k))
-          end do
-       end do
-    end do
+!    print *, "  value of n_k ", n_k
+
+    st_forces0_d = size(forces0,2) * size( forces0, 1) * c_double
+    call gpu_malloc_all(forces0_d, st_forces0_d, gpu_stream)
+    ! st_fi_d = size(fi,2) * size( fi, 1) * c_double
+    ! call gpu_malloc_all(fi_d, st_fi_d, gpu_stream)
+
+    ! st_j2_list_d =  size( j2_list, 1) * c_int
+    ! call gpu_malloc_all(j2_list_d, st_j2_list_d, gpu_stream)
+
+    st_virial_d = 9 * c_double
+    call gpu_malloc_all(virial_d, st_virial_d, gpu_stream)
+
+    ! Note that we are using the xyz_k array here, which is over n_k 
+
+    call cpy_htod(c_loc( forces0 ), forces0_d, st_forces0_d, gpu_stream)
+    call cpy_htod(c_loc( virial ),  virial_d,  st_virial_d,  gpu_stream)
+    
+!    call cpy_htod(c_loc( fi ),      fi_d,      st_fi_d,      gpu_stream)
+    call cpy_htod(c_loc( j2_list ), j2_list_d, st_j2_list_d, gpu_stream)
+
+
+    call gpu_device_sync()
+    call gpu_exp_force_virial_collection( n_k, forces0_d, energy_scale,  fi_d,&
+         j2_list_d,  virial_d,  xyz_k_d, gpu_stream )
+    call    gpu_device_sync()
+    
+    call cpy_dtoh(forces0_d, c_loc( forces0 ), st_forces0_d, gpu_stream)
+    call cpy_dtoh(virial_d,  c_loc( virial ),  st_virial_d,  gpu_stream)
+    
+    
+    call gpu_free_async(forces0_d,  gpu_stream)
+    call gpu_free_async(fi_d,       gpu_stream)
+    call gpu_free_async(j2_list_d,  gpu_stream)
+    call gpu_free_async(virial_d,   gpu_stream)
+    call gpu_free(xyz_k_d)
+        
+
+    !--- COMMENTING CPU CODE ---! 
+    ! do j = 1, n_k
+    !    this_force(1:3) = energy_scale * fi(j,1:3)
+    !    forces0(1:3, j2_list(j)) = forces0(1:3, j2_list(j)) + this_force(1:3)
+    !    k = k_list(j)
+    !    do k1 = 1, 3
+    !       do k2 =1, 3
+    !          virial(k1, k2) = virial(k1, k2) + 0.5d0 * (this_force(k1)*xyz(k2,k) + this_force(k2)*xyz(k1,k))
+    !       end do
+    !    end do
+    ! end do
+
+    
 !    call cpu_time(time(2))
 !    print *, " Time Forces loop = ", time(2) - time(1)
 !    print *, " "
-
+    deallocate(fi_temp)
     deallocate(dermat, fi, Gka, Gk, xyz_k, j2_list, k_list )
     if (do_xrd) deallocate( all_scattering_factors )
     if (do_xrd) deallocate( sf_parameters )
@@ -811,6 +1057,112 @@ contains
 
   end subroutine get_pair_distribution_forces
 
+  subroutine setup_pdf_arrays( r_min, r_max, r_cut, n_samples, x, dV )
+    implicit none
+    real*8, intent(in) :: r_min, r_max, r_cut
+    integer, intent(in) :: n_samples
+    real*8, allocatable, intent(inout) :: x(:)    
+    real*8, allocatable, intent(inout) :: dV(:)
+    real*8, allocatable :: bin_edges(:)
+    real*8, parameter :: pi = acos(-1.0)
+    integer :: i 
+
+    allocate(bin_edges(1:n_samples+1))
+
+    x = 0.d0
+    bin_edges = 0.d0
+
+    do i = 1, n_samples + 1
+       bin_edges(i) = r_min  +  ( real( (i-1) ) /  real(n_samples) ) * (r_max - r_min)
+    end do
+
+    do i = 1, n_samples
+       x(i) = (bin_edges(i) + bin_edges(i+1)) / 2.d0
+
+       dV(i) = 4.d0 * pi * (bin_edges(i)**2 * (bin_edges(i+1) - bin_edges(i)) )
+    end do
+
+    deallocate(bin_edges)
+  end subroutine setup_pdf_arrays
+
+  
+  subroutine setup_rjs(rjs_temp, ks_temp,  n_sites0, &
+       & neighbors_list, n_neigh, neighbor_species, rjs, r_min,&
+       & r_max, n_samples, r_cut, species_1, species_2, kde_sigma)
+    implicit none
+    real*8,  intent(in) :: rjs(:), kde_sigma
+    real*8 :: r_min, r_max, r_cut
+    integer, intent(in) :: neighbors_list(:), n_neigh(:), neighbor_species(:)
+    integer, intent(in) :: n_sites0, n_samples, species_1, species_2
+    integer :: n_sites, n_pairs, species_i, species_j
+    integer :: i, j, k, ki,  i2, j2, l, ii, jj, kk, i3, j3, i4, ind_bin_l, n_k
+    real*8,  intent(out), allocatable :: rjs_temp(:)
+    integer,  intent(out), allocatable ::ks_temp(:)
+    real*8 :: r
+
+    
+    n_sites = size(n_neigh)
+    n_pairs = size(neighbors_list)
+    k = 0
+    n_k = 0
+    do i = 1, n_sites
+       i2 = modulo(neighbors_list(k+1)-1, n_sites0) + 1
+       species_i = neighbor_species(k+1)
+       k = k + 1
+       do j = 2, n_neigh(i)
+          k = k + 1
+          j2 = modulo(neighbors_list(k)-1, n_sites0) + 1
+
+          species_j = neighbor_species(k)
+
+          if (( (species_i /= species_1) .or. ( species_j /= species_2) )) then
+             if ( .not. (species_i == species_2 .and. species_j == species_1)) cycle
+          end if
+
+          r = rjs(k) ! atom pair distance
+
+          if ( r > r_cut )cycle
+          if (r < r_min)cycle
+          if (r > r_max + kde_sigma*6.d0 )cycle
+
+          n_k = n_k + 1
+       end do
+    end do
+
+    allocate(rjs_temp(1:n_k))
+    allocate(ks_temp(1:n_k))    
+    print *, " setup_rjs: n_k = ", n_k 
+    
+    k = 0
+    n_k = 0
+    do i = 1, n_sites
+       i2 = modulo(neighbors_list(k+1)-1, n_sites0) + 1
+       species_i = neighbor_species(k+1)
+       k = k + 1
+       do j = 2, n_neigh(i)
+          k = k + 1
+          j2 = modulo(neighbors_list(k)-1, n_sites0) + 1
+
+          species_j = neighbor_species(k)
+
+          if (( (species_i /= species_1) .or. ( species_j /= species_2) )) then
+             if ( .not. (species_i == species_2 .and. species_j == species_1)) cycle
+          end if
+
+          r = rjs(k) ! atom pair distance
+
+          if ( r > r_cut )cycle
+          if (r < r_min)cycle
+          if (r > r_max + kde_sigma*6.d0 )cycle
+
+          n_k = n_k + 1
+          rjs_temp( n_k ) = r
+          ks_temp( n_k ) = k
+       end do
+    end do
+  end subroutine setup_rjs
+  
+    
 
   subroutine get_pair_distribution(  n_sites0, &
        & neighbors_list, n_neigh, neighbor_species, rjs, xyz, r_min, r_max, n_samples, x,&
@@ -937,6 +1289,7 @@ contains
              kde = 0.d0
              do l = 1,n_samples
                 kde(l) = kde(l) +  exp( -( (x(l) - r) / kde_sigma )**2 / 2.d0 )
+!                print *, l, " exp = ", exp( -( (x(l) - r) / kde_sigma )**2 / 2.d0 )
              end do
              pair_distribution(1:n_samples) = pair_distribution(1:n_samples) + &
                   & kde(1:n_samples)

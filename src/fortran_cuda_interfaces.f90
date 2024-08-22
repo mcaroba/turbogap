@@ -103,6 +103,19 @@ MODULE F_B_C
         type(c_ptr) :: cubhandle,gpu_stream
       end subroutine
 
+      subroutine gpu_dgemm_n_n(m, n, k, alpha, A, lda, B, ldb, beta, C, ldc, cubhandle)  bind(C,name="gpu_dgemm_n_n")
+        use iso_c_binding
+        implicit none
+        type(c_ptr), value :: cubhandle
+        integer(c_int),value :: m, n, k, lda, ldb, ldc
+        real(c_double),value :: alpha,beta
+        type(c_ptr), value   :: A, B, C
+        ! real(c_double), device, dimension(lda,*) :: A
+        ! real(c_double), device, dimension(ldb,*) :: B
+        ! real(c_double), device, dimension(ldc,*) :: C
+      end subroutine
+
+      
       subroutine gpu_blas_mmul_t_n(cubhandle, Qs_d, soap_d, kernels_d, &
                          n_sparse, n_soap, n_sites)  bind(C,name="gpu_blas_mmul_t_n")
         use iso_c_binding
@@ -416,6 +429,7 @@ MODULE F_B_C
       
       subroutine gpu_create_kappas(kappas_array_d, n_neigh_host,stream,n_sites) bind(C,name="create_kappas_cwrap")
         use iso_c_binding
+        implicit none        
         type(c_ptr), value :: kappas_array_d, n_neigh_host
         type(c_ptr)        :: stream
         integer(c_int), value :: n_sites
@@ -423,6 +437,7 @@ MODULE F_B_C
       
       subroutine gpu_setup_3bresult_arrays(energy_3b_d, forces_3b_d, virials_3b_d,stream,do_forces, n_sites, n_sites0) bind(C,name="setup_3bresult_arrays_cwrap")
         use iso_c_binding
+        implicit none        
         type(c_ptr) :: energy_3b_d, forces_3b_d, virials_3b_d
         type(c_ptr) :: stream
         logical(c_bool), value :: do_forces
@@ -431,6 +446,7 @@ MODULE F_B_C
       
       subroutine gpu_cleanup_3bresult_arrays(energy_3b_d, forces_3b_d, virials_3b_d,energy_3b_h,forces_3b_h,virials_3b_h,stream,do_forces, n_sites, n_sites0) bind(C,name="cleanup_3bresult_arrays_cwrap")
         use iso_c_binding
+        implicit none        
         type(c_ptr) :: energy_3b_d, forces_3b_d, virials_3b_d,energy_3b_h,forces_3b_h,virials_3b_h
         type(c_ptr) :: stream
         logical(c_bool), value :: do_forces
@@ -440,8 +456,118 @@ MODULE F_B_C
       subroutine gpu_device_sync() bind(C,name="gpu_device_sync")
         use iso_c_binding
         implicit none
+      end subroutine gpu_device_sync
+
+      subroutine gpu_meminfo() bind(C,name="gpu_meminfo")
+        use iso_c_binding
+        implicit none
       end subroutine
-!
+
+      subroutine gpu_get_pair_distribution_nk(i_beg, i_end, n_pairs, n_sites0, neighbors_list_d,&
+        n_neigh_d, neighbor_species_d,&
+        species_d, rjs_d, xyz_d, r_min, r_max, r_cut,&
+        buffer, &
+        nk_out_d, nk_flags_d, nk_flags_sum_d, species_1, species_2, stream)  bind(C,name="gpu_get_pair_distribution_nk")
+        use iso_c_binding
+        implicit none
+        integer(c_int), value ::  i_beg, i_end, n_sites0, species_1, species_2, n_pairs
+        type(c_ptr), value :: neighbors_list_d, n_neigh_d, neighbor_species_d, species_d, rjs_d, xyz_d, nk_flags_d, nk_flags_sum_d
+        real(c_double), value :: r_min, r_max, buffer, r_cut
+        type(c_ptr), value ::  nk_out_d
+        type(c_ptr) :: stream        
+      end subroutine gpu_get_pair_distribution_nk
+
+      subroutine gpu_set_pair_distribution_k_index(i_beg, i_end, n_pairs, n_sites0, neighbors_list_d,&
+           rjs_d, xyz_d, k_index_d, j2_index_d, rjs_index_d,  xyz_k_d, nk_flags_d,  nk_sum_flags_d, stream)  bind(C,name="gpu_set_pair_distribution_k_index")
+        use iso_c_binding
+        implicit none
+        integer(c_int), value ::  i_beg, i_end, n_sites0, n_pairs
+        type(c_ptr), value :: neighbors_list_d, xyz_d, rjs_d, nk_flags_d
+        type(c_ptr), value ::  k_index_d, j2_index_d, rjs_index_d, xyz_k_d, nk_sum_flags_d
+        type(c_ptr) :: stream
+      end subroutine gpu_set_pair_distribution_k_index
+
+
+      subroutine gpu_setup_matrix_forces(i_beg, i_end, n_pairs, n_sites0, neighbors_list_d,&
+           xyz_all_d, k_index_d, j2_index_d,  xyz_k_d, nk_flags_d, nk_flags_sum_d, stream)  bind(C,name="gpu_setup_matrix_forces")
+        use iso_c_binding
+        implicit none
+        integer(c_int), value ::  i_beg, i_end, n_sites0, n_pairs
+        type(c_ptr), value :: neighbors_list_d, xyz_all_d, nk_flags_d, nk_flags_sum_d
+        type(c_ptr), value ::  k_index_d, j2_index_d, xyz_k_d
+        type(c_ptr) :: stream
+      end subroutine gpu_setup_matrix_forces
+
+      
+      subroutine gpu_exp_force_virial_collection( n_k, forces0, energy_scale,  fi,&
+						 j2_list,  virial,  xyz, stream )bind(C,name="gpu_exp_force_virial_collection")
+
+        use iso_c_binding
+        implicit none        
+        integer(c_int), value ::  n_k
+        real(c_double), value :: energy_scale
+        type(c_ptr), value :: forces0, xyz, virial, j2_list, fi
+        type(c_ptr) :: stream
+      end subroutine gpu_exp_force_virial_collection
+
+      subroutine gpu_get_fi_dgemv( i, n_samples_sf, n_k, dermat_d,&
+           & prefactor_d, fi_d,  cublas_handle, stream )bind(C,name&
+           &="gpu_get_fi_dgemv")
+        use iso_c_binding
+        implicit none        
+        integer(c_int), value ::  i, n_samples_sf, n_k
+        type(c_ptr), value :: dermat_d, prefactor_d, fi_d
+        type(c_ptr), value :: cublas_handle, stream
+      end subroutine gpu_get_fi_dgemv
+        
+      subroutine gpu_hadamard_vec_mat_product(n_samples_sf, n_k,&
+           & all_scattering_factors_d, dermat_d, stream )bind(C&
+           &,name="gpu_hadamard_vec_mat_product")
+        use iso_c_binding
+        implicit none
+        integer(c_int), value ::  n_samples_sf, n_k
+        type(c_ptr), value :: dermat_d, all_scattering_factors_d
+        type(c_ptr) ::  stream
+      end subroutine gpu_hadamard_vec_mat_product
+
+      subroutine gpu_get_Gka(i, n_k, n_samples, Gka_d, Gk_d, xyz_k_d, stream )bind(C&
+           &,name="gpu_get_Gka")
+        use iso_c_binding
+        implicit none
+        integer(c_int), value :: i, n_samples, n_k
+        type(c_ptr), value :: Gka_d, Gk_d, xyz_k_d
+        type(c_ptr) ::  stream
+      end subroutine gpu_get_Gka
+
+
+
+      subroutine gpu_print_pointer_int(p)bind(C&
+           &,name="gpu_print_pointer_int")
+        use iso_c_binding
+        implicit none
+        type(c_ptr), value :: p
+      end subroutine gpu_print_pointer_int
+            
+      subroutine gpu_print_pointer_double(p)bind(C&
+           &,name="gpu_print_pointer_double")
+        use iso_c_binding
+        implicit none
+        type(c_ptr), value :: p
+      end subroutine gpu_print_pointer_double
+      
+
+      subroutine gpu_get_pair_distribution_and_ders(pair_distribution_d,  pair_distribution_der_d,&
+           n_k, n_samples, kde_sigma,  x_d, dV_d, rjs_d, pdf_factor, stream) bind(C&
+           &,name="gpu_get_pair_distribution_and_ders")
+        use iso_c_binding
+        implicit none
+        integer(c_int), value :: n_k, n_samples
+        real(c_double), value :: kde_sigma, pdf_factor
+        type(c_ptr), value :: pair_distribution_d,  pair_distribution_der_d, x_d, dV_d, rjs_d
+        type(c_ptr) :: stream 
+      end subroutine gpu_get_pair_distribution_and_ders
+      
+      !
 !      subroutine gpu_2b(n_sparse, n_sites, sp1, sp2, alpha, delta, cutoff, stream, rjs, xyz, n_neigh, species, neighbor_species, do_forces, rcut,buffer, sigma,qs,n_neigh_host) bind(C,name="gpu_2b")
 !        use iso_c_binding
 !        implicit none
@@ -589,3 +715,691 @@ MODULE F_B_C
       !     type(c_ptr) :: a_d
       !     integer(c_int),value :: n
       ! end subroutine
+
+module gpu_var_mod
+
+  use iso_c_binding
+  use F_B_C
+  implicit none  
+  private
+  
+
+  type, public :: gpu_var_class
+     type(c_ptr), public :: d
+     integer(c_size_t), public :: size
+     logical, public :: allocated = .false., verb = .true. 
+     character*32, public :: name
+   contains
+     procedure, public  :: init => initialize
+     procedure, public  :: memset => memset_async
+
+     procedure, public  :: gcpy_dtoh => copy_dtoh
+     procedure, public  :: gcpy_htod => copy_htod
+     procedure, public  :: gcpy_dtod => copy_dtod          
+
+     procedure, public  :: gallocg => malloc
+!     procedure, public  :: gmalloc_async => malloc_async          
+     procedure, public  :: gfree => dealloc
+     procedure, public  :: gfree_async => dealloc_async     
+     procedure, public  :: print => gpu_var_print_info
+     
+  end type gpu_var_class
+  
+contains
+  
+  subroutine initialize(this, name)
+    class(gpu_var_class), intent(inout) :: this
+    character(len=*) :: name
+    this%name = name 
+  end subroutine initialize
+
+  subroutine memset_async(this, v, gpu_stream)
+    class(gpu_var_class), intent(inout) :: this
+    integer :: v
+    type(c_ptr) :: gpu_stream 
+
+    if ( this % allocated )then
+       call gpu_memset_async( this%d, v, this%size, gpu_stream)
+    else
+       print *, " !!--WARNING--!! Trying to memset variable that is not allocated"
+       call this%print()
+    end if
+    if(this%verb) then
+       call this%print()
+       print *, "--- memset ---"
+    end if
+    
+  end subroutine memset_async
+
+  
+
+  subroutine copy_dtoh(this, ptr, gpu_stream )
+    class(gpu_var_class), intent(inout) :: this
+    type(c_ptr) :: gpu_stream, ptr
+
+    if(this%allocated)then
+       call cpy_dtoh( this%d, ptr, this%size, gpu_stream  )
+    else
+       print *, " !!--WARNING--!! Trying to copy variable that is not allocated"
+       call this%print()
+    end if
+    if(this%verb) then
+       call this%print()
+       print *, "--- copy dtoh ---"
+    end if
+    
+  end subroutine copy_dtoh
+
+  subroutine copy_htod(this, ptr, gpu_stream )
+    class(gpu_var_class), intent(inout) :: this
+    type(c_ptr) :: gpu_stream, ptr
+
+    if(this%allocated)then
+       call cpy_htod( ptr, this%d, this%size, gpu_stream  )
+    else
+       print *, " !!--WARNING--!! Trying to copy variable that is not allocated"
+       call this%print()
+    end if
+    if(this%verb) then
+       call this%print()
+       print *, "--- copy htod ---"
+    end if
+    
+  end subroutine copy_htod
+
+  subroutine copy_dtod(this, ptr, gpu_stream )
+    class(gpu_var_class), intent(inout) :: this
+    type(c_ptr) :: gpu_stream, ptr
+
+    if(this%allocated)then
+       call cpy_dtod( this%d, ptr, this%size, gpu_stream  )
+    else
+       print *, " !!--WARNING--!! Trying to copy variable that is not allocated"
+       call this%print()
+    end if
+    if(this%verb) then
+       call this%print()
+       print *, "--- copy dtod ---"
+    end if
+    
+  end subroutine copy_dtod
+      
+  
+  subroutine malloc(this, name, size, type, gpu_stream )
+    class(gpu_var_class), intent(inout) :: this
+    character(len=*) :: name, type
+    integer :: size
+    type(c_ptr) :: gpu_stream
+
+    this%name = name 
+    if( trim(type) == 'int' )    this%size = size * c_int
+    if( trim(type) == 'double' ) this%size = size * c_double    
+    
+    if(.not. this%allocated)then
+       call gpu_malloc_all( this%d, this%size, gpu_stream  )
+    else
+       print *, " !!--WARNING--!! Trying to allocate already allocated gpu pointer"
+       call this%print()
+    end if
+    if(this%verb) then
+       call this%print()
+       print *, "--- malloc ---"
+    end if
+    
+  end subroutine malloc    
+
+  
+  subroutine dealloc(this)
+    class(gpu_var_class), intent(inout) :: this
+    if(this%allocated)then
+       call gpu_free( this%d  )
+    else
+       print *, " !!--WARNING--!! Trying to deallocate freed gpu pointer"
+       call this%print()
+    end if
+    this%allocated=.false.
+    if(this%verb) then
+       call this%print()
+       print *, "--- dealloc ---"
+    end if
+    
+  end subroutine dealloc
+
+  subroutine dealloc_async(this, gpu_stream )
+    class(gpu_var_class), intent(inout) :: this
+    type(c_ptr) :: gpu_stream
+    if(this%allocated)then
+       call gpu_free_async( this%d, gpu_stream  )
+    else
+       print *, " !!--WARNING--!! Trying to deallocate async freed gpu pointer"
+       call this%print()
+    end if
+    
+    this%allocated=.false.
+    if(this%verb) then
+       call this%print()
+       print *, "--- dealloc async ---"
+    end if
+    
+  end subroutine dealloc_async
+  
+    
+  subroutine gpu_var_print_info(this)
+    !! Prints the animal's age to stdout.
+    class(gpu_var_class), intent(inout) :: this
+    write(*,'(A,1X,A,1X,A,L4)') '-- gpu_var : name = ', this%name, ', allocated = ', this%allocated 
+  end subroutine gpu_var_print_info
+  
+end module gpu_var_mod
+
+
+
+module gpu_var_int_mod
+  ! The gpu_var_int module.
+  use  gpu_var_mod
+  use  F_B_C
+  use  iso_c_binding
+  implicit none
+  private
+
+  ! The gpu_var_int class.
+  type, public, extends(gpu_var_class) :: gpu_var_int_class
+   contains
+     procedure, public :: galloc  => gpu_var_alloc_int     
+     procedure, public :: galloc1 => gpu_var_alloc_int1
+     procedure, public :: galloc2 => gpu_var_alloc_int2
+     procedure, public :: galloc3 => gpu_var_alloc_int3
+
+     procedure, public :: galloc1_copy => gpu_var_alloc_int1_copy
+     procedure, public :: galloc2_copy => gpu_var_alloc_int2_copy
+     procedure, public :: galloc3_copy => gpu_var_alloc_int3_copy
+
+     
+  end type gpu_var_int_class
+
+contains
+
+
+  subroutine gpu_var_alloc_int(this, name, size, gpu_stream)
+    class(gpu_var_int_class), intent(inout) :: this
+    integer :: size
+    type(c_ptr) :: gpu_stream
+    character(len=*) :: name
+
+    this%name = name
+    this%size = size * c_int 
+
+    if(.not. this%allocated)then
+       call gpu_malloc_all( this%d, this%size, gpu_stream )
+    else
+       print *, " !!--WARNING--!! Trying to allocate already allocated gpu pointer"
+       call this%print()
+    end if
+    this%allocated = .true.       
+       if(this%verb) then
+          call this%print()
+          print *, "--- malloc integer size = ", size, " ---"
+       end if
+
+  end subroutine gpu_var_alloc_int
+
+  
+  subroutine gpu_var_alloc_int1(this, name, array, gpu_stream)
+    class(gpu_var_int_class), intent(inout) :: this
+    integer, allocatable :: array(:)
+    type(c_ptr) :: gpu_stream
+    character(len=*) :: name
+
+    this%name = name
+    this%size = size( array,1 ) * c_int 
+
+    if(.not. this%allocated)then
+       call gpu_malloc_all( this%d, this%size, gpu_stream )
+    else
+       print *, " !!--WARNING--!! Trying to allocate already allocated gpu pointer"
+       call this%print()
+    end if
+    this%allocated = .true.       
+       if(this%verb) then
+          call this%print()
+          print *, "--- malloc1 integer ---"
+       end if
+
+  end subroutine gpu_var_alloc_int1
+
+  subroutine gpu_var_alloc_int2(this, name, array, gpu_stream)
+    class(gpu_var_int_class), intent(inout) :: this
+    integer, allocatable :: array(:,:)
+    type(c_ptr) :: gpu_stream
+    character(len=*) :: name
+
+    this%name = name
+    this%size = size( array,1 ) * size( array,2 ) * c_int 
+
+    if(.not. this%allocated)then
+       call gpu_malloc_all( this%d, this%size, gpu_stream )
+    else
+       print *, " !!--WARNING--!! Trying to allocate already allocated gpu pointer"
+       call this%print()
+    end if
+    this%allocated = .true. 
+       if(this%verb) then
+          call this%print()
+          print *, "--- malloc2 integer ---"
+       end if
+
+  end subroutine gpu_var_alloc_int2
+
+  subroutine gpu_var_alloc_int3(this, name, array, gpu_stream)
+    class(gpu_var_int_class), intent(inout) :: this
+    integer, allocatable :: array(:,:,:)
+    type(c_ptr) :: gpu_stream
+    character(len=*) :: name
+
+    this%name = name
+    this%size = size( array,1 ) * size( array,2 ) * size( array,3 ) * c_int 
+
+    if(.not. this%allocated)then
+       call gpu_malloc_all( this%d, this%size, gpu_stream )
+    else
+       print *, " !!--WARNING--!! Trying to allocate already allocated gpu pointer"
+       call this%print()
+    end if
+    this%allocated = .true. 
+       if(this%verb) then
+          call this%print()
+          print *, "--- malloc3 integer ---"
+       end if
+
+  end subroutine gpu_var_alloc_int3
+
+
+  subroutine gpu_var_alloc_int1_copy(this, name, array, gpu_stream)
+    class(gpu_var_int_class), intent(inout) :: this
+    integer, allocatable, target :: array(:)
+    type(c_ptr) :: gpu_stream
+    character(len=*) :: name
+
+    this%name = name
+    this%size = size( array,1 ) * c_int 
+
+    if(.not. this%allocated)then
+       call gpu_malloc_all( this%d, this%size, gpu_stream )
+       call cpy_htod( c_loc( array ), this%d, this%size, gpu_stream )
+    else
+       print *, " !!--WARNING--!! Trying to allocate already allocated gpu pointer, not copying"
+       call this%print()
+    end if
+    this%allocated = .true.       
+       if(this%verb) then
+          call this%print()
+          print *, "--- malloc copy1 integer ---"
+       end if
+
+  end subroutine gpu_var_alloc_int1_copy
+
+  subroutine gpu_var_alloc_int2_copy(this, name, array, gpu_stream)
+    class(gpu_var_int_class), intent(inout) :: this
+    integer, allocatable, target :: array(:,:)
+    type(c_ptr) :: gpu_stream
+    character(len=*) :: name
+
+    this%name = name
+    this%size = size( array,1 ) * size( array,2 ) * c_int 
+
+    if(.not. this%allocated)then
+       call gpu_malloc_all( this%d, this%size, gpu_stream )
+       call cpy_htod( c_loc( array ), this%d, this%size, gpu_stream )       
+    else
+       print *, " !!--WARNING--!! Trying to allocate already allocated gpu pointer, not copying"
+       call this%print()
+    end if
+    this%allocated = .true. 
+       if(this%verb) then
+          call this%print()
+          print *, "--- malloc copy2 integer ---"
+       end if
+
+  end subroutine gpu_var_alloc_int2_copy
+
+  subroutine gpu_var_alloc_int3_copy(this, name, array, gpu_stream)
+    class(gpu_var_int_class), intent(inout) :: this
+    integer, allocatable, target :: array(:,:,:)
+    type(c_ptr) :: gpu_stream
+    character(len=*) :: name
+
+    this%name = name
+    this%size = size( array,1 ) * size( array,2 ) * size( array,3 ) * c_int 
+
+    if(.not. this%allocated)then
+       call gpu_malloc_all( this%d, this%size, gpu_stream )
+       call cpy_htod( c_loc( array ), this%d, this%size, gpu_stream )              
+    else
+       print *, " !!--WARNING--!! Trying to allocate already allocated gpu pointer"
+       call this%print()
+    end if
+    this%allocated = .true. 
+       if(this%verb) then
+          call this%print()
+          print *, "--- malloc copy3 integer ---"
+       end if
+
+  end subroutine gpu_var_alloc_int3_copy
+
+
+end module gpu_var_int_mod
+
+
+
+module gpu_var_double_mod
+  ! The gpu_var_double module.
+  use  gpu_var_mod
+  use  F_B_C
+  use  iso_c_binding  
+  implicit none
+  private
+
+  ! The gpu_var_double class.
+  type, public, extends(gpu_var_class) :: gpu_var_double_class
+   contains
+     procedure, public :: galloc  => gpu_var_alloc_double     
+     procedure, public :: galloc1 => gpu_var_alloc_double1
+     procedure, public :: galloc2 => gpu_var_alloc_double2
+     procedure, public :: galloc3 => gpu_var_alloc_double3
+
+     procedure, public :: galloc1_copy => gpu_var_alloc_double1_copy
+     procedure, public :: galloc2_copy => gpu_var_alloc_double2_copy
+     procedure, public :: galloc3_copy => gpu_var_alloc_double3_copy
+     
+
+  end type gpu_var_double_class
+
+contains
+  subroutine gpu_var_alloc_double(this, name, size, gpu_stream)
+    class(gpu_var_double_class), intent(inout) :: this
+    integer :: size
+    type(c_ptr) :: gpu_stream
+    character(len=*) :: name
+
+    this%name = name
+    this%size = size * c_double
+
+    if(.not. this%allocated)then
+       call gpu_malloc_all( this%d, this%size, gpu_stream )
+    else
+       print *, " !!--WARNING--!! Trying to allocate already allocated gpu pointer"
+       call this%print()
+    end if
+    this%allocated = .true.       
+       if(this%verb) then
+          call this%print()
+          print *, "--- malloc double size = ", size, " ---"
+       end if
+
+  end subroutine gpu_var_alloc_double
+
+
+
+  
+  subroutine gpu_var_alloc_double1(this, name, array, gpu_stream)
+    class(gpu_var_double_class), intent(inout) :: this
+    real*8, allocatable :: array(:)
+    type(c_ptr) :: gpu_stream
+    character(len=*) :: name
+
+    this%name = name
+    this%size = size( array,1 ) * c_double 
+
+    if(.not. this%allocated)then
+       call gpu_malloc_all( this%d, this%size, gpu_stream )
+    else
+       print *, " !!--WARNING--!! Trying to allocate already allocated gpu pointer"
+       call this%print()
+    end if
+    this%allocated = .true.       
+       if(this%verb) then
+          call this%print()
+          print *, "--- malloc1 double ---"
+       end if
+
+  end subroutine gpu_var_alloc_double1
+
+  subroutine gpu_var_alloc_double2(this, name, array, gpu_stream)
+    class(gpu_var_double_class), intent(inout) :: this
+    real*8, allocatable :: array(:,:)
+    type(c_ptr) :: gpu_stream
+    character(len=*) :: name
+
+    this%name = name
+    this%size = size( array,1 ) * size( array,2 ) * c_double 
+
+    if(.not. this%allocated)then
+       call gpu_malloc_all( this%d, this%size, gpu_stream )
+    else
+       print *, " !!--WARNING--!! Trying to allocate already allocated gpu pointer"
+       call this%print()
+    end if
+    this%allocated = .true. 
+       if(this%verb) then
+          call this%print()
+          print *, "--- malloc2 double ---"
+       end if
+
+  end subroutine gpu_var_alloc_double2
+
+  subroutine gpu_var_alloc_double3(this, name, array, gpu_stream)
+    class(gpu_var_double_class), intent(inout) :: this
+    real*8, allocatable :: array(:,:,:)
+    type(c_ptr) :: gpu_stream
+    character(len=*) :: name
+
+    this%name = name
+    this%size = size( array,1 ) * size( array,2 ) * size( array,3 ) * c_double 
+
+    if(.not. this%allocated)then
+       call gpu_malloc_all( this%d, this%size, gpu_stream )
+    else
+       print *, " !!--WARNING--!! Trying to allocate already allocated gpu pointer"
+       call this%print()
+    end if
+    this%allocated = .true. 
+       if(this%verb) then
+          call this%print()
+          print *, "--- malloc3 double ---"
+       end if
+
+  end subroutine gpu_var_alloc_double3
+
+
+  subroutine gpu_var_alloc_double1_copy(this, name, array, gpu_stream)
+    class(gpu_var_double_class), intent(inout) :: this
+    real*8, allocatable, target :: array(:)
+    type(c_ptr) :: gpu_stream
+    character(len=*) :: name
+
+    this%name = name
+    this%size = size( array,1 ) * c_double 
+
+    if(.not. this%allocated)then
+       call gpu_malloc_all( this%d, this%size, gpu_stream )
+       call cpy_htod( c_loc( array ), this%d, this%size, gpu_stream )
+    else
+       print *, " !!--WARNING--!! Trying to allocate already allocated gpu pointer"
+       call this%print()
+    end if
+    this%allocated = .true.       
+       if(this%verb) then
+          call this%print()
+          print *, "--- malloc copy1 double ---"
+       end if
+
+  end subroutine gpu_var_alloc_double1_copy
+
+  subroutine gpu_var_alloc_double2_copy(this, name, array, gpu_stream)
+    class(gpu_var_double_class), intent(inout) :: this
+    real*8, allocatable, target :: array(:,:)
+    type(c_ptr) :: gpu_stream
+    character(len=*) :: name
+
+    this%name = name
+    this%size = size( array,1 ) * size( array,2 ) * c_double 
+
+    if(.not. this%allocated)then
+       call gpu_malloc_all( this%d, this%size, gpu_stream )
+       call cpy_htod( c_loc( array ), this%d, this%size, gpu_stream )       
+    else
+       print *, " !!--WARNING--!! Trying to allocate already allocated gpu pointer"
+       call this%print()
+    end if
+    this%allocated = .true. 
+       if(this%verb) then
+          call this%print()
+          print *, "--- malloc copy2 double ---"
+       end if
+
+  end subroutine gpu_var_alloc_double2_copy
+
+  subroutine gpu_var_alloc_double3_copy(this, name, array, gpu_stream)
+    class(gpu_var_double_class), intent(inout) :: this
+    real*8, allocatable, target :: array(:,:,:)
+    type(c_ptr) :: gpu_stream
+    character(len=*) :: name
+
+    this%name = name
+    this%size = size( array,1 ) * size( array,2 ) * size( array,3 ) * c_double 
+
+    if(.not. this%allocated)then
+       call gpu_malloc_all( this%d, this%size, gpu_stream )
+       call cpy_htod( c_loc( array ), this%d, this%size, gpu_stream )              
+    else
+       print *, " !!--WARNING--!! Trying to allocate already allocated gpu pointer"
+       call this%print()
+    end if
+    this%allocated = .true. 
+       if(this%verb) then
+          call this%print()
+          print *, "--- malloc copy3 double ---"
+       end if
+
+  end subroutine gpu_var_alloc_double3_copy
+
+
+end module gpu_var_double_mod
+
+  
+  
+
+
+module gpu_variables
+  use gpu_var_int_mod
+  use gpu_var_double_mod  
+  implicit none
+
+  type gpu_neigh
+     type( gpu_var_int_class ) :: n_neigh, species, neighbor_species, neighbors_list
+     type( gpu_var_double_class ) :: rjs, xyz
+  end type gpu_neigh
+  
+
+  ! type gpu_exp
+  !    type( gpu_var_int_class ), allocatable :: nk(:)
+  !    type( gpu_var_int_class ) :: nk_flags, nk_sum_flags, k_index, j2_list
+  !    type( gpu_var_double_class ), allocatable :: pair_distribution_partial(:), pair_distribution_partial_der(:)
+  !    type( gpu_var_double_class )  :: Gk, Gka, xyz_k
+  ! end type gpu_exp
+
+  
+  type gpu_exp
+     integer :: n ! stores the number of allocations
+     integer, allocatable :: nk(:)
+     type( gpu_var_int_class ),    allocatable :: nk_d(:), k_index_d(:), j2_index_d(:), nk_flags_d(:), nk_sum_flags_d(:)
+     type( gpu_var_double_class ), allocatable :: xyz_k_d(:), pair_distribution_partial_d(:), rjs_index_d(:), pair_distribution_partial_der_d(:)
+     type( gpu_var_double_class ) :: pair_distribution_d, Gk_d, Gka_d,  fi_d, dermat_d, x_d, dV_d
+
+  end type gpu_exp
+
+contains
+
+  subroutine allocate_gpu_exp( this, n )
+    type( gpu_exp ), intent(inout) :: this
+    integer :: n
+
+    allocate( this % nk(1:n) )
+    
+    allocate( this % nk_d(1:n) )
+    allocate( this % k_index_d(1:n) )
+    allocate( this % j2_index_d(1:n) )
+    allocate( this % rjs_index_d(1:n) )    
+    allocate( this % xyz_k_d(1:n) )
+    allocate( this % nk_flags_d(1:n) )
+    allocate( this % nk_sum_flags_d(1:n) )    
+    allocate( this % pair_distribution_partial_d(1:n) )
+    allocate( this % pair_distribution_partial_der_d(1:n) )    
+  end subroutine allocate_gpu_exp
+
+  subroutine deallocate_gpu_exp( this )
+    type( gpu_exp ), intent(inout) :: this
+    integer :: i, n
+    
+    do i = 1, n
+       if ( this % nk_d(i) % allocated ) call this % nk_d(i) % gfree()
+       if ( this % k_index_d(i) % allocated ) call this % k_index_d(i) % gfree()
+       if ( this % j2_index_d(i) % allocated ) call this % j2_index_d(i) % gfree()
+       if ( this % rjs_index_d(i) % allocated ) call this % rjs_index_d(i) % gfree()       
+       if ( this % nk_flags_d(i) % allocated ) call this % nk_flags_d(i) % gfree()
+       if ( this % nk_sum_flags_d(i) % allocated ) call this % nk_sum_flags_d(i) % gfree()       
+       if ( this % xyz_k_d(i) % allocated ) call this % xyz_k_d(i) % gfree()
+       if ( this % pair_distribution_partial_d(i) % allocated ) call this % pair_distribution_partial_d(i) % gfree()
+       if ( this % pair_distribution_partial_der_d(i) % allocated ) call this % pair_distribution_partial_der_d(i) % gfree()
+    end do
+
+    deallocate( this % nk )
+    
+    deallocate( this % nk_d )
+    deallocate( this % k_index_d )
+    deallocate( this % j2_index_d )
+    deallocate( this % nk_flags_d )
+    deallocate( this % nk_sum_flags_d )        
+    deallocate( this % pair_distribution_partial_d )
+    deallocate( this % pair_distribution_partial_der_d )
+
+    
+  end subroutine deallocate_gpu_exp
+
+  
+  
+  subroutine check_gpu_exp( v )
+    implicit none
+    type(gpu_exp) :: v
+    integer :: i
+    
+    print *, "CHECK GPU EXP: n = ", v % n
+
+    if( allocated( v % nk_d ) )then 
+       do i = 1, v%n
+          call v % nk_d(i) % print()
+          call v % k_index_d(i) % print()
+          call v % j2_index_d(i) % print()
+          call v % xyz_k_d(i) % print()
+          call v % pair_distribution_partial_d(i) % print()
+          call v % pair_distribution_partial_der_d(i) % print()
+       end do
+    end if
+    
+
+    call v % pair_distribution_d % print()
+    call v % x_d  % print()
+    call v % dV_d  % print()
+    
+    call v % Gk_d  % print()
+    call v % Gka_d  % print()
+    call v % fi_d  % print()
+    call v % dermat_d % print()
+
+    
+  end subroutine check_gpu_exp
+  
+ 
+end module gpu_variables
+
+  

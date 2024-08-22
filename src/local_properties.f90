@@ -47,7 +47,7 @@ module local_prop
     type(c_ptr), intent(in) :: soap_d, soap_der_d
     logical, intent(in) :: do_derivatives 
     type(c_ptr), intent(inout) :: cublas_handle, gpu_stream, alphas_d, Qs_d
-    real(c_double), intent(out),target:: local_properties(:), local_properties_cart_der(:,:)
+    real(c_double), intent(out), target:: local_properties(:), local_properties_cart_der(:,:)
     
     real(c_double) ::  zeta, cdelta_ene, mzetam, cdelta_force
     logical :: is_zeta_int = .false.
@@ -180,7 +180,7 @@ module local_prop
     type(c_ptr), intent(in) :: soap_d
     
     type(c_ptr), intent(inout) :: cublas_handle, gpu_stream, alphas_d, Qs_d
-    real(c_double), intent(out), target :: local_properties(:)
+    real(c_double), intent(out), target:: local_properties(:)
     
     real(c_double) ::  zeta, cdelta_ene
     logical :: is_zeta_int = .false.

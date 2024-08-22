@@ -1,4 +1,4 @@
-
+#include "hip/hip_runtime.h"
 // wrappers file
 // compile with:
 // rm cuda_wrappers.o; nvcc -lcublas -lcurand -arch=sm_80 src/cuda_wrappers.cu -c;
@@ -9,7 +9,9 @@
 #include <cmath>
 
 #include <hip/hip_runtime.h>
+#include <hip/hip_runtime.h>
 #include <hipblas/hipblas.h>
+//#include <hipsolver.h>
 #include <hiprand/hiprand.h>
 #include <assert.h>
 #include <hip/hip_complex.h>
@@ -20,7 +22,6 @@
 #define static_alphamax 8
 
 #define mode_polynomial 1
-#define MIN_BLOCKS_PER_MP     1
 
 int counter=0;
 /*__device__ double atomicDoubleAdd(double* address, double val)
@@ -292,8 +293,8 @@ extern "C" void create_cublas_handle(hipblasHandle_t *handle,hipStream_t *stream
  	  hipblasCreate(handle);
     hipStreamCreate(stream);
     hipblasSetStream(*handle, *stream);
-    // hipsolverCreate(handle);
-    // hipsolverSetStream(*handle,*stream);
+//    hipsolverCreate(handle);
+//    hipsolverSetStream(*handle,*stream);
     /*printf("\n cublas handle created \n");
     exit(0);*/
 
@@ -517,6 +518,18 @@ extern "C" void gpu_blas_mmul_n_t(hipblasHandle_t handle, const double *kernels_
   hipblasDgemm(handle, HIPBLAS_OP_N, HIPBLAS_OP_T, n_sites,  n_soap, n_sparse, alpha,  kernels_der_d, n_sites,
                          Qs_copy_d, n_soap, beta, Qss_d, n_sites);
 }
+
+
+extern "C" void gpu_dgemm_n_n(int m, int n, int k, double alpha,
+			      double* A, int lda, double* B, int ldb,
+			      double beta, double* C, int ldc, hipblasHandle_t handle){
+
+	const double *alpha_a = &alpha;
+	const double *beta_a = &beta;
+
+	hipblasDgemm(handle, HIPBLAS_OP_N, HIPBLAS_OP_N, m, n, k, alpha_a, A, lda, B, ldb, beta_a, C, ldc);
+}
+
 
 
 
@@ -1899,7 +1912,6 @@ void cuda_global_scaling(double *radial_exp_coeff_d,
 
 
 __global__
-//__launch_bounds__(tpb, MIN_BLOCKS_PER_MP)
 void cuda_poly3gauss_one(double *radial_exp_coeff_d,
                     int *i_beg_d, int *i_end_d, double *global_scaling_d,
                     int n_max, int n_atom_pairs, int n_species,
@@ -1957,7 +1969,6 @@ extern "C" void  gpu_get_radial_exp_coeff_poly3gauss(double *radial_exp_coeff_d,
 }
 
 __global__
-//__launch_bounds__(tpb, MIN_BLOCKS_PER_MP)
 void kernel_get_radial_poly3gauss(int n_atom_pairs, int n_species, bool *mask_d, double *rjs_d, double *rcut_hard_d, 
 		                  int n_sites, int *n_neigh_d, int n_max, int n_temp, bool do_derivatives, double *exp_coeff_d, 
 				  double *exp_coeff_der_d, double *rcut_soft_d, double *atom_sigma_d, double *exp_coeff_temp1_d,
@@ -2184,7 +2195,6 @@ extern "C" void  gpu_radial_poly3gauss(int n_atom_pairs, int n_species, bool *ma
 }
 
 __global__
-//__launch_bounds__(tpb, MIN_BLOCKS_PER_MP)
 void kernel_get_radial_poly3(int n_atom_pairs, int n_species, bool *mask_d, double *rjs_d, double *rcut_hard_d,
                                   int n_sites, int *n_neigh_d, int n_max, int n_temp, bool do_derivatives, double *exp_coeff_d,
                                   double *exp_coeff_der_d, double *rcut_soft_d, double *atom_sigma_d, double *exp_coeff_temp1_d,
@@ -2395,7 +2405,6 @@ extern "C" void  gpu_radial_poly3(int n_atom_pairs, int n_species, bool *mask_d,
 }
 
 __global__
-//__launch_bounds__(tpb, MIN_BLOCKS_PER_MP)
 void kernel_get_2b(int i_beg, int i_end, int n_sparse, double *energies_d, double e0, int *n_neigh_d, bool do_forces, double *forces_d,
 	           double *virial_d, double *rjs_d, double rcut, int *species_d, int *neighbor_species_d, int sp1, int sp2,double buffer, 
 		   double delta, double *cutoff_d, double *Qs_d, double sigma, double *alphas_d, double *xyz_d){
@@ -2460,7 +2469,6 @@ extern "C" void  gpu_get_2b_forces_energies(int i_beg, int i_end, int n_sparse, 
 }
 
 __global__
-//__launch_bounds__(tpb, MIN_BLOCKS_PER_MP)
 void kernel_get_core_pot(int i_beg, int i_end, bool do_forces, int *species_d, int sp1, int sp2, int *n_neigh_d, int *neighbor_species_d, 
 		         double *rjs_d, int n_sparse, double *x_d, double *V_d, double *dVdx2_d, double yp1, double ypn, double *xyz_d, 
 			 double *forces_d, double *virial_d, double *energies_d){
@@ -2526,3 +2534,33 @@ extern "C" void gpu_device_sync()
 {
   gpuErrchk( hipDeviceSynchronize() );
 }
+/* 
+extern "C" void cuda_malloc_double(double **a_d, int Np)
+{
+   gpuErrchk(hipMalloc( (void **) a_d, sizeof(double) * Np ));
+   return;
+} */
+
+/* extern "C" void cuda_malloc_double_complex(hipDoubleComplex **a_d, int Np)
+{
+
+  gpuErrchk(hipMalloc((void **)  a_d, sizeof(hipDoubleComplex) * Np));
+  //gpuErrchk(hipMallocAsync( a_d, sizeof(hipDoubleComplex) * Np,0));
+   return;
+} */
+
+/* extern "C" void cuda_malloc_int(int **a_d, int Np)
+{
+   // Allocate memory on GPU
+   gpuErrchk(hipMalloc( (void **) a_d, sizeof(int) * Np ));
+   return;
+}
+ */
+
+/* extern "C" void cuda_malloc_bool(void **a_d, int Np)
+{
+   // Allocate memory on GPU
+   gpuErrchk(hipMalloc( (void **) a_d, sizeof(bool) * Np ));
+   return;
+}
+ */

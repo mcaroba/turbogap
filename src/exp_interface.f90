@@ -34,10 +34,37 @@ module exp_interface
 #endif
   use exp_utils
   use soap_turbo_functions
+  use F_B_C
+
+  use gpu_var_mod  
+  use gpu_var_int_mod
+  use gpu_var_double_mod  
+  
+  use iso_c_binding
 contains
 
   ! This module implements the interfaces for the gradient of experimental functions
 
+  ! subroutine galloc_int_1d(gpu_var, array)
+  !   implicit none
+  !   type(gpu_variable) :: gpu_var
+  !   integer, allocatable :: array(:)
+  !   integer :: n
+  !   integer(c_size_t) :: size 
+    
+  !   if( gpu_var%allocated == .false. )then
+  !      n = size(array, 1)
+  !      size = n * c_int
+  !      gpu_var%st 
+
+       
+  !   else
+  !      print *, "Trying to reallocate gpu_variable!"
+  !   end if
+    
+  ! end subroutine galloc
+  
+  
   subroutine get_write_condition( do_mc, do_md, mc_istep, md_istep, write_xyz, write_condition)
     implicit none
     logical, intent(in) :: do_mc, do_md
@@ -484,6 +511,746 @@ contains
   end subroutine preprocess_exp_data
 
 
+  !--- GPU PAIR DISTRIBUTION FUNCTIONS ---!
+  subroutine gpu_calculate_pair_distribution( params, x_pair_distribution&
+       &, y_pair_distribution, y_pair_distribution_temp,&
+       & pair_distribution_partial, pair_distribution_partial_temp, &
+       & n_species, species_types,  n_atoms_of_species, n_sites, a_box, b_box, c_box,&
+       & indices, md_istep, mc_istep, i_beg, i_end, j_beg, j_end, ierr, rjs, xyz, &
+       & neighbors_list, n_neigh, neighbor_species, species, rank,&
+       & do_derivatives, pair_distribution_der, pair_distribution_partial_der, &
+       & nk, pair_distribution_d, nk_d, k_index_d, j2_index_d, xyz_k_d, pair_distribution_partial_d, pair_distribution_partial_der_d, &
+       & st_nk_d, st_k_index_d, st_j2_index_d, st_pair_distribution_partial_d, st_pair_distribution_partial_der_d,&
+       & n_neigh_d, species_d,  neighbor_species_d, neighbor_list_d, rjs_d, xyz_d, species_types_d, cublas_handle, gpu_stream,&
+       & pair_distribution_partial_temp_der, energies_pair_distribution, forces_pair_distribution, virial)
+    implicit none
+    type(input_parameters), intent(inout) :: params
+    real*8, allocatable, intent(out), target :: x_pair_distribution(:),&
+         & y_pair_distribution(:), pair_distribution_partial(:,:),&
+         & n_atoms_of_species(:), pair_distribution_partial_temp(:,:),&
+         & y_pair_distribution_temp(:), pair_distribution_der(:,:),&
+         & pair_distribution_partial_der(:,:,:), &
+         & pair_distribution_partial_temp_der(:,:,:), energies_pair_distribution(:), forces_pair_distribution(:,:)
+    character*8, allocatable, intent(in) :: species_types(:)
+    real*8,  intent(in), allocatable :: rjs(:), xyz(:,:)
+    integer, intent(in), allocatable :: neighbors_list(:), n_neigh(:)&
+         &, neighbor_species(:), species(:)
+    real*8,  intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3)
+    real*8, intent(inout) :: virial(1:3,1:3)
+    real*8 :: v_uc, f, pdf_factor
+    integer, intent(in) :: n_species, n_sites, i_beg, i_end, j_beg, j_end
+    integer, intent(in) :: indices(1:3), md_istep, mc_istep,  rank
+    integer, intent(inout) :: ierr
+    real*8, allocatable, target :: factors(:), pair_distribution_der_temp(:), dV(:), &
+         pdf_gpu_check(:), rjs_temp(:), ders_temp(:,:)
+    integer, allocatable, target :: ks_temp(:), ksd_temp(:)
+    integer :: i, j, k, l, i2, n_dim_partial, n_dim_idx
+    logical, intent(in) :: do_derivatives
+    real*8, parameter :: pi = acos(-1.0)
+    logical :: write_condition, overwrite_condition
+    character*1024 :: filename
+    type(c_ptr) :: cublas_handle, gpu_stream
+
+
+    type(c_ptr) :: n_neigh_d, species_d, neighbor_species_d, neighbor_list_d, rjs_d, xyz_d, species_types_d, x_d, dV_d
+    type(c_ptr) :: pair_distribution_d
+    type(c_ptr), allocatable :: nk_d(:), nk_flags_d(:), nk_flags_sum_d(:), k_index_d(:), j2_index_d(:), rjs_index_d(:), xyz_k_d(:), pair_distribution_partial_d(:), pair_distribution_partial_der_d(:)
+    integer(c_size_t), allocatable :: st_nk_d(:), st_k_index_d(:), st_j2_index_d(:), st_rjs(:), st_pair_distribution_partial_d(:), st_pair_distribution_partial_der_d(:)    
+    integer(c_size_t) :: st_nk_flags, st_nk_temp, st_x_d
+    integer, allocatable :: nk(:), k_index_single(:)
+    integer, target :: nk_temp(1)
+
+    ! Seeing if my gpu helper mod actually helps
+    ! type( gpu_var_double_class ) :: xc, dVc    
+    ! type( gpu_var_double_class ), allocatable :: pdf_partial_d(:)
+
+    ! type( gpu_var_int_class ),    allocatable :: nk_d(:), nk_flags_d(:), nk_flags_sum_d(:), k_index_d(:), j2_index_d(:)
+    ! type( gpu_var_double_class ), allocatable :: rjs_index_d(:), xyz_k_d(:), pair_distribution_partial_d(:), pair_distribution_partial_der_d(:)
+
+    
+    
+    ! Things that are allocated here:
+    ! Always:
+    !  > x_pair_distribution
+    !  > y_pair_distribution
+    ! if pair_distribution_partial == .true.
+    !  > pair_distribution_partial( n_samples, n_spec * (n_spec + 1)/2 )
+    !  if do_derivatives == .true.
+    !    > pair_distribution_partial_der( n_samples, n_spec * (n_spec + 1)/2, j_beg : j_end )
+
+
+    ! first allocate the necessary arrays for the
+    ! calculation of the pair correlation function
+    if (allocated( x_pair_distribution)) deallocate(x_pair_distribution)
+    if (allocated( y_pair_distribution)) deallocate(y_pair_distribution)
+
+    allocate( x_pair_distribution( 1: params%pair_distribution_n_samples) )
+    allocate( y_pair_distribution( 1: params%pair_distribution_n_samples) )
+
+    allocate( dV( 1: params%pair_distribution_n_samples) )    
+    
+    if (params%n_exp > 0)then
+       do i = 1, params%n_exp
+          if ( trim( params%exp_data(i)%label ) == 'pair_distribution' )then
+             x_pair_distribution = params%exp_data(i)%x
+          end if
+       end do
+    end if
+
+
+
+    if (params%pair_distribution_partial)then
+       n_dim_partial = n_species * ( n_species + 1 ) / 2
+       allocate(factors( 1:n_dim_partial ))
+
+       n_dim_idx = 1
+       outer: do i = 1, n_species
+          do j = 1, n_species
+             if (i > j) cycle
+
+             if (i /= j)then
+                factors(n_dim_idx) = 2.d0
+             else
+                factors(n_dim_idx) = 1.d0
+             end if
+
+             n_dim_idx = n_dim_idx + 1
+             if ( n_dim_idx > n_dim_partial )then
+                exit outer
+             end if
+
+          end do
+       end do outer
+
+
+       if (.not. allocated(pair_distribution_partial))then   !deallocate(pair_distribution_partial)
+          allocate( pair_distribution_partial(1:params%pair_distribution_n_samples,&
+               & 1 : n_dim_partial) )
+       end if
+
+       pair_distribution_partial = 0.d0
+
+
+       if (params%do_forces .and. params%exp_forces)then
+          allocate( pair_distribution_partial_der(1:params%pair_distribution_n_samples,&
+            & 1 : n_dim_partial, j_beg : j_end  ))
+          pair_distribution_partial_der = 0.d0
+
+          if (rank == 0 .and. md_istep == 0) write(*, '(A,1X,F7.4,1X,A)') "Gb/core: partial pdfder = ", dfloat(params&
+               &%pair_distribution_n_samples * n_dim_partial * j_end)&
+               & * 8.d0 / (dfloat(1024*1024*1024)), " Gb  |"
+          if (rank == 0 .and. md_istep == 0) write(*,*)'                                       |'
+
+       end if
+    else
+       if (params%do_forces .and. params%exp_forces)then
+          allocate( pair_distribution_partial_der(1:params%pair_distribution_n_samples, 1:1, &
+            &  j_beg : j_end  ))
+          pair_distribution_partial_der = 0.d0
+       end if
+
+
+    end if
+
+    if(allocated(n_atoms_of_species)) deallocate(n_atoms_of_species)
+    allocate(n_atoms_of_species(1:n_species))
+
+    do j = 1, n_species
+       n_atoms_of_species(j) = 0.d0
+       do i2 = 1, n_sites
+          if ( species(i2) == j)then
+             n_atoms_of_species(j) = n_atoms_of_species(j) + 1.d0
+          end if
+       end do
+    end do
+
+
+#ifdef _MPIF90
+    if (params%pair_distribution_partial)then
+       allocate( pair_distribution_partial_temp(1:params%pair_distribution_n_samples, 1 : n_dim_partial) )
+
+       pair_distribution_partial_temp = 0.0d0
+    end if
+
+    allocate( y_pair_distribution_temp( 1: params%pair_distribution_n_samples) )
+    y_pair_distribution_temp = 0.d0
+
+#endif
+    v_uc = dot_product( cross_product(a_box,&
+         & b_box), c_box ) / (&
+         & dfloat(indices(1)*indices(2)&
+         &*indices(3)) )
+
+
+    !#####################################################################!
+    !###---   Calculating the partial pair distribution functions   ---###!
+    !#####################################################################!
+    ! Checking allocation
+    ! print *, "checking alloc"
+    ! allocate( pdf_partial(1:n_dim_partial) )
+    ! call pdf_partial(1) % galloc1( "pdf_partial", y_pair_distribution, gpu_stream )
+    ! call pdf_partial(1) % print()
+    ! call pdf_partial(1) % gfree_async(gpu_stream)
+    ! call pdf_partial(1) % print()
+    ! deallocate(pdf_partial)
+    ! print *, "finished checkng"
+    ! stop 
+    
+    ! Allocate the gpu arrays
+    print *, " - Allocating pdf gpu pointers -"
+!    allocate( pair_distribution_d(1:n_dim_partial) )
+    allocate( nk_d(1:n_dim_partial) )
+    allocate( nk_flags_d(1:n_dim_partial) )
+    allocate( nk_flags_sum_d(1:n_dim_partial) )        
+    allocate( k_index_d(1:n_dim_partial) )
+    allocate( j2_index_d(1:n_dim_partial) )
+    allocate( rjs_index_d(1:n_dim_partial) )    
+    allocate( xyz_k_d(1:n_dim_partial) )    
+    allocate( pair_distribution_partial_d(1:n_dim_partial) )
+    allocate( pair_distribution_partial_der_d(1:n_dim_partial) )
+    allocate( st_nk_d(1:n_dim_partial) )
+    allocate( st_k_index_d(1:n_dim_partial) )
+    allocate( st_j2_index_d(1:n_dim_partial) )
+    allocate( st_rjs(1:n_dim_partial) )
+    allocate( st_pair_distribution_partial_d(1:n_dim_partial) )
+    allocate( st_pair_distribution_partial_der_d(1:n_dim_partial) )
+    allocate( nk(1:n_dim_partial) )    
+    
+    st_x_d = params%pair_distribution_n_samples * c_double
+
+    call setup_pdf_arrays( params%r_range_min, params%r_range_max,&
+         & params%pair_distribution_rcut, params&
+         &%pair_distribution_n_samples, x_pair_distribution, dV)
+
+    ! print *, " starting to copy  "
+    ! call xc % print()        
+    ! call xc % galloc1_copy( "xc", x_pair_distribution, gpu_stream )
+    ! print *, " copied "
+    ! call xc % print()    
+    ! call xc % galloc1_copy( "xc", x_pair_distribution, gpu_stream )    
+    ! call xc % print()
+    ! call xc % gfree_async( gpu_stream )
+    ! call xc % print()
+    ! print *, " finished"    
+    call gpu_malloc_all(x_d,      st_x_d, gpu_stream)             
+    call cpy_htod( c_loc( x_pair_distribution ), x_d, st_x_d, gpu_stream )
+
+    call gpu_malloc_all(dV_d,      st_x_d, gpu_stream)             
+    call cpy_htod( c_loc( dV ), dV_d, st_x_d, gpu_stream )
+    
+    
+    
+    if ( params%pair_distribution_partial )then
+       n_dim_idx = 1
+       outer1: do j = 1, n_species
+          do k = 1, n_species
+
+             if (j > k) cycle ! We have already calculated the pair correlation function!
+
+             ! Note that with the calculation of the derivatives here,
+             ! this is without the -2 * delta_ik (r_j^alpha - r_i^alpha)
+             ! factor, which allows for some freeing of memory
+
+             ! Get all nk_flags 
+
+             print *, "pdfpairs:  j ", j, " k ",  k
+             st_nk_temp = 1*c_int
+             call gpu_malloc_all(nk_d(n_dim_idx),st_nk_temp, gpu_stream)                          
+             st_nk_flags = j_end * c_int
+             call gpu_malloc_all(nk_flags_d(n_dim_idx),      st_nk_flags, gpu_stream)             
+             call gpu_memset_async(nk_flags_d(n_dim_idx), 0, st_nk_flags, gpu_stream)
+             call gpu_malloc_all(nk_flags_sum_d(n_dim_idx),      st_nk_flags, gpu_stream)                          
+             call gpu_device_sync()
+             
+             call gpu_get_pair_distribution_nk(i_beg, i_end, j_end, n_sites, neighbor_list_d,&
+                  n_neigh_d, neighbor_species_d, species_d,&
+                  & rjs_d, xyz_d, params%r_range_min, params%r_range_max, params%pair_distribution_rcut, 6.d0&
+                  &*params%pair_distribution_kde_sigma,&
+                  & nk_d(n_dim_idx), nk_flags_d(n_dim_idx), nk_flags_sum_d(n_dim_idx), j, k, gpu_stream)
+
+             
+             ! Now copy the value of nk from the gpu
+             print *, "out of pdf nk kernel "
+             st_nk_temp = 1*c_int
+             call cpy_dtoh(nk_d(n_dim_idx), c_loc(nk_temp), st_nk_temp, gpu_stream)
+             call gpu_device_sync()
+             print *, "nk temp ", nk_temp(1)
+             nk(n_dim_idx) = nk_temp(1)
+
+             print *, "nk from gpu ", nk(n_dim_idx), " n_pairs ", j_end
+             
+             ! Now we create temporary arrays for the k indices
+
+             ! allocate(k_index_single(1:nk(n_dim_idx)))
+             st_k_index_d(n_dim_idx) = nk(n_dim_idx) * c_int
+             call gpu_malloc_all(k_index_d(n_dim_idx), st_k_index_d(n_dim_idx), gpu_stream)             
+             call gpu_memset_async(k_index_d(n_dim_idx), 0, st_k_index_d(n_dim_idx), gpu_stream)             
+
+             call gpu_malloc_all(j2_index_d(n_dim_idx), st_k_index_d(n_dim_idx), gpu_stream)             
+             call gpu_memset_async(j2_index_d(n_dim_idx), 0, st_k_index_d(n_dim_idx), gpu_stream)             
+
+             st_rjs(n_dim_idx) = nk(n_dim_idx) * c_double
+             call gpu_malloc_all(rjs_index_d(n_dim_idx), st_rjs(n_dim_idx), gpu_stream)             
+             call gpu_memset_async(rjs_index_d(n_dim_idx), 0, st_rjs(n_dim_idx), gpu_stream)             
+
+             
+             call gpu_malloc_all(xyz_k_d(n_dim_idx), 3*st_rjs(n_dim_idx), gpu_stream)             
+             call gpu_memset_async(xyz_k_d(n_dim_idx), 0, 3*st_rjs(n_dim_idx), gpu_stream)             
+             call gpu_device_sync()
+
+             ! call gpu_meminfo()
+
+             ! print *, "-- Memory for nk_flags =  ", dfloat(j_end*8)/(dfloat(1024*1024*1024)), " Gb"
+             ! print *, "-- Memory for xyz_k_d  =  ", dfloat(nk(n_dim_idx)*3*8)/(dfloat(1024*1024*1024)), " Gb"                           
+             
+             print *, "Starting set host "             
+             call gpu_set_pair_distribution_k_index(i_beg, i_end, j_end, n_sites, neighbor_list_d,&
+                   & rjs_d, xyz_d, k_index_d(n_dim_idx), j2_index_d(n_dim_idx),&
+                   & rjs_index_d(n_dim_idx), xyz_k_d(n_dim_idx), nk_flags_d(n_dim_idx), nk_flags_sum_d(n_dim_idx),&
+                   & gpu_stream)
+             call gpu_device_sync()             
+             print *, "Finished setting the gpu arrays "
+
+             ! Checking rjs set
+             
+          
+             ! allocate(pdf_gpu_check(1:nk(n_dim_idx)))
+             ! allocate(ksd_temp(1:nk(n_dim_idx)))             
+             ! call cpy_dtoh( rjs_index_d(n_dim_idx), c_loc(pdf_gpu_check),  st_rjs(n_dim_idx), gpu_stream )
+             ! call cpy_dtoh( k_index_d(n_dim_idx), c_loc(ksd_temp), st_k_index_d(n_dim_idx), gpu_stream )             
+             ! call gpu_device_sync()
+
+             ! call setup_rjs(rjs_temp, ks_temp,  n_sites, &
+             !      & neighbors_list(j_beg:j_end), n_neigh(i_beg:i_end), neighbor_species(j_beg:j_end),&
+             !      rjs(j_beg:j_end), params%r_range_min,&
+             !      & params%r_range_max, params%pair_distribution_n_samples, &
+             !      params%pair_distribution_rcut, i, j,  params%pair_distribution_kde_sigma)             
+             
+             ! print *, " n_k gpu ", nk(n_dim_idx)
+             ! do l = 1, nk(n_dim_idx)
+             !    if( modulo(l-1, 10000)  == 0) print *, " rjs check, l = ", l, " gpu ", pdf_gpu_check(l), " cpu ", rjs_temp(l)
+             !    if( modulo(l-1, 10000)  == 0) print *, " kis check, l = ", l, " gpu ", ksd_temp(l), " cpu ", ks_temp(l)                
+             ! end do
+
+             ! deallocate(pdf_gpu_check, rjs_temp, ks_temp, ksd_temp)
+
+
+             
+
+             call gpu_free_async(nk_flags_d(n_dim_idx), gpu_stream)
+             call gpu_free_async(nk_flags_sum_d(n_dim_idx), gpu_stream)                          
+             
+
+             call gpu_meminfo()
+
+
+             !--- CALCULATING THE PAIR DISTRIBUTION FUNCTION ---!
+             print *, " Allocating pdf arrays   "             
+             st_pair_distribution_partial_d(n_dim_idx) = params%pair_distribution_n_samples * c_double 
+             call gpu_malloc_all(pair_distribution_partial_d(n_dim_idx), st_pair_distribution_partial_d(n_dim_idx), gpu_stream)             
+             call gpu_memset_async(pair_distribution_partial_d(n_dim_idx), 0, st_pair_distribution_partial_d(n_dim_idx), gpu_stream)             
+
+             st_pair_distribution_partial_der_d(n_dim_idx) = params%pair_distribution_n_samples * nk(n_dim_idx) * c_double              
+             call gpu_malloc_all(pair_distribution_partial_der_d(n_dim_idx), st_pair_distribution_partial_der_d(n_dim_idx), gpu_stream)             
+             call gpu_memset_async(pair_distribution_partial_der_d(n_dim_idx), 0, st_pair_distribution_partial_der_d(n_dim_idx), gpu_stream)
+
+             pdf_factor =  ( ( params%r_range_max - params%r_range_min) / &
+                  dfloat(params%pair_distribution_n_samples) ) / ( sqrt( 2.d0 * pi) * params%pair_distribution_kde_sigma)
+             print *, "pdf factor ", pdf_factor
+             print *, " Calculating pdf on the gpu now "
+             call gpu_device_sync()
+             call gpu_get_pair_distribution_and_ders(&
+                  pair_distribution_partial_d(n_dim_idx),&
+                  pair_distribution_partial_der_d(n_dim_idx),&
+                  nk(n_dim_idx), &
+                  params%pair_distribution_n_samples, &
+                  params%pair_distribution_kde_sigma, &
+                  x_d, dV_d,&
+                  rjs_index_d(n_dim_idx), pdf_factor, gpu_stream)
+
+
+             print *, " Finished pdf gpu calculation  "             
+             call gpu_meminfo()
+             
+!             stop
+
+             
+             
+
+
+!             stop(0)
+             print *, "about to start the rest of pdf "
+             call get_pair_distribution( n_sites,&
+                  & neighbors_list(j_beg:j_end), n_neigh(i_beg:i_end)&
+                  &, neighbor_species(j_beg:j_end), rjs(j_beg:j_end),&
+                  & xyz(1:3,j_beg:j_end), params %r_range_min, params&
+                  &%r_range_max, params%pair_distribution_n_samples,&
+                  & x_pair_distribution,&
+                  & pair_distribution_partial(1:params&
+                  &%pair_distribution_n_samples, n_dim_idx), params &
+                  &%pair_distribution_rcut, .false., params&
+                  &%pair_distribution_partial, j, k, params&
+                  &%pair_distribution_kde_sigma, dfloat(n_sites)/v_uc&
+                  &,  params%exp_forces,&
+                  & pair_distribution_partial_der, n_dim_idx, j_beg,&
+                  & j_end )
+
+
+
+
+             ! -------- PDF CHECK ----------!
+             !--- CHECKING THAT IT WORKS ---!
+             print *, "checking pdf"
+             allocate(pdf_gpu_check(1:params%pair_distribution_n_samples))
+             
+             call cpy_dtoh( pair_distribution_partial_d(n_dim_idx), c_loc(pdf_gpu_check), &
+                  st_pair_distribution_partial_d(n_dim_idx), gpu_stream )
+             call gpu_device_sync()
+
+             do l = 1, params%pair_distribution_n_samples
+                print *, " pdfcheck, l = ", l, " gpu ", pdf_gpu_check(l), " cpu ", pair_distribution_partial(l, n_dim_idx) 
+             end do
+
+             deallocate(pdf_gpu_check)
+             !------------------------------!
+             !-------- PDF DER CHECK -------!
+
+
+             allocate(ders_temp(1:params%pair_distribution_n_samples, j_beg : j_end ))
+             call cpy_dtoh( pair_distribution_partial_der_d(n_dim_idx), c_loc(ders_temp), &
+                  st_pair_distribution_partial_der_d(n_dim_idx), gpu_stream )
+             call gpu_device_sync()
+             do l = 1, params%pair_distribution_n_samples
+                do i = j_beg, j_end
+                  if ( modulo( ((l-1) + (i-1)*params%pair_distribution_n_samples), 1000000 ) == 0 ) print *, " pdfdercheck, l = ", l, "i ", i, " gpu ", ders_temp(l,i), " cpu ", pair_distribution_partial_der(l, n_dim_idx, i  ) 
+                end do
+             end do
+             deallocate(ders_temp)
+                
+
+                
+             
+
+             
+             ! We can deallocate the rjs as we don't need them any more
+             call gpu_free_async(rjs_index_d(n_dim_idx), gpu_stream)
+
+
+             n_dim_idx = n_dim_idx + 1
+
+             
+             if ( n_dim_idx > n_dim_partial )then
+                exit outer1
+             end if
+
+          end do
+       end do outer1
+
+       deallocate( rjs_index_d, st_rjs )
+
+    else
+       call get_pair_distribution( n_sites, &
+            & neighbors_list(j_beg:j_end), n_neigh(i_beg:i_end),&
+            & neighbor_species(j_beg:j_end), rjs(j_beg:j_end), xyz(1:3,j_beg:j_end),&
+            & params%r_range_min, params%r_range_max, params &
+            &%pair_distribution_n_samples, x_pair_distribution,&
+            & y_pair_distribution, params &
+            &%pair_distribution_rcut, .false., .false., 1, 1,&
+            & params%pair_distribution_kde_sigma, dfloat(n_sites)&
+            &/v_uc, params%do_forces .and. params%exp_forces, pair_distribution_partial_der, 1, &
+            & j_beg, j_end)
+    end if
+
+    deallocate(dV)    
+
+    ! --- MPI communication is here  ---
+
+    if ( params%pair_distribution_partial )then
+#ifdef _MPIF90
+       call mpi_reduce(pair_distribution_partial,&
+            & pair_distribution_partial_temp, params&
+            &%pair_distribution_n_samples * n_dim_partial, MPI_DOUBLE_PRECISION, MPI_SUM,&
+            & 0, MPI_COMM_WORLD, ierr)
+
+       ! Now store the FULL pair distribution function which comes from these partial pair distribution functions
+       ! Note, we have only so far divided by 4 pi r^2 dr
+       ! Therefore, we must scale by the density
+
+       pair_distribution_partial =  pair_distribution_partial_temp
+       deallocate( pair_distribution_partial_temp )
+
+
+       call mpi_bcast(pair_distribution_partial, params&
+            &%pair_distribution_n_samples * n_dim_partial, MPI_DOUBLE_PRECISION, 0,&
+            & MPI_COMM_WORLD, ierr)
+
+
+       ! Now, we have the derivatives of the partial pair distribution
+       ! function with respect to the atom pairs in that rank
+       !
+       ! We can keep them in the rank and calculate forces
+
+
+       ! call mpi_reduce(pair_distribution_partial_der,&
+       !      & pair_distribution_partial_der_temp, params&
+       !      &%pair_distribution_n_samples * n_species *&
+       !      & n_species * 3 * n_pairs_tot, MPI_DOUBLE_PRECISION, MPI_SUM,&
+       !      & 0, MPI_COMM_WORLD, ierr)
+
+       ! ! Now store the FULL pair distribution function which comes from these partial pair distribution functions
+       ! ! Note, we have only so far divided by 4 pi r^2 dr
+       ! ! Therefore, we must scale by the density
+
+       ! pair_distribution_partial_der =  pair_distribution_partial_der_temp
+       ! deallocate( pair_distribution_partial_der_temp )
+
+
+
+#endif
+
+
+       if ( params%valid_pdf )then
+          allocate(energies_pair_distribution(1:n_sites))
+          energies_pair_distribution = 0.d0
+
+          if (params%do_forces .and. params%exp_forces)then
+             allocate(forces_pair_distribution(1:3,1:n_sites))
+             forces_pair_distribution = 0.d0
+          end if
+
+       end if
+
+
+       !####################################!
+       !###---   Accumulate the PDF   ---###!
+       !####################################!
+
+
+       y_pair_distribution = 0.d0
+       n_dim_idx = 1
+       outer2: do j = 1, n_species
+          do k = 1, n_species
+
+             if (j > k) cycle
+
+             pair_distribution_partial(1:params%pair_distribution_n_samples, n_dim_idx) =&
+                  & pair_distribution_partial(1:params&
+                  &%pair_distribution_n_samples, n_dim_idx) * v_uc &
+                  &  /  n_atoms_of_species(j) /  n_atoms_of_species(k) / factors(n_dim_idx) !real(n_sites)
+
+             if (params%do_forces .and. params%exp_forces) then
+                pair_distribution_partial_der(1:params&
+                     &%pair_distribution_n_samples, n_dim_idx, &
+                     & j_beg:j_end) =  pair_distribution_partial_der(1:params&
+                     & %pair_distribution_n_samples, n_dim_idx, &
+                     & j_beg:j_end) * v_uc /  n_atoms_of_species(j) / &
+                     & n_atoms_of_species(k) / factors(n_dim_idx)!real(n_sites)
+
+             end if
+
+             y_pair_distribution(1:params%pair_distribution_n_samples) = &
+                  & y_pair_distribution(1:params%pair_distribution_n_samples)  +  &
+                  &  factors(n_dim_idx) * (n_atoms_of_species(j) * n_atoms_of_species(k)) * &
+                  & pair_distribution_partial(1:params%pair_distribution_n_samples, n_dim_idx) &
+                  &  /  dfloat(n_sites) / dfloat(n_sites)
+
+             n_dim_idx = n_dim_idx + 1
+
+             if ( n_dim_idx > n_dim_partial )then
+                exit outer2
+             end if
+
+          end do
+       end do outer2
+
+       ! --- Preprocess the pair distribution according to the output --- !
+       if ( trim( params%pair_distribution_output ) == "D(r)" )then
+          y_pair_distribution = 4.d0 * pi * ( dfloat(n_sites) / v_uc ) * x_pair_distribution * (y_pair_distribution - 1.d0)
+       end if
+
+
+
+       !######################################!
+       !###---   Calculate the forces   ---###!
+       !######################################!
+
+       if ( params%valid_pdf .and. allocated( params%exp_energy_scales ))then
+
+          call get_energy_scale( params%do_md, params%do_mc,&
+               & md_istep, params%md_nsteps, mc_istep, params&
+               &%mc_nsteps, params &
+               &%exp_energy_scales_initial(params%pdf_idx), params &
+               &%exp_energy_scales_final(params%pdf_idx), params &
+               &%exp_energy_scales(params%pdf_idx) )
+
+          call get_exp_energies(params%exp_energy_scales(params&
+               &%pdf_idx), params%exp_data(params%pdf_idx)%y&
+               &, y_pair_distribution,&
+               & params%pair_distribution_n_samples, n_sites,&
+               & energies_pair_distribution(i_beg:i_end))
+
+
+
+          if (params%do_forces .and.  params%exp_forces )then
+             ! forces_pair_distribution = 0.d0
+             ! allocate( pair_distribution_der_temp( 1:params%pair_distribution_n_samples ) )
+             ! pair_distribution_der_temp = 0.d0
+
+             n_dim_idx = 1
+             outerforces: do j = 1, n_species
+                do k = 1, n_species
+
+                   if (j > k) cycle
+
+                   call get_pair_distribution_forces(  n_sites, params%exp_energy_scales(params%pdf_idx),&
+                        & params%exp_data(params%pdf_idx)%x, params%exp_data(params%pdf_idx)%y,&
+                        & forces_pair_distribution, virial,&
+                        & neighbors_list(j_beg:j_end), n_neigh(i_beg:i_end),&
+                        & neighbor_species(j_beg:j_end), rjs(j_beg:j_end), xyz(1:3,j_beg:j_end), params&
+                        &%r_range_min, params%r_range_max, params&
+                        &%pair_distribution_n_samples,&
+                        & y_pair_distribution(1:params&
+                        &%pair_distribution_n_samples), params%pair_distribution_rcut&
+                        &, j, k, pair_distribution_partial_der(1:params &
+                        &%pair_distribution_n_samples, n_dim_idx,&
+                        & j_beg:j_end), params%pair_distribution_partial,&
+                        & params%pair_distribution_kde_sigma,&
+                        & ( (n_atoms_of_species(j) *&
+                        & n_atoms_of_species(k)) /  dfloat(n_sites) /&
+                        & dfloat(n_sites) ), ( dfloat(n_sites) / v_uc ), params%pair_distribution_output)
+
+                   n_dim_idx = n_dim_idx + 1
+
+                   if ( n_dim_idx > n_dim_partial )then
+                      exit outerforces
+                   end if
+
+                end do
+             end do outerforces
+          end if
+
+          ! do i = 1, params%pair_distribution_n_samples
+          !    print *,  "ppd ", 100, pair_distribution_der_temp( 1 ), pair_distribution_partial_der( 1, 2, 100:102 )
+          ! end do
+
+          ! open(unit=1234, file="grad", status="unknown")
+          ! do i = 100, 110
+          !    write(1234,  '(A,1X,I8,1X,F20.8)'), "dg_dr_0^1 ", i, pair_distribution_der_temp( i )
+          ! end do
+          ! close(unit=1234)
+
+          ! deallocate( pair_distribution_der_temp)
+       end if
+
+       !##################################################################!
+       !###---   If not doing partial pair distribution functions   ---###!
+       !##################################################################!
+
+
+    else
+#ifdef _MPIF90
+       call mpi_reduce(y_pair_distribution,&
+            & y_pair_distribution_temp, params&
+            &%pair_distribution_n_samples,&
+            & MPI_DOUBLE_PRECISION, MPI_SUM, 0,&
+            & MPI_COMM_WORLD, ierr)
+
+       y_pair_distribution =  y_pair_distribution_temp
+       deallocate( y_pair_distribution_temp )
+
+       call mpi_bcast(y_pair_distribution, params&
+            &%pair_distribution_n_samples, MPI_DOUBLE_PRECISION, 0,&
+            & MPI_COMM_WORLD, ierr)
+
+       ! if ( do_derivatives .and. params%exp_forces .and. allocated( params%exp_energy_scales ) )then
+       !    allocate( forces_pair_distribution_temp(1:3, 1:n_sites) )
+       !    forces_pair_distribution_temp = 0.d0
+
+       !    call mpi_reduce(forces_pair_distribution,&
+       !         & forces_pair_distribution_temp, 3 * n_sites,&
+       !         & MPI_DOUBLE_PRECISION, MPI_SUM, 0,&
+       !         & MPI_COMM_WORLD, ierr)
+
+       !    forces_pair_distribution = forces_pair_distribution_temp
+       !    deallocate( forces_pair_distribution_temp )
+
+       !    call mpi_bcast(forces_pair_distribution, 3*n_sites, MPI_DOUBLE_PRECISION, 0,&
+       !         & MPI_COMM_WORLD, ierr)
+
+       ! end if
+
+#endif
+       y_pair_distribution =y_pair_distribution * &
+            & dot_product( cross_product(a_box, b_box),&
+            & c_box ) / (dfloat(indices(1)*indices(2)&
+            &*indices(3))) / dfloat(n_sites) / dfloat(n_sites)
+
+    end if
+
+
+    if (params%pair_distribution_partial .and. allocated(factors)) deallocate(factors)
+
+
+    ! Write out the partial pair distribution functions
+    call get_write_condition( params%do_mc, params%do_md&
+         &, mc_istep, md_istep, params%write_xyz,&
+         & write_condition)
+
+
+    if (rank == 0 .and. params%write_pair_distribution .and. write_condition) then
+       ! call write_partial_exp(params%do_mc, params%do_md, mc_istep, md_istep,&
+       !      & params%write_xyz, params%pair_distribution_partial,&
+       !      & n_species, params%pair_distribution_n_samples,&
+       !      & n_dim_partial , x_pair_distribution(1:params&
+       !      &%pair_distribution_n_samples), y_pair_distribution(1:params&
+       !      &%pair_distribution_n_samples), pair_distribution_partial(1:params &
+       !      &%pair_distribution_n_samples, 1:n_dim_partial),&
+       !      & species_types , 'pair_distribution')
+
+       call get_overwrite_condition( params%do_mc, params%do_md ,&
+            & mc_istep, md_istep, params%write_xyz,&
+            & overwrite_condition)
+
+
+       if (params%pair_distribution_partial)then
+          n_dim_idx = 1
+          outer3: do j = 1, n_species
+             do k = 1, n_species
+
+                if (j > k) cycle
+
+                write(filename,'(A)')&
+                     & 'pair_distribution_' // trim(params&
+                     &%species_types(j)) // '_' // trim(params&
+                     &%species_types(k)) //&
+                     & "_prediction.dat"
+                call write_exp_datan(x_pair_distribution(1:params%pair_distribution_n_samples),&
+                     & pair_distribution_partial(1:params%pair_distribution_n_samples, n_dim_idx),&
+                     & overwrite_condition, filename, 'pair_distribution')
+
+                n_dim_idx = n_dim_idx + 1
+                if ( n_dim_idx > n_dim_partial )then
+                   exit outer3
+                end if
+
+             end do
+          end do outer3
+       end if
+
+       write(filename,'(A)')&
+            & "pair_distribution_total.dat"
+       call write_exp_datan(x_pair_distribution(1:params%pair_distribution_n_samples),&
+            &y_pair_distribution(1:params%pair_distribution_n_samples),&
+            & overwrite_condition, filename, "pair_distribution  output: " // trim( params&
+            &%pair_distribution_output ))
+
+    end if
+
+  end subroutine gpu_calculate_pair_distribution
+  
+
+
+  
   subroutine calculate_pair_distribution( params, x_pair_distribution&
        &, y_pair_distribution, y_pair_distribution_temp,&
        & pair_distribution_partial, pair_distribution_partial_temp, &
@@ -1009,7 +1776,7 @@ contains
        & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
        & neighbor_species, species, rank , q_beg, q_end, ntasks,&
        & sinc_factor_matrix, do_derivatives, pair_distribution_partial_der,&
-       & energies_sf, forces_sf, virial_sf, use_matrix_forces)
+       & energies_sf, forces_sf, virial_sf, use_matrix_forces, cublas_handle, gpu_stream)
     implicit none
     type(input_parameters), intent(inout) :: params
     real*8, allocatable, intent(out) :: x_structure_factor(:), x_structure_factor_temp(:), &
@@ -1038,6 +1805,9 @@ contains
     logical :: overwrite_condition, write_condition
     logical, intent(in) :: do_derivatives, use_matrix_forces
 
+    type(c_ptr) :: cublas_handle, gpu_stream
+    
+    
     v_uc = dot_product( cross_product(a_box,&
             & b_box), c_box ) / (&
             & dfloat(indices(1)*indices(2)&
@@ -1335,6 +2105,7 @@ contains
 
                 allocate(forces_sf(1:3,1:n_sites))
                 forces_sf = 0.d0
+                virial_sf = 0.d0                
 
                 n_dim_idx = 1
                 outerf: do j = 1, n_species
@@ -1346,11 +2117,11 @@ contains
                       if (j /= k) f = 2.d0
 
                       if (use_matrix_forces)then
-                         call get_structure_factor_forces_matrix(  n_sites, params%exp_energy_scales(params%sf_idx),&
+                         call get_structure_factor_forces_matrix(i_beg, i_end,  n_sites, params%exp_energy_scales(params%sf_idx),&
                               & params%exp_data(params%sf_idx)%x,  params%exp_data(params%sf_idx)%y,&
                               & forces_sf, virial_sf,&
                               & neighbors_list(j_beg:j_end), n_neigh(i_beg:i_end),&
-                              & neighbor_species(j_beg:j_end), species_types, rjs(j_beg:j_end), xyz(1:3,j_beg:j_end), params&
+                              & neighbor_species(j_beg:j_end), species_types, species(i_beg:i_end), rjs(j_beg:j_end), xyz(1:3,j_beg:j_end), params&
                               &%r_range_min, params%r_range_max, params&
                               &%pair_distribution_n_samples, params&
                               &%structure_factor_n_samples, n_species,&
@@ -1366,7 +2137,7 @@ contains
                               & dfloat(n_sites) ) * ( dfloat(n_sites) /&
                               & v_uc ), sinc_factor_matrix, n_dim_idx,&
                               & .false., params%xrd_output,&
-                              & n_atoms_of_species, .false. )
+                              & n_atoms_of_species, .false., cublas_handle, gpu_stream )
                       else
                          call get_structure_factor_forces(  n_sites, params%exp_energy_scales(params%sf_idx),&
                               & params%exp_data(params%sf_idx)%x,  params%exp_data(params%sf_idx)%y,&
@@ -1544,7 +2315,7 @@ contains
        & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
        & neighbor_species, species, rank , q_beg, q_end, ntasks,&
        & sinc_factor_matrix, do_derivatives, pair_distribution_partial_der,&
-       & energies_xrd, forces_xrd, virial_xrd, neutron, use_matrix_forces )
+       & energies_xrd, forces_xrd, virial_xrd, neutron, use_matrix_forces, cublas_handle, gpu_stream )
     implicit none
     type(input_parameters), intent(inout) :: params
     real*8, allocatable, intent(out) :: x_xrd(:), x_xrd_temp(:), &
@@ -1575,6 +2346,9 @@ contains
     integer :: xrd_idx
     character*32 :: xrd_output
 
+    type(c_ptr) :: cublas_handle, gpu_stream
+
+    
     if ( neutron ) xrd_idx = params%nd_idx
     if ( .not. neutron ) xrd_idx = params%xrd_idx
 
@@ -1720,7 +2494,7 @@ contains
 
                 allocate(forces_xrd(1:3,1:n_sites))
                 forces_xrd = 0.d0
-
+                virial_xrd = 0.d0                
                 n_dim_idx = 1
                 outerf: do j = 1, n_species
                    do k = 1, n_species
@@ -1732,11 +2506,11 @@ contains
 
                       if (use_matrix_forces) then
 
-                         call get_structure_factor_forces_matrix(  n_sites, params%exp_energy_scales(xrd_idx),&
+                         call get_structure_factor_forces_matrix( i_beg, i_end, n_sites, params%exp_energy_scales(xrd_idx),&
                               & x_xrd, params%exp_data(xrd_idx)%y,&
                               & forces_xrd, virial_xrd,&
                               & neighbors_list(j_beg:j_end), n_neigh(i_beg:i_end),&
-                              & neighbor_species(j_beg:j_end), species_types, rjs(j_beg:j_end), xyz(1:3,j_beg:j_end), params&
+                              & neighbor_species(j_beg:j_end), species_types, species(i_beg:i_end), rjs(j_beg:j_end), xyz(1:3,j_beg:j_end), params&
                               &%r_range_min, params%r_range_max, params&
                               &%pair_distribution_n_samples, params&
                               &%structure_factor_n_samples, n_species,&
@@ -1751,7 +2525,7 @@ contains
                               & n_atoms_of_species(k)) /  dfloat(n_sites) /&
                               & dfloat(n_sites) ) * ( dfloat(n_sites) /&
                               & v_uc ), sinc_factor_matrix, n_dim_idx,&
-                              & .true., xrd_output, n_atoms_of_species, neutron)
+                              & .true., xrd_output, n_atoms_of_species, neutron, cublas_handle, gpu_stream)
                       else
                          call get_structure_factor_forces(  n_sites, params%exp_energy_scales(xrd_idx),&
                               & x_xrd, params%exp_data(xrd_idx)%y,&
