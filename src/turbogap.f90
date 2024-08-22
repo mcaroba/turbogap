@@ -577,7 +577,7 @@ program turbogap
                           else
                              soap_turbo_hypers(j)%local_property_models(k)%do_derivatives = .false.
                           end if
-                          soap_turbo_hypersj(j)%local_property_models(k)%zero_trunc = .true.
+                          soap_turbo_hypers(j)%local_property_models(k)%zero_trunc = .true.
                        end if
                     end do
 
