@@ -3,8 +3,8 @@
 #include <iostream>
 #include <hip/hip_runtime.h>
 #include <hip/hip_runtime.h>
-#include <hipblas.h>
-#include <hipsolver.h>
+#include <hipblas/hipblas.h>
+//#include <hipsolver.h>
 #include <chrono>
 #include <numbers>
 #include <cstring>

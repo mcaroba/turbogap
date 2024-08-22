@@ -10,9 +10,9 @@
 
 #include <hip/hip_runtime.h>
 #include <hip/hip_runtime.h>
-#include <hipblas.h>
-#include <hipsolver.h>
-#include <hiprand.h>
+#include <hipblas/hipblas.h>
+//#include <hipsolver.h>
+#include <hiprand/hiprand.h>
 #include <assert.h>
 #include <hip/hip_complex.h>
 
@@ -293,8 +293,8 @@ extern "C" void create_cublas_handle(hipblasHandle_t *handle,hipStream_t *stream
  	  hipblasCreate(handle);
     hipStreamCreate(stream);
     hipblasSetStream(*handle, *stream);
-    hipsolverCreate(handle);
-    hipsolverSetStream(*handle,*stream);
+//    hipsolverCreate(handle);
+//    hipsolverSetStream(*handle,*stream);
     /*printf("\n cublas handle created \n");
     exit(0);*/
 
@@ -518,6 +518,18 @@ extern "C" void gpu_blas_mmul_n_t(hipblasHandle_t handle, const double *kernels_
   hipblasDgemm(handle, HIPBLAS_OP_N, HIPBLAS_OP_T, n_sites,  n_soap, n_sparse, alpha,  kernels_der_d, n_sites,
                          Qs_copy_d, n_soap, beta, Qss_d, n_sites);
 }
+
+
+extern "C" void gpu_dgemm_n_n(int m, int n, int k, double alpha,
+			      double* A, int lda, double* B, int ldb,
+			      double beta, double* C, int ldc, hipblasHandle_t handle){
+
+	const double *alpha_a = &alpha;
+	const double *beta_a = &beta;
+
+	hipblasDgemm(handle, HIPBLAS_OP_N, HIPBLAS_OP_N, m, n, k, alpha_a, A, lda, B, ldb, beta_a, C, ldc);
+}
+
 
 
 

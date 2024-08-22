@@ -2,9 +2,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
-#include <hipblas.h>
-#include <hipsolver.h>
-#include <hiprand.h>
+#include <hipblas/hipblas.h>
+//#include <hipsolver.h>
+//#include <hiprand/hiprand.h>
 #include <assert.h>
 #include <hip/hip_complex.h>
 #include <numbers>
@@ -56,10 +56,16 @@ void hip_check_error(hipError_t err)
 // pref(1:n_sparse) = 2.d0 * delta**2 * alphas(1:n_sparse) * cutoff(1:n_sparse)
 __global__ void eval_pref(double* __restrict__ pref, const double* __restrict__ alpha, const double delta, const double* __restrict__ cutoff, const int size){
   auto tid = blockIdx.x * blockDim.x + threadIdx.x;
-  for (auto i = 0; i<= size/blockDim.x;++i)
+  // for (auto i = 0; i<= size/blockDim.x;++i)
+  // {
+  //   auto idx = tid + i*blockDim.x;
+  //   if (idx < size)
+  //     pref[idx] = 2.0 * ( delta * delta ) * alpha[idx] * cutoff[idx];
+  // }
+  
+  auto idx = tid; // + i*blockDim.x;
+  if (idx < size)
   {
-    auto idx = tid + i*blockDim.x;
-    if (idx < size)
       pref[idx] = 2.0 * ( delta * delta ) * alpha[idx] * cutoff[idx];
   }
 }
@@ -73,15 +79,23 @@ __global__ void add_init_energy(double* __restrict__ arr, const double value, co
 }
 
 
-
 __device__ double warp_red(double data) {
 
    double res = data;
-   for (int i = 32; i!=0; i=i>>1) {
-      res += __shfl_down(res, i, 64);
+   for (int i =warpSize/2; i!=0; i=i>>1) {
+      res += __shfl_down_sync(0xffffffff,res, i,warpSize);
    }
    return res;
 }
+
+// __device__ double warp_red(double data) {
+
+//    double res = data;
+//    for (int i = 32; i!=0; i=i>>1) {
+//       res += __shfl_down(res, i, 64);
+//    }
+//    return res;
+// }
 
 void setup_kappas(int* kappas_array, const int n_sites, const int* n_neigh)
 {
@@ -144,6 +158,10 @@ __device__ void eval_energies_d(
   if(tid < 3)
   {
     if(tid%3 == 0) fcut[2] = fcut[0] * fcut[1];  // fcut = fcut 12*fcut 13 has been put in same array.
+  }
+  __syncthreads();
+  if(tid < 3)
+  {
     dfcut[6+tid] = fcut[0] * dfcut[3+tid] + fcut[1] * dfcut[tid];
   }
   __syncthreads();
@@ -156,21 +174,34 @@ __device__ void eval_energies_d(
   auto sigma2_0 = sigma[0]*sigma[0];
   auto sigma2_1 = sigma[1]*sigma[1];
   auto sigma2_2 = sigma[2]*sigma[2];
-
-  for(auto offset=tid; offset < n_sparse; offset+=warpSize)
+  int offset=tid-warpSize;
+  int nitera=(n_sparse+warpSize-1)/warpSize;
+  //for(auto offset=tid; offset < n_sparse; offset+=warpSize)
+  for(int  iter=0; iter< nitera; iter++)
   {
-    auto local_r =   pow(q[0] -qs[offset],2)            / sigma2_0;
-    local_r      +=  pow(q[1] -qs[offset+n_sparse],2)   / sigma2_1;
-    local_r      +=  pow(q[2] -qs[offset+2*n_sparse],2) / sigma2_2;
-    local_r      =  sqrt(local_r);
+    offset+=warpSize;
+    double local_r=1.0;
+    if(offset<n_sparse)
+    {
+      local_r       =  pow(q[0] -qs[offset],2)            / sigma2_0;
+      local_r      +=  pow(q[1] -qs[offset+n_sparse],2)   / sigma2_1;
+      local_r      +=  pow(q[2] -qs[offset+2*n_sparse],2) / sigma2_2;
+    }
+      local_r      =  sqrt(local_r);
   
     if constexpr(type == pol_k)
     {
       constexpr int j_int = 3/2 + 1 + 1;
       constexpr double j = j_int;
-      auto covpp = local_r >= 1 ? 0.0 : local_r <= 0 ? 1.0 : pow((1.0 - local_r),(j_int+1)) * ((j+1.0)*local_r + 1.0);
-      const auto my_energy = pref[offset] * covpp ;
-      auto energy_to_reduce = my_energy;
+      double my_energy=0.0;
+      double energy_to_reduce;
+      double covpp = 0.0;
+      if(offset<n_sparse){
+        //auto covpp = local_r >= 1 ? 0.0 : local_r <= 0 ? 1.0 : pow((1.0 - local_r),(j_int+1)) * ((j+1.0)*local_r + 1.0);
+        covpp = local_r >= 1 ? 0.0 : local_r <= 0 ? 1.0 : pow((1.0 - local_r),(j_int+1)) * ((j+1.0)*local_r + 1.0);
+        my_energy = pref[offset] * covpp ; 
+      }
+      energy_to_reduce = my_energy;
   
       //reduction of energy from warp to single value, syncthreads should never happen (left for sanity reasons)
       __syncthreads();
@@ -185,11 +216,17 @@ __device__ void eval_energies_d(
       if constexpr (do_forces)
       {
         double drdq[3];
-        drdq[0] = ( q[0] - qs[offset]           ) / sigma2_0 ;
-        drdq[1] = ( q[1] - qs[offset+n_sparse]  ) / sigma2_1 ;
-        drdq[2] = ( q[2] - qs[offset+2*n_sparse]) / sigma2_2 ;
-        auto cov_pp_der = local_r <= 0.0 || local_r >= 1.0 ? 0.0 : (( -(j+1.0) * pow((1.0 - local_r),j_int) * ((j+1.0)*local_r + 1.0) + pow((1.0 - local_r),(j_int+1)) * (j + 1.0) ) / local_r);
-        auto kernel_der = pref[offset] * cov_pp_der ;
+        drdq[0] = 0.0 ; drdq[1] = 0.0;  drdq[2] = 0.0;
+        if(offset<n_sparse){
+          drdq[0] = ( q[0] - qs[offset]           ) / sigma2_0 ;
+          drdq[1] = ( q[1] - qs[offset+n_sparse]  ) / sigma2_1 ;
+          drdq[2] = ( q[2] - qs[offset+2*n_sparse]) / sigma2_2 ;
+        }
+        double kernel_der =0.0;
+        if(offset<n_sparse){
+          auto cov_pp_der = local_r <= 0.0 || local_r >= 1.0 ? 0.0 : (( -(j+1.0) * pow((1.0 - local_r),j_int) * ((j+1.0)*local_r + 1.0) + pow((1.0 - local_r),(j_int+1)) * (j + 1.0) ) / local_r);
+          kernel_der = pref[offset] * cov_pp_der ;
+        }
         //split loop of drdx/forces into 3 loops, one for each force since drdx is only needed inside. can help reducing scope of variables? which means keeping things in registers and bla bla 
   #pragma unroll
         for (int l = 0; l < 3; ++l)
@@ -216,23 +253,11 @@ __device__ void eval_energies_d(
           auto drdx2 = - drdq[0] * xyz_red[l  ] - drdq[1] * 2.0 * (r[0]-r[1]) * xyz_red[l  ] + drdq[2] * xyz_red[l+6];
           // force2(l) = - sum( - kernel(1:n_sparse) * fcut13 * dfcut12(l) - kernel_der(1:n_sparse) * fcut*drdx2(1:n_sparse, l) )
           auto force2 = - my_energy * fcut[1] * dfcut[l] - kernel_der * fcut[2] *drdx2;
-	  
           __syncthreads();
-	    // if( isnan(force2) )
-	    //   {
-	    // 	//		printf("\n tid %d : force2 is nan %lf %lf %lf %lf %lf \n", tid,  my_energy, fcut[1], kernel_der, fcut[2], drdx2 );
-	    // 	// xyz_red[l ] is nan
-	    // 	printf("\n tid %d : force2 is nan %lf %lf %lf %lf %lf %lf %lf %lf \n", tid,  drdq[0] , xyz_red[l  ] , drdq[1] , r[0] , r[1],  xyz_red[l  ] , drdq[2] , xyz_red[l+6] );		
-	    //   }
-	  
   	  auto tmp = warp_red(force2);  
           __syncthreads();
           if(tid == 0)
           {
-	    // if( isnan(tmp) )
-	    //   {
-	    // 	printf("\n tmp is nan \n");
-	    //   }
     	    atomicAdd(&(forces[j3*3+l] ), -tmp);
             #pragma unroll
   	    for (auto k=0; k<3; ++k)
@@ -269,7 +294,8 @@ __device__ void eval_energies_d(
     }//pol_k
 
     if constexpr(type == exp_k)
-    {
+    { 
+      printf("\n This part has a bug related to the __syncthreads(). \n Look above to see how to fix it\n");
       const auto my_energy = pref[offset] * exp(-0.5 * local_r * local_r) ;
       auto energy_to_reduce = my_energy;
       //reduction of energy from warp to single value, syncthreads should never happen (left for sanity reasons)
@@ -414,9 +440,8 @@ __global__ void kernel_2nd_try(
   int counter_second_cont =0;
   int counter_launch =0;
 
-  //  Block index should vary from 0 to the number of atoms being sent -1 (0, n_sites-1)
-  const int i = blockIdx.x + i_beg - 1 ; //i_beg-1 + blockIdx.x //+ threadIdx.x
 
+  const int i = blockIdx.x +i_beg -1; //i_beg-1 + blockIdx.x
   if(species[i] != sp0)
   {
     printf("block %d has wrong species, returning \n",i);
@@ -431,18 +456,13 @@ __global__ void kernel_2nd_try(
     }
   }
   __syncthreads();
-
-  // Kappas array should be the size of n_sites, therefore, there should be an offset which is i_beg
-  //
-  //  int k = i_beg != 1 ?  kappas_array[i-i_beg+1] : kappas_array[i] ;
-
-  int k =  kappas_array[i];
-  int nblk = blockIdx.x;
-
-    
+  //int k = i_beg != 1 ?  kappas_array[i-i_beg+1] : kappas_array[i] ;
+  
+   int k =  kappas_array[i];
+  // int nblk = blockIdx.x;
   auto i3 = ((neighbors_list[k]-1)% n_sites0) ;//+ 1;
-  // if(tid==0)
-  //   printf("hello from block= %d, i_beg= %d, n_sites= %d, i %d, my k is %d, i3 is: %d \n",  nblk, i_beg, n_sites,  i, k, i3);
+  //if(tid==0)
+  //  printf ("hello from i %d, my k is %d, i3 is: %d \n", i, k, i3);
 
   //  if(tid==0) {printf("starting kernel, got k and i3\n");}
   for (int j = 1; j < n_neigh[i]; ++j)
@@ -453,14 +473,6 @@ __global__ void kernel_2nd_try(
       r_shmem[0] = rjs[k];
     }
     __syncthreads();
-
-    // if ( r_shmem[0] < 0.0001 )
-    //   {
-    // 	if (tid==0)
-    // 	  printf("tid %d, i_beg = %d,  rjs[k] %lf, k %d, j %d \n", tid, i_beg, rjs[k], k, j );
-    //   }
-	    
-    
     if((neighbor_species[k] != sp1 && neighbor_species[k] != sp2) || r_shmem[0] > rcut )	  
     {
     // if(tid==0)printf("NOT launching kernel, loop variables are: i i%d j: %d and n_neigh[i] is: %d \n ",i,j,n_neigh[i]);
@@ -471,9 +483,14 @@ __global__ void kernel_2nd_try(
     if (threadIdx.x < 3)
     {
       xyz_shmem[threadIdx.x] = xyz[k*3+threadIdx.x];
+    }
+    __syncthreads();
+    if (threadIdx.x < 3)
+    {
       xyz_red_shmem[threadIdx.x] = xyz_shmem[threadIdx.x]/r_shmem[0];
     }
-    auto k2 = k;
+    auto k2 = k;    
+    __syncthreads();
     for(int j2=j+1; j2 < n_neigh[i]; ++j2)
     {
       k2++;
@@ -482,8 +499,7 @@ __global__ void kernel_2nd_try(
 	r_shmem[1] = rjs[k2];
       }
       __syncthreads();
-            
-      
+
       if(!( ((neighbor_species[k] == sp1 && neighbor_species[k2] == sp2) ||
           (neighbor_species[k] == sp2 && neighbor_species[k2] == sp1) ) && r_shmem[1] < rcut ))
       {
@@ -494,14 +510,24 @@ __global__ void kernel_2nd_try(
       auto k3 = ((neighbors_list[k2]-1)% n_sites0);// +1;
       if (threadIdx.x < 3)
       {
-        xyz_shmem[3+threadIdx.x] = xyz[k2*3+threadIdx.x];
-        xyz_red_shmem[3+threadIdx.x] = xyz_shmem[3+threadIdx.x]/r_shmem[1];
+        xyz_shmem[3+threadIdx.x] = xyz[k2*3+threadIdx.x];}
+    __syncthreads();
+    if (threadIdx.x < 3)
+    {
+        xyz_red_shmem[3+threadIdx.x] = xyz_shmem[3+threadIdx.x]/r_shmem[1];}
+    __syncthreads();
+    if (threadIdx.x < 3)
+    {
         xyz_shmem[6+threadIdx.x] = xyz_shmem[3+threadIdx.x] - xyz_shmem[threadIdx.x];
       }
       __syncthreads();
       if (threadIdx.x == 0)
       {
       r_shmem[2] = sqrt( xyz_shmem[6]* xyz_shmem[6]+ xyz_shmem[7]* xyz_shmem[7]+ xyz_shmem[8]* xyz_shmem[8]);
+      }
+      __syncthreads();
+      if (threadIdx.x == 0)
+      {
       xyz_red_shmem[6] = xyz_shmem[6]/r_shmem[2];
       xyz_red_shmem[7] = xyz_shmem[7]/r_shmem[2];
       xyz_red_shmem[8] = xyz_shmem[8]/r_shmem[2];
@@ -524,7 +550,6 @@ __global__ void kernel_2nd_try(
           eval_energies_d<false,exp_k>(rcut, buffer, n_sparse, xyz_shmem, xyz_red_shmem, r_shmem, sigma, qs, pref_d, energies, forces, virial_loc, fcut, dfcut, i, i3, j3, k3, n_sites0) ;
 	}
       }
-
 
 
       if constexpr (type == pol_k){
@@ -692,8 +717,8 @@ void setup_3bresult_arrays(void** energies,void** forces,void** virial,const hip
     hip_check_error( hipMallocAsync(virial, 9*sizeof(double), s));
     hip_check_error( hipMemsetAsync(virial, 0, 9*sizeof(double), s));      
   }
-  hip_check_error(hipMallocAsync(energies, n_sites0 * sizeof(double), s));
-  hip_check_error(hipMemsetAsync(energies, 0, n_sites0 * sizeof(double), s));      
+  hip_check_error(hipMallocAsync(energies, n_sites* n_sites *sizeof(double), s));
+  hip_check_error(hipMemsetAsync(energies, 0, n_sites*n_sites*sizeof(double), s));      
   printf("allocated energies at address %p \n",energies);
   {
     //using scope to override "global" threads, since this values are only used for initialization.
@@ -718,7 +743,7 @@ void cleanup_3bresult_arrays(void** energy_d, void** forces_d, void** virials_d,
     hip_check_error( hipMemcpyAsync(*virials_h, *virials_d,9*sizeof(double),hipMemcpyDeviceToHost ,s));
     hip_check_error( hipFreeAsync(virials_d, s));
   }
-  hip_check_error( hipMemcpyAsync(*energy_h, *energy_d,n_sites*sizeof(double),hipMemcpyDeviceToHost ,s));
+  hip_check_error( hipMemcpyAsync(*energy_h, *energy_d,n_sites0*sizeof(double),hipMemcpyDeviceToHost ,s));
   hip_check_error( hipFreeAsync(energy_d, s));
 }
 
@@ -800,11 +825,8 @@ const int* kappas_array_d
   
   hip_check_error( hipDeviceSynchronize());
   hip_check_error(hipMallocAsync((void**)&pref_d, n_sparse*sizeof(double), s));
-
-  // The number of blocks needs to be specified here, as n_sparse could be larger than the number of threads
-  auto grids = n_sparse < 1024 ? 1 : n_sparse/1024 +1;
-  threads = n_sparse  < 1024 ? n_sparse : 1024;
-  eval_pref<<<grids,threads,0,s>>>(pref_d, alpha, delta, cutoff,n_sparse);
+  // eval_pref<<<1,threads,0,s>>>(pref_d, alpha, delta, cutoff,n_sparse);
+  eval_pref<<<(n_sparse+256-1)/256,256,0,s>>>(pref_d, alpha, delta, cutoff,n_sparse);
 //  std::cout << std::setprecision(16) << std::fixed;
 //    printf("################### after eval pref: C interface #############\n");
 //    fflush(stdout);
@@ -822,18 +844,20 @@ const int* kappas_array_d
     //using scope to override "global" threads, since this values are only used for initialization.
 //    printf("################### C interface before init energy #############\n");
 //    fflush(stdout);
-    grids = n_sites < 1024 ? 1 : n_sites/1024 +1;
-    threads = n_sites  < 1024 ? n_sites : 1024;
+    auto threads = n_sites  < 1024 ? n_sites : 1024;
+    auto grids = n_sites < 1024 ? 1 : n_sites/1024 +1;
 //    printf(" grids is: %d, threads is %d, n_sites is %d, ptr to energies is %p \n",grids, threads, n_sites, energies);
 //    fflush(stdout);
+    printf(" \n Energy cont %lf \n", e0);
+    fflush(stdout);
     if (e0 != 0)
     {
       add_init_energy<<<grids,threads,0,s>>>(energies, e0, i_end, i_beg);
     }
  }
   hip_check_error( hipDeviceSynchronize());
-   // printf("################### C interface after init energy #############\n");
-   // fflush(stdout);
+//    printf("################### C interface after init energy #############\n");
+//    fflush(stdout);
 
 
 //  int* kappas_array_d;
@@ -845,24 +869,20 @@ const int* kappas_array_d
 //
 //  hip_check_error(hipMemcpyAsync(kappas_array_d, kappas_array_h, n_sites*sizeof(int), hipMemcpyHostToDevice, s));
 //  create_kappas (kappas_array_d, n_neigh_host, n_sites ); 
-  grids=i_end - i_beg+1;//n_sites;
-  threads = 1024 ;//n_sparse  < 1024 ? n_sparse : 1024;
-
-  // The threads we now specify are for the evaluation of the kernel 
-  
+  auto grids=i_end - i_beg+1;//n_sites;
 //    printf("################### C interface: grids are %d, threads are %d  \n parameters are: nsparse %d, nsites %d, natompair %d, nsite0 %d \n",grids,threads,n_sparse,n_sites,n_atom_pairs,n_sites0);
 //    printf("sp0 %d, sp1 %d, sp2 %d, alpha[0] %f, delta %f, cutoff[0] %f, rjs[0] %f, xyz[0] %f, n_neigh[0] %d,",sp0, sp1, sp2, alpha[0], delta, cutoff[0], rjs[0], xyz[0], n_neigh[0]);
 //    printf("species[0] %d, neighbors_list[0] %d, neighbor_species[0] %d, kappas_array_d[0] %d, rcut %f, buffer %f, ",species[0], neighbors_list[0], neighbor_species[0], kappas_array_d[0], rcut, buffer);
 //    printf("sigma[0] %f, qs[0] %f, pref_d[0] %f, energies[0] %f, forces[0] %f, virial[0] %f, i_beg %d \n",sigma[0], qs[0], pref_d[0], energies[0], forces[0], virial[0], i_beg);
 //    fflush(stdout);
   
-  hip_check_error( hipStreamSynchronize(s));
-  hip_check_error( hipDeviceSynchronize());
-  auto err = 	hipPeekAtLastError();
-  //  std::cout<< "3b reported error is " <<	hipGetErrorString(err) <<std::flush << std::endl;
-  //  printf("launching kernel\n");
-  //  fflush(stdout);
-  //  printf("starting kernel\n");
+//   hip_check_error( hipStreamSynchronize(s));
+//   hip_check_error( hipDeviceSynchronize());
+//   auto err = 	hipPeekAtLastError();
+//   std::cout<< "reported error is " <<	hipGetErrorString(err) <<std::flush << std::endl;
+//   printf("launching kernel\n");
+  printf("starting kernel with %d\n", threads);
+  fflush(stdout);
 
   auto clock_start = std::chrono::system_clock::now();
   switch(kernel_type)
@@ -882,14 +902,12 @@ const int* kappas_array_d
       break;
     }
   }
-  //sanity_check<<<1,1>>>(rjs,neighbors_list,n_atom_pairs);
-
+  // sanity_check<<<1,1>>>(rjs,neighbors_list,n_atom_pairs);
   // sanity_check<<<1,1>>>(n_sparse, n_sites, n_atom_pairs, n_sites0, sp0, sp1, sp2, alpha, delta, cutoff, rjs, xyz, n_neigh, species, neighbors_list, neighbor_species, kappas_array_d, rcut, buffer, /*e0,*/ sigma, qs, pref_d, energies, forces, virial);
 
   hip_check_error( hipDeviceSynchronize());
-  //  hip_check_error(hipMallocAsync((void**)&pref_d, n_sparse*sizeof(double), s));
-  // printf("outta loops\n");
-  // fflush(stdout);
+//  printf("outta loops\n");
+//  fflush(stdout);
   auto clock_now = std::chrono::system_clock::now();
   float currentTime = float(std::chrono::duration_cast <std::chrono::microseconds> (clock_now - clock_start).count());
 //  std::cout << "Elapsed Time: " << currentTime /1000000 << " S \n";
@@ -927,8 +945,7 @@ const int* kappas_array_d
 //    std::cout<< Double(virials_h[i])<<",";
 //  }
 //  printf("\n");
-  hip_check_error( hipFree(pref_d) );  
-
+  hip_check_error( hipFreeAsync(pref_d,s) );
 
 }
 extern "C"

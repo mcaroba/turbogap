@@ -48,6 +48,10 @@ program turbogap
   use soap_turbo_functions
   use F_B_C
   use iso_c_binding
+  use gpu_var_mod  
+  use gpu_var_int_mod
+  use gpu_var_double_mod  
+  
 #ifdef _MPIF90
   use mpi
   use mpi_helper
@@ -67,7 +71,7 @@ program turbogap
   real*8, allocatable :: positions(:,:), positions_prev(:,:), soap(:,:), soap_cart_der(:,:,:), &
        positions_diff(:,:), forces_prev(:,:), frac_positions(:,:)
   real*8 :: rcut_max, a_box(1:3), b_box(1:3), c_box(1:3), max_displacement, energy, energy_prev
-  real*8 :: virial(1:3, 1:3), this_virial(1:3, 1:3), virial_soap(1:3, 1:3), virial_2b(1:3, 1:3), &
+  real*8, target :: virial(1:3, 1:3), this_virial(1:3, 1:3), virial_soap(1:3, 1:3), virial_2b(1:3, 1:3), &
        virial_3b(1:3,1:3), virial_core_pot(1:3, 1:3), virial_vdw(1:3, 1:3), virial_lp(1:3,1:3), &
        this_virial_vdw(1:3, 1:3), this_virial_lp(1:3, 1:3), virial_pdf(1:3,1:3), this_virial_pdf(1:3,1:3), v_uc,&
        & virial_sf(1:3,1:3), this_virial_sf(1:3,1:3), &
@@ -147,7 +151,7 @@ program turbogap
   integer :: which_atom = 0, n_species = 1, n_species_actual, n_xyz, indices(1:3)
   integer :: radial_enhancement = 0
   integer :: md_istep, mc_istep, mc_mu_id=1, n_mc
-  character*8, allocatable :: species_types_actual(:)
+  character*8, allocatable, target :: species_types_actual(:)
   character*1024, allocatable ::  local_property_labels(:), local_property_labels_temp(:), local_property_labels_temp2(:)
   logical :: repeat_xyz = .true., overwrite = .false., check_species,&
        & valid_local_properties=.false., label_in_list, do_mc_relax&
@@ -217,8 +221,8 @@ program turbogap
   integer :: sp1, sp2
   logical(c_bool) :: c_do_forces
   integer(c_size_t) :: st_n_sites_int,st_n_sites_double, st_n_atom_pairs_int, st_n_atom_pairs_double, st_n_sparse_double, st_virial
-  integer(c_size_t) :: st_size_nf, st_size_rcut_hard
-  type(c_ptr) :: n_neigh_d, species_d, neighbor_species_d, rjs_d, alphas_d,cutoff_d,qs_d,xyz_d
+  integer(c_size_t) :: st_size_nf, st_size_rcut_hard, st_species_types_actual_d
+  type(c_ptr) :: n_neigh_d, species_d, neighbor_species_d, rjs_d, alphas_d,cutoff_d,qs_d,xyz_d, species_types_actual_d
   type(c_ptr) :: energies_2b_d,forces_2b_d,virial_2b_d,x_d,V_d,dVdx2_d,forces_core_pot_d,virial_core_pot_d,energies_core_pot_d
   type(c_ptr) :: nf_d, rcut_hard_d, rcut_soft_d, global_scaling_d, atom_sigma_r_d, atom_sigma_r_scaling_d
   type(c_ptr) :: atom_sigma_t_d, atom_sigma_t_scaling_d, amplitude_scaling_d, alpha_max_d, central_weight_d
@@ -229,9 +233,17 @@ program turbogap
   type(c_ptr) :: energies_3b_d, forces_3b_d, virial_3b_d
   type(c_ptr) :: kappas_array_d, sigma_d, neighbors_list_d 
   integer(c_size_t) :: size_maxnp_bytes, size_maxnp_qs_bytes, size_alphas_bytes, size_energy3b, size_forces3b, size_virial3b
-
+  
 !**************************************************************************
 
+  !--- GPU variables for experimental ---!
+!  type( gpu_exp ) :: gpu_exp_vars
+  type(c_ptr) :: pair_distribution_d
+  type(c_ptr), allocatable :: nk_d(:), k_index_d(:), j2_index_d(:), rjs_index_d(:), xyz_k_d(:), pair_distribution_partial_d(:), pair_distribution_partial_der_d(:)
+  integer(c_size_t), allocatable :: st_nk_d(:), st_k_index_d(:), st_j2_index_d(:), st_pair_distribution_partial_d(:), st_pair_distribution_partial_der_d(:)
+  integer, allocatable :: nk(:)
+
+  
 
   ! Nested sampling
   real*8 :: e_max, e_kin, rand, rand_scale(1:6), mag, n_total_cutoff, n_total_cutoff_temp, dq, target_temp
@@ -1967,7 +1979,7 @@ program turbogap
          ! print *, rank, " > expected size ", soap_turbo_hypers(i)%dim
               !--- TODO: PORT OLD VERSION OF GPU GET GAP SOAP WITH NEW CPU VERSION
               !--- OLD GPU VERSION OF GET GAP SOAP ---!
-              print *, rank, " > GET GAP SOAP < "           
+!              print *, rank, " > GET GAP SOAP < "           
               call get_gap_soap(n_sparse, n_sites, this_n_sites_mpi, n_neigh(this_i_beg:this_i_end), neighbors_list(this_j_beg:this_j_end), &
                    soap_turbo_hypers(i)%n_species, soap_turbo_hypers(i)%species_types, &
                    rjs(this_j_beg:this_j_end), thetas(this_j_beg:this_j_end), phis(this_j_beg:this_j_end), &
@@ -2004,7 +2016,7 @@ program turbogap
                    soap_turbo_hypers(i)%st_W_d, soap_turbo_hypers(i)%st_S_d, soap_turbo_hypers(i)%st_multiplicity_array_d,&
                    soap_turbo_hypers(i)%recompute_basis, cublas_handle, gpu_stream)
 
-              print *, rank, " >>--- Finished GET GAP SOAP ---<< "                         
+!              print *, rank, " >>--- Finished GET GAP SOAP ---<< "                         
               ! !--- NEW CPU VERSION OF GET GAP SOAP ---!
               ! call get_gap_soap(n_sites, this_n_sites_mpi, n_neigh(this_i_beg:this_i_end), neighbors_list(this_j_beg:this_j_end), &
               !      soap_turbo_hypers(i)%n_species, soap_turbo_hypers(i)%species_types, &
@@ -2155,7 +2167,7 @@ program turbogap
         end if
            
         call gpu_free(Qs_d) 
-!        print *, rank, " >>~~~ Finished freeing gpu memory ~~~<< "                                 
+        print *, rank, " >>~~~ Finished freeing gpu memory ~~~<< "                                 
 
 !        soap_time_soap(2 = MPI_wtime()
         soap_time_soap(2)=MPI_Wtime()
@@ -2631,11 +2643,61 @@ program turbogap
         end do
 
 
-        if (params%do_pair_distribution)then
+        if (params%do_pair_distribution .or. params%do_structure_factor .or. params%do_xrd)then
+           print *, ""
+           print *, " >> Allocating GPU arrays for Exp Calculation << "           
+           print *, ""           
+           st_n_sites_int = n_sites*sizeof(n_neigh(1)) 
+           call gpu_malloc_all(n_neigh_d,st_n_sites_int,gpu_stream)
+           call cpy_htod(c_loc(n_neigh),n_neigh_d, st_n_sites_int,gpu_stream)
+           call gpu_malloc_all(species_d,st_n_sites_int,gpu_stream)
+           call cpy_htod(c_loc(species),species_d, st_n_sites_int,gpu_stream)
+           st_n_atom_pairs_int = j_end * sizeof(neighbor_species(1))
 
+           call gpu_malloc_all(neighbor_species_d,st_n_atom_pairs_int,gpu_stream)
+           call cpy_htod(c_loc(neighbor_species),neighbor_species_d, st_n_atom_pairs_int,gpu_stream)
+           call gpu_malloc_all(neighbors_list_d,st_n_atom_pairs_int,gpu_stream)
+           print *, " -- n_pairs for neighbor_list = ", j_end           
+           call cpy_htod(c_loc(neighbors_list),neighbors_list_d, st_n_atom_pairs_int,gpu_stream)
+           
+           st_n_atom_pairs_double = j_end*sizeof(rjs(1))
+           call gpu_malloc_all(rjs_d,st_n_atom_pairs_double,gpu_stream)
+           call cpy_htod(c_loc(rjs),rjs_d, st_n_atom_pairs_double,gpu_stream)
+           call gpu_malloc_all(xyz_d,3*st_n_atom_pairs_double,gpu_stream)
+           call cpy_htod(c_loc(xyz),xyz_d,3*st_n_atom_pairs_double,gpu_stream)
+
+           st_species_types_actual_d = n_species_actual * c_int
+           call gpu_malloc_all(species_types_actual_d,st_species_types_actual_d,gpu_stream)
+           call cpy_htod(c_loc(species_types_actual),species_types_actual_d,st_species_types_actual_d,gpu_stream)
+           call gpu_device_sync()
+           
+        end if
+        
+        
+        if (params%do_pair_distribution)then
+           print *, ""
+           print *, " >> Starting Pair Distribution Fucntion << "
+           print *, ""           
            time_pdf(1) = MPI_wtime()
 
-           call calculate_pair_distribution( params, x_pair_distribution&
+
+!            call calculate_pair_distribution( params, x_pair_distribution&
+!                 &, y_pair_distribution, y_pair_distribution_temp,&
+!                 & pair_distribution_partial, pair_distribution_partial_temp, &
+!                 & n_species_actual, species_types_actual, n_atoms_of_species, n_sites, a_box,&
+!                 & b_box, c_box, indices, md_istep, mc_istep, i_beg, i_end,&
+!                 & j_beg, j_end, ierr , rjs, xyz, neighbors_list,&
+!                 & n_neigh, neighbor_species, species, rank, params%exp_forces, &
+!                 & pair_distribution_der,&
+!                 & pair_distribution_partial_der,&
+! #ifdef _MPIF90
+!                 & pair_distribution_partial_temp_der, this_energies_pdf, this_forces_pdf, this_virial_pdf)
+! #else
+!            & pair_distribution_partial_temp_der, energies_pdf, forces_pdf, virial_pdf)
+! #endif
+           
+           
+           call gpu_calculate_pair_distribution( params, x_pair_distribution&
                 &, y_pair_distribution, y_pair_distribution_temp,&
                 & pair_distribution_partial, pair_distribution_partial_temp, &
                 & n_species_actual, species_types_actual, n_atoms_of_species, n_sites, a_box,&
@@ -2643,7 +2705,10 @@ program turbogap
                 & j_beg, j_end, ierr , rjs, xyz, neighbors_list,&
                 & n_neigh, neighbor_species, species, rank, params%exp_forces, &
                 & pair_distribution_der,&
-                & pair_distribution_partial_der,&
+                & pair_distribution_partial_der, nk, pair_distribution_d, &
+                & nk_d, k_index_d, j2_index_d, xyz_k_d, pair_distribution_partial_d, pair_distribution_partial_der_d, &
+                & st_nk_d, st_k_index_d, st_j2_index_d, st_pair_distribution_partial_d, st_pair_distribution_partial_der_d,&
+                & n_neigh_d, species_d, neighbor_species_d, neighbors_list_d, rjs_d, xyz_d, species_types_actual_d,  cublas_handle, gpu_stream,&
 #ifdef _MPIF90
                 & pair_distribution_partial_temp_der, this_energies_pdf, this_forces_pdf, this_virial_pdf)
 #else
@@ -2651,9 +2716,26 @@ program turbogap
 #endif
 
 
-           time_pdf(2) = MPI_wtime()
-           time_pdf(3) = time_pdf(3) + time_pdf(2) - time_pdf(1)
-           !           if (rank == 0) print *, rank, " TIME_PDF = ", time_pdf(3)
+!            call gpu_calculate_pair_distribution( params, x_pair_distribution&
+!                 &, y_pair_distribution, y_pair_distribution_temp,&
+!                 & pair_distribution_partial, pair_distribution_partial_temp, &
+!                 & n_species_actual, species_types_actual, n_atoms_of_species, n_sites, a_box,&
+!                 & b_box, c_box, indices, md_istep, mc_istep, i_beg, i_end,&
+!                 & j_beg, j_end, ierr , rjs, xyz, neighbors_list,&
+!                 & n_neigh, neighbor_species, species, rank, params%exp_forces, &
+!                 & pair_distribution_der,&
+!                 & pair_distribution_partial_der, gpu_exp_vars,&
+!                 & n_neigh_d, species_d, neighbor_species_d, neighbors_list_d, rjs_d, xyz_d, species_types_actual_d,  cublas_handle, gpu_stream,&
+! #ifdef _MPIF90
+!                 & pair_distribution_partial_temp_der, this_energies_pdf, this_forces_pdf, this_virial_pdf)
+! #else
+!            & pair_distribution_partial_temp_der, energies_pdf, forces_pdf, virial_pdf)
+! #endif
+           
+
+!            time_pdf(2) = MPI_wtime()
+!            time_pdf(3) = time_pdf(3) + time_pdf(2) - time_pdf(1)
+!            !           if (rank == 0) print *, rank, " TIME_PDF = ", time_pdf(3)
 
 
 
@@ -2672,10 +2754,9 @@ program turbogap
                 & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
                 & neighbor_species, species, rank , q_beg, q_end, ntasks, sinc_factor_matrix, params%exp_forces, &
 #ifdef _MPIF90
-                & pair_distribution_partial_der, this_energies_sf, this_forces_sf, this_virial_sf, &
-                & params%structure_factor_matrix_forces)
+                & pair_distribution_partial_der, this_energies_sf, this_forces_sf, this_virial_sf, params%structure_factor_matrix_forces, cublas_handle, gpu_stream)
 #else
-           & pair_distribution_partial_der, energies_sf, forces_sf, virial_sf,params%structure_factor_matrix_forces)
+           & pair_distribution_partial_der, energies_sf, forces_sf, virial_sf,params%structure_factor_matrix_forces, cublas_handle, gpu_stream)
 #endif
 
 
@@ -2699,12 +2780,10 @@ program turbogap
                 & neighbor_species, species, rank , q_beg, q_end, ntasks, sinc_factor_matrix, params%exp_forces, &
 #ifdef _MPIF90
                 & pair_distribution_partial_der, this_energies_xrd,&
-                & this_forces_xrd, this_virial_xrd, .false., params&
-                &%structure_factor_matrix_forces)
+                & this_forces_xrd, this_virial_xrd, .false., params%structure_factor_matrix_forces, cublas_handle, gpu_stream)
 #else
            & pair_distribution_partial_der, energies_xrd, forces_xrd,&
-                & virial_xrd, .false., params&
-                &%structure_factor_matrix_forces )
+                & virial_xrd, .false., params%structure_factor_matrix_forces, cublas_handle, gpu_stream)
 #endif
 
 
@@ -2730,11 +2809,11 @@ program turbogap
 #ifdef _MPIF90
                 & pair_distribution_partial_der, this_energies_nd,&
                 & this_forces_nd, this_virial_nd, .true., params&
-                &%structure_factor_matrix_forces)
+                &%structure_factor_matrix_forces, cublas_handle, gpu_stream)
 #else
            & pair_distribution_partial_der, energies_nd, forces_nd,&
                 & virial_nd, .true., params&
-                &%structure_factor_matrix_forces )
+                &%structure_factor_matrix_forces, cublas_handle, gpu_stream )
 #endif
 
 
@@ -2746,6 +2825,30 @@ program turbogap
 
         end if
 
+
+
+        if (params%do_pair_distribution .or. params%do_structure_factor .or. params%do_xrd)then
+           call gpu_free_async(n_neigh_d, gpu_stream)
+           call gpu_free_async(species_d, gpu_stream)
+           call gpu_free_async(neighbor_species_d, gpu_stream)
+           call gpu_free_async(neighbors_list_d, gpu_stream)           
+           call gpu_free_async(rjs_d, gpu_stream)
+           !           call gpu_free_async(xyz_d, gpu_stream)
+           call gpu_free_async(species_types_actual_d,gpu_stream)
+
+
+!           call deallocate_gpu_exp( gpu_exp_vars )
+           
+           deallocate( nk_d,  k_index_d,  j2_index_d, rjs_index_d, &
+                & xyz_k_d,  pair_distribution_partial_d, &
+                & pair_distribution_partial_der_d,  st_nk_d, &
+                & st_k_index_d,  st_j2_index_d, &
+                & st_pair_distribution_partial_d, &
+                & st_pair_distribution_partial_der_d, nk )    
+
+
+        end if
+        
 
         !################################################################!
         !###---   Compute similarity of experimental predictions   ---###!
@@ -3622,6 +3725,27 @@ program turbogap
                     print *, " i, ", i, " j ", j, " ", virial_core_pot(i,j)
                  end do
               end do
+
+              if (params%exp_forces .and. params%valid_xrd)then 
+                 print *, "> Virial xrd "
+                 do i = 1, 3
+                    do j = 1, 3
+                       print *, " i, ", i, " j ", j, " ", virial_xrd(i,j)
+                    end do
+                 end do
+                 temp_string=""
+                 temp_string2=""                 
+                 write(temp_string, "(I8)")   md_istep                 
+                 write(temp_string2, "(A)")  "forces_xrd_" // trim(adjustl(temp_string))
+                 open(unit=90, file=temp_string2, status="unknown")
+                 do i = 1, n_sites
+                    write(90, "(F20.8, 1X, F20.8, 1X, F20.8)") &
+                         forces_xrd(1,i), forces_xrd(2,i), forces_xrd(3,i)
+                 end do
+                 close(90)
+                 
+              end if
+              
            end if
            
            
