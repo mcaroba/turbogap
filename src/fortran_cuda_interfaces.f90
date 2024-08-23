@@ -458,6 +458,13 @@ MODULE F_B_C
         implicit none
       end subroutine gpu_device_sync
 
+      subroutine gpu_stream_sync(stream) bind(C,name="gpu_stream_sync")
+        use iso_c_binding
+        implicit none
+        type(c_ptr) :: stream 
+      end subroutine gpu_stream_sync
+
+      
       subroutine gpu_meminfo() bind(C,name="gpu_meminfo")
         use iso_c_binding
         implicit none
@@ -557,16 +564,27 @@ MODULE F_B_C
       
 
       subroutine gpu_get_pair_distribution_and_ders(pair_distribution_d,  pair_distribution_der_d,&
-           n_k, n_samples, kde_sigma,  x_d, dV_d, rjs_d, pdf_factor, stream) bind(C&
+           n_k, n_samples, kde_sigma,  x_d, dV_d, rjs_d, pdf_factor, der_factor, stream) bind(C&
            &,name="gpu_get_pair_distribution_and_ders")
         use iso_c_binding
         implicit none
         integer(c_int), value :: n_k, n_samples
-        real(c_double), value :: kde_sigma, pdf_factor
+        real(c_double), value :: kde_sigma, pdf_factor, der_factor
         type(c_ptr), value :: pair_distribution_d,  pair_distribution_der_d, x_d, dV_d, rjs_d
         type(c_ptr) :: stream 
       end subroutine gpu_get_pair_distribution_and_ders
+
+
+      subroutine gpu_set_Gk( nk, n_samples, k_index_d, Gk_d, pair_distribution_partial_der_d, c_factor, stream)bind(C,name="gpu_set_Gk")
+        use iso_c_binding
+        implicit none
+        integer(c_int), value :: nk, n_samples
+        real(c_double), value :: c_factor
+        type(c_ptr), value :: k_index_d, Gk_d, pair_distribution_partial_der_d
+        type(c_ptr) :: stream 
+      end subroutine gpu_set_Gk
       
+        
       !
 !      subroutine gpu_2b(n_sparse, n_sites, sp1, sp2, alpha, delta, cutoff, stream, rjs, xyz, n_neigh, species, neighbor_species, do_forces, rcut,buffer, sigma,qs,n_neigh_host) bind(C,name="gpu_2b")
 !        use iso_c_binding

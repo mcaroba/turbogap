@@ -218,7 +218,7 @@ program turbogap
   integer :: n_omp, omp_task, omp_n_sites
   integer, allocatable :: i_beg_omp(:), i_end_omp(:), j_beg_omp(:), j_end_omp(:)
 !**************************************************************************
-  integer :: sp1, sp2
+  integer :: sp1, sp2, n_dim_partial
   logical(c_bool) :: c_do_forces
   integer(c_size_t) :: st_n_sites_int,st_n_sites_double, st_n_atom_pairs_int, st_n_atom_pairs_double, st_n_sparse_double, st_virial
   integer(c_size_t) :: st_size_nf, st_size_rcut_hard, st_species_types_actual_d
@@ -2697,7 +2697,7 @@ program turbogap
 ! #endif
            
            
-           call gpu_calculate_pair_distribution( params, x_pair_distribution&
+           call gpu_calculate_pair_distribution(n_dim_partial, params, x_pair_distribution&
                 &, y_pair_distribution, y_pair_distribution_temp,&
                 & pair_distribution_partial, pair_distribution_partial_temp, &
                 & n_species_actual, species_types_actual, n_atoms_of_species, n_sites, a_box,&
@@ -2741,6 +2741,17 @@ program turbogap
 
         end if
 
+        if (params%do_pair_distribution .or. params%do_structure_factor .or. params%do_xrd)then
+           call gpu_free_async(n_neigh_d, gpu_stream)
+           call gpu_free_async(species_d, gpu_stream)
+           call gpu_free_async(neighbor_species_d, gpu_stream)
+           call gpu_free_async(neighbors_list_d, gpu_stream)           
+           call gpu_free_async(rjs_d, gpu_stream)
+           call gpu_free_async(xyz_d, gpu_stream)
+           call gpu_free_async(species_types_actual_d,gpu_stream)
+        end if
+        
+        
         ! Now calculate the structure factors
         if (params%do_structure_factor )then
 
@@ -2753,6 +2764,8 @@ program turbogap
                 & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep, i_beg,&
                 & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
                 & neighbor_species, species, rank , q_beg, q_end, ntasks, sinc_factor_matrix, params%exp_forces, &
+                & nk, nk_d, k_index_d, j2_index_d, xyz_k_d, pair_distribution_partial_d, pair_distribution_partial_der_d, &
+                & st_nk_d, st_k_index_d, st_j2_index_d, st_pair_distribution_partial_d, st_pair_distribution_partial_der_d, &
 #ifdef _MPIF90
                 & pair_distribution_partial_der, this_energies_sf, this_forces_sf, this_virial_sf, params%structure_factor_matrix_forces, cublas_handle, gpu_stream)
 #else
@@ -2778,6 +2791,8 @@ program turbogap
                 & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep, i_beg,&
                 & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
                 & neighbor_species, species, rank , q_beg, q_end, ntasks, sinc_factor_matrix, params%exp_forces, &
+                & nk, nk_d, k_index_d, j2_index_d, xyz_k_d, pair_distribution_partial_d, pair_distribution_partial_der_d, &
+                & st_nk_d, st_k_index_d, st_j2_index_d, st_pair_distribution_partial_d, st_pair_distribution_partial_der_d, &
 #ifdef _MPIF90
                 & pair_distribution_partial_der, this_energies_xrd,&
                 & this_forces_xrd, this_virial_xrd, .false., params%structure_factor_matrix_forces, cublas_handle, gpu_stream)
@@ -2806,6 +2821,8 @@ program turbogap
                 & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep, i_beg,&
                 & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
                 & neighbor_species, species, rank , q_beg, q_end, ntasks, sinc_factor_matrix, params%exp_forces, &
+                & nk, nk_d, k_index_d, j2_index_d, xyz_k_d, pair_distribution_partial_d, pair_distribution_partial_der_d, &
+                & st_nk_d, st_k_index_d, st_j2_index_d, st_pair_distribution_partial_d, st_pair_distribution_partial_der_d, &
 #ifdef _MPIF90
                 & pair_distribution_partial_der, this_energies_nd,&
                 & this_forces_nd, this_virial_nd, .true., params&
@@ -2828,18 +2845,21 @@ program turbogap
 
 
         if (params%do_pair_distribution .or. params%do_structure_factor .or. params%do_xrd)then
-           call gpu_free_async(n_neigh_d, gpu_stream)
-           call gpu_free_async(species_d, gpu_stream)
-           call gpu_free_async(neighbor_species_d, gpu_stream)
-           call gpu_free_async(neighbors_list_d, gpu_stream)           
-           call gpu_free_async(rjs_d, gpu_stream)
-           !           call gpu_free_async(xyz_d, gpu_stream)
-           call gpu_free_async(species_types_actual_d,gpu_stream)
+        !           call deallocate_gpu_exp( gpu_exp_vars )
 
 
-!           call deallocate_gpu_exp( gpu_exp_vars )
+           do i = 1, n_dim_partial
+              call gpu_free_async(nk_d(i), gpu_stream)
+              call gpu_free_async(k_index_d(i), gpu_stream)
+              call gpu_free_async(j2_index_d(i), gpu_stream)
+              call gpu_free_async(xyz_k_d(i), gpu_stream)
+              call gpu_free_async(pair_distribution_partial_d(i), gpu_stream)
+              call gpu_free_async(pair_distribution_partial_der_d(i), gpu_stream)
+           end do
+           call gpu_stream_sync(gpu_stream)
            
-           deallocate( nk_d,  k_index_d,  j2_index_d, rjs_index_d, &
+           
+           deallocate( nk_d,  k_index_d,  j2_index_d, &
                 & xyz_k_d,  pair_distribution_partial_d, &
                 & pair_distribution_partial_der_d,  st_nk_d, &
                 & st_k_index_d,  st_j2_index_d, &

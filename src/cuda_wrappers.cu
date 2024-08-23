@@ -2534,6 +2534,12 @@ extern "C" void gpu_device_sync()
 {
   gpuErrchk( hipDeviceSynchronize() );
 }
+
+extern "C" void gpu_stream_sync(hipStream_t *stream)
+{
+  gpuErrchk( hipStreamSynchronize(stream[0]) ); 
+}
+
 /* 
 extern "C" void cuda_malloc_double(double **a_d, int Np)
 {
