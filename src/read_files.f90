@@ -514,6 +514,9 @@ end if
       else if(keyword=='do_md')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%do_md
+      else if(keyword=='mbd_correction_freq')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%mbd_correction_freq
       else if(keyword=='do_prediction')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%do_prediction
@@ -726,6 +729,8 @@ end if
           continue
         else if( params%vdw_type == "mbd" )then
           continue
+        else if( params%vdw_type == "ts+mbd" )then
+          continue
         else if( params%vdw_type == "none" )then
           continue
         else
@@ -738,6 +743,12 @@ end if
       else if( keyword == "vdw_d" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_d
+      else if( keyword == "vdw_sr_mbd" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_sr_mbd
+      else if( keyword == "vdw_d_mbd" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_d_mbd
       else if( keyword == "vdw_rcut" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_rcut
