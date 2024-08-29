@@ -460,6 +460,9 @@ program turbogap
         if( params%vdw_rcut > rcut_max )then
            rcut_max = params%vdw_rcut
         end if
+        ! Electrostatics cutoff will generally be much larger than the soap
+        ! cutoff, unfortunately.  There's not really a way around this other
+        ! than multi-timestepping or Ewald (in progress)
         if (params%estat_rcut > rcut_max) then
             rcut_max = params%estat_rcut
         end if
@@ -566,7 +569,12 @@ program turbogap
 
                  local_property_indexes(j) = i
 
-
+                 ! WARNING -- this seems to be duplicating functionality found both
+                 ! in read_files.f90 and elsewhere in this file (just below the get_gap_soap()
+                 ! call at the time of this comment).  I would recommend keeping this here
+                 ! and removing duplicate functionality elsewhere.
+                 ! WARNING 2: I am not sure the 'j' index can be used to just index into
+                 ! the 'soap_turbo_hypers' array like this!
                  if ( trim(local_property_labels(j)) == "hirshfeld_v" )then
                     vdw_lp_index = i
                     valid_vdw = .true.
@@ -588,8 +596,11 @@ program turbogap
                     !TODO copied from Hirshfeld_v section above -- but why is this extra check needed??
                     !     Note that we only ever expect one set of charges per simulation, so
                     !     soap_turbo_hypers(j)%n_local_properties should almost always be 1.
+                    ! Ohhhh crap. But the charges could come from several soap_turbo objects
+                    ! in the case of e.g. multiple central species.  How does that work now??
                     do k = 1, soap_turbo_hypers(j)%n_local_properties
                        if (trim(soap_turbo_hypers(j)%local_property_models(k)%label) == "atomic_charge")then
+                          soap_turbo_hypers(j)%has_charges = .true.
                           if( params%do_derivatives .or. params%do_forces)then
                              soap_turbo_hypers(j)%local_property_models(k)%do_derivatives = .true.
                           else
@@ -2429,7 +2440,8 @@ program turbogap
                 & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
                 & neighbor_species, species, rank , q_beg, q_end, ntasks, sinc_factor_matrix, params%exp_forces, &
 #ifdef _MPIF90
-                & pair_distribution_partial_der, this_energies_sf, this_forces_sf, this_virial_sf, params%structure_factor_matrix_forces)
+                & pair_distribution_partial_der, this_energies_sf, this_forces_sf, this_virial_sf, &
+                & params%structure_factor_matrix_forces)
 #else
            & pair_distribution_partial_der, energies_sf, forces_sf, virial_sf,params%structure_factor_matrix_forces)
 #endif
@@ -2983,7 +2995,7 @@ program turbogap
               write(*,'(A,1X,F24.8,1X,A)')' 3b energy:', sum(energies_3b), 'eV |'
               write(*,'(A,1X,F18.8,1X,A)')' core_pot energy:', sum(energies_core_pot), 'eV |'
               write(*,'(A,1X,F23.8,1X,A)')' vdw energy:', sum(energies_vdw), 'eV |'
-              write(*,'(A,1X,F23.8,1X,A)')' estat energy:', sum(energies_estat), 'eV |'
+              write(*,'(A,1X,F21.8,1X,A)')' estat energy:', sum(energies_estat), 'eV |'
               write(*,'(A,1X,F22.8,1X,A)')' Exp. energy:', sum(energies_exp), 'eV |'
               if (valid_xps) write(*,'(A,1X,F23.8,1X,A)')' xps energy:', sum(energies_lp), 'eV |'
               if ( params%valid_pdf .and. params%do_pair_distribution )&
@@ -3052,11 +3064,22 @@ program turbogap
 
            end if
 
+           if ( params%print_estat_forces )then
+              open(unit=90, file="forces_estat", status="unknown")
+              do i = 1, n_sites
+                 write(90, "(F20.8, 1X, F20.8, 1X, F20.8)") &
+                      forces_estat(1,i), forces_estat(2,i), forces_estat(3,i)
+              end do
+              close(90)
+
+           end if
+
         end if
         ! For debugging the virial implementation
-        if( rank == 0 .and. .false. )then
+        if( rank == 0 .and. .true. )then
            write(*,*) "pressure_soap: ", virial_soap / 3.d0 / v_uc
            write(*,*) "pressure_vdw: ", virial_vdw / 3.d0 / v_uc
+           write(*,*) "pressure_estat:", virial_estat / 3.d0 / v_uc
            write(*,*) "pressure_lp: ", virial_lp / 3.d0 / v_uc
            write(*,*) "pressure_2b: ", virial_2b / 3.d0 / v_uc
            write(*,*) "pressure_3b: ", virial_3b / 3.d0 / v_uc

@@ -79,7 +79,7 @@ module types
     character*64 :: basis = "poly3", compress_mode = "none"
     character*32 :: scaling_mode = "polynomial"
     character*8, allocatable :: species_types(:)
-    logical :: compress_soap = .false., has_vdw = .false.,&
+    logical :: compress_soap = .false., has_vdw = .false., has_charges = .false., &
          & has_core_electron_be=.false., has_local_properties = .false.
     type(local_property_soap_turbo), allocatable :: local_property_models(:)
   end type soap_turbo
@@ -173,8 +173,8 @@ module types
                variable_time_step = .false., vdw_mbd_grad = .false., do_nested_sampling = .false., &
                scale_box_nested = .false., mc_write_xyz = .false., do_exp = .false., mc_relax =&
          & .false., mc_optimize_exp =.false., exp_forces=.false., exp_energies=.true.,&
-         & print_lp_forces =.false., print_vdw_forces =.false., mc_hamiltonian = .false.,&
-         & accessible_volume = .false., mc_reverse = .false., &
+         & print_lp_forces =.false., print_vdw_forces =.false., print_estat_forces = .false., &
+         & mc_hamiltonian = .false., accessible_volume = .false., mc_reverse = .false., &
          & xrd_iwasa = .true., pair_distribution_partial=.true.,&
          & structure_factor_from_pdf=.true., structure_factor_window&
          & = .true., write_pair_distribution=.false.,&

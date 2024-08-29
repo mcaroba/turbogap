@@ -972,6 +972,9 @@ end if
       else if(keyword=='print_vdw_forces')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%print_vdw_forces
+      else if(keyword=='print_estat_forces')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%print_estat_forces
       else if(keyword=='exp_similarity_type')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%exp_similarity_type
@@ -2356,6 +2359,10 @@ end if
                     soap_turbo_hypers(n_soap_turbo)%core_electron_be_index=nw
                  end if
 
+                 if (trim(soap_turbo_hypers(n_soap_turbo)&local_property_models(nw)%label &
+                        == "atomic_charge")) then
+                    soap_turbo_hypers(n_soap_turbo)%has_charges = .true.
+                 end if
               end do
 
             else if( keyword == "local_property_qs" )then
