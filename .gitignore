@@ -2,3 +2,5 @@ bin/
 build/
 include/
 lib/
+trajectory_out.xyz
+thermo.log
