@@ -491,7 +491,7 @@ program turbogap
 
      call get_irreducible_local_properties(params, n_local_properties_tot, n_soap_turbo, soap_turbo_hypers, &
           local_property_labels, local_property_labels_temp, local_property_labels_temp2, local_property_indexes, &
-          valid_vdw, vdw_lp_index, core_be_lp_index, valid_estat_charges, charge_lp_index, valid_xps, xps_idx)
+          valid_vdw, vdw_lp_index, valid_estat_charges, charge_lp_index, core_be_lp_index, valid_xps, xps_idx)
 
      if( params%n_local_properties > 0 )then
         write(*,*)'                                        |'
