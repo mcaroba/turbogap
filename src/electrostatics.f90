@@ -104,7 +104,8 @@ module electrostatics
                 ! so... the neighbourlist is indexed by pair ID. This needs to be
                 ! counted and updated MANUALLY (ughhhh) while iterating through pairs.
                 ! (there are so, so many ways that this could go wrong....)
-                neigh_id = neighbors_list(pair_counter)
+                ! Oh, and the neighbour ID can exceed the number of atoms...?
+                neigh_id = modulo(neighbors_list(pair_counter) - 1, n_sites_global) + 1
                 rij = rjs(pair_counter)
                 rij_vec = xyz(:, pair_counter)
                 neigh_charge = neighbor_charges(pair_counter)
@@ -132,7 +133,8 @@ module electrostatics
                 ! Now we iterate over SOAP neighbours only, but _including_ the center atom
                 do soap_neigh_seq = 1, n_neigh(center_i)
                     soap_pair_counter = soap_pair_counter + 1
-                    soap_neigh_id = neighbors_list(soap_pair_counter)
+                    ! ???
+                    soap_neigh_id = modulo(neighbors_list(soap_pair_counter) - 1, n_sites_global) + 1
                     ! Avoid computing grad contribution for neighbours that are not in SOAP cutoff
                     if(all(abs(charge_gradients(:, soap_pair_counter)) < FLOAT_ZERO) ) then
                         continue
