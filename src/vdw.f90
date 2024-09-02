@@ -1191,9 +1191,9 @@ r_buf_tsscs = 0.d0
 
     hirshfeld_v_cart_der_H = 0.d0
 
-    if ( do_derivatives ) then
+!    if ( do_derivatives ) then
       virial = 0.d0
-    end if
+!    end if
 
     !write(*,*) "dv"
     !k = 0

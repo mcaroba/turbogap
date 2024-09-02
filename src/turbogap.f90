@@ -932,7 +932,9 @@ program turbogap
       energies_3b = 0.d0
       energies_core_pot = 0.d0
       energies_vdw = 0.d0
-      energies_vdw_corr = 0.d0
+!if( params%vdw_type == "ts+mbd" .and. modulo(md_istep, params%mbd_correction_freq) == 0 )then
+!      energies_vdw_corr = 0.d0
+!end if
       if( any( soap_turbo_hypers(:)%has_vdw ) )then
         if( n_sites /= n_sites_prev )then
           if( allocated(hirshfeld_v) )then
@@ -976,7 +978,9 @@ program turbogap
         forces_3b = 0.d0
         forces_core_pot = 0.d0
         forces_vdw = 0.d0
-        forces_vdw_corr = 0.d0
+!if( params%vdw_type == "ts+mbd" .and. modulo(md_istep, params%mbd_correction_freq) == 0 )then
+!        forces_vdw_corr = 0.d0
+!end if
         virial = 0.d0
         virial_soap = 0.d0
         virial_2b = 0.d0
@@ -1329,14 +1333,20 @@ program turbogap
 #ifdef _MPIF90
         allocate( this_energies_vdw(1:n_sites) )
         this_energies_vdw = 0.d0
-        allocate( this_energies_vdw_corr(1:n_sites) )
-        this_energies_vdw_corr = 0.d0
         if( params%do_forces )then
           allocate( this_forces_vdw(1:3,1:n_sites) )
           this_forces_vdw = 0.d0
+        end if
+if( params%vdw_type == "ts+mbd" .and. modulo(md_istep, params%mbd_correction_freq) == 0 )then
+        if( allocated(this_energies_vdw_corr) )deallocate( this_energies_vdw_corr )
+        allocate( this_energies_vdw_corr(1:n_sites) )
+        this_energies_vdw_corr = 0.d0
+        if( params%do_forces )then
+          if( allocated(this_forces_vdw_corr) )deallocate( this_forces_vdw_corr )
           allocate( this_forces_vdw_corr(1:3,1:n_sites) )
           this_forces_vdw_corr = 0.d0
         end if
+end if
 #endif
         if( .not. allocated(v_neigh_vdw) )allocate(v_neigh_vdw(1:j_end-j_beg+1))
         v_neigh_vdw = 0.d0
@@ -1375,13 +1385,21 @@ program turbogap
             (params%vdw_type == "ts+mbd" .and. modulo(md_istep, params%mbd_correction_freq) == 0) )then
           if( params%vdw_type == "ts+mbd" .and. modulo(md_istep, params%mbd_correction_freq) == 0 )then
 #ifdef _MPIF90
-            this_energies_vdw_corr(i_beg:i_end) = this_energies_vdw(i_beg:i_end)
+!            this_energies_vdw_corr(i_beg:i_end) = this_energies_vdw(i_beg:i_end)
+            this_energies_vdw_corr = this_energies_vdw
             this_forces_vdw_corr = this_forces_vdw
             this_virial_vdw_corr = this_virial_vdw
+            this_energies_vdw = 0.d0
+            this_forces_vdw = 0.d0
+            this_virial_vdw = 0.d0
 #else
-            energies_vdw_corr(i_beg:i_end) = energies_vdw(i_beg:i_end)
+!            energies_vdw_corr(i_beg:i_end) = energies_vdw(i_beg:i_end)
+            energies_vdw_corr = energies_vdw
             forces_vdw_corr = forces_vdw
             virial_vdw_corr = virial_vdw
+            energies_vdw = 0.d0
+            forces_vdw = 0.d0
+            virial_vdw = 0.d0
 #endif
           end if
           allocate( alpha_SCS(1:n_sites) )
@@ -1531,22 +1549,26 @@ call cpu_time(time2)
 !         This updates the correction every mbd_correction_freq steps
           if( modulo(md_istep, params%mbd_correction_freq) == 0 )then 
 #ifdef _MPIF90
-            this_energies_vdw_corr(i_beg:i_end) = this_energies_vdw(i_beg:i_end) - this_energies_vdw_corr(i_beg:i_end)
+!            this_energies_vdw_corr(i_beg:i_end) = this_energies_vdw(i_beg:i_end) - this_energies_vdw_corr(i_beg:i_end)
+            this_energies_vdw_corr = this_energies_vdw - this_energies_vdw_corr
             this_forces_vdw_corr = this_forces_vdw - this_forces_vdw_corr
             this_virial_vdw_corr = this_virial_vdw - this_virial_vdw_corr
 #else
-            energies_vdw_corr(i_beg:i_end) = energies_vdw(i_beg:i_end) - energies_vdw_corr(i_beg:i_end)
+!            energies_vdw_corr(i_beg:i_end) = energies_vdw(i_beg:i_end) - energies_vdw_corr(i_beg:i_end)
+            energies_vdw_corr = energies_vdw - energies_vdw_corr
             forces_vdw_corr = forces_vdw - forces_vdw_corr
             virial_vdw_corr = virial_vdw - virial_vdw_corr
 #endif
           else
 !         This applies the correction
 #ifdef _MPIF90
-            this_energies_vdw(i_beg:i_end) = this_energies_vdw(i_beg:i_end) + this_energies_vdw_corr(i_beg:i_end)
+!            this_energies_vdw(i_beg:i_end) = this_energies_vdw(i_beg:i_end) + this_energies_vdw_corr(i_beg:i_end)
+            this_energies_vdw = this_energies_vdw + this_energies_vdw_corr
             this_forces_vdw = this_forces_vdw + this_forces_vdw_corr
             this_virial_vdw = this_virial_vdw + this_virial_vdw_corr
 #else
-            energies_vdw(i_beg:i_end) = energies_vdw(i_beg:i_end) + energies_vdw_corr(i_beg:i_end)
+!            energies_vdw(i_beg:i_end) = energies_vdw(i_beg:i_end) + energies_vdw_corr(i_beg:i_end)
+            energies_vdw = energies_vdw + energies_vdw_corr
             forces_vdw = forces_vdw + forces_vdw_corr
             virial_vdw = virial_vdw + virial_vdw_corr
 #endif
@@ -1747,12 +1769,10 @@ call cpu_time(time2)
 !         Note the vdw things DO NOT have "this" in front anymore
           energies_vdw(1:n_sites) = all_this_energies(1:n_sites, counter2)
           deallocate(this_energies_vdw)
-          deallocate(this_energies_vdw_corr)
           if( params%do_forces )then
             forces_vdw(1:3, 1:n_sites) = all_this_forces(1:3, 1:n_sites, counter2)
             virial_vdw(1:3, 1:3) = all_this_virial(1:3, 1:3, counter2)
             deallocate(this_forces_vdw)
-            deallocate(this_forces_vdw_corr)
           end if
         end if
         if( n_distance_2b > 0 )then
