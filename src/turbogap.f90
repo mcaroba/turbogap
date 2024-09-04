@@ -648,6 +648,7 @@ program turbogap
     if( params%do_md )then
       md_istep = md_istep + 1
     else
+      md_istep = 0
       n_xyz = n_xyz + 1
     end if
 
@@ -1837,14 +1838,24 @@ call cpu_time(time2)
 #endif
       end if
 
+
       if( params%do_forces )then
+#ifdef _MPIF90
+        IF( rank == 0 )then
+#endif
+if( any( isnan(forces_vdw) ) )then
+write(*,*) rjs
+end if
         forces = forces_soap + forces_2b + forces_3b + forces_core_pot + forces_vdw
         virial = virial_soap + virial_2b + virial_3b + virial_core_pot + virial_vdw
+#ifdef _MPIF90
+        END IF
+#endif
       end if
 
 
 ! For debugging the virial implementation
-if( rank == 0 .and. .true. )then
+if( rank == 0 .and. .false. )then
 !if( rank == 0 .and. .true. )then
 write(*,*) "pressure_soap: ", virial_soap / 3.d0 / v_uc
 write(*,*) "pressure_vdw: ", virial_vdw / 3.d0 / v_uc
