@@ -39,6 +39,7 @@ module electrostatics
     ! expressed in atomic units but the lengths in angstroms
     real(dp), parameter :: COUL_CONSTANT = HARTREE_EV / BOHR_ANG
     real(dp), parameter :: FLOAT_ZERO = 10*EPSILON(1.0_dp)
+    real(dp), parameter :: PI = dacos(-1.0_dp)
 
     contains
 
@@ -82,7 +83,7 @@ module electrostatics
 
         integer :: center_i, neigh_id, soap_neigh_id, neigh_seq, soap_neigh_seq
         integer :: n_sites_global, n_sites_this, pair_counter, soap_pair_counter
-        real :: rij, center_term, pair_energy, neigh_charge
+        real(dp) :: rij, center_term, pair_energy, neigh_charge, inner_damp_ij
         real(dp), dimension(3) :: rij_vec, fij_vec, fki_vec
         real(dp), dimension(:), allocatable :: vc_grad_prefactor
 
@@ -105,26 +106,47 @@ module electrostatics
                 ! counted and updated MANUALLY (ughhhh) while iterating through pairs.
                 ! (there are so, so many ways that this could go wrong....)
                 ! Oh, and the neighbour ID can exceed the number of atoms...?
+                ! Maybe these are periodic replicas (see below).
                 neigh_id = modulo(neighbors_list(pair_counter) - 1, n_sites_global) + 1
                 rij = rjs(pair_counter)
                 rij_vec = xyz(:, pair_counter)
                 neigh_charge = neighbor_charges(pair_counter)
                 ! Sharp cutoff -- for smooth cutoff, use the DSF method instead
                 if (rij > rcut) then
-                    continue
+                    cycle
                 end if
-                pair_energy = center_term * neighbor_charges(pair_counter) / rij
+                ! Inner cutoff -- damp singularity at r->0
+                if (rij < rcut_in) then
+                    if (rij < (rcut_in - rcin_width)) then
+                        cycle
+                    else ! we are in the transition region
+                        inner_damp_ij = damping_function_cosine(rij, rcut_in - rcin_width, rcut_in)
+                        pair_energy = center_term * neighbor_charges(pair_counter) &
+                            * inner_damp_ij / rij
+                    end if
+                else
+                    inner_damp_ij = 1.0_dp
+                    pair_energy = center_term * neighbor_charges(pair_counter) / rij
+                end if
                 ! We use half the pair energy here, since we double-count
                 local_energies(center_i) = local_energies(center_i) + 0.5_dp * pair_energy
                 if (do_gradients) then
+                    ! ...but we don't double-count the centers (?)
                     fij_vec = -1.0_dp * pair_energy * rij_vec / rij**2
+                    if (rij < rcut_in) then
+                        fij_vec = fij_vec + der_damping_function_cosine(&
+                                rij, rcut_in - rcin_width, rcut_in)&
+                            * charges(center_i) * neighbor_charges(pair_counter) * rij_vec / rij**2
+                    end if
                     ! TODO omit forces on periodic replicas? They should cancel in any case.
                     forces(:, center_i) = forces(:, center_i) + fij_vec
                     ! TODO check virial sign convention
                     ! This convention aligns with more positive virials indicating greater internal pressure
                     virial = virial - outer_prod(fij_vec, rij_vec)
                     ! Accumulate ij-pair prefactor for variable-charge gradient term
-                    vc_grad_prefactor(center_i) = vc_grad_prefactor(center_i) + neigh_charge / rij
+                    ! (the inner-damping factor is 1.0 outside the inner cutoff)
+                    vc_grad_prefactor(center_i) = vc_grad_prefactor(center_i) + &
+                            inner_damp_ij * neigh_charge / rij
                 end if
             end do
             ! Now add the variable-charge gradient contribution
@@ -154,5 +176,38 @@ module electrostatics
         if(allocated(vc_grad_prefactor)) deallocate(vc_grad_prefactor)
 
     end subroutine
+
+    ! A simple half-cosine damping function - designed to keep the short-range
+    ! electrostatic terms from blowing up and to be computationally convenient,
+    ! not to be physically realistic.  The short-range energy should always be
+    ! corrected by a GAP afterwards.
+    function damping_function_cosine(distance, r_inner, r_outer)
+        real(dp), intent(in) :: distance, r_inner, r_outer
+        real(dp) :: damping_function_cosine
+
+        if (distance < r_inner) then
+            damping_function_cosine = 0
+        else if (distance > r_outer) then
+            damping_function_cosine = 1
+        else
+            damping_function_cosine = 0.5 - 0.5*dcos((distance - r_inner) * PI &
+                                                     / (r_outer - r_inner))
+        end if
+    end function
+
+    ! The r-derivative of above function
+    function der_damping_function_cosine(distance, r_inner, r_outer)
+        real(dp), intent(in) :: distance, r_inner, r_outer
+        real(dp) :: der_damping_function_cosine
+
+        if (distance < r_inner) then
+            der_damping_function_cosine = 0
+        else if (distance > r_outer) then
+            der_damping_function_cosine = 0
+        else
+            der_damping_function_cosine = 0.5 / (r_outer - r_inner) * dsin(&
+                (distance - r_inner) * PI / (r_outer - r_inner))
+        end if
+    end function
 
 end module

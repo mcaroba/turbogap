@@ -42,7 +42,7 @@ program turbogap
   use gap_interface
   use types
   use vdw
-  use electrostatics
+  use electrostatics, only : compute_coulomb_direct
   use exp_utils
   use exp_interface
   use soap_turbo_functions
