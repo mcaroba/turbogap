@@ -1271,9 +1271,11 @@ end if
          backspace(10)
          read(10, *, iostat=iostatus) cjunk, cjunk, &
               (params%exp_data(nw)%n_samples, nw=1, params%n_exp)
-
-      else if (keyword(i2-4:i2) == "range" .or.  keyword(i2-8:i2) ==&
-           & "file_data" .or. keyword(i2-8:i2) == "n_samples"  )then
+      !TODO WARNING this sort of thing is fragile and is causing unpredictable failures!
+      ! fixed it for now, but... there has to be a better way.
+      ! Update: the index() function would be cleaner, if a tad less efficient
+      else if (keyword(max(1,i2-4):i2) == "range" .or.  keyword(max(1, i2-8):i2) ==&
+           & "file_data" .or. keyword(max(1,i2-8):i2) == "n_samples"  )then
          backspace(10)
          ! Check if experimental range or data files are specified
          do nw = 1, params%n_exp
