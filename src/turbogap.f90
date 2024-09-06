@@ -880,8 +880,10 @@ program turbogap
     n_atom_pairs_by_rank(rank+1) = n_atom_pairs
 #endif
 !   Store by which rank each site is being handled
-    if( allocated(site_in_rank) .and. size(site_in_rank) /= n_sites )then
-      deallocate( site_in_rank, this_site_in_rank )
+    if( allocated(site_in_rank) )then
+      if( size(site_in_rank) /= n_sites )then
+        deallocate( site_in_rank, this_site_in_rank )
+      end if
     end if
     if( .not. allocated(site_in_rank) )then
       allocate( site_in_rank(1:n_sites) )
@@ -1891,7 +1893,13 @@ end do
 
 
 !       Add up all the energy terms
+#ifdef _MPIF90
+	IF( rank == 0 )then
+#endif
         energies = energies + energies_soap + energies_2b + energies_3b + energies_core_pot + energies_vdw
+#ifdef _MPIF90
+	END IF
+#endif
       end if
 
       if( .not. params%do_md )then
