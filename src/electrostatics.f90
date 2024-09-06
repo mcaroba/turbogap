@@ -60,6 +60,26 @@ module electrostatics
         end do
     end function
 
+    ! This is just the Coulomb 1/r form without any prefactors
+    function pair_energy_direct(rij)
+        implicit none
+        real(dp), intent(in) :: rij
+        real(dp) :: pair_energy_direct
+
+        pair_energy_direct = 1.0_dp / rij
+    end function
+
+    ! Derivative of the above, divided by r.
+    ! Multiply by the r_ij _vector_ to get the force
+    function der_pair_energy_direct(rij, pair_energy)
+        implicit none
+        real(dp), intent(in) :: rij
+        real(dp), intent(in) :: pair_energy
+        real(dp) :: der_pair_energy_direct
+
+        der_pair_energy_direct = -1.0_dp * pair_energy / rij**2
+    end function
+
     ! Compute electrostatic energies, forces, and virials via a direct
     ! summation of the Coulomb law.  This should _not_ be used for any
     ! serious applications, since it dos not converge with increasing
@@ -121,22 +141,22 @@ module electrostatics
                         cycle
                     else ! we are in the transition region
                         inner_damp_ij = damping_function_cosine(rij, rcut_in - rcin_width, rcut_in)
-                        pair_energy = center_term * neighbor_charges(pair_counter) &
-                            * inner_damp_ij / rij
                     end if
                 else
                     inner_damp_ij = 1.0_dp
-                    pair_energy = center_term * neighbor_charges(pair_counter) / rij
                 end if
+                ! Note the "pair energy" does NOT include damping
+                pair_energy =  center_term * neigh_charge * pair_energy_direct(rij)
                 ! We use half the pair energy here, since we double-count
-                local_energies(center_i) = local_energies(center_i) + 0.5_dp * pair_energy
+                local_energies(center_i) = local_energies(center_i) + &
+                    0.5_dp * pair_energy * inner_damp_ij
                 if (do_gradients) then
                     ! ...but we don't double-count the centers (?)
-                    fij_vec = -1.0_dp * pair_energy * rij_vec / rij**2
+                    fij_vec = rij_vec * inner_damp_ij * der_pair_energy_direct(rij, pair_energy)
                     if (rij < rcut_in) then
                         fij_vec = fij_vec + der_damping_function_cosine(&
                                 rij, rcut_in - rcin_width, rcut_in)&
-                            * charges(center_i) * neighbor_charges(pair_counter) * rij_vec / rij**2
+                            * pair_energy * rij_vec / rij
                     end if
                     ! TODO omit forces on periodic replicas? They should cancel in any case.
                     forces(:, center_i) = forces(:, center_i) + fij_vec
@@ -145,6 +165,7 @@ module electrostatics
                     virial = virial - outer_prod(fij_vec, rij_vec)
                     ! Accumulate ij-pair prefactor for variable-charge gradient term
                     ! (the inner-damping factor is 1.0 outside the inner cutoff)
+                    ! TODO can we write this in terms of the pair energy derivative?
                     vc_grad_prefactor(center_i) = vc_grad_prefactor(center_i) + &
                             inner_damp_ij * neigh_charge / rij
                 end if
