@@ -20,10 +20,10 @@ ifeq ($(MPIF90),mpif90)
 F90=mpif90
 F90_OPTS=-fPIC -O3
 PP=-cpp -D _MPIF90
-#F90_OPTS=-fPIC -O3 -fcheck=bounds -g -fcheck=all -Wall -ffpe-trap=invalid #,zero,overflow
+F90_OPTS=-fPIC -O3 -fcheck=bounds -g -fcheck=all -Wall -ffpe-trap=invalid #,zero,overflow
 F90_MOD_DIR_OPT=-J
 #LIBS=-L$(LAPACK_LIB_DIR) -llapack -lopenblas
-LIBS=-llapack -lblas #-L/u/27/muhlih1/unix/psblas3/lib -lpsb_util -lpsb_krylov -lpsb_prec -lpsb_base  -llapack -lblas
+LIBS=-lopenblas #-L/u/27/muhlih1/unix/psblas3/lib -lpsb_util -lpsb_krylov -lpsb_prec -lpsb_base  -llapack -lblas
 endif
 
 ifeq ($(F90),gfortran)
