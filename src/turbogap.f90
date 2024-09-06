@@ -1364,6 +1364,7 @@ if( params%vdw_type == "ts+mbd" .and. modulo(md_istep, params%mbd_correction_fre
           this_local_virial_vdw_diag_corr = 0.d0
         end if
 else if( params%vdw_type == "ts" )then
+        if( allocated(this_mbd_ts_scaling) )deallocate( this_mbd_ts_scaling )
         allocate( this_mbd_ts_scaling(1:n_sites) )
         this_mbd_ts_scaling = 1.d0
 end if
