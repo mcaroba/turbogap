@@ -149,20 +149,20 @@ module vdw
                                        n_neigh, neighbors_list, neighbor_species, &
                                        rcut, buffer, rcut_inner, buffer_inner, rjs, xyz, hirshfeld_v_neigh, &
                                        sR, d, c6_ref, r0_ref, alpha0_ref, c6_scs, r0_scs, alpha0_scs, do_forces, &
-                                       energies, forces0, virial )
+                                       energies, forces0, virial, local_virial_diag0, mbd_ts_scaling )
 
     implicit none
 
 !   Input variables
     real*8, intent(in) :: hirshfeld_v(:), hirshfeld_v_cart_der(:,:), rcut, buffer, rcut_inner, buffer_inner, &
                           rjs(:), xyz(:,:), hirshfeld_v_neigh(:), sR, d, c6_ref(:), r0_ref(:), &
-                          alpha0_ref(:), c6_scs(:), r0_scs(:), alpha0_scs(:)
+                          alpha0_ref(:), c6_scs(:), r0_scs(:), alpha0_scs(:), mbd_ts_scaling(:)
     integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:)
     logical, intent(in) :: do_forces
 !   Output variables
     real*8, intent(out) :: virial(1:3, 1:3)
 !   In-Out variables
-    real*8, intent(inout) :: energies(:), forces0(:,:)
+    real*8, intent(inout) :: energies(:), forces0(:,:), local_virial_diag0(:,:)
 !   Internal variables
     real*8, allocatable :: neighbor_c6_ii(:), neighbor_c6_ij(:), r0_ii(:), r0_ij(:), &
                            exp_damp(:), f_damp(:), c6_ij_free(:), neighbor_alpha0(:), &
@@ -325,7 +325,7 @@ module vdw
         end if         
       end do
     end do
-    energies = -0.5d0 * energies
+    energies = -0.5d0 * energies * mbd_ts_scaling
 
     !write(*,*) "TS energy", sum(energies)
 
@@ -339,6 +339,7 @@ module vdw
     if( do_forces )then
       forces0 = 0.d0
       virial = 0.d0
+      local_virial_diag0 = 0.d0
 !     First, we compute the forces acting on all the "SOAP-neighbors" of atom i
 !     (including i itself) due to the gradients of i's Hirshfeld volume wrt the
 !     positions of its neighbors 
@@ -378,12 +379,13 @@ module vdw
 !             SOAP neighbors
 ! MAY NEED TO CHANGE THIS TO ACCOUNT FOR MACHINE PRECISION
             if( .not. all(hirshfeld_v_cart_der(1:3, k) == 0.d0) )then
-              this_force(1:3) = hirshfeld_v_cart_der(1:3, k) * ( pref_force1(i) + pref_force2(i) )
+              this_force(1:3) = hirshfeld_v_cart_der(1:3, k) * ( pref_force1(i) + pref_force2(i) ) * mbd_ts_scaling(i)
               forces0(1:3, j2) = forces0(1:3, j2) + this_force(1:3)
 !             Sign is plus because this force is acting on j2. Factor of one is because this is
 !             derived from a local energy
 !              virial = virial + dot_product(this_force(1:3), xyz(1:3,k))
               do k1 = 1, 3
+                local_virial_diag0(k1, j2) = local_virial_diag0(k1, j2) + this_force(k1)*xyz(k1, k)
                 do k2 =1, 3
                   virial(k1, k2) = virial(k1, k2) + 0.5d0 * (this_force(k1)*xyz(k2,k) + this_force(k2)*xyz(k1,k))
                 end do
@@ -394,7 +396,7 @@ module vdw
             else
               this_force(1:3) = neighbor_c6_ij(k) / rjs(k) * xyz(1:3,k) &
                                * f_damp(k) * ( -r6_der(k) - r6(k) * f_damp(k) * exp_damp(k) &
-                                               * d / sR / r0_ij(k) )
+                                               * d / sR / r0_ij(k) ) * mbd_ts_scaling(i)
             end if
 !           There is no net force acting on i2 from its periodic replicas...
             if( j2 /= i2 )then
@@ -405,6 +407,7 @@ module vdw
 !           derived from a pair energy
 !            virial = virial - 0.5d0 * dot_product(this_force(1:3), xyz(1:3,k))
             do k1 = 1, 3
+              local_virial_diag0(k1, j2) = local_virial_diag0(k1, j2) - 0.5d0 * this_force(k1)*xyz(k1, k)
               do k2 =1, 3
                 virial(k1, k2) = virial(k1, k2) - 0.25d0 * (this_force(k1)*xyz(k2,k) + this_force(k2)*xyz(k1,k))
               end do
@@ -1043,7 +1046,7 @@ module vdw
                                        hirshfeld_v_neigh, sR, d, c6_ref, r0_ref, alpha0_ref, do_derivatives, &
                                        do_hirshfeld_gradients, polynomial_expansion, do_nnls, n_freq, n_order, &
                                        cent_appr, vdw_omega_ref, central_pol, central_omega, include_2b, &
-                                       energies, forces0, virial )
+                                       energies, forces0, virial, local_virial_diag0 )
 
     implicit none
 
@@ -1058,7 +1061,7 @@ module vdw
     real*8, intent(out) :: virial(1:3, 1:3)
 !   In-Out variables
     real*8, intent(inout) :: energies(:), forces0(:,:), central_pol(:), central_omega(:), &
-                             hirshfeld_v_neigh(:)
+                             hirshfeld_v_neigh(:), local_virial_diag0(:,:)
 !   Internal variables
     real*8, allocatable :: neighbor_c6_ii(:), r0_ii(:), f_damp(:), neighbor_alpha0(:), T_func(:), h_func(:), g_func(:), &
                            omegas(:), B_mat(:,:), rjs_H(:), xyz_H(:,:), work_arr(:), dT(:), f_damp_der(:), &
@@ -1193,6 +1196,7 @@ r_buf_tsscs = 0.d0
 
 !    if ( do_derivatives ) then
       virial = 0.d0
+      local_virial_diag0 = 0.d0
 !    end if
 
     !write(*,*) "dv"
@@ -6276,6 +6280,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 if ( .not. cent_appr ) then
                   forces0(c3,i0) = forces0(c3,i0) + (1.d0/(2.d0*pi) * integral) * Hartree/Bohr
                   virial(:,c3) = virial(:,c3) + (1.d0/(pi) * virial_integral) * Hartree
+                  local_virial_diag0(c3, i0) = local_virial_diag0(c3, i0) + (1.d0/(pi) * virial_integral(c3)) * Hartree
                 end if
                 if ( cent_appr ) then
                   !if ( (i == 1 .or. i == 31) .and. c3 == 1 ) then
@@ -6283,6 +6288,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                   !end if
                   forces0(c3,i0) = forces0(c3,i0) + (1.d0/(2.d0*pi) * sym_integral) * Hartree/Bohr
                   virial(:,c3) = virial(:,c3) + (1.d0/(pi) * virial_integral) * Hartree
+                  local_virial_diag0(c3, i0) = local_virial_diag0(c3, i0) + (1.d0/(pi) * virial_integral(c3)) * Hartree
                 end if
 
                 !!!!!!write(*,*) "MBD force", i, c3, 1.d0/(2.d0*pi) * integral * Hartree/Bohr
