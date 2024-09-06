@@ -42,6 +42,7 @@ program turbogap
 #endif
   use bussi
   use xyz_module
+  use misc
 
   implicit none
 
@@ -84,7 +85,7 @@ program turbogap
                           i_beg_list(:), i_end_list(:), j_beg_list(:), j_end_list(:)
   integer :: n_sites, i, j, k, i2, j2, n_soap, k2, k3, l, n_sites_this, ierr, rank, ntasks, dim, n_sp, &
              n_pos, n_sp_sc, this_i_beg, this_i_end, this_j_beg, this_j_end, this_n_sites_mpi, n_sites_prev = 0, &
-             n_atom_pairs_by_rank_prev
+             n_atom_pairs_by_rank_prev, n
   integer :: l_max, n_atom_pairs, n_max, ijunk, central_species = 0, n_atom_pairs_total
   integer :: iostatus, counter, counter2
   integer :: which_atom = 0, n_species = 1, n_xyz, indices(1:3)
@@ -119,7 +120,10 @@ program turbogap
   real*8, allocatable :: alpha_SCS(:), omega_SCS(:), alpha_SCS_grad(:,:), hirshfeld_v_cart_der_send(:,:), &
                          hirshfeld_v_cart_der_receive(:,:), this_hirshfeld_v_cart_der_receive(:,:), &
                          hirshfeld_v_cart_der_ji(:,:), this_alpha_SCS(:), this_omega_SCS(:)
-  real*8, allocatable :: energies_vdw_corr(:), forces_vdw_corr(:,:), this_energies_vdw_corr(:), this_forces_vdw_corr(:,:)
+  real*8, allocatable :: energies_vdw_corr(:), forces_vdw_corr(:,:), this_energies_vdw_corr(:), this_forces_vdw_corr(:,:), &
+                         local_virial_vdw_diag(:,:), local_virial_vdw_diag_corr(:,:), &
+                         this_local_virial_vdw_diag(:,:), this_local_virial_vdw_diag_corr(:,:), S_xyz_inv(:,:), &
+                         mbd_ts_scaling(:), this_mbd_ts_scaling(:)
   integer, allocatable :: hirshfeld_transfer(:,:), this_hirshfeld_transfer(:), i_send(:), j_send(:), k_array(:), &
                           i_receive(:), j_receive(:), this_i_receive(:), this_j_receive(:), hirshfeld_disp(:), &
                           k_start(:)
@@ -915,7 +919,7 @@ program turbogap
 !     We only need to reallocate the arrays if the number of sites changes
       if( n_sites /= n_sites_prev )then
         if( allocated(energies) )deallocate( energies, energies_soap, energies_2b, energies_3b, energies_core_pot, &
-                                             this_energies, energies_vdw, energies_vdw_corr, this_forces )
+                                             this_energies, energies_vdw, energies_vdw_corr, mbd_ts_scaling, this_forces )
         allocate( energies(1:n_sites) )
         allocate( this_energies(1:n_sites) )
         allocate( energies_soap(1:n_sites) )
@@ -924,6 +928,7 @@ program turbogap
         allocate( energies_core_pot(1:n_sites) )
         allocate( energies_vdw(1:n_sites) )
         allocate( energies_vdw_corr(1:n_sites) )
+        allocate( mbd_ts_scaling(1:n_sites) )
 !       This needs to be allocated even if no force prediction is needed:
         allocate( this_forces(1:3, 1:n_sites) )
       end if
@@ -933,9 +938,10 @@ program turbogap
       energies_3b = 0.d0
       energies_core_pot = 0.d0
       energies_vdw = 0.d0
-!if( params%vdw_type == "ts+mbd" .and. modulo(md_istep, params%mbd_correction_freq) == 0 )then
+if( params%vdw_type == "ts+mbd" .and. modulo(md_istep, params%mbd_correction_freq) == 0 )then
 !      energies_vdw_corr = 0.d0
-!end if
+      mbd_ts_scaling = 1.d0
+end if
       if( any( soap_turbo_hypers(:)%has_vdw ) )then
         if( n_sites /= n_sites_prev )then
           if( allocated(hirshfeld_v) )then
@@ -964,14 +970,16 @@ program turbogap
       if( params%do_forces )then
         if( n_sites /= n_sites_prev )then
           if( allocated(forces) )deallocate( forces, forces_soap, forces_2b, forces_3b, forces_core_pot, forces_vdw, &
-                                             forces_vdw_corr )
+                                             forces_vdw_corr, local_virial_vdw_diag, local_virial_vdw_diag_corr )
           allocate( forces(1:3, 1:n_sites) )
           allocate( forces_soap(1:3, 1:n_sites) )
           allocate( forces_2b(1:3, 1:n_sites) )
           allocate( forces_3b(1:3, 1:n_sites) )
           allocate( forces_core_pot(1:3, 1:n_sites) )
-          allocate( forces_vdw(1:3,1:n_sites) )
-          allocate( forces_vdw_corr(1:3,1:n_sites) )
+          allocate( forces_vdw(1:3, 1:n_sites) )
+          allocate( forces_vdw_corr(1:3, 1:n_sites) )
+          allocate( local_virial_vdw_diag_corr(1:3, 1:n_sites) )
+          allocate( local_virial_vdw_diag(1:3, 1:n_sites) )
         end if
         forces = 0.d0
         forces_soap = 0.d0
@@ -981,6 +989,7 @@ program turbogap
         forces_vdw = 0.d0
 !if( params%vdw_type == "ts+mbd" .and. modulo(md_istep, params%mbd_correction_freq) == 0 )then
 !        forces_vdw_corr = 0.d0
+!        local_virial_vdw_diag_corr = 0.d0
 !end if
         virial = 0.d0
         virial_soap = 0.d0
@@ -988,6 +997,7 @@ program turbogap
         virial_3b = 0.d0
         virial_core_pot = 0.d0
         virial_vdw = 0.d0
+        local_virial_vdw_diag = 0.d0
       end if
 
       if( params%do_prediction )then
@@ -1337,16 +1347,25 @@ program turbogap
         if( params%do_forces )then
           allocate( this_forces_vdw(1:3,1:n_sites) )
           this_forces_vdw = 0.d0
+          allocate( this_local_virial_vdw_diag(1:3, 1:n_sites) )
+          this_local_virial_vdw_diag = 0.d0
         end if
 if( params%vdw_type == "ts+mbd" .and. modulo(md_istep, params%mbd_correction_freq) == 0 )then
-        if( allocated(this_energies_vdw_corr) )deallocate( this_energies_vdw_corr )
+        if( allocated(this_energies_vdw_corr) )deallocate( this_energies_vdw_corr, this_mbd_ts_scaling )
         allocate( this_energies_vdw_corr(1:n_sites) )
         this_energies_vdw_corr = 0.d0
+        allocate( this_mbd_ts_scaling(1:n_sites) )
+        this_mbd_ts_scaling = 1.d0
         if( params%do_forces )then
-          if( allocated(this_forces_vdw_corr) )deallocate( this_forces_vdw_corr )
+          if( allocated(this_forces_vdw_corr) )deallocate( this_forces_vdw_corr, this_local_virial_vdw_diag_corr )
           allocate( this_forces_vdw_corr(1:3,1:n_sites) )
           this_forces_vdw_corr = 0.d0
+          allocate( this_local_virial_vdw_diag_corr(1:3, 1:n_sites) )
+          this_local_virial_vdw_diag_corr = 0.d0
         end if
+else if( params%vdw_type == "ts" )then
+        allocate( this_mbd_ts_scaling(1:n_sites) )
+        this_mbd_ts_scaling = 1.d0
 end if
 #endif
         if( .not. allocated(v_neigh_vdw) )allocate(v_neigh_vdw(1:j_end-j_beg+1))
@@ -1361,7 +1380,6 @@ end if
           end do
         end do
 ! TODO: change this back to get_ts_energy_and_forces and implement call for mbd energy
-
         if( params%vdw_type == "ts" .or. params%vdw_type == "ts+mbd" )then
           call get_ts_energy_and_forces( hirshfeld_v(i_beg:i_end), hirshfeld_v_cart_der(1:3, j_beg:j_end), &
                                          n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
@@ -1373,15 +1391,16 @@ end if
                                          params%vdw_alpha0_ref, c6_scs, r0_scs, alpha0_scs, params%do_forces, &
 #ifdef _MPIF90
                                         ! this_energies_vdw(i_beg:i_end), this_forces_vdw(1:3,i_beg:i_end), this_virial_vdw )
-                                         this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw )
+                                         this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw, &
+                                         this_local_virial_vdw_diag, this_mbd_ts_scaling(i_beg:i_end) )
 #else
-                                         energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
+                                         energies_vdw(i_beg:i_end), forces_vdw, virial_vdw, local_virial_vdw_diag, &
+                                         mbd_ts_scaling(i_beg:i_end) )
 #endif
           if( .not. (params%vdw_type == "ts+mbd" .and. modulo(md_istep, params%mbd_correction_freq) == 0) )then
             deallocate(v_neigh_vdw)
           end if
         end if
-!write(*,*) "WHADDUP", md_istep, params%mbd_correction_freq, md_istep, params%mbd_correction_freq, params%vdw_type
         if( params%vdw_type == "mbd" .or. &
             (params%vdw_type == "ts+mbd" .and. modulo(md_istep, params%mbd_correction_freq) == 0) )then
           if( params%vdw_type == "ts+mbd" .and. modulo(md_istep, params%mbd_correction_freq) == 0 )then
@@ -1390,17 +1409,21 @@ end if
             this_energies_vdw_corr = this_energies_vdw
             this_forces_vdw_corr = this_forces_vdw
             this_virial_vdw_corr = this_virial_vdw
+            this_local_virial_vdw_diag_corr = this_local_virial_vdw_diag
             this_energies_vdw = 0.d0
             this_forces_vdw = 0.d0
             this_virial_vdw = 0.d0
+            this_local_virial_vdw_diag = 0.d0
 #else
 !            energies_vdw_corr(i_beg:i_end) = energies_vdw(i_beg:i_end)
             energies_vdw_corr = energies_vdw
             forces_vdw_corr = forces_vdw
             virial_vdw_corr = virial_vdw
+            local_virial_vdw_diag_corr = local_virial_vdw_diag
             energies_vdw = 0.d0
             forces_vdw = 0.d0
             virial_vdw = 0.d0
+            local_virial_vdw_diag = 0.d0
 #endif
           end if
           allocate( alpha_SCS(1:n_sites) )
@@ -1466,9 +1489,10 @@ include_2b = .true.
                                          2, params%vdw_mbd_cent_appr, &
                                          params%vdw_omega_ref, alpha_SCS, omega_SCS, include_2b, &
 #ifdef _MPIF90
-                                         this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw )
+                                         this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw, &
+                                         this_local_virial_vdw_diag )
 #else
-                                         energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
+                                         energies_vdw(i_beg:i_end), forces_vdw, virial_vdw, local_virial_vdw_diag )
 #endif
 if ( params%vdw_mbd_norder > 2 ) then ! Call 3b+ version if maximum body order > 2, otherwise only 2b with SCS polarizabilities is included
 include_2b = .false.
@@ -1485,9 +1509,10 @@ include_2b = .false.
                                          params%vdw_mbd_norder, params%vdw_mbd_cent_appr, &
                                          params%vdw_omega_ref, alpha_SCS, omega_SCS, include_2b, &
 #ifdef _MPIF90
-                                         this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw )
+                                         this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw, &
+                                         this_local_virial_vdw_diag )
 #else
-                                         energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
+                                         energies_vdw(i_beg:i_end), forces_vdw, virial_vdw, local_virial_vdw_diag )
 #endif
 end if
 else ! If 2b cut-off <= mbd cut-off, just execute normally with 2b and 3b+ for same cut-off
@@ -1505,9 +1530,10 @@ include_2b = .true.
                                          params%vdw_mbd_norder, params%vdw_mbd_cent_appr, &
                                          params%vdw_omega_ref, alpha_SCS, omega_SCS, include_2b, &
 #ifdef _MPIF90
-                                         this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw )
+                                         this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw, &
+                                         this_local_virial_vdw_diag )
 #else
-                                         energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
+                                         energies_vdw(i_beg:i_end), forces_vdw, virial_vdw, local_virial_vdw_diag )
 #endif
 end if
 call cpu_time(time2)
@@ -1541,37 +1567,85 @@ call cpu_time(time2)
           !  write(*,*) forces_vdw(1:3,i), this_forces_vdw(1:3,i), energies_vdw(i), this_energies_vdw(i)
           !end do
 
-          deallocate(v_neigh_vdw, alpha_SCS, omega_SCS, alpha_SCS_grad, c6_scs, r0_scs, alpha0_scs, &
+          deallocate(alpha_SCS, omega_SCS, alpha_SCS_grad, c6_scs, r0_scs, alpha0_scs, &
                      this_alpha_SCS, this_omega_SCS)
+          if( .not. (params%vdw_type == "ts+mbd" .and. modulo(md_istep, params%mbd_correction_freq) == 0) )deallocate(v_neigh_vdw) 
         end if
-
 !       Apply the MBD-TS correction if needed/requested
         if( params%vdw_type == "ts+mbd" )then
+if( allocated( S_xyz_inv ) )then
+deallocate( S_xyz_inv )
+end if
+allocate( S_xyz_inv(1:3, 1:n_sites) )
+S_xyz_inv = 0.d0
+k = j_beg - 1
+do i = i_beg, i_end
+k = k + 1
+n = 0
+do j = 2, n_neigh(i) ! exclude self term
+k = k + 1
+if( rjs(k) < params%vdw_rcut )then ! this should be the TS rcut, make sure!
+S_xyz_inv(1:3, i) = S_xyz_inv(1:3, i) + screened_one_over_x(xyz(1:3, k))
+n = n + 1
+end if
+end do
+if( n >= 1 )then
+S_xyz_inv(1:3, i) = S_xyz_inv(1:3, i) / dfloat(n)
+end if
+end do
+!write(*,*) rank, this_local_virial_vdw_diag_corr * S_xyz_inv
 !         This updates the correction every mbd_correction_freq steps
-          if( modulo(md_istep, params%mbd_correction_freq) == 0 )then 
+          if( modulo(md_istep, params%mbd_correction_freq) == 0 )then
 #ifdef _MPIF90
+            this_mbd_ts_scaling = 1.d0 + (dabs(this_energies_vdw) - dabs(this_energies_vdw_corr)) &
+                                  / (dabs(this_energies_vdw_corr) + 0.01d0)
 !            this_energies_vdw_corr(i_beg:i_end) = this_energies_vdw(i_beg:i_end) - this_energies_vdw_corr(i_beg:i_end)
             this_energies_vdw_corr = this_energies_vdw - this_energies_vdw_corr
             this_forces_vdw_corr = this_forces_vdw - this_forces_vdw_corr
             this_virial_vdw_corr = this_virial_vdw - this_virial_vdw_corr
+            this_local_virial_vdw_diag_corr = this_local_virial_vdw_diag - this_local_virial_vdw_diag_corr
 #else
+            this_mbd_ts_scaling = 1.d0 + (dabs(this_energies_vdw) - dabs(this_energies_vdw_corr)) &
+                                  / (dabs(this_energies_vdw_corr) + 0.01d0)
 !            energies_vdw_corr(i_beg:i_end) = energies_vdw(i_beg:i_end) - energies_vdw_corr(i_beg:i_end)
             energies_vdw_corr = energies_vdw - energies_vdw_corr
             forces_vdw_corr = forces_vdw - forces_vdw_corr
             virial_vdw_corr = virial_vdw - virial_vdw_corr
+            local_virial_vdw_diag_corr = local_virial_vdw_diag - local_virial_vdw_diag_corr
 #endif
+            call get_ts_energy_and_forces( hirshfeld_v(i_beg:i_end), hirshfeld_v_cart_der(1:3, j_beg:j_end), &
+                                           n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
+                                           neighbor_species(j_beg:j_end), &
+                                           params%vdw_rcut, params%vdw_buffer, &
+                                           params%vdw_rcut_inner, params%vdw_buffer_inner, &
+                                           rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), v_neigh_vdw, &
+                                           params%vdw_sr, params%vdw_d, params%vdw_c6_ref, params%vdw_r0_ref, &
+                                           params%vdw_alpha0_ref, c6_scs, r0_scs, alpha0_scs, params%do_forces, &
+#ifdef _MPIF90
+                                          ! this_energies_vdw(i_beg:i_end), this_forces_vdw(1:3,i_beg:i_end), this_virial_vdw )
+                                           this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw, &
+                                           this_local_virial_vdw_diag, this_mbd_ts_scaling(i_beg:i_end) )
+#else
+                                           energies_vdw(i_beg:i_end), forces_vdw, virial_vdw, local_virial_vdw_diag, &
+                                           mbd_ts_scaling(i_beg:i_end) )
+#endif
+            deallocate(v_neigh_vdw)
           else
 !         This applies the correction
 #ifdef _MPIF90
 !            this_energies_vdw(i_beg:i_end) = this_energies_vdw(i_beg:i_end) + this_energies_vdw_corr(i_beg:i_end)
-            this_energies_vdw = this_energies_vdw + this_energies_vdw_corr
-            this_forces_vdw = this_forces_vdw + this_forces_vdw_corr
-            this_virial_vdw = this_virial_vdw + this_virial_vdw_corr
+!            this_energies_vdw = this_energies_vdw + this_energies_vdw_corr
+!            this_forces_vdw = this_forces_vdw + this_forces_vdw_corr
+!            this_virial_vdw = this_virial_vdw + this_virial_vdw_corr
+!            this_local_virial_vdw_diag = this_local_virial_vdw_diag + this_local_virial_vdw_diag_corr
+!            this_forces_vdw = this_forces_vdw - this_local_virial_vdw_diag_corr * S_xyz_inv
 #else
 !            energies_vdw(i_beg:i_end) = energies_vdw(i_beg:i_end) + energies_vdw_corr(i_beg:i_end)
-            energies_vdw = energies_vdw + energies_vdw_corr
-            forces_vdw = forces_vdw + forces_vdw_corr
-            virial_vdw = virial_vdw + virial_vdw_corr
+!            energies_vdw = energies_vdw + energies_vdw_corr
+!            forces_vdw = forces_vdw + forces_vdw_corr
+!            virial_vdw = virial_vdw + virial_vdw_corr
+!            local_virial_trace_vdw = local_virial_trace_vdw + local_virial_vdw_diag_corr
+!            forces_vdw = forces_vdw - local_virial_vdw_diag_corr * S_xyz_inv
 #endif
           end if
         end if
@@ -1774,6 +1848,7 @@ call cpu_time(time2)
             forces_vdw(1:3, 1:n_sites) = all_this_forces(1:3, 1:n_sites, counter2)
             virial_vdw(1:3, 1:3) = all_this_virial(1:3, 1:3, counter2)
             deallocate(this_forces_vdw)
+            deallocate(this_local_virial_vdw_diag)
           end if
         end if
         if( n_distance_2b > 0 )then

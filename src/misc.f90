@@ -401,4 +401,24 @@ module misc
 
   end subroutine
 
+
+
+
+  function screened_one_over_x(val) result(res)
+
+    real*8, intent(in) :: val(:)
+    real*8, dimension(1:size(val)) :: res
+    real*8, parameter :: pi = 3.141592653589793d0
+    integer :: i
+
+    do i = 1, size(val)
+      if( dabs(val(i)) > 1.d0 )then
+        res(i) = 1.d0/val(i)
+      else
+        res(i) = dsin(pi/2.d0*val(i))
+      end if
+    end do
+
+  end function
+
 end module
