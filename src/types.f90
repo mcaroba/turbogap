@@ -31,6 +31,43 @@ module types
   use iso_c_binding
 
   implicit none
+
+ 
+  type gpu_host_storage_type
+     real*8, allocatable :: xyz_k_h(:,:), pair_distribution_partial_h(:), pair_distribution_partial_der_h(:,:), forces_h(:,:), rjs_index_h(:)
+     real*8 :: virial_h(1:3,1:3)
+     integer, allocatable :: k_index_h(:), j2_index_h(:)
+  end type gpu_host_storage_type
+
+  
+  type gpu_host_batch_storage_type
+     type( gpu_host_storage_type ), allocatable :: host(:)
+  end type gpu_host_batch_storage_type
+  
+ 
+
+  ! each one of these will be allocated 1:n_dim_partial
+  type gpu_storage_type
+     integer, allocatable :: nk(:)
+     type( c_ptr ), allocatable :: nk_d(:), k_index_d(:), j2_index_d(:), xyz_k_d(:), &
+          pair_distribution_partial_d(:), pair_distribution_partial_der_d(:), nk_flags_sum_d(:), nk_flags_d(:), rjs_index_d(:)
+     integer( c_size_t ), allocatable :: st_nk_d(:), st_k_index_d(:), st_j2_index_d(:), &
+          st_pair_distribution_partial_d(:), st_pair_distribution_partial_der_d(:)
+  end type gpu_storage_type
+
+
+  ! type gpu_batch_storage_type
+  !    type( gpu_storage_type ), allocatable :: device(:)
+  ! end type gpu_batch_storage_type
+
+  
+  type gpu_neigh_storage_type
+     type( c_ptr ) :: n_neigh_d, species_d, neighbors_list_d, neighbor_species_d, rjs_d, xyz_d
+     integer( c_size_t ) :: st_n_neigh_d, st_species_d, st_neighbors_list_d, st_neighbor_species_d, st_rjs_d, st_xyz_d     
+  end type gpu_neigh_storage_type
+  
+
+  
   
   ! GAP+descriptor data structure for SOAP
   type exp_data_container
@@ -147,7 +184,7 @@ module types
          & 1.5405981d0, xrd_alpha=1.01d0, xrd_rcut=4.d0, nd_rcut=4.d0&
          &, q_range_min=1.0, q_range_max=5.d0, r_range_min=1.0,&
          & r_range_max=5.d0, pair_distribution_rcut=4.d0,&
-         & pair_distribution_kde_sigma=0.d0
+         & pair_distribution_kde_sigma=0.d0, gpu_max_batch_size=1.d0
     integer :: md_nsteps = 1, mc_nsteps = 1, write_xyz = 0,&
          & write_thermo = 1, which_atom = 0, vdw_mbd_nfreq = 11,&
          & n_mc_types = 0, n_nested = 0, mc_idx = 1, mc_nrelax=0,&
@@ -155,7 +192,7 @@ module types
          &, xrd_idx, saxs_idx, pdf_idx, sf_idx, nd_idx, n_exp=0, pair_distribution_n_samples&
          &=200, structure_factor_n_samples=200, xrd_n_samples=200, nd_n_samples=200, verb=0, n_t_hold=0,&
          n_exp_opt=0,&
-         n_mc_relax_after = 0, n_mc_mu = 0
+         n_mc_relax_after = 0, n_mc_mu = 0, gpu_n_batches=0
     integer, allocatable :: mc_swaps_id(:)
 
     character*1024 :: atoms_file
@@ -183,7 +220,7 @@ module types
                do_pair_distribution = .false., do_structure_factor = .false., do_xrd = .false., do_nd = .false., &
                write_xrd = .false., write_nd = .false., structure_factor_matrix = .true., &
                structure_factor_matrix_forces = .true., write_exp = .true., valid_pdf = .false., valid_sf = .false., &
-               valid_xrd = .false., valid_nd = .false.
+               valid_xrd = .false., valid_nd = .false., gpu_low_memory = .true., gpu_batched = .true.
 
     logical, allocatable :: write_local_properties(:)
     type(exp_data_container), allocatable :: exp_data(:)

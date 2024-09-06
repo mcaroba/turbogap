@@ -107,12 +107,12 @@ program turbogap
        time_mpi(1:3) = 0.d0, time_core_pot(1:3), time_vdw(1:3),&
        & time_pdf(1:3), time_sf(1:3), time_xrd(1:3), time_nd(1:3), time_xps(1:3), time_mc(1:3), &
        & instant_pressure, lv(1:3,1:3), time_mpi_positions(1:3) =&
-       & 0.d0, time_mpi_ef(1:3) = 0.d0, time_md(3) = 0.d0,&
+       & 0.d0, time_mpi_ef(1:3) = 0.d0, time_md(3) = 0.d0, time_batch_alloc(3) = 0.d0, time_batch_pdf(3) = 0.d0, time_batch_xrd(3) = 0.d0,&
        & instant_pressure_tensor(1:3, 1:3), time_step, md_time,&
        & solo_time_soap=0.d0, soap_time_soap(3)=0.d0, time_get_soap=0.d0, t1, &
-       & instant_pressure_prev, wfac, wfac_temp, energy_exp
+       & instant_pressure_prev, wfac, wfac_temp, energy_exp, time_exp_batched(1:3)
   integer, allocatable :: displs(:), displs2(:), counts(:), counts2(:), in_to_out_pairs(:), in_to_out_site(:), mc_id(:)
-  integer :: update_bar, n_sparse, idx, gd_istep = 0, nprop
+  integer :: update_bar, n_sparse, idx, gd_istep = 0, nprop, n_pairs_temp, n_sites_temp
   logical, allocatable :: do_list(:), has_local_properties_mpi(:), fix_atom(:,:)
   logical :: rebuild_neighbors_list = .true., exit_loop = .true.,&
        & gd_box_do_pos = .true., restart_box_optim = .false.,&
@@ -190,7 +190,7 @@ program turbogap
   real*8, allocatable :: energies_xrd(:), forces_xrd(:,:), this_energies_xrd(:), this_forces_xrd(:,:)
   real*8, allocatable :: energies_nd(:), forces_nd(:,:), this_energies_nd(:), this_forces_nd(:,:)
   ! MPI stuff
-  real*8, allocatable :: temp_1d(:), temp_1d_bis(:), temp_2d(:,:),&
+  real*8, allocatable, target :: temp_1d(:), temp_1d_bis(:), temp_2d(:,:),&
        & pair_distribution_partial(:,:), pair_distribution_der(:,:), pair_distribution_partial_der(:,:,:), &
        & pair_distribution_partial_temp(:,:),&
        & pair_distribution_partial_temp_der(:,:,:),&
@@ -201,7 +201,7 @@ program turbogap
        & x_structure_factor(:), x_structure_factor_temp(:),&
        & y_structure_factor(:), y_structure_factor_temp(:),&
        x_xrd(:), x_xrd_temp(:), y_xrd(:), y_xrd_temp(:), y_xrd_der(:,:,:), y_xrd_temp_der(:,:,:), &
-       x_nd(:), x_nd_temp(:), y_nd(:), y_nd_temp(:), y_nd_der(:,:,:), y_nd_temp_der(:,:,:)
+       x_nd(:), x_nd_temp(:), y_nd(:), y_nd_temp(:), y_nd_der(:,:,:), y_nd_temp_der(:,:,:), dV(:), all_scattering_factors(:)
   integer, allocatable :: temp_1d_int(:), n_atom_pairs_by_rank(:)
   integer, allocatable :: n_species_mpi(:), n_sparse_mpi_soap_turbo(:), dim_mpi(:), n_sparse_mpi_distance_2b(:), &
        n_sparse_mpi_angle_3b(:), n_mpi_core_pot(:),&
@@ -232,26 +232,39 @@ program turbogap
   integer :: sp0_3b, sp1_3b, sp2_3b, max_np
   type(c_ptr) :: energies_3b_d, forces_3b_d, virial_3b_d
   type(c_ptr) :: kappas_array_d, sigma_d, neighbors_list_d 
-  integer(c_size_t) :: size_maxnp_bytes, size_maxnp_qs_bytes, size_alphas_bytes, size_energy3b, size_forces3b, size_virial3b
+  integer(c_size_t) :: size_maxnp_bytes, size_maxnp_qs_bytes, size_alphas_bytes, size_energy3b, size_forces3b, size_virial3b, st_x_d, st_sinc_factor_matrix_d, st_prefactor_d
   
 !**************************************************************************
 
   !--- GPU variables for experimental ---!
 !  type( gpu_exp ) :: gpu_exp_vars
-  type(c_ptr) :: pair_distribution_d
-  type(c_ptr), allocatable :: nk_d(:), k_index_d(:), j2_index_d(:), rjs_index_d(:), xyz_k_d(:), pair_distribution_partial_d(:), pair_distribution_partial_der_d(:)
+  type(c_ptr) :: pair_distribution_d, xpdf_d, dV_d, prefactor_d, sinc_factor_matrix_d
+  type(c_ptr), allocatable :: nk_d(:), k_index_d(:), j2_index_d(:), rjs_index_d(:), xyz_k_d(:), pair_distribution_partial_d(:), pair_distribution_partial_der_d(:), all_scattering_factors_d(:)
   integer(c_size_t), allocatable :: st_nk_d(:), st_k_index_d(:), st_j2_index_d(:), st_pair_distribution_partial_d(:), st_pair_distribution_partial_der_d(:)
   integer, allocatable :: nk(:)
-
+  real*8, allocatable, target :: prefactor(:)
+  
   
 
   ! Nested sampling
-  real*8 :: e_max, e_kin, rand, rand_scale(1:6), mag, n_total_cutoff, n_total_cutoff_temp, dq, target_temp
+  real*8 :: e_max, e_kin, rand, rand_scale(1:6), mag, n_total_cutoff, n_total_cutoff_temp, dq, target_temp, f 
   integer :: i_nested, i_max, i_image, i_current_image=1, i_trial_image=2
   type(image), allocatable :: images(:), images_temp(:)
   type(exp_data_container) :: temp_exp_container
 
+  ! Storage of host arrays which are compatible with gpu implementation 
+  type( gpu_host_storage_type ), allocatable :: gpu_host_exp_storage(:)
+  type( gpu_host_storage_type ) :: gpu_host_temp
 
+  ! this is a type of
+  ! gpu_batch_storage( i_batch ) % host( i_n_dim_idx ) % pair_distribution_h( 1:n_samples ) 
+  type( gpu_host_batch_storage_type ), allocatable :: gpu_batch_storage(:)  
+
+  type( gpu_storage_type ), allocatable :: gpu_exp(:)
+  type( gpu_neigh_storage_type ), allocatable :: gpu_neigh(:)  
+  integer :: n_dim_idx
+  real*8 :: gpu_memory_usage = 0.d0
+  
   !**************************************************************************
 
   !--- TODO: Add in random seeds for repeatable calculations which rely on random numbers! ---!
@@ -262,7 +275,9 @@ program turbogap
 !**************************************************************************
 ! Start recording the time
 
-  call cpu_time(time1)
+  !  call cpu_time(time1)
+  call get_time( time1 )
+  
   time3 = time1
   ! Start random seed
   !call srand(int(time1*1000))
@@ -277,7 +292,11 @@ program turbogap
   call mpi_comm_rank(MPI_COMM_WORLD, rank, ierr)
 
 
-  time1=MPI_Wtime()
+  ! !time1=MPI_Wtime()
+  !call get_time( !time1 )
+  
+  call get_time( time1 )
+  
   time3 = time1
 !  allocate( displs(1:ntasks) )
 !  allocate( displs2(1:ntasks) )
@@ -413,7 +432,10 @@ program turbogap
 
 !time_read_input(1) = MPI_wtime()
 !time_read_input(1 = MPI_wtime()
-  time_read_input(1)=MPI_Wtime()
+
+! time_read_input(1)=MPI_Wtime()
+  call get_time( time_read_input(1) )
+
   open(unit=10,file='input',status='old',iostat=iostatus)
   ! Check for existence of input file
 #ifdef _MPIF90
@@ -561,21 +583,21 @@ program turbogap
      write(*,*)'                                       |'
      write(*,*)'.......................................|'
      write(*,*)'                                       |'
-
+     
      call get_irreducible_local_properties(params, n_local_properties_tot, n_soap_turbo, soap_turbo_hypers, &
           local_property_labels, local_property_labels_temp, local_property_labels_temp2, local_property_indexes, &
           valid_vdw, vdw_lp_index, core_be_lp_index, valid_xps, xps_idx )
 
-     if( params%n_local_properties > 0 )then
-        write(*,*)'                                        |'
-        write(*,*)' Irreducible local properties:           |'
-        do i = 1, params%n_local_properties
-           write(*,'(1X,A)') trim( local_property_labels(i) )
-        end do
 
-        allocate( params%write_local_properties(1:params%n_local_properties) )
-        params%write_local_properties = .true.
-     end if
+     write(*,*)'                                        |'
+     write(*,*)' Irreducible local properties:           |'
+     do i = 1, params%n_local_properties
+        write(*,'(1X,A)') trim( local_property_labels(i) )
+     end do
+
+     allocate( params%write_local_properties(1:params%n_local_properties) )
+     params%write_local_properties = .true.
+
 
 
      ! Now, we have n_soap_turbo descriptors
@@ -669,7 +691,9 @@ program turbogap
      !   Broadcast number of descriptors to other processes
 #ifdef _MPIF90
 
-     time_mpi(1)=MPI_Wtime()
+     ! time_mpi(1)=MPI_Wtime()
+     call get_time( time_mpi(1) )
+     
      call mpi_bcast(n_soap_turbo, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(n_distance_2b, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(n_angle_3b, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
@@ -684,7 +708,9 @@ program turbogap
           & MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
 
      !   Processes other than 0 need to allocate the data structures on their own
-     time_mpi(2)=MPI_Wtime()
+     ! time_mpi(2)=MPI_Wtime()
+     call get_time( time_mpi(2) )
+     
      time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
      allocate( n_species_mpi(1:n_soap_turbo) )
      allocate( n_sparse_mpi_soap_turbo(1:n_soap_turbo) )
@@ -741,7 +767,9 @@ program turbogap
         end if
 
      END IF
-     time_mpi(1)=MPI_Wtime()
+     ! time_mpi(1)=MPI_Wtime()
+     call get_time( time_mpi(1) )
+     
      call mpi_bcast(n_species_mpi, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(n_sparse_mpi_soap_turbo, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(dim_mpi, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
@@ -771,7 +799,9 @@ program turbogap
      call mpi_bcast(n_sparse_mpi_angle_3b, n_angle_3b, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(n_mpi_core_pot, n_core_pot, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
 !     call mpi_bcast(compress_P_nonzero_mpi, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-     time_mpi(2)=MPI_Wtime()
+     ! time_mpi(2)=MPI_Wtime()
+     call get_time( time_mpi(2) )
+     
      time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
 
      IF( rank /= 0 )THEN
@@ -798,7 +828,9 @@ program turbogap
      !   type) at once via broadcasting, to reduce the total number of MPI calls to the minimum. This will be
      !   done at the module's subroutine's level.
      !   soap_turbo allocatable structures
-     time_mpi(1)=MPI_Wtime()
+     ! time_mpi(1)=MPI_Wtime()
+     call get_time( time_mpi(1) )
+     
      do i = 1, n_soap_turbo
         n_sp = soap_turbo_hypers(i)%n_species
         call mpi_bcast(soap_turbo_hypers(i)%nf(1:n_sp), n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
@@ -946,7 +978,9 @@ program turbogap
         call mpi_bcast(core_pot_hypers(i)%species1, 8, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
         call mpi_bcast(core_pot_hypers(i)%species2, 8, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
      end do
-     time_mpi(2)=MPI_Wtime()
+     ! time_mpi(2)=MPI_Wtime()
+     call get_time( time_mpi(2) )
+     
      time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
      !   Clean up
      deallocate( n_species_mpi, n_sparse_mpi_soap_turbo, dim_mpi, compress_soap_mpi, n_sparse_mpi_distance_2b, &
@@ -972,7 +1006,9 @@ program turbogap
   end if
 
 
-  time_read_input(2)=MPI_Wtime()
+  ! time_read_input(2)=MPI_Wtime()
+  call get_time( time_read_input(2) )
+  
   time_read_input(3) = time_read_input(3) + time_read_input(2) - time_read_input(1)
   !**************************************************************************
 
@@ -1055,6 +1091,7 @@ program turbogap
   time_xrd = 0.d0
   time_nd = 0.d0
   time_xps = 0.d0
+  time_exp_batched = 0.d0
 
   xps_idx = params%xps_idx
   md_istep = -1
@@ -1153,7 +1190,10 @@ program turbogap
 
      if( (params%do_md .and. md_istep == 0) )then
 
-        time_read_xyz(1) = MPI_wtime()
+
+        !time_read_xyz(1) = MPI_wtime()
+        call get_time( time_read_xyz(1)  )
+        
 #ifdef _MPIF90
         IF( rank == 0 )THEN
 #endif
@@ -1194,7 +1234,9 @@ program turbogap
 #endif
 
 
-        time_read_xyz(2) = MPI_wtime()
+        !time_read_xyz(2) = MPI_wtime()
+        call get_time( time_read_xyz(2)  )
+        
         time_read_xyz(3) = time_read_xyz(3) + time_read_xyz(2) - time_read_xyz(1)
         !     If we're doing MD, we don't read beyond the first snapshot in the XYZ file
         repeat_xyz = .false.
@@ -1217,7 +1259,9 @@ program turbogap
 #endif
      else if( .not. params%do_md )then
 
-        time_read_xyz(1) = MPI_wtime()
+        !time_read_xyz(1) = MPI_wtime()
+        call get_time( time_read_xyz(1)  )
+        
 #ifdef _MPIF90
         IF( rank == 0 )THEN
 #endif
@@ -1241,13 +1285,23 @@ program turbogap
         END IF
 #endif
 
-        time_read_xyz(2) = MPI_wtime()
+        !time_read_xyz(2) = MPI_wtime()
+        call get_time( time_read_xyz(2)  )
+        
         time_read_xyz(3) = time_read_xyz(3) + time_read_xyz(2) - time_read_xyz(1)
 #ifdef _MPIF90
 
-        time_mpi(1)=MPI_Wtime()
+        !! time_mpi(1)=MPI_Wtime()
+!        call get_time( ! time_mpi(1) )
+        
+        call get_time( time_mpi(1) )
+        
         call mpi_bcast(repeat_xyz, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
-        time_mpi(2)=MPI_Wtime()
+        !! time_mpi(2)=MPI_Wtime()
+        !        call get_time( ! time_mpi(2) )
+        
+        call get_time( time_mpi(2) )
+        
 
         time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
 #endif
@@ -1285,12 +1339,18 @@ program turbogap
         end if
 
      END IF
-     time_mpi(1)=MPI_Wtime()
+     !! time_mpi(1)=MPI_Wtime()
+     !call get_time( ! time_mpi(1) )
+     
+     call get_time( time_mpi(1) )
+     
      call mpi_bcast(n_pos, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(n_sp, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(n_sp_sc, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(n_sites, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-     time_mpi(2)=MPI_Wtime()
+     ! time_mpi(2)=MPI_Wtime()
+     call get_time( time_mpi(2) )
+     
      time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
 
      IF( rank /= 0 )THEN
@@ -1318,7 +1378,9 @@ program turbogap
 
      END IF
 
-     time_mpi_positions(1) = MPI_wtime()
+     !time_mpi_positions(1) = MPI_wtime()
+     call get_time( time_mpi_positions(1)  )
+     
      call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
      if( params%do_md .or. params%do_nested_sampling .or. params%do_mc .or. params%mc_hamiltonian)then
         call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
@@ -1334,7 +1396,9 @@ program turbogap
      call mpi_bcast(b_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(c_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
 
-     time_mpi_positions(2) = MPI_wtime()
+     !time_mpi_positions(2) = MPI_wtime()
+     call get_time( time_mpi_positions(2)  )
+     
      time_mpi_positions(3) = time_mpi_positions(3) + time_mpi_positions(2) - time_mpi_positions(1)
 #endif
      !   Now that all ranks know the size of n_sites, we allocate do_list
@@ -1346,8 +1410,15 @@ program turbogap
      end if
      !
 
-!     call cpu_time(time1)
-     call cpu_time(time1)
+     !     !!     call cpu_time(time1)
+     call get_time( time1 )
+     
+     ! call get_time( time1 )
+     
+     ! !     !     call cpu_time(time1)
+     ! call get_time(  )
+     ! call get_time( time1 )
+     
 #ifdef _MPIF90
      !   Parallel neighbors list build
      call mpi_bcast(rebuild_neighbors_list, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
@@ -1427,6 +1498,7 @@ program turbogap
         j_beg = 1
         j_end = n_atom_pairs_by_rank(rank+1)
      end if
+     print *, "-- Rank ", rank , " > set ", " i_beg = ", i_beg, " i_end = ", i_end,  " j_beg = ", j_beg, " j_end = ", j_end 
 #else
      call build_neighbors_list(positions, a_box, b_box, c_box, params%do_timing, &
           species_supercell, rcut_max, n_atom_pairs, rjs, &
@@ -1523,8 +1595,14 @@ program turbogap
 !   Compute the volume of the "primitive" unit cell
     v_uc = dot_product( cross_product(a_box, b_box), c_box ) / (dfloat(indices(1)*indices(2)*indices(3)))
 
-    call cpu_time(time2)
-    time2=MPI_Wtime()
+    !    call cpu_time(time2)
+    call get_time( time2 )
+    
+    !! time2=MPI_Wtime()
+    !call get_time( ! time2 )
+    
+    call get_time( time2 )
+    
     time_neigh = time_neigh + time2 - time1
 !**************************************************************************
 
@@ -1535,7 +1613,9 @@ program turbogap
      !   If we are doing prediction, we run this chunk of code
      if( params%do_prediction .or. params%write_soap .or. params%write_derivatives)then
 
-        call cpu_time(time1)
+        !        call cpu_time(time1)
+        call get_time( time1 )
+        
 
 !        print *, rank, " Allocating prediction arrays"
         !     We only need to reallocate the arrays if the number of sites changes
@@ -1727,10 +1807,14 @@ program turbogap
         !     Collect all energies
 #ifdef _MPIF90
 
-        time_mpi_ef(1) = MPI_wtime()
+        !time_mpi_ef(1) = MPI_wtime()
+        call get_time( time_mpi_ef(1)  )
+        
         call mpi_reduce(energies, this_energies, n_sites, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
 
-        time_mpi_ef(2) = MPI_wtime()
+        !time_mpi_ef(2) = MPI_wtime()
+        call get_time( time_mpi_ef(2)  )
+        
 
         time_mpi_ef(3) = time_mpi_ef(3) + time_mpi_ef(2) - time_mpi_ef(1)
         energies = this_energies
@@ -1743,7 +1827,9 @@ program turbogap
 !!! COMMENTING OUT 
         do i = 1, n_soap_turbo
 
-           time_soap(1) = MPI_wtime()
+           !time_soap(1) = MPI_wtime()
+           call get_time( time_soap(1)  )
+           
            !       Compute number of pairs for this SOAP. SOAP has in general a different cutoff than overall max
            !       cutoff, so the number of pairs may be a lot smaller for the SOAP subset.
            !       This subroutine splits the load optimally so as to not use more memory per MPI process than available.
@@ -2044,8 +2130,12 @@ program turbogap
         call gpu_free(Qs_d) 
         print *, rank, " >>~~~ Finished freeing gpu memory ~~~<< "                                 
 
-!        soap_time_soap(2 = MPI_wtime()
-        soap_time_soap(2)=MPI_Wtime()
+        !!soap_time_soap(2 = MPI_wtime()
+!        call get_time( soap_time_soap(2  )
+        
+        ! ! soap_time_soap(2)=MPI_Wtime()
+        call get_time( soap_time_soap(2) )
+        
            deallocate( i_beg_list, i_end_list, j_beg_list, j_end_list )
            soap_time_soap(3)=soap_time_soap(3)+soap_time_soap(2)-soap_time_soap(1)
 
@@ -2124,18 +2214,24 @@ program turbogap
 #endif
 
 
-           time_soap(2) = MPI_wtime()
+           !time_soap(2) = MPI_wtime()
+           call get_time( time_soap(2)  )
+           
            time_soap(3) = time_soap(3) + time_soap(2) - time_soap(1)
 
 
-           call cpu_time(time2)
+           !           call cpu_time(time2)
+           call get_time( time2 )
+           
            time_gap = time_gap + time2 - time1
 
         end do
 
 #ifdef _MPIF90
         if( any( soap_turbo_hypers(:)%has_local_properties) )then
-           time_mpi(1)=MPI_Wtime()
+           ! time_mpi(1)=MPI_Wtime()
+           call get_time( time_mpi(1) )
+           
            call mpi_reduce(local_properties, this_local_properties, n_sites*params%n_local_properties,&
                 & MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD,&
                 & ierr)
@@ -2156,7 +2252,9 @@ program turbogap
            !           call mpi_bcast(hirshfeld_v, n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
            call mpi_bcast(local_properties, n_sites*params%n_local_properties, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
 
-           time_mpi(2)=MPI_Wtime()
+           ! time_mpi(2)=MPI_Wtime()
+           call get_time( time_mpi(2) )
+           
            time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
         end if
 #endif
@@ -2165,7 +2263,9 @@ program turbogap
         if( any( soap_turbo_hypers(:)%has_vdw ) .and.( params%do_prediction ) &
              .and. params%vdw_type == "ts" )then
 
-           time_vdw(1) = MPI_wtime()
+           !time_vdw(1) = MPI_wtime()
+           call get_time( time_vdw(1)  )
+           
 #ifdef _MPIF90
 
            allocate( this_energies_vdw(1:n_sites) )
@@ -2206,7 +2306,9 @@ program turbogap
            energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
 #endif
 
-           time_vdw(2) = MPI_wtime()
+           !time_vdw(2) = MPI_wtime()
+           call get_time( time_vdw(2)  )
+           
            time_vdw(3) = time_vdw(2) - time_vdw(1)
 !           print *, rank, ">>--- Finiahed TS energies forces ---<<"
            deallocate(v_neigh_vdw)
@@ -2238,6 +2340,8 @@ program turbogap
               if ( params%exp_data(i)%compute_exp )then
                  if (allocated(params%exp_data(i)%x)) deallocate(params%exp_data(i)%x)
                  if (allocated(params%exp_data(i)%y)) deallocate(params%exp_data(i)%y)
+                 ! print *, " exp n samples ", params%exp_data(i)%n_samples
+                 ! print *, " sf n samples  ", params%structure_factor_n_samples
                  call calculate_exp_interpolation(params%exp_data(i)&
                       &%x, params%exp_data(i)%y, params%exp_data(i)&
                       &%n_samples, params%exp_data(i)%data)
@@ -2301,7 +2405,9 @@ program turbogap
         if( any( soap_turbo_hypers(:)%has_core_electron_be ) .and.( params%do_prediction ) &
              .and. valid_xps )then
 
-           time_xps(1) = MPI_wtime()
+           !time_xps(1) = MPI_wtime()
+           call get_time( time_xps(1)  )
+           
 
 #ifdef _MPIF90
            allocate( this_energies_lp(1:n_sites) )
@@ -2427,7 +2533,9 @@ program turbogap
 
 
 
-           time_xps(2) = MPI_wtime()
+           !time_xps(2) = MPI_wtime()
+           call get_time( time_xps(2)  )
+           
            time_xps(3) = time_xps(3) + time_xps(2) - time_xps(1)
            !           if (rank == 0) print *, rank, " TIME_XPS = ", time_xps(3)
 
@@ -2517,233 +2625,705 @@ program turbogap
            end if
         end do
 
-
-        if (params%do_pair_distribution .or. params%do_structure_factor .or. params%do_xrd)then
-           print *, ""
-           print *, " >> Allocating GPU arrays for Exp Calculation << "           
-           print *, ""           
-           st_n_sites_int = n_sites*sizeof(n_neigh(1)) 
-           call gpu_malloc_all(n_neigh_d,st_n_sites_int,gpu_stream)
-           call cpy_htod(c_loc(n_neigh),n_neigh_d, st_n_sites_int,gpu_stream)
-           call gpu_malloc_all(species_d,st_n_sites_int,gpu_stream)
-           call cpy_htod(c_loc(species),species_d, st_n_sites_int,gpu_stream)
-           st_n_atom_pairs_int = j_end * sizeof(neighbor_species(1))
-
-           call gpu_malloc_all(neighbor_species_d,st_n_atom_pairs_int,gpu_stream)
-           call cpy_htod(c_loc(neighbor_species),neighbor_species_d, st_n_atom_pairs_int,gpu_stream)
-           call gpu_malloc_all(neighbors_list_d,st_n_atom_pairs_int,gpu_stream)
-           print *, " -- n_pairs for neighbor_list = ", j_end           
-           call cpy_htod(c_loc(neighbors_list),neighbors_list_d, st_n_atom_pairs_int,gpu_stream)
-           
-           st_n_atom_pairs_double = j_end*sizeof(rjs(1))
-           call gpu_malloc_all(rjs_d,st_n_atom_pairs_double,gpu_stream)
-           call cpy_htod(c_loc(rjs),rjs_d, st_n_atom_pairs_double,gpu_stream)
-           call gpu_malloc_all(xyz_d,3*st_n_atom_pairs_double,gpu_stream)
-           call cpy_htod(c_loc(xyz),xyz_d,3*st_n_atom_pairs_double,gpu_stream)
-
-           st_species_types_actual_d = n_species_actual * c_int
-           call gpu_malloc_all(species_types_actual_d,st_species_types_actual_d,gpu_stream)
-           call cpy_htod(c_loc(species_types_actual),species_types_actual_d,st_species_types_actual_d,gpu_stream)
-           call gpu_device_sync()
-           
-        end if
-        
-        
-        if (params%do_pair_distribution)then
-           print *, ""
-           print *, " >> Starting Pair Distribution Fucntion << "
-           print *, ""           
-           time_pdf(1) = MPI_wtime()
+        n_dim_partial = n_species_actual * ( n_species_actual + 1) / 2
 
 
-!            call calculate_pair_distribution( params, x_pair_distribution&
-!                 &, y_pair_distribution, y_pair_distribution_temp,&
-!                 & pair_distribution_partial, pair_distribution_partial_temp, &
-!                 & n_species_actual, species_types_actual, n_atoms_of_species, n_sites, a_box,&
-!                 & b_box, c_box, indices, md_istep, mc_istep, i_beg, i_end,&
-!                 & j_beg, j_end, ierr , rjs, xyz, neighbors_list,&
-!                 & n_neigh, neighbor_species, species, rank, params%exp_forces, &
-!                 & pair_distribution_der,&
-!                 & pair_distribution_partial_der,&
-! #ifdef _MPIF90
-!                 & pair_distribution_partial_temp_der, this_energies_pdf, this_forces_pdf, this_virial_pdf)
-! #else
-!            & pair_distribution_partial_temp_der, energies_pdf, forces_pdf, virial_pdf)
-! #endif
+
+        if( params%gpu_batched .and. ( params%do_xrd .or. params%do_nd) &
+             .and. params%exp_forces .and. params%do_forces )then
+
+           !           call cpu_time( time_exp_batched(1) )
+           call get_time(  time_exp_batched(1) )
            
            
-           call gpu_calculate_pair_distribution(n_dim_partial, params, x_pair_distribution&
-                &, y_pair_distribution, y_pair_distribution_temp,&
-                & pair_distribution_partial, pair_distribution_partial_temp, &
-                & n_species_actual, species_types_actual, n_atoms_of_species, n_sites, a_box,&
-                & b_box, c_box, indices, md_istep, mc_istep, i_beg, i_end,&
-                & j_beg, j_end, ierr , rjs, xyz, neighbors_list,&
-                & n_neigh, neighbor_species, species, rank, params%exp_forces, &
-                & pair_distribution_der,&
-                & pair_distribution_partial_der, nk, pair_distribution_d, &
-                & nk_d, k_index_d, j2_index_d, xyz_k_d, pair_distribution_partial_d, pair_distribution_partial_der_d, &
-                & st_nk_d, st_k_index_d, st_j2_index_d, st_pair_distribution_partial_d, st_pair_distribution_partial_der_d,&
-                & n_neigh_d, species_d, neighbor_species_d, neighbors_list_d, rjs_d, xyz_d, species_types_actual_d,  cublas_handle, gpu_stream,&
-#ifdef _MPIF90
-                & pair_distribution_partial_temp_der, this_energies_pdf, this_forces_pdf, this_virial_pdf)
-#else
-           & pair_distribution_partial_temp_der, energies_pdf, forces_pdf, virial_pdf)
-#endif
+           ! call estimate_max_exp_forces_device_memory_usage( n_sites, j_end, n_dim_partial, &
+           !      params%pair_distribution_n_samples, params%structure_factor_n_samples, gpu_memory_usage)
+
+           call get_gpu_batches( n_neigh(i_beg:i_end), rjs(j_beg:j_end), params%pair_distribution_rcut, &
+                params%gpu_n_batches, gpu_memory_usage,&
+                params%gpu_max_batch_size, i_beg_list, i_end_list, j_beg_list, j_end_list )
+
+           gpu_memory_usage = 0.d0
+
+           ! do i = 1, size(i_beg_list)
+           !    write(*,'(A,I8,A,I8,A,I8,A,I8,A,I8,A,I8)') "batches, rank ", rank, &
+           !         " i ", i, " i_beg_i = ", i_beg_list(i), " i_end_i = ", i_end_list(i), &
+           !         " j_beg_i = ", j_beg_list(i), " j_end_i = ", j_end_list(i)
+           ! end do
 
 
-!            call gpu_calculate_pair_distribution( params, x_pair_distribution&
-!                 &, y_pair_distribution, y_pair_distribution_temp,&
-!                 & pair_distribution_partial, pair_distribution_partial_temp, &
-!                 & n_species_actual, species_types_actual, n_atoms_of_species, n_sites, a_box,&
-!                 & b_box, c_box, indices, md_istep, mc_istep, i_beg, i_end,&
-!                 & j_beg, j_end, ierr , rjs, xyz, neighbors_list,&
-!                 & n_neigh, neighbor_species, species, rank, params%exp_forces, &
-!                 & pair_distribution_der,&
-!                 & pair_distribution_partial_der, gpu_exp_vars,&
-!                 & n_neigh_d, species_d, neighbor_species_d, neighbors_list_d, rjs_d, xyz_d, species_types_actual_d,  cublas_handle, gpu_stream,&
-! #ifdef _MPIF90
-!                 & pair_distribution_partial_temp_der, this_energies_pdf, this_forces_pdf, this_virial_pdf)
-! #else
-!            & pair_distribution_partial_temp_der, energies_pdf, forces_pdf, virial_pdf)
-! #endif
+           ! Now we want to use open mp to get the partial pdfs for each batch and then collect them
+           ! Eventually we will use OMP parallel do to do the loop and submit to different gpu streams
+
+           ! allocate the pdfs 
+           call setup_batched_pair_distribution( params%r_range_min, params%r_range_max, &
+                params%pair_distribution_rcut, params%pair_distribution_n_samples, x_pair_distribution, dV )
+
+           call get_n_atoms_of_species(n_atoms_of_species, n_sites, species, n_species_actual)
            
 
-!            time_pdf(2) = MPI_wtime()
-!            time_pdf(3) = time_pdf(3) + time_pdf(2) - time_pdf(1)
-!            !           if (rank == 0) print *, rank, " TIME_PDF = ", time_pdf(3)
+           allocate( gpu_neigh( 1:size(i_beg_list) ) )
+           allocate( gpu_exp( 1:size(i_beg_list) ) )
+           allocate( gpu_batch_storage( 1:size(i_beg_list) ) )           
+
+           st_x_d = params%pair_distribution_n_samples * c_double
+
+           call gpu_malloc_all(xpdf_d,      st_x_d, gpu_stream)             
+           call cpy_htod( c_loc( x_pair_distribution ), xpdf_d, st_x_d, gpu_stream )
+
+           call gpu_malloc_all(dV_d,      st_x_d, gpu_stream)             
+           call cpy_htod( c_loc( dV ), dV_d, st_x_d, gpu_stream )
+
+           
+           do i = 1, size( i_beg_list )
+              this_i_beg = i_beg - 1 + i_beg_list(i)
+              this_i_end = i_beg - 1 + i_end_list(i)
+              this_j_beg = j_beg - 1 + j_beg_list(i)
+              this_j_end = j_beg - 1 + j_end_list(i)
+
+              n_sites_temp = this_i_end - this_i_beg + 1
+              n_pairs_temp = this_j_end - this_j_beg + 1
+
+              print *, " "
+              write(*,'(A,I8,A,I8,A,I8,A,I8,A,I8,A,I8)') "pdf batches---Rank ", rank, " i = ", i,  &
+                   " this_i_beg = ",  this_i_beg,&
+                   " this_i_end = ",  this_i_end,&
+                   " this_j_beg = ",  this_j_beg,&
+                   " this_j_end = ",  this_j_end
+              
+              call gpu_malloc_neighbors(gpu_neigh(i), &
+                   n_sites_temp, n_pairs_temp, &
+                   n_neigh(         this_i_beg : this_i_end), &
+                   species(         this_i_beg : this_i_end), &
+                   neighbor_species(this_j_beg : this_j_end), &
+                   neighbors_list(  this_j_beg : this_j_end), &
+                   rjs(             this_j_beg : this_j_end), &
+                   xyz(        1:3, this_j_beg : this_j_end), &
+                   gpu_stream, rank)
 
 
-
-        end if
-
-        if (params%do_pair_distribution .or. params%do_structure_factor .or. params%do_xrd)then
-           call gpu_free_async(n_neigh_d, gpu_stream)
-           call gpu_free_async(species_d, gpu_stream)
-           call gpu_free_async(neighbor_species_d, gpu_stream)
-           call gpu_free_async(neighbors_list_d, gpu_stream)           
-           call gpu_free_async(rjs_d, gpu_stream)
-           call gpu_free_async(xyz_d, gpu_stream)
-           call gpu_free_async(species_types_actual_d,gpu_stream)
-        end if
-        
-        
-        ! Now calculate the structure factors
-        if (params%do_structure_factor )then
-
-           time_sf(1) = MPI_wtime()
-           call calculate_structure_factor( params, x_structure_factor, x_structure_factor_temp,&
-                & y_structure_factor, y_structure_factor_temp,&
-                & structure_factor_partial, structure_factor_partial_temp,&
-                & x_pair_distribution, y_pair_distribution, &
-                & pair_distribution_partial, n_species_actual, species_types_actual, n_atoms_of_species,&
-                & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep, i_beg,&
-                & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
-                & neighbor_species, species, rank , q_beg, q_end, ntasks, sinc_factor_matrix, params%exp_forces, &
-                & nk, nk_d, k_index_d, j2_index_d, xyz_k_d, pair_distribution_partial_d, pair_distribution_partial_der_d, &
-                & st_nk_d, st_k_index_d, st_j2_index_d, st_pair_distribution_partial_d, st_pair_distribution_partial_der_d, &
-#ifdef _MPIF90
-                & pair_distribution_partial_der, this_energies_sf, this_forces_sf, this_virial_sf, params%structure_factor_matrix_forces, cublas_handle, gpu_stream)
-#else
-           & pair_distribution_partial_der, energies_sf, forces_sf, virial_sf,params%structure_factor_matrix_forces, cublas_handle, gpu_stream)
-#endif
-
-
-
-           time_sf(2) = MPI_wtime()
-           time_sf(3) = time_sf(3) + time_sf(2) - time_sf(1)
-
-
-
-        end if
-
-        if ( params%do_xrd )then
-
-           time_xrd(1) = MPI_wtime()
-           call calculate_xrd( params, x_xrd, x_xrd_temp,&
-                & y_xrd, y_xrd_temp, x_structure_factor, x_structure_factor_temp,&
-                & structure_factor_partial, structure_factor_partial_temp,&
-                & n_species_actual, species_types_actual, n_atoms_of_species,&
-                & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep, i_beg,&
-                & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
-                & neighbor_species, species, rank , q_beg, q_end, ntasks, sinc_factor_matrix, params%exp_forces, &
-                & nk, nk_d, k_index_d, j2_index_d, xyz_k_d, pair_distribution_partial_d, pair_distribution_partial_der_d, &
-                & st_nk_d, st_k_index_d, st_j2_index_d, st_pair_distribution_partial_d, st_pair_distribution_partial_der_d, &
-#ifdef _MPIF90
-                & pair_distribution_partial_der, this_energies_xrd,&
-                & this_forces_xrd, this_virial_xrd, .false., params%structure_factor_matrix_forces, cublas_handle, gpu_stream)
-#else
-           & pair_distribution_partial_der, energies_xrd, forces_xrd,&
-                & virial_xrd, .false., params%structure_factor_matrix_forces, cublas_handle, gpu_stream)
-#endif
-
-
-
-           time_xrd(2) = MPI_wtime()
-           time_xrd(3) = time_xrd(3) + time_xrd(2) - time_xrd(1)
-
-           !           if (rank == 0) print *, rank, " TIME_XRD = ", time_xrd(3)
-
-        end if
-
-
-        if ( params%do_nd )then
-
-           time_nd(1) = MPI_wtime()
-           call calculate_xrd( params, x_nd, x_nd_temp,&
-                & y_nd, y_nd_temp, x_structure_factor, x_structure_factor_temp,&
-                & structure_factor_partial, structure_factor_partial_temp,&
-                & n_species_actual, species_types_actual, n_atoms_of_species,&
-                & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep, i_beg,&
-                & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
-                & neighbor_species, species, rank , q_beg, q_end, ntasks, sinc_factor_matrix, params%exp_forces, &
-                & nk, nk_d, k_index_d, j2_index_d, xyz_k_d, pair_distribution_partial_d, pair_distribution_partial_der_d, &
-                & st_nk_d, st_k_index_d, st_j2_index_d, st_pair_distribution_partial_d, st_pair_distribution_partial_der_d, &
-#ifdef _MPIF90
-                & pair_distribution_partial_der, this_energies_nd,&
-                & this_forces_nd, this_virial_nd, .true., params&
-                &%structure_factor_matrix_forces, cublas_handle, gpu_stream)
-#else
-           & pair_distribution_partial_der, energies_nd, forces_nd,&
-                & virial_nd, .true., params&
-                &%structure_factor_matrix_forces, cublas_handle, gpu_stream )
-#endif
-
-
-
-           time_nd(2) = MPI_wtime()
-           time_nd(3) = time_nd(3) + time_nd(2) - time_nd(1)
-
-           !           if (rank == 0) print *, rank, " TIME_XRD = ", time_xrd(3)
-
-        end if
-
-
-
-        if (params%do_pair_distribution .or. params%do_structure_factor .or. params%do_xrd)then
-        !           call deallocate_gpu_exp( gpu_exp_vars )
-
-
-           do i = 1, n_dim_partial
-              call gpu_free_async(nk_d(i), gpu_stream)
-              call gpu_free_async(k_index_d(i), gpu_stream)
-              call gpu_free_async(j2_index_d(i), gpu_stream)
-              call gpu_free_async(xyz_k_d(i), gpu_stream)
-              call gpu_free_async(pair_distribution_partial_d(i), gpu_stream)
-              call gpu_free_async(pair_distribution_partial_der_d(i), gpu_stream)
+!              print *, " finished gpu malloc batch ", i 
+              call calculate_batched_pair_distribution(gpu_exp(i),  gpu_batch_storage(i),&
+                   gpu_neigh(i), x_pair_distribution, dV, n_atoms_of_species, n_species_actual, n_sites,&
+                   this_i_beg, this_i_end, this_j_beg, this_j_end, &
+                   params%pair_distribution_n_samples,  params%r_range_min, params%r_range_max,&
+                   params%pair_distribution_rcut, params%pair_distribution_kde_sigma, &
+                   gpu_stream, xpdf_d, dV_d, v_uc, rank)
+              
+              call gpu_free_neighbors(gpu_neigh(i), gpu_stream)
+              
            end do
-           call gpu_stream_sync(gpu_stream)
+           deallocate( gpu_neigh )
+
            
-           
-           deallocate( nk_d,  k_index_d,  j2_index_d, &
-                & xyz_k_d,  pair_distribution_partial_d, &
-                & pair_distribution_partial_der_d,  st_nk_d, &
-                & st_k_index_d,  st_j2_index_d, &
-                & st_pair_distribution_partial_d, &
-                & st_pair_distribution_partial_der_d, nk )    
+           ! Collect the pdf
+           !call gpu_device_sync()
+           call collect_batched_pair_distribution( size( i_beg_list ), gpu_batch_storage, &
+                n_dim_partial, params%pair_distribution_n_samples, &
+                pair_distribution_partial, n_species_actual, n_atoms_of_species, v_uc)           
 
 
+           ! n_dim_idx = 1                    
+           ! outerchk: do j = 1, n_species_actual
+           !    do k = 1, n_species_actual
+           !       if (j>k) cycle 
+
+           !       temp_string=""
+           !       temp_string2=""                 
+           !       write(temp_string, "(I8)")   n_dim_idx
+           !       write(temp_string2, "(A)")  "pair_distribution_partial_" // trim(adjustl(temp_string))
+                 
+           !       call write_exp_datan(x_pair_distribution(1:params%pair_distribution_n_samples),&
+           !            & pair_distribution_partial(1:params%pair_distribution_n_samples, n_dim_idx),&
+           !            & overwrite_condition, temp_string2 , "tmp")
+                 
+           !       n_dim_idx = n_dim_idx + 1
+           !       if ( n_dim_idx > n_dim_partial ) exit outerchk
+           !    end do
+           ! end do outerchk
+
+           
+           
+
+           ! SETTING EXP FORCES TO FALSE
+           params % do_forces = .false.           
+           params % exp_forces = .false.
+           
+           
+           if (params%do_structure_factor )then
+
+              !time_sf(1) = MPI_wtime()
+              call get_time( time_sf(1)  )
+              
+              call calculate_structure_factor( params, x_structure_factor, x_structure_factor_temp,&
+                   & y_structure_factor, y_structure_factor_temp,&
+                   & structure_factor_partial, structure_factor_partial_temp,&
+                   & x_pair_distribution, y_pair_distribution, &
+                   & pair_distribution_partial, n_species_actual, species_types_actual, n_atoms_of_species,&
+                   & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep, i_beg,&
+                   & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,& 
+                   & neighbor_species, species, rank , q_beg, q_end, ntasks, sinc_factor_matrix, params%exp_forces, &
+                   & nk, nk_d, k_index_d, j2_index_d, xyz_k_d,&
+                   & pair_distribution_partial_d,&
+                   & pair_distribution_partial_der_d, st_nk_d,&
+                   & st_k_index_d, st_j2_index_d,&
+                   & st_pair_distribution_partial_d,&
+                   & st_pair_distribution_partial_der_d,&
+#ifdef _MPIF90                   
+                   & pair_distribution_partial_der, this_energies_sf,&
+                   & this_forces_sf, this_virial_sf, params&
+                   &%structure_factor_matrix_forces, cublas_handle,&
+                   & gpu_stream,  gpu_host_exp_storage, params&
+                   &%gpu_low_memory)
+#else
+              & pair_distribution_partial_der, energies_sf, forces_sf&
+                   &, virial_sf,params%structure_factor_matrix_forces&
+                   &, cublas_handle, gpu_stream, &
+                   & gpu_host_exp_storage, params%gpu_low_memory)
+#endif
+
+              !time_sf(2) = MPI_wtime()
+              call get_time( time_sf(2)  )
+              
+              time_sf(3) = time_sf(3) + time_sf(2) - time_sf(1)
+
+           end if
+           
+           
+           if ( params%do_xrd )then
+
+              !time_xrd(1) = MPI_wtime()
+              call get_time( time_xrd(1)  )
+              
+              call calculate_xrd( params, x_xrd, x_xrd_temp, y_xrd,&
+                   & y_xrd_temp, x_structure_factor,&
+                   & x_structure_factor_temp,&
+                   & structure_factor_partial,&
+                   & structure_factor_partial_temp, n_species_actual,&
+                   & species_types_actual, n_atoms_of_species,&
+                   & n_sites, a_box, b_box, c_box, indices, md_istep,&
+                   & mc_istep, i_beg, i_end, j_beg, j_end, ierr, rjs,&
+                   & xyz, neighbors_list, n_neigh, neighbor_species,&
+                   & species, rank , q_beg, q_end, ntasks,&
+                   & sinc_factor_matrix, params%exp_forces, nk, nk_d,&
+                   & k_index_d, j2_index_d, xyz_k_d,&
+                   & pair_distribution_partial_d,&
+                   & pair_distribution_partial_der_d, st_nk_d,&
+                   & st_k_index_d, st_j2_index_d,&
+                   & st_pair_distribution_partial_d,&
+                   & st_pair_distribution_partial_der_d,&
+#ifdef _MPIF90
+                   & pair_distribution_partial_der, this_energies_xrd&
+                   &, this_forces_xrd, this_virial_xrd, .false.,&
+                   & params%structure_factor_matrix_forces,&
+                   & cublas_handle, gpu_stream,  gpu_host_exp_storage&
+                   &, params%gpu_low_memory)
+#else
+              & pair_distribution_partial_der, energies_xrd,&
+                   & forces_xrd, virial_xrd, .false., params&
+                   &%structure_factor_matrix_forces, cublas_handle,&
+                   & gpu_stream,  gpu_host_exp_storage, params&
+                   &%gpu_low_memory)
+#endif
+
+              !time_xrd(2) = MPI_wtime()
+              call get_time( time_xrd(2)  )
+              
+              time_xrd(3) = time_xrd(3) + time_xrd(2) - time_xrd(1)
+
+           end if
+
+
+           if ( params%do_nd )then
+
+              !time_nd(1) = MPI_wtime()
+              call get_time( time_nd(1)  )
+              
+              call calculate_xrd( params, x_nd, x_nd_temp, y_nd,&
+                   & y_nd_temp, x_structure_factor,&
+                   & x_structure_factor_temp,&
+                   & structure_factor_partial,&
+                   & structure_factor_partial_temp, n_species_actual,&
+                   & species_types_actual, n_atoms_of_species,&
+                   & n_sites, a_box, b_box, c_box, indices, md_istep,&
+                   & mc_istep, i_beg, i_end, j_beg, j_end, ierr, rjs,&
+                   & xyz, neighbors_list, n_neigh, neighbor_species,&
+                   & species, rank , q_beg, q_end, ntasks,&
+                   & sinc_factor_matrix, params%exp_forces, nk, nk_d,&
+                   & k_index_d, j2_index_d, xyz_k_d,&
+                   & pair_distribution_partial_d,&
+                   & pair_distribution_partial_der_d, st_nk_d,&
+                   & st_k_index_d, st_j2_index_d,&
+                   & st_pair_distribution_partial_d,&
+                   & st_pair_distribution_partial_der_d,&
+#ifdef _MPIF90
+              & pair_distribution_partial_der, this_energies_nd,&
+                   & this_forces_nd, this_virial_nd, .true., params &
+                   &%structure_factor_matrix_forces, cublas_handle,&
+                   & gpu_stream,  gpu_host_exp_storage, params&
+                   &%gpu_low_memory)
+#else
+              & pair_distribution_partial_der, energies_nd, forces_nd&
+                   &, virial_nd, .true., params &
+                   &%structure_factor_matrix_forces, cublas_handle,&
+                   & gpu_stream,  gpu_host_exp_storage, params&
+                   &%gpu_low_memory )
+#endif
+
+              !time_nd(2) = MPI_wtime()
+              call get_time( time_nd(2)  )
+              
+              time_nd(3) = time_nd(3) + time_nd(2) - time_nd(1)
+           end if
+
+
+           ! RESETTING EXP FORCES TO FALSE
+           params % do_forces = .true.           
+           params % exp_forces = .true.
+
+           ! Get the scattering factors
+           
+           ! call get_all_scattering_factors(all_scattering_factors,&
+           !      & n_sites, params%exp_data(params%xrd_idx)%x,&
+           !      & species_types_actual, params&
+           !      &%structure_factor_n_samples, n_species_actual,&
+           !      & x_structure_factor, j,k, params%do_xrd, params&
+           !      &%xrd_output, n_atoms_of_species, .false.)          
+
+           ! print *, " alloc y_xrd ", allocated(y_xrd), size( y_xrd )
+           ! print *, " alloc y_exp ", allocated(params%exp_data(params%xrd_idx)%y), size(params%exp_data(params%xrd_idx)%y) 
+           
+           allocate( prefactor( 1: size( y_xrd ) ) )
+           prefactor(1: size( y_xrd )) =  ( y_xrd(1: size( y_xrd ))  - params%exp_data(params%xrd_idx)%y(1: size( y_xrd )) )
+           
+           st_prefactor_d = size( prefactor, 1) * c_double
+           call gpu_malloc_all(prefactor_d, st_prefactor_d, gpu_stream)
+           call cpy_htod(c_loc( prefactor ), prefactor_d, st_prefactor_d, gpu_stream)
+
+
+           ! st_all_scattering_factors_d = size( all_scattering_factors, 1) * c_double 
+           ! call gpu_malloc_all(all_scattering_factors_d, st_all_scattering_factors_d, gpu_stream)
+           ! call cpy_htod(c_loc( all_scattering_factors ), all_scattering_factors_d, st_all_scattering_factors_d, gpu_stream)       
+
+           st_sinc_factor_matrix_d = size( sinc_factor_matrix, 1) * size( sinc_factor_matrix, 2) * c_double
+           call gpu_malloc_all(sinc_factor_matrix_d, st_sinc_factor_matrix_d, gpu_stream)
+           call cpy_htod(c_loc( sinc_factor_matrix ), sinc_factor_matrix_d, st_sinc_factor_matrix_d, gpu_stream)       
+           
+           allocate( all_scattering_factors_d(1:n_dim_partial) )
+           
+           n_dim_idx = 1                    
+           outerprep: do j = 1, n_species_actual
+              do k = 1, n_species_actual
+                 if (j>k) cycle 
+                 
+                 call get_all_scattering_factors(all_scattering_factors_d( n_dim_idx ),&
+                      & n_sites, x_xrd(1:params%structure_factor_n_samples), species_types_actual, &
+                      params%structure_factor_n_samples, n_species_actual,&
+                      & x_xrd(1:params%structure_factor_n_samples), j, k, params%do_xrd, params%xrd_output,&
+                      & n_atoms_of_species, .false., gpu_stream )
+
+                 
+                 n_dim_idx = n_dim_idx + 1
+                 if ( n_dim_idx > n_dim_partial ) exit outerprep
+              end do
+           end do outerprep
+           
+           
+           call get_energy_scale( params%do_md, params%do_mc,&
+                & md_istep, params%md_nsteps, mc_istep, params &
+                &%mc_nsteps, params&
+                &%exp_energy_scales_initial(params%xrd_idx), params&
+                &%exp_energy_scales_final(params%xrd_idx), params&
+                &%exp_energy_scales(params%xrd_idx) )
+
+
+           do i = 1, size( i_beg_list )
+              this_i_beg = i_beg - 1 + i_beg_list(i)
+              this_i_end = i_beg - 1 + i_end_list(i)
+              this_j_beg = j_beg - 1 + j_beg_list(i)
+              this_j_end = j_beg - 1 + j_end_list(i)
+
+              n_pairs_temp = this_j_end - this_j_beg + 1
+
+              ! I have the neighbors allocated in in gpu_neigh(i)
+              print *, " "
+              write(*,'(A,I8,A,I8,A,I8,A,I8,A,I8,A,I8)') "xrd batches, rank ", rank, &
+                   " i ", i, &
+                   " this_i_beg = ",  this_i_beg,&
+                   " this_i_end = ",  this_i_end,&
+                   " this_j_beg = ",  this_j_beg,&
+                   " this_j_end = ",  this_j_end
+
+              n_dim_idx = 1                    
+              outer: do j = 1, n_species_actual
+                 do k = 1, n_species_actual
+                    if (j>k) cycle 
+
+                    ! Now calculate the pair_distribution_partial_der_d
+                    ! we have the rjs stored
+
+
+                    call calculate_batched_pair_distribution_der(gpu_exp(i),  gpu_batch_storage(i),&
+                         x_pair_distribution, dV, n_atoms_of_species, n_species_actual, n_sites,&
+                         this_i_beg, this_i_end, this_j_beg, this_j_end, &
+                         params%pair_distribution_n_samples,  params%r_range_min, params%r_range_max,&
+                         params%pair_distribution_rcut, params%pair_distribution_kde_sigma, &
+                         gpu_stream, xpdf_d, dV_d, j, k, n_dim_idx, v_uc)
+
+
+!                    print * , "starting xrd setup"
+                    call setup_gpu_xrd_forces( gpu_exp(i), gpu_batch_storage(i), n_dim_idx, gpu_stream )                    
+
+!                    print * , "finished xrd setup"                    
+
+                    if (j == k) f = 1.d0
+                    if (j /= k) f = 2.d0                    
+
+                    f = 4.d0 * pi * f * ( (n_atoms_of_species(j) * n_atoms_of_species(k)) /  dfloat(n_sites) /&
+                         & dfloat(n_sites) ) * ( dfloat(n_sites) / v_uc )
+                    
+                    allocate(gpu_batch_storage(i) % host( n_dim_idx ) % forces_h(1:3,1:n_sites))
+                    gpu_batch_storage(i) % host( n_dim_idx ) % forces_h = 0.d0
+                    gpu_batch_storage(i) % host( n_dim_idx ) % virial_h = 0.d0                    
+
+
+                    
+!                    print * , "starting xrd forces"
+
+                    call get_structure_factor_forces_matrix_original(.true., params%exp_energy_scales(params%xrd_idx), &
+                         gpu_batch_storage(i) % host( n_dim_idx ) % forces_h,&
+                         gpu_batch_storage(i) % host( n_dim_idx ) % virial_h,&
+                         params%pair_distribution_n_samples, params%structure_factor_n_samples,&
+                         f,&
+                         gpu_exp(i) %         nk( n_dim_idx ),&
+                         gpu_exp(i) %  k_index_d( n_dim_idx ),&
+                         gpu_exp(i) % j2_index_d( n_dim_idx ),&
+                         gpu_exp(i) %    xyz_k_d( n_dim_idx ),&
+                         gpu_exp(i) % pair_distribution_partial_der_d(n_dim_idx),&
+                         sinc_factor_matrix_d, &
+                         all_scattering_factors_d( n_dim_idx ), prefactor_d, gpu_stream, cublas_handle )
+                    
+                    ! print *, "virial after function exit ", gpu_batch_storage(i) % host( n_dim_idx ) % virial_h
+                    call free_gpu_xrd_forces( gpu_exp(i), gpu_batch_storage(i), n_dim_idx, gpu_stream )
+                    
+                    n_dim_idx = n_dim_idx + 1
+                    if( n_dim_idx > n_dim_partial ) exit outer
+
+                 end do
+              end do outer
+           end do
+           call gpu_free_async(xpdf_d, gpu_stream)
+           call gpu_free_async(dV_d, gpu_stream)                    
+
+           
+           n_dim_idx = 1                    
+           outer_post: do j = 1, n_species_actual
+              do k = 1, n_species_actual
+                 if (j>k) cycle
+                 call gpu_free_async( all_scattering_factors_d(n_dim_idx), gpu_stream )
+                 n_dim_idx = n_dim_idx + 1
+                 if ( n_dim_idx > n_dim_partial ) exit outer_post
+              end do
+           end do outer_post
+           deallocate( all_scattering_factors_d )
+           
+           call gpu_free_async(sinc_factor_matrix_d, gpu_stream )
+           call gpu_free_async(prefactor_d, gpu_stream )           
+           
+           deallocate(prefactor)
+           
+           
+           call gpu_device_sync()
+
+           allocate(  this_forces_xrd(1:3,1:n_sites) )
+           this_forces_xrd = 0.d0
+           this_virial_xrd = 0.d0
+           
+           call collect_batched_forces( size( i_beg_list ), gpu_batch_storage, n_dim_partial, &
+#ifdef _MPIF90
+                this_forces_xrd, this_virial_xrd, n_sites)
+#else
+                forces_xrd, virial_xrd, n_sites)                      
+#endif
+
+           
+           call free_host_batches(gpu_batch_storage, params%gpu_n_batches, n_dim_partial)
+           call free_exp_batches(gpu_exp, params%gpu_n_batches)
+
+           !           call cpu_time( time_exp_batched(2) )
+           call get_time(  time_exp_batched(2) )
+           
+
+           time_exp_batched(3) = time_exp_batched(3) +   time_exp_batched(2) - time_exp_batched(1)
+
+           print *, " "
+           print *, "TIME EXP BATCHED = ", time_exp_batched(3)
+           print *, " "           
         end if
         
+
+        
+        
+
+!         if (.not. params%gpu_low_memory .and. &
+!              (params%do_pair_distribution .or. params%do_structure_factor .or. params%do_xrd))then
+!            print *, ""
+!            print *, " >> Allocating GPU arrays for Exp Calculation << "           
+!            print *, ""           
+!            st_n_sites_int = n_sites*sizeof(n_neigh(1)) 
+!            call gpu_malloc_all(n_neigh_d,st_n_sites_int,gpu_stream)
+!            call cpy_htod(c_loc(n_neigh),n_neigh_d, st_n_sites_int,gpu_stream)
+!            call gpu_malloc_all(species_d,st_n_sites_int,gpu_stream)
+!            call cpy_htod(c_loc(species),species_d, st_n_sites_int,gpu_stream)
+!            st_n_atom_pairs_int = j_end * sizeof(neighbor_species(1))
+
+!            call gpu_malloc_all(neighbor_species_d,st_n_atom_pairs_int,gpu_stream)
+!            call cpy_htod(c_loc(neighbor_species),neighbor_species_d, st_n_atom_pairs_int,gpu_stream)
+!            call gpu_malloc_all(neighbors_list_d,st_n_atom_pairs_int,gpu_stream)
+!            print *, " -- n_pairs for neighbor_list = ", j_end           
+!            call cpy_htod(c_loc(neighbors_list),neighbors_list_d, st_n_atom_pairs_int,gpu_stream)
+           
+!            st_n_atom_pairs_double = j_end*sizeof(rjs(1))
+!            call gpu_malloc_all(rjs_d,st_n_atom_pairs_double,gpu_stream)
+!            call cpy_htod(c_loc(rjs),rjs_d, st_n_atom_pairs_double,gpu_stream)
+!            call gpu_malloc_all(xyz_d,3*st_n_atom_pairs_double,gpu_stream)
+!            call cpy_htod(c_loc(xyz),xyz_d,3*st_n_atom_pairs_double,gpu_stream)
+
+!            st_species_types_actual_d = n_species_actual * c_int
+!            call gpu_malloc_all(species_types_actual_d,st_species_types_actual_d,gpu_stream)
+!            call cpy_htod(c_loc(species_types_actual),species_types_actual_d,st_species_types_actual_d,gpu_stream)
+! !           call gpu_device_sync()
+           
+!         end if
+        
+
+
+
+        
+        
+!         if (params%do_pair_distribution)then
+!            print *, ""
+!            print *, " >> Starting Pair Distribution Fucntion << "
+!            print *, ""           
+        !!time_pdf(1) = MPI_wtime()
+!        call get_time( time_pdf(1)  )
+        
+
+
+! !            call calculate_pair_distribution( params, x_pair_distribution&
+! !                 &, y_pair_distribution, y_pair_distribution_temp,&
+! !                 & pair_distribution_partial, pair_distribution_partial_temp, &
+! !                 & n_species_actual, species_types_actual, n_atoms_of_species, n_sites, a_box,&
+! !                 & b_box, c_box, indices, md_istep, mc_istep, i_beg, i_end,&
+! !                 & j_beg, j_end, ierr , rjs, xyz, neighbors_list,&
+! !                 & n_neigh, neighbor_species, species, rank, params%exp_forces, &
+! !                 & pair_distribution_der,&
+! !                 & pair_distribution_partial_der,&
+! ! #ifdef _MPIF90
+! !                 & pair_distribution_partial_temp_der, this_energies_pdf, this_forces_pdf, this_virial_pdf)
+! ! #else
+! !            & pair_distribution_partial_temp_der, energies_pdf, forces_pdf, virial_pdf)
+! ! #endif
+           
+           
+!            call gpu_calculate_pair_distribution(n_dim_partial, params, x_pair_distribution&
+!                 &, y_pair_distribution, y_pair_distribution_temp,&
+!                 & pair_distribution_partial, pair_distribution_partial_temp, &
+!                 & n_species_actual, species_types_actual, n_atoms_of_species, n_sites, a_box,&
+!                 & b_box, c_box, indices, md_istep, mc_istep, i_beg, i_end,&
+!                 & j_beg, j_end, ierr , rjs, xyz, neighbors_list,&
+!                 & n_neigh, neighbor_species, species, rank, params%exp_forces, &
+!                 & pair_distribution_der,&
+!                 & pair_distribution_partial_der, nk, pair_distribution_d, &
+!                 & nk_d, k_index_d, j2_index_d, xyz_k_d, pair_distribution_partial_d, pair_distribution_partial_der_d, &
+!                 & st_nk_d, st_k_index_d, st_j2_index_d, st_pair_distribution_partial_d, st_pair_distribution_partial_der_d,&
+!                 & n_neigh_d, species_d, neighbor_species_d, neighbors_list_d, rjs_d, xyz_d, species_types_actual_d,  cublas_handle, gpu_stream, gpu_host_exp_storage, params%gpu_low_memory, &
+! #ifdef _MPIF90
+!                 & pair_distribution_partial_temp_der, this_energies_pdf, this_forces_pdf, this_virial_pdf)
+! #else
+!            & pair_distribution_partial_temp_der, energies_pdf, forces_pdf, virial_pdf)
+! #endif
+
+
+! !            call gpu_calculate_pair_distribution( params, x_pair_distribution&
+! !                 &, y_pair_distribution, y_pair_distribution_temp,&
+! !                 & pair_distribution_partial, pair_distribution_partial_temp, &
+! !                 & n_species_actual, species_types_actual, n_atoms_of_species, n_sites, a_box,&
+! !                 & b_box, c_box, indices, md_istep, mc_istep, i_beg, i_end,&
+! !                 & j_beg, j_end, ierr , rjs, xyz, neighbors_list,&
+! !                 & n_neigh, neighbor_species, species, rank, params%exp_forces, &
+! !                 & pair_distribution_der,&
+! !                 & pair_distribution_partial_der, gpu_exp_vars,&
+! !                 & n_neigh_d, species_d, neighbor_species_d, neighbors_list_d, rjs_d, xyz_d, species_types_actual_d,  cublas_handle, gpu_stream,&
+! ! #ifdef _MPIF90
+! !                 & pair_distribution_partial_temp_der, this_energies_pdf, this_forces_pdf, this_virial_pdf)
+! ! #else
+! !            & pair_distribution_partial_temp_der, energies_pdf, forces_pdf, virial_pdf)
+! ! #endif
+           
+
+!!!            time_pdf(2) = MPI_wtime()
+        !call get_time( !            time_pdf(2)  )
+        
+! !            time_pdf(3) = time_pdf(3) + time_pdf(2) - time_pdf(1)
+! !            !           if (rank == 0) print *, rank, " TIME_PDF = ", time_pdf(3)
+
+
+
+!         end if
+
+!         if (.not. params%gpu_low_memory .and. &
+!              (params%do_pair_distribution .or. params%do_structure_factor .or. params%do_xrd))then
+
+!            call gpu_free_async(n_neigh_d, gpu_stream)
+!            call gpu_free_async(species_d, gpu_stream)
+!            call gpu_free_async(neighbor_species_d, gpu_stream)
+!            call gpu_free_async(neighbors_list_d, gpu_stream)           
+!            call gpu_free_async(rjs_d, gpu_stream)
+!            call gpu_free_async(xyz_d, gpu_stream)
+!            call gpu_free_async(species_types_actual_d,gpu_stream)
+!         end if
+        
+        
+!         ! Now calculate the structure factors
+!         if (params%do_structure_factor )then
+
+        !!time_sf(1) = MPI_wtime()
+        !call get_time( time_sf(1)  )
+        
+!            call calculate_structure_factor( params, x_structure_factor, x_structure_factor_temp,&
+!                 & y_structure_factor, y_structure_factor_temp,&
+!                 & structure_factor_partial, structure_factor_partial_temp,&
+!                 & x_pair_distribution, y_pair_distribution, &
+!                 & pair_distribution_partial, n_species_actual, species_types_actual, n_atoms_of_species,&
+!                 & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep, i_beg,&
+!                 & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
+!                 & neighbor_species, species, rank , q_beg, q_end, ntasks, sinc_factor_matrix, params%exp_forces, &
+!                 & nk, nk_d, k_index_d, j2_index_d, xyz_k_d, pair_distribution_partial_d, pair_distribution_partial_der_d, &
+!                 & st_nk_d, st_k_index_d, st_j2_index_d, st_pair_distribution_partial_d, st_pair_distribution_partial_der_d, &
+! #ifdef _MPIF90
+!                 & pair_distribution_partial_der, this_energies_sf, this_forces_sf, this_virial_sf, params%structure_factor_matrix_forces, cublas_handle, gpu_stream,  gpu_host_exp_storage, params%gpu_low_memory)
+! #else
+!            & pair_distribution_partial_der, energies_sf, forces_sf, virial_sf,params%structure_factor_matrix_forces, cublas_handle, gpu_stream,  gpu_host_exp_storage, params%gpu_low_memory)
+! #endif
+
+
+
+        !!time_sf(2) = MPI_wtime()
+        !call get_time( time_sf(2)  )
+        
+!            time_sf(3) = time_sf(3) + time_sf(2) - time_sf(1)
+
+
+
+!         end if
+
+!         if ( params%do_xrd )then
+
+        !!time_xrd(1) = MPI_wtime()
+        !call get_time( time_xrd(1)  )
+        
+!            call calculate_xrd( params, x_xrd, x_xrd_temp,&
+!                 & y_xrd, y_xrd_temp, x_structure_factor, x_structure_factor_temp,&
+!                 & structure_factor_partial, structure_factor_partial_temp,&
+!                 & n_species_actual, species_types_actual, n_atoms_of_species,&
+!                 & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep, i_beg,&
+!                 & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
+!                 & neighbor_species, species, rank , q_beg, q_end, ntasks, sinc_factor_matrix, params%exp_forces, &
+!                 & nk, nk_d, k_index_d, j2_index_d, xyz_k_d, pair_distribution_partial_d, pair_distribution_partial_der_d, &
+!                 & st_nk_d, st_k_index_d, st_j2_index_d, st_pair_distribution_partial_d, st_pair_distribution_partial_der_d, &
+! #ifdef _MPIF90
+!                 & pair_distribution_partial_der, this_energies_xrd,&
+!                 & this_forces_xrd, this_virial_xrd, .false., params%structure_factor_matrix_forces, cublas_handle, gpu_stream,  gpu_host_exp_storage, params%gpu_low_memory)
+! #else
+!            & pair_distribution_partial_der, energies_xrd, forces_xrd,&
+!                 & virial_xrd, .false., params%structure_factor_matrix_forces, cublas_handle, gpu_stream,  gpu_host_exp_storage, params%gpu_low_memory)
+! #endif
+
+
+
+        !!time_xrd(2) = MPI_wtime()
+        !call get_time( time_xrd(2)  )
+        
+!            time_xrd(3) = time_xrd(3) + time_xrd(2) - time_xrd(1)
+
+!            !           if (rank == 0) print *, rank, " TIME_XRD = ", time_xrd(3)
+
+!         end if
+
+
+!         if ( params%do_nd )then
+
+!            time_nd(1) = MPI_wtime()
+!            call calculate_xrd( params, x_nd, x_nd_temp,&
+!                 & y_nd, y_nd_temp, x_structure_factor, x_structure_factor_temp,&
+!                 & structure_factor_partial, structure_factor_partial_temp,&
+!                 & n_species_actual, species_types_actual, n_atoms_of_species,&
+!                 & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep, i_beg,&
+!                 & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
+!                 & neighbor_species, species, rank , q_beg, q_end, ntasks, sinc_factor_matrix, params%exp_forces, &
+!                 & nk, nk_d, k_index_d, j2_index_d, xyz_k_d, pair_distribution_partial_d, pair_distribution_partial_der_d, &
+!                 & st_nk_d, st_k_index_d, st_j2_index_d, st_pair_distribution_partial_d, st_pair_distribution_partial_der_d, &
+! #ifdef _MPIF90
+!                 & pair_distribution_partial_der, this_energies_nd,&
+!                 & this_forces_nd, this_virial_nd, .true., params&
+!                 &%structure_factor_matrix_forces, cublas_handle, gpu_stream,  gpu_host_exp_storage, params%gpu_low_memory)
+! #else
+!            & pair_distribution_partial_der, energies_nd, forces_nd,&
+!                 & virial_nd, .true., params&
+!                 &%structure_factor_matrix_forces, cublas_handle, gpu_stream,  gpu_host_exp_storage, params%gpu_low_memory )
+! #endif
+
+
+
+!            time_nd(2) = MPI_wtime()
+!            time_nd(3) = time_nd(3) + time_nd(2) - time_nd(1)
+
+!            !           if (rank == 0) print *, rank, " TIME_XRD = ", time_xrd(3)
+
+!         end if
+
+
+!         if( params%gpu_batched ) deallocate(i_beg_list, i_end_list, j_beg_list, j_end_list)
+
+!         if (.not. params%gpu_low_memory .and. &
+!              (params%do_pair_distribution .or. params%do_structure_factor .or. params%do_xrd))then
+!            do i = 1, n_dim_partial
+!               call gpu_free_async(nk_d(i), gpu_stream)
+!               call gpu_free_async(k_index_d(i), gpu_stream)
+!               call gpu_free_async(j2_index_d(i), gpu_stream)
+!               call gpu_free_async(xyz_k_d(i), gpu_stream)
+!               call gpu_free_async(pair_distribution_partial_d(i), gpu_stream)
+!               call gpu_free_async(pair_distribution_partial_der_d(i), gpu_stream)
+!            end do
+! !           call gpu_stream_sync(gpu_stream)
+!         end if
+        
+!         if ((params%do_pair_distribution .or. params%do_structure_factor .or. params%do_xrd))then
+           
+!            deallocate( nk_d,  k_index_d,  j2_index_d, &
+!                 & xyz_k_d,  pair_distribution_partial_d, &
+!                 & pair_distribution_partial_der_d,  st_nk_d, &
+!                 & st_k_index_d,  st_j2_index_d, &
+!                 & st_pair_distribution_partial_d, &
+!                 & st_pair_distribution_partial_der_d, nk )
+
+!            if ( params%gpu_low_memory )then
+!               ! deallocate the host memory!
+!               do i = 1, n_dim_partial
+!                  deallocate( gpu_host_exp_storage( i ) % k_index_h )
+!                  deallocate( gpu_host_exp_storage( i ) % j2_index_h )                                  
+!                  deallocate( gpu_host_exp_storage( i ) % xyz_k_h )
+! !                 deallocate( gpu_host_exp_storage( i ) % pair_distribution_partial_h )
+!                  deallocate( gpu_host_exp_storage( i ) % pair_distribution_partial_der_h )
+!               end do
+!               deallocate( gpu_host_exp_storage )
+!            end if
+           
+!         end if
+
+
+
 
         !################################################################!
         !###---   Compute similarity of experimental predictions   ---###!
@@ -2879,7 +3459,11 @@ program turbogap
 
         
         do i = 1, n_distance_2b
-          time_2b(1)=MPI_Wtime()
+           !! time_2b(1)=MPI_Wtime()
+           !call get_time( ! time_2b(1) )
+           
+           call get_time( time_2b(1) )
+           
           n_sparse = distance_2b_hypers(i)%n_sparse
           st_n_sparse_double=n_sparse*sizeof( distance_2b_hypers(i)%alphas(1))
           call gpu_malloc_all(alphas_d,st_n_sparse_double,gpu_stream)
@@ -2890,7 +3474,9 @@ program turbogap
           call cpy_htod(c_loc(distance_2b_hypers(i)%Qs(:,1)),qs_d,st_n_sparse_double,gpu_stream)
 
 
-          time_2b(1) = MPI_wtime()
+          !time_2b(1) = MPI_wtime()
+          call get_time( time_2b(1)  )
+          
 !          this_energies = 0.d0
 !          if( params%do_forces )then
 !           this_forces = 0.d0
@@ -2948,13 +3534,19 @@ program turbogap
 
           print *, rank, " >>--- Finished allocating 2b on gpu ---"
           print *, rank, " > Starting 2b energies forces on gpu "                            
-          t1=MPI_Wtime()
+          !! t1=MPI_Wtime()
+          !call get_time( ! t1 )
+          
+          call get_time( t1 )
+          
           call gpu_get_2b_forces_energies(i_beg, i_end, n_sparse, energies_2b_d, 0.0d0, n_neigh_d, c_do_forces, forces_2b_d,   & 
                                           virial_2b_d, rjs_d, distance_2b_hypers(i)%rcut, species_d, neighbor_species_d, sp1,  &
                                           sp2, 0.5d0, distance_2b_hypers(i)%delta, cutoff_d, qs_d, distance_2b_hypers(i)%sigma,&
                                           alphas_d, xyz_d, gpu_stream)
 
-          time_2b(2) = MPI_wtime()
+          !time_2b(2) = MPI_wtime()
+          call get_time( time_2b(2)  )
+          
 !          print *, rank, " >>--- Finished 2b energies forces on gpu ---"
           call gpu_free_async(alphas_d,gpu_stream)
           call gpu_free_async(cutoff_d,gpu_stream)
@@ -2972,7 +3564,11 @@ program turbogap
           end if
           
           
-          time_2b(2)=MPI_Wtime()
+          !! time_2b(2)=MPI_Wtime()
+          !call get_time( ! time_2b(2) )
+          
+          call get_time( time_2b(2) )
+          
           time_2b(3) = time_2b(3) + time_2b(2) - time_2b(1)
         end do
         call gpu_free_async(energies_2b_d,gpu_stream)
@@ -3006,8 +3602,12 @@ program turbogap
           call gpu_malloc_all(dVdx2_d,st_n_sparse_double,gpu_stream)
           call cpy_htod(c_loc(core_pot_hypers(i)%dVdx2),dVdx2_d,st_n_sparse_double,gpu_stream)
 
-!          time_core_pot(1 = MPI_wtime()
-          time_core_pot(1)=MPI_Wtime()
+          !!time_core_pot(1 = MPI_wtime()
+          !call get_time( time_core_pot(1  )
+          
+          ! time_core_pot(1)=MPI_Wtime()
+          call get_time( time_core_pot(1) )
+          
 !         this_energies = 0.d0
 !         if( params%do_forces )then
 !           this_forces = 0.d0
@@ -3027,7 +3627,9 @@ program turbogap
 !           virial_core_pot = virial_core_pot + this_virial
 !         end if
 
-          time_core_pot(2) = MPI_wtime()
+          !time_core_pot(2) = MPI_wtime()
+          call get_time( time_core_pot(2)  )
+          
 
          print *, rank, " >>--- Finished allocating core_pot on gpu ---"
          print *, rank, " > Starting core_pot energies forces on gpu "                            
@@ -3052,7 +3654,11 @@ program turbogap
           end if
 
           
-          time_core_pot(2)=MPI_Wtime()
+          !! time_core_pot(2)=MPI_Wtime()
+          !call get_time( ! time_core_pot(2) )
+          
+          call get_time( time_core_pot(2) )
+          
           time_core_pot(3) = time_core_pot(3) + time_core_pot(2) - time_core_pot(1)
         end do
 
@@ -3138,8 +3744,12 @@ program turbogap
 !       Loop through angle_3b descriptors
         do i = 1, n_angle_3b
 
-!           time_3b(1 = MPI_wtime()
-          time_3b(1)=MPI_Wtime()
+           !!time_3b(1 = MPI_wtime()
+           !call get_time( time_3b(1  )
+           
+           ! time_3b(1)=MPI_Wtime()
+           call get_time( time_3b(1) )
+           
 !          this_energies = 0.d0
 !          if( params%do_forces )then
 !            this_forces = 0.d0
@@ -3216,8 +3826,12 @@ program turbogap
 !            virial_3b = virial_3b + this_virial
 !          end if
 !
-!          time_3b(2 = MPI_wtime()
-          time_3b(2)=MPI_Wtime()
+          !!time_3b(2 = MPI_wtime()
+          !call get_time( time_3b(2  )
+          
+          ! time_3b(2)=MPI_Wtime()
+          call get_time( time_3b(2) )
+          
           time_3b(3) = time_3b(3) + time_3b(2) - time_3b(1)
         end do
           print *, rank, " >> Starting freeing memory 3b on gpu"        
@@ -3241,14 +3855,22 @@ program turbogap
 
 !           print *, rank, " >>~~~ Finished freeing memory 3b on gpu ~~~<<"        
 
-!        call cpu_time(time2)
-        time2=MPI_Wtime()
+        !!        call cpu_time(time2)
+        call get_time( time2 )
+        
+        !! time2=MPI_Wtime()
+        !call get_time( ! time2 )
+        
+!        call get_time( time2 )
+        
         time_gap = time_gap + time2 - time1
            !       Communicate all energies and forces here for all
            !       terms
 #ifdef _MPIF90
 
-        time_mpi_ef(1) = MPI_wtime()
+        !time_mpi_ef(1) = MPI_wtime()
+        call get_time( time_mpi_ef(1)  )
+        
            counter2 = 0
            if( n_soap_turbo > 0 )then
               counter2 = counter2 + 1
@@ -3498,7 +4120,9 @@ program turbogap
            end if
 
 
-           time_mpi_ef(2) = MPI_wtime()
+           !time_mpi_ef(2) = MPI_wtime()
+           call get_time( time_mpi_ef(2)  )
+           
            time_mpi_ef(3) = time_mpi_ef(3) + time_mpi_ef(2) - time_mpi_ef(1)
 #endif
 
@@ -3725,7 +4349,9 @@ program turbogap
 #endif
         if( params%do_md .and. md_istep > -1)then
 
-           time_md(1) = MPI_wtime()
+           !time_md(1) = MPI_wtime()
+           call get_time( time_md(1)  )
+           
            !     Define the time_step and md_time prior to possible scaling (see variable_time_step below)
            if( md_istep > 0 )then
               md_time = md_time + time_step
@@ -4070,7 +4696,9 @@ program turbogap
               end do
            end do
 
-           time_md(2) = MPI_wtime()
+           !time_md(2) = MPI_wtime()
+           call get_time( time_md(2)  )
+           
            time_md(3) = time_md(3) + time_md(2) - time_md(1)
         end if
 #ifdef _MPIF90
@@ -4081,12 +4709,16 @@ program turbogap
 #ifdef _MPIF90
      if( params%do_md )then
 
-        time_mpi_positions(1) = MPI_wtime()
+        !time_mpi_positions(1) = MPI_wtime()
+        call get_time( time_mpi_positions(1)  )
+        
         n_pos = size(positions,2)
         call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
         call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
 
-        time_mpi_positions(2) = MPI_wtime()
+        !time_mpi_positions(2) = MPI_wtime()
+        call get_time( time_mpi_positions(2)  )
+        
         time_mpi_positions(3) = time_mpi_positions(3) + time_mpi_positions(2) - time_mpi_positions(1)
      end if
 #endif
@@ -4275,7 +4907,9 @@ program turbogap
 
 
 
-              time_mc(1) = MPI_wtime()
+              !time_mc(1) = MPI_wtime()
+              call get_time( time_mc(1)  )
+              
 
 
               !       Now we do a monte-carlo step: we choose what the steps are from the available list and then choose a random number
@@ -4480,7 +5114,9 @@ program turbogap
 
                  !          Add acceptance to the log file else dont
 
-                 time_mc(2) = MPI_wtime()
+                 !time_mc(2) = MPI_wtime()
+                 call get_time( time_mc(2)  )
+                 
                  time_mc(3) = time_mc(3) + time_mc(2) - time_mc(1)
 
 
@@ -4911,13 +5547,21 @@ program turbogap
         n_sp = size(xyz_species,1)
         n_sp_sc = size(xyz_species_supercell,1)
      END IF
-     time_mpi(1)=MPI_Wtime()
+     !! time_mpi(1)=MPI_Wtime()
+     !call get_time( ! time_mpi(1) )
+     
+     call get_time( time_mpi(1) )
+     
      call mpi_bcast(n_pos, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(n_sp, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(n_sp_sc, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(params%do_md, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(md_istep, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-     time_mpi(2)=MPI_Wtime()
+     !! time_mpi(2)=MPI_Wtime()
+     !call get_time( ! time_mpi(2) )
+     
+     call get_time( time_mpi(2) )
+     
      time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
      IF( rank /= 0 )THEN !.and. (mc_move == "insertion" .or. mc_move == "removal")
         if(allocated(positions))deallocate(positions)
@@ -4949,7 +5593,9 @@ program turbogap
         allocate( species_supercell(1:n_sp_sc) )
      END IF
 
-     time_mpi_positions(1) = MPI_wtime()
+     !time_mpi_positions(1) = MPI_wtime()
+     call get_time( time_mpi_positions(1)  )
+     
      call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
      if( params%do_md .or. params%do_nested_sampling .or. params%do_mc )then
         call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
@@ -4966,7 +5612,9 @@ program turbogap
      call mpi_bcast(c_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(n_sites, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
 
-     time_mpi_positions(2) = MPI_wtime()
+     !time_mpi_positions(2) = MPI_wtime()
+     call get_time( time_mpi_positions(2)  )
+     
      time_mpi_positions(3) = time_mpi_positions(3) + time_mpi_positions(2) - time_mpi_positions(1)
 #endif
      !   Now that all ranks know the size of n_sites, we allocate do_list
@@ -4978,7 +5626,9 @@ program turbogap
      end if
      !
 
-     call cpu_time(time1)
+     !     !     !     !     call cpu_time(time1)
+     call get_time( time1 )
+     
 #ifdef _MPIF90
      !   Parallel neighbors list build
      call mpi_bcast(rebuild_neighbors_list, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
@@ -5036,7 +5686,11 @@ program turbogap
 
 
   if( params%do_md .or. params%do_prediction .or. params%do_mc)then
-    time2=MPI_Wtime()
+     !! time2=MPI_Wtime()
+     !call get_time( ! time2 )
+     
+     call get_time( time2 )
+     
 
 #ifdef _MPIF90
      IF( rank == 0 )then
@@ -5185,7 +5839,11 @@ program turbogap
 
 ! write(*,*) "Starting dummy kernel"
 
-! dut1= MPI_Wtime()
+  !! ! dut1= MPI_Wtime()
+  !call get_time( ! ! dut1 )
+  
+!  call get_time( ! dut1 )
+  
 ! do n_ii=1,10
      
 !      do i_ii=1, 1024
@@ -5197,7 +5855,11 @@ program turbogap
 !      enddo
 !      enddo
 ! enddo 
-! dut2= MPI_Wtime()
+  ! ! ! dut2= MPI_Wtime()
+ ! call get_time( ! ! dut2 )
+  
+  !call get_time( ! dut2 )
+  
 ! write(*,*) "Ending dummy region"
 ! write(*,*) "Time spent in dummy region", dut2-dut1
    

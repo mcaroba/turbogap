@@ -210,42 +210,42 @@ __global__ void addBlockSumsKernel(int* d_data, int* d_blockSums, int n) {
 // Function to perform an inclusive scan on an array
 void inclusiveScan(int* d_data_out, int n, hipStream_t *stream) {
     // Calculate the size needed for padding
-    int paddedN = ((n + BLOCK_SIZE * 2 - 1) / (BLOCK_SIZE * 2)) * (BLOCK_SIZE * 2) + 1;
-    size_t size = paddedN * sizeof(int);
+  int paddedN = ((n + BLOCK_SIZE * 2 - 1) / (BLOCK_SIZE * 2)) * (BLOCK_SIZE * 2); //+ 1;
+  size_t size = paddedN * sizeof(int);
 
-    // Allocate memory on the device
-    int* d_data;
-    int* d_blockSums;
-    hipMalloc(&d_data, size);
-    hipMalloc(&d_blockSums, ((n + BLOCK_SIZE * 2 - 1) / (BLOCK_SIZE * 2)) * sizeof(int));
+  // Allocate memory on the device
+  int* d_data;
+  int* d_blockSums;
+  hipMalloc(&d_data, size);
+  hipMalloc(&d_blockSums, ((n + BLOCK_SIZE * 2 - 1) / (BLOCK_SIZE * 2)) * sizeof(int));
 
-    // Copy data from host to device
-    hipMemcpy(d_data, d_data_out, n * sizeof(int), hipMemcpyDeviceToDevice);
-    hipMemset(d_data + n, 0, (paddedN - n) * sizeof(int));  // Zero out padding
+  // Copy data from host to device
+  hipMemcpy(d_data, d_data_out, n * sizeof(int), hipMemcpyDeviceToDevice);
+  hipMemset(d_data + n, 0, (paddedN - n) * sizeof(int));  // Zero out padding
 
-    // Calculate the number of blocks needed
-    int numBlocks = (n + BLOCK_SIZE * 2 - 1) / (BLOCK_SIZE * 2);
+  // Calculate the number of blocks needed
+  int numBlocks = (n + BLOCK_SIZE * 2 - 1) / (BLOCK_SIZE * 2);
 
-    printf("\n In recursive scan, numBlocks = %d", numBlocks);
+  //  printf("\n In recursive scan, numBlocks = %d", numBlocks);
     
-    // Launch kernel for the main scan operation
-    inclusiveScanKernel<<<numBlocks, BLOCK_SIZE,0, stream[0]>>>(d_data, d_blockSums, n);
-    hipDeviceSynchronize();
+  // Launch kernel for the main scan operation
+  inclusiveScanKernel<<<numBlocks, BLOCK_SIZE,0, stream[0]>>>(d_data, d_blockSums, n);
+  hipDeviceSynchronize();
 
-    // If there are multiple blocks, perform a scan on the block sums
-    if (numBlocks > 1) {
-      inclusiveScan(d_blockSums, numBlocks, stream);
+  // If there are multiple blocks, perform a scan on the block sums
+  if (numBlocks > 1) {
+    inclusiveScan(d_blockSums, numBlocks, stream);
 
-      // Add block sums to each element in the array
-      addBlockSumsKernel<<<numBlocks, BLOCK_SIZE,0,stream[0]>>>(d_data, d_blockSums, n);
-    }
+    // Add block sums to each element in the array
+    addBlockSumsKernel<<<numBlocks, BLOCK_SIZE,0,stream[0]>>>(d_data, d_blockSums, n);
+  }
 
-    // Copy result back to host
-    hipMemcpy(d_data_out, d_data+1, n * sizeof(int), hipMemcpyDeviceToDevice);    
+  // Copy result back to host
+  hipMemcpy(d_data_out, d_data+1, (n-1) * sizeof(int), hipMemcpyDeviceToDevice);    
 
-    // Free device memory
-    hipFree(d_data);
-    hipFree(d_blockSums);
+  // Free device memory
+  hipFree(d_data);
+  hipFree(d_blockSums);
 }
 
 
@@ -272,7 +272,7 @@ void kernel_get_pair_distribution_nk(int i_beg, int i_end, int n_sites0, int* ne
 
   int nk_loc = 0;
   if(i_site<i_end){
-    if( species_d[i_site] == sp1 ||  species_d[i_site] == sp2 ) {
+    if( species_d[i_site] == sp1 ||  species_d[i_site] == sp2 ) {      
       k=0;
       for (i=i_beg-1; i<i_site; i++) k += n_neigh_d[i];
       for (j=1; j<n_neigh_d[i_site]; j++) {
@@ -286,8 +286,17 @@ void kernel_get_pair_distribution_nk(int i_beg, int i_end, int n_sites0, int* ne
 	nk_flags_d[k] = 1;
       }
     }
+  } 
+}
+
+
+__global__
+void kernel_multiply_flags( int n_pairs, int* nk_flags_d, int* nk_sum_flags_d){
+
+  int tid=threadIdx.x+blockIdx.x*blockDim.x;  
+  if( tid < n_pairs){
+    nk_sum_flags_d[tid] *= nk_flags_d[tid];
   }
-    
 }
 
 
@@ -304,11 +313,13 @@ extern "C" void  gpu_get_pair_distribution_nk(int i_beg, int i_end, int n_pairs,
   dim3 nblocks=dim3((i_end - i_beg + tpb)/tpb,1,1);
   dim3 nthreads=dim3(tpb,1,1);
 
+   // gpuErrchk( hipPeekAtLastError() );
 
   kernel_get_pair_distribution_nk<<<nblocks, nthreads,0,stream[0] >>>(i_beg, i_end, n_sites0, neighbors_list,
 								      n_neigh, neighbor_species,
 								      species, rjs, xyz, r_min, r_max, r_cut, buffer,
 								       nk_flags_d, species_1, species_2);
+   // gpuErrchk( hipPeekAtLastError() );
 
   // Perform recursive reduction
   recursiveReduce(nk_flags_d, nk_out_d, n_pairs, stream);
@@ -317,6 +328,12 @@ extern "C" void  gpu_get_pair_distribution_nk(int i_beg, int i_end, int n_pairs,
 
   // Perform inclusive scan to get the nk indexes 
   inclusiveScan(nk_flags_sum_d, n_pairs, stream);
+
+  // Now multiply the flags_sum_d and flags_d to get final nk_array
+  nblocks=dim3((n_pairs + tpb)/tpb,1,1);
+  nthreads=dim3(tpb,1,1);
+  
+  kernel_multiply_flags<<<nblocks, nthreads,0,stream[0] >>>(n_pairs, nk_flags_d, nk_flags_sum_d);
   
 }
 
@@ -326,22 +343,28 @@ __global__
 void kernel_set_pair_distribution_k_index(int i_beg, int i_end, int n_pairs,  int n_sites0, int* neighbors_list_d,
 					  double* rjs, double* xyz,
 					  int* k_index_d, int* j2_index_d,
-					  double* rjs_index_d, double* xyz_index_d, int* nk_flags_d, int* nk_sum_flags_d){
+					  double* rjs_index_d, double* xyz_index_d,// int* nk_flags_d,
+					  int* nk_sum_flags_d){
 
   int tid=threadIdx.x+blockIdx.x*blockDim.x;  
-  int i,j2,nk;
+  int i,j2,nk,nk_temp;
 
   if( tid < n_pairs){
-    //    printf("tid = %d  nk_flags = %d  nk_sum_flags %d \n", tid, nk_flags_d[tid], nk_sum_flags_d[tid]);
+
     
-    if( nk_flags_d[tid] == 1 ){
+    if( nk_sum_flags_d[tid] > 0 ){
 
       nk = nk_sum_flags_d[tid]-1;      
+
       if( tid == n_pairs-1 ){
-	nk = nk_sum_flags_d[tid-1]; 
+	// Search for the last non-zero value
+	i = 0;
+	while( nk == 0 ){
+	  i += 1;
+	  nk = nk_sum_flags_d[tid - i];
+	}
       }
       
-      //      printf(" tid = %d, nk = %d\n", tid, nk);
       k_index_d[nk] = tid;
 
       j2 = ( (neighbors_list_d[tid] - 1) % n_sites0 );
@@ -351,7 +374,8 @@ void kernel_set_pair_distribution_k_index(int i_beg, int i_end, int n_pairs,  in
       
       xyz_index_d[3*nk    ] = xyz[3*tid    ];
       xyz_index_d[3*nk + 1] = xyz[3*tid + 1];
-      xyz_index_d[3*nk + 2] = xyz[3*tid + 2];            
+      xyz_index_d[3*nk + 2] = xyz[3*tid + 2];
+      
     }
   }
 }
@@ -371,10 +395,102 @@ extern "C" void  gpu_set_pair_distribution_k_index(int i_beg, int i_end, int n_p
 
   kernel_set_pair_distribution_k_index<<<nblocks, nthreads,0,stream[0] >>>(i_beg, i_end, n_pairs, n_sites0, neighbors_list,
 									   rjs, xyz, k_index_d, j2_index_d, rjs_index_d,
-									   xyz_k_d, nk_flags_d,
+									   xyz_k_d, //nk_flags_d,
 									   nk_sum_flags_d);
 
 }
+
+
+
+__global__
+void kernel_set_pair_distribution_k_index_only(int n_pairs, int* k_index_d, int* nk_sum_flags_d){
+  int tid=threadIdx.x+blockIdx.x*blockDim.x;  
+  int nk;
+  if( tid < n_pairs){
+    if( nk_sum_flags_d[tid] > 0 ){
+      nk = nk_sum_flags_d[tid]-1;      
+      if( tid == n_pairs-1 ){ nk = nk_sum_flags_d[tid-1]; }
+      k_index_d[nk] = tid;
+    }
+  }
+}
+
+extern "C" void  gpu_set_pair_distribution_k_index_only(int n_pairs, int* k_index_d,int* nk_sum_flags_d, hipStream_t *stream ){
+  dim3 nblocks=dim3((n_pairs + tpb-1)/tpb,1,1);
+  dim3 nthreads=dim3(tpb,1,1);
+  kernel_set_pair_distribution_k_index_only<<<nblocks, nthreads,0,stream[0]>>>(n_pairs, k_index_d, nk_sum_flags_d);
+}
+
+
+
+__global__
+void kernel_set_pair_distribution_j2_only(int n_pairs, int n_sites0, int* neighbors_list_d, int* j2_index_d, int* nk_sum_flags_d){
+  int tid=threadIdx.x+blockIdx.x*blockDim.x;  
+  int j2,nk;
+  if( tid < n_pairs){
+    if( nk_sum_flags_d[tid] > 0 ){
+      nk = nk_sum_flags_d[tid]-1;      
+      if( tid == n_pairs-1 ){ nk = nk_sum_flags_d[tid-1]; }
+      j2 = ( (neighbors_list_d[tid] - 1) % n_sites0 );
+      j2_index_d[nk] = j2+1;
+    }
+  }
+}
+
+extern "C" void  gpu_set_pair_distribution_j2_only(int n_pairs, int n_sites0, int* neighbors_list_d, int* j2_index_d,
+						     int* nk_sum_flags_d, hipStream_t *stream ){
+  dim3 nblocks=dim3((n_pairs + tpb-1)/tpb,1,1);
+  dim3 nthreads=dim3(tpb,1,1);
+  kernel_set_pair_distribution_j2_only<<<nblocks, nthreads,0,stream[0]>>>(n_pairs, n_sites0, neighbors_list_d, j2_index_d, nk_sum_flags_d);
+}
+
+
+__global__
+void kernel_set_pair_distribution_rjs_only(int n_pairs, double* rjs, double* rjs_index_d, int* nk_sum_flags_d){
+  int tid=threadIdx.x+blockIdx.x*blockDim.x;  
+  int nk;
+  if( tid < n_pairs){
+    if( nk_sum_flags_d[tid] > 0 ){
+      nk = nk_sum_flags_d[tid]-1;      
+      if( tid == n_pairs-1 ){	nk = nk_sum_flags_d[tid-1]; }
+       rjs_index_d[nk] = rjs[tid];      
+    }
+  }
+}
+
+extern "C" void  gpu_set_pair_distribution_rjs_only(int n_pairs, double* rjs, double* rjs_index_d, int* nk_sum_flags_d,
+						    hipStream_t *stream ){
+  dim3 nblocks=dim3((n_pairs + tpb-1)/tpb,1,1);
+  dim3 nthreads=dim3(tpb,1,1);
+  kernel_set_pair_distribution_rjs_only<<<nblocks, nthreads,0,stream[0]>>>(n_pairs, rjs, rjs_index_d, nk_sum_flags_d);
+}
+
+
+
+__global__
+void kernel_set_pair_distribution_xyz_only(int n_pairs, double* xyz, double* xyz_index_d, int* nk_sum_flags_d){
+  int tid=threadIdx.x+blockIdx.x*blockDim.x;  
+  int nk;
+  if( tid < n_pairs){
+    if( nk_sum_flags_d[tid] > 0 ){
+      nk = nk_sum_flags_d[tid]-1;      
+      if( tid == n_pairs-1 ){  nk = nk_sum_flags_d[tid-1]; }
+      xyz_index_d[3*nk    ] = xyz[3*tid    ];
+      xyz_index_d[3*nk + 1] = xyz[3*tid + 1];
+      xyz_index_d[3*nk + 2] = xyz[3*tid + 2];            
+    }
+  }
+}
+
+extern "C" void  gpu_set_pair_distribution_xyz_only(int n_pairs, double* xyz, double* xyz_index_d, int* nk_sum_flags_d,
+						    hipStream_t *stream ){
+  dim3 nblocks=dim3((n_pairs + tpb-1)/tpb,1,1);
+  dim3 nthreads=dim3(tpb,1,1);
+  kernel_set_pair_distribution_xyz_only<<<nblocks, nthreads,0,stream[0]>>>(n_pairs, xyz, xyz_index_d, nk_sum_flags_d);
+}
+
+
+
 
 
 
@@ -441,6 +557,7 @@ void kernel_reduce_pair_distribution( double* pdf_in, double* pdf_out, int n_k, 
 
 					  
     if ( k_index < n_k && l_index < n_samples ){
+      // Remember the reversed indexing! 
       pdf_temp += pdf_in[ k_index + l_index * n_k ];
     }
   }
@@ -458,6 +575,9 @@ void kernel_reduce_pair_distribution( double* pdf_in, double* pdf_out, int n_k, 
   // Write the result of the block to global memory
   if (tid == 0) {
     pdf_out[blockIdx.x] =  sharedData[0];
+
+    //    i = blockIdx.x;
+    //    printf("> after pdf reduce, blockidx = %d, pdf_out = %lf\n", i, pdf_out[i] );
   }
 }
   
@@ -475,9 +595,33 @@ extern "C" void  gpu_get_pair_distribution_and_ders( double* pair_distribution_d
   dim3 nblocks=dim3((n_k * n_samples + threads-1)/threads,1,1);
   dim3 nthreads=dim3(threads,1,1);
 
+    size_t freeMem, totalMem;
+
+    // Get memory information
+    hipMemGetInfo(&freeMem, &totalMem);
+
+    // Calculate used memory
+    size_t usedMem = totalMem - freeMem;
+
+    // Print out the memory information
+    printf("\n--- b4 pdf Total Memory: %lu bytes\n", totalMem);
+    printf("--- b4 pdf Free Memory: %lu bytes\n", freeMem);
+    printf("--- b4 pdf Used Memory: %lu bytes\n", usedMem);
+
+  
   double* pdf_to_reduce;
   hipMalloc(&pdf_to_reduce, n_k * n_samples * sizeof(double) );
 
+    // Get memory information
+    hipMemGetInfo(&freeMem, &totalMem);
+    usedMem = totalMem - freeMem;
+
+    // Print out the memory information
+    printf("\n--- after alloc pdf Total Memory: %lu bytes\n", totalMem);
+    printf("--- after alloc pdf Free Memory: %lu bytes\n", freeMem);
+    printf("--- after alloc pdf Used Memory: %lu bytes\n", usedMem);
+
+  
   
   printf("> pdf evaluation kernel starting\n");
   kernel_get_pair_distribution_kde<<<nblocks, nthreads, 0, stream[0]>>>(pdf_to_reduce,  pair_distribution_der_d,
@@ -487,6 +631,17 @@ extern "C" void  gpu_get_pair_distribution_and_ders( double* pair_distribution_d
   // gpuErrchk( hipPeekAtLastError() );
   printf("> pdf evaluation kernel finished\n");
 
+
+    // Get memory information
+    hipMemGetInfo(&freeMem, &totalMem);
+    usedMem = totalMem - freeMem;
+
+    // Print out the memory information
+    printf("\n--- after kernel pdf Total Memory: %lu bytes\n", totalMem);
+    printf("--- after kernel pdf Free Memory: %lu bytes\n", freeMem);
+    printf("--- after kernel pdf Used Memory: %lu bytes\n", usedMem);
+
+  
   // Then we need to reduce over the size of the blocks for the pair distribution 
 
   //  // More complex reduction
@@ -504,6 +659,222 @@ extern "C" void  gpu_get_pair_distribution_and_ders( double* pair_distribution_d
   //gpuErrchk( hipPeekAtLastError() );
 }
 
+
+
+
+__global__
+void kernel_get_pair_distribution_kde_der_only( double* pdf_der_out,
+				       int n_k, int n_samples,
+				       double kde_sigma, double* x_d, double* dV_d, double* rjs_d,
+				       double pdf_factor, double der_factor){
+
+  int utid=threadIdx.x+blockIdx.x*blockDim.x;
+  // int k_index = blockIdx.x * blockDim.x + threadIdx.x;  // Index in the j dimension (columns)
+  // int l_index = blockIdx.y * blockDim.y + threadIdx.y;  // Index in the l dimension (rows)
+  
+  int i;
+  double x, dV, r, x_gauss, pdf_temp, pdf_der_temp;
+
+  int k_index = utid / n_samples;    
+  int l_index = utid % n_samples;
+
+  if ( k_index < n_k && l_index < n_samples ){
+    
+    x  =  x_d[l_index];
+    dV = dV_d[l_index];
+
+    r = rjs_d[k_index];        
+
+    x_gauss = ( (x - r) / kde_sigma );
+    
+    pdf_temp =  pdf_factor * exp( - 0.5 * x_gauss * x_gauss  ) / dV ;
+    
+    pdf_der_temp = (der_factor * pdf_temp * x_gauss) / (kde_sigma * r);// / dV;
+
+
+    // if( isnan( pdf_der_temp ) ){
+    //   printf("pdf_der_temp is NaN! l = %d, k = %d, n_k = %d, r %lf, kde_sigma %lf\n", l_index, k_index, n_k,  r, kde_sigma);
+    // }
+    
+    // Reversed the indexing of this temporary array for memory coalescence 
+    //    pdf_out[  k_index + l_index * n_k    ] = pdf_temp;    
+
+    pdf_der_out[ l_index + n_samples * k_index ] = pdf_der_temp;
+  }
+    
+}
+
+
+
+extern "C" void  gpu_get_pair_distribution_der_only( double* pair_distribution_der_d,
+						     int n_k, int n_samples, double kde_sigma, double* x_d, double* dV_d, 
+						     double* rjs_d, double pdf_factor, double der_factor,  hipStream_t *stream ){
+
+  // We want to evaluate the smoothed pair distribution in a quick manner using these kernels
+  // 1. Evaluate the exponential over the threads
+
+  int threads = BLOCK_SIZE;
+  dim3 nblocks=dim3((n_k * n_samples + threads-1)/threads,1,1);
+  dim3 nthreads=dim3(threads,1,1);
+
+  //  printf("> pdf der evaluation kernel starting\n");
+  kernel_get_pair_distribution_kde_der_only<<<nblocks, nthreads, 0, stream[0]>>>(pair_distribution_der_d,
+									n_k, n_samples, kde_sigma, x_d, dV_d,
+									rjs_d, pdf_factor, der_factor );
+}
+
+
+
+
+
+__global__
+void kernel_get_pair_distribution_kde_only( double* pdf_out,
+				       int n_k, int n_samples,
+				       double kde_sigma, double* x_d, double* dV_d, double* rjs_d,
+				       double pdf_factor, double der_factor){
+
+  int utid=threadIdx.x+blockIdx.x*blockDim.x;
+  // int k_index = blockIdx.x * blockDim.x + threadIdx.x;  // Index in the j dimension (columns)
+  // int l_index = blockIdx.y * blockDim.y + threadIdx.y;  // Index in the l dimension (rows)
+  
+  int i;
+  double x, dV, r, x_gauss, pdf_temp, pdf_der_temp;
+
+  int k_index = utid / n_samples;    
+  int l_index = utid % n_samples;
+
+  if ( k_index < n_k && l_index < n_samples ){
+    
+    x  =  x_d[l_index];
+    dV = dV_d[l_index];
+
+    r = rjs_d[k_index];        
+
+    x_gauss = ( (x - r) / kde_sigma );
+
+    //    printf(" pdf only kernel r = %lf, x = %lf, x_gauss = %lf\n", r, x, x_gauss);
+    
+    pdf_temp =  pdf_factor * exp( - 0.5 * x_gauss * x_gauss  ) / dV ;
+
+    // x =  (- 0.5 * x_gauss * x_gauss) ;
+    
+    //    if( pdf_temp > 0.000 ){
+      // printf("> checking calc has data, k_index %d, l_index %d, pdf_factor = %lf, x = %lf, pdf_temp = %lf \n", k_index, l_index, pdf_factor, x, pdf_temp);
+    //      }   
+    // //    pdf_der_temp = (der_factor * pdf_temp * x_gauss) / (kde_sigma * r);// / dV;
+
+    // Reversed the indexing of this temporary array for memory coalescence 
+    pdf_out[  k_index + l_index * n_k    ] = pdf_temp;    
+
+    //pdf_der_out[ l_index + n_samples * k_index ] = pdf_der_temp;
+  }
+    
+}
+
+
+
+extern "C" void  gpu_get_pair_distribution_only( double* pair_distribution_d,
+						     int n_k, int n_samples, double kde_sigma, double* x_d, double* dV_d, 
+						     double* rjs_d, double pdf_factor, double der_factor,  hipStream_t *stream ){
+
+  // We want to evaluate the smoothed pair distribution in a quick manner using these kernels
+  // 1. Evaluate the exponential over the threads
+
+  int threads = BLOCK_SIZE;
+  dim3 nblocks=dim3((n_k * n_samples + threads-1)/threads,1,1);
+  dim3 nthreads=dim3(threads,1,1);
+
+   // gpuErrchk( hipPeekAtLastError() );
+
+    // size_t freeMem, totalMem;
+
+    // // Get memory information
+    // hipMemGetInfo(&freeMem, &totalMem);
+
+    // // Calculate used memory
+    // size_t usedMem = totalMem - freeMem;
+
+    // // Print out the memory information
+    // // printf("\n--- b4 pdf Total Memory: %lu bytes\n", totalMem);
+    // // printf("--- b4 pdf Free Memory: %lu bytes\n", freeMem);
+    // // printf("--- b4 pdf Used Memory: %lu bytes\n", usedMem);
+
+  
+  double* pdf_to_reduce;
+  hipMalloc(&pdf_to_reduce, n_k * n_samples * sizeof(double) );
+  // gpuErrchk( hipPeekAtLastError() );
+
+  // Get memory information
+    // hipMemGetInfo(&freeMem, &totalMem);
+    // usedMem = totalMem - freeMem;
+
+    // // Print out the memory information
+    // // printf("\n--- after alloc pdf Total Memory: %lu bytes\n", totalMem);
+    // // printf("--- after alloc pdf Free Memory: %lu bytes\n", freeMem);
+    // // printf("--- after alloc pdf Used Memory: %lu bytes\n", usedMem);
+
+  
+  //  printf("> pdf evaluation kernel starting\n");
+  kernel_get_pair_distribution_kde_only<<<nblocks, nthreads, 0, stream[0]>>>(pdf_to_reduce,
+									n_k, n_samples, kde_sigma, x_d, dV_d,
+									rjs_d, pdf_factor, der_factor );
+  //  hipDeviceSynchronize();
+  // gpuErrchk( hipPeekAtLastError() );
+  // printf("> pdf evaluation kernel finished\n");
+  //   // Get memory information
+  //   hipMemGetInfo(&freeMem, &totalMem);
+  //   usedMem = totalMem - freeMem;
+
+  //   // Print out the memory information
+  //   printf("\n--- after kernel pdf Total Memory: %lu bytes\n", totalMem);
+  //   printf("--- after kernel pdf Free Memory: %lu bytes\n", freeMem);
+  //   printf("--- after kernel pdf Used Memory: %lu bytes\n", usedMem);
+
+  // Then we need to reduce over the size of the blocks for the pair distribution 
+
+  //  // More complex reduction
+  //  //----------------------------------------
+  nblocks=dim3(n_samples,1,1);
+  nthreads=dim3(threads,1,1);
+  //  printf("> pdf reduction kernel starting\n");
+  kernel_reduce_pair_distribution<<<nblocks, nthreads, 0, stream[0]>>>(pdf_to_reduce, pair_distribution_d, n_k, n_samples );
+  //printf("> pdf reduction kernel finished\n");
+  //  //----------------------------------------
+  
+  
+  hipFree(pdf_to_reduce);
+  //  hipDeviceSynchronize();  
+  //gpuErrchk( hipPeekAtLastError() );
+}
+
+
+extern "C" void  gpu_get_pair_distribution_only_falloc( double* pair_distribution_d, double* pdf_to_reduce, 
+						     int n_k, int n_samples, double kde_sigma, double* x_d, double* dV_d, 
+						     double* rjs_d, double pdf_factor, double der_factor,  hipStream_t *stream ){
+
+  // We want to evaluate the smoothed pair distribution in a quick manner using these kernels
+  // 1. Evaluate the exponential over the threads
+
+  int threads = BLOCK_SIZE;
+  dim3 nblocks=dim3((n_k * n_samples + threads-1)/threads,1,1);
+  dim3 nthreads=dim3(threads,1,1);
+
+    // gpuErrchk( hipPeekAtLastError() );
+  //  printf("> pdf evaluation kernel starting\n");
+  kernel_get_pair_distribution_kde_only<<<nblocks, nthreads, 0, stream[0]>>>(pdf_to_reduce,
+									n_k, n_samples, kde_sigma, x_d, dV_d,
+									rjs_d, pdf_factor, der_factor );
+  //printf("> pdf evaluation kernel finished\n");
+  //  gpuErrchk( hipPeekAtLastError() );
+  nblocks=dim3(n_samples,1,1);
+  nthreads=dim3(threads,1,1);
+
+  //printf("> pdf reduction kernel starting\n");
+  kernel_reduce_pair_distribution<<<nblocks, nthreads, 0, stream[0]>>>(pdf_to_reduce, pair_distribution_d, n_k, n_samples );
+  //printf("> pdf reduction kernel finished\n");
+   //----------------------------------------
+  //  gpuErrchk( hipPeekAtLastError() );
+}
 
 
 
@@ -538,6 +909,11 @@ void kernel_set_Gka( int nk, int n_samples, int* k_index_d, double* Gk_d,
   // Gk(1:n_samples, n_k) =  -2.d0 *  c_factor * pair_distribution_der(1:n_samples,  k )
 
   if( k < nk && l < n_samples ){
+    // if( isnan( pair_distribution_partial_der_d[l + k*n_samples  ] ) ){
+    //   printf("pair_distribution_partial_der_d[ l + k*n_samples  ] is NaN! l = %d, k = %d, l + k*n_samples = %d \n", l, k, l + k*n_samples);
+    // }
+
+    
     Gk_d[ l + k * n_samples ] = - 2.0 * c_factor * pair_distribution_partial_der_d[ l + k * n_samples ]; 
   }
 }
@@ -567,7 +943,18 @@ void kernel_get_Gka(int i, int n_k, int n_samples, double* Gka_d, double* Gk_d, 
   j = tid % n_samples;  
 
   if( k < n_k && j < n_samples ){
-    Gka_d[ j + k * n_samples ] = Gk_d[ j + k * n_samples ] * xyz_k_d[ (i-1) + k * 3 ]; 
+    Gka_d[ j + k * n_samples ] = Gk_d[ j + k * n_samples ] * xyz_k_d[ (i-1) + k * 3 ];
+
+
+    // if( isnan( Gk_d[ j + k*n_samples  ] ) ){
+    //   printf("Gk_d  setup [ l + j*n_samples  ] is NaN!    j = %d, k = %d, j + k*n_samples = %d, n_k %d\n", j, k, j + k*n_samples, n_k);
+    // }
+    
+    // if( isnan( Gka_d[ j + k*n_samples  ] ) ){
+    //   printf("xyz_k_d is probably nan!                    j = %d, k = %d, j + k*n_samples = %d, n_k %d\n", j, k, j + k*n_samples, n_k);
+    // }
+    
+    
   }
 }
 
@@ -580,10 +967,33 @@ extern "C" void  gpu_get_Gka(int i, int n_k, int n_samples,
   dim3 nthreads=dim3(threads,1,1);
 
   kernel_get_Gka<<<nblocks, nthreads, 0, stream[0]>>>(i, n_k, n_samples, Gka_d, Gk_d, xyz_k_d );
-
 }
 
 
+
+__global__
+void kernel_get_Gka_inplace(int i, int n_k, int n_samples, double* Gk_d, double* xyz_k_d){
+
+  int tid=threadIdx.x+blockIdx.x*blockDim.x;  
+  int j, k, j2;
+  k = tid / n_samples;
+  j = tid % n_samples;  
+
+  if( k < n_k && j < n_samples ){
+    Gk_d[ j + k * n_samples ] *= xyz_k_d[ (i-1) + k * 3 ]; 
+  }
+}
+
+
+extern "C" void  gpu_get_Gka_inplace(int i, int n_k, int n_samples,
+			      double* Gk_d, double* xyz_k_d, hipStream_t* stream ){
+
+  int threads = BLOCK_SIZE;
+  dim3 nblocks=dim3((n_k * n_samples + threads-1)/threads,1,1);
+  dim3 nthreads=dim3(threads,1,1);
+
+  kernel_get_Gka_inplace<<<nblocks, nthreads, 0, stream[0]>>>(i, n_k, n_samples, Gk_d, xyz_k_d );
+}
 
 
 
@@ -597,7 +1007,13 @@ void kernel_hadamard_vec_mat_product(int n_samples_sf, int n_k,
   l = tid % n_samples_sf;  
 
   if( j < n_k && l < n_samples_sf ){
-    dermat_d[ l + j*n_samples_sf  ] *= all_scattering_factors_d[ l ]; 
+
+    // if( isnan( dermat_d[ l + j*n_samples_sf  ] ) ){
+    //   printf("dermat_d     [ l + j*n_samples_sf  ] is NaN! l = %d, j = %d, l + j*n_samples_sf = d \n", l, j, l + j*n_samples_sf);
+    // }
+    
+    dermat_d[ l + j*n_samples_sf  ] *= all_scattering_factors_d[ l ];
+    
   }
   
   
@@ -675,6 +1091,11 @@ void kernel_exp_force_virial_collection(int n_k, double3* forces0, double energy
     fi_tmp[0] = fi[ tid ];
     fi_tmp[1] = fi[ tid +     n_k ];
     fi_tmp[2] = fi[ tid + 2 * n_k ];        
+
+    // if(isnan( fi_tmp[0] )){ printf("> tid = %d, n_k = %d, fi_tmp[0] = %lf\n", tid, n_k,  fi_tmp[0]); }
+    // if(isnan( fi_tmp[1] )){ printf("> tid = %d, n_k = %d, fi_tmp[1] = %lf\n", tid, n_k,  fi_tmp[1]); }
+    // if(isnan( fi_tmp[2] )){ printf("> tid = %d, n_k = %d, fi_tmp[2] = %lf\n", tid, n_k,  fi_tmp[2]); }
+    // if(isnan( energy_scale )){ printf("> tid = %d, n_k = %d,  energy_scale = %lf\n",  tid, n_k,  energy_scale); }        
     
     this_force.x = energy_scale * fi_tmp[0];
     this_force.y = energy_scale * fi_tmp[1];
@@ -701,7 +1122,10 @@ void kernel_exp_force_virial_collection(int n_k, double3* forces0, double energy
 
     for(int k1=0;k1<3;k1++){
       for(int k2=0;k2<3;k2++){
-        double loc_viri=0.5*(tmp_this_force[k1]*this_xyz[k2] + tmp_this_force[k2]*this_xyz[k1]); 
+        double loc_viri=0.5*(tmp_this_force[k1]*this_xyz[k2] + tmp_this_force[k2]*this_xyz[k1]);
+	// if(isnan(loc_viri)){
+	//   printf("> tid %d, k1 %d, k2 %d, tmp_this_force[k1] %lf, tmp_this_force[k2] %lf, this_xyz[k1] %lf, this_xyz[k2] %lf, loc_viri = %lf\n", tid, k1, k2, tmp_this_force[k1], tmp_this_force[k2], this_xyz[k1], this_xyz[k2], loc_viri);
+	// }
         atomicAdd(&virial[k2+3*k1], loc_viri);
       }
     }
@@ -721,6 +1145,7 @@ extern "C" void gpu_exp_force_virial_collection(int n_k, double3* forces0, doubl
   dim3 nblocks=dim3((n_k + tpb-1)/tpb,1,1);
   dim3 nthreads=dim3(tpb,1,1);
 
+  
   kernel_exp_force_virial_collection<<<nblocks, nthreads, 0, stream[0]>>>( n_k, forces0, energy_scale, fi,
 									   j2_list, virial, xyz);
   

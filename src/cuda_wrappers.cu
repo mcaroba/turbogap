@@ -9,7 +9,7 @@
 #include <cmath>
 
 #include <hip/hip_runtime.h>
-#include <hip/hip_runtime.h>
+//#include <hip/hip_runtime.h>
 #include <hipblas/hipblas.h>
 //#include <hipsolver.h>
 #include <hiprand/hiprand.h>
@@ -219,6 +219,29 @@ extern "C" void cuda_cpy_dtoh(void *a_d, void *a, size_t N, hipStream_t *stream 
   //gpuErrchk(hipMemcpy(a, a_d,  N, hipMemcpyDeviceToHost));
    return;
 }
+
+extern "C" void cuda_cpy_dtoh_event(void *a_d, void *a, size_t N, hipStream_t *stream )
+{
+
+  // Create a CUDA event
+  hipEvent_t copyComplete;
+  hipEventCreate(&copyComplete);
+  
+  gpuErrchk(hipMemcpyAsync(a, a_d,  N, hipMemcpyDeviceToHost,stream[0]));
+
+  // Record the event after the asynchronous copy
+  hipEventRecord(copyComplete);
+
+  // Wait for the event to complete
+  hipEventSynchronize(copyComplete);
+
+  // Clean up
+  hipEventDestroy(copyComplete);  
+  
+  //gpuErrchk(hipMemcpy(a, a_d,  N, hipMemcpyDeviceToHost));
+   return;
+}
+
 
 extern "C" void cuda_cpy_dtoh_blocking(void *a_d, void *a, size_t N)
 {
@@ -2540,33 +2563,30 @@ extern "C" void gpu_stream_sync(hipStream_t *stream)
   gpuErrchk( hipStreamSynchronize(stream[0]) ); 
 }
 
-/* 
-extern "C" void cuda_malloc_double(double **a_d, int Np)
-{
-   gpuErrchk(hipMalloc( (void **) a_d, sizeof(double) * Np ));
-   return;
-} */
 
-/* extern "C" void cuda_malloc_double_complex(hipDoubleComplex **a_d, int Np)
-{
-
-  gpuErrchk(hipMalloc((void **)  a_d, sizeof(hipDoubleComplex) * Np));
-  //gpuErrchk(hipMallocAsync( a_d, sizeof(hipDoubleComplex) * Np,0));
-   return;
-} */
-
-/* extern "C" void cuda_malloc_int(int **a_d, int Np)
-{
-   // Allocate memory on GPU
-   gpuErrchk(hipMalloc( (void **) a_d, sizeof(int) * Np ));
-   return;
+extern "C" int *host_alloc(size_t size) {
+    int *a;
+    size_t fm, gm;
+    hipMemGetInfo(&fm, &gm);
+    printf("Host GPU alloc:  memory usage: %lu/%lu MB\n", fm / 1024 / 1024,
+            gm / 1024 / 1024);
+    hipHostMalloc((void **) &(a), size);
+    printf("%s\n", hipGetErrorString(hipGetLastError()));
+    return a;
 }
- */
-
-/* extern "C" void cuda_malloc_bool(void **a_d, int Np)
-{
-   // Allocate memory on GPU
-   gpuErrchk(hipMalloc( (void **) a_d, sizeof(bool) * Np ));
-   return;
+  
+extern "C" void host_free(void *ptr) {
+  hipHostFree(ptr);
+  printf("%s\n", hipGetErrorString(hipGetLastError()));
 }
- */
+
+extern "C" void cpy_htoh_pinned(void *src, void *dest, size_t size ) {
+  gpuErrchk(
+	    hipMemcpy( dest, src, size, hipMemcpyHostToHost )
+	    );
+  printf("%s\n", hipGetErrorString(hipGetLastError()));
+}
+
+
+
+

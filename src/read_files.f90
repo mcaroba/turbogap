@@ -769,6 +769,18 @@ end if
       else if(keyword=='md_nsteps')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%md_nsteps
+      else if(keyword=='gpu_low_memory')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%gpu_low_memory
+      else if(keyword=='gpu_batched')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%gpu_batched
+     else if(keyword=='gpu_n_batches')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%gpu_n_batches        
+      else if(keyword=='gpu_max_batch_size')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%gpu_max_batch_size
       else if(keyword=='mc_nsteps')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_nsteps
@@ -2802,7 +2814,6 @@ end subroutine read_electronic_stopping_file
   end subroutine
 !**************************************************************************
 
-
   subroutine get_irreducible_local_properties(params, n_local_properties_tot, n_soap_turbo, soap_turbo_hypers, &
        local_property_labels, local_property_labels_temp, local_property_labels_temp2, local_property_indexes, &
        valid_vdw, vdw_lp_index, core_be_lp_index, valid_xps, xps_idx )
@@ -2962,7 +2973,5 @@ end subroutine read_electronic_stopping_file
     end if
     
   end subroutine get_irreducible_local_properties
-
-
-
+  
 end module

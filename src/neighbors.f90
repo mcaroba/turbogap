@@ -744,5 +744,196 @@ module neighbors
   end subroutine get_fractional_coordinates
 !**************************************************************************
 
+  
 
+  
+  subroutine get_gpu_batches( n_neigh, rjs, rcut, n_chunks, estimated_memory_in_Gbytes,  max_Gbytes_per_process, &
+                                       i_beg_list, i_end_list, j_beg_list, j_end_list )
+
+    implicit none
+
+!   Input variables
+    real*8, intent(in) :: rjs(:), rcut, max_Gbytes_per_process, estimated_memory_in_Gbytes
+    integer, intent(in) :: n_neigh(:)
+
+!   Output variables
+    integer, allocatable, intent(out) :: i_beg_list(:), i_end_list(:), j_beg_list(:), j_end_list(:)
+
+!   Internal variables
+    real*8 :: mem_ratio, pairs_per_chunk
+    integer :: n_sites, n_atom_pairs, k_max, n_chunks, i, j, k, k2, i_chunk, n_atom_pairs_in
+
+
+    n_sites = size(n_neigh)
+    n_atom_pairs = size(rjs)
+
+    k = 0
+    n_atom_pairs_in = 0
+    do i = 1, n_sites
+      do j = 1, n_neigh(i)
+        k = k + 1
+        if( rjs(k) < rcut )then
+          n_atom_pairs_in = n_atom_pairs_in + 1
+        end if
+      end do
+    end do
+
+    ! !   This is a conservative estimate of the maximum memory that this run will need
+
+    ! ! 
+    ! estimated_memory_in_Gbytes = dfloat(n_atom_pairs_in) * 150.d0 / 1024.d0**3
+    mem_ratio = estimated_memory_in_Gbytes/max_Gbytes_per_process
+!    n_chunks = ceiling(mem_ratio)
+    if( n_chunks > n_sites )then
+      n_chunks = n_sites
+    end if
+
+    pairs_per_chunk = float(n_atom_pairs_in) / float(n_chunks)
+
+    allocate( i_beg_list(1:n_chunks) )
+    allocate( i_end_list(1:n_chunks) )
+    allocate( j_beg_list(1:n_chunks) )
+    allocate( j_end_list(1:n_chunks) )
+
+    if( n_chunks == 0 )then
+      return
+    end if
+
+    i_beg_list(1) = 1
+    j_beg_list(1) = 1
+    i_end_list(n_chunks) = n_sites
+    j_end_list(n_chunks) = n_atom_pairs
+
+    if( n_chunks == 1 )then
+      return
+    end if
+
+    k = 0
+    k2 = 0
+    i_chunk = 1
+    do i = 1, n_sites
+      do j = 1, n_neigh(i)
+        k = k + 1
+        if( rjs(k) < rcut )then
+          k2 = k2 + 1
+        end if
+      end do
+      if( k2 >= int( float(i_chunk)*pairs_per_chunk ) )then
+        i_end_list(i_chunk) = i
+        j_end_list(i_chunk) = k
+        i_chunk = i_chunk + 1
+        i_beg_list(i_chunk) = i+1
+        j_beg_list(i_chunk) = k+1
+        if( i_chunk == n_chunks )then
+          exit
+        end if
+      end if
+    end do
+    return
+
+  end subroutine get_gpu_batches
+
+  
+  subroutine estimate_max_exp_forces_device_memory_usage( n_sites, n_pairs, n_dim_partial, n_samples, n_samples_sf, total)
+    implicit none
+    integer :: n_sites, nk, n_samples, n_samples_sf, n_pairs, n_dim_partial
+    real*8, intent(inout) :: total
+    real*8 :: total_exp=0.d0, total_standard=0.d0
+    real*8 :: nk_int, nk_float, Gk, dermat, sf, fi, pref, xyz, forces, neigh_list, to_gb
+    logical :: verbose = .true. 
+
+    total = 0.d0
+    
+    nk = n_pairs
+    
+    total = 0.d0
+    
+    to_gb = 1 / dfloat(1024**3)
+
+    neigh_list = dfloat(n_pairs) * 4.d0 * to_gb    
+    
+    forces   = dfloat(n_sites) * 8.d0 * to_gb    
+    nk_int   = dfloat(nk) * 4.d0 * to_gb
+    nk_float = dfloat(nk) * 8.d0 * to_gb
+    sf       = dfloat(n_samples * n_samples_sf) * 8.d0 * to_gb
+
+    pref = dfloat( n_samples_sf ) * 8.d0 * to_gb
+    Gk = n_samples * nk_float
+    dermat = n_samples_sf * nk_float
+    fi = 3 * nk_float
+    xyz  = 3 * nk_float 
+
+    
+    if( verbose ) write(*,'(A)') "> Estimating memory for normal allocations "
+    total_standard = total_standard + neigh_list
+    if( verbose ) write(*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device neigh_list_d  ", neigh_list , " Gb"
+
+    total_standard = total_standard + neigh_list
+    if( verbose ) write(*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device neigh_spec_d  ", neigh_list , " Gb"
+
+    total_standard = total_standard + neigh_list*2.d0 * 3.d0
+    if( verbose ) write(*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device xyz_d         ", neigh_list*2.d0 * 3.d0 , " Gb"
+
+    total_standard = total_standard + neigh_list*2.d0 
+    if( verbose ) write(*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device rjs_d         ", neigh_list*2.d0  , " Gb"
+
+    total_standard = total_standard + neigh_list*2.d0 
+    if( verbose ) write(*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device rjs_d         ", neigh_list*2.d0  , " Gb"
+
+    total_standard = total_standard + forces/3.d0
+    if( verbose ) write(*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device species_d     ", forces/3.d0 , " Gb"    
+
+    
+    
+
+    
+    
+    if( verbose ) write(*,'(A)') "> Estimating memory xrd and pdf calculation"
+    total_exp = total_exp + nk_int * n_dim_partial
+    if( verbose ) write(*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device k_index_d     ", nk_int , " Gb"
+
+    total_exp = total_exp + nk_int* n_dim_partial
+    if( verbose ) write(*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device j_index_d     ", nk_int , " Gb"
+                                                                               
+    total_exp = total_exp + 3.d0 * Gk                                          
+    if( verbose ) write(*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device      Gk_d     ", Gk , " Gb"
+    if( verbose ) write(*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device     Gka_d     ", Gk , " Gb"
+                                                                               
+    if( verbose ) write(*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device par_pdf_d     ", Gk , " Gb"
+                                                                               
+    total_exp = total_exp + dermat                                             
+    if( verbose ) write(*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device  dermat_d     ", dermat , " Gb"    
+                                                                               
+                                                                               
+    total_exp = total_exp + fi                                                 
+    if( verbose ) write(*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device      fi_d     ", fi , " Gb"    
+                                                                               
+    total_exp = total_exp + xyz* n_dim_partial                                 
+    if( verbose ) write(*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device     xyz_d     ", xyz , " Gb"    
+                                                                               
+                                                                               
+    total_exp = total_exp + forces                                             
+    if( verbose ) write(*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device   forces_d    ", forces , " Gb"    
+                                                                               
+                                                                               
+                                                                               
+    total_exp = total_exp + pref                                               
+    if( verbose ) write(*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device    pref_d     ", pref , " Gb"    
+                                                                               
+    total_exp = total_exp + pref                                               
+    if( verbose ) write(*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device  scat_f_d     ", pref , " Gb"    
+                                                                               
+                                                                               
+    total_exp = total_exp + sf                                                 
+    if( verbose ) write(*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device  sinc_f_d     ", sf , " Gb"
+
+
+    total = total + total_exp + total_standard
+    if( verbose ) write(*, '(A,1X,F10.6,1X,A)') "--- Total from standard neigh:  ", total_standard , " Gb" 
+    if( verbose ) write(*, '(A,1X,F10.6,1X,A)') "--- Total from exp forces imp:  ", total_exp , " Gb"   
+    if( verbose ) write(*, '(A,1X,F10.6,1X,A)') "--- Total device memory usage:  ", total , " Gb"
+    
+  end subroutine estimate_max_exp_forces_device_memory_usage
+
+  
 end module neighbors

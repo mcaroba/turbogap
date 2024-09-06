@@ -76,6 +76,15 @@ MODULE F_B_C
         type(c_ptr) :: gpu_stream
         integer(c_size_t),value :: n
       end subroutine
+
+
+      subroutine cpy_dtoh_event(a_d,a,n, gpu_stream) bind(C,name="cuda_cpy_dtoh_event")
+        use iso_c_binding
+        implicit none
+        type(c_ptr),value :: a_d,a
+        type(c_ptr) :: gpu_stream
+        integer(c_size_t),value :: n
+      end subroutine
       
 
       subroutine cpy_dtoh_blocking(a_d,a,n) bind(C,name="cuda_cpy_dtoh_blocking")
@@ -547,6 +556,15 @@ MODULE F_B_C
       end subroutine gpu_get_Gka
 
 
+      subroutine gpu_get_Gka_inplace(i, n_k, n_samples, Gk_d, xyz_k_d, stream )bind(C&
+           &,name="gpu_get_Gka_inplace")
+        use iso_c_binding
+        implicit none
+        integer(c_int), value :: i, n_samples, n_k
+        type(c_ptr), value :: Gk_d, xyz_k_d
+        type(c_ptr) ::  stream
+      end subroutine gpu_get_Gka_inplace
+
 
       subroutine gpu_print_pointer_int(p)bind(C&
            &,name="gpu_print_pointer_int")
@@ -574,6 +592,42 @@ MODULE F_B_C
         type(c_ptr) :: stream 
       end subroutine gpu_get_pair_distribution_and_ders
 
+      subroutine gpu_get_pair_distribution_only(pair_distribution_d,&
+           n_k, n_samples, kde_sigma,  x_d, dV_d, rjs_d, pdf_factor, der_factor, stream) bind(C&
+           &,name="gpu_get_pair_distribution_only")
+        use iso_c_binding
+        implicit none
+        integer(c_int), value :: n_k, n_samples
+        real(c_double), value :: kde_sigma, pdf_factor, der_factor
+        type(c_ptr), value :: pair_distribution_d, x_d, dV_d, rjs_d
+        type(c_ptr) :: stream 
+      end subroutine gpu_get_pair_distribution_only
+
+      subroutine gpu_get_pair_distribution_only_falloc(pair_distribution_d, pdf_to_reduce,&
+           n_k, n_samples, kde_sigma,  x_d, dV_d, rjs_d, pdf_factor, der_factor, stream) bind(C&
+           &,name="gpu_get_pair_distribution_only_falloc")
+        use iso_c_binding
+        implicit none
+        integer(c_int), value :: n_k, n_samples
+        real(c_double), value :: kde_sigma, pdf_factor, der_factor
+        type(c_ptr), value :: pair_distribution_d, x_d, dV_d, rjs_d, pdf_to_reduce
+        type(c_ptr) :: stream 
+      end subroutine gpu_get_pair_distribution_only_falloc
+      
+
+      subroutine gpu_get_pair_distribution_der_only(  pair_distribution_der_d,&
+           n_k, n_samples, kde_sigma,  x_d, dV_d, rjs_d, pdf_factor, der_factor, stream) bind(C&
+           &,name="gpu_get_pair_distribution_der_only")
+        use iso_c_binding
+        implicit none
+        integer(c_int), value :: n_k, n_samples
+        real(c_double), value :: kde_sigma, pdf_factor, der_factor
+        type(c_ptr), value :: pair_distribution_der_d, x_d, dV_d, rjs_d
+        type(c_ptr) :: stream 
+      end subroutine gpu_get_pair_distribution_der_only
+
+      
+      
 
       subroutine gpu_set_Gk( nk, n_samples, k_index_d, Gk_d, pair_distribution_partial_der_d, c_factor, stream)bind(C,name="gpu_set_Gk")
         use iso_c_binding
@@ -583,8 +637,68 @@ MODULE F_B_C
         type(c_ptr), value :: k_index_d, Gk_d, pair_distribution_partial_der_d
         type(c_ptr) :: stream 
       end subroutine gpu_set_Gk
+
+
       
-        
+      subroutine  gpu_set_pair_distribution_k_index_only(n_pairs, k_index_d, nk_sum_flags_d, stream )bind(C,name="gpu_set_pair_distribution_k_index_only")
+        use iso_c_binding
+        implicit none
+        integer(c_int), value :: n_pairs
+        type(c_ptr), value :: k_index_d, nk_sum_flags_d
+        type(c_ptr) :: stream
+      end subroutine gpu_set_pair_distribution_k_index_only
+      
+
+      subroutine  gpu_set_pair_distribution_j2_only(n_pairs, n_sites, neighbors_list_d, j2_d, nk_sum_flags_d, stream )bind(C,name="gpu_set_pair_distribution_j2_only")
+        use iso_c_binding
+        implicit none
+        integer(c_int), value :: n_pairs, n_sites
+        type(c_ptr), value :: j2_d, nk_sum_flags_d, neighbors_list_d
+        type(c_ptr) :: stream
+      end subroutine gpu_set_pair_distribution_j2_only
+
+
+
+      subroutine  gpu_set_pair_distribution_rjs_only(n_pairs, rjs, rjs_d, nk_sum_flags_d, stream )bind(C,name="gpu_set_pair_distribution_rjs_only")
+        use iso_c_binding
+        implicit none
+        integer(c_int), value :: n_pairs
+        type(c_ptr), value :: rjs_d, nk_sum_flags_d, rjs
+        type(c_ptr) :: stream
+      end subroutine gpu_set_pair_distribution_rjs_only
+
+
+      subroutine  gpu_set_pair_distribution_xyz_only(n_pairs, xyz, xyz_d, nk_sum_flags_d, stream )bind(C,name="gpu_set_pair_distribution_xyz_only")
+        use iso_c_binding
+        implicit none
+        integer(c_int), value :: n_pairs
+        type(c_ptr), value :: xyz_d, nk_sum_flags_d, xyz
+        type(c_ptr) :: stream
+      end subroutine gpu_set_pair_distribution_xyz_only
+            
+      
+
+      function host_alloc(s) bind(c, name='host_alloc')
+        use iso_c_binding
+        implicit none
+        type(c_ptr)   :: host_alloc
+        integer(c_size_t), value :: s
+      end function host_alloc
+
+      subroutine host_free(p) bind(c, name='host_free')
+        use, intrinsic :: iso_c_binding, only: c_ptr
+        implicit none
+        type(c_ptr), intent(in), value :: p
+      end subroutine host_free
+
+      subroutine cpy_htoh_pinned(s, d, size) bind(c, name='cpy_htoh_pinned')
+        use iso_c_binding
+        implicit none
+        integer( c_size_t ), value :: size 
+        type(c_ptr), value :: s, d 
+      end subroutine cpy_htoh_pinned
+      
+      
       !
 !      subroutine gpu_2b(n_sparse, n_sites, sp1, sp2, alpha, delta, cutoff, stream, rjs, xyz, n_neigh, species, neighbor_species, do_forces, rcut,buffer, sigma,qs,n_neigh_host) bind(C,name="gpu_2b")
 !        use iso_c_binding
