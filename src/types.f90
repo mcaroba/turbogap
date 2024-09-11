@@ -143,7 +143,7 @@ module types
          &, xrd_idx, saxs_idx, pdf_idx, sf_idx, nd_idx, n_exp=0, pair_distribution_n_samples&
          &=200, structure_factor_n_samples=200, xrd_n_samples=200, nd_n_samples=200, verb=0, n_t_hold=0,&
          n_exp_opt=0,&
-         n_mc_relax_after = 0, n_mc_mu = 0
+         n_mc_relax_after = 0, n_mc_mu = 0, mc_max_insertion_trials=500
     integer, allocatable :: mc_swaps_id(:)
 
     character*1024 :: atoms_file
