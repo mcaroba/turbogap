@@ -521,29 +521,6 @@ contains
     end if
 
 
-    do_mc_relax = .false.
-    if (allocated(mc_relax_after) .and. mc_relax)then
-       do i = 1, n_mc_relax_after
-          if (trim(mc_relax_after(i)) == trim(mc_move))then
-             do_mc_relax = .true.
-          end if
-       end do
-    else if (mc_move == "relax" .or. mc_move == "md" .or. mc_relax)then
-       do_mc_relax = .true.
-    end if
-
-    if (do_mc_relax)then
-       md_istep = -1
-       do_md = .true.
-       if(allocated(forces_prev))deallocate(forces_prev)
-       allocate( forces_prev(1:3, 1:n_sites) )
-       if(allocated(positions_diff))deallocate(positions_diff)
-       allocate( positions_diff(1:3, 1:n_sites) )
-       if(allocated(positions_prev))deallocate(positions_prev)
-       allocate( positions_prev(1:3, 1:n_sites) )
-
-       positions_diff = 0.d0
-    end if
 
 
        ! Assume that the number of steps has already been set.
@@ -724,6 +701,24 @@ contains
     if(allocated(positions_diff))deallocate(positions_diff)
     allocate( positions_diff(1:3, 1:n_sites) )
     positions_diff = 0.d0
+
+
+    do_mc_relax = .false.
+    if (allocated(mc_relax_after) .and. mc_relax)then
+       do i = 1, n_mc_relax_after
+          if (trim(mc_relax_after(i)) == trim(mc_move))then
+             do_mc_relax = .true.
+          end if
+       end do
+    else if (mc_move == "relax" .or. mc_move == "md" .or. mc_relax)then
+       do_mc_relax = .true.
+    end if
+
+    if (do_mc_relax)then
+       md_istep = -1
+       do_md = .true.
+    end if
+
 
   end subroutine perform_mc_step
 
