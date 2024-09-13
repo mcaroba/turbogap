@@ -41,12 +41,13 @@ type EPH_Beta_class
 	character*1024 :: beta_infile
 	character*3, allocatable :: line(:)
 	character*3, allocatable :: element_name(:)
-	integer :: n_elements, n_points_rho, n_points_beta
+	integer :: n_elements, n_points_rho, n_points_beta, &
+	data_rho_length, data_beta_length
 	real*8 :: dr, r_cutoff, drho, rho_cutoff
 	integer, allocatable :: element_number(:)
-	real*8, allocatable :: r(:), data_rho(:,:), rho(:), &
-	data_beta(:,:), data_alpha(:,:)
-	real*8, allocatable :: y2rho(:,:), y2alpha(:,:)
+	real*8, allocatable :: r(:), data_rho(:), rho(:), &
+	data_beta(:), data_alpha(:)
+	real*8, allocatable :: y2rho(:), y2alpha(:)
 
 	contains
 	procedure :: beta_parameters, spline_int, splineDerivatives
@@ -62,7 +63,7 @@ subroutine beta_parameters(this, rank, ierr, beta_infile, n_species, species_typ
 	class (EPH_Beta_class) :: this
 	integer, intent(in) :: rank, n_species
 	character*8, intent(in) :: species_types(n_species)
-	integer :: i, j, ierr
+	integer :: i, j, ierr, point_start, point_stop, previous_element_last_point
 	character*1024, intent(in) :: beta_infile
 	real*8, allocatable :: y2(:), w2(:) 
 	real*8, parameter :: bignum = 1.1e30
@@ -103,9 +104,10 @@ subroutine beta_parameters(this, rank, ierr, beta_infile, n_species, species_typ
 
 	this%rho_cutoff = this%drho * (this%n_points_beta - 1)
 
-	allocate(this%data_rho(this%n_elements,this%n_points_rho), &
-			this%data_alpha(this%n_elements,this%n_points_beta), &
-			this%data_beta(this%n_elements,this%n_points_beta))
+	this%data_rho_length = this%n_elements*this%n_points_rho
+	this%data_beta_length = this%n_elements*this%n_points_beta
+	allocate(this%data_rho(this%data_rho_length), this%data_alpha(this%data_beta_length), &
+			this%data_beta(this%data_beta_length))
 
 	!! It is assumed that data in the beta file for different elements is
 	!! according to the corresponding types of the species as specified in 
@@ -122,20 +124,24 @@ subroutine beta_parameters(this, rank, ierr, beta_infile, n_species, species_typ
 
 	do i = 1, this%n_elements
 		read(10,*) this%element_number(i)
+		previous_element_last_point = (i-1)*this%n_points_rho
 		do j = 1, this%n_points_rho
-			read(10,*) this%data_rho(i,j)
+			read(10,*) this%data_rho(previous_element_last_point + j)
 		end do
 
+		previous_element_last_point = (i-1)*this%n_points_beta
 		do j = 1, this%n_points_beta
-			read(10,*) this%data_beta(i,j)
+			read(10,*) this%data_beta(previous_element_last_point + j)
 		end do
 	end do
 	close(unit = 10)
 
 	!! find the values of alpha from beta
 	do i = 1, this%n_elements
+		previous_element_last_point = (i-1)*this%n_points_beta
 		do j = 1, this%n_points_beta
-			this%data_alpha(i,j) = sqrt(this%data_beta(i,j))
+			this%data_alpha(previous_element_last_point + j) = &
+							sqrt(this%data_beta(previous_element_last_point + j))
 		end do
 	end do
 
@@ -156,16 +162,22 @@ subroutine beta_parameters(this, rank, ierr, beta_infile, n_species, species_typ
 	!! Have the y"(x) in y2rho and y2beta for cubic spline interpolation 
 	!! for all types of atoms and use them as and when needed afterwards
 	
-	allocate(this%y2rho(this%n_elements,this%n_points_rho), y2(this%n_points_rho), &
-			this%y2alpha(this%n_elements,this%n_points_beta), w2(this%n_points_beta))
+	allocate(this%y2rho(this%data_rho_length), y2(this%n_points_rho), &
+			this%y2alpha(this%data_beta_length), w2(this%n_points_beta))
 
 	do i = 1, this%n_elements
 		y2 = 0.0d0
-		call this%splineDerivatives (this%r,this%data_rho(i,:),this%n_points_rho,bignum,bignum,y2)
-		this%y2rho(i,:) = y2(:)
+		point_start = (i-1)*this%n_points_rho + 1
+		point_stop = i*this%n_points_rho
+		call this%splineDerivatives (this%r,this%data_rho(point_start:point_stop), &
+											this%n_points_rho,bignum,bignum,y2)
+		this%y2rho(point_start:point_stop) = y2(:)
 		w2 = 0.0d0
-		call this%splineDerivatives (this%rho, this%data_alpha(i,:),this%n_points_beta,bignum,bignum,w2)
-		this%y2alpha(i,:) = w2(:)
+		point_start = (i-1)*this%n_points_beta + 1
+		point_stop = i*this%n_points_beta
+		call this%splineDerivatives (this%rho, this%data_alpha(point_start:point_stop), &
+												this%n_points_beta,bignum,bignum,w2)
+		this%y2alpha(point_start:point_stop) = w2(:)
 	end do
 if (allocated(this%data_beta)) deallocate(this%data_beta)
 if (allocated(y2)) deallocate(y2)
@@ -184,10 +196,8 @@ subroutine beta_parameters_broadcastQuantities (this, ierr)
 	call mpi_bcast (this%n_points_beta, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
 	call mpi_bcast (this%r_cutoff, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
 	call mpi_bcast (this%rho_cutoff, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-	call mpi_bcast (this%data_rho, this%n_elements*this%n_points_rho, &
-								MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-	call mpi_bcast (this%data_alpha, this%n_elements*this%n_points_beta, &
-						MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+	call mpi_bcast (this%data_rho, this%data_rho_length, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+	call mpi_bcast (this%data_alpha, this%data_beta_length, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
 
 end subroutine beta_parameters_broadcastQuantities
 

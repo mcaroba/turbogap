@@ -115,7 +115,8 @@ subroutine eph_LangevinForces (this, vel, forces, masses, type_mass, &
 	
 	real*8, intent(inout) :: forces(:,:)
 	
-	integer ::  Np_all, i, j, ki, kj, itype, jtype, atom_type
+	integer ::  Np_all, i, j, ki, kj, itype, jtype, atom_type, point_start_itype, &
+	point_stop_itype, point_start_jtype, point_stop_jtype
 	integer :: start_index, stop_index, istart, istop, ierr
 
 	real*8 :: xi, yi, zi, xj, yj, zj, r_ij, alpha_I, alpha_J, rho_ij, rho_ij_i, rho_ij_j, &
@@ -181,8 +182,10 @@ END IF
 						call getAtomType(j,natomtypes,masses,type_mass,atom_type)
 						jtype = atom_type
 						rho_ij = 0.0d0
-						call beta%spline_int (rank,ierr,beta%r,beta%data_rho(jtype,:), &
-						beta%y2rho(jtype,:),beta%n_points_rho, r_ij, rho_ij)
+						point_start_jtype = (jtype-1)*beta%n_points_rho + 1
+						point_stop_jtype = jtype*beta%n_points_rho 
+						call beta%spline_int (rank,ierr,beta%r,beta%data_rho(point_start_jtype:point_stop_jtype), &
+						beta%y2rho(point_start_jtype:point_stop_jtype),beta%n_points_rho, r_ij, rho_ij)
 
 						rho_I(i) = rho_I(i) + rho_ij
 						atoms_pair_consider = [atoms_pair_consider, j]
@@ -209,8 +212,10 @@ END IF
 
 				!! alpha_I for the itype atom
 				alpha_I = 0.0d0
-				call beta%spline_int (rank,ierr,beta%rho, beta%data_alpha(itype,:), &
-					beta%y2alpha(itype,:), beta%n_points_beta, rho_I(i), alpha_I)
+				point_start_itype = (itype-1)*beta%n_points_beta + 1
+				point_stop_itype = itype*beta%n_points_beta
+				call beta%spline_int (rank,ierr,beta%rho, beta%data_alpha(point_start_itype:point_stop_itype), &
+					beta%y2alpha(point_start_itype:point_stop_itype), beta%n_points_beta, rho_I(i), alpha_I)
 
 				start_index = sum(num_neighbours(1:i-1)) + 1
 				stop_index = sum(num_neighbours(1:i))
@@ -225,8 +230,10 @@ END IF
 
 					!! find rho_J
 					rho_ij = 0.0d0
-					call beta%spline_int (rank,ierr,beta%r,beta%data_rho(jtype,:), &
-							beta%y2rho(jtype,:), beta%n_points_rho, r_ij, rho_ij)
+					point_start_jtype = (jtype-1)*beta%n_points_rho + 1
+					point_stop_jtype = jtype*beta%n_points_rho
+					call beta%spline_int (rank,ierr,beta%r,beta%data_rho(point_start_jtype:point_stop_jtype), &
+							beta%y2rho(point_start_jtype:point_stop_jtype), beta%n_points_rho, r_ij, rho_ij)
 
 					call relativeVector(positions(:,j), positions(:,i), rel_ij)
 					call relativeVector(vel(:,i), vel(:,j), rel_v_ij)
@@ -260,8 +267,10 @@ END IF
 
 			!! alpha_I for the itype atom
 			alpha_I = 0.0d0
-			call beta%spline_int (rank,ierr,beta%rho, beta%data_alpha(itype,:), &
-					beta%y2alpha(itype,:), beta%n_points_beta, rho_I(i), alpha_I)
+			point_start_itype = (itype-1)*beta%n_points_beta + 1
+			point_stop_itype = itype*beta%n_points_beta
+			call beta%spline_int (rank,ierr,beta%rho, beta%data_alpha(point_start_itype:point_stop_itype), &
+					beta%y2alpha(point_start_itype:point_stop_itype), beta%n_points_beta, rho_I(i), alpha_I)
 
 			start_index = sum(num_neighbours(1:i-1)) + 1
 			stop_index = sum(num_neighbours(1:i))
@@ -278,18 +287,24 @@ END IF
 
 				!! find rho_J
 				rho_ij_j = 0.0d0
-				call beta%spline_int (rank,ierr,beta%r, beta%data_rho(jtype,:), &
-						beta%y2rho(jtype,:), beta%n_points_rho, r_ij, rho_ij_j)
+				point_start_jtype = (jtype-1)*beta%n_points_rho + 1
+				point_stop_jtype = jtype*beta%n_points_rho
+				call beta%spline_int (rank,ierr,beta%r, beta%data_rho(point_start_jtype:point_stop_jtype), &
+						beta%y2rho(point_start_jtype:point_stop_jtype), beta%n_points_rho, r_ij, rho_ij_j)
 
 				!! alpha_J for the jtype atom
 				alpha_J = 0.0d0
-				call beta%spline_int (rank,ierr,beta%rho, beta%data_alpha(jtype,:), &
-					beta%y2alpha(jtype,:), beta%n_points_beta, rho_I(j), alpha_J)
+				point_start_jtype = (jtype-1)*beta%n_points_beta + 1
+				point_stop_jtype = jtype*beta%n_points_beta
+				call beta%spline_int (rank,ierr,beta%rho, beta%data_alpha(point_start_jtype:point_stop_jtype), &
+					beta%y2alpha(point_start_jtype:point_stop_jtype), beta%n_points_beta, rho_I(j), alpha_J)
 
 				!! find rho_I
 				rho_ij_i = 0.0d0
-				call beta%spline_int (rank,ierr,beta%r, beta%data_rho(itype,:), &
-						beta%y2rho(itype,:), beta%n_points_rho, r_ij, rho_ij_i)
+				point_start_itype = (itype-1)*beta%n_points_rho + 1
+				point_stop_itype = itype*beta%n_points_rho
+				call beta%spline_int (rank,ierr,beta%r, beta%data_rho(point_start_itype:point_stop_itype), &
+						beta%y2rho(point_start_itype:point_stop_itype), beta%n_points_rho, r_ij, rho_ij_i)
 
 				if (this%isfriction == 1) then
 					multiply_factor1 = alpha_I * rho_ij_j * dot_product( w_I(:,i), rel_ij )

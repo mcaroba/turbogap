@@ -51,8 +51,8 @@ module electronic_stopping
 use mpi
 
 type electronic_stopping_scalar_class
-	integer :: nrows_esdata, ncols_esdata, md_last_step
-	real*8, allocatable :: En_elstopfile(:), elstop(:,:)
+	integer :: nrows_esdata, ncols_esdata, elstop_length, md_last_step
+	real*8, allocatable :: En_elstopfile(:), elstop(:)
 	real*8 :: cum_EEL, md_prev_time
 	contains
 	procedure :: read_electronic_stopping_file, electron_stopping_velocity_dependent
@@ -87,8 +87,8 @@ subroutine read_electronic_stopping_file (this, rank, ierr, n_species, species_t
 	real*8, allocatable :: allelstopdata(:)
 	
 	character*6, allocatable :: infoline(:)
-	integer :: i, irow, ndata_esdata
-		
+	integer :: i, j, irow, ndata_esdata
+	
 	open (unit = 1000, file = estopfilename)
 	! first line gives information
 	! second line gives number of energy-stopping data points, i.e no. of rows of data
@@ -116,12 +116,22 @@ subroutine read_electronic_stopping_file (this, rank, ierr, n_species, species_t
 
 	close(unit = 1000)
 
-	allocate (this%En_elstopfile(this%nrows_esdata), this%elstop(this%nrows_esdata, this%ncols_esdata-1))
+	this%elstop_length = this%nrows_esdata*(this%ncols_esdata-1)
+	allocate (this%En_elstopfile(this%nrows_esdata), this%elstop(this%elstop_length))
+
+	!! energy values
 	irow = 1
 	do i = 1, ndata_esdata, this%ncols_esdata
 		this%En_elstopfile(irow) = allelstopdata(i)
-		this%elstop(irow,:) = allelstopdata(i+1:i+n_species)
 		irow = irow + 1
+	end do
+	!! ES values
+	do i = 1, n_species
+		irow = 1
+		do j = i+1, ndata_esdata, this%ncols_esdata
+			this%elstop((i-1)*this%nrows_esdata + irow) = allelstopdata(j)
+			irow = irow + 1
+		end do
 	end do
 
 end subroutine read_electronic_stopping_file
@@ -138,7 +148,7 @@ subroutine electronic_stopping_scalar_broadcast(this, ierr)
 	call mpi_bcast (this%ncols_esdata, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
 	call mpi_bcast (this%En_elstopfile, this%nrows_esdata, MPI_DOUBLE_PRECISION, 0, &
 					MPI_COMM_WORLD, ierr)
-	call mpi_bcast (this%elstop, this%nrows_esdata*(this%ncols_esdata-1), MPI_DOUBLE_PRECISION, 0, &
+	call mpi_bcast (this%elstop, this%elstop_length, MPI_DOUBLE_PRECISION, 0, &
 					MPI_COMM_WORLD, ierr)
 	call mpi_bcast (this%cum_EEL, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
 
@@ -155,7 +165,7 @@ subroutine electron_stopping_velocity_dependent (this, md_istep, num_md_steps, n
 	real*8, intent(inout) :: forces(:,:)
 	integer, intent(in) :: md_istep, num_md_steps, eel_freq_out, eel_for_atoms(:), Np, rank, ntasks
 	character*6, intent(in) :: to_calculate
-	integer :: Np_all, ki, i, j, itype
+	integer :: Np_all, ki, i, j, itype, atom_type_start
 	real*8 :: vsq, energy, Se, Se_lo, Se_hi, E_lo, E_hi, factor = 0.0d0, vabs, SeLoss, &
 	E_kinetic_atoms, instant_temp_atoms, SeLoss_temp, E_kinetic_atoms_temp
 	real*8, parameter :: boltzconst = 8.61733326E-05
@@ -210,6 +220,7 @@ IF (rank /= 0) forces = 0.0d0
 				do j = 1, natomtypes
 					if (masses(i) == type_mass(j)) then
 						itype = j
+						atom_type_start = (itype-1)*this%nrows_esdata
 						exit
 					end if
 				end do
@@ -220,8 +231,8 @@ IF (rank /= 0) forces = 0.0d0
 				if (energy < Ecut) cycle
 				if (energy < this%En_elstopfile(1)) cycle
 				if (energy > this%En_elstopfile(this%nrows_esdata)) then
-					if (rank == 0) write (*,*) "ERROR: Kinetic energy ", energy, &
-								"eV of atom is higher than electron stopping data"
+					if (rank == 0) write (*,*) trim("ERROR: Kinetic energy "), energy, &
+								trim("eV of atom is higher than electron stopping data")
 					call mpi_finalize(ierr)
 					stop
 				end if
@@ -231,12 +242,12 @@ IF (rank /= 0) forces = 0.0d0
 
 				do j = 1, this%nrows_esdata
 					if (energy == this%En_elstopfile(j)) then 
-						Se = this%elstop(j, itype)
+						Se = this%elstop(atom_type_start + j)
 						exit
 					end if
 					if (this%En_elstopfile(j) < energy .and. energy < this%En_elstopfile(j+1)) then
-						Se_lo = this%elstop(j, itype)
-						Se_hi = this%elstop(j+1, itype)
+						Se_lo = this%elstop(atom_type_start + j)
+						Se_hi = this%elstop(atom_type_start + j+1)
 						E_lo = this%En_elstopfile(j)
 						E_hi = this%En_elstopfile(j+1)
 						Se = Se_lo + (Se_hi - Se_lo) / (E_hi - E_lo) * (energy - E_lo)
@@ -271,6 +282,7 @@ IF (rank /= 0) forces = 0.0d0
 				do j = 1, natomtypes
 					if (masses(i) == type_mass(j)) then
 						itype = j
+						atom_type_start = (itype-1)*this%nrows_esdata
 						exit
 					end if
 				end do
@@ -293,12 +305,12 @@ IF (rank /= 0) forces = 0.0d0
 
 				do j = 1, this%nrows_esdata
 					if (energy == this%En_elstopfile(j)) then 
-						Se = this%elstop(j, itype)
+						Se = this%elstop(atom_type_start + j)
 						exit
 					end if
 					if (this%En_elstopfile(j) < energy .and. energy < this%En_elstopfile(j+1)) then
-						Se_lo = this%elstop(j, itype)
-						Se_hi = this%elstop(j+1, itype)
+						Se_lo = this%elstop(atom_type_start + j)
+						Se_hi = this%elstop(atom_type_start + j+1)
 						E_lo = this%En_elstopfile(j)
 						E_hi = this%En_elstopfile(j+1)
 						Se = Se_lo + (Se_hi - Se_lo) / (E_hi - E_lo) * (energy - E_lo)
