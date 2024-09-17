@@ -834,6 +834,9 @@ end if
       else if(keyword=='mc_min_dist')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_min_dist
+      else if(keyword=='mc_max_insertion_trials')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_max_insertion_trials
       else if(keyword=='mc_lnvol_max')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_lnvol_max

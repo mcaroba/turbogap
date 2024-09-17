@@ -268,7 +268,7 @@ contains
 
 
   subroutine mc_insert_site(mc_species, mc_id, positions, ref_positions, idx, n_sites, a_box, b_box, c_box, &
-       indices, species, ref_species, xyz_species, ref_xyz_species, min_dist )
+       indices, species, ref_species, xyz_species, ref_xyz_species, min_dist, cannot_insert_site, max_trials )
 
     implicit none
 
@@ -276,61 +276,83 @@ contains
     real*8, intent(in) :: ref_positions(:,:)
     real*8, intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3), min_dist
     real*8 :: ranv(1:3)
-    integer, intent(in) :: idx, n_sites, indices(1:3), ref_species(:)
+    integer, intent(in) :: idx, n_sites, indices(1:3), ref_species(:), max_trials 
     integer, intent(inout) :: species(:), mc_id
     character*8, intent(in) :: ref_xyz_species(:)
     character*8, intent(inout) :: xyz_species(:)
     character*8, intent(in) :: mc_species
+    logical, intent(out) :: cannot_insert_site
+    integer :: n_trials
     logical :: too_close
 
-    positions(1:3,1:n_sites-1) = ref_positions(1:3,1:n_sites-1)
-    positions(1:3,1:n_sites-1) = ref_positions(1:3,1:n_sites-1)
     xyz_species(1:n_sites-1)= ref_xyz_species(1:n_sites-1)
     species(1:n_sites-1)= ref_species(1:n_sites-1)
 
     xyz_species(n_sites) = mc_species
     species(n_sites) = mc_id
 
-    too_close = .true.
+    cannot_insert_site = .true.
+    too_close = .true. 
+
+    n_trials = 0
     do while ( too_close )
 
-       call random_number(ranv)
-       positions(1,n_sites) = ranv(1)*norm2(a_box)
-       positions(2,n_sites) = ranv(2)*norm2(b_box)
-       positions(3,n_sites) = ranv(3)*norm2(c_box)
+       n_trials = n_trials + 1
 
+       positions(1:3,1:n_sites-1) = ref_positions(1:3,1:n_sites-1)
+       positions(1:3,1:n_sites-1) = ref_positions(1:3,1:n_sites-1)
+
+       ranv=0.d0
+       call random_number(ranv)
+       positions(1,n_sites) = ( ranv(1) )*norm2(a_box / dfloat(indices(1)))
+       positions(2,n_sites) = ( ranv(2) )*norm2(b_box / dfloat(indices(2)))
+       positions(3,n_sites) = ( ranv(3) )*norm2(c_box / dfloat(indices(3)))
+
+       
        call wrap_pbc(positions(1:3,1:n_sites), a_box/dfloat(indices(1)), &
             b_box/dfloat(indices(2)), c_box/dfloat(indices(3)))
 
+       
        call check_if_atoms_too_close(positions(1:3,n_sites), ref_positions, n_sites-1, &
-            a_box, b_box, c_box, min_dist, too_close)
+            a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), min_dist, too_close)
 
+       if( n_trials > max_trials ) exit 
+       
     end do
+
+    cannot_insert_site = too_close 
 
   end subroutine mc_insert_site
 
 
   subroutine check_if_atoms_too_close(position, ref_positions, n_sites, &
-       a_box, b_box, c_box, min_dist, too_close)
+       a_box, b_box, c_box, min_dist, too_close_out)
     implicit none
     integer, intent(in) :: n_sites
     integer :: i, i_shift(1:3)
     real*8, intent(in) :: position(:), ref_positions(:,:), min_dist
     real*8, intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3)
-    real*8 :: d, dist(1:3)
-    logical, intent(inout) :: too_close
+    real*8 :: d, dist(1:3), minimum=10000000.d0
+    logical :: too_close
+    logical, intent(out) :: too_close_out
 
+    minimum=10000000.d0    
     too_close = .false.
-    do i = 1, n_sites
+    check: do i = 1, n_sites
        call get_distance(position(1:3), ref_positions(1:3,i), &
             a_box, b_box, c_box, (/ .true., .true., .true. /), dist, d, i_shift)
 
-       if( d < min_dist )then
+       minimum = min( d, minimum )
+       
+       if( minimum < min_dist )then
           too_close=.true.
-          exit
+          exit check
        end if
-    end do
+    end do check
+    
+    too_close_out = too_close
 
+!    print *, "check_if_atoms_too_close: too_close = ", too_close_out, " minimum_found = ", minimum, " min_dist = ", min_dist
   end subroutine check_if_atoms_too_close
 
   subroutine count_swap_species(n_spec_swap_1, n_spec_swap_2,&
@@ -377,7 +399,7 @@ contains
        & velocities, positions_prev, positions_diff, disp, d_disp,&
        & n_lp, mc_acceptance, mc_mu_acceptance, local_properties, im_local_properties, energies,&
        & forces, forces_prev, n_sites, n_mc_mu, mc_mu_id, n_mc_species, mc_move, mc_species,&
-       & mc_move_max, mc_min_dist, ln_vol_max,  mc_types, masses_types,&
+       & mc_move_max, mc_min_dist, mc_max_insertion_trials, ln_vol_max,  mc_types, masses_types,&
        & species_idx, im_pos, im_species, im_xyz_species, im_fix_atom&
        &, im_masses, a_box, b_box, c_box, indices, do_md, mc_relax,&
        & md_istep, mc_id, E_kinetic, instant_temp, t_beg,&
@@ -394,7 +416,7 @@ contains
          & length_prev, l_prop, ranf, ranv(1:3), kB = 8.6173303d-5
     real*8, intent(inout) :: disp(1:3), mc_min_dist, d_disp,&
          & E_kinetic, instant_temp, t_beg
-    integer, intent(in) :: n_lp, verb
+    integer, intent(in) :: n_lp, verb, mc_max_insertion_trials
     integer, intent(inout) :: n_sites, md_istep, n_mc_swaps, n_mc_relax_after, n_mc_mu, mc_mu_id
     integer, allocatable, intent(inout) :: species(:), mc_swaps_id(:), n_mc_species(:), mc_id(:)
     integer, allocatable, intent(in) ::  im_species(:)
@@ -413,6 +435,7 @@ contains
     logical, allocatable:: fix_atom(:,:)
     logical, allocatable, intent(in) :: im_fix_atom(:,:)
     logical, intent(inout) :: do_md, mc_relax, mc_hamiltonian, do_mc_relax
+    logical :: cannot_insert_site
     real*8 :: gamma(1:6)
     !    n_sites = size(positions, 2)
 
@@ -498,29 +521,6 @@ contains
     end if
 
 
-    do_mc_relax = .false.
-    if (allocated(mc_relax_after) .and. mc_relax)then
-       do i = 1, n_mc_relax_after
-          if (trim(mc_relax_after(i)) == trim(mc_move))then
-             do_mc_relax = .true.
-          end if
-       end do
-    else if (mc_move == "relax" .or. mc_move == "md" .or. mc_relax)then
-       do_mc_relax = .true.
-    end if
-
-    if (do_mc_relax)then
-       md_istep = -1
-       do_md = .true.
-       if(allocated(forces_prev))deallocate(forces_prev)
-       allocate( forces_prev(1:3, 1:n_sites) )
-       if(allocated(positions_diff))deallocate(positions_diff)
-       allocate( positions_diff(1:3, 1:n_sites) )
-       if(allocated(positions_prev))deallocate(positions_prev)
-       allocate( positions_prev(1:3, 1:n_sites) )
-
-       positions_diff = 0.d0
-    end if
 
 
        ! Assume that the number of steps has already been set.
@@ -610,21 +610,58 @@ contains
                & im_pos, idx, n_sites,&
                & a_box, b_box, c_box, indices, species,&
                & im_species, xyz_species,&
-               & im_xyz_species, mc_min_dist )
+               & im_xyz_species, mc_min_dist, cannot_insert_site, mc_max_insertion_trials )
 
-          deallocate(masses)
-          allocate(masses(1:n_sites))
-          masses(1:n_sites-1) = im_masses(1:n_sites-1)
-          masses(n_sites) = masses_types(mc_id(mc_mu_id))
 
-          if (allocated(local_properties))then
-             deallocate(local_properties)
-             allocate(local_properties(1:n_sites, n_lp))
-             local_properties(1:n_sites-1,1:n_lp) = im_local_properties(1:n_sites-1,1:n_lp)
-             ! ignoring the hirshfeld v just want to get rough implementation done
-             local_properties(n_sites,1:n_lp) = 0.d0 ! local_properties(n_sites-1)
+          if( cannot_insert_site )then
+             ! Revert the changes
+             print *, "!!! Warning !!! TurboGAP cannot find a valid insertion site after"
+             print *, "                mc_max_insertion_trials = ", mc_max_insertion_trials, " trials. "
+             print *, "                This will mean a MC trial will be wasted! "
+             print *, " "
+             print *, "                Reduce `mc_min_dist' from ", mc_min_dist," A"
+             print *, "                or increase `mc_max_insertion_trials' "
+             print *, "                to mitigate this behaviour"             
+
+             mc_move="insertionFAILED"
+             
+             n_sites = n_sites - 1
+             deallocate( energies, positions, velocities, &
+                  forces, species,  &
+                  xyz_species, fix_atom)
+             
+             allocate( energies(1:n_sites) )
+             allocate( forces(1:3, 1:n_sites) )
+             allocate( velocities(1:3, 1:n_sites) )
+             allocate( positions(1:3, 1:n_sites) )
+             allocate( fix_atom(1:3, 1:n_sites) )
+             allocate( xyz_species(1:n_sites) )
+             allocate( species(1:n_sites) )
+             velocities = 0.0d0
+             forces = 0.0d0
+             energies= 0.0d0
+
+             positions = im_pos
+             species = im_species
+             xyz_species = im_xyz_species             
+             fix_atom = im_fix_atom
+             
+          else
+             
+             deallocate(masses)
+             allocate(masses(1:n_sites))
+             masses(1:n_sites-1) = im_masses(1:n_sites-1)
+             masses(n_sites) = masses_types(mc_id(mc_mu_id))
+
+             if (allocated(local_properties))then
+                deallocate(local_properties)
+                allocate(local_properties(1:n_sites, n_lp))
+                local_properties(1:n_sites-1,1:n_lp) = im_local_properties(1:n_sites-1,1:n_lp)
+                ! ignoring the hirshfeld v just want to get rough implementation done
+                local_properties(n_sites,1:n_lp) = 0.d0 ! local_properties(n_sites-1)
+             end if
           end if
-
+          
        else if (mc_move == "removal")then
           deallocate(masses)
           allocate(masses(1:n_sites))
@@ -664,6 +701,24 @@ contains
     if(allocated(positions_diff))deallocate(positions_diff)
     allocate( positions_diff(1:3, 1:n_sites) )
     positions_diff = 0.d0
+
+
+    do_mc_relax = .false.
+    if (allocated(mc_relax_after) .and. mc_relax)then
+       do i = 1, n_mc_relax_after
+          if (trim(mc_relax_after(i)) == trim(mc_move))then
+             do_mc_relax = .true.
+          end if
+       end do
+    else if (mc_move == "relax" .or. mc_move == "md" .or. mc_relax)then
+       do_mc_relax = .true.
+    end if
+
+    if (do_mc_relax)then
+       md_istep = -1
+       do_md = .true.
+    end if
+
 
   end subroutine perform_mc_step
 

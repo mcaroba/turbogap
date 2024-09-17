@@ -151,7 +151,7 @@ module types
          &, xrd_idx, saxs_idx, pdf_idx, sf_idx, nd_idx, n_exp=0, pair_distribution_n_samples&
          &=200, structure_factor_n_samples=200, xrd_n_samples=200, nd_n_samples=200, verb=0, n_t_hold=0,&
          n_exp_opt=0,&
-         n_mc_relax_after = 0, n_mc_mu = 0
+         n_mc_relax_after = 0, n_mc_mu = 0, mc_max_insertion_trials=500
     integer, allocatable :: mc_swaps_id(:)
 
     character*1024 :: atoms_file
@@ -172,20 +172,16 @@ module types
                write_local_energies = .true., write_property(1:11) = .true., &
                write_array_property(1:8) = .true., write_masses = .false., write_fixes = .true., &
                variable_time_step = .false., vdw_mbd_grad = .false., do_nested_sampling = .false., &
-               scale_box_nested = .false., mc_write_xyz = .false., do_exp = .false., mc_relax =&
-         & .false., mc_optimize_exp =.false., exp_forces=.false., exp_energies=.true.,&
-         & print_lp_forces =.false., print_vdw_forces =.false., print_estat_forces = .false., &
-         & mc_hamiltonian = .false., accessible_volume = .false., mc_reverse = .false., &
-         & xrd_iwasa = .true., pair_distribution_partial=.true.,&
-         & structure_factor_from_pdf=.true., structure_factor_window&
-         & = .true., write_pair_distribution=.false.,&
-         & write_structure_factor=.false., do_pair_distribution =&
-         & .false., do_structure_factor =.false., do_xrd=.false., do_nd=.false.,&
-         & write_xrd=.false., write_nd=.false.,&
-         & structure_factor_matrix=.true.,&
-         & structure_factor_matrix_forces=.true., write_exp=.true.,&
-         & valid_pdf=.false., valid_sf=.false., valid_xrd=.false., &
-         & valid_nd=.false.
+               scale_box_nested = .false., mc_write_xyz = .false., do_exp = .false., mc_relax = .false., &
+               mc_optimize_exp = .false., exp_forces = .false., exp_energies = .true., print_lp_forces = .false., &
+               print_estat_forces = .false., &
+               print_vdw_forces = .false., mc_hamiltonian = .false., accessible_volume = .false., mc_reverse = .false., &
+               xrd_iwasa = .true., pair_distribution_partial = .true., structure_factor_from_pdf = .true., &
+               structure_factor_window = .true., write_pair_distribution = .false., write_structure_factor = .false., &
+               do_pair_distribution = .false., do_structure_factor = .false., do_xrd = .false., do_nd = .false., &
+               write_xrd = .false., write_nd = .false., structure_factor_matrix = .true., &
+               structure_factor_matrix_forces = .true., write_exp = .true., valid_pdf = .false., valid_sf = .false., &
+               valid_xrd = .false., valid_nd = .false.
 
     logical, allocatable :: write_local_properties(:)
     type(exp_data_container), allocatable :: exp_data(:)

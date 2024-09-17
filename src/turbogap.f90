@@ -3954,8 +3954,8 @@ program turbogap
                       images(i_current_image)%local_properties, energies,&
                       & forces, forces_prev, n_sites, params%n_mc_mu, mc_mu_id, n_mc_species,&
                       & mc_move, params %mc_species,&
-                      & params%mc_move_max, params%mc_min_dist, params%mc_lnvol_max, params&
-                      &%mc_types, params%masses_types, species_idx,&
+                      & params%mc_move_max, params%mc_min_dist, params%mc_max_insertion_trials, &
+                      params%mc_lnvol_max, params%mc_types, params%masses_types, species_idx,&
                       & images(i_current_image)%positions,&
                       & images(i_current_image)%species,&
                       & images(i_current_image)%xyz_species,&
