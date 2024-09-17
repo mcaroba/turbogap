@@ -1960,7 +1960,7 @@ program turbogap
 #endif
             else ! This really shouldn't happen... but we both know it could
                 print("WARNING: Unknown electrostatic method " // params%estat_method)
-                print("Ignoring...")
+                write(*,*) "Ignoring..."
             end if
             deallocate(chg_neigh_estat)
             time_estat(2) = MPI_Wtime()
