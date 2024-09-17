@@ -253,8 +253,8 @@ module electrostatics
         n_sites_global = size(forces, 2)
         allocate(vc_grad_prefactor(1:n_sites_this))
         vc_grad_prefactor = 0.0_dp
-        pair_energy_rcut = pair_energy_dsf(rcut, alpha)
-        der_pair_energy_rcut = der_pair_energy_dsf(rcut, alpha)
+        pair_energy_rcut = pair_energy_dsf(rcut, dsf_alpha)
+        der_pair_energy_rcut = der_pair_energy_dsf(rcut, dsf_alpha)
 
         pair_counter = 0
         soap_pair_counter = 0

@@ -42,7 +42,7 @@ program turbogap
   use gap_interface
   use types
   use vdw
-  use electrostatics, only : compute_coulomb_direct
+  use electrostatics, only : compute_coulomb_direct, compute_coulomb_dsf
   use exp_utils
   use exp_interface
   use soap_turbo_functions
@@ -1931,18 +1931,37 @@ program turbogap
               end do
            end do
            ! Prepare to call electrostatics subroutine!
-           call compute_coulomb_direct(&
-                    local_properties(i_beg:i_end, charge_lp_index), &
-                    local_properties_cart_der(1:3, j_beg:j_end, charge_lp_index), &
-                    n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
-                    params%estat_rcut, params%estat_rcut_inner, params%estat_inner_width, &
-                    rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), chg_neigh_estat, &
-                    params%do_forces,&
+           if (params%estat_method == "direct") then
+               call compute_coulomb_direct(&
+                        local_properties(i_beg:i_end, charge_lp_index), &
+                        local_properties_cart_der(1:3, j_beg:j_end, charge_lp_index), &
+                        n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
+                        params%estat_rcut, params%estat_rcut_inner, params%estat_inner_width, &
+                        rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), chg_neigh_estat, &
+                        params%do_forces,&
 #ifdef _MPIF90
-                    this_energies_estat(i_beg:i_end), this_forces_estat, this_virial_estat)
+                        this_energies_estat(i_beg:i_end), this_forces_estat, this_virial_estat)
 #else
-                    energies_estat(i_beg:i_end), forces_estat, virial_estat)
+                        energies_estat(i_beg:i_end), forces_estat, virial_estat)
 #endif
+            else if (params%estat_method == "dsf") then
+               call compute_coulomb_dsf(&
+                        local_properties(i_beg:i_end, charge_lp_index), &
+                        local_properties_cart_der(1:3, j_beg:j_end, charge_lp_index), &
+                        n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
+                        params%estat_dsf_alpha, params%estat_rcut, &
+                        params%estat_rcut_inner, params%estat_inner_width, &
+                        rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), chg_neigh_estat, &
+                        params%do_forces,&
+#ifdef _MPIF90
+                        this_energies_estat(i_beg:i_end), this_forces_estat, this_virial_estat)
+#else
+                        energies_estat(i_beg:i_end), forces_estat, virial_estat)
+#endif
+            else ! This really shouldn't happen... but we both know it could
+                print("WARNING: Unknown electrostatic method " // params%estat_method)
+                print("Ignoring...")
+            end if
             deallocate(chg_neigh_estat)
             time_estat(2) = MPI_Wtime()
             time_estat(3) = time_estat(3) + time_estat(2) - time_estat(1)

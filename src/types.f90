@@ -141,7 +141,8 @@ module types
          & pair_distribution_kde_sigma=0.d0
 
     ! Avoid accidentally mixing precision - unlikely but would be confusing
-    real(dp) :: estat_rcut = 10.0_dp, estat_rcut_inner = 4.0_dp, estat_inner_width = 1.0_dp
+    real(dp) :: estat_rcut = 10.0_dp, estat_dsf_alpha = -1.0_dp, &
+                estat_rcut_inner = 4.0_dp, estat_inner_width = 1.0_dp
 
     integer :: md_nsteps = 1, mc_nsteps = 1, write_xyz = 0,&
          & write_thermo = 1, which_atom = 0, vdw_mbd_nfreq = 11,&

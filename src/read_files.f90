@@ -1661,11 +1661,15 @@ end if
         read(10, *, iostat=iostatus) cjunk, cjunk, params%estat_method
         params%estat_method = trim(params%estat_method)
         call upper_to_lower_case(params%estat_method)
-        if (params%estat_method /= "direct" .and. params%estat_method /= "none") then
+        if (params%estat_method /= "direct" .and. params%estat_method /= "dsf" &
+            .and. params%estat_method /= "none") then
           write(*,*) "ERROR: electrostatic method not implemented: ", params%estat_method
           write(*,*) "       Currently implemented methods are: direct"
           stop
         end if
+      else if( keyword == "estat_dsf_alpha" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%estat_dsf_alpha
       else if( keyword == "estat_rcut" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%estat_rcut
@@ -1758,6 +1762,14 @@ end if
         write(*,*) "ERROR: vdW inner and outer cutoff regions can't overlap. Check your vdw_* definitions"
         stop
       end if
+    end if
+
+    ! Do the same for electrostatics
+    if (params%estat_method == "none") then
+      params%estat_rcut = 0.0_dp
+    else if (params%estat_method == "dsf" .and. params%estat_dsf_alpha <= 0) then
+      write(*,*) "ERROR: Must specify an alpha (>0) for DSF electrostatics."
+      stop
     end if
 
 !   Nested sampling checks
