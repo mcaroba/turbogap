@@ -608,6 +608,8 @@ program turbogap
           & MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(valid_vdw, 1,&
           & MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+     call mpi_bcast(valid_estat_charges, 1,&
+          & MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
 
      !   Processes other than 0 need to allocate the data structures on their own
      call cpu_time(time_mpi(2))
