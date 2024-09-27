@@ -173,6 +173,9 @@ module types
                structure_factor_matrix_forces = .true., write_exp = .true., valid_pdf = .false., valid_sf = .false., &
                valid_xrd = .false., valid_nd = .false.
 
+    integer :: mc_n_max_dist_planes = 0
+    real*8, allocatable :: mc_max_dist_to_planes(:), mc_max_dist_planes(:) ! Final index indexes the planes in first index
+
     logical, allocatable :: write_local_properties(:)
     type(exp_data_container), allocatable :: exp_data(:)
     type(exp_pred_container) :: pair_distribution_params, structure_factor_params, xrd_params

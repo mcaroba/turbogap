@@ -3981,7 +3981,8 @@ program turbogap
                       & params%n_mc_swaps, params%mc_swaps, params%mc_swaps_id, &
                       & params%species_types, params%mc_hamiltonian,&
                       & params%n_mc_relax_after, params&
-                      &%mc_relax_after, do_mc_relax, params%verb)
+                      &%mc_relax_after, do_mc_relax, params%verb, &
+                      params%mc_n_max_dist_planes, params%mc_max_dist_planes, params%mc_max_dist_to_planes)
 
 
               rebuild_neighbors_list = .true.

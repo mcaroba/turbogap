@@ -268,7 +268,8 @@ contains
 
 
   subroutine mc_insert_site(mc_species, mc_id, positions, ref_positions, idx, n_sites, a_box, b_box, c_box, &
-       indices, species, ref_species, xyz_species, ref_xyz_species, min_dist, cannot_insert_site, max_trials )
+       indices, species, ref_species, xyz_species, ref_xyz_species, min_dist, cannot_insert_site, max_trials,&
+        mc_n_max_dist_planes, mc_max_dist_planes, mc_max_dist_to_planes )
 
     implicit none
 
@@ -283,7 +284,12 @@ contains
     character*8, intent(in) :: mc_species
     logical, intent(out) :: cannot_insert_site
     integer :: n_trials
-    logical :: too_close
+    logical :: too_close, too_far
+
+!    real*8 :: mc_max_dist
+    integer :: mc_n_max_dist_planes
+    real*8, allocatable :: mc_max_dist_planes(:), mc_max_dist_to_planes(:) ! Final index indexes the planes in first index
+
 
     xyz_species(1:n_sites-1)= ref_xyz_species(1:n_sites-1)
     species(1:n_sites-1)= ref_species(1:n_sites-1)
@@ -292,10 +298,11 @@ contains
     species(n_sites) = mc_id
 
     cannot_insert_site = .true.
-    too_close = .true. 
+    too_close = .true.
+    too_far=.true.
 
     n_trials = 0
-    do while ( too_close )
+    do while ( .true. )
 
        n_trials = n_trials + 1
 
@@ -316,13 +323,60 @@ contains
        call check_if_atoms_too_close(positions(1:3,n_sites), ref_positions, n_sites-1, &
             a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), min_dist, too_close)
 
-       if( n_trials > max_trials ) exit 
+       if( mc_n_max_dist_planes > 0 )then
+          call check_if_far_from_planes(positions(1:3,n_sites), mc_n_max_dist_planes, mc_max_dist_planes, &
+               mc_max_dist_to_planes, too_far)
+       else
+          too_far = .false.
+       end if
+
+       if( n_trials > max_trials .or. &
+            (.not. too_close .and. .not. too_far)) exit
        
     end do
 
-    cannot_insert_site = too_close 
+    cannot_insert_site = too_close .or. too_far
 
   end subroutine mc_insert_site
+
+  subroutine check_if_far_from_planes(position, n_planes, planes, max_dist_to_planes, too_far_out)
+    implicit none
+    integer :: i, n_planes
+    real*8, allocatable :: planes(:), max_dist_to_planes(:)
+    real*8, intent(in) :: position(1:3)
+    real*8 :: closest_point_on_plane(1:3), normal(1:3), d
+    real*8 :: dist, maximum=10000000.d0
+    logical :: too_far
+    logical, intent(out) :: too_far_out
+
+    maximum=10000000.d0
+    too_far = .false.
+    check: do i = 1, n_planes
+
+       normal(1:3) = planes((i-1)*4 + 1 : i*4 - 1)
+
+       d = planes(i*4) - position(1)*normal(1) - position(2)*normal(2) - position(3)*normal(3)
+
+       ! closest_point_on_plane = normal * d / ( dot_product( normal, normal ) )
+
+       ! print *, "closest point on plane is ", closest_point_on_plane
+
+       ! dist = sqrt( dot_product( closest_point_on_plane, closest_point_on_plane ) )
+       ! print *, "distance1 is ", dist
+
+       dist = abs( d ) / sqrt( dot_product(normal, normal ) )
+       ! print *, "distance2 is ", dist
+
+       maximum = min( dist, maximum )
+
+       if( maximum > max_dist_to_planes(i) )then
+          too_far=.true.
+          exit check
+       end if
+    end do check
+
+    too_far_out = too_far
+  end subroutine check_if_far_from_planes
 
 
   subroutine check_if_atoms_too_close(position, ref_positions, n_sites, &
@@ -404,7 +458,8 @@ contains
        &, im_masses, a_box, b_box, c_box, indices, do_md, mc_relax,&
        & md_istep, mc_id, E_kinetic, instant_temp, t_beg,&
        & n_mc_swaps, mc_swaps, mc_swaps_id, species_types,&
-       & mc_hamiltonian, n_mc_relax_after, mc_relax_after, do_mc_relax, verb)
+       & mc_hamiltonian, n_mc_relax_after, mc_relax_after, do_mc_relax, verb,&
+       & mc_n_max_dist_planes, mc_max_dist_planes, mc_max_dist_to_planes)
 
     implicit none
 
@@ -416,7 +471,7 @@ contains
          & length_prev, l_prop, ranf, ranv(1:3), kB = 8.6173303d-5
     real*8, intent(inout) :: disp(1:3), mc_min_dist, d_disp,&
          & E_kinetic, instant_temp, t_beg
-    integer, intent(in) :: n_lp, verb, mc_max_insertion_trials
+    integer, intent(in) :: n_lp, verb, mc_max_insertion_trials, mc_n_max_dist_planes
     integer, intent(inout) :: n_sites, md_istep, n_mc_swaps, n_mc_relax_after, n_mc_mu, mc_mu_id
     integer, allocatable, intent(inout) :: species(:), mc_swaps_id(:), n_mc_species(:), mc_id(:)
     integer, allocatable, intent(in) ::  im_species(:)
@@ -437,6 +492,7 @@ contains
     logical, intent(inout) :: do_md, mc_relax, mc_hamiltonian, do_mc_relax
     logical :: cannot_insert_site
     real*8 :: gamma(1:6)
+    real*8, allocatable :: mc_max_dist_planes(:), mc_max_dist_to_planes(:)
     !    n_sites = size(positions, 2)
 
     ! Count the mc species (no multi species mc just yet)
@@ -610,7 +666,8 @@ contains
                & im_pos, idx, n_sites,&
                & a_box, b_box, c_box, indices, species,&
                & im_species, xyz_species,&
-               & im_xyz_species, mc_min_dist, cannot_insert_site, mc_max_insertion_trials )
+               & im_xyz_species, mc_min_dist, cannot_insert_site, mc_max_insertion_trials,&
+               & mc_n_max_dist_planes, mc_max_dist_planes, mc_max_dist_to_planes)
 
 
           if( cannot_insert_site )then

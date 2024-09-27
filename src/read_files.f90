@@ -834,6 +834,24 @@ end if
       else if(keyword=='mc_min_dist')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_min_dist
+      else if(keyword=='mc_n_max_dist_planes')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_n_max_dist_planes
+
+        ! Allocate 4 for a b c d, in ax + by + cz = d
+        if( params%mc_n_max_dist_planes > 0 )then
+           allocate( params%mc_max_dist_planes(4*params%mc_n_max_dist_planes) )
+           allocate( params%mc_max_dist_to_planes(params%mc_n_max_dist_planes) )
+        end if
+
+      else if(keyword=='mc_max_dist_planes')then
+         backspace(10)
+         read(10, *, iostat=iostatus) cjunk, cjunk, (params%mc_max_dist_planes(nw),nw=1,4*params%mc_n_max_dist_planes)
+
+      else if(keyword=='mc_max_dist_to_planes')then
+         backspace(10)
+         read(10, *, iostat=iostatus) cjunk, cjunk, (params%mc_max_dist_to_planes(nw),nw=1,params%mc_n_max_dist_planes)
+
       else if(keyword=='mc_max_insertion_trials')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%mc_max_insertion_trials
