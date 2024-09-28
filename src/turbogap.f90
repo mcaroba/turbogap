@@ -1613,21 +1613,9 @@ end do
             call mpi_reduce(this_local_virial_vdw_diag, local_virial_vdw_diag, 3*n_sites, &
                             MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
             if( rank == 0 )then
-!              this_mbd_ts_scaling = sum(local_virial_vdw_diag, 1) / &
-!                                    (sum(local_virial_vdw_diag_corr,1) + 1.d-5*sgn(sum(local_virial_vdw_diag_corr,1)))
               this_mbd_ts_scaling = smooth_ratio(sum(local_virial_vdw_diag, 1), sum(local_virial_vdw_diag_corr, 1), -1.d0, 2.d0)
             end if
             call mpi_bcast(this_mbd_ts_scaling, n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-if(rank == 0)then
-!write(*,*) sum(local_virial_vdw_diag, 1)
-!write(*,*) "WHAT"
-!write(*,*) sum(local_virial_vdw_diag_corr,1)
-!write(*,*) "WHAT"
-!write(*,*) sum(local_virial_vdw_diag, 1) / sum(local_virial_vdw_diag_corr,1)
-write(*,*) "WHAT"
-write(*,*) this_mbd_ts_scaling
-end if
-!stop
 #else
 !            mbd_ts_scaling = 1.d0 + (dabs(this_energies_vdw) - dabs(this_energies_vdw_corr)) &
 !                                  / (dabs(this_energies_vdw_corr) + 0.01d0)
@@ -1636,8 +1624,8 @@ end if
             energies_vdw_corr = energies_vdw - energies_vdw_corr
             forces_vdw_corr = forces_vdw - forces_vdw_corr
             virial_vdw_corr = virial_vdw - virial_vdw_corr
-            local_virial_vdw_diag_corr = local_virial_vdw_diag - local_virial_vdw_diag_corr
-            mbd_ts_scaling = abs(sum(local_virial_vdw_diag, 1)) / (abs(sum(local_virial_vdw_diag_corr,1)) + 1.d-9)
+!            local_virial_vdw_diag_corr = local_virial_vdw_diag - local_virial_vdw_diag_corr
+            mbd_ts_scaling = smooth_ratio(sum(local_virial_vdw_diag, 1), sum(local_virial_vdw_diag_corr, 1), -1.d0, 2.d0)
 #endif
             call get_ts_energy_and_forces( hirshfeld_v(i_beg:i_end), hirshfeld_v_cart_der(1:3, j_beg:j_end), &
                                            n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
