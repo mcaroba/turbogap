@@ -406,6 +406,8 @@ module misc
 
   function screened_one_over_x(val) result(res)
 
+    implicit none
+
     real*8, intent(in) :: val(:)
     real*8, dimension(1:size(val)) :: res
     real*8, parameter :: pi = 3.141592653589793d0
@@ -420,5 +422,57 @@ module misc
     end do
 
   end function
+
+
+
+
+  function sgn(val) result(res)
+
+    implicit none
+
+    real*8, intent(in) :: val(:)
+    real*8, dimension(1:size(val)) :: res
+    integer :: i
+
+    do i = 1, size(val)
+      if( val(i) >= 0.d0 )then
+        res(i) = 1.d0
+      else
+        res(i) = -1.d0
+      end if
+    end do
+
+  end function
+
+
+
+
+  function smooth_ratio(val1, val2, min_val, max_val) result(res)
+
+    implicit none
+
+    real*8, intent(in) :: val1(:), val2(:), min_val, max_val
+    real*8, dimension(1:size(val1)) :: res
+    real*8 :: r
+    integer :: i
+
+    do i = 1, size(val1)
+      if( abs(val2(i)) < 1.d-10 )then
+        res(i) = 0.d0
+      else
+        r = val1(i)/val2(i)
+        if( r < min_val )then
+          res(i) = min_val
+        else if( r > max_val )then
+       	  res(i) = max_val
+        else
+          res(i) = r
+        end if
+      end if
+    end do
+
+  end function
+
+
 
 end module
