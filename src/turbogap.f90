@@ -3982,7 +3982,7 @@ program turbogap
                       & params%species_types, params%mc_hamiltonian,&
                       & params%n_mc_relax_after, params&
                       &%mc_relax_after, do_mc_relax, params%verb, &
-                      params%mc_n_max_dist_planes, params%mc_max_dist_planes, params%mc_max_dist_to_planes)
+                      params%mc_n_planes, params%mc_planes, params%mc_max_dist_to_planes, params%mc_planes_restrict_to_polyhedron)
 
 
               rebuild_neighbors_list = .true.

@@ -171,10 +171,10 @@ module types
                do_pair_distribution = .false., do_structure_factor = .false., do_xrd = .false., do_nd = .false., &
                write_xrd = .false., write_nd = .false., structure_factor_matrix = .true., &
                structure_factor_matrix_forces = .true., write_exp = .true., valid_pdf = .false., valid_sf = .false., &
-               valid_xrd = .false., valid_nd = .false.
+               valid_xrd = .false., valid_nd = .false., mc_planes_restrict_to_polyhedron = .false.
 
-    integer :: mc_n_max_dist_planes = 0
-    real*8, allocatable :: mc_max_dist_to_planes(:), mc_max_dist_planes(:) ! Final index indexes the planes in first index
+    integer :: mc_n_planes = 0
+    real*8, allocatable :: mc_max_dist_to_planes(:), mc_planes(:) ! Final index indexes the planes in first index
 
     logical, allocatable :: write_local_properties(:)
     type(exp_data_container), allocatable :: exp_data(:)

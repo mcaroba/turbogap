@@ -269,7 +269,7 @@ contains
 
   subroutine mc_insert_site(mc_species, mc_id, positions, ref_positions, idx, n_sites, a_box, b_box, c_box, &
        indices, species, ref_species, xyz_species, ref_xyz_species, min_dist, cannot_insert_site, max_trials,&
-        mc_n_max_dist_planes, mc_max_dist_planes, mc_max_dist_to_planes )
+        mc_n_planes, mc_planes, mc_max_dist_to_planes, mc_planes_restrict_to_polyhedron )
 
     implicit none
 
@@ -284,11 +284,11 @@ contains
     character*8, intent(in) :: mc_species
     logical, intent(out) :: cannot_insert_site
     integer :: n_trials
-    logical :: too_close, too_far
+    logical :: too_close, too_far, mc_planes_restrict_to_polyhedron
 
 !    real*8 :: mc_max_dist
-    integer :: mc_n_max_dist_planes
-    real*8, allocatable :: mc_max_dist_planes(:), mc_max_dist_to_planes(:) ! Final index indexes the planes in first index
+    integer :: mc_n_planes
+    real*8, allocatable :: mc_planes(:), mc_max_dist_to_planes(:) ! Final index indexes the planes in first index
 
 
     xyz_species(1:n_sites-1)= ref_xyz_species(1:n_sites-1)
@@ -323,9 +323,14 @@ contains
        call check_if_atoms_too_close(positions(1:3,n_sites), ref_positions, n_sites-1, &
             a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), min_dist, too_close)
 
-       if( mc_n_max_dist_planes > 0 )then
-          call check_if_far_from_planes(positions(1:3,n_sites), mc_n_max_dist_planes, mc_max_dist_planes, &
-               mc_max_dist_to_planes, too_far)
+       if( mc_n_planes > 0 )then
+          if( mc_planes_restrict_to_polyhedron )then
+             call check_in_polyhedron(positions(1:3,n_sites), mc_n_planes, mc_planes, too_far)
+          else
+             call check_if_far_from_planes(positions(1:3,n_sites), mc_n_planes, mc_planes, &
+                  mc_max_dist_to_planes, too_far)
+          end if
+
        else
           too_far = .false.
        end if
@@ -338,6 +343,36 @@ contains
     cannot_insert_site = too_close .or. too_far
 
   end subroutine mc_insert_site
+
+  subroutine check_in_polyhedron(position, n_planes, planes, not_in_polyhedron)
+    implicit none
+    integer :: i, n_planes
+    real*8, allocatable :: planes(:)
+    real*8, intent(in) :: position(1:3)
+    real*8 :: closest_point_on_plane(1:3), normal(1:3), d
+    real*8 :: dist, maximum=10000000.d0
+    logical :: in_polyhedron
+    logical, intent(out) :: not_in_polyhedron
+
+    in_polyhedron = .true.
+    check: do i = 1, n_planes
+
+       normal(1:3) = planes((i-1)*4 + 1 : i*4 - 1)
+
+       d = -( planes(i*4) - position(1)*normal(1) - position(2)*normal(2) - position(3)*normal(3) )
+
+       !       print *, " d = ", d, d>0
+       if( d > 0 )then
+
+          in_polyhedron = .false.
+          exit check
+       end if
+    end do check
+
+    not_in_polyhedron = .not. in_polyhedron
+
+  end subroutine check_in_polyhedron
+
 
   subroutine check_if_far_from_planes(position, n_planes, planes, max_dist_to_planes, too_far_out)
     implicit none
@@ -459,7 +494,7 @@ contains
        & md_istep, mc_id, E_kinetic, instant_temp, t_beg,&
        & n_mc_swaps, mc_swaps, mc_swaps_id, species_types,&
        & mc_hamiltonian, n_mc_relax_after, mc_relax_after, do_mc_relax, verb,&
-       & mc_n_max_dist_planes, mc_max_dist_planes, mc_max_dist_to_planes)
+       & mc_n_planes, mc_planes, mc_max_dist_to_planes, mc_planes_restrict_to_polyhedron)
 
     implicit none
 
@@ -471,7 +506,7 @@ contains
          & length_prev, l_prop, ranf, ranv(1:3), kB = 8.6173303d-5
     real*8, intent(inout) :: disp(1:3), mc_min_dist, d_disp,&
          & E_kinetic, instant_temp, t_beg
-    integer, intent(in) :: n_lp, verb, mc_max_insertion_trials, mc_n_max_dist_planes
+    integer, intent(in) :: n_lp, verb, mc_max_insertion_trials, mc_n_planes
     integer, intent(inout) :: n_sites, md_istep, n_mc_swaps, n_mc_relax_after, n_mc_mu, mc_mu_id
     integer, allocatable, intent(inout) :: species(:), mc_swaps_id(:), n_mc_species(:), mc_id(:)
     integer, allocatable, intent(in) ::  im_species(:)
@@ -490,9 +525,9 @@ contains
     logical, allocatable:: fix_atom(:,:)
     logical, allocatable, intent(in) :: im_fix_atom(:,:)
     logical, intent(inout) :: do_md, mc_relax, mc_hamiltonian, do_mc_relax
-    logical :: cannot_insert_site
+    logical :: cannot_insert_site, mc_planes_restrict_to_polyhedron
     real*8 :: gamma(1:6)
-    real*8, allocatable :: mc_max_dist_planes(:), mc_max_dist_to_planes(:)
+    real*8, allocatable :: mc_planes(:), mc_max_dist_to_planes(:)
     !    n_sites = size(positions, 2)
 
     ! Count the mc species (no multi species mc just yet)
@@ -667,7 +702,7 @@ contains
                & a_box, b_box, c_box, indices, species,&
                & im_species, xyz_species,&
                & im_xyz_species, mc_min_dist, cannot_insert_site, mc_max_insertion_trials,&
-               & mc_n_max_dist_planes, mc_max_dist_planes, mc_max_dist_to_planes)
+               & mc_n_planes, mc_planes, mc_max_dist_to_planes, mc_planes_restrict_to_polyhedron)
 
 
           if( cannot_insert_site )then
