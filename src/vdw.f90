@@ -284,6 +284,8 @@ module vdw
     k = 0
     do i = 1, n_sites
       k = k + 1
+!      i2 = modulo(neighbors_list(k)-1, n_sites0) + 1
+!      c6_ii = neighbor_c6_ii(k) * mbd_ts_scaling(i2)
       c6_ii = neighbor_c6_ii(k)
       r0_i = r0_ii(k)
       alpha0_i = neighbor_alpha0(k)
@@ -292,6 +294,8 @@ module vdw
       r0_ij(k) = r0_i
       do j = 2, n_neigh(i)
         k = k + 1
+!        j2 = modulo(neighbors_list(k)-1, n_sites0) + 1
+!        c6_jj = neighbor_c6_ii(k) * mbd_ts_scaling(j2)
         c6_jj = neighbor_c6_ii(k)
         alpha0_j = neighbor_alpha0(k)
         if( c6_ii == 0.d0 .or. c6_jj == 0.d0 )then
@@ -316,16 +320,18 @@ module vdw
     k = 0
     do i = 1, n_sites
       k = k + 1
+      i2 = modulo(neighbors_list(k)-1, n_sites0) + 1
       do j = 2, n_neigh(i)
         k = k + 1
         if( rjs(k) > rcut_inner .and. rjs(k) < rcut )then
           exp_damp(k) = exp( -d*(rjs(k)/(sR*r0_ij(k)) - 1.d0) )
           f_damp(k) = 1.d0/( 1.d0 + exp_damp(k) )
           energies(i) = energies(i) + neighbor_c6_ij(k) * r6(k) * f_damp(k)
+!          energies(i) = energies(i) + neighbor_c6_ij(k) * r6(k) * f_damp(k) * mbd_ts_scaling(i2)
         end if         
       end do
     end do
-    energies = -0.5d0 * energies * mbd_ts_scaling
+    energies = -0.5d0 * energies
 
     !write(*,*) "TS energy", sum(energies)
 
@@ -379,15 +385,19 @@ module vdw
 !             SOAP neighbors
 ! MAY NEED TO CHANGE THIS TO ACCOUNT FOR MACHINE PRECISION
             if( .not. all(hirshfeld_v_cart_der(1:3, k) == 0.d0) )then
-              this_force(1:3) = hirshfeld_v_cart_der(1:3, k) * ( pref_force1(i) + pref_force2(i) ) * mbd_ts_scaling(i)
-              forces0(1:3, j2) = forces0(1:3, j2) + this_force(1:3)
+              this_force(1:3) = hirshfeld_v_cart_der(1:3, k) * ( pref_force1(i) + pref_force2(i) )
+!              forces0(1:3, j2) = forces0(1:3, j2) + this_force(1:3)
+              forces0(1:3, j2) = forces0(1:3, j2) + this_force(1:3) * mbd_ts_scaling(j2)
 !             Sign is plus because this force is acting on j2. Factor of one is because this is
 !             derived from a local energy
 !              virial = virial + dot_product(this_force(1:3), xyz(1:3,k))
               do k1 = 1, 3
-                local_virial_diag0(k1, j2) = local_virial_diag0(k1, j2) + this_force(k1)*xyz(k1, k)
+!                local_virial_diag0(k1, j2) = local_virial_diag0(k1, j2) + this_force(k1)*xyz(k1, k)
+                local_virial_diag0(k1, j2) = local_virial_diag0(k1, j2) + this_force(k1)*xyz(k1, k) * mbd_ts_scaling(j2)
                 do k2 =1, 3
-                  virial(k1, k2) = virial(k1, k2) + 0.5d0 * (this_force(k1)*xyz(k2,k) + this_force(k2)*xyz(k1,k))
+!                  virial(k1, k2) = virial(k1, k2) + 0.5d0 * (this_force(k1)*xyz(k2,k) + this_force(k2)*xyz(k1,k))
+                  virial(k1, k2) = virial(k1, k2) + 0.5d0 * (this_force(k1)*xyz(k2,k) + &
+                                   this_force(k2)*xyz(k1,k)) * mbd_ts_scaling(j2)
                 end do
               end do
             end if
@@ -396,20 +406,24 @@ module vdw
             else
               this_force(1:3) = neighbor_c6_ij(k) / rjs(k) * xyz(1:3,k) &
                                * f_damp(k) * ( -r6_der(k) - r6(k) * f_damp(k) * exp_damp(k) &
-                                               * d / sR / r0_ij(k) ) * mbd_ts_scaling(i)
+                                               * d / sR / r0_ij(k) )
             end if
 !           There is no net force acting on i2 from its periodic replicas...
             if( j2 /= i2 )then
-              forces0(1:3,i2) = forces0(1:3,i2) + this_force(1:3)
+!              forces0(1:3,i2) = forces0(1:3,i2) + this_force(1:3)
+              forces0(1:3,i2) = forces0(1:3,i2) + this_force(1:3) * mbd_ts_scaling(i2)
             end if
 !           ... but the periodic replicas DO contribute to the virial
 !           Sign is minus because this force is acting on i2. Factor of 1/2 is because this is
 !           derived from a pair energy
 !            virial = virial - 0.5d0 * dot_product(this_force(1:3), xyz(1:3,k))
             do k1 = 1, 3
-              local_virial_diag0(k1, j2) = local_virial_diag0(k1, j2) - 0.5d0 * this_force(k1)*xyz(k1, k)
+!              local_virial_diag0(k1, j2) = local_virial_diag0(k1, j2) - 0.5d0 * this_force(k1)*xyz(k1, k)
+              local_virial_diag0(k1, j2) = local_virial_diag0(k1, j2) - 0.5d0 * this_force(k1)*xyz(k1, k) * mbd_ts_scaling(j2)
               do k2 =1, 3
-                virial(k1, k2) = virial(k1, k2) - 0.25d0 * (this_force(k1)*xyz(k2,k) + this_force(k2)*xyz(k1,k))
+!                virial(k1, k2) = virial(k1, k2) - 0.25d0 * (this_force(k1)*xyz(k2,k) + this_force(k2)*xyz(k1,k))
+                virial(k1, k2) = virial(k1, k2) - 0.25d0 * (this_force(k1)*xyz(k2,k) + &
+                                 this_force(k2)*xyz(k1,k)) * mbd_ts_scaling(j2)
               end do
             end do
           end if

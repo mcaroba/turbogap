@@ -941,6 +941,7 @@ program turbogap
       energies_core_pot = 0.d0
       energies_vdw = 0.d0
 if( params%vdw_type == "ts+mbd" .and. modulo(md_istep, params%mbd_correction_freq) == 0 )then
+!if( params%vdw_type == "ts+mbd" .and. md_istep == 0 )then
 !      energies_vdw_corr = 0.d0
       mbd_ts_scaling = 1.d0
 end if
@@ -1354,10 +1355,13 @@ end if
         end if
 if( params%vdw_type == "ts+mbd" .and. modulo(md_istep, params%mbd_correction_freq) == 0 )then
         if( allocated(this_energies_vdw_corr) )deallocate( this_energies_vdw_corr, this_mbd_ts_scaling )
+!        if( allocated(this_energies_vdw_corr) )deallocate( this_energies_vdw_corr )
         allocate( this_energies_vdw_corr(1:n_sites) )
         this_energies_vdw_corr = 0.d0
+!if( md_istep == 0 )then
         allocate( this_mbd_ts_scaling(1:n_sites) )
         this_mbd_ts_scaling = 1.d0
+!end if
         if( params%do_forces )then
           if( allocated(this_forces_vdw_corr) )deallocate( this_forces_vdw_corr, this_local_virial_vdw_diag_corr )
           allocate( this_forces_vdw_corr(1:3,1:n_sites) )
@@ -1395,10 +1399,10 @@ end if
 #ifdef _MPIF90
                                         ! this_energies_vdw(i_beg:i_end), this_forces_vdw(1:3,i_beg:i_end), this_virial_vdw )
                                          this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw, &
-                                         this_local_virial_vdw_diag, this_mbd_ts_scaling(i_beg:i_end) )
+                                         this_local_virial_vdw_diag, this_mbd_ts_scaling )
 #else
                                          energies_vdw(i_beg:i_end), forces_vdw, virial_vdw, local_virial_vdw_diag, &
-                                         mbd_ts_scaling(i_beg:i_end) )
+                                         mbd_ts_scaling )
 #endif
           if( .not. (params%vdw_type == "ts+mbd" .and. modulo(md_istep, params%mbd_correction_freq) == 0) )then
             deallocate(v_neigh_vdw)
@@ -1604,16 +1608,25 @@ end do
 !                                  / (dabs(this_energies_vdw_corr) + 0.01d0)
 !            this_mbd_ts_scaling = 1.d0
 !            this_energies_vdw_corr(i_beg:i_end) = this_energies_vdw(i_beg:i_end) - this_energies_vdw_corr(i_beg:i_end)
-            this_energies_vdw_corr = this_energies_vdw - this_energies_vdw_corr
-            this_forces_vdw_corr = this_forces_vdw - this_forces_vdw_corr
-            this_virial_vdw_corr = this_virial_vdw - this_virial_vdw_corr
+!            this_energies_vdw_corr = this_energies_vdw - this_energies_vdw_corr
+            this_energies_vdw_corr = this_energies_vdw ! we do this when scaling is used in TS because TS is run twice
+!            this_forces_vdw_corr = this_forces_vdw - this_forces_vdw_corr
+!            this_virial_vdw_corr = this_virial_vdw - this_virial_vdw_corr
 !            this_local_virial_vdw_diag_corr = this_local_virial_vdw_diag - this_local_virial_vdw_diag_corr
             call mpi_reduce(this_local_virial_vdw_diag_corr, local_virial_vdw_diag_corr, 3*n_sites, &
                             MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
             call mpi_reduce(this_local_virial_vdw_diag, local_virial_vdw_diag, 3*n_sites, &
                             MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
             if( rank == 0 )then
-              this_mbd_ts_scaling = smooth_ratio(sum(local_virial_vdw_diag, 1), sum(local_virial_vdw_diag_corr, 1), -1.d0, 2.d0)
+!              this_mbd_ts_scaling = smooth_ratio(sum(local_virial_vdw_diag, 1), sum(local_virial_vdw_diag_corr, 1), -4.d0, 6.d0)
+              this_mbd_ts_scaling = this_mbd_ts_scaling + 0.1d0 * ( &
+                                      smooth_ratio(sum(local_virial_vdw_diag, 1), sum(local_virial_vdw_diag_corr, 1), -4.d0, 6.d0) &
+                                      - 1.d0 )
+!              this_mbd_ts_scaling = clip(this_mbd_ts_scaling, 0.1d0, 1.9d0)
+!write(*,*) "mbd_ts_scaling:", this_mbd_ts_scaling
+write(*,*)
+write(*,*) "Tr(virial):", md_istep, sum(local_virial_vdw_diag), sum(local_virial_vdw_diag_corr), &
+sum(this_mbd_ts_scaling*sum(local_virial_vdw_diag_corr,1))
             end if
             call mpi_bcast(this_mbd_ts_scaling, n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
 #else
@@ -1621,11 +1634,16 @@ end do
 !                                  / (dabs(this_energies_vdw_corr) + 0.01d0)
 !            mbd_ts_scaling = 1.d0
 !            energies_vdw_corr(i_beg:i_end) = energies_vdw(i_beg:i_end) - energies_vdw_corr(i_beg:i_end)
-            energies_vdw_corr = energies_vdw - energies_vdw_corr
-            forces_vdw_corr = forces_vdw - forces_vdw_corr
-            virial_vdw_corr = virial_vdw - virial_vdw_corr
+!            energies_vdw_corr = energies_vdw - energies_vdw_corr
+            energies_vdw_corr = energies_vdw ! we do this when scaling is used in TS because TS is run twice
+!            forces_vdw_corr = forces_vdw - forces_vdw_corr
+!            virial_vdw_corr = virial_vdw - virial_vdw_corr
 !            local_virial_vdw_diag_corr = local_virial_vdw_diag - local_virial_vdw_diag_corr
-            mbd_ts_scaling = smooth_ratio(sum(local_virial_vdw_diag, 1), sum(local_virial_vdw_diag_corr, 1), -1.d0, 2.d0)
+!            mbd_ts_scaling = smooth_ratio(sum(local_virial_vdw_diag, 1), sum(local_virial_vdw_diag_corr, 1), -4.d0, 6.d0)
+            mbd_ts_scaling = mbd_ts_scaling + 0.1d0 * ( &
+                               smooth_ratio(sum(local_virial_vdw_diag, 1), sum(local_virial_vdw_diag_corr, 1), -4.d0, 6.d0) &
+                               - 1.d0 )
+!            mbd_ts_scaling = clip(mbd_ts_scaling, 0.1d0, 3.d0)
 #endif
             call get_ts_energy_and_forces( hirshfeld_v(i_beg:i_end), hirshfeld_v_cart_der(1:3, j_beg:j_end), &
                                            n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
@@ -1638,24 +1656,31 @@ end do
 #ifdef _MPIF90
                                           ! this_energies_vdw(i_beg:i_end), this_forces_vdw(1:3,i_beg:i_end), this_virial_vdw )
                                            this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw, &
-                                           this_local_virial_vdw_diag, this_mbd_ts_scaling(i_beg:i_end) )
+                                           this_local_virial_vdw_diag, this_mbd_ts_scaling )
 #else
                                            energies_vdw(i_beg:i_end), forces_vdw, virial_vdw, local_virial_vdw_diag, &
-                                           mbd_ts_scaling(i_beg:i_end) )
+                                           mbd_ts_scaling )
 #endif
-            deallocate(v_neigh_vdw)
+#ifdef _MPIF90
+            this_energies_vdw_corr = -(this_energies_vdw - this_energies_vdw_corr) ! for scaling with TS
+            this_energies_vdw = this_energies_vdw + this_energies_vdw_corr
+#else
+            energies_vdw_corr = -(energies_vdw - energies_vdw_corr) ! for scaling with TS
+            energies_vdw = energies_vdw + energies_vdw_corr
+#endif
+           deallocate(v_neigh_vdw)
           else
 !         This applies the correction
 #ifdef _MPIF90
 !            this_energies_vdw(i_beg:i_end) = this_energies_vdw(i_beg:i_end) + this_energies_vdw_corr(i_beg:i_end)
-!            this_energies_vdw = this_energies_vdw + this_energies_vdw_corr
+            this_energies_vdw = this_energies_vdw + this_energies_vdw_corr
 !            this_forces_vdw = this_forces_vdw + this_forces_vdw_corr
 !            this_virial_vdw = this_virial_vdw + this_virial_vdw_corr
 !            this_local_virial_vdw_diag = this_local_virial_vdw_diag + this_local_virial_vdw_diag_corr
 !            this_forces_vdw = this_forces_vdw - this_local_virial_vdw_diag_corr * S_xyz_inv
 #else
 !            energies_vdw(i_beg:i_end) = energies_vdw(i_beg:i_end) + energies_vdw_corr(i_beg:i_end)
-!            energies_vdw = energies_vdw + energies_vdw_corr
+            energies_vdw = energies_vdw + energies_vdw_corr
 !            forces_vdw = forces_vdw + forces_vdw_corr
 !            virial_vdw = virial_vdw + virial_vdw_corr
 !            local_virial_trace_vdw = local_virial_trace_vdw + local_virial_vdw_diag_corr

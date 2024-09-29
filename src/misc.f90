@@ -475,4 +475,27 @@ module misc
 
 
 
+
+  function clip(val, min_val, max_val) result(res)
+
+    implicit none
+
+    real*8, intent(in) :: val(:), min_val, max_val
+    real*8, dimension(1:size(val)) :: res
+    integer :: i
+
+    do i = 1, size(val)
+      if( val(i) < min_val )then
+        res(i) = min_val
+      else if( val(i) > max_val )then
+        res(i) = max_val
+      else
+        res(i) = val(i)
+      end if
+    end do
+
+  end function
+
+
+
 end module
