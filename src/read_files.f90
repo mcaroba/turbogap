@@ -617,7 +617,7 @@ end if
     integer :: iostatus, i, j, i2,  nw, iostatus2
     character*1024 :: long_line
     character*128, allocatable :: long_line_items(:)
-    character*64 :: keyword, cjunk
+    character*64 :: keyword, cjunk, keyword_notrim
     character*32 :: implemented_thermostats(1:3)
     character*32 :: implemented_barostats(1:2)
     character*32 :: implemented_mc_types(1:8)
@@ -695,7 +695,12 @@ end if
       read(10, *, iostat=iostatus) keyword
       call upper_to_lower_case(keyword)
       keyword = trim(keyword)
-      i2 = len(trim(keyword))
+      keyword_notrim = keyword
+      keyword_notrim = adjustr(keyword_notrim)
+!      i2 = len(trim(keyword))
+      i2 = len(keyword_notrim)
+write(*,*) ":", keyword, ":"
+write(*,*) ":", keyword_notrim, ":"
       if(iostatus/=0)then
         exit
       end if
@@ -1294,44 +1299,44 @@ end if
          read(10, *, iostat=iostatus) cjunk, cjunk, &
               (params%exp_data(nw)%n_samples, nw=1, params%n_exp)
 
-      else if (keyword(i2-4:i2) == "range" .or.  keyword(i2-8:i2) ==&
-           & "file_data" .or. keyword(i2-8:i2) == "n_samples"  )then
-         backspace(10)
-         ! Check if experimental range or data files are specified
-         do nw = 1, params%n_exp
-            ! See if the keyword matches any exp observables
-            if ( keyword == trim(params%exp_data(nw)%label)//"_range")then
-               ! Expect two values which are in order of lower higher for the range to do the prediction
-               params%exp_data(nw)%user_range = .true.
-               read(10, *, iostat=iostatus) cjunk, cjunk, params%exp_data(nw)%range_min, params%exp_data(nw)%range_max
-            elseif ( keyword == trim(params%exp_data(nw)%label)//"_file_data")then
+      else if (keyword_notrim(i2-4:i2) == "range" .or.  keyword_notrim(i2-8:i2) ==&
+            & "file_data" .or. keyword_notrim(i2-8:i2) == "n_samples"  )then
+           backspace(10)
+           ! Check if experimental range or data files are specified
+           do nw = 1, params%n_exp
+              ! See if the keyword matches any exp observables
+              if ( keyword == trim(params%exp_data(nw)%label)//"_range")then
+                 ! Expect two values which are in order of lower higher for the range to do the prediction
+                 params%exp_data(nw)%user_range = .true.
+                 read(10, *, iostat=iostatus) cjunk, cjunk, params%exp_data(nw)%range_min, params%exp_data(nw)%range_max
+              elseif ( keyword == trim(params%exp_data(nw)%label)//"_file_data")then
 
-               read(10, *, iostat=iostatus) cjunk, cjunk, params%exp_data(nw)%file_data
-               if ( trim( params%exp_data(nw)%file_data ) /= "none" )then
+                 read(10, *, iostat=iostatus) cjunk, cjunk, params%exp_data(nw)%file_data
+                 if ( trim( params%exp_data(nw)%file_data ) /= "none" )then
 
-                  call read_exp_data(&
-                       params%exp_data(nw)%file_data,&
-                       params%exp_data(nw)%n_data,&
-                       params%exp_data(nw)%data)
+                    call read_exp_data(&
+                         params%exp_data(nw)%file_data,&
+                         params%exp_data(nw)%n_data,&
+                         params%exp_data(nw)%data)
 
-                  params%exp_data(nw)%wrote_exp = .false.
-                  params%exp_data(nw)%compute_exp = .true.
-                  params%exp_data(nw)%compute_similarity = .true.
-                  params%exp_data(nw)%range_min = params%exp_data(nw)%data(1,1)
-                  params%exp_data(nw)%range_max = params&
-                       &%exp_data(nw)%data(1,params%exp_data(nw)%n_data)
-               elseif ( trim( params%exp_data(nw)%file_data ) == "none" )then
-                  ! Make sure that no type of exp data is written
-                  params%exp_data(nw)%compute_exp = .false.
-                  params%exp_data(nw)%compute_similarity = .false.
-                  ! If the compute exp is false, then a user range must be specified
-                  params%exp_data(nw)%wrote_exp = .true.
+                    params%exp_data(nw)%wrote_exp = .false.
+                    params%exp_data(nw)%compute_exp = .true.
+                    params%exp_data(nw)%compute_similarity = .true.
+                    params%exp_data(nw)%range_min = params%exp_data(nw)%data(1,1)
+                    params%exp_data(nw)%range_max = params&
+                         &%exp_data(nw)%data(1,params%exp_data(nw)%n_data)
+                 elseif ( trim( params%exp_data(nw)%file_data ) == "none" )then
+                    ! Make sure that no type of exp data is written
+                    params%exp_data(nw)%compute_exp = .false.
+                    params%exp_data(nw)%compute_similarity = .false.
+                    ! If the compute exp is false, then a user range must be specified
+                    params%exp_data(nw)%wrote_exp = .true.
 
-               end if
-            elseif ( keyword == trim(params%exp_data(nw)%label)//"_n_samples")then
-               read(10, *, iostat=iostatus) cjunk, cjunk, params%exp_data(nw)%n_samples
-            end if
-         end do
+                 end if
+              elseif ( keyword == trim(params%exp_data(nw)%label)//"_n_samples")then
+                 read(10, *, iostat=iostatus) cjunk, cjunk, params%exp_data(nw)%n_samples
+              end if
+           end do
 
       else if(keyword=='write_velocities')then
         backspace(10)
@@ -1426,9 +1431,6 @@ end if
       else if(keyword=='radii')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%radii(1:n_species)
-
-!       We convert the masses in amu to eV*fs^2/A^2
-
       else if(keyword=='e0')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%e0(1:n_species)
