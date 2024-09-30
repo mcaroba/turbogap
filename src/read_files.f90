@@ -699,8 +699,6 @@ end if
       keyword_notrim = adjustr(keyword_notrim)
 !      i2 = len(trim(keyword))
       i2 = len(keyword_notrim)
-write(*,*) ":", keyword, ":"
-write(*,*) ":", keyword_notrim, ":"
       if(iostatus/=0)then
         exit
       end if
