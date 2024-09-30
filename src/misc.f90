@@ -498,4 +498,23 @@ module misc
 
 
 
+
+  function poly_cut(x, x_min, x_max) result(res)
+
+    implicit none
+
+    real*8, intent(in) :: x, x_min, x_max
+    real*8 :: res
+
+    if( x < x_min )then
+      res = 0.d0
+    else if( x > x_max )then
+      res = 1.d0
+    else
+      res = 0.5d0 + 1.5d0*(x-(x_max+x_min)/2.d0)/(x_max-x_min) - 2.d0*(x-(x_max+x_min)/2.d0)**3/(x_max-x_min)**3
+    end if
+
+  end function
+
+
 end module
