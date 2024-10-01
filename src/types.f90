@@ -86,7 +86,7 @@ module types
               core_pot_cutoff = 1.d10, core_pot_buffer = 1.d0, tau_dt = 100.d0, target_pos_step, &
               gamma0 = 0.01d0, max_opt_step = 0.1d0, vdw_scs_rcut = 4.5d0, vdw_mbd_rcut = 5.d0, vdw_mbd_rcut2 = 5.d0, &
               vdw_2b_rcut = 10.d0, vdw_2b_rcut2 = 10.d0, vdw_omega_ref = 4.d0, vdw_loc_rcut = 4.5d0, &
-              vdw_d_mbd = 6.d0, vdw_sr_mbd = 0.83d0
+              vdw_d_mbd = 6.d0, vdw_sr_mbd = 0.83d0, poly_cut_xmin = 3.d0, poly_cut_xmax = 10.d0
     integer :: md_nsteps = 1, write_xyz = 0, write_thermo = 1, which_atom = 0, vdw_mbd_nfreq = 12, vdw_mbd_norder = 4, &
                mbd_correction_freq = 10
     character*1024 :: atoms_file

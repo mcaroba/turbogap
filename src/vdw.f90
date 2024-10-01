@@ -149,6 +149,7 @@ module vdw
                                        n_neigh, neighbors_list, neighbor_species, &
                                        rcut, buffer, rcut_inner, buffer_inner, rjs, xyz, hirshfeld_v_neigh, &
                                        sR, d, c6_ref, r0_ref, alpha0_ref, c6_scs, r0_scs, alpha0_scs, do_forces, &
+                                       x_min, x_max, &
                                        energies, forces0, virial, local_virial_diag0, mbd_ts_scaling )
 
     implicit none
@@ -156,7 +157,8 @@ module vdw
 !   Input variables
     real*8, intent(in) :: hirshfeld_v(:), hirshfeld_v_cart_der(:,:), rcut, buffer, rcut_inner, buffer_inner, &
                           rjs(:), xyz(:,:), hirshfeld_v_neigh(:), sR, d, c6_ref(:), r0_ref(:), &
-                          alpha0_ref(:), c6_scs(:), r0_scs(:), alpha0_scs(:), mbd_ts_scaling(:)
+                          alpha0_ref(:), c6_scs(:), r0_scs(:), alpha0_scs(:), mbd_ts_scaling(:), &
+                          x_min, x_max
     integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:)
     logical, intent(in) :: do_forces
 !   Output variables
@@ -394,7 +396,8 @@ module vdw
 !             derived from a local energy
 !              virial = virial + dot_product(this_force(1:3), xyz(1:3,k))
               do k1 = 1, 3
-                local_virial_diag0(k1, j2) = local_virial_diag0(k1, j2) + this_force(k1)*xyz(k1, k)
+                local_virial_diag0(k1, j2) = local_virial_diag0(k1, j2) + this_force(k1)*xyz(k1, k)*&
+                                             poly_cut(rjs(k),x_min,x_max)
 !                local_virial_diag0(k1, j2) = local_virial_diag0(k1, j2) + this_force(k1)*xyz(k1, k) * mbd_ts_scaling(j2)
                 do k2 =1, 3
                   virial(k1, k2) = virial(k1, k2) + 0.5d0 * (this_force(k1)*xyz(k2,k) + this_force(k2)*xyz(k1,k))
@@ -420,7 +423,8 @@ module vdw
 !           derived from a pair energy
 !            virial = virial - 0.5d0 * dot_product(this_force(1:3), xyz(1:3,k))
             do k1 = 1, 3
-              local_virial_diag0(k1, j2) = local_virial_diag0(k1, j2) - 0.5d0 * this_force(k1)*xyz(k1, k)
+              local_virial_diag0(k1, j2) = local_virial_diag0(k1, j2) - 0.5d0 * this_force(k1)*xyz(k1, k)*&
+                                           poly_cut(rjs(k),x_min,x_max)
 !              local_virial_diag0(k1, j2) = local_virial_diag0(k1, j2) - 0.5d0 * this_force(k1)*xyz(k1, k) * mbd_ts_scaling(j2)
               do k2 =1, 3
                 virial(k1, k2) = virial(k1, k2) - 0.25d0 * (this_force(k1)*xyz(k2,k) + this_force(k2)*xyz(k1,k))
@@ -1062,6 +1066,7 @@ module vdw
                                        hirshfeld_v_neigh, sR, d, c6_ref, r0_ref, alpha0_ref, do_derivatives, &
                                        do_hirshfeld_gradients, polynomial_expansion, do_nnls, n_freq, n_order, &
                                        cent_appr, vdw_omega_ref, central_pol, central_omega, include_2b, &
+                                       x_min, x_max, &
                                        energies, forces0, virial, local_virial_diag0 )
 
     implicit none
@@ -1070,7 +1075,8 @@ module vdw
     real*8, intent(in) :: rcut, r_buffer, &
                           rjs(:), xyz(:,:), sR, d, c6_ref(:), r0_ref(:), rcut_loc, rcut_mbd, rcut_mbd2, &
                           hirshfeld_v_cart_der_ji(:,:), &
-                          alpha0_ref(:), vdw_omega_ref !, hirshfeld_v(:), hirshfeld_v_neigh(:) !NOTE: uncomment this in final implementation
+                          alpha0_ref(:), vdw_omega_ref, & !, hirshfeld_v(:), hirshfeld_v_neigh(:) !NOTE: uncomment this in final implementation
+                          x_min, x_max
     integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:), n_freq, n_order
     logical, intent(in) :: do_derivatives, do_hirshfeld_gradients, polynomial_expansion, do_nnls, include_2b, cent_appr
 !   Output variables
@@ -4656,7 +4662,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                                                    f_damp_SCS(k2) * T_mbd(k3)  &
                                                         * T_LR_mult_ij(k2)
                               virial_integrand_2b(:,i_om) = virial_integrand_2b(:,i_om) - 0.5d0 * xyz_i * dval(k4,i_om) * &
-                                                            val_sym(k4,i_om)
+                                                            val_sym(k4,i_om) * poly_cut(rjs_i*Bohr,x_min,x_max)
                               !val_sym_test(k4,i_om) = sqrt(a_mbd_i/(1.d0+(omegas_mbd(i_om)/o_mbd_i)**2)) * &
                               !                     sqrt(a_mbd_j/(1.d0+(omegas_mbd(i_om)/o_mbd_j)**2)) * &
                               !                        f_damp_SCS(k2) * T_mbd(k3)  &
@@ -4692,7 +4698,8 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                               do i_om = 1, n_freq
                                 dval(k4,i_om) = dval(k4-1,i_om)
                                 virial_integrand_2b(:,i_om) = virial_integrand_2b(:,i_om) - 0.5d0 * xyz_0_mbd(:,k2+1) * &
-                                                              dval(k4,i_om) * val_sym(k4,i_om)
+                                                              dval(k4,i_om) * val_sym(k4,i_om) * &
+                                                              poly_cut(rjs_0_mbd(k2+1)*Bohr,x_min,x_max)
                                 !val_sym_test(k4,i_om) = val_sym_test(k4-1,i_om)
                               end do
                               end if
@@ -5969,7 +5976,8 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                         f_ki = f_ki + dot_product(G_mat(3*(p-1)+c1,:,i2), pol_grad(:,3*(q-1)+c1,i2))
                       end do
                       do c1 = 1, 3
-                        virial_integrand(c1,i2) = virial_integrand(c1,i2) - 0.5d0 * xyz_0_mbd(c1,k3+1) * f_ki
+                        virial_integrand(c1,i2) = virial_integrand(c1,i2) - 0.5d0 * xyz_0_mbd(c1,k3+1) * f_ki * &
+                                                  poly_cut(rjs_0_mbd(k3+1)*Bohr,x_min,x_max)
                       end do
                     !else
                     !  write(*,*) "G_mat"
@@ -5998,7 +6006,8 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                             f_ki = f_ki + dot_product(pol_sym(3*(p-1)+c1,:,i2),G_sym(:,3*(p-1)+c1,i2))
                           end do
                           do c1 = 1, 3
-                            virial_integrand(c1,i2) = virial_integrand(c1,i2) - 0.5d0 * xyz_0_mbd(c1,k3+1) * f_ki
+                            virial_integrand(c1,i2) = virial_integrand(c1,i2) - 0.5d0 * xyz_0_mbd(c1,k3+1) * f_ki * &
+                                                      poly_cut(rjs_0_mbd(k3+1)*Bohr,x_min,x_max)
                           end do
                         !else
                         !  write(*,*) "G_mat"

@@ -815,6 +815,12 @@ end if
       else if( keyword == "vdw_omega_ref" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_omega_ref
+      else if( keyword == "poly_cut_xmin" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%poly_cut_xmin
+      else if( keyword == "poly_cut_xmax" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%poly_cut_xmax
       else if( keyword == "core_pot_cutoff" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%core_pot_cutoff
