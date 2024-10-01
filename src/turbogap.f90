@@ -110,7 +110,7 @@ program turbogap
        & 0.d0, time_mpi_ef(1:3) = 0.d0, time_md(3) = 0.d0, time_batch_alloc(3) = 0.d0, time_batch_pdf(3) = 0.d0, time_batch_xrd(3) = 0.d0,&
        & instant_pressure_tensor(1:3, 1:3), time_step, md_time,&
        & solo_time_soap=0.d0, soap_time_soap(3)=0.d0, time_get_soap=0.d0, t1, &
-       & instant_pressure_prev, wfac, wfac_temp, energy_exp, time_exp_batched(1:3)
+       & instant_pressure_prev, wfac, wfac_temp, energy_exp, time_exp_batched(1:3), time_create_streams(1:3)=0.d0
   integer, allocatable :: displs(:), displs2(:), counts(:), counts2(:), in_to_out_pairs(:), in_to_out_site(:), mc_id(:)
   integer :: update_bar, n_sparse, idx, gd_istep = 0, nprop, n_pairs_temp, n_sites_temp
   logical, allocatable :: do_list(:), has_local_properties_mpi(:), fix_atom(:,:)
@@ -215,7 +215,7 @@ program turbogap
   !--- GPU VARIABLES FOR ALLOCATION ---!
 
   type(c_ptr) :: cublas_handle, gpu_stream
-  integer :: n_omp, omp_task, omp_n_sites
+  integer :: n_omp, omp_task, omp_n_sites, n_omp_temp
   integer, allocatable :: i_beg_omp(:), i_end_omp(:), j_beg_omp(:), j_end_omp(:)
 !**************************************************************************
   integer :: sp1, sp2, n_dim_partial
@@ -264,6 +264,11 @@ program turbogap
   type( gpu_neigh_storage_type ), allocatable :: gpu_neigh(:)  
   integer :: n_dim_idx
   real*8 :: gpu_memory_usage = 0.d0
+
+  ! integer, parameter :: nstr=7
+  ! type(c_ptr) :: virial_d(nstr),tmp_forces0_d(nstr),tmp_energies0_d(nstr)
+  type(c_ptr), allocatable :: cublas_handles(:), gpu_streams(:)
+
   
   !**************************************************************************
 
@@ -272,6 +277,7 @@ program turbogap
 ! call random_number(AA)
 ! call random_number(BB)
 
+  
 !**************************************************************************
 ! Start recording the time
 
@@ -312,12 +318,77 @@ program turbogap
   !**************************************************************************
 
 
-  !--- Creating GPU communication ---!
 
-  call gpu_set_device(rank) ! This works when each GPU has only 1 visible device. This is done in the slurm submission script
+  ! !---------------------------------------------------------------------!
+  ! !------   DELETE THIS CODE THIS IS JUST FOR CHECKIGN CUDA-GDB   ------!
+  ! !---------------------------------------------------------------------!
+  
+  ! if ( rank == 0 ) then
+  !    i = 0
+  !    print *, "rank ", rank, ": pid ", getpid(), " on %s ready for attach\n.";
+  !    do while (0 == i)
+  !       call sleep(5)
+  !    end do
+  ! end if
+  
+    !################################################!
+    !###---   OPENMP PARALLELIZATION STARTUP   ---###!
+    !################################################!
 
-  call create_cublas_handle(cublas_handle, gpu_stream)
-  !call create_cublas_handle(cublas_handle)
+    n_omp = 1
+    omp_task = 0
+
+!    !$omp parallel private(omp_task)
+!    !$ omp_task = omp_get_thread_num()
+!    !$omp end parallel
+
+    !--- Creating GPU communication ---!
+    call get_time( time_create_streams( 1 ) )
+    
+    call gpu_set_device(rank) ! This works when each GPU has only 1 visible device. This is done in the slurm submission script
+    
+    call create_cublas_handle(cublas_handle, gpu_stream)
+
+    ! Creating streams for gpu batches
+    if( params%gpu_batched )then
+
+       ! > Set the number of threads equal to the number of batches if
+       !   there are more omp tasks requested
+       
+#ifdef _OPENMP
+       n_omp = omp_get_max_threads()
+       print *, rank, " --  omp max threads first = ", n_omp_temp
+       
+       
+       !$omp parallel DEFAULT(SHARED)
+       n_omp_temp = omp_get_num_threads()
+       print *, rank, " --  omp get num threads = ", n_omp_temp
+
+       if( n_omp_temp > params%gpu_n_batches ) n_omp_temp = params%gpu_n_batches
+
+       call omp_set_num_threads( n_omp_temp )
+
+       !$omp end parallel
+
+#endif
+       n_omp = omp_get_max_threads()
+       
+       print *, rank, " rank n_omp_temp, n_omp", n_omp_temp, n_omp       
+       print *, rank, " --  omp num threads out = ", n_omp       
+       allocate( cublas_handles( 1:n_omp ) )
+       allocate( gpu_streams( 1:n_omp ) )  
+
+       do omp_task = 1, n_omp
+          call create_cublas_handle(cublas_handles( omp_task ), gpu_streams( omp_task ))
+       end do
+       print *, " <<<< OPENMP >>>> -- Rank ", rank, " Created n_omp = ", n_omp, " streams for batched gpu calculation "
+    end if
+
+    call get_time( time_create_streams( 2 ) )
+    time_create_streams(3) = time_create_streams(2) - time_create_streams(1)
+    print *, " "
+    print *, " Time to create streams = ", time_create_streams(3), " Seconds"
+    !call create_cublas_handle(cublas_handle)
 
 
 ! write(*,*) "Starting dummy kernel"
@@ -1513,83 +1584,6 @@ program turbogap
 #endif
 
 
-    ! ### --- OPENMP Parallelization --- ###
-
-    ! Now we split the neighbours that each omp_task will run
-
-    ! > We know the total number of atom_pairs that each rank has,
-    ! > so lets get the number of neighbours for the number of atoms
-    ! > in the task
-
-    ! We need to loop over the neighbours with the k index
-    ! We want the total number of neighbours and the split the neighbour indices accordingly
-    ! Set a pseudo number of omp tasks
-    ! > n_omp: The number of omp tasks
-
-!     n_omp = 1
-!     omp_task = 0
-
-! !$omp parallel
-! !$ n_omp = omp_get_num_threads()
-! !$omp end parallel
-
-!     allocate(i_beg_omp(1:n_omp))
-!     allocate(i_end_omp(1:n_omp))
-!     allocate(j_beg_omp(1:n_omp))
-!     allocate(j_end_omp(1:n_omp))
-
-!     omp_n_sites = i_end - i_beg + 1
-
-!     i_beg_omp = i_beg
-!     i_end_omp = i_end
-
-!     j_beg_omp = 1
-!     j_end_omp = n_atom_pairs_by_rank(rank+1)
-
-! !$omp parallel private(omp_task, k)
-! !$ omp_task = omp_get_thread_num()
-
-!     write(*,*)
-! !    print *, "Allocated omp index arrays"
-!     if( omp_task < mod( omp_n_sites, n_omp ) )then
-!        i_beg_omp(omp_task+1) = i_beg + omp_task*(omp_n_sites / n_omp + 1)
-!     else
-!        i_beg_omp(omp_task+1) = i_beg + mod(omp_n_sites, n_omp)*(omp_n_sites / n_omp + 1) + (omp_task - mod( omp_n_sites, n_omp))*(omp_n_sites / n_omp)
-!     end if
-
-!     if( omp_task < mod( omp_n_sites, n_omp ) )then
-!        i_end_omp(omp_task+1) = i_beg + (omp_task+1)*(omp_n_sites / n_omp + 1) - 1
-!     else
-!        i_end_omp(omp_task+1) = i_beg_omp(omp_task+1) + omp_n_sites/n_omp - 1
-!     end if
-
-!     ! print *,"omp_task = ", omp_task,  " i_beg_omp = ", i_beg_omp(omp_task+1)
-!     ! print *,"omp_task = ", omp_task,  " i_end_omp = ", i_end_omp(omp_task+1)
-
-
-! ! --- Allocating the neighbors indices for reach openmp task
-
-
-!     k = 0
-!     do i = i_beg, i_end
-!        if( i == i_beg_omp(omp_task+1) ) then
-!           j_beg_omp(omp_task+1) = k+1
-!        end if
-
-!        k = k + n_neigh(i)
-
-!        if( i == i_end_omp(omp_task+1)) then
-!           j_end_omp(omp_task+1) = k
-!        end if
-
-!     end do
-
-
-    ! print *, "omp_task = ", omp_task, " j_beg_omp = ", j_beg_omp(omp_task+1)
-    ! print *, "omp_task = ", omp_task, " j_end_omp = ", j_end_omp(omp_task+1)
-    ! print *, "omp_task = ", omp_task, " k         = ", k
-    ! print *, "omp_task = ", omp_task, " n_at_per_r= ", n_atom_pairs_by_rank(rank+1)
-!$omp end parallel
 
 
 !   Compute the volume of the "primitive" unit cell
@@ -2674,8 +2668,26 @@ program turbogap
            call gpu_malloc_all(dV_d,      st_x_d, gpu_stream)             
            call cpy_htod( c_loc( dV ), dV_d, st_x_d, gpu_stream )
 
+
+           ! > We have n_omp streams created. In general the number
+           !   of batches will likely be greater than the number of
+           !   omp tasks, but include num_threads(n_omp) to make sure we just use the right number of threads.
+           
+
+           ! ! $OMP SHARED(cublas_handles, gpu_streams, n_neigh, species, neighbor_species, neighbors_list, rjs, xyz, &
+           ! ! $OMP xpdf_d, dV_d, dV, n_atoms_of_species, n_species_actual, n_sites, v_uc, gpu_batch_storage, gpu_exp)
+
+
+           !$OMP PARALLEL DO num_threads(n_omp) DEFAULT(SHARED) &
+           !$OMP PRIVATE(i,  omp_task, this_i_beg, this_i_end, this_j_beg, this_j_end, n_sites_temp, n_pairs_temp) 
            
            do i = 1, size( i_beg_list )
+
+              n_omp_temp = omp_get_thread_num()
+!              print *, " - pdf thread num ", n_omp_temp, " / ", n_omp
+              ! > In sequential operation, we just want to use the one stream, and only 1 will be created
+              omp_task = mod( i-1, n_omp) + 1
+           
               this_i_beg = i_beg - 1 + i_beg_list(i)
               this_i_end = i_beg - 1 + i_end_list(i)
               this_j_beg = j_beg - 1 + j_beg_list(i)
@@ -2684,12 +2696,13 @@ program turbogap
               n_sites_temp = this_i_end - this_i_beg + 1
               n_pairs_temp = this_j_end - this_j_beg + 1
 
-              print *, " "
-              write(*,'(A,I8,A,I8,A,I8,A,I8,A,I8,A,I8)') "pdf batches---Rank ", rank, " i = ", i,  &
-                   " this_i_beg = ",  this_i_beg,&
-                   " this_i_end = ",  this_i_end,&
-                   " this_j_beg = ",  this_j_beg,&
-                   " this_j_end = ",  this_j_end
+!              print *, " "
+              write(*,'(A,I4,A,I4,A,I4,A,I4,A,I4,A,I4)') "pdf batches---Rank ", rank, " ---Thread ", omp_task, &
+                   " / ", n_omp, " i = ", i,  &
+                   " i_beg = ",  this_i_beg,&
+                   " i_end = ",  this_i_end,&
+                   " j_beg = ",  this_j_beg,&
+                   " j_end = ",  this_j_end
               
               call gpu_malloc_neighbors(gpu_neigh(i), &
                    n_sites_temp, n_pairs_temp, &
@@ -2699,21 +2712,31 @@ program turbogap
                    neighbors_list(  this_j_beg : this_j_end), &
                    rjs(             this_j_beg : this_j_end), &
                    xyz(        1:3, this_j_beg : this_j_end), &
-                   gpu_stream, rank)
+                   gpu_streams(omp_task), rank)
 
 
-!              print *, " finished gpu malloc batch ", i 
+!              call gpu_meminfo()
               call calculate_batched_pair_distribution(gpu_exp(i),  gpu_batch_storage(i),&
                    gpu_neigh(i), x_pair_distribution, dV, n_atoms_of_species, n_species_actual, n_sites,&
                    this_i_beg, this_i_end, this_j_beg, this_j_end, &
                    params%pair_distribution_n_samples,  params%r_range_min, params%r_range_max,&
                    params%pair_distribution_rcut, params%pair_distribution_kde_sigma, &
-                   gpu_stream, xpdf_d, dV_d, v_uc, rank)
+                   gpu_streams(omp_task), xpdf_d, dV_d, v_uc, rank)
               
-              call gpu_free_neighbors(gpu_neigh(i), gpu_stream)
-              
+              call gpu_free_neighbors(gpu_neigh(i), gpu_streams(omp_task))
+
+              write(*,'(A,I4,A,I4,A,I4,A,I4,A,I4,A,I4)') "pdf batches finished---Rank ", rank, " ---Thread ", omp_task, &
+                   " / ", n_omp, " i = ", i,  &
+                   " i_beg = ",  this_i_beg,&
+                   " i_end = ",  this_i_end,&
+                   " j_beg = ",  this_j_beg,&
+                   " j_end = ",  this_j_end
+                            
+              call gpu_meminfo()
            end do
+           !$OMP END PARALLEL DO            
            deallocate( gpu_neigh )
+
 
            
            ! Collect the pdf
@@ -2876,6 +2899,8 @@ program turbogap
               time_nd(3) = time_nd(3) + time_nd(2) - time_nd(1)
            end if
 
+           call get_time( time_xrd(1)  )
+
 
            ! RESETTING EXP FORCES TO FALSE
            params % do_forces = .true.           
@@ -2937,7 +2962,18 @@ program turbogap
                 &%exp_energy_scales(params%xrd_idx) )
 
 
+           ! ! $OMP SHARED(cublas_handles, gpu_streams, n_neigh, species, neighbor_species, neighbors_list, rjs, xyz, &
+           ! ! $OMP xpdf_d, dV_d, dV, n_atoms_of_species, n_species_actual, n_sites, v_uc, gpu_batch_storage, gpu_exp, x_pair_distribution)
+           
+           
+           !$OMP PARALLEL DO num_threads(n_omp) DEFAULT(SHARED) &
+           !$OMP PRIVATE(i, omp_task, this_i_beg, this_i_end, this_j_beg, this_j_end) &
+           !$OMP PRIVATE(n_sites_temp, n_pairs_temp, n_dim_idx, j, k, f) 
+           
            do i = 1, size( i_beg_list )
+
+              omp_task = mod( i-1, n_omp) + 1
+
               this_i_beg = i_beg - 1 + i_beg_list(i)
               this_i_end = i_beg - 1 + i_end_list(i)
               this_j_beg = j_beg - 1 + j_beg_list(i)
@@ -2947,8 +2983,8 @@ program turbogap
 
               ! I have the neighbors allocated in in gpu_neigh(i)
               print *, " "
-              write(*,'(A,I8,A,I8,A,I8,A,I8,A,I8,A,I8)') "xrd batches, rank ", rank, &
-                   " i ", i, &
+              write(*,'(A,I8,A,I8,A,I8,A,I8,A,I8,A,I8)') "xrd batches---Rank ", rank, " ---Thread ", omp_task,  &
+                   " / ", n_omp, " i ", i, &
                    " this_i_beg = ",  this_i_beg,&
                    " this_i_end = ",  this_i_end,&
                    " this_j_beg = ",  this_j_beg,&
@@ -2968,11 +3004,11 @@ program turbogap
                          this_i_beg, this_i_end, this_j_beg, this_j_end, &
                          params%pair_distribution_n_samples,  params%r_range_min, params%r_range_max,&
                          params%pair_distribution_rcut, params%pair_distribution_kde_sigma, &
-                         gpu_stream, xpdf_d, dV_d, j, k, n_dim_idx, v_uc)
+                         gpu_streams( omp_task ), xpdf_d, dV_d, j, k, n_dim_idx, v_uc)
 
 
 !                    print * , "starting xrd setup"
-                    call setup_gpu_xrd_forces( gpu_exp(i), gpu_batch_storage(i), n_dim_idx, gpu_stream )                    
+                    call setup_gpu_xrd_forces( gpu_exp(i), gpu_batch_storage(i), n_dim_idx, gpu_streams( omp_task ) )                    
 
 !                    print * , "finished xrd setup"                    
 
@@ -3001,10 +3037,10 @@ program turbogap
                          gpu_exp(i) %    xyz_k_d( n_dim_idx ),&
                          gpu_exp(i) % pair_distribution_partial_der_d(n_dim_idx),&
                          sinc_factor_matrix_d, &
-                         all_scattering_factors_d( n_dim_idx ), prefactor_d, gpu_stream, cublas_handle )
+                         all_scattering_factors_d( n_dim_idx ), prefactor_d, gpu_streams( omp_task ), cublas_handles( omp_task ) )
                     
                     ! print *, "virial after function exit ", gpu_batch_storage(i) % host( n_dim_idx ) % virial_h
-                    call free_gpu_xrd_forces( gpu_exp(i), gpu_batch_storage(i), n_dim_idx, gpu_stream )
+                    call free_gpu_xrd_forces( gpu_exp(i), gpu_batch_storage(i), n_dim_idx, gpu_streams( omp_task ) )
                     
                     n_dim_idx = n_dim_idx + 1
                     if( n_dim_idx > n_dim_partial ) exit outer
@@ -3012,6 +3048,8 @@ program turbogap
                  end do
               end do outer
            end do
+           !$OMP END PARALLEL DO            
+           
            call gpu_free_async(xpdf_d, gpu_stream)
            call gpu_free_async(dV_d, gpu_stream)                    
 
@@ -3054,10 +3092,13 @@ program turbogap
            call get_time(  time_exp_batched(2) )
            
 
-           time_exp_batched(3) = time_exp_batched(3) +   time_exp_batched(2) - time_exp_batched(1)
 
+           call get_time( time_xrd(2)  )
+           time_xrd(3) = time_xrd(3) + time_xrd(2) - time_xrd(1)           
+
+           time_exp_batched(3) = time_exp_batched(3) +   time_exp_batched(2) - time_exp_batched(1)           
            print *, " "
-           print *, "TIME EXP BATCHED = ", time_exp_batched(3)
+           print *, "--Rank, ", rank, " --- TIME EXP BATCHED = ", time_exp_batched(3)
            print *, " "           
         end if
         
@@ -4216,7 +4257,7 @@ program turbogap
            if (params%exp_forces .and. params%valid_nd) virial = virial + virial_nd
 
 
-           if( rank == 0  )then 
+           if( rank == 0 .and. params%print_vdw_forces  )then 
               print *, "> Virial soap "
               do i = 1, 3
                  do j = 1, 3
@@ -5894,6 +5935,13 @@ program turbogap
   call mpi_finalize(ierr)
 #endif
 
+  if( params%gpu_batched )then 
+     do i = 1, n_omp
+        call destroy_cublas_handle(cublas_handles(i), gpu_streams(i))
+     end do
+  end if
+  
+  
 call destroy_cublas_handle(cublas_handle, gpu_stream)
 call gpu_device_reset()
 

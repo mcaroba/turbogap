@@ -863,7 +863,8 @@ contains
 !          print *, " >> storing k_index_d "
           allocate( gpu_host % host( n_dim_idx ) % k_index_h(1:gpu_exp % nk(n_dim_idx) ) )
 
-          call cpy_dtoh_event(&
+          !          call cpy_dtoh_event(&
+          call cpy_dtoh(&
                gpu_exp % k_index_d(n_dim_idx), &
                c_loc( gpu_host % host( n_dim_idx ) % k_index_h ), &
                gpu_exp % st_k_index_d(n_dim_idx), &
@@ -874,7 +875,8 @@ contains
 !          print *, " >> storing j2_index_d "
           allocate( gpu_host % host( n_dim_idx ) % j2_index_h(1:gpu_exp % nk(n_dim_idx) ) )
 
-          call cpy_dtoh_event(&
+          !          call cpy_dtoh_event(&
+          call cpy_dtoh(&
                gpu_exp % j2_index_d(n_dim_idx), &
                c_loc( gpu_host % host( n_dim_idx ) % j2_index_h ), &
                gpu_exp % st_k_index_d(n_dim_idx), &
@@ -884,7 +886,8 @@ contains
 !          print *, " >> storing rjs_index_d "
           allocate( gpu_host % host( n_dim_idx ) % rjs_index_h( 1:gpu_exp % nk(n_dim_idx) ) )
 
-          call cpy_dtoh_event(&
+          !          call cpy_dtoh_event(&
+          call cpy_dtoh(&
                gpu_exp % rjs_index_d(n_dim_idx), &
                c_loc( gpu_host % host( n_dim_idx ) % rjs_index_h ), &
                st_rjs_index_d, &
@@ -897,7 +900,8 @@ contains
           
 !          print *, " >> storing xyz_k_d "
           allocate( gpu_host % host( n_dim_idx ) % xyz_k_h(1:3, 1:gpu_exp % nk(n_dim_idx) ) )
-          call cpy_dtoh_event(&
+          !          call cpy_dtoh_event(&
+          call cpy_dtoh(&
                gpu_exp % xyz_k_d(n_dim_idx), &
                c_loc( gpu_host % host( n_dim_idx ) % xyz_k_h ), &
                3 * st_rjs_index_d, &
@@ -950,7 +954,8 @@ contains
           !--- check x ---! 
           ! allocate( x_check(1:n_samples) )
           ! st_x_d = n_samples * c_double 
-          ! call cpy_dtoh_event(&
+          !          ! call cpy_dtoh_event(&
+!          call cpy_dtoh(&
           !      x_d, &
           !      c_loc(x_check), &
           !      st_x_d, &
@@ -981,7 +986,8 @@ contains
           
 !          print *, " >> storing pair_distribution_partial_d "
           allocate( gpu_host % host( n_dim_idx ) % pair_distribution_partial_h( 1:n_samples ) )           
-          call cpy_dtoh_event(&
+          !          call cpy_dtoh_event(&
+          call cpy_dtoh(&
                gpu_exp % pair_distribution_partial_d(n_dim_idx), &
                c_loc( gpu_host % host( n_dim_idx ) % pair_distribution_partial_h ), &
                gpu_exp % st_pair_distribution_partial_d(n_dim_idx), &
