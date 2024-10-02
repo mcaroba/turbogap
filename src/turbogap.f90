@@ -1581,7 +1581,7 @@ call cpu_time(time2)
                      this_alpha_SCS, this_omega_SCS)
           if( .not. (params%vdw_type == "ts+mbd" .and. modulo(md_istep, params%mbd_correction_freq) == 0) )deallocate(v_neigh_vdw) 
         end if
-write(*,*) "This local virial", this_local_virial_vdw_diag
+!write(*,*) "This local virial", this_local_virial_vdw_diag
 !       Apply the MBD-TS correction if needed/requested
         if( params%vdw_type == "ts+mbd" )then
 if( allocated( S_xyz_inv ) )then
@@ -1630,7 +1630,7 @@ end do
 !write(*,*) "mbd_ts_scaling:", this_mbd_ts_scaling
 write(*,*)
 write(*,*) "Tr(virial):", md_istep, sum(local_virial_vdw_diag), sum(local_virial_vdw_diag_corr), &
-sum(this_mbd_ts_scaling)/size(this_mbd_ts_scaling)
+sum(this_mbd_ts_scaling)/size(this_mbd_ts_scaling), local_virial_vdw_diag/local_virial_vdw_diag_corr
 !sum(this_mbd_ts_scaling*sum(local_virial_vdw_diag_corr,1))
             end if
             call mpi_bcast(this_mbd_ts_scaling, n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
@@ -1981,8 +1981,8 @@ end if
 
 
 ! For debugging the virial implementation
-!if( rank == 0 .and. .false. )then
-if( rank == 0 .and. .true. )then
+if( rank == 0 .and. .false. )then
+!if( rank == 0 .and. .true. )then
 write(*,*) "pressure_soap: ", virial_soap / 3.d0 / v_uc
 write(*,*) "pressure_vdw: ", virial_vdw / 3.d0 / v_uc
 do i = 1, 3
