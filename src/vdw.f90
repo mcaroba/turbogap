@@ -4668,7 +4668,8 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                                                             val_sym(k4,i_om)
                               damped_virial_integrand_2b(:,i_om) = damped_virial_integrand_2b(:,i_om) - 0.5d0 * xyz_i * &
                                                             dval(k4,i_om) * &
-                                                            val_sym(k4,i_om) * poly_cut(rjs_i*Bohr,x_min,x_max)
+                                  val_sym(k4,i_om) * poly_cut(sqrt(xyz_i(1)**2+xyz_i(2)**2+xyz_i(3)**2)*Bohr,x_min,x_max)
+!                                                            val_sym(k4,i_om) * poly_cut(rjs_i*Bohr,x_min,x_max)
                               !val_sym_test(k4,i_om) = sqrt(a_mbd_i/(1.d0+(omegas_mbd(i_om)/o_mbd_i)**2)) * &
                               !                     sqrt(a_mbd_j/(1.d0+(omegas_mbd(i_om)/o_mbd_j)**2)) * &
                               !                        f_damp_SCS(k2) * T_mbd(k3)  &
@@ -4708,7 +4709,8 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                                 damped_virial_integrand_2b(:,i_om) = damped_virial_integrand_2b(:,i_om) - 0.5d0 * &
                                                               xyz_0_mbd(:,k2+1) * &
                                                               dval(k4,i_om) * val_sym(k4,i_om) * &
-                                                              poly_cut(rjs_0_mbd(k2+1)*Bohr,x_min,x_max)
+                                 poly_cut(sqrt(xyz_0_mbd(1,k2+1)**2+xyz_0_mbd(2,k2+1)**2+xyz_0_mbd(3,k2+1)**2)*Bohr,x_min,x_max)
+!                                                              poly_cut(rjs_0_mbd(k2+1)*Bohr,x_min,x_max)
                                 !val_sym_test(k4,i_om) = val_sym_test(k4-1,i_om)
                               end do
                               end if
@@ -5989,7 +5991,8 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                       do c1 = 1, 3
                         virial_integrand(c1,i2) = virial_integrand(c1,i2) - 0.5d0 * xyz_0_mbd(c1,k3+1) * f_ki
                         damped_virial_integrand(c1,i2) = damped_virial_integrand(c1,i2) - 0.5d0 * xyz_0_mbd(c1,k3+1) * f_ki * &
-                                                  poly_cut(rjs_0_mbd(k3+1)*Bohr,x_min,x_max)
+                              poly_cut(sqrt(xyz_0_mbd(1,k3+1)**2+xyz_0_mbd(2,k3+1)**2+xyz_0_mbd(3,k3+1)**2)*Bohr,x_min,x_max)
+!                                                  poly_cut(rjs_0_mbd(k3+1)*Bohr,x_min,x_max)
                       end do
                     !else
                     !  write(*,*) "G_mat"
@@ -6020,7 +6023,8 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                           do c1 = 1, 3
                             virial_integrand(c1,i2) = virial_integrand(c1,i2) - 0.5d0 * xyz_0_mbd(c1,k3+1) * f_ki
                             damped_virial_integrand(c1,i2) = damped_virial_integrand(c1,i2) - 0.5d0 * xyz_0_mbd(c1,k3+1) * f_ki * &
-                                                      poly_cut(rjs_0_mbd(k3+1)*Bohr,x_min,x_max)
+                                poly_cut(sqrt(xyz_0_mbd(1,k3+1)**2+xyz_0_mbd(2,k3+1)**2+xyz_0_mbd(3,k3+1)**2)*Bohr,x_min,x_max)
+!                                                      poly_cut(rjs_0_mbd(k3+1)*Bohr,x_min,x_max)
                           end do
                         !else
                         !  write(*,*) "G_mat"

@@ -1630,7 +1630,7 @@ end do
 !write(*,*) "mbd_ts_scaling:", this_mbd_ts_scaling
 write(*,*)
 write(*,*) "Tr(virial):", md_istep, sum(local_virial_vdw_diag), sum(local_virial_vdw_diag_corr), &
-sum(this_mbd_ts_scaling)/size(this_mbd_ts_scaling), local_virial_vdw_diag/local_virial_vdw_diag_corr
+sum(this_mbd_ts_scaling)/size(this_mbd_ts_scaling)!, local_virial_vdw_diag/local_virial_vdw_diag_corr
 !sum(this_mbd_ts_scaling*sum(local_virial_vdw_diag_corr,1))
             end if
             call mpi_bcast(this_mbd_ts_scaling, n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)

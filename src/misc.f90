@@ -506,7 +506,7 @@ module misc
     real*8, intent(in) :: x, x_min, x_max
     real*8 :: res
 
-    if( x <= x_min )then
+    if( x < x_min )then
       res = 0.d0
     else if( x >= x_max )then
       res = 1.d0
