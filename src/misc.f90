@@ -517,4 +517,25 @@ module misc
   end function
 
 
+
+
+
+  function std(val) result(res)
+
+    implicit none
+
+    real*8, intent(in) :: val(:)
+    real*8 :: res, ave
+    integer :: i
+
+    ave = sum(val) / size(val)
+    res = 0.d0
+    do i = 1, size(val)
+      res = res + (val(i) - ave)**2
+    end do
+    res = dsqrt(res/size(val))
+
+  end function
+
+
 end module
