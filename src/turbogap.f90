@@ -943,7 +943,15 @@ program turbogap
 !if( params%vdw_type == "ts+mbd" .and. modulo(md_istep, params%mbd_correction_freq) == 0 )then
 if( params%vdw_type == "ts+mbd" .and. md_istep == 0 )then
 !      energies_vdw_corr = 0.d0
-      mbd_ts_scaling = 1.d0
+      open(unit=30, file="mbd_ts_scaling.dat", status="old", iostat=iostatus)
+      if( iostatus == 0 )then
+        do i = 1, n_sites
+          read(30,*) mbd_ts_scaling(i)
+        end do
+      else
+        mbd_ts_scaling = 1.d0
+      end if
+      close(30)
 end if
       if( any( soap_turbo_hypers(:)%has_vdw ) )then
         if( n_sites /= n_sites_prev )then
@@ -1360,7 +1368,18 @@ if( params%vdw_type == "ts+mbd" .and. modulo(md_istep, params%mbd_correction_fre
         this_energies_vdw_corr = 0.d0
 if( md_istep == 0 )then
         allocate( this_mbd_ts_scaling(1:n_sites) )
+if( rank == 0 )then
+      open(unit=30, file="mbd_ts_scaling.dat", status="old", iostat=iostatus)
+      if( iostatus == 0 )then
+        do i = 1, n_sites
+          read(30,*) this_mbd_ts_scaling(i)
+        end do
+      else
         this_mbd_ts_scaling = 1.d0
+      end if
+      close(30)
+end if
+call mpi_bcast(this_mbd_ts_scaling, n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
 end if
         if( params%do_forces )then
           if( allocated(this_forces_vdw_corr) )deallocate( this_forces_vdw_corr, this_local_virial_vdw_diag_corr )
@@ -2304,6 +2323,24 @@ end if
   if( allocated(angle_3b_hypers) )deallocate(angle_3b_hypers)
   if( allocated(core_pot_hypers) )deallocate(core_pot_hypers)
 
+
+if( params%vdw_type == "ts+mbd" )then
+#ifdef _MPIF90
+  IF( rank == 0 )then
+#endif
+open(unit=30, file="mbd_ts_scaling.dat", status="unknown")
+do i = 1, n_sites
+#ifdef _MPIF90
+  write(30,*) this_mbd_ts_scaling(i)
+#else
+  write(30,*) mbd_ts_scaling(i)
+#endif
+end do
+close(30)
+#ifdef _MPIF90
+  END IF
+#endif
+end if
 
 
 
