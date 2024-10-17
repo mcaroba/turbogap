@@ -2068,6 +2068,39 @@ end if
   end subroutine
 !**************************************************************************
 
+  ! Deprecated Variable Check
+  subroutine check_deprecated(n_deprecated,  deprecated_keywords, updated_keywords, keyword )
+    ! Input variables
+    integer,  intent(in) :: n_deprecated
+    character*64, intent(in) :: deprecated_keywords(:), updated_keywords(:)
+    character*64, intent(in) :: keyword
+    ! Internal variables
+    integer :: i
+
+    do i = 1, n_deprecated
+       if( trim(keyword) == trim(deprecated_keywords(i)) )then
+          call print_deprecation_message(keyword, updated_keywords(i))
+       end if
+    end do
+  end subroutine check_deprecated
+
+
+  subroutine print_deprecation_message( keyword, updated_keyword )
+    character*64 :: keyword, updated_keyword
+    integer :: length
+
+    length = len_trim( keyword )
+
+    write(*,*)'.......................................|'
+    write(*,*)'                                       |'
+    write(*,*)'WARNING: Found deprecated keyword      |  <-- WARNING'
+    write(*,'(A41)') trim(keyword)//' |'
+    write(*,*)'Please replace this keyword with       |'
+    write(*,'(A41)') trim(updated_keyword)//' |'
+    write(*,*)'                                       |'
+
+
+  end subroutine print_deprecation_message
 
 
 
@@ -2100,7 +2133,24 @@ end if
     integer :: iostatus, i, counter, n_species, n_sparse, ijunk, n, n_nonzero, j
     character*64 :: keyword, cjunk, compress_string
     character*1 :: keyword_first
+    integer, parameter :: n_deprecated = 6
+    character*64 :: deprecated_keywords(n_deprecated), updated_keywords(n_deprecated)
 
+    deprecated_keywords(1) = "has_vdw"
+    deprecated_keywords(2) = "vdw_qs"
+    deprecated_keywords(3) = "vdw_alphas"
+    deprecated_keywords(4) = "vdw_zeta"
+    deprecated_keywords(5) = "vdw_delta"
+    deprecated_keywords(6) = "vdw_v0"
+
+    updated_keywords(1) = "has_local_properties"
+    updated_keywords(2) = "local_property_qs"
+    updated_keywords(3) = "local_property_alphas"
+    updated_keywords(4) = "local_property_zetas"
+    updated_keywords(5) = "local_property_deltas"
+    updated_keywords(6) = "local_property_v0s"
+
+    
     open(unit=10, file=file_gap, status="old", iostat=iostatus)
 !   Look for the number of instances of each GAP
     n_soap_turbo = 0
@@ -2302,7 +2352,7 @@ end if
               read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%scaling_mode
               if( soap_turbo_hypers(n_soap_turbo)%scaling_mode /= "polynomial" )then
                 write(*,*)'                                       |'
-                write(*,*)'WARNING: I didn''t understand your      |  <-- WARNING'
+                write(*,*)'WARNING: I didn''t understand your     |  <-- WARNING'
                 write(*,*)'keywork for scaling_mode; defaulting   |'
                 write(*,*)'to "polynomial"                        |'
                 soap_turbo_hypers(n_soap_turbo)%scaling_mode = "polynomial"
@@ -2313,24 +2363,66 @@ end if
             else if( keyword == "desc_sparse" )then
               backspace(10)
               read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%file_desc
-            else if( keyword == "has_vdw" )then
-              backspace(10)
-              read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%has_vdw
+           else if( keyword == "has_vdw" )then
+               backspace(10)
+               !               read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%has_vdw
+               read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%has_local_properties
+               call check_deprecated( n_deprecated, deprecated_keywords, updated_keywords, keyword )
+
+
+               write(*,*)'---------------------------------------|'
+               write(*,*)'--------------vdW Notice---------------|'
+               write(*,*)'---------------------------------------|'
+               write(*,*)'                                       |'
+               write(*,*)'When upgrading from deprecated vdW,    |'
+               write(*,*)'set in *.gap file (for just one model) |'
+               write(*,*)'`n_local_properties = 1`               |'
+               write(*,*)'`local_property_labels = "hirshfeld_v"`|'
+               write(*,*)'                                       |'
+               write(*,*)'---------------------------------------|'
+               write(*,*)'                                       |'
+               write(*,*)'WARNING: Defaulting to just 1          |  <-- WARNING'
+               write(*,*)'local property due to deprecated       |'
+               write(*,*)'keyword. Other loc models will not run |'
+               write(*,*)'                                       |'
+               write(*,*)'---------------------------------------|'
+
+               soap_turbo_hypers(n_soap_turbo)%n_local_properties = 1
+
+               allocate( soap_turbo_hypers(n_soap_turbo)%local_property_models(&
+                    1:soap_turbo_hypers(n_soap_turbo)%n_local_properties) )
+
+               soap_turbo_hypers(n_soap_turbo)%local_property_models(1)%label = 'hirshfeld_v'
+
+               soap_turbo_hypers(n_soap_turbo)%has_vdw=.true.
+               soap_turbo_hypers(n_soap_turbo)%local_property_models(1)%do_derivatives=.true.
+               soap_turbo_hypers(n_soap_turbo)%vdw_index=1
+
             else if( keyword == "vdw_qs" )then
-              backspace(10)
-              read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%file_vdw_desc
+               backspace(10)
+               call check_deprecated( n_deprecated, deprecated_keywords, updated_keywords, keyword )
+               !             read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%file_vdw_desc
+               read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%local_property_models(1)%file_desc
             else if( keyword == "vdw_alphas" )then
-              backspace(10)
-              read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%file_vdw_alphas
+               backspace(10)
+               call check_deprecated( n_deprecated, deprecated_keywords, updated_keywords, keyword )
+              !read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%file_vdw_alphas
+              read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%local_property_models(1)%file_alphas
             else if( keyword == "vdw_zeta" )then
-              backspace(10)
-              read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%vdw_zeta
+               backspace(10)
+               call check_deprecated( n_deprecated, deprecated_keywords, updated_keywords, keyword )
+              !              read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%vdw_zeta
+              read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%local_property_models(1)%zeta
             else if( keyword == "vdw_delta" )then
-              backspace(10)
-              read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%vdw_delta
+               backspace(10)
+               call check_deprecated( n_deprecated, deprecated_keywords, updated_keywords, keyword )
+              !              read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%vdw_delta
+              read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%local_property_models(1)%delta
             else if( keyword == "vdw_v0" )then
-              backspace(10)
-              read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%vdw_v0
+               backspace(10)
+               call check_deprecated( n_deprecated, deprecated_keywords, updated_keywords, keyword )
+              !              read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%vdw_v0
+              read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%local_property_models(1)%V0
             else if( keyword == "has_local_properties" )then
               backspace(10)
               read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%has_local_properties
@@ -2426,7 +2518,6 @@ end if
 
             if( soap_turbo_hypers(n_soap_turbo)%has_local_properties )then
                do j=1, soap_turbo_hypers(n_soap_turbo)%n_local_properties
-
                   call read_alphas_and_descriptors(&
                        soap_turbo_hypers(n_soap_turbo)%local_property_models(j)%file_desc, &
                        soap_turbo_hypers(n_soap_turbo)%local_property_models(j)%file_alphas, &
@@ -2820,6 +2911,166 @@ end subroutine read_electronic_stopping_file
   end subroutine
 !**************************************************************************
 
+  subroutine get_irreducible_local_properties(params, n_local_properties_tot, n_soap_turbo, soap_turbo_hypers, &
+       local_property_labels, local_property_labels_temp, local_property_labels_temp2, local_property_indexes, &
+       valid_vdw, vdw_lp_index, core_be_lp_index, valid_xps, xps_idx )
+    implicit none
+    type( input_parameters ), intent(inout) :: params
+    integer, intent(in) :: n_soap_turbo
+    integer, intent( inout ) :: n_local_properties_tot
+    type( soap_turbo ), allocatable, intent(inout) :: soap_turbo_hypers(:)
+    character*1024, allocatable, intent(inout) ::  local_property_labels(:), local_property_labels_temp(:), &
+         local_property_labels_temp2(:)
+    integer, allocatable, intent(inout) :: local_property_indexes(:)
+    integer, intent(inout) :: vdw_lp_index, core_be_lp_index, xps_idx
+    logical, intent(inout) :: valid_vdw, valid_xps
+    logical :: label_in_list = .false.
+    integer :: i, j, i2, j2, k, k2, nprop, length
+
+    n_local_properties_tot = 0
+    i2 = 1 ! using this as a counter for the labels
+    do j = 1, n_soap_turbo
+       if( soap_turbo_hypers(j)%has_local_properties )then
+          ! This property has the labels of the quantities to
+          ! compute. We must specify the number of local properties, for the sake of coding simplicity
+
+          n_local_properties_tot = n_local_properties_tot + soap_turbo_hypers(j)%n_local_properties
+
+          if(.not. allocated(local_property_labels))then
+             allocate(local_property_labels(1:n_local_properties_tot))
+             do i = 1, n_local_properties_tot
+                local_property_labels(i) = soap_turbo_hypers(j)%local_property_models(i)%label
+                length = len_trim(soap_turbo_hypers(j)%local_property_models(i)%label)
+                write(*,*)' Local property found                  |'
+                write(*,'(A,1X,I8,1X,A20)')' Descriptor', j,&
+                     & trim(soap_turbo_hypers(j)&
+                     &%local_property_models(i)%label)//'|'
+             end do
+          else
+             ! Allocate temporary array which is of the size before
+             allocate( local_property_labels_temp( 1:n_local_properties_tot - soap_turbo_hypers(j)%n_local_properties ))
+             local_property_labels_temp = local_property_labels
+             deallocate(local_property_labels)
+             allocate(local_property_labels(1:n_local_properties_tot))
+
+             nprop = soap_turbo_hypers(j)%n_local_properties
+             do i = 1, n_local_properties_tot - nprop
+                local_property_labels(i) = local_property_labels_temp(i)
+             end do
+
+             deallocate(local_property_labels_temp)
+
+             do i = 1, nprop
+                local_property_labels(i + n_local_properties_tot -&
+                     & nprop) = soap_turbo_hypers(j)&
+                     &%local_property_models(i)%label
+                write(*,*)' Local property found                  |'
+                write(*,'(A,1X,I8,1X,A20)')' Descriptor ', j,&
+                     & trim(soap_turbo_hypers(j)&
+                     &%local_property_models(i)%label)//'|'
+
+             end do
+          end if
+       end if
+    end do
+
+    ! by this point, local_property_labels( 1:n_local_properties_tot ) has labels of all local properties
+
+
+    ! Now we create an irreducible list of the labels
+    i2=0
+    if (n_local_properties_tot > 0)then
+       allocate( local_property_labels_temp( 1:1 ))
+       local_property_labels_temp(1) = local_property_labels(1)
+       i2 = 1
+       if (n_local_properties_tot > 1)then
+          do i = 2, n_local_properties_tot
+             label_in_list = .false.
+             ! Iterate through irreducible list to see if there is a mismatch
+             do j = 1, size( local_property_labels_temp, 1 )
+                if (trim( local_property_labels_temp(j) ) == trim( local_property_labels(i) )) label_in_list = .true.
+             end do
+             if (.not. label_in_list) then
+                i2 = i2 + 1
+                allocate(local_property_labels_temp2(1:i2))
+                local_property_labels_temp2(1:i2-1) = local_property_labels_temp(1:i2-1)
+                local_property_labels_temp2(i2)     = local_property_labels(i)
+                deallocate(local_property_labels_temp)
+                allocate(local_property_labels_temp(1:i2))
+                local_property_labels_temp(1:i2) = local_property_labels_temp2(1:i2)
+                deallocate(local_property_labels_temp2)
+             end if
+          end do
+       end if
+
+       params%n_local_properties = i2
+
+       ! by this point, local_property_labels( 1:n_local_properties_tot ) has labels of all local properties
+       !                local_property_labels_temp( 1:params%n_local_properties ) has irreducible labels of local properties
+
+       ! Now we can have an array which has a soap turbo index as an input and it can give us the corresponding label
+       allocate(local_property_indexes(1:n_local_properties_tot))
+       i2 = 1
+       do i = 1, params%n_local_properties
+          do j = 1, n_local_properties_tot
+             if ( trim(local_property_labels(j)) == trim( local_property_labels_temp(i) ) )then
+
+                local_property_indexes(j) = i
+
+
+                if ( trim(local_property_labels(j)) == "hirshfeld_v" )then
+                   vdw_lp_index = i
+                   valid_vdw = .true.
+                   do k2 = 1, n_soap_turbo
+                      do k = 1, soap_turbo_hypers(k2)%n_local_properties
+                         if (trim(soap_turbo_hypers(k2)%local_property_models(k)%label) == "hirshfeld_v")then
+                            if( params%do_derivatives .or. params%do_forces)then
+                               soap_turbo_hypers(k2)%local_property_models(k)%do_derivatives = .true.
+                            else
+                               soap_turbo_hypers(k2)%local_property_models(k)%do_derivatives = .false.
+                            end if
+
+                         end if
+                      end do
+                   end do
+                end if
+
+
+                if ( trim(local_property_labels(j)) == "core_electron_be" )then
+                   core_be_lp_index = i
+
+                   ! Check if there is experimental data for one to do xps fitting
+                   do i2 = 1, params%n_exp
+                      if(( trim(params%exp_data(i2)%label) == "xps" .and.  &
+                           .not. ( trim(params%exp_data(i2)%file_data) == "none" )))then
+                         valid_xps = .true.
+                         xps_idx = i2
+                         do k2 = 1, n_soap_turbo
+                            do k = 1, soap_turbo_hypers(k2)%n_local_properties
+                               if (trim(soap_turbo_hypers(k2)%local_property_models(k)%label) == "core_electron_be")then
+                                  soap_turbo_hypers(k2)%local_property_models(k)%do_derivatives = .false.
+                                  if( params%exp_forces .and. params%do_derivatives)then
+                                     soap_turbo_hypers(k2)%local_property_models(k)%do_derivatives = .true.
+                                  end if
+                               end if
+                            end do
+                         end do
+                      end if
+                   end do
+                end if
+
+
+             end if
+          end do
+       end do
+
+       deallocate(local_property_labels)
+       allocate(local_property_labels(1:size(local_property_labels_temp,1)))
+       local_property_labels = local_property_labels_temp
+       deallocate(local_property_labels_temp)
+    end if
+
+  end subroutine get_irreducible_local_properties
 
 
 
