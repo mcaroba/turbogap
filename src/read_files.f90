@@ -518,35 +518,41 @@ end if
     close(unit_number)
 
 !   Read descriptor vectors in spare set
-    open(newunit=unit_number, file=file_desc, status="old")
-    iostatus = 0
-    i = -1
-    do while(iostatus == 0)
-      read(unit_number, *, iostat=iostatus)
-      i = i + 1
-    end do
-    dim = i / n_sparse
-    close(unit_number)
+    if( soap_turbo_hypers(n_soap_turbo)%file_desc /= "kernel_linearization" )then
+      open(newunit=unit_number, file=file_desc, status="old")
+      iostatus = 0
+      i = -1
+      do while(iostatus == 0)
+        read(unit_number, *, iostat=iostatus)
+        i = i + 1
+      end do
+      dim = i / n_sparse
+      close(unit_number)
+    end if
 
 !   We do things differently for each descriptor
     if( descriptor_type == "soap_turbo" )then
-!     Allocate stuff
-      allocate( alphas(1:n_sparse) )
-      allocate( Qs(1:dim, 1:n_sparse) )
 !     Read alphas SOAP
+      allocate( alphas(1:n_sparse) )
       open(newunit=unit_number, file=file_alphas, status="old")
       do i = 1, n_sparse
         read(unit_number, *) alphas(i)
       end do
       close(unit_number)
 !     Read sparse set descriptors
-      open(newunit=unit_number, file=file_desc, status="old")
-      do i = 1, n_sparse
-        do j = 1, dim
-          read(unit_number, *) Qs(j, i)
+      if( soap_turbo_hypers(n_soap_turbo)%file_desc == "kernel_linearization" )then
+        allocate( Qs(1:1, 1:1) )
+        Qs = 1.d0
+      else
+        allocate( Qs(1:dim, 1:n_sparse) )
+        open(newunit=unit_number, file=file_desc, status="old")
+        do i = 1, n_sparse
+          do j = 1, dim
+            read(unit_number, *) Qs(j, i)
+          end do
         end do
-      end do
-      close(unit_number)
+        close(unit_number)
+      end if
     else if( descriptor_type == "distance_2b" )then
       if( dim /= 1 )then
         write(*,*) "ERROR: Bad 2b descriptor/alphas file(s), dimensions/n_sparse don't match number of data entries"
@@ -2363,6 +2369,10 @@ end if
             else if( keyword == "desc_sparse" )then
               backspace(10)
               read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%file_desc
+            else if( keyword == "kernel_linearization" )then
+              backspace(10)
+              soap_turbo_hypers(n_soap_turbo)%file_desc = "kernel_linearization"
+              read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%file_alphas
            else if( keyword == "has_vdw" )then
                backspace(10)
                !               read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%has_vdw

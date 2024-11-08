@@ -69,16 +69,23 @@ module gap
     n_sites = size(soap, 2)
     n_sites0 = size(forces, 2)
 
-    allocate( kernels(1:n_sites, 1:n_sparse) )
-    kernels = 0.d0
-    allocate( kernels_copy(1:n_sites, 1:n_sparse) )
-    if( n_sites > 0 )then
+!   We perform kernel linearization when Qs(1:1, 1:1) is passed, i.e., iff size(Qs,1) == 1
+!   Otherwise we compute the kernel as usual
+    if( n_sites > 0 .and. size(Qs, 1) /= 1 )then
+      allocate( kernels(1:n_sites, 1:n_sparse) )
+      kernels = 0.d0
+      allocate( kernels_copy(1:n_sites, 1:n_sparse) )
       call dgemm( "t", "n", n_sites, n_sparse, n_soap, 1.d0, soap, n_soap, Qs, n_soap, 0.d0, &
-                kernels, n_sites)
+                 kernels, n_sites)
     end if
 !   We copy the kernels because it makes the matmul() operation (WHICH SHOULD BY THE WAY BE WRITTEN
 !   USING LAPACK ROUTINES) a lot faster
-    if( is_zeta_int )then
+    if( size(Qs, 1) == 1  )then
+!     Use linearized model, where n_sparse = n_linearized and alphas ---> Qs_linearized * alphas
+      allocate( soap_linear(1:n_sites, 1:n_sparse) )
+      call get_linear_descriptor(zeta, soap, soap_linear)
+      energies = matmul(soap_linear, alphas)
+    else if( is_zeta_int )then
       kernels_copy = kernels**zeta_int
       energies = matmul(kernels_copy, alphas)
     else
@@ -180,7 +187,11 @@ module gap
 
 
 !   Wrap it up
-    deallocate(kernels, kernels_copy)
+    if( size(Qs, 1) == 1 )then
+      deallocate(soap_linear)
+    else
+      deallocate(kernels, kernels_copy)
+    end if
     if( do_forces )then
       deallocate(kernels_der, Qs_copy, Qss, this_Qss)
     end if
