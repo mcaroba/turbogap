@@ -484,14 +484,18 @@ program turbogap
              local_property_labels, local_property_labels_temp, local_property_labels_temp2, local_property_indexes, &
              valid_vdw, vdw_lp_index, core_be_lp_index, valid_xps, xps_idx )
 
-        write(*,*)'                                       |'
-        write(*,*)' Irreducible local properties:         |'
-        do i = 1, params%n_local_properties
-           write(*,'(A41)') trim( local_property_labels(i) ) // ' |'
-        end do
+        if( params%n_local_properties > 0)then
+           write(*,*)'                                       |'
+           write(*,*)' Irreducible local properties:         |'
+           do i = 1, params%n_local_properties
+              write(*,'(A41)') trim( local_property_labels(i) ) // ' |'
+           end do
 
-        allocate( params%write_local_properties(1:params%n_local_properties) )
-        params%write_local_properties = .true.
+
+           allocate( params%write_local_properties(1:params%n_local_properties) )
+           params%write_local_properties = .true.
+        end if
+
 
 
 
