@@ -47,7 +47,7 @@ module gap
                            kernels_copy(:,:)
     real*8 :: time1, time2, time3, energies_time, forces_time, zeta, this_force(1:3)
     integer :: n_sites, n_sparse, n_soap, i, j, k, l, j2, zeta_int, n_sites0, k1, k2
-    logical :: is_zeta_int = .false.
+    logical :: is_zeta_int = .false., do_linearization = .false.
 !    integer, allocatable :: neighbors_beg(:), neighbors_end(:)
 
 
@@ -71,26 +71,31 @@ module gap
 
 !   We perform kernel linearization when Qs(1:1, 1:1) is passed, i.e., iff size(Qs,1) == 1
 !   Otherwise we compute the kernel as usual
-    if( n_sites > 0 .and. size(Qs, 1) /= 1 )then
-      allocate( kernels(1:n_sites, 1:n_sparse) )
-      kernels = 0.d0
-      allocate( kernels_copy(1:n_sites, 1:n_sparse) )
-      call dgemm( "t", "n", n_sites, n_sparse, n_soap, 1.d0, soap, n_soap, Qs, n_soap, 0.d0, &
-                 kernels, n_sites)
+    if( size(Qs, 1) == 1 )then
+      do_linearization = .true.
     end if
-!   We copy the kernels because it makes the matmul() operation (WHICH SHOULD BY THE WAY BE WRITTEN
-!   USING LAPACK ROUTINES) a lot faster
-    if( size(Qs, 1) == 1  )then
+    if( do_linearization )then
 !     Use linearized model, where n_sparse = n_linearized and alphas ---> Qs_linearized * alphas
-      allocate( soap_linear(1:n_sites, 1:n_sparse) )
+      allocate( soap_linear(1:n_sparse, 1:n_sites) )
       call get_linear_descriptor(zeta, soap, soap_linear)
       energies = matmul(soap_linear, alphas)
-    else if( is_zeta_int )then
-      kernels_copy = kernels**zeta_int
-      energies = matmul(kernels_copy, alphas)
     else
-      kernels_copy = kernels**zeta
-      energies = matmul(kernels_copy, alphas)
+      if( n_sites > 0 )then
+        allocate( kernels(1:n_sites, 1:n_sparse) )
+        kernels = 0.d0
+        allocate( kernels_copy(1:n_sites, 1:n_sparse) )
+        call dgemm( "t", "n", n_sites, n_sparse, n_soap, 1.d0, soap, n_soap, Qs, &
+                   n_soap, 0.d0, kernels, n_sites)
+      end if
+!     We copy the kernels because it makes the matmul() operation (WHICH SHOULD BY THE WAY BE WRITTEN
+!     USING LAPACK ROUTINES) a lot faster
+      if( is_zeta_int )then
+        kernels_copy = kernels**zeta_int
+        energies = matmul(kernels_copy, alphas)
+      else
+        kernels_copy = kernels**zeta
+        energies = matmul(kernels_copy, alphas)
+      end if
     end if
     energies = delta**2 * energies + e0
     if( do_timing )then
@@ -187,7 +192,7 @@ module gap
 
 
 !   Wrap it up
-    if( size(Qs, 1) == 1 )then
+    if( do_linearization )then
       deallocate(soap_linear)
     else
       deallocate(kernels, kernels_copy)
