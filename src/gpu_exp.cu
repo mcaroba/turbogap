@@ -7,9 +7,9 @@
 #include <ctime>
 #include <cmath>
 #include <hip/hip_runtime.h>
-#include <hip/hip_runtime.h>
+// #include <hip/hip_runtime.h>
 #include <hipblas/hipblas.h>
-//#include <hipsolver.h>
+// #include <hipsolver.h>
 #include <hiprand/hiprand.h>
 #include <assert.h>
 #include <hip/hip_complex.h>
@@ -51,7 +51,8 @@ inline void gpuAssert(hipError_t code, const char *file, int line, bool abort=tr
 __inline__ __device__ int warpReduceSum(int val) {
     // Use shuffle down to reduce across the warp
     for (int offset = warpSize / 2; offset > 0; offset >>= 1) {
-      val += __shfl_down_sync(0xffffffff,val, offset,warpSize);
+      //      val += __shfl_down_sync(0xffffffff,val, offset,warpSize);
+      val += __shfl_down(val, offset,warpSize);            
     }
     return val;
 }
@@ -60,7 +61,8 @@ __inline__ __device__ int warpReduceSum(int val) {
 __inline__ __device__ double warpReduceSumDouble(double val) {
     // Use shuffle down to reduce across the warp
     for (int offset = warpSize / 2; offset > 0; offset >>= 1) {
-      val += __shfl_down_sync(0xffffffff,val, offset,warpSize);
+      //      val += __shfl_down_sync(0xffffffff,val, offset,warpSize);
+      val += __shfl_down(val, offset,warpSize);                  
     }
     return val;
 }
@@ -604,9 +606,9 @@ extern "C" void  gpu_get_pair_distribution_and_ders( double* pair_distribution_d
     size_t usedMem = totalMem - freeMem;
 
     // Print out the memory information
-    printf("\n--- b4 pdf Total Memory: %lu bytes\n", totalMem);
-    printf("--- b4 pdf Free Memory: %lu bytes\n", freeMem);
-    printf("--- b4 pdf Used Memory: %lu bytes\n", usedMem);
+    // printf("\n--- b4 pdf Total Memory: %lu bytes\n", totalMem);
+    // printf("--- b4 pdf Free Memory: %lu bytes\n", freeMem);
+    // printf("--- b4 pdf Used Memory: %lu bytes\n", usedMem);
 
   
   double* pdf_to_reduce;
@@ -617,19 +619,19 @@ extern "C" void  gpu_get_pair_distribution_and_ders( double* pair_distribution_d
     usedMem = totalMem - freeMem;
 
     // Print out the memory information
-    printf("\n--- after alloc pdf Total Memory: %lu bytes\n", totalMem);
-    printf("--- after alloc pdf Free Memory: %lu bytes\n", freeMem);
-    printf("--- after alloc pdf Used Memory: %lu bytes\n", usedMem);
+    // printf("\n--- after alloc pdf Total Memory: %lu bytes\n", totalMem);
+    // printf("--- after alloc pdf Free Memory: %lu bytes\n", freeMem);
+    // printf("--- after alloc pdf Used Memory: %lu bytes\n", usedMem);
 
   
   
-  printf("> pdf evaluation kernel starting\n");
+  // printf("> pdf evaluation kernel starting\n");
   kernel_get_pair_distribution_kde<<<nblocks, nthreads, 0, stream[0]>>>(pdf_to_reduce,  pair_distribution_der_d,
 									n_k, n_samples, kde_sigma, x_d, dV_d,
 									rjs_d, pdf_factor, der_factor );
   //  hipDeviceSynchronize();
   // gpuErrchk( hipPeekAtLastError() );
-  printf("> pdf evaluation kernel finished\n");
+  // printf("> pdf evaluation kernel finished\n");
 
 
     // Get memory information
@@ -637,9 +639,9 @@ extern "C" void  gpu_get_pair_distribution_and_ders( double* pair_distribution_d
     usedMem = totalMem - freeMem;
 
     // Print out the memory information
-    printf("\n--- after kernel pdf Total Memory: %lu bytes\n", totalMem);
-    printf("--- after kernel pdf Free Memory: %lu bytes\n", freeMem);
-    printf("--- after kernel pdf Used Memory: %lu bytes\n", usedMem);
+    // printf("\n--- after kernel pdf Total Memory: %lu bytes\n", totalMem);
+    // printf("--- after kernel pdf Free Memory: %lu bytes\n", freeMem);
+    // printf("--- after kernel pdf Used Memory: %lu bytes\n", usedMem);
 
   
   // Then we need to reduce over the size of the blocks for the pair distribution 
@@ -648,9 +650,9 @@ extern "C" void  gpu_get_pair_distribution_and_ders( double* pair_distribution_d
   //  //----------------------------------------
   nblocks=dim3(n_samples,1,1);
   nthreads=dim3(threads,1,1);
-  printf("> pdf reduction kernel starting\n");
+  // printf("> pdf reduction kernel starting\n");
   kernel_reduce_pair_distribution<<<nblocks, nthreads, 0, stream[0]>>>(pdf_to_reduce, pair_distribution_d, n_k, n_samples );
-  printf("> pdf reduction kernel finished\n");
+  // printf("> pdf reduction kernel finished\n");
   //  //----------------------------------------
   
   
@@ -693,7 +695,7 @@ void kernel_get_pair_distribution_kde_der_only( double* pdf_der_out,
 
 
     // if( isnan( pdf_der_temp ) ){
-    //   printf("pdf_der_temp is NaN! l = %d, k = %d, n_k = %d, r %lf, kde_sigma %lf\n", l_index, k_index, n_k,  r, kde_sigma);
+    //   // printf("pdf_der_temp is NaN! l = %d, k = %d, n_k = %d, r %lf, kde_sigma %lf\n", l_index, k_index, n_k,  r, kde_sigma);
     // }
     
     // Reversed the indexing of this temporary array for memory coalescence 
@@ -717,7 +719,7 @@ extern "C" void  gpu_get_pair_distribution_der_only( double* pair_distribution_d
   dim3 nblocks=dim3((n_k * n_samples + threads-1)/threads,1,1);
   dim3 nthreads=dim3(threads,1,1);
 
-  //  printf("> pdf der evaluation kernel starting\n");
+  //  // printf("> pdf der evaluation kernel starting\n");
   kernel_get_pair_distribution_kde_der_only<<<nblocks, nthreads, 0, stream[0]>>>(pair_distribution_der_d,
 									n_k, n_samples, kde_sigma, x_d, dV_d,
 									rjs_d, pdf_factor, der_factor );
@@ -752,14 +754,14 @@ void kernel_get_pair_distribution_kde_only( double* pdf_out,
 
     x_gauss = ( (x - r) / kde_sigma );
 
-    //    printf(" pdf only kernel r = %lf, x = %lf, x_gauss = %lf\n", r, x, x_gauss);
+    //    // printf(" pdf only kernel r = %lf, x = %lf, x_gauss = %lf\n", r, x, x_gauss);
     
     pdf_temp =  pdf_factor * exp( - 0.5 * x_gauss * x_gauss  ) / dV ;
 
     // x =  (- 0.5 * x_gauss * x_gauss) ;
     
     //    if( pdf_temp > 0.000 ){
-      // printf("> checking calc has data, k_index %d, l_index %d, pdf_factor = %lf, x = %lf, pdf_temp = %lf \n", k_index, l_index, pdf_factor, x, pdf_temp);
+      // // printf("> checking calc has data, k_index %d, l_index %d, pdf_factor = %lf, x = %lf, pdf_temp = %lf \n", k_index, l_index, pdf_factor, x, pdf_temp);
     //      }   
     // //    pdf_der_temp = (der_factor * pdf_temp * x_gauss) / (kde_sigma * r);// / dV;
 
@@ -795,9 +797,9 @@ extern "C" void  gpu_get_pair_distribution_only( double* pair_distribution_d,
     // size_t usedMem = totalMem - freeMem;
 
     // // Print out the memory information
-    // // printf("\n--- b4 pdf Total Memory: %lu bytes\n", totalMem);
-    // // printf("--- b4 pdf Free Memory: %lu bytes\n", freeMem);
-    // // printf("--- b4 pdf Used Memory: %lu bytes\n", usedMem);
+    // // // printf("\n--- b4 pdf Total Memory: %lu bytes\n", totalMem);
+    // // // printf("--- b4 pdf Free Memory: %lu bytes\n", freeMem);
+    // // // printf("--- b4 pdf Used Memory: %lu bytes\n", usedMem);
 
   
   double* pdf_to_reduce;
@@ -809,12 +811,12 @@ extern "C" void  gpu_get_pair_distribution_only( double* pair_distribution_d,
     // usedMem = totalMem - freeMem;
 
     // // Print out the memory information
-    // // printf("\n--- after alloc pdf Total Memory: %lu bytes\n", totalMem);
-    // // printf("--- after alloc pdf Free Memory: %lu bytes\n", freeMem);
-    // // printf("--- after alloc pdf Used Memory: %lu bytes\n", usedMem);
+    // // // printf("\n--- after alloc pdf Total Memory: %lu bytes\n", totalMem);
+    // // // printf("--- after alloc pdf Free Memory: %lu bytes\n", freeMem);
+    // // // printf("--- after alloc pdf Used Memory: %lu bytes\n", usedMem);
 
   
-  //  printf("> pdf evaluation kernel starting\n");
+  //  // printf("> pdf evaluation kernel starting\n");
   kernel_get_pair_distribution_kde_only<<<nblocks, nthreads, 0, stream[0]>>>(pdf_to_reduce,
 									n_k, n_samples, kde_sigma, x_d, dV_d,
 									rjs_d, pdf_factor, der_factor );

@@ -67,35 +67,35 @@ program turbogap
   !**************************************************************************
   ! Variable definitions
   !
-  real*8, allocatable, target :: rjs(:), thetas(:), phis(:), xyz(:,:), sph_temp(:), sph_temp3(:,:)
+  real*8, allocatable :: rjs(:), thetas(:), phis(:), xyz(:,:)
   real*8, allocatable :: positions(:,:), positions_prev(:,:), soap(:,:), soap_cart_der(:,:,:), &
        positions_diff(:,:), forces_prev(:,:), frac_positions(:,:)
   real*8 :: rcut_max, a_box(1:3), b_box(1:3), c_box(1:3), max_displacement, energy, energy_prev
-  real*8, target :: virial(1:3, 1:3), this_virial(1:3, 1:3), virial_soap(1:3, 1:3), virial_2b(1:3, 1:3), &
+  real*8 :: virial(1:3, 1:3), this_virial(1:3, 1:3), virial_soap(1:3, 1:3), virial_2b(1:3, 1:3), &
        virial_3b(1:3,1:3), virial_core_pot(1:3, 1:3), virial_vdw(1:3, 1:3), virial_lp(1:3,1:3), &
        this_virial_vdw(1:3, 1:3), this_virial_lp(1:3, 1:3), virial_pdf(1:3,1:3), this_virial_pdf(1:3,1:3), v_uc,&
        & virial_sf(1:3,1:3), this_virial_sf(1:3,1:3), &
        & virial_xrd(1:3,1:3), this_virial_xrd(1:3,1:3), &
-       & virial_nd(1:3,1:3), this_virial_nd(1:3,1:3), &
-       & v_uc_prev, v_a_uc, v_a_uc_prev, eVperA3tobar =&
+       & virial_nd(1:3,1:3), this_virial_nd(1:3,1:3)
+  real*8 ::  v_uc_prev, v_a_uc, v_a_uc_prev, eVperA3tobar =&
        & 1602176.6208d0, ranf, ranv(1:3), disp(1:3), d_disp, &
        & e_mc_prev, p_accept, virial_prev(1:3, 1:3), sim_exp_pred,&
        & sim_exp_prev, sim_exp_pred_der(1:3)
-  real*8, allocatable, target :: energies(:), forces(:,:), energies_soap(:),&
+  real*8, allocatable :: energies(:), forces(:,:), energies_soap(:),&
        & forces_soap(:,:), this_energies(:), this_forces(:,:),&
        & energies_2b(:), forces_2b(:,:), energies_3b(:), forces_3b(:&
        &,:), energies_core_pot(:), forces_core_pot(:,:), velocities(:&
        &,:), masses_types(:), masses(:),  hirshfeld_v_temp(:),&
        & masses_temp(:), sinc_factor_matrix(:,:), energies_exp(:)
-!  real*8, allocatable, target :: this_hirshfeld_v(:), this_hirshfeld_v_cart_der(:,:)
+!  real*8, allocatable :: this_hirshfeld_v(:), this_hirshfeld_v_cart_der(:,:)
 !  real*8, pointer :: this_hirshfeld_v_pt(:), this_hirshfeld_v_cart_der_pt(:,:)
 
   real*8, allocatable, target :: local_properties(:,:), local_properties_cart_der(:,:,:)
   ! Have one rank lower for the pointer, such that it just relates to a sub array of the local properties/cart_der
-  real*8, pointer :: local_properties_pt(:), local_properties_cart_der_pt(:,:)
-  real*8, pointer :: hirshfeld_v(:), hirshfeld_v_cart_der(:,:)
+!  real*8, pointer :: local_properties_pt(:), local_properties_cart_der_pt(:,:)
+!  real*8, pointer :: hirshfeld_v(:), hirshfeld_v_cart_der(:,:)
   real*8, allocatable, target :: this_local_properties(:,:), this_local_properties_cart_der(:,:,:)
-  real*8, pointer :: this_local_properties_pt(:,:), this_local_properties_cart_der_pt(:,:,:)
+!  real*8, pointer :: this_local_properties_pt(:,:), this_local_properties_cart_der_pt(:,:,:)
   real*8, allocatable ::  y_i_pred_all(:,:), moments(:), moments_exp(:)
 
 
@@ -132,8 +132,8 @@ program turbogap
   ! type (EPH_LangevinSpatialCorrelation_class) :: ephlsc
   
   ! Clean up these variables after code refactoring !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  integer, allocatable, target :: n_neigh(:), neighbors_list(:), alpha_max(:), species(:), species_supercell(:), &
-       neighbor_species(:), sph_temp_int(:), der_neighbors(:), der_neighbors_list(:), &
+  integer, allocatable :: n_neigh(:), neighbors_list(:), alpha_max(:), species(:), species_supercell(:), &
+       neighbor_species(:), der_neighbors(:), der_neighbors_list(:), &
        i_beg_list(:), i_end_list(:), j_beg_list(:), j_end_list(:),&
        & species_idx(:), n_neigh_out(:), n_local_properties_mpi(:),&
        & local_property_indexes(:), n_mc_species(:), n_mc_species_prev(:), kappas(:)
@@ -151,7 +151,7 @@ program turbogap
   integer :: which_atom = 0, n_species = 1, n_species_actual, n_xyz, indices(1:3)
   integer :: radial_enhancement = 0
   integer :: md_istep, mc_istep, mc_mu_id=1, n_mc
-  character*8, allocatable, target :: species_types_actual(:)
+  character*8, allocatable :: species_types_actual(:)
   character*1024, allocatable ::  local_property_labels(:), local_property_labels_temp(:), local_property_labels_temp2(:)
   logical :: repeat_xyz = .true., overwrite = .false., check_species,&
        & valid_local_properties=.false., label_in_list, do_mc_relax&
@@ -177,10 +177,10 @@ program turbogap
   ! These are the containers for the hyperparameters of descriptors and GAPs
   integer :: n_soap_turbo = 0, n_distance_2b = 0, n_angle_3b = 0, n_core_pot = 0, counter_lp_names=0, temp_md_nsteps
   real*8, parameter :: pi = acos(-1.0)
-  type(soap_turbo), allocatable, target :: soap_turbo_hypers(:)
-  type(distance_2b), allocatable, target :: distance_2b_hypers(:)
-  type(angle_3b), allocatable, target :: angle_3b_hypers(:)
-  type(core_pot), allocatable, target :: core_pot_hypers(:)
+  type(soap_turbo), allocatable :: soap_turbo_hypers(:)
+  type(distance_2b), allocatable :: distance_2b_hypers(:)
+  type(angle_3b), allocatable :: angle_3b_hypers(:)
+  type(core_pot), allocatable :: core_pot_hypers(:)
 
   !vdw crap
   real*8, allocatable :: v_neigh_vdw(:), energies_vdw(:), forces_vdw(:,:), this_energies_vdw(:), this_forces_vdw(:,:)
@@ -190,7 +190,7 @@ program turbogap
   real*8, allocatable :: energies_xrd(:), forces_xrd(:,:), this_energies_xrd(:), this_forces_xrd(:,:)
   real*8, allocatable :: energies_nd(:), forces_nd(:,:), this_energies_nd(:), this_forces_nd(:,:)
   ! MPI stuff
-  real*8, allocatable, target :: temp_1d(:), temp_1d_bis(:), temp_2d(:,:),&
+  real*8, allocatable :: temp_1d(:), temp_1d_bis(:), temp_2d(:,:),&
        & pair_distribution_partial(:,:), pair_distribution_der(:,:), pair_distribution_partial_der(:,:,:), &
        & pair_distribution_partial_temp(:,:),&
        & pair_distribution_partial_temp_der(:,:,:),&
@@ -242,7 +242,7 @@ program turbogap
   type(c_ptr), allocatable :: nk_d(:), k_index_d(:), j2_index_d(:), rjs_index_d(:), xyz_k_d(:), pair_distribution_partial_d(:), pair_distribution_partial_der_d(:), all_scattering_factors_d(:)
   integer(c_size_t), allocatable :: st_nk_d(:), st_k_index_d(:), st_j2_index_d(:), st_pair_distribution_partial_d(:), st_pair_distribution_partial_der_d(:)
   integer, allocatable :: nk(:)
-  real*8, allocatable, target :: prefactor(:)
+  real*8, allocatable :: prefactor(:)
   
   
 
@@ -282,9 +282,6 @@ program turbogap
 ! Start recording the time
 
   !  call cpu_time(time1)
-  call get_time( time1 )
-  
-  time3 = time1
   ! Start random seed
   !call srand(int(time1*1000))
   !**************************************************************************
@@ -311,6 +308,10 @@ program turbogap
 
 
 #else
+  call get_time( time1 )
+  
+  time3 = time1
+  
   rank = 0
   ntasks = 1
 #endif
@@ -370,11 +371,13 @@ program turbogap
 
        !$omp end parallel
 
-#endif
+
        n_omp = omp_get_max_threads()
        
        print *, rank, " rank n_omp_temp, n_omp", n_omp_temp, n_omp       
-       print *, rank, " --  omp num threads out = ", n_omp       
+       print *, rank, " --  omp num threads out = ", n_omp
+#endif
+       
        allocate( cublas_handles( 1:n_omp ) )
        allocate( gpu_streams( 1:n_omp ) )  
 
@@ -1551,6 +1554,7 @@ program turbogap
 ! #endif
 !      end if
 
+  
      call build_neighbors_list(positions, a_box, b_box, c_box, params%do_timing, &
           species_supercell, rcut_max, n_atom_pairs, rjs, &
           thetas, phis, xyz, n_neigh_local, neighbors_list, neighbor_species, n_sites, indices, &
@@ -1569,8 +1573,9 @@ program turbogap
         j_beg = 1
         j_end = n_atom_pairs_by_rank(rank+1)
      end if
-     print *, "-- Rank ", rank , " > set ", " i_beg = ", i_beg, " i_end = ", i_end,  " j_beg = ", j_beg, " j_end = ", j_end 
+!     print *, "-- Rank ", rank , " > set ", " i_beg = ", i_beg, " i_end = ", i_end,  " j_beg = ", j_beg, " j_end = ", j_end 
 #else
+
      call build_neighbors_list(positions, a_box, b_box, c_box, params%do_timing, &
           species_supercell, rcut_max, n_atom_pairs, rjs, &
           thetas, phis, xyz, n_neigh, neighbors_list, neighbor_species, n_sites, indices, &
@@ -1673,16 +1678,16 @@ program turbogap
         if( any( soap_turbo_hypers(:)%has_local_properties ) )then
            if( n_sites /= n_sites_prev .or.  params%do_mc  )then
               if( allocated(local_properties) )then
-                 nullify( this_local_properties_pt )
+!                 nullify( this_local_properties_pt )
                  deallocate( this_local_properties, local_properties )
                  if( params%do_forces )then
-                    nullify( this_local_properties_cart_der_pt )
+ !                   nullify( this_local_properties_cart_der_pt )
                     deallocate( this_local_properties_cart_der, local_properties_cart_der )
                  end if
               end if
               allocate( local_properties(1:n_sites, 1:params%n_local_properties) )
               allocate( this_local_properties(1:n_sites, 1:params%n_local_properties) )
-              this_local_properties_pt => this_local_properties
+!              this_local_properties_pt => this_local_properties
 
               !         I don't remember why this needs a pointer <----------------------------------------- CHECK
 
@@ -1702,10 +1707,10 @@ program turbogap
               end if
 
               local_properties_cart_der = 0.d0
-              this_local_properties_cart_der_pt =>&
-                   & this_local_properties_cart_der(1:3,&
-                   & 1:n_atom_pairs_by_rank(rank+1), 1:params&
-                   &%n_local_properties)
+              ! this_local_properties_cart_der_pt =>&
+              !      & this_local_properties_cart_der(1:3,&
+              !      & 1:n_atom_pairs_by_rank(rank+1), 1:params&
+              !      &%n_local_properties)
            end if
         end if
 
@@ -1818,7 +1823,14 @@ program turbogap
         !     Loop through soap_turbo descriptors - we always call this routine, even if we don't want to do prediction
         n_lp_count = 0 ! This counts the local properties
 
-!!! COMMENTING OUT 
+!!! COMMENTING OUT
+
+
+
+!#################################################################
+
+
+!              write(*,*) " > Starting get_gap_soap loop "        
         do i = 1, n_soap_turbo
 
            !time_soap(1) = MPI_wtime()
@@ -1921,20 +1933,15 @@ program turbogap
                  if( params%do_forces )then
                     this_local_properties_cart_der = 0.d0
                     !             I don't remember why this needs a pointer <----------------------------------------- CHECK
-                    nullify(this_local_properties_cart_der_pt)
-                    this_local_properties_cart_der_pt =>&
-                         & this_local_properties_cart_der(1:3,&
-                         & this_j_beg:this_j_end, 1:params&
-                         &%n_local_properties)
+!                    nullify(this_local_properties_cart_der_pt)
+                    ! this_local_properties_cart_der_pt =>&
+                    !      & this_local_properties_cart_der(1:3,&
+                    !      & this_j_beg:this_j_end, 1:params&
+                    !      &%n_local_properties)
                  end if
               end if
 
-         ! print *, rank, " compress soap indices "
-         ! print *, rank, " > actual size ", size(soap_turbo_hypers(i)%compress_soap_indices)
-         ! print *, rank, " > expected size ", soap_turbo_hypers(i)%dim
-              !--- TODO: PORT OLD VERSION OF GPU GET GAP SOAP WITH NEW CPU VERSION
-              !--- OLD GPU VERSION OF GET GAP SOAP ---!
-!              print *, rank, " > GET GAP SOAP < "           
+              write(*,*) "get gap soap "
               call get_gap_soap(n_sparse, n_sites, this_n_sites_mpi, n_neigh(this_i_beg:this_i_end), neighbors_list(this_j_beg:this_j_end), &
                    soap_turbo_hypers(i)%n_species, soap_turbo_hypers(i)%species_types, &
                    rjs(this_j_beg:this_j_end), thetas(this_j_beg:this_j_end), phis(this_j_beg:this_j_end), &
@@ -1963,106 +1970,15 @@ program turbogap
                    & soap_turbo_hypers(i)%n_local_properties,&
                    & soap_turbo_hypers(i)%local_property_models, n_lp_count, &
                    this_energies, this_forces, &
-                   this_local_properties_pt,&
-                   & this_local_properties_cart_der_pt,&
+                   !                   this_local_properties_pt,&
+                   this_local_properties,&                   
+!                   & this_local_properties_cart_der_pt,&
+                   & this_local_properties_cart_der,&                   
                    & local_property_indexes,&
                    this_virial, solo_time_soap, time_get_soap, &
                    soap_turbo_hypers(i)%W_d, soap_turbo_hypers(i)%S_d, soap_turbo_hypers(i)%multiplicity_array_d, &
                    soap_turbo_hypers(i)%st_W_d, soap_turbo_hypers(i)%st_S_d, soap_turbo_hypers(i)%st_multiplicity_array_d,&
                    soap_turbo_hypers(i)%recompute_basis, cublas_handle, gpu_stream)
-
-!              print *, rank, " >>--- Finished GET GAP SOAP ---<< "                         
-              ! !--- NEW CPU VERSION OF GET GAP SOAP ---!
-              ! call get_gap_soap(n_sites, this_n_sites_mpi, n_neigh(this_i_beg:this_i_end), neighbors_list(this_j_beg:this_j_end), &
-              !      soap_turbo_hypers(i)%n_species, soap_turbo_hypers(i)%species_types, &
-              !      rjs(this_j_beg:this_j_end), thetas(this_j_beg:this_j_end), phis(this_j_beg:this_j_end), &
-              !      xyz(1:3, this_j_beg:this_j_end), &
-              !      soap_turbo_hypers(i)%alpha_max, &
-              !      soap_turbo_hypers(i)%l_max, soap_turbo_hypers(i)%dim, soap_turbo_hypers(i)%rcut_hard, &
-              !      soap_turbo_hypers(i)%rcut_soft, soap_turbo_hypers(i)%nf, soap_turbo_hypers(i)%global_scaling, &
-              !      soap_turbo_hypers(i)%atom_sigma_r, soap_turbo_hypers(i)%atom_sigma_r_scaling, &
-              !      soap_turbo_hypers(i)%atom_sigma_t, soap_turbo_hypers(i)%atom_sigma_t_scaling, &
-              !      soap_turbo_hypers(i)%amplitude_scaling, soap_turbo_hypers(i)%radial_enhancement, &
-              !      soap_turbo_hypers(i)%central_weight, soap_turbo_hypers(i)%basis, &
-              !      soap_turbo_hypers(i)%scaling_mode, params%do_timing, params%do_derivatives, params%do_forces, &
-              !      params%do_prediction, params%write_soap, params%write_derivatives, &
-              !      soap_turbo_hypers(i)%compress_soap, soap_turbo_hypers(i)%compress_P_nonzero, &
-              !      soap_turbo_hypers(i)%compress_P_i, soap_turbo_hypers(i)%compress_P_j, &
-              !      soap_turbo_hypers(i)%compress_P_el, &
-              !      soap_turbo_hypers(i)%delta, soap_turbo_hypers(i)%zeta, soap_turbo_hypers(i)%central_species, &
-              !      xyz_species(this_i_beg:this_i_end), xyz_species_supercell, soap_turbo_hypers(i)%alphas, &
-              !      soap_turbo_hypers(i)%Qs, params%all_atoms, params%which_atom, indices, soap, soap_cart_der, &
-              !      der_neighbors, der_neighbors_list, &
-              !      & soap_turbo_hypers(i)%has_local_properties,&
-              !      & soap_turbo_hypers(i)%n_local_properties,&
-              !      & soap_turbo_hypers(i)%local_property_models,&
-              !      & this_energies, this_forces, this_local_properties_pt,&
-              !      & this_local_properties_cart_der_pt,&
-              !      & local_property_indexes, this_i_beg, this_i_end, this_j_beg, this_j_end, &
-              !      & this_virial, n_lp_count )
-
-
-              ! We can have a pointer to specific parts of this_local_properties array to then
-
-
-              ! if (soap_turbo_hypers(i)%has_local_properties)then
-
-              !    ! only iterating over the computed properties
-              !    this_local_properties = 0.d0
-              !    if( params%do_forces )then
-              !       this_local_properties_cart_der = 0.d0
-              !    end if
-
-              !    do l = 1, soap_turbo_hypers(i)%n_local_properties
-              !       ! We can increment the counter for the local properties
-              !       i2 = i2 + 1
-              !       if (soap_turbo_hypers(i)%local_property_models(l)%compute)then
-              !          ! compute the local property!
-              !          ! Above the local properties passes are this_local_properties so one must change
-              !          !
-              !          ! Allocate the pointer
-
-              !          this_local_properties_pt =>&
-              !               & this_local_properties(1:n_sites,&
-              !               & local_property_indexes(i2))
-              !             !             I don't remember why this
-              !          !             needs a pointer
-              !          !
-              !          !<-----------------------------------------
-              !          !CHECK
-              !          this_local_properties_cart_der_pt =>&
-              !               & this_local_properties_cart_der(1:3,&
-              !               & this_j_beg:this_j_end,&
-              !               & local_property_indexes(i2))
-
-              !          call get_local_properties( soap, &
-              !               soap_turbo_hypers(i)%local_property_models(l)%Qs, &
-              !               soap_turbo_hypers(i)%local_property_models(l)%alphas, &
-              !               soap_turbo_hypers(i)%local_property_models(l)%V0, &
-              !               soap_turbo_hypers(i)%local_property_models(l)%delta, &
-              !               soap_turbo_hypers(i)%local_property_models(l)%zeta, &
-              !               this_local_properties_pt, &
-              !               soap_turbo_hypers(i)%local_property_models(l)%do_derivatives, &
-              !               soap_cart_der, &
-              !               n_neigh_out, &
-              !               this_local_properties_cart_der_pt, n_pairs,&
-              !               & in_to_out_pairs, n_all_sites,&
-              !               & in_to_out_site,  n_sites_out )
-
-
-              !          nullify(this_local_properties_pt)
-              !          nullify(this_local_properties_cart_der_pt)
-              !       end if
-              !    end do
-              !    ! Now deallocate the arrays which were not deallocated in get_gap_soap
-              !    deallocate( in_to_out_site, in_to_out_pairs, n_neigh_out )
-
-              !    if( .not. params%write_soap  ) deallocate( soap )
-
-              !    if( params%do_derivatives .and. .not. params%write_derivatives)then
-              !       deallocate( soap_cart_der )
-              !    end if
-              ! end if
 
 
 
@@ -2081,13 +1997,13 @@ program turbogap
 
 
                  if( soap_turbo_hypers(i)%has_vdw )then
-                    hirshfeld_v => local_properties( :, vdw_lp_index)
-                    if (any(soap_turbo_hypers(i)&
-                         &%local_property_models(:)%do_derivatives)&
-                         & .and. params%do_derivatives)&
-                         & hirshfeld_v_cart_der =>&
-                         & local_properties_cart_der( :, :,&
-                         & vdw_lp_index)
+!                    hirshfeld_v => local_properties( :, vdw_lp_index)
+                    ! if (any(soap_turbo_hypers(i)&
+                    !      &%local_property_models(:)%do_derivatives)&
+                    !      & .and. params%do_derivatives)&
+                    !      & hirshfeld_v_cart_der =>&
+                    !      & local_properties_cart_der( :, :,&
+                    !      & vdw_lp_index)
                  end if
 
               end if
@@ -2122,7 +2038,9 @@ program turbogap
         end if
            
         call gpu_free(Qs_d) 
-        print *, rank, " >>~~~ Finished freeing gpu memory ~~~<< "                                 
+
+
+        !        print *, rank, " >>~~~ Finished freeing gpu memory ~~~<< "                                 
 
         !!soap_time_soap(2 = MPI_wtime()
 !        call get_time( soap_time_soap(2  )
@@ -2221,6 +2139,26 @@ program turbogap
 
         end do
 
+
+
+
+
+
+
+
+!#################################################################
+
+
+
+
+
+
+
+
+
+
+
+        
 #ifdef _MPIF90
         if( any( soap_turbo_hypers(:)%has_local_properties) )then
            ! time_mpi(1)=MPI_Wtime()
@@ -2626,6 +2564,7 @@ program turbogap
         if( params%gpu_batched .and. ( params%do_xrd .or. params%do_nd) &
              .and. params%exp_forces .and. params%do_forces )then
 
+!           print *, "> Starting batched xrd "
            !           call cpu_time( time_exp_batched(1) )
            call get_time(  time_exp_batched(1) )
            
@@ -2683,7 +2622,7 @@ program turbogap
            
            do i = 1, size( i_beg_list )
 
-              n_omp_temp = omp_get_thread_num()
+!$              n_omp_temp = omp_get_thread_num()
 !              print *, " - pdf thread num ", n_omp_temp, " / ", n_omp
               ! > In sequential operation, we just want to use the one stream, and only 1 will be created
               omp_task = mod( i-1, n_omp) + 1
@@ -2696,13 +2635,13 @@ program turbogap
               n_sites_temp = this_i_end - this_i_beg + 1
               n_pairs_temp = this_j_end - this_j_beg + 1
 
-!              print *, " "
-              write(*,'(A,I4,A,I4,A,I4,A,I4,A,I4,A,I4)') "pdf batches---Rank ", rank, " ---Thread ", omp_task, &
-                   " / ", n_omp, " i = ", i,  &
-                   " i_beg = ",  this_i_beg,&
-                   " i_end = ",  this_i_end,&
-                   " j_beg = ",  this_j_beg,&
-                   " j_end = ",  this_j_end
+             ! print *, " "
+             !  write(*,'(A,I4,A,I4,A,I4,A,I4,A,I4,A,I4)') "pdf batches---Rank ", rank, " ---Thread ", omp_task, &
+             !       " / ", n_omp, " i = ", i,  &
+             !       " i_beg = ",  this_i_beg,&
+             !       " i_end = ",  this_i_end,&
+             !       " j_beg = ",  this_j_beg,&
+             !       " j_end = ",  this_j_end
               
               call gpu_malloc_neighbors(gpu_neigh(i), &
                    n_sites_temp, n_pairs_temp, &
@@ -2725,12 +2664,12 @@ program turbogap
               
               call gpu_free_neighbors(gpu_neigh(i), gpu_streams(omp_task))
 
-              write(*,'(A,I4,A,I4,A,I4,A,I4,A,I4,A,I4)') "pdf batches finished---Rank ", rank, " ---Thread ", omp_task, &
-                   " / ", n_omp, " i = ", i,  &
-                   " i_beg = ",  this_i_beg,&
-                   " i_end = ",  this_i_end,&
-                   " j_beg = ",  this_j_beg,&
-                   " j_end = ",  this_j_end
+              ! write(*,'(A,I4,A,I4,A,I4,A,I4,A,I4,A,I4)') "pdf batches finished---Rank ", rank, " ---Thread ", omp_task, &
+              !      " / ", n_omp, " i = ", i,  &
+              !      " i_beg = ",  this_i_beg,&
+              !      " i_end = ",  this_i_end,&
+              !      " j_beg = ",  this_j_beg,&
+              !      " j_end = ",  this_j_end
                             
               call gpu_meminfo()
            end do
@@ -2746,25 +2685,36 @@ program turbogap
                 pair_distribution_partial, n_species_actual, n_atoms_of_species, v_uc)           
 
 
-           ! n_dim_idx = 1                    
-           ! outerchk: do j = 1, n_species_actual
-           !    do k = 1, n_species_actual
-           !       if (j>k) cycle 
+           
+           ! Write out the partial pair distribution functions
+           call get_write_condition( params%do_mc, params%do_md&
+                &, mc_istep, md_istep, params%write_xyz,&
+                & write_condition)
 
-           !       temp_string=""
-           !       temp_string2=""                 
-           !       write(temp_string, "(I8)")   n_dim_idx
-           !       write(temp_string2, "(A)")  "pair_distribution_partial_" // trim(adjustl(temp_string))
-                 
-           !       call write_exp_datan(x_pair_distribution(1:params%pair_distribution_n_samples),&
-           !            & pair_distribution_partial(1:params%pair_distribution_n_samples, n_dim_idx),&
-           !            & overwrite_condition, temp_string2 , "tmp")
-                 
-           !       n_dim_idx = n_dim_idx + 1
-           !       if ( n_dim_idx > n_dim_partial ) exit outerchk
-           !    end do
-           ! end do outerchk
 
+           if (rank == 0 .and. params%write_pair_distribution .and. write_condition) then
+              call get_overwrite_condition( params%do_mc, params%do_md ,&
+                   & mc_istep, md_istep, params%write_xyz,&
+                   & overwrite_condition)
+           
+              n_dim_idx = 1                    
+              outerchk: do j = 1, n_species_actual
+                 do k = 1, n_species_actual
+                    if (j>k) cycle 
+
+                    write(temp_string,'(A)')&
+                         & 'pair_distribution_' // trim(species_types_actual(j)) // '_' // trim(species_types_actual(k)) //&
+                         & "_prediction.dat"
+                    call write_exp_datan(x_pair_distribution(1:params%pair_distribution_n_samples),&
+                         & pair_distribution_partial(1:params%pair_distribution_n_samples, n_dim_idx),&
+                         & overwrite_condition, temp_string, 'pair_distribution')
+
+                    n_dim_idx = n_dim_idx + 1
+                    if ( n_dim_idx > n_dim_partial ) exit outerchk
+                 end do
+              end do outerchk
+           end if
+           
            
            
 
@@ -2982,13 +2932,13 @@ program turbogap
               n_pairs_temp = this_j_end - this_j_beg + 1
 
               ! I have the neighbors allocated in in gpu_neigh(i)
-              print *, " "
-              write(*,'(A,I8,A,I8,A,I8,A,I8,A,I8,A,I8)') "xrd batches---Rank ", rank, " ---Thread ", omp_task,  &
-                   " / ", n_omp, " i ", i, &
-                   " this_i_beg = ",  this_i_beg,&
-                   " this_i_end = ",  this_i_end,&
-                   " this_j_beg = ",  this_j_beg,&
-                   " this_j_end = ",  this_j_end
+              ! print *, " "
+              ! write(*,'(A,I8,A,I8,A,I8,A,I8,A,I8,A,I8)') "xrd batches---Rank ", rank, " ---Thread ", omp_task,  &
+              !      " / ", n_omp, " i ", i, &
+              !      " this_i_beg = ",  this_i_beg,&
+              !      " this_i_end = ",  this_i_end,&
+              !      " this_j_beg = ",  this_j_beg,&
+              !      " this_j_end = ",  this_j_end
 
               n_dim_idx = 1                    
               outer: do j = 1, n_species_actual
@@ -3088,6 +3038,13 @@ program turbogap
            call free_host_batches(gpu_batch_storage, params%gpu_n_batches, n_dim_partial)
            call free_exp_batches(gpu_exp, params%gpu_n_batches)
 
+
+           if ( allocated(i_beg_list) ) deallocate( i_beg_list, i_end_list, j_beg_list, j_end_list )
+           
+           if ( allocated( gpu_neigh ) )         deallocate( gpu_neigh )
+           if ( allocated( gpu_exp ) )           deallocate( gpu_exp )
+           if ( allocated( gpu_batch_storage ) ) deallocate( gpu_batch_storage )
+           
            !           call cpu_time( time_exp_batched(2) )
            call get_time(  time_exp_batched(2) )
            
@@ -3097,9 +3054,9 @@ program turbogap
            time_xrd(3) = time_xrd(3) + time_xrd(2) - time_xrd(1)           
 
            time_exp_batched(3) = time_exp_batched(3) +   time_exp_batched(2) - time_exp_batched(1)           
-           print *, " "
-           print *, "--Rank, ", rank, " --- TIME EXP BATCHED = ", time_exp_batched(3)
-           print *, " "           
+           if( rank == 0) print *, " "
+           if( rank == 0) print *, "--Rank, ", rank, " --- TIME EXP BATCHED = ", time_exp_batched(3)
+           if( rank == 0) print *, " "           
         end if
         
 
@@ -3449,460 +3406,316 @@ program turbogap
 
 
 
-
         if( params%do_prediction )then
-!       Loop through distance_2b descriptors
-           print *, rank, " > Starting 2b prediction"
 
-!        print *, "doing omp parallel, with omp_task ", omp_task  
-        do i = 1, size(params%species_types)
-          if( distance_2b_hypers(i)%species1 == params%species_types(i) )then   
-           sp1 = i
-           exit
-          end if
-        end do
-        do i = 1, size(params%species_types)
-          if( distance_2b_hypers(i)%species2 == params%species_types(i) )then   
-           sp2 = i
-           exit
-          end if
-        end do
-        c_do_forces = logical( params%do_forces, kind=c_bool )
+           if( n_core_pot > 0 .or. n_distance_2b > 0 .or. n_angle_3b > 0 )then 
 
-        ! Optimization of kernels by the amount of memory being sent is possible here:
-        ! > Only parts of n_neigh is necessary to be sent along with
-        ! > the species. Leaving this optimization for later.
+              c_do_forces = logical( params%do_forces, kind=c_bool )              
+              
+              st_n_sites_int = n_sites*sizeof(n_neigh(1)) ! (i_end - i_beg + 1)
+              !        print *, rank, " >> Allocating 2b on gpu"        
+              call gpu_malloc_all(n_neigh_d,st_n_sites_int,gpu_stream)
+              call cpy_htod(c_loc(n_neigh),n_neigh_d, st_n_sites_int,gpu_stream)
+              call gpu_malloc_all(species_d,st_n_sites_int,gpu_stream)
+              call cpy_htod(c_loc(species),species_d, st_n_sites_int,gpu_stream)
+              ! Changed n_atom_pairs to n_atom_pairs_by_rank
+              st_n_atom_pairs_int = j_end * sizeof(neighbor_species(1))
+              call gpu_malloc_all(neighbor_species_d,st_n_atom_pairs_int,gpu_stream)
+              call cpy_htod(c_loc(neighbor_species),neighbor_species_d, st_n_atom_pairs_int,gpu_stream)
+              st_n_atom_pairs_double = j_end*sizeof(rjs(1))
+              call gpu_malloc_all(rjs_d,st_n_atom_pairs_double,gpu_stream)
+              call cpy_htod(c_loc(rjs),rjs_d, st_n_atom_pairs_double,gpu_stream)
+              call gpu_malloc_all(xyz_d,3*st_n_atom_pairs_double,gpu_stream)
+              call cpy_htod(c_loc(xyz),xyz_d,3*st_n_atom_pairs_double,gpu_stream)
+
+              size_maxnp_bytes = size(neighbors_list) * c_int 
+              call gpu_malloc_all(neighbors_list_d,size_maxnp_bytes, gpu_stream)
+              call cpy_htod(c_loc(neighbors_list), neighbors_list_d, size_maxnp_bytes, gpu_stream )
+
+
+              
+              if( n_distance_2b > 0 )then 
+                 st_n_sites_double=n_sites*sizeof(energies_2b(1))
+                 call gpu_malloc_all(energies_2b_d,st_n_sites_double,gpu_stream)
+                 call cpy_htod(c_loc(energies_2b),energies_2b_d, st_n_sites_double,gpu_stream)
+                 call gpu_malloc_all(forces_2b_d,3*st_n_sites_double,gpu_stream)
+                 call cpy_htod(c_loc(forces_2b),forces_2b_d, 3*st_n_sites_double,gpu_stream)
+                 st_virial=9*sizeof(virial_2b(1,1))
+                 call gpu_malloc_all(virial_2b_d,st_virial,gpu_stream)
+                 call cpy_htod(c_loc(virial_2b),virial_2b_d, st_virial,gpu_stream)
+
+
+
+                 do i = 1, n_distance_2b
+                    !! time_2b(1)=MPI_Wtime()
+                    !call get_time( ! time_2b(1) )
+
+                    call get_time( time_2b(1) )
+
+
+                    do j = 1, size(params%species_types)
+                       if( distance_2b_hypers(i)%species1 == params%species_types(j) )then   
+                          sp1 = i
+                          exit
+                       end if
+                    end do
+                    do j = 1, size(params%species_types)
+                       if( distance_2b_hypers(i)%species2 == params%species_types(j) )then   
+                          sp2 = i
+                          exit
+                       end if
+                    end do
+
+
+
+                    n_sparse = distance_2b_hypers(i)%n_sparse
+                    st_n_sparse_double=n_sparse*sizeof( distance_2b_hypers(i)%alphas(1))
+                    call gpu_malloc_all(alphas_d,st_n_sparse_double,gpu_stream)
+                    call cpy_htod(c_loc(distance_2b_hypers(i)%alphas),alphas_d,st_n_sparse_double,gpu_stream)
+                    call gpu_malloc_all(cutoff_d,st_n_sparse_double,gpu_stream)
+                    call cpy_htod(c_loc(distance_2b_hypers(i)%cutoff),cutoff_d,st_n_sparse_double,gpu_stream)
+                    call gpu_malloc_all(qs_d,st_n_sparse_double,gpu_stream)
+                    call cpy_htod(c_loc(distance_2b_hypers(i)%Qs(:,1)),qs_d,st_n_sparse_double,gpu_stream)
+
+                    call get_time( t1 )
+
+                    call gpu_get_2b_forces_energies(i_beg, i_end,&
+                         & n_sparse, energies_2b_d, 0.0d0, n_neigh_d,&
+                         & c_do_forces, forces_2b_d, virial_2b_d,&
+                         & rjs_d, distance_2b_hypers(i)%rcut,&
+                         & species_d, neighbor_species_d, sp1, sp2,&
+                         & 0.5d0, distance_2b_hypers(i)%delta,&
+                         & cutoff_d, qs_d, distance_2b_hypers(i)&
+                         &%sigma, alphas_d, xyz_d, gpu_stream)
+
+                    !time_2b(2) = MPI_wtime()
+                    call get_time( time_2b(2)  )
+
+                    !          print *, rank, " >>--- Finished 2b energies forces on gpu ---"
+                    call gpu_free_async(alphas_d,gpu_stream)
+                    call gpu_free_async(cutoff_d,gpu_stream)
+                    call gpu_free_async(qs_d,gpu_stream)
+
+                    call cpy_dtoh(energies_2b_d, c_loc(this_energies),st_n_sites_double, gpu_stream)
+                    call cpy_dtoh(forces_2b_d, c_loc(this_forces),3*st_n_sites_double, gpu_stream)
+                    call cpy_dtoh(virial_2b_d, c_loc(this_virial),st_virial, gpu_stream)
+
+                    call gpu_device_sync()
+                    energies_2b = energies_2b + this_energies
+                    if( params%do_forces )then
+                       forces_2b = forces_2b + this_forces
+                       virial_2b = virial_2b + this_virial
+                    end if
+
+                    call get_time( time_2b(2) )
+
+                    time_2b(3) = time_2b(3) + time_2b(2) - time_2b(1)
+                 end do
+                 call gpu_free_async(energies_2b_d,gpu_stream)
+                 call gpu_free_async(forces_2b_d,gpu_stream)
+                 call gpu_free(virial_2b_d)!,gpu_stream)
+                 !        print *, rank, " >>~~~ Finished freeing 2b energies forces on gpu ~~~<<"
+              end if
+
+
+
+              if( n_core_pot > 0 )then 
+                 
+                 !        print *, rank, " > Allocating core_pot on gpu "
+                 st_n_sites_double=n_sites*sizeof(energies_core_pot(1))
+                 call gpu_malloc_all(energies_core_pot_d,st_n_sites_double,gpu_stream)
+                 call cpy_htod(c_loc(energies_core_pot),energies_core_pot_d, st_n_sites_double,gpu_stream)
+                 call gpu_malloc_all(forces_core_pot_d,3*st_n_sites_double,gpu_stream)
+                 call cpy_htod(c_loc(forces_core_pot),forces_core_pot_d, 3*st_n_sites_double,gpu_stream)
+                 st_virial=9*sizeof(virial_core_pot(1,1))
+                 call gpu_malloc_all(virial_core_pot_d,st_virial,gpu_stream)
+                 call cpy_htod(c_loc(virial_core_pot),virial_core_pot_d, st_virial,gpu_stream)
+
+                 !       Loop through core_pot descriptors
+                 do i = 1, n_core_pot
+
+                    !           print *, " > Getting core potential"
+                    call get_time( time_core_pot(1) )
+                    
+                    n_sparse = core_pot_hypers(i)%n
+                    st_n_sparse_double=n_sparse*sizeof( core_pot_hypers(i)%x(1))
+                    call gpu_malloc_all(x_d,st_n_sparse_double,gpu_stream)
+                    call cpy_htod(c_loc(core_pot_hypers(i)%x),x_d,st_n_sparse_double,gpu_stream)
+                    call gpu_malloc_all(V_d,st_n_sparse_double,gpu_stream)
+                    call cpy_htod(c_loc(core_pot_hypers(i)%V),V_d,st_n_sparse_double,gpu_stream)
+                    call gpu_malloc_all(dVdx2_d,st_n_sparse_double,gpu_stream)
+                    call cpy_htod(c_loc(core_pot_hypers(i)%dVdx2),dVdx2_d,st_n_sparse_double,gpu_stream)
+
+
+                    ! print *, rank, " >>--- Finished allocating core_pot on gpu ---"
+                    ! print *, rank, " > Starting core_pot energies forces on gpu "                            
+
+                    call gpu_get_core_pot_energy_and_forces(i_beg, i_end, c_do_forces, species_d, sp1, sp2, n_neigh_d, neighbor_species_d,&
+                         rjs_d, n_sparse, x_d, V_d, dVdx2_d, core_pot_hypers(i)%yp1, core_pot_hypers(i)%ypn,&
+                         xyz_d, forces_core_pot_d, virial_core_pot_d, energies_core_pot_d, gpu_stream)
+                    !          print *, rank, " >>--- Finished core_pot energies forces on gpu ---<<"                                      
+                    call gpu_free_async(x_d,gpu_stream)
+                    call gpu_free_async(V_d,gpu_stream)
+                    call gpu_free_async(dVdx2_d,gpu_stream)
+
+                    call cpy_dtoh(energies_core_pot_d, c_loc(this_energies),st_n_sites_double, gpu_stream)
+                    call cpy_dtoh(forces_core_pot_d, c_loc(this_forces),3*st_n_sites_double, gpu_stream)
+                    call cpy_dtoh(virial_core_pot_d, c_loc(this_virial),st_virial, gpu_stream)
+
+                    call gpu_device_sync()
+
+                    energies_core_pot = energies_core_pot + this_energies
+                    if( params%do_forces )then
+                       forces_core_pot = forces_core_pot + this_forces
+                       virial_core_pot = virial_core_pot + this_virial
+                    end if
+
+
+                    call get_time( time_core_pot(2) )
+
+                    time_core_pot(3) = time_core_pot(3) + time_core_pot(2) - time_core_pot(1)
+                 end do
+
+                 call gpu_free_async(energies_core_pot_d,gpu_stream)
+                 call gpu_free_async(forces_core_pot_d,gpu_stream)
+                 call gpu_free(virial_core_pot_d)
+              end if
+              
         
-        st_n_sites_int = n_sites*sizeof(n_neigh(1)) ! (i_end - i_beg + 1)
-!        print *, rank, " >> Allocating 2b on gpu"        
-        call gpu_malloc_all(n_neigh_d,st_n_sites_int,gpu_stream)
-        call cpy_htod(c_loc(n_neigh),n_neigh_d, st_n_sites_int,gpu_stream)
-        call gpu_malloc_all(species_d,st_n_sites_int,gpu_stream)
-        call cpy_htod(c_loc(species),species_d, st_n_sites_int,gpu_stream)
-        ! Changed n_atom_pairs to n_atom_pairs_by_rank
-        st_n_atom_pairs_int = j_end * sizeof(neighbor_species(1))
-        call gpu_malloc_all(neighbor_species_d,st_n_atom_pairs_int,gpu_stream)
-        call cpy_htod(c_loc(neighbor_species),neighbor_species_d, st_n_atom_pairs_int,gpu_stream)
-        st_n_atom_pairs_double = j_end*sizeof(rjs(1))
-        call gpu_malloc_all(rjs_d,st_n_atom_pairs_double,gpu_stream)
-        call cpy_htod(c_loc(rjs),rjs_d, st_n_atom_pairs_double,gpu_stream)
-        call gpu_malloc_all(xyz_d,3*st_n_atom_pairs_double,gpu_stream)
-        call cpy_htod(c_loc(xyz),xyz_d,3*st_n_atom_pairs_double,gpu_stream)
-        st_n_sites_double=n_sites*sizeof(energies_2b(1))
-        call gpu_malloc_all(energies_2b_d,st_n_sites_double,gpu_stream)
-        call cpy_htod(c_loc(energies_2b),energies_2b_d, st_n_sites_double,gpu_stream)
-        call gpu_malloc_all(forces_2b_d,3*st_n_sites_double,gpu_stream)
-        call cpy_htod(c_loc(forces_2b),forces_2b_d, 3*st_n_sites_double,gpu_stream)
-        st_virial=9*sizeof(virial_2b(1,1))
-        call gpu_malloc_all(virial_2b_d,st_virial,gpu_stream)
-        call cpy_htod(c_loc(virial_2b),virial_2b_d, st_virial,gpu_stream)
+              
+              !3b preparations:
+              !setup a couple of parameters before calling gpu (kernel type and c_bool do_force)
+              
+              
+              ! print *, rank, " > Starting allocation 3b on gpu "                            
+          
+              if( n_angle_3b > 0 )then 
+                 size_energy3b = size(n_neigh)*c_double
+                 call gpu_malloc_all(energies_3b_d,size_energy3b, gpu_stream)
+                 call gpu_memset_async (energies_3b_d, 0, size_energy3b,gpu_stream)
+                 size_forces3b = size(forces,2) * 3 * c_double
+                 call gpu_malloc_all(forces_3b_d,size_forces3b, gpu_stream)
+                 call gpu_memset_async (forces_3b_d, 0, size_forces3b,gpu_stream)
+                 size_virial3b = 9 * c_double
+                 call gpu_malloc_all(virial_3b_d,size_virial3b, gpu_stream)
+                 call gpu_memset_async (virial_3b_d, 0, size_virial3b,gpu_stream)
 
+                 size_maxnp_bytes = size(n_neigh)* c_int
+                 call gpu_malloc_all(kappas_array_d,size_maxnp_bytes,gpu_stream)
+
+
+
+                 allocate(kappas(1:n_sites))
+
+
+                 k = 0
+                 do i = i_beg, i_end 
+                    kappas( i ) = k            
+                    do j = 1, n_neigh(i)
+                       k = k + 1
+                    end do
+                 end do
+
+
+                 ! do i = 1, size(n_neigh)
+                 !    if( i == 1 )then
+                 !       kappas( i ) = 0
+                 !    else
+                 !       kappas( i ) = n_neigh( i-1 ) + kappas( i-1 )
+                 !    end if
+                 ! end do
+
+                 call cpy_htod(c_loc(kappas), kappas_array_d, size_maxnp_bytes, gpu_stream )
+                 call gpu_device_sync()
+                 deallocate(kappas)
+
+                 !        call gpu_create_kappas(kappas_array_d, c_loc(n_neigh),gpu_stream, size(n_neigh))
+
+
+
+                 max_np = 0
+                 do i = 1, n_angle_3b
+                    if (angle_3b_hypers(i)%n_sparse > max_np)then
+                       max_np = angle_3b_hypers(i)%n_sparse
+                    end if
+                 end do
+
+
+                 !write(0,*) "max np is: ",max_np
+                 size_maxnp_bytes = max_np* c_double
+                 call gpu_malloc_all(cutoff_d,size_maxnp_bytes,gpu_stream)
+                 call gpu_malloc_all(alphas_d,size_maxnp_bytes,gpu_stream)
+                 size_maxnp_qs_bytes = 3*size_maxnp_bytes
+                 call gpu_malloc_all(qs_d,size_maxnp_qs_bytes,gpu_stream)
+                 size_alphas_bytes = 3 * c_double
+                 call gpu_malloc_all(sigma_d,size_alphas_bytes,gpu_stream)
+
+
+                 !       Loop through angle_3b descriptors
+                 do i = 1, n_angle_3b
+                    call get_time( time_3b(1) )
+
+                    call cpy_htod(c_loc(angle_3b_hypers(i)%cutoff),cutoff_d,size_maxnp_bytes,gpu_stream)
+                    call cpy_htod(c_loc(angle_3b_hypers(i)%sigma),sigma_d,size_alphas_bytes,gpu_stream)
+                    call cpy_htod(c_loc(angle_3b_hypers(i)%qs),qs_d,size_maxnp_qs_bytes,gpu_stream)
+                    call cpy_htod(c_loc(angle_3b_hypers(i)%alphas),alphas_d,size_maxnp_bytes,gpu_stream)
+
+                    ! print *, rank, " >> Finished allocation 3b on gpu "
+                    ! print *, rank, " >> Starting setup 3b on gpu "                                                
+                    call setup_3b_gpu(angle_3b_hypers(i)%kernel_type,angle_3b_hypers(i)%species_center,&
+                         angle_3b_hypers(i)%species1, angle_3b_hypers(i)%species2, params%species_types,&
+                         c_name_3b, sp0_3b, sp1_3b, sp2_3b)
+
+                    call gpu_3b(size(angle_3b_hypers(i)%alphas),  i_end-i_beg+1, size(rjs), size(forces,2), &
+                         sp0_3b, sp1_3b, sp2_3b, alphas_d, angle_3b_hypers(i)%delta, 0.d0, cutoff_d, gpu_stream,&
+                         rjs_d, xyz_d, n_neigh_d,species_d,neighbors_list_d,neighbor_species_d, &
+                         c_do_forces, angle_3b_hypers(i)%rcut, 0.5d0, sigma_d, qs_d, c_name_3b,&
+                         i_beg, i_end, energies_3b_d, forces_3b_d, virial_3b_d, kappas_array_d)
+
+                    call cpy_dtoh(energies_3b_d, c_loc(this_energies),st_n_sites_double, gpu_stream)
+                    call cpy_dtoh(forces_3b_d, c_loc(this_forces), 3*st_n_sites_double, gpu_stream)
+                    call cpy_dtoh(virial_3b_d, c_loc(this_virial),st_virial, gpu_stream)
+
+                    call gpu_device_sync()
+                    energies_3b = energies_3b + this_energies
+                    if( params%do_forces )then
+                       forces_3b = forces_3b + this_forces
+                       virial_3b = virial_3b + this_virial
+                    end if
+
+
+                    ! print *, rank, " >>--- Finished 3b on gpu ---<<"
+
+                    call get_time( time_3b(2) )
+
+                    time_3b(3) = time_3b(3) + time_3b(2) - time_3b(1)
+
+                    call gpu_free_async(energies_3b_d,gpu_stream)
+                    call gpu_free_async(forces_3b_d,gpu_stream)
+                    call gpu_free_async(kappas_array_d, gpu_stream)
+                    call gpu_free_async(virial_3b_d, gpu_stream) 
+
+                    call gpu_free_async(cutoff_d,gpu_stream)
+                    call gpu_free_async(sigma_d,gpu_stream)
+                    call gpu_free_async(qs_d,gpu_stream)
+                    call gpu_free_async(alphas_d,gpu_stream)                    
+                 end do
+              end if
+              
+              ! print *, rank, " >> Starting freeing memory 3b on gpu"        
+              
+              call gpu_free_async(species_d,gpu_stream)
+              call gpu_free_async(n_neigh_d,gpu_stream)
+              call gpu_free_async(neighbor_species_d,gpu_stream)
+              call gpu_free_async(rjs_d,gpu_stream)
+              call gpu_free_async(xyz_d,gpu_stream)
+              call gpu_free(neighbors_list_d)        
+
+           end if
 
         
-        do i = 1, n_distance_2b
-           !! time_2b(1)=MPI_Wtime()
-           !call get_time( ! time_2b(1) )
-           
-           call get_time( time_2b(1) )
-           
-          n_sparse = distance_2b_hypers(i)%n_sparse
-          st_n_sparse_double=n_sparse*sizeof( distance_2b_hypers(i)%alphas(1))
-          call gpu_malloc_all(alphas_d,st_n_sparse_double,gpu_stream)
-          call cpy_htod(c_loc(distance_2b_hypers(i)%alphas),alphas_d,st_n_sparse_double,gpu_stream)
-          call gpu_malloc_all(cutoff_d,st_n_sparse_double,gpu_stream)
-          call cpy_htod(c_loc(distance_2b_hypers(i)%cutoff),cutoff_d,st_n_sparse_double,gpu_stream)
-          call gpu_malloc_all(qs_d,st_n_sparse_double,gpu_stream)
-          call cpy_htod(c_loc(distance_2b_hypers(i)%Qs(:,1)),qs_d,st_n_sparse_double,gpu_stream)
-
-
-          !time_2b(1) = MPI_wtime()
-          call get_time( time_2b(1)  )
-          
-!          this_energies = 0.d0
-!          if( params%do_forces )then
-!           this_forces = 0.d0
-!           this_virial = 0.d0
-!         end if
-
-        !   write(*,*) "Before doing 2b"
-        !  !$omp parallel reduction(+: this_energies, this_forces, this_virial)
-        !  !$ omp_task = omp_get_thread_num()
-        !   call get_2b_energy_and_forces(rjs(j_beg_omp(omp_task&
-        !        &+1):j_end_omp(omp_task+1)), xyz(1:3,&
-        !        & j_beg_omp(omp_task+1):j_end_omp(omp_task+1)),&
-        !        & distance_2b_hypers(i)%alphas, distance_2b_hypers(i)&
-        !        &%cutoff, distance_2b_hypers(i)%rcut, 0.5d0,&
-        !        & distance_2b_hypers(i)%delta, distance_2b_hypers(i)&
-        !        &%sigma, 0.d0, distance_2b_hypers(i)%Qs(:,1),&
-        !        & n_neigh(i_beg_omp(omp_task+1):i_end_omp(omp_task+1))&
-        !        &, params%do_forces, params%do_timing,&
-        !        & species(i_beg_omp(omp_task+1):i_end_omp(omp_task+1))&
-        !        &, neighbor_species(j_beg_omp(omp_task&
-        !        &+1):j_end_omp(omp_task+1)), distance_2b_hypers(i)&
-        !        &%species1, distance_2b_hypers(i)%species2, params&
-        !        &%species_types, this_energies(i_beg_omp(omp_task&
-        !        &+1):i_end_omp(omp_task+1)), this_forces(1:3,&
-        !        & i_beg_omp(omp_task+1):i_end_omp(omp_task+1)),&
-        !        & this_virial )
-
-        !   !$omp end parallel
-
-!          print *, " 2b energies array, n = ",i
-          ! print *, " 2b virial array, n = ",i          
-
-          ! do j = 1,3
-          !    do l = 1,3
-          !       print *, "j = ", j, " l = ", l, this_virial(j,l)
-          !    end do
-          ! end do
-          
-            
-
-!         call get_2b_energy_and_forces(rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), distance_2b_hypers(i)%alphas, &
-!                                       distance_2b_hypers(i)%cutoff, &
-!                                       distance_2b_hypers(i)%rcut, 0.5d0, distance_2b_hypers(i)%delta, &
-!                                       distance_2b_hypers(i)%sigma, 0.d0, distance_2b_hypers(i)%Qs(:,1), &
-!                                       n_neigh(i_beg:i_end), params%do_forces, params%do_timing, &
-!                                       species(i_beg:i_end), neighbor_species(j_beg:j_end), &
-!                                       distance_2b_hypers(i)%species1, distance_2b_hypers(i)%species2, &
-!                                       params%species_types, this_energies(i_beg:i_end), this_forces(1:3, i_beg:i_end), &
-!                                       this_virial )
-!         energies_2b = energies_2b + this_energies
-!         if( params%do_forces )then
-!           forces_2b = forces_2b + this_forces
-!           virial_2b = virial_2b + this_virial
-!         end if
-
-          print *, rank, " >>--- Finished allocating 2b on gpu ---"
-          print *, rank, " > Starting 2b energies forces on gpu "                            
-          !! t1=MPI_Wtime()
-          !call get_time( ! t1 )
-          
-          call get_time( t1 )
-          
-          call gpu_get_2b_forces_energies(i_beg, i_end, n_sparse, energies_2b_d, 0.0d0, n_neigh_d, c_do_forces, forces_2b_d,   & 
-                                          virial_2b_d, rjs_d, distance_2b_hypers(i)%rcut, species_d, neighbor_species_d, sp1,  &
-                                          sp2, 0.5d0, distance_2b_hypers(i)%delta, cutoff_d, qs_d, distance_2b_hypers(i)%sigma,&
-                                          alphas_d, xyz_d, gpu_stream)
-
-          !time_2b(2) = MPI_wtime()
-          call get_time( time_2b(2)  )
-          
-!          print *, rank, " >>--- Finished 2b energies forces on gpu ---"
-          call gpu_free_async(alphas_d,gpu_stream)
-          call gpu_free_async(cutoff_d,gpu_stream)
-          call gpu_free_async(qs_d,gpu_stream)
-
-          call cpy_dtoh(energies_2b_d, c_loc(this_energies),st_n_sites_double, gpu_stream)
-          call cpy_dtoh(forces_2b_d, c_loc(this_forces),3*st_n_sites_double, gpu_stream)
-          call cpy_dtoh(virial_2b_d, c_loc(this_virial),st_virial, gpu_stream)
-
-          call gpu_device_sync()
-          energies_2b = energies_2b + this_energies
-          if( params%do_forces )then
-             forces_2b = forces_2b + this_forces
-             virial_2b = virial_2b + this_virial
-          end if
-          
-          
-          !! time_2b(2)=MPI_Wtime()
-          !call get_time( ! time_2b(2) )
-          
-          call get_time( time_2b(2) )
-          
-          time_2b(3) = time_2b(3) + time_2b(2) - time_2b(1)
-        end do
-        call gpu_free_async(energies_2b_d,gpu_stream)
-        call gpu_free_async(forces_2b_d,gpu_stream)
-        call gpu_free(virial_2b_d)!,gpu_stream)
-!        print *, rank, " >>~~~ Finished freeing 2b energies forces on gpu ~~~<<"
-
-
-        
-!        print *, rank, " > Allocating core_pot on gpu "
-        st_n_sites_double=n_sites*sizeof(energies_core_pot(1))
-        call gpu_malloc_all(energies_core_pot_d,st_n_sites_double,gpu_stream)
-        call cpy_htod(c_loc(energies_core_pot),energies_core_pot_d, st_n_sites_double,gpu_stream)
-        call gpu_malloc_all(forces_core_pot_d,3*st_n_sites_double,gpu_stream)
-        call cpy_htod(c_loc(forces_core_pot),forces_core_pot_d, 3*st_n_sites_double,gpu_stream)
-        st_virial=9*sizeof(virial_core_pot(1,1))
-        call gpu_malloc_all(virial_core_pot_d,st_virial,gpu_stream)
-        call cpy_htod(c_loc(virial_core_pot),virial_core_pot_d, st_virial,gpu_stream)
-
-!       Loop through core_pot descriptors
-        do i = 1, n_core_pot
-
-!           print *, " > Getting core potential"
-           
-          n_sparse = core_pot_hypers(i)%n
-          st_n_sparse_double=n_sparse*sizeof( core_pot_hypers(i)%x(1))
-          call gpu_malloc_all(x_d,st_n_sparse_double,gpu_stream)
-          call cpy_htod(c_loc(core_pot_hypers(i)%x),x_d,st_n_sparse_double,gpu_stream)
-          call gpu_malloc_all(V_d,st_n_sparse_double,gpu_stream)
-          call cpy_htod(c_loc(core_pot_hypers(i)%V),V_d,st_n_sparse_double,gpu_stream)
-          call gpu_malloc_all(dVdx2_d,st_n_sparse_double,gpu_stream)
-          call cpy_htod(c_loc(core_pot_hypers(i)%dVdx2),dVdx2_d,st_n_sparse_double,gpu_stream)
-
-          !!time_core_pot(1 = MPI_wtime()
-          !call get_time( time_core_pot(1  )
-          
-          ! time_core_pot(1)=MPI_Wtime()
-          call get_time( time_core_pot(1) )
-          
-!         this_energies = 0.d0
-!         if( params%do_forces )then
-!           this_forces = 0.d0
-!           this_virial = 0.d0
-!         end if
-!         call get_core_pot_energy_and_forces(rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), &
-!                                             core_pot_hypers(i)%x, core_pot_hypers(i)%V, &
-!                                             core_pot_hypers(i)%yp1, core_pot_hypers(i)%ypn, &
-!                                             core_pot_hypers(i)%dVdx2, n_neigh(i_beg:i_end), params%do_forces, &
-!                                             params%do_timing, species(i_beg:i_end), neighbor_species(j_beg:j_end), &
-!                                             core_pot_hypers(i)%species1, core_pot_hypers(i)%species2, &
-!                                             params%species_types, this_energies(i_beg:i_end), this_forces(1:3, i_beg:i_end), &
-!                                             this_virial )
-!         energies_core_pot = energies_core_pot + this_energies
-!         if( params%do_forces )then
-!           forces_core_pot = forces_core_pot + this_forces
-!           virial_core_pot = virial_core_pot + this_virial
-!         end if
-
-          !time_core_pot(2) = MPI_wtime()
-          call get_time( time_core_pot(2)  )
-          
-
-         print *, rank, " >>--- Finished allocating core_pot on gpu ---"
-         print *, rank, " > Starting core_pot energies forces on gpu "                            
-          
-          call gpu_get_core_pot_energy_and_forces(i_beg, i_end, c_do_forces, species_d, sp1, sp2, n_neigh_d, neighbor_species_d,&
-                                                  rjs_d, n_sparse, x_d, V_d, dVdx2_d, core_pot_hypers(i)%yp1, core_pot_hypers(i)%ypn,&
-                                                  xyz_d, forces_core_pot_d, virial_core_pot_d, energies_core_pot_d, gpu_stream)
-!          print *, rank, " >>--- Finished core_pot energies forces on gpu ---<<"                                      
-          call gpu_free_async(x_d,gpu_stream)
-          call gpu_free_async(V_d,gpu_stream)
-          call gpu_free_async(dVdx2_d,gpu_stream)
-
-          call cpy_dtoh(energies_core_pot_d, c_loc(this_energies),st_n_sites_double, gpu_stream)
-          call cpy_dtoh(forces_core_pot_d, c_loc(this_forces),3*st_n_sites_double, gpu_stream)
-          call cpy_dtoh(virial_core_pot_d, c_loc(this_virial),st_virial, gpu_stream)
-
-          call gpu_device_sync()
-          energies_core_pot = energies_core_pot + this_energies
-          if( params%do_forces )then
-             forces_core_pot = forces_core_pot + this_forces
-             virial_core_pot = virial_core_pot + this_virial
-          end if
-
-          
-          !! time_core_pot(2)=MPI_Wtime()
-          !call get_time( ! time_core_pot(2) )
-          
-          call get_time( time_core_pot(2) )
-          
-          time_core_pot(3) = time_core_pot(3) + time_core_pot(2) - time_core_pot(1)
-        end do
-
-        ! call cpy_dtoh(energies_core_pot_d, c_loc(energies_core_pot),st_n_sites_double, gpu_stream)
-        ! call cpy_dtoh(forces_core_pot_d, c_loc(forces_core_pot),3*st_n_sites_double, gpu_stream)
-        ! call cpy_dtoh(virial_core_pot_d, c_loc(virial_core_pot),st_virial, gpu_stream)
-        call gpu_free_async(energies_core_pot_d,gpu_stream)
-        call gpu_free_async(forces_core_pot_d,gpu_stream)
-        call gpu_free(virial_core_pot_d)!,gpu_stream)
-        
-          print *, rank, " >>~~~ Finished freeing core_pot on gpu ~~~<<"
-        !3b preparations:
-        !setup a couple of parameters before calling gpu (kernel type and c_bool do_force)
-
-
-          print *, rank, " > Starting allocation 3b on gpu "                            
-          
-!       write(*,*) "allocating energy, force and virial for 3b"
-        size_energy3b = size(n_neigh)*c_double
-        call gpu_malloc_all(energies_3b_d,size_energy3b, gpu_stream)
-        call gpu_memset_async (energies_3b_d, 0, size_energy3b,gpu_stream)
-        size_forces3b = size(forces,2) * 3 * c_double
-        call gpu_malloc_all(forces_3b_d,size_forces3b, gpu_stream)
-        call gpu_memset_async (forces_3b_d, 0, size_forces3b,gpu_stream)
-        size_virial3b = 9 * c_double
-        call gpu_malloc_all(virial_3b_d,size_virial3b, gpu_stream)
-        call gpu_memset_async (virial_3b_d, 0, size_virial3b,gpu_stream)
-
-        size_maxnp_bytes = size(n_neigh)* c_int
-        call gpu_malloc_all(kappas_array_d,size_maxnp_bytes,gpu_stream)
-
-        
-        
-        allocate(kappas(1:n_sites))
-
-        
-        k = 0
-        do i = i_beg, i_end 
-           kappas( i ) = k            
-           do j = 1, n_neigh(i)
-              k = k + 1
-           end do
-        end do
-        
-        
-        ! do i = 1, size(n_neigh)
-        !    if( i == 1 )then
-        !       kappas( i ) = 0
-        !    else
-        !       kappas( i ) = n_neigh( i-1 ) + kappas( i-1 )
-        !    end if
-        ! end do
-        
-        call cpy_htod(c_loc(kappas), kappas_array_d, size_maxnp_bytes, gpu_stream )
-        call gpu_device_sync()
-        deallocate(kappas)
-        
-!        call gpu_create_kappas(kappas_array_d, c_loc(n_neigh),gpu_stream, size(n_neigh))
-        
-        size_maxnp_bytes = size(neighbors_list) * c_int 
-        call gpu_malloc_all(neighbors_list_d,size_maxnp_bytes, gpu_stream)
-        call cpy_htod(c_loc(neighbors_list), neighbors_list_d, size_maxnp_bytes, gpu_stream )
-
-
-        max_np = 0
-        do i = 1, n_angle_3b
-          if (angle_3b_hypers(i)%n_sparse > max_np)then
-	  max_np = angle_3b_hypers(i)%n_sparse
-	  end if
-	end do
-
-
-!write(0,*) "max np is: ",max_np
-        size_maxnp_bytes = max_np* c_double
-        call gpu_malloc_all(cutoff_d,size_maxnp_bytes,gpu_stream)
-        call gpu_malloc_all(alphas_d,size_maxnp_bytes,gpu_stream)
-        size_maxnp_qs_bytes = 3*size_maxnp_bytes
-        call gpu_malloc_all(qs_d,size_maxnp_qs_bytes,gpu_stream)
-        size_alphas_bytes = 3 * c_double
-        call gpu_malloc_all(sigma_d,size_alphas_bytes,gpu_stream)
-
-
-!       Loop through angle_3b descriptors
-        do i = 1, n_angle_3b
-
-           !!time_3b(1 = MPI_wtime()
-           !call get_time( time_3b(1  )
-           
-           ! time_3b(1)=MPI_Wtime()
-           call get_time( time_3b(1) )
-           
-!          this_energies = 0.d0
-!          if( params%do_forces )then
-!            this_forces = 0.d0
-!            this_virial = 0.d0
-!          end if
-!          write(*,*) "Before doing 3b"
-!          !$omp parallel reduction(+: this_energies, this_forces, this_virial)
-        !  !$ omp_task = omp_get_thread_num()
-
-        !  call get_3b_energy_and_forces(rjs(j_beg_omp(omp_task&
-        !       &+1):j_end_omp(omp_task+1)), xyz(1:3,j_beg_omp(omp_task&
-        !       &+1):j_end_omp(omp_task+1)), angle_3b_hypers(i)%alphas,&
-        !       & angle_3b_hypers(i)%cutoff, angle_3b_hypers(i)%rcut,&
-        !       & 0.5d0, angle_3b_hypers(i)%delta, angle_3b_hypers(i)&
-        !       &%sigma, 0.d0, angle_3b_hypers(i)%Qs,&
-        !       & n_neigh(i_beg_omp(omp_task+1):i_end_omp(omp_task+1)),&
-        !       & neighbors_list(j_beg_omp(omp_task&
-        !       &+1):j_end_omp(omp_task+1)), params%do_forces, params&
-        !       &%do_timing, angle_3b_hypers(i)%kernel_type,&
-        !       & species(i_beg_omp(omp_task+1):i_end_omp(omp_task+1)),&
-        !       & neighbor_species(j_beg_omp(omp_task&
-        !       &+1):j_end_omp(omp_task+1)), angle_3b_hypers(i)&
-        !       &%species_center, angle_3b_hypers(i)%species1,&
-        !       & angle_3b_hypers(i)%species2, params%species_types,&
-        !       & this_energies(i_beg_omp(omp_task&
-        !       &+1):i_end_omp(omp_task+1)), this_forces, this_virial)
-
-        !  !$omp end parallel
-!          call get_3b_energy_and_forces(rjs(j_beg:j_end), xyz(1:3,j_beg:j_end), angle_3b_hypers(i)%alphas, &
-!                                        angle_3b_hypers(i)%cutoff, &
-!                                        angle_3b_hypers(i)%rcut, 0.5d0, angle_3b_hypers(i)%delta, &
-!                                        angle_3b_hypers(i)%sigma, 0.d0, angle_3b_hypers(i)%Qs, n_neigh(i_beg:i_end), &
-!                                        neighbors_list(j_beg:j_end), &
-!                                        params%do_forces, params%do_timing, angle_3b_hypers(i)%kernel_type, &
-!                                        species(i_beg:i_end), neighbor_species(j_beg:j_end), angle_3b_hypers(i)%species_center, &
-!                                        angle_3b_hypers(i)%species1, angle_3b_hypers(i)%species2, params%species_types, &
-!                                        this_energies(i_beg:i_end), this_forces, this_virial)
-
-!          alphas, cutoff, sigma, qs_d are arrays that are supposed to change between calls. size changes? ofc yes :S every size is  in desc(i)%n_sparse. i could do a "empty loop" to get max value and preallocate for this.
-!except alphas, those are always 3 (according to read input function)
-! types are real8
-
-          call cpy_htod(c_loc(angle_3b_hypers(i)%cutoff),cutoff_d,size_maxnp_bytes,gpu_stream)
-          call cpy_htod(c_loc(angle_3b_hypers(i)%sigma),sigma_d,size_alphas_bytes,gpu_stream)
-          call cpy_htod(c_loc(angle_3b_hypers(i)%qs),qs_d,size_maxnp_qs_bytes,gpu_stream)
-          call cpy_htod(c_loc(angle_3b_hypers(i)%alphas),alphas_d,size_maxnp_bytes,gpu_stream)
-
-          print *, rank, " >> Finished allocation 3b on gpu "
-          print *, rank, " >> Starting setup 3b on gpu "                                                
-          call setup_3b_gpu(angle_3b_hypers(i)%kernel_type,angle_3b_hypers(i)%species_center,angle_3b_hypers(i)%species1, angle_3b_hypers(i)%species2,params%species_types, c_name_3b, sp0_3b, sp1_3b, sp2_3b)
-          print *, rank, " >> Finished setup 3b on gpu "                                                          
-          !          call gpu_3b(n_sparse, n_sites, n_atom_pairs, n_sites0, sp0_3b, sp1_3b, sp2_3b, alphas_d, delta, e0, cutoff_d, stream, rjs_d, xyz_d, n_neigh_d,species_d,neighbors_list_d,neighbor_species_d, c_do_forces, rcut, buffer, sigma_d, qs_d, c_name_3b, i_beg, i_end, energies_3b_d, forces_3b_d, virial_3b_d, kappas_array_d)
-          print *, rank, " > Starting 3b on gpu "                                                          
-          ! call gpu_3b(size(angle_3b_hypers(i)%alphas),  size(n_neigh), size(rjs), size(forces,2), sp0_3b, sp1_3b, sp2_3b, alphas_d, angle_3b_hypers(i)%delta, 0.d0, cutoff_d, gpu_stream, rjs_d, xyz_d, n_neigh_d,species_d,neighbors_list_d,neighbor_species_d, c_do_forces, angle_3b_hypers(i)%rcut, 0.5d0, sigma_d, qs_d, c_name_3b, i_beg, i_end, energies_3b_d, forces_3b_d, virial_3b_d, kappas_array_d)
-
-          call gpu_3b(size(angle_3b_hypers(i)%alphas),  i_end-i_beg+1, size(rjs), size(forces,2), sp0_3b, sp1_3b, sp2_3b, alphas_d, angle_3b_hypers(i)%delta, 0.d0, cutoff_d, gpu_stream, rjs_d, xyz_d, n_neigh_d,species_d,neighbors_list_d,neighbor_species_d, c_do_forces, angle_3b_hypers(i)%rcut, 0.5d0, sigma_d, qs_d, c_name_3b, i_beg, i_end, energies_3b_d, forces_3b_d, virial_3b_d, kappas_array_d)
-
-          call cpy_dtoh(energies_3b_d, c_loc(this_energies),st_n_sites_double, gpu_stream)
-          call cpy_dtoh(forces_3b_d, c_loc(this_forces), 3*st_n_sites_double, gpu_stream)
-          call cpy_dtoh(virial_3b_d, c_loc(this_virial),st_virial, gpu_stream)
-
-          call gpu_device_sync()
-          energies_3b = energies_3b + this_energies
-          if( params%do_forces )then
-             forces_3b = forces_3b + this_forces
-             virial_3b = virial_3b + this_virial
-          end if
-
-          
-          print *, rank, " >>--- Finished 3b on gpu ---<<"
-!         energies_3b = energies_3b + this_energies
-!         if( params%do_forces )then
-!           forces_3b = forces_3b + this_forces
-!            virial_3b = virial_3b + this_virial
-!          end if
-!
-          !!time_3b(2 = MPI_wtime()
-          !call get_time( time_3b(2  )
-          
-          ! time_3b(2)=MPI_Wtime()
-          call get_time( time_3b(2) )
-          
-          time_3b(3) = time_3b(3) + time_3b(2) - time_3b(1)
-        end do
-          print *, rank, " >> Starting freeing memory 3b on gpu"        
-        ! call cpy_dtoh(energies_3b_d, c_loc(energies_3b),size_energy3b, gpu_stream)
-        ! call cpy_dtoh(forces_3b_d, c_loc(forces_3b),size_forces3b, gpu_stream)
-        ! call cpy_dtoh(virial_3b_d, c_loc(virial_3b),size_virial3b, gpu_stream)
-        call gpu_free_async(cutoff_d,gpu_stream)
-        call gpu_free_async(sigma_d,gpu_stream)
-        call gpu_free_async(qs_d,gpu_stream)
-        call gpu_free_async(alphas_d,gpu_stream)
-        call gpu_free_async(species_d,gpu_stream)
-        call gpu_free_async(n_neigh_d,gpu_stream)
-        call gpu_free_async(neighbor_species_d,gpu_stream)
-        call gpu_free_async(rjs_d,gpu_stream)
-        call gpu_free_async(xyz_d,gpu_stream)
-        call gpu_free_async(energies_3b_d,gpu_stream)
-        call gpu_free_async(forces_3b_d,gpu_stream)
-        call gpu_free_async(kappas_array_d, gpu_stream)
-        call gpu_free_async(neighbors_list_d, gpu_stream)        
-        call gpu_free(virial_3b_d) !,gpu_stream)
-
-!           print *, rank, " >>~~~ Finished freeing memory 3b on gpu ~~~<<"        
-
-        !!        call cpu_time(time2)
         call get_time( time2 )
         
-        !! time2=MPI_Wtime()
-        !call get_time( ! time2 )
-        
-!        call get_time( time2 )
         
         time_gap = time_gap + time2 - time1
            !       Communicate all energies and forces here for all
@@ -5669,12 +5482,13 @@ program turbogap
 
      !     !     !     !     call cpu_time(time1)
      call get_time( time1 )
+     ! DEBUG CHECKING THAT NEIGHBORS LIST DOES NOT CAUSE INCREASE IN MEMORY  
+     rebuild_neighbors_list = .false.
      
 #ifdef _MPIF90
      !   Parallel neighbors list build
      call mpi_bcast(rebuild_neighbors_list, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
 #endif
-
 
      if( rebuild_neighbors_list )then
         deallocate( rjs, xyz, thetas, phis, neighbor_species )

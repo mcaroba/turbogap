@@ -163,6 +163,8 @@ module gap_interface
                                      species0, species_multiplicity0, &
                                      species_multiplicity_supercell )
 
+    !--- ALLOCATED mask0, species0,  species_multiplicity0, species_multiplicity_supercell ---!
+    
 !   We need to sort out which atoms from the general neighbors list we actually keep
 !
 !   First, we just count the number of sites to keep and the number of atom pairs for allocation purposes
@@ -208,7 +210,6 @@ module gap_interface
     allocate( mask(1:n_atom_pairs, 1:n_species) )
     allocate( in_to_out_site(1:n_all_sites) )
     allocate( in_to_out_pairs(1:n_atom_pairs) )
-!    allocate( out_to_in_site(1:n_sites0) )
     allocate( out_to_in_site(1:n_total_sites) )
     in_to_out_site = 0
     in_to_out_pairs = 0
@@ -284,13 +285,13 @@ module gap_interface
       allocate( soap_cart_der(1:3, 1:n_soap, 1:n_atom_pairs) )
       soap_cart_der = 0.d0
       st_soap_cart_der =   3*n_soap*n_atom_pairs*sizeof(soap_cart_der(1,1,1))
-      call gpu_malloc_all(soap_cart_der_d, st_soap_cart_der, gpu_stream) !call gpu_malloc_all_blocking(soap_cart_der_d, st_soap_cart_de      
+      call gpu_malloc_all(soap_cart_der_d, st_soap_cart_der, gpu_stream)       
     end if
 
-    print *, " starting get soap "
     
     if( n_sites > 0 )then
-!      call cpu_time(ttt(1))
+       !      call cpu_time(ttt(1))
+       write(*,*) "get soap "
       call get_soap(n_sites, n_neigh, n_species, species, species_multiplicity, n_atom_pairs, mask, rjs, &
                     thetas, phis, alpha_max_d, alpha_max, l_max, rcut_hard_d, rcut_hard, rcut_soft_d, nf_d, global_scaling_d, &
                     atom_sigma_r_d, atom_sigma_r, atom_sigma_r_scaling_d, atom_sigma_t_d, atom_sigma_t_scaling_d, &
@@ -303,17 +304,9 @@ module gap_interface
                     & cublas_handle, gpu_stream)
 
 
-!      call cpu_time(ttt(2))
-
     end if
-   ! write(*,*) "n_total_sites", n_total_sites, "n_sites", n_sites, "nsites0", n_sites0
-   !time_get_soap=time_get_soap+ttt(2)-ttt(1)
 
-
-
-
-
-
+    
     if( do_prediction )then
 !     Get energies and forces
       allocate( energies(1:n_sites) )
@@ -348,13 +341,7 @@ module gap_interface
 !     !###---   Local property prediction   ---###!
 !     !###########################################!
 
-    
-    
-    print *, " starting local properties (cpu) "
-    !--- TODO: CONVERT THIS FUNCTION INTO GPU KERNEL ---!
     if( has_local_properties )then
-       !call cpu_time(time1)
-
        allocate( local_properties( 1:n_sites ) )
        if( do_derivatives )then
           allocate( local_properties_cart_der(1:3, 1:n_atom_pairs) )
@@ -386,17 +373,12 @@ module gap_interface
           do i = 1, n_sites
              i2 = in_to_out_site(i)
              local_properties0(i2, local_property_indexes(lp_index + i4)) = local_properties(i)
-!             write(*,'(A,1X,I8,1X,A,1X,I8,1X,A,1X,F20.12)')  "rank ", rank, "lp, index  ", i2, " : ", local_properties0(i2, local_property_indexes(lp_index + i4))  
           end do
           if( do_derivatives )then
              do k = 1, n_atom_pairs
                 k2 = in_to_out_pairs(k)
                 local_properties_cart_der0(1:3,  k2, local_property_indexes(lp_index + i4)) &
                      & = local_properties_cart_der(1:3, k)
-!                write(*,'(A,1X,I8,1X,A,1X,I8,1X,A,1X,F20.12,1X,F20.12,1X,F20.12)')  "rank ", rank,  "lpder, index  ", k2, " : ",&
-                     ! & local_properties_cart_der(1, k),&
-                     ! & local_properties_cart_der(2, k),&
-                     ! & local_properties_cart_der(3, k)
              end do
           end if
        end do
@@ -410,16 +392,13 @@ module gap_interface
 
     end if
 
-
     call gpu_free_async(l_index_d,gpu_stream)
-
-
-!! commenting out to here 
-    
-!    call gpu_free_async(j2_index_d,gpu_stream) 
     call gpu_free_async(soap_d,gpu_stream)
     call gpu_free(soap_cart_der_d)
 
+
+    if( .not. write_soap ) deallocate( soap )
+    if( do_derivatives .and. .not. write_derivatives ) deallocate( soap_cart_der )
     
 !   This is slow, but writing to disk is even slower so who cares
     if( write_soap )then
@@ -434,6 +413,7 @@ module gap_interface
       soap = soap_temp
       deallocate( soap_temp )
     end if
+
     if( do_derivatives .and. write_derivatives )then
       allocate( der_neighbors(1:n_sites) )
       allocate( der_neighbors_list(1:n_atom_pairs) )
@@ -450,24 +430,15 @@ module gap_interface
 
 
 
-    if( do_prediction )then
-      deallocate( energies )
-    end if
-    if( do_forces )then
-      deallocate( forces )
-    end if
+    if( do_prediction ) deallocate( energies )
 
-    deallocate( neighbors_list, n_neigh, rjs, thetas, phis, mask, mask0, is_atom_seen )
+    if( do_forces     ) deallocate( forces )
+
+
+    deallocate( neighbors_list, n_neigh, rjs, xyz, thetas, phis, mask, mask0, is_atom_seen )
     deallocate( species0, species_multiplicity0, species, species_multiplicity, species_multiplicity_supercell )
     deallocate( in_to_out_site, out_to_in_site , in_to_out_pairs )
-    if( .not. write_soap )then
-      deallocate( soap )
-    end if
-    if( do_derivatives .and. .not. write_derivatives )then
-      deallocate( soap_cart_der )
-    end if
 
-  !call destroy_cublas_handle(cublas_handle, gpu_stream)
 end subroutine get_gap_soap
 !**************************************************************************
 

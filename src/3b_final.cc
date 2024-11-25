@@ -47,7 +47,7 @@ enum kern_type {exp_k, pol_k};
 void hip_check_error(hipError_t err)
 {
 
-  std::cout<< "reported error is " <<	hipGetErrorString(err) <<std::flush << std::endl;
+  //  std::cout<< "reported error is " <<	hipGetErrorString(err) <<std::flush << std::endl;
 
 }
 
@@ -83,7 +83,8 @@ __device__ double warp_red(double data) {
 
    double res = data;
    for (int i =warpSize/2; i!=0; i=i>>1) {
-      res += __shfl_down_sync(0xffffffff,res, i,warpSize);
+     //      res += __shfl_down_sync(0xffffffff,res, i,warpSize);
+      res += __shfl_down(res, i,warpSize);      
    }
    return res;
 }
@@ -848,8 +849,8 @@ const int* kappas_array_d
     auto grids = n_sites < 1024 ? 1 : n_sites/1024 +1;
 //    printf(" grids is: %d, threads is %d, n_sites is %d, ptr to energies is %p \n",grids, threads, n_sites, energies);
 //    fflush(stdout);
-    printf(" \n Energy cont %lf \n", e0);
-    fflush(stdout);
+//    printf(" \n Energy cont %lf \n", e0);
+//    fflush(stdout);
     if (e0 != 0)
     {
       add_init_energy<<<grids,threads,0,s>>>(energies, e0, i_end, i_beg);
@@ -881,8 +882,8 @@ const int* kappas_array_d
 //   auto err = 	hipPeekAtLastError();
 //   std::cout<< "reported error is " <<	hipGetErrorString(err) <<std::flush << std::endl;
 //   printf("launching kernel\n");
-  printf("starting kernel with %d\n", threads);
-  fflush(stdout);
+//  printf("starting kernel with %d\n", threads);
+//  fflush(stdout);
 
   auto clock_start = std::chrono::system_clock::now();
   switch(kernel_type)

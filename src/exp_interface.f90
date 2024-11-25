@@ -71,7 +71,7 @@ contains
 #ifdef _MPIF90
     time = MPI_Wtime()
 #else
-    call cpu_time(_time)
+    call cpu_time(time)
 #endif 
   end subroutine get_time
   
@@ -200,6 +200,15 @@ contains
              y = x * (y - 1.d0)
           end if
        end if
+
+
+       if ( trim(params%xrd_output) == "i(q)" .and. params%q_units &
+            &== "q" )then
+          if ( exp .and. ( trim(input) == "q*i(q)" .or. trim(input) == "q*F(q)") )then
+             y = (y/x) + 1.d0
+          end if
+       end if
+       
     elseif ( trim(label) == "nd" )then
        output = params%nd_output
        ! mag = sqrt(dot_product(y, y)) * dx
@@ -209,6 +218,13 @@ contains
             &== "q" )then
           if ( exp .and. ( trim(input) == "i(q)" .or. trim(input) == "F(q)") )then
              y = x * (y - 1.d0)
+          end if
+       end if
+
+       if ( trim(params%nd_output) == "i(q)" .and. params%q_units &
+            &== "q" )then
+          if ( exp .and. ( trim(input) == "q*i(q)" .or. trim(input) == "q*F(q)") )then
+             y = (y/x) + 1.d0
           end if
        end if
 
@@ -416,7 +432,7 @@ contains
     call cpy_htod(c_loc(xyz),gpu_neigh % xyz_d,3*st_n_atom_pairs_double,gpu_stream)
 
 
-    print *, "-- Rank ", rank, " ", " malloc neighbors: n_sites_temp = ", n_sites, " n_pairs_temp = ", n_pairs 
+    ! print *, "-- Rank ", rank, " ", " malloc neighbors: n_sites_temp = ", n_sites, " n_pairs_temp = ", n_pairs 
 
     
     ! allocate( n_neigh_temp( 1:n_sites ) )
@@ -800,7 +816,8 @@ contains
           !                call gpu_stream_sync(gpu_stream)
 
           gpu_exp % nk(n_dim_idx) = nk_temp(1)
-          print *, " -- Rank ", rank, " nk batched = ", gpu_exp % nk(n_dim_idx)
+          call gpu_free_async(gpu_exp % nk_d(n_dim_idx), gpu_stream )
+          ! print *, " -- Rank ", rank, " nk batched = ", gpu_exp % nk(n_dim_idx)
 
           ! Now we create temporary arrays for the k indices
 
@@ -1123,6 +1140,7 @@ contains
     type(c_ptr) :: gpu_stream
     ! copy the xyz, j2 and k_index_d arrays 
 
+    print *, "> nk = ", gpu_exp % nk( n_dim_idx )
     st_rjs_index_d = gpu_exp % nk( n_dim_idx ) * c_double 
     call gpu_malloc_all(gpu_exp % k_index_d(n_dim_idx),      gpu_exp % st_k_index_d(n_dim_idx), gpu_stream)             
     call gpu_malloc_all(gpu_exp % j2_index_d(n_dim_idx),      gpu_exp % st_k_index_d(n_dim_idx), gpu_stream)             

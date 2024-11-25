@@ -1511,7 +1511,7 @@ contains
 
     allocate(rjs_temp(1:n_k))
     allocate(ks_temp(1:n_k))    
-    print *, " setup_rjs: n_k = ", n_k 
+    ! print *, " setup_rjs: n_k = ", n_k 
     
     k = 0
     n_k = 0
