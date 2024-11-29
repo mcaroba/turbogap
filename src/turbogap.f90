@@ -43,6 +43,7 @@ program turbogap
   use gap_interface
   use types
   use vdw
+  use electrostatics, only : compute_coulomb_direct, compute_coulomb_dsf, compute_coulomb_lamichhane
   use exp_utils
   use exp_interface
   use soap_turbo_functions
@@ -67,21 +68,22 @@ program turbogap
   !**************************************************************************
   ! Variable definitions
   !
-  real*8, allocatable :: rjs(:), thetas(:), phis(:), xyz(:,:)
+  real*8, allocatable, target :: rjs(:), thetas(:), phis(:), xyz(:,:)
   real*8, allocatable :: positions(:,:), positions_prev(:,:), soap(:,:), soap_cart_der(:,:,:), &
        positions_diff(:,:), forces_prev(:,:), frac_positions(:,:)
   real*8 :: rcut_max, a_box(1:3), b_box(1:3), c_box(1:3), max_displacement, energy, energy_prev
-  real*8 :: virial(1:3, 1:3), this_virial(1:3, 1:3), virial_soap(1:3, 1:3), virial_2b(1:3, 1:3), &
+  real*8, target :: virial(1:3, 1:3), this_virial(1:3, 1:3), virial_soap(1:3, 1:3), virial_2b(1:3, 1:3), &
        virial_3b(1:3,1:3), virial_core_pot(1:3, 1:3), virial_vdw(1:3, 1:3), virial_lp(1:3,1:3), &
        this_virial_vdw(1:3, 1:3), this_virial_lp(1:3, 1:3), virial_pdf(1:3,1:3), this_virial_pdf(1:3,1:3), v_uc,&
        & virial_sf(1:3,1:3), this_virial_sf(1:3,1:3), &
        & virial_xrd(1:3,1:3), this_virial_xrd(1:3,1:3), &
-       & virial_nd(1:3,1:3), this_virial_nd(1:3,1:3)
+       & virial_nd(1:3,1:3), this_virial_nd(1:3,1:3), &
+       & virial_estat(1:3,1:3), this_virial_estat(1:3,1:3)       
   real*8 ::  v_uc_prev, v_a_uc, v_a_uc_prev, eVperA3tobar =&
        & 1602176.6208d0, ranf, ranv(1:3), disp(1:3), d_disp, &
        & e_mc_prev, p_accept, virial_prev(1:3, 1:3), sim_exp_pred,&
        & sim_exp_prev, sim_exp_pred_der(1:3)
-  real*8, allocatable :: energies(:), forces(:,:), energies_soap(:),&
+  real*8, allocatable, target :: energies(:), forces(:,:), energies_soap(:),&
        & forces_soap(:,:), this_energies(:), this_forces(:,:),&
        & energies_2b(:), forces_2b(:,:), energies_3b(:), forces_3b(:&
        &,:), energies_core_pot(:), forces_core_pot(:,:), velocities(:&
@@ -92,10 +94,10 @@ program turbogap
 
   real*8, allocatable, target :: local_properties(:,:), local_properties_cart_der(:,:,:)
   ! Have one rank lower for the pointer, such that it just relates to a sub array of the local properties/cart_der
-!  real*8, pointer :: local_properties_pt(:), local_properties_cart_der_pt(:,:)
+  real*8, pointer :: local_properties_pt(:), local_properties_cart_der_pt(:,:)
 !  real*8, pointer :: hirshfeld_v(:), hirshfeld_v_cart_der(:,:)
   real*8, allocatable, target :: this_local_properties(:,:), this_local_properties_cart_der(:,:,:)
-!  real*8, pointer :: this_local_properties_pt(:,:), this_local_properties_cart_der_pt(:,:,:)
+  real*8, pointer :: this_local_properties_pt(:,:), this_local_properties_cart_der_pt(:,:,:)
   real*8, allocatable ::  y_i_pred_all(:,:), moments(:), moments_exp(:)
 
 
@@ -104,7 +106,7 @@ program turbogap
 
   real*8 :: instant_temp, kB = 8.6173303d-5, E_kinetic=0.d0, E_kinetic_prev, time1, time2, time3, time_neigh, &
        time_gap, time_soap(1:3), time_2b(1:3), time_3b(1:3), time_read_input(1:3), time_read_xyz(1:3), &
-       time_mpi(1:3) = 0.d0, time_core_pot(1:3), time_vdw(1:3),&
+       time_mpi(1:3) = 0.d0, time_core_pot(1:3), time_vdw(1:3), time_estat(1:3), &
        & time_pdf(1:3), time_sf(1:3), time_xrd(1:3), time_nd(1:3), time_xps(1:3), time_mc(1:3), &
        & instant_pressure, lv(1:3,1:3), time_mpi_positions(1:3) =&
        & 0.d0, time_mpi_ef(1:3) = 0.d0, time_md(3) = 0.d0, time_batch_alloc(3) = 0.d0, time_batch_pdf(3) = 0.d0, time_batch_xrd(3) = 0.d0,&
@@ -116,7 +118,8 @@ program turbogap
   logical, allocatable :: do_list(:), has_local_properties_mpi(:), fix_atom(:,:)
   logical :: rebuild_neighbors_list = .true., exit_loop = .true.,&
        & gd_box_do_pos = .true., restart_box_optim = .false.,&
-       & valid_xps=.false., valid_vdw=.false.,  write_condition=.false., overwrite_condition=.false.
+       & valid_xps=.false., valid_vdw=.false., valid_estat_charges = .false., &
+       write_condition=.false., overwrite_condition=.false.
 
   character*1 :: creturn = achar(13)
 
@@ -132,7 +135,7 @@ program turbogap
   ! type (EPH_LangevinSpatialCorrelation_class) :: ephlsc
   
   ! Clean up these variables after code refactoring !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  integer, allocatable :: n_neigh(:), neighbors_list(:), alpha_max(:), species(:), species_supercell(:), &
+  integer, allocatable, target :: n_neigh(:), neighbors_list(:), alpha_max(:), species(:), species_supercell(:), &
        neighbor_species(:), der_neighbors(:), der_neighbors_list(:), &
        i_beg_list(:), i_end_list(:), j_beg_list(:), j_end_list(:),&
        & species_idx(:), n_neigh_out(:), n_local_properties_mpi(:),&
@@ -143,7 +146,7 @@ program turbogap
        & this_n_sites_mpi, n_sites_prev = 0,&
        & n_atom_pairs_by_rank_prev=0, cPnz, n_pairs, n_all_sites,&
        & n_sites_out, n_local_properties_tot=0, n_lp_count=0,&
-       & vdw_lp_index, core_be_lp_index, xps_idx
+       & charge_lp_index, vdw_lp_index, core_be_lp_index, xps_idx
 
   integer :: l_max, n_atom_pairs, n_max, ijunk, central_species = 0,&
        & n_atom_pairs_total
@@ -151,7 +154,7 @@ program turbogap
   integer :: which_atom = 0, n_species = 1, n_species_actual, n_xyz, indices(1:3)
   integer :: radial_enhancement = 0
   integer :: md_istep, mc_istep, mc_mu_id=1, n_mc
-  character*8, allocatable :: species_types_actual(:)
+  character*8, allocatable, target :: species_types_actual(:)
   character*1024, allocatable ::  local_property_labels(:), local_property_labels_temp(:), local_property_labels_temp2(:)
   logical :: repeat_xyz = .true., overwrite = .false., check_species,&
        & valid_local_properties=.false., label_in_list, do_mc_relax&
@@ -177,20 +180,21 @@ program turbogap
   ! These are the containers for the hyperparameters of descriptors and GAPs
   integer :: n_soap_turbo = 0, n_distance_2b = 0, n_angle_3b = 0, n_core_pot = 0, counter_lp_names=0, temp_md_nsteps
   real*8, parameter :: pi = acos(-1.0)
-  type(soap_turbo), allocatable :: soap_turbo_hypers(:)
-  type(distance_2b), allocatable :: distance_2b_hypers(:)
-  type(angle_3b), allocatable :: angle_3b_hypers(:)
-  type(core_pot), allocatable :: core_pot_hypers(:)
+  type(soap_turbo), allocatable, target :: soap_turbo_hypers(:)
+  type(distance_2b), allocatable, target :: distance_2b_hypers(:)
+  type(angle_3b), allocatable, target :: angle_3b_hypers(:)
+  type(core_pot), allocatable, target :: core_pot_hypers(:)
 
   !vdw crap
   real*8, allocatable :: v_neigh_vdw(:), energies_vdw(:), forces_vdw(:,:), this_energies_vdw(:), this_forces_vdw(:,:)
   real*8, allocatable :: v_neigh_lp(:), energies_lp(:), forces_lp(:,:), this_energies_lp(:), this_forces_lp(:,:)
+  real*8, allocatable :: chg_neigh_estat(:), energies_estat(:), forces_estat(:,:), this_energies_estat(:), this_forces_estat(:,:)
   real*8, allocatable :: energies_pdf(:) , forces_pdf(:,:), this_energies_pdf(:), this_forces_pdf(:,:)
   real*8, allocatable :: energies_sf(:) , forces_sf(:,:), this_energies_sf(:), this_forces_sf(:,:)
   real*8, allocatable :: energies_xrd(:), forces_xrd(:,:), this_energies_xrd(:), this_forces_xrd(:,:)
   real*8, allocatable :: energies_nd(:), forces_nd(:,:), this_energies_nd(:), this_forces_nd(:,:)
   ! MPI stuff
-  real*8, allocatable :: temp_1d(:), temp_1d_bis(:), temp_2d(:,:),&
+  real*8, allocatable, target :: temp_1d(:), temp_1d_bis(:), temp_2d(:,:),&
        & pair_distribution_partial(:,:), pair_distribution_der(:,:), pair_distribution_partial_der(:,:,:), &
        & pair_distribution_partial_temp(:,:),&
        & pair_distribution_partial_temp_der(:,:,:),&
@@ -242,7 +246,7 @@ program turbogap
   type(c_ptr), allocatable :: nk_d(:), k_index_d(:), j2_index_d(:), rjs_index_d(:), xyz_k_d(:), pair_distribution_partial_d(:), pair_distribution_partial_der_d(:), all_scattering_factors_d(:)
   integer(c_size_t), allocatable :: st_nk_d(:), st_k_index_d(:), st_j2_index_d(:), st_pair_distribution_partial_d(:), st_pair_distribution_partial_der_d(:)
   integer, allocatable :: nk(:)
-  real*8, allocatable :: prefactor(:)
+  real*8, allocatable, target :: prefactor(:)
   
   
 
@@ -632,6 +636,9 @@ program turbogap
              rcut_max, params%do_prediction, &
              params )
         !   Check if vdw_rcut is bigger
+        if (params%estat_rcut > rcut_max) then
+            rcut_max = params%estat_rcut
+        end if        
         if( params%vdw_rcut > rcut_max )then
            rcut_max = params%vdw_rcut
         end if
@@ -660,18 +667,22 @@ program turbogap
      
      call get_irreducible_local_properties(params, n_local_properties_tot, n_soap_turbo, soap_turbo_hypers, &
           local_property_labels, local_property_labels_temp, local_property_labels_temp2, local_property_indexes, &
-          valid_vdw, vdw_lp_index, core_be_lp_index, valid_xps, xps_idx )
+          valid_vdw, vdw_lp_index, valid_estat_charges, charge_lp_index, core_be_lp_index, valid_xps, xps_idx)
 
+     if( params%n_local_properties > 0 )then 
+        write(*,*)'                                        |'
+        write(*,*)' Irreducible local properties:          |'
+        do i = 1, params%n_local_properties
+           write(*,'(1X,A)') trim( local_property_labels(i) )
+        end do
 
-     write(*,*)'                                        |'
-     write(*,*)' Irreducible local properties:           |'
-     do i = 1, params%n_local_properties
-        write(*,'(1X,A)') trim( local_property_labels(i) )
-     end do
+        write(*,*)' Total number local properties', n_local_properties_tot, '        |'
 
-     allocate( params%write_local_properties(1:params%n_local_properties) )
-     params%write_local_properties = .true.
-
+        
+        allocate( params%write_local_properties(1:params%n_local_properties) )
+        params%write_local_properties = .true.
+     end if
+     
 
 
      ! Now, we have n_soap_turbo descriptors
@@ -779,6 +790,8 @@ program turbogap
      call mpi_bcast(valid_xps, 1,&
           & MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(valid_vdw, 1,&
+          & MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+     call mpi_bcast(valid_estat_charges, 1,&
           & MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
 
      !   Processes other than 0 need to allocate the data structures on their own
@@ -949,6 +962,7 @@ program turbogap
         call mpi_bcast(soap_turbo_hypers(i)%has_core_electron_be, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
         if (valid_xps) call mpi_bcast(core_be_lp_index, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
         if (valid_vdw) call mpi_bcast(vdw_lp_index, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+        if (valid_estat_charges) call mpi_bcast(charge_lp_index, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
 
         call mpi_bcast(soap_turbo_hypers(i)%has_vdw, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
         call mpi_bcast(soap_turbo_hypers(i)%n_local_properties, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
@@ -1158,6 +1172,7 @@ program turbogap
   time_3b = 0.d0
   time_core_pot = 0.d0
   time_vdw = 0.d0
+  time_estat = 0.d0  
   time_read_xyz = 0.d0
   time_pdf = 0.d0
   time_sf = 0.d0
@@ -1559,6 +1574,7 @@ program turbogap
           species_supercell, rcut_max, n_atom_pairs, rjs, &
           thetas, phis, xyz, n_neigh_local, neighbors_list, neighbor_species, n_sites, indices, &
           rebuild_neighbors_list, do_list, rank )
+
      if( rebuild_neighbors_list )then
         !     Get total number of atom pairs
         call mpi_allgather(n_atom_pairs, 1, MPI_INTEGER, n_atom_pairs_by_rank, 1, MPI_INTEGER, MPI_COMM_WORLD, ierr)
@@ -1621,7 +1637,7 @@ program turbogap
         ! REMOVE TRUE FROM IF STATEMENT
         if( n_sites /= n_sites_prev .or. params%do_mc  )then
            if( allocated(energies) )deallocate( energies, energies_soap, energies_2b, energies_3b, energies_core_pot, &
-                this_energies, energies_vdw, this_forces, energies_lp, energies_exp  )
+                this_energies, energies_vdw, energies_estat, this_forces, energies_lp, energies_exp  )
            allocate( energies(1:n_sites) )
            allocate( this_energies(1:n_sites) )
            allocate( energies_soap(1:n_sites) )
@@ -1629,6 +1645,7 @@ program turbogap
            allocate( energies_3b(1:n_sites) )
            allocate( energies_core_pot(1:n_sites) )
            allocate( energies_vdw(1:n_sites) )
+           allocate( energies_estat(1:n_sites) )           
            allocate( energies_lp(1:n_sites) )
            allocate( energies_exp(1:n_sites) )
 
@@ -1661,6 +1678,7 @@ program turbogap
         energies_3b = 0.d0
         energies_core_pot = 0.d0
         energies_vdw = 0.d0
+        energies_estat = 0.d0        
         energies_lp = 0.d0
         energies_exp = 0.d0
 
@@ -1678,16 +1696,16 @@ program turbogap
         if( any( soap_turbo_hypers(:)%has_local_properties ) )then
            if( n_sites /= n_sites_prev .or.  params%do_mc  )then
               if( allocated(local_properties) )then
-!                 nullify( this_local_properties_pt )
+                 nullify( this_local_properties_pt )
                  deallocate( this_local_properties, local_properties )
                  if( params%do_forces )then
- !                   nullify( this_local_properties_cart_der_pt )
+                    nullify( this_local_properties_cart_der_pt )
                     deallocate( this_local_properties_cart_der, local_properties_cart_der )
                  end if
               end if
               allocate( local_properties(1:n_sites, 1:params%n_local_properties) )
               allocate( this_local_properties(1:n_sites, 1:params%n_local_properties) )
-!              this_local_properties_pt => this_local_properties
+              this_local_properties_pt => this_local_properties
 
               !         I don't remember why this needs a pointer <----------------------------------------- CHECK
 
@@ -1707,10 +1725,10 @@ program turbogap
               end if
 
               local_properties_cart_der = 0.d0
-              ! this_local_properties_cart_der_pt =>&
-              !      & this_local_properties_cart_der(1:3,&
-              !      & 1:n_atom_pairs_by_rank(rank+1), 1:params&
-              !      &%n_local_properties)
+              this_local_properties_cart_der_pt =>&
+                   & this_local_properties_cart_der(1:3,&
+                   & 1:n_atom_pairs_by_rank(rank+1), 1:params&
+                   &%n_local_properties)
            end if
         end if
 
@@ -1724,14 +1742,16 @@ program turbogap
 
         if( params%do_forces )then
            if( n_sites /= n_sites_prev .or.  params%do_mc )then
-              if( allocated(forces) )deallocate( forces, forces_soap, forces_2b, forces_3b, forces_core_pot, forces_vdw,&
-                   & forces_lp )
+              if( allocated(forces) )deallocate( forces, forces_soap, forces_2b, forces_3b, &
+                   forces_core_pot, forces_vdw, forces_estat,&
+                   forces_lp )
               allocate( forces(1:3, 1:n_sites) )
               allocate( forces_soap(1:3, 1:n_sites) )
               allocate( forces_2b(1:3, 1:n_sites) )
               allocate( forces_3b(1:3, 1:n_sites) )
               allocate( forces_core_pot(1:3, 1:n_sites) )
               allocate( forces_vdw(1:3,1:n_sites) )
+              allocate( forces_estat(1:3,1:n_sites) )              
               allocate( forces_lp(1:3,1:n_sites) )
 
               if (params%do_pair_distribution .and. params%exp_forces .and. params%valid_pdf)then
@@ -1762,6 +1782,7 @@ program turbogap
            forces_3b = 0.d0
            forces_core_pot = 0.d0
            forces_vdw = 0.d0
+           forces_estat = 0.d0           
            forces_lp = 0.d0
            virial = 0.d0
            virial_soap = 0.d0
@@ -1769,6 +1790,7 @@ program turbogap
            virial_3b = 0.d0
            virial_core_pot = 0.d0
            virial_vdw = 0.d0
+           virial_estat = 0.d0           
            virial_lp = 0.d0
 
            if (params%do_pair_distribution .and. params%exp_forces .and. params%valid_pdf)then
@@ -1833,7 +1855,8 @@ program turbogap
 !              write(*,*) " > Starting get_gap_soap loop "        
         do i = 1, n_soap_turbo
 
-           !time_soap(1) = MPI_wtime()
+           write(*,*) " > n_soap_turbo loop  ", i , n_soap_turbo        
+
            call get_time( time_soap(1)  )
            
            !       Compute number of pairs for this SOAP. SOAP has in general a different cutoff than overall max
@@ -1847,74 +1870,72 @@ program turbogap
 
            n_sp = soap_turbo_hypers(i)%n_species
 
-        
+
            st_size_nf=n_sp*sizeof(soap_turbo_hypers(i)%nf(1))
-        call gpu_malloc_all(nf_d,st_size_nf, gpu_stream)
-        call cpy_htod(c_loc(soap_turbo_hypers(i)%nf),nf_d,st_size_nf, gpu_stream)
-        call gpu_malloc_all(rcut_hard_d,st_size_nf, gpu_stream)
-        call cpy_htod(c_loc(soap_turbo_hypers(i)%rcut_hard),rcut_hard_d,st_size_nf, gpu_stream)
-        call gpu_malloc_all(rcut_soft_d,st_size_nf, gpu_stream)
-        call cpy_htod(c_loc(soap_turbo_hypers(i)%rcut_soft),rcut_soft_d,st_size_nf, gpu_stream)
-        call gpu_malloc_all(global_scaling_d,st_size_nf, gpu_stream)
-        call cpy_htod(c_loc(soap_turbo_hypers(i)%global_scaling),global_scaling_d,st_size_nf, gpu_stream)
-        call gpu_malloc_all(atom_sigma_r_d,st_size_nf, gpu_stream)
-        call cpy_htod(c_loc(soap_turbo_hypers(i)%atom_sigma_r),atom_sigma_r_d,st_size_nf, gpu_stream)
-        call gpu_malloc_all(atom_sigma_r_scaling_d,st_size_nf, gpu_stream)
-        call cpy_htod(c_loc(soap_turbo_hypers(i)%atom_sigma_r_scaling),atom_sigma_r_scaling_d,st_size_nf, gpu_stream)
-        call gpu_malloc_all(atom_sigma_t_d,st_size_nf, gpu_stream)
-        call cpy_htod(c_loc(soap_turbo_hypers(i)%atom_sigma_t),atom_sigma_t_d,st_size_nf, gpu_stream)
-        call gpu_malloc_all(atom_sigma_t_scaling_d,st_size_nf, gpu_stream)
-        call cpy_htod(c_loc(soap_turbo_hypers(i)%atom_sigma_t_scaling),atom_sigma_t_scaling_d,st_size_nf, gpu_stream)
-        call gpu_malloc_all(amplitude_scaling_d,st_size_nf, gpu_stream)
-        call cpy_htod(c_loc(soap_turbo_hypers(i)%amplitude_scaling),amplitude_scaling_d,st_size_nf, gpu_stream)
-        call gpu_malloc_all(central_weight_d,st_size_nf, gpu_stream)
-        call cpy_htod(c_loc(soap_turbo_hypers(i)%central_weight),central_weight_d,st_size_nf, gpu_stream)
-        st_size_nf=n_sp*sizeof(soap_turbo_hypers(i)%alpha_max(1))
-        call gpu_malloc_all(alpha_max_d,st_size_nf, gpu_stream)
-        call cpy_htod(c_loc(soap_turbo_hypers(i)%alpha_max),alpha_max_d,st_size_nf, gpu_stream)
-        n_sparse = soap_turbo_hypers(i)%n_sparse
-        st_size_nf=n_sparse*sizeof(soap_turbo_hypers(i)%nf(1))
-        call gpu_malloc_all(alphas_d,st_size_nf, gpu_stream)
-        call cpy_htod(c_loc(soap_turbo_hypers(i)%alphas),alphas_d,st_size_nf, gpu_stream)
-        dim = soap_turbo_hypers(i)%dim
-        st_size_nf=n_sparse*dim*sizeof(soap_turbo_hypers(i)%nf(1))
-        call gpu_malloc_all(Qs_d,st_size_nf, gpu_stream)
-        call cpy_htod(c_loc(soap_turbo_hypers(i)%Qs),Qs_d,st_size_nf, gpu_stream)
+           call gpu_malloc_all(nf_d,st_size_nf, gpu_stream)
+           call cpy_htod(c_loc(soap_turbo_hypers(i)%nf),nf_d,st_size_nf, gpu_stream)
+           call gpu_malloc_all(rcut_hard_d,st_size_nf, gpu_stream)
+           call cpy_htod(c_loc(soap_turbo_hypers(i)%rcut_hard),rcut_hard_d,st_size_nf, gpu_stream)
+           call gpu_malloc_all(rcut_soft_d,st_size_nf, gpu_stream)
+           call cpy_htod(c_loc(soap_turbo_hypers(i)%rcut_soft),rcut_soft_d,st_size_nf, gpu_stream)
+           call gpu_malloc_all(global_scaling_d,st_size_nf, gpu_stream)
+           call cpy_htod(c_loc(soap_turbo_hypers(i)%global_scaling),global_scaling_d,st_size_nf, gpu_stream)
+           call gpu_malloc_all(atom_sigma_r_d,st_size_nf, gpu_stream)
+           call cpy_htod(c_loc(soap_turbo_hypers(i)%atom_sigma_r),atom_sigma_r_d,st_size_nf, gpu_stream)
+           call gpu_malloc_all(atom_sigma_r_scaling_d,st_size_nf, gpu_stream)
+           call cpy_htod(c_loc(soap_turbo_hypers(i)%atom_sigma_r_scaling),atom_sigma_r_scaling_d,st_size_nf, gpu_stream)
+           call gpu_malloc_all(atom_sigma_t_d,st_size_nf, gpu_stream)
+           call cpy_htod(c_loc(soap_turbo_hypers(i)%atom_sigma_t),atom_sigma_t_d,st_size_nf, gpu_stream)
+           call gpu_malloc_all(atom_sigma_t_scaling_d,st_size_nf, gpu_stream)
+           call cpy_htod(c_loc(soap_turbo_hypers(i)%atom_sigma_t_scaling),atom_sigma_t_scaling_d,st_size_nf, gpu_stream)
+           call gpu_malloc_all(amplitude_scaling_d,st_size_nf, gpu_stream)
+           call cpy_htod(c_loc(soap_turbo_hypers(i)%amplitude_scaling),amplitude_scaling_d,st_size_nf, gpu_stream)
+           call gpu_malloc_all(central_weight_d,st_size_nf, gpu_stream)
+           call cpy_htod(c_loc(soap_turbo_hypers(i)%central_weight),central_weight_d,st_size_nf, gpu_stream)
+           st_size_nf=n_sp*sizeof(soap_turbo_hypers(i)%alpha_max(1))
+           call gpu_malloc_all(alpha_max_d,st_size_nf, gpu_stream)
+           call cpy_htod(c_loc(soap_turbo_hypers(i)%alpha_max),alpha_max_d,st_size_nf, gpu_stream)
+           n_sparse = soap_turbo_hypers(i)%n_sparse
+           st_size_nf=n_sparse*sizeof(soap_turbo_hypers(i)%nf(1))
+           call gpu_malloc_all(alphas_d,st_size_nf, gpu_stream)
+           call cpy_htod(c_loc(soap_turbo_hypers(i)%alphas),alphas_d,st_size_nf, gpu_stream)
+           dim = soap_turbo_hypers(i)%dim
+           st_size_nf=n_sparse*dim*sizeof(soap_turbo_hypers(i)%nf(1))
+           call gpu_malloc_all(Qs_d,st_size_nf, gpu_stream)
+           call cpy_htod(c_loc(soap_turbo_hypers(i)%Qs),Qs_d,st_size_nf, gpu_stream)
 
-        
-        
-        if ( soap_turbo_hypers(i)%has_local_properties )then
-           ! Allocate gpu memory
-           do j = 1, soap_turbo_hypers(i)%n_local_properties
-              soap_turbo_hypers(i)%local_property_models(j)%st_size_alphas = &
-                   soap_turbo_hypers(i)%local_property_models(j)%n_sparse * &
-                   sizeof(soap_turbo_hypers(i)%local_property_models(j)%alphas(1))
-              call gpu_malloc_all(soap_turbo_hypers(i)%local_property_models(j)%alphas_d, &
-                   soap_turbo_hypers(i)%local_property_models(j)%st_size_alphas, gpu_stream)
-              call cpy_htod(c_loc(soap_turbo_hypers(i)&
-                   &%local_property_models(j)%alphas), &
-                   & soap_turbo_hypers(i)%local_property_models(j)&
-                   &%alphas_d, soap_turbo_hypers(i)&
-                   &%local_property_models(j)%st_size_alphas,&
-                   & gpu_stream)
 
-              soap_turbo_hypers(i)%local_property_models(j)%st_size_Qs = &
-                   soap_turbo_hypers(i)%local_property_models(j)%n_sparse * &
-                   soap_turbo_hypers(i)%local_property_models(j)%dim * &
-                   sizeof(soap_turbo_hypers(i)%local_property_models(j)%Qs(1,1))
 
-              call gpu_malloc_all(soap_turbo_hypers(i)%local_property_models(j)%Qs_d, &
-                   soap_turbo_hypers(i)%local_property_models(j)%st_size_Qs, gpu_stream)
-              call cpy_htod(c_loc(soap_turbo_hypers(i)&
-                   &%local_property_models(j)%Qs), &
-                   & soap_turbo_hypers(i)%local_property_models(j)&
-                   &%Qs_d, soap_turbo_hypers(i)&
-                   &%local_property_models(j)%st_size_Qs,&
-                   & gpu_stream)
-                            
-           end do
-           
-        end if
+           if ( soap_turbo_hypers(i)%has_local_properties )then
+              ! Allocate gpu memory
+              do j = 1, soap_turbo_hypers(i)%n_local_properties
+                 soap_turbo_hypers(i)%local_property_models(j)%st_size_alphas = &
+                      soap_turbo_hypers(i)%local_property_models(j)%n_sparse * &
+                      sizeof(soap_turbo_hypers(i)%local_property_models(j)%alphas(1))
+                 call gpu_malloc_all(soap_turbo_hypers(i)%local_property_models(j)%alphas_d, &
+                      soap_turbo_hypers(i)%local_property_models(j)%st_size_alphas, gpu_stream)
+                 call cpy_htod(c_loc(soap_turbo_hypers(i)&
+                      &%local_property_models(j)%alphas), &
+                      & soap_turbo_hypers(i)%local_property_models(j)&
+                      &%alphas_d, soap_turbo_hypers(i)&
+                      &%local_property_models(j)%st_size_alphas,&
+                      & gpu_stream)
+
+                 soap_turbo_hypers(i)%local_property_models(j)%st_size_Qs = &
+                      soap_turbo_hypers(i)%local_property_models(j)%n_sparse * &
+                      soap_turbo_hypers(i)%local_property_models(j)%dim * &
+                      sizeof(soap_turbo_hypers(i)%local_property_models(j)%Qs(1,1))
+
+                 call gpu_malloc_all(soap_turbo_hypers(i)%local_property_models(j)%Qs_d, &
+                      soap_turbo_hypers(i)%local_property_models(j)%st_size_Qs, gpu_stream)
+                 call cpy_htod(c_loc( soap_turbo_hypers(i)%local_property_models(j)%Qs ), &
+                                      soap_turbo_hypers(i)%local_property_models(j)%Qs_d, &
+                                      soap_turbo_hypers(i)%local_property_models(j)%st_size_Qs, &
+                                      gpu_stream)
+
+              end do
+
+           end if
 
 
            do j = 1, size(i_beg_list)
@@ -1933,11 +1954,11 @@ program turbogap
                  if( params%do_forces )then
                     this_local_properties_cart_der = 0.d0
                     !             I don't remember why this needs a pointer <----------------------------------------- CHECK
-!                    nullify(this_local_properties_cart_der_pt)
-                    ! this_local_properties_cart_der_pt =>&
-                    !      & this_local_properties_cart_der(1:3,&
-                    !      & this_j_beg:this_j_end, 1:params&
-                    !      &%n_local_properties)
+                    nullify(this_local_properties_cart_der_pt)
+                    this_local_properties_cart_der_pt =>&
+                         & this_local_properties_cart_der(1:3,&
+                         & this_j_beg:this_j_end, 1:params&
+                         &%n_local_properties)
                  end if
               end if
 
@@ -1950,17 +1971,17 @@ program turbogap
                    soap_turbo_hypers(i)%l_max, soap_turbo_hypers(i)%dim, rcut_hard_d, soap_turbo_hypers(i)%rcut_hard, &
                                 !soap_turbo_hypers(i)%rcut_soft, soap_turbo_hypers(i)%nf, soap_turbo_hypers(i)%global_scaling, &
                    rcut_soft_d, nf_d, global_scaling_d, &
-                   !                           soap_turbo_hypers(i)%atom_sigma_r, soap_turbo_hypers(i)%atom_sigma_r_scaling, &
+                                !                           soap_turbo_hypers(i)%atom_sigma_r, soap_turbo_hypers(i)%atom_sigma_r_scaling, &
                    atom_sigma_r_d, soap_turbo_hypers(i)%atom_sigma_r, atom_sigma_r_scaling_d, &
-                   !                           soap_turbo_hypers(i)%atom_sigma_t, soap_turbo_hypers(i)%atom_sigma_t_scaling, &
+                                !                           soap_turbo_hypers(i)%atom_sigma_t, soap_turbo_hypers(i)%atom_sigma_t_scaling, &
                    atom_sigma_t_d, atom_sigma_t_scaling_d, &
-                   !                           soap_turbo_hypers(i)%amplitude_scaling, soap_turbo_hypers(i)%radial_enhancement, &
+                                !                           soap_turbo_hypers(i)%amplitude_scaling, soap_turbo_hypers(i)%radial_enhancement, &
                    amplitude_scaling_d, soap_turbo_hypers(i)%radial_enhancement, &
-                   !                           soap_turbo_hypers(i)%central_weight, soap_turbo_hypers(i)%basis, &
+                                !                           soap_turbo_hypers(i)%central_weight, soap_turbo_hypers(i)%basis, &
                    central_weight_d, soap_turbo_hypers(i)%central_weight, soap_turbo_hypers(i)%basis, &
                    soap_turbo_hypers(i)%scaling_mode, params%do_timing, params%do_derivatives, params%do_forces, &
                    params%do_prediction, params%write_soap, params%write_derivatives, &
-                   ! soap_turbo_hypers(i)%compress_P_nonzero, soap_turbo_hypers(i)%compress_P_i, soap_turbo_hypers(i)%compress_P_j, soap_turbo_hypers(i)%compress_P_el, &                   
+                                ! soap_turbo_hypers(i)%compress_P_nonzero, soap_turbo_hypers(i)%compress_P_i, soap_turbo_hypers(i)%compress_P_j, soap_turbo_hypers(i)%compress_P_el, &                   
                    soap_turbo_hypers(i)%compress_soap, soap_turbo_hypers(i)%compress_soap_indices, &
                    soap_turbo_hypers(i)%delta, soap_turbo_hypers(i)%zeta, soap_turbo_hypers(i)%central_species, &
                    xyz_species(this_i_beg:this_i_end), xyz_species_supercell, alphas_d, &
@@ -1970,10 +1991,10 @@ program turbogap
                    & soap_turbo_hypers(i)%n_local_properties,&
                    & soap_turbo_hypers(i)%local_property_models, n_lp_count, &
                    this_energies, this_forces, &
-                   !                   this_local_properties_pt,&
-                   this_local_properties,&                   
-!                   & this_local_properties_cart_der_pt,&
-                   & this_local_properties_cart_der,&                   
+                   this_local_properties_pt,&
+!                   this_local_properties,&                   
+                   & this_local_properties_cart_der_pt,&
+!                   & this_local_properties_cart_der,&                   
                    & local_property_indexes,&
                    this_virial, solo_time_soap, time_get_soap, &
                    soap_turbo_hypers(i)%W_d, soap_turbo_hypers(i)%S_d, soap_turbo_hypers(i)%multiplicity_array_d, &
@@ -1997,7 +2018,7 @@ program turbogap
 
 
                  if( soap_turbo_hypers(i)%has_vdw )then
-!                    hirshfeld_v => local_properties( :, vdw_lp_index)
+                    !                    hirshfeld_v => local_properties( :, vdw_lp_index)
                     ! if (any(soap_turbo_hypers(i)&
                     !      &%local_property_models(:)%do_derivatives)&
                     !      & .and. params%do_derivatives)&
@@ -2016,6 +2037,8 @@ program turbogap
            
            n_lp_count = n_lp_count + soap_turbo_hypers(i)%n_local_properties
 
+           write( *, * ) "n_lp_count ", n_lp_count 
+           
 !           print *, rank, " >> Freeing gpu memory  "                      
            call gpu_free_async(nf_d,gpu_stream)
            call gpu_free_async(rcut_hard_d,gpu_stream)
@@ -2030,25 +2053,26 @@ program turbogap
            call gpu_free_async(central_weight_d,gpu_stream)
            call gpu_free_async(alphas_d,gpu_stream)
 
-        if ( soap_turbo_hypers(i)%has_local_properties )then
-           do j = 1, soap_turbo_hypers(i)%n_local_properties
-              call gpu_free_async(soap_turbo_hypers(i)%local_property_models(j)%alphas_d, gpu_stream)
-              call gpu_free_async(soap_turbo_hypers(i)%local_property_models(j)%Qs_d, gpu_stream)                            
-           end do
-        end if
-           
-        call gpu_free(Qs_d) 
+           if ( soap_turbo_hypers(i)%has_local_properties )then
+              do j = 1, soap_turbo_hypers(i)%n_local_properties
+                 call gpu_free_async(soap_turbo_hypers(i)%local_property_models(j)%alphas_d, gpu_stream)
+                 call gpu_free_async(soap_turbo_hypers(i)%local_property_models(j)%Qs_d, gpu_stream)                            
+              end do
+           end if
+
+           call gpu_free(Qs_d) 
 
 
-        !        print *, rank, " >>~~~ Finished freeing gpu memory ~~~<< "                                 
+           print *, rank, " >>~~~ Finished freeing gpu memory ~~~<< "                                 
 
-        !!soap_time_soap(2 = MPI_wtime()
-!        call get_time( soap_time_soap(2  )
-        
-        ! ! soap_time_soap(2)=MPI_Wtime()
-        call get_time( soap_time_soap(2) )
+           !!soap_time_soap(2 = MPI_wtime()
+           !        call get_time( soap_time_soap(2  )
+
+           ! ! soap_time_soap(2)=MPI_Wtime()
+           call get_time( soap_time_soap(2) )
         
            deallocate( i_beg_list, i_end_list, j_beg_list, j_end_list )
+
            soap_time_soap(3)=soap_time_soap(3)+soap_time_soap(2)-soap_time_soap(1)
 
            ! THIS WON'T WORK! THE SOAP AND SOAP DERIVATIVES NEED TO BE COLLECTED FROM ALL RANKS <--------------------- FIX THIS!!!!
@@ -2138,7 +2162,7 @@ program turbogap
            time_gap = time_gap + time2 - time1
 
         end do
-
+        
 
 
 
@@ -2157,7 +2181,7 @@ program turbogap
 
 
 
-
+        print *, "reducing local prop"
         
 #ifdef _MPIF90
         if( any( soap_turbo_hypers(:)%has_local_properties) )then
@@ -2246,6 +2270,85 @@ program turbogap
            deallocate(v_neigh_vdw)
         end if
 
+
+
+        !     Compute ELECTROSTATIC energies and forces
+        if ((params%estat_method /= "none") .and. params%do_prediction) then
+           print *, "Starting estat "
+           call get_time( time_estat(1)  ) 
+#ifdef _MPIF90
+           allocate( this_energies_estat(1:n_sites) )
+           this_energies_estat = 0.d0
+           if( params%do_forces )then
+              allocate( this_forces_estat(1:3,1:n_sites) )
+              this_forces_estat = 0.d0
+           end if
+#endif
+           allocate(chg_neigh_estat(1:j_end-j_beg+1))
+           chg_neigh_estat = 0.d0
+           k = 0
+           do i = i_beg, i_end
+              do j = 1, n_neigh(i)
+                 !           I'm not sure if this is necessary or neighbors_list is already bounded between 1 and n_sites -> CHECK THIS
+                 j2 = mod(neighbors_list(j_beg + k)-1, n_sites) + 1
+                 k = k + 1
+                 chg_neigh_estat(k) = local_properties(j2, charge_lp_index)
+              end do
+           end do
+           ! Prepare to call electrostatics subroutine!
+           if (trim(params%estat_method) == "direct") then
+               call compute_coulomb_direct(&
+                        local_properties(i_beg:i_end, charge_lp_index), &
+                        local_properties_cart_der(1:3, j_beg:j_end, charge_lp_index), &
+                        n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
+                        params%estat_rcut, params%estat_rcut_inner, params%estat_inner_width, &
+                        rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), chg_neigh_estat, &
+                        params%do_forces,&
+#ifdef _MPIF90
+                        this_energies_estat(i_beg:i_end), this_forces_estat, this_virial_estat, params % estat_options)
+#else
+                        energies_estat(i_beg:i_end), forces_estat, virial_estat, params % estat_options)
+#endif
+            else if (trim(params%estat_method) == "dsf") then
+               call compute_coulomb_dsf(&
+                        local_properties(i_beg:i_end, charge_lp_index), &
+                        local_properties_cart_der(1:3, j_beg:j_end, charge_lp_index), &
+                        n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
+                        params%estat_dsf_alpha, params%estat_rcut, &
+                        params%estat_rcut_inner, params%estat_inner_width, &
+                        rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), chg_neigh_estat, &
+                        params%do_forces,&
+#ifdef _MPIF90
+                        this_energies_estat(i_beg:i_end), this_forces_estat, this_virial_estat, params % estat_options)
+#else
+                        energies_estat(i_beg:i_end), forces_estat, virial_estat, params % estat_options)
+#endif
+             else if (trim(params%estat_method) == "gsf") then
+                print *, "Electrostatics lamichhane"
+
+               call compute_coulomb_lamichhane(&
+                        local_properties(i_beg:i_end, charge_lp_index), &
+                        local_properties_cart_der(1:3, j_beg:j_end, charge_lp_index), &
+                        n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
+                        params%estat_dsf_alpha, params%estat_rcut, &
+                        rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), chg_neigh_estat, &
+                        params%do_forces,&
+#ifdef _MPIF90
+                        this_energies_estat(i_beg:i_end), this_forces_estat, this_virial_estat, params % estat_options)
+#else
+                        energies_estat(i_beg:i_end), forces_estat, virial_estat, params % estat_options)
+#endif
+                        
+            else ! This really shouldn't happen... but we both know it could
+                print("WARNING: Unknown electrostatic method " // params%estat_method)
+                write(*,*) "Ignoring..."
+            end if
+            deallocate(chg_neigh_estat)
+            call get_time( time_estat(2) ) 
+            time_estat(3) = time_estat(3) + time_estat(2) - time_estat(1)
+            print *, "finished estat"
+        end if
+        
 
         !----------------------------------------------------!
         !--- EXPERIMENTAL SPECTRUM CALCULATION AND FORCES ---!
@@ -3732,6 +3835,9 @@ program turbogap
            if( allocated(this_energies_vdw) )then
               counter2 = counter2 + 1
            end if
+           if (allocated(this_energies_estat)) then
+              counter2 = counter2 + 1
+           end if           
            if( allocated(this_energies_lp) )then
               counter2 = counter2 + 1
            end if
@@ -3783,6 +3889,15 @@ program turbogap
               if( params%do_forces )then
                  all_forces(1:3, 1:n_sites, counter2) = this_forces_vdw(1:3, 1:n_sites)
                  all_virial(1:3, 1:3, counter2) = this_virial_vdw(1:3, 1:3)
+              end if
+           end if
+
+           if( allocated(this_energies_estat) )then
+              counter2 = counter2 + 1
+              all_energies(1:n_sites, counter2) = this_energies_estat(1:n_sites)
+              if( params%do_forces )then
+                 all_forces(1:3, 1:n_sites, counter2) = this_forces_estat(1:3, 1:n_sites)
+                 all_virial(1:3, 1:3, counter2) = this_virial_estat(1:3, 1:3)
               end if
            end if
 
@@ -3891,6 +4006,18 @@ program turbogap
                  deallocate(this_forces_vdw)
               end if
            end if
+
+           if (allocated(this_energies_estat)) then
+              counter2 = counter2 + 1
+              energies_estat(1:n_sites) = all_this_energies(1:n_sites, counter2)
+              deallocate(this_energies_estat)
+              if (params%do_forces) then
+                 forces_estat(1:3, 1:n_sites) = all_this_forces(1:3, 1:n_sites, counter2)
+                 virial_estat(1:3, 1:3) = all_this_virial(1:3, 1:3, counter2)
+                 deallocate(this_forces_estat)
+              end if
+           end if
+           
            if( allocated(this_energies_lp) )then
               counter2 = counter2 + 1
               energies_lp(1:n_sites) = all_this_energies(1:n_sites, counter2)
@@ -4011,6 +4138,7 @@ program turbogap
               write(*,'(A,1X,F24.8,1X,A)')' 3b energy:', sum(energies_3b), 'eV |'
               write(*,'(A,1X,F18.8,1X,A)')' core_pot energy:', sum(energies_core_pot), 'eV |'
               write(*,'(A,1X,F23.8,1X,A)')' vdw energy:', sum(energies_vdw), 'eV |'
+              write(*,'(A,1X,F21.8,1X,A)')' estat energy:', sum(energies_estat), 'eV |'              
               write(*,'(A,1X,F22.8,1X,A)')' Exp. energy:', sum(energies_exp), 'eV |'
               if (valid_xps) write(*,'(A,1X,F23.8,1X,A)')' xps energy:', sum(energies_lp), 'eV |'
               if ( params%valid_pdf .and. params%do_pair_distribution )&
@@ -4054,6 +4182,10 @@ program turbogap
            forces = forces_soap + forces_2b + forces_3b + forces_core_pot + forces_vdw
            virial = virial_soap + virial_2b + virial_3b + virial_core_pot + virial_vdw
 
+           if( valid_estat_charges ) forces = forces + forces_estat
+           if( valid_estat_charges ) virial = virial + virial_estat           
+
+           
            if (params%exp_forces .and. valid_xps)        forces = forces + forces_lp
            if (params%exp_forces .and. valid_xps)        virial = virial + virial_lp
 
@@ -4071,6 +4203,14 @@ program turbogap
 
 
            if( rank == 0 .and. params%print_vdw_forces  )then 
+              print *, "> Virial ESTAT "
+              do i = 1, 3
+                 do j = 1, 3
+                    print *, " i, ", i, " j ", j, " ", virial_estat(i,j)
+                 end do
+              end do
+
+
               print *, "> Virial soap "
               do i = 1, 3
                  do j = 1, 3
@@ -4132,11 +4272,33 @@ program turbogap
 
            end if
 
+
+           if ( params%print_estat_forces )then
+              open(unit=90, file="forces_estat", status="unknown")
+              do i = 1, n_sites
+                 write(90, "(F20.8, 1X, F20.8, 1X, F20.8)") &
+                      forces_estat(1,i), forces_estat(2,i), forces_estat(3,i)
+              end do
+              close(90)
+
+              open(unit=90, file="charge_gradients_estat", status="unknown")
+              do i = 1, n_atom_pairs_by_rank(rank+1)
+                 write(90, "(F20.8, 1X, F20.8, 1X, F20.8)") &
+                      local_properties_cart_der(1,i, charge_lp_index), &
+                      local_properties_cart_der(2,i, charge_lp_index), &
+                      local_properties_cart_der(3,i, charge_lp_index)
+              end do
+              close(90)
+
+
+           end if
+           
         end if
         ! For debugging the virial implementation
         if( rank == 0 .and. .false. )then
            write(*,*) "pressure_soap: ", virial_soap / 3.d0 / v_uc
            write(*,*) "pressure_vdw: ", virial_vdw / 3.d0 / v_uc
+           write(*,*) "pressure_estat:", virial_estat / 3.d0 / v_uc           
            write(*,*) "pressure_lp: ", virial_lp / 3.d0 / v_uc
            write(*,*) "pressure_2b: ", virial_2b / 3.d0 / v_uc
            write(*,*) "pressure_3b: ", virial_3b / 3.d0 / v_uc
@@ -4157,7 +4319,7 @@ program turbogap
                    &/dfloat(indices(1)), b_box/dfloat(indices(2)),&
                    & c_box/dfloat(indices(3)))
               call get_xyz_energy_string(energies_soap, energies_2b,&
-                   & energies_3b, energies_core_pot, energies_vdw, energies_exp&
+                   & energies_3b, energies_core_pot, energies_vdw, energies_estat, energies_exp&
                    &, energies_lp, energies_pdf, energies_sf, energies_xrd, energies_nd,&
                    & params%valid_pdf, params%valid_sf, params%valid_xrd, params%valid_nd, params%do_pair_distribution,&
                    & params%do_structure_factor, params%do_xrd, params%do_nd, string)
@@ -4411,7 +4573,7 @@ program turbogap
                    &/dfloat(indices(1)), b_box/dfloat(indices(2)),&
                    & c_box/dfloat(indices(3)))
               call get_xyz_energy_string(energies_soap, energies_2b,&
-                   & energies_3b, energies_core_pot, energies_vdw, energies_exp&
+                   & energies_3b, energies_core_pot, energies_vdw, energies_estat, energies_exp&
                    &, energies_lp, energies_pdf, energies_sf, energies_xrd, energies_nd,&
                    & params%valid_pdf, params%valid_sf, params%valid_xrd, params%valid_nd, params%do_pair_distribution,&
                    & params%do_structure_factor, params%do_xrd, params%do_nd, string)
@@ -4433,7 +4595,7 @@ program turbogap
               call wrap_pbc(positions_prev(1:3,1:n_sites), &
                    a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)))
               call get_xyz_energy_string(energies_soap, energies_2b,&
-                   & energies_3b, energies_core_pot, energies_vdw, energies_exp&
+                   & energies_3b, energies_core_pot, energies_vdw, energies_estat, energies_exp&
                    &, energies_lp, energies_pdf, energies_sf, energies_xrd, energies_nd,&
                    & params%valid_pdf, params%valid_sf, params%valid_xrd, params%valid_nd, params%do_pair_distribution,&
                    & params%do_structure_factor, params%do_xrd, params%do_nd, string)
@@ -4920,7 +5082,7 @@ program turbogap
                          & images(i_current_image)%c_box&
                          &/dfloat(indices(3)))
                     call get_xyz_energy_string(energies_soap, energies_2b,&
-                         & energies_3b, energies_core_pot, energies_vdw, energies_exp&
+                         & energies_3b, energies_core_pot, energies_vdw, energies_estat, energies_exp&
                          &, energies_lp, energies_pdf, energies_sf, energies_xrd, energies_nd,&
                          & params%valid_pdf, params%valid_sf,&
                          & params%valid_xrd, params%valid_nd,&
@@ -5099,7 +5261,7 @@ program turbogap
                          images(i_current_image)%b_box/dfloat(indices(2)),&
                          images(i_current_image)%c_box/dfloat(indices(3)))
                     call get_xyz_energy_string(energies_soap, energies_2b,&
-                         & energies_3b, energies_core_pot, energies_vdw, energies_exp&
+                         & energies_3b, energies_core_pot, energies_vdw, energies_estat, energies_exp&
                          &, energies_lp, energies_pdf, energies_sf, energies_xrd, energies_nd,&
                          & params%valid_pdf, params%valid_sf, params%valid_xrd, params%valid_nd, params%do_pair_distribution,&
                          & params%do_structure_factor, params%do_xrd, params%do_nd, string)
@@ -5215,7 +5377,7 @@ program turbogap
                  call wrap_pbc(positions(1:3,1:n_sites), &
                       a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)))
                  call get_xyz_energy_string(energies_soap, energies_2b,&
-                      & energies_3b, energies_core_pot, energies_vdw, energies_exp&
+                      & energies_3b, energies_core_pot, energies_vdw, energies_estat, energies_exp&
                       &, energies_lp, energies_pdf, energies_sf, energies_xrd, energies_nd,&
                       & params%valid_pdf, params%valid_sf, params%valid_xrd, params%valid_nd, params%do_pair_distribution,&
                       & params%do_structure_factor, params%do_xrd, params%do_nd, string)
@@ -5482,8 +5644,6 @@ program turbogap
 
      !     !     !     !     call cpu_time(time1)
      call get_time( time1 )
-     ! DEBUG CHECKING THAT NEIGHBORS LIST DOES NOT CAUSE INCREASE IN MEMORY  
-     rebuild_neighbors_list = .false.
      
 #ifdef _MPIF90
      !   Parallel neighbors list build

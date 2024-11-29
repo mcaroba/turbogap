@@ -198,247 +198,273 @@ module gap_interface
       end if
     end do
 
-!   Second, we build all the new neighbors list stuff with the correct subset of information
-    allocate( n_neigh(1:n_sites) )
-    allocate( species_multiplicity(1:n_sites) )
-    allocate( species(1:max_species_multiplicity, 1:n_sites) )
-    allocate( neighbors_list(1:n_atom_pairs) )
-    allocate( rjs(1:n_atom_pairs) )
-    allocate( thetas(1:n_atom_pairs) )
-    allocate( phis(1:n_atom_pairs) )
-    allocate( xyz(1:3, 1:n_atom_pairs) )
-    allocate( mask(1:n_atom_pairs, 1:n_species) )
-    allocate( in_to_out_site(1:n_all_sites) )
-    allocate( in_to_out_pairs(1:n_atom_pairs) )
-    allocate( out_to_in_site(1:n_total_sites) )
-    in_to_out_site = 0
-    in_to_out_pairs = 0
-    out_to_in_site = 0
-    k2 = 0
-    i4 = 0
-    k = 0
-    i2 = 0
-!   The first n_sites sites are assigned to the central sites
-    do i = 1, n_sites0
-      k = k + 1
-      j = mod(neighbors_list0(k)-1, n_total_sites) + 1
-      if( species0(1, i) == central_species .or. central_species == 0 )then
-        i2 = i2 + 1
-        in_to_out_site(i2) = j
-        out_to_in_site(j) = i2
-        species_multiplicity(i2) = species_multiplicity0(i)
-        species(:, i2) = species0(:, i)
-        k = k + n_neigh0(i) - 1
-      else
-        k = k + n_neigh0(i) - 1
-      end if
-    end do
-    k = 0
-    i2 = 0
-!   Now we loop over neighbors and make sure that if a neighbor has already been registered, which
-!   means its out_to_in_site /= 0, we do not update the out_to_in_site variable further
-    do i = 1, n_sites0
-      if( species0(1, i) == central_species .or. central_species == 0 )then
-        i2 = i2 + 1
-        j2 = 0
-        do j = 1, n_neigh0(i)
+    ! We may not have the sites for a calculation here!
+    ! - If we have a multispecies GAP, then we could be simulating something without a specific species.
+    ! - Therefore, if the species does not exist in the system, we can ignore everything else
+    
+    if( n_sites == 0 )then
+
+       deallocate(  mask0, is_atom_seen )
+       deallocate( species0, species_multiplicity0, species_multiplicity_supercell )
+
+       ! Assuming we arent writing the derivatives here at all so not allocating soap stuff 
+       
+       
+    else
+       
+       !   Second, we build all the new neighbors list stuff with the correct subset of information
+       allocate( n_neigh(1:n_sites) )
+       allocate( species_multiplicity(1:n_sites) )
+       allocate( species(1:max_species_multiplicity, 1:n_sites) )
+       allocate( neighbors_list(1:n_atom_pairs) )
+       allocate( rjs(1:n_atom_pairs) )
+       allocate( thetas(1:n_atom_pairs) )
+       allocate( phis(1:n_atom_pairs) )
+       allocate( xyz(1:3, 1:n_atom_pairs) )
+       allocate( mask(1:n_atom_pairs, 1:n_species) )
+       allocate( in_to_out_site(1:n_all_sites) )
+       allocate( in_to_out_pairs(1:n_atom_pairs) )
+       allocate( out_to_in_site(1:n_total_sites) )
+       in_to_out_site = 0
+       in_to_out_pairs = 0
+       out_to_in_site = 0
+       k2 = 0
+       i4 = 0
+       k = 0
+       i2 = 0
+       !   The first n_sites sites are assigned to the central sites
+       do i = 1, n_sites0
           k = k + 1
-!         We fold neighbors in the supercell back to the central unit cell
-          j3 = mod(neighbors_list0(k)-1, n_total_sites)+1
-          if( rjs0(k) <= rcut_max .and. species_multiplicity_supercell(j3) > 0 )then
-            j2 = j2 + 1
-            k2 = k2 + 1
-            rjs(k2) = rjs0(k)
-            phis(k2) = phis0(k)
-            thetas(k2) = thetas0(k)
-            xyz(1:3, k2) = xyz0(1:3, k)
-            in_to_out_pairs(k2) = k
-            do i3 = 1, n_species
-              mask(k2, i3) = mask0(k, i3)
-            end do
-            if( j > 1 .and. out_to_in_site(j3) == 0 )then
-              i4 = i4 + 1
-              in_to_out_site(n_sites + i4) = j3
-              out_to_in_site(j3) = n_sites + i4
-              neighbors_list(k2) = out_to_in_site(j3)
-            else if( j > 1 .and. out_to_in_site(j3) /= 0 )then
-              neighbors_list(k2) = out_to_in_site(j3)
-            else if( j == 1 )then
-              neighbors_list(k2) = i2
-            end if
+          j = mod(neighbors_list0(k)-1, n_total_sites) + 1
+          if( species0(1, i) == central_species .or. central_species == 0 )then
+             i2 = i2 + 1
+             in_to_out_site(i2) = j
+             out_to_in_site(j) = i2
+             species_multiplicity(i2) = species_multiplicity0(i)
+             species(:, i2) = species0(:, i)
+             k = k + n_neigh0(i) - 1
+          else
+             k = k + n_neigh0(i) - 1
           end if
-        end do
-        n_neigh(i2) = j2
-      else
-        k = k + n_neigh0(i)
-      end if
-    end do
-
-!   Get SOAP vectors and derivatives:
-    allocate( soap(1:n_soap, 1:n_sites) )
-    soap = 0.d0
-    st_soap=n_soap*n_sites*sizeof(soap(1,1))
-    call gpu_malloc_all(soap_d, st_soap, gpu_stream)
-
-    
-    if( do_derivatives )then
-      allocate( soap_cart_der(1:3, 1:n_soap, 1:n_atom_pairs) )
-      soap_cart_der = 0.d0
-      st_soap_cart_der =   3*n_soap*n_atom_pairs*sizeof(soap_cart_der(1,1,1))
-      call gpu_malloc_all(soap_cart_der_d, st_soap_cart_der, gpu_stream)       
-    end if
-
-    
-    if( n_sites > 0 )then
-       !      call cpu_time(ttt(1))
-       write(*,*) "get soap "
-      call get_soap(n_sites, n_neigh, n_species, species, species_multiplicity, n_atom_pairs, mask, rjs, &
-                    thetas, phis, alpha_max_d, alpha_max, l_max, rcut_hard_d, rcut_hard, rcut_soft_d, nf_d, global_scaling_d, &
-                    atom_sigma_r_d, atom_sigma_r, atom_sigma_r_scaling_d, atom_sigma_t_d, atom_sigma_t_scaling_d, &
-                    amplitude_scaling_d, radial_enhancement, central_weight_d, central_weight, basis, scaling_mode, do_timing, &
-                    do_derivatives, compress_soap, compress_soap_indices, soap,&
-                    & soap_cart_der, time_get_soap, soap_d, &
-                    & soap_cart_der_d, n_neigh_d, W_d, S_d, multiplicity_array_d,&
-                    & st_W_d, st_S_d, st_multiplicity_array_d,&
-                    & recompute_basis, &
-                    & cublas_handle, gpu_stream)
-
-
-    end if
-
-    
-    if( do_prediction )then
-!     Get energies and forces
-      allocate( energies(1:n_sites) )
-      energies = 0.d0
-      if( do_forces )then
-        allocate( forces(1:3, 1:n_all_sites) )
-        forces = 0.d0
-      end if
-      if( n_sites > 0 )then
-        call get_soap_energy_and_forces(n_sparse, soap, soap_cart_der, alphas_d, delta, zeta, 0.d0, Qs_d, &
-                                        n_neigh, neighbors_list, xyz, do_forces, do_timing, &
-                                        energies, forces, virial, solo_time_soap,  &
-                                        soap_d,  soap_cart_der_d, n_neigh_d, n_pairs, l_index_d,  cublas_handle, gpu_stream )
-        
-      end if
-
-      do i = 1, n_sites
-        i2 = in_to_out_site(i)
-        energies0(i2) = energies(i)
-      end do
-      if( do_forces )then
-        do i = 1, n_all_sites
-          i2 = in_to_out_site(i)
-          forces0(1:3, i2) = forces(1:3, i)
-        end do
-      end if
-    end if
-
-
-
-!     !###########################################!
-!     !###---   Local property prediction   ---###!
-!     !###########################################!
-
-    if( has_local_properties )then
-       allocate( local_properties( 1:n_sites ) )
-       if( do_derivatives )then
-          allocate( local_properties_cart_der(1:3, 1:n_atom_pairs) )
-       end if
-
-       ! Allocate the arrays here so we dont have to reallocate 
-       ! Allocate gpu memory
-       st_size_nf = n_sites * sizeof( local_properties(1) )
-       call gpu_malloc_all(local_properties_d, st_size_nf, gpu_stream)
-       st_size_nf = n_atom_pairs * 3 * sizeof( local_properties_cart_der(1,1) )
-       call gpu_malloc_all(local_properties_cart_der_d, st_size_nf, gpu_stream)
-       
-       
-       ! We need to iterate over the number of local properties       
-       do i4 = 1, n_local_properties
-
-          call gpu_local_property_predict( local_property_models(i4)%n_sparse, soap,&
-               & soap_d, local_property_models(i4)%Qs_d,&
-               & local_property_models(i4)%alphas_d,&
-               & local_property_models(i4)%V0,&
-               & local_property_models(i4)%delta,&
-               & local_property_models(i4)%zeta, local_properties, local_properties_d,&
-               & do_derivatives, soap_cart_der_d,&
-               & local_properties_cart_der,&
-               & local_properties_cart_der_d, n_pairs, l_index_d ,&
-               & cublas_handle, gpu_stream )
-
-
-          do i = 1, n_sites
-             i2 = in_to_out_site(i)
-             local_properties0(i2, local_property_indexes(lp_index + i4)) = local_properties(i)
-          end do
-          if( do_derivatives )then
-             do k = 1, n_atom_pairs
-                k2 = in_to_out_pairs(k)
-                local_properties_cart_der0(1:3,  k2, local_property_indexes(lp_index + i4)) &
-                     & = local_properties_cart_der(1:3, k)
+       end do
+       k = 0
+       i2 = 0
+       !   Now we loop over neighbors and make sure that if a neighbor has already been registered, which
+       !   means its out_to_in_site /= 0, we do not update the out_to_in_site variable further
+       do i = 1, n_sites0
+          if( species0(1, i) == central_species .or. central_species == 0 )then
+             i2 = i2 + 1
+             j2 = 0
+             do j = 1, n_neigh0(i)
+                k = k + 1
+                !         We fold neighbors in the supercell back to the central unit cell
+                j3 = mod(neighbors_list0(k)-1, n_total_sites)+1
+                if( rjs0(k) <= rcut_max .and. species_multiplicity_supercell(j3) > 0 )then
+                   j2 = j2 + 1
+                   k2 = k2 + 1
+                   rjs(k2) = rjs0(k)
+                   phis(k2) = phis0(k)
+                   thetas(k2) = thetas0(k)
+                   xyz(1:3, k2) = xyz0(1:3, k)
+                   in_to_out_pairs(k2) = k
+                   do i3 = 1, n_species
+                      mask(k2, i3) = mask0(k, i3)
+                   end do
+                   if( j > 1 .and. out_to_in_site(j3) == 0 )then
+                      i4 = i4 + 1
+                      in_to_out_site(n_sites + i4) = j3
+                      out_to_in_site(j3) = n_sites + i4
+                      neighbors_list(k2) = out_to_in_site(j3)
+                   else if( j > 1 .and. out_to_in_site(j3) /= 0 )then
+                      neighbors_list(k2) = out_to_in_site(j3)
+                   else if( j == 1 )then
+                      neighbors_list(k2) = i2
+                   end if
+                end if
              end do
+             n_neigh(i2) = j2
+          else
+             k = k + n_neigh0(i)
           end if
        end do
 
-       deallocate( local_properties )
-       call gpu_free_async(local_properties_d, gpu_stream)
+       !   Get SOAP vectors and derivatives:
+       allocate( soap(1:n_soap, 1:n_sites) )
+       soap = 0.d0
+       st_soap=n_soap*n_sites*sizeof(soap(1,1))
+       call gpu_malloc_all(soap_d, st_soap, gpu_stream)
+
+
        if( do_derivatives )then
-          deallocate( local_properties_cart_der )
-          call gpu_free_async(local_properties_cart_der_d, gpu_stream)
+          allocate( soap_cart_der(1:3, 1:n_soap, 1:n_atom_pairs) )
+          soap_cart_der = 0.d0
+          st_soap_cart_der =   3*n_soap*n_atom_pairs*sizeof(soap_cart_der(1,1,1))
+          call gpu_malloc_all(soap_cart_der_d, st_soap_cart_der, gpu_stream)       
        end if
 
+
+       if( n_sites > 0 )then
+          !      call cpu_time(ttt(1))
+          write(*,*) "get soap "
+          call get_soap(n_sites, n_neigh, n_species, species, species_multiplicity, n_atom_pairs, mask, rjs, &
+               thetas, phis, alpha_max_d, alpha_max, l_max, rcut_hard_d, rcut_hard, rcut_soft_d, nf_d, global_scaling_d, &
+               atom_sigma_r_d, atom_sigma_r, atom_sigma_r_scaling_d, atom_sigma_t_d, atom_sigma_t_scaling_d, &
+               amplitude_scaling_d, radial_enhancement, central_weight_d, central_weight, basis, scaling_mode, do_timing, &
+               do_derivatives, compress_soap, compress_soap_indices, soap,&
+               & soap_cart_der, time_get_soap, soap_d, &
+               & soap_cart_der_d, n_neigh_d, W_d, S_d, multiplicity_array_d,&
+               & st_W_d, st_S_d, st_multiplicity_array_d,&
+               & recompute_basis, &
+               & cublas_handle, gpu_stream)
+
+
+       end if
+
+
+       if( do_prediction )then
+          !     Get energies and forces
+          allocate( energies(1:n_sites) )
+          energies = 0.d0
+          if( do_forces )then
+             allocate( forces(1:3, 1:n_all_sites) )
+             forces = 0.d0
+          end if
+          if( n_sites > 0 )then
+             call get_soap_energy_and_forces(n_sparse, soap, soap_cart_der, alphas_d, delta, zeta, 0.d0, Qs_d, &
+                  n_neigh, neighbors_list, xyz, do_forces, do_timing, &
+                  energies, forces, virial, solo_time_soap,  &
+                  soap_d,  soap_cart_der_d, n_neigh_d, n_pairs, l_index_d,  cublas_handle, gpu_stream )
+
+          end if
+
+          do i = 1, n_sites
+             i2 = in_to_out_site(i)
+             energies0(i2) = energies(i)
+          end do
+          if( do_forces )then
+             do i = 1, n_all_sites
+                i2 = in_to_out_site(i)
+                forces0(1:3, i2) = forces(1:3, i)
+             end do
+          end if
+       end if
+
+
+
+       !     !###########################################!
+       !     !###---   Local property prediction   ---###!
+       !     !###########################################!
+
+       if( has_local_properties )then
+          allocate( local_properties( 1:n_sites ) )
+          if( do_derivatives )then
+             allocate( local_properties_cart_der(1:3, 1:n_atom_pairs) )
+          end if
+
+          write(*,*) 'n_atom_pairs ', n_atom_pairs, n_pairs 
+
+          write(*,*) "get LP "              
+          ! Allocate the arrays here so we dont have to reallocate 
+          ! Allocate gpu memory
+          st_size_nf = n_sites * sizeof( local_properties(1) )
+          call gpu_malloc_all(local_properties_d, st_size_nf, gpu_stream)
+
+          if( do_derivatives )then
+             st_size_nf = n_atom_pairs * 3 * sizeof( local_properties_cart_der(1,1) )
+             call gpu_malloc_all(local_properties_cart_der_d, st_size_nf, gpu_stream)
+          end if
+
+
+          ! We need to iterate over the number of local properties
+          write(*,*) "nLP =  ", n_local_properties, "  lp_index ", lp_index, size(local_properties0,1), n_sites0, size(local_properties0,2)
+          do i4 = 1, n_local_properties
+
+             call gpu_local_property_predict( local_property_models(i4)%n_sparse, soap,&
+                  & soap_d, local_property_models(i4)%Qs_d,&
+                  & local_property_models(i4)%alphas_d,&
+                  & local_property_models(i4)%V0,&
+                  & local_property_models(i4)%delta,&
+                  & local_property_models(i4)%zeta, local_properties, local_properties_d,&
+                  & do_derivatives, soap_cart_der_d,&
+                  & local_properties_cart_der,&
+                  & local_properties_cart_der_d, n_pairs, l_index_d ,&
+                  & cublas_handle, gpu_stream )
+
+
+             do i = 1, n_sites
+                i2 = in_to_out_site(i)
+                write(*,'(A,1X,I8,1X,I8,1X,I8,1X,I8,1X,F12.6)') "lps ",&
+                     i2, i, local_property_indexes(lp_index + i4), lp_index+i4, local_properties(i)
+
+                local_properties0(i2, local_property_indexes(lp_index + i4)) = &
+                     local_properties0(i2, local_property_indexes(lp_index + i4)) +  local_properties(i)
+             end do
+             if( do_derivatives )then
+                do k = 1, n_atom_pairs
+                   k2 = in_to_out_pairs(k)
+                   local_properties_cart_der0(1:3,  k2, local_property_indexes(lp_index + i4)) &
+                        & = local_properties_cart_der(1:3, k)
+                end do
+             end if
+          end do
+
+          deallocate( local_properties )
+          call gpu_free_async(local_properties_d, gpu_stream)
+          if( do_derivatives )then
+             deallocate( local_properties_cart_der )
+             call gpu_free_async(local_properties_cart_der_d, gpu_stream)
+          end if
+
+       end if
+
+       call gpu_free_async(l_index_d,gpu_stream)
+       call gpu_free_async(soap_d,gpu_stream)
+       call gpu_free(soap_cart_der_d)
+
+
+       if( .not. write_soap ) deallocate( soap )
+       if( do_derivatives .and. .not. write_derivatives ) deallocate( soap_cart_der )
+
+       !   This is slow, but writing to disk is even slower so who cares
+       if( write_soap )then
+          allocate( soap_temp(1:n_soap, 1:n_sites0) )
+          soap_temp = 0.d0
+          do i = 1, n_sites
+             i2 = in_to_out_site(i)
+             soap_temp(1:n_soap, i2) = soap(1:n_soap, i)
+          end do
+          deallocate( soap )
+          allocate( soap(1:n_soap, 1:n_sites0) )
+          soap = soap_temp
+          deallocate( soap_temp )
+       end if
+
+       if( do_derivatives .and. write_derivatives )then
+          allocate( der_neighbors(1:n_sites) )
+          allocate( der_neighbors_list(1:n_atom_pairs) )
+          der_neighbors = n_neigh
+          k = 0
+          do i = 1, n_sites
+             do j = 1, n_neigh(i)
+                k = k + 1
+                j2 = neighbors_list(k)
+                der_neighbors_list(k) = in_to_out_site(j2)
+             end do
+          end do
+       end if
+
+
+
+       if( do_prediction ) deallocate( energies )
+       if( do_forces     ) deallocate( forces )
+
+
+       deallocate( neighbors_list, n_neigh, rjs, xyz, thetas, phis, mask, mask0, is_atom_seen )
+       deallocate( species0, species_multiplicity0, species, species_multiplicity, species_multiplicity_supercell )
+       deallocate( in_to_out_site, out_to_in_site , in_to_out_pairs )
+
     end if
-
-    call gpu_free_async(l_index_d,gpu_stream)
-    call gpu_free_async(soap_d,gpu_stream)
-    call gpu_free(soap_cart_der_d)
-
-
-    if( .not. write_soap ) deallocate( soap )
-    if( do_derivatives .and. .not. write_derivatives ) deallocate( soap_cart_der )
     
-!   This is slow, but writing to disk is even slower so who cares
-    if( write_soap )then
-      allocate( soap_temp(1:n_soap, 1:n_sites0) )
-      soap_temp = 0.d0
-      do i = 1, n_sites
-        i2 = in_to_out_site(i)
-        soap_temp(1:n_soap, i2) = soap(1:n_soap, i)
-      end do
-      deallocate( soap )
-      allocate( soap(1:n_soap, 1:n_sites0) )
-      soap = soap_temp
-      deallocate( soap_temp )
-    end if
-
-    if( do_derivatives .and. write_derivatives )then
-      allocate( der_neighbors(1:n_sites) )
-      allocate( der_neighbors_list(1:n_atom_pairs) )
-      der_neighbors = n_neigh
-      k = 0
-      do i = 1, n_sites
-        do j = 1, n_neigh(i)
-          k = k + 1
-          j2 = neighbors_list(k)
-          der_neighbors_list(k) = in_to_out_site(j2)
-        end do
-      end do
-    end if
-
-
-
-    if( do_prediction ) deallocate( energies )
-
-    if( do_forces     ) deallocate( forces )
-
-
-    deallocate( neighbors_list, n_neigh, rjs, xyz, thetas, phis, mask, mask0, is_atom_seen )
-    deallocate( species0, species_multiplicity0, species, species_multiplicity, species_multiplicity_supercell )
-    deallocate( in_to_out_site, out_to_in_site , in_to_out_pairs )
-
 end subroutine get_gap_soap
 !**************************************************************************
 

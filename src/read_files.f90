@@ -981,9 +981,62 @@ end if
       else if(keyword=='print_lp_forces')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%print_lp_forces
-      else if(keyword=='print_vdw_forces')then
+      else if(keyword=='print_estat_forces')then
         backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%print_vdw_forces
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%print_estat_forces
+      else if( keyword == "estat_damped" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params % estat_options % damped
+
+     else if( keyword == "estat_tsf" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params % estat_options % tsf
+
+     else if( keyword == "estat_sp" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params % estat_options % sp
+
+        if( params % estat_options % sp )then
+           params % estat_options % tsf = .true.
+        end if
+                
+      else if( keyword == "estat_gsf" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params % estat_options % gsf
+
+        if( params % estat_options % gsf )then
+           params % estat_options % tsf = .true.
+           params % estat_options % sp  = .true.            
+        end if
+
+      else if( keyword == "estat_self_energy_correction" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params % estat_options % self_energy_correction
+        
+           
+      else if( keyword == "estat_method" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%estat_method
+        params%estat_method = trim(params%estat_method)
+        call upper_to_lower_case(params%estat_method)
+        if (params%estat_method /= "gsf" .and. params%estat_method /= "direct" .and. params%estat_method /= "dsf" &
+            .and. params%estat_method /= "none") then
+          write(*,*) "ERROR: electrostatic method not implemented: ", params%estat_method
+          write(*,*) "       Currently implemented methods are: direct"
+          stop
+        end if
+      else if( keyword == "estat_dsf_alpha" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%estat_dsf_alpha
+      else if( keyword == "estat_rcut" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%estat_rcut
+      else if( keyword == "estat_rcut_inner" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%estat_rcut_inner
+      else if( keyword == "estat_inner_width" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%estat_inner_width        
       else if(keyword=='exp_similarity_type')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%exp_similarity_type
@@ -1748,6 +1801,15 @@ end if
       end if
     end if
 
+    ! Do the same for electrostatics
+    if (params%estat_method == "none") then
+      params%estat_rcut = 0.d0
+   else if ( (params%estat_method == "dsf" .or. params%estat_method == "gsf") &
+        &             .and. params%estat_dsf_alpha <= 0) then
+      write(*,*) "ERROR: Must specify an alpha (>0) for DSF electrostatics."
+      stop
+    end if
+    
 !   Nested sampling checks
     if( params%do_nested_sampling )then
       if( params%thermostat /= "none" )then
@@ -2349,6 +2411,11 @@ end if
                     soap_turbo_hypers(n_soap_turbo)%core_electron_be_index=nw
                  end if
 
+                 if (trim(soap_turbo_hypers(n_soap_turbo)%local_property_models(nw)%label) &
+                        == "atomic_charge") then
+                    soap_turbo_hypers(n_soap_turbo)%has_charges = .true.
+                 end if
+                 
               end do
 
             else if( keyword == "local_property_qs" )then
@@ -2816,7 +2883,7 @@ end subroutine read_electronic_stopping_file
 
   subroutine get_irreducible_local_properties(params, n_local_properties_tot, n_soap_turbo, soap_turbo_hypers, &
        local_property_labels, local_property_labels_temp, local_property_labels_temp2, local_property_indexes, &
-       valid_vdw, vdw_lp_index, core_be_lp_index, valid_xps, xps_idx )
+       valid_vdw, vdw_lp_index, valid_estat_charges, charge_lp_index, core_be_lp_index, valid_xps, xps_idx )
     implicit none
     type( input_parameters ), intent(inout) :: params
     integer, intent(in) :: n_soap_turbo
@@ -2825,11 +2892,11 @@ end subroutine read_electronic_stopping_file
     character*1024, allocatable, intent(inout) ::  local_property_labels(:), local_property_labels_temp(:), &
          local_property_labels_temp2(:)
     integer, allocatable, intent(inout) :: local_property_indexes(:)
-    integer, intent(inout) :: vdw_lp_index, core_be_lp_index, xps_idx
-    logical, intent(inout) :: valid_vdw, valid_xps
+    integer, intent(inout) :: vdw_lp_index, core_be_lp_index, charge_lp_index, xps_idx
+    logical, intent(inout) :: valid_vdw, valid_xps, valid_estat_charges
     logical :: label_in_list = .false.
     integer :: i, j, i2, j2, k, k2, nprop
-     
+
     n_local_properties_tot = 0
     i2 = 1 ! using this as a counter for the labels
     do j = 1, n_soap_turbo
@@ -2919,7 +2986,10 @@ end subroutine read_electronic_stopping_file
 
                 local_property_indexes(j) = i
 
-
+                ! WARNING -- this seems to be duplicating functionality found above
+                ! see the line:
+                !   else if( keyword == "local_property_labels" )then
+                ! also perhaps in turbogap.f90, just below the get_gap_soap() call
                 if ( trim(local_property_labels(j)) == "hirshfeld_v" )then
                    vdw_lp_index = i
                    valid_vdw = .true.
@@ -2931,12 +3001,33 @@ end subroutine read_electronic_stopping_file
                             else
                                soap_turbo_hypers(k2)%local_property_models(k)%do_derivatives = .false.
                             end if
-
+                            ! The previous default behaviour is to truncate negative
+                            ! volumes to zero, so we keep it that way here for
+                            ! backwards compatibility
+                            soap_turbo_hypers(k2)%local_property_models(k)%zero_trunc = .true.
                          end if
                       end do
                    end do
                 end if
 
+                if (trim(local_property_labels(j)) == "atomic_charge") then
+                   charge_lp_index = i
+                   valid_estat_charges = .true.
+                   do k2 = 1, n_soap_turbo
+                      do k = 1, soap_turbo_hypers(k2)%n_local_properties
+                         if (trim(soap_turbo_hypers(k2)%local_property_models(k)%label) == "atomic_charge")then
+                            soap_turbo_hypers(k2)%has_charges = .true.
+                            if( params%do_derivatives .or. params%do_forces)then
+                               soap_turbo_hypers(k2)%local_property_models(k)%do_derivatives = .true.
+                            else
+                               soap_turbo_hypers(k2)%local_property_models(k)%do_derivatives = .false.
+                            end if
+                            ! This is important -- no truncating the charges; it doesn't make sense here!
+                            soap_turbo_hypers(k2)%local_property_models(k)%zero_trunc = .false.
+                         end if
+                      end do
+                   end do
+                end if
 
                 if ( trim(local_property_labels(j)) == "core_electron_be" )then
                    core_be_lp_index = i
@@ -2961,7 +3052,6 @@ end subroutine read_electronic_stopping_file
                    end do
                 end if
 
-
              end if
           end do
        end do
@@ -2971,7 +3061,9 @@ end subroutine read_electronic_stopping_file
        local_property_labels = local_property_labels_temp
        deallocate(local_property_labels_temp)
     end if
-    
+
   end subroutine get_irreducible_local_properties
-  
+
+
+
 end module

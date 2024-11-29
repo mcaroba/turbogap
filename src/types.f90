@@ -32,6 +32,7 @@ module types
 
   implicit none
 
+  integer, parameter, public :: dp = kind(1.0d0)
  
   type gpu_host_storage_type
      real*8, allocatable :: xyz_k_h(:,:), pair_distribution_partial_h(:), pair_distribution_partial_der_h(:,:), forces_h(:,:), rjs_index_h(:)
@@ -94,7 +95,7 @@ module types
      real*8              :: zeta, delta, V0
      character*1024      :: file_alphas, file_desc, label
      integer             :: n_sparse, dim
-     logical             :: do_derivatives = .false., compute=.true.
+     logical             :: do_derivatives = .false., compute=.true., zero_trunc = .false.
      type(c_ptr)         :: Qs_d, alphas_d
      integer(c_int)      :: n_sparse_d
      integer(c_size_t)   :: st_size_alphas, st_size_Qs
@@ -122,7 +123,7 @@ module types
     character*64 :: basis = "poly3", compress_mode = "none"
     character*32 :: scaling_mode = "polynomial"
     character*8, allocatable :: species_types(:)
-    logical :: compress_soap = .false., has_vdw = .false.,&
+    logical :: compress_soap = .false., has_vdw = .false., has_charges = .false.,&
          & has_core_electron_be=.false., has_local_properties = .false., recompute_basis=.true.
     type(local_property_soap_turbo), allocatable :: local_property_models(:)
     type(c_ptr) :: W_d, S_d, multiplicity_array_d
@@ -159,6 +160,16 @@ module types
     character*8 :: species1, species2
   end type core_pot
 
+
+  type options_estat
+     logical :: damped = .false.
+     logical :: tsf    = .true.
+     logical :: sp     = .false.
+     logical :: gsf    = .false.
+     logical :: self_energy_correction = .false.     
+  end type options_estat
+  
+  
 ! These is the type for the input parameters
   type input_parameters
      real*8, allocatable :: masses_types(:), e0(:), vdw_c6_ref(:), vdw_r0_ref(:), vdw_alpha0_ref(:), &
@@ -181,8 +192,8 @@ module types
          & mc_lnvol_max = 0.01d0, mc_min_dist = 0.2d0, xps_sigma&
          &=0.4d0, mc_reverse_lambda = 0.d0, xrd_wavelength =&
          & 1.5405981d0, xrd_damping=0.0d0, nd_wavelength =&
-         & 1.5405981d0, xrd_alpha=1.01d0, xrd_rcut=4.d0, nd_rcut=4.d0&
-         &, q_range_min=1.0, q_range_max=5.d0, r_range_min=1.0,&
+         & 1.5405981d0, xrd_alpha=1.01d0, xrd_rcut=4.d0, nd_rcut=4.d0,&
+         & q_range_min=1.0, q_range_max=5.d0, r_range_min=1.0,&
          & r_range_max=5.d0, pair_distribution_rcut=4.d0,&
          & pair_distribution_kde_sigma=0.d0, gpu_max_batch_size=1.d0
     integer :: md_nsteps = 1, mc_nsteps = 1, write_xyz = 0,&
@@ -193,6 +204,11 @@ module types
          &=200, structure_factor_n_samples=200, xrd_n_samples=200, nd_n_samples=200, verb=0, n_t_hold=0,&
          n_exp_opt=0,&
          n_mc_relax_after = 0, n_mc_mu = 0, gpu_n_batches=1
+
+    real*8  :: estat_rcut = 10.d0, estat_dsf_alpha = -1.d0, &
+                estat_rcut_inner = 4.0d0, estat_inner_width = 1.d0
+
+    
     integer, allocatable :: mc_swaps_id(:)
 
     character*1024 :: atoms_file
@@ -203,25 +219,41 @@ module types
     character*16 :: optimize = "vv", mc_relax_opt = "gd", mc_hybrid_opt = "vv"
     character*32 :: barostat = "none", thermostat = "none", barostat_sym = "isotropic", &
                     xps_force_type = "similarity", exp_similarity_type = "squared_diff", xrd_method = "xrd", &
-                    q_units="q", xrd_output="xrd", sf_output="xrd", nd_output="xrd", pair_distribution_output = "pdf"
-    logical :: do_md = .false., do_mc = .false., do_prediction = .false., do_forces = .false., do_derivatives = .false., &
-               do_derivatives_fd = .false., write_soap = .false., write_derivatives = .false., &
-               do_timing = .false., all_atoms = .true., print_progress = .true., scale_box = .false., &
-               write_lv = .false., write_forces = .true., write_velocities = .true., write_hirshfeld_v = .true., &
-               write_virial = .true., write_pressure = .true., write_stress = .true., &
-               write_local_energies = .true., write_property(1:11) = .true., &
-               write_array_property(1:8) = .true., write_masses = .false., write_fixes = .true., &
-               variable_time_step = .false., vdw_mbd_grad = .false., do_nested_sampling = .false., &
-               scale_box_nested = .false., mc_write_xyz = .false., do_exp = .false., mc_relax = .false., &
-               mc_optimize_exp = .false., exp_forces = .false., exp_energies = .true., print_lp_forces = .false., &
-               print_vdw_forces = .false., mc_hamiltonian = .false., accessible_volume = .false., mc_reverse = .false., &
-               xrd_iwasa = .true., pair_distribution_partial = .true., structure_factor_from_pdf = .true., &
-               structure_factor_window = .true., write_pair_distribution = .false., write_structure_factor = .false., &
-               do_pair_distribution = .false., do_structure_factor = .false., do_xrd = .false., do_nd = .false., &
-               write_xrd = .false., write_nd = .false., structure_factor_matrix = .true., &
-               structure_factor_matrix_forces = .true., write_exp = .true., valid_pdf = .false., valid_sf = .false., &
-               valid_xrd = .false., valid_nd = .false., gpu_low_memory = .true., gpu_batched = .true.
+                    q_units="q", estat_method = "none", xrd_output&
+                    &="xrd", sf_output="xrd", nd_output="xrd",&
+                    & pair_distribution_output = "pdf"
+    logical :: do_md = .false., do_mc = .false., do_prediction =&
+         & .false., do_forces = .false., do_derivatives = .false.,&
+         & do_derivatives_fd = .false., write_soap = .false.,&
+         & write_derivatives = .false., do_timing = .false.,&
+         & all_atoms = .true., print_progress = .true., scale_box =&
+         & .false., write_lv = .false., write_forces = .true.,&
+         & write_velocities = .true., write_hirshfeld_v = .true.,&
+         & write_virial = .true., write_pressure = .true.,&
+         & write_stress = .true., write_local_energies = .true.,&
+         & write_property(1:11) = .true., write_array_property(1:8) =&
+         & .true., write_masses = .false., write_fixes = .true.,&
+         & variable_time_step = .false., vdw_mbd_grad = .false.,&
+         & do_nested_sampling = .false., scale_box_nested = .false.,&
+         & mc_write_xyz = .false., do_exp = .false., mc_relax =&
+         & .false., mc_optimize_exp = .false., exp_forces = .false.,&
+         & exp_energies = .true., print_lp_forces = .false.,&
+         & print_vdw_forces = .false., print_estat_forces = .false., mc_hamiltonian = .false.,&
+         & accessible_volume = .false., mc_reverse = .false.,&
+         & xrd_iwasa = .true., pair_distribution_partial = .true.,&
+         & structure_factor_from_pdf = .true.,&
+         & structure_factor_window = .true., write_pair_distribution &
+         &= .false., write_structure_factor = .false.,&
+         & do_pair_distribution = .false., do_structure_factor =&
+         & .false., do_xrd = .false., do_nd = .false., write_xrd =&
+         & .false., write_nd = .false., structure_factor_matrix =&
+         & .true., structure_factor_matrix_forces = .true., write_exp&
+         & = .true., valid_pdf = .false., valid_sf = .false.,&
+         & valid_xrd = .false., valid_nd = .false., gpu_low_memory =&
+         & .true., gpu_batched = .true.
 
+    type(options_estat) :: estat_options
+    
     logical, allocatable :: write_local_properties(:)
     type(exp_data_container), allocatable :: exp_data(:)
     type(exp_pred_container) :: pair_distribution_params, structure_factor_params, xrd_params

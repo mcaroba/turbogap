@@ -51,8 +51,8 @@ module gap
       !   real(c_double), intent(in),target :: soap(:,:), soap_der(:,:,:), alphas(:), delta, Qs(:,:), e0, zeta0, xyz(:,:)
       real(c_double), intent(in),target :: soap(:,:), soap_der(:,:,:), delta, e0, zeta0, xyz(:,:)
       real(c_double), intent(out):: energies(:), forces(:,:), virial(1:3,1:3)
-      real(c_double), allocatable :: tmp_energies(:), tmp_forces(:,:), tmp_virial(:,:)
-      integer(c_int), intent(in) :: n_neigh(:), neighbors_list(:)
+      real(c_double), allocatable, target :: tmp_energies(:), tmp_forces(:,:), tmp_virial(:,:)
+      integer(c_int), intent(in), target :: n_neigh(:), neighbors_list(:)
       logical, intent(in) :: do_forces, do_timing
       real(c_double), allocatable,target :: kernels(:,:), kernels_der(:,:), &
            Qss(:,:), Qs_copy(:,:), this_Qss(:), &
@@ -70,12 +70,12 @@ module gap
       integer(c_int) :: size_forces, size_virial, size_soap_der,n1soap_der,n2soap_der,n3soap_der
       integer(c_int) :: rank, ierr
       integer(c_int), intent(inout) :: n_pairs
-      integer(c_int), allocatable :: neighbors_beg(:), neighbors_end(:)
+      integer(c_int), allocatable, target :: neighbors_beg(:), neighbors_end(:)
       type(c_ptr) :: virial_d, n_neigh_d,  this_force_d, j2_index_d
       type(c_ptr), intent(inout) :: l_index_d
       type(c_ptr) :: neighbors_beg_d, neighbors_end_d, xyz_d,  neighbors_list_d, forces_d
       real*8, intent(inout) :: solo_time_soap
-      integer(c_int), allocatable :: j2_index(:),  l_index(:)    
+      integer(c_int), allocatable, target :: j2_index(:),  l_index(:)    
       type(c_ptr), intent(inout) :: soap_der_d, soap_d
       real*8 :: ttt(2)
       integer(c_size_t) :: st_alphas, st_Qs, st_kernels, st_energies, st_soap
@@ -178,6 +178,8 @@ module gap
          end do
          n_pairs=l
 
+         write(*,*) 'N pairs get soap EF ', n_pairs 
+         
          allocate(l_index(1:n_pairs))
 
          l = 0
@@ -289,15 +291,22 @@ module gap
       call gpu_free_async(kernels_d,gpu_stream)
       call gpu_free_async(kernels_copy_d,gpu_stream)
 
-      if( do_forces ) call gpu_free_async(j2_index_d,gpu_stream) 
-      if( do_forces ) call gpu_free_async(forces_d,gpu_stream)
-      if( do_forces ) call gpu_free_async(virial_d, gpu_stream)
-
+      if( do_forces )then 
+         call gpu_free_async(j2_index_d,gpu_stream) 
+         call gpu_free_async(forces_d,gpu_stream)
+         call gpu_free_async(virial_d, gpu_stream)
+      end if
+        
+           
       call gpu_free(energies_d)
 
       energies = tmp_energies
-      if( do_forces ) forces = tmp_forces
-      if( do_forces ) virial = tmp_virial
+
+      if( do_forces )then
+         forces = tmp_forces
+         virial = tmp_virial
+      end if
+      
 
 
       deallocate( kernels, kernels_copy, tmp_energies )

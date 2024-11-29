@@ -83,8 +83,8 @@ __device__ double warp_red(double data) {
 
    double res = data;
    for (int i =warpSize/2; i!=0; i=i>>1) {
-     //      res += __shfl_down_sync(0xffffffff,res, i,warpSize);
-      res += __shfl_down(res, i,warpSize);      
+           res += __shfl_down_sync(0xffffffff,res, i,warpSize);
+	   //  res += __shfl_down(res, i,warpSize);      
    }
    return res;
 }
