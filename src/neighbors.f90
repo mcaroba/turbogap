@@ -788,7 +788,7 @@ module neighbors
       n_chunks = n_sites
     end if
 
-    pairs_per_chunk = float(n_atom_pairs_in) / float(n_chunks)
+    pairs_per_chunk = dfloat(n_atom_pairs_in) / dfloat(n_chunks)
 
     allocate( i_beg_list(1:n_chunks) )
     allocate( i_end_list(1:n_chunks) )

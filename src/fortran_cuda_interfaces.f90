@@ -479,6 +479,66 @@ MODULE F_B_C
         implicit none
       end subroutine
 
+      subroutine gpu_get_electrostatics_nk(i_beg, i_end, n_pairs,&
+        n_neigh_d, n_neigh_index_d, rjs_d, xyz_d, r_cut,&
+        nk_out_d, nk_flags_d, nk_flags_sum_d, stream)  bind(C,name="gpu_get_electrostatics_nk")
+        use iso_c_binding
+        implicit none
+        integer(c_int), value ::  i_beg, i_end, n_pairs
+        type(c_ptr), value :: n_neigh_d, rjs_d, xyz_d, nk_flags_d, nk_flags_sum_d, n_neigh_index_d
+        real(c_double), value :: r_cut
+        type(c_ptr), value ::  nk_out_d
+        type(c_ptr) :: stream        
+      end subroutine gpu_get_electrostatics_nk
+
+
+      subroutine gpu_set_electrostatics_k_index(i_beg, i_end, n_pairs, n_sites0, neighbors_list_d,&
+           rjs_d, xyz_d, &
+           charges_d, &
+           neighbor_charges_index_d, &
+           charge_gradients_d, charge_gradients_index_d,&
+           k_index_d, j2_index_d, rjs_index_d,  xyz_k_d, &
+           nk_flags_d,  nk_sum_flags_d, stream)  bind(C,name="gpu_set_electrostatics_k_index")
+        use iso_c_binding
+        implicit none
+        integer(c_int), value ::  i_beg, i_end, n_sites0, n_pairs
+        type(c_ptr), value :: neighbors_list_d, xyz_d, rjs_d, nk_flags_d, charge_gradients_d, charge_gradients_index_d
+        type(c_ptr), value ::  k_index_d, j2_index_d, rjs_index_d, xyz_k_d, nk_sum_flags_d, charges_d, neighbor_charges_index_d
+        type(c_ptr) :: stream
+      end subroutine gpu_set_electrostatics_k_index
+
+
+
+      subroutine  gpu_get_electrostatics_energies( &
+           i_beg, &
+           energies_d,   &
+           forces_d, &
+           virial_d, &
+           j2_index_d, &
+           n_sites,      &
+           this_n_sites, &
+           this_n_pairs, &
+           n_neigh_index_d, &           
+           charges_d,    &
+           charge_gradients_d, &
+           neighbor_charges_index_d, &
+           rjs_index_d,  &
+           xyz_k_d, & 
+           dsf_alpha, &
+           pair_energy_rcut, &
+           pair_energy_rcut_der, &           
+           stream ) bind(C,name="gpu_get_electrostatics_energies")
+      use iso_c_binding
+      implicit none
+      integer(c_int), value ::  this_n_sites, n_sites, this_n_pairs, i_beg
+      type(c_ptr), value :: charges_d, neighbor_charges_index_d, xyz_k_d, charge_gradients_d
+      type(c_ptr), value ::  rjs_index_d, energies_d, n_neigh_index_d, forces_d, j2_index_d, virial_d
+      type(c_ptr) :: stream
+      real(c_double), value :: dsf_alpha, pair_energy_rcut, pair_energy_rcut_der
+    end subroutine gpu_get_electrostatics_energies
+    
+          
+      
       subroutine gpu_get_pair_distribution_nk(i_beg, i_end, n_pairs, n_sites0, neighbors_list_d,&
         n_neigh_d, neighbor_species_d,&
         species_d, rjs_d, xyz_d, r_min, r_max, r_cut,&
