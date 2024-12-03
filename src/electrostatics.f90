@@ -33,6 +33,9 @@ module electrostatics
     use F_B_C
     use iso_c_binding
 
+    ! use gpu_var_int_mod
+    ! use gpu_var_double_mod
+    
 
     ! Both of these from the NIST website, references 2018 CODATA values
     real(dp), parameter :: HARTREE_EV = 27.2113862460_dp
@@ -302,10 +305,11 @@ module electrostatics
     real(dp), dimension(:,:), intent(in), target :: charge_gradients
     real(dp), intent(in) :: r_cut, dsf_alpha
 
+    integer, allocatable, target :: n_neigh_check(:)
     real(dp), intent(inout), target :: energies(:), forces(:,:)
     real(dp), intent(inout), target :: virial(1:3,1:3)
 
-    real(dp),  allocatable, target :: energies_temp(:), forces_temp(:,:)
+    real(dp),  allocatable, target :: energies_temp(:), forces_temp(:,:), rjs_check(:)
     real(dp),  target :: virial_temp(1:3,1:3)
     
     logical, intent(in) :: do_gradients 
@@ -316,7 +320,7 @@ module electrostatics
     type( gpu_host_batch_storage_type ), intent(inout),  target :: gpu_host
     type( gpu_neigh_storage_type),       intent( in ) :: gpu_neigh
 
-    
+    integer :: i , j, k 
     
     ! Local variables
     integer :: n_dim_partial, n_dim_idx, this_n_sites, this_n_pairs
@@ -327,6 +331,8 @@ module electrostatics
     integer( c_size_t ) :: st_rjs_index_d, st_k_index_d
 
 
+!    type( gpu_var_double_class ) :: flags_sum_test_d
+    
     type( c_ptr )        ::    energies_d
     integer( c_size_t )  :: st_energies_d
 
@@ -346,6 +352,10 @@ module electrostatics
     type( c_ptr )       ::    n_neigh_index_d
     integer( c_size_t ) :: st_n_neigh_index_d
 
+
+    type( c_ptr )       ::    n_neigh_index_sum_d
+    integer( c_size_t ) :: st_n_neigh_index_sum_d
+    
     
     type( c_ptr )       ::    neighbor_charges_index_d
     integer( c_size_t ) :: st_neighbor_charges_index_d
@@ -354,10 +364,12 @@ module electrostatics
     type( c_ptr )       ::    charge_gradients_d
     type( c_ptr )       ::    charge_gradients_index_d    
     integer( c_size_t ) :: st_charge_gradients_d 
-    
+
+    logical(c_bool) :: c_do_forces
     
     real*8 :: pair_energy_rcut, pair_energy_rcut_der
 
+    real(c_double) :: pair_energy_rcut_d, pair_energy_rcut_der_d
     type(c_ptr) :: gpu_stream
 
 
@@ -365,6 +377,9 @@ module electrostatics
     pair_energy_rcut =      kernel_B0( r_cut, dsf_alpha )
     pair_energy_rcut_der =  kernel_B0_der_pre( r_cut, dsf_alpha, pair_energy_rcut )
 
+    ! pair_energy_rcut_d = real( pair_energy_rcut, kind=c_double )
+    ! pair_energy_rcut_der_d = real( pair_energy_rcut_der, kind=c_double )    
+    
     n_dim_partial = 1
 
     
@@ -395,10 +410,20 @@ module electrostatics
     call gpu_memset_async(gpu_exp % nk_flags_d(n_dim_idx), 0, st_nk_flags, gpu_stream)
     call gpu_malloc_all(gpu_exp % nk_flags_sum_d(n_dim_idx),      st_nk_flags, gpu_stream)                          
 
+
+    ! call flags_sum_test_d % galloc( "flags_sum_test_d",  j_end - j_beg + 1, gpu_stream  )
+    ! call flags_sum_test_d % print( )
+    ! call flags_sum_test_d % memset( 0, gpu_stream)
+
+    this_n_sites = i_end - i_beg + 1
+    this_n_pairs = j_end - j_beg + 1
+    
     st_n_neigh_index_d = c_int * this_n_sites
     call gpu_malloc_all( n_neigh_index_d, st_n_neigh_index_d, gpu_stream )
     call gpu_memset_async(n_neigh_index_d, 0, st_n_neigh_index_d, gpu_stream)
 
+    print *, "getting nk "
+    
     call gpu_get_electrostatics_nk(&
          1, &
          i_end - i_beg + 1,&
@@ -426,18 +451,18 @@ module electrostatics
     !      gpu_exp % nk_flags_sum_d(n_dim_idx), &
     !      j, k, gpu_stream)
 
-    !             call gpu_device_sync()             
+    !    call gpu_stream_sync(gpu_stream)             
 
-    call gpu_free_async(gpu_exp % nk_flags_d(n_dim_idx), gpu_stream)
-
+    
     ! Now copy the value of nk from the gpu
     st_nk_temp = 1*c_int
     call cpy_dtoh(gpu_exp % nk_d(n_dim_idx), c_loc(nk_temp), st_nk_temp, gpu_stream)
-    !                call gpu_stream_sync(gpu_stream)
-
     gpu_exp % nk(n_dim_idx) = nk_temp(1)
-    call gpu_free_async(gpu_exp % nk_d(n_dim_idx), gpu_stream )
     print *, " -- Rank ", rank, " nk batched = ", gpu_exp % nk(n_dim_idx)
+
+    call gpu_free_async(gpu_exp % nk_d(n_dim_idx), gpu_stream )
+    call gpu_free_async(gpu_exp % nk_flags_d(n_dim_idx), gpu_stream)
+
 
 
     ! Now we create temporary arrays for the k indices
@@ -456,8 +481,6 @@ module electrostatics
     call gpu_memset_async(gpu_exp % j2_index_d(n_dim_idx), 0, gpu_exp % st_k_index_d(n_dim_idx), gpu_stream)             
 
 
-    this_n_sites = i_end - i_beg + 1
-    this_n_pairs = j_end - j_beg + 1
 
 
 
@@ -467,22 +490,22 @@ module electrostatics
     ! Allocate the array which will store the neighbor charges
     ! > We only need the index array, as we can obviate the need for
     !   doing any of the neighbor charge allocation on the cpu
-    st_neighbor_charges_index_d = c_double * nk_temp(1)
+    st_neighbor_charges_index_d = c_double * gpu_exp % nk(n_dim_idx)
     call gpu_malloc_all(  neighbor_charges_index_d,    st_neighbor_charges_index_d, gpu_stream)
     ! Don't need to set to zero
     
     ! Allocate the charge gradients on the gpu
     ! > First, the actual array 
-    st_charge_gradients_d = c_double * this_n_pairs 
+    st_charge_gradients_d = c_double * this_n_pairs * 3 
     call gpu_malloc_all(  charge_gradients_d,    st_charge_gradients_d, gpu_stream)
     call cpy_htod(c_loc(charge_gradients), charge_gradients_d, st_charge_gradients_d, gpu_stream)
 
     ! Then the array of reduced size 
-    st_charge_gradients_d = c_double * nk_temp(1)
+    st_charge_gradients_d = c_double * gpu_exp % nk(n_dim_idx) * 3 
     call gpu_malloc_all(  charge_gradients_index_d,    st_charge_gradients_d, gpu_stream)
     call gpu_memset_async(charge_gradients_index_d, 0, st_charge_gradients_d, gpu_stream)             
     
-    
+    print *, "starting  k indexes "
     ! Reusing this function to set the k indices for electrostatics
     call gpu_set_electrostatics_k_index(1, i_end - i_beg + 1, j_end - j_beg + 1, n_sites,& ! i_beg, i_end, j_end, n_sites,&
          gpu_neigh % neighbors_list_d,&
@@ -496,10 +519,15 @@ module electrostatics
          gpu_exp % j2_index_d(n_dim_idx),&
          gpu_exp % rjs_index_d(n_dim_idx), &
          gpu_exp % xyz_k_d(n_dim_idx), &
-         gpu_exp % nk_flags_d(n_dim_idx), gpu_exp % nk_flags_sum_d(n_dim_idx),&
+         gpu_exp % nk_flags_sum_d(n_dim_idx),&
          gpu_stream)
 
-    ! Deallocating the flag array 
+    print *, "got the k indexes "
+    
+!    call flags_sum_test_d % gfree_async( gpu_stream  )
+    
+    ! Deallocating the flag array
+    call gpu_free_async(charge_gradients_d, gpu_stream)                          
     call gpu_free_async(gpu_exp % nk_flags_sum_d(n_dim_idx), gpu_stream)                          
 
     ! Removed host storage as its not necessary
@@ -536,47 +564,90 @@ module electrostatics
 
     allocate(energies_temp(1:this_n_sites))
     allocate(forces_temp(1:3,1:n_sites))
+
     
     st_energies_d = c_double * this_n_sites
     call gpu_malloc_all( energies_d, st_energies_d, gpu_stream )
-    
+    call gpu_memset_async(energies_d, 0, st_energies_d, gpu_stream)             
 
-    st_forces_d = c_double * n_sites
+
+    st_forces_d = c_double * n_sites * 3 
     call gpu_malloc_all( forces_d, st_forces_d, gpu_stream )
+    call gpu_memset_async(forces_d, 0, st_forces_d, gpu_stream)             
+
+
+    st_virial_d = c_double * 9
+    call gpu_malloc_all( virial_d, st_virial_d, gpu_stream )
+    call gpu_memset_async(virial_d, 0, st_virial_d, gpu_stream)             
+
+
+    allocate(n_neigh_check(1:this_n_sites))
+    st_nk_temp = c_int * this_n_sites
+    call cpy_dtoh( n_neigh_index_d, c_loc( n_neigh_check ), st_nk_temp , gpu_stream )
+    call gpu_stream_sync(gpu_stream)
+
+
+
+
+    
+    do i = 2, this_n_sites
+       n_neigh_check(i) = n_neigh_check(i) + n_neigh_check(i-1)
+
+       if ( i == this_n_sites )then
+          write(*,*) 'total number of neighbors = ', n_neigh_check(this_n_sites)
+       end if
+       
+    end do
+
+    call cpy_htod( c_loc( n_neigh_check ), n_neigh_index_d, st_nk_temp , gpu_stream )
+
+
+    
+    
+    deallocate(n_neigh_check)
+
+
+    c_do_forces = logical( do_gradients, kind=c_bool )              
+
 
     
     call gpu_get_electrostatics_energies( &
          i_beg, &
+         nk_temp(1), &
          energies_d,   &
          forces_d, &
          virial_d, &
-         gpu_exp % j2_index_d, &
+         gpu_exp % j2_index_d(n_dim_idx), &
          n_sites,      &
          this_n_sites, &
          this_n_pairs, &
-         n_neigh_index_d, &           
+         n_neigh_index_d, &
          charges_d,    &
-         charge_gradients_d, &
+         charge_gradients_index_d, &
          neighbor_charges_index_d, &
          gpu_exp % rjs_index_d(n_dim_idx),  &
          gpu_exp % xyz_k_d(n_dim_idx), &
          dsf_alpha, &
+         r_cut, &
          pair_energy_rcut, &
-         pair_energy_rcut_der, &           
+         pair_energy_rcut_der, &
+         c_do_forces, &
          gpu_stream)
 
-
+    call gpu_stream_sync(gpu_stream)
+    
     st_energies_d = c_double * this_n_sites
     call cpy_dtoh( energies_d, c_loc( energies_temp ), st_energies_d, gpu_stream )
     
+ !   if ( c_do_forces )then 
+       st_forces_d = c_double * n_sites * 3 
+       call cpy_dtoh( forces_d, c_loc( forces_temp ), st_forces_d, gpu_stream )
 
-    st_forces_d = c_double * n_sites
-    call cpy_dtoh( forces_d, c_loc( forces_temp ), st_forces_d, gpu_stream )
 
-
-    st_virial_d = c_double * 9
-    call cpy_dtoh( virial_d, c_loc( virial_temp ), st_virial_d, gpu_stream )
-
+       st_virial_d = c_double * 9
+       call cpy_dtoh( virial_d, c_loc( virial_temp ), st_virial_d, gpu_stream )
+  !  end if
+    
 
            
     call gpu_free_async(gpu_exp % rjs_index_d(n_dim_idx), gpu_stream)             
@@ -584,9 +655,10 @@ module electrostatics
     call gpu_free_async(gpu_exp % k_index_d(n_dim_idx),   gpu_stream)             
     call gpu_free_async(gpu_exp % j2_index_d(n_dim_idx),  gpu_stream)             
 
-    call gpu_free_async(charge_gradients_d, gpu_stream  ) 
+    call gpu_free_async(charge_gradients_index_d, gpu_stream  ) 
     call gpu_free_async(neighbor_charges_index_d, gpu_stream  )
-    call gpu_free_async(n_neigh_index_d, gpu_stream  )   
+    call gpu_free_async(n_neigh_index_d, gpu_stream  )
+
 
     call gpu_free_async(energies_d, gpu_stream  ) 
     call gpu_free_async(forces_d, gpu_stream  )

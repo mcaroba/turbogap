@@ -2404,9 +2404,9 @@ program turbogap
                            local_properties_cart_der(1:3, this_j_beg:this_j_end, charge_lp_index),&
                            params % do_forces, &
 #ifdef _MPIF90
-                        this_energies_estat(i_beg:i_end), this_forces_estat, this_virial_estat, params % estat_options, &
+                        this_energies_estat(this_i_beg:this_i_end), this_forces_estat, this_virial_estat, params % estat_options, &
 #else
-                        energies_estat(i_beg:i_end), forces_estat, virial_estat, params % estat_options, &
+                        energies_estat(this_i_beg:this_i_end), forces_estat, virial_estat, params % estat_options, &
 #endif
                         gpu_streams(omp_task))
 

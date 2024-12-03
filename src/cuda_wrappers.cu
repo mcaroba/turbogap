@@ -2588,5 +2588,12 @@ extern "C" void cpy_htoh_pinned(void *src, void *dest, size_t size ) {
 }
 
 
+extern "C" void gpu_check_error(){
+  hipError_t code=hipDeviceSynchronize() ;
+  printf("\n %s \n", hipGetErrorString(code));
+  gpuErrchk( code );
+}
+
+
 
 
