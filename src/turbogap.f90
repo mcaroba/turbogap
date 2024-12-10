@@ -3417,10 +3417,19 @@ program turbogap
                  call get_mc_acceptance(mc_move, p_accept, &
                       energy + E_kinetic, &
                       images(i_current_image)%energy + images(i_current_image)%e_kin, &
-                      params%t_beg, &
-                      params%mc_mu(mc_mu_id), n_mc_species(mc_mu_id), v_uc, v_uc_prev,&
+                      params%t_beg, mc_id, mc_mu_id, &
+                      params%mc_mu, n_mc_species, v_uc, v_uc_prev,&
                       & v_a_uc, v_a_uc_prev, params&
-                      &%masses_types(mc_id(mc_mu_id)), params%p_beg)
+                      &%masses_types, params%p_beg)
+
+!
+!                 call get_mc_acceptance(mc_move, p_accept, &
+!                      energy + E_kinetic, &
+!                      images(i_current_image)%energy + images(i_current_image)%e_kin, &
+!                      params%t_beg, &
+!                      params%mc_mu(mc_mu_id), n_mc_species(mc_mu_id), v_uc, v_uc_prev,&
+!                      & v_a_uc, v_a_uc_prev, params&
+!                      &%masses_types(mc_id(mc_mu_id)), params%p_beg)
 
 
                  call random_number(ranf)

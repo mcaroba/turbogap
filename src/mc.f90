@@ -136,14 +136,29 @@ contains
    ! end subroutine get_volume_bias
 
    subroutine get_mc_acceptance(mc_move, p_accept, energy, energy_prev, temp, &
-                                mu, n_mc_species, v_uc, v_uc_prev, v_a_uc, v_a_uc_prev, mass, pressure)
+                                mc_id, mc_mu_id, mu_in, n_mc_species_in, &
+                                v_uc, v_uc_prev, v_a_uc, v_a_uc_prev, mass_in, pressure)
       implicit none
 
       character*32, intent(in) :: mc_move
       real*8, intent(out) :: p_accept
+      real*8 :: mu, mass
+      integer :: n_mc_species
       real*8, intent(in) ::  energy, energy_prev, temp, &
-                            mu, v_uc, v_uc_prev, v_a_uc, v_a_uc_prev, mass, pressure
-      integer, intent(in) :: n_mc_species
+                            v_uc, v_uc_prev, v_a_uc, v_a_uc_prev, pressure
+      integer, intent(in) :: mc_mu_id
+      real*8, allocatable :: mass_in(:), mu_in(:)
+      integer, allocatable :: mc_id(:), n_mc_species_in(:)
+
+      if (allocated(mu_in)) then
+         mu = mu_in(mc_mu_id)
+      end if
+      if (allocated(mc_id)) then
+         n_mc_species = n_mc_species_in(mc_mu_id)
+      end if
+      if (allocated(mc_id) .and. allocated(mass_in)) then
+         mass = mass_in(mc_id(mc_mu_id))
+      end if
 
       if (mc_move == "move" .or. mc_move == "relax" .or. mc_move == "md" &
           .or. mc_move == "swap") then
