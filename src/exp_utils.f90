@@ -1705,7 +1705,6 @@ contains
       real*8, intent(inout) :: y(:)
       real*8, intent(in) :: x0, sigma
       integer :: i
-      print *, "core be for ", i, " = ", x0
       do i = 1, size(x)
          y(i) = y(i) + exp(-(x(i) - x0)**2/(2.d0*sigma**2))
       end do

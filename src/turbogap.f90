@@ -675,7 +675,7 @@ program turbogap
         end if
         call mpi_bcast(soap_turbo_hypers(i)%has_local_properties, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
         call mpi_bcast(soap_turbo_hypers(i)%has_core_electron_be, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
-        if (valid_xps) call mpi_bcast(core_be_lp_index, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+        if (valid_xps .or. params%do_xps_standalone) call mpi_bcast(core_be_lp_index, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
         if (valid_vdw) call mpi_bcast(vdw_lp_index, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
 
         call mpi_bcast(soap_turbo_hypers(i)%has_vdw, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
@@ -2032,23 +2032,29 @@ program turbogap
              ! Get the linspace of the xps spectrum and then perform the
              ! calculation and write to the prediction file
              !
-             call get_xps_spectra_standalone(&
-                  & params%xps_e_min,&
-                  & params%xps_e_max, &
-                  & params%xps_sigma, &
-                  & params%xps_n_samples,&
-                  & x_xps, &
-                  & y_xps, &
-                  & local_properties(1:n_sites, core_be_lp_index))
+              if (rank == 0)then
+                 call get_xps_spectra_standalone(&
+                      & params%xps_e_min,&
+                      & params%xps_e_max, &
+                      & params%xps_sigma, &
+                      & params%xps_n_samples,&
+                      & x_xps, &
+                      & y_xps, &
+                      & local_properties(1:n_sites, core_be_lp_index))
 
-              call get_overwrite_condition( params%do_mc, params%do_md&
-                   &, mc_istep, md_istep, params%write_xyz, overwrite_condition)
+                 call get_overwrite_condition( params%do_mc, params%do_md&
+                      &, mc_istep, md_istep, params%write_xyz, overwrite_condition)
 
-              call write_exp_datan( x_xps(1:params%xps_n_samples), &
-                   & y_xps(1:params%xps_n_samples), &
-                   & overwrite_condition, &
-                   &"xps_prediction.dat",&
-                   &"core_electron_be xps")
+                 if (n_xyz > 0)then
+                    overwrite_condition = ( n_xyz == 1 )
+                 end if
+
+                 call write_exp_datan( x_xps(1:params%xps_n_samples), &
+                      & y_xps(1:params%xps_n_samples), &
+                      & overwrite_condition, &
+                      &"xps_prediction.dat",&
+                      &"core_electron_be xps")
+              end if
 
         end if
 
