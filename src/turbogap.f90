@@ -207,6 +207,8 @@ program turbogap
   type(exp_data_container) :: temp_exp_container
   character*32 :: implemented_exp_observables(1:5)
 
+  real*8, allocatable :: x_xps(:), y_xps(:)
+
   implemented_exp_observables(1) = "xps"
   implemented_exp_observables(2) = "xrd"
   implemented_exp_observables(3) = "saxs"
@@ -2025,6 +2027,28 @@ program turbogap
            call cpu_time(time_xps(2))
            time_xps(3) = time_xps(3) + time_xps(2) - time_xps(1)
            !           if (rank == 0) print *, rank, " TIME_XPS = ", time_xps(3)
+
+           else if ( any( soap_turbo_hypers(:)%has_core_electron_be) .and. params%do_xps_standalone )then
+             ! Get the linspace of the xps spectrum and then perform the
+             ! calculation and write to the prediction file
+             !
+             call get_xps_spectra_standalone(&
+                  & params%xps_e_min,&
+                  & params%xps_e_max, &
+                  & params%xps_sigma, &
+                  & params%xps_n_samples,&
+                  & x_xps, &
+                  & y_xps, &
+                  & local_properties(1:n_sites, core_be_lp_index))
+
+              call get_overwrite_condition( params%do_mc, params%do_md&
+                   &, mc_istep, md_istep, params%write_xyz, overwrite_condition)
+
+              call write_exp_datan( x_xps(1:params%xps_n_samples), &
+                   & y_xps(1:params%xps_n_samples), &
+                   & overwrite_condition, &
+                   &"xps_prediction.dat",&
+                   &"core_electron_be xps")
 
         end if
 
