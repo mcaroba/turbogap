@@ -2404,9 +2404,11 @@ program turbogap
                            local_properties_cart_der(1:3, this_j_beg:this_j_end, charge_lp_index),&
                            params % do_forces, &
 #ifdef _MPIF90
-                        this_energies_estat(this_i_beg:this_i_end), this_forces_estat, this_virial_estat, params % estat_options, &
+                        this_energies_estat(this_i_beg:this_i_end), this_forces_estat, this_virial_estat,&
+                                params % estat_options,  params%estat_rcut_inner, params%estat_inner_width, &
 #else
-                        energies_estat(this_i_beg:this_i_end), forces_estat, virial_estat, params % estat_options, &
+                        energies_estat(this_i_beg:this_i_end), forces_estat, virial_estat,&
+                                params % estat_options, & params%estat_rcut_inner, params%estat_inner_width, 
 #endif
                         gpu_streams(omp_task))
 
@@ -2418,7 +2420,6 @@ program turbogap
                       !      " i_end = ",  this_i_end,&
                       !      " j_beg = ",  this_j_beg,&
                       !      " j_end = ",  this_j_end
-
                       call gpu_meminfo()
                    end do
                    !$OMP END PARALLEL DO            
@@ -4218,7 +4219,7 @@ program turbogap
 
            !       Add up all the energy terms
            energies = energies + energies_soap + energies_2b +&
-                & energies_3b + energies_core_pot + energies_vdw !+energies_lp
+                & energies_3b + energies_core_pot + energies_vdw + energies_estat
 
            if ( valid_xps )                                          energies_exp = energies_exp + energies_lp
            if ( params%valid_pdf .and. params%do_pair_distribution ) energies_exp = energies_exp + energies_pdf

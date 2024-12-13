@@ -197,5 +197,23 @@ module mpi_helper
   end subroutine
 !**************************************************************************
 
+subroutine count_energies_forces(counter2, n_sites,  &
+                energies, forces, virial, do_forces, &
+                all_energies, all_forces, all_virial)
+        implicit none
+        integer, intent(inout) :: counter2, n_sites
+        real*8, allocatable, intent(in) :: energies(:), forces(:,:)
+        real*8, intent(in) :: virial(1:3,1:3)
+        real*8, allocatable, intent(inout) :: all_energies(:,:), all_forces(:,:,:)
+        real*8, intent(inout) :: all_virial(:,:,:)
+        logical, intent(in) :: do_forces
+
+        counter2 = counter2 + 1
+        all_energies(1:n_sites, counter2) = energies(1:n_sites)
+        if( do_forces )then
+                all_forces(1:3, 1:n_sites, counter2) = forces(1:3, 1:n_sites)
+                all_virial(1:3, 1:3, counter2) = virial(1:3, 1:3)
+        end if
+end subroutine count_energies_forces  
 
 end module

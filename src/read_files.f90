@@ -1009,6 +1009,10 @@ end if
            params % estat_options % sp  = .true.            
         end if
 
+      else if( keyword == "estat_damped_cosine" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params % estat_options % damped_cosine
+ 
       else if( keyword == "estat_self_energy_correction" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params % estat_options % self_energy_correction

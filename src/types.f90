@@ -167,6 +167,7 @@ module types
      logical :: sp     = .false.
      logical :: gsf    = .false.
      logical :: self_energy_correction = .false.     
+     logical :: damped_cosine = .false.     
   end type options_estat
   
   

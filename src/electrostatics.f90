@@ -297,13 +297,13 @@ module electrostatics
        energies, &
        forces, &
        virial, &
-       options, gpu_stream)
+       options, r_cut_in, r_cut_width, gpu_stream)
     ! Input variables 
     implicit none
     ! -- Electrostatics variables 
     real(dp), dimension(:), intent(in), target :: charges !, neighbor_charges
     real(dp), dimension(:,:), intent(in), target :: charge_gradients
-    real(dp), intent(in) :: r_cut, dsf_alpha
+    real(dp), intent(in) :: r_cut, dsf_alpha, r_cut_in, r_cut_width
 
     integer, allocatable, target :: n_neigh_check(:)
     real(dp), intent(inout), target :: energies(:), forces(:,:)
@@ -366,6 +366,7 @@ module electrostatics
     integer( c_size_t ) :: st_charge_gradients_d 
 
     logical(c_bool) :: c_do_forces
+    logical(c_bool) :: c_do_damping_cosine
     
     real*8 :: pair_energy_rcut, pair_energy_rcut_der
 
@@ -608,6 +609,7 @@ module electrostatics
 
 
     c_do_forces = logical( do_gradients, kind=c_bool )              
+    c_do_damping_cosine = logical( options % damped_cosine, kind=c_bool )              
 
 
     
@@ -629,12 +631,14 @@ module electrostatics
          gpu_exp % xyz_k_d(n_dim_idx), &
          dsf_alpha, &
          r_cut, &
+         r_cut_in, &
+         r_cut_width, &
          pair_energy_rcut, &
          pair_energy_rcut_der, &
+         c_do_damping_cosine, &
          c_do_forces, &
          gpu_stream)
 
-    call gpu_stream_sync(gpu_stream)
     
     st_energies_d = c_double * this_n_sites
     call cpy_dtoh( energies_d, c_loc( energies_temp ), st_energies_d, gpu_stream )
@@ -662,11 +666,14 @@ module electrostatics
 
     call gpu_free_async(energies_d, gpu_stream  ) 
     call gpu_free_async(forces_d, gpu_stream  )
-    call gpu_free(virial_d  )
+    call gpu_free_async(virial_d, gpu_stream )
+
+    call gpu_stream_sync(gpu_stream)
 
     energies = energies + energies_temp
     forces = forces + forces_temp    
     virial = virial + virial_temp
+
 
     deallocate( energies_temp, forces_temp )
 

@@ -620,8 +620,11 @@ void kernel_electrostatics_gsf( const int i_beg,
 				double* xyz_index_d, 
 				const double alpha,
 				const double rcut, 
+				const double rcut_in, 
+				const double rcut_width, 
 				const double B0_rcut,
 				const double B0_rcut_der,
+				const bool do_cosine_damping,
 				const bool do_forces){
 
   int i_site = i_beg-1 + blockIdx.x;
@@ -633,7 +636,7 @@ void kernel_electrostatics_gsf( const int i_beg,
   double this_force[3];
   double this_xyz[3];  
   const double K = 14.399645478380902;
-
+  double inner_damp = 1.0;
   double pair_energy;
   double w_a;
   // In this kernel, each atom is controlled by one block of
@@ -702,12 +705,18 @@ void kernel_electrostatics_gsf( const int i_beg,
       // 	       tid, rij, alpha,  B0, f, B0_rcut, B0_rcut_der );
       // }
 
-      pair_energy = f * center_term * neigh_charge;
+      if (do_cosine_damping){
+	      if (rij < rcut_in - rcut_width){
+		inner_damp = damping_function_cosine( rij, rcut_in - rcut_width, rcut_in);
+	      }
+      }
 
+
+      pair_energy = f * center_term * neigh_charge * inner_damp;
 
 
       // Adding the energy to the shared data 
-      temp_energy += 0.5 * pair_energy ;
+      temp_energy += 0.5 * pair_energy;
 
       // Atomic add to the forces_prefactor_d
       temp_prefactor += pair_energy;
@@ -716,8 +725,15 @@ void kernel_electrostatics_gsf( const int i_beg,
       if( do_forces ){
 
 	neigh_idx = j2_index_d[ pair_idx ];
+	double inner_damp_der = 1.0;
+	if (do_cosine_damping){
+		if (rij < rcut_in - rcut_width){
+			inner_damp_der = damping_function_cosine_der( rij, rcut_in - rcut_width, rcut_in);
+		}
+	}
 
-	w_a = (( estat_B0_der_pre(  rij, alpha, B0 )  -  B0_rcut_der) / rij) * center_term * neigh_charge ;
+
+	w_a = (( estat_B0_der_pre(  rij, alpha, B0 )  -  B0_rcut_der) / rij) * center_term * neigh_charge * inner_damp_der ;
 	
 	this_xyz[0]=xyz_index_d[3*pair_idx    ];
 	this_xyz[1]=xyz_index_d[3*pair_idx + 1];
@@ -768,7 +784,6 @@ void kernel_electrostatics_gsf( const int i_beg,
   __syncthreads();
   if (tid == 0) {
     energies_d[blockIdx.x] = shared_energies[0];
-    //    printf("- got energies for site %d  :  %lf \n", i_site, shared_energies[0]);
   }  
 
   // Now we have the prefactor for each site, we can add the force
@@ -837,8 +852,11 @@ extern "C" void  gpu_get_electrostatics_energies(
 						 double* xyz_index_d, 
 						 const double alpha,
 						 const double rcut, 
+						 const double rcut_in, 
+						 const double rcut_width, 
 						 const double B0_rcut,
 						 const double B0_rcut_der,
+						 const bool do_damping, 
 						 const bool do_forces, 
 						 hipStream_t* stream ){
 
@@ -889,17 +907,14 @@ extern "C" void  gpu_get_electrostatics_energies(
 								 xyz_index_d, 
 								 alpha,
 								 rcut, 
+								 rcut_in, 
+								 rcut_width, 
 								 B0_rcut,
 								 B0_rcut_der,
+								 do_damping, 
 								 do_forces);
 
 
-  hipError_t code=hipDeviceSynchronize() ;
-  printf("\n %s \n", hipGetErrorString(code));
-  gpuErrchk( code );
-
-  gpuErrchk( hipStreamSynchronize( stream[0] ) );
-  gpuErrchk( hipPeekAtLastError() );
   
     }
 

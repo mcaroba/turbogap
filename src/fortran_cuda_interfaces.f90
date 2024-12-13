@@ -535,8 +535,11 @@ MODULE F_B_C
            xyz_k_d, & 
            dsf_alpha, &
            rcut, &
+           rcut_in, &
+           rcut_width, &
            pair_energy_rcut, &
            pair_energy_rcut_der, &
+           do_cosine_damping, &
            do_forces, &
            stream ) bind(C,name="gpu_get_electrostatics_energies")
       use iso_c_binding
@@ -544,9 +547,9 @@ MODULE F_B_C
       integer(c_int), value ::  this_n_sites, n_sites, this_n_pairs, i_beg, nk_max
       type(c_ptr), value :: charges_d, neighbor_charges_index_d, xyz_k_d, charge_gradients_d
       type(c_ptr), value ::  rjs_index_d, energies_d, n_neigh_index_d, forces_d, j2_index_d, virial_d !, n_neigh_index_sum_d
-      logical(c_bool), value :: do_forces
+      logical(c_bool), value :: do_forces, do_cosine_damping
       type(c_ptr) :: stream
-      real(c_double), value :: dsf_alpha, pair_energy_rcut, pair_energy_rcut_der, rcut
+      real(c_double), value :: dsf_alpha, pair_energy_rcut, pair_energy_rcut_der, rcut, rcut_in, rcut_width
     end subroutine gpu_get_electrostatics_energies
     
           
