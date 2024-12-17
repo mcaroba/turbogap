@@ -378,6 +378,46 @@ contains
    end subroutine
 !**************************************************************************
 
+   subroutine read_exp_data_single(file_data, n_points, data)
+
+      implicit none
+
+!   Input variables
+      character*1024, intent(in) :: file_data
+!   Output variables
+      real*8, allocatable, intent(out) :: data(:)
+      integer, intent(out) :: n_points
+
+!   Internal variables
+      integer :: i, j, iostatus, dim, unit_number
+
+      ! if the file_data == none then we allocate and exit
+      if (trim(file_data) == "none") then
+         n_points = 1
+         allocate (data(1:n_points))
+      else
+
+         !   Read data file to figure out data file size
+         open (newunit=unit_number, file=file_data, status="old")
+         iostatus = 0
+         n_points = -1
+         do while (iostatus == 0)
+            read (unit_number, *, iostat=iostatus)
+            n_points = n_points + 1
+         end do
+         close (unit_number)
+
+         allocate (data(1:n_points))
+         !     Read local_property data
+         open (newunit=unit_number, file=file_data, status="old")
+         do i = 1, n_points
+            read (unit_number, *) data(i)
+         end do
+         close (unit_number)
+      end if
+
+   end subroutine read_exp_data_single
+
 !**************************************************************************
    subroutine read_exp_data(file_data, n_points, data)
 
@@ -419,15 +459,16 @@ contains
 
    end subroutine read_exp_data
 
-   subroutine write_exp_data(x, y, overwrite, filename, label)
+   subroutine write_exp_data(x, y, overwrite, filename, label, has_weights, weights)
 
       implicit none
 
 !   Input variables
       character(len=*), intent(in) :: filename, label
 !   Output variables
-      real*8, allocatable, intent(in) :: x(:), y(:)
-      logical, intent(in) :: overwrite
+      real*8, allocatable, intent(in) :: x(:), y(:), weights(:)
+      logical, intent(in) :: overwrite, has_weights
+
 !   Internal variables
       integer :: i
 
@@ -440,11 +481,47 @@ contains
       end if
 
       do i = 1, size(x)
+      if (has_weights) then
+         write (200, '(1X,F20.8,1X,F20.8,1X,F20.8)') x(i), y(i), weights(i)
+      else
          write (200, '(1X,F20.8,1X,F20.8)') x(i), y(i)
+      end if
       end do
       close (200)
 
    end subroutine write_exp_data
+
+   subroutine write_exp_datan_weights(x, y, overwrite, filename, label, has_weights, weights)
+
+      implicit none
+
+!   Input variables
+      character(len=*), intent(in) :: filename, label
+!   Output variables
+      real*8, intent(in) :: x(:), y(:)
+      logical, intent(in) :: overwrite, has_weights
+      real*8, allocatable :: weights(:)
+!   Internal variables
+      integer :: i
+
+      if (overwrite) then
+         open (unit=200, file=filename, status="unknown")
+         write (200, '(A,1X,A)') '# ', trim(label)
+      else
+         open (unit=200, file=filename, status="old", position="append")
+         write (200, *) ' '
+      end if
+
+      do i = 1, size(x)
+      if (has_weights) then
+         write (200, '(1X,F20.8,1X,F20.8,1X,F20.8)') x(i), y(i), weights(i)
+      else
+         write (200, '(1X,F20.8,1X,F20.8)') x(i), y(i)
+      end if
+      end do
+      close (200)
+
+   end subroutine write_exp_datan_weights
 
    subroutine write_exp_datan(x, y, overwrite, filename, label)
 
@@ -1191,6 +1268,23 @@ contains
                        &%exp_data(nw)%data(1, params%exp_data(nw)%n_data)
                end if
             end do
+         else if (keyword == "exp_data_weights") then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, &
+               (params%exp_data(nw)%weights_data, nw=1, params%n_exp)
+            do nw = 1, params%n_exp
+               if (trim(params%exp_data(nw)%weights_data) /= "none") then
+                  call read_exp_data_single( &
+                     params%exp_data(nw)%weights_data, &
+                     params%exp_data(nw)%n_weights, &
+                     params%exp_data(nw)%weights)
+
+                  params%exp_data(nw)%has_weights = .true.
+               end if
+               if (params%exp_data(nw)%n_weights /= params%exp_data(nw)%n_data) then
+                  write (*, *) "ERROR: The weights file does not contain the same number of points as the experimental samples"
+               end if
+            end do
 
          else if (keyword == "xrd_rcut") then
             backspace (10)
@@ -1221,6 +1315,26 @@ contains
          else if (keyword == "pair_distribution_kde_sigma") then
             backspace (10)
             read (10, *, iostat=iostatus) cjunk, cjunk, params%pair_distribution_kde_sigma
+
+         else if (keyword == "pdf_sigma_linear_with_r_temp") then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%pdf_sigma_linear_with_r_temp
+
+         else if (keyword == "pdf_sigma_r_temp_gradient_gradient") then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%pdf_sigma_r_temp_gradient_gradient
+
+         else if (keyword == "pdf_sigma_r_temp_gradient_intercept") then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%pdf_sigma_r_temp_gradient_intercept
+
+         else if (keyword == "pdf_sigma_r_temp_intercept_gradient") then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%pdf_sigma_r_temp_intercept_gradient
+
+         else if (keyword == "pdf_sigma_r_temp_intercept_intercept") then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%pdf_sigma_r_temp_intercept_intercept
 
          else if (keyword == "write_pair_distribution") then
             backspace (10)
@@ -1416,6 +1530,9 @@ contains
          else if (keyword == 'radii') then
             backspace (10)
             read (10, *, iostat=iostatus) cjunk, cjunk, params%radii(1:n_species)
+
+!       We convert the masses in amu to eV*fs^2/A^2
+
          else if (keyword == 'e0') then
             backspace (10)
             read (10, *, iostat=iostatus) cjunk, cjunk, params%e0(1:n_species)

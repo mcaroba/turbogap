@@ -85,7 +85,7 @@ program turbogap
   real*8, allocatable, target :: local_properties(:,:), local_properties_cart_der(:,:,:)
   ! Have one rank lower for the pointer, such that it just relates to a sub array of the local properties/cart_der
   real*8, pointer :: local_properties_pt(:), local_properties_cart_der_pt(:,:)
-!  real*8, pointer :: hirshfeld_v(:), hirshfeld_v_cart_der(:,:)
+  real*8, pointer :: hirshfeld_v(:), hirshfeld_v_cart_der(:,:)
   real*8, allocatable, target :: this_local_properties(:,:), this_local_properties_cart_der(:,:,:)
   real*8, pointer :: this_local_properties_pt(:,:), this_local_properties_cart_der_pt(:,:,:)
   real*8, allocatable ::  y_i_pred_all(:,:), moments(:), moments_exp(:)
@@ -1261,7 +1261,15 @@ program turbogap
      time_neigh = time_neigh + time2 - time1
      !**************************************************************************
 
-
+     ! TODO MAKE THIS MORE ELEGANT!
+     ! Putting in a hack to get the actual temperature for sigma r temp dependence for pair distribution function estimation
+     if( params % do_md )then
+        E_kinetic = 0.d0
+        do i = 1, n_sites
+           E_kinetic = E_kinetic + 0.5d0 * masses(i) * dot_product(velocities(1:3, i), velocities(1:3, i))
+        end do
+        instant_temp = 2.d0/3.d0/dfloat(n_sites-1)/kB*E_kinetic
+     end if
 
 
      !**************************************************************************
@@ -1633,15 +1641,15 @@ program turbogap
                  end if
 
 
-                 ! if( soap_turbo_hypers(i)%has_vdw )then
-                 !    !                    hirshfeld_v => local_properties( :, vdw_lp_index)
-                 !    if (any(soap_turbo_hypers(i)&
-                 !         &%local_property_models(:)%do_derivatives)&
-                 !         & .and. params%do_derivatives)&
-                 !         & hirshfeld_v_cart_der =>&
-                 !         & local_properties_cart_der( :, :,&
-                 !         & vdw_lp_index)
-                 ! end if
+                 if( soap_turbo_hypers(i)%has_vdw )then
+                    hirshfeld_v => local_properties( :, vdw_lp_index)
+                    if (any(soap_turbo_hypers(i)&
+                         &%local_property_models(:)%do_derivatives)&
+                         & .and. params%do_derivatives)&
+                         & hirshfeld_v_cart_der =>&
+                         & local_properties_cart_der( :, :,&
+                         & vdw_lp_index)
+                 end if
 
               end if
               if( params%do_forces )then
@@ -1846,7 +1854,8 @@ program turbogap
                       & params%exp_data(i)%y, params%exp_data(i)%label,&
                       & n_sites, dot_product( cross_product(a_box,&
                       & b_box), c_box ) / (dfloat(indices(1)*indices(2) &
-                      &*indices(3)) ), params%exp_data(i)%input, exp_output, .true. )
+                      &*indices(3)) ),  params%exp_data(i)%has_weights, params%exp_data(i)%weights,&
+                      params%exp_data(i)%input, exp_output, .true. )
 
                  if (params%write_exp .and. .not.  params&
                       &%exp_data(i)%wrote_exp .and. rank == 0 .and. write_condition ) then
@@ -1858,7 +1867,7 @@ program turbogap
                     call write_exp_data(params%exp_data(i)%x, params&
                          &%exp_data(i)%y, overwrite_condition,&
                          & trim(params%exp_data(i) %label) //&
-                         & "_exp.dat", params%exp_data(i) %label  )
+                         & "_exp.dat", params%exp_data(i) %label, params%exp_data(i)%has_weights, params%exp_data(i)%weights    )
                  end if
 
 
@@ -1879,7 +1888,7 @@ program turbogap
                          & overwrite_condition, trim(params&
                          &%exp_data(i)%label) // "_exp_fit.dat",&
                          & trim(params%exp_data(i)%label) // " : output = "&
-                         & // trim( exp_output ))
+                         & // trim( exp_output ),  params%exp_data(i)%has_weights, params%exp_data(i)%weights   )
 
                  end if
 
@@ -1985,12 +1994,12 @@ program turbogap
               call get_overwrite_condition( params%do_mc, params%do_md&
                    &, mc_istep, md_istep, params%write_xyz, overwrite_condition)
 
-              call write_exp_datan(params%exp_data(xps_idx)&
+              call write_exp_datan_weights(params%exp_data(xps_idx)&
                    &%x(1:params%exp_data(xps_idx)%n_samples), params&
                    &%exp_data(xps_idx)%y_pred(1:params&
                    &%exp_data(xps_idx)%n_samples),&
                    & overwrite_condition, "xps_prediction.dat",&
-                   & params%exp_data(xps_idx)%label)
+                   & params%exp_data(xps_idx)%label, params%exp_data(i)%has_weights, params%exp_data(i)%weights)
 
               if ( .not.  params%exp_data(xps_idx)%wrote_exp ) then
 
@@ -1999,14 +2008,15 @@ program turbogap
                       & params%exp_data(xps_idx)%y, params%exp_data(xps_idx)%label,&
                       & n_sites, dot_product( cross_product(a_box,&
                       & b_box), c_box ) / (dfloat(indices(1)*indices(2) &
-                      &*indices(3)) ), params%exp_data(xps_idx)%input, exp_output, .true. )
+                      &*indices(3)) ), params%exp_data(i)%has_weights, params%exp_data(i)%weights, &
+                      params%exp_data(xps_idx)%input, exp_output, .true. )
 
-                 call write_exp_datan(params%exp_data(xps_idx)&
+                 call write_exp_datan_weights(params%exp_data(xps_idx)&
                       &%x(1:params%exp_data(xps_idx)%n_samples),&
                       & params%exp_data(xps_idx)%y(1:params&
                       &%exp_data(xps_idx)%n_samples),&
                       & overwrite_condition, "xps_exp.dat" , params&
-                      &%exp_data(xps_idx)%label)
+                      &%exp_data(xps_idx)%label, params%exp_data(i)%has_weights, params%exp_data(i)%weights)
                  params%exp_data(xps_idx)%wrote_exp = .true.
               end if
 
@@ -2154,7 +2164,7 @@ program turbogap
                 & j_beg, j_end, ierr , rjs, xyz, neighbors_list,&
                 & n_neigh, neighbor_species, species, rank, params%exp_forces, &
                 & pair_distribution_der,&
-                & pair_distribution_partial_der,&
+                & pair_distribution_partial_der, instant_temp, &
 #ifdef _MPIF90
                 & pair_distribution_partial_temp_der, this_energies_pdf, this_forces_pdf, this_virial_pdf)
 #else
@@ -2771,6 +2781,60 @@ program turbogap
            if (params%exp_forces .and. params%valid_nd) forces = forces + forces_nd
            if (params%exp_forces .and. params%valid_nd) virial = virial + virial_nd
 
+
+
+           if( rank == 0 .and.  params%print_vdw_forces )then 
+              print *, "> Virial soap "
+              do i = 1, 3
+                 do j = 1, 3
+                    print *, " i, ", i, " j ", j, " ", virial_soap(i,j)
+                 end do
+              end do
+
+              print *, "> Virial 2b "
+              do i = 1, 3
+                 do j = 1, 3
+                    print *, " i, ", i, " j ", j, " ", virial_2b(i,j)
+                 end do
+              end do
+
+              print *, "> Virial 3b "
+              do i = 1, 3
+                 do j = 1, 3
+                    print *, " i, ", i, " j ", j, " ", virial_3b(i,j)
+                 end do
+              end do
+
+              print *, "> Virial core_pot "
+              do i = 1, 3
+                 do j = 1, 3
+                    print *, " i, ", i, " j ", j, " ", virial_core_pot(i,j)
+                 end do
+              end do
+
+              if (params%exp_forces .and. params%valid_xrd .and.  params%print_vdw_forces)then 
+                 print *, "> Virial xrd "
+                 do i = 1, 3
+                    do j = 1, 3
+                       print *, " i, ", i, " j ", j, " ", virial_xrd(i,j)
+                    end do
+                 end do
+                 temp_string=""
+                 temp_string2=""                 
+                 write(temp_string, "(I8)")   md_istep                 
+                 write(temp_string2, "(A)")  "forces_xrd_" // trim(adjustl(temp_string))
+                 open(unit=90, file=temp_string2, status="unknown")
+                 do i = 1, n_sites
+                    write(90, "(F20.8, 1X, F20.8, 1X, F20.8)") &
+                         forces_xrd(1,i), forces_xrd(2,i), forces_xrd(3,i)
+                 end do
+                 close(90)
+                 
+              end if
+              
+           end if
+
+           
            if ( params%print_vdw_forces )then
               open(unit=90, file="forces_vdw", status="unknown")
               do i = 1, n_sites

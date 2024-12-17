@@ -193,7 +193,7 @@ contains
         & neighbors_list, n_neigh, neighbor_species, species_types, rjs, xyz, r_min,&
         & r_max, n_samples, n_samples_sf, n_species, x_structure_factor, structure_factor, r_cut, species_1,&
         & species_2, pair_distribution_der, partial_rdf, kde_sigma,&
-        & c_factor, sinc_factor_matrix, n_dim_idx, do_xrd, output, n_atoms_of_species, neutron)
+        & c_factor, sinc_factor_matrix, n_dim_idx, do_xrd, output, n_atoms_of_species, weights, has_weights, neutron)
       implicit none
       real*8, intent(in) :: rjs(:), xyz(:, :), y_exp(:), energy_scale, kde_sigma, c_factor, sinc_factor_matrix(:, :), x(:)
       integer, intent(in) :: n_sites0, n_samples_sf, n_species
@@ -207,10 +207,10 @@ contains
       real*8, intent(in) :: pair_distribution_der(:, :)
       real*8, intent(inout) :: forces0(:, :), virial(1:3, 1:3)
       character*32, intent(in) :: output
-      real*8, allocatable ::  prefactor(:), all_scattering_factors(:), sf_parameters(:, :), structure_factor_der(:)
+      real*8, allocatable ::  prefactor(:), all_scattering_factors(:), sf_parameters(:, :), structure_factor_der(:), weights(:)
       real*8 :: r, n_pc, this_force(1:3), f, wfaci, wfacj, temp(1:n_samples_sf), sth
       real*8, parameter :: pi = acos(-1.0)
-      logical, intent(in) :: partial_rdf, do_xrd, neutron
+      logical, intent(in) :: partial_rdf, do_xrd, neutron, has_weights
       logical :: species_in_list, counted_1 = .false.
 
       ! First allocate the pair correlation function array
@@ -297,6 +297,9 @@ contains
 
          end if
 
+      end if
+      if (has_weights) then
+         all_scattering_factors = all_scattering_factors*weights
       end if
 
       ! Not reinitalizing the forces as these will be added to for each partial
@@ -395,7 +398,7 @@ contains
         & neighbors_list, n_neigh, neighbor_species, species_types, rjs, xyz, r_min,&
         & r_max, n_samples, n_samples_sf, n_species, x_structure_factor, structure_factor, r_cut, species_1,&
         & species_2, pair_distribution_der, partial_rdf, kde_sigma,&
-        & c_factor, sinc_factor_matrix, n_dim_idx, do_xrd, output, n_atoms_of_species, neutron)
+        & c_factor, sinc_factor_matrix, n_dim_idx, do_xrd, output, n_atoms_of_species, weights, has_weights, neutron)
       implicit none
       real*8, intent(in) :: rjs(:), xyz(:, :), y_exp(:), energy_scale, kde_sigma, c_factor, sinc_factor_matrix(:, :), x(:)
       integer, intent(in) :: n_sites0, n_samples_sf, n_species
@@ -409,10 +412,10 @@ contains
       real*8, intent(in) :: pair_distribution_der(:, :)
       real*8, intent(inout) :: forces0(:, :), virial(1:3, 1:3)
       character*32, intent(in) :: output
-      real*8, allocatable ::  prefactor(:), all_scattering_factors(:), sf_parameters(:, :), structure_factor_der(:)
+      real*8, allocatable ::  prefactor(:), all_scattering_factors(:), sf_parameters(:, :), structure_factor_der(:), weights(:)
       real*8 :: r, n_pc, this_force(1:3), f, wfaci, wfacj, temp(1:n_samples_sf), sth, time(1:3)
       real*8, parameter :: pi = acos(-1.0)
-      logical, intent(in) :: partial_rdf, do_xrd, neutron
+      logical, intent(in) :: partial_rdf, do_xrd, neutron, has_weights
       logical :: species_in_list, counted_1 = .false.
       real*8, allocatable ::  xyz_k(:, :), Gk(:, :), Gka(:, :), dermat(:, :), fi(:, :)
       integer, allocatable :: k_list(:), i2_list(:), j2_list(:)
@@ -478,7 +481,7 @@ contains
                   sth = 0.d0
                   do j = 1, n_species
                      call get_neutron_scattering_length(species_types(j), wfacj)
-                     sth = sth + (n_atoms_of_species(j)/dfloat(n_sites0))*wfaci !* wfaci
+                     sth = sth + (n_atoms_of_species(j)/dfloat(n_sites0))*wfacj !* wfaci
                   end do
 
                   all_scattering_factors(i) = 2.d0*pi*x(i)*all_scattering_factors(i)/sth**2 !+ 1.d0
@@ -488,7 +491,7 @@ contains
                   sth = 0.d0
                   do j = 1, n_species
                      call get_neutron_scattering_length(species_types(j), wfacj)
-                     sth = sth + (n_atoms_of_species(j)/dfloat(n_sites0))*wfaci !* wfaci
+                     sth = sth + (n_atoms_of_species(j)/dfloat(n_sites0))*wfacj !* wfaci
                   end do
 
                   all_scattering_factors(i) = all_scattering_factors(i)/sth**2 !+ 1.d0
@@ -501,6 +504,9 @@ contains
 
       end if
 
+      if (has_weights) then
+         all_scattering_factors = all_scattering_factors*weights
+      end if
       ! First loop to get the number of valid k indexes
 !    call cpu_time(time(1))
       n_k = 0
@@ -625,7 +631,7 @@ contains
       do j = 1, n_k
          this_force(1:3) = energy_scale*fi(j, 1:3)
          forces0(1:3, j2_list(j)) = forces0(1:3, j2_list(j)) + this_force(1:3)
-
+         k = k_list(j)
          do k1 = 1, 3
             do k2 = 1, 3
                virial(k1, k2) = virial(k1, k2) + 0.5d0*(this_force(k1)*xyz(k2, k) + this_force(k2)*xyz(k1, k))
@@ -779,10 +785,21 @@ contains
    subroutine get_pair_distribution(n_sites0, &
         & neighbors_list, n_neigh, neighbor_species, rjs, xyz, r_min, r_max, n_samples, x,&
         & pair_distribution, r_cut, return_histogram,&
-        & partial_rdf, species_1, species_2, kde_sigma, rho, do_derivatives, pair_distribution_der, n_dim_idx, j_beg, j_end)
+        & partial_rdf, species_1, species_2, kde_sigma, rho, do_derivatives, pair_distribution_der, n_dim_idx, j_beg, j_end, &
+        pdf_sigma_linear_with_r_temp, &
+        pdf_sigma_r_temp_gradient_gradient, &
+        pdf_sigma_r_temp_gradient_intercept, &
+        pdf_sigma_r_temp_intercept_gradient, &
+        pdf_sigma_r_temp_intercept_intercept, &
+        instant_temp)
       implicit none
-      real*8, intent(in) :: rjs(:), kde_sigma, rho, xyz(:, :)
-      real*8 :: r_min, r_max, r_cut
+      real*8, intent(in) :: rjs(:), rho, xyz(:, :), &
+                            pdf_sigma_r_temp_gradient_gradient, &
+                            pdf_sigma_r_temp_gradient_intercept, &
+                            pdf_sigma_r_temp_intercept_gradient, &
+                            pdf_sigma_r_temp_intercept_intercept, instant_temp
+
+      real*8 :: r_min, r_max, r_cut, sigma_gradient, sigma_intercept, kde_sigma
       integer, intent(in) :: neighbors_list(:), n_neigh(:), neighbor_species(:)
       integer, intent(in) :: n_sites0, n_samples, species_1, species_2, n_dim_idx, j_beg, j_end
       integer :: n_sites, n_pairs, count, count_species_1
@@ -792,9 +809,16 @@ contains
       real*8, allocatable :: bin_edges(:), dV(:), kde(:)
       real*8 :: r, n_pc, ri_vec(1:3), rj_vec(1:3)
       real*8, parameter :: pi = acos(-1.0)
-      logical, intent(in) :: partial_rdf, do_derivatives
+      logical, intent(in) :: partial_rdf, do_derivatives, pdf_sigma_linear_with_r_temp
       logical :: return_histogram, species_in_list, counted_1 = .false.
       ! First allocate the pair correlation function array
+
+      ! temperature and r dependent sigma
+      if (pdf_sigma_linear_with_r_temp) then
+         ! First get the gradient of the linear model based on the temperature linear model
+         sigma_gradient = pdf_sigma_r_temp_gradient_gradient*instant_temp + pdf_sigma_r_temp_gradient_intercept
+         sigma_intercept = pdf_sigma_r_temp_intercept_gradient*instant_temp + pdf_sigma_r_temp_intercept_intercept
+      end if
 
       allocate (bin_edges(1:n_samples + 1))
       if (.not. return_histogram) allocate (dV(1:n_samples))
@@ -895,11 +919,17 @@ contains
                ! do a kernel density estimate
                count = count + 1
                kde = 0.d0
+
+               if (pdf_sigma_linear_with_r_temp) then
+                  ! We get the r-dependent sigma, as a function of temperature from the linear model!
+                  kde_sigma = r*sigma_gradient + sigma_intercept
+               end if
+
                do l = 1, n_samples
                   kde(l) = kde(l) + exp(-((x(l) - r)/kde_sigma)**2/2.d0)
                end do
                pair_distribution(1:n_samples) = pair_distribution(1:n_samples) + &
-                    & kde(1:n_samples)
+                    & kde(1:n_samples)/(sqrt(2.d0*pi)*kde_sigma)
 
                if (do_derivatives) then
                   ! reuse kde to get the derivatives
@@ -945,13 +975,19 @@ contains
       !   pdf = kde * dr / norm
       if (kde_sigma > 0.d0) then
          pair_distribution(1:n_samples) =&
-              & pair_distribution(1:n_samples)*((r_max - r_min)/dfloat(n_samples)) &
-              & /(sqrt(2.d0*pi)*kde_sigma)
+              & pair_distribution(1:n_samples)*((r_max - r_min)/dfloat(n_samples))
+
+         ! Moving this division by sigma upwards
+         ! &
+         !      & / ( sqrt( 2.d0 * pi) * kde_sigma)
 
          if (do_derivatives) then
             pair_distribution_der(1:n_samples, n_dim_idx, 1:n_pairs) =&
-                 & pair_distribution_der(1:n_samples, n_dim_idx, 1:n_pairs)*((r_max - r_min)/dfloat(n_samples)) &
-                 & /(sqrt(2.d0*pi)*kde_sigma)
+                 & pair_distribution_der(1:n_samples, n_dim_idx, 1:n_pairs)*((r_max - r_min)/dfloat(n_samples))
+
+            ! Moving this division by sigma upwards
+            ! &
+            !      & / ( sqrt( 2.d0 * pi) * kde_sigma)
          end if
 
       end if
@@ -1699,6 +1735,61 @@ contains
 
    end subroutine get_compare_xps_spectra
 
+   subroutine get_xps_spectra(xi, yi, sigma, n_samples, mag, x, y, y_all,&
+        & core_electron_be, broaden)
+      ! This just gets the broadened spectra
+      ! xi are the predicted core electron binding energies and x is
+      ! the one
+      implicit none
+      real*8, intent(in) :: xi(:), yi(:), core_electron_be(:)
+      integer, intent(in) :: n_samples
+      real*8, allocatable, intent(out) :: x(:), y(:), y_all(:, :)
+      real*8, intent(in) :: sigma
+      integer :: i
+      real*8 ::  x_min, x_max, x_range, t, dx
+      real*8, intent(out) :: mag
+      logical, intent(in) :: broaden
+
+      if (allocated(x)) deallocate (x)
+      if (allocated(y)) deallocate (y)
+      if (allocated(y_all)) deallocate (y_all)
+
+      allocate (x(1:n_samples))
+      allocate (y(1:n_samples))
+      allocate (y_all(1:size(core_electron_be), 1:n_samples))
+
+      x = 0.d0
+      y = 0.d0
+      y_all = 0.d0
+
+      x_min = xi(1)
+      x_max = xi(size(xi))
+      x_range = x_max - x_min
+      dx = x_range/real(n_samples)
+
+      do i = 1, n_samples
+         t = ((i - 1)/real(n_samples - 1))
+         x(i) = (1.d0 - t)*x_min + t*x_max !range
+      end do
+
+      ! Interpolate
+      call lerp(x, y, xi, yi)
+
+      if (broaden) then
+         y = 0.d0
+
+         do i = 1, size(core_electron_be)
+            call broaden_spectrum(x, core_electron_be(i), y, y_all, i, sigma)
+         end do
+
+      end if
+
+      mag = sqrt(dot_product(y, y))  !sum(y * dx) !
+      y = y/mag
+      y_all = y_all/mag
+
+   end subroutine get_xps_spectra
+
    subroutine broaden_spectrum_standalone(x, x0, y, sigma)
       implicit none
       real*8, allocatable, intent(in) :: x(:)
@@ -1758,61 +1849,6 @@ contains
       y = y/mag
 
    end subroutine get_xps_spectra_standalone
-
-   subroutine get_xps_spectra(xi, yi, sigma, n_samples, mag, x, y, y_all,&
-        & core_electron_be, broaden)
-      ! This just gets the broadened spectra
-      ! xi are the predicted core electron binding energies and x is
-      ! the one
-      implicit none
-      real*8, intent(in) :: xi(:), yi(:), core_electron_be(:)
-      integer, intent(in) :: n_samples
-      real*8, allocatable, intent(out) :: x(:), y(:), y_all(:, :)
-      real*8, intent(in) :: sigma
-      integer :: i
-      real*8 ::  x_min, x_max, x_range, t, dx
-      real*8, intent(out) :: mag
-      logical, intent(in) :: broaden
-
-      if (allocated(x)) deallocate (x)
-      if (allocated(y)) deallocate (y)
-      if (allocated(y_all)) deallocate (y_all)
-
-      allocate (x(1:n_samples))
-      allocate (y(1:n_samples))
-      allocate (y_all(1:size(core_electron_be), 1:n_samples))
-
-      x = 0.d0
-      y = 0.d0
-      y_all = 0.d0
-
-      x_min = xi(1)
-      x_max = xi(size(xi))
-      x_range = x_max - x_min
-      dx = x_range/real(n_samples)
-
-      do i = 1, n_samples
-         t = ((i - 1)/real(n_samples - 1))
-         x(i) = (1.d0 - t)*x_min + t*x_max !range
-      end do
-
-      ! Interpolate
-      call lerp(x, y, xi, yi)
-
-      if (broaden) then
-         y = 0.d0
-
-         do i = 1, size(core_electron_be)
-            call broaden_spectrum(x, core_electron_be(i), y, y_all, i, sigma)
-         end do
-
-      end if
-
-      mag = sqrt(dot_product(y, y))  !sum(y * dx) !
-      y = y/mag
-      y_all = y_all/mag
-
-   end subroutine get_xps_spectra
 
    subroutine broaden_spectrum_derivative(x, x0, x0_der, y, sigma, y_exp, y_tot, mag, dx)
       implicit none
@@ -2100,7 +2136,7 @@ contains
       else if (exp_similarity_type == 'squared_diff') then
          do i = 1, n_sites
             !energies_lp(i) =  energy_scale * ( 1.d0 / dfloat( n_sites0 ) -  dot_product( y_all(i,:), y_exp ))
-            energies_lp(i) = 0.5d0*energy_scale*(dot_product(y - y_exp, y - y_exp))
+            energies_lp(i) = 0.5d0*energy_scale*(dot_product(y - y_exp, y - y_exp))/dfloat(n_sites0)
          end do
 
          !energies_lp = + energy_scale / n_sites0 * ( dot_product( (y - y_exp), (y - y_exp) ) )

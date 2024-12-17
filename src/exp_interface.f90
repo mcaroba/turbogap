@@ -426,17 +426,18 @@ contains
   ! end subroutine get_this_exp_force
 
 
-  subroutine preprocess_exp_data(params, x, y, label, n_sites, V, input, output, exp)
+  subroutine preprocess_exp_data(params, x, y, label, n_sites, V, has_weights, weights, input, output, exp)
     implicit none
     type(input_parameters), intent(in) :: params
     real*8, intent(in), allocatable :: x(:)
     real*8, intent(in) :: V
     real*8, intent(inout), allocatable :: y(:)
+    real*8, allocatable ::  weights(:)
     integer, intent(in) :: n_sites
     character*1024, intent(in) :: label
     real*8, parameter :: pi = acos(-1.0)
     real*8 :: mag, dx, rho
-    logical, intent(in) :: exp
+    logical, intent(in) :: exp, has_weights 
     character*32, intent(inout) :: output
     character*1024, intent(inout) :: input
 
@@ -481,6 +482,11 @@ contains
        end if
 
     end if
+
+
+    if( has_weights )then 
+            y = weights * y
+    end if  
   end subroutine preprocess_exp_data
 
 
@@ -490,7 +496,7 @@ contains
        & n_species, species_types,  n_atoms_of_species, n_sites, a_box, b_box, c_box,&
        & indices, md_istep, mc_istep, i_beg, i_end, j_beg, j_end, ierr, rjs, xyz, &
        & neighbors_list, n_neigh, neighbor_species, species, rank,&
-       & do_derivatives, pair_distribution_der, pair_distribution_partial_der,&
+       & do_derivatives, pair_distribution_der, pair_distribution_partial_der, instant_temp, &
        & pair_distribution_partial_temp_der, energies_pair_distribution, forces_pair_distribution, virial)
     implicit none
     type(input_parameters), intent(inout) :: params
@@ -504,7 +510,7 @@ contains
     real*8,  intent(in), allocatable :: rjs(:), xyz(:,:)
     integer, intent(in), allocatable :: neighbors_list(:), n_neigh(:)&
          &, neighbor_species(:), species(:)
-    real*8,  intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3)
+    real*8,  intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3), instant_temp
     real*8, intent(inout) :: virial(1:3,1:3)
     real*8 :: v_uc, f
     integer, intent(in) :: n_species, n_sites, i_beg, i_end, j_beg, j_end
@@ -653,7 +659,13 @@ contains
                   & params%pair_distribution_kde_sigma,&
                   & dfloat(n_sites)/v_uc,  params%exp_forces,&
                   & pair_distribution_partial_der, n_dim_idx, &
-                  & j_beg, j_end )
+                  & j_beg, j_end, &
+                  params%pdf_sigma_linear_with_r_temp,&
+                  params%pdf_sigma_r_temp_gradient_gradient, &
+                  params%pdf_sigma_r_temp_gradient_intercept, &
+                  params%pdf_sigma_r_temp_intercept_gradient, &
+                  params%pdf_sigma_r_temp_intercept_intercept,&
+                  instant_temp )
 
              n_dim_idx = n_dim_idx + 1
 
@@ -675,7 +687,14 @@ contains
             &%pair_distribution_rcut, .false., .false., 1, 1,&
             & params%pair_distribution_kde_sigma, dfloat(n_sites)&
             &/v_uc, params%do_forces .and. params%exp_forces, pair_distribution_partial_der, 1, &
-            & j_beg, j_end)
+            & j_beg, j_end, &
+            params%pdf_sigma_linear_with_r_temp,&
+            params%pdf_sigma_r_temp_gradient_gradient, &
+            params%pdf_sigma_r_temp_gradient_intercept, &
+            params%pdf_sigma_r_temp_intercept_gradient, &
+            params%pdf_sigma_r_temp_intercept_intercept,&
+            instant_temp )
+
     end if
 
 
@@ -1335,6 +1354,7 @@ contains
 
                 allocate(forces_sf(1:3,1:n_sites))
                 forces_sf = 0.d0
+                virial_sf = 0.d0                
 
                 n_dim_idx = 1
                 outerf: do j = 1, n_species
@@ -1366,7 +1386,8 @@ contains
                               & dfloat(n_sites) ) * ( dfloat(n_sites) /&
                               & v_uc ), sinc_factor_matrix, n_dim_idx,&
                               & .false., params%xrd_output,&
-                              & n_atoms_of_species, .false. )
+                              & n_atoms_of_species, params%exp_data(params%sf_idx)%weights, &
+                              params%exp_data(params%sf_idx)%has_weights,.false. )
                       else
                          call get_structure_factor_forces(  n_sites, params%exp_energy_scales(params%sf_idx),&
                               & params%exp_data(params%sf_idx)%x,  params%exp_data(params%sf_idx)%y,&
@@ -1388,7 +1409,8 @@ contains
                               & dfloat(n_sites) ) * ( dfloat(n_sites) /&
                               & v_uc ), sinc_factor_matrix, n_dim_idx,&
                               & .false., params%xrd_output,&
-                              & n_atoms_of_species, .false. )
+                              & n_atoms_of_species, params%exp_data(params%sf_idx)%weights, &
+                              params%exp_data(params%sf_idx)%has_weights,.false. )
                       end if
 
 
@@ -1694,7 +1716,9 @@ contains
     ! if ( trim( params%xrd_output ) == "q*i(q)" )then
     !    y_xrd = 2.d0 * pi * x_xrd * ( y_xrd )
     ! end if
-
+    if( params%exp_data(xrd_idx)%has_weights) then 
+            y_xrd = y_xrd * params%exp_data(xrd_idx)%weights
+    end if
 
     if ( allocated(sinc_factor_matrix) )then
        if (valid_xrd) then
@@ -1720,6 +1744,7 @@ contains
 
                 allocate(forces_xrd(1:3,1:n_sites))
                 forces_xrd = 0.d0
+                virial_xrd = 0.d0
 
                 n_dim_idx = 1
                 outerf: do j = 1, n_species
@@ -1751,7 +1776,9 @@ contains
                               & n_atoms_of_species(k)) /  dfloat(n_sites) /&
                               & dfloat(n_sites) ) * ( dfloat(n_sites) /&
                               & v_uc ), sinc_factor_matrix, n_dim_idx,&
-                              & .true., xrd_output, n_atoms_of_species, neutron)
+                              & .true., xrd_output, n_atoms_of_species,&
+                              params%exp_data(xrd_idx)%weights, &
+                              params%exp_data(xrd_idx)%has_weights,  neutron)
                       else
                          call get_structure_factor_forces(  n_sites, params%exp_energy_scales(xrd_idx),&
                               & x_xrd, params%exp_data(xrd_idx)%y,&
@@ -1772,7 +1799,8 @@ contains
                               & n_atoms_of_species(k)) /  dfloat(n_sites) /&
                               & dfloat(n_sites) ) * ( dfloat(n_sites) /&
                               & v_uc ), sinc_factor_matrix, n_dim_idx,&
-                              & .true., xrd_output, n_atoms_of_species, neutron)
+                              & .true., xrd_output, n_atoms_of_species, params%exp_data(xrd_idx)%weights, &
+                              params%exp_data(xrd_idx)%has_weights,neutron)
                       end if
 
 
@@ -1804,19 +1832,22 @@ contains
        if (.not. neutron) then
           write(filename,'(A)')&
                & 'xrd_prediction.dat'
-          call write_exp_datan(x_xrd_temp(1:params%structure_factor_n_samples),&
+          call write_exp_datan_weights(x_xrd_temp(1:params%structure_factor_n_samples),&
                & y_xrd(1:params&
                &%structure_factor_n_samples),&
                & overwrite_condition, filename, "xrd: units of "//&
-               & trim(params%q_units) // " output: " // trim( xrd_output ))
+               & trim(params%q_units) // " output: " // trim( xrd_output ), &
+               params%exp_data(xrd_idx)%has_weights, params%exp_data(xrd_idx)%weights)
        else
           write(filename,'(A)')&
                & 'nd_prediction.dat'
-          call write_exp_datan(x_xrd_temp(1:params%structure_factor_n_samples),&
+          call write_exp_datan_weights(x_xrd_temp(1:params%structure_factor_n_samples),&
                & y_xrd(1:params&
                &%structure_factor_n_samples),&
                & overwrite_condition, filename, "nd: units of "//&
-               & trim(params%q_units) // " output: " // trim( xrd_output ))
+               & trim(params%q_units) // " output: " // trim( xrd_output ), &
+               params%exp_data(xrd_idx)%has_weights, params%exp_data(xrd_idx)%weights)  
+
        end if
 
     end if
