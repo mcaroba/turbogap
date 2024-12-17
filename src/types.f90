@@ -135,7 +135,7 @@ module types
       real*8 :: xps_e_min = 280.0
       real*8 :: xps_e_max = 300.0
       integer :: xps_n_samples = 200
-      logical :: do_xps_standalone = .false.
+      logical :: do_xps = .false.
 
       integer :: md_nsteps = 1, mc_nsteps = 1, write_xyz = 0,&
            & write_thermo = 1, which_atom = 0, vdw_mbd_nfreq = 11,&

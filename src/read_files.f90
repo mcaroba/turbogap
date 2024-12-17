@@ -965,9 +965,9 @@ contains
             read (10, *, iostat=iostatus) cjunk, cjunk, &
                (params%exp_data(nw)%input, nw=1, params%n_exp)
 
-         else if (keyword == 'do_xps_standalone') then
+         else if (keyword == 'do_xps') then
             backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%do_xps_standalone
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%do_xps
 
          else if (keyword == 'xps_e_min') then
             backspace (10)

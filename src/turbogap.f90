@@ -675,7 +675,7 @@ program turbogap
         end if
         call mpi_bcast(soap_turbo_hypers(i)%has_local_properties, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
         call mpi_bcast(soap_turbo_hypers(i)%has_core_electron_be, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
-        if (valid_xps .or. params%do_xps_standalone) call mpi_bcast(core_be_lp_index, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+        if (valid_xps .or. params%do_xps) call mpi_bcast(core_be_lp_index, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
         if (valid_vdw) call mpi_bcast(vdw_lp_index, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
 
         call mpi_bcast(soap_turbo_hypers(i)%has_vdw, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
@@ -2028,7 +2028,7 @@ program turbogap
            time_xps(3) = time_xps(3) + time_xps(2) - time_xps(1)
            !           if (rank == 0) print *, rank, " TIME_XPS = ", time_xps(3)
 
-           else if ( any( soap_turbo_hypers(:)%has_core_electron_be) .and. params%do_xps_standalone )then
+           else if ( any( soap_turbo_hypers(:)%has_core_electron_be) .and. params%do_xps )then
              ! Get the linspace of the xps spectrum and then perform the
              ! calculation and write to the prediction file
              !
