@@ -518,18 +518,16 @@ end if
     close(unit_number)
 
 !   Read descriptor vectors in spare set
-    if( soap_turbo_hypers(n_soap_turbo)%file_desc /= "kernel_linearization" )then
-      open(newunit=unit_number, file=file_desc, status="old")
-      iostatus = 0
-      i = -1
-      do while(iostatus == 0)
-        read(unit_number, *, iostat=iostatus)
-        i = i + 1
-      end do
-      dim = i / n_sparse
-      close(unit_number)
-    end if
-
+    open(newunit=unit_number, file=file_desc, status="old")
+    iostatus = 0
+    i = -1
+    do while(iostatus == 0)
+      read(unit_number, *, iostat=iostatus)
+      i = i + 1
+    end do
+    dim = i / n_sparse
+    close(unit_number)
+    
 !   We do things differently for each descriptor
     if( descriptor_type == "soap_turbo" )then
 !     Read alphas SOAP
@@ -540,19 +538,14 @@ end if
       end do
       close(unit_number)
 !     Read sparse set descriptors
-      if( soap_turbo_hypers(n_soap_turbo)%file_desc == "kernel_linearization" )then
-        allocate( Qs(1:1, 1:1) )
-        Qs = 1.d0
-      else
-        allocate( Qs(1:dim, 1:n_sparse) )
-        open(newunit=unit_number, file=file_desc, status="old")
-        do i = 1, n_sparse
-          do j = 1, dim
-            read(unit_number, *) Qs(j, i)
-          end do
+      allocate( Qs(1:dim, 1:n_sparse) )
+      open(newunit=unit_number, file=file_desc, status="old")
+      do i = 1, n_sparse
+        do j = 1, dim
+          read(unit_number, *) Qs(j, i)
         end do
-        close(unit_number)
-      end if
+      end do
+      close(unit_number)
     else if( descriptor_type == "distance_2b" )then
       if( dim /= 1 )then
         write(*,*) "ERROR: Bad 2b descriptor/alphas file(s), dimensions/n_sparse don't match number of data entries"
@@ -1715,6 +1708,9 @@ end if
           write(*,*)'ERROR: your "species" keyword is wrong |  <-- ERROR'
           stop
         end if
+      else if( keyword == "kernel_linearization" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%kernel_linearization
       else
         write(*,*)"ERROR: I do not recognize the input file keyword", keyword
         stop
@@ -2140,7 +2136,9 @@ end if
     character*64 :: keyword, cjunk, compress_string
     character*1 :: keyword_first
     integer, parameter :: n_deprecated = 6
-    character*64 :: deprecated_keywords(n_deprecated), updated_keywords(n_deprecated)
+    character*64 :: deprecated_keywords(n_deprecated), updated_keywords(n_deprecated), &
+                    file_alphas_linear, file_desc_linear
+    logical :: has_alphas_linear, has_desc_linear
 
     deprecated_keywords(1) = "has_vdw"
     deprecated_keywords(2) = "vdw_qs"
@@ -2346,7 +2344,8 @@ end if
               backspace(10)
               read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%basis
               if( soap_turbo_hypers(n_soap_turbo)%basis /= "poly3" .and. &
-                soap_turbo_hypers(n_soap_turbo)%basis /= "poly3gauss" )then
+                soap_turbo_hypers(n_soap_turbo)%basis /= "poly3gauss" .and. &
+                soap_turbo_hypers(n_soap_turbo)%basis /= "poly3operator"  )then
                 write(*,*)'                                       |'
                 write(*,*)'WARNING: I didn''t understand your      |  <-- WARNING'
                 write(*,*)'keywork for basis; defaulting to       |'
@@ -2366,14 +2365,37 @@ end if
             else if( keyword == "alphas_sparse" )then
               backspace(10)
               read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%file_alphas
+              if( params%kernel_linearization )then
+                file_alphas_linear = trim(soap_turbo_hypers(n_soap_turbo)%file_alphas)
+                file_alphas_linear = file_alphas_linear(1:29) // "_linear.dat"
+                inquire(file=file_alphas_linear, exist=has_alphas_linear)
+                if( has_alphas_linear )then
+                  soap_turbo_hypers(n_soap_turbo)%file_alphas = file_alphas_linear
+                  soap_turbo_hypers(n_soap_turbo)%do_linear_energies = .true.
+                else
+                  write(*,*)'                                       |'
+                  write(*,*)'WARNING: alphas_linear file is missing |  <-- WARNING'
+                  write(*,*)'kernel linearization cannot be used    |'
+                  write(*,'(A,1X,I0,1X,A)')' for soap_turbo desc. ', n_soap_turbo,  '      |'
+                end if
+              end if
             else if( keyword == "desc_sparse" )then
               backspace(10)
               read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%file_desc
-            else if( keyword == "kernel_linearization" )then
-              backspace(10)
-              soap_turbo_hypers(n_soap_turbo)%file_desc = "kernel_linearization"
-              read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%file_alphas
-           else if( keyword == "has_vdw" )then
+              if( params%kernel_linearization )then
+                file_desc_linear = trim(soap_turbo_hypers(n_soap_turbo)%file_desc) // "_linear.dat"
+                inquire(file=file_desc_linear, exist=has_desc_linear)
+                if( has_desc_linear )then
+                  soap_turbo_hypers(n_soap_turbo)%file_desc = file_desc_linear
+                  soap_turbo_hypers(n_soap_turbo)%do_linear_forces = .true.
+                else
+                  write(*,*)'                                       |'
+                  write(*,*)'WARNING: alphas_linear file is missing |  <-- WARNING'
+                  write(*,*)'kernel linearization cannot be used    |'
+                  write(*,'(A,1X,I0,1X,A)')' for forces of soap_turbo desc. ', n_soap_turbo,  '     |'
+                end if
+              end if
+            else if( keyword == "has_vdw" )then
                backspace(10)
                !               read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%has_vdw
                read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%has_local_properties

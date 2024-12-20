@@ -76,6 +76,7 @@ module types
     character*32 :: scaling_mode = "polynomial"
     character*8, allocatable :: species_types(:)
     logical :: compress_soap = .false., has_vdw = .false.,&
+               do_linear_energies = .false., do_linear_forces = .false., &
          & has_core_electron_be=.false., has_local_properties = .false.
     type(local_property_soap_turbo), allocatable :: local_property_models(:)
   end type soap_turbo
@@ -171,7 +172,8 @@ module types
                do_pair_distribution = .false., do_structure_factor = .false., do_xrd = .false., do_nd = .false., &
                write_xrd = .false., write_nd = .false., structure_factor_matrix = .true., &
                structure_factor_matrix_forces = .true., write_exp = .true., valid_pdf = .false., valid_sf = .false., &
-               valid_xrd = .false., valid_nd = .false., mc_planes_restrict_to_polyhedron = .false.
+               valid_xrd = .false., valid_nd = .false., mc_planes_restrict_to_polyhedron = .false., &
+               kernel_linearization = .false.
 
     integer :: mc_n_planes = 0
     real*8, allocatable :: mc_max_dist_to_planes(:), mc_planes(:) ! Final index indexes the planes in first index

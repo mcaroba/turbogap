@@ -28,11 +28,13 @@
 module gap
 
   use splines
+  use kernel_linearization
 
   contains
 
   subroutine get_soap_energy_and_forces(soap, soap_der, alphas, delta, zeta0, e0, Qs, &
                                         n_neigh, neighbors_list, xyz, do_forces, do_timing, &
+                                        do_linear_energies, do_linear_forces, &
                                         energies, forces, virial)
 !   **********************************************
 !   soap(1:n_soap, 1:n_sites)
@@ -42,12 +44,12 @@ module gap
     real*8, intent(in) :: soap(:,:), soap_der(:,:,:), alphas(:), delta, Qs(:,:), e0, zeta0, xyz(:,:)
     real*8, intent(out) :: energies(:), forces(:,:), virial(1:3,1:3)
     integer, intent(in) :: n_neigh(:), neighbors_list(:)
-    logical, intent(in) :: do_forces, do_timing
+    logical, intent(in) :: do_forces, do_timing, do_linear_energies, do_linear_forces
     real*8, allocatable :: kernels(:,:), kernels_der(:,:), Qss(:,:), Qs_copy(:,:), this_Qss(:), &
-                           kernels_copy(:,:)
+                           kernels_copy(:,:), soap_copy(:,:), soap_linear(:,:)
     real*8 :: time1, time2, time3, energies_time, forces_time, zeta, this_force(1:3)
     integer :: n_sites, n_sparse, n_soap, i, j, k, l, j2, zeta_int, n_sites0, k1, k2
-    logical :: is_zeta_int = .false., do_linearization = .false.
+    logical :: is_zeta_int = .false.
 !    integer, allocatable :: neighbors_beg(:), neighbors_end(:)
 
 
@@ -69,15 +71,14 @@ module gap
     n_sites = size(soap, 2)
     n_sites0 = size(forces, 2)
 
-!   We perform kernel linearization when Qs(1:1, 1:1) is passed, i.e., iff size(Qs,1) == 1
-!   Otherwise we compute the kernel as usual
-    if( size(Qs, 1) == 1 )then
-      do_linearization = .true.
-    end if
-    if( do_linearization )then
-!     Use linearized model, where n_sparse = n_linearized and alphas ---> Qs_linearized * alphas
-      allocate( soap_linear(1:n_sparse, 1:n_sites) )
-      call get_linear_descriptor(zeta, soap, soap_linear)
+    if( do_linear_energies )then
+!     Use the linearized model
+!     Following the notation here: n_sparse = n_linearized and alphas ---> Qs_linearized * alphas
+!     This is taken care of in read_files.f90, so we only modify the linear algebra here
+      allocate( soap_copy(1:n_sites, 1:n_soap) )
+      allocate( soap_linear(1:n_sites, 1:n_sparse) )
+      soap_copy = transpose(soap)
+      call get_linearized_desc(zeta_int, soap_copy, soap_linear)
       energies = matmul(soap_linear, alphas)
     else
       if( n_sites > 0 )then
@@ -192,8 +193,8 @@ module gap
 
 
 !   Wrap it up
-    if( do_linearization )then
-      deallocate(soap_linear)
+    if( do_linear_energies )then
+      deallocate(soap_copy, soap_linear)
     else
       deallocate(kernels, kernels_copy)
     end if
@@ -206,11 +207,11 @@ module gap
       write(*,*)'                                       |'
       write(*,*)'Prediction timings (SOAP):             |'
       write(*,*)'                                       |'
-      write(*,'(A, F7.3, A)') '  *) Energy prediction: ', energies_time, ' seconds |'
+      write(*,'(A, F8.6, A)') '  *) Energy prediction: ', energies_time, ' seconds |'
       if( do_forces )then
-        write(*,'(A, F7.3, A)') '  *) Forces prediction: ', forces_time, ' seconds |'
+        write(*,'(A, F8.6, A)') '  *) Forces prediction: ', forces_time, ' seconds |'
       end if
-      write(*,'(A, F8.3, A)') '  *) Total prediction: ', time2-time3, ' seconds |'
+      write(*,'(A, F8.6, A)') '  *) Total prediction: ', time2-time3, ' seconds |'
       write(*,*)'                                       |'
       write(*,*)'.......................................|'
     end if

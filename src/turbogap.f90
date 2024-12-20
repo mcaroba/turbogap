@@ -484,15 +484,17 @@ program turbogap
              local_property_labels, local_property_labels_temp, local_property_labels_temp2, local_property_indexes, &
              valid_vdw, vdw_lp_index, core_be_lp_index, valid_xps, xps_idx )
 
-        write(*,*)'                                       |'
-        write(*,*)' Irreducible local properties:         |'
-        do i = 1, params%n_local_properties
-           write(*,'(A41)') trim( local_property_labels(i) ) // ' |'
-        end do
+        if( params%n_local_properties > 0)then
+           write(*,*)'                                       |'
+           write(*,*)' Irreducible local properties:         |'
+           do i = 1, params%n_local_properties
+              write(*,'(A41)') trim( local_property_labels(i) ) // ' |'
+           end do
 
-        allocate( params%write_local_properties(1:params%n_local_properties) )
-        params%write_local_properties = .true.
 
+           allocate( params%write_local_properties(1:params%n_local_properties) )
+           params%write_local_properties = .true.
+        end if
 
 
 #ifdef _MPIF90
@@ -650,10 +652,7 @@ program turbogap
         dim = soap_turbo_hypers(i)%dim
         n_nonzero = soap_turbo_hypers(i)%compress_P_nonzero
         call mpi_bcast(soap_turbo_hypers(i)%alphas(1:n_sparse), n_sparse, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        if( soap_turbo_hypers(i)%file_desc == "kernel_linearization" )then
-          call mpi_bcast(soap_turbo_hypers(i)%Qs(1:1, 1:1), 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        else
-          call mpi_bcast(soap_turbo_hypers(i)%Qs(1:dim, 1:n_sparse), n_sparse*dim, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+        call mpi_bcast(soap_turbo_hypers(i)%Qs(1:dim, 1:n_sparse), n_sparse*dim, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
         end if
         call mpi_bcast(soap_turbo_hypers(i)%delta, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
         call mpi_bcast(soap_turbo_hypers(i)%zeta, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
@@ -1542,7 +1541,9 @@ program turbogap
                    soap_turbo_hypers(i)%compress_P_el, &
                    soap_turbo_hypers(i)%delta, soap_turbo_hypers(i)%zeta, soap_turbo_hypers(i)%central_species, &
                    xyz_species(this_i_beg:this_i_end), xyz_species_supercell, soap_turbo_hypers(i)%alphas, &
-                   soap_turbo_hypers(i)%Qs, params%all_atoms, params%which_atom, indices, soap, soap_cart_der, &
+                   soap_turbo_hypers(i)%Qs, soap_turbo_hypers(n_soap_turbo)%do_linear_energies, &
+                   soap_turbo_hypers(n_soap_turbo)%do_linear_forces, &
+                   params%all_atoms, params%which_atom, indices, soap, soap_cart_der, &
                    der_neighbors, der_neighbors_list, &
                    & soap_turbo_hypers(i)%has_local_properties,&
                    & soap_turbo_hypers(i)%n_local_properties,&

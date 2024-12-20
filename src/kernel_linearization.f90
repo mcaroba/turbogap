@@ -55,7 +55,7 @@ module kernel_linearization
       do_linear = .true.
     else
 !     Check here if forces would be faster
-      do_linear = check_forces_kernel_vs_lineal(zeta, n_sites, n_sparse, n_soap, &
+      do_linear = check_forces_kernel_vs_linear(zeta, n_sites, n_sparse, n_soap, &
                                                 n_linear, do_timing)
     end if
 
@@ -74,7 +74,7 @@ module kernel_linearization
 
     integer, intent(in) :: zeta, n_sparse, n_soap, n_sites, n_linear
     integer :: n_neigh(1:n_sites)
-    real*8 :: alphas(1:n_sparse), this_Qss(1:n_soap), n_neigh(1:n_sites), this_force(1:3)
+    real*8 :: alphas(1:n_sparse), this_Qss(1:n_soap), this_force(1:3), n_neigh0(1:n_sites)
     real*8 :: Qs(1:n_soap, 1:n_sparse), Qs_copy(1:n_soap, 1:n_sparse), Qss(1:n_sites, 1:n_soap), &
               kernels(1:n_sites, 1:n_sparse), kernels_der(1:n_sites, 1:n_sparse), &
               desc(1:n_sites, 1:n_soap), desc_linear(1:n_sites, 1:n_linear), &
@@ -149,7 +149,7 @@ module kernel_linearization
     end if
 
 !   Initialize arrays for linearized calculation of forces
-    call random_number(Qs_linear)
+    call random_number(Ms_linear)
     call random_number(desc)
     desc_linear = 0.d0
 
@@ -163,7 +163,7 @@ module kernel_linearization
       this_Qss = kernels_linear(1:n_soap, i)
       do j = 1, n_neigh(i)
         do k = 1, 3
-          this_forces(k) = dot_product(this_Qss, desc_der(k, 1:n_soap, l))
+          this_force(k) = dot_product(this_Qss, desc_der(k, 1:n_soap, l))
           F(k, l) = F(k, l) + this_force(k)
         end do
         l = l + 1
@@ -202,7 +202,8 @@ module kernel_linearization
 ! It is possible to pass a matrix of vectors V, to get V_lin, with
 ! V**T = (v1 v2 ... ) and V_lin**T = (v1_lin v2_lin ... )
 !
-! NOTE: current implementation only works for zeta == 2, 3 !!!!!!!!!!!
+! NOTE: current implementation only works for zeta == 2, 3 !!!!
+!       also, it does NOT include the multinomial coeff.
 !
   subroutine get_linearized_desc(zeta, V, V_lin)
 
@@ -210,44 +211,39 @@ module kernel_linearization
 
     integer, intent(in) :: zeta
     real*8, intent(in) :: V(:,:)
-    integer :: n, m, i, j, k, l
+    integer :: n_soap, m, i, j, k, l
     real*8, intent(out) :: V_lin(:,:)
 
     m = size(V, 1) ! this dim. does not change
-    n = size(V, 2)
+    n_soap = size(V, 2)
 
 !   check that V_lin has the right size!!!!
 
-    V_lin(1:m, 1:n) = V**zeta
+    V_lin(1:m, 1:n_soap) = V**zeta
 
 !   this implementation is slow in fortran (better to take whole rows than columns)!!!
 !   but I would need to transpose the matrices then (given how we allocate them in TurboGAP)
     if( zeta == 2 )then
-      k = n + 1
-      do i = 1, n
-        do j = i + 1, n
-          V_lin(1:m, k) = 2.d0 * V(1:m, i) * V(1:m, j)
+      k = n_soap + 1
+      do i = 1, n_soap
+        do j = i + 1, n_soap
+          V_lin(1:m, k) = V(1:m, i) * V(1:m, j)
           k = k + 1
         end do
       end do
     else if( zeta == 3 )then
-      k = n + 1
-      do i = 1, n
-        do j = i + 1, n
-          V_lin(1:m, k) = 3.d0 * V(1:m, i)**2 * V(1:m, j)
-          V_lin(1:m, k + 1) = 3.d0 * V(1:m, i) * V(1:m, j)**2
+      k = n_soap + 1
+      do i = 1, n_soap
+        do j = i + 1, n_soap
+          V_lin(1:m, k) = V(1:m, i)**2 * V(1:m, j)
+          V_lin(1:m, k + 1) = V(1:m, i) * V(1:m, j)**2
           k = k + 2
         end do
       end do
-    else if( zeta == 3 )then
-      k = n + 1
-      do i = 1, n
-        do j = i + 1, n
-          V_lin(1:m, k) = 3.d0 * V(1:m, i)**2 * V(1:m, j)
-          V_lin(1:m, k + 1) = 3.d0 * V(1:m, i) * V(1:m, j)**2
-          k = k + 2
-          do l = j + 1, n
-            V_lin(1:m, k) = 6.d0 * V(1:m, i) * V(1:m, i) * V(1:m, l)
+      do i = 1, n_soap
+        do j = i + 1, n_soap
+          do l = j + 1, n_soap
+            V_lin(1:m, k) = V(1:m, i) * V(1:m, j) * V(1:m, l)
             k = k + 1
           end do
         end do
@@ -256,6 +252,34 @@ module kernel_linearization
 
   end subroutine
 !**************************************************************************
+
+!**************************************************************************
+!
+! This subroutine gives the multinomial coefficients of a SOAP kernel
+! It assumes the that M has size (1:n_sparse, 1:n_linear)
+!
+  subroutine get_multinomial_coeffs(zeta, n_soap, M)
+
+    implicit none
+
+    integer, intent(in) :: zeta, n_soap
+    real*8, intent(out) :: M(:,:)
+    integer :: i, n_sparse, n_linear
+
+    n_sparse = size(M, 1)
+    n_linear = size(M, 2)
+
+    M = 1.d0
+    if( zeta == 2 )then
+      M(1:n_sparse, n_soap + 1:n_linear) = 2.d0
+    else if( zeta == 3 )then
+      M(1:n_sparse, n_soap + 1:n_soap**2) = 3.d0
+      M(1:n_sparse, n_soap**2 + 1:n_linear) = 6.d0
+    end if
+
+  end subroutine
+!**************************************************************************
+
 
 !**************************************************************************
 !
@@ -270,9 +294,9 @@ module kernel_linearization
 
     integer, intent(in) :: zeta
     real*8, intent(in) :: alphas(:), Qs(:,:)
-    integer :: n_soap, n_sparse, n_linear
-    real*8, allocatable :: Qs_linear(:,:)
-    real*8, allocatable, intent(out) :: alphas_linear(:)
+    integer :: n_soap, n_sparse, n_linear, i, m
+    real*8, allocatable :: Qs_linear(:,:), multinomial_coeffs(:,:)
+    real*8, allocatable :: alphas_linear(:)
 
     n_soap = size(Qs, 2) ! here we assume Qs(1:n_sparse, 1:n_soap), I could check it using alphas size
     n_sparse = size(alphas)
@@ -285,14 +309,17 @@ module kernel_linearization
 !   Allocate arrays
     allocate( alphas_linear(1:n_linear) )
     allocate( Qs_linear(1:n_sparse, 1:n_linear) )
+    allocate( multinomial_coeffs(1:n_sparse, 1:n_linear) )
     alphas_linear = 0.d0
     Qs_linear = 0.d0
 
 !   Get alphas_linear
     call get_linearized_desc(zeta, Qs, Qs_linear)
-    alphas_linear = matmul(alphas, Qs_linear)
+!   add multiplicity using multinomial coefficients
+    call get_multinomial_coeffs(zeta, n_soap, multinomial_coeffs)
+    alphas_linear = matmul(alphas, multinomial_coeffs * Qs_linear)
 
-    deallocate( Qs_linear )
+    deallocate( Qs_linear, multinomial_coeffs )
 
   end function
 !**************************************************************************
@@ -311,7 +338,7 @@ module kernel_linearization
     integer, intent(in) :: zeta
     real*8, intent(in) :: alphas(:), Qs(:,:)
     integer :: zeta0, n_soap, n_sparse, n_linear, i
-    real*8, allocatable :: Qss(:,:), Qs_linear(:,:)
+    real*8, allocatable :: Qss(:,:), Qs_linear(:,:), multinomial_coeffs(:,:)
     real*8, allocatable :: Ms_linear(:,:)
 
     n_soap = size(Qs, 2) ! here we assume Qs(1:n_sparse, 1:n_soap)
@@ -335,6 +362,8 @@ module kernel_linearization
       Qss(1:n_sparse, i) = alphas * Qs(1:n_sparse, i)
     end do
     call get_linearized_desc(zeta0, Qs, Qs_linear)
+    call get_multinomial_coeffs(zeta0, n_soap, multinomial_coeffs)
+    Qs_linear = Qs_linear * multinomial_coeffs
     call dgemm('t','n', n_soap, n_linear, n_sparse, 1.d0, Qss, n_linear, Qs_linear, &
                 n_linear, 0.d0, Ms_linear, n_soap)
 
