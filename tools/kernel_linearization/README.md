@@ -7,26 +7,23 @@ Author(s): Patricia Hernandez Leon
 
 Related files included in TurboGAP:
 
-- src/kernel_linearization.f90
+- src/kernel_linearization.f90 \
 
-    **kernel_linearization** module containing all subroutines and functions related to kernel
+    [**kernel_linearization** module](/src/kernel_linearization.f90) containing all subroutines and functions related to kernel
     linearization, both for calculations and testing purposes.
 
-- tools/kernel_linearization/get_linearized_sparse_model.f90
+- tools/kernel_linearization/get_linearized_sparse_model.f90 \
 
     Given a trained potential, **get_linearized_sparse_model.f90** script checks whether kernel
     linearization is favourable and returns the necessary files to perform it with TurboGAP.
     Current implementation supports only energies (forces are on the way).
     It uses the **kernel_linearization** module included in TurboGAP.
 
-- *tools/kernel_linearization/tests/test_kernel_linearization_module.f90
-- *tools/kernel_linearization/tests/test_kernel_linearization_workflow.sh
-
 
 ## Using kernel linearization with TurboGAP
 
 (1) Get the linearized version of the sparse contribution by running **get_linearized_sparse_model.f90**
-    script (see **Running the tool** section). 
+    script (see [**Running the tool**]{#running-the-tool} section). 
     The output file(s) are placed on the same folder as the given trained GAP: 
     
 
