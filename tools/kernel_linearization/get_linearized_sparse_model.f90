@@ -37,7 +37,7 @@ program get_linear_model
 
   implicit none
 
-  integer :: n_soap, n_linear, n_sparse, n_soap_turbo = 0, zeta, iostatus, i, j, n
+  integer :: n_soap, n_linear, n_sparse, n_soap_turbo = 0, zeta, iostatus, i, j, n, l
   integer :: n_sites = 1000 ! n. atoms used for timings tests
   character*1024 :: file_gap, filename, temp
   character*64 :: keyword
@@ -94,7 +94,8 @@ program get_linear_model
       alphas_linear = get_linearized_sparse(zeta, alphas, transpose(Qs))
 !     save them
       filename = trim(file_alphas(n))
-      filename = filename(1:29) // "_linear.dat"
+      l = len(filename) - 4
+      filename = filename(1:l) // "_linear.dat"
       open(unit=10, file=filename, status="unknown")
       do i = 1, n_linear
         write(10,*) alphas_linear(i), 1.
