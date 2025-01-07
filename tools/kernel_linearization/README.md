@@ -7,12 +7,12 @@ Author(s): Patricia Hernandez Leon
 
 Related files included in TurboGAP:
 
-- src/kernel_linearization.f90 \
+- src/kernel_linearization.f90  
 
     [**kernel_linearization** module](/src/kernel_linearization.f90) containing all subroutines and functions related to kernel
     linearization, both for calculations and testing purposes.
 
-- tools/kernel_linearization/get_linearized_sparse_model.f90 \
+- tools/kernel_linearization/get_linearized_sparse_model.f90  
 
     Given a trained potential, **get_linearized_sparse_model.f90** script checks whether kernel
     linearization is favourable and returns the necessary files to perform it with TurboGAP.
@@ -23,7 +23,7 @@ Related files included in TurboGAP:
 ## Using kernel linearization with TurboGAP
 
 (1) Get the linearized version of the sparse contribution by running **get_linearized_sparse_model.f90**
-    script (see [**Running the tool**]{#running-the-tool} section). 
+    script (see [**Running the tool**](#running-the-tool) section). 
     The output file(s) are placed on the same folder as the given trained GAP: 
     
 
@@ -37,7 +37,7 @@ Related files included in TurboGAP:
 #### (a.k.a. getting the linearized sparse contribution)
 
 
-You need to have a **gap_files** directory with your GAP potential, check first tools/quip_xml_to_gap
+You need to have a **gap_files** directory with your GAP potential, check first [quip_xml_to_gap section](/tools/quip_xml_to_gap)
 otherwise.
 
 Compile the following code from the directory containing your gap_files folder:
