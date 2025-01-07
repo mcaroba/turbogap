@@ -2382,7 +2382,7 @@ end if
             else if( keyword == "desc_sparse" )then
               backspace(10)
               read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%file_desc
-              if( params%kernel_linearization )then
+              if( params%kernel_linearization .and. params%do_forces )then
                 file_desc_linear = trim(soap_turbo_hypers(n_soap_turbo)%file_desc) // "_linear.dat"
                 inquire(file=file_desc_linear, exist=has_desc_linear)
                 if( has_desc_linear )then
