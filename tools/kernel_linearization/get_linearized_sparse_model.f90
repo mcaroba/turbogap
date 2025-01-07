@@ -45,7 +45,7 @@ program get_linear_model
   character*1024, allocatable :: file_alphas(:), file_desc(:), file_gap_updated(:)
   real*8, allocatable :: zetas(:), alphas(:), alphas_linear(:)
   real*8, allocatable :: Qs(:,:), Ms_linear(:,:)
-  logical :: do_linear = .false.
+  logical :: do_check = .true., do_linear = .false.
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 ! Parameters that should be provided by the user
@@ -81,10 +81,14 @@ program get_linear_model
     write(*,*) "n_linear = ", n_linear
 
 !   Check whether kernel linearization is a better option
-    do_linear = check_kernel_vs_linear(zeta, n_sites, n_sparse, n_soap, n_linear, .true.)
+    if( do_check )then
+      do_linear = check_kernel_vs_linear(zeta, n_sites, n_sparse, n_soap, n_linear, .true.)
+    else
+      do_linear = .true.
+    end if
 
 !   Compute the linearized sparse contributions if favourable
-    if( .true. )then
+    if( do_linear )then
 !     ENERGIES
       alphas_linear = get_linearized_sparse(zeta, alphas, transpose(Qs))
 !     save them

@@ -8,24 +8,27 @@ Author(s): Patricia Hernandez Leon
 Related files included in TurboGAP:
 
 - src/kernel_linearization.f90
+
     **kernel_linearization** module containing all subroutines and functions related to kernel
     linearization, both for calculations and testing purposes.
 
 - tools/kernel_linearization/get_linearized_sparse_model.f90
+
     Given a trained potential, **get_linearized_sparse_model.f90** script checks whether kernel
     linearization is favourable and returns the necessary files to perform it with TurboGAP.
     Current implementation supports only energies (forces are on the way).
     It uses the **kernel_linearization** module included in TurboGAP.
 
-- tools/kernel_linearization/test_kernel_linearization_module.f90
-- tools/kernel_linearization/test_kernel_linearization_workflow.sh
+- *tools/kernel_linearization/tests/test_kernel_linearization_module.f90
+- *tools/kernel_linearization/tests/test_kernel_linearization_workflow.sh
+
 
 ## Using kernel linearization with TurboGAP
 
 (1) Get the linearized version of the sparse contribution by running **get_linearized_sparse_model.f90**
     script (see **Running the tool** section). 
     The output file(s) are placed on the same folder as the given trained GAP: 
-    [alphas file]\_linear.dat (energies), [descriptor file]\_linear (forces)
+    
 
 (2) Activate kernel linearization support when running TurboGAP by adding the following line to the 
     input file:
@@ -34,23 +37,26 @@ Related files included in TurboGAP:
 
 
 ## Running the tool 
-### (a.k.a. getting the linearized sparse contribution)
+#### (a.k.a. getting the linearized sparse contribution)
+
 
 You need to have a **gap_files** directory with your GAP potential, check first tools/quip_xml_to_gap
 otherwise.
 
 Compile the following code from the directory containing your gap_files folder:
 
-    gfortran -c /turbogap/source/directory/src/kernel_linearization.f90
+    gfortran -c /turbogap/source/directory/src/kernel_linearization.f90 -O3
 
-    gfortran -o get_linearized_sparse_model kernel_linearization.o /turbogap/source/directory/tools/kernel_linearization/get_linearized_sparse_model.f90 -lblas
+    gfortran -o get_linearized_sparse_model kernel_linearization.o /turbogap/source/directory/tools/kernel_linearization/get_linearized_sparse_model.f90 -O3 -lblas
 
-Note that `/turbogap/source/directory` is the directory where you have your **TurboGAP** installation.
+Note that `/turbogap/source/directory` is the directory where you have your **TurboGAP** installation. Moreover, use the same optimization flags as in TurboGAP or the timing will not be reliable.
+
 To get the linearized sparse contribution, just run:
 
     ./get_linearized_sparse_model [path to your GAP file]
 
+If there is a speed-up in the calculation, the tool will generate the output file(s): [alphas file]\_linear.dat (energies), [descriptor file]\_linear (forces). These are placed on your gap_files directory.
 
-## Example/tests
+If you want to avoid any checks and just get the files, set `do_check = .false.` in the code before following the previous steps.
 
 
