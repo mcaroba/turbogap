@@ -53,6 +53,7 @@ program get_linear_model
   call get_command_argument(1, file_gap)
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  write(*,*) 'Checking kernel linearization ...'
 
 ! Extract the info about zeta, alphas file and descriptor files
   call read_gap_hypers(file_gap, n_soap_turbo, zetas, file_alphas, file_desc)
@@ -68,7 +69,6 @@ program get_linear_model
 !   Get alphas, sparse descriptors and their size
 !   Here size of Qs is (1:n_soap, 1:n_sparse)
     call read_alphas_and_descriptors(file_desc(n), file_alphas(n), n_sparse, n_soap, alphas, Qs)
-    write(*,*) file_desc(n)
 !   Compute the size of the linearized model
     n_linear = 1
     do i = 1, zeta
@@ -89,6 +89,7 @@ program get_linear_model
 
 !   Compute the linearized sparse contributions if favourable
     if( do_linear )then
+      write(*,*) 'Getting linearized sparse contribution ...'
 !     ENERGIES
       alphas_linear = get_linearized_sparse(zeta, alphas, transpose(Qs))
 !     save them
