@@ -1859,7 +1859,6 @@ program turbogap
 !              write(*,*) " > Starting get_gap_soap loop "        
         do i = 1, n_soap_turbo
 
-           write(*,*) " > n_soap_turbo loop  ", i , n_soap_turbo        
 
            call get_time( time_soap(1)  )
            
@@ -1966,7 +1965,6 @@ program turbogap
                  end if
               end if
 
-              write(*,*) "get gap soap "
               call get_gap_soap(n_sparse, n_sites, this_n_sites_mpi, n_neigh(this_i_beg:this_i_end), neighbors_list(this_j_beg:this_j_end), &
                    soap_turbo_hypers(i)%n_species, soap_turbo_hypers(i)%species_types, &
                    rjs(this_j_beg:this_j_end), thetas(this_j_beg:this_j_end), phis(this_j_beg:this_j_end), &
@@ -2041,7 +2039,6 @@ program turbogap
            
            n_lp_count = n_lp_count + soap_turbo_hypers(i)%n_local_properties
 
-           write( *, * ) "n_lp_count ", n_lp_count 
            
 !           print *, rank, " >> Freeing gpu memory  "                      
            call gpu_free_async(nf_d,gpu_stream)
@@ -2067,7 +2064,6 @@ program turbogap
            call gpu_free(Qs_d) 
 
 
-           print *, rank, " >>~~~ Finished freeing gpu memory ~~~<< "                                 
 
            !!soap_time_soap(2 = MPI_wtime()
            !        call get_time( soap_time_soap(2  )
@@ -2185,7 +2181,6 @@ program turbogap
 
 
 
-        print *, "reducing local prop"
         
 #ifdef _MPIF90
         if( any( soap_turbo_hypers(:)%has_local_properties) )then
@@ -2278,7 +2273,6 @@ program turbogap
 
         !     Compute ELECTROSTATIC energies and forces
         if ((params%estat_method /= "none") .and. params%do_prediction) then
-           print *, "Starting estat "
            call get_time( time_estat(1)  ) 
 #ifdef _MPIF90
            allocate( this_energies_estat(1:n_sites) )
@@ -2330,7 +2324,7 @@ program turbogap
              else if (trim(params%estat_method) == "gsf") then
                 if( params%gpu_batched )then
                    
-                   print *, "> Starting GPU electrostatics "
+                   ! print *, "> Starting GPU electrostatics "
 
                    call get_gpu_batches( n_neigh(i_beg:i_end), rjs(j_beg:j_end), params%estat_rcut, &
                         params%gpu_n_batches, gpu_memory_usage,&
@@ -2338,11 +2332,11 @@ program turbogap
 
                    gpu_memory_usage = 0.d0
 
-                   do i = 1, size(i_beg_list)
-                      write(*,'(A,I8,A,I8,A,I8,A,I8,A,I8,A,I8)') "batches, rank ", rank, &
-                           " i ", i, " i_beg_i = ", i_beg_list(i), " i_end_i = ", i_end_list(i), &
-                           " j_beg_i = ", j_beg_list(i), " j_end_i = ", j_end_list(i)
-                   end do
+                   ! do i = 1, size(i_beg_list)
+                   !    write(*,'(A,I8,A,I8,A,I8,A,I8,A,I8,A,I8)') "batches, rank ", rank, &
+                   !         " i ", i, " i_beg_i = ", i_beg_list(i), " i_end_i = ", i_end_list(i), &
+                   !         " j_beg_i = ", j_beg_list(i), " j_end_i = ", j_end_list(i)
+                   ! end do
 
                    allocate( gpu_neigh( 1:size(i_beg_list) ) )
                    allocate( gpu_exp( 1:size(i_beg_list) ) )
@@ -2358,12 +2352,12 @@ program turbogap
 
 
                    
-                   !$OMP PARALLEL DO num_threads(n_omp) DEFAULT(SHARED) &
-                   !$OMP PRIVATE(i,  omp_task, this_i_beg, this_i_end, this_j_beg, this_j_end, n_sites_temp, n_pairs_temp) 
+                   !  !$OMP PARALLEL DO num_threads(n_omp) DEFAULT(SHARED) &
+                   !  !$OMP PRIVATE(i,  omp_task, this_i_beg, this_i_end, this_j_beg, this_j_end, n_sites_temp, n_pairs_temp) 
 
                    do i = 1, size( i_beg_list )
 
-                      !$ n_omp_temp = omp_get_thread_num()
+                      !  !$ n_omp_temp = omp_get_thread_num()
                       !print *, " - pdf thread num ", n_omp_temp, " / ", n_omp
                       ! > In sequential operation, we just want to use the one stream, and only 1 will be created
                       omp_task = mod( i-1, n_omp) + 1
@@ -2376,13 +2370,13 @@ program turbogap
                       n_sites_temp = this_i_end - this_i_beg + 1
                       n_pairs_temp = this_j_end - this_j_beg + 1
 
-                      print *, " "
-                      write(*,'(A,I4,A,I4,A,I4,A,I4,A,I4,A,I4)') "estat batches---Rank ", rank, " ---Thread ", omp_task, &
-                           " / ", n_omp, " i = ", i,  &
-                           " i_beg = ",  this_i_beg,&
-                           " i_end = ",  this_i_end,&
-                           " j_beg = ",  this_j_beg,&
-                           " j_end = ",  this_j_end
+                      ! print *, " "
+                      ! write(*,'(A,I4,A,I4,A,I4,A,I4,A,I4,A,I4)') "estat batches---Rank ", rank, " ---Thread ", omp_task, &
+                      !      " / ", n_omp, " i = ", i,  &
+                      !      " i_beg = ",  this_i_beg,&
+                      !      " i_end = ",  this_i_end,&
+                      !      " j_beg = ",  this_j_beg,&
+                      !      " j_end = ",  this_j_end
 
                       call gpu_malloc_neighbors(gpu_neigh(i), &
                            n_sites_temp, n_pairs_temp, &
@@ -2422,12 +2416,12 @@ program turbogap
                       !      " j_end = ",  this_j_end
                       call gpu_meminfo()
                    end do
-                   !$OMP END PARALLEL DO            
+                   !     !$OMP END PARALLEL DO            
                    deallocate( gpu_neigh )
 
                    call gpu_free_async( charges_d, gpu_stream )
                    deallocate( charges_temp )
-                   
+
                 else
                    call compute_coulomb_lamichhane(&
                         local_properties(i_beg:i_end, charge_lp_index), &
@@ -2450,7 +2444,6 @@ program turbogap
             deallocate(chg_neigh_estat)
             call get_time( time_estat(2) ) 
             time_estat(3) = time_estat(3) + time_estat(2) - time_estat(1)
-            print *, "finished estat"
         end if
         
 
@@ -4382,7 +4375,7 @@ program turbogap
            end if
 
 
-           if ( params%print_estat_forces )then
+           if (rank == 0 .and. params%print_estat_forces )then
               open(unit=90, file="forces_estat", status="unknown")
               do i = 1, n_sites
                  write(90, "(F20.8, 1X, F20.8, 1X, F20.8)") &

@@ -289,8 +289,8 @@ module electrostatics
   
 
   subroutine calculate_batched_electrostatics(gpu_exp,  gpu_host,&
-       & gpu_neigh, n_sites,&
-       & i_beg, i_end, j_beg, j_end, rank,  r_cut, dsf_alpha, &
+       gpu_neigh, n_sites,&
+       i_beg, i_end, j_beg, j_end, rank,  r_cut, dsf_alpha, &
        charges, charges_d, &
        charge_gradients,&
        do_gradients, &
@@ -306,8 +306,8 @@ module electrostatics
     real(dp), intent(in) :: r_cut, dsf_alpha, r_cut_in, r_cut_width
 
     integer, allocatable, target :: n_neigh_check(:)
-    real(dp), intent(inout), target :: energies(:), forces(:,:)
-    real(dp), intent(inout), target :: virial(1:3,1:3)
+    real(dp), intent(inout) :: energies(:), forces(:,:)
+    real(dp), intent(inout)  :: virial(1:3,1:3)
 
     real(dp),  allocatable, target :: energies_temp(:), forces_temp(:,:), rjs_check(:)
     real(dp),  target :: virial_temp(1:3,1:3)
@@ -412,10 +412,6 @@ module electrostatics
     call gpu_malloc_all(gpu_exp % nk_flags_sum_d(n_dim_idx),      st_nk_flags, gpu_stream)                          
 
 
-    ! call flags_sum_test_d % galloc( "flags_sum_test_d",  j_end - j_beg + 1, gpu_stream  )
-    ! call flags_sum_test_d % print( )
-    ! call flags_sum_test_d % memset( 0, gpu_stream)
-
     this_n_sites = i_end - i_beg + 1
     this_n_pairs = j_end - j_beg + 1
     
@@ -423,7 +419,6 @@ module electrostatics
     call gpu_malloc_all( n_neigh_index_d, st_n_neigh_index_d, gpu_stream )
     call gpu_memset_async(n_neigh_index_d, 0, st_n_neigh_index_d, gpu_stream)
 
-    print *, "getting nk "
     
     call gpu_get_electrostatics_nk(&
          1, &
@@ -439,31 +434,14 @@ module electrostatics
          gpu_exp % nk_flags_sum_d(n_dim_idx), &
          gpu_stream)
 
-    ! call gpu_get_pair_distribution_nk(1, i_end - i_beg + 1, j_end - j_beg + 1, n_sites, & ! i_beg, i_end, j_end, n_sites, &
-    !      gpu_neigh % neighbors_list_d,&
-    !      gpu_neigh % n_neigh_d, &
-    !      gpu_neigh % neighbor_species_d,&
-    !      gpu_neigh % species_d,&
-    !      gpu_neigh % rjs_d, &
-    !      gpu_neigh % xyz_d, &             
-    !      r_min, r_max, r_cut, 6.d0*kde_sigma,&
-    !      gpu_exp % nk_d(n_dim_idx), &
-    !      gpu_exp % nk_flags_d(n_dim_idx), &
-    !      gpu_exp % nk_flags_sum_d(n_dim_idx), &
-    !      j, k, gpu_stream)
-
-    !    call gpu_stream_sync(gpu_stream)             
-
     
     ! Now copy the value of nk from the gpu
     st_nk_temp = 1*c_int
     call cpy_dtoh(gpu_exp % nk_d(n_dim_idx), c_loc(nk_temp), st_nk_temp, gpu_stream)
     gpu_exp % nk(n_dim_idx) = nk_temp(1)
-    print *, " -- Rank ", rank, " nk batched = ", gpu_exp % nk(n_dim_idx)
 
     call gpu_free_async(gpu_exp % nk_d(n_dim_idx), gpu_stream )
     call gpu_free_async(gpu_exp % nk_flags_d(n_dim_idx), gpu_stream)
-
 
 
     ! Now we create temporary arrays for the k indices
@@ -506,7 +484,6 @@ module electrostatics
     call gpu_malloc_all(  charge_gradients_index_d,    st_charge_gradients_d, gpu_stream)
     call gpu_memset_async(charge_gradients_index_d, 0, st_charge_gradients_d, gpu_stream)             
     
-    print *, "starting  k indexes "
     ! Reusing this function to set the k indices for electrostatics
     call gpu_set_electrostatics_k_index(1, i_end - i_beg + 1, j_end - j_beg + 1, n_sites,& ! i_beg, i_end, j_end, n_sites,&
          gpu_neigh % neighbors_list_d,&
@@ -523,46 +500,12 @@ module electrostatics
          gpu_exp % nk_flags_sum_d(n_dim_idx),&
          gpu_stream)
 
-    print *, "got the k indexes "
-    
-!    call flags_sum_test_d % gfree_async( gpu_stream  )
     
     ! Deallocating the flag array
     call gpu_free_async(charge_gradients_d, gpu_stream)                          
     call gpu_free_async(gpu_exp % nk_flags_sum_d(n_dim_idx), gpu_stream)                          
 
-    ! Removed host storage as its not necessary
-
-
-    ! Now for the main electrostatics routine
-    ! We will do an N body approach
-    ! This kernel also calculates the prefactor sum for the forces too
-
-    ! n_sites is the global number of sites
-
-    ! st_forces_prefactor_d = c_double * this_n_sites
-    ! call gpu_malloc_all(  forces_prefactor_d,    st_forces_prefactor_d, gpu_stream)
-    ! call gpu_memset_async(forces_prefactor_d, 0, st_forces_prefactor_d, gpu_stream)             
     
-    ! call gpu_get_electrostatics_energies( &
-    !      i_beg, &
-    !      energies_d,   &
-    !      forces_d,  &
-    !      virial_d, &
-    !      gpu_exp % j2_index_d(n_dim_idx), &         
-    !      n_sites,      &
-    !      this_n_sites, &
-    !      this_n_pairs, &
-    !      n_neigh_index_d, &
-    !      charges_d,    &
-    !      neighbor_charges_index_d, &
-    !      gpu_exp % rjs_index_d(n_dim_idx),  &
-    !      gpu_exp % xyz_k_d(n_dim_idx), &         
-    !      dsf_alpha, &
-    !      pair_energy_rcut, &
-    !      pair_energy_rcut_der, &         
-    !      gpu_stream )
-
     allocate(energies_temp(1:this_n_sites))
     allocate(forces_temp(1:3,1:n_sites))
 
@@ -587,10 +530,6 @@ module electrostatics
     call cpy_dtoh( n_neigh_index_d, c_loc( n_neigh_check ), st_nk_temp , gpu_stream )
     call gpu_stream_sync(gpu_stream)
 
-
-
-
-    
     do i = 2, this_n_sites
        n_neigh_check(i) = n_neigh_check(i) + n_neigh_check(i-1)
 
@@ -602,15 +541,10 @@ module electrostatics
 
     call cpy_htod( c_loc( n_neigh_check ), n_neigh_index_d, st_nk_temp , gpu_stream )
 
-
-    
-    
     deallocate(n_neigh_check)
-
 
     c_do_forces = logical( do_gradients, kind=c_bool )              
     c_do_damping_cosine = logical( options % damped_cosine, kind=c_bool )              
-
 
     
     call gpu_get_electrostatics_energies( &

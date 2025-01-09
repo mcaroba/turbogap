@@ -565,37 +565,41 @@ double v_01_gsf( double rij, double alpha, double rcut, double B0, double B0_rcu
 
 __device__
 double damping_function_cosine( double distance, double r_inner, double r_outer){
-  double damping_function_cosine = 0.0;
+  double damping = 0.0;
+  double arg;
   const double PI = 3.14159265358979323846;
   
   if (distance < r_inner){
-    damping_function_cosine = 0.0;
+    damping = 0.0;
   }
   else if (distance > r_outer){
-    damping_function_cosine = 1.0;
+    damping = 1.0;
   }
   else{
-    damping_function_cosine = 0.5 - 0.5*cos((distance - r_inner) * PI / (r_outer - r_inner));
+	  arg = (distance - r_inner) * PI / (r_outer - r_inner);
+	  damping = 0.5 - 0.5 * cos( arg );
   }
-  return damping_function_cosine;
+  return damping;
 }
 
 
 __device__
 double damping_function_cosine_der( double distance, double r_inner, double r_outer){
-  double damping_function_cosine = 0.0;
+  double damping = 0.0;
+  double arg;
   const double PI = 3.14159265358979323846;
   
   if (distance < r_inner){
-    damping_function_cosine = 0.0;
+    damping = 0.0;
   }
   else if (distance > r_outer){
-    damping_function_cosine = 0.0;
+    damping = 0.0;
   }
   else{
-    damping_function_cosine = 0.5 / (r_outer - r_inner) * sin((distance - r_inner) * PI / (r_outer - r_inner));
+	  arg = (distance - r_inner) * PI / (r_outer - r_inner);
+	  damping = 0.5 / (r_outer - r_inner) * sin(arg);
   }
-  return damping_function_cosine;
+  return damping;
 }
 
  
@@ -637,7 +641,7 @@ void kernel_electrostatics_gsf( const int i_beg,
   double this_xyz[3];  
   const double K = 14.399645478380902;
   double inner_damp = 1.0;
-  double pair_energy;
+  double pair_energy, rcut_soft;
   double w_a;
   // In this kernel, each atom is controlled by one block of
   // threads. The threads in the block evaluate each pair and sum them
@@ -680,6 +684,11 @@ void kernel_electrostatics_gsf( const int i_beg,
   double  temp_energy = 0.0;
   double  temp_prefactor = 0.0;
 
+
+  rcut_soft = rcut_in - rcut_width;
+
+
+      
   for (int stride_idx=0; stride_idx < n_strides; ++stride_idx) {
     // The pair_index is offset by the total number of pairs
     // beforehand. Over each stride, it is incremented by the block
@@ -704,10 +713,11 @@ void kernel_electrostatics_gsf( const int i_beg,
       // 	       pair_idx, nk_max,
       // 	       tid, rij, alpha,  B0, f, B0_rcut, B0_rcut_der );
       // }
+      
 
       if (do_cosine_damping){
-	      if (rij < rcut_in - rcut_width){
-		inner_damp = damping_function_cosine( rij, rcut_in - rcut_width, rcut_in);
+	      if (rij < rcut_soft){
+		      inner_damp = damping_function_cosine( rij, rcut_soft, rcut_in);
 	      }
       }
 
@@ -727,13 +737,13 @@ void kernel_electrostatics_gsf( const int i_beg,
 	neigh_idx = j2_index_d[ pair_idx ];
 	double inner_damp_der = 1.0;
 	if (do_cosine_damping){
-		if (rij < rcut_in - rcut_width){
-			inner_damp_der = damping_function_cosine_der( rij, rcut_in - rcut_width, rcut_in);
+		if (rij < rcut_soft){
+			inner_damp_der = damping_function_cosine_der( rij, rcut_soft, rcut_in);
 		}
 	}
 
 
-	w_a = (( estat_B0_der_pre(  rij, alpha, B0 )  -  B0_rcut_der) / rij) * center_term * neigh_charge * inner_damp_der ;
+	w_a = ( ( estat_B0_der_pre(  rij, alpha, B0 )  -  B0_rcut_der ) / rij) * center_term * neigh_charge * inner_damp_der ;
 	
 	this_xyz[0]=xyz_index_d[3*pair_idx    ];
 	this_xyz[1]=xyz_index_d[3*pair_idx + 1];

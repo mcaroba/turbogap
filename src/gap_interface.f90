@@ -305,7 +305,6 @@ module gap_interface
 
        if( n_sites > 0 )then
           !      call cpu_time(ttt(1))
-          write(*,*) "get soap "
           call get_soap(n_sites, n_neigh, n_species, species, species_multiplicity, n_atom_pairs, mask, rjs, &
                thetas, phis, alpha_max_d, alpha_max, l_max, rcut_hard_d, rcut_hard, rcut_soft_d, nf_d, global_scaling_d, &
                atom_sigma_r_d, atom_sigma_r, atom_sigma_r_scaling_d, atom_sigma_t_d, atom_sigma_t_scaling_d, &
@@ -361,9 +360,6 @@ module gap_interface
              allocate( local_properties_cart_der(1:3, 1:n_atom_pairs) )
           end if
 
-          write(*,*) 'n_atom_pairs ', n_atom_pairs, n_pairs 
-
-          write(*,*) "get LP "              
           ! Allocate the arrays here so we dont have to reallocate 
           ! Allocate gpu memory
           st_size_nf = n_sites * sizeof( local_properties(1) )
@@ -375,8 +371,6 @@ module gap_interface
           end if
 
 
-          ! We need to iterate over the number of local properties
-          write(*,*) "nLP =  ", n_local_properties, "  lp_index ", lp_index, size(local_properties0,1), n_sites0, size(local_properties0,2)
           do i4 = 1, n_local_properties
 
              call gpu_local_property_predict( local_property_models(i4)%n_sparse, soap,&
@@ -393,8 +387,6 @@ module gap_interface
 
              do i = 1, n_sites
                 i2 = in_to_out_site(i)
-                write(*,'(A,1X,I8,1X,I8,1X,I8,1X,I8,1X,F12.6)') "lps ",&
-                     i2, i, local_property_indexes(lp_index + i4), lp_index+i4, local_properties(i)
 
                 local_properties0(i2, local_property_indexes(lp_index + i4)) = &
                      local_properties0(i2, local_property_indexes(lp_index + i4)) +  local_properties(i)
