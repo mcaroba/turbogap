@@ -806,6 +806,9 @@ end if
       else if( keyword == "vdw_mbd_cent_appr" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_cent_appr
+      else if( keyword == "vdw_mbd_gpu" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_gpu
       else if( keyword == "vdw_polynomial" )then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_polynomial

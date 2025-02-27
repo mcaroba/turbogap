@@ -42,6 +42,8 @@ program turbogap
 #endif
   use bussi
   use xyz_module
+  use F_B_C
+  use iso_c_binding
   use misc
 
   implicit none
@@ -138,6 +140,27 @@ program turbogap
                           n_sparse_mpi_angle_3b(:), n_mpi_core_pot(:), vdw_n_sparse_mpi_soap_turbo(:), &
                           n_neigh_local(:)
   logical, allocatable :: compress_soap_mpi(:)
+
+! GPU stuff
+  real*8, allocatable :: A_sp(:), v_sp(:), res_sp(:)
+  integer*8, allocatable :: iA_sp(:), jA_sp(:)
+  integer :: dim_sp
+  !--- GPU VARIABLES FOR ALLOCATION ---!
+
+  type(c_ptr) :: cublas_handle, gpu_stream
+  integer :: n_omp, omp_task, omp_n_sites, n_omp_temp
+  integer, allocatable :: i_beg_omp(:), i_end_omp(:), j_beg_omp(:), j_end_omp(:)
+
+
+
+
+
+
+
+
+
+
+
 !**************************************************************************
 
 
@@ -174,6 +197,64 @@ program turbogap
   allocate( n_atom_pairs_by_rank(1:ntasks) )
 !**************************************************************************
 
+  !**************************************************************************
+
+
+
+  ! !---------------------------------------------------------------------!
+  ! !------   DELETE THIS CODE THIS IS JUST FOR CHECKIGN CUDA-GDB   ------!
+  ! !---------------------------------------------------------------------!
+
+  ! if ( rank == 0 ) then
+  !    i = 0
+  !    print *, "rank ", rank, ": pid ", getpid(), " on %s ready for attach\n.";
+  !    do while (0 == i)
+  !       call sleep(5)
+  !    end do
+  ! end if
+
+    !################################################!
+    !###---   OPENMP PARALLELIZATION STARTUP   ---###!
+    !################################################!
+
+!    n_omp = 1
+!    omp_task = 0
+
+!    !$omp parallel private(omp_task)
+!    !$ omp_task = omp_get_thread_num()
+!    !$omp end parallel
+
+    !--- Creating GPU communication ---!
+!    call get_time( time_create_streams( 1 ) )
+
+
+
+! SPARSE MATRIX TEST !!!!!!!!!!!!!!!!!!!!
+
+!NOTE: DO STUFF AFTER GPU STREAM IS INITIALIZED! 
+
+!  allocate(A_sp(1:9))
+!  allocate(v_sp(1:4))
+!  allocate(iA_sp(1:9))
+!  allocate(jA_sp(1:9))
+!  allocate(res_sp(1:4))
+
+!  A_sp = (/ 1, 2, 2, 3, 4, 3, 5, 4, 6 /)
+!  iA_sp = (/ 1, 1, 2, 2, 2, 3, 3, 4, 4 /)
+!  jA_sp = (/ 1, 2, 1, 3, 4, 2, 3, 2, 4 /)
+!  v_sp = (/ -1, -2, 3, 4 /)
+!  dim_sp = 4
+!  write(*,*) "A_sp", A_sp
+!  write(*,*) "iA_sp", iA_sp
+!  write(*,*) "jA_sp", jA_sp
+!  write(*,*) "v_sp", v_sp
+  !call sparse_mul(A_sp,v_sp,dim_sp,iA_sp,jA_sp,res_sp)
+!    call gpu_device_sync()
+!  call gpu_sparse_mul(A_sp,v_sp,dim_sp,iA_sp,jA_sp,res_sp,gpu_stream)
+!  write(*,*) "res_sp", res_sp
+
+!  deallocate(A_sp,v_sp,iA_sp,jA_sp,res_sp)
+! SPARSE MATRIX TEXT !!!!!!!!!!!!!!!!!!!!
 
 
 
@@ -345,6 +426,17 @@ program turbogap
     write(*,*)'_______________________________________/'
     END IF
 #endif
+write(*,*) "vdw_mbd_gpu", params%vdw_mbd_gpu
+write(*,*) "vdw_type", params%vdw_type
+if ( ( params%vdw_type == "ts+mbd" .or. params%vdw_type == "mbd" ) .and. params%vdw_mbd_gpu ) then
+    write(*,*) "Using GPU for MBD"
+    call gpu_set_device(rank) ! This works when each GPU has only 1 visible device. This is done in the slurm submission script
+
+    call create_cublas_handle(cublas_handle, gpu_stream)
+
+    call gpu_device_sync()
+end if
+
 !
 ! Second, we look for pot_file, which contains the GAP difinitions
   rewind(10)
@@ -1513,7 +1605,7 @@ include_2b = .true.
                                          params%vdw_sr_mbd, params%vdw_d_mbd, params%vdw_c6_ref, params%vdw_r0_ref, &
                                          params%vdw_alpha0_ref, params%vdw_mbd_grad, params%vdw_hirsh_grad, &
                                          params%vdw_polynomial, params%do_nnls, params%vdw_mbd_nfreq, &
-                                         2, params%vdw_mbd_cent_appr, &
+                                         2, params%vdw_mbd_cent_appr, params%vdw_mbd_gpu, &
                                          params%vdw_omega_ref, alpha_SCS, omega_SCS, include_2b, &
                                          params%poly_cut_xmin, params%poly_cut_xmax, &
 #ifdef _MPIF90
@@ -1534,7 +1626,7 @@ include_2b = .false.
                                          params%vdw_sr_mbd, params%vdw_d_mbd, params%vdw_c6_ref, params%vdw_r0_ref, &
                                          params%vdw_alpha0_ref, params%vdw_mbd_grad, params%vdw_hirsh_grad, &
                                          params%vdw_polynomial, params%do_nnls, params%vdw_mbd_nfreq, &
-                                         params%vdw_mbd_norder, params%vdw_mbd_cent_appr, &
+                                         params%vdw_mbd_norder, params%vdw_mbd_cent_appr, params%vdw_mbd_gpu, &
                                          params%vdw_omega_ref, alpha_SCS, omega_SCS, include_2b, &
                                          params%poly_cut_xmin, params%poly_cut_xmax, &
 #ifdef _MPIF90
@@ -1556,7 +1648,7 @@ include_2b = .true.
                                          params%vdw_sr_mbd, params%vdw_d_mbd, params%vdw_c6_ref, params%vdw_r0_ref, &
                                          params%vdw_alpha0_ref, params%vdw_mbd_grad, params%vdw_hirsh_grad, &
                                          params%vdw_polynomial, params%do_nnls, params%vdw_mbd_nfreq, &
-                                         params%vdw_mbd_norder, params%vdw_mbd_cent_appr, &
+                                         params%vdw_mbd_norder, params%vdw_mbd_cent_appr, params%vdw_mbd_gpu, &
                                          params%vdw_omega_ref, alpha_SCS, omega_SCS, include_2b, &
                                          params%poly_cut_xmin, params%poly_cut_xmax, &
 #ifdef _MPIF90

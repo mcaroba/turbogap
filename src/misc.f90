@@ -24,15 +24,212 @@
 ! HND X   Miguel A. Caro. Phys. Rev. B 100, 024112 (2019)
 ! HND X
 ! HND XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-
 module misc
-
-  !use psb_base_mod
-  !use psb_prec_mod
-  !use psb_krylov_mod
-  !use psb_util_mod
-
+  use types
+  use iso_c_binding
+  use F_B_C
   contains
+
+
+
+  subroutine gpu_sparse_mul(A,v,dim,iA,jA,res, gpu_stream_blas)
+
+  implicit none
+
+  real*8, intent(in), target :: A(:), v(:)
+  integer, intent(in) :: dim
+  real*8, intent(inout), target :: res(:)
+  integer*8, intent(in) :: iA(:), jA(:)
+  !real*8, allocatable :: resd(:), ress(:)
+  real*8, allocatable, target :: A_CSR_temp(:), this_v_temp(:)
+  real*8, allocatable, target :: A_CSR(:), this_v(:)
+  integer, allocatable, target :: j_CSR(:), i_CSR(:), ipointer(:)
+  integer, allocatable, target :: j_CSR_temp(:), i_CSR_temp(:), ipointer_temp(:)
+  real*8 :: t1, t2, td, ts, tcsr, s
+  !integer, allocatable :: iA(:), jA(:)
+  integer :: i, j, k, n, dim1, dim2, max_el, m
+  
+  type(c_ptr) :: gpu_stream, gpu_stream_blas
+  integer(c_size_t) :: st_A_CSR_d
+  integer(c_size_t) :: st_j_CSR_d
+  integer(c_size_t) :: st_i_CSR_d
+  integer(c_size_t) :: st_v_d
+  integer(c_size_t) :: st_ipointer_d
+  integer(c_size_t) :: st_res_d
+
+  type(c_ptr) :: A_CSR_d
+  type(c_ptr) :: j_CSR_d
+  type(c_ptr) :: i_CSR_d
+  type(c_ptr) :: ipointer_d
+  type(c_ptr) :: res_d
+  type(c_ptr) :: v_d
+  type(c_ptr) :: cusparse_handle 
+  !dim1 = size(A_dense,1)
+  !dim2 = size(A_dense,2)
+  dim1 = dim
+  dim2 = dim
+
+
+  ! Creating the stream here used by cusparse explicitly. 
+    call create_cusparse_handle(cusparse_handle, gpu_stream)
+
+  n = size(iA,1)
+
+  allocate( ipointer(1:dim1) )
+  allocate( A_CSR(1:n) )
+  allocate( j_CSR(1:n) )
+  allocate( i_CSR(1:dim1+1) )
+
+  ipointer = 0
+! Count how many elements in each row
+  do k = 1, n
+    ipointer(iA(k)) = ipointer(iA(k)) + 1
+  end do
+! Set a pointer to where in the A(1:n) array the elements of i start
+  k = ipointer(1)
+  ipointer(1) = 1
+  do i = 1, dim1-1
+    j = ipointer(i+1)
+    ipointer(i+1) = ipointer(i) + k
+    k = j
+  end do
+  do i = 1, dim1
+    i_CSR(i) = ipointer(i)
+  end do
+  i_CSR(dim1+1) = n + 1
+
+! Start to populate A_CSR, i_CSR and j_CSR
+  ipointer = i_CSR(1:dim1)
+  do k = 1, n
+    i = iA(k)
+    m = ipointer(i)
+    A_CSR(m) = A(k)
+    j_CSR(m) = jA(k)
+    ipointer(i) = m + 1
+  end do
+ 
+
+! Zero indexing, does it just work like this?
+  i_CSR = i_CSR - 1
+  j_CSR = j_CSR - 1
+!    deallocate( i_CSR, j_CSR, A_CSR ) 
+!    allocate( i_CSR(1:5) )
+!    allocate( j_CSR(1:9) )
+!    allocate( A_CSR(1:9) )
+
+
+!    dim1 = 4
+!    dim2 = 4 
+!    n = 9 
+!    i_CSR = (/ 0, 3, 4, 7, 9 /)
+!    j_CSR = (/ 0, 2, 3, 1, 0, 2, 3, 1, 3 /)
+    !i_CSR = i_CSR + 1
+    !j_CSR = j_CSR + 1
+!    A_CSR = (/ 1.d0, 2.d0, 3.d0, 4.d0, 5.d0, &
+!                                  6.d0, 7.d0, 8.d0, 9.d0 /)
+!    v = (/ 1.d0, 2.d0, 3.d0, 4.d0 /)
+!    res = (/ 0.d0, 0.d0, 0.d0, 0.d0 /)
+!    hY_result[]     = { 19.0f, 8.0f, 51.0f, 52.0f };
+   
+  st_A_CSR_d     = n * c_double  
+  st_j_CSR_d     = n * c_int  
+  st_i_CSR_d     = ( dim1 + 1) * c_int  
+  st_v_d         = dim1 * c_double  
+  st_ipointer_d  = dim1 * c_int  
+  st_res_d       = dim1 * c_double  
+ 
+
+
+    call gpu_device_sync()
+ 
+!  print *,"    A_CSR    " , size( A_CSR   ),  A_CSR   , st_A_CSR_d
+!  print *,"    j_CSR    " , size( j_CSR   ),  j_CSR   , st_j_CSR_d
+!  print *,"    i_CSR    " , size( i_CSR   ),  i_CSR   , st_i_CSR_d
+!  print *,"    v        " , size( v       ),  v       , st_v_d
+!  print *,"    ipointer " , size( ipointer),  ipointer, st_ipointer_d
+!  print *,"    res      " , size( res     ),  res     , st_res_d    
+
+
+  call gpu_malloc_all_blocking( A_CSR_d, st_A_CSR_d)
+  call gpu_malloc_all_blocking( j_CSR_d, st_j_CSR_d)
+  call gpu_malloc_all_blocking( i_CSR_d, st_i_CSR_d)
+  call gpu_malloc_all_blocking( v_d,     st_v_d)
+  call gpu_malloc_all_blocking( res_d, st_res_d)
+  
+!  print *,"    A_CSR    " , size( A_CSR   ),  A_CSR   , st_A_CSR_d
+!  print *,"    j_CSR    " , size( j_CSR   ),  j_CSR   , st_j_CSR_d
+!  print *,"    i_CSR    " , size( i_CSR   ),  i_CSR   , st_i_CSR_d
+!  print *,"    v        " , size( v       ),  v       , st_v_d
+!  print *,"    ipointer " , size( ipointer),  ipointer, st_ipointer_d
+!  print *,"    res      " , size( res     ),  res     , st_res_d    
+
+
+
+
+! j
+! j  allocate( ipointer_temp(1:dim1) )
+! j  allocate( A_CSR_temp(1:n) )
+! j  allocate( j_CSR_temp(1:n) )
+! j  allocate( i_CSR_temp(1:dim1+1) )
+! j  allocate( this_v_temp(dim1))
+
+    call gpu_device_sync()
+  call cpy_htod_blocking( c_loc( A_CSR ), A_CSR_d, st_A_CSR_d)
+  call cpy_htod_blocking( c_loc( j_CSR ), j_CSR_d, st_j_CSR_d)
+  call cpy_htod_blocking( c_loc( i_CSR ), i_CSR_d, st_i_CSR_d)
+  call cpy_htod_blocking( c_loc( v ),     v_d,     st_v_d)
+!  call cpy_htod( c_loc( res ), res_d, st_res_d, gpu_stream)
+  
+! j
+! j  call cpy_dtoh(  A_CSR_d,    c_loc( A_CSR_temp ),   st_A_CSR_d, gpu_stream)
+! j  call cpy_dtoh(  j_CSR_d,    c_loc( j_CSR_temp ),   st_j_CSR_d, gpu_stream)
+! j  call cpy_dtoh(  i_CSR_d,    c_loc( i_CSR_temp ),   st_i_CSR_d, gpu_stream)
+! j  call cpy_dtoh(  v_d,        c_loc( this_v_temp ),       st_v_d, gpu_stream)
+! j
+! j 
+! j  print *,"    A_CSR    temp copied back " , size( A_CSR   ),  A_CSR_temp
+! j  print *,"    j_CSR    temp copied back " , size( j_CSR   ),  j_CSR_temp
+! j  print *,"    i_CSR    temp copied back " , size( i_CSR   ),  i_CSR_temp
+! j  print *,"    v        temp copied back " , size( v       ),  this_v_temp 
+! j  print *,"    ipointer temp copied back " , size( ipointer),  ipointer_temp
+
+
+
+    call gpu_device_sync()
+  call gpu_memset_blocking(res_d, 0,  st_res_d)
+
+  
+  
+
+    call gpu_device_sync()
+!  write(*,*) "Before matmul"
+  call gpu_sparse_matrix_mul_kernel(dim1, dim2, n, &
+          A_CSR_d, &
+          j_CSR_d, &
+          i_CSR_d, &
+          ipointer_d, &
+          res_d, &
+          v_d, gpu_stream, cusparse_handle )
+!  write(*,*) "Before cpy_dtoh"
+    call gpu_device_sync()
+  ! call gpu_stream_sync(gpu_stream)
+  ! call gpu_device_sync()
+  call cpy_dtoh_blocking( res_d, c_loc( res ), st_res_d)
+  !call cpy_dtoh( c_loc( res ), res_d, st_res_d, gpu_stream)
+!  write(*,*) "cpy_dtoh done"
+
+  call gpu_free( A_CSR_d)
+  call gpu_free( j_CSR_d)
+  call gpu_free( i_CSR_d)
+  call gpu_free( v_d)
+  call gpu_free( res_d)
+
+   deallocate( ipointer, A_CSR, j_CSR, i_CSR )
+
+    call destroy_cusparse_handle(cusparse_handle, gpu_stream)
+  end subroutine
+
+
 
   subroutine integrate(method, x, y, a, b, integral)
 
@@ -276,7 +473,7 @@ module misc
 
 
 
-  subroutine power_iteration(val, ia, ja, dim, n_iter, b) !, myidx, nnz, n_iter, b)
+  subroutine power_iteration(val, ia, ja, dim, n_iter, b, do_gpu) !, myidx, nnz, n_iter, b, do_gpu)
 
     implicit none
 
@@ -287,6 +484,7 @@ module misc
     integer*8, intent(in) :: ia(:), ja(:) !, myidx(:)
     integer, intent(in) :: dim !, nnz
     integer, intent(in) :: n_iter
+    logical, intent(in) :: do_gpu
 !   Output variables
     real*8, intent(inout) :: b(:)
 !   Internal variables
@@ -294,6 +492,8 @@ module misc
     real*8, allocatable :: b_k(:), b_k1(:)
     real*8 :: b_k1_norm, time1, time2
     
+    type(c_ptr) :: gpu_stream
+
     !type(psb_ctxt_type) :: icontxt
     !integer(psb_ipk_) ::  iam, np, ip, jp, idummy, nr, info_psb
     !type(psb_desc_type) :: desc_a
@@ -316,7 +516,11 @@ module misc
     do k = 1, n_iter
 
       !call psb_spmm(1.d0, A_sp, b_k, 0.d0, b_k1, desc_a, info_psb, 'N')
-      call sparse_mul(val, b_k, dim, ia, ja, b_k1)
+      if ( do_gpu ) then
+        call gpu_sparse_mul(val, b_k, dim, ia, ja, b_k1, gpu_stream)
+      else
+        call sparse_mul(val, b_k, dim, ia, ja, b_k1)
+      end if
       !call dgemm('N', 'N', size(A,1), 1, size(A,2), 1.d0, A, size(A,1), b_k, size(A,2), 0.d0, b_k1, size(A,1))
       b_k1_norm = sqrt(dot_product(b_k1,b_k1))
       b_k = b_k1 / b_k1_norm
@@ -328,7 +532,7 @@ module misc
   end subroutine
 
 
-  subroutine lanczos_algorithm(val, ia, ja, dim, n_iter, l_min, l_max) !, myidx, nnz, n_iter, b)
+  subroutine lanczos_algorithm(val, ia, ja, dim, n_iter, l_min, l_max, do_gpu) !, myidx, nnz, n_iter, b, do_gpu)
 
     implicit none
 
@@ -339,6 +543,7 @@ module misc
     integer*8, intent(in) :: ia(:), ja(:) !, myidx(:)
     integer, intent(in) :: dim !, nnz
     integer, intent(in) :: n_iter
+    logical, intent(in) :: do_gpu
 !   Output variables
     !real*8, intent(inout) :: b(:)
     real*8, intent(inout) :: l_min, l_max
@@ -346,6 +551,9 @@ module misc
     integer :: k, N, info
     real*8, allocatable :: v(:,:), w(:,:), alpha(:), beta(:), T(:,:), work_arr(:)
     real*8 :: b_k1_norm, time1, time2
+
+    type(c_ptr) :: gpu_stream
+
 
     allocate( w(1:dim,1:n_iter) )
     allocate( v(1:dim,1:n_iter) )
@@ -358,7 +566,11 @@ module misc
     v(:,1) = v(:,1)-0.5d0
     v(:,1) = v(:,1)/norm2(v(:,1))
 
-    call sparse_mul(val, v(:,1), dim, ia, ja, w(:,1))
+    if ( do_gpu ) then
+      call gpu_sparse_mul(val, v(:,1), dim, ia, ja, w(:,1), gpu_stream)
+    else
+      call sparse_mul(val, v(:,1), dim, ia, ja, w(:,1))
+    end if
     alpha(1) = dot_product(v(:,1),w(:,1))
     w(:,1) = w(:,1) - alpha(1) * v(:,1)
 
@@ -371,7 +583,11 @@ module misc
         v(:,k) = v(:,k)-0.5d0
         v(:,k) = v(:,k)/norm2(v(:,k))
       end if
-      call sparse_mul(val, v(:,k), dim, ia, ja, w(:,k))
+      if ( do_gpu ) then
+        call gpu_sparse_mul(val, v(:,k), dim, ia, ja, w(:,k), gpu_stream)
+      else
+        call sparse_mul(val, v(:,k), dim, ia, ja, w(:,k))
+      end if
       alpha(k) = dot_product(v(:,k),w(:,k))
       w(:,k) = w(:,k) - alpha(k) * v(:,k) - beta(k) * v(:,k-1)
     end do

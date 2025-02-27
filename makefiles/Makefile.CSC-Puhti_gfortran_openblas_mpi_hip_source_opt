@@ -1,0 +1,44 @@
+# Copyright (c) 2020-2021 by Albert Bartók and Miguel Caro
+
+# This is an important note for those building TurboGAP on CSC's Mahti
+# supercomputer with this Makefile. Before compiling, make sure you have
+# loaded the correct module environment:
+#
+#     module reset
+#     module load gcc
+#     module load openblas
+#     module load openmpi
+#     module load cuda
+#
+# When you run TurboGAP, make sure to load this same environment at the top
+# of your Slurm submission script.
+
+# User-modifiable variables below
+
+# Compiler, preprocessor directives, etc.
+HOP_ROOT=/projappl/project_2002883/hop
+F90=mpif90 -lstdc++ -g -fbacktrace  -fcheck=all -fopenmp -I$(HOP_ROOT) -I$(HOP_ROOT)/source/hip  -DHOP_TARGET_CUDA
+# -I$(HOP_ROOT) -I$(HOP_ROOT)/source/hip  -DHOP_TARGET_CUDA 
+CU=nvcc -x cu -I$(HOP_ROOT) -I$(HOP_ROOT)/source/hip  -DHOP_TARGET_CUDA # -DCUDA
+PP=-cpp -D _MPIF90
+F90_MOD_DIR_OPT=-J
+
+CC=nvcc -x cu -lstdc++ -O0 -g -arch=sm_70 --ptxas-options=-v -I$(HOP_ROOT) -I$(HOP_ROOT)/source/hip  -DHOP_TARGET_CUDA # Optimization flags (uncomment second option to enable debugging tools)
+# -I$(HOP_ROOT) -I$(HOP_ROOT)/source/hip  -DHOP_TARGET_CUDA
+# -I$(HOP_ROOT) -I$(HOP_ROOT)/source/hip  -DHOP_TARGET_CUDA
+
+
+F90_OPTS= -fPIC -O0 -g -lcusparse   -lcudart   -lcublas -lcurand -ffree-line-length-none -fallow-argument-mismatch 
+CUDA_OPTS= -O0 -g -lcusparse -lcublas -lcurand -arch=sm_70 --ptxas-options=-v
+
+
+# gdwarf-4 needed for getting line information when sampling 
+#F90_OPTS+= -gdwarf-4
+#CUDA_OPTS+= -Xcompiler -gdwarf-4 
+#CUDA_OPTS+= -g -G 
+#F90_OPTS+= -g -ffpe-trap=zero,invalid,overflow,underflow -Wall -Wextra -Warray-temporaries -Wconversion -fimplicit-none -fbacktrace -ffree-line-length-0 -fcheck=all  -finit-real=nan
+
+#F90_OPTS+= -fbacktrace -fcheck=bounds -g -fcheck=all   -fbacktrace -Wall
+
+# BLAS and LAPACK libraries
+LIBS=-lmkl_gf_lp64 -lmkl_sequential -lmkl_core

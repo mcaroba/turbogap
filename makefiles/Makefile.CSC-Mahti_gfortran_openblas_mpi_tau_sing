@@ -1,0 +1,31 @@
+# Copyright (c) 2020-2021 by Albert Bartók and Miguel Caro
+
+# This is an important note for those building TurboGAP on CSC's Mahti
+# supercomputer with this Makefile. Before compiling, make sure you have
+# loaded the correct module environment:
+#
+#     module reset
+#     module load gcc
+#     module load openblas
+#     module load openmpi
+#     module load cuda
+#
+# When you run TurboGAP, make sure to load this same environment at the top
+# of your Slurm submission script.
+
+# User-modifiable variables below
+
+# Compiler, preprocessor directives, etc.
+F90=mpif90
+CU=nvcc
+PP=-cpp -D _MPIF90
+F90_MOD_DIR_OPT=-J
+
+# Optimization flags (uncomment second option to enable debugging tools)
+F90_OPTS= -gdwarf-4 -fPIC -O2 -L/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-11.1.0/nvhpc-23.1-ycph3kjgqmw7ekqqnpuhl77dzhxa7yes/Linux_x86_64/23.1/cuda/11.8/lib64 -lcudart  -L/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-11.1.0/nvhpc-23.1-ycph3kjgqmw7ekqqnpuhl77dzhxa7yes/Linux_x86_64/23.1/math_libs/11.8/targets/x86_64-linux/lib -lcublas -lcurand 
+CUDA_OPTS= -Xcompiler -gdwarf-4 -L/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-11.1.0/nvhpc-23.1-ycph3kjgqmw7ekqqnpuhl77dzhxa7yes/Linux_x86_64/23.1/math_libs/11.8/targets/x86_64-linux/lib  -lcublas -lcurand -I/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-11.1.0/nvhpc-23.1-ycph3kjgqmw7ekqqnpuhl77dzhxa7yes/Linux_x86_64/23.1/math_libs/11.8/include -arch=sm_80 --ptxas-options=-v 
+#CUDA_OPTS+= -g -G 
+#F90_OPTS+= -pg -fPIC -O3 -fcheck=bounds -g -fcheck=all   -fbacktrace #-Wall
+
+# BLAS and LAPACK libraries
+LIBS=  -gdwarf-4 -L/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-11.1.0/nvhpc-23.1-ycph3kjgqmw7ekqqnpuhl77dzhxa7yes/Linux_x86_64/23.1/cuda/11.8/lib64 -lcudart  -L/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-11.1.0/nvhpc-23.1-ycph3kjgqmw7ekqqnpuhl77dzhxa7yes/Linux_x86_64/23.1/math_libs/11.8/targets/x86_64-linux/lib -lcublas -lcurand -L/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-11.1.0/openblas-0.3.21-zqpb4x2xnk3chteycyzxjcgqpmn2byfi/lib -lopenblas

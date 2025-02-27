@@ -1065,7 +1065,7 @@ module vdw
                                        rcut, rcut_loc, rcut_mbd, rcut_mbd2, r_buffer, rjs, xyz, &
                                        hirshfeld_v_neigh, sR, d, c6_ref, r0_ref, alpha0_ref, do_derivatives, &
                                        do_hirshfeld_gradients, polynomial_expansion, do_nnls, n_freq, n_order, &
-                                       cent_appr, vdw_omega_ref, central_pol, central_omega, include_2b, &
+                                       cent_appr, do_gpu, vdw_omega_ref, central_pol, central_omega, include_2b, &
                                        x_min, x_max, &
                                        energies, forces0, virial, local_virial_diag0 )
 
@@ -1078,7 +1078,7 @@ module vdw
                           alpha0_ref(:), vdw_omega_ref, & !, hirshfeld_v(:), hirshfeld_v_neigh(:) !NOTE: uncomment this in final implementation
                           x_min, x_max
     integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:), n_freq, n_order
-    logical, intent(in) :: do_derivatives, do_hirshfeld_gradients, polynomial_expansion, do_nnls, include_2b, cent_appr
+    logical, intent(in) :: do_derivatives, do_hirshfeld_gradients, polynomial_expansion, do_nnls, include_2b, cent_appr, do_gpu
 !   Output variables
     real*8, intent(out) :: virial(1:3, 1:3)
 !   In-Out variables
@@ -1166,7 +1166,8 @@ module vdw
     integer*8, allocatable :: ia(:), ja(:), ia2(:), ja2(:) !, myidx(:)
     !real(psb_dpk_), 
     real*8, allocatable :: val(:,:), val2(:), val_sym(:,:), dval(:,:) !, val_sym_test(:,:)  !, val_xv(:,:), b_i(:,:), d_vec(:,:)
-
+! GPU stuff
+    type(c_ptr) :: gpu_stream    
 
 !central_pol = 10.d0
 !central_omega = 0.5d0
@@ -2884,8 +2885,13 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 if ( n_order > 2 ) then
                   do k2 = 1, n_order-2
                     !call psb_spmm(1.d0, A_sp, at_vec, 0.d0, at_n_vec, desc_a, info_psb, 'N')
-                    call sparse_mul(val(1:nnz,i2), at_vec, 3*n_mbd_sites, ia(1:nnz), &
-                                        ja(1:nnz), at_n_vec)
+                    if ( do_gpu ) then
+                      call gpu_sparse_mul(val(1:nnz,i2), at_vec, 3*n_mbd_sites, ia(1:nnz), &
+                                          ja(1:nnz), at_n_vec, gpu_stream)
+                    else
+                      call sparse_mul(val(1:nnz,i2), at_vec, 3*n_mbd_sites, ia(1:nnz), &
+                                          ja(1:nnz), at_n_vec)
+                    end if
                     !write(*,*) "at_n_vec", at_n_vec
                     at_vec = at_n_vec
                     !integrand_sp(i2) = integrand_sp(i2) - 1.d0/(k2+1) * at_n_vec(c1)
@@ -3016,7 +3022,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                   end do
                 else
                 call cpu_time(time5)
-                call power_iteration( val(1:nnz,i2), ia(1:nnz), ja(1:nnz), 3*n_mbd_sites, 60, b_vec ) !myidx, nnz, 20, b_vec )
+                call power_iteration( val(1:nnz,i2), ia(1:nnz), ja(1:nnz), 3*n_mbd_sites, 60, b_vec, do_gpu ) !myidx, nnz, 20, b_vec, do_gpu )
                 call cpu_time(time6)
                 !write(*,*) "Power iteration timing", time6-time5       
                 b_norm = dot_product(b_vec,b_vec)
@@ -3030,7 +3036,11 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 !call psb_cdasb(desc_a, info_psb)
                 !call psb_spasb(A_sp, desc_a, info_psb)
                 !call psb_spmm(1.d0, A_sp, b_vec, 0.d0, Ab, desc_a, info_psb, 'N')
-                call sparse_mul(val(1:nnz,i2), b_vec, 3*n_mbd_sites, ia(1:nnz), ja(1:nnz), Ab)
+                if ( do_gpu ) then
+                  call gpu_sparse_mul(val(1:nnz,i2), b_vec, 3*n_mbd_sites, ia(1:nnz), ja(1:nnz), Ab, gpu_stream)
+                else
+                  call sparse_mul(val(1:nnz,i2), b_vec, 3*n_mbd_sites, ia(1:nnz), ja(1:nnz), Ab)
+                end if
                 call cpu_time(time6)
                 !write(*,*) "AT-Ab mult timing", time6-time5
                 l_dom = dot_product(b_vec,Ab)/b_norm
@@ -3050,10 +3060,10 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 end do
                 call cpu_time(time5)
                 call power_iteration( val2(1:nnz2), ia2(1:nnz2), ja2(1:nnz2), &
-                                      3*n_mbd_sites, 60, b_vec) !myidx, nnz2, 20, b_vec )
+                                      3*n_mbd_sites, 60, b_vec, do_gpu) !myidx, nnz2, 20, b_vec, do_gpu )
                 call cpu_time(time6)
                 !write(*,*) "Power iteration timing second", time6-time5
-                !call power_iteration( AT(:,:,i2)-l_dom*I_mat, 50, b_vec )
+                !call power_iteration( AT(:,:,i2)-l_dom*I_mat, 50, b_vec, do_gpu )
                 b_norm = dot_product(b_vec,b_vec)
                 call cpu_time(time5)
                 !call dgemm('N', 'N',  3*n_mbd_sites, 1, 3*n_mbd_sites, 1.d0, AT(:,:,i2)-l_dom*I_mat, &
@@ -3065,8 +3075,13 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 !call psb_cdasb(desc_a, info_psb)
                 !call psb_spasb(A_sp, desc_a, info_psb)
                 !call psb_spmm(1.d0, A_sp, b_vec, 0.d0, Ab, desc_a, info_psb, 'N')
-                call sparse_mul(val2(1:nnz2), b_vec, 3*n_mbd_sites, ia2(1:nnz2), &
-                                ja2(1:nnz2), Ab)
+                if ( do_gpu ) then
+                  call gpu_sparse_mul(val2(1:nnz2), b_vec, 3*n_mbd_sites, ia2(1:nnz2), &
+                                  ja2(1:nnz2), Ab, gpu_stream)
+                else
+                  call sparse_mul(val2(1:nnz2), b_vec, 3*n_mbd_sites, ia2(1:nnz2), &
+                                  ja2(1:nnz2), Ab)
+                end if
                 call cpu_time(time6)
                 !write(*,*) "AT-Ab 2nd mult timing", time6-time5
                 if ( l_dom < 0.d0 ) then
@@ -3123,7 +3138,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 if ( .not. lanczos ) then
                 call cpu_time(time5)
                 call power_iteration( val_sym(1:nnz,i2), ia(1:nnz), ja(1:nnz), &
-                                      3*n_mbd_sites, 60, b_vec ) !myidx, nnz, 20, b_vec )
+                                      3*n_mbd_sites, 60, b_vec, do_gpu ) !myidx, nnz, 20, b_vec, do_gpu )
                 call cpu_time(time6)
                 if ( do_timing ) then
                 write(*,*) "Power iteration timing", time6-time5
@@ -3139,7 +3154,11 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 !call psb_cdasb(desc_a, info_psb)
                 !call psb_spasb(A_sp_sym, desc_a, info_psb)
                 !call psb_spmm(1.d0, A_sp_sym, b_vec, 0.d0, Ab, desc_a, info_psb, 'N')
-                call sparse_mul(val_sym(1:nnz,i2), b_vec, 3*n_mbd_sites, ia(1:nnz), ja(1:nnz), Ab)
+                if ( do_gpu ) then
+                  call gpu_sparse_mul(val_sym(1:nnz,i2), b_vec, 3*n_mbd_sites, ia(1:nnz), ja(1:nnz), Ab, gpu_stream)
+                else
+                  call sparse_mul(val_sym(1:nnz,i2), b_vec, 3*n_mbd_sites, ia(1:nnz), ja(1:nnz), Ab)
+                end if
                 call cpu_time(time6)
                 !write(*,*) "AT-Ab mult timing", time6-time5
                 l_dom = dot_product(b_vec,Ab)/b_norm
@@ -3159,12 +3178,12 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 end do
                 call cpu_time(time5)
                 call power_iteration( val2(1:nnz2), ia2(1:nnz2), ja2(1:nnz2), &
-                                      3*n_mbd_sites, 60, b_vec ) !myidx, nnz2, 20, b_vec )
+                                      3*n_mbd_sites, 60, b_vec, do_gpu ) !myidx, nnz2, 20, b_vec, do_gpu )
                 call cpu_time(time6)
                 if ( do_timing ) then
                 write(*,*) "Power iteration timing second", time6-time5
                 end if
-                !call power_iteration( AT(:,:,i2)-l_dom*I_mat, 50, b_vec )
+                !call power_iteration( AT(:,:,i2)-l_dom*I_mat, 50, b_vec, do_gpu )
                 b_norm = dot_product(b_vec,b_vec)
                 call cpu_time(time5)
                 !call dgemm('N', 'N',  3*n_mbd_sites, 1, 3*n_mbd_sites, 1.d0, AT(:,:,i2)-l_dom*I_mat, &
@@ -3176,8 +3195,13 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 !call psb_cdasb(desc_a, info_psb)
                 !call psb_spasb(A_sp_sym, desc_a, info_psb)
                 !call psb_spmm(1.d0, A_sp_sym, b_vec, 0.d0, Ab, desc_a, info_psb, 'N')
-                call sparse_mul(val2(1:nnz2), b_vec, 3*n_mbd_sites, ia2(1:nnz2), &
-                                ja2(1:nnz2), Ab)
+                if ( do_gpu ) then
+                  call gpu_sparse_mul(val2(1:nnz2), b_vec, 3*n_mbd_sites, ia2(1:nnz2), &
+                                  ja2(1:nnz2), Ab, gpu_stream)
+                else
+                  call sparse_mul(val2(1:nnz2), b_vec, 3*n_mbd_sites, ia2(1:nnz2), &
+                                  ja2(1:nnz2), Ab)
+                end if
                 call cpu_time(time6)
                 !write(*,*) "AT-Ab 2nd mult timing", time6-time5
                 if ( l_dom < 0.d0 ) then
@@ -3199,7 +3223,7 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 end do
                 call cpu_time(time5)
                 call lanczos_algorithm( val2(1:nnz2), ia2(1:nnz2), ja2(1:nnz2), &
-                                        3*n_mbd_sites, 20, l_min, l_max )
+                                        3*n_mbd_sites, 20, l_min, l_max, do_gpu )
                 call cpu_time(time6)
                 if ( do_timing ) then
                   write(*,*) "Lanczos timing", time6-time5
@@ -3323,8 +3347,13 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                 !           3, AT(:,:,i2), 3*n_mbd_sites, 0.d0, temp_mat, 3)
                 !call psb_spmm(1.d0, A_sp, AT_power, 0.d0, temp_mat, desc_a, info_psb, 'N')
                 do c1 = 1, 3
-                  call sparse_mul(val(1:nnz,i2), AT_power(:,c1), 3*n_mbd_sites, &
-                                  ia(1:nnz), ja(1:nnz), temp_mat(:,c1))
+                  if ( do_gpu ) then
+                    call gpu_sparse_mul(val(1:nnz,i2), AT_power(:,c1), 3*n_mbd_sites, &
+                                    ia(1:nnz), ja(1:nnz), temp_mat(:,c1), gpu_stream)
+                  else
+                    call sparse_mul(val(1:nnz,i2), AT_power(:,c1), 3*n_mbd_sites, &
+                                    ia(1:nnz), ja(1:nnz), temp_mat(:,c1))
+                  end if
                 end do
                 !do c1 = 1, 3
                 !  call cpu_time(time5)
@@ -3350,8 +3379,13 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                   call cpu_time(time5)
                   !call psb_spmm(1.d0, A_sp_sym, AT_sym_power, 0.d0, temp_mat, desc_a, info_psb, 'N')
                   do c1 = 1, 3
-                    call sparse_mul(val_sym(1:nnz,i2), AT_sym_power(:,c1), 3*n_mbd_sites, &
-                                    ia(1:nnz), ja(1:nnz), temp_mat(:,c1))
+                    if ( do_gpu ) then
+                      call gpu_sparse_mul(val_sym(1:nnz,i2), AT_sym_power(:,c1), 3*n_mbd_sites, &
+                                      ia(1:nnz), ja(1:nnz), temp_mat(:,c1), gpu_stream)
+                    else
+                      call sparse_mul(val_sym(1:nnz,i2), AT_sym_power(:,c1), 3*n_mbd_sites, &
+                                      ia(1:nnz), ja(1:nnz), temp_mat(:,c1))
+                    end if
                   end do
                   AT_sym_power = temp_mat
                   if ( k2 > 3 ) then
@@ -3380,9 +3414,15 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                     if ( rjs_0_mbd(k3+1) .le. (rcut_force)/Bohr ) then
                       q = q + 1
                       do c1 = 1, 3
-                        call sparse_mul(val(1:nnz,i2), AT_power_full(:,3*(q-1)+c1), &
-                                    3*n_mbd_sites, ia(1:nnz), ja(1:nnz), &
-                                    temp_mat_forces(:,3*(q-1)+c1))
+                        if ( do_gpu ) then
+                          call gpu_sparse_mul(val(1:nnz,i2), AT_power_full(:,3*(q-1)+c1), &
+                                      3*n_mbd_sites, ia(1:nnz), ja(1:nnz), &
+                                      temp_mat_forces(:,3*(q-1)+c1), gpu_stream)
+                        else
+                          call sparse_mul(val(1:nnz,i2), AT_power_full(:,3*(q-1)+c1), &
+                                      3*n_mbd_sites, ia(1:nnz), ja(1:nnz), &
+                                      temp_mat_forces(:,3*(q-1)+c1))
+                        end if
                       end do
                     end if
                     if ( p .ne. n_mbd_sites ) then
@@ -3436,9 +3476,15 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                     if ( rjs_0_mbd(k3+1) .le. (rcut_force)/Bohr ) then
                       q = q + 1
                       do c1 = 1, 3
-                        call sparse_mul(val(1:nnz,i2), AT_power_full(:,3*(q-1)+c1), &
-                                    3*n_mbd_sites, ia(1:nnz), ja(1:nnz), &
-                                    temp_mat_forces(:,3*(q-1)+c1))
+                        if ( do_gpu ) then
+                          call gpu_sparse_mul(val(1:nnz,i2), AT_power_full(:,3*(q-1)+c1), &
+                                      3*n_mbd_sites, ia(1:nnz), ja(1:nnz), &
+                                      temp_mat_forces(:,3*(q-1)+c1), gpu_stream)
+                        else
+                          call sparse_mul(val(1:nnz,i2), AT_power_full(:,3*(q-1)+c1), &
+                                      3*n_mbd_sites, ia(1:nnz), ja(1:nnz), &
+                                      temp_mat_forces(:,3*(q-1)+c1))
+                        end if
                       end do
                     end if
                     if ( p .ne. n_mbd_sites ) then
@@ -5840,16 +5886,26 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                           do k2 = 1, n_order-2
                             !call cpu_time(time3)
                             !call psb_spmm(1.d0, A_sp, g_vec, 0.d0, g_n_vec, desc_a, info_psb, 'N')
-                            call sparse_mul(val(1:nnz,j), g_vec, 3*n_mbd_sites, ia(1:nnz), &
-                                            ja(1:nnz), g_n_vec)
+                            if ( do_gpu ) then
+                              call gpu_sparse_mul(val(1:nnz,j), g_vec, 3*n_mbd_sites, ia(1:nnz), &
+                                              ja(1:nnz), g_n_vec, gpu_stream)
+                            else
+                              call sparse_mul(val(1:nnz,j), g_vec, 3*n_mbd_sites, ia(1:nnz), &
+                                              ja(1:nnz), g_n_vec)
+                            end if
                             !call cpu_time(time4)
                             !write(*,*) "Sparse matrix vector multiplication timing", time4-time3, j, p, c1, k2
                             g_vec = g_n_vec
                             integrand(j) = integrand(j) + g_n_vec(3*(p-1)+c1)
                             if ( c3 == 1 .and. do_total_energy ) then
                               !call psb_spmm(1.d0, A_sp, at_vec, 0.d0, at_n_vec, desc_a, info_psb, 'N')
-                              call sparse_mul(val(1:nnz,j), at_vec, 3*n_mbd_sites, ia(1:nnz), &
-                                              ja(1:nnz), at_n_vec)
+                              if ( do_gpu ) then
+                                call gpu_sparse_mul(val(1:nnz,j), at_vec, 3*n_mbd_sites, ia(1:nnz), &
+                                                ja(1:nnz), at_n_vec, gpu_stream)
+                              else
+                                call sparse_mul(val(1:nnz,j), at_vec, 3*n_mbd_sites, ia(1:nnz), &
+                                                ja(1:nnz), at_n_vec)
+                              end if
                               at_vec = at_n_vec
                               total_integrand(j) = total_integrand(j) - at_n_vec(3*(p-1)+c1)/(k2+1)
                             end if
@@ -5890,23 +5946,25 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                   !write(*,*) "Total energy of sphere", i, E_tot
                 end if
               else
-                ! Diagonalization stuff:
-                allocate( AT_copy(1:3*n_mbd_sites,1:3*n_mbd_sites) )
-                allocate( WR(1:3*n_mbd_sites) )
-                allocate( WI(1:3*n_mbd_sites) )
-                AT_copy = 0.d0
-                WR = 0.d0
-                WI = 0.d0
-                !allocate( VL(1,1) )
-                allocate( VR(1:3*n_mbd_sites,1:3*n_mbd_sites) )
-                allocate( VR_inv(1:3*n_mbd_sites,1:3*n_mbd_sites) )
-                allocate( work_mbd(1:24*n_mbd_sites) )
-                VR = 0.d0
-                VR_inv = 0.d0
-                work_mbd = 0.d0
-                allocate( ipiv_mbd(1:3*n_mbd_sites) )
-                allocate( temp_mat(1:3*n_mbd_sites,1:3*n_mbd_sites) )
-                temp_mat = 0.d0
+                if ( do_log ) then
+                  ! Diagonalization stuff:
+                  allocate( AT_copy(1:3*n_mbd_sites,1:3*n_mbd_sites) )
+                  allocate( WR(1:3*n_mbd_sites) )
+                  allocate( WI(1:3*n_mbd_sites) )
+                  AT_copy = 0.d0
+                  WR = 0.d0
+                  WI = 0.d0
+                  !allocate( VL(1,1) )
+                  allocate( VR(1:3*n_mbd_sites,1:3*n_mbd_sites) )
+                  allocate( VR_inv(1:3*n_mbd_sites,1:3*n_mbd_sites) )
+                  allocate( work_mbd(1:24*n_mbd_sites) )
+                  VR = 0.d0
+                  VR_inv = 0.d0
+                  work_mbd = 0.d0
+                  allocate( ipiv_mbd(1:3*n_mbd_sites) )
+                  allocate( temp_mat(1:3*n_mbd_sites,1:3*n_mbd_sites) )
+                  temp_mat = 0.d0
+                end if
                 allocate( log_integrand(1:n_freq) )
                 allocate( integrand_pol(1:n_freq) )
                 allocate( virial_integrand(1:3,1:n_freq) )
@@ -6037,7 +6095,9 @@ if ( abs(rcut_tsscs) < 1.d-10 ) then
                     end if
                   end if
                 end do
-                deallocate( AT_copy, WR, WI, VR, VR_inv, work_mbd, ipiv_mbd, temp_mat )
+                if ( do_log ) then
+                  deallocate( AT_copy, WR, WI, VR, VR_inv, work_mbd, ipiv_mbd, temp_mat )
+                end if
                 if ( .not. cent_appr ) then
                   deallocate( G_mat )
                 end if

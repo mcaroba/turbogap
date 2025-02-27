@@ -27,7 +27,44 @@
 
 module types
 
+  use iso_c_binding
+
   implicit none
+
+ 
+  type gpu_host_storage_type
+     real*8, allocatable :: xyz_k_h(:,:), pair_distribution_partial_h(:), pair_distribution_partial_der_h(:,:), forces_h(:,:), rjs_index_h(:)
+     real*8 :: virial_h(1:3,1:3)
+     integer, allocatable :: k_index_h(:), j2_index_h(:)
+  end type gpu_host_storage_type
+
+  
+  type gpu_host_batch_storage_type
+     type( gpu_host_storage_type ), allocatable :: host(:)
+  end type gpu_host_batch_storage_type
+  
+ 
+
+  ! each one of these will be allocated 1:n_dim_partial
+  type gpu_storage_type
+     integer, allocatable :: nk(:)
+     type( c_ptr ), allocatable :: nk_d(:), k_index_d(:), j2_index_d(:), xyz_k_d(:), &
+          pair_distribution_partial_d(:), pair_distribution_partial_der_d(:), nk_flags_sum_d(:), nk_flags_d(:), rjs_index_d(:)
+     integer( c_size_t ), allocatable :: st_nk_d(:), st_k_index_d(:), st_j2_index_d(:), &
+          st_pair_distribution_partial_d(:), st_pair_distribution_partial_der_d(:)
+  end type gpu_storage_type
+
+
+  ! type gpu_batch_storage_type
+  !    type( gpu_storage_type ), allocatable :: device(:)
+  ! end type gpu_batch_storage_type
+
+  
+  type gpu_neigh_storage_type
+     type( c_ptr ) :: n_neigh_d, species_d, neighbors_list_d, neighbor_species_d, rjs_d, xyz_d
+     integer( c_size_t ) :: st_n_neigh_d, st_species_d, st_neighbors_list_d, st_neighbor_species_d, st_rjs_d, st_xyz_d     
+  end type gpu_neigh_storage_type
+  
 
 ! GAP+descriptor data structure for SOAP
   type soap_turbo
@@ -102,7 +139,7 @@ module types
                write_local_energies = .true., write_property(1:11) = .true., &
                write_array_property(1:8) = .true., write_masses = .false., write_fixes = .true., &
                variable_time_step = .false., vdw_mbd_grad = .false., vdw_hirsh_grad = .false., &
-               vdw_polynomial = .false., do_nnls = .true., vdw_mbd_cent_appr = .true.
+               vdw_polynomial = .false., do_nnls = .true., vdw_mbd_cent_appr = .true., vdw_mbd_gpu = .true.
   end type input_parameters
 
 end module

@@ -1,4 +1,4 @@
-atoms_file = 'bp_2x.xyz'
+atoms_file = 'BP96.xyz'
 !atoms_file = 'bp_2x_scell_strain.xyz'  ! REMEMBER: EXPLICIT REPLICA FINITE DIFFERENCE REQUIRES A SUPERCELL!!!!!
 !atoms_file = 'black_phosphorus_10.50.xyz'
 !atoms_file = 'all_poscars.xyz'
@@ -44,5 +44,6 @@ vdw_polynomial = .false.  ! Use polynomial approximation for inverse matrices. T
 vdw_omega_ref = 1.3d0     ! Reference frequency value used for SCS characteristic frequency calculation. Might depend on the material (for now).
 do_nnls = .false.         ! NNLS for frequency fitting to avoid calculating many frequency points. Use at least vdw_mbd_nfreq = 2*vdw_mbd_norder+1 or it might be unstable (overfitting)
 vdw_mbd_cent_appr = .true.
+vdw_mbd_gpu = .true.
 poly_cut_xmin = 3.d0
 poly_cut_xmax = 10.d0
