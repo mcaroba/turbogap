@@ -1704,13 +1704,13 @@ program turbogap
                     n_sites_this = size(der_neighbors,1)
                     n_soap = size(soap_cart_der, 2)
                     n_atom_pairs = size(der_neighbors_list,1)
-                    write(10, *) n_sites, n_soap, n_atom_pairs
+                    write(10, *) n_sites_this, n_soap, n_atom_pairs
                     k = 1
                     k2 = 0
                     do i2 = 1, n_sites_this
                        write(10,*) der_neighbors_list(k), der_neighbors(i2), der_neighbors_list(k:k+der_neighbors(i2)-1)
-                       k = k + der_neighbors(i)
-                       do j = 1, der_neighbors(i)
+                       k = k + der_neighbors(i2)
+                       do j = 1, der_neighbors(i2)
                           k2 = k2 + 1
                           write(10, '(*(ES24.15))') soap_cart_der(1, 1:n_soap, k2)
                           write(10, '(*(ES24.15))') soap_cart_der(2, 1:n_soap, k2)
