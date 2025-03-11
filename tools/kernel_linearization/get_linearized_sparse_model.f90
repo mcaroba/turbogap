@@ -37,15 +37,13 @@ program get_linear_model
 
   implicit none
 
-  integer :: n_soap, n_linear, n_sparse, n_soap_turbo = 0, zeta, iostatus, i, j, n, l
+  integer :: n_soap, n_linear, n_sparse, n_soap_turbo = 0, zeta, i, j, n, l
   integer :: n_sites = 1000 ! n. atoms used for timings tests
-  character*1024 :: file_gap, filename, temp
-  character*64 :: keyword
-  character*128 :: cjunk
-  character*1024, allocatable :: file_alphas(:), file_desc(:), file_gap_updated(:)
+  character*1024 :: file_gap, filename
+  character*1024, allocatable :: file_alphas(:), file_desc(:)
   real*8, allocatable :: zetas(:), alphas(:), alphas_linear(:)
   real*8, allocatable :: Qs(:,:), Ms_linear(:,:)
-  logical :: do_check = .true., do_linear = .false.
+  logical :: do_check = .false., do_linear = .false.
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 ! Parameters that should be provided by the user
@@ -76,8 +74,8 @@ program get_linear_model
     end do
     write(*,*) "n_sites = ", n_sites
     write(*,*) "zeta = ", zeta
-    write(*,*) "n_sparse = ", size(Qs, 1)
-    write(*,*) "n_soap = ", size(Qs, 2)
+    write(*,*) "n_sparse = ", size(Qs, 2)
+    write(*,*) "n_soap = ", size(Qs, 1)
     write(*,*) "n_linear = ", n_linear
 
 !   Check whether kernel linearization is a better option
@@ -89,12 +87,12 @@ program get_linear_model
 
 !   Compute the linearized sparse contributions if favourable
     if( do_linear )then
-      write(*,*) 'Getting linearized sparse contribution ...'
+      write(*,*) 'Getting linearized sparse contribution for energies ...'
 !     ENERGIES
       alphas_linear = get_linearized_sparse(zeta, alphas, transpose(Qs))
 !     save them
-      filename = trim(file_alphas(n))
-      l = len(filename) - 4
+      l = len(trim(file_alphas(n))) - 4
+      filename = file_alphas(n)
       filename = filename(1:l) // "_linear.dat"
       open(unit=10, file=filename, status="unknown")
       do i = 1, n_linear
@@ -103,13 +101,13 @@ program get_linear_model
       close(10)
 
 !     FORCES
-      allocate( Ms_linear(1:n_soap,1:n_linear) )
-      Ms_linear = 1.d0
-!      Ms_linear = get_linearized_sparse_forces(zeta, alphas, Qs)
+      write(*,*) 'Getting linearized sparse contribution for forces ...'
+      Ms_linear = get_linearized_sparse_forces(zeta, alphas, transpose(Qs))
+      write(*,*) size(Ms_linear,1), size(Ms_linear,2)
 !     add the file for forces contributions
       filename = trim(file_desc(n)) // "_linear"
       open(unit=10, file=filename, status="unknown")
-      do i = 1, n_linear
+      do i = 1, size(Ms_linear, 2) ! note that n_linear != size(Ms_linear, 2), we use (zeta-1) for forces
         do j = 1, n_soap
           write(10,*) Ms_linear(j, i)
         end do

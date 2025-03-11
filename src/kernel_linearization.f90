@@ -217,13 +217,10 @@ module kernel_linearization
     m = size(V, 1) ! this dim. does not change
     n_soap = size(V, 2)
 
-!   check that V_lin has the right size!!!!
-
-    V_lin(1:m, 1:n_soap) = V**zeta
-
-!   this implementation is slow in fortran (better to take whole rows than columns)!!!
-!   but I would need to transpose the matrices then (given how we allocate them in TurboGAP)
-    if( zeta == 2 )then
+    if( zeta == 1 )then
+      V_lin = V
+    else if( zeta == 2 )then
+      V_lin(1:m, 1:n_soap) = V**zeta
       k = n_soap + 1
       do i = 1, n_soap
         do j = i + 1, n_soap
@@ -232,6 +229,7 @@ module kernel_linearization
         end do
       end do
     else if( zeta == 3 )then
+      V_lin(1:m, 1:n_soap) = V**zeta
       k = n_soap + 1
       do i = 1, n_soap
         do j = i + 1, n_soap
@@ -264,7 +262,7 @@ module kernel_linearization
 
     integer, intent(in) :: zeta, n_soap
     real*8, intent(out) :: M(:,:)
-    integer :: i, n_sparse, n_linear
+    integer :: n_sparse, n_linear
 
     n_sparse = size(M, 1)
     n_linear = size(M, 2)
@@ -294,7 +292,7 @@ module kernel_linearization
 
     integer, intent(in) :: zeta
     real*8, intent(in) :: alphas(:), Qs(:,:)
-    integer :: n_soap, n_sparse, n_linear, i, m
+    integer :: n_soap, n_sparse, n_linear, i
     real*8, allocatable :: Qs_linear(:,:), multinomial_coeffs(:,:)
     real*8, allocatable :: alphas_linear(:)
 
@@ -354,19 +352,21 @@ module kernel_linearization
     allocate( Ms_linear(1:n_soap, 1:n_linear) )
     allocate( Qs_linear(1:n_sparse, 1:n_linear) )
     allocate( Qss(1:n_sparse, 1:n_soap) )
+    allocate( multinomial_coeffs(1:n_sparse, 1:n_linear) )
     Ms_linear = 0.d0
     Qs_linear = 0.d0
    
 !   Get the linearized contribution
-    do i=1, n_soap
-      Qss(1:n_sparse, i) = alphas * Qs(1:n_sparse, i)
-    end do
     call get_linearized_desc(zeta0, Qs, Qs_linear)
     call get_multinomial_coeffs(zeta0, n_soap, multinomial_coeffs)
     Qs_linear = Qs_linear * multinomial_coeffs
-    call dgemm('t','n', n_soap, n_linear, n_sparse, 1.d0, Qss, n_linear, Qs_linear, &
-                n_linear, 0.d0, Ms_linear, n_soap)
-
+!   hadamard product with a vector 
+    do i=1, n_soap
+      Qss(1:n_sparse, i) = Qs(1:n_sparse, i) * alphas
+    end do
+!   (1:n_soap, 1:n_linear) = (1:n_sparse, 1:n_soap)^T * (1:n_sparse, 1:n_linear)
+    call dgemm('t','n', n_soap, n_linear, n_sparse, 1.d0, Qss, n_sparse, Qs_linear, &
+                n_sparse, 0.d0, Ms_linear, n_soap)
     deallocate( Qs_linear, Qss )
 
   end function
