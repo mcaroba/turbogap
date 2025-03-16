@@ -461,7 +461,7 @@ extern "C" void cuda_set_device( int my_rank)
   gpuErrchk(hipSetDevice(my_rank%num_gpus));
   gpuErrchk(hipGetDevice(&mygpuid));
   /*gpuErrchk(hipSetDevice(0));*/
-  printf("\n Seta Aset at %d %d %d %d\n", num_gpus, my_rank%num_gpus,my_rank, mygpuid);
+//  printf("\n Seta Aset at %d %d %d %d\n", num_gpus, my_rank%num_gpus,my_rank, mygpuid);
   //exit(0);
   return;
 }
@@ -2585,6 +2585,13 @@ extern "C" void cpy_htoh_pinned(void *src, void *dest, size_t size ) {
 	    hipMemcpy( dest, src, size, hipMemcpyHostToHost )
 	    );
   printf("%s\n", hipGetErrorString(hipGetLastError()));
+}
+
+
+extern "C" void gpu_check_error(){
+  hipError_t code=hipDeviceSynchronize() ;
+  printf("\n %s \n", hipGetErrorString(code));
+  gpuErrchk( code );
 }
 
 

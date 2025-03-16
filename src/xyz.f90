@@ -67,7 +67,7 @@ module xyz_module
 !
 
     subroutine get_xyz_energy_string(energies_soap, energies_2b,&
-         & energies_3b, energies_core_pot, energies_vdw, energies_exp&
+         & energies_3b, energies_core_pot, energies_vdw, energies_estat,  energies_exp&
          &, energies_lp, energies_pdf, energies_sf, energies_xrd, energies_nd,&
          & valid_pdf, valid_sf, valid_xrd, valid_nd,  do_pair_distribution,&
          & do_structure_factor, do_xrd, do_nd, string)
@@ -75,7 +75,7 @@ module xyz_module
       real*8, intent(in), allocatable :: energies_soap(:), energies_2b(:),&
            & energies_3b(:), energies_core_pot(:), energies_vdw(:),&
            & energies_exp(:), energies_lp(:), energies_pdf(:), energies_sf(:),&
-           & energies_xrd(:), energies_nd(:)
+           & energies_xrd(:), energies_nd(:), energies_estat(:)
       logical, intent(in) :: valid_pdf, valid_sf, valid_xrd, valid_nd, do_pair_distribution,&
            & do_structure_factor, do_xrd, do_nd
       character*1024, intent(out) :: string
@@ -97,6 +97,9 @@ module xyz_module
       write(temp_string, "(F16.8)") sum(energies_vdw)
       write(string, "(A)") adjustl(trim(string)) // " energy_vdw=" // trim(adjustl(temp_string))
 
+      write(temp_string, "(F16.8)") sum(energies_estat)
+      write(string, "(A)") adjustl(trim(string)) // " energy_estat=" // trim(adjustl(temp_string))
+      
       write(temp_string, "(F16.8)") sum(energies_exp)
       write(string, "(A)") adjustl(trim(string)) // " energy_exp=" // trim(adjustl(temp_string))
 

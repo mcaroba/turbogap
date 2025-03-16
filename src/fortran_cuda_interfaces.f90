@@ -459,7 +459,7 @@ MODULE F_B_C
         type(c_ptr) :: energy_3b_d, forces_3b_d, virials_3b_d,energy_3b_h,forces_3b_h,virials_3b_h
         type(c_ptr) :: stream
         logical(c_bool), value :: do_forces
-	      integer(c_int), value :: n_sites, n_sites0
+        integer(c_int), value :: n_sites, n_sites0
       end subroutine
 
       subroutine gpu_device_sync() bind(C,name="gpu_device_sync")
@@ -479,6 +479,87 @@ MODULE F_B_C
         implicit none
       end subroutine
 
+
+      subroutine gpu_check_error() bind(C,name="gpu_check_error")
+        use iso_c_binding
+        implicit none
+      end subroutine
+
+      subroutine gpu_inclusive_scan_int(size, array_d, stream) bind(C,name="gpu_inclusive_scan_int")
+        use iso_c_binding
+        integer(c_int), value ::  size
+        type(c_ptr), value :: array_d
+        type(c_ptr) :: stream        
+      end subroutine 
+
+      
+      subroutine gpu_get_electrostatics_nk(i_beg, i_end, n_pairs,&
+        n_neigh_d, n_neigh_index_d, rjs_d, xyz_d, r_cut,&
+        nk_out_d, nk_flags_d, nk_flags_sum_d, stream)  bind(C,name="gpu_get_electrostatics_nk")
+        use iso_c_binding
+        implicit none
+        integer(c_int), value ::  i_beg, i_end, n_pairs
+        type(c_ptr), value :: n_neigh_d, rjs_d, xyz_d, nk_flags_d, nk_flags_sum_d, n_neigh_index_d
+        real(c_double), value :: r_cut
+        type(c_ptr), value ::  nk_out_d
+        type(c_ptr) :: stream        
+      end subroutine gpu_get_electrostatics_nk
+
+
+      subroutine gpu_set_electrostatics_k_index(i_beg, i_end, n_pairs, n_sites0, neighbors_list_d,&
+           rjs_d, xyz_d, &
+           charges_d, &
+           neighbor_charges_index_d, &
+           charge_gradients_d, charge_gradients_index_d,&
+           k_index_d, j2_index_d, rjs_index_d,  xyz_k_d, &
+           nk_sum_flags_d, stream)  bind(C,name="gpu_set_electrostatics_k_index")
+        use iso_c_binding
+        implicit none
+        integer(c_int), value ::  i_beg, i_end, n_sites0, n_pairs
+        type(c_ptr), value :: neighbors_list_d, xyz_d, rjs_d, charge_gradients_d, charge_gradients_index_d
+        type(c_ptr), value ::  k_index_d, j2_index_d, rjs_index_d, xyz_k_d, nk_sum_flags_d, charges_d, neighbor_charges_index_d
+        type(c_ptr) :: stream
+      end subroutine gpu_set_electrostatics_k_index
+
+
+
+      subroutine  gpu_get_electrostatics_energies( &
+           i_beg, &
+           nk_max, &
+           energies_d,   &
+           forces_d, &
+           virial_d, &
+           j2_index_d, &
+           n_sites,      &
+           this_n_sites, &
+           this_n_pairs, &
+           n_neigh_index_d, &
+           charges_d,    &
+           charge_gradients_d, &
+           neighbor_charges_index_d, &
+           rjs_index_d,  &
+           xyz_k_d, & 
+           dsf_alpha, &
+           rcut, &
+           rcut_in, &
+           rcut_width, &
+           pair_energy_rcut, &
+           pair_energy_rcut_der, &
+           do_cosine_damping, &
+           do_forces, &
+           stream ) bind(C,name="gpu_get_electrostatics_energies")
+      use iso_c_binding
+      implicit none
+      integer(c_int), value ::  this_n_sites, n_sites, this_n_pairs, i_beg, nk_max
+      type(c_ptr), value :: charges_d, neighbor_charges_index_d, xyz_k_d, charge_gradients_d
+      type(c_ptr), value ::  rjs_index_d, energies_d, n_neigh_index_d, forces_d, j2_index_d, virial_d !, n_neigh_index_sum_d
+      logical(c_bool), value :: do_forces, do_cosine_damping
+      type(c_ptr) :: stream
+      real(c_double), value :: dsf_alpha, pair_energy_rcut, pair_energy_rcut_der, rcut, rcut_in, rcut_width
+    end subroutine gpu_get_electrostatics_energies
+    
+          
+      
       subroutine gpu_get_pair_distribution_nk(i_beg, i_end, n_pairs, n_sites0, neighbors_list_d,&
         n_neigh_d, neighbor_species_d,&
         species_d, rjs_d, xyz_d, r_min, r_max, r_cut,&
@@ -603,8 +684,18 @@ MODULE F_B_C
         type(c_ptr) :: stream 
       end subroutine gpu_get_pair_distribution_only
 
-      subroutine gpu_get_pair_distribution_only_falloc(pair_distribution_d, pdf_to_reduce,&
-           n_k, n_samples, kde_sigma,  x_d, dV_d, rjs_d, pdf_factor, der_factor, stream) bind(C&
+      subroutine gpu_get_pair_distribution_only_falloc(&
+          pair_distribution_d,&
+          pdf_to_reduce,&
+           n_k,&
+           n_samples,&
+           kde_sigma,&
+           x_d,&
+           dV_d,&
+           rjs_d,&
+           pdf_factor,&
+           der_factor,&
+           stream) bind(C&
            &,name="gpu_get_pair_distribution_only_falloc")
         use iso_c_binding
         implicit none
@@ -848,6 +939,9 @@ MODULE F_B_C
       !     integer(c_int),value :: n
       ! end subroutine
 
+
+ 
+  
 module gpu_var_mod
 
   use iso_c_binding
@@ -876,6 +970,8 @@ module gpu_var_mod
      procedure, public  :: print => gpu_var_print_info
      
   end type gpu_var_class
+
+  
   
 contains
   
@@ -1019,7 +1115,11 @@ contains
   subroutine gpu_var_print_info(this)
     !! Prints the animal's age to stdout.
     class(gpu_var_class), intent(inout) :: this
-    write(*,'(A,1X,A,1X,A,L4)') '-- gpu_var : name = ', this%name, ', allocated = ', this%allocated 
+    write(*,'(A,1X,A,1X,A,L4)') '-- gpu_var : name = ', this%name, ', allocated = ', this%allocated
+    if( this%allocated )then
+       call gpu_print_pointer_int( this % d )
+    end if
+    
   end subroutine gpu_var_print_info
   
 end module gpu_var_mod
@@ -1068,10 +1168,10 @@ contains
        call this%print()
     end if
     this%allocated = .true.       
-       if(this%verb) then
-          call this%print()
-          print *, "--- malloc integer size = ", size, " ---"
-       end if
+    if(this%verb) then
+       call this%print()
+       print *, "--- malloc integer size = ", size, " ---"
+    end if
 
   end subroutine gpu_var_alloc_int
 
