@@ -27,7 +27,7 @@
 ! HND X
 ! HND XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
-subroutine turbogap_predict()
+subroutine turbogap_predict( err_val )
 
   use neighbors
   use soap_turbo_desc
@@ -55,6 +55,9 @@ subroutine turbogap_predict()
 
   implicit none
 
+
+  ! arguments
+  integer, intent(out) :: err_val !> error value, nonzero at error
 
   !**************************************************************************
   ! Variable definitions
@@ -209,6 +212,9 @@ subroutine turbogap_predict()
 
   real*8, allocatable :: x_xps(:), y_xps(:)
 
+  ! error code
+  err_val = 0
+
   implemented_exp_observables(1) = "xps"
   implemented_exp_observables(2) = "xrd"
   implemented_exp_observables(3) = "saxs"
@@ -361,7 +367,8 @@ subroutine turbogap_predict()
      END IF
      call mpi_finalize(ierr)
 #endif
-     stop
+     err_val = -1
+     return
   end if
   !
   ! First, we look for n_species, which determines how we allocate the species-specific arrays
@@ -389,7 +396,8 @@ subroutine turbogap_predict()
            END IF
            call mpi_finalize(ierr)
 #endif
-           stop
+           err_val = -1
+           return
         end if
      end if
   end do
@@ -402,7 +410,8 @@ subroutine turbogap_predict()
   if ( params%electronic_stopping ) then
 		if (params%estop_filename == 'NULL') then
 			write(*,*) "ERROR: No stopping data file is provided."
-			stop
+      err_val = -1
+      return
 		else
 			call read_electronic_stopping_file (n_species,params%species_types,params%estop_filename,nrows,allelstopdata)
 		end if
@@ -801,7 +810,8 @@ subroutine turbogap_predict()
      END IF
      call mpi_finalize(ierr)
 #endif
-     stop
+     err_val = -1
+     return
   end if
   call cpu_time(time_read_input(2))
   time_read_input(3) = time_read_input(3) + time_read_input(2) - time_read_input(1)
@@ -1035,7 +1045,8 @@ subroutine turbogap_predict()
 #ifdef _MPIF90
               call mpi_finalize(ierr)
 #endif
-              stop
+              err_val = -1
+              return
            end if
 #ifdef _MPIF90
         END IF
