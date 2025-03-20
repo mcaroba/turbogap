@@ -26,8 +26,15 @@
 ! HND X   Miguel A. Caro. Phys. Rev. B 100, 024112 (2019)
 ! HND X
 ! HND XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+module turbogap_wrap
 
-subroutine turbogap_predict( comm, input_fname, err_val )
+  private
+  public :: turbogap_predict
+
+contains
+
+
+subroutine turbogap_predict( comm, input_fname, err_val, output_forces, output_energy )
 
   use neighbors
   use soap_turbo_desc
@@ -52,14 +59,18 @@ subroutine turbogap_predict( comm, input_fname, err_val )
 #endif
   use bussi
   use xyz_module
+  use, intrinsic :: iso_c_binding, only: c_double
 
   implicit none
 
 
   ! arguments
-  integer, intent(in) :: comm !> mpi communicator; unused in serial
-  character(*), intent(in) :: input_fname !> name of the input file with parameters
-  integer, intent(out) :: err_val !> error value, nonzero at error
+  integer,                       intent(in) :: comm !> mpi communicator; unused in serial
+  character(*),                  intent(in) :: input_fname !> name of the input file with parameters
+  integer,                       intent(out) :: err_val !> error value, nonzero at error
+  real( c_double ), allocatable, intent(out), optional :: output_forces(:,:)  !> forces
+  real( c_double ),              intent(out), optional :: output_energy !> energy
+
 
   !**************************************************************************
   ! Variable definitions
@@ -2713,9 +2724,7 @@ subroutine turbogap_predict( comm, input_fname, err_val )
 
 
         if( .not. params%do_md .and. .not. params%do_mc) then
-#ifdef _MPIF90
-           IF( rank == 0 )then
-#endif
+           if( rank == 0 )then
               write(*,*)'                                       |'
               write(*,'(A,1X,F22.8,1X,A)')' SOAP energy:', sum(energies_soap), 'eV |'
               write(*,'(A,1X,F24.8,1X,A)')' 2b energy:', sum(energies_2b), 'eV |'
@@ -2740,8 +2749,12 @@ subroutine turbogap_predict( comm, input_fname, err_val )
 
               if (.not. params%do_mc .or. (params%do_mc .and.  mc_istep <= 1 ))then
                  write(*,'(A,1X,F21.8,1X,A)')' Total energy:', sum(energies), 'eV |'
+                 if(present(output_energy)) &
+                      output_energy=real(sum(energies), kind(output_energy))
               else
                  write(*,'(A,1X,F21.8,1X,A)')' Total energy:', sum(images(i_trial_image)%energies), 'eV |'
+                 if(present(output_energy)) &
+                      output_energy=real(sum(images(i_trial_image)%energies), kind(output_energy))
               end if
 
               if ( .not. params%do_mc)then
@@ -2756,8 +2769,9 @@ subroutine turbogap_predict( comm, input_fname, err_val )
                  write(*,*)'               "mc_all.xyz"            |'
                  write(*,*)'.......................................|'
               end if
-#ifdef _MPIF90
            END IF
+#ifdef _MPIF90
+           if(present(output_energy))call mpi_bcast(output_energy, 1, MPI_DOUBLE, 0, mpi_comm, ierr)
 #endif
         end if
 
@@ -2804,9 +2818,7 @@ subroutine turbogap_predict( comm, input_fname, err_val )
 
 
         if( params%do_prediction .and. .not. params%do_md .and. .not. params%do_mc)then
-#ifdef _MPIF90
            IF( rank == 0 )then
-#endif
               !       Write energy and forces if we're just doing static predictions
               !       The masses should be divided by 103.6426965268d0 to have amu units, but
               !       since masses is not allocated for single point calculations, it would
@@ -2830,9 +2842,15 @@ subroutine turbogap_predict( comm, input_fname, err_val )
                    & params%write_local_properties, local_property_labels, local_properties, &
                    & fix_atom, "trajectory_out.xyz", string, .false.)
 
-#ifdef _MPIF90
            END IF
+           if(present(output_forces)) then
+              allocate(output_forces(1:3,1:n_sites))
+              if(rank==0)output_forces = real(forces, kind(output_forces))
+#ifdef _MPIF90
+              call mpi_bcast( output_forces, 3*n_sites, MPI_DOUBLE, 0, mpi_comm, ierr)
 #endif
+           end if
+           !
         end if
      else
 #ifdef _MPIF90
@@ -4323,3 +4341,5 @@ subroutine turbogap_predict( comm, input_fname, err_val )
 
 
 end subroutine turbogap_predict
+
+end module turbogap_wrap
