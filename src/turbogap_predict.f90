@@ -249,7 +249,7 @@ subroutine turbogap_predict()
   !**************************************************************************
   ! Read the mode. It should be "soap", "predict" or "md"
   !
-  call get_command_argument(1,mode)
+  mode = "predict"
   if( mode == "" .or. mode == "none" )then
      write(*,*) "ERROR: you need to run 'turbogap md' or 'turbogap predict'"
      stop
