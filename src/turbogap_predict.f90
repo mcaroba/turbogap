@@ -27,7 +27,7 @@
 ! HND X
 ! HND XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
-subroutine turbogap_predict( comm, err_val )
+subroutine turbogap_predict( comm, input_fname, err_val )
 
   use neighbors
   use soap_turbo_desc
@@ -58,6 +58,7 @@ subroutine turbogap_predict( comm, err_val )
 
   ! arguments
   integer, intent(in) :: comm !> mpi communicator; unused in serial
+  character(*), intent(in) :: input_fname !> name of the input file with parameters
   integer, intent(out) :: err_val !> error value, nonzero at error
 
   !**************************************************************************
@@ -277,7 +278,7 @@ subroutine turbogap_predict( comm, err_val )
   IF( rank == 0 )THEN
 #endif
   write(*,*)'_________________________________________________________________ '
-  write(*,*)'                             _                                   \'
+  write(*,*)'                             _                                    '
   write(*,*)' ___________            __   \\ /\        _____     ___   _____  |'
   write(*,*)'/____  ____/           / / /\|*\|*\/\    / ___ \   /   | |  _  \ |'
   write(*,*)'    / / __  __  __    / /  \********/   / /  /_/  / /| | | / | | |'
@@ -344,7 +345,7 @@ subroutine turbogap_predict( comm, err_val )
   !
   time_read_input(3) = 0.d0
   call cpu_time(time_read_input(1))
-  open(unit=10,file='input',status='old',iostat=iostatus)
+  open(unit=10,file=input_fname,status='old',iostat=iostatus)
   ! Check for existence of input file
 #ifdef _MPIF90
   IF( rank == 0 )THEN
