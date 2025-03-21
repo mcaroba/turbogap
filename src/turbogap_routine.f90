@@ -242,6 +242,50 @@ subroutine turbogap_routine( comm, turbogap_mode, input_fname, output_fname, err
   screen=.true.
   if(present(output_screen))screen=output_screen
 
+  ! Variables declared with an initial value like:
+  ! ```
+  ! logical :: repeat_xyz=.false.
+  ! ```
+  ! get an implicit save attribute, which we do not want for multiple calls to this routine.
+  ! Thus, initialize the variables explicitly.
+  repeat_xyz=.true.
+  overwrite=.false.
+  valid_local_properties=.false.
+  do_mc_relax=.false.
+  rebuild_neighbors_list = .true.
+  exit_loop = .true.
+  gd_box_do_pos = .true.
+  restart_box_optim = .false.
+  valid_xps=.false.
+  valid_vdw=.false.
+  write_condition=.false.
+  overwrite_condition=.false.
+  E_kinetic=0.d0
+  time_mpi(1:3) = 0.d0
+  time_mpi_positions(1:3) =  0.d0
+  time_mpi_ef(1:3) = 0.d0
+  time_md(3) = 0.d0
+  gd_istep=0
+  cum_EEL = 0.0d0
+  n_sites_prev = 0
+  n_atom_pairs_by_rank_prev=0
+  n_local_properties_tot=0
+  n_lp_count=0
+  central_species=0
+  counter=0
+  which_atom = 0
+  n_species = 1
+  radial_enhancement = 0
+  mc_mu_id=1
+  n_soap_turbo = 0
+  n_distance_2b = 0
+  n_angle_3b = 0
+  n_core_pot = 0
+  counter_lp_names=0
+  i_current_image=1
+  i_trial_image=2
+
+
   implemented_exp_observables(1) = "xps"
   implemented_exp_observables(2) = "xrd"
   implemented_exp_observables(3) = "saxs"
