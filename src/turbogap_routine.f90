@@ -266,9 +266,8 @@ subroutine turbogap_routine( comm, turbogap_mode, input_fname, output_fname, err
   ! check if mpi_init() has been called or not
   call mpi_initialized( is_mpi, ierr )
   if( .not. is_mpi )then
-     write(*,*) "ERROR:: MPI is not initialized. Exiting."
-     err_val = -2
-     return
+     ! if not, call it from here
+     call mpi_init(ierr)
   end if
   call mpi_comm_size(mpi_comm, ntasks, ierr)
   call mpi_comm_rank(mpi_comm, rank, ierr)
