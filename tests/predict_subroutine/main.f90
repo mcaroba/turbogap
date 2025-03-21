@@ -37,13 +37,13 @@ program main
 
      ! pass input file input0
      call turbogap_routine( group_comm, "predict", "input0", "traj0.xyz", turbo_err, &
-          output_energy=energy, output_forces=force )
+          output_energy=energy, output_forces=force, output_screen=.false. )
 
   elseif( mygroup==1 )then
 
      ! pass input file input1
      call turbogap_routine( group_comm, "predict", "input1", "traj1.xyz", turbo_err, &
-          output_energy=energy, output_forces=force )
+          output_energy=energy, output_forces=force, output_screen=.false. )
 
   end if
 
@@ -51,6 +51,7 @@ program main
   if( group_me == 0) then
      write(*,*) "group", mygroup," got turbo_err:", turbo_err
      write(*,*) "group",mygroup, "energy:",energy
+     write(*,*) "group",mygroup, force(:,1)
   end if
 
 
