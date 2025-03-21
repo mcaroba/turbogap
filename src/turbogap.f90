@@ -37,6 +37,11 @@ program turbogap
   integer :: ierr, mpierr
   character*16 :: mode="none"
 
+#ifdef _MPIF90
+  ! initialize mpi
+  call mpi_init(ierr)
+#endif
+
   !**************************************************************************
   ! Read the mode. It should be "soap", "predict" or "md"
   !
@@ -55,14 +60,12 @@ program turbogap
 
   ! check if there is an error
   if( ierr/= 0 ) then
-#ifdef _MPIF90
-     call mpi_abort( MPI_COMM_WORLD, mpierr, ierr )
-#endif
+     ! handle the error in some way, if needed
      stop
   end if
 
-
 #ifdef _MPIF90
+  ! succesful termination
   call mpi_finalize(ierr)
 #endif
 

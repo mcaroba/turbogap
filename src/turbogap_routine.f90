@@ -230,6 +230,7 @@ subroutine turbogap_routine( comm, turbogap_mode, input_fname, output_fname, err
   real*8, allocatable :: x_xps(:), y_xps(:)
 
   integer :: mpi_comm
+  logical :: is_mpi
 
   ! error code
   err_val = 0
@@ -255,6 +256,13 @@ subroutine turbogap_routine( comm, turbogap_mode, input_fname, output_fname, err
   ! MPI stuff
   mpi_comm = comm
 #ifdef _MPIF90
+  ! check if mpi_init() has been called or not
+  call mpi_initialized( is_mpi, ierr )
+  if( .not. is_mpi )then
+     write(*,*) "ERROR:: MPI is not initialized. Exiting."
+     err_val = -2
+     return
+  end if
   call mpi_comm_size(mpi_comm, ntasks, ierr)
   call mpi_comm_rank(mpi_comm, rank, ierr)
   !  allocate( displs(1:ntasks) )
