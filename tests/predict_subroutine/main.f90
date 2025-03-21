@@ -5,7 +5,7 @@ program main
   !! atomic structure.
   !!
   use mpi
-  use turbogap_wrap, only: turbogap_predict
+  use turbogap_wrap, only: turbogap_routine
   use, intrinsic :: iso_c_binding, only: c_double
   implicit none
   integer :: ierr
@@ -36,19 +36,21 @@ program main
   if( mygroup==0 ) then
 
      ! pass input file input0
-     call turbogap_predict( group_comm, "input0", turbo_err, output_energy=energy, output_forces=force )
+     call turbogap_routine( group_comm, "predict", "input0", "traj0.xyz", turbo_err, &
+          output_energy=energy, output_forces=force )
 
   elseif( mygroup==1 )then
 
      ! pass input file input1
-     call turbogap_predict( group_comm, "input1", turbo_err, output_energy=energy, output_forces=force )
+     call turbogap_routine( group_comm, "predict", "input1", "traj1.xyz", turbo_err, &
+          output_energy=energy, output_forces=force )
 
   end if
 
 
   if( group_me == 0) then
      write(*,*) "group", mygroup," got turbo_err:", turbo_err
-     write(*,*) "group",mygroup, "etot:",etot
+     write(*,*) "group",mygroup, "energy:",energy
   end if
 
 
