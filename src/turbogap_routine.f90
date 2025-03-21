@@ -35,7 +35,7 @@ contains
 
 
 subroutine turbogap_routine( comm, turbogap_mode, input_fname, output_fname, err_val, &
-       output_forces, output_energy )
+       output_forces, output_energy, output_screen )
 
   use neighbors
   use soap_turbo_desc
@@ -71,6 +71,8 @@ subroutine turbogap_routine( comm, turbogap_mode, input_fname, output_fname, err
   character(*),                  intent(in) :: input_fname !> input file with parameters (`input`)
   character(*),                  intent(in) :: output_fname !> output file (`trajectory_out.xyz`)
   integer,                       intent(out) :: err_val !> error value, nonzero at error
+  ! optioanl input
+  logical,                       intent(in), optional :: output_screen !> screen output T/F (default=true)
   ! optional return values (only for mode=predict)
   real( c_double ), allocatable, intent(out), optional :: output_forces(:,:)  !> forces
   real( c_double ),              intent(out), optional :: output_energy !> energy
@@ -229,11 +231,16 @@ subroutine turbogap_routine( comm, turbogap_mode, input_fname, output_fname, err
 
   real*8, allocatable :: x_xps(:), y_xps(:)
 
+  logical :: screen
   integer :: mpi_comm
   logical :: is_mpi
 
   ! error code
   err_val = 0
+
+  ! write to screen by default
+  screen=.true.
+  if(present(output_screen))screen=output_screen
 
   implemented_exp_observables(1) = "xps"
   implemented_exp_observables(2) = "xrd"
@@ -298,64 +305,62 @@ subroutine turbogap_routine( comm, turbogap_mode, input_fname, output_fname, err
   !**************************************************************************
   ! Prints some welcome message and reads in the input file
   !
+  if( screen ) then
+     IF( rank == 0 )THEN
+        write(*,*)'_________________________________________________________________ '
+        write(*,*)'                             _                                    '
+        write(*,*)' ___________            __   \\ /\        _____     ___   _____  |'
+        write(*,*)'/____  ____/           / / /\|*\|*\/\    / ___ \   /   | |  _  \ |'
+        write(*,*)'    / / __  __  __    / /  \********/   / /  /_/  / /| | | / | | |'
+        write(*,*)'   / / / / / / / /_  / /__  \**__**/   / / ____  / / | | | |_/ / |'
+        write(*,*)'  / / / / / / / __/ / ___ \ /*/  \*\  / / /_  / / /__| | |  __/  |'
+        write(*,*)' / / / /_/ / / /   / /__/ / \ \__/ / / /___/ / / ____  | | |     |'
+        write(*,*)'/_/_/_____/_/_/___/______/___\____/__\______/_/_/____|_|_|_|____ |'
+        write(*,*)'_____________________________________________________________  / |'
+        write(*,*)'*************************************************************|/  |'
+        write(*,*)'                  Welcome to the TurboGAP code                   |'
+        write(*,*)'                         Maintained by                           |'
+        write(*,*)'                                                                 |'
+        write(*,*)'                         Miguel A. Caro                          |'
+        write(*,*)'                       mcaroba@gmail.com                         |'
+        write(*,*)'                      miguel.caro@aalto.fi                       |'
+        write(*,*)'                                                                 |'
+        write(*,*)'          Department of Chemistry and Materials Science          |'
+        write(*,*)'                     Aalto University, Finland                   |'
+        write(*,*)'                                                                 |'
+        write(*,*)'.................................................................|'
+        write(*,*)'                                                                 |'
+        write(*,*)'====================>>>>>  turbogap.fi  <<<<<====================|'
+        write(*,*)'                                                                 |'
+        write(*,*)'.................................................................|'
+        write(*,*)'                                                                 |'
+        write(*,*)'Contributors (code and methodology) in chronological order:      |'
+        write(*,*)'                                                                 |'
+        write(*,*)'Miguel A. Caro, Patricia Hernández-León, Suresh Kondati          |'
+        write(*,*)'Natarajan, Albert P. Bartók, Eelis V. Mielonen, Heikki Muhli,    |'
+        write(*,*)'Mikhail Kuklin, Gábor Csányi, Jan Kloppenburg, Richard Jana,     |'
+        write(*,*)'Tigany Zarrouk                                                   |'
+        write(*,*)'                                                                 |'
+        write(*,*)'.................................................................|'
+        write(*,*)'                                                                 |'
+        write(*,*)'                     Last updated: Sep. 2024                     |'
+        write(*,*)'                                        _________________________/'
+        write(*,*)'.......................................|'
 #ifdef _MPIF90
-  IF( rank == 0 )THEN
-#endif
-  write(*,*)'_________________________________________________________________ '
-  write(*,*)'                             _                                    '
-  write(*,*)' ___________            __   \\ /\        _____     ___   _____  |'
-  write(*,*)'/____  ____/           / / /\|*\|*\/\    / ___ \   /   | |  _  \ |'
-  write(*,*)'    / / __  __  __    / /  \********/   / /  /_/  / /| | | / | | |'
-  write(*,*)'   / / / / / / / /_  / /__  \**__**/   / / ____  / / | | | |_/ / |'
-  write(*,*)'  / / / / / / / __/ / ___ \ /*/  \*\  / / /_  / / /__| | |  __/  |'
-  write(*,*)' / / / /_/ / / /   / /__/ / \ \__/ / / /___/ / / ____  | | |     |'
-  write(*,*)'/_/_/_____/_/_/___/______/___\____/__\______/_/_/____|_|_|_|____ |'
-  write(*,*)'_____________________________________________________________  / |'
-  write(*,*)'*************************************************************|/  |'
-  write(*,*)'                  Welcome to the TurboGAP code                   |'
-  write(*,*)'                         Maintained by                           |'
-  write(*,*)'                                                                 |'
-  write(*,*)'                         Miguel A. Caro                          |'
-  write(*,*)'                       mcaroba@gmail.com                         |'
-  write(*,*)'                      miguel.caro@aalto.fi                       |'
-  write(*,*)'                                                                 |'
-  write(*,*)'          Department of Chemistry and Materials Science          |'
-  write(*,*)'                     Aalto University, Finland                   |'
-  write(*,*)'                                                                 |'
-  write(*,*)'.................................................................|'
-  write(*,*)'                                                                 |'
-  write(*,*)'====================>>>>>  turbogap.fi  <<<<<====================|'
-  write(*,*)'                                                                 |'
-  write(*,*)'.................................................................|'
-  write(*,*)'                                                                 |'
-  write(*,*)'Contributors (code and methodology) in chronological order:      |'
-  write(*,*)'                                                                 |'
-  write(*,*)'Miguel A. Caro, Patricia Hernández-León, Suresh Kondati          |'
-  write(*,*)'Natarajan, Albert P. Bartók, Eelis V. Mielonen, Heikki Muhli,    |'
-  write(*,*)'Mikhail Kuklin, Gábor Csányi, Jan Kloppenburg, Richard Jana,     |'
-  write(*,*)'Tigany Zarrouk                                                   |'
-  write(*,*)'                                                                 |'
-  write(*,*)'.................................................................|'
-  write(*,*)'                                                                 |'
-  write(*,*)'                     Last updated: Sep. 2024                     |'
-  write(*,*)'                                        _________________________/'
-  write(*,*)'.......................................|'
-#ifdef _MPIF90
-     write(*,*)'                                       |'
-     write(*,*)'Running TurboGAP with MPI support:     |'
-     write(*,*)'                                       |'
-     write(*,'(A,I6,A)')' Running TurboGAP on ', ntasks, ' MPI tasks   |'
-     write(*,*)'                                       |'
-     write(*,*)'.......................................|'
+        write(*,*)'                                       |'
+        write(*,*)'Running TurboGAP with MPI support:     |'
+        write(*,*)'                                       |'
+        write(*,'(A,I6,A)')' Running TurboGAP on ', ntasks, ' MPI tasks   |'
+        write(*,*)'                                       |'
+        write(*,*)'.......................................|'
 #else
-     write(*,*)'                                       |'
-     write(*,*)'Running the serial version of TurboGAP |'
-     write(*,*)'                                       |'
-     write(*,*)'.......................................|'
+        write(*,*)'                                       |'
+        write(*,*)'Running the serial version of TurboGAP |'
+        write(*,*)'                                       |'
+        write(*,*)'.......................................|'
 #endif
-#ifdef _MPIF90
-  END IF
-#endif
+     END IF
+  end if
   !**************************************************************************
 
 
@@ -371,19 +376,13 @@ subroutine turbogap_routine( comm, turbogap_mode, input_fname, output_fname, err
   call cpu_time(time_read_input(1))
   open(unit=10,file=input_fname,status='old',iostat=iostatus)
   ! Check for existence of input file
-#ifdef _MPIF90
-  IF( rank == 0 )THEN
-#endif
+  IF( rank == 0 .and. screen )THEN
      write(*,*)'                                       |'
      write(*,*)'Checking input file...                 |'
-#ifdef _MPIF90
   END IF
-#endif
   if(iostatus/=0)then
      close(10)
-#ifdef _MPIF90
-     IF( rank == 0 )THEN
-#endif
+     IF( rank == 0 .and. screen )THEN
         write(*,*)'                                       |'
         write(*,*)'ERROR: input file could not be found   |  <-- ERROR'
         write(*,*)'                                       |'
@@ -391,9 +390,7 @@ subroutine turbogap_routine( comm, turbogap_mode, input_fname, output_fname, err
         write(*,*)'                                       |'
         write(*,*)'End of execution                       |'
         write(*,*)'_______________________________________/'
-#ifdef _MPIF90
      END IF
-#endif
      err_val = -1
      return
   end if
@@ -412,16 +409,12 @@ subroutine turbogap_routine( comm, turbogap_mode, input_fname, output_fname, err
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, n_species
         if( n_species < 1 )then
-#ifdef _MPIF90
            IF( rank == 0 )THEN
-#endif
               write(*,*)'                                       |'
               write(*,*)'ERROR: n_species must be > 0           |  <-- ERROR'
               write(*,*)'                                       |'
               write(*,*)'.......................................|'
-#ifdef _MPIF90
            END IF
-#endif
            err_val = -1
            return
         end if
@@ -513,20 +506,25 @@ subroutine turbogap_routine( comm, turbogap_mode, input_fname, output_fname, err
 
      ! Need to set the number of local properties, and get an array of labels and sizes for broadcasting
 
-        write(*,*)'                                       |'
-        write(*,*)'.......................................|'
-        write(*,*)'                                       |'
+        if( screen ) then
+           write(*,*)'                                       |'
+           write(*,*)'.......................................|'
+           write(*,*)'                                       |'
+        end if
+
 
         call get_irreducible_local_properties(params, n_local_properties_tot, n_soap_turbo, soap_turbo_hypers, &
              local_property_labels, local_property_labels_temp, local_property_labels_temp2, local_property_indexes, &
              valid_vdw, vdw_lp_index, core_be_lp_index, valid_xps, xps_idx )
 
         if( params%n_local_properties > 0)then
-           write(*,*)'                                       |'
-           write(*,*)' Irreducible local properties:         |'
-           do i = 1, params%n_local_properties
-              write(*,'(A41)') trim( local_property_labels(i) ) // ' |'
-           end do
+           if( screen ) then
+              write(*,*)'                                       |'
+              write(*,*)' Irreducible local properties:         |'
+              do i = 1, params%n_local_properties
+                 write(*,'(A41)') trim( local_property_labels(i) ) // ' |'
+              end do
+           end if
 
 
            allocate( params%write_local_properties(1:params%n_local_properties) )
@@ -825,16 +823,12 @@ subroutine turbogap_routine( comm, turbogap_mode, input_fname, output_fname, err
           & local_properties_n_sparse_mpi_soap_turbo )
 #endif
   else
-#ifdef _MPIF90
      IF( rank == 0 )THEN
-#endif
         write(*,*)'                                       |'
         write(*,*)'ERROR: you must provide a "pot_file"   |  <-- ERROR'
         write(*,*)'                                       |'
         write(*,*)'.......................................|'
-#ifdef _MPIF90
      END IF
-#endif
      err_val = -1
      return
   end if
@@ -866,9 +860,7 @@ subroutine turbogap_routine( comm, turbogap_mode, input_fname, output_fname, err
 
   !**************************************************************************
   ! <----------------------------------------------------------------------------------------------- Finish printouts
-#ifdef _MPIF90
-  IF( rank == 0 )THEN
-#endif
+  IF( rank == 0 .and. screen )THEN
      ! Print out chosen options:
      write(*,*)'                                       |'
      write(*,'(1X,A)')'You specified the following options:   |'
@@ -891,9 +883,7 @@ subroutine turbogap_routine( comm, turbogap_mode, input_fname, output_fname, err
      write(*,*)'---------------------------------      |'
      write(*,*)'                                       |'
      write(*,*)'.......................................|'
-#ifdef _MPIF90
   END IF
-#endif
   !**************************************************************************
 
 
@@ -931,9 +921,7 @@ subroutine turbogap_routine( comm, turbogap_mode, input_fname, output_fname, err
 
 
   if( params%do_md )then
-#ifdef _MPIF90
-     IF( rank == 0 )THEN
-#endif
+     IF( rank == 0 .and. screen )THEN
         write(*,*)'                                       |'
         write(*,*)'Doing molecular dynamics...            |'
         if( params%print_progress .and. md_istep > 0 )then
@@ -942,9 +930,7 @@ subroutine turbogap_routine( comm, turbogap_mode, input_fname, output_fname, err
            write(*,*)'                                       |'
            write(*,'(1X,A)',advance='no')'[                                    ] |'
         end if
-#ifdef _MPIF90
      END IF
-#endif
      update_bar = params%md_nsteps/36
      if( update_bar < 1 )then
         update_bar = 1
@@ -983,9 +969,7 @@ subroutine turbogap_routine( comm, turbogap_mode, input_fname, output_fname, err
 
      !   Update progress bar
      if( params%print_progress .and. counter == update_bar .and. (.not. params%do_mc) )then
-#ifdef _MPIF90
-        IF( rank == 0 )THEN
-#endif
+        IF( rank == 0 .and. screen )THEN
            do j = 1, 36+3
               write(*,"(A)", advance="no") creturn
            end do
@@ -1000,9 +984,7 @@ subroutine turbogap_routine( comm, turbogap_mode, input_fname, output_fname, err
            if( md_istep == params%md_nsteps )then
               write(*,*)
            end if
-#ifdef _MPIF90
         END IF
-#endif
         counter = 1
      else
         counter = counter + 1
@@ -2737,7 +2719,7 @@ subroutine turbogap_routine( comm, turbogap_mode, input_fname, output_fname, err
 
 
         if( .not. params%do_md .and. .not. params%do_mc) then
-           if( rank == 0 )then
+           if( rank == 0 .and. screen )then
               write(*,*)'                                       |'
               write(*,'(A,1X,F22.8,1X,A)')' SOAP energy:', sum(energies_soap), 'eV |'
               write(*,'(A,1X,F24.8,1X,A)')' 2b energy:', sum(energies_2b), 'eV |'
@@ -2762,17 +2744,13 @@ subroutine turbogap_routine( comm, turbogap_mode, input_fname, output_fname, err
 
               if (.not. params%do_mc .or. (params%do_mc .and.  mc_istep <= 1 ))then
                  write(*,'(A,1X,F21.8,1X,A)')' Total energy:', sum(energies), 'eV |'
-                 if(present(output_energy)) &
-                      output_energy=real(sum(energies), kind(output_energy))
               else
                  write(*,'(A,1X,F21.8,1X,A)')' Total energy:', sum(images(i_trial_image)%energies), 'eV |'
-                 if(present(output_energy)) &
-                      output_energy=real(sum(images(i_trial_image)%energies), kind(output_energy))
               end if
 
               if ( .not. params%do_mc)then
                  write(*,*)'                                       |'
-                 write(*,*)'Energy & forces in "'//output_fname//'"|'
+                 write(*,*)'Energy & forces in "'//output_fname//'" |'
                  write(*,*)'                                       |'
                  write(*,*)'.......................................|'
               else if ( mc_istep == 0 )then
@@ -2783,7 +2761,17 @@ subroutine turbogap_routine( comm, turbogap_mode, input_fname, output_fname, err
                  write(*,*)'.......................................|'
               end if
            END IF
+           ! save the energies to output argument on rank=0
+           if(present(output_energy) .and. rank==0 )then
+              ! copy the sum of energies from write statements above
+              if (.not. params%do_mc .or. (params%do_mc .and.  mc_istep <= 1 ))then
+                 output_energy=real( sum(energies), kind(output_energy) )
+              else
+                 output_energy=real( sum(images(i_trial_image)%energies), kind(output_energy) )
+              end if
+           end if
 #ifdef _MPIF90
+           ! bcast the output_energy value
            if(present(output_energy))call mpi_bcast(output_energy, 1, MPI_DOUBLE, 0, mpi_comm, ierr)
 #endif
         end if
@@ -2856,8 +2844,11 @@ subroutine turbogap_routine( comm, turbogap_mode, input_fname, output_fname, err
                    & fix_atom, output_fname, string, .false.)
 
            END IF
+           ! save the forces in output argument
            if(present(output_forces)) then
+              ! allocate the output array on all ranks
               allocate(output_forces(1:3,1:n_sites))
+              ! forces are printed only from rank=0, so take that value and bcast
               if(rank==0)output_forces = real(forces, kind(output_forces))
 #ifdef _MPIF90
               call mpi_bcast( output_forces, 3*n_sites, MPI_DOUBLE, 0, mpi_comm, ierr)
@@ -2866,17 +2857,13 @@ subroutine turbogap_routine( comm, turbogap_mode, input_fname, output_fname, err
            !
         end if
      else
-#ifdef _MPIF90
-        IF( rank == 0 )then
-#endif
+        IF( rank == 0 .and. screen )then
            !     Do nothing
            write(*,*)'                                       |'
            write(*,*)'You didn''t ask me to do anything!      |'
            write(*,*)'                                       |'
            write(*,*)'.......................................|'
-#ifdef _MPIF90
         END IF
-#endif
      end if
      !**************************************************************************
 
@@ -3286,7 +3273,7 @@ subroutine turbogap_routine( comm, turbogap_mode, input_fname, output_fname, err
            md_istep = -1
            params%write_xyz = params%md_nsteps
            params%do_md = .true.
-           if( rank == 0 )then
+           if( rank == 0 .and. screen )then
               write(*,*)'                                       |'
               write(*,*)'Running nested sampling algorithm with |'
               write(*,'(1X,I6,A)') n_xyz, ' walkers.                        |'
@@ -4202,9 +4189,7 @@ subroutine turbogap_routine( comm, turbogap_mode, input_fname, output_fname, err
 
   if( params%do_md .or. params%do_prediction .or. params%do_mc)then
      call cpu_time(time2)
-#ifdef _MPIF90
-     IF( rank == 0 )then
-#endif
+     IF( rank == 0 .and. screen )then
         if( params%do_md .and. .not. params%do_nested_sampling )then
            !      write(*,'(A)')'] |'
            !      write(*,*)
@@ -4266,9 +4251,7 @@ subroutine turbogap_routine( comm, turbogap_mode, input_fname, output_fname, err
         write(*,'(A,F13.3,A)') ' *     Total time:', time2-time3, ' seconds |'
         write(*,*)'                                       |'
         write(*,*)'.......................................|'
-#ifdef _MPIF90
      END IF
-#endif
   end if
 
   if ( allocated( fix_atom ))    deallocate( fix_atom )
@@ -4342,15 +4325,11 @@ subroutine turbogap_routine( comm, turbogap_mode, input_fname, output_fname, err
   if( allocated(do_list))deallocate(do_list)
   if (allocated( params%write_local_properties )) deallocate(params%write_local_properties)
 
-#ifdef _MPIF90
-  IF( rank == 0 )then
-#endif
+  IF( rank == 0 .and. screen )then
      write(*,*)'                                       |'
      write(*,*)'End of execution                       |'
      write(*,*)'_______________________________________/'
-#ifdef _MPIF90
   END IF
-#endif
 
 
 end subroutine turbogap_routine
