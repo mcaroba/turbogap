@@ -29,12 +29,13 @@
 module turbogap_wrap
 
   private
-  public :: turbogap_predict
+  public :: turbogap_routine
 
 contains
 
 
-subroutine turbogap_predict( comm, input_fname, err_val, output_forces, output_energy )
+subroutine turbogap_routine( comm, turbogap_mode, input_fname, output_fname, err_val, &
+       output_forces, output_energy )
 
   use neighbors
   use soap_turbo_desc
@@ -66,8 +67,11 @@ subroutine turbogap_predict( comm, input_fname, err_val, output_forces, output_e
 
   ! arguments
   integer,                       intent(in) :: comm !> mpi communicator; unused in serial
-  character(*),                  intent(in) :: input_fname !> name of the input file with parameters
+  character(*),                  intent(in) :: turbogap_mode !> mode: md/predict/...
+  character(*),                  intent(in) :: input_fname !> input file with parameters (`input`)
+  character(*),                  intent(in) :: output_fname !> output file (`trajectory_out.xyz`)
   integer,                       intent(out) :: err_val !> error value, nonzero at error
+  ! optional return values (only for mode=predict)
   real( c_double ), allocatable, intent(out), optional :: output_forces(:,:)  !> forces
   real( c_double ),              intent(out), optional :: output_energy !> energy
 
@@ -270,10 +274,11 @@ subroutine turbogap_predict( comm, input_fname, err_val, output_forces, output_e
   !**************************************************************************
   ! Read the mode. It should be "soap", "predict" or "md"
   !
-  mode = "predict"
+  mode = trim(turbogap_mode)
   if( mode == "" .or. mode == "none" )then
      write(*,*) "ERROR: you need to run 'turbogap md' or 'turbogap predict'"
-     stop
+     err_val = -1
+     return
      ! THIS SHOULD BE FIXED, IN CASE THE USER JUST WANT TO OUTPUT THE SOAP DESCRIPTORS
      mode = "soap"
   end if
@@ -2759,7 +2764,7 @@ subroutine turbogap_predict( comm, input_fname, err_val, output_forces, output_e
 
               if ( .not. params%do_mc)then
                  write(*,*)'                                       |'
-                 write(*,*)'Energy & forces in "trajectory_out.xyz"|'
+                 write(*,*)'Energy & forces in "'//output_fname//'"|'
                  write(*,*)'                                       |'
                  write(*,*)'.......................................|'
               else if ( mc_istep == 0 )then
@@ -2840,7 +2845,7 @@ subroutine turbogap_predict( comm, input_fname, err_val, output_forces, output_e
                    & energies(1:n_sites), masses, params&
                    &%write_property, params%write_array_property,&
                    & params%write_local_properties, local_property_labels, local_properties, &
-                   & fix_atom, "trajectory_out.xyz", string, .false.)
+                   & fix_atom, output_fname, string, .false.)
 
            END IF
            if(present(output_forces)) then
@@ -3098,7 +3103,7 @@ subroutine turbogap_predict( comm, input_fname, err_val, output_forces, output_e
                    &%write_property, params %write_array_property,&
                    & params %write_local_properties,&
                    & local_property_labels, local_properties,&
-                   & fix_atom(1:3, 1:n_sites), "trajectory_out.xyz", string, &
+                   & fix_atom(1:3, 1:n_sites), output_fname, string, &
                    & md_istep == 0 )
            else if( md_istep == params%md_nsteps .and. params%do_nested_sampling )then
               write(cjunk,'(I8)') i_image
@@ -4340,6 +4345,6 @@ subroutine turbogap_predict( comm, input_fname, err_val, output_forces, output_e
 #endif
 
 
-end subroutine turbogap_predict
+end subroutine turbogap_routine
 
 end module turbogap_wrap
