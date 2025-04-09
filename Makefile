@@ -5,9 +5,9 @@ SHELL = /bin/sh
 # Include user-modifiable variables from a customizable file.
 # Check the makefiles/ directory for a list of tested architectures
 
-include makefiles/Makefile.CSC-Puhti_gfortran_openblas_mpi_hip_source_opt
+#include makefiles/Makefile.CSC-Puhti_gfortran_openblas_mpi_hip_source_opt
 #include makefiles/Makefile.CSC-LUMI_gnu	
-
+include makefiles/Makefile.CSC-LUMI_cray
 
 # Default locations for various files
 BUILD_DIR=build

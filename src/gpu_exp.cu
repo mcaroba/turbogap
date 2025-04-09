@@ -25,7 +25,7 @@
 // #define WARP_SIZE 64
 // #endif
 
-#define WARP_SIZE 32
+#define WARP_SIZE 64
 
 #define BLOCK_SIZE 512 // Number of threads per block
 //#define LOG_BLOCK_SIZE 10 // Log base 2 of BLOCK_SIZE
@@ -53,8 +53,8 @@ inline void gpuAssert(hipError_t code, const char *file, int line, bool abort=tr
 __inline__ __device__ int warpReduceSum(int val) {
     // Use shuffle down to reduce across the warp
     for (int offset = warpSize / 2; offset > 0; offset >>= 1) {
-           val += __shfl_down_sync(0xffffffff,val, offset,warpSize);
-      //val += __shfl_down(val, offset,warpSize);            
+           //val += __shfl_down_sync(0xffffffff,val, offset,warpSize);
+      val += __shfl_down(val, offset,warpSize);            
     }
     return val;
 }
@@ -63,8 +63,8 @@ __inline__ __device__ int warpReduceSum(int val) {
 __inline__ __device__ double warpReduceSumDouble(double val) {
     // Use shuffle down to reduce across the warp
     for (int offset = warpSize / 2; offset > 0; offset >>= 1) {
-            val += __shfl_down_sync(0xffffffff,val, offset,warpSize);
-      //val += __shfl_down(val, offset,warpSize);                  
+            //val += __shfl_down_sync(0xffffffff,val, offset,warpSize);
+      val += __shfl_down(val, offset,warpSize);                  
     }
     return val;
 }
