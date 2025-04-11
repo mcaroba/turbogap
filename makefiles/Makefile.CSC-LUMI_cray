@@ -30,7 +30,7 @@ F90_MOD_DIR_OPT=-J
 
 F90_OPTS= -fPIC -h noomp -h flex_mp=intolerant -O1 -g 
 
-CUDA_OPTS=   --offload-arch=gfx90a -O1 -g -ggdb 
+CUDA_OPTS=   --offload-arch=gfx90a -O1 #-g -ggdb 
 
 CC_OPTS=-xhip -std=c++20 -O1 #-g -ggdb
 
