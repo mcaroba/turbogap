@@ -2313,6 +2313,7 @@ contains
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%basis
                      if (soap_turbo_hypers(n_soap_turbo)%basis /= "poly3" .and. &
+                         soap_turbo_hypers(n_soap_turbo)%basis /= "poly3operator" .and. &
                          soap_turbo_hypers(n_soap_turbo)%basis /= "poly3gauss") then
                         write (*, *) '                                       |'
                         write (*, *) 'WARNING: I didn''t understand your      |  <-- WARNING'
