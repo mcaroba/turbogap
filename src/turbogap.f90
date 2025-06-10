@@ -207,6 +207,8 @@ program turbogap
   type(exp_data_container) :: temp_exp_container
   character*32 :: implemented_exp_observables(1:5)
 
+  real*8, allocatable :: x_xps(:), y_xps(:)
+
   implemented_exp_observables(1) = "xps"
   implemented_exp_observables(2) = "xrd"
   implemented_exp_observables(3) = "saxs"
@@ -497,6 +499,11 @@ program turbogap
         end if
 
 
+           allocate( params%write_local_properties(1:params%n_local_properties) )
+           params%write_local_properties = .true.
+        end if
+
+
 #ifdef _MPIF90
      END IF
 #endif
@@ -671,7 +678,7 @@ program turbogap
         end if
         call mpi_bcast(soap_turbo_hypers(i)%has_local_properties, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
         call mpi_bcast(soap_turbo_hypers(i)%has_core_electron_be, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
-        if (valid_xps) call mpi_bcast(core_be_lp_index, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+        if (valid_xps .or. params%do_xps) call mpi_bcast(core_be_lp_index, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
         if (valid_vdw) call mpi_bcast(vdw_lp_index, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
 
         call mpi_bcast(soap_turbo_hypers(i)%has_vdw, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
@@ -2025,6 +2032,34 @@ program turbogap
            call cpu_time(time_xps(2))
            time_xps(3) = time_xps(3) + time_xps(2) - time_xps(1)
            !           if (rank == 0) print *, rank, " TIME_XPS = ", time_xps(3)
+
+           else if ( any( soap_turbo_hypers(:)%has_core_electron_be) .and. params%do_xps )then
+             ! Get the linspace of the xps spectrum and then perform the
+             ! calculation and write to the prediction file
+             !
+              if (rank == 0)then
+                 call get_xps_spectra_standalone(&
+                      & params%xps_e_min,&
+                      & params%xps_e_max, &
+                      & params%xps_sigma, &
+                      & params%xps_n_samples,&
+                      & x_xps, &
+                      & y_xps, &
+                      & local_properties(1:n_sites, core_be_lp_index))
+
+                 call get_overwrite_condition( params%do_mc, params%do_md&
+                      &, mc_istep, md_istep, params%write_xyz, overwrite_condition)
+
+                 if (n_xyz > 0)then
+                    overwrite_condition = ( n_xyz == 1 )
+                 end if
+
+                 call write_exp_datan( x_xps(1:params%xps_n_samples), &
+                      & y_xps(1:params%xps_n_samples), &
+                      & overwrite_condition, &
+                      &"xps_prediction.dat",&
+                      &"core_electron_be xps")
+              end if
 
         end if
 
@@ -3417,10 +3452,19 @@ program turbogap
                  call get_mc_acceptance(mc_move, p_accept, &
                       energy + E_kinetic, &
                       images(i_current_image)%energy + images(i_current_image)%e_kin, &
-                      params%t_beg, &
-                      params%mc_mu(mc_mu_id), n_mc_species(mc_mu_id), v_uc, v_uc_prev,&
+                      params%t_beg, mc_id, mc_mu_id, &
+                      params%mc_mu, n_mc_species, v_uc, v_uc_prev,&
                       & v_a_uc, v_a_uc_prev, params&
-                      &%masses_types(mc_id(mc_mu_id)), params%p_beg)
+                      &%masses_types, params%p_beg)
+
+!
+!                 call get_mc_acceptance(mc_move, p_accept, &
+!                      energy + E_kinetic, &
+!                      images(i_current_image)%energy + images(i_current_image)%e_kin, &
+!                      params%t_beg, &
+!                      params%mc_mu(mc_mu_id), n_mc_species(mc_mu_id), v_uc, v_uc_prev,&
+!                      & v_a_uc, v_a_uc_prev, params&
+!                      &%masses_types(mc_id(mc_mu_id)), params%p_beg)
 
 
                  call random_number(ranf)
