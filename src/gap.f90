@@ -46,9 +46,10 @@ module gap
     integer, intent(in) :: n_neigh(:), neighbors_list(:)
     logical, intent(in) :: do_forces, do_timing, do_linear_energies, do_linear_forces
     real*8, allocatable :: kernels(:,:), kernels_der(:,:), Qss(:,:), Qs_copy(:,:), this_Qss(:), &
-                           kernels_copy(:,:), soap_copy(:,:), soap_linear(:,:)
+                           kernels_copy(:,:), &
+                           soap_copy(:,:), soap_linear(:,:), this_Q_linear(:), soap_linear_der(:,:)
     real*8 :: time1, time2, time3, energies_time, forces_time, zeta, this_force(1:3)
-    integer :: n_sites, n_sparse, n_soap, i, j, k, l, j2, zeta_int, n_sites0, k1, k2
+    integer :: n_sites, n_sparse, n_soap, i, j, k, l, j2, zeta_int, n_sites0, k1, k2, n_linear_der
     logical :: is_zeta_int = .false.
 !    integer, allocatable :: neighbors_beg(:), neighbors_end(:)
 
@@ -57,6 +58,9 @@ module gap
       is_zeta_int = .true.
       zeta_int = int(zeta0)
       zeta = dfloat(zeta_int)
+    else if( do_linear_energies )then
+      write(*,*) 'WARNING: Linearized kernel is only available for zeta integer |  <-- WARNING'
+      write(*,*) 'Change zeta or set kernel_linearization = .false. |'
     else
       zeta = zeta0
     end if  
@@ -75,11 +79,14 @@ module gap
 !     Use the linearized model
 !     Following the notation here: n_sparse = n_linearized and alphas ---> Qs_linearized * alphas
 !     This is taken care of in read_files.f90, so we only modify the linear algebra here
+      write(*,*) '                                       | <--- SUCCESS! Kernel linearization done.'
       allocate( soap_copy(1:n_sites, 1:n_soap) )
       allocate( soap_linear(1:n_sites, 1:n_sparse) )
       soap_copy = transpose(soap)
       call get_linearized_desc(zeta_int, soap_copy, soap_linear)
-      energies = matmul(soap_linear, alphas)
+!     same as: energies = matmul(soap_linear, alphas)
+      call dgemm("n", "n", n_sites, 1, n_sparse, 1.d0, soap_linear, n_sites, alphas, &
+                  n_sparse, 0.d0, energies, n_sites)
     else
       if( n_sites > 0 )then
         allocate( kernels(1:n_sites, 1:n_sparse) )
@@ -111,32 +118,48 @@ module gap
       if( do_timing )then
         call cpu_time(time1)
       end if
-      allocate( kernels_der(1:n_sites, 1:n_sparse) )
-      allocate( Qss(1:n_sites, 1:n_soap) )
-      Qss = 0.d0
-      allocate( Qs_copy(1:n_soap, 1:n_sparse) )
+
       allocate(this_Qss(1:n_soap))
+      this_Qss = 0.d0
 
-      Qs_copy = Qs
-
-      if( is_zeta_int )then
-        kernels_der = kernels**(zeta_int-1)
+      if( do_linear_forces )then
+!       Use the linearized model
+!       Following the notation here: n_sparse = n_linearized, alphas ---> Qs_linearized * alphas,
+!       and    Qs ---> (Qs * diag(alphas)) · (Qs_linearized)**T
+!       This is taken care of in read_files.f90, so we only modify the linear algebra here
+!       n_linear_der corresponds to the linearized dimension for (zeta - 1)
+        write(*,*) '                                       | <--- SUCCESS! Kernel linearization done (forces).'
+        n_linear_der = size(Qs, 2)
+        allocate(this_Q_linear(1:n_linear_der) )
+        this_Q_linear = 0.d0
+        allocate( soap_linear_der(1:n_sites, 1:n_linear_der) )
+!       Get the linearized descriptor for (zeta - 1)
+        call get_linearized_desc(zeta_int - 1, soap_copy, soap_linear_der)
       else
-        kernels_der = kernels**(zeta-1.d0)
-      end if
-      if( n_sites < n_soap )then
-        do i = 1, n_sites
-          kernels_der(i,:) = kernels_der(i,:)*alphas(:)
-        end do
-      else
-        do i = 1, n_soap
-          Qs_copy(i,:) = Qs(i,:)*alphas(:)
-        end do
-      end if
+        allocate( kernels_der(1:n_sites, 1:n_sparse) )
+        allocate( Qss(1:n_sites, 1:n_soap) )
+        Qss = 0.d0
+        allocate( Qs_copy(1:n_soap, 1:n_sparse) )
+        Qs_copy = Qs
 
-      if( n_sites > 0 )then
-        call dgemm("n", "t", n_sites, n_soap, n_sparse, -zeta*delta**2, kernels_der, n_sites, &
-                   Qs_copy, n_soap, 0.d0, Qss, n_sites)
+        if( is_zeta_int )then
+          kernels_der = kernels**(zeta_int-1)
+        else
+          kernels_der = kernels**(zeta-1.d0)
+        end if
+        if( n_sites < n_soap )then
+          do i = 1, n_sites
+            kernels_der(i,:) = kernels_der(i,:)*alphas(:)
+          end do
+        else
+          do i = 1, n_soap
+            Qs_copy(i,:) = Qs(i,:)*alphas(:)
+          end do
+        end if
+        if( n_sites > 0 )then
+          call dgemm("n", "t", n_sites, n_soap, n_sparse, -zeta*delta**2, kernels_der, n_sites, &
+                     Qs_copy, n_soap, 0.d0, Qss, n_sites)
+        end if
       end if
 
 ! EXPERIMENTAL CODE
@@ -158,7 +181,14 @@ module gap
 !!$OMP parallel do private(i,j,l,j2,this_Qss)
       l = 0
       do i = 1, n_sites
-        this_Qss = Qss(i,1:n_soap)
+        if( do_linear_forces )then
+          this_Q_linear = soap_linear(i, 1:n_sparse)
+!         same as: this_Qss = -zeta*delta**2 * matmul( Qs, this_Q_linear )
+          call  dgemm("n", "n", n_soap, 1, n_linear_der, -zeta_int*delta**2, Qs, n_soap, &
+                       this_Q_linear, n_linear_der, 0.d0, this_Qss, n_soap)
+        else
+          this_Qss = Qss(i,1:n_soap)
+        end if
         do j = 1, n_neigh(i)
           l = l + 1
 !         do l = neighbors_beg(i), neighbors_end(i)
@@ -199,7 +229,11 @@ module gap
       deallocate(kernels, kernels_copy)
     end if
     if( do_forces )then
-      deallocate(kernels_der, Qs_copy, Qss, this_Qss)
+      if( do_linear_forces)then
+        deallocate( this_Q_linear, soap_linear_der, this_Qss )
+      else
+        deallocate(kernels_der, Qs_copy, Qss, this_Qss)
+      end if
     end if
 
     if( do_timing )then

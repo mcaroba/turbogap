@@ -2531,12 +2531,21 @@ end if
           end do
 !         Read the sparse set information
           if( do_prediction )then
-            call read_alphas_and_descriptors(soap_turbo_hypers(n_soap_turbo)%file_desc, &
-                                             soap_turbo_hypers(n_soap_turbo)%file_alphas, &
-                                             soap_turbo_hypers(n_soap_turbo)%n_sparse, &
-                                             "soap_turbo", soap_turbo_hypers(n_soap_turbo)%alphas, &
-                                             soap_turbo_hypers(n_soap_turbo)%Qs, &
-                                             soap_turbo_hypers(n_soap_turbo)%cutoff)
+            if( soap_turbo_hypers(n_soap_turbo)%do_linear_forces )then
+              call read_alphas_and_descriptors(soap_turbo_hypers(n_soap_turbo)%file_desc, &
+                                               soap_turbo_hypers(n_soap_turbo)%file_alphas, &
+                                               soap_turbo_hypers(n_soap_turbo)%n_sparse, &
+                                               "soap_turbo_linear", soap_turbo_hypers(n_soap_turbo)%alphas, &
+                                               soap_turbo_hypers(n_soap_turbo)%Qs, &
+                                               soap_turbo_hypers(n_soap_turbo)%cutoff)
+            else
+              call read_alphas_and_descriptors(soap_turbo_hypers(n_soap_turbo)%file_desc, &
+                                               soap_turbo_hypers(n_soap_turbo)%file_alphas, &
+                                               soap_turbo_hypers(n_soap_turbo)%n_sparse, &
+                                               "soap_turbo", soap_turbo_hypers(n_soap_turbo)%alphas, &
+                                               soap_turbo_hypers(n_soap_turbo)%Qs, &
+                                               soap_turbo_hypers(n_soap_turbo)%cutoff)
+            end if
             ! Commenting this out as it will be subsumed into local property prediction
             ! if( soap_turbo_hypers(n_soap_turbo)%has_vdw )then
             !    call read_alphas_and_descriptors(soap_turbo_hypers(n_soap_turbo)%file_vdw_desc, &
