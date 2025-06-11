@@ -499,11 +499,6 @@ program turbogap
         end if
 
 
-           allocate( params%write_local_properties(1:params%n_local_properties) )
-           params%write_local_properties = .true.
-        end if
-
-
 #ifdef _MPIF90
      END IF
 #endif
