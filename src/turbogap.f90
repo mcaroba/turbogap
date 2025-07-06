@@ -499,8 +499,6 @@ program turbogap
         end if
 
 
-
-
 #ifdef _MPIF90
      END IF
 #endif
@@ -1544,7 +1542,9 @@ program turbogap
                    soap_turbo_hypers(i)%compress_P_el, &
                    soap_turbo_hypers(i)%delta, soap_turbo_hypers(i)%zeta, soap_turbo_hypers(i)%central_species, &
                    xyz_species(this_i_beg:this_i_end), xyz_species_supercell, soap_turbo_hypers(i)%alphas, &
-                   soap_turbo_hypers(i)%Qs, params%all_atoms, params%which_atom, indices, soap, soap_cart_der, &
+                   soap_turbo_hypers(i)%Qs, soap_turbo_hypers(n_soap_turbo)%do_linear_energies, &
+                   soap_turbo_hypers(n_soap_turbo)%do_linear_forces, &
+                   params%all_atoms, params%which_atom, indices, soap, soap_cart_der, &
                    der_neighbors, der_neighbors_list, &
                    & soap_turbo_hypers(i)%has_local_properties,&
                    & soap_turbo_hypers(i)%n_local_properties,&
@@ -1705,13 +1705,13 @@ program turbogap
                     n_sites_this = size(der_neighbors,1)
                     n_soap = size(soap_cart_der, 2)
                     n_atom_pairs = size(der_neighbors_list,1)
-                    write(10, *) n_sites, n_soap, n_atom_pairs
+                    write(10, *) n_sites_this, n_soap, n_atom_pairs
                     k = 1
                     k2 = 0
                     do i2 = 1, n_sites_this
                        write(10,*) der_neighbors_list(k), der_neighbors(i2), der_neighbors_list(k:k+der_neighbors(i2)-1)
-                       k = k + der_neighbors(i)
-                       do j = 1, der_neighbors(i)
+                       k = k + der_neighbors(i2)
+                       do j = 1, der_neighbors(i2)
                           k2 = k2 + 1
                           write(10, '(*(ES24.15))') soap_cart_der(1, 1:n_soap, k2)
                           write(10, '(*(ES24.15))') soap_cart_der(2, 1:n_soap, k2)

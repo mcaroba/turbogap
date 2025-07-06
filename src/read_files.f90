@@ -1442,7 +1442,6 @@ contains
             read (10, *, iostat=iostatus) cjunk, cjunk, params%write_lv
 
         !! ------- option for doing simulation with adaptive time step
-
          else if (keyword == 'adaptive_time') then
             backspace (10)
             read (10, *, iostat=iostatus) cjunk, cjunk, params%adaptive_time
@@ -2108,7 +2107,9 @@ contains
       character*64 :: keyword, cjunk, compress_string
       character*1 :: keyword_first
       integer, parameter :: n_deprecated = 6
-      character*64 :: deprecated_keywords(n_deprecated), updated_keywords(n_deprecated)
+      character*64 :: deprecated_keywords(n_deprecated), updated_keywords(n_deprecated), &
+                      file_alphas_linear, file_desc_linear
+      logical :: has_alphas_linear, has_desc_linear             
 
       deprecated_keywords(1) = "has_vdw"
       deprecated_keywords(2) = "vdw_qs"
@@ -2331,12 +2332,39 @@ contains
                         write (*, *) 'to "polynomial"                        |'
                         soap_turbo_hypers(n_soap_turbo)%scaling_mode = "polynomial"
                      end if
-                  else if (keyword == "alphas_sparse") then
-                     backspace (10)
-                     read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%file_alphas
-                  else if (keyword == "desc_sparse") then
+                  else if( keyword == "alphas_sparse" )then
+                     backspace(10)
+                     read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%file_alphas
+                     if( params%kernel_linearization )then
+                        file_alphas_linear = trim(soap_turbo_hypers(n_soap_turbo)%file_alphas)
+                        file_alphas_linear = file_alphas_linear(1:29) // "_linear.dat"
+                        inquire(file=file_alphas_linear, exist=has_alphas_linear)
+                        if( has_alphas_linear )then
+                           soap_turbo_hypers(n_soap_turbo)%file_alphas = file_alphas_linear
+                           soap_turbo_hypers(n_soap_turbo)%do_linear_energies = .true.
+                        else
+                           write(*,*)'                                       |'
+                           write(*,*)'WARNING: alphas_linear file is missing |  <-- WARNING'
+                           write(*,*)'kernel linearization cannot be used    |'
+                           write(*,'(A,1X,I0,1X,A)')' for soap_turbo desc. ', n_soap_turbo,  '      |'
+                        end if
+                     end if
+                  else if( keyword == "desc_sparse" )then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%file_desc
+                     if( params%kernel_linearization .and. params%do_forces )then
+                        file_desc_linear = trim(soap_turbo_hypers(n_soap_turbo)%file_desc) // "_linear.dat"
+                        inquire(file=file_desc_linear, exist=has_desc_linear)
+                        if( has_desc_linear )then
+                           soap_turbo_hypers(n_soap_turbo)%file_desc = file_desc_linear
+                           soap_turbo_hypers(n_soap_turbo)%do_linear_forces = .true.
+                        else
+                           write(*,*)'                                       |'
+                           write(*,*)'WARNING: alphas_linear file is missing |  <-- WARNING'
+                           write(*,*)'kernel linearization cannot be used    |'
+                           write(*,'(A,1X,I0,1X,A)')' for forces of soap_turbo desc. ', n_soap_turbo,  '     |'
+                        end if
+                     end if
                   else if (keyword == "has_vdw") then
                      backspace (10)
                      !               read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%has_vdw
@@ -2471,12 +2499,21 @@ contains
                end do
 !         Read the sparse set information
                if (do_prediction) then
-                  call read_alphas_and_descriptors(soap_turbo_hypers(n_soap_turbo)%file_desc, &
-                                                   soap_turbo_hypers(n_soap_turbo)%file_alphas, &
-                                                   soap_turbo_hypers(n_soap_turbo)%n_sparse, &
-                                                   "soap_turbo", soap_turbo_hypers(n_soap_turbo)%alphas, &
-                                                   soap_turbo_hypers(n_soap_turbo)%Qs, &
-                                                   soap_turbo_hypers(n_soap_turbo)%cutoff)
+                  if( soap_turbo_hypers(n_soap_turbo)%do_linear_forces )then
+                     call read_alphas_and_descriptors(soap_turbo_hypers(n_soap_turbo)%file_desc, &
+                                                      soap_turbo_hypers(n_soap_turbo)%file_alphas, &
+                                                      soap_turbo_hypers(n_soap_turbo)%n_sparse, &
+                                                      "soap_turbo_linear", soap_turbo_hypers(n_soap_turbo)%alphas, &
+                                                      soap_turbo_hypers(n_soap_turbo)%Qs, &
+                                                      soap_turbo_hypers(n_soap_turbo)%cutoff)
+                  else
+                     call read_alphas_and_descriptors(soap_turbo_hypers(n_soap_turbo)%file_desc, &
+                                                      soap_turbo_hypers(n_soap_turbo)%file_alphas, &
+                                                      soap_turbo_hypers(n_soap_turbo)%n_sparse, &
+                                                      "soap_turbo", soap_turbo_hypers(n_soap_turbo)%alphas, &
+                                                      soap_turbo_hypers(n_soap_turbo)%Qs, &
+                                                      soap_turbo_hypers(n_soap_turbo)%cutoff)
+                  end if
                   ! Commenting this out as it will be subsumed into local property prediction
                   ! if( soap_turbo_hypers(n_soap_turbo)%has_vdw )then
                   !    call read_alphas_and_descriptors(soap_turbo_hypers(n_soap_turbo)%file_vdw_desc, &

@@ -44,7 +44,8 @@ contains
                            write_soap, write_derivatives, compress_soap, &
                            compress_P_nonzero, compress_P_i, compress_P_j, compress_P_el, &
                            delta, zeta, central_species, &
-                           xyz_species, xyz_species_supercell, alphas, Qs, all_atoms, &
+                           xyz_species, xyz_species_supercell, alphas, Qs, &
+                           do_linear_energies, do_linear_forces, all_atoms, &
                            which_atom, indices, soap, soap_cart_der, der_neighbors, der_neighbors_list, &
                            has_local_properties, n_local_properties, local_property_models, &
                            energies0, forces0, local_properties0,&
@@ -70,7 +71,7 @@ contains
                              & local_property_indexes(:), this_i_beg, this_i_end, this_j_beg, this_j_end, lp_index
       logical, intent(in) :: do_timing, do_derivatives, compress_soap,&
            & do_forces, do_prediction, all_atoms, write_soap,&
-           & write_derivatives, has_local_properties
+           & write_derivatives, has_local_properties, do_linear_energies, do_linear_forces
       character*64, intent(in) :: basis
       character*32, intent(in) :: scaling_mode
       character*8, intent(in) :: xyz_species(:), xyz_species_supercell(:), species_types(:)
@@ -297,6 +298,7 @@ contains
 
 !call cpu_time(time2)
 !write(*,*) "local_properties time =", time2-time1, "seconds"
+
       end if
 
       if (do_prediction) then
@@ -310,6 +312,7 @@ contains
          if (n_sites > 0) then
             call get_soap_energy_and_forces(soap, soap_cart_der, alphas, delta, zeta, 0.d0, Qs, &
                                             n_neigh, neighbors_list, xyz, do_forces, do_timing, &
+                                            do_linear_energies, do_linear_forces, &
                                             energies, forces, virial)
          end if
 
