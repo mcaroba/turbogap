@@ -1,0 +1,5 @@
+! Species-specific info
+atoms_file = 'diamond1.xyz'
+pot_file = 'gap_files/carbon.gap'
+n_species = 1
+species = C
