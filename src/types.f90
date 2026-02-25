@@ -124,7 +124,7 @@ module types
            &, f_tol = 0.01d0, p_tol = 0.01d0, max_opt_step_eps = 0.05d0&
            &, t_extra = 0.d0, p_nested = 0.d0, nested_max_strain = 0.d0&
            &, nested_max_volume_change = 0.d0, mc_move_max = 1.d0,&
-           & mc_lnvol_max = 0.01d0, mc_min_dist = 0.2d0, xps_sigma&
+           & mc_lnvol_max = 0.01d0, mc_min_dist = 0.2d0, mc_max_dist = 100000000.d0, xps_sigma&
            &= 0.4d0, mc_reverse_lambda = 0.d0, xrd_wavelength =&
            & 1.5405981d0, xrd_damping = 0.0d0, nd_wavelength =&
            & 1.5405981d0, xrd_alpha = 1.01d0, xrd_rcut = 4.d0, nd_rcut = 4.d0&

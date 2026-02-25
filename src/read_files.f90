@@ -815,6 +815,9 @@ contains
          else if (keyword == 'mc_min_dist') then
             backspace (10)
             read (10, *, iostat=iostatus) cjunk, cjunk, params%mc_min_dist
+         else if (keyword == 'mc_max_dist') then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%mc_max_dist
          else if (keyword == 'mc_n_planes') then
             backspace (10)
             read (10, *, iostat=iostatus) cjunk, cjunk, params%mc_n_planes
