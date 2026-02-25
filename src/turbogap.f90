@@ -1212,6 +1212,7 @@ program turbogap
      do_list = .false.
      do_list(i_beg:i_end) = .true.
 
+
 !      if( rebuild_neighbors_list )then
 !         if(allocated( rjs))deallocate( rjs)
 !         if(allocated( xyz))deallocate( xyz)
@@ -1477,6 +1478,8 @@ program turbogap
            call get_number_of_atom_pairs( n_neigh(i_beg:i_end), rjs(j_beg:j_end), soap_turbo_hypers(i)%rcut_max, &
                 soap_turbo_hypers(i)%l_max, soap_turbo_hypers(i)%n_max, &
                 params%max_Gbytes_per_process, i_beg_list, i_end_list, j_beg_list, j_end_list )
+
+
            do j = 1, size(i_beg_list)
               this_i_beg = i_beg - 1 + i_beg_list(j)
               this_i_end = i_beg - 1 + i_end_list(j)
@@ -3152,9 +3155,13 @@ program turbogap
               call get_target_temp(  params%t_beg,  params%t_end,&
                    & md_istep,  params%md_nsteps,  params%n_t_hold, &
                    & params%t_hold, target_temp )
-              velocities(1:3, 1:n_sites) = velocities(1:3, 1:n_sites) * dsqrt(resamplekin(E_kinetic, &
-                   target_temp, &
+              if ( E_kinetic > 0.0d0 )then 
+              velocities(1:3, 1:n_sites) = velocities(1:3, 1:n_sites) &
+                   * dsqrt(resamplekin(E_kinetic, target_temp, &
                    3*n_sites-3,params%tau_t, time_step) / E_kinetic)
+              else
+              velocities(1:3, 1:n_sites) = 0.0d0
+              end if 
            end if
            !     Check what's the maximum atomic displacement since last neighbors build
            positions_diff = positions_diff + positions(1:3, 1:n_sites) - positions_prev(1:3, 1:n_sites)
@@ -3443,7 +3450,6 @@ program turbogap
                     v_a_uc = v_uc
                  end if
 
-
                  call get_mc_acceptance(mc_move, p_accept, &
                       energy + E_kinetic, &
                       images(i_current_image)%energy + images(i_current_image)%e_kin, &
@@ -3539,10 +3545,15 @@ program turbogap
 
 
                  end if
-                 instant_temp = 2.d0/3.d0/dfloat(n_sites-1)/kB*E_kinetic
-                 instant_pressure = (kB*dfloat(n_sites-1)*instant_temp&
-                      &+(virial(1,1) + virial(2,2) + virial(3,3))/3.d0)&
-                      &/v_uc*eVperA3tobar
+                 if ( n_sites > 1  )then 
+                    instant_temp = 2.d0/3.d0/dfloat(n_sites-1)/kB*E_kinetic
+                    instant_pressure = (kB*dfloat(n_sites-1)*instant_temp&
+                         &+(virial(1,1) + virial(2,2) + virial(3,3))/3.d0)&
+                         &/v_uc*eVperA3tobar
+                 else
+                    instant_temp = 0.0d0
+                    instant_pressure = 0.0d0
+                 end if
 
 
                  if ((params%mc_write_xyz .or. mc_istep == 0 .or. mc_istep == params%mc_nsteps .or. &
@@ -3834,6 +3845,13 @@ program turbogap
                  params%do_md = .true.
                  params%optimize = params%mc_relax_opt
                  params%md_nsteps = params%mc_nrelax
+
+                 if ( n_sites == 1 )then
+                    params%do_md = .false. 
+                 end if
+                 
+                 call randomize_velocities(velocities, n_sites, E_kinetic, masses, instant_temp, params%t_beg )
+
                  ! Note, that this may override md steps if the same is chosen! More testing needed
               end if
               ! If doing md, don't relax
@@ -3843,7 +3861,14 @@ program turbogap
                  params%do_md = .true.
                  params%optimize = params%mc_hybrid_opt
                  params%md_nsteps = temp_md_nsteps
+
+                 if ( n_sites == 1 )then
+                    params%do_md = .false. 
+                 end if
+
+                 call randomize_velocities(velocities, n_sites, E_kinetic, masses, instant_temp, params%t_beg )
                  ! Note, that this may override md steps if the same is chosen! More testing needed
+                  !!
               end if
 
 

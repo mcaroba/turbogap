@@ -150,6 +150,8 @@ contains
       real*8, allocatable :: mass_in(:), mu_in(:)
       integer, allocatable :: mc_id(:), n_mc_species_in(:)
 
+      p_accept = 0.0d0
+
       if (allocated(mu_in)) then
          mu = mu_in(mc_mu_id)
       end if
@@ -329,7 +331,7 @@ contains
                                   a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), min_dist, too_close)
 
          call check_if_atoms_too_far(positions(1:3, n_sites), ref_positions, n_sites - 1, &
-                                    a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), min_dist, too_far)
+                                    a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), max_dist, too_far)
 
          if (mc_n_planes > 0) then
             if (mc_planes_restrict_to_polyhedron) then
@@ -740,6 +742,7 @@ contains
                print *, "                This will mean a MC trial will be wasted! "
                print *, " "
                print *, "                Reduce `mc_min_dist' from ", mc_min_dist, " A"
+               print *, "                or increase `mc_max_dist' from ", mc_max_dist, " A"
                print *, "                or increase `mc_max_insertion_trials' "
                print *, "                to mitigate this behaviour"
 
