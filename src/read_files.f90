@@ -51,7 +51,8 @@ contains
                        repeat_xyz, rcut_max, which_atom, positions, &
                        do_md, velocities, masses_types, masses, xyz_species, xyz_species_supercell, &
                        species, species_supercell, indices, a_box, b_box, c_box, n_sites, &
-                       supercell_check_only, fix_atom, t_beg, write_masses, recalculate_supercell)
+                       supercell_check_only, fix_atom, t_beg, write_masses, recalculate_supercell, &
+                       randomize_velocities)
 
       implicit none
 
@@ -72,6 +73,7 @@ contains
       character*8, allocatable, intent(inout) :: xyz_species(:), xyz_species_supercell(:)
       logical, intent(inout) :: repeat_xyz, write_masses
       logical, allocatable, intent(inout) :: fix_atom(:, :)
+      logical, intent(in) :: randomize_velocities
 
 !   Internal variables
       real*8, allocatable :: positions_supercell(:, :), velocities_supercell(:, :)
@@ -216,7 +218,7 @@ contains
                end if
             end do
 !   Randomize velocities if velocities are not provided
-            if (do_md .and. .not. has_velocities) then
+            if ((do_md .and. .not. has_velocities) .or. randomize_velocities) then
                write (*, *) '                                       |'
                write (*, *) 'WARNING: you have not provided initial |  <-- WARNING'
                write (*, *) 'velocities. I am randomizing them so   |'
@@ -734,6 +736,9 @@ contains
          else if (keyword == 'tau_p') then
             backspace (10)
             read (10, *, iostat=iostatus) cjunk, cjunk, params%tau_p
+         else if (keyword == 'randomize_velocities') then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%randomize_velocities
          else if (keyword == 'n_t_hold') then
             backspace (10)
             read (10, *, iostat=iostatus) cjunk, cjunk, params%n_t_hold

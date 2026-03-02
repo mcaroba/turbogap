@@ -919,10 +919,6 @@ program turbogap
   !**************************************************************************
 
 
-
-
-
-
   !**************************************************************************
   !**************************************************************************
   !**************************************************************************
@@ -990,7 +986,7 @@ program turbogap
                    positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
                    xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
                    n_sites, .not. params%mc_write_xyz, fix_atom, params%t_beg, &
-                   params%write_array_property(6), .not. params%mc_write_xyz)
+                   params%write_array_property(6), .not. params%mc_write_xyz, params%randomize_velocities)
               rebuild_neighbors_list = .true.
 
            else if( .not. params%do_nested_sampling .or. mc_istep == 0 )then
@@ -999,7 +995,7 @@ program turbogap
                    positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
                    xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
                    n_sites, .false., fix_atom, params%t_beg, &
-                   params%write_array_property(6), .false. )
+                   params%write_array_property(6), .false., params%randomize_velocities )
 
            end if
 
@@ -1051,7 +1047,7 @@ program turbogap
                    positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
                    xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
                    n_sites, .not. params%mc_write_xyz, fix_atom, params%t_beg, &
-                   params%write_array_property(6), .not. params%mc_write_xyz )
+                   params%write_array_property(6), .not. params%mc_write_xyz, params%randomize_velocities )
               rebuild_neighbors_list = .true.
            else
               call read_xyz(params%atoms_file, .true., params%all_atoms, params%do_timing, &
@@ -1059,7 +1055,7 @@ program turbogap
                    positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
                    xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
                    n_sites, .false., fix_atom, params%t_beg, params%write_array_property(6), &
-                   .false. )
+                   .false., params%randomize_velocities )
            end if
 #ifdef _MPIF90
         END IF
@@ -1076,9 +1072,6 @@ program turbogap
      end if
      !   Broadcast the info in the XYZ file: positions, velocities, masses, xyz_species, xyz_species_supercell,
      !   species, species_supercell, indices, a_box, b_box, c_box and n_sites. I should put this into a module!!!!!!!
-
-
-
 
 #ifdef _MPIF90
      IF( rank == 0 )THEN
@@ -1183,14 +1176,14 @@ program turbogap
              positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
              xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
              n_sites, .true., fix_atom, params%t_beg, &
-             params%write_array_property(6), .false.)
+             params%write_array_property(6), .false., params%randomize_velocities)
      else if( rebuild_neighbors_list )then
         call read_xyz(params%atoms_file, .true., params%all_atoms, params%do_timing, &
              n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
              positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
              xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
              n_sites, .true., fix_atom, params%t_beg, params%write_array_property(6), &
-             .false.)
+             .false., params%randomize_velocities )
 
      end if
 
@@ -3901,7 +3894,7 @@ program turbogap
                    positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
                    xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
                    n_sites, .true., fix_atom, params%t_beg, &
-                   params%write_array_property(6), .true. )
+                   params%write_array_property(6), .true., params%randomize_velocities)
 
            else
               if( mc_move == 'md')then
