@@ -1078,6 +1078,9 @@ program turbogap
         n_pos = size(positions,2)
         n_sp = size(xyz_species,1)
         n_sp_sc = size(xyz_species_supercell,1)
+        if ( params%randomize_velocities .and. md_istep == 0 )then
+           call randomize_velocities(velocities, n_sites, E_kinetic, masses, instant_temp, params%t_beg )
+        end if
         if ( params%do_mc .and. (mc_move /= "md" .or. md_istep == 0) .and. params%mc_hamiltonian )then
            if(mc_istep > 0) E_kinetic_prev = E_kinetic
            call random_number( velocities )
