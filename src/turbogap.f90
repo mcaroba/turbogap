@@ -3434,13 +3434,13 @@ program turbogap
                  if (params%verb > 50) write(*,'(A,1X,A)')    '    Move type:', mc_move
 
                  if (params%verb > 50) write(*,'(A,1X,F22.8)')'   &
-                      & Ekin_prev:', images(i_current_image)%e_kin&
+                      & Ekin_prev:', images(i_current_image)%e_kin
                  if (params%verb > 50) write(*,'(A,1X,F22.8)')'   &
                       & Etot_prev:', images(i_current_image)&
                       &%energy + images(i_current_image)%e_kin
 
                  if (params%verb > 50) write(*,'(A,1X,F22.8)')'   &
-                      & Ekin_new:', images(i_trial_image)%e_kin&
+                      & Ekin_new:', images(i_trial_image)%e_kin
                  if (params%verb > 50) write(*,'(A,1X,F22.8)')'   &
                       & Etot_new :', images(i_trial_image)%energy &
                       &+ images(i_trial_image)%e_kin
