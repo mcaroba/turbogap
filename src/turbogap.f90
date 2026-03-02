@@ -1083,8 +1083,6 @@ program turbogap
         end if
         if ( params%do_mc .and. (mc_move /= "md" .or. md_istep == 0) .and. params%mc_hamiltonian )then
            if(mc_istep > 0) E_kinetic_prev = E_kinetic
-           print *, "E_kinetic prev ", E_kinetic_prev
-           print *, "E_kinetic      ", E_kinetic
            call random_number( velocities )
            call remove_cm_vel(velocities(1:3,1:n_sites), masses(1:n_sites))
            E_kinetic = 0.d0
@@ -3860,6 +3858,7 @@ program turbogap
                  
                  call randomize_velocities(velocities, n_sites, E_kinetic, masses, instant_temp, params%t_beg )
 
+                 if ( params%mc_hamiltonian ) E_kinetic_prev = E_kinetic
                  ! Note, that this may override md steps if the same is chosen! More testing needed
               end if
               ! If doing md, don't relax
@@ -3875,6 +3874,7 @@ program turbogap
                  end if
 
                  call randomize_velocities(velocities, n_sites, E_kinetic, masses, instant_temp, params%t_beg )
+                 if ( params%mc_hamiltonian ) E_kinetic_prev = E_kinetic
                  ! Note, that this may override md steps if the same is chosen! More testing needed
                   
               end if
