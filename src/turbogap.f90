@@ -1097,6 +1097,9 @@ program turbogap
               ! Reversing as we want it to be at the instant temp and not at t_beg
               velocities = velocities * dsqrt(instant_temp / params%t_beg)
 
+              do i = 1, n_sites
+                 E_kinetic = E_kinetic + 0.5d0 * masses(i) * dot_product(velocities(1:3, i), velocities(1:3, i))
+              end do
            else
               E_kinetic = E_kinetic * params%t_beg/instant_temp
            end if
@@ -3429,9 +3432,15 @@ program turbogap
                  if (params%verb > 50) write(*,*)'.......................................|'
                  if (params%verb > 50) write(*,'(A,1X,I0)')   ' MC Iteration:', mc_istep
                  if (params%verb > 50) write(*,'(A,1X,A)')    '    Move type:', mc_move
+
+                 if (params%verb > 50) write(*,'(A,1X,F22.8)')'   &
+                      & Ekin_prev:', images(i_current_image)%e_kin&
                  if (params%verb > 50) write(*,'(A,1X,F22.8)')'   &
                       & Etot_prev:', images(i_current_image)&
                       &%energy + images(i_current_image)%e_kin
+
+                 if (params%verb > 50) write(*,'(A,1X,F22.8)')'   &
+                      & Ekin_new:', images(i_trial_image)%e_kin&
                  if (params%verb > 50) write(*,'(A,1X,F22.8)')'   &
                       & Etot_new :', images(i_trial_image)%energy &
                       &+ images(i_trial_image)%e_kin

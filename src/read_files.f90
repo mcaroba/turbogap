@@ -228,6 +228,18 @@ contains
                write (*, '(A, F16.4, A)') ' t_beg = ', t_beg, ' K             |'
                write (*, *) '                                       |'
                write (*, *) '.......................................|'
+
+               if (.not. allocated(velocities)) then
+                  allocate (velocities(1:3, 1:n_sites), source=0.0d0)
+               end if
+
+               if (allocated(velocities)) then
+                  if (size(velocities, 2) /= n_sites) then
+                     deallocate (velocities)
+                     allocate (velocities(1:3, 1:n_sites), source=0.0d0)
+                  end if
+               end if
+
                call random_number(velocities)
                call remove_cm_vel(velocities(1:3, 1:n_sites), masses(1:n_sites))
                E_kinetic = 0.d0
@@ -236,6 +248,10 @@ contains
                end do
                instant_temp = 2.d0/3.d0/dfloat(n_sites - 1)/kB*E_kinetic
                velocities = velocities*dsqrt(t_beg/instant_temp)
+
+               do i = 1, n_sites
+                  E_kinetic = E_kinetic + 0.5d0*masses(i)*dot_product(velocities(1:3, i), velocities(1:3, i))
+               end do
             end if
 !   Check if there are more structures in the xyz file
             read (11, *, iostat=iostatus) cjunk
