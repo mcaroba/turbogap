@@ -1096,6 +1096,7 @@ program turbogap
               instant_temp = 2.d0/3.d0/dfloat(n_sites-1)/kB*E_kinetic
               ! Reversing as we want it to be at the instant temp and not at t_beg
               velocities = velocities * dsqrt(instant_temp / params%t_beg)
+
            else
               E_kinetic = E_kinetic * params%t_beg/instant_temp
            end if

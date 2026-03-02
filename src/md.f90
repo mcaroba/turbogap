@@ -63,6 +63,11 @@ contains
          ! when accounting for removing the centre of mass velocity)
          instant_temp = 2.d0/3.d0/dfloat(n_sites - 1)/kB*E_kinetic
          velocities = velocities*dsqrt(t_beg/instant_temp)
+
+         do i = 1, n_sites
+            E_kinetic = E_kinetic + 0.5d0*masses(i)*dot_product(velocities(1:3, i), velocities(1:3, i))
+         end do
+
       else
          ! The instant temperature is zero due to the removal of the degree of freedom
          instant_temp = 0.0d0
