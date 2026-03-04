@@ -327,11 +327,10 @@ contains
          call wrap_pbc(positions(1:3, 1:n_sites), a_box/dfloat(indices(1)), &
                        b_box/dfloat(indices(2)), c_box/dfloat(indices(3)))
 
-         call check_if_atoms_too_close(positions(1:3, n_sites), ref_positions, n_sites - 1, &
-                                  a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), min_dist, too_close)
-
-         call check_if_atoms_too_far(positions(1:3, n_sites), ref_positions, n_sites - 1, &
-                                    a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), max_dist, too_far)
+         call check_if_atoms_too_close_or_far(positions(1:3, n_sites), ref_positions, n_sites - 1, &
+                                              a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
+                                              min_dist, too_close, &
+                                              max_dist, too_far)
 
          if (mc_n_planes > 0) then
             if (mc_planes_restrict_to_polyhedron) then
@@ -350,7 +349,7 @@ contains
 
       end do
 
-      cannot_insert_site = too_close .or. too_far .or. too_far_planes
+      cannot_insert_site = (n_trials > max_trials)
 
    end subroutine mc_insert_site
 
@@ -422,38 +421,10 @@ contains
       too_far_out = too_far
    end subroutine check_if_far_from_planes
 
-   subroutine check_if_atoms_too_far(position, ref_positions, n_sites, &
-                                     a_box, b_box, c_box, max_dist, too_far_out)
-      implicit none
-      integer, intent(in) :: n_sites
-      integer :: i, i_shift(1:3)
-      real*8, intent(in) :: position(:), ref_positions(:, :), max_dist
-      real*8, intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3)
-      real*8 :: d, dist(1:3), minimum = 10000000.d0
-      logical :: too_far
-      logical, intent(out) :: too_far_out
-
-      minimum = 10000000.d0
-      too_far = .false.
-      check: do i = 1, n_sites
-         call get_distance(position(1:3), ref_positions(1:3, i), &
-                           a_box, b_box, c_box, (/.true., .true., .true./), dist, d, i_shift)
-
-         minimum = min(d, minimum)
-
-         if (minimum > max_dist) then
-            too_far = .true.
-            exit check
-         end if
-      end do check
-
-      too_far_out = too_far
-
-!    print *, "check_if_atoms_too_far: too_far = ", too_far_out, " minimum_found = ", minimum, " max_dist = ", min_dist
-   end subroutine check_if_atoms_too_far
-
-   subroutine check_if_atoms_too_close(position, ref_positions, n_sites, &
-                                       a_box, b_box, c_box, min_dist, too_close_out)
+   subroutine check_if_atoms_too_close_or_far(position, ref_positions, n_sites, &
+                                              a_box, b_box, c_box, &
+                                              min_dist, too_close_out, &
+                                              max_dist, too_far_out)
       implicit none
       integer, intent(in) :: n_sites
       integer :: i, i_shift(1:3)
@@ -461,26 +432,28 @@ contains
       real*8, intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3)
       real*8 :: d, dist(1:3), minimum = 10000000.d0
       logical :: too_close
+      logical :: too_far
       logical, intent(out) :: too_close_out
+      logical, intent(out) :: too_far_out
 
       minimum = 10000000.d0
       too_close = .false.
+      too_far = .false.
       check: do i = 1, n_sites
          call get_distance(position(1:3), ref_positions(1:3, i), &
                            a_box, b_box, c_box, (/.true., .true., .true./), dist, d, i_shift)
 
          minimum = min(d, minimum)
 
-         if (minimum < min_dist) then
-            too_close = .true.
-            exit check
-         end if
       end do check
 
-      too_close_out = too_close
+      if (minimum < min_dist) too_close = .true.
+      if (minimum > max_dist) too_far = .true.
 
-!    print *, "check_if_atoms_too_close: too_close = ", too_close_out, " minimum_found = ", minimum, " min_dist = ", min_dist
-   end subroutine check_if_atoms_too_close
+      too_close_out = too_close
+      too_far_out = too_far
+
+   end subroutine check_if_atoms_too_close_or_far
 
    subroutine count_swap_species(n_spec_swap_1, n_spec_swap_2,&
         & species_types, n_mc_swaps, mc_swaps_id, species, n_sites,&
