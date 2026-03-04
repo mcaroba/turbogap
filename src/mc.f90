@@ -428,7 +428,7 @@ contains
       implicit none
       integer, intent(in) :: n_sites
       integer :: i, i_shift(1:3)
-      real*8, intent(in) :: position(:), ref_positions(:, :), min_dist
+      real*8, intent(in) :: position(:), ref_positions(:, :), min_dist, max_dist
       real*8, intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3)
       real*8 :: d, dist(1:3), minimum = 10000000.d0
       logical :: too_close
