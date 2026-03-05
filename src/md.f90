@@ -425,6 +425,7 @@ contains
 
       if (first_step) then
          backtracking = .true.
+         initialized = .false.
          if (.not. allocated(positions0)) allocate (positions0(1:3, 1:size(positions, 2)))
          if (.not. allocated(forces0)) allocate (forces0(1:3, 1:size(positions, 2)))
          positions0 = positions
