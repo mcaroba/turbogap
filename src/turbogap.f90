@@ -48,6 +48,7 @@ program turbogap
   use soap_turbo_functions
 #ifdef _MPIF90
   use mpi
+  use mpi_utils, only: synchronize_array
   use mpi_helper
 #endif
   use bussi
@@ -4078,55 +4079,69 @@ program turbogap
      call mpi_bcast(n_sp_sc, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(params%do_md, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(md_istep, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-     call cpu_time(time_mpi(2))
-     time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
-     IF( rank /= 0 )THEN !.and. (mc_move == "insertion" .or. mc_move == "removal")
-        if(allocated(positions))deallocate(positions)
-        allocate( positions(1:3, n_pos) )
-        if( params%do_md .or. params%do_nested_sampling  .or. params%do_mc)then
-           if(allocated(velocities))deallocate(velocities)
-           allocate( velocities(1:3, n_pos) )
-           if(allocated(masses))deallocate(masses)
-           allocate( masses(1:n_sp) )
-           if(allocated(fix_atom))deallocate(fix_atom)
-           allocate( fix_atom(1:3, 1:n_sp) )
+     call mpi_bcast(n_sites, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+     
+     call synchronize_array( positions, rank )
+     call synchronize_array( velocities, rank )
+     call synchronize_array( masses, rank )
+     call synchronize_array( fix_atom, rank )
+     call synchronize_array( xyz_species, rank )
+     call synchronize_array( xyz_species_supercell, rank )
+     call synchronize_array( species_supercell, rank )
 
-           ! if(allocated(forces_prev))deallocate(forces_prev)
-           ! allocate( forces_prev(1:3, 1:n_sites) )
-           ! if(allocated(positions_prev))deallocate(positions_prev)
-           ! allocate( positions_prev(1:3, 1:n_sites) )
-           ! if(allocated(positions_diff))deallocate(positions_diff)
-           ! allocate( positions_diff(1:3, 1:n_sites) )
-           ! positions_diff = 0.d0
-
-        end if
-        if(allocated(xyz_species))deallocate(xyz_species)
-        allocate( xyz_species(1:n_sp) )
-        if(allocated(species))deallocate(species)
-        allocate( species(1:n_sp) )
-        if(allocated(xyz_species_supercell))deallocate(xyz_species_supercell)
-        allocate( xyz_species_supercell(1:n_sp_sc) )
-        if(allocated(species_supercell))deallocate(species_supercell)
-        allocate( species_supercell(1:n_sp_sc) )
-     END IF
-     call cpu_time(time_mpi_positions(1))
-     call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-     if( params%do_md .or. params%do_nested_sampling .or. params%do_mc )then
-        call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(masses, n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        call mpi_bcast(fix_atom, 3*n_sp, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
-     end if
-     call mpi_bcast(xyz_species, 8*n_sp, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
-     call mpi_bcast(xyz_species_supercell, 8*n_sp_sc, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
-     call mpi_bcast(species, n_sp, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-     call mpi_bcast(species_supercell, n_sp_sc, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(indices, 3, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(a_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(b_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(c_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-     call mpi_bcast(n_sites, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-     call cpu_time(time_mpi_positions(2))
-     time_mpi_positions(3) = time_mpi_positions(3) + time_mpi_positions(2) - time_mpi_positions(1)
+     call cpu_time(time_mpi(2))
+     time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
+     ! IF( rank /= 0 )THEN !.and. (mc_move == "insertion" .or. mc_move == "removal")
+     !    if(allocated(positions))deallocate(positions)
+     !    allocate( positions(1:3, n_pos) )
+     !    if( params%do_md .or. params%do_nested_sampling  .or. params%do_mc)then
+     !       if(allocated(velocities))deallocate(velocities)
+     !       allocate( velocities(1:3, n_pos) )
+     !       if(allocated(masses))deallocate(masses)
+     !       allocate( masses(1:n_sp) )
+     !       if(allocated(fix_atom))deallocate(fix_atom)
+     !       allocate( fix_atom(1:3, 1:n_sp) )
+
+     !       ! if(allocated(forces_prev))deallocate(forces_prev)
+     !       ! allocate( forces_prev(1:3, 1:n_sites) )
+     !       ! if(allocated(positions_prev))deallocate(positions_prev)
+     !       ! allocate( positions_prev(1:3, 1:n_sites) )
+     !       ! if(allocated(positions_diff))deallocate(positions_diff)
+     !       ! allocate( positions_diff(1:3, 1:n_sites) )
+     !       ! positions_diff = 0.d0
+
+     !    end if
+     !    if(allocated(xyz_species))deallocate(xyz_species)
+     !    allocate( xyz_species(1:n_sp) )
+     !    if(allocated(species))deallocate(species)
+     !    allocate( species(1:n_sp) )
+     !    if(allocated(xyz_species_supercell))deallocate(xyz_species_supercell)
+     !    allocate( xyz_species_supercell(1:n_sp_sc) )
+     !    if(allocated(species_supercell))deallocate(species_supercell)
+     !    allocate( species_supercell(1:n_sp_sc) )
+     ! END IF
+     ! call cpu_time(time_mpi_positions(1))
+     ! call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+     ! if( params%do_md .or. params%do_nested_sampling .or. params%do_mc )then
+     !    call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+     !    call mpi_bcast(masses, n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+     !    call mpi_bcast(fix_atom, 3*n_sp, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+     ! end if
+     ! call mpi_bcast(xyz_species, 8*n_sp, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
+     ! call mpi_bcast(xyz_species_supercell, 8*n_sp_sc, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
+     ! call mpi_bcast(species, n_sp, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+     ! call mpi_bcast(species_supercell, n_sp_sc, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+     ! call mpi_bcast(indices, 3, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+     ! call mpi_bcast(a_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+     ! call mpi_bcast(b_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+     ! call mpi_bcast(c_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+     ! call mpi_bcast(n_sites, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+     ! call cpu_time(time_mpi_positions(2))
+     ! time_mpi_positions(3) = time_mpi_positions(3) + time_mpi_positions(2) - time_mpi_positions(1)
 #endif
      !   Now that all ranks know the size of n_sites, we allocate do_list
      if( .not. params%do_md .or. (params%do_md .and. md_istep == 0) .or. &
