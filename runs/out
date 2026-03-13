@@ -1,0 +1,1115 @@
+ _________________________________________________________________ 
+                              _                                   \
+  ___________            __   \\ /\        _____     ___   _____  |
+ /____  ____/           / / /\|*\|*\/\    / ___ \   /   | |  _  \ |
+     / / __  __  __    / /  \********/   / /  /_/  / /| | | / | | |
+    / / / / / / / /_  / /__  \**__**/   / / ____  / / | | | |_/ / |
+   / / / / / / / __/ / ___ \ /*/  \*\  / / /_  / / /__| | |  __/  |
+  / / / /_/ / / /   / /__/ / \ \__/ / / /___/ / / ____  | | |     |
+ /_/_/_____/_/_/___/______/___\____/__\______/_/_/____|_|_|_|____ |
+ _____________________________________________________________  / |
+ *************************************************************|/  |
+                      Welcome to TurboGAP v0.1                    |
+                     Written and maintained by                    |
+                                                                  |
+                          Miguel A. Caro                          |
+                        mcaroba@gmail.com                         |
+                       miguel.caro@aalto.fi                       |
+                                                                  |
+        Department of Electrical Engineering and Automation       |
+                      Aalto University, Finland                   |
+                                                                  |
+ .................................................................|
+                                                                  |
+ ====================>>>>>  turbogap.fi  <<<<<====================|
+                                                                  |
+ .................................................................|
+                                                                  |
+ Contributors (code and methodology) in chronological order:      |
+                                                                  |
+ *) Miguel A. Caro (Aalto University)                             |
+ *) Patricia Hernández-León (Aalto University)                    |
+ *) Suresh Kondati Natarajan (now @ QuantumWise, formerly @ Aalto)|
+ *) Albert P. Bartók-Pártay (Warwick University)                  |
+ *) Eelis V. Mielonen (now @ EPFL, formerly @ Aalto)              |
+ *) Heikki Muhli (Aalto University)                               |
+ *) Mikhail Kuklin (Aalto University)                             |
+ *) Gábor Csányi (University of Cambridge)                        |
+ *) Jan Kloppenburg (Aalto University)                            |
+                                                                  |
+ .................................................................|
+                                                                  |
+                      Last updated: Jul. 2021                     |
+                                         _________________________/
+ .......................................|
+                                        |
+ Running TurboGAP with MPI support:     |
+                                        |
+ Running TurboGAP on      1 MPI tasks   |
+                                        |
+ .......................................|
+                                        |
+ Checking input file...                 |
+                                        |
+ WARNING: default vdW reference parame- |
+ ters not available for element:        |
+                                        |
+ P                                      |
+                                        |
+ You can safely disregard this warning  |
+ if your potential does not use van der |
+ Waals corrections. Otherwise, or if you|
+ want to overrride the defaults, you    |
+ need to provide your own definitions of|
+ vdw_c6_ref, vdw_r0_ref and             |
+ vdw_alpha0_ref in the input file.      |
+                                        |
+ .......................................|
+                                        |
+ You specified the following options:   |
+                                        |
+ ---------------------------------      |
+ Atoms file =         p4_dimer.xyz      |
+ ---------------------------------      |
+ No. of species   = 1                   |
+   *) Species #1  =              P      |
+ ---------------------------------      |
+ rcut_max =         25.5000 Angst.      |
+ ---------------------------------      |
+                                        |
+ .......................................|
+                                        |
+ WARNING: your simulation box is smaller|  <-- WARNING
+ than a neighbors cutoff sphere; this   |
+ will lead to slow code execution due to|
+ inefficient neighbor list builds. This |
+ warning will be printed only once. If  |
+ you have more than one structure in    |
+ your XYZ file, you may also have       |
+ several instances of non-orthorhombic  |
+ cells.                                 |
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.58034895 eV |
+ 2b energy:              10.75454840 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21711244 eV |
+ Total energy:          -42.23299114 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.58071175 eV |
+ 2b energy:              10.75513705 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21709663 eV |
+ Total energy:          -42.23274949 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.58181720 eV |
+ 2b energy:              10.75757781 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21704925 eV |
+ Total energy:          -42.23136680 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.58372467 eV |
+ 2b energy:              10.76215306 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21697072 eV |
+ Total energy:          -42.22862050 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.58651766 eV |
+ 2b energy:              10.76855986 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21686207 eV |
+ Total energy:          -42.22489802 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.59027156 eV |
+ 2b energy:              10.77627862 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21672481 eV |
+ Total energy:          -42.22079591 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.59501533 eV |
+ 2b energy:              10.78480365 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21656095 eV |
+ Total energy:          -42.21685079 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.60069036 eV |
+ 2b energy:              10.79375321 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21637302 eV |
+ Total energy:          -42.21338832 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.60712919 eV |
+ 2b energy:              10.80287901 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21616396 eV |
+ Total energy:          -42.21049230 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.61403443 eV |
+ 2b energy:              10.81202099 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21593726 eV |
+ Total energy:          -42.20802886 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.62100162 eV |
+ 2b energy:              10.82104332 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21569690 eV |
+ Total energy:          -42.20573336 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.62755297 eV |
+ 2b energy:              10.82979197 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21544735 eV |
+ Total energy:          -42.20328651 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.63320424 eV |
+ 2b energy:              10.83809247 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21519339 eV |
+ Total energy:          -42.20038331 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.63754536 eV |
+ 2b energy:              10.84578726 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21493988 eV |
+ Total energy:          -42.19677614 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.64031631 eV |
+ 2b energy:              10.85279051 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21469143 eV |
+ Total energy:          -42.19229540 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.64146041 eV |
+ 2b energy:              10.85913840 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21445216 eV |
+ Total energy:          -42.18685233 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.64113042 eV |
+ 2b energy:              10.86487188 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21422569 eV |
+ Total energy:          -42.18056240 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.63963922 eV |
+ 2b energy:              10.86955674 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21401541 eV |
+ Total energy:          -42.17417605 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.63736274 eV |
+ 2b energy:              10.87308725 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21382445 eV |
+ Total energy:          -42.16817809 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.63461843 eV |
+ 2b energy:              10.87538034 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21365537 eV |
+ Total energy:          -42.16297162 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.63151222 eV |
+ 2b energy:              10.87626356 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21351029 eV |
+ Total energy:          -42.15883711 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.62798855 eV |
+ 2b energy:              10.87629881 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21339084 eV |
+ Total energy:          -42.15515874 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.62387733 eV |
+ 2b energy:              10.87541262 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21330782 eV |
+ Total energy:          -42.15185069 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.61899355 eV |
+ 2b energy:              10.87359137 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21324207 eV |
+ Total energy:          -42.14872241 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.61328460 eV |
+ 2b energy:              10.87102548 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21320474 eV |
+ Total energy:          -42.14554202 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.60692362 eV |
+ 2b energy:              10.86763698 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21319632 eV |
+ Total energy:          -42.14256113 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.60031522 eV |
+ 2b energy:              10.86354021 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21321491 eV |
+ Total energy:          -42.14006808 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.59400271 eV |
+ 2b energy:              10.85893581 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21325650 eV |
+ Total energy:          -42.13840156 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.58850744 eV |
+ 2b energy:              10.85399272 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21331644 eV |
+ Total energy:          -42.13790931 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.58417284 eV |
+ 2b energy:              10.84879938 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21339108 eV |
+ Total energy:          -42.13884271 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.58107942 eV |
+ 2b energy:              10.84339730 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21347842 eV |
+ Total energy:          -42.14123870 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.57905244 eV |
+ 2b energy:              10.83787208 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21357727 eV |
+ Total energy:          -42.14483578 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.57776517 eV |
+ 2b energy:              10.83245417 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21368350 eV |
+ Total energy:          -42.14907266 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.57687992 eV |
+ 2b energy:              10.82759804 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21380064 eV |
+ Total energy:          -42.15316068 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.57615516 eV |
+ 2b energy:              10.82359709 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21392195 eV |
+ Total energy:          -42.15655817 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.57549792 eV |
+ 2b energy:              10.82012208 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21404518 eV |
+ Total energy:          -42.15949918 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.57495325 eV |
+ 2b energy:              10.81753051 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21416759 eV |
+ Total energy:          -42.16166848 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.57459845 eV |
+ 2b energy:              10.81542554 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21428707 eV |
+ Total energy:          -42.16353813 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.57454629 eV |
+ 2b energy:              10.81353649 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21440087 eV |
+ Total energy:          -42.16548883 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.57482293 eV |
+ 2b energy:              10.81225377 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21450638 eV |
+ Total energy:          -42.16715370 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.57532772 eV |
+ 2b energy:              10.81147853 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21460104 eV |
+ Total energy:          -42.16852839 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.57592498 eV |
+ 2b energy:              10.81106833 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21468244 eV |
+ Total energy:          -42.16961725 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.57648985 eV |
+ 2b energy:              10.81089272 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21474836 eV |
+ Total energy:          -42.17042365 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.57693482 eV |
+ 2b energy:              10.81084441 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21479691 eV |
+ Total energy:          -42.17096549 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.57721181 eV |
+ 2b energy:              10.81084615 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21482666 eV |
+ Total energy:          -42.17127049 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.57730508 eV |
+ 2b energy:              10.81085166 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21483668 eV |
+ Total energy:          -42.17136826 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.57721181 eV |
+ 2b energy:              10.81084615 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21482666 eV |
+ Total energy:          -42.17127049 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.57693482 eV |
+ 2b energy:              10.81084441 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21479691 eV |
+ Total energy:          -42.17096548 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.57648985 eV |
+ 2b energy:              10.81089272 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21474836 eV |
+ Total energy:          -42.17042365 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.57592498 eV |
+ 2b energy:              10.81106833 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21468244 eV |
+ Total energy:          -42.16961725 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.57532772 eV |
+ 2b energy:              10.81147853 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21460104 eV |
+ Total energy:          -42.16852839 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.57482293 eV |
+ 2b energy:              10.81225377 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21450638 eV |
+ Total energy:          -42.16715370 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.57454629 eV |
+ 2b energy:              10.81353649 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21440087 eV |
+ Total energy:          -42.16548883 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.57459845 eV |
+ 2b energy:              10.81542554 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21428707 eV |
+ Total energy:          -42.16353813 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.57495325 eV |
+ 2b energy:              10.81753051 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21416759 eV |
+ Total energy:          -42.16166848 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.57549792 eV |
+ 2b energy:              10.82012208 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21404518 eV |
+ Total energy:          -42.15949918 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.57615516 eV |
+ 2b energy:              10.82359709 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21392195 eV |
+ Total energy:          -42.15655817 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.57687992 eV |
+ 2b energy:              10.82759803 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21380064 eV |
+ Total energy:          -42.15316068 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.57776517 eV |
+ 2b energy:              10.83245417 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21368350 eV |
+ Total energy:          -42.14907266 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.57905244 eV |
+ 2b energy:              10.83787208 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21357727 eV |
+ Total energy:          -42.14483578 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.58107942 eV |
+ 2b energy:              10.84339730 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21347842 eV |
+ Total energy:          -42.14123870 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.58417284 eV |
+ 2b energy:              10.84879938 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21339108 eV |
+ Total energy:          -42.13884271 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.58850744 eV |
+ 2b energy:              10.85399272 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21331644 eV |
+ Total energy:          -42.13790932 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.59400271 eV |
+ 2b energy:              10.85893581 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21325650 eV |
+ Total energy:          -42.13840156 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.60031522 eV |
+ 2b energy:              10.86354021 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21321491 eV |
+ Total energy:          -42.14006808 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.60692362 eV |
+ 2b energy:              10.86763698 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21319632 eV |
+ Total energy:          -42.14256113 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.61328460 eV |
+ 2b energy:              10.87102548 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21320474 eV |
+ Total energy:          -42.14554202 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.61899355 eV |
+ 2b energy:              10.87359137 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21324207 eV |
+ Total energy:          -42.14872240 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.62387733 eV |
+ 2b energy:              10.87541262 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21330782 eV |
+ Total energy:          -42.15185069 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.62798855 eV |
+ 2b energy:              10.87629881 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21339084 eV |
+ Total energy:          -42.15515874 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.63151222 eV |
+ 2b energy:              10.87626356 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21351029 eV |
+ Total energy:          -42.15883711 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.63461843 eV |
+ 2b energy:              10.87538034 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21365537 eV |
+ Total energy:          -42.16297162 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.63736274 eV |
+ 2b energy:              10.87308725 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21382445 eV |
+ Total energy:          -42.16817809 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.63963922 eV |
+ 2b energy:              10.86955674 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21401541 eV |
+ Total energy:          -42.17417605 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.64113042 eV |
+ 2b energy:              10.86487188 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21422569 eV |
+ Total energy:          -42.18056240 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.64146041 eV |
+ 2b energy:              10.85913840 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21445216 eV |
+ Total energy:          -42.18685233 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.64031631 eV |
+ 2b energy:              10.85279051 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21469143 eV |
+ Total energy:          -42.19229539 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.63754536 eV |
+ 2b energy:              10.84578726 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21493988 eV |
+ Total energy:          -42.19677614 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.63320424 eV |
+ 2b energy:              10.83809247 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21519339 eV |
+ Total energy:          -42.20038331 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.62755297 eV |
+ 2b energy:              10.82979197 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21544735 eV |
+ Total energy:          -42.20328651 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.62100162 eV |
+ 2b energy:              10.82104332 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21569690 eV |
+ Total energy:          -42.20573336 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.61403443 eV |
+ 2b energy:              10.81202099 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21593726 eV |
+ Total energy:          -42.20802886 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.60712919 eV |
+ 2b energy:              10.80287901 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21616396 eV |
+ Total energy:          -42.21049230 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.60069036 eV |
+ 2b energy:              10.79375321 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21637302 eV |
+ Total energy:          -42.21338832 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.59501533 eV |
+ 2b energy:              10.78480365 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21656095 eV |
+ Total energy:          -42.21685079 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.59027156 eV |
+ 2b energy:              10.77627862 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21672481 eV |
+ Total energy:          -42.22079591 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.58651766 eV |
+ 2b energy:              10.76855986 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21686207 eV |
+ Total energy:          -42.22489802 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.58372467 eV |
+ 2b energy:              10.76215306 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21697072 eV |
+ Total energy:          -42.22862050 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.58181720 eV |
+ 2b energy:              10.75757781 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21704925 eV |
+ Total energy:          -42.23136680 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.58071175 eV |
+ 2b energy:              10.75513705 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21709663 eV |
+ Total energy:          -42.23274949 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ SOAP energy:           -48.58034895 eV |
+ 2b energy:              10.75454840 eV |
+ 3b energy:               0.00000000 eV |
+ core_pot energy:         0.00000000 eV |
+ vdw energy:             -0.21711244 eV |
+ Total energy:          -42.23299114 eV |
+                                        |
+ Energy & forces in "trajectory_out.xyz"|
+                                        |
+ .......................................|
+                                        |
+ *     Read input:        0.184 seconds |
+ * Read XYZ files:        0.003 seconds |
+ * Neighbor lists:        0.004 seconds |
+ *  GAP desc/pred:        0.503 seconds |
+     - soap_turbo:        0.319 seconds |
+     -         2b:        0.003 seconds |
+     -         3b:        0.000 seconds |
+     -   core_pot:        0.000 seconds |
+     -        vdw:        0.005 seconds |
+ *  MPI comms.   :        0.001 seconds |
+     -  pos & vel:        0.000 seconds |
+     - E & F brc.:        0.000 seconds |
+     -  MPI misc.:        0.001 seconds |
+ *  Miscellaneous:        0.466 seconds |
+                                        |
+ *     Total time:        1.161 seconds |
+                                        |
+ .......................................|
+                                        |
+ End of execution                       |
+ _______________________________________/

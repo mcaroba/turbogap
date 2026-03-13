@@ -8,13 +8,17 @@ e0 = -0.52375977
 masses = 30.97
 
 ! van der Waals info
+!vdw_type = ts
 vdw_type = mbd
+!vdw_type = ts+mbd
+!vdw_sr = 0.94
 vdw_sr = 0.83
-vdw_d = 6.            ! Use d = 20 for TS and d = 6 for MBD
+!vdw_d = 20.
+vdw_d = 6.            ! Use d = 20 for TS(SCS) and d = 6 for MBD
 vdw_rcut = 25.
-vdw_r0_ref = 2.12
-vdw_alpha0_ref = 3.7046
-vdw_c6_ref = 110.54
+vdw_r0_ref = 2.12 !1.900 !1.64
+vdw_alpha0_ref = 3.7046 !1.778 !0.667
+vdw_c6_ref = 110.54 !27.8 !3.88
 vdw_buffer = 0.5          ! Buffer for transitions between cut-off regions. Type: REAL
 vdw_scs_rcut = 5.         ! SCS cut-off for polarizabilities. Type: REAL
 vdw_loc_rcut = 5.         ! Cut-off for including polarizability gradients in force calculation (vdw_loc_rcut <= vdw_scs_rcut).
@@ -30,3 +34,5 @@ vdw_polynomial = .false.  ! Use polynomial approximation for inverse matrices. T
 vdw_omega_ref = 1.3d0     ! Reference frequency value used for SCS characteristic frequency calculation. Might depend on the material (for now).
 do_nnls = .false.         ! NNLS for frequency fitting to avoid calculating many frequency points. Use at least vdw_mbd_nfreq = 2*vdw_mbd_norder+1 or it might be unstable (overfitting)
 vdw_mbd_cent_appr = .true.
+poly_cut_xmin = 3.d0
+poly_cut_xmax = 10.d0
