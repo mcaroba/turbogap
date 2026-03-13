@@ -1397,6 +1397,12 @@ end if
         if( .not. allocated(v_neigh_vdw) )allocate(v_neigh_vdw(1:j_end-j_beg+1))
         v_neigh_vdw = 0.d0
         k = 0
+!HERE
+!hirshfeld_v = (/ 0.80762988, 0.80809103, 0.81353695, 0.82763388, 0.81353695, 0.80809103, &
+!0.60956241, 0.61025637, 0.63072600, 0.74482976, 0.63072600, 0.61025637, &
+!0.80231497, 0.80198854, 0.80198854, 0.80231496, 0.80198854, 0.80198854, &
+!0.60095522, 0.60079974, 0.60079974, 0.60095521, 0.60079974, 0.60079974 /)
+if( params%vdw_type == "ts" .or. params%vdw_type == "ts+mbd" .or. params%vdw_type == "mbd")then
         do i = i_beg, i_end
           do j = 1, n_neigh(i)
 !           I'm not sure if this is necessary or neighbors_list is already bounded between 1 and n_sites -> CHECK THIS
@@ -1405,6 +1411,7 @@ end if
             v_neigh_vdw(k) = hirshfeld_v(j2)
           end do
         end do
+end if
 ! TODO: change this back to get_ts_energy_and_forces and implement call for mbd energy
         if( params%vdw_type == "ts" .or. params%vdw_type == "ts+mbd" )then
           call get_ts_energy_and_forces( hirshfeld_v(i_beg:i_end), hirshfeld_v_cart_der(1:3, j_beg:j_end), &
@@ -1648,9 +1655,9 @@ end do
                                       - 1.d0 )
               this_mbd_ts_scaling = clip(this_mbd_ts_scaling, 0.1d0, 2.5d0)
 !write(*,*) "mbd_ts_scaling:", this_mbd_ts_scaling
-write(*,*)
-write(*,*) "Tr(virial):", md_istep, sum(local_virial_vdw_diag), sum(local_virial_vdw_diag_corr), &
-sum(this_mbd_ts_scaling)/size(this_mbd_ts_scaling), std(this_mbd_ts_scaling)!, local_virial_vdw_diag/local_virial_vdw_diag_corr
+!write(*,*)
+!write(*,*) "Tr(virial):", md_istep, sum(local_virial_vdw_diag), sum(local_virial_vdw_diag_corr), &
+!sum(this_mbd_ts_scaling)/size(this_mbd_ts_scaling), std(this_mbd_ts_scaling)!, local_virial_vdw_diag/local_virial_vdw_diag_corr
 !sum(this_mbd_ts_scaling*sum(local_virial_vdw_diag_corr,1))
             end if
             call mpi_bcast(this_mbd_ts_scaling, n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
