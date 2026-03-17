@@ -1720,7 +1720,7 @@ contains
                stop
             end if
          else
-            write (*, *) "ERROR: I do not recognize the input file keyword", keyword
+            write (*, *) "ERROR: I do not recognize the input file keyword ", keyword
             stop
          end if
       end do

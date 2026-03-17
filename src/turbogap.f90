@@ -248,14 +248,23 @@ program turbogap
 
 
   !**************************************************************************
-  ! Read the mode. It should be "soap", "predict" or "md"
+  ! Read the mode. It should be "soap", "predict" or "md" or "mc"
   !
   call get_command_argument(1,mode)
-  if( mode == "" .or. mode == "none" )then
-     write(*,*) "ERROR: you need to run 'turbogap md' or 'turbogap predict'"
+  if( (mode == "" .or. mode == "none") .or.  &
+       ( mode /= "md"   .and. &
+         mode /= "mc"   .and. &
+         mode /= "soap" .and. &
+         mode /= "predict" ))then
+     if ( rank == 0 )then 
+        write(*,*) "ERROR: TurboGAP mode '"//trim(mode)//"' is invalid!!"
+        write(*,*) "You need to run 'turbogap {mode}' where mode is one of 'predict', 'md', 'mc' or 'soap'"
+     end if
+#ifdef _MPIF90
+  call mpi_finalize(ierr)
+#endif 
      stop
-     ! THIS SHOULD BE FIXED, IN CASE THE USER JUST WANT TO OUTPUT THE SOAP DESCRIPTORS
-     mode = "soap"
+     mode = "none"
   end if
   !**************************************************************************
 
@@ -304,7 +313,7 @@ program turbogap
   write(*,*)'                                                                 |'
   write(*,*)'.................................................................|'
   write(*,*)'                                                                 |'
-  write(*,*)'                     Last updated: Sep. 2024                     |'
+  write(*,*)'                     Last updated: Mar. 2026                     |'
   write(*,*)'                                        _________________________/'
   write(*,*)'.......................................|'
 #ifdef _MPIF90
@@ -320,6 +329,12 @@ program turbogap
      write(*,*)'                                       |'
      write(*,*)'.......................................|'
 #endif
+
+     
+     if ( rank == 0  )then 
+     write(*,'(A, A24, A)') "      ", trim(mode), " mode     |"
+     write(*,*)'.......................................|'
+     end if
 #ifdef _MPIF90
   END IF
 #endif
@@ -1868,26 +1883,26 @@ program turbogap
 
               end if
 
-              if ( params%exp_data(i)%compute_exp .and. .not.  params&
-                   &%exp_data(i)%wrote_exp .and. rank == 0  .and. write_condition) then
+              ! if ( params%exp_data(i)%compute_exp .and. .not.  params&
+              !      &%exp_data(i)%wrote_exp .and. rank == 0  .and. write_condition) then
 
-                 if (params%write_exp) then
-                    write(filename,'(A)')&
-                         & trim(params%exp_data(i)%label) // "_exp_fit.dat"
+              !    if (params%write_exp) then
+              !       write(filename,'(A)')&
+              !            & trim(params%exp_data(i)%label) // "_exp_fit.dat"
 
-                    call get_overwrite_condition( params%do_mc,&
-                         & params%do_md, mc_istep, md_istep, params&
-                         &%write_xyz, overwrite_condition)
+              !       call get_overwrite_condition( params%do_mc,&
+              !            & params%do_md, mc_istep, md_istep, params&
+              !            &%write_xyz, overwrite_condition)
 
-                    call write_exp_data(params%exp_data(i)%x, params%exp_data(i)%y,&
-                         & overwrite_condition, trim(params&
-                         &%exp_data(i)%label) // "_exp_fit.dat",&
-                         & trim(params%exp_data(i)%label) // " : output = "&
-                         & // trim( exp_output ))
+              !       call write_exp_data(params%exp_data(i)%x, params%exp_data(i)%y,&
+              !            & overwrite_condition, trim(params&
+              !            &%exp_data(i)%label) // "_exp_fit.dat",&
+              !            & trim(params%exp_data(i)%label) // " : output = "&
+              !            & // trim( exp_output ))
 
-                 end if
+              !    end if
 
-              end if
+              ! end if
 
               params%exp_data(i)%wrote_exp = .true.
               params%exp_data(i)%compute_exp = .true.
@@ -4087,6 +4102,7 @@ program turbogap
      call synchronize_array( fix_atom, rank )
      call synchronize_array( xyz_species, rank )
      call synchronize_array( xyz_species_supercell, rank )
+     call synchronize_array( species, rank )
      call synchronize_array( species_supercell, rank )
 
      call mpi_bcast(indices, 3, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
