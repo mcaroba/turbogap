@@ -1640,6 +1640,10 @@ contains
                continue
             else if (params%vdw_type == "none") then
                continue
+            else if (params%vdw_type == "mbd") then
+               continue
+            else if (params%vdw_type == "ts+mbd") then
+               continue
             else
                write (*, *) "ERROR: I do not recognize the vdw_type keyword ", params%vdw_type
                stop
@@ -1683,6 +1687,17 @@ contains
          else if (keyword == "vdw_mbd_grad") then
             backspace (10)
             read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_grad
+! NEW VDW STUFF HERE
+         else if( keyword == "poly_cut_xmin" )then
+            backspace(10)
+            read(10, *, iostat=iostatus) cjunk, cjunk, params%poly_cut_xmin
+         else if( keyword == "poly_cut_xmax" )then
+            backspace(10)
+            read(10, *, iostat=iostatus) cjunk, cjunk, params%poly_cut_xmax
+         else if(keyword=='mbd_correction_freq')then
+            backspace(10)
+            read(10, *, iostat=iostatus) cjunk, cjunk, params%mbd_correction_freq
+! NEW VDW STUFF ENDS HERE
          else if (keyword == "print_vdw_forces") then
             backspace (10)
             read (10, *, iostat=iostatus) cjunk, cjunk, params%print_vdw_forces

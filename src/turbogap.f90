@@ -176,6 +176,16 @@ program turbogap
   real*8, allocatable :: energies_sf(:) , forces_sf(:,:), this_energies_sf(:), this_forces_sf(:,:)
   real*8, allocatable :: energies_xrd(:), forces_xrd(:,:), this_energies_xrd(:), this_forces_xrd(:,:)
   real*8, allocatable :: energies_nd(:), forces_nd(:,:), this_energies_nd(:), this_forces_nd(:,:)
+  real*8, allocatable :: mbd_ts_scaling(:), this_mbd_ts_scaling(:)
+  real*8, allocatable :: local_virial_vdw_diag(:,:), local_virial_vdw_diag_corr(:,:)
+  real*8, allocatable :: this_local_virial_vdw_diag(:,:), this_local_virial_vdw_diag_corr(:,:), S_xyz_inv(:,:)
+  real*8 :: virial_vdw_corr(1:3, 1:3), this_virial_vdw_corr(1:3, 1:3)
+  real*8, allocatable :: energies_vdw_corr(:), forces_vdw_corr(:,:), this_energies_vdw_corr(:), this_forces_vdw_corr(:,:)
+  integer, allocatable :: hirshfeld_transfer(:,:), this_hirshfeld_transfer(:), i_send(:), j_send(:), k_array(:), &
+                          i_receive(:), j_receive(:), this_i_receive(:), this_j_receive(:), hirshfeld_disp(:), &
+                          k_start(:)
+  integer :: jx, jy, jz
+  logical :: include_2b
   ! MPI stuff
   real*8, allocatable :: temp_1d(:), temp_1d_bis(:), temp_2d(:,:),&
        & pair_distribution_partial(:,:), pair_distribution_der(:,:), pair_distribution_partial_der(:,:,:), &
@@ -1274,7 +1284,7 @@ program turbogap
         ! REMOVE TRUE FROM IF STATEMENT
         if( n_sites /= n_sites_prev .or. params%do_mc  )then
            if( allocated(energies) )deallocate( energies, energies_soap, energies_2b, energies_3b, energies_core_pot, &
-                this_energies, energies_vdw, this_forces, energies_lp, energies_exp  )
+                this_energies, energies_vdw, this_forces, energies_lp, energies_exp, mbd_ts_scaling  )
            allocate( energies(1:n_sites) )
            allocate( this_energies(1:n_sites) )
            allocate( energies_soap(1:n_sites) )
@@ -1284,6 +1294,19 @@ program turbogap
            allocate( energies_vdw(1:n_sites) )
            allocate( energies_lp(1:n_sites) )
            allocate( energies_exp(1:n_sites) )
+           allocate( mbd_ts_scaling(1:n_sites) )
+if( params%vdw_type == "ts+mbd" .and. md_istep == 0 )then
+!      energies_vdw_corr = 0.d0
+      open(unit=30, file="mbd_ts_scaling.dat", status="old", iostat=iostatus)
+      if( iostatus == 0 )then
+        do i = 1, n_sites
+          read(30,*) mbd_ts_scaling(i)
+        end do
+      else
+        mbd_ts_scaling = 1.d0
+      end if
+      close(30)
+end if
 
            if (params%do_pair_distribution .and. params%valid_pdf)then
               if ( allocated( energies_pdf ) ) deallocate(energies_pdf)
@@ -1377,7 +1400,7 @@ program turbogap
         if( params%do_forces )then
            if( n_sites /= n_sites_prev .or.  params%do_mc )then
               if( allocated(forces) )deallocate( forces, forces_soap, forces_2b, forces_3b, forces_core_pot, forces_vdw,&
-                   & forces_lp )
+                   & forces_lp, local_virial_vdw_diag, local_virial_vdw_diag_corr )
               allocate( forces(1:3, 1:n_sites) )
               allocate( forces_soap(1:3, 1:n_sites) )
               allocate( forces_2b(1:3, 1:n_sites) )
@@ -1385,6 +1408,9 @@ program turbogap
               allocate( forces_core_pot(1:3, 1:n_sites) )
               allocate( forces_vdw(1:3,1:n_sites) )
               allocate( forces_lp(1:3,1:n_sites) )
+              allocate( local_virial_vdw_diag_corr(1:3, 1:n_sites) )
+              allocate( local_virial_vdw_diag(1:3, 1:n_sites) )
+
 
               if (params%do_pair_distribution .and. params%exp_forces .and. params%valid_pdf)then
                  if ( allocated( forces_pdf ) ) deallocate(forces_pdf)
@@ -1422,7 +1448,7 @@ program turbogap
            virial_core_pot = 0.d0
            virial_vdw = 0.d0
            virial_lp = 0.d0
-
+           local_virial_vdw_diag = 0.d0
            if (params%do_pair_distribution .and. params%exp_forces .and. params%valid_pdf)then
               forces_pdf = 0.d0
               virial_pdf = 0.d0
@@ -1777,13 +1803,50 @@ program turbogap
            this_energies_vdw = 0.d0
            if( params%do_forces )then
               allocate( this_forces_vdw(1:3,1:n_sites) )
+              allocate( this_local_virial_vdw_diag(1:3, 1:n_sites) )
               this_forces_vdw = 0.d0
               this_virial_vdw = 0.d0
+              this_local_virial_vdw_diag = 0.d0
            end if
 #endif
-           allocate(v_neigh_vdw(1:j_end-j_beg+1))
+if( params%vdw_type == "ts+mbd" .and. modulo(md_istep, params%mbd_correction_freq) == 0 )then
+!        if( allocated(this_energies_vdw_corr) )deallocate( this_energies_vdw_corr, this_mbd_ts_scaling )
+        if( allocated(this_energies_vdw_corr) )deallocate( this_energies_vdw_corr )
+        allocate( this_energies_vdw_corr(1:n_sites) )
+        this_energies_vdw_corr = 0.d0
+if( md_istep == 0 )then
+        allocate( this_mbd_ts_scaling(1:n_sites) )
+if( rank == 0 )then
+      open(unit=30, file="mbd_ts_scaling.dat", status="old", iostat=iostatus)
+      if( iostatus == 0 )then
+        do i = 1, n_sites
+          read(30,*) this_mbd_ts_scaling(i)
+        end do
+      else
+        this_mbd_ts_scaling = 1.d0
+      end if
+      close(30)
+end if
+call mpi_bcast(this_mbd_ts_scaling, n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+end if
+        if( params%do_forces )then
+          if( allocated(this_forces_vdw_corr) )deallocate( this_forces_vdw_corr, this_local_virial_vdw_diag_corr )
+          allocate( this_forces_vdw_corr(1:3,1:n_sites) )
+          this_forces_vdw_corr = 0.d0
+          allocate( this_local_virial_vdw_diag_corr(1:3, 1:n_sites) )
+          this_local_virial_vdw_diag_corr = 0.d0
+        end if
+else if( params%vdw_type == "ts" )then
+        if( allocated(this_mbd_ts_scaling) )deallocate( this_mbd_ts_scaling )
+        allocate( this_mbd_ts_scaling(1:n_sites) )
+        this_mbd_ts_scaling = 1.d0
+end if
+
+
+           if( .not. allocated(v_neigh_vdw) )allocate(v_neigh_vdw(1:j_end-j_beg+1))
            v_neigh_vdw = 0.d0
            k = 0
+if( params%vdw_type == "ts" .or. params%vdw_type == "ts+mbd" .or. params%vdw_type == "mbd")then
            do i = i_beg, i_end
               do j = 1, n_neigh(i)
                  !           I'm not sure if this is necessary or neighbors_list is already bounded between 1 and n_sites -> CHECK THIS
@@ -1793,6 +1856,7 @@ program turbogap
                  v_neigh_vdw(k) = local_properties(j2, vdw_lp_index)
               end do
            end do
+end if
 
            call get_ts_energy_and_forces( local_properties(i_beg:i_end, vdw_lp_index), &
                 & local_properties_cart_der(1:3, j_beg:j_end, vdw_lp_index), &
@@ -1803,15 +1867,19 @@ program turbogap
                 rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), v_neigh_vdw, &
                 params%vdw_sr, params%vdw_d, params%vdw_c6_ref, params%vdw_r0_ref, &
                 params%vdw_alpha0_ref, params%do_forces, &
+                params%poly_cut_xmin, params%poly_cut_xmax, &
 #ifdef _MPIF90
-                this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw)
+                this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw, &
+                this_local_virial_vdw_diag, this_mbd_ts_scaling )
 #else
-           energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
+           energies_vdw(i_beg:i_end), forces_vdw, virial_vdw, local_virial_vdw_diag, &
+           mbd_ts_scaling )
 #endif
            call cpu_time(time_vdw(2))
            time_vdw(3) = time_vdw(2) - time_vdw(1)
-
-           deallocate(v_neigh_vdw)
+           if( .not. (params%vdw_type == "ts+mbd" .and. modulo(md_istep, params%mbd_correction_freq) == 0) )then
+             deallocate(v_neigh_vdw)
+           end if
         end if
 
 
@@ -2597,6 +2665,7 @@ program turbogap
                  forces_vdw(1:3, 1:n_sites) = all_this_forces(1:3, 1:n_sites, counter2)
                  virial_vdw(1:3, 1:3) = all_this_virial(1:3, 1:3, counter2)
                  deallocate(this_forces_vdw)
+                 deallocate(this_local_virial_vdw_diag)
               end if
            end if
            if( allocated(this_energies_lp) )then

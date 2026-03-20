@@ -130,8 +130,10 @@ module types
            & 1.5405981d0, xrd_alpha = 1.01d0, xrd_rcut = 4.d0, nd_rcut = 4.d0&
            &, q_range_min = 1.0, q_range_max = 5.d0, r_range_min = 1.0,&
            & r_range_max = 5.d0, pair_distribution_rcut = 4.d0,&
-           & pair_distribution_kde_sigma = 0.d0
+           & pair_distribution_kde_sigma = 0.d0, &
+           & poly_cut_xmin = 3.d0, poly_cut_xmax = 10.d0                     ! NEW VDW PARAMETERS HERE
 
+      integer :: mbd_correction_freq = 10
       real*8 :: xps_e_min = 280.0
       real*8 :: xps_e_max = 300.0
       integer :: xps_n_samples = 200

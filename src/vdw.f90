@@ -28,6 +28,8 @@
 
 module vdw
 
+  use misc
+  use nonneg_leastsq
 
   contains
 
@@ -148,27 +150,29 @@ module vdw
                                        n_neigh, neighbors_list, neighbor_species, &
                                        rcut, buffer, rcut_inner, buffer_inner, rjs, xyz, hirshfeld_v_neigh, &
                                        sR, d, c6_ref, r0_ref, alpha0_ref, do_forces, &
-                                       energies, forces0, virial )
+                                       x_min, x_max, &
+                                       energies, forces0, virial, local_virial_diag0, mbd_ts_scaling )
 
     implicit none
 
 !   Input variables
     real*8, intent(in) :: hirshfeld_v(:), hirshfeld_v_cart_der(:,:), rcut, buffer, rcut_inner, buffer_inner, &
                           rjs(:), xyz(:,:), hirshfeld_v_neigh(:), sR, d, c6_ref(:), r0_ref(:), &
-                          alpha0_ref(:)
+                          alpha0_ref(:), mbd_ts_scaling(:), &
+                          x_min, x_max
     integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:)
     logical, intent(in) :: do_forces
 !   Output variables
     real*8, intent(out) :: virial(1:3, 1:3)
 !   In-Out variables
-    real*8, intent(inout) :: energies(:), forces0(:,:)
+    real*8, intent(inout) :: energies(:), forces0(:,:), local_virial_diag0(:,:)
 !   Internal variables
     real*8, allocatable :: neighbor_c6_ii(:), neighbor_c6_ij(:), r0_ii(:), r0_ij(:), &
                            exp_damp(:), f_damp(:), c6_ij_free(:), neighbor_alpha0(:), &
                            pref_force1(:), pref_force2(:), r6(:), r6_der(:)
     real*8 :: time1, time2, c6_ii, c6_jj, r0_i, r0_j, alpha0_i, alpha0_j, rbuf, this_force(1:3)
     integer, allocatable:: i_buffer(:)
-    integer :: n_sites, n_pairs, n_species, n_sites0
+    integer :: n_sites, n_pairs, n_pairs_soap, n_species, n_sites0
     integer :: i, j, i2, j2, k, n_in_buffer, k1, k2
     logical, allocatable :: is_in_buffer(:)
     logical :: do_timing = .false.
@@ -280,7 +284,9 @@ module vdw
     k = 0
     do i = 1, n_sites
       k = k + 1
-      c6_ii = neighbor_c6_ii(k)
+      i2 = modulo(neighbors_list(k)-1, n_sites0) + 1
+      c6_ii = neighbor_c6_ii(k) * mbd_ts_scaling(i2)
+!      c6_ii = neighbor_c6_ii(k)
       r0_i = r0_ii(k)
       alpha0_i = neighbor_alpha0(k)
 !     We don't really need these ones but whatever
@@ -288,7 +294,9 @@ module vdw
       r0_ij(k) = r0_i
       do j = 2, n_neigh(i)
         k = k + 1
-        c6_jj = neighbor_c6_ii(k)
+        j2 = modulo(neighbors_list(k)-1, n_sites0) + 1
+        c6_jj = neighbor_c6_ii(k) * mbd_ts_scaling(j2)
+!        c6_jj = neighbor_c6_ii(k)
         alpha0_j = neighbor_alpha0(k)
         if( c6_ii == 0.d0 .or. c6_jj == 0.d0 )then
           neighbor_c6_ij(k) = 0.d0
@@ -307,10 +315,12 @@ module vdw
     end if
 
 !   Compute the TS local energies
+    energies = 0.d0
     f_damp = 0.d0
     k = 0
     do i = 1, n_sites
       k = k + 1
+      i2 = modulo(neighbors_list(k)-1, n_sites0) + 1
       do j = 2, n_neigh(i)
         k = k + 1
         if( rjs(k) > rcut_inner .and. rjs(k) < rcut )then
@@ -332,6 +342,7 @@ module vdw
     if( do_forces )then
       forces0 = 0.d0
       virial = 0.d0
+      local_virial_diag0 = 0.d0
 !     First, we compute the forces acting on all the "SOAP-neighbors" of atom i
 !     (including i itself) due to the gradients of i's Hirshfeld volume wrt the
 !     positions of its neighbors 
@@ -377,6 +388,8 @@ module vdw
 !             derived from a local energy
 !              virial = virial + dot_product(this_force(1:3), xyz(1:3,k))
               do k1 = 1, 3
+                local_virial_diag0(k1, j2) = local_virial_diag0(k1, j2) + this_force(k1)*xyz(k1, k)*&
+                                             poly_cut(rjs(k),x_min,x_max)
                 do k2 =1, 3
                   virial(k1, k2) = virial(k1, k2) + 0.5d0 * (this_force(k1)*xyz(k2,k) + this_force(k2)*xyz(k1,k))
                 end do
@@ -398,6 +411,8 @@ module vdw
 !           derived from a pair energy
 !            virial = virial - 0.5d0 * dot_product(this_force(1:3), xyz(1:3,k))
             do k1 = 1, 3
+              local_virial_diag0(k1, j2) = local_virial_diag0(k1, j2) - 0.5d0 * this_force(k1)*xyz(k1, k)*&
+                                           poly_cut(rjs(k),x_min,x_max)
               do k2 =1, 3
                 virial(k1, k2) = virial(k1, k2) - 0.25d0 * (this_force(k1)*xyz(k2,k) + this_force(k2)*xyz(k1,k))
               end do
