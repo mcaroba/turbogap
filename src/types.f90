@@ -116,11 +116,11 @@ module types
            & 1.d0, e_tol = 1.d-6, vdw_sr = 0.94d0, vdw_d = 20.d0,&
            & vdw_rcut = 10.d0, vdw_buffer = 1.d0, vdw_rcut_inner =&
            & 0.5d0, vdw_buffer_inner = 0.5d0, tau_p = 1000.d0, p_beg =&
-           & 1.d0, p_end = 1.d0, gamma_p = 1.d0, box_scaling_factor(3&
-           &, 3) = reshape([1.d0, 0.d0, 0.d0, 0.d0, 1.d0, 0.d0, 0.d0,&
-           & 0.d0, 1.d0], [3, 3]), core_pot_cutoff = 1.d10,&
+           & 1.d0, p_end = 1.d0, gamma_p = 1.d0, &
+           & box_scaling_factor(3,3) = reshape([1.d0, 0.d0, 0.d0, 0.d0, 1.d0, 0.d0, 0.d0, 0.d0, 1.d0], [3, 3]) &
+           &, core_pot_cutoff = 1.d10,&
            & core_pot_buffer = 1.d0, tau_dt = 100.d0, target_pos_step,&
-           & gamma0 = 0.01d0, max_opt_step = 0.1d0, vdw_scs_rcut = 4.d0&
+           & gamma0 = 0.01d0, max_opt_step = 0.1d0, vdw_scs_rcut = 5.d0&
            &, f_tol = 0.01d0, p_tol = 0.01d0, max_opt_step_eps = 0.05d0&
            &, t_extra = 0.d0, p_nested = 0.d0, nested_max_strain = 0.d0&
            &, nested_max_volume_change = 0.d0, mc_move_max = 1.d0,&
@@ -131,16 +131,23 @@ module types
            &, q_range_min = 1.0, q_range_max = 5.d0, r_range_min = 1.0,&
            & r_range_max = 5.d0, pair_distribution_rcut = 4.d0,&
            & pair_distribution_kde_sigma = 0.d0, &
-           & poly_cut_xmin = 3.d0, poly_cut_xmax = 10.d0                     ! NEW VDW PARAMETERS HERE
-
+           & poly_cut_xmin = 3.d0, poly_cut_xmax = 10.d0, &                    ! NEW VDW PARAMETERS HERE
+           & vdw_mbd_rcut = 5.d0, vdw_mbd_rcut2 = 5.d0, &
+           &   vdw_2b_rcut = 10.d0, vdw_2b_rcut2 = 10.d0, vdw_omega_ref = 1.3d0, vdw_loc_rcut = 4.5d0, &
+           &   vdw_d_mbd = 6.d0, vdw_sr_mbd = 0.83d0
       integer :: mbd_correction_freq = 10
+      integer :: vdw_mbd_nfreq = 12, vdw_mbd_norder = 6
+      logical :: vdw_mbd_grad = .true., vdw_hirsh_grad = .true., &
+               vdw_polynomial = .false., do_nnls = .false., vdw_mbd_cent_appr = .true.
+
+
       real*8 :: xps_e_min = 280.0
       real*8 :: xps_e_max = 300.0
       integer :: xps_n_samples = 200
       logical :: do_xps = .false.
 
       integer :: md_nsteps = 1, mc_nsteps = 1, write_xyz = 0,&
-           & write_thermo = 1, which_atom = 0, vdw_mbd_nfreq = 11,&
+           & write_thermo = 1, which_atom = 0,&
            & n_mc_types = 0, n_nested = 0, mc_idx = 1, mc_nrelax = 0,&
            & n_local_properties = 0, n_moments = 0, n_mc_swaps = 0, xps_idx&
            &, xrd_idx, saxs_idx, pdf_idx, sf_idx, nd_idx, n_exp = 0, pair_distribution_n_samples&
@@ -165,7 +172,7 @@ module types
                  write_virial = .true., write_pressure = .true., write_stress = .true., &
                  write_local_energies = .true., write_property(1:11) = .true., &
                  write_array_property(1:8) = .true., write_masses = .false., write_fixes = .true., &
-                 variable_time_step = .false., vdw_mbd_grad = .false., do_nested_sampling = .false., &
+                 variable_time_step = .false., do_nested_sampling = .false., &
                  scale_box_nested = .false., mc_write_xyz = .false., do_exp = .false., mc_relax = .false., &
                  mc_optimize_exp = .false., exp_forces = .false., exp_energies = .true., print_lp_forces = .false., &
                  print_vdw_forces = .false., mc_hamiltonian = .false., accessible_volume = .false., mc_reverse = .false., &

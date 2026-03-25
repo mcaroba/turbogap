@@ -1654,6 +1654,12 @@ contains
          else if (keyword == "vdw_d") then
             backspace (10)
             read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_d
+         else if( keyword == "vdw_sr_mbd" )then
+            backspace(10)
+            read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_sr_mbd
+         else if( keyword == "vdw_d_mbd" )then
+            backspace(10)
+            read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_d_mbd
          else if (keyword == "vdw_rcut") then
             backspace (10)
             read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_rcut
@@ -1678,22 +1684,56 @@ contains
             backspace (10)
             read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_alpha0_ref(1:n_species)
             are_vdw_refs_read(3) = .true.
-         else if (keyword == "vdw_scs_rcut") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_scs_rcut
-         else if (keyword == "vdw_mbd_nfreq") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_nfreq
-         else if (keyword == "vdw_mbd_grad") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_grad
 ! NEW VDW STUFF HERE
-         else if( keyword == "poly_cut_xmin" )then
-            backspace(10)
-            read(10, *, iostat=iostatus) cjunk, cjunk, params%poly_cut_xmin
-         else if( keyword == "poly_cut_xmax" )then
-            backspace(10)
-            read(10, *, iostat=iostatus) cjunk, cjunk, params%poly_cut_xmax
+      else if( keyword == "vdw_scs_rcut" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_scs_rcut
+      else if( keyword == "vdw_mbd_nfreq" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_nfreq
+      else if( keyword == "vdw_mbd_norder" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_norder
+      else if( keyword == "vdw_mbd_grad" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_grad
+      else if( keyword == "vdw_hirsh_grad" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_hirsh_grad
+      else if( keyword == "vdw_loc_rcut" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_loc_rcut
+      else if( keyword == "vdw_mbd_rcut" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_rcut
+      else if( keyword == "vdw_mbd_rcut2" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_rcut2
+      else if( keyword == "vdw_2b_rcut" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_2b_rcut
+      else if( keyword == "vdw_2b_rcut2" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_2b_rcut2
+      else if( keyword == "vdw_mbd_cent_appr" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_cent_appr
+      else if( keyword == "vdw_polynomial" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_polynomial
+      else if( keyword == "do_nnls" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%do_nnls
+      else if( keyword == "vdw_omega_ref" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_omega_ref
+      else if( keyword == "poly_cut_xmin" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%poly_cut_xmin
+      else if( keyword == "poly_cut_xmax" )then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%poly_cut_xmax
+
          else if(keyword=='mbd_correction_freq')then
             backspace(10)
             read(10, *, iostat=iostatus) cjunk, cjunk, params%mbd_correction_freq
