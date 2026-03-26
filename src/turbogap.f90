@@ -1835,16 +1835,17 @@ end if
               this_virial_vdw = 0.d0
               this_local_virial_vdw_diag = 0.d0
            end if
-        call mpi_reduce(local_properties(:,vdw_lp_index), this_local_properties(:,vdw_lp_index), n_sites, &
-                        MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+! TEST COMMENT THIS OUT
+!        call mpi_reduce(local_properties(:,vdw_lp_index), this_local_properties(:,vdw_lp_index), n_sites, &
+!                        MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
 !        if( params%do_forces )then
 !         I'm not sure if this is necessary at all... CHECK
 !          call mpi_reduce(hirshfeld_v_cart_der, this_hirshfeld_v_cart_der, 3*n_atom_pairs, MPI_DOUBLE_PRECISION, MPI_SUM, &
 !                          0, MPI_COMM_WORLD, ierr)
 !          hirshfeld_v_cart_der = this_hirshfeld_v_cart_der
 !        end if
-        local_properties(:,vdw_lp_index) = this_local_properties(:,vdw_lp_index)
-        call mpi_bcast(local_properties(:,vdw_lp_index), n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+!        local_properties(:,vdw_lp_index) = this_local_properties(:,vdw_lp_index)
+!        call mpi_bcast(local_properties(:,vdw_lp_index), n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !       HERE WE TRANSFER THE HIRSHFELD VOLUME GRADIENTS IF NEEDED FOR SCS
 !       Putting this outside the if condition to avoid segfaults for vdw_hirsh_grad = .false.
@@ -1991,6 +1992,8 @@ end if
                       k_array, hirshfeld_v_cart_der_receive, i_receive, j_receive, hirshfeld_disp, k_start )
         end if
 #endif
+
+
 if( params%vdw_type == "ts+mbd" .and. modulo(md_istep, params%mbd_correction_freq) == 0 )then
 !        if( allocated(this_energies_vdw_corr) )deallocate( this_energies_vdw_corr, this_mbd_ts_scaling )
         if( allocated(this_energies_vdw_corr) )deallocate( this_energies_vdw_corr )
@@ -2061,6 +2064,9 @@ end if
           if( .not. (params%vdw_type == "ts+mbd" .and. modulo(md_istep, params%mbd_correction_freq) == 0) )then
             deallocate(v_neigh_vdw)
           end if
+! TESTING FOR MERGING
+write(*,*) "local_properties", local_properties(i_beg:i_end,vdw_lp_index)
+write(*,*) "this_energies_vdw", this_energies_vdw
         end if
         if( params%vdw_type == "mbd" .or. &
             (params%vdw_type == "ts+mbd" .and. modulo(md_istep, params%mbd_correction_freq) == 0) )then
@@ -2379,6 +2385,8 @@ end do
 !             deallocate(v_neigh_vdw)
 !           end if
         end if
+
+
 
 
         !----------------------------------------------------!
@@ -4901,6 +4909,25 @@ end do
   if (allocated(local_property_indexes) ) deallocate( local_property_indexes)
   if( allocated(do_list))deallocate(do_list)
   if (allocated( params%write_local_properties )) deallocate(params%write_local_properties)
+
+if( params%vdw_type == "ts+mbd" )then
+#ifdef _MPIF90
+  IF( rank == 0 )then
+#endif
+open(unit=30, file="mbd_ts_scaling.dat", status="unknown")
+do i = 1, n_sites
+#ifdef _MPIF90
+  write(30,*) this_mbd_ts_scaling(i)
+#else
+  write(30,*) mbd_ts_scaling(i)
+#endif
+end do
+close(30)
+#ifdef _MPIF90
+  END IF
+#endif
+end if
+
 
 #ifdef _MPIF90
   IF( rank == 0 )then
