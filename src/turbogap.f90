@@ -2065,8 +2065,8 @@ end if
             deallocate(v_neigh_vdw)
           end if
 ! TESTING FOR MERGING
-write(*,*) "local_properties", local_properties(i_beg:i_end,vdw_lp_index)
-write(*,*) "this_energies_vdw", this_energies_vdw
+!write(*,*) "local_properties", local_properties(i_beg:i_end,vdw_lp_index)
+!write(*,*) "this_energies_vdw", this_energies_vdw
         end if
         if( params%vdw_type == "mbd" .or. &
             (params%vdw_type == "ts+mbd" .and. modulo(md_istep, params%mbd_correction_freq) == 0) )then
@@ -3369,6 +3369,24 @@ end do
            write(*,*) "pressure_3b: ", virial_3b / 3.d0 / v_uc
            write(*,*) "pressure_core_pot: ", virial_core_pot / 3.d0 / v_uc
         end if
+! For debugging the virial implementation
+if( rank == 0 .and. .false. )then
+!if( rank == 0 .and. .true. )then
+write(*,*) "pressure_soap: ", virial_soap / 3.d0 / v_uc
+write(*,*) "pressure_vdw: ", virial_vdw / 3.d0 / v_uc
+do i = 1, 3
+  write(*,*) virial_vdw(i,:)/v_uc
+end do
+write(*,*) "Trace of vdw pressure:", (virial_vdw(1,1)+virial_vdw(2,2)+virial_vdw(3,3))/3.d0/v_uc
+write(*,*) "pressure_2b: ", virial_2b / 3.d0 / v_uc
+write(*,*) "pressure_3b: ", virial_3b / 3.d0 / v_uc
+write(*,*) "pressure_core_pot: ", virial_core_pot / 3.d0 / v_uc
+      write(*,*) "full vdw forces"
+      do i = 1, n_sites
+        write(*,*) i, forces_vdw(1:3,i)
+      end do
+write(*,*) "Local virial", local_virial_vdw_diag
+end if
 
 
 
@@ -4866,6 +4884,11 @@ end do
   if ( allocated( this_energies_nd ) )      deallocate( this_energies_nd)
 
 
+              do i = 1, n_sites
+                 write(90, "(F20.8, 1X, F20.8, 1X, F20.8)") &
+                      forces_vdw(1,i), forces_vdw(2,i), forces_vdw(3,i)
+              end do
+
 
   if ( allocated( forces ))          deallocate( forces )
   if ( allocated( forces_soap) )     deallocate( forces_soap )
@@ -4878,6 +4901,9 @@ end do
   if ( allocated( forces_sf ) )      deallocate( forces_sf)
   if ( allocated( forces_xrd ) )     deallocate( forces_xrd)
   if ( allocated( forces_nd ) )      deallocate( forces_nd)
+
+
+
 
   if ( allocated( this_forces ))          deallocate( this_forces )
   if ( allocated( this_forces_vdw) )      deallocate( this_forces_vdw )
