@@ -114,7 +114,7 @@ module types
       real*8 :: t_beg = 300.d0, t_end = 300.d0, tau_t = 100.d0, md_step&
            & = 1.d0, neighbors_buffer = 0.d0, max_GBytes_per_process =&
            & 1.d0, e_tol = 1.d-6, vdw_sr = 0.94d0, vdw_d = 20.d0,&
-           & vdw_rcut = 10.d0, vdw_buffer = 1.d0, vdw_rcut_inner =&
+           & vdw_rcut = 25.d0, vdw_buffer = 1.d0, vdw_rcut_inner =&
            & 0.5d0, vdw_buffer_inner = 0.5d0, tau_p = 1000.d0, p_beg =&
            & 1.d0, p_end = 1.d0, gamma_p = 1.d0, &
            & box_scaling_factor(3,3) = reshape([1.d0, 0.d0, 0.d0, 0.d0, 1.d0, 0.d0, 0.d0, 0.d0, 1.d0], [3, 3]) &
@@ -132,11 +132,12 @@ module types
            & r_range_max = 5.d0, pair_distribution_rcut = 4.d0,&
            & pair_distribution_kde_sigma = 0.d0, &
            & poly_cut_xmin = 3.d0, poly_cut_xmax = 10.d0, &                    ! NEW VDW PARAMETERS HERE
-           & vdw_mbd_rcut = 5.d0, vdw_mbd_rcut2 = 5.d0, &
-           &   vdw_2b_rcut = 10.d0, vdw_2b_rcut2 = 10.d0, vdw_omega_ref = 1.3d0, vdw_loc_rcut = 4.5d0, &
+           & vdw_mbd_rcut = 15.d0, vdw_mbd_rcut2 = 8.d0, &
+           &   vdw_2b_rcut = 15.d0, vdw_2b_rcut2 = 8.d0, vdw_omega_ref = 1.3d0, &
+           & vdw_loc_rcut = 5.d0, &
            &   vdw_d_mbd = 6.d0, vdw_sr_mbd = 0.83d0
-      integer :: mbd_correction_freq = 10
-      integer :: vdw_mbd_nfreq = 12, vdw_mbd_norder = 6
+      integer :: mbd_correction_freq = 100
+      integer :: vdw_mbd_nfreq = 13, vdw_mbd_norder = 6
       logical :: vdw_mbd_grad = .true., vdw_hirsh_grad = .true., &
                vdw_polynomial = .false., do_nnls = .false., vdw_mbd_cent_appr = .true.
 
