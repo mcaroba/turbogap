@@ -67,6 +67,8 @@ $(BUILD_DIR)/%.o: src/stopping/%.f90 | $$(@D)
 	$(F90) $(PP) $(F90_OPTS) -c $< -o $@
 $(BUILD_DIR)/%.o: src/third_party/bussi_thermostat/%.f90 | $$(@D)
 	$(F90) $(PP) $(F90_OPTS) -c $< -o $@
+$(BUILD_DIR)/%.o: src/third_party/nnls/%.f90 | $$(@D)
+	$(F90) $(PP) $(F90_OPTS) -c $< -o $@
 $(BUILD_DIR)/%.o: src/soap_turbo/src/%.f90 | $$(@D)
 	$(F90) $(PP) $(F90_OPTS) -c $< -o $@
 $(BUILD_DIR)/%.o: src/%.f90 | $$(@D)
