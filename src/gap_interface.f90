@@ -279,13 +279,16 @@ contains
 
             do i = 1, n_sites
                i2 = in_to_out_site(i)
-               local_properties0(i2, local_property_indexes(lp_index + i4)) = local_properties(i)
+               local_properties0(i2, local_property_indexes(lp_index + i4)) = &
+                  local_properties0(i2, local_property_indexes(lp_index + i4)) + &
+                  local_properties(i)
             end do
             if (do_derivatives) then
                do k = 1, n_atom_pairs
                   k2 = in_to_out_pairs(k)
                   local_properties_cart_der0(1:3, k2, local_property_indexes(lp_index + i4)) &
-                       & = local_properties_cart_der(1:3, k)
+                     = local_properties_cart_der0(1:3, k2, local_property_indexes(lp_index + i4)) &
+                       + local_properties_cart_der(1:3, k)
                end do
             end if
          end do
