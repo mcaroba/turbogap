@@ -1433,6 +1433,7 @@ end if
               allocate( forces_3b(1:3, 1:n_sites) )
               allocate( forces_core_pot(1:3, 1:n_sites) )
               allocate( forces_vdw(1:3,1:n_sites) )
+              if ( allocated( forces_vdw_corr ) ) deallocate( forces_vdw_corr )
               allocate( forces_vdw_corr(1:3, 1:n_sites) )
               allocate( forces_lp(1:3,1:n_sites) )
               allocate( local_virial_vdw_diag_corr(1:3, 1:n_sites) )
