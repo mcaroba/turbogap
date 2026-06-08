@@ -13,13 +13,13 @@ set( SRC
   src/neighbors.f90
   src/gap.f90
   src/vdw.f90
-	src/local_properties.f90
+  src/local_properties.f90
   src/exp_utils.f90
   src/xyz.f90
   src/md.f90
   src/mc.f90
   src/read_files.f90
-	src/gap_interface.f90
+  src/gap_interface.f90
   src/mpi.f90
   src/exp_interface.f90
   src/turbogap_routine.f90
@@ -73,11 +73,13 @@ target_compile_definitions( libturbogap
   )
 # link to blas,lapack, mpi
 target_link_libraries( libturbogap
-  PRIVATE
+  PUBLIC
   ${LAPACK_LIBRARIES}
   ${BLAS_LIBRARIES}
   MPI::MPI_Fortran
   )
+# alias name for libturbogap
+add_library( turbogap ALIAS libturbogap )
 
 
 # define program
