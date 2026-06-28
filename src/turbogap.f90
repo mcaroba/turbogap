@@ -2,12 +2,12 @@
 ! HND X
 ! HND X   TurboGAP
 ! HND X
-! HND X   TurboGAP is copyright (c) 2019-2023, Miguel A. Caro and others
+! HND X   TurboGAP is copyright (c) 2019-2026, Miguel A. Caro and others
 ! HND X
 ! HND X   TurboGAP is published and distributed under the
 ! HND X      Academic Software License v1.0 (ASL)
 ! HND X
-! HND X   This file, turbogap.f90, is copyright (c) 2019-2023, Miguel A. Caro and
+! HND X   This file, turbogap.f90, is copyright (c) 2019-2026, Miguel A. Caro and
 ! HND X   Tigany Zarrouk
 ! HND X   Uttiyoarnab saha
 ! HND X
@@ -186,7 +186,7 @@ program turbogap
                           i_receive(:), j_receive(:), this_i_receive(:), this_j_receive(:), hirshfeld_disp(:), &
                           k_start(:)
   integer :: jx, jy, jz
-  logical :: include_2b
+  logical :: include_2b, update_mbd_ts_scaling = .true.
   ! MPI stuff
   real*8, allocatable :: temp_1d(:), temp_1d_bis(:), temp_2d(:,:),&
        & pair_distribution_partial(:,:), pair_distribution_der(:,:), pair_distribution_partial_der(:,:,:), &
@@ -295,7 +295,7 @@ program turbogap
   write(*,*)'                  Welcome to the TurboGAP code                   |'
   write(*,*)'                         Maintained by                           |'
   write(*,*)'                                                                 |'
-  write(*,*)'                         Miguel A. Caro                          |'
+  write(*,*)'               Miguel A. Caro and Tigany Zarrouk                 |'
   write(*,*)'                       mcaroba@gmail.com                         |'
   write(*,*)'                      miguel.caro@aalto.fi                       |'
   write(*,*)'                                                                 |'
@@ -313,11 +313,11 @@ program turbogap
   write(*,*)'Miguel A. Caro, Patricia Hernández-León, Suresh Kondati          |'
   write(*,*)'Natarajan, Albert P. Bartók, Eelis V. Mielonen, Heikki Muhli,    |'
   write(*,*)'Mikhail Kuklin, Gábor Csányi, Jan Kloppenburg, Richard Jana,     |'
-  write(*,*)'Tigany Zarrouk                                                   |'
+  write(*,*)'Tigany Zarrouk, Cristian V. Achim                                |'
   write(*,*)'                                                                 |'
   write(*,*)'.................................................................|'
   write(*,*)'                                                                 |'
-  write(*,*)'                     Last updated: Sep. 2024                     |'
+  write(*,*)'                     Last updated: Jun. 2026                     |'
   write(*,*)'                                        _________________________/'
   write(*,*)'.......................................|'
 #ifdef _MPIF90
@@ -1309,7 +1309,8 @@ program turbogap
         ! REMOVE TRUE FROM IF STATEMENT
         if( n_sites /= n_sites_prev .or. params%do_mc  )then
            if( allocated(energies) )deallocate( energies, energies_soap, energies_2b, energies_3b, energies_core_pot, &
-                this_energies, energies_vdw, energies_vdw_corr, mbd_ts_scaling, this_forces, energies_lp, energies_exp  )
+                this_energies, energies_vdw, energies_vdw_corr, mbd_ts_scaling, this_forces, energies_lp, energies_exp, &
+                this_mbd_ts_scaling  )
            allocate( energies(1:n_sites) )
            allocate( this_energies(1:n_sites) )
            allocate( energies_soap(1:n_sites) )
@@ -1320,19 +1321,39 @@ program turbogap
            allocate( energies_vdw_corr(1:n_sites) )
            allocate( energies_lp(1:n_sites) )
            allocate( energies_exp(1:n_sites) )
+!          We do this allocations for van der Waals corrections
            allocate( mbd_ts_scaling(1:n_sites) )
+           allocate( this_mbd_ts_scaling(1:n_sites) )
+
+! Read in file for ts+mbd van der Waals mode if it exists
 if( params%vdw_type == "ts+mbd" .and. md_istep == 0 )then
-!      energies_vdw_corr = 0.d0
-      open(unit=30, file="mbd_ts_scaling.dat", status="old", iostat=iostatus)
-      if( iostatus == 0 )then
-        do i = 1, n_sites
-          read(30,*) mbd_ts_scaling(i)
-        end do
-      else
-        mbd_ts_scaling = 1.d0
-      end if
-      close(30)
+!          energies_vdw_corr = 0.d0
+           if( rank == 0 )then
+             open(unit=30, file="mbd_ts_scaling.dat", status="old", iostat=iostatus)
+             if( iostatus == 0 )then
+               write(*,*)'                                       |'
+               write(*,*)'.......................................|'
+               write(*,*)'                                       |'
+               write(*,*)'Reading TS scaling factors from file   |'
+               write(*,*)'mbd_ts_scaling.dat                     |'
+               write(*,*)'                                       |'
+               write(*,*)'.......................................|'
+               write(*,*)'                                       |'
+               do i = 1, n_sites
+                 read(30,*) mbd_ts_scaling(i)
+               end do
+               update_mbd_ts_scaling = .false.
+             else
+               mbd_ts_scaling = 1.d0
+             end if
+             close(30)
+             this_mbd_ts_scaling = mbd_ts_scaling
+           end if
+#ifdef _MPIF90
+           call mpi_bcast(this_mbd_ts_scaling, n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+#endif
 end if
+
 
            if (params%do_pair_distribution .and. params%valid_pdf)then
               if ( allocated( energies_pdf ) ) deallocate(energies_pdf)
@@ -2000,21 +2021,6 @@ if( params%vdw_type == "ts+mbd" .and. modulo(md_istep, params%mbd_correction_fre
         if( allocated(this_energies_vdw_corr) )deallocate( this_energies_vdw_corr )
         allocate( this_energies_vdw_corr(1:n_sites) )
         this_energies_vdw_corr = 0.d0
-if( md_istep == 0 )then
-        allocate( this_mbd_ts_scaling(1:n_sites) )
-if( rank == 0 )then
-      open(unit=30, file="mbd_ts_scaling.dat", status="old", iostat=iostatus)
-      if( iostatus == 0 )then
-        do i = 1, n_sites
-          read(30,*) this_mbd_ts_scaling(i)
-        end do
-      else
-        this_mbd_ts_scaling = 1.d0
-      end if
-      close(30)
-end if
-call mpi_bcast(this_mbd_ts_scaling, n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-end if
         if( params%do_forces )then
           if( allocated(this_forces_vdw_corr) )deallocate( this_forces_vdw_corr, this_local_virial_vdw_diag_corr )
           allocate( this_forces_vdw_corr(1:3,1:n_sites) )
@@ -2283,11 +2289,14 @@ end do
             call mpi_reduce(this_local_virial_vdw_diag, local_virial_vdw_diag, 3*n_sites, &
                             MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
             if( rank == 0 )then
-!              this_mbd_ts_scaling = smooth_ratio(sum(local_virial_vdw_diag, 1), sum(local_virial_vdw_diag_corr, 1), 0.1d0, 3.d0)
-              this_mbd_ts_scaling = this_mbd_ts_scaling + 0.1d0 * ( &
+              if( update_mbd_ts_scaling )then
+!                this_mbd_ts_scaling = smooth_ratio(sum(local_virial_vdw_diag, 1), sum(local_virial_vdw_diag_corr, 1), 0.1d0, 3.d0)
+                this_mbd_ts_scaling = this_mbd_ts_scaling + 0.1d0 * ( &
                                       smooth_ratio(sum(local_virial_vdw_diag, 1), sum(local_virial_vdw_diag_corr, 1), -1.d0, 3.d0) &
                                       - 1.d0 )
-              this_mbd_ts_scaling = clip(this_mbd_ts_scaling, 0.1d0, 2.5d0)
+                this_mbd_ts_scaling = clip(this_mbd_ts_scaling, 0.1d0, 2.5d0)
+              end if
+              update_mbd_ts_scaling = .true.
 !write(*,*) "mbd_ts_scaling:", this_mbd_ts_scaling
 !write(*,*)
 !write(*,*) "Tr(virial):", md_istep, sum(local_virial_vdw_diag), sum(local_virial_vdw_diag_corr), &
@@ -2306,11 +2315,14 @@ end do
 !            virial_vdw_corr = virial_vdw - virial_vdw_corr
             virial_vdw_corr = virial_vdw ! we do this when scaling is used in TS because TS is run twice
 !            local_virial_vdw_diag_corr = local_virial_vdw_diag - local_virial_vdw_diag_corr
-!            mbd_ts_scaling = smooth_ratio(sum(local_virial_vdw_diag, 1), sum(local_virial_vdw_diag_corr, 1), 0.1d0, 3.d0)
-            mbd_ts_scaling = mbd_ts_scaling + 0.1d0 * ( &
+            if( update_mbd_ts_scaling )then
+!              mbd_ts_scaling = smooth_ratio(sum(local_virial_vdw_diag, 1), sum(local_virial_vdw_diag_corr, 1), 0.1d0, 3.d0)
+              mbd_ts_scaling = mbd_ts_scaling + 0.1d0 * ( &
                                smooth_ratio(sum(local_virial_vdw_diag, 1), sum(local_virial_vdw_diag_corr, 1), -1.d0, 3.d0) &
                                - 1.d0 )
-            mbd_ts_scaling = clip(mbd_ts_scaling, 0.1d0, 2.5d0)
+              mbd_ts_scaling = clip(mbd_ts_scaling, 0.1d0, 2.5d0)
+            end if
+            update_mbd_ts_scaling = .true.
 #endif
             call get_ts_energy_and_forces( local_properties(i_beg:i_end, vdw_lp_index), &
                 & local_properties_cart_der(1:3, j_beg:j_end, vdw_lp_index), &
