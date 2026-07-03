@@ -6491,6 +6491,16 @@ end if
 !     These values are given by Chu and Dalgarno (J Chem Phys 121, 4083 [2004])
       alpha0 = 12.d0 * Bohr**3
       C6 = 46.6d0 * Hartree * Bohr**6
+    else if( element == "O" )then
+!     This is the value provided by VASP, for which they give "private comm."
+!     as reference in the TS implementation paper:
+!      R0 =  3.194 * Bohr
+      R0 = 1.690d0
+!     This is the one given by Grimme (J Comput Chem 27, 1787 [2006]):
+!      R0 = 1.342d0
+!     These values are given by Chu and Dalgarno (J Chem Phys 121, 4083 [2004])
+      alpha0 = 5.4d0 * Bohr**3
+      C6 = 15.6d0 * Hartree * Bohr**6
     else if( element == "P" )then
 !     This is the value provided by VASP, for which they give "private comm."
 !     as reference in the TS implementation paper:
