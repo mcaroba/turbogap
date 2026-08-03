@@ -446,9 +446,10 @@ __global__ void kernel_2nd_try(
 
 
   const int i = blockIdx.x +i_beg -1; //i_beg-1 + blockIdx.x
+  // Sites whose species does not match this descriptor are simply skipped;
+  // this is normal control flow, not an error, so it must not print anything.
   if(species[i] != sp0)
   {
-    printf("block %d has wrong species, returning \n",i);
     return;
   }
   if(tid==0)

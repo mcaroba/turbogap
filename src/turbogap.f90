@@ -3682,18 +3682,6 @@ end if
 
 
 
-                 call gpu_free_async(energies_3b_d,gpu_stream)
-                 call gpu_free_async(forces_3b_d,gpu_stream)
-                 call gpu_free_async(kappas_array_d, gpu_stream)
-                 call gpu_free_async(virial_3b_d, gpu_stream) 
-
-                 call gpu_free_async(cutoff_d,gpu_stream)
-                 call gpu_free_async(sigma_d,gpu_stream)
-                 call gpu_free_async(qs_d,gpu_stream)
-                 call gpu_free_async(alphas_d,gpu_stream)                    
-
-
-
                  call get_time( time_3b(2) )
 
                  time_3b(3) = time_3b(3) + time_3b(2) - time_3b(1)
@@ -3702,6 +3690,21 @@ end if
                  !   time_3b(2) - time_3b(1), " with total being ", time_3b(3)
 
                end do
+
+!              All of the buffers below are allocated once before the descriptor
+!              loop (the parameter buffers are sized for max_np so they can be
+!              reused by every descriptor). They must therefore only be released
+!              after the loop has finished -- freeing them per iteration left
+!              dangling device pointers that the next iteration copied into.
+               call gpu_free_async(energies_3b_d,gpu_stream)
+               call gpu_free_async(forces_3b_d,gpu_stream)
+               call gpu_free_async(kappas_array_d, gpu_stream)
+               call gpu_free_async(virial_3b_d, gpu_stream)
+
+               call gpu_free_async(cutoff_d,gpu_stream)
+               call gpu_free_async(sigma_d,gpu_stream)
+               call gpu_free_async(qs_d,gpu_stream)
+               call gpu_free_async(alphas_d,gpu_stream)
              end if
 
              ! print *, rank, " >> Starting freeing memory 3b on gpu"        

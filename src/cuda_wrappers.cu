@@ -43,12 +43,22 @@ return __longlong_as_double(old);
 }*/
 
 
+#include <execinfo.h>
+
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 inline void gpuAssert(hipError_t code, const char *file, int line, bool abort=true)
 {
   if (code != hipSuccess)
   {
     fprintf(stderr,"GPUassert: %s %s %d\n", hipGetErrorString(code), file, line);
+    // The wrapper file/line above only names the thin C shim; dump the native
+    // stack so the offending Fortran call site can be identified with addr2line.
+    void *bt_[64];
+    int nbt_ = backtrace(bt_, 64);
+    fprintf(stderr, "GPUassert: host backtrace (%d frames):\n", nbt_);
+    fflush(stderr);
+    backtrace_symbols_fd(bt_, nbt_, fileno(stderr));
+    fflush(stderr);
     if (abort) exit(code);
   }
 }
@@ -146,7 +156,7 @@ extern "C" void cuda_malloc_all(void **a_d, size_t Np, hipStream_t *stream )
 
 extern "C" void cuda_memset_async(void *a_d, int value,  size_t Np, hipStream_t *stream )
 {
-  hipMemsetAsync( a_d, value , Np ,stream[0]);
+  gpuErrchk(hipMemsetAsync( a_d, value , Np ,stream[0]));
 }
 extern "C" void cuda_malloc_all_blocking(void **a_d, size_t Np)
 {
