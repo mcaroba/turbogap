@@ -559,7 +559,6 @@ MODULE F_B_C
     end subroutine gpu_get_electrostatics_energies
     
           
-      
       subroutine gpu_get_pair_distribution_nk(i_beg, i_end, n_pairs, n_sites0, neighbors_list_d,&
         n_neigh_d, neighbor_species_d,&
         species_d, rjs_d, xyz_d, r_min, r_max, r_cut,&

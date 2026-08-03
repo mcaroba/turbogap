@@ -5,8 +5,14 @@ SHELL = /bin/sh
 # Include user-modifiable variables from a customizable file.
 # Check the makefiles/ directory for a list of tested architectures
 
-include makefiles/Makefile.CSC-LUMI_cray	
-# include makefiles/Makefile.CSC-LUMI_gnu	
+ifndef TURBOGAP_ARCH
+$(error TURBOGAP_ARCH is not defined. Please export it before running make to pick a makefile from makefiles/)
+endif
+
+ifndef HOP_ROOT
+$(error HOP_ROOT is not defined. Please export it before running make!)
+endif
+include makefiles/Makefile.${TURBOGAP_ARCH}
 
 
 # Default locations for various files

@@ -775,6 +775,9 @@ end if
       else if(keyword=='gpu_batched')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%gpu_batched
+     else if(keyword=='n_batches')then
+        backspace(10)
+        read(10, *, iostat=iostatus) cjunk, cjunk, params%n_batches        
      else if(keyword=='gpu_n_batches')then
         backspace(10)
         read(10, *, iostat=iostatus) cjunk, cjunk, params%gpu_n_batches        

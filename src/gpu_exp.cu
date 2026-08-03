@@ -16,11 +16,11 @@
 
 #define HIP_ENABLE_PRINTF
 
-#define tpb 1024 // optimize for best performance & check the effect on each kernel which used tpb for the shared memory
+#define tpb 512 // optimize for best performance & check the effect on each kernel which used tpb for the shared memory
 
 #define WARP_SIZE 32
 
-#define BLOCK_SIZE 1024 // Number of threads per block
+#define BLOCK_SIZE 512 // Number of threads per block
 //#define LOG_BLOCK_SIZE 10 // Log base 2 of BLOCK_SIZE
 #define NUM_BANKS 32      // Define the number of shared memory banks
 #define LOG_NUM_BANKS 5   // Logarithm base 2 of NUM_BANKS
@@ -46,8 +46,13 @@ inline void gpuAssert(hipError_t code, const char *file, int line, bool abort=tr
 __inline__ __device__ int warpReduceSum(int val) {
     // Use shuffle down to reduce across the warp
     for (int offset = warpSize / 2; offset > 0; offset >>= 1) {
-      //     val += __shfl_down_sync(0xffffffff,val, offset,warpSize);
+#ifdef CUDA 
+      val += __shfl_down_sync(0xffffffff,val, offset,warpSize);
+#else
       val += __shfl_down(val, offset,warpSize);            
+#endif
+
+
     }
     return val;
 }
@@ -56,8 +61,14 @@ __inline__ __device__ int warpReduceSum(int val) {
 __inline__ __device__ double warpReduceSumDouble(double val) {
     // Use shuffle down to reduce across the warp
     for (int offset = warpSize / 2; offset > 0; offset >>= 1) {
-      //      val += __shfl_down_sync(0xffffffff,val, offset,warpSize);
-      val += __shfl_down(val, offset,warpSize);                  
+
+
+#ifdef CUDA 
+      val += __shfl_down_sync(0xffffffff,val, offset,warpSize);
+#else
+      val += __shfl_down(val, offset,warpSize);            
+#endif
+
     }
     return val;
 }
@@ -423,8 +434,19 @@ extern "C" void  gpu_get_electrostatics_nk(int i_beg, int i_end, int n_pairs,
 
   gpuErrchk(hipMemcpyAsync( nk_flags_sum_d, nk_flags_d, n_pairs*sizeof(int), hipMemcpyDeviceToDevice, stream[0]));
 
-  // Perform inclusive scan to get the nk indexes 
+  printf("After recursive reduce");
+gpu_peek_stream_error( stream );
+   hipError_t err;
+   hipDeviceSynchronize();
+   err = hipGetLastError();
+
   inclusiveScan(nk_flags_sum_d, n_pairs, stream);
+  
+  printf("After incluseive scan reduce");
+gpu_peek_stream_error( stream );
+   hipDeviceSynchronize();
+   err = hipGetLastError();
+
 
 //  gpu_peek_stream_error( stream );
   // hipError_t err;
@@ -443,9 +465,14 @@ extern "C" void  gpu_get_electrostatics_nk(int i_beg, int i_end, int n_pairs,
   // Now multiply the flags_sum_d and flags_d to get final nk_array
   nblocks=dim3((n_pairs + tpb)/tpb,1,1);
   nthreads=dim3(tpb,1,1);
-  
+
+ 
   kernel_multiply_flags<<<nblocks, nthreads,0,stream[0] >>>(n_pairs, nk_flags_d, nk_flags_sum_d);
   
+  printf("After multiply flage reduce");
+ gpu_peek_stream_error( stream );
+   hipDeviceSynchronize();
+   err = hipGetLastError();
 }
 
 extern "C" void  gpu_inclusive_scan_int(int size, int* n_neigh_index_d, 
@@ -994,12 +1021,27 @@ void kernel_get_pair_distribution_nk(int i_beg, int i_end, int n_sites0, int* ne
 
 
 
-extern "C" void  gpu_get_pair_distribution_nk(int i_beg, int i_end, int n_pairs,  int n_sites0,  int* neighbors_list,
-						  int* n_neigh, int* neighbor_species,
-					      int* species, double* rjs, double* xyz, double r_min, double r_max, double r_cut,
-						  double buffer, 
-					      int* nk_out_d, int* nk_flags_d, int* nk_flags_sum_d,  int species_1, int species_2,
-						  hipStream_t *stream ){
+extern "C" void  gpu_get_pair_distribution_nk(
+    int i_beg,
+    int i_end,
+    int n_pairs,
+    int n_sites0,
+    int* neighbors_list,
+    int* n_neigh,
+    int* neighbor_species,
+    int* species,
+    double* rjs,
+    double* xyz,
+    double r_min,
+    double r_max,
+    double r_cut,
+    double buffer, 
+    int* nk_out_d,
+    int* nk_flags_d,
+    int* nk_flags_sum_d,
+    int species_1,
+    int species_2,
+    hipStream_t *stream ){
 
   // This function is to set the k_index array for the partial pair distributions 
 
@@ -1010,24 +1052,39 @@ extern "C" void  gpu_get_pair_distribution_nk(int i_beg, int i_end, int n_pairs,
    // gpuErrchk( hipPeekAtLastError() );
 
   kernel_get_pair_distribution_nk<<<nblocks, nthreads,0,stream[0] >>>(i_beg, i_end, n_sites0, neighbors_list,
-								      n_neigh, neighbor_species,
-								      species, rjs, xyz, r_min, r_max, r_cut, buffer,
-								       nk_flags_d, species_1, species_2);
-   // gpuErrchk( hipPeekAtLastError() );
+      n_neigh, neighbor_species,
+      species, rjs, xyz, r_min, r_max, r_cut, buffer,
+      nk_flags_d, species_1, species_2);
+
+  hipStreamSynchronize( stream[0] );
+    gpuErrchk( hipPeekAtLastError() );
+    fflush( stdout ) ;
 
   // Perform recursive reduction
   recursiveReduce(nk_flags_d, nk_out_d, n_pairs, stream);
+  hipStreamSynchronize( stream[0] );
+    gpuErrchk( hipPeekAtLastError() );
+    fflush( stdout ) ;
 
-  gpuErrchk(hipMemcpy( nk_flags_sum_d, nk_flags_d, n_pairs*sizeof(int), hipMemcpyDeviceToDevice));
+  gpuErrchk(hipMemcpyAsync( nk_flags_sum_d, nk_flags_d, n_pairs*sizeof(int), hipMemcpyDeviceToDevice, stream[0]));
+  hipStreamSynchronize( stream[0] );
+    gpuErrchk( hipPeekAtLastError() );
+    fflush( stdout ) ;
 
   // Perform inclusive scan to get the nk indexes 
   inclusiveScan(nk_flags_sum_d, n_pairs, stream);
 
+  hipStreamSynchronize( stream[0] );
+    gpuErrchk( hipPeekAtLastError() );
+    fflush( stdout ) ;
   // Now multiply the flags_sum_d and flags_d to get final nk_array
   nblocks=dim3((n_pairs + tpb)/tpb,1,1);
   nthreads=dim3(tpb,1,1);
   
   kernel_multiply_flags<<<nblocks, nthreads,0,stream[0] >>>(n_pairs, nk_flags_d, nk_flags_sum_d);
+  hipStreamSynchronize( stream[0] );
+    gpuErrchk( hipPeekAtLastError() );
+    fflush( stdout ) ;
   
 }
 
@@ -1572,6 +1629,9 @@ extern "C" void  gpu_get_pair_distribution_only_falloc(
   //  gpuErrchk( hipPeekAtLastError() );
   hipDeviceSynchronize();
   gpuErrchk( hipPeekAtLastError() );
+  printf("exiting from pdf falloc kernel \n");
+  fflush( stdout );
+  exit( 0 ) ;
   nblocks=dim3(n_samples,1,1);
   nthreads=dim3(threads,1,1);
 

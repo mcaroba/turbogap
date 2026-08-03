@@ -1,0 +1,85 @@
+# Copyright (c) 2020-2021 by Albert Bartók and Miguel Caro
+
+# This is an important note for those building TurboGAP on CSC's Mahti
+# supercomputer with this Makefile. Before compiling, make sure you have
+# loaded the correct module environment:
+#
+#     module reset
+#     module load gcc
+#     module load openblas
+#     module load openmpi
+#     module load cuda
+#
+# When you run TurboGAP, make sure to load this same environment at the top
+# of your Slurm submission script.
+
+# User-modifiable variables below
+
+# Compiler, preprocessor directives, etc.
+# HOP_ROOT=/users/cristian/TurboGAP/hop
+# -lstdc++
+#
+#
+#
+#
+#
+ifndef HOP_ROOT
+  $(error HOP_ROOT environment variable not set. Please set it before building.)
+endif
+
+CUDA_HOME ?= $(shell command -v nvcc >/dev/null 2>&1 && dirname $$(dirname $$(command -v nvcc)) || echo "/usr/local/cuda")
+CUDA_ARCH ?= sm_86
+DEBUG ?= 1
+
+F90=mpif90
+PP=-cpp -D _MPIF90
+F90_MOD_DIR_OPT=-J
+
+CU=nvcc -x cu -Xcompiler=-Wall -I"$(HOP_ROOT)" -I"$(HOP_ROOT)/source/hip" -arch=$(CUDA_ARCH) -DHOP_TARGET_CUDA -DCUDA
+CC=nvcc -x cu -Xcompiler=-Wall -std=c++20 -arch=$(CUDA_ARCH) -I"$(HOP_ROOT)" -I"$(HOP_ROOT)/source/hip" -DHOP_TARGET_CUDA -DCUDA
+
+ifeq ($(DEBUG),1)
+  CU += -g -G
+  CC += -g -G
+  F90_OPTS =  -g3 -ggdb -fPIC -ffree-line-length-none -fallow-argument-mismatch
+else
+  F90_OPTS =  -O2 -fPIC -ffree-line-length-none -fallow-argument-mismatch
+endif
+
+CUDA_LIB_PATH = "$(CUDA_HOME)/targets/x86_64-linux/lib"
+LIBS = -L$(CUDA_LIB_PATH) -lopenblas -lcudart -lcuda -lcublas -lstdc++  -lnvToolsExt
+
+
+
+# F90=mpif90 
+#
+# # CU=nvcc  --resource-usage -lineinfo -O0 -x cu -I$(HOP_ROOT) -I$(HOP_ROOT)/source/hip  -DHOP_TARGET_CUDA -DCUDA
+# #
+# CU=nvcc -O3  -gencode arch=compute_86,code=sm_86 -x cu -I$(HOP_ROOT) -I$(HOP_ROOT)/source/hip  -DHOP_TARGET_CUDA -DCUDA
+#
+# PP=-cpp -D _MPIF90 
+#
+# F90_MOD_DIR_OPT=-J
+#
+# CC=nvcc -O3  -gencode arch=compute_86,code=sm_86 -x cu -std=c++17 -g -G  --ptxas-options=-v -I$(HOP_ROOT) -I$(HOP_ROOT)/source/hip  -DHOP_TARGET_CUDA  -DCUDA
+#
+# # Optimization flags (uncomment second option to enable debugging tools)
+# # -g 
+# # F90_OPTS= -O0 -g   -fPIC  -ffree-line-length-none -fallow-argument-mismatch  #-ffpe-trap=invalid,zero,overflow #-Wall -Wuninitialized
+# F90_OPTS= -O3 -march=native  -fPIC  -ffree-line-length-none -fallow-argument-mismatch  #-ffpe-trap=invalid,zero,overflow #-Wall -Wuninitialized
+# # -g -G 
+# # CUDA_OPTS= -O0 -g -G  -lcublas -gencode arch=compute_80,code=sm_80  --ptxas-options=-v  -DCUDA
+# CUDA_OPTS= -O3  -lcublas -gencode arch=compute_86,code=sm_86  --ptxas-options=-v  -DCUDA
+# # gdwarf-4 needed for getting line information when sampling 
+# #F90_OPTS+= -gdwarf-4
+# #CUDA_OPTS+= -Xcompiler -gdwarf-4 
+# #CUDA_OPTS+= -g -G 
+# #F90_OPTS+= -g -ffpe-trap=zero,invalid,overflow,underflow -Wall -Wextra -Warray-temporaries -Wconversion -fimplicit-none -fbacktrace -ffree-line-length-0 -fcheck=all  -finit-real=nan
+#
+# #F90_OPTS+= -fbacktrace -fcheck=bounds -g -fcheck=all   -fbacktrace -Wall
+#
+# # BLAS and LAPACK libraries
+# LIBS= -lopenblas  -lcudart   -lcublas 
+#
+
+

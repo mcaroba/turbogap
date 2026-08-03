@@ -394,7 +394,7 @@ contains
 
        end if
        call get_time( time_local_prop(2) )
-       time_local_prop(3) = time_local_prop(2) - time_local_prop(1)
+       time_local_prop(3) = time_local_prop(3) + time_local_prop(2) - time_local_prop(1)
 
        call gpu_free_async(l_index_d, gpu_stream)
        call gpu_free_async(soap_d, gpu_stream)

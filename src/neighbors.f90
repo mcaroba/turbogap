@@ -583,6 +583,93 @@ module neighbors
 
 
 
+  subroutine get_number_of_atom_pairs_batches( n_batches,n_neigh, rjs, rcut, l_max, n_max, max_Gbytes_per_process, &
+                                       i_beg_list, i_end_list, j_beg_list, j_end_list )
+
+    implicit none
+
+!   Input variables
+    real*8, intent(in) :: rjs(:), rcut, max_Gbytes_per_process
+    integer, intent(in) :: n_neigh(:), l_max, n_max
+    integer, intent(in) :: n_batches
+
+!   Output variables
+    integer, allocatable, intent(out) :: i_beg_list(:), i_end_list(:), j_beg_list(:), j_end_list(:)
+
+!   Internal variables
+    real*8 :: estimated_memory_in_Gbytes, mem_ratio, pairs_per_chunk
+    integer :: n_sites, n_atom_pairs, k_max, n_chunks, i, j, k, k2, i_chunk, n_atom_pairs_in
+
+
+    n_sites = size(n_neigh)
+    n_atom_pairs = size(rjs)
+
+    k = 0
+    n_atom_pairs_in = 0
+    do i = 1, n_sites
+      do j = 1, n_neigh(i)
+        k = k + 1
+        if( rjs(k) < rcut )then
+          n_atom_pairs_in = n_atom_pairs_in + 1
+        end if
+      end do
+    end do
+
+    k_max = 1 + l_max*(l_max+1)/2 + l_max
+!   This is a conservative estimate of the maximum memory that this run will need
+    estimated_memory_in_Gbytes = dfloat(n_atom_pairs_in) * dfloat(n_max) * dfloat(k_max) * 150.d0 / 1024.d0**3
+    mem_ratio = estimated_memory_in_Gbytes/max_Gbytes_per_process
+    n_chunks = ceiling(mem_ratio)
+
+    n_chunks = n_batches
+    if( n_chunks > n_sites )then
+      n_chunks = n_sites
+    end if
+
+    pairs_per_chunk = float(n_atom_pairs_in) / float(n_chunks)
+
+    allocate( i_beg_list(1:n_chunks) )
+    allocate( i_end_list(1:n_chunks) )
+    allocate( j_beg_list(1:n_chunks) )
+    allocate( j_end_list(1:n_chunks) )
+
+    if( n_chunks == 0 )then
+      return
+    end if
+
+    i_beg_list(1) = 1
+    j_beg_list(1) = 1
+    i_end_list(n_chunks) = n_sites
+    j_end_list(n_chunks) = n_atom_pairs
+
+    if( n_chunks == 1 )then
+      return
+    end if
+
+    k = 0
+    k2 = 0
+    i_chunk = 1
+    do i = 1, n_sites
+      do j = 1, n_neigh(i)
+        k = k + 1
+        if( rjs(k) < rcut )then
+          k2 = k2 + 1
+        end if
+      end do
+      if( k2 >= int( float(i_chunk)*pairs_per_chunk ) )then
+        i_end_list(i_chunk) = i
+        j_end_list(i_chunk) = k
+        i_chunk = i_chunk + 1
+        i_beg_list(i_chunk) = i+1
+        j_beg_list(i_chunk) = k+1
+        if( i_chunk == n_chunks )then
+          exit
+        end if
+      end if
+    end do
+    return
+
+  end subroutine
 !**************************************************************************
   subroutine get_number_of_atom_pairs( n_neigh, rjs, rcut, l_max, n_max, max_Gbytes_per_process, &
                                        i_beg_list, i_end_list, j_beg_list, j_end_list )

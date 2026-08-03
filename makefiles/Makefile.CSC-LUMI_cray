@@ -30,9 +30,9 @@ F90_MOD_DIR_OPT=-J
 
 F90_OPTS= -fPIC -h noomp -h flex_mp=intolerant  -O0 -g  # -O3
 
-CUDA_OPTS=   --offload-arch=gfx90a   -g -ggdb 
+CUDA_OPTS=   --offload-arch=gfx90a  -O0 -g -ggdb 
 
-CC_OPTS=-xhip -std=c++20   -O0  -g -ggdb
+CC_OPTS=-xhip -std=c++20  -O0 -g -ggdb
 
 
 # BLAS and LAPACK libraries
