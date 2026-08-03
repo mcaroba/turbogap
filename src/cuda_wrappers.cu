@@ -2073,7 +2073,12 @@ __global__ void cuda_get_soap_p(double *soap_d, double *sqrt_dot_p_d, double *mu
 		      ampli_tude_der = tmp3 - tmp2 * ampli_tude;
 		    } else {
 		      ampli_tude = 1.0 / atom_sigma_scaled * pow(tmp1,amplitude_scaling);
-		      ampli_tude_der = amplitude_scaling * tmp3 * pow(tmp1,amplitude_scaling - 1.0) - tmp2 -ampli_tude;
+		      // The trailing term is a product, matching the CPU:
+		      //   - atom_sigma_scaling/atom_sigma_scaled * amplitude
+		      // It was written as "- tmp2 - ampli_tude", subtracting the two
+		      // factors instead of multiplying them. Only this branch was
+		      // affected; the amplitude_scaling == 1 case above is correct.
+		      ampli_tude_der = amplitude_scaling * tmp3 * pow(tmp1,amplitude_scaling - 1.0) - tmp2 * ampli_tude;
 		    }
 		  }
 		}
