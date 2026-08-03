@@ -1,0 +1,69 @@
+# CI for the GPU branch.
+#
+# The regression job needs a real GPU, a CUDA toolchain and the CO test data,
+# none of which exist on GitHub-hosted runners. It therefore targets a
+# self-hosted runner labelled "gpu"; register one with
+#
+#   ./config.sh --url https://github.com/<owner>/turbogap --labels gpu,cuda
+#
+# and set the repository variable TURBOGAP_TEST_DATA to the directory holding
+# atoms_7176.xyz and gap_files. Until such a runner exists the job simply
+# stays queued/skipped; the "checks" job below still runs everywhere and
+# catches the cheap mistakes.
+
+name: gpu-regression
+
+on:
+  push:
+    branches: [gpu_fixes, gpu_clean]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  checks:
+    name: static checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Shell syntax
+        run: bash -n tests/gpu/run_regression.sh
+
+      - name: Python syntax
+        run: |
+          python3 -m py_compile tools/compare_xyz.py tools/add_velocities_to_xyz.py
+
+      - name: Comparison tool self-test
+        run: python3 tests/gpu/test_compare_xyz.py
+
+  gpu-regression:
+    name: GPU regression vs CPU reference
+    runs-on: [self-hosted, gpu]
+    # Don't block PRs from forks, which cannot reach the self-hosted runner.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Build (optimised)
+        env:
+          HOP_ROOT: ${{ vars.HOP_ROOT }}
+          TURBOGAP_ARCH: Aalto_gfortran_openblas_hip_cuda
+        run: |
+          make deepclean
+          make DEBUG=0 -j4
+
+      - name: Run regression suite
+        env:
+          TURBOGAP_TEST_DATA: ${{ vars.TURBOGAP_TEST_DATA }}
+          TURBOGAP_REF_BIN: ${{ vars.TURBOGAP_REF_BIN }}
+        run: tests/gpu/run_regression.sh
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: regression-logs
+          path: /tmp/turbogap_gpu_regression.*/**/*.log
+          if-no-files-found: ignore
