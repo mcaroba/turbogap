@@ -2481,7 +2481,11 @@ __global__ void cuda_get_soap_p(double *soap_d, double *sqrt_dot_p_d, double *mu
 	    }
 	  }
 	}
-	energies_d[i_site] = energies_loc;
+	// Accumulate, like the force and virial writes above: the caller runs
+	// this kernel once per descriptor over the same buffers and reads the
+	// totals back after the last one. Assigning here kept only the
+	// contribution of the final descriptor.
+	energies_d[i_site] += energies_loc;
 	for (k1=0;k1<9;k1++) atomicAdd(&virial_d[k1],0.5*virial_loc[k1]);
       }
     }
@@ -2545,7 +2549,11 @@ __global__ void cuda_get_soap_p(double *soap_d, double *sqrt_dot_p_d, double *mu
 	    }
 	  }
 	}
-	energies_d[i_site] = energies_loc;
+	// Accumulate, like the force and virial writes above: the caller runs
+	// this kernel once per descriptor over the same buffers and reads the
+	// totals back after the last one. Assigning here kept only the
+	// contribution of the final descriptor.
+	energies_d[i_site] += energies_loc;
 	for (k1=0;k1<9;k1++) atomicAdd(&virial_d[k1],0.5*virial_loc[k1]);
       }
     }

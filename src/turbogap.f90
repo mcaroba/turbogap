@@ -3448,15 +3448,18 @@ end if
                  call get_time( time_2b(1) )
 
 
+!                The kernel filters neighbours by species index, so sp1/sp2
+!                must be the position of the descriptor's species within
+!                params%species_types (j), not the descriptor index (i).
                  do j = 1, size(params%species_types)
-                   if( distance_2b_hypers(i)%species1 == params%species_types(j) )then   
-                     sp1 = i
+                   if( distance_2b_hypers(i)%species1 == params%species_types(j) )then
+                     sp1 = j
                      exit
                    end if
                  end do
                  do j = 1, size(params%species_types)
-                   if( distance_2b_hypers(i)%species2 == params%species_types(j) )then   
-                     sp2 = i
+                   if( distance_2b_hypers(i)%species2 == params%species_types(j) )then
+                     sp2 = j
                      exit
                    end if
                  end do
@@ -3491,21 +3494,26 @@ end if
                  call gpu_free_async(cutoff_d,gpu_stream)
                  call gpu_free_async(qs_d,gpu_stream)
 
-                 call cpy_dtoh(energies_2b_d, c_loc(this_energies),st_n_sites_double, gpu_stream)
-                 call cpy_dtoh(forces_2b_d, c_loc(this_forces),3*st_n_sites_double, gpu_stream)
-                 call cpy_dtoh(virial_2b_d, c_loc(this_virial),st_virial, gpu_stream)
-
-                 call gpu_stream_sync( gpu_stream )
-                 energies_2b = energies_2b + this_energies
-                 if( params%do_forces )then
-                   forces_2b = forces_2b + this_forces
-                   virial_2b = virial_2b + this_virial
-                 end if
-
                  call get_time( time_2b(2) )
 
                  time_2b(3) = time_2b(3) + time_2b(2) - time_2b(1)
                end do
+
+!              The kernels accumulate into the device buffers, so after the
+!              loop these already hold the sum over every 2b descriptor.
+!              Reading them back inside the loop and adding to the host arrays
+!              counted each descriptor once more for every later iteration.
+               call cpy_dtoh(energies_2b_d, c_loc(this_energies),st_n_sites_double, gpu_stream)
+               call cpy_dtoh(forces_2b_d, c_loc(this_forces),3*st_n_sites_double, gpu_stream)
+               call cpy_dtoh(virial_2b_d, c_loc(this_virial),st_virial, gpu_stream)
+
+               call gpu_stream_sync( gpu_stream )
+               energies_2b = energies_2b + this_energies
+               if( params%do_forces )then
+                 forces_2b = forces_2b + this_forces
+                 virial_2b = virial_2b + this_virial
+               end if
+
                call gpu_free_async(energies_2b_d,gpu_stream)
                call gpu_free_async(forces_2b_d,gpu_stream)
                call gpu_free(virial_2b_d)!,gpu_stream)
@@ -3553,23 +3561,25 @@ end if
                  call gpu_free_async(V_d,gpu_stream)
                  call gpu_free_async(dVdx2_d,gpu_stream)
 
-                 call cpy_dtoh(energies_core_pot_d, c_loc(this_energies),st_n_sites_double, gpu_stream)
-                 call cpy_dtoh(forces_core_pot_d, c_loc(this_forces),3*st_n_sites_double, gpu_stream)
-                 call cpy_dtoh(virial_core_pot_d, c_loc(this_virial),st_virial, gpu_stream)
-
-                 call gpu_stream_sync( gpu_stream )
-
-                 energies_core_pot = energies_core_pot + this_energies
-                 if( params%do_forces )then
-                   forces_core_pot = forces_core_pot + this_forces
-                   virial_core_pot = virial_core_pot + this_virial
-                 end if
-
-
                  call get_time( time_core_pot(2) )
 
                  time_core_pot(3) = time_core_pot(3) + time_core_pot(2) - time_core_pot(1)
                end do
+
+!              As for the 2b and 3b terms, the kernel accumulates into the
+!              device buffers, so the totals are read back only once the loop
+!              over descriptors has finished.
+               call cpy_dtoh(energies_core_pot_d, c_loc(this_energies),st_n_sites_double, gpu_stream)
+               call cpy_dtoh(forces_core_pot_d, c_loc(this_forces),3*st_n_sites_double, gpu_stream)
+               call cpy_dtoh(virial_core_pot_d, c_loc(this_virial),st_virial, gpu_stream)
+
+               call gpu_stream_sync( gpu_stream )
+
+               energies_core_pot = energies_core_pot + this_energies
+               if( params%do_forces )then
+                 forces_core_pot = forces_core_pot + this_forces
+                 virial_core_pot = virial_core_pot + this_virial
+               end if
 
                call gpu_free_async(energies_core_pot_d,gpu_stream)
                call gpu_free_async(forces_core_pot_d,gpu_stream)
@@ -3667,21 +3677,6 @@ end if
                    c_do_forces, angle_3b_hypers(i)%rcut, 0.5d0, sigma_d, qs_d, c_name_3b,&
                    i_beg, i_end, energies_3b_d, forces_3b_d, virial_3b_d, kappas_array_d)
 
-                 call cpy_dtoh(energies_3b_d, c_loc(this_energies),st_n_sites_double, gpu_stream)
-                 call cpy_dtoh(forces_3b_d, c_loc(this_forces), 3*st_n_sites_double, gpu_stream)
-                 call cpy_dtoh(virial_3b_d, c_loc(this_virial),st_virial, gpu_stream)
-
-                 call gpu_stream_sync( gpu_stream )
-
-                 energies_3b = energies_3b + this_energies
-                 if( params%do_forces )then
-                   forces_3b = forces_3b + this_forces
-                   virial_3b = virial_3b + this_virial
-                 end if
-
-
-
-
                  call get_time( time_3b(2) )
 
                  time_3b(3) = time_3b(3) + time_3b(2) - time_3b(1)
@@ -3690,6 +3685,21 @@ end if
                  !   time_3b(2) - time_3b(1), " with total being ", time_3b(3)
 
                end do
+
+!              As for the 2b term, the kernels accumulate into the device
+!              buffers, so the totals are only read back once the loop over
+!              descriptors has finished.
+               call cpy_dtoh(energies_3b_d, c_loc(this_energies),st_n_sites_double, gpu_stream)
+               call cpy_dtoh(forces_3b_d, c_loc(this_forces), 3*st_n_sites_double, gpu_stream)
+               call cpy_dtoh(virial_3b_d, c_loc(this_virial),st_virial, gpu_stream)
+
+               call gpu_stream_sync( gpu_stream )
+
+               energies_3b = energies_3b + this_energies
+               if( params%do_forces )then
+                 forces_3b = forces_3b + this_forces
+                 virial_3b = virial_3b + this_virial
+               end if
 
 !              All of the buffers below are allocated once before the descriptor
 !              loop (the parameter buffers are sized for max_np so they can be
