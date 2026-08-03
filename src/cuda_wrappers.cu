@@ -1928,12 +1928,17 @@ __global__ void cuda_get_soap_p(double *soap_d, double *sqrt_dot_p_d, double *mu
 	  for(int i=0;i<n_species; i++){
 	    for(int ii=i_beg_d[i];ii<=i_end_d[i]; ii++){
 	      double loc_rad_exp_coeff=radial_exp_coeff_d[i_one+i_ij*n_max]*global_scaling_d[i]; //radial_exp_coeff_d[i_ij+i_one*size_radial_exp_coeff_two]*global_scaling_d[i];
+	      // The value and its radial derivative come out of the radial
+	      // kernels in different units (the derivative is with respect to
+	      // the reduced coordinate r/rcut_hard), hence the opposite powers
+	      // of sqrt(rcut_hard) here. Verified: forcing both to the same
+	      // factor makes cnk_rad_der far worse.
 	      if(divide==0){
 		loc_rad_exp_coeff*=sqrt(rcut_hard_d[i]);
 	      }
 	      if(divide==1){
 		loc_rad_exp_coeff*=1.0/sqrt(rcut_hard_d[i]);
-	      } 
+	      }
 	      radial_exp_coeff_d[i_one+i_ij*n_max]=loc_rad_exp_coeff; //radial_exp_coeff_d[i_ij+i_one*size_radial_exp_coeff_two]=loc_rad_exp_coeff;
 
 	      i_one++;
