@@ -581,6 +581,10 @@ end do
 rewind(10)
 call read_input_file(n_species, mode, params, rank)
 
+! Make randomized initial velocities (and any other use of random_number)
+! reproducible when the input asks for it, so runs can be compared.
+call init_random_seed( params%random_seed_value, rank )
+
 !! If electronic stopping is required to be done, then read the stopping data file for once
 !! Reading and storing the elctronic stopping data 
 if ( params%electronic_stopping ) then

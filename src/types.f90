@@ -205,6 +205,11 @@ module types
          &=200, structure_factor_n_samples=200, xrd_n_samples=200, nd_n_samples=200, verb=0, n_t_hold=0,&
          n_exp_opt=0,&
          n_mc_relax_after = 0, n_mc_mu = 0, gpu_n_batches=1, n_batches=0
+!   Seed for the intrinsic pseudo-random number generator. Zero (the default)
+!   leaves the compiler's default sequence untouched; any other value makes
+!   runs reproducible, which is what the CPU/GPU regression comparisons rely
+!   on when initial velocities have to be randomized.
+    integer :: random_seed_value = 0
 
     real*8  :: estat_rcut = 10.d0, estat_dsf_alpha = -1.d0, &
                 estat_rcut_inner = 4.0d0, estat_inner_width = 1.d0
