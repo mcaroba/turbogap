@@ -46,6 +46,7 @@ program turbogap
   use vdw
   use turbogap_setup
   use turbogap_exp
+  use gap_backend
   use turbogap_vdw
   use exp_utils
   use exp_interface
@@ -80,8 +81,9 @@ program turbogap
                this_virial_lp(1:3, 1:3), virial_pdf(1:3,1:3), this_virial_pdf(1:3,1:3), virial_sf(1:3,1:3), &
                this_virial_sf(1:3,1:3), virial_xrd(1:3,1:3), this_virial_xrd(1:3,1:3), virial_nd(1:3,1:3), &
                this_virial_nd(1:3,1:3)
-  real*8, allocatable :: energies(:), forces(:,:), this_energies(:), this_forces(:,:), velocities(: ,:), &
-       masses_types(:), masses(:), hirshfeld_v_temp(:), masses_temp(:), energies_exp(:)
+  real*8, allocatable :: energies(:), forces(:,:), this_energies(:), &
+                            this_forces(:,:), velocities(: ,:), masses_types(:), masses(:), &
+                            hirshfeld_v_temp(:), masses_temp(:), sinc_factor_matrix(:,:), energies_exp(:)
   real*8, allocatable, target :: energies_soap(:), forces_soap(:,:), &
                             energies_2b(:), forces_2b(:,:), energies_3b(:), forces_3b(: ,:), &
                             energies_core_pot(:), forces_core_pot(:,:)
@@ -94,7 +96,7 @@ program turbogap
 !  real*8, pointer :: hirshfeld_v(:), hirshfeld_v_cart_der(:,:)
   real*8, allocatable, target :: this_local_properties(:,:), this_local_properties_cart_der(:,:,:)
   real*8, pointer :: this_local_properties_pt(:,:), this_local_properties_cart_der_pt(:,:,:)
-  real*8, allocatable :: moments(:), moments_exp(:)
+  real*8, allocatable :: y_i_pred_all(:,:), moments(:), moments_exp(:)
 
 
   real*8, allocatable :: all_energies(:,:), all_forces(:,:,:), all_virial(:,:,:)
@@ -148,9 +150,10 @@ program turbogap
   logical :: contrib_on(1:N_CONTRIB)
   type(contribution_ref) :: contrib(1:N_CONTRIB)
   integer :: n_active, i_contrib
-  integer :: which_atom = 0, n_species = 1, n_xyz, indices(1:3)
+  integer :: which_atom = 0, n_species = 1, n_species_actual, n_xyz, indices(1:3)
   integer :: radial_enhancement = 0
   integer :: md_istep, mc_istep, mc_mu_id=1, n_mc
+  character*8, allocatable :: species_types_actual(:)
   character*1024, allocatable :: local_property_labels(:)
   logical :: repeat_xyz = .true., overwrite = .false., check_species, valid_local_properties=.false., label_in_list, &
                 do_mc_relax =.false.
@@ -181,6 +184,7 @@ program turbogap
   real*8, allocatable, target :: energies_vdw(:), forces_vdw(:,:), this_energies_vdw(:), this_forces_vdw(:,:)
 ! Persistent ts+mbd correction state, owned by turbogap_vdw
   type(vdw_state) :: vdw_ws
+  real*8, allocatable :: v_neigh_lp(:)
   real*8, allocatable, target :: energies_lp(:), forces_lp(:,:), this_energies_lp(:), this_forces_lp(:,:)
   real*8, allocatable, target :: energies_pdf(:), forces_pdf(:,:), this_energies_pdf(:), this_forces_pdf(:,:)
   real*8, allocatable, target :: energies_sf(:), forces_sf(:,:), this_energies_sf(:), this_forces_sf(:,:)
@@ -192,19 +196,30 @@ program turbogap
   real*8, allocatable :: energies_vdw_corr(:), forces_vdw_corr(:,:)
   logical :: update_mbd_ts_scaling = .true.
   ! MPI stuff
-  real*8, allocatable :: temp_1d(:), temp_1d_bis(:), temp_2d(:,:)
+  real*8, allocatable :: temp_1d(:), temp_1d_bis(:), temp_2d(:,:), pair_distribution_partial(:,:), &
+                            pair_distribution_der(:,:), pair_distribution_partial_der(:,:,:), &
+                            pair_distribution_partial_temp(:,:), pair_distribution_partial_temp_der(:,:,:), &
+                            n_atoms_of_species(:), structure_factor_partial(:,:), structure_factor_partial_temp(:,:), &
+                            structure_factor_partial_der(:,:,:), structure_factor_partial_temp_der(:,:), &
+                            x_pair_distribution(:), y_pair_distribution(:), y_pair_distribution_temp(:), &
+                            x_structure_factor(:), x_structure_factor_temp(:), y_structure_factor(:), &
+                            y_structure_factor_temp(:), x_xrd(:), x_xrd_temp(:), y_xrd(:), y_xrd_temp(:), &
+                            y_xrd_der(:,:,:), y_xrd_temp_der(:,:,:), x_nd(:), x_nd_temp(:), y_nd(:), y_nd_temp(:), &
+                            y_nd_der(:,:,:), y_nd_temp_der(:,:,:)
   integer, allocatable :: temp_1d_int(:), n_atom_pairs_by_rank(:), displ(:)
   integer, allocatable :: local_properties_n_sparse_mpi_soap_turbo(:), local_properties_dim_mpi_soap_turbo(:), &
                              n_neigh_local(:), vdw_n_sparse_mpi_soap_turbo(:), site_in_rank(:), this_site_in_rank(:)
   integer :: i_beg, i_end, n_sites_mpi, j_beg, j_end, size_soap_turbo, size_distance_2b, size_angle_3b
+  integer :: q_beg, q_end
 
   ! Nested sampling
-  real*8 :: e_max, e_kin, rand, rand_scale(1:6), n_total_cutoff, n_total_cutoff_temp, dq, target_temp
+  real*8 :: e_max, e_kin, rand, rand_scale(1:6), mag, n_total_cutoff, n_total_cutoff_temp, dq, target_temp
   integer :: i_nested, i_max, i_image, i_current_image=1, i_trial_image=2
   type(image), allocatable :: images(:), images_temp(:)
   type(exp_data_container) :: temp_exp_container
   character*32 :: implemented_exp_observables(1:5)
 
+  real*8, allocatable :: x_xps(:), y_xps(:)
 
   implemented_exp_observables(1) = "xps"
   implemented_exp_observables(2) = "xrd"
@@ -1500,91 +1515,26 @@ end if
 
 
         if( params%do_prediction )then
-           !       Loop through distance_2b descriptors
+           !       Two-body, core-potential and three-body contributions, via the
+           !       gap_backend seam. The CPU implementation is in
+           !       src/gap_backend_cpu.f90; the GPU branch provides the same three
+           !       names from src/gap_backend_gpu.f90 and the Makefile picks one.
            call get_time(time1)
 
-           do i = 1, n_distance_2b
-              call get_time(time_2b(1))
-              this_energies = 0.d0
-              if( params%do_forces )then
-                 this_forces = 0.d0
-                 this_virial = 0.d0
-              end if
-              call get_2b_energy_and_forces(rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), distance_2b_hypers(i)%alphas, &
-                   distance_2b_hypers(i)%cutoff, &
-                   distance_2b_hypers(i)%rcut, 0.5d0, distance_2b_hypers(i)%delta, &
-                   distance_2b_hypers(i)%sigma, 0.d0, distance_2b_hypers(i)%Qs(:,1), &
-                   n_neigh(i_beg:i_end), params%do_forces, params%do_timing, &
-                   species(i_beg:i_end), neighbor_species(j_beg:j_end), &
-                   distance_2b_hypers(i)%species1, distance_2b_hypers(i)%species2, &
-                   params%species_types, this_energies(i_beg:i_end), this_forces(1:3, i_beg:i_end), &
-                   this_virial )
-              energies_2b = energies_2b + this_energies
-              if( params%do_forces )then
-                 forces_2b = forces_2b + this_forces
-                 virial_2b = virial_2b + this_virial
-              end if
-              call get_time(time_2b(2))
-              time_2b(3) = time_2b(3) + time_2b(2) - time_2b(1)
-           end do
+           call add_2b_contribution( n_distance_2b, distance_2b_hypers, &
+                params, rjs, xyz, n_neigh, species, neighbor_species, &
+                i_beg, i_end, j_beg, j_end, this_energies, this_forces, this_virial, &
+                energies_2b, forces_2b, virial_2b, time_2b )
 
+           call add_core_pot_contribution( n_core_pot, core_pot_hypers, &
+                params, rjs, xyz, n_neigh, species, neighbor_species, &
+                i_beg, i_end, j_beg, j_end, this_energies, this_forces, this_virial, &
+                energies_core_pot, forces_core_pot, virial_core_pot, time_core_pot )
 
-
-
-
-           !       Loop through core_pot descriptors
-           do i = 1, n_core_pot
-              call get_time(time_core_pot(1))
-              this_energies = 0.d0
-              if( params%do_forces )then
-                 this_forces = 0.d0
-                 this_virial = 0.d0
-              end if
-              call get_core_pot_energy_and_forces(rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), &
-                   core_pot_hypers(i)%x, core_pot_hypers(i)%V, &
-                   core_pot_hypers(i)%yp1, core_pot_hypers(i)%ypn, &
-                   core_pot_hypers(i)%dVdx2, n_neigh(i_beg:i_end), params%do_forces, &
-                   params%do_timing, species(i_beg:i_end), neighbor_species(j_beg:j_end), &
-                   core_pot_hypers(i)%species1, core_pot_hypers(i)%species2, &
-                   params%species_types, this_energies(i_beg:i_end), this_forces(1:3, i_beg:i_end), &
-                   this_virial )
-              energies_core_pot = energies_core_pot + this_energies
-              if( params%do_forces )then
-                 forces_core_pot = forces_core_pot + this_forces
-                 virial_core_pot = virial_core_pot + this_virial
-              end if
-              call get_time(time_core_pot(2))
-              time_core_pot(3) = time_core_pot(3) + time_core_pot(2) - time_core_pot(1)
-           end do
-
-
-
-
-           !       Loop through angle_3b descriptors
-           do i = 1, n_angle_3b
-              call get_time(time_3b(1))
-              this_energies = 0.d0
-              if( params%do_forces )then
-                 this_forces = 0.d0
-                 this_virial = 0.d0
-              end if
-              call get_3b_energy_and_forces(rjs(j_beg:j_end), xyz(1:3,j_beg:j_end), angle_3b_hypers(i)%alphas, &
-                   angle_3b_hypers(i)%cutoff, &
-                   angle_3b_hypers(i)%rcut, 0.5d0, angle_3b_hypers(i)%delta, &
-                   angle_3b_hypers(i)%sigma, 0.d0, angle_3b_hypers(i)%Qs, n_neigh(i_beg:i_end), &
-                   neighbors_list(j_beg:j_end), &
-                   params%do_forces, params%do_timing, angle_3b_hypers(i)%kernel_type, &
-                   species(i_beg:i_end), neighbor_species(j_beg:j_end), angle_3b_hypers(i)%species_center, &
-                   angle_3b_hypers(i)%species1, angle_3b_hypers(i)%species2, params%species_types, &
-                   this_energies(i_beg:i_end), this_forces, this_virial)
-              energies_3b = energies_3b + this_energies
-              if( params%do_forces )then
-                 forces_3b = forces_3b + this_forces
-                 virial_3b = virial_3b + this_virial
-              end if
-              call get_time(time_3b(2))
-              time_3b(3) = time_3b(3) + time_3b(2) - time_3b(1)
-           end do
+           call add_3b_contribution( n_angle_3b, angle_3b_hypers, neighbors_list, &
+                params, rjs, xyz, n_neigh, species, neighbor_species, &
+                i_beg, i_end, j_beg, j_end, this_energies, this_forces, this_virial, &
+                energies_3b, forces_3b, virial_3b, time_3b )
 
 
            call get_time(time2)
