@@ -381,6 +381,48 @@ nothing (0.5099 vs 0.5199, within the run-to-run spread).
 The version used for this retry is kept at
 `../phase0_backup/phase2_gpu_wip/gap_backend_gpu_v2.f90`.
 
+#### The indexing was then checked and is not the cause
+
+`kernel_2nd_try` derives everything from the site index and `kappas_array`:
+
+```c
+const int i = blockIdx.x + i_beg - 1;      // absolute site index
+if (species[i] != sp0) return;
+int k = kappas_array[i];
+auto i3 = ((neighbors_list[k]-1) % n_sites0);
+```
+
+so a wrong `k` gives a garbage `neighbors_list[k]`, a negative `i3`, and an
+atomic below the buffer — which is what memcheck reports. **`kappas_array_d`
+was therefore read back from the device in both builds and is identical**:
+`sum = 1633571860`, `[0] = 0`, `[1] = 61`, `[n_sites-1] = 455312`, matching the
+host array exactly.
+
+So the exclusion list is now: host scalars, upload byte counts, host array
+checksums, per-descriptor parameters, the stream, **and the device copy of
+`kappas_array_d`**. Every input the kernel reads has been proved equal, and
+only the module build's atomics leave the buffer.
+
+What that leaves is the *output* pointers — `energies_3b_d`, `forces_3b_d`,
+`virial_3b_d`, allocated inside `add_3b_contribution` from `size(n_neigh)` and
+`size(forces,2)` (both 7176, both verified). Either one of those allocations is
+not what the kernel receives, or the allocation itself is landing somewhere the
+pool later reuses. The next step is to read back the three device pointer values
+and their allocated sizes on both sides, rather than their contents — that is
+the one thing not yet compared.
+
+Worth noting for whoever picks this up: the commented-out line directly above
+the live one,
+
+```c
+//int k = i_beg != 1 ?  kappas_array[i-i_beg+1] : kappas_array[i] ;
+int k =  kappas_array[i];
+```
+
+means the kernel only indexes `kappas_array` correctly when `i_beg == 1`. Every
+test here is single-rank, so it has never been exercised otherwise. That is a
+separate latent bug and will bite any multi-rank 3b run.
+
 ### Earlier notes
 
 The obvious next move is a bisect rather than more reading: instrument the
