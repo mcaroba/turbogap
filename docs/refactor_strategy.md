@@ -169,12 +169,32 @@ Still outstanding on the GPU side: the same triple-walk exists there (~287
 lines), and bundling it the same way converges the reduce block as a side
 effect.
 
-### Phase 4 — exp-spectra
+### Phase 4 — exp-spectra — done
 
-Confirmed as the worst remaining merge site: 269 lines vs 757 in the driver, and
-`exp_interface.f90` is 1865 vs 3455 with a 2193-line real diff. Extract on master
-first into its own module, then the GPU version becomes the backend
-implementation behind the same interface.
+Both blocks are out, into `src/turbogap_exp.f90`.
+
+| | |
+|---|---|
+| `afd0c19` | scattering observables (pdf/sf/xrd/nd), 272 lines, 28 arrays become locals, 37 args |
+| `03877d5` | the XPS spectrum, 161 lines, 5 arrays plus i/j/j2/k become locals, 30 args |
+| `533ccf9` | the 39 declarations those two orphaned |
+
+`turbogap.f90`: **4992 at the branch point → 3538, down 29%.**
+
+**The driver parses.** `fprettify` accepts `turbogap.f90`, `turbogap_exp.f90`,
+`turbogap_setup.f90` and `turbogap_vdw.f90` — every file in `src/`. Until this
+phase the driver defeated formatters, static analysers and IDE parsers alike,
+because an argument list interrupted by `#ifdef` has no token stream until the
+preprocessor has run. That was the §6.4 blocker, and extracting these two blocks
+is what removed it: the five statements each had their `this_`-prefixed and
+un-prefixed variants split across the preprocessor, and inside a procedure the
+dummy has one name either way, so the caller chooses once and the conditional
+disappears from the moved code.
+
+Still to do here: the GPU version of both blocks becomes the backend
+implementation behind the same interface. `exp_interface.f90` remains 1865 vs
+3455 with a 2193-line real diff, which is now the largest single divergence
+left.
 
 ### Phase 5 — one-sided features, decided explicitly
 
@@ -297,8 +317,19 @@ sites" antipattern that produced the ts+mbd bug.
 
 **Correction after doing Phase 3:** it did *not* eliminate them. Phase 3 changed
 the MPI reduce block, whereas the sixteen are in the exp-spectra *call sites* a
-few hundred lines earlier — the families are the same, the code is not. Removing
-them is Phase 4 work, and it is one of the reasons Phase 4 is now next.
+few hundred lines earlier — the families are the same, the code is not.
+
+**Resolved in Phase 4.** All five on master are gone and `turbogap.f90` parses.
+The eleven on the GPU branch remain, and the same extraction removes them.
+
+A hazard for whoever does the GPU side. These blocks contain two kinds of
+`#ifdef _MPIF90` that look alike. One has an `#else` and splits an argument
+list — that is the defect, and it collapses. The other has **no** `#else` and
+guards an MPI-only *allocation* of the same arrays; it is an ordinary
+conditional over whole statements, it parses fine, and it must survive the move.
+A transformation that scans for the first `#else` will swallow it and silently
+make the allocation unconditional. Match directive nesting, and assert how many
+groups you collapsed against how many you kept.
 
 ## 7. Suggested order
 
@@ -306,15 +337,27 @@ them is Phase 4 work, and it is one of the reasons Phase 4 is now next.
 2. ~~0c `get_time()`~~ — done (`fef536c`)
 3. ~~0b whitespace~~ — dropped, see §6.3; use `diff -w` and `-X ignore-all-space`
 4. ~~Phase 3 `contribution_ref`~~ — done, with the exp-spectra coverage it needed
-5. **Phase 4 exp-spectra extraction on master** — next. It is the worst merge
-   site in the tree, it now has coverage, and §6.4's sixteen unparseable
-   statements live in exactly this block, so extracting it is what finally makes
-   `turbogap.f90` parseable by ordinary Fortran tooling. Note that Phase 3 did
-   *not* remove them: bundling changed the reduce block, while the sixteen are
-   in the exp-spectra call sites.
-6. Phase 1 transplant — turns the GPU read-input block from 670 lines to 56
+5. ~~Phase 4 exp-spectra extraction on master~~ — done; the driver parses
+6. **Phase 1 transplant** — next, and the first work on the GPU branch.
+   `turbogap_setup.f90` is 88% shared with the GPU's still-inline 670-line
+   read-input block, which contains zero GPU calls, so it goes to ~56 lines. Then
+   `vdw.f90` + `turbogap_vdw.f90` wholesale, since the GPU branch never touched
+   them.
 7. Phase 2 backend seam, then merge per phase
 8. Phase 5 one-sided features, each on its own commit
 
-Cheap and worth doing whenever: an `nd` case (shares `calculate_xrd` with `xrd`,
-so it is nearly free), and bundling the GPU branch's copy of the reduce block.
+Cheap and worth doing whenever, in rough order of value:
+
+* Bring the GPU branch's copies of the Phase 3 and Phase 4 work across — the
+  same triple-walk (~287 lines) and the same eleven unparseable statements are
+  still there.
+* An `nd` regression case. It shares `calculate_xrd` with `xrd`, so it is nearly
+  free, and `nd` is the last contribution family with no coverage.
+* 65 further unreferenced declarations in the driver (`file_2b`, `displs`,
+  `counts`, `temp_exp_container`, the `sph_temp` family). Left alone by
+  `533ccf9` because they belong to phases not yet touched. Note that a naive
+  unreferenced-name scan also flags `N_CONTRIB`, which appears only as an array
+  bound inside other declarations — check declaration text, not just the body,
+  or the sweep will break the build.
+* KNOWN_ISSUES #5: `mpi_reduce` leaves its receive buffer undefined on non-root
+  ranks and the unpack is not rank-guarded. Harmless as the code stands.
