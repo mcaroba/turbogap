@@ -1,0 +1,10 @@
+atoms_file = "atoms.xyz"
+pot_file = "gap_files/CO.gap"
+n_species = 2
+species = C O
+masses = 12.01 15.99
+e0 = -.16138053 0.
+random_seed = 12345
+xps_sigma = 0.4
+
+write_xyz = 1
