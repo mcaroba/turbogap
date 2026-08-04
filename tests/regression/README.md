@@ -44,6 +44,8 @@ would make every case pass vacuously.
 | `vdw_ts` | 1 | TS pairwise vdW, Hirshfeld local properties |
 | `vdw_mbd` | 1 | many-body dispersion |
 | `vdw_mbd_cell_mpi2` | 2 | MBD + the cross-rank Hirshfeld gradient exchange |
+| `vdw_tsmbd_md` | 1 | ts+mbd correction state: both the recompute and the reuse branch |
+| `vdw_tsmbd_md_mpi2` | 2 | the same under MPI |
 | `xps_predict` | 1 | SOAP loop, local properties, 2b/3b/core_pot, XPS spectrum |
 | `xps_predict_mpi4` | 4 | the energy/force/virial MPI reductions |
 | `gcmc_xps` | 1 | MC insertion/removal: `n_sites` changes, reallocation, neighbor rebuilds |
@@ -69,5 +71,6 @@ A case whose data is absent is skipped, not failed.
 
 ## Coverage gaps
 
-Read `KNOWN_ISSUES.md` before trusting a green run. In particular the
-`ts+mbd` code paths are **not** covered, because `ts+mbd` segfaults in master.
+Read `KNOWN_ISSUES.md` before trusting a green run. In particular `ts+mbd`
+segfaults in `predict` and `mc` in master, so it is covered from `md` mode
+only.

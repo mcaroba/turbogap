@@ -57,10 +57,12 @@ is no MD step counter is a question for whoever owns the vdW code, not
 something a refactor commit should answer.
 
 **Consequence for the suite.** `cases/vdw_mbd_cell_mpi2` uses `vdw_type = mbd`
-instead. The `ts+mbd`-specific blocks in `turbogap.f90` (lines ~2023, ~2084,
-~2256, ~2349) therefore have **no regression coverage**. Treat them with
-extra care during extraction — there is no test that will catch a mistake in
-them. Once the bug is fixed, switch this case back to `ts+mbd`.
+instead, and `ts+mbd` is covered from `md` mode instead of `predict`, by
+`cases/vdw_tsmbd_md{,_mpi2}` — `md` is unaffected by this bug, so the
+correction machinery *is* exercised, including the reuse branch that is
+unreachable in `predict`. What remains uncovered is specifically `ts+mbd`
+under `predict` and `mc`, which is the crash itself. Once the bug is fixed,
+switch `vdw_mbd_cell_mpi2` back to `ts+mbd`.
 
 ---
 
