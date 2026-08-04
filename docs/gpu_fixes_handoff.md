@@ -152,6 +152,51 @@ atoms, 1x RTX A2000 vs 12 cores:
 `mpirun` works and two ranks sharing the single physical GPU give correct
 results (step-20 thermo matches the CPU and the single-rank GPU to ~1e-11).
 
+## 6b. Experimental observables abort on this branch — OPEN
+
+Found 2026-08-04 while adding regression coverage for the exp-spectra paths.
+
+`turbogap md` with `do_pair_distribution` / `do_structure_factor` / `do_xrd`
+**exits after ~1.3 s with status 0, having written no trajectory.** The CPU
+build runs the identical input to completion. It is deterministic, and it is
+not a hang or a timeout — the process returns success.
+
+The log stops partway through the pair-distribution device setup, after
+
+```
+ allocing pdf
+ allocing pdf to reduce
+ gpu_exp%pair_distribution_partial_d(n_dim_idx)
+ pdf_to_reduce_d
+ x_d
+ dV_d
+ gpu_exp%rjs_index_d(n_dim_idx)
+```
+
+which is the `gpu_malloc_all` sequence in `electrostatics.f90` around line 440.
+No `GPUassert`, no `stop`, no error message. Status 0 with truncated output
+means something on that path is terminating the process while reporting
+success, so `run_regression.sh` cannot detect it by exit code — the new case
+detects it by the absence of `trajectory_out.xyz`.
+
+Reproduce:
+
+```sh
+mkdir /tmp/gpuxrd && cd /tmp/gpuxrd
+ln -s <data>/xrd_mad/{atoms.xyz,gap_files,xrd_glassy_carbon_zeng_2017.fq} .
+cp <cpu repo>/tests/regression/cases/xrd_mad/input .
+<gpu repo>/bin/turbogap md          # exits 0, no trajectory_out.xyz
+```
+
+**Why this matters beyond the bug.** These paths had no coverage at all here,
+so nothing had ever run them. The `XRD_mad` case is marked xfail in
+`run_regression.sh` rather than removed, so it stays visible and will report
+XPASS the moment this is fixed. Until then the exp-spectra blocks in
+`turbogap.f90` cannot be refactored on this branch with any verification —
+which is why the CPU branch's Phase 4 extraction has not been brought across.
+
+---
+
 ## 7. What is left
 
 Roughly in priority order.
