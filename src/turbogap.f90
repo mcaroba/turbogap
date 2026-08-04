@@ -80,9 +80,8 @@ program turbogap
                this_virial_lp(1:3, 1:3), virial_pdf(1:3,1:3), this_virial_pdf(1:3,1:3), virial_sf(1:3,1:3), &
                this_virial_sf(1:3,1:3), virial_xrd(1:3,1:3), this_virial_xrd(1:3,1:3), virial_nd(1:3,1:3), &
                this_virial_nd(1:3,1:3)
-  real*8, allocatable :: energies(:), forces(:,:), this_energies(:), &
-                            this_forces(:,:), velocities(: ,:), masses_types(:), masses(:), &
-                            hirshfeld_v_temp(:), masses_temp(:), sinc_factor_matrix(:,:), energies_exp(:)
+  real*8, allocatable :: energies(:), forces(:,:), this_energies(:), this_forces(:,:), velocities(: ,:), &
+       masses_types(:), masses(:), hirshfeld_v_temp(:), masses_temp(:), energies_exp(:)
   real*8, allocatable, target :: energies_soap(:), forces_soap(:,:), &
                             energies_2b(:), forces_2b(:,:), energies_3b(:), forces_3b(: ,:), &
                             energies_core_pot(:), forces_core_pot(:,:)
@@ -95,7 +94,7 @@ program turbogap
 !  real*8, pointer :: hirshfeld_v(:), hirshfeld_v_cart_der(:,:)
   real*8, allocatable, target :: this_local_properties(:,:), this_local_properties_cart_der(:,:,:)
   real*8, pointer :: this_local_properties_pt(:,:), this_local_properties_cart_der_pt(:,:,:)
-  real*8, allocatable :: y_i_pred_all(:,:), moments(:), moments_exp(:)
+  real*8, allocatable :: moments(:), moments_exp(:)
 
 
   real*8, allocatable :: all_energies(:,:), all_forces(:,:,:), all_virial(:,:,:)
@@ -149,10 +148,9 @@ program turbogap
   logical :: contrib_on(1:N_CONTRIB)
   type(contribution_ref) :: contrib(1:N_CONTRIB)
   integer :: n_active, i_contrib
-  integer :: which_atom = 0, n_species = 1, n_species_actual, n_xyz, indices(1:3)
+  integer :: which_atom = 0, n_species = 1, n_xyz, indices(1:3)
   integer :: radial_enhancement = 0
   integer :: md_istep, mc_istep, mc_mu_id=1, n_mc
-  character*8, allocatable :: species_types_actual(:)
   character*1024, allocatable :: local_property_labels(:)
   logical :: repeat_xyz = .true., overwrite = .false., check_species, valid_local_properties=.false., label_in_list, &
                 do_mc_relax =.false.
@@ -183,7 +181,6 @@ program turbogap
   real*8, allocatable, target :: energies_vdw(:), forces_vdw(:,:), this_energies_vdw(:), this_forces_vdw(:,:)
 ! Persistent ts+mbd correction state, owned by turbogap_vdw
   type(vdw_state) :: vdw_ws
-  real*8, allocatable :: v_neigh_lp(:)
   real*8, allocatable, target :: energies_lp(:), forces_lp(:,:), this_energies_lp(:), this_forces_lp(:,:)
   real*8, allocatable, target :: energies_pdf(:), forces_pdf(:,:), this_energies_pdf(:), this_forces_pdf(:,:)
   real*8, allocatable, target :: energies_sf(:), forces_sf(:,:), this_energies_sf(:), this_forces_sf(:,:)
@@ -195,30 +192,19 @@ program turbogap
   real*8, allocatable :: energies_vdw_corr(:), forces_vdw_corr(:,:)
   logical :: update_mbd_ts_scaling = .true.
   ! MPI stuff
-  real*8, allocatable :: temp_1d(:), temp_1d_bis(:), temp_2d(:,:), pair_distribution_partial(:,:), &
-                            pair_distribution_der(:,:), pair_distribution_partial_der(:,:,:), &
-                            pair_distribution_partial_temp(:,:), pair_distribution_partial_temp_der(:,:,:), &
-                            n_atoms_of_species(:), structure_factor_partial(:,:), structure_factor_partial_temp(:,:), &
-                            structure_factor_partial_der(:,:,:), structure_factor_partial_temp_der(:,:), &
-                            x_pair_distribution(:), y_pair_distribution(:), y_pair_distribution_temp(:), &
-                            x_structure_factor(:), x_structure_factor_temp(:), y_structure_factor(:), &
-                            y_structure_factor_temp(:), x_xrd(:), x_xrd_temp(:), y_xrd(:), y_xrd_temp(:), &
-                            y_xrd_der(:,:,:), y_xrd_temp_der(:,:,:), x_nd(:), x_nd_temp(:), y_nd(:), y_nd_temp(:), &
-                            y_nd_der(:,:,:), y_nd_temp_der(:,:,:)
+  real*8, allocatable :: temp_1d(:), temp_1d_bis(:), temp_2d(:,:)
   integer, allocatable :: temp_1d_int(:), n_atom_pairs_by_rank(:), displ(:)
   integer, allocatable :: local_properties_n_sparse_mpi_soap_turbo(:), local_properties_dim_mpi_soap_turbo(:), &
                              n_neigh_local(:), vdw_n_sparse_mpi_soap_turbo(:), site_in_rank(:), this_site_in_rank(:)
   integer :: i_beg, i_end, n_sites_mpi, j_beg, j_end, size_soap_turbo, size_distance_2b, size_angle_3b
-  integer :: q_beg, q_end
 
   ! Nested sampling
-  real*8 :: e_max, e_kin, rand, rand_scale(1:6), mag, n_total_cutoff, n_total_cutoff_temp, dq, target_temp
+  real*8 :: e_max, e_kin, rand, rand_scale(1:6), n_total_cutoff, n_total_cutoff_temp, dq, target_temp
   integer :: i_nested, i_max, i_image, i_current_image=1, i_trial_image=2
   type(image), allocatable :: images(:), images_temp(:)
   type(exp_data_container) :: temp_exp_container
   character*32 :: implemented_exp_observables(1:5)
 
-  real*8, allocatable :: x_xps(:), y_xps(:)
 
   implemented_exp_observables(1) = "xps"
   implemented_exp_observables(2) = "xrd"
