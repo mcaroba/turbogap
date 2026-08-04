@@ -1166,108 +1166,12 @@ __global__ void cuda_get_soap_p(double *soap_d, double *sqrt_dot_p_d, double *mu
   extern "C" void gpu_soap_normalize(double *soap_d, double *sqrt_dot_d, int n_soap, int n_sites, hipStream_t *stream ){
     cuda_soap_normalize<<< n_sites, tpb,0,stream[0]>>> (soap_d, sqrt_dot_d, n_soap,n_sites);
   }
-  /* 
-     __global__ void cuda_get_derivatives(double *radial_exp_coeff_d, hipDoubleComplex *angular_exp_coeff_d, double *radial_exp_coeff_der_d, 
-     hipDoubleComplex *angular_exp_coeff_rad_der_d, hipDoubleComplex *angular_exp_coeff_azi_der_d, hipDoubleComplex *angular_exp_coeff_pol_der_d,
-     hipDoubleComplex *cnk_rad_der_d, hipDoubleComplex *cnk_azi_der_d, hipDoubleComplex *cnk_pol_der_d,
-     double *rjs_d, 
-     double rcut_max,
-     int n_atom_pairs, int n_sites, int n_soap, int k_max, int n_max, int l_max)
-     {
-     int k2 = threadIdx.x+blockIdx.x*blockDim.x;
-     double Pi=4.0*acos(-1.0);
-     if(k2<n_atom_pairs){
-     double my_rjs=rjs_d[k2];
-  // printf(" %lf  %d\n", my_rjs, k2);
-  if(my_rjs<rcut_max){
-  for(int n=1;n<=n_max;n++){
-  double my_radial_exp_c;
-  my_radial_exp_c=radial_exp_coeff_d[n-1+k2*n_max];
-  double my_radial_exp_c_der;
-  my_radial_exp_c_der=radial_exp_coeff_der_d[n-1+k2*n_max];
-  for(int  l=0;l<=l_max;l++){
-  for(int m=0;m<=l;m++){
-  int k=1+l*(l+1)/2+m;
-  hipDoubleComplex my_cnk_rad_der;hipDoubleComplex my_cnk_azi_der;hipDoubleComplex my_cnk_pol_der;
-
-  hipDoubleComplex my_ang_exp_c;
-  my_ang_exp_c=angular_exp_coeff_d[k2+n_atom_pairs*(k-1)]; //angular_exp_coeff_d[k-1+k2*k_max];
-
-  hipDoubleComplex my_ang_exp_c_rad_der;
-  my_ang_exp_c_rad_der=angular_exp_coeff_rad_der_d[k2+(k-1)*n_atom_pairs]; //angular_exp_coeff_rad_der_d[k-1+k2*k_max];
-  hipDoubleComplex my_ang_exp_c_azi_der;
-  my_ang_exp_c_azi_der=angular_exp_coeff_azi_der_d[k2+(k-1)*n_atom_pairs]; //angular_exp_coeff_azi_der_d[k-1+k2*k_max];
-  hipDoubleComplex my_ang_exp_c_pol_der;
-  my_ang_exp_c_pol_der=angular_exp_coeff_pol_der_d[k2+(k-1)*n_atom_pairs]; //angular_exp_coeff_pol_der_d[k-1+k2*k_max];
-
-  my_cnk_rad_der.x=Pi*(my_ang_exp_c.x*my_radial_exp_c_der+my_ang_exp_c_rad_der.x*my_radial_exp_c);
-  my_cnk_rad_der.y=Pi*(my_ang_exp_c.y*my_radial_exp_c_der+my_ang_exp_c_rad_der.y*my_radial_exp_c);
-
-  my_cnk_azi_der.x=Pi*(my_ang_exp_c_azi_der.x*my_radial_exp_c);
-  my_cnk_azi_der.y=Pi*(my_ang_exp_c_azi_der.y*my_radial_exp_c);
-
-  my_cnk_pol_der.x=Pi*(my_ang_exp_c_pol_der.x*my_radial_exp_c);
-  my_cnk_pol_der.y=Pi*(my_ang_exp_c_pol_der.y*my_radial_exp_c);
-
-  cnk_rad_der_d[k-1+k_max*(n-1+k2*n_max)]=my_cnk_rad_der;
-  cnk_azi_der_d[k-1+k_max*(n-1+k2*n_max)]=my_cnk_azi_der;
-  cnk_pol_der_d[k-1+k_max*(n-1+k2*n_max)]=my_cnk_pol_der;
-  }
-  }
-  }
-  }
-  }
-  }
-   */
-  /* 
-     __global__ void cuda_get_derivatives_new(double *radial_exp_coeff_d, hipDoubleComplex *angular_exp_coeff_d, double *radial_exp_coeff_der_d, 
-     hipDoubleComplex *angular_exp_coeff_rad_der_d, hipDoubleComplex *angular_exp_coeff_azi_der_d, hipDoubleComplex *angular_exp_coeff_pol_der_d,
-     hipDoubleComplex *cnk_rad_der_d, hipDoubleComplex *cnk_azi_der_d, hipDoubleComplex *cnk_pol_der_d,
-     double *rjs_d, 
-     double rcut_max,
-     int n_atom_pairs, int n_sites, int n_soap, int k_max, int n_max, int l_max)
-     {
-     int k2 =blockIdx.x;
-     int k=threadIdx.x+1;
-     double Pi=4.0*acos(-1.0);
-     double my_rjs=rjs_d[k2];
-  // printf(" %lf  %d\n", my_rjs, k2);
-  if(my_rjs<rcut_max){
-
-  for(int n=1;n<=n_max;n++){
-  double my_radial_exp_c;
-  my_radial_exp_c=radial_exp_coeff_d[n-1+k2*n_max];
-  double my_radial_exp_c_der;
-  my_radial_exp_c_der=radial_exp_coeff_der_d[n-1+k2*n_max];
-  //int k=1+l*(l+1)/2+m;
-
-  hipDoubleComplex my_cnk_rad_der;hipDoubleComplex my_cnk_azi_der;  hipDoubleComplex my_cnk_pol_der;
-
-  hipDoubleComplex my_ang_exp_c; my_ang_exp_c=angular_exp_coeff_d[k2+n_atom_pairs*(k-1)]; //angular_exp_coeff_d[k-1+k2*k_max];
-
-  hipDoubleComplex my_ang_exp_c_rad_der;  my_ang_exp_c_rad_der=angular_exp_coeff_rad_der_d[k2+(k-1)*n_atom_pairs]; //angular_exp_coeff_rad_der_d[k-1+k2*k_max];
-
-  hipDoubleComplex my_ang_exp_c_azi_der;  my_ang_exp_c_azi_der=angular_exp_coeff_azi_der_d[k2+(k-1)*n_atom_pairs]; //angular_exp_coeff_azi_der_d[k-1+k2*k_max];
-
-  hipDoubleComplex my_ang_exp_c_pol_der;  my_ang_exp_c_pol_der=angular_exp_coeff_pol_der_d[k2+(k-1)*n_atom_pairs]; //angular_exp_coeff_pol_der_d[k-1+k2*k_max];
-
-  my_cnk_rad_der.x=Pi*(my_ang_exp_c.x*my_radial_exp_c_der+my_ang_exp_c_rad_der.x*my_radial_exp_c);
-  my_cnk_rad_der.y=Pi*(my_ang_exp_c.y*my_radial_exp_c_der+my_ang_exp_c_rad_der.y*my_radial_exp_c);
-
-  my_cnk_azi_der.x=Pi*(my_ang_exp_c_azi_der.x*my_radial_exp_c);
-  my_cnk_azi_der.y=Pi*(my_ang_exp_c_azi_der.y*my_radial_exp_c);
-
-  my_cnk_pol_der.x=Pi*(my_ang_exp_c_pol_der.x*my_radial_exp_c);
-  my_cnk_pol_der.y=Pi*(my_ang_exp_c_pol_der.y*my_radial_exp_c);
-
-  cnk_rad_der_d[k-1+k_max*(n-1+k2*n_max)]=my_cnk_rad_der;
-  cnk_azi_der_d[k-1+k_max*(n-1+k2*n_max)]=my_cnk_azi_der;
-  cnk_pol_der_d[k-1+k_max*(n-1+k2*n_max)]=my_cnk_pol_der;
-  }
-  }
-  }
-   */
-
+  // Two earlier versions of the derivative kernel (cuda_get_derivatives and
+  // cuda_get_derivatives_new) used to live here, inside a block comment and
+  // with their only call site commented out as well. They also wrote
+  // cnk_*_der_d with a different memory layout than the live kernel below and
+  // its consumer use, so they were a trap for anyone editing this path.
+  // Removed.
   __global__ void cuda_get_derivatives_new_new(double *radial_exp_coeff_d, hipDoubleComplex *angular_exp_coeff_d, double *radial_exp_coeff_der_d, 
       hipDoubleComplex *angular_exp_coeff_rad_der_d, hipDoubleComplex *angular_exp_coeff_azi_der_d, hipDoubleComplex *angular_exp_coeff_pol_der_d,
       hipDoubleComplex *cnk_rad_der_d, hipDoubleComplex *cnk_azi_der_d, hipDoubleComplex *cnk_pol_der_d,
@@ -1317,35 +1221,6 @@ __global__ void cuda_get_soap_p(double *soap_d, double *sqrt_dot_p_d, double *mu
       double *rjs_d, double rcut_max,
       int n_atom_pairs, int n_sites, int n_soap, int k_max, int n_max, int l_max, hipStream_t *stream )
   {
-    /*dim3 nblocks=dim3((n_atom_pairs-1+tpb)/tpb,1,1);
-      dim3 nthreads=dim3(tpb,1,1);
-
-      hipEvent_t start, stop;
-      hipEventCreate(&start);
-      hipEventCreate(&stop);
-      float milliseconds;
-      hipEventRecord(start);
-      for(int lll=1;lll<=1000;lll++){*//*    
-
-					     hipLaunchKernelGGL(cuda_get_derivatives, nblocks, nthreads, 0, 0, radial_exp_coeff_d, angular_exp_coeff_d, radial_exp_coeff_der_d,
-					     angular_exp_coeff_rad_der_d, angular_exp_coeff_azi_der_d, angular_exp_coeff_pol_der_d,
-					     cnk_rad_der_d, cnk_azi_der_d, cnk_pol_der_d,
-					     rjs_d, rcut_max,
-					     n_atom_pairs, n_soap,k_max, n_max, l_max);
-
-					*//*}
-					    hipEventRecord(stop);
-					    hipEventSynchronize(stop);
-					    milliseconds = 0.0;
-					    hipEventElapsedTime(&milliseconds, start, stop);
-					    printf("\n Time of the first kernel in s %f\n", milliseconds/1000.0);
-
-
-
-					    hipEventRecord(start);
-					    for(int lll=1;lll<=1000;lll++){
-
-					   */
 
     cuda_get_derivatives_new_new<<<dim3((n_atom_pairs+tpbcnk-1)/tpbcnk,n_max,k_max), tpbcnk,0,stream[0]>>>(radial_exp_coeff_d, 
 	angular_exp_coeff_d, radial_exp_coeff_der_d,
@@ -1949,32 +1824,10 @@ __global__ void cuda_get_soap_p(double *soap_d, double *sqrt_dot_p_d, double *mu
     }
 
 
-  __global__
-    void cuda_poly3gauss_one(double *radial_exp_coeff_d,
-	int *i_beg_d, int *i_end_d, double *global_scaling_d,
-	int n_max, int n_atom_pairs, int n_species,
-	double *rcut_hard_d, int *k2_i_site_d, int *k2_start_d){
-
-      int i_ij=threadIdx.x+blockIdx.x*blockDim.x;
-      if(i_ij<n_atom_pairs){
-	int i_site=k2_i_site_d[i_ij];
-	int k2start=k2_start_d[i_site-1];
-	if(i_ij!=k2start)
-	{
-	  int i_one=0;
-	  for(int i=0;i<n_species; i++){
-	    for(int ii=i_beg_d[i];ii<=i_end_d[i]; ii++){
-	      double loc_rad_exp_coeff=0.0; //loc_rad_exp_coeff=radial_exp_coeff_d[i_one+i_ij*n_max]*global_scaling_d[i]; //radial_exp_coeff_d[i_ij+i_one*size_radial_exp_coeff_two]*global_scaling_d[i];
-
-	      loc_rad_exp_coeff*=sqrt(rcut_hard_d[i]);
-
-	      //radial_exp_coeff_d[i_one+i_ij*n_max]=loc_rad_exp_coeff; //radial_exp_coeff_d[i_ij+i_one*size_radial_exp_coeff_two]=loc_rad_exp_coeff;          
-	      i_one++;
-	    }
-	  }  
-	}
-      }
-    }
+  // cuda_poly3gauss_one used to be launched here. Its body had been commented
+  // out, so it read nothing, wrote nothing and only ran an empty loop nest.
+  // Removed along with the kernel; the real work is done by cuda_global_scaling
+  // below.
 
   extern "C" void  gpu_get_radial_exp_coeff_poly3gauss(double *radial_exp_coeff_d, double *radial_exp_coeff_der_d, 
       int *i_beg_d, int *i_end_d, double *global_scaling_d,
@@ -1986,9 +1839,6 @@ __global__ void cuda_get_soap_p(double *soap_d, double *sqrt_dot_p_d, double *mu
 
     dim3 nblocks=dim3((size_radial_exp_coeff_two-1+tpb)/tpb,1,1);
     dim3 nthreads=dim3(tpb,1,1); 
-    cuda_poly3gauss_one<<<nblocks, nthreads,0,stream[0]>>>(radial_exp_coeff_d, i_beg_d,i_end_d,global_scaling_d, 
-	size_radial_exp_coeff_one, size_radial_exp_coeff_two, n_species,
-	rcut_hard_d, k2_i_site_d, k_2start_d); 
     int divide;
     divide=0;
     cuda_global_scaling<<<nblocks, nthreads,0,stream[0]>>>(radial_exp_coeff_d, i_beg_d,i_end_d,global_scaling_d, 
