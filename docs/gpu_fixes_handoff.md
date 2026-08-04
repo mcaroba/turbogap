@@ -345,6 +345,44 @@ merely *stale rather than undefined*, so it looks initialised and is simply
 wrong. `forces`, passed only so the body can take `size(forces,2)`, is the most
 suspicious remaining argument.
 
+### Retried after 6e was fixed — still fails, but now visible to memcheck
+
+The use-after-free fix did not resolve this. `energy_3b` moved from 2.2302 to
+0.5099 against the CPU's 2.1360 — a different wrong answer, which is consistent
+with the fault being layout-sensitive rather than caused by 6e.
+
+What changed is that it is now **diagnosable**. With the SOAP noise gone,
+memcheck on the backend build reports:
+
+```
+Invalid __global__ atomic of size 8 bytes
+    at kernel_2nd_try<(bool)1, (kern_type)1>+0x4cb0
+    Access to 0x7da2c6fe8 is out of bounds
+    and is 58,392 bytes before the nearest allocation
+    Host Frame: gpu_3b_cc_2nd_try -> gpu_3b -> __gap_backend_MOD_add_3b_contribution
+```
+
+68 errors, 9 of them naming the 3b kernel. **Neither the original build nor the
+6e-fixed original has a single one** — checked by grepping all three sanitizer
+runs for `2nd_try`: 0, 0, 9. Full output at
+`../phase0_backup/memcheck_backend_3b.txt`.
+
+So the extraction feeds `kernel_2nd_try` an index that sends its atomics below
+the target buffer. The atomics are how the kernel accumulates energy, which is
+why the energy comes out low rather than merely different. The indices come
+from `kappas_array_d`, so that is where to look — note the host `kappas` array
+was already proved identical, so it is the device copy or the offsets derived
+from it, not the values themselves.
+
+Ruled out on the retry: a race between the async `kappas` upload and
+`deallocate(kappas)` — adding `gpu_stream_sync` before the deallocate changes
+nothing (0.5099 vs 0.5199, within the run-to-run spread).
+
+The version used for this retry is kept at
+`../phase0_backup/phase2_gpu_wip/gap_backend_gpu_v2.f90`.
+
+### Earlier notes
+
 The obvious next move is a bisect rather than more reading: instrument the
 working build to dump every scalar the 3b body reads before writing, run both,
 and diff. That is the technique from section 9, and it is what found bug 5.
