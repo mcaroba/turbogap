@@ -351,6 +351,53 @@ and diff. That is the technique from section 9, and it is what found bug 5.
 
 ---
 
+## 6e. Use-after-free in the SOAP derivative path — OPEN, and it matters
+
+**`compute-sanitizer memcheck` reports 181 errors on `CO_predict` with the
+unmodified build at HEAD.** Every one is a *use-after-free*, on an allocation
+of 1,797,120 bytes, reached from two kernels:
+
+```
+Use-after-free on allocation of size 1,797,120 bytes at 0x7dc3a6200
+    Address 0x7dc3a6200 is potentially accessed after it is free'd
+    Host Frame: cuda_get_soap_der_one(...)
+      gpu_get_soap_der -> get_soap -> get_gap_soap -> MAIN__
+```
+
+and `cuda_local_property_derivatives`. Nothing in the 3b path appears at all.
+Full output kept at `../phase0_backup/memcheck_CO_predict.txt`.
+
+Reproduce:
+
+```sh
+/usr/local/cuda-13.3/bin/compute-sanitizer --tool memcheck bin/turbogap predict
+```
+
+**Why this is not cosmetic.** The kernels read device memory that has been
+freed. What that memory *contains* depends entirely on what has been allocated
+into it since — so the answer the code produces is a function of the device
+allocation layout, not only of the physics. The build passes its regression
+cases today because the layout happens to leave the right bytes there.
+
+This is the same class as bug 2 in section 4, which was a 3b device buffer
+freed inside the descriptor loop instead of after it. That one was found because
+it crashed. This one does not crash; it silently returns the right answer for
+the current layout.
+
+**It is what defeated the gap_backend GPU side (6d).** That work changes which
+buffers are allocated, in what order and how large, and therefore what sits in
+the freed region. Every kernel input was proved bit-identical between the
+working and module builds -- scalars, upload byte counts, array checksums,
+per-descriptor parameters, `kappas`, the stream -- and the device still returned
+a different 3b energy, non-deterministically. Reading freed memory explains
+exactly that: identical inputs, layout-dependent output.
+
+So 6d is not a defect in the extraction. **Fix this first, then retry 6d**;
+until then any change to device allocation on this branch can move results for
+reasons that have nothing to do with the change.
+
+---
+
 ## 7. What is left
 
 Roughly in priority order.
