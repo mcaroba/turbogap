@@ -593,7 +593,7 @@ reasons that have nothing to do with the change.
 
 ---
 
-## 6f. energy_core_pot diverges under MAD — OPEN
+## 6f. energy_core_pot diverges under MAD — FIXED
 
 Found while confirming the virial fix. With `XRD_mad` run from identical
 starting positions, frame 0 agrees on everything including `energy_core_pot`
@@ -607,7 +607,53 @@ that geometry, not accumulated drift.
 `CO_predict` and `CO_md` do not catch it because `energy_core_pot` is 0.0
 throughout those runs: the CO structure never brings a pair close enough to
 enter the core potential. `XRD_mad` does, because the MAD forces push atoms
-together. **This is now what keeps `XRD_mad` xfail**, not the virial.
+together.
+
+**Cause and fix (`a7fe298`).** `add_core_pot_contribution` passed `sp1` and
+`sp2` to the kernel without ever setting them. In the driver they were
+host-associated, so core_pot silently used whatever species indices
+`add_2b_contribution_gpu` had last written — the final 2b descriptor's, not
+its own. **That is bug 3 of section 4, fixed for 2b and never for core_pot.**
+Moving the procedures into a module turned the stale value into an undefined
+one, which is how it finally surfaced.
+
+The kernel filters neighbours by species index, so with the wrong indices no
+pair matches and the term comes out as exactly 0. It now derives them from
+`core_pot_hypers(i)%species1` and `%species2`, as the CPU does inside
+`get_core_pot_energy_and_forces`. Verified against the CPU on `XRD_mad`:
+
+| frame | CPU | GPU |
+|---|---|---|
+| 2 | 8.53223629 | 8.53223629 (exact) |
+| 3 | 82.60515055 | 82.60515056 |
+| 4 | 2512.07875798 | 2512.07875785 |
+
+---
+
+## 6g. The exp virial still diverges from frame 1 — OPEN
+
+What remains after 6b and 6f. Running `XRD_mad` from identical positions with
+both fixes in place:
+
+* **frame 0** — everything agrees, including the virial (1.6e-07, rel 9.5e-12)
+* **frame 1 onward** — energies, `energy_core_pot`, `local_energy` and
+  **forces to `maxabsdiff = 0.0`** all agree; **only the virial differs**
+
+```
+frame 1  CPU [14976.64, -14449.08,  2522.62, ...]
+         GPU [ 1275.74,  -8742.90,  -550.61, ...]
+```
+
+Note the direction reversed when the CPU bug of 6b was fixed: before it, the
+GPU was the larger of the two. Identical positions, identical forces, agreement
+at frame 0 and disagreement from frame 1 points at accumulation — one side
+carrying a virial contribution across MD steps that the other resets, or
+including a term the other omits. `virial_pdf`, `virial_sf`, `virial_xrd` and
+`virial_nd` are zeroed once per prediction block; check whether that block is
+re-entered per MD step on both branches, and compare the pdf, sf and xrd virial
+contributions separately rather than the total.
+
+This is the only thing keeping `XRD_mad` xfail.
 
 ---
 
