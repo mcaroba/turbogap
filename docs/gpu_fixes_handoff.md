@@ -188,7 +188,7 @@ Worth recording separately: with **`gpu_batched = .false.` the run
 segfaults** (exit 139) at the same point. That path is untested and is
 presumably rotted; the batched path is the one that works.
 
-### What it was hiding — the exp virial is wrong, OPEN
+### What it was hiding — the exp virial is wrong, OPEN (owner: Tigany)
 
 With the abort gone, GPU and CPU now agree on this case for everything
 except the virial:
@@ -216,7 +216,36 @@ the GPU kernel or its reduction.
 Energies and forces being exact while the virial is garbage is the same
 signature as bug 5 in section 4 — a quantity that nothing in the main test
 path reads staying wrong indefinitely. `XRD_mad` stays xfail until this is
-fixed, and will report XPASS when it is.
+fixed, and will report XPASS when it is. **Tigany is taking this one** -- it is
+not blocking the refactor, which is proceeding around it.
+
+## 6c. The GPU build is not bit-reproducible run to run — OPEN
+
+Found 2026-08-04 while verifying an extraction, and it changes what
+verification is available on this branch.
+
+Three runs of the **same unchanged binary** on the `XRD_mad` case produce
+three different `trajectory_out.xyz` files. `tools/compare_xyz.py` reports
+two differing quantities between two such runs; the divergence is absent in
+frame 0 and appears once MD has accumulated a step or two, at ~1e-12
+relative. The CPU build on the identical input is reproducible.
+
+Almost certainly non-deterministic reduction order in the device kernels
+(atomics, or a block-order-dependent sum). It has not been chased.
+
+**Consequence for refactoring.** The CPU branch's contract -- output must be
+bit-identical to a pre-refactor baseline, compared with `diff` -- **cannot be
+used here**. There is no baseline to be identical to. A refactor on this
+branch can only be checked to a tolerance, which is what `compare_xyz.py`
+already does and is why `tests/gpu` was built that way rather than around
+`diff`.
+
+That is weaker, and it is worth knowing exactly how much weaker: a change
+that shifts results by less than the run-to-run spread is invisible here.
+When bringing extractions across from the CPU branch, do them there first,
+where the bit-exact contract holds, and port the verified result.
+
+---
 
 ## 7. What is left
 
