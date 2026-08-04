@@ -167,6 +167,12 @@ that block (§7).
 
 ## 5. Two vdW bugs found and fixed
 
+> **Correction (2026-08-04, after this document was written).** Only §5.1 is a
+> bug. §5.2 was not: the uncorrected forces are correct, and `113d0b6` has been
+> reverted in `59997e3`. Read §5.2 as a record of a wrong conclusion, and see
+> `tests/regression/KNOWN_ISSUES.md` issue 2 for why the measurement it argues
+> from does not establish what it claims. Everything in §5.1 stands.
+
 Both were found while building the safety net, not by reading the code.
 
 ### 5.1 `ts+mbd` segfaulted outside MD (`535b1d9`)
@@ -193,7 +199,7 @@ is_correction_step = ( md_istep < 0 ) .or. &
 For `md_istep >= 0` this is exactly the old expression, so MD was provably
 unchanged — verified at the time by the MD cases staying bit-identical.
 
-### 5.2 `ts+mbd` corrected energies but not forces (`113d0b6`)
+### 5.2 `ts+mbd` corrected energies but not forces (`113d0b6`) — REVERTED, NOT A BUG
 
 It returned MBD energies with TS-scaled forces. Uncommenting the dormant line
 would not have fixed it: `this_forces_vdw_corr` was snapshotted as the *TS*
