@@ -27,6 +27,8 @@
 ! HND XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
 module exp_utils
+
+  use kinds
    use types
 
 contains
@@ -35,10 +37,10 @@ contains
    !      & n_samples_pc, n_samples_sf, n_dim_idx,  alpha, k,  xyz, &
    !      & pair_distribution_partial_der, structure_factor_partial_der, c_factor)
    !   implicit none
-   !   real*8, allocatable :: sinc_factor_matrix(:,:), pair_distribution_partial_der(:)
+   !   real(dp), allocatable :: sinc_factor_matrix(:,:), pair_distribution_partial_der(:)
    !   integer, intent(in) :: n_samples_pc, n_samples_sf, n_dim_idx, alpha, k
-   !   real*8, intent(out) :: structure_factor_partial_der(1:n_samples_sf)
-   !   real*8, intent(in)  :: xyz(:), c_factor
+   !   real(dp), intent(out) :: structure_factor_partial_der(1:n_samples_sf)
+   !   real(dp), intent(in)  :: xyz(:), c_factor
    !   integer :: n, m, l, i, j
 
    !   n = n_samples_sf
@@ -56,14 +58,14 @@ contains
    !      & n_sites, n_atoms_of_species, rho, do_xrd,&
    !      & all_scattering_factors)
    !   implicit none
-   !   real*8, allocatable :: sinc_factor_matrix(:,:), pair_distribution_partial_der(:,:,:)
+   !   real(dp), allocatable :: sinc_factor_matrix(:,:), pair_distribution_partial_der(:,:,:)
    !   integer, intent(in) :: n_samples_pc, n_samples_sf, n_dim_partial, alpha, k, n_species, n_sites
-   !   real*8 :: structure_factor_partial_der(1:n_samples_sf,1:n_dim_partial)
-   !   real*8, intent(out) :: structure_factor_der(1:n_samples_sf)
-   !   real*8, intent(in)  :: xyz(:), n_atoms_of_species(:), rho
-   !   real*8, intent(in) allocatable :: all_scattering_factors(:,:)
-   !   real*8, parameter :: pi = acos(-1.0)
-   !   real*8 :: f, cacb, delta
+   !   real(dp) :: structure_factor_partial_der(1:n_samples_sf,1:n_dim_partial)
+   !   real(dp), intent(out) :: structure_factor_der(1:n_samples_sf)
+   !   real(dp), intent(in)  :: xyz(:), n_atoms_of_species(:), rho
+   !   real(dp), intent(in) allocatable :: all_scattering_factors(:,:)
+   !   real(dp), parameter :: pi = acos(-1.0)
+   !   real(dp) :: f, cacb, delta
    !   integer :: n, m, l, i, j
 
    !   n = n_samples_sf
@@ -115,11 +117,11 @@ contains
    ! subroutine get_all_scattering_factors(n_species, n_samples_sf, n_dim_partial, all_scattering_factors, qs, species_types)
    !   implicit none
    !   integer, intent(in) :: n_species, n_samples_sf, n_dim_partial
-   !   real*8, intent(in) :: qs(:)
-   !   real*8, allocatable, intent(out) :: all_scattering_factors(:,:)
+   !   real(dp), intent(in) :: qs(:)
+   !   real(dp), allocatable, intent(out) :: all_scattering_factors(:,:)
    !   character*8, allocatable, intent(in) :: species_types(:)
-   !   real*8 :: wfaci, wfacj
-   !   real*8, allocatable :: sf_parameters(:,:)
+   !   real(dp) :: wfaci, wfacj
+   !   real(dp), allocatable :: sf_parameters(:,:)
    !   integer :: i, j, k, n_dim_idx
 
    !   allocate( sf_parameters(1:9,1:n_species) )
@@ -152,8 +154,8 @@ contains
 
    function clamp(x, low, high)
       implicit none
-      real*8, intent(in) :: x, low, high
-      real*8 :: clamp
+      real(dp), intent(in) :: x, low, high
+      real(dp) :: clamp
       clamp = x
       if (x < low) clamp = low
       if (x > high) clamp = high
@@ -162,9 +164,9 @@ contains
    subroutine energy_scale(current_step, total_steps, escale_initial, escale_final, escale)
       implicit none
       integer, intent(in) :: current_step, total_steps
-      real*8, intent(in) :: escale_initial, escale_final
-      real*8, intent(out) :: escale
-      real*8 :: t
+      real(dp), intent(in) :: escale_initial, escale_final
+      real(dp), intent(out) :: escale
+      real(dp) :: t
 
       t = clamp(dfloat(current_step)/dfloat(total_steps), 0.d0, 1.d0)
       escale = (1.d0 - t)*escale_initial + t*escale_final
@@ -175,9 +177,9 @@ contains
       implicit none
       logical, intent(in) :: do_md, do_mc
       integer, intent(in) :: md_istep, md_nsteps, mc_istep, mc_nsteps
-      real*8, intent(in) :: escale_initial, escale_final
-      real*8, intent(out) :: escale
-      real*8 :: t
+      real(dp), intent(in) :: escale_initial, escale_final
+      real(dp), intent(out) :: escale
+      real(dp) :: t
 
       if (do_md .and. .not. do_mc) then
          call energy_scale(md_istep, md_nsteps, escale_initial, escale_final, escale)
@@ -195,21 +197,21 @@ contains
         & species_2, pair_distribution_der, partial_rdf, kde_sigma,&
         & c_factor, sinc_factor_matrix, n_dim_idx, do_xrd, output, n_atoms_of_species, neutron)
       implicit none
-      real*8, intent(in) :: rjs(:), xyz(:, :), y_exp(:), energy_scale, kde_sigma, c_factor, sinc_factor_matrix(:, :), x(:)
+      real(dp), intent(in) :: rjs(:), xyz(:, :), y_exp(:), energy_scale, kde_sigma, c_factor, sinc_factor_matrix(:, :), x(:)
       integer, intent(in) :: n_sites0, n_samples_sf, n_species
       character*8, allocatable, intent(in) :: species_types(:)
-      real*8 :: r_min, r_max, r_cut
+      real(dp) :: r_min, r_max, r_cut
       integer, intent(in) :: neighbors_list(:), n_neigh(:), neighbor_species(:)
       integer, intent(in) :: n_samples, species_1, species_2, n_dim_idx
       integer :: n_sites, n_pairs, count, count_species_1
       integer :: i, j, k, ki, k1, k2, i2, j2, l, ii, jj, kk, i3, j3, i4, species_i, species_j
-      real*8, intent(in) :: x_structure_factor(:), structure_factor(:), n_atoms_of_species(:)
-      real*8, intent(in) :: pair_distribution_der(:, :)
-      real*8, intent(inout) :: forces0(:, :), virial(1:3, 1:3)
+      real(dp), intent(in) :: x_structure_factor(:), structure_factor(:), n_atoms_of_species(:)
+      real(dp), intent(in) :: pair_distribution_der(:, :)
+      real(dp), intent(inout) :: forces0(:, :), virial(1:3, 1:3)
       character*32, intent(in) :: output
-      real*8, allocatable ::  prefactor(:), all_scattering_factors(:), sf_parameters(:, :), structure_factor_der(:)
-      real*8 :: r, n_pc, this_force(1:3), f, wfaci, wfacj, temp(1:n_samples_sf), sth
-      real*8, parameter :: pi = acos(-1.0)
+      real(dp), allocatable ::  prefactor(:), all_scattering_factors(:), sf_parameters(:, :), structure_factor_der(:)
+      real(dp) :: r, n_pc, this_force(1:3), f, wfaci, wfacj, temp(1:n_samples_sf), sth
+      real(dp), parameter :: pi = acos(-1.0)
       logical, intent(in) :: partial_rdf, do_xrd, neutron
       logical :: species_in_list, counted_1 = .false.
 
@@ -397,24 +399,24 @@ contains
         & species_2, pair_distribution_der, partial_rdf, kde_sigma,&
         & c_factor, sinc_factor_matrix, n_dim_idx, do_xrd, output, n_atoms_of_species, neutron)
       implicit none
-      real*8, intent(in) :: rjs(:), xyz(:, :), y_exp(:), energy_scale, kde_sigma, c_factor, sinc_factor_matrix(:, :), x(:)
+      real(dp), intent(in) :: rjs(:), xyz(:, :), y_exp(:), energy_scale, kde_sigma, c_factor, sinc_factor_matrix(:, :), x(:)
       integer, intent(in) :: n_sites0, n_samples_sf, n_species
       character*8, allocatable, intent(in) :: species_types(:)
-      real*8 :: r_min, r_max, r_cut
+      real(dp) :: r_min, r_max, r_cut
       integer, intent(in) :: neighbors_list(:), n_neigh(:), neighbor_species(:)
       integer, intent(in) :: n_samples, species_1, species_2, n_dim_idx
       integer :: n_sites, n_pairs, count, count_species_1
       integer :: i, j, k, ki, k1, k2, i2, j2, l, ii, jj, kk, i3, j3, i4, species_i, species_j, n_k
-      real*8, intent(in) :: x_structure_factor(:), structure_factor(:), n_atoms_of_species(:)
-      real*8, intent(in) :: pair_distribution_der(:, :)
-      real*8, intent(inout) :: forces0(:, :), virial(1:3, 1:3)
+      real(dp), intent(in) :: x_structure_factor(:), structure_factor(:), n_atoms_of_species(:)
+      real(dp), intent(in) :: pair_distribution_der(:, :)
+      real(dp), intent(inout) :: forces0(:, :), virial(1:3, 1:3)
       character*32, intent(in) :: output
-      real*8, allocatable ::  prefactor(:), all_scattering_factors(:), sf_parameters(:, :), structure_factor_der(:)
-      real*8 :: r, n_pc, this_force(1:3), f, wfaci, wfacj, temp(1:n_samples_sf), sth, time(1:3)
-      real*8, parameter :: pi = acos(-1.0)
+      real(dp), allocatable ::  prefactor(:), all_scattering_factors(:), sf_parameters(:, :), structure_factor_der(:)
+      real(dp) :: r, n_pc, this_force(1:3), f, wfaci, wfacj, temp(1:n_samples_sf), sth, time(1:3)
+      real(dp), parameter :: pi = acos(-1.0)
       logical, intent(in) :: partial_rdf, do_xrd, neutron
       logical :: species_in_list, counted_1 = .false.
-      real*8, allocatable ::  xyz_k(:, :), Gk(:, :), Gka(:, :), dermat(:, :), fi(:, :)
+      real(dp), allocatable ::  xyz_k(:, :), Gk(:, :), Gka(:, :), dermat(:, :), fi(:, :)
       integer, allocatable :: k_list(:), i2_list(:), j2_list(:)
 
       ! First allocate the pair correlation function array
@@ -645,10 +647,10 @@ contains
 
    subroutine my_dgemm(A, B, C, M, N, K)
       implicit none
-      real*8, intent(in) :: A(:, :), B(:, :)
-      real*8, intent(out) :: C(:, :)
+      real(dp), intent(in) :: A(:, :), B(:, :)
+      real(dp), intent(out) :: C(:, :)
       integer, intent(in) :: N, M, K
-      real*8 :: temp
+      real(dp) :: temp
       integer :: i, j, l
       ! A = M x K
       ! B = K x N
@@ -671,20 +673,20 @@ contains
         & species_2, pair_distribution_der, partial_rdf, kde_sigma,&
         & c_factor, rho, output)
       implicit none
-      real*8, intent(in) :: rjs(:), xyz(:, :), x(:), y_exp(:), energy_scale, kde_sigma, c_factor
+      real(dp), intent(in) :: rjs(:), xyz(:, :), x(:), y_exp(:), energy_scale, kde_sigma, c_factor
       integer, intent(in) :: n_sites0
-      real*8 :: r_min, r_max, r_cut
+      real(dp) :: r_min, r_max, r_cut
       integer, intent(in) :: neighbors_list(:), n_neigh(:), neighbor_species(:)
       integer, intent(in) :: n_samples, species_1, species_2
       integer :: n_sites, n_pairs, count, count_species_1
       integer :: i, j, k, ki, k1, k2, i2, j2, l, ii, jj, kk, i3, j3, i4, species_i, species_j
       character*32, intent(in) :: output
-      real*8, intent(in) :: pair_distribution(1:n_samples), rho
-      real*8, intent(in) :: pair_distribution_der(:, :)
-      real*8, intent(inout) :: forces0(:, :), virial(1:3, 1:3)
-      real*8, allocatable ::  prefactor(:)
-      real*8 :: r, n_pc, this_force(1:3), f, temp(1:n_samples)
-      real*8, parameter :: pi = acos(-1.0)
+      real(dp), intent(in) :: pair_distribution(1:n_samples), rho
+      real(dp), intent(in) :: pair_distribution_der(:, :)
+      real(dp), intent(inout) :: forces0(:, :), virial(1:3, 1:3)
+      real(dp), allocatable ::  prefactor(:)
+      real(dp) :: r, n_pc, this_force(1:3), f, temp(1:n_samples)
+      real(dp), parameter :: pi = acos(-1.0)
       logical, intent(in) :: partial_rdf
       logical :: species_in_list, counted_1 = .false.
       ! First allocate the pair correlation function array
@@ -781,17 +783,17 @@ contains
         & pair_distribution, r_cut, return_histogram,&
         & partial_rdf, species_1, species_2, kde_sigma, rho, do_derivatives, pair_distribution_der, n_dim_idx, j_beg, j_end)
       implicit none
-      real*8, intent(in) :: rjs(:), kde_sigma, rho, xyz(:, :)
-      real*8 :: r_min, r_max, r_cut
+      real(dp), intent(in) :: rjs(:), kde_sigma, rho, xyz(:, :)
+      real(dp) :: r_min, r_max, r_cut
       integer, intent(in) :: neighbors_list(:), n_neigh(:), neighbor_species(:)
       integer, intent(in) :: n_sites0, n_samples, species_1, species_2, n_dim_idx, j_beg, j_end
       integer :: n_sites, n_pairs, count, count_species_1
       integer :: i, j, k, ki, i2, j2, l, ii, jj, kk, i3, j3, i4, ind_bin_l, ind_bin_h, species_i, species_j
-      real*8, intent(inout) :: pair_distribution(1:n_samples), x(1:n_samples)
-      real*8, intent(inout), allocatable :: pair_distribution_der(:, :, :)
-      real*8, allocatable :: bin_edges(:), dV(:), kde(:)
-      real*8 :: r, n_pc, ri_vec(1:3), rj_vec(1:3)
-      real*8, parameter :: pi = acos(-1.0)
+      real(dp), intent(inout) :: pair_distribution(1:n_samples), x(1:n_samples)
+      real(dp), intent(inout), allocatable :: pair_distribution_der(:, :, :)
+      real(dp), allocatable :: bin_edges(:), dV(:), kde(:)
+      real(dp) :: r, n_pc, ri_vec(1:3), rj_vec(1:3)
+      real(dp), parameter :: pi = acos(-1.0)
       logical, intent(in) :: partial_rdf, do_derivatives
       logical :: return_histogram, species_in_list, counted_1 = .false.
       ! First allocate the pair correlation function array
@@ -975,9 +977,9 @@ contains
 
    subroutine binary_search_real(xs, x, lin, hin, l, h)
       ! give delimiting indices (lout, hout) of array of x (which is a set of delimited bins) where xs (x search) is in range
-      real*8, allocatable, intent(in) :: x(:)
-      real*8, intent(in) :: xs
-      real*8 :: xi
+      real(dp), allocatable, intent(in) :: x(:)
+      real(dp), intent(in) :: xs
+      real(dp) :: xi
       integer, intent(in) :: lin, hin
       integer, intent(out) :: l, h
       integer :: m
@@ -1026,15 +1028,15 @@ contains
         & structure_factor, r_min, r_max, r_cut,&
         & partial, species_1, species_2, window)
       implicit none
-      real*8, intent(in) :: rjs(:)
-      real*8 :: r_min, r_max, r_cut
+      real(dp), intent(in) :: rjs(:)
+      real(dp) :: r_min, r_max, r_cut
       integer, intent(in) :: neighbors_list(:), n_neigh(:), neighbor_species(:)
       integer, intent(in) :: n_sites0, n_samples, species_1, species_2
       integer :: n_sites, n_pairs, count, count_species_1
       integer :: i, j, k, i2, j2, l, ind_bin_l, ind_bin_h, species_i, species_j
-      real*8, intent(inout) :: structure_factor(1:n_samples), q_list(1:n_samples)
-      real*8 :: r, n_pc, w
-      real*8, parameter :: pi = acos(-1.0)
+      real(dp), intent(inout) :: structure_factor(1:n_samples), q_list(1:n_samples)
+      real(dp) :: r, n_pc, w
+      real(dp), parameter :: pi = acos(-1.0)
       logical, intent(in) :: partial, window
       logical ::  species_in_list, counted_1 = .false.
       ! First allocate the pair correlation function array
@@ -1109,13 +1111,13 @@ contains
         & n_samples_pc, n_samples_sf, n_species, n_atoms_of_species,&
         & n_sites, rho, window)
       implicit none
-      real*8, intent(in), allocatable :: n_atoms_of_species(:)
-      real*8, intent(out) :: structure_factor(:)
-      real*8, intent(in) ::  pair_distribution(:), q_list(:), rs(:), r_cut
+      real(dp), intent(in), allocatable :: n_atoms_of_species(:)
+      real(dp), intent(out) :: structure_factor(:)
+      real(dp), intent(in) ::  pair_distribution(:), q_list(:), rs(:), r_cut
       integer, intent(in) :: n_samples_pc, n_samples_sf, n_species, n_sites, q_beg, q_end
-      real*8 :: r, q, dr, ca, cb, cabh, w, rho
+      real(dp) :: r, q, dr, ca, cb, cabh, w, rho
       integer :: i, j, k, l, idx, n
-      real*8, parameter :: pi = acos(-1.0)
+      real(dp), parameter :: pi = acos(-1.0)
       logical, intent(in) :: window
 
       ! S_ab(q) = delta_ab + 4 pi rho (ca cb)^0.5
@@ -1153,14 +1155,14 @@ contains
    subroutine get_sinc_factor_matrix(q_beg, q_end, q_list, rs, r_cut,&
         & n_samples_pc, n_samples_sf, window, sinc_factor_matrix)
       implicit none
-      real*8, allocatable, intent(in) :: q_list(:), rs(:)
-      real*8, intent(in) :: r_cut
+      real(dp), allocatable, intent(in) :: q_list(:), rs(:)
+      real(dp), intent(in) :: r_cut
       integer, intent(in) :: n_samples_pc, n_samples_sf, q_beg, q_end
-      real*8, allocatable, intent(out) :: sinc_factor_matrix(:, :)
+      real(dp), allocatable, intent(out) :: sinc_factor_matrix(:, :)
       logical, intent(in) :: window
-      real*8 :: dr, q, w = 1.d0
+      real(dp) :: dr, q, w = 1.d0
       integer :: i, j
-      real*8, parameter :: pi = acos(-1.0)
+      real(dp), parameter :: pi = acos(-1.0)
       ! This matrix can be used to get the derivatives. We can parallelize the generation of it on each process
       ! The only thing we have to worry about is memory if n_samples_pc/sf are too large
       allocate (sinc_factor_matrix(1:n_samples_sf, 1:n_samples_pc))
@@ -1185,19 +1187,19 @@ contains
    !      & n_samples_pc, n_samples_sf, n_species, n_dim_partial,  n_atoms_of_species,&
    !      & n_sites, rho,  window, j_beg, j_end, n_dim_partial,  structure_factor_partial_der)
    !   implicit none
-   !   real*8 , intent(in), allocatable :: n_atoms_of_species(:)
-   !   real*8, intent(in) :: pair_distribution_partial_der(:,:,:), q_list(:), rs(:), r_cut
+   !   real(dp) , intent(in), allocatable :: n_atoms_of_species(:)
+   !   real(dp), intent(in) :: pair_distribution_partial_der(:,:,:), q_list(:), rs(:), r_cut
    !   integer, intent(in) :: n_samples_pc, n_samples_sf, n_species, n_sites, q_beg, q_end, n_dim_partial
-   !   real*8, intent(out) :: structure_factor_partial_der(1:n_samples_sf, 1:n_dim_partial, 1:3,  j_beg:j_end)
-   !   real*8,  intent(in) :: rjs(:)
-   !   real*8 :: r_min, r_max, r_cut
+   !   real(dp), intent(out) :: structure_factor_partial_der(1:n_samples_sf, 1:n_dim_partial, 1:3,  j_beg:j_end)
+   !   real(dp),  intent(in) :: rjs(:)
+   !   real(dp) :: r_min, r_max, r_cut
    !   integer, intent(in) :: neighbors_list(:), n_neigh(:), neighbor_species(:)
    !   integer, intent(in) :: n_sites0, n_samples, species_1, species_2
-   !   real*8 :: r, q, dr, ca, cb, cabh, w
+   !   real(dp) :: r, q, dr, ca, cb, cabh, w
    !   integer :: i, j, k, l, i2, j2, i3, j3,  idx,  n, n_dim_idx
    !   integer, allocatable :: indexes_ndim(:,:)
-   !   real*8, parameter :: pi = acos(-1.0)
-   !   real*8, intent(in) ::  rho
+   !   real(dp), parameter :: pi = acos(-1.0)
+   !   real(dp), intent(in) ::  rho
    !   logical, intent(in) :: window
 
    !   ! Here we actually don't parallelize over q, we just go over all q
@@ -1297,14 +1299,14 @@ contains
         & n_samples_pc, n_samples_sf, n_species, n_dim_partial, n_atoms_of_species,&
         & n_sites, rho, window, structure_factor_partial)
       implicit none
-      real*8, intent(in), allocatable :: n_atoms_of_species(:)
-      real*8, intent(in) :: pair_distribution_partial(:, :), q_list(:), rs(:), r_cut
+      real(dp), intent(in), allocatable :: n_atoms_of_species(:)
+      real(dp), intent(in) :: pair_distribution_partial(:, :), q_list(:), rs(:), r_cut
       integer, intent(in) :: n_samples_pc, n_samples_sf, n_species, n_sites, q_beg, q_end, n_dim_partial
-      real*8, intent(out) :: structure_factor_partial(1:n_samples_sf, 1:n_dim_partial)
-      real*8 :: r, q, dr, ca, cb, cabh, w
+      real(dp), intent(out) :: structure_factor_partial(1:n_samples_sf, 1:n_dim_partial)
+      real(dp) :: r, q, dr, ca, cb, cabh, w
       integer :: i, j, k, l, idx, n, n_dim_idx
-      real*8, parameter :: pi = acos(-1.0)
-      real*8, intent(in) ::  rho
+      real(dp), parameter :: pi = acos(-1.0)
+      real(dp), intent(in) ::  rho
       logical, intent(in) :: window
 
       ! S_ab(q) = delta_ab + 4 pi rho (ca cb)^0.5
@@ -1371,18 +1373,18 @@ contains
         & y, r_min, r_max, r_cut,&
         & partial, species_1, species_2, window)
       implicit none
-      real*8, intent(in) :: rjs(:)
-      real*8 :: r_min, r_max, r_cut
+      real(dp), intent(in) :: rjs(:)
+      real(dp) :: r_min, r_max, r_cut
       character*8, allocatable :: species_types(:)
       integer, intent(in) :: neighbors_list(:), n_neigh(:), neighbor_species(:)
       integer, intent(in) :: n_sites0, n_samples, species_1, species_2, n_species
       integer :: n_sites, n_pairs, count, count_species_1
       integer :: i, j, k, i2, j2, l, ind_bin_l, ind_bin_h, species_i, species_j
-      real*8, intent(out) :: y(1:n_samples)
-      real*8, intent(in) :: q_list(1:n_samples)
-      real*8 :: r, n_pc, w, wfaci, wfacj, mag
-      real*8, allocatable :: sf_parameters(:, :)
-      real*8, parameter :: pi = acos(-1.0)
+      real(dp), intent(out) :: y(1:n_samples)
+      real(dp), intent(in) :: q_list(1:n_samples)
+      real(dp) :: r, n_pc, w, wfaci, wfacj, mag
+      real(dp), allocatable :: sf_parameters(:, :)
+      real(dp), parameter :: pi = acos(-1.0)
       logical, intent(in) :: partial, window
       logical ::  species_in_list, counted_1 = .false.
       ! First allocate the pair correlation function array
@@ -1469,19 +1471,19 @@ contains
         & species, wavelength, damping, alpha, method, use_iwasa, output, &
         & x, y, n_atoms_of_species, y_sub, neutron)
       implicit none
-      real*8, intent(in) :: damping, wavelength, alpha, structure_factor_partial(:, :)
+      real(dp), intent(in) :: damping, wavelength, alpha, structure_factor_partial(:, :)
       integer, intent(in) :: species(:)
       logical, intent(in) :: use_iwasa
       integer, intent(in) :: n_species, q_beg, q_end
       character*8, allocatable :: species_types(:)
       character*32, intent(in) :: method, output
-      real*8 :: prefactor, p, c, c2, rij, diff(1:3), mag, sth, wfaci, wfacj, wfac_n, ntot, f, delta
+      real(dp) :: prefactor, p, c, c2, rij, diff(1:3), mag, sth, wfaci, wfacj, wfac_n, ntot, f, delta
       integer :: i, j, l, n, n_dim_idx, n_dim_partial
-      real*8, intent(in), allocatable :: n_atoms_of_species(:)
-      real*8, allocatable :: sf_parameters(:, :)
-      real*8, intent(in) :: x(:)
-      real*8, intent(out) :: y(:), y_sub(:)
-      real*8, parameter :: pi = acos(-1.0)
+      real(dp), intent(in), allocatable :: n_atoms_of_species(:)
+      real(dp), allocatable :: sf_parameters(:, :)
+      real(dp), intent(in) :: x(:)
+      real(dp), intent(out) :: y(:), y_sub(:)
+      real(dp), parameter :: pi = acos(-1.0)
       logical, intent(in) :: neutron
 
       n_dim_partial = n_species*(n_species + 1)/2
@@ -1600,9 +1602,9 @@ contains
       implicit none
       integer, intent(in) :: n_exp
       type(exp_data_container), allocatable, intent(in) :: exp_data(:)
-      real*8, allocatable :: energy_scales(:)
+      real(dp), allocatable :: energy_scales(:)
       integer :: i
-      real*8, intent(out) :: s_tot
+      real(dp), intent(out) :: s_tot
 
       s_tot = 0.d0
       do i = 1, n_exp
@@ -1633,10 +1635,10 @@ contains
    !**************************************************************************
    subroutine calculate_exp_interpolation(x, y, n_samples, data)
       implicit none
-      real*8, allocatable, intent(in) ::  data(:, :)
+      real(dp), allocatable, intent(in) ::  data(:, :)
       integer, intent(in) :: n_samples
-      real*8, allocatable, intent(inout) :: x(:), y(:)
-      real*8 :: dx
+      real(dp), allocatable, intent(inout) :: x(:), y(:)
+      real(dp) :: dx
 
       if (.not. allocated(x)) then
          allocate (x(1:n_samples))
@@ -1654,9 +1656,9 @@ contains
 
    subroutine get_data_similarity(y, y_pred, sim_exp_pred, exp_similarity_type)
       implicit none
-      real*8, allocatable, intent(in) ::  y(:), y_pred(:)
+      real(dp), allocatable, intent(in) ::  y(:), y_pred(:)
       character*32, intent(in) :: exp_similarity_type
-      real*8, intent(out) :: sim_exp_pred
+      real(dp), intent(out) :: sim_exp_pred
 
       if (exp_similarity_type == "squared_diff") then
          sim_exp_pred = -0.5*dot_product(y - y_pred, y - y_pred)
@@ -1674,11 +1676,11 @@ contains
         & x_i_exp, y_i_exp, y_i_pred, y_i_pred_all, &
         & get_exp, exp_similarity_type)
       implicit none
-      real*8, allocatable, intent(in) :: data(:, :)
-      real*8, intent(in) :: sigma, core_electron_be(:)
-      real*8, allocatable, intent(inout) :: x_i_exp(:), y_i_exp(:), &
+      real(dp), allocatable, intent(in) :: data(:, :)
+      real(dp), intent(in) :: sigma, core_electron_be(:)
+      real(dp), allocatable, intent(inout) :: x_i_exp(:), y_i_exp(:), &
            & y_i_pred(:), y_i_pred_all(:, :)
-      real*8, intent(out) :: sim_exp_pred, mag
+      real(dp), intent(out) :: sim_exp_pred, mag
       integer, intent(in) :: n_samples
       logical, intent(in) :: get_exp
       character*32, intent(in) :: exp_similarity_type
@@ -1701,9 +1703,9 @@ contains
 
    subroutine broaden_spectrum_standalone(x, x0, y, sigma)
       implicit none
-      real*8, allocatable, intent(in) :: x(:)
-      real*8, intent(inout) :: y(:)
-      real*8, intent(in) :: x0, sigma
+      real(dp), allocatable, intent(in) :: x(:)
+      real(dp), intent(inout) :: y(:)
+      real(dp), intent(in) :: x0, sigma
       integer :: i
       do i = 1, size(x)
          y(i) = y(i) + exp(-(x(i) - x0)**2/(2.d0*sigma**2))
@@ -1713,10 +1715,10 @@ contains
 
    subroutine broaden_spectrum(x, x0, y, y_all, idx, sigma)
       implicit none
-      real*8, allocatable, intent(in) :: x(:)
-      real*8, intent(inout) :: y(:), y_all(:, :)
-      real*8, intent(in) :: x0, sigma
-      real*8 :: norm_fac
+      real(dp), allocatable, intent(in) :: x(:)
+      real(dp), intent(inout) :: y(:), y_all(:, :)
+      real(dp), intent(in) :: x0, sigma
+      real(dp) :: norm_fac
       integer :: i, idx
       norm_fac = 1.d0/(sqrt(2.d0*3.14159265359)*sigma)
       do i = 1, size(x)
@@ -1731,14 +1733,14 @@ contains
       ! xi are the predicted core electron binding energies and x is
       ! the one
       implicit none
-      real*8, intent(in) ::  core_electron_be(:)
+      real(dp), intent(in) ::  core_electron_be(:)
       integer, intent(in) :: n_samples
-      real*8, allocatable, intent(out) :: x(:), y(:)
-      real*8, intent(in) :: sigma
+      real(dp), allocatable, intent(out) :: x(:), y(:)
+      real(dp), intent(in) :: sigma
       integer :: i
-      real*8, intent(in) ::  x_min, x_max
-      real*8 :: x_range, t, dx
-      real*8 :: mag
+      real(dp), intent(in) ::  x_min, x_max
+      real(dp) :: x_range, t, dx
+      real(dp) :: mag
 
       if (allocated(x)) deallocate (x)
       if (allocated(y)) deallocate (y)
@@ -1765,13 +1767,13 @@ contains
       ! xi are the predicted core electron binding energies and x is
       ! the one
       implicit none
-      real*8, intent(in) :: xi(:), yi(:), core_electron_be(:)
+      real(dp), intent(in) :: xi(:), yi(:), core_electron_be(:)
       integer, intent(in) :: n_samples
-      real*8, allocatable, intent(out) :: x(:), y(:), y_all(:, :)
-      real*8, intent(in) :: sigma
+      real(dp), allocatable, intent(out) :: x(:), y(:), y_all(:, :)
+      real(dp), intent(in) :: sigma
       integer :: i
-      real*8 ::  x_min, x_max, x_range, t, dx
-      real*8, intent(out) :: mag
+      real(dp) ::  x_min, x_max, x_range, t, dx
+      real(dp), intent(out) :: mag
       logical, intent(in) :: broaden
 
       if (allocated(x)) deallocate (x)
@@ -1816,14 +1818,14 @@ contains
 
    subroutine broaden_spectrum_derivative(x, x0, x0_der, y, sigma, y_exp, y_tot, mag, dx)
       implicit none
-      real*8, intent(in) :: x(:)
-      real*8, intent(inout) :: y(:, :)
-      real*8, intent(in) ::  y_exp(:)
-      real*8, intent(in) :: x0, x0_der(:), sigma, mag, dx
-      real*8 :: f
-      real*8, intent(out) :: y_tot(1:3)
+      real(dp), intent(in) :: x(:)
+      real(dp), intent(inout) :: y(:, :)
+      real(dp), intent(in) ::  y_exp(:)
+      real(dp), intent(in) :: x0, x0_der(:), sigma, mag, dx
+      real(dp) :: f
+      real(dp), intent(out) :: y_tot(1:3)
       integer :: i
-      real*8 :: norm_fac
+      real(dp) :: norm_fac
       norm_fac = 1.d0/(sqrt(2.d0*3.14159265359)*sigma)
 
       y = 0.d0
@@ -1841,9 +1843,9 @@ contains
 
    subroutine get_xps_weights(weights, decay, positions)
       implicit none
-      real*8, allocatable, intent(in) :: positions(:, :), decay
-      real*8, allocatable, intent(out) :: weights(:)
-      real*8 :: z_max, z
+      real(dp), allocatable, intent(in) :: positions(:, :), decay
+      real(dp), allocatable, intent(out) :: weights(:)
+      real(dp) :: z_max, z
       integer :: n, i
 
       n = size(positions, 2)
@@ -1864,17 +1866,17 @@ contains
    subroutine get_xrd_single_process(positions, n_species, species, wavelength, damping, alpha, &
         & method, use_iwasa, x_min, x_max, n_samples, x_i_exp, y_i_pred)
       implicit none
-      real*8, allocatable, intent(in) :: positions(:, :)
-      real*8, intent(in) :: damping, wavelength, alpha, x_min, x_max
+      real(dp), allocatable, intent(in) :: positions(:, :)
+      real(dp), intent(in) :: damping, wavelength, alpha, x_min, x_max
       integer, intent(in) :: species(:)
-      real*8, allocatable :: x(:), y(:), s(:), wfac(:), wfac_species(:)
-      real*8, allocatable, intent(inout) :: x_i_exp(:), y_i_pred(:)
+      real(dp), allocatable :: x(:), y(:), s(:), wfac(:), wfac_species(:)
+      real(dp), allocatable, intent(inout) :: x_i_exp(:), y_i_pred(:)
       logical, intent(in) :: use_iwasa
       integer, intent(in) :: n_samples, n_species
       character*32, intent(in) :: method
-      real*8 :: prefactor, p, c, c2, rij, diff(1:3), intensity, mag, sth, wfac_n
+      real(dp) :: prefactor, p, c, c2, rij, diff(1:3), intensity, mag, sth, wfac_n
       integer :: i, j, l, n, n_sites
-      real*8 ::  dx, pi = 3.14159265359
+      real(dp) ::  dx, pi = 3.14159265359
 
       ! Was going to use the rijs for this, but we want the /full/
       ! spectra, so we need the scattering contribution from all atoms
@@ -1967,27 +1969,27 @@ contains
 
    function sinc(x) !sinc function as used in DSP
       implicit none
-      real*8 :: sinc
-      real*8 :: x
-      real*8, parameter :: pi = acos(-1.0)
+      real(dp) :: sinc
+      real(dp) :: x
+      real(dp), parameter :: pi = acos(-1.0)
       sinc = 1.0
       if (x /= 0.0) sinc = sin(x)/x
    end function sinc
 
    function cosc(x)
       implicit none
-      real*8 :: cosc
-      real*8 :: x
-      real*8, parameter :: pi = acos(-1.0)
+      real(dp) :: cosc
+      real(dp) :: x
+      real(dp), parameter :: pi = acos(-1.0)
       cosc = 1.0
       if (x /= 0.0) cosc = cos(x)/x
    end function cosc
 
    function sincp(x) !sinc function as used in DSP
       implicit none
-      real*8 :: sincp
-      real*8 :: x
-      real*8, parameter :: pi = acos(-1.0)
+      real(dp) :: sincp
+      real(dp) :: x
+      real(dp), parameter :: pi = acos(-1.0)
       x = x*pi
       sincp = 1.0
       if (x /= 0.0) sincp = sin(x)/x
@@ -1995,9 +1997,9 @@ contains
 
    function coscp(x)
       implicit none
-      real*8 :: coscp
-      real*8 :: x
-      real*8, parameter :: pi = acos(-1.0)
+      real(dp) :: coscp
+      real(dp) :: x
+      real(dp), parameter :: pi = acos(-1.0)
       x = x*pi
       coscp = 1.0
       if (x /= 0.0) coscp = cos(x)/x
@@ -2009,10 +2011,10 @@ contains
 
    subroutine get_moments_of_distribution(x, y, dx, moments, n_moments, mean_reference)
       implicit none
-      real*8, allocatable, intent(in) ::  x(:), y(:)
-      real*8, allocatable, intent(out) :: moments(:)
-      real*8, allocatable :: xp(:)
-      real*8, intent(in) :: dx, mean_reference
+      real(dp), allocatable, intent(in) ::  x(:), y(:)
+      real(dp), allocatable, intent(out) :: moments(:)
+      real(dp), allocatable :: xp(:)
+      real(dp), intent(in) :: dx, mean_reference
       integer, intent(in) :: n_moments
       integer :: i
       ! Moments are defined at mu^p = \int dx x^p f(x)
@@ -2043,11 +2045,11 @@ contains
 
    subroutine get_exp_energies(energy_scale, y_exp, y_pred, n_samples, n_sites, energies)
       implicit none
-      real*8, intent(in) :: energy_scale
-      real*8, intent(in) :: y_exp(:), y_pred(:)
+      real(dp), intent(in) :: energy_scale
+      real(dp), intent(in) :: y_exp(:), y_pred(:)
       integer, intent(in) :: n_samples, n_sites
-      real*8, intent(inout) :: energies(:)
-      real*8 :: f, e_tot, diff(1:n_samples)
+      real(dp), intent(inout) :: energies(:)
+      real(dp) :: f, e_tot, diff(1:n_samples)
 
       ! We use the sum of squared differences for the energy, ideally we'd have a component resolved thing but alas.
 
@@ -2064,22 +2066,22 @@ contains
         &  energies_lp, forces0, virial, exp_similarity_type, rank)
       implicit none
       integer, intent(in) :: n_neigh(:), neighbors_list(:)
-      real*8, intent(in) :: sigma, core_electron_be(:),&
+      real(dp), intent(in) :: sigma, core_electron_be(:),&
            & core_electron_be_der(:, :), xyz(:, :),&
            & energy_scale, norm
-      real*8, allocatable, intent(inout) :: forces0(:, :)
-      real*8, allocatable, intent(in) :: x(:), y_exp(:), y(:)
-      real*8, intent(in) :: y_all(:, :)
-      real*8, intent(inout) :: energies_lp(:)
-      real*8, intent(inout) :: virial(1:3, 1:3)
-      real*8 ::  this_force(1:3)
-      real*8, allocatable ::  y_der(:, :), der_factor(:, :), der_vec(:, :, :), prefactor(:), dxa(:)
+      real(dp), allocatable, intent(inout) :: forces0(:, :)
+      real(dp), allocatable, intent(in) :: x(:), y_exp(:), y(:)
+      real(dp), intent(in) :: y_all(:, :)
+      real(dp), intent(inout) :: energies_lp(:)
+      real(dp), intent(inout) :: virial(1:3, 1:3)
+      real(dp) ::  this_force(1:3)
+      real(dp), allocatable ::  y_der(:, :), der_factor(:, :), der_vec(:, :, :), prefactor(:), dxa(:)
       integer, intent(in) :: n_samples, rank
       logical, intent(in) ::  do_forces
       integer :: n_sites, n_pairs, n_sites0
       integer :: i, j, i2, j2, k, l, k1, k2, mag_force_i
       logical :: vector_norm = .true.
-      real*8 :: mag_force, max_mag_force, dx, &
+      real(dp) :: mag_force, max_mag_force, dx, &
                 sum_d1, sum_d2, sum_d3, yv
       character*32, intent(in) :: exp_similarity_type
 
@@ -2279,9 +2281,9 @@ contains
 
    subroutine lerp(x, y, xi, yi)
       implicit none
-      real*8, intent(inout) :: x(:), y(:)
-      real*8, intent(in) :: xi(:), yi(:)
-      real*8 :: x_min, x_max, x_range, t
+      real(dp), intent(inout) :: x(:), y(:)
+      real(dp), intent(in) :: xi(:), yi(:)
+      real(dp) :: x_min, x_max, x_range, t
       integer :: i, idx
 
       ! Here we will make x in the same range as xi
@@ -2330,11 +2332,11 @@ contains
 
    subroutine linspace(x, x_min, x_max, n_samples, dx)
       implicit none
-      real*8, allocatable, intent(inout) :: x(:)
-      real*8, intent(in) :: x_min, x_max
-      real*8, intent(out) :: dx
+      real(dp), allocatable, intent(inout) :: x(:)
+      real(dp), intent(in) :: x_min, x_max
+      real(dp), intent(out) :: dx
       integer, intent(in) :: n_samples
-      real*8 :: t, x_range
+      real(dp) :: t, x_range
       integer :: i
 
       if (allocated(x)) deallocate (x)
@@ -2354,11 +2356,11 @@ contains
 
    subroutine interpolate_data(x, y, xi, yi, n_samples, dx)
       implicit none
-      real*8, intent(in) :: xi(:), yi(:)
-      real*8, allocatable, intent(inout) :: x(:), y(:)
-      real*8, intent(out) :: dx
+      real(dp), intent(in) :: xi(:), yi(:)
+      real(dp), allocatable, intent(inout) :: x(:), y(:)
+      real(dp), intent(out) :: dx
       integer, intent(in) :: n_samples
-      real*8 :: t, x_min, x_max, x_range
+      real(dp) :: t, x_min, x_max, x_range
       integer :: i
 
       if (allocated(x)) deallocate (x)
@@ -2382,16 +2384,16 @@ contains
 
    subroutine get_waasmaier(element, s, f)
       implicit none
-      real*8, intent(in) :: s ! scattering vector: s = q / 4pi [1/A]
-      real*8 :: w(1:11, 1:49)
+      real(dp), intent(in) :: s ! scattering vector: s = q / 4pi [1/A]
+      real(dp) :: w(1:11, 1:49)
       character*8 :: elements(1:49)
       !   Input variables
       character*8, intent(in) :: element
       !   Output variables
       logical :: is_in_database = .false.
       !   Internal variables
-      real*8 ::  s_sq
-      real*8, intent(out) :: f
+      real(dp) ::  s_sq
+      real(dp), intent(out) :: f
       integer :: i, j
 
       ! D. Waasmaier and A. Kirfel, Acta Cryst. (1995). A51, 416-431
@@ -2555,15 +2557,15 @@ contains
 
    subroutine get_scattering_factor_params(element, wout)
       implicit none
-      !      real*8, intent(in) :: s ! scattering vector: s = q / 2pi [1/A]
-      real*8 :: w(1:9, 1:215)
+      !      real(dp), intent(in) :: s ! scattering vector: s = q / 2pi [1/A]
+      real(dp) :: w(1:9, 1:215)
       character*20 :: elements(1:215)
       !   Input variables
       character*8, intent(in) :: element
       !   Output variables
       logical :: is_in_database = .false.
       !   Internal variables
-      real*8, intent(out) :: wout(1:9)
+      real(dp), intent(out) :: wout(1:9)
       integer :: i
 
       elements = ['    H', "   H'", '    D', '  H1-', '   He', '  &
@@ -2844,9 +2846,9 @@ contains
 
    subroutine get_scattering_factor(f, w, s)
       implicit none
-      real*8, intent(in) :: w(1:9), s
-      real*8, intent(out) :: f
-      real*8 :: s_sq
+      real(dp), intent(in) :: w(1:9), s
+      real(dp), intent(out) :: f
+      real(dp) :: s_sq
       integer :: j
 
       f = w(9)
@@ -2861,8 +2863,8 @@ contains
       implicit none
       character*8, intent(in) :: element
       character*8 :: elements(1:86)
-      real*8 :: w(1:3, 1:86)
-      real*8, intent(out) :: b
+      real(dp) :: w(1:3, 1:86)
+      real(dp), intent(out) :: b
       logical :: is_in_database = .false.
       integer :: i
 

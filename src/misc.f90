@@ -27,6 +27,8 @@
 
 module misc
 
+  use kinds
+
   !use psb_base_mod
   !use psb_prec_mod
   !use psb_krylov_mod
@@ -39,14 +41,14 @@ module misc
     implicit none
 
 !   Input variables
-    real*8, intent(in) :: y(:), x(:), a, b
+    real(dp), intent(in) :: y(:), x(:), a, b
     character(len=*), intent(in) :: method
 !   Output variables
-    real*8, intent(out) :: integral
+    real(dp), intent(out) :: integral
 
 !   Internal variables
-    real*8, allocatable :: yc(:), xc(:)
-    real*8 :: x_start, x_end, f, x_temp, y_temp
+    real(dp), allocatable :: yc(:), xc(:)
+    real(dp) :: x_start, x_end, f, x_temp, y_temp
     integer :: n, i, j
 
     if( size(x) /= size(y) )then
@@ -130,14 +132,14 @@ module misc
 
   implicit none
 
-  real*8, intent(in) :: A(:), v(:)
+  real(dp), intent(in) :: A(:), v(:)
   integer, intent(in) :: dim
-  real*8, intent(inout) :: res(:)
-  integer*8, intent(in) :: iA(:), jA(:)
-  !real*8, allocatable :: resd(:), ress(:)
-  real*8, allocatable :: A_CSR(:), this_v(:)
+  real(dp), intent(inout) :: res(:)
+  integer(i64), intent(in) :: iA(:), jA(:)
+  !real(dp), allocatable :: resd(:), ress(:)
+  real(dp), allocatable :: A_CSR(:), this_v(:)
   integer, allocatable :: j_CSR(:), i_CSR(:), ipointer(:)
-  real*8 :: t1, t2, td, ts, tcsr, s
+  real(dp) :: t1, t2, td, ts, tcsr, s
   !integer, allocatable :: iA(:), jA(:)
   integer :: i, j, k, n, dim1, dim2, max_el, m
 
@@ -282,17 +284,17 @@ module misc
 
 !   Input variables
     !real(psb_dpk_), 
-    real*8, intent(in) :: val(:)
+    real(dp), intent(in) :: val(:)
     !integer(psb_lpk_),
-    integer*8, intent(in) :: ia(:), ja(:) !, myidx(:)
+    integer(i64), intent(in) :: ia(:), ja(:) !, myidx(:)
     integer, intent(in) :: dim !, nnz
     integer, intent(in) :: n_iter
 !   Output variables
-    real*8, intent(inout) :: b(:)
+    real(dp), intent(inout) :: b(:)
 !   Internal variables
     integer :: k, N
-    real*8, allocatable :: b_k(:), b_k1(:)
-    real*8 :: b_k1_norm, time1, time2
+    real(dp), allocatable :: b_k(:), b_k1(:)
+    real(dp) :: b_k1_norm, time1, time2
     
     !type(psb_ctxt_type) :: icontxt
     !integer(psb_ipk_) ::  iam, np, ip, jp, idummy, nr, info_psb
@@ -334,18 +336,18 @@ module misc
 
 !   Input variables
     !real(psb_dpk_), 
-    real*8, intent(in) :: val(:)
+    real(dp), intent(in) :: val(:)
     !integer(psb_lpk_),
-    integer*8, intent(in) :: ia(:), ja(:) !, myidx(:)
+    integer(i64), intent(in) :: ia(:), ja(:) !, myidx(:)
     integer, intent(in) :: dim !, nnz
     integer, intent(in) :: n_iter
 !   Output variables
-    !real*8, intent(inout) :: b(:)
-    real*8, intent(inout) :: l_min, l_max
+    !real(dp), intent(inout) :: b(:)
+    real(dp), intent(inout) :: l_min, l_max
 !   Internal variables
     integer :: k, N, info
-    real*8, allocatable :: v(:,:), w(:,:), alpha(:), beta(:), T(:,:), work_arr(:)
-    real*8 :: b_k1_norm, time1, time2
+    real(dp), allocatable :: v(:,:), w(:,:), alpha(:), beta(:), T(:,:), work_arr(:)
+    real(dp) :: b_k1_norm, time1, time2
 
     allocate( w(1:dim,1:n_iter) )
     allocate( v(1:dim,1:n_iter) )
@@ -408,9 +410,9 @@ module misc
 
     implicit none
 
-    real*8, intent(in) :: val(:)
-    real*8, dimension(1:size(val)) :: res
-    real*8, parameter :: pi = 3.141592653589793d0
+    real(dp), intent(in) :: val(:)
+    real(dp), dimension(1:size(val)) :: res
+    real(dp), parameter :: pi = 3.141592653589793d0
     integer :: i
 
     do i = 1, size(val)
@@ -430,8 +432,8 @@ module misc
 
     implicit none
 
-    real*8, intent(in) :: val(:)
-    real*8, dimension(1:size(val)) :: res
+    real(dp), intent(in) :: val(:)
+    real(dp), dimension(1:size(val)) :: res
     integer :: i
 
     do i = 1, size(val)
@@ -451,9 +453,9 @@ module misc
 
     implicit none
 
-    real*8, intent(in) :: val1(:), val2(:), min_val, max_val
-    real*8, dimension(1:size(val1)) :: res
-    real*8 :: r
+    real(dp), intent(in) :: val1(:), val2(:), min_val, max_val
+    real(dp), dimension(1:size(val1)) :: res
+    real(dp) :: r
     integer :: i
 
     do i = 1, size(val1)
@@ -480,8 +482,8 @@ module misc
 
     implicit none
 
-    real*8, intent(in) :: val(:), min_val, max_val
-    real*8, dimension(1:size(val)) :: res
+    real(dp), intent(in) :: val(:), min_val, max_val
+    real(dp), dimension(1:size(val)) :: res
     integer :: i
 
     do i = 1, size(val)
@@ -503,8 +505,8 @@ module misc
 
     implicit none
 
-    real*8, intent(in) :: x, x_min, x_max
-    real*8 :: res
+    real(dp), intent(in) :: x, x_min, x_max
+    real(dp) :: res
 
     if( x < x_min )then
       res = 0.d0
@@ -524,8 +526,8 @@ module misc
 
     implicit none
 
-    real*8, intent(in) :: val(:)
-    real*8 :: res, ave
+    real(dp), intent(in) :: val(:)
+    real(dp) :: res, ave
     integer :: i
 
     ave = sum(val) / size(val)

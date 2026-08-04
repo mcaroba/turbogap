@@ -28,6 +28,8 @@
 
 module vdw
 
+  use kinds
+
   use misc
   use nonneg_leastsq
 
@@ -41,13 +43,13 @@ module vdw
     implicit none
 
 !   Input variables
-    real*8, intent(in) :: soap(:,:), Qs(:,:), alphas(:), V0, delta, zeta, soap_cart_der(:,:,:)
+    real(dp), intent(in) :: soap(:,:), Qs(:,:), alphas(:), V0, delta, zeta, soap_cart_der(:,:,:)
     integer, intent(in) :: n_neigh(:)
     logical, intent(in) :: do_derivatives
 !   Output variables
-    real*8, intent(out) :: V(:), V_der(:,:)
+    real(dp), intent(out) :: V(:), V_der(:,:)
 !   Internal variables
-    real*8, allocatable :: K(:,:), K_der(:,:), Qss(:,:), Qs_copy(:,:)
+    real(dp), allocatable :: K(:,:), K_der(:,:), Qss(:,:), Qs_copy(:,:)
     integer :: n_sites, n_soap, n_sparse, zeta_int, n_pairs
     integer :: i, j, i2, cart
 
@@ -156,21 +158,21 @@ module vdw
     implicit none
 
 !   Input variables
-    real*8, intent(in) :: hirshfeld_v(:), hirshfeld_v_cart_der(:,:), rcut, buffer, rcut_inner, buffer_inner, &
+    real(dp), intent(in) :: hirshfeld_v(:), hirshfeld_v_cart_der(:,:), rcut, buffer, rcut_inner, buffer_inner, &
                           rjs(:), xyz(:,:), hirshfeld_v_neigh(:), sR, d, c6_ref(:), r0_ref(:), &
                           alpha0_ref(:), mbd_ts_scaling(:), &
                           x_min, x_max
     integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:)
     logical, intent(in) :: do_forces
 !   Output variables
-    real*8, intent(out) :: virial(1:3, 1:3)
+    real(dp), intent(out) :: virial(1:3, 1:3)
 !   In-Out variables
-    real*8, intent(inout) :: energies(:), forces0(:,:), local_virial_diag0(:,:)
+    real(dp), intent(inout) :: energies(:), forces0(:,:), local_virial_diag0(:,:)
 !   Internal variables
-    real*8, allocatable :: neighbor_c6_ii(:), neighbor_c6_ij(:), r0_ii(:), r0_ij(:), &
+    real(dp), allocatable :: neighbor_c6_ii(:), neighbor_c6_ij(:), r0_ii(:), r0_ij(:), &
                            exp_damp(:), f_damp(:), c6_ij_free(:), neighbor_alpha0(:), &
                            pref_force1(:), pref_force2(:), r6(:), r6_der(:)
-    real*8 :: time1, time2, c6_ii, c6_jj, r0_i, r0_j, alpha0_i, alpha0_j, rbuf, this_force(1:3)
+    real(dp) :: time1, time2, c6_ii, c6_jj, r0_i, r0_j, alpha0_i, alpha0_j, rbuf, this_force(1:3)
     integer, allocatable:: i_buffer(:)
     integer :: n_sites, n_pairs, n_pairs_soap, n_species, n_sites0
     integer :: i, j, i2, j2, k, n_in_buffer, k1, k2
@@ -451,20 +453,20 @@ module vdw
     implicit none
 
 !   Input variables
-    real*8, intent(in) :: rcut, r_buffer, hirshfeld_v_neigh(:), &
+    real(dp), intent(in) :: rcut, r_buffer, hirshfeld_v_neigh(:), &
                           rjs(:), xyz(:,:), sR, d, c6_ref(:), r0_ref(:), &
                           alpha0_ref(:), vdw_omega_ref !, hirshfeld_v(:), hirshfeld_v_neigh(:) !NOTE: uncomment this in final implementation
     integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:)
     logical, intent(in) :: polynomial_expansion
 !   Output variables
 !   In-Out variables
-    real*8, intent(inout) :: central_pol(:), central_omega(:), forces0(:,:)
+    real(dp), intent(inout) :: central_pol(:), central_omega(:), forces0(:,:)
 !   Internal variables
-    real*8, allocatable :: neighbor_c6_ii(:), r0_ii(:), f_damp(:), neighbor_alpha0(:), T_func(:), h_func(:), g_func(:), &
+    real(dp), allocatable :: neighbor_c6_ii(:), r0_ii(:), f_damp(:), neighbor_alpha0(:), T_func(:), h_func(:), g_func(:), &
                            omegas(:), B_mat(:,:), rjs_H(:), xyz_H(:,:), work_arr(:), &
                            a_SCS(:,:), inner_damp(:), &
                            neighbor_sigma(:) !, rjs_0(:)
-    real*8 :: time1, time2, Bohr, Hartree, &
+    real(dp) :: time1, time2, Bohr, Hartree, &
               omega, pi, &
               r_vdw_i, r_vdw_j, t1, t2, &
               sigma_ij, s_i, s_j, omega_ref, xyz_i(1:3), xyz_j(1:3), mult1_i, mult1_j, mult2, pol1, r_buf, rb
@@ -477,7 +479,7 @@ module vdw
     integer :: n_sub_sites, n_sub_pairs, s
 
 !   MBD stuff:
-!    real*8, allocatable :: T_LR(:,:), r0_ii_SCS(:), f_damp_SCS(:), AT(:,:,:), AT_n(:,:,:,:), energy_series(:,:), &
+!    real(dp), allocatable :: T_LR(:,:), r0_ii_SCS(:), f_damp_SCS(:), AT(:,:,:), AT_n(:,:,:,:), energy_series(:,:), &
 !                           integrand(:), AT_n_f(:,:,:,:), f_damp_der_SCS(:), dT_LR(:,:), G_mat(:,:,:), force_series(:,:), &
 !                           total_energy_series(:,:), total_integrand(:), rjs_0(:), &
 !                           T_mbd(:), r0_ii_mbd(:), neighbor_alpha0_mbd(:), omegas_mbd(:), rjs_0_mbd(:), xyz_0_mbd(:,:), &
@@ -487,7 +489,7 @@ module vdw
 !                           a_2b(:), r0_ii_SCS_2b(:), C6_2b(:), da_2b(:), T_SR(:), T_SR_mult(:), d_arr_i(:), d_arr_o(:), &
 !                           d_mult_i(:), d_mult_o(:), dT_SR_mult(:,:), d_dmult_i(:,:), d_dmult_o(:,:), do_mbd(:), &
 !                           hirshfeld_sub_neigh(:), o_2b(:), do_2b(:)
-!    real*8 :: a_mbd_i, a_mbd_j, da_i, da_j, pol1, E_TS, f_damp_der_2b, dr_vdw_i, &
+!    real(dp) :: a_mbd_i, a_mbd_j, da_i, da_j, pol1, E_TS, f_damp_der_2b, dr_vdw_i, &
 !              dr_vdw_j, forces_TS, dC6_2b, mult1_i, mult1_j, mult2, dmult1_i(1:3), dmult1_j(1:3), dmult2(1:3), hv_p_der, &
 !              hv_q_der, do_pref
 !    integer :: n_mbd_sites, n_mbd_pairs, n_2b_sites
@@ -504,9 +506,9 @@ module vdw
     !real(psb_dpk_), allocatable :: val(:) !, val_xv(:,:), b_i(:,:), d_vec(:,:)
     !type(psb_dprec_type) :: prec
     !character(len=20) :: ptype
-    real*8 :: polyfit(1:15)
+    real(dp) :: polyfit(1:15)
     integer :: n_degree
-    real*8, allocatable :: B_pol(:,:), B_mult(:,:), b_i(:,:), d_vec(:,:), val_xv(:,:)
+    real(dp), allocatable :: B_pol(:,:), B_mult(:,:), b_i(:,:), d_vec(:,:), val_xv(:,:)
 
 !   IMPORTANT NOTE ABOUT THE DERIVATIVES:
 !   If rcut < rcut_soap, the derivatives in the new implementation omit the terms that fall outside of rcut.
@@ -1058,7 +1060,7 @@ module vdw
     implicit none
 
 !   Input variables
-    real*8, intent(in) :: rcut, r_buffer, &
+    real(dp), intent(in) :: rcut, r_buffer, &
                           rjs(:), xyz(:,:), sR, d, c6_ref(:), r0_ref(:), rcut_loc, rcut_mbd, rcut_mbd2, &
                           hirshfeld_v_cart_der_ji(:,:), &
                           alpha0_ref(:), vdw_omega_ref, & !, hirshfeld_v(:), hirshfeld_v_neigh(:) !NOTE: uncomment this in final implementation
@@ -1066,17 +1068,17 @@ module vdw
     integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:), n_freq, n_order
     logical, intent(in) :: do_derivatives, do_hirshfeld_gradients, polynomial_expansion, do_nnls, include_2b, cent_appr
 !   Output variables
-    real*8, intent(out) :: virial(1:3, 1:3)
+    real(dp), intent(out) :: virial(1:3, 1:3)
 !   In-Out variables
-    real*8, intent(inout) :: energies(:), forces0(:,:), central_pol(:), central_omega(:), &
+    real(dp), intent(inout) :: energies(:), forces0(:,:), central_pol(:), central_omega(:), &
                              hirshfeld_v_neigh(:), local_virial_diag0(:,:)
 !   Internal variables
-    real*8, allocatable :: neighbor_c6_ii(:), r0_ii(:), f_damp(:), neighbor_alpha0(:), T_func(:), h_func(:), g_func(:), &
+    real(dp), allocatable :: neighbor_c6_ii(:), r0_ii(:), f_damp(:), neighbor_alpha0(:), T_func(:), h_func(:), g_func(:), &
                            omegas(:), B_mat(:,:), rjs_H(:), xyz_H(:,:), work_arr(:), dT(:), f_damp_der(:), &
                            g_func_der(:), h_func_der(:), coeff_der(:), coeff_fdamp(:), hirshfeld_v_cart_der_H(:,:), &
                            a_SCS(:,:), da_SCS(:,:), b_der(:,:), dB_mat(:,:), &
                            neighbor_sigma(:), hirshfeld_v_sub_der(:,:), inner_damp(:)
-    real*8 :: time1, time2, time3, time4, time5, time6, this_force(1:3), Bohr, Hartree, &
+    real(dp) :: time1, time2, time3, time4, time5, time6, this_force(1:3), Bohr, Hartree, &
               omega, pi, integral, total_integral, E_MBD, R_vdW_SCS_ij, S_vdW_ij, dS_vdW_ij, exp_term, &
               r_vdw_i, r_vdw_j, t1, t2, r_buf_scs, r_buf_mbd, r_buf_2b, r_buf_loc, time_tot, time_tot2, time_tot3, &
               time_tot4, sigma_ij, coeff_h_der, dg, dh, s_i, s_j, terms, omega_ref, xyz_i(1:3), xyz_j(1:3), rjs_i, rjs_j
@@ -1089,7 +1091,7 @@ module vdw
     integer :: n_sub_sites, n_sub_pairs, s
 
 !   MBD stuff:
-    real*8, allocatable :: T_LR(:,:), r0_ii_SCS(:), f_damp_SCS(:), AT(:,:,:), AT_n(:,:,:,:), energy_series(:,:), &
+    real(dp), allocatable :: T_LR(:,:), r0_ii_SCS(:), f_damp_SCS(:), AT(:,:,:), AT_n(:,:,:,:), energy_series(:,:), &
                            integrand(:), AT_n_f(:,:,:,:), f_damp_der_SCS(:), dT_LR(:,:), G_mat(:,:,:), force_series(:,:), &
                            total_energy_series(:,:), total_integrand(:), rjs_0(:), &
                            T_mbd(:), r0_ii_mbd(:), neighbor_alpha0_mbd(:), omegas_mbd(:), rjs_0_mbd(:), xyz_0_mbd(:,:), &
@@ -1111,7 +1113,7 @@ module vdw
                            AT_copy(:,:), WR(:), WI(:), VL(:,:), VR(:,:), work_mbd(:), VR_inv(:,:), ipiv_mbd(:), &
                            temp_mat_full(:,:), temp_mat_forces(:,:), virial_integrand(:,:), virial_integrand_2b(:,:), &
                            damped_virial_integrand(:,:), damped_virial_integrand_2b(:,:)
-    real*8 :: a_mbd_i, a_mbd_j, o_mbd_i, o_mbd_j, da_mbd_i, da_mbd_j, da_i, da_j, pol1, E_TS, f_damp_der_2b, dr_vdw_i, &
+    real(dp) :: a_mbd_i, a_mbd_j, o_mbd_i, o_mbd_j, da_mbd_i, da_mbd_j, da_i, da_j, pol1, E_TS, f_damp_der_2b, dr_vdw_i, &
               dr_vdw_j, forces_TS, dC6_2b, mult1_i, mult1_j, mult2, dmult1_i(1:3), dmult1_j(1:3), dmult2(1:3), hv_p_der, &
               hv_q_der, do_pref, rb, inner_damp_der, rjs_0_i, rcut_force, o_i, o_j, do_i, do_j, T_LR_mult_i, T_LR_mult_j, &
               dT_LR_mult_i, dT_LR_mult_j, dT_LR_mult_0ij_2, dT_LR_mult_0ji_2, a_i, a_j, E_TS_tot, r6_der, ac2, ac3, ac4, &
@@ -1120,26 +1122,26 @@ module vdw
     integer :: n_mbd_sites, n_mbd_pairs, n_2b_sites, n_2b_tot_sites, n_2b_tot_pairs, n_ene_sites, n_force_sites
     integer, allocatable :: n_mbd_neigh(:), mbd_neighbors_list(:), p_mbd(:), sub_2b_tot_list(:), n_2b_tot_neigh(:), &
                             p_2b_tot(:)
-    real*8 :: polyfit(1:15)
+    real(dp) :: polyfit(1:15)
     integer :: n_degree
-    real*8, allocatable :: B_pol(:,:), B_mult(:,:), b_i(:,:), d_vec(:,:), val_xv(:,:)
+    real(dp), allocatable :: B_pol(:,:), B_mult(:,:), b_i(:,:), d_vec(:,:), val_xv(:,:)
 !   NNLS stuff;
     
-    real*8, allocatable :: A_nnls(:,:), b_nnls(:), coeff_nnls(:), work_nnls(:), omegas_nnls(:), integrand_nnls(:), &
+    real(dp), allocatable :: A_nnls(:,:), b_nnls(:), coeff_nnls(:), work_nnls(:), omegas_nnls(:), integrand_nnls(:), &
                            total_integrand_nnls(:), work_integrand(:), trace_nnls(:), force_series0(:,:), full_integrand(:), &
                            integrand_sp(:), at_n_vec(:), at_vec(:), g_vec(:), g_n_vec(:), denom_nnls(:)
     integer, allocatable :: ind_nnls(:)
-    real*8 :: res_nnls, E_tot, denom
+    real(dp) :: res_nnls, E_tot, denom
     integer :: mode_nnls
     logical :: do_total_energy = .false., series_expansion = .false., do_log = .false., & !cent_appr = .true.,
                lanczos = .false., &
                do_timing = .false., default_coeff = .true.  ! Finite difference testing purposes
-    real*8, allocatable :: b_vec(:), Ab(:), I_mat(:,:), l_vals(:), log_vals(:), lsq_mat(:,:), res_mat(:), log_exp(:,:), &
+    real(dp), allocatable :: b_vec(:), Ab(:), I_mat(:,:), l_vals(:), log_vals(:), lsq_mat(:,:), res_mat(:), log_exp(:,:), &
                            AT_power(:,:), log_integrand(:), AT_power_full(:,:), pol_grad(:,:,:), pol_inv(:,:,:), inv_vals(:), &
                            res_inv(:), lsq_inv(:,:), integrand_pol(:), AT_sym(:,:,:), G_sym(:,:,:), pol_sym(:,:,:), res_sym(:), &
                            AT_sym_power(:,:), integrand_sym(:), T_LR_sym(:,:), dT_LR_sym(:,:)
-    integer*8, allocatable :: ipiv_lsq(:)
-    real*8 :: b_norm, l_dom, l_min, l_max
+    integer(i64), allocatable :: ipiv_lsq(:)
+    real(dp) :: b_norm, l_dom, l_min, l_max
 
     !PSBLAS stuff:
     !type(psb_ctxt_type) :: icontxt
@@ -1149,9 +1151,9 @@ module vdw
     !type(psb_dspmat_type) :: A_sp, A_sp_sym
     !type(psb_d_vect_type) :: x_vec, b_vec
     !integer(psb_lpk_), 
-    integer*8, allocatable :: ia(:), ja(:), ia2(:), ja2(:) !, myidx(:)
+    integer(i64), allocatable :: ia(:), ja(:), ia2(:), ja2(:) !, myidx(:)
     !real(psb_dpk_), 
-    real*8, allocatable :: val(:,:), val2(:), val_sym(:,:), dval(:,:) !, val_sym_test(:,:)  !, val_xv(:,:), b_i(:,:), d_vec(:,:)
+    real(dp), allocatable :: val(:,:), val2(:), val_sym(:,:), dval(:,:) !, val_sym_test(:,:)  !, val_xv(:,:), b_i(:,:), d_vec(:,:)
 
 
 !central_pol = 10.d0
@@ -6464,8 +6466,8 @@ end if
 
     character*8, intent(in) :: element
     integer, intent(in) :: rank
-    real*8, intent(out) :: C6, R0, alpha0
-    real*8 :: Hartree = 27.211386024367243d0, Bohr = 0.5291772105638411d0
+    real(dp), intent(out) :: C6, R0, alpha0
+    real(dp) :: Hartree = 27.211386024367243d0, Bohr = 0.5291772105638411d0
 
     C6 = 0.d0
     R0 =  0.d0

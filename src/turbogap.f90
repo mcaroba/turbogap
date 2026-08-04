@@ -29,6 +29,8 @@
 
 program turbogap
 
+  use kinds
+
   use timing
   use neighbors
   use soap_turbo_desc
@@ -64,11 +66,11 @@ program turbogap
   !**************************************************************************
   ! Variable definitions
   !
-  real*8, allocatable :: rjs(:), thetas(:), phis(:), xyz(:,:), sph_temp(:), sph_temp3(:,:)
-  real*8, allocatable :: positions(:,:), positions_prev(:,:), soap(:,:), soap_cart_der(:,:,:), positions_diff(:,:), &
+  real(dp), allocatable :: rjs(:), thetas(:), phis(:), xyz(:,:), sph_temp(:), sph_temp3(:,:)
+  real(dp), allocatable :: positions(:,:), positions_prev(:,:), soap(:,:), soap_cart_der(:,:,:), positions_diff(:,:), &
                             forces_prev(:,:), frac_positions(:,:)
-  real*8 :: rcut_max, a_box(1:3), b_box(1:3), c_box(1:3), max_displacement, energy, energy_prev
-  real*8 :: virial(1:3, 1:3), this_virial(1:3, 1:3), v_uc, &
+  real(dp) :: rcut_max, a_box(1:3), b_box(1:3), c_box(1:3), max_displacement, energy, energy_prev
+  real(dp) :: virial(1:3, 1:3), this_virial(1:3, 1:3), v_uc, &
                v_uc_prev, v_a_uc, v_a_uc_prev, eVperA3tobar =  1602176.6208d0, ranf, &
                ranv(1:3), disp(1:3), d_disp, e_mc_prev, p_accept, virial_prev(1:3, 1:3), sim_exp_pred, sim_exp_prev, &
                sim_exp_pred_der(1:3)
@@ -76,32 +78,32 @@ program turbogap
 !   can point at them. They are split onto their own declarations for that
 !   reason alone -- target on energies/forces, the accumulators they are summed
 !   into, would widen the aliasing assumption for no benefit.
-  real*8, target :: virial_soap(1:3, 1:3), virial_2b(1:3, 1:3), virial_3b(1:3,1:3), &
+  real(dp), target :: virial_soap(1:3, 1:3), virial_2b(1:3, 1:3), virial_3b(1:3,1:3), &
                virial_core_pot(1:3, 1:3), virial_vdw(1:3, 1:3), virial_lp(1:3,1:3), this_virial_vdw(1:3, 1:3), &
                this_virial_lp(1:3, 1:3), virial_pdf(1:3,1:3), this_virial_pdf(1:3,1:3), virial_sf(1:3,1:3), &
                this_virial_sf(1:3,1:3), virial_xrd(1:3,1:3), this_virial_xrd(1:3,1:3), virial_nd(1:3,1:3), &
                this_virial_nd(1:3,1:3)
-  real*8, allocatable :: energies(:), forces(:,:), this_energies(:), &
+  real(dp), allocatable :: energies(:), forces(:,:), this_energies(:), &
                             this_forces(:,:), velocities(: ,:), masses_types(:), masses(:), &
                             hirshfeld_v_temp(:), masses_temp(:), sinc_factor_matrix(:,:), energies_exp(:)
-  real*8, allocatable, target :: energies_soap(:), forces_soap(:,:), &
+  real(dp), allocatable, target :: energies_soap(:), forces_soap(:,:), &
                             energies_2b(:), forces_2b(:,:), energies_3b(:), forces_3b(: ,:), &
                             energies_core_pot(:), forces_core_pot(:,:)
-!  real*8, allocatable, target :: this_hirshfeld_v(:), this_hirshfeld_v_cart_der(:,:)
-!  real*8, pointer :: this_hirshfeld_v_pt(:), this_hirshfeld_v_cart_der_pt(:,:)
+!  real(dp), allocatable, target :: this_hirshfeld_v(:), this_hirshfeld_v_cart_der(:,:)
+!  real(dp), pointer :: this_hirshfeld_v_pt(:), this_hirshfeld_v_cart_der_pt(:,:)
 
-  real*8, allocatable, target :: local_properties(:,:), local_properties_cart_der(:,:,:)
+  real(dp), allocatable, target :: local_properties(:,:), local_properties_cart_der(:,:,:)
   ! Have one rank lower for the pointer, such that it just relates to a sub array of the local properties/cart_der
-  real*8, pointer :: local_properties_pt(:), local_properties_cart_der_pt(:,:)
-!  real*8, pointer :: hirshfeld_v(:), hirshfeld_v_cart_der(:,:)
-  real*8, allocatable, target :: this_local_properties(:,:), this_local_properties_cart_der(:,:,:)
-  real*8, pointer :: this_local_properties_pt(:,:), this_local_properties_cart_der_pt(:,:,:)
-  real*8, allocatable :: y_i_pred_all(:,:), moments(:), moments_exp(:)
+  real(dp), pointer :: local_properties_pt(:), local_properties_cart_der_pt(:,:)
+!  real(dp), pointer :: hirshfeld_v(:), hirshfeld_v_cart_der(:,:)
+  real(dp), allocatable, target :: this_local_properties(:,:), this_local_properties_cart_der(:,:,:)
+  real(dp), pointer :: this_local_properties_pt(:,:), this_local_properties_cart_der_pt(:,:,:)
+  real(dp), allocatable :: y_i_pred_all(:,:), moments(:), moments_exp(:)
 
 
-  real*8, allocatable :: all_energies(:,:), all_forces(:,:,:), all_virial(:,:,:)
-  real*8, allocatable :: all_this_energies(:,:), all_this_forces(:,:,:), all_this_virial(:,:,:)
-  real*8 :: instant_temp, kB = 8.6173303d-5, E_kinetic=0.d0, E_kinetic_prev, time1, time2, time3, time_neigh, time_gap, &
+  real(dp), allocatable :: all_energies(:,:), all_forces(:,:,:), all_virial(:,:,:)
+  real(dp), allocatable :: all_this_energies(:,:), all_this_forces(:,:,:), all_this_virial(:,:,:)
+  real(dp) :: instant_temp, kB = 8.6173303d-5, E_kinetic=0.d0, E_kinetic_prev, time1, time2, time3, time_neigh, time_gap, &
                time_soap(1:3), time_2b(1:3), time_3b(1:3), time_read_input(1:3), time_read_xyz(1:3), &
                time_mpi(1:3) = 0.d0, time_core_pot(1:3), time_vdw(1:3), time_pdf(1:3), time_sf(1:3), time_xrd(1:3), &
                time_nd(1:3), time_xps(1:3), time_mc(1:3), instant_pressure, lv(1:3,1:3), &
@@ -115,10 +117,10 @@ program turbogap
   character*1 :: creturn = achar(13)
 
   !! these decalarations are for time step and electronic stopping by different methods
-  real*8 :: time_step_prev
+  real(dp) :: time_step_prev
   integer :: nrows
-  real*8 :: cum_EEL = 0.0d0
-  real*8, allocatable :: allelstopdata(:)
+  real(dp) :: cum_EEL = 0.0d0
+  real(dp), allocatable :: allelstopdata(:)
   type (EPH_Beta_class) :: ephbeta
   type (EPH_FDM_class) :: ephfdm
   type (EPH_LangevinSpatialCorrelation_class) :: ephlsc
@@ -174,29 +176,29 @@ program turbogap
 
   ! These are the containers for the hyperparameters of descriptors and GAPs
   integer :: n_soap_turbo = 0, n_distance_2b = 0, n_angle_3b = 0, n_core_pot = 0, counter_lp_names=0, temp_md_nsteps
-  real*8, parameter :: pi = acos(-1.0)
+  real(dp), parameter :: pi = acos(-1.0)
   type(soap_turbo), allocatable :: soap_turbo_hypers(:)
   type(distance_2b), allocatable :: distance_2b_hypers(:)
   type(angle_3b), allocatable :: angle_3b_hypers(:)
   type(core_pot), allocatable :: core_pot_hypers(:)
 
   !vdw crap
-  real*8, allocatable, target :: energies_vdw(:), forces_vdw(:,:), this_energies_vdw(:), this_forces_vdw(:,:)
+  real(dp), allocatable, target :: energies_vdw(:), forces_vdw(:,:), this_energies_vdw(:), this_forces_vdw(:,:)
 ! Persistent ts+mbd correction state, owned by turbogap_vdw
   type(vdw_state) :: vdw_ws
-  real*8, allocatable :: v_neigh_lp(:)
-  real*8, allocatable, target :: energies_lp(:), forces_lp(:,:), this_energies_lp(:), this_forces_lp(:,:)
-  real*8, allocatable, target :: energies_pdf(:), forces_pdf(:,:), this_energies_pdf(:), this_forces_pdf(:,:)
-  real*8, allocatable, target :: energies_sf(:), forces_sf(:,:), this_energies_sf(:), this_forces_sf(:,:)
-  real*8, allocatable, target :: energies_xrd(:), forces_xrd(:,:), this_energies_xrd(:), this_forces_xrd(:,:)
-  real*8, allocatable, target :: energies_nd(:), forces_nd(:,:), this_energies_nd(:), this_forces_nd(:,:)
-  real*8, allocatable :: mbd_ts_scaling(:), this_mbd_ts_scaling(:)
-  real*8, allocatable :: local_virial_vdw_diag(:,:), local_virial_vdw_diag_corr(:,:)
-  real*8, allocatable :: this_local_virial_vdw_diag(:,:)
-  real*8, allocatable :: energies_vdw_corr(:), forces_vdw_corr(:,:)
+  real(dp), allocatable :: v_neigh_lp(:)
+  real(dp), allocatable, target :: energies_lp(:), forces_lp(:,:), this_energies_lp(:), this_forces_lp(:,:)
+  real(dp), allocatable, target :: energies_pdf(:), forces_pdf(:,:), this_energies_pdf(:), this_forces_pdf(:,:)
+  real(dp), allocatable, target :: energies_sf(:), forces_sf(:,:), this_energies_sf(:), this_forces_sf(:,:)
+  real(dp), allocatable, target :: energies_xrd(:), forces_xrd(:,:), this_energies_xrd(:), this_forces_xrd(:,:)
+  real(dp), allocatable, target :: energies_nd(:), forces_nd(:,:), this_energies_nd(:), this_forces_nd(:,:)
+  real(dp), allocatable :: mbd_ts_scaling(:), this_mbd_ts_scaling(:)
+  real(dp), allocatable :: local_virial_vdw_diag(:,:), local_virial_vdw_diag_corr(:,:)
+  real(dp), allocatable :: this_local_virial_vdw_diag(:,:)
+  real(dp), allocatable :: energies_vdw_corr(:), forces_vdw_corr(:,:)
   logical :: update_mbd_ts_scaling = .true.
   ! MPI stuff
-  real*8, allocatable :: temp_1d(:), temp_1d_bis(:), temp_2d(:,:), pair_distribution_partial(:,:), &
+  real(dp), allocatable :: temp_1d(:), temp_1d_bis(:), temp_2d(:,:), pair_distribution_partial(:,:), &
                             pair_distribution_der(:,:), pair_distribution_partial_der(:,:,:), &
                             pair_distribution_partial_temp(:,:), pair_distribution_partial_temp_der(:,:,:), &
                             n_atoms_of_species(:), structure_factor_partial(:,:), structure_factor_partial_temp(:,:), &
@@ -213,13 +215,13 @@ program turbogap
   integer :: q_beg, q_end
 
   ! Nested sampling
-  real*8 :: e_max, e_kin, rand, rand_scale(1:6), mag, n_total_cutoff, n_total_cutoff_temp, dq, target_temp
+  real(dp) :: e_max, e_kin, rand, rand_scale(1:6), mag, n_total_cutoff, n_total_cutoff_temp, dq, target_temp
   integer :: i_nested, i_max, i_image, i_current_image=1, i_trial_image=2
   type(image), allocatable :: images(:), images_temp(:)
   type(exp_data_container) :: temp_exp_container
   character*32 :: implemented_exp_observables(1:5)
 
-  real*8, allocatable :: x_xps(:), y_xps(:)
+  real(dp), allocatable :: x_xps(:), y_xps(:)
 
   implemented_exp_observables(1) = "xps"
   implemented_exp_observables(2) = "xrd"

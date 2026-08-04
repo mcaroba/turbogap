@@ -19,6 +19,8 @@
 
 module turbogap_setup
 
+  use kinds
+
   use timing
   use types
   use read_files
@@ -63,7 +65,7 @@ contains
     type(core_pot), allocatable, intent(inout) :: core_pot_hypers(:)
     integer, intent(inout) :: n_soap_turbo, n_distance_2b, n_angle_3b, n_core_pot
     integer, intent(inout) :: n_species
-    real*8, intent(inout) :: rcut_max
+    real(dp), intent(inout) :: rcut_max
     logical, intent(inout) :: valid_xps
     integer, intent(inout) :: xps_idx, vdw_lp_index, core_be_lp_index
     character*1024, allocatable, intent(inout) :: local_property_labels(:)
@@ -73,11 +75,11 @@ contains
     integer, allocatable, intent(inout) :: local_properties_n_sparse_mpi_soap_turbo(:)
     integer, allocatable, intent(inout) :: local_properties_dim_mpi_soap_turbo(:)
     integer, intent(inout) :: nrows
-    real*8, allocatable, intent(inout) :: allelstopdata(:)
+    real(dp), allocatable, intent(inout) :: allelstopdata(:)
     type(EPH_Beta_class), intent(inout) :: ephbeta
     type(EPH_FDM_class), intent(inout) :: ephfdm
     type(EPH_LangevinSpatialCorrelation_class), intent(inout) :: ephlsc
-    real*8, intent(inout) :: time_read_input(1:3), time_mpi(1:3)
+    real(dp), intent(inout) :: time_read_input(1:3), time_mpi(1:3)
 
 !   Local. All of these were variables of the main program that nothing
 !   outside this block referenced.

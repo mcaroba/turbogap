@@ -12,6 +12,8 @@
 
 module timing
 
+  use kinds
+
 #ifdef _MPIF90
   use mpi
 #endif
@@ -23,7 +25,7 @@ contains
   !**************************************************************************
   subroutine get_time(time)
     implicit none
-    real*8, intent(out) :: time
+    real(dp), intent(out) :: time
 
 #ifdef _MPIF90
     time = MPI_Wtime()

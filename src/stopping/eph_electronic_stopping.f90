@@ -39,6 +39,8 @@
 
 module eph_electronic_stopping
 
+  use kinds
+
 use eph_fdm
 use eph_beta
 
@@ -47,8 +49,8 @@ type EPH_LangevinSpatialCorrelation_class
 	character*128 :: T_outfile
 	integer :: T_out_freq, isfriction, israndom, model_eph, T_out_mesh_freq, &
 			fdm_option
-	real*8, allocatable :: forces_fric(:,:), forces_rnd(:,:)
-	real*8 :: E_eph_cumulative, md_prev_time
+	real(dp), allocatable :: forces_fric(:,:), forces_rnd(:,:)
+	real(dp) :: E_eph_cumulative, md_prev_time
 	
 	contains
 	procedure :: eph_InitialValues	
@@ -67,7 +69,7 @@ subroutine eph_InitialValues (this, isfriction, israndom, fdm_option, T_outfile,
 	class (EPH_LangevinSpatialCorrelation_class) :: this
 	character*128, intent(in) :: T_outfile
 	integer :: T_out_freq, isfriction, israndom, fdm_option, model_eph, T_out_mesh_freq
-	real*8 :: E_eph_cumulative_prev, md_prev_time
+	real(dp) :: E_eph_cumulative_prev, md_prev_time
 	
 	this%T_outfile = T_outfile
 	this%T_out_freq = T_out_freq
@@ -94,19 +96,19 @@ subroutine eph_LangevinForces (this, vel, forces, masses, type_mass, &
 	type (EPH_FDM_class), intent(in) :: fdm
 	
 	integer, intent(in) :: natomtypes, md_istep
-	real*8, intent(in) :: vel(:,:), positions(:,:), masses(:), &
+	real(dp), intent(in) :: vel(:,:), positions(:,:), masses(:), &
 	type_mass(:), dt, md_time
 	
-	real*8, intent(inout) :: forces(:,:)
+	real(dp), intent(inout) :: forces(:,:)
 	
 	integer :: Np, i, j, itype, jtype, atom_type
 	
-	real*8 :: xi, yi, zi, xj, yj, zj, r_ij, alpha_I, alpha_J, rho_ij, v_Te, rel_ij(3), &
+	real(dp) :: xi, yi, zi, xj, yj, zj, r_ij, alpha_I, alpha_J, rho_ij, v_Te, rel_ij(3), &
 	rel_v_ij(3), r_ij_sq, correl_factor_eta, multiply_factor, multiply_factor1, &
 	multiply_factor2
 
-	real*8, allocatable :: rand_vec(:,:), rho_I(:), w_I(:,:)
-	real*8, parameter :: boltzconst = 8.61733326E-05 
+	real(dp), allocatable :: rand_vec(:,:), rho_I(:), w_I(:,:)
+	real(dp), parameter :: boltzconst = 8.61733326E-05 
 
 	!! Do all calculations for MD time greater than 0
 	
@@ -403,9 +405,9 @@ subroutine eph_LangevinEnergyDissipation (this, md_istep, md_time, vel, position
 	type (EPH_FDM_class), intent(inout) :: fdm
 	
 	integer, intent(in) :: md_istep
-	real*8, intent(in) :: dt, md_time, vel(:,:), positions(:,:)
+	real(dp), intent(in) :: dt, md_time, vel(:,:), positions(:,:)
 	integer :: Np, i, j
-	real*8 :: xi, yi, zi, Energy_val_fric, Energy_val_rnd, &
+	real(dp) :: xi, yi, zi, Energy_val_fric, Energy_val_rnd, &
 	E_val_i_fric, E_val_i_eph, E_val_i_rnd
 
 	if ( md_istep == 0 .or. md_istep == -1 ) then
@@ -526,7 +528,7 @@ end subroutine eph_LangevinEnergyDissipation
 !! Find distance between two atoms.
 real function get_distance(xi,yi,zi,xj,yj,zj) result (r_ij)
 	implicit none
-	real*8, intent(in) :: xi,yi,zi,xj,yj,zj
+	real(dp), intent(in) :: xi,yi,zi,xj,yj,zj
 	r_ij = sqrt((xi-xj)**2 + (yi-yj)**2 + (zi-zj)**2)
 end function get_distance
 
@@ -534,7 +536,7 @@ end function get_distance
 !! Find square of distance between two atoms.
 real function getDistanceSquare(xi,yi,zi,xj,yj,zj) result (r_ij_sq)
 	implicit none
-	real*8, intent(in) :: xi,yi,zi,xj,yj,zj
+	real(dp), intent(in) :: xi,yi,zi,xj,yj,zj
 	r_ij_sq = (xi-xj)**2 + (yi-yj)**2 + (zi-zj)**2
 end function getDistanceSquare
 
@@ -542,8 +544,8 @@ end function getDistanceSquare
 !! Find the relative vectors
 subroutine relativeVector(vec1, vec2, vec12)
 	implicit none
-	real*8, intent(in) :: vec1(3), vec2(3)
-	real*8, intent(out) :: vec12(3)
+	real(dp), intent(in) :: vec1(3), vec2(3)
+	real(dp), intent(out) :: vec12(3)
 	vec12(1) = vec1(1) - vec2(1)
 	vec12(2) = vec1(2) - vec2(2)
 	vec12(3) = vec1(3) - vec2(3)
@@ -557,7 +559,7 @@ end subroutine relativeVector
 subroutine getAtomType(p,natomtypes,masses,type_mass,atom_type)
 	implicit none
 	integer, intent(in) :: p, natomtypes
-	real*8, intent(in) :: masses(:), type_mass(:)
+	real(dp), intent(in) :: masses(:), type_mass(:)
 	integer, intent(out) :: atom_type
 	integer :: k
 	do k = 1, natomtypes
@@ -574,11 +576,11 @@ end subroutine getAtomType
 subroutine randomGaussianArray(Np, mean, standard_deviation, rand_array)
 	implicit none
 	integer, intent(in) :: Np
-	real*8, intent(in) :: mean, standard_deviation
-	real*8, intent(out) :: rand_array(Np)
+	real(dp), intent(in) :: mean, standard_deviation
+	real(dp), intent(out) :: rand_array(Np)
 	integer :: i
-	real*8 :: one_value, mean_actual, sd_actual
-	real*8 :: Pi = 4.0d0*atan(1.0d0)
+	real(dp) :: one_value, mean_actual, sd_actual
+	real(dp) :: Pi = 4.0d0*atan(1.0d0)
 	
 	!! Uniformly distributed random numbers from 0 to 1
 	call random_number(rand_array) 

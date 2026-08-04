@@ -25,6 +25,9 @@ SRC := timing.f90 misc.f90 constants.f90 nonneg_leastsq.f90 splines.f90 types.f9
 	local_properties.f90 exp_utils.f90  xyz.f90 md.f90 mc.f90 read_files.f90	\
 	gap_backend_cpu.f90 gap_interface.f90 mpi.f90 exp_interface.f90 turbogap_exp.f90 turbogap_vdw.f90 turbogap_setup.f90
 
+# kinds must build before everything, including SRC_STOP, so it gets its own
+# group placed first in every prerequisite list.
+SRC_BASE := kinds.f90
 SRC_TP_BT := resamplekin.f90
 SRC_ST := soap_turbo_functions.f90 soap_turbo_radial.f90 soap_turbo_angular.f90 \
           soap_turbo.f90 soap_turbo_compress.f90
@@ -32,6 +35,7 @@ SRC_STOP := adaptive_time.f90 electronic_stopping.f90 eph_beta.f90 eph_fdm.f90 \
             eph_electronic_stopping.f90
 
 OBJ := $(addprefix $(BUILD_DIR)/,$(patsubst %.f90,%.o,$(SRC)))
+OBJ_BASE := $(addprefix $(BUILD_DIR)/,$(patsubst %.f90,%.o,$(SRC_BASE)))
 OBJ_TP_BT := $(addprefix $(BUILD_DIR)/,$(patsubst %.f90,%.o,$(SRC_TP_BT)))
 OBJ_ST := $(addprefix $(BUILD_DIR)/,$(patsubst %.f90,%.o,$(SRC_ST)))
 OBJ_STOP := $(addprefix $(BUILD_DIR)/,$(patsubst %.f90,%.o,$(SRC_STOP)))
@@ -47,7 +51,7 @@ default: libturbogap programs
 all: default
 
 clean:
-	rm -rf $(OBJ_STOP) $(OBJ_TP_BT) $(OBJ_ST) $(OBJ) $(INC_DIR)/*.mod $(PROG)
+	rm -rf $(OBJ_BASE) $(OBJ_STOP) $(OBJ_TP_BT) $(OBJ_ST) $(OBJ) $(INC_DIR)/*.mod $(PROG)
 
 deepclean:
 	rm -rf $(BUILD_DIR) $(BIN_DIR) ${INC_DIR} ${LIB_DIR}
@@ -57,11 +61,11 @@ deepclean:
 
 programs: $(PROG)
 
-libturbogap: $(OBJ_STOP) $(OBJ_TP_BT) $(OBJ_ST) $(OBJ) ${LIB_DIR}
-	ar scr $(LIB_DIR)/libturbogap.a $(OBJ_STOP) $(OBJ_TP_BT) $(OBJ_ST) $(OBJ)
+libturbogap: $(OBJ_BASE) $(OBJ_STOP) $(OBJ_TP_BT) $(OBJ_ST) $(OBJ) ${LIB_DIR}
+	ar scr $(LIB_DIR)/libturbogap.a $(OBJ_BASE) $(OBJ_STOP) $(OBJ_TP_BT) $(OBJ_ST) $(OBJ)
 
-$(BIN_DIR)/%: src/%.f90 $(OBJ_STOP) $(OBJ_TP_BT) $(OBJ_ST) $(OBJ) | $$(@D)
-	$(F90) $(PP) $(F90_OPTS) $< -o $@ $(OBJ_STOP) $(OBJ_TP_BT) $(OBJ_ST) $(OBJ) $(LIBS)
+$(BIN_DIR)/%: src/%.f90 $(OBJ_BASE) $(OBJ_STOP) $(OBJ_TP_BT) $(OBJ_ST) $(OBJ) | $$(@D)
+	$(F90) $(PP) $(F90_OPTS) $< -o $@ $(OBJ_BASE) $(OBJ_STOP) $(OBJ_TP_BT) $(OBJ_ST) $(OBJ) $(LIBS)
 
 $(BUILD_DIR)/%.o: src/stopping/%.f90 | $$(@D)
 	$(F90) $(PP) $(F90_OPTS) -c $< -o $@

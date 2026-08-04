@@ -17,6 +17,8 @@
 
 module turbogap_exp
 
+  use kinds
+
   use types
   use exp_utils
   use exp_interface
@@ -48,23 +50,23 @@ contains
     integer, intent(in) :: n_sites, i_beg, i_end, j_beg, j_end, rank, ntasks
     integer, intent(in) :: indices(1:3), md_istep, mc_istep
     integer, intent(inout) :: ierr
-    real*8,  intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3)
-    real*8,  intent(in), allocatable :: rjs(:), xyz(:,:)
+    real(dp),  intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3)
+    real(dp),  intent(in), allocatable :: rjs(:), xyz(:,:)
     integer, intent(in), allocatable :: neighbors_list(:), n_neigh(:), &
          neighbor_species(:), species(:)
 
 !   The four contribution families this routine produces. The caller passes the
 !   this_-prefixed arrays under MPI and the plain ones otherwise.
-    real*8, allocatable, intent(inout) :: energies_pdf(:), forces_pdf(:,:), &
+    real(dp), allocatable, intent(inout) :: energies_pdf(:), forces_pdf(:,:), &
          energies_sf(:),  forces_sf(:,:),  &
          energies_xrd(:), forces_xrd(:,:), &
          energies_nd(:),  forces_nd(:,:)
-    real*8, intent(inout) :: virial_pdf(1:3,1:3), virial_sf(1:3,1:3), &
+    real(dp), intent(inout) :: virial_pdf(1:3,1:3), virial_sf(1:3,1:3), &
          virial_xrd(1:3,1:3), virial_nd(1:3,1:3)
-    real*8, intent(inout) :: time_pdf(1:3), time_sf(1:3), time_xrd(1:3), time_nd(1:3)
+    real(dp), intent(inout) :: time_pdf(1:3), time_sf(1:3), time_xrd(1:3), time_nd(1:3)
 
 !   Was driver state; block-local now.
-    real*8, allocatable :: x_pair_distribution(:), y_pair_distribution(:), &
+    real(dp), allocatable :: x_pair_distribution(:), y_pair_distribution(:), &
          y_pair_distribution_temp(:), pair_distribution_partial(:,:), &
          pair_distribution_partial_temp(:,:), pair_distribution_der(:,:), &
          pair_distribution_partial_der(:,:,:), pair_distribution_partial_temp_der(:,:,:), &
@@ -357,19 +359,19 @@ contains
     logical, intent(in) :: valid_xps
     logical, intent(inout) :: write_condition, overwrite_condition
     character*32, intent(inout) :: exp_output
-    real*8,  intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3)
-    real*8,  intent(in), allocatable :: xyz(:,:)
+    real(dp),  intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3)
+    real(dp),  intent(in), allocatable :: xyz(:,:)
     integer, intent(in), allocatable :: neighbors_list(:), n_neigh(:)
-    real*8,  intent(inout), allocatable :: local_properties(:,:), local_properties_cart_der(:,:,:)
+    real(dp),  intent(inout), allocatable :: local_properties(:,:), local_properties_cart_der(:,:,:)
 
 !   The caller passes the this_-prefixed arrays under MPI and the plain ones
 !   otherwise.
-    real*8, allocatable, intent(inout) :: energies_lp(:), forces_lp(:,:)
-    real*8, intent(inout) :: virial_lp(1:3,1:3), time_xps(1:3)
+    real(dp), allocatable, intent(inout) :: energies_lp(:), forces_lp(:,:)
+    real(dp), intent(inout) :: virial_lp(1:3,1:3), time_xps(1:3)
 
 !   Was driver state; block-local now.
-    real*8, allocatable :: x_xps(:), y_xps(:), y_i_pred_all(:,:), v_neigh_lp(:)
-    real*8  :: mag
+    real(dp), allocatable :: x_xps(:), y_xps(:), y_i_pred_all(:,:), v_neigh_lp(:)
+    real(dp)  :: mag
     integer :: i, j, j2, k
 
     !     Compute core_electron_be energies and forces
