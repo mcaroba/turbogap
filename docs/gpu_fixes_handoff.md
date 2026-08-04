@@ -276,7 +276,58 @@ uploads and frees one `alphas_d` for the SOAP path and separately for the
 2b/3b path — different data through one name, the pattern that hid bug 5. A
 backend module owning its own removes one instance.
 
-### What is still wrong
+### What is still wrong — narrowed by dump-and-diff
+
+The section 9 technique was applied to this: instrument both builds, dump every
+scalar and every buffer checksum the 3b path consumes, and diff.
+
+**Everything on the host is identical.** Verified equal between the working
+build and the module build, on `CO_predict`:
+
+| dumped | both builds |
+|---|---|
+| `i_beg`, `i_end`, `n_sites` | 1, 7176, 7176 |
+| `max_np`, `size(rjs)`, `size(n_neigh)`, `size(forces,2)` | 200, 455384, 7176, 7176 |
+| `size_maxnp_bytes`, `size_alphas_bytes`, `size_maxnp_qs_bytes` | 1600, 24, 4800 |
+| `st_n_sites_double`, `st_virial` | 57408, 72 |
+| `sp0_3b`, `sp1_3b`, `sp2_3b`, `c_do_forces` | identical per descriptor |
+| checksums of `rjs`, `xyz`, `n_neigh`, `species`, `neighbor_species`, `neighbors_list` | **bit-identical** |
+| per-descriptor `n_sparse`, `sum(alphas)`, `sum(cutoff)`, `sum(qs)`, `sum(sigma)`, `delta` | **bit-identical, all six descriptors** |
+| `gpu_stream` | associated, same pointer value |
+
+**It is a race, not a wrong value.** Three runs of the module build give
+`sum(this_energies)` = 2.2302184918, 2.2299983140, 2.2299886355 — a spread of
+~1e-4, against the working build's stable 2.1360198474. And
+`sum(this_forces)` is -0.81 where it should be ~0 by Newton's third law
+(the working build gives 6.4e-15).
+
+So: identical inputs, identical parameters, identical stream, non-deterministic
+wrong output. The fault is in device memory lifetime or synchronisation, not in
+any value the host computes. Note this is a *different* non-determinism from
+section 6c -- that one is ~1e-12 and present in the working build too; this is
+1e-4 and appears only with the module.
+
+The suspects that remain, in order:
+
+1. **Buffer lifetime across the begin/call/end boundary.** `gap_backend_begin`
+   issues async uploads and `gap_backend_end` issues async frees; in the driver
+   these bracketed the three calls within one scope. If any allocation is not
+   ordered against the kernels on the same stream, this is exactly what it
+   looks like.
+2. **`this_energies`/`this_forces`/`this_virial` as dummies.** `c_loc` is taken
+   of all three. If the compiler is materialising anything for the dummy, the
+   async `cpy_dtoh` targets one address and the accumulation reads another.
+   Passing them as explicit-shape rather than allocatable dummies would rule
+   this out.
+3. Buffers that were driver variables and are now procedure locals
+   (`energies_3b_d`, `forces_3b_d`, `kappas_array_d`, `sigma_d`), if anything
+   frees them asynchronously after the procedure returns.
+
+The instrumented module is kept at
+`../phase0_backup/phase2_gpu_wip/gap_backend_gpu_instrumented.f90`, so the next
+attempt starts from the dumps rather than rebuilding them.
+
+### Original note on what is still wrong
 
 With the ordering dependency fixed, `CO_predict` gives `energy_3b = 2.23018157`
 against the CPU's `2.13601985` — 4.4% out. `energy_soap`, `energy_2b`,
