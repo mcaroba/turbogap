@@ -152,50 +152,71 @@ atoms, 1x RTX A2000 vs 12 cores:
 `mpirun` works and two ranks sharing the single physical GPU give correct
 results (step-20 thermo matches the CPU and the single-rank GPU to ~1e-11).
 
-## 6b. Experimental observables abort on this branch — OPEN
+## 6b. Experimental observables — abort FIXED, virial still wrong
 
-Found 2026-08-04 while adding regression coverage for the exp-spectra paths.
+Found 2026-08-04 while adding regression coverage for the exp-spectra paths,
+which had none.
+
+### The abort — fixed
 
 `turbogap md` with `do_pair_distribution` / `do_structure_factor` / `do_xrd`
-**exits after ~1.3 s with status 0, having written no trajectory.** The CPU
-build runs the identical input to completion. It is deterministic, and it is
-not a hang or a timeout — the process returns success.
+exited after ~1.3 s with **status 0** and no trajectory. The cause was a
+leftover debugging `exit( 0 )` in `gpu_exp.cu`, inside
+`gpu_get_pair_distribution_only_falloc`, sitting between the KDE evaluation
+kernel and the reduction kernel:
 
-The log stops partway through the pair-distribution device setup, after
-
-```
- allocing pdf
- allocing pdf to reduce
- gpu_exp%pair_distribution_partial_d(n_dim_idx)
- pdf_to_reduce_d
- x_d
- dV_d
- gpu_exp%rjs_index_d(n_dim_idx)
+```c
+  printf("exiting from pdf falloc kernel \n");
+  fflush( stdout );
+  exit( 0 ) ;
+  nblocks=dim3(n_samples,1,1);            // never reached
+  kernel_reduce_pair_distribution<<<...>>>(...);
 ```
 
-which is the `gpu_malloc_all` sequence in `electrostatics.f90` around line 440.
-No `GPUassert`, no `stop`, no error message. Status 0 with truncated output
-means something on that path is terminating the process while reporting
-success, so `run_regression.sh` cannot detect it by exit code — the new case
-detects it by the absence of `trajectory_out.xyz`.
+So `kernel_reduce_pair_distribution` never ran and the process reported
+success. Removed. The GPU build now runs the case to completion.
 
-Reproduce:
+Two things made this survive: the paths had no test at all, and the exit
+status was 0, so nothing that checks a return code would have noticed. This
+is why `run_regression.sh` checks for the *absence of a trajectory* and not
+just the exit code.
 
-```sh
-mkdir /tmp/gpuxrd && cd /tmp/gpuxrd
-ln -s <data>/xrd_mad/{atoms.xyz,gap_files,xrd_glassy_carbon_zeng_2017.fq} .
-cp <cpu repo>/tests/regression/cases/xrd_mad/input .
-<gpu repo>/bin/turbogap md          # exits 0, no trajectory_out.xyz
+**Not a missing input keyword.** `gpu_batched` (default `.true.`) and
+`gpu_n_batches` (default `1`) are the only GPU-specific keywords `read_files`
+parses, and all three combinations were tried before the cause was found.
+Worth recording separately: with **`gpu_batched = .false.` the run
+segfaults** (exit 139) at the same point. That path is untested and is
+presumably rotted; the batched path is the one that works.
+
+### What it was hiding — the exp virial is wrong, OPEN
+
+With the abort gone, GPU and CPU now agree on this case for everything
+except the virial:
+
+| quantity | agreement |
+|---|---|
+| `energy` (includes the experimental term) | exact, all printed digits |
+| `energy_soap` | 2.4e-07 abs, 3.7e-10 rel |
+| `energy_2b` / `energy_3b` / `core_pot` / `vdw` | exact |
+| forces | **exact**, maxabsdiff 0.0 |
+| `local_energy` | 3.0e-08 |
+| **virial** | **maxabsdiff 1.67e+04, rel 90** |
+
+```
+ref  diag = [ 184.53,  164.51,  127.92]
+gpu  diag = [13885.43, 13985.59, 16792.62]
 ```
 
-**Why this matters beyond the bug.** These paths had no coverage at all here,
-so nothing had ever run them. The `XRD_mad` case is marked xfail in
-`run_regression.sh` rather than removed, so it stays visible and will report
-XPASS the moment this is fixed. Until then the exp-spectra blocks in
-`turbogap.f90` cannot be refactored on this branch with any verification —
-which is why the CPU branch's Phase 4 extraction has not been brought across.
+The ratios are not constant (75, 85, 131) and the off-diagonals differ in
+sign, so this looks like uninitialised or unreduced memory rather than a
+missing scale factor. Both branches declare and pass `virial` identically
+through `calculate_pair_distribution`, so the divergence is below that, in
+the GPU kernel or its reduction.
 
----
+Energies and forces being exact while the virial is garbage is the same
+signature as bug 5 in section 4 — a quantity that nothing in the main test
+path reads staying wrong indefinitely. `XRD_mad` stays xfail until this is
+fixed, and will report XPASS when it is.
 
 ## 7. What is left
 

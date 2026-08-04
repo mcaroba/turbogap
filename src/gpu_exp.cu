@@ -1629,9 +1629,6 @@ extern "C" void  gpu_get_pair_distribution_only_falloc(
   //  gpuErrchk( hipPeekAtLastError() );
   hipDeviceSynchronize();
   gpuErrchk( hipPeekAtLastError() );
-  printf("exiting from pdf falloc kernel \n");
-  fflush( stdout );
-  exit( 0 ) ;
   nblocks=dim3(n_samples,1,1);
   nthreads=dim3(threads,1,1);
 
