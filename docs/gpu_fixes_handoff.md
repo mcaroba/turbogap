@@ -667,6 +667,16 @@ divergence over five MD steps of a chaotic driver, given this build is not
 bit-reproducible run to run (§6c). It is not a defect, but it is above the
 comparator's tolerance, so `XRD_mad` stays xfail on that alone.
 
+**Recorded as its own item so it is not lost behind the xfail marker:** the
+`local_energy` drift is 2.4e-06 at frame 4 and 1.5e-05 at frame 5, growing
+with step count. Everything else — energies, forces, `energy_core_pot`, the
+virial — agrees in every frame. Before treating this as tolerable, note that
+§6c says this build is not bit-reproducible run to run at ~1e-12, and five MAD
+steps amplifying that to 1e-05 is plausible but has not been demonstrated. The
+way to settle it is to run the same GPU binary twice and see whether frame 5
+`local_energy` moves by a comparable amount; if it does, raise the comparator
+tolerance for this case and the xfail can go.
+
 ---
 
 ## 6h. Spurious pdf, sf and nd virial contributions — OPEN, small
@@ -685,7 +695,15 @@ A geometry-independent value is not physics. Zeroing `this_virial_pdf/sf/nd`
 per snapshot does not change them, so they are written after that point, every
 frame, to the same value.
 
+**What the correct behaviour is** (confirmed with Tigany, 2026-08-05): when
+only `xrd` is given as an experimental observable, the pdf, sf and nd virials
+**should not be computed at all, and must not enter the total virial**. Only
+the fitted observable carries forces and a virial. So this is not a matter of
+getting the numbers to agree with the CPU — the contributions should not be
+there in the first place, and the fix is to stop computing and adding them
+rather than to correct their values.
+
 `sf` at 147 against an xrd virial of order 1e5 is small but not negligible,
-and it is currently included in the total. Worth finding before the exp path
-is trusted for pressure.
+and it is in the reported total today, so any pressure from the exp path on
+this branch is wrong by that amount.
 
