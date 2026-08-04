@@ -304,6 +304,24 @@ contains
     ! print *, rank, " >>--- Finished allocating core_pot on gpu ---"
     ! print *, rank, " > Starting core_pot energies forces on gpu "                            
 
+!   The kernel filters neighbours by species index, so sp1/sp2 must be the
+!   position of this descriptor's species within params%species_types. They
+!   were never set here: the routine passed whatever add_2b_contribution had
+!   left in the enclosing scope, which is the same defect as bug 3 in section 4
+!   and was fixed there but not here.
+    do j = 1, size(params%species_types)
+      if( core_pot_hypers(i)%species1 == params%species_types(j) )then
+        sp1 = j
+        exit
+      end if
+    end do
+    do j = 1, size(params%species_types)
+      if( core_pot_hypers(i)%species2 == params%species_types(j) )then
+        sp2 = j
+        exit
+      end if
+    end do
+
     call gpu_get_core_pot_energy_and_forces(i_beg, i_end, c_do_forces, species_d, sp1, sp2, n_neigh_d, neighbor_species_d,&
     rjs_d, n_sparse, x_d, V_d, dVdx2_d, core_pot_hypers(i)%yp1, core_pot_hypers(i)%ypn,&
     xyz_d, forces_core_pot_d, virial_core_pot_d, energies_core_pot_d, gpu_stream)
