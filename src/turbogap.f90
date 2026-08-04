@@ -66,17 +66,25 @@ program turbogap
   real*8, allocatable :: positions(:,:), positions_prev(:,:), soap(:,:), soap_cart_der(:,:,:), positions_diff(:,:), &
                             forces_prev(:,:), frac_positions(:,:)
   real*8 :: rcut_max, a_box(1:3), b_box(1:3), c_box(1:3), max_displacement, energy, energy_prev
-  real*8 :: virial(1:3, 1:3), this_virial(1:3, 1:3), virial_soap(1:3, 1:3), virial_2b(1:3, 1:3), virial_3b(1:3,1:3), &
-               virial_core_pot(1:3, 1:3), virial_vdw(1:3, 1:3), virial_lp(1:3,1:3), this_virial_vdw(1:3, 1:3), &
-               this_virial_lp(1:3, 1:3), virial_pdf(1:3,1:3), this_virial_pdf(1:3,1:3), v_uc, virial_sf(1:3,1:3), &
-               this_virial_sf(1:3,1:3), virial_xrd(1:3,1:3), this_virial_xrd(1:3,1:3), virial_nd(1:3,1:3), &
-               this_virial_nd(1:3,1:3), v_uc_prev, v_a_uc, v_a_uc_prev, eVperA3tobar =  1602176.6208d0, ranf, &
+  real*8 :: virial(1:3, 1:3), this_virial(1:3, 1:3), v_uc, &
+               v_uc_prev, v_a_uc, v_a_uc_prev, eVperA3tobar =  1602176.6208d0, ranf, &
                ranv(1:3), disp(1:3), d_disp, e_mc_prev, p_accept, virial_prev(1:3, 1:3), sim_exp_pred, sim_exp_prev, &
                sim_exp_pred_der(1:3)
-  real*8, allocatable :: energies(:), forces(:,:), energies_soap(:), forces_soap(:,:), this_energies(:), &
-                            this_forces(:,:), energies_2b(:), forces_2b(:,:), energies_3b(:), forces_3b(: ,:), &
-                            energies_core_pot(:), forces_core_pot(:,:), velocities(: ,:), masses_types(:), masses(:), &
+!   The ten contribution families carry the target attribute so contrib(:) below
+!   can point at them. They are split onto their own declarations for that
+!   reason alone -- target on energies/forces, the accumulators they are summed
+!   into, would widen the aliasing assumption for no benefit.
+  real*8, target :: virial_soap(1:3, 1:3), virial_2b(1:3, 1:3), virial_3b(1:3,1:3), &
+               virial_core_pot(1:3, 1:3), virial_vdw(1:3, 1:3), virial_lp(1:3,1:3), this_virial_vdw(1:3, 1:3), &
+               this_virial_lp(1:3, 1:3), virial_pdf(1:3,1:3), this_virial_pdf(1:3,1:3), virial_sf(1:3,1:3), &
+               this_virial_sf(1:3,1:3), virial_xrd(1:3,1:3), this_virial_xrd(1:3,1:3), virial_nd(1:3,1:3), &
+               this_virial_nd(1:3,1:3)
+  real*8, allocatable :: energies(:), forces(:,:), this_energies(:), &
+                            this_forces(:,:), velocities(: ,:), masses_types(:), masses(:), &
                             hirshfeld_v_temp(:), masses_temp(:), sinc_factor_matrix(:,:), energies_exp(:)
+  real*8, allocatable, target :: energies_soap(:), forces_soap(:,:), &
+                            energies_2b(:), forces_2b(:,:), energies_3b(:), forces_3b(: ,:), &
+                            energies_core_pot(:), forces_core_pot(:,:)
 !  real*8, allocatable, target :: this_hirshfeld_v(:), this_hirshfeld_v_cart_der(:,:)
 !  real*8, pointer :: this_hirshfeld_v_pt(:), this_hirshfeld_v_cart_der_pt(:,:)
 
@@ -138,6 +146,8 @@ program turbogap
                         C_XRD  = 6, C_ND  = 7, C_2B  = 8, C_CP  = 9, C_3B = 10
   integer, parameter :: N_CONTRIB = 10
   logical :: contrib_on(1:N_CONTRIB)
+  type(contribution_ref) :: contrib(1:N_CONTRIB)
+  integer :: n_active, i_contrib
   integer :: which_atom = 0, n_species = 1, n_species_actual, n_xyz, indices(1:3)
   integer :: radial_enhancement = 0
   integer :: md_istep, mc_istep, mc_mu_id=1, n_mc
@@ -169,14 +179,15 @@ program turbogap
   type(core_pot), allocatable :: core_pot_hypers(:)
 
   !vdw crap
-  real*8, allocatable :: energies_vdw(:), forces_vdw(:,:), this_energies_vdw(:), this_forces_vdw(:,:)
+  real*8, allocatable, target :: energies_vdw(:), forces_vdw(:,:), this_energies_vdw(:), this_forces_vdw(:,:)
 ! Persistent ts+mbd correction state, owned by turbogap_vdw
   type(vdw_state) :: vdw_ws
-  real*8, allocatable :: v_neigh_lp(:), energies_lp(:), forces_lp(:,:), this_energies_lp(:), this_forces_lp(:,:)
-  real*8, allocatable :: energies_pdf(:), forces_pdf(:,:), this_energies_pdf(:), this_forces_pdf(:,:)
-  real*8, allocatable :: energies_sf(:), forces_sf(:,:), this_energies_sf(:), this_forces_sf(:,:)
-  real*8, allocatable :: energies_xrd(:), forces_xrd(:,:), this_energies_xrd(:), this_forces_xrd(:,:)
-  real*8, allocatable :: energies_nd(:), forces_nd(:,:), this_energies_nd(:), this_forces_nd(:,:)
+  real*8, allocatable :: v_neigh_lp(:)
+  real*8, allocatable, target :: energies_lp(:), forces_lp(:,:), this_energies_lp(:), this_forces_lp(:,:)
+  real*8, allocatable, target :: energies_pdf(:), forces_pdf(:,:), this_energies_pdf(:), this_forces_pdf(:,:)
+  real*8, allocatable, target :: energies_sf(:), forces_sf(:,:), this_energies_sf(:), this_forces_sf(:,:)
+  real*8, allocatable, target :: energies_xrd(:), forces_xrd(:,:), this_energies_xrd(:), this_forces_xrd(:,:)
+  real*8, allocatable, target :: energies_nd(:), forces_nd(:,:), this_energies_nd(:), this_forces_nd(:,:)
   real*8, allocatable :: mbd_ts_scaling(:), this_mbd_ts_scaling(:)
   real*8, allocatable :: local_virial_vdw_diag(:,:), local_virial_vdw_diag_corr(:,:)
   real*8, allocatable :: this_local_virial_vdw_diag(:,:)
@@ -1981,9 +1992,12 @@ end if
            !       terms
 #ifdef _MPIF90
            call get_time(time_mpi_ef(1))
-!       One evaluation of the ten predicates. Every later reference -- packing
-!       and unpacking alike -- reads contrib_on, so the three walks cannot
-!       disagree about which families own a slot.
+!       One evaluation of the ten predicates, and one list built from them.
+!       The pack and unpack walks below read only that list, so they cannot
+!       disagree about which slot belongs to which family -- the failure mode
+!       this replaces was three independent copies of these conditions, where
+!       any two disagreeing shifts the slot numbering and silently attributes
+!       one family's energies and forces to another.
            contrib_on(C_SOAP) = ( n_soap_turbo > 0 )
            contrib_on(C_VDW)  = allocated(this_energies_vdw)
            contrib_on(C_LP)   = allocated(this_energies_lp)
@@ -1995,10 +2009,130 @@ end if
            contrib_on(C_CP)   = ( n_core_pot > 0 )
            contrib_on(C_3B)   = ( n_angle_3b > 0 )
 
-           counter2 = count( contrib_on )
+           n_active = 0
+           if( contrib_on(C_SOAP) )then
+              n_active = n_active + 1
+              contrib(n_active)%e_src => energies_soap
+              contrib(n_active)%e_dst => energies_soap
+              contrib(n_active)%forces = params%do_forces
+              if( contrib(n_active)%forces )then
+                 contrib(n_active)%f_src => forces_soap
+                 contrib(n_active)%v_src => virial_soap
+                 contrib(n_active)%f_dst => forces_soap
+                 contrib(n_active)%v_dst => virial_soap
+              end if
+           end if
+           if( contrib_on(C_VDW) )then
+              n_active = n_active + 1
+              contrib(n_active)%e_src => this_energies_vdw
+              contrib(n_active)%e_dst => energies_vdw
+              contrib(n_active)%forces = params%do_forces
+              if( contrib(n_active)%forces )then
+                 contrib(n_active)%f_src => this_forces_vdw
+                 contrib(n_active)%v_src => this_virial_vdw
+                 contrib(n_active)%f_dst => forces_vdw
+                 contrib(n_active)%v_dst => virial_vdw
+              end if
+           end if
+           if( contrib_on(C_LP) )then
+              n_active = n_active + 1
+              contrib(n_active)%e_src => this_energies_lp
+              contrib(n_active)%e_dst => energies_lp
+              contrib(n_active)%forces = params%do_forces
+              if( contrib(n_active)%forces )then
+                 contrib(n_active)%f_src => this_forces_lp
+                 contrib(n_active)%v_src => this_virial_lp
+                 contrib(n_active)%f_dst => forces_lp
+                 contrib(n_active)%v_dst => virial_lp
+              end if
+           end if
+           if( contrib_on(C_PDF) )then
+              n_active = n_active + 1
+              contrib(n_active)%e_src => this_energies_pdf
+              contrib(n_active)%e_dst => energies_pdf
+              contrib(n_active)%forces = params%do_forces .and. params%exp_forces
+              if( contrib(n_active)%forces )then
+                 contrib(n_active)%f_src => this_forces_pdf
+                 contrib(n_active)%v_src => this_virial_pdf
+                 contrib(n_active)%f_dst => forces_pdf
+                 contrib(n_active)%v_dst => virial_pdf
+              end if
+           end if
+           if( contrib_on(C_SF) )then
+              n_active = n_active + 1
+              contrib(n_active)%e_src => this_energies_sf
+              contrib(n_active)%e_dst => energies_sf
+              contrib(n_active)%forces = params%do_forces .and. params%exp_forces
+              if( contrib(n_active)%forces )then
+                 contrib(n_active)%f_src => this_forces_sf
+                 contrib(n_active)%v_src => this_virial_sf
+                 contrib(n_active)%f_dst => forces_sf
+                 contrib(n_active)%v_dst => virial_sf
+              end if
+           end if
+           if( contrib_on(C_XRD) )then
+              n_active = n_active + 1
+              contrib(n_active)%e_src => this_energies_xrd
+              contrib(n_active)%e_dst => energies_xrd
+              contrib(n_active)%forces = params%do_forces .and. params%exp_forces
+              if( contrib(n_active)%forces )then
+                 contrib(n_active)%f_src => this_forces_xrd
+                 contrib(n_active)%v_src => this_virial_xrd
+                 contrib(n_active)%f_dst => forces_xrd
+                 contrib(n_active)%v_dst => virial_xrd
+              end if
+           end if
+           if( contrib_on(C_ND) )then
+              n_active = n_active + 1
+              contrib(n_active)%e_src => this_energies_nd
+              contrib(n_active)%e_dst => energies_nd
+              contrib(n_active)%forces = params%do_forces .and. params%exp_forces
+              if( contrib(n_active)%forces )then
+                 contrib(n_active)%f_src => this_forces_nd
+                 contrib(n_active)%v_src => this_virial_nd
+                 contrib(n_active)%f_dst => forces_nd
+                 contrib(n_active)%v_dst => virial_nd
+              end if
+           end if
+           if( contrib_on(C_2B) )then
+              n_active = n_active + 1
+              contrib(n_active)%e_src => energies_2b
+              contrib(n_active)%e_dst => energies_2b
+              contrib(n_active)%forces = params%do_forces
+              if( contrib(n_active)%forces )then
+                 contrib(n_active)%f_src => forces_2b
+                 contrib(n_active)%v_src => virial_2b
+                 contrib(n_active)%f_dst => forces_2b
+                 contrib(n_active)%v_dst => virial_2b
+              end if
+           end if
+           if( contrib_on(C_CP) )then
+              n_active = n_active + 1
+              contrib(n_active)%e_src => energies_core_pot
+              contrib(n_active)%e_dst => energies_core_pot
+              contrib(n_active)%forces = params%do_forces
+              if( contrib(n_active)%forces )then
+                 contrib(n_active)%f_src => forces_core_pot
+                 contrib(n_active)%v_src => virial_core_pot
+                 contrib(n_active)%f_dst => forces_core_pot
+                 contrib(n_active)%v_dst => virial_core_pot
+              end if
+           end if
+           if( contrib_on(C_3B) )then
+              n_active = n_active + 1
+              contrib(n_active)%e_src => energies_3b
+              contrib(n_active)%e_dst => energies_3b
+              contrib(n_active)%forces = params%do_forces
+              if( contrib(n_active)%forces )then
+                 contrib(n_active)%f_src => forces_3b
+                 contrib(n_active)%v_src => virial_3b
+                 contrib(n_active)%f_dst => forces_3b
+                 contrib(n_active)%v_dst => virial_3b
+              end if
+           end if
 
+           counter2 = n_active
 
-           !       It would probably be faster to use pointers for this
            allocate( all_energies(1:n_sites, 1:counter2) )
            allocate( all_this_energies(1:n_sites, 1:counter2) )
            if( params%do_forces )then
@@ -2007,95 +2141,15 @@ end if
               allocate( all_virial(1:3, 1:3, 1:counter2) )
               allocate( all_this_virial(1:3, 1:3, 1:counter2) )
            end if
-           counter2 = 0
-           if( contrib_on(C_SOAP) )then
-              counter2 = counter2 + 1
-              all_energies(1:n_sites, counter2) = energies_soap(1:n_sites)
-              if( params%do_forces )then
-                 all_forces(1:3, 1:n_sites, counter2) = forces_soap(1:3, 1:n_sites)
-                 all_virial(1:3, 1:3, counter2) = virial_soap(1:3, 1:3)
-              end if
-           end if
-           if( contrib_on(C_VDW) )then
-              counter2 = counter2 + 1
-              !         Note the vdw things have "this" in front
-              all_energies(1:n_sites, counter2) = this_energies_vdw(1:n_sites)
-              if( params%do_forces )then
-                 all_forces(1:3, 1:n_sites, counter2) = this_forces_vdw(1:3, 1:n_sites)
-                 all_virial(1:3, 1:3, counter2) = this_virial_vdw(1:3, 1:3)
-              end if
-           end if
 
-           if( contrib_on(C_LP) )then
-              counter2 = counter2 + 1
-              all_energies(1:n_sites, counter2) = this_energies_lp(1:n_sites)
-              if( params%do_forces )then
-                 all_forces(1:3, 1:n_sites, counter2) = this_forces_lp(1:3, 1:n_sites)
-                 all_virial(1:3, 1:3, counter2) = this_virial_lp(1:3, 1:3)
+!       Pack
+           do i_contrib = 1, n_active
+              all_energies(1:n_sites, i_contrib) = contrib(i_contrib)%e_src(1:n_sites)
+              if( contrib(i_contrib)%forces )then
+                 all_forces(1:3, 1:n_sites, i_contrib) = contrib(i_contrib)%f_src(1:3, 1:n_sites)
+                 all_virial(1:3, 1:3, i_contrib) = contrib(i_contrib)%v_src(1:3, 1:3)
               end if
-           end if
-
-           if( contrib_on(C_PDF) )then
-              counter2 = counter2 + 1
-              all_energies(1:n_sites, counter2) = this_energies_pdf(1:n_sites)
-              if( params%do_forces .and. params%exp_forces)then
-                 all_forces(1:3, 1:n_sites, counter2) = this_forces_pdf(1:3, 1:n_sites)
-                 all_virial(1:3, 1:3, counter2) = this_virial_pdf(1:3, 1:3)
-              end if
-           end if
-
-           if( contrib_on(C_SF) )then
-              counter2 = counter2 + 1
-              all_energies(1:n_sites, counter2) = this_energies_sf(1:n_sites)
-              if( params%do_forces .and. params%exp_forces)then
-                 all_forces(1:3, 1:n_sites, counter2) = this_forces_sf(1:3, 1:n_sites)
-                 all_virial(1:3, 1:3, counter2) = this_virial_sf(1:3, 1:3)
-              end if
-           end if
-
-           if( contrib_on(C_XRD) )then
-              counter2 = counter2 + 1
-              all_energies(1:n_sites, counter2) = this_energies_xrd(1:n_sites)
-              if( params%do_forces .and. params%exp_forces )then
-                 all_forces(1:3, 1:n_sites, counter2) = this_forces_xrd(1:3, 1:n_sites)
-                 all_virial(1:3, 1:3, counter2) = this_virial_xrd(1:3, 1:3)
-              end if
-           end if
-
-           if( contrib_on(C_ND) )then
-              counter2 = counter2 + 1
-              all_energies(1:n_sites, counter2) = this_energies_nd(1:n_sites)
-              if( params%do_forces .and. params%exp_forces )then
-                 all_forces(1:3, 1:n_sites, counter2) = this_forces_nd(1:3, 1:n_sites)
-                 all_virial(1:3, 1:3, counter2) = this_virial_nd(1:3, 1:3)
-              end if
-           end if
-
-
-           if( contrib_on(C_2B) )then
-              counter2 = counter2 + 1
-              all_energies(1:n_sites, counter2) = energies_2b(1:n_sites)
-              if( params%do_forces )then
-                 all_forces(1:3, 1:n_sites, counter2) = forces_2b(1:3, 1:n_sites)
-                 all_virial(1:3, 1:3, counter2) = virial_2b(1:3, 1:3)
-              end if
-           end if
-           if( contrib_on(C_CP) )then
-              counter2 = counter2 + 1
-              all_energies(1:n_sites, counter2) = energies_core_pot(1:n_sites)
-              if( params%do_forces )then
-                 all_forces(1:3, 1:n_sites, counter2) = forces_core_pot(1:3, 1:n_sites)
-                 all_virial(1:3, 1:3, counter2) = virial_core_pot(1:3, 1:3)
-              end if
-           end if
-           if( contrib_on(C_3B) )then
-              counter2 = counter2 + 1
-              all_energies(1:n_sites, counter2) = energies_3b(1:n_sites)
-              if( params%do_forces )then
-                 all_forces(1:3, 1:n_sites, counter2) = forces_3b(1:3, 1:n_sites)
-                 all_virial(1:3, 1:3, counter2) = virial_3b(1:3, 1:3)
-              end if
-           end if
+           end do
 
            !       Here we communicate
            call mpi_reduce(all_energies, all_this_energies, n_sites&
@@ -2110,102 +2164,43 @@ end if
                    & MPI_COMM_WORLD, ierr)
            end if
 
-           !       Here we give proper names to the quantities - again, pointers would probably be faster
-           counter2 = 0
-           if( contrib_on(C_SOAP) )then
-              counter2 = counter2 + 1
-              energies_soap(1:n_sites) = all_this_energies(1:n_sites, counter2)
-              if( params%do_forces )then
-                 forces_soap(1:3, 1:n_sites) = all_this_forces(1:3, 1:n_sites, counter2)
-                 virial_soap(1:3, 1:3) = all_this_virial(1:3, 1:3, counter2)
+!       Unpack. For the six families packed from a this_ array this is where
+!       the reduced result lands in the un-prefixed one.
+           do i_contrib = 1, n_active
+              contrib(i_contrib)%e_dst(1:n_sites) = all_this_energies(1:n_sites, i_contrib)
+              if( contrib(i_contrib)%forces )then
+                 contrib(i_contrib)%f_dst(1:3, 1:n_sites) = all_this_forces(1:3, 1:n_sites, i_contrib)
+                 contrib(i_contrib)%v_dst(1:3, 1:3) = all_this_virial(1:3, 1:3, i_contrib)
               end if
-           end if
+           end do
+
+!       Release the this_ arrays now that their contents have been unpacked.
+!       Kept explicit rather than folded into the loop: an allocatable cannot
+!       be deallocated through a pointer, and this_local_virial_vdw_diag has no
+!       counterpart in the list.
            if( contrib_on(C_VDW) )then
-              counter2 = counter2 + 1
-              !         Note the vdw things DO NOT have "this" in front anymore
-              energies_vdw(1:n_sites) = all_this_energies(1:n_sites, counter2)
-              deallocate(this_energies_vdw)
-              if( params%do_forces )then
-                 forces_vdw(1:3, 1:n_sites) = all_this_forces(1:3, 1:n_sites, counter2)
-                 virial_vdw(1:3, 1:3) = all_this_virial(1:3, 1:3, counter2)
-                 deallocate(this_forces_vdw)
-                 deallocate(this_local_virial_vdw_diag)
-              end if
+              deallocate( this_energies_vdw )
+              if( params%do_forces ) deallocate( this_forces_vdw, this_local_virial_vdw_diag )
            end if
            if( contrib_on(C_LP) )then
-              counter2 = counter2 + 1
-              energies_lp(1:n_sites) = all_this_energies(1:n_sites, counter2)
-              deallocate(this_energies_lp)
-              if( params%do_forces )then
-                 forces_lp(1:3, 1:n_sites) = all_this_forces(1:3, 1:n_sites, counter2)
-                 virial_lp(1:3, 1:3) = all_this_virial(1:3, 1:3, counter2)
-                 deallocate(this_forces_lp)
-              end if
+              deallocate( this_energies_lp )
+              if( params%do_forces ) deallocate( this_forces_lp )
            end if
            if( contrib_on(C_PDF) )then
-              counter2 = counter2 + 1
-              energies_pdf(1:n_sites) = all_this_energies(1:n_sites, counter2)
-              deallocate(this_energies_pdf)
-              if( params%do_forces .and. params%exp_forces)then
-                 forces_pdf(1:3, 1:n_sites) = all_this_forces(1:3, 1:n_sites, counter2)
-                 virial_pdf(1:3, 1:3) = all_this_virial(1:3, 1:3, counter2)
-                 deallocate(this_forces_pdf)
-              end if
+              deallocate( this_energies_pdf )
+              if( params%do_forces .and. params%exp_forces ) deallocate( this_forces_pdf )
            end if
            if( contrib_on(C_SF) )then
-              counter2 = counter2 + 1
-              energies_sf(1:n_sites) = all_this_energies(1:n_sites, counter2)
-              deallocate(this_energies_sf)
-              if( params%do_forces .and. params%exp_forces)then
-                 forces_sf(1:3, 1:n_sites) = all_this_forces(1:3, 1:n_sites, counter2)
-                 virial_sf(1:3, 1:3) = all_this_virial(1:3, 1:3, counter2)
-                 deallocate(this_forces_sf)
-              end if
+              deallocate( this_energies_sf )
+              if( params%do_forces .and. params%exp_forces ) deallocate( this_forces_sf )
            end if
            if( contrib_on(C_XRD) )then
-              counter2 = counter2 + 1
-              energies_xrd(1:n_sites) = all_this_energies(1:n_sites, counter2)
-              deallocate(this_energies_xrd)
-              if( params%do_forces  .and. params%exp_forces)then
-                 forces_xrd(1:3, 1:n_sites) = all_this_forces(1:3, 1:n_sites, counter2)
-                 virial_xrd(1:3, 1:3) = all_this_virial(1:3, 1:3, counter2)
-                 deallocate(this_forces_xrd)
-              end if
+              deallocate( this_energies_xrd )
+              if( params%do_forces .and. params%exp_forces ) deallocate( this_forces_xrd )
            end if
            if( contrib_on(C_ND) )then
-              counter2 = counter2 + 1
-              energies_nd(1:n_sites) = all_this_energies(1:n_sites, counter2)
-              deallocate(this_energies_nd)
-              if( params%do_forces  .and. params%exp_forces)then
-                 forces_nd(1:3, 1:n_sites) = all_this_forces(1:3, 1:n_sites, counter2)
-                 virial_nd(1:3, 1:3) = all_this_virial(1:3, 1:3, counter2)
-                 deallocate(this_forces_nd)
-              end if
-           end if
-
-           if( contrib_on(C_2B) )then
-              counter2 = counter2 + 1
-              energies_2b(1:n_sites) = all_this_energies(1:n_sites, counter2)
-              if( params%do_forces)then
-                 forces_2b(1:3, 1:n_sites) = all_this_forces(1:3, 1:n_sites, counter2)
-                 virial_2b(1:3, 1:3) = all_this_virial(1:3, 1:3, counter2)
-              end if
-           end if
-           if( contrib_on(C_CP) )then
-              counter2 = counter2 + 1
-              energies_core_pot(1:n_sites) = all_this_energies(1:n_sites, counter2)
-              if( params%do_forces )then
-                 forces_core_pot(1:3, 1:n_sites) = all_this_forces(1:3, 1:n_sites, counter2)
-                 virial_core_pot(1:3, 1:3) = all_this_virial(1:3, 1:3, counter2)
-              end if
-           end if
-           if( contrib_on(C_3B) )then
-              counter2 = counter2 + 1
-              energies_3b(1:n_sites) = all_this_energies(1:n_sites, counter2)
-              if( params%do_forces )then
-                 forces_3b(1:3, 1:n_sites) = all_this_forces(1:3, 1:n_sites, counter2)
-                 virial_3b(1:3, 1:3) = all_this_virial(1:3, 1:3, counter2)
-              end if
+              deallocate( this_energies_nd )
+              if( params%do_forces .and. params%exp_forces ) deallocate( this_forces_nd )
            end if
 
            !       Clean up

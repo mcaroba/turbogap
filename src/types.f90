@@ -243,6 +243,32 @@ module types
       character*8, allocatable :: xyz_species(:), xyz_species_supercell(:)
    end type image
 
+!**************************************************************************
+!   One additive contribution family as it crosses the MPI reduce block in
+!   turbogap.f90: where its energies, forces and virial are packed from, and
+!   where the reduced result is unpacked to.
+!
+!   Six of the ten families are computed into a this_ prefixed array and land
+!   in the un-prefixed one, so src and dst differ; for the other four they are
+!   the same array. Holding both ends here is what lets the pack and unpack
+!   walks collapse to one loop each, so they cannot disagree about which slot
+!   belongs to which family.
+!
+!   The force and virial pointers are associated only when that family
+!   actually carries forces -- for the exp-spectra families that additionally
+!   requires exp_forces, and their this_forces_ arrays are not allocated
+!   otherwise.
+  type contribution_ref
+     real*8, pointer :: e_src(:)   => null()
+     real*8, pointer :: f_src(:,:) => null()
+     real*8, pointer :: v_src(:,:) => null()
+     real*8, pointer :: e_dst(:)   => null()
+     real*8, pointer :: f_dst(:,:) => null()
+     real*8, pointer :: v_dst(:,:) => null()
+     logical         :: forces = .false.
+  end type contribution_ref
+!**************************************************************************
+
 contains
 
 !**************************************************************************
