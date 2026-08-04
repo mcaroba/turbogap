@@ -142,12 +142,32 @@ procedure cannot move to a module. Converting them to module procedures with
 explicit arguments is a necessary cost, and the resulting argument count is the
 honest measure of coupling still owed (handoff §8).
 
-### Phase 3 — `contribution_ref` bundling
+### Phase 3 — `contribution_ref` bundling — done
 
-Keep it where `docs/refactor_handoff.md` §7.1 put it. It now serves double duty:
-the same ten-family count/pack/unpack triple-walk exists on the GPU side too
-(251 lines master, ~287 GPU), so bundling on both sides converges the MPI reduce
-block as a side effect.
+Landed in three commits, plus the coverage it turned out to require first:
+
+| | |
+|---|---|
+| `3cdc306` | the ten predicates evaluated once into `contrib_on` |
+| `bb8e16f` | `xrd_mad`, `xrd_mad_mpi2`, `xrd_predict` — coverage for pdf/sf/xrd |
+| `7390225` | `contribution_ref`, pack and unpack collapse to one loop each |
+| `<fix>` | KNOWN_ISSUES #4, the uninitialised force slots |
+
+Sequencing note worth keeping. The plan was to bundle in one step. Reading the
+block first showed that four of the ten families — `pdf`, `sf`, `xrd`, `nd` —
+had **no regression coverage at all**, so bundling would have restructured them
+blind. Writing the exp-spectra cases had to come first, and it immediately paid
+for itself by exposing KNOWN_ISSUES #4. Splitting predicate-unification from
+pointer-bundling also meant the `target` attribute could be measured on its own.
+
+Net line count barely moved (3933 → 3928): the ~110-line setup replaces ~215
+lines that stated the same per-family facts three times. The win is that a
+family's identity is now declared in exactly one place, so the walks cannot
+disagree — and that `contribution_ref` is the aggregate Phase 4 needs.
+
+Still outstanding on the GPU side: the same triple-walk exists there (~287
+lines), and bundling it the same way converges the reduce block as a side
+effect.
 
 ### Phase 4 — exp-spectra
 
@@ -177,12 +197,27 @@ regression case first. It is also 91% whitespace-divergent — after Phase 0b it
 is ~189 lines apart and already merges nearly free. It is not on the merge
 critical path. Extract it later for maintainability, once a test exists.
 
-**`contribution_ref` is the one step with real performance risk.** Pointer
-arrays defeat the compiler's aliasing analysis, and the SOAP loop is exactly
-where that matters. Measure `co_predict` immediately before and immediately
-after that specific commit rather than at the end of the phase. Elsewhere,
-declare extracted dummy arguments `contiguous` to preserve the assumptions host
-association previously gave for free.
+**~~`contribution_ref` is the one step with real performance risk~~ — measured,
+and it is not.** The claim was that pointer arrays defeat aliasing analysis and
+the SOAP loop is where that matters. Measured on `co_predict`, interleaved, four
+repetitions with and without the `target` attribute on the ten families:
+
+| | reps (s) | mean |
+|---|---|---|
+| without `target` | 18.17, 20.51, 21.15, 19.65 | 19.87 |
+| with `target` | 19.41, 19.69, 20.98, 19.40 | 19.87 |
+
+No regression. The reason is that the hot compute lives in callees operating on
+dummy arguments, where aliasing is governed by Fortran's argument rules rather
+than by `target` on the actual argument — `target` on a driver array does not
+reach into `soap_turbo`. Keeping it off `energies` and `forces`, the
+accumulators, costs nothing and keeps the assumption narrow.
+
+The spread above is the more useful number: **18.2 to 21.2 s on one unchanged
+binary**, a 16% range. Never trust a single wall-clock ratio here; the suite's
+one-shot `x1.07` for this case was noise. `contiguous` on extracted dummy
+arguments is still worth doing when blocks move out of the driver, for the
+assumptions host association gave for free.
 
 ## 6. Verification notes
 
@@ -258,19 +293,28 @@ All sixteen are the same shape, and the only thing differing across the `#ifdef`
 is the `this_` prefix on an `energies_X` / `forces_X` / `virial_X` triple — i.e.
 exactly the contribution families §7.1 of `docs/refactor_handoff.md` wants to
 bundle. They are the most extreme instance of the "one condition written at N
-sites" antipattern that produced the ts+mbd bug. **Phase 3 should eliminate all
-sixteen as a by-product**, which is a further argument for doing it early; after
-it, `turbogap.f90` becomes parseable by ordinary tooling for the first time.
+sites" antipattern that produced the ts+mbd bug.
+
+**Correction after doing Phase 3:** it did *not* eliminate them. Phase 3 changed
+the MPI reduce block, whereas the sixteen are in the exp-spectra *call sites* a
+few hundred lines earlier — the families are the same, the code is not. Removing
+them is Phase 4 work, and it is one of the reasons Phase 4 is now next.
 
 ## 7. Suggested order
 
 1. ~~0a dead code~~ — done (`4e42b78`)
 2. ~~0c `get_time()`~~ — done (`fef536c`)
 3. ~~0b whitespace~~ — dropped, see §6.3; use `diff -w` and `-X ignore-all-space`
-4. Phase 3 `contribution_ref` — promoted ahead of Phase 1, because §6.4 shows it
-   also removes the sixteen unparseable statements. Measure `co_predict`
-   immediately either side of this commit.
-5. Phase 1 transplant — turns the GPU read-input block from 670 lines to 56
-6. Phase 4 exp-spectra extraction on master
+4. ~~Phase 3 `contribution_ref`~~ — done, with the exp-spectra coverage it needed
+5. **Phase 4 exp-spectra extraction on master** — next. It is the worst merge
+   site in the tree, it now has coverage, and §6.4's sixteen unparseable
+   statements live in exactly this block, so extracting it is what finally makes
+   `turbogap.f90` parseable by ordinary Fortran tooling. Note that Phase 3 did
+   *not* remove them: bundling changed the reduce block, while the sixteen are
+   in the exp-spectra call sites.
+6. Phase 1 transplant — turns the GPU read-input block from 670 lines to 56
 7. Phase 2 backend seam, then merge per phase
 8. Phase 5 one-sided features, each on its own commit
+
+Cheap and worth doing whenever: an `nd` case (shares `calculate_xrd` with `xrd`,
+so it is nearly free), and bundling the GPU branch's copy of the reduce block.

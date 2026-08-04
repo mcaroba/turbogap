@@ -1,9 +1,10 @@
 # Known issues
 
-Findings in the vdW path from building the refactor baseline. Issue 1 is a
-genuine defect and is fixed on this branch. Issue 2 was reported as a defect,
-fixed, and then the fix was reverted: the original behaviour is correct. Issue 3
-is open and cosmetic.
+Findings from building the refactor baseline and from the driver work that
+followed. Issues 1 and 4 are genuine defects and are fixed on this branch.
+Issue 2 was reported as a defect, fixed, and then the fix was reverted: the
+original behaviour is correct. Issue 3 is open and cosmetic. Issue 5 is a
+latent trap that the current call structure makes harmless.
 
 ---
 
@@ -118,7 +119,7 @@ refactor performance — use the wall-clock `run.sh` reports instead.
 
 ---
 
-## 4. `mpi_reduce` reads uninitialised memory for exp-spectra forces — OPEN
+## 4. `mpi_reduce` read uninitialised memory for exp-spectra forces — FIXED
 
 **Found** 2026-08-04 while reading the reduce block for the `contrib_on` change.
 Not introduced by it, and not fixed by it.
@@ -156,9 +157,51 @@ configuration — `do_forces` on, `exp_forces` off, all three families valid —
 the slot bookkeeping is protected even though the uninitialised values
 themselves are not observable in the compared outputs.
 
-**Fixing it** is one line — zero `all_forces` and `all_virial` after allocation,
-or widen the pack predicate to match the slot predicate. Both change what
-`mpi_reduce` sees, so neither can ride on a commit whose contract is
-bit-identical output. With `xrd_mad`, `xrd_mad_mpi2` and `xrd_predict` in place
-the fix is now verifiable: land it in its own commit and expect only those
-three cases to move.
+**Fix.** The pack loop now clears the slot of any family that owns one but
+contributes no forces:
+
+```fortran
+if( contrib(i_contrib)%forces )then
+   all_forces(1:3, 1:n_sites, i_contrib) = contrib(i_contrib)%f_src(1:3, 1:n_sites)
+   all_virial(1:3, 1:3, i_contrib) = contrib(i_contrib)%v_src(1:3, 1:3)
+else if( params%do_forces )then
+   all_forces(1:3, 1:n_sites, i_contrib) = 0.d0
+   all_virial(1:3, 1:3, i_contrib) = 0.d0
+end if
+```
+
+Clearing only the affected slots rather than zeroing the whole array keeps the
+cost off the slots that are about to be overwritten anyway.
+
+This section previously claimed the fix could not ride on a bit-exact commit
+because it changes what `mpi_reduce` sees. That was wrong, and the suite says
+so: all 18 cases pass **unchanged**. Each slot reduces independently, and the
+garbage was never unpacked, so replacing it with zeros moves nothing that is
+read. The defect was a trap, not a wrong number — which is exactly why it
+needed fixing and exactly why no test could have caught it.
+
+
+---
+
+## 5. `mpi_reduce` leaves the receive buffer undefined on non-root ranks — OPEN, by design
+
+Noticed while fixing #4; recorded so it is not mistaken for a new defect.
+
+`mpi_reduce` writes its receive buffer **only on the root rank**. The unpack
+loop is not rank-guarded, so on every non-root rank
+
+```fortran
+contrib(i_contrib)%e_dst(1:n_sites) = all_this_energies(1:n_sites, i_contrib)
+```
+
+copies undefined heap into `energies_soap`, `energies_2b` and the rest.
+
+This is harmless as the code stands: rank 0 owns the MD integration and
+broadcasts positions and velocities back out (`turbogap.f90`, the
+`mpi_bcast(positions, ...)` calls), so nothing downstream reads a non-root
+rank's copy. It is recorded because the same trap as #4 applies -- a
+signalling NaN or denormal landing in those arrays could fault in the "Add up
+all the energy terms" arithmetic that follows, on a rank whose answer nobody
+wants. `mpi_allreduce`, or guarding the unpack with `rank == 0`, would both
+close it; which one is right depends on whether any future consumer needs
+these per-rank, so it is left to whoever changes that.

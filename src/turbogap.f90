@@ -2142,12 +2142,19 @@ end if
               allocate( all_this_virial(1:3, 1:3, 1:counter2) )
            end if
 
-!       Pack
+!       Pack. A family owns a slot whenever it is active, but only contributes
+!       forces when it carries them -- the exp-spectra families additionally
+!       need exp_forces. Their slot must still be cleared: all_forces is
+!       allocated and never zeroed, and mpi_reduce below reads the whole array
+!       regardless of who wrote what into it.
            do i_contrib = 1, n_active
               all_energies(1:n_sites, i_contrib) = contrib(i_contrib)%e_src(1:n_sites)
               if( contrib(i_contrib)%forces )then
                  all_forces(1:3, 1:n_sites, i_contrib) = contrib(i_contrib)%f_src(1:3, 1:n_sites)
                  all_virial(1:3, 1:3, i_contrib) = contrib(i_contrib)%v_src(1:3, 1:3)
+              else if( params%do_forces )then
+                 all_forces(1:3, 1:n_sites, i_contrib) = 0.d0
+                 all_virial(1:3, 1:3, i_contrib) = 0.d0
               end if
            end do
 
