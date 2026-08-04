@@ -427,10 +427,36 @@ Left, in the order the measurements support:
 1. **The exp-spectra virial on the GPU branch** (`gpu_fixes_handoff.md` §6b).
    Energies and forces agree exactly with the CPU; the virial is ~90x out. It
    is the only thing keeping `XRD_mad` xfail.
-2. **The diffraction block on the GPU branch** — 705 lines against master's
-   272. Phase 2 has now moved the device state it shares with the 2b/3b path
-   into the backend, so re-measure its coupling before starting; the 71
-   boundary variables should be substantially fewer.
+2. **The diffraction block on the GPU branch — blocked, and on what.**
+   Re-measured after Phase 2: still 701 lines and **still 71 crossing
+   variables**. Phase 2 did not help, because the 2b/3b device buffers it took
+   over are not the ones this block uses.
+
+   The blocker is that the device context here is **genuinely shared**, unlike
+   `gap_backend`'s. Uses inside the block against uses elsewhere in the driver:
+
+   | | in block | outside |
+   |---|---|---|
+   | `gpu_stream` | 22 | **54** |
+   | `n_omp` | 3 | 13 |
+   | `i_beg_list` | 11 | 12 |
+   | `gpu_streams` | 7 | 6 |
+   | `gpu_neigh` | 6 | 6 |
+   | `omp_task` | 11 | 9 |
+
+   The batch lists are *built* at lines 1283-1364 and 1490 for the
+   electrostatics and SOAP paths and consumed at 1746-1849 as well as here.
+   `gap_backend_gpu` worked because its ten buffers were private to the
+   2b/3b region, so they could become module state without the names changing
+   and the lift stayed verbatim. That trick does not apply here.
+
+   **What this needs is a shared GPU context module** — owning the stream, the
+   cuBLAS handles, the OpenMP batch count and the batch decomposition lists —
+   used by the electrostatics, SOAP and exp paths alike. That is a design
+   decision spanning three subsystems rather than an extraction, and it should
+   be agreed before it is started. Doing the extraction first, with 71
+   arguments including ten device handles, would freeze exactly the interface
+   that context module then has to undo.
 3. **Phase 5 one-sided features**, each on its own commit: electrostatics to
    master, the cascade stack wired on the GPU branch, master's MC fixes across.
 4. `vdw.f90` + `misc`/`constants`/`nonneg_leastsq` to the GPU branch, once
