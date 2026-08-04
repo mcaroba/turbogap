@@ -117,30 +117,56 @@ Superseded by §6.3 and §6.4. Review with `diff -w` and merge with
 `gap_interface.f90` (7), behind a new `src/timing.f90`. All 15 regression cases
 pass, wall-clock ratios 0.97–1.00.
 
-### Phase 1 — transplant what master already built
+### Phase 1 — transplant what master already built — done (setup), deferred (vdw)
 
-`turbogap_setup.f90` onto the GPU branch (§3): 670 lines become ~56, and both
-branches get an identical setup phase. Then `vdw.f90` + `turbogap_vdw.f90`
-wholesale — the GPU branch still carries the old 495-line pre-MBD `vdw.f90` and
-per handoff §2.3 never touched it, so master's 6538-line version simply replaces
-it.
+On the GPU branch: `timing.f90` adopted (`9a1a2b4`), then the start-up phase
+extracted into its own `turbogap_setup.f90` (`08809dd`). `turbogap.f90` there
+went 5889 → 5271.
 
-### Phase 2 — the backend seam
+The measurement that matters: the start-up phase was **56 lines on master
+against 670 on the GPU branch** — an apples-to-oranges comparison, because one
+side had been extracted and the other had not, which hid the shared 88%. It is
+now **16 lines against 12**, and the two modules differ by **235 lines ignoring
+whitespace**. That 235 is the real divergence, and it is almost entirely two
+features: electrostatics parameters on the GPU side, the eph and
+electronic-stopping initialisation on master's.
 
-`gap_backend.f90` declares the interface, `gap_backend_cpu.f90` and
-`gap_backend_gpu.f90` implement it, the Makefile selects one. Scope it to what
-§2 measured: SOAP/2b/3b/core_pot evaluation, device buffer lifetime, and the 3b
-locals. Device pointers, cuBLAS handles and streams live inside the GPU
-implementation and never appear in the driver.
+**`vdw.f90` deliberately not transplanted.** It is not a one-file move: master's
+version `use`s `misc`, `constants` and `nonneg_leastsq`, none of which exist in
+the GPU tree. And nothing in `tests/gpu` exercises vdW at all, which is thin for
+a 495 → 6538 line replacement. Same reasoning for wiring the cascade stack: the
+GPU branch compiles `SRC_STOP` but `OBJ_STOP` is in no rule's prerequisites, so
+it is never linked. Both are genuine merge work and want master's 18-case suite,
+not the GPU branch's two.
 
-Half of this already exists. The GPU branch's `add_2b_contribution_gpu`,
-`add_core_pot_contribution_gpu` and `add_3b_contribution_gpu` (315 lines, called
-from three sites) are already the right decomposition. One caveat: the GPU
-handoff §7.4 calls internal procedures "the cheap route… host association means
-no argument lists", and that is exactly what blocks the merge — a contained
-procedure cannot move to a module. Converting them to module procedures with
-explicit arguments is a necessary cost, and the resulting argument count is the
-honest measure of coupling still owed (handoff §8).
+### Phase 2 — the backend seam — CPU side done, GPU side defined
+
+`src/gap_backend_cpu.f90` (`85c1fdb`) defines `module gap_backend` with
+`add_2b_contribution`, `add_core_pot_contribution` and `add_3b_contribution`.
+Two files will define that module with the same three names and argument lists,
+and the Makefile compiles exactly one; the driver calls the names and never
+learns which implementation it got. `turbogap.f90` 3552 → 3487.
+
+**The interface is physics only** — 19, 19 and 20 arguments, no device pointer,
+stream or cuBLAS handle. That is the whole point of the seam and it is what the
+GPU side has to be built to fit.
+
+**What the GPU side actually is.** Not "extract three procedures". All three of
+`add_2b_contribution_gpu`, `add_core_pot_contribution_gpu` and
+`add_3b_contribution_gpu` reach **ten device buffers by host association** —
+`rjs_d`, `xyz_d`, `species_d`, `neighbors_list_d`, `neighbor_species_d`,
+`n_neigh_d`, `alphas_d`, `qs_d`, `cutoff_d` and `gpu_stream` — all allocated in
+the driver before the call and freed after. Lifting them as they stand would put
+all ten in the interface, which is precisely the design this seam exists to
+prevent. The GPU side is therefore **moving device-buffer ownership into the
+backend module**, and that is the largest single piece of work left.
+
+It also unblocks the diffraction block: 47 of that block's 71 boundary variables
+are the same device state (§6.5).
+
+Measured coupling of the three, as they stand: 31, 27 and 34 crossing variables
+against the CPU side's 19, 19 and 20. The difference is the device state, and
+closing it is the job.
 
 ### Phase 3 — `contribution_ref` bundling — done
 
@@ -331,33 +357,74 @@ A transformation that scans for the first `#else` will swallow it and silently
 make the allocation unconditional. Match directive nesting, and assert how many
 groups you collapsed against how many you kept.
 
+### 6.5 The GPU build is not bit-reproducible, and what follows from it
+
+Three runs of the **same unchanged GPU binary** on the `XRD_mad` case produce
+three different trajectories; `compare_xyz.py` reports two differing quantities
+between two such runs, appearing once MD has accumulated a step, at ~1e-12
+relative. The CPU build on the identical input is reproducible. Recorded as §6c
+of `docs/gpu_fixes_handoff.md` on that branch.
+
+**This changes the method.** The bit-exact contract — output identical to a
+pre-refactor baseline, compared with `diff` — cannot be used on the GPU branch,
+because there is no baseline to be identical to. A change smaller than the
+run-to-run spread is invisible there.
+
+So: **do each extraction on master first, where the contract holds, and port the
+verified result.** That is not a preference, it is the only place the work can be
+checked. It is why Phase 2's CPU implementation was written before the GPU one,
+and it is the sequencing rule for everything that remains.
+
+### 6.6 Coverage on the GPU branch, and what it found
+
+The GPU suite had no coverage of the exp-spectra paths at all. Adding one case
+(`XRD_mad`, `515ad35`) immediately found that those paths **did not work**: a
+leftover debugging `exit(0)` in `gpu_exp.cu` between the pair-distribution
+evaluation and reduction kernels terminated the process with status 0 and no
+trajectory (`c1d96f0`). Because the status was 0, nothing checking a return code
+would ever have caught it — the case tests for the absence of a trajectory.
+
+With that fixed, GPU and CPU agree exactly on energy, every energy component and
+forces, and to 3e-08 on `local_energy`. The **virial is wrong by ~90x** and is
+open, owned by Tigany; `XRD_mad` stays xfail against it and will report XPASS
+when it is fixed.
+
+The general lesson is the one Phase 3 already taught: **write the case before
+the refactor, not after.** Both times, the coverage found a real defect within
+minutes of existing.
+
 ## 7. Suggested order
 
-1. ~~0a dead code~~ — done (`4e42b78`)
-2. ~~0c `get_time()`~~ — done (`fef536c`)
-3. ~~0b whitespace~~ — dropped, see §6.3; use `diff -w` and `-X ignore-all-space`
-4. ~~Phase 3 `contribution_ref`~~ — done, with the exp-spectra coverage it needed
-5. ~~Phase 4 exp-spectra extraction on master~~ — done; the driver parses
-6. **Phase 1 transplant** — next, and the first work on the GPU branch.
-   `turbogap_setup.f90` is 88% shared with the GPU's still-inline 670-line
-   read-input block, which contains zero GPU calls, so it goes to ~56 lines. Then
-   `vdw.f90` + `turbogap_vdw.f90` wholesale, since the GPU branch never touched
-   them.
-7. Phase 2 backend seam, then merge per phase
-8. Phase 5 one-sided features, each on its own commit
+Done, in the order it happened:
 
-Cheap and worth doing whenever, in rough order of value:
+| | |
+|---|---|
+| 0a dead code | `4e42b78` (gpu) |
+| 0c `get_time()` | `fef536c` (cpu), `9a1a2b4` (gpu) |
+| 0b whitespace | dropped, §6.3 |
+| Phase 3 `contribution_ref` | `3cdc306` `7390225` `b51d832` (cpu), `4357188` (gpu) |
+| exp-spectra coverage | `bb8e16f` (cpu), `515ad35` (gpu) |
+| Phase 4 exp-spectra | `afd0c19` `03877d5` `533ccf9` (cpu), `a891432` (gpu, XPS only) |
+| Phase 1 setup transplant | `08809dd` (gpu) |
+| Phase 2 seam, CPU side | `85c1fdb` (cpu) |
 
-* Bring the GPU branch's copies of the Phase 3 and Phase 4 work across — the
-  same triple-walk (~287 lines) and the same eleven unparseable statements are
-  still there.
-* An `nd` regression case. It shares `calculate_xrd` with `xrd`, so it is nearly
-  free, and `nd` is the last contribution family with no coverage.
-* 65 further unreferenced declarations in the driver (`file_2b`, `displs`,
-  `counts`, `temp_exp_container`, the `sph_temp` family). Left alone by
-  `533ccf9` because they belong to phases not yet touched. Note that a naive
-  unreferenced-name scan also flags `N_CONTRIB`, which appears only as an array
-  bound inside other declarations — check declaration text, not just the body,
-  or the sweep will break the build.
-* KNOWN_ISSUES #5: `mpi_reduce` leaves its receive buffer undefined on non-root
-  ranks and the unpack is not rank-guarded. Harmless as the code stands.
+Left, in the order the measurements support:
+
+1. **Phase 2, GPU side** — move device-buffer ownership into `gap_backend_gpu`.
+   The largest piece left, and it unblocks the diffraction block as a side
+   effect. Build against the interface `85c1fdb` already fixes.
+2. **The diffraction block on the GPU branch** — 705 lines against master's 272,
+   71 boundary variables against 37. Do it after (1), when most of those 71 have
+   become backend-owned.
+3. **Phase 5 one-sided features**, each on its own commit: electrostatics to
+   master, the cascade stack wired on the GPU branch, master's MC fixes across.
+4. `vdw.f90` + `misc`/`constants`/`nonneg_leastsq` to the GPU branch, once there
+   is vdW coverage there.
+
+Cheap, any time: an `nd` regression case (shares `calculate_xrd` with `xrd`);
+the 65 remaining unreferenced declarations in the driver (mind `N_CONTRIB`,
+§533ccf9); KNOWN_ISSUES #5, the unguarded non-root unpack.
+
+Not on the critical path: nested-sampling extraction (§5), and the six remaining
+preprocessor-interrupted statements on the GPU branch, which sit outside the exp
+blocks in the earlier prediction code.
