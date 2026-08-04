@@ -399,7 +399,7 @@ contains
 
        call gpu_free_async(l_index_d, gpu_stream)
        call gpu_free_async(soap_d, gpu_stream)
-       call gpu_free(soap_cart_der_d)
+       call gpu_free_async(soap_cart_der_d, gpu_stream)
 
        if (.not. write_soap) deallocate (soap)
        if (do_derivatives .and. .not. write_derivatives) deallocate (soap_cart_der)

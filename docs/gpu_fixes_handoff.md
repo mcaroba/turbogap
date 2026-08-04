@@ -351,7 +351,7 @@ and diff. That is the technique from section 9, and it is what found bug 5.
 
 ---
 
-## 6e. Use-after-free in the SOAP derivative path — OPEN, and it matters
+## 6e. Use-after-free in the SOAP derivative path — FIXED
 
 **`compute-sanitizer memcheck` reports 181 errors on `CO_predict` with the
 unmodified build at HEAD.** Every one is a *use-after-free*, on an allocation
@@ -384,7 +384,28 @@ freed inside the descriptor loop instead of after it. That one was found because
 it crashed. This one does not crash; it silently returns the right answer for
 the current layout.
 
-**It is what defeated the gap_backend GPU side (6d).** That work changes which
+**Cause and fix.** `cuda_malloc_all` is `hipMallocAsync` on `gpu_stream`, so
+every allocation in this code is *stream-ordered* and must be released with
+`hipFreeAsync` on the same stream. Three sites released theirs with the plain
+`gpu_free`, which is `hipFree`:
+
+| freed in | pointer |
+|---|---|
+| `soap_turbo.f90` `get_soap` | `cnk_d` |
+| `gap.f90` `get_soap_energy_and_forces` | `energies_d` |
+| `gap_interface.f90` `get_gap_soap` | `soap_cart_der_d` |
+
+Each matches one of the memcheck backtraces exactly, and each sits directly
+below lines that already use `gpu_free_async(..., gpu_stream)` — so these were
+inconsistencies rather than deliberate choices. Changing the three to
+`gpu_free_async` takes memcheck from **181 errors to 1**, and the one that
+remains is inside cuBLASLt loading its own kernels, not TurboGAP code. Both
+regression cases still pass.
+
+Note the `soap_turbo.f90` fix is in the submodule (`d02eeea`), so the parent's
+submodule pointer moves with it.
+
+**It was also what defeated the gap_backend GPU side (6d).** That work changes which
 buffers are allocated, in what order and how large, and therefore what sits in
 the freed region. Every kernel input was proved bit-identical between the
 working and module builds -- scalars, upload byte counts, array checksums,

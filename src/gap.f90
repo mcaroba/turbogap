@@ -297,7 +297,7 @@ module gap
       end if
         
            
-      call gpu_free(energies_d)
+      call gpu_free_async(energies_d, gpu_stream)
 
       energies = tmp_energies
 
