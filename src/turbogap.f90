@@ -1460,166 +1460,25 @@ end if
         !###################################################!
 
         !     Compute core_electron_be energies and forces
-        if( any( soap_turbo_hypers(:)%has_core_electron_be ) .and.( params%do_prediction ) &
-             .and. valid_xps )then
-           call get_time(time_xps(1))
-
+        !
+        ! Moved to src/turbogap_exp.f90. The #ifdef is here, at the one call,
+        ! rather than inside a continued argument list where nothing
+        ! Fortran-aware could parse it.
 #ifdef _MPIF90
-           allocate( this_energies_lp(1:n_sites) )
-           this_energies_lp = 0.d0
-           if( params%do_forces )then
-              allocate( this_forces_lp(1:3,1:n_sites) )
-              this_forces_lp = 0.d0
-              this_virial_lp = 0.d0
-           end if
-#endif
-           allocate(v_neigh_lp(1:j_end-j_beg+1))
-           v_neigh_lp = 0.d0
-           k = 0
-           do i = i_beg, i_end
-              do j = 1, n_neigh(i)
-                 !           I'm not sure if this is necessary or neighbors_list is already bounded between 1 and n_sites -> CHECK THIS
-                 j2 = mod(neighbors_list(j_beg + k)-1, n_sites) + 1
-                 k = k + 1
-                 !                 v_neigh_lp(k) = hirshfeld_v(j2)
-                 v_neigh_lp(k) = local_properties(j2, core_be_lp_index)
-              end do
-           end do
-
-           call get_xps_spectra(params%exp_data(xps_idx)%data(1,:),&
-                & params%exp_data(xps_idx)%data(2,:), params&
-                &%xps_sigma, params%exp_data(xps_idx)%n_samples, mag,&
-                & params%exp_data(xps_idx)%x, params&
-                &%exp_data(xps_idx)%y_pred, y_i_pred_all,&
-                & local_properties(1:n_sites, core_be_lp_index),&
-                & .true.)
-
-
-           ! call get_compare_xps_spectra(params%exp_data(xps_idx)%data&
-           !      & , local_properties(1:n_sites, core_be_lp_index),&
-           !      & params%xps_sigma, params%exp_data(xps_idx) &
-           !      &%n_samples, mag, params%exp_data(xps_idx)%similarity&
-           !      & , params%exp_data(xps_idx)%x, params &
-           !      &%exp_data(xps_idx)%y, params%exp_data(xps_idx) &
-           !      &%y_pred, y_i_pred_all, .not. allocated(params &
-           !      &%exp_data(xps_idx)%x), params%exp_similarity_type )
-
-           ! print *, params%exp_data(xps_idx)%n_samples, xps_idx
-           call get_energy_scale( params%do_md, params%do_mc,&
-                & md_istep, params%md_nsteps, mc_istep, params&
-                &%mc_nsteps, params &
-                &%exp_energy_scales_initial(xps_idx), params &
-                &%exp_energy_scales_final(xps_idx), params &
-                &%exp_energy_scales(xps_idx) )
-
-           call get_exp_pred_spectra_energies_forces( params&
-                &%exp_energy_scales(xps_idx),&
-                & local_properties(i_beg:i_end,core_be_lp_index),&
-                & local_properties_cart_der(1:3, j_beg:j_end,&
-                & core_be_lp_index ), n_neigh(i_beg:i_end),&
-                & neighbors_list(j_beg:j_end), params%xps_sigma,&
-                & params%exp_data(xps_idx)%n_samples, mag, params&
-                &%exp_data(xps_idx)%x, params %exp_data(xps_idx)%y,&
-                & params%exp_data(xps_idx) %y_pred,&
-                & y_i_pred_all(i_beg:i_end, 1:params &
-                &%exp_data(xps_idx)%n_samples), params %do_forces, &
-                & xyz(1:3, j_beg:j_end),&
-#ifdef _MPIF90
-                & this_energies_lp(i_beg:i_end), this_forces_lp, this_virial_lp, params%exp_similarity_type, rank )
+        call compute_exp_xps( params, n_sites, n_xyz, xyz, neighbors_list, n_neigh, &
+             local_properties, local_properties_cart_der, soap_turbo_hypers, &
+             a_box, b_box, c_box, indices, i_beg, i_end, j_beg, j_end, rank, &
+             md_istep, mc_istep, valid_xps, xps_idx, core_be_lp_index, &
+             write_condition, overwrite_condition, exp_output, &
+             this_energies_lp, this_forces_lp, this_virial_lp, time_xps )
 #else
-           & energies_lp(i_beg:i_end), forces_lp, virial_lp, params%exp_similarity_type, rank )
+        call compute_exp_xps( params, n_sites, n_xyz, xyz, neighbors_list, n_neigh, &
+             local_properties, local_properties_cart_der, soap_turbo_hypers, &
+             a_box, b_box, c_box, indices, i_beg, i_end, j_beg, j_end, rank, &
+             md_istep, mc_istep, valid_xps, xps_idx, core_be_lp_index, &
+             write_condition, overwrite_condition, exp_output, &
+             energies_lp, forces_lp, virial_lp, time_xps )
 #endif
-
-           ! if (rank == 0)then
-           !    open(unit=11, file="tg_xps.dat", status="unknown")
-           !    do i = 1, params%exp_data(xps_idx)%n_samples
-           !       write(11, '(1X,F20.8,1X,F20.8)') params%exp_data(xps_idx)%x(i), params%exp_data(xps_idx)%y_pred(i)
-           !    end do
-           !    close(11)
-           ! end if
-
-
-           call get_write_condition( params%do_mc, params%do_md&
-                &, mc_istep, md_istep, params%write_xyz,&
-                & write_condition)
-
-           if (rank == 0 .and. params%write_exp .and. write_condition)then
-
-              call get_overwrite_condition( params%do_mc, params%do_md&
-                   &, mc_istep, md_istep, params%write_xyz, overwrite_condition)
-
-              call write_exp_datan(params%exp_data(xps_idx)&
-                   &%x(1:params%exp_data(xps_idx)%n_samples), params&
-                   &%exp_data(xps_idx)%y_pred(1:params&
-                   &%exp_data(xps_idx)%n_samples),&
-                   & overwrite_condition, "xps_prediction.dat",&
-                   & params%exp_data(xps_idx)%label)
-
-              if ( .not.  params%exp_data(xps_idx)%wrote_exp ) then
-
-
-                 call preprocess_exp_data(params, params%exp_data(xps_idx)%x,&
-                      & params%exp_data(xps_idx)%y, params%exp_data(xps_idx)%label,&
-                      & n_sites, dot_product( cross_product(a_box,&
-                      & b_box), c_box ) / (dfloat(indices(1)*indices(2) &
-                      &*indices(3)) ), params%exp_data(xps_idx)%input, exp_output, .true. )
-
-                 call write_exp_datan(params%exp_data(xps_idx)&
-                      &%x(1:params%exp_data(xps_idx)%n_samples),&
-                      & params%exp_data(xps_idx)%y(1:params&
-                      &%exp_data(xps_idx)%n_samples),&
-                      & overwrite_condition, "xps_exp.dat" , params&
-                      &%exp_data(xps_idx)%label)
-                 params%exp_data(xps_idx)%wrote_exp = .true.
-              end if
-
-              ! else
-              !    call write_exp_data(params%exp_data(xps_idx)%x, params%exp_data(xps_idx)%y_pred, mc_istep == 0, "xps_prediction.dat" )
-              !    call write_exp_data(params%exp_data(xps_idx)%x, params%exp_data(xps_idx)%y, mc_istep == 0, "xps_exp.dat" )
-
-           end if
-
-
-           !deallocate( params%exp_data(xps_idx)%y_pred )
-           if (allocated(y_i_pred_all)) deallocate(y_i_pred_all)
-           ! sim_exp_pred would be an energy if multiplied by some energy scale \gamma * ( 1 - sim )
-           ! sim_exp_pred_der would be the array of forces if multiplied by (- \gamma )
-           deallocate(v_neigh_lp)
-
-
-           call get_time(time_xps(2))
-           time_xps(3) = time_xps(3) + time_xps(2) - time_xps(1)
-           !           if (rank == 0) print *, rank, " TIME_XPS = ", time_xps(3)
-
-           else if ( any( soap_turbo_hypers(:)%has_core_electron_be) .and. params%do_xps )then
-             ! Get the linspace of the xps spectrum and then perform the
-             ! calculation and write to the prediction file
-             !
-              if (rank == 0)then
-                 call get_xps_spectra_standalone(&
-                      & params%xps_e_min,&
-                      & params%xps_e_max, &
-                      & params%xps_sigma, &
-                      & params%xps_n_samples,&
-                      & x_xps, &
-                      & y_xps, &
-                      & local_properties(1:n_sites, core_be_lp_index))
-
-                 call get_overwrite_condition( params%do_mc, params%do_md&
-                      &, mc_istep, md_istep, params%write_xyz, overwrite_condition)
-
-                 if (n_xyz > 0)then
-                    overwrite_condition = ( n_xyz == 1 )
-                 end if
-
-                 call write_exp_datan( x_xps(1:params%xps_n_samples), &
-                      & y_xps(1:params%xps_n_samples), &
-                      & overwrite_condition, &
-                      &"xps_prediction.dat",&
-                      &"core_electron_be xps")
-              end if
-
-        end if
 
         !##############################################################!
         !###---   (Partial) Pair distribution functions and XRD   ---###!
