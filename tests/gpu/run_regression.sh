@@ -92,7 +92,7 @@ run_case() {
 # gets removed rather than quietly masking a regression later.
 xfail_reason() {
   case $1 in
-    XRD_mad) printf '%s' "exp-spectra virial disagrees with the CPU by ~90x; see docs/gpu_fixes_handoff.md 6b" ;;
+    XRD_mad) printf '%s' "energy_core_pot diverges from the CPU from frame 1; see docs/gpu_fixes_handoff.md 6f" ;;
     *) printf '' ;;
   esac
 }

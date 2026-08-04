@@ -188,7 +188,7 @@ Worth recording separately: with **`gpu_batched = .false.` the run
 segfaults** (exit 139) at the same point. That path is untested and is
 presumably rotted; the batched path is the one that works.
 
-### What it was hiding — the exp virial is wrong, OPEN (owner: Tigany)
+### What it was hiding — the exp virial, FIXED, and it was the CPU that was wrong
 
 With the abort gone, GPU and CPU now agree on this case for everything
 except the virial:
@@ -207,60 +207,32 @@ ref  diag = [ 184.53,  164.51,  127.92]
 gpu  diag = [13885.43, 13985.59, 16792.62]
 ```
 
-The ratios are not constant (75, 85, 131) and the off-diagonals differ in
-sign, so this looks like uninitialised or unreduced memory rather than a
-missing scale factor.
+**Resolved 2026-08-05, and the fault was on the CPU side.**
 
-#### Narrowed 2026-08-05
+`get_structure_factor_forces_matrix` in the CPU branch's `exp_utils.f90`
+accumulates the virial over the `n_k` selected pairs but indexed `xyz` with
+`k` rather than the loop variable `j`. `k` is not live in that loop — it is
+left over from the selection loop that ends about sixty lines earlier — so
+every one of the `n_k` virial terms used the same fixed pair vector. The
+forces in the same loop are correct, using `fi(j,:)` and `j2_list(j)`, which
+is why forces agreed exactly while the virial did not.
 
-**Ruled out.** The virial formula in `get_pair_distribution_forces` is
-character-identical on the two branches:
+The routine already builds the compacted per-pair array for exactly this
+purpose: line 586 fills `xyz_k(1:3, n_k) = xyz(1:3, k)` inside the selection
+loop and line 598 uses it correctly for `Gka`. Only the virial reached past it
+to the raw array.
 
-```fortran
-virial(k1,k2) = virial(k1,k2) + 0.5d0*(this_force(k1)*xyz(k2,k) + this_force(k2)*xyz(k1,k))
-```
+**This branch was right all along.** The device kernel indexes the compacted
+array by the selection index, which is what the CPU should have done. Fixed on
+the CPU branch (`769c815`); on frame 0, at identical positions, the two virials
+now agree to 1.6e-07 absolute and 9.5e-12 relative, against 1.67e+04 before.
 
-`this_virial_pdf`, `_sf`, `_xrd` and `_nd` are not zeroed before accumulation on
-*either* branch — only `this_virial_xrd` is, and only here. Zeroing all four on
-this branch was tried and changes nothing, so they are already effectively zero.
-(It is still worth fixing on both branches as a latent hazard: static `real*8`
-arrays relied on to start at zero, which will not hold across snapshots.)
+The two CPU cases with `exp_forces = .true.` converted to `REFERENCE=golden`
+there, since the baseline binary carries the bug.
 
-**Where it actually is.** The CPU has no
-`get_structure_factor_forces_matrix_original`. The two branches compute the
-xrd/sf virial by *entirely different code paths* — this is not a port of the
-CPU routine, it is a second implementation. On this branch it runs:
+#### How it was found — the readbacks that led there
 
-```
-get_structure_factor_forces_matrix_original
-  -> gpu_exp_force_virial_collection        (gpu_exp.cu:1903)
-     -> kernel_exp_force_virial_collection  (gpu_exp.cu:1843)
-  -> virial_h  ->  collect_batched_forces   (exp_interface.f90:511)
-```
-
-The kernel is:
-
-```c
-j2 = j2_list[tid]-1;
-this_force = energy_scale * fi[tid ...];
-atomicAdd(&forces0[j2].x, this_force.x);     // site index
-tmp_xyz = xyz[tid];                          // pair index
-loc_viri = 0.5*(f[k1]*xyz[k2] + f[k2]*xyz[k1]);
-atomicAdd(&virial[k2+3*k1], loc_viri);
-```
-
-Forces at the site index, virial with the pair vector — the same convention the
-CPU uses, so the indexing is right. The `k2+3*k1` store is transposed relative
-to Fortran's column-major order, but `loc_viri` is symmetric in `k1`/`k2`, so
-that is harmless.
-
-**The deduction that should drive the next attempt.** The virial has exactly two
-inputs: `this_force` and `xyz`. **`this_force` is proved correct** — the forces
-this same kernel accumulates from it match the CPU to `maxabsdiff = 0.0`. So the
-fault has to be in **`xyz_k_d`**, the compacted per-batch pair-vector array that
-the virial reads and the forces do not.
-
-#### xyz_k_d checked — it is correct, hypothesis disproved
+`xyz_k_d` checked and correct, which disproved the first hypothesis
 
 `xyz_k_d` was read back from the device during an `XRD_mad` run:
 
@@ -618,6 +590,24 @@ exactly that: identical inputs, layout-dependent output.
 So 6d is not a defect in the extraction. **Fix this first, then retry 6d**;
 until then any change to device allocation on this branch can move results for
 reasons that have nothing to do with the change.
+
+---
+
+## 6f. energy_core_pot diverges under MAD — OPEN
+
+Found while confirming the virial fix. With `XRD_mad` run from identical
+starting positions, frame 0 agrees on everything including `energy_core_pot`
+(both 0.0). From frame 1 the CPU reports `energy_core_pot = 8.53` and this
+branch reports `0.00`, and the trajectories then separate.
+
+Frame 0 forces agree to `maxabsdiff = 0.0`, so frame 1 positions must agree
+too — which means this is a real disagreement in the core-potential term at
+that geometry, not accumulated drift.
+
+`CO_predict` and `CO_md` do not catch it because `energy_core_pot` is 0.0
+throughout those runs: the CO structure never brings a pair close enough to
+enter the core potential. `XRD_mad` does, because the MAD forces push atoms
+together. **This is now what keeps `XRD_mad` xfail**, not the virial.
 
 ---
 
