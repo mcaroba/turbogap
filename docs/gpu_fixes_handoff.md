@@ -247,6 +247,59 @@ where the bit-exact contract holds, and port the verified result.
 
 ---
 
+## 6d. The gap_backend GPU side — attempted, not landed
+
+The CPU implementation of the seam is on the master branch (`85c1fdb`,
+`33c377d`): `module gap_backend` with `gap_backend_begin`, `gap_backend_end`,
+`add_2b_contribution`, `add_core_pot_contribution`, `add_3b_contribution`, and
+an interface that is physics only. The GPU implementation was written against
+it, builds, and is **not correct**. It is parked at
+`../phase0_backup/phase2_gpu_wip/` rather than committed.
+
+### What it found, which is worth keeping
+
+**The three procedures had an undocumented ordering dependency.**
+`add_2b_contribution_gpu` computed `st_n_sites_double` and `st_virial`, and
+`add_core_pot_contribution_gpu` and `add_3b_contribution_gpu` read them through
+host association without ever setting them. Nothing said so, and nothing
+enforced it: calling 3b without having called 2b first would have copied back
+the wrong number of bytes. Making the three independent procedures exposed it
+immediately — 3b returned an energy of exactly zero until each computed its own
+sizes. Any future attempt must set them per procedure.
+
+This is the concrete cost of "internal procedures are the cheap route, host
+association means no argument lists" (section 7.4). The argument list is not
+the cost; the hidden coupling is.
+
+**`alphas_d` is reused scratch, not shared state.** The driver allocates,
+uploads and frees one `alphas_d` for the SOAP path and separately for the
+2b/3b path — different data through one name, the pattern that hid bug 5. A
+backend module owning its own removes one instance.
+
+### What is still wrong
+
+With the ordering dependency fixed, `CO_predict` gives `energy_3b = 2.23018157`
+against the CPU's `2.13601985` — 4.4% out. `energy_soap`, `energy_2b`,
+`energy_core_pot` and forces all agree. So the fault is confined to the 3b path.
+
+Ruled out: the lifted body is faithful (every one of the 92 code lines of the
+original is present, verified line by line); `n_sites`, `st_n_sites_double`,
+`st_virial` and `c_do_forces` are computed exactly as the originals did; and
+`max_np`, `size_maxnp_bytes`, `size_maxnp_qs_bytes` and `size_alphas_bytes` are
+all written before they are read inside the body.
+
+Not yet ruled out: something else the 3b body inherited from the driver's scope
+that a read-before-write scan does not catch — most likely a value that is
+merely *stale rather than undefined*, so it looks initialised and is simply
+wrong. `forces`, passed only so the body can take `size(forces,2)`, is the most
+suspicious remaining argument.
+
+The obvious next move is a bisect rather than more reading: instrument the
+working build to dump every scalar the 3b body reads before writing, run both,
+and diff. That is the technique from section 9, and it is what found bug 5.
+
+---
+
 ## 7. What is left
 
 Roughly in priority order.
