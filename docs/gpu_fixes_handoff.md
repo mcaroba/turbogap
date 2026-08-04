@@ -630,7 +630,7 @@ pair matches and the term comes out as exactly 0. It now derives them from
 
 ---
 
-## 6g. The exp virial still diverges from frame 1 — OPEN
+## 6g. The exp virial diverged from frame 1 — FIXED, again on the CPU side
 
 What remains after 6b and 6f. Running `XRD_mad` from identical positions with
 both fixes in place:
@@ -644,103 +644,48 @@ frame 1  CPU [14976.64, -14449.08,  2522.62, ...]
          GPU [ 1275.74,  -8742.90,  -550.61, ...]
 ```
 
-Note the direction reversed when the CPU bug of 6b was fixed: before it, the
-GPU was the larger of the two. Identical positions, identical forces, agreement
-at frame 0 and disagreement from frame 1 points at accumulation — one side
-carrying a virial contribution across MD steps that the other resets, or
-including a term the other omits. `virial_pdf`, `virial_sf`, `virial_xrd` and
-`virial_nd` are zeroed once per prediction block; check whether that block is
-re-entered per MD step on both branches, and compare the pdf, sf and xrd virial
-contributions separately rather than the total.
+**Cause and fix.** Comparing the pdf, sf and xrd virials *separately* rather
+than the total settled it immediately:
 
-This is the only thing keeping `XRD_mad` xfail.
+| | frame 0 | 1 | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|---|---|
+| CPU `sum(abs(virial_xrd))` | 72549 | 103851 | 168265 | 192035 | 289353 | 226333 |
+| this branch | 72549 | 35239 | 70441 | 45745 | 114767 | 104029 |
+
+The CPU's grows; this branch's fluctuates per frame. The CPU driver zeroes
+`virial_pdf/sf/xrd/nd` each prediction block, but under MPI the exp routines
+accumulate into the `this_` prefixed copies, **which were never zeroed
+anywhere**, so the structure-factor virial accumulated across every MD step of
+a run. This branch zeroes `this_virial_xrd` before its batched collection and
+was right. Fixed on the CPU branch (`4f99e92`); the two now agree frame by
+frame to ~1e-10.
+
+With 6b, 6f and this fixed, `XRD_mad` agrees on energies, forces, core_pot and
+the virial in every frame. The only remaining difference is `local_energy`
+drift in frames 4 and 5 — 2.4e-06 and 1.5e-05 — which is accumulated
+divergence over five MD steps of a chaotic driver, given this build is not
+bit-reproducible run to run (§6c). It is not a defect, but it is above the
+comparator's tolerance, so `XRD_mad` stays xfail on that alone.
 
 ---
 
-## 7. What is left
+## 6h. Spurious pdf, sf and nd virial contributions — OPEN, small
 
-Roughly in priority order.
+Noticed while separating the contributions. With `n_exp = 1` and
+`exp_labels = 'xrd'`, only the xrd term is fitted, so only it should carry
+forces and a virial. The CPU reports `sum(abs(...))` of exactly 0.0 for pdf,
+sf and nd in every frame. This branch reports:
 
-1. **Rename `tmp1`/`tmp2`/`tmp3` in `kernel_get_radial_poly3gauss`.** `tmp1`
-   means both the amplitude polynomial `1 + rj^2(2rj-3)` and `dr^2/nf^2` in
-   different sections of the same kernel. This reuse is precisely what hid bug 5
-   for four rounds of investigation. It is the highest-value cleanup left, but
-   it is the most numerically delicate kernel in the tree and deserves its own
-   verify cycle against `tests/gpu/run_regression.sh`, section by section.
-2. **Failure notification for the cron job.** Output goes to `/dev/null`, so a
-   broken nightly is only visible in `history.log`. Needs a decision on the
-   channel (email relay, Slack webhook, a watched file).
-3. **`turbogap_master_2026` submodule is dirty.** `random_seed` support is
-   committed there (`e6eb1aa`), but the `TURBOGAP_DUMP_CNK` instrumentation in
-   its `src/soap_turbo/src/soap_turbo.f90` is **not**. Commit or revert
-   deliberately — the nightly cron uses that binary as its reference.
-4. **Continue the `turbogap.f90` refactor.** `0dafc9a` extracted the GPU 2b /
-   core_pot / 3b blocks into internal subroutines (`add_2b_contribution_gpu`
-   etc.). The file previously had *no* internal procedures at all; there is
-   plenty more inline material worth the same treatment. Internal procedures
-   are the cheap route here — host association means no argument lists.
-5. **`-fopenmp` and GPU streams**, only if multi-GPU or batched xrd/pdf work
-   becomes relevant. See §3.
+```
+pdf 6.126893924420E-03    sf 1.472498760758E+02    nd 1.007955953266E+00
+```
 
-## 8. Dead ends — already ruled out, do not re-derive
+**identical to all thirteen digits in all six frames**, while the atoms move.
+A geometry-independent value is not physics. Zeroing `this_virial_pdf/sf/nd`
+per snapshot does not change them, so they are written after that point, every
+frame, to the same value.
 
-Chasing bug 5 eliminated a lot. Recorded so nobody repeats it.
+`sf` at 147 against an xrd virial of order 1e5 is small but not negligible,
+and it is currently included in the total. Worth finding before the exp path
+is trusted for pressure.
 
-**Verified to match the CPU, term by term:**
-
-* `cuda_get_soap_der_one` — assembly and multiplicity indexing (`counter2`
-  correctly advances only inside the non-skipped branch)
-* `cuda_get_soap_der_two_one` / `_two_two` — normalization
-  `der/sqrt_p - soap/p^3 * dot(soap,der)`; the shared-memory reduction is sound
-  (`tpb = 64`, power of two, and `nthreads == tpb`)
-* `cuda_get_soap_der_thr_one` / `_thr_two` — Cartesian transform and the
-  central-atom sum; correctly launched over `n_atom_pairs` and `n_sites`
-  respectively, and race-free
-* `naive_transpose_soap_rad_azi_pol` — parameter *names* are misleading (the
-  dimensions are passed swapped) but the arithmetic is correct
-* `cuda_soap_forces_virial_two` — contraction and the symmetric virial formula;
-  the index transposition is harmless because the expression is symmetric
-* the entire soft-cutoff derivative block (`pref_f`, `der_pref_f`,
-  `der_rjf_rj`, `der_sjf_rj`, and the `tmp5/tmp6/tmp7` rolling window over
-  `exp_coeff_temp2(n, n+1, n+2)` — `tmp7` *is* refreshed each iteration)
-* `angular_exp_coeff_rad_der` — agrees with the CPU to 2.8e-14
-
-**Tested and disproved:**
-
-* Making `cuda_global_scaling` apply the same `sqrt(rcut_hard)` factor to the
-  coefficient and its derivative. This makes `cnk_rad_der` far worse
-  (max deviation 1.1 -> 245). The opposite powers are **correct**: the CPU does
-  `exp_coeff * sqrt(rcut_hard)` and `exp_coeff_der / sqrt(rcut_hard)`
-  (`soap_turbo_radial.f90`), because the derivative is with respect to the
-  reduced coordinate `r/rcut_hard`.
-* The `if( .false. .or. ... )` guards in the radial kernel. These look like
-  hand-neutered conditions but the **identical idiom is in the CPU source**
-  (`soap_turbo_radial.f90` lines 611 and 677). Faithful port, not a bug.
-* A "species-dependent" reading of the error. Early dumps appeared to show the
-  error concentrated in the second species block; this was an **artifact** of
-  each pair only writing its own species block (8 of 16 `n` values). Checking
-  `nonzero` against `differing` showed 100% of computed entries were wrong.
-
-**Removed as dead** (`07f5c93`), so do not go looking for them:
-`cuda_get_derivatives`, `cuda_get_derivatives_new` (never launched, were
-themselves inside a block comment, and wrote `cnk_*_der_d` in a layout
-contradicting the live consumer), the commented-out timing harness in
-`gpu_get_derivatives`, and `cuda_poly3gauss_one` (body commented out — it read
-nothing, wrote nothing, and ran an empty loop nest).
-
-## 9. Debugging technique that worked
-
-The productive loop for numerical disagreement was **dump the same intermediate
-from both codes and diff it**, narrowing one stage at a time:
-
-`forces` -> `soap_cart_der` -> `cnk_rad_der` -> `{radial, angular}_exp_coeff_der`
--> the kernel that produces the radial one.
-
-`TURBOGAP_DUMP_CNK` (set the env var; off by default) dumps `cnk_rad_der`,
-`radial_exp_coeff_der` and `angular_exp_coeff_rad_der` for the first 20 pairs,
-in a matching order, from **both** repos. Always dump `rjs` alongside — that is
-what confirms the two codes agree on neighbour-pair ordering and so that the
-comparison means anything.
-
-Reading the code alone did not find this bug; every suspicious-looking thing
-turned out to be a faithful port. The measurement did.

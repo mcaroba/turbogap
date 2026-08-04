@@ -1,0 +1,21 @@
+=== turbogap GPU regression: 2026-08-04T03:19:48+03:00 on d22-0052 ===
+repo   : /u/74/zarrout1/unix/work/cpu_vs_gpu_tests/turbogap_gpu_commit_mahti
+branch : gpu_fixes
+commit : 18cbb8c Drop the numpy dependency and add a cron driver for the regression suite
+submod : c605ddf
+binary : bin/turbogap (2026-08-04T03:19:39+03:00)
+--- comparator self-test ---
+identical          expected PASS, got PASS  ok
+energy perturbed   expected FAIL, got FAIL  ok
+forces perturbed   expected FAIL, got FAIL  ok
+virial perturbed   expected FAIL, got FAIL  ok
+
+compare_xyz.py self-test passed
+--- regression suite ---
+== CO_predict ==
+    PASS
+== CO_md ==
+    PASS
+
+passed: 2   failed: 0
+RESULT: PASS
