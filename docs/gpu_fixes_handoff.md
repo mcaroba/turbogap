@@ -411,6 +411,41 @@ pool later reuses. The next step is to read back the three device pointer values
 and their allocated sizes on both sides, rather than their contents — that is
 the one thing not yet compared.
 
+#### Every argument to gpu_3b is now proved identical — stop comparing inputs
+
+The argument-by-argument comparison is **complete**. Between the working build
+and the module build, on `CO_predict`, all of the following are equal:
+
+| compared | result |
+|---|---|
+| `n_sparse`, `n_sites`, `n_atom_pairs`, `n_sites0` | identical |
+| `sp0_3b`, `sp1_3b`, `sp2_3b`, `c_do_forces`, `i_beg`, `i_end` | identical |
+| `delta`, `rcut`, `max_np`, all four `size_*` byte counts | identical |
+| `c_name_3b` (selects the kernel template) | identical, `"pol "` |
+| host checksums: `rjs`, `xyz`, `n_neigh`, `species`, `neighbor_species`, `neighbors_list` | identical |
+| per-descriptor host `alphas`, `cutoff`, `qs`, `sigma` | identical, all six |
+| **all 11 input device pointers** | identical *addresses* |
+| **all 3 output device pointers** and their sizes | identical addresses, 57408 / 172224 / 72 |
+| **device contents** of `kappas_array_d` | identical |
+| **device contents** of `alphas_d`, `cutoff_d`, `qs_d`, `sigma_d` | identical |
+| `gpu_stream` | identical pointer |
+
+The kernel receives byte-identical arguments pointing at byte-identical device
+memory, and still writes 59 out-of-bounds atomics that the working build does
+not. **Do not re-check any of the above** — it has been measured, not reasoned
+about.
+
+That means the cause is not in what the kernel is passed, so input comparison
+has been exhausted. The productive next step is a **structural bisect**: start
+from the module version and move it back toward the original one change at a
+time — fold `gap_backend_begin`'s uploads into `add_2b_contribution` to remove
+the begin/end split; make the device pointers driver variables passed as
+arguments instead of module state; make the three procedures internal again but
+in a module. Whichever step restores 2.1360198474 names the cause.
+
+The instrumented versions used for all of the above are kept in
+`../phase0_backup/phase2_gpu_wip/`.
+
 Worth noting for whoever picks this up: the commented-out line directly above
 the live one,
 
