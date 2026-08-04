@@ -29,6 +29,7 @@
 
 program turbogap
 
+  use timing
   use neighbors
   use soap_turbo_desc
   use gap

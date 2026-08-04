@@ -31,7 +31,7 @@ PROGRAMS := turbogap
 
 SRC_CUDA := cuda_wrappers.cu gpu_exp.cu 
 SRC_CC :=  3b_final.cc # orthonormalization_kernels.cc
-SRC := splines.f90 types.f90 neighbors.f90 gap.f90 vdw.f90 local_properties.f90 exp_utils.f90 \
+SRC := timing.f90 splines.f90 types.f90 neighbors.f90 gap.f90 vdw.f90 local_properties.f90 exp_utils.f90 \
        xyz.f90 md.f90 mc.f90 read_files.f90 \
        gap_interface.f90 mpi.f90 exp_interface.f90 \
        electrostatics.f90

@@ -35,6 +35,7 @@ module gap_interface
    use F_B_C
    use iso_c_binding
    use mpi
+   use timing
 
 contains
 
@@ -441,16 +442,7 @@ contains
     end if
   end subroutine get_gap_soap
 !**************************************************************************
-subroutine get_time(time)
-        implicit none
-        real*8 :: time
 
-#ifdef _MPIF90
-        time = MPI_Wtime()
-#else
-        call cpu_time(time)
-#endif
-end subroutine get_time
 
 
 ! !**************************************************************************
