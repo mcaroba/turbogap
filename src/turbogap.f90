@@ -1521,6 +1521,9 @@ end if
            !       names from src/gap_backend_gpu.f90 and the Makefile picks one.
            call get_time(time1)
 
+           call gap_backend_begin( params, rjs, xyz, n_neigh, species, neighbor_species, &
+                neighbors_list, i_beg, i_end, j_beg, j_end )
+
            call add_2b_contribution( n_distance_2b, distance_2b_hypers, &
                 params, rjs, xyz, n_neigh, species, neighbor_species, &
                 i_beg, i_end, j_beg, j_end, this_energies, this_forces, this_virial, &
@@ -1535,6 +1538,8 @@ end if
                 params, rjs, xyz, n_neigh, species, neighbor_species, &
                 i_beg, i_end, j_beg, j_end, this_energies, this_forces, this_virial, &
                 energies_3b, forces_3b, virial_3b, time_3b )
+
+           call gap_backend_end()
 
 
            call get_time(time2)

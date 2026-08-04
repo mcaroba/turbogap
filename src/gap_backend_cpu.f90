@@ -27,9 +27,32 @@ module gap_backend
   implicit none
 
   private
+  public :: gap_backend_begin, gap_backend_end
   public :: add_2b_contribution, add_core_pot_contribution, add_3b_contribution
 
 contains
+
+!**************************************************************************
+! Bracket the three contribution calls.
+!
+! Nothing to do on the CPU: the arrays the kernels read are already in host
+! memory. These exist because the GPU implementation needs somewhere to upload
+! the neighbour data once for all three calls rather than three times, and that
+! has to happen without the driver ever holding a device pointer. An empty pair
+! here is the price of keeping the interface physics-only.
+  subroutine gap_backend_begin( params, rjs, xyz, n_neigh, species, neighbor_species, &
+       neighbors_list, i_beg, i_end, j_beg, j_end )
+    implicit none
+    type(input_parameters), intent(inout) :: params
+    real*8,  intent(in), allocatable :: rjs(:), xyz(:,:)
+    integer, intent(in), allocatable :: n_neigh(:), species(:), neighbor_species(:)
+    integer, intent(in), allocatable :: neighbors_list(:)
+    integer, intent(in) :: i_beg, i_end, j_beg, j_end
+  end subroutine gap_backend_begin
+
+  subroutine gap_backend_end()
+    implicit none
+  end subroutine gap_backend_end
 
 !**************************************************************************
 ! Accumulate the two-body energies, forces and virial.
