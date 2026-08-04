@@ -20,12 +20,15 @@
 #define tpb_get_soap_der_one 128
 #define tpbcnk 64 // this is because k_max is 45???
 #define static_alphamax 8
-
 #define mode_polynomial 1
+
+//For tiled transpositions
+constexpr std::size_t TRANSPOSE_TILE_DIM = 32;
+constexpr std::size_t TRANSPOSE_BLOCK_ROWS = 8;
 
 int counter=0;
 /*__device__ double atomicDoubleAdd(double* address, double val)
-  {
+{
   unsigned long long int* address_as_ull =
   (unsigned long long int*)address;
   unsigned long long int old = *address_as_ull, assumed;
@@ -1034,24 +1037,35 @@ __global__ void cuda_get_soap_p(double *soap_d, double *sqrt_dot_p_d, double *mu
   }
 
 
-  __global__ void naive_transpose_soap_rad_azi_pol(double *soap_rad_der_d,
-      double *tran_soap_rad_der_d, 
-      int n_soap, int n_atom_pairs)
-  {
-    int i_g = threadIdx.x+blockIdx.x*blockDim.x;
-    if(i_g<n_soap*n_atom_pairs){
-      double loc_soap_rad=soap_rad_der_d[i_g];
-      int k2=i_g/n_soap;
-      int icount=i_g%n_soap;
-      int new_i_g=k2+icount*n_atom_pairs;
-      tran_soap_rad_der_d[new_i_g]=loc_soap_rad;
-    }
+__global__ void naive_transpose_soap_rad_azi_pol(double *soap_rad_der_d,
+                                                 double *tran_soap_rad_der_d,
+                                                 int n_soap, int n_atom_pairs) {
 
+  // Handles bank conflicts too
+  __shared__ double tile[TRANSPOSE_TILE_DIM][TRANSPOSE_TILE_DIM + 1];
+  int x = blockIdx.x * TRANSPOSE_TILE_DIM + threadIdx.x;
+  int y = blockIdx.y * TRANSPOSE_TILE_DIM + threadIdx.y;
+
+  for (int j = 0; j < TRANSPOSE_TILE_DIM; j += TRANSPOSE_BLOCK_ROWS) {
+    if (x < n_soap && (y + j) < n_atom_pairs) {
+      tile[threadIdx.y + j][threadIdx.x] = soap_rad_der_d[(y + j) * n_soap + x];
+    }
   }
 
+  __syncthreads();
 
-  __global__ void naive_transpose_cnk_arrays(hipDoubleComplex *C,
-      hipDoubleComplex *tran_C, 
+  x = blockIdx.y * TRANSPOSE_TILE_DIM + threadIdx.x;
+  y = blockIdx.x * TRANSPOSE_TILE_DIM + threadIdx.y;
+  for (int j = 0; j < TRANSPOSE_TILE_DIM; j += TRANSPOSE_BLOCK_ROWS) {
+    if (x < n_atom_pairs && (y + j) < n_soap) {
+      tran_soap_rad_der_d[(y + j) * n_atom_pairs + x] =
+          tile[threadIdx.x][threadIdx.y + j];
+    }
+  }
+}
+
+__global__ void naive_transpose_cnk_arrays(hipDoubleComplex *C,
+                                           hipDoubleComplex *tran_C, 
       int k_max, int n_max, int n_sites)
   {
     // in Fortran is cnk( 1:k_max, 1:n_max, 1:n_sites) --> (1:n_sites,1:k_max, 1:n_max)
@@ -1103,20 +1117,24 @@ __global__ void cuda_get_soap_p(double *soap_d, double *sqrt_dot_p_d, double *mu
 	k2_i_site_d, skip_soap_component_d, 
 	n_sites,  n_atom_pairs, n_soap,  k_max, n_max, l_max);
 
+	dim3 transpose_block(TRANSPOSE_TILE_DIM, TRANSPOSE_BLOCK_ROWS, 1);
+	dim3 transpose_grid(
+	(n_atom_pairs + TRANSPOSE_TILE_DIM - 1) / TRANSPOSE_TILE_DIM,
+	(n_soap + TRANSPOSE_TILE_DIM - 1) / TRANSPOSE_TILE_DIM, 1);
 
-    naive_transpose_soap_rad_azi_pol<<< (n_soap*n_atom_pairs+tpb-1)/tpb, tpb,0, stream[0]>>>(trans_soap_rad_der_d,
-	soap_rad_der_d, 
-	n_atom_pairs,n_soap);
+	naive_transpose_soap_rad_azi_pol<<<transpose_grid, transpose_block, 0,
+	stream[0]>>>(
+	trans_soap_rad_der_d, soap_rad_der_d, n_atom_pairs, n_soap);
 
-    naive_transpose_soap_rad_azi_pol<<< (n_soap*n_atom_pairs+tpb-1)/tpb, tpb,0, stream[0]>>>(trans_soap_azi_der_d,
-	soap_azi_der_d, 
-	n_atom_pairs,n_soap);
+	naive_transpose_soap_rad_azi_pol<<<transpose_grid, transpose_block, 0,
+	stream[0]>>>(
+	trans_soap_azi_der_d, soap_azi_der_d, n_atom_pairs, n_soap);
 
-    naive_transpose_soap_rad_azi_pol<<<(n_soap*n_atom_pairs+tpb-1)/tpb, tpb,0,  stream[0]>>>(trans_soap_pol_der_d,
-	soap_pol_der_d, 
-	n_atom_pairs,n_soap);
+	naive_transpose_soap_rad_azi_pol<<<transpose_grid, transpose_block, 0,
+	stream[0]>>>(
+	trans_soap_pol_der_d, soap_pol_der_d, n_atom_pairs, n_soap);
 
-    cuda_get_soap_der_two_one<<<n_atom_pairs, nthreads,0, stream[0]>>>(soap_d,sqrt_dot_d, 
+	cuda_get_soap_der_two_one<<<n_atom_pairs, nthreads,0, stream[0]>>>(soap_d,sqrt_dot_d, 
 	soap_rad_der_d,soap_azi_der_d, soap_pol_der_d,
 	trans_soap_rad_der_d, trans_soap_azi_der_d, trans_soap_pol_der_d,    
 	tdotoprod_der_rad, tdotoprod_der_azi, tdotoprod_der_pol,                                            
@@ -1141,10 +1159,9 @@ __global__ void cuda_get_soap_p(double *soap_d, double *sqrt_dot_p_d, double *mu
 	thetas_d, phis_d, rjs_d,
 	n_neigh_d, i_k2_start_d, k2_i_site_d, k3_index_d, 
 	n_sites,  n_atom_pairs, n_soap,  k_max, n_max, l_max, maxneigh);                                                       
-    //printf("\n YOLO \n");
-    hipFreeAsync(tdotoprod_der_rad,   stream[0]);hipFreeAsync(tdotoprod_der_azi,   stream[0]);hipFreeAsync(tdotoprod_der_pol,   stream[0]);
-    hipFreeAsync(trans_soap_rad_der_d,stream[0]);hipFreeAsync(trans_soap_azi_der_d,stream[0]);hipFreeAsync(trans_soap_pol_der_d,stream[0]);
-    /* hipFreeAsync(trans_cnk_d,0); */
+	hipFreeAsync(tdotoprod_der_rad,   stream[0]);hipFreeAsync(tdotoprod_der_azi,   stream[0]);hipFreeAsync(tdotoprod_der_pol,   stream[0]);
+	hipFreeAsync(trans_soap_rad_der_d,stream[0]);hipFreeAsync(trans_soap_azi_der_d,stream[0]);hipFreeAsync(trans_soap_pol_der_d,stream[0]);
+	/* hipFreeAsync(trans_cnk_d,0); */
     /* hipFreeAsync(trans_cnk_rad_der_d,0);hipFreeAsync(trans_cnk_azi_der_d,0);hipFreeAsync(trans_cnk_pol_der_d,0); */
 
     // hipError_t code=hipDeviceSynchronize() ;
