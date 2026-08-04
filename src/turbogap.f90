@@ -1324,7 +1324,11 @@ program turbogap
            allocate( this_mbd_ts_scaling(1:n_sites) )
 
 ! Read in file for ts+mbd van der Waals mode if it exists
-if( params%vdw_type == "ts+mbd" .and. md_istep == 0 )then
+! Initialise the TS scaling factors. md_istep <= 0 rather than == 0 because
+! predict and mc never advance md_istep past -1, and without this they reach
+! get_ts_energy_and_forces with mbd_ts_scaling never having been set. For MD
+! this is still exactly the first step, so the MD path is unchanged.
+if( params%vdw_type == "ts+mbd" .and. md_istep <= 0 )then
 !          energies_vdw_corr = 0.d0
            if( rank == 0 )then
              open(unit=30, file="mbd_ts_scaling.dat", status="old", iostat=iostatus)

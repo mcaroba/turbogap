@@ -1,0 +1,5 @@
+# mc_istep  mc_move  accepted  E_trial              E_current           N_tot_trial  N_mc_species_trial
+       1       move    F        -572.24472027        -572.25522130      108 
+       2       move    F        -572.24373379        -572.25522130      108 
+       3       move    T        -572.24363663        -572.25522130      108 
+       4       move    T        -572.23998846        -572.24363663      108 

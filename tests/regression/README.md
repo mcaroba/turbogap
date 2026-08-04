@@ -28,6 +28,22 @@ Non-zero exit means at least one case differs from the baseline.
 | `TURBOGAP_DATA_ROOT` | directory holding the test systems |
 | `TURBOGAP_TIME_TOL` | fail if test/ref wall-clock exceeds this ratio |
 | `TURBOGAP_KEEP` | keep staging dirs for inspection |
+| `TURBOGAP_BLESS` | regenerate `expected/` for golden cases |
+
+## Two kinds of case
+
+Most cases compare against the frozen baseline binary, and must be
+bit-identical to it.
+
+A case whose `case.conf` sets `REFERENCE=golden` compares against a checked-in
+`expected/` directory instead. That is for inputs the baseline cannot run at
+all because it crashes on them — there is no baseline output to diff. These are
+**characterization** tests: they pin behaviour so a later refactor cannot drift
+it silently, and assert nothing about whether the physics is right. Regenerate
+them deliberately with `TURBOGAP_BLESS=1`, never to make a red suite go green.
+
+Expected outputs are stored per rank count, because MPI reductions are not
+associative and rank counts legitimately differ in the last digit or two.
 
 ## The baseline
 
@@ -46,6 +62,9 @@ would make every case pass vacuously.
 | `vdw_mbd_cell_mpi2` | 2 | MBD + the cross-rank Hirshfeld gradient exchange |
 | `vdw_tsmbd_md` | 1 | ts+mbd correction state: both the recompute and the reuse branch |
 | `vdw_tsmbd_md_mpi2` | 2 | the same under MPI |
+| `vdw_tsmbd_predict` | 1 | ts+mbd outside MD (golden; baseline crashes here) |
+| `vdw_tsmbd_predict_mpi2` | 2 | the same under MPI |
+| `vdw_tsmbd_mc` | 1 | ts+mbd under mc, which also never advances md_istep |
 | `xps_predict` | 1 | SOAP loop, local properties, 2b/3b/core_pot, XPS spectrum |
 | `xps_predict_mpi4` | 4 | the energy/force/virial MPI reductions |
 | `gcmc_xps` | 1 | MC insertion/removal: `n_sites` changes, reallocation, neighbor rebuilds |
@@ -72,5 +91,6 @@ A case whose data is absent is skipped, not failed.
 ## Coverage gaps
 
 Read `KNOWN_ISSUES.md` before trusting a green run. In particular `ts+mbd`
-segfaults in `predict` and `mc` in master, so it is covered from `md` mode
-only.
+applies its correction to energies but not to forces, so its energies and
+forces are inconsistent — a green suite pins that behaviour, it does not
+endorse it.

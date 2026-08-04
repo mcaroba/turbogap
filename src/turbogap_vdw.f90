@@ -100,6 +100,7 @@ contains
     integer, allocatable :: hirshfeld_disp(:)
     integer :: i, j, k, i2, j2, k2, n, jx, jy, jz, ierr
     logical :: include_2b
+    logical :: is_correction_step
 !   Scratch timers for the commented-out stage timings inside the block. The
 !   main program's time1/time2 were used for this before; both are written
 !   before they are next read there, so nothing depended on the clobbering.
@@ -108,6 +109,23 @@ contains
     if( has_vdw .and. ( params%do_prediction ) &
          .and. ( params%vdw_type == "ts" .or. params%vdw_type == "mbd".or. params%vdw_type == "ts+mbd" ) )then
            call cpu_time(time_vdw(1))
+
+!          Does this call recompute the ts+mbd correction, or reuse the one a
+!          previous call stored? The reuse half of that cycle only means
+!          anything during MD, where there was a previous step to store it.
+!          predict and mc leave md_istep at -1, and modulo(-1, freq) is
+!          non-zero for every freq > 1, so spelling this test as the modulo
+!          alone sent them down the reuse path with nothing stored: reading
+!          correction buffers the recompute branch had never allocated, and
+!          an mbd_ts_scaling nobody had initialised. Outside MD there is no
+!          cycle to be part of, so every call recomputes.
+!
+!          For md_istep >= 0 this is exactly the old expression, so the MD
+!          path is unchanged. It is computed once because it used to be
+!          spelled out at six sites that all had to agree, and the crash was
+!          two of them disagreeing about whether the buffers existed.
+           is_correction_step = ( md_istep < 0 ) .or. &
+                                ( modulo(md_istep, params%mbd_correction_freq) == 0 )
 #ifdef _MPIF90
            allocate( this_energies_vdw(1:n_sites) )
            this_energies_vdw = 0.d0
@@ -277,7 +295,7 @@ contains
 #endif
 
 
-if( params%vdw_type == "ts+mbd" .and. modulo(md_istep, params%mbd_correction_freq) == 0 )then
+if( params%vdw_type == "ts+mbd" .and. is_correction_step )then
 !        if( allocated(state%this_energies_vdw_corr) )deallocate( state%this_energies_vdw_corr, this_mbd_ts_scaling )
         if( allocated(state%this_energies_vdw_corr) )deallocate( state%this_energies_vdw_corr )
         allocate( state%this_energies_vdw_corr(1:n_sites) )
@@ -329,7 +347,7 @@ end if
                 energies_vdw(i_beg:i_end), forces_vdw, virial_vdw, local_virial_vdw_diag, &
                 mbd_ts_scaling )
 #endif
-          if( .not. (params%vdw_type == "ts+mbd" .and. modulo(md_istep, params%mbd_correction_freq) == 0) )then
+          if( .not. (params%vdw_type == "ts+mbd" .and. is_correction_step) )then
             deallocate(v_neigh_vdw)
           end if
 ! TESTING FOR MERGING
@@ -337,8 +355,8 @@ end if
 !write(*,*) "this_energies_vdw", this_energies_vdw
         end if
         if( params%vdw_type == "mbd" .or. &
-            (params%vdw_type == "ts+mbd" .and. modulo(md_istep, params%mbd_correction_freq) == 0) )then
-          if( params%vdw_type == "ts+mbd" .and. modulo(md_istep, params%mbd_correction_freq) == 0 )then
+            (params%vdw_type == "ts+mbd" .and. is_correction_step) )then
+          if( params%vdw_type == "ts+mbd" .and. is_correction_step )then
 #ifdef _MPIF90
 !            state%this_energies_vdw_corr(i_beg:i_end) = this_energies_vdw(i_beg:i_end)
             state%this_energies_vdw_corr = this_energies_vdw
@@ -506,7 +524,7 @@ call cpu_time(time2)
           !end do
           deallocate(alpha_SCS, omega_SCS, alpha_SCS_grad, c6_scs, r0_scs, alpha0_scs, &
                      this_alpha_SCS, this_omega_SCS)
-          if( .not. (params%vdw_type == "ts+mbd" .and. modulo(md_istep, params%mbd_correction_freq) == 0) )deallocate(v_neigh_vdw) 
+          if( .not. (params%vdw_type == "ts+mbd" .and. is_correction_step) )deallocate(v_neigh_vdw) 
         end if
 !write(*,*) "This local virial", this_local_virial_vdw_diag
 !       Apply the MBD-TS correction if needed/requested
@@ -533,7 +551,7 @@ end if
 end do
 !write(*,*) rank, state%this_local_virial_vdw_diag_corr * S_xyz_inv
 !         This updates the correction every mbd_correction_freq steps
-          if( modulo(md_istep, params%mbd_correction_freq) == 0 )then
+          if( is_correction_step )then
 #ifdef _MPIF90
 !            this_mbd_ts_scaling = 1.d0 + (dabs(this_energies_vdw) - dabs(state%this_energies_vdw_corr)) &
 !                                  / (dabs(state%this_energies_vdw_corr) + 0.01d0)

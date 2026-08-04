@@ -23,6 +23,14 @@
 #   TURBOGAP_TIME_TOL   fail if test/ref wall-clock exceeds this ratio
 #                       (default: unset -> timing is reported, not enforced)
 #   TURBOGAP_KEEP       keep staging directories for inspection
+#   TURBOGAP_BLESS      regenerate the expected/ output of golden cases
+#
+# Most cases compare the binary under test against the frozen baseline. A case
+# whose case.conf sets REFERENCE=golden instead compares against a checked-in
+# expected/ directory, for the situation where the baseline cannot produce a
+# reference at all because it crashes on that input. Those are characterization
+# tests: they pin behaviour against future drift and assert nothing about
+# whether the physics is right.
 #
 # Usage: run.sh [case ...]      (no arguments runs every case)
 #        run.sh --list
@@ -114,7 +122,7 @@ for name in "${cases[@]}"; do
   conf=$here/cases/$name/case.conf
   [ -f "$conf" ] || die "no such case: $name"
 
-  DATA=; MODE=; RANKS=1; LINKS=; OUTPUTS=; NEEDS=
+  DATA=; MODE=; RANKS=1; LINKS=; OUTPUTS=; NEEDS=; REFERENCE=baseline
   # shellcheck source=/dev/null
   . "$conf"
 
@@ -133,13 +141,33 @@ for name in "${cases[@]}"; do
     skip=$((skip+1)); continue
   fi
 
-  rdir=$(stage "$name" ref)
   tdir=$(stage "$name" test)
 
-  if ! run "$rdir" "$REF_BIN" reference; then fail=$((fail+1)); continue; fi
-  rtime=$REPLY
-  if ! run "$tdir" "$BIN" test; then fail=$((fail+1)); continue; fi
-  ttime=$REPLY
+  if [ "$REFERENCE" = golden ]; then
+    # The baseline binary cannot produce a reference for this case -- it
+    # crashes on it. Compare against a checked-in expected output instead.
+    # This is a characterization test: it pins behaviour so later refactors
+    # cannot drift it, and says nothing about whether the physics is right.
+    rdir=$here/cases/$name/expected
+    if [ ! -d "$rdir" ] && [ -z "${TURBOGAP_BLESS:-}" ]; then
+      printf '    SKIP: no expected/ directory (regenerate with TURBOGAP_BLESS=1)\n'
+      skip=$((skip+1)); continue
+    fi
+    if ! run "$tdir" "$BIN" test; then fail=$((fail+1)); continue; fi
+    ttime=$REPLY; rtime=$ttime
+    if [ -n "${TURBOGAP_BLESS:-}" ]; then
+      mkdir -p "$rdir"
+      for out in $OUTPUTS; do cp "$tdir/$out" "$rdir/$out"; done
+      printf '    BLESSED expected output (%ss)\n' "$ttime"
+      pass=$((pass+1)); continue
+    fi
+  else
+    rdir=$(stage "$name" ref)
+    if ! run "$rdir" "$REF_BIN" reference; then fail=$((fail+1)); continue; fi
+    rtime=$REPLY
+    if ! run "$tdir" "$BIN" test; then fail=$((fail+1)); continue; fi
+    ttime=$REPLY
+  fi
 
   bad=
   for out in $OUTPUTS; do

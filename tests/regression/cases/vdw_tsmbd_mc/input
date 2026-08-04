@@ -1,0 +1,31 @@
+atoms_file = "p4_cell.xyz"
+pot_file = "gap_files/phosphorus.gap"
+n_species = 1
+species = P
+e0 = -0.52375977
+masses = 30.97
+random_seed = 12345
+
+vdw_rcut = 25.
+vdw_r0_ref = 2.12
+vdw_alpha0_ref = 3.7046
+vdw_c6_ref = 110.54
+vdw_buffer = 0.5
+
+vdw_type = ts+mbd
+vdw_scs_rcut = 5.
+vdw_loc_rcut = 5.
+vdw_mbd_rcut = 15.0
+vdw_mbd_rcut2 = 10.0
+vdw_2b_rcut = 15.0
+vdw_2b_rcut2 = 10.0
+vdw_mbd_nfreq = 13
+vdw_mbd_norder = 6
+write_xyz = 1
+
+write_xyz = 1
+
+mc_nsteps = 5
+n_mc_types = 1
+mc_types = "move"
+mc_move_max = 0.1
