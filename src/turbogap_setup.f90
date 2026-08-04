@@ -19,6 +19,7 @@
 
 module turbogap_setup
 
+  use timing
   use types
   use read_files
   use local_prop
@@ -92,7 +93,7 @@ contains
     integer :: n_sparse, dim, cPnz, n_nonzero, n_local_properties_tot = 0
     integer :: i, j, ierr, iostatus, n_sp, n_lp_count
   time_read_input(3) = 0.d0
-  call cpu_time(time_read_input(1))
+  call get_time(time_read_input(1))
   open(unit=10,file='input',status='old',iostat=iostatus)
   ! Check for existence of input file
 #ifdef _MPIF90
@@ -269,7 +270,7 @@ contains
      !   THIS CHUNK HERE DISTRIBUTES THE INPUT DATA AMONG ALL THE PROCESSES
      !   Broadcast number of descriptors to other processes
 #ifdef _MPIF90
-     call cpu_time(time_mpi(1))
+     call get_time(time_mpi(1))
      call mpi_bcast(n_soap_turbo, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(n_distance_2b, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(n_angle_3b, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
@@ -284,7 +285,7 @@ contains
           & MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
 
      !   Processes other than 0 need to allocate the data structures on their own
-     call cpu_time(time_mpi(2))
+     call get_time(time_mpi(2))
      time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
      allocate( n_species_mpi(1:n_soap_turbo) )
      allocate( n_sparse_mpi_soap_turbo(1:n_soap_turbo) )
@@ -341,7 +342,7 @@ contains
         end if
 
      END IF
-     call cpu_time(time_mpi(1))
+     call get_time(time_mpi(1))
      call mpi_bcast(n_species_mpi, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(n_sparse_mpi_soap_turbo, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(dim_mpi, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
@@ -371,7 +372,7 @@ contains
      call mpi_bcast(n_sparse_mpi_angle_3b, n_angle_3b, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(n_mpi_core_pot, n_core_pot, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(compress_P_nonzero_mpi, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-     call cpu_time(time_mpi(2))
+     call get_time(time_mpi(2))
      time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
 
      IF( rank /= 0 )THEN
@@ -398,7 +399,7 @@ contains
      !   type) at once via broadcasting, to reduce the total number of MPI calls to the minimum. This will be
      !   done at the module's subroutine's level.
      !   soap_turbo allocatable structures
-     call cpu_time(time_mpi(1))
+     call get_time(time_mpi(1))
      do i = 1, n_soap_turbo
         n_sp = soap_turbo_hypers(i)%n_species
         call mpi_bcast(soap_turbo_hypers(i)%nf(1:n_sp), n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
@@ -542,7 +543,7 @@ contains
         call mpi_bcast(core_pot_hypers(i)%species1, 8, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
         call mpi_bcast(core_pot_hypers(i)%species2, 8, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
      end do
-     call cpu_time(time_mpi(2))
+     call get_time(time_mpi(2))
      time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
      !   Clean up
      deallocate( n_species_mpi, n_sparse_mpi_soap_turbo, dim_mpi, compress_soap_mpi, n_sparse_mpi_distance_2b, &
@@ -565,7 +566,7 @@ contains
 #endif
      stop
   end if
-  call cpu_time(time_read_input(2))
+  call get_time(time_read_input(2))
   time_read_input(3) = time_read_input(3) + time_read_input(2) - time_read_input(1)
   !**************************************************************************
 

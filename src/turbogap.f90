@@ -29,6 +29,7 @@
 
 program turbogap
 
+  use timing
   use neighbors
   use soap_turbo_desc
   use gap
@@ -205,7 +206,7 @@ program turbogap
 
   !**************************************************************************
   ! Start recording the time
-  call cpu_time(time1)
+  call get_time(time1)
   time3 = time1
   ! Start random seed
   call srand(int(time1*1000))
@@ -478,7 +479,7 @@ program turbogap
      !   Read in XYZ file and build neighbors lists
 
      if( (params%do_md .and. md_istep == 0) )then
-        call cpu_time(time_read_xyz(1))
+        call get_time(time_read_xyz(1))
 #ifdef _MPIF90
         IF( rank == 0 )THEN
 #endif
@@ -517,7 +518,7 @@ program turbogap
 #ifdef _MPIF90
         END IF
 #endif
-        call cpu_time(time_read_xyz(2))
+        call get_time(time_read_xyz(2))
         time_read_xyz(3) = time_read_xyz(3) + time_read_xyz(2) - time_read_xyz(1)
         !     If we're doing MD, we don't read beyond the first snapshot in the XYZ file
         repeat_xyz = .false.
@@ -539,7 +540,7 @@ program turbogap
         END IF
 #endif
      else if( .not. params%do_md )then
-        call cpu_time(time_read_xyz(1))
+        call get_time(time_read_xyz(1))
 #ifdef _MPIF90
         IF( rank == 0 )THEN
 #endif
@@ -562,12 +563,12 @@ program turbogap
 #ifdef _MPIF90
         END IF
 #endif
-        call cpu_time(time_read_xyz(2))
+        call get_time(time_read_xyz(2))
         time_read_xyz(3) = time_read_xyz(3) + time_read_xyz(2) - time_read_xyz(1)
 #ifdef _MPIF90
-        call cpu_time(time_mpi(1))
+        call get_time(time_mpi(1))
         call mpi_bcast(repeat_xyz, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
-        call cpu_time(time_mpi(2))
+        call get_time(time_mpi(2))
         time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
 #endif
         rebuild_neighbors_list = .true.
@@ -608,12 +609,12 @@ program turbogap
         end if
 
      END IF
-     call cpu_time(time_mpi(1))
+     call get_time(time_mpi(1))
      call mpi_bcast(n_pos, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(n_sp, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(n_sp_sc, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(n_sites, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-     call cpu_time(time_mpi(2))
+     call get_time(time_mpi(2))
      time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
 
      IF( rank /= 0 )THEN
@@ -640,7 +641,7 @@ program turbogap
         allocate( fix_atom(1:3,1:n_sp) )
 
      END IF
-     call cpu_time(time_mpi_positions(1))
+     call get_time(time_mpi_positions(1))
      call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
      if( params%do_md .or. params%do_nested_sampling .or. params%do_mc .or. params%mc_hamiltonian)then
         call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
@@ -655,7 +656,7 @@ program turbogap
      call mpi_bcast(a_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(b_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(c_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-     call cpu_time(time_mpi_positions(2))
+     call get_time(time_mpi_positions(2))
      time_mpi_positions(3) = time_mpi_positions(3) + time_mpi_positions(2) - time_mpi_positions(1)
 #endif
      !   Now that all ranks know the size of n_sites, we allocate do_list
@@ -666,7 +667,7 @@ program turbogap
         do_list = .true.
      end if
      !
-     call cpu_time(time1)
+     call get_time(time1)
 #ifdef _MPIF90
      !   Parallel neighbors list build
      call mpi_bcast(rebuild_neighbors_list, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
@@ -781,7 +782,7 @@ program turbogap
 #endif
      !   Compute the volume of the "primitive" unit cell
      v_uc = dot_product( cross_product(a_box, b_box), c_box ) / (dfloat(indices(1)*indices(2)*indices(3)))
-     call cpu_time(time2)
+     call get_time(time2)
      time_neigh = time_neigh + time2 - time1
      !**************************************************************************
 
@@ -791,7 +792,7 @@ program turbogap
      !**************************************************************************
      !   If we are doing prediction, we run this chunk of code
      if( params%do_prediction .or. params%write_soap .or. params%write_derivatives)then
-        call cpu_time(time1)
+        call get_time(time1)
 
         !     We only need to reallocate the arrays if the number of sites changes
         ! REMOVE TRUE FROM IF STATEMENT
@@ -1026,9 +1027,9 @@ end if
         end if
         !     Collect all energies
 #ifdef _MPIF90
-        call cpu_time(time_mpi_ef(1))
+        call get_time(time_mpi_ef(1))
         call mpi_reduce(energies, this_energies, n_sites, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
-        call cpu_time(time_mpi_ef(2))
+        call get_time(time_mpi_ef(2))
         time_mpi_ef(3) = time_mpi_ef(3) + time_mpi_ef(2) - time_mpi_ef(1)
         energies = this_energies
 #endif
@@ -1036,7 +1037,7 @@ end if
         !     Loop through soap_turbo descriptors - we always call this routine, even if we don't want to do prediction
         n_lp_count = 0 ! This counts the local properties
         do i = 1, n_soap_turbo
-           call cpu_time(time_soap(1))
+           call get_time(time_soap(1))
            !       Compute number of pairs for this SOAP. SOAP has in general a different cutoff than overall max
            !       cutoff, so the number of pairs may be a lot smaller for the SOAP subset.
            !       This subroutine splits the load optimally so as to not use more memory per MPI process than available.
@@ -1298,10 +1299,10 @@ end if
            END IF
 #endif
 
-           call cpu_time(time_soap(2))
+           call get_time(time_soap(2))
            time_soap(3) = time_soap(3) + time_soap(2) - time_soap(1)
 
-           call cpu_time(time2)
+           call get_time(time2)
            time_gap = time_gap + time2 - time1
 
         end do
@@ -1309,7 +1310,7 @@ end if
 
 #ifdef _MPIF90
         if( any( soap_turbo_hypers(:)%has_local_properties) )then
-           call cpu_time(time_mpi(1))
+           call get_time(time_mpi(1))
            call mpi_reduce(local_properties, this_local_properties, n_sites*params%n_local_properties,&
                 & MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD,&
                 & ierr)
@@ -1330,7 +1331,7 @@ end if
            !           call mpi_bcast(hirshfeld_v, n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
            call mpi_bcast(local_properties, n_sites*params%n_local_properties, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
 
-           call cpu_time(time_mpi(2))
+           call get_time(time_mpi(2))
            time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
         end if
 #endif
@@ -1437,7 +1438,7 @@ end if
         !     Compute core_electron_be energies and forces
         if( any( soap_turbo_hypers(:)%has_core_electron_be ) .and.( params%do_prediction ) &
              .and. valid_xps )then
-           call cpu_time(time_xps(1))
+           call get_time(time_xps(1))
 
 #ifdef _MPIF90
            allocate( this_energies_lp(1:n_sites) )
@@ -1562,7 +1563,7 @@ end if
            deallocate(v_neigh_lp)
 
 
-           call cpu_time(time_xps(2))
+           call get_time(time_xps(2))
            time_xps(3) = time_xps(3) + time_xps(2) - time_xps(1)
            !           if (rank == 0) print *, rank, " TIME_XPS = ", time_xps(3)
 
@@ -1682,7 +1683,7 @@ end if
 
 
         if (params%do_pair_distribution)then
-           call cpu_time(time_pdf(1))
+           call get_time(time_pdf(1))
 
            call calculate_pair_distribution( params, x_pair_distribution&
                 &, y_pair_distribution, y_pair_distribution_temp,&
@@ -1699,7 +1700,7 @@ end if
            & pair_distribution_partial_temp_der, energies_pdf, forces_pdf, virial_pdf)
 #endif
 
-           call cpu_time(time_pdf(2))
+           call get_time(time_pdf(2))
            time_pdf(3) = time_pdf(3) + time_pdf(2) - time_pdf(1)
            !           if (rank == 0) print *, rank, " TIME_PDF = ", time_pdf(3)
 
@@ -1709,7 +1710,7 @@ end if
 
         ! Now calculate the structure factors
         if (params%do_structure_factor )then
-           call cpu_time(time_sf(1))
+           call get_time(time_sf(1))
            call calculate_structure_factor( params, x_structure_factor, x_structure_factor_temp,&
                 & y_structure_factor, y_structure_factor_temp,&
                 & structure_factor_partial, structure_factor_partial_temp,&
@@ -1726,7 +1727,7 @@ end if
 #endif
 
 
-           call cpu_time(time_sf(2))
+           call get_time(time_sf(2))
            time_sf(3) = time_sf(3) + time_sf(2) - time_sf(1)
 
 
@@ -1734,7 +1735,7 @@ end if
         end if
 
         if ( params%do_xrd )then
-           call cpu_time(time_xrd(1))
+           call get_time(time_xrd(1))
            call calculate_xrd( params, x_xrd, x_xrd_temp,&
                 & y_xrd, y_xrd_temp, x_structure_factor, x_structure_factor_temp,&
                 & structure_factor_partial, structure_factor_partial_temp,&
@@ -1753,7 +1754,7 @@ end if
 #endif
 
 
-           call cpu_time(time_xrd(2))
+           call get_time(time_xrd(2))
            time_xrd(3) = time_xrd(3) + time_xrd(2) - time_xrd(1)
 
            !           if (rank == 0) print *, rank, " TIME_XRD = ", time_xrd(3)
@@ -1762,7 +1763,7 @@ end if
 
 
         if ( params%do_nd )then
-           call cpu_time(time_nd(1))
+           call get_time(time_nd(1))
            call calculate_xrd( params, x_nd, x_nd_temp,&
                 & y_nd, y_nd_temp, x_structure_factor, x_structure_factor_temp,&
                 & structure_factor_partial, structure_factor_partial_temp,&
@@ -1781,7 +1782,7 @@ end if
 #endif
 
 
-           call cpu_time(time_nd(2))
+           call get_time(time_nd(2))
            time_nd(3) = time_nd(3) + time_nd(2) - time_nd(1)
 
            !           if (rank == 0) print *, rank, " TIME_XRD = ", time_xrd(3)
@@ -1875,10 +1876,10 @@ end if
 
         if( params%do_prediction )then
            !       Loop through distance_2b descriptors
-           call cpu_time(time1)
+           call get_time(time1)
 
            do i = 1, n_distance_2b
-              call cpu_time(time_2b(1))
+              call get_time(time_2b(1))
               this_energies = 0.d0
               if( params%do_forces )then
                  this_forces = 0.d0
@@ -1898,7 +1899,7 @@ end if
                  forces_2b = forces_2b + this_forces
                  virial_2b = virial_2b + this_virial
               end if
-              call cpu_time(time_2b(2))
+              call get_time(time_2b(2))
               time_2b(3) = time_2b(3) + time_2b(2) - time_2b(1)
            end do
 
@@ -1908,7 +1909,7 @@ end if
 
            !       Loop through core_pot descriptors
            do i = 1, n_core_pot
-              call cpu_time(time_core_pot(1))
+              call get_time(time_core_pot(1))
               this_energies = 0.d0
               if( params%do_forces )then
                  this_forces = 0.d0
@@ -1927,7 +1928,7 @@ end if
                  forces_core_pot = forces_core_pot + this_forces
                  virial_core_pot = virial_core_pot + this_virial
               end if
-              call cpu_time(time_core_pot(2))
+              call get_time(time_core_pot(2))
               time_core_pot(3) = time_core_pot(3) + time_core_pot(2) - time_core_pot(1)
            end do
 
@@ -1936,7 +1937,7 @@ end if
 
            !       Loop through angle_3b descriptors
            do i = 1, n_angle_3b
-              call cpu_time(time_3b(1))
+              call get_time(time_3b(1))
               this_energies = 0.d0
               if( params%do_forces )then
                  this_forces = 0.d0
@@ -1956,18 +1957,18 @@ end if
                  forces_3b = forces_3b + this_forces
                  virial_3b = virial_3b + this_virial
               end if
-              call cpu_time(time_3b(2))
+              call get_time(time_3b(2))
               time_3b(3) = time_3b(3) + time_3b(2) - time_3b(1)
            end do
 
 
-           call cpu_time(time2)
+           call get_time(time2)
            time_gap = time_gap + time2 - time1
 
            !       Communicate all energies and forces here for all
            !       terms
 #ifdef _MPIF90
-           call cpu_time(time_mpi_ef(1))
+           call get_time(time_mpi_ef(1))
            counter2 = 0
            if( n_soap_turbo > 0 )then
               counter2 = counter2 + 1
@@ -2217,7 +2218,7 @@ end if
               deallocate( all_forces, all_this_forces, all_virial, all_this_virial )
            end if
 
-           call cpu_time(time_mpi_ef(2))
+           call get_time(time_mpi_ef(2))
            time_mpi_ef(3) = time_mpi_ef(3) + time_mpi_ef(2) - time_mpi_ef(1)
 #endif
 
@@ -2408,7 +2409,7 @@ end if
      IF( rank == 0 )THEN
 #endif
         if( params%do_md .and. md_istep > -1)then
-           call cpu_time(time_md(1))
+           call get_time(time_md(1))
            !     Define the time_step and md_time prior to possible scaling (see variable_time_step below)
            if( md_istep > 0 )then
               md_time = md_time + time_step
@@ -2756,7 +2757,7 @@ end if
                  end do
               end do
            end do
-           call cpu_time(time_md(2))
+           call get_time(time_md(2))
            time_md(3) = time_md(3) + time_md(2) - time_md(1)
         end if
 #ifdef _MPIF90
@@ -2766,11 +2767,11 @@ end if
      !   Make sure all ranks have correct positions and velocities
 #ifdef _MPIF90
      if( params%do_md )then
-        call cpu_time(time_mpi_positions(1))
+        call get_time(time_mpi_positions(1))
         n_pos = size(positions,2)
         call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
         call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-        call cpu_time(time_mpi_positions(2))
+        call get_time(time_mpi_positions(2))
         time_mpi_positions(3) = time_mpi_positions(3) + time_mpi_positions(2) - time_mpi_positions(1)
      end if
 #endif
@@ -2955,7 +2956,7 @@ end if
                  !       >> First generate a random number in the range of the number of
 
 
-              call cpu_time(time_mc(1))
+              call get_time(time_mc(1))
 
 
               !       Now we do a monte-carlo step: we choose what the steps are from the available list and then choose a random number
@@ -3178,7 +3179,7 @@ end if
                  end if
 
                  !          Add acceptance to the log file else dont
-                 call cpu_time(time_mc(2))
+                 call get_time(time_mc(2))
                  time_mc(3) = time_mc(3) + time_mc(2) - time_mc(1)
 
 
@@ -3626,13 +3627,13 @@ end if
         n_sp = size(xyz_species,1)
         n_sp_sc = size(xyz_species_supercell,1)
      END IF
-     call cpu_time(time_mpi(1))
+     call get_time(time_mpi(1))
      call mpi_bcast(n_pos, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(n_sp, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(n_sp_sc, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(params%do_md, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(md_istep, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-     call cpu_time(time_mpi(2))
+     call get_time(time_mpi(2))
      time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
      IF( rank /= 0 )THEN !.and. (mc_move == "insertion" .or. mc_move == "removal")
         if(allocated(positions))deallocate(positions)
@@ -3663,7 +3664,7 @@ end if
         if(allocated(species_supercell))deallocate(species_supercell)
         allocate( species_supercell(1:n_sp_sc) )
      END IF
-     call cpu_time(time_mpi_positions(1))
+     call get_time(time_mpi_positions(1))
      call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
      if( params%do_md .or. params%do_nested_sampling .or. params%do_mc )then
         call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
@@ -3679,7 +3680,7 @@ end if
      call mpi_bcast(b_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(c_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
      call mpi_bcast(n_sites, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-     call cpu_time(time_mpi_positions(2))
+     call get_time(time_mpi_positions(2))
      time_mpi_positions(3) = time_mpi_positions(3) + time_mpi_positions(2) - time_mpi_positions(1)
 #endif
      !   Now that all ranks know the size of n_sites, we allocate do_list
@@ -3690,7 +3691,7 @@ end if
         do_list = .true.
      end if
      !
-     call cpu_time(time1)
+     call get_time(time1)
 #ifdef _MPIF90
      !   Parallel neighbors list build
      call mpi_bcast(rebuild_neighbors_list, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
@@ -3748,7 +3749,7 @@ end if
 
 
   if( params%do_md .or. params%do_prediction .or. params%do_mc)then
-     call cpu_time(time2)
+     call get_time(time2)
 #ifdef _MPIF90
      IF( rank == 0 )then
 #endif

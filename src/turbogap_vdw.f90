@@ -17,6 +17,7 @@
 
 module turbogap_vdw
 
+  use timing
   use types
   use vdw
   use misc
@@ -108,7 +109,7 @@ contains
 
     if( has_vdw .and. ( params%do_prediction ) &
          .and. ( params%vdw_type == "ts" .or. params%vdw_type == "mbd".or. params%vdw_type == "ts+mbd" ) )then
-           call cpu_time(time_vdw(1))
+           call get_time(time_vdw(1))
 
 !          Does this call recompute the ts+mbd correction, or reuse the one a
 !          previous call stored? The reuse half of that cycle only means
@@ -392,7 +393,7 @@ end if
           allocate( c6_scs(1:j_end-j_beg+1) )
           allocate( r0_scs(1:j_end-j_beg+1) )
           allocate( alpha0_scs(1:j_end-j_beg+1) )
-call cpu_time(time1)
+call get_time(time1)
           !write(*,*) "SCS calculation starts here"
           call get_scs_polarizabilities( n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
                                          neighbor_species(j_beg:j_end), &
@@ -407,9 +408,9 @@ call cpu_time(time1)
 #else
                                          forces_vdw )
 #endif
-call cpu_time(time2)
+call get_time(time2)
 !write(*,*) "SCS timing", time2-time1
-call cpu_time(time1)
+call get_time(time1)
 
 call mpi_reduce(alpha_SCS, this_alpha_SCS, n_sites, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
 alpha_SCS = this_alpha_SCS
@@ -418,14 +419,14 @@ call mpi_reduce(omega_SCS, this_omega_SCS, n_sites, MPI_DOUBLE_PRECISION, MPI_SU
 omega_SCS = this_omega_SCS
 call mpi_bcast(omega_SCS, n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
 
-call cpu_time(time2)
+call get_time(time2)
 !write(*,*) "Communication timing", time2-time1
 
 !write(*,*) "alpha_SCS"
 !do i = 1, n_sites
 !  write(*,*) i, alpha_SCS(i), omega_SCS(i)
 !end do
-call cpu_time(time1)
+call get_time(time1)
 !write(*,*) "scs timing", time1-time2
 if ( params%vdw_2b_rcut > params%vdw_mbd_rcut ) then ! Call 2b version if primary 2b cut-off is larger than primary mbd cut-off
 include_2b = .true.
@@ -492,7 +493,7 @@ include_2b = .true.
                                          energies_vdw(i_beg:i_end), forces_vdw, virial_vdw, local_virial_vdw_diag )
 #endif
 end if
-call cpu_time(time2)
+call get_time(time2)
 !write(*,*) "MBD timing", time2-time1
 
 !        call get_ts_energy_and_forces( hirshfeld_v(i_beg:i_end), hirshfeld_v_cart_der(1:3, j_beg:j_end), &
@@ -679,7 +680,7 @@ end do
 !                energies_vdw(i_beg:i_end), forces_vdw, virial_vdw, local_virial_vdw_diag, &
 !                mbd_ts_scaling )
 !#endif
-           call cpu_time(time_vdw(2))
+           call get_time(time_vdw(2))
            time_vdw(3) = time_vdw(2) - time_vdw(1)
 !           if( .not. (params%vdw_type == "ts+mbd" .and. modulo(md_istep, params%mbd_correction_freq) == 0) )then
 !             deallocate(v_neigh_vdw)

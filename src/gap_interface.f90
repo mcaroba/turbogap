@@ -27,6 +27,7 @@
 
 module gap_interface
 
+   use timing
    use soap_turbo_desc
    use gap
    use read_files
@@ -251,7 +252,7 @@ contains
       !###########################################!
 
       if (has_local_properties) then
-         !call cpu_time(time1)
+         !call get_time(time1)
          ! We need to iterate over the number of local properties
          allocate (local_properties(1:n_sites))
          if (do_derivatives) then
@@ -298,7 +299,7 @@ contains
             deallocate (local_properties_cart_der)
          end if
 
-!call cpu_time(time2)
+!call get_time(time2)
 !write(*,*) "local_properties time =", time2-time1, "seconds"
       end if
 
@@ -587,7 +588,7 @@ contains
 !     end if
 
 ! !     if( has_vdw )then
-! ! !call cpu_time(time1)
+! ! !call get_time(time1)
 ! !       allocate( hirshfeld_v( 1:n_sites_out ) )
 ! !       hirshfeld_v = 0.d0
 ! !       if( do_derivatives )then
@@ -613,12 +614,12 @@ contains
 ! !       if( do_derivatives )then
 ! !         deallocate( hirshfeld_v_cart_der )
 ! !       end if
-! ! !call cpu_time(time2)
+! ! !call get_time(time2)
 ! ! !write(*,*) "hirshfeld_v time =", time2-time1, "seconds"
 ! !     end if
 
 !     if( has_local_properties )then
-! !call cpu_time(time1)
+! !call get_time(time1)
 !        allocate( local_properties( 1:n_sites_out, 1:n_local_properties ) )
 
 !       do i = 1, n_local_properties
@@ -659,7 +660,7 @@ contains
 !          if(local_property_models(i)%do_derivatives) deallocate( local_properties_cart_der )
 !       end do
 
-! !call cpu_time(time2)
+! !call get_time(time2)
 ! !write(*,*) "hirshfeld_v time =", time2-time1, "seconds"
 !    end if
 
@@ -780,7 +781,7 @@ contains
       if (do_derivatives) then
          deallocate (local_property_cart_der)
       end if
-!call cpu_time(time2)
+!call get_time(time2)
 !write(*,*) "hirshfeld_v time =", time2-time1, "seconds"
    end subroutine get_local_properties
 
