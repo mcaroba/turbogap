@@ -260,12 +260,43 @@ this same kernel accumulates from it match the CPU to `maxabsdiff = 0.0`. So the
 fault has to be in **`xyz_k_d`**, the compacted per-batch pair-vector array that
 the virial reads and the forces do not.
 
-`xyz_k_d` is built per batch from `k_index_d`, so its ordering differs from the
-CPU's `xyz(1:3, j_beg:j_end)` and it cannot be compared element-wise directly.
-Compare it against `xyz` gathered through the same `k_index` mapping, or check
-whether it holds pair separations at all rather than absolute positions — the
-magnitude ratio (13885 against 184) is about what substituting positions for
-separations would give in a 20 A cell. Both branches declare and pass `virial` identically
+#### xyz_k_d checked — it is correct, hypothesis disproved
+
+`xyz_k_d` was read back from the device during an `XRD_mad` run:
+
+```
+XYZK  nk=7348   min -5.99055597   max +5.99055597   mean|v| 2.26   max|v| 5.99
+XYZK  nk=3840   min -5.96122864   max +5.96122864   mean|v| 2.25   max|v| 5.96
+XYZK  nk=498    min -5.84727751   max +5.84727751   mean|v| 2.26   max|v| 5.85
+```
+
+Signed, symmetric about zero, and bounded by the pdf `rcut` of 6.0 — these are
+**pair separations, correctly compacted**, not absolute positions (which would
+span 0 to 20 in this cell and be mostly positive). The magnitude coincidence
+that motivated the guess was just that.
+
+Also checked and identical: master computes the xrd/sf virial with the *same*
+formula, in `get_structure_factor_forces_matrix`:
+
+```fortran
+virial(k1,k2) = virial(k1,k2) + 0.5d0*(this_force(k1)*xyz(k2,k) + this_force(k2)*xyz(k1,k))
+```
+
+**So both of the virial's two inputs are now proved correct on this branch**:
+`this_force`, because the per-atom forces this same kernel accumulates from it
+match the CPU to `maxabsdiff = 0.0`; and `xyz_k_d`, by the readback above. The
+formula matches. The kernel's index convention matches (forces by site, virial
+by pair) and its transposed store is harmless by symmetry.
+
+What is left, and it is a different shape of question from anything tried so
+far: the two implementations must be accumulating over **different sets of
+pairs, or a different number of times**. Per-atom forces would not reveal that
+if the extra contributions cancel in the force sum but not in the virial, which
+is exactly what an over-count of symmetric pair terms looks like. There are
+three call sites of `gpu_exp_force_virial_collection` in `exp_utils.f90` (lines
+600, 887, 1008); the next step is to count how many pair terms each branch
+accumulates into the virial for one descriptor and compare the counts, not the
+values. Both branches declare and pass `virial` identically
 through `calculate_pair_distribution`, so the divergence is below that, in
 the GPU kernel or its reduction.
 
