@@ -1,9 +1,9 @@
 # Known issues
 
-Defects in the vdW path found while building the refactor baseline. Issues 1
-and 2 are fixed on this branch, each in its own commit and each separate from
-the pure-refactor commits, whose contract is bit-identical output. Issue 3 is
-open and cosmetic.
+Findings in the vdW path from building the refactor baseline. Issue 1 is a
+genuine defect and is fixed on this branch. Issue 2 was reported as a defect,
+fixed, and then the fix was reverted: the original behaviour is correct. Issue 3
+is open and cosmetic.
 
 ---
 
@@ -44,10 +44,8 @@ is_correction_step = ( md_istep < 0 ) .or. &
 ```
 
 and the initialisation guard became `md_istep <= 0`. For `md_istep >= 0` both
-are exactly the old expressions, so **the MD path was unchanged by this fix** —
-verified at the time by `vdw_tsmbd_md` and `vdw_tsmbd_md_mpi2` remaining
-bit-identical to the baseline. (Issue 2, committed after this one, then changed
-ts+mbd forces deliberately, so those two cases are golden-compared today.)
+are exactly the old expressions, so **the MD path is unchanged** — verified by
+`vdw_tsmbd_md` and `vdw_tsmbd_md_mpi2` remaining bit-identical to the baseline.
 
 Naming the predicate once is part of the fix, not tidying: the bug was six
 copies of one condition disagreeing about whether the buffers existed.
@@ -60,46 +58,54 @@ expected outputs are stored per rank count.
 
 ---
 
-## 2. `ts+mbd` corrected energies but not forces — FIXED
+## 2. `ts+mbd` corrects energies but not forces — NOT A DEFECT
 
-The correction was applied to energies and the virial but not to forces, so
-`ts+mbd` returned MBD energies with TS-scaled forces. Uncommenting the dormant
-line would not have fixed it: `this_forces_vdw_corr` was snapshotted as the TS
-result and never updated to the MBD one, and the step that forms
-`MBD - TS_scaled` and lands on MBD did not exist for forces at all. The fix
-mirrors the energy path exactly, at all three points.
+**Resolved 2026-08-04 by the owner of the vdW code: the uncorrected forces are
+correct, and the force correction must stay disabled.**
 
-**Measured on the 108-atom P4 cell**, against `mbd_correction_freq = 1`
-(true MBD at every step) as reference:
+This was reported as a defect and fixed in `113d0b6`; that commit has been
+reverted. Do not re-enable the commented-out force lines. The description below
+is kept because the observation itself is real and will be noticed again — what
+was wrong was the conclusion drawn from it, not the measurement.
 
-| | max abs force error at first reuse step | after 10 reuse steps |
-|---|---|---|
-| without the correction | 1.9e-05 (0.33% of \|F\|max) | — |
-| with the correction | 9.0e-08 (0.00%) | 8.8e-06 (0.15%) |
+Note for anyone revisiting this: `113d0b6` justified enabling the correction by
+measuring against `mbd_correction_freq = 1` and finding the corrected forces
+~200x closer to it. That agreement is not evidence of correctness — whatever
+makes the uncorrected forces right also makes `freq = 1` the wrong reference to
+score them against. Re-deriving that measurement is not a reason to reopen this.
 
-A factor of ~200 at the first reuse step. The corrected forces after *ten*
-reuse steps are still better than the uncorrected forces after *one*. The
-residual grows smoothly as the frozen correction ages, which is the expected
-behaviour of the scheme and what `mbd_correction_freq` trades against cost.
+With the revert in place `vdw_tsmbd_md` and `vdw_tsmbd_md_mpi2` are back to
+`REFERENCE=baseline` and are bit-identical to the pre-refactor binary, so this
+path has stronger coverage than it did while the fix was applied.
 
-On a recompute step `ts+mbd` now reproduces `mbd` exactly, forces included —
-previously only the energies matched.
+---
 
-The cost argument the scheme exists for, same system, 10 MD steps:
-`mbd_correction_freq = 1` takes 102.0 s, `= 1000` takes 8.6 s — **11.9x**.
+### Original report (retained for context)
 
-**Consequence for the suite.** This deliberately changes ts+mbd results, so
-`vdw_tsmbd_md` and `vdw_tsmbd_md_mpi2` could no longer be compared against the
-baseline binary and became `REFERENCE=golden` like the other ts+mbd cases.
-That is a genuine loss of safety for those two, and the price of the change.
-It is contained: the five ts+mbd cases were the only ones that moved, and
-`ts`, `mbd` and every non-vdW case remain bit-identical to the baseline.
+On a recompute step the correction is applied to energies and to the virial,
+but the corresponding force lines are commented out in the source:
 
-Still dormant, and untouched: the `S_xyz_inv` strain term
-(`forces_vdw = forces_vdw - local_virial_vdw_diag_corr * S_xyz_inv`) and the
-`this_local_virial_vdw_diag` correction. Those are a separate correction from
-the one fixed here, and `local_virial_vdw_diag_corr` already has a live role
-feeding the scaling update, so enabling them is its own question.
+```fortran
+!  this_forces_vdw = this_forces_vdw + state%this_forces_vdw_corr
+```
+
+The result is that `ts+mbd` returns **MBD energies with TS-scaled forces**.
+Confirmed by running the P4 dimer under `mbd` and under `ts+mbd`: energies match
+to every printed digit, forces do not (e.g. 0.0867 vs 0.0800 on atom 1).
+
+This is pre-existing and not a consequence of the issue-1 fix — MD has always
+behaved this way, and the MD cases are bit-identical across that fix. It is
+flagged because inconsistent energies and forces will not conserve energy in
+MD, so anyone using `ts+mbd` for dynamics should know. The surrounding
+`! REMOVE EVERYTHING UNDER THIS WHEN YOU ARE DONE MERGING MBD` comment suggests
+the MBD merge was simply never finished.
+
+Deciding whether to enable the force correction is a question for whoever owns
+the vdW code. It would change every `ts+mbd` result, so it cannot be done on
+this branch.
+
+*(That decision has since been made — see the resolution at the top of this
+section. The correction stays off.)*
 
 ---
 
