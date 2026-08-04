@@ -72,6 +72,9 @@ would make every case pass vacuously.
 | `co_predict` | 1 | 7176-atom single point; timing reference |
 | `co_predict_mpi4` | 4 | the same under MPI; timing reference |
 | `co_md` | 1 | velocity Verlet, Berendsen thermostat, per-step rebuild decision |
+| `xrd_mad` | 1 | MAD: pdf, sf and xrd contributions **carrying forces** |
+| `xrd_mad_mpi2` | 2 | the same through pack/`mpi_reduce`/unpack |
+| `xrd_predict` | 1 | pdf/sf/xrd forward prediction, `exp_forces` off (KNOWN_ISSUES #4) |
 
 Every case fixes `random_seed`, and `co_md` starts from explicit velocities,
 so all of them are reproducible run to run. This was verified before the suite
@@ -90,7 +93,16 @@ A case whose data is absent is skipped, not failed.
 
 ## Coverage gaps
 
-Read `KNOWN_ISSUES.md` before trusting a green run. In particular `ts+mbd`
-applies its correction to energies but not to forces, so its energies and
-forces are inconsistent — a green suite pins that behaviour, it does not
-endorse it.
+Read `KNOWN_ISSUES.md` before trusting a green run.
+
+`ts+mbd` applies its correction to energies but not to forces. That is
+deliberate and correct (KNOWN_ISSUES #2), but it does mean a green suite pins
+the behaviour rather than endorsing any particular reading of it.
+
+The `xrd_*` cases close what was the largest gap: `pdf`, `sf` and `xrd` had no
+coverage at all, which is the reason KNOWN_ISSUES #4 went unnoticed and the
+reason the contribution bundling in `docs/refactor_strategy.md` Phase 3 could
+not be finished. `nd` is still uncovered — it shares the `calculate_xrd` path
+with `xrd`, so it is the cheapest remaining case to add.
+
+No coverage of nested sampling, box scaling or NPT.

@@ -150,14 +150,15 @@ observable risk is therefore not a wrong force but a trap: a signalling NaN or
 a denormal in that slice would fault or stall inside `mpi_reduce`, in a spot
 with no obvious connection to the exp-spectra code.
 
-**Why it has not bitten.** No regression case exercises `pdf`, `sf`, `xrd` or
-`nd` at all — those four families have zero coverage (see README coverage
-table). The configuration needs `do_forces` without `exp_forces`, which no
-tutorial input in the tree sets up either.
+**Why it has not bitten.** Until 2026-08-04 no regression case exercised
+`pdf`, `sf`, `xrd` or `nd` at all. The `xrd_predict` case now pins exactly this
+configuration — `do_forces` on, `exp_forces` off, all three families valid — so
+the slot bookkeeping is protected even though the uninitialised values
+themselves are not observable in the compared outputs.
 
 **Fixing it** is one line — zero `all_forces` and `all_virial` after allocation,
 or widen the pack predicate to match the slot predicate. Both change what
 `mpi_reduce` sees, so neither can ride on a commit whose contract is
-bit-identical output, and neither should be attempted before there is an
-exp-spectra regression case to verify it against. Writing that case is the
-prerequisite, and it is also what Phase 4 of `docs/refactor_strategy.md` needs.
+bit-identical output. With `xrd_mad`, `xrd_mad_mpi2` and `xrd_predict` in place
+the fix is now verifiable: land it in its own commit and expect only those
+three cases to move.

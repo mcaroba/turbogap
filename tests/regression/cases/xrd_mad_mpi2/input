@@ -1,0 +1,61 @@
+! Molecular Augmented Dynamics driven by an experimental XRD pattern.
+!
+! Adapted from TurboGAP_School/exp_observables: the MAD scheme of
+! simulations_with_experimental_observables.md with the pdf/sf/xrd keyword
+! block of input_files/xrd_options, against the glassy-carbon structure
+! factor of Zeng et al. 2017.
+!
+! The point of this case is coverage, not physics: exp_forces = .true. is the
+! only configuration in which the pdf, sf and xrd contribution families carry
+! forces through the driver and the MPI reduce block. The pdf cutoff and
+! sample counts are cut down from the tutorial values to keep the case short.
+
+! Species-specific info
+atoms_file = 'atoms.xyz'
+pot_file = 'gap_files/CO.gap'
+n_species = 2
+species = C O
+masses = 12.01 15.99
+e0 = -.16138053 0.
+
+! --- PDF parameters ---
+do_pair_distribution        = .true.
+pair_distribution_kde_sigma =   0.1
+pair_distribution_n_samples =  201
+pair_distribution_partial   = .true.
+pair_distribution_rcut      =   6.0
+r_range_min                 =   0.1
+r_range_max                 =   6.0
+write_pair_distribution     = .true.
+
+! --- Structure factor parameters ---
+do_structure_factor         = .true.
+structure_factor_from_pdf   = .true.
+structure_factor_window     = .true.
+write_structure_factor      = .true.
+
+! --- X-ray parameters ---
+do_xrd                      = .true.
+q_range_min                 =   1.0
+q_range_max                 =  10.0
+xrd_output                  = 'q*F(q)'
+write_xrd                   = .true.
+
+! --- Experimental data specification (MAD) ---
+n_exp = 1
+exp_labels = 'xrd'
+exp_data_files = 'xrd_glassy_carbon_zeng_2017.fq'
+exp_n_samples = 201
+exp_energy_scales = 100.0
+
+exp_energies = .true.
+exp_forces   = .true.
+
+! --- MD ---
+md_nsteps = 5
+md_step = 1.0
+thermostat = berendsen
+t_beg = 1000
+t_end = 1000
+random_seed = 12345
+write_xyz = 1
