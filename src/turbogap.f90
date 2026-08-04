@@ -1019,21 +1019,33 @@ end if
            if (params%do_pair_distribution .and. params%exp_forces .and. params%valid_pdf)then
               forces_pdf = 0.d0
               virial_pdf = 0.d0
+#ifdef _MPIF90
+              this_virial_pdf = 0.d0
+#endif
            end if
 
            if (params%do_structure_factor .and. params%exp_forces .and. params%valid_sf)then
               forces_sf = 0.d0
               virial_sf = 0.d0
+#ifdef _MPIF90
+              this_virial_sf = 0.d0
+#endif
            end if
 
            if (params%do_xrd .and. params%exp_forces .and. params%valid_xrd)then
               forces_xrd = 0.d0
               virial_xrd = 0.d0
+#ifdef _MPIF90
+              this_virial_xrd = 0.d0
+#endif
            end if
 
            if (params%do_nd .and. params%exp_forces .and. params%valid_nd)then
               forces_nd = 0.d0
               virial_nd = 0.d0
+#ifdef _MPIF90
+              this_virial_nd = 0.d0
+#endif
            end if
 
 
