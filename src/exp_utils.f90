@@ -628,7 +628,7 @@ contains
 
          do k1 = 1, 3
             do k2 = 1, 3
-               virial(k1, k2) = virial(k1, k2) + 0.5d0*(this_force(k1)*xyz(k2, k) + this_force(k2)*xyz(k1, k))
+               virial(k1, k2) = virial(k1, k2) + 0.5d0*(this_force(k1)*xyz_k(k2, j) + this_force(k2)*xyz_k(k1, j))
             end do
          end do
       end do
