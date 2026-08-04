@@ -209,7 +209,63 @@ gpu  diag = [13885.43, 13985.59, 16792.62]
 
 The ratios are not constant (75, 85, 131) and the off-diagonals differ in
 sign, so this looks like uninitialised or unreduced memory rather than a
-missing scale factor. Both branches declare and pass `virial` identically
+missing scale factor.
+
+#### Narrowed 2026-08-05
+
+**Ruled out.** The virial formula in `get_pair_distribution_forces` is
+character-identical on the two branches:
+
+```fortran
+virial(k1,k2) = virial(k1,k2) + 0.5d0*(this_force(k1)*xyz(k2,k) + this_force(k2)*xyz(k1,k))
+```
+
+`this_virial_pdf`, `_sf`, `_xrd` and `_nd` are not zeroed before accumulation on
+*either* branch — only `this_virial_xrd` is, and only here. Zeroing all four on
+this branch was tried and changes nothing, so they are already effectively zero.
+(It is still worth fixing on both branches as a latent hazard: static `real*8`
+arrays relied on to start at zero, which will not hold across snapshots.)
+
+**Where it actually is.** The CPU has no
+`get_structure_factor_forces_matrix_original`. The two branches compute the
+xrd/sf virial by *entirely different code paths* — this is not a port of the
+CPU routine, it is a second implementation. On this branch it runs:
+
+```
+get_structure_factor_forces_matrix_original
+  -> gpu_exp_force_virial_collection        (gpu_exp.cu:1903)
+     -> kernel_exp_force_virial_collection  (gpu_exp.cu:1843)
+  -> virial_h  ->  collect_batched_forces   (exp_interface.f90:511)
+```
+
+The kernel is:
+
+```c
+j2 = j2_list[tid]-1;
+this_force = energy_scale * fi[tid ...];
+atomicAdd(&forces0[j2].x, this_force.x);     // site index
+tmp_xyz = xyz[tid];                          // pair index
+loc_viri = 0.5*(f[k1]*xyz[k2] + f[k2]*xyz[k1]);
+atomicAdd(&virial[k2+3*k1], loc_viri);
+```
+
+Forces at the site index, virial with the pair vector — the same convention the
+CPU uses, so the indexing is right. The `k2+3*k1` store is transposed relative
+to Fortran's column-major order, but `loc_viri` is symmetric in `k1`/`k2`, so
+that is harmless.
+
+**The deduction that should drive the next attempt.** The virial has exactly two
+inputs: `this_force` and `xyz`. **`this_force` is proved correct** — the forces
+this same kernel accumulates from it match the CPU to `maxabsdiff = 0.0`. So the
+fault has to be in **`xyz_k_d`**, the compacted per-batch pair-vector array that
+the virial reads and the forces do not.
+
+`xyz_k_d` is built per batch from `k_index_d`, so its ordering differs from the
+CPU's `xyz(1:3, j_beg:j_end)` and it cannot be compared element-wise directly.
+Compare it against `xyz` gathered through the same `k_index` mapping, or check
+whether it holds pair separations at all rather than absolute positions — the
+magnitude ratio (13885 against 184) is about what substituting positions for
+separations would give in a 20 A cell. Both branches declare and pass `virial` identically
 through `calculate_pair_distribution`, so the divergence is below that, in
 the GPU kernel or its reduction.
 
