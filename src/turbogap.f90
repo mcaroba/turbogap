@@ -32,6 +32,7 @@ program turbogap
   use timing
   use turbogap_setup
   use turbogap_exp
+  use gap_backend
   use neighbors
   use soap_turbo_desc
   use gap
@@ -373,6 +374,7 @@ program turbogap
   call gpu_set_device(rank) ! This works when each GPU has only 1 visible device. This is done in the slurm submission script
 
   call create_cublas_handle(cublas_handle, gpu_stream)
+  call gap_backend_gpu_init( gpu_stream )
 
   ! Creating streams for gpu batches
   if( params%gpu_batched )then
@@ -2687,54 +2689,30 @@ program turbogap
 
            if( n_core_pot > 0 .or. n_distance_2b > 0 .or. n_angle_3b > 0 )then 
 
-             c_do_forces = logical( params%do_forces, kind=c_bool )              
+             ! Two-body, core-potential and three-body contributions, via the
+             ! gap_backend seam. The device buffers these used to reach by host
+             ! association now live inside src/gap_backend_gpu.f90, so nothing
+             ! here names a device pointer and the calls match the CPU branch's
+             ! gap_backend_cpu.f90 exactly.
+             call gap_backend_begin( params, rjs, xyz, n_neigh, species, neighbor_species, &
+                  neighbors_list, i_beg, i_end, j_beg, j_end )
 
-             st_n_sites_int = n_sites*sizeof(n_neigh(1)) ! (i_end - i_beg + 1)
-             !        print *, rank, " >> Allocating 2b on gpu"        
-             call gpu_malloc_all(n_neigh_d,st_n_sites_int,gpu_stream)
-             call cpy_htod(c_loc(n_neigh),n_neigh_d, st_n_sites_int,gpu_stream)
-             call gpu_malloc_all(species_d,st_n_sites_int,gpu_stream)
-             call cpy_htod(c_loc(species),species_d, st_n_sites_int,gpu_stream)
-             ! Changed n_atom_pairs to n_atom_pairs_by_rank
-             st_n_atom_pairs_int = j_end * sizeof(neighbor_species(1))
-             call gpu_malloc_all(neighbor_species_d,st_n_atom_pairs_int,gpu_stream)
-             call cpy_htod(c_loc(neighbor_species),neighbor_species_d, st_n_atom_pairs_int,gpu_stream)
-             st_n_atom_pairs_double = j_end*sizeof(rjs(1))
-             call gpu_malloc_all(rjs_d,st_n_atom_pairs_double,gpu_stream)
-             call cpy_htod(c_loc(rjs),rjs_d, st_n_atom_pairs_double,gpu_stream)
-             call gpu_malloc_all(xyz_d,3*st_n_atom_pairs_double,gpu_stream)
-             call cpy_htod(c_loc(xyz),xyz_d,3*st_n_atom_pairs_double,gpu_stream)
+             call add_2b_contribution( n_distance_2b, distance_2b_hypers, &
+                  params, rjs, xyz, n_neigh, species, neighbor_species, &
+                  i_beg, i_end, j_beg, j_end, this_energies, this_forces, this_virial, &
+                  energies_2b, forces_2b, virial_2b, time_2b )
 
-             size_maxnp_bytes = size(neighbors_list) * c_int 
-             call gpu_malloc_all(neighbors_list_d,size_maxnp_bytes, gpu_stream)
-             call cpy_htod(c_loc(neighbors_list), neighbors_list_d, size_maxnp_bytes, gpu_stream )
+             call add_core_pot_contribution( n_core_pot, core_pot_hypers, &
+                  params, rjs, xyz, n_neigh, species, neighbor_species, &
+                  i_beg, i_end, j_beg, j_end, this_energies, this_forces, this_virial, &
+                  energies_core_pot, forces_core_pot, virial_core_pot, time_core_pot )
 
+             call add_3b_contribution( n_angle_3b, angle_3b_hypers, neighbors_list, &
+                  params, rjs, xyz, n_neigh, species, neighbor_species, &
+                  i_beg, i_end, j_beg, j_end, this_energies, this_forces, this_virial, &
+                  forces, energies_3b, forces_3b, virial_3b, time_3b )
 
-
-             call add_2b_contribution_gpu()
-
-
-
-             call add_core_pot_contribution_gpu()
-
-
-
-             !3b preparations:
-             !setup a couple of parameters before calling gpu (kernel type and c_bool do_force)
-
-
-             ! print *, rank, " > Starting allocation 3b on gpu "                            
-
-             call add_3b_contribution_gpu()
-
-             ! print *, rank, " >> Starting freeing memory 3b on gpu"        
-
-             call gpu_free_async(species_d,gpu_stream)
-             call gpu_free_async(n_neigh_d,gpu_stream)
-             call gpu_free_async(neighbor_species_d,gpu_stream)
-             call gpu_free_async(rjs_d,gpu_stream)
-             call gpu_free_async(xyz_d,gpu_stream)
-             call gpu_free(neighbors_list_d)        
+             call gap_backend_end()
 
            end if
 
@@ -4809,322 +4787,5 @@ program turbogap
      call destroy_cublas_handle(cublas_handle, gpu_stream)
      call gpu_device_reset()
 
-
-contains
-
-!**************************************************************************
-! Accumulate the two-body energies, forces and virial on the GPU.
-! Buffers holding the running totals are allocated once here, the kernel is
-! run for each 2b descriptor in turn, and the totals are read back after the
-! loop; the per-descriptor parameter buffers are allocated and freed inside.
-!
-! Internal procedure: everything it touches is shared with the main program
-! by host association, so no arguments are needed.
-  subroutine add_2b_contribution_gpu()
-
-    if( n_distance_2b == 0 )return
-
-               st_n_sites_double=n_sites*sizeof(energies_2b(1))
-               call gpu_malloc_all(energies_2b_d,st_n_sites_double,gpu_stream)
-               call cpy_htod(c_loc(energies_2b),energies_2b_d, st_n_sites_double,gpu_stream)
-               call gpu_malloc_all(forces_2b_d,3*st_n_sites_double,gpu_stream)
-               call cpy_htod(c_loc(forces_2b),forces_2b_d, 3*st_n_sites_double,gpu_stream)
-               st_virial=9*sizeof(virial_2b(1,1))
-               call gpu_malloc_all(virial_2b_d,st_virial,gpu_stream)
-               call cpy_htod(c_loc(virial_2b),virial_2b_d, st_virial,gpu_stream)
-
-
-
-               do i = 1, n_distance_2b
-                 !! time_2b(1)=MPI_Wtime()
-                 !call get_time( ! time_2b(1) )
-
-                 call get_time( time_2b(1) )
-
-
-!                The kernel filters neighbours by species index, so sp1/sp2
-!                must be the position of the descriptor's species within
-!                params%species_types (j), not the descriptor index (i).
-                 do j = 1, size(params%species_types)
-                   if( distance_2b_hypers(i)%species1 == params%species_types(j) )then
-                     sp1 = j
-                     exit
-                   end if
-                 end do
-                 do j = 1, size(params%species_types)
-                   if( distance_2b_hypers(i)%species2 == params%species_types(j) )then
-                     sp2 = j
-                     exit
-                   end if
-                 end do
-
-
-
-                 n_sparse = distance_2b_hypers(i)%n_sparse
-                 st_n_sparse_double=n_sparse*sizeof( distance_2b_hypers(i)%alphas(1))
-                 call gpu_malloc_all(alphas_d,st_n_sparse_double,gpu_stream)
-                 call cpy_htod(c_loc(distance_2b_hypers(i)%alphas),alphas_d,st_n_sparse_double,gpu_stream)
-                 call gpu_malloc_all(cutoff_d,st_n_sparse_double,gpu_stream)
-                 call cpy_htod(c_loc(distance_2b_hypers(i)%cutoff),cutoff_d,st_n_sparse_double,gpu_stream)
-                 call gpu_malloc_all(qs_d,st_n_sparse_double,gpu_stream)
-                 call cpy_htod(c_loc(distance_2b_hypers(i)%Qs(:,1)),qs_d,st_n_sparse_double,gpu_stream)
-
-                 call get_time( t1 )
-
-                 call gpu_get_2b_forces_energies(i_beg, i_end,&
-                   & n_sparse, energies_2b_d, 0.0d0, n_neigh_d,&
-                   & c_do_forces, forces_2b_d, virial_2b_d,&
-                   & rjs_d, distance_2b_hypers(i)%rcut,&
-                   & species_d, neighbor_species_d, sp1, sp2,&
-                   & 0.5d0, distance_2b_hypers(i)%delta,&
-                   & cutoff_d, qs_d, distance_2b_hypers(i)&
-                   &%sigma, alphas_d, xyz_d, gpu_stream)
-
-                 !time_2b(2) = MPI_wtime()
-                 call get_time( time_2b(2)  )
-
-                 !          print *, rank, " >>--- Finished 2b energies forces on gpu ---"
-                 call gpu_free_async(alphas_d,gpu_stream)
-                 call gpu_free_async(cutoff_d,gpu_stream)
-                 call gpu_free_async(qs_d,gpu_stream)
-
-                 call get_time( time_2b(2) )
-
-                 time_2b(3) = time_2b(3) + time_2b(2) - time_2b(1)
-               end do
-
-!              The kernels accumulate into the device buffers, so after the
-!              loop these already hold the sum over every 2b descriptor.
-!              Reading them back inside the loop and adding to the host arrays
-!              counted each descriptor once more for every later iteration.
-               call cpy_dtoh(energies_2b_d, c_loc(this_energies),st_n_sites_double, gpu_stream)
-               call cpy_dtoh(forces_2b_d, c_loc(this_forces),3*st_n_sites_double, gpu_stream)
-               call cpy_dtoh(virial_2b_d, c_loc(this_virial),st_virial, gpu_stream)
-
-               call gpu_stream_sync( gpu_stream )
-               energies_2b = energies_2b + this_energies
-               if( params%do_forces )then
-                 forces_2b = forces_2b + this_forces
-                 virial_2b = virial_2b + this_virial
-               end if
-
-               call gpu_free_async(energies_2b_d,gpu_stream)
-               call gpu_free_async(forces_2b_d,gpu_stream)
-               call gpu_free(virial_2b_d)!,gpu_stream)
-               !        print *, rank, " >>~~~ Finished freeing 2b energies forces on gpu ~~~<<"
-
-  end subroutine add_2b_contribution_gpu
-!**************************************************************************
-
-!**************************************************************************
-! Accumulate the core-potential energies, forces and virial on the GPU.
-! Same shape as the 2b routine: shared accumulators outside the descriptor
-! loop, per-descriptor spline data inside.
-!
-! Internal procedure: everything it touches is shared with the main program
-! by host association, so no arguments are needed.
-  subroutine add_core_pot_contribution_gpu()
-
-    if( n_core_pot == 0 )return
-
-
-               !        print *, rank, " > Allocating core_pot on gpu "
-               st_n_sites_double=n_sites*sizeof(energies_core_pot(1))
-               call gpu_malloc_all(energies_core_pot_d,st_n_sites_double,gpu_stream)
-               call cpy_htod(c_loc(energies_core_pot),energies_core_pot_d, st_n_sites_double,gpu_stream)
-               call gpu_malloc_all(forces_core_pot_d,3*st_n_sites_double,gpu_stream)
-               call cpy_htod(c_loc(forces_core_pot),forces_core_pot_d, 3*st_n_sites_double,gpu_stream)
-               st_virial=9*sizeof(virial_core_pot(1,1))
-               call gpu_malloc_all(virial_core_pot_d,st_virial,gpu_stream)
-               call cpy_htod(c_loc(virial_core_pot),virial_core_pot_d, st_virial,gpu_stream)
-
-               !       Loop through core_pot descriptors
-               do i = 1, n_core_pot
-
-                 !           print *, " > Getting core potential"
-                 call get_time( time_core_pot(1) )
-
-                 n_sparse = core_pot_hypers(i)%n
-                 st_n_sparse_double=n_sparse*sizeof( core_pot_hypers(i)%x(1))
-                 call gpu_malloc_all(x_d,st_n_sparse_double,gpu_stream)
-                 call cpy_htod(c_loc(core_pot_hypers(i)%x),x_d,st_n_sparse_double,gpu_stream)
-                 call gpu_malloc_all(V_d,st_n_sparse_double,gpu_stream)
-                 call cpy_htod(c_loc(core_pot_hypers(i)%V),V_d,st_n_sparse_double,gpu_stream)
-                 call gpu_malloc_all(dVdx2_d,st_n_sparse_double,gpu_stream)
-                 call cpy_htod(c_loc(core_pot_hypers(i)%dVdx2),dVdx2_d,st_n_sparse_double,gpu_stream)
-
-
-                 ! print *, rank, " >>--- Finished allocating core_pot on gpu ---"
-                 ! print *, rank, " > Starting core_pot energies forces on gpu "                            
-
-                 call gpu_get_core_pot_energy_and_forces(i_beg, i_end, c_do_forces, species_d, sp1, sp2, n_neigh_d, neighbor_species_d,&
-                   rjs_d, n_sparse, x_d, V_d, dVdx2_d, core_pot_hypers(i)%yp1, core_pot_hypers(i)%ypn,&
-                   xyz_d, forces_core_pot_d, virial_core_pot_d, energies_core_pot_d, gpu_stream)
-                 !          print *, rank, " >>--- Finished core_pot energies forces on gpu ---<<"                                      
-                 call gpu_free_async(x_d,gpu_stream)
-                 call gpu_free_async(V_d,gpu_stream)
-                 call gpu_free_async(dVdx2_d,gpu_stream)
-
-                 call get_time( time_core_pot(2) )
-
-                 time_core_pot(3) = time_core_pot(3) + time_core_pot(2) - time_core_pot(1)
-               end do
-
-!              As for the 2b and 3b terms, the kernel accumulates into the
-!              device buffers, so the totals are read back only once the loop
-!              over descriptors has finished.
-               call cpy_dtoh(energies_core_pot_d, c_loc(this_energies),st_n_sites_double, gpu_stream)
-               call cpy_dtoh(forces_core_pot_d, c_loc(this_forces),3*st_n_sites_double, gpu_stream)
-               call cpy_dtoh(virial_core_pot_d, c_loc(this_virial),st_virial, gpu_stream)
-
-               call gpu_stream_sync( gpu_stream )
-
-               energies_core_pot = energies_core_pot + this_energies
-               if( params%do_forces )then
-                 forces_core_pot = forces_core_pot + this_forces
-                 virial_core_pot = virial_core_pot + this_virial
-               end if
-
-               call gpu_free_async(energies_core_pot_d,gpu_stream)
-               call gpu_free_async(forces_core_pot_d,gpu_stream)
-               call gpu_free(virial_core_pot_d)
-
-  end subroutine add_core_pot_contribution_gpu
-!**************************************************************************
-
-!**************************************************************************
-! Accumulate the three-body energies, forces and virial on the GPU.
-! The parameter buffers are sized for the largest descriptor (max_np) and
-! reused by every descriptor, so they are released only after the loop.
-!
-! Internal procedure: everything it touches is shared with the main program
-! by host association, so no arguments are needed.
-  subroutine add_3b_contribution_gpu()
-
-    if( n_angle_3b == 0 )return
-
-               size_energy3b = size(n_neigh)*c_double
-               call gpu_malloc_all(energies_3b_d,size_energy3b, gpu_stream)
-               call gpu_memset_async (energies_3b_d, 0, size_energy3b,gpu_stream)
-               size_forces3b = size(forces,2) * 3 * c_double
-               call gpu_malloc_all(forces_3b_d,size_forces3b, gpu_stream)
-               call gpu_memset_async (forces_3b_d, 0, size_forces3b,gpu_stream)
-               size_virial3b = 9 * c_double
-               call gpu_malloc_all(virial_3b_d,size_virial3b, gpu_stream)
-               call gpu_memset_async (virial_3b_d, 0, size_virial3b,gpu_stream)
-
-               size_maxnp_bytes = size(n_neigh)* c_int
-               call gpu_malloc_all(kappas_array_d,size_maxnp_bytes,gpu_stream)
-
-
-
-               allocate(kappas(1:n_sites))
-
-
-               k = 0
-               do i = i_beg, i_end 
-                 kappas( i ) = k            
-                 do j = 1, n_neigh(i)
-                   k = k + 1
-                 end do
-               end do
-
-
-               ! do i = 1, size(n_neigh)
-               !    if( i == 1 )then
-               !       kappas( i ) = 0
-               !    else
-               !       kappas( i ) = n_neigh( i-1 ) + kappas( i-1 )
-               !    end if
-               ! end do
-
-               call cpy_htod(c_loc(kappas), kappas_array_d, size_maxnp_bytes, gpu_stream )
-               call gpu_stream_sync( gpu_stream )
-               deallocate(kappas)
-
-               !        call gpu_create_kappas(kappas_array_d, c_loc(n_neigh),gpu_stream, size(n_neigh))
-
-
-
-               max_np = 0
-               do i = 1, n_angle_3b
-                 if (angle_3b_hypers(i)%n_sparse > max_np)then
-                   max_np = angle_3b_hypers(i)%n_sparse
-                 end if
-               end do
-
-
-               !write(0,*) "max np is: ",max_np
-               size_maxnp_bytes = max_np* c_double
-               call gpu_malloc_all(cutoff_d,size_maxnp_bytes,gpu_stream)
-               call gpu_malloc_all(alphas_d,size_maxnp_bytes,gpu_stream)
-               size_maxnp_qs_bytes = 3*size_maxnp_bytes
-               call gpu_malloc_all(qs_d,size_maxnp_qs_bytes,gpu_stream)
-               size_alphas_bytes = 3 * c_double
-               call gpu_malloc_all(sigma_d,size_alphas_bytes,gpu_stream)
-
-
-               !       Loop through angle_3b descriptors
-               do i = 1, n_angle_3b
-                 call get_time( time_3b(1) )
-
-                 call cpy_htod(c_loc(angle_3b_hypers(i)%cutoff),cutoff_d,size_maxnp_bytes,gpu_stream)
-                 call cpy_htod(c_loc(angle_3b_hypers(i)%sigma),sigma_d,size_alphas_bytes,gpu_stream)
-                 call cpy_htod(c_loc(angle_3b_hypers(i)%qs),qs_d,size_maxnp_qs_bytes,gpu_stream)
-                 call cpy_htod(c_loc(angle_3b_hypers(i)%alphas),alphas_d,size_maxnp_bytes,gpu_stream)
-
-                 ! print *, rank, " >> Finished allocation 3b on gpu "
-                 ! print *, rank, " >> Starting setup 3b on gpu "                                                
-                 call setup_3b_gpu(angle_3b_hypers(i)%kernel_type,angle_3b_hypers(i)%species_center,&
-                   angle_3b_hypers(i)%species1, angle_3b_hypers(i)%species2, params%species_types,&
-                   c_name_3b, sp0_3b, sp1_3b, sp2_3b)
-
-                 call gpu_3b(size(angle_3b_hypers(i)%alphas),  i_end-i_beg+1, size(rjs), size(forces,2), &
-                   sp0_3b, sp1_3b, sp2_3b, alphas_d, angle_3b_hypers(i)%delta, 0.d0, cutoff_d, gpu_stream,&
-                   rjs_d, xyz_d, n_neigh_d,species_d,neighbors_list_d,neighbor_species_d, &
-                   c_do_forces, angle_3b_hypers(i)%rcut, 0.5d0, sigma_d, qs_d, c_name_3b,&
-                   i_beg, i_end, energies_3b_d, forces_3b_d, virial_3b_d, kappas_array_d)
-
-                 call get_time( time_3b(2) )
-
-                 time_3b(3) = time_3b(3) + time_3b(2) - time_3b(1)
-
-                 ! print *, rank, " >>--- Finished 3b on gpu ---<< took ",&
-                 !   time_3b(2) - time_3b(1), " with total being ", time_3b(3)
-
-               end do
-
-!              As for the 2b term, the kernels accumulate into the device
-!              buffers, so the totals are only read back once the loop over
-!              descriptors has finished.
-               call cpy_dtoh(energies_3b_d, c_loc(this_energies),st_n_sites_double, gpu_stream)
-               call cpy_dtoh(forces_3b_d, c_loc(this_forces), 3*st_n_sites_double, gpu_stream)
-               call cpy_dtoh(virial_3b_d, c_loc(this_virial),st_virial, gpu_stream)
-
-               call gpu_stream_sync( gpu_stream )
-
-               energies_3b = energies_3b + this_energies
-               if( params%do_forces )then
-                 forces_3b = forces_3b + this_forces
-                 virial_3b = virial_3b + this_virial
-               end if
-
-!              All of the buffers below are allocated once before the descriptor
-!              loop (the parameter buffers are sized for max_np so they can be
-!              reused by every descriptor). They must therefore only be released
-!              after the loop has finished -- freeing them per iteration left
-!              dangling device pointers that the next iteration copied into.
-               call gpu_free_async(energies_3b_d,gpu_stream)
-               call gpu_free_async(forces_3b_d,gpu_stream)
-               call gpu_free_async(kappas_array_d, gpu_stream)
-               call gpu_free_async(virial_3b_d, gpu_stream)
-
-               call gpu_free_async(cutoff_d,gpu_stream)
-               call gpu_free_async(sigma_d,gpu_stream)
-               call gpu_free_async(qs_d,gpu_stream)
-               call gpu_free_async(alphas_d,gpu_stream)
-
-  end subroutine add_3b_contribution_gpu
-!**************************************************************************
 
    end program turbogap
