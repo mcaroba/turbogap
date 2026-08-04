@@ -126,6 +126,18 @@ program turbogap
 
   integer :: l_max, n_atom_pairs, n_max, ijunk, central_species = 0, n_atom_pairs_total
   integer :: iostatus, counter = 0, counter2
+
+!   The ten additive contribution families that are reduced together after the
+!   descriptor loop. Their predicates used to be written out three times -- to
+!   count the slots, to pack them and to unpack them -- and evaluated
+!   independently each time. Two copies disagreeing shifts counter2 and
+!   silently attributes one term's energies to another. That is the same shape
+!   as the ts+mbd predicate defect (KNOWN_ISSUES.md #1), so it is killed the
+!   same way: evaluated once, into contrib_on, and only read thereafter.
+  integer, parameter :: C_SOAP = 1, C_VDW = 2, C_LP  = 3, C_PDF = 4, C_SF = 5, &
+                        C_XRD  = 6, C_ND  = 7, C_2B  = 8, C_CP  = 9, C_3B = 10
+  integer, parameter :: N_CONTRIB = 10
+  logical :: contrib_on(1:N_CONTRIB)
   integer :: which_atom = 0, n_species = 1, n_species_actual, n_xyz, indices(1:3)
   integer :: radial_enhancement = 0
   integer :: md_istep, mc_istep, mc_mu_id=1, n_mc
@@ -1969,37 +1981,21 @@ end if
            !       terms
 #ifdef _MPIF90
            call get_time(time_mpi_ef(1))
-           counter2 = 0
-           if( n_soap_turbo > 0 )then
-              counter2 = counter2 + 1
-           end if
-           if( allocated(this_energies_vdw) )then
-              counter2 = counter2 + 1
-           end if
-           if( allocated(this_energies_lp) )then
-              counter2 = counter2 + 1
-           end if
-           if( allocated(this_energies_pdf) .and. params%valid_pdf )then
-              counter2 = counter2 + 1
-           end if
-           if( allocated(this_energies_sf) .and. params%valid_sf)then
-              counter2 = counter2 + 1
-           end if
-           if( allocated(this_energies_xrd) .and. params%valid_xrd)then
-              counter2 = counter2 + 1
-           end if
-           if( allocated(this_energies_nd) .and. params%valid_nd)then
-              counter2 = counter2 + 1
-           end if
-           if( n_distance_2b > 0 )then
-              counter2 = counter2 + 1
-           end if
-           if( n_core_pot > 0 )then
-              counter2 = counter2 + 1
-           end if
-           if( n_angle_3b > 0 )then
-              counter2 = counter2 + 1
-           end if
+!       One evaluation of the ten predicates. Every later reference -- packing
+!       and unpacking alike -- reads contrib_on, so the three walks cannot
+!       disagree about which families own a slot.
+           contrib_on(C_SOAP) = ( n_soap_turbo > 0 )
+           contrib_on(C_VDW)  = allocated(this_energies_vdw)
+           contrib_on(C_LP)   = allocated(this_energies_lp)
+           contrib_on(C_PDF)  = allocated(this_energies_pdf) .and. params%valid_pdf
+           contrib_on(C_SF)   = allocated(this_energies_sf)  .and. params%valid_sf
+           contrib_on(C_XRD)  = allocated(this_energies_xrd) .and. params%valid_xrd
+           contrib_on(C_ND)   = allocated(this_energies_nd)  .and. params%valid_nd
+           contrib_on(C_2B)   = ( n_distance_2b > 0 )
+           contrib_on(C_CP)   = ( n_core_pot > 0 )
+           contrib_on(C_3B)   = ( n_angle_3b > 0 )
+
+           counter2 = count( contrib_on )
 
 
            !       It would probably be faster to use pointers for this
@@ -2012,7 +2008,7 @@ end if
               allocate( all_this_virial(1:3, 1:3, 1:counter2) )
            end if
            counter2 = 0
-           if( n_soap_turbo > 0 )then
+           if( contrib_on(C_SOAP) )then
               counter2 = counter2 + 1
               all_energies(1:n_sites, counter2) = energies_soap(1:n_sites)
               if( params%do_forces )then
@@ -2020,7 +2016,7 @@ end if
                  all_virial(1:3, 1:3, counter2) = virial_soap(1:3, 1:3)
               end if
            end if
-           if( allocated(this_energies_vdw) )then
+           if( contrib_on(C_VDW) )then
               counter2 = counter2 + 1
               !         Note the vdw things have "this" in front
               all_energies(1:n_sites, counter2) = this_energies_vdw(1:n_sites)
@@ -2030,7 +2026,7 @@ end if
               end if
            end if
 
-           if( allocated(this_energies_lp) )then
+           if( contrib_on(C_LP) )then
               counter2 = counter2 + 1
               all_energies(1:n_sites, counter2) = this_energies_lp(1:n_sites)
               if( params%do_forces )then
@@ -2039,7 +2035,7 @@ end if
               end if
            end if
 
-           if( allocated(this_energies_pdf) .and. params%valid_pdf )then
+           if( contrib_on(C_PDF) )then
               counter2 = counter2 + 1
               all_energies(1:n_sites, counter2) = this_energies_pdf(1:n_sites)
               if( params%do_forces .and. params%exp_forces)then
@@ -2048,7 +2044,7 @@ end if
               end if
            end if
 
-           if( allocated(this_energies_sf) .and. params%valid_sf)then
+           if( contrib_on(C_SF) )then
               counter2 = counter2 + 1
               all_energies(1:n_sites, counter2) = this_energies_sf(1:n_sites)
               if( params%do_forces .and. params%exp_forces)then
@@ -2057,7 +2053,7 @@ end if
               end if
            end if
 
-           if( allocated(this_energies_xrd) .and. params%valid_xrd )then
+           if( contrib_on(C_XRD) )then
               counter2 = counter2 + 1
               all_energies(1:n_sites, counter2) = this_energies_xrd(1:n_sites)
               if( params%do_forces .and. params%exp_forces )then
@@ -2066,7 +2062,7 @@ end if
               end if
            end if
 
-           if( allocated(this_energies_nd) .and. params%valid_nd )then
+           if( contrib_on(C_ND) )then
               counter2 = counter2 + 1
               all_energies(1:n_sites, counter2) = this_energies_nd(1:n_sites)
               if( params%do_forces .and. params%exp_forces )then
@@ -2076,7 +2072,7 @@ end if
            end if
 
 
-           if( n_distance_2b > 0 )then
+           if( contrib_on(C_2B) )then
               counter2 = counter2 + 1
               all_energies(1:n_sites, counter2) = energies_2b(1:n_sites)
               if( params%do_forces )then
@@ -2084,7 +2080,7 @@ end if
                  all_virial(1:3, 1:3, counter2) = virial_2b(1:3, 1:3)
               end if
            end if
-           if( n_core_pot > 0 )then
+           if( contrib_on(C_CP) )then
               counter2 = counter2 + 1
               all_energies(1:n_sites, counter2) = energies_core_pot(1:n_sites)
               if( params%do_forces )then
@@ -2092,7 +2088,7 @@ end if
                  all_virial(1:3, 1:3, counter2) = virial_core_pot(1:3, 1:3)
               end if
            end if
-           if( n_angle_3b > 0 )then
+           if( contrib_on(C_3B) )then
               counter2 = counter2 + 1
               all_energies(1:n_sites, counter2) = energies_3b(1:n_sites)
               if( params%do_forces )then
@@ -2116,7 +2112,7 @@ end if
 
            !       Here we give proper names to the quantities - again, pointers would probably be faster
            counter2 = 0
-           if( n_soap_turbo > 0 )then
+           if( contrib_on(C_SOAP) )then
               counter2 = counter2 + 1
               energies_soap(1:n_sites) = all_this_energies(1:n_sites, counter2)
               if( params%do_forces )then
@@ -2124,7 +2120,7 @@ end if
                  virial_soap(1:3, 1:3) = all_this_virial(1:3, 1:3, counter2)
               end if
            end if
-           if( allocated(this_energies_vdw) )then
+           if( contrib_on(C_VDW) )then
               counter2 = counter2 + 1
               !         Note the vdw things DO NOT have "this" in front anymore
               energies_vdw(1:n_sites) = all_this_energies(1:n_sites, counter2)
@@ -2136,7 +2132,7 @@ end if
                  deallocate(this_local_virial_vdw_diag)
               end if
            end if
-           if( allocated(this_energies_lp) )then
+           if( contrib_on(C_LP) )then
               counter2 = counter2 + 1
               energies_lp(1:n_sites) = all_this_energies(1:n_sites, counter2)
               deallocate(this_energies_lp)
@@ -2146,7 +2142,7 @@ end if
                  deallocate(this_forces_lp)
               end if
            end if
-           if( allocated(this_energies_pdf) .and. params%valid_pdf)then
+           if( contrib_on(C_PDF) )then
               counter2 = counter2 + 1
               energies_pdf(1:n_sites) = all_this_energies(1:n_sites, counter2)
               deallocate(this_energies_pdf)
@@ -2156,7 +2152,7 @@ end if
                  deallocate(this_forces_pdf)
               end if
            end if
-           if( allocated(this_energies_sf) .and. params%valid_sf)then
+           if( contrib_on(C_SF) )then
               counter2 = counter2 + 1
               energies_sf(1:n_sites) = all_this_energies(1:n_sites, counter2)
               deallocate(this_energies_sf)
@@ -2166,7 +2162,7 @@ end if
                  deallocate(this_forces_sf)
               end if
            end if
-           if( allocated(this_energies_xrd) .and. params%valid_xrd)then
+           if( contrib_on(C_XRD) )then
               counter2 = counter2 + 1
               energies_xrd(1:n_sites) = all_this_energies(1:n_sites, counter2)
               deallocate(this_energies_xrd)
@@ -2176,7 +2172,7 @@ end if
                  deallocate(this_forces_xrd)
               end if
            end if
-           if( allocated(this_energies_nd) .and. params%valid_nd)then
+           if( contrib_on(C_ND) )then
               counter2 = counter2 + 1
               energies_nd(1:n_sites) = all_this_energies(1:n_sites, counter2)
               deallocate(this_energies_nd)
@@ -2187,7 +2183,7 @@ end if
               end if
            end if
 
-           if( n_distance_2b > 0 )then
+           if( contrib_on(C_2B) )then
               counter2 = counter2 + 1
               energies_2b(1:n_sites) = all_this_energies(1:n_sites, counter2)
               if( params%do_forces)then
@@ -2195,7 +2191,7 @@ end if
                  virial_2b(1:3, 1:3) = all_this_virial(1:3, 1:3, counter2)
               end if
            end if
-           if( n_core_pot > 0 )then
+           if( contrib_on(C_CP) )then
               counter2 = counter2 + 1
               energies_core_pot(1:n_sites) = all_this_energies(1:n_sites, counter2)
               if( params%do_forces )then
@@ -2203,7 +2199,7 @@ end if
                  virial_core_pot(1:3, 1:3) = all_this_virial(1:3, 1:3, counter2)
               end if
            end if
-           if( n_angle_3b > 0 )then
+           if( contrib_on(C_3B) )then
               counter2 = counter2 + 1
               energies_3b(1:n_sites) = all_this_energies(1:n_sites, counter2)
               if( params%do_forces )then

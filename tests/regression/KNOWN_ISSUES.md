@@ -115,3 +115,49 @@ The end-of-run summary prints e.g. `Miscellaneous: -3.252 seconds`, because
 that bucket is total minus the sum of the measured buckets and some buckets are
 double-counted. Harmless, but it makes the printed totals useless for judging
 refactor performance — use the wall-clock `run.sh` reports instead.
+
+---
+
+## 4. `mpi_reduce` reads uninitialised memory for exp-spectra forces — OPEN
+
+**Found** 2026-08-04 while reading the reduce block for the `contrib_on` change.
+Not introduced by it, and not fixed by it.
+
+A contribution family owns a slot in `all_forces` if its *slot* predicate holds:
+
+```fortran
+contrib_on(C_PDF) = allocated(this_energies_pdf) .and. params%valid_pdf
+```
+
+but its forces are written into that slot under a **stricter** predicate:
+
+```fortran
+if( params%do_forces .and. params%exp_forces )then
+   all_forces(1:3, 1:n_sites, counter2) = this_forces_pdf(1:3, 1:n_sites)
+```
+
+So with `do_forces` set and `exp_forces` unset, a valid `pdf`, `sf`, `xrd` or
+`nd` family claims a slice of `all_forces` that is **never written** before
+
+```fortran
+call mpi_reduce(all_forces, all_this_forces, 3*n_sites*counter2, ...)
+```
+
+`all_forces` is `allocate`d and never zeroed, so that slice is whatever was on
+the heap. It is reduced across ranks and unpacked, though under the same
+stricter predicate, so the garbage is not read back into `forces_pdf`. The
+observable risk is therefore not a wrong force but a trap: a signalling NaN or
+a denormal in that slice would fault or stall inside `mpi_reduce`, in a spot
+with no obvious connection to the exp-spectra code.
+
+**Why it has not bitten.** No regression case exercises `pdf`, `sf`, `xrd` or
+`nd` at all — those four families have zero coverage (see README coverage
+table). The configuration needs `do_forces` without `exp_forces`, which no
+tutorial input in the tree sets up either.
+
+**Fixing it** is one line — zero `all_forces` and `all_virial` after allocation,
+or widen the pack predicate to match the slot predicate. Both change what
+`mpi_reduce` sees, so neither can ride on a commit whose contract is
+bit-identical output, and neither should be attempted before there is an
+exp-spectra regression case to verify it against. Writing that case is the
+prerequisite, and it is also what Phase 4 of `docs/refactor_strategy.md` needs.
