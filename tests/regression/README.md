@@ -36,8 +36,10 @@ Most cases compare against the frozen baseline binary, and must be
 bit-identical to it.
 
 A case whose `case.conf` sets `REFERENCE=golden` compares against a checked-in
-`expected/` directory instead. That is for inputs the baseline cannot run at
-all because it crashes on them — there is no baseline output to diff. These are
+`expected/` directory instead. That is for cases the baseline cannot serve as a reference for: either it
+crashes on the input, or the branch has deliberately changed the result. All
+five ts+mbd cases are golden for one of those two reasons; everything else is
+still compared bit-for-bit against the baseline. These are
 **characterization** tests: they pin behaviour so a later refactor cannot drift
 it silently, and assert nothing about whether the physics is right. Regenerate
 them deliberately with `TURBOGAP_BLESS=1`, never to make a red suite go green.
@@ -60,9 +62,9 @@ would make every case pass vacuously.
 | `vdw_ts` | 1 | TS pairwise vdW, Hirshfeld local properties |
 | `vdw_mbd` | 1 | many-body dispersion |
 | `vdw_mbd_cell_mpi2` | 2 | MBD + the cross-rank Hirshfeld gradient exchange |
-| `vdw_tsmbd_md` | 1 | ts+mbd correction state: both the recompute and the reuse branch |
-| `vdw_tsmbd_md_mpi2` | 2 | the same under MPI |
-| `vdw_tsmbd_predict` | 1 | ts+mbd outside MD (golden; baseline crashes here) |
+| `vdw_tsmbd_md` | 1 | ts+mbd: both the recompute and the reuse branch (golden) |
+| `vdw_tsmbd_md_mpi2` | 2 | the same under MPI (golden) |
+| `vdw_tsmbd_predict` | 1 | ts+mbd outside MD (golden) |
 | `vdw_tsmbd_predict_mpi2` | 2 | the same under MPI |
 | `vdw_tsmbd_mc` | 1 | ts+mbd under mc, which also never advances md_istep |
 | `xps_predict` | 1 | SOAP loop, local properties, 2b/3b/core_pot, XPS spectrum |
@@ -90,7 +92,7 @@ A case whose data is absent is skipped, not failed.
 
 ## Coverage gaps
 
-Read `KNOWN_ISSUES.md` before trusting a green run. In particular `ts+mbd`
-applies its correction to energies but not to forces, so its energies and
-forces are inconsistent — a green suite pins that behaviour, it does not
-endorse it.
+Read `KNOWN_ISSUES.md` before trusting a green run. The five ts+mbd cases are
+characterization tests, so for those a green run means "unchanged", not
+"correct". Still dormant in the vdW path: the `S_xyz_inv` strain term and the
+`this_local_virial_vdw_diag` correction.

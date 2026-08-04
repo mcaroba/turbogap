@@ -559,7 +559,7 @@ end do
 !            state%this_energies_vdw_corr(i_beg:i_end) = this_energies_vdw(i_beg:i_end) - state%this_energies_vdw_corr(i_beg:i_end)
 !            state%this_energies_vdw_corr = this_energies_vdw - state%this_energies_vdw_corr
             state%this_energies_vdw_corr = this_energies_vdw ! we do this when scaling is used in TS because TS is run twice
-!            state%this_forces_vdw_corr = this_forces_vdw - state%this_forces_vdw_corr
+            if( params%do_forces ) state%this_forces_vdw_corr = this_forces_vdw
 !            state%this_virial_vdw_corr = this_virial_vdw - state%this_virial_vdw_corr
             state%this_virial_vdw_corr = this_virial_vdw ! we do this when scaling is used in TS because TS is run twice
 !            state%this_local_virial_vdw_diag_corr = this_local_virial_vdw_diag - state%this_local_virial_vdw_diag_corr
@@ -590,7 +590,7 @@ end do
 !            energies_vdw_corr(i_beg:i_end) = energies_vdw(i_beg:i_end) - energies_vdw_corr(i_beg:i_end)
 !            energies_vdw_corr = energies_vdw - energies_vdw_corr
             energies_vdw_corr = energies_vdw ! we do this when scaling is used in TS because TS is run twice
-!            forces_vdw_corr = forces_vdw - forces_vdw_corr
+            if( params%do_forces ) forces_vdw_corr = forces_vdw
 !            state%virial_vdw_corr = virial_vdw - state%virial_vdw_corr
             state%virial_vdw_corr = virial_vdw ! we do this when scaling is used in TS because TS is run twice
 !            local_virial_vdw_diag_corr = local_virial_vdw_diag - local_virial_vdw_diag_corr
@@ -625,11 +625,19 @@ end do
             this_energies_vdw = this_energies_vdw + state%this_energies_vdw_corr
             state%this_virial_vdw_corr = -(this_virial_vdw - state%this_virial_vdw_corr) ! for scaling with TS
             this_virial_vdw = this_virial_vdw + state%this_virial_vdw_corr
+            if( params%do_forces )then
+              state%this_forces_vdw_corr = -(this_forces_vdw - state%this_forces_vdw_corr) ! for scaling with TS
+              this_forces_vdw = this_forces_vdw + state%this_forces_vdw_corr
+            end if
 #else
             energies_vdw_corr = -(energies_vdw - energies_vdw_corr) ! for scaling with TS
             energies_vdw = energies_vdw + energies_vdw_corr
             state%virial_vdw_corr = -(virial_vdw - state%virial_vdw_corr) ! for scaling with TS
             virial_vdw = virial_vdw + state%virial_vdw_corr
+            if( params%do_forces )then
+              forces_vdw_corr = -(forces_vdw - forces_vdw_corr) ! for scaling with TS
+              forces_vdw = forces_vdw + forces_vdw_corr
+            end if
 #endif
            deallocate(v_neigh_vdw)
           else
@@ -637,14 +645,14 @@ end do
 #ifdef _MPIF90
 !            this_energies_vdw(i_beg:i_end) = this_energies_vdw(i_beg:i_end) + state%this_energies_vdw_corr(i_beg:i_end)
             this_energies_vdw = this_energies_vdw + state%this_energies_vdw_corr
-!            this_forces_vdw = this_forces_vdw + state%this_forces_vdw_corr
+            if( params%do_forces ) this_forces_vdw = this_forces_vdw + state%this_forces_vdw_corr
             this_virial_vdw = this_virial_vdw + state%this_virial_vdw_corr
 !            this_local_virial_vdw_diag = this_local_virial_vdw_diag + state%this_local_virial_vdw_diag_corr
 !            this_forces_vdw = this_forces_vdw - state%this_local_virial_vdw_diag_corr * S_xyz_inv
 #else
 !            energies_vdw(i_beg:i_end) = energies_vdw(i_beg:i_end) + energies_vdw_corr(i_beg:i_end)
             energies_vdw = energies_vdw + energies_vdw_corr
-!            forces_vdw = forces_vdw + forces_vdw_corr
+            if( params%do_forces ) forces_vdw = forces_vdw + forces_vdw_corr
             virial_vdw = virial_vdw + state%virial_vdw_corr
 !            local_virial_trace_vdw = local_virial_trace_vdw + local_virial_vdw_diag_corr
 !            forces_vdw = forces_vdw - local_virial_vdw_diag_corr * S_xyz_inv
