@@ -771,6 +771,9 @@ contains
          else if (keyword == 'md_nsteps') then
             backspace (10)
             read (10, *, iostat=iostatus) cjunk, cjunk, params%md_nsteps
+         else if (keyword == 'random_seed') then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%random_seed_value
          else if (keyword == 'mc_nsteps') then
             backspace (10)
             read (10, *, iostat=iostatus) cjunk, cjunk, params%mc_nsteps
@@ -3107,5 +3110,27 @@ contains
       end if
 
    end subroutine get_irreducible_local_properties
+
+!**************************************************************************
+   subroutine init_random_seed(seed_value, rank)
+
+      implicit none
+
+      integer, intent(in) :: seed_value, rank
+      integer, allocatable :: seed(:)
+      integer :: n, i
+
+      if (seed_value == 0) return
+
+      call random_seed(size=n)
+      allocate (seed(1:n))
+      do i = 1, n
+         seed(i) = seed_value + 37*(i - 1) + 7919*rank
+      end do
+      call random_seed(put=seed)
+      deallocate (seed)
+
+   end subroutine init_random_seed
+!**************************************************************************
 
 end module

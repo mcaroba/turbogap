@@ -155,6 +155,11 @@ module types
            &= 200, structure_factor_n_samples = 200, xrd_n_samples = 200, nd_n_samples = 200, verb = 0, n_t_hold = 0, &
            n_exp_opt = 0, &
            n_mc_relax_after = 0, n_mc_mu = 0, mc_max_insertion_trials = 500
+!     Seed for the intrinsic pseudo-random number generator. Zero (the default)
+!     leaves the compiler's default sequence untouched; any other value makes
+!     runs reproducible, which is what the CPU/GPU regression comparisons rely
+!     on when initial velocities have to be randomized.
+      integer :: random_seed_value = 0
       integer, allocatable :: mc_swaps_id(:)
 
       character*1024 :: atoms_file
