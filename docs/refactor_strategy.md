@@ -139,34 +139,48 @@ GPU branch compiles `SRC_STOP` but `OBJ_STOP` is in no rule's prerequisites, so
 it is never linked. Both are genuine merge work and want master's 18-case suite,
 not the GPU branch's two.
 
-### Phase 2 — the backend seam — CPU side done, GPU side defined
+### Phase 2 — the backend seam — done, both sides
 
-`src/gap_backend_cpu.f90` (`85c1fdb`) defines `module gap_backend` with
-`add_2b_contribution`, `add_core_pot_contribution` and `add_3b_contribution`.
-Two files will define that module with the same three names and argument lists,
-and the Makefile compiles exactly one; the driver calls the names and never
-learns which implementation it got. `turbogap.f90` 3552 → 3487.
+| | |
+|---|---|
+| `85c1fdb` (cpu) | `gap_backend_cpu.f90`: the three contribution procedures |
+| `33c377d` (cpu) | `gap_backend_begin` / `gap_backend_end` added to the interface |
+| `5a42ddf`, `5e06143` (gpu) | `gap_backend_gpu.f90`: the GPU implementation |
 
-**The interface is physics only** — 19, 19 and 20 arguments, no device pointer,
-stream or cuBLAS handle. That is the whole point of the seam and it is what the
-GPU side has to be built to fit.
+Both branches now define `module gap_backend` with the same five public
+procedures and the same argument lists; the Makefile compiles one. The driver
+calls the names and never learns which implementation it got.
 
-**What the GPU side actually is.** Not "extract three procedures". All three of
-`add_2b_contribution_gpu`, `add_core_pot_contribution_gpu` and
-`add_3b_contribution_gpu` reach **ten device buffers by host association** —
-`rjs_d`, `xyz_d`, `species_d`, `neighbors_list_d`, `neighbor_species_d`,
-`n_neigh_d`, `alphas_d`, `qs_d`, `cutoff_d` and `gpu_stream` — all allocated in
-the driver before the call and freed after. Lifting them as they stand would put
-all ten in the interface, which is precisely the design this seam exists to
-prevent. The GPU side is therefore **moving device-buffer ownership into the
-backend module**, and that is the largest single piece of work left.
+`turbogap.f90`: master 3552 → 3487, GPU 5129 → 4791. **Neither driver names a
+device pointer in the contribution path any more.** The ten buffers the GPU
+procedures used to reach by host association are module state inside
+`gap_backend_gpu`; `gap_backend_begin` uploads the neighbour data once for all
+three calls and `gap_backend_end` releases it, and on the CPU both are empty.
 
-It also unblocks the diffraction block: 47 of that block's 71 boundary variables
-are the same device state (§6.5).
+`alphas_d` is the backend's own rather than shared with the driver's SOAP path,
+which removes one instance of the name reuse that hid bug 5.
 
-Measured coupling of the three, as they stand: 31, 27 and 34 crossing variables
-against the CPU side's 19, 19 and 20. The difference is the device state, and
-closing it is the job.
+**Three defects had to be fixed to get here, and only one was in the
+extraction.** Two were latent in the original GPU code:
+
+* the three procedures had an **undocumented ordering dependency** —
+  `add_2b_contribution_gpu` computed `st_n_sites_double` and `st_virial`, and
+  the other two read them through host association without ever setting them.
+  Calling 3b without 2b first would have copied back the wrong number of bytes.
+* `virial_2b_d` and `virial_core_pot_d` were released with the plain
+  `gpu_free` (`hipFree`) despite being `hipMallocAsync` allocations — the same
+  defect as `gpu_fixes_handoff.md` §6e, at two further sites, with the intended
+  fix half-written in a trailing comment.
+
+The third was mine, and it cost the most: the lifted setup block stopped one
+line short and dropped the `cpy_htod` that uploads `neighbors_list_d`, so the
+buffer was allocated and never filled. The kernel then indexed
+`neighbors_list` with uninitialised device memory, producing a negative index
+and out-of-bounds atomics. **Every argument was byte-identical because the bug
+was a missing statement, not a wrong value** — which is why an
+argument-by-argument comparison could never have found it, and why the
+structural bisect found it in one step. Record that: when inputs all match and
+the answer does not, stop comparing inputs.
 
 ### Phase 3 — `contribution_ref` bundling — done
 
@@ -410,20 +424,26 @@ Done, in the order it happened:
 
 Left, in the order the measurements support:
 
-1. **Phase 2, GPU side** — move device-buffer ownership into `gap_backend_gpu`.
-   The largest piece left, and it unblocks the diffraction block as a side
-   effect. Build against the interface `85c1fdb` already fixes.
-2. **The diffraction block on the GPU branch** — 705 lines against master's 272,
-   71 boundary variables against 37. Do it after (1), when most of those 71 have
-   become backend-owned.
+1. **The exp-spectra virial on the GPU branch** (`gpu_fixes_handoff.md` §6b).
+   Energies and forces agree exactly with the CPU; the virial is ~90x out. It
+   is the only thing keeping `XRD_mad` xfail.
+2. **The diffraction block on the GPU branch** — 705 lines against master's
+   272. Phase 2 has now moved the device state it shares with the 2b/3b path
+   into the backend, so re-measure its coupling before starting; the 71
+   boundary variables should be substantially fewer.
 3. **Phase 5 one-sided features**, each on its own commit: electrostatics to
    master, the cascade stack wired on the GPU branch, master's MC fixes across.
-4. `vdw.f90` + `misc`/`constants`/`nonneg_leastsq` to the GPU branch, once there
-   is vdW coverage there.
+4. `vdw.f90` + `misc`/`constants`/`nonneg_leastsq` to the GPU branch, once
+   there is vdW coverage there.
+5. **The merge itself.** Both drivers now share `turbogap_setup`, `turbogap_exp`
+   and `gap_backend`, so the per-phase comparison the whole plan was built
+   around is finally available.
 
 Cheap, any time: an `nd` regression case (shares `calculate_xrd` with `xrd`);
 the 65 remaining unreferenced declarations in the driver (mind `N_CONTRIB`,
-§533ccf9); KNOWN_ISSUES #5, the unguarded non-root unpack.
+§533ccf9); `KNOWN_ISSUES` #5, the unguarded non-root unpack; the multi-rank 3b
+indexing bug (`kappas_array[i]` with the `i_beg`-relative form commented out,
+never exercised because every test is single-rank).
 
 Not on the critical path: nested-sampling extraction (§5), and the six remaining
 preprocessor-interrupted statements on the GPU branch, which sit outside the exp
