@@ -108,15 +108,14 @@ Still outstanding: `src/orthonormalization_kernels.cc` (541 lines) is
 an owner decision. `src/soap_turbo/src/*_bak.f90` (2671 lines) sit in the
 submodule, which is already dirty with `TURBOGAP_DUMP_CNK`; handle both together.
 
-**0b. Whitespace normalisation, both branches, same settings.** Takes the driver
-diff from 7697 to ~3250 and makes three phases textually identical. Must be one
-commit that touches nothing else, so it never contaminates a real diff. No
-formatter is installed on `alt`; `fprettify` is the usual choice and needs
-`pip3 install --user fprettify`.
+**0b. Whitespace normalisation — attempted, and it is the wrong tool.**
+Superseded by §6.3 and §6.4. Review with `diff -w` and merge with
+`git merge -X ignore-all-space`; do not reformat.
 
-**0c. Adopt `get_time()` on master.** The GPU branch replaced `cpu_time` with a
-`get_time()` wrapper (90 uses, vs 53 `cpu_time` calls on master). Collapses ~53
-diff sites and does not change results.
+**0c. Adopt `get_time()` on master — done** (`fef536c`). 76 call sites across
+`turbogap.f90` (53), `turbogap_setup.f90` (8), `turbogap_vdw.f90` (8) and
+`gap_interface.f90` (7), behind a new `src/timing.f90`. All 15 regression cases
+pass, wall-clock ratios 0.97–1.00.
 
 ### Phase 1 — transplant what master already built
 
@@ -206,12 +205,72 @@ GPU tree `DEBUG=0` — the default is `DEBUG=1`, a 2.1x slowdown. Fix the negati
 "Miscellaneous" bucket in the end-of-run summary early, so the in-code timers
 become usable as refactor instrumentation instead of relying on wall clock alone.
 
+### 6.3 Reformatting does not converge the branches — measured
+
+§1 recommends normalising whitespace so the real diff becomes visible. That
+recommendation was wrong. This is what the attempt showed.
+
+`fprettify 0.3.7` with `-i 2 --disable-whitespace -l 1000` formats every module
+in the tree cleanly and provably changes nothing but whitespace — `diff -wB`
+between original and formatted is empty for all seventeen. But it **cannot parse
+`turbogap.f90` on either branch** (§6.4), and on the files it can parse it does
+not reach the goal:
+
+| module | branches differ, raw | after formatting both | `diff -w` |
+|---|---|---|---|
+| `read_files.f90` | 5546 | 3337 | **469** |
+| `exp_utils.f90` | 6705 | 2786 | **1024** |
+| `md.f90` | 1103 | 353 | **52** |
+| `mc.f90` | 1381 | 632 | **283** |
+| `neighbors.f90` | 1352 | 781 | **316** |
+
+Formatting more than halves the apparent difference but never reaches the floor,
+because fprettify indents according to block structure and the two branches
+genuinely have different block structure in places. `diff -w` is strictly better
+on every file, costs nothing, and touches no history.
+
+So: **do not reformat.** Review with `diff -w`, merge with
+`git merge -X ignore-all-space`. That captures the whole benefit §1 was reaching
+for, at zero risk, without a ~30,000-line commit that would destroy `git blame`
+across the tree.
+
+### 6.4 Sixteen statements that no Fortran tool can parse
+
+fprettify fails on `turbogap.f90` at an argument list interrupted by the
+preprocessor — the continuation is split across `#ifdef _MPIF90`, with a
+different tail of arguments on each side:
+
+```fortran
+     & xyz(1:3, j_beg:j_end),&
+#ifdef _MPIF90
+     & this_energies_lp(i_beg:i_end), this_forces_lp, this_virial_lp, ... )
+#else
+     & energies_lp(i_beg:i_end), forces_lp, virial_lp, ... )
+#endif
+```
+
+There are **5 such sites on master** (lines 1502, 1696, 1721, 1745, 1773) and
+**11 on the GPU branch**. No Fortran-aware tool can handle these, because the
+token stream depends on the preprocessor — they defeat formatters, static
+analysers and IDE parsers alike.
+
+All sixteen are the same shape, and the only thing differing across the `#ifdef`
+is the `this_` prefix on an `energies_X` / `forces_X` / `virial_X` triple — i.e.
+exactly the contribution families §7.1 of `docs/refactor_handoff.md` wants to
+bundle. They are the most extreme instance of the "one condition written at N
+sites" antipattern that produced the ts+mbd bug. **Phase 3 should eliminate all
+sixteen as a by-product**, which is a further argument for doing it early; after
+it, `turbogap.f90` becomes parseable by ordinary tooling for the first time.
+
 ## 7. Suggested order
 
-1. 0b whitespace, both branches — biggest single reduction, no risk
-2. 0c `get_time()` on master
-3. Phase 1 transplant — turns the GPU read-input block from 670 lines to 56
-4. Phase 3 `contribution_ref` (measure `co_predict` around it)
-5. Phase 4 exp-spectra extraction on master
-6. Phase 2 backend seam, then merge per phase
-7. Phase 5 one-sided features, each on its own commit
+1. ~~0a dead code~~ — done (`4e42b78`)
+2. ~~0c `get_time()`~~ — done (`fef536c`)
+3. ~~0b whitespace~~ — dropped, see §6.3; use `diff -w` and `-X ignore-all-space`
+4. Phase 3 `contribution_ref` — promoted ahead of Phase 1, because §6.4 shows it
+   also removes the sixteen unparseable statements. Measure `co_predict`
+   immediately either side of this commit.
+5. Phase 1 transplant — turns the GPU read-input block from 670 lines to 56
+6. Phase 4 exp-spectra extraction on master
+7. Phase 2 backend seam, then merge per phase
+8. Phase 5 one-sided features, each on its own commit
