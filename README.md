@@ -8,22 +8,22 @@ for detailed authorship info).
 ## Contributors, copyright and license
 
 The following people, listed chronologically, have contributed code or ideas to the **TurboGAP**
-code. Those whose names are in bold have contributed code *to the master branch* (relevant for
+code. Those whose names are in bold have contributed code _to the master branch_ (relevant for
 purpose of copyright; each file in the **TurboGAP** repo that contains code has a copyright
 statement at the beginning).
 
-* **Miguel A. Caro** (Aalto University)
-* Patricia Hernández-León (Aalto University)
-* Suresh Kondati Natarajan (formerly @ Aalto University)
-* **Albert P. Bartók-Pártay** (Warwick University)
-* Eelis V. Mielonen (formerly @ Aalto University)
-* **Heikki Muhli** (Aalto University)
-* **Mikhail Kuklin** (formerly @ Aalto University)
-* Gábor Csányi (University of Cambridge)
-* **Jan Kloppenburg** (Aalto University)
-* **Richard Jana** (Aalto University)
-* **Tigany Zarrouk** (Aalto University)
-* **Uttiyoarnab Saha** (Aalto University)
+- **Miguel A. Caro** (Aalto University)
+- Patricia Hernández-León (Aalto University)
+- Suresh Kondati Natarajan (formerly @ Aalto University)
+- **Albert P. Bartók-Pártay** (Warwick University)
+- Eelis V. Mielonen (formerly @ Aalto University)
+- **Heikki Muhli** (Aalto University)
+- **Mikhail Kuklin** (formerly @ Aalto University)
+- Gábor Csányi (University of Cambridge)
+- **Jan Kloppenburg** (Aalto University)
+- **Richard Jana** (Aalto University)
+- **Tigany Zarrouk** (Aalto University)
+- **Uttiyoarnab Saha** (Aalto University)
 
 **TurboGAP** is licensed under the Academic Software License (ASL), an "available source"
 non-commercial license. This means that you are free to use and distribute the code for
@@ -75,8 +75,8 @@ or left on the Issues section of the Github page.
 
 ## Installation
 
-*For more detailed info on download, installation, etc., you can visit the
-[TurboGAP wiki](https://turbogap.fi/wiki/index.php/Installation).*
+_For more detailed info on download, installation, etc., you can visit the
+[TurboGAP wiki](https://turbogap.fi/wiki/index.php/Installation)._
 
 To get the **TurboGAP** code and the necessary **soap_turbo** routines, do a recursive
 `git clone`:
@@ -103,6 +103,10 @@ you can `make clean; make` or `make deepclean; make`.
 molecular dynamics (`turbogap md`). For details, documentation and up-to-date information
 refer to the [TurboGAP wiki](http://turbogap.fi).
 
+## Testing Turbogap
+
+The data for tests can be found at https://github.com/TiganyZ/turbogap_tests.git. One can clone the repository in the directory where the turbogap repo is stored and execute the regression tests.
+
 ## Attribution
 
 When using **TurboGAP**, you should give attribution to the
@@ -111,9 +115,9 @@ When using **TurboGAP**, you should give attribution to the
 using **TurboGAP** or the **soap_turbo** library,
 even if it is through one of its external interfaces, you should cite:
 
->**Miguel A. Caro**. *Optimizing many-body atomic descriptors for enhanced computational
->performance of machine learning based interatomic potentials*. [Phys. Rev. B 100, 024112
->(2019)](https://journals.aps.org/prb/abstract/10.1103/PhysRevB.100.024112).
+> **Miguel A. Caro**. _Optimizing many-body atomic descriptors for enhanced computational
+> performance of machine learning based interatomic potentials_. [Phys. Rev. B 100, 024112
+> (2019)](https://journals.aps.org/prb/abstract/10.1103/PhysRevB.100.024112).
 
 In addition, you should cite any other relevant literature and code websites (e.g., the
 original SOAP/GAP papers) as appropriate.
