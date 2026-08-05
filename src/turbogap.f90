@@ -91,12 +91,11 @@ program turbogap
     & 1602176.6208d0, ranf, ranv(1:3), disp(1:3), d_disp, &
     & e_mc_prev, p_accept, virial_prev(1:3, 1:3), sim_exp_pred,&
     & sim_exp_prev, sim_exp_pred_der(1:3)
-  real(dp), allocatable, target :: energies(:), forces(:,:), energies_soap(:),&
-    & forces_soap(:,:), this_energies(:), this_forces(:,:),&
-    & energies_2b(:), forces_2b(:,:), energies_3b(:), forces_3b(:&
-    &,:), energies_core_pot(:), forces_core_pot(:,:), velocities(:&
-    &,:), masses_types(:), masses(:),  hirshfeld_v_temp(:),&
-    & masses_temp(:), sinc_factor_matrix(:,:), energies_exp(:)
+  real(dp), allocatable, target :: energies(:), forces(:,:), energies_soap(:), &
+       forces_soap(:,:), this_energies(:), this_forces(:,:), energies_2b(:), forces_2b(:,:), &
+       energies_3b(:), forces_3b(:,:), energies_core_pot(:), forces_core_pot(:,:), &
+       velocities(:,:), masses_types(:), masses(:), hirshfeld_v_temp(:), masses_temp(:), &
+       energies_exp(:)
   !  real(dp), allocatable :: this_hirshfeld_v(:), this_hirshfeld_v_cart_der(:,:)
   !  real(dp), pointer :: this_hirshfeld_v_pt(:), this_hirshfeld_v_cart_der_pt(:,:)
 
@@ -172,7 +171,7 @@ program turbogap
   logical :: contrib_on(1:N_CONTRIB)
   type(contribution_ref) :: contrib(1:N_CONTRIB)
   integer :: n_active, i_contrib
-  integer :: which_atom = 0, n_species = 1, n_species_actual, n_xyz, indices(1:3)
+  integer :: which_atom = 0, n_species = 1, n_xyz, indices(1:3)
   integer :: radial_enhancement = 0
   integer :: md_istep, mc_istep, mc_mu_id=1, n_mc
   character*8, allocatable, target :: species_types_actual(:)
@@ -215,18 +214,10 @@ program turbogap
   real(dp), allocatable, target :: energies_xrd(:), forces_xrd(:,:), this_energies_xrd(:), this_forces_xrd(:,:)
   real(dp), allocatable, target :: energies_nd(:), forces_nd(:,:), this_energies_nd(:), this_forces_nd(:,:)
   ! MPI stuff
-  real(dp), allocatable, target :: temp_1d(:), temp_1d_bis(:), temp_2d(:,:),&
-    & pair_distribution_partial(:,:), pair_distribution_der(:,:), pair_distribution_partial_der(:,:,:), &
-    & pair_distribution_partial_temp(:,:),&
-    & pair_distribution_partial_temp_der(:,:,:),&
-    & n_atoms_of_species(:), structure_factor_partial(:,:),&
-    & structure_factor_partial_temp(:,:), structure_factor_partial_der(:,:,:),&
-    & structure_factor_partial_temp_der(:,:), x_pair_distribution(:)&
-    &, y_pair_distribution(:), y_pair_distribution_temp(:),&
-    & x_structure_factor(:), x_structure_factor_temp(:),&
-    & y_structure_factor(:), y_structure_factor_temp(:),&
-    x_xrd(:), x_xrd_temp(:), y_xrd(:), y_xrd_temp(:), y_xrd_der(:,:,:), y_xrd_temp_der(:,:,:), &
-    x_nd(:), x_nd_temp(:), y_nd(:), y_nd_temp(:), y_nd_der(:,:,:), y_nd_temp_der(:,:,:), dV(:), all_scattering_factors(:)
+  real(dp), allocatable, target :: temp_1d(:), temp_1d_bis(:), temp_2d(:,:), &
+       structure_factor_partial_der(:,:,:), structure_factor_partial_temp_der(:,:), &
+       y_xrd_der(:,:,:), y_xrd_temp_der(:,:,:), y_nd_der(:,:,:), y_nd_temp_der(:,:,:), &
+       all_scattering_factors(:)
   integer, allocatable :: temp_1d_int(:), n_atom_pairs_by_rank(:)
   integer, allocatable :: n_species_mpi(:), n_sparse_mpi_soap_turbo(:), dim_mpi(:), n_sparse_mpi_distance_2b(:), &
     n_sparse_mpi_angle_3b(:), n_mpi_core_pot(:),&
@@ -234,7 +225,7 @@ program turbogap
     & local_properties_dim_mpi_soap_turbo(:), n_neigh_local(:),&
     & compress_P_nonzero_mpi(:)
   integer :: i_beg, i_end, n_sites_mpi, j_beg, j_end, size_soap_turbo, size_distance_2b, size_angle_3b
-  integer :: n_nonzero, q_beg, q_end
+  integer :: n_nonzero
   logical, allocatable :: compress_soap_mpi(:)
 
   !--- GPU VARIABLES FOR ALLOCATION ---!
@@ -242,7 +233,7 @@ program turbogap
   integer :: n_omp, omp_task, omp_n_sites, n_omp_temp
   integer, allocatable :: i_beg_omp(:), i_end_omp(:), j_beg_omp(:), j_end_omp(:)
   !**************************************************************************
-  integer :: sp1, sp2, n_dim_partial
+  integer :: sp1, sp2
   logical(c_bool) :: c_do_forces
   integer(c_size_t) :: st_n_sites_int,st_n_sites_double, st_n_atom_pairs_int, st_n_atom_pairs_double, st_n_sparse_double, st_virial
   integer(c_size_t) :: st_size_nf, st_size_rcut_hard, st_species_types_actual_d
@@ -256,17 +247,15 @@ program turbogap
   integer :: sp0_3b, sp1_3b, sp2_3b, max_np
   type(c_ptr) :: energies_3b_d, forces_3b_d, virial_3b_d
   type(c_ptr) :: kappas_array_d, sigma_d, neighbors_list_d 
-  integer(c_size_t) :: size_maxnp_bytes, size_maxnp_qs_bytes, size_alphas_bytes, size_energy3b, size_forces3b, size_virial3b, st_x_d, st_sinc_factor_matrix_d, st_prefactor_d
+  integer(c_size_t) :: size_maxnp_bytes, size_maxnp_qs_bytes, size_alphas_bytes, size_energy3b, &
+       size_forces3b, size_virial3b
 
   !**************************************************************************
 
   !--- GPU variables for experimental ---!
   !  type( gpu_exp ) :: gpu_exp_vars
-  type(c_ptr) :: pair_distribution_d, xpdf_d, dV_d, prefactor_d, sinc_factor_matrix_d
-  type(c_ptr), allocatable :: nk_d(:), k_index_d(:), j2_index_d(:), rjs_index_d(:), xyz_k_d(:), pair_distribution_partial_d(:), pair_distribution_partial_der_d(:), all_scattering_factors_d(:)
-  integer(c_size_t), allocatable :: st_nk_d(:), st_k_index_d(:), st_j2_index_d(:), st_pair_distribution_partial_d(:), st_pair_distribution_partial_der_d(:)
-  integer, allocatable :: nk(:)
-  real(dp), allocatable, target :: prefactor(:)
+  type(c_ptr) :: pair_distribution_d
+  type(c_ptr), allocatable :: rjs_index_d(:)
 
   real(dp), allocatable, target ::    charges_temp(:)
   type( c_ptr )               ::    charges_d
@@ -280,13 +269,11 @@ program turbogap
   type(exp_data_container) :: temp_exp_container
 
   ! Storage of host arrays which are compatible with gpu implementation 
-  type( gpu_host_storage_type ), allocatable :: gpu_host_exp_storage(:)
   type( gpu_host_storage_type ) :: gpu_host_temp
 
   ! this is a type of
   ! gpu_batch_storage( i_batch ) % host( i_n_dim_idx ) % pair_distribution_h( 1:n_samples ) 
 
-  integer :: n_dim_idx
 
   ! integer, parameter :: nstr=7
   ! type(c_ptr) :: virial_d(nstr),tmp_forces0_d(nstr),tmp_energies0_d(nstr)
