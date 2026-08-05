@@ -13,6 +13,9 @@ $(BUILD_DIR)/electronic_stopping.o: $(BUILD_DIR)/kinds.o
 $(BUILD_DIR)/eph_beta.o: $(BUILD_DIR)/kinds.o
 $(BUILD_DIR)/eph_fdm.o: $(BUILD_DIR)/kinds.o
 $(BUILD_DIR)/eph_electronic_stopping.o: $(BUILD_DIR)/eph_beta.o $(BUILD_DIR)/eph_fdm.o $(BUILD_DIR)/kinds.o
+$(BUILD_DIR)/printing.o: $(BUILD_DIR)/kinds.o
+$(BUILD_DIR)/error.o: $(BUILD_DIR)/kinds.o
+$(BUILD_DIR)/read_utils.o: $(BUILD_DIR)/error.o $(BUILD_DIR)/kinds.o $(BUILD_DIR)/printing.o
 $(BUILD_DIR)/timing.o: $(BUILD_DIR)/kinds.o
 $(BUILD_DIR)/misc.o: $(BUILD_DIR)/kinds.o
 $(BUILD_DIR)/electrostatics.o: $(BUILD_DIR)/kinds.o $(BUILD_DIR)/neighbors.o $(BUILD_DIR)/types.o
