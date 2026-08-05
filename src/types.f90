@@ -186,7 +186,14 @@ module types
            & q_range_min = 1.0, q_range_max = 5.d0, r_range_min = 1.0,&
            & r_range_max = 5.d0, pair_distribution_rcut = 4.d0,&
            & pair_distribution_kde_sigma = 0.d0, gpu_max_batch_size = 1.d0, &
-           & poly_cut_xmin = 3.d0, poly_cut_xmax = 10.d0
+           & poly_cut_xmin = 3.d0, poly_cut_xmax = 10.d0, &
+           & vdw_mbd_rcut = 15.d0, vdw_mbd_rcut2 = 8.d0, &
+           &   vdw_2b_rcut = 15.d0, vdw_2b_rcut2 = 8.d0, vdw_omega_ref = 1.3d0, &
+           & vdw_loc_rcut = 5.d0, &
+           &   vdw_d_mbd = 6.d0, vdw_sr_mbd = 0.83d0
+      logical :: vdw_hirsh_grad = .true., &
+                 vdw_polynomial = .false., do_nnls = .false., vdw_mbd_cent_appr = .true.
+      integer :: vdw_mbd_norder = 6
       integer :: md_nsteps = 1, mc_nsteps = 1, write_xyz = 0,&
            & write_thermo = 1, which_atom = 0, vdw_mbd_nfreq = 11,&
            & n_mc_types = 0, n_nested = 0, mc_idx = 1, mc_nrelax = 0,&
