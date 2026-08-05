@@ -46,6 +46,7 @@ contains
                                        soap_turbo_hypers, distance_2b_hypers, angle_3b_hypers, core_pot_hypers, &
                                        n_soap_turbo, n_distance_2b, n_angle_3b, n_core_pot, n_species, rcut_max, &
                                        valid_xps, xps_idx, vdw_lp_index, core_be_lp_index, &
+                                       valid_estat_charges, charge_lp_index, &
                                        local_property_labels, local_property_indexes, n_local_properties_mpi, &
                                        has_local_properties_mpi, local_properties_n_sparse_mpi_soap_turbo, &
                                        local_properties_dim_mpi_soap_turbo, nrows, allelstopdata, &
@@ -74,6 +75,8 @@ contains
       integer, intent(inout) :: xps_idx
       integer, intent(inout) :: vdw_lp_index
       integer, intent(inout) :: core_be_lp_index
+      integer, intent(inout) :: charge_lp_index
+      logical, intent(inout) :: valid_estat_charges
       character*1024, allocatable, intent(inout) :: local_property_labels(:)
       integer, allocatable, intent(inout) :: local_property_indexes(:)
       integer, allocatable, intent(inout) :: n_local_properties_mpi(:)
@@ -271,7 +274,7 @@ contains
 
             call get_irreducible_local_properties(params, n_local_properties_tot, n_soap_turbo, soap_turbo_hypers, &
                            local_property_labels, local_property_labels_temp, local_property_labels_temp2, local_property_indexes, &
-                                                  valid_vdw, vdw_lp_index, core_be_lp_index, valid_xps, xps_idx)
+                                valid_vdw, vdw_lp_index, valid_estat_charges, charge_lp_index, core_be_lp_index, valid_xps, xps_idx)
 
             if (params%n_local_properties > 0) then
                write (*, *) '                                       |'
@@ -302,6 +305,8 @@ contains
          call mpi_bcast(valid_xps, 1,&
               & MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
          call mpi_bcast(valid_vdw, 1,&
+              & MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+         call mpi_bcast(valid_estat_charges, 1,&
               & MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
 
          !   Processes other than 0 need to allocate the data structures on their own
@@ -458,6 +463,7 @@ contains
             call mpi_bcast(soap_turbo_hypers(i)%has_core_electron_be, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
             if (valid_xps .or. params%do_xps) call mpi_bcast(core_be_lp_index, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
             if (valid_vdw) call mpi_bcast(vdw_lp_index, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+            if (valid_estat_charges) call mpi_bcast(charge_lp_index, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
 
             call mpi_bcast(soap_turbo_hypers(i)%has_vdw, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
             call mpi_bcast(soap_turbo_hypers(i)%n_local_properties, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)

@@ -46,6 +46,7 @@ program turbogap
    use gap_interface
    use types
    use vdw
+   use electrostatics, only: compute_coulomb_direct, compute_coulomb_dsf, compute_coulomb_lamichhane
    use turbogap_setup
    use turbogap_exp
    use gap_backend
@@ -111,6 +112,8 @@ program turbogap
    real(dp), target :: virial_3b(1:3, 1:3)
    real(dp), target :: virial_core_pot(1:3, 1:3)
    real(dp), target :: virial_vdw(1:3, 1:3)
+   real(dp), target :: virial_estat(1:3, 1:3)
+   real(dp), target :: this_virial_estat(1:3, 1:3)
    real(dp), target :: virial_lp(1:3, 1:3)
    real(dp), target :: this_virial_vdw(1:3, 1:3)
    real(dp), target :: this_virial_lp(1:3, 1:3)
@@ -303,15 +306,16 @@ program turbogap
 !   same way: evaluated once, into contrib_on, and only read thereafter.
    integer, parameter :: C_SOAP = 1
    integer, parameter :: C_VDW = 2
-   integer, parameter :: C_LP = 3
-   integer, parameter :: C_PDF = 4
-   integer, parameter :: C_SF = 5
-   integer, parameter :: C_XRD = 6
-   integer, parameter :: C_ND = 7
-   integer, parameter :: C_2B = 8
-   integer, parameter :: C_CP = 9
-   integer, parameter :: C_3B = 10
-   integer, parameter :: N_CONTRIB = 10
+   integer, parameter :: C_ESTAT = 3
+   integer, parameter :: C_LP = 4
+   integer, parameter :: C_PDF = 5
+   integer, parameter :: C_SF = 6
+   integer, parameter :: C_XRD = 7
+   integer, parameter :: C_ND = 8
+   integer, parameter :: C_2B = 9
+   integer, parameter :: C_CP = 10
+   integer, parameter :: C_3B = 11
+   integer, parameter :: N_CONTRIB = 11
    logical :: contrib_on(1:N_CONTRIB)
    type(contribution_ref) :: contrib(1:N_CONTRIB)
    integer :: n_active
@@ -377,6 +381,15 @@ program turbogap
 
    !vdw crap
    real(dp), allocatable, target :: energies_vdw(:)
+   real(dp), allocatable, target :: chg_neigh_estat(:)
+   real(dp), allocatable, target :: energies_estat(:)
+   real(dp), allocatable, target :: forces_estat(:, :)
+   real(dp), allocatable, target :: this_energies_estat(:)
+   real(dp), allocatable, target :: this_forces_estat(:, :)
+   real(dp) :: time_estat(1:3) = 0.d0
+   logical :: do_electrostatics = .true.
+   logical :: valid_estat_charges = .false.
+   integer :: charge_lp_index
    real(dp), allocatable, target :: forces_vdw(:, :)
    real(dp), allocatable, target :: this_energies_vdw(:)
    real(dp), allocatable, target :: this_forces_vdw(:, :)
@@ -603,6 +616,7 @@ program turbogap
                                  soap_turbo_hypers, distance_2b_hypers, angle_3b_hypers, core_pot_hypers, &
                                  n_soap_turbo, n_distance_2b, n_angle_3b, n_core_pot, n_species, rcut_max, &
                                  valid_xps, xps_idx, vdw_lp_index, core_be_lp_index, &
+                                 valid_estat_charges, charge_lp_index, &
                                  local_property_labels, local_property_indexes, n_local_properties_mpi, &
                                  has_local_properties_mpi, local_properties_n_sparse_mpi_soap_turbo, &
                                  local_properties_dim_mpi_soap_turbo, nrows, allelstopdata, &
@@ -1500,6 +1514,95 @@ program turbogap
 #endif
 
          !     Compute vdW energies and forces
+
+!        Compute ELECTROSTATIC energies and forces
+!
+!        Ported from the GPU branch. That branch additionally routes the gsf
+!        method through a batched device implementation when params%gpu_batched
+!        is set; here gsf always takes the compute_coulomb_lamichhane path,
+!        which is what the GPU branch itself falls back to.
+!        valid_estat_charges is part of the guard, not an afterthought: without it a
+!        deck that asks for electrostatics against a GAP with no atomic_charge local
+!        property indexes local_properties with an uninitialised charge_lp_index and
+!        segfaults. Same shape as the has_vdw/has_local_properties defect.
+         if (do_electrostatics .and. (trim(params%estat_method) /= "none") &
+             .and. params%do_prediction) then
+            if (.not. valid_estat_charges) then
+               if (rank == 0) then
+                  write (*, *) "WARNING: estat_method = "//trim(params%estat_method)// &
+                     " but the GAP provides no atomic_charge local property."
+                  write (*, *) "         Skipping the electrostatics contribution."
+               end if
+            else
+               call get_time(time_estat(1))
+#ifdef _MPIF90
+               allocate (this_energies_estat(1:n_sites))
+               this_energies_estat = 0.d0
+               if (params%do_forces) then
+                  allocate (this_forces_estat(1:3, 1:n_sites))
+                  this_forces_estat = 0.d0
+               end if
+#endif
+               allocate (chg_neigh_estat(1:j_end - j_beg + 1))
+               chg_neigh_estat = 0.d0
+               k = 0
+               do i = i_beg, i_end
+                  do j = 1, n_neigh(i)
+                     j2 = mod(neighbors_list(j_beg + k) - 1, n_sites) + 1
+                     k = k + 1
+                     chg_neigh_estat(k) = local_properties(j2, charge_lp_index)
+                  end do
+               end do
+               if (trim(params%estat_method) == "direct") then
+                  call compute_coulomb_direct( &
+                     local_properties(i_beg:i_end, charge_lp_index), &
+                     local_properties_cart_der(1:3, j_beg:j_end, charge_lp_index), &
+                     n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
+                     params%estat_rcut, params%estat_rcut_inner, params%estat_inner_width, &
+                     rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), chg_neigh_estat, &
+                     params%do_forces, &
+#ifdef _MPIF90
+                     this_energies_estat(i_beg:i_end), this_forces_estat, this_virial_estat, params%estat_options)
+#else
+                  energies_estat(i_beg:i_end), forces_estat, virial_estat, params%estat_options)
+#endif
+               else if (trim(params%estat_method) == "dsf") then
+                  call compute_coulomb_dsf( &
+                     local_properties(i_beg:i_end, charge_lp_index), &
+                     local_properties_cart_der(1:3, j_beg:j_end, charge_lp_index), &
+                     n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
+                     params%estat_dsf_alpha, params%estat_rcut, &
+                     params%estat_rcut_inner, params%estat_inner_width, &
+                     rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), chg_neigh_estat, &
+                     params%do_forces, &
+#ifdef _MPIF90
+                     this_energies_estat(i_beg:i_end), this_forces_estat, this_virial_estat, params%estat_options)
+#else
+                  energies_estat(i_beg:i_end), forces_estat, virial_estat, params%estat_options)
+#endif
+               else if (trim(params%estat_method) == "gsf") then
+                  call compute_coulomb_lamichhane( &
+                     local_properties(i_beg:i_end, charge_lp_index), &
+                     local_properties_cart_der(1:3, j_beg:j_end, charge_lp_index), &
+                     n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
+                     params%estat_dsf_alpha, params%estat_rcut, &
+                     rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), chg_neigh_estat, &
+                     params%do_forces, &
+#ifdef _MPIF90
+                     this_energies_estat(i_beg:i_end), this_forces_estat, this_virial_estat, params%estat_options)
+#else
+                  energies_estat(i_beg:i_end), forces_estat, virial_estat, params%estat_options)
+#endif
+               else
+                  write (*, *) "WARNING: Unknown electrostatic method "//trim(params%estat_method)
+                  write (*, *) "Ignoring..."
+               end if
+               deallocate (chg_neigh_estat)
+               call get_time(time_estat(2))
+               time_estat(3) = time_estat(3) + time_estat(2) - time_estat(1)
+            end if
+         end if
+
          call compute_vdw(params, any(soap_turbo_hypers(:)%has_vdw), n_sites, &
                           n_neigh, neighbors_list, neighbor_species, rjs, xyz, &
                           local_properties, local_properties_cart_der, vdw_lp_index, &
@@ -1683,6 +1786,7 @@ program turbogap
 !       one family's energies and forces to another.
             contrib_on(C_SOAP) = (n_soap_turbo > 0)
             contrib_on(C_VDW) = allocated(this_energies_vdw)
+            contrib_on(C_ESTAT) = allocated(this_energies_estat)
             contrib_on(C_LP) = allocated(this_energies_lp)
             contrib_on(C_PDF) = allocated(this_energies_pdf) .and. params%valid_pdf
             contrib_on(C_SF) = allocated(this_energies_sf) .and. params%valid_sf
@@ -1715,6 +1819,18 @@ program turbogap
                   contrib(n_active)%v_src => this_virial_vdw
                   contrib(n_active)%f_dst => forces_vdw
                   contrib(n_active)%v_dst => virial_vdw
+               end if
+            end if
+            if (contrib_on(C_ESTAT)) then
+               n_active = n_active + 1
+               contrib(n_active)%e_src => this_energies_estat
+               contrib(n_active)%e_dst => energies_estat
+               contrib(n_active)%forces = params%do_forces
+               if (contrib(n_active)%forces) then
+                  contrib(n_active)%f_src => this_forces_estat
+                  contrib(n_active)%v_src => this_virial_estat
+                  contrib(n_active)%f_dst => forces_estat
+                  contrib(n_active)%v_dst => virial_estat
                end if
             end if
             if (contrib_on(C_LP)) then

@@ -74,7 +74,7 @@ module types
       character*64 :: basis = "poly3", compress_mode = "none"
       character*32 :: scaling_mode = "polynomial"
       character*8, allocatable :: species_types(:)
-      logical :: compress_soap = .false., has_vdw = .false.,&
+      logical :: compress_soap = .false., has_vdw = .false., has_charges = .false.,&
            & has_core_electron_be = .false., has_local_properties = .false.
       type(local_property_soap_turbo), allocatable :: local_property_models(:)
    end type soap_turbo
@@ -108,6 +108,15 @@ module types
    end type core_pot
 
 ! These is the type for the input parameters
+   type options_estat
+      logical :: damped = .false.
+      logical :: tsf = .true.
+      logical :: sp = .false.
+      logical :: gsf = .false.
+      logical :: self_energy_correction = .false.
+      logical :: damped_cosine = .false.
+   end type options_estat
+
    type input_parameters
       real(dp), allocatable :: masses_types(:), e0(:), vdw_c6_ref(:), vdw_r0_ref(:), vdw_alpha0_ref(:), &
            mc_acceptance(:), mc_mu_acceptance(:), mc_mu(:), &
@@ -138,6 +147,8 @@ module types
            &   vdw_2b_rcut = 15.d0, vdw_2b_rcut2 = 8.d0, vdw_omega_ref = 1.3d0, &
            & vdw_loc_rcut = 5.d0, &
            &   vdw_d_mbd = 6.d0, vdw_sr_mbd = 0.83d0
+      real(dp)  :: estat_rcut = 10.d0, estat_dsf_alpha = -1.d0, &
+                   estat_rcut_inner = 4.0d0, estat_inner_width = 1.d0
       integer :: mbd_correction_freq = 100
       integer :: vdw_mbd_nfreq = 13, vdw_mbd_norder = 6
       logical :: vdw_mbd_grad = .true., vdw_hirsh_grad = .true., &
@@ -169,6 +180,8 @@ module types
       character*32, allocatable ::  mc_types(:), mc_relax_after(:)
       character*8, allocatable :: species_types(:), mc_swaps(:), mc_species(:)
       character*16 :: optimize = "vv", mc_relax_opt = "gd", mc_hybrid_opt = "vv"
+      character*32 :: estat_method = "none"
+      type(options_estat) :: estat_options
       character*32 :: barostat = "none", thermostat = "none", barostat_sym = "isotropic", &
                       xps_force_type = "similarity", exp_similarity_type = "squared_diff", xrd_method = "xrd", &
                       q_units = "q", xrd_output = "xrd", sf_output = "xrd", nd_output = "xrd", pair_distribution_output = "pdf"

@@ -1796,6 +1796,39 @@ contains
          else if (keyword == "poly_cut_xmin") then
             backspace (10)
             read (10, *, iostat=iostatus) cjunk, cjunk, params%poly_cut_xmin
+         else if (keyword == "estat_method") then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%estat_method
+         else if (keyword == "estat_dsf_alpha") then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%estat_dsf_alpha
+         else if (keyword == "estat_rcut") then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%estat_rcut
+         else if (keyword == "estat_rcut_inner") then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%estat_rcut_inner
+         else if (keyword == "estat_inner_width") then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%estat_inner_width
+         else if (keyword == "estat_damped") then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%estat_options%damped
+         else if (keyword == "estat_tsf") then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%estat_options%tsf
+         else if (keyword == "estat_sp") then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%estat_options%sp
+         else if (keyword == "estat_gsf") then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%estat_options%gsf
+         else if (keyword == "estat_damped_cosine") then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%estat_options%damped_cosine
+         else if (keyword == "estat_self_energy_correction") then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%estat_options%self_energy_correction
          else if (keyword == "poly_cut_xmax") then
             backspace (10)
             read (10, *, iostat=iostatus) cjunk, cjunk, params%poly_cut_xmax
@@ -3045,7 +3078,7 @@ contains
 
    subroutine get_irreducible_local_properties(params, n_local_properties_tot, n_soap_turbo, soap_turbo_hypers, &
                            local_property_labels, local_property_labels_temp, local_property_labels_temp2, local_property_indexes, &
-                                               valid_vdw, vdw_lp_index, core_be_lp_index, valid_xps, xps_idx)
+                                valid_vdw, vdw_lp_index, valid_estat_charges, charge_lp_index, core_be_lp_index, valid_xps, xps_idx)
       implicit none
       type(input_parameters), intent(inout) :: params
       integer, intent(in) :: n_soap_turbo
@@ -3057,9 +3090,11 @@ contains
       integer, allocatable, intent(inout) :: local_property_indexes(:)
       integer, intent(inout) :: vdw_lp_index
       integer, intent(inout) :: core_be_lp_index
+      integer, intent(inout) :: charge_lp_index
       integer, intent(inout) :: xps_idx
       logical, intent(inout) :: valid_vdw
       logical, intent(inout) :: valid_xps
+      logical, intent(inout) :: valid_estat_charges
       logical :: label_in_list = .false.
       integer :: i
       integer :: j
@@ -3171,6 +3206,24 @@ contains
                                  soap_turbo_hypers(k2)%local_property_models(k)%do_derivatives = .false.
                               end if
 
+                           end if
+                        end do
+                     end do
+                  end if
+
+                  if (trim(local_property_labels(j)) == "atomic_charge") then
+                     charge_lp_index = i
+                     valid_estat_charges = .true.
+                     do k2 = 1, n_soap_turbo
+                        do k = 1, soap_turbo_hypers(k2)%n_local_properties
+                           if (trim(soap_turbo_hypers(k2)%local_property_models(k)%label) == "atomic_charge") then
+                              soap_turbo_hypers(k2)%has_charges = .true.
+                              if (params%do_derivatives .or. params%do_forces) then
+                                 soap_turbo_hypers(k2)%local_property_models(k)%do_derivatives = .true.
+                              else
+                                 soap_turbo_hypers(k2)%local_property_models(k)%do_derivatives = .false.
+                              end if
+                              ! This is important -- no truncating the charges; it doesn't make sense here!
                            end if
                         end do
                      end do

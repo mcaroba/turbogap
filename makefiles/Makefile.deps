@@ -15,6 +15,7 @@ $(BUILD_DIR)/eph_fdm.o: $(BUILD_DIR)/kinds.o
 $(BUILD_DIR)/eph_electronic_stopping.o: $(BUILD_DIR)/eph_beta.o $(BUILD_DIR)/eph_fdm.o $(BUILD_DIR)/kinds.o
 $(BUILD_DIR)/timing.o: $(BUILD_DIR)/kinds.o
 $(BUILD_DIR)/misc.o: $(BUILD_DIR)/kinds.o
+$(BUILD_DIR)/electrostatics.o: $(BUILD_DIR)/kinds.o $(BUILD_DIR)/neighbors.o $(BUILD_DIR)/types.o
 $(BUILD_DIR)/nonneg_leastsq.o: $(BUILD_DIR)/constants.o
 $(BUILD_DIR)/splines.o: $(BUILD_DIR)/kinds.o
 $(BUILD_DIR)/types.o: $(BUILD_DIR)/kinds.o
