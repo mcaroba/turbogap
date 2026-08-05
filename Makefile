@@ -33,7 +33,7 @@ SRC_CUDA := cuda_wrappers.cu gpu_exp.cu
 # orthonormalization_kernels.cc is deliberately disabled, not dead: it is kept in
 # src/ for possible reintegration. Re-enable by moving it before the '#'.
 SRC_CC :=  3b_final.cc # orthonormalization_kernels.cc
-SRC := timing.f90 misc.f90 constants.f90 nonneg_leastsq.f90 splines.f90 types.f90 gpu_context.f90 neighbors.f90 gap.f90 vdw.f90 local_properties.f90 exp_utils.f90 \
+SRC := printing.f90 error.f90 read_utils.f90 timing.f90 misc.f90 constants.f90 nonneg_leastsq.f90 splines.f90 types.f90 gpu_context.f90 neighbors.f90 gap.f90 vdw.f90 local_properties.f90 exp_utils.f90 \
        xyz.f90 md.f90 mc.f90 read_files.f90 \
        gap_backend_gpu.f90 gap_interface.f90 mpi.f90 exp_interface.f90 turbogap_exp.f90 turbogap_setup.f90 \
        electrostatics.f90
