@@ -25,6 +25,8 @@
 ! own removes one instance of it.
 module gap_backend
 
+  use kinds
+
   use types
   use gap
   use timing
@@ -63,7 +65,7 @@ contains
 
     implicit none
     type(input_parameters), intent(inout) :: params
-    real*8,  intent(in), allocatable, target :: rjs(:), xyz(:,:)
+    real(dp),  intent(in), allocatable, target :: rjs(:), xyz(:,:)
     integer, intent(in), allocatable, target :: n_neigh(:), species(:), neighbor_species(:)
     integer, intent(in), allocatable, target :: neighbors_list(:)
     integer, intent(in) :: i_beg, i_end, j_beg, j_end
@@ -120,20 +122,20 @@ contains
     integer, intent(in) :: n_distance_2b
     type(distance_2b), allocatable, intent(inout), target :: distance_2b_hypers(:)
     type(input_parameters), intent(inout) :: params
-    real*8,  intent(in), allocatable, target :: rjs(:), xyz(:,:)
+    real(dp),  intent(in), allocatable, target :: rjs(:), xyz(:,:)
     integer, intent(in), allocatable, target :: n_neigh(:), species(:), neighbor_species(:)
     integer, intent(in) :: i_beg, i_end, j_beg, j_end
-    real*8, intent(inout), allocatable, target :: this_energies(:), this_forces(:,:)
-    real*8, intent(inout), target :: this_virial(1:3,1:3)
-    real*8, intent(inout), allocatable, target :: energies_2b(:), forces_2b(:,:)
-    real*8, intent(inout), target :: virial_2b(1:3,1:3)
-    real*8, intent(inout) :: time_2b(1:3)
+    real(dp), intent(inout), allocatable, target :: this_energies(:), this_forces(:,:)
+    real(dp), intent(inout), target :: this_virial(1:3,1:3)
+    real(dp), intent(inout), allocatable, target :: energies_2b(:), forces_2b(:,:)
+    real(dp), intent(inout), target :: virial_2b(1:3,1:3)
+    real(dp), intent(inout) :: time_2b(1:3)
     type(c_ptr) :: energies_2b_d, forces_2b_d, virial_2b_d
     integer :: i, j, sp1, sp2, n_sparse
     integer(c_size_t) :: st_n_sites_double, st_n_sparse_double, st_virial
     logical(c_bool) :: c_do_forces
     integer :: n_sites
-    real*8 :: t1, t2
+    real(dp) :: t1, t2
 
     n_sites = i_end - i_beg + 1
     c_do_forces = logical( params%do_forces, kind=c_bool )
@@ -248,21 +250,21 @@ contains
     integer, intent(in) :: n_core_pot
     type(core_pot), allocatable, intent(inout), target :: core_pot_hypers(:)
     type(input_parameters), intent(inout) :: params
-    real*8,  intent(in), allocatable, target :: rjs(:), xyz(:,:)
+    real(dp),  intent(in), allocatable, target :: rjs(:), xyz(:,:)
     integer, intent(in), allocatable, target :: n_neigh(:), species(:), neighbor_species(:)
     integer, intent(in) :: i_beg, i_end, j_beg, j_end
-    real*8, intent(inout), allocatable, target :: this_energies(:), this_forces(:,:)
-    real*8, intent(inout), target :: this_virial(1:3,1:3)
-    real*8, intent(inout), allocatable, target :: energies_core_pot(:), forces_core_pot(:,:)
-    real*8, intent(inout), target :: virial_core_pot(1:3,1:3)
-    real*8, intent(inout) :: time_core_pot(1:3)
+    real(dp), intent(inout), allocatable, target :: this_energies(:), this_forces(:,:)
+    real(dp), intent(inout), target :: this_virial(1:3,1:3)
+    real(dp), intent(inout), allocatable, target :: energies_core_pot(:), forces_core_pot(:,:)
+    real(dp), intent(inout), target :: virial_core_pot(1:3,1:3)
+    real(dp), intent(inout) :: time_core_pot(1:3)
     type(c_ptr) :: energies_core_pot_d, forces_core_pot_d, virial_core_pot_d
     type(c_ptr) :: x_d, V_d, dVdx2_d
     integer :: i, j, sp1, sp2, n_sparse
     integer(c_size_t) :: st_n_sites_double, st_n_sparse_double, st_virial
     logical(c_bool) :: c_do_forces
     integer :: n_sites
-    real*8 :: t1, t2
+    real(dp) :: t1, t2
 
     n_sites = i_end - i_beg + 1
     c_do_forces = logical( params%do_forces, kind=c_bool )
@@ -369,22 +371,22 @@ contains
     type(angle_3b), allocatable, intent(inout), target :: angle_3b_hypers(:)
     integer, intent(in), allocatable, target :: neighbors_list(:)
     type(input_parameters), intent(inout) :: params
-    real*8,  intent(in), allocatable, target :: rjs(:), xyz(:,:)
+    real(dp),  intent(in), allocatable, target :: rjs(:), xyz(:,:)
     integer, intent(in), allocatable, target :: n_neigh(:), species(:), neighbor_species(:)
     integer, intent(in) :: i_beg, i_end, j_beg, j_end
-    real*8, intent(inout), allocatable, target :: this_energies(:), this_forces(:,:)
-    real*8, intent(inout), target :: this_virial(1:3,1:3)
+    real(dp), intent(inout), allocatable, target :: this_energies(:), this_forces(:,:)
+    real(dp), intent(inout), target :: this_virial(1:3,1:3)
 !   Read only for its extent; the 3b kernel sizes a device buffer from it.
-    real*8, intent(in), allocatable :: forces(:,:)
-    real*8, intent(inout), allocatable, target :: energies_3b(:), forces_3b(:,:)
-    real*8, intent(inout), target :: virial_3b(1:3,1:3)
-    real*8, intent(inout) :: time_3b(1:3)
+    real(dp), intent(in), allocatable :: forces(:,:)
+    real(dp), intent(inout), allocatable, target :: energies_3b(:), forces_3b(:,:)
+    real(dp), intent(inout), target :: virial_3b(1:3,1:3)
+    real(dp), intent(inout) :: time_3b(1:3)
     type(c_ptr) :: energies_3b_d, forces_3b_d, virial_3b_d
     integer :: i, j, sp1, sp2, n_sparse
     integer(c_size_t) :: st_n_sites_double, st_n_sparse_double, st_virial
     logical(c_bool) :: c_do_forces
     integer :: n_sites
-    real*8 :: t1, t2
+    real(dp) :: t1, t2
     integer :: k, max_np, sp0_3b, sp1_3b, sp2_3b
     integer, allocatable, target :: kappas(:)
     type(c_ptr) :: kappas_array_d

@@ -27,6 +27,8 @@
 
 module electrostatics
 
+  use kinds
+
   
     use neighbors
     use types
@@ -368,7 +370,7 @@ module electrostatics
     logical(c_bool) :: c_do_forces
     logical(c_bool) :: c_do_damping_cosine
     
-    real*8 :: pair_energy_rcut, pair_energy_rcut_der, memory
+    real(dp) :: pair_energy_rcut, pair_energy_rcut_der, memory
 
     real(c_double) :: pair_energy_rcut_d, pair_energy_rcut_der_d
     type(c_ptr) :: gpu_stream

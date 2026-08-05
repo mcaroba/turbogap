@@ -21,6 +21,8 @@
 ! crosses the boundary too. It wants the backend seam, not a straight lift.
 module turbogap_exp
 
+  use kinds
+
   use timing
   use types
   use exp_utils
@@ -54,19 +56,19 @@ contains
     logical, intent(in) :: valid_xps
     logical, intent(inout) :: write_condition, overwrite_condition
     character*32, intent(inout) :: exp_output
-    real*8,  intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3)
-    real*8,  intent(in), allocatable :: xyz(:,:)
+    real(dp),  intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3)
+    real(dp),  intent(in), allocatable :: xyz(:,:)
     integer, intent(in), allocatable :: neighbors_list(:), n_neigh(:)
-    real*8,  intent(inout), allocatable :: local_properties(:,:), local_properties_cart_der(:,:,:)
+    real(dp),  intent(inout), allocatable :: local_properties(:,:), local_properties_cart_der(:,:,:)
 
 !   The caller passes the this_-prefixed arrays under MPI and the plain ones
 !   otherwise.
-    real*8, allocatable, intent(inout) :: energies_lp(:), forces_lp(:,:)
-    real*8, intent(inout) :: virial_lp(1:3,1:3), time_xps(1:3)
+    real(dp), allocatable, intent(inout) :: energies_lp(:), forces_lp(:,:)
+    real(dp), intent(inout) :: virial_lp(1:3,1:3), time_xps(1:3)
 
 !   Was driver state; block-local now.
-    real*8, allocatable :: y_i_pred_all(:,:), v_neigh_lp(:)
-    real*8  :: mag
+    real(dp), allocatable :: y_i_pred_all(:,:), v_neigh_lp(:)
+    real(dp)  :: mag
     integer :: i, j, j2, k
 
     !     Compute core_electron_be energies and forces

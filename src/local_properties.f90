@@ -28,6 +28,8 @@
 
 module local_prop
 
+  use kinds
+
   use F_B_C
   use iso_c_binding
 
@@ -176,13 +178,13 @@ module local_prop
     implicit none
 
 !   Input variables
-    real*8, intent(in) :: soap(:,:), Qs(:,:), alphas(:), V0, delta, zeta, soap_cart_der(:,:,:)
+    real(dp), intent(in) :: soap(:,:), Qs(:,:), alphas(:), V0, delta, zeta, soap_cart_der(:,:,:)
     integer, intent(in) :: n_neigh(:)
     logical, intent(in) :: do_derivatives
 !   Output variables
-    real*8, intent(out) :: V(:), V_der(:,:)
+    real(dp), intent(out) :: V(:), V_der(:,:)
 !   Internal variables
-    real*8, allocatable :: K(:,:), K_der(:,:), Qss(:,:), Qs_copy(:,:)
+    real(dp), allocatable :: K(:,:), K_der(:,:), Qss(:,:), Qs_copy(:,:)
     integer :: n_sites, n_soap, n_sparse, zeta_int, n_pairs
     integer :: i, j, i2, cart
 

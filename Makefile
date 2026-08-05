@@ -35,6 +35,8 @@ SRC := timing.f90 splines.f90 types.f90 neighbors.f90 gap.f90 vdw.f90 local_prop
        xyz.f90 md.f90 mc.f90 read_files.f90 \
        gap_backend_gpu.f90 gap_interface.f90 mpi.f90 exp_interface.f90 turbogap_exp.f90 turbogap_setup.f90 \
        electrostatics.f90
+# kinds must build before every other group.
+SRC_BASE := kinds.f90
 SRC_TP_BT := resamplekin.f90 fortran_cuda_interfaces.f90
 SRC_ST := soap_turbo_functions.f90 soap_turbo_radial.f90 soap_turbo_angular.f90 \
           soap_turbo.f90 soap_turbo_compress.f90
@@ -44,6 +46,7 @@ SRC_STOP := adaptive_time.f90 electronic_stopping.f90 eph_beta.f90 eph_fdm.f90 \
 OBJ_CUDA := $(addprefix $(BUILD_DIR)/,$(patsubst %.cu,%.o,$(SRC_CUDA)))
 OBJ_CC := $(addprefix $(BUILD_DIR)/,$(patsubst %.cc,%.o,$(SRC_CC)))
 OBJ := $(addprefix $(BUILD_DIR)/,$(patsubst %.f90,%.o,$(SRC)))
+OBJ_BASE := $(addprefix $(BUILD_DIR)/,$(patsubst %.f90,%.o,$(SRC_BASE)))
 OBJ_TP_BT := $(addprefix $(BUILD_DIR)/,$(patsubst %.f90,%.o,$(SRC_TP_BT)))
 OBJ_ST := $(addprefix $(BUILD_DIR)/,$(patsubst %.f90,%.o,$(SRC_ST)))
 OBJ_STOP := $(addprefix $(BUILD_DIR)/,$(patsubst %.f90,%.o,$(SRC_STOP)))
@@ -59,7 +62,7 @@ default: libturbogap programs
 all: default
 
 clean:
-	rm -rf $(OBJ_CUDA) $(OBJ_CC) $(OBJ_TP_BT) $(OBJ_ST)  $(OBJ) $(INC_DIR)/*.mod $(PROG)
+	rm -rf $(OBJ_BASE) $(OBJ_CUDA) $(OBJ_CC) $(OBJ_TP_BT) $(OBJ_ST)  $(OBJ) $(INC_DIR)/*.mod $(PROG)
 
 deepclean:
 	rm -rf $(BUILD_DIR) $(BIN_DIR) ${INC_DIR} ${LIB_DIR}
@@ -70,8 +73,8 @@ deepclean:
 programs: $(PROG)
 
 
-libturbogap: $(OBJ_TP_BT) $(OBJ_ST) $(OBJ) $(OBJ_CUDA) ${LIB_DIR}
-	ar scr $(LIB_DIR)/libturbogap.a $(OBJ_TP_BT) $(OBJ_ST) $(OBJ)  $(OBJ_CUDA)
+libturbogap: $(OBJ_BASE) $(OBJ_TP_BT) $(OBJ_ST) $(OBJ) $(OBJ_CUDA) ${LIB_DIR}
+	ar scr $(LIB_DIR)/libturbogap.a $(OBJ_BASE) $(OBJ_TP_BT) $(OBJ_ST) $(OBJ)  $(OBJ_CUDA)
 
 $(BUILD_DIR)/cuda_%.o: src/cuda_%.cu
 	$(CU) $(CUDA_OPTS) -c $< -o $@
@@ -79,8 +82,8 @@ $(BUILD_DIR)/gpu_%.o: src/gpu_%.cu
 	$(CU) $(CUDA_OPTS) -c $< -o $@
 $(BUILD_DIR)/%.o: src/%.cc
 	$(CC) $(CC_OPTS) -c $< -o $@
-$(BIN_DIR)/%: src/%.f90 $(OBJ_TP_BT) $(OBJ_ST)  $(OBJ) $(OBJ_CUDA) $(OBJ_CC) | $$(@D)
-	$(F90) $(PP) $(F90_OPTS) $< -o $@ $(OBJ_TP_BT) $(OBJ_ST) $(OBJ) $(OBJ_CUDA) $(OBJ_CC) $(LIBS)
+$(BIN_DIR)/%: src/%.f90 $(OBJ_BASE) $(OBJ_TP_BT) $(OBJ_ST)  $(OBJ) $(OBJ_CUDA) $(OBJ_CC) | $$(@D)
+	$(F90) $(PP) $(F90_OPTS) $< -o $@ $(OBJ_BASE) $(OBJ_TP_BT) $(OBJ_ST) $(OBJ) $(OBJ_CUDA) $(OBJ_CC) $(LIBS)
 
 $(BUILD_DIR)/%.o: src/stopping/%.f90 | $$(@D)
 	$(F90) $(PP) $(F90_OPTS) -c $< -o $@

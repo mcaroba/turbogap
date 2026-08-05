@@ -27,6 +27,8 @@
 
 module gap
 
+  use kinds
+
   use splines
   use F_B_C
   use iso_c_binding
@@ -74,10 +76,10 @@ module gap
       type(c_ptr) :: virial_d, n_neigh_d,  this_force_d, j2_index_d
       type(c_ptr), intent(inout) :: l_index_d
       type(c_ptr) :: neighbors_beg_d, neighbors_end_d, xyz_d,  neighbors_list_d, forces_d
-      real*8, intent(inout) :: solo_time_soap
+      real(dp), intent(inout) :: solo_time_soap
       integer(c_int), allocatable, target :: j2_index(:),  l_index(:)    
       type(c_ptr), intent(inout) :: soap_der_d, soap_d
-      real*8 :: ttt(2)
+      real(dp) :: ttt(2)
       integer(c_size_t) :: st_alphas, st_Qs, st_kernels, st_energies, st_soap
       integer(c_size_t) :: st_n_pairs, st_xyz,st_nnlist, st_forces, st_virial
       integer(c_size_t) :: st_neigh,st_neigh_beg, st_neigh_end
@@ -344,16 +346,16 @@ module gap
     implicit none
 
 !   Input variables
-    real*8, intent(in) :: rjs(:), xyz(:,:), alphas(:), cutoff(:), delta, sigma, e0, Qs(:), rcut, buffer
+    real(dp), intent(in) :: rjs(:), xyz(:,:), alphas(:), cutoff(:), delta, sigma, e0, Qs(:), rcut, buffer
     integer, intent(in) :: n_neigh(:), species(:), neighbor_species(:)
     character*8, intent(in) :: species_types(:), species1, species2
     logical, intent(in) :: do_forces, do_timing
 
 !   Output variables
-    real*8, intent(out) :: energies(:), forces(:,:), virial(1:3,1:3)
+    real(dp), intent(out) :: energies(:), forces(:,:), virial(1:3,1:3)
 
 !   Internal variables
-    real*8 :: time1, time2, fcut, pi, dfcut, this_force(1:3)
+    real(dp) :: time1, time2, fcut, pi, dfcut, this_force(1:3)
     integer :: n_sparse, i, j, k, n_sites, n_atom_pairs, s, sp1, sp2, n_sites0, k1, k2
 
     if( do_timing )then
@@ -484,22 +486,22 @@ module gap
     implicit none
 
 !   Input variables
-    real*8, intent(in) :: rjs(:), xyz(:,:), x(:), V(:), yp1, ypn, dVdx2(:)
+    real(dp), intent(in) :: rjs(:), xyz(:,:), x(:), V(:), yp1, ypn, dVdx2(:)
     integer, intent(in) :: n_neigh(:), species(:), neighbor_species(:)
     character*8, intent(in) :: species_types(:), species1, species2
     logical, intent(in) :: do_forces, do_timing
 
 !   Output variables
-    real*8, intent(out) :: energies(:), forces(:,:), virial(1:3,1:3)
+    real(dp), intent(out) :: energies(:), forces(:,:), virial(1:3,1:3)
 
 !   Internal variables
 !   There are two ways of doing the core_pot interpolation; most efficient probably depends on
 !   whether a small subset or big subset of the total number of atom pairs has a core potential
 !   term associated to it. The current implementation is fast going over pairs, but slow computing
 !   the splines. This will give the best performance for systems with many atom types
-    real*8 :: V_int(1:1), dV_int(1:1), this_force(1:3)
-!    real*8, allocatable :: V_int(:), dV_int(:)
-    real*8 :: time1, time2, rcut
+    real(dp) :: V_int(1:1), dV_int(1:1), this_force(1:3)
+!    real(dp), allocatable :: V_int(:), dV_int(:)
+    real(dp) :: time1, time2, rcut
     integer :: n_sparse, i, j, k, n_sites, n_atom_pairs, s, sp1, sp2, n_sites0, k1, k2
 
     if( do_timing )then
@@ -652,21 +654,21 @@ module gap
     implicit none
 
 !   Input variables
-    real*8, intent(in) :: rjs(:), xyz(:,:), alphas(:), cutoff(:), rcut, buffer, delta, sigma(:), e0, Qs(:,:)
+    real(dp), intent(in) :: rjs(:), xyz(:,:), alphas(:), cutoff(:), rcut, buffer, delta, sigma(:), e0, Qs(:,:)
     integer, intent(in) :: n_neigh(:), neighbors_list(:), species(:), neighbor_species(:)
     logical, intent(in) :: do_timing, do_forces
     character*3, intent(in) :: kernel_type
     character*8, intent(in) :: species_center, species1, species2, species_types(:)
 
 !   Output variables
-    real*8, intent(out) :: energies(:), forces(:,:), virial(1:3,1:3)
+    real(dp), intent(out) :: energies(:), forces(:,:), virial(1:3,1:3)
 
 !   Internal variables
-    real*8 :: time1, time2, fcut, pi, r12, r13, r23, xyz12(1:3), xyz13(1:3), &
+    real(dp) :: time1, time2, fcut, pi, r12, r13, r23, xyz12(1:3), xyz13(1:3), &
               xyz23(1:3), q(1:3), fcut12, fcut13, dfcut12(1:3), dfcut13(1:3), &
               force1(1:3), force2(1:3), force3(1:3), dfcut(1:3), &
               xyz12_red(1:3), xyz13_red(1:3), xyz23_red(1:3), this_force(1:3)
-    real*8, allocatable :: r(:), drdq(:,:), kernel(:), drdx1(:,:), drdx2(:,:), drdx3(:,:), pref(:), &
+    real(dp), allocatable :: r(:), drdq(:,:), kernel(:), drdx1(:,:), drdx2(:,:), drdx3(:,:), pref(:), &
                            kernel_der(:)
     integer :: n_sparse, i, j, k, k2, n_sites, n_atom_pairs, s, j2, i3, j3, k3, l, sp0, sp1, sp2, n_sites0, k1, k4
     !write(*,*) "3B"
@@ -919,11 +921,11 @@ module gap
 
     implicit none
 
-    real*8, intent(in) :: r(:)
+    real(dp), intent(in) :: r(:)
     integer, intent(in) :: d, q
-    real*8, dimension(1:size(r)) :: cov
+    real(dp), dimension(1:size(r)) :: cov
 
-    real*8 :: j
+    real(dp) :: j
     integer :: j_int, i
 
     j_int = d/2 + q + 1
@@ -949,11 +951,11 @@ module gap
 
     implicit none
 
-    real*8, intent(in) :: r(:)
+    real(dp), intent(in) :: r(:)
     integer, intent(in) :: d, q
-    real*8, dimension(1:size(r)) :: cov_der
+    real(dp), dimension(1:size(r)) :: cov_der
 
-    real*8 :: j
+    real(dp) :: j
     integer :: j_int, i
 
     j_int = d/2 + q + 1

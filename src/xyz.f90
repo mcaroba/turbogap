@@ -27,6 +27,8 @@
 
 module xyz_module
 
+  use kinds
+
 
   use soap_turbo_functions
 
@@ -72,7 +74,7 @@ module xyz_module
          & valid_pdf, valid_sf, valid_xrd, valid_nd,  do_pair_distribution,&
          & do_structure_factor, do_xrd, do_nd, string)
       implicit none
-      real*8, intent(in), allocatable :: energies_soap(:), energies_2b(:),&
+      real(dp), intent(in), allocatable :: energies_soap(:), energies_2b(:),&
            & energies_3b(:), energies_core_pot(:), energies_vdw(:),&
            & energies_exp(:), energies_lp(:), energies_pdf(:), energies_sf(:),&
            & energies_xrd(:), energies_nd(:), energies_estat(:)
@@ -141,16 +143,16 @@ module xyz_module
     implicit none
 
 !   In variables:
-    real*8, intent(in) :: md_time, dt, temperature, pressure, a_cell(1:3), b_cell(1:3), c_cell(1:3), virial(1:3,1:3)
-    real*8, intent(in) :: forces(:,:), velocities(:,:), positions(:,:), local_energies(:), masses(:)
-    real*8, intent(in) :: local_properties(:,:)
+    real(dp), intent(in) :: md_time, dt, temperature, pressure, a_cell(1:3), b_cell(1:3), c_cell(1:3), virial(1:3,1:3)
+    real(dp), intent(in) :: forces(:,:), velocities(:,:), positions(:,:), local_energies(:), masses(:)
+    real(dp), intent(in) :: local_properties(:,:)
     integer, intent(in) :: Nat, md_istep
     character(len=*), intent(in) :: species(:), filename, string
     logical, intent(in) :: write_property(:), write_array_property(:), fix_atom(:,:), overwrite
     logical, allocatable, intent(in) :: write_local_properties(:)
     character*1024, allocatable, intent(in) :: local_property_labels(:)
 !   Internal variables:
-    real*8 :: vol
+    real(dp) :: vol
     integer :: n_properties, n_array_properties, i, j, k
     character*1024 :: properties_string
     character*16 :: lattice_string(1:16), temp_string
@@ -427,7 +429,7 @@ module xyz_module
     character*1024, intent(in) :: properties, line
 
 !   Output variables
-    real*8, intent(inout) :: velocities(1:3), positions(1:3), masses
+    real(dp), intent(inout) :: velocities(1:3), positions(1:3), masses
     character*8 :: species
     logical, intent(inout) :: fix_atom(1:3)
     logical, intent(out) :: has_velocities, has_masses

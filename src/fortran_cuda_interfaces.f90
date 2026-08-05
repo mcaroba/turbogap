@@ -5,6 +5,7 @@
 ! gnupot
 !plot "< paste trajectory_out.xyz_64k_oiriginal trajectory_out.xyz | awk 'NR>2{print $5,$13}'", x
 MODULE F_B_C
+
     INTERFACE
       subroutine gpu_malloc_all(a_d,n,gpu_stream) bind(C,name="cuda_malloc_all")
         use iso_c_binding
@@ -943,6 +944,7 @@ MODULE F_B_C
   
 module gpu_var_mod
 
+
   use iso_c_binding
   use F_B_C
   implicit none  
@@ -1126,6 +1128,7 @@ end module gpu_var_mod
 
 
 module gpu_var_int_mod
+
   ! The gpu_var_int module.
   use  gpu_var_mod
   use  F_B_C
@@ -1323,6 +1326,8 @@ end module gpu_var_int_mod
 
 
 module gpu_var_double_mod
+
+  use kinds
   ! The gpu_var_double module.
   use  gpu_var_mod
   use  F_B_C
@@ -1374,7 +1379,7 @@ contains
   
   subroutine gpu_var_alloc_double1(this, name, array, gpu_stream)
     class(gpu_var_double_class), intent(inout) :: this
-    real*8, allocatable :: array(:)
+    real(dp), allocatable :: array(:)
     type(c_ptr) :: gpu_stream
     character(len=*) :: name
 
@@ -1397,7 +1402,7 @@ contains
 
   subroutine gpu_var_alloc_double2(this, name, array, gpu_stream)
     class(gpu_var_double_class), intent(inout) :: this
-    real*8, allocatable :: array(:,:)
+    real(dp), allocatable :: array(:,:)
     type(c_ptr) :: gpu_stream
     character(len=*) :: name
 
@@ -1420,7 +1425,7 @@ contains
 
   subroutine gpu_var_alloc_double3(this, name, array, gpu_stream)
     class(gpu_var_double_class), intent(inout) :: this
-    real*8, allocatable :: array(:,:,:)
+    real(dp), allocatable :: array(:,:,:)
     type(c_ptr) :: gpu_stream
     character(len=*) :: name
 
@@ -1444,7 +1449,7 @@ contains
 
   subroutine gpu_var_alloc_double1_copy(this, name, array, gpu_stream)
     class(gpu_var_double_class), intent(inout) :: this
-    real*8, allocatable, target :: array(:)
+    real(dp), allocatable, target :: array(:)
     type(c_ptr) :: gpu_stream
     character(len=*) :: name
 
@@ -1468,7 +1473,7 @@ contains
 
   subroutine gpu_var_alloc_double2_copy(this, name, array, gpu_stream)
     class(gpu_var_double_class), intent(inout) :: this
-    real*8, allocatable, target :: array(:,:)
+    real(dp), allocatable, target :: array(:,:)
     type(c_ptr) :: gpu_stream
     character(len=*) :: name
 
@@ -1492,7 +1497,7 @@ contains
 
   subroutine gpu_var_alloc_double3_copy(this, name, array, gpu_stream)
     class(gpu_var_double_class), intent(inout) :: this
-    real*8, allocatable, target :: array(:,:,:)
+    real(dp), allocatable, target :: array(:,:,:)
     type(c_ptr) :: gpu_stream
     character(len=*) :: name
 
@@ -1522,6 +1527,7 @@ end module gpu_var_double_mod
 
 
 module gpu_variables
+
   use gpu_var_int_mod
   use gpu_var_double_mod  
   implicit none

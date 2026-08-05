@@ -25,6 +25,8 @@
 ! cases, which is not enough to land one on.
 module turbogap_setup
 
+  use kinds
+
   use timing
   use types
   use read_files
@@ -63,7 +65,7 @@ contains
     type(core_pot), allocatable, intent(inout) :: core_pot_hypers(:)
     integer, intent(inout) :: n_soap_turbo, n_distance_2b, n_angle_3b, n_core_pot
     integer, intent(inout) :: n_species
-    real*8, intent(inout) :: rcut_max
+    real(dp), intent(inout) :: rcut_max
     logical, intent(inout) :: valid_xps, valid_estat_charges
     integer, intent(inout) :: xps_idx, vdw_lp_index, core_be_lp_index, charge_lp_index
     character*1024, allocatable, intent(inout) :: local_property_labels(:)
@@ -72,7 +74,7 @@ contains
     logical, allocatable, intent(inout) :: has_local_properties_mpi(:)
     integer, allocatable, intent(inout) :: local_properties_n_sparse_mpi_soap_turbo(:)
     integer, allocatable, intent(inout) :: local_properties_dim_mpi_soap_turbo(:)
-    real*8, intent(inout) :: time_read_input(1:3), time_mpi(1:3)
+    real(dp), intent(inout) :: time_read_input(1:3), time_mpi(1:3)
 
 !   Local. All of these were variables of the main program that nothing outside
 !   this block referenced. i, j, ierr, iostatus, cjunk, n_sp and n_lp_count are
@@ -90,7 +92,7 @@ contains
     logical :: valid_vdw = .false.
     integer :: n_sparse, dim, cPnz, n_nonzero, n_local_properties_tot = 0
     integer :: i, j, ierr, iostatus, n_sp, n_lp_count, nrows
-    real*8, allocatable :: allelstopdata(:)
+    real(dp), allocatable :: allelstopdata(:)
 
   ! Read input file and other files
   !

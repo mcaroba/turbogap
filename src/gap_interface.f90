@@ -27,6 +27,8 @@
 
 module gap_interface
 
+  use kinds
+
    use soap_turbo_desc
    use gap
    use read_files
@@ -64,8 +66,8 @@ contains
     !   Input variables
     type(local_property_soap_turbo), allocatable :: local_property_models(:)
 
-    !   real*8, intent(in) :: rjs0(:), thetas0(:), phis0(:), xyz0(:,:), rcut_hard(:), rcut_soft(:), &
-    real*8, intent(in) :: rjs0(:), thetas0(:), phis0(:), xyz0(:, :), rcut_hard(:), &
+    !   real(dp), intent(in) :: rjs0(:), thetas0(:), phis0(:), xyz0(:,:), rcut_hard(:), rcut_soft(:), &
+    real(dp), intent(in) :: rjs0(:), thetas0(:), phis0(:), xyz0(:, :), rcut_hard(:), &
                                 !                         nf(:), global_scaling(:), atom_sigma_r(:), atom_sigma_r_scaling(:), &
          atom_sigma_r(:), &
                                 !                         atom_sigma_t(:), atom_sigma_t_scaling(:), amplitude_scaling(:), &
@@ -85,15 +87,15 @@ contains
     character*8, intent(in) :: xyz_species(:), xyz_species_supercell(:), species_types(:)
 
     !   Output variables
-    real*8, allocatable, intent(out) :: soap(:, :), soap_cart_der(:, :, :)
-    real*8, intent(out) :: virial(1:3, 1:3)
-    real*8, intent(inout)  :: solo_time_soap, time_get_soap
+    real(dp), allocatable, intent(out) :: soap(:, :), soap_cart_der(:, :, :)
+    real(dp), intent(out) :: virial(1:3, 1:3)
+    real(dp), intent(inout)  :: solo_time_soap, time_get_soap
 
     !   Inout variables
-    real*8, intent(inout) :: energies0(:), forces0(:, :), local_properties0(:, :), local_properties_cart_der0(:, :, :)
+    real(dp), intent(inout) :: energies0(:), forces0(:, :), local_properties0(:, :), local_properties_cart_der0(:, :, :)
 
     !   Internal variables
-    real*8, allocatable :: rjs(:), thetas(:), phis(:), energies(:), forces(:, :), soap_temp(:, :), &
+    real(dp), allocatable :: rjs(:), thetas(:), phis(:), energies(:), forces(:, :), soap_temp(:, :), &
          local_properties(:), local_properties_cart_der(:, :), xyz(:, :)
 
     integer, allocatable :: in_to_out_site(:), n_neigh(:), neighbors_list(:), species_multiplicity(:), &
@@ -106,9 +108,9 @@ contains
     logical, allocatable :: mask(:, :)
     logical, allocatable ::  mask0(:, :), is_atom_seen(:)
     !   CLEAN THIS UP
-    real*8 :: time1, time2, rcut_max
-    real*8 :: ttt(2)
-    real*8 :: time_local_prop(3)
+    real(dp) :: time1, time2, rcut_max
+    real(dp) :: ttt(2)
+    real(dp) :: time_local_prop(3)
     type(c_ptr) :: soap_cart_der_d, soap_d, nf_d, rcut_hard_d, rcut_soft_d, global_scaling_d, atom_sigma_r_d, atom_sigma_r_scaling_d
     type(c_ptr) :: atom_sigma_t_d, atom_sigma_t_scaling_d, amplitude_scaling_d, alpha_max_d, central_weight_d, alphas_d, Qs_d
     type(c_ptr) :: cublas_handle, gpu_stream
@@ -467,7 +469,7 @@ contains
 !     implicit none
 
 ! !   Input variables
-!     real*8, intent(in) :: rjs0(:), thetas0(:), phis0(:), xyz0(:,:), rcut_hard(:), rcut_soft(:), &
+!     real(dp), intent(in) :: rjs0(:), thetas0(:), phis0(:), xyz0(:,:), rcut_hard(:), rcut_soft(:), &
 !                           nf(:), global_scaling(:), atom_sigma_r(:), atom_sigma_r_scaling(:), &
 !                           atom_sigma_t(:), atom_sigma_t_scaling(:), amplitude_scaling(:), &
 !                           central_weight(:), delta, zeta, alphas(:), Qs(:,:), compress_P_el(:)
@@ -483,16 +485,16 @@ contains
 !     character*8, intent(in) :: xyz_species(:), xyz_species_supercell(:), species_types(:)
 
 ! !   Output variables
-!     real*8, allocatable, intent(out) :: soap(:,:), soap_cart_der(:,:,:)
-!     real*8, intent(out) :: virial(1:3, 1:3)
+!     real(dp), allocatable, intent(out) :: soap(:,:), soap_cart_der(:,:,:)
+!     real(dp), intent(out) :: virial(1:3, 1:3)
 
 ! !   Inout variables
-!     real*8, intent(inout) :: energies0(:), forces0(:,:), local_properties0(:), local_properties_cart_der0(:,:)
+!     real(dp), intent(inout) :: energies0(:), forces0(:,:), local_properties0(:), local_properties_cart_der0(:,:)
 
 ! !   Internal variables
-!     real*8, allocatable :: rjs(:), thetas(:), phis(:), energies(:), forces(:,:), soap_temp(:,:), &
+!     real(dp), allocatable :: rjs(:), thetas(:), phis(:), energies(:), forces(:,:), soap_temp(:,:), &
 !                            & xyz(:,:)
-!     real*8 :: rcut_max
+!     real(dp) :: rcut_max
 !     integer, allocatable :: neighbors_list(:), species_multiplicity(:), &
 !                             species(:,:), species0(:,:), species_multiplicity0(:), out_to_in_site(:), &
 !                             der_neighbors(:), der_neighbors_list(:)
@@ -504,7 +506,7 @@ contains
 !     logical, allocatable :: mask(:,:), mask0(:,:), is_atom_seen(:)
 
 ! !   CLEAN THIS UP
-!     real*8 :: time1, time2
+!     real(dp) :: time1, time2
 
 !     n_sites_supercell = size(xyz_species_supercell)
 
@@ -817,10 +819,10 @@ contains
                                  & in_to_out_pairs, n_all_sites,&
                                  & in_to_out_site, n_sites_out)
 
-      real*8, allocatable, intent(in) :: soap(:, :), soap_cart_der(:, :, :)
-      real*8, intent(in) ::  Qs(:, :), alphas(:), zeta, delta, V0
-      real*8, intent(inout) :: local_property0(:), local_property_cart_der0(:, :)
-      real*8, allocatable :: local_property(:), local_property_cart_der(:, :)
+      real(dp), allocatable, intent(in) :: soap(:, :), soap_cart_der(:, :, :)
+      real(dp), intent(in) ::  Qs(:, :), alphas(:), zeta, delta, V0
+      real(dp), intent(inout) :: local_property0(:), local_property_cart_der0(:, :)
+      real(dp), allocatable :: local_property(:), local_property_cart_der(:, :)
       integer, intent(in) :: n_atom_pairs, in_to_out_pairs(:), n_all_sites,&
            & in_to_out_site(:), n_neigh_out(:), n_sites_out
       logical, intent(in) :: do_derivatives

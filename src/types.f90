@@ -28,15 +28,19 @@
 ! HND XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
 module types
+
+  use kinds
   use iso_c_binding
 
   implicit none
 
-  integer, parameter, public :: dp = kind(1.0d0)
+! dp came from here before src/kinds.f90 existed. It is now use-associated from
+! kinds and re-exported, so every module that gets dp through  still
+! does, and there is one definition rather than two.
  
   type gpu_host_storage_type
-     real*8, allocatable :: xyz_k_h(:,:), pair_distribution_partial_h(:), pair_distribution_partial_der_h(:,:), forces_h(:,:), rjs_index_h(:)
-     real*8 :: virial_h(1:3,1:3)
+     real(dp), allocatable :: xyz_k_h(:,:), pair_distribution_partial_h(:), pair_distribution_partial_der_h(:,:), forces_h(:,:), rjs_index_h(:)
+     real(dp) :: virial_h(1:3,1:3)
      integer, allocatable :: k_index_h(:), j2_index_h(:)
   end type gpu_host_storage_type
 
@@ -76,23 +80,23 @@ module types
      integer             :: n_data, n_samples=200
      logical             :: compute_similarity=.false., compute_exp=.false.,&
           & wrote_exp=.false., user_range=.false., compute_forces=.false.
-     real*8, allocatable :: data(:,:), x(:), y(:), y_pred(:), &
+     real(dp), allocatable :: data(:,:), x(:), y(:), y_pred(:), &
           & y_pred_prev(:)
-     real*8              :: similarity, range_min=0.d0, range_max=1.d0, mag
+     real(dp)              :: similarity, range_min=0.d0, range_max=1.d0, mag
   end type exp_data_container
 
   type exp_pred_container
      integer             :: n_samples=200
      logical             :: write=.false.
-     real*8, allocatable :: x(:), y(:)
-     real*8              :: range_min=0.d0, range_max=1.d0
+     real(dp), allocatable :: x(:), y(:)
+     real(dp)              :: range_min=0.d0, range_max=1.d0
   end type exp_pred_container
 
 
 
   type local_property_soap_turbo
-     real*8, allocatable :: Qs(:,:), alphas(:), cutoff(:)
-     real*8              :: zeta, delta, V0
+     real(dp), allocatable :: Qs(:,:), alphas(:), cutoff(:)
+     real(dp)              :: zeta, delta, V0
      character*1024      :: file_alphas, file_desc, label
      integer             :: n_sparse, dim
      logical             :: do_derivatives = .false., compute=.true., zero_trunc = .false.
@@ -103,11 +107,11 @@ module types
 
 
   type soap_turbo
-    real*8, allocatable :: nf(:), rcut_hard(:), rcut_soft(:), atom_sigma_r(:), atom_sigma_t(:), &
+    real(dp), allocatable :: nf(:), rcut_hard(:), rcut_soft(:), atom_sigma_r(:), atom_sigma_t(:), &
                            atom_sigma_r_scaling(:), atom_sigma_t_scaling(:), amplitude_scaling(:), &
                            central_weight(:), global_scaling(:), alphas(:), Qs(:,:), cutoff(:), &
                            vdw_Qs(:,:), vdw_alphas(:), vdw_cutoff(:)!, compress_P_el(:)
-    real*8 :: zeta = 2.d0, delta = 1.d0, rcut_max, vdw_zeta, vdw_delta, vdw_V0
+    real(dp) :: zeta = 2.d0, delta = 1.d0, rcut_max, vdw_zeta, vdw_delta, vdw_V0
     integer, allocatable :: alpha_max(:), compress_soap_indices(:)!, compress_P_i(:), compress_P_j(:)
     integer :: n_species, central_species = 0, dim, l_max, radial_enhancement = 0, n_max, n_sparse, &
                vdw_n_sparse, n_local_properties=0& !  compress_P_nonzero,
@@ -134,8 +138,8 @@ module types
 
 ! GAP+descriptor data structure for distance_2b
   type distance_2b
-    real*8, allocatable :: cutoff(:), alphas(:), Qs(:,:)
-    real*8 :: delta = 1.d0, sigma = 1.d0, rcut, buffer = 0.5d0
+    real(dp), allocatable :: cutoff(:), alphas(:), Qs(:,:)
+    real(dp) :: delta = 1.d0, sigma = 1.d0, rcut, buffer = 0.5d0
     integer :: dim = 1, n_sparse
     character*1024 :: file_alphas, file_desc
     character*8 :: species1, species2
@@ -143,8 +147,8 @@ module types
 
 ! GAP+descriptor data structure for distance_2b
   type angle_3b
-    real*8, allocatable :: cutoff(:), alphas(:), Qs(:,:)
-    real*8 :: delta = 1.d0, sigma(1:3) = 1.d0, rcut, buffer = 0.5d0
+    real(dp), allocatable :: cutoff(:), alphas(:), Qs(:,:)
+    real(dp) :: delta = 1.d0, sigma(1:3) = 1.d0, rcut, buffer = 0.5d0
     integer :: dim = 3, n_sparse
     character*1024 :: file_alphas, file_desc
     character*8 :: species_center, species1, species2
@@ -153,8 +157,8 @@ module types
 
 ! Data structure for core_pot
   type core_pot
-    real*8, allocatable :: x(:), V(:), dVdx2(:)
-    real*8 :: yp1, ypn
+    real(dp), allocatable :: x(:), V(:), dVdx2(:)
+    real(dp) :: yp1, ypn
     integer :: n
     character*1024 :: core_pot_file
     character*8 :: species1, species2
@@ -173,11 +177,11 @@ module types
   
 ! These is the type for the input parameters
   type input_parameters
-     real*8, allocatable :: masses_types(:), e0(:), vdw_c6_ref(:), vdw_r0_ref(:), vdw_alpha0_ref(:), &
+     real(dp), allocatable :: masses_types(:), e0(:), vdw_c6_ref(:), vdw_r0_ref(:), vdw_alpha0_ref(:), &
           mc_acceptance(:),  mc_mu_acceptance(:), mc_mu(:), &
           & exp_energy_scales(:), exp_energy_scales_initial(:),&
           & exp_energy_scales_final(:), radii(:), t_hold(:)
-    real*8 :: t_beg = 300.d0, t_end = 300.d0, tau_t = 100.d0, md_step&
+    real(dp) :: t_beg = 300.d0, t_end = 300.d0, tau_t = 100.d0, md_step&
          & = 1.d0, neighbors_buffer = 0.d0, max_GBytes_per_process =&
          & 1.d0, e_tol = 1.d-6, vdw_sr = 0.94d0, vdw_d = 20.d0,&
          & vdw_rcut = 10.d0, vdw_buffer = 1.d0, vdw_rcut_inner =&
@@ -211,7 +215,7 @@ module types
 !   on when initial velocities have to be randomized.
     integer :: random_seed_value = 0
 
-    real*8  :: estat_rcut = 10.d0, estat_dsf_alpha = -1.d0, &
+    real(dp)  :: estat_rcut = 10.d0, estat_dsf_alpha = -1.d0, &
                 estat_rcut_inner = 4.0d0, estat_inner_width = 1.d0
 
     
@@ -267,12 +271,12 @@ module types
      !! ------- option for doing simulation with adaptive time step
 	logical :: adaptive_time = .false.
 	integer :: adapt_tstep_interval = 1
-	real*8 :: adapt_tmin = 1.0d-3, adapt_tmax = 1.0d0, adapt_xmax = 1.0d-2, adapt_emax = 1.0d+1
+	real(dp) :: adapt_tmin = 1.0d-3, adapt_tmax = 1.0d0, adapt_xmax = 1.0d-2, adapt_emax = 1.0d+1
      !! ----------------------------------------------		******** until here for adaptive time
 
      !! ------- option for radiation cascade simulation with electronic stopping
 	logical :: electronic_stopping = .false.
-	real*8 :: eel_cut = 1.0d0
+	real(dp) :: eel_cut = 1.0d0
 	integer :: eel_freq_out = 1
 	character*1024 :: estop_filename = 'NULL'
      !! ----------------------------------------------		******** until here for electronic stopping
@@ -284,13 +288,13 @@ module types
 	integer :: eph_md_last_step = 0, eph_freq_Tout = 1, eph_freq_mesh_Tout = 1 
 	integer :: eph_fdm_steps = 1, eph_gsx = 1, eph_gsy = 1, eph_gsz = 1
 	integer :: model_eph = 1
-	real*8 :: eph_rho_e = 1.0
-	real*8 :: eph_C_e = 1.0
-	real*8 :: eph_kappa_e = 1.0
-	real*8 :: eph_Ti_e = 300.0, &
+	real(dp) :: eph_rho_e = 1.0
+	real(dp) :: eph_C_e = 1.0
+	real(dp) :: eph_kappa_e = 1.0
+	real(dp) :: eph_Ti_e = 300.0, &
 	in_x0 = -100.0, in_x1 = 100.0, in_y0 = -100.0, in_y1 = 100.0, in_z0 = -100.0, in_z1 = 100.0, &
 	eph_E_prev_time = 0.0d0, eph_md_prev_time = 0.0d0
-	real*8, dimension(6) :: eph_box_limits = (/ -100.0, 100.0, -100.0, 100.0, -100.0, 100.0 /)
+	real(dp), dimension(6) :: eph_box_limits = (/ -100.0, 100.0, -100.0, 100.0, -100.0, 100.0 /)
 	character*128 :: eph_Tinfile = 'NULL'
 	character*128 :: eph_Toutfile = 'NULL'
 	character*128 :: eph_betafile = 'NULL'
@@ -302,9 +306,9 @@ module types
 
 ! This is a container for atomic images
   type image
-    real*8, allocatable :: positions(:,:), positions_prev(:,:), velocities(:,:), masses(:), &
+    real(dp), allocatable :: positions(:,:), positions_prev(:,:), velocities(:,:), masses(:), &
                            forces(:,:), forces_prev(:,:), energies(:), local_properties(:,:)
-    real*8 :: a_box(1:3), b_box(1:3), c_box(1:3), energy, e_kin, energy_exp
+    real(dp) :: a_box(1:3), b_box(1:3), c_box(1:3), energy, e_kin, energy_exp
     integer, allocatable :: species(:), species_supercell(:)
     integer :: n_sites, indices(1:3)
     logical, allocatable :: fix_atom(:,:)
@@ -326,12 +330,12 @@ module types
 !   walks collapse to one loop each, so they cannot disagree about which slot
 !   belongs to which family.
   type contribution_ref
-     real*8, pointer :: e_src(:)   => null()
-     real*8, pointer :: f_src(:,:) => null()
-     real*8, pointer :: v_src(:,:) => null()
-     real*8, pointer :: e_dst(:)   => null()
-     real*8, pointer :: f_dst(:,:) => null()
-     real*8, pointer :: v_dst(:,:) => null()
+     real(dp), pointer :: e_src(:)   => null()
+     real(dp), pointer :: f_src(:,:) => null()
+     real(dp), pointer :: v_src(:,:) => null()
+     real(dp), pointer :: e_dst(:)   => null()
+     real(dp), pointer :: f_dst(:,:) => null()
+     real(dp), pointer :: v_dst(:,:) => null()
      logical         :: forces = .false.
   end type contribution_ref
 !**************************************************************************
@@ -349,9 +353,9 @@ module types
     implicit none
 
 !   Input variables
-    real*8, intent(in) :: positions(:,:), velocities(:,:), masses(:), energies(:), &
+    real(dp), intent(in) :: positions(:,:), velocities(:,:), masses(:), energies(:), &
          forces(:,:), a_box(1:3), b_box(1:3), c_box(1:3), energy, e_kin, energy_exp
-    real*8, allocatable, intent(in) :: local_properties(:,:)
+    real(dp), allocatable, intent(in) :: local_properties(:,:)
     integer, intent(in) :: species(:), species_supercell(:), n_sites, indices(1:3)
     logical, intent(in) :: fix_atom(:,:)
     character*8, intent(in) :: xyz_species(:), xyz_species_supercell(:)
@@ -452,10 +456,10 @@ module types
 !   Input variables
     type(image), intent(in) :: this_image
 !   Output variables
-    real*8, allocatable, intent(out) :: positions(:,:), velocities(:,:), masses(:), &
+    real(dp), allocatable, intent(out) :: positions(:,:), velocities(:,:), masses(:), &
          forces(:,:), energies(:)
-    real*8, allocatable, intent(out) :: local_properties(:,:)
-    real*8, intent(out) :: a_box(1:3), b_box(1:3), c_box(1:3), energy, e_kin, energy_exp
+    real(dp), allocatable, intent(out) :: local_properties(:,:)
+    real(dp), intent(out) :: a_box(1:3), b_box(1:3), c_box(1:3), energy, e_kin, energy_exp
     integer, allocatable, intent(out) :: species(:), species_supercell(:)
     integer, intent(out) :: n_sites, indices(1:3)
     logical, allocatable, intent(out) :: fix_atom(:,:)

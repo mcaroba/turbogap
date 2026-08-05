@@ -48,6 +48,8 @@
 
 module electronic_stopping
 
+  use kinds
+
 contains
 
 subroutine electron_stopping_velocity_dependent (md_istep, natomtypes, Ecut, eel_freq_out, &
@@ -55,23 +57,23 @@ subroutine electron_stopping_velocity_dependent (md_istep, natomtypes, Ecut, eel
 
 	implicit none
 	
-	real*8, intent(in) :: vel(:,:), dt, md_time 
-	real*8, intent(inout) :: cum_EEL, forces(:,:)
+	real(dp), intent(in) :: vel(:,:), dt, md_time 
+	real(dp), intent(inout) :: cum_EEL, forces(:,:)
 	integer, intent(in) :: md_istep, nrows, eel_freq_out
 	character*6, intent(in) :: to_calculate
 	integer :: Np, i, j, itype
-	real*8 :: vsq, energy, Se, Se_lo, Se_hi, E_lo, E_hi, factor, vabs, SeLoss
+	real(dp) :: vsq, energy, Se, Se_lo, Se_hi, E_lo, E_hi, factor, vabs, SeLoss
 	
 	!! Data from the user-given input script file
 	
 	integer, intent(in) :: natomtypes
-	real*8, intent(in) :: Ecut,  masses(:), type_mass(:)
+	real(dp), intent(in) :: Ecut,  masses(:), type_mass(:)
 	
 	!! To receive stopping data from file to array containers
 	
 	integer :: ncols, ndata, irow		!icol 
-	real*8, allocatable, intent(in) :: allelstopdata(:)
-	real*8, allocatable :: En_elstopfile(:), elstop(:,:)
+	real(dp), allocatable, intent(in) :: allelstopdata(:)
+	real(dp), allocatable :: En_elstopfile(:), elstop(:,:)
 	character*1024 :: infoline
 	
 	!! To write the electronic energy loss data to a file after evaluation at each time step

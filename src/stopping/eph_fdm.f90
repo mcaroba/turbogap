@@ -39,15 +39,17 @@
 
 module eph_fdm
 
+  use kinds
+
 type EPH_FDM_class
 	character*128 :: FDM_infile
 	integer, allocatable :: x_mesh(:), y_mesh(:), z_mesh(:)
 	integer :: nx, ny, nz, steps, ntotal, md_last_step
-	real*8 :: dx, dy, dz, dV
-	real*8 :: x0, x1, y0, y1, z0, z1
-	real*8, allocatable :: file_C_e_T(:), file_kappa_e_T(:), file_T_for_kappae(:), &
+	real(dp) :: dx, dy, dz, dV
+	real(dp) :: x0, x1, y0, y1, z0, z1
+	real(dp), allocatable :: file_C_e_T(:), file_kappa_e_T(:), file_T_for_kappae(:), &
 	file_T_for_Ce(:), C_e_T_deriv(:), K_e_T_deriv(:)
-	real*8, allocatable :: T_e(:,:,:), S_e(:,:,:), rho_e(:,:,:), &
+	real(dp), allocatable :: T_e(:,:,:), S_e(:,:,:), rho_e(:,:,:), &
 	C_e(:,:,:), kappa_e(:,:,:), Q_ei(:,:,:) 
 	integer, allocatable :: flag(:,:,:), T_dynamic_flag(:,:,:)
 	logical :: T_dependent_parameters = .false., Source_term = .false.
@@ -71,7 +73,7 @@ subroutine EPH_FDM_input_params (this, md_last_step, &
 	class (EPH_FDM_class) :: this
 	integer, intent(in) :: in_nx, in_ny, in_nz, in_steps
 	integer, intent(in) :: md_last_step
-	real*8, intent(in) :: in_x0,in_x1,in_y0,in_y1,in_z0,in_z1,in_T_e,in_C_e,in_rho_e,in_kappa_e
+	real(dp), intent(in) :: in_x0,in_x1,in_y0,in_y1,in_z0,in_z1,in_T_e,in_C_e,in_rho_e,in_kappa_e
 	integer :: i,j,k,loc
 
 	this%nx = in_nx; this%ny = in_ny; this%nz = in_nz
@@ -112,9 +114,9 @@ subroutine EPH_FDM_input_file (this, FDM_infile, md_last_step)
 	character*128, intent(in) :: FDM_infile
 	integer, intent(in) :: md_last_step
 	integer :: i
-	real*8 :: T_e_val, S_e_val, rho_e_val, C_e_val, kappa_e_val
+	real(dp) :: T_e_val, S_e_val, rho_e_val, C_e_val, kappa_e_val
 	integer :: T_dynamic_flag_val, flag_val
-	real*8, parameter :: bignum = 1.1e30
+	real(dp), parameter :: bignum = 1.1e30
 	
 	this%FDM_infile = FDM_infile
 	this%md_last_step = md_last_step
@@ -254,7 +256,7 @@ end subroutine setMeshIndices
 subroutine edgesOf3DGrids (this,nx,ny,nz,x0,x1,y0,y1,z0,z1)
 	implicit none
 	integer, intent(in) :: nx, ny, nz
-	real*8, intent(in) :: x0,x1,y0,y1,z0,z1
+	real(dp), intent(in) :: x0,x1,y0,y1,z0,z1
 	class (EPH_FDM_class) :: this
 	if (x0 >= x1 .or. y0 >= y1 .or. z0 >= z1) then
 		write(*,*) "ERROR: Mesh boundaries are not correct in input or in file"
@@ -271,7 +273,7 @@ end subroutine edgesOf3DGrids
 integer function whichGrid (this, x, y, z)	result (indx)
 	implicit none
 	class (EPH_FDM_class) :: this
-	real*8, intent(in) :: x, y, z
+	real(dp), intent(in) :: x, y, z
 	integer :: lx, px, ly, py, lz, pz
 	
 	lx = floor((x-this%x0) / this%dx)
@@ -294,8 +296,8 @@ end function whichGrid
 subroutine feedback_ei_energy (this, x, y, z, En, dt)
 	implicit none
 	class (EPH_FDM_class) :: this
-	real*8, intent(in) :: x, y, z, En, dt
-	real*8 :: converter, xtrue, ytrue, ztrue
+	real(dp), intent(in) :: x, y, z, En, dt
+	real(dp) :: converter, xtrue, ytrue, ztrue
 	integer :: indx
 	
 	xtrue = x; ytrue = y; ztrue = z
@@ -321,7 +323,7 @@ real function Collect_Te (this, x, y, z)	result(T_e_indx)
 	implicit none
 	class (EPH_FDM_class) :: this
 	integer :: indx
-	real*8, intent(in) :: x, y, z
+	real(dp), intent(in) :: x, y, z
 
 	indx = this%whichGrid (x, y, z)
 	T_e_indx = this%T_e(this%z_mesh(indx),this%y_mesh(indx),this%x_mesh(indx))
@@ -332,9 +334,9 @@ end function Collect_Te
 subroutine heatDiffusionSolve(this, dt)
 	implicit none
 	class (EPH_FDM_class) :: this
-	real*8, intent(in) :: dt
+	real(dp), intent(in) :: dt
 	integer :: i,j,k, new_steps, n, indx
-	real*8 :: inner_dt, e_sp_heat_min, e_rho_min, e_kappa_max, grad_sq_T, &
+	real(dp) :: inner_dt, e_sp_heat_min, e_rho_min, e_kappa_max, grad_sq_T, &
 	grad_kappa_grad_T, stability, invdx2, invdy2, invdz2, &
 	sum_invd, factor, multiply_factor
 	integer :: xback, xfront, yback, yfront, zback, zfront
@@ -680,7 +682,7 @@ subroutine saveOutputToFile (this, outputfile, md_istep, dt)
 	class (EPH_FDM_class) :: this
 	character*128, intent(in) :: outputfile
 	integer, intent(in) :: md_istep
-	real*8, intent(in) :: dt
+	real(dp), intent(in) :: dt
 	integer :: i,j,k
 
 	open (unit=300, file = outputfile, status = "old", position = "append")
@@ -714,9 +716,9 @@ subroutine spline_int(this,xarr,yarr,y2arr,n,x,y)
 	implicit none
 	class (EPH_FDM_class) :: this
 	integer :: n
-	real*8 :: x, y, xarr(n), yarr(n), y2arr(n)
+	real(dp) :: x, y, xarr(n), yarr(n), y2arr(n)
 	integer :: indx, hiindx, loindx
-	real*8 :: xwidth, A, B, C, D
+	real(dp) :: xwidth, A, B, C, D
 	
 	!! Interpolate by method of bisection. Find the index limits within which x lies.
 	
@@ -764,9 +766,9 @@ subroutine splineDerivatives(this,x,y,n,yp1,ypn,y2)
 	implicit none
 	class (EPH_FDM_class) :: this
 	integer :: n
-	real*8 :: yp1, ypn, x(n), y(n), y2(n)
+	real(dp) :: yp1, ypn, x(n), y(n), y2(n)
 	integer :: i, k
-	real*8 :: p, qn, sig, un, u(n)
+	real(dp) :: p, qn, sig, un, u(n)
 	
 	!! The lower boundary condition is set either to be “natural”, else to have a specified first derivative.
 	!! The first derivative is not known, so it is set high value --> natural.

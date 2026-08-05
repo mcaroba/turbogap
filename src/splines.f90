@@ -28,6 +28,8 @@
 
 module splines
 
+  use kinds
+
 
   contains
 
@@ -65,10 +67,10 @@ module splines
 
     implicit none
 
-    real*8, intent(in) :: x(:), y(:), y2(:), r(:), yp1, ypn, rcut
-    real*8, dimension(1:size(r)) :: s
+    real(dp), intent(in) :: x(:), y(:), y2(:), r(:), yp1, ypn, rcut
+    real(dp), dimension(1:size(r)) :: s
 
-    real*8 :: h, h26, A, B, C, D
+    real(dp) :: h, h26, A, B, C, D
     integer :: j, n, m, i
 
     n = size(x)
@@ -113,10 +115,10 @@ module splines
 
     implicit none
 
-    real*8, intent(in) :: x(:), y(:), y2(:), r(:), yp1, ypn, rcut
-    real*8, dimension(1:size(r)) :: ds
+    real(dp), intent(in) :: x(:), y(:), y2(:), r(:), yp1, ypn, rcut
+    real(dp), dimension(1:size(r)) :: ds
 
-    real*8 :: h, h6, dAdx, dBdx, dCdx, dDdx, A, B
+    real(dp) :: h, h6, dAdx, dBdx, dCdx, dDdx, A, B
     integer :: j, n, m, i
 
     n = size(x)

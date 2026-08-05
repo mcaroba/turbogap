@@ -37,16 +37,18 @@
 !**************************************************************************
 module eph_beta
 
+  use kinds
+
 type EPH_Beta_class
 	character*128 :: beta_infile
 	character*2, dimension(5) :: line
 	character*2, allocatable :: element_name(:)
 	integer :: n_elements, n_points_rho, n_points_beta, n_species
-	real*8 :: dr, r_cutoff, drho, rho_cutoff
+	real(dp) :: dr, r_cutoff, drho, rho_cutoff
 	integer, allocatable :: element_number(:)
-	real*8, allocatable :: r(:), data_rho(:,:), rho(:), &
+	real(dp), allocatable :: r(:), data_rho(:,:), rho(:), &
 	data_beta(:,:), data_alpha(:,:)
-	real*8, allocatable :: y2rho(:,:), y2beta(:,:), y2alpha(:,:)
+	real(dp), allocatable :: y2rho(:,:), y2beta(:,:), y2alpha(:,:)
 
 	contains
 	procedure :: beta_parameters, spline_int, splineDerivatives
@@ -62,8 +64,8 @@ subroutine beta_parameters(this,beta_infile,n_species)
 	integer, intent(in) :: n_species
 	integer :: i, j
 	character*128, intent(in) :: beta_infile
-	real*8, allocatable :: y2(:), z2(:), w2(:), y2r2(:)
-	real*8, parameter :: bignum = 1.1e30
+	real(dp), allocatable :: y2(:), z2(:), w2(:), y2r2(:)
+	real(dp), parameter :: bignum = 1.1e30
 	
 	this%n_species = n_species
 	this%beta_infile = beta_infile
@@ -172,9 +174,9 @@ subroutine spline_int(this,xarr,yarr,y2arr,n,x,y)
 	implicit none
 	class (EPH_Beta_class) :: this
 	integer :: n
-	real*8 :: x, y, xarr(n), yarr(n), y2arr(n)
+	real(dp) :: x, y, xarr(n), yarr(n), y2arr(n)
 	integer :: indx, hiindx, loindx
-	real*8 :: xwidth, A, B, C, D
+	real(dp) :: xwidth, A, B, C, D
 	
 	!! Interpolate by method of bisection. Find the index limits within which x lies.
 	
@@ -222,9 +224,9 @@ subroutine splineDerivatives(this,x,y,n,yp1,ypn,y2)
 	implicit none
 	class (EPH_Beta_class) :: this
 	integer :: n
-	real*8 :: yp1, ypn, x(n), y(n), y2(n)
+	real(dp) :: yp1, ypn, x(n), y(n), y2(n)
 	integer :: i, k
-	real*8 :: p, qn, sig, un, u(n)
+	real(dp) :: p, qn, sig, un, u(n)
 	
 	!! The lower boundary condition is set either to be “natural”, else to have a specified first derivative.
 	!! The first derivative is not known, so it is set high value --> natural.

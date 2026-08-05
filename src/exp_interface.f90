@@ -27,6 +27,8 @@
 ! HND XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
 module exp_interface
+
+  use kinds
    use types
    use read_files
 #ifdef _MPIF90
@@ -99,7 +101,7 @@ contains
       implicit none
       logical, intent(in) :: do_mc, do_md, has_partials
       integer, intent(in) :: mc_istep, md_istep, write_xyz, n_species, n_samples, n_dim_partial
-      real*8, intent(in) :: x(:), y(:), partials(:, :)
+      real(dp), intent(in) :: x(:), y(:), partials(:, :)
       character*8, allocatable :: species_types(:)
       character(len=*), intent(in) :: name
       integer :: j, k, n_dim_idx
@@ -143,13 +145,13 @@ contains
    subroutine preprocess_exp_data(params, x, y, label, n_sites, V, input, output, exp)
       implicit none
       type(input_parameters), intent(in) :: params
-      real*8, intent(in), allocatable :: x(:)
-      real*8, intent(in) :: V
-      real*8, intent(inout), allocatable :: y(:)
+      real(dp), intent(in), allocatable :: x(:)
+      real(dp), intent(in) :: V
+      real(dp), intent(inout), allocatable :: y(:)
       integer, intent(in) :: n_sites
       character*1024, intent(in) :: label
-      real*8, parameter :: pi = acos(-1.0)
-      real*8 :: mag, dx, rho
+      real(dp), parameter :: pi = acos(-1.0)
+      real(dp) :: mag, dx, rho
       logical, intent(in) :: exp
       character*32, intent(inout) :: output
       character*1024, intent(inout) :: input
@@ -215,7 +217,7 @@ contains
    subroutine gpu_copy_pdf(n_samples, pdf_d, pdf, gpu_stream)
       implicit none
       integer :: n_samples
-      real*8, intent(inout), target :: pdf(1:n_samples)
+      real(dp), intent(inout), target :: pdf(1:n_samples)
       type(c_ptr) :: pdf_d, gpu_stream
       integer(c_size_t) :: size
 
@@ -228,9 +230,9 @@ contains
    subroutine estimate_device_memory_usage(n_sites, n_pairs, nk, n_samples, n_samples_sf, total, standard)
       implicit none
       integer :: n_sites, nk, n_samples, n_samples_sf, n_pairs
-      real*8, intent(inout) :: total
-      real*8 :: total_exp = 0.d0, total_standard = 0.d0
-      real*8 :: nk_int, nk_float, Gk, dermat, sf, fi, pref, xyz, forces, neigh_list, to_gb
+      real(dp), intent(inout) :: total
+      real(dp) :: total_exp = 0.d0, total_standard = 0.d0
+      real(dp) :: nk_int, nk_float, Gk, dermat, sf, fi, pref, xyz, forces, neigh_list, to_gb
       logical :: standard
 
       to_gb = 1/dfloat(1024**3)
@@ -310,7 +312,7 @@ contains
       implicit none
       integer, intent(in) :: n_sites, n_species
       integer, allocatable, intent(in) :: species(:)
-      real*8, allocatable, intent(out) :: n_atoms_of_species(:)
+      real(dp), allocatable, intent(out) :: n_atoms_of_species(:)
       integer :: j, i2
 
       if (allocated(n_atoms_of_species)) deallocate (n_atoms_of_species)
@@ -328,9 +330,9 @@ contains
 
    subroutine setup_batched_pair_distribution(r_min, r_max, r_cut, n_samples, x, dV)
       implicit none
-      real*8, intent(in) :: r_min, r_max, r_cut
+      real(dp), intent(in) :: r_min, r_max, r_cut
       integer, intent(in) :: n_samples
-      real*8, allocatable, intent(out) :: x(:), dV(:)
+      real(dp), allocatable, intent(out) :: x(:), dV(:)
 
       if (allocated(x)) deallocate (x)
       if (allocated(dV)) deallocate (dV)
@@ -349,10 +351,10 @@ contains
       type(gpu_neigh_storage_type) :: gpu_neigh
       integer, intent(in):: n_sites, n_pairs, rank
       integer, intent(in), target :: n_neigh(:), species(:), neighbor_species(:), neighbors_list(:)
-      real*8, intent(in), target :: rjs(:), xyz(:, :)
+      real(dp), intent(in), target :: rjs(:), xyz(:, :)
 
       integer, allocatable, target :: n_neigh_temp(:), species_temp(:), neighbor_species_temp(:), neighbors_list_temp(:)
-      real*8, allocatable, target :: rjs_temp(:), xyz_temp(:, :)
+      real(dp), allocatable, target :: rjs_temp(:), xyz_temp(:, :)
 
       integer(c_size_t) :: st_n_sites_int, st_n_atom_pairs_int, st_n_atom_pairs_double
       type(c_ptr) :: gpu_stream
@@ -449,11 +451,11 @@ contains
       implicit none
       integer, intent(in) :: n_dim_partial, n_samples, n_batches, n_species
       type(gpu_host_batch_storage_type), intent(in), allocatable :: gpu_host(:)
-      real*8, allocatable, intent(out) :: pair_distribution_partial(:, :)
-      real*8, allocatable, intent(in) :: n_atoms_of_species(:)
-      real*8, intent(in) :: v_uc
-      real*8, allocatable :: pair_distribution_partial_temp(:, :), factors(:)
-      real*8 :: f
+      real(dp), allocatable, intent(out) :: pair_distribution_partial(:, :)
+      real(dp), allocatable, intent(in) :: n_atoms_of_species(:)
+      real(dp), intent(in) :: v_uc
+      real(dp), allocatable :: pair_distribution_partial_temp(:, :), factors(:)
+      real(dp) :: f
       integer :: i, j, k, n_dim_idx, ierr
 
       allocate (factors(1:n_dim_partial))
@@ -513,8 +515,8 @@ contains
       implicit none
       integer, intent(in) :: n_batches, n_sites, n_dim_partial
       type(gpu_host_batch_storage_type), intent(in), allocatable :: gpu_host(:)
-      real*8, allocatable :: forces_out(:, :)
-      real*8 :: virial_out(1:3, 1:3)
+      real(dp), allocatable :: forces_out(:, :)
+      real(dp) :: virial_out(1:3, 1:3)
       integer :: i, j, k, n_dim_idx
 
       ! allocate( forces_out( 1:3, 1:n_sites))
@@ -613,8 +615,8 @@ contains
    end subroutine free_exp_batches
 
    subroutine total_gpu_memory( add ) 
-      real*8, intent(in) :: add 
-      real*8, save  :: total
+      real(dp), intent(in) :: add 
+      real(dp), save  :: total
       logical, save :: first_call = .true.
 
       if ( first_call )then 
@@ -657,14 +659,14 @@ contains
       implicit none
       ! Input variables
       integer, intent(in) :: n_species, i_beg, i_end, j_beg, j_end, n_sites, n_samples, rank
-      real*8, allocatable, intent(in) :: n_atoms_of_species(:), x(:), dV(:)
-      real*8, intent(in) :: r_min, r_max, r_cut, kde_sigma, v_uc
+      real(dp), allocatable, intent(in) :: n_atoms_of_species(:), x(:), dV(:)
+      real(dp), intent(in) :: r_min, r_max, r_cut, kde_sigma, v_uc
       type(gpu_storage_type), intent(inout) :: gpu_exp
       type(gpu_host_batch_storage_type), intent(inout), target :: gpu_host
       type(gpu_neigh_storage_type), intent(in) :: gpu_neigh
 
       ! Local variables
-      real*8, parameter :: pi = acos(-1.0)
+      real(dp), parameter :: pi = acos(-1.0)
       integer :: n_dim_partial, n_dim_idx
       type(c_ptr), intent(in) :: x_d, dV_d
       integer(c_size_t) :: st_x_d
@@ -674,12 +676,12 @@ contains
       type(c_ptr) :: rjs_index_d, pdf_to_reduce_d
       integer(c_size_t) :: st_rjs_index_d, st_k_index_d, st_pdf_to_reduce_d
 
-      real*8 :: pdf_factor, der_factor = 0.d0, f
+      real(dp) :: pdf_factor, der_factor = 0.d0, f
       integer :: i, j, k, l
 
       type(c_ptr) :: gpu_stream
 
-      real*8, allocatable, target :: x_check(:)
+      real(dp), allocatable, target :: x_check(:)
 
       n_dim_partial = n_species*(n_species + 1)/2
 
@@ -1071,13 +1073,13 @@ contains
       implicit none
       ! Input variables
       integer, intent(in) :: n_species, i_beg, i_end, j_beg, j_end, n_sites, n_samples, j, k, n_dim_idx
-      real*8, allocatable, intent(in) :: n_atoms_of_species(:), x(:), dV(:)
-      real*8, intent(in) :: r_min, r_max, r_cut, kde_sigma, v_uc
+      real(dp), allocatable, intent(in) :: n_atoms_of_species(:), x(:), dV(:)
+      real(dp), intent(in) :: r_min, r_max, r_cut, kde_sigma, v_uc
       type(gpu_storage_type), intent(inout) :: gpu_exp
       type(gpu_host_batch_storage_type), intent(inout), target :: gpu_host
 
       ! Local variables
-      real*8, parameter :: pi = acos(-1.0)
+      real(dp), parameter :: pi = acos(-1.0)
       integer :: n_dim_partial
       type(c_ptr), intent(in) :: x_d, dV_d
       integer(c_size_t) :: st_x_d
@@ -1087,7 +1089,7 @@ contains
       type(c_ptr) :: rjs_index_d
       integer(c_size_t) :: st_rjs_index_d
 
-      real*8 :: pdf_factor, der_factor = 0.d0, f
+      real(dp) :: pdf_factor, der_factor = 0.d0, f
       integer :: i
 
       type(c_ptr) :: gpu_stream
@@ -1206,28 +1208,28 @@ contains
       implicit none
       type(input_parameters), intent(inout) :: params
       integer, intent(out) :: n_dim_partial_out
-      real*8, allocatable, intent(out), target :: x_pair_distribution(:),&
+      real(dp), allocatable, intent(out), target :: x_pair_distribution(:),&
            & y_pair_distribution(:), pair_distribution_partial(:, :),&
            & n_atoms_of_species(:), pair_distribution_partial_temp(:, :),&
            & y_pair_distribution_temp(:), pair_distribution_der(:, :),&
            & pair_distribution_partial_der(:, :, :), &
            & pair_distribution_partial_temp_der(:, :, :), energies_pair_distribution(:), forces_pair_distribution(:, :)
       character*8, allocatable, intent(in) :: species_types(:)
-      real*8, intent(in), allocatable, target :: rjs(:), xyz(:, :)
+      real(dp), intent(in), allocatable, target :: rjs(:), xyz(:, :)
       integer, intent(in), allocatable, target :: neighbors_list(:), n_neigh(:)&
            &, neighbor_species(:), species(:)
-      real*8, intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3)
-      real*8, intent(inout) :: virial(1:3, 1:3)
-      real*8 :: v_uc, f, pdf_factor, der_factor, total_memory_usage = 0.d0
+      real(dp), intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3)
+      real(dp), intent(inout) :: virial(1:3, 1:3)
+      real(dp) :: v_uc, f, pdf_factor, der_factor, total_memory_usage = 0.d0
       integer, intent(in) :: n_species, n_sites, i_beg, i_end, j_beg, j_end
       integer, intent(in) :: indices(1:3), md_istep, mc_istep, rank
       integer, intent(inout) :: ierr
-      real*8, allocatable, target :: factors(:), pair_distribution_der_temp(:), dV(:), &
+      real(dp), allocatable, target :: factors(:), pair_distribution_der_temp(:), dV(:), &
                                      pdf_gpu_check(:), rjs_temp(:), ders_temp(:, :)
       integer, allocatable, target :: ks_temp(:), ksd_temp(:)
       integer :: i, j, k, l, i2, n_dim_partial, n_dim_idx
       logical, intent(in) :: do_derivatives
-      real*8, parameter :: pi = acos(-1.0)
+      real(dp), parameter :: pi = acos(-1.0)
       logical :: write_condition, overwrite_condition
       character*1024 :: filename
       type(c_ptr) :: cublas_handle, gpu_stream
@@ -2139,26 +2141,26 @@ contains
         & pair_distribution_partial_temp_der, energies_pair_distribution, forces_pair_distribution, virial)
       implicit none
       type(input_parameters), intent(inout) :: params
-      real*8, allocatable, intent(out) :: x_pair_distribution(:),&
+      real(dp), allocatable, intent(out) :: x_pair_distribution(:),&
            & y_pair_distribution(:), pair_distribution_partial(:, :),&
            & n_atoms_of_species(:), pair_distribution_partial_temp(:, :),&
            & y_pair_distribution_temp(:), pair_distribution_der(:, :),&
            & pair_distribution_partial_der(:, :, :), &
            & pair_distribution_partial_temp_der(:, :, :), energies_pair_distribution(:), forces_pair_distribution(:, :)
       character*8, allocatable, intent(in) :: species_types(:)
-      real*8, intent(in), allocatable :: rjs(:), xyz(:, :)
+      real(dp), intent(in), allocatable :: rjs(:), xyz(:, :)
       integer, intent(in), allocatable :: neighbors_list(:), n_neigh(:)&
            &, neighbor_species(:), species(:)
-      real*8, intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3)
-      real*8, intent(inout) :: virial(1:3, 1:3)
-      real*8 :: v_uc, f
+      real(dp), intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3)
+      real(dp), intent(inout) :: virial(1:3, 1:3)
+      real(dp) :: v_uc, f
       integer, intent(in) :: n_species, n_sites, i_beg, i_end, j_beg, j_end
       integer, intent(in) :: indices(1:3), md_istep, mc_istep, rank
       integer, intent(inout) :: ierr
-      real*8, allocatable :: factors(:), pair_distribution_der_temp(:)
+      real(dp), allocatable :: factors(:), pair_distribution_der_temp(:)
       integer :: i, j, k, l, i2, n_dim_partial, n_dim_idx
       logical, intent(in) :: do_derivatives
-      real*8, parameter :: pi = acos(-1.0)
+      real(dp), parameter :: pi = acos(-1.0)
       logical :: write_condition, overwrite_condition
       character*1024 :: filename
 
@@ -2590,7 +2592,7 @@ contains
       implicit none
       type(input_parameters), intent(in) :: params
       integer, intent(in) :: rank
-      real*8, allocatable, intent(inout) :: x_pair_distribution(:),&
+      real(dp), allocatable, intent(inout) :: x_pair_distribution(:),&
            & y_pair_distribution(:), pair_distribution_partial(:, :),&
            & n_atoms_of_species(:), pair_distribution_partial_temp(:, :),&
            & y_pair_distribution_temp(:), pair_distribution_der(:, :),&
@@ -2629,28 +2631,28 @@ contains
         & energies_sf, forces_sf, virial_sf, use_matrix_forces, cublas_handle, gpu_stream, gpu_host_storage, gpu_low_memory)
       implicit none
       type(input_parameters), intent(inout) :: params
-      real*8, allocatable, intent(out) :: x_structure_factor(:), x_structure_factor_temp(:), &
+      real(dp), allocatable, intent(out) :: x_structure_factor(:), x_structure_factor_temp(:), &
            & y_structure_factor(:), structure_factor_partial(:, :),&
            &  structure_factor_partial_temp(:, :),&
            & y_structure_factor_temp(:)
-      real*8, intent(in), allocatable :: rjs(:), xyz(:, :),&
+      real(dp), intent(in), allocatable :: rjs(:), xyz(:, :),&
            & x_pair_distribution(:), y_pair_distribution(:),&
            & pair_distribution_partial(:, :), n_atoms_of_species(:), pair_distribution_partial_der(:, :, :)
       integer, intent(in), allocatable :: neighbors_list(:), n_neigh(:)&
            &, neighbor_species(:), species(:), nk(:)
       character*8, allocatable, intent(in) :: species_types(:)
-      real*8, intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3)
-      real*8, allocatable, intent(inout) :: sinc_factor_matrix(:, :), energies_sf(:), forces_sf(:, :)
-      real*8, intent(inout) :: virial_sf(1:3, 1:3)
-      real*8, allocatable :: sinc_factor_matrix_temp(:, :), temp_pdf(:, :)
-      real*8 :: v_uc
+      real(dp), intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3)
+      real(dp), allocatable, intent(inout) :: sinc_factor_matrix(:, :), energies_sf(:), forces_sf(:, :)
+      real(dp), intent(inout) :: virial_sf(1:3, 1:3)
+      real(dp), allocatable :: sinc_factor_matrix_temp(:, :), temp_pdf(:, :)
+      real(dp) :: v_uc
       integer, intent(in) :: n_species, n_sites, i_beg, i_end, j_beg, j_end, ntasks
       integer, intent(out) :: q_beg, q_end
       integer, intent(in) :: indices(1:3), md_istep, mc_istep, rank
       integer, intent(out) :: ierr
       integer :: i, j, k, l, i2, n_dim_partial, n_dim_idx, n, m
-      real*8 :: dq, f, cabh, delta
-      real*8, parameter :: pi = acos(-1.0)
+      real(dp) :: dq, f, cabh, delta
+      real(dp), parameter :: pi = acos(-1.0)
       character*1024 :: filename
       logical :: overwrite_condition, write_condition
       logical, intent(in) :: do_derivatives, use_matrix_forces
@@ -3116,13 +3118,13 @@ contains
         & pair_distribution_partial, sinc_factor_matrix)
       implicit none
       type(input_parameters), intent(in) :: params
-      real*8, allocatable, intent(inout) :: x_structure_factor(:), x_structure_factor_temp(:), &
+      real(dp), allocatable, intent(inout) :: x_structure_factor(:), x_structure_factor_temp(:), &
            & y_structure_factor(:), structure_factor_partial(:, :),&
            &  structure_factor_partial_temp(:, :),&
            & y_structure_factor_temp(:)
-      real*8, intent(inout), allocatable :: x_pair_distribution(:), y_pair_distribution(:),&
+      real(dp), intent(inout), allocatable :: x_pair_distribution(:), y_pair_distribution(:),&
            & pair_distribution_partial(:, :)
-      real*8, allocatable, intent(inout) :: sinc_factor_matrix(:, :)
+      real(dp), allocatable, intent(inout) :: sinc_factor_matrix(:, :)
 
       if (allocated(x_structure_factor)) deallocate (x_structure_factor)
       if (allocated(x_structure_factor_temp)) deallocate (x_structure_factor_temp)
@@ -3151,28 +3153,28 @@ contains
     & energies_xrd, forces_xrd, virial_xrd, neutron, use_matrix_forces, cublas_handle, gpu_stream, gpu_host_storage, gpu_low_memory)
       implicit none
       type(input_parameters), intent(inout) :: params
-      real*8, allocatable, intent(out) :: x_xrd(:), x_xrd_temp(:), &
+      real(dp), allocatable, intent(out) :: x_xrd(:), x_xrd_temp(:), &
            & y_xrd(:), y_xrd_temp(:), energies_xrd(:), forces_xrd(:, :)
-      real*8, allocatable, intent(in) :: structure_factor_partial(:, :),&
+      real(dp), allocatable, intent(in) :: structure_factor_partial(:, :),&
            &  structure_factor_partial_temp(:, :), x_structure_factor(:)&
            &, x_structure_factor_temp(:), sinc_factor_matrix(:, :),&
            & pair_distribution_partial_der(:, :, :)
-      real*8, intent(in), allocatable :: rjs(:), xyz(:, :),&
+      real(dp), intent(in), allocatable :: rjs(:), xyz(:, :),&
            & n_atoms_of_species(:)
-      real*8, intent(out) :: virial_xrd(1:3, 1:3)
+      real(dp), intent(out) :: virial_xrd(1:3, 1:3)
       integer, intent(in), allocatable :: neighbors_list(:), n_neigh(:)&
            &, neighbor_species(:), species(:), nk(:)
-      real*8, intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3)
+      real(dp), intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3)
       character*8, allocatable, intent(in) :: species_types(:)
-      real*8 :: v_uc
+      real(dp) :: v_uc
       integer, intent(in) :: n_species, n_sites, i_beg, i_end, j_beg, j_end, ntasks
       integer, intent(out) :: q_beg, q_end
       integer, intent(in) :: indices(1:3), md_istep, mc_istep, rank
       integer, intent(out) :: ierr
-      real*8, allocatable :: y_sub(:)
+      real(dp), allocatable :: y_sub(:)
       integer :: i, j, k, l, i2, n_dim_idx, n_dim_partial
-      real*8 :: dq, f
-      real*8, parameter :: pi = acos(-1.0)
+      real(dp) :: dq, f
+      real(dp), parameter :: pi = acos(-1.0)
       character*1024 :: filename
       logical :: write_condition, overwrite_condition, valid_xrd
       logical, intent(in) :: do_derivatives, neutron, use_matrix_forces
@@ -3437,9 +3439,9 @@ contains
         & structure_factor_partial, structure_factor_partial_temp)
       implicit none
       type(input_parameters), intent(in) :: params
-      real*8, allocatable, intent(inout) :: x_xrd(:), x_xrd_temp(:), &
+      real(dp), allocatable, intent(inout) :: x_xrd(:), x_xrd_temp(:), &
            & y_xrd(:), y_xrd_temp(:)
-      real*8, allocatable, intent(inout) :: structure_factor_partial(:, :),&
+      real(dp), allocatable, intent(inout) :: structure_factor_partial(:, :),&
            &  structure_factor_partial_temp(:, :), x_structure_factor(:), x_structure_factor_temp(:)
 
       if (allocated(x_xrd)) deallocate (x_xrd)

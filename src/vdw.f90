@@ -28,6 +28,8 @@
 
 module vdw
 
+  use kinds
+
 
   contains
 
@@ -39,13 +41,13 @@ module vdw
     implicit none
 
 !   Input variables
-    real*8, intent(in) :: soap(:,:), Qs(:,:), alphas(:), V0, delta, zeta, soap_cart_der(:,:,:)
+    real(dp), intent(in) :: soap(:,:), Qs(:,:), alphas(:), V0, delta, zeta, soap_cart_der(:,:,:)
     integer, intent(in) :: n_neigh(:)
     logical, intent(in) :: do_derivatives
 !   Output variables
-    real*8, intent(out) :: V(:), V_der(:,:)
+    real(dp), intent(out) :: V(:), V_der(:,:)
 !   Internal variables
-    real*8, allocatable :: K(:,:), K_der(:,:), Qss(:,:), Qs_copy(:,:)
+    real(dp), allocatable :: K(:,:), K_der(:,:), Qss(:,:), Qs_copy(:,:)
     integer :: n_sites, n_soap, n_sparse, zeta_int, n_pairs
     integer :: i, j, i2, cart
 
@@ -153,20 +155,20 @@ module vdw
     implicit none
 
 !   Input variables
-    real*8, intent(in) :: hirshfeld_v(:), hirshfeld_v_cart_der(:,:), rcut, buffer, rcut_inner, buffer_inner, &
+    real(dp), intent(in) :: hirshfeld_v(:), hirshfeld_v_cart_der(:,:), rcut, buffer, rcut_inner, buffer_inner, &
                           rjs(:), xyz(:,:), hirshfeld_v_neigh(:), sR, d, c6_ref(:), r0_ref(:), &
                           alpha0_ref(:)
     integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:)
     logical, intent(in) :: do_forces
 !   Output variables
-    real*8, intent(out) :: virial(1:3, 1:3)
+    real(dp), intent(out) :: virial(1:3, 1:3)
 !   In-Out variables
-    real*8, intent(inout) :: energies(:), forces0(:,:)
+    real(dp), intent(inout) :: energies(:), forces0(:,:)
 !   Internal variables
-    real*8, allocatable :: neighbor_c6_ii(:), neighbor_c6_ij(:), r0_ii(:), r0_ij(:), &
+    real(dp), allocatable :: neighbor_c6_ii(:), neighbor_c6_ij(:), r0_ii(:), r0_ij(:), &
                            exp_damp(:), f_damp(:), c6_ij_free(:), neighbor_alpha0(:), &
                            pref_force1(:), pref_force2(:), r6(:), r6_der(:)
-    real*8 :: time1, time2, c6_ii, c6_jj, r0_i, r0_j, alpha0_i, alpha0_j, rbuf, this_force(1:3)
+    real(dp) :: time1, time2, c6_ii, c6_jj, r0_i, r0_j, alpha0_i, alpha0_j, rbuf, this_force(1:3)
     integer, allocatable:: i_buffer(:)
     integer :: n_sites, n_pairs, n_species, n_sites0
     integer :: i, j, i2, j2, k, n_in_buffer, k1, k2
@@ -431,8 +433,8 @@ module vdw
 
     character*8, intent(in) :: element
     integer, intent(in) :: rank
-    real*8, intent(out) :: C6, R0, alpha0
-    real*8 :: Hartree = 27.211386024367243d0, Bohr = 0.5291772105638411d0
+    real(dp), intent(out) :: C6, R0, alpha0
+    real(dp) :: Hartree = 27.211386024367243d0, Bohr = 0.5291772105638411d0
 
     C6 = 0.d0
     R0 =  0.d0

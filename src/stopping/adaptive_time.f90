@@ -39,17 +39,19 @@
 
 module adaptive_time
 
+  use kinds
+
 contains
 
 subroutine variable_time_step_adaptive (init, vel, forces, masses, tmin, tmax, xmax, emax, dt0, dt)
 
 	implicit none
 
-	real*8, intent(inout) :: dt
-	real*8, intent(in) :: vel(:,:), dt0, forces(:,:), masses(:), tmin, tmax, xmax, emax
+	real(dp), intent(inout) :: dt
+	real(dp), intent(in) :: vel(:,:), dt0, forces(:,:), masses(:), tmin, tmax, xmax, emax
 	logical, intent(in) :: init
-	real*8, allocatable :: d(:)
-	real*8 :: dtmin, vsq, fsq, dte, dtf, dtv
+	real(dp), allocatable :: d(:)
+	real(dp) :: dtmin, vsq, fsq, dte, dtf, dtv
 	integer :: Np, i
 
 	!! checking the input values of calculation parameters
