@@ -240,10 +240,52 @@ un-prefixed variants split across the preprocessor, and inside a procedure the
 dummy has one name either way, so the caller chooses once and the conditional
 disappears from the moved code.
 
-Still to do here: the GPU version of both blocks becomes the backend
-implementation behind the same interface. `exp_interface.f90` remains 1865 vs
-3455 with a 2193-line real diff, which is now the largest single divergence
-left.
+Both blocks are now out on the GPU branch too (`a891432` XPS, `a84be03`
+spectra), so `turbogap_exp.f90` holds the same two procedures on both sides.
+
+**`exp_interface.f90` is not the largest divergence left — it is one of the
+smallest.** The 2193-line figure is a file-level diff, and a file-level diff
+cannot tell a *conflict* from an *addition*. Compared procedure by procedure
+with whitespace and comments stripped (`tools/proc_diff.py`), 1867 vs 3457
+decomposes as:
+
+| | lines | |
+|---|---|---|
+| 16 GPU-only procedures | **1898** | pure additions — the batched-device paths. No conflict; they merge by appearing. |
+| 10 shared procedures | **55** real diff | the entire merge surface |
+| 1 master-only procedure | 283 | `get_pdf_sf_xrd_explicitly_kde` — owed to the GPU branch |
+| remainder | — | formatting |
+
+**Eight of the ten shared procedures are identical** ignoring whitespace and
+comments — including `calculate_pair_distribution`, all 479 lines of it. The
+whole conflict is 55 lines in two procedures:
+
+* `calculate_xrd` (31) and `calculate_structure_factor` (24), and most of that
+  is inherent device plumbing: the `nk_d`/`k_index_d`/`j2_index_d` argument
+  block, `cublas_handle`/`gpu_stream`/`gpu_host_storage`/`gpu_low_memory`, and
+  their declarations. Those are what a GPU implementation *is*.
+
+Three items in there are genuine and worth reconciling on their own, none of
+them GPU-specific:
+
+1. `preprocess_exp_data`'s i(q)-from-q\*i(q) conversion — **done** (`451735e`),
+   and that procedure is now identical.
+2. `virial_sf = 0.d0` in `calculate_structure_factor`, present only on the GPU
+   side. Master zeroes the exp-spectra virials elsewhere (`4f99e92`); check the
+   two are not both needed, or both missing a case.
+3. `get_structure_factor_forces_matrix` takes `i_beg, i_end` and
+   `species(i_beg:i_end)` on the GPU branch and neither on master. That is an
+   MPI-decomposition difference in a routine every test exercises single-rank,
+   which is exactly the shape of the unexercised multi-rank indexing bug noted
+   at the end of §7.
+
+**The measurement lesson generalises.** A whitespace-insensitive comparison
+must strip whitespace *entirely*, not collapse runs of it: the GPU copy of this
+file has been through fprettify, so it writes `(:, :)` for `(:,:)`,
+`deallocate (x)` for `deallocate(x)`, and `a*b/c` for `a * b / c`. Collapsing
+runs to a single space still counts every one of those as a difference, and
+reports 757 lines of divergence where the truth is 67. Re-check the other
+files' figures the same way before trusting them.
 
 ### Phase 5 — one-sided features, decided explicitly
 
