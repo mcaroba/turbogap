@@ -103,10 +103,19 @@ deleted, because all but one were untracked and git could not have recovered
 them. Same 25 objects build before and after; `tests/gpu/run_regression.sh`
 passes `CO_predict` and `CO_md`.
 
-Still outstanding: `src/orthonormalization_kernels.cc` (541 lines) is
-*commented out* of `SRC_CC` rather than absent — a deliberate disable that needs
-an owner decision. `src/soap_turbo/src/*_bak.f90` (2671 lines) sit in the
-submodule, which is already dirty with `TURBOGAP_DUMP_CNK`; handle both together.
+**Both remaining items closed 2026-08-05.**
+
+`src/soap_turbo/src/*_bak.f90` — removed (submodule `856b860`, parent `6a2f772`).
+2710 lines, not 2671. Archived to `../phase0_attic/soap_turbo_bak_files_20260805.tar.gz`,
+though unlike the phase 0a files these were *tracked*, so git alone could recover
+them. The reason they had to go first: each defines the **same module name** as
+its live counterpart (`soap_turbo_desc`, `soap_turbo_radial`,
+`soap_turbo_angular`), so any module-name-to-file mapping is ambiguous while they
+exist — which blocks the `make -j` fix below.
+
+`src/orthonormalization_kernels.cc` — **kept, by owner decision.** It stays
+commented out of `SRC_CC` and stays in `src/` for possible reintegration. The
+Makefile now says so, so it does not get re-litigated as dead code.
 
 **0b. Whitespace normalisation — attempted, and it is the wrong tool.**
 Superseded by §6.3 and §6.4. Review with `diff -w` and merge with
@@ -288,11 +297,27 @@ unchanged GPU tree gave three different md5sums
 comparator is the right instrument. A binary checksum would have reported a
 false failure for Phase 0a, which the regression suite correctly passed.
 
-**`make -j` is broken.** The Makefile expresses no Fortran module dependencies,
-so a parallel build races and fails with `Cannot open module file
-'read_files.mod'`. Builds must be serial (28 s for the GPU tree, DEBUG=0).
-Adding dependency ordering is a cheap, separate improvement worth doing before
-the build gets larger.
+**~~`make -j` is broken.~~ — fixed on the GPU tree 2026-08-05 (`6a2f772`).**
+The Makefile expressed no Fortran module dependencies, so a parallel build raced
+and failed with `Cannot open module file`. `tools/gen_fortran_deps.py` now
+generates the 23 ordering rules into `makefiles/Makefile.deps`, included by the
+Makefile. Serial 29 s unchanged; `-j12` 15 s, verified over six builds at
+`-j12/-j8/-j4` plus a `deepclean` rebuild, 30 objects every time. Regression
+suite after a parallel build is identical to the serial baseline.
+
+Two traps worth keeping, both of which report success while being wrong:
+
+* **The include must come last.** Placed before the first rule, one of the
+  generated dependency lines becomes make's *default goal*: `make` builds a
+  single object and **exits 0**. An exit-code check passes; only counting the
+  objects catches it.
+* **Duplicate module definitions must be gone first.** The generator fails loudly
+  if two files define the same module, which is exactly what the `*_bak.f90`
+  files did. Ordering here was forced, not chosen.
+
+Not covered: `SRC_STOP`. `OBJ_STOP` is still in no rule's prerequisites, so it is
+never built or linked, and generating dependencies for it would be meaningless
+until it is wired up. Master's tree still needs the same treatment.
 
 **Timing.** `co_predict` (~18 s) is the reference; ignore sub-5-second ratios
 (`vdw_mbd` gave 2.01/2.01/3.34 s across repeats of one binary). Always build the
@@ -399,9 +424,10 @@ trajectory (`c1d96f0`). Because the status was 0, nothing checking a return code
 would ever have caught it — the case tests for the absence of a trajectory.
 
 With that fixed, GPU and CPU agree exactly on energy, every energy component and
-forces, and to 3e-08 on `local_energy`. The **virial is wrong by ~90x** and is
-open, owned by Tigany; `XRD_mad` stays xfail against it and will report XPASS
-when it is fixed.
+forces, and to 3e-08 on `local_energy`. The ~~**virial is wrong by ~90x**~~ —
+**fixed (owner, 2026-08-05).** `XRD_mad` is still xfail, but against a different
+and much smaller defect: a `local_energy` drift of ~1e-5 by frame 5, with
+everything else agreeing. Open, deferred deliberately.
 
 The general lesson is the one Phase 3 already taught: **write the case before
 the refactor, not after.** Both times, the coverage found a real defect within
@@ -421,12 +447,15 @@ Done, in the order it happened:
 | Phase 4 exp-spectra | `afd0c19` `03877d5` `533ccf9` (cpu), `a891432` (gpu, XPS only) |
 | Phase 1 setup transplant | `08809dd` (gpu) |
 | Phase 2 seam, CPU side | `85c1fdb` (cpu) |
+| 0a remainder, `*_bak.f90` | `856b860` (gpu submodule), `6a2f772` (gpu) |
+| `make -j` module deps | `6a2f772` (gpu) |
+| exp-spectra virial | fixed by owner, 2026-08-05 |
 
 Left, in the order the measurements support:
 
-1. **The exp-spectra virial on the GPU branch** (`gpu_fixes_handoff.md` §6b).
-   Energies and forces agree exactly with the CPU; the virial is ~90x out. It
-   is the only thing keeping `XRD_mad` xfail.
+1. **The `local_energy` drift on the GPU branch**, ~1e-5 by frame 5 on
+   `XRD_mad`, everything else agreeing. This is what replaced the virial bug as
+   the reason that case is xfail. Deferred deliberately — not blocking.
 2. **The diffraction block on the GPU branch — blocked, and on what.**
    Re-measured after Phase 2: still 701 lines and **still 71 crossing
    variables**. Phase 2 did not help, because the 2b/3b device buffers it took
