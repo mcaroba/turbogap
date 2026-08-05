@@ -293,9 +293,37 @@ files' figures the same way before trusting them.
 
 ### Phase 5 — one-sided features, decided explicitly
 
-* **Electrostatics** (`electrostatics.f90`, 1162 lines, plus 271 in the GPU
-  driver) exists only on the GPU branch and is *physics, not GPU code*. Lift it
-  into its own module and merge it to master independently of the GPU work.
+* ~~**Electrostatics**~~ — **done (`d64d7f4`).** The "physics, not GPU code"
+  reading was nearly right: the module is 24 procedures, of which exactly one,
+  `calculate_batched_electrostatics` (362 lines), carries all 120 of its device
+  tokens. The other 23 — including all three the driver calls — have none. So
+  master's copy is the GPU copy minus that one procedure and the two `USE`
+  statements it needed, with zero residual device tokens, and `gsf` takes the
+  `compute_coulomb_lamichhane` path the GPU branch itself falls back to.
+
+  Came with it: the `atomic_charge` local property threaded through
+  `read_files`, `turbogap_setup` and the driver; `N_CONTRIB` 10 → 11 with
+  `C_ESTAT` inserted at 3 and `C_LP..C_3B` renumbered **to match the GPU
+  branch's numbering rather than appending**, so the two files agree; eleven
+  keywords; `options_estat`.
+
+  **A latent defect was found and fixed on both branches.** The block's guard
+  was `estat_method /= "none"` alone, so a deck asking for electrostatics
+  against a GAP with no `atomic_charge` property indexed `local_properties` with
+  an uninitialised `charge_lp_index`. It segfaults; reproduced. It now warns and
+  skips. That is the **fourth** defect here of the form *one condition, two
+  predicates free to disagree* — after ts+mbd (§5.1), the MPI reduce triple walk
+  (§7.1), and `has_vdw` against `has_local_properties`.
+
+  **Not ported, deliberately:** the unconditional `energy_estat=` field
+  `xyz.f90` writes on the GPU branch. It changes every trajectory header, which
+  takes all ten baseline-compared cases red at once — a result-changing commit
+  that belongs on its own with the cases blessed deliberately, per §4.2.
+
+  **Not verified:** the electrostatics numbers. No GAP in the test data declares
+  an `atomic_charge` local property, so the path cannot be exercised on *either*
+  branch. The GPU branch's electrostatics has never been tested either. A
+  charge-carrying GAP is the next thing this needs.
 * **Radiation cascade stack** (`adaptive_time`, `eph_*`) is the mirror case:
   wired into master's driver (5 `use` statements), and in the GPU tree compiled
   as `SRC_STOP` but never linked — `OBJ_STOP` appears in no rule's
@@ -303,6 +331,52 @@ files' figures the same way before trusting them.
 * **MC** has diverged in master's favour: master uses `params%mc_mu(mc_mu_id)`
   and `n_mc_species(mc_mu_id)` where the GPU branch passes them un-indexed, and
   master uses `random_number` where the GPU branch uses `mod(irand(), n_xyz)`.
+
+### Phase 6 — the driver has reached its extraction limit, measured
+
+Re-measured both remaining candidate blocks in master's driver with
+`tools/classify.py`, after Phases 3 and 4 had done their bundling:
+
+| block | lines | arguments | block-private locals |
+|---|---|---|---|
+| nested sampling | 1099 | **145** | 23 |
+| md driver | 368 | **67** | 9 |
+
+Both confirm the §5 and §7.2 judgements rather than overturning them, and now
+show *why*. Splitting the arguments by kind:
+
+| | contribution arrays | timers | everything else |
+|---|---|---|---|
+| nested sampling | 38 | 22 | 85 |
+| md driver | 14 | 3 | 50 |
+
+So bundling the driver's ~38 contribution arrays into the `contrib` aggregate it
+already builds, and its 22 timing buckets into one derived type, would take
+nested sampling from 145 arguments to **87** and the md driver from 67 to
+**52**. That is a 40% cut and still not a good extraction — those blocks
+genuinely read and write state that spans the whole program.
+
+**The conclusion to record: de-monolithing `turbogap.f90` by lifting phases is
+finished.** The blocks that were worth lifting have been lifted — setup, vdW,
+exp-spectra, XPS, the backend seam. What remains is 3682 lines on master and
+4247 on the GPU branch of code whose coupling is to the driver's *state*, not to
+a phase boundary. Cutting it further means bundling that state first — the
+contribution arrays and the timers are the two obvious aggregates — and that is
+a different kind of change from an extraction, with its own risk and no merge
+payoff on its own.
+
+Meanwhile the merge surface is where the remaining value is. Current real
+divergence, whitespace-insensitive, after the vdW and electrostatics work:
+
+| file | master | gpu | real diff |
+|---|---|---|---|
+| `exp_interface.f90` | 1947 | 3760 | 2416 (but only ~55 is conflict; see §7.2) |
+| `turbogap.f90` | 3682 | 4247 | 1519 |
+| `turbogap_exp.f90` | 581 | 1046 | 1098 |
+| `exp_utils.f90` | 3413 | 4125 | 1086 |
+| `read_files.f90` | 3291 | 3285 | 458 |
+| `electrostatics.f90` | 840 | 1197 | 373 |
+| `vdw.f90` | 6938 | 6938 | **0** |
 
 ## 5. Two corrections to the existing plan
 
