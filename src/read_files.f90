@@ -32,6 +32,7 @@ module read_files
    use printing, only: print_parameter, print_parameters, print_error, &
                        print_warning, print_note, print_message
    use read_utils, only: read_parameters, check_iostatus, check_file_exists
+   use error, only: turbogap_abort
    use kinds
 
    use neighbors
@@ -41,6 +42,17 @@ module read_files
    use soap_turbo_compress ! soap_turbo_compress_module
    use xyz_module
    use md
+
+!  Constant lists of what the code implements. Module parameters rather than
+!  locals rebuilt on every call, so the keyword-family subroutines can validate
+!  against them without being handed the lists.
+   character*32, parameter :: implemented_thermostats(1:3) = &
+                              [character*32 :: "none", "berendsen", "bussi"]
+   character*32, parameter :: implemented_barostats(1:2) = &
+                              [character*32 :: "none", "berendsen"]
+   character*32, parameter :: implemented_mc_types(1:8) = &
+                              [character*32 :: "none", "move", "insertion", "removal", "relax", "md", &
+                                                "swap", "volume"]
 
 contains
 
@@ -662,31 +674,13 @@ contains
       character*128, allocatable :: long_line_items(:)
       character*64 :: keyword
       character*64 :: cjunk
-      character*32 :: implemented_thermostats(1:3)
-      character*32 :: implemented_barostats(1:2)
-      character*32 :: implemented_mc_types(1:8)
       character*32 :: implemented_exp_observables(1:5)
       character*2 :: element
       character*1 :: keyword_first
       logical :: are_vdw_refs_read(1:3)
       logical :: valid_choice
       logical :: masses_in_input_file = .false.
-
-      implemented_thermostats(1) = "none"
-      implemented_thermostats(2) = "berendsen"
-      implemented_thermostats(3) = "bussi"
-
-      implemented_barostats(1) = "none"
-      implemented_barostats(2) = "berendsen"
-
-      implemented_mc_types(1) = "none"
-      implemented_mc_types(2) = "move"
-      implemented_mc_types(3) = "insertion"
-      implemented_mc_types(4) = "removal"
-      implemented_mc_types(5) = "relax"
-      implemented_mc_types(6) = "md"
-      implemented_mc_types(7) = "swap"
-      implemented_mc_types(8) = "volume"
+      logical :: keyword_found
 
       implemented_exp_observables(1) = "xps"
       implemented_exp_observables(2) = "xrd"
@@ -743,1491 +737,39 @@ contains
             exit
          end if
          keyword_first = keyword(1:1)
-         if (keyword_first == '#' .or. keyword_first == '!' .or. keyword == 'pot_file' .or. keyword == 'n_species') then
-            continue
-         else if (keyword == 'do_md') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%do_md
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("do_md", params%do_md)
-         else if (keyword == 'do_mc') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%do_mc
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("do_mc", params%do_mc)
-         else if (keyword == 'verbosity' .or. keyword == 'verb') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%verb
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("verbosity", params%verb)
-         else if (keyword == 'do_prediction') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%do_prediction
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("do_prediction", params%do_prediction)
-         else if (keyword == 'do_forces') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%do_forces
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("do_forces", params%do_forces)
-         else if (keyword == 'do_derivatives') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%do_derivatives
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("do_derivatives", params%do_derivatives)
-         else if (keyword == 'do_derivatives_fd') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%do_derivatives_fd
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("do_derivatives_fd", params%do_derivatives_fd)
-         else if (keyword == 'write_soap') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%write_soap
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("write_soap", params%write_soap)
-         else if (keyword == 'write_derivatives') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%write_derivatives
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("write_derivatives", params%write_derivatives)
-         else if (keyword == 'timing') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%do_timing
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("timing", params%do_timing)
-         else if (keyword == 'neighbors_buffer') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%neighbors_buffer
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("neighbors_buffer", params%neighbors_buffer)
-         else if (keyword == 't_beg') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%t_beg
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("t_beg", params%t_beg)
-         else if (keyword == 't_end') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%t_end
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("t_end", params%t_end)
-         else if (keyword == 'p_beg') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%p_beg
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("p_beg", params%p_beg)
-         else if (keyword == 'p_end') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%p_end
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("p_end", params%p_end)
-         else if (keyword == 'tau_t') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%tau_t
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("tau_t", params%tau_t)
-         else if (keyword == 'tau_p') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%tau_p
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("tau_p", params%tau_p)
-         else if (keyword == 'n_t_hold') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%n_t_hold
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("n_t_hold", params%n_t_hold)
-            allocate (params%t_hold(1:params%n_t_hold*3))
-         else if (keyword == 't_hold') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, (params%t_hold(nw), nw=1, params%n_t_hold*3)
-         else if (keyword == 'gamma_p') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%gamma_p
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("gamma_p", params%gamma_p)
-         else if (keyword == 'md_step') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%md_step
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("md_step", params%md_step)
-         else if (keyword == 'md_nsteps') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%md_nsteps
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("md_nsteps", params%md_nsteps)
-         else if (keyword == 'random_seed') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%random_seed_value
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("random_seed", params%random_seed_value)
-         else if (keyword == 'gpu_low_memory') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%gpu_low_memory
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("gpu_low_memory", params%gpu_low_memory)
-         else if (keyword == 'gpu_batched') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%gpu_batched
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("gpu_batched", params%gpu_batched)
-         else if (keyword == 'n_batches') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%n_batches
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("n_batches", params%n_batches)
-         else if (keyword == 'gpu_n_batches') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%gpu_n_batches
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("gpu_n_batches", params%gpu_n_batches)
-         else if (keyword == 'gpu_max_batch_size') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%gpu_max_batch_size
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("gpu_max_batch_size", params%gpu_max_batch_size)
-         else if (keyword == 'mc_nsteps') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%mc_nsteps
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("mc_nsteps", params%mc_nsteps)
-         else if (keyword == 'n_mc_types') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%n_mc_types
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("n_mc_types", params%n_mc_types)
-            allocate (params%mc_types(1:params%n_mc_types))
-            allocate (params%mc_acceptance(1:params%n_mc_types))
-            params%mc_acceptance = 1.d0/dfloat(params%n_mc_types)
-         else if (keyword == 'n_mc_swaps') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%n_mc_swaps
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("n_mc_swaps", params%n_mc_swaps)
-            allocate (params%mc_swaps(1:2*params%n_mc_swaps))
-            allocate (params%mc_swaps_id(1:2*params%n_mc_swaps))
-         else if (keyword == 'mc_swaps') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, (params%mc_swaps(nw), nw=1, 2*params%n_mc_swaps)
-            !       Need the check the implemented types
-            valid_choice = .false.
-            do j = 1, 2*params%n_mc_swaps
-               valid_choice = .false.
-               do i = 1, n_species
-                  if (trim(params%species_types(i)) == trim(params%mc_swaps(j))) then
-                     params%mc_swaps_id(i) = i
-                     valid_choice = .true.
-                  end if
-               end do
-               if (.not. valid_choice) then
-                  if (rank == 0) then
-                     write (*, *) "ERROR -> Invalid mc_swaps species keyword:", params%mc_swaps(j)
-                     write (*, *) "This is a list of valid options:"
-                     write (*, *) params%species_types
-                  end if
-                  stop
-               end if
-            end do
-
-         else if (keyword == 'mc_types') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, (params%mc_types(nw), nw=1, params%n_mc_types)
-            !       Need the check the implemented types
-            valid_choice = .false.
-            do j = 1, params%n_mc_types
-               call upper_to_lower_case(params%mc_types(j))
-               valid_choice = .false.
-               do i = 1, size(implemented_mc_types)
-                  if (trim(params%mc_types(j)) == trim(implemented_mc_types(i))) then
-                     valid_choice = .true.
-                  end if
-               end do
-               if (.not. valid_choice) then
-                  if (rank == 0) then
-                     write (*, *) "ERROR -> Invalid mc_type keyword:", params%mc_types(j)
-                     write (*, *) "This is a list of valid options:"
-                     write (*, *) implemented_mc_types
-                  end if
-                  stop
-               end if
-            end do
-         else if (keyword == 'mc_move_max') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%mc_move_max
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("mc_move_max", params%mc_move_max)
-         else if (keyword == 'mc_min_dist') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%mc_min_dist
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("mc_min_dist", params%mc_min_dist)
-         else if (keyword == 'mc_lnvol_max') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%mc_lnvol_max
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("mc_lnvol_max", params%mc_lnvol_max)
-         else if (keyword == 'n_mc_mu') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%n_mc_mu
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("n_mc_mu", params%n_mc_mu)
-            allocate (params%mc_mu(1:params%n_mc_mu))
-            allocate (params%mc_species(1:params%n_mc_mu))
-            allocate (params%mc_mu_acceptance(1:params%n_mc_mu))
-            params%mc_mu_acceptance = 1.d0/dfloat(params%n_mc_mu)
-
-         else if (keyword == 'mc_mu') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, (params%mc_mu(nw), nw=1, params%n_mc_mu)
-         else if (keyword == 'mc_species') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, (params%mc_species(nw), nw=1, params%n_mc_mu)
-         else if (keyword == 'mc_write_xyz') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%mc_write_xyz
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("mc_write_xyz", params%mc_write_xyz)
-         else if (keyword == 'mc_hamiltonian') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%mc_hamiltonian
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("mc_hamiltonian", params%mc_hamiltonian)
-         else if (keyword == 'mc_relax') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%mc_relax
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("mc_relax", params%mc_relax)
-         else if (keyword == 'n_mc_relax_after') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%n_mc_relax_after
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("n_mc_relax_after", params%n_mc_relax_after)
-            allocate (params%mc_relax_after(1:params%n_mc_relax_after))
-         else if (keyword == 'mc_relax_after') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, (params%mc_relax_after(nw), nw=1, params%n_mc_relax_after)
-         else if (keyword == 'mc_nrelax') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%mc_nrelax
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("mc_nrelax", params%mc_nrelax)
-         else if (keyword == 'mc_relax_opt') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%mc_relax_opt
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("mc_relax_opt", params%mc_relax_opt)
-         else if (keyword == 'mc_hybrid_opt') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%mc_hybrid_opt
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("mc_hybrid_opt", params%mc_hybrid_opt)
-         else if (keyword == 'mc_acceptance') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, (params%mc_acceptance(nw), nw=1, params%n_mc_types)
-            ! The acceptance probability is based on this sum and normalised
-            do i = 1, params%n_mc_types
-               k = k + params%mc_acceptance(i)
-            end do
-
-            do i = 1, params%n_mc_types
-               params%mc_acceptance(i) = params%mc_acceptance(i)/k
-            end do
-
-         else if (keyword == 'mc_mu_acceptance') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, (params%mc_mu_acceptance(nw), nw=1, params%n_mc_types)
-            ! The acceptance probability is based on this sum and normalised
-            do i = 1, params%n_mc_mu
-               k = k + params%mc_mu_acceptance(i)
-            end do
-
-            do i = 1, params%n_mc_mu
-               params%mc_mu_acceptance(i) = params%mc_mu_acceptance(i)/k
-            end do
-
-         else if (keyword == 'accessible_volume') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%accessible_volume
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("accessible_volume", params%accessible_volume)
-
-         else if (keyword == 'mc_optimize_exp') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%mc_optimize_exp
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("mc_optimize_exp", params%mc_optimize_exp)
-         else if (keyword == 'mc_reverse') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%mc_reverse
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("mc_reverse", params%mc_reverse)
-         else if (keyword == 'mc_reverse_lambda') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%mc_reverse_lambda
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("mc_reverse_lambda", params%mc_reverse_lambda)
-         else if (keyword == 'accessible_volume') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%accessible_volume
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("accessible_volume", params%accessible_volume)
-         else if (keyword == 'exp_forces') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%exp_forces
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("exp_forces", params%exp_forces)
-! do experimental
-            params%do_exp = .true.
-
-         else if (keyword == 'exp_energies') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%exp_energies
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("exp_energies", params%exp_energies)
-! do experimental
-            params%do_exp = .true.
-
-         else if (keyword == 'exp_energy_scales' .or. keyword&
-              &== 'exp_energy_scales_initial' .or. keyword&
-              &== 'exp_energy_scales_beg') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, (params&
-                 &%exp_energy_scales(nw), nw=1, params&
-                 &%n_exp)
-
-            ! Set the final gamma to the initial in case
-            do nw = 1, params%n_exp
-               params%exp_energy_scales_initial(nw) = params%exp_energy_scales(nw)
-               params%exp_energy_scales_final(nw) = params%exp_energy_scales(nw)
-            end do
-
-         else if (keyword == 'exp_energy_scales_final' .or. keyword == 'exp_energy_scales_end') then
-            backspace (10)
-            if (params%n_moments > 0) then
-               read (10, *, iostat=iostatus) cjunk, cjunk, (params&
-                &%exp_energy_scales_final(nw), nw=1, params&
-                &%n_moments)
-            else
-               read (10, *, iostat=iostatus) cjunk, cjunk, (params&
-                    &%exp_energy_scales_final(nw), nw=1, params&
-                    &%n_exp)
-            end if
-
-         else if (keyword == 'exp_input_type') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, &
-               (params%exp_data(nw)%input, nw=1, params%n_exp)
-
-         else if (keyword == 'xps_sigma') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%xps_sigma
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("xps_sigma", params%xps_sigma)
-         else if (keyword == 'xps_force_type') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%xps_force_type
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("xps_force_type", params%xps_force_type)
-         else if (keyword == 'print_lp_forces') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%print_lp_forces
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("print_lp_forces", params%print_lp_forces)
-         else if (keyword == 'print_estat_forces') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%print_estat_forces
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("print_estat_forces", params%print_estat_forces)
-         else if (keyword == "estat_damped") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%estat_options%damped
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("estat_damped", params%estat_options%damped)
-
-         else if (keyword == "estat_tsf") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%estat_options%tsf
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("estat_tsf", params%estat_options%tsf)
-
-         else if (keyword == "estat_sp") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%estat_options%sp
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("estat_sp", params%estat_options%sp)
-
-            if (params%estat_options%sp) then
-               params%estat_options%tsf = .true.
-            end if
-
-         else if (keyword == "estat_gsf") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%estat_options%gsf
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("estat_gsf", params%estat_options%gsf)
-
-            if (params%estat_options%gsf) then
-               params%estat_options%tsf = .true.
-               params%estat_options%sp = .true.
-            end if
-
-         else if (keyword == "estat_damped_cosine") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%estat_options%damped_cosine
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("estat_damped_cosine", params%estat_options%damped_cosine)
-
-         else if (keyword == "estat_self_energy_correction") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%estat_options%self_energy_correction
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("estat_self_energy_correction", params%estat_options%self_energy_correction)
-
-         else if (keyword == "estat_method") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%estat_method
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("estat_method", params%estat_method)
-            params%estat_method = trim(params%estat_method)
-            call upper_to_lower_case(params%estat_method)
-            if (params%estat_method /= "gsf" .and. params%estat_method /= "direct" .and. params%estat_method /= "dsf" &
-                .and. params%estat_method /= "none") then
-               write (*, *) "ERROR: electrostatic method not implemented: ", params%estat_method
-               write (*, *) "       Currently implemented methods are: direct"
-               stop
-            end if
-         else if (keyword == "estat_dsf_alpha") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%estat_dsf_alpha
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("estat_dsf_alpha", params%estat_dsf_alpha)
-         else if (keyword == "estat_rcut") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%estat_rcut
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("estat_rcut", params%estat_rcut)
-         else if (keyword == "estat_rcut_inner") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%estat_rcut_inner
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("estat_rcut_inner", params%estat_rcut_inner)
-         else if (keyword == "estat_inner_width") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%estat_inner_width
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("estat_inner_width", params%estat_inner_width)
-         else if (keyword == 'exp_similarity_type') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%exp_similarity_type
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("exp_similarity_type", params%exp_similarity_type)
-         else if (keyword == 'xrd_alpha') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%xrd_alpha
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("xrd_alpha", params%xrd_alpha)
-         else if (keyword == 'xrd_damping') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%xrd_damping
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("xrd_damping", params%xrd_damping)
-         else if (keyword == 'xrd_wavelength') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%xrd_wavelength
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("xrd_wavelength", params%xrd_wavelength)
-         else if (keyword == 'xrd_method') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%xrd_method
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("xrd_method", params%xrd_method)
-
-         else if (keyword == 'nd_wavelength') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%nd_wavelength
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("nd_wavelength", params%nd_wavelength)
-
-         else if (keyword == 'xrd_output') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%xrd_output
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("xrd_output", params%xrd_output)
-         else if (keyword == 'sf_output') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%sf_output
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("sf_output", params%sf_output)
-
-         else if (keyword == 'nd_output') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%nd_output
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("nd_output", params%nd_output)
-
-            ! else if(keyword=='xrd_input')then
-            !    backspace(10)
-            !    read(10, *, iostat=iostatus) cjunk, cjunk, params%xrd_output
-
-         else if (keyword == 'pair_distribution_output') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%pair_distribution_output
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("pair_distribution_output", params%pair_distribution_output)
-
-         else if (keyword == 'xrd_iwasa') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%xrd_iwasa
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("xrd_iwasa", params%xrd_iwasa)
-         else if (keyword == 'write_xyz') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%write_xyz
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("write_xyz", params%write_xyz)
-         else if (keyword == 'write_thermo') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%write_thermo
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("write_thermo", params%write_thermo)
-         else if (keyword == 'n_nested') then
-            if (mode /= "predict") then
-               write (*, *) 'ERROR: the "n_nested" option for nested sampling can only be used with "turbogap predict"'
-               stop
-            end if
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%n_nested
-            if (params%n_nested > 0) then
-               params%do_nested_sampling = .true.
-            end if
-         else if (keyword == 't_extra') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%t_extra
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("t_extra", params%t_extra)
-         else if (keyword == 'p_nested') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%p_nested
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("p_nested", params%p_nested)
-         else if (keyword == 'nested_max_strain') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%nested_max_strain
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("nested_max_strain", params%nested_max_strain)
-         else if (keyword == 'nested_max_volume_change') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%nested_max_volume_change
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("nested_max_volume_change", params%nested_max_volume_change)
-         else if (keyword == 'scale_box_nested') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%scale_box_nested
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("scale_box_nested", params%scale_box_nested)
-         else if (keyword == 'n_local_properties') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%n_local_properties
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("n_local_properties", params%n_local_properties)
-            allocate (params%write_local_properties(1:params%n_local_properties))
-            allocate (params%compute_local_properties(1:params%n_local_properties))
-            params%write_local_properties = .true.
-         else if (keyword == 'compute_local_properties') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, (params&
-                 &%compute_local_properties(nw), nw=1, params&
-                &%n_local_properties)
-
-         else if (keyword == 'do_pair_distribution') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%do_pair_distribution
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("do_pair_distribution", params%do_pair_distribution)
-
-         else if (keyword == 'do_structure_factor') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%do_structure_factor
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("do_structure_factor", params%do_structure_factor)
-            if (params%do_structure_factor) then
-               params%do_pair_distribution = .true.
-            end if
-
-         else if (keyword == 'structure_factor_window') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%structure_factor_window
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("structure_factor_window", params%structure_factor_window)
-
-         else if (keyword == 'do_xrd') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%do_xrd
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("do_xrd", params%do_xrd)
-
-            if (params%do_xrd) then
-               params%do_pair_distribution = .true.
-!           params%do_structure_factor = .true.
-            end if
-
-         else if (keyword == 'do_nd') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%do_nd
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("do_nd", params%do_nd)
-
-            if (params%do_nd) then
-               params%do_pair_distribution = .true.
-!           params%do_structure_factor = .true.
-            end if
-
-         else if (keyword == 'do_exp') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%do_exp
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("do_exp", params%do_exp)
-
-         else if (keyword == 'n_exp') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%n_exp
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("n_exp", params%n_exp)
-            allocate (params%exp_data(1:params%n_exp))
-            allocate (params%exp_energy_scales(1:params%n_exp))
-            allocate (params%exp_energy_scales_initial(1:params%n_exp))
-            allocate (params%exp_energy_scales_final(1:params%n_exp))
-
-            ! Turning on exp prediction
-            params%do_exp = .true.
-
-         else if (keyword == "exp_labels") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, &
-               (params%exp_data(nw)%label, nw=1, params%n_exp)
-            do nw = 1, params%n_exp
-               call upper_to_lower_case(params%exp_data(nw)%label)
-               if (trim(params%exp_data(nw)%label) == "xps") then
-                  params%xps_idx = nw
-                  if (rank == 0) write (*, *) ' - Valid exp. XPS found                |'
-
-               else if (trim(params%exp_data(nw)%label) == "xrd") then
-                  params%xrd_idx = nw
-                  params%valid_xrd = .true.
-                  if (rank == 0) write (*, *) ' - Valid exp. XRD found                |'
-                  ! Must be set to true to find the partial structure factors
-                  ! params%pair_distribution_partial = .true.
-               else if (trim(params%exp_data(nw)%label) == "nd") then
-                  params%nd_idx = nw
-                  params%valid_nd = .true.
-                  if (rank == 0) write (*, *) ' - Valid exp. ND found                |'
-                  ! Must be set to true to find the partial structure factors
-                  ! params%pair_distribution_partial = .true.
-
-               else if (trim(params%exp_data(nw)%label) == "saxs") then
-                  params%saxs_idx = nw
-                  params%valid_xrd = .true.
-                  if (rank == 0) write (*, *) ' - Valid exp. XRD found                |'
-                  ! Must be set to true to find the partial structure factors
-                  ! params%pair_distribution_partial = .true.
-               else if (trim(params%exp_data(nw)%label) == "pair_distribution") then
-                  params%pdf_idx = nw
-                  params%valid_pdf = .true.
-                  if (rank == 0) write (*, *) ' - Valid exp. pair distribution found  |'
-               else if (trim(params%exp_data(nw)%label) == "structure_factor") then
-                  params%sf_idx = nw
-                  params%valid_sf = .true.
-                  if (rank == 0) write (*, *) ' - Valid exp. structure factor found   |'
-               end if
-            end do
-         else if (keyword == "exp_data_files") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, &
-               (params%exp_data(nw)%file_data, nw=1, params%n_exp)
-
-            do nw = 1, params%n_exp
-               if (trim(params%exp_data(nw)%file_data) == "none") then
-                  ! Make sure that no type of exp data is written
-                  params%exp_data(nw)%compute_exp = .false.
-                  params%exp_data(nw)%compute_similarity = .false.
-                  ! If the compute exp is false, then a user range must be specified
-                  params%exp_data(nw)%wrote_exp = .true.
-               else
-
-                  call read_exp_data( &
-                     params%exp_data(nw)%file_data, &
-                     params%exp_data(nw)%n_data, &
-                     params%exp_data(nw)%data)
-
-                  params%exp_data(nw)%compute_exp = .true.
-                  params%exp_data(nw)%compute_similarity = .true.
-                  params%exp_data(nw)%range_min = params%exp_data(nw)%data(1, 1)
-                  params%exp_data(nw)%range_max = params&
-                       &%exp_data(nw)%data(1, params%exp_data(nw)%n_data)
-               end if
-            end do
-
-         else if (keyword == "xrd_rcut") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%xrd_rcut
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("xrd_rcut", params%xrd_rcut)
-
-         else if (keyword == "nd_rcut") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%nd_rcut
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("nd_rcut", params%nd_rcut)
-
-         else if (keyword == "pair_distribution_rcut") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%pair_distribution_rcut
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("pair_distribution_rcut", params%pair_distribution_rcut)
-
-         else if (keyword == "pair_distribution_partial") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%pair_distribution_partial
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("pair_distribution_partial", params%pair_distribution_partial)
-
-         else if (keyword == "structure_factor_from_pdf") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%structure_factor_from_pdf
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("structure_factor_from_pdf", params%structure_factor_from_pdf)
-         else if (keyword == "structure_factor_matrix") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%structure_factor_matrix
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("structure_factor_matrix", params%structure_factor_matrix)
-         else if (keyword == "structure_factor_matrix_forces") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%structure_factor_matrix_forces
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("structure_factor_matrix_forces", params%structure_factor_matrix_forces)
-
-         else if (keyword == "pair_distribution_kde_sigma") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%pair_distribution_kde_sigma
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("pair_distribution_kde_sigma", params%pair_distribution_kde_sigma)
-
-         else if (keyword == "write_pair_distribution") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%write_pair_distribution
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("write_pair_distribution", params%write_pair_distribution)
-         else if (keyword == "write_structure_factor") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%write_structure_factor
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("write_structure_factor", params%write_structure_factor)
-
-         else if (keyword == "write_xrd") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%write_xrd
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("write_xrd", params%write_xrd)
-
-         else if (keyword == "write_nd") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%write_nd
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("write_nd", params%write_nd)
-
-         else if (keyword == "write_exp") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%write_exp
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("write_exp", params%write_exp)
-
-         else if (keyword == "pair_distribution_n_samples") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%pair_distribution_n_samples
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("pair_distribution_n_samples", params%pair_distribution_n_samples)
-
-         else if (keyword == "structure_factor_n_samples") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%structure_factor_n_samples
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("structure_factor_n_samples", params%structure_factor_n_samples)
-
-         else if (keyword == "xrd_n_samples") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%xrd_n_samples
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("xrd_n_samples", params%xrd_n_samples)
-            params%structure_factor_n_samples = params%xrd_n_samples
-
-         else if (keyword == "nd_n_samples") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%xrd_n_samples
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("nd_n_samples", params%xrd_n_samples)
-            params%structure_factor_n_samples = params%nd_n_samples
-
-         else if (keyword == "r_range_min") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%r_range_min
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("r_range_min", params%r_range_min)
-
-         else if (keyword == "r_range_max") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%r_range_max
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("r_range_max", params%r_range_max)
-
-         else if (keyword == "q_range_min") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%q_range_min
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("q_range_min", params%q_range_min)
-
-         else if (keyword == "q_range_max") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%q_range_max
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("q_range_max", params%q_range_max)
-
-         else if (keyword == "q_units") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%q_units
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("q_units", params%q_units)
-
-         else if (keyword == "exp_n_samples") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, &
-               (params%exp_data(nw)%n_samples, nw=1, params%n_exp)
-
-         else if (keyword(i2 - 4:i2) == "range" .or. keyword(i2 - 8:i2) ==&
-              & "file_data" .or. keyword(i2 - 8:i2) == "n_samples") then
-            backspace (10)
-            ! Check if experimental range or data files are specified
-            do nw = 1, params%n_exp
-               ! See if the keyword matches any exp observables
-               if (keyword == trim(params%exp_data(nw)%label)//"_range") then
-                  ! Expect two values which are in order of lower higher for the range to do the prediction
-                  params%exp_data(nw)%user_range = .true.
-                  read (10, *, iostat=iostatus) cjunk, cjunk, params%exp_data(nw)%range_min, params%exp_data(nw)%range_max
-               elseif (keyword == trim(params%exp_data(nw)%label)//"_file_data") then
-
-                  read (10, *, iostat=iostatus) cjunk, cjunk, params%exp_data(nw)%file_data
-                  if (trim(params%exp_data(nw)%file_data) /= "none") then
-
-                     call read_exp_data( &
-                        params%exp_data(nw)%file_data, &
-                        params%exp_data(nw)%n_data, &
-                        params%exp_data(nw)%data)
-
-                     params%exp_data(nw)%wrote_exp = .false.
-                     params%exp_data(nw)%compute_exp = .true.
-                     params%exp_data(nw)%compute_similarity = .true.
-                     params%exp_data(nw)%range_min = params%exp_data(nw)%data(1, 1)
-                     params%exp_data(nw)%range_max = params&
-                          &%exp_data(nw)%data(1, params%exp_data(nw)%n_data)
-                  elseif (trim(params%exp_data(nw)%file_data) == "none") then
-                     ! Make sure that no type of exp data is written
-                     params%exp_data(nw)%compute_exp = .false.
-                     params%exp_data(nw)%compute_similarity = .false.
-                     ! If the compute exp is false, then a user range must be specified
-                     params%exp_data(nw)%wrote_exp = .true.
-
-                  end if
-               elseif (keyword == trim(params%exp_data(nw)%label)//"_n_samples") then
-                  read (10, *, iostat=iostatus) cjunk, cjunk, params%exp_data(nw)%n_samples
-               end if
-            end do
-
-         else if (keyword == 'write_velocities') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%write_velocities
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("write_velocities", params%write_velocities)
-         else if (keyword == 'write_forces') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%write_forces
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("write_forces", params%write_forces)
-         else if (keyword == 'write_fixes') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%write_fixes
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("write_fixes", params%write_fixes)
-         else if (keyword == 'write_stress') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%write_stress
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("write_stress", params%write_stress)
-         else if (keyword == 'write_virial') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%write_virial
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("write_virial", params%write_virial)
-         else if (keyword == 'write_pressure') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%write_pressure
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("write_pressure", params%write_pressure)
-         else if (keyword == 'write_hirshfeld_v') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%write_hirshfeld_v
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("write_hirshfeld_v", params%write_hirshfeld_v)
-         else if (keyword == 'write_local_properties') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, (params&
-                 &%write_local_properties(nw), nw=1, params&
-                 &%n_local_properties)
-         else if (keyword == 'write_local_energies') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%write_local_energies
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("write_local_energies", params%write_local_energies)
-         else if (keyword == 'write_masses') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%write_masses
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("write_masses", params%write_masses)
-         else if (keyword == 'target_pos_step') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%target_pos_step
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("target_pos_step", params%target_pos_step)
-            params%variable_time_step = .true.
-         else if (keyword == 'tau_dt') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%tau_dt
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("tau_dt", params%tau_dt)
-         else if (keyword == 'print_progress') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%print_progress
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("print_progress", params%print_progress)
-         else if (keyword == 'thermostat') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%thermostat
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("thermostat", params%thermostat)
-            call upper_to_lower_case(params%thermostat)
-            valid_choice = .false.
-            do i = 1, size(implemented_thermostats)
-               if (trim(params%thermostat) == trim(implemented_thermostats(i))) then
-                  valid_choice = .true.
-               end if
-            end do
-            if (.not. valid_choice) then
-               if (rank == 0) then
-                  write (*, *) "ERROR -> Invalid thermostat keyword:", params%thermostat
-                  write (*, *) "This is a list of valid options:"
-                  write (*, *) implemented_thermostats
-               end if
-               stop
-            end if
-         else if (keyword == 'barostat') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%barostat
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("barostat", params%barostat)
-            call upper_to_lower_case(params%barostat)
-            valid_choice = .false.
-            do i = 1, size(implemented_barostats)
-               if (trim(params%barostat) == trim(implemented_barostats(i))) then
-                  valid_choice = .true.
-               end if
-            end do
-            if (.not. valid_choice) then
-               if (rank == 0) then
-                  write (*, *) "ERROR -> Invalid barostat keyword:", params%barostat
-                  write (*, *) "This is a list of valid options:"
-                  write (*, *) implemented_barostats
-               end if
-               stop
-            end if
-         else if (keyword == 'barostat_sym') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%barostat_sym
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("barostat_sym", params%barostat_sym)
-         else if (keyword == 'which_atom') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%which_atom
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("which_atom", params%which_atom)
-         else if (keyword == 'masses') then
-            backspace (10)
-            call read_parameters(10, iostatus, n_species, params%masses_types)
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameters("masses", params%masses_types)
-!       We convert the masses in amu to eV*fs^2/A^2
-            params%masses_types = params%masses_types*103.6426965268d0
-            masses_in_input_file = .true.
-         else if (keyword == 'radii') then
-            backspace (10)
-            call read_parameters(10, iostatus, n_species, params%radii)
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameters("radii", params%radii)
-
-!       We convert the masses in amu to eV*fs^2/A^2
-
-         else if (keyword == 'e0') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%e0(1:n_species)
-         else if (keyword == 'atoms_file' .or. keyword == 'input_file') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%atoms_file
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("atoms_file", params%atoms_file)
-         else if (keyword == 'max_gbytes_per_process') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%max_Gbytes_per_process
-         else if (keyword == 'e_tol') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%e_tol
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("e_tol", params%e_tol)
-         else if (keyword == 'f_tol') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%f_tol
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("f_tol", params%f_tol)
-         else if (keyword == 'p_tol') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%p_tol
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("p_tol", params%p_tol)
-         else if (keyword == 'scale_box') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%scale_box
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("scale_box", params%scale_box)
-         else if (keyword == 'write_lv') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%write_lv
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("write_lv", params%write_lv)
-
-        !! ------- option for doing simulation with adaptive time step
-
-         else if (keyword == 'adaptive_time') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%adaptive_time
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("adaptive_time", params%adaptive_time)
-         else if (keyword == 'adapt_tstep_interval') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%adapt_tstep_interval
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("adapt_tstep_interval", params%adapt_tstep_interval)
-            if (params%adapt_tstep_interval <= 0) then
-               write (*, *) "ERROR: Interval of timesteps in adaptive time-step must be positive."
-               stop
-            end if
-         else if (keyword == 'adapt_tmin') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%adapt_tmin
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("adapt_tmin", params%adapt_tmin)
-         else if (keyword == 'adapt_tmax') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%adapt_tmax
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("adapt_tmax", params%adapt_tmax)
-         else if (keyword == 'adapt_xmax') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%adapt_xmax
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("adapt_xmax", params%adapt_xmax)
-         else if (keyword == 'adapt_emax') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%adapt_emax
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("adapt_emax", params%adapt_emax)
-
-        !! --------------------------                        ******** until here for adaptive time
-
-        !! ------- option for radiation cascade simulation with electronic stopping
-
-         else if (keyword == 'electronic_stopping') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%electronic_stopping
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("electronic_stopping", params%electronic_stopping)
-         else if (keyword == 'eel_cut') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%eel_cut
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("eel_cut", params%eel_cut)
-            if (params%eel_cut <= 0) then
-               write (*, *) "ERROR: Cut off energy for electronic stopping should be positive, few tens of eV!"
-               stop
-            end if
-         else if (keyword == 'eel_freq_out') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%eel_freq_out
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("eel_freq_out", params%eel_freq_out)
-         else if (keyword == 'estop_filename') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%estop_filename
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("estop_filename", params%estop_filename)
-
-        !! -------------------------------                ******** until here for electronic stopping
-
-        !! ------- option for radiation cascade simulation with EPH model
-
-         else if (keyword == 'nonadiabatic_processes') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%nonadiabatic_processes
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("nonadiabatic_processes", params%nonadiabatic_processes)
-         else if (keyword == 'eph_fdm_option') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%eph_fdm_option
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("eph_fdm_option", params%eph_fdm_option)
-         else if (keyword == 'eph_friction_option') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%eph_friction_option
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("eph_friction_option", params%eph_friction_option)
-         else if (keyword == 'eph_random_option') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%eph_random_option
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("eph_random_option", params%eph_random_option)
-         else if (keyword == 'eph_tinfile') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%eph_Tinfile
-         else if (keyword == 'model_eph') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%model_eph
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("model_eph", params%model_eph)
-         else if (keyword == 'eph_md_last_step') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%eph_md_last_step
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("eph_md_last_step", params%eph_md_last_step)
-         else if (keyword == 'eph_md_prev_time') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%eph_md_prev_time
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("eph_md_prev_time", params%eph_md_prev_time)
-         else if (keyword == 'eph_e_prev_time') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%eph_E_prev_time
-         else if (keyword == 'eph_toutfile') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%eph_Toutfile
-         else if (keyword == 'eph_fdm_steps') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%eph_fdm_steps
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("eph_fdm_steps", params%eph_fdm_steps)
-         else if (keyword == 'eph_freq_tout') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%eph_freq_Tout
-         else if (keyword == 'eph_freq_mesh_tout') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%eph_freq_mesh_Tout
-         else if (keyword == 'eph_betafile') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%eph_betafile
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("eph_betafile", params%eph_betafile)
-         else if (keyword == 'eph_box_limits') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, (params%eph_box_limits(i), i=1, 6)
-            params%in_x0 = params%eph_box_limits(1); params%in_x1 = params%eph_box_limits(2)
-            params%in_y0 = params%eph_box_limits(3); params%in_y1 = params%eph_box_limits(4)
-            params%in_z0 = params%eph_box_limits(5); params%in_z1 = params%eph_box_limits(6)
-         else if (keyword == 'eph_gsx') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%eph_gsx
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("eph_gsx", params%eph_gsx)
-         else if (keyword == 'eph_gsy') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%eph_gsy
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("eph_gsy", params%eph_gsy)
-         else if (keyword == 'eph_gsz') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%eph_gsz
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("eph_gsz", params%eph_gsz)
-         else if (keyword == 'eph_rho_e') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%eph_rho_e
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("eph_rho_e", params%eph_rho_e)
-         else if (keyword == 'eph_c_e') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%eph_c_e
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("eph_c_e", params%eph_c_e)
-         else if (keyword == 'eph_kappa_e') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%eph_kappa_e
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("eph_kappa_e", params%eph_kappa_e)
-         else if (keyword == 'eph_ti_e') then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%eph_Ti_e
-
-        !! --------------------                        ******** until here for electronic stopping based on EPH model
-
-         else if (keyword == 'box_scaling_factor') then
-            backspace (10)
-            read (10, '(A)', iostat=iostatus) long_line
-            allocate (long_line_items(1:9))
-            do i = 1, 9
-               read (long_line, *, iostat=iostatus2) cjunk, cjunk, long_line_items(1:i)
-               if (iostatus2 == -1) exit
-            end do
-            i = i - 1
-            if (i == 1) then
-               read (long_line_items(1), *) bsf
-               params%box_scaling_factor(1, 1) = bsf
-               params%box_scaling_factor(2, 2) = bsf
-               params%box_scaling_factor(3, 3) = bsf
-            else if (i == 3) then
-               read (long_line_items(1), *) bsf
-               params%box_scaling_factor(1, 1) = bsf
-               read (long_line_items(2), *) bsf
-               params%box_scaling_factor(2, 2) = bsf
-               read (long_line_items(3), *) bsf
-               params%box_scaling_factor(3, 3) = bsf
-            else if (i == 9) then
-               read (long_line_items(1), *) bsf
-               params%box_scaling_factor(1, 1) = bsf
-               read (long_line_items(2), *) bsf
-               params%box_scaling_factor(1, 2) = bsf
-               read (long_line_items(3), *) bsf
-               params%box_scaling_factor(1, 3) = bsf
-               read (long_line_items(4), *) bsf
-               params%box_scaling_factor(2, 1) = bsf
-               read (long_line_items(5), *) bsf
-               params%box_scaling_factor(2, 2) = bsf
-               read (long_line_items(6), *) bsf
-               params%box_scaling_factor(2, 3) = bsf
-               read (long_line_items(7), *) bsf
-               params%box_scaling_factor(3, 1) = bsf
-               read (long_line_items(8), *) bsf
-               params%box_scaling_factor(3, 2) = bsf
-               read (long_line_items(9), *) bsf
-               params%box_scaling_factor(3, 3) = bsf
-            else
-               write (*, *) "ERROR: the box_scaling_factor must be given by 1, 3 or 9 numbers"
-               stop
-            end if
-            deallocate (long_line_items)
-         else if (keyword == "vdw_type") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_type
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("vdw_type", params%vdw_type)
-            call upper_to_lower_case(params%vdw_type)
-            if (params%vdw_type == "ts") then
-               continue
-            else if (params%vdw_type == "none") then
-               continue
-            else
-               write (*, *) "ERROR: I do not recognize the vdw_type keyword ", params%vdw_type
-               stop
-            end if
-         else if (keyword == "vdw_sr") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_sr
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("vdw_sr", params%vdw_sr)
-         else if (keyword == "vdw_d") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_d
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("vdw_d", params%vdw_d)
-         else if (keyword == "vdw_rcut") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_rcut
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("vdw_rcut", params%vdw_rcut)
-         else if (keyword == "vdw_buffer") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_buffer
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("vdw_buffer", params%vdw_buffer)
-         else if (keyword == "vdw_rcut_inner") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_rcut_inner
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("vdw_rcut_inner", params%vdw_rcut_inner)
-         else if (keyword == "vdw_buffer_inner") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_buffer_inner
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("vdw_buffer_inner", params%vdw_buffer_inner)
-         else if (keyword == "vdw_c6_ref") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_c6_ref(1:n_species)
-            are_vdw_refs_read(1) = .true.
-         else if (keyword == "vdw_r0_ref") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_r0_ref(1:n_species)
-            are_vdw_refs_read(2) = .true.
-         else if (keyword == "vdw_alpha0_ref") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_alpha0_ref(1:n_species)
-            are_vdw_refs_read(3) = .true.
-         else if (keyword == "vdw_scs_rcut") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_scs_rcut
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("vdw_scs_rcut", params%vdw_scs_rcut)
-         else if (keyword == "poly_cut_xmin") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%poly_cut_xmin
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("poly_cut_xmin", params%poly_cut_xmin)
-         else if (keyword == "vdw_mbd_rcut") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_rcut
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("vdw_mbd_rcut", params%vdw_mbd_rcut)
-         else if (keyword == "vdw_mbd_rcut2") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_rcut2
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("vdw_mbd_rcut2", params%vdw_mbd_rcut2)
-         else if (keyword == "vdw_2b_rcut") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_2b_rcut
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("vdw_2b_rcut", params%vdw_2b_rcut)
-         else if (keyword == "vdw_2b_rcut2") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_2b_rcut2
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("vdw_2b_rcut2", params%vdw_2b_rcut2)
-         else if (keyword == "vdw_omega_ref") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_omega_ref
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("vdw_omega_ref", params%vdw_omega_ref)
-         else if (keyword == "vdw_loc_rcut") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_loc_rcut
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("vdw_loc_rcut", params%vdw_loc_rcut)
-         else if (keyword == "vdw_d_mbd") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_d_mbd
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("vdw_d_mbd", params%vdw_d_mbd)
-         else if (keyword == "vdw_sr_mbd") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_sr_mbd
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("vdw_sr_mbd", params%vdw_sr_mbd)
-         else if (keyword == "vdw_mbd_norder") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_norder
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("vdw_mbd_norder", params%vdw_mbd_norder)
-         else if (keyword == "vdw_hirsh_grad") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_hirsh_grad
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("vdw_hirsh_grad", params%vdw_hirsh_grad)
-         else if (keyword == "vdw_polynomial") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_polynomial
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("vdw_polynomial", params%vdw_polynomial)
-         else if (keyword == "do_nnls") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%do_nnls
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("do_nnls", params%do_nnls)
-         else if (keyword == "vdw_mbd_cent_appr") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_cent_appr
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("vdw_mbd_cent_appr", params%vdw_mbd_cent_appr)
-         else if (keyword == "poly_cut_xmax") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%poly_cut_xmax
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("poly_cut_xmax", params%poly_cut_xmax)
-         else if (keyword == "vdw_mbd_nfreq") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_nfreq
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("vdw_mbd_nfreq", params%vdw_mbd_nfreq)
-         else if (keyword == "vdw_mbd_grad") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_grad
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("vdw_mbd_grad", params%vdw_mbd_grad)
-         else if (keyword == "print_vdw_forces") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%print_vdw_forces
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("print_vdw_forces", params%print_vdw_forces)
-         else if (keyword == "core_pot_cutoff") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%core_pot_cutoff
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("core_pot_cutoff", params%core_pot_cutoff)
-         else if (keyword == "core_pot_buffer") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%core_pot_buffer
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("core_pot_buffer", params%core_pot_buffer)
-         else if (keyword == "optimize") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%optimize
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("optimize", params%optimize)
-            if (params%optimize == "vv" .or. params%optimize == "gd" .or. params%optimize == "gd-box" .or. &
-                params%optimize == "gd-box-ortho") then
-               continue
-            else
-               write (*, *) "ERROR: optimize algorithm not implemented:", params%optimize
-               stop
-            end if
-         else if (keyword == "gamma0") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%gamma0
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("gamma0", params%gamma0)
-         else if (keyword == "max_opt_step") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%max_opt_step
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("max_opt_step", params%max_opt_step)
-         else if (keyword == "max_opt_step_eps") then
-            backspace (10)
-            read (10, *, iostat=iostatus) cjunk, cjunk, params%max_opt_step_eps
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameter("max_opt_step_eps", params%max_opt_step_eps)
-         else if (keyword == 'species') then
-            backspace (10)
-            call read_parameters(10, iostatus, n_species, params%species_types)
-            call check_iostatus(iostatus, keyword)
-            if (rank == 0) call print_parameters("species", params%species_types)
-            if (iostatus > 0) then
-               write (*, *) '                                       |'
-               write (*, *) 'ERROR: your "species" keyword is wrong |  <-- ERROR'
-               stop
-            end if
-         else
-            write (*, *) "ERROR: I do not recognize the input file keyword", keyword
-            stop
-         end if
+         if (keyword_first == '#' .or. keyword_first == '!' .or. keyword == 'pot_file' &
+             .or. keyword == 'n_species') cycle
+
+         ! Offer the line to each family in turn. The first that recognises the
+         ! keyword sets keyword_found; falling off the end means nothing claimed it.
+         keyword_found = .false.
+         call read_options_general(10, iostatus, rank, keyword, mode, params, n_species, keyword_found, masses_in_input_file)
+         if (keyword_found) cycle
+         call read_options_control(10, iostatus, rank, keyword, mode, params, n_species, keyword_found)
+         if (keyword_found) cycle
+         call read_options_md(10, iostatus, rank, keyword, mode, params, n_species, keyword_found)
+         if (keyword_found) cycle
+         call read_options_nested(10, iostatus, rank, keyword, mode, params, n_species, keyword_found)
+         if (keyword_found) cycle
+         call read_options_mc(10, iostatus, rank, keyword, mode, params, n_species, keyword_found)
+         if (keyword_found) cycle
+         call read_options_vdw(10, iostatus, rank, keyword, mode, params, n_species, keyword_found, are_vdw_refs_read)
+         if (keyword_found) cycle
+         call read_options_estat(10, iostatus, rank, keyword, mode, params, n_species, keyword_found)
+         if (keyword_found) cycle
+         call read_options_exp(10, iostatus, rank, keyword, mode, params, n_species, keyword_found)
+         if (keyword_found) cycle
+         call read_options_stopping(10, iostatus, rank, keyword, mode, params, n_species, keyword_found)
+         if (keyword_found) cycle
+         call read_options_local_properties(10, iostatus, rank, keyword, mode, params, n_species, keyword_found)
+         if (keyword_found) cycle
+         call read_options_output(10, iostatus, rank, keyword, mode, params, n_species, keyword_found)
+         if (keyword_found) cycle
+         call read_options_gpu(10, iostatus, rank, keyword, mode, params, n_species, keyword_found)
+         if (keyword_found) cycle
+
+         write (*, *) "ERROR: I do not recognize the input file keyword ", trim(keyword)
+         call turbogap_abort()
       end do
 
 !   Do some checks
@@ -2582,6 +1124,1817 @@ contains
       end if
 
    end subroutine
+
+!**************************************************************************
+!  Input keywords for the system: files, species, masses, and global limits.
+!
+!  Sets keyword_found when it recognises the keyword and leaves it alone
+!  otherwise, so read_input_file can offer the line to the next family.
+   subroutine read_options_general(unit, iostatus, rank, keyword, mode, params, n_species, keyword_found, masses_in_input_file)
+
+      implicit none
+
+      integer, intent(in) :: unit, rank, n_species
+      integer, intent(inout) :: iostatus
+      character*64, intent(in) :: keyword
+      character(len=*), intent(in) :: mode
+      type(input_parameters), intent(inout) :: params
+      logical, intent(inout) :: keyword_found
+      logical, intent(inout) :: masses_in_input_file
+
+      character*64 :: cjunk
+
+      if (keyword == 'verbosity' .or. keyword == 'verb') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%verb
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("verbosity", params%verb)
+      else if (keyword == 'timing') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%do_timing
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("timing", params%do_timing)
+      else if (keyword == 'neighbors_buffer') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%neighbors_buffer
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("neighbors_buffer", params%neighbors_buffer)
+      else if (keyword == 'random_seed') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%random_seed_value
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("random_seed", params%random_seed_value)
+      else if (keyword == 'which_atom') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%which_atom
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("which_atom", params%which_atom)
+      else if (keyword == 'masses') then
+         backspace (unit)
+         call read_parameters(unit, iostatus, n_species, params%masses_types)
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameters("masses", params%masses_types)
+!       We convert the masses in amu to eV*fs^2/A^2
+         params%masses_types = params%masses_types*103.6426965268d0
+         masses_in_input_file = .true.
+      else if (keyword == 'radii') then
+         backspace (unit)
+         call read_parameters(unit, iostatus, n_species, params%radii)
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameters("radii", params%radii)
+
+!       We convert the masses in amu to eV*fs^2/A^2
+
+      else if (keyword == 'e0') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%e0(1:n_species)
+      else if (keyword == 'atoms_file' .or. keyword == 'input_file') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%atoms_file
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("atoms_file", params%atoms_file)
+      else if (keyword == 'max_gbytes_per_process') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%max_Gbytes_per_process
+      else if (keyword == 'species') then
+         backspace (unit)
+         call read_parameters(unit, iostatus, n_species, params%species_types)
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameters("species", params%species_types)
+         if (iostatus > 0) then
+            write (*, *) '                                       |'
+            write (*, *) 'ERROR: your "species" keyword is wrong |  <-- ERROR'
+            stop
+         end if
+      else
+         return
+      end if
+
+      keyword_found = .true.
+
+   end subroutine read_options_general
+
+!**************************************************************************
+!  Input keywords for what the run does: prediction, forces, optimisation.
+!
+!  Sets keyword_found when it recognises the keyword and leaves it alone
+!  otherwise, so read_input_file can offer the line to the next family.
+   subroutine read_options_control(unit, iostatus, rank, keyword, mode, params, n_species, keyword_found)
+
+      implicit none
+
+      integer, intent(in) :: unit, rank, n_species
+      integer, intent(inout) :: iostatus
+      character*64, intent(in) :: keyword
+      character(len=*), intent(in) :: mode
+      type(input_parameters), intent(inout) :: params
+      logical, intent(inout) :: keyword_found
+
+      character*64 :: cjunk
+
+      if (keyword == 'do_md') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%do_md
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("do_md", params%do_md)
+      else if (keyword == 'do_mc') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%do_mc
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("do_mc", params%do_mc)
+      else if (keyword == 'do_prediction') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%do_prediction
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("do_prediction", params%do_prediction)
+      else if (keyword == 'do_forces') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%do_forces
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("do_forces", params%do_forces)
+      else if (keyword == 'do_derivatives') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%do_derivatives
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("do_derivatives", params%do_derivatives)
+      else if (keyword == 'do_derivatives_fd') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%do_derivatives_fd
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("do_derivatives_fd", params%do_derivatives_fd)
+      else if (keyword == 'write_soap') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%write_soap
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("write_soap", params%write_soap)
+      else if (keyword == 'write_derivatives') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%write_derivatives
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("write_derivatives", params%write_derivatives)
+      else if (keyword == 'target_pos_step') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%target_pos_step
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("target_pos_step", params%target_pos_step)
+         params%variable_time_step = .true.
+      else if (keyword == 'tau_dt') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%tau_dt
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("tau_dt", params%tau_dt)
+      else if (keyword == 'e_tol') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%e_tol
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("e_tol", params%e_tol)
+      else if (keyword == 'f_tol') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%f_tol
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("f_tol", params%f_tol)
+      else if (keyword == 'p_tol') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%p_tol
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("p_tol", params%p_tol)
+      else if (keyword == "optimize") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%optimize
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("optimize", params%optimize)
+         if (params%optimize == "vv" .or. params%optimize == "gd" .or. params%optimize == "gd-box" .or. &
+             params%optimize == "gd-box-ortho") then
+            continue
+         else
+            write (*, *) "ERROR: optimize algorithm not implemented:", params%optimize
+            stop
+         end if
+      else if (keyword == "gamma0") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%gamma0
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("gamma0", params%gamma0)
+      else if (keyword == "max_opt_step") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%max_opt_step
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("max_opt_step", params%max_opt_step)
+      else if (keyword == "max_opt_step_eps") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%max_opt_step_eps
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("max_opt_step_eps", params%max_opt_step_eps)
+      else
+         return
+      end if
+
+      keyword_found = .true.
+
+   end subroutine read_options_control
+
+!**************************************************************************
+!  Input keywords for molecular dynamics: thermostat, barostat, step and duration.
+!
+!  Sets keyword_found when it recognises the keyword and leaves it alone
+!  otherwise, so read_input_file can offer the line to the next family.
+   subroutine read_options_md(unit, iostatus, rank, keyword, mode, params, n_species, keyword_found)
+
+      implicit none
+
+      integer, intent(in) :: unit, rank, n_species
+      integer, intent(inout) :: iostatus
+      character*64, intent(in) :: keyword
+      character(len=*), intent(in) :: mode
+      type(input_parameters), intent(inout) :: params
+      logical, intent(inout) :: keyword_found
+
+      character*64 :: cjunk
+      integer :: i
+      integer :: nw
+      integer :: iostatus2
+      real(dp) :: bsf
+      character*1024 :: long_line
+      character*128, allocatable :: long_line_items(:)
+      logical :: valid_choice
+
+      if (keyword == 't_beg') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%t_beg
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("t_beg", params%t_beg)
+      else if (keyword == 't_end') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%t_end
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("t_end", params%t_end)
+      else if (keyword == 'p_beg') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%p_beg
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("p_beg", params%p_beg)
+      else if (keyword == 'p_end') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%p_end
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("p_end", params%p_end)
+      else if (keyword == 'tau_t') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%tau_t
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("tau_t", params%tau_t)
+      else if (keyword == 'tau_p') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%tau_p
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("tau_p", params%tau_p)
+      else if (keyword == 'n_t_hold') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%n_t_hold
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("n_t_hold", params%n_t_hold)
+         allocate (params%t_hold(1:params%n_t_hold*3))
+      else if (keyword == 't_hold') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, (params%t_hold(nw), nw=1, params%n_t_hold*3)
+      else if (keyword == 'gamma_p') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%gamma_p
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("gamma_p", params%gamma_p)
+      else if (keyword == 'md_step') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%md_step
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("md_step", params%md_step)
+      else if (keyword == 'md_nsteps') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%md_nsteps
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("md_nsteps", params%md_nsteps)
+      else if (keyword == 'thermostat') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%thermostat
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("thermostat", params%thermostat)
+         call upper_to_lower_case(params%thermostat)
+         valid_choice = .false.
+         do i = 1, size(implemented_thermostats)
+            if (trim(params%thermostat) == trim(implemented_thermostats(i))) then
+               valid_choice = .true.
+            end if
+         end do
+         if (.not. valid_choice) then
+            if (rank == 0) then
+               write (*, *) "ERROR -> Invalid thermostat keyword:", params%thermostat
+               write (*, *) "This is a list of valid options:"
+               write (*, *) implemented_thermostats
+            end if
+            stop
+         end if
+      else if (keyword == 'barostat') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%barostat
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("barostat", params%barostat)
+         call upper_to_lower_case(params%barostat)
+         valid_choice = .false.
+         do i = 1, size(implemented_barostats)
+            if (trim(params%barostat) == trim(implemented_barostats(i))) then
+               valid_choice = .true.
+            end if
+         end do
+         if (.not. valid_choice) then
+            if (rank == 0) then
+               write (*, *) "ERROR -> Invalid barostat keyword:", params%barostat
+               write (*, *) "This is a list of valid options:"
+               write (*, *) implemented_barostats
+            end if
+            stop
+         end if
+      else if (keyword == 'barostat_sym') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%barostat_sym
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("barostat_sym", params%barostat_sym)
+      else if (keyword == 'scale_box') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%scale_box
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("scale_box", params%scale_box)
+      else if (keyword == 'box_scaling_factor') then
+         backspace (unit)
+         read (10, '(A)', iostat=iostatus) long_line
+         allocate (long_line_items(1:9))
+         do i = 1, 9
+            read (long_line, *, iostat=iostatus2) cjunk, cjunk, long_line_items(1:i)
+            if (iostatus2 == -1) exit
+         end do
+         i = i - 1
+         if (i == 1) then
+            read (long_line_items(1), *) bsf
+            params%box_scaling_factor(1, 1) = bsf
+            params%box_scaling_factor(2, 2) = bsf
+            params%box_scaling_factor(3, 3) = bsf
+         else if (i == 3) then
+            read (long_line_items(1), *) bsf
+            params%box_scaling_factor(1, 1) = bsf
+            read (long_line_items(2), *) bsf
+            params%box_scaling_factor(2, 2) = bsf
+            read (long_line_items(3), *) bsf
+            params%box_scaling_factor(3, 3) = bsf
+         else if (i == 9) then
+            read (long_line_items(1), *) bsf
+            params%box_scaling_factor(1, 1) = bsf
+            read (long_line_items(2), *) bsf
+            params%box_scaling_factor(1, 2) = bsf
+            read (long_line_items(3), *) bsf
+            params%box_scaling_factor(1, 3) = bsf
+            read (long_line_items(4), *) bsf
+            params%box_scaling_factor(2, 1) = bsf
+            read (long_line_items(5), *) bsf
+            params%box_scaling_factor(2, 2) = bsf
+            read (long_line_items(6), *) bsf
+            params%box_scaling_factor(2, 3) = bsf
+            read (long_line_items(7), *) bsf
+            params%box_scaling_factor(3, 1) = bsf
+            read (long_line_items(8), *) bsf
+            params%box_scaling_factor(3, 2) = bsf
+            read (long_line_items(9), *) bsf
+            params%box_scaling_factor(3, 3) = bsf
+         else
+            write (*, *) "ERROR: the box_scaling_factor must be given by 1, 3 or 9 numbers"
+            stop
+         end if
+         deallocate (long_line_items)
+      else
+         return
+      end if
+
+      keyword_found = .true.
+
+   end subroutine read_options_md
+
+!**************************************************************************
+!  Input keywords for nested sampling.
+!
+!  Sets keyword_found when it recognises the keyword and leaves it alone
+!  otherwise, so read_input_file can offer the line to the next family.
+   subroutine read_options_nested(unit, iostatus, rank, keyword, mode, params, n_species, keyword_found)
+
+      implicit none
+
+      integer, intent(in) :: unit, rank, n_species
+      integer, intent(inout) :: iostatus
+      character*64, intent(in) :: keyword
+      character(len=*), intent(in) :: mode
+      type(input_parameters), intent(inout) :: params
+      logical, intent(inout) :: keyword_found
+
+      character*64 :: cjunk
+
+      if (keyword == 'n_nested') then
+         if (mode /= "predict") then
+            write (*, *) 'ERROR: the "n_nested" option for nested sampling can only be used with "turbogap predict"'
+            stop
+         end if
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%n_nested
+         if (params%n_nested > 0) then
+            params%do_nested_sampling = .true.
+         end if
+      else if (keyword == 't_extra') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%t_extra
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("t_extra", params%t_extra)
+      else if (keyword == 'p_nested') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%p_nested
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("p_nested", params%p_nested)
+      else if (keyword == 'nested_max_strain') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%nested_max_strain
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("nested_max_strain", params%nested_max_strain)
+      else if (keyword == 'nested_max_volume_change') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%nested_max_volume_change
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("nested_max_volume_change", params%nested_max_volume_change)
+      else if (keyword == 'scale_box_nested') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%scale_box_nested
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("scale_box_nested", params%scale_box_nested)
+      else
+         return
+      end if
+
+      keyword_found = .true.
+
+   end subroutine read_options_nested
+
+!**************************************************************************
+!  Input keywords for Monte Carlo: move types, limits and acceptance.
+!
+!  Sets keyword_found when it recognises the keyword and leaves it alone
+!  otherwise, so read_input_file can offer the line to the next family.
+   subroutine read_options_mc(unit, iostatus, rank, keyword, mode, params, n_species, keyword_found)
+
+      implicit none
+
+      integer, intent(in) :: unit, rank, n_species
+      integer, intent(inout) :: iostatus
+      character*64, intent(in) :: keyword
+      character(len=*), intent(in) :: mode
+      type(input_parameters), intent(inout) :: params
+      logical, intent(inout) :: keyword_found
+
+      character*64 :: cjunk
+      integer :: i
+      integer :: j
+      integer :: k
+      integer :: nw
+      logical :: valid_choice
+
+      if (keyword == 'mc_nsteps') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%mc_nsteps
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("mc_nsteps", params%mc_nsteps)
+      else if (keyword == 'n_mc_types') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%n_mc_types
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("n_mc_types", params%n_mc_types)
+         allocate (params%mc_types(1:params%n_mc_types))
+         allocate (params%mc_acceptance(1:params%n_mc_types))
+         params%mc_acceptance = 1.d0/dfloat(params%n_mc_types)
+      else if (keyword == 'n_mc_swaps') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%n_mc_swaps
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("n_mc_swaps", params%n_mc_swaps)
+         allocate (params%mc_swaps(1:2*params%n_mc_swaps))
+         allocate (params%mc_swaps_id(1:2*params%n_mc_swaps))
+      else if (keyword == 'mc_swaps') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, (params%mc_swaps(nw), nw=1, 2*params%n_mc_swaps)
+         !       Need the check the implemented types
+         valid_choice = .false.
+         do j = 1, 2*params%n_mc_swaps
+            valid_choice = .false.
+            do i = 1, n_species
+               if (trim(params%species_types(i)) == trim(params%mc_swaps(j))) then
+                  params%mc_swaps_id(i) = i
+                  valid_choice = .true.
+               end if
+            end do
+            if (.not. valid_choice) then
+               if (rank == 0) then
+                  write (*, *) "ERROR -> Invalid mc_swaps species keyword:", params%mc_swaps(j)
+                  write (*, *) "This is a list of valid options:"
+                  write (*, *) params%species_types
+               end if
+               stop
+            end if
+         end do
+
+      else if (keyword == 'mc_types') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, (params%mc_types(nw), nw=1, params%n_mc_types)
+         !       Need the check the implemented types
+         valid_choice = .false.
+         do j = 1, params%n_mc_types
+            call upper_to_lower_case(params%mc_types(j))
+            valid_choice = .false.
+            do i = 1, size(implemented_mc_types)
+               if (trim(params%mc_types(j)) == trim(implemented_mc_types(i))) then
+                  valid_choice = .true.
+               end if
+            end do
+            if (.not. valid_choice) then
+               if (rank == 0) then
+                  write (*, *) "ERROR -> Invalid mc_type keyword:", params%mc_types(j)
+                  write (*, *) "This is a list of valid options:"
+                  write (*, *) implemented_mc_types
+               end if
+               stop
+            end if
+         end do
+      else if (keyword == 'mc_move_max') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%mc_move_max
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("mc_move_max", params%mc_move_max)
+      else if (keyword == 'mc_min_dist') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%mc_min_dist
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("mc_min_dist", params%mc_min_dist)
+      else if (keyword == 'mc_lnvol_max') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%mc_lnvol_max
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("mc_lnvol_max", params%mc_lnvol_max)
+      else if (keyword == 'n_mc_mu') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%n_mc_mu
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("n_mc_mu", params%n_mc_mu)
+         allocate (params%mc_mu(1:params%n_mc_mu))
+         allocate (params%mc_species(1:params%n_mc_mu))
+         allocate (params%mc_mu_acceptance(1:params%n_mc_mu))
+         params%mc_mu_acceptance = 1.d0/dfloat(params%n_mc_mu)
+
+      else if (keyword == 'mc_mu') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, (params%mc_mu(nw), nw=1, params%n_mc_mu)
+      else if (keyword == 'mc_species') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, (params%mc_species(nw), nw=1, params%n_mc_mu)
+      else if (keyword == 'mc_write_xyz') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%mc_write_xyz
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("mc_write_xyz", params%mc_write_xyz)
+      else if (keyword == 'mc_hamiltonian') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%mc_hamiltonian
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("mc_hamiltonian", params%mc_hamiltonian)
+      else if (keyword == 'mc_relax') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%mc_relax
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("mc_relax", params%mc_relax)
+      else if (keyword == 'n_mc_relax_after') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%n_mc_relax_after
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("n_mc_relax_after", params%n_mc_relax_after)
+         allocate (params%mc_relax_after(1:params%n_mc_relax_after))
+      else if (keyword == 'mc_relax_after') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, (params%mc_relax_after(nw), nw=1, params%n_mc_relax_after)
+      else if (keyword == 'mc_nrelax') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%mc_nrelax
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("mc_nrelax", params%mc_nrelax)
+      else if (keyword == 'mc_relax_opt') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%mc_relax_opt
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("mc_relax_opt", params%mc_relax_opt)
+      else if (keyword == 'mc_hybrid_opt') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%mc_hybrid_opt
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("mc_hybrid_opt", params%mc_hybrid_opt)
+      else if (keyword == 'mc_acceptance') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, (params%mc_acceptance(nw), nw=1, params%n_mc_types)
+         ! The acceptance probability is based on this sum and normalised
+         do i = 1, params%n_mc_types
+            k = k + params%mc_acceptance(i)
+         end do
+
+         do i = 1, params%n_mc_types
+            params%mc_acceptance(i) = params%mc_acceptance(i)/k
+         end do
+
+      else if (keyword == 'mc_mu_acceptance') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, (params%mc_mu_acceptance(nw), nw=1, params%n_mc_types)
+         ! The acceptance probability is based on this sum and normalised
+         do i = 1, params%n_mc_mu
+            k = k + params%mc_mu_acceptance(i)
+         end do
+
+         do i = 1, params%n_mc_mu
+            params%mc_mu_acceptance(i) = params%mc_mu_acceptance(i)/k
+         end do
+
+      else if (keyword == 'accessible_volume') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%accessible_volume
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("accessible_volume", params%accessible_volume)
+
+      else if (keyword == 'mc_optimize_exp') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%mc_optimize_exp
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("mc_optimize_exp", params%mc_optimize_exp)
+      else if (keyword == 'mc_reverse') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%mc_reverse
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("mc_reverse", params%mc_reverse)
+      else if (keyword == 'mc_reverse_lambda') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%mc_reverse_lambda
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("mc_reverse_lambda", params%mc_reverse_lambda)
+      else if (keyword == 'accessible_volume') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%accessible_volume
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("accessible_volume", params%accessible_volume)
+      else
+         return
+      end if
+
+      keyword_found = .true.
+
+   end subroutine read_options_mc
+
+!**************************************************************************
+!  Input keywords for van der Waals: TS, MBD, and the Hirshfeld model.
+!
+!  Sets keyword_found when it recognises the keyword and leaves it alone
+!  otherwise, so read_input_file can offer the line to the next family.
+   subroutine read_options_vdw(unit, iostatus, rank, keyword, mode, params, n_species, keyword_found, are_vdw_refs_read)
+
+      implicit none
+
+      integer, intent(in) :: unit, rank, n_species
+      integer, intent(inout) :: iostatus
+      character*64, intent(in) :: keyword
+      character(len=*), intent(in) :: mode
+      type(input_parameters), intent(inout) :: params
+      logical, intent(inout) :: keyword_found
+      logical, intent(inout) :: are_vdw_refs_read(1:3)
+
+      character*64 :: cjunk
+
+      if (keyword == "vdw_type") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_type
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("vdw_type", params%vdw_type)
+         call upper_to_lower_case(params%vdw_type)
+         if (params%vdw_type == "ts") then
+            continue
+         else if (params%vdw_type == "none") then
+            continue
+         else
+            write (*, *) "ERROR: I do not recognize the vdw_type keyword ", params%vdw_type
+            stop
+         end if
+      else if (keyword == "vdw_sr") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_sr
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("vdw_sr", params%vdw_sr)
+      else if (keyword == "vdw_d") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_d
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("vdw_d", params%vdw_d)
+      else if (keyword == "vdw_rcut") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_rcut
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("vdw_rcut", params%vdw_rcut)
+      else if (keyword == "vdw_buffer") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_buffer
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("vdw_buffer", params%vdw_buffer)
+      else if (keyword == "vdw_rcut_inner") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_rcut_inner
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("vdw_rcut_inner", params%vdw_rcut_inner)
+      else if (keyword == "vdw_buffer_inner") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_buffer_inner
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("vdw_buffer_inner", params%vdw_buffer_inner)
+      else if (keyword == "vdw_c6_ref") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_c6_ref(1:n_species)
+         are_vdw_refs_read(1) = .true.
+      else if (keyword == "vdw_r0_ref") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_r0_ref(1:n_species)
+         are_vdw_refs_read(2) = .true.
+      else if (keyword == "vdw_alpha0_ref") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_alpha0_ref(1:n_species)
+         are_vdw_refs_read(3) = .true.
+      else if (keyword == "vdw_scs_rcut") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_scs_rcut
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("vdw_scs_rcut", params%vdw_scs_rcut)
+      else if (keyword == "poly_cut_xmin") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%poly_cut_xmin
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("poly_cut_xmin", params%poly_cut_xmin)
+      else if (keyword == "vdw_mbd_rcut") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_rcut
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("vdw_mbd_rcut", params%vdw_mbd_rcut)
+      else if (keyword == "vdw_mbd_rcut2") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_rcut2
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("vdw_mbd_rcut2", params%vdw_mbd_rcut2)
+      else if (keyword == "vdw_2b_rcut") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_2b_rcut
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("vdw_2b_rcut", params%vdw_2b_rcut)
+      else if (keyword == "vdw_2b_rcut2") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_2b_rcut2
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("vdw_2b_rcut2", params%vdw_2b_rcut2)
+      else if (keyword == "vdw_omega_ref") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_omega_ref
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("vdw_omega_ref", params%vdw_omega_ref)
+      else if (keyword == "vdw_loc_rcut") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_loc_rcut
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("vdw_loc_rcut", params%vdw_loc_rcut)
+      else if (keyword == "vdw_d_mbd") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_d_mbd
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("vdw_d_mbd", params%vdw_d_mbd)
+      else if (keyword == "vdw_sr_mbd") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_sr_mbd
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("vdw_sr_mbd", params%vdw_sr_mbd)
+      else if (keyword == "vdw_mbd_norder") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_norder
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("vdw_mbd_norder", params%vdw_mbd_norder)
+      else if (keyword == "vdw_hirsh_grad") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_hirsh_grad
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("vdw_hirsh_grad", params%vdw_hirsh_grad)
+      else if (keyword == "vdw_polynomial") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_polynomial
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("vdw_polynomial", params%vdw_polynomial)
+      else if (keyword == "do_nnls") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%do_nnls
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("do_nnls", params%do_nnls)
+      else if (keyword == "vdw_mbd_cent_appr") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_cent_appr
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("vdw_mbd_cent_appr", params%vdw_mbd_cent_appr)
+      else if (keyword == "poly_cut_xmax") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%poly_cut_xmax
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("poly_cut_xmax", params%poly_cut_xmax)
+      else if (keyword == "vdw_mbd_nfreq") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_nfreq
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("vdw_mbd_nfreq", params%vdw_mbd_nfreq)
+      else if (keyword == "vdw_mbd_grad") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_grad
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("vdw_mbd_grad", params%vdw_mbd_grad)
+      else if (keyword == "print_vdw_forces") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%print_vdw_forces
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("print_vdw_forces", params%print_vdw_forces)
+      else
+         return
+      end if
+
+      keyword_found = .true.
+
+   end subroutine read_options_vdw
+
+!**************************************************************************
+!  Input keywords for electrostatics.
+!
+!  Sets keyword_found when it recognises the keyword and leaves it alone
+!  otherwise, so read_input_file can offer the line to the next family.
+   subroutine read_options_estat(unit, iostatus, rank, keyword, mode, params, n_species, keyword_found)
+
+      implicit none
+
+      integer, intent(in) :: unit, rank, n_species
+      integer, intent(inout) :: iostatus
+      character*64, intent(in) :: keyword
+      character(len=*), intent(in) :: mode
+      type(input_parameters), intent(inout) :: params
+      logical, intent(inout) :: keyword_found
+
+      character*64 :: cjunk
+
+      if (keyword == 'print_estat_forces') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%print_estat_forces
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("print_estat_forces", params%print_estat_forces)
+      else if (keyword == "estat_damped") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%estat_options%damped
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("estat_damped", params%estat_options%damped)
+
+      else if (keyword == "estat_tsf") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%estat_options%tsf
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("estat_tsf", params%estat_options%tsf)
+
+      else if (keyword == "estat_sp") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%estat_options%sp
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("estat_sp", params%estat_options%sp)
+
+         if (params%estat_options%sp) then
+            params%estat_options%tsf = .true.
+         end if
+
+      else if (keyword == "estat_gsf") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%estat_options%gsf
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("estat_gsf", params%estat_options%gsf)
+
+         if (params%estat_options%gsf) then
+            params%estat_options%tsf = .true.
+            params%estat_options%sp = .true.
+         end if
+
+      else if (keyword == "estat_damped_cosine") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%estat_options%damped_cosine
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("estat_damped_cosine", params%estat_options%damped_cosine)
+
+      else if (keyword == "estat_self_energy_correction") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%estat_options%self_energy_correction
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("estat_self_energy_correction", params%estat_options%self_energy_correction)
+
+      else if (keyword == "estat_method") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%estat_method
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("estat_method", params%estat_method)
+         params%estat_method = trim(params%estat_method)
+         call upper_to_lower_case(params%estat_method)
+         if (params%estat_method /= "gsf" .and. params%estat_method /= "direct" .and. params%estat_method /= "dsf" &
+             .and. params%estat_method /= "none") then
+            write (*, *) "ERROR: electrostatic method not implemented: ", params%estat_method
+            write (*, *) "       Currently implemented methods are: direct"
+            stop
+         end if
+      else if (keyword == "estat_dsf_alpha") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%estat_dsf_alpha
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("estat_dsf_alpha", params%estat_dsf_alpha)
+      else if (keyword == "estat_rcut") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%estat_rcut
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("estat_rcut", params%estat_rcut)
+      else if (keyword == "estat_rcut_inner") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%estat_rcut_inner
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("estat_rcut_inner", params%estat_rcut_inner)
+      else if (keyword == "estat_inner_width") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%estat_inner_width
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("estat_inner_width", params%estat_inner_width)
+      else
+         return
+      end if
+
+      keyword_found = .true.
+
+   end subroutine read_options_estat
+
+!**************************************************************************
+!  Input keywords for experimental observables: pdf, structure factor, XRD, ND, XPS.
+!
+!  Sets keyword_found when it recognises the keyword and leaves it alone
+!  otherwise, so read_input_file can offer the line to the next family.
+   subroutine read_options_exp(unit, iostatus, rank, keyword, mode, params, n_species, keyword_found)
+
+      implicit none
+
+      integer, intent(in) :: unit, rank, n_species
+      integer, intent(inout) :: iostatus
+      character*64, intent(in) :: keyword
+      character(len=*), intent(in) :: mode
+      type(input_parameters), intent(inout) :: params
+      logical, intent(inout) :: keyword_found
+
+      character*64 :: cjunk
+      integer :: i2
+      integer :: nw
+
+      if (keyword == 'exp_forces') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%exp_forces
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("exp_forces", params%exp_forces)
+! do experimental
+         params%do_exp = .true.
+
+      else if (keyword == 'exp_energies') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%exp_energies
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("exp_energies", params%exp_energies)
+! do experimental
+         params%do_exp = .true.
+
+      else if (keyword == 'exp_energy_scales' .or. keyword&
+           &== 'exp_energy_scales_initial' .or. keyword&
+           &== 'exp_energy_scales_beg') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, (params&
+              &%exp_energy_scales(nw), nw=1, params&
+              &%n_exp)
+
+         ! Set the final gamma to the initial in case
+         do nw = 1, params%n_exp
+            params%exp_energy_scales_initial(nw) = params%exp_energy_scales(nw)
+            params%exp_energy_scales_final(nw) = params%exp_energy_scales(nw)
+         end do
+
+      else if (keyword == 'exp_energy_scales_final' .or. keyword == 'exp_energy_scales_end') then
+         backspace (unit)
+         if (params%n_moments > 0) then
+            read (unit, *, iostat=iostatus) cjunk, cjunk, (params&
+             &%exp_energy_scales_final(nw), nw=1, params&
+             &%n_moments)
+         else
+            read (unit, *, iostat=iostatus) cjunk, cjunk, (params&
+                 &%exp_energy_scales_final(nw), nw=1, params&
+                 &%n_exp)
+         end if
+
+      else if (keyword == 'exp_input_type') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, &
+            (params%exp_data(nw)%input, nw=1, params%n_exp)
+
+      else if (keyword == 'xps_sigma') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%xps_sigma
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("xps_sigma", params%xps_sigma)
+      else if (keyword == 'xps_force_type') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%xps_force_type
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("xps_force_type", params%xps_force_type)
+      else if (keyword == 'exp_similarity_type') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%exp_similarity_type
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("exp_similarity_type", params%exp_similarity_type)
+      else if (keyword == 'xrd_alpha') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%xrd_alpha
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("xrd_alpha", params%xrd_alpha)
+      else if (keyword == 'xrd_damping') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%xrd_damping
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("xrd_damping", params%xrd_damping)
+      else if (keyword == 'xrd_wavelength') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%xrd_wavelength
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("xrd_wavelength", params%xrd_wavelength)
+      else if (keyword == 'xrd_method') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%xrd_method
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("xrd_method", params%xrd_method)
+
+      else if (keyword == 'nd_wavelength') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%nd_wavelength
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("nd_wavelength", params%nd_wavelength)
+
+      else if (keyword == 'xrd_output') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%xrd_output
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("xrd_output", params%xrd_output)
+      else if (keyword == 'sf_output') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%sf_output
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("sf_output", params%sf_output)
+
+      else if (keyword == 'nd_output') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%nd_output
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("nd_output", params%nd_output)
+
+         ! else if(keyword=='xrd_input')then
+         !    backspace(10)
+         !    read(10, *, iostat=iostatus) cjunk, cjunk, params%xrd_output
+
+      else if (keyword == 'pair_distribution_output') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%pair_distribution_output
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("pair_distribution_output", params%pair_distribution_output)
+
+      else if (keyword == 'xrd_iwasa') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%xrd_iwasa
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("xrd_iwasa", params%xrd_iwasa)
+      else if (keyword == 'do_pair_distribution') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%do_pair_distribution
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("do_pair_distribution", params%do_pair_distribution)
+
+      else if (keyword == 'do_structure_factor') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%do_structure_factor
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("do_structure_factor", params%do_structure_factor)
+         if (params%do_structure_factor) then
+            params%do_pair_distribution = .true.
+         end if
+
+      else if (keyword == 'structure_factor_window') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%structure_factor_window
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("structure_factor_window", params%structure_factor_window)
+
+      else if (keyword == 'do_xrd') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%do_xrd
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("do_xrd", params%do_xrd)
+
+         if (params%do_xrd) then
+            params%do_pair_distribution = .true.
+!           params%do_structure_factor = .true.
+         end if
+
+      else if (keyword == 'do_nd') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%do_nd
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("do_nd", params%do_nd)
+
+         if (params%do_nd) then
+            params%do_pair_distribution = .true.
+!           params%do_structure_factor = .true.
+         end if
+
+      else if (keyword == 'do_exp') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%do_exp
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("do_exp", params%do_exp)
+
+      else if (keyword == 'n_exp') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%n_exp
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("n_exp", params%n_exp)
+         allocate (params%exp_data(1:params%n_exp))
+         allocate (params%exp_energy_scales(1:params%n_exp))
+         allocate (params%exp_energy_scales_initial(1:params%n_exp))
+         allocate (params%exp_energy_scales_final(1:params%n_exp))
+
+         ! Turning on exp prediction
+         params%do_exp = .true.
+
+      else if (keyword == "exp_labels") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, &
+            (params%exp_data(nw)%label, nw=1, params%n_exp)
+         do nw = 1, params%n_exp
+            call upper_to_lower_case(params%exp_data(nw)%label)
+            if (trim(params%exp_data(nw)%label) == "xps") then
+               params%xps_idx = nw
+               if (rank == 0) write (*, *) ' - Valid exp. XPS found                |'
+
+            else if (trim(params%exp_data(nw)%label) == "xrd") then
+               params%xrd_idx = nw
+               params%valid_xrd = .true.
+               if (rank == 0) write (*, *) ' - Valid exp. XRD found                |'
+               ! Must be set to true to find the partial structure factors
+               ! params%pair_distribution_partial = .true.
+            else if (trim(params%exp_data(nw)%label) == "nd") then
+               params%nd_idx = nw
+               params%valid_nd = .true.
+               if (rank == 0) write (*, *) ' - Valid exp. ND found                |'
+               ! Must be set to true to find the partial structure factors
+               ! params%pair_distribution_partial = .true.
+
+            else if (trim(params%exp_data(nw)%label) == "saxs") then
+               params%saxs_idx = nw
+               params%valid_xrd = .true.
+               if (rank == 0) write (*, *) ' - Valid exp. XRD found                |'
+               ! Must be set to true to find the partial structure factors
+               ! params%pair_distribution_partial = .true.
+            else if (trim(params%exp_data(nw)%label) == "pair_distribution") then
+               params%pdf_idx = nw
+               params%valid_pdf = .true.
+               if (rank == 0) write (*, *) ' - Valid exp. pair distribution found  |'
+            else if (trim(params%exp_data(nw)%label) == "structure_factor") then
+               params%sf_idx = nw
+               params%valid_sf = .true.
+               if (rank == 0) write (*, *) ' - Valid exp. structure factor found   |'
+            end if
+         end do
+      else if (keyword == "exp_data_files") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, &
+            (params%exp_data(nw)%file_data, nw=1, params%n_exp)
+
+         do nw = 1, params%n_exp
+            if (trim(params%exp_data(nw)%file_data) == "none") then
+               ! Make sure that no type of exp data is written
+               params%exp_data(nw)%compute_exp = .false.
+               params%exp_data(nw)%compute_similarity = .false.
+               ! If the compute exp is false, then a user range must be specified
+               params%exp_data(nw)%wrote_exp = .true.
+            else
+
+               call read_exp_data( &
+                  params%exp_data(nw)%file_data, &
+                  params%exp_data(nw)%n_data, &
+                  params%exp_data(nw)%data)
+
+               params%exp_data(nw)%compute_exp = .true.
+               params%exp_data(nw)%compute_similarity = .true.
+               params%exp_data(nw)%range_min = params%exp_data(nw)%data(1, 1)
+               params%exp_data(nw)%range_max = params&
+                    &%exp_data(nw)%data(1, params%exp_data(nw)%n_data)
+            end if
+         end do
+
+      else if (keyword == "xrd_rcut") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%xrd_rcut
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("xrd_rcut", params%xrd_rcut)
+
+      else if (keyword == "nd_rcut") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%nd_rcut
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("nd_rcut", params%nd_rcut)
+
+      else if (keyword == "pair_distribution_rcut") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%pair_distribution_rcut
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("pair_distribution_rcut", params%pair_distribution_rcut)
+
+      else if (keyword == "pair_distribution_partial") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%pair_distribution_partial
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("pair_distribution_partial", params%pair_distribution_partial)
+
+      else if (keyword == "structure_factor_from_pdf") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%structure_factor_from_pdf
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("structure_factor_from_pdf", params%structure_factor_from_pdf)
+      else if (keyword == "structure_factor_matrix") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%structure_factor_matrix
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("structure_factor_matrix", params%structure_factor_matrix)
+      else if (keyword == "structure_factor_matrix_forces") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%structure_factor_matrix_forces
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("structure_factor_matrix_forces", params%structure_factor_matrix_forces)
+
+      else if (keyword == "pair_distribution_kde_sigma") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%pair_distribution_kde_sigma
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("pair_distribution_kde_sigma", params%pair_distribution_kde_sigma)
+
+      else if (keyword == "pair_distribution_n_samples") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%pair_distribution_n_samples
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("pair_distribution_n_samples", params%pair_distribution_n_samples)
+
+      else if (keyword == "structure_factor_n_samples") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%structure_factor_n_samples
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("structure_factor_n_samples", params%structure_factor_n_samples)
+
+      else if (keyword == "xrd_n_samples") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%xrd_n_samples
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("xrd_n_samples", params%xrd_n_samples)
+         params%structure_factor_n_samples = params%xrd_n_samples
+
+      else if (keyword == "nd_n_samples") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%xrd_n_samples
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("nd_n_samples", params%xrd_n_samples)
+         params%structure_factor_n_samples = params%nd_n_samples
+
+      else if (keyword == "r_range_min") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%r_range_min
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("r_range_min", params%r_range_min)
+
+      else if (keyword == "r_range_max") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%r_range_max
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("r_range_max", params%r_range_max)
+
+      else if (keyword == "q_range_min") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%q_range_min
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("q_range_min", params%q_range_min)
+
+      else if (keyword == "q_range_max") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%q_range_max
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("q_range_max", params%q_range_max)
+
+      else if (keyword == "q_units") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%q_units
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("q_units", params%q_units)
+
+      else if (keyword == "exp_n_samples") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, &
+            (params%exp_data(nw)%n_samples, nw=1, params%n_exp)
+
+      else if (keyword(i2 - 4:i2) == "range" .or. keyword(i2 - 8:i2) ==&
+           & "file_data" .or. keyword(i2 - 8:i2) == "n_samples") then
+         backspace (unit)
+         ! Check if experimental range or data files are specified
+         do nw = 1, params%n_exp
+            ! See if the keyword matches any exp observables
+            if (keyword == trim(params%exp_data(nw)%label)//"_range") then
+               ! Expect two values which are in order of lower higher for the range to do the prediction
+               params%exp_data(nw)%user_range = .true.
+               read (unit, *, iostat=iostatus) cjunk, cjunk, params%exp_data(nw)%range_min, params%exp_data(nw)%range_max
+            elseif (keyword == trim(params%exp_data(nw)%label)//"_file_data") then
+
+               read (unit, *, iostat=iostatus) cjunk, cjunk, params%exp_data(nw)%file_data
+               if (trim(params%exp_data(nw)%file_data) /= "none") then
+
+                  call read_exp_data( &
+                     params%exp_data(nw)%file_data, &
+                     params%exp_data(nw)%n_data, &
+                     params%exp_data(nw)%data)
+
+                  params%exp_data(nw)%wrote_exp = .false.
+                  params%exp_data(nw)%compute_exp = .true.
+                  params%exp_data(nw)%compute_similarity = .true.
+                  params%exp_data(nw)%range_min = params%exp_data(nw)%data(1, 1)
+                  params%exp_data(nw)%range_max = params&
+                       &%exp_data(nw)%data(1, params%exp_data(nw)%n_data)
+               elseif (trim(params%exp_data(nw)%file_data) == "none") then
+                  ! Make sure that no type of exp data is written
+                  params%exp_data(nw)%compute_exp = .false.
+                  params%exp_data(nw)%compute_similarity = .false.
+                  ! If the compute exp is false, then a user range must be specified
+                  params%exp_data(nw)%wrote_exp = .true.
+
+               end if
+            elseif (keyword == trim(params%exp_data(nw)%label)//"_n_samples") then
+               read (unit, *, iostat=iostatus) cjunk, cjunk, params%exp_data(nw)%n_samples
+            end if
+         end do
+
+      else
+         return
+      end if
+
+      keyword_found = .true.
+
+   end subroutine read_options_exp
+
+!**************************************************************************
+!  Input keywords for electronic stopping and the electron-phonon model.
+!
+!  Sets keyword_found when it recognises the keyword and leaves it alone
+!  otherwise, so read_input_file can offer the line to the next family.
+   subroutine read_options_stopping(unit, iostatus, rank, keyword, mode, params, n_species, keyword_found)
+
+      implicit none
+
+      integer, intent(in) :: unit, rank, n_species
+      integer, intent(inout) :: iostatus
+      character*64, intent(in) :: keyword
+      character(len=*), intent(in) :: mode
+      type(input_parameters), intent(inout) :: params
+      logical, intent(inout) :: keyword_found
+
+      character*64 :: cjunk
+      integer :: i
+
+      if (keyword == 'adaptive_time') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%adaptive_time
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("adaptive_time", params%adaptive_time)
+      else if (keyword == 'adapt_tstep_interval') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%adapt_tstep_interval
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("adapt_tstep_interval", params%adapt_tstep_interval)
+         if (params%adapt_tstep_interval <= 0) then
+            write (*, *) "ERROR: Interval of timesteps in adaptive time-step must be positive."
+            stop
+         end if
+      else if (keyword == 'adapt_tmin') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%adapt_tmin
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("adapt_tmin", params%adapt_tmin)
+      else if (keyword == 'adapt_tmax') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%adapt_tmax
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("adapt_tmax", params%adapt_tmax)
+      else if (keyword == 'adapt_xmax') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%adapt_xmax
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("adapt_xmax", params%adapt_xmax)
+      else if (keyword == 'adapt_emax') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%adapt_emax
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("adapt_emax", params%adapt_emax)
+
+        !! --------------------------                        ******** until here for adaptive time
+
+        !! ------- option for radiation cascade simulation with electronic stopping
+
+      else if (keyword == 'electronic_stopping') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%electronic_stopping
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("electronic_stopping", params%electronic_stopping)
+      else if (keyword == 'eel_cut') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%eel_cut
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("eel_cut", params%eel_cut)
+         if (params%eel_cut <= 0) then
+            write (*, *) "ERROR: Cut off energy for electronic stopping should be positive, few tens of eV!"
+            stop
+         end if
+      else if (keyword == 'eel_freq_out') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%eel_freq_out
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("eel_freq_out", params%eel_freq_out)
+      else if (keyword == 'estop_filename') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%estop_filename
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("estop_filename", params%estop_filename)
+
+        !! -------------------------------                ******** until here for electronic stopping
+
+        !! ------- option for radiation cascade simulation with EPH model
+
+      else if (keyword == 'nonadiabatic_processes') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%nonadiabatic_processes
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("nonadiabatic_processes", params%nonadiabatic_processes)
+      else if (keyword == 'eph_fdm_option') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%eph_fdm_option
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("eph_fdm_option", params%eph_fdm_option)
+      else if (keyword == 'eph_friction_option') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%eph_friction_option
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("eph_friction_option", params%eph_friction_option)
+      else if (keyword == 'eph_random_option') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%eph_random_option
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("eph_random_option", params%eph_random_option)
+      else if (keyword == 'eph_tinfile') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%eph_Tinfile
+      else if (keyword == 'model_eph') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%model_eph
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("model_eph", params%model_eph)
+      else if (keyword == 'eph_md_last_step') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%eph_md_last_step
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("eph_md_last_step", params%eph_md_last_step)
+      else if (keyword == 'eph_md_prev_time') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%eph_md_prev_time
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("eph_md_prev_time", params%eph_md_prev_time)
+      else if (keyword == 'eph_e_prev_time') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%eph_E_prev_time
+      else if (keyword == 'eph_toutfile') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%eph_Toutfile
+      else if (keyword == 'eph_fdm_steps') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%eph_fdm_steps
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("eph_fdm_steps", params%eph_fdm_steps)
+      else if (keyword == 'eph_freq_tout') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%eph_freq_Tout
+      else if (keyword == 'eph_freq_mesh_tout') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%eph_freq_mesh_Tout
+      else if (keyword == 'eph_betafile') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%eph_betafile
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("eph_betafile", params%eph_betafile)
+      else if (keyword == 'eph_box_limits') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, (params%eph_box_limits(i), i=1, 6)
+         params%in_x0 = params%eph_box_limits(1); params%in_x1 = params%eph_box_limits(2)
+         params%in_y0 = params%eph_box_limits(3); params%in_y1 = params%eph_box_limits(4)
+         params%in_z0 = params%eph_box_limits(5); params%in_z1 = params%eph_box_limits(6)
+      else if (keyword == 'eph_gsx') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%eph_gsx
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("eph_gsx", params%eph_gsx)
+      else if (keyword == 'eph_gsy') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%eph_gsy
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("eph_gsy", params%eph_gsy)
+      else if (keyword == 'eph_gsz') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%eph_gsz
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("eph_gsz", params%eph_gsz)
+      else if (keyword == 'eph_rho_e') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%eph_rho_e
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("eph_rho_e", params%eph_rho_e)
+      else if (keyword == 'eph_c_e') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%eph_c_e
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("eph_c_e", params%eph_c_e)
+      else if (keyword == 'eph_kappa_e') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%eph_kappa_e
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("eph_kappa_e", params%eph_kappa_e)
+      else if (keyword == 'eph_ti_e') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%eph_Ti_e
+
+        !! --------------------                        ******** until here for electronic stopping based on EPH model
+
+      else
+         return
+      end if
+
+      keyword_found = .true.
+
+   end subroutine read_options_stopping
+
+!**************************************************************************
+!  Input keywords for local properties and the core potential.
+!
+!  Sets keyword_found when it recognises the keyword and leaves it alone
+!  otherwise, so read_input_file can offer the line to the next family.
+   subroutine read_options_local_properties(unit, iostatus, rank, keyword, mode, params, n_species, keyword_found)
+
+      implicit none
+
+      integer, intent(in) :: unit, rank, n_species
+      integer, intent(inout) :: iostatus
+      character*64, intent(in) :: keyword
+      character(len=*), intent(in) :: mode
+      type(input_parameters), intent(inout) :: params
+      logical, intent(inout) :: keyword_found
+
+      character*64 :: cjunk
+      integer :: nw
+
+      if (keyword == 'print_lp_forces') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%print_lp_forces
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("print_lp_forces", params%print_lp_forces)
+      else if (keyword == 'n_local_properties') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%n_local_properties
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("n_local_properties", params%n_local_properties)
+         allocate (params%write_local_properties(1:params%n_local_properties))
+         allocate (params%compute_local_properties(1:params%n_local_properties))
+         params%write_local_properties = .true.
+      else if (keyword == 'compute_local_properties') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, (params&
+              &%compute_local_properties(nw), nw=1, params&
+             &%n_local_properties)
+
+      else if (keyword == "core_pot_cutoff") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%core_pot_cutoff
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("core_pot_cutoff", params%core_pot_cutoff)
+      else if (keyword == "core_pot_buffer") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%core_pot_buffer
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("core_pot_buffer", params%core_pot_buffer)
+      else
+         return
+      end if
+
+      keyword_found = .true.
+
+   end subroutine read_options_local_properties
+
+!**************************************************************************
+!  Input keywords for what gets written, and how often.
+!
+!  Sets keyword_found when it recognises the keyword and leaves it alone
+!  otherwise, so read_input_file can offer the line to the next family.
+   subroutine read_options_output(unit, iostatus, rank, keyword, mode, params, n_species, keyword_found)
+
+      implicit none
+
+      integer, intent(in) :: unit, rank, n_species
+      integer, intent(inout) :: iostatus
+      character*64, intent(in) :: keyword
+      character(len=*), intent(in) :: mode
+      type(input_parameters), intent(inout) :: params
+      logical, intent(inout) :: keyword_found
+
+      character*64 :: cjunk
+      integer :: nw
+
+      if (keyword == 'write_xyz') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%write_xyz
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("write_xyz", params%write_xyz)
+      else if (keyword == 'write_thermo') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%write_thermo
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("write_thermo", params%write_thermo)
+      else if (keyword == "write_pair_distribution") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%write_pair_distribution
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("write_pair_distribution", params%write_pair_distribution)
+      else if (keyword == "write_structure_factor") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%write_structure_factor
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("write_structure_factor", params%write_structure_factor)
+
+      else if (keyword == "write_xrd") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%write_xrd
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("write_xrd", params%write_xrd)
+
+      else if (keyword == "write_nd") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%write_nd
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("write_nd", params%write_nd)
+
+      else if (keyword == "write_exp") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%write_exp
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("write_exp", params%write_exp)
+
+      else if (keyword == 'write_velocities') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%write_velocities
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("write_velocities", params%write_velocities)
+      else if (keyword == 'write_forces') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%write_forces
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("write_forces", params%write_forces)
+      else if (keyword == 'write_fixes') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%write_fixes
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("write_fixes", params%write_fixes)
+      else if (keyword == 'write_stress') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%write_stress
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("write_stress", params%write_stress)
+      else if (keyword == 'write_virial') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%write_virial
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("write_virial", params%write_virial)
+      else if (keyword == 'write_pressure') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%write_pressure
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("write_pressure", params%write_pressure)
+      else if (keyword == 'write_hirshfeld_v') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%write_hirshfeld_v
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("write_hirshfeld_v", params%write_hirshfeld_v)
+      else if (keyword == 'write_local_properties') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, (params&
+              &%write_local_properties(nw), nw=1, params&
+              &%n_local_properties)
+      else if (keyword == 'write_local_energies') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%write_local_energies
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("write_local_energies", params%write_local_energies)
+      else if (keyword == 'write_masses') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%write_masses
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("write_masses", params%write_masses)
+      else if (keyword == 'print_progress') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%print_progress
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("print_progress", params%print_progress)
+      else if (keyword == 'write_lv') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%write_lv
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("write_lv", params%write_lv)
+
+        !! ------- option for doing simulation with adaptive time step
+
+      else
+         return
+      end if
+
+      keyword_found = .true.
+
+   end subroutine read_options_output
+
+!**************************************************************************
+!  Input keywords for GPU execution: batching and device memory (GPU branch only).
+!
+!  Sets keyword_found when it recognises the keyword and leaves it alone
+!  otherwise, so read_input_file can offer the line to the next family.
+   subroutine read_options_gpu(unit, iostatus, rank, keyword, mode, params, n_species, keyword_found)
+
+      implicit none
+
+      integer, intent(in) :: unit, rank, n_species
+      integer, intent(inout) :: iostatus
+      character*64, intent(in) :: keyword
+      character(len=*), intent(in) :: mode
+      type(input_parameters), intent(inout) :: params
+      logical, intent(inout) :: keyword_found
+
+      character*64 :: cjunk
+
+      if (keyword == 'gpu_low_memory') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%gpu_low_memory
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("gpu_low_memory", params%gpu_low_memory)
+      else if (keyword == 'gpu_batched') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%gpu_batched
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("gpu_batched", params%gpu_batched)
+      else if (keyword == 'n_batches') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%n_batches
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("n_batches", params%n_batches)
+      else if (keyword == 'gpu_n_batches') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%gpu_n_batches
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("gpu_n_batches", params%gpu_n_batches)
+      else if (keyword == 'gpu_max_batch_size') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%gpu_max_batch_size
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("gpu_max_batch_size", params%gpu_max_batch_size)
+      else
+         return
+      end if
+
+      keyword_found = .true.
+
+   end subroutine read_options_gpu
+
 !**************************************************************************
 
 !**************************************************************************
