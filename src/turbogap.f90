@@ -1885,166 +1885,46 @@ program turbogap
          end if
 
          !     Compute ELECTROSTATIC energies and forces
-         if (do_electrostatics .and. (trim(params%estat_method) /= "none") .and. params%do_prediction) then
-            call get_time(time_estat(1))
+!        valid_estat_charges is part of the guard, not an afterthought: without it a
+!        deck that asks for electrostatics against a GAP with no atomic_charge local
+!        property indexes local_properties with an uninitialised charge_lp_index and
+!        segfaults. Reproduced on the CPU branch, where the same block was ported.
+         if (do_electrostatics .and. (trim(params%estat_method) /= "none") &
+             .and. params%do_prediction) then
+            if (.not. valid_estat_charges) then
+               if (rank == 0) then
+                  write (*, *) "WARNING: estat_method = "//trim(params%estat_method)// &
+                     " but the GAP provides no atomic_charge local property."
+                  write (*, *) "         Skipping the electrostatics contribution."
+               end if
+            else
+               call get_time(time_estat(1))
 #ifdef _MPIF90
-            allocate (this_energies_estat(1:n_sites))
-            this_energies_estat = 0.d0
-            if (params%do_forces) then
-               allocate (this_forces_estat(1:3, 1:n_sites))
-               this_forces_estat = 0.d0
-            end if
+               allocate (this_energies_estat(1:n_sites))
+               this_energies_estat = 0.d0
+               if (params%do_forces) then
+                  allocate (this_forces_estat(1:3, 1:n_sites))
+                  this_forces_estat = 0.d0
+               end if
 #endif
-            allocate (chg_neigh_estat(1:j_end - j_beg + 1))
-            chg_neigh_estat = 0.d0
-            k = 0
-            do i = i_beg, i_end
-               do j = 1, n_neigh(i)
-                  !           I'm not sure if this is necessary or neighbors_list is already bounded between 1 and n_sites -> CHECK THIS
-                  j2 = mod(neighbors_list(j_beg + k) - 1, n_sites) + 1
-                  k = k + 1
-                  chg_neigh_estat(k) = local_properties(j2, charge_lp_index)
-               end do
-            end do
-            ! Prepare to call electrostatics subroutine!
-            if (trim(params%estat_method) == "direct") then
-               call compute_coulomb_direct( &
-                  local_properties(i_beg:i_end, charge_lp_index), &
-                  local_properties_cart_der(1:3, j_beg:j_end, charge_lp_index), &
-                  n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
-                  params%estat_rcut, params%estat_rcut_inner, params%estat_inner_width, &
-                  rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), chg_neigh_estat, &
-                  params%do_forces, &
-#ifdef _MPIF90
-                  this_energies_estat(i_beg:i_end), this_forces_estat, this_virial_estat, params%estat_options)
-#else
-               energies_estat(i_beg:i_end), forces_estat, virial_estat, params%estat_options)
-#endif
-            else if (trim(params%estat_method) == "dsf") then
-               call compute_coulomb_dsf( &
-                  local_properties(i_beg:i_end, charge_lp_index), &
-                  local_properties_cart_der(1:3, j_beg:j_end, charge_lp_index), &
-                  n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
-                  params%estat_dsf_alpha, params%estat_rcut, &
-                  params%estat_rcut_inner, params%estat_inner_width, &
-                  rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), chg_neigh_estat, &
-                  params%do_forces, &
-#ifdef _MPIF90
-                  this_energies_estat(i_beg:i_end), this_forces_estat, this_virial_estat, params%estat_options)
-#else
-               energies_estat(i_beg:i_end), forces_estat, virial_estat, params%estat_options)
-#endif
-            else if (trim(params%estat_method) == "gsf") then
-               if (params%gpu_batched) then
-
-                  print *, "> Starting GPU electrostatics, rank = ", rank
-
-                  call get_gpu_batches(n_neigh(i_beg:i_end), rjs(j_beg:j_end), params%estat_rcut, &
-                                       params%gpu_n_batches, gpu_memory_usage, &
-                                       params%gpu_max_batch_size, i_beg_list, i_end_list, j_beg_list, j_end_list)
-
-                  gpu_memory_usage = 0.d0
-
-                  ! do i = 1, size(i_beg_list)
-                  !    write(*,'(A,I8,A,I8,A,I8,A,I8,A,I8,A,I8)') "batches, rank ", rank, &
-                  !         " i ", i, " i_beg_i = ", i_beg_list(i), " i_end_i = ", i_end_list(i), &
-                  !         " j_beg_i = ", j_beg_list(i), " j_end_i = ", j_end_list(i)
-                  ! end do
-
-                  allocate (gpu_neigh(1:size(i_beg_list)))
-                  allocate (gpu_exp(1:size(i_beg_list)))
-                  allocate (gpu_batch_storage(1:size(i_beg_list)))
-
-                  allocate (charges_temp(1:n_sites))
-
-                  charges_temp = local_properties(:, charge_lp_index)
-                  ! Before the loop, allocate the charges
-                  st_charges_d = c_double*n_sites
-                  call gpu_malloc_all(charges_d, st_charges_d, gpu_stream)
-                  call cpy_htod(c_loc(charges_temp), charges_d, st_charges_d, gpu_stream)
-
-                  !  !$OMP PARALLEL DO num_threads(n_omp) DEFAULT(SHARED) &
-                  !  !$OMP PRIVATE(i,  omp_task, this_i_beg, this_i_end, this_j_beg, this_j_end, n_sites_temp, n_pairs_temp)
-
-                  do i = 1, size(i_beg_list)
-
-                     !  !$ n_omp_temp = omp_get_thread_num()
-                     !print *, " - pdf thread num ", n_omp_temp, " / ", n_omp
-                     ! > In sequential operation, we just want to use the one stream, and only 1 will be created
-                     omp_task = mod(i - 1, n_omp) + 1
-
-                     this_i_beg = i_beg - 1 + i_beg_list(i)
-                     this_i_end = i_beg - 1 + i_end_list(i)
-                     this_j_beg = j_beg - 1 + j_beg_list(i)
-                     this_j_end = j_beg - 1 + j_end_list(i)
-
-                     n_sites_temp = this_i_end - this_i_beg + 1
-                     n_pairs_temp = this_j_end - this_j_beg + 1
-
-                     print *, " "
-                     write (*, '(9(A,I4))') &
-                        "estat batches---Rank ", rank, " ---Thread ", omp_task, &
-                        " / ", n_omp, " i = ", i, " / ", params%gpu_n_batches, &
-                        " i_beg = ", this_i_beg, &
-                        " i_end = ", this_i_end, &
-                        " j_beg = ", this_j_beg, &
-                        " j_end = ", this_j_end
-
-                     call gpu_malloc_neighbors(gpu_neigh(i), &
-                                               n_sites_temp, n_pairs_temp, &
-                                               n_neigh(this_i_beg:this_i_end), &
-                                               species(this_i_beg:this_i_end), &
-                                               neighbor_species(this_j_beg:this_j_end), &
-                                               neighbors_list(this_j_beg:this_j_end), &
-                                               rjs(this_j_beg:this_j_end), &
-                                               xyz(1:3, this_j_beg:this_j_end), &
-                                               gpu_streams(omp_task), rank)
-
-                     call calculate_batched_electrostatics(gpu_exp(i), gpu_batch_storage(i), &
-                                                           gpu_neigh(i), n_sites, &
-                                                           this_i_beg, this_i_end, this_j_beg, this_j_end, rank, &
-                                                           params%estat_rcut, params%estat_dsf_alpha, &
-                                                           charges_temp, charges_d, &
-                                                           local_properties_cart_der(1:3, this_j_beg:this_j_end, charge_lp_index), &
-                                                           params%do_forces, &
-#ifdef _MPIF90
-                                                 this_energies_estat(this_i_beg:this_i_end), this_forces_estat, this_virial_estat, &
-                                                          params%estat_options, params%estat_rcut_inner, params%estat_inner_width, &
-#else
-                                                           energies_estat(this_i_beg:this_i_end), forces_estat, virial_estat, &
-                                                           params%estat_options, &params%estat_rcut_inner, params%estat_inner_width,
-#endif
-                     gpu_streams(omp_task) &
-                        )
-
-                     call gpu_free_neighbors(gpu_neigh(i), gpu_streams(omp_task))
-
-            write (*, '(A,I4,A,I4,A,I4,A,I4,A,I4,A,I4)') "Electrostatics batches finished---Rank ", rank, " ---Thread ", omp_task, &
-                        " / ", n_omp, " i = ", i, &
-                        " i_beg = ", this_i_beg, &
-                        " i_end = ", this_i_end, &
-                        " j_beg = ", this_j_beg, &
-                        " j_end = ", this_j_end
+               allocate (chg_neigh_estat(1:j_end - j_beg + 1))
+               chg_neigh_estat = 0.d0
+               k = 0
+               do i = i_beg, i_end
+                  do j = 1, n_neigh(i)
+                     !           I'm not sure if this is necessary or neighbors_list is already bounded between 1 and n_sites -> CHECK THIS
+                     j2 = mod(neighbors_list(j_beg + k) - 1, n_sites) + 1
+                     k = k + 1
+                     chg_neigh_estat(k) = local_properties(j2, charge_lp_index)
                   end do
-                  !     !$OMP END PARALLEL DO
-                  deallocate (gpu_neigh)
-
-                  call gpu_free_async(charges_d, gpu_stream)
-                  deallocate (charges_temp)
-
-                  call free_exp_batches(gpu_exp, params%gpu_n_batches)
-
-                  if (allocated(i_beg_list)) deallocate (i_beg_list, i_end_list, j_beg_list, j_end_list)
-
-                  if (allocated(gpu_neigh)) deallocate (gpu_neigh)
-                  if (allocated(gpu_exp)) deallocate (gpu_exp)
-                  if (allocated(gpu_batch_storage)) deallocate (gpu_batch_storage)
-               else
-                  call compute_coulomb_lamichhane( &
+               end do
+               ! Prepare to call electrostatics subroutine!
+               if (trim(params%estat_method) == "direct") then
+                  call compute_coulomb_direct( &
                      local_properties(i_beg:i_end, charge_lp_index), &
                      local_properties_cart_der(1:3, j_beg:j_end, charge_lp_index), &
                      n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
-                     params%estat_dsf_alpha, params%estat_rcut, &
+                     params%estat_rcut, params%estat_rcut_inner, params%estat_inner_width, &
                      rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), chg_neigh_estat, &
                      params%do_forces, &
 #ifdef _MPIF90
@@ -2052,15 +1932,148 @@ program turbogap
 #else
                   energies_estat(i_beg:i_end), forces_estat, virial_estat, params%estat_options)
 #endif
-               end if
+               else if (trim(params%estat_method) == "dsf") then
+                  call compute_coulomb_dsf( &
+                     local_properties(i_beg:i_end, charge_lp_index), &
+                     local_properties_cart_der(1:3, j_beg:j_end, charge_lp_index), &
+                     n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
+                     params%estat_dsf_alpha, params%estat_rcut, &
+                     params%estat_rcut_inner, params%estat_inner_width, &
+                     rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), chg_neigh_estat, &
+                     params%do_forces, &
+#ifdef _MPIF90
+                     this_energies_estat(i_beg:i_end), this_forces_estat, this_virial_estat, params%estat_options)
+#else
+                  energies_estat(i_beg:i_end), forces_estat, virial_estat, params%estat_options)
+#endif
+               else if (trim(params%estat_method) == "gsf") then
+                  if (params%gpu_batched) then
 
-            else ! This really shouldn't happen... but we both know it could
-               print("WARNING: Unknown electrostatic method "//params%estat_method)
-               write (*, *) "Ignoring..."
+                     print *, "> Starting GPU electrostatics, rank = ", rank
+
+                     call get_gpu_batches(n_neigh(i_beg:i_end), rjs(j_beg:j_end), params%estat_rcut, &
+                                          params%gpu_n_batches, gpu_memory_usage, &
+                                          params%gpu_max_batch_size, i_beg_list, i_end_list, j_beg_list, j_end_list)
+
+                     gpu_memory_usage = 0.d0
+
+                     ! do i = 1, size(i_beg_list)
+                     !    write(*,'(A,I8,A,I8,A,I8,A,I8,A,I8,A,I8)') "batches, rank ", rank, &
+                     !         " i ", i, " i_beg_i = ", i_beg_list(i), " i_end_i = ", i_end_list(i), &
+                     !         " j_beg_i = ", j_beg_list(i), " j_end_i = ", j_end_list(i)
+                     ! end do
+
+                     allocate (gpu_neigh(1:size(i_beg_list)))
+                     allocate (gpu_exp(1:size(i_beg_list)))
+                     allocate (gpu_batch_storage(1:size(i_beg_list)))
+
+                     allocate (charges_temp(1:n_sites))
+
+                     charges_temp = local_properties(:, charge_lp_index)
+                     ! Before the loop, allocate the charges
+                     st_charges_d = c_double*n_sites
+                     call gpu_malloc_all(charges_d, st_charges_d, gpu_stream)
+                     call cpy_htod(c_loc(charges_temp), charges_d, st_charges_d, gpu_stream)
+
+                     !  !$OMP PARALLEL DO num_threads(n_omp) DEFAULT(SHARED) &
+                     !  !$OMP PRIVATE(i,  omp_task, this_i_beg, this_i_end, this_j_beg, this_j_end, n_sites_temp, n_pairs_temp)
+
+                     do i = 1, size(i_beg_list)
+
+                        !  !$ n_omp_temp = omp_get_thread_num()
+                        !print *, " - pdf thread num ", n_omp_temp, " / ", n_omp
+                        ! > In sequential operation, we just want to use the one stream, and only 1 will be created
+                        omp_task = mod(i - 1, n_omp) + 1
+
+                        this_i_beg = i_beg - 1 + i_beg_list(i)
+                        this_i_end = i_beg - 1 + i_end_list(i)
+                        this_j_beg = j_beg - 1 + j_beg_list(i)
+                        this_j_end = j_beg - 1 + j_end_list(i)
+
+                        n_sites_temp = this_i_end - this_i_beg + 1
+                        n_pairs_temp = this_j_end - this_j_beg + 1
+
+                        print *, " "
+                        write (*, '(9(A,I4))') &
+                           "estat batches---Rank ", rank, " ---Thread ", omp_task, &
+                           " / ", n_omp, " i = ", i, " / ", params%gpu_n_batches, &
+                           " i_beg = ", this_i_beg, &
+                           " i_end = ", this_i_end, &
+                           " j_beg = ", this_j_beg, &
+                           " j_end = ", this_j_end
+
+                        call gpu_malloc_neighbors(gpu_neigh(i), &
+                                                  n_sites_temp, n_pairs_temp, &
+                                                  n_neigh(this_i_beg:this_i_end), &
+                                                  species(this_i_beg:this_i_end), &
+                                                  neighbor_species(this_j_beg:this_j_end), &
+                                                  neighbors_list(this_j_beg:this_j_end), &
+                                                  rjs(this_j_beg:this_j_end), &
+                                                  xyz(1:3, this_j_beg:this_j_end), &
+                                                  gpu_streams(omp_task), rank)
+
+                        call calculate_batched_electrostatics(gpu_exp(i), gpu_batch_storage(i), &
+                                                              gpu_neigh(i), n_sites, &
+                                                              this_i_beg, this_i_end, this_j_beg, this_j_end, rank, &
+                                                              params%estat_rcut, params%estat_dsf_alpha, &
+                                                              charges_temp, charges_d, &
+                                                           local_properties_cart_der(1:3, this_j_beg:this_j_end, charge_lp_index), &
+                                                              params%do_forces, &
+#ifdef _MPIF90
+                                                 this_energies_estat(this_i_beg:this_i_end), this_forces_estat, this_virial_estat, &
+                                                          params%estat_options, params%estat_rcut_inner, params%estat_inner_width, &
+#else
+                                                              energies_estat(this_i_beg:this_i_end), forces_estat, virial_estat, &
+                                                           params%estat_options, &params%estat_rcut_inner, params%estat_inner_width,
+#endif
+                        gpu_streams(omp_task) &
+                           )
+
+                        call gpu_free_neighbors(gpu_neigh(i), gpu_streams(omp_task))
+
+            write (*, '(A,I4,A,I4,A,I4,A,I4,A,I4,A,I4)') "Electrostatics batches finished---Rank ", rank, " ---Thread ", omp_task, &
+                           " / ", n_omp, " i = ", i, &
+                           " i_beg = ", this_i_beg, &
+                           " i_end = ", this_i_end, &
+                           " j_beg = ", this_j_beg, &
+                           " j_end = ", this_j_end
+                     end do
+                     !     !$OMP END PARALLEL DO
+                     deallocate (gpu_neigh)
+
+                     call gpu_free_async(charges_d, gpu_stream)
+                     deallocate (charges_temp)
+
+                     call free_exp_batches(gpu_exp, params%gpu_n_batches)
+
+                     if (allocated(i_beg_list)) deallocate (i_beg_list, i_end_list, j_beg_list, j_end_list)
+
+                     if (allocated(gpu_neigh)) deallocate (gpu_neigh)
+                     if (allocated(gpu_exp)) deallocate (gpu_exp)
+                     if (allocated(gpu_batch_storage)) deallocate (gpu_batch_storage)
+                  else
+                     call compute_coulomb_lamichhane( &
+                        local_properties(i_beg:i_end, charge_lp_index), &
+                        local_properties_cart_der(1:3, j_beg:j_end, charge_lp_index), &
+                        n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
+                        params%estat_dsf_alpha, params%estat_rcut, &
+                        rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), chg_neigh_estat, &
+                        params%do_forces, &
+#ifdef _MPIF90
+                        this_energies_estat(i_beg:i_end), this_forces_estat, this_virial_estat, params%estat_options)
+#else
+                     energies_estat(i_beg:i_end), forces_estat, virial_estat, params%estat_options)
+#endif
+                  end if
+
+               else ! This really shouldn't happen... but we both know it could
+                  print("WARNING: Unknown electrostatic method "//params%estat_method)
+                  write (*, *) "Ignoring..."
+               end if
+               deallocate (chg_neigh_estat)
+               call get_time(time_estat(2))
+               time_estat(3) = time_estat(3) + time_estat(2) - time_estat(1)
             end if
-            deallocate (chg_neigh_estat)
-            call get_time(time_estat(2))
-            time_estat(3) = time_estat(3) + time_estat(2) - time_estat(1)
          end if
 
          !----------------------------------------------------!
