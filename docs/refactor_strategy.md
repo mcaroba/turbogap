@@ -519,21 +519,53 @@ Left, in the order the measurements support:
    recomputed per snapshot and handed to `neighbors.f90` as `intent(out)`, so
    they read as data flowing through the driver.
 
-   **The extraction itself is now sized.** Block is lines 1978-2679 (702 lines,
-   confirming the 701 above). Against the driver's declarations it splits into
-   **64 arguments, 53 block-private locals**, versus master's verified
-   `compute_exp_spectra` at 37 arguments. The extra ~27 are the batched-GPU
-   machinery (`i_beg_list`/`i_end_list`/`j_beg_list`/`j_end_list`,
-   `this_i_beg`/`this_i_end`/`this_j_beg`/`this_j_end`, `n_sites_temp`,
-   `n_pairs_temp`, `time_exp_batched`) and the nine `this_*` spectra triples.
-   Four more (`i`, `j`, `k`, `f`) are shared loop scratch and can become locals
-   once checked against §8's rule that the driver rewrites them before next
-   reading them.
+   **Done (`a84be03`, `ca6ee53`).** Block was lines 1979-2680, 702 lines,
+   confirming the 701 above. `turbogap.f90`: **4793 → 4101, −14%**.
+   `compute_exp_spectra` now sits beside `compute_exp_xps` in
+   `src/turbogap_exp.f90`, same module and procedure names as the CPU branch, so
+   the two are finally comparable procedure against procedure.
 
-   Measure it with `tools/gen_fortran_deps.py`'s sibling analysis rather than by
-   hand: a crossing count that does not discount declaration lines and their
-   *continuation* lines overstates the argument list badly — 89 against the real
-   64 on this same block.
+   **51 arguments against master's 37**, 57 driver declarations become locals,
+   52 of which were then removed as orphaned (`ca6ee53`). The gap to 37 is
+   entirely the batched-device machinery: the four batch-decomposition lists,
+   the four per-batch bounds, `n_omp`/`omp_task`, `n_sites_temp`,
+   `n_pairs_temp`, `time_exp_batched`.
+
+   Two reductions were applied *before* lifting, not after, which is what got it
+   from 64 to 51:
+
+   * `i`, `j`, `k`, `f` became locals under §8's leaked-value rule, checked per
+     variable. `j`'s first use in the block is the *labelled* `outerchk: do j =`
+     loop, which a naive "is this a do-loop index" test misses; `f` turned out
+     to be used nowhere else in the file at all.
+   * The nine `this_`/plain contribution pairs collapse to nine dummies rather
+     than eighteen, because inside a procedure the dummy has one name and the
+     caller chooses once.
+
+   That second one removed **four of the nine argument lists no Fortran tool can
+   parse** (§6.4), leaving five. The new call site's own `#ifdef` is an ordinary
+   whole-statement one and parses.
+
+   Three traps, all of which report success while being wrong:
+
+   * **Comparing the two `#ifdef` branches line by line says they differ.** They
+     break their continuations in different places. Join each branch into one
+     statement and normalise whitespace before comparing, or the collapse looks
+     unsafe when it is not.
+   * **Three `this_forces_xrd`/`this_virial_xrd` references sit outside any
+     `#ifdef`** — the block allocates and zeroes them unconditionally before
+     choosing which pair to hand to `collect_batched_forces`. A transformation
+     that only rewrites inside directive groups leaves them behind, and they
+     then have no IMPLICIT type. Both trees build with `-D _MPIF90`
+     unconditionally, so the `#ifdef` branch is the one that compiles.
+   * **A crossing count that does not discount declaration *continuation* lines
+     overstates the argument list badly** — 89 against the real 64 on this same
+     block. Discounting only the first line of a declaration is not enough.
+
+   Tooling left behind: `tools/extract_spectra.py` (the move, with every count
+   asserted), `tools/find_orphans.py` and `tools/drop_orphans.py` (the
+   declaration cleanup; the former counts a name as live if it appears in *any*
+   other declaration, which is the `N_CONTRIB` trap from `533ccf9`).
 3. **Phase 5 one-sided features**, each on its own commit: electrostatics to
    master, the cascade stack wired on the GPU branch, master's MC fixes across.
 4. `vdw.f90` + `misc`/`constants`/`nonneg_leastsq` to the GPU branch, once
