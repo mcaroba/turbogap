@@ -199,6 +199,32 @@ else
   log "          (create it with tools/add_velocities_to_xyz.py)"
 fi
 
+# Tkatchenko-Scheffler pairwise vdW on the P4 dimer. Mirrors the CPU branch's
+# vdw_ts case and shares its data, so the two suites cover the same code.
+#
+# Two things make this case worth more than its size. It is the only one here
+# that reaches the vdW path -- which could not run at all on this branch until
+# the deprecated has_vdw GAP form was migrated to a local property (6j) -- and
+# it is the only one that uses a *small* cell. The get_gap_soap overrun in 6i
+# corrupted the heap silently on the 7176-atom CO system and aborted instantly
+# on this one; a suite of a single system size cannot see that class of bug.
+check_case vdw_ts p4_dimer.xyz predict 'atoms_file = "atoms.xyz"
+pot_file = "gap_files/phosphorus.gap"
+n_species = 1
+species = P
+e0 = -0.52375977
+masses = 30.97
+random_seed = 12345
+
+vdw_rcut = 25.
+vdw_r0_ref = 2.12
+vdw_alpha0_ref = 3.7046
+vdw_c6_ref = 110.54
+vdw_buffer = 0.5
+
+vdw_type = ts
+write_xyz = 1' "${TURBOGAP_TESTS_DIR:-$repo/../turbogap_tests}/vdw_P"
+
 # Molecular Augmented Dynamics against an experimental XRD pattern. This is the
 # only case that reaches the pair-distribution, structure-factor and XRD paths
 # at all -- the CO cases exercise none of them. It mirrors the CPU branch's
