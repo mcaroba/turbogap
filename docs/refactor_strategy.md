@@ -395,7 +395,7 @@ because fprettify indents according to block structure and the two branches
 genuinely have different block structure in places. `diff -w` is strictly better
 on every file, costs nothing, and touches no history.
 
-~~So: **do not reformat.**~~ **Reversed 2026-08-05** (`bedcf3d` cpu,
+~~So: **do not reformat.**~~ **Reversed 2026-08-05** (`ca390bc` cpu,
 `415f881` gpu). Both trees are now fprettify-normalised with identical settings
 and a `.pre-commit-config.yaml` keeps them that way.
 
