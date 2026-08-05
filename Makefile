@@ -30,6 +30,8 @@ PROGRAMS := turbogap
 
 
 SRC_CUDA := cuda_wrappers.cu gpu_exp.cu 
+# orthonormalization_kernels.cc is deliberately disabled, not dead: it is kept in
+# src/ for possible reintegration. Re-enable by moving it before the '#'.
 SRC_CC :=  3b_final.cc # orthonormalization_kernels.cc
 SRC := timing.f90 splines.f90 types.f90 neighbors.f90 gap.f90 vdw.f90 local_properties.f90 exp_utils.f90 \
        xyz.f90 md.f90 mc.f90 read_files.f90 \
@@ -104,3 +106,17 @@ $(INC_DIR):
 
 $(LIB_DIR):
 	mkdir -p $@
+
+# Fortran module dependencies. Compiling a file that USEs a module requires that
+# module's .mod file to exist already, and make cannot infer that from the source
+# tree. Without this include the build works only because the SRC lists happen to
+# be in a workable order for a *serial* build; -j races and fails with
+# "Cannot open module file".
+#
+# Included last on purpose: an include placed before the first rule would make one
+# of these dependency lines the default goal, and `make` would silently build a
+# single object and exit 0.
+#
+# Regenerate after adding, removing or moving a USE / module:
+#     python3 tools/gen_fortran_deps.py . > makefiles/Makefile.deps
+include makefiles/Makefile.deps
