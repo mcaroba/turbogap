@@ -707,3 +707,79 @@ rather than to correct their values.
 and it is in the reported total today, so any pressure from the exp path on
 this branch is wrong by that amount.
 
+
+## 6i. Out-of-bounds write in `get_gap_soap` — FIXED
+
+`gap_interface.f90` sizes the SOAP neighbour arrays in a counting pass and fills
+them in a second pass. The two passes disagreed:
+
+```
+line 265 (count):  if (rjs0(k) <  rcut_max .and. species_multiplicity_supercell(j2) > 0)
+line 340 (fill) :  if (rjs0(k) <= rcut_max .and. species_multiplicity_supercell(j3) > 0)
+```
+
+A pair sitting exactly on `rcut_max` was not counted but was written, so the
+fill ran one element past the end of `rjs`, `phis`, `thetas`, `xyz`,
+`in_to_out_pairs` and `mask`. Master has the strict comparison at both sites;
+the `<=` was a divergence on this branch.
+
+**Why it survived this long, which is the part worth keeping.** On the
+7176-atom CO system the overrun lands inside memory the allocator has already
+handed out. It corrupts the heap silently instead of crashing, and every test
+on this branch used that one system. It only becomes visible on a small cell,
+where the overrun crosses the top chunk: the P4 dimer from `vdw_P` aborts with
+
+```
+malloc(): corrupted top size
+```
+
+before printing a single line, while the CPU build runs the same input fine. A
+`-fcheck=bounds` build named it exactly — *"Index '41' of dimension 1 of array
+'rjs' above upper bound of 40"*. That is the tool of choice here, per §3:
+`ptrace_scope = 2` means gdb cannot attach.
+
+Two lessons:
+
+* **A suite of one system size cannot see this class of bug.** The CO cases pass
+  identically before and after the fix — they never place a pair exactly on the
+  cutoff. Coverage needs a small cell as well as a large one.
+* It is the same shape as `refactor_handoff.md` §5.1 and §7.1: **one condition
+  written at more than one site**, with nothing forcing the copies to agree.
+  Three separate defects on these branches now have that shape.
+
+## 6j. `local_properties` is unallocated on the vdW path — OPEN
+
+With 6i fixed, the P4 dimer gets further and then dies at `turbogap.f90:1853`:
+
+```
+Index '-1101217936' of dimension 2 of array 'local_properties'
+   below lower bound of 4391641174017424937
+```
+
+Nonsense on both sides of the comparison, which is what an unallocated array
+descriptor reads as. The line is
+
+```fortran
+v_neigh_vdw(k) = local_properties(j2, vdw_lp_index)
+```
+
+in the TS block, and that block is entered on `any(soap_turbo_hypers(:)%has_vdw)`
+while `local_properties` is allocated a few hundred lines earlier under
+`any(soap_turbo_hypers(:)%has_local_properties)`. The two predicates are not the
+same, and nothing checks the second before the first is acted on.
+
+What has been ruled out: the allocation block itself is character-for-character
+identical to master's, as is the `vdw_lp_index` assignment in `read_files.f90`.
+So this is not a transplanted-code problem, and it predates the vdW adoption —
+the same abort happens with the branch's own old `vdw.f90`.
+
+**Consequence: the vdW path on this branch has never run.** Master's `vdw.f90`
+was adopted wholesale and is byte-identical to master's copy, so it is correct
+by construction, but nothing here exercises it. Fixing this is what makes a vdW
+regression case possible, and that case is what would let the branch claim vdW
+works at all.
+
+Owner decision needed on the fix: guard the TS block on `has_local_properties`
+as well, or make the allocation unconditional when `has_vdw`. Master gets away
+without either because its `compute_vdw` is reached on a path where the local
+properties have already been computed.
