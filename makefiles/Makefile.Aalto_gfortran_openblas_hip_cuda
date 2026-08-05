@@ -51,35 +51,33 @@ LIBS = -L$(CUDA_LIB_PATH) -lopenblas -lcudart -lcuda -lcublas -lstdc++  -lnvTool
 
 
 
-# F90=mpif90 
+# F90=mpif90
 #
 # # CU=nvcc  --resource-usage -lineinfo -O0 -x cu -I$(HOP_ROOT) -I$(HOP_ROOT)/source/hip  -DHOP_TARGET_CUDA -DCUDA
 # #
 # CU=nvcc -O3  -gencode arch=compute_86,code=sm_86 -x cu -I$(HOP_ROOT) -I$(HOP_ROOT)/source/hip  -DHOP_TARGET_CUDA -DCUDA
 #
-# PP=-cpp -D _MPIF90 
+# PP=-cpp -D _MPIF90
 #
 # F90_MOD_DIR_OPT=-J
 #
 # CC=nvcc -O3  -gencode arch=compute_86,code=sm_86 -x cu -std=c++17 -g -G  --ptxas-options=-v -I$(HOP_ROOT) -I$(HOP_ROOT)/source/hip  -DHOP_TARGET_CUDA  -DCUDA
 #
 # # Optimization flags (uncomment second option to enable debugging tools)
-# # -g 
+# # -g
 # # F90_OPTS= -O0 -g   -fPIC  -ffree-line-length-none -fallow-argument-mismatch  #-ffpe-trap=invalid,zero,overflow #-Wall -Wuninitialized
 # F90_OPTS= -O3 -march=native  -fPIC  -ffree-line-length-none -fallow-argument-mismatch  #-ffpe-trap=invalid,zero,overflow #-Wall -Wuninitialized
-# # -g -G 
+# # -g -G
 # # CUDA_OPTS= -O0 -g -G  -lcublas -gencode arch=compute_80,code=sm_80  --ptxas-options=-v  -DCUDA
 # CUDA_OPTS= -O3  -lcublas -gencode arch=compute_86,code=sm_86  --ptxas-options=-v  -DCUDA
-# # gdwarf-4 needed for getting line information when sampling 
+# # gdwarf-4 needed for getting line information when sampling
 # #F90_OPTS+= -gdwarf-4
-# #CUDA_OPTS+= -Xcompiler -gdwarf-4 
-# #CUDA_OPTS+= -g -G 
+# #CUDA_OPTS+= -Xcompiler -gdwarf-4
+# #CUDA_OPTS+= -g -G
 # #F90_OPTS+= -g -ffpe-trap=zero,invalid,overflow,underflow -Wall -Wextra -Warray-temporaries -Wconversion -fimplicit-none -fbacktrace -ffree-line-length-0 -fcheck=all  -finit-real=nan
 #
 # #F90_OPTS+= -fbacktrace -fcheck=bounds -g -fcheck=all   -fbacktrace -Wall
 #
 # # BLAS and LAPACK libraries
-# LIBS= -lopenblas  -lcudart   -lcublas 
+# LIBS= -lopenblas  -lcudart   -lcublas
 #
-
-

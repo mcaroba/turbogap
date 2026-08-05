@@ -14,18 +14,18 @@
 ! its own dp through constants_nswc, and re-declaring it here would collide.
 module kinds
 
-  use, intrinsic :: iso_fortran_env, only: real32, real64, int32, int64
+   use, intrinsic :: iso_fortran_env, only: real32, real64, int32, int64
 
-  implicit none
+   implicit none
 
-  public
+   public
 
 ! Real kinds
-  integer, parameter :: sp = real32
-  integer, parameter :: dp = real64
+   integer, parameter :: sp = real32
+   integer, parameter :: dp = real64
 
 ! Integer kinds
-  integer, parameter :: i32 = int32
-  integer, parameter :: i64 = int64
+   integer, parameter :: i32 = int32
+   integer, parameter :: i64 = int64
 
 end module kinds

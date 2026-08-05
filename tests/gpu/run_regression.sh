@@ -25,7 +25,7 @@ repo=$(cd "$here/../.." && pwd)
 
 BIN=${TURBOGAP_BIN:-$repo/bin/turbogap}
 REF_BIN=${TURBOGAP_REF_BIN:-}
-DATA=${TURBOGAP_TEST_DATA:-$HOME/work/cpu_vs_gpu_tests/input/CO}
+DATA=${TURBOGAP_TEST_DATA:-$repo/../turbogap_tests/CO}
 COMPARE=$repo/tools/compare_xyz.py
 REFDIR=$here/reference
 WORK=${TMPDIR:-/tmp}/turbogap_gpu_regression.$$
@@ -35,12 +35,21 @@ pass=0
 xfail=0
 xpass=0
 
-log()  { printf '%s\n' "$*"; }
-die()  { printf 'ERROR: %s\n' "$*" >&2; exit 2; }
+log() { printf '%s\n' "$*"; }
+die() {
+  printf 'ERROR: %s\n' "$*" >&2
+  exit 2
+}
 
-[ -x "$BIN" ]      || die "GPU binary not found or not executable: $BIN"
-[ -f "$COMPARE" ]  || die "comparison script not found: $COMPARE"
-[ -d "$DATA" ]     || die "test data directory not found: $DATA (set TURBOGAP_TEST_DATA)"
+[ -x "$BIN" ] || die "GPU binary not found or not executable: $BIN"
+[ -f "$COMPARE" ] || die "comparison script not found: $COMPARE"
+# The test systems live in their own repository. $DATA points at one system
+# inside it, so fetch the whole clone and then re-check.
+if [ ! -d "$DATA" ]; then
+  "$repo/tests/fetch_test_data.sh" "${TURBOGAP_TESTS_DIR:-$repo/../turbogap_tests}" \
+    || die "could not fetch test data"
+fi
+[ -d "$DATA" ] || die "test data directory not found: $DATA (set TURBOGAP_TEST_DATA)"
 command -v python3 >/dev/null || die "python3 is required"
 
 mkdir -p "$WORK"
@@ -55,23 +64,23 @@ stage_case() {
   local name=$1 atoms=$2 body=$3 data=${4:-$DATA} dir=$WORK/$name
   shift 4 2>/dev/null || shift $#
   mkdir -p "$dir"
-  ln -sf "$data/$atoms"   "$dir/atoms.xyz"
+  ln -sf "$data/$atoms" "$dir/atoms.xyz"
   ln -sf "$data/gap_files" "$dir/gap_files"
   local extra
   for extra in "$@"; do ln -sf "$data/$extra" "$dir/$extra"; done
-  printf '%s\n' "$body" > "$dir/input"
+  printf '%s\n' "$body" >"$dir/input"
   printf '%s' "$dir"
 }
 
 # run_case <dir> <binary> <mode> <label>
 run_case() {
   local dir=$1 bin=$2 mode=$3 label=$4
-  ( cd "$dir" && \
+  (cd "$dir" &&
     if [ -n "${TURBOGAP_MPI_RANKS:-}" ] && [ "$label" = gpu ]; then
       mpirun -np "$TURBOGAP_MPI_RANKS" "$bin" "$mode"
     else
       "$bin" "$mode"
-    fi ) > "$dir/$label.log" 2>&1
+    fi) >"$dir/$label.log" 2>&1
   local rc=$?
   if [ $rc -ne 0 ]; then
     log "    $label run failed (exit $rc); tail of log:"
@@ -92,35 +101,39 @@ run_case() {
 # gets removed rather than quietly masking a regression later.
 xfail_reason() {
   case $1 in
-    XRD_mad) printf '%s' "local_energy drift ~1e-5 by frame 5; everything else agrees; see docs/gpu_fixes_handoff.md 6g" ;;
-    *) printf '' ;;
+  XRD_mad) printf '%s' "local_energy drift ~1e-5 by frame 5; everything else agrees; see docs/gpu_fixes_handoff.md 6g" ;;
+  *) printf '' ;;
   esac
 }
 
 check_case() {
   local name=$1 atoms=$2 mode=$3 body=$4 data=${5:-$DATA}
   shift 5 2>/dev/null || shift $#
-  local extras=( "$@" )
+  local extras=("$@")
   log "== $name =="
   if [ ! -d "$data" ]; then
     log "    SKIP: data directory not present: $data"
     return
   fi
-  local dir; dir=$(stage_case "$name" "$atoms" "$body" "$data" "${extras[@]}")
+  local dir
+  dir=$(stage_case "$name" "$atoms" "$body" "$data" "${extras[@]}")
 
-  local xreason; xreason=$(xfail_reason "$name")
+  local xreason
+  xreason=$(xfail_reason "$name")
   if ! run_case "$dir" "$BIN" "$mode" gpu; then
     if [ -n "$xreason" ]; then
-      log "    XFAIL: $xreason"; xfail=$((xfail+1))
+      log "    XFAIL: $xreason"
+      xfail=$((xfail + 1))
     else
-      fail=$((fail+1))
+      fail=$((fail + 1))
     fi
     return
   fi
   if [ -n "$xreason" ] && [ ! -f "$dir/trajectory_out.xyz" ]; then
     log "    XFAIL: $xreason"
     log "           (ran to exit 0 but produced no trajectory)"
-    xfail=$((xfail+1)); return
+    xfail=$((xfail + 1))
+    return
   fi
 
   local ref=$REFDIR/$name.xyz
@@ -133,7 +146,9 @@ check_case() {
     for extra in "${extras[@]}"; do ln -sf "$data/$extra" "$rdir/$extra"; done
     cp "$dir/input" "$rdir/input"
     if ! run_case "$rdir" "$REF_BIN" "$mode" cpu; then
-      log "    reference run failed"; fail=$((fail+1)); return
+      log "    reference run failed"
+      fail=$((fail + 1))
+      return
     fi
     ref=$rdir/trajectory_out.xyz
   elif [ ! -f "$ref" ]; then
@@ -141,21 +156,21 @@ check_case() {
     return
   fi
 
-  if python3 "$COMPARE" "$ref" "$dir/trajectory_out.xyz" > "$dir/compare.txt" 2>&1; then
+  if python3 "$COMPARE" "$ref" "$dir/trajectory_out.xyz" >"$dir/compare.txt" 2>&1; then
     if [ -n "$xreason" ]; then
       log "    XPASS: expected to fail but did not -- remove it from xfail_reason"
-      xpass=$((xpass+1))
+      xpass=$((xpass + 1))
     else
       log "    PASS"
-      pass=$((pass+1))
+      pass=$((pass + 1))
     fi
   elif [ -n "$xreason" ]; then
     log "    XFAIL: $xreason"
-    xfail=$((xfail+1))
+    xfail=$((xfail + 1))
   else
     log "    FAIL"
     sed 's/^/      /' "$dir/compare.txt"
-    fail=$((fail+1))
+    fail=$((fail + 1))
   fi
 }
 

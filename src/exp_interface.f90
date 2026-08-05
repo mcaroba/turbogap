@@ -28,7 +28,7 @@
 
 module exp_interface
 
-  use kinds
+   use kinds
    use types
    use read_files
 #ifdef _MPIF90
@@ -65,14 +65,14 @@ contains
 
    ! end subroutine galloc
 
-      subroutine get_write_condition(do_mc, do_md, mc_istep, md_istep, write_xyz, write_condition)
+   subroutine get_write_condition(do_mc, do_md, mc_istep, md_istep, write_xyz, write_condition)
       implicit none
- logical, intent(in) :: do_mc
- logical, intent(in) :: do_md
- integer, intent(in) :: mc_istep
- integer, intent(in) :: md_istep
- integer, intent(in) :: write_xyz
- logical, intent(out) :: write_condition
+      logical, intent(in) :: do_mc
+      logical, intent(in) :: do_md
+      integer, intent(in) :: mc_istep
+      integer, intent(in) :: md_istep
+      integer, intent(in) :: write_xyz
+      logical, intent(out) :: write_condition
 
       if (do_mc) then
          write_condition = mc_istep > -1 .and. (modulo(mc_istep, write_xyz) == 0)
@@ -85,12 +85,12 @@ contains
 
    subroutine get_overwrite_condition(do_mc, do_md, mc_istep, md_istep, write_xyz, write_condition)
       implicit none
- logical, intent(in) :: do_mc
- logical, intent(in) :: do_md
- integer, intent(in) :: mc_istep
- integer, intent(in) :: md_istep
- integer, intent(in) :: write_xyz
- logical, intent(out) :: write_condition
+      logical, intent(in) :: do_mc
+      logical, intent(in) :: do_md
+      integer, intent(in) :: mc_istep
+      integer, intent(in) :: md_istep
+      integer, intent(in) :: write_xyz
+      logical, intent(out) :: write_condition
 
       if (do_mc) then
          write_condition = mc_istep == 0
@@ -105,26 +105,26 @@ contains
         & write_xyz, has_partials, n_species, n_samples, n_dim_partial&
         &, x, y, partials, species_types, name)
       implicit none
- logical, intent(in) :: do_mc
- logical, intent(in) :: do_md
- logical, intent(in) :: has_partials
- integer, intent(in) :: mc_istep
- integer, intent(in) :: md_istep
- integer, intent(in) :: write_xyz
- integer, intent(in) :: n_species
- integer, intent(in) :: n_samples
- integer, intent(in) :: n_dim_partial
- real(dp), intent(in) :: x(:)
- real(dp), intent(in) :: y(:)
- real(dp), intent(in) :: partials(:, :)
- character*8, allocatable :: species_types(:)
+      logical, intent(in) :: do_mc
+      logical, intent(in) :: do_md
+      logical, intent(in) :: has_partials
+      integer, intent(in) :: mc_istep
+      integer, intent(in) :: md_istep
+      integer, intent(in) :: write_xyz
+      integer, intent(in) :: n_species
+      integer, intent(in) :: n_samples
+      integer, intent(in) :: n_dim_partial
+      real(dp), intent(in) :: x(:)
+      real(dp), intent(in) :: y(:)
+      real(dp), intent(in) :: partials(:, :)
+      character*8, allocatable :: species_types(:)
       character(len=*), intent(in) :: name
- integer :: j
- integer :: k
- integer :: n_dim_idx
- character*1024 :: filename
- logical :: write_condition
- logical :: overwrite_condition
+      integer :: j
+      integer :: k
+      integer :: n_dim_idx
+      character*1024 :: filename
+      logical :: write_condition
+      logical :: overwrite_condition
 
       call get_overwrite_condition(do_mc, do_md&
            &, mc_istep, md_istep, write_xyz,&
@@ -162,19 +162,19 @@ contains
 
    subroutine preprocess_exp_data(params, x, y, label, n_sites, V, input, output, exp)
       implicit none
- type(input_parameters), intent(in) :: params
- real(dp), intent(in), allocatable :: x(:)
- real(dp), intent(in) :: V
- real(dp), intent(inout), allocatable :: y(:)
- integer, intent(in) :: n_sites
- character*1024, intent(in) :: label
- real(dp), parameter :: pi = acos(-1.0)
- real(dp) :: mag
- real(dp) :: dx
- real(dp) :: rho
- logical, intent(in) :: exp
- character*32, intent(inout) :: output
- character*1024, intent(inout) :: input
+      type(input_parameters), intent(in) :: params
+      real(dp), intent(in), allocatable :: x(:)
+      real(dp), intent(in) :: V
+      real(dp), intent(inout), allocatable :: y(:)
+      integer, intent(in) :: n_sites
+      character*1024, intent(in) :: label
+      real(dp), parameter :: pi = acos(-1.0)
+      real(dp) :: mag
+      real(dp) :: dx
+      real(dp) :: rho
+      logical, intent(in) :: exp
+      character*32, intent(inout) :: output
+      character*1024, intent(inout) :: input
 
       dx = x(2) - x(1)
       rho = dfloat(n_sites)/V
@@ -236,11 +236,11 @@ contains
 
    subroutine gpu_copy_pdf(n_samples, pdf_d, pdf, gpu_stream)
       implicit none
- integer :: n_samples
- real(dp), intent(inout), target :: pdf(1:n_samples)
- type(c_ptr) :: pdf_d
- type(c_ptr) :: gpu_stream
- integer(c_size_t) :: size
+      integer :: n_samples
+      real(dp), intent(inout), target :: pdf(1:n_samples)
+      type(c_ptr) :: pdf_d
+      type(c_ptr) :: gpu_stream
+      integer(c_size_t) :: size
 
       size = n_samples*c_double
 
@@ -250,26 +250,26 @@ contains
 
    subroutine estimate_device_memory_usage(n_sites, n_pairs, nk, n_samples, n_samples_sf, total, standard)
       implicit none
- integer :: n_sites
- integer :: nk
- integer :: n_samples
- integer :: n_samples_sf
- integer :: n_pairs
- real(dp), intent(inout) :: total
- real(dp) :: total_exp = 0.d0
- real(dp) :: total_standard = 0.d0
- real(dp) :: nk_int
- real(dp) :: nk_float
- real(dp) :: Gk
- real(dp) :: dermat
- real(dp) :: sf
- real(dp) :: fi
- real(dp) :: pref
- real(dp) :: xyz
- real(dp) :: forces
- real(dp) :: neigh_list
- real(dp) :: to_gb
- logical :: standard
+      integer :: n_sites
+      integer :: nk
+      integer :: n_samples
+      integer :: n_samples_sf
+      integer :: n_pairs
+      real(dp), intent(inout) :: total
+      real(dp) :: total_exp = 0.d0
+      real(dp) :: total_standard = 0.d0
+      real(dp) :: nk_int
+      real(dp) :: nk_float
+      real(dp) :: Gk
+      real(dp) :: dermat
+      real(dp) :: sf
+      real(dp) :: fi
+      real(dp) :: pref
+      real(dp) :: xyz
+      real(dp) :: forces
+      real(dp) :: neigh_list
+      real(dp) :: to_gb
+      logical :: standard
 
       to_gb = 1/dfloat(1024**3)
 
@@ -346,12 +346,12 @@ contains
 
    subroutine get_n_atoms_of_species(n_atoms_of_species, n_sites, species, n_species)
       implicit none
- integer, intent(in) :: n_sites
- integer, intent(in) :: n_species
- integer, allocatable, intent(in) :: species(:)
- real(dp), allocatable, intent(out) :: n_atoms_of_species(:)
- integer :: j
- integer :: i2
+      integer, intent(in) :: n_sites
+      integer, intent(in) :: n_species
+      integer, allocatable, intent(in) :: species(:)
+      real(dp), allocatable, intent(out) :: n_atoms_of_species(:)
+      integer :: j
+      integer :: i2
 
       if (allocated(n_atoms_of_species)) deallocate (n_atoms_of_species)
       allocate (n_atoms_of_species(1:n_species))
@@ -368,12 +368,12 @@ contains
 
    subroutine setup_batched_pair_distribution(r_min, r_max, r_cut, n_samples, x, dV)
       implicit none
- real(dp), intent(in) :: r_min
- real(dp), intent(in) :: r_max
- real(dp), intent(in) :: r_cut
- integer, intent(in) :: n_samples
- real(dp), allocatable, intent(out) :: x(:)
- real(dp), allocatable, intent(out) :: dV(:)
+      real(dp), intent(in) :: r_min
+      real(dp), intent(in) :: r_max
+      real(dp), intent(in) :: r_cut
+      integer, intent(in) :: n_samples
+      real(dp), allocatable, intent(out) :: x(:)
+      real(dp), allocatable, intent(out) :: dV(:)
 
       if (allocated(x)) deallocate (x)
       if (allocated(dV)) deallocate (dV)
@@ -389,29 +389,29 @@ contains
         & n_neigh, species, neighbor_species, neighbors_list, rjs, &
         & xyz, gpu_stream, rank)
       implicit none
- type(gpu_neigh_storage_type) :: gpu_neigh
- integer, intent(in):: n_sites
- integer, intent(in):: n_pairs
- integer, intent(in):: rank
- integer, intent(in), target :: n_neigh(:)
- integer, intent(in), target :: species(:)
- integer, intent(in), target :: neighbor_species(:)
- integer, intent(in), target :: neighbors_list(:)
- real(dp), intent(in), target :: rjs(:)
- real(dp), intent(in), target :: xyz(:, :)
+      type(gpu_neigh_storage_type) :: gpu_neigh
+      integer, intent(in):: n_sites
+      integer, intent(in):: n_pairs
+      integer, intent(in):: rank
+      integer, intent(in), target :: n_neigh(:)
+      integer, intent(in), target :: species(:)
+      integer, intent(in), target :: neighbor_species(:)
+      integer, intent(in), target :: neighbors_list(:)
+      real(dp), intent(in), target :: rjs(:)
+      real(dp), intent(in), target :: xyz(:, :)
 
- integer, allocatable, target :: n_neigh_temp(:)
- integer, allocatable, target :: species_temp(:)
- integer, allocatable, target :: neighbor_species_temp(:)
- integer, allocatable, target :: neighbors_list_temp(:)
- real(dp), allocatable, target :: rjs_temp(:)
- real(dp), allocatable, target :: xyz_temp(:, :)
+      integer, allocatable, target :: n_neigh_temp(:)
+      integer, allocatable, target :: species_temp(:)
+      integer, allocatable, target :: neighbor_species_temp(:)
+      integer, allocatable, target :: neighbors_list_temp(:)
+      real(dp), allocatable, target :: rjs_temp(:)
+      real(dp), allocatable, target :: xyz_temp(:, :)
 
- integer(c_size_t) :: st_n_sites_int
- integer(c_size_t) :: st_n_atom_pairs_int
- integer(c_size_t) :: st_n_atom_pairs_double
- type(c_ptr) :: gpu_stream
- integer :: i
+      integer(c_size_t) :: st_n_sites_int
+      integer(c_size_t) :: st_n_atom_pairs_int
+      integer(c_size_t) :: st_n_atom_pairs_double
+      type(c_ptr) :: gpu_stream
+      integer :: i
 
       st_n_sites_int = n_sites*c_int
       gpu_neigh%st_n_neigh_d = st_n_sites_int
@@ -438,7 +438,7 @@ contains
       call gpu_malloc_all(gpu_neigh%xyz_d, 3*st_n_atom_pairs_double, gpu_stream)
       call cpy_htod(c_loc(xyz), gpu_neigh%xyz_d, 3*st_n_atom_pairs_double, gpu_stream)
 
-       print *, "-- Rank ", rank, " ", " malloc neighbors: n_sites_temp = ", n_sites, " n_pairs_temp = ", n_pairs
+      print *, "-- Rank ", rank, " ", " malloc neighbors: n_sites_temp = ", n_sites, " n_pairs_temp = ", n_pairs
 
       ! allocate( n_neigh_temp( 1:n_sites ) )
       ! n_neigh_temp = n_neigh
@@ -487,8 +487,8 @@ contains
 
    subroutine gpu_free_neighbors(gpu_neigh, gpu_stream)
       implicit none
- type(gpu_neigh_storage_type) :: gpu_neigh
- type(c_ptr) :: gpu_stream
+      type(gpu_neigh_storage_type) :: gpu_neigh
+      type(c_ptr) :: gpu_stream
 
       call gpu_free_async(gpu_neigh%n_neigh_d, gpu_stream)
       call gpu_free_async(gpu_neigh%species_d, gpu_stream)
@@ -502,22 +502,22 @@ contains
    subroutine collect_batched_pair_distribution(n_batches, gpu_host, n_dim_partial, n_samples, &
                                                 pair_distribution_partial, n_species, n_atoms_of_species, v_uc)
       implicit none
- integer, intent(in) :: n_dim_partial
- integer, intent(in) :: n_samples
- integer, intent(in) :: n_batches
- integer, intent(in) :: n_species
- type(gpu_host_batch_storage_type), intent(in), allocatable :: gpu_host(:)
- real(dp), allocatable, intent(out) :: pair_distribution_partial(:, :)
- real(dp), allocatable, intent(in) :: n_atoms_of_species(:)
- real(dp), intent(in) :: v_uc
- real(dp), allocatable :: pair_distribution_partial_temp(:, :)
- real(dp), allocatable :: factors(:)
- real(dp) :: f
- integer :: i
- integer :: j
- integer :: k
- integer :: n_dim_idx
- integer :: ierr
+      integer, intent(in) :: n_dim_partial
+      integer, intent(in) :: n_samples
+      integer, intent(in) :: n_batches
+      integer, intent(in) :: n_species
+      type(gpu_host_batch_storage_type), intent(in), allocatable :: gpu_host(:)
+      real(dp), allocatable, intent(out) :: pair_distribution_partial(:, :)
+      real(dp), allocatable, intent(in) :: n_atoms_of_species(:)
+      real(dp), intent(in) :: v_uc
+      real(dp), allocatable :: pair_distribution_partial_temp(:, :)
+      real(dp), allocatable :: factors(:)
+      real(dp) :: f
+      integer :: i
+      integer :: j
+      integer :: k
+      integer :: n_dim_idx
+      integer :: ierr
 
       allocate (factors(1:n_dim_partial))
 
@@ -574,16 +574,16 @@ contains
    subroutine collect_batched_forces(n_batches, gpu_host, n_dim_partial, &
                                      forces_out, virial_out, n_sites)
       implicit none
- integer, intent(in) :: n_batches
- integer, intent(in) :: n_sites
- integer, intent(in) :: n_dim_partial
- type(gpu_host_batch_storage_type), intent(in), allocatable :: gpu_host(:)
- real(dp), allocatable :: forces_out(:, :)
- real(dp) :: virial_out(1:3, 1:3)
- integer :: i
- integer :: j
- integer :: k
- integer :: n_dim_idx
+      integer, intent(in) :: n_batches
+      integer, intent(in) :: n_sites
+      integer, intent(in) :: n_dim_partial
+      type(gpu_host_batch_storage_type), intent(in), allocatable :: gpu_host(:)
+      real(dp), allocatable :: forces_out(:, :)
+      real(dp) :: virial_out(1:3, 1:3)
+      integer :: i
+      integer :: j
+      integer :: k
+      integer :: n_dim_idx
 
       ! allocate( forces_out( 1:3, 1:n_sites))
       ! forces_out = 0.d0
@@ -606,11 +606,11 @@ contains
 
    subroutine free_host_batches(gpu_host, n_batches, n_dim_partial)
       implicit none
- type(gpu_host_batch_storage_type), allocatable :: gpu_host(:)
- integer, intent(in) :: n_batches
- integer, intent(in) :: n_dim_partial
- integer :: i
- integer :: j
+      type(gpu_host_batch_storage_type), allocatable :: gpu_host(:)
+      integer, intent(in) :: n_batches
+      integer, intent(in) :: n_dim_partial
+      integer :: i
+      integer :: j
 
       do i = 1, n_batches
          do j = 1, n_dim_partial
@@ -642,10 +642,10 @@ contains
 
    subroutine free_exp_batches(gpu_exp, n_batches)
       implicit none
- type(gpu_storage_type), allocatable :: gpu_exp(:)
- integer, intent(in) :: n_batches
- integer :: i
- integer :: j
+      type(gpu_storage_type), allocatable :: gpu_exp(:)
+      integer, intent(in) :: n_batches
+      integer :: i
+      integer :: j
 
       do i = 1, n_batches
 
@@ -683,99 +683,97 @@ contains
 
    end subroutine free_exp_batches
 
-   subroutine total_gpu_memory( add ) 
- real(dp), intent(in) :: add
- real(dp), save :: total
- logical, save :: first_call = .true.
+   subroutine total_gpu_memory(add)
+      real(dp), intent(in) :: add
+      real(dp), save :: total
+      logical, save :: first_call = .true.
 
-      if ( first_call )then 
+      if (first_call) then
          total = 0.0d0
-         first_call = .false. 
-      end if 
+         first_call = .false.
+      end if
 
-      total = total + add 
+      total = total + add
 
-      print *, " GPU mem = ", total / 1024.d0 / 1024.d0 / 1024.d0 , " Gb"
-               call flush(101)
+      print *, " GPU mem = ", total/1024.d0/1024.d0/1024.d0, " Gb"
+      call flush (101)
 
-   end subroutine 
+   end subroutine
 
-
-
-   subroutine calculate_batched_pair_distribution(&
-        gpu_exp,&
-        gpu_host,&
-        gpu_neigh,&
-        x,&
-        dV,&
-        n_atoms_of_species,&
-        n_species,&
-        n_sites,&
-        i_beg,&
-        i_end,&
-        j_beg,&
-        j_end,&
-        n_samples,&
-        r_min,&
-        r_max,&
-        r_cut,&
-        kde_sigma, &
-        gpu_stream,&
-        x_d,&
-        dV_d,&
-        v_uc,&
-        rank)
+   subroutine calculate_batched_pair_distribution( &
+      gpu_exp, &
+      gpu_host, &
+      gpu_neigh, &
+      x, &
+      dV, &
+      n_atoms_of_species, &
+      n_species, &
+      n_sites, &
+      i_beg, &
+      i_end, &
+      j_beg, &
+      j_end, &
+      n_samples, &
+      r_min, &
+      r_max, &
+      r_cut, &
+      kde_sigma, &
+      gpu_stream, &
+      x_d, &
+      dV_d, &
+      v_uc, &
+      rank)
       implicit none
       ! Input variables
- integer, intent(in) :: n_species
- integer, intent(in) :: i_beg
- integer, intent(in) :: i_end
- integer, intent(in) :: j_beg
- integer, intent(in) :: j_end
- integer, intent(in) :: n_sites
- integer, intent(in) :: n_samples
- integer, intent(in) :: rank
- real(dp), allocatable, intent(in) :: n_atoms_of_species(:)
- real(dp), allocatable, intent(in) :: x(:)
- real(dp), allocatable, intent(in) :: dV(:)
- real(dp), intent(in) :: r_min
- real(dp), intent(in) :: r_max
- real(dp), intent(in) :: r_cut
- real(dp), intent(in) :: kde_sigma
- real(dp), intent(in) :: v_uc
- type(gpu_storage_type), intent(inout) :: gpu_exp
- type(gpu_host_batch_storage_type), intent(inout), target :: gpu_host
- type(gpu_neigh_storage_type), intent(in) :: gpu_neigh
+      integer, intent(in) :: n_species
+      integer, intent(in) :: i_beg
+      integer, intent(in) :: i_end
+      integer, intent(in) :: j_beg
+      integer, intent(in) :: j_end
+      integer, intent(in) :: n_sites
+      integer, intent(in) :: n_samples
+      integer, intent(in) :: rank
+      real(dp), allocatable, intent(in) :: n_atoms_of_species(:)
+      real(dp), allocatable, intent(in) :: x(:)
+      real(dp), allocatable, intent(in) :: dV(:)
+      real(dp), intent(in) :: r_min
+      real(dp), intent(in) :: r_max
+      real(dp), intent(in) :: r_cut
+      real(dp), intent(in) :: kde_sigma
+      real(dp), intent(in) :: v_uc
+      type(gpu_storage_type), intent(inout) :: gpu_exp
+      type(gpu_host_batch_storage_type), intent(inout), target :: gpu_host
+      type(gpu_neigh_storage_type), intent(in) :: gpu_neigh
 
       ! Local variables
- real(dp), parameter :: pi = acos(-1.0)
- integer :: n_dim_partial
- integer :: n_dim_idx
- type(c_ptr), intent(in) :: x_d
- type(c_ptr), intent(in) :: dV_d
- integer(c_size_t) :: st_x_d
- integer, target :: nk_temp(1)
- type(c_ptr) :: nk_flags_d
- type(c_ptr) :: nk_flags_sum_d
- integer(c_size_t) :: st_nk_flags
- integer(c_size_t) :: st_nk_temp
- type(c_ptr) :: rjs_index_d
- type(c_ptr) :: pdf_to_reduce_d
- integer(c_size_t) :: st_rjs_index_d
- integer(c_size_t) :: st_k_index_d
- integer(c_size_t) :: st_pdf_to_reduce_d
+      real(dp), parameter :: pi = acos(-1.0)
+      integer :: n_dim_partial
+      integer :: n_dim_idx
+      type(c_ptr), intent(in) :: x_d
+      type(c_ptr), intent(in) :: dV_d
+      integer(c_size_t) :: st_x_d
+      integer, target :: nk_temp(1)
+      type(c_ptr) :: nk_flags_d
+      type(c_ptr) :: nk_flags_sum_d
+      integer(c_size_t) :: st_nk_flags
+      integer(c_size_t) :: st_nk_temp
+      type(c_ptr) :: rjs_index_d
+      type(c_ptr) :: pdf_to_reduce_d
+      integer(c_size_t) :: st_rjs_index_d
+      integer(c_size_t) :: st_k_index_d
+      integer(c_size_t) :: st_pdf_to_reduce_d
 
- real(dp) :: pdf_factor
- real(dp) :: der_factor = 0.d0
- real(dp) :: f
- integer :: i
- integer :: j
- integer :: k
- integer :: l
+      real(dp) :: pdf_factor
+      real(dp) :: der_factor = 0.d0
+      real(dp) :: f
+      integer :: i
+      integer :: j
+      integer :: k
+      integer :: l
 
- type(c_ptr) :: gpu_stream
+      type(c_ptr) :: gpu_stream
 
- real(dp), allocatable, target :: x_check(:)
+      real(dp), allocatable, target :: x_check(:)
 
       n_dim_partial = n_species*(n_species + 1)/2
 
@@ -825,60 +823,59 @@ contains
             call gpu_memset_async(gpu_exp%nk_flags_d(n_dim_idx), 0, st_nk_flags, gpu_stream)
             call gpu_malloc_all(gpu_exp%nk_flags_sum_d(n_dim_idx), st_nk_flags, gpu_stream)
 
-            call total_gpu_memory( dfloat( (j_end - j_beg + 1) * 2 * 4 ))
+            call total_gpu_memory(dfloat((j_end - j_beg + 1)*2*4))
 !          call gpu_stream_sync(gpu_stream)
 
-            print *, "-- Rank ", rank, " ",   "int(gpu_exp % nk_d(n_dim_idx))"
-            call gpu_print_pointer_int(gpu_exp % nk_d(n_dim_idx))
-            print *, "-- Rank ", rank, " ",   "int(gpu_exp % nk_flags_d(n_dim_idx))"
-            call gpu_print_pointer_int(gpu_exp % nk_flags_d(n_dim_idx))
-            print *, "-- Rank ", rank, " ",   "int(gpu_exp % nk_flags_sum_d(n_dim_idx))"
-            call gpu_print_pointer_int(gpu_exp % nk_flags_sum_d(n_dim_idx))
-            print *, "-- Rank ", rank, " ",   "int(gpu_neigh % neighbors_list_d  )"
-            call gpu_print_pointer_int(gpu_neigh % neighbors_list_d  )
-            print *, "-- Rank ", rank, " ",   "int(gpu_neigh % n_neigh_d         )"
-            call gpu_print_pointer_int(gpu_neigh % n_neigh_d         )
-            print *, "-- Rank ", rank, " ",   "int(gpu_neigh % neighbor_species_d)"
-            call gpu_print_pointer_int(gpu_neigh % neighbor_species_d)
-            print *, "-- Rank ", rank, " ",   "int(gpu_neigh % species_d         )"
-            call gpu_print_pointer_int(gpu_neigh % species_d         )
-            print *, "-- Rank ", rank, " ",   "double(gpu_neigh % rjs_d             )"
-            call gpu_print_pointer_double(gpu_neigh % rjs_d             )
-            print *, "-- Rank ", rank, " ",   "double(gpu_neigh % xyz_d             )"
-            call gpu_print_pointer_double(gpu_neigh % xyz_d             )
-            call flush(101)
+            print *, "-- Rank ", rank, " ", "int(gpu_exp % nk_d(n_dim_idx))"
+            call gpu_print_pointer_int(gpu_exp%nk_d(n_dim_idx))
+            print *, "-- Rank ", rank, " ", "int(gpu_exp % nk_flags_d(n_dim_idx))"
+            call gpu_print_pointer_int(gpu_exp%nk_flags_d(n_dim_idx))
+            print *, "-- Rank ", rank, " ", "int(gpu_exp % nk_flags_sum_d(n_dim_idx))"
+            call gpu_print_pointer_int(gpu_exp%nk_flags_sum_d(n_dim_idx))
+            print *, "-- Rank ", rank, " ", "int(gpu_neigh % neighbors_list_d  )"
+            call gpu_print_pointer_int(gpu_neigh%neighbors_list_d)
+            print *, "-- Rank ", rank, " ", "int(gpu_neigh % n_neigh_d         )"
+            call gpu_print_pointer_int(gpu_neigh%n_neigh_d)
+            print *, "-- Rank ", rank, " ", "int(gpu_neigh % neighbor_species_d)"
+            call gpu_print_pointer_int(gpu_neigh%neighbor_species_d)
+            print *, "-- Rank ", rank, " ", "int(gpu_neigh % species_d         )"
+            call gpu_print_pointer_int(gpu_neigh%species_d)
+            print *, "-- Rank ", rank, " ", "double(gpu_neigh % rjs_d             )"
+            call gpu_print_pointer_double(gpu_neigh%rjs_d)
+            print *, "-- Rank ", rank, " ", "double(gpu_neigh % xyz_d             )"
+            call gpu_print_pointer_double(gpu_neigh%xyz_d)
+            call flush (101)
 
-            call gpu_get_pair_distribution_nk(&
-               1,&
-               i_end - i_beg + 1,&
-               j_end - j_beg + 1,&
-               n_sites, & 
+            call gpu_get_pair_distribution_nk( &
+               1, &
+               i_end - i_beg + 1, &
+               j_end - j_beg + 1, &
+               n_sites, &
                gpu_neigh%neighbors_list_d, &
                gpu_neigh%n_neigh_d, &
                gpu_neigh%neighbor_species_d, &
                gpu_neigh%species_d, &
                gpu_neigh%rjs_d, &
                gpu_neigh%xyz_d, &
-               r_min,&
-               r_max,&
-               r_cut,&
+               r_min, &
+               r_max, &
+               r_cut, &
                6.d0*kde_sigma, &
                gpu_exp%nk_d(n_dim_idx), &
                gpu_exp%nk_flags_d(n_dim_idx), &
                gpu_exp%nk_flags_sum_d(n_dim_idx), &
-               j,&
-               k,&
+               j, &
+               k, &
                gpu_stream)
-
 
             call gpu_stream_sync(gpu_stream)
 
             call gpu_free_async(gpu_exp%nk_flags_d(n_dim_idx), gpu_stream)
-            
+
             call gpu_stream_sync(gpu_stream)
             call gpu_check_error()
 
-            call total_gpu_memory( dfloat( -(j_end - j_beg + 1) * 4 ))
+            call total_gpu_memory(dfloat(-(j_end - j_beg + 1)*4))
 
             ! Now copy the value of nk from the gpu
 !          print *, "out of pdf nk kernel "
@@ -894,7 +891,7 @@ contains
 
             st_rjs_index_d = gpu_exp%nk(n_dim_idx)*c_double
             print *, " allocating rjs "
-            call total_gpu_memory( dfloat( gpu_exp%nk(n_dim_idx) * 8  ))
+            call total_gpu_memory(dfloat(gpu_exp%nk(n_dim_idx)*8))
             call gpu_malloc_all(gpu_exp%rjs_index_d(n_dim_idx), st_rjs_index_d, gpu_stream)
             call gpu_memset_async(gpu_exp%rjs_index_d(n_dim_idx), 0, st_rjs_index_d, gpu_stream)
 
@@ -902,14 +899,14 @@ contains
             call gpu_check_error()
             gpu_exp%st_k_index_d(n_dim_idx) = gpu_exp%nk(n_dim_idx)*c_int
             print *, " allocating k index "
-            call total_gpu_memory( dfloat( gpu_exp%nk(n_dim_idx) * 4  ))
+            call total_gpu_memory(dfloat(gpu_exp%nk(n_dim_idx)*4))
             call gpu_malloc_all(gpu_exp%k_index_d(n_dim_idx), gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
             call gpu_memset_async(gpu_exp%k_index_d(n_dim_idx), 0, gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
 
             call gpu_stream_sync(gpu_stream)
             call gpu_check_error()
             print *, " allocating j2 index "
-            call total_gpu_memory( dfloat( gpu_exp%nk(n_dim_idx) * 4  ))
+            call total_gpu_memory(dfloat(gpu_exp%nk(n_dim_idx)*4))
             call gpu_malloc_all(gpu_exp%j2_index_d(n_dim_idx), gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
             call gpu_memset_async(gpu_exp%j2_index_d(n_dim_idx), 0, gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
 
@@ -922,7 +919,7 @@ contains
             print *, " allocating j2 index "
             call gpu_stream_sync(gpu_stream)
             call gpu_check_error()
-            call total_gpu_memory( dfloat( gpu_exp%nk(n_dim_idx) * 8 * 3  ))
+            call total_gpu_memory(dfloat(gpu_exp%nk(n_dim_idx)*8*3))
             call gpu_malloc_all(gpu_exp%xyz_k_d(n_dim_idx), 3*st_rjs_index_d, gpu_stream)
             call gpu_memset_async(gpu_exp%xyz_k_d(n_dim_idx), 0, 3*st_rjs_index_d, gpu_stream)
 !          call gpu_stream_sync(gpu_stream)
@@ -954,10 +951,9 @@ contains
 
 !          print *, " >> Set batch arrays on gpu "
 
-
             call gpu_free_async(gpu_exp%nk_flags_sum_d(n_dim_idx), gpu_stream)
             print *, "deallocing flags sum"
-            call total_gpu_memory( dfloat( -(j_end - j_beg + 1) * 4 ))
+            call total_gpu_memory(dfloat(-(j_end - j_beg + 1)*4))
             call gpu_stream_sync(gpu_stream)
             call gpu_check_error()
 
@@ -966,7 +962,7 @@ contains
 
             !          call cpy_dtoh_event(&
             print *, "deallocing k index"
-            call total_gpu_memory( dfloat( -gpu_exp%nk(n_dim_idx) * 4  ))
+            call total_gpu_memory(dfloat(-gpu_exp%nk(n_dim_idx)*4))
 
             call gpu_stream_sync(gpu_stream)
             call gpu_check_error()
@@ -984,7 +980,7 @@ contains
 
             !          call cpy_dtoh_event(&
             print *, "deallocing j2 index"
-            call total_gpu_memory( dfloat( -gpu_exp%nk(n_dim_idx) * 4  ))
+            call total_gpu_memory(dfloat(-gpu_exp%nk(n_dim_idx)*4))
             call cpy_dtoh( &
                gpu_exp%j2_index_d(n_dim_idx), &
                c_loc(gpu_host%host(n_dim_idx)%j2_index_h), &
@@ -1013,7 +1009,7 @@ contains
             allocate (gpu_host%host(n_dim_idx)%xyz_k_h(1:3, 1:gpu_exp%nk(n_dim_idx)))
             !          call cpy_dtoh_event(&
             print *, "deallocing xyz_k"
-            call total_gpu_memory( dfloat( -gpu_exp%nk(n_dim_idx) * 3 * 8  ))
+            call total_gpu_memory(dfloat(-gpu_exp%nk(n_dim_idx)*3*8))
             call gpu_stream_sync(gpu_stream)
             call gpu_check_error()
             call cpy_dtoh( &
@@ -1023,9 +1019,8 @@ contains
                gpu_stream)
             call gpu_free_async(gpu_exp%xyz_k_d(n_dim_idx), gpu_stream)
 
-
             print *, "allocing pdf"
-            call total_gpu_memory( dfloat( n_samples * 8  ))
+            call total_gpu_memory(dfloat(n_samples*8))
             call gpu_stream_sync(gpu_stream)
             call gpu_check_error()
 
@@ -1035,14 +1030,12 @@ contains
             call gpu_memset_async(gpu_exp%pair_distribution_partial_d(n_dim_idx), 0, &
                                   gpu_exp%st_pair_distribution_partial_d(n_dim_idx), gpu_stream)
 
-
             print *, "allocing pdf to reduce "
-            call total_gpu_memory( dfloat( gpu_exp%nk(n_dim_idx)*n_samples * 8  ))
+            call total_gpu_memory(dfloat(gpu_exp%nk(n_dim_idx)*n_samples*8))
 
             st_pdf_to_reduce_d = gpu_exp%nk(n_dim_idx)*n_samples*c_double
             call gpu_malloc_all(pdf_to_reduce_d, st_pdf_to_reduce_d, gpu_stream)
             call gpu_memset_async(pdf_to_reduce_d, 0, st_pdf_to_reduce_d, gpu_stream)
-
 
             pdf_factor = ((r_max - r_min)/dfloat(n_samples))/(sqrt(2.d0*pi)*kde_sigma)
 
@@ -1064,36 +1057,35 @@ contains
 
 !          call gpu_meminfo()
 
+            print *, "gpu_exp%pair_distribution_partial_d(n_dim_idx)"
+            call gpu_print_pointer_double(gpu_exp%pair_distribution_partial_d(n_dim_idx))
+            print *, "pdf_to_reduce_d "
+            call gpu_print_pointer_double(pdf_to_reduce_d)
+            print *, "x_d "
+            call gpu_print_pointer_double(x_d)
+            print *, "dV_d "
+            call gpu_print_pointer_double(dV_d)
+            print *, "gpu_exp%rjs_index_d(n_dim_idx) "
+            call gpu_print_pointer_double(gpu_exp%rjs_index_d(n_dim_idx))
+            call flush (101)
 
-               print *, "gpu_exp%pair_distribution_partial_d(n_dim_idx)"
-               call gpu_print_pointer_double( gpu_exp%pair_distribution_partial_d(n_dim_idx) ) 
-               print *, "pdf_to_reduce_d " 
-               call gpu_print_pointer_double( pdf_to_reduce_d ) 
-               print *, "x_d " 
-               call gpu_print_pointer_double( x_d ) 
-               print *, "dV_d " 
-               call gpu_print_pointer_double( dV_d ) 
-               print *, "gpu_exp%rjs_index_d(n_dim_idx) " 
-               call gpu_print_pointer_double( gpu_exp%rjs_index_d(n_dim_idx) ) 
-               call flush(101)
-
-               der_factor = 0.0d0
+            der_factor = 0.0d0
             call gpu_get_pair_distribution_only_falloc( &
-               gpu_exp%pair_distribution_partial_d(n_dim_idx),&
+               gpu_exp%pair_distribution_partial_d(n_dim_idx), &
                pdf_to_reduce_d, &
                gpu_exp%nk(n_dim_idx), &
                n_samples, &
                kde_sigma, &
-               x_d,&
+               x_d, &
                dV_d, &
-               gpu_exp%rjs_index_d(n_dim_idx),&
-               pdf_factor,&
-               der_factor,&
+               gpu_exp%rjs_index_d(n_dim_idx), &
+               pdf_factor, &
+               der_factor, &
                gpu_stream)
 
-         ! call gpu_device_sync()
-         ! call gpu_check_error()
-         !  stop(0)
+            ! call gpu_device_sync()
+            ! call gpu_check_error()
+            !  stop(0)
 
             !--- check x ---!
             ! allocate( x_check(1:n_samples) )
@@ -1166,47 +1158,47 @@ contains
         & gpu_stream, x_d, dV_d, j, k, n_dim_idx, v_uc)
       implicit none
       ! Input variables
- integer, intent(in) :: n_species
- integer, intent(in) :: i_beg
- integer, intent(in) :: i_end
- integer, intent(in) :: j_beg
- integer, intent(in) :: j_end
- integer, intent(in) :: n_sites
- integer, intent(in) :: n_samples
- integer, intent(in) :: j
- integer, intent(in) :: k
- integer, intent(in) :: n_dim_idx
- real(dp), allocatable, intent(in) :: n_atoms_of_species(:)
- real(dp), allocatable, intent(in) :: x(:)
- real(dp), allocatable, intent(in) :: dV(:)
- real(dp), intent(in) :: r_min
- real(dp), intent(in) :: r_max
- real(dp), intent(in) :: r_cut
- real(dp), intent(in) :: kde_sigma
- real(dp), intent(in) :: v_uc
- type(gpu_storage_type), intent(inout) :: gpu_exp
- type(gpu_host_batch_storage_type), intent(inout), target :: gpu_host
+      integer, intent(in) :: n_species
+      integer, intent(in) :: i_beg
+      integer, intent(in) :: i_end
+      integer, intent(in) :: j_beg
+      integer, intent(in) :: j_end
+      integer, intent(in) :: n_sites
+      integer, intent(in) :: n_samples
+      integer, intent(in) :: j
+      integer, intent(in) :: k
+      integer, intent(in) :: n_dim_idx
+      real(dp), allocatable, intent(in) :: n_atoms_of_species(:)
+      real(dp), allocatable, intent(in) :: x(:)
+      real(dp), allocatable, intent(in) :: dV(:)
+      real(dp), intent(in) :: r_min
+      real(dp), intent(in) :: r_max
+      real(dp), intent(in) :: r_cut
+      real(dp), intent(in) :: kde_sigma
+      real(dp), intent(in) :: v_uc
+      type(gpu_storage_type), intent(inout) :: gpu_exp
+      type(gpu_host_batch_storage_type), intent(inout), target :: gpu_host
 
       ! Local variables
- real(dp), parameter :: pi = acos(-1.0)
- integer :: n_dim_partial
- type(c_ptr), intent(in) :: x_d
- type(c_ptr), intent(in) :: dV_d
- integer(c_size_t) :: st_x_d
- integer, target :: nk_temp(1)
- type(c_ptr) :: nk_flags_d
- type(c_ptr) :: nk_sum_flags_d
- integer(c_size_t) :: st_nk_flags
- integer(c_size_t) :: st_nk_temp
- type(c_ptr) :: rjs_index_d
- integer(c_size_t) :: st_rjs_index_d
+      real(dp), parameter :: pi = acos(-1.0)
+      integer :: n_dim_partial
+      type(c_ptr), intent(in) :: x_d
+      type(c_ptr), intent(in) :: dV_d
+      integer(c_size_t) :: st_x_d
+      integer, target :: nk_temp(1)
+      type(c_ptr) :: nk_flags_d
+      type(c_ptr) :: nk_sum_flags_d
+      integer(c_size_t) :: st_nk_flags
+      integer(c_size_t) :: st_nk_temp
+      type(c_ptr) :: rjs_index_d
+      integer(c_size_t) :: st_rjs_index_d
 
- real(dp) :: pdf_factor
- real(dp) :: der_factor = 0.d0
- real(dp) :: f
- integer :: i
+      real(dp) :: pdf_factor
+      real(dp) :: der_factor = 0.d0
+      real(dp) :: f
+      integer :: i
 
- type(c_ptr) :: gpu_stream
+      type(c_ptr) :: gpu_stream
 
       n_dim_partial = n_species*(n_species + 1)/2
 
@@ -1255,11 +1247,11 @@ contains
 
    subroutine setup_gpu_xrd_forces(gpu_exp, gpu_host, n_dim_idx, gpu_stream)
       implicit none
- integer, intent(in) :: n_dim_idx
- type(gpu_storage_type), intent(inout) :: gpu_exp
- type(gpu_host_batch_storage_type), intent(inout), target :: gpu_host
- integer(c_size_t) :: st_rjs_index_d
- type(c_ptr) :: gpu_stream
+      integer, intent(in) :: n_dim_idx
+      type(gpu_storage_type), intent(inout) :: gpu_exp
+      type(gpu_host_batch_storage_type), intent(inout), target :: gpu_host
+      integer(c_size_t) :: st_rjs_index_d
+      type(c_ptr) :: gpu_stream
       ! copy the xyz, j2 and k_index_d arrays
 
       print *, "> nk = ", gpu_exp%nk(n_dim_idx)
@@ -1292,11 +1284,11 @@ contains
 
    subroutine free_gpu_xrd_forces(gpu_exp, gpu_host, n_dim_idx, gpu_stream)
       implicit none
- integer, intent(in) :: n_dim_idx
- type(gpu_storage_type), intent(inout) :: gpu_exp
- type(gpu_host_batch_storage_type), intent(inout), target :: gpu_host
- integer(c_size_t) :: st_rjs_index_d
- type(c_ptr) :: gpu_stream
+      integer, intent(in) :: n_dim_idx
+      type(gpu_storage_type), intent(inout) :: gpu_exp
+      type(gpu_host_batch_storage_type), intent(inout), target :: gpu_host
+      integer(c_size_t) :: st_rjs_index_d
+      type(c_ptr) :: gpu_stream
       ! copy the xyz, j2 and k_index_d arrays
 
       call gpu_free_async(gpu_exp%k_index_d(n_dim_idx), gpu_stream)
@@ -1320,107 +1312,107 @@ contains
         gpu_host_storage, gpu_low_memory,&
         & pair_distribution_partial_temp_der, energies_pair_distribution, forces_pair_distribution, virial)
       implicit none
- type(input_parameters), intent(inout) :: params
- integer, intent(out) :: n_dim_partial_out
- real(dp), allocatable, intent(out), target :: x_pair_distribution(:)
- real(dp), allocatable, intent(out), target :: y_pair_distribution(:)
- real(dp), allocatable, intent(out), target :: pair_distribution_partial(:, :)
- real(dp), allocatable, intent(out), target :: n_atoms_of_species(:)
- real(dp), allocatable, intent(out), target :: pair_distribution_partial_temp(:, :)
- real(dp), allocatable, intent(out), target :: y_pair_distribution_temp(:)
- real(dp), allocatable, intent(out), target :: pair_distribution_der(:, :)
- real(dp), allocatable, intent(out), target :: pair_distribution_partial_der(:, :, :)
- real(dp), allocatable, intent(out), target :: pair_distribution_partial_temp_der(:, :, :)
- real(dp), allocatable, intent(out), target :: energies_pair_distribution(:)
- real(dp), allocatable, intent(out), target :: forces_pair_distribution(:, :)
- character*8, allocatable, intent(in) :: species_types(:)
- real(dp), intent(in), allocatable, target :: rjs(:)
- real(dp), intent(in), allocatable, target :: xyz(:, :)
- integer, intent(in), allocatable, target :: neighbors_list(:)
- integer, intent(in), allocatable, target :: n_neigh(:)
- integer, intent(in), allocatable, target :: neighbor_species(:)
- integer, intent(in), allocatable, target :: species(:)
- real(dp), intent(in) :: a_box(1:3)
- real(dp), intent(in) :: b_box(1:3)
- real(dp), intent(in) :: c_box(1:3)
- real(dp), intent(inout) :: virial(1:3, 1:3)
- real(dp) :: v_uc
- real(dp) :: f
- real(dp) :: pdf_factor
- real(dp) :: der_factor
- real(dp) :: total_memory_usage = 0.d0
- integer, intent(in) :: n_species
- integer, intent(in) :: n_sites
- integer, intent(in) :: i_beg
- integer, intent(in) :: i_end
- integer, intent(in) :: j_beg
- integer, intent(in) :: j_end
- integer, intent(in) :: indices(1:3)
- integer, intent(in) :: md_istep
- integer, intent(in) :: mc_istep
- integer, intent(in) :: rank
- integer, intent(inout) :: ierr
- real(dp), allocatable, target :: factors(:)
- real(dp), allocatable, target :: pair_distribution_der_temp(:)
- real(dp), allocatable, target :: dV(:)
- real(dp), allocatable, target :: pdf_gpu_check(:)
- real(dp), allocatable, target :: rjs_temp(:)
- real(dp), allocatable, target :: ders_temp(:, :)
- integer, allocatable, target :: ks_temp(:)
- integer, allocatable, target :: ksd_temp(:)
- integer :: i
- integer :: j
- integer :: k
- integer :: l
- integer :: i2
- integer :: n_dim_partial
- integer :: n_dim_idx
- logical, intent(in) :: do_derivatives
- real(dp), parameter :: pi = acos(-1.0)
- logical :: write_condition
- logical :: overwrite_condition
- character*1024 :: filename
- type(c_ptr) :: cublas_handle
- type(c_ptr) :: gpu_stream
+      type(input_parameters), intent(inout) :: params
+      integer, intent(out) :: n_dim_partial_out
+      real(dp), allocatable, intent(out), target :: x_pair_distribution(:)
+      real(dp), allocatable, intent(out), target :: y_pair_distribution(:)
+      real(dp), allocatable, intent(out), target :: pair_distribution_partial(:, :)
+      real(dp), allocatable, intent(out), target :: n_atoms_of_species(:)
+      real(dp), allocatable, intent(out), target :: pair_distribution_partial_temp(:, :)
+      real(dp), allocatable, intent(out), target :: y_pair_distribution_temp(:)
+      real(dp), allocatable, intent(out), target :: pair_distribution_der(:, :)
+      real(dp), allocatable, intent(out), target :: pair_distribution_partial_der(:, :, :)
+      real(dp), allocatable, intent(out), target :: pair_distribution_partial_temp_der(:, :, :)
+      real(dp), allocatable, intent(out), target :: energies_pair_distribution(:)
+      real(dp), allocatable, intent(out), target :: forces_pair_distribution(:, :)
+      character*8, allocatable, intent(in) :: species_types(:)
+      real(dp), intent(in), allocatable, target :: rjs(:)
+      real(dp), intent(in), allocatable, target :: xyz(:, :)
+      integer, intent(in), allocatable, target :: neighbors_list(:)
+      integer, intent(in), allocatable, target :: n_neigh(:)
+      integer, intent(in), allocatable, target :: neighbor_species(:)
+      integer, intent(in), allocatable, target :: species(:)
+      real(dp), intent(in) :: a_box(1:3)
+      real(dp), intent(in) :: b_box(1:3)
+      real(dp), intent(in) :: c_box(1:3)
+      real(dp), intent(inout) :: virial(1:3, 1:3)
+      real(dp) :: v_uc
+      real(dp) :: f
+      real(dp) :: pdf_factor
+      real(dp) :: der_factor
+      real(dp) :: total_memory_usage = 0.d0
+      integer, intent(in) :: n_species
+      integer, intent(in) :: n_sites
+      integer, intent(in) :: i_beg
+      integer, intent(in) :: i_end
+      integer, intent(in) :: j_beg
+      integer, intent(in) :: j_end
+      integer, intent(in) :: indices(1:3)
+      integer, intent(in) :: md_istep
+      integer, intent(in) :: mc_istep
+      integer, intent(in) :: rank
+      integer, intent(inout) :: ierr
+      real(dp), allocatable, target :: factors(:)
+      real(dp), allocatable, target :: pair_distribution_der_temp(:)
+      real(dp), allocatable, target :: dV(:)
+      real(dp), allocatable, target :: pdf_gpu_check(:)
+      real(dp), allocatable, target :: rjs_temp(:)
+      real(dp), allocatable, target :: ders_temp(:, :)
+      integer, allocatable, target :: ks_temp(:)
+      integer, allocatable, target :: ksd_temp(:)
+      integer :: i
+      integer :: j
+      integer :: k
+      integer :: l
+      integer :: i2
+      integer :: n_dim_partial
+      integer :: n_dim_idx
+      logical, intent(in) :: do_derivatives
+      real(dp), parameter :: pi = acos(-1.0)
+      logical :: write_condition
+      logical :: overwrite_condition
+      character*1024 :: filename
+      type(c_ptr) :: cublas_handle
+      type(c_ptr) :: gpu_stream
 
- type(c_ptr) :: n_neigh_d
- type(c_ptr) :: species_d
- type(c_ptr) :: neighbor_species_d
- type(c_ptr) :: neighbor_list_d
- type(c_ptr) :: rjs_d
- type(c_ptr) :: xyz_d
- type(c_ptr) :: species_types_d
- type(c_ptr) :: x_d
- type(c_ptr) :: dV_d
- type(c_ptr) :: pair_distribution_d
- type(c_ptr), allocatable :: nk_d(:)
- type(c_ptr), allocatable :: nk_flags_d(:)
- type(c_ptr), allocatable :: nk_flags_sum_d(:)
- type(c_ptr), allocatable :: k_index_d(:)
- type(c_ptr), allocatable :: j2_index_d(:)
- type(c_ptr), allocatable :: rjs_index_d(:)
- type(c_ptr), allocatable :: xyz_k_d(:)
- type(c_ptr), allocatable :: pair_distribution_partial_d(:)
- type(c_ptr), allocatable :: pair_distribution_partial_der_d(:)
- integer(c_size_t), allocatable :: st_nk_d(:)
- integer(c_size_t), allocatable :: st_k_index_d(:)
- integer(c_size_t), allocatable :: st_j2_index_d(:)
- integer(c_size_t), allocatable :: st_rjs(:)
- integer(c_size_t), allocatable :: st_pair_distribution_partial_d(:)
- integer(c_size_t), allocatable :: st_pair_distribution_partial_der_d(:)
- integer(c_size_t) :: st_nk_flags
- integer(c_size_t) :: st_nk_temp
- integer(c_size_t) :: st_x_d
- integer, allocatable :: nk(:)
- integer, allocatable :: k_index_single(:)
- integer, target :: nk_temp(1)
+      type(c_ptr) :: n_neigh_d
+      type(c_ptr) :: species_d
+      type(c_ptr) :: neighbor_species_d
+      type(c_ptr) :: neighbor_list_d
+      type(c_ptr) :: rjs_d
+      type(c_ptr) :: xyz_d
+      type(c_ptr) :: species_types_d
+      type(c_ptr) :: x_d
+      type(c_ptr) :: dV_d
+      type(c_ptr) :: pair_distribution_d
+      type(c_ptr), allocatable :: nk_d(:)
+      type(c_ptr), allocatable :: nk_flags_d(:)
+      type(c_ptr), allocatable :: nk_flags_sum_d(:)
+      type(c_ptr), allocatable :: k_index_d(:)
+      type(c_ptr), allocatable :: j2_index_d(:)
+      type(c_ptr), allocatable :: rjs_index_d(:)
+      type(c_ptr), allocatable :: xyz_k_d(:)
+      type(c_ptr), allocatable :: pair_distribution_partial_d(:)
+      type(c_ptr), allocatable :: pair_distribution_partial_der_d(:)
+      integer(c_size_t), allocatable :: st_nk_d(:)
+      integer(c_size_t), allocatable :: st_k_index_d(:)
+      integer(c_size_t), allocatable :: st_j2_index_d(:)
+      integer(c_size_t), allocatable :: st_rjs(:)
+      integer(c_size_t), allocatable :: st_pair_distribution_partial_d(:)
+      integer(c_size_t), allocatable :: st_pair_distribution_partial_der_d(:)
+      integer(c_size_t) :: st_nk_flags
+      integer(c_size_t) :: st_nk_temp
+      integer(c_size_t) :: st_x_d
+      integer, allocatable :: nk(:)
+      integer, allocatable :: k_index_single(:)
+      integer, target :: nk_temp(1)
 
- type(gpu_host_storage_type), intent(inout), allocatable, target :: gpu_host_storage(:)
- logical, intent(in) :: gpu_low_memory
- integer(c_size_t) :: st_n_sites_int
- integer(c_size_t) :: st_n_atom_pairs_int
- integer(c_size_t) :: st_n_atom_pairs_double
- integer(c_size_t) :: st_species_types_d
+      type(gpu_host_storage_type), intent(inout), allocatable, target :: gpu_host_storage(:)
+      logical, intent(in) :: gpu_low_memory
+      integer(c_size_t) :: st_n_sites_int
+      integer(c_size_t) :: st_n_atom_pairs_int
+      integer(c_size_t) :: st_n_atom_pairs_double
+      integer(c_size_t) :: st_species_types_d
 
 !            print *, ""
 !            print *, " >> Allocating GPU arrays for Exp Calculation << "
@@ -2316,56 +2308,56 @@ contains
         & do_derivatives, pair_distribution_der, pair_distribution_partial_der,&
         & pair_distribution_partial_temp_der, energies_pair_distribution, forces_pair_distribution, virial)
       implicit none
- type(input_parameters), intent(inout) :: params
- real(dp), allocatable, intent(out) :: x_pair_distribution(:)
- real(dp), allocatable, intent(out) :: y_pair_distribution(:)
- real(dp), allocatable, intent(out) :: pair_distribution_partial(:, :)
- real(dp), allocatable, intent(out) :: n_atoms_of_species(:)
- real(dp), allocatable, intent(out) :: pair_distribution_partial_temp(:, :)
- real(dp), allocatable, intent(out) :: y_pair_distribution_temp(:)
- real(dp), allocatable, intent(out) :: pair_distribution_der(:, :)
- real(dp), allocatable, intent(out) :: pair_distribution_partial_der(:, :, :)
- real(dp), allocatable, intent(out) :: pair_distribution_partial_temp_der(:, :, :)
- real(dp), allocatable, intent(out) :: energies_pair_distribution(:)
- real(dp), allocatable, intent(out) :: forces_pair_distribution(:, :)
- character*8, allocatable, intent(in) :: species_types(:)
- real(dp), intent(in), allocatable :: rjs(:)
- real(dp), intent(in), allocatable :: xyz(:, :)
- integer, intent(in), allocatable :: neighbors_list(:)
- integer, intent(in), allocatable :: n_neigh(:)
- integer, intent(in), allocatable :: neighbor_species(:)
- integer, intent(in), allocatable :: species(:)
- real(dp), intent(in) :: a_box(1:3)
- real(dp), intent(in) :: b_box(1:3)
- real(dp), intent(in) :: c_box(1:3)
- real(dp), intent(inout) :: virial(1:3, 1:3)
- real(dp) :: v_uc
- real(dp) :: f
- integer, intent(in) :: n_species
- integer, intent(in) :: n_sites
- integer, intent(in) :: i_beg
- integer, intent(in) :: i_end
- integer, intent(in) :: j_beg
- integer, intent(in) :: j_end
- integer, intent(in) :: indices(1:3)
- integer, intent(in) :: md_istep
- integer, intent(in) :: mc_istep
- integer, intent(in) :: rank
- integer, intent(inout) :: ierr
- real(dp), allocatable :: factors(:)
- real(dp), allocatable :: pair_distribution_der_temp(:)
- integer :: i
- integer :: j
- integer :: k
- integer :: l
- integer :: i2
- integer :: n_dim_partial
- integer :: n_dim_idx
- logical, intent(in) :: do_derivatives
- real(dp), parameter :: pi = acos(-1.0)
- logical :: write_condition
- logical :: overwrite_condition
- character*1024 :: filename
+      type(input_parameters), intent(inout) :: params
+      real(dp), allocatable, intent(out) :: x_pair_distribution(:)
+      real(dp), allocatable, intent(out) :: y_pair_distribution(:)
+      real(dp), allocatable, intent(out) :: pair_distribution_partial(:, :)
+      real(dp), allocatable, intent(out) :: n_atoms_of_species(:)
+      real(dp), allocatable, intent(out) :: pair_distribution_partial_temp(:, :)
+      real(dp), allocatable, intent(out) :: y_pair_distribution_temp(:)
+      real(dp), allocatable, intent(out) :: pair_distribution_der(:, :)
+      real(dp), allocatable, intent(out) :: pair_distribution_partial_der(:, :, :)
+      real(dp), allocatable, intent(out) :: pair_distribution_partial_temp_der(:, :, :)
+      real(dp), allocatable, intent(out) :: energies_pair_distribution(:)
+      real(dp), allocatable, intent(out) :: forces_pair_distribution(:, :)
+      character*8, allocatable, intent(in) :: species_types(:)
+      real(dp), intent(in), allocatable :: rjs(:)
+      real(dp), intent(in), allocatable :: xyz(:, :)
+      integer, intent(in), allocatable :: neighbors_list(:)
+      integer, intent(in), allocatable :: n_neigh(:)
+      integer, intent(in), allocatable :: neighbor_species(:)
+      integer, intent(in), allocatable :: species(:)
+      real(dp), intent(in) :: a_box(1:3)
+      real(dp), intent(in) :: b_box(1:3)
+      real(dp), intent(in) :: c_box(1:3)
+      real(dp), intent(inout) :: virial(1:3, 1:3)
+      real(dp) :: v_uc
+      real(dp) :: f
+      integer, intent(in) :: n_species
+      integer, intent(in) :: n_sites
+      integer, intent(in) :: i_beg
+      integer, intent(in) :: i_end
+      integer, intent(in) :: j_beg
+      integer, intent(in) :: j_end
+      integer, intent(in) :: indices(1:3)
+      integer, intent(in) :: md_istep
+      integer, intent(in) :: mc_istep
+      integer, intent(in) :: rank
+      integer, intent(inout) :: ierr
+      real(dp), allocatable :: factors(:)
+      real(dp), allocatable :: pair_distribution_der_temp(:)
+      integer :: i
+      integer :: j
+      integer :: k
+      integer :: l
+      integer :: i2
+      integer :: n_dim_partial
+      integer :: n_dim_idx
+      logical, intent(in) :: do_derivatives
+      real(dp), parameter :: pi = acos(-1.0)
+      logical :: write_condition
+      logical :: overwrite_condition
+      character*1024 :: filename
 
       ! Things that are allocated here:
       ! Always:
@@ -2793,18 +2785,18 @@ contains
         & do_derivatives, pair_distribution_der, pair_distribution_partial_der,&
         & pair_distribution_partial_temp_der, n_atoms_of_species, rank)
       implicit none
- type(input_parameters), intent(in) :: params
- integer, intent(in) :: rank
- real(dp), allocatable, intent(inout) :: x_pair_distribution(:)
- real(dp), allocatable, intent(inout) :: y_pair_distribution(:)
- real(dp), allocatable, intent(inout) :: pair_distribution_partial(:, :)
- real(dp), allocatable, intent(inout) :: n_atoms_of_species(:)
- real(dp), allocatable, intent(inout) :: pair_distribution_partial_temp(:, :)
- real(dp), allocatable, intent(inout) :: y_pair_distribution_temp(:)
- real(dp), allocatable, intent(inout) :: pair_distribution_der(:, :)
- real(dp), allocatable, intent(inout) :: pair_distribution_partial_der(:, :, :)
- real(dp), allocatable, intent(inout) :: pair_distribution_partial_temp_der(:, :, :)
- logical, intent(in) :: do_derivatives
+      type(input_parameters), intent(in) :: params
+      integer, intent(in) :: rank
+      real(dp), allocatable, intent(inout) :: x_pair_distribution(:)
+      real(dp), allocatable, intent(inout) :: y_pair_distribution(:)
+      real(dp), allocatable, intent(inout) :: pair_distribution_partial(:, :)
+      real(dp), allocatable, intent(inout) :: n_atoms_of_species(:)
+      real(dp), allocatable, intent(inout) :: pair_distribution_partial_temp(:, :)
+      real(dp), allocatable, intent(inout) :: y_pair_distribution_temp(:)
+      real(dp), allocatable, intent(inout) :: pair_distribution_der(:, :)
+      real(dp), allocatable, intent(inout) :: pair_distribution_partial_der(:, :, :)
+      real(dp), allocatable, intent(inout) :: pair_distribution_partial_temp_der(:, :, :)
+      logical, intent(in) :: do_derivatives
 
       ! Naive finalization, include the logic of how things are actually
       ! allocated above rather then allocating and deallocating
@@ -2836,89 +2828,89 @@ contains
         pair_distribution_partial_der,&
         & energies_sf, forces_sf, virial_sf, use_matrix_forces, cublas_handle, gpu_stream, gpu_host_storage, gpu_low_memory)
       implicit none
- type(input_parameters), intent(inout) :: params
- real(dp), allocatable, intent(out) :: x_structure_factor(:)
- real(dp), allocatable, intent(out) :: x_structure_factor_temp(:)
- real(dp), allocatable, intent(out) :: y_structure_factor(:)
- real(dp), allocatable, intent(out) :: structure_factor_partial(:, :)
- real(dp), allocatable, intent(out) :: structure_factor_partial_temp(:, :)
- real(dp), allocatable, intent(out) :: y_structure_factor_temp(:)
- real(dp), intent(in), allocatable :: rjs(:)
- real(dp), intent(in), allocatable :: xyz(:, :)
- real(dp), intent(in), allocatable :: x_pair_distribution(:)
- real(dp), intent(in), allocatable :: y_pair_distribution(:)
- real(dp), intent(in), allocatable :: pair_distribution_partial(:, :)
- real(dp), intent(in), allocatable :: n_atoms_of_species(:)
- real(dp), intent(in), allocatable :: pair_distribution_partial_der(:, :, :)
- integer, intent(in), allocatable :: neighbors_list(:)
- integer, intent(in), allocatable :: n_neigh(:)
- integer, intent(in), allocatable :: neighbor_species(:)
- integer, intent(in), allocatable :: species(:)
- integer, intent(in), allocatable :: nk(:)
- character*8, allocatable, intent(in) :: species_types(:)
- real(dp), intent(in) :: a_box(1:3)
- real(dp), intent(in) :: b_box(1:3)
- real(dp), intent(in) :: c_box(1:3)
- real(dp), allocatable, intent(inout) :: sinc_factor_matrix(:, :)
- real(dp), allocatable, intent(inout) :: energies_sf(:)
- real(dp), allocatable, intent(inout) :: forces_sf(:, :)
- real(dp), intent(inout) :: virial_sf(1:3, 1:3)
- real(dp), allocatable :: sinc_factor_matrix_temp(:, :)
- real(dp), allocatable :: temp_pdf(:, :)
- real(dp) :: v_uc
- integer, intent(in) :: n_species
- integer, intent(in) :: n_sites
- integer, intent(in) :: i_beg
- integer, intent(in) :: i_end
- integer, intent(in) :: j_beg
- integer, intent(in) :: j_end
- integer, intent(in) :: ntasks
- integer, intent(out) :: q_beg
- integer, intent(out) :: q_end
- integer, intent(in) :: indices(1:3)
- integer, intent(in) :: md_istep
- integer, intent(in) :: mc_istep
- integer, intent(in) :: rank
- integer, intent(out) :: ierr
- integer :: i
- integer :: j
- integer :: k
- integer :: l
- integer :: i2
- integer :: n_dim_partial
- integer :: n_dim_idx
- integer :: n
- integer :: m
- real(dp) :: dq
- real(dp) :: f
- real(dp) :: cabh
- real(dp) :: delta
- real(dp), parameter :: pi = acos(-1.0)
- character*1024 :: filename
- logical :: overwrite_condition
- logical :: write_condition
- logical, intent(in) :: do_derivatives
- logical, intent(in) :: use_matrix_forces
+      type(input_parameters), intent(inout) :: params
+      real(dp), allocatable, intent(out) :: x_structure_factor(:)
+      real(dp), allocatable, intent(out) :: x_structure_factor_temp(:)
+      real(dp), allocatable, intent(out) :: y_structure_factor(:)
+      real(dp), allocatable, intent(out) :: structure_factor_partial(:, :)
+      real(dp), allocatable, intent(out) :: structure_factor_partial_temp(:, :)
+      real(dp), allocatable, intent(out) :: y_structure_factor_temp(:)
+      real(dp), intent(in), allocatable :: rjs(:)
+      real(dp), intent(in), allocatable :: xyz(:, :)
+      real(dp), intent(in), allocatable :: x_pair_distribution(:)
+      real(dp), intent(in), allocatable :: y_pair_distribution(:)
+      real(dp), intent(in), allocatable :: pair_distribution_partial(:, :)
+      real(dp), intent(in), allocatable :: n_atoms_of_species(:)
+      real(dp), intent(in), allocatable :: pair_distribution_partial_der(:, :, :)
+      integer, intent(in), allocatable :: neighbors_list(:)
+      integer, intent(in), allocatable :: n_neigh(:)
+      integer, intent(in), allocatable :: neighbor_species(:)
+      integer, intent(in), allocatable :: species(:)
+      integer, intent(in), allocatable :: nk(:)
+      character*8, allocatable, intent(in) :: species_types(:)
+      real(dp), intent(in) :: a_box(1:3)
+      real(dp), intent(in) :: b_box(1:3)
+      real(dp), intent(in) :: c_box(1:3)
+      real(dp), allocatable, intent(inout) :: sinc_factor_matrix(:, :)
+      real(dp), allocatable, intent(inout) :: energies_sf(:)
+      real(dp), allocatable, intent(inout) :: forces_sf(:, :)
+      real(dp), intent(inout) :: virial_sf(1:3, 1:3)
+      real(dp), allocatable :: sinc_factor_matrix_temp(:, :)
+      real(dp), allocatable :: temp_pdf(:, :)
+      real(dp) :: v_uc
+      integer, intent(in) :: n_species
+      integer, intent(in) :: n_sites
+      integer, intent(in) :: i_beg
+      integer, intent(in) :: i_end
+      integer, intent(in) :: j_beg
+      integer, intent(in) :: j_end
+      integer, intent(in) :: ntasks
+      integer, intent(out) :: q_beg
+      integer, intent(out) :: q_end
+      integer, intent(in) :: indices(1:3)
+      integer, intent(in) :: md_istep
+      integer, intent(in) :: mc_istep
+      integer, intent(in) :: rank
+      integer, intent(out) :: ierr
+      integer :: i
+      integer :: j
+      integer :: k
+      integer :: l
+      integer :: i2
+      integer :: n_dim_partial
+      integer :: n_dim_idx
+      integer :: n
+      integer :: m
+      real(dp) :: dq
+      real(dp) :: f
+      real(dp) :: cabh
+      real(dp) :: delta
+      real(dp), parameter :: pi = acos(-1.0)
+      character*1024 :: filename
+      logical :: overwrite_condition
+      logical :: write_condition
+      logical, intent(in) :: do_derivatives
+      logical, intent(in) :: use_matrix_forces
 
- type(c_ptr) :: cublas_handle
- type(c_ptr) :: gpu_stream
- type(c_ptr), allocatable :: nk_d(:)
- type(c_ptr), allocatable :: nk_flags_d(:)
- type(c_ptr), allocatable :: nk_flags_sum_d(:)
- type(c_ptr), allocatable :: k_index_d(:)
- type(c_ptr), allocatable :: j2_index_d(:)
- type(c_ptr), allocatable :: rjs_index_d(:)
- type(c_ptr), allocatable :: xyz_k_d(:)
- type(c_ptr), allocatable :: pair_distribution_partial_d(:)
- type(c_ptr), allocatable :: pair_distribution_partial_der_d(:)
- integer(c_size_t), allocatable :: st_nk_d(:)
- integer(c_size_t), allocatable :: st_k_index_d(:)
- integer(c_size_t), allocatable :: st_j2_index_d(:)
- integer(c_size_t), allocatable :: st_rjs(:)
- integer(c_size_t), allocatable :: st_pair_distribution_partial_d(:)
- integer(c_size_t), allocatable :: st_pair_distribution_partial_der_d(:)
- type(gpu_host_storage_type), intent(inout), allocatable, target :: gpu_host_storage(:)
- logical, intent(in) :: gpu_low_memory
+      type(c_ptr) :: cublas_handle
+      type(c_ptr) :: gpu_stream
+      type(c_ptr), allocatable :: nk_d(:)
+      type(c_ptr), allocatable :: nk_flags_d(:)
+      type(c_ptr), allocatable :: nk_flags_sum_d(:)
+      type(c_ptr), allocatable :: k_index_d(:)
+      type(c_ptr), allocatable :: j2_index_d(:)
+      type(c_ptr), allocatable :: rjs_index_d(:)
+      type(c_ptr), allocatable :: xyz_k_d(:)
+      type(c_ptr), allocatable :: pair_distribution_partial_d(:)
+      type(c_ptr), allocatable :: pair_distribution_partial_der_d(:)
+      integer(c_size_t), allocatable :: st_nk_d(:)
+      integer(c_size_t), allocatable :: st_k_index_d(:)
+      integer(c_size_t), allocatable :: st_j2_index_d(:)
+      integer(c_size_t), allocatable :: st_rjs(:)
+      integer(c_size_t), allocatable :: st_pair_distribution_partial_d(:)
+      integer(c_size_t), allocatable :: st_pair_distribution_partial_der_d(:)
+      type(gpu_host_storage_type), intent(inout), allocatable, target :: gpu_host_storage(:)
+      logical, intent(in) :: gpu_low_memory
 
       v_uc = dot_product(cross_product(a_box,&
               & b_box), c_box)/(&
@@ -3374,17 +3366,17 @@ contains
         & x_pair_distribution, y_pair_distribution, &
         & pair_distribution_partial, sinc_factor_matrix)
       implicit none
- type(input_parameters), intent(in) :: params
- real(dp), allocatable, intent(inout) :: x_structure_factor(:)
- real(dp), allocatable, intent(inout) :: x_structure_factor_temp(:)
- real(dp), allocatable, intent(inout) :: y_structure_factor(:)
- real(dp), allocatable, intent(inout) :: structure_factor_partial(:, :)
- real(dp), allocatable, intent(inout) :: structure_factor_partial_temp(:, :)
- real(dp), allocatable, intent(inout) :: y_structure_factor_temp(:)
- real(dp), intent(inout), allocatable :: x_pair_distribution(:)
- real(dp), intent(inout), allocatable :: y_pair_distribution(:)
- real(dp), intent(inout), allocatable :: pair_distribution_partial(:, :)
- real(dp), allocatable, intent(inout) :: sinc_factor_matrix(:, :)
+      type(input_parameters), intent(in) :: params
+      real(dp), allocatable, intent(inout) :: x_structure_factor(:)
+      real(dp), allocatable, intent(inout) :: x_structure_factor_temp(:)
+      real(dp), allocatable, intent(inout) :: y_structure_factor(:)
+      real(dp), allocatable, intent(inout) :: structure_factor_partial(:, :)
+      real(dp), allocatable, intent(inout) :: structure_factor_partial_temp(:, :)
+      real(dp), allocatable, intent(inout) :: y_structure_factor_temp(:)
+      real(dp), intent(inout), allocatable :: x_pair_distribution(:)
+      real(dp), intent(inout), allocatable :: y_pair_distribution(:)
+      real(dp), intent(inout), allocatable :: pair_distribution_partial(:, :)
+      real(dp), allocatable, intent(inout) :: sinc_factor_matrix(:, :)
 
       if (allocated(x_structure_factor)) deallocate (x_structure_factor)
       if (allocated(x_structure_factor_temp)) deallocate (x_structure_factor_temp)
@@ -3412,87 +3404,87 @@ contains
          pair_distribution_partial_der,&
     & energies_xrd, forces_xrd, virial_xrd, neutron, use_matrix_forces, cublas_handle, gpu_stream, gpu_host_storage, gpu_low_memory)
       implicit none
- type(input_parameters), intent(inout) :: params
- real(dp), allocatable, intent(out) :: x_xrd(:)
- real(dp), allocatable, intent(out) :: x_xrd_temp(:)
- real(dp), allocatable, intent(out) :: y_xrd(:)
- real(dp), allocatable, intent(out) :: y_xrd_temp(:)
- real(dp), allocatable, intent(out) :: energies_xrd(:)
- real(dp), allocatable, intent(out) :: forces_xrd(:, :)
- real(dp), allocatable, intent(in) :: structure_factor_partial(:, :)
- real(dp), allocatable, intent(in) :: structure_factor_partial_temp(:, :)
- real(dp), allocatable, intent(in) :: x_structure_factor(:)
- real(dp), allocatable, intent(in) :: x_structure_factor_temp(:)
- real(dp), allocatable, intent(in) :: sinc_factor_matrix(:, :)
- real(dp), allocatable, intent(in) :: pair_distribution_partial_der(:, :, :)
- real(dp), intent(in), allocatable :: rjs(:)
- real(dp), intent(in), allocatable :: xyz(:, :)
- real(dp), intent(in), allocatable :: n_atoms_of_species(:)
- real(dp), intent(out) :: virial_xrd(1:3, 1:3)
- integer, intent(in), allocatable :: neighbors_list(:)
- integer, intent(in), allocatable :: n_neigh(:)
- integer, intent(in), allocatable :: neighbor_species(:)
- integer, intent(in), allocatable :: species(:)
- integer, intent(in), allocatable :: nk(:)
- real(dp), intent(in) :: a_box(1:3)
- real(dp), intent(in) :: b_box(1:3)
- real(dp), intent(in) :: c_box(1:3)
- character*8, allocatable, intent(in) :: species_types(:)
- real(dp) :: v_uc
- integer, intent(in) :: n_species
- integer, intent(in) :: n_sites
- integer, intent(in) :: i_beg
- integer, intent(in) :: i_end
- integer, intent(in) :: j_beg
- integer, intent(in) :: j_end
- integer, intent(in) :: ntasks
- integer, intent(out) :: q_beg
- integer, intent(out) :: q_end
- integer, intent(in) :: indices(1:3)
- integer, intent(in) :: md_istep
- integer, intent(in) :: mc_istep
- integer, intent(in) :: rank
- integer, intent(out) :: ierr
- real(dp), allocatable :: y_sub(:)
- integer :: i
- integer :: j
- integer :: k
- integer :: l
- integer :: i2
- integer :: n_dim_idx
- integer :: n_dim_partial
- real(dp) :: dq
- real(dp) :: f
- real(dp), parameter :: pi = acos(-1.0)
- character*1024 :: filename
- logical :: write_condition
- logical :: overwrite_condition
- logical :: valid_xrd
- logical, intent(in) :: do_derivatives
- logical, intent(in) :: neutron
- logical, intent(in) :: use_matrix_forces
- integer :: xrd_idx
- character*32 :: xrd_output
+      type(input_parameters), intent(inout) :: params
+      real(dp), allocatable, intent(out) :: x_xrd(:)
+      real(dp), allocatable, intent(out) :: x_xrd_temp(:)
+      real(dp), allocatable, intent(out) :: y_xrd(:)
+      real(dp), allocatable, intent(out) :: y_xrd_temp(:)
+      real(dp), allocatable, intent(out) :: energies_xrd(:)
+      real(dp), allocatable, intent(out) :: forces_xrd(:, :)
+      real(dp), allocatable, intent(in) :: structure_factor_partial(:, :)
+      real(dp), allocatable, intent(in) :: structure_factor_partial_temp(:, :)
+      real(dp), allocatable, intent(in) :: x_structure_factor(:)
+      real(dp), allocatable, intent(in) :: x_structure_factor_temp(:)
+      real(dp), allocatable, intent(in) :: sinc_factor_matrix(:, :)
+      real(dp), allocatable, intent(in) :: pair_distribution_partial_der(:, :, :)
+      real(dp), intent(in), allocatable :: rjs(:)
+      real(dp), intent(in), allocatable :: xyz(:, :)
+      real(dp), intent(in), allocatable :: n_atoms_of_species(:)
+      real(dp), intent(out) :: virial_xrd(1:3, 1:3)
+      integer, intent(in), allocatable :: neighbors_list(:)
+      integer, intent(in), allocatable :: n_neigh(:)
+      integer, intent(in), allocatable :: neighbor_species(:)
+      integer, intent(in), allocatable :: species(:)
+      integer, intent(in), allocatable :: nk(:)
+      real(dp), intent(in) :: a_box(1:3)
+      real(dp), intent(in) :: b_box(1:3)
+      real(dp), intent(in) :: c_box(1:3)
+      character*8, allocatable, intent(in) :: species_types(:)
+      real(dp) :: v_uc
+      integer, intent(in) :: n_species
+      integer, intent(in) :: n_sites
+      integer, intent(in) :: i_beg
+      integer, intent(in) :: i_end
+      integer, intent(in) :: j_beg
+      integer, intent(in) :: j_end
+      integer, intent(in) :: ntasks
+      integer, intent(out) :: q_beg
+      integer, intent(out) :: q_end
+      integer, intent(in) :: indices(1:3)
+      integer, intent(in) :: md_istep
+      integer, intent(in) :: mc_istep
+      integer, intent(in) :: rank
+      integer, intent(out) :: ierr
+      real(dp), allocatable :: y_sub(:)
+      integer :: i
+      integer :: j
+      integer :: k
+      integer :: l
+      integer :: i2
+      integer :: n_dim_idx
+      integer :: n_dim_partial
+      real(dp) :: dq
+      real(dp) :: f
+      real(dp), parameter :: pi = acos(-1.0)
+      character*1024 :: filename
+      logical :: write_condition
+      logical :: overwrite_condition
+      logical :: valid_xrd
+      logical, intent(in) :: do_derivatives
+      logical, intent(in) :: neutron
+      logical, intent(in) :: use_matrix_forces
+      integer :: xrd_idx
+      character*32 :: xrd_output
 
- type(c_ptr) :: cublas_handle
- type(c_ptr) :: gpu_stream
- type(c_ptr), allocatable :: nk_d(:)
- type(c_ptr), allocatable :: nk_flags_d(:)
- type(c_ptr), allocatable :: nk_flags_sum_d(:)
- type(c_ptr), allocatable :: k_index_d(:)
- type(c_ptr), allocatable :: j2_index_d(:)
- type(c_ptr), allocatable :: rjs_index_d(:)
- type(c_ptr), allocatable :: xyz_k_d(:)
- type(c_ptr), allocatable :: pair_distribution_partial_d(:)
- type(c_ptr), allocatable :: pair_distribution_partial_der_d(:)
- integer(c_size_t), allocatable :: st_nk_d(:)
- integer(c_size_t), allocatable :: st_k_index_d(:)
- integer(c_size_t), allocatable :: st_j2_index_d(:)
- integer(c_size_t), allocatable :: st_rjs(:)
- integer(c_size_t), allocatable :: st_pair_distribution_partial_d(:)
- integer(c_size_t), allocatable :: st_pair_distribution_partial_der_d(:)
- type(gpu_host_storage_type), intent(inout), allocatable, target :: gpu_host_storage(:)
- logical, intent(in) :: gpu_low_memory
+      type(c_ptr) :: cublas_handle
+      type(c_ptr) :: gpu_stream
+      type(c_ptr), allocatable :: nk_d(:)
+      type(c_ptr), allocatable :: nk_flags_d(:)
+      type(c_ptr), allocatable :: nk_flags_sum_d(:)
+      type(c_ptr), allocatable :: k_index_d(:)
+      type(c_ptr), allocatable :: j2_index_d(:)
+      type(c_ptr), allocatable :: rjs_index_d(:)
+      type(c_ptr), allocatable :: xyz_k_d(:)
+      type(c_ptr), allocatable :: pair_distribution_partial_d(:)
+      type(c_ptr), allocatable :: pair_distribution_partial_der_d(:)
+      integer(c_size_t), allocatable :: st_nk_d(:)
+      integer(c_size_t), allocatable :: st_k_index_d(:)
+      integer(c_size_t), allocatable :: st_j2_index_d(:)
+      integer(c_size_t), allocatable :: st_rjs(:)
+      integer(c_size_t), allocatable :: st_pair_distribution_partial_d(:)
+      integer(c_size_t), allocatable :: st_pair_distribution_partial_der_d(:)
+      type(gpu_host_storage_type), intent(inout), allocatable, target :: gpu_host_storage(:)
+      logical, intent(in) :: gpu_low_memory
 
       if (neutron) xrd_idx = params%nd_idx
       if (.not. neutron) xrd_idx = params%xrd_idx
@@ -3745,15 +3737,15 @@ contains
         & y_xrd, y_xrd_temp, x_structure_factor, x_structure_factor_temp,&
         & structure_factor_partial, structure_factor_partial_temp)
       implicit none
- type(input_parameters), intent(in) :: params
- real(dp), allocatable, intent(inout) :: x_xrd(:)
- real(dp), allocatable, intent(inout) :: x_xrd_temp(:)
- real(dp), allocatable, intent(inout) :: y_xrd(:)
- real(dp), allocatable, intent(inout) :: y_xrd_temp(:)
- real(dp), allocatable, intent(inout) :: structure_factor_partial(:, :)
- real(dp), allocatable, intent(inout) :: structure_factor_partial_temp(:, :)
- real(dp), allocatable, intent(inout) :: x_structure_factor(:)
- real(dp), allocatable, intent(inout) :: x_structure_factor_temp(:)
+      type(input_parameters), intent(in) :: params
+      real(dp), allocatable, intent(inout) :: x_xrd(:)
+      real(dp), allocatable, intent(inout) :: x_xrd_temp(:)
+      real(dp), allocatable, intent(inout) :: y_xrd(:)
+      real(dp), allocatable, intent(inout) :: y_xrd_temp(:)
+      real(dp), allocatable, intent(inout) :: structure_factor_partial(:, :)
+      real(dp), allocatable, intent(inout) :: structure_factor_partial_temp(:, :)
+      real(dp), allocatable, intent(inout) :: x_structure_factor(:)
+      real(dp), allocatable, intent(inout) :: x_structure_factor_temp(:)
 
       if (allocated(x_xrd)) deallocate (x_xrd)
       if (allocated(x_xrd_temp)) deallocate (x_xrd_temp)

@@ -12,7 +12,7 @@
 //first version of kernels, no stream no gpu pointers in/out
 
 
-#include <limits>	
+#include <limits>
 template<bool is_gauss>
 __global__ void init_S (int alpha_max, double* S)
 {
@@ -73,7 +73,7 @@ __global__ void orthonormalization_copy_matrix(double* S, double* edge_S, double
   {
     S[tid] = edge_S[i];
   }
-  
+
   W[tid] = S[tid];
 }
 
@@ -94,7 +94,7 @@ __global__ void sqr_diag_mat(double* S, double* diagS, const int alpha_max)
   auto j = tid % alpha_max;
   if(i == j)
     S[tid] = sqrt(diagS[i]);
-  else 
+  else
     S[tid] = 0;
 
 }
@@ -123,7 +123,7 @@ __global__ void init_id_mat(double* S, const int alpha_max)
 }
 void sqrt_mat(double* W, const int alpha_max, hipStream_t& s, hipblasHandle_t& handle )
 {
-//things to get W^0.5: 
+//things to get W^0.5:
 //step 1: dgesvd
   double* U;
   double* VT;
@@ -134,8 +134,8 @@ void sqrt_mat(double* W, const int alpha_max, hipStream_t& s, hipblasHandle_t& h
   hipMalloc((void**) &VT, alpha_max*alpha_max*sizeof(double));
   hipMalloc((void**) &svd, alpha_max*sizeof(double));
   hipMalloc((void**) &devinfo, 1*sizeof(int));
-  int lworksize; 
-  { 
+  int lworksize;
+  {
      auto status = hipsolverDgesvd_bufferSize(handle, 'A', 'A', alpha_max, alpha_max, &lworksize);
     if(status != HIPSOLVER_STATUS_SUCCESS)
     {
@@ -144,9 +144,9 @@ void sqrt_mat(double* W, const int alpha_max, hipStream_t& s, hipblasHandle_t& h
     }
   }
   hipMalloc((void**) &work, lworksize*sizeof(double));
-  
 
-  { 
+
+  {
     auto status =  hipsolverDnDgesvd( handle, 'A', 'A', alpha_max, alpha_max, W, alpha_max, svd, U, alpha_max, VT, alpha_max, work,  lworksize, nullptr, devinfo);
     if(status != HIPSOLVER_STATUS_SUCCESS)
     {
@@ -217,7 +217,7 @@ void invert_mat_other(double* W, const int alpha_max, hipStream_t& s, hipblasHan
   }
   hipFree(work);
 
- 
+
   {
     auto status =  hipsolverDpotri_bufferSize ( handle, HIPSOLVER_FILL_MODE_UPPER, alpha_max, W, alpha_max,&lworksize);
     if(status != HIPSOLVER_STATUS_SUCCESS)
@@ -227,7 +227,7 @@ void invert_mat_other(double* W, const int alpha_max, hipStream_t& s, hipblasHan
     }
   }
   hipMalloc((void**) &work, lworksize*sizeof(double));
-  { 
+  {
     auto status =  hipsolverDpotri( handle, HIPSOLVER_FILL_MODE_UPPER, alpha_max, W, alpha_max,work,lworksize, devinfo);
     if(status != HIPSOLVER_STATUS_SUCCESS)
     {
@@ -267,7 +267,7 @@ void invert_mat(double* &W, const int alpha_max, hipStream_t& s, hipblasHandle_t
     }
   }
   hipMalloc((void**) &work, lworksize*sizeof(double));
-//hipsolverStatus_t hipsolverDgetrf(hipsolverHandle_t handle, int m, int n, double *A, int lda, double *work, int lwork, int *devIpiv, int *devInfo)  
+//hipsolverStatus_t hipsolverDgetrf(hipsolverHandle_t handle, int m, int n, double *A, int lda, double *work, int lwork, int *devIpiv, int *devInfo)
 
   {
     auto status =  hipsolverDgetrf( handle, alpha_max, alpha_max, W, alpha_max,work,lworksize,Ipivot ,devinfo);
@@ -288,7 +288,7 @@ void invert_mat(double* &W, const int alpha_max, hipStream_t& s, hipblasHandle_t
       throw std::runtime_error("");
     }
     hipMalloc((void**) &work, lworksize*sizeof(double));
-  } 
+  }
   {
 //hipsolverStatus_t hipsolverDgetrs(hipsolverHandle_t handle, hipsolverOperation_t trans, int n, int nrhs, double *A, int lda, int *devIpiv, double *B, int ldb, double *work, int lwork, int *devInfo)
     auto status =  hipsolverDgetrs( handle,HIPSOLVER_OP_N,alpha_max, alpha_max, W, alpha_max,Ipivot,IdMat,alpha_max,work, lworksize ,devinfo);
@@ -308,7 +308,7 @@ void invert_mat(double* &W, const int alpha_max, hipStream_t& s, hipblasHandle_t
 
 
 
-//specific for the orthonormals: it will copy on the diagonal of the supermatrix	
+//specific for the orthonormals: it will copy on the diagonal of the supermatrix
 __global__ void orthonormalization_copy_to_global_mats(double* src, double* dest, int alpha_max, int d_beg, int d_colsize)
 {
   auto tid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -369,43 +369,43 @@ void get_orthonormalization_matrix_poly3gauss_cc(const int alpha_max, const doub
 //  hipError_t err = hipGetLastError();
 //  if (err != hipSuccess) {
 //    printf("CUDA error: %s\n", hipGetErrorString(err));
-//  fflush(stdout); 
-//} 
-  
+//  fflush(stdout);
+//}
+
   auto total_threads= alpha_max*alpha_max;
   auto thread_per_block = 64;
   auto num_blocks = total_threads/thread_per_block >= 1 ? total_threads/thread_per_block : 1 ;
 //  printf("begin of orthonormalization poly3gauss: before init s\n");
-//  fflush(stdout); 
+//  fflush(stdout);
   init_S<true><<<num_blocks,thread_per_block,0,s>>>(alpha_max,S);
 
   hipDeviceSynchronize();
 //  printf("begin of orthonormalization poly3gauss: after init s \n");
-//  fflush(stdout); 
+//  fflush(stdout);
 //  err = hipGetLastError();
 //  if (err != hipSuccess) {
 //    printf("CUDA error in init_S: %s\n", hipGetErrorString(err));
-//  fflush(stdout); 
-//} 
+//  fflush(stdout);
+//}
   {
     const auto atom_sigma =  atom_sigma_in/rcut_hard_in;
     const auto rcut_hard = 1.0;
     const auto s2 = atom_sigma * atom_sigma;
     const auto sq2 = sqrt(2.0);
-    auto pi = std::numbers::pi_v<double>;  
+    auto pi = std::numbers::pi_v<double>;
     auto I_n = 0.0;
     auto N_n = 1.0;
     auto N_np1 = N_a(rcut_hard, -2);
     auto I_np1 = sqrt(pi/2.0) * atom_sigma * erf( rcut_hard/sq2/atom_sigma ) / N_np1;
     auto C2 = s2 / rcut_hard;
- 
- 
+
+
     //loop here is completely sequential, doesnt really make sense to gpu this... cant even diagonalize and shfl. guess best option is to go for parallel cpu execution and then copy results in gpu matrix
     for (auto i=-1; i< alpha_max; ++i)
     {
       C2 = C2 * rcut_hard;
       auto N_np2 = N_a(rcut_hard, i);
-      auto I_np2 = s2 * static_cast<double>(i+1) * N_n/ N_np2 * I_n + N_np1 * rcut_hard / N_np2 * I_np1 - C2 / N_np2; 
+      auto I_np2 = s2 * static_cast<double>(i+1) * N_n/ N_np2 * I_n + N_np1 * rcut_hard / N_np2 * I_np1 - C2 / N_np2;
       if(i > 0)
       {
               //Include the normalization factor of the Gaussian
@@ -423,32 +423,32 @@ void get_orthonormalization_matrix_poly3gauss_cc(const int alpha_max, const doub
 //  err = hipGetLastError();
 //  if (err != hipSuccess) {
 //    printf("CUDA error in memcpy: %s\n", hipGetErrorString(err));
-//  fflush(stdout); 
-//  } 
+//  fflush(stdout);
+//  }
   //finalize S matrix, and initialize the W matrix at the same time
   orthonormalization_copy_matrix<<<num_blocks,thread_per_block,0,s>>>(S,edge_S,W,alpha_max);
 //  hipDeviceSynchronize();
 //  err = hipGetLastError();
 //  if (err != hipSuccess) {
 //    printf("CUDA error in copy matrix: %s\n", hipGetErrorString(err));
-//  fflush(stdout); 
-//  } 
+//  fflush(stdout);
+//  }
 
   sqrt_mat(W, alpha_max, s, handle);
 //  hipDeviceSynchronize();
 //  err = hipGetLastError();
 //  if (err != hipSuccess) {
 //    printf("CUDA error in sqrt mat: %s\n", hipGetErrorString(err));
-//  fflush(stdout); 
-//  } 
+//  fflush(stdout);
+//  }
   //invert_mat(W, alpha_max, s, handle);
   invert_mat_other(W, alpha_max, s, handle);
 //  hipDeviceSynchronize();
 //  err = hipGetLastError();
 //  if (err != hipSuccess) {
 //    printf("CUDA error in invert mat: %s\n", hipGetErrorString(err));
-//  fflush(stdout); 
-//  } 
+//  fflush(stdout);
+//  }
 
 
 
@@ -457,7 +457,7 @@ void get_orthonormalization_matrix_poly3gauss_cc(const int alpha_max, const doub
 //  hipMemcpy(HW,W,alpha_max*alpha_max*sizeof(double),hipMemcpyDeviceToHost);
 //  for (int i=0; i<alpha_max*alpha_max; i++)
 //    printf("%.17g ",HW[i]);
-// 
+//
 //  printf("\n");
 //  std::memcpy(W_inout, HW, alpha_max*alpha_max*sizeof(double));
 //
@@ -465,7 +465,7 @@ void get_orthonormalization_matrix_poly3gauss_cc(const int alpha_max, const doub
 //  hipMemcpy(HS,S,alpha_max*alpha_max*sizeof(double),hipMemcpyDeviceToHost);
 //  for (int i=0; i<alpha_max*alpha_max; i++)
 //    printf("%.17g ",HS[i]);
-// 
+//
 //  printf("\n");
 //  std::memcpy(S_inout, HS, alpha_max*alpha_max*sizeof(double));
 
@@ -473,7 +473,7 @@ void get_orthonormalization_matrix_poly3gauss_cc(const int alpha_max, const doub
 
 
 void get_orthonormalization_matrix_poly3_cc(const int alpha_max, double* S, double* W, hipblasHandle_t handle, hipStream_t s){
-  
+
 
   auto total_threads= alpha_max*alpha_max;
   auto thread_per_block = 64;
@@ -481,7 +481,7 @@ void get_orthonormalization_matrix_poly3_cc(const int alpha_max, double* S, doub
   init_S<false><<<num_blocks,thread_per_block,0,s>>>(alpha_max,S);
   //cpy S to W
   hipMemcpy(W,S,alpha_max*alpha_max*sizeof(double),hipMemcpyDeviceToDevice);
-  
+
   sqrt_mat(W, alpha_max, s, handle);
   //invert_mat(W, alpha_max, s, handle);
   invert_mat_other(W, alpha_max, s, handle);
@@ -493,20 +493,20 @@ void get_orthonormalization_matrix_poly3_cc(const int alpha_max, double* S, doub
 //  hipMemcpy(HW,W,alpha_max*alpha_max*sizeof(double),hipMemcpyDeviceToHost);
 //  for (int i=0; i<alpha_max*alpha_max; i++)
 //    printf("%.17g ",HW[i]);
-// 
+//
 //  printf("\n");
 //  std::memcpy(W_inout, HW, alpha_max*alpha_max*sizeof(double));
 //  printf (" after invert matrix, S \n\n");
 //  hipMemcpy(HS,S,alpha_max*alpha_max*sizeof(double),hipMemcpyDeviceToHost);
 //  for (int i=0; i<alpha_max*alpha_max; i++)
 //    printf("%.17g ",HS[i]);
-// 
+//
 //  printf("\n");
 //  std::memcpy(S_inout, HS, alpha_max*alpha_max*sizeof(double));
 //
 }
 
-void orthonormalization_copy_to_global_matrix_cc(double* src, double* dest, const int src_rowsize, const int dest_start, const int dest_rowsize,hipStream_t s ) 
+void orthonormalization_copy_to_global_matrix_cc(double* src, double* dest, const int src_rowsize, const int dest_start, const int dest_rowsize,hipStream_t s )
 {
   auto total_threads= src_rowsize*src_rowsize;
   auto thread_per_block = 64;
@@ -517,7 +517,7 @@ void orthonormalization_copy_to_global_matrix_cc(double* src, double* dest, cons
 
 
 
-//exposed C APIs 
+//exposed C APIs
 //stream and handle are passed as "ptr_c" type in fortran so they need to be dereferenced.
 extern "C"
 {
@@ -526,16 +526,16 @@ extern "C"
   }
   void get_orthonormalization_matrix_poly3gauss(const int alpha_max, const double atom_sigma_in, const double rcut_hard_in, double *S, double* W,hipblasHandle_t* handle, hipStream_t* s){
 //    printf("calling ortho from extern c, pointers are W%p and S%p\n",W,S);
-//    fflush(stdout); 
+//    fflush(stdout);
 
     get_orthonormalization_matrix_poly3gauss_cc(alpha_max, atom_sigma_in, rcut_hard_in, S, W,*handle,*s);
   }
 
   void copy_to_global_matrix(double* src, double* dest, const int src_rowsize, const int dest_start, const int dest_rowsize,hipStream_t* s ) {
 //    printf("copy to matrix begin, values are %d, %d, %d \n",src_rowsize,dest_start,dest_rowsize);
-//    fflush(stdout); 
-    orthonormalization_copy_to_global_matrix_cc(src, dest, src_rowsize, dest_start,  dest_rowsize, *s ); 
+//    fflush(stdout);
+    orthonormalization_copy_to_global_matrix_cc(src, dest, src_rowsize, dest_start,  dest_rowsize, *s );
 //    printf("copy to matrix end\n");
-//    fflush(stdout); 
+//    fflush(stdout);
   }
 }

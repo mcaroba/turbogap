@@ -29,7 +29,7 @@ F90_OPTS += $(F90_MOD_DIR_OPT) $(INC_DIR)
 PROGRAMS := turbogap
 
 
-SRC_CUDA := cuda_wrappers.cu gpu_exp.cu 
+SRC_CUDA := cuda_wrappers.cu gpu_exp.cu
 # orthonormalization_kernels.cc is deliberately disabled, not dead: it is kept in
 # src/ for possible reintegration. Re-enable by moving it before the '#'.
 SRC_CC :=  3b_final.cc # orthonormalization_kernels.cc

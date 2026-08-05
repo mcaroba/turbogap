@@ -30,32 +30,32 @@ module gpu_context
 !   * params%gpu_batched, params%gpu_n_batches, params%gpu_max_batch_size --
 !     input parameters, already carried by params.
 
-  use kinds
-  use iso_c_binding
-  use types, only: gpu_storage_type, gpu_neigh_storage_type, &
-                   gpu_host_batch_storage_type
+   use kinds
+   use iso_c_binding
+   use types, only: gpu_storage_type, gpu_neigh_storage_type, &
+                    gpu_host_batch_storage_type
 
-  implicit none
+   implicit none
 
-  public
+   public
 
 ! The default stream and cuBLAS handle, created once at start-up.
- type(c_ptr) :: cublas_handle
- type(c_ptr) :: gpu_stream
+   type(c_ptr) :: cublas_handle
+   type(c_ptr) :: gpu_stream
 
 ! Per-OpenMP-task streams and handles. Shared arrays, indexed by the
 ! thread-private omp_task.
- type(c_ptr), allocatable :: cublas_handles(:)
- type(c_ptr), allocatable :: gpu_streams(:)
+   type(c_ptr), allocatable :: cublas_handles(:)
+   type(c_ptr), allocatable :: gpu_streams(:)
 
 ! Device-side storage for the batched experimental-observable paths.
 ! gpu_batch_storage is indexed
 !   gpu_batch_storage(i_batch) % host(i_n_dim_idx) % pair_distribution_h(1:n_samples)
- type( gpu_storage_type ), allocatable :: gpu_exp(:)
- type( gpu_neigh_storage_type ), allocatable :: gpu_neigh(:)
- type( gpu_host_batch_storage_type ), allocatable :: gpu_batch_storage(:)
+   type(gpu_storage_type), allocatable :: gpu_exp(:)
+   type(gpu_neigh_storage_type), allocatable :: gpu_neigh(:)
+   type(gpu_host_batch_storage_type), allocatable :: gpu_batch_storage(:)
 
 ! Running total of device memory handed out, for the end-of-run report.
- real(dp) :: gpu_memory_usage = 0.d0
+   real(dp) :: gpu_memory_usage = 0.d0
 
 end module gpu_context
