@@ -470,6 +470,15 @@ contains
              y = x * (y - 1.d0)
           end if
        end if
+
+!      The inverse: experimental data supplied as q*i(q) when i(q) is the
+!      requested output.
+       if ( trim(params%xrd_output) == "i(q)" .and. params%q_units &
+            &== "q" )then
+          if ( exp .and. ( trim(input) == "q*i(q)" .or. trim(input) == "q*F(q)") )then
+             y = (y / x) + 1.d0
+          end if
+       end if
     elseif ( trim(label) == "nd" )then
        output = params%nd_output
        ! mag = sqrt(dot_product(y, y)) * dx
@@ -479,6 +488,15 @@ contains
             &== "q" )then
           if ( exp .and. ( trim(input) == "i(q)" .or. trim(input) == "F(q)") )then
              y = x * (y - 1.d0)
+          end if
+       end if
+
+!      The inverse: experimental data supplied as q*i(q) when i(q) is the
+!      requested output.
+       if ( trim(params%nd_output) == "i(q)" .and. params%q_units &
+            &== "q" )then
+          if ( exp .and. ( trim(input) == "q*i(q)" .or. trim(input) == "q*F(q)") )then
+             y = (y / x) + 1.d0
           end if
        end if
 
