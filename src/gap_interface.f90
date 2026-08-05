@@ -337,7 +337,7 @@ contains
                   k = k + 1
                   !         We fold neighbors in the supercell back to the central unit cell
                   j3 = mod(neighbors_list0(k) - 1, n_total_sites) + 1
-                  if (rjs0(k) <= rcut_max .and. species_multiplicity_supercell(j3) > 0) then
+                  if (rjs0(k) < rcut_max .and. species_multiplicity_supercell(j3) > 0) then
                      j2 = j2 + 1
                      k2 = k2 + 1
                      rjs(k2) = rjs0(k)
