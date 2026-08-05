@@ -61,34 +61,68 @@ module read_files
     implicit none
 
 !   Input variables
-    real(dp), intent(in) :: rcut_max, masses_types(:), t_beg
-    integer, intent(in) :: which_atom, n_species
-    character*8, intent(in) :: species_types(:)
-    character*1024, intent(in) :: filename
-    logical, intent(in) :: ase_format, all_atoms, do_timing, do_md, supercell_check_only, &
-         recalculate_supercell
+ real(dp), intent(in) :: rcut_max
+ real(dp), intent(in) :: masses_types(:)
+ real(dp), intent(in) :: t_beg
+ integer, intent(in) :: which_atom
+ integer, intent(in) :: n_species
+ character*8, intent(in) :: species_types(:)
+ character*1024, intent(in) :: filename
+ logical, intent(in) :: ase_format
+ logical, intent(in) :: all_atoms
+ logical, intent(in) :: do_timing
+ logical, intent(in) :: do_md
+ logical, intent(in) :: supercell_check_only
+ logical, intent(in) :: recalculate_supercell
 
 !   In and out variables
-    real(dp), allocatable, intent(inout) :: positions(:,:), velocities(:,:), masses(:)
-    real(dp), intent(inout) :: a_box(1:3), b_box(1:3), c_box(1:3)
-    integer, allocatable, intent(inout) :: species(:), species_supercell(:)
-    integer, intent(inout) :: n_sites
-    integer, intent(inout) :: indices(1:3)
-    character*8, allocatable, intent(inout) :: xyz_species(:), xyz_species_supercell(:)
-    logical, intent(inout) :: repeat_xyz, write_masses
-    logical, allocatable, intent(inout) :: fix_atom(:,:)
+ real(dp), allocatable, intent(inout) :: positions(:,:)
+ real(dp), allocatable, intent(inout) :: velocities(:,:)
+ real(dp), allocatable, intent(inout) :: masses(:)
+ real(dp), intent(inout) :: a_box(1:3)
+ real(dp), intent(inout) :: b_box(1:3)
+ real(dp), intent(inout) :: c_box(1:3)
+ integer, allocatable, intent(inout) :: species(:)
+ integer, allocatable, intent(inout) :: species_supercell(:)
+ integer, intent(inout) :: n_sites
+ integer, intent(inout) :: indices(1:3)
+ character*8, allocatable, intent(inout) :: xyz_species(:)
+ character*8, allocatable, intent(inout) :: xyz_species_supercell(:)
+ logical, intent(inout) :: repeat_xyz
+ logical, intent(inout) :: write_masses
+ logical, allocatable, intent(inout) :: fix_atom(:,:)
 
 !   Internal variables
-    real(dp), allocatable :: positions_supercell(:,:), velocities_supercell(:,:)
-    real(dp) :: time1, time2, dist(1:3), read_time, E_kinetic, instant_temp
-    real(dp) :: kB = 8.6173303d-5, rjunk(1:3), rjunk1d
-    integer :: i, iostatus, j, n_sites_supercell, counter, ijunk, k2, i2, j2
-    integer :: indices_prev(1:3)
-    character*8 :: i_char
-    character*128 :: cjunk, cjunk_array(1:100)
-    character*1024 :: cjunk1024, properties
-    character*12800 :: cjunk_array_flat
-    logical :: masses_from_xyz, has_velocities, ljunk(1:3)
+ real(dp), allocatable :: positions_supercell(:,:)
+ real(dp), allocatable :: velocities_supercell(:,:)
+ real(dp) :: time1
+ real(dp) :: time2
+ real(dp) :: dist(1:3)
+ real(dp) :: read_time
+ real(dp) :: E_kinetic
+ real(dp) :: instant_temp
+ real(dp) :: kB = 8.6173303d-5
+ real(dp) :: rjunk(1:3)
+ real(dp) :: rjunk1d
+ integer :: i
+ integer :: iostatus
+ integer :: j
+ integer :: n_sites_supercell
+ integer :: counter
+ integer :: ijunk
+ integer :: k2
+ integer :: i2
+ integer :: j2
+ integer :: indices_prev(1:3)
+ character*8 :: i_char
+ character*128 :: cjunk
+ character*128 :: cjunk_array(1:100)
+ character*1024 :: cjunk1024
+ character*1024 :: properties
+ character*12800 :: cjunk_array_flat
+ logical :: masses_from_xyz
+ logical :: has_velocities
+ logical :: ljunk(1:3)
 
     indices_prev = indices
 
@@ -397,13 +431,17 @@ end if
     implicit none
 
 !   Input variables
-    character*1024, intent(in) :: file_data
+ character*1024, intent(in) :: file_data
 !   Output variables
-    real(dp), allocatable, intent(out) :: data(:,:)
-    integer, intent(out) :: n_points
+ real(dp), allocatable, intent(out) :: data(:,:)
+ integer, intent(out) :: n_points
 
 !   Internal variables
-    integer :: i, j, iostatus, dim, unit_number
+ integer :: i
+ integer :: j
+ integer :: iostatus
+ integer :: dim
+ integer :: unit_number
 
 
     ! if the file_data == none then we allocate and exit
@@ -441,10 +479,11 @@ end if
 !   Input variables
     character(len = *), intent(in) :: filename, label
 !   Output variables
-    real(dp), allocatable, intent(in) :: x(:), y(:)
-    logical, intent(in) :: overwrite
+ real(dp), allocatable, intent(in) :: x(:)
+ real(dp), allocatable, intent(in) :: y(:)
+ logical, intent(in) :: overwrite
 !   Internal variables
-    integer :: i
+ integer :: i
 
     if( overwrite )then
        open(unit=200, file=filename, status="unknown")
@@ -468,10 +507,11 @@ end if
 !   Input variables
     character(len = *), intent(in) :: filename, label
 !   Output variables
-    real(dp), intent(in) :: x(:), y(:)
-    logical, intent(in) :: overwrite
+ real(dp), intent(in) :: x(:)
+ real(dp), intent(in) :: y(:)
+ logical, intent(in) :: overwrite
 !   Internal variables
-    integer :: i
+ integer :: i
 
     if( overwrite )then
        open(unit=200, file=filename, status="unknown")
@@ -498,15 +538,22 @@ end if
     implicit none
 
 !   Input variables
-    character*1024, intent(in) :: file_desc, file_alphas
+ character*1024, intent(in) :: file_desc
+ character*1024, intent(in) :: file_alphas
     character(len=*), intent(in) :: descriptor_type
 
 !   Output variables
-    real(dp), allocatable, intent(out) :: alphas(:), Qs(:,:), cutoff(:)
-    integer, intent(out) :: n_sparse
+ real(dp), allocatable, intent(out) :: alphas(:)
+ real(dp), allocatable, intent(out) :: Qs(:,:)
+ real(dp), allocatable, intent(out) :: cutoff(:)
+ integer, intent(out) :: n_sparse
 
 !   Internal variables
-    integer :: i, j, iostatus, dim, unit_number
+ integer :: i
+ integer :: j
+ integer :: iostatus
+ integer :: dim
+ integer :: unit_number
 
 
 !   Read alphas to figure out sparse set size
@@ -608,25 +655,38 @@ end if
     implicit none
 
 !   Input variables
-    integer, intent(in) :: n_species, rank
+ integer, intent(in) :: n_species
+ integer, intent(in) :: rank
     character(len=*) :: mode
 
 !   Output variables
-    type(input_parameters), intent(out) :: params
+ type(input_parameters), intent(out) :: params
 
 !   Internal variables
-    real(dp) :: c6_ref, r0_ref, alpha0_ref, bsf, k
-    integer :: iostatus, i, j, i2,  nw, iostatus2
-    character*1024 :: long_line
-    character*128, allocatable :: long_line_items(:)
-    character*64 :: keyword, cjunk
-    character*32 :: implemented_thermostats(1:3)
-    character*32 :: implemented_barostats(1:2)
-    character*32 :: implemented_mc_types(1:8)
-    character*32 :: implemented_exp_observables(1:5)
-    character*2 :: element
-    character*1 :: keyword_first
-    logical :: are_vdw_refs_read(1:3), valid_choice, masses_in_input_file = .false.
+ real(dp) :: c6_ref
+ real(dp) :: r0_ref
+ real(dp) :: alpha0_ref
+ real(dp) :: bsf
+ real(dp) :: k
+ integer :: iostatus
+ integer :: i
+ integer :: j
+ integer :: i2
+ integer :: nw
+ integer :: iostatus2
+ character*1024 :: long_line
+ character*128, allocatable :: long_line_items(:)
+ character*64 :: keyword
+ character*64 :: cjunk
+ character*32 :: implemented_thermostats(1:3)
+ character*32 :: implemented_barostats(1:2)
+ character*32 :: implemented_mc_types(1:8)
+ character*32 :: implemented_exp_observables(1:5)
+ character*2 :: element
+ character*1 :: keyword_first
+ logical :: are_vdw_refs_read(1:3)
+ logical :: valid_choice
+ logical :: masses_in_input_file = .false.
 
     implemented_thermostats(1) = "none"
     implemented_thermostats(2) = "berendsen"
@@ -2143,24 +2203,42 @@ end if
     implicit none
 
 !   Input variables
-    type(input_parameters), intent(in) :: params
-    logical, intent(in) :: do_prediction
+ type(input_parameters), intent(in) :: params
+ logical, intent(in) :: do_prediction
     character(len=*), intent(in) :: file_gap
 
 !   Output variables
-    real(dp), intent(out) :: rcut_max
-    integer, intent(out) :: n_soap_turbo, n_distance_2b, n_angle_3b, n_core_pot
-    integer :: nw
-    type(soap_turbo), allocatable, intent(out) :: soap_turbo_hypers(:)
-    type(distance_2b), allocatable, intent(out) :: distance_2b_hypers(:)
-    type(angle_3b), allocatable, intent(out) :: angle_3b_hypers(:)
-    type(core_pot), allocatable, intent(out) :: core_pot_hypers(:)
+ real(dp), intent(out) :: rcut_max
+ integer, intent(out) :: n_soap_turbo
+ integer, intent(out) :: n_distance_2b
+ integer, intent(out) :: n_angle_3b
+ integer, intent(out) :: n_core_pot
+ integer :: nw
+ type(soap_turbo), allocatable, intent(out) :: soap_turbo_hypers(:)
+ type(distance_2b), allocatable, intent(out) :: distance_2b_hypers(:)
+ type(angle_3b), allocatable, intent(out) :: angle_3b_hypers(:)
+ type(core_pot), allocatable, intent(out) :: core_pot_hypers(:)
 !   Internal variables
-    real(dp), allocatable :: u(:), x(:), V(:)
-    real(dp) :: sig, p, qn, un
-    integer :: iostatus, i, counter, n_species, n_sparse, ijunk, n, n_nonzero, j
-    character*64 :: keyword, cjunk, compress_string
-    character*1 :: keyword_first
+ real(dp), allocatable :: u(:)
+ real(dp), allocatable :: x(:)
+ real(dp), allocatable :: V(:)
+ real(dp) :: sig
+ real(dp) :: p
+ real(dp) :: qn
+ real(dp) :: un
+ integer :: iostatus
+ integer :: i
+ integer :: counter
+ integer :: n_species
+ integer :: n_sparse
+ integer :: ijunk
+ integer :: n
+ integer :: n_nonzero
+ integer :: j
+ character*64 :: keyword
+ character*64 :: cjunk
+ character*64 :: compress_string
+ character*1 :: keyword_first
 
     open(unit=10, file=file_gap, status="old", iostat=iostatus)
 !   Look for the number of instances of each GAP
@@ -2832,7 +2910,9 @@ character*8, intent(in) :: species_types(n_species)
 integer, intent(out) :: nrows
 real(dp), allocatable :: allelstopdata(:)
 character*8, allocatable :: infoline(:)
-integer :: i, ncols, ndata
+integer :: i
+integer :: ncols
+integer :: ndata
 	
 open (unit = 1000, file = estopfilename)
 ! first line gives information
@@ -2871,8 +2951,11 @@ end subroutine read_electronic_stopping_file
     implicit none
 
     character(len=*), intent(inout) :: string
-    character*1 :: upper_case_dict(1:26), lower_case_dict(1:26)
-    integer :: i, j, n
+ character*1 :: upper_case_dict(1:26)
+ character*1 :: lower_case_dict(1:26)
+ integer :: i
+ integer :: j
+ integer :: n
 
     upper_case_dict = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", &
                        "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", &
@@ -2897,17 +2980,29 @@ end subroutine read_electronic_stopping_file
        local_property_labels, local_property_labels_temp, local_property_labels_temp2, local_property_indexes, &
        valid_vdw, vdw_lp_index, valid_estat_charges, charge_lp_index, core_be_lp_index, valid_xps, xps_idx )
     implicit none
-    type( input_parameters ), intent(inout) :: params
-    integer, intent(in) :: n_soap_turbo
-    integer, intent( inout ) :: n_local_properties_tot
-    type( soap_turbo ), allocatable, intent(inout) :: soap_turbo_hypers(:)
-    character*1024, allocatable, intent(inout) ::  local_property_labels(:), local_property_labels_temp(:), &
-         local_property_labels_temp2(:)
-    integer, allocatable, intent(inout) :: local_property_indexes(:)
-    integer, intent(inout) :: vdw_lp_index, core_be_lp_index, charge_lp_index, xps_idx
-    logical, intent(inout) :: valid_vdw, valid_xps, valid_estat_charges
-    logical :: label_in_list = .false.
-    integer :: i, j, i2, j2, k, k2, nprop
+ type( input_parameters ), intent(inout) :: params
+ integer, intent(in) :: n_soap_turbo
+ integer, intent( inout ) :: n_local_properties_tot
+ type( soap_turbo ), allocatable, intent(inout) :: soap_turbo_hypers(:)
+ character*1024, allocatable, intent(inout) :: local_property_labels(:)
+ character*1024, allocatable, intent(inout) :: local_property_labels_temp(:)
+ character*1024, allocatable, intent(inout) :: local_property_labels_temp2(:)
+ integer, allocatable, intent(inout) :: local_property_indexes(:)
+ integer, intent(inout) :: vdw_lp_index
+ integer, intent(inout) :: core_be_lp_index
+ integer, intent(inout) :: charge_lp_index
+ integer, intent(inout) :: xps_idx
+ logical, intent(inout) :: valid_vdw
+ logical, intent(inout) :: valid_xps
+ logical, intent(inout) :: valid_estat_charges
+ logical :: label_in_list = .false.
+ integer :: i
+ integer :: j
+ integer :: i2
+ integer :: j2
+ integer :: k
+ integer :: k2
+ integer :: nprop
 
     n_local_properties_tot = 0
     i2 = 1 ! using this as a counter for the labels
@@ -3091,9 +3186,11 @@ end subroutine read_electronic_stopping_file
 
     implicit none
 
-    integer, intent(in) :: seed_value, rank
-    integer, allocatable :: seed(:)
-    integer :: n, i
+ integer, intent(in) :: seed_value
+ integer, intent(in) :: rank
+ integer, allocatable :: seed(:)
+ integer :: n
+ integer :: i
 
     if( seed_value == 0 )return
 

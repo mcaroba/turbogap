@@ -46,16 +46,36 @@ module neighbors
 
     implicit none
 
-    real(dp), intent(in) :: posi(1:3), posj(1:3), a(1:3), b(1:3), c(1:3)
-    integer, intent(out) :: i_shift(1:3)
-    logical, intent(in) :: PBC(1:3)
-    real(dp), intent(out) :: d
-    real(dp), intent(out) :: dist(1:3)
-    real(dp) :: d2, L(1:3), d_tol = 1.d-6
-    real(dp) :: mat(1:3,1:3), md, indices_real(1:3), res, res_opt, dist_opt(1:3), dist_temp(1:3)
-    real(dp), save :: a0(1:3) = 0.d0, b0(1:3) = 0.d0, c0(1:3) = 0.d0, mat_inv(1:3,1:3) = 0.d0
-    integer :: i, j, k, indices(1:3)
-    logical :: lattice_check_a(1:3), lattice_check_b(1:3), lattice_check_c(1:3)
+ real(dp), intent(in) :: posi(1:3)
+ real(dp), intent(in) :: posj(1:3)
+ real(dp), intent(in) :: a(1:3)
+ real(dp), intent(in) :: b(1:3)
+ real(dp), intent(in) :: c(1:3)
+ integer, intent(out) :: i_shift(1:3)
+ logical, intent(in) :: PBC(1:3)
+ real(dp), intent(out) :: d
+ real(dp), intent(out) :: dist(1:3)
+ real(dp) :: d2
+ real(dp) :: L(1:3)
+ real(dp) :: d_tol = 1.d-6
+ real(dp) :: mat(1:3,1:3)
+ real(dp) :: md
+ real(dp) :: indices_real(1:3)
+ real(dp) :: res
+ real(dp) :: res_opt
+ real(dp) :: dist_opt(1:3)
+ real(dp) :: dist_temp(1:3)
+ real(dp), save :: a0(1:3) = 0.d0
+ real(dp), save :: b0(1:3) = 0.d0
+ real(dp), save :: c0(1:3) = 0.d0
+ real(dp), save :: mat_inv(1:3,1:3) = 0.d0
+ integer :: i
+ integer :: j
+ integer :: k
+ integer :: indices(1:3)
+ logical :: lattice_check_a(1:3)
+ logical :: lattice_check_b(1:3)
+ logical :: lattice_check_c(1:3)
 
     if( dabs(a(2)) < d_tol .and. dabs(a(3)) < d_tol .and. &
         dabs(b(1)) < d_tol .and. dabs(b(3)) < d_tol .and. &
@@ -160,12 +180,20 @@ module neighbors
 
     implicit none
 
-    real(dp), intent(in) :: a(1:3), b(1:3), c(1:3), rcut
-    logical, intent(in) :: PBC(1:3)
-    integer, intent(out) :: indices(1:3)
-    real(dp) :: axb(1:3), bxc(1:3), cxa(1:3), indices_real(1:3)
-    real(dp) :: mat(1:3,1:3), mat_inv(1:3,1:3), md
-    integer :: i
+ real(dp), intent(in) :: a(1:3)
+ real(dp), intent(in) :: b(1:3)
+ real(dp), intent(in) :: c(1:3)
+ real(dp), intent(in) :: rcut
+ logical, intent(in) :: PBC(1:3)
+ integer, intent(out) :: indices(1:3)
+ real(dp) :: axb(1:3)
+ real(dp) :: bxc(1:3)
+ real(dp) :: cxa(1:3)
+ real(dp) :: indices_real(1:3)
+ real(dp) :: mat(1:3,1:3)
+ real(dp) :: mat_inv(1:3,1:3)
+ real(dp) :: md
+ integer :: i
 
     axb = cross_product(a, b)
     axb = axb / dsqrt( dot_product(axb, axb) )
@@ -230,29 +258,65 @@ module neighbors
     implicit none
 
 !   Input variables
-    real(dp), intent(in) :: rcut_max, positions(:,:)
+ real(dp), intent(in) :: rcut_max
+ real(dp), intent(in) :: positions(:,:)
 !    integer, intent(in) :: species_multiplicity(:), n_species
-    integer, intent(in) :: species_supercell(:), indices(1:3), n_sites, rank
-    logical, intent(in) :: do_timing, rebuild_neighbors_list, do_list(:)
+ integer, intent(in) :: species_supercell(:)
+ integer, intent(in) :: indices(1:3)
+ integer, intent(in) :: n_sites
+ integer, intent(in) :: rank
+ logical, intent(in) :: do_timing
+ logical, intent(in) :: rebuild_neighbors_list
+ logical, intent(in) :: do_list(:)
 
 !   Output variables
-    integer, intent(out) :: n_atom_pairs
+ integer, intent(out) :: n_atom_pairs
 !    logical, allocatable, intent(out) :: mask_species(:,:)
 
 !   In and out variables
-    real(dp), allocatable, intent(inout) :: rjs(:), thetas(:), phis(:), xyz(:,:)
-    integer, allocatable, intent(inout) :: neighbor_species(:)
-    real(dp), intent(inout) :: a_box(1:3), b_box(1:3), c_box(1:3)
-    integer, allocatable, intent(inout) :: neighbors_list(:), n_neigh(:)
+ real(dp), allocatable, intent(inout) :: rjs(:)
+ real(dp), allocatable, intent(inout) :: thetas(:)
+ real(dp), allocatable, intent(inout) :: phis(:)
+ real(dp), allocatable, intent(inout) :: xyz(:,:)
+ integer, allocatable, intent(inout) :: neighbor_species(:)
+ real(dp), intent(inout) :: a_box(1:3)
+ real(dp), intent(inout) :: b_box(1:3)
+ real(dp), intent(inout) :: c_box(1:3)
+ integer, allocatable, intent(inout) :: neighbors_list(:)
+ integer, allocatable, intent(inout) :: n_neigh(:)
 !    integer, allocatable, intent(inout) :: species_supercell(:,:)
 
 !   Internal variables
-    real(dp) :: time1, time2, dist(1:3), d, neigh_time, time3, tol, d_tol = 1.d-6
-    integer, allocatable :: neighbors_list_temp(:), head(:), this_list(:)
-    integer :: n_neigh_max, i, j, n_sites_supercell, &
-               k, k2, i2, j2, i3, j3, k3, mx, my, mz, i_shift(1:3)
-    logical :: is_box_square, is_box_small
-    logical, save :: print_cutoff_warning = .true., print_shape_warning = .true.
+ real(dp) :: time1
+ real(dp) :: time2
+ real(dp) :: dist(1:3)
+ real(dp) :: d
+ real(dp) :: neigh_time
+ real(dp) :: time3
+ real(dp) :: tol
+ real(dp) :: d_tol = 1.d-6
+ integer, allocatable :: neighbors_list_temp(:)
+ integer, allocatable :: head(:)
+ integer, allocatable :: this_list(:)
+ integer :: n_neigh_max
+ integer :: i
+ integer :: j
+ integer :: n_sites_supercell
+ integer :: k
+ integer :: k2
+ integer :: i2
+ integer :: j2
+ integer :: i3
+ integer :: j3
+ integer :: k3
+ integer :: mx
+ integer :: my
+ integer :: mz
+ integer :: i_shift(1:3)
+ logical :: is_box_square
+ logical :: is_box_small
+ logical, save :: print_cutoff_warning = .true.
+ logical, save :: print_shape_warning = .true.
 
 
 ! integer :: n_ii,i_ii, j_jj,k_ii
@@ -591,16 +655,34 @@ module neighbors
     implicit none
 
 !   Input variables
-    real(dp), intent(in) :: rjs(:), rcut, max_Gbytes_per_process
-    integer, intent(in) :: n_neigh(:), l_max, n_max
-    integer, intent(in) :: n_batches
+ real(dp), intent(in) :: rjs(:)
+ real(dp), intent(in) :: rcut
+ real(dp), intent(in) :: max_Gbytes_per_process
+ integer, intent(in) :: n_neigh(:)
+ integer, intent(in) :: l_max
+ integer, intent(in) :: n_max
+ integer, intent(in) :: n_batches
 
 !   Output variables
-    integer, allocatable, intent(out) :: i_beg_list(:), i_end_list(:), j_beg_list(:), j_end_list(:)
+ integer, allocatable, intent(out) :: i_beg_list(:)
+ integer, allocatable, intent(out) :: i_end_list(:)
+ integer, allocatable, intent(out) :: j_beg_list(:)
+ integer, allocatable, intent(out) :: j_end_list(:)
 
 !   Internal variables
-    real(dp) :: estimated_memory_in_Gbytes, mem_ratio, pairs_per_chunk
-    integer :: n_sites, n_atom_pairs, k_max, n_chunks, i, j, k, k2, i_chunk, n_atom_pairs_in
+ real(dp) :: estimated_memory_in_Gbytes
+ real(dp) :: mem_ratio
+ real(dp) :: pairs_per_chunk
+ integer :: n_sites
+ integer :: n_atom_pairs
+ integer :: k_max
+ integer :: n_chunks
+ integer :: i
+ integer :: j
+ integer :: k
+ integer :: k2
+ integer :: i_chunk
+ integer :: n_atom_pairs_in
 
 
     n_sites = size(n_neigh)
@@ -679,15 +761,33 @@ module neighbors
     implicit none
 
 !   Input variables
-    real(dp), intent(in) :: rjs(:), rcut, max_Gbytes_per_process
-    integer, intent(in) :: n_neigh(:), l_max, n_max
+ real(dp), intent(in) :: rjs(:)
+ real(dp), intent(in) :: rcut
+ real(dp), intent(in) :: max_Gbytes_per_process
+ integer, intent(in) :: n_neigh(:)
+ integer, intent(in) :: l_max
+ integer, intent(in) :: n_max
 
 !   Output variables
-    integer, allocatable, intent(out) :: i_beg_list(:), i_end_list(:), j_beg_list(:), j_end_list(:)
+ integer, allocatable, intent(out) :: i_beg_list(:)
+ integer, allocatable, intent(out) :: i_end_list(:)
+ integer, allocatable, intent(out) :: j_beg_list(:)
+ integer, allocatable, intent(out) :: j_end_list(:)
 
 !   Internal variables
-    real(dp) :: estimated_memory_in_Gbytes, mem_ratio, pairs_per_chunk
-    integer :: n_sites, n_atom_pairs, k_max, n_chunks, i, j, k, k2, i_chunk, n_atom_pairs_in
+ real(dp) :: estimated_memory_in_Gbytes
+ real(dp) :: mem_ratio
+ real(dp) :: pairs_per_chunk
+ integer :: n_sites
+ integer :: n_atom_pairs
+ integer :: k_max
+ integer :: n_chunks
+ integer :: i
+ integer :: j
+ integer :: k
+ integer :: k2
+ integer :: i_chunk
+ integer :: n_atom_pairs_in
 
 
     n_sites = size(n_neigh)
@@ -775,15 +875,27 @@ module neighbors
     implicit none
 
 !   Input variables
-    real(dp), intent(in) :: pos(:,:), a(1:3), b(1:3), c(1:3)
+ real(dp), intent(in) :: pos(:,:)
+ real(dp), intent(in) :: a(1:3)
+ real(dp), intent(in) :: b(1:3)
+ real(dp), intent(in) :: c(1:3)
 !   Output variables
-    real(dp), intent(out) :: frac(1:3,1:size(pos,2))
+ real(dp), intent(out) :: frac(1:3,1:size(pos,2))
 !   Internal variables
-    real(dp) :: L(1:3), d_tol = 1.d-6
-    real(dp) :: mat(1:3,1:3), md
-    real(dp), save :: a0(1:3) = 0.d0, b0(1:3) = 0.d0, c0(1:3) = 0.d0, mat_inv(1:3,1:3) = 0.d0
-    integer :: i, atom, n_atoms
-    logical :: lattice_check_a(1:3), lattice_check_b(1:3), lattice_check_c(1:3)
+ real(dp) :: L(1:3)
+ real(dp) :: d_tol = 1.d-6
+ real(dp) :: mat(1:3,1:3)
+ real(dp) :: md
+ real(dp), save :: a0(1:3) = 0.d0
+ real(dp), save :: b0(1:3) = 0.d0
+ real(dp), save :: c0(1:3) = 0.d0
+ real(dp), save :: mat_inv(1:3,1:3) = 0.d0
+ integer :: i
+ integer :: atom
+ integer :: n_atoms
+ logical :: lattice_check_a(1:3)
+ logical :: lattice_check_b(1:3)
+ logical :: lattice_check_c(1:3)
 
     n_atoms = size(pos, 2)
 
@@ -842,15 +954,31 @@ module neighbors
     implicit none
 
 !   Input variables
-    real(dp), intent(in) :: rjs(:), rcut, max_Gbytes_per_process, estimated_memory_in_Gbytes
-    integer, intent(in) :: n_neigh(:)
+ real(dp), intent(in) :: rjs(:)
+ real(dp), intent(in) :: rcut
+ real(dp), intent(in) :: max_Gbytes_per_process
+ real(dp), intent(in) :: estimated_memory_in_Gbytes
+ integer, intent(in) :: n_neigh(:)
 
 !   Output variables
-    integer, allocatable, intent(out) :: i_beg_list(:), i_end_list(:), j_beg_list(:), j_end_list(:)
+ integer, allocatable, intent(out) :: i_beg_list(:)
+ integer, allocatable, intent(out) :: i_end_list(:)
+ integer, allocatable, intent(out) :: j_beg_list(:)
+ integer, allocatable, intent(out) :: j_end_list(:)
 
 !   Internal variables
-    real(dp) :: mem_ratio, pairs_per_chunk
-    integer :: n_sites, n_atom_pairs, k_max, n_chunks, i, j, k, k2, i_chunk, n_atom_pairs_in
+ real(dp) :: mem_ratio
+ real(dp) :: pairs_per_chunk
+ integer :: n_sites
+ integer :: n_atom_pairs
+ integer :: k_max
+ integer :: n_chunks
+ integer :: i
+ integer :: j
+ integer :: k
+ integer :: k2
+ integer :: i_chunk
+ integer :: n_atom_pairs_in
 
 
     n_sites = size(n_neigh)
@@ -925,11 +1053,27 @@ module neighbors
   
   subroutine estimate_max_exp_forces_device_memory_usage( n_sites, n_pairs, n_dim_partial, n_samples, n_samples_sf, total)
     implicit none
-    integer :: n_sites, nk, n_samples, n_samples_sf, n_pairs, n_dim_partial
-    real(dp), intent(inout) :: total
-    real(dp) :: total_exp=0.d0, total_standard=0.d0
-    real(dp) :: nk_int, nk_float, Gk, dermat, sf, fi, pref, xyz, forces, neigh_list, to_gb
-    logical :: verbose = .true. 
+ integer :: n_sites
+ integer :: nk
+ integer :: n_samples
+ integer :: n_samples_sf
+ integer :: n_pairs
+ integer :: n_dim_partial
+ real(dp), intent(inout) :: total
+ real(dp) :: total_exp=0.d0
+ real(dp) :: total_standard=0.d0
+ real(dp) :: nk_int
+ real(dp) :: nk_float
+ real(dp) :: Gk
+ real(dp) :: dermat
+ real(dp) :: sf
+ real(dp) :: fi
+ real(dp) :: pref
+ real(dp) :: xyz
+ real(dp) :: forces
+ real(dp) :: neigh_list
+ real(dp) :: to_gb
+ logical :: verbose = .true.
 
     total = 0.d0
     

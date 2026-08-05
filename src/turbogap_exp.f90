@@ -47,7 +47,8 @@ module turbogap_exp
   implicit none
 
   private
-  public :: compute_exp_xps, compute_exp_spectra
+ public :: compute_exp_xps
+ public :: compute_exp_spectra
 
 contains
 
@@ -61,27 +62,47 @@ contains
 
     implicit none
 
-    type(input_parameters), intent(inout) :: params
-    type(soap_turbo), allocatable, intent(inout) :: soap_turbo_hypers(:)
-    integer, intent(in) :: n_sites, i_beg, i_end, j_beg, j_end, rank
-    integer, intent(in) :: indices(1:3), md_istep, mc_istep, xps_idx, core_be_lp_index
-    logical, intent(in) :: valid_xps
-    logical, intent(inout) :: write_condition, overwrite_condition
-    character*32, intent(inout) :: exp_output
-    real(dp),  intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3)
-    real(dp),  intent(in), allocatable :: xyz(:,:)
-    integer, intent(in), allocatable :: neighbors_list(:), n_neigh(:)
-    real(dp),  intent(inout), allocatable :: local_properties(:,:), local_properties_cart_der(:,:,:)
+ type(input_parameters), intent(inout) :: params
+ type(soap_turbo), allocatable, intent(inout) :: soap_turbo_hypers(:)
+ integer, intent(in) :: n_sites
+ integer, intent(in) :: i_beg
+ integer, intent(in) :: i_end
+ integer, intent(in) :: j_beg
+ integer, intent(in) :: j_end
+ integer, intent(in) :: rank
+ integer, intent(in) :: indices(1:3)
+ integer, intent(in) :: md_istep
+ integer, intent(in) :: mc_istep
+ integer, intent(in) :: xps_idx
+ integer, intent(in) :: core_be_lp_index
+ logical, intent(in) :: valid_xps
+ logical, intent(inout) :: write_condition
+ logical, intent(inout) :: overwrite_condition
+ character*32, intent(inout) :: exp_output
+ real(dp), intent(in) :: a_box(1:3)
+ real(dp), intent(in) :: b_box(1:3)
+ real(dp), intent(in) :: c_box(1:3)
+ real(dp), intent(in), allocatable :: xyz(:,:)
+ integer, intent(in), allocatable :: neighbors_list(:)
+ integer, intent(in), allocatable :: n_neigh(:)
+ real(dp), intent(inout), allocatable :: local_properties(:,:)
+ real(dp), intent(inout), allocatable :: local_properties_cart_der(:,:,:)
 
 !   The caller passes the this_-prefixed arrays under MPI and the plain ones
 !   otherwise.
-    real(dp), allocatable, intent(inout) :: energies_lp(:), forces_lp(:,:)
-    real(dp), intent(inout) :: virial_lp(1:3,1:3), time_xps(1:3)
+ real(dp), allocatable, intent(inout) :: energies_lp(:)
+ real(dp), allocatable, intent(inout) :: forces_lp(:,:)
+ real(dp), intent(inout) :: virial_lp(1:3,1:3)
+ real(dp), intent(inout) :: time_xps(1:3)
 
 !   Was driver state; block-local now.
-    real(dp), allocatable :: y_i_pred_all(:,:), v_neigh_lp(:)
-    real(dp)  :: mag
-    integer :: i, j, j2, k
+ real(dp), allocatable :: y_i_pred_all(:,:)
+ real(dp), allocatable :: v_neigh_lp(:)
+ real(dp) :: mag
+ integer :: i
+ integer :: j
+ integer :: j2
+ integer :: k
 
     !     Compute core_electron_be energies and forces
     if( any( soap_turbo_hypers(:)%has_core_electron_be ) .and.( params%do_prediction ) &
@@ -252,90 +273,147 @@ contains
 
 !   ---- dummy arguments ----
 !   Read-only inputs.
-    integer, intent(in) :: n_sites, i_beg, i_end, j_beg, j_end, rank, ntasks
-    integer, intent(in) :: indices(1:3), md_istep, mc_istep
-    real(dp), intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3)
-    real(dp), intent(in), allocatable :: rjs(:), xyz(:,:)
-    integer,  intent(in), allocatable :: neighbors_list(:), n_neigh(:), &
-         neighbor_species(:), species(:)
+ integer, intent(in) :: n_sites
+ integer, intent(in) :: i_beg
+ integer, intent(in) :: i_end
+ integer, intent(in) :: j_beg
+ integer, intent(in) :: j_end
+ integer, intent(in) :: rank
+ integer, intent(in) :: ntasks
+ integer, intent(in) :: indices(1:3)
+ integer, intent(in) :: md_istep
+ integer, intent(in) :: mc_istep
+ real(dp), intent(in) :: a_box(1:3)
+ real(dp), intent(in) :: b_box(1:3)
+ real(dp), intent(in) :: c_box(1:3)
+ real(dp), intent(in), allocatable :: rjs(:)
+ real(dp), intent(in), allocatable :: xyz(:,:)
+ integer, intent(in), allocatable :: neighbors_list(:)
+ integer, intent(in), allocatable :: n_neigh(:)
+ integer, intent(in), allocatable :: neighbor_species(:)
+ integer, intent(in), allocatable :: species(:)
 
 !   params carries the do_* switches and the exp_data containers, which the
 !   exp_interface routines update, so it cannot be intent(in).
-    type(input_parameters), intent(inout) :: params
-    integer, intent(inout) :: ierr
+ type(input_parameters), intent(inout) :: params
+ integer, intent(inout) :: ierr
 
 !   The three contribution families this routine produces. The caller passes
 !   the this_-prefixed arrays under MPI and the plain ones otherwise; in here
 !   there is one name either way, which is what removes four
 !   preprocessor-interrupted argument lists from the driver.
-    real(dp), allocatable, intent(inout) :: energies_sf(:),  forces_sf(:,:)
-    real(dp), allocatable, intent(inout) :: energies_xrd(:), forces_xrd(:,:)
-    real(dp), allocatable, intent(inout) :: energies_nd(:),  forces_nd(:,:)
-    real(dp), intent(inout) :: virial_sf(1:3,1:3), virial_xrd(1:3,1:3), &
-         virial_nd(1:3,1:3)
+ real(dp), allocatable, intent(inout) :: energies_sf(:)
+ real(dp), allocatable, intent(inout) :: forces_sf(:,:)
+ real(dp), allocatable, intent(inout) :: energies_xrd(:)
+ real(dp), allocatable, intent(inout) :: forces_xrd(:,:)
+ real(dp), allocatable, intent(inout) :: energies_nd(:)
+ real(dp), allocatable, intent(inout) :: forces_nd(:,:)
+ real(dp), intent(inout) :: virial_sf(1:3,1:3)
+ real(dp), intent(inout) :: virial_xrd(1:3,1:3)
+ real(dp), intent(inout) :: virial_nd(1:3,1:3)
 
 !   Timing buckets, accumulated across snapshots.
-    real(dp), intent(inout) :: time_sf(1:3), time_xrd(1:3), time_nd(1:3), &
-         time_exp_batched(1:3)
+ real(dp), intent(inout) :: time_sf(1:3)
+ real(dp), intent(inout) :: time_xrd(1:3)
+ real(dp), intent(inout) :: time_nd(1:3)
+ real(dp), intent(inout) :: time_exp_batched(1:3)
 
 !   The batch decomposition. Built by the caller for the electrostatics and
 !   SOAP paths and consumed here too, which is why it is passed rather than
 !   held in gpu_context.
-    integer, allocatable, intent(inout) :: i_beg_list(:), i_end_list(:), &
-         j_beg_list(:), j_end_list(:)
+ integer, allocatable, intent(inout) :: i_beg_list(:)
+ integer, allocatable, intent(inout) :: i_end_list(:)
+ integer, allocatable, intent(inout) :: j_beg_list(:)
+ integer, allocatable, intent(inout) :: j_end_list(:)
 
 !   Per-batch bounds and the OpenMP task index. omp_task is intended to be
 !   thread-private, so it stays a variable the caller owns rather than moving
 !   into gpu_context with the arrays it indexes.
-    integer, intent(inout) :: n_omp, omp_task, this_i_beg, this_i_end, &
-         this_j_beg, this_j_end, n_sites_temp, n_pairs_temp
+ integer, intent(inout) :: n_omp
+ integer, intent(inout) :: omp_task
+ integer, intent(inout) :: this_i_beg
+ integer, intent(inout) :: this_i_end
+ integer, intent(inout) :: this_j_beg
+ integer, intent(inout) :: this_j_end
+ integer, intent(inout) :: n_sites_temp
+ integer, intent(inout) :: n_pairs_temp
 
 !   Output bookkeeping shared with the XPS path.
-    logical, intent(inout) :: write_condition, overwrite_condition
-    character*1024, intent(inout) :: temp_string
-    character*8, allocatable, intent(inout) :: species_types_actual(:)
-    real(dp), intent(inout) :: v_uc
+ logical, intent(inout) :: write_condition
+ logical, intent(inout) :: overwrite_condition
+ character*1024, intent(inout) :: temp_string
+ character*8, allocatable, intent(inout) :: species_types_actual(:)
+ real(dp), intent(inout) :: v_uc
 
 !   ---- local variables ----
 !   Block-private. All of these were driver declarations that nothing outside
 !   this block referenced.
-    real(dp), parameter :: pi = acos(-1.0)
+ real(dp), parameter :: pi = acos(-1.0)
 
 !   i, j, k and f were driver scratch. Each is written before it is read here,
 !   and the driver rewrites i and j (do-loops) before next reading them; k and f
 !   it never reads again. f is only ever used inside this block.
-    integer :: i, j, k
-    real(dp) :: f
-    integer :: n_dim_idx, n_dim_partial, n_species_actual, q_beg, q_end
+ integer :: i
+ integer :: j
+ integer :: k
+ real(dp) :: f
+ integer :: n_dim_idx
+ integer :: n_dim_partial
+ integer :: n_species_actual
+ integer :: q_beg
+ integer :: q_end
 
-    real(dp), allocatable, target :: dV(:), n_atoms_of_species(:), prefactor(:)
-    real(dp), allocatable, target :: sinc_factor_matrix(:,:)
-    real(dp), allocatable, target :: pair_distribution_der(:,:), &
-         pair_distribution_partial(:,:), pair_distribution_partial_temp(:,:), &
-         pair_distribution_partial_der(:,:,:), &
-         pair_distribution_partial_temp_der(:,:,:)
-    real(dp), allocatable, target :: structure_factor_partial(:,:), &
-         structure_factor_partial_temp(:,:)
-    real(dp), allocatable, target :: x_pair_distribution(:), &
-         y_pair_distribution(:), y_pair_distribution_temp(:), &
-         x_structure_factor(:), x_structure_factor_temp(:), &
-         y_structure_factor(:), y_structure_factor_temp(:), &
-         x_xrd(:), x_xrd_temp(:), y_xrd(:), y_xrd_temp(:), &
-         x_nd(:), x_nd_temp(:), y_nd(:), y_nd_temp(:)
+ real(dp), allocatable, target :: dV(:)
+ real(dp), allocatable, target :: n_atoms_of_species(:)
+ real(dp), allocatable, target :: prefactor(:)
+ real(dp), allocatable, target :: sinc_factor_matrix(:,:)
+ real(dp), allocatable, target :: pair_distribution_der(:,:)
+ real(dp), allocatable, target :: pair_distribution_partial(:,:)
+ real(dp), allocatable, target :: pair_distribution_partial_temp(:,:)
+ real(dp), allocatable, target :: pair_distribution_partial_der(:,:,:)
+ real(dp), allocatable, target :: pair_distribution_partial_temp_der(:,:,:)
+ real(dp), allocatable, target :: structure_factor_partial(:,:)
+ real(dp), allocatable, target :: structure_factor_partial_temp(:,:)
+ real(dp), allocatable, target :: x_pair_distribution(:)
+ real(dp), allocatable, target :: y_pair_distribution(:)
+ real(dp), allocatable, target :: y_pair_distribution_temp(:)
+ real(dp), allocatable, target :: x_structure_factor(:)
+ real(dp), allocatable, target :: x_structure_factor_temp(:)
+ real(dp), allocatable, target :: y_structure_factor(:)
+ real(dp), allocatable, target :: y_structure_factor_temp(:)
+ real(dp), allocatable, target :: x_xrd(:)
+ real(dp), allocatable, target :: x_xrd_temp(:)
+ real(dp), allocatable, target :: y_xrd(:)
+ real(dp), allocatable, target :: y_xrd_temp(:)
+ real(dp), allocatable, target :: x_nd(:)
+ real(dp), allocatable, target :: x_nd_temp(:)
+ real(dp), allocatable, target :: y_nd(:)
+ real(dp), allocatable, target :: y_nd_temp(:)
 
-    integer, allocatable :: nk(:)
+ integer, allocatable :: nk(:)
 
 !   Device-side scratch, private to this block.
-    type(c_ptr) :: xpdf_d, dV_d, prefactor_d, sinc_factor_matrix_d
-    type(c_ptr), allocatable :: nk_d(:), k_index_d(:), j2_index_d(:), &
-         xyz_k_d(:), pair_distribution_partial_d(:), &
-         pair_distribution_partial_der_d(:), all_scattering_factors_d(:)
-    integer(c_size_t) :: st_x_d, st_sinc_factor_matrix_d, st_prefactor_d
-    integer(c_size_t), allocatable :: st_nk_d(:), st_k_index_d(:), &
-         st_j2_index_d(:), st_pair_distribution_partial_d(:), &
-         st_pair_distribution_partial_der_d(:)
+ type(c_ptr) :: xpdf_d
+ type(c_ptr) :: dV_d
+ type(c_ptr) :: prefactor_d
+ type(c_ptr) :: sinc_factor_matrix_d
+ type(c_ptr), allocatable :: nk_d(:)
+ type(c_ptr), allocatable :: k_index_d(:)
+ type(c_ptr), allocatable :: j2_index_d(:)
+ type(c_ptr), allocatable :: xyz_k_d(:)
+ type(c_ptr), allocatable :: pair_distribution_partial_d(:)
+ type(c_ptr), allocatable :: pair_distribution_partial_der_d(:)
+ type(c_ptr), allocatable :: all_scattering_factors_d(:)
+ integer(c_size_t) :: st_x_d
+ integer(c_size_t) :: st_sinc_factor_matrix_d
+ integer(c_size_t) :: st_prefactor_d
+ integer(c_size_t), allocatable :: st_nk_d(:)
+ integer(c_size_t), allocatable :: st_k_index_d(:)
+ integer(c_size_t), allocatable :: st_j2_index_d(:)
+ integer(c_size_t), allocatable :: st_pair_distribution_partial_d(:)
+ integer(c_size_t), allocatable :: st_pair_distribution_partial_der_d(:)
 
-    type( gpu_host_storage_type ), allocatable :: gpu_host_exp_storage(:)
+ type( gpu_host_storage_type ), allocatable :: gpu_host_exp_storage(:)
 
          !##############################################################!
          !###---   (Partial) Pair distribution functions and XRD   ---###!

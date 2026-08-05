@@ -25,7 +25,7 @@ contains
   !**************************************************************************
   subroutine get_time(time)
     implicit none
-    real(dp), intent(out) :: time
+ real(dp), intent(out) :: time
 
 #ifdef _MPIF90
     time = MPI_Wtime()

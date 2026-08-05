@@ -49,40 +49,119 @@ module gap
       !use mpi
       implicit none
 
-      integer(c_int), intent(in) :: n_sparse
+ integer(c_int), intent(in) :: n_sparse
       !   real(c_double), intent(in),target :: soap(:,:), soap_der(:,:,:), alphas(:), delta, Qs(:,:), e0, zeta0, xyz(:,:)
-      real(c_double), intent(in),target :: soap(:,:), soap_der(:,:,:), delta, e0, zeta0, xyz(:,:)
-      real(c_double), intent(out):: energies(:), forces(:,:), virial(1:3,1:3)
-      real(c_double), allocatable, target :: tmp_energies(:), tmp_forces(:,:), tmp_virial(:,:)
-      integer(c_int), intent(in), target :: n_neigh(:), neighbors_list(:)
-      logical, intent(in) :: do_forces, do_timing
-      real(c_double), allocatable,target :: kernels(:,:), kernels_der(:,:), &
-           Qss(:,:), Qs_copy(:,:), this_Qss(:), &
-           kernels_copy(:,:), this_force_h(:,:)
-      real(c_double) :: time1, time2, time3, energies_time, forces_time, this_force(1:3)
-      real(c_double) ::  zeta, cdelta_ene,cdelta_force, mzetam
-      integer(c_int) :: n_sites, n_soap, i, j, k, l, j2, zeta_int, n_sites0, k1, k2
-      logical :: is_zeta_int = .false.
-      type(c_ptr), intent(inout) :: cublas_handle, gpu_stream, alphas_d, Qs_d
+ real(c_double), intent(in),target :: soap(:,:)
+ real(c_double), intent(in),target :: soap_der(:,:,:)
+ real(c_double), intent(in),target :: delta
+ real(c_double), intent(in),target :: e0
+ real(c_double), intent(in),target :: zeta0
+ real(c_double), intent(in),target :: xyz(:,:)
+ real(c_double), intent(out):: energies(:)
+ real(c_double), intent(out):: forces(:,:)
+ real(c_double), intent(out):: virial(1:3,1:3)
+ real(c_double), allocatable, target :: tmp_energies(:)
+ real(c_double), allocatable, target :: tmp_forces(:,:)
+ real(c_double), allocatable, target :: tmp_virial(:,:)
+ integer(c_int), intent(in), target :: n_neigh(:)
+ integer(c_int), intent(in), target :: neighbors_list(:)
+ logical, intent(in) :: do_forces
+ logical, intent(in) :: do_timing
+ real(c_double), allocatable,target :: kernels(:,:)
+ real(c_double), allocatable,target :: kernels_der(:,:)
+ real(c_double), allocatable,target :: Qss(:,:)
+ real(c_double), allocatable,target :: Qs_copy(:,:)
+ real(c_double), allocatable,target :: this_Qss(:)
+ real(c_double), allocatable,target :: kernels_copy(:,:)
+ real(c_double), allocatable,target :: this_force_h(:,:)
+ real(c_double) :: time1
+ real(c_double) :: time2
+ real(c_double) :: time3
+ real(c_double) :: energies_time
+ real(c_double) :: forces_time
+ real(c_double) :: this_force(1:3)
+ real(c_double) :: zeta
+ real(c_double) :: cdelta_ene
+ real(c_double) :: cdelta_force
+ real(c_double) :: mzetam
+ integer(c_int) :: n_sites
+ integer(c_int) :: n_soap
+ integer(c_int) :: i
+ integer(c_int) :: j
+ integer(c_int) :: k
+ integer(c_int) :: l
+ integer(c_int) :: j2
+ integer(c_int) :: zeta_int
+ integer(c_int) :: n_sites0
+ integer(c_int) :: k1
+ integer(c_int) :: k2
+ logical :: is_zeta_int = .false.
+ type(c_ptr), intent(inout) :: cublas_handle
+ type(c_ptr), intent(inout) :: gpu_stream
+ type(c_ptr), intent(inout) :: alphas_d
+ type(c_ptr), intent(inout) :: Qs_d
       !   type(c_ptr) :: kernels_copy_d, kernels_d, Qs_d, energies_d, alphas_d
-      type(c_ptr) :: kernels_copy_d, kernels_d, energies_d
-      type(c_ptr) :: kernels_der_d, Qss_d, Qs_copy_d !, this_Qss_d
-      integer(c_int) :: size_kernels, size_soap, size_Qs, size_alphas, size_energies,maxnn
-      integer(c_int) :: size_nnlist, size_xyz, n1xyz, n2xyz, n1forces,n2forces, n1virial,n2virial
-      integer(c_int) :: size_forces, size_virial, size_soap_der,n1soap_der,n2soap_der,n3soap_der
-      integer(c_int) :: rank, ierr
-      integer(c_int), intent(inout) :: n_pairs
-      integer(c_int), allocatable, target :: neighbors_beg(:), neighbors_end(:)
-      type(c_ptr) :: virial_d, n_neigh_d,  this_force_d, j2_index_d
-      type(c_ptr), intent(inout) :: l_index_d
-      type(c_ptr) :: neighbors_beg_d, neighbors_end_d, xyz_d,  neighbors_list_d, forces_d
-      real(dp), intent(inout) :: solo_time_soap
-      integer(c_int), allocatable, target :: j2_index(:),  l_index(:)    
-      type(c_ptr), intent(inout) :: soap_der_d, soap_d
-      real(dp) :: ttt(2)
-      integer(c_size_t) :: st_alphas, st_Qs, st_kernels, st_energies, st_soap
-      integer(c_size_t) :: st_n_pairs, st_xyz,st_nnlist, st_forces, st_virial
-      integer(c_size_t) :: st_neigh,st_neigh_beg, st_neigh_end
+ type(c_ptr) :: kernels_copy_d
+ type(c_ptr) :: kernels_d
+ type(c_ptr) :: energies_d
+ type(c_ptr) :: kernels_der_d
+ type(c_ptr) :: Qss_d
+ type(c_ptr) :: Qs_copy_d !
+ type(c_ptr) :: this_Qss_d
+ integer(c_int) :: size_kernels
+ integer(c_int) :: size_soap
+ integer(c_int) :: size_Qs
+ integer(c_int) :: size_alphas
+ integer(c_int) :: size_energies
+ integer(c_int) :: maxnn
+ integer(c_int) :: size_nnlist
+ integer(c_int) :: size_xyz
+ integer(c_int) :: n1xyz
+ integer(c_int) :: n2xyz
+ integer(c_int) :: n1forces
+ integer(c_int) :: n2forces
+ integer(c_int) :: n1virial
+ integer(c_int) :: n2virial
+ integer(c_int) :: size_forces
+ integer(c_int) :: size_virial
+ integer(c_int) :: size_soap_der
+ integer(c_int) :: n1soap_der
+ integer(c_int) :: n2soap_der
+ integer(c_int) :: n3soap_der
+ integer(c_int) :: rank
+ integer(c_int) :: ierr
+ integer(c_int), intent(inout) :: n_pairs
+ integer(c_int), allocatable, target :: neighbors_beg(:)
+ integer(c_int), allocatable, target :: neighbors_end(:)
+ type(c_ptr) :: virial_d
+ type(c_ptr) :: n_neigh_d
+ type(c_ptr) :: this_force_d
+ type(c_ptr) :: j2_index_d
+ type(c_ptr), intent(inout) :: l_index_d
+ type(c_ptr) :: neighbors_beg_d
+ type(c_ptr) :: neighbors_end_d
+ type(c_ptr) :: xyz_d
+ type(c_ptr) :: neighbors_list_d
+ type(c_ptr) :: forces_d
+ real(dp), intent(inout) :: solo_time_soap
+ integer(c_int), allocatable, target :: j2_index(:)
+ integer(c_int), allocatable, target :: l_index(:)
+ type(c_ptr), intent(inout) :: soap_der_d
+ type(c_ptr), intent(inout) :: soap_d
+ real(dp) :: ttt(2)
+ integer(c_size_t) :: st_alphas
+ integer(c_size_t) :: st_Qs
+ integer(c_size_t) :: st_kernels
+ integer(c_size_t) :: st_energies
+ integer(c_size_t) :: st_soap
+ integer(c_size_t) :: st_n_pairs
+ integer(c_size_t) :: st_xyz
+ integer(c_size_t) :: st_nnlist
+ integer(c_size_t) :: st_forces
+ integer(c_size_t) :: st_virial
+ integer(c_size_t) :: st_neigh
+ integer(c_size_t) :: st_neigh_beg
+ integer(c_size_t) :: st_neigh_end
 
 #ifdef _MPIF90
       ttt(1) = MPI_Wtime()
@@ -346,17 +425,49 @@ module gap
     implicit none
 
 !   Input variables
-    real(dp), intent(in) :: rjs(:), xyz(:,:), alphas(:), cutoff(:), delta, sigma, e0, Qs(:), rcut, buffer
-    integer, intent(in) :: n_neigh(:), species(:), neighbor_species(:)
-    character*8, intent(in) :: species_types(:), species1, species2
-    logical, intent(in) :: do_forces, do_timing
+ real(dp), intent(in) :: rjs(:)
+ real(dp), intent(in) :: xyz(:,:)
+ real(dp), intent(in) :: alphas(:)
+ real(dp), intent(in) :: cutoff(:)
+ real(dp), intent(in) :: delta
+ real(dp), intent(in) :: sigma
+ real(dp), intent(in) :: e0
+ real(dp), intent(in) :: Qs(:)
+ real(dp), intent(in) :: rcut
+ real(dp), intent(in) :: buffer
+ integer, intent(in) :: n_neigh(:)
+ integer, intent(in) :: species(:)
+ integer, intent(in) :: neighbor_species(:)
+ character*8, intent(in) :: species_types(:)
+ character*8, intent(in) :: species1
+ character*8, intent(in) :: species2
+ logical, intent(in) :: do_forces
+ logical, intent(in) :: do_timing
 
 !   Output variables
-    real(dp), intent(out) :: energies(:), forces(:,:), virial(1:3,1:3)
+ real(dp), intent(out) :: energies(:)
+ real(dp), intent(out) :: forces(:,:)
+ real(dp), intent(out) :: virial(1:3,1:3)
 
 !   Internal variables
-    real(dp) :: time1, time2, fcut, pi, dfcut, this_force(1:3)
-    integer :: n_sparse, i, j, k, n_sites, n_atom_pairs, s, sp1, sp2, n_sites0, k1, k2
+ real(dp) :: time1
+ real(dp) :: time2
+ real(dp) :: fcut
+ real(dp) :: pi
+ real(dp) :: dfcut
+ real(dp) :: this_force(1:3)
+ integer :: n_sparse
+ integer :: i
+ integer :: j
+ integer :: k
+ integer :: n_sites
+ integer :: n_atom_pairs
+ integer :: s
+ integer :: sp1
+ integer :: sp2
+ integer :: n_sites0
+ integer :: k1
+ integer :: k2
 
     if( do_timing )then
       call cpu_time(time1)
@@ -486,23 +597,51 @@ module gap
     implicit none
 
 !   Input variables
-    real(dp), intent(in) :: rjs(:), xyz(:,:), x(:), V(:), yp1, ypn, dVdx2(:)
-    integer, intent(in) :: n_neigh(:), species(:), neighbor_species(:)
-    character*8, intent(in) :: species_types(:), species1, species2
-    logical, intent(in) :: do_forces, do_timing
+ real(dp), intent(in) :: rjs(:)
+ real(dp), intent(in) :: xyz(:,:)
+ real(dp), intent(in) :: x(:)
+ real(dp), intent(in) :: V(:)
+ real(dp), intent(in) :: yp1
+ real(dp), intent(in) :: ypn
+ real(dp), intent(in) :: dVdx2(:)
+ integer, intent(in) :: n_neigh(:)
+ integer, intent(in) :: species(:)
+ integer, intent(in) :: neighbor_species(:)
+ character*8, intent(in) :: species_types(:)
+ character*8, intent(in) :: species1
+ character*8, intent(in) :: species2
+ logical, intent(in) :: do_forces
+ logical, intent(in) :: do_timing
 
 !   Output variables
-    real(dp), intent(out) :: energies(:), forces(:,:), virial(1:3,1:3)
+ real(dp), intent(out) :: energies(:)
+ real(dp), intent(out) :: forces(:,:)
+ real(dp), intent(out) :: virial(1:3,1:3)
 
 !   Internal variables
 !   There are two ways of doing the core_pot interpolation; most efficient probably depends on
 !   whether a small subset or big subset of the total number of atom pairs has a core potential
 !   term associated to it. The current implementation is fast going over pairs, but slow computing
 !   the splines. This will give the best performance for systems with many atom types
-    real(dp) :: V_int(1:1), dV_int(1:1), this_force(1:3)
+ real(dp) :: V_int(1:1)
+ real(dp) :: dV_int(1:1)
+ real(dp) :: this_force(1:3)
 !    real(dp), allocatable :: V_int(:), dV_int(:)
-    real(dp) :: time1, time2, rcut
-    integer :: n_sparse, i, j, k, n_sites, n_atom_pairs, s, sp1, sp2, n_sites0, k1, k2
+ real(dp) :: time1
+ real(dp) :: time2
+ real(dp) :: rcut
+ integer :: n_sparse
+ integer :: i
+ integer :: j
+ integer :: k
+ integer :: n_sites
+ integer :: n_atom_pairs
+ integer :: s
+ integer :: sp1
+ integer :: sp2
+ integer :: n_sites0
+ integer :: k1
+ integer :: k2
 
     if( do_timing )then
       call cpu_time(time1)
@@ -616,10 +755,15 @@ module gap
   subroutine setup_3b_gpu(kernel_type, species_center, species1, species2, species_types,c_name,sp0, sp1, sp2)
   implicit none
     character(kind=c_char,len=4) :: c_name
-    character*3, intent(in) :: kernel_type
-    character*8, intent(in) :: species_center, species1, species2, species_types(:)
-    integer, intent(out) :: sp0, sp1, sp2
-    integer :: i
+ character*3, intent(in) :: kernel_type
+ character*8, intent(in) :: species_center
+ character*8, intent(in) :: species1
+ character*8, intent(in) :: species2
+ character*8, intent(in) :: species_types(:)
+ integer, intent(out) :: sp0
+ integer, intent(out) :: sp1
+ integer, intent(out) :: sp2
+ integer :: i
 
     c_name = trim(kernel_type)//c_null_char
     !Map species to index
@@ -654,23 +798,84 @@ module gap
     implicit none
 
 !   Input variables
-    real(dp), intent(in) :: rjs(:), xyz(:,:), alphas(:), cutoff(:), rcut, buffer, delta, sigma(:), e0, Qs(:,:)
-    integer, intent(in) :: n_neigh(:), neighbors_list(:), species(:), neighbor_species(:)
-    logical, intent(in) :: do_timing, do_forces
-    character*3, intent(in) :: kernel_type
-    character*8, intent(in) :: species_center, species1, species2, species_types(:)
+ real(dp), intent(in) :: rjs(:)
+ real(dp), intent(in) :: xyz(:,:)
+ real(dp), intent(in) :: alphas(:)
+ real(dp), intent(in) :: cutoff(:)
+ real(dp), intent(in) :: rcut
+ real(dp), intent(in) :: buffer
+ real(dp), intent(in) :: delta
+ real(dp), intent(in) :: sigma(:)
+ real(dp), intent(in) :: e0
+ real(dp), intent(in) :: Qs(:,:)
+ integer, intent(in) :: n_neigh(:)
+ integer, intent(in) :: neighbors_list(:)
+ integer, intent(in) :: species(:)
+ integer, intent(in) :: neighbor_species(:)
+ logical, intent(in) :: do_timing
+ logical, intent(in) :: do_forces
+ character*3, intent(in) :: kernel_type
+ character*8, intent(in) :: species_center
+ character*8, intent(in) :: species1
+ character*8, intent(in) :: species2
+ character*8, intent(in) :: species_types(:)
 
 !   Output variables
-    real(dp), intent(out) :: energies(:), forces(:,:), virial(1:3,1:3)
+ real(dp), intent(out) :: energies(:)
+ real(dp), intent(out) :: forces(:,:)
+ real(dp), intent(out) :: virial(1:3,1:3)
 
 !   Internal variables
-    real(dp) :: time1, time2, fcut, pi, r12, r13, r23, xyz12(1:3), xyz13(1:3), &
-              xyz23(1:3), q(1:3), fcut12, fcut13, dfcut12(1:3), dfcut13(1:3), &
-              force1(1:3), force2(1:3), force3(1:3), dfcut(1:3), &
-              xyz12_red(1:3), xyz13_red(1:3), xyz23_red(1:3), this_force(1:3)
-    real(dp), allocatable :: r(:), drdq(:,:), kernel(:), drdx1(:,:), drdx2(:,:), drdx3(:,:), pref(:), &
-                           kernel_der(:)
-    integer :: n_sparse, i, j, k, k2, n_sites, n_atom_pairs, s, j2, i3, j3, k3, l, sp0, sp1, sp2, n_sites0, k1, k4
+ real(dp) :: time1
+ real(dp) :: time2
+ real(dp) :: fcut
+ real(dp) :: pi
+ real(dp) :: r12
+ real(dp) :: r13
+ real(dp) :: r23
+ real(dp) :: xyz12(1:3)
+ real(dp) :: xyz13(1:3)
+ real(dp) :: xyz23(1:3)
+ real(dp) :: q(1:3)
+ real(dp) :: fcut12
+ real(dp) :: fcut13
+ real(dp) :: dfcut12(1:3)
+ real(dp) :: dfcut13(1:3)
+ real(dp) :: force1(1:3)
+ real(dp) :: force2(1:3)
+ real(dp) :: force3(1:3)
+ real(dp) :: dfcut(1:3)
+ real(dp) :: xyz12_red(1:3)
+ real(dp) :: xyz13_red(1:3)
+ real(dp) :: xyz23_red(1:3)
+ real(dp) :: this_force(1:3)
+ real(dp), allocatable :: r(:)
+ real(dp), allocatable :: drdq(:,:)
+ real(dp), allocatable :: kernel(:)
+ real(dp), allocatable :: drdx1(:,:)
+ real(dp), allocatable :: drdx2(:,:)
+ real(dp), allocatable :: drdx3(:,:)
+ real(dp), allocatable :: pref(:)
+ real(dp), allocatable :: kernel_der(:)
+ integer :: n_sparse
+ integer :: i
+ integer :: j
+ integer :: k
+ integer :: k2
+ integer :: n_sites
+ integer :: n_atom_pairs
+ integer :: s
+ integer :: j2
+ integer :: i3
+ integer :: j3
+ integer :: k3
+ integer :: l
+ integer :: sp0
+ integer :: sp1
+ integer :: sp2
+ integer :: n_sites0
+ integer :: k1
+ integer :: k4
     !write(*,*) "3B"
     if( do_timing )then
       call cpu_time(time1)
@@ -921,12 +1126,14 @@ module gap
 
     implicit none
 
-    real(dp), intent(in) :: r(:)
-    integer, intent(in) :: d, q
-    real(dp), dimension(1:size(r)) :: cov
+ real(dp), intent(in) :: r(:)
+ integer, intent(in) :: d
+ integer, intent(in) :: q
+ real(dp), dimension(1:size(r)) :: cov
 
-    real(dp) :: j
-    integer :: j_int, i
+ real(dp) :: j
+ integer :: j_int
+ integer :: i
 
     j_int = d/2 + q + 1
     j = dfloat(j_int)
@@ -951,12 +1158,14 @@ module gap
 
     implicit none
 
-    real(dp), intent(in) :: r(:)
-    integer, intent(in) :: d, q
-    real(dp), dimension(1:size(r)) :: cov_der
+ real(dp), intent(in) :: r(:)
+ integer, intent(in) :: d
+ integer, intent(in) :: q
+ real(dp), dimension(1:size(r)) :: cov_der
 
-    real(dp) :: j
-    integer :: j_int, i
+ real(dp) :: j
+ integer :: j_int
+ integer :: i
 
     j_int = d/2 + q + 1
     j = dfloat(j_int)

@@ -40,15 +40,15 @@ module electrostatics
     
 
     ! Both of these from the NIST website, references 2018 CODATA values
-    real(dp), parameter :: HARTREE_EV = 27.2113862460_dp
-    real(dp), parameter :: BOHR_ANG = 0.5291772109_dp
+ real(dp), parameter :: HARTREE_EV = 27.2113862460_dp
+ real(dp), parameter :: BOHR_ANG = 0.5291772109_dp
     ! TODO this needs to be checked with the turbogap unit system
     ! it will probably just be Hartree * Bohr, since the charges are
     ! expressed in atomic units but the lengths in angstroms
-    real(dp), parameter :: COUL_CONSTANT = HARTREE_EV * BOHR_ANG ! = q_e^2 / 4πε_0
-    real(dp), parameter :: FLOAT_ZERO = 10*EPSILON(1.0_dp)
-    real(dp), parameter :: PI = dacos(-1.0_dp)
-    real(dp), parameter :: TWO_OVER_SQRT_PI = 2.0_dp / sqrt(PI)
+ real(dp), parameter :: COUL_CONSTANT = HARTREE_EV * BOHR_ANG ! = q_e^2 / 4πε_0
+ real(dp), parameter :: FLOAT_ZERO = 10*EPSILON(1.0_dp)
+ real(dp), parameter :: PI = dacos(-1.0_dp)
+ real(dp), parameter :: TWO_OVER_SQRT_PI = 2.0_dp / sqrt(PI)
 
     contains
 
@@ -57,10 +57,11 @@ module electrostatics
     function outer_prod(vec_i, vec_j)
 
         implicit none
-        real(dp), dimension(:), intent(in) :: vec_i
-        real(dp), dimension(:), intent(in) :: vec_j
-        real(dp), dimension(size(vec_i), size(vec_j)) :: outer_prod
-        integer :: ii, jj
+ real(dp), dimension(:), intent(in) :: vec_i
+ real(dp), dimension(:), intent(in) :: vec_j
+ real(dp), dimension(size(vec_i), size(vec_j)) :: outer_prod
+ integer :: ii
+ integer :: jj
 
         do ii = 1, size(vec_i)
             do jj = 1, size(vec_j)
@@ -72,8 +73,8 @@ module electrostatics
     ! This is just the Coulomb 1/r form without any prefactors
     function pair_energy_direct(rij)
         implicit none
-        real(dp), intent(in) :: rij
-        real(dp) :: pair_energy_direct
+ real(dp), intent(in) :: rij
+ real(dp) :: pair_energy_direct
 
         pair_energy_direct = 1.0_dp / rij
     end function
@@ -83,8 +84,8 @@ module electrostatics
     ! (so divide the full vector by rij)
     function der_pair_energy_direct(rij)
         implicit none
-        real(dp), intent(in) :: rij
-        real(dp) :: der_pair_energy_direct
+ real(dp), intent(in) :: rij
+ real(dp) :: der_pair_energy_direct
 
         der_pair_energy_direct = -1.0_dp / rij**2
     end function
@@ -93,8 +94,9 @@ module electrostatics
     ! on top of this, but it's more convenient to keep just this function separate
     function pair_energy_dsf(rij, alpha)
         implicit none
-        real(dp), intent(in) :: rij, alpha
-        real(dp) :: pair_energy_dsf
+ real(dp), intent(in) :: rij
+ real(dp), intent(in) :: alpha
+ real(dp) :: pair_energy_dsf
 
         pair_energy_dsf = erfc(alpha*rij) / rij
     end function
@@ -102,8 +104,9 @@ module electrostatics
     ! Again - Wolf, not DSF, to make shifting easier later on.
     function der_pair_energy_dsf(rij, alpha)
         implicit none
-        real(dp), intent(in) :: rij, alpha
-        real(dp) :: der_pair_energy_dsf
+ real(dp), intent(in) :: rij
+ real(dp), intent(in) :: alpha
+ real(dp) :: der_pair_energy_dsf
 
         der_pair_energy_dsf = -1. * erfc(alpha*rij) / rij**2 - &
             TWO_OVER_SQRT_PI * alpha * exp(-1. * alpha**2 * rij**2) / rij
@@ -115,8 +118,8 @@ module electrostatics
 
     function kernel_B0_undamped( rij )
       implicit none
-      real(dp), intent( in ) ::  rij
-      real(dp) :: kernel_B0_undamped
+ real(dp), intent( in ) :: rij
+ real(dp) :: kernel_B0_undamped
       kernel_B0_undamped = 1.d0 / rij
     end function kernel_B0_undamped
 
@@ -124,16 +127,17 @@ module electrostatics
     
     function kernel_B0_der_undamped( rij )
       implicit none
-      real(dp), intent( in ) ::  rij
-      real(dp) :: kernel_B0_der_undamped
+ real(dp), intent( in ) :: rij
+ real(dp) :: kernel_B0_der_undamped
       kernel_B0_der_undamped = -1.d0 * kernel_B0_undamped( rij ) / rij
     end function kernel_B0_der_undamped
 
 
     function kernel_B0_der_undamped_pre( rij, B0 )
       implicit none
-      real(dp), intent( in ) ::  rij, B0
-      real(dp) :: kernel_B0_der_undamped_pre
+ real(dp), intent( in ) :: rij
+ real(dp), intent( in ) :: B0
+ real(dp) :: kernel_B0_der_undamped_pre
       kernel_B0_der_undamped_pre = -1.d0 * B0 / rij
     end function kernel_B0_der_undamped_pre
 
@@ -142,8 +146,8 @@ module electrostatics
     
     function kernel_B1_undamped( rij )
       implicit none
-      real(dp), intent( in ) :: rij
-      real(dp) :: kernel_B1_undamped
+ real(dp), intent( in ) :: rij
+ real(dp) :: kernel_B1_undamped
       kernel_B1_undamped = -1.d0 * kernel_B0_der_undamped( rij ) / rij
     end function kernel_B1_undamped
 
@@ -155,8 +159,9 @@ module electrostatics
 
     function kernel_B0( rij, alpha )
       implicit none
-      real(dp), intent( in ) :: alpha, rij
-      real(dp) :: kernel_B0
+ real(dp), intent( in ) :: alpha
+ real(dp), intent( in ) :: rij
+ real(dp) :: kernel_B0
       kernel_B0 = erfc(alpha*rij) / rij
     end function kernel_B0
 
@@ -164,8 +169,9 @@ module electrostatics
     
     function kernel_B0_der( rij, alpha )
       implicit none
-      real(dp), intent( in ) :: alpha, rij
-      real(dp) :: kernel_B0_der
+ real(dp), intent( in ) :: alpha
+ real(dp), intent( in ) :: rij
+ real(dp) :: kernel_B0_der
       kernel_B0_der = -1.d0 * kernel_B0( rij, alpha ) / rij - &
            TWO_OVER_SQRT_PI * alpha * exp(-1. * alpha**2 * rij**2) / rij
     end function kernel_B0_der
@@ -173,8 +179,10 @@ module electrostatics
 
     function kernel_B0_der_pre( rij, alpha, B0 )
       implicit none
-      real(dp), intent( in ) :: alpha, rij, B0
-      real(dp) :: kernel_B0_der_pre
+ real(dp), intent( in ) :: alpha
+ real(dp), intent( in ) :: rij
+ real(dp), intent( in ) :: B0
+ real(dp) :: kernel_B0_der_pre
       kernel_B0_der_pre = -1.d0 * B0 / rij - &
            TWO_OVER_SQRT_PI * alpha * exp(-1.d0 * alpha**2 * rij**2) / rij
     end function kernel_B0_der_pre
@@ -183,17 +191,19 @@ module electrostatics
     
     function kernel_B1( rij, alpha )
       implicit none
-      real(dp), intent( in ) :: alpha, rij
-      real(dp) :: kernel_B1
+ real(dp), intent( in ) :: alpha
+ real(dp), intent( in ) :: rij
+ real(dp) :: kernel_B1
       kernel_B1 = - kernel_B0_der( rij, alpha ) / rij
     end function kernel_B1
 
 
     function g_estat( rij, alpha, damped )
       implicit none
-      real(dp), intent(in) :: rij, alpha
-      logical, intent(in) :: damped
-      real(dp) :: g_estat
+ real(dp), intent(in) :: rij
+ real(dp), intent(in) :: alpha
+ logical, intent(in) :: damped
+ real(dp) :: g_estat
       
       if( damped )then
          g_estat = - rij * kernel_B1( rij, alpha )
@@ -205,9 +215,16 @@ module electrostatics
 
     function v_01( rij, alpha, rcut, B0_rcut, B0_rcut_der, tsf, sp, gsf )
       implicit none
-      real(dp), intent(in) :: rij, alpha, rcut, B0_rcut, B0_rcut_der
-      logical, intent(in) ::  tsf, sp, gsf
-      real(dp) :: v_01, B0
+ real(dp), intent(in) :: rij
+ real(dp), intent(in) :: alpha
+ real(dp), intent(in) :: rcut
+ real(dp), intent(in) :: B0_rcut
+ real(dp), intent(in) :: B0_rcut_der
+ logical, intent(in) :: tsf
+ logical, intent(in) :: sp
+ logical, intent(in) :: gsf
+ real(dp) :: v_01
+ real(dp) :: B0
 
       v_01 = 0.d0
       
@@ -225,9 +242,15 @@ module electrostatics
     
     function w_a( rij, alpha, rcut,  B0_rcut_der, tsf, sp, gsf )
       implicit none
-      real(dp), intent(in) :: rij, alpha, rcut,  B0_rcut_der
-      logical, intent(in) ::  tsf, sp, gsf
-      real(dp) :: w_a, B0
+ real(dp), intent(in) :: rij
+ real(dp), intent(in) :: alpha
+ real(dp), intent(in) :: rcut
+ real(dp), intent(in) :: B0_rcut_der
+ logical, intent(in) :: tsf
+ logical, intent(in) :: sp
+ logical, intent(in) :: gsf
+ real(dp) :: w_a
+ real(dp) :: B0
 
       w_a = 0.d0
       
@@ -248,9 +271,15 @@ module electrostatics
 
     function v_01_undamped( rij, rcut, B0_rcut, B0_rcut_der, tsf, sp, gsf )
       implicit none
-      real(dp), intent(in) :: rij, rcut, B0_rcut, B0_rcut_der 
-      logical, intent(in) ::  tsf, sp, gsf
-      real(dp) :: v_01_undamped, B0
+ real(dp), intent(in) :: rij
+ real(dp), intent(in) :: rcut
+ real(dp), intent(in) :: B0_rcut
+ real(dp), intent(in) :: B0_rcut_der
+ logical, intent(in) :: tsf
+ logical, intent(in) :: sp
+ logical, intent(in) :: gsf
+ real(dp) :: v_01_undamped
+ real(dp) :: B0
 
       v_01_undamped = 0.d0
       
@@ -268,9 +297,14 @@ module electrostatics
 
     function w_a_undamped( rij, rcut,  B0_rcut_der, tsf, sp, gsf )
       implicit none
-      real(dp), intent(in) :: rij, rcut,  B0_rcut_der
-      logical, intent(in) ::  tsf, sp, gsf
-      real(dp) :: w_a_undamped, B0
+ real(dp), intent(in) :: rij
+ real(dp), intent(in) :: rcut
+ real(dp), intent(in) :: B0_rcut_der
+ logical, intent(in) :: tsf
+ logical, intent(in) :: sp
+ logical, intent(in) :: gsf
+ real(dp) :: w_a_undamped
+ real(dp) :: B0
 
       w_a_undamped = 0.d0
       
@@ -303,77 +337,100 @@ module electrostatics
     ! Input variables 
     implicit none
     ! -- Electrostatics variables 
-    real(dp), dimension(:), intent(in), target :: charges !, neighbor_charges
-    real(dp), dimension(:,:), intent(in), target :: charge_gradients
-    real(dp), intent(in) :: r_cut, dsf_alpha, r_cut_in, r_cut_width
+ real(dp), dimension(:), intent(in), target :: charges !
+ real(dp), dimension(:,:), intent(in), target :: charge_gradients
+ real(dp), intent(in) :: r_cut
+ real(dp), intent(in) :: dsf_alpha
+ real(dp), intent(in) :: r_cut_in
+ real(dp), intent(in) :: r_cut_width
 
-    integer, allocatable, target :: n_neigh_check(:), n_neigh_check_sum(:)
-    real(dp), intent(inout) :: energies(:), forces(:,:)
-    real(dp), intent(inout)  :: virial(1:3,1:3)
+ integer, allocatable, target :: n_neigh_check(:)
+ integer, allocatable, target :: n_neigh_check_sum(:)
+ real(dp), intent(inout) :: energies(:)
+ real(dp), intent(inout) :: forces(:,:)
+ real(dp), intent(inout) :: virial(1:3,1:3)
 
-    real(dp),  allocatable, target :: energies_temp(:), forces_temp(:,:), rjs_check(:)
-    real(dp),  target :: virial_temp(1:3,1:3)
+ real(dp), allocatable, target :: energies_temp(:)
+ real(dp), allocatable, target :: forces_temp(:,:)
+ real(dp), allocatable, target :: rjs_check(:)
+ real(dp), target :: virial_temp(1:3,1:3)
     
-    logical, intent(in) :: do_gradients 
-    type(options_estat), intent(in) :: options
+ logical, intent(in) :: do_gradients
+ type(options_estat), intent(in) :: options
     
-    integer, intent(in) :: i_beg, i_end, j_beg, j_end, n_sites, rank
-    type( gpu_storage_type ),            intent( inout ) :: gpu_exp 
-    type( gpu_host_batch_storage_type ), intent(inout),  target :: gpu_host
-    type( gpu_neigh_storage_type),       intent( in ) :: gpu_neigh
+ integer, intent(in) :: i_beg
+ integer, intent(in) :: i_end
+ integer, intent(in) :: j_beg
+ integer, intent(in) :: j_end
+ integer, intent(in) :: n_sites
+ integer, intent(in) :: rank
+ type( gpu_storage_type ), intent( inout ) :: gpu_exp
+ type( gpu_host_batch_storage_type ), intent(inout), target :: gpu_host
+ type( gpu_neigh_storage_type), intent( in ) :: gpu_neigh
 
-    integer :: i , j, k 
+ integer :: i
+ integer :: j
+ integer :: k
     
     ! Local variables
-    integer :: n_dim_partial, n_dim_idx, this_n_sites, this_n_pairs
-    integer, target :: nk_temp(1)    
-    type( c_ptr ) :: nk_flags_d, nk_flags_sum_d
-    integer( c_size_t ) :: st_nk_flags, st_nk_temp
-    type( c_ptr ) :: rjs_index_d
-    integer( c_size_t ) :: st_rjs_index_d, st_k_index_d
+ integer :: n_dim_partial
+ integer :: n_dim_idx
+ integer :: this_n_sites
+ integer :: this_n_pairs
+ integer, target :: nk_temp(1)
+ type( c_ptr ) :: nk_flags_d
+ type( c_ptr ) :: nk_flags_sum_d
+ integer( c_size_t ) :: st_nk_flags
+ integer( c_size_t ) :: st_nk_temp
+ type( c_ptr ) :: rjs_index_d
+ integer( c_size_t ) :: st_rjs_index_d
+ integer( c_size_t ) :: st_k_index_d
 
 
 !    type( gpu_var_double_class ) :: flags_sum_test_d
     
-    type( c_ptr )        ::    energies_d
-    integer( c_size_t )  :: st_energies_d
+ type( c_ptr ) :: energies_d
+ integer( c_size_t ) :: st_energies_d
 
-    type( c_ptr )        ::    forces_d
-    integer( c_size_t )  :: st_forces_d
+ type( c_ptr ) :: forces_d
+ integer( c_size_t ) :: st_forces_d
 
-    type( c_ptr )        ::    force_prefactor_d
-    integer( c_size_t )  :: st_force_prefactor_d
+ type( c_ptr ) :: force_prefactor_d
+ integer( c_size_t ) :: st_force_prefactor_d
     
-    type( c_ptr )        ::    virial_d
-    integer( c_size_t )  :: st_virial_d
-    
-    
-    type( c_ptr ), intent( in )       ::    charges_d
-
-
-    type( c_ptr )       ::    n_neigh_index_d
-    integer( c_size_t ) :: st_n_neigh_index_d
-
-
-    type( c_ptr )       ::    n_neigh_index_sum_d
-    integer( c_size_t ) :: st_n_neigh_index_sum_d
+ type( c_ptr ) :: virial_d
+ integer( c_size_t ) :: st_virial_d
     
     
-    type( c_ptr )       ::    neighbor_charges_index_d
-    integer( c_size_t ) :: st_neighbor_charges_index_d
+ type( c_ptr ), intent( in ) :: charges_d
+
+
+ type( c_ptr ) :: n_neigh_index_d
+ integer( c_size_t ) :: st_n_neigh_index_d
+
+
+ type( c_ptr ) :: n_neigh_index_sum_d
+ integer( c_size_t ) :: st_n_neigh_index_sum_d
+    
+    
+ type( c_ptr ) :: neighbor_charges_index_d
+ integer( c_size_t ) :: st_neighbor_charges_index_d
 
     
-    type( c_ptr )       ::    charge_gradients_d
-    type( c_ptr )       ::    charge_gradients_index_d    
-    integer( c_size_t ) :: st_charge_gradients_d 
+ type( c_ptr ) :: charge_gradients_d
+ type( c_ptr ) :: charge_gradients_index_d
+ integer( c_size_t ) :: st_charge_gradients_d
 
-    logical(c_bool) :: c_do_forces
-    logical(c_bool) :: c_do_damping_cosine
+ logical(c_bool) :: c_do_forces
+ logical(c_bool) :: c_do_damping_cosine
     
-    real(dp) :: pair_energy_rcut, pair_energy_rcut_der, memory
+ real(dp) :: pair_energy_rcut
+ real(dp) :: pair_energy_rcut_der
+ real(dp) :: memory
 
-    real(c_double) :: pair_energy_rcut_d, pair_energy_rcut_der_d
-    type(c_ptr) :: gpu_stream
+ real(c_double) :: pair_energy_rcut_d
+ real(c_double) :: pair_energy_rcut_der_d
+ type(c_ptr) :: gpu_stream
 
 
 
@@ -681,24 +738,48 @@ module electrostatics
          virial, &
          options)
         implicit none
-        real(dp), dimension(:), intent(in) :: charges, neighbor_charges, rjs
-        real(dp), dimension(:,:), intent(in) :: charge_gradients, xyz
-        integer, dimension(:), intent(in) :: n_neigh, neighbors_list
-        real(dp), intent(in) :: rcut, dsf_alpha
-        logical, intent(in) :: do_gradients
-        type( options_estat ) :: options 
+ real(dp), dimension(:), intent(in) :: charges
+ real(dp), dimension(:), intent(in) :: neighbor_charges
+ real(dp), dimension(:), intent(in) :: rjs
+ real(dp), dimension(:,:), intent(in) :: charge_gradients
+ real(dp), dimension(:,:), intent(in) :: xyz
+ integer, dimension(:), intent(in) :: n_neigh
+ integer, dimension(:), intent(in) :: neighbors_list
+ real(dp), intent(in) :: rcut
+ real(dp), intent(in) :: dsf_alpha
+ logical, intent(in) :: do_gradients
+ type( options_estat ) :: options
 
         ! inout because they are initialized outside this procedure and filled with zeros
-        real(dp), intent(inout), dimension(:) :: local_energies
-        real(dp), intent(inout), dimension(:,:) :: forces
-        real(dp), intent(inout), dimension(3,3) :: virial
+ real(dp), intent(inout), dimension(:) :: local_energies
+ real(dp), intent(inout), dimension(:,:) :: forces
+ real(dp), intent(inout), dimension(3,3) :: virial
 
-        integer :: center_i, neigh_id, soap_neigh_id, neigh_seq, soap_neigh_seq
-        integer :: n_sites_global, n_sites_this, pair_counter, soap_pair_counter
-        real(dp) :: rij, center_term, pair_energy, neigh_charge, inner_damp_ij
-        real(dp) :: pair_energy_rcut, der_pair_energy_rcut, self_energy, v 
-        real(dp), dimension(3) :: rij_vec, fij_vec, fki_vec, self_energy_der, center_grad, vc_grad
-        real(dp), dimension(:), allocatable :: vc_grad_prefactor
+ integer :: center_i
+ integer :: neigh_id
+ integer :: soap_neigh_id
+ integer :: neigh_seq
+ integer :: soap_neigh_seq
+ integer :: n_sites_global
+ integer :: n_sites_this
+ integer :: pair_counter
+ integer :: soap_pair_counter
+ real(dp) :: rij
+ real(dp) :: center_term
+ real(dp) :: pair_energy
+ real(dp) :: neigh_charge
+ real(dp) :: inner_damp_ij
+ real(dp) :: pair_energy_rcut
+ real(dp) :: der_pair_energy_rcut
+ real(dp) :: self_energy
+ real(dp) :: v
+ real(dp), dimension(3) :: rij_vec
+ real(dp), dimension(3) :: fij_vec
+ real(dp), dimension(3) :: fki_vec
+ real(dp), dimension(3) :: self_energy_der
+ real(dp), dimension(3) :: center_grad
+ real(dp), dimension(3) :: vc_grad
+ real(dp), dimension(:), allocatable :: vc_grad_prefactor
 !        real(dp), dimension(:,:), allocatable :: vc_grad        
 
         n_sites_this = size(n_neigh)
@@ -898,23 +979,42 @@ module electrostatics
                                       neighbor_charges, do_gradients, &
                                       local_energies, forces, virial, options)
         implicit none
-        real(dp), dimension(:), intent(in) :: charges, neighbor_charges, rjs
-        real(dp), dimension(:,:), intent(in) :: charge_gradients, xyz
-        integer, dimension(:), intent(in) :: n_neigh, neighbors_list
-        real(dp), intent(in) :: rcut, rcut_in, rcin_width
-        logical, intent(in) :: do_gradients
+ real(dp), dimension(:), intent(in) :: charges
+ real(dp), dimension(:), intent(in) :: neighbor_charges
+ real(dp), dimension(:), intent(in) :: rjs
+ real(dp), dimension(:,:), intent(in) :: charge_gradients
+ real(dp), dimension(:,:), intent(in) :: xyz
+ integer, dimension(:), intent(in) :: n_neigh
+ integer, dimension(:), intent(in) :: neighbors_list
+ real(dp), intent(in) :: rcut
+ real(dp), intent(in) :: rcut_in
+ real(dp), intent(in) :: rcin_width
+ logical, intent(in) :: do_gradients
 
         ! inout because they are initialized outside this procedure and filled with zeros
-        real(dp), intent(inout), dimension(:) :: local_energies
-        real(dp), intent(inout), dimension(:,:) :: forces
-        real(dp), intent(inout), dimension(3,3) :: virial
-        type( options_estat ) :: options 
+ real(dp), intent(inout), dimension(:) :: local_energies
+ real(dp), intent(inout), dimension(:,:) :: forces
+ real(dp), intent(inout), dimension(3,3) :: virial
+ type( options_estat ) :: options
 
-        integer :: center_i, neigh_id, soap_neigh_id, neigh_seq, soap_neigh_seq
-        integer :: n_sites_global, n_sites_this, pair_counter, soap_pair_counter
-        real(dp) :: rij, center_term, pair_energy, neigh_charge, inner_damp_ij
-        real(dp), dimension(3) :: rij_vec, fij_vec, fki_vec
-        real(dp), dimension(:), allocatable :: vc_grad_prefactor
+ integer :: center_i
+ integer :: neigh_id
+ integer :: soap_neigh_id
+ integer :: neigh_seq
+ integer :: soap_neigh_seq
+ integer :: n_sites_global
+ integer :: n_sites_this
+ integer :: pair_counter
+ integer :: soap_pair_counter
+ real(dp) :: rij
+ real(dp) :: center_term
+ real(dp) :: pair_energy
+ real(dp) :: neigh_charge
+ real(dp) :: inner_damp_ij
+ real(dp), dimension(3) :: rij_vec
+ real(dp), dimension(3) :: fij_vec
+ real(dp), dimension(3) :: fki_vec
+ real(dp), dimension(:), allocatable :: vc_grad_prefactor
 
         n_sites_this = size(n_neigh)
         n_sites_global = size(forces, 2)
@@ -1020,24 +1120,45 @@ module electrostatics
                                    neighbor_charges, do_gradients, &
                                    local_energies, forces, virial, options)
         implicit none
-        real(dp), dimension(:), intent(in) :: charges, neighbor_charges, rjs
-        real(dp), dimension(:,:), intent(in) :: charge_gradients, xyz
-        integer, dimension(:), intent(in) :: n_neigh, neighbors_list
-        real(dp), intent(in) :: rcut, rcut_in, rcin_width, dsf_alpha
-        logical, intent(in) :: do_gradients
-        type( options_estat ) :: options 
+ real(dp), dimension(:), intent(in) :: charges
+ real(dp), dimension(:), intent(in) :: neighbor_charges
+ real(dp), dimension(:), intent(in) :: rjs
+ real(dp), dimension(:,:), intent(in) :: charge_gradients
+ real(dp), dimension(:,:), intent(in) :: xyz
+ integer, dimension(:), intent(in) :: n_neigh
+ integer, dimension(:), intent(in) :: neighbors_list
+ real(dp), intent(in) :: rcut
+ real(dp), intent(in) :: rcut_in
+ real(dp), intent(in) :: rcin_width
+ real(dp), intent(in) :: dsf_alpha
+ logical, intent(in) :: do_gradients
+ type( options_estat ) :: options
 
         ! inout because they are initialized outside this procedure and filled with zeros
-        real(dp), intent(inout), dimension(:) :: local_energies
-        real(dp), intent(inout), dimension(:,:) :: forces
-        real(dp), intent(inout), dimension(3,3) :: virial
+ real(dp), intent(inout), dimension(:) :: local_energies
+ real(dp), intent(inout), dimension(:,:) :: forces
+ real(dp), intent(inout), dimension(3,3) :: virial
 
-        integer :: center_i, neigh_id, soap_neigh_id, neigh_seq, soap_neigh_seq
-        integer :: n_sites_global, n_sites_this, pair_counter, soap_pair_counter
-        real(dp) :: rij, center_term, pair_energy, neigh_charge, inner_damp_ij
-        real(dp) :: pair_energy_rcut, der_pair_energy_rcut
-        real(dp), dimension(3) :: rij_vec, fij_vec, fki_vec
-        real(dp), dimension(:), allocatable :: vc_grad_prefactor
+ integer :: center_i
+ integer :: neigh_id
+ integer :: soap_neigh_id
+ integer :: neigh_seq
+ integer :: soap_neigh_seq
+ integer :: n_sites_global
+ integer :: n_sites_this
+ integer :: pair_counter
+ integer :: soap_pair_counter
+ real(dp) :: rij
+ real(dp) :: center_term
+ real(dp) :: pair_energy
+ real(dp) :: neigh_charge
+ real(dp) :: inner_damp_ij
+ real(dp) :: pair_energy_rcut
+ real(dp) :: der_pair_energy_rcut
+ real(dp), dimension(3) :: rij_vec
+ real(dp), dimension(3) :: fij_vec
+ real(dp), dimension(3) :: fki_vec
+ real(dp), dimension(:), allocatable :: vc_grad_prefactor
 
         n_sites_this = size(n_neigh)
         n_sites_global = size(forces, 2)
@@ -1133,8 +1254,10 @@ module electrostatics
     ! not to be physically realistic.  The short-range energy should always be
     ! corrected by a GAP afterwards.
     function damping_function_cosine(distance, r_inner, r_outer)
-        real(dp), intent(in) :: distance, r_inner, r_outer
-        real(dp) :: damping_function_cosine
+ real(dp), intent(in) :: distance
+ real(dp), intent(in) :: r_inner
+ real(dp), intent(in) :: r_outer
+ real(dp) :: damping_function_cosine
 
         if (distance < r_inner) then
             damping_function_cosine = 0
@@ -1148,8 +1271,10 @@ module electrostatics
 
     ! The r-derivative of above function
     function der_damping_function_cosine(distance, r_inner, r_outer)
-        real(dp), intent(in) :: distance, r_inner, r_outer
-        real(dp) :: der_damping_function_cosine
+ real(dp), intent(in) :: distance
+ real(dp), intent(in) :: r_inner
+ real(dp), intent(in) :: r_outer
+ real(dp) :: der_damping_function_cosine
 
         if (distance < r_inner) then
             der_damping_function_cosine = 0

@@ -44,29 +44,70 @@ module local_prop
     implicit none
 
     !   Input variables
-    integer(c_int), intent(in) :: n_sparse
-    real(c_double), intent(in), target :: soap(:,:), delta, e0, zeta0
-    type(c_ptr), intent(in) :: soap_d, soap_der_d
-    logical, intent(in) :: do_derivatives 
-    type(c_ptr), intent(inout) :: cublas_handle, gpu_stream, alphas_d, Qs_d
-    real(c_double), intent(out), target:: local_properties(:), local_properties_cart_der(:,:)
+ integer(c_int), intent(in) :: n_sparse
+ real(c_double), intent(in), target :: soap(:,:)
+ real(c_double), intent(in), target :: delta
+ real(c_double), intent(in), target :: e0
+ real(c_double), intent(in), target :: zeta0
+ type(c_ptr), intent(in) :: soap_d
+ type(c_ptr), intent(in) :: soap_der_d
+ logical, intent(in) :: do_derivatives
+ type(c_ptr), intent(inout) :: cublas_handle
+ type(c_ptr), intent(inout) :: gpu_stream
+ type(c_ptr), intent(inout) :: alphas_d
+ type(c_ptr), intent(inout) :: Qs_d
+ real(c_double), intent(out), target:: local_properties(:)
+ real(c_double), intent(out), target:: local_properties_cart_der(:,:)
     
-    real(c_double) ::  zeta, cdelta_ene, mzetam, cdelta_force
-    logical :: is_zeta_int = .false.
-    integer(c_int) :: n_sites, n_soap, i, j, k, l, j2, zeta_int, n_sites0, k1, k2
+ real(c_double) :: zeta
+ real(c_double) :: cdelta_ene
+ real(c_double) :: mzetam
+ real(c_double) :: cdelta_force
+ logical :: is_zeta_int = .false.
+ integer(c_int) :: n_sites
+ integer(c_int) :: n_soap
+ integer(c_int) :: i
+ integer(c_int) :: j
+ integer(c_int) :: k
+ integer(c_int) :: l
+ integer(c_int) :: j2
+ integer(c_int) :: zeta_int
+ integer(c_int) :: n_sites0
+ integer(c_int) :: k1
+ integer(c_int) :: k2
 
-    integer(c_int), intent(in) :: n_pairs 
-    real(c_double), allocatable, target :: kernels(:,:), &
-                            Qss(:,:), Qs_copy(:,:), this_Qss(:), &
-                           kernels_copy(:,:), this_force_h(:,:)
-    integer(c_size_t) :: st_alphas, st_Qs, st_kernels, st_local_properties, st_soap, st_local_properties_cart_der
+ integer(c_int), intent(in) :: n_pairs
+ real(c_double), allocatable, target :: kernels(:,:)
+ real(c_double), allocatable, target :: Qss(:,:)
+ real(c_double), allocatable, target :: Qs_copy(:,:)
+ real(c_double), allocatable, target :: this_Qss(:)
+ real(c_double), allocatable, target :: kernels_copy(:,:)
+ real(c_double), allocatable, target :: this_force_h(:,:)
+ integer(c_size_t) :: st_alphas
+ integer(c_size_t) :: st_Qs
+ integer(c_size_t) :: st_kernels
+ integer(c_size_t) :: st_local_properties
+ integer(c_size_t) :: st_soap
+ integer(c_size_t) :: st_local_properties_cart_der
 
-    integer(c_int) :: size_kernels, size_soap, size_Qs, size_alphas, size_local_properties, size_local_properties_cart_der, maxnn
-    type(c_ptr) :: kernels_copy_d, kernels_d
-    type(c_ptr), intent(inout) :: local_properties_d, local_properties_cart_der_d
-    type(c_ptr) :: kernels_der_d, Qss_d, Qs_copy_d !, this_Qss_d
-    type(c_ptr), intent(inout) :: l_index_d
-    integer :: n1local_properties_cart_der, n2local_properties_cart_der
+ integer(c_int) :: size_kernels
+ integer(c_int) :: size_soap
+ integer(c_int) :: size_Qs
+ integer(c_int) :: size_alphas
+ integer(c_int) :: size_local_properties
+ integer(c_int) :: size_local_properties_cart_der
+ integer(c_int) :: maxnn
+ type(c_ptr) :: kernels_copy_d
+ type(c_ptr) :: kernels_d
+ type(c_ptr), intent(inout) :: local_properties_d
+ type(c_ptr), intent(inout) :: local_properties_cart_der_d
+ type(c_ptr) :: kernels_der_d
+ type(c_ptr) :: Qss_d
+ type(c_ptr) :: Qs_copy_d !
+ type(c_ptr) :: this_Qss_d
+ type(c_ptr), intent(inout) :: l_index_d
+ integer :: n1local_properties_cart_der
+ integer :: n2local_properties_cart_der
 
     
     cdelta_ene=delta*delta
@@ -178,15 +219,32 @@ module local_prop
     implicit none
 
 !   Input variables
-    real(dp), intent(in) :: soap(:,:), Qs(:,:), alphas(:), V0, delta, zeta, soap_cart_der(:,:,:)
-    integer, intent(in) :: n_neigh(:)
-    logical, intent(in) :: do_derivatives
+ real(dp), intent(in) :: soap(:,:)
+ real(dp), intent(in) :: Qs(:,:)
+ real(dp), intent(in) :: alphas(:)
+ real(dp), intent(in) :: V0
+ real(dp), intent(in) :: delta
+ real(dp), intent(in) :: zeta
+ real(dp), intent(in) :: soap_cart_der(:,:,:)
+ integer, intent(in) :: n_neigh(:)
+ logical, intent(in) :: do_derivatives
 !   Output variables
-    real(dp), intent(out) :: V(:), V_der(:,:)
+ real(dp), intent(out) :: V(:)
+ real(dp), intent(out) :: V_der(:,:)
 !   Internal variables
-    real(dp), allocatable :: K(:,:), K_der(:,:), Qss(:,:), Qs_copy(:,:)
-    integer :: n_sites, n_soap, n_sparse, zeta_int, n_pairs
-    integer :: i, j, i2, cart
+ real(dp), allocatable :: K(:,:)
+ real(dp), allocatable :: K_der(:,:)
+ real(dp), allocatable :: Qss(:,:)
+ real(dp), allocatable :: Qs_copy(:,:)
+ integer :: n_sites
+ integer :: n_soap
+ integer :: n_sparse
+ integer :: zeta_int
+ integer :: n_pairs
+ integer :: i
+ integer :: j
+ integer :: i2
+ integer :: cart
 
     n_sparse = size(alphas)
     n_soap = size(soap, 1)

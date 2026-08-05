@@ -41,16 +41,26 @@ module mpi_helper
        compress_soap, desc)
 
 !   Input variables
-    integer, intent(in) :: n_soap_turbo, n_species(:), n_sparse(:), dim(:), local_properties_n_sparse(:), &
-                            n_local_properties(:), local_properties_dim(:) ! compress_P_nonzero(:),
-    logical, intent(in) :: compress_soap(:), has_local_properties(:)
+ integer, intent(in) :: n_soap_turbo
+ integer, intent(in) :: n_species(:)
+ integer, intent(in) :: n_sparse(:)
+ integer, intent(in) :: dim(:)
+ integer, intent(in) :: local_properties_n_sparse(:)
+ integer, intent(in) :: n_local_properties(:)
+ integer, intent(in) :: local_properties_dim(:) ! compress_P_nonzero(:)
+ logical, intent(in) :: compress_soap(:)
+ logical, intent(in) :: has_local_properties(:)
 
 !   Output_variables
-    type(soap_turbo), allocatable, intent(out) :: desc(:)
+ type(soap_turbo), allocatable, intent(out) :: desc(:)
 
 !   Internal variables
 
-    integer :: i, n_sp, d, cPnz, counter
+ integer :: i
+ integer :: n_sp
+ integer :: d
+ integer :: cPnz
+ integer :: counter
 
     allocate( desc(1:n_soap_turbo) )
     counter = 0
@@ -119,13 +129,15 @@ module mpi_helper
   subroutine allocate_distance_2b_hypers(n_distance_2b, n_sparse, desc)
 
 !   Input variables
-    integer, intent(in) :: n_distance_2b, n_sparse(:)
+ integer, intent(in) :: n_distance_2b
+ integer, intent(in) :: n_sparse(:)
 
 !   Output_variables
-    type(distance_2b), allocatable, intent(out) :: desc(:)
+ type(distance_2b), allocatable, intent(out) :: desc(:)
 
 !   Internal variables
-    integer :: i, n_sp
+ integer :: i
+ integer :: n_sp
 
     allocate( desc(1:n_distance_2b) )
 
@@ -148,13 +160,15 @@ module mpi_helper
   subroutine allocate_angle_3b_hypers(n_angle_3b, n_sparse, desc)
 
 !   Input variables
-    integer, intent(in) :: n_angle_3b, n_sparse(:)
+ integer, intent(in) :: n_angle_3b
+ integer, intent(in) :: n_sparse(:)
 
 !   Output_variables
-    type(angle_3b), allocatable, intent(out) :: desc(:)
+ type(angle_3b), allocatable, intent(out) :: desc(:)
 
 !   Internal variables
-    integer :: i, n_sp
+ integer :: i
+ integer :: n_sp
 
     allocate( desc(1:n_angle_3b) )
 
@@ -178,13 +192,15 @@ module mpi_helper
   subroutine allocate_core_pot_hypers(n_core_pot, n, desc)
 
 !   Input variables
-    integer, intent(in) :: n_core_pot, n(:)
+ integer, intent(in) :: n_core_pot
+ integer, intent(in) :: n(:)
 
 !   Output_variables
-    type(core_pot), allocatable, intent(out) :: desc(:)
+ type(core_pot), allocatable, intent(out) :: desc(:)
 
 !   Internal variables
-    integer :: i, n_sp
+ integer :: i
+ integer :: n_sp
 
     allocate( desc(1:n_core_pot) )
 
@@ -203,12 +219,15 @@ subroutine count_energies_forces(counter2, n_sites,  &
                 energies, forces, virial, do_forces, &
                 all_energies, all_forces, all_virial)
         implicit none
-        integer, intent(inout) :: counter2, n_sites
-        real(dp), allocatable, intent(in) :: energies(:), forces(:,:)
-        real(dp), intent(in) :: virial(1:3,1:3)
-        real(dp), allocatable, intent(inout) :: all_energies(:,:), all_forces(:,:,:)
-        real(dp), intent(inout) :: all_virial(:,:,:)
-        logical, intent(in) :: do_forces
+ integer, intent(inout) :: counter2
+ integer, intent(inout) :: n_sites
+ real(dp), allocatable, intent(in) :: energies(:)
+ real(dp), allocatable, intent(in) :: forces(:,:)
+ real(dp), intent(in) :: virial(1:3,1:3)
+ real(dp), allocatable, intent(inout) :: all_energies(:,:)
+ real(dp), allocatable, intent(inout) :: all_forces(:,:,:)
+ real(dp), intent(inout) :: all_virial(:,:,:)
+ logical, intent(in) :: do_forces
 
         counter2 = counter2 + 1
         all_energies(1:n_sites, counter2) = energies(1:n_sites)

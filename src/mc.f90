@@ -38,12 +38,15 @@ contains
 
     subroutine get_accessible_volume(v_tot, v, species, radii)
       implicit none
-      real(dp), intent(in) :: v_tot
-      real(dp), intent(out) :: v
-      real(dp), allocatable, intent(in) :: radii(:)
-      integer, allocatable, intent(in) :: species(:)
-      integer :: n, i
-      real(dp) :: v_atoms, r, pi=3.14159265359
+ real(dp), intent(in) :: v_tot
+ real(dp), intent(out) :: v
+ real(dp), allocatable, intent(in) :: radii(:)
+ integer, allocatable, intent(in) :: species(:)
+ integer :: n
+ integer :: i
+ real(dp) :: v_atoms
+ real(dp) :: r
+ real(dp) :: pi=3.14159265359
 
 
       n = size(species, 1)
@@ -62,11 +65,19 @@ contains
   subroutine monte_carlo_insertion(p_accept, e_new, e_prev, temp, mu, m, volume, volume_bias, N_exch)
     implicit none
 
-    real(dp), intent(in) :: e_new, e_prev, temp, mu, m, volume, volume_bias
-    integer, intent(in) :: N_exch
-    real(dp) :: lam
-    real(dp) :: kB = 8.617333262e-5, hbar = 6.582119569e-1, pi=3.1415926535
-    real(dp), intent(out) :: p_accept
+ real(dp), intent(in) :: e_new
+ real(dp), intent(in) :: e_prev
+ real(dp), intent(in) :: temp
+ real(dp), intent(in) :: mu
+ real(dp), intent(in) :: m
+ real(dp), intent(in) :: volume
+ real(dp), intent(in) :: volume_bias
+ integer, intent(in) :: N_exch
+ real(dp) :: lam
+ real(dp) :: kB = 8.617333262e-5
+ real(dp) :: hbar = 6.582119569e-1
+ real(dp) :: pi=3.1415926535
+ real(dp), intent(out) :: p_accept
     ! mass has units eV*fs^2/A^2
     ! hbar in eV.fs
     ! lam is thermal debroglie wavelength
@@ -81,11 +92,19 @@ contains
   subroutine monte_carlo_removal(p_accept, e_new, e_prev, temp, mu, m, volume, volume_bias, N_exch)
     implicit none
 
-    real(dp), intent(in) :: e_new, e_prev, temp, mu, m, volume, volume_bias
-    integer, intent(in) :: N_exch
-    real(dp) :: lam
-    real(dp) :: kB = 8.617333262e-5, hbar = 6.582119569e-1, pi=3.1415926535
-    real(dp), intent(out) :: p_accept
+ real(dp), intent(in) :: e_new
+ real(dp), intent(in) :: e_prev
+ real(dp), intent(in) :: temp
+ real(dp), intent(in) :: mu
+ real(dp), intent(in) :: m
+ real(dp), intent(in) :: volume
+ real(dp), intent(in) :: volume_bias
+ integer, intent(in) :: N_exch
+ real(dp) :: lam
+ real(dp) :: kB = 8.617333262e-5
+ real(dp) :: hbar = 6.582119569e-1
+ real(dp) :: pi=3.1415926535
+ real(dp), intent(out) :: p_accept
     ! mass has units eV*fs^2/A^2
     ! hbar in eV.fs
     ! lam is thermal debroglie wavelength in A, volume in A^3
@@ -99,9 +118,11 @@ contains
   subroutine monte_carlo_move(p_accept, e_new, e_prev, temp)
     implicit none
 
-    real(dp), intent(in) :: e_new, e_prev, temp
-    real(dp) :: kB = 8.617333262e-5
-    real(dp), intent(out) :: p_accept
+ real(dp), intent(in) :: e_new
+ real(dp), intent(in) :: e_prev
+ real(dp), intent(in) :: temp
+ real(dp) :: kB = 8.617333262e-5
+ real(dp), intent(out) :: p_accept
     p_accept = exp( -( e_new - e_prev ) / (kB * temp) )
 
   end subroutine monte_carlo_move
@@ -110,11 +131,19 @@ contains
        & V_prev, V_avail_new, V_avail_prev, P, N_exch)
     implicit none
 
-    real(dp), intent(in) :: e_new, e_prev, temp, V_new, V_prev,&
-         & V_avail_new, V_avail_prev, P
-    real(dp) :: kB = 8.617333262e-5, beta, eVperA3tobar = 1602176.6208d0
-    integer, intent(in) :: N_exch
-    real(dp), intent(out) :: p_accept
+ real(dp), intent(in) :: e_new
+ real(dp), intent(in) :: e_prev
+ real(dp), intent(in) :: temp
+ real(dp), intent(in) :: V_new
+ real(dp), intent(in) :: V_prev
+ real(dp), intent(in) :: V_avail_new
+ real(dp), intent(in) :: V_avail_prev
+ real(dp), intent(in) :: P
+ real(dp) :: kB = 8.617333262e-5
+ real(dp) :: beta
+ real(dp) :: eVperA3tobar = 1602176.6208d0
+ integer, intent(in) :: N_exch
+ real(dp), intent(out) :: p_accept
 
     beta = (1./(kB * temp))
     p_accept = exp( - beta * ( (e_new - e_prev) + &
@@ -149,11 +178,19 @@ contains
        mu, n_mc_species, v_uc, v_uc_prev, v_a_uc, v_a_uc_prev, mass, pressure)
     implicit none
 
-    character*32, intent(in) :: mc_move
-    real(dp), intent(out) :: p_accept
-    real(dp), intent(in) ::  energy, energy_prev, temp, &
-         mu, v_uc, v_uc_prev, v_a_uc, v_a_uc_prev, mass, pressure
-    integer, intent(in) :: n_mc_species
+ character*32, intent(in) :: mc_move
+ real(dp), intent(out) :: p_accept
+ real(dp), intent(in) :: energy
+ real(dp), intent(in) :: energy_prev
+ real(dp), intent(in) :: temp
+ real(dp), intent(in) :: mu
+ real(dp), intent(in) :: v_uc
+ real(dp), intent(in) :: v_uc_prev
+ real(dp), intent(in) :: v_a_uc
+ real(dp), intent(in) :: v_a_uc_prev
+ real(dp), intent(in) :: mass
+ real(dp), intent(in) :: pressure
+ integer, intent(in) :: n_mc_species
 
 
 
@@ -180,11 +217,13 @@ contains
     implicit none
 
 
-    real(dp), intent(out) :: disp(1:3), d_disp
-    integer, intent(out) :: idx
-    real(dp), intent(in) :: move_max
-    integer, intent(in) :: n_sites
-    real(dp) :: ranf, ranv(1:3)
+ real(dp), intent(out) :: disp(1:3)
+ real(dp), intent(out) :: d_disp
+ integer, intent(out) :: idx
+ real(dp), intent(in) :: move_max
+ integer, intent(in) :: n_sites
+ real(dp) :: ranf
+ real(dp) :: ranv(1:3)
 
 !          Choose a random atom and displace it
     call random_number(ranf)
@@ -204,18 +243,32 @@ contains
        & mc_swaps_id, species, swap_id_1, swap_id_2, swap_species_1, swap_species_2, mc_mu_id)
     implicit none
 
-    integer, intent(in) :: n_sites, n_mc_mu
-    integer :: n_mc, i
-    character*32, intent(in) ::  mc_types(:)
-    character*32, intent(out) :: mc_move
-    real(dp) :: ranf, acceptance(:), mu_acceptance(:), k
-    logical :: invalid_move, cant_remove, cant_swap=.false.
-    integer, intent(inout) :: n_spec_swap_1, n_spec_swap_2,&
-         & n_mc_swaps, swap_id_1, swap_id_2, mc_mu_id
-    integer :: n_mc_types
-    integer, allocatable, intent(inout) :: species(:), mc_swaps_id(:), n_mc_species(:)
-    character*8, allocatable :: species_types(:)
-    character*8, intent(inout) :: swap_species_1, swap_species_2
+ integer, intent(in) :: n_sites
+ integer, intent(in) :: n_mc_mu
+ integer :: n_mc
+ integer :: i
+ character*32, intent(in) :: mc_types(:)
+ character*32, intent(out) :: mc_move
+ real(dp) :: ranf
+ real(dp) :: acceptance(:)
+ real(dp) :: mu_acceptance(:)
+ real(dp) :: k
+ logical :: invalid_move
+ logical :: cant_remove
+ logical :: cant_swap=.false.
+ integer, intent(inout) :: n_spec_swap_1
+ integer, intent(inout) :: n_spec_swap_2
+ integer, intent(inout) :: n_mc_swaps
+ integer, intent(inout) :: swap_id_1
+ integer, intent(inout) :: swap_id_2
+ integer, intent(inout) :: mc_mu_id
+ integer :: n_mc_types
+ integer, allocatable, intent(inout) :: species(:)
+ integer, allocatable, intent(inout) :: mc_swaps_id(:)
+ integer, allocatable, intent(inout) :: n_mc_species(:)
+ character*8, allocatable :: species_types(:)
+ character*8, intent(inout) :: swap_species_1
+ character*8, intent(inout) :: swap_species_2
 
     n_mc_types = size( mc_types, 1)
 
@@ -274,16 +327,23 @@ contains
 
     implicit none
 
-    real(dp), intent(inout) :: positions(:,:)
-    real(dp), intent(in) :: ref_positions(:,:)
-    real(dp), intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3), min_dist
-    real(dp) :: ranv(1:3)
-    integer, intent(in) :: idx, n_sites, indices(1:3), ref_species(:)
-    integer, intent(inout) :: species(:), mc_id
-    character*8, intent(in) :: ref_xyz_species(:)
-    character*8, intent(inout) :: xyz_species(:)
-    character*8, intent(in) :: mc_species
-    logical :: too_close
+ real(dp), intent(inout) :: positions(:,:)
+ real(dp), intent(in) :: ref_positions(:,:)
+ real(dp), intent(in) :: a_box(1:3)
+ real(dp), intent(in) :: b_box(1:3)
+ real(dp), intent(in) :: c_box(1:3)
+ real(dp), intent(in) :: min_dist
+ real(dp) :: ranv(1:3)
+ integer, intent(in) :: idx
+ integer, intent(in) :: n_sites
+ integer, intent(in) :: indices(1:3)
+ integer, intent(in) :: ref_species(:)
+ integer, intent(inout) :: species(:)
+ integer, intent(inout) :: mc_id
+ character*8, intent(in) :: ref_xyz_species(:)
+ character*8, intent(inout) :: xyz_species(:)
+ character*8, intent(in) :: mc_species
+ logical :: too_close
 
     positions(1:3,1:n_sites-1) = ref_positions(1:3,1:n_sites-1)
     positions(1:3,1:n_sites-1) = ref_positions(1:3,1:n_sites-1)
@@ -315,12 +375,18 @@ contains
   subroutine check_if_atoms_too_close(position, ref_positions, n_sites, &
        a_box, b_box, c_box, min_dist, too_close)
     implicit none
-    integer, intent(in) :: n_sites
-    integer :: i, i_shift(1:3)
-    real(dp), intent(in) :: position(:), ref_positions(:,:), min_dist
-    real(dp), intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3)
-    real(dp) :: d, dist(1:3)
-    logical, intent(inout) :: too_close
+ integer, intent(in) :: n_sites
+ integer :: i
+ integer :: i_shift(1:3)
+ real(dp), intent(in) :: position(:)
+ real(dp), intent(in) :: ref_positions(:,:)
+ real(dp), intent(in) :: min_dist
+ real(dp), intent(in) :: a_box(1:3)
+ real(dp), intent(in) :: b_box(1:3)
+ real(dp), intent(in) :: c_box(1:3)
+ real(dp) :: d
+ real(dp) :: dist(1:3)
+ logical, intent(inout) :: too_close
 
     too_close = .false.
     do i = 1, n_sites
@@ -340,14 +406,20 @@ contains
        & swap_id_1, swap_id_2, swap_species_1, swap_species_2)
     implicit none
 
-    integer, intent(inout) :: n_spec_swap_1, n_spec_swap_2, n_mc_swaps
-    integer, allocatable, intent(inout) :: species(:), mc_swaps_id(:)
-    character*8, allocatable, intent(inout) :: species_types(:)
-    character*8, intent(inout) :: swap_species_1, swap_species_2
-    integer :: i, idx
-    integer, intent(inout) :: swap_id_1, swap_id_2
-    integer, intent(in) :: n_sites
-    real(dp) :: ranf
+ integer, intent(inout) :: n_spec_swap_1
+ integer, intent(inout) :: n_spec_swap_2
+ integer, intent(inout) :: n_mc_swaps
+ integer, allocatable, intent(inout) :: species(:)
+ integer, allocatable, intent(inout) :: mc_swaps_id(:)
+ character*8, allocatable, intent(inout) :: species_types(:)
+ character*8, intent(inout) :: swap_species_1
+ character*8, intent(inout) :: swap_species_2
+ integer :: i
+ integer :: idx
+ integer, intent(inout) :: swap_id_1
+ integer, intent(inout) :: swap_id_2
+ integer, intent(in) :: n_sites
+ real(dp) :: ranf
     ! Now choose the species to swap
     call random_number(ranf)
     idx = floor( ranf * 2 * n_mc_swaps ) + 1
@@ -388,34 +460,84 @@ contains
 
     implicit none
 
-    real(dp), allocatable, intent(inout) :: positions(:,:), masses(:), local_properties(:,:),&
-         forces_prev(:,:), positions_prev(:,:), positions_diff(:,:),&
-         mc_acceptance(:), mc_mu_acceptance(:), im_local_properties(:,:), velocities(:,:), &
-         & energies(:), forces(:,:), masses_types(:), im_pos(:,:), im_masses(:)
-    real(dp) :: mc_move_max, ln_vol_max, lnvn, vn, v_uc, length,&
-         & length_prev, l_prop, ranf, ranv(1:3), kB = 8.6173303d-5
-    real(dp), intent(inout) :: disp(1:3), mc_min_dist, d_disp,&
-         & E_kinetic, instant_temp, t_beg
-    integer, intent(in) :: n_lp, verb
-    integer, intent(inout) :: n_sites, md_istep, n_mc_swaps, n_mc_relax_after, n_mc_mu, mc_mu_id
-    integer, allocatable, intent(inout) :: species(:), mc_swaps_id(:), n_mc_species(:), mc_id(:)
-    integer, allocatable, intent(in) ::  im_species(:)
-    character*8, allocatable, intent(inout) :: species_types(:),&
-         & xyz_species(:),  mc_swaps(:), mc_species(:)
-    character*8, allocatable, intent(in) :: im_xyz_species(:)
-    character*32, intent(inout) :: mc_move
-    character*8 ::  swap_species_1, swap_species_2
-    character*32, allocatable, intent(in) ::  mc_types(:), mc_relax_after(:)
-    integer :: idx, i, j, swap_id_1, swap_id_2, n_spec_swap_1, n_spec_swap_2, &
-         swap_atom_id_1, swap_atom_id_2
-    integer, allocatable :: swap_idx_1(:), swap_idx_2(:)
-    integer, allocatable, intent(inout) :: species_idx(:)
-    integer :: indices(1:3)
-    real(dp), intent(inout):: a_box(1:3), b_box(1:3), c_box(1:3)
-    logical, allocatable:: fix_atom(:,:)
-    logical, allocatable, intent(in) :: im_fix_atom(:,:)
-    logical, intent(inout) :: do_md, mc_relax, mc_hamiltonian, do_mc_relax
-    real(dp) :: gamma(1:6)
+ real(dp), allocatable, intent(inout) :: positions(:,:)
+ real(dp), allocatable, intent(inout) :: masses(:)
+ real(dp), allocatable, intent(inout) :: local_properties(:,:)
+ real(dp), allocatable, intent(inout) :: forces_prev(:,:)
+ real(dp), allocatable, intent(inout) :: positions_prev(:,:)
+ real(dp), allocatable, intent(inout) :: positions_diff(:,:)
+ real(dp), allocatable, intent(inout) :: mc_acceptance(:)
+ real(dp), allocatable, intent(inout) :: mc_mu_acceptance(:)
+ real(dp), allocatable, intent(inout) :: im_local_properties(:,:)
+ real(dp), allocatable, intent(inout) :: velocities(:,:)
+ real(dp), allocatable, intent(inout) :: energies(:)
+ real(dp), allocatable, intent(inout) :: forces(:,:)
+ real(dp), allocatable, intent(inout) :: masses_types(:)
+ real(dp), allocatable, intent(inout) :: im_pos(:,:)
+ real(dp), allocatable, intent(inout) :: im_masses(:)
+ real(dp) :: mc_move_max
+ real(dp) :: ln_vol_max
+ real(dp) :: lnvn
+ real(dp) :: vn
+ real(dp) :: v_uc
+ real(dp) :: length
+ real(dp) :: length_prev
+ real(dp) :: l_prop
+ real(dp) :: ranf
+ real(dp) :: ranv(1:3)
+ real(dp) :: kB = 8.6173303d-5
+ real(dp), intent(inout) :: disp(1:3)
+ real(dp), intent(inout) :: mc_min_dist
+ real(dp), intent(inout) :: d_disp
+ real(dp), intent(inout) :: E_kinetic
+ real(dp), intent(inout) :: instant_temp
+ real(dp), intent(inout) :: t_beg
+ integer, intent(in) :: n_lp
+ integer, intent(in) :: verb
+ integer, intent(inout) :: n_sites
+ integer, intent(inout) :: md_istep
+ integer, intent(inout) :: n_mc_swaps
+ integer, intent(inout) :: n_mc_relax_after
+ integer, intent(inout) :: n_mc_mu
+ integer, intent(inout) :: mc_mu_id
+ integer, allocatable, intent(inout) :: species(:)
+ integer, allocatable, intent(inout) :: mc_swaps_id(:)
+ integer, allocatable, intent(inout) :: n_mc_species(:)
+ integer, allocatable, intent(inout) :: mc_id(:)
+ integer, allocatable, intent(in) :: im_species(:)
+ character*8, allocatable, intent(inout) :: species_types(:)
+ character*8, allocatable, intent(inout) :: xyz_species(:)
+ character*8, allocatable, intent(inout) :: mc_swaps(:)
+ character*8, allocatable, intent(inout) :: mc_species(:)
+ character*8, allocatable, intent(in) :: im_xyz_species(:)
+ character*32, intent(inout) :: mc_move
+ character*8 :: swap_species_1
+ character*8 :: swap_species_2
+ character*32, allocatable, intent(in) :: mc_types(:)
+ character*32, allocatable, intent(in) :: mc_relax_after(:)
+ integer :: idx
+ integer :: i
+ integer :: j
+ integer :: swap_id_1
+ integer :: swap_id_2
+ integer :: n_spec_swap_1
+ integer :: n_spec_swap_2
+ integer :: swap_atom_id_1
+ integer :: swap_atom_id_2
+ integer, allocatable :: swap_idx_1(:)
+ integer, allocatable :: swap_idx_2(:)
+ integer, allocatable, intent(inout) :: species_idx(:)
+ integer :: indices(1:3)
+ real(dp), intent(inout):: a_box(1:3)
+ real(dp), intent(inout):: b_box(1:3)
+ real(dp), intent(inout):: c_box(1:3)
+ logical, allocatable:: fix_atom(:,:)
+ logical, allocatable, intent(in) :: im_fix_atom(:,:)
+ logical, intent(inout) :: do_md
+ logical, intent(inout) :: mc_relax
+ logical, intent(inout) :: mc_hamiltonian
+ logical, intent(inout) :: do_mc_relax
+ real(dp) :: gamma(1:6)
     !    n_sites = size(positions, 2)
 
     ! Count the mc species (no multi species mc just yet)
@@ -675,13 +797,19 @@ contains
   subroutine modify_box(positions, eps, a_box, b_box, c_box )
     implicit none
 !   Input variables
-    real(dp), intent(inout) :: positions(:,:), a_box(1:3), b_box(1:3), c_box(1:3)
-    real(dp), intent(in) :: eps(1:6)
+ real(dp), intent(inout) :: positions(:,:)
+ real(dp), intent(inout) :: a_box(1:3)
+ real(dp), intent(inout) :: b_box(1:3)
+ real(dp), intent(inout) :: c_box(1:3)
+ real(dp), intent(in) :: eps(1:6)
 !   Internal variables
-    real(dp) ::t_eps(1:3, 1:3)
-    real(dp), allocatable :: frac_pos(:,:)
-    real(dp) :: a_box0(1:3), b_box0(1:3), c_box0(1:3)
-    integer :: n_sites, i
+ real(dp) :: t_eps(1:3, 1:3)
+ real(dp), allocatable :: frac_pos(:,:)
+ real(dp) :: a_box0(1:3)
+ real(dp) :: b_box0(1:3)
+ real(dp) :: c_box0(1:3)
+ integer :: n_sites
+ integer :: i
 
 
     n_sites = size(positions,2)

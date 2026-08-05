@@ -41,15 +41,32 @@ module vdw
     implicit none
 
 !   Input variables
-    real(dp), intent(in) :: soap(:,:), Qs(:,:), alphas(:), V0, delta, zeta, soap_cart_der(:,:,:)
-    integer, intent(in) :: n_neigh(:)
-    logical, intent(in) :: do_derivatives
+ real(dp), intent(in) :: soap(:,:)
+ real(dp), intent(in) :: Qs(:,:)
+ real(dp), intent(in) :: alphas(:)
+ real(dp), intent(in) :: V0
+ real(dp), intent(in) :: delta
+ real(dp), intent(in) :: zeta
+ real(dp), intent(in) :: soap_cart_der(:,:,:)
+ integer, intent(in) :: n_neigh(:)
+ logical, intent(in) :: do_derivatives
 !   Output variables
-    real(dp), intent(out) :: V(:), V_der(:,:)
+ real(dp), intent(out) :: V(:)
+ real(dp), intent(out) :: V_der(:,:)
 !   Internal variables
-    real(dp), allocatable :: K(:,:), K_der(:,:), Qss(:,:), Qs_copy(:,:)
-    integer :: n_sites, n_soap, n_sparse, zeta_int, n_pairs
-    integer :: i, j, i2, cart
+ real(dp), allocatable :: K(:,:)
+ real(dp), allocatable :: K_der(:,:)
+ real(dp), allocatable :: Qss(:,:)
+ real(dp), allocatable :: Qs_copy(:,:)
+ integer :: n_sites
+ integer :: n_soap
+ integer :: n_sparse
+ integer :: zeta_int
+ integer :: n_pairs
+ integer :: i
+ integer :: j
+ integer :: i2
+ integer :: cart
 
     n_sparse = size(alphas)
     n_soap = size(soap, 1)
@@ -155,25 +172,67 @@ module vdw
     implicit none
 
 !   Input variables
-    real(dp), intent(in) :: hirshfeld_v(:), hirshfeld_v_cart_der(:,:), rcut, buffer, rcut_inner, buffer_inner, &
-                          rjs(:), xyz(:,:), hirshfeld_v_neigh(:), sR, d, c6_ref(:), r0_ref(:), &
-                          alpha0_ref(:)
-    integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:)
-    logical, intent(in) :: do_forces
+ real(dp), intent(in) :: hirshfeld_v(:)
+ real(dp), intent(in) :: hirshfeld_v_cart_der(:,:)
+ real(dp), intent(in) :: rcut
+ real(dp), intent(in) :: buffer
+ real(dp), intent(in) :: rcut_inner
+ real(dp), intent(in) :: buffer_inner
+ real(dp), intent(in) :: rjs(:)
+ real(dp), intent(in) :: xyz(:,:)
+ real(dp), intent(in) :: hirshfeld_v_neigh(:)
+ real(dp), intent(in) :: sR
+ real(dp), intent(in) :: d
+ real(dp), intent(in) :: c6_ref(:)
+ real(dp), intent(in) :: r0_ref(:)
+ real(dp), intent(in) :: alpha0_ref(:)
+ integer, intent(in) :: n_neigh(:)
+ integer, intent(in) :: neighbors_list(:)
+ integer, intent(in) :: neighbor_species(:)
+ logical, intent(in) :: do_forces
 !   Output variables
-    real(dp), intent(out) :: virial(1:3, 1:3)
+ real(dp), intent(out) :: virial(1:3, 1:3)
 !   In-Out variables
-    real(dp), intent(inout) :: energies(:), forces0(:,:)
+ real(dp), intent(inout) :: energies(:)
+ real(dp), intent(inout) :: forces0(:,:)
 !   Internal variables
-    real(dp), allocatable :: neighbor_c6_ii(:), neighbor_c6_ij(:), r0_ii(:), r0_ij(:), &
-                           exp_damp(:), f_damp(:), c6_ij_free(:), neighbor_alpha0(:), &
-                           pref_force1(:), pref_force2(:), r6(:), r6_der(:)
-    real(dp) :: time1, time2, c6_ii, c6_jj, r0_i, r0_j, alpha0_i, alpha0_j, rbuf, this_force(1:3)
-    integer, allocatable:: i_buffer(:)
-    integer :: n_sites, n_pairs, n_species, n_sites0
-    integer :: i, j, i2, j2, k, n_in_buffer, k1, k2
-    logical, allocatable :: is_in_buffer(:)
-    logical :: do_timing = .false.
+ real(dp), allocatable :: neighbor_c6_ii(:)
+ real(dp), allocatable :: neighbor_c6_ij(:)
+ real(dp), allocatable :: r0_ii(:)
+ real(dp), allocatable :: r0_ij(:)
+ real(dp), allocatable :: exp_damp(:)
+ real(dp), allocatable :: f_damp(:)
+ real(dp), allocatable :: c6_ij_free(:)
+ real(dp), allocatable :: neighbor_alpha0(:)
+ real(dp), allocatable :: pref_force1(:)
+ real(dp), allocatable :: pref_force2(:)
+ real(dp), allocatable :: r6(:)
+ real(dp), allocatable :: r6_der(:)
+ real(dp) :: time1
+ real(dp) :: time2
+ real(dp) :: c6_ii
+ real(dp) :: c6_jj
+ real(dp) :: r0_i
+ real(dp) :: r0_j
+ real(dp) :: alpha0_i
+ real(dp) :: alpha0_j
+ real(dp) :: rbuf
+ real(dp) :: this_force(1:3)
+ integer, allocatable:: i_buffer(:)
+ integer :: n_sites
+ integer :: n_pairs
+ integer :: n_species
+ integer :: n_sites0
+ integer :: i
+ integer :: j
+ integer :: i2
+ integer :: j2
+ integer :: k
+ integer :: n_in_buffer
+ integer :: k1
+ integer :: k2
+ logical, allocatable :: is_in_buffer(:)
+ logical :: do_timing = .false.
 
 
 
@@ -431,10 +490,13 @@ module vdw
 
     implicit none
 
-    character*8, intent(in) :: element
-    integer, intent(in) :: rank
-    real(dp), intent(out) :: C6, R0, alpha0
-    real(dp) :: Hartree = 27.211386024367243d0, Bohr = 0.5291772105638411d0
+ character*8, intent(in) :: element
+ integer, intent(in) :: rank
+ real(dp), intent(out) :: C6
+ real(dp), intent(out) :: R0
+ real(dp), intent(out) :: alpha0
+ real(dp) :: Hartree = 27.211386024367243d0
+ real(dp) :: Bohr = 0.5291772105638411d0
 
     C6 = 0.d0
     R0 =  0.d0

@@ -74,14 +74,28 @@ module xyz_module
          & valid_pdf, valid_sf, valid_xrd, valid_nd,  do_pair_distribution,&
          & do_structure_factor, do_xrd, do_nd, string)
       implicit none
-      real(dp), intent(in), allocatable :: energies_soap(:), energies_2b(:),&
-           & energies_3b(:), energies_core_pot(:), energies_vdw(:),&
-           & energies_exp(:), energies_lp(:), energies_pdf(:), energies_sf(:),&
-           & energies_xrd(:), energies_nd(:), energies_estat(:)
-      logical, intent(in) :: valid_pdf, valid_sf, valid_xrd, valid_nd, do_pair_distribution,&
-           & do_structure_factor, do_xrd, do_nd
-      character*1024, intent(out) :: string
-      character*32 :: temp_string
+ real(dp), intent(in), allocatable :: energies_soap(:)
+ real(dp), intent(in), allocatable :: energies_2b(:)
+ real(dp), intent(in), allocatable :: energies_3b(:)
+ real(dp), intent(in), allocatable :: energies_core_pot(:)
+ real(dp), intent(in), allocatable :: energies_vdw(:)
+ real(dp), intent(in), allocatable :: energies_exp(:)
+ real(dp), intent(in), allocatable :: energies_lp(:)
+ real(dp), intent(in), allocatable :: energies_pdf(:)
+ real(dp), intent(in), allocatable :: energies_sf(:)
+ real(dp), intent(in), allocatable :: energies_xrd(:)
+ real(dp), intent(in), allocatable :: energies_nd(:)
+ real(dp), intent(in), allocatable :: energies_estat(:)
+ logical, intent(in) :: valid_pdf
+ logical, intent(in) :: valid_sf
+ logical, intent(in) :: valid_xrd
+ logical, intent(in) :: valid_nd
+ logical, intent(in) :: do_pair_distribution
+ logical, intent(in) :: do_structure_factor
+ logical, intent(in) :: do_xrd
+ logical, intent(in) :: do_nd
+ character*1024, intent(out) :: string
+ character*32 :: temp_string
 
 
       write(temp_string, "(F16.8)") sum(energies_soap)
@@ -143,19 +157,39 @@ module xyz_module
     implicit none
 
 !   In variables:
-    real(dp), intent(in) :: md_time, dt, temperature, pressure, a_cell(1:3), b_cell(1:3), c_cell(1:3), virial(1:3,1:3)
-    real(dp), intent(in) :: forces(:,:), velocities(:,:), positions(:,:), local_energies(:), masses(:)
-    real(dp), intent(in) :: local_properties(:,:)
-    integer, intent(in) :: Nat, md_istep
+ real(dp), intent(in) :: md_time
+ real(dp), intent(in) :: dt
+ real(dp), intent(in) :: temperature
+ real(dp), intent(in) :: pressure
+ real(dp), intent(in) :: a_cell(1:3)
+ real(dp), intent(in) :: b_cell(1:3)
+ real(dp), intent(in) :: c_cell(1:3)
+ real(dp), intent(in) :: virial(1:3,1:3)
+ real(dp), intent(in) :: forces(:,:)
+ real(dp), intent(in) :: velocities(:,:)
+ real(dp), intent(in) :: positions(:,:)
+ real(dp), intent(in) :: local_energies(:)
+ real(dp), intent(in) :: masses(:)
+ real(dp), intent(in) :: local_properties(:,:)
+ integer, intent(in) :: Nat
+ integer, intent(in) :: md_istep
     character(len=*), intent(in) :: species(:), filename, string
-    logical, intent(in) :: write_property(:), write_array_property(:), fix_atom(:,:), overwrite
-    logical, allocatable, intent(in) :: write_local_properties(:)
-    character*1024, allocatable, intent(in) :: local_property_labels(:)
+ logical, intent(in) :: write_property(:)
+ logical, intent(in) :: write_array_property(:)
+ logical, intent(in) :: fix_atom(:,:)
+ logical, intent(in) :: overwrite
+ logical, allocatable, intent(in) :: write_local_properties(:)
+ character*1024, allocatable, intent(in) :: local_property_labels(:)
 !   Internal variables:
-    real(dp) :: vol
-    integer :: n_properties, n_array_properties, i, j, k
-    character*1024 :: properties_string
-    character*16 :: lattice_string(1:16), temp_string
+ real(dp) :: vol
+ integer :: n_properties
+ integer :: n_array_properties
+ integer :: i
+ integer :: j
+ integer :: k
+ character*1024 :: properties_string
+ character*16 :: lattice_string(1:16)
+ character*16 :: temp_string
 
 
     n_properties = 0
@@ -426,18 +460,26 @@ module xyz_module
     implicit none
 
 !   Input variables
-    character*1024, intent(in) :: properties, line
+ character*1024, intent(in) :: properties
+ character*1024, intent(in) :: line
 
 !   Output variables
-    real(dp), intent(inout) :: velocities(1:3), positions(1:3), masses
-    character*8 :: species
-    logical, intent(inout) :: fix_atom(1:3)
-    logical, intent(out) :: has_velocities, has_masses
+ real(dp), intent(inout) :: velocities(1:3)
+ real(dp), intent(inout) :: positions(1:3)
+ real(dp), intent(inout) :: masses
+ character*8 :: species
+ logical, intent(inout) :: fix_atom(1:3)
+ logical, intent(out) :: has_velocities
+ logical, intent(out) :: has_masses
 
 !   Internal variables
-    integer :: i, j, k, iostatus
-    character*1 :: c, junk
-    character*32 :: property
+ integer :: i
+ integer :: j
+ integer :: k
+ integer :: iostatus
+ character*1 :: c
+ character*1 :: junk
+ character*32 :: property
 
     has_velocities = .false.
     has_masses = .false.

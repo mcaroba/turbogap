@@ -64,69 +64,154 @@ contains
     implicit none
 
     !   Input variables
-    type(local_property_soap_turbo), allocatable :: local_property_models(:)
+ type(local_property_soap_turbo), allocatable :: local_property_models(:)
 
     !   real(dp), intent(in) :: rjs0(:), thetas0(:), phis0(:), xyz0(:,:), rcut_hard(:), rcut_soft(:), &
-    real(dp), intent(in) :: rjs0(:), thetas0(:), phis0(:), xyz0(:, :), rcut_hard(:), &
-                                !                         nf(:), global_scaling(:), atom_sigma_r(:), atom_sigma_r_scaling(:), &
-         atom_sigma_r(:), &
-                                !                         atom_sigma_t(:), atom_sigma_t_scaling(:), amplitude_scaling(:), &
-                                !                         central_weight(:), delta, zeta, Qs(:,:), vdw_Qs(:,:), &
-         central_weight(:), delta, zeta
-    integer, intent(in) :: n_sites0, n_neigh0(:), neighbors_list0(:), n_species, central_species, &
-         radial_enhancement, compress_soap_indices(:), which_atom, &
-         indices(1:3), alpha_max(:), l_max, n_total_sites, n_sparse,&
-         & n_local_properties,&
-         & local_property_indexes(:), lp_index
+ real(dp), intent(in) :: rjs0(:)
+ real(dp), intent(in) :: thetas0(:)
+ real(dp), intent(in) :: phis0(:)
+ real(dp), intent(in) :: xyz0(:, :)
+ real(dp), intent(in) :: rcut_hard(:)
+ real(dp), intent(in) :: atom_sigma_r(:)
+ real(dp), intent(in) ::                          central_weight(:)
+ real(dp), intent(in) :: delta
+ real(dp), intent(in) :: zeta
+ integer, intent(in) :: n_sites0
+ integer, intent(in) :: n_neigh0(:)
+ integer, intent(in) :: neighbors_list0(:)
+ integer, intent(in) :: n_species
+ integer, intent(in) :: central_species
+ integer, intent(in) :: radial_enhancement
+ integer, intent(in) :: compress_soap_indices(:)
+ integer, intent(in) :: which_atom
+ integer, intent(in) :: indices(1:3)
+ integer, intent(in) :: alpha_max(:)
+ integer, intent(in) :: l_max
+ integer, intent(in) :: n_total_sites
+ integer, intent(in) :: n_sparse
+ integer, intent(in) :: n_local_properties
+ integer, intent(in) :: local_property_indexes(:)
+ integer, intent(in) :: lp_index
 
-    logical, intent(in) :: do_timing, do_derivatives, compress_soap, do_forces, do_prediction, &
-         all_atoms, write_soap, write_derivatives, has_local_properties
+ logical, intent(in) :: do_timing
+ logical, intent(in) :: do_derivatives
+ logical, intent(in) :: compress_soap
+ logical, intent(in) :: do_forces
+ logical, intent(in) :: do_prediction
+ logical, intent(in) :: all_atoms
+ logical, intent(in) :: write_soap
+ logical, intent(in) :: write_derivatives
+ logical, intent(in) :: has_local_properties
 
-    character*64, intent(in) :: basis
-    character*32, intent(in) :: scaling_mode
-    character*8, intent(in) :: xyz_species(:), xyz_species_supercell(:), species_types(:)
+ character*64, intent(in) :: basis
+ character*32, intent(in) :: scaling_mode
+ character*8, intent(in) :: xyz_species(:)
+ character*8, intent(in) :: xyz_species_supercell(:)
+ character*8, intent(in) :: species_types(:)
 
     !   Output variables
-    real(dp), allocatable, intent(out) :: soap(:, :), soap_cart_der(:, :, :)
-    real(dp), intent(out) :: virial(1:3, 1:3)
-    real(dp), intent(inout)  :: solo_time_soap, time_get_soap
+ real(dp), allocatable, intent(out) :: soap(:, :)
+ real(dp), allocatable, intent(out) :: soap_cart_der(:, :, :)
+ real(dp), intent(out) :: virial(1:3, 1:3)
+ real(dp), intent(inout) :: solo_time_soap
+ real(dp), intent(inout) :: time_get_soap
 
     !   Inout variables
-    real(dp), intent(inout) :: energies0(:), forces0(:, :), local_properties0(:, :), local_properties_cart_der0(:, :, :)
+ real(dp), intent(inout) :: energies0(:)
+ real(dp), intent(inout) :: forces0(:, :)
+ real(dp), intent(inout) :: local_properties0(:, :)
+ real(dp), intent(inout) :: local_properties_cart_der0(:, :, :)
 
     !   Internal variables
-    real(dp), allocatable :: rjs(:), thetas(:), phis(:), energies(:), forces(:, :), soap_temp(:, :), &
-         local_properties(:), local_properties_cart_der(:, :), xyz(:, :)
+ real(dp), allocatable :: rjs(:)
+ real(dp), allocatable :: thetas(:)
+ real(dp), allocatable :: phis(:)
+ real(dp), allocatable :: energies(:)
+ real(dp), allocatable :: forces(:, :)
+ real(dp), allocatable :: soap_temp(:, :)
+ real(dp), allocatable :: local_properties(:)
+ real(dp), allocatable :: local_properties_cart_der(:, :)
+ real(dp), allocatable :: xyz(:, :)
 
-    integer, allocatable :: in_to_out_site(:), n_neigh(:), neighbors_list(:), species_multiplicity(:), &
-         species(:, :), species0(:, :), species_multiplicity0(:), out_to_in_site(:), &
-         der_neighbors(:), der_neighbors_list(:), in_to_out_pairs(:)
-    integer, allocatable :: species_multiplicity_supercell(:)
-    integer :: n_sites, i, j, n_atom_pairs, k, k2, i2, j2, n_soap, max_species_multiplicity, i3, n_all_sites, &
-         i4, n_sites_supercell, j3
-    integer :: ierr, rank
-    logical, allocatable :: mask(:, :)
-    logical, allocatable ::  mask0(:, :), is_atom_seen(:)
+ integer, allocatable :: in_to_out_site(:)
+ integer, allocatable :: n_neigh(:)
+ integer, allocatable :: neighbors_list(:)
+ integer, allocatable :: species_multiplicity(:)
+ integer, allocatable :: species(:, :)
+ integer, allocatable :: species0(:, :)
+ integer, allocatable :: species_multiplicity0(:)
+ integer, allocatable :: out_to_in_site(:)
+ integer, allocatable :: der_neighbors(:)
+ integer, allocatable :: der_neighbors_list(:)
+ integer, allocatable :: in_to_out_pairs(:)
+ integer, allocatable :: species_multiplicity_supercell(:)
+ integer :: n_sites
+ integer :: i
+ integer :: j
+ integer :: n_atom_pairs
+ integer :: k
+ integer :: k2
+ integer :: i2
+ integer :: j2
+ integer :: n_soap
+ integer :: max_species_multiplicity
+ integer :: i3
+ integer :: n_all_sites
+ integer :: i4
+ integer :: n_sites_supercell
+ integer :: j3
+ integer :: ierr
+ integer :: rank
+ logical, allocatable :: mask(:, :)
+ logical, allocatable :: mask0(:, :)
+ logical, allocatable :: is_atom_seen(:)
     !   CLEAN THIS UP
-    real(dp) :: time1, time2, rcut_max
-    real(dp) :: ttt(2)
-    real(dp) :: time_local_prop(3)
-    type(c_ptr) :: soap_cart_der_d, soap_d, nf_d, rcut_hard_d, rcut_soft_d, global_scaling_d, atom_sigma_r_d, atom_sigma_r_scaling_d
-    type(c_ptr) :: atom_sigma_t_d, atom_sigma_t_scaling_d, amplitude_scaling_d, alpha_max_d, central_weight_d, alphas_d, Qs_d
-    type(c_ptr) :: cublas_handle, gpu_stream
-    type(c_ptr) :: n_neigh_d
+ real(dp) :: time1
+ real(dp) :: time2
+ real(dp) :: rcut_max
+ real(dp) :: ttt(2)
+ real(dp) :: time_local_prop(3)
+ type(c_ptr) :: soap_cart_der_d
+ type(c_ptr) :: soap_d
+ type(c_ptr) :: nf_d
+ type(c_ptr) :: rcut_hard_d
+ type(c_ptr) :: rcut_soft_d
+ type(c_ptr) :: global_scaling_d
+ type(c_ptr) :: atom_sigma_r_d
+ type(c_ptr) :: atom_sigma_r_scaling_d
+ type(c_ptr) :: atom_sigma_t_d
+ type(c_ptr) :: atom_sigma_t_scaling_d
+ type(c_ptr) :: amplitude_scaling_d
+ type(c_ptr) :: alpha_max_d
+ type(c_ptr) :: central_weight_d
+ type(c_ptr) :: alphas_d
+ type(c_ptr) :: Qs_d
+ type(c_ptr) :: cublas_handle
+ type(c_ptr) :: gpu_stream
+ type(c_ptr) :: n_neigh_d
 
-    type(c_ptr), intent(inout) :: W_d, S_d, multiplicity_array_d
-    integer(c_size_t), intent(inout) :: st_W_d, st_S_d, st_multiplicity_array_d
-    logical, intent(inout) ::  recompute_basis
+ type(c_ptr), intent(inout) :: W_d
+ type(c_ptr), intent(inout) :: S_d
+ type(c_ptr), intent(inout) :: multiplicity_array_d
+ integer(c_size_t), intent(inout) :: st_W_d
+ integer(c_size_t), intent(inout) :: st_S_d
+ integer(c_size_t), intent(inout) :: st_multiplicity_array_d
+ logical, intent(inout) :: recompute_basis
 
     ! For local properties
-    type(c_ptr) :: alphas_lp_d, Qs_lp_d, l_index_d, local_properties_d, local_properties_cart_der_d
-    integer(c_int) :: n_pairs
+ type(c_ptr) :: alphas_lp_d
+ type(c_ptr) :: Qs_lp_d
+ type(c_ptr) :: l_index_d
+ type(c_ptr) :: local_properties_d
+ type(c_ptr) :: local_properties_cart_der_d
+ integer(c_int) :: n_pairs
 
     ! Check for lp prediction
-    integer :: n_sparse_lp, dim_lp
-    integer(c_size_t) :: st_soap, st_soap_cart_der, st_size_nf
+ integer :: n_sparse_lp
+ integer :: dim_lp
+ integer(c_size_t) :: st_soap
+ integer(c_size_t) :: st_soap_cart_der
+ integer(c_size_t) :: st_size_nf
 
     !--- TODO: CHANGE THE LOCAL PROPERTIES PARAMS TO DOUBLES TOO ---!
 
@@ -819,13 +904,24 @@ contains
                                  & in_to_out_pairs, n_all_sites,&
                                  & in_to_out_site, n_sites_out)
 
-      real(dp), allocatable, intent(in) :: soap(:, :), soap_cart_der(:, :, :)
-      real(dp), intent(in) ::  Qs(:, :), alphas(:), zeta, delta, V0
-      real(dp), intent(inout) :: local_property0(:), local_property_cart_der0(:, :)
-      real(dp), allocatable :: local_property(:), local_property_cart_der(:, :)
-      integer, intent(in) :: n_atom_pairs, in_to_out_pairs(:), n_all_sites,&
-           & in_to_out_site(:), n_neigh_out(:), n_sites_out
-      logical, intent(in) :: do_derivatives
+ real(dp), allocatable, intent(in) :: soap(:, :)
+ real(dp), allocatable, intent(in) :: soap_cart_der(:, :, :)
+ real(dp), intent(in) :: Qs(:, :)
+ real(dp), intent(in) :: alphas(:)
+ real(dp), intent(in) :: zeta
+ real(dp), intent(in) :: delta
+ real(dp), intent(in) :: V0
+ real(dp), intent(inout) :: local_property0(:)
+ real(dp), intent(inout) :: local_property_cart_der0(:, :)
+ real(dp), allocatable :: local_property(:)
+ real(dp), allocatable :: local_property_cart_der(:, :)
+ integer, intent(in) :: n_atom_pairs
+ integer, intent(in) :: in_to_out_pairs(:)
+ integer, intent(in) :: n_all_sites
+ integer, intent(in) :: in_to_out_site(:)
+ integer, intent(in) :: n_neigh_out(:)
+ integer, intent(in) :: n_sites_out
+ logical, intent(in) :: do_derivatives
 
       allocate (local_property(1:n_sites_out))
       local_property = 0.d0

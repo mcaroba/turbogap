@@ -39,7 +39,7 @@ module turbogap_setup
   implicit none
 
   private
-  public :: read_input_and_gap_files
+ public :: read_input_and_gap_files
 
 contains
 
@@ -55,44 +55,69 @@ contains
     implicit none
 
 !   Input
-    character*16, intent(in) :: mode
-    integer, intent(in) :: rank, ntasks
+ character*16, intent(in) :: mode
+ integer, intent(in) :: rank
+ integer, intent(in) :: ntasks
 !   Everything below is filled in by this routine
-    type(input_parameters), intent(inout) :: params
-    type(soap_turbo), allocatable, intent(inout) :: soap_turbo_hypers(:)
-    type(distance_2b), allocatable, intent(inout) :: distance_2b_hypers(:)
-    type(angle_3b), allocatable, intent(inout) :: angle_3b_hypers(:)
-    type(core_pot), allocatable, intent(inout) :: core_pot_hypers(:)
-    integer, intent(inout) :: n_soap_turbo, n_distance_2b, n_angle_3b, n_core_pot
-    integer, intent(inout) :: n_species
-    real(dp), intent(inout) :: rcut_max
-    logical, intent(inout) :: valid_xps, valid_estat_charges
-    integer, intent(inout) :: xps_idx, vdw_lp_index, core_be_lp_index, charge_lp_index
-    character*1024, allocatable, intent(inout) :: local_property_labels(:)
-    integer, allocatable, intent(inout) :: local_property_indexes(:)
-    integer, allocatable, intent(inout) :: n_local_properties_mpi(:)
-    logical, allocatable, intent(inout) :: has_local_properties_mpi(:)
-    integer, allocatable, intent(inout) :: local_properties_n_sparse_mpi_soap_turbo(:)
-    integer, allocatable, intent(inout) :: local_properties_dim_mpi_soap_turbo(:)
-    real(dp), intent(inout) :: time_read_input(1:3), time_mpi(1:3)
+ type(input_parameters), intent(inout) :: params
+ type(soap_turbo), allocatable, intent(inout) :: soap_turbo_hypers(:)
+ type(distance_2b), allocatable, intent(inout) :: distance_2b_hypers(:)
+ type(angle_3b), allocatable, intent(inout) :: angle_3b_hypers(:)
+ type(core_pot), allocatable, intent(inout) :: core_pot_hypers(:)
+ integer, intent(inout) :: n_soap_turbo
+ integer, intent(inout) :: n_distance_2b
+ integer, intent(inout) :: n_angle_3b
+ integer, intent(inout) :: n_core_pot
+ integer, intent(inout) :: n_species
+ real(dp), intent(inout) :: rcut_max
+ logical, intent(inout) :: valid_xps
+ logical, intent(inout) :: valid_estat_charges
+ integer, intent(inout) :: xps_idx
+ integer, intent(inout) :: vdw_lp_index
+ integer, intent(inout) :: core_be_lp_index
+ integer, intent(inout) :: charge_lp_index
+ character*1024, allocatable, intent(inout) :: local_property_labels(:)
+ integer, allocatable, intent(inout) :: local_property_indexes(:)
+ integer, allocatable, intent(inout) :: n_local_properties_mpi(:)
+ logical, allocatable, intent(inout) :: has_local_properties_mpi(:)
+ integer, allocatable, intent(inout) :: local_properties_n_sparse_mpi_soap_turbo(:)
+ integer, allocatable, intent(inout) :: local_properties_dim_mpi_soap_turbo(:)
+ real(dp), intent(inout) :: time_read_input(1:3)
+ real(dp), intent(inout) :: time_mpi(1:3)
 
 !   Local. All of these were variables of the main program that nothing outside
 !   this block referenced. i, j, ierr, iostatus, cjunk, n_sp and n_lp_count are
 !   shared scratch elsewhere in the driver; they are safe to localise because
 !   each is written before it is next read after this block.
-    character*1024 :: file_gap = "none", cjunk
-    character*1024, allocatable :: local_property_labels_temp(:), local_property_labels_temp2(:)
-    character*64 :: keyword
-    character*1 :: keyword_first
-    character*8 :: i_char
-    integer, allocatable :: n_species_mpi(:), n_sparse_mpi_soap_turbo(:), dim_mpi(:)
-    integer, allocatable :: n_sparse_mpi_distance_2b(:), n_sparse_mpi_angle_3b(:)
-    integer, allocatable :: n_mpi_core_pot(:), compress_P_nonzero_mpi(:)
-    logical, allocatable :: compress_soap_mpi(:)
-    logical :: valid_vdw = .false.
-    integer :: n_sparse, dim, cPnz, n_nonzero, n_local_properties_tot = 0
-    integer :: i, j, ierr, iostatus, n_sp, n_lp_count, nrows
-    real(dp), allocatable :: allelstopdata(:)
+ character*1024 :: file_gap = "none"
+ character*1024 :: cjunk
+ character*1024, allocatable :: local_property_labels_temp(:)
+ character*1024, allocatable :: local_property_labels_temp2(:)
+ character*64 :: keyword
+ character*1 :: keyword_first
+ character*8 :: i_char
+ integer, allocatable :: n_species_mpi(:)
+ integer, allocatable :: n_sparse_mpi_soap_turbo(:)
+ integer, allocatable :: dim_mpi(:)
+ integer, allocatable :: n_sparse_mpi_distance_2b(:)
+ integer, allocatable :: n_sparse_mpi_angle_3b(:)
+ integer, allocatable :: n_mpi_core_pot(:)
+ integer, allocatable :: compress_P_nonzero_mpi(:)
+ logical, allocatable :: compress_soap_mpi(:)
+ logical :: valid_vdw = .false.
+ integer :: n_sparse
+ integer :: dim
+ integer :: cPnz
+ integer :: n_nonzero
+ integer :: n_local_properties_tot = 0
+ integer :: i
+ integer :: j
+ integer :: ierr
+ integer :: iostatus
+ integer :: n_sp
+ integer :: n_lp_count
+ integer :: nrows
+ real(dp), allocatable :: allelstopdata(:)
 
   ! Read input file and other files
   !

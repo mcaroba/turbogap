@@ -76,200 +76,512 @@ program turbogap
   !**************************************************************************
   ! Variable definitions
   !
-  real(dp), allocatable, target :: rjs(:), thetas(:), phis(:), xyz(:,:)
-  real(dp), allocatable :: positions(:,:), positions_prev(:,:), soap(:,:), soap_cart_der(:,:,:), &
-    positions_diff(:,:), forces_prev(:,:), frac_positions(:,:)
-  real(dp) :: rcut_max, a_box(1:3), b_box(1:3), c_box(1:3), max_displacement, energy, energy_prev
-  real(dp), target :: virial(1:3, 1:3), this_virial(1:3, 1:3), virial_soap(1:3, 1:3), virial_2b(1:3, 1:3), &
-    virial_3b(1:3,1:3), virial_core_pot(1:3, 1:3), virial_vdw(1:3, 1:3), virial_lp(1:3,1:3), &
-    this_virial_vdw(1:3, 1:3), this_virial_lp(1:3, 1:3), virial_pdf(1:3,1:3), this_virial_pdf(1:3,1:3), v_uc,&
-    & virial_sf(1:3,1:3), this_virial_sf(1:3,1:3), &
-    & virial_xrd(1:3,1:3), this_virial_xrd(1:3,1:3), &
-    & virial_nd(1:3,1:3), this_virial_nd(1:3,1:3), &
-    & virial_estat(1:3,1:3), this_virial_estat(1:3,1:3)       
-  real(dp) ::  v_uc_prev, v_a_uc, v_a_uc_prev, eVperA3tobar =&
-    & 1602176.6208d0, ranf, ranv(1:3), disp(1:3), d_disp, &
-    & e_mc_prev, p_accept, virial_prev(1:3, 1:3), sim_exp_pred,&
-    & sim_exp_prev, sim_exp_pred_der(1:3)
-  real(dp), allocatable, target :: energies(:), forces(:,:), energies_soap(:), &
-       forces_soap(:,:), this_energies(:), this_forces(:,:), energies_2b(:), forces_2b(:,:), &
-       energies_3b(:), forces_3b(:,:), energies_core_pot(:), forces_core_pot(:,:), &
-       velocities(:,:), masses_types(:), masses(:), hirshfeld_v_temp(:), masses_temp(:), &
-       energies_exp(:)
+ real(dp), allocatable, target :: rjs(:)
+ real(dp), allocatable, target :: thetas(:)
+ real(dp), allocatable, target :: phis(:)
+ real(dp), allocatable, target :: xyz(:,:)
+ real(dp), allocatable :: positions(:,:)
+ real(dp), allocatable :: positions_prev(:,:)
+ real(dp), allocatable :: soap(:,:)
+ real(dp), allocatable :: soap_cart_der(:,:,:)
+ real(dp), allocatable :: positions_diff(:,:)
+ real(dp), allocatable :: forces_prev(:,:)
+ real(dp), allocatable :: frac_positions(:,:)
+ real(dp) :: rcut_max
+ real(dp) :: a_box(1:3)
+ real(dp) :: b_box(1:3)
+ real(dp) :: c_box(1:3)
+ real(dp) :: max_displacement
+ real(dp) :: energy
+ real(dp) :: energy_prev
+ real(dp), target :: virial(1:3, 1:3)
+ real(dp), target :: this_virial(1:3, 1:3)
+ real(dp), target :: virial_soap(1:3, 1:3)
+ real(dp), target :: virial_2b(1:3, 1:3)
+ real(dp), target :: virial_3b(1:3,1:3)
+ real(dp), target :: virial_core_pot(1:3, 1:3)
+ real(dp), target :: virial_vdw(1:3, 1:3)
+ real(dp), target :: virial_lp(1:3,1:3)
+ real(dp), target :: this_virial_vdw(1:3, 1:3)
+ real(dp), target :: this_virial_lp(1:3, 1:3)
+ real(dp), target :: virial_pdf(1:3,1:3)
+ real(dp), target :: this_virial_pdf(1:3,1:3)
+ real(dp), target :: v_uc
+ real(dp), target :: virial_sf(1:3,1:3)
+ real(dp), target :: this_virial_sf(1:3,1:3)
+ real(dp), target :: virial_xrd(1:3,1:3)
+ real(dp), target :: this_virial_xrd(1:3,1:3)
+ real(dp), target :: virial_nd(1:3,1:3)
+ real(dp), target :: this_virial_nd(1:3,1:3)
+ real(dp), target :: virial_estat(1:3,1:3)
+ real(dp), target :: this_virial_estat(1:3,1:3)
+ real(dp) :: v_uc_prev
+ real(dp) :: v_a_uc
+ real(dp) :: v_a_uc_prev
+ real(dp) :: eVperA3tobar = 1602176.6208d0
+ real(dp) :: ranf
+ real(dp) :: ranv(1:3)
+ real(dp) :: disp(1:3)
+ real(dp) :: d_disp
+ real(dp) :: e_mc_prev
+ real(dp) :: p_accept
+ real(dp) :: virial_prev(1:3, 1:3)
+ real(dp) :: sim_exp_pred
+ real(dp) :: sim_exp_prev
+ real(dp) :: sim_exp_pred_der(1:3)
+ real(dp), allocatable, target :: energies(:)
+ real(dp), allocatable, target :: forces(:,:)
+ real(dp), allocatable, target :: energies_soap(:)
+ real(dp), allocatable, target :: forces_soap(:,:)
+ real(dp), allocatable, target :: this_energies(:)
+ real(dp), allocatable, target :: this_forces(:,:)
+ real(dp), allocatable, target :: energies_2b(:)
+ real(dp), allocatable, target :: forces_2b(:,:)
+ real(dp), allocatable, target :: energies_3b(:)
+ real(dp), allocatable, target :: forces_3b(:,:)
+ real(dp), allocatable, target :: energies_core_pot(:)
+ real(dp), allocatable, target :: forces_core_pot(:,:)
+ real(dp), allocatable, target :: velocities(:,:)
+ real(dp), allocatable, target :: masses_types(:)
+ real(dp), allocatable, target :: masses(:)
+ real(dp), allocatable, target :: hirshfeld_v_temp(:)
+ real(dp), allocatable, target :: masses_temp(:)
+ real(dp), allocatable, target :: energies_exp(:)
   !  real(dp), allocatable :: this_hirshfeld_v(:), this_hirshfeld_v_cart_der(:,:)
   !  real(dp), pointer :: this_hirshfeld_v_pt(:), this_hirshfeld_v_cart_der_pt(:,:)
 
-  real(dp), allocatable, target :: local_properties(:,:), local_properties_cart_der(:,:,:)
+ real(dp), allocatable, target :: local_properties(:,:)
+ real(dp), allocatable, target :: local_properties_cart_der(:,:,:)
   ! Have one rank lower for the pointer, such that it just relates to a sub array of the local properties/cart_der
-  real(dp), pointer :: local_properties_pt(:), local_properties_cart_der_pt(:,:)
+ real(dp), pointer :: local_properties_pt(:)
+ real(dp), pointer :: local_properties_cart_der_pt(:,:)
   !  real(dp), pointer :: hirshfeld_v(:), hirshfeld_v_cart_der(:,:)
-  real(dp), allocatable, target :: this_local_properties(:,:), this_local_properties_cart_der(:,:,:)
-  real(dp), pointer :: this_local_properties_pt(:,:), this_local_properties_cart_der_pt(:,:,:)
-  real(dp), allocatable ::  y_i_pred_all(:,:), moments(:), moments_exp(:)
+ real(dp), allocatable, target :: this_local_properties(:,:)
+ real(dp), allocatable, target :: this_local_properties_cart_der(:,:,:)
+ real(dp), pointer :: this_local_properties_pt(:,:)
+ real(dp), pointer :: this_local_properties_cart_der_pt(:,:,:)
+ real(dp), allocatable :: y_i_pred_all(:,:)
+ real(dp), allocatable :: moments(:)
+ real(dp), allocatable :: moments_exp(:)
 
 
-  real(dp), allocatable :: all_energies(:,:), all_forces(:,:,:), all_virial(:,:,:)
-  real(dp), allocatable :: all_this_energies(:,:), all_this_forces(:,:,:), all_this_virial(:,:,:)
+ real(dp), allocatable :: all_energies(:,:)
+ real(dp), allocatable :: all_forces(:,:,:)
+ real(dp), allocatable :: all_virial(:,:,:)
+ real(dp), allocatable :: all_this_energies(:,:)
+ real(dp), allocatable :: all_this_forces(:,:,:)
+ real(dp), allocatable :: all_this_virial(:,:,:)
 
-  real(dp) :: instant_temp, kB = 8.6173303d-5, E_kinetic=0.d0, E_kinetic_prev, time1, time2, time3, time_neigh, &
-    time_gap, time_soap(1:3), time_2b(1:3), time_3b(1:3), time_read_input(1:3), time_read_xyz(1:3), &
-    time_mpi(1:3) = 0.d0, time_core_pot(1:3), time_vdw(1:3), time_estat(1:3), &
-    & time_pdf(1:3), time_sf(1:3), time_xrd(1:3), time_nd(1:3), time_xps(1:3), time_mc(1:3), &
-    & instant_pressure, lv(1:3,1:3), time_mpi_positions(1:3) =&
-    & 0.d0, time_mpi_ef(1:3) = 0.d0, time_md(3) = 0.d0, time_batch_alloc(3) = 0.d0, &
-    & time_batch_pdf(3) = 0.d0, time_batch_xrd(3) = 0.d0, time_local_prop(3),&
-    & instant_pressure_tensor(1:3, 1:3), time_step, md_time,&
-    & solo_time_soap=0.d0, soap_time_soap(3)=0.d0, time_get_soap=0.d0, t1, &
-    & instant_pressure_prev, wfac, wfac_temp, energy_exp, time_exp_batched(1:3), time_create_streams(1:3)=0.d0
-  integer, allocatable :: displs(:), displs2(:), counts(:), counts2(:), in_to_out_pairs(:), in_to_out_site(:), mc_id(:)
-  integer :: update_bar, n_sparse, idx, gd_istep = 0, nprop, n_pairs_temp, n_sites_temp
-  logical, allocatable :: do_list(:), has_local_properties_mpi(:), fix_atom(:,:)
-  logical :: rebuild_neighbors_list = .true., exit_loop = .true.,&
-    & gd_box_do_pos = .true., restart_box_optim = .false.,&
-    & valid_xps=.false., valid_vdw=.false., valid_estat_charges = .false., &
-    write_condition=.false., overwrite_condition=.false., do_electrostatics = .true. 
+ real(dp) :: instant_temp
+ real(dp) :: kB = 8.6173303d-5
+ real(dp) :: E_kinetic=0.d0
+ real(dp) :: E_kinetic_prev
+ real(dp) :: time1
+ real(dp) :: time2
+ real(dp) :: time3
+ real(dp) :: time_neigh
+ real(dp) :: time_gap
+ real(dp) :: time_soap(1:3)
+ real(dp) :: time_2b(1:3)
+ real(dp) :: time_3b(1:3)
+ real(dp) :: time_read_input(1:3)
+ real(dp) :: time_read_xyz(1:3)
+ real(dp) :: time_mpi(1:3) = 0.d0
+ real(dp) :: time_core_pot(1:3)
+ real(dp) :: time_vdw(1:3)
+ real(dp) :: time_estat(1:3)
+ real(dp) :: time_pdf(1:3)
+ real(dp) :: time_sf(1:3)
+ real(dp) :: time_xrd(1:3)
+ real(dp) :: time_nd(1:3)
+ real(dp) :: time_xps(1:3)
+ real(dp) :: time_mc(1:3)
+ real(dp) :: instant_pressure
+ real(dp) :: lv(1:3,1:3)
+ real(dp) :: time_mpi_positions(1:3) = 0.d0
+ real(dp) :: time_mpi_ef(1:3) = 0.d0
+ real(dp) :: time_md(3) = 0.d0
+ real(dp) :: time_batch_alloc(3) = 0.d0
+ real(dp) :: time_batch_pdf(3) = 0.d0
+ real(dp) :: time_batch_xrd(3) = 0.d0
+ real(dp) :: time_local_prop(3)
+ real(dp) :: instant_pressure_tensor(1:3, 1:3)
+ real(dp) :: time_step
+ real(dp) :: md_time
+ real(dp) :: solo_time_soap=0.d0
+ real(dp) :: soap_time_soap(3)=0.d0
+ real(dp) :: time_get_soap=0.d0
+ real(dp) :: t1
+ real(dp) :: instant_pressure_prev
+ real(dp) :: wfac
+ real(dp) :: wfac_temp
+ real(dp) :: energy_exp
+ real(dp) :: time_exp_batched(1:3)
+ real(dp) :: time_create_streams(1:3)=0.d0
+ integer, allocatable :: displs(:)
+ integer, allocatable :: displs2(:)
+ integer, allocatable :: counts(:)
+ integer, allocatable :: counts2(:)
+ integer, allocatable :: in_to_out_pairs(:)
+ integer, allocatable :: in_to_out_site(:)
+ integer, allocatable :: mc_id(:)
+ integer :: update_bar
+ integer :: n_sparse
+ integer :: idx
+ integer :: gd_istep = 0
+ integer :: nprop
+ integer :: n_pairs_temp
+ integer :: n_sites_temp
+ logical, allocatable :: do_list(:)
+ logical, allocatable :: has_local_properties_mpi(:)
+ logical, allocatable :: fix_atom(:,:)
+ logical :: rebuild_neighbors_list = .true.
+ logical :: exit_loop = .true.
+ logical :: gd_box_do_pos = .true.
+ logical :: restart_box_optim = .false.
+ logical :: valid_xps=.false.
+ logical :: valid_vdw=.false.
+ logical :: valid_estat_charges = .false.
+ logical :: write_condition=.false.
+ logical :: overwrite_condition=.false.
+ logical :: do_electrostatics = .true.
 
-  character*1 :: creturn = achar(13)
+ character*1 :: creturn = achar(13)
 
   !--- TODO: Create variables for GOU allocation of variables which are needed! ---!
 
   !! these decalarations are for time step and electronic stopping by different methods
-  real(dp) :: time_step_prev
-  integer :: nrows
-  real(dp) :: cum_EEL = 0.0d0
-  real(dp), allocatable :: allelstopdata(:)
+ real(dp) :: time_step_prev
+ integer :: nrows
+ real(dp) :: cum_EEL = 0.0d0
+ real(dp), allocatable :: allelstopdata(:)
   ! type (EPH_Beta_class) :: ephbeta
   ! type (EPH_FDM_class) :: ephfdm
   ! type (EPH_LangevinSpatialCorrelation_class) :: ephlsc
 
   ! Clean up these variables after code refactoring !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  integer, allocatable, target :: n_neigh(:), neighbors_list(:), alpha_max(:), species(:), species_supercell(:), &
-    neighbor_species(:), der_neighbors(:), der_neighbors_list(:), &
-    i_beg_list(:), i_end_list(:), j_beg_list(:), j_end_list(:),&
-    & species_idx(:), n_neigh_out(:), n_local_properties_mpi(:),&
-    & local_property_indexes(:), n_mc_species(:), n_mc_species_prev(:), kappas(:)
-  integer :: n_sites, i, j, k, i2, j2, n_soap, k2, k3, l,&
-    & n_sites_this, ierr, rank, ntasks, dim, n_sp, n_pos, n_sp_sc,&
-    & this_i_beg, this_i_end, this_j_beg, this_j_end,&
-    & this_n_sites_mpi, n_sites_prev = 0,&
-    & n_atom_pairs_by_rank_prev=0, cPnz, n_pairs, n_all_sites,&
-    & n_sites_out, n_local_properties_tot=0, n_lp_count=0,&
-    & charge_lp_index, vdw_lp_index, core_be_lp_index, xps_idx
+ integer, allocatable, target :: n_neigh(:)
+ integer, allocatable, target :: neighbors_list(:)
+ integer, allocatable, target :: alpha_max(:)
+ integer, allocatable, target :: species(:)
+ integer, allocatable, target :: species_supercell(:)
+ integer, allocatable, target :: neighbor_species(:)
+ integer, allocatable, target :: der_neighbors(:)
+ integer, allocatable, target :: der_neighbors_list(:)
+ integer, allocatable, target :: i_beg_list(:)
+ integer, allocatable, target :: i_end_list(:)
+ integer, allocatable, target :: j_beg_list(:)
+ integer, allocatable, target :: j_end_list(:)
+ integer, allocatable, target :: species_idx(:)
+ integer, allocatable, target :: n_neigh_out(:)
+ integer, allocatable, target :: n_local_properties_mpi(:)
+ integer, allocatable, target :: local_property_indexes(:)
+ integer, allocatable, target :: n_mc_species(:)
+ integer, allocatable, target :: n_mc_species_prev(:)
+ integer, allocatable, target :: kappas(:)
+ integer :: n_sites
+ integer :: i
+ integer :: j
+ integer :: k
+ integer :: i2
+ integer :: j2
+ integer :: n_soap
+ integer :: k2
+ integer :: k3
+ integer :: l
+ integer :: n_sites_this
+ integer :: ierr
+ integer :: rank
+ integer :: ntasks
+ integer :: dim
+ integer :: n_sp
+ integer :: n_pos
+ integer :: n_sp_sc
+ integer :: this_i_beg
+ integer :: this_i_end
+ integer :: this_j_beg
+ integer :: this_j_end
+ integer :: this_n_sites_mpi
+ integer :: n_sites_prev = 0
+ integer :: n_atom_pairs_by_rank_prev=0
+ integer :: cPnz
+ integer :: n_pairs
+ integer :: n_all_sites
+ integer :: n_sites_out
+ integer :: n_local_properties_tot=0
+ integer :: n_lp_count=0
+ integer :: charge_lp_index
+ integer :: vdw_lp_index
+ integer :: core_be_lp_index
+ integer :: xps_idx
 
-  integer :: l_max, n_atom_pairs, n_max, ijunk, central_species = 0,&
-    & n_atom_pairs_total
-  integer :: iostatus, counter = 0, counter2
+ integer :: l_max
+ integer :: n_atom_pairs
+ integer :: n_max
+ integer :: ijunk
+ integer :: central_species = 0
+ integer :: n_atom_pairs_total
+ integer :: iostatus
+ integer :: counter = 0
+ integer :: counter2
 
 !   The eleven additive contribution families reduced together after the
 !   descriptor loop. Their predicates used to be written out three times -- to
 !   count the slots, to pack them and to unpack them -- and evaluated
 !   independently each time. Two copies disagreeing shifts counter2 and
 !   silently attributes one family's energies to another.
-  integer, parameter :: C_SOAP = 1, C_VDW = 2, C_ESTAT = 3, C_LP = 4, C_PDF = 5, &
-                        C_SF = 6, C_XRD = 7, C_ND = 8, C_2B = 9, C_CP = 10, C_3B = 11
-  integer, parameter :: N_CONTRIB = 11
-  logical :: contrib_on(1:N_CONTRIB)
-  type(contribution_ref) :: contrib(1:N_CONTRIB)
-  integer :: n_active, i_contrib
-  integer :: which_atom = 0, n_species = 1, n_xyz, indices(1:3)
-  integer :: radial_enhancement = 0
-  integer :: md_istep, mc_istep, mc_mu_id=1, n_mc
-  character*8, allocatable, target :: species_types_actual(:)
-  character*1024, allocatable ::  local_property_labels(:), local_property_labels_temp(:), local_property_labels_temp2(:)
-  logical :: repeat_xyz = .true., overwrite = .false., check_species,&
-    & valid_local_properties=.false., label_in_list, do_mc_relax&
-    &=.false.
+ integer, parameter :: C_SOAP = 1
+ integer, parameter :: C_VDW = 2
+ integer, parameter :: C_ESTAT = 3
+ integer, parameter :: C_LP = 4
+ integer, parameter :: C_PDF = 5
+ integer, parameter :: C_SF = 6
+ integer, parameter :: C_XRD = 7
+ integer, parameter :: C_ND = 8
+ integer, parameter :: C_2B = 9
+ integer, parameter :: C_CP = 10
+ integer, parameter :: C_3B = 11
+ integer, parameter :: N_CONTRIB = 11
+ logical :: contrib_on(1:N_CONTRIB)
+ type(contribution_ref) :: contrib(1:N_CONTRIB)
+ integer :: n_active
+ integer :: i_contrib
+ integer :: which_atom = 0
+ integer :: n_species = 1
+ integer :: n_xyz
+ integer :: indices(1:3)
+ integer :: radial_enhancement = 0
+ integer :: md_istep
+ integer :: mc_istep
+ integer :: mc_mu_id=1
+ integer :: n_mc
+ character*8, allocatable, target :: species_types_actual(:)
+ character*1024, allocatable :: local_property_labels(:)
+ character*1024, allocatable :: local_property_labels_temp(:)
+ character*1024, allocatable :: local_property_labels_temp2(:)
+ logical :: repeat_xyz = .true.
+ logical :: overwrite = .false.
+ logical :: check_species
+ logical :: valid_local_properties=.false.
+ logical :: label_in_list
+ logical :: do_mc_relax =.false.
 
-  character*1024 :: filename, cjunk, file_compress_soap, file_alphas, file_soap, file_2b, file_alphas_2b, &
-    file_3b, file_alphas_3b, file_gap = "none", mc_file = "mc_trial.xyz", string, temp_string, temp_string2
-  character*64 :: keyword
-  character*16 :: lattice_string(1:9)
-  character*8 :: i_char
-  character*8, allocatable ::  xyz_species(:), xyz_species_supercell(:), &
-    species_type_temp(:)
+ character*1024 :: filename
+ character*1024 :: cjunk
+ character*1024 :: file_compress_soap
+ character*1024 :: file_alphas
+ character*1024 :: file_soap
+ character*1024 :: file_2b
+ character*1024 :: file_alphas_2b
+ character*1024 :: file_3b
+ character*1024 :: file_alphas_3b
+ character*1024 :: file_gap = "none"
+ character*1024 :: mc_file = "mc_trial.xyz"
+ character*1024 :: string
+ character*1024 :: temp_string
+ character*1024 :: temp_string2
+ character*64 :: keyword
+ character*16 :: lattice_string(1:9)
+ character*8 :: i_char
+ character*8, allocatable :: xyz_species(:)
+ character*8, allocatable :: xyz_species_supercell(:)
+ character*8, allocatable :: species_type_temp(:)
 
-  character*1 :: keyword_first
+ character*1 :: keyword_first
 
   ! This is the mode in which we run TurboGAP
-  character*16 :: mode = "none"
-  character*32 :: mc_move = "none", exp_output="none"
+ character*16 :: mode = "none"
+ character*32 :: mc_move = "none"
+ character*32 :: exp_output="none"
 
   ! Here we store the input parameters
-  type(input_parameters) :: params
+ type(input_parameters) :: params
 
   ! These are the containers for the hyperparameters of descriptors and GAPs
-  integer :: n_soap_turbo = 0, n_distance_2b = 0, n_angle_3b = 0, n_core_pot = 0, counter_lp_names=0, temp_md_nsteps
-  real(dp), parameter :: pi = acos(-1.0)
-  type(soap_turbo), allocatable, target :: soap_turbo_hypers(:)
-  type(distance_2b), allocatable, target :: distance_2b_hypers(:)
-  type(angle_3b), allocatable, target :: angle_3b_hypers(:)
-  type(core_pot), allocatable, target :: core_pot_hypers(:)
+ integer :: n_soap_turbo = 0
+ integer :: n_distance_2b = 0
+ integer :: n_angle_3b = 0
+ integer :: n_core_pot = 0
+ integer :: counter_lp_names=0
+ integer :: temp_md_nsteps
+ real(dp), parameter :: pi = acos(-1.0)
+ type(soap_turbo), allocatable, target :: soap_turbo_hypers(:)
+ type(distance_2b), allocatable, target :: distance_2b_hypers(:)
+ type(angle_3b), allocatable, target :: angle_3b_hypers(:)
+ type(core_pot), allocatable, target :: core_pot_hypers(:)
 
   !vdw crap
-  real(dp), allocatable, target :: v_neigh_vdw(:), energies_vdw(:), forces_vdw(:,:), this_energies_vdw(:), this_forces_vdw(:,:)
-  real(dp), allocatable, target :: v_neigh_lp(:), energies_lp(:), forces_lp(:,:), this_energies_lp(:), this_forces_lp(:,:)
-  real(dp), allocatable, target :: chg_neigh_estat(:), energies_estat(:), forces_estat(:,:), this_energies_estat(:), this_forces_estat(:,:)
-  real(dp), allocatable, target :: energies_pdf(:) , forces_pdf(:,:), this_energies_pdf(:), this_forces_pdf(:,:)
-  real(dp), allocatable, target :: energies_sf(:) , forces_sf(:,:), this_energies_sf(:), this_forces_sf(:,:)
-  real(dp), allocatable, target :: energies_xrd(:), forces_xrd(:,:), this_energies_xrd(:), this_forces_xrd(:,:)
-  real(dp), allocatable, target :: energies_nd(:), forces_nd(:,:), this_energies_nd(:), this_forces_nd(:,:)
+ real(dp), allocatable, target :: v_neigh_vdw(:)
+ real(dp), allocatable, target :: energies_vdw(:)
+ real(dp), allocatable, target :: forces_vdw(:,:)
+ real(dp), allocatable, target :: this_energies_vdw(:)
+ real(dp), allocatable, target :: this_forces_vdw(:,:)
+ real(dp), allocatable, target :: v_neigh_lp(:)
+ real(dp), allocatable, target :: energies_lp(:)
+ real(dp), allocatable, target :: forces_lp(:,:)
+ real(dp), allocatable, target :: this_energies_lp(:)
+ real(dp), allocatable, target :: this_forces_lp(:,:)
+ real(dp), allocatable, target :: chg_neigh_estat(:)
+ real(dp), allocatable, target :: energies_estat(:)
+ real(dp), allocatable, target :: forces_estat(:,:)
+ real(dp), allocatable, target :: this_energies_estat(:)
+ real(dp), allocatable, target :: this_forces_estat(:,:)
+ real(dp), allocatable, target :: energies_pdf(:)
+ real(dp), allocatable, target :: forces_pdf(:,:)
+ real(dp), allocatable, target :: this_energies_pdf(:)
+ real(dp), allocatable, target :: this_forces_pdf(:,:)
+ real(dp), allocatable, target :: energies_sf(:)
+ real(dp), allocatable, target :: forces_sf(:,:)
+ real(dp), allocatable, target :: this_energies_sf(:)
+ real(dp), allocatable, target :: this_forces_sf(:,:)
+ real(dp), allocatable, target :: energies_xrd(:)
+ real(dp), allocatable, target :: forces_xrd(:,:)
+ real(dp), allocatable, target :: this_energies_xrd(:)
+ real(dp), allocatable, target :: this_forces_xrd(:,:)
+ real(dp), allocatable, target :: energies_nd(:)
+ real(dp), allocatable, target :: forces_nd(:,:)
+ real(dp), allocatable, target :: this_energies_nd(:)
+ real(dp), allocatable, target :: this_forces_nd(:,:)
   ! MPI stuff
-  real(dp), allocatable, target :: temp_1d(:), temp_1d_bis(:), temp_2d(:,:), &
-       structure_factor_partial_der(:,:,:), structure_factor_partial_temp_der(:,:), &
-       y_xrd_der(:,:,:), y_xrd_temp_der(:,:,:), y_nd_der(:,:,:), y_nd_temp_der(:,:,:), &
-       all_scattering_factors(:)
-  integer, allocatable :: temp_1d_int(:), n_atom_pairs_by_rank(:)
-  integer, allocatable :: n_species_mpi(:), n_sparse_mpi_soap_turbo(:), dim_mpi(:), n_sparse_mpi_distance_2b(:), &
-    n_sparse_mpi_angle_3b(:), n_mpi_core_pot(:),&
-    & local_properties_n_sparse_mpi_soap_turbo(:),&
-    & local_properties_dim_mpi_soap_turbo(:), n_neigh_local(:),&
-    & compress_P_nonzero_mpi(:)
-  integer :: i_beg, i_end, n_sites_mpi, j_beg, j_end, size_soap_turbo, size_distance_2b, size_angle_3b
-  integer :: n_nonzero
-  logical, allocatable :: compress_soap_mpi(:)
+ real(dp), allocatable, target :: temp_1d(:)
+ real(dp), allocatable, target :: temp_1d_bis(:)
+ real(dp), allocatable, target :: temp_2d(:,:)
+ real(dp), allocatable, target :: structure_factor_partial_der(:,:,:)
+ real(dp), allocatable, target :: structure_factor_partial_temp_der(:,:)
+ real(dp), allocatable, target :: y_xrd_der(:,:,:)
+ real(dp), allocatable, target :: y_xrd_temp_der(:,:,:)
+ real(dp), allocatable, target :: y_nd_der(:,:,:)
+ real(dp), allocatable, target :: y_nd_temp_der(:,:,:)
+ real(dp), allocatable, target :: all_scattering_factors(:)
+ integer, allocatable :: temp_1d_int(:)
+ integer, allocatable :: n_atom_pairs_by_rank(:)
+ integer, allocatable :: n_species_mpi(:)
+ integer, allocatable :: n_sparse_mpi_soap_turbo(:)
+ integer, allocatable :: dim_mpi(:)
+ integer, allocatable :: n_sparse_mpi_distance_2b(:)
+ integer, allocatable :: n_sparse_mpi_angle_3b(:)
+ integer, allocatable :: n_mpi_core_pot(:)
+ integer, allocatable :: local_properties_n_sparse_mpi_soap_turbo(:)
+ integer, allocatable :: local_properties_dim_mpi_soap_turbo(:)
+ integer, allocatable :: n_neigh_local(:)
+ integer, allocatable :: compress_P_nonzero_mpi(:)
+ integer :: i_beg
+ integer :: i_end
+ integer :: n_sites_mpi
+ integer :: j_beg
+ integer :: j_end
+ integer :: size_soap_turbo
+ integer :: size_distance_2b
+ integer :: size_angle_3b
+ integer :: n_nonzero
+ logical, allocatable :: compress_soap_mpi(:)
 
   !--- GPU VARIABLES FOR ALLOCATION ---!
 
-  integer :: n_omp, omp_task, omp_n_sites, n_omp_temp
-  integer, allocatable :: i_beg_omp(:), i_end_omp(:), j_beg_omp(:), j_end_omp(:)
+ integer :: n_omp
+ integer :: omp_task
+ integer :: omp_n_sites
+ integer :: n_omp_temp
+ integer, allocatable :: i_beg_omp(:)
+ integer, allocatable :: i_end_omp(:)
+ integer, allocatable :: j_beg_omp(:)
+ integer, allocatable :: j_end_omp(:)
   !**************************************************************************
-  integer :: sp1, sp2
-  logical(c_bool) :: c_do_forces
-  integer(c_size_t) :: st_n_sites_int,st_n_sites_double, st_n_atom_pairs_int, st_n_atom_pairs_double, st_n_sparse_double, st_virial
-  integer(c_size_t) :: st_size_nf, st_size_rcut_hard, st_species_types_actual_d
-  type(c_ptr) :: n_neigh_d, species_d, neighbor_species_d, rjs_d, alphas_d,cutoff_d,qs_d,xyz_d, species_types_actual_d
-  type(c_ptr) :: energies_2b_d,forces_2b_d,virial_2b_d,x_d,V_d,dVdx2_d,forces_core_pot_d,virial_core_pot_d,energies_core_pot_d
-  type(c_ptr) :: nf_d, rcut_hard_d, rcut_soft_d, global_scaling_d, atom_sigma_r_d, atom_sigma_r_scaling_d
-  type(c_ptr) :: atom_sigma_t_d, atom_sigma_t_scaling_d, amplitude_scaling_d, alpha_max_d, central_weight_d
+ integer :: sp1
+ integer :: sp2
+ logical(c_bool) :: c_do_forces
+ integer(c_size_t) :: st_n_sites_int
+ integer(c_size_t) :: st_n_sites_double
+ integer(c_size_t) :: st_n_atom_pairs_int
+ integer(c_size_t) :: st_n_atom_pairs_double
+ integer(c_size_t) :: st_n_sparse_double
+ integer(c_size_t) :: st_virial
+ integer(c_size_t) :: st_size_nf
+ integer(c_size_t) :: st_size_rcut_hard
+ integer(c_size_t) :: st_species_types_actual_d
+ type(c_ptr) :: n_neigh_d
+ type(c_ptr) :: species_d
+ type(c_ptr) :: neighbor_species_d
+ type(c_ptr) :: rjs_d
+ type(c_ptr) :: alphas_d
+ type(c_ptr) :: cutoff_d
+ type(c_ptr) :: qs_d
+ type(c_ptr) :: xyz_d
+ type(c_ptr) :: species_types_actual_d
+ type(c_ptr) :: energies_2b_d
+ type(c_ptr) :: forces_2b_d
+ type(c_ptr) :: virial_2b_d
+ type(c_ptr) :: x_d
+ type(c_ptr) :: V_d
+ type(c_ptr) :: dVdx2_d
+ type(c_ptr) :: forces_core_pot_d
+ type(c_ptr) :: virial_core_pot_d
+ type(c_ptr) :: energies_core_pot_d
+ type(c_ptr) :: nf_d
+ type(c_ptr) :: rcut_hard_d
+ type(c_ptr) :: rcut_soft_d
+ type(c_ptr) :: global_scaling_d
+ type(c_ptr) :: atom_sigma_r_d
+ type(c_ptr) :: atom_sigma_r_scaling_d
+ type(c_ptr) :: atom_sigma_t_d
+ type(c_ptr) :: atom_sigma_t_scaling_d
+ type(c_ptr) :: amplitude_scaling_d
+ type(c_ptr) :: alpha_max_d
+ type(c_ptr) :: central_weight_d
   !**************************************************************************
   !local variables for 3benergy and forces gpu
   character(kind=c_char,len=4) :: c_name_3b
-  integer :: sp0_3b, sp1_3b, sp2_3b, max_np
-  type(c_ptr) :: energies_3b_d, forces_3b_d, virial_3b_d
-  type(c_ptr) :: kappas_array_d, sigma_d, neighbors_list_d 
-  integer(c_size_t) :: size_maxnp_bytes, size_maxnp_qs_bytes, size_alphas_bytes, size_energy3b, &
-       size_forces3b, size_virial3b
+ integer :: sp0_3b
+ integer :: sp1_3b
+ integer :: sp2_3b
+ integer :: max_np
+ type(c_ptr) :: energies_3b_d
+ type(c_ptr) :: forces_3b_d
+ type(c_ptr) :: virial_3b_d
+ type(c_ptr) :: kappas_array_d
+ type(c_ptr) :: sigma_d
+ type(c_ptr) :: neighbors_list_d
+ integer(c_size_t) :: size_maxnp_bytes
+ integer(c_size_t) :: size_maxnp_qs_bytes
+ integer(c_size_t) :: size_alphas_bytes
+ integer(c_size_t) :: size_energy3b
+ integer(c_size_t) :: size_forces3b
+ integer(c_size_t) :: size_virial3b
 
   !**************************************************************************
 
   !--- GPU variables for experimental ---!
   !  type( gpu_exp ) :: gpu_exp_vars
-  type(c_ptr) :: pair_distribution_d
-  type(c_ptr), allocatable :: rjs_index_d(:)
+ type(c_ptr) :: pair_distribution_d
+ type(c_ptr), allocatable :: rjs_index_d(:)
 
-  real(dp), allocatable, target ::    charges_temp(:)
-  type( c_ptr )               ::    charges_d
-  integer( c_size_t )         :: st_charges_d
+ real(dp), allocatable, target :: charges_temp(:)
+ type( c_ptr ) :: charges_d
+ integer( c_size_t ) :: st_charges_d
 
 
   ! Nested sampling
-  real(dp) :: e_max, e_kin, rand, rand_scale(1:6), mag, n_total_cutoff, n_total_cutoff_temp, dq, target_temp, f 
-  integer :: i_nested, i_max, i_image, i_current_image=1, i_trial_image=2
-  type(image), allocatable :: images(:), images_temp(:)
-  type(exp_data_container) :: temp_exp_container
+ real(dp) :: e_max
+ real(dp) :: e_kin
+ real(dp) :: rand
+ real(dp) :: rand_scale(1:6)
+ real(dp) :: mag
+ real(dp) :: n_total_cutoff
+ real(dp) :: n_total_cutoff_temp
+ real(dp) :: dq
+ real(dp) :: target_temp
+ real(dp) :: f
+ integer :: i_nested
+ integer :: i_max
+ integer :: i_image
+ integer :: i_current_image=1
+ integer :: i_trial_image=2
+ type(image), allocatable :: images(:)
+ type(image), allocatable :: images_temp(:)
+ type(exp_data_container) :: temp_exp_container
 
   ! Storage of host arrays which are compatible with gpu implementation 
-  type( gpu_host_storage_type ) :: gpu_host_temp
+ type( gpu_host_storage_type ) :: gpu_host_temp
 
   ! this is a type of
   ! gpu_batch_storage( i_batch ) % host( i_n_dim_idx ) % pair_distribution_h( 1:n_samples ) 

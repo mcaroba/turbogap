@@ -44,9 +44,12 @@ module md
 
     implicit none
 
-    real(dp), intent(in) :: x_in(1:3), x_in_prev(1:3)
-    real(dp), intent(out) :: x_out(1:3)
-    real(dp), intent(in) :: F(1:3), m, dt
+ real(dp), intent(in) :: x_in(1:3)
+ real(dp), intent(in) :: x_in_prev(1:3)
+ real(dp), intent(out) :: x_out(1:3)
+ real(dp), intent(in) :: F(1:3)
+ real(dp), intent(in) :: m
+ real(dp), intent(in) :: dt
 
     x_out(1:3) = 2.d0*x_in(1:3) - x_in_prev(1:3) + F(1:3)/m*dt**2
 
@@ -56,12 +59,21 @@ module md
 
     implicit none
 
-    real(dp), intent(in) :: forces(:,:), masses(:), dt, a_box(1:3), b_box(1:3), c_box(1:3)
-    real(dp), intent(inout) :: positions(:,:), positions_prev(:,:)
-    real(dp), intent(inout) :: velocities(:,:)
-    logical, intent(in) :: first_step
-    integer :: natoms, i, i_shift(1:3)
-    real(dp) :: pos(1:3), d
+ real(dp), intent(in) :: forces(:,:)
+ real(dp), intent(in) :: masses(:)
+ real(dp), intent(in) :: dt
+ real(dp), intent(in) :: a_box(1:3)
+ real(dp), intent(in) :: b_box(1:3)
+ real(dp), intent(in) :: c_box(1:3)
+ real(dp), intent(inout) :: positions(:,:)
+ real(dp), intent(inout) :: positions_prev(:,:)
+ real(dp), intent(inout) :: velocities(:,:)
+ logical, intent(in) :: first_step
+ integer :: natoms
+ integer :: i
+ integer :: i_shift(1:3)
+ real(dp) :: pos(1:3)
+ real(dp) :: d
 
     natoms = size(positions,2)
 
@@ -100,13 +112,23 @@ module md
     implicit none
 
 !   Input variables
-    real(dp), intent(inout) :: positions(:,:), positions_prev(:,:), velocities(:,:), &
-                             forces_prev(:,:), dt_prev
-    real(dp), intent(in) :: forces(:,:), masses(:), dt, a_box(1:3), b_box(1:3), &
-                          c_box(1:3)
-    logical, intent(in) :: first_step, fix_atom(:,:)
+ real(dp), intent(inout) :: positions(:,:)
+ real(dp), intent(inout) :: positions_prev(:,:)
+ real(dp), intent(inout) :: velocities(:,:)
+ real(dp), intent(inout) :: forces_prev(:,:)
+ real(dp), intent(inout) :: dt_prev
+ real(dp), intent(in) :: forces(:,:)
+ real(dp), intent(in) :: masses(:)
+ real(dp), intent(in) :: dt
+ real(dp), intent(in) :: a_box(1:3)
+ real(dp), intent(in) :: b_box(1:3)
+ real(dp), intent(in) :: c_box(1:3)
+ logical, intent(in) :: first_step
+ logical, intent(in) :: fix_atom(:,:)
 !   Internal variables
-    integer :: n_sites, i, j
+ integer :: n_sites
+ integer :: i
+ integer :: j
 
     n_sites = size(masses)
 
@@ -154,10 +176,14 @@ module md
 
     implicit none
 
-    real(dp), intent(inout) :: vel(:,:)
-    real(dp), intent(in) :: T0, T, tau, dt
-    real(dp) :: f
-    integer :: Np, i
+ real(dp), intent(inout) :: vel(:,:)
+ real(dp), intent(in) :: T0
+ real(dp), intent(in) :: T
+ real(dp), intent(in) :: tau
+ real(dp), intent(in) :: dt
+ real(dp) :: f
+ integer :: Np
+ integer :: i
 
     Np = size(vel, 2)
 
@@ -186,10 +212,13 @@ module md
 
     implicit none
 
-    real(dp), intent(inout) :: vel(:,:)
-    real(dp), intent(in) :: M(:)
-    real(dp) :: cm_pos(1:3), cm_vel(1:3), total_mass
-    integer :: Np, i
+ real(dp), intent(inout) :: vel(:,:)
+ real(dp), intent(in) :: M(:)
+ real(dp) :: cm_pos(1:3)
+ real(dp) :: cm_vel(1:3)
+ real(dp) :: total_mass
+ integer :: Np
+ integer :: i
 
     Np = size(vel, 2)
 
@@ -216,10 +245,16 @@ module md
 
     implicit none
 
-    real(dp), intent(inout) :: positions(:,:)
-    real(dp), intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3)
-    real(dp) :: dist(1:3), d, mid(1:3)
-    integer :: Np, i, i_shift(1:3)
+ real(dp), intent(inout) :: positions(:,:)
+ real(dp), intent(in) :: a_box(1:3)
+ real(dp), intent(in) :: b_box(1:3)
+ real(dp), intent(in) :: c_box(1:3)
+ real(dp) :: dist(1:3)
+ real(dp) :: d
+ real(dp) :: mid(1:3)
+ integer :: Np
+ integer :: i
+ integer :: i_shift(1:3)
 
     Np = size(positions,2)
 
@@ -255,11 +290,16 @@ module md
 !   gamma = 1 is probably a good choice.
     implicit none
 
-    real(dp), intent(inout) :: positions(:, :)
-    real(dp), intent(in) :: P0, P(1:3,1:3), tau, dt, gamma
-    character(*), intent(in) :: sym
-    real(dp) :: P_iso
-    integer :: i, n
+ real(dp), intent(inout) :: positions(:, :)
+ real(dp), intent(in) :: P0
+ real(dp), intent(in) :: P(1:3,1:3)
+ real(dp), intent(in) :: tau
+ real(dp), intent(in) :: dt
+ real(dp), intent(in) :: gamma
+ character(*), intent(in) :: sym
+ real(dp) :: P_iso
+ integer :: i
+ integer :: n
 
     P_iso = (P(1,1) + P(2,2) + P(3,3))/3.d0
 
@@ -290,13 +330,20 @@ module md
 
     implicit none
 
-    real(dp), intent(inout) :: positions(:, :), a_box(1:3), b_box(1:3), c_box(1:3)
-    real(dp), intent(in) :: gamma(3,3)
-    integer, intent(in) :: n_steps, indices(:)
-    real(dp) :: f(3,3), identity(3,3) = reshape([1.d0, 0.d0, 0.d0, 0.d0, 1.d0, 0.d0, 0.d0, 0.d0, 1.d0], [3,3])
-    real(dp), save :: a0(1:3), b0(1:3), c0(1:3)
-    integer :: i_step
-    integer, save :: indices0(1:3)
+ real(dp), intent(inout) :: positions(:, :)
+ real(dp), intent(inout) :: a_box(1:3)
+ real(dp), intent(inout) :: b_box(1:3)
+ real(dp), intent(inout) :: c_box(1:3)
+ real(dp), intent(in) :: gamma(3,3)
+ integer, intent(in) :: n_steps
+ integer, intent(in) :: indices(:)
+ real(dp) :: f(3,3)
+ real(dp) :: identity(3,3) = reshape([1.d0, 0.d0, 0.d0, 0.d0, 1.d0, 0.d0, 0.d0, 0.d0, 1.d0], [3,3])
+ real(dp), save :: a0(1:3)
+ real(dp), save :: b0(1:3)
+ real(dp), save :: c0(1:3)
+ integer :: i_step
+ integer, save :: indices0(1:3)
 
     if( i_step == 0 )then
       a0(1:3) = a_box(1:3)
@@ -331,13 +378,23 @@ module md
 
     implicit none
 
-    real(dp), intent(inout) :: dt
-    real(dp), intent(in) :: vel(:,:), target_pos_step, dt0, tau_dt, forces(:,:), masses(:)
-    logical, intent(in) :: init
-    real(dp), allocatable :: d(:)
-    real(dp) :: new_dt, d_max, dt_prev
-    integer :: Np, i, i_max
-    logical :: optimize_time_step, too_large
+ real(dp), intent(inout) :: dt
+ real(dp), intent(in) :: vel(:,:)
+ real(dp), intent(in) :: target_pos_step
+ real(dp), intent(in) :: dt0
+ real(dp), intent(in) :: tau_dt
+ real(dp), intent(in) :: forces(:,:)
+ real(dp), intent(in) :: masses(:)
+ logical, intent(in) :: init
+ real(dp), allocatable :: d(:)
+ real(dp) :: new_dt
+ real(dp) :: d_max
+ real(dp) :: dt_prev
+ integer :: Np
+ integer :: i
+ integer :: i_max
+ logical :: optimize_time_step
+ logical :: too_large
 
     Np = size(vel, 2)
 
@@ -405,17 +462,37 @@ module md
     implicit none
 
 !   Input variables
-    real(dp), intent(inout) :: positions(:,:), positions_prev(:,:), velocities(:,:), &
-                             forces_prev(:,:), forces(:,:)
-    real(dp), intent(in) :: masses(:), a_box(1:3), b_box(1:3), &
-                          c_box(1:3), max_opt_step, energy
-    logical, intent(in) :: fix_atom(:,:), first_step
+ real(dp), intent(inout) :: positions(:,:)
+ real(dp), intent(inout) :: positions_prev(:,:)
+ real(dp), intent(inout) :: velocities(:,:)
+ real(dp), intent(inout) :: forces_prev(:,:)
+ real(dp), intent(inout) :: forces(:,:)
+ real(dp), intent(in) :: masses(:)
+ real(dp), intent(in) :: a_box(1:3)
+ real(dp), intent(in) :: b_box(1:3)
+ real(dp), intent(in) :: c_box(1:3)
+ real(dp), intent(in) :: max_opt_step
+ real(dp), intent(in) :: energy
+ logical, intent(in) :: fix_atom(:,:)
+ logical, intent(in) :: first_step
 !   Internal variables
-    real(dp) :: gamma, max_force, this_force, pos(1:3), d
-    real(dp), save :: gamma_prev, energy0, m_prev, gamma_back0
-    real(dp), allocatable, save :: positions0(:,:), forces0(:,:)
-    integer :: n_sites, i, j, i_shift(1:3)
-    logical, save :: backtracking, initialized = .false.
+ real(dp) :: gamma
+ real(dp) :: max_force
+ real(dp) :: this_force
+ real(dp) :: pos(1:3)
+ real(dp) :: d
+ real(dp), save :: gamma_prev
+ real(dp), save :: energy0
+ real(dp), save :: m_prev
+ real(dp), save :: gamma_back0
+ real(dp), allocatable, save :: positions0(:,:)
+ real(dp), allocatable, save :: forces0(:,:)
+ integer :: n_sites
+ integer :: i
+ integer :: j
+ integer :: i_shift(1:3)
+ logical, save :: backtracking
+ logical, save :: initialized = .false.
 
     n_sites = size(masses)
 
@@ -502,10 +579,17 @@ module md
 
     implicit none
 
-    real(dp), intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3)
-    real(dp), intent(inout) :: gamma(3,3)
-    real(dp) :: identity(3,3) = reshape([1.d0, 0.d0, 0.d0, 0.d0, 1.d0, 0.d0, 0.d0, 0.d0, 1.d0], [3,3]), &
-              a(1:3), b(1:3), c(1:3), vol, vol_p, vol_ratio
+ real(dp), intent(in) :: a_box(1:3)
+ real(dp), intent(in) :: b_box(1:3)
+ real(dp), intent(in) :: c_box(1:3)
+ real(dp), intent(inout) :: gamma(3,3)
+ real(dp) :: identity(3,3) = reshape([1.d0, 0.d0, 0.d0, 0.d0, 1.d0, 0.d0, 0.d0, 0.d0, 1.d0], [3,3])
+ real(dp) :: a(1:3)
+ real(dp) :: b(1:3)
+ real(dp) :: c(1:3)
+ real(dp) :: vol
+ real(dp) :: vol_p
+ real(dp) :: vol_ratio
 
     a = a_box + matmul(gamma-identity, a_box)
     b = b_box + matmul(gamma-identity, b_box)
@@ -538,12 +622,15 @@ module md
     !   distributions
 
     implicit none
-    real(dp), intent(in) :: V1, V2
-    integer, intent(in) :: n_sites
+ real(dp), intent(in) :: V1
+ real(dp), intent(in) :: V2
+ integer, intent(in) :: n_sites
 !   Output variables
-    real(dp), intent(out) :: V
+ real(dp), intent(out) :: V
 !   Internal variables
-    real(dp) :: rand, log_V_V2, v_ratio
+ real(dp) :: rand
+ real(dp) :: log_V_V2
+ real(dp) :: v_ratio
 
     call random_number( rand )
 
@@ -567,26 +654,54 @@ module md
 !                                  virial, optim_mode, n_restart, restart )
     implicit none
 !   Input variables
-    real(dp), intent(inout) :: positions(:,:), positions_prev(:,:), velocities(:,:), &
-                             forces_prev(:,:), a_box(1:3), b_box(1:3), c_box(1:3)
-    real(dp), intent(in) :: forces(:,:), masses(:), max_opt_step_eps, energy, virial(1:6)
+ real(dp), intent(inout) :: positions(:,:)
+ real(dp), intent(inout) :: positions_prev(:,:)
+ real(dp), intent(inout) :: velocities(:,:)
+ real(dp), intent(inout) :: forces_prev(:,:)
+ real(dp), intent(inout) :: a_box(1:3)
+ real(dp), intent(inout) :: b_box(1:3)
+ real(dp), intent(inout) :: c_box(1:3)
+ real(dp), intent(in) :: forces(:,:)
+ real(dp), intent(in) :: masses(:)
+ real(dp), intent(in) :: max_opt_step_eps
+ real(dp), intent(in) :: energy
+ real(dp), intent(in) :: virial(1:6)
 !    integer, intent(inout) :: n_restart
-    integer :: n_restart
-    logical, intent(in) :: first_step
-    character*16, intent(in) :: optim_mode
+ integer :: n_restart
+ logical, intent(in) :: first_step
+ character*16, intent(in) :: optim_mode
 !   Output variables
-    logical :: restart
+ logical :: restart
 !   Internal variables
-    real(dp) :: max_force, this_force, pos(1:3), d, gamma_eps, t_eps(1:3, 1:3)
-    real(dp), allocatable, save :: frac_pos(:,:), frac_pos_prev(:,:)
-    real(dp), save :: energy0, m_prev, a_box0(1:3), b_box0(1:3), c_box0(1:3), &
-                    eps(1:6), eps_prev(1:6), gamma_eps_prev, &
-                    m_eps_prev, virial_prev(1:6), virial0(1:6), this_virial(1:6), &
-                    gamma_back0
-    real(dp), allocatable, save :: positions0(:,:)
-    integer :: n_sites, i, j, i_shift(1:3)
-    integer, save :: i_restart
-    logical, save :: backtracking, initialized = .false.
+ real(dp) :: max_force
+ real(dp) :: this_force
+ real(dp) :: pos(1:3)
+ real(dp) :: d
+ real(dp) :: gamma_eps
+ real(dp) :: t_eps(1:3, 1:3)
+ real(dp), allocatable, save :: frac_pos(:,:)
+ real(dp), allocatable, save :: frac_pos_prev(:,:)
+ real(dp), save :: energy0
+ real(dp), save :: m_prev
+ real(dp), save :: a_box0(1:3)
+ real(dp), save :: b_box0(1:3)
+ real(dp), save :: c_box0(1:3)
+ real(dp), save :: eps(1:6)
+ real(dp), save :: eps_prev(1:6)
+ real(dp), save :: gamma_eps_prev
+ real(dp), save :: m_eps_prev
+ real(dp), save :: virial_prev(1:6)
+ real(dp), save :: virial0(1:6)
+ real(dp), save :: this_virial(1:6)
+ real(dp), save :: gamma_back0
+ real(dp), allocatable, save :: positions0(:,:)
+ integer :: n_sites
+ integer :: i
+ integer :: j
+ integer :: i_shift(1:3)
+ integer, save :: i_restart
+ logical, save :: backtracking
+ logical, save :: initialized = .false.
 
     n_sites = size(masses)
 
@@ -717,14 +832,14 @@ module md
     implicit none
 
 !   Input variables
-    character*8, intent(in) :: element
+ character*8, intent(in) :: element
 !   Output variables
-    real(dp), intent(out) :: mass
-    logical, intent(out) :: is_in_database
+ real(dp), intent(out) :: mass
+ logical, intent(out) :: is_in_database
 !   Internal variables
-    real(dp) :: masses(1:96)
-    character*8 :: elements(1:96)
-    integer :: i
+ real(dp) :: masses(1:96)
+ character*8 :: elements(1:96)
+ integer :: i
 
     elements = [" H", "He", "Li", "Be", " B", " C", " N", " O", &
                 " F", "Ne", "Na", "Mg", "Al", "Si", " P", " S", &
@@ -768,12 +883,19 @@ module md
 
   subroutine get_target_temp( t_beg, t_end, md_istep, md_nsteps, n_t_hold, t_hold, target_temp )
     implicit none
-    real(dp), intent(in) :: t_beg, t_end
-    integer, intent(in) :: md_istep, md_nsteps, n_t_hold
-    real(dp), intent(in), allocatable :: t_hold(:)
-    real(dp), intent(out) ::  target_temp
-    real(dp) :: t_h, n_start, n_end, n_end_prev=0
-    integer :: i, n_end_tot=0
+ real(dp), intent(in) :: t_beg
+ real(dp), intent(in) :: t_end
+ integer, intent(in) :: md_istep
+ integer, intent(in) :: md_nsteps
+ integer, intent(in) :: n_t_hold
+ real(dp), intent(in), allocatable :: t_hold(:)
+ real(dp), intent(out) :: target_temp
+ real(dp) :: t_h
+ real(dp) :: n_start
+ real(dp) :: n_end
+ real(dp) :: n_end_prev=0
+ integer :: i
+ integer :: n_end_tot=0
 
     ! This all assumes t_hold is in order
     target_temp = t_beg + (t_end-t_beg)*dfloat(md_istep+1)/float(md_nsteps)
