@@ -2202,7 +2202,24 @@ contains
       character*64 :: keyword
       character*64 :: cjunk
       character*64 :: compress_string
+      integer, parameter :: n_deprecated = 6
+      character*64 :: deprecated_keywords(n_deprecated)
+      character*64 :: updated_keywords(n_deprecated)
       character*1 :: keyword_first
+
+      deprecated_keywords(1) = "has_vdw"
+      deprecated_keywords(2) = "vdw_qs"
+      deprecated_keywords(3) = "vdw_alphas"
+      deprecated_keywords(4) = "vdw_zeta"
+      deprecated_keywords(5) = "vdw_delta"
+      deprecated_keywords(6) = "vdw_v0"
+
+      updated_keywords(1) = "has_local_properties"
+      updated_keywords(2) = "local_property_qs"
+      updated_keywords(3) = "local_property_alphas"
+      updated_keywords(4) = "local_property_zetas"
+      updated_keywords(5) = "local_property_deltas"
+      updated_keywords(6) = "local_property_v0s"
 
       open (unit=10, file=file_gap, status="old", iostat=iostatus)
 !   Look for the number of instances of each GAP
@@ -2418,22 +2435,60 @@ contains
                      read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%file_desc
                   else if (keyword == "has_vdw") then
                      backspace (10)
-                     read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%has_vdw
+!                    The deprecated form declares the Hirshfeld model inline. It has to
+!                    become a local_property_models entry, because has_local_properties
+!                    is what allocates local_properties later -- has_vdw alone does not.
+                     read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%has_local_properties
+                     call check_deprecated(n_deprecated, deprecated_keywords, updated_keywords, keyword)
+
+                     write (*, *) '---------------------------------------|'
+                     write (*, *) '--------------vdW Notice---------------|'
+                     write (*, *) '---------------------------------------|'
+                     write (*, *) '                                       |'
+                     write (*, *) 'When upgrading from deprecated vdW,    |'
+                     write (*, *) 'set in *.gap file (for just one model) |'
+                     write (*, *) '`n_local_properties = 1`               |'
+                     write (*, *) '`local_property_labels = "hirshfeld_v"`|'
+                     write (*, *) '                                       |'
+                     write (*, *) '---------------------------------------|'
+                     write (*, *) '                                       |'
+                     write (*, *) 'WARNING: Defaulting to just 1          |  <-- WARNING'
+                     write (*, *) 'local property due to deprecated       |'
+                     write (*, *) 'keyword. Other loc models will not run |'
+                     write (*, *) '                                       |'
+                     write (*, *) '---------------------------------------|'
+
+                     soap_turbo_hypers(n_soap_turbo)%n_local_properties = 1
+
+                     allocate (soap_turbo_hypers(n_soap_turbo)%local_property_models( &
+                               1:soap_turbo_hypers(n_soap_turbo)%n_local_properties))
+
+                     soap_turbo_hypers(n_soap_turbo)%local_property_models(1)%label = 'hirshfeld_v'
+
+                     soap_turbo_hypers(n_soap_turbo)%has_vdw = .true.
+                     soap_turbo_hypers(n_soap_turbo)%local_property_models(1)%do_derivatives = .true.
+                     soap_turbo_hypers(n_soap_turbo)%vdw_index = 1
+
                   else if (keyword == "vdw_qs") then
                      backspace (10)
-                     read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%file_vdw_desc
+                     call check_deprecated(n_deprecated, deprecated_keywords, updated_keywords, keyword)
+                     read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%local_property_models(1)%file_desc
                   else if (keyword == "vdw_alphas") then
                      backspace (10)
-                     read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%file_vdw_alphas
+                     call check_deprecated(n_deprecated, deprecated_keywords, updated_keywords, keyword)
+                    read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%local_property_models(1)%file_alphas
                   else if (keyword == "vdw_zeta") then
                      backspace (10)
-                     read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%vdw_zeta
+                     call check_deprecated(n_deprecated, deprecated_keywords, updated_keywords, keyword)
+                     read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%local_property_models(1)%zeta
                   else if (keyword == "vdw_delta") then
                      backspace (10)
-                     read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%vdw_delta
+                     call check_deprecated(n_deprecated, deprecated_keywords, updated_keywords, keyword)
+                     read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%local_property_models(1)%delta
                   else if (keyword == "vdw_v0") then
                      backspace (10)
-                     read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%vdw_v0
+                     call check_deprecated(n_deprecated, deprecated_keywords, updated_keywords, keyword)
+                     read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%local_property_models(1)%V0
                   else if (keyword == "has_local_properties") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%has_local_properties
@@ -3154,5 +3209,38 @@ contains
 
    end subroutine init_random_seed
 !**************************************************************************
+
+   subroutine print_deprecation_message(keyword, updated_keyword)
+      character*64 :: keyword
+      character*64 :: updated_keyword
+      integer :: length
+
+      length = len_trim(keyword)
+
+      write (*, *) '.......................................|'
+      write (*, *) '                                       |'
+      write (*, *) 'WARNING: Found deprecated keyword      |  <-- WARNING'
+      write (*, '(A41)') trim(keyword)//' |'
+      write (*, *) 'Please replace this keyword with       |'
+      write (*, '(A41)') trim(updated_keyword)//' |'
+      write (*, *) '                                       |'
+
+   end subroutine print_deprecation_message
+
+   subroutine check_deprecated(n_deprecated, deprecated_keywords, updated_keywords, keyword)
+      ! Input variables
+      integer, intent(in) :: n_deprecated
+      character*64, intent(in) :: deprecated_keywords(:)
+      character*64, intent(in) :: updated_keywords(:)
+      character*64, intent(in) :: keyword
+      ! Internal variables
+      integer :: i
+
+      do i = 1, n_deprecated
+         if (trim(keyword) == trim(deprecated_keywords(i))) then
+            call print_deprecation_message(keyword, updated_keywords(i))
+         end if
+      end do
+   end subroutine check_deprecated
 
 end module
