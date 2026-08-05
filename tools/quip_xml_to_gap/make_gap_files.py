@@ -199,7 +199,7 @@ def write_descriptor_to_output(output_file, gpCoordinates, index, local_property
                         n_lp += 1
                     else:
                         continue
-                    
+
                     for index_hirsh, gpc in enumerate(local_property_soups[k].find_all('gpCoordinates')):
                         if compare_descriptors(gpc.find('descriptor'), gpCoordinates.find('descriptor')):
                             hirshfeld_dict = descriptor_to_dict(gpc.find('descriptor'))
@@ -225,7 +225,7 @@ def write_descriptor_to_output(output_file, gpCoordinates, index, local_property
                             break # only include the first matching Hirshfeld
                 if write_lp:
                     output.write( has_lp_str   + "\n" )
-                    output.write( f"n_local_properties = {n_lp}\n" )                    
+                    output.write( f"n_local_properties = {n_lp}\n" )
                     output.write( lp_qs_str    + "\n" )
                     output.write( lp_alphas_str+ "\n" )
                     output.write( lp_labels_str+ "\n" )
@@ -280,7 +280,7 @@ descriptor_counts = {'distance_2b': 0,
                      'hirshfeld': 0,
                      'core_electron_be': 0}
 
-# Generalise this to include the number of local properties 
+# Generalise this to include the number of local properties
 
 local_property_files = []
 local_property_labels = []
@@ -291,9 +291,9 @@ if len(sys.argv) > 3:
     print(f" Found {n_local_properties} local properties!")
     for i in range(n_local_properties):
         local_property_files.append( sys.argv[3 + 2*i + 1])
-        local_property_labels.append(sys.argv[3 + 2*i + 2])        
-        local_property = local_property_files[-1] 
-        local_property_label = local_property_labels[-1]       
+        local_property_labels.append(sys.argv[3 + 2*i + 2])
+        local_property = local_property_files[-1]
+        local_property_label = local_property_labels[-1]
         print(f"Reading {local_property} ...")
         with open(local_property) as file:
             local_property_soup = BeautifulSoup(file,'xml')

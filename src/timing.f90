@@ -12,27 +12,27 @@
 
 module timing
 
-  use kinds
+   use kinds
 
 #ifdef _MPIF90
-  use mpi
+   use mpi
 #endif
 
-  implicit none
+   implicit none
 
 contains
 
-  !**************************************************************************
-  subroutine get_time(time)
-    implicit none
- real(dp), intent(out) :: time
+   !**************************************************************************
+   subroutine get_time(time)
+      implicit none
+      real(dp), intent(out) :: time
 
 #ifdef _MPIF90
-    time = MPI_Wtime()
+      time = MPI_Wtime()
 #else
-    call cpu_time(time)
+      call cpu_time(time)
 #endif
-  end subroutine get_time
-  !**************************************************************************
+   end subroutine get_time
+   !**************************************************************************
 
 end module timing

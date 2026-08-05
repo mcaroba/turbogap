@@ -58,6 +58,11 @@ fi
 
 [ -x "$BIN" ] || die "binary under test not found or not executable: $BIN"
 [ -x "$REF_BIN" ] || die "reference binary not found or not executable: $REF_BIN"
+# The test systems live in their own repository. Fetch them on first use rather
+# than making every new checkout a two-step setup.
+if [ ! -d "$DATA_ROOT" ]; then
+  "$repo/tests/fetch_test_data.sh" "$DATA_ROOT" || die "could not fetch test data"
+fi
 [ -d "$DATA_ROOT" ] || die "data root not found: $DATA_ROOT (set TURBOGAP_DATA_ROOT)"
 
 if [ "$BIN" -ef "$REF_BIN" ]; then

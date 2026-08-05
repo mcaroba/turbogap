@@ -29,7 +29,7 @@
 
 module types
 
-  use kinds
+   use kinds
 
    implicit none
 
@@ -61,9 +61,9 @@ module types
 
    type soap_turbo
       real(dp), allocatable :: nf(:), rcut_hard(:), rcut_soft(:), atom_sigma_r(:), atom_sigma_t(:), &
-                             atom_sigma_r_scaling(:), atom_sigma_t_scaling(:), amplitude_scaling(:), &
-                             central_weight(:), global_scaling(:), alphas(:), Qs(:, :), cutoff(:), &
-                             vdw_Qs(:, :), vdw_alphas(:), vdw_cutoff(:), compress_P_el(:)
+                               atom_sigma_r_scaling(:), atom_sigma_t_scaling(:), amplitude_scaling(:), &
+                               central_weight(:), global_scaling(:), alphas(:), Qs(:, :), cutoff(:), &
+                               vdw_Qs(:, :), vdw_alphas(:), vdw_cutoff(:), compress_P_el(:)
       real(dp) :: zeta = 2.d0, delta = 1.d0, rcut_max, vdw_zeta, vdw_delta, vdw_V0
       integer, allocatable :: alpha_max(:), compress_P_i(:), compress_P_j(:)
       integer :: n_species, central_species = 0, dim, l_max, radial_enhancement = 0, n_max, n_sparse, &
@@ -119,7 +119,7 @@ module types
            & vdw_rcut = 25.d0, vdw_buffer = 1.d0, vdw_rcut_inner =&
            & 0.5d0, vdw_buffer_inner = 0.5d0, tau_p = 1000.d0, p_beg =&
            & 1.d0, p_end = 1.d0, gamma_p = 1.d0, &
-           & box_scaling_factor(3,3) = reshape([1.d0, 0.d0, 0.d0, 0.d0, 1.d0, 0.d0, 0.d0, 0.d0, 1.d0], [3, 3]) &
+           & box_scaling_factor(3, 3) = reshape([1.d0, 0.d0, 0.d0, 0.d0, 1.d0, 0.d0, 0.d0, 0.d0, 1.d0], [3, 3]) &
            &, core_pot_cutoff = 1.d10,&
            & core_pot_buffer = 1.d0, tau_dt = 100.d0, target_pos_step,&
            & gamma0 = 0.01d0, max_opt_step = 0.1d0, vdw_scs_rcut = 5.d0&
@@ -141,8 +141,7 @@ module types
       integer :: mbd_correction_freq = 100
       integer :: vdw_mbd_nfreq = 13, vdw_mbd_norder = 6
       logical :: vdw_mbd_grad = .true., vdw_hirsh_grad = .true., &
-               vdw_polynomial = .false., do_nnls = .false., vdw_mbd_cent_appr = .true.
-
+                 vdw_polynomial = .false., do_nnls = .false., vdw_mbd_cent_appr = .true.
 
       real(dp) :: xps_e_min = 280.0
       real(dp) :: xps_e_max = 300.0
@@ -223,8 +222,8 @@ module types
       real(dp) :: eph_C_e = 1.0
       real(dp) :: eph_kappa_e = 1.0
       real(dp) :: eph_Ti_e = 300.0, &
-                in_x0 = -100.0, in_x1 = 100.0, in_y0 = -100.0, in_y1 = 100.0, in_z0 = -100.0, in_z1 = 100.0, &
-                eph_E_prev_time = 0.0d0, eph_md_prev_time = 0.0d0
+                  in_x0 = -100.0, in_x1 = 100.0, in_y0 = -100.0, in_y1 = 100.0, in_z0 = -100.0, in_z1 = 100.0, &
+                  eph_E_prev_time = 0.0d0, eph_md_prev_time = 0.0d0
       real(dp), dimension(6) :: eph_box_limits = (/-100.0, 100.0, -100.0, 100.0, -100.0, 100.0/)
       character*128 :: eph_Tinfile = 'NULL'
       character*128 :: eph_Toutfile = 'NULL'
@@ -237,7 +236,7 @@ module types
 ! This is a container for atomic images
    type image
       real(dp), allocatable :: positions(:, :), positions_prev(:, :), velocities(:, :), masses(:), &
-                             forces(:, :), forces_prev(:, :), energies(:), local_properties(:, :)
+                               forces(:, :), forces_prev(:, :), energies(:), local_properties(:, :)
       real(dp) :: a_box(1:3), b_box(1:3), c_box(1:3), energy, e_kin, energy_exp
       integer, allocatable :: species(:), species_supercell(:)
       integer :: n_sites, indices(1:3)
@@ -260,15 +259,15 @@ module types
 !   actually carries forces -- for the exp-spectra families that additionally
 !   requires exp_forces, and their this_forces_ arrays are not allocated
 !   otherwise.
-  type contribution_ref
-     real(dp), pointer :: e_src(:)   => null()
-     real(dp), pointer :: f_src(:,:) => null()
-     real(dp), pointer :: v_src(:,:) => null()
-     real(dp), pointer :: e_dst(:)   => null()
-     real(dp), pointer :: f_dst(:,:) => null()
-     real(dp), pointer :: v_dst(:,:) => null()
-     logical         :: forces = .false.
-  end type contribution_ref
+   type contribution_ref
+      real(dp), pointer :: e_src(:) => null()
+      real(dp), pointer :: f_src(:, :) => null()
+      real(dp), pointer :: v_src(:, :) => null()
+      real(dp), pointer :: e_dst(:) => null()
+      real(dp), pointer :: f_dst(:, :) => null()
+      real(dp), pointer :: v_dst(:, :) => null()
+      logical         :: forces = .false.
+   end type contribution_ref
 !**************************************************************************
 
 contains
@@ -284,7 +283,7 @@ contains
 
 !   Input variables
       real(dp), intent(in) :: positions(:, :), velocities(:, :), masses(:), energies(:), &
-                            forces(:, :), a_box(1:3), b_box(1:3), c_box(1:3), energy, e_kin, energy_exp
+                              forces(:, :), a_box(1:3), b_box(1:3), c_box(1:3), energy, e_kin, energy_exp
       real(dp), allocatable, intent(in) :: local_properties(:, :)
       integer, intent(in) :: species(:), species_supercell(:), n_sites, indices(1:3)
       logical, intent(in) :: fix_atom(:, :)
@@ -382,7 +381,7 @@ contains
       type(image), intent(in) :: this_image
 !   Output variables
       real(dp), allocatable, intent(out) :: positions(:, :), velocities(:, :), masses(:), &
-                                          forces(:, :), energies(:)
+                                            forces(:, :), energies(:)
       real(dp), allocatable, intent(out) :: local_properties(:, :)
       real(dp), intent(out) :: a_box(1:3), b_box(1:3), c_box(1:3), energy, e_kin, energy_exp
       integer, allocatable, intent(out) :: species(:), species_supercell(:)

@@ -29,7 +29,7 @@
 
 module read_files
 
-  use kinds
+   use kinds
 
    use neighbors
    use types
@@ -59,69 +59,69 @@ contains
       implicit none
 
 !   Input variables
- real(dp), intent(in) :: rcut_max
- real(dp), intent(in) :: masses_types(:)
- real(dp), intent(in) :: t_beg
- integer, intent(in) :: which_atom
- integer, intent(in) :: n_species
- character*8, intent(in) :: species_types(:)
- character*1024, intent(in) :: filename
- logical, intent(in) :: ase_format
- logical, intent(in) :: all_atoms
- logical, intent(in) :: do_timing
- logical, intent(in) :: do_md
- logical, intent(in) :: supercell_check_only
- logical, intent(in) :: recalculate_supercell
+      real(dp), intent(in) :: rcut_max
+      real(dp), intent(in) :: masses_types(:)
+      real(dp), intent(in) :: t_beg
+      integer, intent(in) :: which_atom
+      integer, intent(in) :: n_species
+      character*8, intent(in) :: species_types(:)
+      character*1024, intent(in) :: filename
+      logical, intent(in) :: ase_format
+      logical, intent(in) :: all_atoms
+      logical, intent(in) :: do_timing
+      logical, intent(in) :: do_md
+      logical, intent(in) :: supercell_check_only
+      logical, intent(in) :: recalculate_supercell
 
 !   In and out variables
- real(dp), allocatable, intent(inout) :: positions(:, :)
- real(dp), allocatable, intent(inout) :: velocities(:, :)
- real(dp), allocatable, intent(inout) :: masses(:)
- real(dp), intent(inout) :: a_box(1:3)
- real(dp), intent(inout) :: b_box(1:3)
- real(dp), intent(inout) :: c_box(1:3)
- integer, allocatable, intent(inout) :: species(:)
- integer, allocatable, intent(inout) :: species_supercell(:)
- integer, intent(inout) :: n_sites
- integer, intent(inout) :: indices(1:3)
- character*8, allocatable, intent(inout) :: xyz_species(:)
- character*8, allocatable, intent(inout) :: xyz_species_supercell(:)
- logical, intent(inout) :: repeat_xyz
- logical, intent(inout) :: write_masses
- logical, allocatable, intent(inout) :: fix_atom(:, :)
- logical, intent(in) :: randomize_velocities
+      real(dp), allocatable, intent(inout) :: positions(:, :)
+      real(dp), allocatable, intent(inout) :: velocities(:, :)
+      real(dp), allocatable, intent(inout) :: masses(:)
+      real(dp), intent(inout) :: a_box(1:3)
+      real(dp), intent(inout) :: b_box(1:3)
+      real(dp), intent(inout) :: c_box(1:3)
+      integer, allocatable, intent(inout) :: species(:)
+      integer, allocatable, intent(inout) :: species_supercell(:)
+      integer, intent(inout) :: n_sites
+      integer, intent(inout) :: indices(1:3)
+      character*8, allocatable, intent(inout) :: xyz_species(:)
+      character*8, allocatable, intent(inout) :: xyz_species_supercell(:)
+      logical, intent(inout) :: repeat_xyz
+      logical, intent(inout) :: write_masses
+      logical, allocatable, intent(inout) :: fix_atom(:, :)
+      logical, intent(in) :: randomize_velocities
 
 !   Internal variables
- real(dp), allocatable :: positions_supercell(:, :)
- real(dp), allocatable :: velocities_supercell(:, :)
- real(dp) :: time1
- real(dp) :: time2
- real(dp) :: dist(1:3)
- real(dp) :: read_time
- real(dp) :: E_kinetic
- real(dp) :: instant_temp
- real(dp) :: kB = 8.6173303d-5
- real(dp) :: rjunk(1:3)
- real(dp) :: rjunk1d
- integer :: i
- integer :: iostatus
- integer :: j
- integer :: n_sites_supercell
- integer :: counter
- integer :: ijunk
- integer :: k2
- integer :: i2
- integer :: j2
- integer :: indices_prev(1:3)
- character*8 :: i_char
- character*128 :: cjunk
- character*128 :: cjunk_array(1:100)
- character*1024 :: cjunk1024
- character*1024 :: properties
- character*12800 :: cjunk_array_flat
- logical :: masses_from_xyz
- logical :: has_velocities
- logical :: ljunk(1:3)
+      real(dp), allocatable :: positions_supercell(:, :)
+      real(dp), allocatable :: velocities_supercell(:, :)
+      real(dp) :: time1
+      real(dp) :: time2
+      real(dp) :: dist(1:3)
+      real(dp) :: read_time
+      real(dp) :: E_kinetic
+      real(dp) :: instant_temp
+      real(dp) :: kB = 8.6173303d-5
+      real(dp) :: rjunk(1:3)
+      real(dp) :: rjunk1d
+      integer :: i
+      integer :: iostatus
+      integer :: j
+      integer :: n_sites_supercell
+      integer :: counter
+      integer :: ijunk
+      integer :: k2
+      integer :: i2
+      integer :: j2
+      integer :: indices_prev(1:3)
+      character*8 :: i_char
+      character*128 :: cjunk
+      character*128 :: cjunk_array(1:100)
+      character*1024 :: cjunk1024
+      character*1024 :: properties
+      character*12800 :: cjunk_array_flat
+      logical :: masses_from_xyz
+      logical :: has_velocities
+      logical :: ljunk(1:3)
 
       indices_prev = indices
 
@@ -438,17 +438,17 @@ contains
       implicit none
 
 !   Input variables
- character*1024, intent(in) :: file_data
+      character*1024, intent(in) :: file_data
 !   Output variables
- real(dp), allocatable, intent(out) :: data(:, :)
- integer, intent(out) :: n_points
+      real(dp), allocatable, intent(out) :: data(:, :)
+      integer, intent(out) :: n_points
 
 !   Internal variables
- integer :: i
- integer :: j
- integer :: iostatus
- integer :: dim
- integer :: unit_number
+      integer :: i
+      integer :: j
+      integer :: iostatus
+      integer :: dim
+      integer :: unit_number
 
       ! if the file_data == none then we allocate and exit
       if (trim(file_data) == "none") then
@@ -484,11 +484,11 @@ contains
 !   Input variables
       character(len=*), intent(in) :: filename, label
 !   Output variables
- real(dp), allocatable, intent(in) :: x(:)
- real(dp), allocatable, intent(in) :: y(:)
- logical, intent(in) :: overwrite
+      real(dp), allocatable, intent(in) :: x(:)
+      real(dp), allocatable, intent(in) :: y(:)
+      logical, intent(in) :: overwrite
 !   Internal variables
- integer :: i
+      integer :: i
 
       if (overwrite) then
          open (unit=200, file=filename, status="unknown")
@@ -512,11 +512,11 @@ contains
 !   Input variables
       character(len=*), intent(in) :: filename, label
 !   Output variables
- real(dp), intent(in) :: x(:)
- real(dp), intent(in) :: y(:)
- logical, intent(in) :: overwrite
+      real(dp), intent(in) :: x(:)
+      real(dp), intent(in) :: y(:)
+      logical, intent(in) :: overwrite
 !   Internal variables
- integer :: i
+      integer :: i
 
       if (overwrite) then
          open (unit=200, file=filename, status="unknown")
@@ -541,22 +541,22 @@ contains
       implicit none
 
 !   Input variables
- character*1024, intent(in) :: file_desc
- character*1024, intent(in) :: file_alphas
+      character*1024, intent(in) :: file_desc
+      character*1024, intent(in) :: file_alphas
       character(len=*), intent(in) :: descriptor_type
 
 !   Output variables
- real(dp), allocatable, intent(out) :: alphas(:)
- real(dp), allocatable, intent(out) :: Qs(:, :)
- real(dp), allocatable, intent(out) :: cutoff(:)
- integer, intent(out) :: n_sparse
+      real(dp), allocatable, intent(out) :: alphas(:)
+      real(dp), allocatable, intent(out) :: Qs(:, :)
+      real(dp), allocatable, intent(out) :: cutoff(:)
+      integer, intent(out) :: n_sparse
 
 !   Internal variables
- integer :: i
- integer :: j
- integer :: iostatus
- integer :: dim
- integer :: unit_number
+      integer :: i
+      integer :: j
+      integer :: iostatus
+      integer :: dim
+      integer :: unit_number
 
 !   Read alphas to figure out sparse set size
       open (newunit=unit_number, file=file_alphas, status="old")
@@ -654,39 +654,39 @@ contains
       implicit none
 
 !   Input variables
- integer, intent(in) :: n_species
- integer, intent(in) :: rank
+      integer, intent(in) :: n_species
+      integer, intent(in) :: rank
       character(len=*) :: mode
 
 !   Output variables
- type(input_parameters), intent(out) :: params
+      type(input_parameters), intent(out) :: params
 
 !   Internal variables
- real(dp) :: c6_ref
- real(dp) :: r0_ref
- real(dp) :: alpha0_ref
- real(dp) :: bsf
- real(dp) :: k
- integer :: iostatus
- integer :: i
- integer :: j
- integer :: i2
- integer :: nw
- integer :: iostatus2
- character*1024 :: long_line
- character*128, allocatable :: long_line_items(:)
- character*64 :: keyword
- character*64 :: cjunk
- character*64 :: keyword_notrim
- character*32 :: implemented_thermostats(1:3)
- character*32 :: implemented_barostats(1:2)
- character*32 :: implemented_mc_types(1:8)
- character*32 :: implemented_exp_observables(1:5)
- character*2 :: element
- character*1 :: keyword_first
- logical :: are_vdw_refs_read(1:3)
- logical :: valid_choice
- logical :: masses_in_input_file = .false.
+      real(dp) :: c6_ref
+      real(dp) :: r0_ref
+      real(dp) :: alpha0_ref
+      real(dp) :: bsf
+      real(dp) :: k
+      integer :: iostatus
+      integer :: i
+      integer :: j
+      integer :: i2
+      integer :: nw
+      integer :: iostatus2
+      character*1024 :: long_line
+      character*128, allocatable :: long_line_items(:)
+      character*64 :: keyword
+      character*64 :: cjunk
+      character*64 :: keyword_notrim
+      character*32 :: implemented_thermostats(1:3)
+      character*32 :: implemented_barostats(1:2)
+      character*32 :: implemented_mc_types(1:8)
+      character*32 :: implemented_exp_observables(1:5)
+      character*2 :: element
+      character*1 :: keyword_first
+      logical :: are_vdw_refs_read(1:3)
+      logical :: valid_choice
+      logical :: masses_in_input_file = .false.
 
       implemented_thermostats(1) = "none"
       implemented_thermostats(2) = "berendsen"
@@ -1720,12 +1720,12 @@ contains
          else if (keyword == "vdw_d") then
             backspace (10)
             read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_d
-         else if( keyword == "vdw_sr_mbd" )then
-            backspace(10)
-            read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_sr_mbd
-         else if( keyword == "vdw_d_mbd" )then
-            backspace(10)
-            read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_d_mbd
+         else if (keyword == "vdw_sr_mbd") then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_sr_mbd
+         else if (keyword == "vdw_d_mbd") then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_d_mbd
          else if (keyword == "vdw_rcut") then
             backspace (10)
             read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_rcut
@@ -1751,58 +1751,58 @@ contains
             read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_alpha0_ref(1:n_species)
             are_vdw_refs_read(3) = .true.
 ! NEW VDW STUFF HERE
-      else if( keyword == "vdw_scs_rcut" )then
-        backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_scs_rcut
-      else if( keyword == "vdw_mbd_nfreq" )then
-        backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_nfreq
-      else if( keyword == "vdw_mbd_norder" )then
-        backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_norder
-      else if( keyword == "vdw_mbd_grad" )then
-        backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_grad
-      else if( keyword == "vdw_hirsh_grad" )then
-        backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_hirsh_grad
-      else if( keyword == "vdw_loc_rcut" )then
-        backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_loc_rcut
-      else if( keyword == "vdw_mbd_rcut" )then
-        backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_rcut
-      else if( keyword == "vdw_mbd_rcut2" )then
-        backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_rcut2
-      else if( keyword == "vdw_2b_rcut" )then
-        backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_2b_rcut
-      else if( keyword == "vdw_2b_rcut2" )then
-        backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_2b_rcut2
-      else if( keyword == "vdw_mbd_cent_appr" )then
-        backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_cent_appr
-      else if( keyword == "vdw_polynomial" )then
-        backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_polynomial
-      else if( keyword == "do_nnls" )then
-        backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%do_nnls
-      else if( keyword == "vdw_omega_ref" )then
-        backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%vdw_omega_ref
-      else if( keyword == "poly_cut_xmin" )then
-        backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%poly_cut_xmin
-      else if( keyword == "poly_cut_xmax" )then
-        backspace(10)
-        read(10, *, iostat=iostatus) cjunk, cjunk, params%poly_cut_xmax
+         else if (keyword == "vdw_scs_rcut") then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_scs_rcut
+         else if (keyword == "vdw_mbd_nfreq") then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_nfreq
+         else if (keyword == "vdw_mbd_norder") then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_norder
+         else if (keyword == "vdw_mbd_grad") then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_grad
+         else if (keyword == "vdw_hirsh_grad") then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_hirsh_grad
+         else if (keyword == "vdw_loc_rcut") then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_loc_rcut
+         else if (keyword == "vdw_mbd_rcut") then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_rcut
+         else if (keyword == "vdw_mbd_rcut2") then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_rcut2
+         else if (keyword == "vdw_2b_rcut") then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_2b_rcut
+         else if (keyword == "vdw_2b_rcut2") then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_2b_rcut2
+         else if (keyword == "vdw_mbd_cent_appr") then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_cent_appr
+         else if (keyword == "vdw_polynomial") then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_polynomial
+         else if (keyword == "do_nnls") then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%do_nnls
+         else if (keyword == "vdw_omega_ref") then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_omega_ref
+         else if (keyword == "poly_cut_xmin") then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%poly_cut_xmin
+         else if (keyword == "poly_cut_xmax") then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%poly_cut_xmax
 
-         else if(keyword=='mbd_correction_freq')then
-            backspace(10)
-            read(10, *, iostat=iostatus) cjunk, cjunk, params%mbd_correction_freq
+         else if (keyword == 'mbd_correction_freq') then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%mbd_correction_freq
 ! NEW VDW STUFF ENDS HERE
          else if (keyword == "print_vdw_forces") then
             backspace (10)
@@ -2194,12 +2194,12 @@ contains
    ! Deprecated Variable Check
    subroutine check_deprecated(n_deprecated, deprecated_keywords, updated_keywords, keyword)
       ! Input variables
- integer, intent(in) :: n_deprecated
- character*64, intent(in) :: deprecated_keywords(:)
- character*64, intent(in) :: updated_keywords(:)
- character*64, intent(in) :: keyword
+      integer, intent(in) :: n_deprecated
+      character*64, intent(in) :: deprecated_keywords(:)
+      character*64, intent(in) :: updated_keywords(:)
+      character*64, intent(in) :: keyword
       ! Internal variables
- integer :: i
+      integer :: i
 
       do i = 1, n_deprecated
          if (trim(keyword) == trim(deprecated_keywords(i))) then
@@ -2209,9 +2209,9 @@ contains
    end subroutine check_deprecated
 
    subroutine print_deprecation_message(keyword, updated_keyword)
- character*64 :: keyword
- character*64 :: updated_keyword
- integer :: length
+      character*64 :: keyword
+      character*64 :: updated_keyword
+      integer :: length
 
       length = len_trim(keyword)
 
@@ -2236,45 +2236,45 @@ contains
       implicit none
 
 !   Input variables
- type(input_parameters), intent(in) :: params
- logical, intent(in) :: do_prediction
+      type(input_parameters), intent(in) :: params
+      logical, intent(in) :: do_prediction
       character(len=*), intent(in) :: file_gap
 
 !   Output variables
- real(dp), intent(out) :: rcut_max
- integer, intent(out) :: n_soap_turbo
- integer, intent(out) :: n_distance_2b
- integer, intent(out) :: n_angle_3b
- integer, intent(out) :: n_core_pot
- integer :: nw
- type(soap_turbo), allocatable, intent(out) :: soap_turbo_hypers(:)
- type(distance_2b), allocatable, intent(out) :: distance_2b_hypers(:)
- type(angle_3b), allocatable, intent(out) :: angle_3b_hypers(:)
- type(core_pot), allocatable, intent(out) :: core_pot_hypers(:)
+      real(dp), intent(out) :: rcut_max
+      integer, intent(out) :: n_soap_turbo
+      integer, intent(out) :: n_distance_2b
+      integer, intent(out) :: n_angle_3b
+      integer, intent(out) :: n_core_pot
+      integer :: nw
+      type(soap_turbo), allocatable, intent(out) :: soap_turbo_hypers(:)
+      type(distance_2b), allocatable, intent(out) :: distance_2b_hypers(:)
+      type(angle_3b), allocatable, intent(out) :: angle_3b_hypers(:)
+      type(core_pot), allocatable, intent(out) :: core_pot_hypers(:)
 !   Internal variables
- real(dp), allocatable :: u(:)
- real(dp), allocatable :: x(:)
- real(dp), allocatable :: V(:)
- real(dp) :: sig
- real(dp) :: p
- real(dp) :: qn
- real(dp) :: un
- integer :: iostatus
- integer :: i
- integer :: counter
- integer :: n_species
- integer :: n_sparse
- integer :: ijunk
- integer :: n
- integer :: n_nonzero
- integer :: j
- character*64 :: keyword
- character*64 :: cjunk
- character*64 :: compress_string
- character*1 :: keyword_first
- integer, parameter :: n_deprecated = 6
- character*64 :: deprecated_keywords(n_deprecated)
- character*64 :: updated_keywords(n_deprecated)
+      real(dp), allocatable :: u(:)
+      real(dp), allocatable :: x(:)
+      real(dp), allocatable :: V(:)
+      real(dp) :: sig
+      real(dp) :: p
+      real(dp) :: qn
+      real(dp) :: un
+      integer :: iostatus
+      integer :: i
+      integer :: counter
+      integer :: n_species
+      integer :: n_sparse
+      integer :: ijunk
+      integer :: n
+      integer :: n_nonzero
+      integer :: j
+      character*64 :: keyword
+      character*64 :: cjunk
+      character*64 :: compress_string
+      character*1 :: keyword_first
+      integer, parameter :: n_deprecated = 6
+      character*64 :: deprecated_keywords(n_deprecated)
+      character*64 :: updated_keywords(n_deprecated)
 
       deprecated_keywords(1) = "has_vdw"
       deprecated_keywords(2) = "vdw_qs"
@@ -2976,15 +2976,15 @@ contains
 ! also give error messages if the data in the file is not in proper format
       implicit none
 
- character*1024, intent(in) :: estopfilename
- integer, intent(in) :: n_species
- character*8, intent(in) :: species_types(n_species)
- integer, intent(out) :: nrows
- real(dp), allocatable :: allelstopdata(:)
- character*8, allocatable :: infoline(:)
- integer :: i
- integer :: ncols
- integer :: ndata
+      character*1024, intent(in) :: estopfilename
+      integer, intent(in) :: n_species
+      character*8, intent(in) :: species_types(n_species)
+      integer, intent(out) :: nrows
+      real(dp), allocatable :: allelstopdata(:)
+      character*8, allocatable :: infoline(:)
+      integer :: i
+      integer :: ncols
+      integer :: ndata
 
       open (unit=1000, file=estopfilename)
 ! first line gives information
@@ -3019,11 +3019,11 @@ contains
       implicit none
 
       character(len=*), intent(inout) :: string
- character*1 :: upper_case_dict(1:26)
- character*1 :: lower_case_dict(1:26)
- integer :: i
- integer :: j
- integer :: n
+      character*1 :: upper_case_dict(1:26)
+      character*1 :: lower_case_dict(1:26)
+      integer :: i
+      integer :: j
+      integer :: n
 
       upper_case_dict = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", &
                          "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", &
@@ -3047,28 +3047,28 @@ contains
                            local_property_labels, local_property_labels_temp, local_property_labels_temp2, local_property_indexes, &
                                                valid_vdw, vdw_lp_index, core_be_lp_index, valid_xps, xps_idx)
       implicit none
- type(input_parameters), intent(inout) :: params
- integer, intent(in) :: n_soap_turbo
- integer, intent(inout) :: n_local_properties_tot
- type(soap_turbo), allocatable, intent(inout) :: soap_turbo_hypers(:)
- character*1024, allocatable, intent(inout) :: local_property_labels(:)
- character*1024, allocatable, intent(inout) :: local_property_labels_temp(:)
- character*1024, allocatable, intent(inout) :: local_property_labels_temp2(:)
- integer, allocatable, intent(inout) :: local_property_indexes(:)
- integer, intent(inout) :: vdw_lp_index
- integer, intent(inout) :: core_be_lp_index
- integer, intent(inout) :: xps_idx
- logical, intent(inout) :: valid_vdw
- logical, intent(inout) :: valid_xps
- logical :: label_in_list = .false.
- integer :: i
- integer :: j
- integer :: i2
- integer :: j2
- integer :: k
- integer :: k2
- integer :: nprop
- integer :: length
+      type(input_parameters), intent(inout) :: params
+      integer, intent(in) :: n_soap_turbo
+      integer, intent(inout) :: n_local_properties_tot
+      type(soap_turbo), allocatable, intent(inout) :: soap_turbo_hypers(:)
+      character*1024, allocatable, intent(inout) :: local_property_labels(:)
+      character*1024, allocatable, intent(inout) :: local_property_labels_temp(:)
+      character*1024, allocatable, intent(inout) :: local_property_labels_temp2(:)
+      integer, allocatable, intent(inout) :: local_property_indexes(:)
+      integer, intent(inout) :: vdw_lp_index
+      integer, intent(inout) :: core_be_lp_index
+      integer, intent(inout) :: xps_idx
+      logical, intent(inout) :: valid_vdw
+      logical, intent(inout) :: valid_xps
+      logical :: label_in_list = .false.
+      integer :: i
+      integer :: j
+      integer :: i2
+      integer :: j2
+      integer :: k
+      integer :: k2
+      integer :: nprop
+      integer :: length
 
       n_local_properties_tot = 0
       i2 = 1 ! using this as a counter for the labels
@@ -3216,11 +3216,11 @@ contains
 
       implicit none
 
- integer, intent(in) :: seed_value
- integer, intent(in) :: rank
- integer, allocatable :: seed(:)
- integer :: n
- integer :: i
+      integer, intent(in) :: seed_value
+      integer, intent(in) :: rank
+      integer, allocatable :: seed(:)
+      integer :: n
+      integer :: i
 
       if (seed_value == 0) return
 

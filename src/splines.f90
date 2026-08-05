@@ -25,17 +25,14 @@
 ! HND X
 ! HND XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
-
 module splines
 
-  use kinds
+   use kinds
 
-
-  contains
-
+contains
 
 !**************************************************************************
-  function spline(x, y, y2, yp1, ypn, r, rcut) result(s)
+   function spline(x, y, y2, yp1, ypn, r, rcut) result(s)
 
 !   This function computes a cubic spline on all the points defined in
 !   array r(:), for those r(i) < rcut, but constructing a cubic spline
@@ -65,131 +62,130 @@ module splines
 !     D = (B^3 - B) * h^2 / 6
 !     s(i) = A*y(j) + B*y(j+1) + C*y2(j) + D*y2(j+1)
 
-    implicit none
+      implicit none
 
- real(dp), intent(in) :: x(:)
- real(dp), intent(in) :: y(:)
- real(dp), intent(in) :: y2(:)
- real(dp), intent(in) :: r(:)
- real(dp), intent(in) :: yp1
- real(dp), intent(in) :: ypn
- real(dp), intent(in) :: rcut
- real(dp), dimension(1:size(r)) :: s
+      real(dp), intent(in) :: x(:)
+      real(dp), intent(in) :: y(:)
+      real(dp), intent(in) :: y2(:)
+      real(dp), intent(in) :: r(:)
+      real(dp), intent(in) :: yp1
+      real(dp), intent(in) :: ypn
+      real(dp), intent(in) :: rcut
+      real(dp), dimension(1:size(r)) :: s
 
- real(dp) :: h
- real(dp) :: h26
- real(dp) :: A
- real(dp) :: B
- real(dp) :: C
- real(dp) :: D
- integer :: j
- integer :: n
- integer :: m
- integer :: i
+      real(dp) :: h
+      real(dp) :: h26
+      real(dp) :: A
+      real(dp) :: B
+      real(dp) :: C
+      real(dp) :: D
+      integer :: j
+      integer :: n
+      integer :: m
+      integer :: i
 
-    n = size(x)
-    m = size(r)
+      n = size(x)
+      m = size(r)
 
-    s = 0.d0
+      s = 0.d0
 
-    do i = 1, m
-      if( r(i) < rcut )then
-        if( r(i) < x(1) )then
-          s(i) = y(1) + (r(i) - x(1)) * yp1
-        else if( r(i) > x(n) )then
-          s(i) = y(n) + (r(i) - x(n)) * ypn
-        else
-          do j = 1, n-1
-            if( r(i) < x(j+1) )then
-              exit
+      do i = 1, m
+         if (r(i) < rcut) then
+            if (r(i) < x(1)) then
+               s(i) = y(1) + (r(i) - x(1))*yp1
+            else if (r(i) > x(n)) then
+               s(i) = y(n) + (r(i) - x(n))*ypn
+            else
+               do j = 1, n - 1
+                  if (r(i) < x(j + 1)) then
+                     exit
+                  end if
+               end do
+
+               h = x(j + 1) - x(j)
+               h26 = h**2/6.d0
+               if (h == 0.d0) then
+                  write (*, *) "spline: h=0 -> check your tabulated values!"
+                  stop
+               end if
+
+               A = (x(j + 1) - r(i))/h
+               B = 1.d0 - A
+               C = (A**3 - A)*h26
+               D = (B**3 - B)*h26
+               s(i) = A*y(j) + B*y(j + 1) + C*y2(j) + D*y2(j + 1)
             end if
-          end do
+         end if
+      end do
 
-          h = x(j+1) - x(j)
-          h26 = h**2 / 6.d0
-          if( h == 0.d0 )then
-            write(*, *) "spline: h=0 -> check your tabulated values!"
-            stop
-          end if
+   end function
 
-          A = (x(j+1) - r(i)) / h
-          B = 1.d0 - A
-          C = (A**3 - A) * h26
-          D = (B**3 - B) * h26
-          s(i) = A*y(j) + B*y(j+1) + C*y2(j) + D*y2(j+1)
-        end if
-      end if
-    end do
-
-  end function
-
-  function spline_der(x, y, y2, yp1, ypn, r, rcut) result(ds)
+   function spline_der(x, y, y2, yp1, ypn, r, rcut) result(ds)
 
 !   This just gives the derivative of spline()
 
-    implicit none
+      implicit none
 
- real(dp), intent(in) :: x(:)
- real(dp), intent(in) :: y(:)
- real(dp), intent(in) :: y2(:)
- real(dp), intent(in) :: r(:)
- real(dp), intent(in) :: yp1
- real(dp), intent(in) :: ypn
- real(dp), intent(in) :: rcut
- real(dp), dimension(1:size(r)) :: ds
+      real(dp), intent(in) :: x(:)
+      real(dp), intent(in) :: y(:)
+      real(dp), intent(in) :: y2(:)
+      real(dp), intent(in) :: r(:)
+      real(dp), intent(in) :: yp1
+      real(dp), intent(in) :: ypn
+      real(dp), intent(in) :: rcut
+      real(dp), dimension(1:size(r)) :: ds
 
- real(dp) :: h
- real(dp) :: h6
- real(dp) :: dAdx
- real(dp) :: dBdx
- real(dp) :: dCdx
- real(dp) :: dDdx
- real(dp) :: A
- real(dp) :: B
- integer :: j
- integer :: n
- integer :: m
- integer :: i
+      real(dp) :: h
+      real(dp) :: h6
+      real(dp) :: dAdx
+      real(dp) :: dBdx
+      real(dp) :: dCdx
+      real(dp) :: dDdx
+      real(dp) :: A
+      real(dp) :: B
+      integer :: j
+      integer :: n
+      integer :: m
+      integer :: i
 
-    n = size(x)
-    m = size(r)
+      n = size(x)
+      m = size(r)
 
-    ds = 0.d0
+      ds = 0.d0
 
-    do i = 1, m
-      if( r(i) < rcut )then
-        if( r(i) < x(1) )then
-          ds(i) = yp1
-        else if( r(i) > x(n) )then
-          ds(i) = ypn
-        else
-          do j = 1, n-1
-            if( r(i) < x(j+1) )then
-              exit
+      do i = 1, m
+         if (r(i) < rcut) then
+            if (r(i) < x(1)) then
+               ds(i) = yp1
+            else if (r(i) > x(n)) then
+               ds(i) = ypn
+            else
+               do j = 1, n - 1
+                  if (r(i) < x(j + 1)) then
+                     exit
+                  end if
+               end do
+
+               h = x(j + 1) - x(j)
+               h6 = h/6.d0
+               if (h == 0.d0) then
+                  write (*, *) "spline: h=0 -> check your tabulated values!"
+                  stop
+               end if
+
+               A = (x(j + 1) - r(i))/h
+               B = 1.d0 - A
+               dAdx = -1.d0/h
+               dBdx = -dAdx
+               dCdx = (1.d0 - 3.d0*A**2)*h6
+               dDdx = (3.d0*B**2 - 1.d0)*h6
+
+               ds(i) = dAdx*y(j) + dBdx*y(j + 1) + dCdx*y2(j) + dDdx*y2(j + 1)
             end if
-          end do
+         end if
+      end do
 
-          h = x(j+1) - x(j)
-          h6 = h / 6.d0
-          if( h == 0.d0 )then
-            write(*, *) "spline: h=0 -> check your tabulated values!"
-            stop
-          end if
-
-          A = (x(j+1) - r(i)) / h
-          B = 1.d0 - A
-          dAdx = -1.d0 / h
-          dBdx = -dAdx
-          dCdx = (1.d0 - 3.d0*A**2) * h6
-          dDdx = (3.d0*B**2 - 1.d0) * h6
-
-          ds(i) = dAdx*y(j) + dBdx*y(j+1) + dCdx*y2(j) + dDdx*y2(j+1)
-        end if
-      end if
-    end do
-
-  end function
+   end function
 !**************************************************************************
-
 
 end module

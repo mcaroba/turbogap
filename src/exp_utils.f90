@@ -28,7 +28,7 @@
 
 module exp_utils
 
-  use kinds
+   use kinds
    use types
 
 contains
@@ -154,10 +154,10 @@ contains
 
    function clamp(x, low, high)
       implicit none
- real(dp), intent(in) :: x
- real(dp), intent(in) :: low
- real(dp), intent(in) :: high
- real(dp) :: clamp
+      real(dp), intent(in) :: x
+      real(dp), intent(in) :: low
+      real(dp), intent(in) :: high
+      real(dp) :: clamp
       clamp = x
       if (x < low) clamp = low
       if (x > high) clamp = high
@@ -165,12 +165,12 @@ contains
 
    subroutine energy_scale(current_step, total_steps, escale_initial, escale_final, escale)
       implicit none
- integer, intent(in) :: current_step
- integer, intent(in) :: total_steps
- real(dp), intent(in) :: escale_initial
- real(dp), intent(in) :: escale_final
- real(dp), intent(out) :: escale
- real(dp) :: t
+      integer, intent(in) :: current_step
+      integer, intent(in) :: total_steps
+      real(dp), intent(in) :: escale_initial
+      real(dp), intent(in) :: escale_final
+      real(dp), intent(out) :: escale
+      real(dp) :: t
 
       t = clamp(dfloat(current_step)/dfloat(total_steps), 0.d0, 1.d0)
       escale = (1.d0 - t)*escale_initial + t*escale_final
@@ -179,16 +179,16 @@ contains
    subroutine get_energy_scale(do_md, do_mc, md_istep, md_nsteps,&
         & mc_istep, mc_nsteps, escale_initial, escale_final, escale)
       implicit none
- logical, intent(in) :: do_md
- logical, intent(in) :: do_mc
- integer, intent(in) :: md_istep
- integer, intent(in) :: md_nsteps
- integer, intent(in) :: mc_istep
- integer, intent(in) :: mc_nsteps
- real(dp), intent(in) :: escale_initial
- real(dp), intent(in) :: escale_final
- real(dp), intent(out) :: escale
- real(dp) :: t
+      logical, intent(in) :: do_md
+      logical, intent(in) :: do_mc
+      integer, intent(in) :: md_istep
+      integer, intent(in) :: md_nsteps
+      integer, intent(in) :: mc_istep
+      integer, intent(in) :: mc_nsteps
+      real(dp), intent(in) :: escale_initial
+      real(dp), intent(in) :: escale_final
+      real(dp), intent(out) :: escale
+      real(dp) :: t
 
       if (do_md .and. .not. do_mc) then
          call energy_scale(md_istep, md_nsteps, escale_initial, escale_final, escale)
@@ -206,74 +206,74 @@ contains
         & species_2, pair_distribution_der, partial_rdf, kde_sigma,&
         & c_factor, sinc_factor_matrix, n_dim_idx, do_xrd, output, n_atoms_of_species, neutron)
       implicit none
- real(dp), intent(in) :: rjs(:)
- real(dp), intent(in) :: xyz(:, :)
- real(dp), intent(in) :: y_exp(:)
- real(dp), intent(in) :: energy_scale
- real(dp), intent(in) :: kde_sigma
- real(dp), intent(in) :: c_factor
- real(dp), intent(in) :: sinc_factor_matrix(:, :)
- real(dp), intent(in) :: x(:)
- integer, intent(in) :: n_sites0
- integer, intent(in) :: n_samples_sf
- integer, intent(in) :: n_species
- character*8, allocatable, intent(in) :: species_types(:)
- real(dp) :: r_min
- real(dp) :: r_max
- real(dp) :: r_cut
- integer, intent(in) :: neighbors_list(:)
- integer, intent(in) :: n_neigh(:)
- integer, intent(in) :: neighbor_species(:)
- integer, intent(in) :: n_samples
- integer, intent(in) :: species_1
- integer, intent(in) :: species_2
- integer, intent(in) :: n_dim_idx
- integer :: n_sites
- integer :: n_pairs
- integer :: count
- integer :: count_species_1
- integer :: i
- integer :: j
- integer :: k
- integer :: ki
- integer :: k1
- integer :: k2
- integer :: i2
- integer :: j2
- integer :: l
- integer :: ii
- integer :: jj
- integer :: kk
- integer :: i3
- integer :: j3
- integer :: i4
- integer :: species_i
- integer :: species_j
- real(dp), intent(in) :: x_structure_factor(:)
- real(dp), intent(in) :: structure_factor(:)
- real(dp), intent(in) :: n_atoms_of_species(:)
- real(dp), intent(in) :: pair_distribution_der(:, :)
- real(dp), intent(inout) :: forces0(:, :)
- real(dp), intent(inout) :: virial(1:3, 1:3)
- character*32, intent(in) :: output
- real(dp), allocatable :: prefactor(:)
- real(dp), allocatable :: all_scattering_factors(:)
- real(dp), allocatable :: sf_parameters(:, :)
- real(dp), allocatable :: structure_factor_der(:)
- real(dp) :: r
- real(dp) :: n_pc
- real(dp) :: this_force(1:3)
- real(dp) :: f
- real(dp) :: wfaci
- real(dp) :: wfacj
- real(dp) :: temp(1:n_samples_sf)
- real(dp) :: sth
- real(dp), parameter :: pi = acos(-1.0)
- logical, intent(in) :: partial_rdf
- logical, intent(in) :: do_xrd
- logical, intent(in) :: neutron
- logical :: species_in_list
- logical :: counted_1 = .false.
+      real(dp), intent(in) :: rjs(:)
+      real(dp), intent(in) :: xyz(:, :)
+      real(dp), intent(in) :: y_exp(:)
+      real(dp), intent(in) :: energy_scale
+      real(dp), intent(in) :: kde_sigma
+      real(dp), intent(in) :: c_factor
+      real(dp), intent(in) :: sinc_factor_matrix(:, :)
+      real(dp), intent(in) :: x(:)
+      integer, intent(in) :: n_sites0
+      integer, intent(in) :: n_samples_sf
+      integer, intent(in) :: n_species
+      character*8, allocatable, intent(in) :: species_types(:)
+      real(dp) :: r_min
+      real(dp) :: r_max
+      real(dp) :: r_cut
+      integer, intent(in) :: neighbors_list(:)
+      integer, intent(in) :: n_neigh(:)
+      integer, intent(in) :: neighbor_species(:)
+      integer, intent(in) :: n_samples
+      integer, intent(in) :: species_1
+      integer, intent(in) :: species_2
+      integer, intent(in) :: n_dim_idx
+      integer :: n_sites
+      integer :: n_pairs
+      integer :: count
+      integer :: count_species_1
+      integer :: i
+      integer :: j
+      integer :: k
+      integer :: ki
+      integer :: k1
+      integer :: k2
+      integer :: i2
+      integer :: j2
+      integer :: l
+      integer :: ii
+      integer :: jj
+      integer :: kk
+      integer :: i3
+      integer :: j3
+      integer :: i4
+      integer :: species_i
+      integer :: species_j
+      real(dp), intent(in) :: x_structure_factor(:)
+      real(dp), intent(in) :: structure_factor(:)
+      real(dp), intent(in) :: n_atoms_of_species(:)
+      real(dp), intent(in) :: pair_distribution_der(:, :)
+      real(dp), intent(inout) :: forces0(:, :)
+      real(dp), intent(inout) :: virial(1:3, 1:3)
+      character*32, intent(in) :: output
+      real(dp), allocatable :: prefactor(:)
+      real(dp), allocatable :: all_scattering_factors(:)
+      real(dp), allocatable :: sf_parameters(:, :)
+      real(dp), allocatable :: structure_factor_der(:)
+      real(dp) :: r
+      real(dp) :: n_pc
+      real(dp) :: this_force(1:3)
+      real(dp) :: f
+      real(dp) :: wfaci
+      real(dp) :: wfacj
+      real(dp) :: temp(1:n_samples_sf)
+      real(dp) :: sth
+      real(dp), parameter :: pi = acos(-1.0)
+      logical, intent(in) :: partial_rdf
+      logical, intent(in) :: do_xrd
+      logical, intent(in) :: neutron
+      logical :: species_in_list
+      logical :: counted_1 = .false.
 
       ! First allocate the pair correlation function array
 
@@ -459,84 +459,84 @@ contains
         & species_2, pair_distribution_der, partial_rdf, kde_sigma,&
         & c_factor, sinc_factor_matrix, n_dim_idx, do_xrd, output, n_atoms_of_species, neutron)
       implicit none
- real(dp), intent(in) :: rjs(:)
- real(dp), intent(in) :: xyz(:, :)
- real(dp), intent(in) :: y_exp(:)
- real(dp), intent(in) :: energy_scale
- real(dp), intent(in) :: kde_sigma
- real(dp), intent(in) :: c_factor
- real(dp), intent(in) :: sinc_factor_matrix(:, :)
- real(dp), intent(in) :: x(:)
- integer, intent(in) :: n_sites0
- integer, intent(in) :: n_samples_sf
- integer, intent(in) :: n_species
- character*8, allocatable, intent(in) :: species_types(:)
- real(dp) :: r_min
- real(dp) :: r_max
- real(dp) :: r_cut
- integer, intent(in) :: neighbors_list(:)
- integer, intent(in) :: n_neigh(:)
- integer, intent(in) :: neighbor_species(:)
- integer, intent(in) :: n_samples
- integer, intent(in) :: species_1
- integer, intent(in) :: species_2
- integer, intent(in) :: n_dim_idx
- integer :: n_sites
- integer :: n_pairs
- integer :: count
- integer :: count_species_1
- integer :: i
- integer :: j
- integer :: k
- integer :: ki
- integer :: k1
- integer :: k2
- integer :: i2
- integer :: j2
- integer :: l
- integer :: ii
- integer :: jj
- integer :: kk
- integer :: i3
- integer :: j3
- integer :: i4
- integer :: species_i
- integer :: species_j
- integer :: n_k
- real(dp), intent(in) :: x_structure_factor(:)
- real(dp), intent(in) :: structure_factor(:)
- real(dp), intent(in) :: n_atoms_of_species(:)
- real(dp), intent(in) :: pair_distribution_der(:, :)
- real(dp), intent(inout) :: forces0(:, :)
- real(dp), intent(inout) :: virial(1:3, 1:3)
- character*32, intent(in) :: output
- real(dp), allocatable :: prefactor(:)
- real(dp), allocatable :: all_scattering_factors(:)
- real(dp), allocatable :: sf_parameters(:, :)
- real(dp), allocatable :: structure_factor_der(:)
- real(dp) :: r
- real(dp) :: n_pc
- real(dp) :: this_force(1:3)
- real(dp) :: f
- real(dp) :: wfaci
- real(dp) :: wfacj
- real(dp) :: temp(1:n_samples_sf)
- real(dp) :: sth
- real(dp) :: time(1:3)
- real(dp), parameter :: pi = acos(-1.0)
- logical, intent(in) :: partial_rdf
- logical, intent(in) :: do_xrd
- logical, intent(in) :: neutron
- logical :: species_in_list
- logical :: counted_1 = .false.
- real(dp), allocatable :: xyz_k(:, :)
- real(dp), allocatable :: Gk(:, :)
- real(dp), allocatable :: Gka(:, :)
- real(dp), allocatable :: dermat(:, :)
- real(dp), allocatable :: fi(:, :)
- integer, allocatable :: k_list(:)
- integer, allocatable :: i2_list(:)
- integer, allocatable :: j2_list(:)
+      real(dp), intent(in) :: rjs(:)
+      real(dp), intent(in) :: xyz(:, :)
+      real(dp), intent(in) :: y_exp(:)
+      real(dp), intent(in) :: energy_scale
+      real(dp), intent(in) :: kde_sigma
+      real(dp), intent(in) :: c_factor
+      real(dp), intent(in) :: sinc_factor_matrix(:, :)
+      real(dp), intent(in) :: x(:)
+      integer, intent(in) :: n_sites0
+      integer, intent(in) :: n_samples_sf
+      integer, intent(in) :: n_species
+      character*8, allocatable, intent(in) :: species_types(:)
+      real(dp) :: r_min
+      real(dp) :: r_max
+      real(dp) :: r_cut
+      integer, intent(in) :: neighbors_list(:)
+      integer, intent(in) :: n_neigh(:)
+      integer, intent(in) :: neighbor_species(:)
+      integer, intent(in) :: n_samples
+      integer, intent(in) :: species_1
+      integer, intent(in) :: species_2
+      integer, intent(in) :: n_dim_idx
+      integer :: n_sites
+      integer :: n_pairs
+      integer :: count
+      integer :: count_species_1
+      integer :: i
+      integer :: j
+      integer :: k
+      integer :: ki
+      integer :: k1
+      integer :: k2
+      integer :: i2
+      integer :: j2
+      integer :: l
+      integer :: ii
+      integer :: jj
+      integer :: kk
+      integer :: i3
+      integer :: j3
+      integer :: i4
+      integer :: species_i
+      integer :: species_j
+      integer :: n_k
+      real(dp), intent(in) :: x_structure_factor(:)
+      real(dp), intent(in) :: structure_factor(:)
+      real(dp), intent(in) :: n_atoms_of_species(:)
+      real(dp), intent(in) :: pair_distribution_der(:, :)
+      real(dp), intent(inout) :: forces0(:, :)
+      real(dp), intent(inout) :: virial(1:3, 1:3)
+      character*32, intent(in) :: output
+      real(dp), allocatable :: prefactor(:)
+      real(dp), allocatable :: all_scattering_factors(:)
+      real(dp), allocatable :: sf_parameters(:, :)
+      real(dp), allocatable :: structure_factor_der(:)
+      real(dp) :: r
+      real(dp) :: n_pc
+      real(dp) :: this_force(1:3)
+      real(dp) :: f
+      real(dp) :: wfaci
+      real(dp) :: wfacj
+      real(dp) :: temp(1:n_samples_sf)
+      real(dp) :: sth
+      real(dp) :: time(1:3)
+      real(dp), parameter :: pi = acos(-1.0)
+      logical, intent(in) :: partial_rdf
+      logical, intent(in) :: do_xrd
+      logical, intent(in) :: neutron
+      logical :: species_in_list
+      logical :: counted_1 = .false.
+      real(dp), allocatable :: xyz_k(:, :)
+      real(dp), allocatable :: Gk(:, :)
+      real(dp), allocatable :: Gka(:, :)
+      real(dp), allocatable :: dermat(:, :)
+      real(dp), allocatable :: fi(:, :)
+      integer, allocatable :: k_list(:)
+      integer, allocatable :: i2_list(:)
+      integer, allocatable :: j2_list(:)
 
       ! First allocate the pair correlation function array
 
@@ -766,16 +766,16 @@ contains
 
    subroutine my_dgemm(A, B, C, M, N, K)
       implicit none
- real(dp), intent(in) :: A(:, :)
- real(dp), intent(in) :: B(:, :)
- real(dp), intent(out) :: C(:, :)
- integer, intent(in) :: N
- integer, intent(in) :: M
- integer, intent(in) :: K
- real(dp) :: temp
- integer :: i
- integer :: j
- integer :: l
+      real(dp), intent(in) :: A(:, :)
+      real(dp), intent(in) :: B(:, :)
+      real(dp), intent(out) :: C(:, :)
+      integer, intent(in) :: N
+      integer, intent(in) :: M
+      integer, intent(in) :: K
+      real(dp) :: temp
+      integer :: i
+      integer :: j
+      integer :: l
       ! A = M x K
       ! B = K x N
       ! C = M x N
@@ -797,60 +797,60 @@ contains
         & species_2, pair_distribution_der, partial_rdf, kde_sigma,&
         & c_factor, rho, output)
       implicit none
- real(dp), intent(in) :: rjs(:)
- real(dp), intent(in) :: xyz(:, :)
- real(dp), intent(in) :: x(:)
- real(dp), intent(in) :: y_exp(:)
- real(dp), intent(in) :: energy_scale
- real(dp), intent(in) :: kde_sigma
- real(dp), intent(in) :: c_factor
- integer, intent(in) :: n_sites0
- real(dp) :: r_min
- real(dp) :: r_max
- real(dp) :: r_cut
- integer, intent(in) :: neighbors_list(:)
- integer, intent(in) :: n_neigh(:)
- integer, intent(in) :: neighbor_species(:)
- integer, intent(in) :: n_samples
- integer, intent(in) :: species_1
- integer, intent(in) :: species_2
- integer :: n_sites
- integer :: n_pairs
- integer :: count
- integer :: count_species_1
- integer :: i
- integer :: j
- integer :: k
- integer :: ki
- integer :: k1
- integer :: k2
- integer :: i2
- integer :: j2
- integer :: l
- integer :: ii
- integer :: jj
- integer :: kk
- integer :: i3
- integer :: j3
- integer :: i4
- integer :: species_i
- integer :: species_j
- character*32, intent(in) :: output
- real(dp), intent(in) :: pair_distribution(1:n_samples)
- real(dp), intent(in) :: rho
- real(dp), intent(in) :: pair_distribution_der(:, :)
- real(dp), intent(inout) :: forces0(:, :)
- real(dp), intent(inout) :: virial(1:3, 1:3)
- real(dp), allocatable :: prefactor(:)
- real(dp) :: r
- real(dp) :: n_pc
- real(dp) :: this_force(1:3)
- real(dp) :: f
- real(dp) :: temp(1:n_samples)
- real(dp), parameter :: pi = acos(-1.0)
- logical, intent(in) :: partial_rdf
- logical :: species_in_list
- logical :: counted_1 = .false.
+      real(dp), intent(in) :: rjs(:)
+      real(dp), intent(in) :: xyz(:, :)
+      real(dp), intent(in) :: x(:)
+      real(dp), intent(in) :: y_exp(:)
+      real(dp), intent(in) :: energy_scale
+      real(dp), intent(in) :: kde_sigma
+      real(dp), intent(in) :: c_factor
+      integer, intent(in) :: n_sites0
+      real(dp) :: r_min
+      real(dp) :: r_max
+      real(dp) :: r_cut
+      integer, intent(in) :: neighbors_list(:)
+      integer, intent(in) :: n_neigh(:)
+      integer, intent(in) :: neighbor_species(:)
+      integer, intent(in) :: n_samples
+      integer, intent(in) :: species_1
+      integer, intent(in) :: species_2
+      integer :: n_sites
+      integer :: n_pairs
+      integer :: count
+      integer :: count_species_1
+      integer :: i
+      integer :: j
+      integer :: k
+      integer :: ki
+      integer :: k1
+      integer :: k2
+      integer :: i2
+      integer :: j2
+      integer :: l
+      integer :: ii
+      integer :: jj
+      integer :: kk
+      integer :: i3
+      integer :: j3
+      integer :: i4
+      integer :: species_i
+      integer :: species_j
+      character*32, intent(in) :: output
+      real(dp), intent(in) :: pair_distribution(1:n_samples)
+      real(dp), intent(in) :: rho
+      real(dp), intent(in) :: pair_distribution_der(:, :)
+      real(dp), intent(inout) :: forces0(:, :)
+      real(dp), intent(inout) :: virial(1:3, 1:3)
+      real(dp), allocatable :: prefactor(:)
+      real(dp) :: r
+      real(dp) :: n_pc
+      real(dp) :: this_force(1:3)
+      real(dp) :: f
+      real(dp) :: temp(1:n_samples)
+      real(dp), parameter :: pi = acos(-1.0)
+      logical, intent(in) :: partial_rdf
+      logical :: species_in_list
+      logical :: counted_1 = .false.
       ! First allocate the pair correlation function array
 
       n_sites = size(n_neigh)
@@ -945,60 +945,60 @@ contains
         & pair_distribution, r_cut, return_histogram,&
         & partial_rdf, species_1, species_2, kde_sigma, rho, do_derivatives, pair_distribution_der, n_dim_idx, j_beg, j_end)
       implicit none
- real(dp), intent(in) :: rjs(:)
- real(dp), intent(in) :: kde_sigma
- real(dp), intent(in) :: rho
- real(dp), intent(in) :: xyz(:, :)
- real(dp) :: r_min
- real(dp) :: r_max
- real(dp) :: r_cut
- integer, intent(in) :: neighbors_list(:)
- integer, intent(in) :: n_neigh(:)
- integer, intent(in) :: neighbor_species(:)
- integer, intent(in) :: n_sites0
- integer, intent(in) :: n_samples
- integer, intent(in) :: species_1
- integer, intent(in) :: species_2
- integer, intent(in) :: n_dim_idx
- integer, intent(in) :: j_beg
- integer, intent(in) :: j_end
- integer :: n_sites
- integer :: n_pairs
- integer :: count
- integer :: count_species_1
- integer :: i
- integer :: j
- integer :: k
- integer :: ki
- integer :: i2
- integer :: j2
- integer :: l
- integer :: ii
- integer :: jj
- integer :: kk
- integer :: i3
- integer :: j3
- integer :: i4
- integer :: ind_bin_l
- integer :: ind_bin_h
- integer :: species_i
- integer :: species_j
- real(dp), intent(inout) :: pair_distribution(1:n_samples)
- real(dp), intent(inout) :: x(1:n_samples)
- real(dp), intent(inout), allocatable :: pair_distribution_der(:, :, :)
- real(dp), allocatable :: bin_edges(:)
- real(dp), allocatable :: dV(:)
- real(dp), allocatable :: kde(:)
- real(dp) :: r
- real(dp) :: n_pc
- real(dp) :: ri_vec(1:3)
- real(dp) :: rj_vec(1:3)
- real(dp), parameter :: pi = acos(-1.0)
- logical, intent(in) :: partial_rdf
- logical, intent(in) :: do_derivatives
- logical :: return_histogram
- logical :: species_in_list
- logical :: counted_1 = .false.
+      real(dp), intent(in) :: rjs(:)
+      real(dp), intent(in) :: kde_sigma
+      real(dp), intent(in) :: rho
+      real(dp), intent(in) :: xyz(:, :)
+      real(dp) :: r_min
+      real(dp) :: r_max
+      real(dp) :: r_cut
+      integer, intent(in) :: neighbors_list(:)
+      integer, intent(in) :: n_neigh(:)
+      integer, intent(in) :: neighbor_species(:)
+      integer, intent(in) :: n_sites0
+      integer, intent(in) :: n_samples
+      integer, intent(in) :: species_1
+      integer, intent(in) :: species_2
+      integer, intent(in) :: n_dim_idx
+      integer, intent(in) :: j_beg
+      integer, intent(in) :: j_end
+      integer :: n_sites
+      integer :: n_pairs
+      integer :: count
+      integer :: count_species_1
+      integer :: i
+      integer :: j
+      integer :: k
+      integer :: ki
+      integer :: i2
+      integer :: j2
+      integer :: l
+      integer :: ii
+      integer :: jj
+      integer :: kk
+      integer :: i3
+      integer :: j3
+      integer :: i4
+      integer :: ind_bin_l
+      integer :: ind_bin_h
+      integer :: species_i
+      integer :: species_j
+      real(dp), intent(inout) :: pair_distribution(1:n_samples)
+      real(dp), intent(inout) :: x(1:n_samples)
+      real(dp), intent(inout), allocatable :: pair_distribution_der(:, :, :)
+      real(dp), allocatable :: bin_edges(:)
+      real(dp), allocatable :: dV(:)
+      real(dp), allocatable :: kde(:)
+      real(dp) :: r
+      real(dp) :: n_pc
+      real(dp) :: ri_vec(1:3)
+      real(dp) :: rj_vec(1:3)
+      real(dp), parameter :: pi = acos(-1.0)
+      logical, intent(in) :: partial_rdf
+      logical, intent(in) :: do_derivatives
+      logical :: return_histogram
+      logical :: species_in_list
+      logical :: counted_1 = .false.
       ! First allocate the pair correlation function array
 
       allocate (bin_edges(1:n_samples + 1))
@@ -1180,15 +1180,15 @@ contains
 
    subroutine binary_search_real(xs, x, lin, hin, l, h)
       ! give delimiting indices (lout, hout) of array of x (which is a set of delimited bins) where xs (x search) is in range
- real(dp), allocatable, intent(in) :: x(:)
- real(dp), intent(in) :: xs
- real(dp) :: xi
- integer, intent(in) :: lin
- integer, intent(in) :: hin
- integer, intent(out) :: l
- integer, intent(out) :: h
- integer :: m
- logical :: found = .false.
+      real(dp), allocatable, intent(in) :: x(:)
+      real(dp), intent(in) :: xs
+      real(dp) :: xi
+      integer, intent(in) :: lin
+      integer, intent(in) :: hin
+      integer, intent(out) :: l
+      integer, intent(out) :: h
+      integer :: m
+      logical :: found = .false.
 
       l = lin
       h = hin
@@ -1233,41 +1233,41 @@ contains
         & structure_factor, r_min, r_max, r_cut,&
         & partial, species_1, species_2, window)
       implicit none
- real(dp), intent(in) :: rjs(:)
- real(dp) :: r_min
- real(dp) :: r_max
- real(dp) :: r_cut
- integer, intent(in) :: neighbors_list(:)
- integer, intent(in) :: n_neigh(:)
- integer, intent(in) :: neighbor_species(:)
- integer, intent(in) :: n_sites0
- integer, intent(in) :: n_samples
- integer, intent(in) :: species_1
- integer, intent(in) :: species_2
- integer :: n_sites
- integer :: n_pairs
- integer :: count
- integer :: count_species_1
- integer :: i
- integer :: j
- integer :: k
- integer :: i2
- integer :: j2
- integer :: l
- integer :: ind_bin_l
- integer :: ind_bin_h
- integer :: species_i
- integer :: species_j
- real(dp), intent(inout) :: structure_factor(1:n_samples)
- real(dp), intent(inout) :: q_list(1:n_samples)
- real(dp) :: r
- real(dp) :: n_pc
- real(dp) :: w
- real(dp), parameter :: pi = acos(-1.0)
- logical, intent(in) :: partial
- logical, intent(in) :: window
- logical :: species_in_list
- logical :: counted_1 = .false.
+      real(dp), intent(in) :: rjs(:)
+      real(dp) :: r_min
+      real(dp) :: r_max
+      real(dp) :: r_cut
+      integer, intent(in) :: neighbors_list(:)
+      integer, intent(in) :: n_neigh(:)
+      integer, intent(in) :: neighbor_species(:)
+      integer, intent(in) :: n_sites0
+      integer, intent(in) :: n_samples
+      integer, intent(in) :: species_1
+      integer, intent(in) :: species_2
+      integer :: n_sites
+      integer :: n_pairs
+      integer :: count
+      integer :: count_species_1
+      integer :: i
+      integer :: j
+      integer :: k
+      integer :: i2
+      integer :: j2
+      integer :: l
+      integer :: ind_bin_l
+      integer :: ind_bin_h
+      integer :: species_i
+      integer :: species_j
+      real(dp), intent(inout) :: structure_factor(1:n_samples)
+      real(dp), intent(inout) :: q_list(1:n_samples)
+      real(dp) :: r
+      real(dp) :: n_pc
+      real(dp) :: w
+      real(dp), parameter :: pi = acos(-1.0)
+      logical, intent(in) :: partial
+      logical, intent(in) :: window
+      logical :: species_in_list
+      logical :: counted_1 = .false.
       ! First allocate the pair correlation function array
 
       n_sites = size(n_neigh)
@@ -1340,34 +1340,34 @@ contains
         & n_samples_pc, n_samples_sf, n_species, n_atoms_of_species,&
         & n_sites, rho, window)
       implicit none
- real(dp), intent(in), allocatable :: n_atoms_of_species(:)
- real(dp), intent(out) :: structure_factor(:)
- real(dp), intent(in) :: pair_distribution(:)
- real(dp), intent(in) :: q_list(:)
- real(dp), intent(in) :: rs(:)
- real(dp), intent(in) :: r_cut
- integer, intent(in) :: n_samples_pc
- integer, intent(in) :: n_samples_sf
- integer, intent(in) :: n_species
- integer, intent(in) :: n_sites
- integer, intent(in) :: q_beg
- integer, intent(in) :: q_end
- real(dp) :: r
- real(dp) :: q
- real(dp) :: dr
- real(dp) :: ca
- real(dp) :: cb
- real(dp) :: cabh
- real(dp) :: w
- real(dp) :: rho
- integer :: i
- integer :: j
- integer :: k
- integer :: l
- integer :: idx
- integer :: n
- real(dp), parameter :: pi = acos(-1.0)
- logical, intent(in) :: window
+      real(dp), intent(in), allocatable :: n_atoms_of_species(:)
+      real(dp), intent(out) :: structure_factor(:)
+      real(dp), intent(in) :: pair_distribution(:)
+      real(dp), intent(in) :: q_list(:)
+      real(dp), intent(in) :: rs(:)
+      real(dp), intent(in) :: r_cut
+      integer, intent(in) :: n_samples_pc
+      integer, intent(in) :: n_samples_sf
+      integer, intent(in) :: n_species
+      integer, intent(in) :: n_sites
+      integer, intent(in) :: q_beg
+      integer, intent(in) :: q_end
+      real(dp) :: r
+      real(dp) :: q
+      real(dp) :: dr
+      real(dp) :: ca
+      real(dp) :: cb
+      real(dp) :: cabh
+      real(dp) :: w
+      real(dp) :: rho
+      integer :: i
+      integer :: j
+      integer :: k
+      integer :: l
+      integer :: idx
+      integer :: n
+      real(dp), parameter :: pi = acos(-1.0)
+      logical, intent(in) :: window
 
       ! S_ab(q) = delta_ab + 4 pi rho (ca cb)^0.5
       !                  * int_0^r_cut dr r^2 [ g_ab(r) - 1 ] sin(qr)/(qr) * sin( pi r / R )/ (pi r /R)
@@ -1404,21 +1404,21 @@ contains
    subroutine get_sinc_factor_matrix(q_beg, q_end, q_list, rs, r_cut,&
         & n_samples_pc, n_samples_sf, window, sinc_factor_matrix)
       implicit none
- real(dp), allocatable, intent(in) :: q_list(:)
- real(dp), allocatable, intent(in) :: rs(:)
- real(dp), intent(in) :: r_cut
- integer, intent(in) :: n_samples_pc
- integer, intent(in) :: n_samples_sf
- integer, intent(in) :: q_beg
- integer, intent(in) :: q_end
- real(dp), allocatable, intent(out) :: sinc_factor_matrix(:, :)
- logical, intent(in) :: window
- real(dp) :: dr
- real(dp) :: q
- real(dp) :: w = 1.d0
- integer :: i
- integer :: j
- real(dp), parameter :: pi = acos(-1.0)
+      real(dp), allocatable, intent(in) :: q_list(:)
+      real(dp), allocatable, intent(in) :: rs(:)
+      real(dp), intent(in) :: r_cut
+      integer, intent(in) :: n_samples_pc
+      integer, intent(in) :: n_samples_sf
+      integer, intent(in) :: q_beg
+      integer, intent(in) :: q_end
+      real(dp), allocatable, intent(out) :: sinc_factor_matrix(:, :)
+      logical, intent(in) :: window
+      real(dp) :: dr
+      real(dp) :: q
+      real(dp) :: w = 1.d0
+      integer :: i
+      integer :: j
+      real(dp), parameter :: pi = acos(-1.0)
       ! This matrix can be used to get the derivatives. We can parallelize the generation of it on each process
       ! The only thing we have to worry about is memory if n_samples_pc/sf are too large
       allocate (sinc_factor_matrix(1:n_samples_sf, 1:n_samples_pc))
@@ -1555,36 +1555,36 @@ contains
         & n_samples_pc, n_samples_sf, n_species, n_dim_partial, n_atoms_of_species,&
         & n_sites, rho, window, structure_factor_partial)
       implicit none
- real(dp), intent(in), allocatable :: n_atoms_of_species(:)
- real(dp), intent(in) :: pair_distribution_partial(:, :)
- real(dp), intent(in) :: q_list(:)
- real(dp), intent(in) :: rs(:)
- real(dp), intent(in) :: r_cut
- integer, intent(in) :: n_samples_pc
- integer, intent(in) :: n_samples_sf
- integer, intent(in) :: n_species
- integer, intent(in) :: n_sites
- integer, intent(in) :: q_beg
- integer, intent(in) :: q_end
- integer, intent(in) :: n_dim_partial
- real(dp), intent(out) :: structure_factor_partial(1:n_samples_sf, 1:n_dim_partial)
- real(dp) :: r
- real(dp) :: q
- real(dp) :: dr
- real(dp) :: ca
- real(dp) :: cb
- real(dp) :: cabh
- real(dp) :: w
- integer :: i
- integer :: j
- integer :: k
- integer :: l
- integer :: idx
- integer :: n
- integer :: n_dim_idx
- real(dp), parameter :: pi = acos(-1.0)
- real(dp), intent(in) :: rho
- logical, intent(in) :: window
+      real(dp), intent(in), allocatable :: n_atoms_of_species(:)
+      real(dp), intent(in) :: pair_distribution_partial(:, :)
+      real(dp), intent(in) :: q_list(:)
+      real(dp), intent(in) :: rs(:)
+      real(dp), intent(in) :: r_cut
+      integer, intent(in) :: n_samples_pc
+      integer, intent(in) :: n_samples_sf
+      integer, intent(in) :: n_species
+      integer, intent(in) :: n_sites
+      integer, intent(in) :: q_beg
+      integer, intent(in) :: q_end
+      integer, intent(in) :: n_dim_partial
+      real(dp), intent(out) :: structure_factor_partial(1:n_samples_sf, 1:n_dim_partial)
+      real(dp) :: r
+      real(dp) :: q
+      real(dp) :: dr
+      real(dp) :: ca
+      real(dp) :: cb
+      real(dp) :: cabh
+      real(dp) :: w
+      integer :: i
+      integer :: j
+      integer :: k
+      integer :: l
+      integer :: idx
+      integer :: n
+      integer :: n_dim_idx
+      real(dp), parameter :: pi = acos(-1.0)
+      real(dp), intent(in) :: rho
+      logical, intent(in) :: window
 
       ! S_ab(q) = delta_ab + 4 pi rho (ca cb)^0.5
       !                  * int_0^r_cut dr r^2 [ g_ab(r) - 1 ] sin(qr)/(qr) * sin( pi r / R )/ (pi r /R)
@@ -1650,47 +1650,47 @@ contains
         & y, r_min, r_max, r_cut,&
         & partial, species_1, species_2, window)
       implicit none
- real(dp), intent(in) :: rjs(:)
- real(dp) :: r_min
- real(dp) :: r_max
- real(dp) :: r_cut
- character*8, allocatable :: species_types(:)
- integer, intent(in) :: neighbors_list(:)
- integer, intent(in) :: n_neigh(:)
- integer, intent(in) :: neighbor_species(:)
- integer, intent(in) :: n_sites0
- integer, intent(in) :: n_samples
- integer, intent(in) :: species_1
- integer, intent(in) :: species_2
- integer, intent(in) :: n_species
- integer :: n_sites
- integer :: n_pairs
- integer :: count
- integer :: count_species_1
- integer :: i
- integer :: j
- integer :: k
- integer :: i2
- integer :: j2
- integer :: l
- integer :: ind_bin_l
- integer :: ind_bin_h
- integer :: species_i
- integer :: species_j
- real(dp), intent(out) :: y(1:n_samples)
- real(dp), intent(in) :: q_list(1:n_samples)
- real(dp) :: r
- real(dp) :: n_pc
- real(dp) :: w
- real(dp) :: wfaci
- real(dp) :: wfacj
- real(dp) :: mag
- real(dp), allocatable :: sf_parameters(:, :)
- real(dp), parameter :: pi = acos(-1.0)
- logical, intent(in) :: partial
- logical, intent(in) :: window
- logical :: species_in_list
- logical :: counted_1 = .false.
+      real(dp), intent(in) :: rjs(:)
+      real(dp) :: r_min
+      real(dp) :: r_max
+      real(dp) :: r_cut
+      character*8, allocatable :: species_types(:)
+      integer, intent(in) :: neighbors_list(:)
+      integer, intent(in) :: n_neigh(:)
+      integer, intent(in) :: neighbor_species(:)
+      integer, intent(in) :: n_sites0
+      integer, intent(in) :: n_samples
+      integer, intent(in) :: species_1
+      integer, intent(in) :: species_2
+      integer, intent(in) :: n_species
+      integer :: n_sites
+      integer :: n_pairs
+      integer :: count
+      integer :: count_species_1
+      integer :: i
+      integer :: j
+      integer :: k
+      integer :: i2
+      integer :: j2
+      integer :: l
+      integer :: ind_bin_l
+      integer :: ind_bin_h
+      integer :: species_i
+      integer :: species_j
+      real(dp), intent(out) :: y(1:n_samples)
+      real(dp), intent(in) :: q_list(1:n_samples)
+      real(dp) :: r
+      real(dp) :: n_pc
+      real(dp) :: w
+      real(dp) :: wfaci
+      real(dp) :: wfacj
+      real(dp) :: mag
+      real(dp), allocatable :: sf_parameters(:, :)
+      real(dp), parameter :: pi = acos(-1.0)
+      logical, intent(in) :: partial
+      logical, intent(in) :: window
+      logical :: species_in_list
+      logical :: counted_1 = .false.
       ! First allocate the pair correlation function array
 
       n_sites = size(n_neigh)
@@ -1775,45 +1775,45 @@ contains
         & species, wavelength, damping, alpha, method, use_iwasa, output, &
         & x, y, n_atoms_of_species, y_sub, neutron)
       implicit none
- real(dp), intent(in) :: damping
- real(dp), intent(in) :: wavelength
- real(dp), intent(in) :: alpha
- real(dp), intent(in) :: structure_factor_partial(:, :)
- integer, intent(in) :: species(:)
- logical, intent(in) :: use_iwasa
- integer, intent(in) :: n_species
- integer, intent(in) :: q_beg
- integer, intent(in) :: q_end
- character*8, allocatable :: species_types(:)
- character*32, intent(in) :: method
- character*32, intent(in) :: output
- real(dp) :: prefactor
- real(dp) :: p
- real(dp) :: c
- real(dp) :: c2
- real(dp) :: rij
- real(dp) :: diff(1:3)
- real(dp) :: mag
- real(dp) :: sth
- real(dp) :: wfaci
- real(dp) :: wfacj
- real(dp) :: wfac_n
- real(dp) :: ntot
- real(dp) :: f
- real(dp) :: delta
- integer :: i
- integer :: j
- integer :: l
- integer :: n
- integer :: n_dim_idx
- integer :: n_dim_partial
- real(dp), intent(in), allocatable :: n_atoms_of_species(:)
- real(dp), allocatable :: sf_parameters(:, :)
- real(dp), intent(in) :: x(:)
- real(dp), intent(out) :: y(:)
- real(dp), intent(out) :: y_sub(:)
- real(dp), parameter :: pi = acos(-1.0)
- logical, intent(in) :: neutron
+      real(dp), intent(in) :: damping
+      real(dp), intent(in) :: wavelength
+      real(dp), intent(in) :: alpha
+      real(dp), intent(in) :: structure_factor_partial(:, :)
+      integer, intent(in) :: species(:)
+      logical, intent(in) :: use_iwasa
+      integer, intent(in) :: n_species
+      integer, intent(in) :: q_beg
+      integer, intent(in) :: q_end
+      character*8, allocatable :: species_types(:)
+      character*32, intent(in) :: method
+      character*32, intent(in) :: output
+      real(dp) :: prefactor
+      real(dp) :: p
+      real(dp) :: c
+      real(dp) :: c2
+      real(dp) :: rij
+      real(dp) :: diff(1:3)
+      real(dp) :: mag
+      real(dp) :: sth
+      real(dp) :: wfaci
+      real(dp) :: wfacj
+      real(dp) :: wfac_n
+      real(dp) :: ntot
+      real(dp) :: f
+      real(dp) :: delta
+      integer :: i
+      integer :: j
+      integer :: l
+      integer :: n
+      integer :: n_dim_idx
+      integer :: n_dim_partial
+      real(dp), intent(in), allocatable :: n_atoms_of_species(:)
+      real(dp), allocatable :: sf_parameters(:, :)
+      real(dp), intent(in) :: x(:)
+      real(dp), intent(out) :: y(:)
+      real(dp), intent(out) :: y_sub(:)
+      real(dp), parameter :: pi = acos(-1.0)
+      logical, intent(in) :: neutron
 
       n_dim_partial = n_species*(n_species + 1)/2
 
@@ -1929,11 +1929,11 @@ contains
 
    subroutine get_all_similarities(n_exp, exp_data, energy_scales, s_tot)
       implicit none
- integer, intent(in) :: n_exp
- type(exp_data_container), allocatable, intent(in) :: exp_data(:)
- real(dp), allocatable :: energy_scales(:)
- integer :: i
- real(dp), intent(out) :: s_tot
+      integer, intent(in) :: n_exp
+      type(exp_data_container), allocatable, intent(in) :: exp_data(:)
+      real(dp), allocatable :: energy_scales(:)
+      integer :: i
+      real(dp), intent(out) :: s_tot
 
       s_tot = 0.d0
       do i = 1, n_exp
@@ -1951,10 +1951,10 @@ contains
 
    subroutine check_species_in_list(species_i, allowed_species, species_in_list)
       implicit none
- integer, allocatable, intent(in) :: allowed_species(:)
- integer, intent(in) :: species_i
- logical, intent(out) :: species_in_list
- integer :: l
+      integer, allocatable, intent(in) :: allowed_species(:)
+      integer, intent(in) :: species_i
+      logical, intent(out) :: species_in_list
+      integer :: l
       species_in_list = .false.
       do l = 1, size(allowed_species)
          if (allowed_species(l) == species_i) species_in_list = .true.
@@ -1964,11 +1964,11 @@ contains
    !**************************************************************************
    subroutine calculate_exp_interpolation(x, y, n_samples, data)
       implicit none
- real(dp), allocatable, intent(in) :: data(:, :)
- integer, intent(in) :: n_samples
- real(dp), allocatable, intent(inout) :: x(:)
- real(dp), allocatable, intent(inout) :: y(:)
- real(dp) :: dx
+      real(dp), allocatable, intent(in) :: data(:, :)
+      integer, intent(in) :: n_samples
+      real(dp), allocatable, intent(inout) :: x(:)
+      real(dp), allocatable, intent(inout) :: y(:)
+      real(dp) :: dx
 
       if (.not. allocated(x)) then
          allocate (x(1:n_samples))
@@ -1986,10 +1986,10 @@ contains
 
    subroutine get_data_similarity(y, y_pred, sim_exp_pred, exp_similarity_type)
       implicit none
- real(dp), allocatable, intent(in) :: y(:)
- real(dp), allocatable, intent(in) :: y_pred(:)
- character*32, intent(in) :: exp_similarity_type
- real(dp), intent(out) :: sim_exp_pred
+      real(dp), allocatable, intent(in) :: y(:)
+      real(dp), allocatable, intent(in) :: y_pred(:)
+      character*32, intent(in) :: exp_similarity_type
+      real(dp), intent(out) :: sim_exp_pred
 
       if (exp_similarity_type == "squared_diff") then
          sim_exp_pred = -0.5*dot_product(y - y_pred, y - y_pred)
@@ -2007,18 +2007,18 @@ contains
         & x_i_exp, y_i_exp, y_i_pred, y_i_pred_all, &
         & get_exp, exp_similarity_type)
       implicit none
- real(dp), allocatable, intent(in) :: data(:, :)
- real(dp), intent(in) :: sigma
- real(dp), intent(in) :: core_electron_be(:)
- real(dp), allocatable, intent(inout) :: x_i_exp(:)
- real(dp), allocatable, intent(inout) :: y_i_exp(:)
- real(dp), allocatable, intent(inout) :: y_i_pred(:)
- real(dp), allocatable, intent(inout) :: y_i_pred_all(:, :)
- real(dp), intent(out) :: sim_exp_pred
- real(dp), intent(out) :: mag
- integer, intent(in) :: n_samples
- logical, intent(in) :: get_exp
- character*32, intent(in) :: exp_similarity_type
+      real(dp), allocatable, intent(in) :: data(:, :)
+      real(dp), intent(in) :: sigma
+      real(dp), intent(in) :: core_electron_be(:)
+      real(dp), allocatable, intent(inout) :: x_i_exp(:)
+      real(dp), allocatable, intent(inout) :: y_i_exp(:)
+      real(dp), allocatable, intent(inout) :: y_i_pred(:)
+      real(dp), allocatable, intent(inout) :: y_i_pred_all(:, :)
+      real(dp), intent(out) :: sim_exp_pred
+      real(dp), intent(out) :: mag
+      integer, intent(in) :: n_samples
+      logical, intent(in) :: get_exp
+      character*32, intent(in) :: exp_similarity_type
 
       if (get_exp) then
          ! Get interpolated exp spectra
@@ -2038,11 +2038,11 @@ contains
 
    subroutine broaden_spectrum_standalone(x, x0, y, sigma)
       implicit none
- real(dp), allocatable, intent(in) :: x(:)
- real(dp), intent(inout) :: y(:)
- real(dp), intent(in) :: x0
- real(dp), intent(in) :: sigma
- integer :: i
+      real(dp), allocatable, intent(in) :: x(:)
+      real(dp), intent(inout) :: y(:)
+      real(dp), intent(in) :: x0
+      real(dp), intent(in) :: sigma
+      integer :: i
       do i = 1, size(x)
          y(i) = y(i) + exp(-(x(i) - x0)**2/(2.d0*sigma**2))
       end do
@@ -2051,14 +2051,14 @@ contains
 
    subroutine broaden_spectrum(x, x0, y, y_all, idx, sigma)
       implicit none
- real(dp), allocatable, intent(in) :: x(:)
- real(dp), intent(inout) :: y(:)
- real(dp), intent(inout) :: y_all(:, :)
- real(dp), intent(in) :: x0
- real(dp), intent(in) :: sigma
- real(dp) :: norm_fac
- integer :: i
- integer :: idx
+      real(dp), allocatable, intent(in) :: x(:)
+      real(dp), intent(inout) :: y(:)
+      real(dp), intent(inout) :: y_all(:, :)
+      real(dp), intent(in) :: x0
+      real(dp), intent(in) :: sigma
+      real(dp) :: norm_fac
+      integer :: i
+      integer :: idx
       norm_fac = 1.d0/(sqrt(2.d0*3.14159265359)*sigma)
       do i = 1, size(x)
          y_all(idx, i) = exp(-(x(i) - x0)**2/(2.d0*sigma**2))
@@ -2072,18 +2072,18 @@ contains
       ! xi are the predicted core electron binding energies and x is
       ! the one
       implicit none
- real(dp), intent(in) :: core_electron_be(:)
- integer, intent(in) :: n_samples
- real(dp), allocatable, intent(out) :: x(:)
- real(dp), allocatable, intent(out) :: y(:)
- real(dp), intent(in) :: sigma
- integer :: i
- real(dp), intent(in) :: x_min
- real(dp), intent(in) :: x_max
- real(dp) :: x_range
- real(dp) :: t
- real(dp) :: dx
- real(dp) :: mag
+      real(dp), intent(in) :: core_electron_be(:)
+      integer, intent(in) :: n_samples
+      real(dp), allocatable, intent(out) :: x(:)
+      real(dp), allocatable, intent(out) :: y(:)
+      real(dp), intent(in) :: sigma
+      integer :: i
+      real(dp), intent(in) :: x_min
+      real(dp), intent(in) :: x_max
+      real(dp) :: x_range
+      real(dp) :: t
+      real(dp) :: dx
+      real(dp) :: mag
 
       if (allocated(x)) deallocate (x)
       if (allocated(y)) deallocate (y)
@@ -2110,22 +2110,22 @@ contains
       ! xi are the predicted core electron binding energies and x is
       ! the one
       implicit none
- real(dp), intent(in) :: xi(:)
- real(dp), intent(in) :: yi(:)
- real(dp), intent(in) :: core_electron_be(:)
- integer, intent(in) :: n_samples
- real(dp), allocatable, intent(out) :: x(:)
- real(dp), allocatable, intent(out) :: y(:)
- real(dp), allocatable, intent(out) :: y_all(:, :)
- real(dp), intent(in) :: sigma
- integer :: i
- real(dp) :: x_min
- real(dp) :: x_max
- real(dp) :: x_range
- real(dp) :: t
- real(dp) :: dx
- real(dp), intent(out) :: mag
- logical, intent(in) :: broaden
+      real(dp), intent(in) :: xi(:)
+      real(dp), intent(in) :: yi(:)
+      real(dp), intent(in) :: core_electron_be(:)
+      integer, intent(in) :: n_samples
+      real(dp), allocatable, intent(out) :: x(:)
+      real(dp), allocatable, intent(out) :: y(:)
+      real(dp), allocatable, intent(out) :: y_all(:, :)
+      real(dp), intent(in) :: sigma
+      integer :: i
+      real(dp) :: x_min
+      real(dp) :: x_max
+      real(dp) :: x_range
+      real(dp) :: t
+      real(dp) :: dx
+      real(dp), intent(out) :: mag
+      logical, intent(in) :: broaden
 
       if (allocated(x)) deallocate (x)
       if (allocated(y)) deallocate (y)
@@ -2169,18 +2169,18 @@ contains
 
    subroutine broaden_spectrum_derivative(x, x0, x0_der, y, sigma, y_exp, y_tot, mag, dx)
       implicit none
- real(dp), intent(in) :: x(:)
- real(dp), intent(inout) :: y(:, :)
- real(dp), intent(in) :: y_exp(:)
- real(dp), intent(in) :: x0
- real(dp), intent(in) :: x0_der(:)
- real(dp), intent(in) :: sigma
- real(dp), intent(in) :: mag
- real(dp), intent(in) :: dx
- real(dp) :: f
- real(dp), intent(out) :: y_tot(1:3)
- integer :: i
- real(dp) :: norm_fac
+      real(dp), intent(in) :: x(:)
+      real(dp), intent(inout) :: y(:, :)
+      real(dp), intent(in) :: y_exp(:)
+      real(dp), intent(in) :: x0
+      real(dp), intent(in) :: x0_der(:)
+      real(dp), intent(in) :: sigma
+      real(dp), intent(in) :: mag
+      real(dp), intent(in) :: dx
+      real(dp) :: f
+      real(dp), intent(out) :: y_tot(1:3)
+      integer :: i
+      real(dp) :: norm_fac
       norm_fac = 1.d0/(sqrt(2.d0*3.14159265359)*sigma)
 
       y = 0.d0
@@ -2198,13 +2198,13 @@ contains
 
    subroutine get_xps_weights(weights, decay, positions)
       implicit none
- real(dp), allocatable, intent(in) :: positions(:, :)
- real(dp), allocatable, intent(in) :: decay
- real(dp), allocatable, intent(out) :: weights(:)
- real(dp) :: z_max
- real(dp) :: z
- integer :: n
- integer :: i
+      real(dp), allocatable, intent(in) :: positions(:, :)
+      real(dp), allocatable, intent(in) :: decay
+      real(dp), allocatable, intent(out) :: weights(:)
+      real(dp) :: z_max
+      real(dp) :: z
+      integer :: n
+      integer :: i
 
       n = size(positions, 2)
       allocate (weights(1:n))
@@ -2224,41 +2224,41 @@ contains
    subroutine get_xrd_single_process(positions, n_species, species, wavelength, damping, alpha, &
         & method, use_iwasa, x_min, x_max, n_samples, x_i_exp, y_i_pred)
       implicit none
- real(dp), allocatable, intent(in) :: positions(:, :)
- real(dp), intent(in) :: damping
- real(dp), intent(in) :: wavelength
- real(dp), intent(in) :: alpha
- real(dp), intent(in) :: x_min
- real(dp), intent(in) :: x_max
- integer, intent(in) :: species(:)
- real(dp), allocatable :: x(:)
- real(dp), allocatable :: y(:)
- real(dp), allocatable :: s(:)
- real(dp), allocatable :: wfac(:)
- real(dp), allocatable :: wfac_species(:)
- real(dp), allocatable, intent(inout) :: x_i_exp(:)
- real(dp), allocatable, intent(inout) :: y_i_pred(:)
- logical, intent(in) :: use_iwasa
- integer, intent(in) :: n_samples
- integer, intent(in) :: n_species
- character*32, intent(in) :: method
- real(dp) :: prefactor
- real(dp) :: p
- real(dp) :: c
- real(dp) :: c2
- real(dp) :: rij
- real(dp) :: diff(1:3)
- real(dp) :: intensity
- real(dp) :: mag
- real(dp) :: sth
- real(dp) :: wfac_n
- integer :: i
- integer :: j
- integer :: l
- integer :: n
- integer :: n_sites
- real(dp) :: dx
- real(dp) :: pi = 3.14159265359
+      real(dp), allocatable, intent(in) :: positions(:, :)
+      real(dp), intent(in) :: damping
+      real(dp), intent(in) :: wavelength
+      real(dp), intent(in) :: alpha
+      real(dp), intent(in) :: x_min
+      real(dp), intent(in) :: x_max
+      integer, intent(in) :: species(:)
+      real(dp), allocatable :: x(:)
+      real(dp), allocatable :: y(:)
+      real(dp), allocatable :: s(:)
+      real(dp), allocatable :: wfac(:)
+      real(dp), allocatable :: wfac_species(:)
+      real(dp), allocatable, intent(inout) :: x_i_exp(:)
+      real(dp), allocatable, intent(inout) :: y_i_pred(:)
+      logical, intent(in) :: use_iwasa
+      integer, intent(in) :: n_samples
+      integer, intent(in) :: n_species
+      character*32, intent(in) :: method
+      real(dp) :: prefactor
+      real(dp) :: p
+      real(dp) :: c
+      real(dp) :: c2
+      real(dp) :: rij
+      real(dp) :: diff(1:3)
+      real(dp) :: intensity
+      real(dp) :: mag
+      real(dp) :: sth
+      real(dp) :: wfac_n
+      integer :: i
+      integer :: j
+      integer :: l
+      integer :: n
+      integer :: n_sites
+      real(dp) :: dx
+      real(dp) :: pi = 3.14159265359
 
       ! Was going to use the rijs for this, but we want the /full/
       ! spectra, so we need the scattering contribution from all atoms
@@ -2351,27 +2351,27 @@ contains
 
    function sinc(x) !sinc function as used in DSP
       implicit none
- real(dp) :: sinc
- real(dp) :: x
- real(dp), parameter :: pi = acos(-1.0)
+      real(dp) :: sinc
+      real(dp) :: x
+      real(dp), parameter :: pi = acos(-1.0)
       sinc = 1.0
       if (x /= 0.0) sinc = sin(x)/x
    end function sinc
 
    function cosc(x)
       implicit none
- real(dp) :: cosc
- real(dp) :: x
- real(dp), parameter :: pi = acos(-1.0)
+      real(dp) :: cosc
+      real(dp) :: x
+      real(dp), parameter :: pi = acos(-1.0)
       cosc = 1.0
       if (x /= 0.0) cosc = cos(x)/x
    end function cosc
 
    function sincp(x) !sinc function as used in DSP
       implicit none
- real(dp) :: sincp
- real(dp) :: x
- real(dp), parameter :: pi = acos(-1.0)
+      real(dp) :: sincp
+      real(dp) :: x
+      real(dp), parameter :: pi = acos(-1.0)
       x = x*pi
       sincp = 1.0
       if (x /= 0.0) sincp = sin(x)/x
@@ -2379,9 +2379,9 @@ contains
 
    function coscp(x)
       implicit none
- real(dp) :: coscp
- real(dp) :: x
- real(dp), parameter :: pi = acos(-1.0)
+      real(dp) :: coscp
+      real(dp) :: x
+      real(dp), parameter :: pi = acos(-1.0)
       x = x*pi
       coscp = 1.0
       if (x /= 0.0) coscp = cos(x)/x
@@ -2393,14 +2393,14 @@ contains
 
    subroutine get_moments_of_distribution(x, y, dx, moments, n_moments, mean_reference)
       implicit none
- real(dp), allocatable, intent(in) :: x(:)
- real(dp), allocatable, intent(in) :: y(:)
- real(dp), allocatable, intent(out) :: moments(:)
- real(dp), allocatable :: xp(:)
- real(dp), intent(in) :: dx
- real(dp), intent(in) :: mean_reference
- integer, intent(in) :: n_moments
- integer :: i
+      real(dp), allocatable, intent(in) :: x(:)
+      real(dp), allocatable, intent(in) :: y(:)
+      real(dp), allocatable, intent(out) :: moments(:)
+      real(dp), allocatable :: xp(:)
+      real(dp), intent(in) :: dx
+      real(dp), intent(in) :: mean_reference
+      integer, intent(in) :: n_moments
+      integer :: i
       ! Moments are defined at mu^p = \int dx x^p f(x)
 
       allocate (moments(1:n_moments))
@@ -2429,15 +2429,15 @@ contains
 
    subroutine get_exp_energies(energy_scale, y_exp, y_pred, n_samples, n_sites, energies)
       implicit none
- real(dp), intent(in) :: energy_scale
- real(dp), intent(in) :: y_exp(:)
- real(dp), intent(in) :: y_pred(:)
- integer, intent(in) :: n_samples
- integer, intent(in) :: n_sites
- real(dp), intent(inout) :: energies(:)
- real(dp) :: f
- real(dp) :: e_tot
- real(dp) :: diff(1:n_samples)
+      real(dp), intent(in) :: energy_scale
+      real(dp), intent(in) :: y_exp(:)
+      real(dp), intent(in) :: y_pred(:)
+      integer, intent(in) :: n_samples
+      integer, intent(in) :: n_sites
+      real(dp), intent(inout) :: energies(:)
+      real(dp) :: f
+      real(dp) :: e_tot
+      real(dp) :: diff(1:n_samples)
 
       ! We use the sum of squared differences for the energy, ideally we'd have a component resolved thing but alas.
 
@@ -2453,51 +2453,51 @@ contains
         & x, y_exp, y, y_all, do_forces, xyz,&
         &  energies_lp, forces0, virial, exp_similarity_type, rank)
       implicit none
- integer, intent(in) :: n_neigh(:)
- integer, intent(in) :: neighbors_list(:)
- real(dp), intent(in) :: sigma
- real(dp), intent(in) :: core_electron_be(:)
- real(dp), intent(in) :: core_electron_be_der(:, :)
- real(dp), intent(in) :: xyz(:, :)
- real(dp), intent(in) :: energy_scale
- real(dp), intent(in) :: norm
- real(dp), allocatable, intent(inout) :: forces0(:, :)
- real(dp), allocatable, intent(in) :: x(:)
- real(dp), allocatable, intent(in) :: y_exp(:)
- real(dp), allocatable, intent(in) :: y(:)
- real(dp), intent(in) :: y_all(:, :)
- real(dp), intent(inout) :: energies_lp(:)
- real(dp), intent(inout) :: virial(1:3, 1:3)
- real(dp) :: this_force(1:3)
- real(dp), allocatable :: y_der(:, :)
- real(dp), allocatable :: der_factor(:, :)
- real(dp), allocatable :: der_vec(:, :, :)
- real(dp), allocatable :: prefactor(:)
- real(dp), allocatable :: dxa(:)
- integer, intent(in) :: n_samples
- integer, intent(in) :: rank
- logical, intent(in) :: do_forces
- integer :: n_sites
- integer :: n_pairs
- integer :: n_sites0
- integer :: i
- integer :: j
- integer :: i2
- integer :: j2
- integer :: k
- integer :: l
- integer :: k1
- integer :: k2
- integer :: mag_force_i
- logical :: vector_norm = .true.
- real(dp) :: mag_force
- real(dp) :: max_mag_force
- real(dp) :: dx
- real(dp) :: sum_d1
- real(dp) :: sum_d2
- real(dp) :: sum_d3
- real(dp) :: yv
- character*32, intent(in) :: exp_similarity_type
+      integer, intent(in) :: n_neigh(:)
+      integer, intent(in) :: neighbors_list(:)
+      real(dp), intent(in) :: sigma
+      real(dp), intent(in) :: core_electron_be(:)
+      real(dp), intent(in) :: core_electron_be_der(:, :)
+      real(dp), intent(in) :: xyz(:, :)
+      real(dp), intent(in) :: energy_scale
+      real(dp), intent(in) :: norm
+      real(dp), allocatable, intent(inout) :: forces0(:, :)
+      real(dp), allocatable, intent(in) :: x(:)
+      real(dp), allocatable, intent(in) :: y_exp(:)
+      real(dp), allocatable, intent(in) :: y(:)
+      real(dp), intent(in) :: y_all(:, :)
+      real(dp), intent(inout) :: energies_lp(:)
+      real(dp), intent(inout) :: virial(1:3, 1:3)
+      real(dp) :: this_force(1:3)
+      real(dp), allocatable :: y_der(:, :)
+      real(dp), allocatable :: der_factor(:, :)
+      real(dp), allocatable :: der_vec(:, :, :)
+      real(dp), allocatable :: prefactor(:)
+      real(dp), allocatable :: dxa(:)
+      integer, intent(in) :: n_samples
+      integer, intent(in) :: rank
+      logical, intent(in) :: do_forces
+      integer :: n_sites
+      integer :: n_pairs
+      integer :: n_sites0
+      integer :: i
+      integer :: j
+      integer :: i2
+      integer :: j2
+      integer :: k
+      integer :: l
+      integer :: k1
+      integer :: k2
+      integer :: mag_force_i
+      logical :: vector_norm = .true.
+      real(dp) :: mag_force
+      real(dp) :: max_mag_force
+      real(dp) :: dx
+      real(dp) :: sum_d1
+      real(dp) :: sum_d2
+      real(dp) :: sum_d3
+      real(dp) :: yv
+      character*32, intent(in) :: exp_similarity_type
 
       n_sites = size(n_neigh)
       n_pairs = size(neighbors_list)
@@ -2695,16 +2695,16 @@ contains
 
    subroutine lerp(x, y, xi, yi)
       implicit none
- real(dp), intent(inout) :: x(:)
- real(dp), intent(inout) :: y(:)
- real(dp), intent(in) :: xi(:)
- real(dp), intent(in) :: yi(:)
- real(dp) :: x_min
- real(dp) :: x_max
- real(dp) :: x_range
- real(dp) :: t
- integer :: i
- integer :: idx
+      real(dp), intent(inout) :: x(:)
+      real(dp), intent(inout) :: y(:)
+      real(dp), intent(in) :: xi(:)
+      real(dp), intent(in) :: yi(:)
+      real(dp) :: x_min
+      real(dp) :: x_max
+      real(dp) :: x_range
+      real(dp) :: t
+      integer :: i
+      integer :: idx
 
       ! Here we will make x in the same range as xi
       x_min = xi(1)        !minval(xi)
@@ -2752,14 +2752,14 @@ contains
 
    subroutine linspace(x, x_min, x_max, n_samples, dx)
       implicit none
- real(dp), allocatable, intent(inout) :: x(:)
- real(dp), intent(in) :: x_min
- real(dp), intent(in) :: x_max
- real(dp), intent(out) :: dx
- integer, intent(in) :: n_samples
- real(dp) :: t
- real(dp) :: x_range
- integer :: i
+      real(dp), allocatable, intent(inout) :: x(:)
+      real(dp), intent(in) :: x_min
+      real(dp), intent(in) :: x_max
+      real(dp), intent(out) :: dx
+      integer, intent(in) :: n_samples
+      real(dp) :: t
+      real(dp) :: x_range
+      integer :: i
 
       if (allocated(x)) deallocate (x)
 
@@ -2778,17 +2778,17 @@ contains
 
    subroutine interpolate_data(x, y, xi, yi, n_samples, dx)
       implicit none
- real(dp), intent(in) :: xi(:)
- real(dp), intent(in) :: yi(:)
- real(dp), allocatable, intent(inout) :: x(:)
- real(dp), allocatable, intent(inout) :: y(:)
- real(dp), intent(out) :: dx
- integer, intent(in) :: n_samples
- real(dp) :: t
- real(dp) :: x_min
- real(dp) :: x_max
- real(dp) :: x_range
- integer :: i
+      real(dp), intent(in) :: xi(:)
+      real(dp), intent(in) :: yi(:)
+      real(dp), allocatable, intent(inout) :: x(:)
+      real(dp), allocatable, intent(inout) :: y(:)
+      real(dp), intent(out) :: dx
+      integer, intent(in) :: n_samples
+      real(dp) :: t
+      real(dp) :: x_min
+      real(dp) :: x_max
+      real(dp) :: x_range
+      integer :: i
 
       if (allocated(x)) deallocate (x)
       if (allocated(y)) deallocate (y)
@@ -2811,18 +2811,18 @@ contains
 
    subroutine get_waasmaier(element, s, f)
       implicit none
- real(dp), intent(in) :: s ! scattering vector: s = q / 4pi [1/A]
- real(dp) :: w(1:11, 1:49)
- character*8 :: elements(1:49)
+      real(dp), intent(in) :: s ! scattering vector: s = q / 4pi [1/A]
+      real(dp) :: w(1:11, 1:49)
+      character*8 :: elements(1:49)
       !   Input variables
- character*8, intent(in) :: element
+      character*8, intent(in) :: element
       !   Output variables
- logical :: is_in_database = .false.
+      logical :: is_in_database = .false.
       !   Internal variables
- real(dp) :: s_sq
- real(dp), intent(out) :: f
- integer :: i
- integer :: j
+      real(dp) :: s_sq
+      real(dp), intent(out) :: f
+      integer :: i
+      integer :: j
 
       ! D. Waasmaier and A. Kirfel, Acta Cryst. (1995). A51, 416-431
 
@@ -2986,15 +2986,15 @@ contains
    subroutine get_scattering_factor_params(element, wout)
       implicit none
       !      real(dp), intent(in) :: s ! scattering vector: s = q / 2pi [1/A]
- real(dp) :: w(1:9, 1:215)
- character*20 :: elements(1:215)
+      real(dp) :: w(1:9, 1:215)
+      character*20 :: elements(1:215)
       !   Input variables
- character*8, intent(in) :: element
+      character*8, intent(in) :: element
       !   Output variables
- logical :: is_in_database = .false.
+      logical :: is_in_database = .false.
       !   Internal variables
- real(dp), intent(out) :: wout(1:9)
- integer :: i
+      real(dp), intent(out) :: wout(1:9)
+      integer :: i
 
       elements = ['    H', "   H'", '    D', '  H1-', '   He', '  &
            & Li', ' Li1+', '   Be', ' Be2+', '    B', '    C', '&
@@ -3274,11 +3274,11 @@ contains
 
    subroutine get_scattering_factor(f, w, s)
       implicit none
- real(dp), intent(in) :: w(1:9)
- real(dp), intent(in) :: s
- real(dp), intent(out) :: f
- real(dp) :: s_sq
- integer :: j
+      real(dp), intent(in) :: w(1:9)
+      real(dp), intent(in) :: s
+      real(dp), intent(out) :: f
+      real(dp) :: s_sq
+      integer :: j
 
       f = w(9)
       s_sq = s*s
@@ -3290,12 +3290,12 @@ contains
 
    subroutine get_neutron_scattering_length(element, b)
       implicit none
- character*8, intent(in) :: element
- character*8 :: elements(1:86)
- real(dp) :: w(1:3, 1:86)
- real(dp), intent(out) :: b
- logical :: is_in_database = .false.
- integer :: i
+      character*8, intent(in) :: element
+      character*8 :: elements(1:86)
+      real(dp) :: w(1:3, 1:86)
+      real(dp), intent(out) :: b
+      logical :: is_in_database = .false.
+      integer :: i
 
       elements = ["H ", "D ", "He", "Li", "Be", "B ", "C ", "N ", "O ",&
            & "F ", "Ne", "Na", "Mg", "Al", "Si", "P ", "S ", "Cl", "Ar"&

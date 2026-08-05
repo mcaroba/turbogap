@@ -27,7 +27,7 @@
 
 module gap_interface
 
-  use kinds
+   use kinds
 
    use timing
    use soap_turbo_desc
@@ -58,118 +58,118 @@ contains
       implicit none
 
       !   Input variables
- type(local_property_soap_turbo), allocatable, intent(in) :: local_property_models(:)
+      type(local_property_soap_turbo), allocatable, intent(in) :: local_property_models(:)
 
- real(dp), intent(in) :: rjs0(:)
- real(dp), intent(in) :: thetas0(:)
- real(dp), intent(in) :: phis0(:)
- real(dp), intent(in) :: xyz0(:, :)
- real(dp), intent(in) :: rcut_hard(:)
- real(dp), intent(in) :: rcut_soft(:)
- real(dp), intent(in) :: nf(:)
- real(dp), intent(in) :: global_scaling(:)
- real(dp), intent(in) :: atom_sigma_r(:)
- real(dp), intent(in) :: atom_sigma_r_scaling(:)
- real(dp), intent(in) :: atom_sigma_t(:)
- real(dp), intent(in) :: atom_sigma_t_scaling(:)
- real(dp), intent(in) :: amplitude_scaling(:)
- real(dp), intent(in) :: central_weight(:)
- real(dp), intent(in) :: delta
- real(dp), intent(in) :: zeta
- real(dp), intent(in) :: alphas(:)
- real(dp), intent(in) :: Qs(:, :)
- real(dp), intent(in) :: compress_P_el(:)
- integer, intent(in) :: n_sites0
- integer, intent(in) :: n_neigh0(:)
- integer, intent(in) :: neighbors_list0(:)
- integer, intent(in) :: n_species
- integer, intent(in) :: central_species
- integer, intent(in) :: radial_enhancement
- integer, intent(in) :: which_atom
- integer, intent(in) :: indices(1:3)
- integer, intent(in) :: alpha_max(:)
- integer, intent(in) :: l_max
- integer, intent(in) :: n_total_sites
- integer, intent(in) :: compress_P_nonzero
- integer, intent(in) :: compress_P_i(:)
- integer, intent(in) :: compress_P_j(:)
- integer, intent(in) :: n_local_properties
- integer, intent(in) :: local_property_indexes(:)
- integer, intent(in) :: this_i_beg
- integer, intent(in) :: this_i_end
- integer, intent(in) :: this_j_beg
- integer, intent(in) :: this_j_end
- integer, intent(in) :: lp_index
- logical, intent(in) :: do_timing
- logical, intent(in) :: do_derivatives
- logical, intent(in) :: compress_soap
- logical, intent(in) :: do_forces
- logical, intent(in) :: do_prediction
- logical, intent(in) :: all_atoms
- logical, intent(in) :: write_soap
- logical, intent(in) :: write_derivatives
- logical, intent(in) :: has_local_properties
- character*64, intent(in) :: basis
- character*32, intent(in) :: scaling_mode
- character*8, intent(in) :: xyz_species(:)
- character*8, intent(in) :: xyz_species_supercell(:)
- character*8, intent(in) :: species_types(:)
+      real(dp), intent(in) :: rjs0(:)
+      real(dp), intent(in) :: thetas0(:)
+      real(dp), intent(in) :: phis0(:)
+      real(dp), intent(in) :: xyz0(:, :)
+      real(dp), intent(in) :: rcut_hard(:)
+      real(dp), intent(in) :: rcut_soft(:)
+      real(dp), intent(in) :: nf(:)
+      real(dp), intent(in) :: global_scaling(:)
+      real(dp), intent(in) :: atom_sigma_r(:)
+      real(dp), intent(in) :: atom_sigma_r_scaling(:)
+      real(dp), intent(in) :: atom_sigma_t(:)
+      real(dp), intent(in) :: atom_sigma_t_scaling(:)
+      real(dp), intent(in) :: amplitude_scaling(:)
+      real(dp), intent(in) :: central_weight(:)
+      real(dp), intent(in) :: delta
+      real(dp), intent(in) :: zeta
+      real(dp), intent(in) :: alphas(:)
+      real(dp), intent(in) :: Qs(:, :)
+      real(dp), intent(in) :: compress_P_el(:)
+      integer, intent(in) :: n_sites0
+      integer, intent(in) :: n_neigh0(:)
+      integer, intent(in) :: neighbors_list0(:)
+      integer, intent(in) :: n_species
+      integer, intent(in) :: central_species
+      integer, intent(in) :: radial_enhancement
+      integer, intent(in) :: which_atom
+      integer, intent(in) :: indices(1:3)
+      integer, intent(in) :: alpha_max(:)
+      integer, intent(in) :: l_max
+      integer, intent(in) :: n_total_sites
+      integer, intent(in) :: compress_P_nonzero
+      integer, intent(in) :: compress_P_i(:)
+      integer, intent(in) :: compress_P_j(:)
+      integer, intent(in) :: n_local_properties
+      integer, intent(in) :: local_property_indexes(:)
+      integer, intent(in) :: this_i_beg
+      integer, intent(in) :: this_i_end
+      integer, intent(in) :: this_j_beg
+      integer, intent(in) :: this_j_end
+      integer, intent(in) :: lp_index
+      logical, intent(in) :: do_timing
+      logical, intent(in) :: do_derivatives
+      logical, intent(in) :: compress_soap
+      logical, intent(in) :: do_forces
+      logical, intent(in) :: do_prediction
+      logical, intent(in) :: all_atoms
+      logical, intent(in) :: write_soap
+      logical, intent(in) :: write_derivatives
+      logical, intent(in) :: has_local_properties
+      character*64, intent(in) :: basis
+      character*32, intent(in) :: scaling_mode
+      character*8, intent(in) :: xyz_species(:)
+      character*8, intent(in) :: xyz_species_supercell(:)
+      character*8, intent(in) :: species_types(:)
 
 !   Output variables
- real(dp), allocatable, intent(out) :: soap(:, :)
- real(dp), allocatable, intent(out) :: soap_cart_der(:, :, :)
- real(dp), intent(out) :: virial(1:3, 1:3)
+      real(dp), allocatable, intent(out) :: soap(:, :)
+      real(dp), allocatable, intent(out) :: soap_cart_der(:, :, :)
+      real(dp), intent(out) :: virial(1:3, 1:3)
 
 !   Inout variables
- real(dp), intent(inout) :: energies0(:)
- real(dp), intent(inout) :: forces0(:, :)
- real(dp), intent(inout) :: local_properties0(:, :)
- real(dp), intent(inout) :: local_properties_cart_der0(:, :, :)
+      real(dp), intent(inout) :: energies0(:)
+      real(dp), intent(inout) :: forces0(:, :)
+      real(dp), intent(inout) :: local_properties0(:, :)
+      real(dp), intent(inout) :: local_properties_cart_der0(:, :, :)
 
 !   Internal variables
- real(dp), allocatable :: rjs(:)
- real(dp), allocatable :: thetas(:)
- real(dp), allocatable :: phis(:)
- real(dp), allocatable :: energies(:)
- real(dp), allocatable :: forces(:, :)
- real(dp), allocatable :: soap_temp(:, :)
- real(dp), allocatable :: local_properties(:)
- real(dp), allocatable :: local_properties_cart_der(:, :)
- real(dp), allocatable :: xyz(:, :)
- real(dp) :: rcut_max
- integer, allocatable :: in_to_out_site(:)
- integer, allocatable :: n_neigh(:)
- integer, allocatable :: neighbors_list(:)
- integer, allocatable :: species_multiplicity(:)
- integer, allocatable :: species(:, :)
- integer, allocatable :: species0(:, :)
- integer, allocatable :: species_multiplicity0(:)
- integer, allocatable :: out_to_in_site(:)
- integer, allocatable :: der_neighbors(:)
- integer, allocatable :: der_neighbors_list(:)
- integer, allocatable :: in_to_out_pairs(:)
- integer, allocatable :: species_multiplicity_supercell(:)
- integer :: n_sites
- integer :: i
- integer :: j
- integer :: n_atom_pairs
- integer :: k
- integer :: k2
- integer :: i2
- integer :: j2
- integer :: n_soap
- integer :: max_species_multiplicity
- integer :: i3
- integer :: n_all_sites
- integer :: i4
- integer :: n_sites_supercell
- integer :: j3
- logical, allocatable :: mask(:, :)
- logical, allocatable :: mask0(:, :)
- logical, allocatable :: is_atom_seen(:)
+      real(dp), allocatable :: rjs(:)
+      real(dp), allocatable :: thetas(:)
+      real(dp), allocatable :: phis(:)
+      real(dp), allocatable :: energies(:)
+      real(dp), allocatable :: forces(:, :)
+      real(dp), allocatable :: soap_temp(:, :)
+      real(dp), allocatable :: local_properties(:)
+      real(dp), allocatable :: local_properties_cart_der(:, :)
+      real(dp), allocatable :: xyz(:, :)
+      real(dp) :: rcut_max
+      integer, allocatable :: in_to_out_site(:)
+      integer, allocatable :: n_neigh(:)
+      integer, allocatable :: neighbors_list(:)
+      integer, allocatable :: species_multiplicity(:)
+      integer, allocatable :: species(:, :)
+      integer, allocatable :: species0(:, :)
+      integer, allocatable :: species_multiplicity0(:)
+      integer, allocatable :: out_to_in_site(:)
+      integer, allocatable :: der_neighbors(:)
+      integer, allocatable :: der_neighbors_list(:)
+      integer, allocatable :: in_to_out_pairs(:)
+      integer, allocatable :: species_multiplicity_supercell(:)
+      integer :: n_sites
+      integer :: i
+      integer :: j
+      integer :: n_atom_pairs
+      integer :: k
+      integer :: k2
+      integer :: i2
+      integer :: j2
+      integer :: n_soap
+      integer :: max_species_multiplicity
+      integer :: i3
+      integer :: n_all_sites
+      integer :: i4
+      integer :: n_sites_supercell
+      integer :: j3
+      logical, allocatable :: mask(:, :)
+      logical, allocatable :: mask0(:, :)
+      logical, allocatable :: is_atom_seen(:)
 !   CLEAN THIS UP
- real(dp) :: time1
- real(dp) :: time2
+      real(dp) :: time1
+      real(dp) :: time2
 
       n_sites_supercell = size(xyz_species_supercell)
 
@@ -822,24 +822,24 @@ contains
                                  & in_to_out_pairs, n_all_sites,&
                                  & in_to_out_site, n_sites_out)
 
- real(dp), allocatable, intent(in) :: soap(:, :)
- real(dp), allocatable, intent(in) :: soap_cart_der(:, :, :)
- real(dp), intent(in) :: Qs(:, :)
- real(dp), intent(in) :: alphas(:)
- real(dp), intent(in) :: zeta
- real(dp), intent(in) :: delta
- real(dp), intent(in) :: V0
- real(dp), intent(inout) :: local_property0(:)
- real(dp), intent(inout) :: local_property_cart_der0(:, :)
- real(dp), allocatable :: local_property(:)
- real(dp), allocatable :: local_property_cart_der(:, :)
- integer, intent(in) :: n_atom_pairs
- integer, intent(in) :: in_to_out_pairs(:)
- integer, intent(in) :: n_all_sites
- integer, intent(in) :: in_to_out_site(:)
- integer, intent(in) :: n_neigh_out(:)
- integer, intent(in) :: n_sites_out
- logical, intent(in) :: do_derivatives
+      real(dp), allocatable, intent(in) :: soap(:, :)
+      real(dp), allocatable, intent(in) :: soap_cart_der(:, :, :)
+      real(dp), intent(in) :: Qs(:, :)
+      real(dp), intent(in) :: alphas(:)
+      real(dp), intent(in) :: zeta
+      real(dp), intent(in) :: delta
+      real(dp), intent(in) :: V0
+      real(dp), intent(inout) :: local_property0(:)
+      real(dp), intent(inout) :: local_property_cart_der0(:, :)
+      real(dp), allocatable :: local_property(:)
+      real(dp), allocatable :: local_property_cart_der(:, :)
+      integer, intent(in) :: n_atom_pairs
+      integer, intent(in) :: in_to_out_pairs(:)
+      integer, intent(in) :: n_all_sites
+      integer, intent(in) :: in_to_out_site(:)
+      integer, intent(in) :: n_neigh_out(:)
+      integer, intent(in) :: n_sites_out
+      logical, intent(in) :: do_derivatives
 
       allocate (local_property(1:n_sites_out))
       local_property = 0.d0

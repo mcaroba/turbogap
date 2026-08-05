@@ -20,20 +20,20 @@
 ! the "Loop through distance_2b descriptors" banner and the MPI reduce block.
 module gap_backend
 
-  use kinds
+   use kinds
 
-  use types
-  use gap
-  use timing
+   use types
+   use gap
+   use timing
 
-  implicit none
+   implicit none
 
-  private
- public :: gap_backend_begin
- public :: gap_backend_end
- public :: add_2b_contribution
- public :: add_core_pot_contribution
- public :: add_3b_contribution
+   private
+   public :: gap_backend_begin
+   public :: gap_backend_end
+   public :: add_2b_contribution
+   public :: add_core_pot_contribution
+   public :: add_3b_contribution
 
 contains
 
@@ -45,219 +45,219 @@ contains
 ! the neighbour data once for all three calls rather than three times, and that
 ! has to happen without the driver ever holding a device pointer. An empty pair
 ! here is the price of keeping the interface physics-only.
-  subroutine gap_backend_begin( params, rjs, xyz, n_neigh, species, neighbor_species, &
-       neighbors_list, i_beg, i_end, j_beg, j_end )
-    implicit none
- type(input_parameters), intent(inout) :: params
- real(dp), intent(in), allocatable :: rjs(:)
- real(dp), intent(in), allocatable :: xyz(:,:)
- integer, intent(in), allocatable :: n_neigh(:)
- integer, intent(in), allocatable :: species(:)
- integer, intent(in), allocatable :: neighbor_species(:)
- integer, intent(in), allocatable :: neighbors_list(:)
- integer, intent(in) :: i_beg
- integer, intent(in) :: i_end
- integer, intent(in) :: j_beg
- integer, intent(in) :: j_end
-  end subroutine gap_backend_begin
+   subroutine gap_backend_begin(params, rjs, xyz, n_neigh, species, neighbor_species, &
+                                neighbors_list, i_beg, i_end, j_beg, j_end)
+      implicit none
+      type(input_parameters), intent(inout) :: params
+      real(dp), intent(in), allocatable :: rjs(:)
+      real(dp), intent(in), allocatable :: xyz(:, :)
+      integer, intent(in), allocatable :: n_neigh(:)
+      integer, intent(in), allocatable :: species(:)
+      integer, intent(in), allocatable :: neighbor_species(:)
+      integer, intent(in), allocatable :: neighbors_list(:)
+      integer, intent(in) :: i_beg
+      integer, intent(in) :: i_end
+      integer, intent(in) :: j_beg
+      integer, intent(in) :: j_end
+   end subroutine gap_backend_begin
 
-  subroutine gap_backend_end()
-    implicit none
-  end subroutine gap_backend_end
+   subroutine gap_backend_end()
+      implicit none
+   end subroutine gap_backend_end
 
 !**************************************************************************
 ! Accumulate the two-body energies, forces and virial.
-  subroutine add_2b_contribution( n_distance_2b, distance_2b_hypers, &
-       params, rjs, xyz, n_neigh, species, neighbor_species, &
-       i_beg, i_end, j_beg, j_end, this_energies, this_forces, this_virial, &
-       energies_2b, forces_2b, virial_2b, time_2b )
+   subroutine add_2b_contribution(n_distance_2b, distance_2b_hypers, &
+                                  params, rjs, xyz, n_neigh, species, neighbor_species, &
+                                  i_beg, i_end, j_beg, j_end, this_energies, this_forces, this_virial, &
+                                  energies_2b, forces_2b, virial_2b, time_2b)
 
-    implicit none
+      implicit none
 
 !   ---- Input: describes the system and this descriptor set ----
- integer, intent(in) :: n_distance_2b
- type(distance_2b), allocatable, intent(inout) :: distance_2b_hypers(:)
- type(input_parameters), intent(inout) :: params
- real(dp), intent(in), allocatable :: rjs(:)
- real(dp), intent(in), allocatable :: xyz(:,:)
- integer, intent(in), allocatable :: n_neigh(:)
- integer, intent(in), allocatable :: species(:)
- integer, intent(in), allocatable :: neighbor_species(:)
- integer, intent(in) :: i_beg
- integer, intent(in) :: i_end
- integer, intent(in) :: j_beg
- integer, intent(in) :: j_end
+      integer, intent(in) :: n_distance_2b
+      type(distance_2b), allocatable, intent(inout) :: distance_2b_hypers(:)
+      type(input_parameters), intent(inout) :: params
+      real(dp), intent(in), allocatable :: rjs(:)
+      real(dp), intent(in), allocatable :: xyz(:, :)
+      integer, intent(in), allocatable :: n_neigh(:)
+      integer, intent(in), allocatable :: species(:)
+      integer, intent(in), allocatable :: neighbor_species(:)
+      integer, intent(in) :: i_beg
+      integer, intent(in) :: i_end
+      integer, intent(in) :: j_beg
+      integer, intent(in) :: j_end
 
 !   ---- Output: accumulated into by this routine ----
- real(dp), intent(inout), allocatable :: energies_2b(:)
- real(dp), intent(inout), allocatable :: forces_2b(:,:)
- real(dp), intent(inout) :: virial_2b(1:3,1:3)
- real(dp), intent(inout) :: time_2b(1:3)
+      real(dp), intent(inout), allocatable :: energies_2b(:)
+      real(dp), intent(inout), allocatable :: forces_2b(:, :)
+      real(dp), intent(inout) :: virial_2b(1:3, 1:3)
+      real(dp), intent(inout) :: time_2b(1:3)
 
 !   ---- Scratch: owned by the driver and reused across the three calls,
 !        rather than local, so this does not add an allocation per descriptor ----
- real(dp), intent(inout), allocatable :: this_energies(:)
- real(dp), intent(inout), allocatable :: this_forces(:,:)
- real(dp), intent(inout) :: this_virial(1:3,1:3)
+      real(dp), intent(inout), allocatable :: this_energies(:)
+      real(dp), intent(inout), allocatable :: this_forces(:, :)
+      real(dp), intent(inout) :: this_virial(1:3, 1:3)
 
 !   ---- Internal ----
- integer :: i
+      integer :: i
 
-    do i = 1, n_distance_2b
-       call get_time(time_2b(1))
-       this_energies = 0.d0
-       if( params%do_forces )then
-          this_forces = 0.d0
-          this_virial = 0.d0
-       end if
-       call get_2b_energy_and_forces(rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), distance_2b_hypers(i)%alphas, &
-            distance_2b_hypers(i)%cutoff, &
-            distance_2b_hypers(i)%rcut, 0.5d0, distance_2b_hypers(i)%delta, &
-            distance_2b_hypers(i)%sigma, 0.d0, distance_2b_hypers(i)%Qs(:,1), &
-            n_neigh(i_beg:i_end), params%do_forces, params%do_timing, &
-            species(i_beg:i_end), neighbor_species(j_beg:j_end), &
-            distance_2b_hypers(i)%species1, distance_2b_hypers(i)%species2, &
-            params%species_types, this_energies(i_beg:i_end), this_forces(1:3, i_beg:i_end), &
-            this_virial )
-       energies_2b = energies_2b + this_energies
-       if( params%do_forces )then
-          forces_2b = forces_2b + this_forces
-          virial_2b = virial_2b + this_virial
-       end if
-       call get_time(time_2b(2))
-       time_2b(3) = time_2b(3) + time_2b(2) - time_2b(1)
-    end do
+      do i = 1, n_distance_2b
+         call get_time(time_2b(1))
+         this_energies = 0.d0
+         if (params%do_forces) then
+            this_forces = 0.d0
+            this_virial = 0.d0
+         end if
+         call get_2b_energy_and_forces(rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), distance_2b_hypers(i)%alphas, &
+                                       distance_2b_hypers(i)%cutoff, &
+                                       distance_2b_hypers(i)%rcut, 0.5d0, distance_2b_hypers(i)%delta, &
+                                       distance_2b_hypers(i)%sigma, 0.d0, distance_2b_hypers(i)%Qs(:, 1), &
+                                       n_neigh(i_beg:i_end), params%do_forces, params%do_timing, &
+                                       species(i_beg:i_end), neighbor_species(j_beg:j_end), &
+                                       distance_2b_hypers(i)%species1, distance_2b_hypers(i)%species2, &
+                                       params%species_types, this_energies(i_beg:i_end), this_forces(1:3, i_beg:i_end), &
+                                       this_virial)
+         energies_2b = energies_2b + this_energies
+         if (params%do_forces) then
+            forces_2b = forces_2b + this_forces
+            virial_2b = virial_2b + this_virial
+         end if
+         call get_time(time_2b(2))
+         time_2b(3) = time_2b(3) + time_2b(2) - time_2b(1)
+      end do
 
-  end subroutine add_2b_contribution
+   end subroutine add_2b_contribution
 
 !**************************************************************************
 ! Accumulate the core-potential energies, forces and virial.
-  subroutine add_core_pot_contribution( n_core_pot, core_pot_hypers, &
-       params, rjs, xyz, n_neigh, species, neighbor_species, &
-       i_beg, i_end, j_beg, j_end, this_energies, this_forces, this_virial, &
-       energies_core_pot, forces_core_pot, virial_core_pot, time_core_pot )
+   subroutine add_core_pot_contribution(n_core_pot, core_pot_hypers, &
+                                        params, rjs, xyz, n_neigh, species, neighbor_species, &
+                                        i_beg, i_end, j_beg, j_end, this_energies, this_forces, this_virial, &
+                                        energies_core_pot, forces_core_pot, virial_core_pot, time_core_pot)
 
-    implicit none
+      implicit none
 
 !   ---- Input: describes the system and this descriptor set ----
- integer, intent(in) :: n_core_pot
- type(core_pot), allocatable, intent(inout) :: core_pot_hypers(:)
- type(input_parameters), intent(inout) :: params
- real(dp), intent(in), allocatable :: rjs(:)
- real(dp), intent(in), allocatable :: xyz(:,:)
- integer, intent(in), allocatable :: n_neigh(:)
- integer, intent(in), allocatable :: species(:)
- integer, intent(in), allocatable :: neighbor_species(:)
- integer, intent(in) :: i_beg
- integer, intent(in) :: i_end
- integer, intent(in) :: j_beg
- integer, intent(in) :: j_end
+      integer, intent(in) :: n_core_pot
+      type(core_pot), allocatable, intent(inout) :: core_pot_hypers(:)
+      type(input_parameters), intent(inout) :: params
+      real(dp), intent(in), allocatable :: rjs(:)
+      real(dp), intent(in), allocatable :: xyz(:, :)
+      integer, intent(in), allocatable :: n_neigh(:)
+      integer, intent(in), allocatable :: species(:)
+      integer, intent(in), allocatable :: neighbor_species(:)
+      integer, intent(in) :: i_beg
+      integer, intent(in) :: i_end
+      integer, intent(in) :: j_beg
+      integer, intent(in) :: j_end
 
 !   ---- Output: accumulated into by this routine ----
- real(dp), intent(inout), allocatable :: energies_core_pot(:)
- real(dp), intent(inout), allocatable :: forces_core_pot(:,:)
- real(dp), intent(inout) :: virial_core_pot(1:3,1:3)
- real(dp), intent(inout) :: time_core_pot(1:3)
+      real(dp), intent(inout), allocatable :: energies_core_pot(:)
+      real(dp), intent(inout), allocatable :: forces_core_pot(:, :)
+      real(dp), intent(inout) :: virial_core_pot(1:3, 1:3)
+      real(dp), intent(inout) :: time_core_pot(1:3)
 
 !   ---- Scratch: owned by the driver and reused across the three calls,
 !        rather than local, so this does not add an allocation per descriptor ----
- real(dp), intent(inout), allocatable :: this_energies(:)
- real(dp), intent(inout), allocatable :: this_forces(:,:)
- real(dp), intent(inout) :: this_virial(1:3,1:3)
+      real(dp), intent(inout), allocatable :: this_energies(:)
+      real(dp), intent(inout), allocatable :: this_forces(:, :)
+      real(dp), intent(inout) :: this_virial(1:3, 1:3)
 
 !   ---- Internal ----
- integer :: i
+      integer :: i
 
-    do i = 1, n_core_pot
-       call get_time(time_core_pot(1))
-       this_energies = 0.d0
-       if( params%do_forces )then
-          this_forces = 0.d0
-          this_virial = 0.d0
-       end if
-       call get_core_pot_energy_and_forces(rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), &
-            core_pot_hypers(i)%x, core_pot_hypers(i)%V, &
-            core_pot_hypers(i)%yp1, core_pot_hypers(i)%ypn, &
-            core_pot_hypers(i)%dVdx2, n_neigh(i_beg:i_end), params%do_forces, &
-            params%do_timing, species(i_beg:i_end), neighbor_species(j_beg:j_end), &
-            core_pot_hypers(i)%species1, core_pot_hypers(i)%species2, &
-            params%species_types, this_energies(i_beg:i_end), this_forces(1:3, i_beg:i_end), &
-            this_virial )
-       energies_core_pot = energies_core_pot + this_energies
-       if( params%do_forces )then
-          forces_core_pot = forces_core_pot + this_forces
-          virial_core_pot = virial_core_pot + this_virial
-       end if
-       call get_time(time_core_pot(2))
-       time_core_pot(3) = time_core_pot(3) + time_core_pot(2) - time_core_pot(1)
-    end do
+      do i = 1, n_core_pot
+         call get_time(time_core_pot(1))
+         this_energies = 0.d0
+         if (params%do_forces) then
+            this_forces = 0.d0
+            this_virial = 0.d0
+         end if
+         call get_core_pot_energy_and_forces(rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), &
+                                             core_pot_hypers(i)%x, core_pot_hypers(i)%V, &
+                                             core_pot_hypers(i)%yp1, core_pot_hypers(i)%ypn, &
+                                             core_pot_hypers(i)%dVdx2, n_neigh(i_beg:i_end), params%do_forces, &
+                                             params%do_timing, species(i_beg:i_end), neighbor_species(j_beg:j_end), &
+                                             core_pot_hypers(i)%species1, core_pot_hypers(i)%species2, &
+                                             params%species_types, this_energies(i_beg:i_end), this_forces(1:3, i_beg:i_end), &
+                                             this_virial)
+         energies_core_pot = energies_core_pot + this_energies
+         if (params%do_forces) then
+            forces_core_pot = forces_core_pot + this_forces
+            virial_core_pot = virial_core_pot + this_virial
+         end if
+         call get_time(time_core_pot(2))
+         time_core_pot(3) = time_core_pot(3) + time_core_pot(2) - time_core_pot(1)
+      end do
 
-  end subroutine add_core_pot_contribution
+   end subroutine add_core_pot_contribution
 
 !**************************************************************************
 ! Accumulate the three-body energies, forces and virial.
-  subroutine add_3b_contribution( n_angle_3b, angle_3b_hypers, neighbors_list, &
-       params, rjs, xyz, n_neigh, species, neighbor_species, &
-       i_beg, i_end, j_beg, j_end, this_energies, this_forces, this_virial, &
-       energies_3b, forces_3b, virial_3b, time_3b )
+   subroutine add_3b_contribution(n_angle_3b, angle_3b_hypers, neighbors_list, &
+                                  params, rjs, xyz, n_neigh, species, neighbor_species, &
+                                  i_beg, i_end, j_beg, j_end, this_energies, this_forces, this_virial, &
+                                  energies_3b, forces_3b, virial_3b, time_3b)
 
-    implicit none
+      implicit none
 
 !   ---- Input: describes the system and this descriptor set ----
- integer, intent(in) :: n_angle_3b
- type(angle_3b), allocatable, intent(inout) :: angle_3b_hypers(:)
- type(input_parameters), intent(inout) :: params
- real(dp), intent(in), allocatable :: rjs(:)
- real(dp), intent(in), allocatable :: xyz(:,:)
- integer, intent(in), allocatable :: n_neigh(:)
- integer, intent(in), allocatable :: species(:)
- integer, intent(in), allocatable :: neighbor_species(:)
- integer, intent(in), allocatable :: neighbors_list(:)
- integer, intent(in) :: i_beg
- integer, intent(in) :: i_end
- integer, intent(in) :: j_beg
- integer, intent(in) :: j_end
+      integer, intent(in) :: n_angle_3b
+      type(angle_3b), allocatable, intent(inout) :: angle_3b_hypers(:)
+      type(input_parameters), intent(inout) :: params
+      real(dp), intent(in), allocatable :: rjs(:)
+      real(dp), intent(in), allocatable :: xyz(:, :)
+      integer, intent(in), allocatable :: n_neigh(:)
+      integer, intent(in), allocatable :: species(:)
+      integer, intent(in), allocatable :: neighbor_species(:)
+      integer, intent(in), allocatable :: neighbors_list(:)
+      integer, intent(in) :: i_beg
+      integer, intent(in) :: i_end
+      integer, intent(in) :: j_beg
+      integer, intent(in) :: j_end
 
 !   ---- Output: accumulated into by this routine ----
- real(dp), intent(inout), allocatable :: energies_3b(:)
- real(dp), intent(inout), allocatable :: forces_3b(:,:)
- real(dp), intent(inout) :: virial_3b(1:3,1:3)
- real(dp), intent(inout) :: time_3b(1:3)
+      real(dp), intent(inout), allocatable :: energies_3b(:)
+      real(dp), intent(inout), allocatable :: forces_3b(:, :)
+      real(dp), intent(inout) :: virial_3b(1:3, 1:3)
+      real(dp), intent(inout) :: time_3b(1:3)
 
 !   ---- Scratch: owned by the driver and reused across the three calls,
 !        rather than local, so this does not add an allocation per descriptor ----
- real(dp), intent(inout), allocatable :: this_energies(:)
- real(dp), intent(inout), allocatable :: this_forces(:,:)
- real(dp), intent(inout) :: this_virial(1:3,1:3)
+      real(dp), intent(inout), allocatable :: this_energies(:)
+      real(dp), intent(inout), allocatable :: this_forces(:, :)
+      real(dp), intent(inout) :: this_virial(1:3, 1:3)
 
 !   ---- Internal ----
- integer :: i
+      integer :: i
 
-    do i = 1, n_angle_3b
-       call get_time(time_3b(1))
-       this_energies = 0.d0
-       if( params%do_forces )then
-          this_forces = 0.d0
-          this_virial = 0.d0
-       end if
-       call get_3b_energy_and_forces(rjs(j_beg:j_end), xyz(1:3,j_beg:j_end), angle_3b_hypers(i)%alphas, &
-            angle_3b_hypers(i)%cutoff, &
-            angle_3b_hypers(i)%rcut, 0.5d0, angle_3b_hypers(i)%delta, &
-            angle_3b_hypers(i)%sigma, 0.d0, angle_3b_hypers(i)%Qs, n_neigh(i_beg:i_end), &
-            neighbors_list(j_beg:j_end), &
-            params%do_forces, params%do_timing, angle_3b_hypers(i)%kernel_type, &
-            species(i_beg:i_end), neighbor_species(j_beg:j_end), angle_3b_hypers(i)%species_center, &
-            angle_3b_hypers(i)%species1, angle_3b_hypers(i)%species2, params%species_types, &
-            this_energies(i_beg:i_end), this_forces, this_virial)
-       energies_3b = energies_3b + this_energies
-       if( params%do_forces )then
-          forces_3b = forces_3b + this_forces
-          virial_3b = virial_3b + this_virial
-       end if
-       call get_time(time_3b(2))
-       time_3b(3) = time_3b(3) + time_3b(2) - time_3b(1)
-    end do
+      do i = 1, n_angle_3b
+         call get_time(time_3b(1))
+         this_energies = 0.d0
+         if (params%do_forces) then
+            this_forces = 0.d0
+            this_virial = 0.d0
+         end if
+         call get_3b_energy_and_forces(rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), angle_3b_hypers(i)%alphas, &
+                                       angle_3b_hypers(i)%cutoff, &
+                                       angle_3b_hypers(i)%rcut, 0.5d0, angle_3b_hypers(i)%delta, &
+                                       angle_3b_hypers(i)%sigma, 0.d0, angle_3b_hypers(i)%Qs, n_neigh(i_beg:i_end), &
+                                       neighbors_list(j_beg:j_end), &
+                                       params%do_forces, params%do_timing, angle_3b_hypers(i)%kernel_type, &
+                                       species(i_beg:i_end), neighbor_species(j_beg:j_end), angle_3b_hypers(i)%species_center, &
+                                       angle_3b_hypers(i)%species1, angle_3b_hypers(i)%species2, params%species_types, &
+                                       this_energies(i_beg:i_end), this_forces, this_virial)
+         energies_3b = energies_3b + this_energies
+         if (params%do_forces) then
+            forces_3b = forces_3b + this_forces
+            virial_3b = virial_3b + this_virial
+         end if
+         call get_time(time_3b(2))
+         time_3b(3) = time_3b(3) + time_3b(2) - time_3b(1)
+      end do
 
-  end subroutine add_3b_contribution
+   end subroutine add_3b_contribution
 
 end module gap_backend

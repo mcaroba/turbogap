@@ -4,8 +4,8 @@
 # supercomputer with this Makefile. Before compiling, make sure you have
 # loaded the correct module environment:
 #
-#  module load gcc/15.2.0 openmpi/5.0.10 openblas/0.3.30     
-#     
+#  module load gcc/15.2.0 openmpi/5.0.10 openblas/0.3.30
+#
 #
 # We you run TurboGAP, make sure to load this same environment at the top
 # of your Slurm submission script.

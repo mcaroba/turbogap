@@ -1,0 +1,65 @@
+# Pre-commit hooks for TurboGAP.
+#
+# Install once per clone:
+#     pip install pre-commit      # or: pipx install pre-commit
+#     pre-commit install
+#
+# The point of the fprettify hook is not tidiness. The CPU and GPU branches are
+# being merged, and formatting noise makes that measurably harder: before the
+# tree was normalised, exp_interface.f90 read as 757 diverged lines between the
+# branches where the real figure was 67 -- the GPU copy had been through
+# fprettify and master's had not, so every `(:, :)` against `(:,:)` counted as
+# divergence. Both branches now run the same formatter with the same settings,
+# so a file-level diff between them means something again.
+#
+# Settings are fprettify's defaults (indent 3, line length 132) stated
+# explicitly, so the hook and any manual run agree. Do not change them on one
+# branch alone -- that reintroduces exactly the noise this removes.
+#
+# Run over everything (only needed after changing the settings):
+#     pre-commit run --all-files
+
+repos:
+  - repo: local
+    hooks:
+      - id: fprettify
+        name: fprettify (Fortran source formatting)
+        entry: fprettify
+        language: python
+        additional_dependencies: ["fprettify==0.3.7"]
+        args: ["--indent", "3", "--line-length", "132"]
+        types: [file]
+        files: \.[fF]90$
+        # src/soap_turbo is a submodule with its own history, and third_party is
+        # vendored -- neither is ours to reformat.
+        exclude: ^(src/soap_turbo/|src/third_party/)
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      # Whitespace fixers are allow-listed to source and tooling, NOT excluded
+      # from data. An exclude list is the wrong shape here: the first version of
+      # this file excluded tests/*/expected and tests/*/reference, and the hooks
+      # then went and rewrote tests/stopping/*/gap_files/silicon.gap,
+      # silicon.xml, the .beta tables and a regression case's `input`. Those are
+      # parsed inputs and potential files -- a stripped trailing space or an
+      # added final newline can change what the code reads. Only ever widen this
+      # `files:` pattern to things that are read by a compiler or a shell.
+      # Fortran is excluded here on purpose: fprettify is the sole authority for
+      # .f90 formatting. It emits a trailing space after a statement-separating
+      # ';' (eph_fdm.f90:283-284), so with both hooks active this one strips it,
+      # fprettify puts it back, and the two never converge -- every commit fails,
+      # forever. If a formatter and a fixer disagree about a file, only one of
+      # them may own it.
+      - id: trailing-whitespace
+        files: ^(src/|tools/|docs/|makefiles/|\.pre-commit-config\.yaml$|Makefile$)
+        exclude: ^(src/soap_turbo/|src/third_party/)|\.[fF]90$
+      - id: end-of-file-fixer
+        files: ^(src/|tools/|docs/|makefiles/|\.pre-commit-config\.yaml$|Makefile$)
+        exclude: ^(src/soap_turbo/|src/third_party/)
+
+      # Checks only -- these never modify a file.
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=2048"]
+      - id: check-yaml
