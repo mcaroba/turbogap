@@ -31,7 +31,8 @@ module turbogap_vdw
   implicit none
 
   private
-  public :: vdw_state, compute_vdw
+ public :: vdw_state
+ public :: compute_vdw
 
 ! Persistent state of the ts+mbd correction.
 !
@@ -42,12 +43,12 @@ module turbogap_vdw
 ! tests/regression/KNOWN_ISSUES.md is -- the allocation and the consumer branch
 ! on the same modulo() expression, so in predict mode the consumer runs having
 ! never been allocated. Naming the lifetime is the first step to fixing it.
-  type :: vdw_state
-     real(dp), allocatable :: this_energies_vdw_corr(:)
-     real(dp), allocatable :: this_forces_vdw_corr(:,:)
-     real(dp), allocatable :: this_local_virial_vdw_diag_corr(:,:)
-     real(dp) :: this_virial_vdw_corr(1:3, 1:3) = 0.d0
-     real(dp) :: virial_vdw_corr(1:3, 1:3) = 0.d0
+ type :: vdw_state
+ real(dp), allocatable :: this_energies_vdw_corr(:)
+ real(dp), allocatable :: this_forces_vdw_corr(:,:)
+ real(dp), allocatable :: this_local_virial_vdw_diag_corr(:,:)
+ real(dp) :: this_virial_vdw_corr(1:3, 1:3) = 0.d0
+ real(dp) :: virial_vdw_corr(1:3, 1:3) = 0.d0
   end type vdw_state
 
 contains
@@ -65,49 +66,93 @@ contains
     implicit none
 
 !   Input
-    type(input_parameters), intent(in) :: params
-    logical, intent(in) :: has_vdw
-    integer, intent(in) :: n_sites, vdw_lp_index, i_beg, i_end, j_beg, j_end
-    integer, intent(in) :: rank, ntasks, md_istep
-    integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:)
-    integer, intent(in) :: n_atom_pairs_by_rank(:), site_in_rank(:), indices(1:3)
-    real(dp), intent(in) :: rjs(:), xyz(:,:)
-    real(dp), intent(in) :: local_properties(:,:), local_properties_cart_der(:,:,:)
+ type(input_parameters), intent(in) :: params
+ logical, intent(in) :: has_vdw
+ integer, intent(in) :: n_sites
+ integer, intent(in) :: vdw_lp_index
+ integer, intent(in) :: i_beg
+ integer, intent(in) :: i_end
+ integer, intent(in) :: j_beg
+ integer, intent(in) :: j_end
+ integer, intent(in) :: rank
+ integer, intent(in) :: ntasks
+ integer, intent(in) :: md_istep
+ integer, intent(in) :: n_neigh(:)
+ integer, intent(in) :: neighbors_list(:)
+ integer, intent(in) :: neighbor_species(:)
+ integer, intent(in) :: n_atom_pairs_by_rank(:)
+ integer, intent(in) :: site_in_rank(:)
+ integer, intent(in) :: indices(1:3)
+ real(dp), intent(in) :: rjs(:)
+ real(dp), intent(in) :: xyz(:,:)
+ real(dp), intent(in) :: local_properties(:,:)
+ real(dp), intent(in) :: local_properties_cart_der(:,:,:)
 
 !   Correction state, persistent across calls
-    type(vdw_state), intent(inout) :: state
+ type(vdw_state), intent(inout) :: state
 
 !   Output
-    real(dp), allocatable, intent(inout) :: energies_vdw(:), forces_vdw(:,:)
-    real(dp), allocatable, intent(inout) :: local_virial_vdw_diag(:,:)
-    real(dp), intent(inout) :: virial_vdw(1:3, 1:3), this_virial_vdw(1:3, 1:3)
-    real(dp), allocatable, intent(inout) :: this_energies_vdw(:), this_forces_vdw(:,:)
-    real(dp), allocatable, intent(inout) :: this_local_virial_vdw_diag(:,:)
-    real(dp), allocatable, intent(inout) :: energies_vdw_corr(:), forces_vdw_corr(:,:)
-    real(dp), allocatable, intent(inout) :: local_virial_vdw_diag_corr(:,:)
-    real(dp), allocatable, intent(inout) :: mbd_ts_scaling(:), this_mbd_ts_scaling(:)
-    logical, intent(inout) :: update_mbd_ts_scaling
-    real(dp), intent(inout) :: time_vdw(1:3)
+ real(dp), allocatable, intent(inout) :: energies_vdw(:)
+ real(dp), allocatable, intent(inout) :: forces_vdw(:,:)
+ real(dp), allocatable, intent(inout) :: local_virial_vdw_diag(:,:)
+ real(dp), intent(inout) :: virial_vdw(1:3, 1:3)
+ real(dp), intent(inout) :: this_virial_vdw(1:3, 1:3)
+ real(dp), allocatable, intent(inout) :: this_energies_vdw(:)
+ real(dp), allocatable, intent(inout) :: this_forces_vdw(:,:)
+ real(dp), allocatable, intent(inout) :: this_local_virial_vdw_diag(:,:)
+ real(dp), allocatable, intent(inout) :: energies_vdw_corr(:)
+ real(dp), allocatable, intent(inout) :: forces_vdw_corr(:,:)
+ real(dp), allocatable, intent(inout) :: local_virial_vdw_diag_corr(:,:)
+ real(dp), allocatable, intent(inout) :: mbd_ts_scaling(:)
+ real(dp), allocatable, intent(inout) :: this_mbd_ts_scaling(:)
+ logical, intent(inout) :: update_mbd_ts_scaling
+ real(dp), intent(inout) :: time_vdw(1:3)
 
 !   Local. Every one of these was previously a variable of the main program
 !   that no other part of it referenced.
-    real(dp), allocatable :: v_neigh_vdw(:)
-    real(dp), allocatable :: alpha_SCS(:), omega_SCS(:), alpha_SCS_grad(:,:)
-    real(dp), allocatable :: this_alpha_SCS(:), this_omega_SCS(:)
-    real(dp), allocatable :: c6_scs(:), r0_scs(:), alpha0_scs(:), S_xyz_inv(:,:)
-    real(dp), allocatable :: hirshfeld_v_cart_der_send(:,:), hirshfeld_v_cart_der_receive(:,:)
-    real(dp), allocatable :: this_hirshfeld_v_cart_der_receive(:,:), hirshfeld_v_cart_der_ji(:,:)
-    integer, allocatable :: hirshfeld_transfer(:,:), this_hirshfeld_transfer(:)
-    integer, allocatable :: i_send(:), j_send(:), k_array(:), k_start(:)
-    integer, allocatable :: i_receive(:), j_receive(:), this_i_receive(:), this_j_receive(:)
-    integer, allocatable :: hirshfeld_disp(:)
-    integer :: i, j, k, i2, j2, k2, n, jx, jy, jz, ierr
-    logical :: include_2b
-    logical :: is_correction_step
+ real(dp), allocatable :: v_neigh_vdw(:)
+ real(dp), allocatable :: alpha_SCS(:)
+ real(dp), allocatable :: omega_SCS(:)
+ real(dp), allocatable :: alpha_SCS_grad(:,:)
+ real(dp), allocatable :: this_alpha_SCS(:)
+ real(dp), allocatable :: this_omega_SCS(:)
+ real(dp), allocatable :: c6_scs(:)
+ real(dp), allocatable :: r0_scs(:)
+ real(dp), allocatable :: alpha0_scs(:)
+ real(dp), allocatable :: S_xyz_inv(:,:)
+ real(dp), allocatable :: hirshfeld_v_cart_der_send(:,:)
+ real(dp), allocatable :: hirshfeld_v_cart_der_receive(:,:)
+ real(dp), allocatable :: this_hirshfeld_v_cart_der_receive(:,:)
+ real(dp), allocatable :: hirshfeld_v_cart_der_ji(:,:)
+ integer, allocatable :: hirshfeld_transfer(:,:)
+ integer, allocatable :: this_hirshfeld_transfer(:)
+ integer, allocatable :: i_send(:)
+ integer, allocatable :: j_send(:)
+ integer, allocatable :: k_array(:)
+ integer, allocatable :: k_start(:)
+ integer, allocatable :: i_receive(:)
+ integer, allocatable :: j_receive(:)
+ integer, allocatable :: this_i_receive(:)
+ integer, allocatable :: this_j_receive(:)
+ integer, allocatable :: hirshfeld_disp(:)
+ integer :: i
+ integer :: j
+ integer :: k
+ integer :: i2
+ integer :: j2
+ integer :: k2
+ integer :: n
+ integer :: jx
+ integer :: jy
+ integer :: jz
+ integer :: ierr
+ logical :: include_2b
+ logical :: is_correction_step
 !   Scratch timers for the commented-out stage timings inside the block. The
 !   main program's time1/time2 were used for this before; both are written
 !   before they are next read there, so nothing depended on the clobbering.
-    real(dp) :: time1, time2
+ real(dp) :: time1
+ real(dp) :: time2
 
     if( has_vdw .and. ( params%do_prediction ) &
          .and. ( params%vdw_type == "ts" .or. params%vdw_type == "mbd".or. params%vdw_type == "ts+mbd" ) )then

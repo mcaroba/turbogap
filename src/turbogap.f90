@@ -66,78 +66,235 @@ program turbogap
   !**************************************************************************
   ! Variable definitions
   !
-  real(dp), allocatable :: rjs(:), thetas(:), phis(:), xyz(:,:), sph_temp(:), sph_temp3(:,:)
-  real(dp), allocatable :: positions(:,:), positions_prev(:,:), soap(:,:), soap_cart_der(:,:,:), positions_diff(:,:), &
-                            forces_prev(:,:), frac_positions(:,:)
-  real(dp) :: rcut_max, a_box(1:3), b_box(1:3), c_box(1:3), max_displacement, energy, energy_prev
-  real(dp) :: virial(1:3, 1:3), this_virial(1:3, 1:3), v_uc, &
-               v_uc_prev, v_a_uc, v_a_uc_prev, eVperA3tobar =  1602176.6208d0, ranf, &
-               ranv(1:3), disp(1:3), d_disp, e_mc_prev, p_accept, virial_prev(1:3, 1:3), sim_exp_pred, sim_exp_prev, &
-               sim_exp_pred_der(1:3)
+ real(dp), allocatable :: rjs(:)
+ real(dp), allocatable :: thetas(:)
+ real(dp), allocatable :: phis(:)
+ real(dp), allocatable :: xyz(:,:)
+ real(dp), allocatable :: sph_temp(:)
+ real(dp), allocatable :: sph_temp3(:,:)
+ real(dp), allocatable :: positions(:,:)
+ real(dp), allocatable :: positions_prev(:,:)
+ real(dp), allocatable :: soap(:,:)
+ real(dp), allocatable :: soap_cart_der(:,:,:)
+ real(dp), allocatable :: positions_diff(:,:)
+ real(dp), allocatable :: forces_prev(:,:)
+ real(dp), allocatable :: frac_positions(:,:)
+ real(dp) :: rcut_max
+ real(dp) :: a_box(1:3)
+ real(dp) :: b_box(1:3)
+ real(dp) :: c_box(1:3)
+ real(dp) :: max_displacement
+ real(dp) :: energy
+ real(dp) :: energy_prev
+ real(dp) :: virial(1:3, 1:3)
+ real(dp) :: this_virial(1:3, 1:3)
+ real(dp) :: v_uc
+ real(dp) :: v_uc_prev
+ real(dp) :: v_a_uc
+ real(dp) :: v_a_uc_prev
+ real(dp) :: eVperA3tobar =  1602176.6208d0
+ real(dp) :: ranf
+ real(dp) :: ranv(1:3)
+ real(dp) :: disp(1:3)
+ real(dp) :: d_disp
+ real(dp) :: e_mc_prev
+ real(dp) :: p_accept
+ real(dp) :: virial_prev(1:3, 1:3)
+ real(dp) :: sim_exp_pred
+ real(dp) :: sim_exp_prev
+ real(dp) :: sim_exp_pred_der(1:3)
 !   The ten contribution families carry the target attribute so contrib(:) below
 !   can point at them. They are split onto their own declarations for that
 !   reason alone -- target on energies/forces, the accumulators they are summed
 !   into, would widen the aliasing assumption for no benefit.
-  real(dp), target :: virial_soap(1:3, 1:3), virial_2b(1:3, 1:3), virial_3b(1:3,1:3), &
-               virial_core_pot(1:3, 1:3), virial_vdw(1:3, 1:3), virial_lp(1:3,1:3), this_virial_vdw(1:3, 1:3), &
-               this_virial_lp(1:3, 1:3), virial_pdf(1:3,1:3), this_virial_pdf(1:3,1:3), virial_sf(1:3,1:3), &
-               this_virial_sf(1:3,1:3), virial_xrd(1:3,1:3), this_virial_xrd(1:3,1:3), virial_nd(1:3,1:3), &
-               this_virial_nd(1:3,1:3)
-  real(dp), allocatable :: energies(:), forces(:,:), this_energies(:), &
-                            this_forces(:,:), velocities(: ,:), masses_types(:), masses(:), &
-                            hirshfeld_v_temp(:), masses_temp(:), sinc_factor_matrix(:,:), energies_exp(:)
-  real(dp), allocatable, target :: energies_soap(:), forces_soap(:,:), &
-                            energies_2b(:), forces_2b(:,:), energies_3b(:), forces_3b(: ,:), &
-                            energies_core_pot(:), forces_core_pot(:,:)
+ real(dp), target :: virial_soap(1:3, 1:3)
+ real(dp), target :: virial_2b(1:3, 1:3)
+ real(dp), target :: virial_3b(1:3,1:3)
+ real(dp), target :: virial_core_pot(1:3, 1:3)
+ real(dp), target :: virial_vdw(1:3, 1:3)
+ real(dp), target :: virial_lp(1:3,1:3)
+ real(dp), target :: this_virial_vdw(1:3, 1:3)
+ real(dp), target :: this_virial_lp(1:3, 1:3)
+ real(dp), target :: virial_pdf(1:3,1:3)
+ real(dp), target :: this_virial_pdf(1:3,1:3)
+ real(dp), target :: virial_sf(1:3,1:3)
+ real(dp), target :: this_virial_sf(1:3,1:3)
+ real(dp), target :: virial_xrd(1:3,1:3)
+ real(dp), target :: this_virial_xrd(1:3,1:3)
+ real(dp), target :: virial_nd(1:3,1:3)
+ real(dp), target :: this_virial_nd(1:3,1:3)
+ real(dp), allocatable :: energies(:)
+ real(dp), allocatable :: forces(:,:)
+ real(dp), allocatable :: this_energies(:)
+ real(dp), allocatable :: this_forces(:,:)
+ real(dp), allocatable :: velocities(: ,:)
+ real(dp), allocatable :: masses_types(:)
+ real(dp), allocatable :: masses(:)
+ real(dp), allocatable :: hirshfeld_v_temp(:)
+ real(dp), allocatable :: masses_temp(:)
+ real(dp), allocatable :: sinc_factor_matrix(:,:)
+ real(dp), allocatable :: energies_exp(:)
+ real(dp), allocatable, target :: energies_soap(:)
+ real(dp), allocatable, target :: forces_soap(:,:)
+ real(dp), allocatable, target :: energies_2b(:)
+ real(dp), allocatable, target :: forces_2b(:,:)
+ real(dp), allocatable, target :: energies_3b(:)
+ real(dp), allocatable, target :: forces_3b(: ,:)
+ real(dp), allocatable, target :: energies_core_pot(:)
+ real(dp), allocatable, target :: forces_core_pot(:,:)
 !  real(dp), allocatable, target :: this_hirshfeld_v(:), this_hirshfeld_v_cart_der(:,:)
 !  real(dp), pointer :: this_hirshfeld_v_pt(:), this_hirshfeld_v_cart_der_pt(:,:)
 
-  real(dp), allocatable, target :: local_properties(:,:), local_properties_cart_der(:,:,:)
+ real(dp), allocatable, target :: local_properties(:,:)
+ real(dp), allocatable, target :: local_properties_cart_der(:,:,:)
   ! Have one rank lower for the pointer, such that it just relates to a sub array of the local properties/cart_der
-  real(dp), pointer :: local_properties_pt(:), local_properties_cart_der_pt(:,:)
+ real(dp), pointer :: local_properties_pt(:)
+ real(dp), pointer :: local_properties_cart_der_pt(:,:)
 !  real(dp), pointer :: hirshfeld_v(:), hirshfeld_v_cart_der(:,:)
-  real(dp), allocatable, target :: this_local_properties(:,:), this_local_properties_cart_der(:,:,:)
-  real(dp), pointer :: this_local_properties_pt(:,:), this_local_properties_cart_der_pt(:,:,:)
-  real(dp), allocatable :: y_i_pred_all(:,:), moments(:), moments_exp(:)
+ real(dp), allocatable, target :: this_local_properties(:,:)
+ real(dp), allocatable, target :: this_local_properties_cart_der(:,:,:)
+ real(dp), pointer :: this_local_properties_pt(:,:)
+ real(dp), pointer :: this_local_properties_cart_der_pt(:,:,:)
+ real(dp), allocatable :: y_i_pred_all(:,:)
+ real(dp), allocatable :: moments(:)
+ real(dp), allocatable :: moments_exp(:)
 
 
-  real(dp), allocatable :: all_energies(:,:), all_forces(:,:,:), all_virial(:,:,:)
-  real(dp), allocatable :: all_this_energies(:,:), all_this_forces(:,:,:), all_this_virial(:,:,:)
-  real(dp) :: instant_temp, kB = 8.6173303d-5, E_kinetic=0.d0, E_kinetic_prev, time1, time2, time3, time_neigh, time_gap, &
-               time_soap(1:3), time_2b(1:3), time_3b(1:3), time_read_input(1:3), time_read_xyz(1:3), &
-               time_mpi(1:3) = 0.d0, time_core_pot(1:3), time_vdw(1:3), time_pdf(1:3), time_sf(1:3), time_xrd(1:3), &
-               time_nd(1:3), time_xps(1:3), time_mc(1:3), instant_pressure, lv(1:3,1:3), &
-               time_mpi_positions(1:3) =  0.d0, time_mpi_ef(1:3) = 0.d0, time_md(3) = 0.d0, &
-               instant_pressure_tensor(1:3, 1:3), time_step, md_time, instant_pressure_prev, wfac, wfac_temp, energy_exp
-  integer, allocatable :: displs(:), displs2(:), counts(:), counts2(:), in_to_out_pairs(:), in_to_out_site(:), mc_id(:)
-  integer :: update_bar, idx, gd_istep = 0, nprop
-  logical, allocatable :: do_list(:), has_local_properties_mpi(:), fix_atom(:,:)
-  logical :: rebuild_neighbors_list = .true., exit_loop = .true., gd_box_do_pos = .true., restart_box_optim = .false., &
-                valid_xps=.false., write_condition=.false., overwrite_condition=.false.
-  character*1 :: creturn = achar(13)
+ real(dp), allocatable :: all_energies(:,:)
+ real(dp), allocatable :: all_forces(:,:,:)
+ real(dp), allocatable :: all_virial(:,:,:)
+ real(dp), allocatable :: all_this_energies(:,:)
+ real(dp), allocatable :: all_this_forces(:,:,:)
+ real(dp), allocatable :: all_this_virial(:,:,:)
+ real(dp) :: instant_temp
+ real(dp) :: kB = 8.6173303d-5
+ real(dp) :: E_kinetic=0.d0
+ real(dp) :: E_kinetic_prev
+ real(dp) :: time1
+ real(dp) :: time2
+ real(dp) :: time3
+ real(dp) :: time_neigh
+ real(dp) :: time_gap
+ real(dp) :: time_soap(1:3)
+ real(dp) :: time_2b(1:3)
+ real(dp) :: time_3b(1:3)
+ real(dp) :: time_read_input(1:3)
+ real(dp) :: time_read_xyz(1:3)
+ real(dp) :: time_mpi(1:3) = 0.d0
+ real(dp) :: time_core_pot(1:3)
+ real(dp) :: time_vdw(1:3)
+ real(dp) :: time_pdf(1:3)
+ real(dp) :: time_sf(1:3)
+ real(dp) :: time_xrd(1:3)
+ real(dp) :: time_nd(1:3)
+ real(dp) :: time_xps(1:3)
+ real(dp) :: time_mc(1:3)
+ real(dp) :: instant_pressure
+ real(dp) :: lv(1:3,1:3)
+ real(dp) :: time_mpi_positions(1:3) =  0.d0
+ real(dp) :: time_mpi_ef(1:3) = 0.d0
+ real(dp) :: time_md(3) = 0.d0
+ real(dp) :: instant_pressure_tensor(1:3, 1:3)
+ real(dp) :: time_step
+ real(dp) :: md_time
+ real(dp) :: instant_pressure_prev
+ real(dp) :: wfac
+ real(dp) :: wfac_temp
+ real(dp) :: energy_exp
+ integer, allocatable :: displs(:)
+ integer, allocatable :: displs2(:)
+ integer, allocatable :: counts(:)
+ integer, allocatable :: counts2(:)
+ integer, allocatable :: in_to_out_pairs(:)
+ integer, allocatable :: in_to_out_site(:)
+ integer, allocatable :: mc_id(:)
+ integer :: update_bar
+ integer :: idx
+ integer :: gd_istep = 0
+ integer :: nprop
+ logical, allocatable :: do_list(:)
+ logical, allocatable :: has_local_properties_mpi(:)
+ logical, allocatable :: fix_atom(:,:)
+ logical :: rebuild_neighbors_list = .true.
+ logical :: exit_loop = .true.
+ logical :: gd_box_do_pos = .true.
+ logical :: restart_box_optim = .false.
+ logical :: valid_xps=.false.
+ logical :: write_condition=.false.
+ logical :: overwrite_condition=.false.
+ character*1 :: creturn = achar(13)
 
   !! these decalarations are for time step and electronic stopping by different methods
-  real(dp) :: time_step_prev
-  integer :: nrows
-  real(dp) :: cum_EEL = 0.0d0
-  real(dp), allocatable :: allelstopdata(:)
-  type (EPH_Beta_class) :: ephbeta
-  type (EPH_FDM_class) :: ephfdm
-  type (EPH_LangevinSpatialCorrelation_class) :: ephlsc
+ real(dp) :: time_step_prev
+ integer :: nrows
+ real(dp) :: cum_EEL = 0.0d0
+ real(dp), allocatable :: allelstopdata(:)
+ type (EPH_Beta_class) :: ephbeta
+ type (EPH_FDM_class) :: ephfdm
+ type (EPH_LangevinSpatialCorrelation_class) :: ephlsc
   
   ! Clean up these variables after code refactoring !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  integer, allocatable :: n_neigh(:), neighbors_list(:), alpha_max(:), species(:), species_supercell(:), &
-                             neighbor_species(:), sph_temp_int(:), der_neighbors(:), der_neighbors_list(:), &
-                             i_beg_list(:), i_end_list(:), j_beg_list(:), j_end_list(:), species_idx(:), &
-                             n_neigh_out(:), n_local_properties_mpi(:), local_property_indexes(:), n_mc_species(:), &
-                             n_mc_species_prev(:)
-  integer :: n_sites, i, j, k, i2, j2, n_soap, k2, k3, l, n_sites_this, ierr, rank, ntasks, n_sp, n_pos, n_sp_sc, &
-                this_i_beg, this_i_end, this_j_beg, this_j_end, this_n_sites_mpi, n_sites_prev = 0, &
-                n_atom_pairs_by_rank_prev=0, n_pairs, n_all_sites, n_sites_out, n_lp_count=0, vdw_lp_index, &
-                core_be_lp_index, xps_idx, n
+ integer, allocatable :: n_neigh(:)
+ integer, allocatable :: neighbors_list(:)
+ integer, allocatable :: alpha_max(:)
+ integer, allocatable :: species(:)
+ integer, allocatable :: species_supercell(:)
+ integer, allocatable :: neighbor_species(:)
+ integer, allocatable :: sph_temp_int(:)
+ integer, allocatable :: der_neighbors(:)
+ integer, allocatable :: der_neighbors_list(:)
+ integer, allocatable :: i_beg_list(:)
+ integer, allocatable :: i_end_list(:)
+ integer, allocatable :: j_beg_list(:)
+ integer, allocatable :: j_end_list(:)
+ integer, allocatable :: species_idx(:)
+ integer, allocatable :: n_neigh_out(:)
+ integer, allocatable :: n_local_properties_mpi(:)
+ integer, allocatable :: local_property_indexes(:)
+ integer, allocatable :: n_mc_species(:)
+ integer, allocatable :: n_mc_species_prev(:)
+ integer :: n_sites
+ integer :: i
+ integer :: j
+ integer :: k
+ integer :: i2
+ integer :: j2
+ integer :: n_soap
+ integer :: k2
+ integer :: k3
+ integer :: l
+ integer :: n_sites_this
+ integer :: ierr
+ integer :: rank
+ integer :: ntasks
+ integer :: n_sp
+ integer :: n_pos
+ integer :: n_sp_sc
+ integer :: this_i_beg
+ integer :: this_i_end
+ integer :: this_j_beg
+ integer :: this_j_end
+ integer :: this_n_sites_mpi
+ integer :: n_sites_prev = 0
+ integer :: n_atom_pairs_by_rank_prev=0
+ integer :: n_pairs
+ integer :: n_all_sites
+ integer :: n_sites_out
+ integer :: n_lp_count=0
+ integer :: vdw_lp_index
+ integer :: core_be_lp_index
+ integer :: xps_idx
+ integer :: n
 
-  integer :: l_max, n_atom_pairs, n_max, ijunk, central_species = 0, n_atom_pairs_total
-  integer :: iostatus, counter = 0, counter2
+ integer :: l_max
+ integer :: n_atom_pairs
+ integer :: n_max
+ integer :: ijunk
+ integer :: central_species = 0
+ integer :: n_atom_pairs_total
+ integer :: iostatus
+ integer :: counter = 0
+ integer :: counter2
 
 !   The ten additive contribution families that are reduced together after the
 !   descriptor loop. Their predicates used to be written out three times -- to
@@ -146,82 +303,192 @@ program turbogap
 !   silently attributes one term's energies to another. That is the same shape
 !   as the ts+mbd predicate defect (KNOWN_ISSUES.md #1), so it is killed the
 !   same way: evaluated once, into contrib_on, and only read thereafter.
-  integer, parameter :: C_SOAP = 1, C_VDW = 2, C_LP  = 3, C_PDF = 4, C_SF = 5, &
-                        C_XRD  = 6, C_ND  = 7, C_2B  = 8, C_CP  = 9, C_3B = 10
-  integer, parameter :: N_CONTRIB = 10
-  logical :: contrib_on(1:N_CONTRIB)
-  type(contribution_ref) :: contrib(1:N_CONTRIB)
-  integer :: n_active, i_contrib
-  integer :: which_atom = 0, n_species = 1, n_species_actual, n_xyz, indices(1:3)
-  integer :: radial_enhancement = 0
-  integer :: md_istep, mc_istep, mc_mu_id=1, n_mc
-  character*8, allocatable :: species_types_actual(:)
-  character*1024, allocatable :: local_property_labels(:)
-  logical :: repeat_xyz = .true., overwrite = .false., check_species, valid_local_properties=.false., label_in_list, &
-                do_mc_relax =.false.
+ integer, parameter :: C_SOAP = 1
+ integer, parameter :: C_VDW = 2
+ integer, parameter :: C_LP  = 3
+ integer, parameter :: C_PDF = 4
+ integer, parameter :: C_SF = 5
+ integer, parameter :: C_XRD  = 6
+ integer, parameter :: C_ND  = 7
+ integer, parameter :: C_2B  = 8
+ integer, parameter :: C_CP  = 9
+ integer, parameter :: C_3B = 10
+ integer, parameter :: N_CONTRIB = 10
+ logical :: contrib_on(1:N_CONTRIB)
+ type(contribution_ref) :: contrib(1:N_CONTRIB)
+ integer :: n_active
+ integer :: i_contrib
+ integer :: which_atom = 0
+ integer :: n_species = 1
+ integer :: n_species_actual
+ integer :: n_xyz
+ integer :: indices(1:3)
+ integer :: radial_enhancement = 0
+ integer :: md_istep
+ integer :: mc_istep
+ integer :: mc_mu_id=1
+ integer :: n_mc
+ character*8, allocatable :: species_types_actual(:)
+ character*1024, allocatable :: local_property_labels(:)
+ logical :: repeat_xyz = .true.
+ logical :: overwrite = .false.
+ logical :: check_species
+ logical :: valid_local_properties=.false.
+ logical :: label_in_list
+ logical :: do_mc_relax =.false.
 
-  character*1024 :: filename, cjunk, file_compress_soap, file_alphas, file_soap, file_2b, file_alphas_2b, file_3b, &
-                       file_alphas_3b, mc_file = "mc_trial.xyz", string, temp_string, temp_string2
-  character*16 :: lattice_string(1:9)
-  character*8 :: i_char
-  character*8, allocatable :: xyz_species(:), xyz_species_supercell(:), species_type_temp(:)
+ character*1024 :: filename
+ character*1024 :: cjunk
+ character*1024 :: file_compress_soap
+ character*1024 :: file_alphas
+ character*1024 :: file_soap
+ character*1024 :: file_2b
+ character*1024 :: file_alphas_2b
+ character*1024 :: file_3b
+ character*1024 :: file_alphas_3b
+ character*1024 :: mc_file = "mc_trial.xyz"
+ character*1024 :: string
+ character*1024 :: temp_string
+ character*1024 :: temp_string2
+ character*16 :: lattice_string(1:9)
+ character*8 :: i_char
+ character*8, allocatable :: xyz_species(:)
+ character*8, allocatable :: xyz_species_supercell(:)
+ character*8, allocatable :: species_type_temp(:)
 
 
   ! This is the mode in which we run TurboGAP
-  character*16 :: mode = "none"
-  character*32 :: mc_move = "none", exp_output="none"
+ character*16 :: mode = "none"
+ character*32 :: mc_move = "none"
+ character*32 :: exp_output="none"
 
   ! Here we store the input parameters
-  type(input_parameters) :: params
+ type(input_parameters) :: params
 
   ! These are the containers for the hyperparameters of descriptors and GAPs
-  integer :: n_soap_turbo = 0, n_distance_2b = 0, n_angle_3b = 0, n_core_pot = 0, counter_lp_names=0, temp_md_nsteps
-  real(dp), parameter :: pi = acos(-1.0)
-  type(soap_turbo), allocatable :: soap_turbo_hypers(:)
-  type(distance_2b), allocatable :: distance_2b_hypers(:)
-  type(angle_3b), allocatable :: angle_3b_hypers(:)
-  type(core_pot), allocatable :: core_pot_hypers(:)
+ integer :: n_soap_turbo = 0
+ integer :: n_distance_2b = 0
+ integer :: n_angle_3b = 0
+ integer :: n_core_pot = 0
+ integer :: counter_lp_names=0
+ integer :: temp_md_nsteps
+ real(dp), parameter :: pi = acos(-1.0)
+ type(soap_turbo), allocatable :: soap_turbo_hypers(:)
+ type(distance_2b), allocatable :: distance_2b_hypers(:)
+ type(angle_3b), allocatable :: angle_3b_hypers(:)
+ type(core_pot), allocatable :: core_pot_hypers(:)
 
   !vdw crap
-  real(dp), allocatable, target :: energies_vdw(:), forces_vdw(:,:), this_energies_vdw(:), this_forces_vdw(:,:)
+ real(dp), allocatable, target :: energies_vdw(:)
+ real(dp), allocatable, target :: forces_vdw(:,:)
+ real(dp), allocatable, target :: this_energies_vdw(:)
+ real(dp), allocatable, target :: this_forces_vdw(:,:)
 ! Persistent ts+mbd correction state, owned by turbogap_vdw
-  type(vdw_state) :: vdw_ws
-  real(dp), allocatable :: v_neigh_lp(:)
-  real(dp), allocatable, target :: energies_lp(:), forces_lp(:,:), this_energies_lp(:), this_forces_lp(:,:)
-  real(dp), allocatable, target :: energies_pdf(:), forces_pdf(:,:), this_energies_pdf(:), this_forces_pdf(:,:)
-  real(dp), allocatable, target :: energies_sf(:), forces_sf(:,:), this_energies_sf(:), this_forces_sf(:,:)
-  real(dp), allocatable, target :: energies_xrd(:), forces_xrd(:,:), this_energies_xrd(:), this_forces_xrd(:,:)
-  real(dp), allocatable, target :: energies_nd(:), forces_nd(:,:), this_energies_nd(:), this_forces_nd(:,:)
-  real(dp), allocatable :: mbd_ts_scaling(:), this_mbd_ts_scaling(:)
-  real(dp), allocatable :: local_virial_vdw_diag(:,:), local_virial_vdw_diag_corr(:,:)
-  real(dp), allocatable :: this_local_virial_vdw_diag(:,:)
-  real(dp), allocatable :: energies_vdw_corr(:), forces_vdw_corr(:,:)
-  logical :: update_mbd_ts_scaling = .true.
+ type(vdw_state) :: vdw_ws
+ real(dp), allocatable :: v_neigh_lp(:)
+ real(dp), allocatable, target :: energies_lp(:)
+ real(dp), allocatable, target :: forces_lp(:,:)
+ real(dp), allocatable, target :: this_energies_lp(:)
+ real(dp), allocatable, target :: this_forces_lp(:,:)
+ real(dp), allocatable, target :: energies_pdf(:)
+ real(dp), allocatable, target :: forces_pdf(:,:)
+ real(dp), allocatable, target :: this_energies_pdf(:)
+ real(dp), allocatable, target :: this_forces_pdf(:,:)
+ real(dp), allocatable, target :: energies_sf(:)
+ real(dp), allocatable, target :: forces_sf(:,:)
+ real(dp), allocatable, target :: this_energies_sf(:)
+ real(dp), allocatable, target :: this_forces_sf(:,:)
+ real(dp), allocatable, target :: energies_xrd(:)
+ real(dp), allocatable, target :: forces_xrd(:,:)
+ real(dp), allocatable, target :: this_energies_xrd(:)
+ real(dp), allocatable, target :: this_forces_xrd(:,:)
+ real(dp), allocatable, target :: energies_nd(:)
+ real(dp), allocatable, target :: forces_nd(:,:)
+ real(dp), allocatable, target :: this_energies_nd(:)
+ real(dp), allocatable, target :: this_forces_nd(:,:)
+ real(dp), allocatable :: mbd_ts_scaling(:)
+ real(dp), allocatable :: this_mbd_ts_scaling(:)
+ real(dp), allocatable :: local_virial_vdw_diag(:,:)
+ real(dp), allocatable :: local_virial_vdw_diag_corr(:,:)
+ real(dp), allocatable :: this_local_virial_vdw_diag(:,:)
+ real(dp), allocatable :: energies_vdw_corr(:)
+ real(dp), allocatable :: forces_vdw_corr(:,:)
+ logical :: update_mbd_ts_scaling = .true.
   ! MPI stuff
-  real(dp), allocatable :: temp_1d(:), temp_1d_bis(:), temp_2d(:,:), pair_distribution_partial(:,:), &
-                            pair_distribution_der(:,:), pair_distribution_partial_der(:,:,:), &
-                            pair_distribution_partial_temp(:,:), pair_distribution_partial_temp_der(:,:,:), &
-                            n_atoms_of_species(:), structure_factor_partial(:,:), structure_factor_partial_temp(:,:), &
-                            structure_factor_partial_der(:,:,:), structure_factor_partial_temp_der(:,:), &
-                            x_pair_distribution(:), y_pair_distribution(:), y_pair_distribution_temp(:), &
-                            x_structure_factor(:), x_structure_factor_temp(:), y_structure_factor(:), &
-                            y_structure_factor_temp(:), x_xrd(:), x_xrd_temp(:), y_xrd(:), y_xrd_temp(:), &
-                            y_xrd_der(:,:,:), y_xrd_temp_der(:,:,:), x_nd(:), x_nd_temp(:), y_nd(:), y_nd_temp(:), &
-                            y_nd_der(:,:,:), y_nd_temp_der(:,:,:)
-  integer, allocatable :: temp_1d_int(:), n_atom_pairs_by_rank(:), displ(:)
-  integer, allocatable :: local_properties_n_sparse_mpi_soap_turbo(:), local_properties_dim_mpi_soap_turbo(:), &
-                             n_neigh_local(:), vdw_n_sparse_mpi_soap_turbo(:), site_in_rank(:), this_site_in_rank(:)
-  integer :: i_beg, i_end, n_sites_mpi, j_beg, j_end, size_soap_turbo, size_distance_2b, size_angle_3b
-  integer :: q_beg, q_end
+ real(dp), allocatable :: temp_1d(:)
+ real(dp), allocatable :: temp_1d_bis(:)
+ real(dp), allocatable :: temp_2d(:,:)
+ real(dp), allocatable :: pair_distribution_partial(:,:)
+ real(dp), allocatable :: pair_distribution_der(:,:)
+ real(dp), allocatable :: pair_distribution_partial_der(:,:,:)
+ real(dp), allocatable :: pair_distribution_partial_temp(:,:)
+ real(dp), allocatable :: pair_distribution_partial_temp_der(:,:,:)
+ real(dp), allocatable :: n_atoms_of_species(:)
+ real(dp), allocatable :: structure_factor_partial(:,:)
+ real(dp), allocatable :: structure_factor_partial_temp(:,:)
+ real(dp), allocatable :: structure_factor_partial_der(:,:,:)
+ real(dp), allocatable :: structure_factor_partial_temp_der(:,:)
+ real(dp), allocatable :: x_pair_distribution(:)
+ real(dp), allocatable :: y_pair_distribution(:)
+ real(dp), allocatable :: y_pair_distribution_temp(:)
+ real(dp), allocatable :: x_structure_factor(:)
+ real(dp), allocatable :: x_structure_factor_temp(:)
+ real(dp), allocatable :: y_structure_factor(:)
+ real(dp), allocatable :: y_structure_factor_temp(:)
+ real(dp), allocatable :: x_xrd(:)
+ real(dp), allocatable :: x_xrd_temp(:)
+ real(dp), allocatable :: y_xrd(:)
+ real(dp), allocatable :: y_xrd_temp(:)
+ real(dp), allocatable :: y_xrd_der(:,:,:)
+ real(dp), allocatable :: y_xrd_temp_der(:,:,:)
+ real(dp), allocatable :: x_nd(:)
+ real(dp), allocatable :: x_nd_temp(:)
+ real(dp), allocatable :: y_nd(:)
+ real(dp), allocatable :: y_nd_temp(:)
+ real(dp), allocatable :: y_nd_der(:,:,:)
+ real(dp), allocatable :: y_nd_temp_der(:,:,:)
+ integer, allocatable :: temp_1d_int(:)
+ integer, allocatable :: n_atom_pairs_by_rank(:)
+ integer, allocatable :: displ(:)
+ integer, allocatable :: local_properties_n_sparse_mpi_soap_turbo(:)
+ integer, allocatable :: local_properties_dim_mpi_soap_turbo(:)
+ integer, allocatable :: n_neigh_local(:)
+ integer, allocatable :: vdw_n_sparse_mpi_soap_turbo(:)
+ integer, allocatable :: site_in_rank(:)
+ integer, allocatable :: this_site_in_rank(:)
+ integer :: i_beg
+ integer :: i_end
+ integer :: n_sites_mpi
+ integer :: j_beg
+ integer :: j_end
+ integer :: size_soap_turbo
+ integer :: size_distance_2b
+ integer :: size_angle_3b
+ integer :: q_beg
+ integer :: q_end
 
   ! Nested sampling
-  real(dp) :: e_max, e_kin, rand, rand_scale(1:6), mag, n_total_cutoff, n_total_cutoff_temp, dq, target_temp
-  integer :: i_nested, i_max, i_image, i_current_image=1, i_trial_image=2
-  type(image), allocatable :: images(:), images_temp(:)
-  type(exp_data_container) :: temp_exp_container
-  character*32 :: implemented_exp_observables(1:5)
+ real(dp) :: e_max
+ real(dp) :: e_kin
+ real(dp) :: rand
+ real(dp) :: rand_scale(1:6)
+ real(dp) :: mag
+ real(dp) :: n_total_cutoff
+ real(dp) :: n_total_cutoff_temp
+ real(dp) :: dq
+ real(dp) :: target_temp
+ integer :: i_nested
+ integer :: i_max
+ integer :: i_image
+ integer :: i_current_image=1
+ integer :: i_trial_image=2
+ type(image), allocatable :: images(:)
+ type(image), allocatable :: images_temp(:)
+ type(exp_data_container) :: temp_exp_container
+ character*32 :: implemented_exp_observables(1:5)
 
-  real(dp), allocatable :: x_xps(:), y_xps(:)
+ real(dp), allocatable :: x_xps(:)
+ real(dp), allocatable :: y_xps(:)
 
   implemented_exp_observables(1) = "xps"
   implemented_exp_observables(2) = "xrd"
@@ -1112,30 +1379,6 @@ end if
               end if
 
 
-              ! call get_gap_soap(n_sites, this_n_sites_mpi, n_neigh(this_i_beg:this_i_end), neighbors_list(this_j_beg:this_j_end), &
-              !      soap_turbo_hypers(i)%n_species, soap_turbo_hypers(i)%species_types, &
-              !      rjs(this_j_beg:this_j_end), thetas(this_j_beg:this_j_end), phis(this_j_beg:this_j_end), &
-              !      xyz(1:3, this_j_beg:this_j_end), &
-              !      soap_turbo_hypers(i)%alpha_max, &
-              !      soap_turbo_hypers(i)%l_max, soap_turbo_hypers(i)%dim, soap_turbo_hypers(i)%rcut_hard, &
-              !      soap_turbo_hypers(i)%rcut_soft, soap_turbo_hypers(i)%nf, soap_turbo_hypers(i)%global_scaling, &
-              !      soap_turbo_hypers(i)%atom_sigma_r, soap_turbo_hypers(i)%atom_sigma_r_scaling, &
-              !      soap_turbo_hypers(i)%atom_sigma_t, soap_turbo_hypers(i)%atom_sigma_t_scaling, &
-              !      soap_turbo_hypers(i)%amplitude_scaling, soap_turbo_hypers(i)%radial_enhancement, &
-              !      soap_turbo_hypers(i)%central_weight, soap_turbo_hypers(i)%basis, &
-              !      soap_turbo_hypers(i)%scaling_mode, params%do_timing, params%do_derivatives, params%do_forces, &
-              !      params%do_prediction, params%write_soap, params%write_derivatives, &
-              !      soap_turbo_hypers(i)%compress_soap, soap_turbo_hypers(i)%compress_P_nonzero, &
-              !      soap_turbo_hypers(i)%compress_P_i, soap_turbo_hypers(i)%compress_P_j, &
-              !      soap_turbo_hypers(i)%compress_P_el, &
-              !      soap_turbo_hypers(i)%delta, soap_turbo_hypers(i)%zeta, soap_turbo_hypers(i)%central_species, &
-              !      xyz_species(this_i_beg:this_i_end), xyz_species_supercell, soap_turbo_hypers(i)%alphas, &
-              !      soap_turbo_hypers(i)%Qs, params%all_atoms, params%which_atom, indices, soap, soap_cart_der, &
-              !      der_neighbors, der_neighbors_list, &
-              !      this_energies, this_forces, &
-              !      this_virial, soap_turbo_hypers(i)&
-              !      &%has_local_properties, n_pairs, in_to_out_pairs, n_all_sites, in_to_out_site, n_neigh_out, n_sites_out )
-
               call get_gap_soap(n_sites, this_n_sites_mpi, n_neigh(this_i_beg:this_i_end), neighbors_list(this_j_beg:this_j_end), &
                    soap_turbo_hypers(i)%n_species, soap_turbo_hypers(i)%species_types, &
                    rjs(this_j_beg:this_j_end), thetas(this_j_beg:this_j_end), phis(this_j_beg:this_j_end), &
@@ -1168,67 +1411,6 @@ end if
               ! We can have a pointer to specific parts of this_local_properties array to then
 
 
-              ! if (soap_turbo_hypers(i)%has_local_properties)then
-
-              !    ! only iterating over the computed properties
-              !    this_local_properties = 0.d0
-              !    if( params%do_forces )then
-              !       this_local_properties_cart_der = 0.d0
-              !    end if
-
-              !    do l = 1, soap_turbo_hypers(i)%n_local_properties
-              !       ! We can increment the counter for the local properties
-              !       i2 = i2 + 1
-              !       if (soap_turbo_hypers(i)%local_property_models(l)%compute)then
-              !          ! compute the local property!
-              !          ! Above the local properties passes are this_local_properties so one must change
-              !          !
-              !          ! Allocate the pointer
-
-              !          this_local_properties_pt =>&
-              !               & this_local_properties(1:n_sites,&
-              !               & local_property_indexes(i2))
-              !             !             I don't remember why this
-              !          !             needs a pointer
-              !          !
-              !          !<-----------------------------------------
-              !          !CHECK
-              !          this_local_properties_cart_der_pt =>&
-              !               & this_local_properties_cart_der(1:3,&
-              !               & this_j_beg:this_j_end,&
-              !               & local_property_indexes(i2))
-
-              !          call get_local_properties( soap, &
-              !               soap_turbo_hypers(i)%local_property_models(l)%Qs, &
-              !               soap_turbo_hypers(i)%local_property_models(l)%alphas, &
-              !               soap_turbo_hypers(i)%local_property_models(l)%V0, &
-              !               soap_turbo_hypers(i)%local_property_models(l)%delta, &
-              !               soap_turbo_hypers(i)%local_property_models(l)%zeta, &
-              !               this_local_properties_pt, &
-              !               soap_turbo_hypers(i)%local_property_models(l)%do_derivatives, &
-              !               soap_cart_der, &
-              !               n_neigh_out, &
-              !               this_local_properties_cart_der_pt, n_pairs,&
-              !               & in_to_out_pairs, n_all_sites,&
-              !               & in_to_out_site,  n_sites_out )
-
-
-              !          nullify(this_local_properties_pt)
-              !          nullify(this_local_properties_cart_der_pt)
-              !       end if
-              !    end do
-              !    ! Now deallocate the arrays which were not deallocated in get_gap_soap
-              !    deallocate( in_to_out_site, in_to_out_pairs, n_neigh_out )
-
-              !    if( .not. params%write_soap  ) deallocate( soap )
-
-              !    if( params%do_derivatives .and. .not. params%write_derivatives)then
-              !       deallocate( soap_cart_der )
-              !    end if
-              ! end if
-
-
-
               energies_soap = energies_soap + this_energies
 
               if( soap_turbo_hypers(i)%has_local_properties )then
@@ -1242,16 +1424,6 @@ end if
                          & this_local_properties_cart_der(:,:,:)
                  end if
 
-
-                 ! if( soap_turbo_hypers(i)%has_vdw )then
-                 !    !                    hirshfeld_v => local_properties( :, vdw_lp_index)
-                 !    if (any(soap_turbo_hypers(i)&
-                 !         &%local_property_models(:)%do_derivatives)&
-                 !         & .and. params%do_derivatives)&
-                 !         & hirshfeld_v_cart_der =>&
-                 !         & local_properties_cart_der( :, :,&
-                 !         & vdw_lp_index)
-                 ! end if
 
               end if
               if( params%do_forces )then

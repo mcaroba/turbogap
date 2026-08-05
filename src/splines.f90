@@ -67,11 +67,25 @@ module splines
 
     implicit none
 
-    real(dp), intent(in) :: x(:), y(:), y2(:), r(:), yp1, ypn, rcut
-    real(dp), dimension(1:size(r)) :: s
+ real(dp), intent(in) :: x(:)
+ real(dp), intent(in) :: y(:)
+ real(dp), intent(in) :: y2(:)
+ real(dp), intent(in) :: r(:)
+ real(dp), intent(in) :: yp1
+ real(dp), intent(in) :: ypn
+ real(dp), intent(in) :: rcut
+ real(dp), dimension(1:size(r)) :: s
 
-    real(dp) :: h, h26, A, B, C, D
-    integer :: j, n, m, i
+ real(dp) :: h
+ real(dp) :: h26
+ real(dp) :: A
+ real(dp) :: B
+ real(dp) :: C
+ real(dp) :: D
+ integer :: j
+ integer :: n
+ integer :: m
+ integer :: i
 
     n = size(x)
     m = size(r)
@@ -115,11 +129,27 @@ module splines
 
     implicit none
 
-    real(dp), intent(in) :: x(:), y(:), y2(:), r(:), yp1, ypn, rcut
-    real(dp), dimension(1:size(r)) :: ds
+ real(dp), intent(in) :: x(:)
+ real(dp), intent(in) :: y(:)
+ real(dp), intent(in) :: y2(:)
+ real(dp), intent(in) :: r(:)
+ real(dp), intent(in) :: yp1
+ real(dp), intent(in) :: ypn
+ real(dp), intent(in) :: rcut
+ real(dp), dimension(1:size(r)) :: ds
 
-    real(dp) :: h, h6, dAdx, dBdx, dCdx, dDdx, A, B
-    integer :: j, n, m, i
+ real(dp) :: h
+ real(dp) :: h6
+ real(dp) :: dAdx
+ real(dp) :: dBdx
+ real(dp) :: dCdx
+ real(dp) :: dDdx
+ real(dp) :: A
+ real(dp) :: B
+ integer :: j
+ integer :: n
+ integer :: m
+ integer :: i
 
     n = size(x)
     m = size(r)

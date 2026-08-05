@@ -42,9 +42,12 @@ contains
 
   subroutine get_write_condition( do_mc, do_md, mc_istep, md_istep, write_xyz, write_condition)
     implicit none
-    logical, intent(in) :: do_mc, do_md
-    integer, intent(in) :: mc_istep, md_istep, write_xyz
-    logical, intent(out) :: write_condition
+ logical, intent(in) :: do_mc
+ logical, intent(in) :: do_md
+ integer, intent(in) :: mc_istep
+ integer, intent(in) :: md_istep
+ integer, intent(in) :: write_xyz
+ logical, intent(out) :: write_condition
 
     if (do_mc)then
        write_condition = mc_istep > -1 .and. (modulo( mc_istep, write_xyz) ==  0)
@@ -57,9 +60,12 @@ contains
 
   subroutine get_overwrite_condition( do_mc, do_md, mc_istep, md_istep, write_xyz, write_condition)
     implicit none
-    logical, intent(in) :: do_mc, do_md
-    integer, intent(in) :: mc_istep, md_istep, write_xyz
-    logical, intent(out) :: write_condition
+ logical, intent(in) :: do_mc
+ logical, intent(in) :: do_md
+ integer, intent(in) :: mc_istep
+ integer, intent(in) :: md_istep
+ integer, intent(in) :: write_xyz
+ logical, intent(out) :: write_condition
 
     if (do_mc)then
        write_condition = mc_istep ==  0
@@ -75,14 +81,26 @@ contains
        & write_xyz, has_partials, n_species, n_samples, n_dim_partial&
        &, x, y, partials, species_types, name )
     implicit none
-    logical, intent(in) :: do_mc, do_md, has_partials
-    integer, intent(in) :: mc_istep, md_istep, write_xyz, n_species, n_samples, n_dim_partial
-    real(dp), intent(in) :: x(:), y(:), partials(:,:)
-    character*8, allocatable :: species_types(:)
+ logical, intent(in) :: do_mc
+ logical, intent(in) :: do_md
+ logical, intent(in) :: has_partials
+ integer, intent(in) :: mc_istep
+ integer, intent(in) :: md_istep
+ integer, intent(in) :: write_xyz
+ integer, intent(in) :: n_species
+ integer, intent(in) :: n_samples
+ integer, intent(in) :: n_dim_partial
+ real(dp), intent(in) :: x(:)
+ real(dp), intent(in) :: y(:)
+ real(dp), intent(in) :: partials(:,:)
+ character*8, allocatable :: species_types(:)
     character(len = *), intent(in) :: name
-    integer :: j, k, n_dim_idx
-    character*1024 :: filename
-    logical :: write_condition, overwrite_condition
+ integer :: j
+ integer :: k
+ integer :: n_dim_idx
+ character*1024 :: filename
+ logical :: write_condition
+ logical :: overwrite_condition
 
     call get_overwrite_condition( do_mc, do_md&
          &, mc_istep, md_istep, write_xyz,&
@@ -127,27 +145,66 @@ contains
        ! &    forces_pdf,    forces_sf,    forces_xrd )
     implicit none
     ! Input Variables
-    real(dp),  intent(in) :: rjs(:), kde_sigma, xyz(:,:), v_uc,  r_min, r_max, r_cut
-    integer, intent(in) :: neighbors_list(:), n_neigh(:), neighbor_species(:), species(:)
-    integer, intent(in) :: n_sites0, n_samples, n_species, rank
-    logical, intent(in) :: do_derivatives !, do_forces_pdf, do_forces_sf, do_forces_xrd
-    character*8, intent(in), allocatable :: species_types(:)
+ real(dp), intent(in) :: rjs(:)
+ real(dp), intent(in) :: kde_sigma
+ real(dp), intent(in) :: xyz(:,:)
+ real(dp), intent(in) :: v_uc
+ real(dp), intent(in) :: r_min
+ real(dp), intent(in) :: r_max
+ real(dp), intent(in) :: r_cut
+ integer, intent(in) :: neighbors_list(:)
+ integer, intent(in) :: n_neigh(:)
+ integer, intent(in) :: neighbor_species(:)
+ integer, intent(in) :: species(:)
+ integer, intent(in) :: n_sites0
+ integer, intent(in) :: n_samples
+ integer, intent(in) :: n_species
+ integer, intent(in) :: rank
+ logical, intent(in) :: do_derivatives !
+ character*8, intent(in), allocatable :: species_types(:)
     ! Output Variables
-    real(dp),  intent(out), allocatable :: pair_distribution(:,:)
-    real(dp),  intent(out), allocatable :: pair_distribution_der(:,:,:)!, forces_pdf(:,:)
+ real(dp), intent(out), allocatable :: pair_distribution(:,:)
+ real(dp), intent(out), allocatable :: pair_distribution_der(:,:,:)!
 
     ! Internal  Variables
-    integer :: n_sites, n_pairs, s, species_i, species_j
-    integer :: i, j, k, l, i2, j2, n_dim_partial, n_dim_idx, ierr
-    real(dp)  :: r, gauss, c
-    real(dp), allocatable :: bin_edges(:), dV(:), factors(:), pair_distribution_partial_temp(:,:),&
-         & pdf(:), sf(:), xrd(:), forces_sf(:,:), forces_xrd(:,:), n_atoms_of_species(:), &
-         prefactor_pdf(:), prefactor_sf(:), prefactor_xrd(:), x_pdf(:)
+ integer :: n_sites
+ integer :: n_pairs
+ integer :: s
+ integer :: species_i
+ integer :: species_j
+ integer :: i
+ integer :: j
+ integer :: k
+ integer :: l
+ integer :: i2
+ integer :: j2
+ integer :: n_dim_partial
+ integer :: n_dim_idx
+ integer :: ierr
+ real(dp) :: r
+ real(dp) :: gauss
+ real(dp) :: c
+ real(dp), allocatable :: bin_edges(:)
+ real(dp), allocatable :: dV(:)
+ real(dp), allocatable :: factors(:)
+ real(dp), allocatable :: pair_distribution_partial_temp(:,:)
+ real(dp), allocatable :: pdf(:)
+ real(dp), allocatable :: sf(:)
+ real(dp), allocatable :: xrd(:)
+ real(dp), allocatable :: forces_sf(:,:)
+ real(dp), allocatable :: forces_xrd(:,:)
+ real(dp), allocatable :: n_atoms_of_species(:)
+ real(dp), allocatable :: prefactor_pdf(:)
+ real(dp), allocatable :: prefactor_sf(:)
+ real(dp), allocatable :: prefactor_xrd(:)
+ real(dp), allocatable :: x_pdf(:)
 
-    integer, allocatable :: species_to_ndim(:,:), species1_partial(:), species2_partial(:)
-    character*1024 :: filename
+ integer, allocatable :: species_to_ndim(:,:)
+ integer, allocatable :: species1_partial(:)
+ integer, allocatable :: species2_partial(:)
+ character*1024 :: filename
     ! Parameters
-    real(dp), parameter :: pi = acos(-1.0)
+ real(dp), parameter :: pi = acos(-1.0)
 
 
 
@@ -430,17 +487,19 @@ contains
 
   subroutine preprocess_exp_data(params, x, y, label, n_sites, V, input, output, exp)
     implicit none
-    type(input_parameters), intent(in) :: params
-    real(dp), intent(in), allocatable :: x(:)
-    real(dp), intent(in) :: V
-    real(dp), intent(inout), allocatable :: y(:)
-    integer, intent(in) :: n_sites
-    character*1024, intent(in) :: label
-    real(dp), parameter :: pi = acos(-1.0)
-    real(dp) :: mag, dx, rho
-    logical, intent(in) :: exp
-    character*32, intent(inout) :: output
-    character*1024, intent(inout) :: input
+ type(input_parameters), intent(in) :: params
+ real(dp), intent(in), allocatable :: x(:)
+ real(dp), intent(in) :: V
+ real(dp), intent(inout), allocatable :: y(:)
+ integer, intent(in) :: n_sites
+ character*1024, intent(in) :: label
+ real(dp), parameter :: pi = acos(-1.0)
+ real(dp) :: mag
+ real(dp) :: dx
+ real(dp) :: rho
+ logical, intent(in) :: exp
+ character*32, intent(inout) :: output
+ character*1024, intent(inout) :: input
 
     dx = x(2) - x(1)
     rho = dfloat(n_sites) / V
@@ -513,29 +572,56 @@ contains
        & do_derivatives, pair_distribution_der, pair_distribution_partial_der,&
        & pair_distribution_partial_temp_der, energies_pair_distribution, forces_pair_distribution, virial)
     implicit none
-    type(input_parameters), intent(inout) :: params
-    real(dp), allocatable, intent(out) :: x_pair_distribution(:),&
-         & y_pair_distribution(:), pair_distribution_partial(:,:),&
-         & n_atoms_of_species(:), pair_distribution_partial_temp(:,:),&
-         & y_pair_distribution_temp(:), pair_distribution_der(:,:),&
-         & pair_distribution_partial_der(:,:,:), &
-         & pair_distribution_partial_temp_der(:,:,:), energies_pair_distribution(:), forces_pair_distribution(:,:)
-    character*8, allocatable, intent(in) :: species_types(:)
-    real(dp),  intent(in), allocatable :: rjs(:), xyz(:,:)
-    integer, intent(in), allocatable :: neighbors_list(:), n_neigh(:)&
-         &, neighbor_species(:), species(:)
-    real(dp),  intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3)
-    real(dp), intent(inout) :: virial(1:3,1:3)
-    real(dp) :: v_uc, f
-    integer, intent(in) :: n_species, n_sites, i_beg, i_end, j_beg, j_end
-    integer, intent(in) :: indices(1:3), md_istep, mc_istep,  rank
-    integer, intent(inout) :: ierr
-    real(dp), allocatable :: factors(:), pair_distribution_der_temp(:)
-    integer :: i, j, k, l, i2, n_dim_partial, n_dim_idx
-    logical, intent(in) :: do_derivatives
-    real(dp), parameter :: pi = acos(-1.0)
-    logical :: write_condition, overwrite_condition
-    character*1024 :: filename
+ type(input_parameters), intent(inout) :: params
+ real(dp), allocatable, intent(out) :: x_pair_distribution(:)
+ real(dp), allocatable, intent(out) :: y_pair_distribution(:)
+ real(dp), allocatable, intent(out) :: pair_distribution_partial(:,:)
+ real(dp), allocatable, intent(out) :: n_atoms_of_species(:)
+ real(dp), allocatable, intent(out) :: pair_distribution_partial_temp(:,:)
+ real(dp), allocatable, intent(out) :: y_pair_distribution_temp(:)
+ real(dp), allocatable, intent(out) :: pair_distribution_der(:,:)
+ real(dp), allocatable, intent(out) :: pair_distribution_partial_der(:,:,:)
+ real(dp), allocatable, intent(out) :: pair_distribution_partial_temp_der(:,:,:)
+ real(dp), allocatable, intent(out) :: energies_pair_distribution(:)
+ real(dp), allocatable, intent(out) :: forces_pair_distribution(:,:)
+ character*8, allocatable, intent(in) :: species_types(:)
+ real(dp), intent(in), allocatable :: rjs(:)
+ real(dp), intent(in), allocatable :: xyz(:,:)
+ integer, intent(in), allocatable :: neighbors_list(:)
+ integer, intent(in), allocatable :: n_neigh(:)
+ integer, intent(in), allocatable :: neighbor_species(:)
+ integer, intent(in), allocatable :: species(:)
+ real(dp), intent(in) :: a_box(1:3)
+ real(dp), intent(in) :: b_box(1:3)
+ real(dp), intent(in) :: c_box(1:3)
+ real(dp), intent(inout) :: virial(1:3,1:3)
+ real(dp) :: v_uc
+ real(dp) :: f
+ integer, intent(in) :: n_species
+ integer, intent(in) :: n_sites
+ integer, intent(in) :: i_beg
+ integer, intent(in) :: i_end
+ integer, intent(in) :: j_beg
+ integer, intent(in) :: j_end
+ integer, intent(in) :: indices(1:3)
+ integer, intent(in) :: md_istep
+ integer, intent(in) :: mc_istep
+ integer, intent(in) :: rank
+ integer, intent(inout) :: ierr
+ real(dp), allocatable :: factors(:)
+ real(dp), allocatable :: pair_distribution_der_temp(:)
+ integer :: i
+ integer :: j
+ integer :: k
+ integer :: l
+ integer :: i2
+ integer :: n_dim_partial
+ integer :: n_dim_idx
+ logical, intent(in) :: do_derivatives
+ real(dp), parameter :: pi = acos(-1.0)
+ logical :: write_condition
+ logical :: overwrite_condition
+ character*1024 :: filename
 
     ! Things that are allocated here:
     ! Always:
@@ -991,15 +1077,18 @@ contains
        & do_derivatives, pair_distribution_der, pair_distribution_partial_der,&
        & pair_distribution_partial_temp_der,  n_atoms_of_species, rank)
     implicit none
-    type(input_parameters), intent(in) :: params
-    integer, intent(in) :: rank
-    real(dp), allocatable, intent(inout) :: x_pair_distribution(:),&
-         & y_pair_distribution(:), pair_distribution_partial(:,:),&
-         & n_atoms_of_species(:), pair_distribution_partial_temp(:,:),&
-         & y_pair_distribution_temp(:), pair_distribution_der(:,:),&
-         & pair_distribution_partial_der(:,:,:), &
-         & pair_distribution_partial_temp_der(:,:,:)
-    logical, intent(in) :: do_derivatives
+ type(input_parameters), intent(in) :: params
+ integer, intent(in) :: rank
+ real(dp), allocatable, intent(inout) :: x_pair_distribution(:)
+ real(dp), allocatable, intent(inout) :: y_pair_distribution(:)
+ real(dp), allocatable, intent(inout) :: pair_distribution_partial(:,:)
+ real(dp), allocatable, intent(inout) :: n_atoms_of_species(:)
+ real(dp), allocatable, intent(inout) :: pair_distribution_partial_temp(:,:)
+ real(dp), allocatable, intent(inout) :: y_pair_distribution_temp(:)
+ real(dp), allocatable, intent(inout) :: pair_distribution_der(:,:)
+ real(dp), allocatable, intent(inout) :: pair_distribution_partial_der(:,:,:)
+ real(dp), allocatable, intent(inout) :: pair_distribution_partial_temp_der(:,:,:)
+ logical, intent(in) :: do_derivatives
 
     ! Naive finalization, include the logic of how things are actually
     ! allocated above rather then allocating and deallocating
@@ -1031,32 +1120,68 @@ contains
        & sinc_factor_matrix, do_derivatives, pair_distribution_partial_der,&
        & energies_sf, forces_sf, virial_sf, use_matrix_forces)
     implicit none
-    type(input_parameters), intent(inout) :: params
-    real(dp), allocatable, intent(out) :: x_structure_factor(:), x_structure_factor_temp(:), &
-         & y_structure_factor(:), structure_factor_partial(:,:),&
-         &  structure_factor_partial_temp(:,:),&
-         & y_structure_factor_temp(:)
-    real(dp),  intent(in), allocatable :: rjs(:), xyz(:,:),&
-         & x_pair_distribution(:), y_pair_distribution(:),&
-         & pair_distribution_partial(:,:), n_atoms_of_species(:), pair_distribution_partial_der(:,:,:)
-    integer, intent(in), allocatable :: neighbors_list(:), n_neigh(:)&
-         &, neighbor_species(:), species(:)
-    character*8, allocatable, intent(in) :: species_types(:)
-    real(dp),  intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3)
-    real(dp), allocatable, intent(inout) :: sinc_factor_matrix(:,:), energies_sf(:), forces_sf(:,:)
-    real(dp), intent(inout) :: virial_sf(1:3,1:3)
-    real(dp), allocatable :: sinc_factor_matrix_temp(:,:), temp_pdf(:,:)
-    real(dp) :: v_uc
-    integer, intent(in) :: n_species, n_sites, i_beg, i_end, j_beg, j_end, ntasks
-    integer, intent(out) :: q_beg, q_end
-    integer, intent(in) :: indices(1:3), md_istep, mc_istep, rank
-    integer, intent(out) :: ierr
-    integer :: i, j, k, l, i2, n_dim_partial, n_dim_idx, n, m
-    real(dp) :: dq, f, cabh, delta
-    real(dp), parameter :: pi = acos(-1.0)
-    character*1024 :: filename
-    logical :: overwrite_condition, write_condition
-    logical, intent(in) :: do_derivatives, use_matrix_forces
+ type(input_parameters), intent(inout) :: params
+ real(dp), allocatable, intent(out) :: x_structure_factor(:)
+ real(dp), allocatable, intent(out) :: x_structure_factor_temp(:)
+ real(dp), allocatable, intent(out) :: y_structure_factor(:)
+ real(dp), allocatable, intent(out) :: structure_factor_partial(:,:)
+ real(dp), allocatable, intent(out) :: structure_factor_partial_temp(:,:)
+ real(dp), allocatable, intent(out) :: y_structure_factor_temp(:)
+ real(dp), intent(in), allocatable :: rjs(:)
+ real(dp), intent(in), allocatable :: xyz(:,:)
+ real(dp), intent(in), allocatable :: x_pair_distribution(:)
+ real(dp), intent(in), allocatable :: y_pair_distribution(:)
+ real(dp), intent(in), allocatable :: pair_distribution_partial(:,:)
+ real(dp), intent(in), allocatable :: n_atoms_of_species(:)
+ real(dp), intent(in), allocatable :: pair_distribution_partial_der(:,:,:)
+ integer, intent(in), allocatable :: neighbors_list(:)
+ integer, intent(in), allocatable :: n_neigh(:)
+ integer, intent(in), allocatable :: neighbor_species(:)
+ integer, intent(in), allocatable :: species(:)
+ character*8, allocatable, intent(in) :: species_types(:)
+ real(dp), intent(in) :: a_box(1:3)
+ real(dp), intent(in) :: b_box(1:3)
+ real(dp), intent(in) :: c_box(1:3)
+ real(dp), allocatable, intent(inout) :: sinc_factor_matrix(:,:)
+ real(dp), allocatable, intent(inout) :: energies_sf(:)
+ real(dp), allocatable, intent(inout) :: forces_sf(:,:)
+ real(dp), intent(inout) :: virial_sf(1:3,1:3)
+ real(dp), allocatable :: sinc_factor_matrix_temp(:,:)
+ real(dp), allocatable :: temp_pdf(:,:)
+ real(dp) :: v_uc
+ integer, intent(in) :: n_species
+ integer, intent(in) :: n_sites
+ integer, intent(in) :: i_beg
+ integer, intent(in) :: i_end
+ integer, intent(in) :: j_beg
+ integer, intent(in) :: j_end
+ integer, intent(in) :: ntasks
+ integer, intent(out) :: q_beg
+ integer, intent(out) :: q_end
+ integer, intent(in) :: indices(1:3)
+ integer, intent(in) :: md_istep
+ integer, intent(in) :: mc_istep
+ integer, intent(in) :: rank
+ integer, intent(out) :: ierr
+ integer :: i
+ integer :: j
+ integer :: k
+ integer :: l
+ integer :: i2
+ integer :: n_dim_partial
+ integer :: n_dim_idx
+ integer :: n
+ integer :: m
+ real(dp) :: dq
+ real(dp) :: f
+ real(dp) :: cabh
+ real(dp) :: delta
+ real(dp), parameter :: pi = acos(-1.0)
+ character*1024 :: filename
+ logical :: overwrite_condition
+ logical :: write_condition
+ logical, intent(in) :: do_derivatives
+ logical, intent(in) :: use_matrix_forces
 
     v_uc = dot_product( cross_product(a_box,&
             & b_box), c_box ) / (&
@@ -1531,14 +1656,17 @@ contains
        & x_pair_distribution, y_pair_distribution, &
        & pair_distribution_partial, sinc_factor_matrix)
     implicit none
-    type(input_parameters), intent(in) :: params
-    real(dp), allocatable, intent(inout) :: x_structure_factor(:), x_structure_factor_temp(:), &
-         & y_structure_factor(:), structure_factor_partial(:,:),&
-         &  structure_factor_partial_temp(:,:),&
-         & y_structure_factor_temp(:)
-    real(dp),  intent(inout), allocatable :: x_pair_distribution(:), y_pair_distribution(:),&
-         & pair_distribution_partial(:,:)
-    real(dp), allocatable, intent(inout) :: sinc_factor_matrix(:,:)
+ type(input_parameters), intent(in) :: params
+ real(dp), allocatable, intent(inout) :: x_structure_factor(:)
+ real(dp), allocatable, intent(inout) :: x_structure_factor_temp(:)
+ real(dp), allocatable, intent(inout) :: y_structure_factor(:)
+ real(dp), allocatable, intent(inout) :: structure_factor_partial(:,:)
+ real(dp), allocatable, intent(inout) :: structure_factor_partial_temp(:,:)
+ real(dp), allocatable, intent(inout) :: y_structure_factor_temp(:)
+ real(dp), intent(inout), allocatable :: x_pair_distribution(:)
+ real(dp), intent(inout), allocatable :: y_pair_distribution(:)
+ real(dp), intent(inout), allocatable :: pair_distribution_partial(:,:)
+ real(dp), allocatable, intent(inout) :: sinc_factor_matrix(:,:)
 
     if (allocated(x_structure_factor)) deallocate(x_structure_factor)
     if (allocated(x_structure_factor_temp)) deallocate(x_structure_factor_temp)
@@ -1566,34 +1694,66 @@ contains
        & sinc_factor_matrix, do_derivatives, pair_distribution_partial_der,&
        & energies_xrd, forces_xrd, virial_xrd, neutron, use_matrix_forces )
     implicit none
-    type(input_parameters), intent(inout) :: params
-    real(dp), allocatable, intent(out) :: x_xrd(:), x_xrd_temp(:), &
-         & y_xrd(:), y_xrd_temp(:), energies_xrd(:), forces_xrd(:,:)
-    real(dp), allocatable, intent(in) :: structure_factor_partial(:,:),&
-         &  structure_factor_partial_temp(:,:), x_structure_factor(:)&
-         &, x_structure_factor_temp(:), sinc_factor_matrix(:,:),&
-         & pair_distribution_partial_der(:,:,:)
-    real(dp),  intent(in), allocatable :: rjs(:), xyz(:,:),&
-         & n_atoms_of_species(:)
-    real(dp), intent(out) :: virial_xrd(1:3,1:3)
-    integer, intent(in), allocatable :: neighbors_list(:), n_neigh(:)&
-         &, neighbor_species(:), species(:)
-    real(dp),  intent(in) :: a_box(1:3), b_box(1:3), c_box(1:3)
-    character*8, allocatable, intent(in) :: species_types(:)
-    real(dp) :: v_uc
-    integer, intent(in) :: n_species, n_sites, i_beg, i_end, j_beg, j_end, ntasks
-    integer, intent(out) :: q_beg, q_end
-    integer, intent(in) :: indices(1:3), md_istep, mc_istep, rank
-    integer, intent(out) :: ierr
-    real(dp), allocatable :: y_sub(:)
-    integer :: i, j, k, l, i2, n_dim_idx, n_dim_partial
-    real(dp) :: dq, f
-    real(dp), parameter :: pi = acos(-1.0)
-    character*1024 :: filename
-    logical :: write_condition, overwrite_condition, valid_xrd
-    logical, intent(in) :: do_derivatives, neutron, use_matrix_forces
-    integer :: xrd_idx
-    character*32 :: xrd_output
+ type(input_parameters), intent(inout) :: params
+ real(dp), allocatable, intent(out) :: x_xrd(:)
+ real(dp), allocatable, intent(out) :: x_xrd_temp(:)
+ real(dp), allocatable, intent(out) :: y_xrd(:)
+ real(dp), allocatable, intent(out) :: y_xrd_temp(:)
+ real(dp), allocatable, intent(out) :: energies_xrd(:)
+ real(dp), allocatable, intent(out) :: forces_xrd(:,:)
+ real(dp), allocatable, intent(in) :: structure_factor_partial(:,:)
+ real(dp), allocatable, intent(in) :: structure_factor_partial_temp(:,:)
+ real(dp), allocatable, intent(in) :: x_structure_factor(:)
+ real(dp), allocatable, intent(in) :: x_structure_factor_temp(:)
+ real(dp), allocatable, intent(in) :: sinc_factor_matrix(:,:)
+ real(dp), allocatable, intent(in) :: pair_distribution_partial_der(:,:,:)
+ real(dp), intent(in), allocatable :: rjs(:)
+ real(dp), intent(in), allocatable :: xyz(:,:)
+ real(dp), intent(in), allocatable :: n_atoms_of_species(:)
+ real(dp), intent(out) :: virial_xrd(1:3,1:3)
+ integer, intent(in), allocatable :: neighbors_list(:)
+ integer, intent(in), allocatable :: n_neigh(:)
+ integer, intent(in), allocatable :: neighbor_species(:)
+ integer, intent(in), allocatable :: species(:)
+ real(dp), intent(in) :: a_box(1:3)
+ real(dp), intent(in) :: b_box(1:3)
+ real(dp), intent(in) :: c_box(1:3)
+ character*8, allocatable, intent(in) :: species_types(:)
+ real(dp) :: v_uc
+ integer, intent(in) :: n_species
+ integer, intent(in) :: n_sites
+ integer, intent(in) :: i_beg
+ integer, intent(in) :: i_end
+ integer, intent(in) :: j_beg
+ integer, intent(in) :: j_end
+ integer, intent(in) :: ntasks
+ integer, intent(out) :: q_beg
+ integer, intent(out) :: q_end
+ integer, intent(in) :: indices(1:3)
+ integer, intent(in) :: md_istep
+ integer, intent(in) :: mc_istep
+ integer, intent(in) :: rank
+ integer, intent(out) :: ierr
+ real(dp), allocatable :: y_sub(:)
+ integer :: i
+ integer :: j
+ integer :: k
+ integer :: l
+ integer :: i2
+ integer :: n_dim_idx
+ integer :: n_dim_partial
+ real(dp) :: dq
+ real(dp) :: f
+ real(dp), parameter :: pi = acos(-1.0)
+ character*1024 :: filename
+ logical :: write_condition
+ logical :: overwrite_condition
+ logical :: valid_xrd
+ logical, intent(in) :: do_derivatives
+ logical, intent(in) :: neutron
+ logical, intent(in) :: use_matrix_forces
+ integer :: xrd_idx
+ character*32 :: xrd_output
 
     if ( neutron ) xrd_idx = params%nd_idx
     if ( .not. neutron ) xrd_idx = params%xrd_idx
@@ -1863,11 +2023,15 @@ contains
        & y_xrd, y_xrd_temp, x_structure_factor, x_structure_factor_temp,&
        & structure_factor_partial, structure_factor_partial_temp)
     implicit none
-    type(input_parameters), intent(in) :: params
-    real(dp), allocatable, intent(inout) :: x_xrd(:), x_xrd_temp(:), &
-         & y_xrd(:), y_xrd_temp(:)
-    real(dp), allocatable, intent(inout) :: structure_factor_partial(:,:),&
-         &  structure_factor_partial_temp(:,:), x_structure_factor(:), x_structure_factor_temp(:)
+ type(input_parameters), intent(in) :: params
+ real(dp), allocatable, intent(inout) :: x_xrd(:)
+ real(dp), allocatable, intent(inout) :: x_xrd_temp(:)
+ real(dp), allocatable, intent(inout) :: y_xrd(:)
+ real(dp), allocatable, intent(inout) :: y_xrd_temp(:)
+ real(dp), allocatable, intent(inout) :: structure_factor_partial(:,:)
+ real(dp), allocatable, intent(inout) :: structure_factor_partial_temp(:,:)
+ real(dp), allocatable, intent(inout) :: x_structure_factor(:)
+ real(dp), allocatable, intent(inout) :: x_structure_factor_temp(:)
 
     if (allocated(x_xrd)) deallocate(x_xrd)
     if (allocated(x_xrd_temp)) deallocate(x_xrd_temp)

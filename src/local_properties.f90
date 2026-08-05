@@ -184,15 +184,32 @@ module local_prop
     implicit none
 
 !   Input variables
-    real(dp), intent(in) :: soap(:,:), Qs(:,:), alphas(:), V0, delta, zeta, soap_cart_der(:,:,:)
-    integer, intent(in) :: n_neigh(:)
-    logical, intent(in) :: do_derivatives
+ real(dp), intent(in) :: soap(:,:)
+ real(dp), intent(in) :: Qs(:,:)
+ real(dp), intent(in) :: alphas(:)
+ real(dp), intent(in) :: V0
+ real(dp), intent(in) :: delta
+ real(dp), intent(in) :: zeta
+ real(dp), intent(in) :: soap_cart_der(:,:,:)
+ integer, intent(in) :: n_neigh(:)
+ logical, intent(in) :: do_derivatives
 !   Output variables
-    real(dp), intent(out) :: V(:), V_der(:,:)
+ real(dp), intent(out) :: V(:)
+ real(dp), intent(out) :: V_der(:,:)
 !   Internal variables
-    real(dp), allocatable :: K(:,:), K_der(:,:), Qss(:,:), Qs_copy(:,:)
-    integer :: n_sites, n_soap, n_sparse, zeta_int, n_pairs
-    integer :: i, j, i2, cart
+ real(dp), allocatable :: K(:,:)
+ real(dp), allocatable :: K_der(:,:)
+ real(dp), allocatable :: Qss(:,:)
+ real(dp), allocatable :: Qs_copy(:,:)
+ integer :: n_sites
+ integer :: n_soap
+ integer :: n_sparse
+ integer :: zeta_int
+ integer :: n_pairs
+ integer :: i
+ integer :: j
+ integer :: i2
+ integer :: cart
 
     n_sparse = size(alphas)
     n_soap = size(soap, 1)

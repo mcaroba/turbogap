@@ -43,15 +43,32 @@ module vdw
     implicit none
 
 !   Input variables
-    real(dp), intent(in) :: soap(:,:), Qs(:,:), alphas(:), V0, delta, zeta, soap_cart_der(:,:,:)
-    integer, intent(in) :: n_neigh(:)
-    logical, intent(in) :: do_derivatives
+ real(dp), intent(in) :: soap(:,:)
+ real(dp), intent(in) :: Qs(:,:)
+ real(dp), intent(in) :: alphas(:)
+ real(dp), intent(in) :: V0
+ real(dp), intent(in) :: delta
+ real(dp), intent(in) :: zeta
+ real(dp), intent(in) :: soap_cart_der(:,:,:)
+ integer, intent(in) :: n_neigh(:)
+ logical, intent(in) :: do_derivatives
 !   Output variables
-    real(dp), intent(out) :: V(:), V_der(:,:)
+ real(dp), intent(out) :: V(:)
+ real(dp), intent(out) :: V_der(:,:)
 !   Internal variables
-    real(dp), allocatable :: K(:,:), K_der(:,:), Qss(:,:), Qs_copy(:,:)
-    integer :: n_sites, n_soap, n_sparse, zeta_int, n_pairs
-    integer :: i, j, i2, cart
+ real(dp), allocatable :: K(:,:)
+ real(dp), allocatable :: K_der(:,:)
+ real(dp), allocatable :: Qss(:,:)
+ real(dp), allocatable :: Qs_copy(:,:)
+ integer :: n_sites
+ integer :: n_soap
+ integer :: n_sparse
+ integer :: zeta_int
+ integer :: n_pairs
+ integer :: i
+ integer :: j
+ integer :: i2
+ integer :: cart
 
     n_sparse = size(alphas)
     n_soap = size(soap, 1)
@@ -158,26 +175,72 @@ module vdw
     implicit none
 
 !   Input variables
-    real(dp), intent(in) :: hirshfeld_v(:), hirshfeld_v_cart_der(:,:), rcut, buffer, rcut_inner, buffer_inner, &
-                          rjs(:), xyz(:,:), hirshfeld_v_neigh(:), sR, d, c6_ref(:), r0_ref(:), &
-                          alpha0_ref(:), mbd_ts_scaling(:), &
-                          x_min, x_max
-    integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:)
-    logical, intent(in) :: do_forces
+ real(dp), intent(in) :: hirshfeld_v(:)
+ real(dp), intent(in) :: hirshfeld_v_cart_der(:,:)
+ real(dp), intent(in) :: rcut
+ real(dp), intent(in) :: buffer
+ real(dp), intent(in) :: rcut_inner
+ real(dp), intent(in) :: buffer_inner
+ real(dp), intent(in) :: rjs(:)
+ real(dp), intent(in) :: xyz(:,:)
+ real(dp), intent(in) :: hirshfeld_v_neigh(:)
+ real(dp), intent(in) :: sR
+ real(dp), intent(in) :: d
+ real(dp), intent(in) :: c6_ref(:)
+ real(dp), intent(in) :: r0_ref(:)
+ real(dp), intent(in) :: alpha0_ref(:)
+ real(dp), intent(in) :: mbd_ts_scaling(:)
+ real(dp), intent(in) :: x_min
+ real(dp), intent(in) :: x_max
+ integer, intent(in) :: n_neigh(:)
+ integer, intent(in) :: neighbors_list(:)
+ integer, intent(in) :: neighbor_species(:)
+ logical, intent(in) :: do_forces
 !   Output variables
-    real(dp), intent(out) :: virial(1:3, 1:3)
+ real(dp), intent(out) :: virial(1:3, 1:3)
 !   In-Out variables
-    real(dp), intent(inout) :: energies(:), forces0(:,:), local_virial_diag0(:,:)
+ real(dp), intent(inout) :: energies(:)
+ real(dp), intent(inout) :: forces0(:,:)
+ real(dp), intent(inout) :: local_virial_diag0(:,:)
 !   Internal variables
-    real(dp), allocatable :: neighbor_c6_ii(:), neighbor_c6_ij(:), r0_ii(:), r0_ij(:), &
-                           exp_damp(:), f_damp(:), c6_ij_free(:), neighbor_alpha0(:), &
-                           pref_force1(:), pref_force2(:), r6(:), r6_der(:)
-    real(dp) :: time1, time2, c6_ii, c6_jj, r0_i, r0_j, alpha0_i, alpha0_j, rbuf, this_force(1:3)
-    integer, allocatable:: i_buffer(:)
-    integer :: n_sites, n_pairs, n_pairs_soap, n_species, n_sites0
-    integer :: i, j, i2, j2, k, n_in_buffer, k1, k2
-    logical, allocatable :: is_in_buffer(:)
-    logical :: do_timing = .false.
+ real(dp), allocatable :: neighbor_c6_ii(:)
+ real(dp), allocatable :: neighbor_c6_ij(:)
+ real(dp), allocatable :: r0_ii(:)
+ real(dp), allocatable :: r0_ij(:)
+ real(dp), allocatable :: exp_damp(:)
+ real(dp), allocatable :: f_damp(:)
+ real(dp), allocatable :: c6_ij_free(:)
+ real(dp), allocatable :: neighbor_alpha0(:)
+ real(dp), allocatable :: pref_force1(:)
+ real(dp), allocatable :: pref_force2(:)
+ real(dp), allocatable :: r6(:)
+ real(dp), allocatable :: r6_der(:)
+ real(dp) :: time1
+ real(dp) :: time2
+ real(dp) :: c6_ii
+ real(dp) :: c6_jj
+ real(dp) :: r0_i
+ real(dp) :: r0_j
+ real(dp) :: alpha0_i
+ real(dp) :: alpha0_j
+ real(dp) :: rbuf
+ real(dp) :: this_force(1:3)
+ integer, allocatable:: i_buffer(:)
+ integer :: n_sites
+ integer :: n_pairs
+ integer :: n_pairs_soap
+ integer :: n_species
+ integer :: n_sites0
+ integer :: i
+ integer :: j
+ integer :: i2
+ integer :: j2
+ integer :: k
+ integer :: n_in_buffer
+ integer :: k1
+ integer :: k2
+ logical, allocatable :: is_in_buffer(:)
+ logical :: do_timing = .false.
 
 
 
@@ -453,30 +516,106 @@ module vdw
     implicit none
 
 !   Input variables
-    real(dp), intent(in) :: rcut, r_buffer, hirshfeld_v_neigh(:), &
-                          rjs(:), xyz(:,:), sR, d, c6_ref(:), r0_ref(:), &
-                          alpha0_ref(:), vdw_omega_ref !, hirshfeld_v(:), hirshfeld_v_neigh(:) !NOTE: uncomment this in final implementation
-    integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:)
-    logical, intent(in) :: polynomial_expansion
+ real(dp), intent(in) :: rcut
+ real(dp), intent(in) :: r_buffer
+ real(dp), intent(in) :: hirshfeld_v_neigh(:)
+ real(dp), intent(in) :: rjs(:)
+ real(dp), intent(in) :: xyz(:,:)
+ real(dp), intent(in) :: sR
+ real(dp), intent(in) :: d
+ real(dp), intent(in) :: c6_ref(:)
+ real(dp), intent(in) :: r0_ref(:)
+ real(dp), intent(in) :: alpha0_ref(:)
+ real(dp), intent(in) :: vdw_omega_ref !
+ integer, intent(in) :: n_neigh(:)
+ integer, intent(in) :: neighbors_list(:)
+ integer, intent(in) :: neighbor_species(:)
+ logical, intent(in) :: polynomial_expansion
 !   Output variables
 !   In-Out variables
-    real(dp), intent(inout) :: central_pol(:), central_omega(:), forces0(:,:)
+ real(dp), intent(inout) :: central_pol(:)
+ real(dp), intent(inout) :: central_omega(:)
+ real(dp), intent(inout) :: forces0(:,:)
 !   Internal variables
-    real(dp), allocatable :: neighbor_c6_ii(:), r0_ii(:), f_damp(:), neighbor_alpha0(:), T_func(:), h_func(:), g_func(:), &
-                           omegas(:), B_mat(:,:), rjs_H(:), xyz_H(:,:), work_arr(:), &
-                           a_SCS(:,:), inner_damp(:), &
-                           neighbor_sigma(:) !, rjs_0(:)
-    real(dp) :: time1, time2, Bohr, Hartree, &
-              omega, pi, &
-              r_vdw_i, r_vdw_j, t1, t2, &
-              sigma_ij, s_i, s_j, omega_ref, xyz_i(1:3), xyz_j(1:3), mult1_i, mult1_j, mult2, pol1, r_buf, rb
-    integer, allocatable :: ipiv(:)
-    integer :: n_sites, n_pairs, n_species, n_sites0, info, om, n_tot
-    integer :: i, i0, i1, i2, i3, j, j1, j2, j3, k, k2, k3, k4, a, a2, c1, c2, c3, lwork, b, p, q, r, k_i, k_j
+ real(dp), allocatable :: neighbor_c6_ii(:)
+ real(dp), allocatable :: r0_ii(:)
+ real(dp), allocatable :: f_damp(:)
+ real(dp), allocatable :: neighbor_alpha0(:)
+ real(dp), allocatable :: T_func(:)
+ real(dp), allocatable :: h_func(:)
+ real(dp), allocatable :: g_func(:)
+ real(dp), allocatable :: omegas(:)
+ real(dp), allocatable :: B_mat(:,:)
+ real(dp), allocatable :: rjs_H(:)
+ real(dp), allocatable :: xyz_H(:,:)
+ real(dp), allocatable :: work_arr(:)
+ real(dp), allocatable :: a_SCS(:,:)
+ real(dp), allocatable :: inner_damp(:)
+ real(dp), allocatable :: neighbor_sigma(:) !
+ real(dp), allocatable :: rjs_0(:)
+ real(dp) :: time1
+ real(dp) :: time2
+ real(dp) :: Bohr
+ real(dp) :: Hartree
+ real(dp) :: omega
+ real(dp) :: pi
+ real(dp) :: r_vdw_i
+ real(dp) :: r_vdw_j
+ real(dp) :: t1
+ real(dp) :: t2
+ real(dp) :: sigma_ij
+ real(dp) :: s_i
+ real(dp) :: s_j
+ real(dp) :: omega_ref
+ real(dp) :: xyz_i(1:3)
+ real(dp) :: xyz_j(1:3)
+ real(dp) :: mult1_i
+ real(dp) :: mult1_j
+ real(dp) :: mult2
+ real(dp) :: pol1
+ real(dp) :: r_buf
+ real(dp) :: rb
+ integer, allocatable :: ipiv(:)
+ integer :: n_sites
+ integer :: n_pairs
+ integer :: n_species
+ integer :: n_sites0
+ integer :: info
+ integer :: om
+ integer :: n_tot
+ integer :: i
+ integer :: i0
+ integer :: i1
+ integer :: i2
+ integer :: i3
+ integer :: j
+ integer :: j1
+ integer :: j2
+ integer :: j3
+ integer :: k
+ integer :: k2
+ integer :: k3
+ integer :: k4
+ integer :: a
+ integer :: a2
+ integer :: c1
+ integer :: c2
+ integer :: c3
+ integer :: lwork
+ integer :: b
+ integer :: p
+ integer :: q
+ integer :: r
+ integer :: k_i
+ integer :: k_j
                
 !    LOCAL TEST stuff:
-    integer, allocatable :: sub_neighbors_list(:), n_sub_neigh(:), p_list(:)
-    integer :: n_sub_sites, n_sub_pairs, s
+ integer, allocatable :: sub_neighbors_list(:)
+ integer, allocatable :: n_sub_neigh(:)
+ integer, allocatable :: p_list(:)
+ integer :: n_sub_sites
+ integer :: n_sub_pairs
+ integer :: s
 
 !   MBD stuff:
 !    real(dp), allocatable :: T_LR(:,:), r0_ii_SCS(:), f_damp_SCS(:), AT(:,:,:), AT_n(:,:,:,:), energy_series(:,:), &
@@ -506,9 +645,13 @@ module vdw
     !real(psb_dpk_), allocatable :: val(:) !, val_xv(:,:), b_i(:,:), d_vec(:,:)
     !type(psb_dprec_type) :: prec
     !character(len=20) :: ptype
-    real(dp) :: polyfit(1:15)
-    integer :: n_degree
-    real(dp), allocatable :: B_pol(:,:), B_mult(:,:), b_i(:,:), d_vec(:,:), val_xv(:,:)
+ real(dp) :: polyfit(1:15)
+ integer :: n_degree
+ real(dp), allocatable :: B_pol(:,:)
+ real(dp), allocatable :: B_mult(:,:)
+ real(dp), allocatable :: b_i(:,:)
+ real(dp), allocatable :: d_vec(:,:)
+ real(dp), allocatable :: val_xv(:,:)
 
 !   IMPORTANT NOTE ABOUT THE DERIVATIVES:
 !   If rcut < rcut_soap, the derivatives in the new implementation omit the terms that fall outside of rcut.
@@ -1060,100 +1203,421 @@ module vdw
     implicit none
 
 !   Input variables
-    real(dp), intent(in) :: rcut, r_buffer, &
-                          rjs(:), xyz(:,:), sR, d, c6_ref(:), r0_ref(:), rcut_loc, rcut_mbd, rcut_mbd2, &
-                          hirshfeld_v_cart_der_ji(:,:), &
-                          alpha0_ref(:), vdw_omega_ref, & !, hirshfeld_v(:), hirshfeld_v_neigh(:) !NOTE: uncomment this in final implementation
-                          x_min, x_max
-    integer, intent(in) :: n_neigh(:), neighbors_list(:), neighbor_species(:), n_freq, n_order
-    logical, intent(in) :: do_derivatives, do_hirshfeld_gradients, polynomial_expansion, do_nnls, include_2b, cent_appr
+ real(dp), intent(in) :: rcut
+ real(dp), intent(in) :: r_buffer
+ real(dp), intent(in) :: rjs(:)
+ real(dp), intent(in) :: xyz(:,:)
+ real(dp), intent(in) :: sR
+ real(dp), intent(in) :: d
+ real(dp), intent(in) :: c6_ref(:)
+ real(dp), intent(in) :: r0_ref(:)
+ real(dp), intent(in) :: rcut_loc
+ real(dp), intent(in) :: rcut_mbd
+ real(dp), intent(in) :: rcut_mbd2
+ real(dp), intent(in) :: hirshfeld_v_cart_der_ji(:,:)
+ real(dp), intent(in) :: alpha0_ref(:)
+ real(dp), intent(in) :: vdw_omega_ref
+ real(dp), intent(in) :: hirshfeld_v_neigh(:) !NOTE: uncomment this in final implementation
+ real(dp), intent(in) :: x_min, x_max
+ integer, intent(in) :: n_neigh(:)
+ integer, intent(in) :: neighbors_list(:)
+ integer, intent(in) :: neighbor_species(:)
+ integer, intent(in) :: n_freq
+ integer, intent(in) :: n_order
+ logical, intent(in) :: do_derivatives
+ logical, intent(in) :: do_hirshfeld_gradients
+ logical, intent(in) :: polynomial_expansion
+ logical, intent(in) :: do_nnls
+ logical, intent(in) :: include_2b
+ logical, intent(in) :: cent_appr
 !   Output variables
-    real(dp), intent(out) :: virial(1:3, 1:3)
+ real(dp), intent(out) :: virial(1:3, 1:3)
 !   In-Out variables
-    real(dp), intent(inout) :: energies(:), forces0(:,:), central_pol(:), central_omega(:), &
-                             hirshfeld_v_neigh(:), local_virial_diag0(:,:)
+ real(dp), intent(inout) :: energies(:)
+ real(dp), intent(inout) :: forces0(:,:)
+ real(dp), intent(inout) :: central_pol(:)
+ real(dp), intent(inout) :: central_omega(:)
+ real(dp), intent(inout) :: local_virial_diag0(:,:)
 !   Internal variables
-    real(dp), allocatable :: neighbor_c6_ii(:), r0_ii(:), f_damp(:), neighbor_alpha0(:), T_func(:), h_func(:), g_func(:), &
-                           omegas(:), B_mat(:,:), rjs_H(:), xyz_H(:,:), work_arr(:), dT(:), f_damp_der(:), &
-                           g_func_der(:), h_func_der(:), coeff_der(:), coeff_fdamp(:), hirshfeld_v_cart_der_H(:,:), &
-                           a_SCS(:,:), da_SCS(:,:), b_der(:,:), dB_mat(:,:), &
-                           neighbor_sigma(:), hirshfeld_v_sub_der(:,:), inner_damp(:)
-    real(dp) :: time1, time2, time3, time4, time5, time6, this_force(1:3), Bohr, Hartree, &
-              omega, pi, integral, total_integral, E_MBD, R_vdW_SCS_ij, S_vdW_ij, dS_vdW_ij, exp_term, &
-              r_vdw_i, r_vdw_j, t1, t2, r_buf_scs, r_buf_mbd, r_buf_2b, r_buf_loc, time_tot, time_tot2, time_tot3, &
-              time_tot4, sigma_ij, coeff_h_der, dg, dh, s_i, s_j, terms, omega_ref, xyz_i(1:3), xyz_j(1:3), rjs_i, rjs_j
-    integer, allocatable :: ipiv(:)
-    integer :: n_sites, n_pairs, n_species, n_sites0, info, om, n_tot
-    integer :: i, i0, i1, i2, i3, j, j1, j2, j3, k, k2, k3, k4, i_om, a, a2, c1, c2, c3, lwork, b, p, q, r, k_i, k_j
+ real(dp), allocatable :: neighbor_c6_ii(:)
+ real(dp), allocatable :: r0_ii(:)
+ real(dp), allocatable :: f_damp(:)
+ real(dp), allocatable :: neighbor_alpha0(:)
+ real(dp), allocatable :: T_func(:)
+ real(dp), allocatable :: h_func(:)
+ real(dp), allocatable :: g_func(:)
+ real(dp), allocatable :: omegas(:)
+ real(dp), allocatable :: B_mat(:,:)
+ real(dp), allocatable :: rjs_H(:)
+ real(dp), allocatable :: xyz_H(:,:)
+ real(dp), allocatable :: work_arr(:)
+ real(dp), allocatable :: dT(:)
+ real(dp), allocatable :: f_damp_der(:)
+ real(dp), allocatable :: g_func_der(:)
+ real(dp), allocatable :: h_func_der(:)
+ real(dp), allocatable :: coeff_der(:)
+ real(dp), allocatable :: coeff_fdamp(:)
+ real(dp), allocatable :: hirshfeld_v_cart_der_H(:,:)
+ real(dp), allocatable :: a_SCS(:,:)
+ real(dp), allocatable :: da_SCS(:,:)
+ real(dp), allocatable :: b_der(:,:)
+ real(dp), allocatable :: dB_mat(:,:)
+ real(dp), allocatable :: neighbor_sigma(:)
+ real(dp), allocatable :: hirshfeld_v_sub_der(:,:)
+ real(dp), allocatable :: inner_damp(:)
+ real(dp) :: time1
+ real(dp) :: time2
+ real(dp) :: time3
+ real(dp) :: time4
+ real(dp) :: time5
+ real(dp) :: time6
+ real(dp) :: this_force(1:3)
+ real(dp) :: Bohr
+ real(dp) :: Hartree
+ real(dp) :: omega
+ real(dp) :: pi
+ real(dp) :: integral
+ real(dp) :: total_integral
+ real(dp) :: E_MBD
+ real(dp) :: R_vdW_SCS_ij
+ real(dp) :: S_vdW_ij
+ real(dp) :: dS_vdW_ij
+ real(dp) :: exp_term
+ real(dp) :: r_vdw_i
+ real(dp) :: r_vdw_j
+ real(dp) :: t1
+ real(dp) :: t2
+ real(dp) :: r_buf_scs
+ real(dp) :: r_buf_mbd
+ real(dp) :: r_buf_2b
+ real(dp) :: r_buf_loc
+ real(dp) :: time_tot
+ real(dp) :: time_tot2
+ real(dp) :: time_tot3
+ real(dp) :: time_tot4
+ real(dp) :: sigma_ij
+ real(dp) :: coeff_h_der
+ real(dp) :: dg
+ real(dp) :: dh
+ real(dp) :: s_i
+ real(dp) :: s_j
+ real(dp) :: terms
+ real(dp) :: omega_ref
+ real(dp) :: xyz_i(1:3)
+ real(dp) :: xyz_j(1:3)
+ real(dp) :: rjs_i
+ real(dp) :: rjs_j
+ integer, allocatable :: ipiv(:)
+ integer :: n_sites
+ integer :: n_pairs
+ integer :: n_species
+ integer :: n_sites0
+ integer :: info
+ integer :: om
+ integer :: n_tot
+ integer :: i
+ integer :: i0
+ integer :: i1
+ integer :: i2
+ integer :: i3
+ integer :: j
+ integer :: j1
+ integer :: j2
+ integer :: j3
+ integer :: k
+ integer :: k2
+ integer :: k3
+ integer :: k4
+ integer :: i_om
+ integer :: a
+ integer :: a2
+ integer :: c1
+ integer :: c2
+ integer :: c3
+ integer :: lwork
+ integer :: b
+ integer :: p
+ integer :: q
+ integer :: r
+ integer :: k_i
+ integer :: k_j
 
 !    LOCAL TEST stuff:
-    integer, allocatable :: sub_neighbors_list(:), n_sub_neigh(:), p_list(:)
-    integer :: n_sub_sites, n_sub_pairs, s
+ integer, allocatable :: sub_neighbors_list(:)
+ integer, allocatable :: n_sub_neigh(:)
+ integer, allocatable :: p_list(:)
+ integer :: n_sub_sites
+ integer :: n_sub_pairs
+ integer :: s
 
 !   MBD stuff:
-    real(dp), allocatable :: T_LR(:,:), r0_ii_SCS(:), f_damp_SCS(:), AT(:,:,:), AT_n(:,:,:,:), energy_series(:,:), &
-                           integrand(:), AT_n_f(:,:,:,:), f_damp_der_SCS(:), dT_LR(:,:), G_mat(:,:,:), force_series(:,:), &
-                           total_energy_series(:,:), total_integrand(:), rjs_0(:), &
-                           T_mbd(:), r0_ii_mbd(:), neighbor_alpha0_mbd(:), omegas_mbd(:), rjs_0_mbd(:), xyz_0_mbd(:,:), &
-                           xyz_mbd(:,:), rjs_mbd(:), d_der(:,:), dT_mbd(:), f_damp_der_mbd(:), a_mbd(:), da_mbd(:), &
-                           a_iso(:,:), o_p(:), da_iso(:,:,:),  o_mbd(:), sub_2b_list(:), hirshfeld_2b_neigh(:), &
-                           xyz_2b(:,:), rjs_2b(:), r0_ii_2b(:), neighbor_alpha0_2b(:), f_damp_SCS_2b(:), &
-                           a_2b(:), r0_ii_SCS_2b(:), C6_2b(:), da_2b(:), T_SR(:), T_SR_mult(:), d_arr_i(:), d_arr_o(:), &
-                           d_mult_i(:), d_mult_o(:), dT_SR_mult(:,:), d_dmult_i(:,:), d_dmult_o(:,:), do_mbd(:), &
-                           hirshfeld_sub_neigh(:), o_2b(:), do_2b(:), hirshfeld_v_mbd_der(:,:), hirshfeld_mbd_neigh(:), &
-                           hirshfeld_v_2b_der(:,:), dr0_ii_SCS(:), dr0_ii_SCS_2b(:), V_int(:,:), T_LR_mult_0i(:), &
-                           T_LR_mult_0j(:), T_LR_mult_ij(:), dT_LR_mult_0i(:), dT_LR_mult_0j(:), dT_LR_mult_ij(:), &
-                           r6_mult(:), dr6_mult(:), T_LR_mult_0ij(:), T_LR_mult_0ji(:), &
-                           xyz_2b_tot(:,:), rjs_2b_tot(:), r0_ii_2b_tot(:), neighbor_alpha0_2b_tot(:), &
-                           f_damp_SCS_2b_tot(:), hirshfeld_2b_tot_neigh(:), a_2b_tot(:), o_2b_tot(:), &
-                           r0_ii_SCS_2b_tot(:), c6_2b_tot(:), r6_mult_2b_tot(:), r6_mult_0i(:), r6_mult_0j(:), &
-                           dr6_mult_0i(:), dr6_mult_0j(:), dT_LR_mult_ij0(:), AT_mult(:), E_mult(:), dAT_mult(:), dE_mult(:), &
-                           temp_mat(:,:), &
-                           ! Eigenvalue stuff
-                           AT_copy(:,:), WR(:), WI(:), VL(:,:), VR(:,:), work_mbd(:), VR_inv(:,:), ipiv_mbd(:), &
-                           temp_mat_full(:,:), temp_mat_forces(:,:), virial_integrand(:,:), virial_integrand_2b(:,:), &
-                           damped_virial_integrand(:,:), damped_virial_integrand_2b(:,:)
-    real(dp) :: a_mbd_i, a_mbd_j, o_mbd_i, o_mbd_j, da_mbd_i, da_mbd_j, da_i, da_j, pol1, E_TS, f_damp_der_2b, dr_vdw_i, &
-              dr_vdw_j, forces_TS, dC6_2b, mult1_i, mult1_j, mult2, dmult1_i(1:3), dmult1_j(1:3), dmult2(1:3), hv_p_der, &
-              hv_q_der, do_pref, rb, inner_damp_der, rjs_0_i, rcut_force, o_i, o_j, do_i, do_j, T_LR_mult_i, T_LR_mult_j, &
-              dT_LR_mult_i, dT_LR_mult_j, dT_LR_mult_0ij_2, dT_LR_mult_0ji_2, a_i, a_j, E_TS_tot, r6_der, ac2, ac3, ac4, &
-              r_buf_ij, log_integral, rcut_tot, sym_integral, rcut_tsscs, r_buf_tsscs, dT_LR_val(1:3,1:3), do_mbd_i, do_mbd_j, &
-              rcut_mbd_sqrd, rcut_mbd2_sqrd, f_ki, virial_integral(1:3), damped_virial_integral(1:3)              
-    integer :: n_mbd_sites, n_mbd_pairs, n_2b_sites, n_2b_tot_sites, n_2b_tot_pairs, n_ene_sites, n_force_sites
-    integer, allocatable :: n_mbd_neigh(:), mbd_neighbors_list(:), p_mbd(:), sub_2b_tot_list(:), n_2b_tot_neigh(:), &
-                            p_2b_tot(:)
-    real(dp) :: polyfit(1:15)
-    integer :: n_degree
-    real(dp), allocatable :: B_pol(:,:), B_mult(:,:), b_i(:,:), d_vec(:,:), val_xv(:,:)
+ real(dp), allocatable :: T_LR(:,:)
+ real(dp), allocatable :: r0_ii_SCS(:)
+ real(dp), allocatable :: f_damp_SCS(:)
+ real(dp), allocatable :: AT(:,:,:)
+ real(dp), allocatable :: AT_n(:,:,:,:)
+ real(dp), allocatable :: energy_series(:,:)
+ real(dp), allocatable :: integrand(:)
+ real(dp), allocatable :: AT_n_f(:,:,:,:)
+ real(dp), allocatable :: f_damp_der_SCS(:)
+ real(dp), allocatable :: dT_LR(:,:)
+ real(dp), allocatable :: G_mat(:,:,:)
+ real(dp), allocatable :: force_series(:,:)
+ real(dp), allocatable :: total_energy_series(:,:)
+ real(dp), allocatable :: total_integrand(:)
+ real(dp), allocatable :: rjs_0(:)
+ real(dp), allocatable :: T_mbd(:)
+ real(dp), allocatable :: r0_ii_mbd(:)
+ real(dp), allocatable :: neighbor_alpha0_mbd(:)
+ real(dp), allocatable :: omegas_mbd(:)
+ real(dp), allocatable :: rjs_0_mbd(:)
+ real(dp), allocatable :: xyz_0_mbd(:,:)
+ real(dp), allocatable :: xyz_mbd(:,:)
+ real(dp), allocatable :: rjs_mbd(:)
+ real(dp), allocatable :: d_der(:,:)
+ real(dp), allocatable :: dT_mbd(:)
+ real(dp), allocatable :: f_damp_der_mbd(:)
+ real(dp), allocatable :: a_mbd(:)
+ real(dp), allocatable :: da_mbd(:)
+ real(dp), allocatable :: a_iso(:,:)
+ real(dp), allocatable :: o_p(:)
+ real(dp), allocatable :: da_iso(:,:,:)
+ real(dp), allocatable :: o_mbd(:)
+ real(dp), allocatable :: sub_2b_list(:)
+ real(dp), allocatable :: hirshfeld_2b_neigh(:)
+ real(dp), allocatable :: xyz_2b(:,:)
+ real(dp), allocatable :: rjs_2b(:)
+ real(dp), allocatable :: r0_ii_2b(:)
+ real(dp), allocatable :: neighbor_alpha0_2b(:)
+ real(dp), allocatable :: f_damp_SCS_2b(:)
+ real(dp), allocatable :: a_2b(:)
+ real(dp), allocatable :: r0_ii_SCS_2b(:)
+ real(dp), allocatable :: C6_2b(:)
+ real(dp), allocatable :: da_2b(:)
+ real(dp), allocatable :: T_SR(:)
+ real(dp), allocatable :: T_SR_mult(:)
+ real(dp), allocatable :: d_arr_i(:)
+ real(dp), allocatable :: d_arr_o(:)
+ real(dp), allocatable :: d_mult_i(:)
+ real(dp), allocatable :: d_mult_o(:)
+ real(dp), allocatable :: dT_SR_mult(:,:)
+ real(dp), allocatable :: d_dmult_i(:,:)
+ real(dp), allocatable :: d_dmult_o(:,:)
+ real(dp), allocatable :: do_mbd(:)
+ real(dp), allocatable :: hirshfeld_sub_neigh(:)
+ real(dp), allocatable :: o_2b(:)
+ real(dp), allocatable :: do_2b(:)
+ real(dp), allocatable :: hirshfeld_v_mbd_der(:,:)
+ real(dp), allocatable :: hirshfeld_mbd_neigh(:)
+ real(dp), allocatable :: hirshfeld_v_2b_der(:,:)
+ real(dp), allocatable :: dr0_ii_SCS(:)
+ real(dp), allocatable :: dr0_ii_SCS_2b(:)
+ real(dp), allocatable :: V_int(:,:)
+ real(dp), allocatable :: T_LR_mult_0i(:)
+ real(dp), allocatable :: T_LR_mult_0j(:)
+ real(dp), allocatable :: T_LR_mult_ij(:)
+ real(dp), allocatable :: dT_LR_mult_0i(:)
+ real(dp), allocatable :: dT_LR_mult_0j(:)
+ real(dp), allocatable :: dT_LR_mult_ij(:)
+ real(dp), allocatable :: r6_mult(:)
+ real(dp), allocatable :: dr6_mult(:)
+ real(dp), allocatable :: T_LR_mult_0ij(:)
+ real(dp), allocatable :: T_LR_mult_0ji(:)
+ real(dp), allocatable :: xyz_2b_tot(:,:)
+ real(dp), allocatable :: rjs_2b_tot(:)
+ real(dp), allocatable :: r0_ii_2b_tot(:)
+ real(dp), allocatable :: neighbor_alpha0_2b_tot(:)
+ real(dp), allocatable :: f_damp_SCS_2b_tot(:)
+ real(dp), allocatable :: hirshfeld_2b_tot_neigh(:)
+ real(dp), allocatable :: a_2b_tot(:)
+ real(dp), allocatable :: o_2b_tot(:)
+ real(dp), allocatable :: r0_ii_SCS_2b_tot(:)
+ real(dp), allocatable :: c6_2b_tot(:)
+ real(dp), allocatable :: r6_mult_2b_tot(:)
+ real(dp), allocatable :: r6_mult_0i(:)
+ real(dp), allocatable :: r6_mult_0j(:)
+ real(dp), allocatable :: dr6_mult_0i(:)
+ real(dp), allocatable :: dr6_mult_0j(:)
+ real(dp), allocatable :: dT_LR_mult_ij0(:)
+ real(dp), allocatable :: AT_mult(:)
+ real(dp), allocatable :: E_mult(:)
+ real(dp), allocatable :: dAT_mult(:)
+ real(dp), allocatable :: dE_mult(:)
+ real(dp), allocatable :: temp_mat(:,:)
+ real(dp), allocatable :: AT_copy(:,:)
+ real(dp), allocatable :: WR(:)
+ real(dp), allocatable :: WI(:)
+ real(dp), allocatable :: VL(:,:)
+ real(dp), allocatable :: VR(:,:)
+ real(dp), allocatable :: work_mbd(:)
+ real(dp), allocatable :: VR_inv(:,:)
+ real(dp), allocatable :: ipiv_mbd(:)
+ real(dp), allocatable :: temp_mat_full(:,:)
+ real(dp), allocatable :: temp_mat_forces(:,:)
+ real(dp), allocatable :: virial_integrand(:,:)
+ real(dp), allocatable :: virial_integrand_2b(:,:)
+ real(dp), allocatable :: damped_virial_integrand(:,:)
+ real(dp), allocatable :: damped_virial_integrand_2b(:,:)
+ real(dp) :: a_mbd_i
+ real(dp) :: a_mbd_j
+ real(dp) :: o_mbd_i
+ real(dp) :: o_mbd_j
+ real(dp) :: da_mbd_i
+ real(dp) :: da_mbd_j
+ real(dp) :: da_i
+ real(dp) :: da_j
+ real(dp) :: pol1
+ real(dp) :: E_TS
+ real(dp) :: f_damp_der_2b
+ real(dp) :: dr_vdw_i
+ real(dp) :: dr_vdw_j
+ real(dp) :: forces_TS
+ real(dp) :: dC6_2b
+ real(dp) :: mult1_i
+ real(dp) :: mult1_j
+ real(dp) :: mult2
+ real(dp) :: dmult1_i(1:3)
+ real(dp) :: dmult1_j(1:3)
+ real(dp) :: dmult2(1:3)
+ real(dp) :: hv_p_der
+ real(dp) :: hv_q_der
+ real(dp) :: do_pref
+ real(dp) :: rb
+ real(dp) :: inner_damp_der
+ real(dp) :: rjs_0_i
+ real(dp) :: rcut_force
+ real(dp) :: o_i
+ real(dp) :: o_j
+ real(dp) :: do_i
+ real(dp) :: do_j
+ real(dp) :: T_LR_mult_i
+ real(dp) :: T_LR_mult_j
+ real(dp) :: dT_LR_mult_i
+ real(dp) :: dT_LR_mult_j
+ real(dp) :: dT_LR_mult_0ij_2
+ real(dp) :: dT_LR_mult_0ji_2
+ real(dp) :: a_i
+ real(dp) :: a_j
+ real(dp) :: E_TS_tot
+ real(dp) :: r6_der
+ real(dp) :: ac2
+ real(dp) :: ac3
+ real(dp) :: ac4
+ real(dp) :: r_buf_ij
+ real(dp) :: log_integral
+ real(dp) :: rcut_tot
+ real(dp) :: sym_integral
+ real(dp) :: rcut_tsscs
+ real(dp) :: r_buf_tsscs
+ real(dp) :: dT_LR_val(1:3,1:3)
+ real(dp) :: do_mbd_i
+ real(dp) :: do_mbd_j
+ real(dp) :: rcut_mbd_sqrd
+ real(dp) :: rcut_mbd2_sqrd
+ real(dp) :: f_ki
+ real(dp) :: virial_integral(1:3)
+ real(dp) :: damped_virial_integral(1:3)
+ integer :: n_mbd_sites
+ integer :: n_mbd_pairs
+ integer :: n_2b_sites
+ integer :: n_2b_tot_sites
+ integer :: n_2b_tot_pairs
+ integer :: n_ene_sites
+ integer :: n_force_sites
+ integer, allocatable :: n_mbd_neigh(:)
+ integer, allocatable :: mbd_neighbors_list(:)
+ integer, allocatable :: p_mbd(:)
+ integer, allocatable :: sub_2b_tot_list(:)
+ integer, allocatable :: n_2b_tot_neigh(:)
+ integer, allocatable :: p_2b_tot(:)
+ real(dp) :: polyfit(1:15)
+ integer :: n_degree
+ real(dp), allocatable :: B_pol(:,:)
+ real(dp), allocatable :: B_mult(:,:)
+ real(dp), allocatable :: b_i(:,:)
+ real(dp), allocatable :: d_vec(:,:)
+ real(dp), allocatable :: val_xv(:,:)
 !   NNLS stuff;
     
-    real(dp), allocatable :: A_nnls(:,:), b_nnls(:), coeff_nnls(:), work_nnls(:), omegas_nnls(:), integrand_nnls(:), &
-                           total_integrand_nnls(:), work_integrand(:), trace_nnls(:), force_series0(:,:), full_integrand(:), &
-                           integrand_sp(:), at_n_vec(:), at_vec(:), g_vec(:), g_n_vec(:), denom_nnls(:)
-    integer, allocatable :: ind_nnls(:)
-    real(dp) :: res_nnls, E_tot, denom
-    integer :: mode_nnls
-    logical :: do_total_energy = .false., series_expansion = .false., do_log = .false., & !cent_appr = .true.,
+ real(dp), allocatable :: A_nnls(:,:)
+ real(dp), allocatable :: b_nnls(:)
+ real(dp), allocatable :: coeff_nnls(:)
+ real(dp), allocatable :: work_nnls(:)
+ real(dp), allocatable :: omegas_nnls(:)
+ real(dp), allocatable :: integrand_nnls(:)
+ real(dp), allocatable :: total_integrand_nnls(:)
+ real(dp), allocatable :: work_integrand(:)
+ real(dp), allocatable :: trace_nnls(:)
+ real(dp), allocatable :: force_series0(:,:)
+ real(dp), allocatable :: full_integrand(:)
+ real(dp), allocatable :: integrand_sp(:)
+ real(dp), allocatable :: at_n_vec(:)
+ real(dp), allocatable :: at_vec(:)
+ real(dp), allocatable :: g_vec(:)
+ real(dp), allocatable :: g_n_vec(:)
+ real(dp), allocatable :: denom_nnls(:)
+ integer, allocatable :: ind_nnls(:)
+ real(dp) :: res_nnls
+ real(dp) :: E_tot
+ real(dp) :: denom
+ integer :: mode_nnls
+ logical :: do_total_energy = .false.
+ logical :: series_expansion = .false.
+ logical :: do_log = .false.
+ logical :: & !cent_appr = .true.
                lanczos = .false., &
                do_timing = .false., default_coeff = .true.  ! Finite difference testing purposes
-    real(dp), allocatable :: b_vec(:), Ab(:), I_mat(:,:), l_vals(:), log_vals(:), lsq_mat(:,:), res_mat(:), log_exp(:,:), &
-                           AT_power(:,:), log_integrand(:), AT_power_full(:,:), pol_grad(:,:,:), pol_inv(:,:,:), inv_vals(:), &
-                           res_inv(:), lsq_inv(:,:), integrand_pol(:), AT_sym(:,:,:), G_sym(:,:,:), pol_sym(:,:,:), res_sym(:), &
-                           AT_sym_power(:,:), integrand_sym(:), T_LR_sym(:,:), dT_LR_sym(:,:)
-    integer(i64), allocatable :: ipiv_lsq(:)
-    real(dp) :: b_norm, l_dom, l_min, l_max
+ real(dp), allocatable :: b_vec(:)
+ real(dp), allocatable :: Ab(:)
+ real(dp), allocatable :: I_mat(:,:)
+ real(dp), allocatable :: l_vals(:)
+ real(dp), allocatable :: log_vals(:)
+ real(dp), allocatable :: lsq_mat(:,:)
+ real(dp), allocatable :: res_mat(:)
+ real(dp), allocatable :: log_exp(:,:)
+ real(dp), allocatable :: AT_power(:,:)
+ real(dp), allocatable :: log_integrand(:)
+ real(dp), allocatable :: AT_power_full(:,:)
+ real(dp), allocatable :: pol_grad(:,:,:)
+ real(dp), allocatable :: pol_inv(:,:,:)
+ real(dp), allocatable :: inv_vals(:)
+ real(dp), allocatable :: res_inv(:)
+ real(dp), allocatable :: lsq_inv(:,:)
+ real(dp), allocatable :: integrand_pol(:)
+ real(dp), allocatable :: AT_sym(:,:,:)
+ real(dp), allocatable :: G_sym(:,:,:)
+ real(dp), allocatable :: pol_sym(:,:,:)
+ real(dp), allocatable :: res_sym(:)
+ real(dp), allocatable :: AT_sym_power(:,:)
+ real(dp), allocatable :: integrand_sym(:)
+ real(dp), allocatable :: T_LR_sym(:,:)
+ real(dp), allocatable :: dT_LR_sym(:,:)
+ integer(i64), allocatable :: ipiv_lsq(:)
+ real(dp) :: b_norm
+ real(dp) :: l_dom
+ real(dp) :: l_min
+ real(dp) :: l_max
 
     !PSBLAS stuff:
     !type(psb_ctxt_type) :: icontxt
     !integer(psb_ipk_) ::  iam, np, ip, jp, idummy, nr, nnz, info_psb, nnz2
-    integer :: nnz, nnz2
+ integer :: nnz
+ integer :: nnz2
     !type(psb_desc_type) :: desc_a
     !type(psb_dspmat_type) :: A_sp, A_sp_sym
     !type(psb_d_vect_type) :: x_vec, b_vec
     !integer(psb_lpk_), 
-    integer(i64), allocatable :: ia(:), ja(:), ia2(:), ja2(:) !, myidx(:)
+ integer(i64), allocatable :: ia(:)
+ integer(i64), allocatable :: ja(:)
+ integer(i64), allocatable :: ia2(:)
+ integer(i64), allocatable :: ja2(:) !
+ integer(i64), allocatable :: myidx(:)
     !real(psb_dpk_), 
-    real(dp), allocatable :: val(:,:), val2(:), val_sym(:,:), dval(:,:) !, val_sym_test(:,:)  !, val_xv(:,:), b_i(:,:), d_vec(:,:)
+ real(dp), allocatable :: val(:,:)
+ real(dp), allocatable :: val2(:)
+ real(dp), allocatable :: val_sym(:,:)
+ real(dp), allocatable :: dval(:,:) !
+ real(dp), allocatable :: val_sym_test(:,:)  !
 
 
 !central_pol = 10.d0
@@ -6464,10 +6928,13 @@ end if
 
     implicit none
 
-    character*8, intent(in) :: element
-    integer, intent(in) :: rank
-    real(dp), intent(out) :: C6, R0, alpha0
-    real(dp) :: Hartree = 27.211386024367243d0, Bohr = 0.5291772105638411d0
+ character*8, intent(in) :: element
+ integer, intent(in) :: rank
+ real(dp), intent(out) :: C6
+ real(dp), intent(out) :: R0
+ real(dp), intent(out) :: alpha0
+ real(dp) :: Hartree = 27.211386024367243d0
+ real(dp) :: Bohr = 0.5291772105638411d0
 
     C6 = 0.d0
     R0 =  0.d0

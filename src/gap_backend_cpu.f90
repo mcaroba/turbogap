@@ -29,8 +29,11 @@ module gap_backend
   implicit none
 
   private
-  public :: gap_backend_begin, gap_backend_end
-  public :: add_2b_contribution, add_core_pot_contribution, add_3b_contribution
+ public :: gap_backend_begin
+ public :: gap_backend_end
+ public :: add_2b_contribution
+ public :: add_core_pot_contribution
+ public :: add_3b_contribution
 
 contains
 
@@ -45,11 +48,17 @@ contains
   subroutine gap_backend_begin( params, rjs, xyz, n_neigh, species, neighbor_species, &
        neighbors_list, i_beg, i_end, j_beg, j_end )
     implicit none
-    type(input_parameters), intent(inout) :: params
-    real(dp),  intent(in), allocatable :: rjs(:), xyz(:,:)
-    integer, intent(in), allocatable :: n_neigh(:), species(:), neighbor_species(:)
-    integer, intent(in), allocatable :: neighbors_list(:)
-    integer, intent(in) :: i_beg, i_end, j_beg, j_end
+ type(input_parameters), intent(inout) :: params
+ real(dp), intent(in), allocatable :: rjs(:)
+ real(dp), intent(in), allocatable :: xyz(:,:)
+ integer, intent(in), allocatable :: n_neigh(:)
+ integer, intent(in), allocatable :: species(:)
+ integer, intent(in), allocatable :: neighbor_species(:)
+ integer, intent(in), allocatable :: neighbors_list(:)
+ integer, intent(in) :: i_beg
+ integer, intent(in) :: i_end
+ integer, intent(in) :: j_beg
+ integer, intent(in) :: j_end
   end subroutine gap_backend_begin
 
   subroutine gap_backend_end()
@@ -66,33 +75,33 @@ contains
     implicit none
 
 !   ---- Input: describes the system and this descriptor set ----
-    integer,                intent(in)                :: n_distance_2b
-    type(distance_2b),    allocatable, intent(inout)   :: distance_2b_hypers(:)
-    type(input_parameters), intent(inout)             :: params
-    real(dp),                 intent(in),  allocatable  :: rjs(:)
-    real(dp),                 intent(in),  allocatable  :: xyz(:,:)
-    integer,                intent(in),  allocatable  :: n_neigh(:)
-    integer,                intent(in),  allocatable  :: species(:)
-    integer,                intent(in),  allocatable  :: neighbor_species(:)
-    integer,                intent(in)                :: i_beg
-    integer,                intent(in)                :: i_end
-    integer,                intent(in)                :: j_beg
-    integer,                intent(in)                :: j_end
+ integer, intent(in) :: n_distance_2b
+ type(distance_2b), allocatable, intent(inout) :: distance_2b_hypers(:)
+ type(input_parameters), intent(inout) :: params
+ real(dp), intent(in), allocatable :: rjs(:)
+ real(dp), intent(in), allocatable :: xyz(:,:)
+ integer, intent(in), allocatable :: n_neigh(:)
+ integer, intent(in), allocatable :: species(:)
+ integer, intent(in), allocatable :: neighbor_species(:)
+ integer, intent(in) :: i_beg
+ integer, intent(in) :: i_end
+ integer, intent(in) :: j_beg
+ integer, intent(in) :: j_end
 
 !   ---- Output: accumulated into by this routine ----
-    real(dp),                 intent(inout), allocatable :: energies_2b(:)
-    real(dp),                 intent(inout), allocatable :: forces_2b(:,:)
-    real(dp),                 intent(inout)              :: virial_2b(1:3,1:3)
-    real(dp),                 intent(inout)              :: time_2b(1:3)
+ real(dp), intent(inout), allocatable :: energies_2b(:)
+ real(dp), intent(inout), allocatable :: forces_2b(:,:)
+ real(dp), intent(inout) :: virial_2b(1:3,1:3)
+ real(dp), intent(inout) :: time_2b(1:3)
 
 !   ---- Scratch: owned by the driver and reused across the three calls,
 !        rather than local, so this does not add an allocation per descriptor ----
-    real(dp),                 intent(inout), allocatable :: this_energies(:)
-    real(dp),                 intent(inout), allocatable :: this_forces(:,:)
-    real(dp),                 intent(inout)              :: this_virial(1:3,1:3)
+ real(dp), intent(inout), allocatable :: this_energies(:)
+ real(dp), intent(inout), allocatable :: this_forces(:,:)
+ real(dp), intent(inout) :: this_virial(1:3,1:3)
 
 !   ---- Internal ----
-    integer :: i
+ integer :: i
 
     do i = 1, n_distance_2b
        call get_time(time_2b(1))
@@ -131,33 +140,33 @@ contains
     implicit none
 
 !   ---- Input: describes the system and this descriptor set ----
-    integer,                intent(in)                :: n_core_pot
-    type(core_pot),       allocatable, intent(inout)   :: core_pot_hypers(:)
-    type(input_parameters), intent(inout)             :: params
-    real(dp),                 intent(in),  allocatable  :: rjs(:)
-    real(dp),                 intent(in),  allocatable  :: xyz(:,:)
-    integer,                intent(in),  allocatable  :: n_neigh(:)
-    integer,                intent(in),  allocatable  :: species(:)
-    integer,                intent(in),  allocatable  :: neighbor_species(:)
-    integer,                intent(in)                :: i_beg
-    integer,                intent(in)                :: i_end
-    integer,                intent(in)                :: j_beg
-    integer,                intent(in)                :: j_end
+ integer, intent(in) :: n_core_pot
+ type(core_pot), allocatable, intent(inout) :: core_pot_hypers(:)
+ type(input_parameters), intent(inout) :: params
+ real(dp), intent(in), allocatable :: rjs(:)
+ real(dp), intent(in), allocatable :: xyz(:,:)
+ integer, intent(in), allocatable :: n_neigh(:)
+ integer, intent(in), allocatable :: species(:)
+ integer, intent(in), allocatable :: neighbor_species(:)
+ integer, intent(in) :: i_beg
+ integer, intent(in) :: i_end
+ integer, intent(in) :: j_beg
+ integer, intent(in) :: j_end
 
 !   ---- Output: accumulated into by this routine ----
-    real(dp),                 intent(inout), allocatable :: energies_core_pot(:)
-    real(dp),                 intent(inout), allocatable :: forces_core_pot(:,:)
-    real(dp),                 intent(inout)              :: virial_core_pot(1:3,1:3)
-    real(dp),                 intent(inout)              :: time_core_pot(1:3)
+ real(dp), intent(inout), allocatable :: energies_core_pot(:)
+ real(dp), intent(inout), allocatable :: forces_core_pot(:,:)
+ real(dp), intent(inout) :: virial_core_pot(1:3,1:3)
+ real(dp), intent(inout) :: time_core_pot(1:3)
 
 !   ---- Scratch: owned by the driver and reused across the three calls,
 !        rather than local, so this does not add an allocation per descriptor ----
-    real(dp),                 intent(inout), allocatable :: this_energies(:)
-    real(dp),                 intent(inout), allocatable :: this_forces(:,:)
-    real(dp),                 intent(inout)              :: this_virial(1:3,1:3)
+ real(dp), intent(inout), allocatable :: this_energies(:)
+ real(dp), intent(inout), allocatable :: this_forces(:,:)
+ real(dp), intent(inout) :: this_virial(1:3,1:3)
 
 !   ---- Internal ----
-    integer :: i
+ integer :: i
 
     do i = 1, n_core_pot
        call get_time(time_core_pot(1))
@@ -195,34 +204,34 @@ contains
     implicit none
 
 !   ---- Input: describes the system and this descriptor set ----
-    integer,                intent(in)                :: n_angle_3b
-    type(angle_3b),       allocatable, intent(inout)   :: angle_3b_hypers(:)
-    type(input_parameters), intent(inout)             :: params
-    real(dp),                 intent(in),  allocatable  :: rjs(:)
-    real(dp),                 intent(in),  allocatable  :: xyz(:,:)
-    integer,                intent(in),  allocatable  :: n_neigh(:)
-    integer,                intent(in),  allocatable  :: species(:)
-    integer,                intent(in),  allocatable  :: neighbor_species(:)
-    integer,                intent(in),  allocatable  :: neighbors_list(:)
-    integer,                intent(in)                :: i_beg
-    integer,                intent(in)                :: i_end
-    integer,                intent(in)                :: j_beg
-    integer,                intent(in)                :: j_end
+ integer, intent(in) :: n_angle_3b
+ type(angle_3b), allocatable, intent(inout) :: angle_3b_hypers(:)
+ type(input_parameters), intent(inout) :: params
+ real(dp), intent(in), allocatable :: rjs(:)
+ real(dp), intent(in), allocatable :: xyz(:,:)
+ integer, intent(in), allocatable :: n_neigh(:)
+ integer, intent(in), allocatable :: species(:)
+ integer, intent(in), allocatable :: neighbor_species(:)
+ integer, intent(in), allocatable :: neighbors_list(:)
+ integer, intent(in) :: i_beg
+ integer, intent(in) :: i_end
+ integer, intent(in) :: j_beg
+ integer, intent(in) :: j_end
 
 !   ---- Output: accumulated into by this routine ----
-    real(dp),                 intent(inout), allocatable :: energies_3b(:)
-    real(dp),                 intent(inout), allocatable :: forces_3b(:,:)
-    real(dp),                 intent(inout)              :: virial_3b(1:3,1:3)
-    real(dp),                 intent(inout)              :: time_3b(1:3)
+ real(dp), intent(inout), allocatable :: energies_3b(:)
+ real(dp), intent(inout), allocatable :: forces_3b(:,:)
+ real(dp), intent(inout) :: virial_3b(1:3,1:3)
+ real(dp), intent(inout) :: time_3b(1:3)
 
 !   ---- Scratch: owned by the driver and reused across the three calls,
 !        rather than local, so this does not add an allocation per descriptor ----
-    real(dp),                 intent(inout), allocatable :: this_energies(:)
-    real(dp),                 intent(inout), allocatable :: this_forces(:,:)
-    real(dp),                 intent(inout)              :: this_virial(1:3,1:3)
+ real(dp), intent(inout), allocatable :: this_energies(:)
+ real(dp), intent(inout), allocatable :: this_forces(:,:)
+ real(dp), intent(inout) :: this_virial(1:3,1:3)
 
 !   ---- Internal ----
-    integer :: i
+ integer :: i
 
     do i = 1, n_angle_3b
        call get_time(time_3b(1))
