@@ -747,7 +747,7 @@ Two lessons:
   written at more than one site**, with nothing forcing the copies to agree.
   Three separate defects on these branches now have that shape.
 
-## 6j. `local_properties` is unallocated on the vdW path — OPEN
+## 6j. `local_properties` is unallocated on the vdW path — FIXED
 
 With 6i fixed, the P4 dimer gets further and then dies at `turbogap.f90:1853`:
 
@@ -783,3 +783,33 @@ Owner decision needed on the fix: guard the TS block on `has_local_properties`
 as well, or make the allocation unconditional when `has_vdw`. Master gets away
 without either because its `compute_vdw` is reached on a path where the local
 properties have already been computed.
+
+**Fixed (`389cf76`).** The cause was in the GAP-file parsing, not the driver.
+
+A GAP file may declare the Hirshfeld model in the deprecated inline form
+(`has_vdw = .true.` plus `vdw_qs`, `vdw_alphas`, `vdw_zeta`, `vdw_delta`,
+`vdw_v0`), and `vdw_P/gap_files/phosphorus.gap` does. Master reads `has_vdw`
+into `%has_local_properties` and synthesises a `local_property_models` entry
+labelled `hirshfeld_v`; this branch read it into the legacy `%has_vdw` field
+and never created the model. So `has_vdw` was true, `has_local_properties` was
+false, and the TS block ran against an array the allocation guard had skipped.
+
+Master's migration is ported verbatim, with `check_deprecated` and
+`print_deprecation_message`, so a deck using the old form is told what to
+replace instead of silently taking a different path.
+
+The P4 dimer now runs and agrees with the CPU build: `energy`, `energy_vdw` and
+`energy_2b` identical, `energy_soap` differing at 1e-8. It is now the `vdw_ts`
+case in `tests/gpu/run_regression.sh`.
+
+Two follow-ons landed with it:
+
+* **Thirteen vdW/MBD input parameters** master has and this branch did not
+  (`vdw_mbd_rcut`, `vdw_2b_rcut`, `vdw_omega_ref`, `vdw_sr_mbd`, `do_nnls`, …).
+  Master's `vdw.f90` is compiled here now, so those paths exist; without the
+  keywords a deck setting them was *silently ignored*, which is worse than
+  failing. The two trees now recognise the same keyword set, with the eleven
+  `estat_*` keywords the deliberate exception — that is this branch's feature,
+  owed to master.
+* The suite gained its first **small cell**. Everything else here is the
+  7176-atom CO system, which is exactly why §6i went unnoticed.
