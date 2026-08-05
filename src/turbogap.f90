@@ -411,6 +411,11 @@ program turbogap
    !vdw crap
    real(dp), allocatable, target :: v_neigh_vdw(:)
    real(dp), allocatable, target :: energies_vdw(:)
+!  The TS scaling factor and the diagonal local virial that master's
+!  get_ts_energy_and_forces takes. For plain TS the scaling is 1.d0; it
+!  exists so the ts+mbd scheme can reuse the same routine.
+   real(dp), allocatable :: mbd_ts_scaling(:), this_mbd_ts_scaling(:)
+   real(dp), allocatable :: local_virial_vdw_diag(:, :), this_local_virial_vdw_diag(:, :)
    real(dp), allocatable, target :: forces_vdw(:, :)
    real(dp), allocatable, target :: this_energies_vdw(:)
    real(dp), allocatable, target :: this_forces_vdw(:, :)
@@ -1830,6 +1835,12 @@ program turbogap
                this_virial_vdw = 0.d0
             end if
 #endif
+            if (allocated(this_mbd_ts_scaling)) deallocate (this_mbd_ts_scaling)
+            allocate (this_mbd_ts_scaling(1:n_sites))
+            this_mbd_ts_scaling = 1.d0
+            if (allocated(this_local_virial_vdw_diag)) deallocate (this_local_virial_vdw_diag)
+            allocate (this_local_virial_vdw_diag(1:3, 1:n_sites))
+            this_local_virial_vdw_diag = 0.d0
             allocate (v_neigh_vdw(1:j_end - j_beg + 1))
             v_neigh_vdw = 0.d0
             k = 0
@@ -1854,10 +1865,13 @@ program turbogap
               rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), v_neigh_vdw, &
               params%vdw_sr, params%vdw_d, params%vdw_c6_ref, params%vdw_r0_ref, &
               params%vdw_alpha0_ref, params%do_forces, &
+              params%poly_cut_xmin, params%poly_cut_xmax, &
 #ifdef _MPIF90
-            this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw)
+            this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw, &
+            this_local_virial_vdw_diag, this_mbd_ts_scaling)
 #else
-            energies_vdw(i_beg:i_end), forces_vdw, virial_vdw)
+            energies_vdw(i_beg:i_end), forces_vdw, virial_vdw, &
+               local_virial_vdw_diag, mbd_ts_scaling)
 #endif
 
             !time_vdw(2) = MPI_wtime()
@@ -1866,6 +1880,8 @@ program turbogap
             time_vdw(3) = time_vdw(2) - time_vdw(1)
             !           print *, rank, ">>--- Finiahed TS energies forces ---<<"
             deallocate (v_neigh_vdw)
+            if (allocated(this_mbd_ts_scaling)) deallocate (this_mbd_ts_scaling)
+            if (allocated(this_local_virial_vdw_diag)) deallocate (this_local_virial_vdw_diag)
          end if
 
          !     Compute ELECTROSTATIC energies and forces

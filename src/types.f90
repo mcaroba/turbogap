@@ -185,7 +185,8 @@ module types
            & 1.5405981d0, xrd_alpha = 1.01d0, xrd_rcut = 4.d0, nd_rcut = 4.d0,&
            & q_range_min = 1.0, q_range_max = 5.d0, r_range_min = 1.0,&
            & r_range_max = 5.d0, pair_distribution_rcut = 4.d0,&
-           & pair_distribution_kde_sigma = 0.d0, gpu_max_batch_size = 1.d0
+           & pair_distribution_kde_sigma = 0.d0, gpu_max_batch_size = 1.d0, &
+           & poly_cut_xmin = 3.d0, poly_cut_xmax = 10.d0
       integer :: md_nsteps = 1, mc_nsteps = 1, write_xyz = 0,&
            & write_thermo = 1, which_atom = 0, vdw_mbd_nfreq = 11,&
            & n_mc_types = 0, n_nested = 0, mc_idx = 1, mc_nrelax = 0,&

@@ -1748,6 +1748,12 @@ contains
          else if (keyword == "vdw_scs_rcut") then
             backspace (10)
             read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_scs_rcut
+         else if (keyword == "poly_cut_xmin") then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%poly_cut_xmin
+         else if (keyword == "poly_cut_xmax") then
+            backspace (10)
+            read (10, *, iostat=iostatus) cjunk, cjunk, params%poly_cut_xmax
          else if (keyword == "vdw_mbd_nfreq") then
             backspace (10)
             read (10, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_nfreq
