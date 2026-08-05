@@ -120,6 +120,10 @@ Makefile now says so, so it does not get re-litigated as dead code.
 **0b. Whitespace normalisation — attempted, and it is the wrong tool.**
 Superseded by §6.3 and §6.4. Review with `diff -w` and merge with
 `git merge -X ignore-all-space`; do not reformat.
+**Superseded 2026-08-05 — see §6.3.** Both trees are now fprettify-normalised
+with identical settings, the raw diff has fallen to the `diff -w` floor
+(26786 → 7828 lines across the shared modules), and `-X ignore-all-space` is no
+longer needed for the merge to behave.
 
 **0c. Adopt `get_time()` on master — done** (`fef536c`). 76 call sites across
 `turbogap.f90` (53), `turbogap_setup.f90` (8), `turbogap_vdw.f90` (8) and
@@ -391,10 +395,60 @@ because fprettify indents according to block structure and the two branches
 genuinely have different block structure in places. `diff -w` is strictly better
 on every file, costs nothing, and touches no history.
 
-So: **do not reformat.** Review with `diff -w`, merge with
-`git merge -X ignore-all-space`. That captures the whole benefit §1 was reaching
-for, at zero risk, without a ~30,000-line commit that would destroy `git blame`
-across the tree.
+~~So: **do not reformat.**~~ **Reversed 2026-08-05** (`bedcf3d` cpu,
+`415f881` gpu). Both trees are now fprettify-normalised with identical settings
+and a `.pre-commit-config.yaml` keeps them that way.
+
+The measurement above was right; the conclusion drawn from it was too narrow. It
+tested whether formatting **alone** converges the branches. It does not — but
+that was never the choice. The choice was between formatting *neither* tree and
+formatting *both with the same settings*, and the table above formats each in
+isolation without asking what the pair then looks like. Measured on the pair:
+
+| | before | after |
+|---|---|---|
+| `exp_utils.f90` | 6039 | **1106** |
+| `read_files.f90` | 5399 | **478** |
+| `turbogap.f90` | 5535 | 2372 |
+| `exp_interface.f90` | 4957 | 2465 |
+| `md.f90` | 983 | **55** |
+| `mc.f90` | 1228 | 333 |
+| `neighbors.f90` | 1328 | 339 |
+| `types.f90` | 743 | 179 |
+
+26786 → 7828, **−71%**, and those land on the `diff -w` floor in the table
+above — `read_files` 478 against 469, `md` 55 against 52. The raw diff and the
+semantic diff have converged, which is the thing §1 actually wanted: `git merge`
+now behaves without `-X ignore-all-space`, and a file-level diff between the
+branches means something again.
+
+What made this worth the `git blame` cost was §7.2's finding: the GPU copy of
+`exp_interface.f90` had already been through fprettify and master's had not, so
+the pair read as 757 diverged lines where the truth was 67. Formatting drift
+between the branches was not cosmetic — it was inflating the measured merge
+surface by an order of magnitude and hiding what actually conflicts.
+
+The whole change is whitespace, verified per tree with
+`git diff -w --ignore-blank-lines` over `src`: one line each, in `xyz.f90`,
+where fprettify drops a redundant leading `&`. Both suites pass unchanged.
+
+Three things had to be fixed first, all of which would otherwise fail *quietly
+and forever*:
+
+* **The hygiene hooks rewrote test data** — `silicon.gap`, `silicon.xml`, the
+  `.beta` tables, a regression case's input deck. Parsed inputs where a stripped
+  trailing space changes what the code reads. The hooks are now allow-listed to
+  `src/ tools/ docs/ makefiles/`; an exclude list fails open.
+* **fprettify and `trailing-whitespace` never converge** on `eph_fdm.f90`:
+  fprettify emits a trailing space after a statement-separating `;`, the fixer
+  strips it, repeat. Fortran is excluded from the fixer — when a formatter and a
+  fixer disagree, exactly one may own the file.
+* **fprettify is not idempotent on the GPU `turbogap.f90`** as it stood, for two
+  reasons in one `get_gap_soap` call: eight commented-out argument lines *inside*
+  the continued argument list (dead host-side arguments the GPU replaced with
+  device pointers), and the call being right-aligned to exactly column 132, where
+  the alignment drifts a few spaces per pass. Both fixed; the statement's 75
+  arguments are byte-identical across the rewrap.
 
 ### 6.4 Sixteen statements that no Fortran tool can parse
 
