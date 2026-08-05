@@ -14,11 +14,20 @@
 ! MPI-only allocation of those same arrays; that one is an ordinary conditional
 ! over whole statements and survives the move unchanged.
 !
-! The CPU branch's copy also holds compute_exp_spectra, the pair-distribution,
-! structure-factor and diffraction block. That one is not brought across yet:
-! here it is 705 lines against 272 there, with 71 boundary variables against 37,
-! because the device state -- cuBLAS handles, streams, gpu_exp, gpu_neigh --
-! crosses the boundary too. It wants the backend seam, not a straight lift.
+! compute_exp_spectra -- the pair-distribution, structure-factor and diffraction
+! block -- is now here too, so this module holds the same two procedures as the
+! CPU branch's copy and the two can be compared procedure against procedure.
+!
+! It was held up on the device state (cuBLAS handles, streams, gpu_exp,
+! gpu_neigh) appearing to cross the boundary. Most of it does not: the count
+! that said 71 was mostly declaration-only crossings of buffers private to the
+! block. What genuinely crosses is eight symbols, and they now come from
+! gpu_context by USE, which is why the body could move unchanged.
+!
+! It is 51 arguments against the CPU branch's 37. The difference is the
+! batched-device machinery -- the batch decomposition lists, the per-batch
+! bounds, and omp_task, which stays an argument because it is meant to be
+! OpenMP-private and must not become shared module state.
 module turbogap_exp
 
   use kinds
