@@ -58,6 +58,7 @@ program turbogap
   use iso_c_binding
   use gpu_var_mod  
   use gpu_var_int_mod
+  use gpu_context
   use gpu_var_double_mod  
 
 #ifdef _MPIF90
@@ -238,7 +239,6 @@ program turbogap
 
   !--- GPU VARIABLES FOR ALLOCATION ---!
 
-  type(c_ptr) :: cublas_handle, gpu_stream
   integer :: n_omp, omp_task, omp_n_sites, n_omp_temp
   integer, allocatable :: i_beg_omp(:), i_end_omp(:), j_beg_omp(:), j_end_omp(:)
   !**************************************************************************
@@ -285,16 +285,11 @@ program turbogap
 
   ! this is a type of
   ! gpu_batch_storage( i_batch ) % host( i_n_dim_idx ) % pair_distribution_h( 1:n_samples ) 
-  type( gpu_host_batch_storage_type ), allocatable :: gpu_batch_storage(:)  
 
-  type( gpu_storage_type ), allocatable :: gpu_exp(:)
-  type( gpu_neigh_storage_type ), allocatable :: gpu_neigh(:)  
   integer :: n_dim_idx
-  real(dp) :: gpu_memory_usage = 0.d0
 
   ! integer, parameter :: nstr=7
   ! type(c_ptr) :: virial_d(nstr),tmp_forces0_d(nstr),tmp_energies0_d(nstr)
-  type(c_ptr), allocatable :: cublas_handles(:), gpu_streams(:)
 
 
   !**************************************************************************
