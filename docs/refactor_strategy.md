@@ -486,6 +486,54 @@ Left, in the order the measurements support:
    be agreed before it is started. Doing the extraction first, with 71
    arguments including ten device handles, would freeze exactly the interface
    that context module then has to undo.
+
+   **Unblocked 2026-08-05 (`19aa6a9`). The context is eight symbols, not 71.**
+   The count above conflates three different things, and separating them is what
+   made the module writable:
+
+   * **28 of the crossings are declaration-only.** Their sole appearance outside
+     the block is the `type(c_ptr) :: ...` line itself — `st_x_d`, `xpdf_d`,
+     `dv_d`, `pair_distribution_partial_d`, the whole `_d` family. They are
+     block-private and move with the code.
+   * **Four are procedures, not state** — `gpu_malloc_all`, `gpu_free_async`,
+     `gpu_malloc_neighbors`, `gpu_free_neighbors` arrive via `use` at zero
+     interface cost.
+   * **Three are `params%` fields** — `gpu_batched`, `gpu_n_batches`,
+     `gpu_max_batch_size` — already carried by `params`.
+
+   What genuinely crosses is `gpu_stream`, `cublas_handle`, `gpu_streams`,
+   `cublas_handles`, `gpu_exp`, `gpu_neigh`, `gpu_batch_storage` and
+   `gpu_memory_usage`. Those are now `src/gpu_context.f90`, reached by `use`, so
+   the names are unchanged and the lift stays verbatim — the `gap_backend_gpu`
+   trick does apply here after all, once the private buffers are told apart from
+   the shared ones.
+
+   **`omp_task` must not go in the module**, and this is the trap. It reads like
+   context and it crosses like context, but `turbogap.f90` intends it to be
+   OpenMP-*private* — see the `!$omp parallel private(omp_task)` and
+   `!$OMP PRIVATE(i, omp_task, ...)` directives. Shared module state there is a
+   correctness bug the moment `-fopenmp` is enabled, which it currently is not,
+   so nothing would catch it. The arrays it indexes (`gpu_streams`,
+   `cublas_handles`) are shared and do belong in the module; the index does not.
+   The batch decomposition lists are excluded for a weaker reason: they are
+   recomputed per snapshot and handed to `neighbors.f90` as `intent(out)`, so
+   they read as data flowing through the driver.
+
+   **The extraction itself is now sized.** Block is lines 1978-2679 (702 lines,
+   confirming the 701 above). Against the driver's declarations it splits into
+   **64 arguments, 53 block-private locals**, versus master's verified
+   `compute_exp_spectra` at 37 arguments. The extra ~27 are the batched-GPU
+   machinery (`i_beg_list`/`i_end_list`/`j_beg_list`/`j_end_list`,
+   `this_i_beg`/`this_i_end`/`this_j_beg`/`this_j_end`, `n_sites_temp`,
+   `n_pairs_temp`, `time_exp_batched`) and the nine `this_*` spectra triples.
+   Four more (`i`, `j`, `k`, `f`) are shared loop scratch and can become locals
+   once checked against §8's rule that the driver rewrites them before next
+   reading them.
+
+   Measure it with `tools/gen_fortran_deps.py`'s sibling analysis rather than by
+   hand: a crossing count that does not discount declaration lines and their
+   *continuation* lines overstates the argument list badly — 89 against the real
+   64 on this same block.
 3. **Phase 5 one-sided features**, each on its own commit: electrostatics to
    master, the cascade stack wired on the GPU branch, master's MC fixes across.
 4. `vdw.f90` + `misc`/`constants`/`nonneg_leastsq` to the GPU branch, once
