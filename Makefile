@@ -23,7 +23,7 @@ PROGRAMS := turbogap
 
 SRC := printing.f90 error.f90 read_utils.f90 timing.f90 misc.f90 electrostatics.f90 constants.f90 nonneg_leastsq.f90 splines.f90 types.f90 neighbors.f90 gap.f90 vdw.f90		\
 	local_properties.f90 exp_utils.f90  xyz.f90 md.f90 mc.f90 read_files.f90	\
-	gap_backend_cpu.f90 gap_interface.f90 mpi.f90 exp_interface.f90 turbogap_exp.f90 turbogap_vdw.f90 turbogap_setup.f90
+	gap_backend_cpu.f90 gap_interface.f90 mpi.f90 exp_interface.f90 turbogap_exp.f90 turbogap_md.f90 turbogap_vdw.f90 turbogap_setup.f90
 
 # kinds must build before everything, including SRC_STOP, so it gets its own
 # group placed first in every prerequisite list.
