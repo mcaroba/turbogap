@@ -139,9 +139,9 @@ contains
       ! st_alphas=size_alphas*(sizeof(alphas(1)))
       st_local_properties = size_local_properties*(sizeof(local_properties(1)))
 
-      call gpu_malloc_all(kernels_d, st_kernels, gpu_stream)
-      call gpu_malloc_all(kernels_copy_d, st_kernels, gpu_stream)
-      !call gpu_malloc_all(local_properties_d, st_local_properties, gpu_stream)
+      call gpu_malloc_async(kernels_d, st_kernels, gpu_stream)
+      call gpu_malloc_async(kernels_copy_d, st_kernels, gpu_stream)
+      !call gpu_malloc_async(local_properties_d, st_local_properties, gpu_stream)
 
       call gpu_blas_mmul_t_n(cublas_handle, Qs_d, soap_d, kernels_d, n_sparse, n_soap, n_sites)
       call gpu_kernels_pow(kernels_d, kernels_copy_d, zeta, size_kernels, gpu_stream)
@@ -154,10 +154,10 @@ contains
       ! Now we do the derivatives
       if (do_derivatives) then
 
-         call gpu_malloc_all(kernels_der_d, st_kernels, gpu_stream)
+         call gpu_malloc_async(kernels_der_d, st_kernels, gpu_stream)
          st_soap = size_soap*sizeof(local_properties(1))
-         call gpu_malloc_all(Qss_d, st_soap, gpu_stream)
-         call gpu_malloc_all(Qs_copy_d, st_Qs, gpu_stream)
+         call gpu_malloc_async(Qss_d, st_soap, gpu_stream)
+         call gpu_malloc_async(Qs_copy_d, st_Qs, gpu_stream)
          call cpy_dtod(Qs_d, Qs_copy_d, st_Qs, gpu_stream)
 
          mzetam = zeta - 1
@@ -180,7 +180,7 @@ contains
          size_local_properties_cart_der = n1local_properties_cart_der*n2local_properties_cart_der
 
          st_local_properties_cart_der = size_local_properties_cart_der*sizeof(local_properties_cart_der(1, 1))
-         !call gpu_malloc_all(local_properties_cart_der_d, st_local_properties_cart_der, gpu_stream)
+         !call gpu_malloc_async(local_properties_cart_der_d, st_local_properties_cart_der, gpu_stream)
 
          call gpu_local_property_derivatives(n_sites, &
                                              Qss_d, n_soap, l_index_d, &

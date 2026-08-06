@@ -129,7 +129,7 @@ __global__ void vect_dble(double *a, int N)
 }
 
 
-extern "C" void cuda_malloc_all(void **a_d, size_t Np, hipStream_t *stream )
+extern "C" void gpu_malloc_async(void **a_d, size_t Np, hipStream_t *stream )
 {
 
 
@@ -143,7 +143,7 @@ extern "C" void cuda_malloc_all(void **a_d, size_t Np, hipStream_t *stream )
   return;
 }
 
-//  extern "C" void cuda_malloc_all(void **a_d, size_t Np, hipStream_t *stream )
+//  extern "C" void gpu_malloc_async(void **a_d, size_t Np, hipStream_t *stream )
 // {
 
 

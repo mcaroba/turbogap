@@ -58,10 +58,7 @@ program turbogap
    use soap_turbo_functions
    use F_B_C
    use iso_c_binding
-   use gpu_var_mod
-   use gpu_var_int_mod
    use gpu_context
-   use gpu_var_double_mod
 
 #ifdef _MPIF90
    use mpi
@@ -1561,36 +1558,36 @@ program turbogap
             n_sp = soap_turbo_hypers(i)%n_species
 
             st_size_nf = n_sp*sizeof(soap_turbo_hypers(i)%nf(1))
-            call gpu_malloc_all(nf_d, st_size_nf, gpu_stream)
+            call gpu_malloc_async(nf_d, st_size_nf, gpu_stream)
             call cpy_htod(c_loc(soap_turbo_hypers(i)%nf), nf_d, st_size_nf, gpu_stream)
-            call gpu_malloc_all(rcut_hard_d, st_size_nf, gpu_stream)
+            call gpu_malloc_async(rcut_hard_d, st_size_nf, gpu_stream)
             call cpy_htod(c_loc(soap_turbo_hypers(i)%rcut_hard), rcut_hard_d, st_size_nf, gpu_stream)
-            call gpu_malloc_all(rcut_soft_d, st_size_nf, gpu_stream)
+            call gpu_malloc_async(rcut_soft_d, st_size_nf, gpu_stream)
             call cpy_htod(c_loc(soap_turbo_hypers(i)%rcut_soft), rcut_soft_d, st_size_nf, gpu_stream)
-            call gpu_malloc_all(global_scaling_d, st_size_nf, gpu_stream)
+            call gpu_malloc_async(global_scaling_d, st_size_nf, gpu_stream)
             call cpy_htod(c_loc(soap_turbo_hypers(i)%global_scaling), global_scaling_d, st_size_nf, gpu_stream)
-            call gpu_malloc_all(atom_sigma_r_d, st_size_nf, gpu_stream)
+            call gpu_malloc_async(atom_sigma_r_d, st_size_nf, gpu_stream)
             call cpy_htod(c_loc(soap_turbo_hypers(i)%atom_sigma_r), atom_sigma_r_d, st_size_nf, gpu_stream)
-            call gpu_malloc_all(atom_sigma_r_scaling_d, st_size_nf, gpu_stream)
+            call gpu_malloc_async(atom_sigma_r_scaling_d, st_size_nf, gpu_stream)
             call cpy_htod(c_loc(soap_turbo_hypers(i)%atom_sigma_r_scaling), atom_sigma_r_scaling_d, st_size_nf, gpu_stream)
-            call gpu_malloc_all(atom_sigma_t_d, st_size_nf, gpu_stream)
+            call gpu_malloc_async(atom_sigma_t_d, st_size_nf, gpu_stream)
             call cpy_htod(c_loc(soap_turbo_hypers(i)%atom_sigma_t), atom_sigma_t_d, st_size_nf, gpu_stream)
-            call gpu_malloc_all(atom_sigma_t_scaling_d, st_size_nf, gpu_stream)
+            call gpu_malloc_async(atom_sigma_t_scaling_d, st_size_nf, gpu_stream)
             call cpy_htod(c_loc(soap_turbo_hypers(i)%atom_sigma_t_scaling), atom_sigma_t_scaling_d, st_size_nf, gpu_stream)
-            call gpu_malloc_all(amplitude_scaling_d, st_size_nf, gpu_stream)
+            call gpu_malloc_async(amplitude_scaling_d, st_size_nf, gpu_stream)
             call cpy_htod(c_loc(soap_turbo_hypers(i)%amplitude_scaling), amplitude_scaling_d, st_size_nf, gpu_stream)
-            call gpu_malloc_all(central_weight_d, st_size_nf, gpu_stream)
+            call gpu_malloc_async(central_weight_d, st_size_nf, gpu_stream)
             call cpy_htod(c_loc(soap_turbo_hypers(i)%central_weight), central_weight_d, st_size_nf, gpu_stream)
             st_size_nf = n_sp*sizeof(soap_turbo_hypers(i)%alpha_max(1))
-            call gpu_malloc_all(alpha_max_d, st_size_nf, gpu_stream)
+            call gpu_malloc_async(alpha_max_d, st_size_nf, gpu_stream)
             call cpy_htod(c_loc(soap_turbo_hypers(i)%alpha_max), alpha_max_d, st_size_nf, gpu_stream)
             n_sparse = soap_turbo_hypers(i)%n_sparse
             st_size_nf = n_sparse*sizeof(soap_turbo_hypers(i)%nf(1))
-            call gpu_malloc_all(alphas_d, st_size_nf, gpu_stream)
+            call gpu_malloc_async(alphas_d, st_size_nf, gpu_stream)
             call cpy_htod(c_loc(soap_turbo_hypers(i)%alphas), alphas_d, st_size_nf, gpu_stream)
             dim = soap_turbo_hypers(i)%dim
             st_size_nf = n_sparse*dim*sizeof(soap_turbo_hypers(i)%nf(1))
-            call gpu_malloc_all(Qs_d, st_size_nf, gpu_stream)
+            call gpu_malloc_async(Qs_d, st_size_nf, gpu_stream)
             call cpy_htod(c_loc(soap_turbo_hypers(i)%Qs), Qs_d, st_size_nf, gpu_stream)
 
             if (soap_turbo_hypers(i)%has_local_properties) then
@@ -1599,8 +1596,8 @@ program turbogap
                   soap_turbo_hypers(i)%local_property_models(j)%st_size_alphas = &
                      soap_turbo_hypers(i)%local_property_models(j)%n_sparse* &
                      sizeof(soap_turbo_hypers(i)%local_property_models(j)%alphas(1))
-                  call gpu_malloc_all(soap_turbo_hypers(i)%local_property_models(j)%alphas_d, &
-                                      soap_turbo_hypers(i)%local_property_models(j)%st_size_alphas, gpu_stream)
+                  call gpu_malloc_async(soap_turbo_hypers(i)%local_property_models(j)%alphas_d, &
+                                        soap_turbo_hypers(i)%local_property_models(j)%st_size_alphas, gpu_stream)
                   call cpy_htod(c_loc(soap_turbo_hypers(i)&
                     &%local_property_models(j)%alphas), &
                     & soap_turbo_hypers(i)%local_property_models(j)&
@@ -1613,8 +1610,8 @@ program turbogap
                      soap_turbo_hypers(i)%local_property_models(j)%dim* &
                      sizeof(soap_turbo_hypers(i)%local_property_models(j)%Qs(1, 1))
 
-                  call gpu_malloc_all(soap_turbo_hypers(i)%local_property_models(j)%Qs_d, &
-                                      soap_turbo_hypers(i)%local_property_models(j)%st_size_Qs, gpu_stream)
+                  call gpu_malloc_async(soap_turbo_hypers(i)%local_property_models(j)%Qs_d, &
+                                        soap_turbo_hypers(i)%local_property_models(j)%st_size_Qs, gpu_stream)
                   call cpy_htod(c_loc(soap_turbo_hypers(i)%local_property_models(j)%Qs), &
                                 soap_turbo_hypers(i)%local_property_models(j)%Qs_d, &
                                 soap_turbo_hypers(i)%local_property_models(j)%st_size_Qs, &
@@ -1954,7 +1951,7 @@ program turbogap
                      charges_temp = local_properties(:, charge_lp_index)
                      ! Before the loop, allocate the charges
                      st_charges_d = c_double*n_sites
-                     call gpu_malloc_all(charges_d, st_charges_d, gpu_stream)
+                     call gpu_malloc_async(charges_d, st_charges_d, gpu_stream)
                      call cpy_htod(c_loc(charges_temp), charges_d, st_charges_d, gpu_stream)
 
                      !  !$OMP PARALLEL DO num_threads(n_omp) DEFAULT(SHARED) &

@@ -7,7 +7,6 @@
 # Covers: SRC_BASE, SRC_TP_BT, SRC_ST, SRC
 # Not covered (objects are in no rule's prerequisites, so never built): SRC_STOP
 
-$(BUILD_DIR)/fortran_cuda_interfaces.o: $(BUILD_DIR)/kinds.o
 $(BUILD_DIR)/soap_turbo_radial.o: $(BUILD_DIR)/soap_turbo_functions.o
 $(BUILD_DIR)/soap_turbo_angular.o: $(BUILD_DIR)/fortran_cuda_interfaces.o
 $(BUILD_DIR)/soap_turbo.o: $(BUILD_DIR)/fortran_cuda_interfaces.o $(BUILD_DIR)/soap_turbo_angular.o $(BUILD_DIR)/soap_turbo_radial.o

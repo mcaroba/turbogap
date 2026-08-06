@@ -370,13 +370,13 @@ contains
          allocate (soap(1:n_soap, 1:n_sites))
          soap = 0.d0
          st_soap = n_soap*n_sites*sizeof(soap(1, 1))
-         call gpu_malloc_all(soap_d, st_soap, gpu_stream)
+         call gpu_malloc_async(soap_d, st_soap, gpu_stream)
 
          if (do_derivatives) then
             allocate (soap_cart_der(1:3, 1:n_soap, 1:n_atom_pairs))
             soap_cart_der = 0.d0
             st_soap_cart_der = 3*n_soap*n_atom_pairs*sizeof(soap_cart_der(1, 1, 1))
-            call gpu_malloc_all(soap_cart_der_d, st_soap_cart_der, gpu_stream)
+            call gpu_malloc_async(soap_cart_der_d, st_soap_cart_der, gpu_stream)
          end if
 
          if (n_sites > 0) then
@@ -436,11 +436,11 @@ contains
             ! Allocate the arrays here so we dont have to reallocate
             ! Allocate gpu memory
             st_size_nf = n_sites*sizeof(local_properties(1))
-            call gpu_malloc_all(local_properties_d, st_size_nf, gpu_stream)
+            call gpu_malloc_async(local_properties_d, st_size_nf, gpu_stream)
 
             if (do_derivatives) then
                st_size_nf = n_atom_pairs*3*sizeof(local_properties_cart_der(1, 1))
-               call gpu_malloc_all(local_properties_cart_der_d, st_size_nf, gpu_stream)
+               call gpu_malloc_async(local_properties_cart_der_d, st_size_nf, gpu_stream)
             end if
 
             ! We need to iterate over the number of local properties

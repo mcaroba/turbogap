@@ -523,10 +523,10 @@ contains
 
          st_x_d = params%pair_distribution_n_samples*c_double
 
-         call gpu_malloc_all(xpdf_d, st_x_d, gpu_stream)
+         call gpu_malloc_async(xpdf_d, st_x_d, gpu_stream)
          call cpy_htod(c_loc(x_pair_distribution), xpdf_d, st_x_d, gpu_stream)
 
-         call gpu_malloc_all(dV_d, st_x_d, gpu_stream)
+         call gpu_malloc_async(dV_d, st_x_d, gpu_stream)
          call cpy_htod(c_loc(dV), dV_d, st_x_d, gpu_stream)
 
          ! > We have n_omp streams created. In general the number
@@ -786,16 +786,16 @@ contains
          prefactor(1:size(y_xrd)) = (y_xrd(1:size(y_xrd)) - params%exp_data(params%xrd_idx)%y(1:size(y_xrd)))
 
          st_prefactor_d = size(prefactor, 1)*c_double
-         call gpu_malloc_all(prefactor_d, st_prefactor_d, gpu_stream)
+         call gpu_malloc_async(prefactor_d, st_prefactor_d, gpu_stream)
          call cpy_htod(c_loc(prefactor), prefactor_d, st_prefactor_d, gpu_stream)
 
          ! call gpu_check_error()
          ! st_all_scattering_factors_d = size( all_scattering_factors, 1) * c_double
-         ! call gpu_malloc_all(all_scattering_factors_d, st_all_scattering_factors_d, gpu_stream)
+         ! call gpu_malloc_async(all_scattering_factors_d, st_all_scattering_factors_d, gpu_stream)
          ! call cpy_htod(c_loc( all_scattering_factors ), all_scattering_factors_d, st_all_scattering_factors_d, gpu_stream)
 
          st_sinc_factor_matrix_d = size(sinc_factor_matrix, 1)*size(sinc_factor_matrix, 2)*c_double
-         call gpu_malloc_all(sinc_factor_matrix_d, st_sinc_factor_matrix_d, gpu_stream)
+         call gpu_malloc_async(sinc_factor_matrix_d, st_sinc_factor_matrix_d, gpu_stream)
          call cpy_htod(c_loc(sinc_factor_matrix), sinc_factor_matrix_d, st_sinc_factor_matrix_d, gpu_stream)
 
          allocate (all_scattering_factors_d(1:n_dim_partial))

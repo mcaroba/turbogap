@@ -202,9 +202,9 @@ contains
       st_Qs = size_Qs*(sizeof(e0))
       st_energies = size_energies*(sizeof(energies(1)))
 
-      call gpu_malloc_all(kernels_d, st_kernels, gpu_stream)
-      call gpu_malloc_all(kernels_copy_d, st_kernels, gpu_stream)
-      call gpu_malloc_all(energies_d, st_energies, gpu_stream)
+      call gpu_malloc_async(kernels_d, st_kernels, gpu_stream)
+      call gpu_malloc_async(kernels_copy_d, st_kernels, gpu_stream)
+      call gpu_malloc_async(energies_d, st_energies, gpu_stream)
 
       call gpu_blas_mmul_t_n(cublas_handle, Qs_d, soap_d, kernels_d, n_sparse, n_soap, n_sites)
       call gpu_kernels_pow(kernels_d, kernels_copy_d, zeta, size_kernels, gpu_stream)
@@ -219,9 +219,9 @@ contains
 
          st_soap = size_soap*sizeof(Qss(1, 1))
 
-         call gpu_malloc_all(kernels_der_d, st_kernels, gpu_stream)
-         call gpu_malloc_all(Qss_d, st_soap, gpu_stream)
-         call gpu_malloc_all(Qs_copy_d, st_Qs, gpu_stream)
+         call gpu_malloc_async(kernels_der_d, st_kernels, gpu_stream)
+         call gpu_malloc_async(Qss_d, st_soap, gpu_stream)
+         call gpu_malloc_async(Qs_copy_d, st_Qs, gpu_stream)
 
          call cpy_dtod(Qs_d, Qs_copy_d, st_Qs, gpu_stream)
 
@@ -264,7 +264,7 @@ contains
             end do
          end do
          st_n_pairs = n_pairs*sizeof(l_index(1))
-         call gpu_malloc_all(l_index_d, st_n_pairs, gpu_stream)
+         call gpu_malloc_async(l_index_d, st_n_pairs, gpu_stream)
          call cpy_htod(c_loc(l_index), l_index_d, st_n_pairs, gpu_stream)
 
          allocate (j2_index(1:n_pairs))
@@ -277,7 +277,7 @@ contains
             end do
          end do
          st_n_pairs = n_pairs*sizeof(j2_index(1))
-         call gpu_malloc_all(j2_index_d, st_n_pairs, gpu_stream)
+         call gpu_malloc_async(j2_index_d, st_n_pairs, gpu_stream)
          call cpy_htod(c_loc(j2_index), j2_index_d, st_n_pairs, gpu_stream)
 
          virial = 0.d0
@@ -306,27 +306,27 @@ contains
          size_soap_der = n1soap_der*n2soap_der*n3soap_der
 
          st_xyz = size_xyz*sizeof(xyz(1, 1))
-         call gpu_malloc_all(xyz_d, st_xyz, gpu_stream)
+         call gpu_malloc_async(xyz_d, st_xyz, gpu_stream)
          call cpy_htod(c_loc(xyz), xyz_d, st_xyz, gpu_stream)
 
          st_nnlist = size_nnlist*sizeof(neighbors_list(1))
-         call gpu_malloc_all(neighbors_list_d, st_nnlist, gpu_stream)
+         call gpu_malloc_async(neighbors_list_d, st_nnlist, gpu_stream)
          call cpy_htod(c_loc(neighbors_list), neighbors_list_d, st_nnlist, gpu_stream)
 
          st_forces = size_forces*sizeof(forces(1, 1))
-         call gpu_malloc_all(forces_d, st_forces, gpu_stream)
+         call gpu_malloc_async(forces_d, st_forces, gpu_stream)
 
          st_virial = size_virial*sizeof(virial(1, 1))
-         call gpu_malloc_all(virial_d, st_virial, gpu_stream)
+         call gpu_malloc_async(virial_d, st_virial, gpu_stream)
 
          st_neigh = n_sites*sizeof(n_neigh(1))
 
          st_neigh_end = n_sites*sizeof(neighbors_end(1))
-         call gpu_malloc_all(neighbors_end_d, st_neigh_end, gpu_stream)
+         call gpu_malloc_async(neighbors_end_d, st_neigh_end, gpu_stream)
          call cpy_htod(c_loc(neighbors_end), neighbors_end_d, st_neigh_end, gpu_stream)
 
          st_neigh_beg = n_sites*sizeof(neighbors_beg(1))
-         call gpu_malloc_all(neighbors_beg_d, st_neigh_beg, gpu_stream)
+         call gpu_malloc_async(neighbors_beg_d, st_neigh_beg, gpu_stream)
          call cpy_htod(c_loc(neighbors_beg), neighbors_beg_d, st_neigh_beg, gpu_stream)
 
          call gpu_final_soap_forces_virial(n_sites, &

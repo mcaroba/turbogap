@@ -38,10 +38,6 @@ module exp_interface
    use soap_turbo_functions
    use F_B_C
 
-   use gpu_var_mod
-   use gpu_var_int_mod
-   use gpu_var_double_mod
-
    use iso_c_binding
 contains
 
@@ -416,26 +412,26 @@ contains
       st_n_sites_int = n_sites*c_int
       gpu_neigh%st_n_neigh_d = st_n_sites_int
       gpu_neigh%st_species_d = st_n_sites_int
-      call gpu_malloc_all(gpu_neigh%n_neigh_d, st_n_sites_int, gpu_stream)
+      call gpu_malloc_async(gpu_neigh%n_neigh_d, st_n_sites_int, gpu_stream)
       call cpy_htod(c_loc(n_neigh), gpu_neigh%n_neigh_d, st_n_sites_int, gpu_stream)
-      call gpu_malloc_all(gpu_neigh%species_d, st_n_sites_int, gpu_stream)
+      call gpu_malloc_async(gpu_neigh%species_d, st_n_sites_int, gpu_stream)
       call cpy_htod(c_loc(species), gpu_neigh%species_d, st_n_sites_int, gpu_stream)
 
       st_n_atom_pairs_int = n_pairs*c_int
       gpu_neigh%st_neighbor_species_d = st_n_atom_pairs_int
       gpu_neigh%st_neighbors_list_d = st_n_atom_pairs_int
-      call gpu_malloc_all(gpu_neigh%neighbor_species_d, st_n_atom_pairs_int, gpu_stream)
+      call gpu_malloc_async(gpu_neigh%neighbor_species_d, st_n_atom_pairs_int, gpu_stream)
       call cpy_htod(c_loc(neighbor_species), gpu_neigh%neighbor_species_d, st_n_atom_pairs_int, gpu_stream)
-      call gpu_malloc_all(gpu_neigh%neighbors_list_d, st_n_atom_pairs_int, gpu_stream)
+      call gpu_malloc_async(gpu_neigh%neighbors_list_d, st_n_atom_pairs_int, gpu_stream)
       call cpy_htod(c_loc(neighbors_list), gpu_neigh%neighbors_list_d, st_n_atom_pairs_int, gpu_stream)
 
       st_n_atom_pairs_double = n_pairs*c_double
       gpu_neigh%st_rjs_d = st_n_atom_pairs_double
       gpu_neigh%st_xyz_d = 3*st_n_atom_pairs_double
 
-      call gpu_malloc_all(gpu_neigh%rjs_d, st_n_atom_pairs_double, gpu_stream)
+      call gpu_malloc_async(gpu_neigh%rjs_d, st_n_atom_pairs_double, gpu_stream)
       call cpy_htod(c_loc(rjs), gpu_neigh%rjs_d, st_n_atom_pairs_double, gpu_stream)
-      call gpu_malloc_all(gpu_neigh%xyz_d, 3*st_n_atom_pairs_double, gpu_stream)
+      call gpu_malloc_async(gpu_neigh%xyz_d, 3*st_n_atom_pairs_double, gpu_stream)
       call cpy_htod(c_loc(xyz), gpu_neigh%xyz_d, 3*st_n_atom_pairs_double, gpu_stream)
 
       print *, "-- Rank ", rank, " ", " malloc neighbors: n_sites_temp = ", n_sites, " n_pairs_temp = ", n_pairs
@@ -457,26 +453,26 @@ contains
       ! st_n_sites_int = n_sites * c_int
       ! gpu_neigh % st_n_neigh_d = st_n_sites_int
       ! gpu_neigh % st_species_d = st_n_sites_int
-      ! call gpu_malloc_all(gpu_neigh % n_neigh_d,st_n_sites_int,gpu_stream)
+      ! call gpu_malloc_async(gpu_neigh % n_neigh_d,st_n_sites_int,gpu_stream)
       ! call cpy_htod(c_loc(n_neigh_temp), gpu_neigh % n_neigh_d, st_n_sites_int,gpu_stream)
-      ! call gpu_malloc_all(gpu_neigh % species_d,st_n_sites_int,gpu_stream)
+      ! call gpu_malloc_async(gpu_neigh % species_d,st_n_sites_int,gpu_stream)
       ! call cpy_htod(c_loc(species_temp), gpu_neigh % species_d, st_n_sites_int,gpu_stream)
 
       ! st_n_atom_pairs_int = n_pairs * c_int
       ! gpu_neigh % st_neighbor_species_d = st_n_atom_pairs_int
       ! gpu_neigh % st_neighbors_list_d    = st_n_atom_pairs_int
-      ! call gpu_malloc_all(gpu_neigh % neighbor_species_d,st_n_atom_pairs_int,gpu_stream)
+      ! call gpu_malloc_async(gpu_neigh % neighbor_species_d,st_n_atom_pairs_int,gpu_stream)
       ! call cpy_htod(c_loc(neighbor_species_temp),gpu_neigh % neighbor_species_d, st_n_atom_pairs_int,gpu_stream)
-      ! call gpu_malloc_all(gpu_neigh % neighbors_list_d,st_n_atom_pairs_int,gpu_stream)
+      ! call gpu_malloc_async(gpu_neigh % neighbors_list_d,st_n_atom_pairs_int,gpu_stream)
       ! call cpy_htod(c_loc(neighbors_list_temp),gpu_neigh % neighbors_list_d, st_n_atom_pairs_int,gpu_stream)
 
       ! st_n_atom_pairs_double = n_pairs * c_double
       ! gpu_neigh % st_rjs_d    =     st_n_atom_pairs_double
       ! gpu_neigh % st_xyz_d    = 3 * st_n_atom_pairs_double
 
-      ! call gpu_malloc_all(gpu_neigh % rjs_d,st_n_atom_pairs_double,gpu_stream)
+      ! call gpu_malloc_async(gpu_neigh % rjs_d,st_n_atom_pairs_double,gpu_stream)
       ! call cpy_htod(c_loc(rjs_temp),gpu_neigh % rjs_d, st_n_atom_pairs_double,gpu_stream)
-      ! call gpu_malloc_all(gpu_neigh % xyz_d,3*st_n_atom_pairs_double,gpu_stream)
+      ! call gpu_malloc_async(gpu_neigh % xyz_d,3*st_n_atom_pairs_double,gpu_stream)
       ! call cpy_htod(c_loc(xyz_temp),gpu_neigh % xyz_d,3*st_n_atom_pairs_double,gpu_stream)
 
       ! call gpu_stream_sync( gpu_stream )
@@ -803,10 +799,10 @@ contains
 
       ! st_x_d = n_samples * c_double
 
-      ! call gpu_malloc_all(x_d,      st_x_d, gpu_stream)
+      ! call gpu_malloc_async(x_d,      st_x_d, gpu_stream)
       ! call cpy_htod( c_loc( x ), x_d, st_x_d, gpu_stream )
 
-      ! call gpu_malloc_all(dV_d,      st_x_d, gpu_stream)
+      ! call gpu_malloc_async(dV_d,      st_x_d, gpu_stream)
       ! call cpy_htod( c_loc( dV ), dV_d, st_x_d, gpu_stream )
 
       n_dim_idx = 1
@@ -817,11 +813,11 @@ contains
             if (j > k) cycle ! We have already calculated the pair correlation function!
 
             st_nk_temp = 1*c_int
-            call gpu_malloc_all(gpu_exp%nk_d(n_dim_idx), st_nk_temp, gpu_stream)
+            call gpu_malloc_async(gpu_exp%nk_d(n_dim_idx), st_nk_temp, gpu_stream)
             st_nk_flags = (j_end - j_beg + 1)*c_int
-            call gpu_malloc_all(gpu_exp%nk_flags_d(n_dim_idx), st_nk_flags, gpu_stream)
+            call gpu_malloc_async(gpu_exp%nk_flags_d(n_dim_idx), st_nk_flags, gpu_stream)
             call gpu_memset_async(gpu_exp%nk_flags_d(n_dim_idx), 0, st_nk_flags, gpu_stream)
-            call gpu_malloc_all(gpu_exp%nk_flags_sum_d(n_dim_idx), st_nk_flags, gpu_stream)
+            call gpu_malloc_async(gpu_exp%nk_flags_sum_d(n_dim_idx), st_nk_flags, gpu_stream)
 
             call total_gpu_memory(dfloat((j_end - j_beg + 1)*2*4))
 !          call gpu_stream_sync(gpu_stream)
@@ -892,7 +888,7 @@ contains
             st_rjs_index_d = gpu_exp%nk(n_dim_idx)*c_double
             print *, " allocating rjs "
             call total_gpu_memory(dfloat(gpu_exp%nk(n_dim_idx)*8))
-            call gpu_malloc_all(gpu_exp%rjs_index_d(n_dim_idx), st_rjs_index_d, gpu_stream)
+            call gpu_malloc_async(gpu_exp%rjs_index_d(n_dim_idx), st_rjs_index_d, gpu_stream)
             call gpu_memset_async(gpu_exp%rjs_index_d(n_dim_idx), 0, st_rjs_index_d, gpu_stream)
 
             call gpu_stream_sync(gpu_stream)
@@ -900,18 +896,18 @@ contains
             gpu_exp%st_k_index_d(n_dim_idx) = gpu_exp%nk(n_dim_idx)*c_int
             print *, " allocating k index "
             call total_gpu_memory(dfloat(gpu_exp%nk(n_dim_idx)*4))
-            call gpu_malloc_all(gpu_exp%k_index_d(n_dim_idx), gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
+            call gpu_malloc_async(gpu_exp%k_index_d(n_dim_idx), gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
             call gpu_memset_async(gpu_exp%k_index_d(n_dim_idx), 0, gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
 
             call gpu_stream_sync(gpu_stream)
             call gpu_check_error()
             print *, " allocating j2 index "
             call total_gpu_memory(dfloat(gpu_exp%nk(n_dim_idx)*4))
-            call gpu_malloc_all(gpu_exp%j2_index_d(n_dim_idx), gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
+            call gpu_malloc_async(gpu_exp%j2_index_d(n_dim_idx), gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
             call gpu_memset_async(gpu_exp%j2_index_d(n_dim_idx), 0, gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
 
             ! st_rjs_index_d = gpu_exp % nk(n_dim_idx) * c_double
-            ! call gpu_malloc_all(rjs_index_d, st_rjs_index_d, gpu_stream)
+            ! call gpu_malloc_async(rjs_index_d, st_rjs_index_d, gpu_stream)
             ! call gpu_memset_async(rjs_index_d, 0, st_rjs_index_d, gpu_stream)
 
             ! call gpu_set_pair_distribution_rjs_only(j_end, gpu_exp % rjs_d, rjs_index_d, nk_flags_sum_d, gpu_stream )
@@ -920,7 +916,7 @@ contains
             call gpu_stream_sync(gpu_stream)
             call gpu_check_error()
             call total_gpu_memory(dfloat(gpu_exp%nk(n_dim_idx)*8*3))
-            call gpu_malloc_all(gpu_exp%xyz_k_d(n_dim_idx), 3*st_rjs_index_d, gpu_stream)
+            call gpu_malloc_async(gpu_exp%xyz_k_d(n_dim_idx), 3*st_rjs_index_d, gpu_stream)
             call gpu_memset_async(gpu_exp%xyz_k_d(n_dim_idx), 0, 3*st_rjs_index_d, gpu_stream)
 !          call gpu_stream_sync(gpu_stream)
 
@@ -1025,8 +1021,8 @@ contains
             call gpu_check_error()
 
             gpu_exp%st_pair_distribution_partial_d(n_dim_idx) = n_samples*c_double
-            call gpu_malloc_all(gpu_exp%pair_distribution_partial_d(n_dim_idx), &
-                                gpu_exp%st_pair_distribution_partial_d(n_dim_idx), gpu_stream)
+            call gpu_malloc_async(gpu_exp%pair_distribution_partial_d(n_dim_idx), &
+                                  gpu_exp%st_pair_distribution_partial_d(n_dim_idx), gpu_stream)
             call gpu_memset_async(gpu_exp%pair_distribution_partial_d(n_dim_idx), 0, &
                                   gpu_exp%st_pair_distribution_partial_d(n_dim_idx), gpu_stream)
 
@@ -1034,7 +1030,7 @@ contains
             call total_gpu_memory(dfloat(gpu_exp%nk(n_dim_idx)*n_samples*8))
 
             st_pdf_to_reduce_d = gpu_exp%nk(n_dim_idx)*n_samples*c_double
-            call gpu_malloc_all(pdf_to_reduce_d, st_pdf_to_reduce_d, gpu_stream)
+            call gpu_malloc_async(pdf_to_reduce_d, st_pdf_to_reduce_d, gpu_stream)
             call gpu_memset_async(pdf_to_reduce_d, 0, st_pdf_to_reduce_d, gpu_stream)
 
             pdf_factor = ((r_max - r_min)/dfloat(n_samples))/(sqrt(2.d0*pi)*kde_sigma)
@@ -1206,7 +1202,7 @@ contains
    if (.not. allocated(gpu_exp%pair_distribution_partial_der_d)) allocate (gpu_exp%pair_distribution_partial_der_d(1:n_dim_partial))
 
       st_rjs_index_d = gpu_exp%nk(n_dim_idx)*c_double
-      call gpu_malloc_all(rjs_index_d, st_rjs_index_d, gpu_stream)
+      call gpu_malloc_async(rjs_index_d, st_rjs_index_d, gpu_stream)
       call gpu_memset_async(rjs_index_d, 0, st_rjs_index_d, gpu_stream)
 
       call cpy_htod( &
@@ -1216,7 +1212,7 @@ contains
          gpu_stream)
 
       gpu_exp%st_pair_distribution_partial_der_d(n_dim_idx) = n_samples*gpu_exp%nk(n_dim_idx)*c_double
-    call gpu_malloc_all(gpu_exp %pair_distribution_partial_der_d(n_dim_idx), gpu_exp %st_pair_distribution_partial_der_d(n_dim_idx), gpu_stream)
+    call gpu_malloc_async(gpu_exp %pair_distribution_partial_der_d(n_dim_idx), gpu_exp %st_pair_distribution_partial_der_d(n_dim_idx), gpu_stream)
     call gpu_memset_async(gpu_exp %pair_distribution_partial_der_d(n_dim_idx), 0, gpu_exp %st_pair_distribution_partial_der_d(n_dim_idx), gpu_stream)
 
       pdf_factor = ((r_max - r_min)/ &
@@ -1256,9 +1252,9 @@ contains
 
       print *, "> nk = ", gpu_exp%nk(n_dim_idx)
       st_rjs_index_d = gpu_exp%nk(n_dim_idx)*c_double
-      call gpu_malloc_all(gpu_exp%k_index_d(n_dim_idx), gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
-      call gpu_malloc_all(gpu_exp%j2_index_d(n_dim_idx), gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
-      call gpu_malloc_all(gpu_exp%xyz_k_d(n_dim_idx), 3*st_rjs_index_d, gpu_stream)
+      call gpu_malloc_async(gpu_exp%k_index_d(n_dim_idx), gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
+      call gpu_malloc_async(gpu_exp%j2_index_d(n_dim_idx), gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
+      call gpu_malloc_async(gpu_exp%xyz_k_d(n_dim_idx), 3*st_rjs_index_d, gpu_stream)
 
       call cpy_htod( &
          c_loc(gpu_host%host(n_dim_idx)%k_index_h), &
@@ -1418,35 +1414,30 @@ contains
 !            print *, " >> Allocating GPU arrays for Exp Calculation << "
 !            print *, ""
 !            st_n_sites_int = n_sites*sizeof(n_neigh(1))
-!            call gpu_malloc_all(n_neigh_d,st_n_sites_int,gpu_stream)
+!            call gpu_malloc_async(n_neigh_d,st_n_sites_int,gpu_stream)
 !            call cpy_htod(c_loc(n_neigh),n_neigh_d, st_n_sites_int,gpu_stream)
-!            call gpu_malloc_all(species_d,st_n_sites_int,gpu_stream)
+!            call gpu_malloc_async(species_d,st_n_sites_int,gpu_stream)
 !            call cpy_htod(c_loc(species),species_d, st_n_sites_int,gpu_stream)
 !            st_n_atom_pairs_int = j_end * sizeof(neighbor_species(1))
 
-!            call gpu_malloc_all(neighbor_species_d,st_n_atom_pairs_int,gpu_stream)
+!            call gpu_malloc_async(neighbor_species_d,st_n_atom_pairs_int,gpu_stream)
 !            call cpy_htod(c_loc(neighbor_species),neighbor_species_d, st_n_atom_pairs_int,gpu_stream)
-!            call gpu_malloc_all(neighbors_list_d,st_n_atom_pairs_int,gpu_stream)
+!            call gpu_malloc_async(neighbors_list_d,st_n_atom_pairs_int,gpu_stream)
 !            print *, " -- n_pairs for neighbor_list = ", j_end
 !            call cpy_htod(c_loc(neighbors_list),neighbors_list_d, st_n_atom_pairs_int,gpu_stream)
 
 !            st_n_atom_pairs_double = j_end*sizeof(rjs(1))
-!            call gpu_malloc_all(rjs_d,st_n_atom_pairs_double,gpu_stream)
+!            call gpu_malloc_async(rjs_d,st_n_atom_pairs_double,gpu_stream)
 !            call cpy_htod(c_loc(rjs),rjs_d, st_n_atom_pairs_double,gpu_stream)
-!            call gpu_malloc_all(xyz_d,3*st_n_atom_pairs_double,gpu_stream)
+!            call gpu_malloc_async(xyz_d,3*st_n_atom_pairs_double,gpu_stream)
 !            call cpy_htod(c_loc(xyz),xyz_d,3*st_n_atom_pairs_double,gpu_stream)
 
 !            st_species_types_d = n_species * c_int
-!            call gpu_malloc_all(species_types_d,st_species_types_d,gpu_stream)
+!            call gpu_malloc_async(species_types_d,st_species_types_d,gpu_stream)
 !            call cpy_htod(c_loc(species_types),species_types_d,st_species_types_d,gpu_stream)
 ! !           call gpu_device_sync()
 
       ! Seeing if my gpu helper mod actually helps
-      ! type( gpu_var_double_class ) :: xc, dVc
-      ! type( gpu_var_double_class ), allocatable :: pdf_partial_d(:)
-
-      ! type( gpu_var_int_class ),    allocatable :: nk_d(:), nk_flags_d(:), nk_flags_sum_d(:), k_index_d(:), j2_index_d(:)
-      ! type( gpu_var_double_class ), allocatable :: rjs_index_d(:), xyz_k_d(:), pair_distribution_partial_d(:), pair_distribution_partial_der_d(:)
 
       ! Things that are allocated here:
       ! Always:
@@ -1584,10 +1575,10 @@ contains
            &%pair_distribution_n_samples, x_pair_distribution, dV)
 
       call gpu_meminfo()
-      call gpu_malloc_all(x_d, st_x_d, gpu_stream)
+      call gpu_malloc_async(x_d, st_x_d, gpu_stream)
       call cpy_htod(c_loc(x_pair_distribution), x_d, st_x_d, gpu_stream)
 
-      call gpu_malloc_all(dV_d, st_x_d, gpu_stream)
+      call gpu_malloc_async(dV_d, st_x_d, gpu_stream)
       call cpy_htod(c_loc(dV), dV_d, st_x_d, gpu_stream)
 
       if (params%pair_distribution_partial) then
@@ -1614,35 +1605,35 @@ contains
                   call gpu_stream_sync(gpu_stream)
 
                   st_nk_temp = 1*c_int
-                  call gpu_malloc_all(nk_d(n_dim_idx), st_nk_temp, gpu_stream)
+                  call gpu_malloc_async(nk_d(n_dim_idx), st_nk_temp, gpu_stream)
                   st_nk_flags = j_end*c_int
-                  call gpu_malloc_all(nk_flags_d(n_dim_idx), st_nk_flags, gpu_stream)
+                  call gpu_malloc_async(nk_flags_d(n_dim_idx), st_nk_flags, gpu_stream)
                   call gpu_memset_async(nk_flags_d(n_dim_idx), 0, st_nk_flags, gpu_stream)
-                  call gpu_malloc_all(nk_flags_sum_d(n_dim_idx), st_nk_flags, gpu_stream)
+                  call gpu_malloc_async(nk_flags_sum_d(n_dim_idx), st_nk_flags, gpu_stream)
 !                call gpu_stream_sync(gpu_stream)
 
                   ! Here I need the neighbor_list_d, n_neigh_d, neighbor_species_d, species_d, rjs_d
 
                   st_n_sites_int = n_sites*sizeof(n_neigh(1))
-                  call gpu_malloc_all(n_neigh_d, st_n_sites_int, gpu_stream)
+                  call gpu_malloc_async(n_neigh_d, st_n_sites_int, gpu_stream)
                   call cpy_htod(c_loc(n_neigh), n_neigh_d, st_n_sites_int, gpu_stream)
-                  call gpu_malloc_all(species_d, st_n_sites_int, gpu_stream)
+                  call gpu_malloc_async(species_d, st_n_sites_int, gpu_stream)
                   call cpy_htod(c_loc(species), species_d, st_n_sites_int, gpu_stream)
                   st_n_atom_pairs_int = j_end*sizeof(neighbor_species(1))
 
-                  call gpu_malloc_all(neighbor_species_d, st_n_atom_pairs_int, gpu_stream)
+                  call gpu_malloc_async(neighbor_species_d, st_n_atom_pairs_int, gpu_stream)
                   call cpy_htod(c_loc(neighbor_species), neighbor_species_d, st_n_atom_pairs_int, gpu_stream)
-                  call gpu_malloc_all(neighbor_list_d, st_n_atom_pairs_int, gpu_stream)
+                  call gpu_malloc_async(neighbor_list_d, st_n_atom_pairs_int, gpu_stream)
                   call cpy_htod(c_loc(neighbors_list), neighbor_list_d, st_n_atom_pairs_int, gpu_stream)
 
                   st_n_atom_pairs_double = j_end*sizeof(rjs(1))
-                  call gpu_malloc_all(rjs_d, st_n_atom_pairs_double, gpu_stream)
+                  call gpu_malloc_async(rjs_d, st_n_atom_pairs_double, gpu_stream)
                   call cpy_htod(c_loc(rjs), rjs_d, st_n_atom_pairs_double, gpu_stream)
-                  ! call gpu_malloc_all(xyz_d,3*st_n_atom_pairs_double,gpu_stream)
+                  ! call gpu_malloc_async(xyz_d,3*st_n_atom_pairs_double,gpu_stream)
                   ! call cpy_htod(c_loc(xyz),xyz_d,3*st_n_atom_pairs_double,gpu_stream)
 
                   ! st_species_types_d = n_species * c_int
-                  ! call gpu_malloc_all(species_types_d,st_species_types_d,gpu_stream)
+                  ! call gpu_malloc_async(species_types_d,st_species_types_d,gpu_stream)
                   ! call cpy_htod(c_loc(species_types),species_types_d,st_species_types_d,gpu_stream)
 
                   ! I don't actually need xyz_d here at all!
@@ -1678,7 +1669,7 @@ contains
                   ! -------------------- Setting k --------------------
                   ! ---------------------------------------------------
                   st_k_index_d(n_dim_idx) = nk(n_dim_idx)*c_int
-                  call gpu_malloc_all(k_index_d(n_dim_idx), st_k_index_d(n_dim_idx), gpu_stream)
+                  call gpu_malloc_async(k_index_d(n_dim_idx), st_k_index_d(n_dim_idx), gpu_stream)
                   call gpu_memset_async(k_index_d(n_dim_idx), 0, st_k_index_d(n_dim_idx), gpu_stream)
 
                   call gpu_set_pair_distribution_k_index_only(j_end, k_index_d(n_dim_idx), nk_flags_sum_d(n_dim_idx), gpu_stream)
@@ -1695,10 +1686,10 @@ contains
                   ! ----------------------------------------------------
                   ! -------------------- Setting j2 --------------------
                   ! ----------------------------------------------------
-                  call gpu_malloc_all(j2_index_d(n_dim_idx), st_k_index_d(n_dim_idx), gpu_stream)
+                  call gpu_malloc_async(j2_index_d(n_dim_idx), st_k_index_d(n_dim_idx), gpu_stream)
                   call gpu_memset_async(j2_index_d(n_dim_idx), 0, st_k_index_d(n_dim_idx), gpu_stream)
 
-                  call gpu_malloc_all(neighbor_list_d, st_n_atom_pairs_int, gpu_stream)
+                  call gpu_malloc_async(neighbor_list_d, st_n_atom_pairs_int, gpu_stream)
                   call cpy_htod(c_loc(neighbors_list), neighbor_list_d, st_n_atom_pairs_int, gpu_stream)
 
                 call gpu_set_pair_distribution_j2_only(j_end, n_sites, neighbor_list_d, j2_index_d(n_dim_idx), nk_flags_sum_d(n_dim_idx), gpu_stream )
@@ -1718,11 +1709,11 @@ contains
                   ! -----------------------------------------------------
                   ! -------------------- Setting xyz --------------------
                   ! -----------------------------------------------------
-                  call gpu_malloc_all(xyz_d, 3*st_n_atom_pairs_double, gpu_stream)
+                  call gpu_malloc_async(xyz_d, 3*st_n_atom_pairs_double, gpu_stream)
                   call cpy_htod(c_loc(xyz), xyz_d, 3*st_n_atom_pairs_double, gpu_stream)
 
                   st_rjs(n_dim_idx) = nk(n_dim_idx)*c_double
-                  call gpu_malloc_all(xyz_k_d(n_dim_idx), 3*st_rjs(n_dim_idx), gpu_stream)
+                  call gpu_malloc_async(xyz_k_d(n_dim_idx), 3*st_rjs(n_dim_idx), gpu_stream)
                   call gpu_memset_async(xyz_k_d(n_dim_idx), 0, 3*st_rjs(n_dim_idx), gpu_stream)
 
                   call gpu_set_pair_distribution_xyz_only(j_end, xyz_d, xyz_k_d(n_dim_idx), nk_flags_sum_d(n_dim_idx), gpu_stream)
@@ -1736,11 +1727,11 @@ contains
                   ! -------------------- Setting rjs --------------------
                   ! -----------------------------------------------------
                   st_n_atom_pairs_double = j_end*sizeof(rjs(1))
-                  call gpu_malloc_all(rjs_d, st_n_atom_pairs_double, gpu_stream)
+                  call gpu_malloc_async(rjs_d, st_n_atom_pairs_double, gpu_stream)
                   call cpy_htod(c_loc(rjs), rjs_d, st_n_atom_pairs_double, gpu_stream)
 
                   st_rjs(n_dim_idx) = nk(n_dim_idx)*c_double
-                  call gpu_malloc_all(rjs_index_d(n_dim_idx), st_rjs(n_dim_idx), gpu_stream)
+                  call gpu_malloc_async(rjs_index_d(n_dim_idx), st_rjs(n_dim_idx), gpu_stream)
                   call gpu_memset_async(rjs_index_d(n_dim_idx), 0, st_rjs(n_dim_idx), gpu_stream)
 
                 call gpu_set_pair_distribution_rjs_only(j_end, rjs_d, rjs_index_d(n_dim_idx), nk_flags_sum_d(n_dim_idx), gpu_stream)
@@ -1757,7 +1748,7 @@ contains
 
 !                print *, "Setting pdf device arrays kernel "
                   st_pair_distribution_partial_d(n_dim_idx) = params%pair_distribution_n_samples*c_double
-                  call gpu_malloc_all(pair_distribution_partial_d(n_dim_idx), st_pair_distribution_partial_d(n_dim_idx), gpu_stream)
+                call gpu_malloc_async(pair_distribution_partial_d(n_dim_idx), st_pair_distribution_partial_d(n_dim_idx), gpu_stream)
              call gpu_memset_async(pair_distribution_partial_d(n_dim_idx), 0, st_pair_distribution_partial_d(n_dim_idx), gpu_stream)
 
                   pdf_factor = ((params%r_range_max - params%r_range_min)/ &
@@ -1786,7 +1777,7 @@ contains
                   call gpu_stream_sync(gpu_stream)
 
                   st_pair_distribution_partial_der_d(n_dim_idx) = params%pair_distribution_n_samples*nk(n_dim_idx)*c_double
-          call gpu_malloc_all(pair_distribution_partial_der_d(n_dim_idx), st_pair_distribution_partial_der_d(n_dim_idx), gpu_stream)
+        call gpu_malloc_async(pair_distribution_partial_der_d(n_dim_idx), st_pair_distribution_partial_der_d(n_dim_idx), gpu_stream)
      call gpu_memset_async(pair_distribution_partial_der_d(n_dim_idx), 0, st_pair_distribution_partial_der_d(n_dim_idx), gpu_stream)
 
 !                print *, " starting pdf der only "
@@ -1852,11 +1843,11 @@ contains
 
 !                print *, "pdfpairs:  j ", j, " k ",  k
                   st_nk_temp = 1*c_int
-                  call gpu_malloc_all(nk_d(n_dim_idx), st_nk_temp, gpu_stream)
+                  call gpu_malloc_async(nk_d(n_dim_idx), st_nk_temp, gpu_stream)
                   st_nk_flags = j_end*c_int
-                  call gpu_malloc_all(nk_flags_d(n_dim_idx), st_nk_flags, gpu_stream)
+                  call gpu_malloc_async(nk_flags_d(n_dim_idx), st_nk_flags, gpu_stream)
                   call gpu_memset_async(nk_flags_d(n_dim_idx), 0, st_nk_flags, gpu_stream)
-                  call gpu_malloc_all(nk_flags_sum_d(n_dim_idx), st_nk_flags, gpu_stream)
+                  call gpu_malloc_async(nk_flags_sum_d(n_dim_idx), st_nk_flags, gpu_stream)
 !                call gpu_stream_sync(gpu_stream)
 
                   call gpu_get_pair_distribution_nk(i_beg, i_end, j_end, n_sites, neighbor_list_d, &
@@ -1883,17 +1874,17 @@ contains
                   ! Now we create temporary arrays for the k indices
 
                   st_k_index_d(n_dim_idx) = nk(n_dim_idx)*c_int
-                  call gpu_malloc_all(k_index_d(n_dim_idx), st_k_index_d(n_dim_idx), gpu_stream)
+                  call gpu_malloc_async(k_index_d(n_dim_idx), st_k_index_d(n_dim_idx), gpu_stream)
                   call gpu_memset_async(k_index_d(n_dim_idx), 0, st_k_index_d(n_dim_idx), gpu_stream)
 
-                  call gpu_malloc_all(j2_index_d(n_dim_idx), st_k_index_d(n_dim_idx), gpu_stream)
+                  call gpu_malloc_async(j2_index_d(n_dim_idx), st_k_index_d(n_dim_idx), gpu_stream)
                   call gpu_memset_async(j2_index_d(n_dim_idx), 0, st_k_index_d(n_dim_idx), gpu_stream)
 
                   st_rjs(n_dim_idx) = nk(n_dim_idx)*c_double
-                  call gpu_malloc_all(rjs_index_d(n_dim_idx), st_rjs(n_dim_idx), gpu_stream)
+                  call gpu_malloc_async(rjs_index_d(n_dim_idx), st_rjs(n_dim_idx), gpu_stream)
                   call gpu_memset_async(rjs_index_d(n_dim_idx), 0, st_rjs(n_dim_idx), gpu_stream)
 
-                  call gpu_malloc_all(xyz_k_d(n_dim_idx), 3*st_rjs(n_dim_idx), gpu_stream)
+                  call gpu_malloc_async(xyz_k_d(n_dim_idx), 3*st_rjs(n_dim_idx), gpu_stream)
                   call gpu_memset_async(xyz_k_d(n_dim_idx), 0, 3*st_rjs(n_dim_idx), gpu_stream)
                   !               call gpu_stream_sync(gpu_stream)
 
@@ -1911,11 +1902,11 @@ contains
                   !--- CALCULATING THE PAIR DISTRIBUTION FUNCTION ---!
                   !             print *, " Allocating pdf arrays   "
                   st_pair_distribution_partial_d(n_dim_idx) = params%pair_distribution_n_samples*c_double
-                  call gpu_malloc_all(pair_distribution_partial_d(n_dim_idx), st_pair_distribution_partial_d(n_dim_idx), gpu_stream)
+                call gpu_malloc_async(pair_distribution_partial_d(n_dim_idx), st_pair_distribution_partial_d(n_dim_idx), gpu_stream)
              call gpu_memset_async(pair_distribution_partial_d(n_dim_idx), 0, st_pair_distribution_partial_d(n_dim_idx), gpu_stream)
 
                   st_pair_distribution_partial_der_d(n_dim_idx) = params%pair_distribution_n_samples*nk(n_dim_idx)*c_double
-          call gpu_malloc_all(pair_distribution_partial_der_d(n_dim_idx), st_pair_distribution_partial_der_d(n_dim_idx), gpu_stream)
+        call gpu_malloc_async(pair_distribution_partial_der_d(n_dim_idx), st_pair_distribution_partial_der_d(n_dim_idx), gpu_stream)
      call gpu_memset_async(pair_distribution_partial_der_d(n_dim_idx), 0, st_pair_distribution_partial_der_d(n_dim_idx), gpu_stream)
 
                   pdf_factor = ((params%r_range_max - params%r_range_min)/ &

@@ -96,22 +96,22 @@ contains
 
       st_n_sites_int = n_sites*sizeof(n_neigh(1)) ! (i_end - i_beg + 1)
       !        print *, rank, " >> Allocating 2b on gpu"
-      call gpu_malloc_all(n_neigh_d, st_n_sites_int, gpu_stream)
+      call gpu_malloc_async(n_neigh_d, st_n_sites_int, gpu_stream)
       call cpy_htod(c_loc(n_neigh), n_neigh_d, st_n_sites_int, gpu_stream)
-      call gpu_malloc_all(species_d, st_n_sites_int, gpu_stream)
+      call gpu_malloc_async(species_d, st_n_sites_int, gpu_stream)
       call cpy_htod(c_loc(species), species_d, st_n_sites_int, gpu_stream)
       ! Changed n_atom_pairs to n_atom_pairs_by_rank
       st_n_atom_pairs_int = j_end*sizeof(neighbor_species(1))
-      call gpu_malloc_all(neighbor_species_d, st_n_atom_pairs_int, gpu_stream)
+      call gpu_malloc_async(neighbor_species_d, st_n_atom_pairs_int, gpu_stream)
       call cpy_htod(c_loc(neighbor_species), neighbor_species_d, st_n_atom_pairs_int, gpu_stream)
       st_n_atom_pairs_double = j_end*sizeof(rjs(1))
-      call gpu_malloc_all(rjs_d, st_n_atom_pairs_double, gpu_stream)
+      call gpu_malloc_async(rjs_d, st_n_atom_pairs_double, gpu_stream)
       call cpy_htod(c_loc(rjs), rjs_d, st_n_atom_pairs_double, gpu_stream)
-      call gpu_malloc_all(xyz_d, 3*st_n_atom_pairs_double, gpu_stream)
+      call gpu_malloc_async(xyz_d, 3*st_n_atom_pairs_double, gpu_stream)
       call cpy_htod(c_loc(xyz), xyz_d, 3*st_n_atom_pairs_double, gpu_stream)
 
       size_maxnp_bytes = size(neighbors_list)*c_int
-      call gpu_malloc_all(neighbors_list_d, size_maxnp_bytes, gpu_stream)
+      call gpu_malloc_async(neighbors_list_d, size_maxnp_bytes, gpu_stream)
       call cpy_htod(c_loc(neighbors_list), neighbors_list_d, size_maxnp_bytes, gpu_stream)
 
    end subroutine gap_backend_begin
@@ -183,12 +183,12 @@ contains
       if (n_distance_2b == 0) return
 
       st_n_sites_double = n_sites*sizeof(energies_2b(1))
-      call gpu_malloc_all(energies_2b_d, st_n_sites_double, gpu_stream)
+      call gpu_malloc_async(energies_2b_d, st_n_sites_double, gpu_stream)
       call cpy_htod(c_loc(energies_2b), energies_2b_d, st_n_sites_double, gpu_stream)
-      call gpu_malloc_all(forces_2b_d, 3*st_n_sites_double, gpu_stream)
+      call gpu_malloc_async(forces_2b_d, 3*st_n_sites_double, gpu_stream)
       call cpy_htod(c_loc(forces_2b), forces_2b_d, 3*st_n_sites_double, gpu_stream)
       st_virial = 9*sizeof(virial_2b(1, 1))
-      call gpu_malloc_all(virial_2b_d, st_virial, gpu_stream)
+      call gpu_malloc_async(virial_2b_d, st_virial, gpu_stream)
       call cpy_htod(c_loc(virial_2b), virial_2b_d, st_virial, gpu_stream)
 
       do i = 1, n_distance_2b
@@ -215,11 +215,11 @@ contains
 
          n_sparse = distance_2b_hypers(i)%n_sparse
          st_n_sparse_double = n_sparse*sizeof(distance_2b_hypers(i)%alphas(1))
-         call gpu_malloc_all(alphas_d, st_n_sparse_double, gpu_stream)
+         call gpu_malloc_async(alphas_d, st_n_sparse_double, gpu_stream)
          call cpy_htod(c_loc(distance_2b_hypers(i)%alphas), alphas_d, st_n_sparse_double, gpu_stream)
-         call gpu_malloc_all(cutoff_d, st_n_sparse_double, gpu_stream)
+         call gpu_malloc_async(cutoff_d, st_n_sparse_double, gpu_stream)
          call cpy_htod(c_loc(distance_2b_hypers(i)%cutoff), cutoff_d, st_n_sparse_double, gpu_stream)
-         call gpu_malloc_all(qs_d, st_n_sparse_double, gpu_stream)
+         call gpu_malloc_async(qs_d, st_n_sparse_double, gpu_stream)
          call cpy_htod(c_loc(distance_2b_hypers(i)%Qs(:, 1)), qs_d, st_n_sparse_double, gpu_stream)
 
          call get_time(t1)
@@ -326,12 +326,12 @@ contains
 
       !        print *, rank, " > Allocating core_pot on gpu "
       st_n_sites_double = n_sites*sizeof(energies_core_pot(1))
-      call gpu_malloc_all(energies_core_pot_d, st_n_sites_double, gpu_stream)
+      call gpu_malloc_async(energies_core_pot_d, st_n_sites_double, gpu_stream)
       call cpy_htod(c_loc(energies_core_pot), energies_core_pot_d, st_n_sites_double, gpu_stream)
-      call gpu_malloc_all(forces_core_pot_d, 3*st_n_sites_double, gpu_stream)
+      call gpu_malloc_async(forces_core_pot_d, 3*st_n_sites_double, gpu_stream)
       call cpy_htod(c_loc(forces_core_pot), forces_core_pot_d, 3*st_n_sites_double, gpu_stream)
       st_virial = 9*sizeof(virial_core_pot(1, 1))
-      call gpu_malloc_all(virial_core_pot_d, st_virial, gpu_stream)
+      call gpu_malloc_async(virial_core_pot_d, st_virial, gpu_stream)
       call cpy_htod(c_loc(virial_core_pot), virial_core_pot_d, st_virial, gpu_stream)
 
       !       Loop through core_pot descriptors
@@ -342,11 +342,11 @@ contains
 
          n_sparse = core_pot_hypers(i)%n
          st_n_sparse_double = n_sparse*sizeof(core_pot_hypers(i)%x(1))
-         call gpu_malloc_all(x_d, st_n_sparse_double, gpu_stream)
+         call gpu_malloc_async(x_d, st_n_sparse_double, gpu_stream)
          call cpy_htod(c_loc(core_pot_hypers(i)%x), x_d, st_n_sparse_double, gpu_stream)
-         call gpu_malloc_all(V_d, st_n_sparse_double, gpu_stream)
+         call gpu_malloc_async(V_d, st_n_sparse_double, gpu_stream)
          call cpy_htod(c_loc(core_pot_hypers(i)%V), V_d, st_n_sparse_double, gpu_stream)
-         call gpu_malloc_all(dVdx2_d, st_n_sparse_double, gpu_stream)
+         call gpu_malloc_async(dVdx2_d, st_n_sparse_double, gpu_stream)
          call cpy_htod(c_loc(core_pot_hypers(i)%dVdx2), dVdx2_d, st_n_sparse_double, gpu_stream)
 
          ! print *, rank, " >>--- Finished allocating core_pot on gpu ---"
@@ -476,17 +476,17 @@ contains
       if (n_angle_3b == 0) return
 
       size_energy3b = size(n_neigh)*c_double
-      call gpu_malloc_all(energies_3b_d, size_energy3b, gpu_stream)
+      call gpu_malloc_async(energies_3b_d, size_energy3b, gpu_stream)
       call gpu_memset_async(energies_3b_d, 0, size_energy3b, gpu_stream)
       size_forces3b = size(forces, 2)*3*c_double
-      call gpu_malloc_all(forces_3b_d, size_forces3b, gpu_stream)
+      call gpu_malloc_async(forces_3b_d, size_forces3b, gpu_stream)
       call gpu_memset_async(forces_3b_d, 0, size_forces3b, gpu_stream)
       size_virial3b = 9*c_double
-      call gpu_malloc_all(virial_3b_d, size_virial3b, gpu_stream)
+      call gpu_malloc_async(virial_3b_d, size_virial3b, gpu_stream)
       call gpu_memset_async(virial_3b_d, 0, size_virial3b, gpu_stream)
 
       size_maxnp_bytes = size(n_neigh)*c_int
-      call gpu_malloc_all(kappas_array_d, size_maxnp_bytes, gpu_stream)
+      call gpu_malloc_async(kappas_array_d, size_maxnp_bytes, gpu_stream)
 
       allocate (kappas(1:n_sites))
 
@@ -521,12 +521,12 @@ contains
 
       !write(0,*) "max np is: ",max_np
       size_maxnp_bytes = max_np*c_double
-      call gpu_malloc_all(cutoff_d, size_maxnp_bytes, gpu_stream)
-      call gpu_malloc_all(alphas_d, size_maxnp_bytes, gpu_stream)
+      call gpu_malloc_async(cutoff_d, size_maxnp_bytes, gpu_stream)
+      call gpu_malloc_async(alphas_d, size_maxnp_bytes, gpu_stream)
       size_maxnp_qs_bytes = 3*size_maxnp_bytes
-      call gpu_malloc_all(qs_d, size_maxnp_qs_bytes, gpu_stream)
+      call gpu_malloc_async(qs_d, size_maxnp_qs_bytes, gpu_stream)
       size_alphas_bytes = 3*c_double
-      call gpu_malloc_all(sigma_d, size_alphas_bytes, gpu_stream)
+      call gpu_malloc_async(sigma_d, size_alphas_bytes, gpu_stream)
 
       !       Loop through angle_3b descriptors
       do i = 1, n_angle_3b

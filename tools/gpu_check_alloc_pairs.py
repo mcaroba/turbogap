@@ -4,7 +4,7 @@
 The wrappers in src/cuda_wrappers.cu are two distinct allocation families, and
 mixing them is undefined behaviour rather than a leak:
 
-    gpu_malloc_all(a_d, n, stream)      -> hipMallocAsync   (stream-ordered pool)
+    gpu_malloc_async(a_d, n, stream)    -> hipMallocAsync   (stream-ordered pool)
     gpu_malloc_all_blocking(a_d, n)     -> hipMalloc        (ordinary device heap)
 
     gpu_free_async(a_d, stream)         -> hipFreeAsync
@@ -42,7 +42,7 @@ import re
 import sys
 from collections import defaultdict
 
-POOL_ALLOC = ("gpu_malloc_all", "gpu_malloc_neighbors")
+POOL_ALLOC = ("gpu_malloc_async", "gpu_malloc_neighbors")
 PLAIN_ALLOC = ("gpu_malloc_all_blocking",)
 POOL_FREE = ("gpu_free_async", "gpu_free_neighbors")
 PLAIN_FREE = ("gpu_free",)
@@ -72,7 +72,7 @@ def first_arg(text, open_paren):
     (j2_index_d(n_dim_idx)) and a lazy character class either stops inside it
     or swallows the closing paren of the call. Swallowing it is the worse
     failure and it is silent -- gpu_free(Qs_d) yields the name "Qs_d)" while
-    gpu_malloc_all(Qs_d, n, s) yields "Qs_d", so one buffer becomes two
+    gpu_malloc_async(Qs_d, n, s) yields "Qs_d", so one buffer becomes two
     entries and a genuine MISMATCH is reported as an UNFREED plus a FREE-ONLY.
     Track the depth instead.
     """
