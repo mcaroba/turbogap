@@ -134,7 +134,7 @@ contains
    subroutine add_2b_contribution(n_distance_2b, distance_2b_hypers, &
                                   params, rjs, xyz, n_neigh, species, neighbor_species, &
                                   i_beg, i_end, j_beg, j_end, this_energies, this_forces, this_virial, &
-                                  energies_2b, forces_2b, virial_2b, time_2b)
+                                  energies_2b, forces_2b, virial_2b, time)
 
       implicit none
       integer, intent(in) :: n_distance_2b
@@ -155,7 +155,7 @@ contains
       real(dp), intent(inout), allocatable, target :: energies_2b(:)
       real(dp), intent(inout), allocatable, target :: forces_2b(:, :)
       real(dp), intent(inout), target :: virial_2b(1:3, 1:3)
-      real(dp), intent(inout) :: time_2b(1:3)
+      type(times_t), intent(inout) :: time
       type(c_ptr) :: energies_2b_d
       type(c_ptr) :: forces_2b_d
       type(c_ptr) :: virial_2b_d
@@ -192,10 +192,10 @@ contains
       call cpy_htod(c_loc(virial_2b), virial_2b_d, st_virial, gpu_stream)
 
       do i = 1, n_distance_2b
-    !! time_2b(1)=MPI_Wtime()
-         !call get_time( ! time_2b(1) )
+    !! time%gap_2b(1)=MPI_Wtime()
+         !call get_time( ! time%gap_2b(1) )
 
-         call get_time(time_2b(1))
+         call time_start(time%gap_2b)
 
          !                The kernel filters neighbours by species index, so sp1/sp2
          !                must be the position of the descriptor's species within
@@ -233,17 +233,17 @@ contains
          & cutoff_d, qs_d, distance_2b_hypers(i)&
          &%sigma, alphas_d, xyz_d, gpu_stream)
 
-         !time_2b(2) = MPI_wtime()
-         call get_time(time_2b(2))
+         !time%gap_2b(2) = MPI_wtime()
+         call get_time(time%gap_2b(2))
 
          !          print *, rank, " >>--- Finished 2b energies forces on gpu ---"
          call gpu_free_async(alphas_d, gpu_stream)
          call gpu_free_async(cutoff_d, gpu_stream)
          call gpu_free_async(qs_d, gpu_stream)
 
-         call get_time(time_2b(2))
+         call get_time(time%gap_2b(2))
 
-         time_2b(3) = time_2b(3) + time_2b(2) - time_2b(1)
+         time%gap_2b(3) = time%gap_2b(3) + time%gap_2b(2) - time%gap_2b(1)
       end do
 
       !              The kernels accumulate into the device buffers, so after the
@@ -273,7 +273,7 @@ contains
    subroutine add_core_pot_contribution(n_core_pot, core_pot_hypers, &
                                         params, rjs, xyz, n_neigh, species, neighbor_species, &
                                         i_beg, i_end, j_beg, j_end, this_energies, this_forces, this_virial, &
-                                        energies_core_pot, forces_core_pot, virial_core_pot, time_core_pot)
+                                        energies_core_pot, forces_core_pot, virial_core_pot, time)
 
       implicit none
       integer, intent(in) :: n_core_pot
@@ -294,7 +294,7 @@ contains
       real(dp), intent(inout), allocatable, target :: energies_core_pot(:)
       real(dp), intent(inout), allocatable, target :: forces_core_pot(:, :)
       real(dp), intent(inout), target :: virial_core_pot(1:3, 1:3)
-      real(dp), intent(inout) :: time_core_pot(1:3)
+      type(times_t), intent(inout) :: time
       type(c_ptr) :: energies_core_pot_d
       type(c_ptr) :: forces_core_pot_d
       type(c_ptr) :: virial_core_pot_d
@@ -338,7 +338,7 @@ contains
       do i = 1, n_core_pot
 
          !           print *, " > Getting core potential"
-         call get_time(time_core_pot(1))
+         call time_start(time%gap_core_pot)
 
          n_sparse = core_pot_hypers(i)%n
          st_n_sparse_double = n_sparse*sizeof(core_pot_hypers(i)%x(1))
@@ -378,9 +378,9 @@ contains
          call gpu_free_async(V_d, gpu_stream)
          call gpu_free_async(dVdx2_d, gpu_stream)
 
-         call get_time(time_core_pot(2))
+         call get_time(time%gap_core_pot(2))
 
-         time_core_pot(3) = time_core_pot(3) + time_core_pot(2) - time_core_pot(1)
+         time%gap_core_pot(3) = time%gap_core_pot(3) + time%gap_core_pot(2) - time%gap_core_pot(1)
       end do
 
       !              As for the 2b and 3b terms, the kernel accumulates into the
@@ -409,7 +409,7 @@ contains
    subroutine add_3b_contribution(n_angle_3b, angle_3b_hypers, neighbors_list, &
                                   params, rjs, xyz, n_neigh, species, neighbor_species, &
                                   i_beg, i_end, j_beg, j_end, this_energies, this_forces, this_virial, &
-                                  forces, energies_3b, forces_3b, virial_3b, time_3b)
+                                  forces, energies_3b, forces_3b, virial_3b, time)
 
       implicit none
       integer, intent(in) :: n_angle_3b
@@ -433,7 +433,7 @@ contains
       real(dp), intent(inout), allocatable, target :: energies_3b(:)
       real(dp), intent(inout), allocatable, target :: forces_3b(:, :)
       real(dp), intent(inout), target :: virial_3b(1:3, 1:3)
-      real(dp), intent(inout) :: time_3b(1:3)
+      type(times_t), intent(inout) :: time
       type(c_ptr) :: energies_3b_d
       type(c_ptr) :: forces_3b_d
       type(c_ptr) :: virial_3b_d
@@ -530,7 +530,7 @@ contains
 
       !       Loop through angle_3b descriptors
       do i = 1, n_angle_3b
-         call get_time(time_3b(1))
+         call time_start(time%gap_3b)
 
          call cpy_htod(c_loc(angle_3b_hypers(i)%cutoff), cutoff_d, size_maxnp_bytes, gpu_stream)
          call cpy_htod(c_loc(angle_3b_hypers(i)%sigma), sigma_d, size_alphas_bytes, gpu_stream)
@@ -549,12 +549,12 @@ contains
                      c_do_forces, angle_3b_hypers(i)%rcut, 0.5d0, sigma_d, qs_d, c_name_3b, &
                      i_beg, i_end, energies_3b_d, forces_3b_d, virial_3b_d, kappas_array_d)
 
-         call get_time(time_3b(2))
+         call get_time(time%gap_3b(2))
 
-         time_3b(3) = time_3b(3) + time_3b(2) - time_3b(1)
+         time%gap_3b(3) = time%gap_3b(3) + time%gap_3b(2) - time%gap_3b(1)
 
          ! print *, rank, " >>--- Finished 3b on gpu ---<< took ",&
-         !   time_3b(2) - time_3b(1), " with total being ", time_3b(3)
+         !   time%gap_3b(2) - time%gap_3b(1), " with total being ", time%gap_3b(3)
 
       end do
 

@@ -64,7 +64,7 @@ contains
                          energies_xrd, energies_nd, local_properties, local_property_labels, instant_temp, &
                          instant_pressure, instant_pressure_prev, e_kin, e_kinetic, kb, evpera3tobar, &
                          fix_atom, exit_loop, rebuild_neighbors_list, i_image, i_nested, n_pos, string, &
-                         time_md, time_mpi_positions, gd_box_do_pos, gd_istep, restart_box_optim, &
+                         time, gd_box_do_pos, gd_istep, restart_box_optim, &
                          target_temp, time_step_prev)
 
       implicit none
@@ -122,8 +122,7 @@ contains
       integer, intent(in) :: i_nested
       integer, intent(inout) :: n_pos
       character*1024, intent(inout) :: string
-      real(dp), intent(inout) :: time_md(1:3)
-      real(dp), intent(inout) :: time_mpi_positions(1:3)
+      type(times_t), intent(inout) :: time
       logical, intent(inout) :: gd_box_do_pos
       integer, intent(inout) :: gd_istep
       logical, intent(inout) :: restart_box_optim
@@ -145,8 +144,8 @@ contains
 #endif
          if (params%do_md .and. md_istep > -1) then
 
-            !time_md(1) = MPI_wtime()
-            call get_time(time_md(1))
+            !time%md(1) = MPI_wtime()
+            call time_start(time%md)
 
             !     Define the time_step and md_time prior to possible scaling (see variable_time_step below)
             if (md_istep > 0) then
@@ -488,10 +487,10 @@ contains
                end do
             end do
 
-            !time_md(2) = MPI_wtime()
-            call get_time(time_md(2))
+            !time%md(2) = MPI_wtime()
+            call get_time(time%md(2))
 
-            time_md(3) = time_md(3) + time_md(2) - time_md(1)
+            time%md(3) = time%md(3) + time%md(2) - time%md(1)
          end if
 #ifdef _MPIF90
       END IF
@@ -501,17 +500,17 @@ contains
 #ifdef _MPIF90
       if (params%do_md) then
 
-         !time_mpi_positions(1) = MPI_wtime()
-         call get_time(time_mpi_positions(1))
+         !time%mpi_positions(1) = MPI_wtime()
+         call time_start(time%mpi_positions)
 
          n_pos = size(positions, 2)
          call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
          call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
 
-         !time_mpi_positions(2) = MPI_wtime()
-         call get_time(time_mpi_positions(2))
+         !time%mpi_positions(2) = MPI_wtime()
+         call get_time(time%mpi_positions(2))
 
-         time_mpi_positions(3) = time_mpi_positions(3) + time_mpi_positions(2) - time_mpi_positions(1)
+         time%mpi_positions(3) = time%mpi_positions(3) + time%mpi_positions(2) - time%mpi_positions(1)
       end if
 #endif
 

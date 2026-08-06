@@ -50,7 +50,7 @@ contains
                                        valid_estat_charges, charge_lp_index, &
                                        local_property_labels, local_property_indexes, n_local_properties_mpi, &
                                        has_local_properties_mpi, local_properties_n_sparse_mpi_soap_turbo, &
-                                       local_properties_dim_mpi_soap_turbo, time_read_input, time_mpi)
+                                       local_properties_dim_mpi_soap_turbo, time)
 
       implicit none
 
@@ -82,8 +82,7 @@ contains
       logical, allocatable, intent(inout) :: has_local_properties_mpi(:)
       integer, allocatable, intent(inout) :: local_properties_n_sparse_mpi_soap_turbo(:)
       integer, allocatable, intent(inout) :: local_properties_dim_mpi_soap_turbo(:)
-      real(dp), intent(inout) :: time_read_input(1:3)
-      real(dp), intent(inout) :: time_mpi(1:3)
+      type(times_t), intent(inout) :: time
 
 !   Local. All of these were variables of the main program that nothing outside
 !   this block referenced. i, j, ierr, iostatus, cjunk, n_sp and n_lp_count are
@@ -121,13 +120,13 @@ contains
 
       ! Read input file and other files
       !
-      time_read_input(3) = 0.d0
+      time%read_input(3) = 0.d0
 
-      !time_read_input(1) = MPI_wtime()
-      !time_read_input(1 = MPI_wtime()
+      !time%read_input(1) = MPI_wtime()
+      !time%read_input(1 = MPI_wtime()
 
-      ! time_read_input(1)=MPI_Wtime()
-      call get_time(time_read_input(1))
+      ! time%read_input(1)=MPI_Wtime()
+      call time_start(time%read_input)
 
       open (unit=10, file='input', status='old', iostat=iostatus)
       ! Check for existence of input file
@@ -391,8 +390,8 @@ contains
          !   Broadcast number of descriptors to other processes
 #ifdef _MPIF90
 
-         ! time_mpi(1)=MPI_Wtime()
-         call get_time(time_mpi(1))
+         ! time%mpi(1)=MPI_Wtime()
+         call time_start(time%mpi)
 
          call mpi_bcast(n_soap_turbo, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
          call mpi_bcast(n_distance_2b, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
@@ -410,10 +409,10 @@ contains
            & MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
 
          !   Processes other than 0 need to allocate the data structures on their own
-         ! time_mpi(2)=MPI_Wtime()
-         call get_time(time_mpi(2))
+         ! time%mpi(2)=MPI_Wtime()
+         call get_time(time%mpi(2))
 
-         time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
+         time%mpi(3) = time%mpi(3) + time%mpi(2) - time%mpi(1)
          allocate (n_species_mpi(1:n_soap_turbo))
          allocate (n_sparse_mpi_soap_turbo(1:n_soap_turbo))
          allocate (dim_mpi(1:n_soap_turbo))
@@ -468,8 +467,8 @@ contains
             end if
 
          END IF
-         ! time_mpi(1)=MPI_Wtime()
-         call get_time(time_mpi(1))
+         ! time%mpi(1)=MPI_Wtime()
+         call time_start(time%mpi)
 
          call mpi_bcast(n_species_mpi, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
          call mpi_bcast(n_sparse_mpi_soap_turbo, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
@@ -499,10 +498,10 @@ contains
          call mpi_bcast(n_sparse_mpi_angle_3b, n_angle_3b, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
          call mpi_bcast(n_mpi_core_pot, n_core_pot, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
          !     call mpi_bcast(compress_P_nonzero_mpi, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-         ! time_mpi(2)=MPI_Wtime()
-         call get_time(time_mpi(2))
+         ! time%mpi(2)=MPI_Wtime()
+         call get_time(time%mpi(2))
 
-         time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
+         time%mpi(3) = time%mpi(3) + time%mpi(2) - time%mpi(1)
 
          IF (rank /= 0) THEN
             call allocate_soap_turbo_hypers(n_soap_turbo, n_species_mpi, n_sparse_mpi_soap_turbo, dim_mpi, &
@@ -528,8 +527,8 @@ contains
          !   type) at once via broadcasting, to reduce the total number of MPI calls to the minimum. This will be
          !   done at the module's subroutine's level.
          !   soap_turbo allocatable structures
-         ! time_mpi(1)=MPI_Wtime()
-         call get_time(time_mpi(1))
+         ! time%mpi(1)=MPI_Wtime()
+         call time_start(time%mpi)
 
          do i = 1, n_soap_turbo
             n_sp = soap_turbo_hypers(i)%n_species
@@ -679,10 +678,10 @@ contains
             call mpi_bcast(core_pot_hypers(i)%species1, 8, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
             call mpi_bcast(core_pot_hypers(i)%species2, 8, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
          end do
-         ! time_mpi(2)=MPI_Wtime()
-         call get_time(time_mpi(2))
+         ! time%mpi(2)=MPI_Wtime()
+         call get_time(time%mpi(2))
 
-         time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
+         time%mpi(3) = time%mpi(3) + time%mpi(2) - time%mpi(1)
          !   Clean up
          deallocate (n_species_mpi, n_sparse_mpi_soap_turbo, dim_mpi, compress_soap_mpi, n_sparse_mpi_distance_2b, &
                      n_sparse_mpi_angle_3b, n_mpi_core_pot, n_local_properties_mpi, has_local_properties_mpi) ! compress_P_nonzero_mpi,
@@ -706,10 +705,10 @@ contains
          stop
       end if
 
-      ! time_read_input(2)=MPI_Wtime()
-      call get_time(time_read_input(2))
+      ! time%read_input(2)=MPI_Wtime()
+      call get_time(time%read_input(2))
 
-      time_read_input(3) = time_read_input(3) + time_read_input(2) - time_read_input(1)
+      time%read_input(3) = time%read_input(3) + time%read_input(2) - time%read_input(1)
       !**************************************************************************
 
   !! If electronic stopping based on eph model is to be calculated, these data structures are required to be

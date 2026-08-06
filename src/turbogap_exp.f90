@@ -58,7 +58,7 @@ contains
                               a_box, b_box, c_box, indices, i_beg, i_end, j_beg, j_end, rank, &
                               md_istep, mc_istep, valid_xps, xps_idx, core_be_lp_index, &
                               write_condition, overwrite_condition, exp_output, &
-                              energies_lp, forces_lp, virial_lp, time_xps)
+                              energies_lp, forces_lp, virial_lp, time)
 
       implicit none
 
@@ -93,7 +93,7 @@ contains
       real(dp), allocatable, intent(inout) :: energies_lp(:)
       real(dp), allocatable, intent(inout) :: forces_lp(:, :)
       real(dp), intent(inout) :: virial_lp(1:3, 1:3)
-      real(dp), intent(inout) :: time_xps(1:3)
+      type(times_t), intent(inout) :: time
 
 !   Was driver state; block-local now.
       real(dp), allocatable :: y_i_pred_all(:, :)
@@ -108,8 +108,8 @@ contains
       if (any(soap_turbo_hypers(:)%has_core_electron_be) .and. (params%do_prediction) &
           .and. valid_xps) then
 
-         !time_xps(1) = MPI_wtime()
-         call get_time(time_xps(1))
+         !time%xps(1) = MPI_wtime()
+         call time_start(time%xps)
 
 #ifdef _MPIF90
          allocate (energies_lp(1:n_sites))
@@ -225,11 +225,11 @@ contains
          ! sim_exp_pred_der would be the array of forces if multiplied by (- \gamma )
          deallocate (v_neigh_lp)
 
-         !time_xps(2) = MPI_wtime()
-         call get_time(time_xps(2))
+         !time%xps(2) = MPI_wtime()
+         call get_time(time%xps(2))
 
-         time_xps(3) = time_xps(3) + time_xps(2) - time_xps(1)
-         !           if (rank == 0) print *, rank, " TIME_XPS = ", time_xps(3)
+         time%xps(3) = time%xps(3) + time%xps(2) - time%xps(1)
+         !           if (rank == 0) print *, rank, " TIME_XPS = ", time%xps(3)
 
       end if
 
@@ -255,8 +255,8 @@ contains
    subroutine compute_exp_spectra(params, n_sites, species, rjs, xyz, neighbors_list, &
                                   n_neigh, neighbor_species, indices, a_box, b_box, c_box, i_beg, i_end, j_beg, j_end, &
                                   rank, ntasks, ierr, md_istep, mc_istep, energies_sf, forces_sf, virial_sf, &
-                                  energies_xrd, forces_xrd, virial_xrd, energies_nd, forces_nd, virial_nd, time_sf, &
-                                  time_xrd, time_nd, time_exp_batched, i_beg_list, i_end_list, j_beg_list, j_end_list, &
+                                  energies_xrd, forces_xrd, virial_xrd, energies_nd, forces_nd, virial_nd, time, &
+                                  i_beg_list, i_end_list, j_beg_list, j_end_list, &
                                   n_omp, omp_task, this_i_beg, this_i_end, this_j_beg, this_j_end, n_sites_temp, &
                                   n_pairs_temp, write_condition, overwrite_condition, temp_string, &
                                   species_types_actual, v_uc)
@@ -305,10 +305,7 @@ contains
       real(dp), intent(inout) :: virial_nd(1:3, 1:3)
 
 !   Timing buckets, accumulated across snapshots.
-      real(dp), intent(inout) :: time_sf(1:3)
-      real(dp), intent(inout) :: time_xrd(1:3)
-      real(dp), intent(inout) :: time_nd(1:3)
-      real(dp), intent(inout) :: time_exp_batched(1:3)
+      type(times_t), intent(inout) :: time
 
 !   The batch decomposition. Built by the caller for the electrostatics and
 !   SOAP paths and consumed here too, which is why it is passed rather than
@@ -497,8 +494,8 @@ contains
           .and. params%exp_forces .and. params%do_forces) then
 
          !           print *, "> Starting batched xrd "
-         !           call cpu_time( time_exp_batched(1) )
-         call get_time(time_exp_batched(1))
+         !           call cpu_time( time%exp_batched(1) )
+         call time_start(time%exp_batched)
 
          ! call estimate_max_exp_forces_device_memory_usage( n_sites, j_end, n_dim_partial, &
          !      params%pair_distribution_n_samples, params%structure_factor_n_samples, gpu_memory_usage)
@@ -669,8 +666,8 @@ contains
 
          if (params%do_structure_factor) then
 
-            !time_sf(1) = MPI_wtime()
-            call get_time(time_sf(1))
+            !time%sf(1) = MPI_wtime()
+            call time_start(time%sf)
 
             call calculate_structure_factor(params, x_structure_factor, x_structure_factor_temp,&
               & y_structure_factor, y_structure_factor_temp,&
@@ -691,17 +688,17 @@ contains
               &, cublas_handle, gpu_stream, &
               & gpu_host_exp_storage, params%gpu_low_memory)
 
-            !time_sf(2) = MPI_wtime()
-            call get_time(time_sf(2))
+            !time%sf(2) = MPI_wtime()
+            call get_time(time%sf(2))
 
-            time_sf(3) = time_sf(3) + time_sf(2) - time_sf(1)
+            time%sf(3) = time%sf(3) + time%sf(2) - time%sf(1)
 
          end if
 
          if (params%do_xrd) then
 
-            !time_xrd(1) = MPI_wtime()
-            call get_time(time_xrd(1))
+            !time%xrd(1) = MPI_wtime()
+            call time_start(time%xrd)
 
             call calculate_xrd(params, x_xrd, x_xrd_temp, y_xrd,&
               & y_xrd_temp, x_structure_factor,&
@@ -726,17 +723,17 @@ contains
               & gpu_stream, gpu_host_exp_storage, params&
               &%gpu_low_memory)
 
-            !time_xrd(2) = MPI_wtime()
-            call get_time(time_xrd(2))
+            !time%xrd(2) = MPI_wtime()
+            call get_time(time%xrd(2))
 
-            time_xrd(3) = time_xrd(3) + time_xrd(2) - time_xrd(1)
+            time%xrd(3) = time%xrd(3) + time%xrd(2) - time%xrd(1)
 
          end if
 
          if (params%do_nd) then
 
-            !time_nd(1) = MPI_wtime()
-            call get_time(time_nd(1))
+            !time%nd(1) = MPI_wtime()
+            call time_start(time%nd)
 
             call calculate_xrd(params, x_nd, x_nd_temp, y_nd,&
               & y_nd_temp, x_structure_factor,&
@@ -761,13 +758,13 @@ contains
               & gpu_stream, gpu_host_exp_storage, params&
               &%gpu_low_memory)
 
-            !time_nd(2) = MPI_wtime()
-            call get_time(time_nd(2))
+            !time%nd(2) = MPI_wtime()
+            call get_time(time%nd(2))
 
-            time_nd(3) = time_nd(3) + time_nd(2) - time_nd(1)
+            time%nd(3) = time%nd(3) + time%nd(2) - time%nd(1)
          end if
 
-         call get_time(time_xrd(1))
+         call time_start(time%xrd)
 
          ! RESETTING EXP FORCES TO FALSE
          params%do_forces = .true.
@@ -952,15 +949,14 @@ contains
          if (allocated(gpu_exp)) deallocate (gpu_exp)
          if (allocated(gpu_batch_storage)) deallocate (gpu_batch_storage)
 
-         !           call cpu_time( time_exp_batched(2) )
-         call get_time(time_exp_batched(2))
+         !           call cpu_time( time%exp_batched(2) )
+         call get_time(time%exp_batched(2))
 
-         call get_time(time_xrd(2))
-         time_xrd(3) = time_xrd(3) + time_xrd(2) - time_xrd(1)
+         call time_end(time%xrd)
 
-         time_exp_batched(3) = time_exp_batched(3) + time_exp_batched(2) - time_exp_batched(1)
+         time%exp_batched(3) = time%exp_batched(3) + time%exp_batched(2) - time%exp_batched(1)
          if (rank == 0) print *, " "
-         if (rank == 0) print *, "--Rank, ", rank, " --- TIME EXP BATCHED = ", time_exp_batched(3)
+         if (rank == 0) print *, "--Rank, ", rank, " --- TIME EXP BATCHED = ", time%exp_batched(3)
          if (rank == 0) print *, " "
       end if
 
