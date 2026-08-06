@@ -29,6 +29,7 @@ module gap_backend
    implicit none
 
    private
+   public :: gap_backend_init
    public :: gap_backend_begin
    public :: gap_backend_end
    public :: add_2b_contribution
@@ -45,6 +46,14 @@ contains
 ! the neighbour data once for all three calls rather than three times, and that
 ! has to happen without the driver ever holding a device pointer. An empty pair
 ! here is the price of keeping the interface physics-only.
+!**************************************************************************
+! The GPU implementation takes the stream it launches on from gpu_context here.
+! There is nothing to take on the CPU, but the name and the empty argument list
+! exist on both branches so the driver's call site is identical.
+   subroutine gap_backend_init()
+   end subroutine gap_backend_init
+!**************************************************************************
+
    subroutine gap_backend_begin(params, rjs, xyz, n_neigh, species, neighbor_species, &
                                 neighbors_list, i_beg, i_end, j_beg, j_end)
       implicit none

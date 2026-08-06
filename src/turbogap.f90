@@ -51,6 +51,7 @@ program turbogap
    use turbogap_exp
    use turbogap_md
    use gap_backend
+   use gpu_context
    use turbogap_vdw
    use exp_utils
    use exp_interface
@@ -309,6 +310,7 @@ program turbogap
    integer :: n_active
    integer :: i_contrib
    integer :: which_atom = 0
+   integer :: n_omp = 1
    integer :: n_species = 1
    integer :: n_species_actual
    integer :: n_xyz
@@ -493,6 +495,15 @@ program turbogap
    implemented_exp_observables(4) = "pair_distribution"
    implemented_exp_observables(5) = "structure_factor"
 
+   !**************************************************************************
+
+   !**************************************************************************
+!  Bring the device context up. Empty on this branch (src/gpu_context.f90);
+!  on the GPU branch the same two names create the streams and cuBLAS handles.
+   call time_start(time%create_streams)
+   call gpu_context_init(params, rank, n_omp)
+   call gap_backend_init()
+   call time_end(time%create_streams)
    !**************************************************************************
 
    !**************************************************************************
@@ -3302,5 +3313,7 @@ program turbogap
 #ifdef _MPIF90
    call mpi_finalize(ierr)
 #endif
+
+   call gpu_context_finalize(params, n_omp)
 
 end program turbogap
