@@ -141,7 +141,7 @@ module types
            & 1.5405981d0, xrd_alpha = 1.01d0, xrd_rcut = 4.d0, nd_rcut = 4.d0&
            &, q_range_min = 1.0, q_range_max = 5.d0, r_range_min = 1.0,&
            & r_range_max = 5.d0, pair_distribution_rcut = 4.d0,&
-           & pair_distribution_kde_sigma = 0.d0, &
+           & pair_distribution_kde_sigma = 0.d0, gpu_max_batch_size = 1.d0, &
            & poly_cut_xmin = 3.d0, poly_cut_xmax = 10.d0, &                    ! NEW VDW PARAMETERS HERE
            & vdw_mbd_rcut = 15.d0, vdw_mbd_rcut2 = 8.d0, &
            &   vdw_2b_rcut = 15.d0, vdw_2b_rcut2 = 8.d0, vdw_omega_ref = 1.3d0, &
@@ -166,7 +166,8 @@ module types
            &, xrd_idx, saxs_idx, pdf_idx, sf_idx, nd_idx, n_exp = 0, pair_distribution_n_samples&
            &= 200, structure_factor_n_samples = 200, xrd_n_samples = 200, nd_n_samples = 200, verb = 0, n_t_hold = 0, &
            n_exp_opt = 0, &
-           n_mc_relax_after = 0, n_mc_mu = 0, mc_max_insertion_trials = 500
+           n_mc_relax_after = 0, n_mc_mu = 0, mc_max_insertion_trials = 500, &
+           gpu_n_batches = 1, n_batches = 0
 !     Seed for the intrinsic pseudo-random number generator. Zero (the default)
 !     leaves the compiler's default sequence untouched; any other value makes
 !     runs reproducible, which is what the CPU/GPU regression comparisons rely
@@ -202,7 +203,8 @@ module types
                  do_pair_distribution = .false., do_structure_factor = .false., do_xrd = .false., do_nd = .false., &
                  write_xrd = .false., write_nd = .false., structure_factor_matrix = .true., &
                  structure_factor_matrix_forces = .true., write_exp = .true., valid_pdf = .false., valid_sf = .false., &
-                 valid_xrd = .false., valid_nd = .false., mc_planes_restrict_to_polyhedron = .false., randomize_velocities = .false.
+                 valid_xrd = .false., valid_nd = .false., mc_planes_restrict_to_polyhedron = .false., &
+                 randomize_velocities = .false., gpu_low_memory = .true., gpu_batched = .true.
 
       integer :: mc_n_planes = 0
       real(dp), allocatable :: mc_max_dist_to_planes(:), mc_planes(:) ! Final index indexes the planes in first index

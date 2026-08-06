@@ -788,6 +788,14 @@ contains
          call read_options_output(10, iostatus, rank, keyword, mode, params, n_species, keyword_found)
          if (keyword_found) cycle
 
+!      Accepted here and ignored: these tune the GPU implementation and a CPU
+!      build has nothing to tune. They are read anyway so that one input deck
+!      runs on both branches -- without this, any deck written for the GPU
+!      build aborts here with "I do not recognize the input file keyword", and
+!      the two suites cannot share a case.
+         call read_options_gpu(10, iostatus, rank, keyword, mode, params, n_species, keyword_found)
+         if (keyword_found) cycle
+
          write (*, *) "ERROR: I do not recognize the input file keyword ", trim(keyword)
          call turbogap_abort()
       end do
@@ -2941,6 +2949,52 @@ contains
       keyword_found = .true.
 
    end subroutine read_options_output
+
+   subroutine read_options_gpu(unit, iostatus, rank, keyword, mode, params, n_species, keyword_found)
+
+      implicit none
+
+      integer, intent(in) :: unit, rank, n_species
+      integer, intent(inout) :: iostatus
+      character*64, intent(in) :: keyword
+      character(len=*), intent(in) :: mode
+      type(input_parameters), intent(inout) :: params
+      logical, intent(inout) :: keyword_found
+
+      character*64 :: cjunk
+
+      if (keyword == 'gpu_batched') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%gpu_batched
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("gpu_batched", params%gpu_batched)
+      else if (keyword == 'gpu_low_memory') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%gpu_low_memory
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("gpu_low_memory", params%gpu_low_memory)
+      else if (keyword == 'gpu_max_batch_size') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%gpu_max_batch_size
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("gpu_max_batch_size", params%gpu_max_batch_size)
+      else if (keyword == 'gpu_n_batches') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%gpu_n_batches
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("gpu_n_batches", params%gpu_n_batches)
+      else if (keyword == 'n_batches') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%n_batches
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("n_batches", params%n_batches)
+      else
+         return
+      end if
+
+      keyword_found = .true.
+
+   end subroutine read_options_gpu
 
 !**************************************************************************
 
