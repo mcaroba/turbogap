@@ -47,7 +47,7 @@ contains
                            write_soap, write_derivatives, compress_soap, &
                            compress_P_nonzero, compress_P_i, compress_P_j, compress_P_el, &
                            delta, zeta, central_species, &
-                           xyz_species, xyz_species_supercell, alphas, Qs, all_atoms, &
+                           xyz_species, xyz_species_supercell, all_atoms, &
                            which_atom, indices, soap, soap_cart_der, der_neighbors, der_neighbors_list, &
                            has_local_properties, n_local_properties, local_property_models, &
                            energies0, forces0, local_properties0,&
@@ -76,8 +76,6 @@ contains
       real(dp), intent(in) :: central_weight(:)
       real(dp), intent(in) :: delta
       real(dp), intent(in) :: zeta
-      real(dp), intent(in) :: alphas(:)
-      real(dp), intent(in) :: Qs(:, :)
       real(dp), intent(in) :: compress_P_el(:)
       integer, intent(in) :: n_sites0
       integer, intent(in) :: n_neigh0(:)
@@ -386,7 +384,7 @@ contains
             forces = 0.d0
          end if
          if (n_sites > 0) then
-            call get_soap_energy_and_forces(soap, soap_cart_der, alphas, delta, zeta, 0.d0, Qs, &
+            call get_soap_energy_and_forces(soap, soap_cart_der, delta, zeta, 0.d0, &
                                             n_neigh, neighbors_list, xyz, do_forces, do_timing, &
                                             energies, forces, virial)
          end if

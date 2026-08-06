@@ -366,7 +366,7 @@ program turbogap
    integer :: counter_lp_names = 0
    integer :: temp_md_nsteps
    real(dp), parameter :: pi = acos(-1.0)
-   type(soap_turbo), allocatable :: soap_turbo_hypers(:)
+   type(soap_turbo), allocatable, target :: soap_turbo_hypers(:)
    type(distance_2b), allocatable :: distance_2b_hypers(:)
    type(angle_3b), allocatable :: angle_3b_hypers(:)
    type(core_pot), allocatable :: core_pot_hypers(:)
@@ -1357,6 +1357,7 @@ program turbogap
                   end if
                end if
 
+               call soap_backend_begin(soap_turbo_hypers(i))
                call get_gap_soap(n_sites, this_n_sites_mpi, n_neigh(this_i_beg:this_i_end), neighbors_list(this_j_beg:this_j_end), &
                     soap_turbo_hypers(i)%n_species, soap_turbo_hypers(i)%species_types, &
                     rjs(this_j_beg:this_j_end), thetas(this_j_beg:this_j_end), phis(this_j_beg:this_j_end), &
@@ -1374,8 +1375,8 @@ program turbogap
                     soap_turbo_hypers(i)%compress_P_i, soap_turbo_hypers(i)%compress_P_j, &
                     soap_turbo_hypers(i)%compress_P_el, &
                     soap_turbo_hypers(i)%delta, soap_turbo_hypers(i)%zeta, soap_turbo_hypers(i)%central_species, &
-                    xyz_species(this_i_beg:this_i_end), xyz_species_supercell, soap_turbo_hypers(i)%alphas, &
-                    soap_turbo_hypers(i)%Qs, params%all_atoms, params%which_atom, indices, soap, soap_cart_der, &
+                    xyz_species(this_i_beg:this_i_end), xyz_species_supercell, &
+                    params%all_atoms, params%which_atom, indices, soap, soap_cart_der, &
                     der_neighbors, der_neighbors_list, &
                     & soap_turbo_hypers(i)%has_local_properties,&
                     & soap_turbo_hypers(i)%n_local_properties,&
@@ -1384,6 +1385,8 @@ program turbogap
                     & this_local_properties_cart_der_pt,&
                     & local_property_indexes, this_i_beg, this_i_end, this_j_beg, this_j_end, &
                     & this_virial, n_lp_count)
+
+               call soap_backend_end()
 
                ! We can have a pointer to specific parts of this_local_properties array to then
 

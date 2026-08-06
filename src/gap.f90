@@ -31,9 +31,39 @@ module gap
 
    use splines
 
+!  The sparse set for the descriptor currently being evaluated. It is POINTED
+!  at, never copied: Qs feeds a dgemm and is n_sparse x dim, so a copy per
+!  descriptor per step would be real time. soap_backend_begin associates them
+!  and soap_backend_end nullifies.
+!
+!  They keep the names the dummy arguments had, so the body of
+!  get_soap_energy_and_forces is untouched -- the same trick gap_backend_gpu
+!  uses for its ten buffers. Private, because these are common names and
+!  gap.f90 has no default private, so publishing them collides on use.
+   real(dp), pointer :: alphas(:) => null()
+   real(dp), pointer :: Qs(:, :) => null()
+   private :: alphas, Qs
+
 contains
 
-   subroutine get_soap_energy_and_forces(soap, soap_der, alphas, delta, zeta0, e0, Qs, &
+   subroutine soap_backend_begin(hypers)
+!     Point at one descriptor's sparse set. The GPU branch's version of this
+!     uploads it to the device instead; the driver calls the same name on both.
+      use types, only: soap_turbo
+      implicit none
+      type(soap_turbo), intent(in), target :: hypers
+
+      alphas => hypers%alphas
+      Qs => hypers%Qs
+   end subroutine soap_backend_begin
+
+   subroutine soap_backend_end()
+      implicit none
+      nullify (alphas)
+      nullify (Qs)
+   end subroutine soap_backend_end
+
+   subroutine get_soap_energy_and_forces(soap, soap_der, delta, zeta0, e0, &
                                          n_neigh, neighbors_list, xyz, do_forces, do_timing, &
                                          energies, forces, virial)
 !   **********************************************
@@ -43,9 +73,7 @@ contains
 
       real(dp), intent(in) :: soap(:, :)
       real(dp), intent(in) :: soap_der(:, :, :)
-      real(dp), intent(in) :: alphas(:)
       real(dp), intent(in) :: delta
-      real(dp), intent(in) :: Qs(:, :)
       real(dp), intent(in) :: e0
       real(dp), intent(in) :: zeta0
       real(dp), intent(in) :: xyz(:, :)
