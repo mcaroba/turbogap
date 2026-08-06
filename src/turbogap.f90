@@ -305,6 +305,7 @@ program turbogap
    integer, parameter :: N_CONTRIB = 11
    logical :: contrib_on(1:N_CONTRIB)
    type(contribution_ref) :: contrib(1:N_CONTRIB)
+   type(perform_t) :: perform
    integer :: n_active
    integer :: i_contrib
    integer :: which_atom = 0
@@ -678,6 +679,29 @@ program turbogap
    !**************************************************************************
    ! This checks if we need to do the SOAP calculation more than once, if there are several concatenated
    ! structures in the xyz file provided or we're doing molecular dynamics
+
+!   The exp-observable decisions, evaluated once.  Every input is a params
+!   field or valid_xps, none of which changes inside the main loop.
+!
+!   This closes a defect.  The allocation guards asked do_X .and. valid_X, the
+!   zeroing guards asked do_X .and. exp_forces .and. valid_X, and the force
+!   accumulation asked only exp_forces .and. valid_X -- so a deck supplying an
+!   experimental dataset for an observable it had not switched on, with
+!   exp_forces set, accumulated forces_X and virial_X that the allocation
+!   guard had skipped.  do_X and valid_X are independent: valid_X is set from
+!   a label in the experimental data file, do_X is its own input keyword.
+!   Same shape as the electrostatics guard and as has_vdw against
+!   has_local_properties.
+   perform%pdf = params%do_pair_distribution .and. params%valid_pdf
+   perform%sf = params%do_structure_factor .and. params%valid_sf
+   perform%xrd = params%do_xrd .and. params%valid_xrd
+   perform%nd = params%do_nd .and. params%valid_nd
+
+   perform%pdf_forces = perform%pdf .and. params%exp_forces
+   perform%sf_forces = perform%sf .and. params%exp_forces
+   perform%xrd_forces = perform%xrd .and. params%exp_forces
+   perform%nd_forces = perform%nd .and. params%exp_forces
+   perform%xps_forces = valid_xps .and. params%exp_forces
 
    do while (repeat_xyz .or. (params%do_md .and. md_istep < params%md_nsteps) &
              .or. (params%do_mc .and. mc_istep < params%mc_nsteps))
@@ -1087,22 +1111,22 @@ program turbogap
 #endif
             end if
 
-            if (params%do_pair_distribution .and. params%valid_pdf) then
+            if (perform%pdf) then
                if (allocated(energies_pdf)) deallocate (energies_pdf)
                allocate (energies_pdf(1:n_sites))
             end if
 
-            if (params%do_structure_factor .and. params%valid_sf) then
+            if (perform%sf) then
                if (allocated(energies_sf)) deallocate (energies_sf)
                allocate (energies_sf(1:n_sites))
             end if
 
-            if (params%do_xrd .and. params%valid_xrd) then
+            if (perform%xrd) then
                if (allocated(energies_xrd)) deallocate (energies_xrd)
                allocate (energies_xrd(1:n_sites))
             end if
 
-            if (params%do_nd .and. params%valid_nd) then
+            if (perform%nd) then
                if (allocated(energies_nd)) deallocate (energies_nd)
                allocate (energies_nd(1:n_sites))
             end if
@@ -1119,10 +1143,10 @@ program turbogap
          energies_lp = 0.d0
          energies_exp = 0.d0
 
-         if (params%do_pair_distribution .and. params%valid_pdf) energies_pdf = 0.d0
-         if (params%do_structure_factor .and. params%valid_sf) energies_sf = 0.d0
-         if (params%do_xrd .and. params%valid_xrd) energies_xrd = 0.d0
-         if (params%do_nd .and. params%valid_nd) energies_nd = 0.d0
+         if (perform%pdf) energies_pdf = 0.d0
+         if (perform%sf) energies_sf = 0.d0
+         if (perform%xrd) energies_xrd = 0.d0
+         if (perform%nd) energies_nd = 0.d0
 
          ! Adding allocation of local properties
 
@@ -1188,22 +1212,22 @@ program turbogap
                allocate (local_virial_vdw_diag_corr(1:3, 1:n_sites))
                allocate (local_virial_vdw_diag(1:3, 1:n_sites))
 
-               if (params%do_pair_distribution .and. params%exp_forces .and. params%valid_pdf) then
+               if (perform%pdf_forces) then
                   if (allocated(forces_pdf)) deallocate (forces_pdf)
                   allocate (forces_pdf(1:3, 1:n_sites))
                end if
 
-               if (params%do_structure_factor .and. params%exp_forces .and. params%valid_sf) then
+               if (perform%sf_forces) then
                   if (allocated(forces_sf)) deallocate (forces_sf)
                   allocate (forces_sf(1:3, 1:n_sites))
                end if
 
-               if (params%do_xrd .and. params%exp_forces .and. params%valid_xrd) then
+               if (perform%xrd_forces) then
                   if (allocated(forces_xrd)) deallocate (forces_xrd)
                   allocate (forces_xrd(1:3, 1:n_sites))
                end if
 
-               if (params%do_nd .and. params%exp_forces .and. params%valid_nd) then
+               if (perform%nd_forces) then
                   if (allocated(forces_nd)) deallocate (forces_nd)
                   allocate (forces_nd(1:3, 1:n_sites))
                end if
@@ -1224,7 +1248,7 @@ program turbogap
             virial_vdw = 0.d0
             virial_lp = 0.d0
             local_virial_vdw_diag = 0.d0
-            if (params%do_pair_distribution .and. params%exp_forces .and. params%valid_pdf) then
+            if (perform%pdf_forces) then
                forces_pdf = 0.d0
                virial_pdf = 0.d0
 #ifdef _MPIF90
@@ -1232,7 +1256,7 @@ program turbogap
 #endif
             end if
 
-            if (params%do_structure_factor .and. params%exp_forces .and. params%valid_sf) then
+            if (perform%sf_forces) then
                forces_sf = 0.d0
                virial_sf = 0.d0
 #ifdef _MPIF90
@@ -1240,7 +1264,7 @@ program turbogap
 #endif
             end if
 
-            if (params%do_xrd .and. params%exp_forces .and. params%valid_xrd) then
+            if (perform%xrd_forces) then
                forces_xrd = 0.d0
                virial_xrd = 0.d0
 #ifdef _MPIF90
@@ -1248,7 +1272,7 @@ program turbogap
 #endif
             end if
 
-            if (params%do_nd .and. params%exp_forces .and. params%valid_nd) then
+            if (perform%nd_forces) then
                forces_nd = 0.d0
                virial_nd = 0.d0
 #ifdef _MPIF90
@@ -1982,10 +2006,10 @@ program turbogap
                  & energies_3b + energies_core_pot + energies_vdw !+energies_lp
 
             if (valid_xps) energies_exp = energies_exp + energies_lp
-            if (params%valid_pdf .and. params%do_pair_distribution) energies_exp = energies_exp + energies_pdf
-            if (params%valid_sf .and. params%do_structure_factor) energies_exp = energies_exp + energies_sf
-            if (params%valid_xrd .and. params%do_xrd) energies_exp = energies_exp + energies_xrd
-            if (params%valid_nd .and. params%do_nd) energies_exp = energies_exp + energies_nd
+            if (perform%pdf) energies_exp = energies_exp + energies_pdf
+            if (perform%sf) energies_exp = energies_exp + energies_sf
+            if (perform%xrd) energies_exp = energies_exp + energies_xrd
+            if (perform%nd) energies_exp = energies_exp + energies_nd
 
             if (params%exp_energies) energies = energies + energies_exp
 
@@ -2008,16 +2032,16 @@ program turbogap
                write (*, '(A,1X,F23.8,1X,A)') ' vdw energy:', sum(energies_vdw), 'eV |'
                write (*, '(A,1X,F22.8,1X,A)') ' Exp. energy:', sum(energies_exp), 'eV |'
                if (valid_xps) write (*, '(A,1X,F23.8,1X,A)') ' xps energy:', sum(energies_lp), 'eV |'
-               if (params%valid_pdf .and. params%do_pair_distribution)&
+               if (perform%pdf)&
                     & write (*, '(A,1X,F23.8,1X,A)') ' pdf energy:',&
                     & sum(energies_pdf), 'eV |'
-               if (params%valid_sf .and. params%do_structure_factor)&
+               if (perform%sf)&
                     & write (*, '(A,1X,F24.8,1X,A)') ' sf energy:',&
                     & sum(energies_sf), 'eV |'
-               if (params%valid_xrd .and. params%do_xrd)&
+               if (perform%xrd)&
                     & write (*, '(A,1X,F23.8,1X,A)') ' xrd energy:',&
                     & sum(energies_xrd), 'eV |'
-               if (params%valid_nd .and. params%do_nd)&
+               if (perform%nd)&
                     & write (*, '(A,1X,F23.8,1X,A)') ' nd energy:',&
                     & sum(energies_nd), 'eV |'
 
@@ -2048,20 +2072,20 @@ program turbogap
             forces = forces_soap + forces_2b + forces_3b + forces_core_pot + forces_vdw
             virial = virial_soap + virial_2b + virial_3b + virial_core_pot + virial_vdw
 
-            if (params%exp_forces .and. valid_xps) forces = forces + forces_lp
-            if (params%exp_forces .and. valid_xps) virial = virial + virial_lp
+            if (perform%xps_forces) forces = forces + forces_lp
+            if (perform%xps_forces) virial = virial + virial_lp
 
-            if (params%exp_forces .and. params%valid_pdf) forces = forces + forces_pdf
-            if (params%exp_forces .and. params%valid_pdf) virial = virial + virial_pdf
+            if (perform%pdf_forces) forces = forces + forces_pdf
+            if (perform%pdf_forces) virial = virial + virial_pdf
 
-            if (params%exp_forces .and. params%valid_sf) forces = forces + forces_sf
-            if (params%exp_forces .and. params%valid_sf) virial = virial + virial_sf
+            if (perform%sf_forces) forces = forces + forces_sf
+            if (perform%sf_forces) virial = virial + virial_sf
 
-            if (params%exp_forces .and. params%valid_xrd) forces = forces + forces_xrd
-            if (params%exp_forces .and. params%valid_xrd) virial = virial + virial_xrd
+            if (perform%xrd_forces) forces = forces + forces_xrd
+            if (perform%xrd_forces) virial = virial + virial_xrd
 
-            if (params%exp_forces .and. params%valid_nd) forces = forces + forces_nd
-            if (params%exp_forces .and. params%valid_nd) virial = virial + virial_nd
+            if (perform%nd_forces) forces = forces + forces_nd
+            if (perform%nd_forces) virial = virial + virial_nd
 
             if (params%print_vdw_forces) then
                open (unit=90, file="forces_vdw", status="unknown")
@@ -2889,16 +2913,16 @@ program turbogap
                        & vdw energy:', sum(energies_vdw), 'eV |'
                   if (params%verb > 50 .and. valid_xps) write (*, '(A,1X,F23.8,1X,A)') ' xps energy:', sum(energies_lp), 'eV |'
 
-                  if (params%valid_pdf .and. params%do_pair_distribution .and. params%verb > 50)&
+                  if (perform%pdf .and. params%verb > 50)&
                        & write (*, '(A,1X,F23.8,1X,A)') ' pdf energy:',&
                        & sum(energies_pdf), 'eV |'
-                  if (params%valid_sf .and. params%do_structure_factor .and. params%verb > 50)&
+                  if (perform%sf .and. params%verb > 50)&
                        & write (*, '(A,1X,F24.8,1X,A)') ' sf energy:',&
                        & sum(energies_sf), 'eV |'
-                  if (params%valid_xrd .and. params%do_xrd .and. params%verb > 50)&
+                  if (perform%xrd .and. params%verb > 50)&
                        & write (*, '(A,1X,F23.8,1X,A)') ' xrd energy:',&
                        & sum(energies_xrd), 'eV |'
-                  if (params%valid_nd .and. params%do_nd .and. params%verb > 50)&
+                  if (perform%nd .and. params%verb > 50)&
                        & write (*, '(A,1X,F23.8,1X,A)') ' nd energy:',&
                        & sum(energies_nd), 'eV |'
 
@@ -2943,16 +2967,16 @@ program turbogap
                   if (params%verb > 50) write (*, '(A,1X,F23.8,1X,A)') ' vdw energy:', sum(energies_vdw), 'eV |'
                   if (params%verb > 50 .and. valid_xps) write (*, '(A,1X,F23.8,1X,A)') ' xps energy:', sum(energies_lp), 'eV |'
 
-                  if (params%valid_pdf .and. params%do_pair_distribution .and. params%verb > 50)&
+                  if (perform%pdf .and. params%verb > 50)&
                        & write (*, '(A,1X,F23.8,1X,A)') ' pdf energy:',&
                        & sum(energies_pdf), 'eV |'
-                  if (params%valid_sf .and. params%do_structure_factor .and. params%verb > 50)&
+                  if (perform%sf .and. params%verb > 50)&
                        & write (*, '(A,1X,F24.8,1X,A)') ' sf energy:',&
                        & sum(energies_sf), 'eV |'
-                  if (params%valid_xrd .and. params%do_xrd .and. params%verb > 50)&
+                  if (perform%xrd .and. params%verb > 50)&
                        & write (*, '(A,1X,F23.8,1X,A)') ' xrd energy:',&
                        & sum(energies_xrd), 'eV |'
-                  if (params%valid_nd .and. params%do_nd .and. params%verb > 50)&
+                  if (perform%nd .and. params%verb > 50)&
                        & write (*, '(A,1X,F23.8,1X,A)') ' nd energy:',&
                        & sum(energies_nd), 'eV |'
 

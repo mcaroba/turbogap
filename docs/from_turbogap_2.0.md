@@ -323,3 +323,112 @@ why the in-code timers could not be used as refactor instrumentation.
 Two holes are left deliberately, both now visible in Miscellaneous rather than
 hidden in a wrong subtraction: the prediction-phase reallocation is untimed,
 and the end-of-loop neighbour-array teardown opens an interval it never closes.
+
+---
+
+## 6. `perform_t`, measured rather than guessed
+
+Before writing it, every compound condition in master's driver was normalised
+(continuations joined, whitespace and comments stripped) and counted by site.
+Excluding `allocated()` guards and the `params%verb > 50` print noise, these
+are the decisions written at more than one site — i.e. exactly the set
+`perform_t` should own:
+
+| decision | sites | lines |
+|---|---|---|
+| `n_sites /= n_sites_prev .or. do_mc` (reallocate) | 3 | 1039, 1132, 1176 |
+| `do_md .or. do_nested_sampling .or. do_mc` | 3 | 870, 3003, 3031 |
+| `do_pair_distribution .and. valid_pdf` (and sf / xrd / nd) | 2 each | 1090…1125 |
+| `exp_forces .and. valid_X` (xps / pdf / sf / xrd / nd) | 2 each | 2051–2064 |
+| `do_X .and. exp_forces .and. valid_X` (pdf / sf / xrd / nd) | 2 each | 1191…1251 |
+| `.not. do_md .or. (do_md .and. md_istep == 0) .or. do_mc` | 2 | 909, 3048 |
+| the SOAP-frame write cadence | 2 | 1391, 1412 |
+| the MC trajectory write cadence | **3, and they disagree** | 2498, 2676, 2805 |
+
+### The MC write cadence disagrees with itself — finding, not fixed
+
+Three sites decide whether to write `mc_current.xyz` / `mc_all.xyz`:
+
+```fortran
+! 2498 and 2805
+if ((params%mc_write_xyz .or. mc_istep == 0 .or. mc_istep == params%mc_nsteps .or. &
+     modulo(mc_istep, params%write_xyz) == 0)) then
+! 2676  -- no params%mc_write_xyz
+if ((mc_istep == 0 .or. mc_istep == params%mc_nsteps .or. &
+     modulo(mc_istep, params%write_xyz) == 0)) then
+```
+
+With `mc_write_xyz = .true.` on a step where the modulo does not fire, two of
+the three writers run and one does not, so what lands in the trajectory
+depends on which branch the step took. 2498 and 2676 are the closer pair —
+both write the *image* — which makes the omission look like a copy that lost a
+term rather than a deliberate difference.
+
+**Not folded in here.** Unifying it makes that site write more often, which
+changes a compared output, and a result-changing change gets its own commit
+with its cases blessed deliberately (§4.2). It needs the owner's reading of
+which of the two behaviours was intended.
+
+This is the **eighth** instance of *one condition, N predicates free to
+disagree*, after ts+mbd, the MPI reduce triple walk, `has_vdw` against
+`has_local_properties`, `gap_interface` counting `<` and filling `<=`, the
+electrostatics guard, the duplicate keyword handlers, and `time_gap` above.
+The pattern is not incidental to this codebase; it is its characteristic
+defect, and `perform_t` is the structural answer to it.
+
+### The exp-observable guards disagreed three ways — found and fixed
+
+The measurement above put the four experimental families' identity at 2 sites
+each. It is worse than that: each family is guarded by **three different
+expressions**, and it took writing them next to each other to see it.
+
+| | guard | sites |
+|---|---|---|
+| allocate `energies_X` | `do_X .and. valid_X` | 1090–1108 |
+| allocate / zero `forces_X`, `virial_X` | `do_X .and. exp_forces .and. valid_X` | 1191–1256 |
+| **accumulate into `forces` / `virial`** | `exp_forces .and. valid_X` | 2054–2064 |
+
+The third omits `do_X`. And `do_X` and `valid_X` are **independent inputs**:
+`params%valid_pdf` is set in `read_files.f90` from a `pair_distribution` label
+in the experimental data file, `params%do_pair_distribution` is its own
+keyword. So a deck that supplies an experimental dataset for an observable it
+has not switched on, with `exp_forces` set, reaches
+
+```fortran
+forces = forces + forces_pdf     ! forces_pdf was never allocated
+```
+
+Same shape as the electrostatics guard (`estat_method` without
+`valid_estat_charges`) and as `has_vdw` against `has_local_properties`. It has
+never been hit because every test deck that supplies exp data also switches the
+observable on — and a single input shape cannot see this class of bug, per
+§1.3 of the session handoff.
+
+`perform_t` fixes it by construction: `perform%pdf_forces` is one expression,
+and all three guards now read it. The direction is conservative — the
+accumulation guard becomes *stricter*, never looser — so every currently
+passing case is untouched, and the suite stays bit-exact. There is no green
+test that could have been relying on the old behaviour, because the old
+behaviour on that path is an unallocated access.
+
+### Two that look foldable and are not
+
+`tools/`-style measurement finds these; reading the loop rejects them. Record
+them so they are not re-proposed:
+
+* **`.not. do_md .or. (do_md .and. md_istep == 0) .or. do_mc`** at lines 909
+  and 3048. `md_istep` is **reset to −1 at five sites between them** (2195,
+  2212, 2357, 2773, 2790), so the two evaluations legitimately differ within
+  one iteration. Folding them changes behaviour. This is §1.1's trap — a value
+  that is loop-invariant in appearance and not in fact.
+* **`n_sites /= n_sites_prev .or. do_mc`** at 1039, 1132 and 1176.
+  `n_sites_prev` is only assigned at 2476 and 3098, both after all three, so
+  this one is *probably* safe — but `n_sites` itself moves under MC
+  insert/remove and that was not established, so it is left alone pending the
+  check rather than assumed.
+
+The rule those two suggest: **a decision is foldable only if every input is
+provably unwritten between the first and last site.** For `perform_t` as
+landed, every input is a `params` field or `valid_xps`, none of which is
+written inside the loop at all — which is why it is evaluated once *before*
+the loop rather than per iteration.
