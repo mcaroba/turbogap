@@ -53,6 +53,7 @@ program turbogap
    use gap_backend
    use gpu_context
    use turbogap_vdw
+   use turbogap_estat
    use exp_utils
    use exp_interface
    use soap_turbo_functions
@@ -1527,99 +1528,22 @@ program turbogap
 !        deck that asks for electrostatics against a GAP with no atomic_charge local
 !        property indexes local_properties with an uninitialised charge_lp_index and
 !        segfaults. Same shape as the has_vdw/has_local_properties defect.
-         if (do_electrostatics .and. (trim(params%estat_method) /= "none") &
-             .and. params%do_prediction) then
-            if (.not. valid_estat_charges) then
-               if (rank == 0) then
-                  write (*, *) "WARNING: estat_method = "//trim(params%estat_method)// &
-                     " but the GAP provides no atomic_charge local property."
-                  write (*, *) "         Skipping the electrostatics contribution."
-               end if
-            else
-               call time_start(time%estat)
+!        Moved to src/turbogap_estat.f90. The #ifdef is here, at the one call,
+!        rather than inside three continued argument lists where nothing
+!        Fortran-aware could parse it.
 #ifdef _MPIF90
-               allocate (this_energies_estat(1:n_sites))
-               this_energies_estat = 0.d0
-               if (params%do_forces) then
-                  allocate (this_forces_estat(1:3, 1:n_sites))
-                  this_forces_estat = 0.d0
-               end if
-#endif
-               allocate (chg_neigh_estat(1:j_end - j_beg + 1))
-               chg_neigh_estat = 0.d0
-
-               ! First, make sure that the system is charge neutral if it is periodic
-               !
-               ! This is not strictly correct, as charges should be equilibrated,
-               ! but with the models that we have available, this
-               ! is not possible
-
-               charge_sum = 0.0_dp
-               do k = 1, n_sites
-                  charge_sum = charge_sum + local_properties(k, charge_lp_index)
-               end do
-               charge_sum = charge_sum/real(n_sites, dp)
-
-               do k = 1, n_sites
-                  local_properties(k, charge_lp_index) = local_properties(k, charge_lp_index) - charge_sum
-               end do
-
-               k = 0
-               do i = i_beg, i_end
-                  do j = 1, n_neigh(i)
-                     j2 = mod(neighbors_list(j_beg + k) - 1, n_sites) + 1
-                     k = k + 1
-                     chg_neigh_estat(k) = local_properties(j2, charge_lp_index)
-                  end do
-               end do
-               if (trim(params%estat_method) == "direct") then
-                  call compute_coulomb_direct( &
-                     local_properties(i_beg:i_end, charge_lp_index), &
-                     local_properties_cart_der(1:3, j_beg:j_end, charge_lp_index), &
-                     n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
-                     params%estat_rcut, params%estat_rcut_inner, params%estat_inner_width, &
-                     rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), chg_neigh_estat, &
-                     params%do_forces, &
-#ifdef _MPIF90
-                     this_energies_estat(i_beg:i_end), this_forces_estat, this_virial_estat, params%estat_options)
+         call compute_estat(params, do_electrostatics, valid_estat_charges, charge_lp_index, &
+                            n_sites, n_neigh, neighbors_list, rjs, xyz, &
+                            local_properties, local_properties_cart_der, &
+                            i_beg, i_end, j_beg, j_end, rank, &
+                            this_energies_estat, this_forces_estat, this_virial_estat, time)
 #else
-                  energies_estat(i_beg:i_end), forces_estat, virial_estat, params%estat_options)
+         call compute_estat(params, do_electrostatics, valid_estat_charges, charge_lp_index, &
+                            n_sites, n_neigh, neighbors_list, rjs, xyz, &
+                            local_properties, local_properties_cart_der, &
+                            i_beg, i_end, j_beg, j_end, rank, &
+                            energies_estat, forces_estat, virial_estat, time)
 #endif
-               else if (trim(params%estat_method) == "dsf") then
-                  call compute_coulomb_dsf( &
-                     local_properties(i_beg:i_end, charge_lp_index), &
-                     local_properties_cart_der(1:3, j_beg:j_end, charge_lp_index), &
-                     n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
-                     params%estat_dsf_alpha, params%estat_rcut, &
-                     params%estat_rcut_inner, params%estat_inner_width, &
-                     rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), chg_neigh_estat, &
-                     params%do_forces, &
-#ifdef _MPIF90
-                     this_energies_estat(i_beg:i_end), this_forces_estat, this_virial_estat, params%estat_options)
-#else
-                  energies_estat(i_beg:i_end), forces_estat, virial_estat, params%estat_options)
-#endif
-               else if (trim(params%estat_method) == "gsf") then
-                  call compute_coulomb_lamichhane( &
-                     local_properties(i_beg:i_end, charge_lp_index), &
-                     local_properties_cart_der(1:3, j_beg:j_end, charge_lp_index), &
-                     n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
-                     params%estat_dsf_alpha, params%estat_rcut, &
-                     rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), chg_neigh_estat, &
-                     params%do_forces, &
-#ifdef _MPIF90
-                     this_energies_estat(i_beg:i_end), this_forces_estat, this_virial_estat, params%estat_options)
-#else
-                  energies_estat(i_beg:i_end), forces_estat, virial_estat, params%estat_options)
-#endif
-               else
-                  write (*, *) "WARNING: Unknown electrostatic method "//trim(params%estat_method)
-                  write (*, *) "Ignoring..."
-               end if
-               deallocate (chg_neigh_estat)
-               call time_end(time%estat)
-            end if
-         end if
 
          call compute_vdw(params, any(soap_turbo_hypers(:)%has_vdw), n_sites, &
                           n_neigh, neighbors_list, neighbor_species, rjs, xyz, &
