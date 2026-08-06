@@ -2,12 +2,12 @@
 ! HND X
 ! HND X   TurboGAP
 ! HND X
-! HND X   TurboGAP is copyright (c) 2019-2023, Miguel A. Caro and others
+! HND X   TurboGAP is copyright (c) 2019-2026, Miguel A. Caro and others
 ! HND X
 ! HND X   TurboGAP is published and distributed under the
 ! HND X      Academic Software License v1.0 (ASL)
 ! HND X
-! HND X   This file, turbogap.f90, is copyright (c) 2019-2023, Miguel A. Caro and
+! HND X   This file, turbogap.f90, is copyright (c) 2019-2026, Miguel A. Caro and
 ! HND X   Tigany Zarrouk
 ! HND X   Uttiyoarnab saha
 ! HND X
