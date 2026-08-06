@@ -345,3 +345,70 @@ driver does.
 
 **Bundling stops at the phase boundary. Kernels keep taking plain arrays.**
 Nothing in `soap_turbo`, `gap.f90` or `vdw.f90` learns about these types.
+
+---
+
+# The SOAP backend seam — scoped, not started
+
+Written 2026-08-06, after the electrostatics seam landed. This is the last
+large piece of the merge, and it is Phase-2-scale rather than an extraction.
+
+## What it is
+
+`gap.f90`'s real conflict is **380 lines, all `get_soap_energy_and_forces`**
+(196 lines on the CPU branch, 360 on the GPU one). Its caller,
+`gap_interface.f90`'s `get_gap_soap`, is a further **220** (410 vs 485). Those
+two are the whole remaining conflict in both files — every other procedure in
+either is identical ignoring whitespace and comments.
+
+They must move together. The GPU signature takes eleven arguments the CPU one
+does not:
+
+    n_sparse  alphas_d  Qs_d  solo_time_soap  soap_d  soap_der_d
+    n_neigh_d  n_pairs  l_index_d  cublas_handle  gpu_stream
+
+and nine of those are created in `get_gap_soap` and passed down. Extracting
+the callee alone would freeze exactly the interface the caller then has to
+undo — the same argument that blocked the diffraction lift until
+`gpu_context` existed.
+
+## The shape it should take
+
+`gap_backend` already solved this once. Its ten device buffers became module
+state inside `gap_backend_gpu`, so the driver's calls carry no device handles
+and the CPU implementation offers the same names with empty bodies. Apply the
+same split here:
+
+* `cublas_handle` and `gpu_stream` are **already in `gpu_context`** — reached
+  by `use`, at zero interface cost, exactly as `gap_backend_gpu` reaches them.
+* `alphas_d`, `Qs_d`, `soap_d`, `soap_der_d`, `n_neigh_d`, `l_index_d` are
+  device buffers private to the SOAP path. They become module state inside the
+  GPU implementation, and the names do not change, so the lift stays verbatim.
+* `n_sparse` and `n_pairs` are plain integers and stay arguments — they are
+  meaningful on both branches.
+* `solo_time_soap` is a timer; it is already a `times_t` bucket
+  (`time%soap_lin`), so it travels in `time`.
+
+That leaves an interface both branches can implement, and it is the same
+interface the CPU branch already has.
+
+## Sequencing
+
+1. **CPU first**, per §6.5 of `refactor_strategy.md` — it is the only tree
+   where the bit-exact contract holds, and every SOAP case in the 21-case
+   suite exercises this path, so the safety net here is as good as it gets.
+2. Move `get_soap_energy_and_forces` into `gap_backend_cpu.f90` and add the
+   matching name to `gap_backend_gpu.f90`.
+3. Then `get_gap_soap`, which is where the device buffers are created and
+   therefore where the module-state split actually happens.
+4. Port, and check `co_predict` against the CPU build.
+
+Expect `gap.f90` and `gap_interface.f90` to converge to near zero real
+conflict; between them that is ~600 of the ~1237 lines that genuinely conflict
+across the whole tree.
+
+## What it is not
+
+It is not a prerequisite for anything else, and it does not block the merge of
+the files that are already converged. `electrostatics.f90` (real conflict 0)
+and `neighbors.f90` (3) can merge today.
