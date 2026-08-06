@@ -1936,14 +1936,14 @@ program turbogap
          ! rather than inside a continued argument list where nothing
          ! Fortran-aware could parse it.
 #ifdef _MPIF90
-         call compute_exp_xps(params, n_sites, xyz, neighbors_list, n_neigh, &
+         call compute_exp_xps(params, n_sites, n_xyz, xyz, neighbors_list, n_neigh, &
                               local_properties, local_properties_cart_der, soap_turbo_hypers, &
                               a_box, b_box, c_box, indices, i_beg, i_end, j_beg, j_end, rank, &
                               md_istep, mc_istep, valid_xps, xps_idx, core_be_lp_index, &
                               write_condition, overwrite_condition, exp_output, &
                               this_energies_lp, this_forces_lp, this_virial_lp, time)
 #else
-         call compute_exp_xps(params, n_sites, xyz, neighbors_list, n_neigh, &
+         call compute_exp_xps(params, n_sites, n_xyz, xyz, neighbors_list, n_neigh, &
                               local_properties, local_properties_cart_der, soap_turbo_hypers, &
                               a_box, b_box, c_box, indices, i_beg, i_end, j_beg, j_end, rank, &
                               md_istep, mc_istep, valid_xps, xps_idx, core_be_lp_index, &

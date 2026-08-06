@@ -410,9 +410,7 @@ contains
 
          !   Processes other than 0 need to allocate the data structures on their own
          ! time%mpi(2)=MPI_Wtime()
-         call get_time(time%mpi(2))
-
-         time%mpi(3) = time%mpi(3) + time%mpi(2) - time%mpi(1)
+         call time_end(time%mpi)
          allocate (n_species_mpi(1:n_soap_turbo))
          allocate (n_sparse_mpi_soap_turbo(1:n_soap_turbo))
          allocate (dim_mpi(1:n_soap_turbo))
@@ -499,9 +497,7 @@ contains
          call mpi_bcast(n_mpi_core_pot, n_core_pot, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
          !     call mpi_bcast(compress_P_nonzero_mpi, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
          ! time%mpi(2)=MPI_Wtime()
-         call get_time(time%mpi(2))
-
-         time%mpi(3) = time%mpi(3) + time%mpi(2) - time%mpi(1)
+         call time_end(time%mpi)
 
          IF (rank /= 0) THEN
             call allocate_soap_turbo_hypers(n_soap_turbo, n_species_mpi, n_sparse_mpi_soap_turbo, dim_mpi, &
@@ -679,9 +675,7 @@ contains
             call mpi_bcast(core_pot_hypers(i)%species2, 8, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
          end do
          ! time%mpi(2)=MPI_Wtime()
-         call get_time(time%mpi(2))
-
-         time%mpi(3) = time%mpi(3) + time%mpi(2) - time%mpi(1)
+         call time_end(time%mpi)
          !   Clean up
          deallocate (n_species_mpi, n_sparse_mpi_soap_turbo, dim_mpi, compress_soap_mpi, n_sparse_mpi_distance_2b, &
                      n_sparse_mpi_angle_3b, n_mpi_core_pot, n_local_properties_mpi, has_local_properties_mpi) ! compress_P_nonzero_mpi,
@@ -706,9 +700,7 @@ contains
       end if
 
       ! time%read_input(2)=MPI_Wtime()
-      call get_time(time%read_input(2))
-
-      time%read_input(3) = time%read_input(3) + time%read_input(2) - time%read_input(1)
+      call time_end(time%read_input)
       !**************************************************************************
 
   !! If electronic stopping based on eph model is to be calculated, these data structures are required to be

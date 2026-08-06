@@ -53,7 +53,7 @@ module turbogap_exp
 contains
 
 !**************************************************************************
-   subroutine compute_exp_xps(params, n_sites, xyz, neighbors_list, n_neigh, &
+   subroutine compute_exp_xps(params, n_sites, n_xyz, xyz, neighbors_list, n_neigh, &
                               local_properties, local_properties_cart_der, soap_turbo_hypers, &
                               a_box, b_box, c_box, indices, i_beg, i_end, j_beg, j_end, rank, &
                               md_istep, mc_istep, valid_xps, xps_idx, core_be_lp_index, &
@@ -65,6 +65,7 @@ contains
       type(input_parameters), intent(inout) :: params
       type(soap_turbo), allocatable, intent(inout) :: soap_turbo_hypers(:)
       integer, intent(in) :: n_sites
+      integer, intent(in) :: n_xyz
       integer, intent(in) :: i_beg
       integer, intent(in) :: i_end
       integer, intent(in) :: j_beg
@@ -96,6 +97,8 @@ contains
       type(times_t), intent(inout) :: time
 
 !   Was driver state; block-local now.
+      real(dp), allocatable :: x_xps(:)
+      real(dp), allocatable :: y_xps(:)
       real(dp), allocatable :: y_i_pred_all(:, :)
       real(dp), allocatable :: v_neigh_lp(:)
       real(dp) :: mag
@@ -226,10 +229,36 @@ contains
          deallocate (v_neigh_lp)
 
          !time%xps(2) = MPI_wtime()
-         call get_time(time%xps(2))
-
-         time%xps(3) = time%xps(3) + time%xps(2) - time%xps(1)
+         call time_end(time%xps)
          !           if (rank == 0) print *, rank, " TIME_XPS = ", time%xps(3)
+
+      else if (any(soap_turbo_hypers(:)%has_core_electron_be) .and. params%do_xps) then
+         ! Get the linspace of the xps spectrum and then perform the
+         ! calculation and write to the prediction file
+         !
+         if (rank == 0) then
+            call get_xps_spectra_standalone(&
+                 & params%xps_e_min,&
+                 & params%xps_e_max, &
+                 & params%xps_sigma, &
+                 & params%xps_n_samples,&
+                 & x_xps, &
+                 & y_xps, &
+                 & local_properties(1:n_sites, core_be_lp_index))
+
+            call get_overwrite_condition(params%do_mc, params%do_md&
+                 &, mc_istep, md_istep, params%write_xyz, overwrite_condition)
+
+            if (n_xyz > 0) then
+               overwrite_condition = (n_xyz == 1)
+            end if
+
+            call write_exp_datan(x_xps(1:params%xps_n_samples), &
+                 & y_xps(1:params%xps_n_samples), &
+                 & overwrite_condition, &
+                 &"xps_prediction.dat",&
+                 &"core_electron_be xps")
+         end if
 
       end if
 
@@ -689,9 +718,7 @@ contains
               & gpu_host_exp_storage, params%gpu_low_memory)
 
             !time%sf(2) = MPI_wtime()
-            call get_time(time%sf(2))
-
-            time%sf(3) = time%sf(3) + time%sf(2) - time%sf(1)
+            call time_end(time%sf)
 
          end if
 
@@ -724,9 +751,7 @@ contains
               &%gpu_low_memory)
 
             !time%xrd(2) = MPI_wtime()
-            call get_time(time%xrd(2))
-
-            time%xrd(3) = time%xrd(3) + time%xrd(2) - time%xrd(1)
+            call time_end(time%xrd)
 
          end if
 
@@ -759,9 +784,7 @@ contains
               &%gpu_low_memory)
 
             !time%nd(2) = MPI_wtime()
-            call get_time(time%nd(2))
-
-            time%nd(3) = time%nd(3) + time%nd(2) - time%nd(1)
+            call time_end(time%nd)
          end if
 
          call time_start(time%xrd)

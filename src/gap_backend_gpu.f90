@@ -241,9 +241,7 @@ contains
          call gpu_free_async(cutoff_d, gpu_stream)
          call gpu_free_async(qs_d, gpu_stream)
 
-         call get_time(time%gap_2b(2))
-
-         time%gap_2b(3) = time%gap_2b(3) + time%gap_2b(2) - time%gap_2b(1)
+         call time_end(time%gap_2b)
       end do
 
       !              The kernels accumulate into the device buffers, so after the
@@ -378,9 +376,7 @@ contains
          call gpu_free_async(V_d, gpu_stream)
          call gpu_free_async(dVdx2_d, gpu_stream)
 
-         call get_time(time%gap_core_pot(2))
-
-         time%gap_core_pot(3) = time%gap_core_pot(3) + time%gap_core_pot(2) - time%gap_core_pot(1)
+         call time_end(time%gap_core_pot)
       end do
 
       !              As for the 2b and 3b terms, the kernel accumulates into the
@@ -549,9 +545,7 @@ contains
                      c_do_forces, angle_3b_hypers(i)%rcut, 0.5d0, sigma_d, qs_d, c_name_3b, &
                      i_beg, i_end, energies_3b_d, forces_3b_d, virial_3b_d, kappas_array_d)
 
-         call get_time(time%gap_3b(2))
-
-         time%gap_3b(3) = time%gap_3b(3) + time%gap_3b(2) - time%gap_3b(1)
+         call time_end(time%gap_3b)
 
          ! print *, rank, " >>--- Finished 3b on gpu ---<< took ",&
          !   time%gap_3b(2) - time%gap_3b(1), " with total being ", time%gap_3b(3)

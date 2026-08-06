@@ -488,9 +488,7 @@ contains
             end do
 
             !time%md(2) = MPI_wtime()
-            call get_time(time%md(2))
-
-            time%md(3) = time%md(3) + time%md(2) - time%md(1)
+            call time_end(time%md)
          end if
 #ifdef _MPIF90
       END IF
@@ -508,9 +506,7 @@ contains
          call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
 
          !time%mpi_positions(2) = MPI_wtime()
-         call get_time(time%mpi_positions(2))
-
-         time%mpi_positions(3) = time%mpi_positions(3) + time%mpi_positions(2) - time%mpi_positions(1)
+         call time_end(time%mpi_positions)
       end if
 #endif
 

@@ -2445,6 +2445,26 @@ contains
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%xps_force_type
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("xps_force_type", params%xps_force_type)
+      else if (keyword == 'do_xps') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%do_xps
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("do_xps", params%do_xps)
+      else if (keyword == 'xps_e_max') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%xps_e_max
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("xps_e_max", params%xps_e_max)
+      else if (keyword == 'xps_e_min') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%xps_e_min
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("xps_e_min", params%xps_e_min)
+      else if (keyword == 'xps_n_samples') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%xps_n_samples
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("xps_n_samples", params%xps_n_samples)
       else if (keyword == 'xps_sigma') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%xps_sigma

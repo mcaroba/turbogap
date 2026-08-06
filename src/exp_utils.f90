@@ -2798,6 +2798,19 @@ contains
 
    end subroutine get_compare_xps_spectra
 
+   subroutine broaden_spectrum_standalone(x, x0, y, sigma)
+      implicit none
+      real(dp), allocatable, intent(in) :: x(:)
+      real(dp), intent(inout) :: y(:)
+      real(dp), intent(in) :: x0
+      real(dp), intent(in) :: sigma
+      integer :: i
+      do i = 1, size(x)
+         y(i) = y(i) + exp(-(x(i) - x0)**2/(2.d0*sigma**2))
+      end do
+
+   end subroutine broaden_spectrum_standalone
+
    subroutine broaden_spectrum(x, x0, y, y_all, idx, sigma)
       implicit none
       real(dp), allocatable, intent(in) :: x(:)
@@ -2815,6 +2828,43 @@ contains
       end do
 
    end subroutine broaden_spectrum
+
+   subroutine get_xps_spectra_standalone(x_min, x_max, sigma, n_samples, x, y, core_electron_be)
+      ! This just gets the broadened spectra
+      ! xi are the predicted core electron binding energies and x is
+      ! the one
+      implicit none
+      real(dp), intent(in) :: core_electron_be(:)
+      integer, intent(in) :: n_samples
+      real(dp), allocatable, intent(out) :: x(:)
+      real(dp), allocatable, intent(out) :: y(:)
+      real(dp), intent(in) :: sigma
+      integer :: i
+      real(dp), intent(in) :: x_min
+      real(dp), intent(in) :: x_max
+      real(dp) :: x_range
+      real(dp) :: t
+      real(dp) :: dx
+      real(dp) :: mag
+
+      if (allocated(x)) deallocate (x)
+      if (allocated(y)) deallocate (y)
+
+      dx = x_range/dfloat(n_samples)
+      call linspace(x, x_min, x_max, n_samples, dx)
+
+      allocate (y(1:n_samples))
+
+      y = 0.d0
+
+      do i = 1, size(core_electron_be)
+         call broaden_spectrum_standalone(x, core_electron_be(i), y, sigma)
+      end do
+
+      mag = sqrt(dot_product(y, y))  !sum(y * dx) !
+      y = y/mag
+
+   end subroutine get_xps_spectra_standalone
 
    subroutine get_xps_spectra(xi, yi, sigma, n_samples, mag, x, y, y_all,&
         & core_electron_be, broaden)

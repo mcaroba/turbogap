@@ -193,6 +193,10 @@ module types
            &   vdw_d_mbd = 6.d0, vdw_sr_mbd = 0.83d0
       logical :: vdw_hirsh_grad = .true., &
                  vdw_polynomial = .false., do_nnls = .false., vdw_mbd_cent_appr = .true.
+      real(dp) :: xps_e_min = 280.0
+      real(dp) :: xps_e_max = 300.0
+      integer :: xps_n_samples = 200
+      logical :: do_xps = .false.
       integer :: mbd_correction_freq = 100
       integer :: vdw_mbd_norder = 6
       integer :: md_nsteps = 1, mc_nsteps = 1, write_xyz = 0,&
