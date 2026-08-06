@@ -85,6 +85,8 @@ module timing
       real(dp) :: gap_core_pot(3) = 0.0_dp
       real(dp) :: get_soap(3) = 0.0_dp        ! GPU branch
       real(dp) :: local_prop(3) = 0.0_dp      ! GPU branch
+      real(dp) :: soap_solo(3) = 0.0_dp       ! GPU branch, "lolo__soap"
+      real(dp) :: soap_lin(3) = 0.0_dp        ! GPU branch, "lin__turbo"
 
       !----- GPU-only, nesting not established: never summed --------------
       real(dp) :: batch_alloc(3) = 0.0_dp

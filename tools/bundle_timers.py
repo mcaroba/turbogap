@@ -69,8 +69,14 @@ def rewrite(text):
     n_end = 0
     clobbered = []
     for old, new in BUCKETS.items():
+        # Allow blank lines and comments between the (2) stamp and the
+        # accumulate -- the GPU tree interleaves dead MPI_wtime comments, and
+        # requiring adjacency left 13 sites uncollapsed there. Anything else
+        # in between (soap_solo has a deallocate) means collapsing would move
+        # the stamp, so those are left alone.
         pat = re.compile(
-            r"[ \t]*call get_time\(%s\(2\)\)[ \t]*\n"
+            r"([ \t]*)call get_time\(%s\(2\)\)[ \t]*\n"
+            r"((?:[ \t]*(?:!.*)?\n)*)"
             r"[ \t]*%s\(3\) *= *(%s\(3\) *\+ *)?%s\(2\) *- *%s\(1\)"
             % (old, old, old, old, old)
         )
@@ -80,10 +86,9 @@ def rewrite(text):
             # ASSIGNS rather than accumulates, so it reports only the last
             # interval. time_end always accumulates, so collapsing the idiom
             # silently fixes it -- report it rather than hide it.
-            if m.group(1) is None:
+            if m.group(3) is None:
                 clobbered.append(old)
-            indent = m.group(0)[: len(m.group(0)) - len(m.group(0).lstrip())]
-            return "%scall time_end(time%%%s)" % (indent, new)
+            return "%scall time_end(time%%%s)" % (m.group(1), new)
 
         text, k = pat.subn(repl, text)
         n_end += k
