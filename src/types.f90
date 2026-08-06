@@ -316,6 +316,34 @@ module types
 !   are the same array. Holding both ends here is what lets the pack and unpack
 !   walks collapse to one loop each, so they cannot disagree about which slot
 !   belongs to which family.
+!**************************************************************************
+!   Per-run decisions, evaluated once and only read thereafter.
+!
+!   The rule this exists to enforce: a condition written at N sites is free to
+!   disagree with itself, and every time it has, in this codebase, it has been
+!   a defect -- ts+mbd, the MPI reduce triple walk, has_vdw against
+!   has_local_properties, gap_interface counting < and filling <=, the
+!   electrostatics guard, the duplicate keyword handlers, time_gap.  Adding a
+!   decision here and reading the field is the structural answer.
+!
+!   Every field below is a function of params and valid_xps alone, none of
+!   which is reassigned inside the main loop, so this is filled once before
+!   the loop rather than per iteration.
+   type perform_t
+!     an experimental observable is both requested and backed by data
+      logical :: pdf = .false.
+      logical :: sf = .false.
+      logical :: xrd = .false.
+      logical :: nd = .false.
+!     ... and its forces are wanted, so its forces_/virial_ arrays exist
+      logical :: pdf_forces = .false.
+      logical :: sf_forces = .false.
+      logical :: xrd_forces = .false.
+      logical :: nd_forces = .false.
+      logical :: xps_forces = .false.
+   end type perform_t
+!**************************************************************************
+
    type contribution_ref
       real(dp), pointer :: e_src(:) => null()
       real(dp), pointer :: f_src(:, :) => null()
