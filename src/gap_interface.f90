@@ -54,7 +54,7 @@ contains
         write_soap, write_derivatives, compress_soap, &
         compress_soap_indices, &
         delta, zeta, central_species, &
-        xyz_species, xyz_species_supercell, alphas_d, Qs_d, all_atoms, &
+        xyz_species, xyz_species_supercell, all_atoms, &
         which_atom, indices, soap, soap_cart_der, der_neighbors, der_neighbors_list, &
         has_local_properties, n_local_properties, local_property_models, lp_index, &
         energies0, forces0, local_properties0,&
@@ -187,8 +187,6 @@ contains
       type(c_ptr) :: amplitude_scaling_d
       type(c_ptr) :: alpha_max_d
       type(c_ptr) :: central_weight_d
-      type(c_ptr) :: alphas_d
-      type(c_ptr) :: Qs_d
       type(c_ptr) :: n_neigh_d
 
       type(c_ptr), intent(inout) :: W_d
@@ -404,7 +402,7 @@ contains
                forces = 0.d0
             end if
             if (n_sites > 0) then
-               call get_soap_energy_and_forces(n_sparse, soap, soap_cart_der, alphas_d, delta, zeta, 0.d0, Qs_d, &
+               call get_soap_energy_and_forces(n_sparse, soap, soap_cart_der, delta, zeta, 0.d0, &
                                                n_neigh, neighbors_list, xyz, do_forces, do_timing, &
                                                energies, forces, virial, solo_time_soap, &
                                                soap_d, soap_cart_der_d, n_neigh_d, n_pairs)

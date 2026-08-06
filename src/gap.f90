@@ -50,9 +50,41 @@ module gap
 !  several modules here (7, 4 and 4 respectively) and gap.f90 has no default
 !  private, so publishing module state under those names collides on use.
    type(c_ptr) :: l_index_d
-   private :: cublas_handle, gpu_stream, l_index_d
+
+!  The sparse-set arrays for the descriptor currently being evaluated. They
+!  were uploaded and released by the DRIVER, two levels above the only code
+!  that reads them, and passed down through get_gap_soap purely to reach here.
+!  soap_backend_begin/end take over that lifetime so neither the driver nor
+!  get_gap_soap names a device pointer for them.
+   type(c_ptr) :: alphas_d
+   type(c_ptr) :: Qs_d
+
+   private :: cublas_handle, gpu_stream, l_index_d, alphas_d, Qs_d
 
 contains
+
+   subroutine soap_backend_begin(hypers)
+!     Upload the sparse set for one descriptor. Pairs with soap_backend_end.
+      use types, only: soap_turbo
+      implicit none
+      type(soap_turbo), intent(in), target :: hypers
+      integer(c_size_t) :: st
+
+      st = hypers%n_sparse*sizeof(hypers%nf(1))
+      call gpu_malloc_async(alphas_d, st, gpu_stream)
+      call cpy_htod(c_loc(hypers%alphas), alphas_d, st, gpu_stream)
+
+      st = hypers%n_sparse*hypers%dim*sizeof(hypers%nf(1))
+      call gpu_malloc_async(Qs_d, st, gpu_stream)
+      call cpy_htod(c_loc(hypers%Qs), Qs_d, st, gpu_stream)
+   end subroutine soap_backend_begin
+
+   subroutine soap_backend_end()
+!     Release what soap_backend_begin uploaded.
+      implicit none
+      call gpu_free_async(alphas_d, gpu_stream)
+      call gpu_free_async(Qs_d, gpu_stream)
+   end subroutine soap_backend_end
 
    function soap_l_index_d() result(ptr)
 !     The pair->site index built by get_soap_energy_and_forces, for the
@@ -70,7 +102,7 @@ contains
       call gpu_free_async(l_index_d, gpu_stream)
    end subroutine soap_backend_release
 
-   subroutine get_soap_energy_and_forces(n_sparse, soap, soap_der, alphas_d, delta, zeta0, e0, Qs_d, &
+   subroutine get_soap_energy_and_forces(n_sparse, soap, soap_der, delta, zeta0, e0, &
         n_neigh, neighbors_list, xyz, do_forces, do_timing, &
         energies, forces, virial, solo_time_soap, soap_d, &
         soap_der_d, n_neigh_d,&
@@ -128,8 +160,6 @@ contains
       integer(c_int) :: k1
       integer(c_int) :: k2
       logical :: is_zeta_int = .false.
-      type(c_ptr), intent(inout) :: alphas_d
-      type(c_ptr), intent(inout) :: Qs_d
       !   type(c_ptr) :: kernels_copy_d, kernels_d, Qs_d, energies_d, alphas_d
       type(c_ptr) :: kernels_copy_d
       type(c_ptr) :: kernels_d

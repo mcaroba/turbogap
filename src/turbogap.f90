@@ -1545,13 +1545,8 @@ program turbogap
             call gpu_malloc_async(alpha_max_d, st_size_nf, gpu_stream)
             call cpy_htod(c_loc(soap_turbo_hypers(i)%alpha_max), alpha_max_d, st_size_nf, gpu_stream)
             n_sparse = soap_turbo_hypers(i)%n_sparse
-            st_size_nf = n_sparse*sizeof(soap_turbo_hypers(i)%nf(1))
-            call gpu_malloc_async(alphas_d, st_size_nf, gpu_stream)
-            call cpy_htod(c_loc(soap_turbo_hypers(i)%alphas), alphas_d, st_size_nf, gpu_stream)
             dim = soap_turbo_hypers(i)%dim
-            st_size_nf = n_sparse*dim*sizeof(soap_turbo_hypers(i)%nf(1))
-            call gpu_malloc_async(Qs_d, st_size_nf, gpu_stream)
-            call cpy_htod(c_loc(soap_turbo_hypers(i)%Qs), Qs_d, st_size_nf, gpu_stream)
+            call soap_backend_begin(soap_turbo_hypers(i))
 
             if (soap_turbo_hypers(i)%has_local_properties) then
                ! Allocate gpu memory
@@ -1622,7 +1617,7 @@ program turbogap
                   params%do_prediction, params%write_soap, params%write_derivatives, &
                   soap_turbo_hypers(i)%compress_soap, soap_turbo_hypers(i)%compress_soap_indices, &
                   soap_turbo_hypers(i)%delta, soap_turbo_hypers(i)%zeta, soap_turbo_hypers(i)%central_species, &
-                  xyz_species(this_i_beg:this_i_end), xyz_species_supercell, alphas_d, Qs_d, params%all_atoms, &
+                  xyz_species(this_i_beg:this_i_end), xyz_species_supercell, params%all_atoms, &
                   params%which_atom, indices, soap, soap_cart_der, der_neighbors, der_neighbors_list, &
                   soap_turbo_hypers(i)%has_local_properties, soap_turbo_hypers(i)%n_local_properties, &
                   soap_turbo_hypers(i)%local_property_models, n_lp_count, this_energies, this_forces, &
@@ -1676,7 +1671,6 @@ program turbogap
             call gpu_free_async(amplitude_scaling_d, gpu_stream)
             call gpu_free_async(alpha_max_d, gpu_stream)
             call gpu_free_async(central_weight_d, gpu_stream)
-            call gpu_free_async(alphas_d, gpu_stream)
 
             if (soap_turbo_hypers(i)%has_local_properties) then
                do j = 1, soap_turbo_hypers(i)%n_local_properties
@@ -1685,7 +1679,7 @@ program turbogap
                end do
             end if
 
-            call gpu_free_async(Qs_d, gpu_stream)
+            call soap_backend_end()
 
            !!time%soap_solo(2 = MPI_wtime()
             !        call get_time( time%soap_solo(2  )
