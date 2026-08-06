@@ -34,6 +34,29 @@ repos:
         # vendored -- neither is ours to reformat.
         exclude: ^(src/soap_turbo/|src/third_party/)
 
+  - repo: https://github.com/pre-commit/mirrors-clang-format
+    rev: v18.1.8
+    hooks:
+      # The CUDA / C / C++ counterpart to the fprettify hook above. This branch
+      # is the only one with C-family sources -- cuda_wrappers.cu, gpu_exp.cu,
+      # 3b_final.cc and the deliberately-disabled orthonormalization_kernels.cc
+      # -- so unlike fprettify there is no cross-branch formatting drift to
+      # avoid here. The reason to have it is the other one: these files carry
+      # the device allocation and stream code, where the defects have been, and
+      # a consistent layout is what makes an odd one out visible.
+      #
+      # The version is pinned because clang-format's output changes between
+      # major versions; the rules are pinned in .clang-format for the same
+      # reason the fprettify arguments are stated explicitly. If a manual run
+      # and the hook disagree, every commit fails forever -- see the fprettify
+      # / trailing-whitespace note below for what that looks like.
+      - id: clang-format
+        name: clang-format (CUDA / C / C++)
+        types_or: [c, c++, cuda]
+        files: \.(cu|cuh|c|cc|cpp|cxx|h|hh|hpp)$
+        # Same rule as above: the submodule and third_party are not ours.
+        exclude: ^(src/soap_turbo/|src/third_party/)
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0
     hooks:
@@ -53,7 +76,14 @@ repos:
       # them may own it.
       - id: trailing-whitespace
         files: ^(src/|tools/|docs/|makefiles/|\.pre-commit-config\.yaml$|Makefile$)
-        exclude: ^(src/soap_turbo/|src/third_party/)|\.[fF]90$
+        # Fortran is excluded because fprettify owns it, and the C-family
+        # extensions because clang-format owns them. Same rule either way: if a
+        # formatter and a fixer disagree about a file, exactly one may own it.
+        # clang-format happens to strip trailing whitespace too, so today the
+        # two would converge -- but that is a property of the current version,
+        # not a guarantee, and the fprettify/eph_fdm.f90 deadlock below is what
+        # relying on such a coincidence costs.
+        exclude: ^(src/soap_turbo/|src/third_party/)|\.([fF]90|cu|cuh|c|cc|cpp|cxx|h|hh|hpp)$
       - id: end-of-file-fixer
         files: ^(src/|tools/|docs/|makefiles/|\.pre-commit-config\.yaml$|Makefile$)
         exclude: ^(src/soap_turbo/|src/third_party/)

@@ -1,0 +1,49 @@
+# Formatting for the CUDA / C / C++ sources, the counterpart to fprettify's
+# settings in .pre-commit-config.yaml.
+#
+# Settings are stated explicitly rather than inherited from a named style, for
+# the same reason the fprettify arguments are: the hook and any manual
+# `clang-format` run must agree, and "LLVM style" means whatever the installed
+# clang-format version thinks it means. The hook pins the version; this pins
+# the rules.
+#
+# The column limit matches Fortran's 132 rather than C's usual 80. These files
+# are full of kernel launches and hipMemcpyAsync calls whose argument lists do
+# not fit in 80 columns without becoming unreadable, and a mixed-language tree
+# reads better with one limit than two.
+
+Language: Cpp
+BasedOnStyle: LLVM
+
+ColumnLimit: 132
+IndentWidth: 2
+TabWidth: 2
+UseTab: Never
+AccessModifierOffset: -2
+
+# Kernel launch syntax (<<< >>>) is not C++; clang-format handles it, but
+# keeping short blocks and functions un-collapsed makes the launches and their
+# error checks individually greppable and individually breakpointable.
+AllowShortBlocksOnASingleLine: Never
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+
+AlignAfterOpenBracket: Align
+BinPackArguments: true
+BinPackParameters: true
+BreakBeforeBraces: Attach
+PointerAlignment: Left
+SortIncludes: false        # include order here is load-bearing in places
+
+# Comment reflow is off deliberately. With it on, a pure reformat is no longer
+# provably a pure reformat: clang-format re-wraps long // comments, which
+# inserts and removes comment markers, so a whitespace-stripped comparison
+# between the old and new file no longer matches and there is nothing left to
+# check the reformat against. Off, the comparison holds and "this changed only
+# layout" is a claim rather than a hope.
+ReflowComments: false
+IndentPPDirectives: None
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 2
+SpaceAfterCStyleCast: true
