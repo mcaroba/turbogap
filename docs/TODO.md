@@ -412,3 +412,62 @@ across the whole tree.
 It is not a prerequisite for anything else, and it does not block the merge of
 the files that are already converged. `electrostatics.f90` (real conflict 0)
 and `neighbors.f90` (3) can merge today.
+
+## Step 2 is a design decision, not a mechanical move — measured 2026-08-06
+
+Step 1 (`ef58814`) took `cublas_handle` and `gpu_stream` from `gpu_context`.
+Attempting the six device buffers the same way ran into two things that stop
+the `gap_backend` recipe working unchanged here.
+
+**The buffers do not have one owner.** Mapping where each is created and
+destroyed:
+
+| buffer | allocated | freed |
+|---|---|---|
+| `alphas_d`, `Qs_d` | `turbogap.f90` 1549/1553 | `turbogap.f90` 1679/1688 |
+| `soap_d`, `soap_cart_der_d` | `gap_interface.f90` 374/380 | `gap_interface.f90` 488/489 |
+| `l_index_d` | elsewhere | `gap_interface.f90` 487 |
+| `n_neigh_d` | elsewhere | — |
+
+So two are **driver** state passed down two levels, two are **call-local** to
+`get_gap_soap` and are arguments only because the callee needs them, and two
+are created somewhere else again. `gap_backend_gpu` worked because its ten
+buffers were private to one region with one owner; these are not.
+
+**And `l_index_d` is shared between two consumers inside `get_gap_soap`** — the
+SOAP call at line 410 and the local-properties call at line 458. Moving it into
+`gap.f90` as module state breaks that sharing unless `gap.f90` republishes it.
+
+**Which it cannot, because the names collide.** These are declared in many
+modules at once:
+
+    n_neigh_d         7 modules   (incl. gap_backend_gpu, local_properties, types)
+    soap_d            4 modules
+    l_index_d         4 modules
+    soap_der_d        3 modules
+
+`gap.f90` has no default private, so public module state there re-exports into
+everything that `use`s it and collides — the same failure step 1 hit with
+`gpu_stream`, but unfixable by `private ::` since `get_gap_soap` has to reach
+them.
+
+### What step 2 actually requires
+
+A `soap_backend_begin` / `soap_backend_end` pair that **owns** the SOAP device
+buffers outright, on the model of `gap_backend_begin` / `gap_backend_end`:
+
+* the buffers become module state **private** to the SOAP backend, allocated in
+  `begin` and released in `end`, so no caller names them;
+* `get_gap_soap` stops allocating `soap_d` and `soap_cart_der_d` and calls
+  `begin`/`end` around the descriptor loop instead;
+* the **local-properties path must take what it needs as an argument** rather
+  than sharing `l_index_d` by scope — that is the decision, and it is the same
+  one the diffraction lift faced with `gpu_stream` before `gpu_context` existed;
+* `alphas_d` and `Qs_d` move from the driver into `begin` as well, which is
+  what removes them from two argument lists at once.
+
+That is a design change spanning `gap.f90`, `gap_interface.f90`,
+`local_properties.f90` and the driver, and it should be agreed before it is
+started. Doing the mechanical half first — moving buffers to module state
+without deciding who owns `l_index_d` — freezes exactly the sharing the design
+then has to undo.
