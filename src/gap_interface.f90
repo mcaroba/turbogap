@@ -407,7 +407,8 @@ contains
                call get_soap_energy_and_forces(n_sparse, soap, soap_cart_der, alphas_d, delta, zeta, 0.d0, Qs_d, &
                                                n_neigh, neighbors_list, xyz, do_forces, do_timing, &
                                                energies, forces, virial, solo_time_soap, &
-                                               soap_d, soap_cart_der_d, n_neigh_d, n_pairs, l_index_d)
+                                               soap_d, soap_cart_der_d, n_neigh_d, n_pairs)
+               l_index_d = soap_l_index_d()
 
             end if
 
@@ -484,7 +485,7 @@ contains
          call get_time(time_local_prop(2))
          time_local_prop(3) = time_local_prop(3) + time_local_prop(2) - time_local_prop(1)
 
-         call gpu_free_async(l_index_d, gpu_stream)
+         call soap_backend_release()
          call gpu_free_async(soap_d, gpu_stream)
          call gpu_free_async(soap_cart_der_d, gpu_stream)
 

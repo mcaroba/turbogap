@@ -40,16 +40,41 @@ module gap
    use gpu_context, only: cublas_handle, gpu_stream
    use mpi
 
-   private :: cublas_handle, gpu_stream
+!  The pair->site index for the SOAP path. It is BUILT here and consumed by
+!  local_properties, and until now it was allocated here and freed in
+!  gap_interface -- split ownership across two modules. Now it is allocated and
+!  released in one place, and reached from outside through soap_l_index_d()
+!  rather than by being passed back out of the argument list.
+!
+!  It is private because n_neigh_d, soap_d and l_index_d are each declared in
+!  several modules here (7, 4 and 4 respectively) and gap.f90 has no default
+!  private, so publishing module state under those names collides on use.
+   type(c_ptr) :: l_index_d
+   private :: cublas_handle, gpu_stream, l_index_d
 
 contains
+
+   function soap_l_index_d() result(ptr)
+!     The pair->site index built by get_soap_energy_and_forces, for the
+!     local-properties path that consumes it. A function rather than public
+!     module state, so the name cannot collide on use.
+      implicit none
+      type(c_ptr) :: ptr
+      ptr = l_index_d
+   end function soap_l_index_d
+
+   subroutine soap_backend_release()
+!     Release what the SOAP path allocated. Pairs with the allocation in
+!     get_soap_energy_and_forces; gap_interface used to do this by hand.
+      implicit none
+      call gpu_free_async(l_index_d, gpu_stream)
+   end subroutine soap_backend_release
 
    subroutine get_soap_energy_and_forces(n_sparse, soap, soap_der, alphas_d, delta, zeta0, e0, Qs_d, &
         n_neigh, neighbors_list, xyz, do_forces, do_timing, &
         energies, forces, virial, solo_time_soap, soap_d, &
         soap_der_d, n_neigh_d,&
-        & n_pairs,&
-        & l_index_d)
+        & n_pairs)
       !   **********************************************
       !   soap(1:n_soap, 1:n_sites)
 
@@ -142,7 +167,6 @@ contains
       type(c_ptr) :: n_neigh_d
       type(c_ptr) :: this_force_d
       type(c_ptr) :: j2_index_d
-      type(c_ptr), intent(inout) :: l_index_d
       type(c_ptr) :: neighbors_beg_d
       type(c_ptr) :: neighbors_end_d
       type(c_ptr) :: xyz_d
