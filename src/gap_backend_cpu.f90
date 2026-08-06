@@ -70,7 +70,7 @@ contains
    subroutine add_2b_contribution(n_distance_2b, distance_2b_hypers, &
                                   params, rjs, xyz, n_neigh, species, neighbor_species, &
                                   i_beg, i_end, j_beg, j_end, this_energies, this_forces, this_virial, &
-                                  energies_2b, forces_2b, virial_2b, time_2b)
+                                  energies_2b, forces_2b, virial_2b, time)
 
       implicit none
 
@@ -92,7 +92,7 @@ contains
       real(dp), intent(inout), allocatable :: energies_2b(:)
       real(dp), intent(inout), allocatable :: forces_2b(:, :)
       real(dp), intent(inout) :: virial_2b(1:3, 1:3)
-      real(dp), intent(inout) :: time_2b(1:3)
+      type(times_t), intent(inout) :: time
 
 !   ---- Scratch: owned by the driver and reused across the three calls,
 !        rather than local, so this does not add an allocation per descriptor ----
@@ -104,7 +104,7 @@ contains
       integer :: i
 
       do i = 1, n_distance_2b
-         call get_time(time_2b(1))
+         call time_start(time%gap_2b)
          this_energies = 0.d0
          if (params%do_forces) then
             this_forces = 0.d0
@@ -124,8 +124,7 @@ contains
             forces_2b = forces_2b + this_forces
             virial_2b = virial_2b + this_virial
          end if
-         call get_time(time_2b(2))
-         time_2b(3) = time_2b(3) + time_2b(2) - time_2b(1)
+         call time_end(time%gap_2b)
       end do
 
    end subroutine add_2b_contribution
@@ -135,7 +134,7 @@ contains
    subroutine add_core_pot_contribution(n_core_pot, core_pot_hypers, &
                                         params, rjs, xyz, n_neigh, species, neighbor_species, &
                                         i_beg, i_end, j_beg, j_end, this_energies, this_forces, this_virial, &
-                                        energies_core_pot, forces_core_pot, virial_core_pot, time_core_pot)
+                                        energies_core_pot, forces_core_pot, virial_core_pot, time)
 
       implicit none
 
@@ -157,7 +156,7 @@ contains
       real(dp), intent(inout), allocatable :: energies_core_pot(:)
       real(dp), intent(inout), allocatable :: forces_core_pot(:, :)
       real(dp), intent(inout) :: virial_core_pot(1:3, 1:3)
-      real(dp), intent(inout) :: time_core_pot(1:3)
+      type(times_t), intent(inout) :: time
 
 !   ---- Scratch: owned by the driver and reused across the three calls,
 !        rather than local, so this does not add an allocation per descriptor ----
@@ -169,7 +168,7 @@ contains
       integer :: i
 
       do i = 1, n_core_pot
-         call get_time(time_core_pot(1))
+         call time_start(time%gap_core_pot)
          this_energies = 0.d0
          if (params%do_forces) then
             this_forces = 0.d0
@@ -188,8 +187,7 @@ contains
             forces_core_pot = forces_core_pot + this_forces
             virial_core_pot = virial_core_pot + this_virial
          end if
-         call get_time(time_core_pot(2))
-         time_core_pot(3) = time_core_pot(3) + time_core_pot(2) - time_core_pot(1)
+         call time_end(time%gap_core_pot)
       end do
 
    end subroutine add_core_pot_contribution
@@ -199,7 +197,7 @@ contains
    subroutine add_3b_contribution(n_angle_3b, angle_3b_hypers, neighbors_list, &
                                   params, rjs, xyz, n_neigh, species, neighbor_species, &
                                   i_beg, i_end, j_beg, j_end, this_energies, this_forces, this_virial, &
-                                  energies_3b, forces_3b, virial_3b, time_3b)
+                                  energies_3b, forces_3b, virial_3b, time)
 
       implicit none
 
@@ -222,7 +220,7 @@ contains
       real(dp), intent(inout), allocatable :: energies_3b(:)
       real(dp), intent(inout), allocatable :: forces_3b(:, :)
       real(dp), intent(inout) :: virial_3b(1:3, 1:3)
-      real(dp), intent(inout) :: time_3b(1:3)
+      type(times_t), intent(inout) :: time
 
 !   ---- Scratch: owned by the driver and reused across the three calls,
 !        rather than local, so this does not add an allocation per descriptor ----
@@ -234,7 +232,7 @@ contains
       integer :: i
 
       do i = 1, n_angle_3b
-         call get_time(time_3b(1))
+         call time_start(time%gap_3b)
          this_energies = 0.d0
          if (params%do_forces) then
             this_forces = 0.d0
@@ -254,8 +252,7 @@ contains
             forces_3b = forces_3b + this_forces
             virial_3b = virial_3b + this_virial
          end if
-         call get_time(time_3b(2))
-         time_3b(3) = time_3b(3) + time_3b(2) - time_3b(1)
+         call time_end(time%gap_3b)
       end do
 
    end subroutine add_3b_contribution

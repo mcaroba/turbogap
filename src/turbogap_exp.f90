@@ -40,7 +40,7 @@ contains
                                   energies_sf, forces_sf, virial_sf, &
                                   energies_xrd, forces_xrd, virial_xrd, &
                                   energies_nd, forces_nd, virial_nd, &
-                                  time_pdf, time_sf, time_xrd, time_nd)
+                                  time)
 
       implicit none
 
@@ -82,10 +82,7 @@ contains
       real(dp), intent(inout) :: virial_sf(1:3, 1:3)
       real(dp), intent(inout) :: virial_xrd(1:3, 1:3)
       real(dp), intent(inout) :: virial_nd(1:3, 1:3)
-      real(dp), intent(inout) :: time_pdf(1:3)
-      real(dp), intent(inout) :: time_sf(1:3)
-      real(dp), intent(inout) :: time_xrd(1:3)
-      real(dp), intent(inout) :: time_nd(1:3)
+      type(times_t), intent(inout) :: time
 
 !   Was driver state; block-local now.
       real(dp), allocatable :: x_pair_distribution(:)
@@ -203,7 +200,7 @@ contains
       end do
 
       if (params%do_pair_distribution) then
-         call get_time(time_pdf(1))
+         call time_start(time%pdf)
 
          call calculate_pair_distribution(params, x_pair_distribution&
               &, y_pair_distribution, y_pair_distribution_temp,&
@@ -216,15 +213,14 @@ contains
               & pair_distribution_partial_der,&
               & pair_distribution_partial_temp_der, energies_pdf, forces_pdf, virial_pdf)
 
-         call get_time(time_pdf(2))
-         time_pdf(3) = time_pdf(3) + time_pdf(2) - time_pdf(1)
-         !           if (rank == 0) print *, rank, " TIME_PDF = ", time_pdf(3)
+         call time_end(time%pdf)
+         !           if (rank == 0) print *, rank, " TIME_PDF = ", time%pdf(3)
 
       end if
 
       ! Now calculate the structure factors
       if (params%do_structure_factor) then
-         call get_time(time_sf(1))
+         call time_start(time%sf)
          call calculate_structure_factor(params, x_structure_factor, x_structure_factor_temp,&
               & y_structure_factor, y_structure_factor_temp,&
               & structure_factor_partial, structure_factor_partial_temp,&
@@ -236,13 +232,12 @@ contains
               & pair_distribution_partial_der, energies_sf, forces_sf, virial_sf, &
               & params%structure_factor_matrix_forces)
 
-         call get_time(time_sf(2))
-         time_sf(3) = time_sf(3) + time_sf(2) - time_sf(1)
+         call time_end(time%sf)
 
       end if
 
       if (params%do_xrd) then
-         call get_time(time_xrd(1))
+         call time_start(time%xrd)
          call calculate_xrd(params, x_xrd, x_xrd_temp,&
               & y_xrd, y_xrd_temp, x_structure_factor, x_structure_factor_temp,&
               & structure_factor_partial, structure_factor_partial_temp,&
@@ -254,15 +249,14 @@ contains
               & forces_xrd, virial_xrd, .false., params&
               &%structure_factor_matrix_forces)
 
-         call get_time(time_xrd(2))
-         time_xrd(3) = time_xrd(3) + time_xrd(2) - time_xrd(1)
+         call time_end(time%xrd)
 
-         !           if (rank == 0) print *, rank, " TIME_XRD = ", time_xrd(3)
+         !           if (rank == 0) print *, rank, " TIME_XRD = ", time%xrd(3)
 
       end if
 
       if (params%do_nd) then
-         call get_time(time_nd(1))
+         call time_start(time%nd)
          call calculate_xrd(params, x_nd, x_nd_temp,&
               & y_nd, y_nd_temp, x_structure_factor, x_structure_factor_temp,&
               & structure_factor_partial, structure_factor_partial_temp,&
@@ -274,10 +268,9 @@ contains
               & forces_nd, virial_nd, .true., params&
               &%structure_factor_matrix_forces)
 
-         call get_time(time_nd(2))
-         time_nd(3) = time_nd(3) + time_nd(2) - time_nd(1)
+         call time_end(time%nd)
 
-         !           if (rank == 0) print *, rank, " TIME_XRD = ", time_xrd(3)
+         !           if (rank == 0) print *, rank, " TIME_XRD = ", time%xrd(3)
 
       end if
 
@@ -373,7 +366,7 @@ contains
                               a_box, b_box, c_box, indices, i_beg, i_end, j_beg, j_end, rank, &
                               md_istep, mc_istep, valid_xps, xps_idx, core_be_lp_index, &
                               write_condition, overwrite_condition, exp_output, &
-                              energies_lp, forces_lp, virial_lp, time_xps)
+                              energies_lp, forces_lp, virial_lp, time)
 
       implicit none
 
@@ -409,7 +402,7 @@ contains
       real(dp), allocatable, intent(inout) :: energies_lp(:)
       real(dp), allocatable, intent(inout) :: forces_lp(:, :)
       real(dp), intent(inout) :: virial_lp(1:3, 1:3)
-      real(dp), intent(inout) :: time_xps(1:3)
+      type(times_t), intent(inout) :: time
 
 !   Was driver state; block-local now.
       real(dp), allocatable :: x_xps(:)
@@ -425,7 +418,7 @@ contains
       !     Compute core_electron_be energies and forces
       if (any(soap_turbo_hypers(:)%has_core_electron_be) .and. (params%do_prediction) &
           .and. valid_xps) then
-         call get_time(time_xps(1))
+         call time_start(time%xps)
 
 #ifdef _MPIF90
          allocate (energies_lp(1:n_sites))
@@ -541,9 +534,8 @@ contains
          ! sim_exp_pred_der would be the array of forces if multiplied by (- \gamma )
          deallocate (v_neigh_lp)
 
-         call get_time(time_xps(2))
-         time_xps(3) = time_xps(3) + time_xps(2) - time_xps(1)
-         !           if (rank == 0) print *, rank, " TIME_XPS = ", time_xps(3)
+         call time_end(time%xps)
+         !           if (rank == 0) print *, rank, " TIME_XPS = ", time%xps(3)
 
       else if (any(soap_turbo_hypers(:)%has_core_electron_be) .and. params%do_xps) then
          ! Get the linspace of the xps spectrum and then perform the

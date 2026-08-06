@@ -61,7 +61,7 @@ contains
                           this_energies_vdw, this_forces_vdw, this_virial_vdw, &
                           this_local_virial_vdw_diag, energies_vdw_corr, forces_vdw_corr, &
                           local_virial_vdw_diag_corr, mbd_ts_scaling, this_mbd_ts_scaling, &
-                          update_mbd_ts_scaling, time_vdw)
+                          update_mbd_ts_scaling, time)
 
       implicit none
 
@@ -106,7 +106,7 @@ contains
       real(dp), allocatable, intent(inout) :: mbd_ts_scaling(:)
       real(dp), allocatable, intent(inout) :: this_mbd_ts_scaling(:)
       logical, intent(inout) :: update_mbd_ts_scaling
-      real(dp), intent(inout) :: time_vdw(1:3)
+      type(times_t), intent(inout) :: time
 
 !   Local. Every one of these was previously a variable of the main program
 !   that no other part of it referenced.
@@ -156,7 +156,7 @@ contains
 
       if (has_vdw .and. (params%do_prediction) &
           .and. (params%vdw_type == "ts" .or. params%vdw_type == "mbd" .or. params%vdw_type == "ts+mbd")) then
-         call get_time(time_vdw(1))
+         call time_start(time%vdw)
 
 !          Does this call recompute the ts+mbd correction, or reuse the one a
 !          previous call stored? The reuse half of that cycle only means
@@ -716,8 +716,7 @@ contains
 !                energies_vdw(i_beg:i_end), forces_vdw, virial_vdw, local_virial_vdw_diag, &
 !                mbd_ts_scaling )
 !#endif
-         call get_time(time_vdw(2))
-         time_vdw(3) = time_vdw(2) - time_vdw(1)
+         call time_end(time%vdw)
 !           if( .not. (params%vdw_type == "ts+mbd" .and. modulo(md_istep, params%mbd_correction_freq) == 0) )then
 !             deallocate(v_neigh_vdw)
 !           end if

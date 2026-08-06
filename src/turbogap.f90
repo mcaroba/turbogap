@@ -175,27 +175,13 @@ program turbogap
    real(dp) :: time1
    real(dp) :: time2
    real(dp) :: time3
-   real(dp) :: time_neigh
-   real(dp) :: time_gap
-   real(dp) :: time_soap(1:3)
-   real(dp) :: time_2b(1:3)
-   real(dp) :: time_3b(1:3)
-   real(dp) :: time_read_input(1:3)
-   real(dp) :: time_read_xyz(1:3)
-   real(dp) :: time_mpi(1:3) = 0.d0
-   real(dp) :: time_core_pot(1:3)
-   real(dp) :: time_vdw(1:3)
-   real(dp) :: time_pdf(1:3)
-   real(dp) :: time_sf(1:3)
-   real(dp) :: time_xrd(1:3)
-   real(dp) :: time_nd(1:3)
-   real(dp) :: time_xps(1:3)
-   real(dp) :: time_mc(1:3)
+!   Every wall-clock bucket lives in one times_t (src/timing.f90), so the
+!   extracted modules take a single argument instead of thirteen and the two
+!   branches' signatures agree. time_step and time_step_prev below are the MD
+!   integration step in fs, not timers, and deliberately stay separate.
+   type(times_t) :: time
    real(dp) :: instant_pressure
    real(dp) :: lv(1:3, 1:3)
-   real(dp) :: time_mpi_positions(1:3) = 0.d0
-   real(dp) :: time_mpi_ef(1:3) = 0.d0
-   real(dp) :: time_md(3) = 0.d0
    real(dp) :: instant_pressure_tensor(1:3, 1:3)
    real(dp) :: time_step
    real(dp) :: md_time
@@ -387,7 +373,6 @@ program turbogap
    real(dp), allocatable, target :: forces_estat(:, :)
    real(dp), allocatable, target :: this_energies_estat(:)
    real(dp), allocatable, target :: this_forces_estat(:, :)
-   real(dp) :: time_estat(1:3) = 0.d0
    logical :: do_electrostatics = .true.
    logical :: valid_estat_charges = .false.
    integer :: charge_lp_index
@@ -621,7 +606,7 @@ program turbogap
                                  local_property_labels, local_property_indexes, n_local_properties_mpi, &
                                  has_local_properties_mpi, local_properties_n_sparse_mpi_soap_turbo, &
                                  local_properties_dim_mpi_soap_turbo, nrows, allelstopdata, &
-                                 ephbeta, ephfdm, ephlsc, time_read_input, time_mpi)
+                                 ephbeta, ephfdm, ephlsc, time)
 
    !**************************************************************************
    ! <----------------------------------------------------------------------------------------------- Finish printouts
@@ -657,20 +642,6 @@ program turbogap
 
    !**************************************************************************
    ! Print progress bar and initialize timers
-   time_neigh = 0.d0
-   time_gap = 0.d0
-   time_soap = 0.d0
-   time_2b = 0.d0
-   time_3b = 0.d0
-   time_core_pot = 0.d0
-   time_vdw = 0.d0
-   time_read_xyz = 0.d0
-   time_pdf = 0.d0
-   time_sf = 0.d0
-   time_mc = 0.d0
-   time_xrd = 0.d0
-   time_nd = 0.d0
-   time_xps = 0.d0
 
    xps_idx = params%xps_idx
    md_istep = -1
@@ -759,7 +730,7 @@ program turbogap
       !   Read in XYZ file and build neighbors lists
 
       if ((params%do_md .and. md_istep == 0)) then
-         call get_time(time_read_xyz(1))
+         call time_start(time%read_xyz)
 #ifdef _MPIF90
          IF (rank == 0) THEN
 #endif
@@ -798,8 +769,7 @@ program turbogap
 #ifdef _MPIF90
          END IF
 #endif
-         call get_time(time_read_xyz(2))
-         time_read_xyz(3) = time_read_xyz(3) + time_read_xyz(2) - time_read_xyz(1)
+         call time_end(time%read_xyz)
          !     If we're doing MD, we don't read beyond the first snapshot in the XYZ file
          repeat_xyz = .false.
          !     At the moment, we can't do prediction if the unit cell doesn't fit a whole cutoff sphere
@@ -820,7 +790,7 @@ program turbogap
          END IF
 #endif
       else if (.not. params%do_md) then
-         call get_time(time_read_xyz(1))
+         call time_start(time%read_xyz)
 #ifdef _MPIF90
          IF (rank == 0) THEN
 #endif
@@ -843,13 +813,11 @@ program turbogap
 #ifdef _MPIF90
          END IF
 #endif
-         call get_time(time_read_xyz(2))
-         time_read_xyz(3) = time_read_xyz(3) + time_read_xyz(2) - time_read_xyz(1)
+         call time_end(time%read_xyz)
 #ifdef _MPIF90
-         call get_time(time_mpi(1))
+         call time_start(time%mpi)
          call mpi_bcast(repeat_xyz, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
-         call get_time(time_mpi(2))
-         time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
+         call time_end(time%mpi)
 #endif
          rebuild_neighbors_list = .true.
       end if
@@ -889,13 +857,12 @@ program turbogap
          end if
 
       END IF
-      call get_time(time_mpi(1))
+      call time_start(time%mpi)
       call mpi_bcast(n_pos, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(n_sp, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(n_sp_sc, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(n_sites, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-      call get_time(time_mpi(2))
-      time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
+      call time_end(time%mpi)
 
       IF (rank /= 0) THEN
          if (allocated(positions)) deallocate (positions)
@@ -921,7 +888,7 @@ program turbogap
          allocate (fix_atom(1:3, 1:n_sp))
 
       END IF
-      call get_time(time_mpi_positions(1))
+      call time_start(time%mpi_positions)
       call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
       if (params%do_md .or. params%do_nested_sampling .or. params%do_mc .or. params%mc_hamiltonian) then
          call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
@@ -936,8 +903,7 @@ program turbogap
       call mpi_bcast(a_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(b_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(c_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-      call get_time(time_mpi_positions(2))
-      time_mpi_positions(3) = time_mpi_positions(3) + time_mpi_positions(2) - time_mpi_positions(1)
+      call time_end(time%mpi_positions)
 #endif
       !   Now that all ranks know the size of n_sites, we allocate do_list
       if (.not. params%do_md .or. (params%do_md .and. md_istep == 0) .or. &
@@ -947,7 +913,7 @@ program turbogap
          do_list = .true.
       end if
       !
-      call get_time(time1)
+      call time_start(time%neigh)
 #ifdef _MPIF90
       !   Parallel neighbors list build
       call mpi_bcast(rebuild_neighbors_list, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
@@ -1061,14 +1027,12 @@ program turbogap
 #endif
       !   Compute the volume of the "primitive" unit cell
       v_uc = dot_product(cross_product(a_box, b_box), c_box)/(dfloat(indices(1)*indices(2)*indices(3)))
-      call get_time(time2)
-      time_neigh = time_neigh + time2 - time1
+      call time_end(time%neigh)
       !**************************************************************************
 
       !**************************************************************************
       !   If we are doing prediction, we run this chunk of code
       if (params%do_prediction .or. params%write_soap .or. params%write_derivatives) then
-         call get_time(time1)
 
          !     We only need to reallocate the arrays if the number of sites changes
          ! REMOVE TRUE FROM IF STATEMENT
@@ -1307,17 +1271,17 @@ program turbogap
          end if
          !     Collect all energies
 #ifdef _MPIF90
-         call get_time(time_mpi_ef(1))
+         call time_start(time%mpi_ef)
          call mpi_reduce(energies, this_energies, n_sites, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
-         call get_time(time_mpi_ef(2))
-         time_mpi_ef(3) = time_mpi_ef(3) + time_mpi_ef(2) - time_mpi_ef(1)
+         call time_end(time%mpi_ef)
          energies = this_energies
 #endif
 
          !     Loop through soap_turbo descriptors - we always call this routine, even if we don't want to do prediction
          n_lp_count = 0 ! This counts the local properties
+         call time_start(time%gap)
          do i = 1, n_soap_turbo
-            call get_time(time_soap(1))
+            call time_start(time%soap)
             !       Compute number of pairs for this SOAP. SOAP has in general a different cutoff than overall max
             !       cutoff, so the number of pairs may be a lot smaller for the SOAP subset.
             !       This subroutine splits the load optimally so as to not use more memory per MPI process than available.
@@ -1478,17 +1442,14 @@ program turbogap
             END IF
 #endif
 
-            call get_time(time_soap(2))
-            time_soap(3) = time_soap(3) + time_soap(2) - time_soap(1)
-
-            call get_time(time2)
-            time_gap = time_gap + time2 - time1
+            call time_end(time%soap)
 
          end do
+         call time_end(time%gap)
 
 #ifdef _MPIF90
          if (any(soap_turbo_hypers(:)%has_local_properties)) then
-            call get_time(time_mpi(1))
+            call time_start(time%mpi)
             call mpi_reduce(local_properties, this_local_properties, n_sites*params%n_local_properties,&
                  & MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD,&
                  & ierr)
@@ -1509,8 +1470,7 @@ program turbogap
             !           call mpi_bcast(hirshfeld_v, n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
             call mpi_bcast(local_properties, n_sites*params%n_local_properties, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
 
-            call get_time(time_mpi(2))
-            time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
+            call time_end(time%mpi)
          end if
 #endif
 
@@ -1535,7 +1495,7 @@ program turbogap
                   write (*, *) "         Skipping the electrostatics contribution."
                end if
             else
-               call get_time(time_estat(1))
+               call time_start(time%estat)
 #ifdef _MPIF90
                allocate (this_energies_estat(1:n_sites))
                this_energies_estat = 0.d0
@@ -1599,8 +1559,7 @@ program turbogap
                   write (*, *) "Ignoring..."
                end if
                deallocate (chg_neigh_estat)
-               call get_time(time_estat(2))
-               time_estat(3) = time_estat(3) + time_estat(2) - time_estat(1)
+               call time_end(time%estat)
             end if
          end if
 
@@ -1613,7 +1572,7 @@ program turbogap
                           this_energies_vdw, this_forces_vdw, this_virial_vdw, &
                           this_local_virial_vdw_diag, energies_vdw_corr, forces_vdw_corr, &
                           local_virial_vdw_diag_corr, mbd_ts_scaling, this_mbd_ts_scaling, &
-                          update_mbd_ts_scaling, time_vdw)
+                          update_mbd_ts_scaling, time)
 
          !----------------------------------------------------!
          !--- EXPERIMENTAL SPECTRUM CALCULATION AND FORCES ---!
@@ -1706,14 +1665,14 @@ program turbogap
                               a_box, b_box, c_box, indices, i_beg, i_end, j_beg, j_end, rank, &
                               md_istep, mc_istep, valid_xps, xps_idx, core_be_lp_index, &
                               write_condition, overwrite_condition, exp_output, &
-                              this_energies_lp, this_forces_lp, this_virial_lp, time_xps)
+                              this_energies_lp, this_forces_lp, this_virial_lp, time)
 #else
          call compute_exp_xps(params, n_sites, n_xyz, xyz, neighbors_list, n_neigh, &
                               local_properties, local_properties_cart_der, soap_turbo_hypers, &
                               a_box, b_box, c_box, indices, i_beg, i_end, j_beg, j_end, rank, &
                               md_istep, mc_istep, valid_xps, xps_idx, core_be_lp_index, &
                               write_condition, overwrite_condition, exp_output, &
-                              energies_lp, forces_lp, virial_lp, time_xps)
+                              energies_lp, forces_lp, virial_lp, time)
 #endif
 
          !##############################################################!
@@ -1733,7 +1692,7 @@ program turbogap
                                   this_energies_sf, this_forces_sf, this_virial_sf, &
                                   this_energies_xrd, this_forces_xrd, this_virial_xrd, &
                                   this_energies_nd, this_forces_nd, this_virial_nd, &
-                                  time_pdf, time_sf, time_xrd, time_nd)
+                                  time)
 #else
          call compute_exp_spectra(params, n_sites, species, rjs, xyz, neighbors_list, &
                                   n_neigh, neighbor_species, indices, a_box, b_box, c_box, &
@@ -1742,7 +1701,7 @@ program turbogap
                                   energies_sf, forces_sf, virial_sf, &
                                   energies_xrd, forces_xrd, virial_xrd, &
                                   energies_nd, forces_nd, virial_nd, &
-                                  time_pdf, time_sf, time_xrd, time_nd)
+                                  time)
 #endif
 
          if (params%do_prediction) then
@@ -1750,7 +1709,7 @@ program turbogap
             !       gap_backend seam. The CPU implementation is in
             !       src/gap_backend_cpu.f90; the GPU branch provides the same three
             !       names from src/gap_backend_gpu.f90 and the Makefile picks one.
-            call get_time(time1)
+            call time_start(time%gap)
 
             call gap_backend_begin(params, rjs, xyz, n_neigh, species, neighbor_species, &
                                    neighbors_list, i_beg, i_end, j_beg, j_end)
@@ -1758,27 +1717,26 @@ program turbogap
             call add_2b_contribution(n_distance_2b, distance_2b_hypers, &
                                      params, rjs, xyz, n_neigh, species, neighbor_species, &
                                      i_beg, i_end, j_beg, j_end, this_energies, this_forces, this_virial, &
-                                     energies_2b, forces_2b, virial_2b, time_2b)
+                                     energies_2b, forces_2b, virial_2b, time)
 
             call add_core_pot_contribution(n_core_pot, core_pot_hypers, &
                                            params, rjs, xyz, n_neigh, species, neighbor_species, &
                                            i_beg, i_end, j_beg, j_end, this_energies, this_forces, this_virial, &
-                                           energies_core_pot, forces_core_pot, virial_core_pot, time_core_pot)
+                                           energies_core_pot, forces_core_pot, virial_core_pot, time)
 
             call add_3b_contribution(n_angle_3b, angle_3b_hypers, neighbors_list, &
                                      params, rjs, xyz, n_neigh, species, neighbor_species, &
                                      i_beg, i_end, j_beg, j_end, this_energies, this_forces, this_virial, &
-                                     energies_3b, forces_3b, virial_3b, time_3b)
+                                     energies_3b, forces_3b, virial_3b, time)
 
             call gap_backend_end()
 
-            call get_time(time2)
-            time_gap = time_gap + time2 - time1
+            call time_end(time%gap)
 
             !       Communicate all energies and forces here for all
             !       terms
 #ifdef _MPIF90
-            call get_time(time_mpi_ef(1))
+            call time_start(time%mpi_ef)
 !       One evaluation of the ten predicates, and one list built from them.
 !       The pack and unpack walks below read only that list, so they cannot
 !       disagree about which slot belongs to which family -- the failure mode
@@ -2016,8 +1974,7 @@ program turbogap
                deallocate (all_forces, all_this_forces, all_virial, all_this_virial)
             end if
 
-            call get_time(time_mpi_ef(2))
-            time_mpi_ef(3) = time_mpi_ef(3) + time_mpi_ef(2) - time_mpi_ef(1)
+            call time_end(time%mpi_ef)
 #endif
 
             !       Add up all the energy terms
@@ -2202,8 +2159,8 @@ program turbogap
                       energies_nd, local_properties, local_property_labels, instant_temp, &
                       instant_pressure, instant_pressure_prev, e_kin, e_kinetic, kb, evpera3tobar, &
                       fix_atom, exit_loop, rebuild_neighbors_list, i_image, i_nested, n_pos, nrows, &
-                      filename, string, allelstopdata, ephbeta, ephfdm, ephlsc, time_md, &
-                      time_mpi_positions, cum_eel, gd_box_do_pos, gd_istep, restart_box_optim, &
+                      filename, string, allelstopdata, ephbeta, ephfdm, ephlsc, time, &
+                      cum_eel, gd_box_do_pos, gd_istep, restart_box_optim, &
                       target_temp, time_step_prev)
 
       !**************************************************************************
@@ -2384,7 +2341,7 @@ program turbogap
                !       -- We have the list of move types in params%mc_types and the number params%n_mc_types --
                !       >> First generate a random number in the range of the number of
 
-               call get_time(time_mc(1))
+               call time_start(time%mc)
 
                !       Now we do a monte-carlo step: we choose what the steps are from the available list and then choose a random number
                !       -- We have the list of move types in params%mc_types and the number params%n_mc_types --
@@ -2600,8 +2557,7 @@ program turbogap
                   end if
 
                   !          Add acceptance to the log file else dont
-                  call get_time(time_mc(2))
-                  time_mc(3) = time_mc(3) + time_mc(2) - time_mc(1)
+                  call time_end(time%mc)
 
                else ! if (mc_istep == 0)
                   temp_md_nsteps = params%md_nsteps
@@ -3034,14 +2990,13 @@ program turbogap
          n_sp = size(xyz_species, 1)
          n_sp_sc = size(xyz_species_supercell, 1)
       END IF
-      call get_time(time_mpi(1))
+      call time_start(time%mpi)
       call mpi_bcast(n_pos, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(n_sp, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(n_sp_sc, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(params%do_md, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(md_istep, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-      call get_time(time_mpi(2))
-      time_mpi(3) = time_mpi(3) + time_mpi(2) - time_mpi(1)
+      call time_end(time%mpi)
       IF (rank /= 0) THEN !.and. (mc_move == "insertion" .or. mc_move == "removal")
          if (allocated(positions)) deallocate (positions)
          allocate (positions(1:3, n_pos))
@@ -3071,7 +3026,7 @@ program turbogap
          if (allocated(species_supercell)) deallocate (species_supercell)
          allocate (species_supercell(1:n_sp_sc))
       END IF
-      call get_time(time_mpi_positions(1))
+      call time_start(time%mpi_positions)
       call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
       if (params%do_md .or. params%do_nested_sampling .or. params%do_mc) then
          call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
@@ -3087,8 +3042,7 @@ program turbogap
       call mpi_bcast(b_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(c_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(n_sites, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-      call get_time(time_mpi_positions(2))
-      time_mpi_positions(3) = time_mpi_positions(3) + time_mpi_positions(2) - time_mpi_positions(1)
+      call time_end(time%mpi_positions)
 #endif
       !   Now that all ranks know the size of n_sites, we allocate do_list
       if (.not. params%do_md .or. (params%do_md .and. md_istep == 0) .or. &
@@ -3172,47 +3126,46 @@ program turbogap
          end if
 
          write (*, *) '                                       |'
-         write (*, '(A,F13.3,A)') ' *     Read input:', time_read_input(3), ' seconds |'
-         write (*, '(A,F13.3,A)') ' * Read XYZ files:', time_read_xyz(3), ' seconds |'
-         write (*, '(A,F13.3,A)') ' * Neighbor lists:', time_neigh, ' seconds |'
-         write (*, '(A,F13.3,A)') ' *  GAP desc/pred:', time_gap, ' seconds |'
-         write (*, '(A,F13.3,A)') '     - soap_turbo:', time_soap(3), ' seconds |'
-         write (*, '(A,F13.3,A)') '     -         2b:', time_2b(3), ' seconds |'
-         write (*, '(A,F13.3,A)') '     -         3b:', time_3b(3), ' seconds |'
-         write (*, '(A,F13.3,A)') '     -   core_pot:', time_core_pot(3), ' seconds |'
-         write (*, '(A,F13.3,A)') '     -        vdw:', time_vdw(3), ' seconds |'
+         write (*, '(A,F13.3,A)') ' *     Read input:', time%read_input(3), ' seconds |'
+         write (*, '(A,F13.3,A)') ' * Read XYZ files:', time%read_xyz(3), ' seconds |'
+         write (*, '(A,F13.3,A)') ' * Neighbor lists:', time%neigh(3), ' seconds |'
+         write (*, '(A,F13.3,A)') ' *  GAP desc/pred:', time%gap(3), ' seconds |'
+         write (*, '(A,F13.3,A)') '     - soap_turbo:', time%soap(3), ' seconds |'
+         write (*, '(A,F13.3,A)') '     -         2b:', time%gap_2b(3), ' seconds |'
+         write (*, '(A,F13.3,A)') '     -         3b:', time%gap_3b(3), ' seconds |'
+         write (*, '(A,F13.3,A)') '     -   core_pot:', time%gap_core_pot(3), ' seconds |'
+         write (*, '(A,F13.3,A)') '     -        vdw:', time%vdw(3), ' seconds |'
          if (valid_xps .or. params%do_pair_distribution .or. params&
               &%do_structure_factor .or. params%do_xrd .or. params%do_nd) write (*, '(A&
-              &,F13.3,A)') ' *  Exp. pred.   :', time_pdf(3) + time_sf(3) + time_xrd(3) + time_nd(3), ' seconds&
+              &,F13.3,A)') ' *  Exp. pred.   :', time%pdf(3) + time%sf(3) + time%xrd(3) + time%nd(3), ' seconds&
               & |'
          if (valid_xps) write (*, '(A,F13.3,A)') '     -        xps:',&
-              & time_xps(3), ' seconds |'
-         if (params%do_pair_distribution) write (*, '(A,F13.3,A)') '     -        pdf:', time_pdf(3), ' seconds |'
-         if (params%do_structure_factor) write (*, '(A,F13.3,A)') '     -         sf:', time_sf(3), ' seconds |'
-         if (params%do_xrd) write (*, '(A,F13.3,A)') '     -        xrd:', time_xrd(3), ' seconds |'
-         if (params%do_nd) write (*, '(A,F13.3,A)') '     -         nd:', time_nd(3), ' seconds |'
+              & time%xps(3), ' seconds |'
+         if (params%do_pair_distribution) write (*, '(A,F13.3,A)') '     -        pdf:', time%pdf(3), ' seconds |'
+         if (params%do_structure_factor) write (*, '(A,F13.3,A)') '     -         sf:', time%sf(3), ' seconds |'
+         if (params%do_xrd) write (*, '(A,F13.3,A)') '     -        xrd:', time%xrd(3), ' seconds |'
+         if (params%do_nd) write (*, '(A,F13.3,A)') '     -         nd:', time%nd(3), ' seconds |'
 
          if (params%do_md) then
-            write (*, '(A,F13.3,A)') ' *  MD algorithms:', time_md(3), ' seconds |'
+            write (*, '(A,F13.3,A)') ' *  MD algorithms:', time%md(3), ' seconds |'
          end if
          if (params%do_mc) then
-            write (*, '(A,F13.3,A)') ' *  MC algorithms:', time_mc(3), ' seconds |'
+            write (*, '(A,F13.3,A)') ' *  MC algorithms:', time%mc(3), ' seconds |'
          end if
 
 #ifdef _MPIF90
-         write (*, '(A,F13.3,A)') ' *  MPI comms.   :', time_mpi(3) + time_mpi_positions(3) + time_mpi_ef(3), ' seconds |'
-         write (*, '(A,F13.3,A)') '     -  pos & vel:', time_mpi_positions(3), ' seconds |'
-         write (*, '(A,F13.3,A)') '     - E & F brc.:', time_mpi_ef(3), ' seconds |'
-         write (*, '(A,F13.3,A)') '     -  MPI misc.:', time_mpi(3), ' seconds |'
-         write (*, '(A,F13.3,A)') ' *  Miscellaneous:', time2 - time3 - time_neigh - time_gap - time_read_input(3) &
-              - time_read_xyz(3) - time_mpi(3) - time_mpi_positions(3)&
-              & - time_mpi_ef(3) - time_md(3) - time_xps(3) -&
-              & time_pdf(3) - time_sf(3) - time_xrd(3) - time_nd(3), ' seconds |'
-#else
-         write (*, '(A,F13.3,A)') ' *  Miscellaneous:', time2 - time3 - time_neigh - time_gap - time_read_input(3) &
-              - time_read_xyz(3) - time_md(3) - time_xps(3) -&
-              & time_pdf(3) - time_sf(3) - time_xrd(3) - time_nd(3), ' seconds |'
+         write (*, '(A,F13.3,A)') ' *  MPI comms.   :', time%mpi(3) + time%mpi_positions(3) + time%mpi_ef(3), ' seconds |'
+         write (*, '(A,F13.3,A)') '     -  pos & vel:', time%mpi_positions(3), ' seconds |'
+         write (*, '(A,F13.3,A)') '     - E & F brc.:', time%mpi_ef(3), ' seconds |'
+         write (*, '(A,F13.3,A)') '     -  MPI misc.:', time%mpi(3), ' seconds |'
 #endif
+!       Miscellaneous is what the parent buckets do not account for.  It used
+!       to be written out here as one long subtraction, which is how it came to
+!       subtract time%gap and the mpi_ef reduce nested inside it and print a
+!       negative number.  sum_times owns the list now (src/timing.f90), so the
+!       set summed here and the set declared as parents there cannot disagree.
+         time%total(3) = time2 - time3
+         write (*, '(A,F13.3,A)') ' *  Miscellaneous:', time%total(3) - sum_times(time), ' seconds |'
          write (*, *) '                                       |'
          write (*, '(A,F13.3,A)') ' *     Total time:', time2 - time3, ' seconds |'
          write (*, *) '                                       |'
