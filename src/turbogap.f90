@@ -173,6 +173,7 @@ program turbogap
    real(dp) :: kB = 8.6173303d-5
    real(dp) :: E_kinetic = 0.d0
    real(dp) :: E_kinetic_prev
+   real(dp) :: charge_sum
    real(dp) :: time1
    real(dp) :: time2
    real(dp) :: time3
@@ -1074,7 +1075,7 @@ program turbogap
          if (n_sites /= n_sites_prev .or. params%do_mc) then
             if (allocated(energies)) deallocate (energies, energies_soap, energies_2b, energies_3b, energies_core_pot, &
                            this_energies, energies_vdw, energies_vdw_corr, mbd_ts_scaling, this_forces, energies_lp, energies_exp, &
-                                                 this_mbd_ts_scaling)
+                                                 energies_estat, this_mbd_ts_scaling)
             allocate (energies(1:n_sites))
             allocate (this_energies(1:n_sites))
             allocate (energies_soap(1:n_sites))
@@ -1084,6 +1085,7 @@ program turbogap
             allocate (energies_vdw(1:n_sites))
             allocate (energies_vdw_corr(1:n_sites))
             allocate (energies_lp(1:n_sites))
+            allocate (energies_estat(1:n_sites))
             allocate (energies_exp(1:n_sites))
 !          We do this allocations for van der Waals corrections
             allocate (mbd_ts_scaling(1:n_sites))
@@ -1151,6 +1153,7 @@ program turbogap
          energies_3b = 0.d0
          energies_core_pot = 0.d0
          energies_vdw = 0.d0
+         energies_estat = 0.d0
          energies_lp = 0.d0
          energies_exp = 0.d0
 
@@ -1210,7 +1213,7 @@ program turbogap
          if (params%do_forces) then
             if (n_sites /= n_sites_prev .or. params%do_mc) then
                if (allocated(forces)) deallocate (forces, forces_soap, forces_2b, forces_3b, forces_core_pot, forces_vdw,&
-                    & forces_lp, local_virial_vdw_diag, local_virial_vdw_diag_corr)
+                    & forces_lp, forces_estat, local_virial_vdw_diag, local_virial_vdw_diag_corr)
                allocate (forces(1:3, 1:n_sites))
                allocate (forces_soap(1:3, 1:n_sites))
                allocate (forces_2b(1:3, 1:n_sites))
@@ -1220,6 +1223,7 @@ program turbogap
                if (allocated(forces_vdw_corr)) deallocate (forces_vdw_corr)
                allocate (forces_vdw_corr(1:3, 1:n_sites))
                allocate (forces_lp(1:3, 1:n_sites))
+               allocate (forces_estat(1:3, 1:n_sites))
                allocate (local_virial_vdw_diag_corr(1:3, 1:n_sites))
                allocate (local_virial_vdw_diag(1:3, 1:n_sites))
 
@@ -1250,6 +1254,7 @@ program turbogap
             forces_3b = 0.d0
             forces_core_pot = 0.d0
             forces_vdw = 0.d0
+            forces_estat = 0.d0
             forces_lp = 0.d0
             virial = 0.d0
             virial_soap = 0.d0
@@ -1257,6 +1262,7 @@ program turbogap
             virial_3b = 0.d0
             virial_core_pot = 0.d0
             virial_vdw = 0.d0
+            virial_estat = 0.d0
             virial_lp = 0.d0
             local_virial_vdw_diag = 0.d0
             if (perform%pdf_forces) then
@@ -1541,6 +1547,23 @@ program turbogap
 #endif
                allocate (chg_neigh_estat(1:j_end - j_beg + 1))
                chg_neigh_estat = 0.d0
+
+               ! First, make sure that the system is charge neutral if it is periodic
+               !
+               ! This is not strictly correct, as charges should be equilibrated,
+               ! but with the models that we have available, this
+               ! is not possible
+
+               charge_sum = 0.0_dp
+               do k = 1, n_sites
+                  charge_sum = charge_sum + local_properties(k, charge_lp_index)
+               end do
+               charge_sum = charge_sum/real(n_sites, dp)
+
+               do k = 1, n_sites
+                  local_properties(k, charge_lp_index) = local_properties(k, charge_lp_index) - charge_sum
+               end do
+
                k = 0
                do i = i_beg, i_end
                   do j = 1, n_neigh(i)
@@ -1982,6 +2005,10 @@ program turbogap
                deallocate (this_energies_vdw)
                if (params%do_forces) deallocate (this_forces_vdw, this_local_virial_vdw_diag)
             end if
+            if (contrib_on(C_ESTAT)) then
+               deallocate (this_energies_estat)
+               if (params%do_forces) deallocate (this_forces_estat)
+            end if
             if (contrib_on(C_LP)) then
                deallocate (this_energies_lp)
                if (params%do_forces) deallocate (this_forces_lp)
@@ -2014,7 +2041,7 @@ program turbogap
 
             !       Add up all the energy terms
             energies = energies + energies_soap + energies_2b +&
-                 & energies_3b + energies_core_pot + energies_vdw !+energies_lp
+                 & energies_3b + energies_core_pot + energies_vdw + energies_estat !+energies_lp
 
             if (valid_xps) energies_exp = energies_exp + energies_lp
             if (perform%pdf) energies_exp = energies_exp + energies_pdf
@@ -2041,6 +2068,7 @@ program turbogap
                write (*, '(A,1X,F24.8,1X,A)') ' 3b energy:', sum(energies_3b), 'eV |'
                write (*, '(A,1X,F18.8,1X,A)') ' core_pot energy:', sum(energies_core_pot), 'eV |'
                write (*, '(A,1X,F23.8,1X,A)') ' vdw energy:', sum(energies_vdw), 'eV |'
+               write (*, '(A,1X,F21.8,1X,A)') ' estat energy:', sum(energies_estat), 'eV |'
                write (*, '(A,1X,F22.8,1X,A)') ' Exp. energy:', sum(energies_exp), 'eV |'
                if (valid_xps) write (*, '(A,1X,F23.8,1X,A)') ' xps energy:', sum(energies_lp), 'eV |'
                if (perform%pdf)&
@@ -2082,6 +2110,9 @@ program turbogap
          if (params%do_forces) then
             forces = forces_soap + forces_2b + forces_3b + forces_core_pot + forces_vdw
             virial = virial_soap + virial_2b + virial_3b + virial_core_pot + virial_vdw
+
+            if (valid_estat_charges) forces = forces + forces_estat
+            if (valid_estat_charges) virial = virial + virial_estat
 
             if (perform%xps_forces) forces = forces + forces_lp
             if (perform%xps_forces) virial = virial + virial_lp

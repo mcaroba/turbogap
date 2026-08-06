@@ -1,0 +1,54 @@
+atoms_file = 'atoms.xyz'
+pot_file = 'gap_files/carbon.gap'
+n_species = 1
+species = C
+masses = 12.01
+e0 = -.16138053
+random_seed = 12345
+
+md_nsteps = 2
+md_step = 1.0
+t_beg = 300
+t_end = 300
+thermostat = "berendsen"
+
+do_pair_distribution = .true.
+write_pair_distribution = .true.
+pair_distribution_partial = .true.
+pair_distribution_n_samples = 301
+pair_distribution_kde_sigma = 0.1
+pair_distribution_output = "pdf"
+r_range_min = 0.1
+r_range_max = 12.0
+pair_distribution_rcut = 12.6
+
+do_structure_factor = .true.
+write_structure_factor = .true.
+structure_factor_from_pdf = .true.
+structure_factor_matrix = .true.
+structure_factor_matrix_forces = .true.
+structure_factor_window = .true.
+structure_factor_n_samples = 301
+
+do_xrd = .true.
+write_xrd = .true.
+xrd_method = "xrd"
+xrd_output = 'q*i(q)'
+xrd_wavelength = 0.4066
+
+q_units = "q"
+q_range_min = 0.1
+q_range_max = 10.0
+
+n_exp = 1
+exp_labels = 'xrd'
+exp_data_files = 'xrd_ta-C_Shang_2021_27_GPa_1000C_hand.fq'
+exp_input_type = 'q*i(q)'
+exp_n_samples = 158
+exp_similarity_type = 'squared_diff'
+exp_energy_scales_beg = 1000 10.0
+exp_energy_scales_end = 1000 10.0
+write_exp = .true.
+exp_forces = .true.
+
+write_xyz = 1

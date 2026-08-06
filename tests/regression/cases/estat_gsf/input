@@ -1,0 +1,19 @@
+atoms_file = "atoms.xyz"
+pot_file = "gap_files/CCLi_estat_ljrep.gap"
+
+n_species = 2
+species = C Li
+masses = 12.01 6.94
+e0 = 0. 0.
+random_seed = 12345
+
+estat_method = "gsf"
+estat_rcut = 10.0
+estat_dsf_alpha = 0.12
+estat_damped = .true.
+estat_tsf = .true.
+estat_sp = .true.
+estat_gsf = .true.
+estat_self_energy_correction = .false.
+
+write_xyz = 1
