@@ -36,8 +36,11 @@ module gap_interface
    use local_prop
    use F_B_C
    use iso_c_binding
+   use gpu_context, only: cublas_handle, gpu_stream
    use mpi
    use timing
+
+   private :: cublas_handle, gpu_stream
 
 contains
 
@@ -59,7 +62,7 @@ contains
         & local_property_indexes, virial, solo_time_soap, &
         time_get_soap, W_d, S_d, multiplicity_array_d,&
         & st_W_d, st_S_d, st_multiplicity_array_d,&
-        & recompute_basis, time_local_prop, cublas_handle, gpu_stream)
+        & recompute_basis, time_local_prop)
 
       implicit none
 
@@ -186,8 +189,6 @@ contains
       type(c_ptr) :: central_weight_d
       type(c_ptr) :: alphas_d
       type(c_ptr) :: Qs_d
-      type(c_ptr) :: cublas_handle
-      type(c_ptr) :: gpu_stream
       type(c_ptr) :: n_neigh_d
 
       type(c_ptr), intent(inout) :: W_d
@@ -406,7 +407,7 @@ contains
                call get_soap_energy_and_forces(n_sparse, soap, soap_cart_der, alphas_d, delta, zeta, 0.d0, Qs_d, &
                                                n_neigh, neighbors_list, xyz, do_forces, do_timing, &
                                                energies, forces, virial, solo_time_soap, &
-                                               soap_d, soap_cart_der_d, n_neigh_d, n_pairs, l_index_d, cublas_handle, gpu_stream)
+                                               soap_d, soap_cart_der_d, n_neigh_d, n_pairs, l_index_d)
 
             end if
 

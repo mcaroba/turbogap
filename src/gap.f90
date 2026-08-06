@@ -32,7 +32,15 @@ module gap
    use splines
    use F_B_C
    use iso_c_binding
+!  The default stream and cuBLAS handle come from gpu_context, not from the
+!  argument list. The driver passes the GLOBAL ones here -- the SOAP loop is
+!  not OpenMP-parallel, unlike the exp and estat batch loops -- so the names
+!  are unchanged and the bodies below are untouched. Same trick as
+!  gap_backend_gpu's ten buffers.
+   use gpu_context, only: cublas_handle, gpu_stream
    use mpi
+
+   private :: cublas_handle, gpu_stream
 
 contains
 
@@ -41,8 +49,7 @@ contains
         energies, forces, virial, solo_time_soap, soap_d, &
         soap_der_d, n_neigh_d,&
         & n_pairs,&
-        & l_index_d, cublas_handle,&
-        & gpu_stream)
+        & l_index_d)
       !   **********************************************
       !   soap(1:n_soap, 1:n_sites)
 
@@ -96,8 +103,6 @@ contains
       integer(c_int) :: k1
       integer(c_int) :: k2
       logical :: is_zeta_int = .false.
-      type(c_ptr), intent(inout) :: cublas_handle
-      type(c_ptr), intent(inout) :: gpu_stream
       type(c_ptr), intent(inout) :: alphas_d
       type(c_ptr), intent(inout) :: Qs_d
       !   type(c_ptr) :: kernels_copy_d, kernels_d, Qs_d, energies_d, alphas_d

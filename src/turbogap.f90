@@ -1630,7 +1630,7 @@ program turbogap
                   time%soap_lin(3), time%get_soap(3), soap_turbo_hypers(i)%W_d, soap_turbo_hypers(i)%S_d, &
                   soap_turbo_hypers(i)%multiplicity_array_d, soap_turbo_hypers(i)%st_W_d, &
                   soap_turbo_hypers(i)%st_S_d, soap_turbo_hypers(i)%st_multiplicity_array_d, &
-                  soap_turbo_hypers(i)%recompute_basis, time%local_prop, cublas_handle, gpu_stream)
+                  soap_turbo_hypers(i)%recompute_basis, time%local_prop)
 
                energies_soap = energies_soap + this_energies
 
