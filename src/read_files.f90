@@ -1811,6 +1811,11 @@ contains
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%do_nnls
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("do_nnls", params%do_nnls)
+      else if (keyword == 'mbd_correction_freq') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%mbd_correction_freq
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("mbd_correction_freq", params%mbd_correction_freq)
       else if (keyword == "poly_cut_xmax") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%poly_cut_xmax

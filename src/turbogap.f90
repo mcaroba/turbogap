@@ -35,6 +35,7 @@ program turbogap
    use turbogap_setup
    use turbogap_exp
    use turbogap_md
+   use turbogap_vdw
    use gap_backend
    use neighbors
    use soap_turbo_desc
@@ -388,6 +389,12 @@ program turbogap
 
    !vdw crap
    real(dp), allocatable, target :: v_neigh_vdw(:)
+!   Persistent ts+mbd correction state, owned by turbogap_vdw.
+   type(vdw_state) :: vdw_ws
+   real(dp), allocatable :: energies_vdw_corr(:)
+   real(dp), allocatable :: forces_vdw_corr(:, :)
+   real(dp), allocatable :: local_virial_vdw_diag_corr(:, :)
+   logical :: update_mbd_ts_scaling = .true.
    real(dp), allocatable, target :: energies_vdw(:)
 !  The TS scaling factor and the diagonal local virial that master's
 !  get_ts_energy_and_forces takes. For plain TS the scaling is 1.d0; it
@@ -436,6 +443,8 @@ program turbogap
    real(dp), allocatable, target :: all_scattering_factors(:)
    integer, allocatable :: temp_1d_int(:)
    integer, allocatable :: n_atom_pairs_by_rank(:)
+   integer, allocatable :: site_in_rank(:)
+   integer, allocatable :: this_site_in_rank(:)
    integer, allocatable :: n_species_mpi(:)
    integer, allocatable :: n_sparse_mpi_soap_turbo(:)
    integer, allocatable :: dim_mpi(:)
@@ -1241,6 +1250,27 @@ program turbogap
       j_end = n_atom_pairs
       n_atom_pairs_by_rank(rank + 1) = n_atom_pairs
 #endif
+!   Store by which rank each site is being handled
+      if (allocated(site_in_rank)) then
+         if (size(site_in_rank) /= n_sites) then
+            deallocate (site_in_rank, this_site_in_rank)
+         end if
+      end if
+      if (.not. allocated(site_in_rank)) then
+         allocate (site_in_rank(1:n_sites))
+         allocate (this_site_in_rank(1:n_sites))
+      end if
+      site_in_rank = 0
+      this_site_in_rank = 0
+      do i = i_beg, i_end
+         this_site_in_rank(i) = rank
+      end do
+#ifdef _MPIF90
+      call mpi_reduce(this_site_in_rank, site_in_rank, n_sites, MPI_INTEGER, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+      call mpi_bcast(site_in_rank, n_sites, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+#else
+      site_in_rank = this_site_in_rank
+#endif
 
       !   Compute the volume of the "primitive" unit cell
       v_uc = dot_product(cross_product(a_box, b_box), c_box)/(dfloat(indices(1)*indices(2)*indices(3)))
@@ -1263,7 +1293,8 @@ program turbogap
          ! REMOVE TRUE FROM IF STATEMENT
          if (n_sites /= n_sites_prev .or. params%do_mc) then
             if (allocated(energies)) deallocate (energies, energies_soap, energies_2b, energies_3b, energies_core_pot, &
-                                                this_energies, energies_vdw, energies_estat, this_forces, energies_lp, energies_exp)
+                                              this_energies, energies_vdw, energies_estat, this_forces, energies_lp, energies_exp, &
+                                                 energies_vdw_corr, mbd_ts_scaling, this_mbd_ts_scaling)
             allocate (energies(1:n_sites))
             allocate (this_energies(1:n_sites))
             allocate (energies_soap(1:n_sites))
@@ -1274,6 +1305,42 @@ program turbogap
             allocate (energies_estat(1:n_sites))
             allocate (energies_lp(1:n_sites))
             allocate (energies_exp(1:n_sites))
+            allocate (energies_vdw_corr(1:n_sites))
+!          We do this allocations for van der Waals corrections
+            allocate (mbd_ts_scaling(1:n_sites))
+            allocate (this_mbd_ts_scaling(1:n_sites))
+
+! Read in file for ts+mbd van der Waals mode if it exists
+! Initialise the TS scaling factors. md_istep <= 0 rather than == 0 because
+! predict and mc never advance md_istep past -1, and without this they reach
+! get_ts_energy_and_forces with mbd_ts_scaling never having been set. For MD
+! this is still exactly the first step, so the MD path is unchanged.
+            if (params%vdw_type == "ts+mbd" .and. md_istep <= 0) then
+               if (rank == 0) then
+                  open (unit=30, file="mbd_ts_scaling.dat", status="old", iostat=iostatus)
+                  if (iostatus == 0) then
+                     write (*, *) '                                       |'
+                     write (*, *) '.......................................|'
+                     write (*, *) '                                       |'
+                     write (*, *) 'Reading TS scaling factors from file   |'
+                     write (*, *) 'mbd_ts_scaling.dat                     |'
+                     write (*, *) '                                       |'
+                     write (*, *) '.......................................|'
+                     write (*, *) '                                       |'
+                     do i = 1, n_sites
+                        read (30, *) mbd_ts_scaling(i)
+                     end do
+                     update_mbd_ts_scaling = .false.
+                  else
+                     mbd_ts_scaling = 1.d0
+                  end if
+                  close (30)
+                  this_mbd_ts_scaling = mbd_ts_scaling
+               end if
+#ifdef _MPIF90
+               call mpi_bcast(this_mbd_ts_scaling, n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+#endif
+            end if
 
             if (perform%pdf) then
                if (allocated(energies_pdf)) deallocate (energies_pdf)
@@ -1372,6 +1439,10 @@ program turbogap
                allocate (forces_3b(1:3, 1:n_sites))
                allocate (forces_core_pot(1:3, 1:n_sites))
                allocate (forces_vdw(1:3, 1:n_sites))
+               if (allocated(forces_vdw_corr)) deallocate (forces_vdw_corr)
+               allocate (forces_vdw_corr(1:3, 1:n_sites))
+               allocate (local_virial_vdw_diag_corr(1:3, 1:n_sites))
+               allocate (local_virial_vdw_diag(1:3, 1:n_sites))
                allocate (forces_estat(1:3, 1:n_sites))
                allocate (forces_lp(1:3, 1:n_sites))
 
@@ -1410,6 +1481,7 @@ program turbogap
             virial_3b = 0.d0
             virial_core_pot = 0.d0
             virial_vdw = 0.d0
+            local_virial_vdw_diag = 0.d0
             virial_estat = 0.d0
             virial_lp = 0.d0
 
@@ -1778,68 +1850,21 @@ program turbogap
 #endif
 
          !     Compute vdW energies and forces
-         if (any(soap_turbo_hypers(:)%has_vdw) .and. (params%do_prediction) &
-             .and. params%vdw_type == "ts") then
-
-            !time%vdw(1) = MPI_wtime()
-            call time_start(time%vdw)
-
-#ifdef _MPIF90
-
-            allocate (this_energies_vdw(1:n_sites))
-            this_energies_vdw = 0.d0
-            if (params%do_forces) then
-               allocate (this_forces_vdw(1:3, 1:n_sites))
-               this_forces_vdw = 0.d0
-               this_virial_vdw = 0.d0
-            end if
-#endif
-            if (allocated(this_mbd_ts_scaling)) deallocate (this_mbd_ts_scaling)
-            allocate (this_mbd_ts_scaling(1:n_sites))
-            this_mbd_ts_scaling = 1.d0
-            if (allocated(this_local_virial_vdw_diag)) deallocate (this_local_virial_vdw_diag)
-            allocate (this_local_virial_vdw_diag(1:3, 1:n_sites))
-            this_local_virial_vdw_diag = 0.d0
-            allocate (v_neigh_vdw(1:j_end - j_beg + 1))
-            v_neigh_vdw = 0.d0
-            k = 0
-            do i = i_beg, i_end
-               do j = 1, n_neigh(i)
-                  !           I'm not sure if this is necessary or neighbors_list is already bounded between 1 and n_sites -> CHECK THIS
-                  j2 = mod(neighbors_list(j_beg + k) - 1, n_sites) + 1
-                  k = k + 1
-                  !                 v_neigh_vdw(k) = hirshfeld_v(j2)
-                  v_neigh_vdw(k) = local_properties(j2, vdw_lp_index)
-               end do
-            end do
-
-            !           print *, rank, "> TS energies forces"
-
-            call get_ts_energy_and_forces(local_properties(i_beg:i_end, vdw_lp_index), &
-              & local_properties_cart_der(1:3, j_beg:j_end, vdw_lp_index), &
-              n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
-              neighbor_species(j_beg:j_end), &
-              params%vdw_rcut, params%vdw_buffer, &
-              params%vdw_rcut_inner, params%vdw_buffer_inner, &
-              rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), v_neigh_vdw, &
-              params%vdw_sr, params%vdw_d, params%vdw_c6_ref, params%vdw_r0_ref, &
-              params%vdw_alpha0_ref, params%do_forces, &
-              params%poly_cut_xmin, params%poly_cut_xmax, &
-#ifdef _MPIF90
-            this_energies_vdw(i_beg:i_end), this_forces_vdw, this_virial_vdw, &
-            this_local_virial_vdw_diag, this_mbd_ts_scaling)
-#else
-            energies_vdw(i_beg:i_end), forces_vdw, virial_vdw, &
-               local_virial_vdw_diag, mbd_ts_scaling)
-#endif
-
-            !time%vdw(2) = MPI_wtime()
-            call time_end(time%vdw)
-            !           print *, rank, ">>--- Finiahed TS energies forces ---<<"
-            deallocate (v_neigh_vdw)
-            if (allocated(this_mbd_ts_scaling)) deallocate (this_mbd_ts_scaling)
-            if (allocated(this_local_virial_vdw_diag)) deallocate (this_local_virial_vdw_diag)
-         end if
+!   vdW / MBD, via turbogap_vdw.f90, adopted from the CPU branch.  What was
+!   inline here handled vdw_type == "ts" only; compute_vdw handles ts, mbd and
+!   ts+mbd, and carries the ts+mbd correction state in vdw_ws rather than in
+!   driver locals whose lifetime was invisible.  vdw.f90 and misc.f90 are
+!   already byte-identical between the trees, so this is a straight transplant.
+         call compute_vdw(params, any(soap_turbo_hypers(:)%has_vdw), n_sites, &
+                          n_neigh, neighbors_list, neighbor_species, rjs, xyz, &
+                          local_properties, local_properties_cart_der, vdw_lp_index, &
+                          i_beg, i_end, j_beg, j_end, n_atom_pairs_by_rank, site_in_rank, &
+                          indices, rank, ntasks, md_istep, vdw_ws, &
+                          energies_vdw, forces_vdw, virial_vdw, local_virial_vdw_diag, &
+                          this_energies_vdw, this_forces_vdw, this_virial_vdw, &
+                          this_local_virial_vdw_diag, energies_vdw_corr, forces_vdw_corr, &
+                          local_virial_vdw_diag_corr, mbd_ts_scaling, this_mbd_ts_scaling, &
+                          update_mbd_ts_scaling, time)
 
          !     Compute ELECTROSTATIC energies and forces
 !        valid_estat_charges is part of the guard, not an afterthought: without it a
@@ -2402,11 +2427,11 @@ program turbogap
 
 !       Release the this_ arrays now that their contents have been unpacked.
 !       Kept explicit: an allocatable cannot be deallocated through a pointer.
-!       Unlike the CPU branch there is no this_local_virial_vdw_diag here --
-!       that array belongs to the MBD rewrite, which this branch predates.
+!       this_local_virial_vdw_diag has no counterpart in the list, so it is
+!       released here by name; compute_vdw allocates it per call.
             if (contrib_on(C_VDW)) then
                deallocate (this_energies_vdw)
-               if (params%do_forces) deallocate (this_forces_vdw)
+               if (params%do_forces) deallocate (this_forces_vdw, this_local_virial_vdw_diag)
             end if
             if (contrib_on(C_ESTAT)) then
                deallocate (this_energies_estat)
