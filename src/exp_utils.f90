@@ -1034,7 +1034,7 @@ contains
          call gpu_free_async(xyz_k_d, gpu_stream)
          call gpu_free_async(forces0_d, gpu_stream)
          call gpu_free_async(fi_d, gpu_stream)
-         call gpu_free(virial_d)
+         call gpu_free_async(virial_d, gpu_stream)
          if (do_xrd) deallocate (all_scattering_factors)
          if (do_xrd) deallocate (sf_parameters)
          deallocate (prefactor)
@@ -1135,7 +1135,7 @@ contains
 
          call gpu_free_async(forces0_d, gpu_stream)
          call gpu_free_async(fi_d, gpu_stream)
-         call gpu_free(virial_d)
+         call gpu_free_async(virial_d, gpu_stream)
          if (do_xrd) deallocate (all_scattering_factors)
          if (do_xrd) deallocate (sf_parameters)
          deallocate (prefactor)

@@ -1660,8 +1660,7 @@ contains
 
                   !                call gpu_free_async(species_types_actual_d,gpu_stream)
 
-                  call gpu_free(nk_flags_d(n_dim_idx))
-!                call gpu_free_async(nk_flags_d(n_dim_idx), gpu_stream)
+                  call gpu_free_async(nk_flags_d(n_dim_idx), gpu_stream)
 
 !                print *, "out of pdf nk kernel "
                   st_nk_temp = 1*c_int
@@ -1686,8 +1685,12 @@ contains
 
                   allocate (gpu_host_storage(n_dim_idx)%k_index_h(1:nk(n_dim_idx)))
               call cpy_dtoh(k_index_d(n_dim_idx), c_loc(gpu_host_storage(n_dim_idx)%k_index_h), st_k_index_d(n_dim_idx), gpu_stream)
-                  call gpu_free(k_index_d(n_dim_idx))
-!                call gpu_stream_sync( gpu_stream )
+!                 The plain hipFree here synchronised the whole device, which is
+!                 what made the host buffer above valid. hipFreeAsync does not,
+!                 so the sync the author left commented out has to be real, and
+!                 has to come before the free.
+                  call gpu_stream_sync(gpu_stream)
+                  call gpu_free_async(k_index_d(n_dim_idx), gpu_stream)
 
                   ! ----------------------------------------------------
                   ! -------------------- Setting j2 --------------------
@@ -1700,13 +1703,17 @@ contains
 
                 call gpu_set_pair_distribution_j2_only(j_end, n_sites, neighbor_list_d, j2_index_d(n_dim_idx), nk_flags_sum_d(n_dim_idx), gpu_stream )
 
-                  call gpu_free(neighbor_list_d)
+                  call gpu_free_async(neighbor_list_d, gpu_stream)
                   allocate (gpu_host_storage(n_dim_idx)%j2_index_h(1:nk(n_dim_idx)))
 
                   call cpy_dtoh(j2_index_d(n_dim_idx), c_loc(gpu_host_storage(n_dim_idx)%j2_index_h), st_k_index_d(n_dim_idx), &
                                 gpu_stream)
-                  call gpu_free(j2_index_d(n_dim_idx))
-!                call gpu_stream_sync( gpu_stream )
+!                 The plain hipFree here synchronised the whole device, which is
+!                 what made the host buffer above valid. hipFreeAsync does not,
+!                 so the sync the author left commented out has to be real, and
+!                 has to come before the free.
+                  call gpu_stream_sync(gpu_stream)
+                  call gpu_free_async(j2_index_d(n_dim_idx), gpu_stream)
 
                   ! -----------------------------------------------------
                   ! -------------------- Setting xyz --------------------
@@ -2009,7 +2016,7 @@ contains
             end do outer1
          end if
          call gpu_free_async(x_d, gpu_stream)
-         call gpu_free(dV_d)
+         call gpu_free_async(dV_d, gpu_stream)
 
          deallocate (rjs_index_d, st_rjs)
          deallocate (nk_flags_d)

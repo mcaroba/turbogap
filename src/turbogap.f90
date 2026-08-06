@@ -1725,7 +1725,7 @@ program turbogap
                end do
             end if
 
-            call gpu_free(Qs_d)
+            call gpu_free_async(Qs_d, gpu_stream)
 
            !!time%soap_solo(2 = MPI_wtime()
             !        call get_time( time%soap_solo(2  )

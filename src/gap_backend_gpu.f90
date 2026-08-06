@@ -125,7 +125,7 @@ contains
       call gpu_free_async(neighbor_species_d, gpu_stream)
       call gpu_free_async(rjs_d, gpu_stream)
       call gpu_free_async(xyz_d, gpu_stream)
-      call gpu_free(neighbors_list_d)
+      call gpu_free_async(neighbors_list_d, gpu_stream)
 
    end subroutine gap_backend_end
 

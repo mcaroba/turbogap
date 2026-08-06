@@ -1403,6 +1403,13 @@ contains
    subroutine dealloc(this)
       class(gpu_var_class), intent(inout) :: this
       if (this%allocated) then
+!        NOT converted to gpu_free_async, deliberately: this%d comes from
+!        gpu_malloc_all (hipMallocAsync) in malloc() above, so the pairing IS
+!        wrong -- but dealloc() takes no stream and malloc() takes one as a
+!        dummy, so fixing it changes a type-bound signature. gpu_var_class is
+!        used nowhere outside this file, so the defect is unreachable; it is
+!        left visible rather than fixed blind. tools/gpu_check_alloc_pairs.py
+!        reports it.
          call gpu_free(this%d)
       else
          print *, " !!--WARNING--!! Trying to deallocate freed gpu pointer"

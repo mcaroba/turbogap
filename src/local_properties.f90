@@ -196,7 +196,7 @@ contains
       end if
 
       call gpu_free_async(kernels_d, gpu_stream)
-      call gpu_free(kernels_copy_d)
+      call gpu_free_async(kernels_copy_d, gpu_stream)
 
       deallocate (kernels, kernels_copy)
 
