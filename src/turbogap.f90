@@ -979,9 +979,7 @@ program turbogap
 #endif
 
          !time%read_xyz(2) = MPI_wtime()
-         call get_time(time%read_xyz(2))
-
-         time%read_xyz(3) = time%read_xyz(3) + time%read_xyz(2) - time%read_xyz(1)
+         call time_end(time%read_xyz)
          !     If we're doing MD, we don't read beyond the first snapshot in the XYZ file
          repeat_xyz = .false.
          !     At the moment, we can't do prediction if the unit cell doesn't fit a whole cutoff sphere
@@ -1030,9 +1028,7 @@ program turbogap
 #endif
 
          !time%read_xyz(2) = MPI_wtime()
-         call get_time(time%read_xyz(2))
-
-         time%read_xyz(3) = time%read_xyz(3) + time%read_xyz(2) - time%read_xyz(1)
+         call time_end(time%read_xyz)
 #ifdef _MPIF90
 
          !! time%mpi(1)=MPI_Wtime()
@@ -1044,9 +1040,7 @@ program turbogap
          !! time%mpi(2)=MPI_Wtime()
          !        call get_time( ! time%mpi(2) )
 
-         call get_time(time%mpi(2))
-
-         time%mpi(3) = time%mpi(3) + time%mpi(2) - time%mpi(1)
+         call time_end(time%mpi)
 #endif
          rebuild_neighbors_list = .true.
       end if
@@ -1089,9 +1083,7 @@ program turbogap
       call mpi_bcast(n_sp_sc, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(n_sites, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
       ! time%mpi(2)=MPI_Wtime()
-      call get_time(time%mpi(2))
-
-      time%mpi(3) = time%mpi(3) + time%mpi(2) - time%mpi(1)
+      call time_end(time%mpi)
 
       IF (rank /= 0) THEN
          if (allocated(positions)) deallocate (positions)
@@ -1137,9 +1129,7 @@ program turbogap
       call mpi_bcast(c_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
 
       !time%mpi_positions(2) = MPI_wtime()
-      call get_time(time%mpi_positions(2))
-
-      time%mpi_positions(3) = time%mpi_positions(3) + time%mpi_positions(2) - time%mpi_positions(1)
+      call time_end(time%mpi_positions)
 #endif
       !   Now that all ranks know the size of n_sites, we allocate do_list
       if (.not. params%do_md .or. (params%do_md .and. md_istep == 0) .or. &
@@ -1464,9 +1454,7 @@ program turbogap
          call mpi_reduce(energies, this_energies, n_sites, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
 
          !time%mpi_ef(2) = MPI_wtime()
-         call get_time(time%mpi_ef(2))
-
-         time%mpi_ef(3) = time%mpi_ef(3) + time%mpi_ef(2) - time%mpi_ef(1)
+         call time_end(time%mpi_ef)
          energies = this_energies
 #endif
 
@@ -1752,9 +1740,7 @@ program turbogap
 #endif
 
             !time%soap(2) = MPI_wtime()
-            call get_time(time%soap(2))
-
-            time%soap(3) = time%soap(3) + time%soap(2) - time%soap(1)
+            call time_end(time%soap)
 
          end do
          call time_end(time%gap)
@@ -1787,9 +1773,7 @@ program turbogap
             call mpi_bcast(local_properties, n_sites*params%n_local_properties, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
 
             ! time%mpi(2)=MPI_Wtime()
-            call get_time(time%mpi(2))
-
-            time%mpi(3) = time%mpi(3) + time%mpi(2) - time%mpi(1)
+            call time_end(time%mpi)
          end if
 #endif
 
@@ -1850,9 +1834,7 @@ program turbogap
 #endif
 
             !time%vdw(2) = MPI_wtime()
-            call get_time(time%vdw(2))
-
-            time%vdw(3) = time%vdw(2) - time%vdw(1)
+            call time_end(time%vdw)
             !           print *, rank, ">>--- Finiahed TS energies forces ---<<"
             deallocate (v_neigh_vdw)
             if (allocated(this_mbd_ts_scaling)) deallocate (this_mbd_ts_scaling)
@@ -2458,9 +2440,7 @@ program turbogap
             end if
 
             !time%mpi_ef(2) = MPI_wtime()
-            call get_time(time%mpi_ef(2))
-
-            time%mpi_ef(3) = time%mpi_ef(3) + time%mpi_ef(2) - time%mpi_ef(1)
+            call time_end(time%mpi_ef)
 #endif
 
             !       Add up all the energy terms
@@ -3092,9 +3072,7 @@ program turbogap
                   !          Add acceptance to the log file else dont
 
                   !time%mc(2) = MPI_wtime()
-                  call get_time(time%mc(2))
-
-                  time%mc(3) = time%mc(3) + time%mc(2) - time%mc(1)
+                  call time_end(time%mc)
 
                else ! if (mc_istep == 0)
                   temp_md_nsteps = params%md_nsteps
@@ -3523,9 +3501,7 @@ program turbogap
        !! time%mpi(2)=MPI_Wtime()
       !call get_time( ! time%mpi(2) )
 
-      call get_time(time%mpi(2))
-
-      time%mpi(3) = time%mpi(3) + time%mpi(2) - time%mpi(1)
+      call time_end(time%mpi)
       IF (rank /= 0) THEN !.and. (mc_move == "insertion" .or. mc_move == "removal")
          if (allocated(positions)) deallocate (positions)
          allocate (positions(1:3, n_pos))
@@ -3576,9 +3552,7 @@ program turbogap
       call mpi_bcast(n_sites, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
 
       !time%mpi_positions(2) = MPI_wtime()
-      call get_time(time%mpi_positions(2))
-
-      time%mpi_positions(3) = time%mpi_positions(3) + time%mpi_positions(2) - time%mpi_positions(1)
+      call time_end(time%mpi_positions)
 #endif
       !   Now that all ranks know the size of n_sites, we allocate do_list
       if (.not. params%do_md .or. (params%do_md .and. md_istep == 0) .or. &
