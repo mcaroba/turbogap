@@ -102,6 +102,7 @@ run_case() {
 xfail_reason() {
   case $1 in
   XRD_mad) printf '%s' "local_energy drift ~1e-5 by frame 5; everything else agrees; see docs/gpu_fixes_handoff.md 6g" ;;
+  estat_gsf) printf '%s' "batched device electrostatics disagrees with the CPU implementation: forces to 1.1 eV/A on |F|max 20.5, virial 0.7%, local_energy 0.16 eV -- every other energy component agrees exactly. Found the first time the path was ever exercised; see the commit that added this case" ;;
   *) printf '' ;;
   esac
 }
@@ -269,6 +270,39 @@ thermostat = berendsen
 t_beg = 1000
 t_end = 1000
 write_xyz = 1' "$(dirname "$DATA")/xrd_mad" xrd_glassy_carbon_zeng_2017.fq
+
+# Damped-shifted-force electrostatics with the BATCHED device path, against the
+# CPU build's ordinary one. This is the only case that reaches electrostatics
+# at all -- the CCLi potential is the only one in the test data declaring an
+# atomic_charge local property, and until it was added the path had never run
+# on either branch (docs/refactor_strategy.md section 5).
+#
+# gpu_batched = .true. is the point: calculate_batched_electrostatics is
+# GPU-only, so what this compares is the batched device implementation against
+# the CPU's compute_coulomb_lamichhane. Nothing else in either suite does that.
+#
+# 897-atom carbon cell against the C+CLi potential. Pure carbon is deliberate --
+# a real equilibrated structure already in the test data, whose C descriptor
+# carries atomic_charge, giving an estat term around -3.2 eV: small, and far
+# enough from zero that a regression in it shows.
+check_case estat_gsf atoms_897.xyz predict 'atoms_file = "atoms.xyz"
+pot_file = "gap_files/CCLi_estat_ljrep.gap"
+n_species = 2
+species = C Li
+masses = 12.01 6.94
+e0 = 0. 0.
+random_seed = 12345
+estat_method = "gsf"
+estat_rcut = 10.0
+estat_dsf_alpha = 0.12
+estat_damped = .true.
+estat_tsf = .true.
+estat_sp = .true.
+estat_gsf = .true.
+estat_self_energy_correction = .false.
+gpu_batched = .true.
+gpu_n_batches = 4
+write_xyz = 1' "$(dirname "$DATA")/CLi"
 
 log ""
 log "passed: $pass   failed: $fail   xfail: $xfail   xpass: $xpass"
