@@ -471,3 +471,56 @@ That is a design change spanning `gap.f90`, `gap_interface.f90`,
 started. Doing the mechanical half first — moving buffers to module state
 without deciding who owns `l_index_d` — freezes exactly the sharing the design
 then has to undo.
+
+## Step 4 has no clear win as posed — traced 2026-08-07
+
+After steps 1–3 the signatures are:
+
+    master   get_soap_energy_and_forces(soap, soap_der, delta, zeta0, e0,
+                                        n_neigh, neighbors_list, xyz,
+                                        do_forces, do_timing,
+                                        energies, forces, virial)
+    gpu      ... the same, plus n_sparse, solo_time_soap, soap_d,
+                                soap_der_d, n_neigh_d, n_pairs
+
+The obvious next move is to give `soap_d`, `soap_cart_der_d` and `n_neigh_d`
+the `soap_backend_begin`/`end` treatment. Tracing where they come from says
+otherwise:
+
+* `soap_d` and `soap_cart_der_d` are allocated in `gap_interface.f90` (374,
+  380) and freed there (488, 489) — call-local, as expected.
+* **`n_neigh_d` is allocated inside the `soap_turbo` SUBMODULE**
+  (`soap_turbo.f90:675`) and handed back out through the `get_soap` call at
+  `gap_interface.f90:389`.
+
+So all three are *produced* by the SOAP evaluation and *consumed* by the
+energy/forces call, with `gap_interface` as the courier. Making them module
+state in `gap.f90` would need either the vendored submodule writing into
+`gap`'s module variables — which is not something to do to a submodule — or a
+three-pointer setter called from `gap_interface` immediately after `get_soap`
+returns.
+
+The setter removes them from the seam signature and adds a call with the same
+three names one line earlier. **That is a wash**, unless `gap_interface` is
+itself seamed — and `gap_interface.f90` still carries 213 lines of real
+conflict, all in `get_gap_soap`.
+
+### What this means for the order of work
+
+`get_gap_soap` should be seamed **before**, or together with, the last three
+arguments of `get_soap_energy_and_forces`. Doing the callee alone leaves the
+courier in the middle holding device pointers, which is the same shape as the
+problem `gpu_context` was created to solve.
+
+Concretely, the remaining sequence is:
+
+1. Seam `get_gap_soap` — it is one procedure, 410 lines on the CPU branch
+   against 485 on the GPU one, and its 213 lines of conflict are the last
+   structural difference in the SOAP path.
+2. `soap_d` / `soap_cart_der_d` / `n_neigh_d` then have an owner on the GPU
+   side and leave the callee signature for free.
+3. `n_sparse` comes from `hypers%n_sparse`, which `soap_backend_begin` already
+   receives; `n_pairs` is derivable from `n_neigh`; `solo_time_soap` is
+   already `time%soap_lin`. All three are bookkeeping once 1 and 2 are done.
+4. Move `get_soap_energy_and_forces` into `gap_backend_cpu` / `gap_backend_gpu`.
+   `gap.f90` converges at that point, not before.
