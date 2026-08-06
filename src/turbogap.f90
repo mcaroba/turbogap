@@ -644,47 +644,8 @@ program turbogap
 
    !--- Creating GPU communication ---!
    call time_start(time%create_streams)
-
-   call gpu_set_device(rank) ! This works when each GPU has only 1 visible device. This is done in the slurm submission script
-
-   call create_cublas_handle(cublas_handle, gpu_stream)
-   call gap_backend_gpu_init(gpu_stream)
-
-   ! Creating streams for gpu batches
-   if (params%gpu_batched) then
-
-      ! > Set the number of threads equal to the number of batches if
-      !   there are more omp tasks requested
-
-#ifdef _OPENMP
-      n_omp = omp_get_max_threads()
-      print *, rank, " --  omp max threads first = ", n_omp_temp
-
-      !$omp parallel DEFAULT(SHARED)
-      n_omp_temp = omp_get_num_threads()
-      print *, rank, " --  omp get num threads = ", n_omp_temp
-
-      if (n_omp_temp > params%gpu_n_batches) n_omp_temp = params%gpu_n_batches
-
-      call omp_set_num_threads(n_omp_temp)
-
-      !$omp end parallel
-
-      n_omp = omp_get_max_threads()
-
-      print *, rank, " rank n_omp_temp, n_omp", n_omp_temp, n_omp
-      print *, rank, " --  omp num threads out = ", n_omp
-#endif
-
-      allocate (cublas_handles(1:n_omp))
-      allocate (gpu_streams(1:n_omp))
-
-      do omp_task = 1, n_omp
-         call create_cublas_handle(cublas_handles(omp_task), gpu_streams(omp_task))
-      end do
-      print *, " <<<< OPENMP >>>> -- Rank ", rank, " Created n_omp = ", n_omp, " streams for batched gpu calculation "
-   end if
-
+   call gpu_context_init(params, rank, n_omp)
+   call gap_backend_init()
    call time_end(time%create_streams)
    ! print *, " "
    ! print *, " Time to create streams = ", time%create_streams(3), " Seconds"
@@ -3840,13 +3801,6 @@ program turbogap
    call mpi_finalize(ierr)
 #endif
 
-   if (params%gpu_batched) then
-      do i = 1, n_omp
-         call destroy_cublas_handle(cublas_handles(i), gpu_streams(i))
-      end do
-   end if
-
-   call destroy_cublas_handle(cublas_handle, gpu_stream)
-   call gpu_device_reset()
+   call gpu_context_finalize(params, n_omp)
 
 end program turbogap

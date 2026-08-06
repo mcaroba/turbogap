@@ -33,7 +33,9 @@ module gpu_context
    use kinds
    use iso_c_binding
    use types, only: gpu_storage_type, gpu_neigh_storage_type, &
-                    gpu_host_batch_storage_type
+                    gpu_host_batch_storage_type, input_parameters
+   use F_B_C
+!$ use omp_lib
 
    implicit none
 
@@ -57,5 +59,80 @@ module gpu_context
 
 ! Running total of device memory handed out, for the end-of-run report.
    real(dp) :: gpu_memory_usage = 0.d0
+
+contains
+
+!**************************************************************************
+!  Bring the device up, and take it down.
+!
+!  These two exist on both branches under the same names and the same argument
+!  lists; the CPU branch's src/gpu_context.f90 implements them as empty stubs
+!  and the Makefile compiles one or the other, exactly as it does for
+!  gap_backend_cpu / gap_backend_gpu. The driver calls the names and never
+!  learns which implementation it got, so ~50 lines of device set-up and
+!  teardown stop being a difference between the two turbogap.f90 files.
+!
+!  n_omp is an OUT argument rather than another module variable, deliberately:
+!  the CPU stub has a correct answer for it (one stream's worth of work), and
+!  keeping it out of the module keeps the exclusion documented at the top of
+!  this file intact.
+   subroutine gpu_context_init(params, rank, n_omp)
+      type(input_parameters), intent(in) :: params
+      integer, intent(in) :: rank
+      integer, intent(out) :: n_omp
+
+      integer :: omp_task, n_omp_temp
+
+      n_omp = 1
+
+!     One visible device per rank; the slurm submission script arranges that.
+      call gpu_set_device(rank)
+
+      call create_cublas_handle(cublas_handle, gpu_stream)
+
+      if (params%gpu_batched) then
+!        Do not ask for more threads than there are batches to give them.
+#ifdef _OPENMP
+         n_omp_temp = omp_get_max_threads()
+
+         !$omp parallel DEFAULT(SHARED)
+         n_omp_temp = omp_get_num_threads()
+         if (n_omp_temp > params%gpu_n_batches) n_omp_temp = params%gpu_n_batches
+         call omp_set_num_threads(n_omp_temp)
+         !$omp end parallel
+
+         n_omp = omp_get_max_threads()
+#endif
+         allocate (cublas_handles(1:n_omp))
+         allocate (gpu_streams(1:n_omp))
+         do omp_task = 1, n_omp
+            call create_cublas_handle(cublas_handles(omp_task), gpu_streams(omp_task))
+         end do
+
+         if (rank == 0) write (*, '(A,I0,A)') &
+            ' <<<< OPENMP >>>> created ', n_omp, ' streams for the batched gpu calculation'
+      end if
+
+   end subroutine gpu_context_init
+!**************************************************************************
+
+!**************************************************************************
+   subroutine gpu_context_finalize(params, n_omp)
+      type(input_parameters), intent(in) :: params
+      integer, intent(in) :: n_omp
+
+      integer :: i
+
+      if (params%gpu_batched) then
+         do i = 1, n_omp
+            call destroy_cublas_handle(cublas_handles(i), gpu_streams(i))
+         end do
+      end if
+
+      call destroy_cublas_handle(cublas_handle, gpu_stream)
+      call gpu_device_reset()
+
+   end subroutine gpu_context_finalize
+!**************************************************************************
 
 end module gpu_context

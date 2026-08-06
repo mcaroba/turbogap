@@ -36,7 +36,7 @@ module gap_backend
    implicit none
 
    private
-   public :: gap_backend_gpu_init
+   public :: gap_backend_init
    public :: gap_backend_begin
    public :: gap_backend_end
    public :: add_2b_contribution
@@ -59,14 +59,14 @@ module gap_backend
 contains
 
 !**************************************************************************
-! Hand the backend the stream it should launch on. GPU-only, and called from
-! the driver's existing GPU start-up block, which is #ifdef-guarded anyway --
-! the shared contribution interface stays free of device handles.
-   subroutine gap_backend_gpu_init(stream)
+! Take the stream the backend launches on from gpu_context, so the call itself
+! carries no device handle and the CPU branch can offer the same name with an
+! empty body. Called once from the driver, straight after gpu_context_init.
+   subroutine gap_backend_init()
+      use gpu_context, only: ctx_stream => gpu_stream
       implicit none
-      type(c_ptr), intent(in) :: stream
-      gpu_stream = stream
-   end subroutine gap_backend_gpu_init
+      gpu_stream = ctx_stream
+   end subroutine gap_backend_init
 
 !**************************************************************************
 ! Upload the neighbour data once for all three contribution calls.
