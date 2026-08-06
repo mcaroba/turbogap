@@ -195,7 +195,8 @@ module types
                  variable_time_step = .false., do_nested_sampling = .false., &
                  scale_box_nested = .false., mc_write_xyz = .false., do_exp = .false., mc_relax = .false., &
                  mc_optimize_exp = .false., exp_forces = .false., exp_energies = .true., print_lp_forces = .false., &
-                 print_vdw_forces = .false., mc_hamiltonian = .false., accessible_volume = .false., mc_reverse = .false., &
+                 print_vdw_forces = .false., print_estat_forces = .false., &
+                 mc_hamiltonian = .false., accessible_volume = .false., mc_reverse = .false., &
                  xrd_iwasa = .true., pair_distribution_partial = .true., structure_factor_from_pdf = .true., &
                  structure_factor_window = .true., write_pair_distribution = .false., write_structure_factor = .false., &
                  do_pair_distribution = .false., do_structure_factor = .false., do_xrd = .false., do_nd = .false., &

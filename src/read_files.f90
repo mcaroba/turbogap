@@ -1877,6 +1877,11 @@ contains
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%poly_cut_xmin
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("poly_cut_xmin", params%poly_cut_xmin)
+      else if (keyword == 'print_estat_forces') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%print_estat_forces
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("print_estat_forces", params%print_estat_forces)
       else if (keyword == 'print_vdw_forces') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%print_vdw_forces

@@ -2098,11 +2098,88 @@ program turbogap
             if (perform%nd_forces) forces = forces + forces_nd
             if (perform%nd_forces) virial = virial + virial_nd
 
+            if (rank == 0 .and. params%print_vdw_forces) then
+               print *, "> Virial ESTAT "
+               do i = 1, 3
+                  do j = 1, 3
+                     print *, " i, ", i, " j ", j, " ", virial_estat(i, j)
+                  end do
+               end do
+
+               print *, "> Virial soap "
+               do i = 1, 3
+                  do j = 1, 3
+                     print *, " i, ", i, " j ", j, " ", virial_soap(i, j)
+                  end do
+               end do
+
+               print *, "> Virial 2b "
+               do i = 1, 3
+                  do j = 1, 3
+                     print *, " i, ", i, " j ", j, " ", virial_2b(i, j)
+                  end do
+               end do
+
+               print *, "> Virial 3b "
+               do i = 1, 3
+                  do j = 1, 3
+                     print *, " i, ", i, " j ", j, " ", virial_3b(i, j)
+                  end do
+               end do
+
+               print *, "> Virial core_pot "
+               do i = 1, 3
+                  do j = 1, 3
+                     print *, " i, ", i, " j ", j, " ", virial_core_pot(i, j)
+                  end do
+               end do
+
+               if (perform%xrd_forces) then
+                  print *, "> Virial xrd "
+                  do i = 1, 3
+                     do j = 1, 3
+                        print *, " i, ", i, " j ", j, " ", virial_xrd(i, j)
+                     end do
+                  end do
+                  temp_string = ""
+                  temp_string2 = ""
+                  write (temp_string, "(I8)") md_istep
+                  write (temp_string2, "(A)") "forces_xrd_"//trim(adjustl(temp_string))
+                  open (unit=90, file=temp_string2, status="unknown")
+                  do i = 1, n_sites
+                     write (90, "(F20.8, 1X, F20.8, 1X, F20.8)") &
+                        forces_xrd(1, i), forces_xrd(2, i), forces_xrd(3, i)
+                  end do
+                  close (90)
+
+               end if
+
+            end if
+
             if (params%print_vdw_forces) then
                open (unit=90, file="forces_vdw", status="unknown")
                do i = 1, n_sites
                   write (90, "(F20.8, 1X, F20.8, 1X, F20.8)") &
                      forces_vdw(1, i), forces_vdw(2, i), forces_vdw(3, i)
+               end do
+               close (90)
+
+            end if
+
+            if (rank == 0 .and. params%print_estat_forces) then
+               open (unit=90, file="forces_estat", status="unknown")
+               do i = 1, n_sites
+                  write (90, "(F20.8, 1X, F20.8, 1X, F20.8)") &
+                     forces_estat(1, i), forces_estat(2, i), forces_estat(3, i)
+               end do
+               close (90)
+
+               open (unit=90, file="charge_gradients_estat", status="unknown")
+               do i = 1, n_atom_pairs_by_rank(rank + 1)
+                  write (90, "(F20.8, 1X, F20.8, 1X, F20.8)") &
+                     local_properties_cart_der(1, i, charge_lp_index), &
+                     local_properties_cart_der(2, i, charge_lp_index), &
+                     local_properties_cart_der(3, i, charge_lp_index)
                end do
                close (90)
 
