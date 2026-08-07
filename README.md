@@ -103,9 +103,15 @@ you can `make clean; make` or `make deepclean; make`.
 molecular dynamics (`turbogap md`). For details, documentation and up-to-date information
 refer to the [TurboGAP wiki](http://turbogap.fi).
 
-## Testing Turbogap
+## TurboGAP Tutorials
 
-The data for tests can be found at https://github.com/TiganyZ/turbogap_tests.git. One can clone the repository in the directory where the turbogap repo is stored and execute the regression tests.
+For the latest features in TurboGAP, one can follow the tutorials which were ran for the TurboGAP School, and adapt them for their machine: [TurboGAP School](https://github.com/mcaroba/TurboGAP_School).
+
+Simple tutorials can be found in the [TurboGAP Tutorials](https://github.com/TiganyZ/turbogap_tutorials) repository `git clone https://github.com/TiganyZ/turbogap_tutorials.git`. Further tutorials and all documentation can be found on the [Turbogap Website](https://turbogap.fi/wiki/index.php/Tutorials).
+
+## Testing TurboGAP
+
+The data for tests can be by cloning the [TurboGAP Tests](https://github.com/TiganyZ/turbogap_tests). One can clone the repository `git clone https://github.com/TiganyZ/turbogap_tests.git` in the directory where the TurboGAP repo is stored and execute the regression tests.
 
 ## Attribution
 
