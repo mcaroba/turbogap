@@ -73,20 +73,16 @@ program turbogap
    real(dp), allocatable :: thetas(:)
    real(dp), allocatable :: phis(:)
    real(dp), allocatable :: xyz(:, :)
-   real(dp), allocatable :: sph_temp(:)
-   real(dp), allocatable :: sph_temp3(:, :)
    real(dp), allocatable :: positions(:, :)
    real(dp), allocatable :: positions_prev(:, :)
    real(dp), allocatable :: soap(:, :)
    real(dp), allocatable :: soap_cart_der(:, :, :)
    real(dp), allocatable :: positions_diff(:, :)
    real(dp), allocatable :: forces_prev(:, :)
-   real(dp), allocatable :: frac_positions(:, :)
    real(dp) :: rcut_max
    real(dp) :: a_box(1:3)
    real(dp) :: b_box(1:3)
    real(dp) :: c_box(1:3)
-   real(dp) :: max_displacement
    real(dp) :: energy
    real(dp) :: energy_prev
    real(dp) :: virial(1:3, 1:3)
@@ -97,15 +93,10 @@ program turbogap
    real(dp) :: v_a_uc_prev
    real(dp) :: eVperA3tobar = 1602176.6208d0
    real(dp) :: ranf
-   real(dp) :: ranv(1:3)
    real(dp) :: disp(1:3)
    real(dp) :: d_disp
-   real(dp) :: e_mc_prev
    real(dp) :: p_accept
    real(dp) :: virial_prev(1:3, 1:3)
-   real(dp) :: sim_exp_pred
-   real(dp) :: sim_exp_prev
-   real(dp) :: sim_exp_pred_der(1:3)
 !   The ten contribution families carry the target attribute so contrib(:) below
 !   can point at them. They are split onto their own declarations for that
 !   reason alone -- target on energies/forces, the accumulators they are summed
@@ -135,9 +126,6 @@ program turbogap
    real(dp), allocatable :: velocities(:, :)
    real(dp), allocatable :: masses_types(:)
    real(dp), allocatable :: masses(:)
-   real(dp), allocatable :: hirshfeld_v_temp(:)
-   real(dp), allocatable :: masses_temp(:)
-   real(dp), allocatable :: sinc_factor_matrix(:, :)
    real(dp), allocatable :: energies_exp(:)
    real(dp), allocatable, target :: energies_soap(:)
    real(dp), allocatable, target :: forces_soap(:, :)
@@ -147,22 +135,13 @@ program turbogap
    real(dp), allocatable, target :: forces_3b(:, :)
    real(dp), allocatable, target :: energies_core_pot(:)
    real(dp), allocatable, target :: forces_core_pot(:, :)
-!  real(dp), allocatable, target :: this_hirshfeld_v(:), this_hirshfeld_v_cart_der(:,:)
-!  real(dp), pointer :: this_hirshfeld_v_pt(:), this_hirshfeld_v_cart_der_pt(:,:)
 
    real(dp), allocatable, target :: local_properties(:, :)
    real(dp), allocatable, target :: local_properties_cart_der(:, :, :)
-   ! Have one rank lower for the pointer, such that it just relates to a sub array of the local properties/cart_der
-   real(dp), pointer :: local_properties_pt(:)
-   real(dp), pointer :: local_properties_cart_der_pt(:, :)
-!  real(dp), pointer :: hirshfeld_v(:), hirshfeld_v_cart_der(:,:)
    real(dp), allocatable, target :: this_local_properties(:, :)
    real(dp), allocatable, target :: this_local_properties_cart_der(:, :, :)
    real(dp), pointer :: this_local_properties_pt(:, :)
    real(dp), pointer :: this_local_properties_cart_der_pt(:, :, :)
-   real(dp), allocatable :: y_i_pred_all(:, :)
-   real(dp), allocatable :: moments(:)
-   real(dp), allocatable :: moments_exp(:)
 
    real(dp), allocatable :: all_energies(:, :)
    real(dp), allocatable :: all_forces(:, :, :)
@@ -174,7 +153,6 @@ program turbogap
    real(dp) :: kB = 8.6173303d-5
    real(dp) :: E_kinetic = 0.d0
    real(dp) :: E_kinetic_prev
-   real(dp) :: charge_sum
    real(dp) :: time1
    real(dp) :: time2
    real(dp) :: time3
@@ -184,25 +162,13 @@ program turbogap
 !   integration step in fs, not timers, and deliberately stay separate.
    type(times_t) :: time
    real(dp) :: instant_pressure
-   real(dp) :: lv(1:3, 1:3)
-   real(dp) :: instant_pressure_tensor(1:3, 1:3)
    real(dp) :: time_step
    real(dp) :: md_time
    real(dp) :: instant_pressure_prev
-   real(dp) :: wfac
-   real(dp) :: wfac_temp
    real(dp) :: energy_exp
-   integer, allocatable :: displs(:)
-   integer, allocatable :: displs2(:)
-   integer, allocatable :: counts(:)
-   integer, allocatable :: counts2(:)
-   integer, allocatable :: in_to_out_pairs(:)
-   integer, allocatable :: in_to_out_site(:)
    integer, allocatable :: mc_id(:)
    integer :: update_bar
-   integer :: idx
    integer :: gd_istep = 0
-   integer :: nprop
    logical, allocatable :: do_list(:)
    logical, allocatable :: has_local_properties_mpi(:)
    logical, allocatable :: fix_atom(:, :)
@@ -231,7 +197,6 @@ program turbogap
    integer, allocatable :: species(:)
    integer, allocatable :: species_supercell(:)
    integer, allocatable :: neighbor_species(:)
-   integer, allocatable :: sph_temp_int(:)
    integer, allocatable :: der_neighbors(:)
    integer, allocatable :: der_neighbors_list(:)
    integer, allocatable :: i_beg_list(:)
@@ -239,7 +204,6 @@ program turbogap
    integer, allocatable :: j_beg_list(:)
    integer, allocatable :: j_end_list(:)
    integer, allocatable :: species_idx(:)
-   integer, allocatable :: n_neigh_out(:)
    integer, allocatable :: n_local_properties_mpi(:)
    integer, allocatable :: local_property_indexes(:)
    integer, allocatable :: n_mc_species(:)
@@ -249,11 +213,8 @@ program turbogap
    integer :: j
    integer :: k
    integer :: i2
-   integer :: j2
    integer :: n_soap
    integer :: k2
-   integer :: k3
-   integer :: l
    integer :: n_sites_this
    integer :: ierr
    integer :: rank
@@ -268,19 +229,14 @@ program turbogap
    integer :: this_n_sites_mpi
    integer :: n_sites_prev = 0
    integer :: n_atom_pairs_by_rank_prev = 0
-   integer :: n_pairs
-   integer :: n_all_sites
-   integer :: n_sites_out
    integer :: n_lp_count = 0
    integer :: vdw_lp_index
    integer :: core_be_lp_index
    integer :: xps_idx
-   integer :: n
 
    integer :: l_max
    integer :: n_atom_pairs
    integer :: n_max
-   integer :: ijunk
    integer :: central_species = 0
    integer :: n_atom_pairs_total
    integer :: iostatus
@@ -314,41 +270,24 @@ program turbogap
    integer :: which_atom = 0
    integer :: n_omp = 1
    integer :: n_species = 1
-   integer :: n_species_actual
    integer :: n_xyz
    integer :: indices(1:3)
    integer :: radial_enhancement = 0
    integer :: md_istep
    integer :: mc_istep
    integer :: mc_mu_id = 1
-   integer :: n_mc
-   character*8, allocatable :: species_types_actual(:)
    character*1024, allocatable :: local_property_labels(:)
    logical :: repeat_xyz = .true.
-   logical :: overwrite = .false.
-   logical :: check_species
-   logical :: valid_local_properties = .false.
-   logical :: label_in_list
    logical :: do_mc_relax = .false.
 
    character*1024 :: filename
-   character*1024 :: cjunk
-   character*1024 :: file_compress_soap
-   character*1024 :: file_alphas
-   character*1024 :: file_soap
-   character*1024 :: file_2b
-   character*1024 :: file_alphas_2b
-   character*1024 :: file_3b
-   character*1024 :: file_alphas_3b
    character*1024 :: mc_file = "mc_trial.xyz"
    character*1024 :: string
    character*1024 :: temp_string
    character*1024 :: temp_string2
-   character*16 :: lattice_string(1:9)
    character*8 :: i_char
    character*8, allocatable :: xyz_species(:)
    character*8, allocatable :: xyz_species_supercell(:)
-   character*8, allocatable :: species_type_temp(:)
 
    ! This is the mode in which we run TurboGAP
    character*16 :: mode = "none"
@@ -363,9 +302,7 @@ program turbogap
    integer :: n_distance_2b = 0
    integer :: n_angle_3b = 0
    integer :: n_core_pot = 0
-   integer :: counter_lp_names = 0
    integer :: temp_md_nsteps
-   real(dp), parameter :: pi = acos(-1.0)
    type(soap_turbo), allocatable, target :: soap_turbo_hypers(:)
    type(distance_2b), allocatable :: distance_2b_hypers(:)
    type(angle_3b), allocatable :: angle_3b_hypers(:)
@@ -373,7 +310,6 @@ program turbogap
 
    !vdw crap
    real(dp), allocatable, target :: energies_vdw(:)
-   real(dp), allocatable, target :: chg_neigh_estat(:)
    real(dp), allocatable, target :: energies_estat(:)
    real(dp), allocatable, target :: forces_estat(:, :)
    real(dp), allocatable, target :: this_energies_estat(:)
@@ -386,7 +322,6 @@ program turbogap
    real(dp), allocatable, target :: this_forces_vdw(:, :)
 ! Persistent ts+mbd correction state, owned by turbogap_vdw
    type(vdw_state) :: vdw_ws
-   real(dp), allocatable :: v_neigh_lp(:)
    real(dp), allocatable, target :: energies_lp(:)
    real(dp), allocatable, target :: forces_lp(:, :)
    real(dp), allocatable, target :: this_energies_lp(:)
@@ -416,45 +351,10 @@ program turbogap
    real(dp), allocatable :: forces_vdw_corr(:, :)
    logical :: update_mbd_ts_scaling = .true.
    ! MPI stuff
-   real(dp), allocatable :: temp_1d(:)
-   real(dp), allocatable :: temp_1d_bis(:)
-   real(dp), allocatable :: temp_2d(:, :)
-   real(dp), allocatable :: pair_distribution_partial(:, :)
-   real(dp), allocatable :: pair_distribution_der(:, :)
-   real(dp), allocatable :: pair_distribution_partial_der(:, :, :)
-   real(dp), allocatable :: pair_distribution_partial_temp(:, :)
-   real(dp), allocatable :: pair_distribution_partial_temp_der(:, :, :)
-   real(dp), allocatable :: n_atoms_of_species(:)
-   real(dp), allocatable :: structure_factor_partial(:, :)
-   real(dp), allocatable :: structure_factor_partial_temp(:, :)
-   real(dp), allocatable :: structure_factor_partial_der(:, :, :)
-   real(dp), allocatable :: structure_factor_partial_temp_der(:, :)
-   real(dp), allocatable :: x_pair_distribution(:)
-   real(dp), allocatable :: y_pair_distribution(:)
-   real(dp), allocatable :: y_pair_distribution_temp(:)
-   real(dp), allocatable :: x_structure_factor(:)
-   real(dp), allocatable :: x_structure_factor_temp(:)
-   real(dp), allocatable :: y_structure_factor(:)
-   real(dp), allocatable :: y_structure_factor_temp(:)
-   real(dp), allocatable :: x_xrd(:)
-   real(dp), allocatable :: x_xrd_temp(:)
-   real(dp), allocatable :: y_xrd(:)
-   real(dp), allocatable :: y_xrd_temp(:)
-   real(dp), allocatable :: y_xrd_der(:, :, :)
-   real(dp), allocatable :: y_xrd_temp_der(:, :, :)
-   real(dp), allocatable :: x_nd(:)
-   real(dp), allocatable :: x_nd_temp(:)
-   real(dp), allocatable :: y_nd(:)
-   real(dp), allocatable :: y_nd_temp(:)
-   real(dp), allocatable :: y_nd_der(:, :, :)
-   real(dp), allocatable :: y_nd_temp_der(:, :, :)
-   integer, allocatable :: temp_1d_int(:)
    integer, allocatable :: n_atom_pairs_by_rank(:)
-   integer, allocatable :: displ(:)
    integer, allocatable :: local_properties_n_sparse_mpi_soap_turbo(:)
    integer, allocatable :: local_properties_dim_mpi_soap_turbo(:)
    integer, allocatable :: n_neigh_local(:)
-   integer, allocatable :: vdw_n_sparse_mpi_soap_turbo(:)
    integer, allocatable :: site_in_rank(:)
    integer, allocatable :: this_site_in_rank(:)
    integer :: i_beg
@@ -462,21 +362,12 @@ program turbogap
    integer :: n_sites_mpi
    integer :: j_beg
    integer :: j_end
-   integer :: size_soap_turbo
-   integer :: size_distance_2b
-   integer :: size_angle_3b
-   integer :: q_beg
-   integer :: q_end
 
    ! Nested sampling
    real(dp) :: e_max
    real(dp) :: e_kin
    real(dp) :: rand
    real(dp) :: rand_scale(1:6)
-   real(dp) :: mag
-   real(dp) :: n_total_cutoff
-   real(dp) :: n_total_cutoff_temp
-   real(dp) :: dq
    real(dp) :: target_temp
    integer :: i_nested
    integer :: i_max
@@ -485,11 +376,7 @@ program turbogap
    integer :: i_trial_image = 2
    type(image), allocatable :: images(:)
    type(image), allocatable :: images_temp(:)
-   type(exp_data_container) :: temp_exp_container
    character*32 :: implemented_exp_observables(1:5)
-
-   real(dp), allocatable :: x_xps(:)
-   real(dp), allocatable :: y_xps(:)
 
    implemented_exp_observables(1) = "xps"
    implemented_exp_observables(2) = "xrd"
@@ -522,11 +409,6 @@ program turbogap
    call mpi_init(ierr)
    call mpi_comm_size(MPI_COMM_WORLD, ntasks, ierr)
    call mpi_comm_rank(MPI_COMM_WORLD, rank, ierr)
-   !  allocate( displs(1:ntasks) )
-   !  allocate( displs2(1:ntasks) )
-   !  allocate( counts(1:ntasks) )
-   !  allocate( counts2(1:ntasks) )
-   ! allocate( displ(1:ntasks) )
 #else
    rank = 0
    ntasks = 1
@@ -907,11 +789,8 @@ program turbogap
          if (params%do_md .or. params%do_nested_sampling .or. params%do_mc) then
             if (allocated(velocities)) deallocate (velocities)
             allocate (velocities(1:3, n_pos))
-            !      allocate( masses(n_pos) )
             if (allocated(masses)) deallocate (masses)
             allocate (masses(1:n_sp))
-            ! if(allocated( fix_atom ))deallocate( fix_atom )
-            ! allocate( fix_atom(1:3, 1:n_sp) )
          end if
          if (allocated(xyz_species)) deallocate (xyz_species)
          allocate (xyz_species(1:n_sp))
@@ -998,19 +877,6 @@ program turbogap
       do_list = .false.
       do_list(i_beg:i_end) = .true.
 
-!      if( rebuild_neighbors_list )then
-!         if(allocated( rjs))deallocate( rjs)
-!         if(allocated( xyz))deallocate( xyz)
-!         if(allocated( thetas))deallocate( thetas)
-!         if(allocated( phis))deallocate( phis)
-!         if(allocated( neighbor_species ))deallocate( neighbor_species )
-!         if(allocated( neighbors_list))deallocate( neighbors_list )
-!         if(allocated(n_neigh))deallocate( n_neigh )
-! #ifdef _MPIF90
-!         if(allocated(n_neigh_local))deallocate( n_neigh_local )
-! #endif
-!      end if
-
       call build_neighbors_list(positions, a_box, b_box, c_box, params%do_timing, &
                                 species_supercell, rcut_max, n_atom_pairs, rjs, &
                                 thetas, phis, xyz, n_neigh_local, neighbors_list, neighbor_species, n_sites, indices, &
@@ -1074,9 +940,20 @@ program turbogap
          !     We only need to reallocate the arrays if the number of sites changes
          ! REMOVE TRUE FROM IF STATEMENT
          if (n_sites /= n_sites_prev .or. params%do_mc) then
-            if (allocated(energies)) deallocate (energies, energies_soap, energies_2b, energies_3b, energies_core_pot, &
-                           this_energies, energies_vdw, energies_vdw_corr, mbd_ts_scaling, this_forces, energies_lp, energies_exp, &
-                                                 energies_estat, this_mbd_ts_scaling)
+            if (allocated(energies)) deallocate (energies, &
+                                                 energies_soap, &
+                                                 energies_2b, &
+                                                 energies_3b, &
+                                                 energies_core_pot, &
+                                                 this_energies, &
+                                                 energies_vdw, &
+                                                 energies_vdw_corr, &
+                                                 mbd_ts_scaling, &
+                                                 this_forces, &
+                                                 energies_lp, &
+                                                 energies_exp, &
+                                                 energies_estat, &
+                                                 this_mbd_ts_scaling)
             allocate (energies(1:n_sites))
             allocate (this_energies(1:n_sites))
             allocate (energies_soap(1:n_sites))
@@ -1098,7 +975,6 @@ program turbogap
 ! get_ts_energy_and_forces with mbd_ts_scaling never having been set. For MD
 ! this is still exactly the first step, so the MD path is unchanged.
             if (params%vdw_type == "ts+mbd" .and. md_istep <= 0) then
-!          energies_vdw_corr = 0.d0
                if (rank == 0) then
                   open (unit=30, file="mbd_ts_scaling.dat", status="old", iostat=iostatus)
                   if (iostatus == 0) then
@@ -1302,7 +1178,6 @@ program turbogap
 
          if (params%do_prediction) then
             !       Assign the e0 to each atom according to its species
-            !        do i = 1, n_sites
             do i = i_beg, i_end
                do j = 1, n_species
                   if (xyz_species(i) == params%species_types(j)) then
@@ -1498,21 +1373,7 @@ program turbogap
             call mpi_reduce(local_properties, this_local_properties, n_sites*params%n_local_properties,&
                  & MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD,&
                  & ierr)
-            !           if( any( soap_turbo_hypers(:)%has_vdw ) )then
-            ! call mpi_reduce(hirshfeld_v, this_hirshfeld_v, n_sites,&
-            !      & MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD,&
-            !      & ierr)
-            !        if( params%do_forces )then
-            !         I'm not sure if this is necessary at all... CHECK
-            !          call mpi_reduce(hirshfeld_v_cart_der,
-            !          this_hirshfeld_v_cart_der, 3*n_atom_pairs,
-            !          MPI_DOUBLE_PRECISION, MPI_SUM, 0,
-            !          MPI_COMM_WORLD, ierr)
-            !          hirshfeld_v_cart_der = this_hirshfeld_v_cart_der
-            !        end if
-            !            hirshfeld_v = this_hirshfeld_v
             local_properties = this_local_properties
-            !           call mpi_bcast(hirshfeld_v, n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
             call mpi_bcast(local_properties, n_sites*params%n_local_properties, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
 
             call time_end(time%mpi)
@@ -2155,7 +2016,6 @@ program turbogap
          end if
 ! For debugging the virial implementation
          if (rank == 0 .and. .false.) then
-!if( rank == 0 .and. .true. )then
             write (*, *) "pressure_soap: ", virial_soap/3.d0/v_uc
             write (*, *) "pressure_vdw: ", virial_vdw/3.d0/v_uc
             do i = 1, 3
@@ -2320,7 +2180,6 @@ program turbogap
             end if
             if (rank == 0) then
                counter = 1
-               !          write(*,*)
                write (*, *) '                                       |'
                write (*, '(A,I8,A,I8,A)') "Nested sampling iter.:", i_nested, "/", params%n_nested, " |"
                write (*, '(A,I8,A)') " - Highest enthalpy walker:    ", i_image, " |"
@@ -2366,29 +2225,11 @@ program turbogap
                e_kin = e_kin + 0.5d0*masses(i)*dot_product(velocities(1:3, i), velocities(1:3, i))
             end do
             call random_number(rand)
-            !        rand = rand * 4.d0/3.d0 - 1.d0/3.d0
-            !        velocities = velocities / sqrt(e_kin) * sqrt(e_max - energy - params%p_nested/eVperA3tobar*v_uc + &
-            !                                                     1.5d0*real(n_sites-1)*kB*params%t_extra*max(0.d0, rand))
             velocities = velocities/sqrt(e_kin)*sqrt(rand*(e_max - energy - params%p_nested/eVperA3tobar*v_uc))
          else if (i_nested == params%n_nested) then
             exit_loop = .true.
          end if
       end if
-
-      !   NOW THIS IS HANDLED AT THE BEGINNING OF THE CODE WHEN WE CHECK IF THE NUMBER OF SITES HAS CHANGED
-      !   Clean up
-      !    deallocate( energies, energies_soap, energies_2b, energies_3b, energies_core_pot, this_energies, energies_vdw )
-      !    if( params%do_forces )then
-      !      deallocate( forces, forces_soap, forces_2b, forces_3b, forces_core_pot, this_forces, forces_vdw )
-      !    end if
-      !    if( any( soap_turbo_hypers(:)%has_vdw ) )then
-      !      nullify( this_hirshfeld_v_pt )
-      !      deallocate( this_hirshfeld_v, hirshfeld_v )
-      !      if( params%do_forces )then
-      !        nullify( this_hirshfeld_v_cart_der_pt )
-      !        deallocate( this_hirshfeld_v_cart_der, hirshfeld_v_cart_der )
-      !      end if
-      !    end if
 
 #ifdef _MPIF90
       IF (rank == 0) THEN
@@ -3078,14 +2919,6 @@ program turbogap
             if (allocated(fix_atom)) deallocate (fix_atom)
             allocate (fix_atom(1:3, 1:n_sp))
 
-            ! if(allocated(forces_prev))deallocate(forces_prev)
-            ! allocate( forces_prev(1:3, 1:n_sites) )
-            ! if(allocated(positions_prev))deallocate(positions_prev)
-            ! allocate( positions_prev(1:3, 1:n_sites) )
-            ! if(allocated(positions_diff))deallocate(positions_diff)
-            ! allocate( positions_diff(1:3, 1:n_sites) )
-            ! positions_diff = 0.d0
-
          end if
          if (allocated(xyz_species)) deallocate (xyz_species)
          allocate (xyz_species(1:n_sp))
@@ -3181,17 +3014,12 @@ program turbogap
       IF (rank == 0) then
 #endif
          if (params%do_md .and. .not. params%do_nested_sampling) then
-            !      write(*,'(A)')'] |'
-            !      write(*,*)
             write (*, *) '                                       |'
-            !      write(*,'(I8,A,F13.3,A)') params%md_nsteps, ' MD steps:', time2-time3, ' seconds |'
             write (*, '(I8,A,F13.3,A)') md_istep, ' MD steps:', time2 - time3, ' seconds |'
          end if
          if (params%do_mc) then
-            !      write(*,'(A)')'] |'
             write (*, *)
             write (*, *) '                                       |'
-            !      write(*,'(I8,A,F13.3,A)') params%md_nsteps, ' MD steps:', time2-time3, ' seconds |'
             write (*, '(I8,A,F13.3,A)') mc_istep, ' MC steps:', time2 - time3, ' seconds |'
          end if
 
