@@ -92,25 +92,7 @@ program turbogap
    real(dp) :: energy_prev
    real(dp), target :: virial(1:3, 1:3)
    real(dp), target :: this_virial(1:3, 1:3)
-   real(dp), target :: virial_soap(1:3, 1:3)
-   real(dp), target :: virial_2b(1:3, 1:3)
-   real(dp), target :: virial_3b(1:3, 1:3)
-   real(dp), target :: virial_core_pot(1:3, 1:3)
-   real(dp), target :: virial_vdw(1:3, 1:3)
-   real(dp), target :: virial_lp(1:3, 1:3)
-   real(dp), target :: this_virial_vdw(1:3, 1:3)
-   real(dp), target :: this_virial_lp(1:3, 1:3)
-   real(dp), target :: virial_pdf(1:3, 1:3)
-   real(dp), target :: this_virial_pdf(1:3, 1:3)
    real(dp), target :: v_uc
-   real(dp), target :: virial_sf(1:3, 1:3)
-   real(dp), target :: this_virial_sf(1:3, 1:3)
-   real(dp), target :: virial_xrd(1:3, 1:3)
-   real(dp), target :: this_virial_xrd(1:3, 1:3)
-   real(dp), target :: virial_nd(1:3, 1:3)
-   real(dp), target :: this_virial_nd(1:3, 1:3)
-   real(dp), target :: virial_estat(1:3, 1:3)
-   real(dp), target :: this_virial_estat(1:3, 1:3)
    real(dp) :: v_uc_prev
    real(dp) :: v_a_uc
    real(dp) :: v_a_uc_prev
@@ -120,22 +102,40 @@ program turbogap
    real(dp) :: d_disp
    real(dp) :: p_accept
    real(dp) :: virial_prev(1:3, 1:3)
+   real(dp), target :: virial_soap(1:3, 1:3)
+   real(dp), target :: virial_2b(1:3, 1:3)
+   real(dp), target :: virial_3b(1:3, 1:3)
+   real(dp), target :: virial_core_pot(1:3, 1:3)
+   real(dp), target :: virial_vdw(1:3, 1:3)
+   real(dp), target :: virial_estat(1:3, 1:3)
+   real(dp), target :: this_virial_estat(1:3, 1:3)
+   real(dp), target :: virial_lp(1:3, 1:3)
+   real(dp), target :: this_virial_vdw(1:3, 1:3)
+   real(dp), target :: this_virial_lp(1:3, 1:3)
+   real(dp), target :: virial_pdf(1:3, 1:3)
+   real(dp), target :: this_virial_pdf(1:3, 1:3)
+   real(dp), target :: virial_sf(1:3, 1:3)
+   real(dp), target :: this_virial_sf(1:3, 1:3)
+   real(dp), target :: virial_xrd(1:3, 1:3)
+   real(dp), target :: this_virial_xrd(1:3, 1:3)
+   real(dp), target :: virial_nd(1:3, 1:3)
+   real(dp), target :: this_virial_nd(1:3, 1:3)
    real(dp), allocatable, target :: energies(:)
    real(dp), allocatable, target :: forces(:, :)
-   real(dp), allocatable, target :: energies_soap(:)
-   real(dp), allocatable, target :: forces_soap(:, :)
    real(dp), allocatable, target :: this_energies(:)
    real(dp), allocatable, target :: this_forces(:, :)
+   real(dp), allocatable, target :: velocities(:, :)
+   real(dp), allocatable, target :: masses_types(:)
+   real(dp), allocatable, target :: masses(:)
+   real(dp), allocatable, target :: energies_exp(:)
+   real(dp), allocatable, target :: energies_soap(:)
+   real(dp), allocatable, target :: forces_soap(:, :)
    real(dp), allocatable, target :: energies_2b(:)
    real(dp), allocatable, target :: forces_2b(:, :)
    real(dp), allocatable, target :: energies_3b(:)
    real(dp), allocatable, target :: forces_3b(:, :)
    real(dp), allocatable, target :: energies_core_pot(:)
    real(dp), allocatable, target :: forces_core_pot(:, :)
-   real(dp), allocatable, target :: velocities(:, :)
-   real(dp), allocatable, target :: masses_types(:)
-   real(dp), allocatable, target :: masses(:)
-   real(dp), allocatable, target :: energies_exp(:)
 
    real(dp), allocatable, target :: local_properties(:, :)
    real(dp), allocatable, target :: local_properties_cart_der(:, :, :)
@@ -150,7 +150,6 @@ program turbogap
    real(dp), allocatable :: all_this_energies(:, :)
    real(dp), allocatable :: all_this_forces(:, :, :)
    real(dp), allocatable :: all_this_virial(:, :, :)
-
    real(dp) :: instant_temp
    real(dp) :: kB = 8.6173303d-5
    real(dp) :: E_kinetic = 0.d0
@@ -182,14 +181,9 @@ program turbogap
    logical :: gd_box_do_pos = .true.
    logical :: restart_box_optim = .false.
    logical :: valid_xps = .false.
-   logical :: valid_estat_charges = .false.
    logical :: write_condition = .false.
    logical :: overwrite_condition = .false.
-   logical :: do_electrostatics = .true.
-
    character*1 :: creturn = achar(13)
-
-   !--- TODO: Create variables for GOU allocation of variables which are needed! ---!
 
   !! these decalarations are for time step and electronic stopping by different methods
    real(dp) :: time_step_prev
@@ -238,7 +232,6 @@ program turbogap
    integer :: n_sites_prev = 0
    integer :: n_atom_pairs_by_rank_prev = 0
    integer :: n_lp_count = 0
-   integer :: charge_lp_index
    integer :: vdw_lp_index
    integer :: core_be_lp_index
    integer :: xps_idx
@@ -252,11 +245,13 @@ program turbogap
    integer :: counter = 0
    integer :: counter2
 
-!   The eleven additive contribution families reduced together after the
+!   The eleven additive contribution families that are reduced together after the
 !   descriptor loop. Their predicates used to be written out three times -- to
 !   count the slots, to pack them and to unpack them -- and evaluated
 !   independently each time. Two copies disagreeing shifts counter2 and
-!   silently attributes one family's energies to another.
+!   silently attributes one term's energies to another. That is the same shape
+!   as the ts+mbd predicate defect (KNOWN_ISSUES.md #1), so it is killed the
+!   same way: evaluated once, into contrib_on, and only read thereafter.
    integer, parameter :: C_SOAP = 1
    integer, parameter :: C_VDW = 2
    integer, parameter :: C_ESTAT = 3
@@ -275,6 +270,26 @@ program turbogap
    integer :: n_active
    integer :: i_contrib
    integer :: which_atom = 0
+
+   !--- GPU VARIABLES FOR ALLOCATION ---!
+
+   integer :: n_omp
+   integer :: omp_task
+   !**************************************************************************
+   integer(c_size_t) :: st_size_nf
+   type(c_ptr) :: alphas_d
+   type(c_ptr) :: qs_d
+   type(c_ptr) :: nf_d
+   type(c_ptr) :: rcut_hard_d
+   type(c_ptr) :: rcut_soft_d
+   type(c_ptr) :: global_scaling_d
+   type(c_ptr) :: atom_sigma_r_d
+   type(c_ptr) :: atom_sigma_r_scaling_d
+   type(c_ptr) :: atom_sigma_t_d
+   type(c_ptr) :: atom_sigma_t_scaling_d
+   type(c_ptr) :: amplitude_scaling_d
+   type(c_ptr) :: alpha_max_d
+   type(c_ptr) :: central_weight_d
    integer :: n_species = 1
    integer :: n_xyz
    integer :: indices(1:3)
@@ -313,31 +328,24 @@ program turbogap
    type(distance_2b), allocatable, target :: distance_2b_hypers(:)
    type(angle_3b), allocatable, target :: angle_3b_hypers(:)
    type(core_pot), allocatable, target :: core_pot_hypers(:)
-
-   !vdw crap
-!   Persistent ts+mbd correction state, owned by turbogap_vdw.
-   type(vdw_state) :: vdw_ws
-   real(dp), allocatable :: energies_vdw_corr(:)
-   real(dp), allocatable :: forces_vdw_corr(:, :)
-   real(dp), allocatable :: local_virial_vdw_diag_corr(:, :)
-   logical :: update_mbd_ts_scaling = .true.
    real(dp), allocatable, target :: energies_vdw(:)
-!  The TS scaling factor and the diagonal local virial that master's
-!  get_ts_energy_and_forces takes. For plain TS the scaling is 1.d0; it
-!  exists so the ts+mbd scheme can reuse the same routine.
-   real(dp), allocatable :: mbd_ts_scaling(:), this_mbd_ts_scaling(:)
-   real(dp), allocatable :: local_virial_vdw_diag(:, :), this_local_virial_vdw_diag(:, :)
-   real(dp), allocatable, target :: forces_vdw(:, :)
-   real(dp), allocatable, target :: this_energies_vdw(:)
-   real(dp), allocatable, target :: this_forces_vdw(:, :)
-   real(dp), allocatable, target :: energies_lp(:)
-   real(dp), allocatable, target :: forces_lp(:, :)
-   real(dp), allocatable, target :: this_energies_lp(:)
-   real(dp), allocatable, target :: this_forces_lp(:, :)
    real(dp), allocatable, target :: energies_estat(:)
    real(dp), allocatable, target :: forces_estat(:, :)
    real(dp), allocatable, target :: this_energies_estat(:)
    real(dp), allocatable, target :: this_forces_estat(:, :)
+   logical :: do_electrostatics = .true.
+   logical :: valid_estat_charges = .false.
+   integer :: charge_lp_index
+   real(dp), allocatable, target :: forces_vdw(:, :)
+   real(dp), allocatable, target :: this_energies_vdw(:)
+   real(dp), allocatable, target :: this_forces_vdw(:, :)
+
+!   Persistent ts+mbd correction state, owned by turbogap_vdw.
+   type(vdw_state) :: vdw_ws
+   real(dp), allocatable, target :: energies_lp(:)
+   real(dp), allocatable, target :: forces_lp(:, :)
+   real(dp), allocatable, target :: this_energies_lp(:)
+   real(dp), allocatable, target :: this_forces_lp(:, :)
    real(dp), allocatable, target :: energies_pdf(:)
    real(dp), allocatable, target :: forces_pdf(:, :)
    real(dp), allocatable, target :: this_energies_pdf(:)
@@ -354,45 +362,30 @@ program turbogap
    real(dp), allocatable, target :: forces_nd(:, :)
    real(dp), allocatable, target :: this_energies_nd(:)
    real(dp), allocatable, target :: this_forces_nd(:, :)
+!  The TS scaling factor and the diagonal local virial that master's
+!  get_ts_energy_and_forces takes. For plain TS the scaling is 1.d0; it
+!  exists so the ts+mbd scheme can reuse the same routine.
+   real(dp), allocatable :: mbd_ts_scaling(:), this_mbd_ts_scaling(:)
+   real(dp), allocatable :: local_virial_vdw_diag(:, :), this_local_virial_vdw_diag(:, :)
+   real(dp), allocatable :: local_virial_vdw_diag_corr(:, :)
+   real(dp), allocatable :: energies_vdw_corr(:)
+   real(dp), allocatable :: forces_vdw_corr(:, :)
+   logical :: update_mbd_ts_scaling = .true.
    ! MPI stuff
    integer, allocatable :: n_atom_pairs_by_rank(:)
-   integer, allocatable :: site_in_rank(:)
-   integer, allocatable :: this_site_in_rank(:)
    integer, allocatable :: local_properties_n_sparse_mpi_soap_turbo(:)
    integer, allocatable :: local_properties_dim_mpi_soap_turbo(:)
    integer, allocatable :: n_neigh_local(:)
+   integer, allocatable :: site_in_rank(:)
+   integer, allocatable :: this_site_in_rank(:)
    integer :: i_beg
    integer :: i_end
    integer :: n_sites_mpi
    integer :: j_beg
    integer :: j_end
-
-   !--- GPU VARIABLES FOR ALLOCATION ---!
-
-   integer :: n_omp
-   integer :: omp_task
-   !**************************************************************************
-   integer(c_size_t) :: st_size_nf
-   type(c_ptr) :: alphas_d
-   type(c_ptr) :: qs_d
-   type(c_ptr) :: nf_d
-   type(c_ptr) :: rcut_hard_d
-   type(c_ptr) :: rcut_soft_d
-   type(c_ptr) :: global_scaling_d
-   type(c_ptr) :: atom_sigma_r_d
-   type(c_ptr) :: atom_sigma_r_scaling_d
-   type(c_ptr) :: atom_sigma_t_d
-   type(c_ptr) :: atom_sigma_t_scaling_d
-   type(c_ptr) :: amplitude_scaling_d
-   type(c_ptr) :: alpha_max_d
-   type(c_ptr) :: central_weight_d
-   !**************************************************************************
-   !local variables for 3benergy and forces gpu
-
    !**************************************************************************
 
-   !--- GPU variables for experimental ---!
-   !  type( gpu_exp ) :: gpu_exp_vars
+   !**************************************************************************
 
    ! Nested sampling
    real(dp) :: e_max
@@ -410,12 +403,6 @@ program turbogap
    type(image), allocatable :: images_temp(:)
 
    ! Storage of host arrays which are compatible with gpu implementation
-
-   ! this is a type of
-   ! gpu_batch_storage( i_batch ) % host( i_n_dim_idx ) % pair_distribution_h( 1:n_samples )
-
-   ! integer, parameter :: nstr=7
-   ! type(c_ptr) :: virial_d(nstr),tmp_forces0_d(nstr),tmp_energies0_d(nstr)
 
    !**************************************************************************
 
@@ -474,7 +461,6 @@ program turbogap
    !**************************************************************************
    ! Read the mode. It should be "soap", "predict" or "md"
    !
-
    call get_command_argument(1, mode)
    if (mode == "" .or. mode == "none") then
       write (*, *) "ERROR: you need to run 'turbogap md' or 'turbogap predict'"
@@ -688,7 +674,6 @@ program turbogap
             if (md_istep == params%md_nsteps) then
                write (*, *)
             end if
-
 #ifdef _MPIF90
          END IF
 #endif
@@ -704,10 +689,7 @@ program turbogap
       !   Read in XYZ file and build neighbors lists
 
       if ((params%do_md .and. md_istep == 0)) then
-
-         !time%read_xyz(1) = MPI_wtime()
          call time_start(time%read_xyz)
-
 #ifdef _MPIF90
          IF (rank == 0) THEN
 #endif
@@ -746,8 +728,6 @@ program turbogap
 #ifdef _MPIF90
          END IF
 #endif
-
-         !time%read_xyz(2) = MPI_wtime()
          call time_end(time%read_xyz)
          !     If we're doing MD, we don't read beyond the first snapshot in the XYZ file
          repeat_xyz = .false.
@@ -769,10 +749,7 @@ program turbogap
          END IF
 #endif
       else if (.not. params%do_md) then
-
-         !time%read_xyz(1) = MPI_wtime()
          call time_start(time%read_xyz)
-
 #ifdef _MPIF90
          IF (rank == 0) THEN
 #endif
@@ -795,15 +772,10 @@ program turbogap
 #ifdef _MPIF90
          END IF
 #endif
-
-         !time%read_xyz(2) = MPI_wtime()
          call time_end(time%read_xyz)
 #ifdef _MPIF90
-
          call time_start(time%mpi)
-
          call mpi_bcast(repeat_xyz, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
-
          call time_end(time%mpi)
 #endif
          rebuild_neighbors_list = .true.
@@ -837,14 +809,11 @@ program turbogap
          end if
 
       END IF
-
       call time_start(time%mpi)
-
       call mpi_bcast(n_pos, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(n_sp, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(n_sp_sc, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(n_sites, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-      ! time%mpi(2)=MPI_Wtime()
       call time_end(time%mpi)
 
       IF (rank /= 0) THEN
@@ -868,10 +837,7 @@ program turbogap
          allocate (fix_atom(1:3, 1:n_sp))
 
       END IF
-
-      !time%mpi_positions(1) = MPI_wtime()
       call time_start(time%mpi_positions)
-
       call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
       if (params%do_md .or. params%do_nested_sampling .or. params%do_mc .or. params%mc_hamiltonian) then
          call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
@@ -886,8 +852,6 @@ program turbogap
       call mpi_bcast(a_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(b_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(c_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-
-      !time%mpi_positions(2) = MPI_wtime()
       call time_end(time%mpi_positions)
 #endif
       !   Now that all ranks know the size of n_sites, we allocate do_list
@@ -898,9 +862,7 @@ program turbogap
          do_list = .true.
       end if
       !
-
       call time_start(time%neigh)
-
 #ifdef _MPIF90
       !   Parallel neighbors list build
       call mpi_bcast(rebuild_neighbors_list, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
@@ -952,7 +914,6 @@ program turbogap
                                 species_supercell, rcut_max, n_atom_pairs, rjs, &
                                 thetas, phis, xyz, n_neigh_local, neighbors_list, neighbor_species, n_sites, indices, &
                                 rebuild_neighbors_list, do_list, rank)
-
       if (rebuild_neighbors_list) then
          !     Get total number of atom pairs
          call mpi_allgather(n_atom_pairs, 1, MPI_INTEGER, n_atom_pairs_by_rank, 1, MPI_INTEGER, MPI_COMM_WORLD, ierr)
@@ -968,7 +929,6 @@ program turbogap
          j_end = n_atom_pairs_by_rank(rank + 1)
       end if
 #else
-
       call build_neighbors_list(positions, a_box, b_box, c_box, params%do_timing, &
                                 species_supercell, rcut_max, n_atom_pairs, rjs, &
                                 thetas, phis, xyz, n_neigh, neighbors_list, neighbor_species, n_sites, indices, &
@@ -1001,7 +961,6 @@ program turbogap
 #else
       site_in_rank = this_site_in_rank
 #endif
-
       !   Compute the volume of the "primitive" unit cell
       v_uc = dot_product(cross_product(a_box, b_box), c_box)/(dfloat(indices(1)*indices(2)*indices(3)))
 
@@ -1014,7 +973,6 @@ program turbogap
       !   If we are doing prediction, we run this chunk of code
       if (params%do_prediction .or. params%write_soap .or. params%write_derivatives) then
 
-         !        print *, rank, " Allocating prediction arrays"
          !     We only need to reallocate the arrays if the number of sites changes
          ! REMOVE TRUE FROM IF STATEMENT
          if (n_sites /= n_sites_prev .or. params%do_mc) then
@@ -1120,7 +1078,6 @@ program turbogap
          ! Adding allocation of local properties
 
          ! Now one could use pointers such that hirshfeld_v(:) acts as an alias for local_properties(vdw_index,:)...
-         !        print *, rank, " Associating local properties "
          if (any(soap_turbo_hypers(:)%has_local_properties)) then
             if (n_sites /= n_sites_prev .or. params%do_mc) then
                if (allocated(local_properties)) then
@@ -1255,13 +1212,8 @@ program turbogap
          end if
          !     Collect all energies
 #ifdef _MPIF90
-
-         !time%mpi_ef(1) = MPI_wtime()
          call time_start(time%mpi_ef)
-
          call mpi_reduce(energies, this_energies, n_sites, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
-
-         !time%mpi_ef(2) = MPI_wtime()
          call time_end(time%mpi_ef)
          energies = this_energies
 #endif
@@ -1269,16 +1221,11 @@ program turbogap
          !     Loop through soap_turbo descriptors - we always call this routine, even if we don't want to do prediction
          n_lp_count = 0 ! This counts the local properties
 
-         !!! COMMENTING OUT
-
          !#################################################################
 
-         !              write(*,*) " > Starting get_gap_soap loop "
          call time_start(time%gap)
          do i = 1, n_soap_turbo
-
             call time_start(time%soap)
-
             !       Compute number of pairs for this SOAP. SOAP has in general a different cutoff than overall max
             !       cutoff, so the number of pairs may be a lot smaller for the SOAP subset.
             !       This subroutine splits the load optimally so as to not use more memory per MPI process than available.
@@ -1438,7 +1385,6 @@ program turbogap
                   virial_soap = virial_soap + this_virial
                end if
             end do
-
             n_lp_count = n_lp_count + soap_turbo_hypers(i)%n_local_properties
 
             call gpu_free_async(nf_d, gpu_stream)
@@ -1462,10 +1408,6 @@ program turbogap
 
             call soap_backend_end()
 
-           !!time%soap_solo(2 = MPI_wtime()
-            !        call get_time( time%soap_solo(2  )
-
-            ! ! time%soap_solo(2)=MPI_Wtime()
             call get_time(time%soap_solo(2))
 
             deallocate (i_beg_list, i_end_list, j_beg_list, j_end_list)
@@ -1546,7 +1488,6 @@ program turbogap
             END IF
 #endif
 
-            !time%soap(2) = MPI_wtime()
             call time_end(time%soap)
 
          end do
@@ -1556,16 +1497,13 @@ program turbogap
 
 #ifdef _MPIF90
          if (any(soap_turbo_hypers(:)%has_local_properties)) then
-            ! time%mpi(1)=MPI_Wtime()
             call time_start(time%mpi)
-
             call mpi_reduce(local_properties, this_local_properties, n_sites*params%n_local_properties,&
               & MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD,&
               & ierr)
             local_properties = this_local_properties
             call mpi_bcast(local_properties, n_sites*params%n_local_properties, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
 
-            ! time%mpi(2)=MPI_Wtime()
             call time_end(time%mpi)
          end if
 #endif
@@ -1587,11 +1525,11 @@ program turbogap
                           local_virial_vdw_diag_corr, mbd_ts_scaling, this_mbd_ts_scaling, &
                           update_mbd_ts_scaling, time)
 
-         !     Compute ELECTROSTATIC energies and forces
+!        Compute ELECTROSTATIC energies and forces
 !        valid_estat_charges is part of the guard, not an afterthought: without it a
 !        deck that asks for electrostatics against a GAP with no atomic_charge local
 !        property indexes local_properties with an uninitialised charge_lp_index and
-!        segfaults. Reproduced on the CPU branch, where the same block was ported.
+!        segfaults. Same shape as the has_vdw/has_local_properties defect.
 !        Moved to src/turbogap_estat.f90. The #ifdef is here, at the one call,
 !        rather than inside four continued argument lists where nothing
 !        Fortran-aware could parse it.
@@ -1714,9 +1652,11 @@ program turbogap
          !###---   (Partial) Pair distribution functions and XRD   ---###!
          !##############################################################!
          !
-         ! Moved to src/turbogap_exp.f90. The #ifdef is here, at the one
-         ! call, rather than inside four continued argument lists where
-         ! nothing Fortran-aware could parse it.
+         ! Moved to src/turbogap_exp.f90. The #ifdef below is the whole reason
+         ! it is here rather than inside: the exp_interface routines take the
+         ! this_-prefixed arrays under MPI and the plain ones otherwise. Choosing
+         ! once, at the call, is what let four preprocessor-interrupted argument
+         ! lists disappear from the moved code.
 #ifdef _MPIF90
          call compute_exp_spectra(params, n_sites, species, rjs, xyz, neighbors_list, &
                                   n_neigh, neighbor_species, indices, a_box, b_box, c_box, i_beg, i_end, j_beg, &
@@ -1774,13 +1714,13 @@ program turbogap
             !       Communicate all energies and forces here for all
             !       terms
 #ifdef _MPIF90
-
-            !time%mpi_ef(1) = MPI_wtime()
             call time_start(time%mpi_ef)
-
 !       One evaluation of the eleven predicates, and one list built from them.
 !       The pack and unpack walks below read only that list, so they cannot
-!       disagree about which slot belongs to which family.
+!       disagree about which slot belongs to which family -- the failure mode
+!       this replaces was three independent copies of these conditions, where
+!       any two disagreeing shifts the slot numbering and silently attributes
+!       one family's energies and forces to another.
             contrib_on(C_SOAP) = (n_soap_turbo > 0)
             contrib_on(C_VDW) = allocated(this_energies_vdw)
             contrib_on(C_ESTAT) = allocated(this_energies_estat)
@@ -2014,7 +1954,6 @@ program turbogap
                deallocate (all_forces, all_this_forces, all_virial, all_this_virial)
             end if
 
-            !time%mpi_ef(2) = MPI_wtime()
             call time_end(time%mpi_ef)
 #endif
 
@@ -2427,7 +2366,6 @@ program turbogap
                !       -- We have the list of move types in params%mc_types and the number params%n_mc_types --
                !       >> First generate a random number in the range of the number of
 
-               !time%mc(1) = MPI_wtime()
                call time_start(time%mc)
 
                !       Now we do a monte-carlo step: we choose what the steps are from the available list and then choose a random number
@@ -2624,8 +2562,6 @@ program turbogap
                   end if
 
                   !          Add acceptance to the log file else dont
-
-                  !time%mc(2) = MPI_wtime()
                   call time_end(time%mc)
 
                else ! if (mc_istep == 0)
@@ -3042,15 +2978,12 @@ program turbogap
          n_sp = size(xyz_species, 1)
          n_sp_sc = size(xyz_species_supercell, 1)
       END IF
-
       call time_start(time%mpi)
-
       call mpi_bcast(n_pos, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(n_sp, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(n_sp_sc, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(params%do_md, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(md_istep, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-
       call time_end(time%mpi)
       IF (rank /= 0) THEN !.and. (mc_move == "insertion" .or. mc_move == "removal")
          if (allocated(positions)) deallocate (positions)
@@ -3073,10 +3006,7 @@ program turbogap
          if (allocated(species_supercell)) deallocate (species_supercell)
          allocate (species_supercell(1:n_sp_sc))
       END IF
-
-      !time%mpi_positions(1) = MPI_wtime()
       call time_start(time%mpi_positions)
-
       call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
       if (params%do_md .or. params%do_nested_sampling .or. params%do_mc) then
          call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
@@ -3092,8 +3022,6 @@ program turbogap
       call mpi_bcast(b_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(c_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(n_sites, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-
-      !time%mpi_positions(2) = MPI_wtime()
       call time_end(time%mpi_positions)
 #endif
       !   Now that all ranks know the size of n_sites, we allocate do_list
@@ -3107,7 +3035,6 @@ program turbogap
 
       !     !     !     !     call cpu_time(time1)
       call get_time(time1)
-
 #ifdef _MPIF90
       !   Parallel neighbors list build
       call mpi_bcast(rebuild_neighbors_list, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
@@ -3161,13 +3088,10 @@ program turbogap
    end do
 
    if (params%do_md .or. params%do_prediction .or. params%do_mc) then
-
       call get_time(time2)
-
 #ifdef _MPIF90
       IF (rank == 0) then
 #endif
-
          if (params%do_md .and. .not. params%do_nested_sampling) then
             write (*, *) '                                       |'
             write (*, '(I8,A,F13.3,A)') md_istep, ' MD steps:', time2 - time3, ' seconds |'
@@ -3308,6 +3232,24 @@ program turbogap
    if (allocated(local_property_indexes)) deallocate (local_property_indexes)
    if (allocated(do_list)) deallocate (do_list)
    if (allocated(params%write_local_properties)) deallocate (params%write_local_properties)
+
+   if (params%vdw_type == "ts+mbd") then
+#ifdef _MPIF90
+      IF (rank == 0) then
+#endif
+         open (unit=30, file="mbd_ts_scaling.dat", status="unknown")
+         do i = 1, n_sites
+#ifdef _MPIF90
+            write (30, *) this_mbd_ts_scaling(i)
+#else
+            write (30, *) mbd_ts_scaling(i)
+#endif
+         end do
+         close (30)
+#ifdef _MPIF90
+      END IF
+#endif
+   end if
 
 #ifdef _MPIF90
    IF (rank == 0) then
