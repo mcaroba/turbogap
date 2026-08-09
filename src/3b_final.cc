@@ -148,6 +148,14 @@ __device__ void eval_energies_d(const double rcut, const double buffer, const in
   auto sigma2_0 = sigma[0] * sigma[0];
   auto sigma2_1 = sigma[1] * sigma[1];
   auto sigma2_2 = sigma[2] * sigma[2];
+
+  // Per-lane accumulators over the sparse-point loop. Reduced across the warp
+  // and pushed to global memory once, after the loop, instead of once per
+  // iteration -- see the file header.
+  double acc_energy = 0.0;
+  double acc_f1[3] = {0.0, 0.0, 0.0};
+  double acc_f2[3] = {0.0, 0.0, 0.0};
+  double acc_f3[3] = {0.0, 0.0, 0.0};
   int offset = tid - warpSize;
   int nitera = (n_sparse + warpSize - 1) / warpSize;
   //for(auto offset=tid; offset < n_sparse; offset+=warpSize)
@@ -155,9 +163,15 @@ __device__ void eval_energies_d(const double rcut, const double buffer, const in
     offset += warpSize;
     double local_r = 1.0;
     if (offset < n_sparse) {
-      local_r = pow(q[0] - qs[offset], 2) / sigma2_0;
-      local_r += pow(q[1] - qs[offset + n_sparse], 2) / sigma2_1;
-      local_r += pow(q[2] - qs[offset + 2 * n_sparse], 2) / sigma2_2;
+      // x*x rather than pow(x, 2): identical result, and pow is a call.
+      // Kept as three statements so the summation order is the one that was
+      // here before.
+      const double d0 = q[0] - qs[offset];
+      const double d1 = q[1] - qs[offset + n_sparse];
+      const double d2 = q[2] - qs[offset + 2 * n_sparse];
+      local_r = d0 * d0 / sigma2_0;
+      local_r += d1 * d1 / sigma2_1;
+      local_r += d2 * d2 / sigma2_2;
     }
     local_r = sqrt(local_r);
 
@@ -165,23 +179,21 @@ __device__ void eval_energies_d(const double rcut, const double buffer, const in
       constexpr int j_int = 3 / 2 + 1 + 1;
       constexpr double j = j_int;
       double my_energy = 0.0;
-      double energy_to_reduce;
       double covpp = 0.0;
+      // (1 - local_r) to the integer powers j_int and j_int+1, which are 3 and
+      // 4. Both come from two multiplies, and the exponent-4 term below reuses
+      // this one instead of calling pow a second time.
+      const double u = 1.0 - local_r;
+      const double u2 = u * u;
+      const double u3 = u2 * u;
+      const double u4 = u2 * u2;
       if (offset < n_sparse) {
-        //auto covpp = local_r >= 1 ? 0.0 : local_r <= 0 ? 1.0 : pow((1.0 - local_r),(j_int+1)) * ((j+1.0)*local_r + 1.0);
-        covpp = local_r >= 1 ? 0.0 : local_r <= 0 ? 1.0 : pow((1.0 - local_r), (j_int + 1)) * ((j + 1.0) * local_r + 1.0);
+        covpp = local_r >= 1 ? 0.0 : local_r <= 0 ? 1.0 : u4 * ((j + 1.0) * local_r + 1.0);
         my_energy = pref[offset] * covpp;
       }
-      energy_to_reduce = my_energy;
-
-      //reduction of energy from warp to single value, syncthreads should never happen (left for sanity reasons)
-      __syncthreads();
-      double tmp = warp_red(energy_to_reduce);
-      __syncthreads();
-
-      if (tid == 0) {
-        atomicAdd(&(energies[i]), fcut[2] * tmp);
-      }
+      //    Accumulate per lane. The reduction and the atomic move below the loop;
+      //    see the note at the top of this file for why that is the same sum.
+      acc_energy += my_energy;
 
       if constexpr (do_forces) {
         double drdq[3];
@@ -195,69 +207,26 @@ __device__ void eval_energies_d(const double rcut, const double buffer, const in
         }
         double kernel_der = 0.0;
         if (offset < n_sparse) {
-          auto cov_pp_der = local_r <= 0.0 || local_r >= 1.0
-                                ? 0.0
-                                : ((-(j + 1.0) * pow((1.0 - local_r), j_int) * ((j + 1.0) * local_r + 1.0) +
-                                    pow((1.0 - local_r), (j_int + 1)) * (j + 1.0)) /
-                                   local_r);
+          auto cov_pp_der =
+              local_r <= 0.0 || local_r >= 1.0 ? 0.0 : ((-(j + 1.0) * u3 * ((j + 1.0) * local_r + 1.0) + u4 * (j + 1.0)) / local_r);
           kernel_der = pref[offset] * cov_pp_der;
         }
-        //split loop of drdx/forces into 3 loops, one for each force since drdx is only needed inside. can help reducing scope of variables? which means keeping things in registers and bla bla
 #pragma unroll
         for (int l = 0; l < 3; ++l) {
-          // For atom 1
-          // drdx1(1:n_sparse, l) = drdq(1:n_sparse, 1) * ( xyz12_red(l) + xyz13_red(l) ) + drdq(1:n_sparse, 2) * 2.d0 * (r12-r13) * ( xyz12_red(l) - xyz13_red(l) )
           auto drdx1 = drdq[0] * (xyz_red[l] + xyz_red[l + 3]) + drdq[1] * 2.0 * (r[0] - r[1]) * (xyz_red[l] - xyz_red[3 + l]);
-          //force1(l) = - sum( kernel(1:n_sparse) * dfcut(l) - kernel_der(1:n_sparse) * fcut*drdx1(1:n_sparse, l) )
-          auto force1 = my_energy * dfcut[6 + l] - kernel_der * fcut[2] * drdx1;
-          __syncthreads();
-          auto tmp = warp_red(force1);
-          __syncthreads();
-          if (tid == 0) {
-            atomicAdd(&(forces[i3 * 3 + l]), -tmp);
-          }
+          acc_f1[l] += my_energy * dfcut[6 + l] - kernel_der * fcut[2] * drdx1;
         } //atom1, pol_k
 
 #pragma unroll
         for (int l = 0; l < 3; ++l) {
-          // For atom 2
-          // drdx2(1:n_sparse, l) = - drdq(1:n_sparse, 1) * xyz12_red(l) - drdq(1:n_sparse, 2) * 2.d0 * (r12-r13) * xyz12_red(l) + drdq(1:n_sparse, 3) * xyz23_red(l)
           auto drdx2 = -drdq[0] * xyz_red[l] - drdq[1] * 2.0 * (r[0] - r[1]) * xyz_red[l] + drdq[2] * xyz_red[l + 6];
-          // force2(l) = - sum( - kernel(1:n_sparse) * fcut13 * dfcut12(l) - kernel_der(1:n_sparse) * fcut*drdx2(1:n_sparse, l) )
-          auto force2 = -my_energy * fcut[1] * dfcut[l] - kernel_der * fcut[2] * drdx2;
-          __syncthreads();
-          auto tmp = warp_red(force2);
-          __syncthreads();
-          if (tid == 0) {
-            atomicAdd(&(forces[j3 * 3 + l]), -tmp);
-#pragma unroll
-            for (auto k = 0; k < 3; ++k) {
-              virial[l * 3 + k] += 0.5 * -tmp /*l*/ * xyz[k];
-              virial[k * 3 + l] +=
-                  0.5 * -tmp /*l*/ *
-                  xyz[k]; //this is not really the original formula, it should be k*3+l = force(k)*xyz(l) but i am exploiting the fact that virials are a symmetric matrix to speed up computations by flipping the indexes here and avoid to store forces(1:3) into variables -> less register usage/memory accesses -> higher efficiency
-            }
-          }
+          acc_f2[l] += -my_energy * fcut[1] * dfcut[l] - kernel_der * fcut[2] * drdx2;
         } //atom2, pol_k
+
 #pragma unroll
         for (int l = 0; l < 3; ++l) {
-          //! For atom 3
-          //  drdx3(1:n_sparse, l) = - drdq(1:n_sparse, 1) * xyz13_red(l) - drdq(1:n_sparse, 2) * 2.d0 * (r13-r12) * xyz13_red(l) - drdq(1:n_sparse, 3) * xyz23_red(l)
           auto drdx3 = -drdq[0] * xyz_red[l + 3] - drdq[1] * 2.0 * (r[1] - r[0]) * xyz_red[l + 3] - drdq[2] * xyz_red[6 + l];
-          __syncthreads();
-          //                  force3(l) = - sum( - kernel(1:n_sparse) * fcut12 * dfcut13(l) - kernel_der(1:n_sparse) * fcut*drdx3(1:n_sparse, l) )
-          auto force3 = -my_energy * fcut[0] * dfcut[3 + l] - kernel_der * fcut[2] * drdx3;
-          __syncthreads();
-          auto tmp = warp_red(force3);
-          __syncthreads();
-          if (tid == 0) {
-            atomicAdd(&(forces[k3 * 3 + l]), -tmp);
-#pragma unroll
-            for (auto k = 0; k < 3; ++k) {
-              virial[l * 3 + k] += 0.5 * -tmp /*l*/ * xyz[3 + k];
-              virial[k * 3 + l] += 0.5 * -tmp /*l*/ * xyz[3 + k]; //see above comment
-            }
-          }
+          acc_f3[l] += -my_energy * fcut[0] * dfcut[3 + l] - kernel_der * fcut[2] * drdx3;
         } //atom3, pol_k
       } //do forces
     } //pol_k
@@ -339,6 +308,47 @@ __device__ void eval_energies_d(const double rcut, const double buffer, const in
       } //do_forces
     } //exp_k
   } //loop on n_sparse
+
+  if constexpr (type == pol_k) {
+    // One reduction and one atomic per quantity, for the whole sparse set.
+    double te = warp_red(acc_energy);
+    if (tid == 0) {
+      atomicAdd(&(energies[i]), fcut[2] * te);
+    }
+    if constexpr (do_forces) {
+#pragma unroll
+      for (int l = 0; l < 3; ++l) {
+        double tmp = warp_red(acc_f1[l]);
+        if (tid == 0) {
+          atomicAdd(&(forces[i3 * 3 + l]), -tmp);
+        }
+      }
+#pragma unroll
+      for (int l = 0; l < 3; ++l) {
+        double tmp = warp_red(acc_f2[l]);
+        if (tid == 0) {
+          atomicAdd(&(forces[j3 * 3 + l]), -tmp);
+#pragma unroll
+          for (auto kk = 0; kk < 3; ++kk) {
+            virial[l * 3 + kk] += 0.5 * -tmp * xyz[kk];
+            virial[kk * 3 + l] += 0.5 * -tmp * xyz[kk];
+          }
+        }
+      }
+#pragma unroll
+      for (int l = 0; l < 3; ++l) {
+        double tmp = warp_red(acc_f3[l]);
+        if (tid == 0) {
+          atomicAdd(&(forces[k3 * 3 + l]), -tmp);
+#pragma unroll
+          for (auto kk = 0; kk < 3; ++kk) {
+            virial[l * 3 + kk] += 0.5 * -tmp * xyz[3 + kk];
+            virial[kk * 3 + l] += 0.5 * -tmp * xyz[3 + kk];
+          }
+        }
+      }
+    }
+  }
 }
 
 
