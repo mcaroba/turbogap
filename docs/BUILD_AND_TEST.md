@@ -105,6 +105,49 @@ cd $M && make -j12 && cp bin/turbogap /tmp/tg_under_test \
 
 ---
 
+## 2b. Profile
+
+`docs/PROFILING.md` is the whole workflow. The two commands:
+
+```sh
+tools/setup_profiling_env.sh --check    # what would stop a profile, and the fix
+tools/profile_gpu.sh CO_predict         # build PROFILE=1, run under nsys, analyse
+```
+
+The cases come from `tests/gpu/cases.sh`, which `tests/gpu/run_regression.sh`
+reads too, so a profile is always of an input the suite checks. **Never profile
+a `DEBUG=1` build** -- the Makefile refuses it, because `-G` is a 2.1x slowdown
+that also reorders the kernel ranking.
+
+`make PROFILE=1` and `make OPENMP=1` each get their own object tree
+(`build-profile/`, `build-omp/`), so neither can silently reuse the other's
+objects or invalidate `bin/turbogap` while the suite is reading it.
+
+## 2c. Device memory, and systems too big for the suite
+
+Every run now ends with a `GPUmem` block: what the device has, what this rank
+held, and its peak. An allocation that does not fit retries once (after draining
+the stream, because `hipFreeAsync` is stream-ordered) and then reports the size,
+the budget and the keyword that fixes it, instead of a bare "out of memory".
+
+```
+gpu_mem_fraction = 0.8      # size max_Gbytes_per_process from the card
+```
+
+Default 0 = off, so existing inputs are unchanged. The 1.0 GB default for
+`max_Gbytes_per_process` was chosen with no device in mind. An explicit
+`gpu_n_batches` is a **floor**: the automatic sizing raises it, never lowers it.
+
+The diamond ladder (13,824 → 1,000,000 atoms) lives outside both repos in
+`../large_systems/diamond_1M/`; see its `README.md` and `docs/PROFILING.md` §6.
+
+```sh
+tools/run_scaling_ladder.sh              # wall time, host RSS, device peak per size
+tools/profile_gpu.sh diamond_125k        # one rung, under nsys
+```
+
+---
+
 ## 3. Checks that are not the suite
 
 ```sh

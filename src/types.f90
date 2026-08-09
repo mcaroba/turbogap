@@ -186,6 +186,11 @@ module types
            & q_range_min = 1.0, q_range_max = 5.d0, r_range_min = 1.0,&
            & r_range_max = 5.d0, pair_distribution_rcut = 4.d0,&
            & pair_distribution_kde_sigma = 0.d0, gpu_max_batch_size = 1.d0, &
+!          Fraction of the device's FREE memory this rank may budget for. Zero
+!          is off, and off is the default: with it set, max_Gbytes_per_process
+!          and the batch counts are derived from the card at start-up instead of
+!          from the 1.0 GB default, which was chosen with no device in mind.
+           & gpu_mem_fraction = 0.d0, &
            & poly_cut_xmin = 3.d0, poly_cut_xmax = 10.d0, &
            & vdw_mbd_rcut = 15.d0, vdw_mbd_rcut2 = 8.d0, &
            &   vdw_2b_rcut = 15.d0, vdw_2b_rcut2 = 8.d0, vdw_omega_ref = 1.3d0, &

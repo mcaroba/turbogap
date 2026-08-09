@@ -13,7 +13,7 @@ $(BUILD_DIR)/soap_turbo.o: $(BUILD_DIR)/fortran_cuda_interfaces.o $(BUILD_DIR)/s
 $(BUILD_DIR)/printing.o: $(BUILD_DIR)/kinds.o
 $(BUILD_DIR)/error.o: $(BUILD_DIR)/kinds.o
 $(BUILD_DIR)/read_utils.o: $(BUILD_DIR)/error.o $(BUILD_DIR)/kinds.o $(BUILD_DIR)/printing.o
-$(BUILD_DIR)/timing.o: $(BUILD_DIR)/kinds.o
+$(BUILD_DIR)/timing.o: $(BUILD_DIR)/kinds.o $(BUILD_DIR)/nvtx.o
 $(BUILD_DIR)/misc.o: $(BUILD_DIR)/kinds.o
 $(BUILD_DIR)/nonneg_leastsq.o: $(BUILD_DIR)/constants.o
 $(BUILD_DIR)/splines.o: $(BUILD_DIR)/kinds.o

@@ -60,7 +60,190 @@ module gpu_context
 ! Running total of device memory handed out, for the end-of-run report.
    real(dp) :: gpu_memory_usage = 0.d0
 
+! The device memory budget this rank may use, in bytes. Set by
+! gpu_memory_budget_init from the device's own free memory; zero means it was
+! never established and every caller falls back to the input's fixed keywords.
+   integer(c_size_t) :: gpu_mem_budget = 0_c_size_t
+
 contains
+
+!**************************************************************************
+!  Establish the device memory budget, and report it.
+!
+!  Called once, after gpu_set_device and before anything allocates. It has to be
+!  after the device is chosen -- hipMemGetInfo on an uninitialised context
+!  returns the wrong card -- and before the first allocation, or the "free"
+!  figure already has TurboGAP's own buffers subtracted from it.
+!
+!  Why a FRACTION of free rather than all of it. Three things are not visible
+!  here and all of them consume device memory: cuBLAS/cutlass workspaces, the
+!  driver's own context growth, and fragmentation inside the stream-ordered
+!  pool, which can refuse a large contiguous request while reporting plenty
+!  free. Sizing batches to 100% of free reliably produces a run that dies near
+!  the end, which is the worst time.
+!
+!  n_ranks_on_device divides the budget. One rank per GPU is the arrangement the
+!  slurm scripts make, but nothing enforces it, and two ranks each sizing their
+!  batches to the whole card is a guaranteed failure that looks like a code bug.
+   subroutine gpu_memory_budget_init(params, rank, ntasks)
+      type(input_parameters), intent(inout) :: params
+      integer, intent(in) :: rank
+      integer, intent(in) :: ntasks
+
+      integer(c_size_t) :: dev_free, dev_total, live, peak
+      real(dp) :: budget_gb
+      real(dp) :: free_gb
+      integer :: n_devices
+      integer :: n_ranks_on_device
+
+      call gpu_mem_stats(dev_free, dev_total, live, peak)
+      free_gb = real(dev_free, dp)/1024.d0**3
+
+!     cuda_set_device assigns devices round-robin (rank mod n_devices), so this
+!     many ranks are looking at the same free memory and would each budget all
+!     of it. One rank per GPU is the usual slurm arrangement and makes this 1.
+      n_devices = max(1, int(gpu_device_count()))
+      n_ranks_on_device = max(1, (ntasks + n_devices - 1)/n_devices)
+
+      if (params%gpu_mem_fraction <= 0.d0) then
+!        Opted out: the input's own max_Gbytes_per_process and gpu_n_batches
+!        stand exactly as written. Still report, because knowing the card has
+!        5.7 GB while max_Gbytes_per_process says 1.0 is most of the diagnosis.
+         gpu_mem_budget = 0_c_size_t
+         if (rank == 0) then
+            write (*, '(A,F8.3,A,F8.3,A)') ' <<<< GPU MEM >>>> device has ', free_gb, &
+               ' GB free of ', real(dev_total, dp)/1024.d0**3, ' GB'
+            write (*, '(A,F8.3,A)') ' <<<< GPU MEM >>>> budgeting is OFF; max_Gbytes_per_process = ', &
+               params%max_Gbytes_per_process, ' as given'
+            write (*, '(A)') ' <<<< GPU MEM >>>> set gpu_mem_fraction (e.g. 0.8) to size it from the device'
+         end if
+      else
+         budget_gb = params%gpu_mem_fraction*free_gb/dfloat(max(1, n_ranks_on_device))
+         gpu_mem_budget = int(budget_gb*1024.d0**3, c_size_t)
+
+!        max_Gbytes_per_process is the SOAP loop's divisor: get_number_of_atom_pairs
+!        splits the descriptor loop until an estimated batch fits inside it. It
+!        defaults to 1.0 GB, a number chosen with no reference to any device, so
+!        on this card it asks for 6x more batches than necessary and on a 80 GB
+!        card 80x. Overwriting it here is the whole point of the keyword.
+         params%max_Gbytes_per_process = budget_gb
+
+         if (rank == 0) then
+            write (*, '(A,F8.3,A,F8.3,A)') ' <<<< GPU MEM >>>> device has ', free_gb, &
+               ' GB free of ', real(dev_total, dp)/1024.d0**3, ' GB'
+            write (*, '(A,F6.3,A,I0,A,F8.3,A)') ' <<<< GPU MEM >>>> budget = ', params%gpu_mem_fraction, &
+               ' x free / ', max(1, n_ranks_on_device), ' rank(s) = ', budget_gb, ' GB per rank'
+            write (*, '(A,F8.3)') ' <<<< GPU MEM >>>> max_Gbytes_per_process set from the device to ', budget_gb
+         end if
+      end if
+
+!     So an out-of-memory abort can print the keyword and its value rather than
+!     just "out of memory".
+      call gpu_mem_set_hint(params%max_Gbytes_per_process, params%gpu_n_batches)
+
+   end subroutine gpu_memory_budget_init
+!**************************************************************************
+
+!**************************************************************************
+!  How many batches a loop needs, given what one unbatched pass would cost.
+!
+!  need_gb comes from the caller because only the caller knows what its kernels
+!  allocate. The tree already contains exactly this kind of estimate --
+!  estimate_max_exp_forces_device_memory_usage enumerates the pdf/xrd buffers
+!  one by one, and get_number_of_atom_pairs has the same thing for SOAP folded
+!  into a 150-byte-per-pair constant -- so this is the consumer for them rather
+!  than a competing model.
+!
+!  Two properties matter more than the arithmetic:
+!
+!  * It returns n_batches_in unchanged when budgeting is off. gpu_mem_fraction
+!    defaults to zero, so nothing about an existing input changes until it is
+!    set.
+!
+!  * It never returns FEWER batches than asked for. Raising the count is a
+!    safety measure that cannot make a run fail; lowering it would override a
+!    setting the user may have arrived at precisely because this estimate is
+!    wrong for their system. The user's number is a floor, not a suggestion --
+!    which is the answer to "it is likely that a manual setting is necessary".
+   integer function gpu_batches_for_gb(need_gb, n_batches_in, n_sites, rank, what)
+      real(dp), intent(in) :: need_gb
+      integer, intent(in) :: n_batches_in
+      integer, intent(in) :: n_sites
+      integer, intent(in) :: rank
+      character(len=*), intent(in) :: what
+
+      real(dp) :: budget_gb
+
+      gpu_batches_for_gb = n_batches_in
+
+      if (gpu_mem_budget <= 0_c_size_t) return
+      if (need_gb <= 0.d0) return
+
+      budget_gb = real(gpu_mem_budget, dp)/1024.d0**3
+
+      gpu_batches_for_gb = max(1, ceiling(need_gb/budget_gb))
+!     A batch cannot be smaller than one site, so this is the hard ceiling. If
+!     it is reached the estimate says one site's worth still does not fit, and
+!     the run will fail however it is batched -- worth saying so rather than
+!     letting it look like the batching handled it.
+      if (gpu_batches_for_gb >= n_sites) then
+         gpu_batches_for_gb = max(1, n_sites)
+         if (rank == 0) then
+            write (*, '(A,A,A)') ' <<<< GPU MEM >>>> WARNING: ', trim(what), &
+               ' needs more memory than the device has even at one site per batch.'
+            write (*, '(A)') ' <<<< GPU MEM >>>> This run is expected to fail. Reduce the cutoff, the'
+            write (*, '(A)') ' <<<< GPU MEM >>>> number of samples, or the system size, or use more ranks.'
+         end if
+      end if
+
+      if (gpu_batches_for_gb < n_batches_in) gpu_batches_for_gb = n_batches_in
+
+      if (rank == 0 .and. gpu_batches_for_gb /= n_batches_in) then
+         write (*, '(A,A,A,F12.3,A,F8.3,A,I0,A,I0)') ' <<<< GPU MEM >>>> ', trim(what), &
+            ' needs ~', need_gb, ' GB, budget ', budget_gb, &
+            ' GB/rank -> batches ', n_batches_in, ' -> ', gpu_batches_for_gb
+      end if
+
+   end function gpu_batches_for_gb
+!**************************************************************************
+
+!**************************************************************************
+!  Print the ledger next to the device's own figures.
+   subroutine gpu_memory_report(label)
+      character(len=*), intent(in) :: label
+
+      call gpu_mem_report(trim(label)//c_null_char)
+   end subroutine gpu_memory_report
+!**************************************************************************
+
+!**************************************************************************
+!  Which stream the calling thread owns.
+!
+!  The only correct answer is the thread's own index. Two threads running at
+!  the same time must never be handed the same stream: the work they enqueue
+!  would be serialised against each other (which defeats the point) and, worse,
+!  a buffer one thread allocates stream-ordered could be freed by the other's
+!  hipFreeAsync on the same stream while the first is still using it.
+!
+!  Both batched loops got this wrong in different ways, which is why it is a
+!  function now rather than an expression repeated at each site:
+!
+!    * the pdf loop computed mod(i-1, n_omp)+1 and then assigned 1 over the
+!      top unconditionally, so every batch used stream 1 whatever the build;
+!    * the xrd loop kept mod(i-1, n_omp)+1, which is a property of the
+!      ITERATION, not of the thread. Under any schedule that does not hand out
+!      iterations strictly round-robin -- and static, the default, does not --
+!      two concurrent threads can draw the same index.
+!
+!  Outside a parallel region omp_get_thread_num() is 0, so this returns 1 and
+!  the serial path uses gpu_streams(1), exactly as before.
+   integer function gpu_omp_task()
+      implicit none
+
+      gpu_omp_task = 1
+!$    gpu_omp_task = omp_get_thread_num() + 1
+   end function gpu_omp_task
+!**************************************************************************
 
 !**************************************************************************
 !  Bring the device up, and take it down.

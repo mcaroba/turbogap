@@ -410,14 +410,20 @@ contains
 
             end if
 
+!           Add rather than assign. energies0 and forces0 are the caller's
+!           accumulators over ALL batches, zeroed once before the descriptor
+!           loop, so this batch contributes to them directly instead of the
+!           caller clearing and folding in a full-system scratch array per
+!           batch. in_to_out_site is injective within a batch, so no element is
+!           touched twice here and the sum cannot double-count.
             do i = 1, n_sites
                i2 = in_to_out_site(i)
-               energies0(i2) = energies(i)
+               energies0(i2) = energies0(i2) + energies(i)
             end do
             if (do_forces) then
                do i = 1, n_all_sites
                   i2 = in_to_out_site(i)
-                  forces0(1:3, i2) = forces(1:3, i)
+                  forces0(1:3, i2) = forces0(1:3, i2) + forces(1:3, i)
                end do
             end if
          end if

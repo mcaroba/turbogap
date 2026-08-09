@@ -544,6 +544,23 @@ program turbogap
                                  local_property_labels, local_property_indexes, n_local_properties_mpi, &
                                  has_local_properties_mpi, local_properties_n_sparse_mpi_soap_turbo, &
                                  local_properties_dim_mpi_soap_turbo, time)
+
+!  The device memory budget, which has to sit exactly here.
+!
+!  After read_input_and_gap_files, because it reads gpu_mem_fraction and writes
+!  max_Gbytes_per_process -- placed next to gpu_context_init it ran before the
+!  input existed, saw the default zero, and reported budgeting off no matter
+!  what the input said.
+!
+!  Still before the first device allocation, because the "free" figure it
+!  budgets from must not already have TurboGAP's own buffers subtracted from it.
+!  gpu_context_init above creates streams and cuBLAS handles, which cost a few
+!  MB of context; nothing has allocated a data buffer yet.
+!
+!  ntasks divides the budget: gpu_set_device hands out cards round-robin, so
+!  when there are more ranks than devices they share, and each one budgeting the
+!  whole card is a guaranteed failure that looks like a code bug.
+   call gpu_memory_budget_init(params, rank, ntasks)
    !**************************************************************************
    ! <----------------------------------------------------------------------------------------------- Finish printouts
 #ifdef _MPIF90
@@ -689,7 +706,7 @@ program turbogap
       !   Read in XYZ file and build neighbors lists
 
       if ((params%do_md .and. md_istep == 0)) then
-         call time_start(time%read_xyz)
+         call time_start(time%read_xyz, "read_xyz")
 #ifdef _MPIF90
          IF (rank == 0) THEN
 #endif
@@ -728,7 +745,7 @@ program turbogap
 #ifdef _MPIF90
          END IF
 #endif
-         call time_end(time%read_xyz)
+         call time_end(time%read_xyz, "read_xyz")
          !     If we're doing MD, we don't read beyond the first snapshot in the XYZ file
          repeat_xyz = .false.
          !     At the moment, we can't do prediction if the unit cell doesn't fit a whole cutoff sphere
@@ -749,7 +766,7 @@ program turbogap
          END IF
 #endif
       else if (.not. params%do_md) then
-         call time_start(time%read_xyz)
+         call time_start(time%read_xyz, "read_xyz")
 #ifdef _MPIF90
          IF (rank == 0) THEN
 #endif
@@ -772,7 +789,7 @@ program turbogap
 #ifdef _MPIF90
          END IF
 #endif
-         call time_end(time%read_xyz)
+         call time_end(time%read_xyz, "read_xyz")
 #ifdef _MPIF90
          call time_start(time%mpi)
          call mpi_bcast(repeat_xyz, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
@@ -837,7 +854,7 @@ program turbogap
          allocate (fix_atom(1:3, 1:n_sp))
 
       END IF
-      call time_start(time%mpi_positions)
+      call time_start(time%mpi_positions, "mpi_positions")
       call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
       if (params%do_md .or. params%do_nested_sampling .or. params%do_mc .or. params%mc_hamiltonian) then
          call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
@@ -852,7 +869,7 @@ program turbogap
       call mpi_bcast(a_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(b_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
       call mpi_bcast(c_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-      call time_end(time%mpi_positions)
+      call time_end(time%mpi_positions, "mpi_positions")
 #endif
       !   Now that all ranks know the size of n_sites, we allocate do_list
       if (.not. params%do_md .or. (params%do_md .and. md_istep == 0) .or. &
@@ -862,7 +879,7 @@ program turbogap
          do_list = .true.
       end if
       !
-      call time_start(time%neigh)
+      call time_start(time%neigh, "neigh")
 #ifdef _MPIF90
       !   Parallel neighbors list build
       call mpi_bcast(rebuild_neighbors_list, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
@@ -966,7 +983,7 @@ program turbogap
 
       call get_time(time2)
 
-      call time_end(time%neigh)
+      call time_end(time%neigh, "neigh")
       !**************************************************************************
 
       !**************************************************************************
@@ -1223,9 +1240,9 @@ program turbogap
 
          !#################################################################
 
-         call time_start(time%gap)
+         call time_start(time%gap, "gap:soap")
          do i = 1, n_soap_turbo
-            call time_start(time%soap)
+            call time_start(time%soap, "soap_descriptor")
             !       Compute number of pairs for this SOAP. SOAP has in general a different cutoff than overall max
             !       cutoff, so the number of pairs may be a lot smaller for the SOAP subset.
             !       This subroutine splits the load optimally so as to not use more memory per MPI process than available.
@@ -1236,6 +1253,8 @@ program turbogap
                                                      rjs(j_beg:j_end), soap_turbo_hypers(i)%rcut_max, &
                                                      soap_turbo_hypers(i)%l_max, &
                                                      soap_turbo_hypers(i)%n_max, &
+                                                     soap_turbo_hypers(i)%dim, &
+                                                     soap_turbo_hypers(i)%n_species, &
                                                      params%max_Gbytes_per_process, i_beg_list, &
                                                      i_end_list, j_beg_list, j_end_list)
             else
@@ -1243,6 +1262,8 @@ program turbogap
                                              soap_turbo_hypers(i)%rcut_max, &
                                              soap_turbo_hypers(i)%l_max, &
                                              soap_turbo_hypers(i)%n_max, &
+                                             soap_turbo_hypers(i)%dim, &
+                                             soap_turbo_hypers(i)%n_species, &
                                              params%max_Gbytes_per_process, i_beg_list, &
                                              i_end_list, j_beg_list, j_end_list)
             end if
@@ -1314,9 +1335,12 @@ program turbogap
                this_j_beg = j_beg - 1 + j_beg_list(j)
                this_j_end = j_beg - 1 + j_end_list(j)
                this_n_sites_mpi = this_i_end - this_i_beg + 1
-               this_energies = 0.d0
+!              No per-batch scratch to clear: get_gap_soap adds straight into
+!              energies_soap and forces_soap, which were zeroed once before this
+!              descriptor loop. Clearing a full-system array here cost 4 million
+!              doubles per batch at a million atoms, for a batch covering about
+!              1200 sites. this_virial is 3x3 and stays.
                if (params%do_forces) then
-                  this_forces = 0.d0
                   this_virial = 0.d0
                end if
                if (soap_turbo_hypers(i)%has_local_properties) then
@@ -1349,14 +1373,12 @@ program turbogap
                   xyz_species(this_i_beg:this_i_end), xyz_species_supercell, params%all_atoms, &
                   params%which_atom, indices, soap, soap_cart_der, der_neighbors, der_neighbors_list, &
                   soap_turbo_hypers(i)%has_local_properties, soap_turbo_hypers(i)%n_local_properties, &
-                  soap_turbo_hypers(i)%local_property_models, n_lp_count, this_energies, this_forces, &
+                  soap_turbo_hypers(i)%local_property_models, n_lp_count, energies_soap, forces_soap, &
                   this_local_properties_pt, this_local_properties_cart_der_pt, local_property_indexes, this_virial, &
                   time%soap_lin(3), time%get_soap(3), soap_turbo_hypers(i)%W_d, soap_turbo_hypers(i)%S_d, &
                   soap_turbo_hypers(i)%multiplicity_array_d, soap_turbo_hypers(i)%st_W_d, &
                   soap_turbo_hypers(i)%st_S_d, soap_turbo_hypers(i)%st_multiplicity_array_d, &
                   soap_turbo_hypers(i)%recompute_basis, time%local_prop)
-
-               energies_soap = energies_soap + this_energies
 
                if (soap_turbo_hypers(i)%has_local_properties) then
 
@@ -1381,7 +1403,6 @@ program turbogap
 
                end if
                if (params%do_forces) then
-                  forces_soap = forces_soap + this_forces
                   virial_soap = virial_soap + this_virial
                end if
             end do
@@ -1488,10 +1509,10 @@ program turbogap
             END IF
 #endif
 
-            call time_end(time%soap)
+            call time_end(time%soap, "soap_descriptor")
 
          end do
-         call time_end(time%gap)
+         call time_end(time%gap, "gap:soap")
 
          !#################################################################
 
@@ -1679,7 +1700,7 @@ program turbogap
 #endif
 
          if (params%do_prediction) then
-            call time_start(time%gap)
+            call time_start(time%gap, "gap:2b_3b_corepot")
 
             if (n_core_pot > 0 .or. n_distance_2b > 0 .or. n_angle_3b > 0) then
 
@@ -1710,11 +1731,11 @@ program turbogap
 
             end if
 
-            call time_end(time%gap)
+            call time_end(time%gap, "gap:2b_3b_corepot")
             !       Communicate all energies and forces here for all
             !       terms
 #ifdef _MPIF90
-            call time_start(time%mpi_ef)
+            call time_start(time%mpi_ef, "mpi_ef")
 !       One evaluation of the eleven predicates, and one list built from them.
 !       The pack and unpack walks below read only that list, so they cannot
 !       disagree about which slot belongs to which family -- the failure mode
@@ -1954,7 +1975,7 @@ program turbogap
                deallocate (all_forces, all_this_forces, all_virial, all_this_virial)
             end if
 
-            call time_end(time%mpi_ef)
+            call time_end(time%mpi_ef, "mpi_ef")
 #endif
 
             !       Add up all the energy terms
@@ -3260,6 +3281,14 @@ program turbogap
 #ifdef _MPIF90
    END IF
 #endif
+
+!  The high-water mark, which is the number that sizes the next run.
+!
+!  Before gpu_context_finalize, which calls hipDeviceReset and takes the whole
+!  context down -- after it there is nothing left to ask. Printed unconditionally
+!  and to stderr: it costs one line, and "what did that actually use" is the
+!  first question asked after any run that was close to the limit.
+   if (rank == 0) call gpu_memory_report("end of run")
 
 #ifdef _MPIF90
    call mpi_finalize(ierr)

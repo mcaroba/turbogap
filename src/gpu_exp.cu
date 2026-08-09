@@ -20,6 +20,29 @@
 
 #define WARP_SIZE 32
 
+// Report a launch geometry the device will refuse, and say which launch it was.
+//
+// CUDA rejects any launch with a zero extent as "invalid configuration
+// argument" -- an error that names neither the kernel nor the dimension, and is
+// raised at the next error check rather than at the launch. Both properties
+// cost real time here, because the batched experimental paths compute their
+// extents from per-batch, per-species-pair counts that go to zero as soon as
+// gpu_n_batches > 1 splits the cell finely enough. This turns that into one
+// line saying which kernel and what it asked for, immediately.
+//
+// Costs nothing when the launch is valid: three integer comparisons on the
+// host, off the critical path of a kernel that is about to run.
+#define TG_CHECK_LAUNCH(name_, grid_, block_, extent_name_, extent_)                                                               \
+  do {                                                                                                                             \
+    if ((grid_).x == 0 || (grid_).y == 0 || (grid_).z == 0 || (block_).x == 0) {                                                   \
+      fprintf(stderr,                                                                                                              \
+              "GPUlaunch: %s would launch grid(%u,%u,%u) block(%u,%u,%u) -- a zero extent.\n"                                      \
+              "GPUlaunch:   %s = %ld. An empty batch reaches this kernel; guard the call.\n",                                      \
+              (name_), (grid_).x, (grid_).y, (grid_).z, (block_).x, (block_).y, (block_).z, (extent_name_), (long) (extent_));     \
+      fflush(stderr);                                                                                                              \
+    }                                                                                                                              \
+  } while (0)
+
 #define BLOCK_SIZE 512 // Number of threads per block
 //#define LOG_BLOCK_SIZE 10 // Log base 2 of BLOCK_SIZE
 #define NUM_BANKS 32    // Define the number of shared memory banks
@@ -882,6 +905,11 @@ extern "C" void gpu_get_pair_distribution_nk(int i_beg, int i_end, int n_pairs, 
 
   // gpuErrchk( hipPeekAtLastError() );
 
+  // "invalid configuration argument" names no dimension and no kernel, which
+  // makes a zero-extent launch one of the more expensive errors here to track
+  // down -- and splitting a cell into batches produces empty extents readily.
+  // Say which launch and what it asked for.
+  TG_CHECK_LAUNCH("kernel_get_pair_distribution_nk", nblocks, nthreads, "n_pairs", n_pairs);
   kernel_get_pair_distribution_nk<<<nblocks, nthreads, 0, stream[0]>>>(i_beg, i_end, n_sites0, neighbors_list, n_neigh,
                                                                        neighbor_species, species, rjs, xyz, r_min, r_max, r_cut,
                                                                        buffer, nk_flags_d, species_1, species_2);
@@ -1303,11 +1331,39 @@ __global__ void kernel_get_pair_distribution_kde_only(double* pdf_out, int n_k, 
 }
 
 
+// An empty species pair contributes nothing, and asking the device for it is an
+// error rather than a no-op.
+//
+// n_k is the number of pairs of one species combination inside one batch, so it
+// is zero whenever a batch happens to contain none -- which cannot happen with
+// the default gpu_n_batches = 1 over a whole cell, and happens readily as soon
+// as the cell is split. The grid below is then dim3(0,1,1), and CUDA rejects a
+// zero-extent launch with "invalid configuration argument". The allocation is
+// zero bytes too, so rjs_d is NULL.
+//
+// This is why XRD_mad aborts at gpu_exp.cu:1397 with `gpu_n_batches = 4`: it is
+// not a stream problem and not a memory problem, it is the batched experimental
+// path never having been run with more than one batch. estat_gsf, the only case
+// in the suite that sets gpu_n_batches > 1, exhausts device memory before it
+// reaches here, so nothing exercised this.
+//
+// Returning early is the whole fix: the caller memsets pair_distribution_d
+// before calling, and the answer for no pairs is zero.
+static inline bool pdf_batch_is_empty(int n_k, int n_samples) {
+  return n_k <= 0 || n_samples <= 0;
+}
+
 extern "C" void gpu_get_pair_distribution_only(double* pair_distribution_d, int n_k, int n_samples, double kde_sigma, double* x_d,
                                                double* dV_d, double* rjs_d, double pdf_factor, double der_factor,
                                                hipStream_t* stream) {
   // We want to evaluate the smoothed pair distribution in a quick manner using these kernels
   // 1. Evaluate the exponential over the threads
+
+  if (pdf_batch_is_empty(n_k, n_samples)) {
+    if (n_samples > 0)
+      gpuErrchk(hipMemsetAsync(pair_distribution_d, 0, n_samples * sizeof(double), stream[0]));
+    return;
+  }
 
   int threads = BLOCK_SIZE;
   dim3 nblocks = dim3((n_k * n_samples + threads - 1) / threads, 1, 1);
@@ -1381,6 +1437,14 @@ extern "C" void gpu_get_pair_distribution_only_falloc(double* pair_distribution_
                                                       double der_factor, hipStream_t* stream) {
   // We want to evaluate the smoothed pair distribution in a quick manner using these kernels
   // 1. Evaluate the exponential over the threads
+
+  // See pdf_batch_is_empty above: with the cell split into batches a species
+  // pair can be absent from a batch, and dim3(0,1,1) is a launch error.
+  if (pdf_batch_is_empty(n_k, n_samples)) {
+    if (n_samples > 0)
+      gpuErrchk(hipMemsetAsync(pair_distribution_d, 0, n_samples * sizeof(double), stream[0]));
+    return;
+  }
 
   int threads = BLOCK_SIZE;
   dim3 nblocks = dim3((n_k * n_samples + threads - 1) / threads, 1, 1);

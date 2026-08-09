@@ -16,6 +16,11 @@
 #                      (default: $HOME/work/cpu_vs_gpu_tests/input/CO)
 #   TURBOGAP_MPI_RANKS if set, run the GPU binary under mpirun with this many ranks
 #
+# With no arguments every case in tests/gpu/cases.sh runs; name cases on the
+# command line to run a subset. That file is the single definition of what the
+# cases ARE -- tools/profile_gpu.sh sources it too, so a profile and a test run
+# are of the same input.
+#
 # Exit status is non-zero if any case fails.
 
 set -u
@@ -55,32 +60,26 @@ command -v python3 >/dev/null || die "python3 is required"
 mkdir -p "$WORK"
 trap 'rm -rf "$WORK"' EXIT
 
-# stage_case <case> <atoms-file> <input-body> [data-dir] [extra-file ...]
-#
-# data-dir defaults to $DATA. It is a parameter because the experimental
-# observables need a different system from the CO cases, and extra-file exists
-# because those cases also need their experimental data linked in.
-stage_case() {
-  local name=$1 atoms=$2 body=$3 data=${4:-$DATA} dir=$WORK/$name
-  shift 4 2>/dev/null || shift $#
-  mkdir -p "$dir"
-  ln -sf "$data/$atoms" "$dir/atoms.xyz"
-  ln -sf "$data/gap_files" "$dir/gap_files"
-  local extra
-  for extra in "$@"; do ln -sf "$data/$extra" "$dir/$extra"; done
-  printf '%s\n' "$body" >"$dir/input"
-  printf '%s' "$dir"
-}
+# The case table. tools/profile_gpu.sh sources the same file, so a profile is
+# always of the input this suite checks.
+TG_TESTS_DIR=${TURBOGAP_TESTS_DIR:-$repo/../turbogap_tests}
+TG_DATA=$DATA
+. "$here/cases.sh"
 
 # run_case <dir> <binary> <mode> <label>
 run_case() {
   local dir=$1 bin=$2 mode=$3 label=$4
+  # </dev/null is load-bearing. mpirun reads its own stdin, and the case loop
+  # at the bottom of this file feeds names to `while read` on the shell's
+  # stdin -- so under TURBOGAP_MPI_RANKS the first mpirun swallowed the rest of
+  # the case list and the suite reported "passed: 1" as though it had run
+  # everything and been happy.
   (cd "$dir" &&
     if [ -n "${TURBOGAP_MPI_RANKS:-}" ] && [ "$label" = gpu ]; then
-      mpirun -np "$TURBOGAP_MPI_RANKS" "$bin" "$mode"
+      mpirun --oversubscribe -np "$TURBOGAP_MPI_RANKS" "$bin" "$mode"
     else
       "$bin" "$mode"
-    fi) >"$dir/$label.log" 2>&1
+    fi) >"$dir/$label.log" 2>&1 </dev/null
   local rc=$?
   if [ $rc -ne 0 ]; then
     log "    $label run failed (exit $rc); tail of log:"
@@ -95,32 +94,28 @@ run_case() {
   return 0
 }
 
-# Cases listed here are known to fail for a reason recorded in
-# docs/gpu_fixes_handoff.md. They still run and still report, but they do not
-# turn the suite red; if one starts passing, the suite says XPASS so the marker
-# gets removed rather than quietly masking a regression later.
-xfail_reason() {
-  case $1 in
-  XRD_mad) printf '%s' "local_energy drift ~1e-5 by frame 5; everything else agrees; see docs/gpu_fixes_handoff.md 6g" ;;
-  estat_gsf) printf '%s' "batched device electrostatics disagrees with the CPU implementation: forces to 1.1 eV/A on |F|max 20.5, virial 0.7%, local_energy 0.16 eV -- every other energy component agrees exactly. Found the first time the path was ever exercised; see the commit that added this case" ;;
-  *) printf '' ;;
-  esac
-}
-
 check_case() {
-  local name=$1 atoms=$2 mode=$3 body=$4 data=${5:-$DATA}
-  shift 5 2>/dev/null || shift $#
-  local extras=("$@")
+  local name=$1
   log "== $name =="
+  tg_case_def "$name" || die "no such case: $name"
+  local data=$TG_DATA_DIR
   if [ ! -d "$data" ]; then
     log "    SKIP: data directory not present: $data"
     return
   fi
+  if [ ! -e "$data/$TG_ATOMS" ]; then
+    log "    SKIP: $data/$TG_ATOMS not present"
+    [ "$name" = CO_md ] &&
+      log "          (create it with tools/add_velocities_to_xyz.py)"
+    return
+  fi
+  local mode=$TG_MODE
+  local extras=(${TG_EXTRAS+"${TG_EXTRAS[@]}"})
   local dir
-  dir=$(stage_case "$name" "$atoms" "$body" "$data" "${extras[@]}")
+  dir=$(tg_stage_case "$name" "$WORK")
 
   local xreason
-  xreason=$(xfail_reason "$name")
+  xreason=$(tg_case_xfail "$name")
   if ! run_case "$dir" "$BIN" "$mode" gpu; then
     if [ -n "$xreason" ]; then
       log "    XFAIL: $xreason"
@@ -141,10 +136,10 @@ check_case() {
   if [ -n "$REF_BIN" ]; then
     local rdir=$WORK/$name.ref
     mkdir -p "$rdir"
-    ln -sf "$data/$atoms" "$rdir/atoms.xyz"
+    ln -sf "$data/$TG_ATOMS" "$rdir/atoms.xyz"
     ln -sf "$data/gap_files" "$rdir/gap_files"
     local extra
-    for extra in "${extras[@]}"; do ln -sf "$data/$extra" "$rdir/$extra"; done
+    for extra in ${extras+"${extras[@]}"}; do ln -sf "$data/$extra" "$rdir/$extra"; done
     cp "$dir/input" "$rdir/input"
     if ! run_case "$rdir" "$REF_BIN" "$mode" cpu; then
       log "    reference run failed"
@@ -175,140 +170,19 @@ check_case() {
   fi
 }
 
-common='atoms_file = "atoms.xyz"
-pot_file = "gap_files/CO.gap"
-n_species = 2
-species = C O
-masses = 12.01 15.99
-e0 = -.16138053 0.
-random_seed = 12345'
-
-# Single point: exercises the SOAP, 2b and 3b energy, force and virial paths.
-check_case CO_predict atoms_7176.xyz predict "$common
-write_xyz = 1"
-
-# Short MD from explicit velocities, so no randomization is involved and the
-# trajectory is reproducible between the CPU and GPU builds.
-if [ -f "$DATA/atoms_7176_vel.xyz" ]; then
-  check_case CO_md atoms_7176_vel.xyz md "$common
-md_nsteps = 5
-thermostat = berendsen
-write_xyz = 1"
+# Run the whole table, or the cases named on the command line.
+if [ $# -gt 0 ]; then
+  for name in "$@"; do check_case "$name"; done
 else
-  log "== CO_md =="
-  log "    SKIP: $DATA/atoms_7176_vel.xyz not present"
-  log "          (create it with tools/add_velocities_to_xyz.py)"
+  while read -r name; do check_case "$name"; done < <(tg_case_list)
 fi
-
-# Tkatchenko-Scheffler pairwise vdW on the P4 dimer. Mirrors the CPU branch's
-# vdw_ts case and shares its data, so the two suites cover the same code.
-#
-# Two things make this case worth more than its size. It is the only one here
-# that reaches the vdW path -- which could not run at all on this branch until
-# the deprecated has_vdw GAP form was migrated to a local property (6j) -- and
-# it is the only one that uses a *small* cell. The get_gap_soap overrun in 6i
-# corrupted the heap silently on the 7176-atom CO system and aborted instantly
-# on this one; a suite of a single system size cannot see that class of bug.
-check_case vdw_ts p4_dimer.xyz predict 'atoms_file = "atoms.xyz"
-pot_file = "gap_files/phosphorus.gap"
-n_species = 1
-species = P
-e0 = -0.52375977
-masses = 30.97
-random_seed = 12345
-
-vdw_rcut = 25.
-vdw_r0_ref = 2.12
-vdw_alpha0_ref = 3.7046
-vdw_c6_ref = 110.54
-vdw_buffer = 0.5
-
-vdw_type = ts
-write_xyz = 1' "${TURBOGAP_TESTS_DIR:-$repo/../turbogap_tests}/vdw_P"
-
-# Molecular Augmented Dynamics against an experimental XRD pattern. This is the
-# only case that reaches the pair-distribution, structure-factor and XRD paths
-# at all -- the CO cases exercise none of them. It mirrors the CPU branch's
-# xrd_mad case so the two suites cover the same code, and it shares that case's
-# data directory.
-check_case XRD_mad atoms.xyz md 'atoms_file = "atoms.xyz"
-pot_file = "gap_files/CO.gap"
-n_species = 2
-species = C O
-masses = 12.01 15.99
-e0 = -.16138053 0.
-random_seed = 12345
-
-do_pair_distribution        = .true.
-pair_distribution_kde_sigma =   0.1
-pair_distribution_n_samples =  201
-pair_distribution_partial   = .true.
-pair_distribution_rcut      =   6.0
-r_range_min                 =   0.1
-r_range_max                 =   6.0
-
-do_structure_factor         = .true.
-structure_factor_from_pdf   = .true.
-structure_factor_window     = .true.
-
-do_xrd                      = .true.
-q_range_min                 =   1.0
-q_range_max                 =  10.0
-xrd_output                  = "q*F(q)"
-
-n_exp = 1
-exp_labels = "xrd"
-exp_data_files = "xrd_glassy_carbon_zeng_2017.fq"
-exp_n_samples = 201
-exp_energy_scales = 100.0
-exp_energies = .true.
-exp_forces   = .true.
-
-md_nsteps = 5
-md_step = 1.0
-thermostat = berendsen
-t_beg = 1000
-t_end = 1000
-write_xyz = 1' "$(dirname "$DATA")/xrd_mad" xrd_glassy_carbon_zeng_2017.fq
-
-# Damped-shifted-force electrostatics with the BATCHED device path, against the
-# CPU build's ordinary one. This is the only case that reaches electrostatics
-# at all -- the CCLi potential is the only one in the test data declaring an
-# atomic_charge local property, and until it was added the path had never run
-# on either branch (docs/refactor_strategy.md section 5).
-#
-# gpu_batched = .true. is the point: calculate_batched_electrostatics is
-# GPU-only, so what this compares is the batched device implementation against
-# the CPU's compute_coulomb_lamichhane. Nothing else in either suite does that.
-#
-# 897-atom carbon cell against the C+CLi potential. Pure carbon is deliberate --
-# a real equilibrated structure already in the test data, whose C descriptor
-# carries atomic_charge, giving an estat term around -3.2 eV: small, and far
-# enough from zero that a regression in it shows.
-check_case estat_gsf atoms_897.xyz predict 'atoms_file = "atoms.xyz"
-pot_file = "gap_files/CCLi_estat_ljrep.gap"
-n_species = 2
-species = C Li
-masses = 12.01 6.94
-e0 = 0. 0.
-random_seed = 12345
-estat_method = "gsf"
-estat_rcut = 10.0
-estat_dsf_alpha = 0.12
-estat_damped = .true.
-estat_tsf = .true.
-estat_sp = .true.
-estat_gsf = .true.
-estat_self_energy_correction = .false.
-gpu_batched = .true.
-gpu_n_batches = 4
-write_xyz = 1' "$(dirname "$DATA")/CLi"
 
 log ""
 log "passed: $pass   failed: $fail   xfail: $xfail   xpass: $xpass"
 if [ "$xpass" -gt 0 ]; then
   log ""
-  log "An expected failure passed. Remove it from xfail_reason() and update"
+  log "An expected failure passed. Remove it from tg_case_xfail() in cases.sh"
+  log "and update"
   log "docs/gpu_fixes_handoff.md before this masks a real regression."
 fi
 [ "$fail" -eq 0 ]

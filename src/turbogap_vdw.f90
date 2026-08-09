@@ -156,7 +156,7 @@ contains
 
       if (has_vdw .and. (params%do_prediction) &
           .and. (params%vdw_type == "ts" .or. params%vdw_type == "mbd" .or. params%vdw_type == "ts+mbd")) then
-         call time_start(time%vdw)
+         call time_start(time%vdw, "vdw")
 
 !          Does this call recompute the ts+mbd correction, or reuse the one a
 !          previous call stored? The reuse half of that cycle only means
@@ -716,7 +716,7 @@ contains
 !                energies_vdw(i_beg:i_end), forces_vdw, virial_vdw, local_virial_vdw_diag, &
 !                mbd_ts_scaling )
 !#endif
-         call time_end(time%vdw)
+         call time_end(time%vdw, "vdw")
 !           if( .not. (params%vdw_type == "ts+mbd" .and. modulo(md_istep, params%mbd_correction_freq) == 0) )then
 !             deallocate(v_neigh_vdw)
 !           end if

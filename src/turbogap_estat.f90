@@ -100,7 +100,7 @@ contains
                write (*, *) "         Skipping the electrostatics contribution."
             end if
          else
-            call time_start(time%estat)
+            call time_start(time%estat, "estat")
 #ifdef _MPIF90
             allocate (energies_estat(1:n_sites))
             energies_estat = 0.d0
@@ -185,15 +185,36 @@ contains
                   call gpu_malloc_async(charges_d, st_charges_d, gpu_stream)
                   call cpy_htod(c_loc(charges_temp), charges_d, st_charges_d, gpu_stream)
 
-                  !  !$OMP PARALLEL DO num_threads(n_omp) DEFAULT(SHARED) &
-                  !  !$OMP PRIVATE(i,  omp_task, this_i_beg, this_i_end, this_j_beg, this_j_end, n_sites_temp, n_pairs_temp)
+!                 These directives are commented out, and must stay that way
+!                 until the accumulators below are dealt with. This is not an
+!                 oversight to be tidied up by uncommenting them.
+!
+!                 The batches are independent in their device state --
+!                 gpu_neigh(i), gpu_exp(i), gpu_batch_storage(i) are all indexed
+!                 by i, exactly as in the pdf loop that IS threaded -- and
+!                 energies_estat(this_i_beg:this_i_end) is a disjoint slice per
+!                 batch. But forces_estat and virial_estat are passed WHOLE to
+!                 every batch and accumulated into. Two threads in this loop
+!                 would read-modify-write the same array, and the result would
+!                 be wrong by an amount that changes run to run.
+!
+!                 To thread it, forces and virial have to become per-batch and
+!                 be summed after the loop -- which is what the pdf path already
+!                 does with collect_batched_pair_distribution, and what makes
+!                 that one safe to run in parallel.
+!
+!                 Note also that no test can currently catch a mistake here:
+!                 estat_gsf is the only case that reaches this code, it is an
+!                 xfail, and it exhausts device memory before finishing.
+!
+!                 !$OMP PARALLEL DO num_threads(n_omp) DEFAULT(SHARED) &
+!                 !$OMP PRIVATE(i, omp_task, this_i_beg, this_i_end, this_j_beg, this_j_end, n_sites_temp, n_pairs_temp)
 
                   do i = 1, size(i_beg_list)
 
-                     !  !$ n_omp_temp = omp_get_thread_num()
-                     !print *, " - pdf thread num ", n_omp_temp, " / ", n_omp
-                     ! > In sequential operation, we just want to use the one stream, and only 1 will be created
-                     omp_task = mod(i - 1, n_omp) + 1
+                     ! Serial today, so this is stream 1; gpu_omp_task() is what
+                     ! it becomes when the loop above is threaded.
+                     omp_task = gpu_omp_task()
 
                      this_i_beg = i_beg - 1 + i_beg_list(i)
                      this_i_end = i_beg - 1 + i_end_list(i)
@@ -272,7 +293,7 @@ contains
                write (*, *) "Ignoring..."
             end if
             deallocate (chg_neigh_estat)
-            call time_end(time%estat)
+            call time_end(time%estat, "estat")
          end if
       end if
 

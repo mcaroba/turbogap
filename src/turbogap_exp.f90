@@ -112,7 +112,7 @@ contains
           .and. valid_xps) then
 
          !time%xps(1) = MPI_wtime()
-         call time_start(time%xps)
+         call time_start(time%xps, "xps")
 
 #ifdef _MPIF90
          allocate (energies_lp(1:n_sites))
@@ -229,7 +229,7 @@ contains
          deallocate (v_neigh_lp)
 
          !time%xps(2) = MPI_wtime()
-         call time_end(time%xps)
+         call time_end(time%xps, "xps")
          !           if (rank == 0) print *, rank, " TIME_XPS = ", time%xps(3)
 
       else if (any(soap_turbo_hypers(:)%has_core_electron_be) .and. params%do_xps) then
@@ -524,10 +524,27 @@ contains
 
          !           print *, "> Starting batched xrd "
          !           call cpu_time( time%exp_batched(1) )
-         call time_start(time%exp_batched)
+         call time_start(time%exp_batched, "exp_batched")
 
-         ! call estimate_max_exp_forces_device_memory_usage( n_sites, j_end, n_dim_partial, &
-         !      params%pair_distribution_n_samples, params%structure_factor_n_samples, gpu_memory_usage)
+!        Size the batch count from the device, unless the input opted out.
+!
+!        The estimator was written for exactly this and its call site has been
+!        commented out ever since -- so gpu_n_batches has always been whatever
+!        the input said, with nothing anywhere comparing it to the card. It
+!        enumerates the pdf/xrd device buffers one by one; the dominant term is
+!        Gk = n_samples x n_pairs x 8 bytes, which is why a large cutoff blows
+!        up so much faster than a large cell.
+!
+!        gpu_batches_for_gb only ever raises the count, and does nothing at all
+!        when gpu_mem_fraction is unset, so an input that worked yesterday
+!        batches identically today.
+         call estimate_max_exp_forces_device_memory_usage(i_end - i_beg + 1, j_end - j_beg + 1, n_dim_partial, &
+                                                          params%pair_distribution_n_samples, &
+                                                          params%structure_factor_n_samples, gpu_memory_usage, &
+                                                          be_verbose=(rank == 0 .and. params%gpu_mem_fraction > 0.d0))
+
+         params%gpu_n_batches = gpu_batches_for_gb(gpu_memory_usage, params%gpu_n_batches, &
+                                                   i_end - i_beg + 1, rank, "pdf/xrd batched forces")
 
          call get_gpu_batches(n_neigh(i_beg:i_end), rjs(j_beg:j_end), params%pair_distribution_rcut, &
                               params%gpu_n_batches, gpu_memory_usage, &
@@ -570,11 +587,8 @@ contains
 
          do i = 1, size(i_beg_list)
 
-!$          n_omp_temp = omp_get_thread_num()
-            !              print *, " - pdf thread num ", n_omp_temp, " / ", n_omp
             ! > In sequential operation, we just want to use the one stream, and only 1 will be created
-!$          omp_task = mod(i - 1, n_omp) + 1
-            omp_task = 1
+            omp_task = gpu_omp_task()
 
             this_i_beg = i_beg - 1 + i_beg_list(i)
             this_i_end = i_beg - 1 + i_end_list(i)
@@ -645,8 +659,15 @@ contains
                " j_end = ", this_j_end
             call flush (101)
 
-            call gpu_stream_sync(gpu_stream)
-            ! stop(0)
+!           This batch's work is on gpu_streams(omp_task), not on the default
+!           stream. Syncing gpu_stream here waited for a stream this iteration
+!           never touched -- so it neither ordered anything this loop needs nor,
+!           once threads are real, kept a thread from racing ahead of its own
+!           batch. The batch results are collected after the loop, and the
+!           barrier at END PARALLEL DO is what orders that; this sync only has
+!           to make the batch's own device work complete before its host-side
+!           bookkeeping below.
+            call gpu_stream_sync(gpu_streams(omp_task))
 
             call gpu_meminfo()
          end do
@@ -696,7 +717,7 @@ contains
          if (params%do_structure_factor) then
 
             !time%sf(1) = MPI_wtime()
-            call time_start(time%sf)
+            call time_start(time%sf, "structure_factor")
 
             call calculate_structure_factor(params, x_structure_factor, x_structure_factor_temp,&
               & y_structure_factor, y_structure_factor_temp,&
@@ -718,14 +739,14 @@ contains
               & gpu_host_exp_storage, params%gpu_low_memory)
 
             !time%sf(2) = MPI_wtime()
-            call time_end(time%sf)
+            call time_end(time%sf, "structure_factor")
 
          end if
 
          if (params%do_xrd) then
 
             !time%xrd(1) = MPI_wtime()
-            call time_start(time%xrd)
+            call time_start(time%xrd, "xrd")
 
             call calculate_xrd(params, x_xrd, x_xrd_temp, y_xrd,&
               & y_xrd_temp, x_structure_factor,&
@@ -751,14 +772,14 @@ contains
               &%gpu_low_memory)
 
             !time%xrd(2) = MPI_wtime()
-            call time_end(time%xrd)
+            call time_end(time%xrd, "xrd")
 
          end if
 
          if (params%do_nd) then
 
             !time%nd(1) = MPI_wtime()
-            call time_start(time%nd)
+            call time_start(time%nd, "nd")
 
             call calculate_xrd(params, x_nd, x_nd_temp, y_nd,&
               & y_nd_temp, x_structure_factor,&
@@ -784,10 +805,10 @@ contains
               &%gpu_low_memory)
 
             !time%nd(2) = MPI_wtime()
-            call time_end(time%nd)
+            call time_end(time%nd, "nd")
          end if
 
-         call time_start(time%xrd)
+         call time_start(time%xrd, "xrd_batched")
 
          ! RESETTING EXP FORCES TO FALSE
          params%do_forces = .true.
@@ -856,7 +877,7 @@ contains
 
          do i = 1, size(i_beg_list)
 
-            omp_task = mod(i - 1, n_omp) + 1
+            omp_task = gpu_omp_task()
 
             this_i_beg = i_beg - 1 + i_beg_list(i)
             this_i_end = i_beg - 1 + i_end_list(i)
@@ -867,7 +888,11 @@ contains
 
             ! I have the neighbors allocated in in gpu_neigh(i)
             print *, " "
-            write (*, '(A,I8,A,I8,A,I8,A,I8,A,I8,A,I8)') "xrd batches---Rank ", rank, " ---Thread ", omp_task, &
+!           I0, not I8, and eight descriptors for eight integers. The format had
+!           six, so it wrapped onto a second line, and the pair indices overflowed
+!           it into '********' -- a million atoms at a 6 A cutoff gives ~168M
+!           pairs, which is nine digits.
+            write (*, '(A,I0,A,I0,A,I0,A,I0,A,I0,A,I0,A,I0,A,I0)') "xrd batches---Rank ", rank, " ---Thread ", omp_task, &
                " / ", n_omp, " i ", i, &
                " this_i_beg = ", this_i_beg, &
                " this_i_end = ", this_i_end, &
@@ -972,12 +997,15 @@ contains
          if (allocated(gpu_exp)) deallocate (gpu_exp)
          if (allocated(gpu_batch_storage)) deallocate (gpu_batch_storage)
 
-         !           call cpu_time( time%exp_batched(2) )
-         call get_time(time%exp_batched(2))
+         call time_end(time%xrd, "xrd_batched")
 
-         call time_end(time%xrd)
+!        Was a hand-written copy of time_end -- get_time into (2), then the
+!        accumulation into (3) -- with the xrd close in between. time_end is
+!        that, and only it closes the NVTX range opened at the top of the
+!        block, so the hand-written form would leave the range open and nest
+!        every later phase inside it.
+         call time_end(time%exp_batched, "exp_batched")
 
-         time%exp_batched(3) = time%exp_batched(3) + time%exp_batched(2) - time%exp_batched(1)
          if (rank == 0) print *, " "
          if (rank == 0) print *, "--Rank, ", rank, " --- TIME EXP BATCHED = ", time%exp_batched(3)
          if (rank == 0) print *, " "

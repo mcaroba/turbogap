@@ -94,7 +94,32 @@ contains
 
       n_sites = i_end - i_beg + 1
 
-      st_n_sites_int = n_sites*sizeof(n_neigh(1)) ! (i_end - i_beg + 1)
+!   i_end, not (i_end - i_beg + 1). This is the fix for the multi-rank crash.
+!
+!   The copy starts at c_loc(n_neigh), i.e. element 1 of the WHOLE array, and
+!   the kernels index it with the GLOBAL site number:
+!
+!       int i_site = i_beg - 1 + threadIdx.x + blockIdx.x * blockDim.x;
+!       ... species_d[i_site] ... n_neigh_d[i]  for i in [i_beg-1, i_site)
+!
+!   so the buffer has to reach index i_end - 1, not hold i_end - i_beg + 1
+!   elements. The two agree only when i_beg == 1 -- which is rank 0, and only
+!   rank 0. Every other rank read past the end of the allocation, and
+!   compute-sanitizer put it exactly there:
+!
+!       Invalid __global__ read of size 4 bytes
+!         at kernel_get_2b+0xd0 by thread (32,0,0) in block (1,0,0)
+!         Access to 0x7da1bef90 is out of bounds
+!         and is 112 bytes before the nearest allocation
+!
+!   Note the shape of the failure: it read BEFORE a neighbouring allocation, so
+!   with a different allocator layout it would silently read another buffer's
+!   data instead of faulting. A single-rank test can never see any of this.
+!
+!   The three buffers below already do exactly this -- j_end, the global top
+!   pair index, not the rank's pair count -- as does neighbors_list_d with
+!   size(neighbors_list). These two were the only ones written the other way.
+      st_n_sites_int = i_end*sizeof(n_neigh(1))
       !        print *, rank, " >> Allocating 2b on gpu"
       call gpu_malloc_async(n_neigh_d, st_n_sites_int, gpu_stream)
       call cpy_htod(c_loc(n_neigh), n_neigh_d, st_n_sites_int, gpu_stream)
@@ -182,7 +207,23 @@ contains
 
       if (n_distance_2b == 0) return
 
-      st_n_sites_double = n_sites*sizeof(energies_2b(1))
+      call time_start(time%gap_2b, "2b")
+
+!   size(energies_2b), not the rank's site count. Same defect as the one fixed
+!   in gap_backend_begin, one layer along and on the OUTPUT side.
+!
+!   kernel_get_2b writes energies_d[i_site] and forces_d[3*i_site + l] with the
+!   GLOBAL site index, and the host arrays it is copied to and from --
+!   energies_2b, forces_2b, this_energies, this_forces -- are allocated
+!   (1:n_sites) over the WHOLE system on every rank (turbogap.f90). Only the
+!   device buffer was sized by (i_end - i_beg + 1), so on any rank but the first
+!   the kernel wrote past the end of it and the read-back took the wrong slice.
+!
+!   Sizing from the host array rather than from a count means the buffer cannot
+!   drift from the thing it is copied to. add_3b_contribution has always done
+!   this (size(n_neigh), size(forces,2)); 2b and core_pot were the two that did
+!   not.
+      st_n_sites_double = size(energies_2b)*sizeof(energies_2b(1))
       call gpu_malloc_async(energies_2b_d, st_n_sites_double, gpu_stream)
       call cpy_htod(c_loc(energies_2b), energies_2b_d, st_n_sites_double, gpu_stream)
       call gpu_malloc_async(forces_2b_d, 3*st_n_sites_double, gpu_stream)
@@ -192,11 +233,6 @@ contains
       call cpy_htod(c_loc(virial_2b), virial_2b_d, st_virial, gpu_stream)
 
       do i = 1, n_distance_2b
-    !! time%gap_2b(1)=MPI_Wtime()
-         !call get_time( ! time%gap_2b(1) )
-
-         call time_start(time%gap_2b)
-
          !                The kernel filters neighbours by species index, so sp1/sp2
          !                must be the position of the descriptor's species within
          !                params%species_types (j), not the descriptor index (i).
@@ -222,8 +258,6 @@ contains
          call gpu_malloc_async(qs_d, st_n_sparse_double, gpu_stream)
          call cpy_htod(c_loc(distance_2b_hypers(i)%Qs(:, 1)), qs_d, st_n_sparse_double, gpu_stream)
 
-         call get_time(t1)
-
          call gpu_get_2b_forces_energies(i_beg, i_end,&
          & n_sparse, energies_2b_d, 0.0d0, n_neigh_d,&
          & c_do_forces, forces_2b_d, virial_2b_d,&
@@ -233,15 +267,10 @@ contains
          & cutoff_d, qs_d, distance_2b_hypers(i)&
          &%sigma, alphas_d, xyz_d, gpu_stream)
 
-         !time%gap_2b(2) = MPI_wtime()
-         call get_time(time%gap_2b(2))
-
          !          print *, rank, " >>--- Finished 2b energies forces on gpu ---"
          call gpu_free_async(alphas_d, gpu_stream)
          call gpu_free_async(cutoff_d, gpu_stream)
          call gpu_free_async(qs_d, gpu_stream)
-
-         call time_end(time%gap_2b)
       end do
 
       !              The kernels accumulate into the device buffers, so after the
@@ -263,6 +292,17 @@ contains
       call gpu_free_async(forces_2b_d, gpu_stream)
       call gpu_free_async(virial_2b_d, gpu_stream)
       !        print *, rank, " >>~~~ Finished freeing 2b energies forces on gpu ~~~<<"
+
+!   The bucket wraps the whole routine, not each descriptor.
+!
+!   It used to be started and ended inside the loop, which was only meaningful
+!   while gpu_get_2b_forces_energies ended in a stream synchronise: with that
+!   gone the launch returns immediately and a per-descriptor interval would
+!   measure launch overhead and call it 2b time. Here the interval encloses the
+!   gpu_stream_sync above, so it still measures the kernels -- and it is one
+!   interval per call rather than one per descriptor, which is also what the
+!   NVTX phase table wants.
+      call time_end(time%gap_2b, "2b")
 
    end subroutine add_2b_contribution
 
@@ -323,7 +363,9 @@ contains
       if (n_core_pot == 0) return
 
       !        print *, rank, " > Allocating core_pot on gpu "
-      st_n_sites_double = n_sites*sizeof(energies_core_pot(1))
+!   Global, not rank-local -- see the note in add_2b_contribution. The core
+!   potential kernel indexes energies_d and forces_d exactly as the 2b one does.
+      st_n_sites_double = size(energies_core_pot)*sizeof(energies_core_pot(1))
       call gpu_malloc_async(energies_core_pot_d, st_n_sites_double, gpu_stream)
       call cpy_htod(c_loc(energies_core_pot), energies_core_pot_d, st_n_sites_double, gpu_stream)
       call gpu_malloc_async(forces_core_pot_d, 3*st_n_sites_double, gpu_stream)
@@ -336,7 +378,7 @@ contains
       do i = 1, n_core_pot
 
          !           print *, " > Getting core potential"
-         call time_start(time%gap_core_pot)
+         call time_start(time%gap_core_pot, "core_pot")
 
          n_sparse = core_pot_hypers(i)%n
          st_n_sparse_double = n_sparse*sizeof(core_pot_hypers(i)%x(1))
@@ -376,7 +418,7 @@ contains
          call gpu_free_async(V_d, gpu_stream)
          call gpu_free_async(dVdx2_d, gpu_stream)
 
-         call time_end(time%gap_core_pot)
+         call time_end(time%gap_core_pot, "core_pot")
       end do
 
       !              As for the 2b and 3b terms, the kernel accumulates into the
@@ -484,7 +526,23 @@ contains
       size_maxnp_bytes = size(n_neigh)*c_int
       call gpu_malloc_async(kappas_array_d, size_maxnp_bytes, gpu_stream)
 
-      allocate (kappas(1:n_sites))
+!   size(n_neigh), not the rank's site count, and zeroed.
+!
+!   The loop below indexes kappas with the GLOBAL site number i in [i_beg,i_end],
+!   and the cpy_htod two statements down copies size_maxnp_bytes = size(n_neigh)
+!   integers out of it. Allocated (1:i_end-i_beg+1) it was too small for both:
+!   on rank 0 (i_beg = 1) the two agree by accident, and on every other rank the
+!   loop wrote one element past the end of the heap block. That is the
+!   `free(): invalid next size` abort, and gfortran's -fcheck=all names it
+!   outright:
+!
+!       Fortran runtime error: Index '3589' of dimension 1 of array 'kappas'
+!       above upper bound of 3588
+!
+!   Zeroed because only [i_beg,i_end] is filled: the rest is uploaded too, and
+!   uninitialised heap makes a run that differs from itself.
+      allocate (kappas(1:size(n_neigh)))
+      kappas = 0
 
       k = 0
       do i = i_beg, i_end
@@ -526,7 +584,7 @@ contains
 
       !       Loop through angle_3b descriptors
       do i = 1, n_angle_3b
-         call time_start(time%gap_3b)
+         call time_start(time%gap_3b, "3b")
 
          call cpy_htod(c_loc(angle_3b_hypers(i)%cutoff), cutoff_d, size_maxnp_bytes, gpu_stream)
          call cpy_htod(c_loc(angle_3b_hypers(i)%sigma), sigma_d, size_alphas_bytes, gpu_stream)
@@ -545,7 +603,7 @@ contains
                      c_do_forces, angle_3b_hypers(i)%rcut, 0.5d0, sigma_d, qs_d, c_name_3b, &
                      i_beg, i_end, energies_3b_d, forces_3b_d, virial_3b_d, kappas_array_d)
 
-         call time_end(time%gap_3b)
+         call time_end(time%gap_3b, "3b")
 
          ! print *, rank, " >>--- Finished 3b on gpu ---<< took ",&
          !   time%gap_3b(2) - time%gap_3b(1), " with total being ", time%gap_3b(3)
@@ -555,8 +613,25 @@ contains
       !              As for the 2b term, the kernels accumulate into the device
       !              buffers, so the totals are only read back once the loop over
       !              descriptors has finished.
-      call cpy_dtoh(energies_3b_d, c_loc(this_energies), st_n_sites_double, gpu_stream)
-      call cpy_dtoh(forces_3b_d, c_loc(this_forces), 3*st_n_sites_double, gpu_stream)
+!              The READ-BACK lengths, which are the last place this file mixed
+!              the two conventions.
+!
+!              These buffers were allocated size_energy3b = size(n_neigh) and
+!              size_forces3b = size(forces,2) -- global -- and the kernel writes
+!              into them at the global site index. Reading them back with
+!              st_n_sites_double = (i_end - i_beg + 1) copied that many doubles
+!              from OFFSET ZERO, i.e. global sites 1..n_local. On rank 0
+!              (i_beg = 1) that is exactly rank 0's own sites and the answer is
+!              right; on every other rank it is a slice the kernel never wrote,
+!              so the rank contributed zeros and its share of the energy simply
+!              vanished in the MPI_SUM.
+!
+!              It showed up as a 3b energy that fell to 1/nranks on a test cell
+!              that happens to be a 2x2x2 replication -- exactly 1/2 on two
+!              ranks and 1/4 on four, but not 1/3 on three, which is the
+!              signature of "only rank 0 counted" rather than of a division.
+      call cpy_dtoh(energies_3b_d, c_loc(this_energies), size_energy3b, gpu_stream)
+      call cpy_dtoh(forces_3b_d, c_loc(this_forces), size_forces3b, gpu_stream)
       call cpy_dtoh(virial_3b_d, c_loc(this_virial), st_virial, gpu_stream)
 
       call gpu_stream_sync(gpu_stream)

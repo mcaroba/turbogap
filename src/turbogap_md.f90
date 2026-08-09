@@ -145,7 +145,7 @@ contains
          if (params%do_md .and. md_istep > -1) then
 
             !time%md(1) = MPI_wtime()
-            call time_start(time%md)
+            call time_start(time%md, "md")
 
             !     Define the time_step and md_time prior to possible scaling (see variable_time_step below)
             if (md_istep > 0) then
@@ -488,7 +488,7 @@ contains
             end do
 
             !time%md(2) = MPI_wtime()
-            call time_end(time%md)
+            call time_end(time%md, "md")
          end if
 #ifdef _MPIF90
       END IF

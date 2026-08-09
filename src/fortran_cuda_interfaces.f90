@@ -716,6 +716,41 @@ MODULE F_B_C
          implicit none
       end subroutine
 
+!     The device memory ledger in cuda_wrappers.cu. gpu_meminfo above prints the
+!     device's own free/total and nothing else; these also report what THIS rank
+!     has asked for, which is the quantity the batching keywords control.
+      subroutine gpu_mem_report(label) bind(C, name="gpu_mem_report")
+         use iso_c_binding
+         implicit none
+         character(kind=c_char), dimension(*) :: label
+      end subroutine
+
+!     Bytes. Every argument is written; pass all four.
+      subroutine gpu_mem_stats(dev_free, dev_total, live, peak) bind(C, name="gpu_mem_stats")
+         use iso_c_binding
+         implicit none
+         integer(c_size_t) :: dev_free
+         integer(c_size_t) :: dev_total
+         integer(c_size_t) :: live
+         integer(c_size_t) :: peak
+      end subroutine
+
+!     Tell the C side what the input asked for, so an out-of-memory abort can
+!     name the keyword that fixes it and its current value.
+      subroutine gpu_mem_set_hint(max_gb, n_batches) bind(C, name="gpu_mem_set_hint")
+         use iso_c_binding
+         implicit none
+         real(c_double), value :: max_gb
+         integer(c_int), value :: n_batches
+      end subroutine
+
+!     Visible devices. cuda_set_device assigns them round-robin, so this is what
+!     says how many ranks share one card's memory.
+      integer(c_int) function gpu_device_count() bind(C, name="gpu_device_count")
+         use iso_c_binding
+         implicit none
+      end function
+
       subroutine gpu_check_error() bind(C, name="gpu_check_error")
          use iso_c_binding
          implicit none

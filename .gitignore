@@ -2,3 +2,8 @@ bin/
 build/
 include/
 lib/
+bin-*/
+build-*/
+include-*/
+lib-*/
+profiling/

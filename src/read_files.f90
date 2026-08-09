@@ -1163,6 +1163,11 @@ contains
       else if (keyword == 'max_gbytes_per_process') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%max_Gbytes_per_process
+      else if (keyword == 'gpu_mem_fraction') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%gpu_mem_fraction
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("gpu_mem_fraction", params%gpu_mem_fraction)
       else if (keyword == 'neighbors_buffer') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%neighbors_buffer
