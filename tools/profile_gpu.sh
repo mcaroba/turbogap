@@ -49,7 +49,14 @@ BUILD=1
 OUT=${TURBOGAP_PROF_OUT:-$repo/profiling}
 KERNEL_FILTER=
 LAUNCH_COUNT=3
-NCU_SET=${TURBOGAP_NCU_SET:-speedoflight}
+# basic, not speedoflight. `ncu --list-sets` offers basic / detailed / full /
+# roofline; SpeedOfLight is a SECTION inside them, not a set. Given a set name it
+# does not recognise ncu does NOT fail: it warns once, "No metrics to collect
+# found in sections", and then writes a normal ~1 MB report containing no metric
+# values at all. Every kernel appears with empty columns and the CSV export is
+# empty, so the run looks like it worked. This default cost a whole GH200 job
+# before it was noticed.
+NCU_SET=${TURBOGAP_NCU_SET:-basic}
 JOBS=${TURBOGAP_MAKE_JOBS:-12}
 OPENMP=0
 OMP_THREADS=
@@ -71,8 +78,10 @@ Options:
   --no-build             use the existing bin[-omp]-profile/turbogap
   --out DIR              where results go                (default: <repo>/profiling)
   --kernel REGEX         ncu: profile only matching kernels
-  --launch-count N       ncu: profile at most N launches of each  (default: 3)
-  --ncu-set SET          ncu: metric set                 (default: speedoflight)
+  --launch-count N       ncu: GLOBAL cap on profiled launches, not per kernel
+                         (default: 3). Pair it with --kernel, or you profile
+                         only whatever launches first.
+  --ncu-set SET          ncu: metric set (basic|detailed|full|roofline)  (default: basic)
   --jobs N               make -j                         (default: 12)
   --ranks N              run under mpirun with N ranks
   --openmp [N]           build OPENMP=1 and run with N host threads. This is
