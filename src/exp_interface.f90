@@ -819,7 +819,7 @@ contains
             call gpu_memset_async(gpu_exp%nk_flags_d(n_dim_idx), 0, st_nk_flags, gpu_stream)
             call gpu_malloc_async(gpu_exp%nk_flags_sum_d(n_dim_idx), st_nk_flags, gpu_stream)
 
-            call total_gpu_memory(dfloat((j_end - j_beg + 1)*2*4))
+            call total_gpu_memory(dfloat(int((j_end - j_beg + 1), c_size_t)*2*4))
 !          call gpu_stream_sync(gpu_stream)
 
             print *, "-- Rank ", rank, " ", "int(gpu_exp % nk_d(n_dim_idx))"
@@ -871,7 +871,7 @@ contains
             call gpu_stream_sync(gpu_stream)
             call gpu_check_error()
 
-            call total_gpu_memory(dfloat(-(j_end - j_beg + 1)*4))
+            call total_gpu_memory(dfloat(-int((j_end - j_beg + 1), c_size_t)*4))
 
             ! Now copy the value of nk from the gpu
 !          print *, "out of pdf nk kernel "
@@ -887,7 +887,7 @@ contains
 
             st_rjs_index_d = int(gpu_exp%nk(n_dim_idx), c_size_t)*c_double
             print *, " allocating rjs "
-            call total_gpu_memory(dfloat(gpu_exp%nk(n_dim_idx)*8))
+            call total_gpu_memory(dfloat(int(gpu_exp%nk(n_dim_idx), c_size_t)*8))
             call gpu_malloc_async(gpu_exp%rjs_index_d(n_dim_idx), st_rjs_index_d, gpu_stream)
             call gpu_memset_async(gpu_exp%rjs_index_d(n_dim_idx), 0, st_rjs_index_d, gpu_stream)
 
@@ -895,14 +895,14 @@ contains
             call gpu_check_error()
             gpu_exp%st_k_index_d(n_dim_idx) = int(gpu_exp%nk(n_dim_idx), c_size_t)*c_int
             print *, " allocating k index "
-            call total_gpu_memory(dfloat(gpu_exp%nk(n_dim_idx)*4))
+            call total_gpu_memory(dfloat(int(gpu_exp%nk(n_dim_idx), c_size_t)*4))
             call gpu_malloc_async(gpu_exp%k_index_d(n_dim_idx), gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
             call gpu_memset_async(gpu_exp%k_index_d(n_dim_idx), 0, gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
 
             call gpu_stream_sync(gpu_stream)
             call gpu_check_error()
             print *, " allocating j2 index "
-            call total_gpu_memory(dfloat(gpu_exp%nk(n_dim_idx)*4))
+            call total_gpu_memory(dfloat(int(gpu_exp%nk(n_dim_idx), c_size_t)*4))
             call gpu_malloc_async(gpu_exp%j2_index_d(n_dim_idx), gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
             call gpu_memset_async(gpu_exp%j2_index_d(n_dim_idx), 0, gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
 
@@ -915,7 +915,7 @@ contains
             print *, " allocating j2 index "
             call gpu_stream_sync(gpu_stream)
             call gpu_check_error()
-            call total_gpu_memory(dfloat(gpu_exp%nk(n_dim_idx)*8*3))
+            call total_gpu_memory(dfloat(int(gpu_exp%nk(n_dim_idx), c_size_t)*8*3))
             call gpu_malloc_async(gpu_exp%xyz_k_d(n_dim_idx), 3*st_rjs_index_d, gpu_stream)
             call gpu_memset_async(gpu_exp%xyz_k_d(n_dim_idx), 0, 3*st_rjs_index_d, gpu_stream)
 !          call gpu_stream_sync(gpu_stream)
@@ -949,7 +949,7 @@ contains
 
             call gpu_free_async(gpu_exp%nk_flags_sum_d(n_dim_idx), gpu_stream)
             print *, "deallocing flags sum"
-            call total_gpu_memory(dfloat(-(j_end - j_beg + 1)*4))
+            call total_gpu_memory(dfloat(-int((j_end - j_beg + 1), c_size_t)*4))
             call gpu_stream_sync(gpu_stream)
             call gpu_check_error()
 
@@ -958,7 +958,7 @@ contains
 
             !          call cpy_dtoh_event(&
             print *, "deallocing k index"
-            call total_gpu_memory(dfloat(-gpu_exp%nk(n_dim_idx)*4))
+            call total_gpu_memory(dfloat(-int(gpu_exp%nk(n_dim_idx), c_size_t)*4))
 
             call gpu_stream_sync(gpu_stream)
             call gpu_check_error()
@@ -976,7 +976,7 @@ contains
 
             !          call cpy_dtoh_event(&
             print *, "deallocing j2 index"
-            call total_gpu_memory(dfloat(-gpu_exp%nk(n_dim_idx)*4))
+            call total_gpu_memory(dfloat(-int(gpu_exp%nk(n_dim_idx), c_size_t)*4))
             call cpy_dtoh( &
                gpu_exp%j2_index_d(n_dim_idx), &
                c_loc(gpu_host%host(n_dim_idx)%j2_index_h), &
@@ -1005,7 +1005,7 @@ contains
             allocate (gpu_host%host(n_dim_idx)%xyz_k_h(1:3, 1:gpu_exp%nk(n_dim_idx)))
             !          call cpy_dtoh_event(&
             print *, "deallocing xyz_k"
-            call total_gpu_memory(dfloat(-gpu_exp%nk(n_dim_idx)*3*8))
+            call total_gpu_memory(dfloat(-int(gpu_exp%nk(n_dim_idx), c_size_t)*3*8))
             call gpu_stream_sync(gpu_stream)
             call gpu_check_error()
             call cpy_dtoh( &
@@ -1016,7 +1016,7 @@ contains
             call gpu_free_async(gpu_exp%xyz_k_d(n_dim_idx), gpu_stream)
 
             print *, "allocing pdf"
-            call total_gpu_memory(dfloat(n_samples*8))
+            call total_gpu_memory(dfloat(int(n_samples, c_size_t)*8))
             call gpu_stream_sync(gpu_stream)
             call gpu_check_error()
 
@@ -1027,7 +1027,7 @@ contains
                                   gpu_exp%st_pair_distribution_partial_d(n_dim_idx), gpu_stream)
 
             print *, "allocing pdf to reduce "
-            call total_gpu_memory(dfloat(gpu_exp%nk(n_dim_idx)*n_samples*8))
+            call total_gpu_memory(dfloat(int(gpu_exp%nk(n_dim_idx), c_size_t)*n_samples*8))
 
             st_pdf_to_reduce_d = int(gpu_exp%nk(n_dim_idx), c_size_t)*n_samples*c_double
             call gpu_malloc_async(pdf_to_reduce_d, st_pdf_to_reduce_d, gpu_stream)

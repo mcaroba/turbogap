@@ -1135,8 +1135,8 @@ __global__ void kernel_reduce_pair_distribution(double* pdf_in, double* pdf_out,
   pdf_temp = 0.0;
 
   for (i = 0; i < n_strides; ++i) {
-    int k_index = tid + i * BLOCK_SIZE;
-    int l_index = blockIdx.x;
+    long long k_index = tid + i * BLOCK_SIZE;
+    long long l_index = blockIdx.x;
 
 
     if (k_index < n_k && l_index < n_samples) {
@@ -1172,7 +1172,7 @@ extern "C" void gpu_get_pair_distribution_and_ders(double* pair_distribution_d, 
   // 1. Evaluate the exponential over the threads
 
   int threads = BLOCK_SIZE;
-  dim3 nblocks = dim3((n_k * n_samples + threads - 1) / threads, 1, 1);
+  dim3 nblocks = dim3((unsigned int) (((long long) n_k * n_samples + threads - 1) / threads), 1, 1);
   dim3 nthreads = dim3(threads, 1, 1);
 
   size_t freeMem, totalMem;
@@ -1241,15 +1241,15 @@ extern "C" void gpu_get_pair_distribution_and_ders(double* pair_distribution_d, 
 __global__ void kernel_get_pair_distribution_kde_der_only(double* pdf_der_out, int n_k, int n_samples, double kde_sigma,
                                                           double* x_d, double* dV_d, double* rjs_d, double pdf_factor,
                                                           double der_factor) {
-  int utid = threadIdx.x + blockIdx.x * blockDim.x;
+  long long utid = (long long) blockIdx.x * blockDim.x + threadIdx.x;
   // int k_index = blockIdx.x * blockDim.x + threadIdx.x;  // Index in the j dimension (columns)
   // int l_index = blockIdx.y * blockDim.y + threadIdx.y;  // Index in the l dimension (rows)
 
   int i;
   double x, dV, r, x_gauss, pdf_temp, pdf_der_temp;
 
-  int k_index = utid / n_samples;
-  int l_index = utid % n_samples;
+  long long k_index = utid / n_samples;
+  long long l_index = utid % n_samples;
 
   if (k_index < n_k && l_index < n_samples) {
     x = x_d[l_index];
@@ -1283,7 +1283,7 @@ extern "C" void gpu_get_pair_distribution_der_only(double* pair_distribution_der
   // 1. Evaluate the exponential over the threads
 
   int threads = BLOCK_SIZE;
-  dim3 nblocks = dim3((n_k * n_samples + threads - 1) / threads, 1, 1);
+  dim3 nblocks = dim3((unsigned int) (((long long) n_k * n_samples + threads - 1) / threads), 1, 1);
   dim3 nthreads = dim3(threads, 1, 1);
 
   //  // printf("> pdf der evaluation kernel starting\n");
@@ -1294,15 +1294,15 @@ extern "C" void gpu_get_pair_distribution_der_only(double* pair_distribution_der
 
 __global__ void kernel_get_pair_distribution_kde_only(double* pdf_out, int n_k, int n_samples, double kde_sigma, double* x_d,
                                                       double* dV_d, double* rjs_d, double pdf_factor, double der_factor) {
-  int utid = threadIdx.x + blockIdx.x * blockDim.x;
+  long long utid = (long long) blockIdx.x * blockDim.x + threadIdx.x;
   // int k_index = blockIdx.x * blockDim.x + threadIdx.x;  // Index in the j dimension (columns)
   // int l_index = blockIdx.y * blockDim.y + threadIdx.y;  // Index in the l dimension (rows)
 
   int i;
   double x, dV, r, x_gauss, pdf_temp, pdf_der_temp;
 
-  int k_index = utid / n_samples;
-  int l_index = utid % n_samples;
+  long long k_index = utid / n_samples;
+  long long l_index = utid % n_samples;
 
   if (k_index < n_k && l_index < n_samples) {
     x = x_d[l_index];
@@ -1366,7 +1366,7 @@ extern "C" void gpu_get_pair_distribution_only(double* pair_distribution_d, int 
   }
 
   int threads = BLOCK_SIZE;
-  dim3 nblocks = dim3((n_k * n_samples + threads - 1) / threads, 1, 1);
+  dim3 nblocks = dim3((unsigned int) (((long long) n_k * n_samples + threads - 1) / threads), 1, 1);
   dim3 nthreads = dim3(threads, 1, 1);
 
   // gpuErrchk( hipPeekAtLastError() );
@@ -1447,7 +1447,7 @@ extern "C" void gpu_get_pair_distribution_only_falloc(double* pair_distribution_
   }
 
   int threads = BLOCK_SIZE;
-  dim3 nblocks = dim3((n_k * n_samples + threads - 1) / threads, 1, 1);
+  dim3 nblocks = dim3((unsigned int) (((long long) n_k * n_samples + threads - 1) / threads), 1, 1);
   dim3 nthreads = dim3(threads, 1, 1);
 
   // gpuErrchk( hipPeekAtLastError() );
@@ -1491,8 +1491,8 @@ extern "C" void gpu_meminfo() {
 
 __global__ void kernel_set_Gka(int nk, int n_samples, int* k_index_d, double* Gk_d, double* pair_distribution_partial_der_d,
                                double c_factor) {
-  int tid = threadIdx.x + blockIdx.x * blockDim.x;
-  int l, k;
+  long long tid = (long long) blockIdx.x * blockDim.x + threadIdx.x;
+  long long l, k;
   k = tid / n_samples;
   l = tid % n_samples;
 
@@ -1512,7 +1512,7 @@ __global__ void kernel_set_Gka(int nk, int n_samples, int* k_index_d, double* Gk
 extern "C" void gpu_set_Gk(int nk, int n_samples, int* k_index_d, double* Gk_d, double* pair_distribution_partial_der_d,
                            double c_factor, hipStream_t* stream) {
   int threads = BLOCK_SIZE;
-  dim3 nblocks = dim3((nk * n_samples + threads - 1) / threads, 1, 1);
+  dim3 nblocks = dim3((unsigned int) (((long long) nk * n_samples + threads - 1) / threads), 1, 1);
   dim3 nthreads = dim3(threads, 1, 1);
 
   kernel_set_Gka<<<nblocks, nthreads, 0, stream[0]>>>(nk, n_samples, k_index_d, Gk_d, pair_distribution_partial_der_d, c_factor);
@@ -1520,8 +1520,8 @@ extern "C" void gpu_set_Gk(int nk, int n_samples, int* k_index_d, double* Gk_d, 
 
 
 __global__ void kernel_get_Gka(int i, int n_k, int n_samples, double* Gka_d, double* Gk_d, double* xyz_k_d) {
-  int tid = threadIdx.x + blockIdx.x * blockDim.x;
-  int j, k, j2;
+  long long tid = (long long) blockIdx.x * blockDim.x + threadIdx.x;
+  long long j, k, j2;
   k = tid / n_samples;
   j = tid % n_samples;
 
@@ -1542,7 +1542,7 @@ __global__ void kernel_get_Gka(int i, int n_k, int n_samples, double* Gka_d, dou
 
 extern "C" void gpu_get_Gka(int i, int n_k, int n_samples, double* Gka_d, double* Gk_d, double* xyz_k_d, hipStream_t* stream) {
   int threads = BLOCK_SIZE;
-  dim3 nblocks = dim3((n_k * n_samples + threads - 1) / threads, 1, 1);
+  dim3 nblocks = dim3((unsigned int) (((long long) n_k * n_samples + threads - 1) / threads), 1, 1);
   dim3 nthreads = dim3(threads, 1, 1);
 
   kernel_get_Gka<<<nblocks, nthreads, 0, stream[0]>>>(i, n_k, n_samples, Gka_d, Gk_d, xyz_k_d);
@@ -1550,8 +1550,8 @@ extern "C" void gpu_get_Gka(int i, int n_k, int n_samples, double* Gka_d, double
 
 
 __global__ void kernel_get_Gka_inplace(int i, int n_k, int n_samples, double* Gk_d, double* xyz_k_d) {
-  int tid = threadIdx.x + blockIdx.x * blockDim.x;
-  int j, k, j2;
+  long long tid = (long long) blockIdx.x * blockDim.x + threadIdx.x;
+  long long j, k, j2;
   k = tid / n_samples;
   j = tid % n_samples;
 
@@ -1563,7 +1563,7 @@ __global__ void kernel_get_Gka_inplace(int i, int n_k, int n_samples, double* Gk
 
 extern "C" void gpu_get_Gka_inplace(int i, int n_k, int n_samples, double* Gk_d, double* xyz_k_d, hipStream_t* stream) {
   int threads = BLOCK_SIZE;
-  dim3 nblocks = dim3((n_k * n_samples + threads - 1) / threads, 1, 1);
+  dim3 nblocks = dim3((unsigned int) (((long long) n_k * n_samples + threads - 1) / threads), 1, 1);
   dim3 nthreads = dim3(threads, 1, 1);
 
   kernel_get_Gka_inplace<<<nblocks, nthreads, 0, stream[0]>>>(i, n_k, n_samples, Gk_d, xyz_k_d);
@@ -1571,8 +1571,8 @@ extern "C" void gpu_get_Gka_inplace(int i, int n_k, int n_samples, double* Gk_d,
 
 
 __global__ void kernel_hadamard_vec_mat_product(int n_samples_sf, int n_k, double* all_scattering_factors_d, double* dermat_d) {
-  int tid = threadIdx.x + blockIdx.x * blockDim.x;
-  int j, l;
+  long long tid = (long long) blockIdx.x * blockDim.x + threadIdx.x;
+  long long j, l;
   j = tid / n_samples_sf;
   l = tid % n_samples_sf;
 
@@ -1586,8 +1586,8 @@ __global__ void kernel_hadamard_vec_mat_product(int n_samples_sf, int n_k, doubl
 }
 
 __global__ void dermat_kernel(double* dermat, double* all_scattering_factors, int n_samples_sf, int n_k) {
-  int j = blockIdx.x * blockDim.x + threadIdx.x; // Index in the j dimension (columns)
-  int l = blockIdx.y * blockDim.y + threadIdx.y; // Index in the l dimension (rows)
+  long long j = blockIdx.x * blockDim.x + threadIdx.x; // Index in the j dimension (columns)
+  long long l = blockIdx.y * blockDim.y + threadIdx.y; // Index in the l dimension (rows)
 
   if (j < n_k && l < n_samples_sf) {
     dermat[l + j * n_samples_sf] *= all_scattering_factors[l];
@@ -1597,7 +1597,7 @@ __global__ void dermat_kernel(double* dermat, double* all_scattering_factors, in
 extern "C" void gpu_hadamard_vec_mat_product(int n_samples_sf, int n_k, double* all_scattering_factors_d, double* dermat_d,
                                              hipStream_t* stream) {
   int threads = BLOCK_SIZE;
-  dim3 nblocks = dim3((n_k * n_samples_sf + threads - 1) / threads, 1, 1);
+  dim3 nblocks = dim3((unsigned int) (((long long) n_k * n_samples_sf + threads - 1) / threads), 1, 1);
   dim3 nthreads = dim3(threads, 1, 1);
 
   kernel_hadamard_vec_mat_product<<<nblocks, nthreads, 0, stream[0]>>>(n_samples_sf, n_k, all_scattering_factors_d, dermat_d);
