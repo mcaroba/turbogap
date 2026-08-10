@@ -354,8 +354,49 @@ __device__ void eval_energies_d(const double rcut, const double buffer, const in
 #endif
 
 //grid is different "i" iterations (i.e. sites), block is inner loops.
+// Occupancy of this kernel is set by its register count, and the register count
+// is set by ONE of its four instantiations.
+//
+//   ptxas: <false,exp_k> 48   <true,exp_k> 66   <false,pol_k> 50
+//          <true,pol_k>  146 on sm_86, 140 on sm_90
+//
+// The 146/140 one is what a polynomial-kernel potential with forces on runs,
+// i.e. every production run. ncu on a GH200 measures the consequence directly:
+// theoretical occupancy 18.8%, achieved 16.9%, SM throughput 40.3%, memory
+// throughput 22.0%. Neither compute- nor memory-bound -- latency-bound, with
+// too few resident warps to hide the latency.
+//
+// 140 x 32 threads = 4480 registers per block, so a Hopper SM's 65536 hold 14
+// blocks, and at one warp per block that is 14 of 64 warps. Capping registers
+// trades a little spill traffic for resident warps. Measured, 124,959 atoms,
+// one GH200, three runs each, on the 3b phase timer:
+//
+//   cap   regs   spill   blocks/SM   occupancy   3b phase
+//   none   140     0 B      14          21%       0.129 s
+//    96     96    84 B      21          32%       0.099 s   -23%
+//    80     80   112 B      25          39%       0.096 s   -26%
+//    64     64   220 B      32          50%       0.105 s   -19%  (spills bite)
+//
+// AND IT IS AN AMPERE LOSS, which is why it is not on by default. sm_86 allows
+// only 16 blocks per SM, so one warp per block caps at 16 of 48 warps -- 33%
+// -- whatever the register count, and the uncapped kernel already reaches 14
+// blocks. The same sweep on an RTX A2000 measured 40.9 s uncapped against
+// 41.0 / 41.1 / 41.3 s at 96 / 80 / 64: no gain, then a slow loss to the
+// spills. Ampere needs the register cap AND more than one warp per block, and
+// neither alone does anything -- which is also why the earlier
+// warps-per-block experiment, run at 146 registers, found nothing.
+//
+// Set it per architecture, in the architecture makefile, e.g.
+//     CC += -DTG_3B_MAXNREG=80
+// __maxnreg__ needs CUDA 12.4; alt is on 12.0, hence the version guard.
+#if defined(TG_3B_MAXNREG) && defined(CUDART_VERSION) && CUDART_VERSION >= 12040
+#define TG_3B_REGCAP __maxnreg__(TG_3B_MAXNREG)
+#else
+#define TG_3B_REGCAP
+#endif
+
 template <bool do_forces, kern_type type>
-__global__ void kernel_2nd_try(
+__global__ void TG_3B_REGCAP kernel_2nd_try(
 
     const int n_sparse, const int n_sites, const int n_atom_pairs, const int n_sites0, const int sp0, const int sp1, const int sp2,
     const double* alpha, const double delta, const double* cutoff,
