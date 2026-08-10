@@ -552,7 +552,7 @@ contains
          end if
       end if
 
-      st_all_scattering_factors_d = n_samples_sf*c_double
+      st_all_scattering_factors_d = int(n_samples_sf, c_size_t)*c_double
       call gpu_malloc_async(all_scattering_factors_d, st_all_scattering_factors_d, gpu_stream)
       call cpy_htod(c_loc(all_scattering_factors), all_scattering_factors_d, st_all_scattering_factors_d, gpu_stream)
 
@@ -602,23 +602,23 @@ contains
       ! First loop to get the number of valid k indexes
       call cpu_time(time(1))
 
-      st_Gk_d = n_samples*nk*c_double
+      st_Gk_d = int(n_samples, c_size_t)*nk*c_double
       call gpu_malloc_async(Gk_d, st_Gk_d, gpu_stream)
 
 !    call gpu_device_sync()
       call gpu_set_Gk(nk, n_samples, k_index_d, Gk_d, pair_distribution_partial_der_d, c_factor, gpu_stream)
 
-      st_dermat_d = n_samples_sf*nk*c_double
+      st_dermat_d = int(n_samples_sf, c_size_t)*nk*c_double
       call gpu_malloc_async(dermat_d, st_dermat_d, gpu_stream)
 
-      st_fi_d = nk*3*c_double
+      st_fi_d = int(nk, c_size_t)*3*c_double
       call gpu_malloc_async(fi_d, st_fi_d, gpu_stream)
       call gpu_memset_async(fi_d, 0, st_fi_d, gpu_stream)
 
       alpha = 1.d0
       beta = 0.d0
 
-      st_Gka_d = n_samples*nk*c_double
+      st_Gka_d = int(n_samples, c_size_t)*nk*c_double
       call gpu_malloc_async(Gka_d, st_Gka_d, gpu_stream)
 
       ! call gpu_meminfo()
@@ -650,11 +650,11 @@ contains
 !    call gpu_free_async( prefactor_d, gpu_stream )
       call gpu_free_async(dermat_d, gpu_stream)
 
-      st_forces0_d = size(forces0, 2)*size(forces0, 1)*c_double
+      st_forces0_d = int(size(forces0, 2), c_size_t)*size(forces0, 1)*c_double
       call gpu_malloc_async(forces0_d, st_forces0_d, gpu_stream)
       call cpy_htod(c_loc(forces0), forces0_d, st_forces0_d, gpu_stream)
 
-      st_virial_d = 9*c_double
+      st_virial_d = int(9, c_size_t)*c_double
       call gpu_malloc_async(virial_d, st_virial_d, gpu_stream)
       call cpy_htod(c_loc(virial), virial_d, st_virial_d, gpu_stream)
 
@@ -912,15 +912,15 @@ contains
 
          call gpu_meminfo()
 
-         st_fi_d = nk*3*c_double
+         st_fi_d = int(nk, c_size_t)*3*c_double
          call gpu_malloc_async(fi_d, st_fi_d, gpu_stream)
          call gpu_memset_async(fi_d, 0, st_fi_d, gpu_stream)
 
-         st_prefactor_d = size(prefactor, 1)*c_double
+         st_prefactor_d = int(size(prefactor, 1), c_size_t)*c_double
          call gpu_malloc_async(prefactor_d, st_prefactor_d, gpu_stream)
          call cpy_htod(c_loc(prefactor), prefactor_d, st_prefactor_d, gpu_stream)
 
-         st_all_scattering_factors_d = size(all_scattering_factors, 1)*c_double
+         st_all_scattering_factors_d = int(size(all_scattering_factors, 1), c_size_t)*c_double
          call gpu_malloc_async(all_scattering_factors_d, st_all_scattering_factors_d, gpu_stream)
          call cpy_htod(c_loc(all_scattering_factors), all_scattering_factors_d, st_all_scattering_factors_d, gpu_stream)
 
@@ -938,7 +938,7 @@ contains
             call gpu_malloc_async(pair_distribution_partial_der_d, st_pair_distribution_partial_der_d, gpu_stream)
           call cpy_htod( c_loc( gpu_host_storage % pair_distribution_partial_der_h), pair_distribution_partial_der_d, st_pair_distribution_partial_der_d, gpu_stream)
 
-            st_Gk_d = n_samples*nk*c_double
+            st_Gk_d = int(n_samples, c_size_t)*nk*c_double
             call gpu_malloc_async(Gk_d, st_Gk_d, gpu_stream)
 
             call gpu_stream_sync(gpu_stream)
@@ -950,7 +950,7 @@ contains
             ! st_Gka_d = n_samples * nk * c_double
             ! call gpu_malloc_async(Gka_d, st_Gka_d, gpu_stream)
 
-            st_rjs = nk*c_double
+            st_rjs = int(nk, c_size_t)*c_double
             call gpu_stream_sync(gpu_stream)
             call gpu_malloc_async(xyz_k_d, 3*st_rjs, gpu_stream)
             call cpy_htod(c_loc(gpu_host_storage%xyz_k_h), xyz_k_d, 3*st_rjs, gpu_stream)
@@ -962,11 +962,11 @@ contains
             ! call gpu_free_async( Gk_d, gpu_stream )
 
             call gpu_stream_sync(gpu_stream)
-            st_sinc_factor_matrix_d = size(sinc_factor_matrix, 1)*size(sinc_factor_matrix, 2)*c_double
+            st_sinc_factor_matrix_d = int(size(sinc_factor_matrix, 1), c_size_t)*size(sinc_factor_matrix, 2)*c_double
             call gpu_malloc_async(sinc_factor_matrix_d, st_sinc_factor_matrix_d, gpu_stream)
             call cpy_htod(c_loc(sinc_factor_matrix), sinc_factor_matrix_d, st_sinc_factor_matrix_d, gpu_stream)
 
-            st_dermat_d = n_samples_sf*nk*c_double
+            st_dermat_d = int(n_samples_sf, c_size_t)*nk*c_double
             call gpu_malloc_async(dermat_d, st_dermat_d, gpu_stream)
 
             call gpu_stream_sync(gpu_stream)
@@ -999,11 +999,11 @@ contains
          !       call gpu_free_async( dermat_d, gpu_stream )
 
          call gpu_stream_sync(gpu_stream)
-         st_forces0_d = size(forces0, 2)*size(forces0, 1)*c_double
+         st_forces0_d = int(size(forces0, 2), c_size_t)*size(forces0, 1)*c_double
          call gpu_malloc_async(forces0_d, st_forces0_d, gpu_stream)
          call cpy_htod(c_loc(forces0), forces0_d, st_forces0_d, gpu_stream)
 
-         st_virial_d = 9*c_double
+         st_virial_d = int(9, c_size_t)*c_double
          call gpu_malloc_async(virial_d, st_virial_d, gpu_stream)
          call cpy_htod(c_loc(virial), virial_d, st_virial_d, gpu_stream)
 
@@ -1013,7 +1013,7 @@ contains
             end do
          end do
 
-         st_rjs = nk*c_double
+         st_rjs = int(nk, c_size_t)*c_double
          call gpu_stream_sync(gpu_stream)
          call gpu_malloc_async(xyz_k_d, 3*st_rjs, gpu_stream)
          call cpy_htod(c_loc(gpu_host_storage%xyz_k_h), xyz_k_d, 3*st_rjs, gpu_stream)
@@ -1048,36 +1048,36 @@ contains
 
       else
 
-         st_Gk_d = n_samples*nk*c_double
+         st_Gk_d = int(n_samples, c_size_t)*nk*c_double
          call gpu_malloc_async(Gk_d, st_Gk_d, gpu_stream)
 
          !    call gpu_device_sync()
          call gpu_set_Gk(nk, n_samples, k_index_d, Gk_d, pair_distribution_partial_der_d, c_factor, gpu_stream)
          call gpu_meminfo()
 
-         st_sinc_factor_matrix_d = size(sinc_factor_matrix, 1)*size(sinc_factor_matrix, 2)*c_double
+         st_sinc_factor_matrix_d = int(size(sinc_factor_matrix, 1), c_size_t)*size(sinc_factor_matrix, 2)*c_double
          call gpu_malloc_async(sinc_factor_matrix_d, st_sinc_factor_matrix_d, gpu_stream)
          call cpy_htod(c_loc(sinc_factor_matrix), sinc_factor_matrix_d, st_sinc_factor_matrix_d, gpu_stream)
 
-         st_dermat_d = n_samples_sf*nk*c_double
+         st_dermat_d = int(n_samples_sf, c_size_t)*nk*c_double
          call gpu_malloc_async(dermat_d, st_dermat_d, gpu_stream)
 
-         st_fi_d = nk*3*c_double
+         st_fi_d = int(nk, c_size_t)*3*c_double
          call gpu_malloc_async(fi_d, st_fi_d, gpu_stream)
          call gpu_memset_async(fi_d, 0, st_fi_d, gpu_stream)
 
-         st_prefactor_d = size(prefactor, 1)*c_double
+         st_prefactor_d = int(size(prefactor, 1), c_size_t)*c_double
          call gpu_malloc_async(prefactor_d, st_prefactor_d, gpu_stream)
          call cpy_htod(c_loc(prefactor), prefactor_d, st_prefactor_d, gpu_stream)
 
-         st_all_scattering_factors_d = size(all_scattering_factors, 1)*c_double
+         st_all_scattering_factors_d = int(size(all_scattering_factors, 1), c_size_t)*c_double
          call gpu_malloc_async(all_scattering_factors_d, st_all_scattering_factors_d, gpu_stream)
          call cpy_htod(c_loc(all_scattering_factors), all_scattering_factors_d, st_all_scattering_factors_d, gpu_stream)
 
          alpha = 1.d0
          beta = 0.d0
 
-         st_Gka_d = n_samples*nk*c_double
+         st_Gka_d = int(n_samples, c_size_t)*nk*c_double
          call gpu_malloc_async(Gka_d, st_Gka_d, gpu_stream)
 
          call gpu_stream_sync(gpu_stream)
@@ -1109,11 +1109,11 @@ contains
          call gpu_free_async(prefactor_d, gpu_stream)
          call gpu_free_async(dermat_d, gpu_stream)
 
-         st_forces0_d = size(forces0, 2)*size(forces0, 1)*c_double
+         st_forces0_d = int(size(forces0, 2), c_size_t)*size(forces0, 1)*c_double
          call gpu_malloc_async(forces0_d, st_forces0_d, gpu_stream)
          call cpy_htod(c_loc(forces0), forces0_d, st_forces0_d, gpu_stream)
 
-         st_virial_d = 9*c_double
+         st_virial_d = int(9, c_size_t)*c_double
          call gpu_malloc_async(virial_d, st_virial_d, gpu_stream)
          call cpy_htod(c_loc(virial), virial_d, st_virial_d, gpu_stream)
 

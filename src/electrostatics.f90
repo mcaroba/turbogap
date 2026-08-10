@@ -418,9 +418,9 @@ contains
 
       n_dim_idx = 1
 
-      st_nk_temp = 1*c_int
+      st_nk_temp = int(1, c_size_t)*c_int
       call gpu_malloc_async(gpu_exp%nk_d(n_dim_idx), st_nk_temp, gpu_stream)
-      st_nk_flags = (j_end - j_beg + 1)*c_int
+      st_nk_flags = int((j_end - j_beg + 1), c_size_t)*c_int
       call gpu_malloc_async(gpu_exp%nk_flags_d(n_dim_idx), st_nk_flags, gpu_stream)
       call gpu_memset_async(gpu_exp%nk_flags_d(n_dim_idx), 0, st_nk_flags, gpu_stream)
       call gpu_malloc_async(gpu_exp%nk_flags_sum_d(n_dim_idx), st_nk_flags, gpu_stream)
@@ -428,7 +428,7 @@ contains
       this_n_sites = i_end - i_beg + 1
       this_n_pairs = j_end - j_beg + 1
 
-      st_n_neigh_index_d = c_int*this_n_sites
+      st_n_neigh_index_d = int(c_int, c_size_t)*this_n_sites
       call gpu_malloc_async(n_neigh_index_d, st_n_neigh_index_d, gpu_stream)
       call gpu_memset_async(n_neigh_index_d, 0, st_n_neigh_index_d, gpu_stream)
 
@@ -450,7 +450,7 @@ contains
          gpu_stream)
 
       ! Now copy the value of nk from the gpu
-      st_nk_temp = 1*c_int
+      st_nk_temp = int(1, c_size_t)*c_int
       call cpy_dtoh(gpu_exp%nk_d(n_dim_idx), c_loc(nk_temp), st_nk_temp, gpu_stream)
       call gpu_stream_sync(gpu_stream)
       gpu_exp%nk(n_dim_idx) = nk_temp(1)
@@ -459,14 +459,14 @@ contains
       call gpu_free_async(gpu_exp%nk_flags_d(n_dim_idx), gpu_stream)
 
       ! Now we create temporary arrays for the k indices
-      st_rjs_index_d = gpu_exp%nk(n_dim_idx)*c_double
+      st_rjs_index_d = int(gpu_exp%nk(n_dim_idx), c_size_t)*c_double
       call gpu_malloc_async(gpu_exp%rjs_index_d(n_dim_idx), st_rjs_index_d, gpu_stream)
       call gpu_memset_async(gpu_exp%rjs_index_d(n_dim_idx), 0, st_rjs_index_d, gpu_stream)
 
       call gpu_malloc_async(gpu_exp%xyz_k_d(n_dim_idx), 3*st_rjs_index_d, gpu_stream)
       call gpu_memset_async(gpu_exp%xyz_k_d(n_dim_idx), 0, 3*st_rjs_index_d, gpu_stream)
 
-      gpu_exp%st_k_index_d(n_dim_idx) = gpu_exp%nk(n_dim_idx)*c_int
+      gpu_exp%st_k_index_d(n_dim_idx) = int(gpu_exp%nk(n_dim_idx), c_size_t)*c_int
       call gpu_malloc_async(gpu_exp%k_index_d(n_dim_idx), gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
       call gpu_memset_async(gpu_exp%k_index_d(n_dim_idx), 0, gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
 
@@ -482,18 +482,18 @@ contains
       ! Allocate the array which will store the neighbor charges
       ! > We only need the index array, as we can obviate the need for
       !   doing any of the neighbor charge allocation on the cpu
-      st_neighbor_charges_index_d = c_double*gpu_exp%nk(n_dim_idx)
+      st_neighbor_charges_index_d = int(c_double, c_size_t)*gpu_exp%nk(n_dim_idx)
       call gpu_malloc_async(neighbor_charges_index_d, st_neighbor_charges_index_d, gpu_stream)
       ! Don't need to set to zero
 
       ! Allocate the charge gradients on the gpu
       ! > First, the actual array
-      st_charge_gradients_d = c_double*this_n_pairs*3
+      st_charge_gradients_d = int(c_double, c_size_t)*this_n_pairs*3
       call gpu_malloc_async(charge_gradients_d, st_charge_gradients_d, gpu_stream)
       call cpy_htod(c_loc(charge_gradients), charge_gradients_d, st_charge_gradients_d, gpu_stream)
 
       ! Then the array of reduced size
-      st_charge_gradients_d = c_double*gpu_exp%nk(n_dim_idx)*3
+      st_charge_gradients_d = int(c_double, c_size_t)*gpu_exp%nk(n_dim_idx)*3
       call gpu_malloc_async(charge_gradients_index_d, st_charge_gradients_d, gpu_stream)
       call gpu_memset_async(charge_gradients_index_d, 0, st_charge_gradients_d, gpu_stream)
 
@@ -525,15 +525,15 @@ contains
       write (*, '(A,1X,I8,1X,A)') "rank = ", rank, "  finished gpu_get_electrostatics_k_index"
 
       call flush (101)
-      st_energies_d = c_double*this_n_sites
+      st_energies_d = int(c_double, c_size_t)*this_n_sites
       call gpu_malloc_async(energies_d, st_energies_d, gpu_stream)
       call gpu_memset_async(energies_d, 0, st_energies_d, gpu_stream)
 
-      st_forces_d = c_double*n_sites*3
+      st_forces_d = int(c_double, c_size_t)*n_sites*3
       call gpu_malloc_async(forces_d, st_forces_d, gpu_stream)
       call gpu_memset_async(forces_d, 0, st_forces_d, gpu_stream)
 
-      st_virial_d = c_double*9
+      st_virial_d = int(c_double, c_size_t)*9
       call gpu_malloc_async(virial_d, st_virial_d, gpu_stream)
       call gpu_memset_async(virial_d, 0, st_virial_d, gpu_stream)
 
@@ -604,14 +604,14 @@ contains
 
       write (*, '(A,1X,I8,1X,A)') "rank = ", rank, " finished electrostatics energies"
       call flush (101)
-      st_energies_d = c_double*this_n_sites
+      st_energies_d = int(c_double, c_size_t)*this_n_sites
       call cpy_dtoh(energies_d, c_loc(energies_temp), st_energies_d, gpu_stream)
 
       !   if ( c_do_forces )then
-      st_forces_d = c_double*n_sites*3
+      st_forces_d = int(c_double, c_size_t)*n_sites*3
       call cpy_dtoh(forces_d, c_loc(forces_temp), st_forces_d, gpu_stream)
 
-      st_virial_d = c_double*9
+      st_virial_d = int(c_double, c_size_t)*9
       call cpy_dtoh(virial_d, c_loc(virial_temp), st_virial_d, gpu_stream)
       !  end if
 

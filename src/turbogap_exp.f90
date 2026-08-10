@@ -567,7 +567,7 @@ contains
          allocate (gpu_exp(1:size(i_beg_list)))
          allocate (gpu_batch_storage(1:size(i_beg_list)))
 
-         st_x_d = params%pair_distribution_n_samples*c_double
+         st_x_d = int(params%pair_distribution_n_samples, c_size_t)*c_double
 
          call gpu_malloc_async(xpdf_d, st_x_d, gpu_stream)
          call cpy_htod(c_loc(x_pair_distribution), xpdf_d, st_x_d, gpu_stream)
@@ -829,7 +829,7 @@ contains
          allocate (prefactor(1:size(y_xrd)))
          prefactor(1:size(y_xrd)) = (y_xrd(1:size(y_xrd)) - params%exp_data(params%xrd_idx)%y(1:size(y_xrd)))
 
-         st_prefactor_d = size(prefactor, 1)*c_double
+         st_prefactor_d = int(size(prefactor, 1), c_size_t)*c_double
          call gpu_malloc_async(prefactor_d, st_prefactor_d, gpu_stream)
          call cpy_htod(c_loc(prefactor), prefactor_d, st_prefactor_d, gpu_stream)
 
@@ -838,7 +838,7 @@ contains
          ! call gpu_malloc_async(all_scattering_factors_d, st_all_scattering_factors_d, gpu_stream)
          ! call cpy_htod(c_loc( all_scattering_factors ), all_scattering_factors_d, st_all_scattering_factors_d, gpu_stream)
 
-         st_sinc_factor_matrix_d = size(sinc_factor_matrix, 1)*size(sinc_factor_matrix, 2)*c_double
+         st_sinc_factor_matrix_d = int(size(sinc_factor_matrix, 1), c_size_t)*size(sinc_factor_matrix, 2)*c_double
          call gpu_malloc_async(sinc_factor_matrix_d, st_sinc_factor_matrix_d, gpu_stream)
          call cpy_htod(c_loc(sinc_factor_matrix), sinc_factor_matrix_d, st_sinc_factor_matrix_d, gpu_stream)
 

@@ -202,8 +202,8 @@ contains
 !   These two were set in the 2b procedure and read by the other two through
 !   host association -- an undocumented ordering dependency between the three,
 !   which is exactly what a shared host scope hides. Each computes its own now.
-      st_n_sites_double = n_sites*c_double
-      st_virial = 9*c_double
+      st_n_sites_double = int(n_sites, c_size_t)*c_double
+      st_virial = int(9, c_size_t)*c_double
 
       if (n_distance_2b == 0) return
 
@@ -357,8 +357,8 @@ contains
 !   These two were set in the 2b procedure and read by the other two through
 !   host association -- an undocumented ordering dependency between the three,
 !   which is exactly what a shared host scope hides. Each computes its own now.
-      st_n_sites_double = n_sites*c_double
-      st_virial = 9*c_double
+      st_n_sites_double = int(n_sites, c_size_t)*c_double
+      st_virial = int(9, c_size_t)*c_double
 
       if (n_core_pot == 0) return
 
@@ -508,8 +508,8 @@ contains
 !   These two were set in the 2b procedure and read by the other two through
 !   host association -- an undocumented ordering dependency between the three,
 !   which is exactly what a shared host scope hides. Each computes its own now.
-      st_n_sites_double = n_sites*c_double
-      st_virial = 9*c_double
+      st_n_sites_double = int(n_sites, c_size_t)*c_double
+      st_virial = int(9, c_size_t)*c_double
 
       if (n_angle_3b == 0) return
 
