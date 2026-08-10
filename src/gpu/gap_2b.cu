@@ -18,11 +18,14 @@ __device__ double gpu_spline(int nx, double r, double* x, double* y, double* y2,
         if (r < x[j + 1])
           break;
       double h = x[j + 1] - x[j];
-      double h26 = pow(h, 2) / 6.0;
+      // Written as multiplies, not pow(). nvcc does NOT fold pow(x, 2) with a
+      // literal exponent -- the PTX for this file carried six real calls to
+      // __internal_accurate_pow, which is log2 + exp2 plus correction terms.
+      double h26 = h * h / 6.0;
       double A = (x[j + 1] - r) / h;
       double B = 1.0 - A;
-      double C = (pow(A, 3) - A) * h26;
-      double D = (pow(B, 3) - B) * h26;
+      double C = (A * A * A - A) * h26;
+      double D = (B * B * B - B) * h26;
       s = A * y[j] + B * y[j + 1] + C * y2[j] + D * y2[j + 1];
     }
   }
@@ -47,8 +50,8 @@ __device__ double gpu_spline_der(int nx, double r, double* x, double* y, double*
       double B = 1.0 - A;
       double dAdx = -1.0 / h;
       double dBdx = -dAdx;
-      double dCdx = (1.0 - 3.0 * pow(A, 2)) * h6;
-      double dDdx = (3.0 * pow(B, 2) - 1.0) * h6;
+      double dCdx = (1.0 - 3.0 * A * A) * h6;
+      double dDdx = (3.0 * B * B - 1.0) * h6;
       ds = dAdx * y[j] + dBdx * y[j + 1] + dCdx * y2[j] + dDdx * y2[j + 1];
     }
   }
@@ -89,7 +92,11 @@ __global__ void kernel_get_2b(int i_beg, int i_end, int n_sparse, double* energi
           sigma2 = sigma * sigma;
           delta2 = delta * delta;
           for (s = 0; s < n_sparse; s++) {
-            tmp = delta2 * alphas_d[s] * cutoff_d[s] * exp(-0.5 * pow(rjs_k - Qs_d[s], 2) / sigma2);
+            // The innermost statement of the whole kernel, run n_neigh x
+            // n_sparse times per site. pow(dq, 2) here was a call to
+            // __internal_accurate_pow on every one of those iterations.
+            double dq = rjs_k - Qs_d[s];
+            tmp = delta2 * alphas_d[s] * cutoff_d[s] * exp(-0.5 * dq * dq / sigma2);
             energies_loc += tmp * fcut;
             if (do_forces) {
               for (i = 0; i < 3; i++) {
