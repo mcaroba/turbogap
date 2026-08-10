@@ -9,7 +9,7 @@
 #
 # The question this exists for
 # ----------------------------
-# "Is each GPU tied to one rank?" No. src/cuda_wrappers.cu does
+# "Is each GPU tied to one rank?" No. src/gpu/gpu_memory.cu does
 #
 #     hipSetDevice(my_rank % num_gpus)
 #

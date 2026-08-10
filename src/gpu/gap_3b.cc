@@ -1,17 +1,16 @@
-#include <hip/hip_runtime.h>
-#include <cstdio>
-#include <cstdlib>
-#include <ctime>
-#include <hipblas/hipblas.h>
-//#include <hipsolver.h>
-//#include <hiprand/hiprand.h>
-#include <assert.h>
-#include <hip/hip_complex.h>
+// The three-body descriptor.
+//
+// Kept as .cc, and so compiled with $(CC) rather than $(CU), because it needs
+// -std=c++20 for <numbers> and <bit>.
+#include "gpu_common.h"
+#include "gap_gpu.h"
+
 #include <numbers>
 #include <iostream>
 #include <iomanip>
 #include <bit>
 #include <chrono>
+
 
 //stupid thing needed to have 0 starting exponential printing, debug only to compare with fortran exponential notation.
 

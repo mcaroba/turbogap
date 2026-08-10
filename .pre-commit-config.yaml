@@ -38,8 +38,8 @@ repos:
     rev: v18.1.8
     hooks:
       # The CUDA / C / C++ counterpart to the fprettify hook above. This branch
-      # is the only one with C-family sources -- cuda_wrappers.cu, gpu_exp.cu,
-      # 3b_final.cc and the deliberately-disabled orthonormalization_kernels.cc
+      # is the only one with C-family sources -- everything under src/gpu,
+      # including the deliberately-disabled orthonormalization_kernels.cc
       # -- so unlike fprettify there is no cross-branch formatting drift to
       # avoid here. The reason to have it is the other one: these files carry
       # the device allocation and stream code, where the defects have been, and

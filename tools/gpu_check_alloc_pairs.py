@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check that every device buffer is released by the matching deallocator.
 
-The wrappers in src/cuda_wrappers.cu are two distinct allocation families, and
+The wrappers in src/gpu/gpu_memory.cu are two distinct allocation families, and
 mixing them is undefined behaviour rather than a leak:
 
     gpu_malloc_async(a_d, n, stream)    -> hipMallocAsync   (stream-ordered pool)

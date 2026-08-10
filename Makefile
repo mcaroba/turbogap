@@ -171,10 +171,24 @@ F90_OPTS += $(F90_MOD_DIR_OPT) $(INC_DIR)
 PROGRAMS := turbogap
 
 
-SRC_CUDA := cuda_wrappers.cu gpu_exp.cu
+# Device sources, all under src/gpu/ and named after what they compute. See
+# src/gpu/README.md for the partition; in short, gpu_* is infrastructure both
+# sides use, gap_* is the interatomic potential (2b, 3b, soap_turbo) and mad_*
+# is the experimental-data path (pdf, structure factor, electrostatics).
+#
+# Every one of these was carved out of the three monolithic files this list used
+# to name -- cuda_wrappers.cu (2684 lines), gpu_exp.cu (1709) and 3b_final.cc --
+# so a change to one kernel family no longer recompiles the other twelve.
+SRC_CUDA := gpu_memory.cu gpu_blas.cu gpu_scan.cu \
+            gap_predict.cu gap_soap_radial.cu gap_soap_angular.cu \
+            gap_soap_descriptor.cu gap_soap_forces.cu gap_2b.cu \
+            mad_pdf.cu mad_xrd.cu mad_electrostatics.cu
+# gap_3b stays .cc, and so is compiled by $(CC) rather than $(CU), because it
+# needs -std=c++20 for <numbers> and <bit>; only $(CC) passes it.
+#
 # orthonormalization_kernels.cc is deliberately disabled, not dead: it is kept in
-# src/ for possible reintegration. Re-enable by moving it before the '#'.
-SRC_CC :=  3b_final.cc # orthonormalization_kernels.cc
+# src/gpu/ for possible reintegration. Re-enable by moving it before the '#'.
+SRC_CC :=  gap_3b.cc # orthonormalization_kernels.cc
 SRC := printing.f90 error.f90 read_utils.f90 nvtx.f90 timing.f90 misc.f90 constants.f90 nonneg_leastsq.f90 splines.f90 types.f90 gpu_context.f90 neighbors.f90 gap.f90 vdw.f90 local_properties.f90 exp_utils.f90 \
        xyz.f90 md.f90 mc.f90 read_files.f90 \
        gap_backend_gpu.f90 gap_interface.f90 mpi.f90 exp_interface.f90 turbogap_exp.f90 turbogap_md.f90 turbogap_vdw.f90 turbogap_estat.f90 turbogap_setup.f90 \
@@ -220,11 +234,15 @@ programs: $(PROG)
 libturbogap: $(OBJ_BASE) $(OBJ_TP_BT) $(OBJ_ST) $(OBJ) $(OBJ_CUDA) ${LIB_DIR}
 	ar scr $(LIB_DIR)/libturbogap.a $(OBJ_BASE) $(OBJ_TP_BT) $(OBJ_ST) $(OBJ)  $(OBJ_CUDA)
 
-$(BUILD_DIR)/cuda_%.o: src/cuda_%.cu
+# Device sources. The headers are listed as prerequisites explicitly: they are
+# not in Makefile.deps (which is Fortran modules only) and nvcc is not asked to
+# emit depfiles, so without this an edit to gpu_common.h would rebuild nothing
+# -- the same class of silent-staleness trap the BUILD_TAG note above describes.
+GPU_HEADERS := $(wildcard src/gpu/*.h)
+
+$(BUILD_DIR)/%.o: src/gpu/%.cu $(GPU_HEADERS) | $$(@D)
 	$(CU) $(CUDA_OPTS) -c $< -o $@
-$(BUILD_DIR)/gpu_%.o: src/gpu_%.cu
-	$(CU) $(CUDA_OPTS) -c $< -o $@
-$(BUILD_DIR)/%.o: src/%.cc
+$(BUILD_DIR)/%.o: src/gpu/%.cc $(GPU_HEADERS) | $$(@D)
 	$(CC) $(CC_OPTS) -c $< -o $@
 $(BIN_DIR)/%: src/%.f90 $(OBJ_BASE) $(OBJ_TP_BT) $(OBJ_ST)  $(OBJ) $(OBJ_CUDA) $(OBJ_CC) | $$(@D)
 	$(F90) $(PP) $(F90_OPTS) $< -o $@ $(OBJ_BASE) $(OBJ_TP_BT) $(OBJ_ST) $(OBJ) $(OBJ_CUDA) $(OBJ_CC) $(LIBS)

@@ -1,6 +1,6 @@
 
-! module load gcc/10.3.0 openblas openmpi cuda
-! rm cuda_wrappers.o ; nvcc -arch=sm_70 -c src/cuda_wrappers.cu ; make clean; make -B
+! rm build/gpu_memory.o ; nvcc -arch=sm_70 -c src/gpu/gpu_memory.cu ; make clean; make -B
+! rm build/gpu_memory.o ; nvcc -arch=sm_70 -c src/gpu/gpu_memory.cu ; make clean; make -B
 !  srun  --time=00:10:00 --partition=gputest --account=project_2000634 --nodes=1 --ntasks-per-node=4  --cpus-per-task=1 --gres=gpu:a100:4  ../turbogap_dev/bin/turbogap md
 ! gnupot
 !plot "< paste trajectory_out.xyz_64k_oiriginal trajectory_out.xyz | awk 'NR>2{print $5,$13}'", x
@@ -716,7 +716,7 @@ MODULE F_B_C
          implicit none
       end subroutine
 
-!     The device memory ledger in cuda_wrappers.cu. gpu_meminfo above prints the
+!     The device memory ledger in src/gpu/gpu_memory.cu. gpu_meminfo above prints the
 !     device's own free/total and nothing else; these also report what THIS rank
 !     has asked for, which is the quantity the batching keywords control.
       subroutine gpu_mem_report(label) bind(C, name="gpu_mem_report")
