@@ -184,7 +184,12 @@ if ! nm -D "$BIN" 2>/dev/null | grep -q nvtxRangePush; then
     Rebuild:  make -C $repo PROFILE=1 DEBUG=0"
 fi
 
-command -v nsys >/dev/null || die "nsys not found; run tools/setup_profiling_env.sh --check"
+# Require only the profiler actually being run. Demanding nsys unconditionally
+# made --tool ncu impossible on Roihu, where nsys is not installed on the GPU
+# nodes at all -- and ncu is the only profiler that works there.
+if [ "$TOOL" != ncu ]; then
+  command -v nsys >/dev/null || die "nsys not found; run tools/setup_profiling_env.sh --check"
+fi
 if [ "$TOOL" != nsys ]; then
   command -v ncu >/dev/null || die "ncu not found; run tools/setup_profiling_env.sh --check"
 fi
