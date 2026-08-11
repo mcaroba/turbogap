@@ -86,16 +86,19 @@ reported virial. Forces are checked in the same run.
 | leg | what it reaches |
 | --- | --- |
 | `xrd` | the batched device route, which is what a default deck runs |
-| `xrd-matrix` | `get_structure_factor_forces_matrix`, `gpu_batched` off |
-| `xrd-plain` | `get_structure_factor_forces`, the host implementation |
+| `xrd-plain` | `get_structure_factor_forces`, the host route, `gpu_batched` off |
 | `sf` | both routines with `do_xrd` off |
 | `pdf` | `get_pair_distribution_forces`, `g(r)` |
 | `pdf-dr` | the same with `pair_distribution_output = 'D(r)'` |
 | `mpi` | the virial at 1 rank against `TURBOGAP_RANKS` |
 
-Only `xrd` and `mpi` actually run here; the rest report why they cannot, below.
-`xrd` is not a narrow leg for that — the batched route is the only route a deck
-on this branch can take, so it is the whole of what a user sees.
+All six run. Four of them could not until `gpu_batched = .false.` was given a
+route to take again — see below, and `src/turbogap_exp.f90`.
+
+`get_structure_factor_forces_matrix` has no leg. It reads the device pair lists
+that only the batched pdf builds, so it is reachable from neither route: the
+batched one calls `get_structure_factor_forces_matrix_original` instead, and the
+unbatched one has no device lists to give it. It carries the fix, unexercised.
 
 The `mpi` leg compares with a tolerance rather than byte for byte. The pair half
 is a device reduction whose summation order is not fixed, and splitting the
@@ -108,34 +111,34 @@ finite-difference resolution, not physics: the frame carries 8 decimals, so a
 leg whose energy is large and whose virial is small resolves the derivative
 less well, and the device reductions do not fix their summation order.
 
-## Four legs cannot run here, and it is not the virial
+## Four of these legs used to be impossible, and why they are not
 
-`compute_exp_spectra` assembles the *total* pattern for exactly one
-configuration: `gpu_batched` on, with `do_xrd` or `do_nd`. Everything else
-falls through to the similarity block, which assigns an unallocated array into
-`y_pred` and segfaults — `src/turbogap_exp.f90:1024`, `:1026` and `:1028` for
-`y_pair_distribution`, `y_structure_factor` and `y_xrd` in turn. So:
+Until `src/turbogap_exp.f90` grew an unbatched branch, `compute_exp_spectra`
+assembled the *total* pattern for exactly one configuration: `gpu_batched` on,
+with `do_xrd` or `do_nd`. Everything else fell through to the similarity block,
+which assigned an unallocated array into `y_pred` and segfaulted. That took out
+`sf`, `pdf` and `pdf-dr`, whose labels had no assembled total at all, and
+`xrd-plain`, which reaches the `exp_utils` routines by turning `gpu_batched`
+off — the very thing that removed the only assembly of `y_xrd`.
 
-- `sf`, `pdf` and `pdf-dr` cannot run: those labels have no assembled total at
-  all. The batched path collects the partials and stops there, and there is no
-  other path.
-- `xrd-matrix` and `xrd-plain` cannot run: they exist to reach the routines in
-  `exp_utils`, which means turning `gpu_batched` off, which is what removes the
-  only thing that assembles `y_xrd`.
+The batched route collects the partials and stops; nothing turned them into
+`y_pair_distribution`. The unbatched branch calls `calculate_pair_distribution`,
+the host implementation, which does. The pattern assembly — the
+`calculate_structure_factor` / `calculate_xrd` / `calculate_nd` calls — is now
+shared by both routes, and still runs before the batched forces, which build
+their residual from `y_xrd`.
 
-All of it predates the virial work — the binary from before dies at the same
-lines on the same decks. Adding `do_xrd = .true.` to a pdf deck does not help
-either: what is missing is the assembly, not the trigger. Guarding the
-dereference would stop the crash without making the observable work, so
-nothing here does that.
+`gpu_batched = .false.` forces `structure_factor_matrix_forces = .false.` and
+says so. The matrix route reads the device pair lists the batched pdf builds,
+and the host pdf builds none.
 
-What it costs: `get_structure_factor_forces`, `get_structure_factor_forces_matrix`
-and `get_pair_distribution_forces` in `src/exp_utils.f90`, and the volume term
-in `calculate_pair_distribution` and `gpu_calculate_pair_distribution`, are
-unreachable on this branch and therefore unexercised. They carry the fix anyway,
-as a line-for-line port of the CPU branch's change, where `tests/pdf_virial`
-does run those legs and they pass. The legs are kept rather than deleted so
-they come back on their own the day those routes are reachable.
+The `xrd` and `xrd-plain` legs agree to the last printed digit, which is worth
+more than either alone: the batched device route and the host route are
+independent implementations of the same virial, and neither was checked against
+the other before.
+
+`run.sh` still probes for the old failure and skips with the reason rather than
+failing, so the suite stays honest on a branch where it comes back.
 
 `--strain 1e-5`, against the harness default of `1e-4`. The pair distribution
 is cut hard at `pair_distribution_rcut`, so a pair crossing that radius takes a

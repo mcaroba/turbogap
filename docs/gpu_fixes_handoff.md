@@ -813,3 +813,86 @@ Two follow-ons landed with it:
   owed to master.
 * The suite gained its first **small cell**. Everything else here is the
   7176-atom CO system, which is exactly why §6i went unnoticed.
+
+---
+
+## 6c revisited. The run-to-run irreproducibility, diagnosed — two atomicAdds
+
+§6c recorded that the same binary gives different output run to run and that it
+"has not been chased". §6g then hung the `XRD_mad` xfail on a `local_energy`
+drift and asked, as the way to settle it, whether the same binary moves frame 5
+by a comparable amount on its own. It does. This is that chase, finished.
+
+**The drift is not a GPU-vs-CPU disagreement.** It is the GPU build disagreeing
+with itself, and the two places it comes from are now known.
+
+### Method
+
+Three ablations, each run three times, comparing `md5sum` of
+`trajectory_out.xyz` over the five `XRD_mad` MD steps. The potential ablations
+are `delta = 0.0` on whole `gap_beg` blocks, which zeroes those contributions
+exactly and so removes their summation-order noise without touching any code.
+The kernel ablation is a build in which `cuda_soap_forces_virial_two` is
+launched as a single block looping the pairs in index order, which makes its
+scatter sequential.
+
+| build | deck | reproducible |
+|---|---|---|
+| unmodified | soap only, no exp | **no** |
+| serialised soap scatter | soap only, no exp | yes |
+| serialised soap scatter | soap + 2b, no exp | yes |
+| serialised soap scatter | soap + 2b + 3b, no exp | yes |
+| serialised soap scatter | soap + 2b + 3b, with exp | **no** |
+
+A single-point `predict` is bit-identical in every configuration. The
+divergence needs an MD step to become visible: the noise is at the 1e-16 level
+per force component, which the `F16.8` writer cannot show, and one integration
+step turns it into ~1e-12 on the velocities, which it can.
+
+### The two sources
+
+Both are the same shape — a per-pair contribution scattered into a per-atom
+force with a double `atomicAdd`, whose completion order is not fixed:
+
+1. `src/gpu/gap_soap_forces.cu:63-65`, `cuda_soap_forces_virial_two`. One block
+   per pair; thread 0 adds the block's reduced 3-vector into `forces_d[j2]`.
+   Many blocks share a `j2`. The virial at `:92` is the same problem with all
+   blocks on nine addresses, worse but harmless here — nothing integrates the
+   virial without a barostat.
+2. `src/gpu/mad_xrd.cu:178-180` and `:203`,
+   `kernel_exp_force_virial_collection`. Identical construction on the exp
+   forces, which is why the last row of the table is still red with the soap
+   scatter serialised.
+
+`gap_2b.cu` and `gap_3b.cc` also scatter with `atomicAdd`, `gap_3b.cc:243` and
+`:315` doing it on `energies[i]` directly. They do not show above: 2b and 3b
+carry `delta = 0.5` and `0.01` against soap's `0.1` on a much larger descriptor,
+so their last-bit noise never reaches the printed digits here. They are not
+deterministic either, and a deck weighted towards them would show it.
+
+### What a fix looks like, and what it costs
+
+Serialising is a diagnosis, not a fix — it is O(n_pairs) sequential in the
+hottest kernel on the branch. Two real options:
+
+* **Deterministic gather.** Have each block *store* its 3-vector at
+  `pair_force_d[l]` — a plain store, no ordering question — and add a second
+  pass that sums each site's incoming pairs in increasing pair index. That
+  needs the inverse map (site → its incoming pairs), which is a counting sort
+  of `j2_index_d`: histogram with integer atomics (exact), exclusive scan
+  (`gpu_scan.cu` is already there), scatter into buckets, then rank each bucket
+  by pair index so its order stops depending on which thread got there first.
+  Exact — no change to any number — and one reusable helper serves both call
+  sites, which have the same `j2_index`/`pair` shape. Perhaps 120 lines of
+  CUDA. The extra pass is small next to the `n_soap` contraction each block
+  already does, but it wants measuring before it lands in the SOAP path.
+* **Fixed-point accumulation.** `atomicAdd` on `unsigned long long` at a fixed
+  scale is associative, so any order gives the same answer. About thirty lines.
+  It changes every force by the quantisation — at a scale of 2^34 that is
+  ~6e-13 relative, comparable to the noise it removes — and it introduces a
+  silent overflow mode at ~5e8 eV/A, which is a bad failure to add to a force
+  path even if no physical configuration reaches it.
+
+The first is the right one; neither is landed. Until one is, `tests/gpu`
+cannot certify anything at a tolerance below the run-to-run spread, which is
+§6c's point and still stands.

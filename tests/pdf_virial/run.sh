@@ -25,8 +25,10 @@
 #              channel, with its pair virial accumulated by
 #              kernel_exp_force_virial_collection in src/gpu/mad_xrd.cu and
 #              its cell half added on the host in compute_exp_spectra
-#   xrd-matrix get_structure_factor_forces_matrix, gpu_batched off
-#   xrd-plain  get_structure_factor_forces, the host implementation
+#   xrd-plain  get_structure_factor_forces, the host route, gpu_batched off.
+#              get_structure_factor_forces_matrix has no leg: it reads the
+#              device pair lists only the batched pdf builds, so neither route
+#              can reach it
 #   sf         the same two routines with do_xrd off, so no form factors
 #   pdf        get_pair_distribution_forces, g(r) as the observable
 #   pdf-dr     the same with pair_distribution_output = D(r), where the volume
@@ -269,7 +271,7 @@ EOF
 # implied do over the experimental families, so it means nothing unless n_exp
 # is already set. It goes after exp_block, never before it.
 
-legs=${*:-xrd xrd-matrix xrd-plain sf pdf pdf-dr mpi}
+legs=${*:-xrd xrd-plain sf pdf pdf-dr mpi}
 run_leg() { case " $legs " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 
 make_targets
@@ -294,11 +296,11 @@ fi
 # gpu_batched is on by default and, when it is, the batched block in
 # compute_exp_spectra does the xrd forces itself through
 # get_structure_factor_forces_matrix_original and never consults
-# structure_factor_matrix_forces. So these two legs have to turn it off;
-# without that they are the `xrd` leg again, to the last digit, and prove
-# nothing about the routines they name.
+# structure_factor_matrix_forces. So this leg has to turn it off; without that
+# it is the `xrd` leg again, to the last digit, and proves nothing about the
+# routine it names.
 unbatched_ok=""
-if run_leg xrd-matrix || run_leg xrd-plain; then
+if run_leg xrd-plain; then
   { preamble
     cat <<EOF
 do_xrd      = .true.
@@ -310,19 +312,6 @@ EOF
   } >"$WORK/input"
   if bash -c 'cd "$1" && "$2" predict; exit $?' _ "$WORK" "$BIN" >"$WORK/unbatched.log" 2>&1; then
     unbatched_ok=1
-  fi
-fi
-
-if run_leg xrd-matrix; then
-  if [ -n "$unbatched_ok" ]; then
-    leg "xrd, matrix forces, unbatched" xrd 1.0 \
-      "do_xrd      = .true.
-xrd_output  = 'q*F(q)'
-gpu_batched = .false.
-
-$(exp_block xrd xrd_glassy_carbon_zeng_2017.fq $SF_SAMPLES 1.0)"
-  else
-    unbatched_unsupported "xrd, matrix forces, unbatched"
   fi
 fi
 

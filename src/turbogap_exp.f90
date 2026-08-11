@@ -283,7 +283,8 @@ contains
 !**************************************************************************
    subroutine compute_exp_spectra(params, n_sites, species, rjs, xyz, neighbors_list, &
                                   n_neigh, neighbor_species, indices, a_box, b_box, c_box, i_beg, i_end, j_beg, j_end, &
-                                  rank, ntasks, ierr, md_istep, mc_istep, energies_sf, forces_sf, virial_sf, &
+                                  rank, ntasks, ierr, md_istep, mc_istep, energies_pdf, forces_pdf, virial_pdf, &
+                                  energies_sf, forces_sf, virial_sf, &
                                   energies_xrd, forces_xrd, virial_xrd, energies_nd, forces_nd, virial_nd, time, &
                                   i_beg_list, i_end_list, j_beg_list, j_end_list, &
                                   n_omp, omp_task, this_i_beg, this_i_end, this_j_beg, this_j_end, n_sites_temp, &
@@ -323,12 +324,20 @@ contains
 !   the this_-prefixed arrays under MPI and the plain ones otherwise; in here
 !   there is one name either way, which is what removes four
 !   preprocessor-interrupted argument lists from the driver.
+!   The pdf accumulators come in for the same reason as the other three. They
+!   were absent while the batched route was the only one: it computes the
+!   partials and stops, so nothing here had a pdf energy to hand back. The
+!   driver has carried this_energies_pdf/forces_pdf/virial_pdf and their
+!   reduction all along.
+      real(dp), allocatable, intent(inout) :: energies_pdf(:)
+      real(dp), allocatable, intent(inout) :: forces_pdf(:, :)
       real(dp), allocatable, intent(inout) :: energies_sf(:)
       real(dp), allocatable, intent(inout) :: forces_sf(:, :)
       real(dp), allocatable, intent(inout) :: energies_xrd(:)
       real(dp), allocatable, intent(inout) :: forces_xrd(:, :)
       real(dp), allocatable, intent(inout) :: energies_nd(:)
       real(dp), allocatable, intent(inout) :: forces_nd(:, :)
+      real(dp), intent(inout) :: virial_pdf(1:3, 1:3)
       real(dp), intent(inout) :: virial_sf(1:3, 1:3)
       real(dp), intent(inout) :: virial_xrd(1:3, 1:3)
       real(dp), intent(inout) :: virial_nd(1:3, 1:3)
@@ -392,6 +401,10 @@ contains
 !     the device weights are still alive and added once the batches have been
 !     collected into virial_xrd.
       real(dp) :: virial_xrd_volume(1:3, 1:3)
+!     Whether this snapshot takes the batched device route. The condition was
+!     written inline on the `if`; it is a name now because the pattern
+!     assembly below is shared with the route that does not.
+      logical :: batched
       real(dp), allocatable, target :: sinc_factor_matrix(:, :)
       real(dp), allocatable, target :: pair_distribution_der(:, :)
       real(dp), allocatable, target :: pair_distribution_partial(:, :)
@@ -527,8 +540,20 @@ contains
 
       n_dim_partial = n_species_actual*(n_species_actual + 1)/2
 
-      if (params%gpu_batched .and. (params%do_xrd .or. params%do_nd) &
-          .and. params%exp_forces .and. params%do_forces) then
+      batched = params%gpu_batched .and. (params%do_xrd .or. params%do_nd) &
+                .and. params%exp_forces .and. params%do_forces
+
+!     The matrix force route reads the device pair lists that the batched pdf
+!     builds. The unbatched pdf is the host one and builds none, so that route
+!     is not available off the batched path; say so rather than dereferencing
+!     an unset pointer.
+      if (.not. batched .and. params%structure_factor_matrix_forces) then
+         if (rank == 0 .and. md_istep == 0) write (*, *) &
+            ' - gpu_batched off: using non-matrix  |'
+         params%structure_factor_matrix_forces = .false.
+      end if
+
+      if (batched) then
 
          !           print *, "> Starting batched xrd "
          !           call cpu_time( time%exp_batched(1) )
@@ -722,99 +747,133 @@ contains
          params%do_forces = .false.
          params%exp_forces = .false.
 
-         if (params%do_structure_factor) then
+      else
 
-            !time%sf(1) = MPI_wtime()
-            call time_start(time%sf, "structure_factor")
+!        ---   The unbatched route   --- !
+!
+!        calculate_pair_distribution is the host implementation: it bins the
+!        pair distances into the partials, assembles the total, and -- unlike
+!        the batched route, which collects partials and stops -- hands back
+!        y_pair_distribution, which is what the similarity block below needs.
+!        It computes the pdf forces and virial itself, so exp_forces stays as
+!        the input left it.
+         call calculate_pair_distribution(params, x_pair_distribution&
+           &, y_pair_distribution, y_pair_distribution_temp,&
+           & pair_distribution_partial, pair_distribution_partial_temp,&
+           & n_species_actual, species_types_actual, n_atoms_of_species,&
+           & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep,&
+           & i_beg, i_end, j_beg, j_end, ierr, rjs, xyz,&
+           & neighbors_list, n_neigh, neighbor_species, species, rank,&
+           & params%exp_forces, pair_distribution_der,&
+           & pair_distribution_partial_der,&
+           & pair_distribution_partial_temp_der, energies_pdf,&
+           & forces_pdf, virial_pdf)
 
-            call calculate_structure_factor(params, x_structure_factor, x_structure_factor_temp,&
-              & y_structure_factor, y_structure_factor_temp,&
-              & structure_factor_partial, structure_factor_partial_temp,&
-              & x_pair_distribution, y_pair_distribution, &
-              & pair_distribution_partial, n_species_actual, species_types_actual, n_atoms_of_species,&
-              & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep, i_beg,&
-              & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
-              & neighbor_species, species, rank, q_beg, q_end, ntasks, sinc_factor_matrix, params%exp_forces, &
-              & nk, nk_d, k_index_d, j2_index_d, xyz_k_d,&
-              & pair_distribution_partial_d,&
-              & pair_distribution_partial_der_d, st_nk_d,&
-              & st_k_index_d, st_j2_index_d,&
-              & st_pair_distribution_partial_d,&
-              & st_pair_distribution_partial_der_d,&
-            & pair_distribution_partial_der, energies_sf, forces_sf&
-              &, virial_sf, params%structure_factor_matrix_forces&
-              &, cublas_handle, gpu_stream, &
-              & gpu_host_exp_storage, params%gpu_low_memory)
+      end if
 
-            !time%sf(2) = MPI_wtime()
-            call time_end(time%sf, "structure_factor")
+!     ---   The patterns   --- !
+!
+!     Shared by both routes, and it has to run before the batched forces
+!     below: those build their residual from y_xrd. On the batched route
+!     exp_forces is off here, the forces being done on the device afterwards;
+!     on the unbatched one it is on, and these calls do the forces themselves.
 
-         end if
+      if (params%do_structure_factor) then
 
-         if (params%do_xrd) then
+         !time%sf(1) = MPI_wtime()
+         call time_start(time%sf, "structure_factor")
 
-            !time%xrd(1) = MPI_wtime()
-            call time_start(time%xrd, "xrd")
+         call calculate_structure_factor(params, x_structure_factor, x_structure_factor_temp,&
+           & y_structure_factor, y_structure_factor_temp,&
+           & structure_factor_partial, structure_factor_partial_temp,&
+           & x_pair_distribution, y_pair_distribution, &
+           & pair_distribution_partial, n_species_actual, species_types_actual, n_atoms_of_species,&
+           & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep, i_beg,&
+           & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
+           & neighbor_species, species, rank, q_beg, q_end, ntasks, sinc_factor_matrix, params%exp_forces, &
+           & nk, nk_d, k_index_d, j2_index_d, xyz_k_d,&
+           & pair_distribution_partial_d,&
+           & pair_distribution_partial_der_d, st_nk_d,&
+           & st_k_index_d, st_j2_index_d,&
+           & st_pair_distribution_partial_d,&
+           & st_pair_distribution_partial_der_d,&
+         & pair_distribution_partial_der, energies_sf, forces_sf&
+           &, virial_sf, params%structure_factor_matrix_forces&
+           &, cublas_handle, gpu_stream, &
+           & gpu_host_exp_storage, params%gpu_low_memory)
 
-            call calculate_xrd(params, x_xrd, x_xrd_temp, y_xrd,&
-              & y_xrd_temp, x_structure_factor,&
-              & x_structure_factor_temp,&
-              & structure_factor_partial,&
-              & structure_factor_partial_temp, n_species_actual,&
-              & species_types_actual, n_atoms_of_species,&
-              & n_sites, a_box, b_box, c_box, indices, md_istep,&
-              & mc_istep, i_beg, i_end, j_beg, j_end, ierr, rjs,&
-              & xyz, neighbors_list, n_neigh, neighbor_species,&
-              & species, rank, q_beg, q_end, ntasks,&
-              & sinc_factor_matrix, params%exp_forces, nk, nk_d,&
-              & k_index_d, j2_index_d, xyz_k_d,&
-              & pair_distribution_partial_d,&
-              & pair_distribution_partial_der_d, st_nk_d,&
-              & st_k_index_d, st_j2_index_d,&
-              & st_pair_distribution_partial_d,&
-              & st_pair_distribution_partial_der_d,&
-            & pair_distribution_partial_der, energies_xrd,&
-              & forces_xrd, virial_xrd, .false., params&
-              &%structure_factor_matrix_forces, cublas_handle,&
-              & gpu_stream, gpu_host_exp_storage, params&
-              &%gpu_low_memory)
+         !time%sf(2) = MPI_wtime()
+         call time_end(time%sf, "structure_factor")
 
-            !time%xrd(2) = MPI_wtime()
-            call time_end(time%xrd, "xrd")
+      end if
 
-         end if
+      if (params%do_xrd) then
 
-         if (params%do_nd) then
+         !time%xrd(1) = MPI_wtime()
+         call time_start(time%xrd, "xrd")
 
-            !time%nd(1) = MPI_wtime()
-            call time_start(time%nd, "nd")
+         call calculate_xrd(params, x_xrd, x_xrd_temp, y_xrd,&
+           & y_xrd_temp, x_structure_factor,&
+           & x_structure_factor_temp,&
+           & structure_factor_partial,&
+           & structure_factor_partial_temp, n_species_actual,&
+           & species_types_actual, n_atoms_of_species,&
+           & n_sites, a_box, b_box, c_box, indices, md_istep,&
+           & mc_istep, i_beg, i_end, j_beg, j_end, ierr, rjs,&
+           & xyz, neighbors_list, n_neigh, neighbor_species,&
+           & species, rank, q_beg, q_end, ntasks,&
+           & sinc_factor_matrix, params%exp_forces, nk, nk_d,&
+           & k_index_d, j2_index_d, xyz_k_d,&
+           & pair_distribution_partial_d,&
+           & pair_distribution_partial_der_d, st_nk_d,&
+           & st_k_index_d, st_j2_index_d,&
+           & st_pair_distribution_partial_d,&
+           & st_pair_distribution_partial_der_d,&
+         & pair_distribution_partial_der, energies_xrd,&
+           & forces_xrd, virial_xrd, .false., params&
+           &%structure_factor_matrix_forces, cublas_handle,&
+           & gpu_stream, gpu_host_exp_storage, params&
+           &%gpu_low_memory)
 
-            call calculate_xrd(params, x_nd, x_nd_temp, y_nd,&
-              & y_nd_temp, x_structure_factor,&
-              & x_structure_factor_temp,&
-              & structure_factor_partial,&
-              & structure_factor_partial_temp, n_species_actual,&
-              & species_types_actual, n_atoms_of_species,&
-              & n_sites, a_box, b_box, c_box, indices, md_istep,&
-              & mc_istep, i_beg, i_end, j_beg, j_end, ierr, rjs,&
-              & xyz, neighbors_list, n_neigh, neighbor_species,&
-              & species, rank, q_beg, q_end, ntasks,&
-              & sinc_factor_matrix, params%exp_forces, nk, nk_d,&
-              & k_index_d, j2_index_d, xyz_k_d,&
-              & pair_distribution_partial_d,&
-              & pair_distribution_partial_der_d, st_nk_d,&
-              & st_k_index_d, st_j2_index_d,&
-              & st_pair_distribution_partial_d,&
-              & st_pair_distribution_partial_der_d,&
-            & pair_distribution_partial_der, energies_nd, forces_nd&
-              &, virial_nd, .true., params &
-              &%structure_factor_matrix_forces, cublas_handle,&
-              & gpu_stream, gpu_host_exp_storage, params&
-              &%gpu_low_memory)
+         !time%xrd(2) = MPI_wtime()
+         call time_end(time%xrd, "xrd")
 
-            !time%nd(2) = MPI_wtime()
-            call time_end(time%nd, "nd")
-         end if
+      end if
+
+      if (params%do_nd) then
+
+         !time%nd(1) = MPI_wtime()
+         call time_start(time%nd, "nd")
+
+         call calculate_xrd(params, x_nd, x_nd_temp, y_nd,&
+           & y_nd_temp, x_structure_factor,&
+           & x_structure_factor_temp,&
+           & structure_factor_partial,&
+           & structure_factor_partial_temp, n_species_actual,&
+           & species_types_actual, n_atoms_of_species,&
+           & n_sites, a_box, b_box, c_box, indices, md_istep,&
+           & mc_istep, i_beg, i_end, j_beg, j_end, ierr, rjs,&
+           & xyz, neighbors_list, n_neigh, neighbor_species,&
+           & species, rank, q_beg, q_end, ntasks,&
+           & sinc_factor_matrix, params%exp_forces, nk, nk_d,&
+           & k_index_d, j2_index_d, xyz_k_d,&
+           & pair_distribution_partial_d,&
+           & pair_distribution_partial_der_d, st_nk_d,&
+           & st_k_index_d, st_j2_index_d,&
+           & st_pair_distribution_partial_d,&
+           & st_pair_distribution_partial_der_d,&
+         & pair_distribution_partial_der, energies_nd, forces_nd&
+           &, virial_nd, .true., params &
+           &%structure_factor_matrix_forces, cublas_handle,&
+           & gpu_stream, gpu_host_exp_storage, params&
+           &%gpu_low_memory)
+
+         !time%nd(2) = MPI_wtime()
+         call time_end(time%nd, "nd")
+      end if
+      if (batched) then
+
+
 
          call time_start(time%xrd, "xrd_batched")
 

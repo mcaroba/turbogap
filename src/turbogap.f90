@@ -1725,7 +1725,8 @@ program turbogap
 #ifdef _MPIF90
          call compute_exp_spectra(params, n_sites, species, rjs, xyz, neighbors_list, &
                                   n_neigh, neighbor_species, indices, a_box, b_box, c_box, i_beg, i_end, j_beg, &
-                                  j_end, rank, ntasks, ierr, md_istep, mc_istep, this_energies_sf, &
+                                  j_end, rank, ntasks, ierr, md_istep, mc_istep, this_energies_pdf, &
+                                  this_forces_pdf, this_virial_pdf, this_energies_sf, &
                                   this_forces_sf, this_virial_sf, this_energies_xrd, this_forces_xrd, &
                                   this_virial_xrd, this_energies_nd, this_forces_nd, this_virial_nd, time, &
                                   i_beg_list, i_end_list, j_beg_list, &
@@ -1735,7 +1736,8 @@ program turbogap
 #else
          call compute_exp_spectra(params, n_sites, species, rjs, xyz, neighbors_list, &
                                   n_neigh, neighbor_species, indices, a_box, b_box, c_box, i_beg, i_end, j_beg, &
-                                  j_end, rank, ntasks, ierr, md_istep, mc_istep, energies_sf, forces_sf, &
+                                  j_end, rank, ntasks, ierr, md_istep, mc_istep, energies_pdf, forces_pdf, &
+                                  virial_pdf, energies_sf, forces_sf, &
                                   virial_sf, energies_xrd, forces_xrd, virial_xrd, energies_nd, forces_nd, &
                                   virial_nd, time, i_beg_list, &
                                   i_end_list, j_beg_list, j_end_list, n_omp, omp_task, this_i_beg, this_i_end, &
