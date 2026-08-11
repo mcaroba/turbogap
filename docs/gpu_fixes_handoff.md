@@ -870,29 +870,80 @@ carry `delta = 0.5` and `0.01` against soap's `0.1` on a much larger descriptor,
 so their last-bit noise never reaches the printed digits here. They are not
 deterministic either, and a deck weighted towards them would show it.
 
-### What a fix looks like, and what it costs
+### The fix, and what it cost
 
-Serialising is a diagnosis, not a fix — it is O(n_pairs) sequential in the
-hottest kernel on the branch. Two real options:
+`src/gpu/gpu_scatter.cu`. Each block *stores* its pair's 3-vector at its own
+index -- a plain store, so no ordering question arises -- and
+`gpu_pair_scatter_reduce` sums those onto atoms in an order fixed by the
+neighbour list: count how many pairs name each atom (integer atomics, so the
+counts are exact), exclusive-scan the counts into slices, drop each pair into
+its atom's slice, rank each slice by pair index, sum in that order. The virial
+is a global sum rather than a per-atom one, so it goes through a two-level
+ordered reduction instead -- fixed chunks of pairs summed in index order, then
+the chunk totals in chunk order.
 
-* **Deterministic gather.** Have each block *store* its 3-vector at
-  `pair_force_d[l]` — a plain store, no ordering question — and add a second
-  pass that sums each site's incoming pairs in increasing pair index. That
-  needs the inverse map (site → its incoming pairs), which is a counting sort
-  of `j2_index_d`: histogram with integer atomics (exact), exclusive scan
-  (`gpu_scan.cu` is already there), scatter into buckets, then rank each bucket
-  by pair index so its order stops depending on which thread got there first.
-  Exact — no change to any number — and one reusable helper serves both call
-  sites, which have the same `j2_index`/`pair` shape. Perhaps 120 lines of
-  CUDA. The extra pass is small next to the `n_soap` contraction each block
-  already does, but it wants measuring before it lands in the SOAP path.
-* **Fixed-point accumulation.** `atomicAdd` on `unsigned long long` at a fixed
-  scale is associative, so any order gives the same answer. About thirty lines.
-  It changes every force by the quantisation — at a scale of 2^34 that is
-  ~6e-13 relative, comparable to the noise it removes — and it introduces a
-  silent overflow mode at ~5e8 eV/A, which is a bad failure to add to a force
-  path even if no physical configuration reaches it.
+Both call sites use it. `gpu_final_soap_forces_virial` passes `0.5`;
+`gpu_exp_force_virial_collection` passes `0.25` and grew an `n_sites` argument,
+since bucketing by destination atom needs the range.
 
-The first is the right one; neither is landed. Until one is, `tests/gpu`
-cannot certify anything at a tolerance below the run-to-run spread, which is
-§6c's point and still stands.
+**It works.** Three runs of the five-step `XRD_mad` MD, same binary:
+
+```
+before   01743e50cf4ab1d9  d9631e7b5e32ee2b  3c3bd3841ce84914
+after    3e54c08df14fe486  3e54c08df14fe486  3e54c08df14fe486
+```
+
+**It is free**, which was the open question. `predict` on the CO ladder, an
+A2000, the `soap` bucket of turbogap's own timer, seconds:
+
+| atoms | atomicAdd | gather |
+|---|---|---|
+| 24 219 | 22.00, 21.79, 22.07 | 22.14, 21.98, 21.93 |
+| 112 125 | 139.81, 139.85, 139.70 | 138.55, 141.71, 111.17 |
+| 459 264 | 917.32 | 913.09 |
+
+Under half a percent at the small size and inside the noise at the other two --
+the 111.17 is the machine's own spread, not the build's, and it is the reason
+this table is three runs rather than one.
+
+Peak device memory is **unchanged**: 0.807 GB for both builds at 112 125 atoms,
+to the digit the tracker prints. The scratch is `3 * n_pairs` doubles and
+`2 * n_pairs` ints, live only inside one SOAP call and returned to the pool
+afterwards, against a `soap_der` of `3 * n_soap * n_pairs` that is three orders
+of magnitude larger and sets the peak on its own.
+
+What that buys: the GPU build now reproduces itself, so a change on this branch
+can be checked with `diff` rather than only to a tolerance. §6c said that
+contract "cannot be used here". It can now.
+
+### What `XRD_mad` fails on now, which is a different thing
+
+Against the CPU branch's build, five MD steps, everything agrees:
+
+| | frame 5 |
+|---|---|
+| `energy` | rel 7.7e-10 |
+| `energy_soap` | rel 4.2e-10 |
+| `energy_2b`, `energy_3b`, `energy_core_pot` | rel <= 1.3e-09 |
+| `virial` | rel 8.6e-09 |
+| `forces` | maxabsdiff 1.0e-08 on \|F\|max 3.05 |
+| `local_energy` | **maxabsdiff 1.9e-05** |
+
+Only the per-atom decomposition. That is a genuine CPU-against-GPU difference
+-- the two sum an atom's energy in different orders, at 1e-16 a term, and five
+MD steps of a chaotic driver amplify it -- rather than the GPU disagreeing with
+itself, which is what §6g could not separate at the time and what the xfail
+text used to claim. It is 2.7e-06 at frame 4 and 1.9e-05 at frame 5, the same
+numbers §6g recorded, so nothing about it has moved; what has moved is that
+they can now be attributed.
+
+`compare_xyz.py` holds `local_energy` to an absolute 1e-6, which is why this
+alone is red. Raising that would make the case green today and hide the growth
+with step count, so the xfail stays, with a reason that now says what it is.
+
+**Not fixed.** `gap_3b.cc` scatters forces and `energies` the same way and
+`mad_electrostatics.cu` scatters eleven times; neither shows on the decks in
+`tests/gpu`, and the 3b one has three destinations per triplet rather than one
+per pair, so it does not fit this helper as written. `estat_gsf`'s asymmetric
+virial in §6c is very likely the electrostatics one, and that case has no test
+data on `alt` to check against.

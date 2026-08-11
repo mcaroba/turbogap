@@ -42,8 +42,8 @@ void gpu_hadamard_vec_mat_product(int n_samples_sf, int n_k, double* all_scatter
                                   hipStream_t* stream);
 void gpu_get_fi_dgemv(const int i, const int n_samples_sf, const int n_k, double* dermat_d, double* prefactor_d, double* fi_d,
                       hipblasHandle_t handle, hipStream_t* stream);
-void gpu_exp_force_virial_collection(int n_k, double3* forces0, double energy_scale, double* fi, int* j2_list, double* virial,
-                                     double3* xyz, hipStream_t* stream);
+void gpu_exp_force_virial_collection(int n_k, int n_sites, double3* forces0, double energy_scale, double* fi, int* j2_list,
+                                     double* virial, double3* xyz, hipStream_t* stream);
 
 // ---- mad_electrostatics.cu
 void gpu_get_electrostatics_nk(int i_beg, int i_end, int n_pairs, int* n_neigh, int* n_neigh_index_d, double* rjs, double* xyz,

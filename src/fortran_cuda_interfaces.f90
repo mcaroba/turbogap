@@ -945,12 +945,15 @@ MODULE F_B_C
          type(c_ptr) :: stream
       end subroutine gpu_setup_matrix_forces
 
-      subroutine gpu_exp_force_virial_collection(n_k, forces0, energy_scale, fi, &
+      subroutine gpu_exp_force_virial_collection(n_k, n_sites, forces0, energy_scale, fi, &
                                                  j2_list, virial, xyz, stream) bind(C, name="gpu_exp_force_virial_collection")
 
          use iso_c_binding
          implicit none
          integer(c_int), value :: n_k
+!        Length of forces0 in atoms. The deterministic gather behind this call
+!        buckets the pairs by their destination atom, so it needs the range.
+         integer(c_int), value :: n_sites
          real(c_double), value :: energy_scale
          type(c_ptr), value :: forces0
          type(c_ptr), value :: xyz

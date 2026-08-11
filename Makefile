@@ -182,7 +182,7 @@ PROGRAMS := turbogap
 SRC_CUDA := gpu_memory.cu gpu_blas.cu gpu_scan.cu \
             gap_predict.cu gap_soap_radial.cu gap_soap_angular.cu \
             gap_soap_descriptor.cu gap_soap_forces.cu gap_2b.cu \
-            mad_pdf.cu mad_xrd.cu mad_electrostatics.cu
+            mad_pdf.cu mad_xrd.cu mad_electrostatics.cu gpu_scatter.cu
 # gap_3b stays .cc, and so is compiled by $(CC) rather than $(CU), because it
 # needs -std=c++20 for <numbers> and <bit>; only $(CC) passes it.
 #

@@ -5,6 +5,7 @@
 // and the collection of those into forces and the virial.
 #include "gpu_common.h"
 #include "mad_gpu.h"
+#include "gpu_scatter.h"
 
 #define tpb 512
 
@@ -149,17 +150,18 @@ extern "C" void gpu_get_fi_dgemv(const int i, const int n_samples_sf, const int 
 }
 
 
-__global__ void kernel_exp_force_virial_collection(int n_k, double3* forces0, double energy_scale, double* fi, int* j2_list,
-                                                   double* virial, double3* xyz) {
+// The pair's own force, staged at its own index. It used to be added straight
+// into forces0[j2] and the virial into nine addresses, both with atomicAdd,
+// which made the result depend on the order the threads arrived; the sum is
+// gpu_pair_scatter_reduce's now. See gpu_scatter.h.
+__global__ void kernel_exp_force_virial_collection(int n_k, double* pair_force, double energy_scale, double* fi,
+                                                   int* j2_list) {
   // tid == some n_k value
   int tid = threadIdx.x + blockIdx.x * blockDim.x;
-  int j2;
 
   double3 this_force;
 
   if (tid < n_k) {
-    j2 = j2_list[tid] - 1;
-    //    this_force = forces0[ j2 ];
     double fi_tmp[3];
 
     fi_tmp[0] = fi[tid];
@@ -175,46 +177,33 @@ __global__ void kernel_exp_force_virial_collection(int n_k, double3* forces0, do
     this_force.y = energy_scale * fi_tmp[1];
     this_force.z = energy_scale * fi_tmp[2];
 
-    atomicAdd(&forces0[j2].x, this_force.x);
-    atomicAdd(&forces0[j2].y, this_force.y);
-    atomicAdd(&forces0[j2].z, this_force.z);
-
     //    forces0(1:3, j2_list(j)) = forces0(1:3, j2_list(j)) + this_force(1:3)
-
-    double tmp_this_force[3];
-    tmp_this_force[0] = this_force.x;
-    tmp_this_force[1] = this_force.y;
-    tmp_this_force[2] = this_force.z;
-
-
-    double3 tmp_xyz;
-    tmp_xyz = xyz[tid];
-    double this_xyz[3];
-    this_xyz[0] = tmp_xyz.x;
-    this_xyz[1] = tmp_xyz.y;
-    this_xyz[2] = tmp_xyz.z;
-
-    for (int k1 = 0; k1 < 3; k1++) {
-      for (int k2 = 0; k2 < 3; k2++) {
-        double loc_viri = 0.25 * (tmp_this_force[k1] * this_xyz[k2] + tmp_this_force[k2] * this_xyz[k1]);
-        // if(isnan(loc_viri)){
-        //   printf("> tid %d, k1 %d, k2 %d, tmp_this_force[k1] %lf, tmp_this_force[k2] %lf, this_xyz[k1] %lf, this_xyz[k2] %lf, loc_viri = %lf\n", tid, k1, k2, tmp_this_force[k1], tmp_this_force[k2], this_xyz[k1], this_xyz[k2], loc_viri);
-        // }
-        atomicAdd(&virial[k2 + 3 * k1], loc_viri);
-      }
-    }
+    pair_force[3 * tid] = this_force.x;
+    pair_force[3 * tid + 1] = this_force.y;
+    pair_force[3 * tid + 2] = this_force.z;
   }
 }
 
-extern "C" void gpu_exp_force_virial_collection(int n_k, double3* forces0, double energy_scale, double* fi, int* j2_list,
-                                                double* virial, double3* xyz, hipStream_t* stream) {
+extern "C" void gpu_exp_force_virial_collection(int n_k, int n_sites, double3* forces0, double energy_scale, double* fi,
+                                                int* j2_list, double* virial, double3* xyz, hipStream_t* stream) {
   // We can have a kernel go over the values of nk, which furnish us
   // with the j index for fi, and we can pass it ot the forces
   // j2_list.
 
+  if (n_k <= 0)
+    return;
+
   dim3 nblocks = dim3((n_k + tpb - 1) / tpb, 1, 1);
   dim3 nthreads = dim3(tpb, 1, 1);
 
+  double* pair_force_d;
+  gpuErrchk(hipMallocAsync(&pair_force_d, (size_t) 3 * n_k * sizeof(double), stream[0]));
 
-  kernel_exp_force_virial_collection<<<nblocks, nthreads, 0, stream[0]>>>(n_k, forces0, energy_scale, fi, j2_list, virial, xyz);
+  kernel_exp_force_virial_collection<<<nblocks, nthreads, 0, stream[0]>>>(n_k, pair_force_d, energy_scale, fi, j2_list);
+
+  // 0.25 = 0.5 to symmetrise, times 0.5 because k_list holds ordered pairs and
+  // the reversed one reproduces the term rather than adding a new one.
+  gpu_pair_scatter_reduce(n_k, n_sites, j2_list, pair_force_d, (const double*) xyz, (double*) forces0, virial, 0.25, stream);
+
+  gpuErrchk(hipFreeAsync(pair_force_d, stream[0]));
 }

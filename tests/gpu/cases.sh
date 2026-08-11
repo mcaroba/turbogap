@@ -294,7 +294,7 @@ tg_stage_case() {
 # gets removed rather than quietly masking a regression later.
 tg_case_xfail() {
   case $1 in
-  XRD_mad) printf '%s' "not a CPU/GPU disagreement: the GPU build differs from ITSELF run to run, and local_energy is simply the quantity that shows it first. Traced to the double atomicAdd scattering pair contributions into per-atom forces, in gap_soap_forces.cu and mad_xrd.cu; see docs/gpu_fixes_handoff.md, 6c revisited" ;;
+  XRD_mad) printf '%s' "local_energy only, 2.7e-06 at frame 4 and 1.9e-05 at frame 5 against the CPU build, on an absolute tolerance of 1e-6. Everything else agrees -- energy 7.7e-10, virial 8.6e-09, forces 1.0e-08 on |F|max 3.05. The two builds sum an atom's energy in different orders and five MD steps amplify it; the GPU's own run-to-run half of this was the atomicAdd scatter and is fixed. See docs/gpu_fixes_handoff.md, 6c revisited" ;;
   estat_gsf) printf '%s' "batched device electrostatics disagrees with the CPU implementation: forces to 1.1 eV/A on |F|max 20.5, virial 0.7%, local_energy 0.16 eV -- every other energy component agrees exactly. Found the first time the path was ever exercised; see the commit that added this case" ;;
   *) printf '' ;;
   esac

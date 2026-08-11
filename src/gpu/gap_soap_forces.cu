@@ -2,11 +2,17 @@
 // and the same contraction for local properties.
 #include "gpu_common.h"
 #include "gap_gpu.h"
+#include "gpu_scatter.h"
 
 #define tpb 64
 
-__global__ void cuda_soap_forces_virial_two(int n_sites, double* Qss_d, int n_soap, int* l_index_d, int* j2_index_d,
-                                            double3* soap_der_d, double3* xyz_d, double* virial_d, int n_sites0, double* forces_d) {
+// The block's own pair, and nothing about where it lands. Both the force and
+// the virial used to be added straight from here with atomicAdd, and the order
+// the blocks got there is what made the build disagree with itself run to run;
+// the sum now happens in gpu_pair_scatter_reduce, in pair order. See
+// gpu_scatter.h.
+__global__ void cuda_soap_forces_virial_two(int n_sites, double* Qss_d, int n_soap, int* l_index_d, double3* soap_der_d,
+                                            double* pair_force_d) {
   int l_nn = blockIdx.x;
   int tid = threadIdx.x;
   int i_site = l_index_d[l_nn] - 1;
@@ -59,42 +65,12 @@ __global__ void cuda_soap_forces_virial_two(int n_sites, double* Qss_d, int n_so
 
   //  at this point this_force is computed
   if (tid == 0) {
-    int j2 = j2_index_d[l_nn] - 1;
-    atomicAdd(&forces_d[j2 * 3], shxthis_block_force[0]);
-    atomicAdd(&forces_d[j2 * 3 + 1], shythis_block_force[0]);
-    atomicAdd(&forces_d[j2 * 3 + 2], shzthis_block_force[0]);
-
-    // now the virial
-    double this_force[3];
-    this_force[0] = shxthis_block_force[0];
-    this_force[1] = shythis_block_force[0];
-    this_force[2] = shzthis_block_force[0];
     /*     if(isnan(shxthis_block_force[0])||isnan(shythis_block_force[0])||isnan(shzthis_block_force[0])){
 	   printf("\n this_force is nan\n");
 	   } */
-    /* if(isnan(this_force[0])||isnan(this_force[1])||isnan(this_force[2])){
-       printf("\n this_force is nan\n");
-       } */
-
-    double3 tmp_xyz;
-    tmp_xyz = xyz_d[l_nn];
-    double this_xyz[3];
-    this_xyz[0] = tmp_xyz.x;
-    this_xyz[1] = tmp_xyz.y;
-    this_xyz[2] = tmp_xyz.z;
-
-    for (int k1 = 0; k1 < 3; k1++) {
-      for (int k2 = 0; k2 < 3; k2++) {
-        double loc_viri = 0.5 * (this_force[k1] * this_xyz[k2] + this_force[k2] * this_xyz[k1]);
-        /*         if(isnan(loc_viri)){
-		   printf("\n locviri is nan\n");
-		   } */
-        atomicAdd(&virial_d[k2 + 3 * k1], loc_viri);
-      }
-    }
-    /*     if(isnan(tmp_xyz.x)||isnan(tmp_xyz.y)||isnan(tmp_xyz.z)){
-	   printf("\n tmp is nan\n");
-	   } */
+    pair_force_d[3 * l_nn] = shxthis_block_force[0];
+    pair_force_d[3 * l_nn + 1] = shythis_block_force[0];
+    pair_force_d[3 * l_nn + 2] = shzthis_block_force[0];
   }
 }
 
@@ -103,16 +79,22 @@ extern "C" void gpu_final_soap_forces_virial(int n_sites, double* Qss_d, int n_s
                                              int n_pairs, hipStream_t* stream) {
   dim3 nblocks(n_pairs, 1);
 
-  /*double *this_force_d;
-    hipMalloc((void**)&this_force_d,sizeof(double)*n_pairs*3);*/
   hipMemsetAsync(forces_d, 0, 3 * n_sites0 * sizeof(double), stream[0]);
   hipMemsetAsync(virial_d, 0, 9 * sizeof(double), stream[0]);
 
-  cuda_soap_forces_virial_two<<<nblocks, tpb, 0, stream[0]>>>(n_sites, Qss_d, n_soap, l_index_d, j2_index_d, soap_der_d, xyz_d,
-                                                              virial_d, n_sites0, forces_d);
+  // The kernel now stages its result per pair and gpu_pair_scatter_reduce sums
+  // it, so that the answer does not depend on the order the blocks finish in.
+  double* pair_force_d;
+  gpuErrchk(hipMallocAsync(&pair_force_d, (size_t) 3 * n_pairs * sizeof(double), stream[0]));
 
-  /*gpuErrchk( hipPeekAtLastError() );
-    gpuErrchk( hipDeviceSynchronize() );*/
+  cuda_soap_forces_virial_two<<<nblocks, tpb, 0, stream[0]>>>(n_sites, Qss_d, n_soap, l_index_d, soap_der_d, pair_force_d);
+
+  // 0.5 symmetrises; this route does not halve again, its l_nn running over the
+  // neighbour list rather than over ordered pairs of a k_list.
+  gpu_pair_scatter_reduce(n_pairs, n_sites0, j2_index_d, pair_force_d, (const double*) xyz_d, forces_d, virial_d, 0.5,
+                          stream);
+
+  gpuErrchk(hipFreeAsync(pair_force_d, stream[0]));
 
   return;
 }

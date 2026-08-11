@@ -679,7 +679,7 @@ contains
 
 !    call gpu_stream_sync(gpu_stream)
 
-      call gpu_exp_force_virial_collection(nk, forces0_d, energy_scale, fi_d, &
+      call gpu_exp_force_virial_collection(nk, size(forces0, 2), forces0_d, energy_scale, fi_d, &
                                            j2_index_d, virial_d, xyz_k_d, gpu_stream)
 
 !    call gpu_device_sync()
@@ -1101,7 +1101,7 @@ contains
          call cpy_htod(c_loc(gpu_host_storage%j2_index_h), j2_index_d, st_k_index_d, gpu_stream)
 
          call gpu_stream_sync(gpu_stream)
-         call gpu_exp_force_virial_collection(nk, forces0_d, energy_scale, fi_d, &
+         call gpu_exp_force_virial_collection(nk, size(forces0, 2), forces0_d, energy_scale, fi_d, &
                                               j2_index_d, virial_d, xyz_k_d, gpu_stream)
 
          call gpu_stream_sync(gpu_stream)
@@ -1217,7 +1217,7 @@ contains
 
          call gpu_stream_sync(gpu_stream)
 
-         call gpu_exp_force_virial_collection(nk, forces0_d, energy_scale, fi_d, &
+         call gpu_exp_force_virial_collection(nk, size(forces0, 2), forces0_d, energy_scale, fi_d, &
                                               j2_index_d, virial_d, xyz_k_d, gpu_stream)
 
          call gpu_stream_sync(gpu_stream)
