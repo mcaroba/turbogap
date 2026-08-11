@@ -1944,4 +1944,285 @@ contains
       if (allocated(structure_factor_partial_temp)) deallocate (structure_factor_partial_temp)
    end subroutine finalize_xrd
 
+!**************************************************************************
+!  The XRD (or ND) pattern from the Debye scattering equation, with the
+!  energies, forces and virial that fitting it against experiment produces.
+!
+!  This is the counterpart of calculate_xrd, and takes the other of the two
+!  routes to the same observable. calculate_xrd needs a pair distribution to
+!  have been binned and Fourier transformed first; this one goes straight from
+!  the positions, so params%do_pair_distribution and params%do_structure_factor
+!  can both be off and nothing above this routine has to have run.
+!
+!  What arrives from get_xrd_debye is the raw intensity per atom,
+!
+!     I(q) = 1/N sum_ij f_i f_j sinc(q r_ij) w(r_ij),
+!
+!  self term included. Everything after the MPI reduction is one affine map
+!  per q sample,
+!
+!     y(l) = lp(l) * ( a(l) * ( I(l) - b(l) ) + c(l) ),
+!
+!  chosen so that the four xrd_output conventions here mean exactly what they
+!  mean in get_xrd_from_partial_structure_factors, whose y is the interference
+!  part I - sum_i c_i f_i^2. Because the map is affine in I with coefficients
+!  that do not depend on the positions, the gradient is the same map without
+!  the constants: dy(l)/dr = lp(l) a(l) dI(l)/dr. That is what keeps the
+!  forces below consistent with the energy no matter which output, and which
+!  the pdf/sf route cannot say as cheaply.
+!**************************************************************************
+   subroutine calculate_xrd_debye(params, x_xrd, x_xrd_temp, y_xrd, y_xrd_temp, &
+        & n_sites, positions, species, md_istep, mc_istep, i_beg, i_end, &
+        & ierr, rank, do_derivatives, energies_xrd, forces_xrd, virial_xrd, neutron)
+      implicit none
+      type(input_parameters), intent(inout) :: params
+      real(dp), allocatable, intent(out) :: x_xrd(:)
+      real(dp), allocatable, intent(out) :: x_xrd_temp(:)
+      real(dp), allocatable, intent(out) :: y_xrd(:)
+      real(dp), allocatable, intent(out) :: y_xrd_temp(:)
+      real(dp), allocatable, intent(out) :: energies_xrd(:)
+      real(dp), allocatable, intent(out) :: forces_xrd(:, :)
+      real(dp), intent(out) :: virial_xrd(1:3, 1:3)
+      real(dp), intent(in), allocatable :: positions(:, :)
+      integer, intent(in), allocatable :: species(:)
+      integer, intent(in) :: n_sites
+      integer, intent(in) :: i_beg
+      integer, intent(in) :: i_end
+      integer, intent(in) :: md_istep
+      integer, intent(in) :: mc_istep
+      integer, intent(in) :: rank
+      integer, intent(out) :: ierr
+      logical, intent(in) :: do_derivatives
+      logical, intent(in) :: neutron
+      real(dp), allocatable :: y_debye(:)
+      real(dp), allocatable :: y_debye_der(:, :, :)
+      real(dp), allocatable :: f_table(:, :)
+      real(dp), allocatable :: channel(:)
+      real(dp), allocatable :: self_term(:)
+      real(dp), allocatable :: lp(:)
+      real(dp), allocatable :: prefactor(:)
+      real(dp), allocatable :: concentration(:)
+      real(dp) :: this_force(1:3)
+      real(dp) :: sth
+      real(dp) :: dq
+      real(dp) :: energy_scale
+!     Double-precision pi, unlike the acos(-1.0) the rest of this module uses
+!     -- see the note in get_xrd_debye.
+      real(dp), parameter :: pi = acos(-1.0d0)
+      integer :: i
+      integer :: l
+      integer :: k1
+      integer :: k2
+      integer :: n_species
+      integer :: n_samples
+      integer :: xrd_idx
+      character*32 :: xrd_output
+      character*1024 :: filename
+      logical :: write_condition
+      logical :: overwrite_condition
+      logical :: valid_xrd
+      logical :: want_forces
+
+      if (neutron) then
+         xrd_idx = params%nd_idx
+         xrd_output = params%nd_output
+         valid_xrd = params%valid_nd
+      else
+         xrd_idx = params%xrd_idx
+         xrd_output = params%xrd_output
+         valid_xrd = params%valid_xrd
+      end if
+
+      n_species = size(params%species_types)
+      n_samples = params%structure_factor_n_samples
+      virial_xrd = 0.d0
+      ierr = 0
+
+!     The q grid, built exactly as calculate_structure_factor builds it so
+!     that a deck can be switched between the two routes without touching
+!     q_range_min/max or q_units. x_xrd is the working grid,
+!     x = 2 sin(theta)/lambda; x_xrd_temp keeps the user's units for output.
+      call linspace(x_xrd, params%q_range_min, params%q_range_max, n_samples, dq)
+      call linspace(x_xrd_temp, params%q_range_min, params%q_range_max, n_samples, dq)
+
+      if (trim(params%q_units) == "xrd" .or. params%q_units == "twotheta") then
+         do i = 1, n_samples
+            x_xrd(i) = 2.d0*sin(pi*x_xrd(i)/180.d0/2.d0)/params%xrd_wavelength
+         end do
+      elseif (trim(params%q_units) == "saxs" .or. params%q_units == "q") then
+         do i = 1, n_samples
+            x_xrd(i) = x_xrd(i)/2.d0/pi
+         end do
+      end if
+
+      want_forces = do_derivatives .and. params%do_forces .and. valid_xrd &
+           & .and. allocated(params%exp_energy_scales)
+
+      call get_xrd_debye(n_sites, positions, i_beg, i_end, n_species, species, &
+           & params%species_types, x_xrd, params%structure_factor_window, &
+           & params%xrd_rcut, want_forces, neutron, y_debye, y_debye_der)
+
+#ifdef _MPIF90
+!     Each rank summed the pairs of the atoms it owns; the pattern is the sum
+!     over ranks. The derivative slices are already complete per atom and are
+!     deliberately not reduced here -- the driver reduces the forces built
+!     from them.
+      allocate (y_xrd_temp(1:n_samples))
+      y_xrd_temp = 0.d0
+      call mpi_reduce(y_debye, y_xrd_temp, n_samples, MPI_DOUBLE_PRECISION, MPI_SUM, 0, &
+           & MPI_COMM_WORLD, ierr)
+      y_debye = y_xrd_temp
+      deallocate (y_xrd_temp)
+      call mpi_bcast(y_debye, n_samples, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+#endif
+
+!     Concentrations and the two species averages the output conventions need:
+!     the self term sum_i c_i f_i(q)^2 that the interference part excludes,
+!     and sth = sum_i c_i f_i(q), whose square normalises F(q).
+      allocate (concentration(1:n_species))
+      concentration = 0.d0
+      do i = 1, n_sites
+         concentration(species(i)) = concentration(species(i)) + 1.d0
+      end do
+      concentration = concentration/dfloat(n_sites)
+
+      call get_form_factor_table(n_species, params%species_types, x_xrd, neutron, f_table)
+
+      allocate (self_term(1:n_samples))
+      allocate (channel(1:n_samples))
+      self_term = 0.d0
+      channel = 1.d0
+
+      allocate (y_xrd(1:n_samples))
+
+      if (trim(xrd_output) == "xrd") then
+!        The raw intensity per atom, self term included. Nothing to do.
+         y_xrd = y_debye
+      else
+         do l = 1, n_samples
+            sth = 0.d0
+            do i = 1, n_species
+               self_term(l) = self_term(l) + concentration(i)*f_table(l, i)*f_table(l, i)
+               sth = sth + concentration(i)*f_table(l, i)
+            end do
+            channel(l) = 1.d0/sth**2
+         end do
+
+         if (trim(xrd_output) == "q*i(q)" .or. trim(xrd_output) == "q*F(q)") then
+!           q here is the wavevector 2 pi x, matching what the pdf/sf route
+!           multiplies by.
+            channel = 2.d0*pi*x_xrd*channel
+            y_xrd = channel*(y_debye - self_term)
+         elseif (trim(xrd_output) == "F(q)" .or. trim(xrd_output) == "i(q)") then
+            y_xrd = channel*(y_debye - self_term) + 1.d0
+         else
+            if (rank == 0) write (*, *) "WARNING: unrecognised xrd_output '"//trim(xrd_output)// &
+                 & "' for the Debye route; falling back to the raw intensity"
+            channel = 1.d0
+            y_xrd = y_debye
+         end if
+      end if
+
+!     The Lorentz-polarization factor multiplies whatever pattern was asked
+!     for. It is a per-q weight, so it scales the gradient channel by the same
+!     number and the forces stay exact. It is meant for xrd_output = 'xrd',
+!     where the prediction really is a raw powder intensity.
+      if (params%xrd_lorentz_polarization) then
+         allocate (lp(1:n_samples))
+         call get_lorentz_polarization(x_xrd, params%xrd_wavelength, &
+              & params%xrd_lp_polarization, params%xrd_lp_sin_theta_min, lp)
+         y_xrd = lp*y_xrd
+         channel = lp*channel
+         deallocate (lp)
+      end if
+
+!     ---   Energies and forces against the experimental pattern   --- !
+      if (valid_xrd .and. allocated(params%exp_energy_scales)) then
+         allocate (energies_xrd(1:n_sites))
+         energies_xrd = 0.d0
+
+         call get_energy_scale(params%do_md, params%do_mc, md_istep, params%md_nsteps, &
+              & mc_istep, params%mc_nsteps, params%exp_energy_scales_initial(xrd_idx), &
+              & params%exp_energy_scales_final(xrd_idx), params%exp_energy_scales(xrd_idx))
+
+         energy_scale = params%exp_energy_scales(xrd_idx)
+
+         call get_exp_energies(energy_scale, params%exp_data(xrd_idx)%y, y_xrd, &
+              & n_samples, n_sites, energies_xrd(i_beg:i_end))
+
+         if (want_forces) then
+            allocate (forces_xrd(1:3, 1:n_sites))
+            forces_xrd = 0.d0
+
+!           E = 1/2 s sum_l ( y_l - y_exp_l )^2, so the force on atom a is
+!           -dE/dr_a = -s sum_l ( y_l - y_exp_l ) dy_l/dr_a, with
+!           dy_l/dr_a = channel(l) * y_debye_der(:,l,a). Only the atoms this
+!           rank owns have a complete derivative, and only those are written.
+            allocate (prefactor(1:n_samples))
+            prefactor = energy_scale*channel &
+                       & *(y_xrd - params%exp_data(xrd_idx)%y(1:n_samples))
+
+            do i = i_beg, i_end
+               do k1 = 1, 3
+                  this_force(k1) = -dot_product(y_debye_der(k1, 1:n_samples, i), prefactor)
+               end do
+               forces_xrd(1:3, i) = this_force(1:3)
+
+!              The Debye energy depends on the positions only through the
+!              interatomic distances of atoms in the cell -- no periodic
+!              images enter the sum -- so sum_i F_i (x) r_i telescopes into
+!              the pair form sum_{i<j} F_ij (x) r_ij and is the virial.
+               do k1 = 1, 3
+                  do k2 = 1, 3
+                     virial_xrd(k1, k2) = virial_xrd(k1, k2) + &
+                          & 0.5d0*(this_force(k1)*positions(k2, i) + this_force(k2)*positions(k1, i))
+                  end do
+               end do
+            end do
+
+            deallocate (prefactor)
+         end if
+      end if
+
+!     ---   Write the prediction   --- !
+      call get_write_condition(params%do_mc, params%do_md, mc_istep, md_istep, &
+           & params%write_xyz, write_condition)
+
+      if (rank == 0 .and. (params%write_xrd .or. params%write_nd) .and. write_condition) then
+         call get_overwrite_condition(params%do_mc, params%do_md, mc_istep, md_istep, &
+              & params%write_xyz, overwrite_condition)
+
+         if (.not. neutron) then
+            write (filename, '(A)') 'xrd_prediction.dat'
+            call write_exp_datan(x_xrd_temp, y_xrd, overwrite_condition, filename, &
+                 & "xrd (debye): units of "//trim(params%q_units)//" output: "//trim(xrd_output))
+         else
+            write (filename, '(A)') 'nd_prediction.dat'
+            call write_exp_datan(x_xrd_temp, y_xrd, overwrite_condition, filename, &
+                 & "nd (debye): units of "//trim(params%q_units)//" output: "//trim(xrd_output))
+         end if
+      end if
+
+      deallocate (y_debye)
+      if (allocated(y_debye_der)) deallocate (y_debye_der)
+      deallocate (f_table)
+      deallocate (channel)
+      deallocate (self_term)
+      deallocate (concentration)
+
+   end subroutine calculate_xrd_debye
+
+   subroutine finalize_xrd_debye(x_xrd, x_xrd_temp, y_xrd, y_xrd_temp)
+      implicit none
+      real(dp), allocatable, intent(inout) :: x_xrd(:)
+      real(dp), allocatable, intent(inout) :: x_xrd_temp(:)
+      real(dp), allocatable, intent(inout) :: y_xrd(:)
+      real(dp), allocatable, intent(inout) :: y_xrd_temp(:)
+
+      if (allocated(x_xrd)) deallocate (x_xrd)
+      if (allocated(x_xrd_temp)) deallocate (x_xrd_temp)
+      if (allocated(y_xrd)) deallocate (y_xrd)
+      if (allocated(y_xrd_temp)) deallocate (y_xrd_temp)
+   end subroutine finalize_xrd_debye
+
 end module exp_interface

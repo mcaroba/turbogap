@@ -998,6 +998,32 @@ contains
          end do
       end if
 
+!   The Debye route goes from the positions straight to I(q), so it needs
+!   neither the pair distribution nor the structure factor. Both get switched
+!   on as a side effect of asking for XRD/ND -- by the do_xrd/do_nd keywords
+!   and again by the exp_labels block above -- and leaving them on would make
+!   xrd_debye a pure slowdown, computing a whole pdf and sf that nothing
+!   reads. A deck that asked for either in as many words keeps it: wanting the
+!   pair distribution written out is a legitimate reason to compute one.
+!
+!   This has to run after the exp_labels loop, not inside the keyword
+!   handlers, because the deck may set xrd_debye either side of do_xrd.
+      if (params%xrd_debye .and. (params%do_xrd .or. params%do_nd)) then
+         if (params%do_pair_distribution .and. .not. params%do_pair_distribution_explicit) then
+            params%do_pair_distribution = .false.
+            if (rank == 0) write (*, *) 'NOTE: xrd_debye, so the pdf is not |'
+            if (rank == 0) write (*, *) 'computed. Set do_pair_distribution |'
+            if (rank == 0) write (*, *) '= .true. to get it anyway.         |'
+         end if
+         if (params%do_structure_factor .and. .not. params%do_structure_factor_explicit) then
+            params%do_structure_factor = .false.
+            if (rank == 0) write (*, *) 'NOTE: xrd_debye, so the structure  |'
+            if (rank == 0) write (*, *) 'factor is not computed. Set        |'
+            if (rank == 0) write (*, *) 'do_structure_factor = .true. to    |'
+            if (rank == 0) write (*, *) 'get it anyway.                     |'
+         end if
+      end if
+
 !   Monte-carlo checks
       if (params%do_mc) then
          do i = 1, params%n_mc_types
@@ -2174,12 +2200,14 @@ contains
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%do_pair_distribution
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("do_pair_distribution", params%do_pair_distribution)
+         params%do_pair_distribution_explicit = params%do_pair_distribution
 
       else if (keyword == 'do_structure_factor') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%do_structure_factor
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("do_structure_factor", params%do_structure_factor)
+         params%do_structure_factor_explicit = params%do_structure_factor
          if (params%do_structure_factor) then
             params%do_pair_distribution = .true.
          end if
@@ -2537,6 +2565,26 @@ contains
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%xrd_damping
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("xrd_damping", params%xrd_damping)
+      else if (keyword == 'xrd_debye') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%xrd_debye
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("xrd_debye", params%xrd_debye)
+      else if (keyword == 'xrd_lorentz_polarization') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%xrd_lorentz_polarization
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("xrd_lorentz_polarization", params%xrd_lorentz_polarization)
+      else if (keyword == 'xrd_lp_polarization') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%xrd_lp_polarization
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("xrd_lp_polarization", params%xrd_lp_polarization)
+      else if (keyword == 'xrd_lp_sin_theta_min') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%xrd_lp_sin_theta_min
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("xrd_lp_sin_theta_min", params%xrd_lp_sin_theta_min)
       else if (keyword == 'xrd_iwasa') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%xrd_iwasa

@@ -1,0 +1,57 @@
+! Molecular Augmented Dynamics driven by an experimental XRD pattern, with the
+! pattern computed from the Debye scattering equation instead of the
+! pdf -> structure factor -> XRD chain.
+!
+! Same system, same experimental data and same energy scale as xrd_mad, so the
+! two cases can be read side by side: what differs is xrd_debye = .true. and
+! everything that follows from it. Note that no pdf and no structure factor
+! keywords appear here at all. do_xrd switches both on as a side effect, and
+! read_input_file switches them back off because the Debye route does not use
+! them -- the run computes neither, which is the point of the keyword.
+!
+! exp_forces = .true. is what puts the xrd contribution family into the
+! driver's force pack / mpi_reduce / unpack path, so this covers the Debye
+! gradient end to end. Whether that gradient is *right* is a different
+! question, asked by tests/xrd_debye against finite differences; this case
+! only pins it against drift.
+
+! Species-specific info
+atoms_file = 'atoms.xyz'
+pot_file = 'gap_files/CO.gap'
+n_species = 2
+species = C O
+masses = 12.01 15.99
+e0 = -.16138053 0.
+
+! --- X-ray parameters ---
+do_xrd                      = .true.
+xrd_debye                   = .true.
+q_range_min                 =   1.0
+q_range_max                 =  10.0
+xrd_output                  = 'q*F(q)'
+write_xrd                   = .true.
+
+! The Lorch window and its cutoff. r_cut here is the Debye sum's own cutoff,
+! not a neighbour-list radius -- turbogap_setup deliberately does not widen
+! rcut_max for it when xrd_debye is on.
+structure_factor_window     = .true.
+xrd_rcut                    =   6.0
+
+! --- Experimental data specification (MAD) ---
+n_exp = 1
+exp_labels = 'xrd'
+exp_data_files = 'xrd_glassy_carbon_zeng_2017.fq'
+exp_n_samples = 201
+exp_energy_scales = 100.0
+
+exp_energies = .true.
+exp_forces   = .true.
+
+! --- MD ---
+md_nsteps = 5
+md_step = 1.0
+thermostat = berendsen
+t_beg = 1000
+t_end = 1000
+random_seed = 12345
+write_xyz = 1

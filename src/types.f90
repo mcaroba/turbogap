@@ -257,6 +257,14 @@ module types
       real(dp) :: xrd_damping = 0.0d0
       real(dp) :: nd_wavelength = 1.5405981d0
       real(dp) :: xrd_alpha = 1.01d0
+!     Degree of polarization of the incident beam in the Lorentz-polarization
+!     factor (1 + P cos^2 2theta) / (sin^2 theta cos theta). P = 1 is an
+!     unpolarized source; a graphite monochromator at 2theta_M gives
+!     P = cos^2(2theta_M).
+      real(dp) :: xrd_lp_polarization = 1.d0
+!     Below this |sin(theta)| the Lorentz factor 1/(sin^2 theta cos theta) is
+!     unusable, so the whole factor is set to zero there rather than blown up.
+      real(dp) :: xrd_lp_sin_theta_min = 1.d-3
       real(dp) :: xrd_rcut = 4.d0
       real(dp) :: nd_rcut = 4.d0
       real(dp) :: q_range_min = 1.0
@@ -413,6 +421,23 @@ module types
       logical :: do_structure_factor = .false.
       logical :: do_xrd = .false.
       logical :: do_nd = .false.
+!     Compute the XRD/ND pattern from the N^2 Debye sum over atomic positions
+!     instead of Fourier-transforming the partial pair distributions. The two
+!     routes answer the same question by different approximations: the pdf/sf
+!     route bins pair distances and truncates at pair_distribution_rcut, the
+!     Debye route sums every pair in the cell exactly. Turning this on makes
+!     the pdf and sf calculations unnecessary, and read_files switches off
+!     whichever of them was enabled only to feed the XRD.
+      logical :: xrd_debye = .false.
+!     Multiply the predicted Debye pattern by the powder Lorentz-polarization
+!     factor. Only the Debye route applies it, where the energy and the
+!     gradient stay consistent because it is one multiplicative weight per q.
+      logical :: xrd_lorentz_polarization = .false.
+!     Whether the deck asked for the pdf/sf in as many words. The XRD keywords
+!     switch both on as a side effect, and xrd_debye has to be able to tell a
+!     side effect it may undo from a request it may not.
+      logical :: do_pair_distribution_explicit = .false.
+      logical :: do_structure_factor_explicit = .false.
       logical :: write_xrd = .false.
       logical :: write_nd = .false.
       logical :: structure_factor_matrix = .true.

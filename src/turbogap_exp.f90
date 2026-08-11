@@ -33,7 +33,7 @@ module turbogap_exp
 contains
 
 !**************************************************************************
-   subroutine compute_exp_spectra(params, n_sites, species, rjs, xyz, neighbors_list, &
+   subroutine compute_exp_spectra(params, n_sites, species, positions, rjs, xyz, neighbors_list, &
                                   n_neigh, neighbor_species, indices, a_box, b_box, c_box, &
                                   i_beg, i_end, j_beg, j_end, rank, ntasks, ierr, md_istep, mc_istep, &
                                   energies_pdf, forces_pdf, virial_pdf, &
@@ -63,6 +63,10 @@ contains
       real(dp), intent(in) :: c_box(1:3)
       real(dp), intent(in), allocatable :: rjs(:)
       real(dp), intent(in), allocatable :: xyz(:, :)
+!   The Debye route sums over every pair in the cell rather than walking the
+!   neighbour list, so it needs the positions themselves. Every rank holds the
+!   whole array, so no communication is implied by using it here.
+      real(dp), intent(in), allocatable :: positions(:, :)
       integer, intent(in), allocatable :: neighbors_list(:)
       integer, intent(in), allocatable :: n_neigh(:)
       integer, intent(in), allocatable :: neighbor_species(:)
@@ -238,16 +242,23 @@ contains
 
       if (params%do_xrd) then
          call time_start(time%xrd)
-         call calculate_xrd(params, x_xrd, x_xrd_temp,&
-              & y_xrd, y_xrd_temp, x_structure_factor, x_structure_factor_temp,&
-              & structure_factor_partial, structure_factor_partial_temp,&
-              & n_species_actual, species_types_actual, n_atoms_of_species,&
-              & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep, i_beg,&
-              & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
-              & neighbor_species, species, rank, q_beg, q_end, ntasks, sinc_factor_matrix, params%exp_forces, &
-              & pair_distribution_partial_der, energies_xrd,&
-              & forces_xrd, virial_xrd, .false., params&
-              &%structure_factor_matrix_forces)
+         if (params%xrd_debye) then
+            call calculate_xrd_debye(params, x_xrd, x_xrd_temp, y_xrd, y_xrd_temp,&
+                 & n_sites, positions, species, md_istep, mc_istep, i_beg, i_end,&
+                 & ierr, rank, params%exp_forces, energies_xrd, forces_xrd,&
+                 & virial_xrd, .false.)
+         else
+            call calculate_xrd(params, x_xrd, x_xrd_temp,&
+                 & y_xrd, y_xrd_temp, x_structure_factor, x_structure_factor_temp,&
+                 & structure_factor_partial, structure_factor_partial_temp,&
+                 & n_species_actual, species_types_actual, n_atoms_of_species,&
+                 & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep, i_beg,&
+                 & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
+                 & neighbor_species, species, rank, q_beg, q_end, ntasks, sinc_factor_matrix, params%exp_forces, &
+                 & pair_distribution_partial_der, energies_xrd,&
+                 & forces_xrd, virial_xrd, .false., params&
+                 &%structure_factor_matrix_forces)
+         end if
 
          call time_end(time%xrd)
 
@@ -257,16 +268,23 @@ contains
 
       if (params%do_nd) then
          call time_start(time%nd)
-         call calculate_xrd(params, x_nd, x_nd_temp,&
-              & y_nd, y_nd_temp, x_structure_factor, x_structure_factor_temp,&
-              & structure_factor_partial, structure_factor_partial_temp,&
-              & n_species_actual, species_types_actual, n_atoms_of_species,&
-              & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep, i_beg,&
-              & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
-              & neighbor_species, species, rank, q_beg, q_end, ntasks, sinc_factor_matrix, params%exp_forces, &
-              & pair_distribution_partial_der, energies_nd,&
-              & forces_nd, virial_nd, .true., params&
-              &%structure_factor_matrix_forces)
+         if (params%xrd_debye) then
+            call calculate_xrd_debye(params, x_nd, x_nd_temp, y_nd, y_nd_temp,&
+                 & n_sites, positions, species, md_istep, mc_istep, i_beg, i_end,&
+                 & ierr, rank, params%exp_forces, energies_nd, forces_nd,&
+                 & virial_nd, .true.)
+         else
+            call calculate_xrd(params, x_nd, x_nd_temp,&
+                 & y_nd, y_nd_temp, x_structure_factor, x_structure_factor_temp,&
+                 & structure_factor_partial, structure_factor_partial_temp,&
+                 & n_species_actual, species_types_actual, n_atoms_of_species,&
+                 & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep, i_beg,&
+                 & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
+                 & neighbor_species, species, rank, q_beg, q_end, ntasks, sinc_factor_matrix, params%exp_forces, &
+                 & pair_distribution_partial_der, energies_nd,&
+                 & forces_nd, virial_nd, .true., params&
+                 &%structure_factor_matrix_forces)
+         end if
 
          call time_end(time%nd)
 
@@ -337,15 +355,26 @@ contains
       end if
 
       if (params%do_xrd) then
-         call finalize_xrd(params, x_xrd, x_xrd_temp,&
-              & y_xrd, y_xrd_temp, x_structure_factor, x_structure_factor_temp,&
-              & structure_factor_partial, structure_factor_partial_temp)
+         if (params%xrd_debye) then
+!           The Debye route never touched the structure-factor arrays, and
+!           finalize_xrd would free them out from under a structure_factor
+!           calculation the deck asked for in its own right.
+            call finalize_xrd_debye(x_xrd, x_xrd_temp, y_xrd, y_xrd_temp)
+         else
+            call finalize_xrd(params, x_xrd, x_xrd_temp,&
+                 & y_xrd, y_xrd_temp, x_structure_factor, x_structure_factor_temp,&
+                 & structure_factor_partial, structure_factor_partial_temp)
+         end if
       end if
 
       if (params%do_nd) then
-         call finalize_xrd(params, x_nd, x_nd_temp,&
-              & y_nd, y_nd_temp, x_structure_factor, x_structure_factor_temp,&
-              & structure_factor_partial, structure_factor_partial_temp)
+         if (params%xrd_debye) then
+            call finalize_xrd_debye(x_nd, x_nd_temp, y_nd, y_nd_temp)
+         else
+            call finalize_xrd(params, x_nd, x_nd_temp,&
+                 & y_nd, y_nd_temp, x_structure_factor, x_structure_factor_temp,&
+                 & structure_factor_partial, structure_factor_partial_temp)
+         end if
       end if
 
       deallocate (species_types_actual)

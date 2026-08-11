@@ -1601,7 +1601,7 @@ program turbogap
          ! once, at the call, is what let four preprocessor-interrupted argument
          ! lists disappear from the moved code.
 #ifdef _MPIF90
-         call compute_exp_spectra(params, n_sites, species, rjs, xyz, neighbors_list, &
+         call compute_exp_spectra(params, n_sites, species, positions, rjs, xyz, neighbors_list, &
                                   n_neigh, neighbor_species, indices, a_box, b_box, c_box, &
                                   i_beg, i_end, j_beg, j_end, rank, ntasks, ierr, md_istep, mc_istep, &
                                   this_energies_pdf, this_forces_pdf, this_virial_pdf, &
@@ -1610,7 +1610,7 @@ program turbogap
                                   this_energies_nd, this_forces_nd, this_virial_nd, &
                                   time)
 #else
-         call compute_exp_spectra(params, n_sites, species, rjs, xyz, neighbors_list, &
+         call compute_exp_spectra(params, n_sites, species, positions, rjs, xyz, neighbors_list, &
                                   n_neigh, neighbor_species, indices, a_box, b_box, c_box, &
                                   i_beg, i_end, j_beg, j_end, rank, ntasks, ierr, md_istep, mc_istep, &
                                   energies_pdf, forces_pdf, virial_pdf, &
