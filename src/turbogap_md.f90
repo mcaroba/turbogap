@@ -65,7 +65,7 @@ contains
                          instant_pressure, instant_pressure_prev, e_kin, e_kinetic, kb, evpera3tobar, &
                          fix_atom, exit_loop, rebuild_neighbors_list, i_image, i_nested, n_pos, string, &
                          time, gd_box_do_pos, gd_istep, restart_box_optim, &
-                         target_temp, time_step_prev)
+                         target_temp, time_step_prev, dipole, local_dipoles, energies_dipole)
 
       implicit none
 
@@ -107,6 +107,11 @@ contains
       real(dp), allocatable, intent(inout) :: energies_xrd(:)
       real(dp), allocatable, intent(inout) :: energies_nd(:)
       real(dp), allocatable, intent(in) :: local_properties(:, :)
+!     Dipole model output, written alongside the trajectory. energies_dipole is
+!     the model's fictitious scalar and is reported separately from energy=.
+      real(dp), intent(in) :: dipole(1:3)
+      real(dp), allocatable, intent(in) :: local_dipoles(:, :)
+      real(dp), allocatable, intent(in) :: energies_dipole(:)
       character*1024, allocatable, intent(in) :: local_property_labels(:)
       real(dp), intent(inout) :: instant_temp
       real(dp), intent(inout) :: instant_pressure
@@ -351,7 +356,8 @@ contains
                  & energies_3b, energies_core_pot, energies_vdw, energies_estat, energies_exp&
                  &, energies_lp, energies_pdf, energies_sf, energies_xrd, energies_nd,&
                  & params%valid_pdf, params%valid_sf, params%valid_xrd, params%valid_nd, params%do_pair_distribution,&
-                 & params%do_structure_factor, params%do_xrd, params%do_nd, string)
+                 & params%do_structure_factor, params%do_xrd, params%do_nd, string,&
+                 & params%do_dipole, dipole, energies_dipole)
 
                call write_extxyz(n_sites, md_istep, md_time, time_step,&
                  & instant_temp, instant_pressure, a_box&
@@ -363,7 +369,7 @@ contains
                  & params%write_local_properties,&
                  & local_property_labels, local_properties,&
                  & fix_atom(1:3, 1:n_sites), "trajectory_out.xyz", string, &
-                 & md_istep == 0)
+                 & md_istep == 0, params%do_dipole, local_dipoles(1:3, 1:n_sites))
             else if (md_istep == params%md_nsteps .and. params%do_nested_sampling) then
                write (cjunk, '(I8)') i_image
                write (filename, '(A,A,A)') "walkers/", trim(adjustl(cjunk)), ".xyz"
@@ -373,7 +379,8 @@ contains
                  & energies_3b, energies_core_pot, energies_vdw, energies_estat, energies_exp&
                  &, energies_lp, energies_pdf, energies_sf, energies_xrd, energies_nd,&
                  & params%valid_pdf, params%valid_sf, params%valid_xrd, params%valid_nd, params%do_pair_distribution,&
-                 & params%do_structure_factor, params%do_xrd, params%do_nd, string)
+                 & params%do_structure_factor, params%do_xrd, params%do_nd, string,&
+                 & params%do_dipole, dipole, energies_dipole)
 
                call write_extxyz(n_sites, md_istep, md_time, time_step, instant_temp, instant_pressure, &
                  a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
@@ -383,7 +390,8 @@ contains
                  params%write_property, params%write_array_property&
                  &, params%write_local_properties,&
                  & local_property_labels, local_properties,&
-                 & fix_atom(1:3, 1:n_sites), filename, string, .true.)
+                 & fix_atom(1:3, 1:n_sites), filename, string, .true.,&
+                 & params%do_dipole, local_dipoles(1:3, 1:n_sites))
 
             end if
             !

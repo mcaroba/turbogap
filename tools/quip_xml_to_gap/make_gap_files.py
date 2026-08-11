@@ -98,7 +98,7 @@ def compare_descriptors(descriptor1, descriptor2):
 
     return True
 
-def write_descriptor_to_output(output_file, gpCoordinates, index, local_property_labels=[]):
+def write_descriptor_to_output(output_file, gpCoordinates, index, local_property_labels=[], dipole_model=False):
     descriptor = gpCoordinates.find('descriptor')
     desc_dict = descriptor_to_dict(descriptor)
 
@@ -179,6 +179,12 @@ def write_descriptor_to_output(output_file, gpCoordinates, index, local_property
                     output.write('compress_soap = .true.\n')
                 output.write('compress_mode = ' + '"' + desc_dict['compress_mode'] + '"\n')
 
+            # A dipole GAP is fitted so that dE_i/dr_i is the local dipole. The
+            # flag tells TurboGAP to predict mu from this descriptor and to keep
+            # its fictitious energy out of the total energy and forces.
+            if dipole_model:
+                output.write('dipole_model = .true.\n')
+
             n_lp = 0
             write_lp = False
             if len(local_property_labels) > 0:
@@ -199,7 +205,7 @@ def write_descriptor_to_output(output_file, gpCoordinates, index, local_property
                         n_lp += 1
                     else:
                         continue
-                    
+
                     for index_hirsh, gpc in enumerate(local_property_soups[k].find_all('gpCoordinates')):
                         if compare_descriptors(gpc.find('descriptor'), gpCoordinates.find('descriptor')):
                             hirshfeld_dict = descriptor_to_dict(gpc.find('descriptor'))
@@ -225,7 +231,7 @@ def write_descriptor_to_output(output_file, gpCoordinates, index, local_property
                             break # only include the first matching Hirshfeld
                 if write_lp:
                     output.write( has_lp_str   + "\n" )
-                    output.write( f"n_local_properties = {n_lp}\n" )                    
+                    output.write( f"n_local_properties = {n_lp}\n" )
                     output.write( lp_qs_str    + "\n" )
                     output.write( lp_alphas_str+ "\n" )
                     output.write( lp_labels_str+ "\n" )
@@ -255,6 +261,13 @@ def write_pairpot_to_output(output_file, per_pair_data, index):
         output.write("\n")
 
 
+# Pull the flag out of argv before the positional arguments are read, so it can
+# be given anywhere on the command line without disturbing them.
+dipole_model = '--dipole-model' in sys.argv
+if dipole_model:
+    sys.argv.remove('--dipole-model')
+    print("Marking every soap_turbo descriptor as a dipole model.")
+
 # open potential xml file as the first argument in the command line
 gap_file = sys.argv[1]
 # give name of the output file as the second argument in the command when script is executed
@@ -280,7 +293,7 @@ descriptor_counts = {'distance_2b': 0,
                      'hirshfeld': 0,
                      'core_electron_be': 0}
 
-# Generalise this to include the number of local properties 
+# Generalise this to include the number of local properties
 
 local_property_files = []
 local_property_labels = []
@@ -291,9 +304,9 @@ if len(sys.argv) > 3:
     print(f" Found {n_local_properties} local properties!")
     for i in range(n_local_properties):
         local_property_files.append( sys.argv[3 + 2*i + 1])
-        local_property_labels.append(sys.argv[3 + 2*i + 2])        
-        local_property = local_property_files[-1] 
-        local_property_label = local_property_labels[-1]       
+        local_property_labels.append(sys.argv[3 + 2*i + 2])
+        local_property = local_property_files[-1]
+        local_property_label = local_property_labels[-1]
         print(f"Reading {local_property} ...")
         with open(local_property) as file:
             local_property_soup = BeautifulSoup(file,'xml')
@@ -308,7 +321,8 @@ for gpc in xml_soup.find_all('gpCoordinates'):
     type = gpc.find('descriptor').get_text().split()[0]
     descriptor_counts[type] += 1
     write_alphas_file(gpc, descriptor_counts[type])
-    write_descriptor_to_output(output_file, gpc, descriptor_counts[type], local_property_labels=local_property_labels)
+    write_descriptor_to_output(output_file, gpc, descriptor_counts[type], local_property_labels=local_property_labels,
+                               dipole_model=dipole_model)
 
 if xml_soup.find('pairpot'):
     per_type_data = {} # convert 'type1' etc. into atomic numbers

@@ -73,6 +73,8 @@ void gpu_final_soap_forces_virial(int n_sites, double* Qss_d, int n_soap, int* l
                                   hipStream_t* stream);
 void gpu_local_property_derivatives(int n_sites, double* Qss_d, int n_soap, int* l_index_d, double3* soap_der_d,
                                     double* local_property_cart_der_d, int n_pairs, hipStream_t* stream);
+void gpu_soap_dipole(int n_sites, double* Qss_d, int n_soap, int* beg_index_d, double3* soap_der_d, double* dipoles_d,
+                     hipStream_t* stream);
 
 // ---- gap_2b.cu
 void gpu_get_2b_forces_energies(int i_beg, int i_end, int n_sparse, double* energies_d, double e0, int* n_neigh_d, bool do_forces,

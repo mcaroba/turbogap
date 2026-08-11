@@ -456,6 +456,170 @@ contains
 
    end subroutine get_soap_energy_and_forces
 
+   subroutine get_soap_dipole(n_sparse, soap, delta, zeta0, n_neigh, dipoles, energies, &
+                              soap_d, soap_der_d)
+      !   **********************************************
+      !   Local dipoles from a dipole GAP, on the device.
+      !
+      !   The model is a GAP whose local "energy" E_i is a fictitious scalar,
+      !   fitted so that its derivative with respect to the central atom's OWN
+      !   position is the local dipole:
+      !
+      !       mu_i = dE_i/dr_i   and   mu = sum_i mu_i
+      !
+      !   Everything up to Qss is identical to get_soap_energy_and_forces; the
+      !   two differences are the sign (mu is a gradient, not a force, so the
+      !   prefactor is +zeta*delta**2 rather than -zeta*delta**2) and the fact
+      !   that only the SELF pair of each site is contracted rather than every
+      !   pair scattered onto neighbours. soap_turbo builds that self pair as
+      !   -sum_{j/=1} of the neighbour terms, which is exactly d(soap_i)/d(r_i),
+      !   and build_neighbors_list puts it first for every site -- so the pair
+      !   index wanted for site i is neighbors_beg(i).
+      !
+      !   E_i is returned too, because the kernel matrix it needs has already
+      !   been formed here. It is a fitting artefact with no physical meaning:
+      !   it is reported as energy_dipole and must never be added to the total
+      !   energy, and its gradient must never be added to the forces.
+      !   **********************************************
+
+      implicit none
+
+      integer(c_int), intent(in) :: n_sparse
+      real(c_double), intent(in), target :: soap(:, :)
+      real(c_double), intent(in), target :: delta
+      real(c_double), intent(in), target :: zeta0
+      integer(c_int), intent(in), target :: n_neigh(:)
+      real(c_double), intent(out), target :: dipoles(:, :)
+      real(c_double), intent(out), target :: energies(:)
+      type(c_ptr), intent(inout) :: soap_d
+      type(c_ptr), intent(inout) :: soap_der_d
+
+      real(c_double), allocatable, target :: kernels(:, :)
+      real(c_double) :: zeta
+      real(c_double) :: cdelta_ene
+      real(c_double) :: cdelta_dipole
+      real(c_double) :: mzetam
+      integer(c_int) :: n_sites
+      integer(c_int) :: n_soap
+      integer(c_int) :: i
+      integer(c_int) :: j
+      integer(c_int) :: l
+      integer(c_int) :: zeta_int
+      integer(c_int) :: size_kernels
+      integer(c_int) :: size_soap
+      integer(c_int) :: size_Qs
+      integer(c_int) :: size_energies
+      logical :: is_zeta_int = .false.
+      type(c_ptr) :: kernels_d
+      type(c_ptr) :: kernels_copy_d
+      type(c_ptr) :: kernels_der_d
+      type(c_ptr) :: energies_d
+      type(c_ptr) :: Qss_d
+      type(c_ptr) :: Qs_copy_d
+      type(c_ptr) :: dipoles_d
+      type(c_ptr) :: beg_index_d
+      integer(c_int), allocatable, target :: beg_index(:)
+      integer(c_size_t) :: st_kernels
+      integer(c_size_t) :: st_Qs
+      integer(c_size_t) :: st_energies
+      integer(c_size_t) :: st_soap
+      integer(c_size_t) :: st_dipoles
+      integer(c_size_t) :: st_beg_index
+
+      n_soap = size(soap, 1)
+      n_sites = size(soap, 2)
+
+      dipoles = 0.d0
+      energies = 0.d0
+      if (n_sites == 0) then
+         return
+      end if
+
+      cdelta_ene = delta*delta
+      if (dabs(zeta0 - dfloat(int(zeta0))) < 1.d-5) then
+         is_zeta_int = .true.
+         zeta_int = int(zeta0)
+         zeta = dfloat(zeta_int)
+      else
+         zeta = zeta0
+      end if
+
+      allocate (kernels(1:n_sites, 1:n_sparse))
+
+      size_kernels = n_sites*n_sparse
+      size_soap = n_soap*n_sites
+      size_Qs = n_soap*n_sparse
+      size_energies = n_sites
+
+      st_kernels = size_kernels*(sizeof(kernels(1, 1)))
+      st_Qs = size_Qs*(sizeof(delta))
+      st_energies = size_energies*(sizeof(energies(1)))
+      st_soap = size_soap*(sizeof(delta))
+      st_dipoles = 3*n_sites*(sizeof(delta))
+
+      call gpu_malloc_async(kernels_d, st_kernels, gpu_stream)
+      call gpu_malloc_async(kernels_copy_d, st_kernels, gpu_stream)
+      call gpu_malloc_async(energies_d, st_energies, gpu_stream)
+
+      !   The fictitious energy, formed from the same kernel matrix the dipole needs
+      call gpu_blas_mmul_t_n(cublas_handle, Qs_d, soap_d, kernels_d, n_sparse, n_soap, n_sites)
+      call gpu_kernels_pow(kernels_d, kernels_copy_d, zeta, size_kernels, gpu_stream)
+      call gpu_blas_mvmul_n(cublas_handle, kernels_copy_d, alphas_d, energies_d, n_sites, n_sparse)
+      call gpu_axpe(energies_d, cdelta_ene, 0.d0, size_energies, gpu_stream)
+      call cpy_dtoh(energies_d, c_loc(energies), st_energies, gpu_stream)
+
+      !   Qss, exactly as for the forces but for the sign
+      call gpu_malloc_async(kernels_der_d, st_kernels, gpu_stream)
+      call gpu_malloc_async(Qss_d, st_soap, gpu_stream)
+      call gpu_malloc_async(Qs_copy_d, st_Qs, gpu_stream)
+      call cpy_dtod(Qs_d, Qs_copy_d, st_Qs, gpu_stream)
+
+      mzetam = zeta - 1
+      call gpu_kernels_pow(kernels_d, kernels_der_d, mzetam, size_kernels, gpu_stream)
+
+      if (n_sites < n_soap) then
+         call gpu_matvect(kernels_der_d, alphas_d, n_sites, n_sparse, gpu_stream)
+      else
+         call gpu_matvect(Qs_copy_d, alphas_d, n_soap, n_sparse, gpu_stream)
+      end if
+
+      !   Plus, not minus: a dipole is a gradient, where a force is its negative
+      cdelta_dipole = zeta*delta**2
+      call gpu_blas_mmul_n_t(cublas_handle, kernels_der_d, Qs_copy_d, Qss_d, n_sparse, &
+                             n_soap, n_sites, cdelta_dipole)
+
+      !   Site -> its own self pair. This is neighbors_beg, and it is the only
+      !   pair index the dipole needs, so the kernel runs over n_sites blocks
+      !   rather than n_pairs.
+      allocate (beg_index(1:n_sites))
+      l = 0
+      do i = 1, n_sites
+         beg_index(i) = l + 1
+         do j = 1, n_neigh(i)
+            l = l + 1
+         end do
+      end do
+      st_beg_index = n_sites*sizeof(beg_index(1))
+      call gpu_malloc_async(beg_index_d, st_beg_index, gpu_stream)
+      call cpy_htod(c_loc(beg_index), beg_index_d, st_beg_index, gpu_stream)
+
+      call gpu_malloc_async(dipoles_d, st_dipoles, gpu_stream)
+      call gpu_soap_dipole(n_sites, Qss_d, n_soap, beg_index_d, soap_der_d, dipoles_d, gpu_stream)
+      call cpy_dtoh(dipoles_d, c_loc(dipoles), st_dipoles, gpu_stream)
+
+      call gpu_free_async(dipoles_d, gpu_stream)
+      call gpu_free_async(beg_index_d, gpu_stream)
+      call gpu_free_async(kernels_der_d, gpu_stream)
+      call gpu_free_async(Qss_d, gpu_stream)
+      call gpu_free_async(Qs_copy_d, gpu_stream)
+      call gpu_free_async(kernels_d, gpu_stream)
+      call gpu_free_async(kernels_copy_d, gpu_stream)
+      call gpu_free_async(energies_d, gpu_stream)
+
+      deallocate (kernels, beg_index)
+
+   end subroutine get_soap_dipole
+
    subroutine get_2b_energy_and_forces(rjs, xyz, alphas, cutoff, rcut, buffer, delta, sigma, e0, Qs, &
                                        n_neigh, do_forces, do_timing, species, neighbor_species, &
                                        species1, species2, species_types, energies, forces, virial)

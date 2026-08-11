@@ -253,6 +253,21 @@ MODULE F_B_C
          integer(c_int), value :: n_pairs
       end subroutine
 
+      subroutine gpu_soap_dipole(n_sites, &
+                                 Qss_d, n_soap, beg_index_d, &
+                                 soap_der_d, &
+                                 dipoles_d, gpu_stream) &
+         bind(C, name="gpu_soap_dipole")
+         use iso_c_binding
+         type(c_ptr), value :: Qss_d
+         type(c_ptr), value :: beg_index_d
+         type(c_ptr), value :: dipoles_d
+         type(c_ptr), value :: soap_der_d
+         type(c_ptr) :: gpu_stream
+         integer(c_int), value :: n_sites
+         integer(c_int), value :: n_soap
+      end subroutine
+
       subroutine gpu_get_sqrt_dot_p(sqrt_dot_d, soap_d, multiplicity_array_d, &
                                     cnk_d, skip_soap_component_d, &
                                     n_sites, n_soap, n_max, l_max, gpu_stream) &

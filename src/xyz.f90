@@ -69,7 +69,8 @@ contains
         & energies_3b, energies_core_pot, energies_vdw, energies_estat, energies_exp&
         &, energies_lp, energies_pdf, energies_sf, energies_xrd, energies_nd,&
         & valid_pdf, valid_sf, valid_xrd, valid_nd, do_pair_distribution,&
-        & do_structure_factor, do_xrd, do_nd, string)
+        & do_structure_factor, do_xrd, do_nd, string, do_dipole, dipole,&
+        & energies_dipole)
       implicit none
       real(dp), intent(in), allocatable :: energies_soap(:)
       real(dp), intent(in), allocatable :: energies_2b(:)
@@ -91,8 +92,13 @@ contains
       logical, intent(in) :: do_structure_factor
       logical, intent(in) :: do_xrd
       logical, intent(in) :: do_nd
+      logical, intent(in), optional :: do_dipole
+      real(dp), intent(in), optional :: dipole(1:3)
+      real(dp), intent(in), allocatable, optional :: energies_dipole(:)
       character*1024, intent(out) :: string
       character*32 :: temp_string
+      character*32 :: dipole_string(1:3)
+      logical :: my_do_dipole
 
       write (temp_string, "(F16.8)") sum(energies_soap)
       write (string, "(1X,A)") "energy_soap="//trim(adjustl(temp_string))
@@ -135,6 +141,33 @@ contains
          write (string, "(A)") adjustl(trim(string))//" energy_nd="//trim(adjustl(temp_string))
       end if
 
+!   The dipole model. energy_dipole is the fictitious scalar the model is built
+!   on -- reported because it is occasionally useful for diagnosing a fit, and
+!   deliberately NOT part of energy=, which is the sum of the physical terms
+!   above. The model contributes no forces either.
+      my_do_dipole = .false.
+      if (present(do_dipole)) my_do_dipole = do_dipole
+
+      if (my_do_dipole) then
+!        The dummy is allocatable, so an unallocated actual arrives present but
+!        unusable -- an MC image stored before any dipole was computed.
+         if (present(energies_dipole)) then
+            if (allocated(energies_dipole)) then
+               write (temp_string, "(F16.8)") sum(energies_dipole)
+               write (string, "(A)") adjustl(trim(string))//" energy_dipole="//trim(adjustl(temp_string))
+            end if
+         end if
+         if (present(dipole)) then
+            write (dipole_string(1), "(F16.8)") dipole(1)
+            write (dipole_string(2), "(F16.8)") dipole(2)
+            write (dipole_string(3), "(F16.8)") dipole(3)
+            write (string, "(A)") adjustl(trim(string))//" dipole="""// &
+               trim(adjustl(dipole_string(1)))//" "// &
+               trim(adjustl(dipole_string(2)))//" "// &
+               trim(adjustl(dipole_string(3)))//""""
+         end if
+      end if
+
    end subroutine get_xyz_energy_string
 
    subroutine write_extxyz(Nat, md_istep, md_time, dt, temperature, pressure, a_cell, b_cell, c_cell, virial, &
@@ -143,7 +176,7 @@ contains
                             write_array_property,&
                             & write_local_properties,&
                             & local_property_labels, local_properties, fix_atom,&
-                            & filename, string, overwrite)
+                            & filename, string, overwrite, do_dipole, local_dipoles)
 
       implicit none
 
@@ -171,6 +204,12 @@ contains
       logical, intent(in) :: overwrite
       logical, allocatable, intent(in) :: write_local_properties(:)
       character*1024, allocatable, intent(in) :: local_property_labels(:)
+!   local_dipoles(1:3, 1:Nat) is written only when do_dipole says a dipole model
+!   was actually loaded. The array itself is always allocated by the caller, so
+!   both are passed unconditionally and the flag is what decides.
+      logical, intent(in), optional :: do_dipole
+      real(dp), intent(in), optional :: local_dipoles(:, :)
+      logical :: write_dipoles
 !   Internal variables:
       real(dp) :: vol
       integer :: n_properties
@@ -202,6 +241,14 @@ contains
                n_array_properties = n_array_properties + 1
             end if
          end do
+      end if
+      ! And the local dipoles, which are one property occupying three columns
+      write_dipoles = .false.
+      if (present(do_dipole) .and. present(local_dipoles)) then
+         if (do_dipole) write_dipoles = .true.
+      end if
+      if (write_dipoles) then
+         n_array_properties = n_array_properties + 1
       end if
 
       if (md_istep == 0 .or. md_istep == -1 .or. overwrite) then
@@ -273,6 +320,13 @@ contains
                   end if
                end if
             end do
+         end if
+         if (write_dipoles) then
+            write (properties_string, "(A)") trim(adjustl(properties_string))//"local_dipole:R:3"
+            i = i + 1
+            if (i < n_array_properties) then
+               write (properties_string, "(A)") trim(adjustl(properties_string))//":"
+            end if
          end if
 
 ! Not removing yet for compatibility
@@ -416,6 +470,10 @@ contains
             do j = 1, size(local_properties, 2)
                write (10, "(1X,F16.8)", advance="no") local_properties(i, j)
             end do
+         end if
+! Local dipoles
+         if (write_dipoles) then
+            write (10, "(1X,F16.8,1X,F16.8,1X,F16.8)", advance="no") local_dipoles(1:3, i)
          end if
 
 !     Fix atoms

@@ -1,0 +1,9 @@
+atoms_file = "atoms.xyz"
+pot_file = "gap_files/water_dipole.gap"
+n_species = 2
+species = H O
+masses = 1.008 15.999
+e0 = 0. 0.
+random_seed = 12345
+
+write_xyz = 1

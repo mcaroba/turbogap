@@ -195,3 +195,78 @@ extern "C" void gpu_local_property_derivatives(int n_sites, double* Qss_d, int n
 
   return;
 }
+
+
+// Local dipoles from a dipole GAP.
+//
+// mu_i = dE_i/dr_i, the fitted scalar differentiated with respect to the
+// central atom's OWN position. soap_turbo builds that self derivative as the
+// j == 1 pair of each site, so this is the same contraction
+// cuda_local_property_derivatives performs, restricted to one pair per site
+// instead of every pair. The grid is therefore n_sites blocks rather than
+// n_pairs, which is where nearly all of the saving is: a site has of order 50
+// neighbours and only its own entry is wanted.
+//
+// beg_index_d[i] is the 1-based index of site i's self pair, i.e. the Fortran
+// neighbors_beg. The caller supplies Qss_d already carrying +zeta*delta^2, so
+// no sign is applied here -- mu is a gradient, not a force.
+__global__ void cuda_soap_dipole(int n_sites, double* Qss_d, int n_soap, int* beg_index_d, double3* soap_der_d,
+                                 double* dipoles_d) {
+  int i_site = blockIdx.x;
+  int tid = threadIdx.x;
+  int l_self = beg_index_d[i_site] - 1;
+
+  __shared__ double shx[tpb];
+  __shared__ double shy[tpb];
+  __shared__ double shz[tpb];
+
+  double locx = 0;
+  double locy = 0;
+  double locz = 0;
+
+  // Each thread strides over the SOAP dimension; the block reduces the three
+  // dot products dot(Qss(i,1:n_soap), soap_der(cart,1:n_soap,l_self)).
+  for (int ii = tid; ii < n_soap; ii = ii + tpb) {
+    int i_Qss = i_site + ii * n_sites;  // Qss is (n_sites, n_soap), column major
+    double loc_this_Qss = Qss_d[i_Qss];
+    int in_soap_der = (l_self * n_soap + ii);  // soap_der is (3, n_soap, n_pairs)
+    double3 loc_soap_der = soap_der_d[in_soap_der];
+
+    locx += loc_this_Qss * loc_soap_der.x;
+    locy += loc_this_Qss * loc_soap_der.y;
+    locz += loc_this_Qss * loc_soap_der.z;
+  }
+
+  shx[tid] = locx;
+  shy[tid] = locy;
+  shz[tid] = locz;
+
+  __syncthreads();
+
+  for (int s = tpb / 2; s > 0; s >>= 1) {
+    if (tid < s) {
+      shx[tid] += shx[tid + s];
+      shy[tid] += shy[tid + s];
+      shz[tid] += shz[tid + s];
+    }
+    __syncthreads();
+  }
+
+  if (tid == 0) {
+    // One block per site, so these writes are independent and need no atomics.
+    dipoles_d[3 * i_site] = shx[0];
+    dipoles_d[3 * i_site + 1] = shy[0];
+    dipoles_d[3 * i_site + 2] = shz[0];
+  }
+}
+
+extern "C" void gpu_soap_dipole(int n_sites, double* Qss_d, int n_soap, int* beg_index_d, double3* soap_der_d,
+                                double* dipoles_d, hipStream_t* stream) {
+  dim3 nblocks(n_sites, 1);
+
+  hipMemsetAsync(dipoles_d, 0, 3 * n_sites * sizeof(double), stream[0]);
+
+  cuda_soap_dipole<<<nblocks, tpb, 0, stream[0]>>>(n_sites, Qss_d, n_soap, beg_index_d, soap_der_d, dipoles_d);
+
+  return;
+}

@@ -62,7 +62,8 @@ contains
         & local_property_indexes, virial, solo_time_soap, &
         time_get_soap, W_d, S_d, multiplicity_array_d,&
         & st_W_d, st_S_d, st_multiplicity_array_d,&
-        & recompute_basis, time_local_prop)
+        & recompute_basis, time_local_prop, is_dipole_model, local_dipoles0,&
+        & energies_dipole0)
 
       implicit none
 
@@ -95,6 +96,7 @@ contains
       integer, intent(in) :: n_local_properties
       integer, intent(in) :: local_property_indexes(:)
       integer, intent(in) :: lp_index
+      logical, intent(in) :: is_dipole_model
 
       logical, intent(in) :: do_timing
       logical, intent(in) :: do_derivatives
@@ -124,6 +126,8 @@ contains
       real(dp), intent(inout) :: forces0(:, :)
       real(dp), intent(inout) :: local_properties0(:, :)
       real(dp), intent(inout) :: local_properties_cart_der0(:, :, :)
+      real(dp), intent(inout) :: local_dipoles0(:, :)
+      real(dp), intent(inout) :: energies_dipole0(:)
 
       !   Internal variables
       real(dp), allocatable :: rjs(:)
@@ -132,6 +136,8 @@ contains
       real(dp), allocatable :: energies(:)
       real(dp), allocatable :: forces(:, :)
       real(dp), allocatable :: soap_temp(:, :)
+      real(dp), allocatable :: dipoles(:, :)
+      real(dp), allocatable :: energies_dipole(:)
       real(dp), allocatable :: local_properties(:)
       real(dp), allocatable :: local_properties_cart_der(:, :)
       real(dp), allocatable :: xyz(:, :)
@@ -393,7 +399,36 @@ contains
 
          end if
 
-         if (do_prediction) then
+         !###########################################!
+         !###---      Dipole prediction        ---###!
+         !###########################################!
+
+         if (is_dipole_model) then
+!          virial is intent(out) and is otherwise only defined inside
+!          get_soap_energy_and_forces, which is skipped below for a dipole
+!          model. Without this the caller would add an undefined value to
+!          virial_soap.
+            virial = 0.d0
+            allocate (dipoles(1:3, 1:n_sites))
+            allocate (energies_dipole(1:n_sites))
+            if (n_sites > 0) then
+               call get_soap_dipole(n_sparse, soap, delta, zeta, n_neigh, &
+                                    dipoles, energies_dipole, soap_d, soap_cart_der_d)
+            end if
+!          Accumulate rather than assign, matching energies0/forces0 below:
+!          these are the caller's accumulators over all batches.
+            do i = 1, n_sites
+               i2 = in_to_out_site(i)
+               local_dipoles0(1:3, i2) = local_dipoles0(1:3, i2) + dipoles(1:3, i)
+               energies_dipole0(i2) = energies_dipole0(i2) + energies_dipole(i)
+            end do
+            deallocate (dipoles, energies_dipole)
+         end if
+
+!        A dipole model's energy is a fitting artefact, not a physical energy,
+!        so it must not reach energies0/forces0. Everything above still ran:
+!        the descriptor and its derivatives are what the dipole was built from.
+         if (do_prediction .and. .not. is_dipole_model) then
             !     Get energies and forces
             allocate (energies(1:n_sites))
             energies = 0.d0
@@ -524,8 +559,10 @@ contains
             end do
          end if
 
-         if (do_prediction) deallocate (energies)
-         if (do_forces) deallocate (forces)
+!        Guarded on allocation rather than on do_prediction: a dipole model
+!        skips the block that allocates this.
+         if (allocated(energies)) deallocate (energies)
+         if (allocated(forces)) deallocate (forces)
 
          deallocate (neighbors_list, n_neigh, rjs, xyz, thetas, phis, mask, mask0, is_atom_seen)
          deallocate (species0, species_multiplicity0, species, species_multiplicity, species_multiplicity_supercell)
