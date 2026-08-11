@@ -136,6 +136,15 @@ program turbogap
    real(dp), allocatable, target :: energies_core_pot(:)
    real(dp), allocatable, target :: forces_core_pot(:, :)
 
+!  Dipole model output. energies_dipole is the model's fictitious scalar: it is
+!  reported as energy_dipole and is deliberately absent from `energies`, and the
+!  model contributes no forces or virial at all.
+   real(dp), allocatable :: local_dipoles(:, :)
+   real(dp), allocatable :: this_local_dipoles(:, :)
+   real(dp), allocatable :: energies_dipole(:)
+   real(dp), allocatable :: this_energies_dipole(:)
+   real(dp) :: dipole(1:3)
+
    real(dp), allocatable, target :: local_properties(:, :)
    real(dp), allocatable, target :: local_properties_cart_der(:, :, :)
    real(dp), allocatable, target :: this_local_properties(:, :)
@@ -982,6 +991,15 @@ program turbogap
 !          We do this allocations for van der Waals corrections
             allocate (mbd_ts_scaling(1:n_sites))
             allocate (this_mbd_ts_scaling(1:n_sites))
+!          Allocated whether or not a dipole model is loaded: they are passed to
+!          get_gap_soap unconditionally, and 4 doubles per atom is not worth a
+!          second code path.
+            if (allocated(local_dipoles)) deallocate (local_dipoles, this_local_dipoles, &
+                                                      energies_dipole, this_energies_dipole)
+            allocate (local_dipoles(1:3, 1:n_sites))
+            allocate (this_local_dipoles(1:3, 1:n_sites))
+            allocate (energies_dipole(1:n_sites))
+            allocate (this_energies_dipole(1:n_sites))
 
 ! Read in file for ts+mbd van der Waals mode if it exists
 ! Initialise the TS scaling factors. md_istep <= 0 rather than == 0 because
@@ -1047,6 +1065,9 @@ program turbogap
          energies_estat = 0.d0
          energies_lp = 0.d0
          energies_exp = 0.d0
+         local_dipoles = 0.d0
+         energies_dipole = 0.d0
+         dipole = 0.d0
 
          if (perform%pdf) energies_pdf = 0.d0
          if (perform%sf) energies_sf = 0.d0
@@ -1232,6 +1253,10 @@ program turbogap
                   this_forces = 0.d0
                   this_virial = 0.d0
                end if
+               if (soap_turbo_hypers(i)%is_dipole_model) then
+                  this_local_dipoles = 0.d0
+                  this_energies_dipole = 0.d0
+               end if
                if (soap_turbo_hypers(i)%has_local_properties) then
                   this_local_properties = 0.d0
                   if (params%do_forces) then
@@ -1272,13 +1297,23 @@ program turbogap
                     & this_energies, this_forces, this_local_properties_pt,&
                     & this_local_properties_cart_der_pt,&
                     & local_property_indexes, this_i_beg, this_i_end, this_j_beg, this_j_end, &
-                    & this_virial, n_lp_count)
+                    & this_virial, n_lp_count, soap_turbo_hypers(i)%is_dipole_model, &
+                    & this_local_dipoles, this_energies_dipole)
 
                call soap_backend_end()
 
                ! We can have a pointer to specific parts of this_local_properties array to then
 
+!              A dipole descriptor leaves this_energies and this_forces at the
+!              zero they were set to above -- get_gap_soap never writes them --
+!              so its fictitious energy stays out of energies_soap and its
+!              gradient out of forces_soap. It is carried separately.
                energies_soap = energies_soap + this_energies
+
+               if (soap_turbo_hypers(i)%is_dipole_model) then
+                  local_dipoles = local_dipoles + this_local_dipoles
+                  energies_dipole = energies_dipole + this_energies_dipole
+               end if
 
                if (soap_turbo_hypers(i)%has_local_properties) then
 
@@ -1391,7 +1426,29 @@ program turbogap
 
             call time_end(time%mpi)
          end if
+
+!        Each rank owns a slice of the sites, so its local_dipoles is zero
+!        everywhere else and a plain sum is the whole reduction.
+         if (params%do_dipole) then
+            call time_start(time%mpi)
+            call mpi_reduce(local_dipoles, this_local_dipoles, 3*n_sites,&
+                 & MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+            local_dipoles = this_local_dipoles
+            call mpi_bcast(local_dipoles, 3*n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+
+            call mpi_reduce(energies_dipole, this_energies_dipole, n_sites,&
+                 & MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+            energies_dipole = this_energies_dipole
+            call mpi_bcast(energies_dipole, n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+            call time_end(time%mpi)
+         end if
 #endif
+
+         if (params%do_dipole) then
+            dipole(1) = sum(local_dipoles(1, 1:n_sites))
+            dipole(2) = sum(local_dipoles(2, 1:n_sites))
+            dipole(3) = sum(local_dipoles(3, 1:n_sites))
+         end if
 
          !     Compute vdW energies and forces
 
@@ -2059,7 +2116,8 @@ program turbogap
                     & energies_3b, energies_core_pot, energies_vdw, energies_exp&
                     &, energies_lp, energies_pdf, energies_sf, energies_xrd, energies_nd,&
                     & params%valid_pdf, params%valid_sf, params%valid_xrd, params%valid_nd, params%do_pair_distribution,&
-                    & params%do_structure_factor, params%do_xrd, params%do_nd, string)
+                    & params%do_structure_factor, params%do_xrd, params%do_nd, string,&
+                    & params%do_dipole, dipole, energies_dipole)
 
                call write_extxyz(n_sites, -n_xyz, md_time, time_step,&
                     & instant_temp, instant_pressure, a_box&
@@ -2069,7 +2127,8 @@ program turbogap
                     & energies(1:n_sites), masses, params&
                     &%write_property, params%write_array_property,&
                     & params%write_local_properties, local_property_labels, local_properties, &
-                    & fix_atom, "trajectory_out.xyz", string, .false.)
+                    & fix_atom, "trajectory_out.xyz", string, .false.,&
+                    & params%do_dipole, local_dipoles(1:3, 1:n_sites))
 
 #ifdef _MPIF90
             END IF
@@ -2103,7 +2162,7 @@ program turbogap
                       fix_atom, exit_loop, rebuild_neighbors_list, i_image, i_nested, n_pos, nrows, &
                       filename, string, allelstopdata, ephbeta, ephfdm, ephlsc, time, &
                       cum_eel, gd_box_do_pos, gd_istep, restart_box_optim, &
-                      target_temp, time_step_prev)
+                      target_temp, time_step_prev, dipole, local_dipoles, energies_dipole)
 
       !**************************************************************************
       !   Nested sampling
@@ -3090,6 +3149,8 @@ program turbogap
    if (allocated(positions_diff)) deallocate (positions_diff)
 
    if (allocated(energies)) deallocate (energies)
+   if (allocated(local_dipoles)) deallocate (local_dipoles, this_local_dipoles)
+   if (allocated(energies_dipole)) deallocate (energies_dipole, this_energies_dipole)
    if (allocated(energies_soap)) deallocate (energies_soap)
    if (allocated(energies_2b)) deallocate (energies_2b)
    if (allocated(energies_3b)) deallocate (energies_3b)

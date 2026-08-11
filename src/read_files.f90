@@ -3284,6 +3284,9 @@ contains
                   else if (keyword == "compress_mode") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%compress_mode
+                  else if (keyword == "dipole_model") then
+                     backspace (10)
+                     read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%is_dipole_model
                   else if (keyword == "zeta") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%zeta

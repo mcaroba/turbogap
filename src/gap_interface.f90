@@ -53,7 +53,8 @@ contains
                            energies0, forces0, local_properties0,&
                            & local_properties_cart_der0,&
                            & local_property_indexes, this_i_beg, this_i_end, this_j_beg,&
-                           & this_j_end, virial, lp_index)
+                           & this_j_end, virial, lp_index, is_dipole_model, local_dipoles0, &
+                           & energies_dipole0)
 
       implicit none
 
@@ -98,6 +99,7 @@ contains
       integer, intent(in) :: this_j_beg
       integer, intent(in) :: this_j_end
       integer, intent(in) :: lp_index
+      logical, intent(in) :: is_dipole_model
       logical, intent(in) :: do_timing
       logical, intent(in) :: do_derivatives
       logical, intent(in) :: compress_soap
@@ -123,6 +125,8 @@ contains
       real(dp), intent(inout) :: forces0(:, :)
       real(dp), intent(inout) :: local_properties0(:, :)
       real(dp), intent(inout) :: local_properties_cart_der0(:, :, :)
+      real(dp), intent(inout) :: local_dipoles0(:, :)
+      real(dp), intent(inout) :: energies_dipole0(:)
 
 !   Internal variables
       real(dp), allocatable :: rjs(:)
@@ -133,6 +137,8 @@ contains
       real(dp), allocatable :: soap_temp(:, :)
       real(dp), allocatable :: local_properties(:)
       real(dp), allocatable :: local_properties_cart_der(:, :)
+      real(dp), allocatable :: dipoles(:, :)
+      real(dp), allocatable :: energies_dipole(:)
       real(dp), allocatable :: xyz(:, :)
       real(dp) :: rcut_max
       integer, allocatable :: in_to_out_site(:)
@@ -375,7 +381,31 @@ contains
 !write(*,*) "local_properties time =", time2-time1, "seconds"
       end if
 
-      if (do_prediction) then
+      !###########################################!
+      !###---      Dipole prediction        ---###!
+      !###########################################!
+
+      if (is_dipole_model) then
+!       virial is intent(out) and is otherwise only defined inside
+!       get_soap_energy_and_forces, which is skipped below for a dipole model.
+!       Without this the caller would add an undefined value to virial_soap.
+         virial = 0.d0
+         allocate (dipoles(1:3, 1:n_sites))
+         allocate (energies_dipole(1:n_sites))
+         call get_soap_dipole(soap, soap_cart_der, delta, zeta, n_neigh, do_timing, &
+                              dipoles, energies_dipole)
+         do i = 1, n_sites
+            i2 = in_to_out_site(i)
+            local_dipoles0(1:3, i2) = local_dipoles0(1:3, i2) + dipoles(1:3, i)
+            energies_dipole0(i2) = energies_dipole0(i2) + energies_dipole(i)
+         end do
+         deallocate (dipoles, energies_dipole)
+      end if
+
+!   A dipole model's energy is a fitting artefact, not a physical energy, so it
+!   must not reach energies_soap/forces_soap. Everything above still ran: the
+!   descriptor and its derivatives are what the dipole was built from.
+      if (do_prediction .and. .not. is_dipole_model) then
 !     Get energies and forces
          allocate (energies(1:n_sites))
          energies = 0.d0
@@ -428,10 +458,12 @@ contains
          end do
       end if
 
-      if (do_prediction) then
+!   Guarded on allocation rather than on do_prediction/do_forces: a dipole model
+!   skips the block that allocates these.
+      if (allocated(energies)) then
          deallocate (energies)
       end if
-      if (do_forces) then
+      if (allocated(forces)) then
          deallocate (forces)
       end if
 

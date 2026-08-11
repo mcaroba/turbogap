@@ -134,6 +134,11 @@ module types
       logical :: has_charges = .false.
       logical :: has_core_electron_be = .false.
       logical :: has_local_properties = .false.
+!     A dipole model is a GAP whose "energy" is a fictitious scalar fitted so that
+!     mu_i = dE_i/dr_i (the derivative w.r.t. the central atom's *own* position)
+!     reproduces the local dipole. Such a descriptor contributes to mu only: its
+!     energy, forces and virial are meaningless and are not accumulated.
+      logical :: is_dipole_model = .false.
       type(local_property_soap_turbo), allocatable :: local_property_models(:)
    end type soap_turbo
 
@@ -362,6 +367,9 @@ module types
       logical :: do_forces = .false.
       logical :: do_derivatives = .false.
       logical :: do_derivatives_fd = .false.
+!     Set from the .gap file, not the input file: true when at least one
+!     soap_turbo descriptor is flagged dipole_model
+      logical :: do_dipole = .false.
       logical :: write_soap = .false.
       logical :: write_derivatives = .false.
       logical :: do_timing = .false.

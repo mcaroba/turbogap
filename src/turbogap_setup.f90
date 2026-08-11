@@ -245,6 +245,21 @@ contains
                                  n_core_pot, core_pot_hypers, &
                                  rcut_max, params%do_prediction, &
                                  params)
+
+            !   A dipole model is evaluated from d(soap_i)/d(r_i), so it needs the
+            !   SOAP Cartesian derivatives whether or not forces were asked for.
+            !   Turning do_derivatives on here rather than making the user remember
+            !   it is the difference between a correct answer and a silent zero.
+            params%do_dipole = any(soap_turbo_hypers(1:n_soap_turbo)%is_dipole_model)
+            if (params%do_dipole .and. .not. params%do_derivatives) then
+               params%do_derivatives = .true.
+               write (*, *) '                                       |'
+               write (*, *) 'NOTE: a dipole model is present, so    |'
+               write (*, *) 'do_derivatives has been switched on.   |'
+               write (*, *) '                                       |'
+               write (*, *) '.......................................|'
+            end if
+
             !   Check if vdw_rcut is bigger
             if (params%vdw_rcut > rcut_max) then
                rcut_max = params%vdw_rcut
@@ -306,6 +321,11 @@ contains
          call mpi_bcast(valid_vdw, 1,&
               & MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
          call mpi_bcast(valid_estat_charges, 1,&
+              & MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+         !   Both of these are decided from the .gap file, which only rank 0 reads
+         call mpi_bcast(params%do_dipole, 1,&
+              & MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+         call mpi_bcast(params%do_derivatives, 1,&
               & MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
 
          !   Processes other than 0 need to allocate the data structures on their own
@@ -456,6 +476,7 @@ contains
                call mpi_bcast(soap_turbo_hypers(i)%compress_P_i(1:cPnz), cPnz, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
                call mpi_bcast(soap_turbo_hypers(i)%compress_P_j(1:cPnz), cPnz, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
             end if
+            call mpi_bcast(soap_turbo_hypers(i)%is_dipole_model, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
             call mpi_bcast(soap_turbo_hypers(i)%has_local_properties, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
             call mpi_bcast(soap_turbo_hypers(i)%has_core_electron_be, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
             if (valid_xps .or. params%do_xps) call mpi_bcast(core_be_lp_index, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)

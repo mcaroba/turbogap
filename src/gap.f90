@@ -258,6 +258,145 @@ contains
 
    end subroutine
 
+   subroutine get_soap_dipole(soap, soap_cart_der, delta, zeta0, n_neigh, do_timing, dipoles, energies)
+!   **********************************************
+!   Local dipoles from a dipole GAP.
+!
+!   The model is a GAP whose local "energy" E_i is a fictitious scalar, fitted so
+!   that its derivative with respect to the central atom's OWN position is the
+!   local dipole:
+!
+!       mu_i = dE_i/dr_i   and   mu = sum_i mu_i
+!
+!   This is the same quantity get_soap_energy_and_forces already contracts, with
+!   two differences: the sign (mu is a gradient, not a force, so the prefactor is
+!   +zeta*delta**2 rather than -zeta*delta**2), and the fact that only the SELF
+!   pair of each site is wanted rather than the scatter over all its neighbors.
+!   soap_turbo builds that self pair as -sum_{j/=1} of the neighbor terms, which
+!   is exactly d(soap_i)/d(r_i), and the neighbor list puts it first for every
+!   site (see build_neighbors_list).
+!
+!   E_i itself is returned too, because the kernel matrix it needs has already
+!   been formed here. It is a fitting artefact with no physical meaning: it is
+!   reported as energy_dipole and must never be added to the total energy, and
+!   its gradient must never be added to the forces.
+!
+!   soap(1:n_soap, 1:n_sites), dipoles(1:3, 1:n_sites)
+!   **********************************************
+
+      implicit none
+
+      real(dp), intent(in) :: soap(:, :)
+      real(dp), intent(in) :: soap_cart_der(:, :, :)
+      real(dp), intent(in) :: delta
+      real(dp), intent(in) :: zeta0
+      integer, intent(in) :: n_neigh(:)
+      logical, intent(in) :: do_timing
+      real(dp), intent(out) :: dipoles(:, :)
+      real(dp), intent(out) :: energies(:)
+      real(dp), allocatable :: kernels(:, :)
+      real(dp), allocatable :: kernels_copy(:, :)
+      real(dp), allocatable :: kernels_der(:, :)
+      real(dp), allocatable :: Qss(:, :)
+      real(dp), allocatable :: Qs_copy(:, :)
+      real(dp) :: time1
+      real(dp) :: time2
+      real(dp) :: zeta
+      integer :: n_sites
+      integer :: n_sparse
+      integer :: n_soap
+      integer :: i
+      integer :: k
+      integer :: l
+      integer :: zeta_int
+      logical :: is_zeta_int = .false.
+
+      if (do_timing) then
+         call cpu_time(time1)
+      end if
+
+      if (dabs(zeta0 - dfloat(int(zeta0))) < 1.d-5) then
+         is_zeta_int = .true.
+         zeta_int = int(zeta0)
+         zeta = dfloat(zeta_int)
+      else
+         zeta = zeta0
+      end if
+
+      n_sparse = size(alphas)
+      n_soap = size(soap, 1)
+      n_sites = size(soap, 2)
+
+      dipoles = 0.d0
+      energies = 0.d0
+      if (n_sites == 0) then
+         return
+      end if
+
+      allocate (kernels(1:n_sites, 1:n_sparse))
+      kernels = 0.d0
+      call dgemm("t", "n", n_sites, n_sparse, n_soap, 1.d0, soap, n_soap, Qs, n_soap, 0.d0, &
+                 kernels, n_sites)
+
+!   The fictitious energy, taken before the alphas are folded into kernels_der
+!   below. No e0: a dipole model has no reference energy to speak of.
+      allocate (kernels_copy(1:n_sites, 1:n_sparse))
+      if (is_zeta_int) then
+         kernels_copy = kernels**zeta_int
+      else
+         kernels_copy = kernels**zeta
+      end if
+      energies = delta**2*matmul(kernels_copy, alphas)
+      deallocate (kernels_copy)
+
+      allocate (kernels_der(1:n_sites, 1:n_sparse))
+      allocate (Qss(1:n_sites, 1:n_soap))
+      Qss = 0.d0
+      allocate (Qs_copy(1:n_soap, 1:n_sparse))
+      Qs_copy = Qs
+
+      if (is_zeta_int) then
+         kernels_der = kernels**(zeta_int - 1)
+      else
+         kernels_der = kernels**(zeta - 1.d0)
+      end if
+!   Fold the alphas into whichever of the two factors is cheaper, exactly as
+!   get_soap_energy_and_forces does
+      if (n_sites < n_soap) then
+         do i = 1, n_sites
+            kernels_der(i, :) = kernels_der(i, :)*alphas(:)
+         end do
+      else
+         do i = 1, n_soap
+            Qs_copy(i, :) = Qs(i, :)*alphas(:)
+         end do
+      end if
+
+      call dgemm("n", "t", n_sites, n_soap, n_sparse, zeta*delta**2, kernels_der, n_sites, &
+                 Qs_copy, n_soap, 0.d0, Qss, n_sites)
+
+      l = 0
+      do i = 1, n_sites
+!       j = 1 is the central atom itself, so soap_cart_der(:,:,l) here is
+!       d(soap_i)/d(r_i). The remaining n_neigh(i)-1 pairs are skipped.
+         l = l + 1
+         do k = 1, 3
+            dipoles(k, i) = dot_product(Qss(i, 1:n_soap), soap_cart_der(k, :, l))
+         end do
+         l = l + n_neigh(i) - 1
+      end do
+
+      deallocate (kernels, kernels_der, Qs_copy, Qss)
+
+      if (do_timing) then
+         call cpu_time(time2)
+         write (*, *) '                                       |'
+         write (*, '(A, F7.3, A)') '  *) Dipole prediction: ', time2 - time1, ' seconds |'
+         write (*, *) '.......................................|'
+      end if
+
+   end subroutine
+
    subroutine get_2b_energy_and_forces(rjs, xyz, alphas, cutoff, rcut, buffer, delta, sigma, e0, Qs, &
                                        n_neigh, do_forces, do_timing, species, neighbor_species, &
                                        species1, species2, species_types, energies, forces, virial)
