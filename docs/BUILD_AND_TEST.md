@@ -11,6 +11,18 @@ export G=/u/74/zarrout1/unix/work/cpu_vs_gpu_tests/turbogap_gpu_commit_mahti
 
 ## 0. Once per clone
 
+`src/soap_turbo` is a git submodule and the tree does not compile without it,
+so a fresh clone needs `--recursive` (or `git submodule update --init` after
+the fact). It points at `TiganyZ/soap_turbo`, branch `cleanup`: every module
+there declares its kind parameters `private`, which is what keeps `dp` from
+being handed on to the TurboGAP files that already have one from
+`src/kinds.f90`. The `master` branch of the same fork takes them from a shared
+`mod_types` instead, and re-exports them -- that combination does not build.
+
+A clean build that dies on `Cannot open module file 'mod_types.mod'` means the
+submodule has moved off its recorded commit. Check `git status` for
+`M src/soap_turbo` before suspecting the Makefile.
+
 ```sh
 tools/setup_dev_env.sh                 # venv + pinned fprettify + git hook
 export PATH="$HOME/.venvs/turbogap-tools/bin:$PATH"
