@@ -113,6 +113,10 @@ Simple tutorials can be found in the [TurboGAP Tutorials](https://github.com/Tig
 
 The data for tests can be by cloning the [TurboGAP Tests](https://github.com/TiganyZ/turbogap_tests). One can clone the repository `git clone https://github.com/TiganyZ/turbogap_tests.git` in the directory where the TurboGAP repo is stored and execute the regression tests.
 
+## Developing TurboGAP
+
+To develop for TurboGAP, one can install the development tools python environment (which has fprettify and pre-commit and so on which is installed through uv) such that formatting is preserved. Make a new branch or fork and then once ready submit a pull request. Please add tests for your new feature in the ` tests/` folder such that the CI interface can test upon pushing.
+
 ## Attribution
 
 When using **TurboGAP**, you should give attribution to the
