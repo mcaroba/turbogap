@@ -382,9 +382,46 @@ __device__ void eval_energies_d(const double rcut, const double buffer, const in
 // -- whatever the register count, and the uncapped kernel already reaches 14
 // blocks. The same sweep on an RTX A2000 measured 40.9 s uncapped against
 // 41.0 / 41.1 / 41.3 s at 96 / 80 / 64: no gain, then a slow loss to the
-// spills. Ampere needs the register cap AND more than one warp per block, and
-// neither alone does anything -- which is also why the earlier
-// warps-per-block experiment, run at 146 registers, found nothing.
+// spills.
+//
+// MORE WARPS PER BLOCK DOES NOT RESCUE AMPERE EITHER, and this has now been
+// measured rather than argued. The reasoning that says it should is sound as
+// far as it goes: Ampere's ceiling is 16 BLOCKS per SM, so at one warp per
+// block the occupancy cannot exceed 33% however few registers are used, and
+// putting several warps in a block raises that ceiling while the register cap
+// lets more blocks fit under it. The kernel was restructured to one site per
+// WARP instead of per block -- per-warp shared-memory slices, __syncwarp() in
+// place of __syncthreads(), lane indices in place of thread indices -- and the
+// whole grid swept on an RTX A2000, 124,959 atoms, 3b phase, two runs each:
+//
+//   warps/blk  cap   regs  spill   occupancy   3b phase
+//       1      none   146    0 B      29%       8.647 s   <- what ships
+//       1      none   146    0 B      29%       8.742 s   (restructured, W=1)
+//       1       96     96   84 B      33%       8.763 s
+//       1       80     80  112 B      33%       8.887 s
+//       1       64     64  220 B      33%       8.918 s
+//       2       80     80  228 B      50%       8.916 s
+//       4       80     80  228 B      50%       8.983 s
+//       4       64     64  316 B      66%       9.444 s
+//       8       64     64  316 B      66%       9.492 s
+//       8       48     48  500 B      83%      10.403 s
+//
+// Occupancy rose 2.9x and the kernel got 20% SLOWER, monotonically, tracking
+// the spill column almost exactly. So the 146 registers are not waste to be
+// squeezed out: they are the live values of a deeply nested arithmetic loop,
+// and on Ampere every one taken away costs a local-memory round trip in the
+// innermost loop that more resident warps do not pay for. The kernel is not
+// occupancy-limited here in any way that occupancy can fix.
+//
+// Hopper differs because spilling is cheap there -- 2x the L1/shared per SM and
+// far more L2 bandwidth -- so at cap 80 it spills 112 B and still wins 29%.
+//
+// That is three independent attempts at this idea now (a warps-per-block
+// rewrite at 146 registers, the register cap alone, and the two together).
+// Do not spend a fourth without new evidence about WHERE the kernel stalls;
+// the launch geometry is not it. The restructure patch, which is correct and
+// passes the suite, is kept out of tree deliberately: at W=1 it costs ~1%
+// against this code for no configuration in which it wins.
 //
 // Set it per architecture, in the architecture makefile, e.g.
 //     CC += -DTG_3B_MAXNREG=80
