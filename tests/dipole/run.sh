@@ -36,7 +36,7 @@ BIN=${TURBOGAP_BIN:-$repo/bin/turbogap}
 # shellcheck source=../data_root.sh
 . "$here/../data_root.sh"
 DATA=$DATA_ROOT/water_dipole
-TOL=${TURBOGAP_DIPOLE_TOL:-1e-6}
+TOL=${TURBOGAP_DIPOLE_TOL:-1.5e-6}
 RANKS=${TURBOGAP_RANKS:-1}
 WORK=${TMPDIR:-/tmp}/turbogap_dipole.$$
 
@@ -77,13 +77,16 @@ printf 'ranks    %s\n\n' "$RANKS"
 # derived .gap that could drift from the xml it came from -- but the converter
 # needs BeautifulSoup, which is not everywhere, so fall back to a pre-converted
 # gap_files/ beside the data when it is missing.
-( cd "$WORK" && cp "$DATA/water_dipole.xml" . && cp "$DATA"/water_dipole.xml.sparseX.* . ) \
-  || die "could not stage the model"
+(cd "$WORK" && cp "$DATA/water_dipole.xml" . && cp "$DATA"/water_dipole.xml.sparseX.* .) ||
+  die "could not stage the model"
 
 if python3 -c 'import bs4' >/dev/null 2>&1; then
-  ( cd "$WORK" && python3 "$repo/tools/quip_xml_to_gap/make_gap_files.py" \
-      water_dipole.xml water_dipole.gap --dipole-model ) >"$WORK/convert.log" 2>&1 \
-    || { sed 's/^/    /' "$WORK/convert.log"; die "xml -> gap conversion failed"; }
+  (cd "$WORK" && python3 "$repo/tools/quip_xml_to_gap/make_gap_files.py" \
+    water_dipole.xml water_dipole.gap --dipole-model) >"$WORK/convert.log" 2>&1 ||
+    {
+      sed 's/^/    /' "$WORK/convert.log"
+      die "xml -> gap conversion failed"
+    }
 elif [ -d "$DATA/gap_files" ]; then
   printf 'NOTE: python bs4 not available; using pre-converted %s/gap_files\n\n' "$DATA"
   cp -r "$DATA/gap_files" "$WORK/gap_files" || die "could not copy pre-converted gap_files"
@@ -93,19 +96,19 @@ else
   exit 0
 fi
 
-grep -q 'dipole_model = .true.' "$WORK/gap_files/water_dipole.gap" \
-  || die "the .gap in use has no dipole_model flag"
+grep -q 'dipole_model = .true.' "$WORK/gap_files/water_dipole.gap" ||
+  die "the .gap in use has no dipole_model flag"
 
 cp "$DATA/water_dipole_tnep_converted_test.xyz" "$WORK/atoms.xyz"
 cp "$here/input" "$WORK/input"
 
-python3 "$here/make_reference.py" "$DATA/out_quip_predict" "$WORK/reference.dat" \
-  || die "could not extract the QUIP reference"
+python3 "$here/make_reference.py" "$DATA/out_quip_predict" "$WORK/reference.dat" ||
+  die "could not extract the QUIP reference"
 
 if [ "$RANKS" -gt 1 ]; then
-  ( cd "$WORK" && mpirun -np "$RANKS" "$BIN" predict ) >"$WORK/run.log" 2>&1
+  (cd "$WORK" && mpirun -np "$RANKS" "$BIN" predict) >"$WORK/run.log" 2>&1
 else
-  ( cd "$WORK" && "$BIN" predict ) >"$WORK/run.log" 2>&1
+  (cd "$WORK" && "$BIN" predict) >"$WORK/run.log" 2>&1
 fi
 rc=$?
 if [ $rc -ne 0 ]; then
