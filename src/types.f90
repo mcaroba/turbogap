@@ -499,6 +499,12 @@ module types
       real(dp), allocatable :: forces_prev(:, :)
       real(dp), allocatable :: energies(:)
       real(dp), allocatable :: local_properties(:, :)
+!     Dipole model output. It travels with the image because MC accepts or
+!     rejects whole configurations, and a rejected move must not leave the
+!     dipole of the configuration that was thrown away.
+      real(dp), allocatable :: local_dipoles(:, :)
+      real(dp), allocatable :: energies_dipole(:)
+      real(dp) :: dipole(1:3) = 0.d0
       real(dp) :: a_box(1:3)
       real(dp) :: b_box(1:3)
       real(dp) :: c_box(1:3)
@@ -576,7 +582,8 @@ contains
    subroutine from_properties_to_image(this_image, positions, velocities, masses, &
                                        forces, a_box, b_box, c_box, energy, energies, energy_exp, e_kin, &
                                        species, species_supercell, n_sites, indices, fix_atom, &
-                                       xyz_species, xyz_species_supercell, local_properties)
+                                       xyz_species, xyz_species_supercell, local_properties, &
+                                       local_dipoles, energies_dipole, dipole)
       implicit none
 
 !   Input variables
@@ -592,6 +599,9 @@ contains
       real(dp), intent(in) :: e_kin
       real(dp), intent(in) :: energy_exp
       real(dp), allocatable, intent(in) :: local_properties(:, :)
+      real(dp), allocatable, intent(in), optional :: local_dipoles(:, :)
+      real(dp), allocatable, intent(in), optional :: energies_dipole(:)
+      real(dp), intent(in), optional :: dipole(1:3)
       integer, intent(in) :: species(:)
       integer, intent(in) :: species_supercell(:)
       integer, intent(in) :: n_sites
@@ -679,6 +689,26 @@ contains
          this_image%local_properties = local_properties
       end if
 
+      if (present(local_dipoles)) then
+         if (allocated(local_dipoles)) then
+            n = size(local_dipoles, 2)
+            if (allocated(this_image%local_dipoles)) deallocate (this_image%local_dipoles)
+            allocate (this_image%local_dipoles(1:3, 1:n))
+            this_image%local_dipoles = local_dipoles
+         end if
+      end if
+
+      if (present(energies_dipole)) then
+         if (allocated(energies_dipole)) then
+            n = size(energies_dipole, 1)
+            if (allocated(this_image%energies_dipole)) deallocate (this_image%energies_dipole)
+            allocate (this_image%energies_dipole(1:n))
+            this_image%energies_dipole = energies_dipole
+         end if
+      end if
+
+      if (present(dipole)) this_image%dipole = dipole
+
    end subroutine
 !**************************************************************************
 
@@ -686,7 +716,8 @@ contains
    subroutine from_image_to_properties(this_image, positions, velocities, masses, &
                                        forces, a_box, b_box, c_box, energy, energies, energy_exp, e_kin, &
                                        species, species_supercell, n_sites, indices, fix_atom, &
-                                       xyz_species, xyz_species_supercell, local_properties)
+                                       xyz_species, xyz_species_supercell, local_properties, &
+                                       local_dipoles, energies_dipole, dipole)
       implicit none
 
 !   Input variables
@@ -698,6 +729,9 @@ contains
       real(dp), allocatable, intent(out) :: forces(:, :)
       real(dp), allocatable, intent(out) :: energies(:)
       real(dp), allocatable, intent(out) :: local_properties(:, :)
+      real(dp), allocatable, intent(out), optional :: local_dipoles(:, :)
+      real(dp), allocatable, intent(out), optional :: energies_dipole(:)
+      real(dp), intent(out), optional :: dipole(1:3)
       real(dp), intent(out) :: a_box(1:3)
       real(dp), intent(out) :: b_box(1:3)
       real(dp), intent(out) :: c_box(1:3)
@@ -777,6 +811,24 @@ contains
          allocate (local_properties(1:n, 1:n2))
          local_properties = this_image%local_properties
       end if
+
+      if (present(local_dipoles)) then
+         if (allocated(this_image%local_dipoles)) then
+            n = size(this_image%local_dipoles, 2)
+            allocate (local_dipoles(1:3, 1:n))
+            local_dipoles = this_image%local_dipoles
+         end if
+      end if
+
+      if (present(energies_dipole)) then
+         if (allocated(this_image%energies_dipole)) then
+            n = size(this_image%energies_dipole, 1)
+            allocate (energies_dipole(1:n))
+            energies_dipole = this_image%energies_dipole
+         end if
+      end if
+
+      if (present(dipole)) dipole = this_image%dipole
 
    end subroutine
 !**************************************************************************

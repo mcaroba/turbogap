@@ -2186,7 +2186,8 @@ program turbogap
          call from_properties_to_image(images(i_image), positions, velocities, masses, &
                                        forces, a_box, b_box, c_box, energy, energies, energy_exp, E_kinetic, &
                                        species, species_supercell, n_sites, indices, fix_atom, &
-                                       xyz_species, xyz_species_supercell, local_properties)
+                                       xyz_species, xyz_species_supercell, local_properties, &
+                                       local_dipoles, energies_dipole, dipole)
       end if
 
       !   This handles the nested sampling iterations after all images have
@@ -2219,7 +2220,8 @@ program turbogap
                call from_properties_to_image(images(i_image), positions, velocities, masses, &
                                              forces, a_box, b_box, c_box, energy, energies, energy_exp, E_kinetic, &
                                              species, species_supercell, n_sites, indices, fix_atom, &
-                                             xyz_species, xyz_species_supercell, local_properties)
+                                             xyz_species, xyz_species_supercell, local_properties, &
+                                             local_dipoles, energies_dipole, dipole)
             end if
          end if
          !     This selects the highest energy image from the pool
@@ -2260,7 +2262,8 @@ program turbogap
             call from_image_to_properties(images(i), positions, velocities, masses, &
                                           forces, a_box, b_box, c_box, energy, energies, energy_exp, E_kinetic, &
                                           species, species_supercell, n_sites, indices, fix_atom, &
-                                          xyz_species, xyz_species_supercell, local_properties)
+                                          xyz_species, xyz_species_supercell, local_properties, &
+                                          local_dipoles, energies_dipole, dipole)
             v_uc = dot_product(cross_product(images(i)%a_box, images(i)%b_box), images(i)%c_box)/ &
                    (dfloat(images(i)%indices(1)*images(i)%indices(2)*images(i)%indices(3)))
             !       This only gets triggered if we are doing box rescaling, i.e., if the target nested sampling pressure (*not* the
@@ -2347,7 +2350,8 @@ program turbogap
                   call from_properties_to_image(images(i_trial_image), positions, velocities, masses, &
                                                 forces, a_box, b_box, c_box, energy, energies, energy_exp, E_kinetic, &
                                                 species, species_supercell, n_sites, indices, fix_atom, &
-                                                xyz_species, xyz_species_supercell, local_properties)
+                                                xyz_species, xyz_species_supercell, local_properties, &
+                                                local_dipoles, energies_dipole, dipole)
 
                   if (params%verb > 50) write (*, *) '.......................................|'
                   if (params%verb > 50) write (*, '(A,1X,I0)') ' MC Iteration:', mc_istep
@@ -2498,7 +2502,9 @@ program turbogap
                           & params%valid_xrd, params%valid_nd,&
                           & params%do_pair_distribution, params&
                           &%do_structure_factor, params%do_xrd,&
-                          & params%do_nd, string)
+                          & params%do_nd, string, params%do_dipole,&
+                          & images(i_current_image)%dipole,&
+                          & images(i_current_image)%energies_dipole)
 
                      call write_extxyz(images(i_current_image)%n_sites, 0, 1.0d0, 0.d0, instant_temp, instant_pressure, &
                           images(i_current_image)%a_box/dfloat(indices(1)), &
@@ -2516,7 +2522,9 @@ program turbogap
                           & local_property_labels,&
                           & images(i_current_image)%local_properties&
                           &, images(i_current_image)%fix_atom,&
-                          & "mc_current.xyz", string, .true.)
+                          & "mc_current.xyz", string, .true., &
+                          & params%do_dipole,&
+                          & images(i_current_image)%local_dipoles)
 
                      call write_extxyz(images(i_current_image)%n_sites, 1, 1.0d0, 0.d0, instant_temp, instant_pressure, &
                           images(i_current_image)%a_box/dfloat(indices(1)), &
@@ -2534,7 +2542,9 @@ program turbogap
                           & local_property_labels,&
                           & images(i_current_image)%local_properties,&
                           & images(i_current_image)%fix_atom,&
-                          & "mc_all.xyz", string, .false.)
+                          & "mc_all.xyz", string, .false., &
+                          & params%do_dipole,&
+                          & images(i_current_image)%local_dipoles)
 
                   end if
 
@@ -2648,7 +2658,8 @@ program turbogap
                   call from_properties_to_image(images(i_current_image), positions, velocities, masses, &
                                                 forces, a_box, b_box, c_box, energy, energies, energy_exp, E_kinetic, &
                                                 species, species_supercell, n_sites, indices, fix_atom, &
-                                                xyz_species, xyz_species_supercell, local_properties)
+                                                xyz_species, xyz_species_supercell, local_properties, &
+                                                local_dipoles, energies_dipole, dipole)
 
                   instant_temp = 2.d0/3.d0/dfloat(n_sites - 1)/kB*E_kinetic
                   instant_pressure = (kB*dfloat(n_sites - 1)*instant_temp&
@@ -2666,7 +2677,9 @@ program turbogap
                           & energies_3b, energies_core_pot, energies_vdw, energies_exp&
                           &, energies_lp, energies_pdf, energies_sf, energies_xrd, energies_nd,&
                           & params%valid_pdf, params%valid_sf, params%valid_xrd, params%valid_nd, params%do_pair_distribution,&
-                          & params%do_structure_factor, params%do_xrd, params%do_nd, string)
+                          & params%do_structure_factor, params%do_xrd, params%do_nd, string,&
+                          & params%do_dipole, images(i_current_image)%dipole,&
+                          & images(i_current_image)%energies_dipole)
 
                      call write_extxyz(images(i_current_image)%n_sites, 0, 1.0d0, 0.0d0, instant_temp, instant_pressure, &
                           images(i_current_image)%a_box/dfloat(indices(1)), &
@@ -2683,7 +2696,9 @@ program turbogap
                           &%write_local_properties,&
                           & local_property_labels, images(i_current_image)%local_properties&
                           &, images(i_current_image)%fix_atom,&
-                          & "mc_current.xyz", string, .true.)
+                          & "mc_current.xyz", string, .true., &
+                          & params%do_dipole,&
+                          & images(i_current_image)%local_dipoles)
 
                      call write_extxyz(images(i_current_image)%n_sites, 1, 1.0d0, 0.0d0, instant_temp, instant_pressure, &
                           images(i_current_image)%a_box/dfloat(indices(1)), &
@@ -2700,7 +2715,9 @@ program turbogap
                           &%write_local_properties,&
                           & local_property_labels, images(i_current_image)%local_properties&
                           &, images(i_current_image)%fix_atom,&
-                          & "mc_all.xyz", string, .true.)
+                          & "mc_all.xyz", string, .true., &
+                          & params%do_dipole,&
+                          & images(i_current_image)%local_dipoles)
 
                      v_uc_prev = dot_product(cross_product(a_box, b_box), c_box)/(dfloat(indices(1)*indices(2)*indices(3)))
                      if (params%accessible_volume) then
@@ -2716,7 +2733,8 @@ program turbogap
                call from_image_to_properties(images(i_current_image), positions, velocities, masses, &
                                              forces, a_box, b_box, c_box, energy, energies, energy_exp, E_kinetic, &
                                              species, species_supercell, n_sites, indices, fix_atom, &
-                                             xyz_species, xyz_species_supercell, local_properties)
+                                             xyz_species, xyz_species_supercell, local_properties, &
+                                             local_dipoles, energies_dipole, dipole)
 
                call perform_mc_step(&
                     & positions, species, xyz_species, masses, fix_atom,&

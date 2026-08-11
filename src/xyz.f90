@@ -145,9 +145,13 @@ contains
       if (present(do_dipole)) my_do_dipole = do_dipole
 
       if (my_do_dipole) then
+!        The dummy is allocatable, so an unallocated actual arrives present but
+!        unusable -- an MC image stored before any dipole was computed.
          if (present(energies_dipole)) then
-            write (temp_string, "(F16.8)") sum(energies_dipole)
-            write (string, "(A)") adjustl(trim(string))//" energy_dipole="//trim(adjustl(temp_string))
+            if (allocated(energies_dipole)) then
+               write (temp_string, "(F16.8)") sum(energies_dipole)
+               write (string, "(A)") adjustl(trim(string))//" energy_dipole="//trim(adjustl(temp_string))
+            end if
          end if
          if (present(dipole)) then
             write (dipole_string(1), "(F16.8)") dipole(1)
