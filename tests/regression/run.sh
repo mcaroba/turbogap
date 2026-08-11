@@ -98,6 +98,14 @@ stage() {
     ln -sf "$DATA_ROOT/$DATA/$src" "$dir/$dst"
   done
   cp "$here/cases/$name/input" "$dir/input"
+  # Pin the SOAP batch split. gpu_memory_budget_init sizes
+  # max_Gbytes_per_process from the node's memory, and the batch count it
+  # produces changes the order the per-batch force contributions are summed --
+  # so without this the stored references would only reproduce on a machine
+  # with the same amount of RAM. 1.0 is the historical default the baselines
+  # were recorded with. Pinned here rather than in each cases/*/input because
+  # it is a property of comparing against stored text, not of any one case.
+  printf '\nmax_Gbytes_per_process = 1.0\n' >>"$dir/input"
   printf '%s' "$dir"
 }
 

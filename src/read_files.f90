@@ -1182,6 +1182,17 @@ contains
       else if (keyword == 'max_gbytes_per_process') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%max_Gbytes_per_process
+         call check_iostatus(iostatus, keyword)
+!       Remember that the input named it, so gpu_memory_budget_init leaves it
+!       alone. Someone who sets this keyword has a reason the node's memory
+!       cannot know about.
+         params%max_Gbytes_set = .true.
+         if (rank == 0) call print_parameter("max_Gbytes_per_process", params%max_Gbytes_per_process)
+      else if (keyword == 'mem_fraction') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%mem_fraction
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("mem_fraction", params%mem_fraction)
       else if (keyword == 'neighbors_buffer') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%neighbors_buffer

@@ -1,6 +1,6 @@
 # The TurboGAP code
 
-**TurboGAP** (c) 2018-2023 by **Miguel A. Caro** and others (see "contributors" below
+**TurboGAP** (c) 2018-2026 by **Miguel A. Caro** and others (see "contributors" below
 for detailed authorship info).
 
 [www.turbogap.fi](http://www.turbogap.fi)

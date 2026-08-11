@@ -31,6 +31,12 @@ module neighbors
 
    use soap_turbo_functions
 
+!  Headroom on top of soap_batch_memory_model. The terms there are the
+!  allocations that scale with the batch; this covers what does not appear in
+!  them, and allocator behaviour. Raising it costs batches; lowering it costs
+!  the run.
+   real(dp), parameter :: SOAP_BATCH_SAFETY = 1.10d0
+
 contains
 
 !**************************************************************************
@@ -600,7 +606,66 @@ contains
 !**************************************************************************
 
 !**************************************************************************
-   subroutine get_number_of_atom_pairs(n_neigh, rjs, rcut, l_max, n_max, max_Gbytes_per_process, &
+!  What one atom pair and one site cost the SOAP descriptor path, in bytes.
+!
+!  Every term is one allocation in get_soap (src/soap_turbo/src/) or in
+!  get_gap_soap (src/gap_interface.f90), with do_derivatives on. Element sizes:
+!  complex(dp) 16, real(dp) 8, integer 4, logical 4.
+!
+!  PER PAIR
+!    48*k_max*n_max   cnk_rad_der, cnk_azi_der, cnk_pol_der
+!    64*k_max         angular_exp_coeff and its rad/azi/pol derivatives
+!    48*n_soap        soap_rad_der, soap_azi_der, soap_pol_der, soap_cart_der
+!    16*n_max         radial_exp_coeff, radial_exp_coeff_der
+!     4*n_species     mask
+!    56               rjs, thetas, phis, xyz, neighbors_list, in_to_out_pairs
+!
+!  PER SITE
+!    16*k_max*n_max   cnk
+!     8*n_soap        soap
+!    16               sqrt_dot_p, n_neigh, species_multiplicity
+!
+!  These numbers are this branch's, and differ from the GPU branch's for a
+!  reason worth stating: there, get_derivatives is never called, so the
+!  coefficient and derivative arrays are dummies and the real allocations are on
+!  the device. Here they are live host arrays. The two branches enumerate what
+!  they each allocate; the coefficients must not be copied between them.
+!
+!  Per-site is not a rounding correction. cnk is the same order as the per-pair
+!  total divided by the neighbour count, and it decides the answer for a short
+!  cutoff, where there are few pairs per site.
+   subroutine soap_batch_memory_model(l_max, n_max, n_soap, n_species, &
+                                      bytes_per_pair, bytes_per_site)
+      implicit none
+
+      integer, intent(in) :: l_max
+      integer, intent(in) :: n_max
+      integer, intent(in) :: n_soap
+      integer, intent(in) :: n_species
+      real(dp), intent(out) :: bytes_per_pair
+      real(dp), intent(out) :: bytes_per_site
+
+      integer :: k_max
+
+      k_max = 1 + l_max*(l_max + 1)/2 + l_max
+
+      bytes_per_pair = 48.d0*dfloat(k_max)*dfloat(n_max) &
+                       + 64.d0*dfloat(k_max) &
+                       + 48.d0*dfloat(n_soap) &
+                       + 16.d0*dfloat(n_max) &
+                       + 4.d0*dfloat(n_species) &
+                       + 56.d0
+
+      bytes_per_site = 16.d0*dfloat(k_max)*dfloat(n_max) &
+                       + 8.d0*dfloat(n_soap) &
+                       + 16.d0
+
+   end subroutine soap_batch_memory_model
+!**************************************************************************
+
+!**************************************************************************
+   subroutine get_number_of_atom_pairs(n_neigh, rjs, rcut, l_max, n_max, n_soap, n_species, &
+                                       max_Gbytes_per_process, &
                                        i_beg_list, i_end_list, j_beg_list, j_end_list)
 
       implicit none
@@ -612,6 +677,8 @@ contains
       integer, intent(in) :: n_neigh(:)
       integer, intent(in) :: l_max
       integer, intent(in) :: n_max
+      integer, intent(in) :: n_soap
+      integer, intent(in) :: n_species
 
 !   Output variables
       integer, allocatable, intent(out) :: i_beg_list(:)
@@ -621,6 +688,8 @@ contains
 
 !   Internal variables
       real(dp) :: estimated_memory_in_Gbytes
+      real(dp) :: bytes_per_pair
+      real(dp) :: bytes_per_site
       real(dp) :: mem_ratio
       real(dp) :: pairs_per_chunk
       integer :: n_sites
@@ -649,8 +718,12 @@ contains
       end do
 
       k_max = 1 + l_max*(l_max + 1)/2 + l_max
-!   This is a conservative estimate of the maximum memory that this run will need
-      estimated_memory_in_Gbytes = dfloat(n_atom_pairs_in)*dfloat(n_max)*dfloat(k_max)*150.d0/1024.d0**3
+!   What the descriptor path will actually allocate for these pairs and sites,
+!   enumerated in soap_batch_memory_model rather than folded into one constant.
+      call soap_batch_memory_model(l_max, n_max, n_soap, n_species, bytes_per_pair, bytes_per_site)
+      estimated_memory_in_Gbytes = SOAP_BATCH_SAFETY* &
+                                   (dfloat(n_atom_pairs_in)*bytes_per_pair &
+                                    + dfloat(n_sites)*bytes_per_site)/1024.d0**3
       mem_ratio = estimated_memory_in_Gbytes/max_Gbytes_per_process
 
       n_chunks = ceiling(mem_ratio)

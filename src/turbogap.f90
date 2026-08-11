@@ -97,7 +97,7 @@ program turbogap
    real(dp) :: d_disp
    real(dp) :: p_accept
    real(dp) :: virial_prev(1:3, 1:3)
-!   The ten contribution families carry the target attribute so contrib(:) below
+!   The eleven contribution families carry the target attribute so contrib(:) below
 !   can point at them. They are split onto their own declarations for that
 !   reason alone -- target on energies/forces, the accumulators they are summed
 !   into, would widen the aliasing assumption for no benefit.
@@ -243,7 +243,7 @@ program turbogap
    integer :: counter = 0
    integer :: counter2
 
-!   The ten additive contribution families that are reduced together after the
+!   The eleven additive contribution families that are reduced together after the
 !   descriptor loop. Their predicates used to be written out three times -- to
 !   count the slots, to pack them and to unpack them -- and evaluated
 !   independently each time. Two copies disagreeing shifts counter2 and
@@ -503,6 +503,20 @@ program turbogap
                                  has_local_properties_mpi, local_properties_n_sparse_mpi_soap_turbo, &
                                  local_properties_dim_mpi_soap_turbo, nrows, allelstopdata, &
                                  ephbeta, ephfdm, ephlsc, time)
+
+!  The host memory budget, which has to sit exactly here.
+!
+!  After read_input_and_gap_files, because it reads mem_fraction and writes
+!  max_Gbytes_per_process -- placed next to gpu_context_init it would run before
+!  the input existed and size the loop from defaults whatever the input said.
+!
+!  ntasks is passed for the case where MPI cannot say how the ranks are laid
+!  out; the routine prefers to ask MPI which ranks share a node, because that is
+!  the set that shares the memory it is dividing.
+!
+!  The GPU branch calls the same name in the same place, where it budgets from
+!  the device instead of from the node.
+   call gpu_memory_budget_init(params, rank, ntasks)
 
    !**************************************************************************
    ! <----------------------------------------------------------------------------------------------- Finish printouts
@@ -1042,7 +1056,6 @@ program turbogap
          ! Adding allocation of local properties
 
          ! Now one could use pointers such that hirshfeld_v(:) acts as an alias for local_properties(vdw_index,:)...
-
          if (any(soap_turbo_hypers(:)%has_local_properties)) then
             if (n_sites /= n_sites_prev .or. params%do_mc) then
                if (allocated(local_properties)) then
@@ -1173,7 +1186,6 @@ program turbogap
                this_virial_nd = 0.d0
 #endif
             end if
-
          end if
 
          if (params%do_prediction) then
@@ -1206,6 +1218,7 @@ program turbogap
             !       max_Gbytes_per_process (default = 1.d0)
             call get_number_of_atom_pairs(n_neigh(i_beg:i_end), rjs(j_beg:j_end), soap_turbo_hypers(i)%rcut_max, &
                                           soap_turbo_hypers(i)%l_max, soap_turbo_hypers(i)%n_max, &
+                                          soap_turbo_hypers(i)%dim, soap_turbo_hypers(i)%n_species, &
                                           params%max_Gbytes_per_process, i_beg_list, i_end_list, j_beg_list, j_end_list)
 
             do j = 1, size(i_beg_list)
@@ -1578,12 +1591,11 @@ program turbogap
             call gap_backend_end()
 
             call time_end(time%gap)
-
             !       Communicate all energies and forces here for all
             !       terms
 #ifdef _MPIF90
             call time_start(time%mpi_ef)
-!       One evaluation of the ten predicates, and one list built from them.
+!       One evaluation of the eleven predicates, and one list built from them.
 !       The pack and unpack walks below read only that list, so they cannot
 !       disagree about which slot belongs to which family -- the failure mode
 !       this replaces was three independent copies of these conditions, where
@@ -2710,7 +2722,6 @@ program turbogap
                   call randomize_velocities(velocities, n_sites, E_kinetic, masses, instant_temp, params%t_beg)
                   if (params%mc_hamiltonian) E_kinetic_prev = E_kinetic
                   ! Note, that this may override md steps if the same is chosen! More testing needed
-
                end if
 
                if ((params%mc_write_xyz .or. mc_istep == 0 .or. mc_istep == params%mc_nsteps .or. &
