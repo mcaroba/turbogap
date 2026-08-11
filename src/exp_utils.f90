@@ -204,7 +204,7 @@ contains
         & neighbors_list, n_neigh, neighbor_species, species_types, rjs, xyz, r_min,&
         & r_max, n_samples, n_samples_sf, n_species, x_structure_factor, structure_factor, r_cut, species_1,&
         & species_2, pair_distribution_der, partial_rdf, kde_sigma,&
-        & c_factor, sinc_factor_matrix, n_dim_idx, do_xrd, output, n_atoms_of_species, neutron)
+        & c_factor, sinc_factor_matrix, n_dim_idx, do_xrd, output, n_atoms_of_species, neutron, lp)
       implicit none
       real(dp), intent(in) :: rjs(:)
       real(dp), intent(in) :: xyz(:, :)
@@ -256,6 +256,9 @@ contains
       real(dp), intent(inout) :: forces0(:, :)
       real(dp), intent(inout) :: virial(1:3, 1:3)
       character*32, intent(in) :: output
+!     The Lorentz-polarization weight on the q grid, when the caller applied
+!     one to the pattern. Absent means no weight.
+      real(dp), intent(in), optional :: lp(:)
       real(dp), allocatable :: prefactor(:)
       real(dp), allocatable :: all_scattering_factors(:)
       real(dp), allocatable :: sf_parameters(:, :)
@@ -359,6 +362,13 @@ contains
 
          end if
 
+!        The pattern the energy is built from was multiplied by lp(q), so its
+!        gradient carries the same per-q weight -- the factor is a constant of
+!        the geometry, so it rides along on the chain rule untouched. Folding
+!        it into all_scattering_factors puts it on every derivative below at
+!        no extra cost.
+         if (present(lp)) all_scattering_factors = lp*all_scattering_factors
+
       end if
 
       ! Not reinitalizing the forces as these will be added to for each partial
@@ -457,7 +467,7 @@ contains
         & neighbors_list, n_neigh, neighbor_species, species_types, rjs, xyz, r_min,&
         & r_max, n_samples, n_samples_sf, n_species, x_structure_factor, structure_factor, r_cut, species_1,&
         & species_2, pair_distribution_der, partial_rdf, kde_sigma,&
-        & c_factor, sinc_factor_matrix, n_dim_idx, do_xrd, output, n_atoms_of_species, neutron)
+        & c_factor, sinc_factor_matrix, n_dim_idx, do_xrd, output, n_atoms_of_species, neutron, lp)
       implicit none
       real(dp), intent(in) :: rjs(:)
       real(dp), intent(in) :: xyz(:, :)
@@ -510,6 +520,9 @@ contains
       real(dp), intent(inout) :: forces0(:, :)
       real(dp), intent(inout) :: virial(1:3, 1:3)
       character*32, intent(in) :: output
+!     The Lorentz-polarization weight on the q grid, when the caller applied
+!     one to the pattern. Absent means no weight.
+      real(dp), intent(in), optional :: lp(:)
       real(dp), allocatable :: prefactor(:)
       real(dp), allocatable :: all_scattering_factors(:)
       real(dp), allocatable :: sf_parameters(:, :)
@@ -619,6 +632,10 @@ contains
             end do
 
          end if
+
+!        See the note in get_structure_factor_forces: the pattern the energy
+!        is built from carries lp(q), so its gradient carries the same weight.
+         if (present(lp)) all_scattering_factors = lp*all_scattering_factors
 
       end if
 

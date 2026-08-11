@@ -1657,6 +1657,7 @@ contains
       integer, intent(in) :: rank
       integer, intent(out) :: ierr
       real(dp), allocatable :: y_sub(:)
+      real(dp), allocatable :: lp(:)
       integer :: i
       integer :: j
       integer :: k
@@ -1781,6 +1782,32 @@ contains
 
 #endif
 
+!     ---   The Lorentz-polarization factor   --- !
+!
+!     A weight per q sample, applied here rather than inside
+!     get_xrd_from_partial_structure_factors so that it lands once on the
+!     whole pattern -- each rank builds only its own q slice, and this is
+!     after the reduce. It multiplies whatever xrd_output asked for, and so
+!     covers the get_xrd_explicit branch above too.
+!
+!     Everything downstream sees the weighted pattern: the energy, the
+!     residual (y - y_exp) the forces are built from, and the file written at
+!     the end. What the forces additionally need is the same weight on
+!     dy/dr, which is why lp is handed to the two force routines below.
+!
+!     x_xrd holds 2 sin(theta)/lambda, the grid get_lorentz_polarization
+!     expects. lp stays allocated and equal to one when the factor is off, so
+!     the calls below need no second form; multiplying by 1.0d0 is exact.
+      allocate (lp(1:params%structure_factor_n_samples))
+      lp = 1.d0
+
+      if (params%xrd_lorentz_polarization) then
+         call get_lorentz_polarization(x_xrd(1:params%structure_factor_n_samples), &
+              & params%xrd_wavelength, params%xrd_lp_polarization, &
+              & params%xrd_lp_sin_theta_min, lp)
+         y_xrd = lp*y_xrd
+      end if
+
       ! Already preprocessed the xrd !
       ! --- Preprocess the structure factor according to the output --- !
       ! if ( trim( params%xrd_output ) == "q*i(q)" )then
@@ -1840,7 +1867,7 @@ contains
                                 & n_atoms_of_species(k))/dfloat(n_sites)/&
                                 & dfloat(n_sites))*(dfloat(n_sites)/&
                                 & v_uc), sinc_factor_matrix, n_dim_idx,&
-                                & .true., xrd_output, n_atoms_of_species, neutron)
+                                & .true., xrd_output, n_atoms_of_species, neutron, lp)
                         else
                            call get_structure_factor_forces(n_sites, params%exp_energy_scales(xrd_idx),&
                                 & x_xrd, params%exp_data(xrd_idx)%y,&
@@ -1861,7 +1888,7 @@ contains
                                 & n_atoms_of_species(k))/dfloat(n_sites)/&
                                 & dfloat(n_sites))*(dfloat(n_sites)/&
                                 & v_uc), sinc_factor_matrix, n_dim_idx,&
-                                & .true., xrd_output, n_atoms_of_species, neutron)
+                                & .true., xrd_output, n_atoms_of_species, neutron, lp)
                         end if
 
                         n_dim_idx = n_dim_idx + 1
@@ -1917,6 +1944,7 @@ contains
 
       !    end if
       if (allocated(y_sub)) deallocate (y_sub)
+      if (allocated(lp)) deallocate (lp)
 
    end subroutine calculate_xrd
 

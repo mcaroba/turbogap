@@ -56,31 +56,15 @@ through into the forces, so turning it on does not cost gradient consistency.
 
 ## The Lorentz-polarization factor
 
-`xrd_lorentz_polarization = .true.` multiplies the predicted pattern by
+`xrd_lorentz_polarization = .true.` multiplies the predicted pattern by the
+powder Lorentz-polarization factor. It is not a property of this route —
+both routes apply it, and the keywords mean the same thing on each — so it is
+documented on its own in
+[xrd_lorentz_polarization.md](xrd_lorentz_polarization.md).
 
-```
-LP(theta) = ( 1 + P cos^2(2 theta) ) / ( sin^2(theta) cos(theta) )
-```
-
-with `P = xrd_lp_polarization` the degree of polarization of the incident
-beam: 1 for an unpolarized source, `cos^2(2 theta_M)` behind a monochromator
-set at `2 theta_M`. The scattering angle comes from the q grid and
-`xrd_wavelength`, since the grid holds `2 sin(theta)/lambda`.
-
-Two parts of the grid have no usable angle and are set to zero rather than to
-an infinity: below `xrd_lp_sin_theta_min`, where the Lorentz factor diverges
-as the forward direction is approached, and above the Ewald limit
-`sin(theta) >= 1`, which cannot be measured at that wavelength at all.
-
-The factor is applied on the Debye route only, and to whatever `xrd_output`
-asked for. It corrects a raw powder intensity, so `xrd_output = 'xrd'` is what
-it is meant for; applied to `F(q)` it is just a per-q rescaling of an already
-normalised quantity. It is a multiplicative weight per q sample either way, so
-the energy and the gradient stay consistent with each other.
-
-The pdf route does not apply it. Making it consistent there means touching
-`get_structure_factor_forces` and the self-term bookkeeping in
-`get_xrd_from_partial_structure_factors`, and no test covers that today.
+What is specific here: `calculate_xrd_debye` scales `y_xrd` and the gradient
+channel by it together, right after the affine map that implements
+`xrd_output`, so it costs nothing in gradient consistency.
 
 ## Output conventions
 
@@ -119,11 +103,11 @@ already complete for the atoms it owns — that rank looped over every `j`.
 | keyword                    | default     | meaning                                        |
 | -------------------------- | ----------- | ---------------------------------------------- |
 | `xrd_debye`                | `.false.`   | use the Debye sum for XRD and ND               |
-| `xrd_lorentz_polarization` | `.false.`   | apply the powder LP factor (Debye route only)  |
-| `xrd_lp_polarization`      | `1.0`       | `P` in `1 + P cos^2 2theta`                    |
-| `xrd_lp_sin_theta_min`     | `1e-3`      | below this `sin(theta)`, LP is set to zero     |
 | `xrd_rcut`                 | `4.0`       | Lorch window cutoff when `xrd_debye` is on     |
 | `structure_factor_window`  | `.true.`    | apply the Lorch window                         |
+
+The `xrd_lorentz_polarization` family is in
+[xrd_lorentz_polarization.md](xrd_lorentz_polarization.md).
 
 ## Tests
 

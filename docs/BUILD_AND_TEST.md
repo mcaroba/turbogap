@@ -83,14 +83,16 @@ cd $G && export HOP_ROOT=/u/74/zarrout1/unix/work/hop \
 Expected: CPU **20 passed, 0 failed**; GPU **3 passed, 0 failed, 1 xfail**
 (`XRD_mad`, the known ~1e-5 `local_energy` drift).
 
-Two suites sit outside `tests/regression`, because they ask whether an answer
-is *right* rather than whether it is *unchanged*, and the frozen baseline
-cannot run their inputs at all:
+Three suites sit outside `tests/regression`, because they ask whether an
+answer is *right* rather than whether it is *unchanged*, and the frozen
+baseline cannot run their inputs at all:
 
 ```sh
 cd $M && tests/dipole/run.sh        # dipole prediction against QUIP
 cd $M && tests/xrd_debye/run.sh     # Debye XRD against an independent sum,
                                     # and its forces against finite differences
+cd $M && tests/xrd_lp_pdf/run.sh    # the Lorentz-polarization factor on the
+                                    # pdf route, pattern and forces
 ```
 
 ### Do not let a rebuild race a running suite
