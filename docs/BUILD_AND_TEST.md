@@ -68,7 +68,7 @@ that is the symptom of a stale `Makefile.deps`, not a flaky build.
 ## 2. Test
 
 ```sh
-# CPU: 18 cases, bit-exact against a frozen baseline binary, ~7 min
+# CPU: 20 cases, bit-exact against a frozen baseline binary, ~8 min
 cd $M && tests/regression/run.sh
 cd $M && tests/regression/run.sh vdw_ts co_predict     # named cases
 cd $M && tests/regression/run.sh --list
@@ -80,8 +80,18 @@ cd $G && export HOP_ROOT=/u/74/zarrout1/unix/work/hop \
       && TURBOGAP_REF_BIN=$M/bin/turbogap tests/gpu/run_regression.sh
 ```
 
-Expected: CPU **18 passed, 0 failed**; GPU **3 passed, 0 failed, 1 xfail**
+Expected: CPU **20 passed, 0 failed**; GPU **3 passed, 0 failed, 1 xfail**
 (`XRD_mad`, the known ~1e-5 `local_energy` drift).
+
+Two suites sit outside `tests/regression`, because they ask whether an answer
+is *right* rather than whether it is *unchanged*, and the frozen baseline
+cannot run their inputs at all:
+
+```sh
+cd $M && tests/dipole/run.sh        # dipole prediction against QUIP
+cd $M && tests/xrd_debye/run.sh     # Debye XRD against an independent sum,
+                                    # and its forces against finite differences
+```
 
 ### Do not let a rebuild race a running suite
 

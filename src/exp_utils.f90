@@ -1923,6 +1923,258 @@ contains
 
    end subroutine get_xrd_from_partial_structure_factors
 
+   !####################################################################!
+   !###---   Debye scattering equation: XRD / ND from positions   ---###!
+   !####################################################################!
+
+!  The scattering power of each species on the whole q grid, in one table.
+!
+!  Both callers below need f_a(q) for every species and every sample, and
+!  get_scattering_factor is four exponentials a call -- evaluating it inside
+!  an N^2 pair loop, as the obvious transcription of the Debye equation does,
+!  costs O(N^2 n_samples) exponentials for a quantity that has only
+!  n_species * n_samples distinct values.
+!
+!  q_list holds x = 2 sin(theta)/lambda, so the form factors are sampled at
+!  sin(theta)/lambda = x/2, the same convention as get_xrd_explicit and
+!  get_xrd_from_partial_structure_factors. Neutron scattering lengths do not
+!  depend on q at all, so that column is constant.
+   subroutine get_form_factor_table(n_species, species_types, q_list, neutron, f_table)
+      implicit none
+      integer, intent(in) :: n_species
+      character*8, intent(in) :: species_types(:)
+      real(dp), intent(in) :: q_list(:)
+      logical, intent(in) :: neutron
+      real(dp), allocatable, intent(out) :: f_table(:, :)
+      real(dp), allocatable :: sf_parameters(:, :)
+      real(dp) :: wfac
+      integer :: i
+      integer :: l
+      integer :: n_samples
+
+      n_samples = size(q_list)
+      allocate (f_table(1:n_samples, 1:n_species))
+
+      if (neutron) then
+         do i = 1, n_species
+            call get_neutron_scattering_length(species_types(i), wfac)
+            f_table(1:n_samples, i) = wfac
+         end do
+      else
+         allocate (sf_parameters(1:9, 1:n_species))
+         sf_parameters = 0.d0
+         do i = 1, n_species
+            call get_scattering_factor_params(species_types(i), sf_parameters(1:9, i))
+            do l = 1, n_samples
+               call get_scattering_factor(f_table(l, i), sf_parameters(1:9, i), q_list(l)/2.d0)
+            end do
+         end do
+         deallocate (sf_parameters)
+      end if
+
+   end subroutine get_form_factor_table
+
+!  The powder Lorentz-polarization factor on the q grid this module uses.
+!
+!     LP(theta) = ( 1 + P cos^2(2 theta) ) / ( sin^2(theta) cos(theta) )
+!
+!  P is the degree of polarization of the incident beam: 1 for an unpolarized
+!  source, cos^2(2 theta_M) behind a monochromator set at 2 theta_M.
+!
+!  Since q_list is x = 2 sin(theta)/lambda, sin(theta) = lambda x / 2. Two
+!  regions of the grid have no usable scattering angle and are given LP = 0
+!  rather than an infinity or a NaN: sin(theta) below sin_theta_min, where the
+!  Lorentz factor diverges as the forward-scattering limit is approached, and
+!  sin(theta) >= 1, which is past the Ewald limit and cannot be measured at
+!  this wavelength at all.
+   subroutine get_lorentz_polarization(q_list, wavelength, polarization, sin_theta_min, lp)
+      implicit none
+      real(dp), intent(in) :: q_list(:)
+      real(dp), intent(in) :: wavelength
+      real(dp), intent(in) :: polarization
+      real(dp), intent(in) :: sin_theta_min
+      real(dp), intent(out) :: lp(:)
+      real(dp) :: sth
+      real(dp) :: cth
+      real(dp) :: c2th
+      integer :: l
+
+      do l = 1, size(q_list)
+         sth = 0.5d0*wavelength*q_list(l)
+         if (sth < sin_theta_min .or. sth >= 1.d0) then
+            lp(l) = 0.d0
+            cycle
+         end if
+         cth = sqrt(1.d0 - sth*sth)
+!        cos(2 theta) = 1 - 2 sin^2(theta)
+         c2th = 1.d0 - 2.d0*sth*sth
+         lp(l) = (1.d0 + polarization*c2th*c2th)/(sth*sth*cth)
+      end do
+
+   end subroutine get_lorentz_polarization
+
+!  The Debye scattering equation, summed over every pair of atoms in the cell:
+!
+!     I(q) = 1/N sum_i sum_j f_i(q) f_j(q) sinc(q r_ij) w(r_ij)
+!
+!  with sinc(x) = sin(x)/x. The i = j terms contribute f_i(q)^2 each; that is
+!  the same self term the pdf/sf route adds back by hand as y_sub.
+!
+!  This is the alternative to the pdf -> partial structure factor -> XRD chain
+!  in get_xrd_from_partial_structure_factors. It answers the same question
+!  without ever binning a distance: no pair distribution, no Fourier
+!  transform, no pair_distribution_n_samples to converge. What it costs is
+!  O(N^2 n_samples), against O(N r_cut^3) for the binned route, so it is the
+!  right tool for a few thousand atoms and the wrong one for a hundred
+!  thousand.
+!
+!  q_list holds x = 2 sin(theta)/lambda, so the wavevector is q = 2 pi x. This
+!  is the grid x_structure_factor is built on and the one get_xrd_explicit
+!  already assumes.
+!
+!  MPI: the double sum is split by giving each rank the outer atoms
+!  i_beg..i_end while the inner loop always covers all n_sites0 atoms, so
+!  summing xrd over ranks reproduces the full double sum. The caller must
+!  reduce it.
+!
+!  Derivatives: xrd_der(1:3, l, i) is d I(q_l) / d r_i. Both atoms of a pair
+!  move when either one does, and the ordered double sum visits (i,j) and
+!  (j,i) separately, which together are where the factor of two below comes
+!  from. Each rank's slice is complete for the atoms it owns, because that
+!  rank saw every j for them -- so forces derived from it need no reduction
+!  beyond the one the driver already does over atoms.
+!
+!  Periodicity: the sum runs over the atoms as given, with no minimum image
+!  convention and no periodic images. That is exact for a cluster or a
+!  nanoparticle and an approximation for a periodic cell, where the window
+!  below is what keeps the truncation of the sum from ringing.
+   subroutine get_xrd_debye(n_sites0, positions, i_beg, i_end, n_species, species, &
+        & species_types, q_list, window, r_cut, do_derivatives, neutron, xrd, xrd_der)
+      implicit none
+      integer, intent(in) :: n_sites0
+      integer, intent(in) :: i_beg
+      integer, intent(in) :: i_end
+      integer, intent(in) :: n_species
+      real(dp), intent(in) :: positions(:, :)
+      integer, intent(in) :: species(:)
+      character*8, intent(in) :: species_types(:)
+      real(dp), intent(in) :: q_list(:)
+      real(dp), intent(in) :: r_cut
+      logical, intent(in) :: window
+      logical, intent(in) :: do_derivatives
+      logical, intent(in) :: neutron
+      real(dp), allocatable, intent(out) :: xrd(:)
+      real(dp), allocatable, intent(out) :: xrd_der(:, :, :)
+      real(dp), allocatable :: f_table(:, :)
+      real(dp), allocatable :: q_wave(:)
+      real(dp) :: posi(1:3)
+      real(dp) :: diff(1:3)
+      real(dp) :: rij
+      real(dp) :: qrij
+      real(dp) :: s
+      real(dp) :: ff
+      real(dp) :: w
+      real(dp) :: dwdr
+      real(dp) :: dsdr
+      real(dp) :: arg_w
+      real(dp) :: der_factor
+!     Note the d0. The rest of this module writes acos(-1.0), which evaluates
+!     in default (single) precision and then widens, so its pi is wrong in the
+!     8th digit -- enough to show up against an independent reference.
+      real(dp), parameter :: pi = acos(-1.0d0)
+      integer :: i
+      integer :: j
+      integer :: l
+      integer :: n_samples
+      integer :: species_i
+      integer :: species_j
+
+      n_samples = size(q_list)
+
+      call get_form_factor_table(n_species, species_types, q_list, neutron, f_table)
+
+      allocate (q_wave(1:n_samples))
+      q_wave = 2.d0*pi*q_list(1:n_samples)
+
+      allocate (xrd(1:n_samples))
+      xrd = 0.d0
+
+      if (do_derivatives) then
+         allocate (xrd_der(1:3, 1:n_samples, 1:n_sites0))
+         xrd_der = 0.d0
+      end if
+
+      do i = i_beg, i_end
+         species_i = species(i)
+         posi(1:3) = positions(1:3, i)
+
+         do j = 1, n_sites0
+
+            if (j == i) then
+!              The self term. sinc(0) = 1, and an atom's distance to itself
+!              does not move, so there is no gradient here.
+               xrd(1:n_samples) = xrd(1:n_samples) + f_table(1:n_samples, species_i)**2
+               cycle
+            end if
+
+            species_j = species(j)
+            diff(1:3) = posi(1:3) - positions(1:3, j)
+            rij = sqrt(dot_product(diff, diff))
+
+!           Two atoms on top of one another have no direction to push along.
+!           Take the sinc(0) = 1 limit and skip the gradient rather than
+!           divide by r_ij = 0.
+            if (rij < 1.d-10) then
+               xrd(1:n_samples) = xrd(1:n_samples) + &
+                    & f_table(1:n_samples, species_i)*f_table(1:n_samples, species_j)
+               cycle
+            end if
+
+!           The Lorch window sinc(pi r / r_cut), which damps the termination
+!           ripple a hard cutoff would put into I(q). Pairs beyond r_cut are
+!           dropped: past its first zero the window is an oscillation, not a
+!           taper, so carrying them would add the ringing back.
+            w = 1.d0
+            dwdr = 0.d0
+            if (window) then
+               if (rij > r_cut) cycle
+               arg_w = pi*rij/r_cut
+               w = sin(arg_w)/arg_w
+               dwdr = (cos(arg_w) - w)/rij
+            end if
+
+            do l = 1, n_samples
+               qrij = q_wave(l)*rij
+               ff = f_table(l, species_i)*f_table(l, species_j)
+
+               if (qrij == 0.d0) then
+                  s = 1.d0
+                  dsdr = 0.d0
+               else
+                  s = sin(qrij)/qrij
+                  dsdr = (cos(qrij) - s)/rij
+               end if
+
+               xrd(l) = xrd(l) + ff*s*w
+
+               if (do_derivatives) then
+!                 d/dr_i [ s(q r_ij) w(r_ij) ] = (diff / r_ij) (w ds/dr + s dw/dr)
+                  der_factor = ff*(w*dsdr + s*dwdr)/rij
+                  xrd_der(1:3, l, i) = xrd_der(1:3, l, i) + diff(1:3)*der_factor
+               end if
+            end do
+
+         end do
+      end do
+
+      xrd = xrd/dfloat(n_sites0)
+      if (do_derivatives) xrd_der = 2.d0*xrd_der/dfloat(n_sites0)
+
+      deallocate (f_table)
+      deallocate (q_wave)
+
+   end subroutine get_xrd_debye
+
    !#############################################################!
    !###---   Experimental Interpolation and Similarities   ---###!
    !#############################################################!

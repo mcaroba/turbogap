@@ -264,11 +264,18 @@ contains
             if (params%vdw_rcut > rcut_max) then
                rcut_max = params%vdw_rcut
             end if
-            if (params%xrd_rcut > rcut_max) then
-               rcut_max = params%xrd_rcut
-            end if
-            if (params%nd_rcut > rcut_max) then
-               rcut_max = params%nd_rcut
+            !   xrd_rcut/nd_rcut widen the neighbour list for the routes that
+            !   walk it. The Debye route reads the positions directly and uses
+            !   xrd_rcut only as its window cutoff, so widening the list there
+            !   would buy nothing and would make a large window silently cost
+            !   a large neighbour list.
+            if (.not. params%xrd_debye) then
+               if (params%xrd_rcut > rcut_max) then
+                  rcut_max = params%xrd_rcut
+               end if
+               if (params%nd_rcut > rcut_max) then
+                  rcut_max = params%nd_rcut
+               end if
             end if
             if (params%pair_distribution_rcut > rcut_max) then
                rcut_max = params%pair_distribution_rcut

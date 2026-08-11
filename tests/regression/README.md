@@ -66,6 +66,8 @@ would make every case pass vacuously.
 | `xrd_mad`                | 1     | MAD: pdf, sf and xrd contributions **carrying forces**                   |
 | `xrd_mad_mpi2`           | 2     | the same through pack/`mpi_reduce`/unpack                                |
 | `xrd_predict`            | 1     | pdf/sf/xrd forward prediction, `exp_forces` off (KNOWN_ISSUES #4)        |
+| `xrd_debye_mad`          | 1     | the Debye XRD route carrying forces (golden; baseline rejects keyword)  |
+| `xrd_debye_mad_mpi2`     | 2     | the Debye double sum split and reduced across ranks                     |
 
 Every case fixes `random_seed`, and `co_md` starts from explicit velocities,
 so all of them are reproducible run to run. This was verified before the suite
