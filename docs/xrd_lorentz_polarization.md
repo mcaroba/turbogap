@@ -77,7 +77,8 @@ regression suite confirms bit-identical output with the factor off.
   rebuilt from scratch in numpy at `P = 0.8`, plus finite-difference forces
   and virial.
 - `tests/xrd_lp_pdf/run.sh` — the factor on the pdf route: the weight itself
-  over four decks including MPI, and finite-difference forces. Its README also
-  records what that test found and deliberately does not assert — the pdf
-  route's **virial** does not agree with a strain derivative of its own
-  energy, before and after this change alike.
+  over four decks including MPI, and finite-difference forces and virial. That
+  the factor reaches the virial at all is worth a word: writing this test is
+  what turned up the pdf route's virial disagreeing with a strain derivative of
+  its own energy, for reasons older than the factor. `tests/pdf_virial` covers
+  that.

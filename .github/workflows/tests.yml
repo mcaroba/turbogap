@@ -1,0 +1,90 @@
+# The physics suites: every one of them checks TurboGAP against something that
+# is not TurboGAP -- an independent implementation in numpy, a finite
+# difference of the code's own energy, or a QUIP prediction. They assert that
+# the answer is right, so they are expected to be green, and a failure here is
+# a real defect rather than a number that moved.
+#
+# Byte-for-byte comparison against a previous binary is a different question
+# with a different answer, and lives in regression.yml.
+name: tests
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  suites:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      # Check out into a subdirectory so that turbogap_tests, which the suites
+      # look for beside the source tree, lands inside the workspace where the
+      # cache can reach it.
+      - uses: actions/checkout@v4
+        with:
+          path: turbogap
+          # soap_turbo is a submodule; without it the tree does not compile.
+          submodules: recursive
+
+      - name: Install the toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gfortran libopenmpi-dev openmpi-bin liblapack-dev libblas-dev
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install numpy
+
+      # The test systems are trajectories and fitted potentials in a repository
+      # of their own. Key the cache on the revision they are at, so a new
+      # commit there is picked up without anyone having to remember to bump
+      # anything, and an unchanged one is never downloaded twice.
+      - name: Resolve the test-data revision
+        id: data
+        run: |
+          sha=$(git ls-remote https://github.com/TiganyZ/turbogap_tests.git HEAD | cut -f1)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        with:
+          path: turbogap_tests
+          key: turbogap-tests-${{ steps.data.outputs.sha }}
+
+      - name: Fetch the test data
+        working-directory: turbogap
+        run: tests/fetch_test_data.sh
+
+      - name: Build
+        working-directory: turbogap
+        run: make -j"$(nproc)"
+
+      # Each suite gets its own step: a red X then names the physics that
+      # broke, and `if: always()` means the first failure does not hide the
+      # rest.
+      - name: XRD and ND from the Debye scattering equation
+        if: always()
+        working-directory: turbogap
+        run: TURBOGAP_PYTHON=python tests/xrd_debye/run.sh
+
+      - name: The Lorentz-polarization factor on the pdf route
+        if: always()
+        working-directory: turbogap
+        run: TURBOGAP_PYTHON=python tests/xrd_lp_pdf/run.sh
+
+      - name: The MAD virial on the pdf route
+        if: always()
+        working-directory: turbogap
+        run: TURBOGAP_PYTHON=python tests/pdf_virial/run.sh
+
+      - name: Dipole prediction against QUIP
+        if: always()
+        working-directory: turbogap
+        run: TURBOGAP_PYTHON=python tests/dipole/run.sh

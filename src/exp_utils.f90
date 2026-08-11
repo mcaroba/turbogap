@@ -204,7 +204,7 @@ contains
         & neighbors_list, n_neigh, neighbor_species, species_types, rjs, xyz, r_min,&
         & r_max, n_samples, n_samples_sf, n_species, x_structure_factor, structure_factor, r_cut, species_1,&
         & species_2, pair_distribution_der, partial_rdf, kde_sigma,&
-        & c_factor, sinc_factor_matrix, n_dim_idx, do_xrd, output, n_atoms_of_species, neutron, lp)
+        & c_factor, sinc_factor_matrix, n_dim_idx, do_xrd, output, n_atoms_of_species, neutron, rank, lp)
       implicit none
       real(dp), intent(in) :: rjs(:)
       real(dp), intent(in) :: xyz(:, :)
@@ -249,6 +249,9 @@ contains
       integer :: i4
       integer :: species_i
       integer :: species_j
+!     Only rank 0 adds the volume half of the virial: it belongs to the cell,
+!     not to the pairs this rank owns, and the virial is summed over ranks.
+      integer, intent(in) :: rank
       real(dp), intent(in) :: x_structure_factor(:)
       real(dp), intent(in) :: structure_factor(:)
       real(dp), intent(in) :: n_atoms_of_species(:)
@@ -446,15 +449,29 @@ contains
                !             Sign is plus because this force is acting on j2. Factor of one is because this is
                !             derived from a local energy
                !              virial = virial + dot_product(this_force(1:3), xyz(1:3,k))
+               !
+               !             0.25 = 0.5 to symmetrise, times 0.5 because this loop
+               !             runs over ordered pairs. sum_a F_a (x) r_a telescopes
+               !             into one term per *unordered* pair, this_force (x) xyz,
+               !             and the reversed pair reproduces it rather than adding
+               !             anything new: xyz and this_force both change sign.
                do k1 = 1, 3
                   do k2 = 1, 3
-                     virial(k1, k2) = virial(k1, k2) + 0.5d0*(this_force(k1)*xyz(k2, k) + this_force(k2)*xyz(k1, k))
+                     virial(k1, k2) = virial(k1, k2) + 0.25d0*(this_force(k1)*xyz(k2, k) + this_force(k2)*xyz(k1, k))
                   end do
                end do
             end if
 
          end do
       end do
+
+      if (do_xrd) then
+         call add_structure_factor_volume_virial(virial, rank, energy_scale, c_factor,&
+              & prefactor, sinc_factor_matrix, n_samples, n_samples_sf, all_scattering_factors)
+      else
+         call add_structure_factor_volume_virial(virial, rank, energy_scale, c_factor,&
+              & prefactor, sinc_factor_matrix, n_samples, n_samples_sf)
+      end if
 
       if (do_xrd) deallocate (all_scattering_factors)
       if (do_xrd) deallocate (sf_parameters)
@@ -463,11 +480,68 @@ contains
 
    end subroutine get_structure_factor_forces
 
+!  --------------------------------------------------------------------------
+!  The cell half of the pdf-route virial.
+!
+!  A partial structure factor is built as
+!
+!     S_ab(q) - delta_ab = c_factor * sum_r M(q,r) ( g_ab(r) - 1 )
+!
+!  where c_factor carries the number density N/V and g_ab carries a
+!  compensating factor of V from its own normalisation. The two cancel in the
+!  g_ab term, which therefore depends on the cell only through the interatomic
+!  distances the pair loop above already differentiates. They do not cancel in
+!  the -1 term: that piece of the pattern goes as 1/V, so a homogeneous strain
+!  moves the energy through the volume as well, and the virial owes the cell
+!
+!     -V dE/dV = -energy_scale * sum_q ( y_q - y_exp_q ) * c_factor * asf(q)
+!                                     * sum_r M(q,r)
+!
+!  on each diagonal. asf is the same per-q weight that turns dS_ab/dr into
+!  dy/dr, so it carries the xrd_output convention and the Lorentz-polarization
+!  factor with it; absent, as on the plain structure factor, it is one.
+!
+!  The caller holds one (a,b) channel, and the channels sum, which is why this
+!  is written as an accumulation rather than as a single closed form.
+!  --------------------------------------------------------------------------
+   subroutine add_structure_factor_volume_virial(virial, rank, energy_scale, c_factor,&
+        & prefactor, sinc_factor_matrix, n_samples, n_samples_sf, all_scattering_factors)
+      implicit none
+      real(dp), intent(inout) :: virial(1:3, 1:3)
+      integer, intent(in) :: rank
+      real(dp), intent(in) :: energy_scale
+      real(dp), intent(in) :: c_factor
+      real(dp), intent(in) :: prefactor(:)
+      real(dp), intent(in) :: sinc_factor_matrix(:, :)
+      integer, intent(in) :: n_samples
+      integer, intent(in) :: n_samples_sf
+      real(dp), intent(in), optional :: all_scattering_factors(:)
+      real(dp) :: w
+      real(dp) :: dev
+      integer :: l
+
+!     A property of the whole cell, not of the pairs this rank owns.
+      if (rank /= 0) return
+
+      dev = 0.d0
+      do l = 1, n_samples_sf
+         w = sum(sinc_factor_matrix(l, 1:n_samples))
+         if (present(all_scattering_factors)) w = w*all_scattering_factors(l)
+         dev = dev + prefactor(l)*w
+      end do
+      dev = -energy_scale*c_factor*dev
+
+      do l = 1, 3
+         virial(l, l) = virial(l, l) + dev
+      end do
+
+   end subroutine add_structure_factor_volume_virial
+
    subroutine get_structure_factor_forces_matrix(n_sites0, energy_scale, x, y_exp, forces0, virial,  &
         & neighbors_list, n_neigh, neighbor_species, species_types, rjs, xyz, r_min,&
         & r_max, n_samples, n_samples_sf, n_species, x_structure_factor, structure_factor, r_cut, species_1,&
         & species_2, pair_distribution_der, partial_rdf, kde_sigma,&
-        & c_factor, sinc_factor_matrix, n_dim_idx, do_xrd, output, n_atoms_of_species, neutron, lp)
+        & c_factor, sinc_factor_matrix, n_dim_idx, do_xrd, output, n_atoms_of_species, neutron, rank, lp)
       implicit none
       real(dp), intent(in) :: rjs(:)
       real(dp), intent(in) :: xyz(:, :)
@@ -513,6 +587,9 @@ contains
       integer :: species_i
       integer :: species_j
       integer :: n_k
+!     Only rank 0 adds the volume half of the virial: it belongs to the cell,
+!     not to the pairs this rank owns, and the virial is summed over ranks.
+      integer, intent(in) :: rank
       real(dp), intent(in) :: x_structure_factor(:)
       real(dp), intent(in) :: structure_factor(:)
       real(dp), intent(in) :: n_atoms_of_species(:)
@@ -764,15 +841,26 @@ contains
          this_force(1:3) = energy_scale*fi(j, 1:3)
          forces0(1:3, j2_list(j)) = forces0(1:3, j2_list(j)) + this_force(1:3)
 
+!        See the note in get_structure_factor_forces: 0.25 is 0.5 to
+!        symmetrise, times 0.5 because k_list holds ordered pairs and the
+!        reversed pair reproduces this term rather than adding a new one.
          do k1 = 1, 3
             do k2 = 1, 3
-               virial(k1, k2) = virial(k1, k2) + 0.5d0*(this_force(k1)*xyz_k(k2, j) + this_force(k2)*xyz_k(k1, j))
+               virial(k1, k2) = virial(k1, k2) + 0.25d0*(this_force(k1)*xyz_k(k2, j) + this_force(k2)*xyz_k(k1, j))
             end do
          end do
       end do
 !    call cpu_time(time(2))
 !    print *, " Time Forces loop = ", time(2) - time(1)
 !    print *, " "
+
+      if (do_xrd) then
+         call add_structure_factor_volume_virial(virial, rank, energy_scale, c_factor,&
+              & prefactor, sinc_factor_matrix, n_samples, n_samples_sf, all_scattering_factors)
+      else
+         call add_structure_factor_volume_virial(virial, rank, energy_scale, c_factor,&
+              & prefactor, sinc_factor_matrix, n_samples, n_samples_sf)
+      end if
 
       deallocate (dermat, fi, Gka, Gk, xyz_k, j2_list, k_list)
       if (do_xrd) deallocate (all_scattering_factors)
@@ -943,9 +1031,16 @@ contains
                !             Sign is plus because this force is acting on j2. Factor of one is because this is
                !             derived from a local energy
                !              virial = virial + dot_product(this_force(1:3), xyz(1:3,k))
+               !
+               !             See the note in get_structure_factor_forces for the
+               !             0.25: this loop runs over ordered pairs, and
+               !             sum_a F_a (x) r_a has one term per unordered pair.
+               !             The cell half of this observable's virial -- the pair
+               !             distribution is normalised by V -- is added by the
+               !             caller, which holds the assembled pattern.
                do k1 = 1, 3
                   do k2 = 1, 3
-                     virial(k1, k2) = virial(k1, k2) + 0.5d0*(this_force(k1)*xyz(k2, k) + this_force(k2)*xyz(k1, k))
+                     virial(k1, k2) = virial(k1, k2) + 0.25d0*(this_force(k1)*xyz(k2, k) + this_force(k2)*xyz(k1, k))
                   end do
                end do
             end if

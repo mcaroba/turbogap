@@ -44,9 +44,15 @@ def write_frame(path, n, comment, body):
 class Runner:
     """Runs turbogap in a staging directory and reads back what it produced."""
 
-    def __init__(self, binary, workdir, atoms, scale, mode="predict"):
+    def __init__(self, binary, workdir, atoms, scale, mode="predict", family="xrd"):
         self.binary, self.workdir, self.atoms, self.mode = binary, workdir, atoms, mode
         self.scale = scale
+        # Which per-family energy in the output frame this deck is exercising.
+        # The forces and the virial are read from the same frame whatever it
+        # is, because contribution() differences two energy scales; only the
+        # energy has to be named, and naming the family rather than the total
+        # keeps the finite difference away from the GAP energy's round-off.
+        self.family = family
         self.deck = open(f"{workdir}/input").read()
         self.n, self.comment, self.body = read_frame(f"{workdir}/{atoms}")
         self.lattice = np.array(
@@ -92,8 +98,8 @@ class Runner:
             raise SystemExit(f"turbogap failed at {label}")
         lines = open(f"{self.workdir}/trajectory_out.xyz").read().splitlines()
         c = lines[1]
-        m = _need(re.search(r"energy_(?:xrd|nd)=(\S+)", c),
-                  "no energy_xrd/energy_nd in the output frame; "
+        m = _need(re.search(rf"energy_{self.family}=(\S+)", c),
+                  f"no energy_{self.family} in the output frame; "
                   "does the deck set exp_energies?")
         energy = float(m.group(1))
         virial = np.array([float(v) for v in _need(
@@ -118,14 +124,17 @@ def main():
     p.add_argument("--atoms", default="atoms.xyz")
     p.add_argument("--scale", default="100.0",
                    help="energy scale of the deck under test")
+    p.add_argument("--family", default="xrd", choices=("xrd", "nd", "pdf", "sf"),
+                   help="which energy_* in the output frame the deck drives")
     p.add_argument("--h", type=float, default=1e-3, help="displacement, Angstrom")
     p.add_argument("--strain", type=float, default=1e-4)
     p.add_argument("--atoms-to-check", type=int, default=3)
     p.add_argument("--seed", type=int, default=0)
-    # The strain leg assumes the energy depends on the cell only through the
-    # interatomic distances. That holds on the Debye route and does not on the
-    # pdf route, whose pair distribution is normalised by the number density
-    # N/V -- see tests/xrd_lp_pdf/README.md.
+    # An escape hatch for a deck whose energy is known not to be a function of
+    # the cell alone -- nothing in the tree needs it today. The pdf route used
+    # to: its pair distribution is normalised by the number density N/V, and
+    # the virial did not carry the resulting volume term. tests/pdf_virial now
+    # checks that it does.
     p.add_argument("--skip-virial", action="store_true",
                    help="check the forces only, not the virial")
     # The reported energy carries 8 decimals, so at E ~ 1e3 and h = 1e-3 the
@@ -134,14 +143,14 @@ def main():
     a = p.parse_args()
 
     shutil.copy(f"{a.workdir}/{a.atoms}", f"{a.workdir}/atoms_reference.xyz")
-    r = Runner(a.bin, a.workdir, a.atoms, a.scale)
+    r = Runner(a.bin, a.workdir, a.atoms, a.scale, family=a.family)
     deck = r.deck
     status = 0
     try:
         e_ref, f_ref, v_ref = r.contribution("reference")
         f_scale = max(float(np.abs(f_ref).max()), 1e-12)
         v_scale = max(float(np.abs(v_ref).max()), 1e-12)
-        print(f"    energy_xrd = {e_ref:.8f} eV   "
+        print(f"    energy_{a.family} = {e_ref:.8f} eV   "
               f"max|F| = {f_scale:.4e} eV/A   max|W| = {v_scale:.4e} eV")
 
         drift = float(np.abs(f_ref.sum(axis=0)).max())

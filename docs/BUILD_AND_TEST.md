@@ -83,7 +83,7 @@ cd $G && export HOP_ROOT=/u/74/zarrout1/unix/work/hop \
 Expected: CPU **20 passed, 0 failed**; GPU **3 passed, 0 failed, 1 xfail**
 (`XRD_mad`, the known ~1e-5 `local_energy` drift).
 
-Three suites sit outside `tests/regression`, because they ask whether an
+Four suites sit outside `tests/regression`, because they ask whether an
 answer is *right* rather than whether it is *unchanged*, and the frozen
 baseline cannot run their inputs at all:
 
@@ -92,8 +92,17 @@ cd $M && tests/dipole/run.sh        # dipole prediction against QUIP
 cd $M && tests/xrd_debye/run.sh     # Debye XRD against an independent sum,
                                     # and its forces against finite differences
 cd $M && tests/xrd_lp_pdf/run.sh    # the Lorentz-polarization factor on the
-                                    # pdf route, pattern and forces
+                                    # pdf route, pattern and gradient
+cd $M && tests/pdf_virial/run.sh    # the pdf-route MAD virial against a strain
+                                    # derivative, over four observables and MPI
 ```
+
+These four run in CI, along with the build; see `.github/workflows/`. Nothing
+needs setting up first -- each `run.sh` sources `tests/data_root.sh`, which
+clones the `turbogap_tests` data repository beside this one on the first run.
+Point `TURBOGAP_TESTS_DIR` somewhere else to keep it out of the way, or
+`TURBOGAP_DATA_ROOT` at a directory you assembled yourself, which also
+suppresses the fetch.
 
 ### Do not let a rebuild race a running suite
 

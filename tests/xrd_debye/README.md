@@ -5,7 +5,7 @@ gradient the gradient of its energy?
 
 ```sh
 make DEBUG=0 all
-TURBOGAP_DATA_ROOT=$HOME/work/cpu_vs_gpu_tests/input tests/xrd_debye/run.sh
+tests/xrd_debye/run.sh
 tests/xrd_debye/run.sh forward     # just the pattern
 tests/xrd_debye/run.sh gradient    # just the forces and virial
 ```
@@ -16,7 +16,8 @@ a failure.
 | variable             | meaning                                      |
 | -------------------- | -------------------------------------------- |
 | `TURBOGAP_BIN`       | binary under test (default `bin/turbogap`)   |
-| `TURBOGAP_DATA_ROOT` | directory holding the test systems           |
+| `TURBOGAP_DATA_ROOT` | take the systems from here and fetch nothing |
+| `TURBOGAP_TESTS_DIR` | where the data repository is cloned          |
 | `TURBOGAP_RANKS`     | ranks for the MPI leg (default 2)            |
 | `TURBOGAP_PYTHON`    | interpreter for the reference (default `python3`) |
 | `TURBOGAP_KEEP`      | keep the staging directory                   |

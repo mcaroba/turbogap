@@ -4,19 +4,23 @@
 
 ```sh
 make DEBUG=0 all                       # or whatever your arch build is
-TURBOGAP_DATA_ROOT=$HOME/turbogap_tests/input \
-  tests/regression/run.sh              # all cases
+tests/regression/run.sh                # all cases
 tests/regression/run.sh vdw_mbd        # one case
 tests/regression/run.sh --list         # case names
 ```
 
 Non-zero exit means at least one case differs from the baseline.
 
+The test systems come from the `turbogap_tests` repository beside this one.
+`run.sh` clones it through `tests/fetch_test_data.sh` on the first run, so
+there is nothing to set up by hand.
+
 | variable             | meaning                                                          |
 | -------------------- | ---------------------------------------------------------------- |
 | `TURBOGAP_BIN`       | binary under test (default `bin/turbogap`)                       |
 | `TURBOGAP_REF_BIN`   | reference (default `tests/regression/baseline/turbogap.e6eb1aa`) |
-| `TURBOGAP_DATA_ROOT` | directory holding the test systems                               |
+| `TURBOGAP_DATA_ROOT` | take the systems from here and fetch nothing                     |
+| `TURBOGAP_TESTS_DIR` | where the data repository is cloned                              |
 | `TURBOGAP_TIME_TOL`  | fail if test/ref wall-clock exceeds this ratio                   |
 | `TURBOGAP_KEEP`      | keep staging dirs for inspection                                 |
 | `TURBOGAP_BLESS`     | regenerate `expected/` for golden cases                          |

@@ -576,6 +576,8 @@ contains
       real(dp), intent(inout) :: virial(1:3, 1:3)
       real(dp) :: v_uc
       real(dp) :: f
+!     -V dE/dV, the cell half of this observable's virial.
+      real(dp) :: dedv
       integer, intent(in) :: n_species
       integer, intent(in) :: n_sites
       integer, intent(in) :: i_beg
@@ -906,6 +908,38 @@ contains
 
                   end do
                end do outerforces
+
+!              ---   The cell half of the virial   --- !
+!
+!              get_pair_distribution_forces differentiates the interatomic
+!              distances; the pattern also depends on the cell directly,
+!              because each partial is normalised by the number density, and a
+!              homogeneous strain changes the volume as well as the distances.
+!              That part is a property of the whole pattern rather than of one
+!              (a,b) channel, so it is added here, once, and only by rank 0 --
+!              the virial is summed over ranks afterwards.
+!
+!              g(r) is proportional to V outright, so V dy/dV is y itself.
+!              D(r) = 4 pi rho r ( g(r) - 1 ) has the volume cancel in the g
+!              term, leaving only the subtracted background, which goes as 1/V.
+               if (rank == 0) then
+                  if (trim(params%pair_distribution_output) == "D(r)") then
+                     dedv = -params%exp_energy_scales(params%pdf_idx)*&
+                          & sum((y_pair_distribution(1:params%pair_distribution_n_samples) - &
+                          &      params%exp_data(params%pdf_idx)%y)*&
+                          &     4.d0*pi*(dfloat(n_sites)/v_uc)*&
+                          &     x_pair_distribution(1:params%pair_distribution_n_samples))
+                  else
+                     dedv = -params%exp_energy_scales(params%pdf_idx)*&
+                          & sum((y_pair_distribution(1:params%pair_distribution_n_samples) - &
+                          &      params%exp_data(params%pdf_idx)%y)*&
+                          &     y_pair_distribution(1:params%pair_distribution_n_samples))
+                  end if
+
+                  do i = 1, 3
+                     virial(i, i) = virial(i, i) + dedv
+                  end do
+               end if
             end if
 
             ! do i = 1, params%pair_distribution_n_samples
@@ -1445,7 +1479,7 @@ contains
                                 & dfloat(n_sites))*(dfloat(n_sites)/&
                                 & v_uc), sinc_factor_matrix, n_dim_idx,&
                                 & .false., params%xrd_output,&
-                                & n_atoms_of_species, .false.)
+                                & n_atoms_of_species, .false., rank)
                         else
                            call get_structure_factor_forces(n_sites, params%exp_energy_scales(params%sf_idx),&
                                 & params%exp_data(params%sf_idx)%x, params%exp_data(params%sf_idx)%y,&
@@ -1467,7 +1501,7 @@ contains
                                 & dfloat(n_sites))*(dfloat(n_sites)/&
                                 & v_uc), sinc_factor_matrix, n_dim_idx,&
                                 & .false., params%xrd_output,&
-                                & n_atoms_of_species, .false.)
+                                & n_atoms_of_species, .false., rank)
                         end if
 
                         n_dim_idx = n_dim_idx + 1
@@ -1867,7 +1901,7 @@ contains
                                 & n_atoms_of_species(k))/dfloat(n_sites)/&
                                 & dfloat(n_sites))*(dfloat(n_sites)/&
                                 & v_uc), sinc_factor_matrix, n_dim_idx,&
-                                & .true., xrd_output, n_atoms_of_species, neutron, lp)
+                                & .true., xrd_output, n_atoms_of_species, neutron, rank, lp)
                         else
                            call get_structure_factor_forces(n_sites, params%exp_energy_scales(xrd_idx),&
                                 & x_xrd, params%exp_data(xrd_idx)%y,&
@@ -1888,7 +1922,7 @@ contains
                                 & n_atoms_of_species(k))/dfloat(n_sites)/&
                                 & dfloat(n_sites))*(dfloat(n_sites)/&
                                 & v_uc), sinc_factor_matrix, n_dim_idx,&
-                                & .true., xrd_output, n_atoms_of_species, neutron, lp)
+                                & .true., xrd_output, n_atoms_of_species, neutron, rank, lp)
                         end if
 
                         n_dim_idx = n_dim_idx + 1

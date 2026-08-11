@@ -4,7 +4,7 @@ Checks that TurboGAP reproduces QUIP's dipole prediction for the same model.
 
 ```sh
 make DEBUG=0 all
-TURBOGAP_DATA_ROOT=$HOME/work/cpu_vs_gpu_tests/input tests/dipole/run.sh
+tests/dipole/run.sh
 ```
 
 Non-zero exit means TurboGAP and QUIP disagree by more than the tolerance.
@@ -13,7 +13,8 @@ Missing data is a skip, not a failure.
 | variable              | meaning                                          |
 | --------------------- | ------------------------------------------------ |
 | `TURBOGAP_BIN`        | binary under test (default `bin/turbogap`)       |
-| `TURBOGAP_DATA_ROOT`  | directory holding the test systems               |
+| `TURBOGAP_DATA_ROOT`  | take the systems from here and fetch nothing |
+| `TURBOGAP_TESTS_DIR`  | where the data repository is cloned          |
 | `TURBOGAP_DIPOLE_TOL` | absolute tolerance (default `1e-6`)              |
 | `TURBOGAP_RANKS`      | MPI ranks (default 1)                            |
 | `TURBOGAP_KEEP`       | keep the staging directory                       |

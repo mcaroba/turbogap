@@ -6,7 +6,7 @@ same weight?
 
 ```sh
 make DEBUG=0 all
-TURBOGAP_DATA_ROOT=$HOME/work/cpu_vs_gpu_tests/input tests/xrd_lp_pdf/run.sh
+tests/xrd_lp_pdf/run.sh
 tests/xrd_lp_pdf/run.sh forward     # just the pattern
 tests/xrd_lp_pdf/run.sh gradient    # just the forces
 ```
@@ -17,7 +17,8 @@ a failure.
 | variable             | meaning                                      |
 | -------------------- | -------------------------------------------- |
 | `TURBOGAP_BIN`       | binary under test (default `bin/turbogap`)   |
-| `TURBOGAP_DATA_ROOT` | directory holding the test systems           |
+| `TURBOGAP_DATA_ROOT` | take the systems from here and fetch nothing |
+| `TURBOGAP_TESTS_DIR` | where the data repository is cloned          |
 | `TURBOGAP_RANKS`     | ranks for the MPI leg (default 2)            |
 | `TURBOGAP_PYTHON`    | interpreter for the reference (default `python3`) |
 | `TURBOGAP_KEEP`      | keep the staging directory                   |
@@ -66,32 +67,29 @@ scale 100 the virial overflows the field width of the xyz writer and comes
 back with two numbers run together. The gradient check does not depend on the
 scale — it divides out.
 
-## The virial is not checked, and why
+## The virial
 
-`--skip-virial`. The pdf route's virial does not agree with a strain
-derivative of its own energy, and that has nothing to do with this factor:
+Checked too, to `3.5e-08` relative. It did not use to be: the pdf route's
+virial disagreed with a strain derivative of its own energy by a factor of two
+and more, which is why an earlier version of this test passed `--skip-virial`.
+That was never anything to do with the Lorentz-polarization factor -- it was a
+double-counted pair sum and a missing volume term, both of them older than this
+route's LP support. `tests/pdf_virial` is where that lives now, and where the
+finding is written up.
 
-| deck                       | analytic `W_00` | finite difference |
-| -------------------------- | --------------- | ----------------- |
-| pdf route, LP off          | 34.46           | 16.75             |
-| pdf route, LP on           | 28475.12        | 3621.60           |
+What this leg adds on top of that one is the factor itself: `LP` multiplies the
+whole pattern, so it has to reach the virial as well as the forces, and a
+version that weighted only `y` would fail here while `tests/pdf_virial` stayed
+green.
 
-The LP-off row is reproduced bit-for-bit by `bin/turbogap` built from the
-commit *before* the factor was carried to this route, so it predates the
-change. The Debye route passes the same check to `3e-6`, which is what the
-difference between the two points at: `get_structure_factor_forces{,_matrix}`
-accumulates `sum_pairs F (x) r` over both orderings of each pair, and the pdf
-it differentiates is normalised by the number density `N/V`, so the energy
-depends on the cell explicitly and not only through the interatomic distances
-that expression telescopes into. Neither term is the Lorentz-polarization
-factor's to fix.
-
-Consequence: MAD forces on the pdf route are right, MAD *stress* on it is not,
-with or without this factor. `tests/regression/cases/xrd_mad` pins the number
-that comes out; it does not check it against anything.
+`--strain 1e-5` rather than the harness default, for the reason
+`tests/pdf_virial/README.md` gives: the pair distribution is cut hard at
+`pair_distribution_rcut`, and at `1e-4` a few pairs cross it.
 
 ## Test data
 
-`$TURBOGAP_DATA_ROOT/xrd_mad`, the 91-atom melted graphite-O system and the
-glassy-carbon structure factor the `xrd_mad` regression case uses. Fetched by
-`tests/fetch_test_data.sh`.
+`$DATA_ROOT/xrd_mad`, the 91-atom melted graphite-O system and the
+glassy-carbon structure factor the `xrd_mad` regression case uses. It comes
+from the `turbogap_tests` repository beside this one, which
+`tests/fetch_test_data.sh` clones and `run.sh` fetches by itself on the first
+run.

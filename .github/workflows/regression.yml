@@ -1,0 +1,93 @@
+# Did any output move?
+#
+# tests/regression compares two binaries byte for byte across 23 decks. It
+# asserts nothing about whether the numbers are right -- only that they are the
+# same numbers, which makes it a change detector rather than a correctness
+# test. So a red run here is not automatically a bug: a deliberate fix to the
+# physics turns it red too, and the honest response is to say so in the pull
+# request, not to make it green.
+#
+# The reference is the merge base with the target branch, built here, rather
+# than the frozen baseline the suite defaults to. That baseline is a binary
+# that is not in the repository, and several cases have failed against it for
+# reasons that predate any current work -- a signal nobody can act on. Against
+# the merge base, green means "this branch changes no output", which is a
+# statement about this branch alone.
+name: regression
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      reference:
+        description: "Git ref to compare against (default: the merge base)"
+        required: false
+        default: ""
+
+concurrency:
+  group: regression-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: turbogap
+          # soap_turbo is a submodule; without it the tree does not compile.
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Install the toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gfortran libopenmpi-dev openmpi-bin liblapack-dev libblas-dev
+
+      - name: Resolve the test-data revision
+        id: data
+        run: |
+          sha=$(git ls-remote https://github.com/TiganyZ/turbogap_tests.git HEAD | cut -f1)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        with:
+          path: turbogap_tests
+          key: turbogap-tests-${{ steps.data.outputs.sha }}
+
+      - name: Fetch the test data
+        working-directory: turbogap
+        run: tests/fetch_test_data.sh
+
+      - name: Build the binary under test
+        working-directory: turbogap
+        run: make -j"$(nproc)"
+
+      # A worktree rather than a second clone: same object store, and the
+      # source tree under test is left untouched while the reference builds.
+      - name: Build the reference
+        working-directory: turbogap
+        run: |
+          ref='${{ inputs.reference }}'
+          if [ -z "$ref" ]; then
+            # On a pull request, the merge base with the target branch. Run by
+            # hand off a branch there is no such thing, so fall back to the
+            # merge base with the default branch.
+            base='${{ github.event.pull_request.base.sha }}'
+            [ -n "$base" ] || base=origin/${{ github.event.repository.default_branch }}
+            ref=$(git merge-base "$base" HEAD)
+          fi
+          echo "reference: $ref ($(git log -1 --format=%s "$ref"))"
+          git worktree add /tmp/reference "$ref"
+          # A worktree starts with empty submodule directories of its own.
+          git -C /tmp/reference submodule update --init --recursive
+          make -C /tmp/reference -j"$(nproc)"
+
+      - name: Compare
+        working-directory: turbogap
+        run: |
+          TURBOGAP_BIN=$PWD/bin/turbogap \
+          TURBOGAP_REF_BIN=/tmp/reference/bin/turbogap \
+          tests/regression/run.sh

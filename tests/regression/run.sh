@@ -18,8 +18,10 @@
 # Environment:
 #   TURBOGAP_BIN        binary under test  (default: <repo>/bin/turbogap)
 #   TURBOGAP_REF_BIN    reference binary   (default: <repo>/tests/regression/baseline/turbogap.e6eb1aa)
-#   TURBOGAP_DATA_ROOT  directory holding the test systems
-#                       (default: $HOME/work/cpu_vs_gpu_tests/input)
+#   TURBOGAP_DATA_ROOT  directory holding the test systems. Default: the
+#                       turbogap_tests clone beside this repository, which
+#                       tests/fetch_test_data.sh creates on the first run
+#                       (override where it goes with TURBOGAP_TESTS_DIR).
 #   TURBOGAP_TIME_TOL   fail if test/ref wall-clock exceeds this ratio
 #                       (default: unset -> timing is reported, not enforced)
 #   TURBOGAP_KEEP       keep staging directories for inspection
@@ -42,7 +44,6 @@ repo=$(cd "$here/../.." && pwd)
 
 BIN=${TURBOGAP_BIN:-$repo/bin/turbogap}
 REF_BIN=${TURBOGAP_REF_BIN:-$here/baseline/turbogap.e6eb1aa}
-DATA_ROOT=${TURBOGAP_DATA_ROOT:-$repo/../turbogap_tests}
 TIME_TOL=${TURBOGAP_TIME_TOL:-}
 WORK=${TMPDIR:-/tmp}/turbogap_regression.$$
 
@@ -58,11 +59,10 @@ fi
 
 [ -x "$BIN" ] || die "binary under test not found or not executable: $BIN"
 [ -x "$REF_BIN" ] || die "reference binary not found or not executable: $REF_BIN"
-# The test systems live in their own repository. Fetch them on first use rather
+# The test systems live in their own repository, fetched on first use rather
 # than making every new checkout a two-step setup.
-if [ ! -d "$DATA_ROOT" ]; then
-  "$repo/tests/fetch_test_data.sh" "$DATA_ROOT" || die "could not fetch test data"
-fi
+# shellcheck source=../data_root.sh
+. "$here/../data_root.sh"
 [ -d "$DATA_ROOT" ] || die "data root not found: $DATA_ROOT (set TURBOGAP_DATA_ROOT)"
 
 if [ "$BIN" -ef "$REF_BIN" ]; then

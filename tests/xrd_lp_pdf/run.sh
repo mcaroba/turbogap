@@ -15,14 +15,15 @@
 #             for a normalised output, for X-rays and for neutrons, and under
 #             MPI where the q grid is split across ranks and reduced before
 #             the factor is applied
-#   gradient  the forces of an LP-weighted MAD run against central finite
-#             differences of its energy. Forces only: see README.md for why
-#             the virial is not checked on this route
+#   gradient  the forces and virial of an LP-weighted MAD run against central
+#             finite differences of its energy
 #
 # Environment:
 #   TURBOGAP_BIN        binary under test (default: <repo>/bin/turbogap)
-#   TURBOGAP_DATA_ROOT  directory holding the test systems
-#                       (default: $HOME/work/cpu_vs_gpu_tests/input)
+#   TURBOGAP_DATA_ROOT  directory holding the test systems. Default: the
+#                       turbogap_tests clone beside this repository, which
+#                       tests/fetch_test_data.sh creates on the first run
+#                       (override where it goes with TURBOGAP_TESTS_DIR).
 #   TURBOGAP_RANKS      ranks for the MPI leg (default: 2)
 #   TURBOGAP_PYTHON     interpreter for the reference (default: python3). It
 #                       needs numpy; on a machine whose system python3 has
@@ -37,7 +38,8 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repo=$(cd "$here/../.." && pwd)
 
 BIN=${TURBOGAP_BIN:-$repo/bin/turbogap}
-DATA_ROOT=${TURBOGAP_DATA_ROOT:-$HOME/work/cpu_vs_gpu_tests/input}
+# shellcheck source=../data_root.sh
+. "$here/../data_root.sh"
 DATA=$DATA_ROOT/xrd_mad
 RANKS=${TURBOGAP_RANKS:-2}
 PYTHON=${TURBOGAP_PYTHON:-python3}
@@ -70,7 +72,7 @@ command -v "$PYTHON" >/dev/null || die "python interpreter not found: $PYTHON"
 for f in atoms.xyz gap_files/CO.gap xrd_glassy_carbon_zeng_2017.fq; do
   if [ ! -e "$DATA/$f" ]; then
     printf 'SKIP: missing test data %s\n' "$DATA/$f"
-    printf '      (set TURBOGAP_DATA_ROOT, or see tests/xrd_lp_pdf/README.md)\n'
+    printf '      (run tests/fetch_test_data.sh, or see tests/xrd_lp_pdf/README.md)\n'
     exit 0
   fi
 done
@@ -238,13 +240,12 @@ EOF
   # energy scales, so it isolates whatever experimental family the deck turns
   # on. Shared with tests/xrd_debye rather than copied.
   #
-  # Forces only. The pdf route's virial does not agree with a strain
-  # derivative of its energy, with or without this factor and on the binary
-  # that predates it -- see README.md. Asserting it here would be asserting a
-  # pre-existing bug that has nothing to do with the Lorentz-polarization
-  # factor.
+  # Forces and virial both, since the factor multiplies the whole pattern and
+  # so has to reach both. What the strain leg says about the pdf route in
+  # general -- and why it needs a smaller strain than the Debye route does --
+  # belongs to tests/pdf_virial, which covers it without the factor.
   if "$PYTHON" "$here/../xrd_debye/fd_gradient.py" "$WORK" --bin "$BIN" \
-       --scale "$GRADIENT_SCALE" --skip-virial; then
+       --scale "$GRADIENT_SCALE" --strain 1e-5; then
     printf '    PASS\n'
     pass=$((pass + 1))
   else
