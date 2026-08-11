@@ -75,37 +75,85 @@ or left on the Issues section of the Github page.
 
 ## Installation
 
+_**tl;dr**_ (for standard linux builds with the prerequisites installed):
+
+```sh
+git clone --recursive http://github.com/mcaroba/turbogap.git
+cd turbogap
+export TURBOGAP_ARCH=Ubuntu_gfortran_mpi
+make -j4
+turbogap_dir=$(realpath bin)
+export PATH="$turbogap_dir:$PATH"
+echo "export PATH=\"${turbogap_dir}:\$PATH\"" >> ~/.bashrc
+```
+
+### Prerequisites
+
+To use TurboGAP you must have the libraries `openmpi`, `lapack` + `blas` (or `openblas`)
+and the Fortran compilers necessary for your system (e.g. `gcc`).
+
 _For more detailed info on download, installation, etc., you can visit the
 [TurboGAP wiki](https://turbogap.fi/wiki/index.php/Installation)._
+
+### Getting the code
 
 To get the **TurboGAP** code and the necessary **soap_turbo** routines, do a recursive
 `git clone`:
 
-    git clone --recursive http://github.com/mcaroba/turbogap.git /turbogap/source/directory
+```sh
+    git clone --recursive http://github.com/mcaroba/turbogap.git
+```
 
-Where `/turbogap/source/directory` is the directory where you're putting the **TurboGAP**
-source code. To build the **TurboGAP** binary and library, you need to select the options
-that best match your architecture, by editing this line in the `Makefile`:
+### Building
 
-    include makefiles/Makefile.Ubuntu_gfortran_mpi
+To build the **TurboGAP** binary and library, you need to select the options
+that best match your architecture by exporting the environment variable
+`TURBOGAP_ARCH=<your_architecture>` which is used in the `Makefile` e.g.:
 
-A list of example makefiles is provided under the `makefiles/` directory. Once you are
-happy with your `Makefile`, to build the code just type
+```sh
+export TURBOGAP_ARCH=Ubuntu_gfortran_mpi
+```
 
-    make
+This will include the architecture specific examples found in `makefiles`, e.g.
+the above will include the specification for that architecture,
 
-Then add `/turbogap/source/directory/bin/` to your path. If you need to rebuild the code,
+```sh
+ include makefiles/Makefile.Ubuntu_gfortran_mpi
+```
+
+A list of example makefiles is provided under the `makefiles/` directory for different systems.
+
+Once you are happy with your `Makefile`, to build the code just type
+
+```sh
+make j<N_processes>
+```
+
+where `<N_processes>` is the number of processes you wish to build the code with.
+
+Then add `turbogap/bin` to your path.
+
+```sh
+turbogap_dir=$(realpath bin)
+export PATH="$turbogap_dir:$PATH"
+echo "export PATH=\"${turbogap_dir}:\$PATH\"" >> ~/.bashrc
+```
+
+If you need to rebuild the code,
 you can `make clean; make` or `make deepclean; make`.
 
 ## Running TurboGAP
 
-**TurboGAP** can be used to run static (single-point) calculations (`turbogap predict`) or
-molecular dynamics (`turbogap md`). For details, documentation and up-to-date information
-refer to the [TurboGAP wiki](http://turbogap.fi).
+**TurboGAP** can be used to run static (single-point) calculations (`turbogap
+predict`) or molecular dynamics (`turbogap md`) or (`turbogap mc`) for
+Monte-Carlo. For details, documentation and up-to-date information refer to the
+[TurboGAP wiki](http://turbogap.fi).
 
 ## TurboGAP Tutorials
 
-For the latest features in TurboGAP, one can follow the tutorials which were ran for the TurboGAP School, and adapt them for their machine: [TurboGAP School](https://github.com/mcaroba/TurboGAP_School).
+For the latest features in TurboGAP, one can follow the tutorials which were
+ran for the TurboGAP School, and adapt them for their machine: [TurboGAP
+School](https://github.com/mcaroba/TurboGAP_School).
 
 Simple tutorials can be found in the [TurboGAP Tutorials](https://github.com/TiganyZ/turbogap_tutorials) repository `git clone https://github.com/TiganyZ/turbogap_tutorials.git`. Further tutorials and all documentation can be found on the [Turbogap Website](https://turbogap.fi/wiki/index.php/Tutorials).
 
@@ -116,6 +164,28 @@ The data for tests can be by cloning the [TurboGAP Tests](https://github.com/Tig
 ## Developing TurboGAP
 
 To develop for TurboGAP, one can install the development tools python environment (which has fprettify and pre-commit and so on which is installed through uv) such that formatting is preserved. Make a new branch or fork and then once ready submit a pull request. Please add tests for your new feature in the ` tests/` folder such that the CI interface can test upon pushing.
+
+If you're including new source files, make sure to run the script which
+regenerates the `makefiles/Makefile.deps`.
+
+```sh
+python3 tools/gen_fortran_deps.py . > makefiles/Makefile.deps
+```
+
+This may require you to first install a python environment if you don't have a
+reasonable version of python. This can be done using the `source
+tools/setup_dev_env.sh` which will install one for you using `uv` which will be
+placed in `$HOME/.venvs`
+
+### Debugging
+
+Debug flags can be enabled by exporting
+
+```sh
+DEBUG=1
+```
+
+This will create a `bin-dbg` folder which contains the (now slower) binary.
 
 ## Attribution
 
