@@ -384,6 +384,14 @@ contains
       real(dp), allocatable, target :: dV(:)
       real(dp), allocatable, target :: n_atoms_of_species(:)
       real(dp), allocatable, target :: prefactor(:)
+!     The batched route builds the per-q scattering weights on the device only;
+!     the cell half of the virial is a host sum over them, so it copies one
+!     channel back at a time into this.
+      real(dp), allocatable, target :: asf_host(:)
+!     -V dE/dV for the batched xrd, accumulated over the (a,b) channels while
+!     the device weights are still alive and added once the batches have been
+!     collected into virial_xrd.
+      real(dp) :: virial_xrd_volume(1:3, 1:3)
       real(dp), allocatable, target :: sinc_factor_matrix(:, :)
       real(dp), allocatable, target :: pair_distribution_der(:, :)
       real(dp), allocatable, target :: pair_distribution_partial(:, :)
@@ -962,15 +970,56 @@ contains
          call gpu_free_async(xpdf_d, gpu_stream)
          call gpu_free_async(dV_d, gpu_stream)
 
+!        ---   The cell half of the virial   --- !
+!
+!        get_structure_factor_forces_matrix_original differentiates the
+!        interatomic distances, batch by batch, on the device. The pattern also
+!        depends on the cell directly: every partial is normalised by the
+!        number density N/V, and in
+!
+!           S_ab - delta = c_factor * sum_r M(q,r) ( g_ab - 1 )
+!
+!        the N/V in c_factor cancels against a V inside g_ab everywhere but the
+!        subtracted -1, which goes as 1/V. That piece belongs to the whole cell
+!        rather than to a batch or to the pairs a rank owns, so it is summed
+!        over the (a,b) channels once, here, and added to virial_xrd after the
+!        batches have been collected -- see add_structure_factor_volume_virial,
+!        which is also what the non-batched routes in exp_utils call.
+!
+!        The weights it needs are the same per-q scattering factors the force
+!        kernel used, and this route only ever built them on the device, hence
+!        the copy back. Done in this loop because it is the last place they are
+!        alive.
+         call gpu_stream_sync(gpu_stream)
+         virial_xrd_volume = 0.d0
+         allocate (asf_host(1:params%structure_factor_n_samples))
+
          n_dim_idx = 1
          outer_post: do j = 1, n_species_actual
             do k = 1, n_species_actual
                if (j > k) cycle
+
+               if (rank == 0) then
+                  call cpy_dtoh_blocking(all_scattering_factors_d(n_dim_idx), c_loc(asf_host),&
+                       & int(params%structure_factor_n_samples, c_size_t)*c_double)
+
+                  if (j == k) f = 1.d0
+                  if (j /= k) f = 2.d0
+                  f = 4.d0*pi*f*((n_atoms_of_species(j)*n_atoms_of_species(k))/dfloat(n_sites)/&
+                    & dfloat(n_sites))*(dfloat(n_sites)/v_uc)
+
+                  call add_structure_factor_volume_virial(virial_xrd_volume, rank,&
+                       & params%exp_energy_scales(params%xrd_idx), f, prefactor,&
+                       & sinc_factor_matrix, params%pair_distribution_n_samples,&
+                       & params%structure_factor_n_samples, asf_host)
+               end if
+
                call gpu_free_async(all_scattering_factors_d(n_dim_idx), gpu_stream)
                n_dim_idx = n_dim_idx + 1
                if (n_dim_idx > n_dim_partial) exit outer_post
             end do
          end do outer_post
+         deallocate (asf_host)
          deallocate (all_scattering_factors_d)
 
          call gpu_free_async(sinc_factor_matrix_d, gpu_stream)
@@ -987,6 +1036,10 @@ contains
 
          call collect_batched_forces(size(i_beg_list), gpu_batch_storage, n_dim_partial, &
                                      forces_xrd, virial_xrd, n_sites)
+
+!        The pair half, summed over batches, plus the cell half, which is not a
+!        per-batch quantity. Zero on every rank but 0.
+         virial_xrd = virial_xrd + virial_xrd_volume
 
          call free_host_batches(gpu_batch_storage, params%gpu_n_batches, n_dim_partial)
          call free_exp_batches(gpu_exp, params%gpu_n_batches)

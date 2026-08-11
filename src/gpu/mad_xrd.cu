@@ -196,7 +196,7 @@ __global__ void kernel_exp_force_virial_collection(int n_k, double3* forces0, do
 
     for (int k1 = 0; k1 < 3; k1++) {
       for (int k2 = 0; k2 < 3; k2++) {
-        double loc_viri = 0.5 * (tmp_this_force[k1] * this_xyz[k2] + tmp_this_force[k2] * this_xyz[k1]);
+        double loc_viri = 0.25 * (tmp_this_force[k1] * this_xyz[k2] + tmp_this_force[k2] * this_xyz[k1]);
         // if(isnan(loc_viri)){
         //   printf("> tid %d, k1 %d, k2 %d, tmp_this_force[k1] %lf, tmp_this_force[k2] %lf, this_xyz[k1] %lf, this_xyz[k2] %lf, loc_viri = %lf\n", tid, k1, k2, tmp_this_force[k1], tmp_this_force[k2], this_xyz[k1], this_xyz[k2], loc_viri);
         // }

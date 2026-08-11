@@ -1334,6 +1334,8 @@ contains
       real(dp), intent(inout) :: virial(1:3, 1:3)
       real(dp) :: v_uc
       real(dp) :: f
+!     -V dE/dV, the cell half of this observable's virial.
+      real(dp) :: dedv
       real(dp) :: pdf_factor
       real(dp) :: der_factor
       real(dp) :: total_memory_usage = 0.d0
@@ -2181,6 +2183,38 @@ contains
 
                   end do
                end do outerforces
+
+!              ---   The cell half of the virial   --- !
+!
+!              get_pair_distribution_forces differentiates the interatomic
+!              distances; the pattern also depends on the cell directly,
+!              because each partial is normalised by the number density, and a
+!              homogeneous strain changes the volume as well as the distances.
+!              That part is a property of the whole pattern rather than of one
+!              (a,b) channel, so it is added here, once, and only by rank 0 --
+!              the virial is summed over ranks afterwards.
+!
+!              g(r) is proportional to V outright, so V dy/dV is y itself.
+!              D(r) = 4 pi rho r ( g(r) - 1 ) has the volume cancel in the g
+!              term, leaving only the subtracted background, which goes as 1/V.
+               if (rank == 0) then
+                  if (trim(params%pair_distribution_output) == "D(r)") then
+                     dedv = -params%exp_energy_scales(params%pdf_idx)*&
+                          & sum((y_pair_distribution(1:params%pair_distribution_n_samples) - &
+                          &      params%exp_data(params%pdf_idx)%y)*&
+                          &     4.d0*pi*(dfloat(n_sites)/v_uc)*&
+                          &     x_pair_distribution(1:params%pair_distribution_n_samples))
+                  else
+                     dedv = -params%exp_energy_scales(params%pdf_idx)*&
+                          & sum((y_pair_distribution(1:params%pair_distribution_n_samples) - &
+                          &      params%exp_data(params%pdf_idx)%y)*&
+                          &     y_pair_distribution(1:params%pair_distribution_n_samples))
+                  end if
+
+                  do i = 1, 3
+                     virial(i, i) = virial(i, i) + dedv
+                  end do
+               end if
             end if
 
             ! do i = 1, params%pair_distribution_n_samples
@@ -2331,6 +2365,8 @@ contains
       real(dp), intent(inout) :: virial(1:3, 1:3)
       real(dp) :: v_uc
       real(dp) :: f
+!     -V dE/dV, the cell half of this observable's virial.
+      real(dp) :: dedv
       integer, intent(in) :: n_species
       integer, intent(in) :: n_sites
       integer, intent(in) :: i_beg
@@ -2661,6 +2697,38 @@ contains
 
                   end do
                end do outerforces
+
+!              ---   The cell half of the virial   --- !
+!
+!              get_pair_distribution_forces differentiates the interatomic
+!              distances; the pattern also depends on the cell directly,
+!              because each partial is normalised by the number density, and a
+!              homogeneous strain changes the volume as well as the distances.
+!              That part is a property of the whole pattern rather than of one
+!              (a,b) channel, so it is added here, once, and only by rank 0 --
+!              the virial is summed over ranks afterwards.
+!
+!              g(r) is proportional to V outright, so V dy/dV is y itself.
+!              D(r) = 4 pi rho r ( g(r) - 1 ) has the volume cancel in the g
+!              term, leaving only the subtracted background, which goes as 1/V.
+               if (rank == 0) then
+                  if (trim(params%pair_distribution_output) == "D(r)") then
+                     dedv = -params%exp_energy_scales(params%pdf_idx)*&
+                          & sum((y_pair_distribution(1:params%pair_distribution_n_samples) - &
+                          &      params%exp_data(params%pdf_idx)%y)*&
+                          &     4.d0*pi*(dfloat(n_sites)/v_uc)*&
+                          &     x_pair_distribution(1:params%pair_distribution_n_samples))
+                  else
+                     dedv = -params%exp_energy_scales(params%pdf_idx)*&
+                          & sum((y_pair_distribution(1:params%pair_distribution_n_samples) - &
+                          &      params%exp_data(params%pdf_idx)%y)*&
+                          &     y_pair_distribution(1:params%pair_distribution_n_samples))
+                  end if
+
+                  do i = 1, 3
+                     virial(i, i) = virial(i, i) + dedv
+                  end do
+               end if
             end if
 
             ! do i = 1, params%pair_distribution_n_samples
@@ -3225,7 +3293,7 @@ contains
                                 & dfloat(n_sites))*(dfloat(n_sites)/&
                                 & v_uc), sinc_factor_matrix, n_dim_idx,&
                                 & .false., params%xrd_output,&
-                                & n_atoms_of_species, .false., cublas_handle, gpu_stream, &
+                                & n_atoms_of_species, .false., rank, cublas_handle, gpu_stream, &
                 & nk(n_dim_idx), nk_d(n_dim_idx), k_index_d(n_dim_idx), j2_index_d(n_dim_idx), xyz_k_d(n_dim_idx), pair_distribution_partial_d(n_dim_idx), pair_distribution_partial_der_d(n_dim_idx), &
                 & st_nk_d(n_dim_idx), st_k_index_d(n_dim_idx), st_j2_index_d(n_dim_idx), st_pair_distribution_partial_d(n_dim_idx), st_pair_distribution_partial_der_d(n_dim_idx), &
                                 gpu_host_storage(n_dim_idx), gpu_low_memory)
@@ -3250,7 +3318,7 @@ contains
                                 & dfloat(n_sites))*(dfloat(n_sites)/&
                                 & v_uc), sinc_factor_matrix, n_dim_idx,&
                                 & .false., params%xrd_output,&
-                                & n_atoms_of_species, .false.)
+                                & n_atoms_of_species, .false., rank)
                         end if
 
                         n_dim_idx = n_dim_idx + 1
@@ -3648,7 +3716,7 @@ contains
                                 & n_atoms_of_species(k))/dfloat(n_sites)/&
                                 & dfloat(n_sites))*(dfloat(n_sites)/&
                                 & v_uc), sinc_factor_matrix, n_dim_idx,&
-                                & .true., xrd_output, n_atoms_of_species, neutron, cublas_handle, gpu_stream,&
+                                & .true., xrd_output, n_atoms_of_species, neutron, rank, cublas_handle, gpu_stream,&
                 & nk(n_dim_idx), nk_d(n_dim_idx), k_index_d(n_dim_idx), j2_index_d(n_dim_idx), xyz_k_d(n_dim_idx), pair_distribution_partial_d(n_dim_idx), pair_distribution_partial_der_d(n_dim_idx), &
                 & st_nk_d(n_dim_idx), st_k_index_d(n_dim_idx), st_j2_index_d(n_dim_idx), st_pair_distribution_partial_d(n_dim_idx), st_pair_distribution_partial_der_d(n_dim_idx), &
                                 gpu_host_storage(n_dim_idx), gpu_low_memory)
@@ -3672,7 +3740,7 @@ contains
                                 & n_atoms_of_species(k))/dfloat(n_sites)/&
                                 & dfloat(n_sites))*(dfloat(n_sites)/&
                                 & v_uc), sinc_factor_matrix, n_dim_idx,&
-                                & .true., xrd_output, n_atoms_of_species, neutron)
+                                & .true., xrd_output, n_atoms_of_species, neutron, rank)
                         end if
 
                         n_dim_idx = n_dim_idx + 1
