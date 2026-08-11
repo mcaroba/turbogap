@@ -78,7 +78,7 @@ or left on the Issues section of the Github page.
 _**tl;dr**_ (for standard linux builds with the prerequisites installed):
 
 ```sh
-git clone --recursive http://github.com/mcaroba/turbogap.git
+git clone --recursive --depth=1 http://github.com/mcaroba/turbogap.git
 cd turbogap
 export TURBOGAP_ARCH=Ubuntu_gfortran_mpi
 make -j4
@@ -98,10 +98,10 @@ _For more detailed info on download, installation, etc., you can visit the
 ### Getting the code
 
 To get the **TurboGAP** code and the necessary **soap_turbo** routines, do a recursive
-`git clone`:
+`git clone` with `--depth=1` to speed up things:
 
 ```sh
-    git clone --recursive http://github.com/mcaroba/turbogap.git
+    git clone --recursive --depth=1 http://github.com/mcaroba/turbogap.git
 ```
 
 ### Building
