@@ -101,7 +101,7 @@ To get the **TurboGAP** code and the necessary **soap_turbo** routines, do a rec
 `git clone` with `--depth=1` to speed up things:
 
 ```sh
-    git clone --recursive --depth=1 http://github.com/mcaroba/turbogap.git
+git clone --recursive --depth=1 http://github.com/mcaroba/turbogap.git
 ```
 
 ### Building
@@ -118,7 +118,7 @@ This will include the architecture specific examples found in `makefiles`, e.g.
 the above will include the specification for that architecture,
 
 ```sh
- include makefiles/Makefile.Ubuntu_gfortran_mpi
+include makefiles/Makefile.Ubuntu_gfortran_mpi
 ```
 
 A list of example makefiles is provided under the `makefiles/` directory for different systems.
@@ -148,6 +148,31 @@ you can `make clean; make` or `make deepclean; make`.
 predict`) or molecular dynamics (`turbogap md`) or (`turbogap mc`) for
 Monte-Carlo. For details, documentation and up-to-date information refer to the
 [TurboGAP wiki](http://turbogap.fi).
+
+If you need help with TurboGAP modes or its keywords, you can either consult the html document
+
+```sh
+open docs/keywords.html
+```
+
+or the markdown `docs/keywords.md`, or one can use the `--help`:
+
+:
+
+```sh
+turbogap --help
+```
+
+or
+
+```sh
+turbogap --help <mode>
+```
+
+where mode is any of the above (`predict`, `md`, `mc`).
+
+The keywords for the `input` file will be listed with descriptions and their
+dependencies and be filtered according to the simulation mode.
 
 ## TurboGAP Tutorials
 
