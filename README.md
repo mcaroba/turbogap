@@ -195,7 +195,24 @@ Simple tutorials can be found in the [TurboGAP Tutorials](https://github.com/Tig
 
 ## Testing TurboGAP
 
-The data for tests can be by cloning the [TurboGAP Tests](https://github.com/TiganyZ/turbogap_tests). One can clone the repository `git clone https://github.com/TiganyZ/turbogap_tests.git` in the directory where the TurboGAP repo is stored and execute the regression tests.
+The data for tests can be by cloning the [TurboGAP Tests](https://github.com/TiganyZ/turbogap_tests). This can be done using the script in `tests/regression/fetch_test_data.sh`.
+
+Instead of doing a shallow clone (with depth=1) you can do the full clone so you have access to the baseline commit for regression tests.
+
+```sh
+git clone --recursive http://github.com/mcaroba/turbogap.git
+cd turbogap
+export TURBOGAP_ARCH=Ubuntu_gfortran_mpi
+make -j4
+turbogap_dir=$(realpath bin)
+export PATH="$turbogap_dir:$PATH"
+cd tests/regression
+./make_baseline.sh
+./fetch_test_data.sh
+./run.sh
+```
+
+Other tests can be done by running the scripts in the `tests/<test_name>/run.sh` directories respectively.
 
 ## Developing TurboGAP
 
