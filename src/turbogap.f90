@@ -436,7 +436,9 @@ program turbogap
 
    !**************************************************************************
    ! Start recording the time
-   call get_time(time1)
+   call get_time(time2)
+   time%total = 0.0_dp
+   call time_start(time%total)
    time3 = time1
 !  Everything before the first pass of the main loop: the input file, the
 !  potential files, and the allocation and broadcast that follow them. Without
@@ -3164,6 +3166,7 @@ program turbogap
       ! End of loop through structures in the xyz file or MD steps
    end do
 
+   call time_end(time%total)
    if (params%do_md .or. params%do_prediction .or. params%do_mc) then
       call get_time(time2)
 #ifdef _MPIF90
@@ -3225,18 +3228,6 @@ program turbogap
          write (*, '(A,F13.3,A)') '     - E & F brc.:', time%mpi_ef(3), ' seconds |'
          write (*, '(A,F13.3,A)') '     -  MPI misc.:', time%mpi(3), ' seconds |'
 #endif
-!       Miscellaneous is what the parent buckets do not account for.  It used
-!       to be written out here as one long subtraction, which is how it came to
-!       subtract time%gap and the mpi_ef reduce nested inside it and print a
-!       negative number.  sum_times owns the list now (src/timing.f90), so the
-!       set summed here and the set declared as parents there cannot disagree.
-!
-!       Accounted-for is printed beside it so the arithmetic is visible: the
-!       three numbers below have to add up, and a reader can see at a glance how
-!       much of the run the buckets actually name.  A large Miscellaneous is a
-!       statement that something real is not being measured -- which is how the
-!       setup bucket above came to exist.
-         time%total(3) = time2 - time3
          write (*, *) '                                       |'
          write (*, '(A,F13.3,A)') ' *  Accounted for:', sum_times(time), ' seconds |'
          write (*, '(A,F13.3,A)') ' *  Miscellaneous:', time%total(3) - sum_times(time), ' seconds |'

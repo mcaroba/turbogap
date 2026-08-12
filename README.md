@@ -209,8 +209,10 @@ export PATH="$turbogap_dir:$PATH"
 cd tests/regression
 ./make_baseline.sh
 ./fetch_test_data.sh
-./run.sh
+TURBOGAP_KEEP=1 ./run.sh
 ```
+
+and the tests will be found in `$TMPDIR/turbogap_regression.xxxxx`.
 
 Other tests can be done by running the scripts in the `tests/<test_name>/run.sh` directories respectively.
 
