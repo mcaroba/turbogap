@@ -1189,14 +1189,28 @@ contains
 
       character*64 :: cjunk
 
+      !> @kw atoms_file, input_file
+      !> Path to the extended-XYZ file holding the atomic configuration, or the trajectory of
+      !> configurations to loop over in predict mode. Required.
       if (keyword == 'atoms_file' .or. keyword == 'input_file') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%atoms_file
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("atoms_file", params%atoms_file)
+      !> @kw e0
+      !> Constant energy offset per species, added to every atom of that species. One value per
+      !> entry in species, in the same order. The GAP predicts energies relative to these, so they
+      !> set the zero of the energy scale.
+      !> @units eV
       else if (keyword == 'e0') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%e0(1:n_species)
+      !> @kw masses
+      !> Atomic mass of each species, one value per entry in species and in the same order. Read in
+      !> amu and converted internally to eV fs^2 / A^2. If absent they are taken from the XYZ file
+      !> instead.
+      !> @units amu
+      !> @see species
       else if (keyword == 'masses') then
          backspace (unit)
          call read_parameters(unit, iostatus, n_species, params%masses_types)
@@ -1205,6 +1219,13 @@ contains
 !       We convert the masses in amu to eV*fs^2/A^2
          params%masses_types = params%masses_types*103.6426965268d0
          masses_in_input_file = .true.
+      !> @kw max_gbytes_per_process
+      !> Memory an MPI rank may use for the SOAP descriptor and its derivatives; the rank splits
+      !> its atoms into as many batches as it takes to stay under this. Naming it in the input file
+      !> also stops the run sizing the budget from the node automatically, so a value chosen
+      !> deliberately is never overwritten.
+      !> @units GB
+      !> @see mem_fraction
       else if (keyword == 'max_gbytes_per_process') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%max_Gbytes_per_process
@@ -1214,26 +1235,49 @@ contains
 !       cannot know about.
          params%max_Gbytes_set = .true.
          if (rank == 0) call print_parameter("max_Gbytes_per_process", params%max_Gbytes_per_process)
+      !> @kw mem_fraction
+      !> Fraction of the node's memory to divide between the ranks on it when
+      !> max_Gbytes_per_process was not given. Only consulted for that automatic budget, and
+      !> ignored once max_Gbytes_per_process appears in the deck.
+      !> @see max_gbytes_per_process
       else if (keyword == 'mem_fraction') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%mem_fraction
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("mem_fraction", params%mem_fraction)
+      !> @kw neighbors_buffer
+      !> Extra distance added to every cutoff when the neighbour lists are built, so that a list
+      !> stays valid for several steps as atoms move. Larger values cost memory and neighbour-loop
+      !> time but rebuild less often.
+      !> @units A
       else if (keyword == 'neighbors_buffer') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%neighbors_buffer
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("neighbors_buffer", params%neighbors_buffer)
+      !> @kw radii
+      !> Per-species radius used by the Monte-Carlo insertion and accessible-volume tests, one
+      !> value per entry in species. Not a physical parameter of the potential.
+      !> @units A
+      !> @see accessible_volume, mc_types
       else if (keyword == 'radii') then
          backspace (unit)
          call read_parameters(unit, iostatus, n_species, params%radii)
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameters("radii", params%radii)
+      !> @kw random_seed
+      !> Seed for the intrinsic pseudo-random number generator. Zero, the default, leaves the
+      !> compiler's own sequence alone; any other value makes a run repeatable, which is what the
+      !> regression comparisons rely on when the initial velocities are randomized.
+      !> @see randomize_velocities
       else if (keyword == 'random_seed') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%random_seed_value
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("random_seed", params%random_seed_value)
+      !> @kw species
+      !> Chemical symbols of the species in the system, in the order every other per-species list
+      !> is written in. n_species entries.
       else if (keyword == 'species') then
          backspace (unit)
          call read_parameters(unit, iostatus, n_species, params%species_types)
@@ -1244,16 +1288,25 @@ contains
             write (*, *) 'ERROR: your "species" keyword is wrong |  <-- ERROR'
             stop
          end if
+      !> @kw timing
+      !> Print a breakdown of where wall time went, by phase, at the end of the run.
       else if (keyword == 'timing') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%do_timing
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("timing", params%do_timing)
+      !> @kw verbosity, verb
+      !> How much diagnostic output to print. 0 is quiet; the MC and MD drivers gate extra
+      !> reporting on thresholds up to about 50.
       else if (keyword == 'verbosity' .or. keyword == 'verb') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%verb
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("verbosity", params%verb)
+      !> @kw which_atom
+      !> Restrict the prediction to a single atom index, for debugging a local environment. 0, the
+      !> default, means every atom.
+      !> @modes predict
       else if (keyword == 'which_atom') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%which_atom
@@ -1285,61 +1338,110 @@ contains
 
       character*64 :: cjunk
 
+      !> @kw do_derivatives
+      !> Compute the derivatives of the SOAP descriptor with respect to atomic positions. Needed
+      !> for forces, and switched on automatically in md and mc mode. Turning it off in predict
+      !> mode is what makes an energy-only pass cheap.
       if (keyword == 'do_derivatives') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%do_derivatives
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("do_derivatives", params%do_derivatives)
+      !> @kw do_derivatives_fd
+      !> Compute the descriptor derivatives by finite differences instead of analytically. A
+      !> correctness check on the analytic route, far slower, and not meant for production.
+      !> @see do_derivatives
       else if (keyword == 'do_derivatives_fd') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%do_derivatives_fd
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("do_derivatives_fd", params%do_derivatives_fd)
+      !> @kw do_forces
+      !> Compute forces and the virial. Set automatically in md, mc and predict mode; the only
+      !> reason to name it is to switch it off.
       else if (keyword == 'do_forces') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%do_forces
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("do_forces", params%do_forces)
+      !> @kw do_mc
+      !> Run a Monte-Carlo walk. Set automatically by `turbogap mc`.
+      !> @modes mc
       else if (keyword == 'do_mc') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%do_mc
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("do_mc", params%do_mc)
+      !> @kw do_md
+      !> Run molecular dynamics. Set automatically by `turbogap md`.
+      !> @modes md
       else if (keyword == 'do_md') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%do_md
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("do_md", params%do_md)
+      !> @kw do_prediction
+      !> Evaluate the GAP at all. Set automatically in every mode except soap; switching it off
+      !> leaves only the descriptor calculation.
       else if (keyword == 'do_prediction') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%do_prediction
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("do_prediction", params%do_prediction)
+      !> @kw e_tol
+      !> Convergence threshold on the energy change between successive relaxation steps. The
+      !> relaxation stops when the energy, force and pressure criteria are all met.
+      !> @units eV
+      !> @needs optimize
+      !> @see f_tol, p_tol
       else if (keyword == 'e_tol') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%e_tol
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("e_tol", params%e_tol)
+      !> @kw f_tol
+      !> Convergence threshold on the largest force component during a relaxation.
+      !> @units eV/A
+      !> @needs optimize
+      !> @see e_tol, p_tol
       else if (keyword == 'f_tol') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%f_tol
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("f_tol", params%f_tol)
+      !> @kw gamma0
+      !> The gradient-descent prefactor this once scaled. The step is now taken from max_opt_step
+      !> and the largest force, so the value is read and discarded.
+      !> @see max_opt_step
+      !> @type real
+      !> @status ignored
       else if (keyword == "gamma0") then
-         backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, params%gamma0
-         call check_iostatus(iostatus, keyword)
-         if (rank == 0) call print_parameter("gamma0", params%gamma0)
+         call ignored_keyword(unit, iostatus, rank, keyword)
+      !> @kw max_opt_step
+      !> Largest distance any atom may move in one gradient-descent step. The step size is chosen
+      !> so that the biggest displacement equals this.
+      !> @units A
+      !> @needs optimize
       else if (keyword == "max_opt_step") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%max_opt_step
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("max_opt_step", params%max_opt_step)
+      !> @kw max_opt_step_eps
+      !> Largest strain any cell vector may take in one step of a cell relaxation. The strain
+      !> analogue of max_opt_step.
+      !> @needs optimize
+      !> @see max_opt_step
       else if (keyword == "max_opt_step_eps") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%max_opt_step_eps
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("max_opt_step_eps", params%max_opt_step_eps)
+      !> @kw optimize
+      !> How the geometry is driven: "vv" for velocity-Verlet dynamics, "gd" for gradient descent
+      !> on the positions, "gd-box" to relax the cell as well, and "gd-box-ortho" to relax the cell
+      !> keeping it orthorhombic. Anything else aborts the run.
+      !> @modes md mc
       else if (keyword == "optimize") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%optimize
@@ -1352,27 +1454,50 @@ contains
             write (*, *) "ERROR: optimize algorithm not implemented:", params%optimize
             stop
          end if
+      !> @kw p_tol
+      !> Convergence threshold on the pressure during a cell relaxation.
+      !> @units GPa
+      !> @needs optimize
+      !> @see e_tol, f_tol
       else if (keyword == 'p_tol') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%p_tol
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("p_tol", params%p_tol)
+      !> @kw target_pos_step
+      !> Displacement the variable time step aims for: the step is rescaled so that the fastest
+      !> atom moves about this far. Naming this keyword is what enables the variable time step.
+      !> @units A
+      !> @modes md
+      !> @see tau_dt
       else if (keyword == 'target_pos_step') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%target_pos_step
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("target_pos_step", params%target_pos_step)
          params%variable_time_step = .true.
+      !> @kw tau_dt
+      !> Relaxation time over which the variable time step is allowed to change, so that the step
+      !> size follows target_pos_step smoothly instead of jumping.
+      !> @units fs
+      !> @modes md
+      !> @needs target_pos_step
       else if (keyword == 'tau_dt') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%tau_dt
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("tau_dt", params%tau_dt)
+      !> @kw write_derivatives
+      !> Write the SOAP descriptor derivatives to file alongside the descriptors. Large output; a
+      !> debugging aid.
+      !> @see write_soap
       else if (keyword == 'write_derivatives') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%write_derivatives
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("write_derivatives", params%write_derivatives)
+      !> @kw write_soap
+      !> Write the SOAP descriptor vectors to file. Set automatically by `turbogap soap`.
       else if (keyword == 'write_soap') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%write_soap
@@ -1411,6 +1536,10 @@ contains
       character*128, allocatable :: long_line_items(:)
       logical :: valid_choice
 
+      !> @kw barostat
+      !> Pressure coupling: "none" or "berendsen". Anything else aborts the run.
+      !> @modes md mc
+      !> @see p_beg, p_end, tau_p, barostat_sym
       if (keyword == 'barostat') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%barostat
@@ -1431,11 +1560,20 @@ contains
             end if
             stop
          end if
+      !> @kw barostat_sym
+      !> Which components of the cell the barostat is allowed to change: "isotropic" scales all
+      !> three axes together, and the anisotropic settings let them move independently.
+      !> @modes md mc
+      !> @needs barostat
       else if (keyword == 'barostat_sym') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%barostat_sym
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("barostat_sym", params%barostat_sym)
+      !> @kw box_scaling_factor
+      !> A 3x3 matrix the cell is multiplied by, applied once at the start of the run. Nine
+      !> numbers, read column by column. Used to strain a cell without editing the XYZ file.
+      !> @needs scale_box
       else if (keyword == 'box_scaling_factor') then
          backspace (unit)
          read (10, '(A)', iostat=iostatus) long_line
@@ -1481,70 +1619,141 @@ contains
             stop
          end if
          deallocate (long_line_items)
+      !> @kw gamma_p
+      !> Damping of the Berendsen barostat's cell response, on top of tau_p.
+      !> @modes md mc
+      !> @needs barostat
       else if (keyword == 'gamma_p') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%gamma_p
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("gamma_p", params%gamma_p)
+      !> @kw md_nsteps
+      !> Number of molecular-dynamics steps to take.
+      !> @modes md
       else if (keyword == 'md_nsteps') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%md_nsteps
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("md_nsteps", params%md_nsteps)
+      !> @kw md_step
+      !> Time step. With a variable time step this is the starting value.
+      !> @units fs
+      !> @modes md
+      !> @see target_pos_step
       else if (keyword == 'md_step') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%md_step
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("md_step", params%md_step)
+      !> @kw n_t_hold
+      !> Number of entries in the t_hold list, which must be given before it.
+      !> @modes md
+      !> @see t_hold
       else if (keyword == 'n_t_hold') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%n_t_hold
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("n_t_hold", params%n_t_hold)
          allocate (params%t_hold(1:params%n_t_hold*3))
+      !> @kw p_beg
+      !> Target pressure at the start of the run. With p_end it defines a linear ramp over the run.
+      !> @units GPa
+      !> @modes md mc
+      !> @needs barostat
       else if (keyword == 'p_beg') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%p_beg
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("p_beg", params%p_beg)
+      !> @kw p_end
+      !> Target pressure at the end of the run.
+      !> @units GPa
+      !> @modes md mc
+      !> @needs barostat
+      !> @see p_beg
       else if (keyword == 'p_end') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%p_end
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("p_end", params%p_end)
+      !> @kw randomize_velocities
+      !> Draw the initial velocities from a Maxwell-Boltzmann distribution at t_beg instead of
+      !> taking them from the XYZ file. Use random_seed to make the draw repeatable.
+      !> @modes md
+      !> @see random_seed, t_beg
       else if (keyword == 'randomize_velocities') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%randomize_velocities
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("randomize_velocities", params%randomize_velocities)
+      !> @kw scale_box
+      !> Apply box_scaling_factor to the cell at the start of the run.
+      !> @see box_scaling_factor
       else if (keyword == 'scale_box') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%scale_box
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("scale_box", params%scale_box)
+      !> @kw t_beg
+      !> Target temperature at the start of the run. With t_end it defines a linear ramp over the
+      !> run; give only t_beg for a constant-temperature run.
+      !> @units K
+      !> @modes md mc
+      !> @see thermostat, t_end, t_hold
       else if (keyword == 't_beg') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%t_beg
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("t_beg", params%t_beg)
+      !> @kw t_end
+      !> Target temperature at the end of the run.
+      !> @units K
+      !> @modes md mc
+      !> @see t_beg
       else if (keyword == 't_end') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%t_end
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("t_end", params%t_end)
+      !> @kw t_hold
+      !> Segments of the temperature schedule, as a flat list read n_t_hold entries at a time: a
+      !> piecewise ramp-and-hold instead of the single linear ramp that t_beg and t_end give.
+      !> n_t_hold must appear first.
+      !> @units K
+      !> @modes md
+      !> @needs n_t_hold
       else if (keyword == 't_hold') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, (params%t_hold(nw), nw=1, params%n_t_hold*3)
+      !> @kw tau_p
+      !> Relaxation time of the barostat: how quickly the cell is pushed towards the target
+      !> pressure. Larger is gentler.
+      !> @units fs
+      !> @modes md mc
+      !> @needs barostat
       else if (keyword == 'tau_p') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%tau_p
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("tau_p", params%tau_p)
+      !> @kw tau_t
+      !> Relaxation time of the thermostat: how quickly the kinetic energy is pushed towards the
+      !> target temperature. Larger is gentler.
+      !> @units fs
+      !> @modes md mc
+      !> @needs thermostat
       else if (keyword == 'tau_t') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%tau_t
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("tau_t", params%tau_t)
+      !> @kw thermostat
+      !> Temperature coupling: "none", "berendsen" or "bussi". Bussi is the stochastic velocity
+      !> rescaling that samples the canonical ensemble properly; Berendsen does not. Anything else
+      !> aborts the run.
+      !> @modes md mc
+      !> @see t_beg, t_end, tau_t
       else if (keyword == 'thermostat') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%thermostat
@@ -1591,6 +1800,8 @@ contains
 
       character*64 :: cjunk
 
+      !> @kw n_nested
+      !> Number of nested-sampling iterations. Naming it is what enables nested sampling.
       if (keyword == 'n_nested') then
          if (mode /= "predict") then
             write (*, *) 'ERROR: the "n_nested" option for nested sampling can only be used with "turbogap predict"'
@@ -1601,31 +1812,45 @@ contains
          if (params%n_nested > 0) then
             params%do_nested_sampling = .true.
          end if
+      !> @kw nested_max_strain
+      !> Largest strain a nested-sampling cell-shape move may apply.
       else if (keyword == 'nested_max_strain') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%nested_max_strain
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("nested_max_strain", params%nested_max_strain)
+      !> @kw nested_max_volume_change
+      !> Largest fractional volume change a nested-sampling volume move may make.
+      !> @needs scale_box_nested
       else if (keyword == 'nested_max_volume_change') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%nested_max_volume_change
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("nested_max_volume_change", params%nested_max_volume_change)
+      !> @kw p_nested
+      !> External pressure entering the nested-sampling enthalpy.
+      !> @units GPa
+      !> @needs n_nested
       else if (keyword == 'p_nested') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%p_nested
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("p_nested", params%p_nested)
+      !> @kw scale_box_nested
+      !> Let nested sampling change the cell as well as the positions.
+      !> @needs n_nested
+      !> @see nested_max_volume_change, nested_max_strain
       else if (keyword == 'scale_box_nested') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%scale_box_nested
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("scale_box_nested", params%scale_box_nested)
+      !> @kw t_extra
+      !> Temperature offset from an earlier nested-sampling design; nothing consults it.
+      !> @type real
+      !> @status ignored
       else if (keyword == 't_extra') then
-         backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, params%t_extra
-         call check_iostatus(iostatus, keyword)
-         if (rank == 0) call print_parameter("t_extra", params%t_extra)
+         call ignored_keyword(unit, iostatus, rank, keyword)
       else
          return
       end if
@@ -1657,12 +1882,24 @@ contains
       integer :: nw
       logical :: valid_choice
 
+      !> @kw accessible_volume
+      !> Use the volume actually accessible to a new atom, with the volume of the existing atoms'
+      !> spheres removed, rather than the cell volume, in the insertion and removal acceptance
+      !> ratios. The spheres are sized by radii.
+      !> @modes mc
+      !> @see radii
       if (keyword == 'accessible_volume') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%accessible_volume
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("accessible_volume", params%accessible_volume)
 
+      !> @kw mc_acceptance
+      !> Relative probability of picking each move type, one weight per entry in mc_types and in
+      !> the same order. Normalised internally, so the weights need not sum to one. Its length sets
+      !> n_mc_types.
+      !> @modes mc
+      !> @see mc_types
       else if (keyword == 'mc_acceptance') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, (params%mc_acceptance(nw), nw=1, params%n_mc_types)
@@ -1675,48 +1912,106 @@ contains
             params%mc_acceptance(i) = params%mc_acceptance(i)/k
          end do
 
+      !> @kw mc_hamiltonian
+      !> Include the kinetic energy in the Metropolis test, so that the walk samples configurations
+      !> and momenta together rather than configurations alone. Also what makes the "md" move type
+      !> meaningful.
+      !> @modes mc
+      !> @see mc_types
       else if (keyword == 'mc_hamiltonian') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%mc_hamiltonian
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("mc_hamiltonian", params%mc_hamiltonian)
+      !> @kw mc_hybrid_opt
+      !> How the short MD burst of a hybrid "md" move is propagated: same choices as optimize.
+      !> @modes mc
+      !> @needs mc_types
+      !> @see optimize
       else if (keyword == 'mc_hybrid_opt') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%mc_hybrid_opt
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("mc_hybrid_opt", params%mc_hybrid_opt)
+      !> @kw mc_lnvol_max
+      !> Largest change in ln(V) a volume move may make, so the trial volume is drawn from
+      !> V*exp(+-mc_lnvol_max). Working in the logarithm keeps the move symmetric in volume.
+      !> @modes mc
+      !> @needs mc_types
       else if (keyword == 'mc_lnvol_max') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%mc_lnvol_max
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("mc_lnvol_max", params%mc_lnvol_max)
+      !> @kw mc_max_dist
+      !> Largest distance from an existing atom at which a new atom may be inserted. Together with
+      !> mc_min_dist it bounds where an insertion trial may land.
+      !> @units A
+      !> @modes mc
+      !> @see mc_min_dist, mc_max_insertion_trials
       else if (keyword == 'mc_max_dist') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%mc_max_dist
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("mc_max_dist", params%mc_max_dist)
+      !> @kw mc_max_dist_to_planes
+      !> Distance from each plane within which a moved or inserted atom must stay, one value per
+      !> plane. mc_n_planes must appear first.
+      !> @units A
+      !> @modes mc
+      !> @needs mc_n_planes
+      !> @see mc_planes
       else if (keyword == 'mc_max_dist_to_planes') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, (params%mc_max_dist_to_planes(nw), nw=1, params%mc_n_planes)
 
+      !> @kw mc_max_insertion_trials
+      !> How many random positions an insertion move may try before giving up. The run reports the
+      !> failure and says which of mc_min_dist, mc_max_dist or this to change.
+      !> @modes mc
+      !> @see mc_min_dist, mc_max_dist
       else if (keyword == 'mc_max_insertion_trials') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%mc_max_insertion_trials
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("mc_max_insertion_trials", params%mc_max_insertion_trials)
+      !> @kw mc_min_dist
+      !> Closest an inserted atom may come to an existing one. Trials nearer than this are rejected
+      !> without evaluating the potential, which is what keeps an insertion from landing on top of
+      !> an atom.
+      !> @units A
+      !> @modes mc
+      !> @see mc_max_dist
       else if (keyword == 'mc_min_dist') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%mc_min_dist
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("mc_min_dist", params%mc_min_dist)
+      !> @kw mc_move_max
+      !> Largest displacement of a single-atom "move". The trial displacement is drawn uniformly up
+      !> to this.
+      !> @units A
+      !> @modes mc
+      !> @needs mc_types
       else if (keyword == 'mc_move_max') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%mc_move_max
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("mc_move_max", params%mc_move_max)
+      !> @kw mc_mu
+      !> Chemical potential of each species that may be inserted or removed, one value per entry in
+      !> mc_species. Its length sets n_mc_mu.
+      !> @units eV
+      !> @modes mc
+      !> @see mc_species, mc_types
       else if (keyword == 'mc_mu') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, (params%mc_mu(nw), nw=1, params%n_mc_mu)
+      !> @kw mc_mu_acceptance
+      !> Relative probability of picking each species for a grand-canonical move, one weight per
+      !> entry in mc_species.
+      !> @modes mc
+      !> @see mc_mu, mc_species
       else if (keyword == 'mc_mu_acceptance') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, (params%mc_mu_acceptance(nw), nw=1, params%n_mc_types)
@@ -1729,6 +2024,11 @@ contains
             params%mc_mu_acceptance(i) = params%mc_mu_acceptance(i)/k
          end do
 
+      !> @kw mc_n_planes
+      !> Number of planes bounding the region moves are restricted to. Must appear before mc_planes
+      !> and mc_max_dist_to_planes, which it allocates.
+      !> @modes mc
+      !> @see mc_planes
       else if (keyword == 'mc_n_planes') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%mc_n_planes
@@ -1741,57 +2041,113 @@ contains
             allocate (params%mc_max_dist_to_planes(params%mc_n_planes))
          end if
 
+      !> @kw mc_nrelax
+      !> Number of relaxation steps to take after an accepted move when mc_relax is on.
+      !> @modes mc
+      !> @needs mc_relax
       else if (keyword == 'mc_nrelax') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%mc_nrelax
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("mc_nrelax", params%mc_nrelax)
+      !> @kw mc_nsteps
+      !> Number of Monte-Carlo steps to take.
+      !> @modes mc
       else if (keyword == 'mc_nsteps') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%mc_nsteps
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("mc_nsteps", params%mc_nsteps)
+      !> @kw mc_optimize_exp
+      !> Include the experimental-data penalty in the Metropolis test, so the walk is driven
+      !> towards agreement with the measured pattern. This is the reverse Monte-Carlo mode.
+      !> @modes mc
+      !> @needs do_exp
+      !> @see exp_energy_scales
       else if (keyword == 'mc_optimize_exp') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%mc_optimize_exp
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("mc_optimize_exp", params%mc_optimize_exp)
+      !> @kw mc_planes
+      !> The planes bounding the region moves are restricted to, four numbers per plane giving its
+      !> normal and offset. mc_n_planes must appear first.
+      !> @modes mc
+      !> @needs mc_n_planes
+      !> @see mc_max_dist_to_planes, mc_planes_restrict_to_polyhedron
       else if (keyword == 'mc_planes') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, (params%mc_planes(nw), nw=1, 4*params%mc_n_planes)
 
+      !> @kw mc_planes_restrict_to_polyhedron
+      !> Require an atom to be inside the polyhedron the planes enclose, rather than merely within
+      !> mc_max_dist_to_planes of each plane.
+      !> @modes mc
+      !> @needs mc_planes
       else if (keyword == 'mc_planes_restrict_to_polyhedron') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%mc_planes_restrict_to_polyhedron
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("mc_planes_restrict_to_polyhedron", params%mc_planes_restrict_to_polyhedron)
 
+      !> @kw mc_relax
+      !> Relax the geometry after each accepted move, so the walk samples relaxed configurations.
+      !> @modes mc
+      !> @see mc_nrelax, mc_relax_opt, mc_relax_after
       else if (keyword == 'mc_relax') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%mc_relax
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("mc_relax", params%mc_relax)
+      !> @kw mc_relax_after
+      !> Which move types trigger a relaxation, by name. n_mc_relax_after must appear first.
+      !> Without it, mc_relax applies to every accepted move.
+      !> @modes mc
+      !> @needs n_mc_relax_after
+      !> @see mc_relax
       else if (keyword == 'mc_relax_after') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, (params%mc_relax_after(nw), nw=1, params%n_mc_relax_after)
+      !> @kw mc_relax_opt
+      !> How the post-move relaxation is driven: same choices as optimize.
+      !> @modes mc
+      !> @needs mc_relax
+      !> @see optimize
       else if (keyword == 'mc_relax_opt') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%mc_relax_opt
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("mc_relax_opt", params%mc_relax_opt)
+      !> @kw mc_reverse
+      !> Reverse-Monte-Carlo switch from an earlier design; nothing consults it. Use
+      !> mc_optimize_exp.
+      !> @see mc_optimize_exp
+      !> @type logical
+      !> @modes mc
+      !> @status ignored
       else if (keyword == 'mc_reverse') then
-         backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, params%mc_reverse
-         call check_iostatus(iostatus, keyword)
-         if (rank == 0) call print_parameter("mc_reverse", params%mc_reverse)
+         call ignored_keyword(unit, iostatus, rank, keyword)
+      !> @kw mc_reverse_lambda
+      !> Mixing weight for the same earlier design; nothing consults it. The weight that does exist
+      !> is exp_energy_scales.
+      !> @see exp_energy_scales
+      !> @type real
+      !> @modes mc
+      !> @status ignored
       else if (keyword == 'mc_reverse_lambda') then
-         backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, params%mc_reverse_lambda
-         call check_iostatus(iostatus, keyword)
-         if (rank == 0) call print_parameter("mc_reverse_lambda", params%mc_reverse_lambda)
+         call ignored_keyword(unit, iostatus, rank, keyword)
+      !> @kw mc_species
+      !> Species that may be inserted or removed by grand-canonical moves. Its length sets n_mc_mu.
+      !> @modes mc
+      !> @see mc_mu, mc_types
       else if (keyword == 'mc_species') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, (params%mc_species(nw), nw=1, params%n_mc_mu)
+      !> @kw mc_swaps
+      !> Species pairs that a "swap" move may exchange, given as a flat list of symbols read two at
+      !> a time. Its length sets n_mc_swaps, and the symbols are resolved against species.
+      !> @modes mc
+      !> @see mc_types, species
       else if (keyword == 'mc_swaps') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, (params%mc_swaps(nw), nw=1, 2*params%n_mc_swaps)
@@ -1815,6 +2171,12 @@ contains
             end if
          end do
 
+      !> @kw mc_types
+      !> Which moves the walk may make, from "move", "insertion", "removal", "relax", "md", "swap",
+      !> "volume" and "none". Any other name aborts the run. Its length sets n_mc_types, and
+      !> mc_acceptance weights them.
+      !> @modes mc
+      !> @see mc_acceptance
       else if (keyword == 'mc_types') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, (params%mc_types(nw), nw=1, params%n_mc_types)
@@ -1837,11 +2199,20 @@ contains
                stop
             end if
          end do
+      !> @kw mc_write_xyz
+      !> Write the configuration after every Monte-Carlo step, not only the accepted ones.
+      !> @modes mc
+      !> @see write_xyz
       else if (keyword == 'mc_write_xyz') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%mc_write_xyz
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("mc_write_xyz", params%mc_write_xyz)
+      !> @kw n_mc_mu
+      !> Number of species in the grand-canonical lists. Give it before mc_species, mc_mu and
+      !> mc_mu_acceptance, which it allocates; giving those lists instead sets it implicitly.
+      !> @modes mc
+      !> @see mc_species
       else if (keyword == 'n_mc_mu') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%n_mc_mu
@@ -1852,12 +2223,21 @@ contains
          allocate (params%mc_mu_acceptance(1:params%n_mc_mu))
          params%mc_mu_acceptance = 1.d0/dfloat(params%n_mc_mu)
 
+      !> @kw n_mc_relax_after
+      !> Number of entries in mc_relax_after, which it allocates and must precede.
+      !> @modes mc
+      !> @see mc_relax_after
       else if (keyword == 'n_mc_relax_after') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%n_mc_relax_after
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("n_mc_relax_after", params%n_mc_relax_after)
          allocate (params%mc_relax_after(1:params%n_mc_relax_after))
+      !> @kw n_mc_swaps
+      !> Number of swap pairs, which is half the length of mc_swaps. Give it before mc_swaps, which
+      !> it allocates.
+      !> @modes mc
+      !> @see mc_swaps
       else if (keyword == 'n_mc_swaps') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%n_mc_swaps
@@ -1865,6 +2245,11 @@ contains
          if (rank == 0) call print_parameter("n_mc_swaps", params%n_mc_swaps)
          allocate (params%mc_swaps(1:2*params%n_mc_swaps))
          allocate (params%mc_swaps_id(1:2*params%n_mc_swaps))
+      !> @kw n_mc_types
+      !> Number of move types. Give it before mc_types and mc_acceptance, which it allocates;
+      !> giving those lists instead sets it implicitly.
+      !> @modes mc
+      !> @see mc_types
       else if (keyword == 'n_mc_types') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%n_mc_types
@@ -1900,156 +2285,302 @@ contains
 
       character*64 :: cjunk
 
+      !> @kw do_nnls
+      !> Solve the Hirshfeld-volume fit with non-negative least squares, which keeps the fitted
+      !> volumes positive where an unconstrained solve would not.
+      !> @needs vdw_type
       if (keyword == "do_nnls") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%do_nnls
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("do_nnls", params%do_nnls)
+      !> @kw mbd_correction_freq
+      !> Recompute the many-body dispersion every this many MD steps, reusing the previous
+      !> correction in between. MBD is the expensive part of ts+mbd, so this trades accuracy for
+      !> time.
+      !> @modes md mc
+      !> @needs vdw_type
       else if (keyword == 'mbd_correction_freq') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%mbd_correction_freq
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("mbd_correction_freq", params%mbd_correction_freq)
 ! NEW VDW STUFF ENDS HERE
+      !> @kw poly_cut_xmax
+      !> Upper end of the range over which the polynomial cutoff turns the dispersion off.
+      !> @units A
+      !> @needs vdw_polynomial
+      !> @see poly_cut_xmin
       else if (keyword == "poly_cut_xmax") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%poly_cut_xmax
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("poly_cut_xmax", params%poly_cut_xmax)
 
+      !> @kw poly_cut_xmin
+      !> Lower end of that range: below it the interaction is at full strength.
+      !> @units A
+      !> @needs vdw_polynomial
+      !> @see poly_cut_xmax
       else if (keyword == "poly_cut_xmin") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%poly_cut_xmin
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("poly_cut_xmin", params%poly_cut_xmin)
+      !> @kw print_estat_forces
+      !> Write the electrostatic contribution to the forces separately, for checking how much of
+      !> the total it is.
+      !> @see estat_method
       else if (keyword == 'print_estat_forces') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%print_estat_forces
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("print_estat_forces", params%print_estat_forces)
+      !> @kw print_vdw_forces
+      !> Write the dispersion contribution to the forces separately.
+      !> @see vdw_type
       else if (keyword == 'print_vdw_forces') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%print_vdw_forces
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("print_vdw_forces", params%print_vdw_forces)
+      !> @kw vdw_2b_rcut
+      !> Cutoff of the pairwise part of the many-body dispersion.
+      !> @units A
+      !> @needs vdw_type
+      !> @see vdw_2b_rcut2
       else if (keyword == "vdw_2b_rcut") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_2b_rcut
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("vdw_2b_rcut", params%vdw_2b_rcut)
+      !> @kw vdw_2b_rcut2
+      !> Inner radius at which that pairwise part starts to be turned off; it is at full strength
+      !> inside this and zero beyond vdw_2b_rcut.
+      !> @units A
+      !> @needs vdw_type
+      !> @see vdw_2b_rcut
       else if (keyword == "vdw_2b_rcut2") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_2b_rcut2
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("vdw_2b_rcut2", params%vdw_2b_rcut2)
+      !> @kw vdw_alpha0_ref
+      !> Free-atom static polarizability of each species, one value per entry in species. Together
+      !> with vdw_c6_ref and vdw_r0_ref these are the reference data the Hirshfeld rescaling starts
+      !> from.
+      !> @units bohr^3
+      !> @needs vdw_type
+      !> @see vdw_c6_ref, vdw_r0_ref
       else if (keyword == "vdw_alpha0_ref") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_alpha0_ref(1:n_species)
          are_vdw_refs_read(3) = .true.
 ! NEW VDW STUFF HERE
+      !> @kw vdw_buffer
+      !> Width of the smooth turn-off applied at vdw_rcut, so the dispersion energy and its
+      !> gradient reach zero together.
+      !> @units A
+      !> @needs vdw_type
+      !> @see vdw_rcut
       else if (keyword == "vdw_buffer") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_buffer
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("vdw_buffer", params%vdw_buffer)
+      !> @kw vdw_buffer_inner
+      !> Width of the smooth turn-on applied at vdw_rcut_inner.
+      !> @units A
+      !> @needs vdw_type
+      !> @see vdw_rcut_inner
       else if (keyword == "vdw_buffer_inner") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_buffer_inner
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("vdw_buffer_inner", params%vdw_buffer_inner)
+      !> @kw vdw_c6_ref
+      !> Free-atom C6 coefficient of each species, one value per entry in species.
+      !> @units Ha bohr^6
+      !> @needs vdw_type
+      !> @see vdw_alpha0_ref, vdw_r0_ref
       else if (keyword == "vdw_c6_ref") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_c6_ref(1:n_species)
          are_vdw_refs_read(1) = .true.
+      !> @kw vdw_d
+      !> Steepness of the Fermi damping function in the Tkatchenko-Scheffler energy. Larger makes
+      !> the switch at vdw_sr*R0 sharper.
+      !> @needs vdw_type
+      !> @see vdw_sr
       else if (keyword == "vdw_d") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_d
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("vdw_d", params%vdw_d)
+      !> @kw vdw_d_mbd
+      !> The same steepness for the many-body dispersion.
+      !> @needs vdw_type
+      !> @see vdw_sr_mbd
       else if (keyword == "vdw_d_mbd") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_d_mbd
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("vdw_d_mbd", params%vdw_d_mbd)
+      !> @kw vdw_hirsh_grad
+      !> Include the derivative of the Hirshfeld volumes with respect to positions in the
+      !> dispersion forces. Switching it off gives a cheaper but inconsistent force.
+      !> @needs vdw_type
       else if (keyword == "vdw_hirsh_grad") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_hirsh_grad
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("vdw_hirsh_grad", params%vdw_hirsh_grad)
+      !> @kw vdw_loc_rcut
+      !> Radius of the local environment whose atoms enter the screened polarizability of a given
+      !> atom.
+      !> @units A
+      !> @needs vdw_type
       else if (keyword == "vdw_loc_rcut") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_loc_rcut
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("vdw_loc_rcut", params%vdw_loc_rcut)
+      !> @kw vdw_mbd_cent_appr
+      !> Evaluate the many-body dispersion about the central atom only, rather than over every atom
+      !> of its environment. The cheaper approximation.
+      !> @needs vdw_type
       else if (keyword == "vdw_mbd_cent_appr") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_cent_appr
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("vdw_mbd_cent_appr", params%vdw_mbd_cent_appr)
+      !> @kw vdw_mbd_grad
+      !> Compute the gradient of the many-body dispersion energy. Off gives MBD energies with
+      !> TS-only forces.
+      !> @needs vdw_type
       else if (keyword == "vdw_mbd_grad") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_grad
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("vdw_mbd_grad", params%vdw_mbd_grad)
+      !> @kw vdw_mbd_nfreq
+      !> Number of imaginary-frequency quadrature points used for the dynamic polarizability. More
+      !> is more accurate and proportionally slower.
+      !> @needs vdw_type
       else if (keyword == "vdw_mbd_nfreq") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_nfreq
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("vdw_mbd_nfreq", params%vdw_mbd_nfreq)
+      !> @kw vdw_mbd_norder
+      !> Order at which the many-body expansion is truncated.
+      !> @needs vdw_type
       else if (keyword == "vdw_mbd_norder") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_norder
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("vdw_mbd_norder", params%vdw_mbd_norder)
+      !> @kw vdw_mbd_rcut
+      !> Cutoff of the many-body dispersion term.
+      !> @units A
+      !> @needs vdw_type
+      !> @see vdw_mbd_rcut2
       else if (keyword == "vdw_mbd_rcut") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_rcut
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("vdw_mbd_rcut", params%vdw_mbd_rcut)
+      !> @kw vdw_mbd_rcut2
+      !> Inner radius at which the many-body term starts to be turned off.
+      !> @units A
+      !> @needs vdw_type
+      !> @see vdw_mbd_rcut
       else if (keyword == "vdw_mbd_rcut2") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_rcut2
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("vdw_mbd_rcut2", params%vdw_mbd_rcut2)
+      !> @kw vdw_omega_ref
+      !> Reference characteristic excitation frequency of the oscillator model.
+      !> @units Ha
+      !> @needs vdw_type
       else if (keyword == "vdw_omega_ref") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_omega_ref
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("vdw_omega_ref", params%vdw_omega_ref)
+      !> @kw vdw_polynomial
+      !> Use a polynomial cutoff for the dispersion rather than the default form.
+      !> @needs vdw_type
+      !> @see poly_cut_xmin, poly_cut_xmax
       else if (keyword == "vdw_polynomial") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_polynomial
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("vdw_polynomial", params%vdw_polynomial)
+      !> @kw vdw_r0_ref
+      !> Free-atom van der Waals radius of each species, one value per entry in species.
+      !> @units bohr
+      !> @needs vdw_type
+      !> @see vdw_c6_ref, vdw_alpha0_ref
       else if (keyword == "vdw_r0_ref") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_r0_ref(1:n_species)
          are_vdw_refs_read(2) = .true.
+      !> @kw vdw_rcut
+      !> Cutoff of the pairwise Tkatchenko-Scheffler dispersion.
+      !> @units A
+      !> @needs vdw_type
+      !> @see vdw_buffer
       else if (keyword == "vdw_rcut") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_rcut
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("vdw_rcut", params%vdw_rcut)
+      !> @kw vdw_rcut_inner
+      !> Radius below which the dispersion is smoothly switched off, so that it does not
+      !> double-count the short-range interaction the GAP already describes.
+      !> @units A
+      !> @needs vdw_type
+      !> @see vdw_buffer_inner
       else if (keyword == "vdw_rcut_inner") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_rcut_inner
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("vdw_rcut_inner", params%vdw_rcut_inner)
+      !> @kw vdw_scs_rcut
+      !> Cutoff of the self-consistent screening that turns free-atom polarizabilities into
+      !> screened ones.
+      !> @units A
+      !> @needs vdw_type
       else if (keyword == "vdw_scs_rcut") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_scs_rcut
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("vdw_scs_rcut", params%vdw_scs_rcut)
+      !> @kw vdw_sr
+      !> Position of the Fermi damping function in the Tkatchenko-Scheffler energy, as a fraction
+      !> of the sum of the two van der Waals radii. Fitted per exchange-correlation functional.
+      !> @needs vdw_type
+      !> @see vdw_d
       else if (keyword == "vdw_sr") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_sr
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("vdw_sr", params%vdw_sr)
+      !> @kw vdw_sr_mbd
+      !> The same fraction for the many-body dispersion.
+      !> @needs vdw_type
+      !> @see vdw_d_mbd
       else if (keyword == "vdw_sr_mbd") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_sr_mbd
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("vdw_sr_mbd", params%vdw_sr_mbd)
+      !> @kw vdw_type
+      !> Which dispersion correction to add: "none", "ts" for Tkatchenko-Scheffler, "mbd" for
+      !> many-body dispersion, or "ts+mbd" for both. Any other value aborts the run. The correction
+      !> needs Hirshfeld volumes, so the GAP has to provide them.
       else if (keyword == "vdw_type") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_type
@@ -2094,56 +2625,108 @@ contains
 
       character*64 :: cjunk
 
+      !> @kw estat_damped
+      !> Damp the Coulomb interaction at the cutoff rather than truncating it, which removes the
+      !> jump in the energy an atom crossing the cutoff would otherwise cause.
+      !> @needs estat_method
+      !> @type logical
       if (keyword == "estat_damped") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%estat_options%damped
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("estat_damped", params%estat_options%damped)
+      !> @kw estat_damped_cosine
+      !> Use a cosine taper for that damping instead of the default shifted form.
+      !> @needs estat_method
+      !> @type logical
       else if (keyword == "estat_damped_cosine") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%estat_options%damped_cosine
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("estat_damped_cosine", params%estat_options%damped_cosine)
+      !> @kw estat_dsf_alpha
+      !> Damping parameter of the damped shifted force. A negative value, the default, means the
+      !> run picks one from the cutoff.
+      !> @units 1/A
+      !> @needs estat_method
       else if (keyword == "estat_dsf_alpha") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%estat_dsf_alpha
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("estat_dsf_alpha", params%estat_dsf_alpha)
+      !> @kw estat_gsf
+      !> Use the gradient-shifted force, which subtracts the force at the cutoff so that the force
+      !> goes to zero there.
+      !> @needs estat_method
+      !> @type logical
       else if (keyword == "estat_gsf") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%estat_options%gsf
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("estat_gsf", params%estat_options%gsf)
+      !> @kw estat_inner_width
+      !> Width over which the inner cutoff turns the electrostatics on.
+      !> @units A
+      !> @needs estat_method
+      !> @see estat_rcut_inner
       else if (keyword == "estat_inner_width") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%estat_inner_width
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("estat_inner_width", params%estat_inner_width)
+      !> @kw estat_method
+      !> Which electrostatic sum to use: "none", "direct" for a bare cutoff sum, "dsf" for the
+      !> damped shifted force, or "gsf" for the gradient-shifted force. An unknown name warns and
+      !> computes nothing. The GAP has to provide charges for any of this to run.
       else if (keyword == "estat_method") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%estat_method
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("estat_method", params%estat_method)
+      !> @kw estat_rcut
+      !> Cutoff of the electrostatic sum.
+      !> @units A
+      !> @needs estat_method
       else if (keyword == "estat_rcut") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%estat_rcut
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("estat_rcut", params%estat_rcut)
+      !> @kw estat_rcut_inner
+      !> Radius below which the electrostatics is smoothly switched off, so it does not
+      !> double-count what the GAP already describes at short range.
+      !> @units A
+      !> @needs estat_method
+      !> @see estat_inner_width
       else if (keyword == "estat_rcut_inner") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%estat_rcut_inner
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("estat_rcut_inner", params%estat_rcut_inner)
+      !> @kw estat_self_energy_correction
+      !> Subtract each charge's interaction with its own periodic images, the self term of the
+      !> shifted sum.
+      !> @needs estat_method
+      !> @type logical
       else if (keyword == "estat_self_energy_correction") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%estat_options%self_energy_correction
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("estat_self_energy_correction", params%estat_options%self_energy_correction)
+      !> @kw estat_sp
+      !> Use the shifted-potential form, which shifts the energy to zero at the cutoff but leaves a
+      !> discontinuous force.
+      !> @needs estat_method
+      !> @type logical
       else if (keyword == "estat_sp") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%estat_options%sp
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("estat_sp", params%estat_options%sp)
+      !> @kw estat_tsf
+      !> Use the truncated shifted force. On by default.
+      !> @needs estat_method
+      !> @type logical
       else if (keyword == "estat_tsf") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%estat_options%tsf
@@ -2178,12 +2761,20 @@ contains
       integer :: nw
       character*64 :: keyword_notrim
 
+      !> @kw do_exp
+      !> Compare the prediction against experimental data and add the mismatch to the energy. The
+      !> individual exp_ keywords switch this on for you.
+      !> @see exp_data_files, exp_energy_scales
       if (keyword == 'do_exp') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%do_exp
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("do_exp", params%do_exp)
 
+      !> @kw do_nd
+      !> Compute a neutron diffraction pattern. Needs the partial pair distributions and the
+      !> structure factors it is built from, so it switches both on.
+      !> @see do_pair_distribution, do_structure_factor, nd_output
       else if (keyword == 'do_nd') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%do_nd
@@ -2195,6 +2786,11 @@ contains
 !           params%do_structure_factor = .true.
          end if
 
+      !> @kw do_pair_distribution
+      !> Compute the pair distribution function g(r). Also records that the deck asked for it in as
+      !> many words, which is what lets xrd_debye tell a request it must honour from a side effect
+      !> it may undo.
+      !> @see pair_distribution_rcut, pair_distribution_n_samples
       else if (keyword == 'do_pair_distribution') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%do_pair_distribution
@@ -2202,6 +2798,10 @@ contains
          if (rank == 0) call print_parameter("do_pair_distribution", params%do_pair_distribution)
          params%do_pair_distribution_explicit = params%do_pair_distribution
 
+      !> @kw do_structure_factor
+      !> Compute the structure factor S(q). Needs the pair distributions when
+      !> structure_factor_from_pdf is on, so it switches those on too.
+      !> @see structure_factor_from_pdf, q_range_min, q_range_max
       else if (keyword == 'do_structure_factor') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%do_structure_factor
@@ -2212,12 +2812,21 @@ contains
             params%do_pair_distribution = .true.
          end if
 
+      !> @kw do_xps
+      !> Compute an X-ray photoelectron spectrum from the predicted core-electron binding energies.
+      !> The GAP has to provide those.
+      !> @see xps_sigma, xps_e_min, xps_e_max
       else if (keyword == 'do_xps') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%do_xps
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("do_xps", params%do_xps)
 
+      !> @kw do_xrd
+      !> Compute an X-ray diffraction pattern. Needs the partial pair distributions and the
+      !> structure factors it is built from, so it switches both on, unless xrd_debye takes the
+      !> direct route instead.
+      !> @see xrd_wavelength, xrd_debye, xrd_output
       else if (keyword == 'do_xrd') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%do_xrd
@@ -2229,6 +2838,11 @@ contains
 !           params%do_structure_factor = .true.
          end if
 
+      !> @kw exp_data_files
+      !> Files holding the measured data, one per observable, in the order of exp_labels. Two
+      !> columns: abscissa and intensity.
+      !> @see exp_labels, n_exp
+      !> @type string list
       else if (keyword == "exp_data_files") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, &
@@ -2256,6 +2870,9 @@ contains
             end if
          end do
 
+      !> @kw exp_energies
+      !> Add the data mismatch to the energy. Naming it enables do_exp.
+      !> @see exp_energy_scales
       else if (keyword == 'exp_energies') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%exp_energies
@@ -2264,6 +2881,12 @@ contains
 ! do experimental
          params%do_exp = .true.
 
+      !> @kw exp_energy_scales
+      !> Weight of each observable's mismatch in the total energy, one value per observable. This
+      !> is what sets how hard the data pulls against the potential. Also seeds the initial and
+      !> final values of a ramp.
+      !> @units eV
+      !> @see exp_energy_scales_final, n_exp
       else if (keyword == 'exp_energy_scales' .or. keyword&
            &== 'exp_energy_scales_initial' .or. keyword&
            &== 'exp_energy_scales_beg') then
@@ -2278,6 +2901,13 @@ contains
             params%exp_energy_scales_final(nw) = params%exp_energy_scales(nw)
          end do
 
+      !> @kw exp_energy_scales_final, exp_energy_scales_end
+      !> End point of a linear ramp in the weights over the run, so the data can be brought in
+      !> gradually. Without it the weights stay at exp_energy_scales.
+      !> @units eV
+      !> @see exp_energy_scales
+      !> @type real list
+      !> @default same as exp_energy_scales
       else if (keyword == 'exp_energy_scales_final' .or. keyword == 'exp_energy_scales_end') then
          backspace (unit)
          if (params%n_moments > 0) then
@@ -2290,6 +2920,10 @@ contains
                  &%n_exp)
          end if
 
+      !> @kw exp_forces
+      !> Compute the derivative of the data mismatch with respect to positions and add it to the
+      !> forces. Naming it enables do_exp. Without it the mismatch contributes to the energy alone.
+      !> @see exp_energies
       else if (keyword == 'exp_forces') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%exp_forces
@@ -2298,11 +2932,23 @@ contains
 ! do experimental
          params%do_exp = .true.
 
+      !> @kw exp_input_type
+      !> What the corresponding data file contains, one per observable, when it is not the
+      !> observable's default representation: for instance "D(r)" for a pair distribution supplied
+      !> as the reduced form.
+      !> @see exp_labels, pair_distribution_output
+      !> @type string list
       else if (keyword == 'exp_input_type') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, &
             (params%exp_data(nw)%input, nw=1, params%n_exp)
 
+      !> @kw exp_labels
+      !> Which observable each data file is, one per file, from "xps", "xrd", "saxs",
+      !> "pair_distribution" and "structure_factor". Matching a label to a file is what marks that
+      !> observable valid, and an observable that was asked for but has no data stays switched off.
+      !> @see exp_data_files, n_exp
+      !> @type string list
       else if (keyword == "exp_labels") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, &
@@ -2327,7 +2973,6 @@ contains
                ! params%pair_distribution_partial = .true.
 
             else if (trim(params%exp_data(nw)%label) == "saxs") then
-               params%saxs_idx = nw
                params%valid_xrd = .true.
                if (rank == 0) write (*, *) ' - Valid exp. XRD found                |'
                ! Must be set to true to find the partial structure factors
@@ -2342,6 +2987,11 @@ contains
                if (rank == 0) write (*, *) ' - Valid exp. structure factor found   |'
             end if
          end do
+      !> @kw exp_n_samples
+      !> Number of points to predict for each observable, one per observable, overriding that
+      !> observable's own n_samples keyword.
+      !> @see exp_labels
+      !> @type integer list
       else if (keyword == "exp_n_samples") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, &
@@ -2386,11 +3036,19 @@ contains
             end if
          end do
 
+      !> @kw exp_similarity_type
+      !> How the mismatch between prediction and data is measured: "squared_diff" for a sum of
+      !> squared residuals, or "similarity"/"overlap" for a normalised overlap.
+      !> @see exp_energy_scales
       else if (keyword == 'exp_similarity_type') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%exp_similarity_type
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("exp_similarity_type", params%exp_similarity_type)
+      !> @kw n_exp
+      !> Number of experimental observables. Give it before exp_data_files, exp_labels and
+      !> exp_energy_scales, which it allocates.
+      !> @see exp_labels
       else if (keyword == 'n_exp') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%n_exp
@@ -2404,6 +3062,10 @@ contains
          ! Turning on exp prediction
          params%do_exp = .true.
 
+      !> @kw nd_n_samples
+      !> Number of points in the predicted neutron pattern. Writes the same sample count the XRD
+      !> and structure-factor routines use, since the three share one q grid.
+      !> @see xrd_n_samples
       else if (keyword == "nd_n_samples") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%xrd_n_samples
@@ -2411,6 +3073,10 @@ contains
          if (rank == 0) call print_parameter("nd_n_samples", params%xrd_n_samples)
          params%structure_factor_n_samples = params%nd_n_samples
 
+      !> @kw nd_output
+      !> Abscissa of the neutron pattern, in the same choices as xrd_output. Writes xrd_output as
+      !> well, the two patterns sharing a grid.
+      !> @see xrd_output
       else if (keyword == 'nd_output') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%nd_output
@@ -2421,181 +3087,322 @@ contains
          !    backspace(10)
          !    read(10, *, iostat=iostatus) cjunk, cjunk, params%xrd_output
 
+      !> @kw nd_rcut
+      !> Real-space cutoff of the pair sum entering the neutron pattern.
+      !> @units A
+      !> @see pair_distribution_rcut
       else if (keyword == "nd_rcut") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%nd_rcut
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("nd_rcut", params%nd_rcut)
 
+      !> @kw nd_wavelength
+      !> Neutron wavelength. Nothing consults it: the pattern is built on the grid xrd_wavelength
+      !> defines.
+      !> @see xrd_wavelength
+      !> @type real
+      !> @status ignored
       else if (keyword == 'nd_wavelength') then
-         backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, params%nd_wavelength
-         call check_iostatus(iostatus, keyword)
-         if (rank == 0) call print_parameter("nd_wavelength", params%nd_wavelength)
+         call ignored_keyword(unit, iostatus, rank, keyword)
 
+      !> @kw pair_distribution_kde_sigma
+      !> Width of the Gaussian each pair distance is smeared with when binning g(r). Zero, the
+      !> default, means plain histogram binning. A non-zero width makes g(r) differentiable, which
+      !> is what the forces need.
+      !> @units A
+      !> @see exp_forces
       else if (keyword == "pair_distribution_kde_sigma") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%pair_distribution_kde_sigma
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("pair_distribution_kde_sigma", params%pair_distribution_kde_sigma)
 
+      !> @kw pair_distribution_n_samples
+      !> Number of r points in the predicted g(r).
+      !> @see r_range_min, r_range_max
       else if (keyword == "pair_distribution_n_samples") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%pair_distribution_n_samples
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("pair_distribution_n_samples", params%pair_distribution_n_samples)
 
+      !> @kw pair_distribution_output
+      !> What g(r) is reported as: "pdf" for g(r) itself, or "D(r)" for the reduced pair
+      !> distribution 4 pi r rho (g(r) - 1). The energy and its gradient follow the choice, so it
+      !> changes the fit and not only the plot.
+      !> @see exp_input_type
       else if (keyword == 'pair_distribution_output') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%pair_distribution_output
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("pair_distribution_output", params%pair_distribution_output)
 
+      !> @kw pair_distribution_partial
+      !> Resolve g(r) into per-species-pair partials. The structure factor is built from these, so
+      !> it is on by default.
+      !> @see do_structure_factor
       else if (keyword == "pair_distribution_partial") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%pair_distribution_partial
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("pair_distribution_partial", params%pair_distribution_partial)
 
+      !> @kw pair_distribution_rcut
+      !> Largest pair distance binned into g(r). A hard cut, not a smooth one, which is why a
+      !> finite-difference check of the virial needs a small strain.
+      !> @units A
+      !> @see r_range_max
       else if (keyword == "pair_distribution_rcut") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%pair_distribution_rcut
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("pair_distribution_rcut", params%pair_distribution_rcut)
 
+      !> @kw q_range_max
+      !> Upper end of the q range the structure factor and the diffraction patterns are predicted
+      !> on.
+      !> @units 1/A
+      !> @see q_range_min, q_units
       else if (keyword == "q_range_max") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%q_range_max
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("q_range_max", params%q_range_max)
 
+      !> @kw q_range_min
+      !> Lower end of that range.
+      !> @units 1/A
+      !> @see q_range_max
       else if (keyword == "q_range_min") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%q_range_min
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("q_range_min", params%q_range_min)
 
+      !> @kw q_units
+      !> What the abscissa of the supplied and predicted patterns means: "q" or "saxs" for a
+      !> scattering vector, "xrd" or "twotheta" for a diffraction angle. The conversion between
+      !> them uses xrd_wavelength.
+      !> @see xrd_wavelength
       else if (keyword == "q_units") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%q_units
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("q_units", params%q_units)
 
+      !> @kw r_range_max
+      !> Upper end of the r range g(r) is reported on. Points beyond pair_distribution_rcut are
+      !> empty.
+      !> @units A
+      !> @see pair_distribution_rcut
       else if (keyword == "r_range_max") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%r_range_max
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("r_range_max", params%r_range_max)
 
+      !> @kw r_range_min
+      !> Lower end of that range.
+      !> @units A
+      !> @see r_range_max
       else if (keyword == "r_range_min") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%r_range_min
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("r_range_min", params%r_range_min)
 
+      !> @kw sf_output
+      !> Abscissa of the structure factor, in the same choices as q_units.
+      !> @see q_units
       else if (keyword == 'sf_output') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%sf_output
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("sf_output", params%sf_output)
 
+      !> @kw structure_factor_from_pdf
+      !> Build S(q) by Fourier-transforming the binned partial pair distributions, rather than from
+      !> the positions directly. The transform is far cheaper and is what the analytic forces are
+      !> written for.
+      !> @see pair_distribution_partial
       else if (keyword == "structure_factor_from_pdf") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%structure_factor_from_pdf
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("structure_factor_from_pdf", params%structure_factor_from_pdf)
+      !> @kw structure_factor_matrix
+      !> Assemble the transform as a matrix product over the r grid instead of looping the pairs.
+      !> Much faster, at the cost of holding the kernel matrix.
+      !> @see structure_factor_matrix_forces
       else if (keyword == "structure_factor_matrix") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%structure_factor_matrix
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("structure_factor_matrix", params%structure_factor_matrix)
+      !> @kw structure_factor_matrix_forces
+      !> Use the same matrix assembly for the derivatives. Falls back to the loop when the run
+      !> cannot batch.
+      !> @see structure_factor_matrix
       else if (keyword == "structure_factor_matrix_forces") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%structure_factor_matrix_forces
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("structure_factor_matrix_forces", params%structure_factor_matrix_forces)
 
+      !> @kw structure_factor_n_samples
+      !> Number of q points in the predicted S(q).
+      !> @see q_range_min, q_range_max
       else if (keyword == "structure_factor_n_samples") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%structure_factor_n_samples
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("structure_factor_n_samples", params%structure_factor_n_samples)
 
+      !> @kw structure_factor_window
+      !> Apply a Lorch window to the truncated pair distribution before transforming, which
+      !> suppresses the ringing the hard cut at pair_distribution_rcut would otherwise put into
+      !> S(q).
+      !> @see pair_distribution_rcut
       else if (keyword == 'structure_factor_window') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%structure_factor_window
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("structure_factor_window", params%structure_factor_window)
 
+      !> @kw xps_e_max
+      !> Upper end of the binding-energy range the XPS spectrum is predicted on.
+      !> @units eV
+      !> @needs do_xps
+      !> @see xps_e_min
       else if (keyword == 'xps_e_max') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%xps_e_max
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("xps_e_max", params%xps_e_max)
 
+      !> @kw xps_e_min
+      !> Lower end of that range.
+      !> @units eV
+      !> @needs do_xps
+      !> @see xps_e_max
       else if (keyword == 'xps_e_min') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%xps_e_min
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("xps_e_min", params%xps_e_min)
 
+      !> @kw xps_force_type
+      !> Which XPS force expression to use. Nothing consults it; the spectrum is differentiated one
+      !> way only.
+      !> @type string
+      !> @status ignored
       else if (keyword == 'xps_force_type') then
-         backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, params%xps_force_type
-         call check_iostatus(iostatus, keyword)
-         if (rank == 0) call print_parameter("xps_force_type", params%xps_force_type)
+         call ignored_keyword(unit, iostatus, rank, keyword)
+      !> @kw xps_n_samples
+      !> Number of points in the predicted XPS spectrum.
+      !> @needs do_xps
       else if (keyword == 'xps_n_samples') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%xps_n_samples
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("xps_n_samples", params%xps_n_samples)
 
+      !> @kw xps_sigma
+      !> Width of the Gaussian each core-electron binding energy is broadened by to make a
+      !> spectrum.
+      !> @units eV
+      !> @needs do_xps
       else if (keyword == 'xps_sigma') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%xps_sigma
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("xps_sigma", params%xps_sigma)
+      !> @kw xrd_alpha
+      !> Exponent of the sharpening applied to the diffraction pattern.
+      !> @needs do_xrd
+      !> @see xrd_damping
       else if (keyword == 'xrd_alpha') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%xrd_alpha
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("xrd_alpha", params%xrd_alpha)
+      !> @kw xrd_damping
+      !> Damping applied to the pair sum with distance, which suppresses the truncation ripple from
+      !> the finite cutoff. Zero, the default, is no damping.
+      !> @needs do_xrd
+      !> @see xrd_alpha
       else if (keyword == 'xrd_damping') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%xrd_damping
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("xrd_damping", params%xrd_damping)
+      !> @kw xrd_debye
+      !> Compute the pattern from the N^2 Debye sum over positions instead of transforming the
+      !> partial pair distributions. The two routes answer the same question by different
+      !> approximations: the pdf route bins distances and truncates at pair_distribution_rcut, the
+      !> Debye route sums every pair exactly. Turning it on makes the pdf and sf calculations
+      !> unnecessary, and whichever of them was switched on only to feed the XRD is switched off
+      !> again.
+      !> @needs do_xrd
+      !> @see pair_distribution_rcut
       else if (keyword == 'xrd_debye') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%xrd_debye
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("xrd_debye", params%xrd_debye)
+      !> @kw xrd_lorentz_polarization
+      !> Multiply the predicted pattern by the powder Lorentz-polarization factor. Only the Debye
+      !> route applies it, where the energy and the gradient stay consistent because it is one
+      !> multiplicative weight per q.
+      !> @needs xrd_debye
+      !> @see xrd_lp_polarization
       else if (keyword == 'xrd_lorentz_polarization') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%xrd_lorentz_polarization
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("xrd_lorentz_polarization", params%xrd_lorentz_polarization)
+      !> @kw xrd_lp_polarization
+      !> Degree of polarization P of the incident beam in the factor (1 + P cos^2 2theta) / (sin^2
+      !> theta cos theta). P = 1 is an unpolarized source; a graphite monochromator at 2theta_M
+      !> gives P = cos^2(2theta_M).
+      !> @needs xrd_lorentz_polarization
       else if (keyword == 'xrd_lp_polarization') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%xrd_lp_polarization
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("xrd_lp_polarization", params%xrd_lp_polarization)
+      !> @kw xrd_lp_sin_theta_min
+      !> Below this |sin theta| the Lorentz factor 1/(sin^2 theta cos theta) is unusable, so the
+      !> whole factor is set to zero rather than blown up.
+      !> @needs xrd_lorentz_polarization
       else if (keyword == 'xrd_lp_sin_theta_min') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%xrd_lp_sin_theta_min
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("xrd_lp_sin_theta_min", params%xrd_lp_sin_theta_min)
+      !> @kw xrd_iwasa
+      !> Iwasa correction switch from an earlier design; the correction is applied unconditionally
+      !> now.
+      !> @status deprecated
       else if (keyword == 'xrd_iwasa') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%xrd_iwasa
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("xrd_iwasa", params%xrd_iwasa)
+      !> @kw xrd_method
+      !> Which scattering factors the pattern is built from. "xrd" uses the X-ray form factors.
+      !> @needs do_xrd
       else if (keyword == 'xrd_method') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%xrd_method
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("xrd_method", params%xrd_method)
 
+      !> @kw xrd_n_samples
+      !> Number of points in the predicted X-ray pattern. Sets the structure-factor sample count
+      !> too, the two sharing a q grid.
+      !> @needs do_xrd
       else if (keyword == "xrd_n_samples") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%xrd_n_samples
@@ -2603,17 +3410,31 @@ contains
          if (rank == 0) call print_parameter("xrd_n_samples", params%xrd_n_samples)
          params%structure_factor_n_samples = params%xrd_n_samples
 
+      !> @kw xrd_output
+      !> Abscissa the pattern is reported on, in the same choices as q_units.
+      !> @needs do_xrd
+      !> @see q_units
       else if (keyword == 'xrd_output') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%xrd_output
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("xrd_output", params%xrd_output)
+      !> @kw xrd_rcut
+      !> Real-space cutoff of the pair sum entering the X-ray pattern.
+      !> @units A
+      !> @needs do_xrd
+      !> @see pair_distribution_rcut
       else if (keyword == "xrd_rcut") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%xrd_rcut
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("xrd_rcut", params%xrd_rcut)
 
+      !> @kw xrd_wavelength
+      !> Wavelength of the incident X-rays. Fixes the map between q and 2theta, so it matters
+      !> whenever q_units or xrd_output name an angle.
+      !> @units A
+      !> @see q_units
       else if (keyword == 'xrd_wavelength') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%xrd_wavelength
@@ -2646,6 +3467,12 @@ contains
       character*64 :: cjunk
       integer :: i
 
+      !> @kw adapt_emax
+      !> Largest energy change tolerated over one step; the adaptive time step shrinks until the
+      !> change is under this.
+      !> @units eV
+      !> @modes md
+      !> @needs adaptive_time
       if (keyword == 'adapt_emax') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%adapt_emax
@@ -2656,16 +3483,31 @@ contains
 
         !! ------- option for radiation cascade simulation with electronic stopping
 
+      !> @kw adapt_tmax
+      !> Upper bound on the adaptive time step.
+      !> @units fs
+      !> @modes md
+      !> @needs adaptive_time
       else if (keyword == 'adapt_tmax') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%adapt_tmax
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("adapt_tmax", params%adapt_tmax)
+      !> @kw adapt_tmin
+      !> Lower bound on the adaptive time step. Reaching it means the dynamics cannot be resolved
+      !> and the run should be reconsidered.
+      !> @units fs
+      !> @modes md
+      !> @needs adaptive_time
       else if (keyword == 'adapt_tmin') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%adapt_tmin
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("adapt_tmin", params%adapt_tmin)
+      !> @kw adapt_tstep_interval
+      !> How often, in steps, the adaptive time step is re-examined.
+      !> @modes md
+      !> @needs adaptive_time
       else if (keyword == 'adapt_tstep_interval') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%adapt_tstep_interval
@@ -2675,16 +3517,33 @@ contains
             write (*, *) "ERROR: Interval of timesteps in adaptive time-step must be positive."
             stop
          end if
+      !> @kw adapt_xmax
+      !> Largest displacement of any atom tolerated over one step.
+      !> @units A
+      !> @modes md
+      !> @needs adaptive_time
       else if (keyword == 'adapt_xmax') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%adapt_xmax
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("adapt_xmax", params%adapt_xmax)
+      !> @kw adaptive_time
+      !> Choose the time step from how fast the fastest atom is moving, rather than holding md_step
+      !> fixed. Written for radiation cascades, where the first femtoseconds need a far smaller
+      !> step than the rest.
+      !> @modes md
+      !> @see adapt_tmin, adapt_tmax, adapt_xmax, adapt_emax
       else if (keyword == 'adaptive_time') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%adaptive_time
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("adaptive_time", params%adaptive_time)
+      !> @kw eel_cut
+      !> Kinetic energy below which an atom is too slow to lose energy to the electrons, so
+      !> electronic stopping is not applied to it.
+      !> @units eV
+      !> @modes md
+      !> @needs electronic_stopping
       else if (keyword == 'eel_cut') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%eel_cut
@@ -2694,108 +3553,216 @@ contains
             write (*, *) "ERROR: Cut off energy for electronic stopping should be positive, few tens of eV!"
             stop
          end if
+      !> @kw eel_freq_out
+      !> How often, in steps, to report the energy lost to electronic stopping.
+      !> @modes md
+      !> @needs electronic_stopping
       else if (keyword == 'eel_freq_out') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%eel_freq_out
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("eel_freq_out", params%eel_freq_out)
+      !> @kw electronic_stopping
+      !> Drain energy from fast atoms into the electronic system, the dominant energy loss at the
+      !> start of a radiation cascade. Reads its stopping powers from estop_filename.
+      !> @modes md
+      !> @see estop_filename, eel_cut
       else if (keyword == 'electronic_stopping') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%electronic_stopping
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("electronic_stopping", params%electronic_stopping)
+      !> @kw eph_betafile
+      !> File holding the beta(rho) coupling data the EPH model needs, one entry per species.
+      !> @modes md
+      !> @needs nonadiabatic_processes
       else if (keyword == 'eph_betafile') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%eph_betafile
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("eph_betafile", params%eph_betafile)
+      !> @kw eph_box_limits
+      !> Extent of the electronic grid, as xmin xmax ymin ymax zmin zmax. Also written into the six
+      !> individual bounds the solver reads.
+      !> @units A
+      !> @modes md
+      !> @needs nonadiabatic_processes
       else if (keyword == 'eph_box_limits') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, (params%eph_box_limits(i), i=1, 6)
          params%in_x0 = params%eph_box_limits(1); params%in_x1 = params%eph_box_limits(2)
          params%in_y0 = params%eph_box_limits(3); params%in_y1 = params%eph_box_limits(4)
          params%in_z0 = params%eph_box_limits(5); params%in_z1 = params%eph_box_limits(6)
+      !> @kw eph_c_e
+      !> Electronic heat capacity per unit volume, used when the electronic temperature is evolved
+      !> rather than held fixed.
+      !> @units eV/A^3/K
+      !> @modes md
+      !> @needs nonadiabatic_processes
       else if (keyword == 'eph_c_e') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%eph_c_e
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("eph_c_e", params%eph_c_e)
+      !> @kw eph_e_prev_time
+      !> Electronic energy carried over from a previous run, for restarting a cascade.
+      !> @units eV
+      !> @modes md
+      !> @needs nonadiabatic_processes
       else if (keyword == 'eph_e_prev_time') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%eph_E_prev_time
+      !> @kw eph_fdm_option
+      !> How the electronic temperature grid is initialised: from eph_Tinfile, or uniformly at
+      !> eph_Ti_e.
+      !> @modes md
+      !> @needs nonadiabatic_processes
       else if (keyword == 'eph_fdm_option') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%eph_fdm_option
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("eph_fdm_option", params%eph_fdm_option)
+      !> @kw eph_fdm_steps
+      !> Number of electronic diffusion sub-steps taken per MD step, the electronic system being
+      !> much faster than the ionic one.
+      !> @modes md
+      !> @needs nonadiabatic_processes
       else if (keyword == 'eph_fdm_steps') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%eph_fdm_steps
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("eph_fdm_steps", params%eph_fdm_steps)
+      !> @kw eph_freq_mesh_tout
+      !> How often, in steps, to write the whole electronic temperature grid.
+      !> @modes md
+      !> @needs nonadiabatic_processes
       else if (keyword == 'eph_freq_mesh_tout') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%eph_freq_mesh_Tout
+      !> @kw eph_freq_tout
+      !> How often, in steps, to write the electronic temperature summary.
+      !> @modes md
+      !> @needs nonadiabatic_processes
       else if (keyword == 'eph_freq_tout') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%eph_freq_Tout
+      !> @kw eph_friction_option
+      !> Which friction term of the electron-phonon coupling to apply, or none.
+      !> @modes md
+      !> @needs nonadiabatic_processes
       else if (keyword == 'eph_friction_option') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%eph_friction_option
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("eph_friction_option", params%eph_friction_option)
+      !> @kw eph_gsx
+      !> Number of electronic grid cells along x.
+      !> @modes md
+      !> @needs nonadiabatic_processes
       else if (keyword == 'eph_gsx') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%eph_gsx
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("eph_gsx", params%eph_gsx)
+      !> @kw eph_gsy
+      !> Number of electronic grid cells along y.
+      !> @modes md
+      !> @needs nonadiabatic_processes
       else if (keyword == 'eph_gsy') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%eph_gsy
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("eph_gsy", params%eph_gsy)
+      !> @kw eph_gsz
+      !> Number of electronic grid cells along z.
+      !> @modes md
+      !> @needs nonadiabatic_processes
       else if (keyword == 'eph_gsz') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%eph_gsz
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("eph_gsz", params%eph_gsz)
+      !> @kw eph_kappa_e
+      !> Electronic thermal conductivity entering the diffusion of the electronic temperature.
+      !> @units eV/A/fs/K
+      !> @modes md
+      !> @needs nonadiabatic_processes
       else if (keyword == 'eph_kappa_e') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%eph_kappa_e
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("eph_kappa_e", params%eph_kappa_e)
+      !> @kw eph_md_last_step
+      !> Step number the previous run finished at, for restarting a cascade.
+      !> @modes md
+      !> @needs nonadiabatic_processes
       else if (keyword == 'eph_md_last_step') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%eph_md_last_step
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("eph_md_last_step", params%eph_md_last_step)
+      !> @kw eph_md_prev_time
+      !> Simulated time the previous run finished at, for restarting a cascade.
+      !> @units fs
+      !> @modes md
+      !> @needs nonadiabatic_processes
       else if (keyword == 'eph_md_prev_time') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%eph_md_prev_time
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("eph_md_prev_time", params%eph_md_prev_time)
+      !> @kw eph_random_option
+      !> Which random term of the electron-phonon coupling to apply, or none. Paired with the
+      !> friction term it is what makes the coupling a thermostat rather than a drain.
+      !> @modes md
+      !> @needs nonadiabatic_processes
+      !> @see eph_friction_option
       else if (keyword == 'eph_random_option') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%eph_random_option
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("eph_random_option", params%eph_random_option)
+      !> @kw eph_rho_e
+      !> Electronic density entering the coupling.
+      !> @units 1/A^3
+      !> @modes md
+      !> @needs nonadiabatic_processes
       else if (keyword == 'eph_rho_e') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%eph_rho_e
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("eph_rho_e", params%eph_rho_e)
+      !> @kw eph_ti_e
+      !> Initial electronic temperature, when the grid is started uniform rather than read from a
+      !> file.
+      !> @units K
+      !> @modes md
+      !> @needs nonadiabatic_processes
+      !> @see eph_fdm_option
       else if (keyword == 'eph_ti_e') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%eph_Ti_e
 
         !! --------------------                        ******** until here for electronic stopping based on EPH model
 
+      !> @kw eph_tinfile
+      !> File holding an initial electronic temperature grid.
+      !> @modes md
+      !> @needs nonadiabatic_processes
       else if (keyword == 'eph_tinfile') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%eph_Tinfile
+      !> @kw eph_toutfile
+      !> File the electronic temperature grid is written to.
+      !> @modes md
+      !> @needs nonadiabatic_processes
       else if (keyword == 'eph_toutfile') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%eph_Toutfile
+      !> @kw estop_filename
+      !> File holding the electronic stopping power per species as a function of velocity.
+      !> @modes md
+      !> @needs electronic_stopping
       else if (keyword == 'estop_filename') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%estop_filename
@@ -2806,11 +3773,20 @@ contains
 
         !! ------- option for radiation cascade simulation with EPH model
 
+      !> @kw model_eph
+      !> Which electron-phonon model to evaluate.
+      !> @modes md
+      !> @needs nonadiabatic_processes
       else if (keyword == 'model_eph') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%model_eph
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("model_eph", params%model_eph)
+      !> @kw nonadiabatic_processes
+      !> Exchange energy between the ions and an explicit electronic subsystem through the EPH
+      !> model, rather than the one-way drain of electronic stopping.
+      !> @modes md
+      !> @see model_eph, eph_friction_option, eph_random_option
       else if (keyword == 'nonadiabatic_processes') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%nonadiabatic_processes
@@ -2843,22 +3819,41 @@ contains
       character*64 :: cjunk
       integer :: nw
 
+      !> @kw compute_local_properties
+      !> Which local properties to predict, by name, one per property. The GAP has to carry a model
+      !> for each. n_local_properties must appear first.
+      !> @needs n_local_properties
+      !> @type string list
       if (keyword == 'compute_local_properties') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, (params&
               &%compute_local_properties(nw), nw=1, params&
              &%n_local_properties)
 
+      !> @kw core_pot_buffer
+      !> Width over which the core potential is smoothly turned off approaching core_pot_cutoff, so
+      !> the tabulated potential and its gradient reach zero together.
+      !> @units A
+      !> @see core_pot_cutoff
       else if (keyword == "core_pot_buffer") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%core_pot_buffer
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("core_pot_buffer", params%core_pot_buffer)
+      !> @kw core_pot_cutoff
+      !> Distance beyond which the tabulated core potential is dropped. The default is effectively
+      !> infinite, meaning the whole table is used.
+      !> @units A
+      !> @see core_pot_buffer
       else if (keyword == "core_pot_cutoff") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%core_pot_cutoff
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("core_pot_cutoff", params%core_pot_cutoff)
+      !> @kw n_local_properties
+      !> Number of local properties to predict. Give it before compute_local_properties and
+      !> write_local_properties, which it allocates.
+      !> @see compute_local_properties
       else if (keyword == 'n_local_properties') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%n_local_properties
@@ -2867,11 +3862,12 @@ contains
          allocate (params%write_local_properties(1:params%n_local_properties))
          allocate (params%compute_local_properties(1:params%n_local_properties))
          params%write_local_properties = .true.
+      !> @kw print_lp_forces
+      !> Local-property force reporting switch; nothing consults it.
+      !> @type logical
+      !> @status ignored
       else if (keyword == 'print_lp_forces') then
-         backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, params%print_lp_forces
-         call check_iostatus(iostatus, keyword)
-         if (rank == 0) call print_parameter("print_lp_forces", params%print_lp_forces)
+         call ignored_keyword(unit, iostatus, rank, keyword)
       else
          return
       end if
@@ -2899,42 +3895,64 @@ contains
       character*64 :: cjunk
       integer :: nw
 
+      !> @kw print_progress
+      !> Print a progress line as the run advances.
       if (keyword == 'print_progress') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%print_progress
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("print_progress", params%print_progress)
+      !> @kw write_exp
+      !> Write the predicted experimental observables to file.
+      !> @needs do_exp
       else if (keyword == "write_exp") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%write_exp
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("write_exp", params%write_exp)
 
+      !> @kw write_fixes
+      !> Include the per-atom fix flags as a column in the XYZ output.
       else if (keyword == 'write_fixes') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%write_fixes
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("write_fixes", params%write_fixes)
+      !> @kw write_forces
+      !> Include forces as columns in the XYZ output.
       else if (keyword == 'write_forces') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%write_forces
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("write_forces", params%write_forces)
+      !> @kw write_hirshfeld_v
+      !> Hirshfeld-volume output switch; the volumes follow the local-property output instead, so
+      !> nothing consults it.
+      !> @see write_local_properties
+      !> @type logical
+      !> @status ignored
       else if (keyword == 'write_hirshfeld_v') then
-         backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, params%write_hirshfeld_v
-         call check_iostatus(iostatus, keyword)
-         if (rank == 0) call print_parameter("write_hirshfeld_v", params%write_hirshfeld_v)
+         call ignored_keyword(unit, iostatus, rank, keyword)
+      !> @kw write_local_energies
+      !> Include the per-atom energy decomposition as a column in the XYZ output.
       else if (keyword == 'write_local_energies') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%write_local_energies
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("write_local_energies", params%write_local_energies)
+      !> @kw write_local_properties
+      !> Which predicted local properties to write, one flag per property in the order of
+      !> compute_local_properties.
+      !> @needs n_local_properties
+      !> @see compute_local_properties
+      !> @type logical list
       else if (keyword == 'write_local_properties') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, (params&
               &%write_local_properties(nw), nw=1, params&
               &%n_local_properties)
+      !> @kw write_lv
+      !> Write the lattice vectors on every frame.
       else if (keyword == 'write_lv') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%write_lv
@@ -2943,59 +3961,89 @@ contains
 
         !! ------- option for doing simulation with adaptive time step
 
+      !> @kw write_masses
+      !> Include atomic masses as a column in the XYZ output.
       else if (keyword == 'write_masses') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%write_masses
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("write_masses", params%write_masses)
+      !> @kw write_nd
+      !> Write the predicted neutron diffraction pattern to file.
+      !> @needs do_nd
       else if (keyword == "write_nd") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%write_nd
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("write_nd", params%write_nd)
 
+      !> @kw write_pair_distribution
+      !> Write the predicted pair distribution to file.
+      !> @needs do_pair_distribution
       else if (keyword == "write_pair_distribution") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%write_pair_distribution
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("write_pair_distribution", params%write_pair_distribution)
+      !> @kw write_pressure
+      !> Include the pressure in the frame comment line.
       else if (keyword == 'write_pressure') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%write_pressure
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("write_pressure", params%write_pressure)
+      !> @kw write_stress
+      !> Include the stress tensor in the frame comment line.
+      !> @see write_virial
       else if (keyword == 'write_stress') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%write_stress
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("write_stress", params%write_stress)
+      !> @kw write_structure_factor
+      !> Write the predicted structure factor to file.
+      !> @needs do_structure_factor
       else if (keyword == "write_structure_factor") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%write_structure_factor
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("write_structure_factor", params%write_structure_factor)
 
+      !> @kw write_thermo
+      !> Write a thermodynamic summary line every this many steps. Zero switches it off.
+      !> @modes md mc
       else if (keyword == 'write_thermo') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%write_thermo
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("write_thermo", params%write_thermo)
+      !> @kw write_velocities
+      !> Include velocities as columns in the XYZ output.
       else if (keyword == 'write_velocities') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%write_velocities
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("write_velocities", params%write_velocities)
+      !> @kw write_virial
+      !> Include the virial tensor in the frame comment line.
+      !> @see write_stress
       else if (keyword == 'write_virial') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%write_virial
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("write_virial", params%write_virial)
+      !> @kw write_xrd
+      !> Write the predicted X-ray diffraction pattern to file.
+      !> @needs do_xrd
       else if (keyword == "write_xrd") then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%write_xrd
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("write_xrd", params%write_xrd)
 
+      !> @kw write_xyz
+      !> Write a trajectory frame every this many steps. Zero, the default, writes only the last.
+      !> @modes md mc
       else if (keyword == 'write_xyz') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%write_xyz
@@ -3022,26 +4070,46 @@ contains
 
       character*64 :: cjunk
 
+      !> @kw gpu_batched
+      !> Evaluate the experimental observables in batches on the device, staging one batch of pairs
+      !> at a time. Switching it off takes the unbatched route, which holds everything at once and
+      !> is the reference the batched route is checked against.
       if (keyword == 'gpu_batched') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%gpu_batched
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("gpu_batched", params%gpu_batched)
+      !> @kw gpu_low_memory
+      !> Free each batch's device arrays as soon as its contribution has been accumulated, rather
+      !> than holding them for the whole calculation. Slower and much smaller.
+      !> @see gpu_batched
       else if (keyword == 'gpu_low_memory') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%gpu_low_memory
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("gpu_low_memory", params%gpu_low_memory)
+      !> @kw gpu_max_batch_size
+      !> Largest device allocation a single batch may make. The batch count follows from it.
+      !> @units GB
+      !> @see gpu_n_batches
       else if (keyword == 'gpu_max_batch_size') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%gpu_max_batch_size
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("gpu_max_batch_size", params%gpu_max_batch_size)
+      !> @kw gpu_n_batches
+      !> Split the work into exactly this many batches, instead of choosing the count from the
+      !> memory budget.
+      !> @see gpu_max_batch_size
       else if (keyword == 'gpu_n_batches') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%gpu_n_batches
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("gpu_n_batches", params%gpu_n_batches)
+      !> @kw n_batches
+      !> Split the SOAP descriptor calculation into exactly this many batches, instead of choosing
+      !> the count from max_Gbytes_per_process.
+      !> @see max_gbytes_per_process
       else if (keyword == 'n_batches') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%n_batches
@@ -3090,6 +4158,33 @@ contains
       write (*, *) '                                       |'
 
    end subroutine print_deprecation_message
+
+!**************************************************************************
+!  A keyword that is still parsed so that existing input files keep running,
+!  but whose value nothing consults. The field it used to write has been
+!  removed from input_parameters rather than left there looking meaningful.
+!
+!  Deleting the keyword outright is not an option: read_input_file treats an
+!  unrecognised keyword as fatal, so every deck that sets one of these would
+!  abort. Warning here is the visible half of the same decision -- the
+!  generated keyword reference lists these as "accepted and ignored".
+   subroutine ignored_keyword(unit, iostatus, rank, keyword)
+
+      implicit none
+
+      integer, intent(in) :: unit, rank
+      integer, intent(inout) :: iostatus
+      character(len=*), intent(in) :: keyword
+
+      character*64 :: cjunk
+
+      backspace (unit)
+      read (unit, *, iostat=iostatus) cjunk, cjunk, cjunk
+      call check_iostatus(iostatus, keyword)
+      if (rank == 0) write (*, '(1X,A)') 'WARNING: "'//trim(keyword)// &
+         '" is accepted for backwards compatibility and ignored'
+
+   end subroutine ignored_keyword
 
 !**************************************************************************
    subroutine read_gap_hypers(file_gap, &

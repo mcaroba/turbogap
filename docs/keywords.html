@@ -1,0 +1,2499 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TurboGAP input keywords</title>
+<style>
+/* Headings are set in the monospace face and the prose in a sans one: the
+   subject here is a list of literal strings typed into a file, so the face
+   the keyword is written in is the one that leads. Neutrals are pulled a few
+   degrees towards the verdigris accent so the greys read as chosen. */
+:root {
+  --bg:      #fafbfa;
+  --panel:   #f0f4f3;
+  --raised:  #ffffff;
+  --fg:      #16211f;
+  --muted:   #5b6c69;
+  --faint:   #8a9996;
+  --rule:    #dbe4e1;
+  --rule-hi: #c3d2ce;
+  --accent:  #0d6f6a;
+  --accent-soft: #e2efed;
+  --flag:    #7d5312;
+  --flag-bg: #f8efdc;
+  --shadow:  0 1px 2px rgba(16, 40, 37, .05);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:      #0f1514;
+    --panel:   #161f1d;
+    --raised:  #131b1a;
+    --fg:      #e2eae8;
+    --muted:   #93a5a1;
+    --faint:   #6d807c;
+    --rule:    #232f2d;
+    --rule-hi: #32403d;
+    --accent:  #5cc4bb;
+    --accent-soft: #16302e;
+    --flag:    #e0b978;
+    --flag-bg: #2a2214;
+    --shadow:  none;
+  }
+}
+:root[data-theme="dark"] {
+  --bg:      #0f1514;
+  --panel:   #161f1d;
+  --raised:  #131b1a;
+  --fg:      #e2eae8;
+  --muted:   #93a5a1;
+  --faint:   #6d807c;
+  --rule:    #232f2d;
+  --rule-hi: #32403d;
+  --accent:  #5cc4bb;
+  --accent-soft: #16302e;
+  --flag:    #e0b978;
+  --flag-bg: #2a2214;
+  --shadow:  none;
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; scroll-padding-top: 5rem; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 15px/1.6 ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+code, .mono, h1, h2, th, .eyebrow {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+.page {
+  display: grid;
+  grid-template-columns: 15rem minmax(0, 1fr);
+  gap: 0 3rem;
+  max-width: 84rem;
+  margin: 0 auto;
+  padding: 0 1.5rem 6rem;
+  align-items: start;
+}
+@media (max-width: 60rem) {
+  .page { grid-template-columns: minmax(0, 1fr); gap: 0; }
+}
+
+/* --- masthead -------------------------------------------------------- */
+.masthead { grid-column: 1 / -1; padding: 3rem 0 1.75rem; }
+.eyebrow {
+  font-size: 11px; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--accent); margin: 0 0 .7rem;
+}
+h1 {
+  font-size: clamp(1.6rem, 1.1rem + 1.6vw, 2.3rem);
+  font-weight: 600; letter-spacing: -.02em; margin: 0;
+  text-wrap: balance;
+}
+.lede {
+  color: var(--muted); margin: .8rem 0 0; max-width: 62ch;
+}
+.lede code { font-size: .92em; }
+
+/* --- section rail ---------------------------------------------------- */
+.rail {
+  position: sticky; top: 1.5rem;
+  display: flex; flex-direction: column; gap: .1rem;
+  padding-bottom: 2rem;
+}
+.rail a {
+  display: flex; justify-content: space-between; gap: .75rem; align-items: baseline;
+  text-decoration: none; color: var(--muted);
+  font-size: 13px; padding: .3rem .6rem;
+  border-left: 2px solid var(--rule); border-radius: 0 4px 4px 0;
+}
+.rail a:hover { color: var(--fg); background: var(--panel); border-left-color: var(--accent); }
+.rail a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.rail .n { font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums;
+           font-size: 11.5px; color: var(--faint); }
+@media (max-width: 60rem) {
+  .rail {
+    position: static; flex-direction: row; flex-wrap: wrap; gap: .4rem;
+    margin-bottom: 1.5rem;
+  }
+  .rail a { border-left: 0; border: 1px solid var(--rule); border-radius: 999px; padding: .2rem .7rem; }
+  .rail .n { display: none; }
+}
+
+/* --- filter bar ------------------------------------------------------ */
+.filters {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; gap: .6rem; flex-wrap: wrap; align-items: center;
+  padding: .85rem 0;
+  background: var(--bg);
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: .25rem;
+}
+input[type=search], select {
+  font: inherit; font-size: 14px;
+  padding: .4rem .65rem;
+  color: var(--fg); background: var(--raised);
+  border: 1px solid var(--rule-hi); border-radius: 6px;
+  box-shadow: var(--shadow);
+}
+input[type=search] { flex: 1 1 18rem; min-width: 10rem; }
+input[type=search]:focus-visible, select:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent);
+}
+.tally {
+  font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums;
+  font-size: 12.5px; color: var(--faint); margin-left: auto;
+}
+
+/* --- groups ---------------------------------------------------------- */
+section { padding-top: 2.4rem; }
+h2 {
+  font-size: 1rem; font-weight: 600; letter-spacing: -.005em;
+  margin: 0; display: flex; align-items: baseline; gap: .6rem;
+}
+h2::after {
+  content: ""; flex: 1; height: 1px; background: var(--rule);
+}
+.blurb { color: var(--muted); font-size: 13.5px; margin: .45rem 0 1rem; max-width: 60ch; }
+
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td { text-align: left; vertical-align: top; padding: .55rem .7rem; }
+th {
+  font-size: 10.5px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase;
+  color: var(--faint); border-bottom: 1px solid var(--rule-hi); white-space: nowrap;
+  padding-bottom: .4rem;
+}
+tbody tr { border-bottom: 1px solid var(--rule); }
+tbody tr:hover { background: var(--panel); }
+tbody tr:last-child { border-bottom: 0; }
+
+td.kw { white-space: nowrap; padding-left: .7rem; border-left: 2px solid transparent; }
+tr.flagged td.kw { border-left-color: var(--flag); }
+td.kw code { font-weight: 600; color: var(--fg); }
+td.kw .alias { display: block; margin-top: .15rem; }
+td.kw .alias code { font-weight: 400; color: var(--faint); font-size: 12px; }
+
+td.ty, td.df, td.un, td.mo { white-space: nowrap; color: var(--muted); font-size: 12.5px; }
+td.df code, td.ty { font-variant-numeric: tabular-nums; }
+td.mo { color: var(--faint); }
+td.de { min-width: 24rem; }
+td.dp { color: var(--muted); font-size: 12.5px; min-width: 10rem; }
+td.dp .dep { display: block; }
+
+code {
+  font-size: 12.5px;
+  background: var(--panel); border-radius: 3px; padding: .08em .32em;
+}
+td.dp code, td.de code { background: none; padding: 0; color: var(--accent); }
+a { color: var(--accent); }
+
+.flag {
+  display: inline-block; font-family: ui-monospace, monospace;
+  font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+  background: var(--flag-bg); color: var(--flag);
+  border-radius: 3px; padding: .1rem .35rem; margin-right: .4rem;
+  vertical-align: 1px;
+}
+
+tr.hide, section.hide { display: none; }
+.empty {
+  grid-column: 1 / -1; color: var(--faint); font-size: 14px;
+  padding: 3rem 0; text-align: center; display: none;
+}
+.empty.show { display: block; }
+
+footer {
+  grid-column: 1 / -1; margin-top: 3.5rem; padding-top: 1.25rem;
+  border-top: 1px solid var(--rule); color: var(--faint); font-size: 12.5px;
+}
+</style>
+
+<div class="page">
+<header class="masthead">
+<p class="eyebrow">TurboGAP &middot; input reference</p>
+<h1>Input keywords</h1>
+<p class="lede">239 keywords in 12 groups. An input file is one <code>keyword = value</code> per line, and a keyword this list does not contain aborts the run. Types and defaults are read out of <code>src/types.f90</code>, and the rest out of the branch in <code>src/read_files.f90</code> that parses the keyword, so nothing here is transcribed by hand.</p>
+</header>
+<nav class="rail" aria-label="Groups">
+<a href="#general"><span>General</span><span class="n">12</span></a>
+<a href="#run-control"><span>Run control</span><span class="n">17</span></a>
+<a href="#molecular-dynamics"><span>Molecular dynamics</span><span class="n">17</span></a>
+<a href="#nested-sampling"><span>Nested sampling</span><span class="n">6</span></a>
+<a href="#monte-carlo"><span>Monte Carlo</span><span class="n">31</span></a>
+<a href="#van-der-waals"><span>Van der Waals</span><span class="n">31</span></a>
+<a href="#electrostatics"><span>Electrostatics</span><span class="n">11</span></a>
+<a href="#experimental-data-mad"><span>Experimental data (MAD)</span><span class="n">53</span></a>
+<a href="#electronic-stopping-and-eph"><span>Electronic stopping and EPH</span><span class="n">32</span></a>
+<a href="#local-properties"><span>Local properties</span><span class="n">5</span></a>
+<a href="#output"><span>Output</span><span class="n">19</span></a>
+<a href="#gpu"><span>GPU</span><span class="n">5</span></a>
+</nav>
+<main>
+<div class="filters">
+<input type="search" id="q" aria-label="Filter keywords" placeholder="Filter by name or description…" autocomplete="off" spellcheck="false">
+<select id="mode" aria-label="Mode"><option value="">every mode</option>
+<option value="predict">turbogap predict</option>
+<option value="md">turbogap md</option>
+<option value="mc">turbogap mc</option>
+<option value="soap">turbogap soap</option>
+</select>
+<span class="tally" id="tally"></span>
+</div>
+<section id="general">
+<h2>General</h2>
+<p class="blurb">The atoms, the species and how chatty the run is.</p>
+<div class="scroll"><table><thead><tr><th>Keyword</th><th>Type</th><th>Default</th><th>Units</th><th>Modes</th><th>Description</th><th>Depends on</th></tr></thead><tbody>
+<tr data-h="atoms_file input_file path to the extended-xyz file holding the atomic configuration, or the trajectory of configurations to loop over in predict mode. required." data-m="predict md mc soap">
+<td class="kw"><code>atoms_file</code><span class="alias"><code>input_file</code></span></td>
+<td class="ty">string</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Path to the extended-XYZ file holding the atomic configuration, or the trajectory of configurations to loop over in predict mode. Required.</td>
+<td class="dp"></td>
+</tr>
+<tr data-h="e0 constant energy offset per species, added to every atom of that species. one value per entry in species, in the same order. the gap predicts energies relative to these, so they set the zero of the energy scale." data-m="predict md mc soap">
+<td class="kw"><code>e0</code></td>
+<td class="ty">real list</td>
+<td class="df"></td>
+<td class="un">eV</td>
+<td class="mo">all</td>
+<td class="de">Constant energy offset per species, added to every atom of that species. One value per entry in species, in the same order. The GAP predicts energies relative to these, so they set the zero of the energy scale.</td>
+<td class="dp"></td>
+</tr>
+<tr data-h="masses atomic mass of each species, one value per entry in species and in the same order. read in amu and converted internally to ev fs^2 / a^2. if absent they are taken from the xyz file instead." data-m="predict md mc soap">
+<td class="kw"><code>masses</code></td>
+<td class="ty">real list</td>
+<td class="df"></td>
+<td class="un">amu</td>
+<td class="mo">all</td>
+<td class="de">Atomic mass of each species, one value per entry in species and in the same order. Read in amu and converted internally to eV fs^2 / A^2. If absent they are taken from the XYZ file instead.</td>
+<td class="dp"><span class="dep">see <code>species</code></span></td>
+</tr>
+<tr data-h="max_gbytes_per_process memory an mpi rank may use for the soap descriptor and its derivatives; the rank splits its atoms into as many batches as it takes to stay under this. naming it in the input file also stops the run sizing the budget from the node automatically, so a value chosen deliberately is never overwritten." data-m="predict md mc soap">
+<td class="kw"><code>max_gbytes_per_process</code></td>
+<td class="ty">real</td>
+<td class="df"><code>1.0</code></td>
+<td class="un">GB</td>
+<td class="mo">all</td>
+<td class="de">Memory an MPI rank may use for the SOAP descriptor and its derivatives; the rank splits its atoms into as many batches as it takes to stay under this. Naming it in the input file also stops the run sizing the budget from the node automatically, so a value chosen deliberately is never overwritten.</td>
+<td class="dp"><span class="dep">sets <code>max_Gbytes_set</code></span><span class="dep">see <code>mem_fraction</code></span></td>
+</tr>
+<tr data-h="mem_fraction fraction of the node&#x27;s memory to divide between the ranks on it when max_gbytes_per_process was not given. only consulted for that automatic budget, and ignored once max_gbytes_per_process appears in the deck." data-m="predict md mc soap">
+<td class="kw"><code>mem_fraction</code></td>
+<td class="ty">real</td>
+<td class="df"><code>0.25</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Fraction of the node&#x27;s memory to divide between the ranks on it when max_Gbytes_per_process was not given. Only consulted for that automatic budget, and ignored once max_Gbytes_per_process appears in the deck.</td>
+<td class="dp"><span class="dep">see <code>max_gbytes_per_process</code></span></td>
+</tr>
+<tr data-h="neighbors_buffer extra distance added to every cutoff when the neighbour lists are built, so that a list stays valid for several steps as atoms move. larger values cost memory and neighbour-loop time but rebuild less often." data-m="predict md mc soap">
+<td class="kw"><code>neighbors_buffer</code></td>
+<td class="ty">real</td>
+<td class="df"><code>0.0</code></td>
+<td class="un">A</td>
+<td class="mo">all</td>
+<td class="de">Extra distance added to every cutoff when the neighbour lists are built, so that a list stays valid for several steps as atoms move. Larger values cost memory and neighbour-loop time but rebuild less often.</td>
+<td class="dp"></td>
+</tr>
+<tr data-h="radii per-species radius used by the monte-carlo insertion and accessible-volume tests, one value per entry in species. not a physical parameter of the potential." data-m="predict md mc soap">
+<td class="kw"><code>radii</code></td>
+<td class="ty">real list</td>
+<td class="df"></td>
+<td class="un">A</td>
+<td class="mo">all</td>
+<td class="de">Per-species radius used by the Monte-Carlo insertion and accessible-volume tests, one value per entry in species. Not a physical parameter of the potential.</td>
+<td class="dp"><span class="dep">see <code>accessible_volume</code></span><span class="dep">see <code>mc_types</code></span></td>
+</tr>
+<tr data-h="random_seed seed for the intrinsic pseudo-random number generator. zero, the default, leaves the compiler&#x27;s own sequence alone; any other value makes a run repeatable, which is what the regression comparisons rely on when the initial velocities are randomized." data-m="predict md mc soap">
+<td class="kw"><code>random_seed</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>0</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Seed for the intrinsic pseudo-random number generator. Zero, the default, leaves the compiler&#x27;s own sequence alone; any other value makes a run repeatable, which is what the regression comparisons rely on when the initial velocities are randomized.</td>
+<td class="dp"><span class="dep">see <code>randomize_velocities</code></span></td>
+</tr>
+<tr data-h="species chemical symbols of the species in the system, in the order every other per-species list is written in. n_species entries." data-m="predict md mc soap">
+<td class="kw"><code>species</code></td>
+<td class="ty">string list</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Chemical symbols of the species in the system, in the order every other per-species list is written in. n_species entries.</td>
+<td class="dp"></td>
+</tr>
+<tr data-h="timing print a breakdown of where wall time went, by phase, at the end of the run." data-m="predict md mc soap">
+<td class="kw"><code>timing</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Print a breakdown of where wall time went, by phase, at the end of the run.</td>
+<td class="dp"></td>
+</tr>
+<tr data-h="verbosity verb how much diagnostic output to print. 0 is quiet; the mc and md drivers gate extra reporting on thresholds up to about 50." data-m="predict md mc soap">
+<td class="kw"><code>verbosity</code><span class="alias"><code>verb</code></span></td>
+<td class="ty">integer</td>
+<td class="df"><code>0</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">How much diagnostic output to print. 0 is quiet; the MC and MD drivers gate extra reporting on thresholds up to about 50.</td>
+<td class="dp"></td>
+</tr>
+<tr data-h="which_atom restrict the prediction to a single atom index, for debugging a local environment. 0, the default, means every atom." data-m="predict">
+<td class="kw"><code>which_atom</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>0</code></td>
+<td class="un"></td>
+<td class="mo">predict</td>
+<td class="de">Restrict the prediction to a single atom index, for debugging a local environment. 0, the default, means every atom.</td>
+<td class="dp"></td>
+</tr>
+</tbody></table></div></section>
+<section id="run-control">
+<h2>Run control</h2>
+<p class="blurb">What is computed, and how a relaxation is driven.</p>
+<div class="scroll"><table><thead><tr><th>Keyword</th><th>Type</th><th>Default</th><th>Units</th><th>Modes</th><th>Description</th><th>Depends on</th></tr></thead><tbody>
+<tr data-h="do_derivatives compute the derivatives of the soap descriptor with respect to atomic positions. needed for forces, and switched on automatically in md and mc mode. turning it off in predict mode is what makes an energy-only pass cheap." data-m="predict md mc soap">
+<td class="kw"><code>do_derivatives</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Compute the derivatives of the SOAP descriptor with respect to atomic positions. Needed for forces, and switched on automatically in md and mc mode. Turning it off in predict mode is what makes an energy-only pass cheap.</td>
+<td class="dp"></td>
+</tr>
+<tr data-h="do_derivatives_fd compute the descriptor derivatives by finite differences instead of analytically. a correctness check on the analytic route, far slower, and not meant for production." data-m="predict md mc soap">
+<td class="kw"><code>do_derivatives_fd</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Compute the descriptor derivatives by finite differences instead of analytically. A correctness check on the analytic route, far slower, and not meant for production.</td>
+<td class="dp"><span class="dep">see <code>do_derivatives</code></span></td>
+</tr>
+<tr data-h="do_forces compute forces and the virial. set automatically in md, mc and predict mode; the only reason to name it is to switch it off." data-m="predict md mc soap">
+<td class="kw"><code>do_forces</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Compute forces and the virial. Set automatically in md, mc and predict mode; the only reason to name it is to switch it off.</td>
+<td class="dp"></td>
+</tr>
+<tr data-h="do_mc run a monte-carlo walk. set automatically by `turbogap mc`." data-m="mc">
+<td class="kw"><code>do_mc</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">mc</td>
+<td class="de">Run a Monte-Carlo walk. Set automatically by `turbogap mc`.</td>
+<td class="dp"></td>
+</tr>
+<tr data-h="do_md run molecular dynamics. set automatically by `turbogap md`." data-m="md">
+<td class="kw"><code>do_md</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">Run molecular dynamics. Set automatically by `turbogap md`.</td>
+<td class="dp"></td>
+</tr>
+<tr data-h="do_prediction evaluate the gap at all. set automatically in every mode except soap; switching it off leaves only the descriptor calculation." data-m="predict md mc soap">
+<td class="kw"><code>do_prediction</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Evaluate the GAP at all. Set automatically in every mode except soap; switching it off leaves only the descriptor calculation.</td>
+<td class="dp"></td>
+</tr>
+<tr data-h="e_tol convergence threshold on the energy change between successive relaxation steps. the relaxation stops when the energy, force and pressure criteria are all met." data-m="predict md mc soap">
+<td class="kw"><code>e_tol</code></td>
+<td class="ty">real</td>
+<td class="df"><code>1.e-6</code></td>
+<td class="un">eV</td>
+<td class="mo">all</td>
+<td class="de">Convergence threshold on the energy change between successive relaxation steps. The relaxation stops when the energy, force and pressure criteria are all met.</td>
+<td class="dp"><span class="dep">needs <code>optimize</code></span><span class="dep">see <code>f_tol</code></span><span class="dep">see <code>p_tol</code></span></td>
+</tr>
+<tr data-h="f_tol convergence threshold on the largest force component during a relaxation." data-m="predict md mc soap">
+<td class="kw"><code>f_tol</code></td>
+<td class="ty">real</td>
+<td class="df"><code>0.01</code></td>
+<td class="un">eV/A</td>
+<td class="mo">all</td>
+<td class="de">Convergence threshold on the largest force component during a relaxation.</td>
+<td class="dp"><span class="dep">needs <code>optimize</code></span><span class="dep">see <code>e_tol</code></span><span class="dep">see <code>p_tol</code></span></td>
+</tr>
+<tr class="flagged" data-h="gamma0 the gradient-descent prefactor this once scaled. the step is now taken from max_opt_step and the largest force, so the value is read and discarded." data-m="predict md mc soap">
+<td class="kw"><code>gamma0</code></td>
+<td class="ty">real</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de"><span class="tag">ignored</span>The gradient-descent prefactor this once scaled. The step is now taken from max_opt_step and the largest force, so the value is read and discarded.</td>
+<td class="dp"><span class="dep">see <code>max_opt_step</code></span></td>
+</tr>
+<tr data-h="max_opt_step largest distance any atom may move in one gradient-descent step. the step size is chosen so that the biggest displacement equals this." data-m="predict md mc soap">
+<td class="kw"><code>max_opt_step</code></td>
+<td class="ty">real</td>
+<td class="df"><code>0.1</code></td>
+<td class="un">A</td>
+<td class="mo">all</td>
+<td class="de">Largest distance any atom may move in one gradient-descent step. The step size is chosen so that the biggest displacement equals this.</td>
+<td class="dp"><span class="dep">needs <code>optimize</code></span></td>
+</tr>
+<tr data-h="max_opt_step_eps largest strain any cell vector may take in one step of a cell relaxation. the strain analogue of max_opt_step." data-m="predict md mc soap">
+<td class="kw"><code>max_opt_step_eps</code></td>
+<td class="ty">real</td>
+<td class="df"><code>0.05</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Largest strain any cell vector may take in one step of a cell relaxation. The strain analogue of max_opt_step.</td>
+<td class="dp"><span class="dep">needs <code>optimize</code></span><span class="dep">see <code>max_opt_step</code></span></td>
+</tr>
+<tr data-h="optimize how the geometry is driven: &quot;vv&quot; for velocity-verlet dynamics, &quot;gd&quot; for gradient descent on the positions, &quot;gd-box&quot; to relax the cell as well, and &quot;gd-box-ortho&quot; to relax the cell keeping it orthorhombic. anything else aborts the run." data-m="md mc">
+<td class="kw"><code>optimize</code></td>
+<td class="ty">string</td>
+<td class="df"><code>vv</code></td>
+<td class="un"></td>
+<td class="mo">md, mc</td>
+<td class="de">How the geometry is driven: &quot;vv&quot; for velocity-Verlet dynamics, &quot;gd&quot; for gradient descent on the positions, &quot;gd-box&quot; to relax the cell as well, and &quot;gd-box-ortho&quot; to relax the cell keeping it orthorhombic. Anything else aborts the run.</td>
+<td class="dp"></td>
+</tr>
+<tr data-h="p_tol convergence threshold on the pressure during a cell relaxation." data-m="predict md mc soap">
+<td class="kw"><code>p_tol</code></td>
+<td class="ty">real</td>
+<td class="df"><code>0.01</code></td>
+<td class="un">GPa</td>
+<td class="mo">all</td>
+<td class="de">Convergence threshold on the pressure during a cell relaxation.</td>
+<td class="dp"><span class="dep">needs <code>optimize</code></span><span class="dep">see <code>e_tol</code></span><span class="dep">see <code>f_tol</code></span></td>
+</tr>
+<tr data-h="target_pos_step displacement the variable time step aims for: the step is rescaled so that the fastest atom moves about this far. naming this keyword is what enables the variable time step." data-m="md">
+<td class="kw"><code>target_pos_step</code></td>
+<td class="ty">real</td>
+<td class="df"></td>
+<td class="un">A</td>
+<td class="mo">md</td>
+<td class="de">Displacement the variable time step aims for: the step is rescaled so that the fastest atom moves about this far. Naming this keyword is what enables the variable time step.</td>
+<td class="dp"><span class="dep">sets <code>variable_time_step</code></span><span class="dep">see <code>tau_dt</code></span></td>
+</tr>
+<tr data-h="tau_dt relaxation time over which the variable time step is allowed to change, so that the step size follows target_pos_step smoothly instead of jumping." data-m="md">
+<td class="kw"><code>tau_dt</code></td>
+<td class="ty">real</td>
+<td class="df"><code>100.0</code></td>
+<td class="un">fs</td>
+<td class="mo">md</td>
+<td class="de">Relaxation time over which the variable time step is allowed to change, so that the step size follows target_pos_step smoothly instead of jumping.</td>
+<td class="dp"><span class="dep">needs <code>target_pos_step</code></span></td>
+</tr>
+<tr data-h="write_derivatives write the soap descriptor derivatives to file alongside the descriptors. large output; a debugging aid." data-m="predict md mc soap">
+<td class="kw"><code>write_derivatives</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Write the SOAP descriptor derivatives to file alongside the descriptors. Large output; a debugging aid.</td>
+<td class="dp"><span class="dep">see <code>write_soap</code></span></td>
+</tr>
+<tr data-h="write_soap write the soap descriptor vectors to file. set automatically by `turbogap soap`." data-m="predict md mc soap">
+<td class="kw"><code>write_soap</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Write the SOAP descriptor vectors to file. Set automatically by `turbogap soap`.</td>
+<td class="dp"></td>
+</tr>
+</tbody></table></div></section>
+<section id="molecular-dynamics">
+<h2>Molecular dynamics</h2>
+<p class="blurb">Time stepping, thermostat and barostat.</p>
+<div class="scroll"><table><thead><tr><th>Keyword</th><th>Type</th><th>Default</th><th>Units</th><th>Modes</th><th>Description</th><th>Depends on</th></tr></thead><tbody>
+<tr data-h="barostat pressure coupling: &quot;none&quot; or &quot;berendsen&quot;. anything else aborts the run." data-m="md mc">
+<td class="kw"><code>barostat</code></td>
+<td class="ty">string</td>
+<td class="df"><code>none</code></td>
+<td class="un"></td>
+<td class="mo">md, mc</td>
+<td class="de">Pressure coupling: &quot;none&quot; or &quot;berendsen&quot;. Anything else aborts the run.</td>
+<td class="dp"><span class="dep">see <code>p_beg</code></span><span class="dep">see <code>p_end</code></span><span class="dep">see <code>tau_p</code></span><span class="dep">see <code>barostat_sym</code></span></td>
+</tr>
+<tr data-h="barostat_sym which components of the cell the barostat is allowed to change: &quot;isotropic&quot; scales all three axes together, and the anisotropic settings let them move independently." data-m="md mc">
+<td class="kw"><code>barostat_sym</code></td>
+<td class="ty">string</td>
+<td class="df"><code>isotropic</code></td>
+<td class="un"></td>
+<td class="mo">md, mc</td>
+<td class="de">Which components of the cell the barostat is allowed to change: &quot;isotropic&quot; scales all three axes together, and the anisotropic settings let them move independently.</td>
+<td class="dp"><span class="dep">needs <code>barostat</code></span></td>
+</tr>
+<tr data-h="box_scaling_factor a 3x3 matrix the cell is multiplied by, applied once at the start of the run. nine numbers, read column by column. used to strain a cell without editing the xyz file." data-m="predict md mc soap">
+<td class="kw"><code>box_scaling_factor</code></td>
+<td class="ty">real(3, 3)</td>
+<td class="df"><code>identity</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">A 3x3 matrix the cell is multiplied by, applied once at the start of the run. Nine numbers, read column by column. Used to strain a cell without editing the XYZ file.</td>
+<td class="dp"><span class="dep">needs <code>scale_box</code></span></td>
+</tr>
+<tr data-h="gamma_p damping of the berendsen barostat&#x27;s cell response, on top of tau_p." data-m="md mc">
+<td class="kw"><code>gamma_p</code></td>
+<td class="ty">real</td>
+<td class="df"><code>1.0</code></td>
+<td class="un"></td>
+<td class="mo">md, mc</td>
+<td class="de">Damping of the Berendsen barostat&#x27;s cell response, on top of tau_p.</td>
+<td class="dp"><span class="dep">needs <code>barostat</code></span></td>
+</tr>
+<tr data-h="md_nsteps number of molecular-dynamics steps to take." data-m="md">
+<td class="kw"><code>md_nsteps</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>1</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">Number of molecular-dynamics steps to take.</td>
+<td class="dp"></td>
+</tr>
+<tr data-h="md_step time step. with a variable time step this is the starting value." data-m="md">
+<td class="kw"><code>md_step</code></td>
+<td class="ty">real</td>
+<td class="df"><code>1.0</code></td>
+<td class="un">fs</td>
+<td class="mo">md</td>
+<td class="de">Time step. With a variable time step this is the starting value.</td>
+<td class="dp"><span class="dep">see <code>target_pos_step</code></span></td>
+</tr>
+<tr data-h="n_t_hold number of entries in the t_hold list, which must be given before it." data-m="md">
+<td class="kw"><code>n_t_hold</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>0</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">Number of entries in the t_hold list, which must be given before it.</td>
+<td class="dp"><span class="dep">sets <code>t_hold</code></span><span class="dep">see <code>t_hold</code></span></td>
+</tr>
+<tr data-h="p_beg target pressure at the start of the run. with p_end it defines a linear ramp over the run." data-m="md mc">
+<td class="kw"><code>p_beg</code></td>
+<td class="ty">real</td>
+<td class="df"><code>1.0</code></td>
+<td class="un">GPa</td>
+<td class="mo">md, mc</td>
+<td class="de">Target pressure at the start of the run. With p_end it defines a linear ramp over the run.</td>
+<td class="dp"><span class="dep">needs <code>barostat</code></span></td>
+</tr>
+<tr data-h="p_end target pressure at the end of the run." data-m="md mc">
+<td class="kw"><code>p_end</code></td>
+<td class="ty">real</td>
+<td class="df"><code>1.0</code></td>
+<td class="un">GPa</td>
+<td class="mo">md, mc</td>
+<td class="de">Target pressure at the end of the run.</td>
+<td class="dp"><span class="dep">needs <code>barostat</code></span><span class="dep">see <code>p_beg</code></span></td>
+</tr>
+<tr data-h="randomize_velocities draw the initial velocities from a maxwell-boltzmann distribution at t_beg instead of taking them from the xyz file. use random_seed to make the draw repeatable." data-m="md">
+<td class="kw"><code>randomize_velocities</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">Draw the initial velocities from a Maxwell-Boltzmann distribution at t_beg instead of taking them from the XYZ file. Use random_seed to make the draw repeatable.</td>
+<td class="dp"><span class="dep">see <code>random_seed</code></span><span class="dep">see <code>t_beg</code></span></td>
+</tr>
+<tr data-h="scale_box apply box_scaling_factor to the cell at the start of the run." data-m="predict md mc soap">
+<td class="kw"><code>scale_box</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Apply box_scaling_factor to the cell at the start of the run.</td>
+<td class="dp"><span class="dep">see <code>box_scaling_factor</code></span></td>
+</tr>
+<tr data-h="t_beg target temperature at the start of the run. with t_end it defines a linear ramp over the run; give only t_beg for a constant-temperature run." data-m="md mc">
+<td class="kw"><code>t_beg</code></td>
+<td class="ty">real</td>
+<td class="df"><code>300.0</code></td>
+<td class="un">K</td>
+<td class="mo">md, mc</td>
+<td class="de">Target temperature at the start of the run. With t_end it defines a linear ramp over the run; give only t_beg for a constant-temperature run.</td>
+<td class="dp"><span class="dep">see <code>thermostat</code></span><span class="dep">see <code>t_end</code></span><span class="dep">see <code>t_hold</code></span></td>
+</tr>
+<tr data-h="t_end target temperature at the end of the run." data-m="md mc">
+<td class="kw"><code>t_end</code></td>
+<td class="ty">real</td>
+<td class="df"><code>300.0</code></td>
+<td class="un">K</td>
+<td class="mo">md, mc</td>
+<td class="de">Target temperature at the end of the run.</td>
+<td class="dp"><span class="dep">see <code>t_beg</code></span></td>
+</tr>
+<tr data-h="t_hold segments of the temperature schedule, as a flat list read n_t_hold entries at a time: a piecewise ramp-and-hold instead of the single linear ramp that t_beg and t_end give. n_t_hold must appear first." data-m="md">
+<td class="kw"><code>t_hold</code></td>
+<td class="ty">real list</td>
+<td class="df"></td>
+<td class="un">K</td>
+<td class="mo">md</td>
+<td class="de">Segments of the temperature schedule, as a flat list read n_t_hold entries at a time: a piecewise ramp-and-hold instead of the single linear ramp that t_beg and t_end give. n_t_hold must appear first.</td>
+<td class="dp"><span class="dep">needs <code>n_t_hold</code></span><span class="dep">sets <code>n_t_hold</code></span></td>
+</tr>
+<tr data-h="tau_p relaxation time of the barostat: how quickly the cell is pushed towards the target pressure. larger is gentler." data-m="md mc">
+<td class="kw"><code>tau_p</code></td>
+<td class="ty">real</td>
+<td class="df"><code>1000.0</code></td>
+<td class="un">fs</td>
+<td class="mo">md, mc</td>
+<td class="de">Relaxation time of the barostat: how quickly the cell is pushed towards the target pressure. Larger is gentler.</td>
+<td class="dp"><span class="dep">needs <code>barostat</code></span></td>
+</tr>
+<tr data-h="tau_t relaxation time of the thermostat: how quickly the kinetic energy is pushed towards the target temperature. larger is gentler." data-m="md mc">
+<td class="kw"><code>tau_t</code></td>
+<td class="ty">real</td>
+<td class="df"><code>100.0</code></td>
+<td class="un">fs</td>
+<td class="mo">md, mc</td>
+<td class="de">Relaxation time of the thermostat: how quickly the kinetic energy is pushed towards the target temperature. Larger is gentler.</td>
+<td class="dp"><span class="dep">needs <code>thermostat</code></span></td>
+</tr>
+<tr data-h="thermostat temperature coupling: &quot;none&quot;, &quot;berendsen&quot; or &quot;bussi&quot;. bussi is the stochastic velocity rescaling that samples the canonical ensemble properly; berendsen does not. anything else aborts the run." data-m="md mc">
+<td class="kw"><code>thermostat</code></td>
+<td class="ty">string</td>
+<td class="df"><code>none</code></td>
+<td class="un"></td>
+<td class="mo">md, mc</td>
+<td class="de">Temperature coupling: &quot;none&quot;, &quot;berendsen&quot; or &quot;bussi&quot;. Bussi is the stochastic velocity rescaling that samples the canonical ensemble properly; Berendsen does not. Anything else aborts the run.</td>
+<td class="dp"><span class="dep">see <code>t_beg</code></span><span class="dep">see <code>t_end</code></span><span class="dep">see <code>tau_t</code></span></td>
+</tr>
+</tbody></table></div></section>
+<section id="nested-sampling">
+<h2>Nested sampling</h2>
+<p class="blurb">Nested-sampling walks.</p>
+<div class="scroll"><table><thead><tr><th>Keyword</th><th>Type</th><th>Default</th><th>Units</th><th>Modes</th><th>Description</th><th>Depends on</th></tr></thead><tbody>
+<tr data-h="n_nested number of nested-sampling iterations. naming it is what enables nested sampling." data-m="predict md mc soap">
+<td class="kw"><code>n_nested</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>0</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Number of nested-sampling iterations. Naming it is what enables nested sampling.</td>
+<td class="dp"><span class="dep">sets <code>do_nested_sampling</code></span></td>
+</tr>
+<tr data-h="nested_max_strain largest strain a nested-sampling cell-shape move may apply." data-m="predict md mc soap">
+<td class="kw"><code>nested_max_strain</code></td>
+<td class="ty">real</td>
+<td class="df"><code>0.0</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Largest strain a nested-sampling cell-shape move may apply.</td>
+<td class="dp"></td>
+</tr>
+<tr data-h="nested_max_volume_change largest fractional volume change a nested-sampling volume move may make." data-m="predict md mc soap">
+<td class="kw"><code>nested_max_volume_change</code></td>
+<td class="ty">real</td>
+<td class="df"><code>0.0</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Largest fractional volume change a nested-sampling volume move may make.</td>
+<td class="dp"><span class="dep">needs <code>scale_box_nested</code></span></td>
+</tr>
+<tr data-h="p_nested external pressure entering the nested-sampling enthalpy." data-m="predict md mc soap">
+<td class="kw"><code>p_nested</code></td>
+<td class="ty">real</td>
+<td class="df"><code>0.0</code></td>
+<td class="un">GPa</td>
+<td class="mo">all</td>
+<td class="de">External pressure entering the nested-sampling enthalpy.</td>
+<td class="dp"><span class="dep">needs <code>n_nested</code></span></td>
+</tr>
+<tr data-h="scale_box_nested let nested sampling change the cell as well as the positions." data-m="predict md mc soap">
+<td class="kw"><code>scale_box_nested</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Let nested sampling change the cell as well as the positions.</td>
+<td class="dp"><span class="dep">needs <code>n_nested</code></span><span class="dep">see <code>nested_max_volume_change</code></span><span class="dep">see <code>nested_max_strain</code></span></td>
+</tr>
+<tr class="flagged" data-h="t_extra temperature offset from an earlier nested-sampling design; nothing consults it." data-m="predict md mc soap">
+<td class="kw"><code>t_extra</code></td>
+<td class="ty">real</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de"><span class="tag">ignored</span>Temperature offset from an earlier nested-sampling design; nothing consults it.</td>
+<td class="dp"></td>
+</tr>
+</tbody></table></div></section>
+<section id="monte-carlo">
+<h2>Monte Carlo</h2>
+<p class="blurb">Move types, acceptance and the grand-canonical ensemble.</p>
+<div class="scroll"><table><thead><tr><th>Keyword</th><th>Type</th><th>Default</th><th>Units</th><th>Modes</th><th>Description</th><th>Depends on</th></tr></thead><tbody>
+<tr data-h="accessible_volume use the volume actually accessible to a new atom, with the volume of the existing atoms&#x27; spheres removed, rather than the cell volume, in the insertion and removal acceptance ratios. the spheres are sized by radii." data-m="mc">
+<td class="kw"><code>accessible_volume</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">mc</td>
+<td class="de">Use the volume actually accessible to a new atom, with the volume of the existing atoms&#x27; spheres removed, rather than the cell volume, in the insertion and removal acceptance ratios. The spheres are sized by radii.</td>
+<td class="dp"><span class="dep">see <code>radii</code></span></td>
+</tr>
+<tr data-h="mc_acceptance relative probability of picking each move type, one weight per entry in mc_types and in the same order. normalised internally, so the weights need not sum to one. its length sets n_mc_types." data-m="mc">
+<td class="kw"><code>mc_acceptance</code></td>
+<td class="ty">real list</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="mo">mc</td>
+<td class="de">Relative probability of picking each move type, one weight per entry in mc_types and in the same order. Normalised internally, so the weights need not sum to one. Its length sets n_mc_types.</td>
+<td class="dp"><span class="dep">sets <code>n_mc_types</code></span><span class="dep">see <code>mc_types</code></span></td>
+</tr>
+<tr data-h="mc_hamiltonian include the kinetic energy in the metropolis test, so that the walk samples configurations and momenta together rather than configurations alone. also what makes the &quot;md&quot; move type meaningful." data-m="mc">
+<td class="kw"><code>mc_hamiltonian</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">mc</td>
+<td class="de">Include the kinetic energy in the Metropolis test, so that the walk samples configurations and momenta together rather than configurations alone. Also what makes the &quot;md&quot; move type meaningful.</td>
+<td class="dp"><span class="dep">see <code>mc_types</code></span></td>
+</tr>
+<tr data-h="mc_hybrid_opt how the short md burst of a hybrid &quot;md&quot; move is propagated: same choices as optimize." data-m="mc">
+<td class="kw"><code>mc_hybrid_opt</code></td>
+<td class="ty">string</td>
+<td class="df"><code>vv</code></td>
+<td class="un"></td>
+<td class="mo">mc</td>
+<td class="de">How the short MD burst of a hybrid &quot;md&quot; move is propagated: same choices as optimize.</td>
+<td class="dp"><span class="dep">needs <code>mc_types</code></span><span class="dep">see <code>optimize</code></span></td>
+</tr>
+<tr data-h="mc_lnvol_max largest change in ln(v) a volume move may make, so the trial volume is drawn from v*exp(+-mc_lnvol_max). working in the logarithm keeps the move symmetric in volume." data-m="mc">
+<td class="kw"><code>mc_lnvol_max</code></td>
+<td class="ty">real</td>
+<td class="df"><code>0.01</code></td>
+<td class="un"></td>
+<td class="mo">mc</td>
+<td class="de">Largest change in ln(V) a volume move may make, so the trial volume is drawn from V*exp(+-mc_lnvol_max). Working in the logarithm keeps the move symmetric in volume.</td>
+<td class="dp"><span class="dep">needs <code>mc_types</code></span></td>
+</tr>
+<tr data-h="mc_max_dist largest distance from an existing atom at which a new atom may be inserted. together with mc_min_dist it bounds where an insertion trial may land." data-m="mc">
+<td class="kw"><code>mc_max_dist</code></td>
+<td class="ty">real</td>
+<td class="df"><code>100000000.0</code></td>
+<td class="un">A</td>
+<td class="mo">mc</td>
+<td class="de">Largest distance from an existing atom at which a new atom may be inserted. Together with mc_min_dist it bounds where an insertion trial may land.</td>
+<td class="dp"><span class="dep">see <code>mc_min_dist</code></span><span class="dep">see <code>mc_max_insertion_trials</code></span></td>
+</tr>
+<tr data-h="mc_max_dist_to_planes distance from each plane within which a moved or inserted atom must stay, one value per plane. mc_n_planes must appear first." data-m="mc">
+<td class="kw"><code>mc_max_dist_to_planes</code></td>
+<td class="ty">real list</td>
+<td class="df"></td>
+<td class="un">A</td>
+<td class="mo">mc</td>
+<td class="de">Distance from each plane within which a moved or inserted atom must stay, one value per plane. mc_n_planes must appear first.</td>
+<td class="dp"><span class="dep">needs <code>mc_n_planes</code></span><span class="dep">sets <code>mc_n_planes</code></span><span class="dep">see <code>mc_planes</code></span></td>
+</tr>
+<tr data-h="mc_max_insertion_trials how many random positions an insertion move may try before giving up. the run reports the failure and says which of mc_min_dist, mc_max_dist or this to change." data-m="mc">
+<td class="kw"><code>mc_max_insertion_trials</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>500</code></td>
+<td class="un"></td>
+<td class="mo">mc</td>
+<td class="de">How many random positions an insertion move may try before giving up. The run reports the failure and says which of mc_min_dist, mc_max_dist or this to change.</td>
+<td class="dp"><span class="dep">see <code>mc_min_dist</code></span><span class="dep">see <code>mc_max_dist</code></span></td>
+</tr>
+<tr data-h="mc_min_dist closest an inserted atom may come to an existing one. trials nearer than this are rejected without evaluating the potential, which is what keeps an insertion from landing on top of an atom." data-m="mc">
+<td class="kw"><code>mc_min_dist</code></td>
+<td class="ty">real</td>
+<td class="df"><code>0.2</code></td>
+<td class="un">A</td>
+<td class="mo">mc</td>
+<td class="de">Closest an inserted atom may come to an existing one. Trials nearer than this are rejected without evaluating the potential, which is what keeps an insertion from landing on top of an atom.</td>
+<td class="dp"><span class="dep">see <code>mc_max_dist</code></span></td>
+</tr>
+<tr data-h="mc_move_max largest displacement of a single-atom &quot;move&quot;. the trial displacement is drawn uniformly up to this." data-m="mc">
+<td class="kw"><code>mc_move_max</code></td>
+<td class="ty">real</td>
+<td class="df"><code>1.0</code></td>
+<td class="un">A</td>
+<td class="mo">mc</td>
+<td class="de">Largest displacement of a single-atom &quot;move&quot;. The trial displacement is drawn uniformly up to this.</td>
+<td class="dp"><span class="dep">needs <code>mc_types</code></span></td>
+</tr>
+<tr data-h="mc_mu chemical potential of each species that may be inserted or removed, one value per entry in mc_species. its length sets n_mc_mu." data-m="mc">
+<td class="kw"><code>mc_mu</code></td>
+<td class="ty">real list</td>
+<td class="df"></td>
+<td class="un">eV</td>
+<td class="mo">mc</td>
+<td class="de">Chemical potential of each species that may be inserted or removed, one value per entry in mc_species. Its length sets n_mc_mu.</td>
+<td class="dp"><span class="dep">sets <code>n_mc_mu</code></span><span class="dep">see <code>mc_species</code></span><span class="dep">see <code>mc_types</code></span></td>
+</tr>
+<tr data-h="mc_mu_acceptance relative probability of picking each species for a grand-canonical move, one weight per entry in mc_species." data-m="mc">
+<td class="kw"><code>mc_mu_acceptance</code></td>
+<td class="ty">real list</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="mo">mc</td>
+<td class="de">Relative probability of picking each species for a grand-canonical move, one weight per entry in mc_species.</td>
+<td class="dp"><span class="dep">sets <code>n_mc_types</code></span><span class="dep">sets <code>n_mc_mu</code></span><span class="dep">see <code>mc_mu</code></span><span class="dep">see <code>mc_species</code></span></td>
+</tr>
+<tr data-h="mc_n_planes number of planes bounding the region moves are restricted to. must appear before mc_planes and mc_max_dist_to_planes, which it allocates." data-m="mc">
+<td class="kw"><code>mc_n_planes</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>0</code></td>
+<td class="un"></td>
+<td class="mo">mc</td>
+<td class="de">Number of planes bounding the region moves are restricted to. Must appear before mc_planes and mc_max_dist_to_planes, which it allocates.</td>
+<td class="dp"><span class="dep">sets <code>mc_planes</code></span><span class="dep">sets <code>mc_max_dist_to_planes</code></span><span class="dep">see <code>mc_planes</code></span></td>
+</tr>
+<tr data-h="mc_nrelax number of relaxation steps to take after an accepted move when mc_relax is on." data-m="mc">
+<td class="kw"><code>mc_nrelax</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>0</code></td>
+<td class="un"></td>
+<td class="mo">mc</td>
+<td class="de">Number of relaxation steps to take after an accepted move when mc_relax is on.</td>
+<td class="dp"><span class="dep">needs <code>mc_relax</code></span></td>
+</tr>
+<tr data-h="mc_nsteps number of monte-carlo steps to take." data-m="mc">
+<td class="kw"><code>mc_nsteps</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>1</code></td>
+<td class="un"></td>
+<td class="mo">mc</td>
+<td class="de">Number of Monte-Carlo steps to take.</td>
+<td class="dp"></td>
+</tr>
+<tr data-h="mc_optimize_exp include the experimental-data penalty in the metropolis test, so the walk is driven towards agreement with the measured pattern. this is the reverse monte-carlo mode." data-m="mc">
+<td class="kw"><code>mc_optimize_exp</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">mc</td>
+<td class="de">Include the experimental-data penalty in the Metropolis test, so the walk is driven towards agreement with the measured pattern. This is the reverse Monte-Carlo mode.</td>
+<td class="dp"><span class="dep">needs <code>do_exp</code></span><span class="dep">see <code>exp_energy_scales</code></span></td>
+</tr>
+<tr data-h="mc_planes the planes bounding the region moves are restricted to, four numbers per plane giving its normal and offset. mc_n_planes must appear first." data-m="mc">
+<td class="kw"><code>mc_planes</code></td>
+<td class="ty">real list</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="mo">mc</td>
+<td class="de">The planes bounding the region moves are restricted to, four numbers per plane giving its normal and offset. mc_n_planes must appear first.</td>
+<td class="dp"><span class="dep">needs <code>mc_n_planes</code></span><span class="dep">sets <code>mc_n_planes</code></span><span class="dep">see <code>mc_max_dist_to_planes</code></span><span class="dep">see <code>mc_planes_restrict_to_polyhedron</code></span></td>
+</tr>
+<tr data-h="mc_planes_restrict_to_polyhedron require an atom to be inside the polyhedron the planes enclose, rather than merely within mc_max_dist_to_planes of each plane." data-m="mc">
+<td class="kw"><code>mc_planes_restrict_to_polyhedron</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">mc</td>
+<td class="de">Require an atom to be inside the polyhedron the planes enclose, rather than merely within mc_max_dist_to_planes of each plane.</td>
+<td class="dp"><span class="dep">needs <code>mc_planes</code></span></td>
+</tr>
+<tr data-h="mc_relax relax the geometry after each accepted move, so the walk samples relaxed configurations." data-m="mc">
+<td class="kw"><code>mc_relax</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">mc</td>
+<td class="de">Relax the geometry after each accepted move, so the walk samples relaxed configurations.</td>
+<td class="dp"><span class="dep">see <code>mc_nrelax</code></span><span class="dep">see <code>mc_relax_opt</code></span><span class="dep">see <code>mc_relax_after</code></span></td>
+</tr>
+<tr data-h="mc_relax_after which move types trigger a relaxation, by name. n_mc_relax_after must appear first. without it, mc_relax applies to every accepted move." data-m="mc">
+<td class="kw"><code>mc_relax_after</code></td>
+<td class="ty">string list</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="mo">mc</td>
+<td class="de">Which move types trigger a relaxation, by name. n_mc_relax_after must appear first. Without it, mc_relax applies to every accepted move.</td>
+<td class="dp"><span class="dep">needs <code>n_mc_relax_after</code></span><span class="dep">sets <code>n_mc_relax_after</code></span><span class="dep">see <code>mc_relax</code></span></td>
+</tr>
+<tr data-h="mc_relax_opt how the post-move relaxation is driven: same choices as optimize." data-m="mc">
+<td class="kw"><code>mc_relax_opt</code></td>
+<td class="ty">string</td>
+<td class="df"><code>gd</code></td>
+<td class="un"></td>
+<td class="mo">mc</td>
+<td class="de">How the post-move relaxation is driven: same choices as optimize.</td>
+<td class="dp"><span class="dep">needs <code>mc_relax</code></span><span class="dep">see <code>optimize</code></span></td>
+</tr>
+<tr class="flagged" data-h="mc_reverse reverse-monte-carlo switch from an earlier design; nothing consults it. use mc_optimize_exp." data-m="mc">
+<td class="kw"><code>mc_reverse</code></td>
+<td class="ty">logical</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="mo">mc</td>
+<td class="de"><span class="tag">ignored</span>Reverse-Monte-Carlo switch from an earlier design; nothing consults it. Use mc_optimize_exp.</td>
+<td class="dp"><span class="dep">see <code>mc_optimize_exp</code></span></td>
+</tr>
+<tr class="flagged" data-h="mc_reverse_lambda mixing weight for the same earlier design; nothing consults it. the weight that does exist is exp_energy_scales." data-m="mc">
+<td class="kw"><code>mc_reverse_lambda</code></td>
+<td class="ty">real</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="mo">mc</td>
+<td class="de"><span class="tag">ignored</span>Mixing weight for the same earlier design; nothing consults it. The weight that does exist is exp_energy_scales.</td>
+<td class="dp"><span class="dep">see <code>exp_energy_scales</code></span></td>
+</tr>
+<tr data-h="mc_species species that may be inserted or removed by grand-canonical moves. its length sets n_mc_mu." data-m="mc">
+<td class="kw"><code>mc_species</code></td>
+<td class="ty">string list</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="mo">mc</td>
+<td class="de">Species that may be inserted or removed by grand-canonical moves. Its length sets n_mc_mu.</td>
+<td class="dp"><span class="dep">sets <code>n_mc_mu</code></span><span class="dep">see <code>mc_mu</code></span><span class="dep">see <code>mc_types</code></span></td>
+</tr>
+<tr data-h="mc_swaps species pairs that a &quot;swap&quot; move may exchange, given as a flat list of symbols read two at a time. its length sets n_mc_swaps, and the symbols are resolved against species." data-m="mc">
+<td class="kw"><code>mc_swaps</code></td>
+<td class="ty">string list</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="mo">mc</td>
+<td class="de">Species pairs that a &quot;swap&quot; move may exchange, given as a flat list of symbols read two at a time. Its length sets n_mc_swaps, and the symbols are resolved against species.</td>
+<td class="dp"><span class="dep">sets <code>n_mc_swaps</code></span><span class="dep">sets <code>species</code></span><span class="dep">sets <code>mc_swaps_id</code></span><span class="dep">see <code>mc_types</code></span><span class="dep">see <code>species</code></span></td>
+</tr>
+<tr data-h="mc_types which moves the walk may make, from &quot;move&quot;, &quot;insertion&quot;, &quot;removal&quot;, &quot;relax&quot;, &quot;md&quot;, &quot;swap&quot;, &quot;volume&quot; and &quot;none&quot;. any other name aborts the run. its length sets n_mc_types, and mc_acceptance weights them." data-m="mc">
+<td class="kw"><code>mc_types</code></td>
+<td class="ty">string list</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="mo">mc</td>
+<td class="de">Which moves the walk may make, from &quot;move&quot;, &quot;insertion&quot;, &quot;removal&quot;, &quot;relax&quot;, &quot;md&quot;, &quot;swap&quot;, &quot;volume&quot; and &quot;none&quot;. Any other name aborts the run. Its length sets n_mc_types, and mc_acceptance weights them.</td>
+<td class="dp"><span class="dep">sets <code>n_mc_types</code></span><span class="dep">see <code>mc_acceptance</code></span></td>
+</tr>
+<tr data-h="mc_write_xyz write the configuration after every monte-carlo step, not only the accepted ones." data-m="mc">
+<td class="kw"><code>mc_write_xyz</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">mc</td>
+<td class="de">Write the configuration after every Monte-Carlo step, not only the accepted ones.</td>
+<td class="dp"><span class="dep">see <code>write_xyz</code></span></td>
+</tr>
+<tr data-h="n_mc_mu number of species in the grand-canonical lists. give it before mc_species, mc_mu and mc_mu_acceptance, which it allocates; giving those lists instead sets it implicitly." data-m="mc">
+<td class="kw"><code>n_mc_mu</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>0</code></td>
+<td class="un"></td>
+<td class="mo">mc</td>
+<td class="de">Number of species in the grand-canonical lists. Give it before mc_species, mc_mu and mc_mu_acceptance, which it allocates; giving those lists instead sets it implicitly.</td>
+<td class="dp"><span class="dep">sets <code>mc_mu</code></span><span class="dep">sets <code>mc_species</code></span><span class="dep">sets <code>mc_mu_acceptance</code></span><span class="dep">see <code>mc_species</code></span></td>
+</tr>
+<tr data-h="n_mc_relax_after number of entries in mc_relax_after, which it allocates and must precede." data-m="mc">
+<td class="kw"><code>n_mc_relax_after</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>0</code></td>
+<td class="un"></td>
+<td class="mo">mc</td>
+<td class="de">Number of entries in mc_relax_after, which it allocates and must precede.</td>
+<td class="dp"><span class="dep">sets <code>mc_relax_after</code></span><span class="dep">see <code>mc_relax_after</code></span></td>
+</tr>
+<tr data-h="n_mc_swaps number of swap pairs, which is half the length of mc_swaps. give it before mc_swaps, which it allocates." data-m="mc">
+<td class="kw"><code>n_mc_swaps</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>0</code></td>
+<td class="un"></td>
+<td class="mo">mc</td>
+<td class="de">Number of swap pairs, which is half the length of mc_swaps. Give it before mc_swaps, which it allocates.</td>
+<td class="dp"><span class="dep">sets <code>mc_swaps</code></span><span class="dep">sets <code>mc_swaps_id</code></span><span class="dep">see <code>mc_swaps</code></span></td>
+</tr>
+<tr data-h="n_mc_types number of move types. give it before mc_types and mc_acceptance, which it allocates; giving those lists instead sets it implicitly." data-m="mc">
+<td class="kw"><code>n_mc_types</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>0</code></td>
+<td class="un"></td>
+<td class="mo">mc</td>
+<td class="de">Number of move types. Give it before mc_types and mc_acceptance, which it allocates; giving those lists instead sets it implicitly.</td>
+<td class="dp"><span class="dep">sets <code>mc_types</code></span><span class="dep">sets <code>mc_acceptance</code></span><span class="dep">see <code>mc_types</code></span></td>
+</tr>
+</tbody></table></div></section>
+<section id="van-der-waals">
+<h2>Van der Waals</h2>
+<p class="blurb">Tkatchenko-Scheffler and many-body dispersion.</p>
+<div class="scroll"><table><thead><tr><th>Keyword</th><th>Type</th><th>Default</th><th>Units</th><th>Modes</th><th>Description</th><th>Depends on</th></tr></thead><tbody>
+<tr data-h="do_nnls solve the hirshfeld-volume fit with non-negative least squares, which keeps the fitted volumes positive where an unconstrained solve would not." data-m="predict md mc soap">
+<td class="kw"><code>do_nnls</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Solve the Hirshfeld-volume fit with non-negative least squares, which keeps the fitted volumes positive where an unconstrained solve would not.</td>
+<td class="dp"><span class="dep">needs <code>vdw_type</code></span></td>
+</tr>
+<tr data-h="mbd_correction_freq recompute the many-body dispersion every this many md steps, reusing the previous correction in between. mbd is the expensive part of ts+mbd, so this trades accuracy for time." data-m="md mc">
+<td class="kw"><code>mbd_correction_freq</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>100</code></td>
+<td class="un"></td>
+<td class="mo">md, mc</td>
+<td class="de">Recompute the many-body dispersion every this many MD steps, reusing the previous correction in between. MBD is the expensive part of ts+mbd, so this trades accuracy for time.</td>
+<td class="dp"><span class="dep">needs <code>vdw_type</code></span></td>
+</tr>
+<tr data-h="poly_cut_xmax upper end of the range over which the polynomial cutoff turns the dispersion off." data-m="predict md mc soap">
+<td class="kw"><code>poly_cut_xmax</code></td>
+<td class="ty">real</td>
+<td class="df"><code>10.0</code></td>
+<td class="un">A</td>
+<td class="mo">all</td>
+<td class="de">Upper end of the range over which the polynomial cutoff turns the dispersion off.</td>
+<td class="dp"><span class="dep">needs <code>vdw_polynomial</code></span><span class="dep">see <code>poly_cut_xmin</code></span></td>
+</tr>
+<tr data-h="poly_cut_xmin lower end of that range: below it the interaction is at full strength." data-m="predict md mc soap">
+<td class="kw"><code>poly_cut_xmin</code></td>
+<td class="ty">real</td>
+<td class="df"><code>3.0</code></td>
+<td class="un">A</td>
+<td class="mo">all</td>
+<td class="de">Lower end of that range: below it the interaction is at full strength.</td>
+<td class="dp"><span class="dep">needs <code>vdw_polynomial</code></span><span class="dep">see <code>poly_cut_xmax</code></span></td>
+</tr>
+<tr data-h="print_estat_forces write the electrostatic contribution to the forces separately, for checking how much of the total it is." data-m="predict md mc soap">
+<td class="kw"><code>print_estat_forces</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Write the electrostatic contribution to the forces separately, for checking how much of the total it is.</td>
+<td class="dp"><span class="dep">see <code>estat_method</code></span></td>
+</tr>
+<tr data-h="print_vdw_forces write the dispersion contribution to the forces separately." data-m="predict md mc soap">
+<td class="kw"><code>print_vdw_forces</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Write the dispersion contribution to the forces separately.</td>
+<td class="dp"><span class="dep">see <code>vdw_type</code></span></td>
+</tr>
+<tr data-h="vdw_2b_rcut cutoff of the pairwise part of the many-body dispersion." data-m="predict md mc soap">
+<td class="kw"><code>vdw_2b_rcut</code></td>
+<td class="ty">real</td>
+<td class="df"><code>15.0</code></td>
+<td class="un">A</td>
+<td class="mo">all</td>
+<td class="de">Cutoff of the pairwise part of the many-body dispersion.</td>
+<td class="dp"><span class="dep">needs <code>vdw_type</code></span><span class="dep">see <code>vdw_2b_rcut2</code></span></td>
+</tr>
+<tr data-h="vdw_2b_rcut2 inner radius at which that pairwise part starts to be turned off; it is at full strength inside this and zero beyond vdw_2b_rcut." data-m="predict md mc soap">
+<td class="kw"><code>vdw_2b_rcut2</code></td>
+<td class="ty">real</td>
+<td class="df"><code>8.0</code></td>
+<td class="un">A</td>
+<td class="mo">all</td>
+<td class="de">Inner radius at which that pairwise part starts to be turned off; it is at full strength inside this and zero beyond vdw_2b_rcut.</td>
+<td class="dp"><span class="dep">needs <code>vdw_type</code></span><span class="dep">see <code>vdw_2b_rcut</code></span></td>
+</tr>
+<tr data-h="vdw_alpha0_ref free-atom static polarizability of each species, one value per entry in species. together with vdw_c6_ref and vdw_r0_ref these are the reference data the hirshfeld rescaling starts from." data-m="predict md mc soap">
+<td class="kw"><code>vdw_alpha0_ref</code></td>
+<td class="ty">real list</td>
+<td class="df"></td>
+<td class="un">bohr^3</td>
+<td class="mo">all</td>
+<td class="de">Free-atom static polarizability of each species, one value per entry in species. Together with vdw_c6_ref and vdw_r0_ref these are the reference data the Hirshfeld rescaling starts from.</td>
+<td class="dp"><span class="dep">needs <code>vdw_type</code></span><span class="dep">see <code>vdw_c6_ref</code></span><span class="dep">see <code>vdw_r0_ref</code></span></td>
+</tr>
+<tr data-h="vdw_buffer width of the smooth turn-off applied at vdw_rcut, so the dispersion energy and its gradient reach zero together." data-m="predict md mc soap">
+<td class="kw"><code>vdw_buffer</code></td>
+<td class="ty">real</td>
+<td class="df"><code>1.0</code></td>
+<td class="un">A</td>
+<td class="mo">all</td>
+<td class="de">Width of the smooth turn-off applied at vdw_rcut, so the dispersion energy and its gradient reach zero together.</td>
+<td class="dp"><span class="dep">needs <code>vdw_type</code></span><span class="dep">see <code>vdw_rcut</code></span></td>
+</tr>
+<tr data-h="vdw_buffer_inner width of the smooth turn-on applied at vdw_rcut_inner." data-m="predict md mc soap">
+<td class="kw"><code>vdw_buffer_inner</code></td>
+<td class="ty">real</td>
+<td class="df"><code>0.5</code></td>
+<td class="un">A</td>
+<td class="mo">all</td>
+<td class="de">Width of the smooth turn-on applied at vdw_rcut_inner.</td>
+<td class="dp"><span class="dep">needs <code>vdw_type</code></span><span class="dep">see <code>vdw_rcut_inner</code></span></td>
+</tr>
+<tr data-h="vdw_c6_ref free-atom c6 coefficient of each species, one value per entry in species." data-m="predict md mc soap">
+<td class="kw"><code>vdw_c6_ref</code></td>
+<td class="ty">real list</td>
+<td class="df"></td>
+<td class="un">Ha bohr^6</td>
+<td class="mo">all</td>
+<td class="de">Free-atom C6 coefficient of each species, one value per entry in species.</td>
+<td class="dp"><span class="dep">needs <code>vdw_type</code></span><span class="dep">see <code>vdw_alpha0_ref</code></span><span class="dep">see <code>vdw_r0_ref</code></span></td>
+</tr>
+<tr data-h="vdw_d steepness of the fermi damping function in the tkatchenko-scheffler energy. larger makes the switch at vdw_sr*r0 sharper." data-m="predict md mc soap">
+<td class="kw"><code>vdw_d</code></td>
+<td class="ty">real</td>
+<td class="df"><code>20.0</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Steepness of the Fermi damping function in the Tkatchenko-Scheffler energy. Larger makes the switch at vdw_sr*R0 sharper.</td>
+<td class="dp"><span class="dep">needs <code>vdw_type</code></span><span class="dep">see <code>vdw_sr</code></span></td>
+</tr>
+<tr data-h="vdw_d_mbd the same steepness for the many-body dispersion." data-m="predict md mc soap">
+<td class="kw"><code>vdw_d_mbd</code></td>
+<td class="ty">real</td>
+<td class="df"><code>6.0</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">The same steepness for the many-body dispersion.</td>
+<td class="dp"><span class="dep">needs <code>vdw_type</code></span><span class="dep">see <code>vdw_sr_mbd</code></span></td>
+</tr>
+<tr data-h="vdw_hirsh_grad include the derivative of the hirshfeld volumes with respect to positions in the dispersion forces. switching it off gives a cheaper but inconsistent force." data-m="predict md mc soap">
+<td class="kw"><code>vdw_hirsh_grad</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>true</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Include the derivative of the Hirshfeld volumes with respect to positions in the dispersion forces. Switching it off gives a cheaper but inconsistent force.</td>
+<td class="dp"><span class="dep">needs <code>vdw_type</code></span></td>
+</tr>
+<tr data-h="vdw_loc_rcut radius of the local environment whose atoms enter the screened polarizability of a given atom." data-m="predict md mc soap">
+<td class="kw"><code>vdw_loc_rcut</code></td>
+<td class="ty">real</td>
+<td class="df"><code>5.0</code></td>
+<td class="un">A</td>
+<td class="mo">all</td>
+<td class="de">Radius of the local environment whose atoms enter the screened polarizability of a given atom.</td>
+<td class="dp"><span class="dep">needs <code>vdw_type</code></span></td>
+</tr>
+<tr data-h="vdw_mbd_cent_appr evaluate the many-body dispersion about the central atom only, rather than over every atom of its environment. the cheaper approximation." data-m="predict md mc soap">
+<td class="kw"><code>vdw_mbd_cent_appr</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>true</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Evaluate the many-body dispersion about the central atom only, rather than over every atom of its environment. The cheaper approximation.</td>
+<td class="dp"><span class="dep">needs <code>vdw_type</code></span></td>
+</tr>
+<tr data-h="vdw_mbd_grad compute the gradient of the many-body dispersion energy. off gives mbd energies with ts-only forces." data-m="predict md mc soap">
+<td class="kw"><code>vdw_mbd_grad</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>true</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Compute the gradient of the many-body dispersion energy. Off gives MBD energies with TS-only forces.</td>
+<td class="dp"><span class="dep">needs <code>vdw_type</code></span></td>
+</tr>
+<tr data-h="vdw_mbd_nfreq number of imaginary-frequency quadrature points used for the dynamic polarizability. more is more accurate and proportionally slower." data-m="predict md mc soap">
+<td class="kw"><code>vdw_mbd_nfreq</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>13</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Number of imaginary-frequency quadrature points used for the dynamic polarizability. More is more accurate and proportionally slower.</td>
+<td class="dp"><span class="dep">needs <code>vdw_type</code></span></td>
+</tr>
+<tr data-h="vdw_mbd_norder order at which the many-body expansion is truncated." data-m="predict md mc soap">
+<td class="kw"><code>vdw_mbd_norder</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>6</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Order at which the many-body expansion is truncated.</td>
+<td class="dp"><span class="dep">needs <code>vdw_type</code></span></td>
+</tr>
+<tr data-h="vdw_mbd_rcut cutoff of the many-body dispersion term." data-m="predict md mc soap">
+<td class="kw"><code>vdw_mbd_rcut</code></td>
+<td class="ty">real</td>
+<td class="df"><code>15.0</code></td>
+<td class="un">A</td>
+<td class="mo">all</td>
+<td class="de">Cutoff of the many-body dispersion term.</td>
+<td class="dp"><span class="dep">needs <code>vdw_type</code></span><span class="dep">see <code>vdw_mbd_rcut2</code></span></td>
+</tr>
+<tr data-h="vdw_mbd_rcut2 inner radius at which the many-body term starts to be turned off." data-m="predict md mc soap">
+<td class="kw"><code>vdw_mbd_rcut2</code></td>
+<td class="ty">real</td>
+<td class="df"><code>8.0</code></td>
+<td class="un">A</td>
+<td class="mo">all</td>
+<td class="de">Inner radius at which the many-body term starts to be turned off.</td>
+<td class="dp"><span class="dep">needs <code>vdw_type</code></span><span class="dep">see <code>vdw_mbd_rcut</code></span></td>
+</tr>
+<tr data-h="vdw_omega_ref reference characteristic excitation frequency of the oscillator model." data-m="predict md mc soap">
+<td class="kw"><code>vdw_omega_ref</code></td>
+<td class="ty">real</td>
+<td class="df"><code>1.3</code></td>
+<td class="un">Ha</td>
+<td class="mo">all</td>
+<td class="de">Reference characteristic excitation frequency of the oscillator model.</td>
+<td class="dp"><span class="dep">needs <code>vdw_type</code></span></td>
+</tr>
+<tr data-h="vdw_polynomial use a polynomial cutoff for the dispersion rather than the default form." data-m="predict md mc soap">
+<td class="kw"><code>vdw_polynomial</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Use a polynomial cutoff for the dispersion rather than the default form.</td>
+<td class="dp"><span class="dep">needs <code>vdw_type</code></span><span class="dep">see <code>poly_cut_xmin</code></span><span class="dep">see <code>poly_cut_xmax</code></span></td>
+</tr>
+<tr data-h="vdw_r0_ref free-atom van der waals radius of each species, one value per entry in species." data-m="predict md mc soap">
+<td class="kw"><code>vdw_r0_ref</code></td>
+<td class="ty">real list</td>
+<td class="df"></td>
+<td class="un">bohr</td>
+<td class="mo">all</td>
+<td class="de">Free-atom van der Waals radius of each species, one value per entry in species.</td>
+<td class="dp"><span class="dep">needs <code>vdw_type</code></span><span class="dep">see <code>vdw_c6_ref</code></span><span class="dep">see <code>vdw_alpha0_ref</code></span></td>
+</tr>
+<tr data-h="vdw_rcut cutoff of the pairwise tkatchenko-scheffler dispersion." data-m="predict md mc soap">
+<td class="kw"><code>vdw_rcut</code></td>
+<td class="ty">real</td>
+<td class="df"><code>25.0</code></td>
+<td class="un">A</td>
+<td class="mo">all</td>
+<td class="de">Cutoff of the pairwise Tkatchenko-Scheffler dispersion.</td>
+<td class="dp"><span class="dep">needs <code>vdw_type</code></span><span class="dep">see <code>vdw_buffer</code></span></td>
+</tr>
+<tr data-h="vdw_rcut_inner radius below which the dispersion is smoothly switched off, so that it does not double-count the short-range interaction the gap already describes." data-m="predict md mc soap">
+<td class="kw"><code>vdw_rcut_inner</code></td>
+<td class="ty">real</td>
+<td class="df"><code>0.5</code></td>
+<td class="un">A</td>
+<td class="mo">all</td>
+<td class="de">Radius below which the dispersion is smoothly switched off, so that it does not double-count the short-range interaction the GAP already describes.</td>
+<td class="dp"><span class="dep">needs <code>vdw_type</code></span><span class="dep">see <code>vdw_buffer_inner</code></span></td>
+</tr>
+<tr data-h="vdw_scs_rcut cutoff of the self-consistent screening that turns free-atom polarizabilities into screened ones." data-m="predict md mc soap">
+<td class="kw"><code>vdw_scs_rcut</code></td>
+<td class="ty">real</td>
+<td class="df"><code>5.0</code></td>
+<td class="un">A</td>
+<td class="mo">all</td>
+<td class="de">Cutoff of the self-consistent screening that turns free-atom polarizabilities into screened ones.</td>
+<td class="dp"><span class="dep">needs <code>vdw_type</code></span></td>
+</tr>
+<tr data-h="vdw_sr position of the fermi damping function in the tkatchenko-scheffler energy, as a fraction of the sum of the two van der waals radii. fitted per exchange-correlation functional." data-m="predict md mc soap">
+<td class="kw"><code>vdw_sr</code></td>
+<td class="ty">real</td>
+<td class="df"><code>0.94</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Position of the Fermi damping function in the Tkatchenko-Scheffler energy, as a fraction of the sum of the two van der Waals radii. Fitted per exchange-correlation functional.</td>
+<td class="dp"><span class="dep">needs <code>vdw_type</code></span><span class="dep">see <code>vdw_d</code></span></td>
+</tr>
+<tr data-h="vdw_sr_mbd the same fraction for the many-body dispersion." data-m="predict md mc soap">
+<td class="kw"><code>vdw_sr_mbd</code></td>
+<td class="ty">real</td>
+<td class="df"><code>0.83</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">The same fraction for the many-body dispersion.</td>
+<td class="dp"><span class="dep">needs <code>vdw_type</code></span><span class="dep">see <code>vdw_d_mbd</code></span></td>
+</tr>
+<tr data-h="vdw_type which dispersion correction to add: &quot;none&quot;, &quot;ts&quot; for tkatchenko-scheffler, &quot;mbd&quot; for many-body dispersion, or &quot;ts+mbd&quot; for both. any other value aborts the run. the correction needs hirshfeld volumes, so the gap has to provide them." data-m="predict md mc soap">
+<td class="kw"><code>vdw_type</code></td>
+<td class="ty">string</td>
+<td class="df"><code>none</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Which dispersion correction to add: &quot;none&quot;, &quot;ts&quot; for Tkatchenko-Scheffler, &quot;mbd&quot; for many-body dispersion, or &quot;ts+mbd&quot; for both. Any other value aborts the run. The correction needs Hirshfeld volumes, so the GAP has to provide them.</td>
+<td class="dp"></td>
+</tr>
+</tbody></table></div></section>
+<section id="electrostatics">
+<h2>Electrostatics</h2>
+<p class="blurb">Charge-charge interactions and their damping.</p>
+<div class="scroll"><table><thead><tr><th>Keyword</th><th>Type</th><th>Default</th><th>Units</th><th>Modes</th><th>Description</th><th>Depends on</th></tr></thead><tbody>
+<tr data-h="estat_damped damp the coulomb interaction at the cutoff rather than truncating it, which removes the jump in the energy an atom crossing the cutoff would otherwise cause." data-m="predict md mc soap">
+<td class="kw"><code>estat_damped</code></td>
+<td class="ty">logical</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Damp the Coulomb interaction at the cutoff rather than truncating it, which removes the jump in the energy an atom crossing the cutoff would otherwise cause.</td>
+<td class="dp"><span class="dep">needs <code>estat_method</code></span></td>
+</tr>
+<tr data-h="estat_damped_cosine use a cosine taper for that damping instead of the default shifted form." data-m="predict md mc soap">
+<td class="kw"><code>estat_damped_cosine</code></td>
+<td class="ty">logical</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Use a cosine taper for that damping instead of the default shifted form.</td>
+<td class="dp"><span class="dep">needs <code>estat_method</code></span></td>
+</tr>
+<tr data-h="estat_dsf_alpha damping parameter of the damped shifted force. a negative value, the default, means the run picks one from the cutoff." data-m="predict md mc soap">
+<td class="kw"><code>estat_dsf_alpha</code></td>
+<td class="ty">real</td>
+<td class="df"><code>-1.0</code></td>
+<td class="un">1/A</td>
+<td class="mo">all</td>
+<td class="de">Damping parameter of the damped shifted force. A negative value, the default, means the run picks one from the cutoff.</td>
+<td class="dp"><span class="dep">needs <code>estat_method</code></span></td>
+</tr>
+<tr data-h="estat_gsf use the gradient-shifted force, which subtracts the force at the cutoff so that the force goes to zero there." data-m="predict md mc soap">
+<td class="kw"><code>estat_gsf</code></td>
+<td class="ty">logical</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Use the gradient-shifted force, which subtracts the force at the cutoff so that the force goes to zero there.</td>
+<td class="dp"><span class="dep">needs <code>estat_method</code></span></td>
+</tr>
+<tr data-h="estat_inner_width width over which the inner cutoff turns the electrostatics on." data-m="predict md mc soap">
+<td class="kw"><code>estat_inner_width</code></td>
+<td class="ty">real</td>
+<td class="df"><code>1.0</code></td>
+<td class="un">A</td>
+<td class="mo">all</td>
+<td class="de">Width over which the inner cutoff turns the electrostatics on.</td>
+<td class="dp"><span class="dep">needs <code>estat_method</code></span><span class="dep">see <code>estat_rcut_inner</code></span></td>
+</tr>
+<tr data-h="estat_method which electrostatic sum to use: &quot;none&quot;, &quot;direct&quot; for a bare cutoff sum, &quot;dsf&quot; for the damped shifted force, or &quot;gsf&quot; for the gradient-shifted force. an unknown name warns and computes nothing. the gap has to provide charges for any of this to run." data-m="predict md mc soap">
+<td class="kw"><code>estat_method</code></td>
+<td class="ty">string</td>
+<td class="df"><code>none</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Which electrostatic sum to use: &quot;none&quot;, &quot;direct&quot; for a bare cutoff sum, &quot;dsf&quot; for the damped shifted force, or &quot;gsf&quot; for the gradient-shifted force. An unknown name warns and computes nothing. The GAP has to provide charges for any of this to run.</td>
+<td class="dp"></td>
+</tr>
+<tr data-h="estat_rcut cutoff of the electrostatic sum." data-m="predict md mc soap">
+<td class="kw"><code>estat_rcut</code></td>
+<td class="ty">real</td>
+<td class="df"><code>10.0</code></td>
+<td class="un">A</td>
+<td class="mo">all</td>
+<td class="de">Cutoff of the electrostatic sum.</td>
+<td class="dp"><span class="dep">needs <code>estat_method</code></span></td>
+</tr>
+<tr data-h="estat_rcut_inner radius below which the electrostatics is smoothly switched off, so it does not double-count what the gap already describes at short range." data-m="predict md mc soap">
+<td class="kw"><code>estat_rcut_inner</code></td>
+<td class="ty">real</td>
+<td class="df"><code>4.0</code></td>
+<td class="un">A</td>
+<td class="mo">all</td>
+<td class="de">Radius below which the electrostatics is smoothly switched off, so it does not double-count what the GAP already describes at short range.</td>
+<td class="dp"><span class="dep">needs <code>estat_method</code></span><span class="dep">see <code>estat_inner_width</code></span></td>
+</tr>
+<tr data-h="estat_self_energy_correction subtract each charge&#x27;s interaction with its own periodic images, the self term of the shifted sum." data-m="predict md mc soap">
+<td class="kw"><code>estat_self_energy_correction</code></td>
+<td class="ty">logical</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Subtract each charge&#x27;s interaction with its own periodic images, the self term of the shifted sum.</td>
+<td class="dp"><span class="dep">needs <code>estat_method</code></span></td>
+</tr>
+<tr data-h="estat_sp use the shifted-potential form, which shifts the energy to zero at the cutoff but leaves a discontinuous force." data-m="predict md mc soap">
+<td class="kw"><code>estat_sp</code></td>
+<td class="ty">logical</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Use the shifted-potential form, which shifts the energy to zero at the cutoff but leaves a discontinuous force.</td>
+<td class="dp"><span class="dep">needs <code>estat_method</code></span></td>
+</tr>
+<tr data-h="estat_tsf use the truncated shifted force. on by default." data-m="predict md mc soap">
+<td class="kw"><code>estat_tsf</code></td>
+<td class="ty">logical</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Use the truncated shifted force. On by default.</td>
+<td class="dp"><span class="dep">needs <code>estat_method</code></span></td>
+</tr>
+</tbody></table></div></section>
+<section id="experimental-data-mad">
+<h2>Experimental data (MAD)</h2>
+<p class="blurb">XPS, pair distributions, structure factors and diffraction.</p>
+<div class="scroll"><table><thead><tr><th>Keyword</th><th>Type</th><th>Default</th><th>Units</th><th>Modes</th><th>Description</th><th>Depends on</th></tr></thead><tbody>
+<tr data-h="do_exp compare the prediction against experimental data and add the mismatch to the energy. the individual exp_ keywords switch this on for you." data-m="predict md mc soap">
+<td class="kw"><code>do_exp</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Compare the prediction against experimental data and add the mismatch to the energy. The individual exp_ keywords switch this on for you.</td>
+<td class="dp"><span class="dep">see <code>exp_data_files</code></span><span class="dep">see <code>exp_energy_scales</code></span></td>
+</tr>
+<tr data-h="do_nd compute a neutron diffraction pattern. needs the partial pair distributions and the structure factors it is built from, so it switches both on." data-m="predict md mc soap">
+<td class="kw"><code>do_nd</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Compute a neutron diffraction pattern. Needs the partial pair distributions and the structure factors it is built from, so it switches both on.</td>
+<td class="dp"><span class="dep">sets <code>do_pair_distribution</code></span><span class="dep">sets <code>do_structure_factor</code></span><span class="dep">see <code>do_pair_distribution</code></span><span class="dep">see <code>do_structure_factor</code></span><span class="dep">see <code>nd_output</code></span></td>
+</tr>
+<tr data-h="do_pair_distribution compute the pair distribution function g(r). also records that the deck asked for it in as many words, which is what lets xrd_debye tell a request it must honour from a side effect it may undo." data-m="predict md mc soap">
+<td class="kw"><code>do_pair_distribution</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Compute the pair distribution function g(r). Also records that the deck asked for it in as many words, which is what lets xrd_debye tell a request it must honour from a side effect it may undo.</td>
+<td class="dp"><span class="dep">sets <code>do_pair_distribution_explicit</code></span><span class="dep">see <code>pair_distribution_rcut</code></span><span class="dep">see <code>pair_distribution_n_samples</code></span></td>
+</tr>
+<tr data-h="do_structure_factor compute the structure factor s(q). needs the pair distributions when structure_factor_from_pdf is on, so it switches those on too." data-m="predict md mc soap">
+<td class="kw"><code>do_structure_factor</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Compute the structure factor S(q). Needs the pair distributions when structure_factor_from_pdf is on, so it switches those on too.</td>
+<td class="dp"><span class="dep">sets <code>do_structure_factor_explicit</code></span><span class="dep">sets <code>do_pair_distribution</code></span><span class="dep">see <code>structure_factor_from_pdf</code></span><span class="dep">see <code>q_range_min</code></span><span class="dep">see <code>q_range_max</code></span></td>
+</tr>
+<tr data-h="do_xps compute an x-ray photoelectron spectrum from the predicted core-electron binding energies. the gap has to provide those." data-m="predict md mc soap">
+<td class="kw"><code>do_xps</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Compute an X-ray photoelectron spectrum from the predicted core-electron binding energies. The GAP has to provide those.</td>
+<td class="dp"><span class="dep">see <code>xps_sigma</code></span><span class="dep">see <code>xps_e_min</code></span><span class="dep">see <code>xps_e_max</code></span></td>
+</tr>
+<tr data-h="do_xrd compute an x-ray diffraction pattern. needs the partial pair distributions and the structure factors it is built from, so it switches both on, unless xrd_debye takes the direct route instead." data-m="predict md mc soap">
+<td class="kw"><code>do_xrd</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Compute an X-ray diffraction pattern. Needs the partial pair distributions and the structure factors it is built from, so it switches both on, unless xrd_debye takes the direct route instead.</td>
+<td class="dp"><span class="dep">sets <code>do_pair_distribution</code></span><span class="dep">sets <code>do_structure_factor</code></span><span class="dep">see <code>xrd_wavelength</code></span><span class="dep">see <code>xrd_debye</code></span><span class="dep">see <code>xrd_output</code></span></td>
+</tr>
+<tr data-h="exp_data_files files holding the measured data, one per observable, in the order of exp_labels. two columns: abscissa and intensity." data-m="predict md mc soap">
+<td class="kw"><code>exp_data_files</code></td>
+<td class="ty">string list</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Files holding the measured data, one per observable, in the order of exp_labels. Two columns: abscissa and intensity.</td>
+<td class="dp"><span class="dep">sets <code>exp_energy_scales</code></span><span class="dep">see <code>exp_labels</code></span><span class="dep">see <code>n_exp</code></span></td>
+</tr>
+<tr data-h="exp_energies add the data mismatch to the energy. naming it enables do_exp." data-m="predict md mc soap">
+<td class="kw"><code>exp_energies</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>true</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Add the data mismatch to the energy. Naming it enables do_exp.</td>
+<td class="dp"><span class="dep">sets <code>do_exp</code></span><span class="dep">see <code>exp_energy_scales</code></span></td>
+</tr>
+<tr data-h="exp_energy_scales weight of each observable&#x27;s mismatch in the total energy, one value per observable. this is what sets how hard the data pulls against the potential. also seeds the initial and final values of a ramp." data-m="predict md mc soap">
+<td class="kw"><code>exp_energy_scales</code></td>
+<td class="ty">real list</td>
+<td class="df"></td>
+<td class="un">eV</td>
+<td class="mo">all</td>
+<td class="de">Weight of each observable&#x27;s mismatch in the total energy, one value per observable. This is what sets how hard the data pulls against the potential. Also seeds the initial and final values of a ramp.</td>
+<td class="dp"><span class="dep">sets <code>n_exp</code></span><span class="dep">sets <code>exp_energy_scales_initial</code></span><span class="dep">sets <code>exp_energy_scales_final</code></span><span class="dep">see <code>exp_energy_scales_final</code></span><span class="dep">see <code>n_exp</code></span></td>
+</tr>
+<tr data-h="exp_energy_scales_final exp_energy_scales_end end point of a linear ramp in the weights over the run, so the data can be brought in gradually. without it the weights stay at exp_energy_scales." data-m="predict md mc soap">
+<td class="kw"><code>exp_energy_scales_final</code><span class="alias"><code>exp_energy_scales_end</code></span></td>
+<td class="ty">real list</td>
+<td class="df"><code>same as exp_energy_scales</code></td>
+<td class="un">eV</td>
+<td class="mo">all</td>
+<td class="de">End point of a linear ramp in the weights over the run, so the data can be brought in gradually. Without it the weights stay at exp_energy_scales.</td>
+<td class="dp"><span class="dep">see <code>exp_energy_scales</code></span></td>
+</tr>
+<tr data-h="exp_forces compute the derivative of the data mismatch with respect to positions and add it to the forces. naming it enables do_exp. without it the mismatch contributes to the energy alone." data-m="predict md mc soap">
+<td class="kw"><code>exp_forces</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Compute the derivative of the data mismatch with respect to positions and add it to the forces. Naming it enables do_exp. Without it the mismatch contributes to the energy alone.</td>
+<td class="dp"><span class="dep">sets <code>do_exp</code></span><span class="dep">see <code>exp_energies</code></span></td>
+</tr>
+<tr data-h="exp_input_type what the corresponding data file contains, one per observable, when it is not the observable&#x27;s default representation: for instance &quot;d(r)&quot; for a pair distribution supplied as the reduced form." data-m="predict md mc soap">
+<td class="kw"><code>exp_input_type</code></td>
+<td class="ty">string list</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">What the corresponding data file contains, one per observable, when it is not the observable&#x27;s default representation: for instance &quot;D(r)&quot; for a pair distribution supplied as the reduced form.</td>
+<td class="dp"><span class="dep">sets <code>exp_energy_scales</code></span><span class="dep">see <code>exp_labels</code></span><span class="dep">see <code>pair_distribution_output</code></span></td>
+</tr>
+<tr data-h="exp_labels which observable each data file is, one per file, from &quot;xps&quot;, &quot;xrd&quot;, &quot;saxs&quot;, &quot;pair_distribution&quot; and &quot;structure_factor&quot;. matching a label to a file is what marks that observable valid, and an observable that was asked for but has no data stays switched off." data-m="predict md mc soap">
+<td class="kw"><code>exp_labels</code></td>
+<td class="ty">string list</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Which observable each data file is, one per file, from &quot;xps&quot;, &quot;xrd&quot;, &quot;saxs&quot;, &quot;pair_distribution&quot; and &quot;structure_factor&quot;. Matching a label to a file is what marks that observable valid, and an observable that was asked for but has no data stays switched off.</td>
+<td class="dp"><span class="dep">sets <code>exp_energy_scales</code></span><span class="dep">sets <code>xps_idx</code></span><span class="dep">sets <code>xrd_idx</code></span><span class="dep">sets <code>valid_xrd</code></span><span class="dep">sets <code>pair_distribution_partial</code></span><span class="dep">sets <code>nd_idx</code></span><span class="dep">sets <code>valid_nd</code></span><span class="dep">sets <code>pdf_idx</code></span><span class="dep">sets <code>valid_pdf</code></span><span class="dep">sets <code>sf_idx</code></span><span class="dep">sets <code>valid_sf</code></span><span class="dep">see <code>exp_data_files</code></span><span class="dep">see <code>n_exp</code></span></td>
+</tr>
+<tr data-h="exp_n_samples number of points to predict for each observable, one per observable, overriding that observable&#x27;s own n_samples keyword." data-m="predict md mc soap">
+<td class="kw"><code>exp_n_samples</code></td>
+<td class="ty">integer list</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Number of points to predict for each observable, one per observable, overriding that observable&#x27;s own n_samples keyword.</td>
+<td class="dp"><span class="dep">sets <code>exp_energy_scales</code></span><span class="dep">see <code>exp_labels</code></span></td>
+</tr>
+<tr data-h="exp_similarity_type how the mismatch between prediction and data is measured: &quot;squared_diff&quot; for a sum of squared residuals, or &quot;similarity&quot;/&quot;overlap&quot; for a normalised overlap." data-m="predict md mc soap">
+<td class="kw"><code>exp_similarity_type</code></td>
+<td class="ty">string</td>
+<td class="df"><code>squared_diff</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">How the mismatch between prediction and data is measured: &quot;squared_diff&quot; for a sum of squared residuals, or &quot;similarity&quot;/&quot;overlap&quot; for a normalised overlap.</td>
+<td class="dp"><span class="dep">see <code>exp_energy_scales</code></span></td>
+</tr>
+<tr data-h="n_exp number of experimental observables. give it before exp_data_files, exp_labels and exp_energy_scales, which it allocates." data-m="predict md mc soap">
+<td class="kw"><code>n_exp</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>0</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Number of experimental observables. Give it before exp_data_files, exp_labels and exp_energy_scales, which it allocates.</td>
+<td class="dp"><span class="dep">sets <code>exp_data_files</code></span><span class="dep">sets <code>exp_energy_scales</code></span><span class="dep">sets <code>exp_energy_scales_initial</code></span><span class="dep">sets <code>exp_energy_scales_final</code></span><span class="dep">sets <code>do_exp</code></span><span class="dep">see <code>exp_labels</code></span></td>
+</tr>
+<tr data-h="nd_n_samples number of points in the predicted neutron pattern. writes the same sample count the xrd and structure-factor routines use, since the three share one q grid." data-m="predict md mc soap">
+<td class="kw"><code>nd_n_samples</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>200</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Number of points in the predicted neutron pattern. Writes the same sample count the XRD and structure-factor routines use, since the three share one q grid.</td>
+<td class="dp"><span class="dep">sets <code>xrd_n_samples</code></span><span class="dep">sets <code>structure_factor_n_samples</code></span><span class="dep">see <code>xrd_n_samples</code></span></td>
+</tr>
+<tr data-h="nd_output abscissa of the neutron pattern, in the same choices as xrd_output. writes xrd_output as well, the two patterns sharing a grid." data-m="predict md mc soap">
+<td class="kw"><code>nd_output</code></td>
+<td class="ty">string</td>
+<td class="df"><code>xrd</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Abscissa of the neutron pattern, in the same choices as xrd_output. Writes xrd_output as well, the two patterns sharing a grid.</td>
+<td class="dp"><span class="dep">sets <code>xrd_output</code></span><span class="dep">see <code>xrd_output</code></span></td>
+</tr>
+<tr data-h="nd_rcut real-space cutoff of the pair sum entering the neutron pattern." data-m="predict md mc soap">
+<td class="kw"><code>nd_rcut</code></td>
+<td class="ty">real</td>
+<td class="df"><code>4.0</code></td>
+<td class="un">A</td>
+<td class="mo">all</td>
+<td class="de">Real-space cutoff of the pair sum entering the neutron pattern.</td>
+<td class="dp"><span class="dep">see <code>pair_distribution_rcut</code></span></td>
+</tr>
+<tr class="flagged" data-h="nd_wavelength neutron wavelength. nothing consults it: the pattern is built on the grid xrd_wavelength defines." data-m="predict md mc soap">
+<td class="kw"><code>nd_wavelength</code></td>
+<td class="ty">real</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de"><span class="tag">ignored</span>Neutron wavelength. Nothing consults it: the pattern is built on the grid xrd_wavelength defines.</td>
+<td class="dp"><span class="dep">see <code>xrd_wavelength</code></span></td>
+</tr>
+<tr data-h="pair_distribution_kde_sigma width of the gaussian each pair distance is smeared with when binning g(r). zero, the default, means plain histogram binning. a non-zero width makes g(r) differentiable, which is what the forces need." data-m="predict md mc soap">
+<td class="kw"><code>pair_distribution_kde_sigma</code></td>
+<td class="ty">real</td>
+<td class="df"><code>0.0</code></td>
+<td class="un">A</td>
+<td class="mo">all</td>
+<td class="de">Width of the Gaussian each pair distance is smeared with when binning g(r). Zero, the default, means plain histogram binning. A non-zero width makes g(r) differentiable, which is what the forces need.</td>
+<td class="dp"><span class="dep">see <code>exp_forces</code></span></td>
+</tr>
+<tr data-h="pair_distribution_n_samples number of r points in the predicted g(r)." data-m="predict md mc soap">
+<td class="kw"><code>pair_distribution_n_samples</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>200</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Number of r points in the predicted g(r).</td>
+<td class="dp"><span class="dep">see <code>r_range_min</code></span><span class="dep">see <code>r_range_max</code></span></td>
+</tr>
+<tr data-h="pair_distribution_output what g(r) is reported as: &quot;pdf&quot; for g(r) itself, or &quot;d(r)&quot; for the reduced pair distribution 4 pi r rho (g(r) - 1). the energy and its gradient follow the choice, so it changes the fit and not only the plot." data-m="predict md mc soap">
+<td class="kw"><code>pair_distribution_output</code></td>
+<td class="ty">string</td>
+<td class="df"><code>pdf</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">What g(r) is reported as: &quot;pdf&quot; for g(r) itself, or &quot;D(r)&quot; for the reduced pair distribution 4 pi r rho (g(r) - 1). The energy and its gradient follow the choice, so it changes the fit and not only the plot.</td>
+<td class="dp"><span class="dep">see <code>exp_input_type</code></span></td>
+</tr>
+<tr data-h="pair_distribution_partial resolve g(r) into per-species-pair partials. the structure factor is built from these, so it is on by default." data-m="predict md mc soap">
+<td class="kw"><code>pair_distribution_partial</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>true</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Resolve g(r) into per-species-pair partials. The structure factor is built from these, so it is on by default.</td>
+<td class="dp"><span class="dep">see <code>do_structure_factor</code></span></td>
+</tr>
+<tr data-h="pair_distribution_rcut largest pair distance binned into g(r). a hard cut, not a smooth one, which is why a finite-difference check of the virial needs a small strain." data-m="predict md mc soap">
+<td class="kw"><code>pair_distribution_rcut</code></td>
+<td class="ty">real</td>
+<td class="df"><code>4.0</code></td>
+<td class="un">A</td>
+<td class="mo">all</td>
+<td class="de">Largest pair distance binned into g(r). A hard cut, not a smooth one, which is why a finite-difference check of the virial needs a small strain.</td>
+<td class="dp"><span class="dep">see <code>r_range_max</code></span></td>
+</tr>
+<tr data-h="q_range_max upper end of the q range the structure factor and the diffraction patterns are predicted on." data-m="predict md mc soap">
+<td class="kw"><code>q_range_max</code></td>
+<td class="ty">real</td>
+<td class="df"><code>5.0</code></td>
+<td class="un">1/A</td>
+<td class="mo">all</td>
+<td class="de">Upper end of the q range the structure factor and the diffraction patterns are predicted on.</td>
+<td class="dp"><span class="dep">see <code>q_range_min</code></span><span class="dep">see <code>q_units</code></span></td>
+</tr>
+<tr data-h="q_range_min lower end of that range." data-m="predict md mc soap">
+<td class="kw"><code>q_range_min</code></td>
+<td class="ty">real</td>
+<td class="df"><code>1.0</code></td>
+<td class="un">1/A</td>
+<td class="mo">all</td>
+<td class="de">Lower end of that range.</td>
+<td class="dp"><span class="dep">see <code>q_range_max</code></span></td>
+</tr>
+<tr data-h="q_units what the abscissa of the supplied and predicted patterns means: &quot;q&quot; or &quot;saxs&quot; for a scattering vector, &quot;xrd&quot; or &quot;twotheta&quot; for a diffraction angle. the conversion between them uses xrd_wavelength." data-m="predict md mc soap">
+<td class="kw"><code>q_units</code></td>
+<td class="ty">string</td>
+<td class="df"><code>q</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">What the abscissa of the supplied and predicted patterns means: &quot;q&quot; or &quot;saxs&quot; for a scattering vector, &quot;xrd&quot; or &quot;twotheta&quot; for a diffraction angle. The conversion between them uses xrd_wavelength.</td>
+<td class="dp"><span class="dep">see <code>xrd_wavelength</code></span></td>
+</tr>
+<tr data-h="r_range_max upper end of the r range g(r) is reported on. points beyond pair_distribution_rcut are empty." data-m="predict md mc soap">
+<td class="kw"><code>r_range_max</code></td>
+<td class="ty">real</td>
+<td class="df"><code>5.0</code></td>
+<td class="un">A</td>
+<td class="mo">all</td>
+<td class="de">Upper end of the r range g(r) is reported on. Points beyond pair_distribution_rcut are empty.</td>
+<td class="dp"><span class="dep">see <code>pair_distribution_rcut</code></span></td>
+</tr>
+<tr data-h="r_range_min lower end of that range." data-m="predict md mc soap">
+<td class="kw"><code>r_range_min</code></td>
+<td class="ty">real</td>
+<td class="df"><code>1.0</code></td>
+<td class="un">A</td>
+<td class="mo">all</td>
+<td class="de">Lower end of that range.</td>
+<td class="dp"><span class="dep">see <code>r_range_max</code></span></td>
+</tr>
+<tr data-h="sf_output abscissa of the structure factor, in the same choices as q_units." data-m="predict md mc soap">
+<td class="kw"><code>sf_output</code></td>
+<td class="ty">string</td>
+<td class="df"><code>xrd</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Abscissa of the structure factor, in the same choices as q_units.</td>
+<td class="dp"><span class="dep">see <code>q_units</code></span></td>
+</tr>
+<tr data-h="structure_factor_from_pdf build s(q) by fourier-transforming the binned partial pair distributions, rather than from the positions directly. the transform is far cheaper and is what the analytic forces are written for." data-m="predict md mc soap">
+<td class="kw"><code>structure_factor_from_pdf</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>true</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Build S(q) by Fourier-transforming the binned partial pair distributions, rather than from the positions directly. The transform is far cheaper and is what the analytic forces are written for.</td>
+<td class="dp"><span class="dep">see <code>pair_distribution_partial</code></span></td>
+</tr>
+<tr data-h="structure_factor_matrix assemble the transform as a matrix product over the r grid instead of looping the pairs. much faster, at the cost of holding the kernel matrix." data-m="predict md mc soap">
+<td class="kw"><code>structure_factor_matrix</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>true</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Assemble the transform as a matrix product over the r grid instead of looping the pairs. Much faster, at the cost of holding the kernel matrix.</td>
+<td class="dp"><span class="dep">see <code>structure_factor_matrix_forces</code></span></td>
+</tr>
+<tr data-h="structure_factor_matrix_forces use the same matrix assembly for the derivatives. falls back to the loop when the run cannot batch." data-m="predict md mc soap">
+<td class="kw"><code>structure_factor_matrix_forces</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>true</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Use the same matrix assembly for the derivatives. Falls back to the loop when the run cannot batch.</td>
+<td class="dp"><span class="dep">see <code>structure_factor_matrix</code></span></td>
+</tr>
+<tr data-h="structure_factor_n_samples number of q points in the predicted s(q)." data-m="predict md mc soap">
+<td class="kw"><code>structure_factor_n_samples</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>200</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Number of q points in the predicted S(q).</td>
+<td class="dp"><span class="dep">see <code>q_range_min</code></span><span class="dep">see <code>q_range_max</code></span></td>
+</tr>
+<tr data-h="structure_factor_window apply a lorch window to the truncated pair distribution before transforming, which suppresses the ringing the hard cut at pair_distribution_rcut would otherwise put into s(q)." data-m="predict md mc soap">
+<td class="kw"><code>structure_factor_window</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>true</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Apply a Lorch window to the truncated pair distribution before transforming, which suppresses the ringing the hard cut at pair_distribution_rcut would otherwise put into S(q).</td>
+<td class="dp"><span class="dep">see <code>pair_distribution_rcut</code></span></td>
+</tr>
+<tr data-h="xps_e_max upper end of the binding-energy range the xps spectrum is predicted on." data-m="predict md mc soap">
+<td class="kw"><code>xps_e_max</code></td>
+<td class="ty">real</td>
+<td class="df"><code>300.0</code></td>
+<td class="un">eV</td>
+<td class="mo">all</td>
+<td class="de">Upper end of the binding-energy range the XPS spectrum is predicted on.</td>
+<td class="dp"><span class="dep">needs <code>do_xps</code></span><span class="dep">see <code>xps_e_min</code></span></td>
+</tr>
+<tr data-h="xps_e_min lower end of that range." data-m="predict md mc soap">
+<td class="kw"><code>xps_e_min</code></td>
+<td class="ty">real</td>
+<td class="df"><code>280.0</code></td>
+<td class="un">eV</td>
+<td class="mo">all</td>
+<td class="de">Lower end of that range.</td>
+<td class="dp"><span class="dep">needs <code>do_xps</code></span><span class="dep">see <code>xps_e_max</code></span></td>
+</tr>
+<tr class="flagged" data-h="xps_force_type which xps force expression to use. nothing consults it; the spectrum is differentiated one way only." data-m="predict md mc soap">
+<td class="kw"><code>xps_force_type</code></td>
+<td class="ty">string</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de"><span class="tag">ignored</span>Which XPS force expression to use. Nothing consults it; the spectrum is differentiated one way only.</td>
+<td class="dp"></td>
+</tr>
+<tr data-h="xps_n_samples number of points in the predicted xps spectrum." data-m="predict md mc soap">
+<td class="kw"><code>xps_n_samples</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>200</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Number of points in the predicted XPS spectrum.</td>
+<td class="dp"><span class="dep">needs <code>do_xps</code></span></td>
+</tr>
+<tr data-h="xps_sigma width of the gaussian each core-electron binding energy is broadened by to make a spectrum." data-m="predict md mc soap">
+<td class="kw"><code>xps_sigma</code></td>
+<td class="ty">real</td>
+<td class="df"><code>0.4</code></td>
+<td class="un">eV</td>
+<td class="mo">all</td>
+<td class="de">Width of the Gaussian each core-electron binding energy is broadened by to make a spectrum.</td>
+<td class="dp"><span class="dep">needs <code>do_xps</code></span></td>
+</tr>
+<tr data-h="xrd_alpha exponent of the sharpening applied to the diffraction pattern." data-m="predict md mc soap">
+<td class="kw"><code>xrd_alpha</code></td>
+<td class="ty">real</td>
+<td class="df"><code>1.01</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Exponent of the sharpening applied to the diffraction pattern.</td>
+<td class="dp"><span class="dep">needs <code>do_xrd</code></span><span class="dep">see <code>xrd_damping</code></span></td>
+</tr>
+<tr data-h="xrd_damping damping applied to the pair sum with distance, which suppresses the truncation ripple from the finite cutoff. zero, the default, is no damping." data-m="predict md mc soap">
+<td class="kw"><code>xrd_damping</code></td>
+<td class="ty">real</td>
+<td class="df"><code>0.0</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Damping applied to the pair sum with distance, which suppresses the truncation ripple from the finite cutoff. Zero, the default, is no damping.</td>
+<td class="dp"><span class="dep">needs <code>do_xrd</code></span><span class="dep">see <code>xrd_alpha</code></span></td>
+</tr>
+<tr data-h="xrd_debye compute the pattern from the n^2 debye sum over positions instead of transforming the partial pair distributions. the two routes answer the same question by different approximations: the pdf route bins distances and truncates at pair_distribution_rcut, the debye route sums every pair exactly. turning it on makes the pdf and sf calculations unnecessary, and whichever of them was switched on only to feed the xrd is switched off again." data-m="predict md mc soap">
+<td class="kw"><code>xrd_debye</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Compute the pattern from the N^2 Debye sum over positions instead of transforming the partial pair distributions. The two routes answer the same question by different approximations: the pdf route bins distances and truncates at pair_distribution_rcut, the Debye route sums every pair exactly. Turning it on makes the pdf and sf calculations unnecessary, and whichever of them was switched on only to feed the XRD is switched off again.</td>
+<td class="dp"><span class="dep">needs <code>do_xrd</code></span><span class="dep">see <code>pair_distribution_rcut</code></span></td>
+</tr>
+<tr class="flagged" data-h="xrd_iwasa iwasa correction switch from an earlier design; the correction is applied unconditionally now." data-m="predict md mc soap">
+<td class="kw"><code>xrd_iwasa</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>true</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de"><span class="tag">deprecated</span>Iwasa correction switch from an earlier design; the correction is applied unconditionally now.</td>
+<td class="dp"></td>
+</tr>
+<tr data-h="xrd_lorentz_polarization multiply the predicted pattern by the powder lorentz-polarization factor. only the debye route applies it, where the energy and the gradient stay consistent because it is one multiplicative weight per q." data-m="predict md mc soap">
+<td class="kw"><code>xrd_lorentz_polarization</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Multiply the predicted pattern by the powder Lorentz-polarization factor. Only the Debye route applies it, where the energy and the gradient stay consistent because it is one multiplicative weight per q.</td>
+<td class="dp"><span class="dep">needs <code>xrd_debye</code></span><span class="dep">see <code>xrd_lp_polarization</code></span></td>
+</tr>
+<tr data-h="xrd_lp_polarization degree of polarization p of the incident beam in the factor (1 + p cos^2 2theta) / (sin^2 theta cos theta). p = 1 is an unpolarized source; a graphite monochromator at 2theta_m gives p = cos^2(2theta_m)." data-m="predict md mc soap">
+<td class="kw"><code>xrd_lp_polarization</code></td>
+<td class="ty">real</td>
+<td class="df"><code>1.0</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Degree of polarization P of the incident beam in the factor (1 + P cos^2 2theta) / (sin^2 theta cos theta). P = 1 is an unpolarized source; a graphite monochromator at 2theta_M gives P = cos^2(2theta_M).</td>
+<td class="dp"><span class="dep">needs <code>xrd_lorentz_polarization</code></span></td>
+</tr>
+<tr data-h="xrd_lp_sin_theta_min below this |sin theta| the lorentz factor 1/(sin^2 theta cos theta) is unusable, so the whole factor is set to zero rather than blown up." data-m="predict md mc soap">
+<td class="kw"><code>xrd_lp_sin_theta_min</code></td>
+<td class="ty">real</td>
+<td class="df"><code>1.e-3</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Below this |sin theta| the Lorentz factor 1/(sin^2 theta cos theta) is unusable, so the whole factor is set to zero rather than blown up.</td>
+<td class="dp"><span class="dep">needs <code>xrd_lorentz_polarization</code></span></td>
+</tr>
+<tr data-h="xrd_method which scattering factors the pattern is built from. &quot;xrd&quot; uses the x-ray form factors." data-m="predict md mc soap">
+<td class="kw"><code>xrd_method</code></td>
+<td class="ty">string</td>
+<td class="df"><code>xrd</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Which scattering factors the pattern is built from. &quot;xrd&quot; uses the X-ray form factors.</td>
+<td class="dp"><span class="dep">needs <code>do_xrd</code></span></td>
+</tr>
+<tr data-h="xrd_n_samples number of points in the predicted x-ray pattern. sets the structure-factor sample count too, the two sharing a q grid." data-m="predict md mc soap">
+<td class="kw"><code>xrd_n_samples</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>200</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Number of points in the predicted X-ray pattern. Sets the structure-factor sample count too, the two sharing a q grid.</td>
+<td class="dp"><span class="dep">needs <code>do_xrd</code></span><span class="dep">sets <code>structure_factor_n_samples</code></span></td>
+</tr>
+<tr data-h="xrd_output abscissa the pattern is reported on, in the same choices as q_units." data-m="predict md mc soap">
+<td class="kw"><code>xrd_output</code></td>
+<td class="ty">string</td>
+<td class="df"><code>xrd</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Abscissa the pattern is reported on, in the same choices as q_units.</td>
+<td class="dp"><span class="dep">needs <code>do_xrd</code></span><span class="dep">see <code>q_units</code></span></td>
+</tr>
+<tr data-h="xrd_rcut real-space cutoff of the pair sum entering the x-ray pattern." data-m="predict md mc soap">
+<td class="kw"><code>xrd_rcut</code></td>
+<td class="ty">real</td>
+<td class="df"><code>4.0</code></td>
+<td class="un">A</td>
+<td class="mo">all</td>
+<td class="de">Real-space cutoff of the pair sum entering the X-ray pattern.</td>
+<td class="dp"><span class="dep">needs <code>do_xrd</code></span><span class="dep">see <code>pair_distribution_rcut</code></span></td>
+</tr>
+<tr data-h="xrd_wavelength wavelength of the incident x-rays. fixes the map between q and 2theta, so it matters whenever q_units or xrd_output name an angle." data-m="predict md mc soap">
+<td class="kw"><code>xrd_wavelength</code></td>
+<td class="ty">real</td>
+<td class="df"><code>1.5405981</code></td>
+<td class="un">A</td>
+<td class="mo">all</td>
+<td class="de">Wavelength of the incident X-rays. Fixes the map between q and 2theta, so it matters whenever q_units or xrd_output name an angle.</td>
+<td class="dp"><span class="dep">see <code>q_units</code></span></td>
+</tr>
+</tbody></table></div></section>
+<section id="electronic-stopping-and-eph">
+<h2>Electronic stopping and EPH</h2>
+<p class="blurb">Radiation cascades and electron-phonon coupling.</p>
+<div class="scroll"><table><thead><tr><th>Keyword</th><th>Type</th><th>Default</th><th>Units</th><th>Modes</th><th>Description</th><th>Depends on</th></tr></thead><tbody>
+<tr data-h="adapt_emax largest energy change tolerated over one step; the adaptive time step shrinks until the change is under this." data-m="md">
+<td class="kw"><code>adapt_emax</code></td>
+<td class="ty">real</td>
+<td class="df"><code>1.0e1</code></td>
+<td class="un">eV</td>
+<td class="mo">md</td>
+<td class="de">Largest energy change tolerated over one step; the adaptive time step shrinks until the change is under this.</td>
+<td class="dp"><span class="dep">needs <code>adaptive_time</code></span></td>
+</tr>
+<tr data-h="adapt_tmax upper bound on the adaptive time step." data-m="md">
+<td class="kw"><code>adapt_tmax</code></td>
+<td class="ty">real</td>
+<td class="df"><code>1.0</code></td>
+<td class="un">fs</td>
+<td class="mo">md</td>
+<td class="de">Upper bound on the adaptive time step.</td>
+<td class="dp"><span class="dep">needs <code>adaptive_time</code></span></td>
+</tr>
+<tr data-h="adapt_tmin lower bound on the adaptive time step. reaching it means the dynamics cannot be resolved and the run should be reconsidered." data-m="md">
+<td class="kw"><code>adapt_tmin</code></td>
+<td class="ty">real</td>
+<td class="df"><code>1.0e-3</code></td>
+<td class="un">fs</td>
+<td class="mo">md</td>
+<td class="de">Lower bound on the adaptive time step. Reaching it means the dynamics cannot be resolved and the run should be reconsidered.</td>
+<td class="dp"><span class="dep">needs <code>adaptive_time</code></span></td>
+</tr>
+<tr data-h="adapt_tstep_interval how often, in steps, the adaptive time step is re-examined." data-m="md">
+<td class="kw"><code>adapt_tstep_interval</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>1</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">How often, in steps, the adaptive time step is re-examined.</td>
+<td class="dp"><span class="dep">needs <code>adaptive_time</code></span></td>
+</tr>
+<tr data-h="adapt_xmax largest displacement of any atom tolerated over one step." data-m="md">
+<td class="kw"><code>adapt_xmax</code></td>
+<td class="ty">real</td>
+<td class="df"><code>1.0e-2</code></td>
+<td class="un">A</td>
+<td class="mo">md</td>
+<td class="de">Largest displacement of any atom tolerated over one step.</td>
+<td class="dp"><span class="dep">needs <code>adaptive_time</code></span></td>
+</tr>
+<tr data-h="adaptive_time choose the time step from how fast the fastest atom is moving, rather than holding md_step fixed. written for radiation cascades, where the first femtoseconds need a far smaller step than the rest." data-m="md">
+<td class="kw"><code>adaptive_time</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">Choose the time step from how fast the fastest atom is moving, rather than holding md_step fixed. Written for radiation cascades, where the first femtoseconds need a far smaller step than the rest.</td>
+<td class="dp"><span class="dep">see <code>adapt_tmin</code></span><span class="dep">see <code>adapt_tmax</code></span><span class="dep">see <code>adapt_xmax</code></span><span class="dep">see <code>adapt_emax</code></span></td>
+</tr>
+<tr data-h="eel_cut kinetic energy below which an atom is too slow to lose energy to the electrons, so electronic stopping is not applied to it." data-m="md">
+<td class="kw"><code>eel_cut</code></td>
+<td class="ty">real</td>
+<td class="df"><code>1.0</code></td>
+<td class="un">eV</td>
+<td class="mo">md</td>
+<td class="de">Kinetic energy below which an atom is too slow to lose energy to the electrons, so electronic stopping is not applied to it.</td>
+<td class="dp"><span class="dep">needs <code>electronic_stopping</code></span></td>
+</tr>
+<tr data-h="eel_freq_out how often, in steps, to report the energy lost to electronic stopping." data-m="md">
+<td class="kw"><code>eel_freq_out</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>1</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">How often, in steps, to report the energy lost to electronic stopping.</td>
+<td class="dp"><span class="dep">needs <code>electronic_stopping</code></span></td>
+</tr>
+<tr data-h="electronic_stopping drain energy from fast atoms into the electronic system, the dominant energy loss at the start of a radiation cascade. reads its stopping powers from estop_filename." data-m="md">
+<td class="kw"><code>electronic_stopping</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">Drain energy from fast atoms into the electronic system, the dominant energy loss at the start of a radiation cascade. Reads its stopping powers from estop_filename.</td>
+<td class="dp"><span class="dep">see <code>estop_filename</code></span><span class="dep">see <code>eel_cut</code></span></td>
+</tr>
+<tr data-h="eph_betafile file holding the beta(rho) coupling data the eph model needs, one entry per species." data-m="md">
+<td class="kw"><code>eph_betafile</code></td>
+<td class="ty">string</td>
+<td class="df"><code>NULL</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">File holding the beta(rho) coupling data the EPH model needs, one entry per species.</td>
+<td class="dp"><span class="dep">needs <code>nonadiabatic_processes</code></span></td>
+</tr>
+<tr data-h="eph_box_limits extent of the electronic grid, as xmin xmax ymin ymax zmin zmax. also written into the six individual bounds the solver reads." data-m="md">
+<td class="kw"><code>eph_box_limits</code></td>
+<td class="ty">real(6)</td>
+<td class="df"><code>[-100.0, 100.0, -100.0, 100.0, ...</code></td>
+<td class="un">A</td>
+<td class="mo">md</td>
+<td class="de">Extent of the electronic grid, as xmin xmax ymin ymax zmin zmax. Also written into the six individual bounds the solver reads.</td>
+<td class="dp"><span class="dep">needs <code>nonadiabatic_processes</code></span><span class="dep">sets <code>in_x0</code></span><span class="dep">sets <code>in_x1</code></span><span class="dep">sets <code>in_y0</code></span><span class="dep">sets <code>in_y1</code></span><span class="dep">sets <code>in_z0</code></span><span class="dep">sets <code>in_z1</code></span></td>
+</tr>
+<tr data-h="eph_c_e electronic heat capacity per unit volume, used when the electronic temperature is evolved rather than held fixed." data-m="md">
+<td class="kw"><code>eph_c_e</code></td>
+<td class="ty">real</td>
+<td class="df"><code>1.0</code></td>
+<td class="un">eV/A^3/K</td>
+<td class="mo">md</td>
+<td class="de">Electronic heat capacity per unit volume, used when the electronic temperature is evolved rather than held fixed.</td>
+<td class="dp"><span class="dep">needs <code>nonadiabatic_processes</code></span></td>
+</tr>
+<tr data-h="eph_e_prev_time electronic energy carried over from a previous run, for restarting a cascade." data-m="md">
+<td class="kw"><code>eph_e_prev_time</code></td>
+<td class="ty">real</td>
+<td class="df"><code>0.0</code></td>
+<td class="un">eV</td>
+<td class="mo">md</td>
+<td class="de">Electronic energy carried over from a previous run, for restarting a cascade.</td>
+<td class="dp"><span class="dep">needs <code>nonadiabatic_processes</code></span></td>
+</tr>
+<tr data-h="eph_fdm_option how the electronic temperature grid is initialised: from eph_tinfile, or uniformly at eph_ti_e." data-m="md">
+<td class="kw"><code>eph_fdm_option</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>1</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">How the electronic temperature grid is initialised: from eph_Tinfile, or uniformly at eph_Ti_e.</td>
+<td class="dp"><span class="dep">needs <code>nonadiabatic_processes</code></span></td>
+</tr>
+<tr data-h="eph_fdm_steps number of electronic diffusion sub-steps taken per md step, the electronic system being much faster than the ionic one." data-m="md">
+<td class="kw"><code>eph_fdm_steps</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>1</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">Number of electronic diffusion sub-steps taken per MD step, the electronic system being much faster than the ionic one.</td>
+<td class="dp"><span class="dep">needs <code>nonadiabatic_processes</code></span></td>
+</tr>
+<tr data-h="eph_freq_mesh_tout how often, in steps, to write the whole electronic temperature grid." data-m="md">
+<td class="kw"><code>eph_freq_mesh_tout</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>1</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">How often, in steps, to write the whole electronic temperature grid.</td>
+<td class="dp"><span class="dep">needs <code>nonadiabatic_processes</code></span></td>
+</tr>
+<tr data-h="eph_freq_tout how often, in steps, to write the electronic temperature summary." data-m="md">
+<td class="kw"><code>eph_freq_tout</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>1</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">How often, in steps, to write the electronic temperature summary.</td>
+<td class="dp"><span class="dep">needs <code>nonadiabatic_processes</code></span></td>
+</tr>
+<tr data-h="eph_friction_option which friction term of the electron-phonon coupling to apply, or none." data-m="md">
+<td class="kw"><code>eph_friction_option</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>1</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">Which friction term of the electron-phonon coupling to apply, or none.</td>
+<td class="dp"><span class="dep">needs <code>nonadiabatic_processes</code></span></td>
+</tr>
+<tr data-h="eph_gsx number of electronic grid cells along x." data-m="md">
+<td class="kw"><code>eph_gsx</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>1</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">Number of electronic grid cells along x.</td>
+<td class="dp"><span class="dep">needs <code>nonadiabatic_processes</code></span></td>
+</tr>
+<tr data-h="eph_gsy number of electronic grid cells along y." data-m="md">
+<td class="kw"><code>eph_gsy</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>1</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">Number of electronic grid cells along y.</td>
+<td class="dp"><span class="dep">needs <code>nonadiabatic_processes</code></span></td>
+</tr>
+<tr data-h="eph_gsz number of electronic grid cells along z." data-m="md">
+<td class="kw"><code>eph_gsz</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>1</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">Number of electronic grid cells along z.</td>
+<td class="dp"><span class="dep">needs <code>nonadiabatic_processes</code></span></td>
+</tr>
+<tr data-h="eph_kappa_e electronic thermal conductivity entering the diffusion of the electronic temperature." data-m="md">
+<td class="kw"><code>eph_kappa_e</code></td>
+<td class="ty">real</td>
+<td class="df"><code>1.0</code></td>
+<td class="un">eV/A/fs/K</td>
+<td class="mo">md</td>
+<td class="de">Electronic thermal conductivity entering the diffusion of the electronic temperature.</td>
+<td class="dp"><span class="dep">needs <code>nonadiabatic_processes</code></span></td>
+</tr>
+<tr data-h="eph_md_last_step step number the previous run finished at, for restarting a cascade." data-m="md">
+<td class="kw"><code>eph_md_last_step</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>0</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">Step number the previous run finished at, for restarting a cascade.</td>
+<td class="dp"><span class="dep">needs <code>nonadiabatic_processes</code></span></td>
+</tr>
+<tr data-h="eph_md_prev_time simulated time the previous run finished at, for restarting a cascade." data-m="md">
+<td class="kw"><code>eph_md_prev_time</code></td>
+<td class="ty">real</td>
+<td class="df"><code>0.0</code></td>
+<td class="un">fs</td>
+<td class="mo">md</td>
+<td class="de">Simulated time the previous run finished at, for restarting a cascade.</td>
+<td class="dp"><span class="dep">needs <code>nonadiabatic_processes</code></span></td>
+</tr>
+<tr data-h="eph_random_option which random term of the electron-phonon coupling to apply, or none. paired with the friction term it is what makes the coupling a thermostat rather than a drain." data-m="md">
+<td class="kw"><code>eph_random_option</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>1</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">Which random term of the electron-phonon coupling to apply, or none. Paired with the friction term it is what makes the coupling a thermostat rather than a drain.</td>
+<td class="dp"><span class="dep">needs <code>nonadiabatic_processes</code></span><span class="dep">see <code>eph_friction_option</code></span></td>
+</tr>
+<tr data-h="eph_rho_e electronic density entering the coupling." data-m="md">
+<td class="kw"><code>eph_rho_e</code></td>
+<td class="ty">real</td>
+<td class="df"><code>1.0</code></td>
+<td class="un">1/A^3</td>
+<td class="mo">md</td>
+<td class="de">Electronic density entering the coupling.</td>
+<td class="dp"><span class="dep">needs <code>nonadiabatic_processes</code></span></td>
+</tr>
+<tr data-h="eph_ti_e initial electronic temperature, when the grid is started uniform rather than read from a file." data-m="md">
+<td class="kw"><code>eph_ti_e</code></td>
+<td class="ty">real</td>
+<td class="df"><code>300.0</code></td>
+<td class="un">K</td>
+<td class="mo">md</td>
+<td class="de">Initial electronic temperature, when the grid is started uniform rather than read from a file.</td>
+<td class="dp"><span class="dep">needs <code>nonadiabatic_processes</code></span><span class="dep">see <code>eph_fdm_option</code></span></td>
+</tr>
+<tr data-h="eph_tinfile file holding an initial electronic temperature grid." data-m="md">
+<td class="kw"><code>eph_tinfile</code></td>
+<td class="ty">string</td>
+<td class="df"><code>NULL</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">File holding an initial electronic temperature grid.</td>
+<td class="dp"><span class="dep">needs <code>nonadiabatic_processes</code></span></td>
+</tr>
+<tr data-h="eph_toutfile file the electronic temperature grid is written to." data-m="md">
+<td class="kw"><code>eph_toutfile</code></td>
+<td class="ty">string</td>
+<td class="df"><code>NULL</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">File the electronic temperature grid is written to.</td>
+<td class="dp"><span class="dep">needs <code>nonadiabatic_processes</code></span></td>
+</tr>
+<tr data-h="estop_filename file holding the electronic stopping power per species as a function of velocity." data-m="md">
+<td class="kw"><code>estop_filename</code></td>
+<td class="ty">string</td>
+<td class="df"><code>NULL</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">File holding the electronic stopping power per species as a function of velocity.</td>
+<td class="dp"><span class="dep">needs <code>electronic_stopping</code></span></td>
+</tr>
+<tr data-h="model_eph which electron-phonon model to evaluate." data-m="md">
+<td class="kw"><code>model_eph</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>1</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">Which electron-phonon model to evaluate.</td>
+<td class="dp"><span class="dep">needs <code>nonadiabatic_processes</code></span></td>
+</tr>
+<tr data-h="nonadiabatic_processes exchange energy between the ions and an explicit electronic subsystem through the eph model, rather than the one-way drain of electronic stopping." data-m="md">
+<td class="kw"><code>nonadiabatic_processes</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">Exchange energy between the ions and an explicit electronic subsystem through the EPH model, rather than the one-way drain of electronic stopping.</td>
+<td class="dp"><span class="dep">see <code>model_eph</code></span><span class="dep">see <code>eph_friction_option</code></span><span class="dep">see <code>eph_random_option</code></span></td>
+</tr>
+</tbody></table></div></section>
+<section id="local-properties">
+<h2>Local properties</h2>
+<p class="blurb">Per-atom quantities predicted alongside the energy.</p>
+<div class="scroll"><table><thead><tr><th>Keyword</th><th>Type</th><th>Default</th><th>Units</th><th>Modes</th><th>Description</th><th>Depends on</th></tr></thead><tbody>
+<tr data-h="compute_local_properties which local properties to predict, by name, one per property. the gap has to carry a model for each. n_local_properties must appear first." data-m="predict md mc soap">
+<td class="kw"><code>compute_local_properties</code></td>
+<td class="ty">string list</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Which local properties to predict, by name, one per property. The GAP has to carry a model for each. n_local_properties must appear first.</td>
+<td class="dp"><span class="dep">needs <code>n_local_properties</code></span></td>
+</tr>
+<tr data-h="core_pot_buffer width over which the core potential is smoothly turned off approaching core_pot_cutoff, so the tabulated potential and its gradient reach zero together." data-m="predict md mc soap">
+<td class="kw"><code>core_pot_buffer</code></td>
+<td class="ty">real</td>
+<td class="df"><code>1.0</code></td>
+<td class="un">A</td>
+<td class="mo">all</td>
+<td class="de">Width over which the core potential is smoothly turned off approaching core_pot_cutoff, so the tabulated potential and its gradient reach zero together.</td>
+<td class="dp"><span class="dep">see <code>core_pot_cutoff</code></span></td>
+</tr>
+<tr data-h="core_pot_cutoff distance beyond which the tabulated core potential is dropped. the default is effectively infinite, meaning the whole table is used." data-m="predict md mc soap">
+<td class="kw"><code>core_pot_cutoff</code></td>
+<td class="ty">real</td>
+<td class="df"><code>1.e10</code></td>
+<td class="un">A</td>
+<td class="mo">all</td>
+<td class="de">Distance beyond which the tabulated core potential is dropped. The default is effectively infinite, meaning the whole table is used.</td>
+<td class="dp"><span class="dep">see <code>core_pot_buffer</code></span></td>
+</tr>
+<tr data-h="n_local_properties number of local properties to predict. give it before compute_local_properties and write_local_properties, which it allocates." data-m="predict md mc soap">
+<td class="kw"><code>n_local_properties</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>0</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Number of local properties to predict. Give it before compute_local_properties and write_local_properties, which it allocates.</td>
+<td class="dp"><span class="dep">sets <code>write_local_properties</code></span><span class="dep">sets <code>compute_local_properties</code></span><span class="dep">see <code>compute_local_properties</code></span></td>
+</tr>
+<tr class="flagged" data-h="print_lp_forces local-property force reporting switch; nothing consults it." data-m="predict md mc soap">
+<td class="kw"><code>print_lp_forces</code></td>
+<td class="ty">logical</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de"><span class="tag">ignored</span>Local-property force reporting switch; nothing consults it.</td>
+<td class="dp"></td>
+</tr>
+</tbody></table></div></section>
+<section id="output">
+<h2>Output</h2>
+<p class="blurb">What is written, and how often.</p>
+<div class="scroll"><table><thead><tr><th>Keyword</th><th>Type</th><th>Default</th><th>Units</th><th>Modes</th><th>Description</th><th>Depends on</th></tr></thead><tbody>
+<tr data-h="print_progress print a progress line as the run advances." data-m="predict md mc soap">
+<td class="kw"><code>print_progress</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>true</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Print a progress line as the run advances.</td>
+<td class="dp"></td>
+</tr>
+<tr data-h="write_exp write the predicted experimental observables to file." data-m="predict md mc soap">
+<td class="kw"><code>write_exp</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>true</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Write the predicted experimental observables to file.</td>
+<td class="dp"><span class="dep">needs <code>do_exp</code></span></td>
+</tr>
+<tr data-h="write_fixes include the per-atom fix flags as a column in the xyz output." data-m="predict md mc soap">
+<td class="kw"><code>write_fixes</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>true</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Include the per-atom fix flags as a column in the XYZ output.</td>
+<td class="dp"></td>
+</tr>
+<tr data-h="write_forces include forces as columns in the xyz output." data-m="predict md mc soap">
+<td class="kw"><code>write_forces</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>true</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Include forces as columns in the XYZ output.</td>
+<td class="dp"></td>
+</tr>
+<tr class="flagged" data-h="write_hirshfeld_v hirshfeld-volume output switch; the volumes follow the local-property output instead, so nothing consults it." data-m="predict md mc soap">
+<td class="kw"><code>write_hirshfeld_v</code></td>
+<td class="ty">logical</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de"><span class="tag">ignored</span>Hirshfeld-volume output switch; the volumes follow the local-property output instead, so nothing consults it.</td>
+<td class="dp"><span class="dep">see <code>write_local_properties</code></span></td>
+</tr>
+<tr data-h="write_local_energies include the per-atom energy decomposition as a column in the xyz output." data-m="predict md mc soap">
+<td class="kw"><code>write_local_energies</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>true</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Include the per-atom energy decomposition as a column in the XYZ output.</td>
+<td class="dp"></td>
+</tr>
+<tr data-h="write_local_properties which predicted local properties to write, one flag per property in the order of compute_local_properties." data-m="predict md mc soap">
+<td class="kw"><code>write_local_properties</code></td>
+<td class="ty">logical list</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Which predicted local properties to write, one flag per property in the order of compute_local_properties.</td>
+<td class="dp"><span class="dep">needs <code>n_local_properties</code></span><span class="dep">see <code>compute_local_properties</code></span></td>
+</tr>
+<tr data-h="write_lv write the lattice vectors on every frame." data-m="predict md mc soap">
+<td class="kw"><code>write_lv</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Write the lattice vectors on every frame.</td>
+<td class="dp"></td>
+</tr>
+<tr data-h="write_masses include atomic masses as a column in the xyz output." data-m="predict md mc soap">
+<td class="kw"><code>write_masses</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Include atomic masses as a column in the XYZ output.</td>
+<td class="dp"></td>
+</tr>
+<tr data-h="write_nd write the predicted neutron diffraction pattern to file." data-m="predict md mc soap">
+<td class="kw"><code>write_nd</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Write the predicted neutron diffraction pattern to file.</td>
+<td class="dp"><span class="dep">needs <code>do_nd</code></span></td>
+</tr>
+<tr data-h="write_pair_distribution write the predicted pair distribution to file." data-m="predict md mc soap">
+<td class="kw"><code>write_pair_distribution</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Write the predicted pair distribution to file.</td>
+<td class="dp"><span class="dep">needs <code>do_pair_distribution</code></span></td>
+</tr>
+<tr data-h="write_pressure include the pressure in the frame comment line." data-m="predict md mc soap">
+<td class="kw"><code>write_pressure</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>true</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Include the pressure in the frame comment line.</td>
+<td class="dp"></td>
+</tr>
+<tr data-h="write_stress include the stress tensor in the frame comment line." data-m="predict md mc soap">
+<td class="kw"><code>write_stress</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>true</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Include the stress tensor in the frame comment line.</td>
+<td class="dp"><span class="dep">see <code>write_virial</code></span></td>
+</tr>
+<tr data-h="write_structure_factor write the predicted structure factor to file." data-m="predict md mc soap">
+<td class="kw"><code>write_structure_factor</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Write the predicted structure factor to file.</td>
+<td class="dp"><span class="dep">needs <code>do_structure_factor</code></span></td>
+</tr>
+<tr data-h="write_thermo write a thermodynamic summary line every this many steps. zero switches it off." data-m="md mc">
+<td class="kw"><code>write_thermo</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>1</code></td>
+<td class="un"></td>
+<td class="mo">md, mc</td>
+<td class="de">Write a thermodynamic summary line every this many steps. Zero switches it off.</td>
+<td class="dp"></td>
+</tr>
+<tr data-h="write_velocities include velocities as columns in the xyz output." data-m="predict md mc soap">
+<td class="kw"><code>write_velocities</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>true</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Include velocities as columns in the XYZ output.</td>
+<td class="dp"></td>
+</tr>
+<tr data-h="write_virial include the virial tensor in the frame comment line." data-m="predict md mc soap">
+<td class="kw"><code>write_virial</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>true</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Include the virial tensor in the frame comment line.</td>
+<td class="dp"><span class="dep">see <code>write_stress</code></span></td>
+</tr>
+<tr data-h="write_xrd write the predicted x-ray diffraction pattern to file." data-m="predict md mc soap">
+<td class="kw"><code>write_xrd</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Write the predicted X-ray diffraction pattern to file.</td>
+<td class="dp"><span class="dep">needs <code>do_xrd</code></span></td>
+</tr>
+<tr data-h="write_xyz write a trajectory frame every this many steps. zero, the default, writes only the last." data-m="md mc">
+<td class="kw"><code>write_xyz</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>0</code></td>
+<td class="un"></td>
+<td class="mo">md, mc</td>
+<td class="de">Write a trajectory frame every this many steps. Zero, the default, writes only the last.</td>
+<td class="dp"></td>
+</tr>
+</tbody></table></div></section>
+<section id="gpu">
+<h2>GPU</h2>
+<p class="blurb">Accepted by the CPU build too, so one deck runs on both.</p>
+<div class="scroll"><table><thead><tr><th>Keyword</th><th>Type</th><th>Default</th><th>Units</th><th>Modes</th><th>Description</th><th>Depends on</th></tr></thead><tbody>
+<tr data-h="gpu_batched evaluate the experimental observables in batches on the device, staging one batch of pairs at a time. switching it off takes the unbatched route, which holds everything at once and is the reference the batched route is checked against." data-m="predict md mc soap">
+<td class="kw"><code>gpu_batched</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>true</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Evaluate the experimental observables in batches on the device, staging one batch of pairs at a time. Switching it off takes the unbatched route, which holds everything at once and is the reference the batched route is checked against.</td>
+<td class="dp"></td>
+</tr>
+<tr data-h="gpu_low_memory free each batch&#x27;s device arrays as soon as its contribution has been accumulated, rather than holding them for the whole calculation. slower and much smaller." data-m="predict md mc soap">
+<td class="kw"><code>gpu_low_memory</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>true</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Free each batch&#x27;s device arrays as soon as its contribution has been accumulated, rather than holding them for the whole calculation. Slower and much smaller.</td>
+<td class="dp"><span class="dep">see <code>gpu_batched</code></span></td>
+</tr>
+<tr data-h="gpu_max_batch_size largest device allocation a single batch may make. the batch count follows from it." data-m="predict md mc soap">
+<td class="kw"><code>gpu_max_batch_size</code></td>
+<td class="ty">real</td>
+<td class="df"><code>1.0</code></td>
+<td class="un">GB</td>
+<td class="mo">all</td>
+<td class="de">Largest device allocation a single batch may make. The batch count follows from it.</td>
+<td class="dp"><span class="dep">see <code>gpu_n_batches</code></span></td>
+</tr>
+<tr data-h="gpu_n_batches split the work into exactly this many batches, instead of choosing the count from the memory budget." data-m="predict md mc soap">
+<td class="kw"><code>gpu_n_batches</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>1</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Split the work into exactly this many batches, instead of choosing the count from the memory budget.</td>
+<td class="dp"><span class="dep">see <code>gpu_max_batch_size</code></span></td>
+</tr>
+<tr data-h="n_batches split the soap descriptor calculation into exactly this many batches, instead of choosing the count from max_gbytes_per_process." data-m="predict md mc soap">
+<td class="kw"><code>n_batches</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>0</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Split the SOAP descriptor calculation into exactly this many batches, instead of choosing the count from max_Gbytes_per_process.</td>
+<td class="dp"><span class="dep">see <code>max_gbytes_per_process</code></span></td>
+</tr>
+</tbody></table></div></section>
+<p class="empty" id="empty">Nothing matches that filter.</p>
+</main>
+<footer>Generated by <code>tools/keyword_docs.py</code>. To change an entry, edit the <code>!&gt;</code> block above the keyword in <code>src/read_files.f90</code> and run <code>make docs</code>.</footer>
+</div>
+<script>
+(function () {
+  var q = document.getElementById('q'),
+      mode = document.getElementById('mode'),
+      tally = document.getElementById('tally'),
+      empty = document.getElementById('empty'),
+      rows = Array.prototype.slice.call(document.querySelectorAll('tbody tr')),
+      secs = Array.prototype.slice.call(document.querySelectorAll('section'));
+
+  function apply() {
+    var needle = q.value.trim().toLowerCase(), m = mode.value, shown = 0;
+    rows.forEach(function (r) {
+      var ok = (!needle || r.dataset.h.indexOf(needle) !== -1) &&
+               (!m || r.dataset.m.split(' ').indexOf(m) !== -1);
+      r.classList.toggle('hide', !ok);
+      if (ok) { shown++; }
+    });
+    secs.forEach(function (s) {
+      s.classList.toggle('hide', !s.querySelector('tbody tr:not(.hide)'));
+    });
+    empty.classList.toggle('show', shown === 0);
+    tally.textContent = shown === rows.length
+      ? rows.length + ' keywords'
+      : shown + ' of ' + rows.length;
+  }
+
+  q.addEventListener('input', apply);
+  mode.addEventListener('change', apply);
+  apply();
+})();
+</script>
+
+</body>
+</html>

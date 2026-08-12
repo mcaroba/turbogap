@@ -63,6 +63,7 @@ program turbogap
 #endif
    use bussi
    use xyz_module
+   use keyword_help
 
    implicit none
 
@@ -300,6 +301,7 @@ program turbogap
 
    ! This is the mode in which we run TurboGAP
    character*16 :: mode = "none"
+   character*16 :: help_mode = ""
    character*32 :: mc_move = "none"
    character*32 :: exp_output = "none"
 
@@ -387,6 +389,24 @@ program turbogap
    type(image), allocatable :: images_temp(:)
    character*32 :: implemented_exp_observables(1:5)
 
+!  --help answers from the generated keyword reference and exits. It is the
+!  first thing the program does because it must work with no input file, no
+!  GPU and no MPI: everything below this point assumes at least one of those.
+   call get_command_argument(1, mode)
+   if (mode == "--help" .or. mode == "-h" .or. mode == "help") then
+      call get_command_argument(2, help_mode)
+      if (len_trim(help_mode) > 0 .and. &
+          help_mode /= "predict" .and. help_mode /= "md" .and. &
+          help_mode /= "mc" .and. help_mode /= "soap") then
+         write (*, '(A)') 'ERROR: unknown mode "'//trim(help_mode)// &
+            '". turbogap --help ['//trim(keyword_help_modes())//']'
+         stop 1
+      end if
+      call print_keyword_help(help_mode)
+      stop
+   end if
+   mode = "none"
+
    implemented_exp_observables(1) = "xps"
    implemented_exp_observables(2) = "xrd"
    implemented_exp_observables(3) = "saxs"
@@ -430,7 +450,8 @@ program turbogap
    !
    call get_command_argument(1, mode)
    if (mode == "" .or. mode == "none") then
-      write (*, *) "ERROR: you need to run 'turbogap md' or 'turbogap predict'"
+      write (*, *) "ERROR: you need to run 'turbogap md', 'turbogap mc' or 'turbogap predict'"
+      write (*, *) "       'turbogap --help [predict|md|mc|soap]' lists the input keywords"
       stop
       ! THIS SHOULD BE FIXED, IN CASE THE USER JUST WANT TO OUTPUT THE SOAP DESCRIPTORS
       mode = "soap"
@@ -2619,12 +2640,6 @@ program turbogap
                   if (params%verb > 50) write (*, '(1X,A,1X,L8,1X,A)')  &
                        &  'mc_hamiltonian = ', params%mc_hamiltonian, '&
                        &  |'
-                  if (params%verb > 50) write (*, '(1X,A,1X,L8,1X,A)')  &
-                       &   'mc_reverse    = ', params%mc_reverse, '    &
-                       & |'
-                  if (params%verb > 50) write (*, '(1X,A,1X,F12.6,1X&
-                       &,A)') 'mc_reverse_lambda = ', params&
-                       &%mc_reverse_lambda, '|'
 
                   if (params%verb > 50) write (*, *) '                                       |'
                   ! t_beg must

@@ -56,15 +56,6 @@ module types
       real(dp) :: mag
    end type exp_data_container
 
-   type exp_pred_container
-      integer :: n_samples = 200
-      logical :: write = .false.
-      real(dp), allocatable :: x(:)
-      real(dp), allocatable :: y(:)
-      real(dp) :: range_min = 0.d0
-      real(dp) :: range_max = 1.d0
-   end type exp_pred_container
-
    type local_property_soap_turbo
       real(dp), allocatable :: Qs(:, :)
       real(dp), allocatable :: alphas(:)
@@ -202,81 +193,169 @@ module types
    end type options_estat
 
    type input_parameters
+
+!     ==================================================================
+!     GENERAL
+!     ==================================================================
+      character*1024 :: atoms_file
+      character*8, allocatable :: species_types(:)
       real(dp), allocatable :: masses_types(:)
       real(dp), allocatable :: e0(:)
-      real(dp), allocatable :: vdw_c6_ref(:)
-      real(dp), allocatable :: vdw_r0_ref(:)
-      real(dp), allocatable :: vdw_alpha0_ref(:)
-      real(dp), allocatable :: mc_acceptance(:)
-      real(dp), allocatable :: mc_mu_acceptance(:)
-      real(dp), allocatable :: mc_mu(:)
-      real(dp), allocatable :: exp_energy_scales(:)
-      real(dp), allocatable :: exp_energy_scales_initial(:)
-      real(dp), allocatable :: exp_energy_scales_final(:)
       real(dp), allocatable :: radii(:)
-      real(dp), allocatable :: t_hold(:)
+      integer :: which_atom = 0
+      logical :: all_atoms = .true.
+      logical :: do_timing = .false.
+      logical :: print_progress = .true.
+!     Verbosity for debugging. 0 is quiet.
+      integer :: verb = 0
+!     Seed for the intrinsic pseudo-random number generator. Zero (the default)
+!     leaves the compiler's default sequence untouched; any other value makes
+!     runs reproducible, which is what the CPU/GPU regression comparisons rely
+!     on when initial velocities have to be randomized.
+      integer :: random_seed_value = 0
+
+!     ==================================================================
+!     WHAT THE RUN COMPUTES
+!     ==================================================================
+      logical :: do_prediction = .false.
+      logical :: do_forces = .false.
+      logical :: do_derivatives = .false.
+      logical :: do_derivatives_fd = .false.
+      logical :: do_md = .false.
+      logical :: do_mc = .false.
+      logical :: do_nested_sampling = .false.
+      logical :: do_exp = .false.
+      logical :: do_xps = .false.
+!     Set from the .gap file, not the input file: true when at least one
+!     soap_turbo descriptor is flagged dipole_model
+      logical :: do_dipole = .false.
+
+!     ==================================================================
+!     NEIGHBOUR LISTS AND THE CORE POTENTIAL
+!     ==================================================================
+      real(dp) :: neighbors_buffer = 0.d0
+      real(dp) :: core_pot_cutoff = 1.d10
+      real(dp) :: core_pot_buffer = 1.d0
+
+!     ==================================================================
+!     MEMORY BUDGET AND SOAP BATCHING
+!     ==================================================================
+      real(dp) :: max_GBytes_per_process = 1.d0
+!     Did the input name max_Gbytes_per_process? gpu_memory_budget_init sizes
+!     that keyword from the node, and must not do so over a value someone chose
+!     deliberately.
+      logical :: max_Gbytes_set = .false.
+      real(dp) :: mem_fraction = 0.25d0
+
+!     ==================================================================
+!     MOLECULAR DYNAMICS
+!     ==================================================================
+      integer :: md_nsteps = 1
+      real(dp) :: md_step = 1.d0
+      character*16 :: optimize = "vv"
+      logical :: randomize_velocities = .false.
+
+!     Thermostat
+      character*32 :: thermostat = "none"
       real(dp) :: t_beg = 300.d0
       real(dp) :: t_end = 300.d0
       real(dp) :: tau_t = 100.d0
-      real(dp) :: md_step = 1.d0
-      real(dp) :: neighbors_buffer = 0.d0
-      real(dp) :: max_GBytes_per_process = 1.d0
+      real(dp), allocatable :: t_hold(:)
+      integer :: n_t_hold = 0
+
+!     Barostat
+      character*32 :: barostat = "none"
+      character*32 :: barostat_sym = "isotropic"
+      real(dp) :: p_beg = 1.d0
+      real(dp) :: p_end = 1.d0
+      real(dp) :: tau_p = 1000.d0
+      real(dp) :: gamma_p = 1.d0
+      logical :: scale_box = .false.
+      real(dp) :: box_scaling_factor(3, 3) = reshape([1.d0, 0.d0, 0.d0, 0.d0, 1.d0, 0.d0, 0.d0, 0.d0, 1.d0], [3, 3])
+
+!     Structural relaxation (optimize = "gd" and friends)
       real(dp) :: e_tol = 1.d-6
+      real(dp) :: f_tol = 0.01d0
+      real(dp) :: p_tol = 0.01d0
+      real(dp) :: max_opt_step = 0.1d0
+      real(dp) :: max_opt_step_eps = 0.05d0
+
+!     Variable time step
+      logical :: variable_time_step = .false.
+      real(dp) :: target_pos_step
+      real(dp) :: tau_dt = 100.d0
+
+!     ==================================================================
+!     NESTED SAMPLING
+!     ==================================================================
+      integer :: n_nested = 0
+      real(dp) :: p_nested = 0.d0
+      real(dp) :: nested_max_strain = 0.d0
+      real(dp) :: nested_max_volume_change = 0.d0
+      logical :: scale_box_nested = .false.
+
+!     ==================================================================
+!     MONTE CARLO
+!     ==================================================================
+      integer :: mc_nsteps = 1
+      character*32, allocatable :: mc_types(:)
+      real(dp), allocatable :: mc_acceptance(:)
+      integer :: n_mc_types = 0
+      real(dp) :: mc_move_max = 1.d0
+      real(dp) :: mc_lnvol_max = 0.01d0
+      real(dp) :: mc_min_dist = 0.2d0
+      real(dp) :: mc_max_dist = 100000000.d0
+      integer :: mc_max_insertion_trials = 500
+      logical :: mc_write_xyz = .false.
+      logical :: mc_hamiltonian = .false.
+      logical :: accessible_volume = .false.
+      character*16 :: mc_hybrid_opt = "vv"
+
+!     Grand canonical: chemical potentials per species
+      character*8, allocatable :: mc_species(:)
+      real(dp), allocatable :: mc_mu(:)
+      real(dp), allocatable :: mc_mu_acceptance(:)
+      integer :: n_mc_mu = 0
+
+!     Swap moves
+      character*8, allocatable :: mc_swaps(:)
+      integer, allocatable :: mc_swaps_id(:)
+      integer :: n_mc_swaps = 0
+
+!     Relaxation interleaved with the MC walk
+      logical :: mc_relax = .false.
+      integer :: mc_nrelax = 0
+      character*16 :: mc_relax_opt = "gd"
+      character*32, allocatable :: mc_relax_after(:)
+      integer :: n_mc_relax_after = 0
+
+!     Restricting moves to a polyhedron
+      integer :: mc_n_planes = 0
+      real(dp), allocatable :: mc_planes(:)
+      real(dp), allocatable :: mc_max_dist_to_planes(:)
+      logical :: mc_planes_restrict_to_polyhedron = .false.
+
+!     Reverse Monte Carlo against experimental data
+      logical :: mc_optimize_exp = .false.
+
+!     ==================================================================
+!     VAN DER WAALS
+!     ==================================================================
+      character*32 :: vdw_type = "none"
       real(dp) :: vdw_sr = 0.94d0
       real(dp) :: vdw_d = 20.d0
       real(dp) :: vdw_rcut = 25.d0
       real(dp) :: vdw_buffer = 1.d0
       real(dp) :: vdw_rcut_inner = 0.5d0
       real(dp) :: vdw_buffer_inner = 0.5d0
-      real(dp) :: tau_p = 1000.d0
-      real(dp) :: p_beg = 1.d0
-      real(dp) :: p_end = 1.d0
-      real(dp) :: gamma_p = 1.d0
-      real(dp) :: box_scaling_factor(3, 3) = reshape([1.d0, 0.d0, 0.d0, 0.d0, 1.d0, 0.d0, 0.d0, 0.d0, 1.d0], [3, 3])
-      real(dp) :: core_pot_cutoff = 1.d10
-      real(dp) :: core_pot_buffer = 1.d0
-      real(dp) :: tau_dt = 100.d0
-      real(dp) :: target_pos_step
-      real(dp) :: gamma0 = 0.01d0
-      real(dp) :: max_opt_step = 0.1d0
       real(dp) :: vdw_scs_rcut = 5.d0
-      real(dp) :: f_tol = 0.01d0
-      real(dp) :: p_tol = 0.01d0
-      real(dp) :: max_opt_step_eps = 0.05d0
-      real(dp) :: t_extra = 0.d0
-      real(dp) :: p_nested = 0.d0
-      real(dp) :: nested_max_strain = 0.d0
-      real(dp) :: nested_max_volume_change = 0.d0
-      real(dp) :: mc_move_max = 1.d0
-      real(dp) :: mc_lnvol_max = 0.01d0
-      real(dp) :: mc_min_dist = 0.2d0
-      real(dp) :: mc_max_dist = 100000000.d0
-      real(dp) :: xps_sigma = 0.4d0
-      real(dp) :: mc_reverse_lambda = 0.d0
-      real(dp) :: xrd_wavelength = 1.5405981d0
-      real(dp) :: xrd_damping = 0.0d0
-      real(dp) :: nd_wavelength = 1.5405981d0
-      real(dp) :: xrd_alpha = 1.01d0
-!     Degree of polarization of the incident beam in the Lorentz-polarization
-!     factor (1 + P cos^2 2theta) / (sin^2 theta cos theta). P = 1 is an
-!     unpolarized source; a graphite monochromator at 2theta_M gives
-!     P = cos^2(2theta_M).
-      real(dp) :: xrd_lp_polarization = 1.d0
-!     Below this |sin(theta)| the Lorentz factor 1/(sin^2 theta cos theta) is
-!     unusable, so the whole factor is set to zero there rather than blown up.
-      real(dp) :: xrd_lp_sin_theta_min = 1.d-3
-      real(dp) :: xrd_rcut = 4.d0
-      real(dp) :: nd_rcut = 4.d0
-      real(dp) :: q_range_min = 1.0
-      real(dp) :: q_range_max = 5.d0
-      real(dp) :: r_range_min = 1.0
-      real(dp) :: r_range_max = 5.d0
-      real(dp) :: pair_distribution_rcut = 4.d0
-      real(dp) :: pair_distribution_kde_sigma = 0.d0
-      real(dp) :: gpu_max_batch_size = 1.d0
-      real(dp) :: mem_fraction = 0.25d0
-      real(dp) :: poly_cut_xmin = 3.d0
-      real(dp) :: poly_cut_xmax = 10.d0
+      real(dp), allocatable :: vdw_c6_ref(:)
+      real(dp), allocatable :: vdw_r0_ref(:)
+      real(dp), allocatable :: vdw_alpha0_ref(:)
+      logical :: vdw_hirsh_grad = .true.
+      logical :: print_vdw_forces = .false.
+
+!     Many-body dispersion
       real(dp) :: vdw_mbd_rcut = 15.d0
       real(dp) :: vdw_mbd_rcut2 = 8.d0
       real(dp) :: vdw_2b_rcut = 15.d0
@@ -285,142 +364,102 @@ module types
       real(dp) :: vdw_loc_rcut = 5.d0
       real(dp) :: vdw_d_mbd = 6.d0
       real(dp) :: vdw_sr_mbd = 0.83d0
+      integer :: vdw_mbd_norder = 6
+      integer :: vdw_mbd_nfreq = 13
+      integer :: mbd_correction_freq = 100
+      logical :: vdw_mbd_grad = .true.
+      logical :: vdw_mbd_cent_appr = .true.
+      logical :: vdw_polynomial = .false.
+      real(dp) :: poly_cut_xmin = 3.d0
+      real(dp) :: poly_cut_xmax = 10.d0
+      logical :: do_nnls = .false.
+
+!     ==================================================================
+!     ELECTROSTATICS
+!     ==================================================================
+      character*32 :: estat_method = "none"
+      type(options_estat) :: estat_options
       real(dp) :: estat_rcut = 10.d0
-      real(dp) :: estat_dsf_alpha = -1.d0
       real(dp) :: estat_rcut_inner = 4.0d0
       real(dp) :: estat_inner_width = 1.d0
-!     Did the input name max_Gbytes_per_process? gpu_memory_budget_init sizes
-!     that keyword from the node, and must not do so over a value someone chose
-!     deliberately.
-      logical :: max_Gbytes_set = .false.
-      integer :: mbd_correction_freq = 100
-      integer :: vdw_mbd_nfreq = 13
-      integer :: vdw_mbd_norder = 6
-      logical :: vdw_mbd_grad = .true.
-      logical :: vdw_hirsh_grad = .true.
-      logical :: vdw_polynomial = .false.
-      logical :: do_nnls = .false.
-      logical :: vdw_mbd_cent_appr = .true.
+      real(dp) :: estat_dsf_alpha = -1.d0
+      logical :: print_estat_forces = .false.
 
+!     ==================================================================
+!     LOCAL PROPERTIES
+!     ==================================================================
+      integer :: n_local_properties = 0
+      character*1024, allocatable :: compute_local_properties(:)
+      logical, allocatable :: write_local_properties(:)
+
+!     ==================================================================
+!     EXPERIMENTAL DATA (MAD): SHARED
+!     ==================================================================
+      integer :: n_exp = 0
+      type(exp_data_container), allocatable :: exp_data(:)
+      character*32 :: exp_similarity_type = "squared_diff"
+      logical :: exp_forces = .false.
+      logical :: exp_energies = .true.
+      real(dp), allocatable :: exp_energy_scales(:)
+      real(dp), allocatable :: exp_energy_scales_initial(:)
+      real(dp), allocatable :: exp_energy_scales_final(:)
+      integer :: n_moments = 0
+      logical :: write_exp = .true.
+
+!     ==================================================================
+!     XPS
+!     ==================================================================
+      type(exp_data_container) :: xps
+      real(dp) :: xps_sigma = 0.4d0
       real(dp) :: xps_e_min = 280.0
       real(dp) :: xps_e_max = 300.0
       integer :: xps_n_samples = 200
-      logical :: do_xps = .false.
 
-      integer :: md_nsteps = 1
-      integer :: mc_nsteps = 1
-      integer :: write_xyz = 0
-      integer :: write_thermo = 1
-      integer :: which_atom = 0
-      integer :: n_mc_types = 0
-      integer :: n_nested = 0
-      integer :: mc_idx = 1
-      integer :: mc_nrelax = 0
-      integer :: n_local_properties = 0
-      integer :: n_moments = 0
-      integer :: n_mc_swaps = 0
-      integer :: xps_idx
-      integer :: xrd_idx
-      integer :: saxs_idx
-      integer :: pdf_idx
-      integer :: sf_idx
-      integer :: nd_idx
-      integer :: n_exp = 0
-      integer :: pair_distribution_n_samples = 200
-      integer :: structure_factor_n_samples = 200
-      integer :: xrd_n_samples = 200
-      integer :: nd_n_samples = 200
-      integer :: verb = 0
-      integer :: n_t_hold = 0
-      integer :: n_exp_opt = 0
-      integer :: n_mc_relax_after = 0
-      integer :: n_mc_mu = 0
-      integer :: mc_max_insertion_trials = 500
-      integer :: gpu_n_batches = 1
-      integer :: n_batches = 0
-!     Seed for the intrinsic pseudo-random number generator. Zero (the default)
-!     leaves the compiler's default sequence untouched; any other value makes
-!     runs reproducible, which is what the CPU/GPU regression comparisons rely
-!     on when initial velocities have to be randomized.
-      integer :: random_seed_value = 0
-      integer, allocatable :: mc_swaps_id(:)
-
-      character*1024 :: atoms_file
-      character*1024, allocatable :: compute_local_properties(:)
-      character*32 :: vdw_type = "none"
-      character*32, allocatable :: mc_types(:)
-      character*32, allocatable :: mc_relax_after(:)
-      character*8, allocatable :: species_types(:)
-      character*8, allocatable :: mc_swaps(:)
-      character*8, allocatable :: mc_species(:)
-      character*16 :: optimize = "vv"
-      character*16 :: mc_relax_opt = "gd"
-      character*16 :: mc_hybrid_opt = "vv"
-      character*32 :: estat_method = "none"
-      type(options_estat) :: estat_options
-      character*32 :: barostat = "none"
-      character*32 :: thermostat = "none"
-      character*32 :: barostat_sym = "isotropic"
-      character*32 :: xps_force_type = "similarity"
-      character*32 :: exp_similarity_type = "squared_diff"
-      character*32 :: xrd_method = "xrd"
-      character*32 :: q_units = "q"
-      character*32 :: xrd_output = "xrd"
-      character*32 :: sf_output = "xrd"
-      character*32 :: nd_output = "xrd"
-      character*32 :: pair_distribution_output = "pdf"
-      logical :: do_md = .false.
-      logical :: do_mc = .false.
-      logical :: do_prediction = .false.
-      logical :: do_forces = .false.
-      logical :: do_derivatives = .false.
-      logical :: do_derivatives_fd = .false.
-!     Set from the .gap file, not the input file: true when at least one
-!     soap_turbo descriptor is flagged dipole_model
-      logical :: do_dipole = .false.
-      logical :: write_soap = .false.
-      logical :: write_derivatives = .false.
-      logical :: do_timing = .false.
-      logical :: all_atoms = .true.
-      logical :: print_progress = .true.
-      logical :: scale_box = .false.
-      logical :: write_lv = .false.
-      logical :: write_forces = .true.
-      logical :: write_velocities = .true.
-      logical :: write_hirshfeld_v = .true.
-      logical :: write_virial = .true.
-      logical :: write_pressure = .true.
-      logical :: write_stress = .true.
-      logical :: write_local_energies = .true.
-      logical :: write_property(1:11) = .true.
-      logical :: write_array_property(1:8) = .true.
-      logical :: write_masses = .false.
-      logical :: write_fixes = .true.
-      logical :: variable_time_step = .false.
-      logical :: do_nested_sampling = .false.
-      logical :: scale_box_nested = .false.
-      logical :: mc_write_xyz = .false.
-      logical :: do_exp = .false.
-      logical :: mc_relax = .false.
-      logical :: mc_optimize_exp = .false.
-      logical :: exp_forces = .false.
-      logical :: exp_energies = .true.
-      logical :: print_lp_forces = .false.
-      logical :: print_vdw_forces = .false.
-      logical :: print_estat_forces = .false.
-      logical :: mc_hamiltonian = .false.
-      logical :: accessible_volume = .false.
-      logical :: mc_reverse = .false.
-      logical :: xrd_iwasa = .true.
+!     ==================================================================
+!     PAIR DISTRIBUTION
+!     ==================================================================
+      logical :: do_pair_distribution = .false.
+      logical :: write_pair_distribution = .false.
       logical :: pair_distribution_partial = .true.
+      character*32 :: pair_distribution_output = "pdf"
+      integer :: pair_distribution_n_samples = 200
+      real(dp) :: pair_distribution_rcut = 4.d0
+      real(dp) :: pair_distribution_kde_sigma = 0.d0
+      real(dp) :: r_range_min = 1.0
+      real(dp) :: r_range_max = 5.d0
+
+!     ==================================================================
+!     STRUCTURE FACTOR
+!     ==================================================================
+      logical :: do_structure_factor = .false.
+      logical :: write_structure_factor = .false.
       logical :: structure_factor_from_pdf = .true.
       logical :: structure_factor_window = .true.
-      logical :: write_pair_distribution = .false.
-      logical :: write_structure_factor = .false.
-      logical :: do_pair_distribution = .false.
-      logical :: do_structure_factor = .false.
+      logical :: structure_factor_matrix = .true.
+      logical :: structure_factor_matrix_forces = .true.
+      character*32 :: sf_output = "xrd"
+      integer :: structure_factor_n_samples = 200
+      real(dp) :: q_range_min = 1.0
+      real(dp) :: q_range_max = 5.d0
+      character*32 :: q_units = "q"
+
+!     ==================================================================
+!     X-RAY AND NEUTRON DIFFRACTION
+!     ==================================================================
       logical :: do_xrd = .false.
+      logical :: write_xrd = .false.
+      character*32 :: xrd_method = "xrd"
+      character*32 :: xrd_output = "xrd"
+      integer :: xrd_n_samples = 200
+      real(dp) :: xrd_wavelength = 1.5405981d0
+      real(dp) :: xrd_rcut = 4.d0
+      real(dp) :: xrd_alpha = 1.01d0
+      real(dp) :: xrd_damping = 0.0d0
       logical :: do_nd = .false.
+      logical :: write_nd = .false.
+      character*32 :: nd_output = "xrd"
+      integer :: nd_n_samples = 200
+      real(dp) :: nd_rcut = 4.d0
 !     Compute the XRD/ND pattern from the N^2 Debye sum over atomic positions
 !     instead of Fourier-transforming the partial pair distributions. The two
 !     routes answer the same question by different approximations: the pdf/sf
@@ -433,55 +472,72 @@ module types
 !     factor. Only the Debye route applies it, where the energy and the
 !     gradient stay consistent because it is one multiplicative weight per q.
       logical :: xrd_lorentz_polarization = .false.
-!     Whether the deck asked for the pdf/sf in as many words. The XRD keywords
-!     switch both on as a side effect, and xrd_debye has to be able to tell a
-!     side effect it may undo from a request it may not.
-      logical :: do_pair_distribution_explicit = .false.
-      logical :: do_structure_factor_explicit = .false.
-      logical :: write_xrd = .false.
-      logical :: write_nd = .false.
-      logical :: structure_factor_matrix = .true.
-      logical :: structure_factor_matrix_forces = .true.
-      logical :: write_exp = .true.
-      logical :: valid_pdf = .false.
-      logical :: valid_sf = .false.
-      logical :: valid_xrd = .false.
-      logical :: valid_nd = .false.
-      logical :: mc_planes_restrict_to_polyhedron = .false.
-      logical :: randomize_velocities = .false.
-      logical :: gpu_low_memory = .true.
+!     Degree of polarization of the incident beam in the Lorentz-polarization
+!     factor (1 + P cos^2 2theta) / (sin^2 theta cos theta). P = 1 is an
+!     unpolarized source; a graphite monochromator at 2theta_M gives
+!     P = cos^2(2theta_M).
+      real(dp) :: xrd_lp_polarization = 1.d0
+!     Below this |sin(theta)| the Lorentz factor 1/(sin^2 theta cos theta) is
+!     unusable, so the whole factor is set to zero there rather than blown up.
+      real(dp) :: xrd_lp_sin_theta_min = 1.d-3
+!     Deprecated, read and ignored.
+      logical :: xrd_iwasa = .true.
+
+!     ==================================================================
+!     GPU
+!     ==================================================================
+!     Accepted by the CPU build too, so that one input deck runs on both.
       logical :: gpu_batched = .true.
+      logical :: gpu_low_memory = .true.
+      integer :: gpu_n_batches = 1
+      integer :: n_batches = 0
+      real(dp) :: gpu_max_batch_size = 1.d0
 
-      integer :: mc_n_planes = 0
-      real(dp), allocatable :: mc_max_dist_to_planes(:)
-      real(dp), allocatable :: mc_planes(:)
+!     ==================================================================
+!     OUTPUT
+!     ==================================================================
+      integer :: write_xyz = 0
+      integer :: write_thermo = 1
+      logical :: write_soap = .false.
+      logical :: write_derivatives = .false.
+      logical :: write_lv = .false.
+      logical :: write_forces = .true.
+      logical :: write_velocities = .true.
+      logical :: write_virial = .true.
+      logical :: write_pressure = .true.
+      logical :: write_stress = .true.
+      logical :: write_local_energies = .true.
+      logical :: write_masses = .false.
+      logical :: write_fixes = .true.
+!     write_forces and the rest above are the user-facing switches;
+!     these two arrays are what xyz.f90 actually reads, filled from them
+!     once read_input_file has finished.
+      logical :: write_property(1:11) = .true.
+      logical :: write_array_property(1:8) = .true.
 
-      logical, allocatable :: write_local_properties(:)
-      type(exp_data_container), allocatable :: exp_data(:)
-      type(exp_data_container) :: xps
-      type(exp_pred_container) :: pair_distribution_params
-      type(exp_pred_container) :: structure_factor_params
-      type(exp_pred_container) :: xrd_params
-
-     !! ------- option for doing simulation with adaptive time step
+!     ==================================================================
+!     ADAPTIVE TIME STEP
+!     ==================================================================
       logical :: adaptive_time = .false.
       integer :: adapt_tstep_interval = 1
       real(dp) :: adapt_tmin = 1.0d-3
       real(dp) :: adapt_tmax = 1.0d0
       real(dp) :: adapt_xmax = 1.0d-2
       real(dp) :: adapt_emax = 1.0d+1
-     !! ----------------------------------------------                ******** until here for adaptive time
 
-     !! ------- option for radiation cascade simulation with electronic stopping
+!     ==================================================================
+!     RADIATION CASCADE: ELECTRONIC STOPPING
+!     ==================================================================
       logical :: electronic_stopping = .false.
       real(dp) :: eel_cut = 1.0d0
       integer :: eel_freq_out = 1
       character*1024 :: estop_filename = 'NULL'
-     !! ----------------------------------------------                ******** until here for electronic stopping
 
-     !! ------- option for non-adiabatic processes of energy exchange through EPH model
-
+!     ==================================================================
+!     NON-ADIABATIC ENERGY EXCHANGE: EPH MODEL
+!     ==================================================================
       logical :: nonadiabatic_processes = .false.
+      integer :: model_eph = 1
       integer :: eph_fdm_option = 1
       integer :: eph_friction_option = 1
       integer :: eph_random_option = 1
@@ -492,25 +548,44 @@ module types
       integer :: eph_gsx = 1
       integer :: eph_gsy = 1
       integer :: eph_gsz = 1
-      integer :: model_eph = 1
       real(dp) :: eph_rho_e = 1.0
       real(dp) :: eph_C_e = 1.0
       real(dp) :: eph_kappa_e = 1.0
       real(dp) :: eph_Ti_e = 300.0
+      real(dp) :: eph_E_prev_time = 0.0d0
+      real(dp) :: eph_md_prev_time = 0.0d0
+      real(dp), dimension(6) :: eph_box_limits = (/-100.0, 100.0, -100.0, 100.0, -100.0, 100.0/)
       real(dp) :: in_x0 = -100.0
       real(dp) :: in_x1 = 100.0
       real(dp) :: in_y0 = -100.0
       real(dp) :: in_y1 = 100.0
       real(dp) :: in_z0 = -100.0
       real(dp) :: in_z1 = 100.0
-      real(dp) :: eph_E_prev_time = 0.0d0
-      real(dp) :: eph_md_prev_time = 0.0d0
-      real(dp), dimension(6) :: eph_box_limits = (/-100.0, 100.0, -100.0, 100.0, -100.0, 100.0/)
       character*128 :: eph_Tinfile = 'NULL'
       character*128 :: eph_Toutfile = 'NULL'
       character*128 :: eph_betafile = 'NULL'
 
-     !! ---------------------------------------------                ******** until here for electronic stopping based on EPH model
+!     ==================================================================
+!     INTERNAL: set by read_files from the keywords above, never read
+!     directly from the input file
+!     ==================================================================
+!     Index into exp_data of each observable, or 0 when that observable
+!     has no data file
+      integer :: xps_idx
+      integer :: xrd_idx
+      integer :: pdf_idx
+      integer :: sf_idx
+      integer :: nd_idx
+!     An observable is "valid" when it was both requested and backed by data
+      logical :: valid_pdf = .false.
+      logical :: valid_sf = .false.
+      logical :: valid_xrd = .false.
+      logical :: valid_nd = .false.
+!     Whether the deck asked for the pdf/sf in as many words. The XRD keywords
+!     switch both on as a side effect, and xrd_debye has to be able to tell a
+!     side effect it may undo from a request it may not.
+      logical :: do_pair_distribution_explicit = .false.
+      logical :: do_structure_factor_explicit = .false.
 
    end type input_parameters
 

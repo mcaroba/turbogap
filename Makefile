@@ -30,7 +30,7 @@ SRC := printing.f90 error.f90 read_utils.f90 timing.f90 misc.f90 electrostatics.
 
 # kinds must build before everything, including SRC_STOP, so it gets its own
 # group placed first in every prerequisite list.
-SRC_BASE := kinds.f90
+SRC_BASE := kinds.f90 keyword_help.f90
 SRC_TP_BT := resamplekin.f90
 SRC_ST := soap_turbo_functions.f90 soap_turbo_radial.f90 soap_turbo_angular.f90 \
           soap_turbo.f90 soap_turbo_compress.f90
@@ -47,11 +47,23 @@ PROG := $(addprefix $(BIN_DIR)/,$(PROGRAMS))
 
 .SUFFIXES:
 .SUFFIXES: .f90 .o
-.PHONY: default all programs clean deepclean libturbogap
+.PHONY: default all programs clean deepclean libturbogap docs check-docs
 
 default: libturbogap programs
 
 all: default
+
+# Regenerate the input-keyword reference from the !> blocks above each keyword
+# in src/read_files.f90: docs/keywords.md, docs/keywords.html and
+# src/keyword_help.f90, the module `turbogap --help` prints from. Run after
+# adding, renaming or documenting a keyword.
+docs:
+	python3 tools/keyword_docs.py
+
+# Fail if a keyword has no !> block or one of those three outputs is stale.
+# Also runs from .pre-commit-config.yaml.
+check-docs:
+	python3 tools/keyword_docs.py --check
 
 clean:
 	rm -rf $(OBJ_BASE) $(OBJ_STOP) $(OBJ_TP_BT) $(OBJ_ST) $(OBJ) $(INC_DIR)/*.mod $(PROG)
