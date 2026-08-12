@@ -49,6 +49,32 @@ associative and rank counts legitimately differ in the last digit or two.
 knows what the code did before, and rebuilding it from the branch under test
 would make every case pass vacuously.
 
+The binary is not committed (1.6 MB, architecture-specific, and a stale one
+committed by accident would make the whole suite pass vacuously), so a fresh
+checkout has to build it:
+
+```sh
+tests/regression/make_baseline.sh          # no-op if the binary is already there
+TURBOGAP_ARCH=CSC-Mahti_gfortran_openblas_mpi tests/regression/make_baseline.sh
+```
+
+It builds `baseline/COMMIT` in a detached worktree, so the branch you are on is
+never touched, and takes under a minute. It is **not** how you run the suite —
+that is `run.sh`.
+
+Two ways it fails, both with the fix in the message:
+
+- *`commit ... is not in this clone`* — the pre-refactor commit is not in your
+  object store. `git fetch --unshallow` if the clone is shallow, otherwise
+  `git fetch origin`; likewise `git -C src/soap_turbo fetch origin` for the
+  submodule. Before this check the failure was git's bare
+  `fatal: invalid reference: <sha>`, which named neither which commit nor what
+  to do.
+- *`could not determine the arch`* — the script follows whatever arch the
+  working tree's `Makefile` is configured with, and the current Makefile says
+  it through `TURBOGAP_ARCH ?=` while the baseline commit's says it in the
+  `include` line. Set `TURBOGAP_ARCH` explicitly to settle it.
+
 ## Cases
 
 | case                     | ranks | covers                                                                   |
