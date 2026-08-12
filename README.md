@@ -202,6 +202,10 @@ reasonable version of python. This can be done using the `source
 tools/setup_dev_env.sh` which will install one for you using `uv` which will be
 placed in `$HOME/.venvs`
 
+To add new keywords in to TurboGAP, please follow the reference for adding them
+in `docs/keywords-howto.md`. Following this format allows for automated
+documentation and help information for usage.
+
 ### Debugging
 
 Debug flags can be enabled by exporting
