@@ -11,6 +11,7 @@ file. Defects fixed alongside it are in `tests/regression/KNOWN_ISSUES.md`
 | [Chemical potential reference](#chemical-potential-reference) | new `mc_mu_reference` |
 | [Molecular grand-canonical moves](#molecular-grand-canonical-moves) | new `mc_molecule_files` |
 | [Readable input echo](#readable-input-echo) | output format change |
+| [Timing report](#timing-report) | it now adds up |
 | [New test suites](#new-test-suites) | `fd_gap`, `mc_mpi_neighbors`, `velocity_draw` |
 
 ---
@@ -203,6 +204,59 @@ list-valued: `e0`, `mc_types`, `mc_acceptance`, `mc_mu`, `mc_species`,
 `exp_energy_scales`, `vdw_c6_ref` and the rest. The `.gap` potential-file
 parser still does not echo its keywords; that is a separate, much larger,
 stream.
+
+---
+
+## Timing report
+
+The end-of-run report now accounts for the run. It used to leave about **0.42
+seconds in `Miscellaneous` whatever the run was doing** — a 1.6 s prediction and
+a 31.8 s Monte Carlo walk both reported 0.42 s, so it was plainly a setup cost,
+but no bucket named it.
+
+```
+ *          Setup:        0.904 seconds |
+     - input+pot.:        0.568 seconds |
+     -  MPI setup:        0.000 seconds |
+ * Read XYZ files:        0.030 seconds |
+ * Neighbor lists:        0.011 seconds |
+ *  GAP desc/pred:        0.775 seconds |
+     - soap_turbo:        0.747 seconds |
+     -         2b:        0.019 seconds |
+     -         3b:        0.008 seconds |
+     -   core_pot:        0.000 seconds |
+ * Electrostatics:        0.000 seconds |
+ *  MPI comms.   :        0.000 seconds |
+                                        |
+ *  Accounted for:        1.720 seconds |
+ *  Miscellaneous:        0.008 seconds |
+ *     Total time:        1.728 seconds |
+```
+
+What changed:
+
+- **`Setup` is a new bucket** covering everything before the first pass of the
+  main loop, with the input and potential files reported under it. That is where
+  the missing 0.42 s was: `gpu_memory_budget_init`, the option printout and the
+  pre-loop allocation were measured by nothing.
+- **`MPI setup` is split out of `MPI misc.`** The three broadcasts inside
+  `read_input_and_gap_files` charged the same bucket as the per-step
+  communication, so they were inside `Setup` *and* summed as a parent — counted
+  twice.
+- **`Accounted for` is printed** beside `Miscellaneous` and `Total time`, so the
+  arithmetic is visible instead of something you have to add up yourself.
+- **`Electrostatics` is printed at last.** It has always been in the sum.
+- **`vdw` is printed as the parent it is**, not indented under GAP as though it
+  were one of the GAP children.
+
+Miscellaneous is now 0.004–0.03 s across prediction, MD, MC and 4-rank runs.
+`KNOWN_ISSUES.md` #3 has the before/after table.
+
+Also gone: every run wrote a stray **`fort.90`**. A leftover debug loop in the
+cleanup section dumped `forces_vdw` to unit 90 with no `open`, unguarded and
+unconditional — a copy of the `print_vdw_forces` block above it that escaped
+when that one was made optional. It also read `forces_vdw` without checking it
+was allocated.
 
 ---
 

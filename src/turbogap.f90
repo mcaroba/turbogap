@@ -438,6 +438,13 @@ program turbogap
    ! Start recording the time
    call get_time(time1)
    time3 = time1
+!  Everything before the first pass of the main loop: the input file, the
+!  potential files, and the allocation and broadcast that follow them. Without
+!  this bucket the pre-loop cost fell into Miscellaneous, which is why a run
+!  whose real work took 1.2 s reported 0.4 s "miscellaneous" and a 31 s run
+!  reported the same 0.4 s -- a constant, and therefore obviously a setup cost,
+!  but not one the report could name.
+   call time_start(time%setup)
    ! Start random seed
    call srand(int(time1*1000))
    !**************************************************************************
@@ -651,6 +658,8 @@ program turbogap
    perform%xrd_forces = perform%xrd .and. params%exp_forces
    perform%nd_forces = perform%nd .and. params%exp_forces
    perform%xps_forces = valid_xps .and. params%exp_forces
+
+   call time_end(time%setup)
 
    do while (repeat_xyz .or. (params%do_md .and. md_istep < params%md_nsteps) &
              .or. (params%do_mc .and. mc_istep < params%mc_nsteps))
@@ -3171,7 +3180,11 @@ program turbogap
          end if
 
          write (*, *) '                                       |'
-         write (*, '(A,F13.3,A)') ' *     Read input:', time%read_input(3), ' seconds |'
+         write (*, '(A,F13.3,A)') ' *          Setup:', time%setup(3), ' seconds |'
+         write (*, '(A,F13.3,A)') '     - input+pot.:', time%read_input(3), ' seconds |'
+#ifdef _MPIF90
+         write (*, '(A,F13.3,A)') '     -  MPI setup:', time%mpi_setup(3), ' seconds |'
+#endif
          write (*, '(A,F13.3,A)') ' * Read XYZ files:', time%read_xyz(3), ' seconds |'
          write (*, '(A,F13.3,A)') ' * Neighbor lists:', time%neigh(3), ' seconds |'
          write (*, '(A,F13.3,A)') ' *  GAP desc/pred:', time%gap(3), ' seconds |'
@@ -3179,7 +3192,12 @@ program turbogap
          write (*, '(A,F13.3,A)') '     -         2b:', time%gap_2b(3), ' seconds |'
          write (*, '(A,F13.3,A)') '     -         3b:', time%gap_3b(3), ' seconds |'
          write (*, '(A,F13.3,A)') '     -   core_pot:', time%gap_core_pot(3), ' seconds |'
-         write (*, '(A,F13.3,A)') '     -        vdw:', time%vdw(3), ' seconds |'
+!       vdw is a parent, not one of the GAP children above: compute_vdw runs
+!       outside the time%gap region and sum_times adds it in its own right.
+!       Printing it indented under GAP said otherwise.
+         if (params%vdw_type /= "none") then
+            write (*, '(A,F13.3,A)') ' *            vdw:', time%vdw(3), ' seconds |'
+         end if
          if (valid_xps .or. params%do_pair_distribution .or. params&
               &%do_structure_factor .or. params%do_xrd .or. params%do_nd) write (*, '(A&
               &,F13.3,A)') ' *  Exp. pred.   :', time%pdf(3) + time%sf(3) + time%xrd(3) + time%nd(3), ' seconds&
@@ -3191,6 +3209,9 @@ program turbogap
          if (params%do_xrd) write (*, '(A,F13.3,A)') '     -        xrd:', time%xrd(3), ' seconds |'
          if (params%do_nd) write (*, '(A,F13.3,A)') '     -         nd:', time%nd(3), ' seconds |'
 
+         if (do_electrostatics) then
+            write (*, '(A,F13.3,A)') ' * Electrostatics:', time%estat(3), ' seconds |'
+         end if
          if (params%do_md) then
             write (*, '(A,F13.3,A)') ' *  MD algorithms:', time%md(3), ' seconds |'
          end if
@@ -3209,10 +3230,17 @@ program turbogap
 !       subtract time%gap and the mpi_ef reduce nested inside it and print a
 !       negative number.  sum_times owns the list now (src/timing.f90), so the
 !       set summed here and the set declared as parents there cannot disagree.
+!
+!       Accounted-for is printed beside it so the arithmetic is visible: the
+!       three numbers below have to add up, and a reader can see at a glance how
+!       much of the run the buckets actually name.  A large Miscellaneous is a
+!       statement that something real is not being measured -- which is how the
+!       setup bucket above came to exist.
          time%total(3) = time2 - time3
-         write (*, '(A,F13.3,A)') ' *  Miscellaneous:', time%total(3) - sum_times(time), ' seconds |'
          write (*, *) '                                       |'
-         write (*, '(A,F13.3,A)') ' *     Total time:', time2 - time3, ' seconds |'
+         write (*, '(A,F13.3,A)') ' *  Accounted for:', sum_times(time), ' seconds |'
+         write (*, '(A,F13.3,A)') ' *  Miscellaneous:', time%total(3) - sum_times(time), ' seconds |'
+         write (*, '(A,F13.3,A)') ' *     Total time:', time%total(3), ' seconds |'
          write (*, *) '                                       |'
          write (*, *) '.......................................|'
 #ifdef _MPIF90
@@ -3247,11 +3275,6 @@ program turbogap
    if (allocated(this_energies_sf)) deallocate (this_energies_sf)
    if (allocated(this_energies_xrd)) deallocate (this_energies_xrd)
    if (allocated(this_energies_nd)) deallocate (this_energies_nd)
-
-   do i = 1, n_sites
-      write (90, "(F20.8, 1X, F20.8, 1X, F20.8)") &
-         forces_vdw(1, i), forces_vdw(2, i), forces_vdw(3, i)
-   end do
 
    if (allocated(forces)) deallocate (forces)
    if (allocated(forces_soap)) deallocate (forces_soap)

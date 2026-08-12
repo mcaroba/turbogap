@@ -110,12 +110,57 @@ section. The correction stays off.)*
 
 ---
 
-## 3. Negative "Miscellaneous" time in the timing report — OPEN, cosmetic
+## 3. The timing report did not account for the run — FIXED
 
-The end-of-run summary prints e.g. `Miscellaneous: -3.252 seconds`, because
-that bucket is total minus the sum of the measured buckets and some buckets are
-double-counted. Harmless, but it makes the printed totals useless for judging
-refactor performance — use the wall-clock `run.sh` reports instead.
+Originally: the end-of-run summary printed e.g. `Miscellaneous: -3.252
+seconds`, because that bucket is total minus the sum of the measured buckets
+and some buckets were double-counted. `sum_times` in `src/timing.f90` fixed the
+double-counting by making one place own the list of parent buckets.
+
+**Reopened and closed properly 2026-08-12.** The sign was right by then but the
+report still did not add up: every run reported about **0.42 s** of
+Miscellaneous, whatever it was doing. A 1.6 s prediction and a 31.8 s Monte
+Carlo walk both reported 0.42 s — a constant, and therefore a setup cost, but
+not one any bucket named.
+
+Two things were wrong.
+
+1. **Everything before the main loop but outside `read_input` was unmeasured** —
+   `gpu_memory_budget_init`, the option printout, the pre-loop allocation. A new
+   `setup` parent now spans `time3` to the top of the loop, with `read_input`
+   demoted to a child reported under it. On the 512-atom prediction that is
+   0.900 s total against 0.501 s of input and potential files: the other 0.4 s
+   was the whole of the old Miscellaneous.
+
+2. **`time%mpi` was used both nested and standalone.** The three broadcasts in
+   `read_input_and_gap_files` charged the same bucket as the per-step
+   communication, so they sat inside `read_input` *and* were summed as a
+   parent — counted twice. They now have their own `mpi_setup`, a child of
+   setup.
+
+After both:
+
+| | Miscellaneous before | after |
+| --- | --- | --- |
+| `xps_predict` | 0.418 s | **0.004 s** |
+| `xps_predict_mpi4` | 0.317 s | **0.004 s** |
+| `xrd_mad` | 0.430 s | **0.023 s** |
+| `gcmc_xps` | 0.436 s | **0.027 s** |
+
+The report also now prints an `Accounted for` line beside `Miscellaneous` and
+`Total time`, so the arithmetic is visible rather than something a reader has
+to add up; `Electrostatics`, which `sum_times` has always included, is printed
+at last; and `vdw` is printed as the parent it is instead of indented under GAP
+as though it were one of the GAP children.
+
+Timings are printed and never written to any file `tests/regression/run.sh`
+compares, so none of this can move a result.
+
+**Found alongside it: a stray `fort.90`.** Every run wrote one, from a leftover
+debug loop in the cleanup section that dumped `forces_vdw` to unit 90 with no
+`open` — a copy of the `print_vdw_forces` block above it that escaped when that
+block was made conditional. Unguarded and unconditional, and it read
+`forces_vdw` without checking it was allocated. Removed.
 
 ---
 

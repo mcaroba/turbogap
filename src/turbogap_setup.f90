@@ -314,7 +314,7 @@ contains
          !   THIS CHUNK HERE DISTRIBUTES THE INPUT DATA AMONG ALL THE PROCESSES
          !   Broadcast number of descriptors to other processes
 #ifdef _MPIF90
-         call time_start(time%mpi)
+         call time_start(time%mpi_setup)
          call mpi_bcast(n_soap_turbo, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
          call mpi_bcast(n_distance_2b, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
          call mpi_bcast(n_angle_3b, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
@@ -336,7 +336,7 @@ contains
               & MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
 
          !   Processes other than 0 need to allocate the data structures on their own
-         call time_end(time%mpi)
+         call time_end(time%mpi_setup)
          allocate (n_species_mpi(1:n_soap_turbo))
          allocate (n_sparse_mpi_soap_turbo(1:n_soap_turbo))
          allocate (dim_mpi(1:n_soap_turbo))
@@ -391,7 +391,7 @@ contains
             end if
 
          END IF
-         call time_start(time%mpi)
+         call time_start(time%mpi_setup)
          call mpi_bcast(n_species_mpi, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
          call mpi_bcast(n_sparse_mpi_soap_turbo, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
          call mpi_bcast(dim_mpi, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
@@ -420,7 +420,7 @@ contains
          call mpi_bcast(n_sparse_mpi_angle_3b, n_angle_3b, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
          call mpi_bcast(n_mpi_core_pot, n_core_pot, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
          call mpi_bcast(compress_P_nonzero_mpi, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-         call time_end(time%mpi)
+         call time_end(time%mpi_setup)
 
          IF (rank /= 0) THEN
             call allocate_soap_turbo_hypers(n_soap_turbo, n_species_mpi, n_sparse_mpi_soap_turbo, dim_mpi, &
@@ -446,7 +446,7 @@ contains
          !   type) at once via broadcasting, to reduce the total number of MPI calls to the minimum. This will be
          !   done at the module's subroutine's level.
          !   soap_turbo allocatable structures
-         call time_start(time%mpi)
+         call time_start(time%mpi_setup)
          do i = 1, n_soap_turbo
             n_sp = soap_turbo_hypers(i)%n_species
             call mpi_bcast(soap_turbo_hypers(i)%nf(1:n_sp), n_sp, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
@@ -592,7 +592,7 @@ contains
             call mpi_bcast(core_pot_hypers(i)%species1, 8, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
             call mpi_bcast(core_pot_hypers(i)%species2, 8, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
          end do
-         call time_end(time%mpi)
+         call time_end(time%mpi_setup)
          !   Clean up
          deallocate (n_species_mpi, n_sparse_mpi_soap_turbo, dim_mpi, compress_soap_mpi, n_sparse_mpi_distance_2b, &
                     n_sparse_mpi_angle_3b, n_mpi_core_pot, compress_P_nonzero_mpi, n_local_properties_mpi, has_local_properties_mpi)

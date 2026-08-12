@@ -61,7 +61,11 @@ module timing
       real(dp) :: total(3) = 0.0_dp
 
       !----- parents: disjoint, and summed by sum_times -------------------
-      real(dp) :: read_input(3) = 0.0_dp
+      !! setup is everything before the first pass of the main loop: the input
+      !! file, the potential files, and the allocation and broadcast that
+      !! follow them. read_input measures part of that and is reported under
+      !! it, never summed -- see below.
+      real(dp) :: setup(3) = 0.0_dp
       real(dp) :: read_xyz(3) = 0.0_dp
       real(dp) :: neigh(3) = 0.0_dp
       real(dp) :: gap(3) = 0.0_dp
@@ -77,6 +81,15 @@ module timing
       real(dp) :: mpi(3) = 0.0_dp
       real(dp) :: mpi_positions(3) = 0.0_dp
       real(dp) :: mpi_ef(3) = 0.0_dp
+
+      !----- children of setup: reported, never summed ---------------------
+      !! read_input is the input and potential files. mpi_setup is the
+      !! broadcast of what they produced, which happens inside read_input and
+      !! is why it cannot share the `mpi` bucket with the per-step ones: one
+      !! bucket used both nested and standalone is counted twice by sum_times
+      !! however carefully the list is maintained.
+      real(dp) :: read_input(3) = 0.0_dp
+      real(dp) :: mpi_setup(3) = 0.0_dp
 
       !----- children of gap: reported, never summed ----------------------
       real(dp) :: soap(3) = 0.0_dp
@@ -141,7 +154,7 @@ contains
       type(times_t), intent(in) :: time
       real(dp) :: total
 
-      total = time%read_input(3) + time%read_xyz(3) + time%neigh(3) &
+      total = time%setup(3) + time%read_xyz(3) + time%neigh(3) &
               + time%gap(3) + time%vdw(3) + time%estat(3) &
               + time%pdf(3) + time%sf(3) + time%xrd(3) + time%nd(3) + time%xps(3) &
               + time%md(3) + time%mc(3) &
