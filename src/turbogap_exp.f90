@@ -445,7 +445,7 @@ contains
       integer :: k
 
       !     Compute core_electron_be energies and forces
-      if (any(soap_turbo_hypers(:)%has_core_electron_be) .and. (params%do_prediction) &
+      if (any_has_core_electron_be(soap_turbo_hypers) .and. (params%do_prediction) &
           .and. valid_xps) then
          call time_start(time%xps)
 
@@ -566,7 +566,7 @@ contains
          call time_end(time%xps)
          !           if (rank == 0) print *, rank, " TIME_XPS = ", time%xps(3)
 
-      else if (any(soap_turbo_hypers(:)%has_core_electron_be) .and. params%do_xps) then
+      else if (any_has_core_electron_be(soap_turbo_hypers) .and. params%do_xps) then
          ! Get the linspace of the xps spectrum and then perform the
          ! calculation and write to the prediction file
          !

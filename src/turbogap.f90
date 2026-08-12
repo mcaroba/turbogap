@@ -184,8 +184,6 @@ program turbogap
    logical, allocatable :: fix_atom(:, :)
    logical :: rebuild_neighbors_list = .true.
    logical :: exit_loop = .true.
-   logical :: gd_box_do_pos = .true.
-   logical :: restart_box_optim = .false.
    logical :: valid_xps = .false.
    logical :: write_condition = .false.
    logical :: overwrite_condition = .false.
@@ -289,6 +287,17 @@ program turbogap
    character*1024, allocatable :: local_property_labels(:)
    logical :: repeat_xyz = .true.
    logical :: do_mc_relax = .false.
+!  Whether the trial about to be tested came out of an MD or relaxation burst,
+!  captured before params%do_md is cleared just below.
+   logical :: trial_came_from_md = .false.
+!  Molecule bookkeeping for grand-canonical moves that exchange whole molecules
+!  (mc_molecule_files). mc_mol_id tags each atom with the inserted copy it
+!  belongs to, mc_mol_mu with the chemical potential that copy came from, and
+!  both are zero for a free atom. mc_mol_next hands out the tags. Rank 0 only:
+!  the energy evaluation never reads any of it, so none of it is broadcast.
+   integer, allocatable :: mc_mol_id(:)
+   integer, allocatable :: mc_mol_mu(:)
+   integer :: mc_mol_next = 0
 
    character*1024 :: filename
    character*1024 :: mc_file = "mc_trial.xyz"
@@ -794,7 +803,8 @@ program turbogap
          n_sp = size(xyz_species, 1)
          n_sp_sc = size(xyz_species_supercell, 1)
          if (params%randomize_velocities .and. md_istep == 0) then
-            call randomize_velocities(velocities, n_sites, E_kinetic, masses, instant_temp, params%t_beg)
+            call randomize_velocities(velocities, n_sites, E_kinetic, masses, instant_temp, params%t_beg, &
+                                      params%velocity_distribution)
          end if
          if (params%do_mc .and. (mc_move /= "md" .or. md_istep == 0) .and. params%mc_hamiltonian) then
             if (mc_istep > 0) E_kinetic_prev = E_kinetic
@@ -1099,7 +1109,7 @@ program turbogap
          ! Adding allocation of local properties
 
          ! Now one could use pointers such that hirshfeld_v(:) acts as an alias for local_properties(vdw_index,:)...
-         if (any(soap_turbo_hypers(:)%has_local_properties)) then
+         if (any_has_local_properties(soap_turbo_hypers)) then
             if (n_sites /= n_sites_prev .or. params%do_mc) then
                if (allocated(local_properties)) then
                   nullify (this_local_properties_pt)
@@ -1438,7 +1448,7 @@ program turbogap
          call time_end(time%gap)
 
 #ifdef _MPIF90
-         if (any(soap_turbo_hypers(:)%has_local_properties)) then
+         if (any_has_local_properties(soap_turbo_hypers)) then
             call time_start(time%mpi)
             call mpi_reduce(local_properties, this_local_properties, n_sites*params%n_local_properties,&
                  & MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD,&
@@ -1501,7 +1511,7 @@ program turbogap
                             energies_estat, forces_estat, virial_estat, time)
 #endif
 
-         call compute_vdw(params, any(soap_turbo_hypers(:)%has_vdw), n_sites, &
+         call compute_vdw(params, any_has_vdw(soap_turbo_hypers), n_sites, &
                           n_neigh, neighbors_list, neighbor_species, rjs, xyz, &
                           local_properties, local_properties_cart_der, vdw_lp_index, &
                           i_beg, i_end, j_beg, j_end, n_atom_pairs_by_rank, site_in_rank, &
@@ -2183,7 +2193,7 @@ program turbogap
                       instant_pressure, instant_pressure_prev, e_kin, e_kinetic, kb, evpera3tobar, &
                       fix_atom, exit_loop, rebuild_neighbors_list, i_image, i_nested, n_pos, nrows, &
                       filename, string, allelstopdata, ephbeta, ephfdm, ephlsc, time, &
-                      cum_eel, gd_box_do_pos, gd_istep, restart_box_optim, &
+                      cum_eel, gd_istep, &
                       target_temp, time_step_prev, dipole, local_dipoles, energies_dipole)
 
       !**************************************************************************
@@ -2243,7 +2253,7 @@ program turbogap
                                              forces, a_box, b_box, c_box, energy, energies, energy_exp, E_kinetic, &
                                              species, species_supercell, n_sites, indices, fix_atom, &
                                              xyz_species, xyz_species_supercell, local_properties, &
-                                             local_dipoles, energies_dipole, dipole)
+                                             local_dipoles, energies_dipole, dipole, mc_mol_id, mc_mol_mu)
             end if
          end if
          !     This selects the highest energy image from the pool
@@ -2342,7 +2352,7 @@ program turbogap
                 (md_istep == -1) .or. &
                 (params%do_md .and. ( &
                  (md_istep == params%md_nsteps) .or. &
-                 ((abs(energy - energy_prev) < params%e_tol*dfloat(n_sites)) .and. (maxval(forces) < params%f_tol)) &
+                 ((abs(energy - energy_prev) < params%e_tol*dfloat(n_sites)) .and. (maxval(abs(forces)) < params%f_tol)) &
                  )))) then
                !       Now we do a monte-carlo step: we choose what the steps are from the available list and then choose a random number
                !       -- We have the list of move types in params%mc_types and the number params%n_mc_types --
@@ -2360,6 +2370,7 @@ program turbogap
                   !       > We care about comparing e_store to the energy of the new configuration based on the mc_movw
 
                   ! Reset the parameters for md / relaxation
+                  trial_came_from_md = params%do_md
                   if (params%do_md) then
                      md_istep = -1
                      params%do_md = .false.
@@ -2369,11 +2380,31 @@ program turbogap
 
                   if (.not. params%mc_hamiltonian) E_kinetic = 0.d0
 
+!                 The trial configuration has to be the one `energy` belongs to.
+!                 An "md" move, or a relaxation after any other move, leaves
+!                 `positions` one integrator step *past* the last force
+!                 evaluation: compute_md advances them after the energy was
+!                 computed, and stashes the configuration it was computed at in
+!                 positions_prev. md.f90 says as much -- "velocities and
+!                 positions_prev are synchronous, positions is dt ahead of
+!                 velocities" -- and compute_md writes positions_prev to the
+!                 trajectory for exactly this reason.
+!
+!                 Storing `positions` here accepted or rejected x_(n+1) on the
+!                 strength of E(x_n), and wrote a frame to mc_all.xyz whose
+!                 energy was not the energy of its own coordinates: ~1 eV out on
+!                 512 atoms after a 0.5 fs velocity-Verlet burst. Rewind by the
+!                 one step, which also pairs the stored positions with the
+!                 stored velocities.
+                  if (trial_came_from_md) then
+                     positions(1:3, 1:n_sites) = positions_prev(1:3, 1:n_sites)
+                  end if
+
                   call from_properties_to_image(images(i_trial_image), positions, velocities, masses, &
                                                 forces, a_box, b_box, c_box, energy, energies, energy_exp, E_kinetic, &
                                                 species, species_supercell, n_sites, indices, fix_atom, &
                                                 xyz_species, xyz_species_supercell, local_properties, &
-                                                local_dipoles, energies_dipole, dipole)
+                                                local_dipoles, energies_dipole, dipole, mc_mol_id, mc_mol_mu)
 
                   if (params%verb > 50) write (*, *) '.......................................|'
                   if (params%verb > 50) write (*, '(A,1X,I0)') ' MC Iteration:', mc_istep
@@ -2405,10 +2436,11 @@ program turbogap
                   call get_mc_acceptance(mc_move, p_accept, &
                        energy + E_kinetic, &
                        images(i_current_image)%energy + images(i_current_image)%e_kin, &
-                       params%t_beg, mc_id, mc_mu_id, &
+                       params%t_beg, mc_mu_id, &
                        params%mc_mu, n_mc_species, v_uc, v_uc_prev,&
-                       & v_a_uc, v_a_uc_prev, params&
-                       &%masses_types, params%p_beg)
+                       & v_a_uc, v_a_uc_prev, params%mc_exchange_mass, &
+                       & params%mc_exchange_e0, params%mc_mu_reference, &
+                       & params%p_beg, n_sites)
 
 !
 !                 call get_mc_acceptance(mc_move, p_accept, &
@@ -2651,6 +2683,12 @@ program turbogap
                      allocate (images(1:2*i_image))
                   end if
 
+                  if (.not. allocated(mc_mol_id)) then
+                     allocate (mc_mol_id(1:n_sites), mc_mol_mu(1:n_sites))
+                     mc_mol_id = 0
+                     mc_mol_mu = 0
+                  end if
+
                   if (.not. allocated(mc_id) .and. params%n_mc_mu > 0) then
                      allocate (mc_id(1:params%n_mc_mu))
                      allocate (n_mc_species(1:params%n_mc_mu))
@@ -2675,7 +2713,7 @@ program turbogap
                                                 forces, a_box, b_box, c_box, energy, energies, energy_exp, E_kinetic, &
                                                 species, species_supercell, n_sites, indices, fix_atom, &
                                                 xyz_species, xyz_species_supercell, local_properties, &
-                                                local_dipoles, energies_dipole, dipole)
+                                                local_dipoles, energies_dipole, dipole, mc_mol_id, mc_mol_mu)
 
                   instant_temp = 2.d0/3.d0/dfloat(n_sites - 1)/kB*E_kinetic
                   instant_pressure = (kB*dfloat(n_sites - 1)*instant_temp&
@@ -2750,7 +2788,7 @@ program turbogap
                                              forces, a_box, b_box, c_box, energy, energies, energy_exp, E_kinetic, &
                                              species, species_supercell, n_sites, indices, fix_atom, &
                                              xyz_species, xyz_species_supercell, local_properties, &
-                                             local_dipoles, energies_dipole, dipole)
+                                             local_dipoles, energies_dipole, dipole, mc_mol_id, mc_mol_mu)
 
                call perform_mc_step(&
                     & positions, species, xyz_species, masses, fix_atom,&
@@ -2772,7 +2810,10 @@ program turbogap
                     & params%species_types, params%mc_hamiltonian,&
                     & params%n_mc_relax_after, params&
                     &%mc_relax_after, do_mc_relax, params%verb, &
-                    params%mc_n_planes, params%mc_planes, params%mc_max_dist_to_planes, params%mc_planes_restrict_to_polyhedron)
+                    params%mc_n_planes, params%mc_planes, params%mc_max_dist_to_planes, &
+                    params%mc_planes_restrict_to_polyhedron, &
+                    params%mc_molecules, mc_mol_id, mc_mol_mu, &
+                    images(i_current_image)%mc_mol_id, images(i_current_image)%mc_mol_mu, mc_mol_next)
 
                rebuild_neighbors_list = .true.
                ! end if
@@ -2795,7 +2836,8 @@ program turbogap
                      params%do_md = .false.
                   end if
 
-                  call randomize_velocities(velocities, n_sites, E_kinetic, masses, instant_temp, params%t_beg)
+                  call randomize_velocities(velocities, n_sites, E_kinetic, masses, instant_temp, params%t_beg, &
+                                            params%velocity_distribution)
 
                   if (params%mc_hamiltonian) E_kinetic_prev = E_kinetic
                   ! Note, that this may override md steps if the same is chosen! More testing needed
@@ -2812,7 +2854,8 @@ program turbogap
                      params%do_md = .false.
                   end if
 
-                  call randomize_velocities(velocities, n_sites, E_kinetic, masses, instant_temp, params%t_beg)
+                  call randomize_velocities(velocities, n_sites, E_kinetic, masses, instant_temp, params%t_beg, &
+                                            params%velocity_distribution)
                   if (params%mc_hamiltonian) E_kinetic_prev = E_kinetic
                   ! Note, that this may override md steps if the same is chosen! More testing needed
                end if
@@ -2862,7 +2905,7 @@ program turbogap
                      counter = 1
                   else if (md_istep == params%md_nsteps - 1 .or. &
                            (abs(energy - energy_prev) < params%e_tol*dfloat(n_sites) .and. &
-                            maxval(forces) < params%f_tol) .and. md_istep > 0) then
+                            maxval(abs(forces)) < params%f_tol) .and. md_istep > 0) then
                      write (*, *)
                   else if (params%print_progress .and. counter == update_bar .and. md_istep < params%md_nsteps - 1) then
                      do j = 1, 36 + 3

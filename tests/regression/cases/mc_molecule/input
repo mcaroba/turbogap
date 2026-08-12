@@ -1,0 +1,23 @@
+atoms_file = "atoms.xyz"
+pot_file = "gap_files/CO.gap"
+n_species = 2
+species = C O
+masses = 12.01 15.99
+e0 = -.16138053 0.
+random_seed = 12345
+
+mc_nsteps = 12
+n_mc_types = 3
+mc_types = "insertion" "removal" "move"
+mc_acceptance = 2 1 1
+mc_move_max = 0.3
+
+n_mc_mu = 1
+mc_mu = -1.0
+mc_species = "CO"
+mc_molecule_files = "co_molecule.xyz"
+mc_mu_reference = "e0"
+mc_min_dist = 1.2
+mc_max_dist = 3.0
+
+write_xyz = 6

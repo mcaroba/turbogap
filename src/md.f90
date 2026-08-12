@@ -33,14 +33,76 @@ module md
 
 contains
 
-   subroutine randomize_velocities(velocities, n_sites, E_kinetic, masses, instant_temp, t_beg)
+!**************************************************************************
+!  Standard normal deviates by the polar Box-Muller transform, drawn from the
+!  intrinsic generator so that they belong to the same stream random_seed
+!  fixes. `bussi` carries a gasdev() of its own, but it runs off that module's
+!  private ran1(), which random_seed does not reach -- using it here would make
+!  a seeded run irreproducible.
+   subroutine gaussian_deviates(g)
+
+      implicit none
+
+      real(dp), intent(out) :: g(:)
+      real(dp) :: u(1:2)
+      real(dp) :: r
+      real(dp) :: f
+      integer :: n
+      integer :: i
+
+      n = size(g)
+      i = 1
+      do while (i <= n)
+         r = 2.d0
+         do while (r >= 1.d0 .or. r == 0.d0)
+            call random_number(u)
+            u = 2.d0*u - 1.d0
+            r = u(1)*u(1) + u(2)*u(2)
+         end do
+         f = dsqrt(-2.d0*dlog(r)/r)
+         g(i) = u(1)*f
+         if (i + 1 <= n) g(i + 1) = u(2)*f
+         i = i + 2
+      end do
+
+   end subroutine gaussian_deviates
+!**************************************************************************
+
+!**************************************************************************
+!  Fresh momenta at t_beg, by one of two draws.
+!
+!  "uniform" is the historical one: each component uniform on [0,1), the
+!  centre-of-mass velocity removed, then everything scaled so that the kinetic
+!  energy is exactly (3/2)(N-1)kT. It gets the mean right and the distribution
+!  wrong -- the components are a shifted box, not a Gaussian, and fixing the
+!  kinetic energy exactly is itself a constraint the canonical ensemble does
+!  not have. It remains the default only so that existing trajectories
+!  reproduce.
+!
+!  "maxwell" draws each component from N(0, kT/m_i) and removes the
+!  centre-of-mass velocity, with **no rescaling**: the kinetic energy is
+!  supposed to fluctuate. This is the draw hybrid Monte Carlo needs. With
+!  mc_hamiltonian the momenta are part of the state the Metropolis test accepts
+!  or rejects, and detailed balance holds only if they come from the
+!  Maxwell-Boltzmann distribution the test assumes. Under "uniform" the walk
+!  still runs and still moves, but what it samples is not the canonical
+!  ensemble.
+!
+!  Removing the centre-of-mass velocity after a Maxwell-Boltzmann draw is
+!  deliberate and does not spoil it: it projects out the three momentum degrees
+!  of freedom that the dynamics conserves anyway, leaving the correct
+!  distribution on the remaining 3N-3.
+   subroutine randomize_velocities(velocities, n_sites, E_kinetic, masses, instant_temp, t_beg, &
+                                   distribution)
       real(dp), allocatable, intent(inout) :: velocities(:, :)
       real(dp), allocatable, intent(inout) :: masses(:)
       integer, intent(in) :: n_sites
       real(dp), intent(in) :: t_beg
       real(dp), intent(inout) :: E_kinetic
       real(dp), intent(inout) :: instant_temp
+      character(len=*), intent(in) :: distribution
       real(dp), parameter :: kB = 8.6173303d-5
+      real(dp) :: g(1:3)
       integer :: i
 
       if (allocated(velocities)) then
@@ -53,28 +115,45 @@ contains
       end if
 
       velocities = 0.0d0
-      call random_number(velocities)
-      call remove_cm_vel(velocities(1:3, 1:n_sites), masses(1:n_sites))
-      E_kinetic = 0.d0
-      do i = 1, n_sites
-         E_kinetic = E_kinetic + 0.5d0*masses(i)*dot_product(velocities(1:3, i), velocities(1:3, i))
-      end do
-      if (n_sites > 1) then
+
+      if (n_sites < 2) then
+!        One atom carries no momentum once the centre of mass is removed
+         instant_temp = 0.0d0
+         E_kinetic = 0.0d0
+         velocities = 0.0d0
+         return
+      end if
+
+      if (trim(distribution) == "maxwell") then
+         do i = 1, n_sites
+            call gaussian_deviates(g)
+            velocities(1:3, i) = g(1:3)*dsqrt(kB*t_beg/masses(i))
+         end do
+         call remove_cm_vel(velocities(1:3, 1:n_sites), masses(1:n_sites))
+      else
+         call random_number(velocities)
+         call remove_cm_vel(velocities(1:3, 1:n_sites), masses(1:n_sites))
+         E_kinetic = 0.d0
+         do i = 1, n_sites
+            E_kinetic = E_kinetic + 0.5d0*masses(i)*dot_product(velocities(1:3, i), velocities(1:3, i))
+         end do
          ! I assume the instant temperature has this factor of N-1 in the
          ! denominator, (perhaps its to do with the degree of freedom removed
          ! when accounting for removing the centre of mass velocity)
          instant_temp = 2.d0/3.d0/dfloat(n_sites - 1)/kB*E_kinetic
          velocities = velocities*dsqrt(t_beg/instant_temp)
-
-         do i = 1, n_sites
-            E_kinetic = E_kinetic + 0.5d0*masses(i)*dot_product(velocities(1:3, i), velocities(1:3, i))
-         end do
-
-      else
-         ! The instant temperature is zero due to the removal of the degree of freedom
-         instant_temp = 0.0d0
-         velocities = 0.0d0
       end if
+
+!     Recompute, do not accumulate. Under "uniform" the draw before rescaling is
+!     an absurdly hot configuration -- thousands of eV -- and adding the rescaled
+!     energy to it left E_kinetic wrong by that much. With mc_hamiltonian that
+!     number goes straight into the Metropolis test, so every "md" and
+!     relaxation move was rejected.
+      E_kinetic = 0.d0
+      do i = 1, n_sites
+         E_kinetic = E_kinetic + 0.5d0*masses(i)*dot_product(velocities(1:3, i), velocities(1:3, i))
+      end do
+      instant_temp = 2.d0/3.d0/dfloat(n_sites - 1)/kB*E_kinetic
 
    end subroutine randomize_velocities
 
@@ -504,7 +583,13 @@ contains
 
       if (first_step) then
          backtracking = .true.
-         initialized = .false.
+!     `initialized` deliberately survives a restart. It says a previous descent
+!     already paid for a backtracking line search and gamma_back0 is the step
+!     that came out of it, which is a far better opening guess than
+!     max_opt_step/max_force. This branch used to clear it here, one line above
+!     the test that reads it, so the reuse was dead code: under `turbogap mc`
+!     every relaxation restarted the search from scratch and spent most of its
+!     mc_nrelax budget halving the step back down again.
          if (.not. allocated(positions0)) allocate (positions0(1:3, 1:size(positions, 2)))
          if (.not. allocated(forces0)) allocate (forces0(1:3, 1:size(positions, 2)))
          positions0 = positions
@@ -640,180 +725,316 @@ contains
 
    end subroutine
 
-   subroutine gradient_descent_box(positions, positions_prev, velocities, &
-                                   forces, forces_prev, masses, max_opt_step_eps, &
-                                   first_step, a_box, b_box, c_box, energy, &
-                                   virial, optim_mode, restart)
-!                                  virial, optim_mode, n_restart, restart )
+!**************************************************************************
+!  3x3 inverse and determinant, by cofactors. Only ever applied to lattice
+!  matrices, which are well conditioned by construction, so no pivoting.
+   pure function determinant_3x3(m) result(det)
+
       implicit none
+
+      real(dp), intent(in) :: m(1:3, 1:3)
+      real(dp) :: det
+
+      det = m(1, 1)*(m(2, 2)*m(3, 3) - m(2, 3)*m(3, 2)) &
+            - m(1, 2)*(m(2, 1)*m(3, 3) - m(2, 3)*m(3, 1)) &
+            + m(1, 3)*(m(2, 1)*m(3, 2) - m(2, 2)*m(3, 1))
+
+   end function determinant_3x3
+
+   pure function invert_3x3(m) result(inv)
+
+      implicit none
+
+      real(dp), intent(in) :: m(1:3, 1:3)
+      real(dp) :: inv(1:3, 1:3)
+      real(dp) :: det
+
+      det = determinant_3x3(m)
+
+      inv(1, 1) = m(2, 2)*m(3, 3) - m(2, 3)*m(3, 2)
+      inv(1, 2) = m(1, 3)*m(3, 2) - m(1, 2)*m(3, 3)
+      inv(1, 3) = m(1, 2)*m(2, 3) - m(1, 3)*m(2, 2)
+      inv(2, 1) = m(2, 3)*m(3, 1) - m(2, 1)*m(3, 3)
+      inv(2, 2) = m(1, 1)*m(3, 3) - m(1, 3)*m(3, 1)
+      inv(2, 3) = m(1, 3)*m(2, 1) - m(1, 1)*m(2, 3)
+      inv(3, 1) = m(2, 1)*m(3, 2) - m(2, 2)*m(3, 1)
+      inv(3, 2) = m(1, 2)*m(3, 1) - m(1, 1)*m(3, 2)
+      inv(3, 3) = m(1, 1)*m(2, 2) - m(1, 2)*m(2, 1)
+
+      inv = inv/det
+
+   end function invert_3x3
+!**************************************************************************
+
+!**************************************************************************
+!  Variable-cell relaxation: positions and lattice vectors optimized together,
+!  in the preconditioned variables of Gubler, Finkler, Schaefer and Goedecker,
+!  "Efficient variable cell shape geometry optimization" (2023).
+!
+!  The naive combined descent over (x_i, A) that gradient_descent_box drives is
+!  badly conditioned for two reasons, and the transformation below removes both.
+!
+!   1. When A changes, the Cartesian x_i must follow it or every atom is
+!      displaced relative to its neighbours. Optimizing over
+!
+!          q_i = A_0 A^-1 x_i
+!
+!      -- the position the atom would hold in the *reference* cell A_0 -- makes
+!      the two blocks independent: a lattice step moves the whole structure
+!      affinely and leaves q alone.
+!
+!   2. The lattice has 9 degrees of freedom against the atoms' 3N, and its
+!      gradient carries a factor of the cell volume. A single step length
+!      cannot suit both. Optimizing over
+!
+!          A~ = w sqrt(N) A diag(1/|a_0|, 1/|b_0|, 1/|c_0|) = A M
+!
+!      puts the lattice block on the same scale as the atomic one, with w a
+!      dimensionless weight of order 1 (lattice_weight).
+!
+!  The gradients transform as
+!
+!      dE/dq_i = (A A_0^-1)^T dE/dx_i          (note the transpose)
+!      dE/dA   = (dE/deps) A^-T = -virial A^-T
+!      dE/dA~  = dE/dA M^-1                    (M diagonal)
+!
+!  What is left is one ordinary descent over the concatenated vector (q, A~):
+!  Barzilai-Borwein step length with an Armijo-Goldstein backtracking line
+!  search, the same scheme gradient_descent uses for positions alone.
+!
+!  This replaces the alternating scheme, which relaxed positions to
+!  convergence, then the box to convergence, then the positions again. Each
+!  half undid part of the other's work, and both halves shared the module-level
+!  `initialized`/`gamma_back0` state, so the step length one had tuned was
+!  handed to the other.
+!
+!  Note on constraints: fix_atom is applied to q, not to x. Under a moving cell
+!  "this atom does not move" has no frame-independent meaning; holding q fixed
+!  holds the atom at fixed fractional coordinates, so it rides the cell.
+   subroutine gradient_descent_positions_and_lattice(positions, velocities, forces, virial, &
+                                                     energy, a_box, b_box, c_box, indices, &
+                                                     fix_atom, lattice_weight, max_opt_step, &
+                                                     ortho_only, first_step)
+
+      implicit none
+
 !   Input variables
       real(dp), intent(inout) :: positions(:, :)
-      real(dp), intent(inout) :: positions_prev(:, :)
       real(dp), intent(inout) :: velocities(:, :)
-      real(dp), intent(inout) :: forces_prev(:, :)
+      real(dp), intent(in) :: forces(:, :)
+      real(dp), intent(in) :: virial(1:3, 1:3)
+      real(dp), intent(in) :: energy
       real(dp), intent(inout) :: a_box(1:3)
       real(dp), intent(inout) :: b_box(1:3)
       real(dp), intent(inout) :: c_box(1:3)
-      real(dp), intent(in) :: forces(:, :)
-      real(dp), intent(in) :: masses(:)
-      real(dp), intent(in) :: max_opt_step_eps
-      real(dp), intent(in) :: energy
-      real(dp), intent(in) :: virial(1:6)
-!    integer, intent(inout) :: n_restart
-      integer :: n_restart
+      integer, intent(in) :: indices(1:3)
+      logical, intent(in) :: fix_atom(:, :)
+      real(dp), intent(in) :: lattice_weight
+      real(dp), intent(in) :: max_opt_step
+      logical, intent(in) :: ortho_only
       logical, intent(in) :: first_step
-      character*16, intent(in) :: optim_mode
-!   Output variables
-      logical :: restart
 !   Internal variables
-      real(dp) :: max_force
-      real(dp) :: this_force
-      real(dp) :: pos(1:3)
+      real(dp) :: a_lat(1:3, 1:3)
+      real(dp) :: a_lat_inv(1:3, 1:3)
+      real(dp) :: a_tilde(1:3, 1:3)
+      real(dp) :: f_tilde(1:3, 1:3)
+      real(dp) :: to_q(1:3, 1:3)
+      real(dp) :: to_x(1:3, 1:3)
+      real(dp) :: scale(1:3)
+      real(dp) :: gamma
+      real(dp) :: max_grad
+      real(dp) :: this_grad
+      real(dp) :: num
+      real(dp) :: den
+      real(dp) :: dq(1:3)
       real(dp) :: d
-      real(dp) :: gamma_eps
-      real(dp) :: t_eps(1:3, 1:3)
-      real(dp), allocatable, save :: frac_pos(:, :)
-      real(dp), allocatable, save :: frac_pos_prev(:, :)
-      real(dp), save :: energy0
-      real(dp), save :: m_prev
-      real(dp), save :: a_box0(1:3)
-      real(dp), save :: b_box0(1:3)
-      real(dp), save :: c_box0(1:3)
-      real(dp), save :: eps(1:6)
-      real(dp), save :: eps_prev(1:6)
-      real(dp), save :: gamma_eps_prev
-      real(dp), save :: m_eps_prev
-      real(dp), save :: virial_prev(1:6)
-      real(dp), save :: virial0(1:6)
-      real(dp), save :: this_virial(1:6)
-      real(dp), save :: gamma_back0
-      real(dp), allocatable, save :: positions0(:, :)
+      integer :: i_shift(1:3)
       integer :: n_sites
       integer :: i
       integer :: j
-      integer :: i_shift(1:3)
-      integer, save :: i_restart
+!   Saved state: the reference cell, the previous iterate for Barzilai-Borwein,
+!   and the start-of-line-search iterate for the backtracking restore.
+      real(dp), allocatable, save :: q(:, :)
+      real(dp), allocatable, save :: fq(:, :)
+      real(dp), allocatable, save :: q_prev(:, :)
+      real(dp), allocatable, save :: fq_prev(:, :)
+      real(dp), allocatable, save :: q0(:, :)
+      real(dp), allocatable, save :: fq0(:, :)
+      real(dp), save :: a_0(1:3, 1:3)
+      real(dp), save :: a_0_inv(1:3, 1:3)
+      real(dp), save :: len_0(1:3)
+      real(dp), save :: a_tilde_prev(1:3, 1:3)
+      real(dp), save :: f_tilde_prev(1:3, 1:3)
+      real(dp), save :: a_tilde_0(1:3, 1:3)
+      real(dp), save :: f_tilde_0(1:3, 1:3)
+      real(dp), save :: gamma_prev
+      real(dp), save :: gamma_back0
+      real(dp), save :: energy0
+      real(dp), save :: m_prev
       logical, save :: backtracking
       logical, save :: initialized = .false.
 
-      n_sites = size(masses)
+      n_sites = size(positions, 2)
 
-!   Here we always set the velocities to zero
+!   A relaxation carries no momentum
       velocities = 0.d0
 
-      this_virial = virial
-
-!   HARDCODED FOR NOW
-      n_restart = 10
-      if (n_restart < 2) then
-         n_restart = 2
-      end if
+!   The lattice of the primitive cell, as columns
+      a_lat(1:3, 1) = a_box(1:3)/dfloat(indices(1))
+      a_lat(1:3, 2) = b_box(1:3)/dfloat(indices(2))
+      a_lat(1:3, 3) = c_box(1:3)/dfloat(indices(3))
+      a_lat_inv = invert_3x3(a_lat)
 
       if (first_step) then
-         i_restart = 0
          backtracking = .true.
-         if (.not. allocated(frac_pos)) allocate (frac_pos(1:3, 1:n_sites))
-         if (.not. allocated(frac_pos_prev)) allocate (frac_pos_prev(1:3, 1:n_sites))
-         if (.not. allocated(positions0)) allocate (positions0(1:3, 1:size(positions, 2)))
-         positions0 = positions
-         virial0 = this_virial
-         energy0 = energy
-         a_box0 = a_box
-         b_box0 = b_box
-         c_box0 = c_box
-         eps = 0.d0
-!     The first step is (over)estimated from user-provided values
-         max_force = 0.d0
-         do i = 1, 6
-            this_force = sqrt(this_virial(i)**2)
-            if (this_force > max_force) then
-               max_force = this_force
-            end if
+         a_0 = a_lat
+         a_0_inv = a_lat_inv
+         do j = 1, 3
+            len_0(j) = dsqrt(dot_product(a_0(1:3, j), a_0(1:3, j)))
          end do
-         if (max_force == 0.d0) then
-            gamma_eps = 0.d0
+         energy0 = energy
+!     n_sites changes between relaxations under `turbogap mc`, so these are
+!     sized against the current call, not allocated once
+         if (allocated(q)) then
+            if (size(q, 2) /= n_sites) deallocate (q, fq, q_prev, fq_prev, q0, fq0)
+         end if
+         if (.not. allocated(q)) then
+            allocate (q(1:3, 1:n_sites), fq(1:3, 1:n_sites))
+            allocate (q_prev(1:3, 1:n_sites), fq_prev(1:3, 1:n_sites))
+            allocate (q0(1:3, 1:n_sites), fq0(1:3, 1:n_sites))
+         end if
+      end if
+
+!   The scaling that puts the lattice block on the atoms' scale
+      scale(1:3) = lattice_weight*dsqrt(dfloat(n_sites))/len_0(1:3)
+
+!   Forward transformations
+      to_q = matmul(a_0, a_lat_inv)
+      to_x = matmul(a_lat, a_0_inv)
+
+      do i = 1, n_sites
+         q(1:3, i) = matmul(to_q, positions(1:3, i))
+!        dE/dq = (A A_0^-1)^T dE/dx, and forces are -dE/dx
+         fq(1:3, i) = matmul(transpose(to_x), forces(1:3, i))
+      end do
+
+!   -dE/dA = virial A^-T. dE/deps = -virial is the convention the strain step in
+!   gradient_descent_box already relies on: a cell under positive pressure has a
+!   positive virial trace and wants to expand.
+      f_tilde = matmul(virial, transpose(a_lat_inv))
+      do j = 1, 3
+         a_tilde(1:3, j) = a_lat(1:3, j)*scale(j)
+         f_tilde(1:3, j) = f_tilde(1:3, j)/scale(j)
+      end do
+
+      if (ortho_only) then
+!     Keep the cell orthorhombic: only the diagonal of the lattice may move.
+         do j = 1, 3
+            do i = 1, 3
+               if (i /= j) f_tilde(i, j) = 0.d0
+            end do
+         end do
+      end if
+
+!   The caller wraps positions into the cell between steps, so q can jump by a
+!   lattice vector of the *reference* cell. Undo that against the previous
+!   iterate before either difference below is taken. The lattice block is not
+!   periodic and must never be re-imaged.
+      if (.not. first_step) then
+         do i = 1, n_sites
+            call get_distance(q_prev(1:3, i), q(1:3, i), a_0(1:3, 1), a_0(1:3, 2), a_0(1:3, 3), &
+                              [.true., .true., .true.], dq(1:3), d, i_shift(1:3))
+            q_prev(1:3, i) = q(1:3, i) - dq(1:3)
+         end do
+      end if
+
+      gamma = 0.d0
+      if (first_step) then
+!     Open with a step that moves the largest gradient component by
+!     max_opt_step, unless a previous line search already found a good one.
+         max_grad = 0.d0
+         do i = 1, n_sites
+            this_grad = maxval(dabs(fq(1:3, i)))
+            if (this_grad > max_grad) max_grad = this_grad
+         end do
+         max_grad = max(max_grad, maxval(dabs(f_tilde)))
+
+         if (max_grad == 0.d0) then
+            gamma = 0.d0
          else if (initialized) then
-            gamma_eps = gamma_back0
+            gamma = gamma_back0
          else
-            gamma_eps = max_opt_step_eps/max_force
+            gamma = max_opt_step/max_grad
          end if
       else if (backtracking) then
-!     After the first step, we perform backtracking line search until fullfilling the
-!     Armijo-Goldstein condition
-         if (energy <= energy0 - gamma_eps_prev*0.5d0*m_eps_prev) then
+!     Armijo-Goldstein: accept the trial step if it bought enough energy,
+!     otherwise rewind to where the search started and halve it.
+         if (energy <= energy0 - gamma_prev*0.5d0*m_prev) then
             backtracking = .false.
             initialized = .true.
-            gamma_back0 = gamma_eps_prev
+            gamma_back0 = gamma_prev
          else
-!       If the condition is not fulfilled, we restore the original positions and decrease
-!       the step by half
-            gamma_eps = gamma_eps_prev*0.5d0
-            gamma_back0 = gamma_eps
-            a_box = a_box0
-            b_box = b_box0
-            c_box = c_box0
-            eps = 0.d0
-            positions = positions0
-            this_virial = virial0
+            gamma = gamma_prev*0.5d0
+            q = q0
+            fq = fq0
+            a_tilde = a_tilde_0
+            f_tilde = f_tilde_0
          end if
       end if
 
-!   Transform positions to fractional coordinate system
-      call get_fractional_coordinates(positions, a_box, b_box, c_box, frac_pos)
-
       if (.not. first_step .and. .not. backtracking) then
-!     Make sure we use the same image convention for positions and positions_prev
-         do i = 1, n_sites
-            call get_distance(frac_pos_prev(1:3, i), frac_pos(1:3, i), [1.d0, 0.d0, 0.d0], [0.d0, 1.d0, 0.d0], &
-                              [0.d0, 0.d0, 1.d0], [.true., .true., .true.], pos(1:3), d, i_shift(1:3))
-            frac_pos_prev(1:3, i) = frac_pos(1:3, i) - pos(1:3)
+!     Barzilai-Borwein, over the concatenated (q, A~) vector. The whole point
+!     of the scaling above is that one step length can serve both blocks.
+         num = sum((q - q_prev)*(fq - fq_prev)) &
+               + sum((a_tilde - a_tilde_prev)*(f_tilde - f_tilde_prev))
+         den = sum((fq - fq_prev)**2) + sum((f_tilde - f_tilde_prev)**2)
+         if (den == 0.d0) then
+            gamma = 0.d0
+         else
+            gamma = dabs(num/den)
+         end if
+      end if
+
+      if (first_step .or. .not. backtracking) then
+!     A fresh line search starts here, so this is the point a rejected trial
+!     step rewinds to.
+         q0 = q
+         fq0 = fq
+         a_tilde_0 = a_tilde
+         f_tilde_0 = f_tilde
+         energy0 = energy
+         backtracking = .true.
+      end if
+
+      q_prev = q
+      fq_prev = fq
+      a_tilde_prev = a_tilde
+      f_tilde_prev = f_tilde
+
+      do i = 1, n_sites
+         do j = 1, 3
+            if (.not. fix_atom(j, i)) q(j, i) = q(j, i) + gamma*fq(j, i)
          end do
-!     Barzilai–Borwein method for finding gamma
-         gamma_eps = sum((eps(:) - eps_prev(:))*(this_virial(:) - virial_prev(:)))/ &
-                     sum((this_virial(:) - virial_prev(:))**2)
-         gamma_eps = abs(gamma_eps)
-      end if
+      end do
+      a_tilde = a_tilde + gamma*f_tilde
 
-      virial_prev = this_virial
-      eps_prev = eps
-      frac_pos_prev = frac_pos
+      gamma_prev = gamma
+      m_prev = sum(fq**2) + sum(f_tilde**2)
+
+!   Back to the lattice and Cartesian positions
+      do j = 1, 3
+         a_lat(1:3, j) = a_tilde(1:3, j)/scale(j)
+      end do
+      to_x = matmul(a_lat, a_0_inv)
       do i = 1, n_sites
-         positions(1:3, i) = frac_pos(1, i)*a_box(1:3) + frac_pos(2, i)*b_box(1:3) + &
-                             frac_pos(3, i)*c_box(1:3)
+         positions(1:3, i) = matmul(to_x, q(1:3, i))
       end do
 
-      positions_prev = positions
-      forces_prev = forces
+      a_box(1:3) = a_lat(1:3, 1)*dfloat(indices(1))
+      b_box(1:3) = a_lat(1:3, 2)*dfloat(indices(2))
+      c_box(1:3) = a_lat(1:3, 3)*dfloat(indices(3))
 
-      eps(1:6) = eps_prev(1:6) + gamma_eps*virial_prev(1:6)
-      gamma_eps_prev = gamma_eps
-      m_eps_prev = sum(virial_prev(1:6)**2)
-
-      if (optim_mode == "gd-box-ortho") then
-         eps(4) = 0.d0
-         eps(5) = 0.d0
-         eps(6) = 0.d0
-      end if
-
-      t_eps(1:3, 1) = [1.d0 + eps(1), eps(6)/2.d0, eps(5)/2.d0]
-      t_eps(1:3, 2) = [eps(6)/2.d0, 1.d0 + eps(2), eps(4)/2.d0]
-      t_eps(1:3, 3) = [eps(5)/2.d0, eps(4)/2.d0, 1.d0 + eps(3)]
-      a_box = matmul(t_eps, a_box0)
-      b_box = matmul(t_eps, b_box0)
-      c_box = matmul(t_eps, c_box0)
-
-      do i = 1, n_sites
-         positions(1:3, i) = frac_pos(1, i)*a_box(1:3) + frac_pos(2, i)*b_box(1:3) + &
-                             frac_pos(3, i)*c_box(1:3)
-      end do
-
-      i_restart = i_restart + 1
-      if (i_restart >= n_restart .and. energy < energy0) then
-         restart = .true.
-      else
-         restart = .false.
-      end if
-   end subroutine
+   end subroutine gradient_descent_positions_and_lattice
 !**************************************************************************
 
 !**************************************************************************

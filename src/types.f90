@@ -192,6 +192,27 @@ module types
       logical :: damped_cosine = .false.
    end type options_estat
 
+!  A rigid molecule that grand-canonical moves may insert and remove as one
+!  object. Read from an xyz file by read_mc_molecule; positions are stored
+!  relative to the centre of mass so that an insertion is a rotation about the
+!  origin followed by a translation.
+   type mc_molecule
+      integer :: n_atoms = 0
+      real(dp), allocatable :: positions(:, :)
+      real(dp), allocatable :: masses(:)
+      integer, allocatable :: species(:)
+      character*8, allocatable :: xyz_species(:)
+!     Total mass, for the thermal de Broglie wavelength, and the sum of the e0
+!     of its atoms, for mc_mu_reference = "e0".
+      real(dp) :: total_mass = 0.d0
+      real(dp) :: e0_total = 0.d0
+!     Largest distance of any atom from the centre of mass. An insertion needs
+!     it to know how far the molecule reaches from the point it is placed at.
+      real(dp) :: radius = 0.d0
+      logical :: is_molecule = .false.
+      character*1024 :: file = "none"
+   end type mc_molecule
+
    type input_parameters
 
 !     ==================================================================
@@ -254,6 +275,9 @@ module types
       real(dp) :: md_step = 1.d0
       character*16 :: optimize = "vv"
       logical :: randomize_velocities = .false.
+!     Which distribution randomize_velocities draws from: "uniform" (the historical
+!     draw, kept as the default so old trajectories reproduce) or "maxwell".
+      character*16 :: velocity_distribution = "uniform"
 
 !     Thermostat
       character*32 :: thermostat = "none"
@@ -278,7 +302,7 @@ module types
       real(dp) :: f_tol = 0.01d0
       real(dp) :: p_tol = 0.01d0
       real(dp) :: max_opt_step = 0.1d0
-      real(dp) :: max_opt_step_eps = 0.05d0
+      real(dp) :: gd_box_weight = 2.d0
 
 !     Variable time step
       logical :: variable_time_step = .false.
@@ -326,6 +350,20 @@ module types
       logical :: mc_relax = .false.
       integer :: mc_nrelax = 0
       character*16 :: mc_relax_opt = "gd"
+!     Rigid molecules the grand-canonical moves exchange, one entry per chemical
+!     potential. An entry with is_molecule false is an ordinary single atom.
+      type(mc_molecule), allocatable :: mc_molecules(:)
+      character*1024, allocatable :: mc_molecule_files(:)
+!     What mc_mu is measured from: "absolute" leaves the acceptance ratio as
+!     written, "e0" adds the exchanged object's e0 to it, so that mc_mu is
+!     quoted relative to the isolated-species reference energy rather than to
+!     zero.
+      character*16 :: mc_mu_reference = "absolute"
+!     Per chemical potential, filled once at setup: the mass that enters the
+!     thermal de Broglie wavelength and the e0 that mc_mu_reference = "e0" adds.
+!     For a molecule these are summed over its atoms.
+      real(dp), allocatable :: mc_exchange_mass(:)
+      real(dp), allocatable :: mc_exchange_e0(:)
       character*32, allocatable :: mc_relax_after(:)
       integer :: n_mc_relax_after = 0
 
@@ -613,6 +651,13 @@ module types
       real(dp) :: energy_exp
       integer, allocatable :: species(:)
       integer, allocatable :: species_supercell(:)
+!     Which inserted molecule each atom belongs to: mc_mol_id is a serial that
+!     is unique within the run, mc_mol_mu says which chemical potential it was
+!     inserted under. Both are zero for an atom that is not part of a molecule.
+!     Rank 0 only -- the energy evaluation never needs them, so they are not
+!     broadcast.
+      integer, allocatable :: mc_mol_id(:)
+      integer, allocatable :: mc_mol_mu(:)
       integer :: n_sites
       integer :: indices(1:3)
       logical, allocatable :: fix_atom(:, :)
@@ -678,12 +723,49 @@ contains
 
 !**************************************************************************
 ! This provides a way to pass all the individual arrays/variables in the main code to an image container
+!**************************************************************************
+!  Whether any soap_turbo descriptor sets a given flag.
+!
+!  A potential file need not contain a soap_turbo block at all -- a pure 2b, 3b
+!  or core_pot potential is a legitimate thing to run, and the finite-difference
+!  suite builds exactly those. read_gap_file only allocates soap_turbo_hypers
+!  when there is at least one block, so the bare `any(soap_turbo_hypers(:)%flag)`
+!  these replace read an unallocated array descriptor and segfaulted before the
+!  first energy was computed.
+   pure function any_has_local_properties(hypers) result(flag)
+      type(soap_turbo), allocatable, intent(in) :: hypers(:)
+      logical :: flag
+
+      flag = .false.
+      if (allocated(hypers)) flag = any(hypers(:)%has_local_properties)
+
+   end function any_has_local_properties
+
+   pure function any_has_vdw(hypers) result(flag)
+      type(soap_turbo), allocatable, intent(in) :: hypers(:)
+      logical :: flag
+
+      flag = .false.
+      if (allocated(hypers)) flag = any(hypers(:)%has_vdw)
+
+   end function any_has_vdw
+
+   pure function any_has_core_electron_be(hypers) result(flag)
+      type(soap_turbo), allocatable, intent(in) :: hypers(:)
+      logical :: flag
+
+      flag = .false.
+      if (allocated(hypers)) flag = any(hypers(:)%has_core_electron_be)
+
+   end function any_has_core_electron_be
+!**************************************************************************
+
 ! In time I should make the image data type the default way to store these properties!!!!!!!
    subroutine from_properties_to_image(this_image, positions, velocities, masses, &
                                        forces, a_box, b_box, c_box, energy, energies, energy_exp, e_kin, &
                                        species, species_supercell, n_sites, indices, fix_atom, &
                                        xyz_species, xyz_species_supercell, local_properties, &
-                                       local_dipoles, energies_dipole, dipole)
+                                       local_dipoles, energies_dipole, dipole, mc_mol_id, mc_mol_mu)
       implicit none
 
 !   Input variables
@@ -709,6 +791,11 @@ contains
       logical, intent(in) :: fix_atom(:, :)
       character*8, intent(in) :: xyz_species(:)
       character*8, intent(in) :: xyz_species_supercell(:)
+!   Molecule bookkeeping. Optional because only a grand-canonical run that
+!   exchanges whole molecules has any, and it is rank-0 state: the energy
+!   evaluation never reads it, so it is not broadcast.
+      integer, allocatable, intent(in), optional :: mc_mol_id(:)
+      integer, allocatable, intent(in), optional :: mc_mol_mu(:)
 !   In/out variables
       type(image), intent(inout) :: this_image
 !   Internal variables
@@ -764,6 +851,23 @@ contains
 
       this_image%n_sites = n_sites
 
+      if (present(mc_mol_id)) then
+         if (allocated(mc_mol_id)) then
+            n = size(mc_mol_id, 1)
+            if (allocated(this_image%mc_mol_id)) deallocate (this_image%mc_mol_id)
+            allocate (this_image%mc_mol_id(1:n))
+            this_image%mc_mol_id = mc_mol_id
+         end if
+      end if
+      if (present(mc_mol_mu)) then
+         if (allocated(mc_mol_mu)) then
+            n = size(mc_mol_mu, 1)
+            if (allocated(this_image%mc_mol_mu)) deallocate (this_image%mc_mol_mu)
+            allocate (this_image%mc_mol_mu(1:n))
+            this_image%mc_mol_mu = mc_mol_mu
+         end if
+      end if
+
       this_image%indices = indices
 
       n = size(fix_atom, 2)
@@ -817,7 +921,7 @@ contains
                                        forces, a_box, b_box, c_box, energy, energies, energy_exp, e_kin, &
                                        species, species_supercell, n_sites, indices, fix_atom, &
                                        xyz_species, xyz_species_supercell, local_properties, &
-                                       local_dipoles, energies_dipole, dipole)
+                                       local_dipoles, energies_dipole, dipole, mc_mol_id, mc_mol_mu)
       implicit none
 
 !   Input variables
@@ -845,6 +949,9 @@ contains
       logical, allocatable, intent(out) :: fix_atom(:, :)
       character*8, allocatable, intent(out) :: xyz_species(:)
       character*8, allocatable, intent(out) :: xyz_species_supercell(:)
+!   Molecule bookkeeping; see from_properties_to_image.
+      integer, allocatable, intent(inout), optional :: mc_mol_id(:)
+      integer, allocatable, intent(inout), optional :: mc_mol_mu(:)
 !   Internal variables
       integer :: n
       integer :: n2
@@ -890,6 +997,23 @@ contains
       species_supercell = this_image%species_supercell
 
       n_sites = this_image%n_sites
+
+      if (present(mc_mol_id)) then
+         if (allocated(this_image%mc_mol_id)) then
+            n = size(this_image%mc_mol_id, 1)
+            if (allocated(mc_mol_id)) deallocate (mc_mol_id)
+            allocate (mc_mol_id(1:n))
+            mc_mol_id = this_image%mc_mol_id
+         end if
+      end if
+      if (present(mc_mol_mu)) then
+         if (allocated(this_image%mc_mol_mu)) then
+            n = size(this_image%mc_mol_mu, 1)
+            if (allocated(mc_mol_mu)) deallocate (mc_mol_mu)
+            allocate (mc_mol_mu(1:n))
+            mc_mol_mu = this_image%mc_mol_mu
+         end if
+      end if
 
       indices = this_image%indices
 

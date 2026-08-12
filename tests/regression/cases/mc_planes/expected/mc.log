@@ -1,0 +1,10 @@
+# mc_istep  mc_move  accepted  E_trial              E_current           N_tot_trial  N_mc_species_trial
+       1  insertion    T       -4322.97718701       -4321.58260476      513  O        1
+       2  insertion    F       -4320.78558297       -4322.97718701      514  O        2
+       3  insertion    T       -4326.07042007       -4322.97718701      514  O        2
+       4  insertion    T       -4326.00503063       -4326.07042007      515  O        3
+       5    removal    F       -4324.69036562       -4326.00503063      514  O        2
+       6  insertion    T       -4327.83310441       -4326.00503063      516  O        4
+       7    removal    F       -4326.14755006       -4327.83310441      515  O        3
+       8    removal    F       -4327.89849385       -4327.83310441      515  O        3
+       9  insertion    F       -4326.63491572       -4327.83310441      517  O        5

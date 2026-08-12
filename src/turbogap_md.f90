@@ -68,8 +68,7 @@ contains
                          local_property_labels, instant_temp, instant_pressure, instant_pressure_prev, &
                          e_kin, e_kinetic, kb, evpera3tobar, fix_atom, exit_loop, rebuild_neighbors_list, &
                          i_image, i_nested, n_pos, nrows, filename, string, allelstopdata, ephbeta, ephfdm, &
-                         ephlsc, time, cum_eel, gd_box_do_pos, gd_istep, &
-                         restart_box_optim, target_temp, time_step_prev, &
+                         ephlsc, time, cum_eel, gd_istep, target_temp, time_step_prev, &
                          dipole, local_dipoles, energies_dipole)
 
       implicit none
@@ -141,9 +140,9 @@ contains
       type(EPH_LangevinSpatialCorrelation_class), intent(inout) :: ephlsc
       type(times_t), intent(inout) :: time
       real(dp), intent(inout) :: cum_eel
-      logical, intent(inout) :: gd_box_do_pos
+!     Counts steps taken by the gd-box relaxation. Only the convergence test
+!     below reads it; the optimizer keeps its own state.
       integer, intent(inout) :: gd_istep
-      logical, intent(inout) :: restart_box_optim
       real(dp), intent(inout) :: target_temp
       real(dp), intent(inout) :: time_step_prev
 
@@ -227,27 +226,30 @@ contains
                                      forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), &
                                      params%max_opt_step, md_istep == 0, a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), &
                                      c_box/dfloat(indices(3)), fix_atom(1:3, 1:n_sites), energy)
-            else if ((params%optimize == "gd-box" .or. params%optimize == "gd-box-ortho") .and. gd_box_do_pos) then
-               !       We propagate the positions
-               call gradient_descent(positions(1:3, 1:n_sites),&
-                    & positions_prev(1:3, 1:n_sites), velocities(1:3,&
-                    & 1:n_sites), forces(1:3, 1:n_sites),&
-                    & forces_prev(1:3, 1:n_sites), masses(1:n_sites),&
-                    & params%max_opt_step, gd_istep == 0, a_box&
-                    &/dfloat(indices(1)), b_box/dfloat(indices(2)),&
-                    & c_box/dfloat(indices(3)), fix_atom(1:3,&
-                    & 1:n_sites), energy)
-               if (gd_istep > 1 .and. abs(energy - energy_prev) < params&
-                    &%e_tol*dfloat(n_sites) .and. maxval(forces) <&
-                    & params%f_tol) then
-                  !         If the position optimization is converged
-                  !         (energy only) we set the code to do the
-                  !         box relaxation (below)
-                  gd_box_do_pos = .false.
-                  gd_istep = 0
-               else
-                  gd_istep = gd_istep + 1
-               end if
+            else if (params%optimize == "gd-box" .or. params%optimize == "gd-box-ortho") then
+               !       Positions and lattice descend together, in the
+               !       preconditioned variables of Gubler et al. (2023). The
+               !       old scheme alternated -- relax positions to convergence,
+               !       then the box to convergence, then back -- and each half
+               !       undid part of the other's work. The lattice update that
+               !       used to live in the box-rescaling section below is part
+               !       of this one call now.
+               positions_prev(1:3, 1:n_sites) = positions(1:3, 1:n_sites)
+               forces_prev(1:3, 1:n_sites) = forces(1:3, 1:n_sites)
+               call gradient_descent_positions_and_lattice(positions(1:3, 1:n_sites), &
+                                                           velocities(1:3, 1:n_sites), &
+                                                           forces(1:3, 1:n_sites), virial(1:3, 1:3), &
+                                                           energy, a_box, b_box, c_box, indices, &
+                                                           fix_atom(1:3, 1:n_sites), &
+                                                           params%gd_box_weight, params%max_opt_step, &
+                                                           params%optimize == "gd-box-ortho", &
+                                                           md_istep == 0)
+               !       Restarts at zero for each relaxation, so that the
+               !       gd_istep > 1 guard on the convergence test below means
+               !       "this relaxation has taken a step or two" even under mc,
+               !       where compute_md is re-entered once per accepted move.
+               if (md_istep == 0) gd_istep = 0
+               gd_istep = gd_istep + 1
             else
                !       If nothing happens we still update these variables
                positions_prev(1:3, 1:n_sites) = positions(1:3, 1:n_sites)
@@ -335,7 +337,7 @@ contains
             !     Check if we have converged a relaxation calculation
             if (params%do_md .and. params%optimize == "gd" .and. md_istep > 0 .and. &
                 abs(energy - energy_prev) < params%e_tol*dfloat(n_sites) .and. &
-                maxval(forces) < params%f_tol .and. rank == 0) then
+                maxval(abs(forces)) < params%f_tol .and. rank == 0) then
                exit_loop = .true.
                if (params%do_mc) exit_loop = .false.
                !     THIS CONDITION ON INSTANT PRESSURE WILL NEED TO BE FINE TUNED, TO ACCOUNT FOR ARBITRARY TARGET PRESSURES
@@ -421,33 +423,10 @@ contains
                call berendsen_barostat(positions(1:3, 1:n_sites), &
                                        params%p_beg + (params%p_end - params%p_beg)*dfloat(md_istep + 1)/float(params%md_nsteps), &
                                        instant_pressure_tensor, params%barostat_sym, params%tau_p, params%gamma_p, time_step)
-            else if ((params%optimize == "gd-box" .or. params%optimize == "gd-box-ortho") &
-                     .and. .not. gd_box_do_pos) then
-               if (gd_istep > 1 .and. ((abs(energy - energy_prev) < params%e_tol*dfloat(n_sites) &
-                                        .and. abs(instant_pressure - instant_pressure_prev) < params%p_tol) &
-                                       .or. restart_box_optim)) then
-                  gd_box_do_pos = .true.
-                  gd_istep = 0
-               else
-                  !         We rewind positions and forces because they were already updated above
-                  positions(1:3, 1:n_sites) = positions_prev(1:3, 1:n_sites)
-                  forces(1:3, 1:n_sites) = forces_prev(1:3, 1:n_sites)
-                  !
-                  a_box = a_box/dfloat(indices(1))
-                  b_box = b_box/dfloat(indices(2))
-                  c_box = c_box/dfloat(indices(3))
-                  call gradient_descent_box(positions(1:3, 1:n_sites), positions_prev(1:3, 1:n_sites), &
-                                            velocities(1:3, 1:n_sites), &
-                                            forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), &
-                                            params%max_opt_step_eps, gd_istep == 0, a_box, b_box, c_box, energy, &
-                                            [virial(1, 1), virial(2, 2), virial(3, 3), virial(2, 3), virial(1, 3), virial(1, 2)], &
-                                            params%optimize, restart_box_optim)
-                  a_box = a_box*dfloat(indices(1))
-                  b_box = b_box*dfloat(indices(2))
-                  c_box = c_box*dfloat(indices(3))
-                  gd_istep = gd_istep + 1
-               end if
             end if
+            !     gd-box has no separate box-rescaling stage any more: the
+            !     lattice moved with the positions in the single
+            !     gradient_descent_positions_and_lattice call above.
             !     If there are thermostating operations they happen here
             if (params%thermostat == "berendsen") then
                call get_target_temp(params%t_beg, params%t_end,&

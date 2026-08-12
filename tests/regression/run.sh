@@ -24,6 +24,8 @@
 #                       (override where it goes with TURBOGAP_TESTS_DIR).
 #   TURBOGAP_TIME_TOL   fail if test/ref wall-clock exceeds this ratio
 #                       (default: unset -> timing is reported, not enforced)
+#   TURBOGAP_CASE_TIMEOUT  seconds a single run may take before it is killed
+#                       and the case failed (default: 1800)
 #   TURBOGAP_KEEP       keep staging directories for inspection
 #   TURBOGAP_BLESS      regenerate the expected/ output of golden cases
 #
@@ -45,6 +47,7 @@ repo=$(cd "$here/../.." && pwd)
 BIN=${TURBOGAP_BIN:-$repo/bin/turbogap}
 REF_BIN=${TURBOGAP_REF_BIN:-$here/baseline/turbogap.e6eb1aa}
 TIME_TOL=${TURBOGAP_TIME_TOL:-}
+CASE_TIMEOUT=${TURBOGAP_CASE_TIMEOUT:-1800}
 WORK=${TMPDIR:-/tmp}/turbogap_regression.$$
 
 die() {
@@ -110,17 +113,28 @@ stage() {
 }
 
 # run <dir> <binary> <label> -> sets REPLY to elapsed seconds
+#
+# Wrapped in a timeout because a defect that hangs the run is a real failure
+# mode here, not a hypothetical: KNOWN_ISSUES #6 made the input-file loop
+# re-read the same record for ever, and without this the whole suite waits
+# behind it with nothing on the terminal to say which case is stuck. A timed-out
+# case reports exit 124 and the suite moves on.
 run() {
   local dir=$1 bin=$2 label=$3 rc t0 t1
   t0=$(date +%s.%N)
   if [ "$RANKS" -gt 1 ]; then
-    (cd "$dir" && mpirun -np "$RANKS" "$bin" "$MODE") >"$dir/run.log" 2>&1
+    (cd "$dir" && timeout "$CASE_TIMEOUT" mpirun -np "$RANKS" "$bin" "$MODE") >"$dir/run.log" 2>&1
   else
-    (cd "$dir" && "$bin" "$MODE") >"$dir/run.log" 2>&1
+    (cd "$dir" && timeout "$CASE_TIMEOUT" "$bin" "$MODE") >"$dir/run.log" 2>&1
   fi
   rc=$?
   t1=$(date +%s.%N)
   REPLY=$(awk -v a="$t0" -v b="$t1" 'BEGIN{printf "%.2f", b-a}')
+  if [ $rc -eq 124 ]; then
+    printf '    %s run timed out after %ss (TURBOGAP_CASE_TIMEOUT)\n' "$label" "$CASE_TIMEOUT"
+    tail -15 "$dir/run.log" | sed 's/^/      /'
+    return 1
+  fi
   if [ $rc -ne 0 ]; then
     printf '    %s run failed (exit %d):\n' "$label" "$rc"
     tail -15 "$dir/run.log" | sed 's/^/      /'

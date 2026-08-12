@@ -222,6 +222,16 @@ contains
          write (*, '(A)') ''
       end if
       if (every .or. .not. gap_only) then
+         write (*, '(A)') '  gd_box_weight                        [real, default 2.0]'
+         write (*, '(A)') '      How heavily the lattice degrees of freedom count against the atomic'
+         write (*, '(A)') '      ones in a gd-box relaxation. The lattice is optimized in the scaled'
+         write (*, '(A)') '      variable gd_box_weight*sqrt(n_sites)*A*diag(1/|a0|,1/|b0|,1/|c0|),'
+         write (*, '(A)') '      which is what lets one step length serve both blocks. Larger values'
+         write (*, '(A)') '      make the cell move more slowly than the atoms.'
+         write (*, '(A)') '      -> needs optimize; see optimize, max_opt_step'
+         write (*, '(A)') ''
+      end if
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  max_opt_step                         [real, default 0.1, A]'
          write (*, '(A)') '      Largest distance any atom may move in one gradient-descent step. The'
          write (*, '(A)') '      step size is chosen so that the biggest displacement equals this.'
@@ -229,10 +239,14 @@ contains
          write (*, '(A)') ''
       end if
       if (every .or. .not. gap_only) then
-         write (*, '(A)') '  max_opt_step_eps                     [real, default 0.05]'
-         write (*, '(A)') '      Largest strain any cell vector may take in one step of a cell'
-         write (*, '(A)') '      relaxation. The strain analogue of max_opt_step.'
-         write (*, '(A)') '      -> needs optimize; see max_opt_step'
+         write (*, '(A)') '  max_opt_step_eps                     [real]'
+         write (*, '(A)') '      Accepted and ignored. Largest strain any cell vector could take in'
+         write (*, '(A)') '      one step of the old alternating cell relaxation. gd-box now relaxes'
+         write (*, '(A)') '      positions and lattice together in one preconditioned descent with a'
+         write (*, '(A)') '      single step length, taken from max_opt_step, so this is read and'
+         write (*, '(A)') '      discarded. Use gd_box_weight to change how far the cell moves per'
+         write (*, '(A)') '      step.'
+         write (*, '(A)') '      -> see max_opt_step, gd_box_weight'
          write (*, '(A)') ''
       end if
       if (every .or. (mode == 'md' .or. mode == 'mc')) then
@@ -343,12 +357,13 @@ contains
          write (*, '(A)') '      -> needs barostat; see p_beg'
          write (*, '(A)') ''
       end if
-      if (every .or. (mode == 'md')) then
+      if (every .or. (mode == 'md' .or. mode == 'mc')) then
          write (*, '(A)') '  randomize_velocities                 [logical, default false]'
-         write (*, '(A)') '      Draw the initial velocities from a Maxwell-Boltzmann distribution at'
-         write (*, '(A)') '      t_beg instead of taking them from the XYZ file. Use random_seed to'
-         write (*, '(A)') '      make the draw repeatable.'
-         write (*, '(A)') '      -> see random_seed, t_beg'
+         write (*, '(A)') '      Draw fresh velocities at t_beg instead of taking them from the XYZ'
+         write (*, '(A)') '      file. Also what the "md" Monte Carlo move does before each burst.'
+         write (*, '(A)') '      velocity_distribution chooses the draw. Use random_seed to make it'
+         write (*, '(A)') '      repeatable.'
+         write (*, '(A)') '      -> see velocity_distribution, random_seed, t_beg'
          write (*, '(A)') ''
       end if
       if (every .or. .not. gap_only) then
@@ -399,6 +414,18 @@ contains
          write (*, '(A)') '      stochastic velocity rescaling that samples the canonical ensemble'
          write (*, '(A)') '      properly; Berendsen does not. Anything else aborts the run.'
          write (*, '(A)') '      -> see t_beg, t_end, tau_t'
+         write (*, '(A)') ''
+      end if
+      if (every .or. (mode == 'md' .or. mode == 'mc')) then
+         write (*, '(A)') '  velocity_distribution                [string, default uniform]'
+         write (*, '(A)') '      Which distribution randomize_velocities draws from: "maxwell" for'
+         write (*, '(A)') '      Maxwell-Boltzmann at t_beg, or "uniform" for the historical draw,'
+         write (*, '(A)') '      whose components are uniform on [0,1) and are then scaled so the'
+         write (*, '(A)') '      kinetic energy is exactly (3/2)(N-1)kT. Only "maxwell" samples the'
+         write (*, '(A)') '      canonical ensemble, and mc_hamiltonian needs it for detailed'
+         write (*, '(A)') '      balance; "uniform" is the default so that existing trajectories'
+         write (*, '(A)') '      reproduce. Anything else aborts the run.'
+         write (*, '(A)') '      -> see randomize_velocities, mc_hamiltonian, t_beg'
          write (*, '(A)') ''
       end if
 
@@ -523,6 +550,19 @@ contains
          write (*, '(A)') ''
       end if
       if (every .or. (mode == 'mc')) then
+         write (*, '(A)') '  mc_molecule_files                    [string list]'
+         write (*, '(A)') '      Insert and remove a whole rigid molecule instead of a single atom,'
+         write (*, '(A)') '      one xyz file per entry in mc_species, or "none" for an entry that'
+         write (*, '(A)') '      really is an atom. n_mc_mu must appear first. Every species in the'
+         write (*, '(A)') '      file has to be in species. The molecule is placed with a uniformly'
+         write (*, '(A)') '      random orientation and its centre of mass drawn like an atomic'
+         write (*, '(A)') '      insertion, and a removal takes all of its atoms together, so mc_mu'
+         write (*, '(A)') '      is the chemical potential of the molecule.'
+         write (*, '(A)') '      -> needs n_mc_mu; sets n_mc_mu; see mc_species, mc_mu,'
+         write (*, '(A)') '         mc_min_dist'
+         write (*, '(A)') ''
+      end if
+      if (every .or. (mode == 'mc')) then
          write (*, '(A)') '  mc_move_max                          [real, default 1.0, A]'
          write (*, '(A)') '      Largest displacement of a single-atom "move". The trial displacement'
          write (*, '(A)') '      is drawn uniformly up to this.'
@@ -540,7 +580,18 @@ contains
          write (*, '(A)') '  mc_mu_acceptance                     [real list]'
          write (*, '(A)') '      Relative probability of picking each species for a grand-canonical'
          write (*, '(A)') '      move, one weight per entry in mc_species.'
-         write (*, '(A)') '      -> sets n_mc_types; sets n_mc_mu; see mc_mu, mc_species'
+         write (*, '(A)') '      -> sets n_mc_mu; see mc_mu, mc_species'
+         write (*, '(A)') ''
+      end if
+      if (every .or. (mode == 'mc')) then
+         write (*, '(A)') '  mc_mu_reference                      [string, default absolute]'
+         write (*, '(A)') '      What mc_mu is measured from. "absolute" compares it against the'
+         write (*, '(A)') '      total energy change of the exchange, which carries the e0 of'
+         write (*, '(A)') '      whatever was inserted or removed. "e0" adds that e0 back into the'
+         write (*, '(A)') '      acceptance ratio, so mc_mu is quoted relative to the'
+         write (*, '(A)') '      isolated-species reference energy instead. For a molecule the e0 of'
+         write (*, '(A)') '      all its atoms is summed. Anything else aborts the run.'
+         write (*, '(A)') '      -> see mc_mu, e0'
          write (*, '(A)') ''
       end if
       if (every .or. (mode == 'mc')) then
@@ -565,10 +616,12 @@ contains
       end if
       if (every .or. (mode == 'mc')) then
          write (*, '(A)') '  mc_optimize_exp                      [logical, default false]'
-         write (*, '(A)') '      Include the experimental-data penalty in the Metropolis test, so the'
-         write (*, '(A)') '      walk is driven towards agreement with the measured pattern. This is'
-         write (*, '(A)') '      the reverse Monte-Carlo mode.'
-         write (*, '(A)') '      -> needs do_exp; see exp_energy_scales'
+         write (*, '(A)') '      Declares that this is a reverse Monte-Carlo run, so that a missing'
+         write (*, '(A)') '      exp_energy_scales is reported. It does not itself put the'
+         write (*, '(A)') '      experimental penalty into the Metropolis test: the acceptance ratio'
+         write (*, '(A)') '      reads the total energy, and what folds the penalty into that is'
+         write (*, '(A)') '      exp_energies. Set both.'
+         write (*, '(A)') '      -> needs do_exp; see exp_energies, exp_energy_scales'
          write (*, '(A)') ''
       end if
       if (every .or. (mode == 'mc')) then
@@ -659,8 +712,9 @@ contains
          write (*, '(A)') '      Number of species in the grand-canonical lists. Give it before'
          write (*, '(A)') '      mc_species, mc_mu and mc_mu_acceptance, which it allocates; giving'
          write (*, '(A)') '      those lists instead sets it implicitly.'
-         write (*, '(A)') '      -> sets mc_mu; sets mc_species; sets mc_mu_acceptance; see'
-         write (*, '(A)') '         mc_species'
+         write (*, '(A)') '      -> sets mc_mu; sets mc_species; sets mc_mu_acceptance; sets'
+         write (*, '(A)') '         mc_molecule_files; sets mc_molecules; sets mc_exchange_mass;'
+         write (*, '(A)') '         sets mc_exchange_e0; see mc_species'
          write (*, '(A)') ''
       end if
       if (every .or. (mode == 'mc')) then
@@ -1049,7 +1103,7 @@ contains
          write (*, '(A)') '  exp_data_files                       [string list]'
          write (*, '(A)') '      Files holding the measured data, one per observable, in the order of'
          write (*, '(A)') '      exp_labels. Two columns: abscissa and intensity.'
-         write (*, '(A)') '      -> sets exp_energy_scales; see exp_labels, n_exp'
+         write (*, '(A)') '      -> sets n_exp; see exp_labels, n_exp'
          write (*, '(A)') ''
       end if
       if (every .or. .not. gap_only) then
@@ -1073,7 +1127,7 @@ contains
          write (*, '(A)') '      End point of a linear ramp in the weights over the run, so the data'
          write (*, '(A)') '      can be brought in gradually. Without it the weights stay at'
          write (*, '(A)') '      exp_energy_scales.'
-         write (*, '(A)') '      -> see exp_energy_scales'
+         write (*, '(A)') '      -> sets n_moments; see exp_energy_scales'
          write (*, '(A)') ''
       end if
       if (every .or. .not. gap_only) then
@@ -1089,8 +1143,7 @@ contains
          write (*, '(A)') '      What the corresponding data file contains, one per observable, when'
          write (*, '(A)') '      it is not the observable''s default representation: for instance'
          write (*, '(A)') '      "D(r)" for a pair distribution supplied as the reduced form.'
-         write (*, '(A)') '      -> sets exp_energy_scales; see exp_labels,'
-         write (*, '(A)') '         pair_distribution_output'
+         write (*, '(A)') '      -> sets n_exp; see exp_labels, pair_distribution_output'
          write (*, '(A)') ''
       end if
       if (every .or. .not. gap_only) then
@@ -1099,17 +1152,17 @@ contains
          write (*, '(A)') '      "saxs", "pair_distribution" and "structure_factor". Matching a label'
          write (*, '(A)') '      to a file is what marks that observable valid, and an observable'
          write (*, '(A)') '      that was asked for but has no data stays switched off.'
-         write (*, '(A)') '      -> sets exp_energy_scales; sets xps_idx; sets xrd_idx; sets'
-         write (*, '(A)') '         valid_xrd; sets pair_distribution_partial; sets nd_idx; sets'
-         write (*, '(A)') '         valid_nd; sets pdf_idx; sets valid_pdf; sets sf_idx; sets'
-         write (*, '(A)') '         valid_sf; see exp_data_files, n_exp'
+         write (*, '(A)') '      -> sets n_exp; sets xps_idx; sets xrd_idx; sets valid_xrd; sets'
+         write (*, '(A)') '         pair_distribution_partial; sets nd_idx; sets valid_nd; sets'
+         write (*, '(A)') '         pdf_idx; sets valid_pdf; sets sf_idx; sets valid_sf; see'
+         write (*, '(A)') '         exp_data_files, n_exp'
          write (*, '(A)') ''
       end if
       if (every .or. .not. gap_only) then
          write (*, '(A)') '  exp_n_samples                        [integer list]'
          write (*, '(A)') '      Number of points to predict for each observable, one per observable,'
          write (*, '(A)') '      overriding that observable''s own n_samples keyword.'
-         write (*, '(A)') '      -> sets exp_energy_scales; see exp_labels'
+         write (*, '(A)') '      -> sets n_exp; see exp_labels'
          write (*, '(A)') ''
       end if
       if (every .or. .not. gap_only) then

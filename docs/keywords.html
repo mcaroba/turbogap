@@ -240,15 +240,15 @@ footer {
 <header class="masthead">
 <p class="eyebrow">TurboGAP &middot; keyword reference</p>
 <h1>Keywords</h1>
-<p class="lede">298 keywords across the input file and the potential (.gap) file. Types and defaults are read out of <code>src/types.f90</code>, and the rest out of the branch in <code>src/read_files.f90</code> that parses the keyword, so nothing here is transcribed by hand.</p>
+<p class="lede">302 keywords across the input file and the potential (.gap) file. Types and defaults are read out of <code>src/types.f90</code>, and the rest out of the branch in <code>src/read_files.f90</code> that parses the keyword, so nothing here is transcribed by hand.</p>
 </header>
 <nav class="rail" aria-label="Groups">
 <p class="railhead">the input file</p>
 <a href="#general"><span>General</span><span class="n">12</span></a>
-<a href="#run-control"><span>Run control</span><span class="n">17</span></a>
-<a href="#molecular-dynamics"><span>Molecular dynamics</span><span class="n">17</span></a>
+<a href="#run-control"><span>Run control</span><span class="n">18</span></a>
+<a href="#molecular-dynamics"><span>Molecular dynamics</span><span class="n">18</span></a>
 <a href="#nested-sampling"><span>Nested sampling</span><span class="n">6</span></a>
-<a href="#monte-carlo"><span>Monte Carlo</span><span class="n">31</span></a>
+<a href="#monte-carlo"><span>Monte Carlo</span><span class="n">33</span></a>
 <a href="#van-der-waals"><span>Van der Waals</span><span class="n">31</span></a>
 <a href="#electrostatics"><span>Electrostatics</span><span class="n">11</span></a>
 <a href="#experimental-data-mad"><span>Experimental data (MAD)</span><span class="n">53</span></a>
@@ -474,6 +474,15 @@ footer {
 <td class="de"><span class="tag">ignored</span>The gradient-descent prefactor this once scaled. The step is now taken from max_opt_step and the largest force, so the value is read and discarded.</td>
 <td class="dp"><span class="dep">see <code>max_opt_step</code></span></td>
 </tr>
+<tr data-h="gd_box_weight how heavily the lattice degrees of freedom count against the atomic ones in a gd-box relaxation. the lattice is optimized in the scaled variable gd_box_weight*sqrt(n_sites)*a*diag(1/|a0|,1/|b0|,1/|c0|), which is what lets one step length serve both blocks. larger values make the cell move more slowly than the atoms." data-m="predict md mc soap">
+<td class="kw"><code>gd_box_weight</code></td>
+<td class="ty">real</td>
+<td class="df"><code>2.0</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">How heavily the lattice degrees of freedom count against the atomic ones in a gd-box relaxation. The lattice is optimized in the scaled variable gd_box_weight*sqrt(n_sites)*A*diag(1/|a0|,1/|b0|,1/|c0|), which is what lets one step length serve both blocks. Larger values make the cell move more slowly than the atoms.</td>
+<td class="dp"><span class="dep">needs <code>optimize</code></span><span class="dep">see <code>optimize</code></span><span class="dep">see <code>max_opt_step</code></span></td>
+</tr>
 <tr data-h="max_opt_step largest distance any atom may move in one gradient-descent step. the step size is chosen so that the biggest displacement equals this." data-m="predict md mc soap">
 <td class="kw"><code>max_opt_step</code></td>
 <td class="ty">real</td>
@@ -483,14 +492,14 @@ footer {
 <td class="de">Largest distance any atom may move in one gradient-descent step. The step size is chosen so that the biggest displacement equals this.</td>
 <td class="dp"><span class="dep">needs <code>optimize</code></span></td>
 </tr>
-<tr data-h="max_opt_step_eps largest strain any cell vector may take in one step of a cell relaxation. the strain analogue of max_opt_step." data-m="predict md mc soap">
+<tr class="flagged" data-h="max_opt_step_eps largest strain any cell vector could take in one step of the old alternating cell relaxation. gd-box now relaxes positions and lattice together in one preconditioned descent with a single step length, taken from max_opt_step, so this is read and discarded. use gd_box_weight to change how far the cell moves per step." data-m="predict md mc soap">
 <td class="kw"><code>max_opt_step_eps</code></td>
 <td class="ty">real</td>
-<td class="df"><code>0.05</code></td>
+<td class="df"></td>
 <td class="un"></td>
 <td class="mo">all</td>
-<td class="de">Largest strain any cell vector may take in one step of a cell relaxation. The strain analogue of max_opt_step.</td>
-<td class="dp"><span class="dep">needs <code>optimize</code></span><span class="dep">see <code>max_opt_step</code></span></td>
+<td class="de"><span class="tag">ignored</span>Largest strain any cell vector could take in one step of the old alternating cell relaxation. gd-box now relaxes positions and lattice together in one preconditioned descent with a single step length, taken from max_opt_step, so this is read and discarded. Use gd_box_weight to change how far the cell moves per step.</td>
+<td class="dp"><span class="dep">see <code>max_opt_step</code></span><span class="dep">see <code>gd_box_weight</code></span></td>
 </tr>
 <tr data-h="optimize how the geometry is driven: &quot;vv&quot; for velocity-verlet dynamics, &quot;gd&quot; for gradient descent on the positions, &quot;gd-box&quot; to relax the cell as well, and &quot;gd-box-ortho&quot; to relax the cell keeping it orthorhombic. anything else aborts the run." data-m="md mc">
 <td class="kw"><code>optimize</code></td>
@@ -632,14 +641,14 @@ footer {
 <td class="de">Target pressure at the end of the run.</td>
 <td class="dp"><span class="dep">needs <code>barostat</code></span><span class="dep">see <code>p_beg</code></span></td>
 </tr>
-<tr data-h="randomize_velocities draw the initial velocities from a maxwell-boltzmann distribution at t_beg instead of taking them from the xyz file. use random_seed to make the draw repeatable." data-m="md">
+<tr data-h="randomize_velocities draw fresh velocities at t_beg instead of taking them from the xyz file. also what the &quot;md&quot; monte carlo move does before each burst. velocity_distribution chooses the draw. use random_seed to make it repeatable." data-m="md mc">
 <td class="kw"><code>randomize_velocities</code></td>
 <td class="ty">logical</td>
 <td class="df"><code>false</code></td>
 <td class="un"></td>
-<td class="mo">md</td>
-<td class="de">Draw the initial velocities from a Maxwell-Boltzmann distribution at t_beg instead of taking them from the XYZ file. Use random_seed to make the draw repeatable.</td>
-<td class="dp"><span class="dep">see <code>random_seed</code></span><span class="dep">see <code>t_beg</code></span></td>
+<td class="mo">md, mc</td>
+<td class="de">Draw fresh velocities at t_beg instead of taking them from the XYZ file. Also what the &quot;md&quot; Monte Carlo move does before each burst. velocity_distribution chooses the draw. Use random_seed to make it repeatable.</td>
+<td class="dp"><span class="dep">see <code>velocity_distribution</code></span><span class="dep">see <code>random_seed</code></span><span class="dep">see <code>t_beg</code></span></td>
 </tr>
 <tr data-h="scale_box apply box_scaling_factor to the cell at the start of the run." data-m="predict md mc soap">
 <td class="kw"><code>scale_box</code></td>
@@ -703,6 +712,15 @@ footer {
 <td class="mo">md, mc</td>
 <td class="de">Temperature coupling: &quot;none&quot;, &quot;berendsen&quot; or &quot;bussi&quot;. Bussi is the stochastic velocity rescaling that samples the canonical ensemble properly; Berendsen does not. Anything else aborts the run.</td>
 <td class="dp"><span class="dep">see <code>t_beg</code></span><span class="dep">see <code>t_end</code></span><span class="dep">see <code>tau_t</code></span></td>
+</tr>
+<tr data-h="velocity_distribution which distribution randomize_velocities draws from: &quot;maxwell&quot; for maxwell-boltzmann at t_beg, or &quot;uniform&quot; for the historical draw, whose components are uniform on [0,1) and are then scaled so the kinetic energy is exactly (3/2)(n-1)kt. only &quot;maxwell&quot; samples the canonical ensemble, and mc_hamiltonian needs it for detailed balance; &quot;uniform&quot; is the default so that existing trajectories reproduce. anything else aborts the run." data-m="md mc">
+<td class="kw"><code>velocity_distribution</code></td>
+<td class="ty">string</td>
+<td class="df"><code>uniform</code></td>
+<td class="un"></td>
+<td class="mo">md, mc</td>
+<td class="de">Which distribution randomize_velocities draws from: &quot;maxwell&quot; for Maxwell-Boltzmann at t_beg, or &quot;uniform&quot; for the historical draw, whose components are uniform on [0,1) and are then scaled so the kinetic energy is exactly (3/2)(N-1)kT. Only &quot;maxwell&quot; samples the canonical ensemble, and mc_hamiltonian needs it for detailed balance; &quot;uniform&quot; is the default so that existing trajectories reproduce. Anything else aborts the run.</td>
+<td class="dp"><span class="dep">see <code>randomize_velocities</code></span><span class="dep">see <code>mc_hamiltonian</code></span><span class="dep">see <code>t_beg</code></span></td>
 </tr>
 </tbody></table></div></section>
 <section id="nested-sampling">
@@ -849,6 +867,15 @@ footer {
 <td class="de">Closest an inserted atom may come to an existing one. Trials nearer than this are rejected without evaluating the potential, which is what keeps an insertion from landing on top of an atom.</td>
 <td class="dp"><span class="dep">see <code>mc_max_dist</code></span></td>
 </tr>
+<tr data-h="mc_molecule_files insert and remove a whole rigid molecule instead of a single atom, one xyz file per entry in mc_species, or &quot;none&quot; for an entry that really is an atom. n_mc_mu must appear first. every species in the file has to be in species. the molecule is placed with a uniformly random orientation and its centre of mass drawn like an atomic insertion, and a removal takes all of its atoms together, so mc_mu is the chemical potential of the molecule." data-m="mc">
+<td class="kw"><code>mc_molecule_files</code></td>
+<td class="ty">string list</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="mo">mc</td>
+<td class="de">Insert and remove a whole rigid molecule instead of a single atom, one xyz file per entry in mc_species, or &quot;none&quot; for an entry that really is an atom. n_mc_mu must appear first. Every species in the file has to be in species. The molecule is placed with a uniformly random orientation and its centre of mass drawn like an atomic insertion, and a removal takes all of its atoms together, so mc_mu is the chemical potential of the molecule.</td>
+<td class="dp"><span class="dep">needs <code>n_mc_mu</code></span><span class="dep">sets <code>n_mc_mu</code></span><span class="dep">see <code>mc_species</code></span><span class="dep">see <code>mc_mu</code></span><span class="dep">see <code>mc_min_dist</code></span></td>
+</tr>
 <tr data-h="mc_move_max largest displacement of a single-atom &quot;move&quot;. the trial displacement is drawn uniformly up to this." data-m="mc">
 <td class="kw"><code>mc_move_max</code></td>
 <td class="ty">real</td>
@@ -874,7 +901,16 @@ footer {
 <td class="un"></td>
 <td class="mo">mc</td>
 <td class="de">Relative probability of picking each species for a grand-canonical move, one weight per entry in mc_species.</td>
-<td class="dp"><span class="dep">sets <code>n_mc_types</code></span><span class="dep">sets <code>n_mc_mu</code></span><span class="dep">see <code>mc_mu</code></span><span class="dep">see <code>mc_species</code></span></td>
+<td class="dp"><span class="dep">sets <code>n_mc_mu</code></span><span class="dep">see <code>mc_mu</code></span><span class="dep">see <code>mc_species</code></span></td>
+</tr>
+<tr data-h="mc_mu_reference what mc_mu is measured from. &quot;absolute&quot; compares it against the total energy change of the exchange, which carries the e0 of whatever was inserted or removed. &quot;e0&quot; adds that e0 back into the acceptance ratio, so mc_mu is quoted relative to the isolated-species reference energy instead. for a molecule the e0 of all its atoms is summed. anything else aborts the run." data-m="mc">
+<td class="kw"><code>mc_mu_reference</code></td>
+<td class="ty">string</td>
+<td class="df"><code>absolute</code></td>
+<td class="un"></td>
+<td class="mo">mc</td>
+<td class="de">What mc_mu is measured from. &quot;absolute&quot; compares it against the total energy change of the exchange, which carries the e0 of whatever was inserted or removed. &quot;e0&quot; adds that e0 back into the acceptance ratio, so mc_mu is quoted relative to the isolated-species reference energy instead. For a molecule the e0 of all its atoms is summed. Anything else aborts the run.</td>
+<td class="dp"><span class="dep">see <code>mc_mu</code></span><span class="dep">see <code>e0</code></span></td>
 </tr>
 <tr data-h="mc_n_planes number of planes bounding the region moves are restricted to. must appear before mc_planes and mc_max_dist_to_planes, which it allocates." data-m="mc">
 <td class="kw"><code>mc_n_planes</code></td>
@@ -903,14 +939,14 @@ footer {
 <td class="de">Number of Monte-Carlo steps to take.</td>
 <td class="dp"></td>
 </tr>
-<tr data-h="mc_optimize_exp include the experimental-data penalty in the metropolis test, so the walk is driven towards agreement with the measured pattern. this is the reverse monte-carlo mode." data-m="mc">
+<tr data-h="mc_optimize_exp declares that this is a reverse monte-carlo run, so that a missing exp_energy_scales is reported. it does not itself put the experimental penalty into the metropolis test: the acceptance ratio reads the total energy, and what folds the penalty into that is exp_energies. set both." data-m="mc">
 <td class="kw"><code>mc_optimize_exp</code></td>
 <td class="ty">logical</td>
 <td class="df"><code>false</code></td>
 <td class="un"></td>
 <td class="mo">mc</td>
-<td class="de">Include the experimental-data penalty in the Metropolis test, so the walk is driven towards agreement with the measured pattern. This is the reverse Monte-Carlo mode.</td>
-<td class="dp"><span class="dep">needs <code>do_exp</code></span><span class="dep">see <code>exp_energy_scales</code></span></td>
+<td class="de">Declares that this is a reverse Monte-Carlo run, so that a missing exp_energy_scales is reported. It does not itself put the experimental penalty into the Metropolis test: the acceptance ratio reads the total energy, and what folds the penalty into that is exp_energies. Set both.</td>
+<td class="dp"><span class="dep">needs <code>do_exp</code></span><span class="dep">see <code>exp_energies</code></span><span class="dep">see <code>exp_energy_scales</code></span></td>
 </tr>
 <tr data-h="mc_planes the planes bounding the region moves are restricted to, four numbers per plane giving its normal and offset. mc_n_planes must appear first." data-m="mc">
 <td class="kw"><code>mc_planes</code></td>
@@ -1018,7 +1054,7 @@ footer {
 <td class="un"></td>
 <td class="mo">mc</td>
 <td class="de">Number of species in the grand-canonical lists. Give it before mc_species, mc_mu and mc_mu_acceptance, which it allocates; giving those lists instead sets it implicitly.</td>
-<td class="dp"><span class="dep">sets <code>mc_mu</code></span><span class="dep">sets <code>mc_species</code></span><span class="dep">sets <code>mc_mu_acceptance</code></span><span class="dep">see <code>mc_species</code></span></td>
+<td class="dp"><span class="dep">sets <code>mc_mu</code></span><span class="dep">sets <code>mc_species</code></span><span class="dep">sets <code>mc_mu_acceptance</code></span><span class="dep">sets <code>mc_molecule_files</code></span><span class="dep">sets <code>mc_molecules</code></span><span class="dep">sets <code>mc_exchange_mass</code></span><span class="dep">sets <code>mc_exchange_e0</code></span><span class="dep">see <code>mc_species</code></span></td>
 </tr>
 <tr data-h="n_mc_relax_after number of entries in mc_relax_after, which it allocates and must precede." data-m="mc">
 <td class="kw"><code>n_mc_relax_after</code></td>
@@ -1501,7 +1537,7 @@ footer {
 <td class="un"></td>
 <td class="mo">all</td>
 <td class="de">Files holding the measured data, one per observable, in the order of exp_labels. Two columns: abscissa and intensity.</td>
-<td class="dp"><span class="dep">sets <code>exp_energy_scales</code></span><span class="dep">see <code>exp_labels</code></span><span class="dep">see <code>n_exp</code></span></td>
+<td class="dp"><span class="dep">sets <code>n_exp</code></span><span class="dep">see <code>exp_labels</code></span><span class="dep">see <code>n_exp</code></span></td>
 </tr>
 <tr data-h="exp_energies add the data mismatch to the energy. naming it enables do_exp." data-m="predict md mc soap">
 <td class="kw"><code>exp_energies</code></td>
@@ -1528,7 +1564,7 @@ footer {
 <td class="un">eV</td>
 <td class="mo">all</td>
 <td class="de">End point of a linear ramp in the weights over the run, so the data can be brought in gradually. Without it the weights stay at exp_energy_scales.</td>
-<td class="dp"><span class="dep">see <code>exp_energy_scales</code></span></td>
+<td class="dp"><span class="dep">sets <code>n_moments</code></span><span class="dep">see <code>exp_energy_scales</code></span></td>
 </tr>
 <tr data-h="exp_forces compute the derivative of the data mismatch with respect to positions and add it to the forces. naming it enables do_exp. without it the mismatch contributes to the energy alone." data-m="predict md mc soap">
 <td class="kw"><code>exp_forces</code></td>
@@ -1546,7 +1582,7 @@ footer {
 <td class="un"></td>
 <td class="mo">all</td>
 <td class="de">What the corresponding data file contains, one per observable, when it is not the observable&#x27;s default representation: for instance &quot;D(r)&quot; for a pair distribution supplied as the reduced form.</td>
-<td class="dp"><span class="dep">sets <code>exp_energy_scales</code></span><span class="dep">see <code>exp_labels</code></span><span class="dep">see <code>pair_distribution_output</code></span></td>
+<td class="dp"><span class="dep">sets <code>n_exp</code></span><span class="dep">see <code>exp_labels</code></span><span class="dep">see <code>pair_distribution_output</code></span></td>
 </tr>
 <tr data-h="exp_labels which observable each data file is, one per file, from &quot;xps&quot;, &quot;xrd&quot;, &quot;saxs&quot;, &quot;pair_distribution&quot; and &quot;structure_factor&quot;. matching a label to a file is what marks that observable valid, and an observable that was asked for but has no data stays switched off." data-m="predict md mc soap">
 <td class="kw"><code>exp_labels</code></td>
@@ -1555,7 +1591,7 @@ footer {
 <td class="un"></td>
 <td class="mo">all</td>
 <td class="de">Which observable each data file is, one per file, from &quot;xps&quot;, &quot;xrd&quot;, &quot;saxs&quot;, &quot;pair_distribution&quot; and &quot;structure_factor&quot;. Matching a label to a file is what marks that observable valid, and an observable that was asked for but has no data stays switched off.</td>
-<td class="dp"><span class="dep">sets <code>exp_energy_scales</code></span><span class="dep">sets <code>xps_idx</code></span><span class="dep">sets <code>xrd_idx</code></span><span class="dep">sets <code>valid_xrd</code></span><span class="dep">sets <code>pair_distribution_partial</code></span><span class="dep">sets <code>nd_idx</code></span><span class="dep">sets <code>valid_nd</code></span><span class="dep">sets <code>pdf_idx</code></span><span class="dep">sets <code>valid_pdf</code></span><span class="dep">sets <code>sf_idx</code></span><span class="dep">sets <code>valid_sf</code></span><span class="dep">see <code>exp_data_files</code></span><span class="dep">see <code>n_exp</code></span></td>
+<td class="dp"><span class="dep">sets <code>n_exp</code></span><span class="dep">sets <code>xps_idx</code></span><span class="dep">sets <code>xrd_idx</code></span><span class="dep">sets <code>valid_xrd</code></span><span class="dep">sets <code>pair_distribution_partial</code></span><span class="dep">sets <code>nd_idx</code></span><span class="dep">sets <code>valid_nd</code></span><span class="dep">sets <code>pdf_idx</code></span><span class="dep">sets <code>valid_pdf</code></span><span class="dep">sets <code>sf_idx</code></span><span class="dep">sets <code>valid_sf</code></span><span class="dep">see <code>exp_data_files</code></span><span class="dep">see <code>n_exp</code></span></td>
 </tr>
 <tr data-h="exp_n_samples number of points to predict for each observable, one per observable, overriding that observable&#x27;s own n_samples keyword." data-m="predict md mc soap">
 <td class="kw"><code>exp_n_samples</code></td>
@@ -1564,7 +1600,7 @@ footer {
 <td class="un"></td>
 <td class="mo">all</td>
 <td class="de">Number of points to predict for each observable, one per observable, overriding that observable&#x27;s own n_samples keyword.</td>
-<td class="dp"><span class="dep">sets <code>exp_energy_scales</code></span><span class="dep">see <code>exp_labels</code></span></td>
+<td class="dp"><span class="dep">sets <code>n_exp</code></span><span class="dep">see <code>exp_labels</code></span></td>
 </tr>
 <tr data-h="exp_similarity_type how the mismatch between prediction and data is measured: &quot;squared_diff&quot; for a sum of squared residuals, or &quot;similarity&quot;/&quot;overlap&quot; for a normalised overlap." data-m="predict md mc soap">
 <td class="kw"><code>exp_similarity_type</code></td>

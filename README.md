@@ -184,8 +184,11 @@ instead, grouped by the block they belong to (`soap_turbo`, `distance_2b`,
 
 ## TurboGAP Tutorials
 
-For the latest features in TurboGAP, one can follow the tutorials which were
-ran for the TurboGAP School, and adapt them for their machine: [TurboGAP
+For simple test cases of various simulation modes, one can consult `tests/regression/cases`.
+
+For practical use cases (i.e. useful simulations for understanding a particular
+research question) one can follow the tutorials which were ran for the TurboGAP
+School, and adapt them for their machine: [TurboGAP
 School](https://github.com/mcaroba/TurboGAP_School).
 
 Simple tutorials can be found in the [TurboGAP Tutorials](https://github.com/TiganyZ/turbogap_tutorials) repository `git clone https://github.com/TiganyZ/turbogap_tutorials.git`. Further tutorials and all documentation can be found on the [Turbogap Website](https://turbogap.fi/wiki/index.php/Tutorials).

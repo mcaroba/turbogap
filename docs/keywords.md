@@ -6,13 +6,13 @@ keyword in `src/read_files.f90` and regenerate with `make docs`.
 
 ## Contents
 
-**The input file** &mdash; 239 keywords
+**The input file** &mdash; 243 keywords
 
 - [General](#general) (12)
-- [Run control](#run-control) (17)
-- [Molecular dynamics](#molecular-dynamics) (17)
+- [Run control](#run-control) (18)
+- [Molecular dynamics](#molecular-dynamics) (18)
 - [Nested sampling](#nested-sampling) (6)
-- [Monte Carlo](#monte-carlo) (31)
+- [Monte Carlo](#monte-carlo) (33)
 - [Van der Waals](#van-der-waals) (31)
 - [Electrostatics](#electrostatics) (11)
 - [Experimental data (MAD)](#experimental-data-mad) (53)
@@ -67,8 +67,9 @@ What is computed, and how a relaxation is driven.
 | `e_tol` | real | `1.e-6` | eV | all | Convergence threshold on the energy change between successive relaxation steps. The relaxation stops when the energy, force and pressure criteria are all met. | needs `optimize`; see `f_tol`; see `p_tol` |
 | `f_tol` | real | `0.01` | eV/A | all | Convergence threshold on the largest force component during a relaxation. | needs `optimize`; see `e_tol`; see `p_tol` |
 | `gamma0` | real |  |  | all | **Accepted and ignored.** The gradient-descent prefactor this once scaled. The step is now taken from max_opt_step and the largest force, so the value is read and discarded. | see `max_opt_step` |
+| `gd_box_weight` | real | `2.0` |  | all | How heavily the lattice degrees of freedom count against the atomic ones in a gd-box relaxation. The lattice is optimized in the scaled variable gd_box_weight*sqrt(n_sites)*A*diag(1/\|a0\|,1/\|b0\|,1/\|c0\|), which is what lets one step length serve both blocks. Larger values make the cell move more slowly than the atoms. | needs `optimize`; see `optimize`; see `max_opt_step` |
 | `max_opt_step` | real | `0.1` | A | all | Largest distance any atom may move in one gradient-descent step. The step size is chosen so that the biggest displacement equals this. | needs `optimize` |
-| `max_opt_step_eps` | real | `0.05` |  | all | Largest strain any cell vector may take in one step of a cell relaxation. The strain analogue of max_opt_step. | needs `optimize`; see `max_opt_step` |
+| `max_opt_step_eps` | real |  |  | all | **Accepted and ignored.** Largest strain any cell vector could take in one step of the old alternating cell relaxation. gd-box now relaxes positions and lattice together in one preconditioned descent with a single step length, taken from max_opt_step, so this is read and discarded. Use gd_box_weight to change how far the cell moves per step. | see `max_opt_step`; see `gd_box_weight` |
 | `optimize` | string | `vv` |  | md, mc | How the geometry is driven: "vv" for velocity-Verlet dynamics, "gd" for gradient descent on the positions, "gd-box" to relax the cell as well, and "gd-box-ortho" to relax the cell keeping it orthorhombic. Anything else aborts the run. |  |
 | `p_tol` | real | `0.01` | GPa | all | Convergence threshold on the pressure during a cell relaxation. | needs `optimize`; see `e_tol`; see `f_tol` |
 | `target_pos_step` | real |  | A | md | Displacement the variable time step aims for: the step is rescaled so that the fastest atom moves about this far. Naming this keyword is what enables the variable time step. | sets `variable_time_step`; see `tau_dt` |
@@ -91,7 +92,7 @@ Time stepping, thermostat and barostat.
 | `n_t_hold` | integer | `0` |  | md | Number of entries in the t_hold list, which must be given before it. | sets `t_hold`; see `t_hold` |
 | `p_beg` | real | `1.0` | GPa | md, mc | Target pressure at the start of the run. With p_end it defines a linear ramp over the run. | needs `barostat` |
 | `p_end` | real | `1.0` | GPa | md, mc | Target pressure at the end of the run. | needs `barostat`; see `p_beg` |
-| `randomize_velocities` | logical | `false` |  | md | Draw the initial velocities from a Maxwell-Boltzmann distribution at t_beg instead of taking them from the XYZ file. Use random_seed to make the draw repeatable. | see `random_seed`; see `t_beg` |
+| `randomize_velocities` | logical | `false` |  | md, mc | Draw fresh velocities at t_beg instead of taking them from the XYZ file. Also what the "md" Monte Carlo move does before each burst. velocity_distribution chooses the draw. Use random_seed to make it repeatable. | see `velocity_distribution`; see `random_seed`; see `t_beg` |
 | `scale_box` | logical | `false` |  | all | Apply box_scaling_factor to the cell at the start of the run. | see `box_scaling_factor` |
 | `t_beg` | real | `300.0` | K | md, mc | Target temperature at the start of the run. With t_end it defines a linear ramp over the run; give only t_beg for a constant-temperature run. | see `thermostat`; see `t_end`; see `t_hold` |
 | `t_end` | real | `300.0` | K | md, mc | Target temperature at the end of the run. | see `t_beg` |
@@ -99,6 +100,7 @@ Time stepping, thermostat and barostat.
 | `tau_p` | real | `1000.0` | fs | md, mc | Relaxation time of the barostat: how quickly the cell is pushed towards the target pressure. Larger is gentler. | needs `barostat` |
 | `tau_t` | real | `100.0` | fs | md, mc | Relaxation time of the thermostat: how quickly the kinetic energy is pushed towards the target temperature. Larger is gentler. | needs `thermostat` |
 | `thermostat` | string | `none` |  | md, mc | Temperature coupling: "none", "berendsen" or "bussi". Bussi is the stochastic velocity rescaling that samples the canonical ensemble properly; Berendsen does not. Anything else aborts the run. | see `t_beg`; see `t_end`; see `tau_t` |
+| `velocity_distribution` | string | `uniform` |  | md, mc | Which distribution randomize_velocities draws from: "maxwell" for Maxwell-Boltzmann at t_beg, or "uniform" for the historical draw, whose components are uniform on [0,1) and are then scaled so the kinetic energy is exactly (3/2)(N-1)kT. Only "maxwell" samples the canonical ensemble, and mc_hamiltonian needs it for detailed balance; "uniform" is the default so that existing trajectories reproduce. Anything else aborts the run. | see `randomize_velocities`; see `mc_hamiltonian`; see `t_beg` |
 
 ## Nested sampling
 
@@ -128,13 +130,15 @@ Move types, acceptance and the grand-canonical ensemble.
 | `mc_max_dist_to_planes` | real list |  | A | mc | Distance from each plane within which a moved or inserted atom must stay, one value per plane. mc_n_planes must appear first. | needs `mc_n_planes`; sets `mc_n_planes`; see `mc_planes` |
 | `mc_max_insertion_trials` | integer | `500` |  | mc | How many random positions an insertion move may try before giving up. The run reports the failure and says which of mc_min_dist, mc_max_dist or this to change. | see `mc_min_dist`; see `mc_max_dist` |
 | `mc_min_dist` | real | `0.2` | A | mc | Closest an inserted atom may come to an existing one. Trials nearer than this are rejected without evaluating the potential, which is what keeps an insertion from landing on top of an atom. | see `mc_max_dist` |
+| `mc_molecule_files` | string list |  |  | mc | Insert and remove a whole rigid molecule instead of a single atom, one xyz file per entry in mc_species, or "none" for an entry that really is an atom. n_mc_mu must appear first. Every species in the file has to be in species. The molecule is placed with a uniformly random orientation and its centre of mass drawn like an atomic insertion, and a removal takes all of its atoms together, so mc_mu is the chemical potential of the molecule. | needs `n_mc_mu`; sets `n_mc_mu`; see `mc_species`; see `mc_mu`; see `mc_min_dist` |
 | `mc_move_max` | real | `1.0` | A | mc | Largest displacement of a single-atom "move". The trial displacement is drawn uniformly up to this. | needs `mc_types` |
 | `mc_mu` | real list |  | eV | mc | Chemical potential of each species that may be inserted or removed, one value per entry in mc_species. Its length sets n_mc_mu. | sets `n_mc_mu`; see `mc_species`; see `mc_types` |
-| `mc_mu_acceptance` | real list |  |  | mc | Relative probability of picking each species for a grand-canonical move, one weight per entry in mc_species. | sets `n_mc_types`; sets `n_mc_mu`; see `mc_mu`; see `mc_species` |
+| `mc_mu_acceptance` | real list |  |  | mc | Relative probability of picking each species for a grand-canonical move, one weight per entry in mc_species. | sets `n_mc_mu`; see `mc_mu`; see `mc_species` |
+| `mc_mu_reference` | string | `absolute` |  | mc | What mc_mu is measured from. "absolute" compares it against the total energy change of the exchange, which carries the e0 of whatever was inserted or removed. "e0" adds that e0 back into the acceptance ratio, so mc_mu is quoted relative to the isolated-species reference energy instead. For a molecule the e0 of all its atoms is summed. Anything else aborts the run. | see `mc_mu`; see `e0` |
 | `mc_n_planes` | integer | `0` |  | mc | Number of planes bounding the region moves are restricted to. Must appear before mc_planes and mc_max_dist_to_planes, which it allocates. | sets `mc_planes`; sets `mc_max_dist_to_planes`; see `mc_planes` |
 | `mc_nrelax` | integer | `0` |  | mc | Number of relaxation steps to take after an accepted move when mc_relax is on. | needs `mc_relax` |
 | `mc_nsteps` | integer | `1` |  | mc | Number of Monte-Carlo steps to take. |  |
-| `mc_optimize_exp` | logical | `false` |  | mc | Include the experimental-data penalty in the Metropolis test, so the walk is driven towards agreement with the measured pattern. This is the reverse Monte-Carlo mode. | needs `do_exp`; see `exp_energy_scales` |
+| `mc_optimize_exp` | logical | `false` |  | mc | Declares that this is a reverse Monte-Carlo run, so that a missing exp_energy_scales is reported. It does not itself put the experimental penalty into the Metropolis test: the acceptance ratio reads the total energy, and what folds the penalty into that is exp_energies. Set both. | needs `do_exp`; see `exp_energies`; see `exp_energy_scales` |
 | `mc_planes` | real list |  |  | mc | The planes bounding the region moves are restricted to, four numbers per plane giving its normal and offset. mc_n_planes must appear first. | needs `mc_n_planes`; sets `mc_n_planes`; see `mc_max_dist_to_planes`; see `mc_planes_restrict_to_polyhedron` |
 | `mc_planes_restrict_to_polyhedron` | logical | `false` |  | mc | Require an atom to be inside the polyhedron the planes enclose, rather than merely within mc_max_dist_to_planes of each plane. | needs `mc_planes` |
 | `mc_relax` | logical | `false` |  | mc | Relax the geometry after each accepted move, so the walk samples relaxed configurations. | see `mc_nrelax`; see `mc_relax_opt`; see `mc_relax_after` |
@@ -146,7 +150,7 @@ Move types, acceptance and the grand-canonical ensemble.
 | `mc_swaps` | string list |  |  | mc | Species pairs that a "swap" move may exchange, given as a flat list of symbols read two at a time. Its length sets n_mc_swaps, and the symbols are resolved against species. | sets `n_mc_swaps`; sets `species`; sets `mc_swaps_id`; see `mc_types`; see `species` |
 | `mc_types` | string list |  |  | mc | Which moves the walk may make, from "move", "insertion", "removal", "relax", "md", "swap", "volume" and "none". Any other name aborts the run. Its length sets n_mc_types, and mc_acceptance weights them. | sets `n_mc_types`; see `mc_acceptance` |
 | `mc_write_xyz` | logical | `false` |  | mc | Write the configuration after every Monte-Carlo step, not only the accepted ones. | see `write_xyz` |
-| `n_mc_mu` | integer | `0` |  | mc | Number of species in the grand-canonical lists. Give it before mc_species, mc_mu and mc_mu_acceptance, which it allocates; giving those lists instead sets it implicitly. | sets `mc_mu`; sets `mc_species`; sets `mc_mu_acceptance`; see `mc_species` |
+| `n_mc_mu` | integer | `0` |  | mc | Number of species in the grand-canonical lists. Give it before mc_species, mc_mu and mc_mu_acceptance, which it allocates; giving those lists instead sets it implicitly. | sets `mc_mu`; sets `mc_species`; sets `mc_mu_acceptance`; sets `mc_molecule_files`; sets `mc_molecules`; sets `mc_exchange_mass`; sets `mc_exchange_e0`; see `mc_species` |
 | `n_mc_relax_after` | integer | `0` |  | mc | Number of entries in mc_relax_after, which it allocates and must precede. | sets `mc_relax_after`; see `mc_relax_after` |
 | `n_mc_swaps` | integer | `0` |  | mc | Number of swap pairs, which is half the length of mc_swaps. Give it before mc_swaps, which it allocates. | sets `mc_swaps`; sets `mc_swaps_id`; see `mc_swaps` |
 | `n_mc_types` | integer | `0` |  | mc | Number of move types. Give it before mc_types and mc_acceptance, which it allocates; giving those lists instead sets it implicitly. | sets `mc_types`; sets `mc_acceptance`; see `mc_types` |
@@ -219,14 +223,14 @@ XPS, pair distributions, structure factors and diffraction.
 | `do_structure_factor` | logical | `false` |  | all | Compute the structure factor S(q). Needs the pair distributions when structure_factor_from_pdf is on, so it switches those on too. | sets `do_structure_factor_explicit`; sets `do_pair_distribution`; see `structure_factor_from_pdf`; see `q_range_min`; see `q_range_max` |
 | `do_xps` | logical | `false` |  | all | Compute an X-ray photoelectron spectrum from the predicted core-electron binding energies. The GAP has to provide those. | see `xps_sigma`; see `xps_e_min`; see `xps_e_max` |
 | `do_xrd` | logical | `false` |  | all | Compute an X-ray diffraction pattern. Needs the partial pair distributions and the structure factors it is built from, so it switches both on, unless xrd_debye takes the direct route instead. | sets `do_pair_distribution`; sets `do_structure_factor`; see `xrd_wavelength`; see `xrd_debye`; see `xrd_output` |
-| `exp_data_files` | string list |  |  | all | Files holding the measured data, one per observable, in the order of exp_labels. Two columns: abscissa and intensity. | sets `exp_energy_scales`; see `exp_labels`; see `n_exp` |
+| `exp_data_files` | string list |  |  | all | Files holding the measured data, one per observable, in the order of exp_labels. Two columns: abscissa and intensity. | sets `n_exp`; see `exp_labels`; see `n_exp` |
 | `exp_energies` | logical | `true` |  | all | Add the data mismatch to the energy. Naming it enables do_exp. | sets `do_exp`; see `exp_energy_scales` |
 | `exp_energy_scales` | real list |  | eV | all | Weight of each observable's mismatch in the total energy, one value per observable. This is what sets how hard the data pulls against the potential. Also seeds the initial and final values of a ramp. | sets `n_exp`; sets `exp_energy_scales_initial`; sets `exp_energy_scales_final`; see `exp_energy_scales_final`; see `n_exp` |
-| `exp_energy_scales_final`<br>`exp_energy_scales_end` | real list | `same as exp_energy_scales` | eV | all | End point of a linear ramp in the weights over the run, so the data can be brought in gradually. Without it the weights stay at exp_energy_scales. | see `exp_energy_scales` |
+| `exp_energy_scales_final`<br>`exp_energy_scales_end` | real list | `same as exp_energy_scales` | eV | all | End point of a linear ramp in the weights over the run, so the data can be brought in gradually. Without it the weights stay at exp_energy_scales. | sets `n_moments`; see `exp_energy_scales` |
 | `exp_forces` | logical | `false` |  | all | Compute the derivative of the data mismatch with respect to positions and add it to the forces. Naming it enables do_exp. Without it the mismatch contributes to the energy alone. | sets `do_exp`; see `exp_energies` |
-| `exp_input_type` | string list |  |  | all | What the corresponding data file contains, one per observable, when it is not the observable's default representation: for instance "D(r)" for a pair distribution supplied as the reduced form. | sets `exp_energy_scales`; see `exp_labels`; see `pair_distribution_output` |
-| `exp_labels` | string list |  |  | all | Which observable each data file is, one per file, from "xps", "xrd", "saxs", "pair_distribution" and "structure_factor". Matching a label to a file is what marks that observable valid, and an observable that was asked for but has no data stays switched off. | sets `exp_energy_scales`; sets `xps_idx`; sets `xrd_idx`; sets `valid_xrd`; sets `pair_distribution_partial`; sets `nd_idx`; sets `valid_nd`; sets `pdf_idx`; sets `valid_pdf`; sets `sf_idx`; sets `valid_sf`; see `exp_data_files`; see `n_exp` |
-| `exp_n_samples` | integer list |  |  | all | Number of points to predict for each observable, one per observable, overriding that observable's own n_samples keyword. | sets `exp_energy_scales`; see `exp_labels` |
+| `exp_input_type` | string list |  |  | all | What the corresponding data file contains, one per observable, when it is not the observable's default representation: for instance "D(r)" for a pair distribution supplied as the reduced form. | sets `n_exp`; see `exp_labels`; see `pair_distribution_output` |
+| `exp_labels` | string list |  |  | all | Which observable each data file is, one per file, from "xps", "xrd", "saxs", "pair_distribution" and "structure_factor". Matching a label to a file is what marks that observable valid, and an observable that was asked for but has no data stays switched off. | sets `n_exp`; sets `xps_idx`; sets `xrd_idx`; sets `valid_xrd`; sets `pair_distribution_partial`; sets `nd_idx`; sets `valid_nd`; sets `pdf_idx`; sets `valid_pdf`; sets `sf_idx`; sets `valid_sf`; see `exp_data_files`; see `n_exp` |
+| `exp_n_samples` | integer list |  |  | all | Number of points to predict for each observable, one per observable, overriding that observable's own n_samples keyword. | sets `n_exp`; see `exp_labels` |
 | `exp_similarity_type` | string | `squared_diff` |  | all | How the mismatch between prediction and data is measured: "squared_diff" for a sum of squared residuals, or "similarity"/"overlap" for a normalised overlap. | see `exp_energy_scales` |
 | `n_exp` | integer | `0` |  | all | Number of experimental observables. Give it before exp_data_files, exp_labels and exp_energy_scales, which it allocates. | sets `exp_data_files`; sets `exp_energy_scales`; sets `exp_energy_scales_initial`; sets `exp_energy_scales_final`; sets `do_exp`; see `exp_labels` |
 | `nd_n_samples` | integer | `200` |  | all | Number of points in the predicted neutron pattern. Writes the same sample count the XRD and structure-factor routines use, since the three share one q grid. | sets `xrd_n_samples`; sets `structure_factor_n_samples`; see `xrd_n_samples` |
@@ -452,4 +456,3 @@ A tabulated pair potential added on top of the GAPs, one block per species pair.
 | `Z1`<br>`z1`, `species1` | string |  |  | First species of the pair this core potential acts on, as a chemical symbol. | see `Z2` |
 | `Z2`<br>`z2`, `species2` | string |  |  | Second species of the pair. | see `Z1` |
 | `core_pot_file` | string |  |  | File holding the tabulated potential, as distance and energy columns. It is splined on read, and truncated at core_pot_cutoff with a taper of width core_pot_buffer, both set in the input file rather than here. This is the short-range repulsion the GAP is not fitted to describe, so the table usually only covers distances the training data never visited. | see `core_pot_cutoff`; see `core_pot_buffer` |
-

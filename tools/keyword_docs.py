@@ -1215,6 +1215,13 @@ def main():
                (DOC_HTML, render_html(keywords)),
                (GEN_F90, render_f90(keywords))]
 
+    # Exactly one trailing newline, which is what pre-commit's end-of-file-fixer
+    # enforces. Without this the two rewrite each other for ever: the generator
+    # emits a blank last line, the fixer strips it, and the next commit runs the
+    # generator again. The config warns about that shape of conflict for
+    # fprettify and trailing-whitespace; this is the same trap one hook over.
+    outputs = [(path, text.rstrip("\n") + "\n") for path, text in outputs]
+
     if args.check:
         bad = 0
         for k in missing:

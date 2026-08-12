@@ -44,7 +44,8 @@ def write_frame(path, n, comment, body):
 class Runner:
     """Runs turbogap in a staging directory and reads back what it produced."""
 
-    def __init__(self, binary, workdir, atoms, scale, mode="predict", family="xrd"):
+    def __init__(self, binary, workdir, atoms, scale, mode="predict", family="xrd",
+                 absolute=False):
         self.binary, self.workdir, self.atoms, self.mode = binary, workdir, atoms, mode
         self.scale = scale
         # Which per-family energy in the output frame this deck is exercising.
@@ -53,6 +54,7 @@ class Runner:
         # energy has to be named, and naming the family rather than the total
         # keeps the finite difference away from the GAP energy's round-off.
         self.family = family
+        self.absolute = absolute
         self.deck = open(f"{workdir}/input").read()
         self.n, self.comment, self.body = read_frame(f"{workdir}/{atoms}")
         self.lattice = np.array(
@@ -108,8 +110,21 @@ class Runner:
         return energy, forces, virial
 
     def contribution(self, label, **geom):
-        """Energy, forces and virial of the experimental term alone."""
+        """Energy, forces and virial of the term under test.
+
+        For an experimental family that means running twice, at the deck's
+        energy scale and at zero, and differencing: everything but the family
+        cancels, so the check does not depend on the GAP forces being right.
+
+        A GAP family has no such knob -- there is no scale to turn off. It is
+        isolated instead by giving the deck a potential file that contains only
+        that family's blocks, which makes the total energy, forces and virial
+        the family's own. That is what `absolute` selects, and it halves the
+        number of invocations.
+        """
         self.geometry(**geom)
+        if self.absolute:
+            return self.run(self.scale, label)
         e0, f0, v0 = self.run("0.0", f"{label} (scale 0)")
         self.geometry(**geom)
         e1, f1, v1 = self.run(self.scale, label)
@@ -124,12 +139,27 @@ def main():
     p.add_argument("--atoms", default="atoms.xyz")
     p.add_argument("--scale", default="100.0",
                    help="energy scale of the deck under test")
-    p.add_argument("--family", default="xrd", choices=("xrd", "nd", "pdf", "sf"),
+    p.add_argument("--absolute", action="store_true",
+                   help="the deck contains only the family under test, so take its "
+                        "energy, forces and virial from one run instead of "
+                        "differencing two energy scales")
+    p.add_argument("--family", default="xrd",
+                   choices=("xrd", "nd", "pdf", "sf", "soap", "2b", "3b", "core_pot"),
                    help="which energy_* in the output frame the deck drives")
     p.add_argument("--h", type=float, default=1e-3, help="displacement, Angstrom")
     p.add_argument("--strain", type=float, default=1e-4)
     p.add_argument("--atoms-to-check", type=int, default=3)
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--pick", default="random", choices=("random", "largest"),
+                   help="which atoms to check. 'random' is representative of a "
+                        "contribution every atom feels; 'largest' takes the "
+                        "biggest |F|, which is the only useful choice for a "
+                        "sparse one -- a random atom's core_pot force is exactly "
+                        "zero, and matching zero to zero checks nothing.")
+    p.add_argument("--exclude-atoms", default="",
+                   help="comma-separated atom indices to leave out of the force "
+                        "check, for geometries with a known non-smooth point. "
+                        "Every exclusion needs a KNOWN_ISSUES entry naming it.")
     # An escape hatch for a deck whose energy is known not to be a function of
     # the cell alone -- nothing in the tree needs it today. The pdf route used
     # to: its pair distribution is normalised by the number density N/V, and
@@ -143,7 +173,7 @@ def main():
     a = p.parse_args()
 
     shutil.copy(f"{a.workdir}/{a.atoms}", f"{a.workdir}/atoms_reference.xyz")
-    r = Runner(a.bin, a.workdir, a.atoms, a.scale, family=a.family)
+    r = Runner(a.bin, a.workdir, a.atoms, a.scale, family=a.family, absolute=a.absolute)
     deck = r.deck
     status = 0
     try:
@@ -159,8 +189,17 @@ def main():
             print("    FAIL: forces do not sum to zero")
             status = 1
 
-        rng = np.random.default_rng(a.seed)
-        picks = rng.choice(r.n, size=min(a.atoms_to_check, r.n), replace=False)
+        excluded = {int(v) for v in a.exclude_atoms.split(",") if v.strip()}
+        allowed = np.array([i for i in range(r.n) if i not in excluded])
+        if a.pick == "largest":
+            order = allowed[np.argsort(-np.abs(f_ref[allowed]).max(axis=1))]
+            picks = order[:min(a.atoms_to_check, len(order))]
+        else:
+            rng = np.random.default_rng(a.seed)
+            picks = rng.choice(allowed, size=min(a.atoms_to_check, len(allowed)), replace=False)
+        if excluded:
+            print(f"    excluding atoms {sorted(excluded)} (see KNOWN_ISSUES)")
+        print(f"    checking atoms {sorted(int(i) for i in picks)} ({a.pick})")
 
         print(f"\n    forces, h = {a.h} A")
         print(f"    {'atom':>5} {'dim':>3} {'analytic':>15} {'finite diff':>15} {'rel':>10}")

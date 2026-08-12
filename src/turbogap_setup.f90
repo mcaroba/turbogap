@@ -367,7 +367,7 @@ contains
             n_local_properties_mpi = soap_turbo_hypers(1:n_soap_turbo)%n_local_properties
 
             ! Allocate the arrays have n_sparse and n_data
-            if (any(soap_turbo_hypers(:)%has_local_properties)) then
+            if (any_has_local_properties(soap_turbo_hypers)) then
                n_lp_count = 0
                do i = 1, n_soap_turbo
                   if (n_local_properties_mpi(i) > 0) then

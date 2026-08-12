@@ -48,6 +48,12 @@ contains
    subroutine turbogap_abort()
       integer :: ierror
 
+!     Flush before aborting. MPI_abort kills the process outright, and Fortran
+!     unit 6 is buffered, so the diagnostic every caller writes just before
+!     getting here -- which keyword was wrong, and what the valid values are --
+!     was discarded along with the rest of the buffer. What the user saw was
+!     "with errorcode 1" and nothing else.
+      flush (6)
 #ifdef _MPIF90
       call MPI_abort(MPI_COMM_WORLD, 1, ierror)
 #endif

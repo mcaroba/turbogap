@@ -1,0 +1,25 @@
+atoms_file = "atoms.xyz"
+pot_file = "gap_files/CO.gap"
+n_species = 2
+species = C O
+masses = 12.01 15.99
+e0 = -.16138053 0.
+random_seed = 12345
+
+mc_nsteps = 10
+n_mc_types = 2
+mc_types = "insertion" "removal"
+mc_acceptance = 1 1
+
+n_mc_mu = 1
+mc_mu = 0.0
+mc_species = "O"
+mc_min_dist = 0.8
+mc_max_dist = 3.0
+
+! A slab 3 A either side of the z = 8.6 A mid-plane of the cell
+mc_n_planes = 1
+mc_planes = 0.0 0.0 1.0 8.6
+mc_max_dist_to_planes = 3.0
+
+write_xyz = 5

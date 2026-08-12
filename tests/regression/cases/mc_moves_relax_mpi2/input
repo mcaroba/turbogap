@@ -1,0 +1,30 @@
+atoms_file = "atoms.xyz"
+pot_file = "gap_files/CO.gap"
+n_species = 2
+species = C O
+masses = 12.01 15.99
+e0 = -.16138053 0.
+random_seed = 12345
+
+mc_nsteps = 12
+n_mc_types = 4
+mc_types = "insertion" "removal" "move" "swap"
+mc_acceptance = 1 1 1 1
+mc_move_max = 0.3
+
+n_mc_mu = 1
+mc_mu = 0.0
+mc_species = "O"
+mc_min_dist = 0.8
+mc_max_dist = 3.0
+
+n_mc_swaps = 1
+mc_swaps = "C" "O"
+
+mc_relax = .true.
+n_mc_relax_after = 3
+mc_relax_after = "insertion" "removal" "swap"
+mc_nrelax = 4
+mc_relax_opt = "gd"
+
+write_xyz = 4

@@ -1,0 +1,25 @@
+atoms_file = "atoms.xyz"
+pot_file = "gap_files/CO.gap"
+n_species = 2
+species = C O
+masses = 12.01 15.99
+e0 = -.16138053 0.
+random_seed = 12345
+
+t_beg = 300
+t_end = 300
+md_nsteps = 4
+md_step = 0.5
+thermostat = bussi
+tau_t = 100
+randomize_velocities = .true.
+
+mc_hamiltonian = .true.
+mc_nsteps = 10
+n_mc_types = 2
+mc_types = "md" "move"
+mc_acceptance = 1 1
+mc_move_max = 0.2
+mc_hybrid_opt = "vv"
+
+write_xyz = 5

@@ -167,15 +167,28 @@ contains
    ! end subroutine get_volume_bias
 
    subroutine get_mc_acceptance(mc_move, p_accept, energy, energy_prev, temp, &
-                                mc_id, mc_mu_id, mu_in, n_mc_species_in, &
-                                v_uc, v_uc_prev, v_a_uc, v_a_uc_prev, mass_in, pressure)
+                                mc_mu_id, mu_in, n_mc_species_in, &
+                                v_uc, v_uc_prev, v_a_uc, v_a_uc_prev, &
+                                exchange_mass, exchange_e0, mu_reference, pressure, n_sites)
       implicit none
 
       character*32, intent(in) :: mc_move
       real(dp), intent(out) :: p_accept
       real(dp) :: mu
       real(dp) :: mass
+!     Number of exchangeable objects present -- atoms for an atomic chemical
+!     potential, whole molecules for a molecular one. Left undefined when no
+!     chemical potential is configured, which the "volume" move then read --
+!     see the call to monte_carlo_volume below.
       integer :: n_mc_species
+!     Total number of particles. The N in the NPT volume-move acceptance ratio.
+      integer, intent(in) :: n_sites
+!     Per chemical potential: the mass entering the thermal de Broglie
+!     wavelength and the e0 of the exchanged object, both summed over a
+!     molecule's atoms. mu_reference says whether the second one is used.
+      real(dp), allocatable, intent(in) :: exchange_mass(:)
+      real(dp), allocatable, intent(in) :: exchange_e0(:)
+      character(len=*), intent(in) :: mu_reference
       real(dp), intent(in) :: energy
       real(dp), intent(in) :: energy_prev
       real(dp), intent(in) :: temp
@@ -185,21 +198,30 @@ contains
       real(dp), intent(in) :: v_a_uc_prev
       real(dp), intent(in) :: pressure
       integer, intent(in) :: mc_mu_id
-      real(dp), allocatable :: mass_in(:)
       real(dp), allocatable :: mu_in(:)
-      integer, allocatable :: mc_id(:)
       integer, allocatable :: n_mc_species_in(:)
 
       p_accept = 0.0d0
+      mu = 0.0d0
+      mass = 0.0d0
+      n_mc_species = 0
 
       if (allocated(mu_in)) then
          mu = mu_in(mc_mu_id)
       end if
-      if (allocated(mc_id)) then
+      if (allocated(n_mc_species_in)) then
          n_mc_species = n_mc_species_in(mc_mu_id)
       end if
-      if (allocated(mc_id) .and. allocated(mass_in)) then
-         mass = mass_in(mc_id(mc_mu_id))
+      if (allocated(exchange_mass)) then
+         mass = exchange_mass(mc_mu_id)
+      end if
+!     "absolute" compares mc_mu against the whole energy change, which carries
+!     the e0 of whatever was inserted or removed. "e0" adds that reference back
+!     in, so the number the user quotes is measured from the isolated species
+!     rather than from zero. The insertion and removal ratios below take mu
+!     with opposite signs, so this one line covers both.
+      if (trim(mu_reference) == "e0" .and. allocated(exchange_e0)) then
+         mu = mu + exchange_e0(mc_mu_id)
       end if
 
       if (mc_move == "move" .or. mc_move == "relax" .or. mc_move == "md" &
@@ -213,13 +235,33 @@ contains
          call monte_carlo_removal(p_accept, energy, energy_prev, temp, mu, &
                                   mass, v_a_uc, 1.0d0, n_mc_species)
       else if (mc_move == "volume") then
+!        The N in the (N+1) ln(V'/V) term of the NPT acceptance ratio is the
+!        total particle count, not the count of whichever species a chemical
+!        potential happens to name. A volume move needs no chemical potential
+!        at all, and with none configured n_mc_species was read undefined here.
          call monte_carlo_volume(p_accept, energy, energy_prev, temp, &
-                                 v_uc, v_uc_prev, v_a_uc, v_a_uc_prev, pressure, n_mc_species)
+                                 v_uc, v_uc_prev, v_a_uc, v_a_uc_prev, pressure, n_sites)
       end if
 
       p_accept = min(1.0, p_accept)
 
    end subroutine get_mc_acceptance
+
+!  Resize an allocatable integer array to n, discarding what it held. Used for
+!  the molecule bookkeeping, which is rebuilt from the incumbent image on every
+!  exchange rather than carried across the reallocation.
+   subroutine mc_resize_int(a, n)
+      implicit none
+      integer, allocatable, intent(inout) :: a(:)
+      integer, intent(in) :: n
+
+      if (allocated(a)) then
+         if (size(a, 1) /= n) deallocate (a)
+      end if
+      if (.not. allocated(a)) allocate (a(1:n))
+      a = 0
+
+   end subroutine mc_resize_int
 
    subroutine mc_get_atom_disp(n_sites, move_max, idx, disp, d_disp)
       implicit none
@@ -268,6 +310,8 @@ contains
       integer, intent(inout) :: swap_id_2
       integer, intent(inout) :: mc_mu_id
       integer :: n_mc_types
+      integer :: n_draws
+      integer, parameter :: max_draws = 1000
       integer, allocatable, intent(inout) :: species(:)
       integer, allocatable, intent(inout) :: mc_swaps_id(:)
       integer, allocatable, intent(inout) :: n_mc_species(:)
@@ -277,8 +321,19 @@ contains
 
       n_mc_types = size(mc_types, 1)
 
+!     Rejection sampling over the move list, so it has to be able to give up:
+!     a deck whose every enabled move is currently impossible -- "swap" alone
+!     with one species left, "removal" alone with nothing to remove -- would
+!     otherwise spin here for ever. "none" costs the walk one wasted trial,
+!     which is the same price a failed insertion already pays.
+      n_draws = 0
       invalid_move = .true.
       do while (invalid_move)
+         n_draws = n_draws + 1
+         if (n_draws > max_draws) then
+            mc_move = "none"
+            exit
+         end if
          call random_number(ranf)
 
          ! Now choose the move based on the acceptance ratios
@@ -297,10 +352,18 @@ contains
 
          cant_swap = .false.
          if (mc_move == "swap") then
-            call count_swap_species(n_spec_swap_1, n_spec_swap_2,&
-                 & species_types, n_mc_swaps, mc_swaps_id, species,&
-                 & n_sites, swap_id_1, swap_id_2, swap_species_1, swap_species_2)
-            cant_swap = (n_spec_swap_1 < 1 .or. n_spec_swap_2 < 1)
+!           A deck that lists "swap" in mc_types but never sets n_mc_swaps
+!           leaves mc_swaps_id unallocated, and count_swap_species indexes it
+!           unconditionally. Refuse the move here instead of reading the null
+!           pointer; perform_mc_step prints the diagnostic.
+            if (n_mc_swaps < 1 .or. .not. allocated(mc_swaps_id)) then
+               cant_swap = .true.
+            else
+               call count_swap_species(n_spec_swap_1, n_spec_swap_2,&
+                    & species_types, n_mc_swaps, mc_swaps_id, species,&
+                    & n_sites, swap_id_1, swap_id_2, swap_species_1, swap_species_2)
+               cant_swap = (n_spec_swap_1 < 1 .or. n_spec_swap_2 < 1)
+            end if
          end if
 
          ! If there are none of the gc species to remove, then we can't remove!!
@@ -421,6 +484,163 @@ contains
       cannot_insert_site = (n_trials > max_trials)
 
    end subroutine mc_insert_site
+
+!**************************************************************************
+!  A rotation matrix drawn uniformly from SO(3), by Shoemake's method: a
+!  uniform unit quaternion, converted. Sampling Euler angles uniformly instead
+!  would bias insertions towards particular orientations, and the whole point
+!  of the molecular move is that every orientation is equally likely.
+   subroutine random_rotation_matrix(r)
+
+      implicit none
+
+      real(dp), intent(out) :: r(1:3, 1:3)
+      real(dp) :: u(1:3)
+      real(dp) :: q(1:4)
+      real(dp), parameter :: pi = 3.14159265358979323846d0
+
+      call random_number(u)
+
+      q(1) = dsqrt(1.d0 - u(1))*dsin(2.d0*pi*u(2))
+      q(2) = dsqrt(1.d0 - u(1))*dcos(2.d0*pi*u(2))
+      q(3) = dsqrt(u(1))*dsin(2.d0*pi*u(3))
+      q(4) = dsqrt(u(1))*dcos(2.d0*pi*u(3))
+
+      r(1, 1) = 1.d0 - 2.d0*(q(2)*q(2) + q(3)*q(3))
+      r(1, 2) = 2.d0*(q(1)*q(2) - q(3)*q(4))
+      r(1, 3) = 2.d0*(q(1)*q(3) + q(2)*q(4))
+      r(2, 1) = 2.d0*(q(1)*q(2) + q(3)*q(4))
+      r(2, 2) = 1.d0 - 2.d0*(q(1)*q(1) + q(3)*q(3))
+      r(2, 3) = 2.d0*(q(2)*q(3) - q(1)*q(4))
+      r(3, 1) = 2.d0*(q(1)*q(3) - q(2)*q(4))
+      r(3, 2) = 2.d0*(q(2)*q(3) + q(1)*q(4))
+      r(3, 3) = 1.d0 - 2.d0*(q(1)*q(1) + q(2)*q(2))
+
+   end subroutine random_rotation_matrix
+!**************************************************************************
+
+!**************************************************************************
+!  Place one rigid molecule: a uniformly random orientation about its centre of
+!  mass, and a centre of mass drawn the same way mc_insert_site draws an atom.
+!
+!  The distance tests run over every atom of the molecule against every
+!  incumbent, never against its own atoms -- a molecule's own bond lengths are
+!  shorter than any sensible mc_min_dist, and rejecting on them would reject
+!  every trial. The plane restriction applies to the centre of mass, which is
+!  the point the move is nominally placing.
+   subroutine mc_insert_molecule(mol, positions, ref_positions, n_sites, n_ref, &
+                                 a_box, b_box, c_box, indices, species, ref_species, &
+                                 xyz_species, ref_xyz_species, min_dist, max_dist, &
+                                 cannot_insert_site, max_trials, &
+                                 mc_n_planes, mc_planes, mc_max_dist_to_planes, &
+                                 mc_planes_restrict_to_polyhedron)
+
+      implicit none
+
+      type(mc_molecule), intent(in) :: mol
+      real(dp), intent(inout) :: positions(:, :)
+      real(dp), intent(in) :: ref_positions(:, :)
+      real(dp), intent(in) :: a_box(1:3)
+      real(dp), intent(in) :: b_box(1:3)
+      real(dp), intent(in) :: c_box(1:3)
+      real(dp), intent(in) :: min_dist
+      real(dp), intent(in) :: max_dist
+      integer, intent(in) :: n_sites
+      integer, intent(in) :: n_ref
+      integer, intent(in) :: indices(1:3)
+      integer, intent(in) :: ref_species(:)
+      integer, intent(in) :: max_trials
+      integer, intent(inout) :: species(:)
+      character*8, intent(in) :: ref_xyz_species(:)
+      character*8, intent(inout) :: xyz_species(:)
+      logical, intent(out) :: cannot_insert_site
+      integer, intent(in) :: mc_n_planes
+      real(dp), allocatable, intent(in) :: mc_planes(:)
+      real(dp), allocatable, intent(in) :: mc_max_dist_to_planes(:)
+      logical, intent(in) :: mc_planes_restrict_to_polyhedron
+      real(dp) :: rot(1:3, 1:3)
+      real(dp) :: com(1:3)
+      real(dp) :: ranv(1:3)
+      real(dp) :: a_cell(1:3)
+      real(dp) :: b_cell(1:3)
+      real(dp) :: c_cell(1:3)
+      integer :: n_trials
+      integer :: i
+      logical :: too_close
+      logical :: too_far
+      logical :: too_far_planes
+      logical :: this_too_close
+      logical :: this_too_far
+
+      a_cell = a_box/dfloat(indices(1))
+      b_cell = b_box/dfloat(indices(2))
+      c_cell = c_box/dfloat(indices(3))
+
+      xyz_species(1:n_ref) = ref_xyz_species(1:n_ref)
+      species(1:n_ref) = ref_species(1:n_ref)
+      do i = 1, mol%n_atoms
+         xyz_species(n_ref + i) = mol%xyz_species(i)
+         species(n_ref + i) = mol%species(i)
+      end do
+
+      n_trials = 0
+      do while (.true.)
+
+         n_trials = n_trials + 1
+
+         positions(1:3, 1:n_ref) = ref_positions(1:3, 1:n_ref)
+
+         call random_number(ranv)
+         com(1) = ranv(1)*norm2(a_cell)
+         com(2) = ranv(2)*norm2(b_cell)
+         com(3) = ranv(3)*norm2(c_cell)
+
+         call random_rotation_matrix(rot)
+         do i = 1, mol%n_atoms
+            positions(1:3, n_ref + i) = com(1:3) + matmul(rot, mol%positions(1:3, i))
+         end do
+
+!        Every atom of the molecule has to clear min_dist, and at least one has
+!        to be within max_dist -- the same "not floating in vacuum" test the
+!        atomic insertion makes, applied to the molecule as a whole.
+         too_close = .false.
+         too_far = .true.
+         do i = 1, mol%n_atoms
+            call check_if_atoms_too_close_or_far(positions(1:3, n_ref + i), ref_positions, n_ref, &
+                                                 a_cell, b_cell, c_cell, &
+                                                 min_dist, this_too_close, &
+                                                 max_dist, this_too_far)
+            if (this_too_close) too_close = .true.
+            if (.not. this_too_far) too_far = .false.
+         end do
+
+         if (mc_n_planes > 0) then
+            if (mc_planes_restrict_to_polyhedron) then
+               call check_in_polyhedron(com(1:3), mc_n_planes, mc_planes, too_far_planes)
+            else
+               call check_if_far_from_planes(com(1:3), mc_n_planes, mc_planes, &
+                                             mc_max_dist_to_planes, too_far_planes)
+            end if
+         else
+            too_far_planes = .false.
+         end if
+
+         if (n_trials > max_trials .or. &
+             (.not. too_close .and. .not. too_far .and. .not. too_far_planes)) exit
+
+      end do
+
+      cannot_insert_site = (n_trials > max_trials)
+
+!     Wrapping last, and over the whole cell: an insertion near a face puts
+!     part of the molecule outside, and wrapping each atom independently is
+!     right here because the neighbour lists use the minimum image anyway.
+      if (.not. cannot_insert_site) then
+         call wrap_pbc(positions(1:3, 1:n_sites), a_cell, b_cell, c_cell)
+      end if
+
+   end subroutine mc_insert_molecule
+!**************************************************************************
 
    subroutine check_in_polyhedron(position, n_planes, planes, not_in_polyhedron)
       implicit none
@@ -596,7 +816,8 @@ contains
         & md_istep, mc_id, E_kinetic, instant_temp, t_beg,&
         & n_mc_swaps, mc_swaps, mc_swaps_id, species_types,&
         & mc_hamiltonian, n_mc_relax_after, mc_relax_after, do_mc_relax, verb,&
-        & mc_n_planes, mc_planes, mc_max_dist_to_planes, mc_planes_restrict_to_polyhedron)
+        & mc_n_planes, mc_planes, mc_max_dist_to_planes, mc_planes_restrict_to_polyhedron,&
+        & mc_molecules, mc_mol_id, mc_mol_mu, im_mol_id, im_mol_mu, mc_mol_next)
 
       implicit none
 
@@ -685,14 +906,46 @@ contains
       real(dp) :: gamma(1:6)
       real(dp), allocatable :: mc_planes(:)
       real(dp), allocatable :: mc_max_dist_to_planes(:)
+!     Rigid molecules the grand-canonical moves may exchange, one entry per
+!     chemical potential, and the bookkeeping that says which atom belongs to
+!     which inserted copy. All rank-0 state: the energy evaluation never reads
+!     it, so none of it is broadcast.
+      type(mc_molecule), allocatable, intent(in) :: mc_molecules(:)
+      integer, allocatable, intent(inout) :: mc_mol_id(:)
+      integer, allocatable, intent(inout) :: mc_mol_mu(:)
+      integer, allocatable, intent(in) :: im_mol_id(:)
+      integer, allocatable, intent(in) :: im_mol_mu(:)
+      integer, intent(inout) :: mc_mol_next
+      logical :: is_molecule
+      logical :: is_new_molecule
+      logical, allocatable :: keep(:)
+      integer :: n_exchange
+      integer :: n_ref
       !    n_sites = size(positions, 2)
 
-      ! Count the mc species (no multi species mc just yet)
+!     How many exchangeable objects there are of each kind. Atoms for an
+!     ordinary chemical potential -- and only atoms that are not part of an
+!     inserted molecule, since those are not free to be removed on their own --
+!     and whole molecules for a molecular one.
       if (allocated(n_mc_species) .and. n_mc_mu > 0) then
          n_mc_species = 0
          do j = 1, n_mc_mu
+            if (allocated(mc_molecules)) then
+               if (mc_molecules(j)%is_molecule) then
+                  do i = 1, n_sites
+                     if (mc_mol_mu(i) == j) then
+                        is_new_molecule = .true.
+                        do idx = 1, i - 1
+                           if (mc_mol_id(idx) == mc_mol_id(i)) is_new_molecule = .false.
+                        end do
+                        if (is_new_molecule) n_mc_species(j) = n_mc_species(j) + 1
+                     end if
+                  end do
+                  cycle
+               end if
+            end if
             do i = 1, n_sites
-               if (xyz_species(i) == mc_species(j)) then
+               if (xyz_species(i) == mc_species(j) .and. mc_mol_id(i) == 0) then
                   n_mc_species(j) = n_mc_species(j) + 1
                end if
             end do
@@ -811,26 +1064,68 @@ contains
 
       if (mc_move == "insertion" .or. mc_move == "removal") then
 
-         !   Allocate temporary storage arrays
-
-         if (allocated(species_idx)) deallocate (species_idx)
-         allocate (species_idx(1:n_mc_species(mc_mu_id)))
-
-         n_mc_species(mc_mu_id) = 0
-         do i = 1, n_sites
-            if (xyz_species(i) == mc_species(mc_mu_id)) then
-               n_mc_species(mc_mu_id) = n_mc_species(mc_mu_id) + 1
-               species_idx(n_mc_species(mc_mu_id)) = i
+!        How many atoms the exchange moves. One for an ordinary species; for a
+!        molecular chemical potential, the whole molecule at once.
+         is_molecule = .false.
+         n_exchange = 1
+         if (allocated(mc_molecules)) then
+            if (mc_molecules(mc_mu_id)%is_molecule) then
+               is_molecule = .true.
+               n_exchange = mc_molecules(mc_mu_id)%n_atoms
             end if
-         end do
+         end if
+
+         n_ref = n_sites
+
+!        The removal candidates, and the count that the acceptance ratio's
+!        N_exch is taken from. For a molecular potential both are counted in
+!        molecules: species_idx holds molecule tags, not atom indices. For an
+!        atomic one they are atoms of that species that are not part of any
+!        molecule -- an oxygen inside an inserted water is not a free oxygen.
+         if (allocated(species_idx)) deallocate (species_idx)
+         allocate (species_idx(1:n_ref))
+         n_mc_species(mc_mu_id) = 0
+         if (is_molecule) then
+            do i = 1, n_ref
+               if (mc_mol_mu(i) == mc_mu_id) then
+                  is_new_molecule = .true.
+                  do j = 1, n_mc_species(mc_mu_id)
+                     if (species_idx(j) == mc_mol_id(i)) is_new_molecule = .false.
+                  end do
+                  if (is_new_molecule) then
+                     n_mc_species(mc_mu_id) = n_mc_species(mc_mu_id) + 1
+                     species_idx(n_mc_species(mc_mu_id)) = mc_mol_id(i)
+                  end if
+               end if
+            end do
+         else
+            do i = 1, n_ref
+               if (xyz_species(i) == mc_species(mc_mu_id) .and. mc_mol_id(i) == 0) then
+                  n_mc_species(mc_mu_id) = n_mc_species(mc_mu_id) + 1
+                  species_idx(n_mc_species(mc_mu_id)) = i
+               end if
+            end do
+         end if
+
+         if (allocated(keep)) deallocate (keep)
+         allocate (keep(1:n_ref))
+         keep = .true.
 
          if (mc_move == "insertion") then
-            n_sites = n_sites + 1
+            n_sites = n_ref + n_exchange
          else if (mc_move == "removal") then
-            n_sites = n_sites - 1
             call random_number(ranf)
-            ! Index of atom to remove
             idx = species_idx(floor(ranf*n_mc_species(mc_mu_id)) + 1)
+!           idx is an atom index for an atomic potential and a molecule tag for
+!           a molecular one; either way this marks exactly the atoms that go.
+            if (is_molecule) then
+               do i = 1, n_ref
+                  if (mc_mol_id(i) == idx) keep(i) = .false.
+               end do
+            else
+               keep(idx) = .false.
+            end if
+            n_sites = count(keep)
          end if
 
          if (allocated(energies)) deallocate (energies, positions, velocities, &
@@ -848,12 +1143,21 @@ contains
          energies = 0.0d0
 
          if (mc_move == "insertion") then
-            call mc_insert_site(mc_species(mc_mu_id), mc_id(mc_mu_id), positions,&
-                 & im_pos, idx, n_sites,&
-                 & a_box, b_box, c_box, indices, species,&
-                 & im_species, xyz_species,&
-                 & im_xyz_species, mc_min_dist, mc_max_dist, cannot_insert_site, mc_max_insertion_trials,&
-                 & mc_n_planes, mc_planes, mc_max_dist_to_planes, mc_planes_restrict_to_polyhedron)
+            if (is_molecule) then
+               call mc_insert_molecule(mc_molecules(mc_mu_id), positions, im_pos, n_sites, n_ref, &
+                                       a_box, b_box, c_box, indices, species, im_species, &
+                                       xyz_species, im_xyz_species, mc_min_dist, mc_max_dist, &
+                                       cannot_insert_site, mc_max_insertion_trials, &
+                                       mc_n_planes, mc_planes, mc_max_dist_to_planes, &
+                                       mc_planes_restrict_to_polyhedron)
+            else
+               call mc_insert_site(mc_species(mc_mu_id), mc_id(mc_mu_id), positions,&
+                    & im_pos, idx, n_sites,&
+                    & a_box, b_box, c_box, indices, species,&
+                    & im_species, xyz_species,&
+                    & im_xyz_species, mc_min_dist, mc_max_dist, cannot_insert_site, mc_max_insertion_trials,&
+                    & mc_n_planes, mc_planes, mc_max_dist_to_planes, mc_planes_restrict_to_polyhedron)
+            end if
 
             if (cannot_insert_site) then
                ! Revert the changes
@@ -868,7 +1172,7 @@ contains
 
                mc_move = "insertionFAILED"
 
-               n_sites = n_sites - 1
+               n_sites = n_ref
                deallocate (energies, positions, velocities, &
                            forces, species, &
                            xyz_species, fix_atom)
@@ -889,19 +1193,54 @@ contains
                xyz_species = im_xyz_species
                fix_atom = im_fix_atom
 
+               call mc_resize_int(mc_mol_id, n_sites)
+               call mc_resize_int(mc_mol_mu, n_sites)
+               mc_mol_id(1:n_sites) = im_mol_id(1:n_sites)
+               mc_mol_mu(1:n_sites) = im_mol_mu(1:n_sites)
+
             else
+
+!              The successful-insertion path is the only one that did not fill
+!              fix_atom, which was reallocated a few lines above and so held
+!              whatever the heap did. Every consumer of it is a
+!              "if (.not. fix_atom(j,i))" guard in the integrators, so a
+!              relaxation or an MD burst after an insertion froze an arbitrary
+!              subset of the atoms -- a different subset on each run, which is
+!              what made a seeded walk irreproducible.
+               fix_atom(1:3, 1:n_ref) = im_fix_atom(1:3, 1:n_ref)
+               fix_atom(1:3, n_ref + 1:n_sites) = .false.
 
                deallocate (masses)
                allocate (masses(1:n_sites))
-               masses(1:n_sites - 1) = im_masses(1:n_sites - 1)
-               masses(n_sites) = masses_types(mc_id(mc_mu_id))
+               masses(1:n_ref) = im_masses(1:n_ref)
+
+               call mc_resize_int(mc_mol_id, n_sites)
+               call mc_resize_int(mc_mol_mu, n_sites)
+               mc_mol_id(1:n_ref) = im_mol_id(1:n_ref)
+               mc_mol_mu(1:n_ref) = im_mol_mu(1:n_ref)
+
+               if (is_molecule) then
+!                 One tag for the whole molecule, unique within the run, so
+!                 that a later removal can find its atoms again after
+!                 intervening removals have shifted every index.
+                  mc_mol_next = mc_mol_next + 1
+                  do i = 1, n_exchange
+                     masses(n_ref + i) = mc_molecules(mc_mu_id)%masses(i)
+                     mc_mol_id(n_ref + i) = mc_mol_next
+                     mc_mol_mu(n_ref + i) = mc_mu_id
+                  end do
+               else
+                  masses(n_sites) = masses_types(mc_id(mc_mu_id))
+                  mc_mol_id(n_sites) = 0
+                  mc_mol_mu(n_sites) = 0
+               end if
 
                if (allocated(local_properties)) then
                   deallocate (local_properties)
                   allocate (local_properties(1:n_sites, n_lp))
-                  local_properties(1:n_sites - 1, 1:n_lp) = im_local_properties(1:n_sites - 1, 1:n_lp)
+                  local_properties(1:n_ref, 1:n_lp) = im_local_properties(1:n_ref, 1:n_lp)
                   ! ignoring the hirshfeld v just want to get rough implementation done
-                  local_properties(n_sites, 1:n_lp) = 0.d0 ! local_properties(n_sites-1)
+                  local_properties(n_ref + 1:n_sites, 1:n_lp) = 0.d0
                end if
             end if
 
@@ -914,25 +1253,25 @@ contains
                allocate (local_properties(1:n_sites, 1:n_lp))
             end if
 
-            do i = 1, n_sites
-               if (i < idx) then
-                  positions(1:3, i) = im_pos(1:3, i)
+            call mc_resize_int(mc_mol_id, n_sites)
+            call mc_resize_int(mc_mol_mu, n_sites)
 
-                  xyz_species(i) = im_xyz_species(i)
-                  species(i) = im_species(i)
-
-                  masses(i) = im_masses(i)
-                  fix_atom(1:3, i) = im_fix_atom(1:3, i)
-
-                  if (allocated(local_properties)) local_properties(i, 1:n_lp) = im_local_properties(i, 1:n_lp)
-               else
-                  positions(1:3, i) = im_pos(1:3, i + 1)
-                  xyz_species(i) = im_xyz_species(i + 1)
-                  species(i) = im_species(i + 1)
-                  masses(i) = im_masses(i + 1)
-                  fix_atom(1:3, i) = im_fix_atom(1:3, i + 1)
-                  if (allocated(local_properties)) local_properties(i, 1:n_lp) = im_local_properties(i + 1, 1:n_lp)
-               end if
+!           Compact everything that survived, in order. This replaces an
+!           index-shifting loop that could only ever drop one atom; a molecular
+!           removal drops several, and they need not be adjacent once earlier
+!           removals have shuffled the list.
+            j = 0
+            do i = 1, n_ref
+               if (.not. keep(i)) cycle
+               j = j + 1
+               positions(1:3, j) = im_pos(1:3, i)
+               xyz_species(j) = im_xyz_species(i)
+               species(j) = im_species(i)
+               masses(j) = im_masses(i)
+               fix_atom(1:3, j) = im_fix_atom(1:3, i)
+               mc_mol_id(j) = im_mol_id(i)
+               mc_mol_mu(j) = im_mol_mu(i)
+               if (allocated(local_properties)) local_properties(j, 1:n_lp) = im_local_properties(i, 1:n_lp)
             end do
          end if
       end if

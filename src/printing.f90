@@ -71,103 +71,99 @@ contains
 
    end subroutine print_matrix_dp
 
+!  The input-file echo.
+!
+!  These lines are meant to be read back: the point of echoing a deck is that a
+!  reader can see what the run actually decided, and copy any of it into an
+!  input file of their own. So they carry no `|` end cap, and nothing is
+!  truncated -- both of which the fixed-width buffers here used to do. A name
+!  longer than 20 characters lost its tail (`write_pair_distribut`,
+!  `mc_planes_restrict_t`), and a value longer than the 42-character line lost
+!  its tail too, silently. Everything is built in a deferred-length string now,
+!  so a long path or a long species list comes out whole.
+!
+!  Values are written with G0/I0 rather than a fixed F or I width, so they are
+!  valid Fortran literals whatever their magnitude, which is what makes the
+!  line paste back into a deck.
    subroutine print_parameters(desc, values, unit)
       class(*), intent(in) :: values(:)
       character(len=*) :: desc
       character(len=*), optional :: unit
-      integer :: i, n
+      character(len=:), allocatable :: line
+      integer :: i
 
-      n = size(values)
-      call print_line(desc, 'normal')
-      do i = 1, n
-         if (present(unit)) then
-            call print_parameter("", values(i), unit)
-         else
-            call print_parameter("", values(i))
-         end if
-
+!     One line for the whole list, "name = v1 v2 v3", because that is the shape
+!     an input file wants it back in. The old form printed the name on its own
+!     line and then one value per line, which read back as nothing.
+      line = pad_name(desc)//' ='
+      do i = 1, size(values)
+         line = line//' '//value_string(values(i))
       end do
+!     The unit goes after a `!`, which is what the input parser treats as a
+!     comment, so the line stays paste-able as it stands.
+      if (present(unit)) line = line//'   ! '//trim(adjustl(unit))
+
+      write (*, '(1X,A)') line
+
    end subroutine print_parameters
 
    subroutine print_parameter(desc, value, unit)
       class(*), intent(in) :: value
       character(len=*) :: desc
-      character(len=max_length) :: string
-      character(len=max_length_half) :: temp
-      character(len=max_length_half) :: temp2
-      character(len=3) :: equals = ' = '
       character(len=*), optional :: unit
+      character(len=:), allocatable :: line
 
-      write (temp, '(a20)') adjustl(trim(desc))
-      if (present(unit)) then
+      line = pad_name(desc)//' = '//value_string(value)
+      if (present(unit)) line = line//'   ! '//trim(adjustl(unit))
 
-         select type (value)
-         type is (character(len=*))
-            write (string, '(a17,a3,a,a)') adjustl(temp), equals, trim(value), adjustl(unit)
-         type is (real(dp))
-            if (value < 0.0_dp) then
-               !write (temp2, '(g13.6)') value
-               write (temp2, '(f13.6)') value
-               write (string, '(a20,a3,a13,1X,a)') adjustl(temp), equals, adjustl(temp2), adjustl(unit)
-            else
-               !write (temp2, '(g13.7)') value
-               write (temp2, '(f13.7)') value
-               write (string, '(a20,a3,a13,1X,a)') adjustl(temp), equals, " "//adjustl(temp2), adjustl(unit)
-            end if
-
-            !write (string, '(a17,a3,g18.6,a)') adjustl(temp), equals, value, adjustl(unit)
-         type is (integer)
-            write (string, '(a17,a3,i8,a)') adjustl(temp), equals, value, adjustl(unit)
-         type is (logical)
-            write (string, '(a17,a3,1x,l2,a)') adjustl(temp), equals, value, adjustl(unit)
-         end select
-
-      else
-
-         select type (value)
-         type is (character(len=*))
-            if (len_trim(value) > max_length - 24) then
-               write (temp, '(a20,a3)') adjustl(temp), equals
-               call print_line(temp//adjustl(trim(value)), 'normal')
-               return
-            else
-
-               write (string, '(a20,a3,a)') adjustl(temp), equals, " "//trim(value)
-            end if
-
-         type is (real(dp))
-            if (value < 0.0_dp) then
-               !write (temp2, '(g18.6)') value
-               write (temp2, '(f18.6)') value
-               write (string, '(a20,a3,a18)') adjustl(temp), equals, adjustl(temp2)
-            else
-               !jwrite (temp2, '(g19.7)') value
-               write (temp2, '(f19.7)') value
-               write (string, '(a20,a3,a19)') adjustl(temp), equals, " "//adjustl(temp2)
-            end if
-
-         type is (integer)
-            if (value < 0) then
-               write (temp2, '(i8)') value
-               write (string, '(a20,a3,a18)') adjustl(temp), equals, adjustl(temp2)
-            else
-               write (temp2, '(i9)') value
-               write (string, '(a20,a3,a19)') adjustl(temp), equals, " "//adjustl(temp2)
-            end if
-
-         type is (logical)
-            if (value) then
-               write (temp2, '(a6)') '.true.'
-            else
-               write (temp2, '(a7)') '.false.'
-            end if
-            write (string, '(a20,a3,1x,a18)') adjustl(temp), equals, adjustl(temp2)
-         end select
-      end if
-
-      call print_line(string, 'normal')
+      write (*, '(1X,A)') line
 
    end subroutine print_parameter
+
+!  Keyword names padded to a common column so the `=` line up. The width is the
+!  longest keyword there is (mc_planes_restrict_to_polyhedron, 32); a longer one
+!  is not truncated, it just pushes its own `=` out.
+   function pad_name(desc) result(padded)
+      character(len=*), intent(in) :: desc
+      character(len=:), allocatable :: padded
+      integer, parameter :: name_width = 32
+      character(len=name_width) :: buffer
+
+      if (len_trim(desc) > name_width) then
+         padded = trim(adjustl(desc))
+      else
+         buffer = adjustl(desc)
+         padded = buffer
+      end if
+
+   end function pad_name
+
+!  One value, as a literal an input file would accept back.
+   function value_string(value) result(text)
+      class(*), intent(in) :: value
+      character(len=:), allocatable :: text
+      character(len=64) :: buffer
+
+      select type (value)
+      type is (character(len=*))
+         text = trim(adjustl(value))
+      type is (real(dp))
+         write (buffer, '(G0.10)') value
+         text = trim(adjustl(buffer))
+      type is (integer)
+         write (buffer, '(I0)') value
+         text = trim(adjustl(buffer))
+      type is (logical)
+         if (value) then
+            text = '.true.'
+         else
+            text = '.false.'
+         end if
+      class default
+         text = '<unprintable>'
+      end select
+
+   end function value_string
 
    subroutine print_line(input_string, line_type)
       character(len=*) :: input_string
