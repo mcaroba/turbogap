@@ -7,51 +7,70 @@ module keyword_help
    implicit none
 
    private
-   public :: print_keyword_help, keyword_help_modes
+   public :: print_keyword_help, keyword_help_topics
 
 contains
 
-!  The modes `turbogap --help <mode>` accepts, for the error message.
-   function keyword_help_modes() result(text)
+!  What `turbogap --help <topic>` accepts, for the error message.
+   function keyword_help_topics() result(text)
       character(len=64) :: text
-      text = 'predict/md/mc/soap'
-   end function keyword_help_modes
+      text = 'predict/md/mc/soap/gap'
+   end function keyword_help_topics
 
-!  Print the keyword reference. An empty mode prints every keyword;
-!  otherwise only those that do something in that mode.
-   subroutine print_keyword_help(mode)
+!  Print the keyword reference. An empty topic prints everything; a mode
+!  prints the input-file keywords that do something in it; "gap" prints
+!  the potential-file keywords instead.
+   subroutine print_keyword_help(topic)
 
-      character(len=*), intent(in) :: mode
+      character(len=*), intent(in) :: topic
 
       logical :: every
+      logical :: gap_only
+      character(len=len(topic)) :: mode
 
-      every = (len_trim(mode) == 0)
+      every = (len_trim(topic) == 0)
+      gap_only = (topic == 'gap')
+!     A mode never selects the potential file, so blank it out there and
+!     the per-keyword guards below need no second variable.
+      mode = topic
+      if (gap_only) mode = ''
 
-      write (*, '(A)') 'TurboGAP input keywords'
+      write (*, '(A)') 'TurboGAP keywords'
       write (*, '(A)') ''
       if (every) then
-         write (*, '(A)') '  Every keyword. Use `turbogap --help <predict|md|mc|soap>` to narrow this down.'
+         write (*, '(A)') '  Everything. `turbogap --help <predict|md|mc|soap|gap>` narrows this down.'
+      else if (gap_only) then
+         write (*, '(A)') '  Keywords of the potential (.gap) file.'
       else
-         write (*, '(A)') '  Keywords that do something in mode: '//trim(mode)
+         write (*, '(A)') '  Input-file keywords that do something in mode: '//trim(topic)
       end if
       write (*, '(A)') ''
-      write (*, '(A)') '  One `keyword = value` per line in the input file. An unrecognised'
-      write (*, '(A)') '  keyword aborts the run. Full reference: docs/keywords.html'
+      write (*, '(A)') '  Full reference, with the cross-references: docs/keywords.html'
       write (*, '(A)') ''
 
+!  ======== the input file
+      if (every .or. .not. gap_only) then
+         write (*, '(A)') ''
+         write (*, '(A)') '##### KEYWORDS FOR THE INPUT FILE #####'
+         write (*, '(A)') ''
+         write (*, '(A)') '  One keyword = value per line. A keyword this list does not contain'
+         write (*, '(A)') '  aborts the run.'
+         write (*, '(A)') ''
+      end if
+
 !     ---- General
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '=== GENERAL ==='
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  atoms_file (or input_file)           [string]'
          write (*, '(A)') '      Path to the extended-XYZ file holding the atomic configuration, or'
          write (*, '(A)') '      the trajectory of configurations to loop over in predict mode.'
          write (*, '(A)') '      Required.'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  e0                                   [real list, eV]'
          write (*, '(A)') '      Constant energy offset per species, added to every atom of that'
          write (*, '(A)') '      species. One value per entry in species, in the same order. The GAP'
@@ -59,7 +78,7 @@ contains
          write (*, '(A)') '      energy scale.'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  masses                               [real list, amu]'
          write (*, '(A)') '      Atomic mass of each species, one value per entry in species and in'
          write (*, '(A)') '      the same order. Read in amu and converted internally to eV fs^2 /'
@@ -67,7 +86,7 @@ contains
          write (*, '(A)') '      -> see species'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  max_gbytes_per_process               [real, default 1.0, GB]'
          write (*, '(A)') '      Memory an MPI rank may use for the SOAP descriptor and its'
          write (*, '(A)') '      derivatives; the rank splits its atoms into as many batches as it'
@@ -77,7 +96,7 @@ contains
          write (*, '(A)') '      -> sets max_Gbytes_set; see mem_fraction'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  mem_fraction                         [real, default 0.25]'
          write (*, '(A)') '      Fraction of the node''s memory to divide between the ranks on it when'
          write (*, '(A)') '      max_Gbytes_per_process was not given. Only consulted for that'
@@ -86,7 +105,7 @@ contains
          write (*, '(A)') '      -> see max_gbytes_per_process'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  neighbors_buffer                     [real, default 0.0, A]'
          write (*, '(A)') '      Extra distance added to every cutoff when the neighbour lists are'
          write (*, '(A)') '      built, so that a list stays valid for several steps as atoms move.'
@@ -94,7 +113,7 @@ contains
          write (*, '(A)') '      often.'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  radii                                [real list, A]'
          write (*, '(A)') '      Per-species radius used by the Monte-Carlo insertion and'
          write (*, '(A)') '      accessible-volume tests, one value per entry in species. Not a'
@@ -102,7 +121,7 @@ contains
          write (*, '(A)') '      -> see accessible_volume, mc_types'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  random_seed                          [integer, default 0]'
          write (*, '(A)') '      Seed for the intrinsic pseudo-random number generator. Zero, the'
          write (*, '(A)') '      default, leaves the compiler''s own sequence alone; any other value'
@@ -111,25 +130,25 @@ contains
          write (*, '(A)') '      -> see randomize_velocities'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  species                              [string list]'
          write (*, '(A)') '      Chemical symbols of the species in the system, in the order every'
          write (*, '(A)') '      other per-species list is written in. n_species entries.'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  timing                               [logical, default false]'
          write (*, '(A)') '      Print a breakdown of where wall time went, by phase, at the end of'
          write (*, '(A)') '      the run.'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  verbosity (or verb)                  [integer, default 0]'
          write (*, '(A)') '      How much diagnostic output to print. 0 is quiet; the MC and MD'
          write (*, '(A)') '      drivers gate extra reporting on thresholds up to about 50.'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'predict') then
+      if (every .or. (mode == 'predict')) then
          write (*, '(A)') '  which_atom                           [integer, default 0]'
          write (*, '(A)') '      Restrict the prediction to a single atom index, for debugging a'
          write (*, '(A)') '      local environment. 0, the default, means every atom.'
@@ -137,11 +156,11 @@ contains
       end if
 
 !     ---- Run control
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '=== RUN CONTROL ==='
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  do_derivatives                       [logical, default false]'
          write (*, '(A)') '      Compute the derivatives of the SOAP descriptor with respect to'
          write (*, '(A)') '      atomic positions. Needed for forces, and switched on automatically'
@@ -149,7 +168,7 @@ contains
          write (*, '(A)') '      energy-only pass cheap.'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  do_derivatives_fd                    [logical, default false]'
          write (*, '(A)') '      Compute the descriptor derivatives by finite differences instead of'
          write (*, '(A)') '      analytically. A correctness check on the analytic route, far slower,'
@@ -157,29 +176,29 @@ contains
          write (*, '(A)') '      -> see do_derivatives'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  do_forces                            [logical, default false]'
          write (*, '(A)') '      Compute forces and the virial. Set automatically in md, mc and'
          write (*, '(A)') '      predict mode; the only reason to name it is to switch it off.'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'mc') then
+      if (every .or. (mode == 'mc')) then
          write (*, '(A)') '  do_mc                                [logical, default false]'
          write (*, '(A)') '      Run a Monte-Carlo walk. Set automatically by `turbogap mc`.'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  do_md                                [logical, default false]'
          write (*, '(A)') '      Run molecular dynamics. Set automatically by `turbogap md`.'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  do_prediction                        [logical, default false]'
          write (*, '(A)') '      Evaluate the GAP at all. Set automatically in every mode except'
          write (*, '(A)') '      soap; switching it off leaves only the descriptor calculation.'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  e_tol                                [real, default 1.e-6, eV]'
          write (*, '(A)') '      Convergence threshold on the energy change between successive'
          write (*, '(A)') '      relaxation steps. The relaxation stops when the energy, force and'
@@ -187,14 +206,14 @@ contains
          write (*, '(A)') '      -> needs optimize; see f_tol, p_tol'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  f_tol                                [real, default 0.01, eV/A]'
          write (*, '(A)') '      Convergence threshold on the largest force component during a'
          write (*, '(A)') '      relaxation.'
          write (*, '(A)') '      -> needs optimize; see e_tol, p_tol'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  gamma0                               [real]'
          write (*, '(A)') '      Accepted and ignored. The gradient-descent prefactor this once'
          write (*, '(A)') '      scaled. The step is now taken from max_opt_step and the largest'
@@ -202,21 +221,21 @@ contains
          write (*, '(A)') '      -> see max_opt_step'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  max_opt_step                         [real, default 0.1, A]'
          write (*, '(A)') '      Largest distance any atom may move in one gradient-descent step. The'
          write (*, '(A)') '      step size is chosen so that the biggest displacement equals this.'
          write (*, '(A)') '      -> needs optimize'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  max_opt_step_eps                     [real, default 0.05]'
          write (*, '(A)') '      Largest strain any cell vector may take in one step of a cell'
          write (*, '(A)') '      relaxation. The strain analogue of max_opt_step.'
          write (*, '(A)') '      -> needs optimize; see max_opt_step'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md' .or. mode == 'mc') then
+      if (every .or. (mode == 'md' .or. mode == 'mc')) then
          write (*, '(A)') '  optimize                             [string, default vv]'
          write (*, '(A)') '      How the geometry is driven: "vv" for velocity-Verlet dynamics, "gd"'
          write (*, '(A)') '      for gradient descent on the positions, "gd-box" to relax the cell as'
@@ -224,13 +243,13 @@ contains
          write (*, '(A)') '      Anything else aborts the run.'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  p_tol                                [real, default 0.01, GPa]'
          write (*, '(A)') '      Convergence threshold on the pressure during a cell relaxation.'
          write (*, '(A)') '      -> needs optimize; see e_tol, f_tol'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  target_pos_step                      [real, A]'
          write (*, '(A)') '      Displacement the variable time step aims for: the step is rescaled'
          write (*, '(A)') '      so that the fastest atom moves about this far. Naming this keyword'
@@ -238,7 +257,7 @@ contains
          write (*, '(A)') '      -> sets variable_time_step; see tau_dt'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  tau_dt                               [real, default 100.0, fs]'
          write (*, '(A)') '      Relaxation time over which the variable time step is allowed to'
          write (*, '(A)') '      change, so that the step size follows target_pos_step smoothly'
@@ -246,14 +265,14 @@ contains
          write (*, '(A)') '      -> needs target_pos_step'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  write_derivatives                    [logical, default false]'
          write (*, '(A)') '      Write the SOAP descriptor derivatives to file alongside the'
          write (*, '(A)') '      descriptors. Large output; a debugging aid.'
          write (*, '(A)') '      -> see write_soap'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  write_soap                           [logical, default false]'
          write (*, '(A)') '      Write the SOAP descriptor vectors to file. Set automatically by'
          write (*, '(A)') '      `turbogap soap`.'
@@ -261,18 +280,18 @@ contains
       end if
 
 !     ---- Molecular dynamics
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '=== MOLECULAR DYNAMICS ==='
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md' .or. mode == 'mc') then
+      if (every .or. (mode == 'md' .or. mode == 'mc')) then
          write (*, '(A)') '  barostat                             [string, default none]'
          write (*, '(A)') '      Pressure coupling: "none" or "berendsen". Anything else aborts the'
          write (*, '(A)') '      run.'
          write (*, '(A)') '      -> see p_beg, p_end, tau_p, barostat_sym'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md' .or. mode == 'mc') then
+      if (every .or. (mode == 'md' .or. mode == 'mc')) then
          write (*, '(A)') '  barostat_sym                         [string, default isotropic]'
          write (*, '(A)') '      Which components of the cell the barostat is allowed to change:'
          write (*, '(A)') '      "isotropic" scales all three axes together, and the anisotropic'
@@ -280,7 +299,7 @@ contains
          write (*, '(A)') '      -> needs barostat'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  box_scaling_factor                   [real(3, 3), default identity]'
          write (*, '(A)') '      A 3x3 matrix the cell is multiplied by, applied once at the start of'
          write (*, '(A)') '      the run. Nine numbers, read column by column. Used to strain a cell'
@@ -288,43 +307,43 @@ contains
          write (*, '(A)') '      -> needs scale_box'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md' .or. mode == 'mc') then
+      if (every .or. (mode == 'md' .or. mode == 'mc')) then
          write (*, '(A)') '  gamma_p                              [real, default 1.0]'
          write (*, '(A)') '      Damping of the Berendsen barostat''s cell response, on top of tau_p.'
          write (*, '(A)') '      -> needs barostat'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  md_nsteps                            [integer, default 1]'
          write (*, '(A)') '      Number of molecular-dynamics steps to take.'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  md_step                              [real, default 1.0, fs]'
          write (*, '(A)') '      Time step. With a variable time step this is the starting value.'
          write (*, '(A)') '      -> see target_pos_step'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  n_t_hold                             [integer, default 0]'
          write (*, '(A)') '      Number of entries in the t_hold list, which must be given before it.'
          write (*, '(A)') '      -> sets t_hold; see t_hold'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md' .or. mode == 'mc') then
+      if (every .or. (mode == 'md' .or. mode == 'mc')) then
          write (*, '(A)') '  p_beg                                [real, default 1.0, GPa]'
          write (*, '(A)') '      Target pressure at the start of the run. With p_end it defines a'
          write (*, '(A)') '      linear ramp over the run.'
          write (*, '(A)') '      -> needs barostat'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md' .or. mode == 'mc') then
+      if (every .or. (mode == 'md' .or. mode == 'mc')) then
          write (*, '(A)') '  p_end                                [real, default 1.0, GPa]'
          write (*, '(A)') '      Target pressure at the end of the run.'
          write (*, '(A)') '      -> needs barostat; see p_beg'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  randomize_velocities                 [logical, default false]'
          write (*, '(A)') '      Draw the initial velocities from a Maxwell-Boltzmann distribution at'
          write (*, '(A)') '      t_beg instead of taking them from the XYZ file. Use random_seed to'
@@ -332,13 +351,13 @@ contains
          write (*, '(A)') '      -> see random_seed, t_beg'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  scale_box                            [logical, default false]'
          write (*, '(A)') '      Apply box_scaling_factor to the cell at the start of the run.'
          write (*, '(A)') '      -> see box_scaling_factor'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md' .or. mode == 'mc') then
+      if (every .or. (mode == 'md' .or. mode == 'mc')) then
          write (*, '(A)') '  t_beg                                [real, default 300.0, K]'
          write (*, '(A)') '      Target temperature at the start of the run. With t_end it defines a'
          write (*, '(A)') '      linear ramp over the run; give only t_beg for a constant-temperature'
@@ -346,13 +365,13 @@ contains
          write (*, '(A)') '      -> see thermostat, t_end, t_hold'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md' .or. mode == 'mc') then
+      if (every .or. (mode == 'md' .or. mode == 'mc')) then
          write (*, '(A)') '  t_end                                [real, default 300.0, K]'
          write (*, '(A)') '      Target temperature at the end of the run.'
          write (*, '(A)') '      -> see t_beg'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  t_hold                               [real list, K]'
          write (*, '(A)') '      Segments of the temperature schedule, as a flat list read n_t_hold'
          write (*, '(A)') '      entries at a time: a piecewise ramp-and-hold instead of the single'
@@ -360,21 +379,21 @@ contains
          write (*, '(A)') '      -> needs n_t_hold; sets n_t_hold'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md' .or. mode == 'mc') then
+      if (every .or. (mode == 'md' .or. mode == 'mc')) then
          write (*, '(A)') '  tau_p                                [real, default 1000.0, fs]'
          write (*, '(A)') '      Relaxation time of the barostat: how quickly the cell is pushed'
          write (*, '(A)') '      towards the target pressure. Larger is gentler.'
          write (*, '(A)') '      -> needs barostat'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md' .or. mode == 'mc') then
+      if (every .or. (mode == 'md' .or. mode == 'mc')) then
          write (*, '(A)') '  tau_t                                [real, default 100.0, fs]'
          write (*, '(A)') '      Relaxation time of the thermostat: how quickly the kinetic energy is'
          write (*, '(A)') '      pushed towards the target temperature. Larger is gentler.'
          write (*, '(A)') '      -> needs thermostat'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md' .or. mode == 'mc') then
+      if (every .or. (mode == 'md' .or. mode == 'mc')) then
          write (*, '(A)') '  thermostat                           [string, default none]'
          write (*, '(A)') '      Temperature coupling: "none", "berendsen" or "bussi". Bussi is the'
          write (*, '(A)') '      stochastic velocity rescaling that samples the canonical ensemble'
@@ -384,43 +403,43 @@ contains
       end if
 
 !     ---- Nested sampling
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '=== NESTED SAMPLING ==='
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  n_nested                             [integer, default 0]'
          write (*, '(A)') '      Number of nested-sampling iterations. Naming it is what enables'
          write (*, '(A)') '      nested sampling.'
          write (*, '(A)') '      -> sets do_nested_sampling'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  nested_max_strain                    [real, default 0.0]'
          write (*, '(A)') '      Largest strain a nested-sampling cell-shape move may apply.'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  nested_max_volume_change             [real, default 0.0]'
          write (*, '(A)') '      Largest fractional volume change a nested-sampling volume move may'
          write (*, '(A)') '      make.'
          write (*, '(A)') '      -> needs scale_box_nested'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  p_nested                             [real, default 0.0, GPa]'
          write (*, '(A)') '      External pressure entering the nested-sampling enthalpy.'
          write (*, '(A)') '      -> needs n_nested'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  scale_box_nested                     [logical, default false]'
          write (*, '(A)') '      Let nested sampling change the cell as well as the positions.'
          write (*, '(A)') '      -> needs n_nested; see nested_max_volume_change,'
          write (*, '(A)') '         nested_max_strain'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  t_extra                              [real]'
          write (*, '(A)') '      Accepted and ignored. Temperature offset from an earlier'
          write (*, '(A)') '      nested-sampling design; nothing consults it.'
@@ -428,11 +447,11 @@ contains
       end if
 
 !     ---- Monte Carlo
-      if (every .or. mode == 'mc') then
+      if (every .or. (mode == 'mc')) then
          write (*, '(A)') '=== MONTE CARLO ==='
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'mc') then
+      if (every .or. (mode == 'mc')) then
          write (*, '(A)') '  accessible_volume                    [logical, default false]'
          write (*, '(A)') '      Use the volume actually accessible to a new atom, with the volume of'
          write (*, '(A)') '      the existing atoms'' spheres removed, rather than the cell volume, in'
@@ -441,7 +460,7 @@ contains
          write (*, '(A)') '      -> see radii'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'mc') then
+      if (every .or. (mode == 'mc')) then
          write (*, '(A)') '  mc_acceptance                        [real list]'
          write (*, '(A)') '      Relative probability of picking each move type, one weight per entry'
          write (*, '(A)') '      in mc_types and in the same order. Normalised internally, so the'
@@ -449,7 +468,7 @@ contains
          write (*, '(A)') '      -> sets n_mc_types; see mc_types'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'mc') then
+      if (every .or. (mode == 'mc')) then
          write (*, '(A)') '  mc_hamiltonian                       [logical, default false]'
          write (*, '(A)') '      Include the kinetic energy in the Metropolis test, so that the walk'
          write (*, '(A)') '      samples configurations and momenta together rather than'
@@ -457,14 +476,14 @@ contains
          write (*, '(A)') '      -> see mc_types'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'mc') then
+      if (every .or. (mode == 'mc')) then
          write (*, '(A)') '  mc_hybrid_opt                        [string, default vv]'
          write (*, '(A)') '      How the short MD burst of a hybrid "md" move is propagated: same'
          write (*, '(A)') '      choices as optimize.'
          write (*, '(A)') '      -> needs mc_types; see optimize'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'mc') then
+      if (every .or. (mode == 'mc')) then
          write (*, '(A)') '  mc_lnvol_max                         [real, default 0.01]'
          write (*, '(A)') '      Largest change in ln(V) a volume move may make, so the trial volume'
          write (*, '(A)') '      is drawn from V*exp(+-mc_lnvol_max). Working in the logarithm keeps'
@@ -472,7 +491,7 @@ contains
          write (*, '(A)') '      -> needs mc_types'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'mc') then
+      if (every .or. (mode == 'mc')) then
          write (*, '(A)') '  mc_max_dist                          [real, default 100000000.0, A]'
          write (*, '(A)') '      Largest distance from an existing atom at which a new atom may be'
          write (*, '(A)') '      inserted. Together with mc_min_dist it bounds where an insertion'
@@ -480,14 +499,14 @@ contains
          write (*, '(A)') '      -> see mc_min_dist, mc_max_insertion_trials'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'mc') then
+      if (every .or. (mode == 'mc')) then
          write (*, '(A)') '  mc_max_dist_to_planes                [real list, A]'
          write (*, '(A)') '      Distance from each plane within which a moved or inserted atom must'
          write (*, '(A)') '      stay, one value per plane. mc_n_planes must appear first.'
          write (*, '(A)') '      -> needs mc_n_planes; sets mc_n_planes; see mc_planes'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'mc') then
+      if (every .or. (mode == 'mc')) then
          write (*, '(A)') '  mc_max_insertion_trials              [integer, default 500]'
          write (*, '(A)') '      How many random positions an insertion move may try before giving'
          write (*, '(A)') '      up. The run reports the failure and says which of mc_min_dist,'
@@ -495,7 +514,7 @@ contains
          write (*, '(A)') '      -> see mc_min_dist, mc_max_dist'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'mc') then
+      if (every .or. (mode == 'mc')) then
          write (*, '(A)') '  mc_min_dist                          [real, default 0.2, A]'
          write (*, '(A)') '      Closest an inserted atom may come to an existing one. Trials nearer'
          write (*, '(A)') '      than this are rejected without evaluating the potential, which is'
@@ -503,28 +522,28 @@ contains
          write (*, '(A)') '      -> see mc_max_dist'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'mc') then
+      if (every .or. (mode == 'mc')) then
          write (*, '(A)') '  mc_move_max                          [real, default 1.0, A]'
          write (*, '(A)') '      Largest displacement of a single-atom "move". The trial displacement'
          write (*, '(A)') '      is drawn uniformly up to this.'
          write (*, '(A)') '      -> needs mc_types'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'mc') then
+      if (every .or. (mode == 'mc')) then
          write (*, '(A)') '  mc_mu                                [real list, eV]'
          write (*, '(A)') '      Chemical potential of each species that may be inserted or removed,'
          write (*, '(A)') '      one value per entry in mc_species. Its length sets n_mc_mu.'
          write (*, '(A)') '      -> sets n_mc_mu; see mc_species, mc_types'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'mc') then
+      if (every .or. (mode == 'mc')) then
          write (*, '(A)') '  mc_mu_acceptance                     [real list]'
          write (*, '(A)') '      Relative probability of picking each species for a grand-canonical'
          write (*, '(A)') '      move, one weight per entry in mc_species.'
          write (*, '(A)') '      -> sets n_mc_types; sets n_mc_mu; see mc_mu, mc_species'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'mc') then
+      if (every .or. (mode == 'mc')) then
          write (*, '(A)') '  mc_n_planes                          [integer, default 0]'
          write (*, '(A)') '      Number of planes bounding the region moves are restricted to. Must'
          write (*, '(A)') '      appear before mc_planes and mc_max_dist_to_planes, which it'
@@ -532,19 +551,19 @@ contains
          write (*, '(A)') '      -> sets mc_planes; sets mc_max_dist_to_planes; see mc_planes'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'mc') then
+      if (every .or. (mode == 'mc')) then
          write (*, '(A)') '  mc_nrelax                            [integer, default 0]'
          write (*, '(A)') '      Number of relaxation steps to take after an accepted move when'
          write (*, '(A)') '      mc_relax is on.'
          write (*, '(A)') '      -> needs mc_relax'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'mc') then
+      if (every .or. (mode == 'mc')) then
          write (*, '(A)') '  mc_nsteps                            [integer, default 1]'
          write (*, '(A)') '      Number of Monte-Carlo steps to take.'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'mc') then
+      if (every .or. (mode == 'mc')) then
          write (*, '(A)') '  mc_optimize_exp                      [logical, default false]'
          write (*, '(A)') '      Include the experimental-data penalty in the Metropolis test, so the'
          write (*, '(A)') '      walk is driven towards agreement with the measured pattern. This is'
@@ -552,7 +571,7 @@ contains
          write (*, '(A)') '      -> needs do_exp; see exp_energy_scales'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'mc') then
+      if (every .or. (mode == 'mc')) then
          write (*, '(A)') '  mc_planes                            [real list]'
          write (*, '(A)') '      The planes bounding the region moves are restricted to, four numbers'
          write (*, '(A)') '      per plane giving its normal and offset. mc_n_planes must appear'
@@ -561,21 +580,21 @@ contains
          write (*, '(A)') '         mc_max_dist_to_planes, mc_planes_restrict_to_polyhedron'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'mc') then
+      if (every .or. (mode == 'mc')) then
          write (*, '(A)') '  mc_planes_restrict_to_polyhedron     [logical, default false]'
          write (*, '(A)') '      Require an atom to be inside the polyhedron the planes enclose,'
          write (*, '(A)') '      rather than merely within mc_max_dist_to_planes of each plane.'
          write (*, '(A)') '      -> needs mc_planes'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'mc') then
+      if (every .or. (mode == 'mc')) then
          write (*, '(A)') '  mc_relax                             [logical, default false]'
          write (*, '(A)') '      Relax the geometry after each accepted move, so the walk samples'
          write (*, '(A)') '      relaxed configurations.'
          write (*, '(A)') '      -> see mc_nrelax, mc_relax_opt, mc_relax_after'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'mc') then
+      if (every .or. (mode == 'mc')) then
          write (*, '(A)') '  mc_relax_after                       [string list]'
          write (*, '(A)') '      Which move types trigger a relaxation, by name. n_mc_relax_after'
          write (*, '(A)') '      must appear first. Without it, mc_relax applies to every accepted'
@@ -583,20 +602,20 @@ contains
          write (*, '(A)') '      -> needs n_mc_relax_after; sets n_mc_relax_after; see mc_relax'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'mc') then
+      if (every .or. (mode == 'mc')) then
          write (*, '(A)') '  mc_relax_opt                         [string, default gd]'
          write (*, '(A)') '      How the post-move relaxation is driven: same choices as optimize.'
          write (*, '(A)') '      -> needs mc_relax; see optimize'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'mc') then
+      if (every .or. (mode == 'mc')) then
          write (*, '(A)') '  mc_reverse                           [logical]'
          write (*, '(A)') '      Accepted and ignored. Reverse-Monte-Carlo switch from an earlier'
          write (*, '(A)') '      design; nothing consults it. Use mc_optimize_exp.'
          write (*, '(A)') '      -> see mc_optimize_exp'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'mc') then
+      if (every .or. (mode == 'mc')) then
          write (*, '(A)') '  mc_reverse_lambda                    [real]'
          write (*, '(A)') '      Accepted and ignored. Mixing weight for the same earlier design;'
          write (*, '(A)') '      nothing consults it. The weight that does exist is'
@@ -604,14 +623,14 @@ contains
          write (*, '(A)') '      -> see exp_energy_scales'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'mc') then
+      if (every .or. (mode == 'mc')) then
          write (*, '(A)') '  mc_species                           [string list]'
          write (*, '(A)') '      Species that may be inserted or removed by grand-canonical moves.'
          write (*, '(A)') '      Its length sets n_mc_mu.'
          write (*, '(A)') '      -> sets n_mc_mu; see mc_mu, mc_types'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'mc') then
+      if (every .or. (mode == 'mc')) then
          write (*, '(A)') '  mc_swaps                             [string list]'
          write (*, '(A)') '      Species pairs that a "swap" move may exchange, given as a flat list'
          write (*, '(A)') '      of symbols read two at a time. Its length sets n_mc_swaps, and the'
@@ -620,7 +639,7 @@ contains
          write (*, '(A)') '         species'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'mc') then
+      if (every .or. (mode == 'mc')) then
          write (*, '(A)') '  mc_types                             [string list]'
          write (*, '(A)') '      Which moves the walk may make, from "move", "insertion", "removal",'
          write (*, '(A)') '      "relax", "md", "swap", "volume" and "none". Any other name aborts'
@@ -628,14 +647,14 @@ contains
          write (*, '(A)') '      -> sets n_mc_types; see mc_acceptance'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'mc') then
+      if (every .or. (mode == 'mc')) then
          write (*, '(A)') '  mc_write_xyz                         [logical, default false]'
          write (*, '(A)') '      Write the configuration after every Monte-Carlo step, not only the'
          write (*, '(A)') '      accepted ones.'
          write (*, '(A)') '      -> see write_xyz'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'mc') then
+      if (every .or. (mode == 'mc')) then
          write (*, '(A)') '  n_mc_mu                              [integer, default 0]'
          write (*, '(A)') '      Number of species in the grand-canonical lists. Give it before'
          write (*, '(A)') '      mc_species, mc_mu and mc_mu_acceptance, which it allocates; giving'
@@ -644,21 +663,21 @@ contains
          write (*, '(A)') '         mc_species'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'mc') then
+      if (every .or. (mode == 'mc')) then
          write (*, '(A)') '  n_mc_relax_after                     [integer, default 0]'
          write (*, '(A)') '      Number of entries in mc_relax_after, which it allocates and must'
          write (*, '(A)') '      precede.'
          write (*, '(A)') '      -> sets mc_relax_after; see mc_relax_after'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'mc') then
+      if (every .or. (mode == 'mc')) then
          write (*, '(A)') '  n_mc_swaps                           [integer, default 0]'
          write (*, '(A)') '      Number of swap pairs, which is half the length of mc_swaps. Give it'
          write (*, '(A)') '      before mc_swaps, which it allocates.'
          write (*, '(A)') '      -> sets mc_swaps; sets mc_swaps_id; see mc_swaps'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'mc') then
+      if (every .or. (mode == 'mc')) then
          write (*, '(A)') '  n_mc_types                           [integer, default 0]'
          write (*, '(A)') '      Number of move types. Give it before mc_types and mc_acceptance,'
          write (*, '(A)') '      which it allocates; giving those lists instead sets it implicitly.'
@@ -667,11 +686,11 @@ contains
       end if
 
 !     ---- Van der Waals
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '=== VAN DER WAALS ==='
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  do_nnls                              [logical, default false]'
          write (*, '(A)') '      Solve the Hirshfeld-volume fit with non-negative least squares,'
          write (*, '(A)') '      which keeps the fitted volumes positive where an unconstrained solve'
@@ -679,7 +698,7 @@ contains
          write (*, '(A)') '      -> needs vdw_type'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md' .or. mode == 'mc') then
+      if (every .or. (mode == 'md' .or. mode == 'mc')) then
          write (*, '(A)') '  mbd_correction_freq                  [integer, default 100]'
          write (*, '(A)') '      Recompute the many-body dispersion every this many MD steps, reusing'
          write (*, '(A)') '      the previous correction in between. MBD is the expensive part of'
@@ -687,47 +706,47 @@ contains
          write (*, '(A)') '      -> needs vdw_type'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  poly_cut_xmax                        [real, default 10.0, A]'
          write (*, '(A)') '      Upper end of the range over which the polynomial cutoff turns the'
          write (*, '(A)') '      dispersion off.'
          write (*, '(A)') '      -> needs vdw_polynomial; see poly_cut_xmin'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  poly_cut_xmin                        [real, default 3.0, A]'
          write (*, '(A)') '      Lower end of that range: below it the interaction is at full'
          write (*, '(A)') '      strength.'
          write (*, '(A)') '      -> needs vdw_polynomial; see poly_cut_xmax'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  print_estat_forces                   [logical, default false]'
          write (*, '(A)') '      Write the electrostatic contribution to the forces separately, for'
          write (*, '(A)') '      checking how much of the total it is.'
          write (*, '(A)') '      -> see estat_method'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  print_vdw_forces                     [logical, default false]'
          write (*, '(A)') '      Write the dispersion contribution to the forces separately.'
          write (*, '(A)') '      -> see vdw_type'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  vdw_2b_rcut                          [real, default 15.0, A]'
          write (*, '(A)') '      Cutoff of the pairwise part of the many-body dispersion.'
          write (*, '(A)') '      -> needs vdw_type; see vdw_2b_rcut2'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  vdw_2b_rcut2                         [real, default 8.0, A]'
          write (*, '(A)') '      Inner radius at which that pairwise part starts to be turned off; it'
          write (*, '(A)') '      is at full strength inside this and zero beyond vdw_2b_rcut.'
          write (*, '(A)') '      -> needs vdw_type; see vdw_2b_rcut'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  vdw_alpha0_ref                       [real list, bohr^3]'
          write (*, '(A)') '      Free-atom static polarizability of each species, one value per entry'
          write (*, '(A)') '      in species. Together with vdw_c6_ref and vdw_r0_ref these are the'
@@ -735,40 +754,40 @@ contains
          write (*, '(A)') '      -> needs vdw_type; see vdw_c6_ref, vdw_r0_ref'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  vdw_buffer                           [real, default 1.0, A]'
          write (*, '(A)') '      Width of the smooth turn-off applied at vdw_rcut, so the dispersion'
          write (*, '(A)') '      energy and its gradient reach zero together.'
          write (*, '(A)') '      -> needs vdw_type; see vdw_rcut'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  vdw_buffer_inner                     [real, default 0.5, A]'
          write (*, '(A)') '      Width of the smooth turn-on applied at vdw_rcut_inner.'
          write (*, '(A)') '      -> needs vdw_type; see vdw_rcut_inner'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  vdw_c6_ref                           [real list, Ha bohr^6]'
          write (*, '(A)') '      Free-atom C6 coefficient of each species, one value per entry in'
          write (*, '(A)') '      species.'
          write (*, '(A)') '      -> needs vdw_type; see vdw_alpha0_ref, vdw_r0_ref'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  vdw_d                                [real, default 20.0]'
          write (*, '(A)') '      Steepness of the Fermi damping function in the Tkatchenko-Scheffler'
          write (*, '(A)') '      energy. Larger makes the switch at vdw_sr*R0 sharper.'
          write (*, '(A)') '      -> needs vdw_type; see vdw_sr'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  vdw_d_mbd                            [real, default 6.0]'
          write (*, '(A)') '      The same steepness for the many-body dispersion.'
          write (*, '(A)') '      -> needs vdw_type; see vdw_sr_mbd'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  vdw_hirsh_grad                       [logical, default true]'
          write (*, '(A)') '      Include the derivative of the Hirshfeld volumes with respect to'
          write (*, '(A)') '      positions in the dispersion forces. Switching it off gives a cheaper'
@@ -776,14 +795,14 @@ contains
          write (*, '(A)') '      -> needs vdw_type'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  vdw_loc_rcut                         [real, default 5.0, A]'
          write (*, '(A)') '      Radius of the local environment whose atoms enter the screened'
          write (*, '(A)') '      polarizability of a given atom.'
          write (*, '(A)') '      -> needs vdw_type'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  vdw_mbd_cent_appr                    [logical, default true]'
          write (*, '(A)') '      Evaluate the many-body dispersion about the central atom only,'
          write (*, '(A)') '      rather than over every atom of its environment. The cheaper'
@@ -791,66 +810,66 @@ contains
          write (*, '(A)') '      -> needs vdw_type'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  vdw_mbd_grad                         [logical, default true]'
          write (*, '(A)') '      Compute the gradient of the many-body dispersion energy. Off gives'
          write (*, '(A)') '      MBD energies with TS-only forces.'
          write (*, '(A)') '      -> needs vdw_type'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  vdw_mbd_nfreq                        [integer, default 13]'
          write (*, '(A)') '      Number of imaginary-frequency quadrature points used for the dynamic'
          write (*, '(A)') '      polarizability. More is more accurate and proportionally slower.'
          write (*, '(A)') '      -> needs vdw_type'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  vdw_mbd_norder                       [integer, default 6]'
          write (*, '(A)') '      Order at which the many-body expansion is truncated.'
          write (*, '(A)') '      -> needs vdw_type'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  vdw_mbd_rcut                         [real, default 15.0, A]'
          write (*, '(A)') '      Cutoff of the many-body dispersion term.'
          write (*, '(A)') '      -> needs vdw_type; see vdw_mbd_rcut2'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  vdw_mbd_rcut2                        [real, default 8.0, A]'
          write (*, '(A)') '      Inner radius at which the many-body term starts to be turned off.'
          write (*, '(A)') '      -> needs vdw_type; see vdw_mbd_rcut'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  vdw_omega_ref                        [real, default 1.3, Ha]'
          write (*, '(A)') '      Reference characteristic excitation frequency of the oscillator'
          write (*, '(A)') '      model.'
          write (*, '(A)') '      -> needs vdw_type'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  vdw_polynomial                       [logical, default false]'
          write (*, '(A)') '      Use a polynomial cutoff for the dispersion rather than the default'
          write (*, '(A)') '      form.'
          write (*, '(A)') '      -> needs vdw_type; see poly_cut_xmin, poly_cut_xmax'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  vdw_r0_ref                           [real list, bohr]'
          write (*, '(A)') '      Free-atom van der Waals radius of each species, one value per entry'
          write (*, '(A)') '      in species.'
          write (*, '(A)') '      -> needs vdw_type; see vdw_c6_ref, vdw_alpha0_ref'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  vdw_rcut                             [real, default 25.0, A]'
          write (*, '(A)') '      Cutoff of the pairwise Tkatchenko-Scheffler dispersion.'
          write (*, '(A)') '      -> needs vdw_type; see vdw_buffer'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  vdw_rcut_inner                       [real, default 0.5, A]'
          write (*, '(A)') '      Radius below which the dispersion is smoothly switched off, so that'
          write (*, '(A)') '      it does not double-count the short-range interaction the GAP already'
@@ -858,14 +877,14 @@ contains
          write (*, '(A)') '      -> needs vdw_type; see vdw_buffer_inner'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  vdw_scs_rcut                         [real, default 5.0, A]'
          write (*, '(A)') '      Cutoff of the self-consistent screening that turns free-atom'
          write (*, '(A)') '      polarizabilities into screened ones.'
          write (*, '(A)') '      -> needs vdw_type'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  vdw_sr                               [real, default 0.94]'
          write (*, '(A)') '      Position of the Fermi damping function in the Tkatchenko-Scheffler'
          write (*, '(A)') '      energy, as a fraction of the sum of the two van der Waals radii.'
@@ -873,13 +892,13 @@ contains
          write (*, '(A)') '      -> needs vdw_type; see vdw_d'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  vdw_sr_mbd                           [real, default 0.83]'
          write (*, '(A)') '      The same fraction for the many-body dispersion.'
          write (*, '(A)') '      -> needs vdw_type; see vdw_d_mbd'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  vdw_type                             [string, default none]'
          write (*, '(A)') '      Which dispersion correction to add: "none", "ts" for'
          write (*, '(A)') '      Tkatchenko-Scheffler, "mbd" for many-body dispersion, or "ts+mbd"'
@@ -889,11 +908,11 @@ contains
       end if
 
 !     ---- Electrostatics
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '=== ELECTROSTATICS ==='
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  estat_damped                         [logical]'
          write (*, '(A)') '      Damp the Coulomb interaction at the cutoff rather than truncating'
          write (*, '(A)') '      it, which removes the jump in the energy an atom crossing the cutoff'
@@ -901,34 +920,34 @@ contains
          write (*, '(A)') '      -> needs estat_method'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  estat_damped_cosine                  [logical]'
          write (*, '(A)') '      Use a cosine taper for that damping instead of the default shifted'
          write (*, '(A)') '      form.'
          write (*, '(A)') '      -> needs estat_method'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  estat_dsf_alpha                      [real, default -1.0, 1/A]'
          write (*, '(A)') '      Damping parameter of the damped shifted force. A negative value, the'
          write (*, '(A)') '      default, means the run picks one from the cutoff.'
          write (*, '(A)') '      -> needs estat_method'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  estat_gsf                            [logical]'
          write (*, '(A)') '      Use the gradient-shifted force, which subtracts the force at the'
          write (*, '(A)') '      cutoff so that the force goes to zero there.'
          write (*, '(A)') '      -> needs estat_method'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  estat_inner_width                    [real, default 1.0, A]'
          write (*, '(A)') '      Width over which the inner cutoff turns the electrostatics on.'
          write (*, '(A)') '      -> needs estat_method; see estat_rcut_inner'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  estat_method                         [string, default none]'
          write (*, '(A)') '      Which electrostatic sum to use: "none", "direct" for a bare cutoff'
          write (*, '(A)') '      sum, "dsf" for the damped shifted force, or "gsf" for the'
@@ -936,13 +955,13 @@ contains
          write (*, '(A)') '      The GAP has to provide charges for any of this to run.'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  estat_rcut                           [real, default 10.0, A]'
          write (*, '(A)') '      Cutoff of the electrostatic sum.'
          write (*, '(A)') '      -> needs estat_method'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  estat_rcut_inner                     [real, default 4.0, A]'
          write (*, '(A)') '      Radius below which the electrostatics is smoothly switched off, so'
          write (*, '(A)') '      it does not double-count what the GAP already describes at short'
@@ -950,21 +969,21 @@ contains
          write (*, '(A)') '      -> needs estat_method; see estat_inner_width'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  estat_self_energy_correction         [logical]'
          write (*, '(A)') '      Subtract each charge''s interaction with its own periodic images, the'
          write (*, '(A)') '      self term of the shifted sum.'
          write (*, '(A)') '      -> needs estat_method'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  estat_sp                             [logical]'
          write (*, '(A)') '      Use the shifted-potential form, which shifts the energy to zero at'
          write (*, '(A)') '      the cutoff but leaves a discontinuous force.'
          write (*, '(A)') '      -> needs estat_method'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  estat_tsf                            [logical]'
          write (*, '(A)') '      Use the truncated shifted force. On by default.'
          write (*, '(A)') '      -> needs estat_method'
@@ -972,11 +991,11 @@ contains
       end if
 
 !     ---- Experimental data (MAD)
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '=== EXPERIMENTAL DATA (MAD) ==='
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  do_exp                               [logical, default false]'
          write (*, '(A)') '      Compare the prediction against experimental data and add the'
          write (*, '(A)') '      mismatch to the energy. The individual exp_ keywords switch this on'
@@ -984,7 +1003,7 @@ contains
          write (*, '(A)') '      -> see exp_data_files, exp_energy_scales'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  do_nd                                [logical, default false]'
          write (*, '(A)') '      Compute a neutron diffraction pattern. Needs the partial pair'
          write (*, '(A)') '      distributions and the structure factors it is built from, so it'
@@ -993,7 +1012,7 @@ contains
          write (*, '(A)') '         do_pair_distribution, do_structure_factor, nd_output'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  do_pair_distribution                 [logical, default false]'
          write (*, '(A)') '      Compute the pair distribution function g(r). Also records that the'
          write (*, '(A)') '      deck asked for it in as many words, which is what lets xrd_debye'
@@ -1002,7 +1021,7 @@ contains
          write (*, '(A)') '         pair_distribution_rcut, pair_distribution_n_samples'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  do_structure_factor                  [logical, default false]'
          write (*, '(A)') '      Compute the structure factor S(q). Needs the pair distributions when'
          write (*, '(A)') '      structure_factor_from_pdf is on, so it switches those on too.'
@@ -1010,14 +1029,14 @@ contains
          write (*, '(A)') '         see structure_factor_from_pdf, q_range_min, q_range_max'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  do_xps                               [logical, default false]'
          write (*, '(A)') '      Compute an X-ray photoelectron spectrum from the predicted'
          write (*, '(A)') '      core-electron binding energies. The GAP has to provide those.'
          write (*, '(A)') '      -> see xps_sigma, xps_e_min, xps_e_max'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  do_xrd                               [logical, default false]'
          write (*, '(A)') '      Compute an X-ray diffraction pattern. Needs the partial pair'
          write (*, '(A)') '      distributions and the structure factors it is built from, so it'
@@ -1026,20 +1045,20 @@ contains
          write (*, '(A)') '         xrd_wavelength, xrd_debye, xrd_output'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  exp_data_files                       [string list]'
          write (*, '(A)') '      Files holding the measured data, one per observable, in the order of'
          write (*, '(A)') '      exp_labels. Two columns: abscissa and intensity.'
          write (*, '(A)') '      -> sets exp_energy_scales; see exp_labels, n_exp'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  exp_energies                         [logical, default true]'
          write (*, '(A)') '      Add the data mismatch to the energy. Naming it enables do_exp.'
          write (*, '(A)') '      -> sets do_exp; see exp_energy_scales'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  exp_energy_scales                    [real list, eV]'
          write (*, '(A)') '      Weight of each observable''s mismatch in the total energy, one value'
          write (*, '(A)') '      per observable. This is what sets how hard the data pulls against'
@@ -1048,7 +1067,7 @@ contains
          write (*, '(A)') '         exp_energy_scales_final; see exp_energy_scales_final, n_exp'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  exp_energy_scales_final (or exp_energy_scales_end)'
          write (*, '(A)') '      [real list, default same as exp_energy_scales, eV]'
          write (*, '(A)') '      End point of a linear ramp in the weights over the run, so the data'
@@ -1057,7 +1076,7 @@ contains
          write (*, '(A)') '      -> see exp_energy_scales'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  exp_forces                           [logical, default false]'
          write (*, '(A)') '      Compute the derivative of the data mismatch with respect to'
          write (*, '(A)') '      positions and add it to the forces. Naming it enables do_exp.'
@@ -1065,7 +1084,7 @@ contains
          write (*, '(A)') '      -> sets do_exp; see exp_energies'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  exp_input_type                       [string list]'
          write (*, '(A)') '      What the corresponding data file contains, one per observable, when'
          write (*, '(A)') '      it is not the observable''s default representation: for instance'
@@ -1074,7 +1093,7 @@ contains
          write (*, '(A)') '         pair_distribution_output'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  exp_labels                           [string list]'
          write (*, '(A)') '      Which observable each data file is, one per file, from "xps", "xrd",'
          write (*, '(A)') '      "saxs", "pair_distribution" and "structure_factor". Matching a label'
@@ -1086,14 +1105,14 @@ contains
          write (*, '(A)') '         valid_sf; see exp_data_files, n_exp'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  exp_n_samples                        [integer list]'
          write (*, '(A)') '      Number of points to predict for each observable, one per observable,'
          write (*, '(A)') '      overriding that observable''s own n_samples keyword.'
          write (*, '(A)') '      -> sets exp_energy_scales; see exp_labels'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  exp_similarity_type                  [string, default squared_diff]'
          write (*, '(A)') '      How the mismatch between prediction and data is measured:'
          write (*, '(A)') '      "squared_diff" for a sum of squared residuals, or'
@@ -1101,7 +1120,7 @@ contains
          write (*, '(A)') '      -> see exp_energy_scales'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  n_exp                                [integer, default 0]'
          write (*, '(A)') '      Number of experimental observables. Give it before exp_data_files,'
          write (*, '(A)') '      exp_labels and exp_energy_scales, which it allocates.'
@@ -1110,7 +1129,7 @@ contains
          write (*, '(A)') '         do_exp; see exp_labels'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  nd_n_samples                         [integer, default 200]'
          write (*, '(A)') '      Number of points in the predicted neutron pattern. Writes the same'
          write (*, '(A)') '      sample count the XRD and structure-factor routines use, since the'
@@ -1119,27 +1138,27 @@ contains
          write (*, '(A)') '         xrd_n_samples'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  nd_output                            [string, default xrd]'
          write (*, '(A)') '      Abscissa of the neutron pattern, in the same choices as xrd_output.'
          write (*, '(A)') '      Writes xrd_output as well, the two patterns sharing a grid.'
          write (*, '(A)') '      -> sets xrd_output; see xrd_output'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  nd_rcut                              [real, default 4.0, A]'
          write (*, '(A)') '      Real-space cutoff of the pair sum entering the neutron pattern.'
          write (*, '(A)') '      -> see pair_distribution_rcut'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  nd_wavelength                        [real]'
          write (*, '(A)') '      Accepted and ignored. Neutron wavelength. Nothing consults it: the'
          write (*, '(A)') '      pattern is built on the grid xrd_wavelength defines.'
          write (*, '(A)') '      -> see xrd_wavelength'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  pair_distribution_kde_sigma          [real, default 0.0, A]'
          write (*, '(A)') '      Width of the Gaussian each pair distance is smeared with when'
          write (*, '(A)') '      binning g(r). Zero, the default, means plain histogram binning. A'
@@ -1148,13 +1167,13 @@ contains
          write (*, '(A)') '      -> see exp_forces'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  pair_distribution_n_samples          [integer, default 200]'
          write (*, '(A)') '      Number of r points in the predicted g(r).'
          write (*, '(A)') '      -> see r_range_min, r_range_max'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  pair_distribution_output             [string, default pdf]'
          write (*, '(A)') '      What g(r) is reported as: "pdf" for g(r) itself, or "D(r)" for the'
          write (*, '(A)') '      reduced pair distribution 4 pi r rho (g(r) - 1). The energy and its'
@@ -1163,14 +1182,14 @@ contains
          write (*, '(A)') '      -> see exp_input_type'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  pair_distribution_partial            [logical, default true]'
          write (*, '(A)') '      Resolve g(r) into per-species-pair partials. The structure factor is'
          write (*, '(A)') '      built from these, so it is on by default.'
          write (*, '(A)') '      -> see do_structure_factor'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  pair_distribution_rcut               [real, default 4.0, A]'
          write (*, '(A)') '      Largest pair distance binned into g(r). A hard cut, not a smooth'
          write (*, '(A)') '      one, which is why a finite-difference check of the virial needs a'
@@ -1178,20 +1197,20 @@ contains
          write (*, '(A)') '      -> see r_range_max'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  q_range_max                          [real, default 5.0, 1/A]'
          write (*, '(A)') '      Upper end of the q range the structure factor and the diffraction'
          write (*, '(A)') '      patterns are predicted on.'
          write (*, '(A)') '      -> see q_range_min, q_units'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  q_range_min                          [real, default 1.0, 1/A]'
          write (*, '(A)') '      Lower end of that range.'
          write (*, '(A)') '      -> see q_range_max'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  q_units                              [string, default q]'
          write (*, '(A)') '      What the abscissa of the supplied and predicted patterns means: "q"'
          write (*, '(A)') '      or "saxs" for a scattering vector, "xrd" or "twotheta" for a'
@@ -1199,26 +1218,26 @@ contains
          write (*, '(A)') '      -> see xrd_wavelength'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  r_range_max                          [real, default 5.0, A]'
          write (*, '(A)') '      Upper end of the r range g(r) is reported on. Points beyond'
          write (*, '(A)') '      pair_distribution_rcut are empty.'
          write (*, '(A)') '      -> see pair_distribution_rcut'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  r_range_min                          [real, default 1.0, A]'
          write (*, '(A)') '      Lower end of that range.'
          write (*, '(A)') '      -> see r_range_max'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  sf_output                            [string, default xrd]'
          write (*, '(A)') '      Abscissa of the structure factor, in the same choices as q_units.'
          write (*, '(A)') '      -> see q_units'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  structure_factor_from_pdf            [logical, default true]'
          write (*, '(A)') '      Build S(q) by Fourier-transforming the binned partial pair'
          write (*, '(A)') '      distributions, rather than from the positions directly. The'
@@ -1227,7 +1246,7 @@ contains
          write (*, '(A)') '      -> see pair_distribution_partial'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  structure_factor_matrix              [logical, default true]'
          write (*, '(A)') '      Assemble the transform as a matrix product over the r grid instead'
          write (*, '(A)') '      of looping the pairs. Much faster, at the cost of holding the kernel'
@@ -1235,20 +1254,20 @@ contains
          write (*, '(A)') '      -> see structure_factor_matrix_forces'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  structure_factor_matrix_forces       [logical, default true]'
          write (*, '(A)') '      Use the same matrix assembly for the derivatives. Falls back to the'
          write (*, '(A)') '      loop when the run cannot batch.'
          write (*, '(A)') '      -> see structure_factor_matrix'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  structure_factor_n_samples           [integer, default 200]'
          write (*, '(A)') '      Number of q points in the predicted S(q).'
          write (*, '(A)') '      -> see q_range_min, q_range_max'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  structure_factor_window              [logical, default true]'
          write (*, '(A)') '      Apply a Lorch window to the truncated pair distribution before'
          write (*, '(A)') '      transforming, which suppresses the ringing the hard cut at'
@@ -1256,45 +1275,45 @@ contains
          write (*, '(A)') '      -> see pair_distribution_rcut'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  xps_e_max                            [real, default 300.0, eV]'
          write (*, '(A)') '      Upper end of the binding-energy range the XPS spectrum is predicted'
          write (*, '(A)') '      on.'
          write (*, '(A)') '      -> needs do_xps; see xps_e_min'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  xps_e_min                            [real, default 280.0, eV]'
          write (*, '(A)') '      Lower end of that range.'
          write (*, '(A)') '      -> needs do_xps; see xps_e_max'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  xps_force_type                       [string]'
          write (*, '(A)') '      Accepted and ignored. Which XPS force expression to use. Nothing'
          write (*, '(A)') '      consults it; the spectrum is differentiated one way only.'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  xps_n_samples                        [integer, default 200]'
          write (*, '(A)') '      Number of points in the predicted XPS spectrum.'
          write (*, '(A)') '      -> needs do_xps'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  xps_sigma                            [real, default 0.4, eV]'
          write (*, '(A)') '      Width of the Gaussian each core-electron binding energy is broadened'
          write (*, '(A)') '      by to make a spectrum.'
          write (*, '(A)') '      -> needs do_xps'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  xrd_alpha                            [real, default 1.01]'
          write (*, '(A)') '      Exponent of the sharpening applied to the diffraction pattern.'
          write (*, '(A)') '      -> needs do_xrd; see xrd_damping'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  xrd_damping                          [real, default 0.0]'
          write (*, '(A)') '      Damping applied to the pair sum with distance, which suppresses the'
          write (*, '(A)') '      truncation ripple from the finite cutoff. Zero, the default, is no'
@@ -1302,7 +1321,7 @@ contains
          write (*, '(A)') '      -> needs do_xrd; see xrd_alpha'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  xrd_debye                            [logical, default false]'
          write (*, '(A)') '      Compute the pattern from the N^2 Debye sum over positions instead of'
          write (*, '(A)') '      transforming the partial pair distributions. The two routes answer'
@@ -1314,13 +1333,13 @@ contains
          write (*, '(A)') '      -> needs do_xrd; see pair_distribution_rcut'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  xrd_iwasa                            [logical, default true]'
          write (*, '(A)') '      Deprecated. Iwasa correction switch from an earlier design; the'
          write (*, '(A)') '      correction is applied unconditionally now.'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  xrd_lorentz_polarization             [logical, default false]'
          write (*, '(A)') '      Multiply the predicted pattern by the powder Lorentz-polarization'
          write (*, '(A)') '      factor. Only the Debye route applies it, where the energy and the'
@@ -1329,7 +1348,7 @@ contains
          write (*, '(A)') '      -> needs xrd_debye; see xrd_lp_polarization'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  xrd_lp_polarization                  [real, default 1.0]'
          write (*, '(A)') '      Degree of polarization P of the incident beam in the factor (1 + P'
          write (*, '(A)') '      cos^2 2theta) / (sin^2 theta cos theta). P = 1 is an unpolarized'
@@ -1338,7 +1357,7 @@ contains
          write (*, '(A)') '      -> needs xrd_lorentz_polarization'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  xrd_lp_sin_theta_min                 [real, default 1.e-3]'
          write (*, '(A)') '      Below this |sin theta| the Lorentz factor 1/(sin^2 theta cos theta)'
          write (*, '(A)') '      is unusable, so the whole factor is set to zero rather than blown'
@@ -1346,33 +1365,33 @@ contains
          write (*, '(A)') '      -> needs xrd_lorentz_polarization'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  xrd_method                           [string, default xrd]'
          write (*, '(A)') '      Which scattering factors the pattern is built from. "xrd" uses the'
          write (*, '(A)') '      X-ray form factors.'
          write (*, '(A)') '      -> needs do_xrd'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  xrd_n_samples                        [integer, default 200]'
          write (*, '(A)') '      Number of points in the predicted X-ray pattern. Sets the'
          write (*, '(A)') '      structure-factor sample count too, the two sharing a q grid.'
          write (*, '(A)') '      -> needs do_xrd; sets structure_factor_n_samples'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  xrd_output                           [string, default xrd]'
          write (*, '(A)') '      Abscissa the pattern is reported on, in the same choices as q_units.'
          write (*, '(A)') '      -> needs do_xrd; see q_units'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  xrd_rcut                             [real, default 4.0, A]'
          write (*, '(A)') '      Real-space cutoff of the pair sum entering the X-ray pattern.'
          write (*, '(A)') '      -> needs do_xrd; see pair_distribution_rcut'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  xrd_wavelength                       [real, default 1.5405981, A]'
          write (*, '(A)') '      Wavelength of the incident X-rays. Fixes the map between q and'
          write (*, '(A)') '      2theta, so it matters whenever q_units or xrd_output name an angle.'
@@ -1381,43 +1400,43 @@ contains
       end if
 
 !     ---- Electronic stopping and EPH
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '=== ELECTRONIC STOPPING AND EPH ==='
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  adapt_emax                           [real, default 1.0e1, eV]'
          write (*, '(A)') '      Largest energy change tolerated over one step; the adaptive time'
          write (*, '(A)') '      step shrinks until the change is under this.'
          write (*, '(A)') '      -> needs adaptive_time'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  adapt_tmax                           [real, default 1.0, fs]'
          write (*, '(A)') '      Upper bound on the adaptive time step.'
          write (*, '(A)') '      -> needs adaptive_time'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  adapt_tmin                           [real, default 1.0e-3, fs]'
          write (*, '(A)') '      Lower bound on the adaptive time step. Reaching it means the'
          write (*, '(A)') '      dynamics cannot be resolved and the run should be reconsidered.'
          write (*, '(A)') '      -> needs adaptive_time'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  adapt_tstep_interval                 [integer, default 1]'
          write (*, '(A)') '      How often, in steps, the adaptive time step is re-examined.'
          write (*, '(A)') '      -> needs adaptive_time'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  adapt_xmax                           [real, default 1.0e-2, A]'
          write (*, '(A)') '      Largest displacement of any atom tolerated over one step.'
          write (*, '(A)') '      -> needs adaptive_time'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  adaptive_time                        [logical, default false]'
          write (*, '(A)') '      Choose the time step from how fast the fastest atom is moving,'
          write (*, '(A)') '      rather than holding md_step fixed. Written for radiation cascades,'
@@ -1425,21 +1444,21 @@ contains
          write (*, '(A)') '      -> see adapt_tmin, adapt_tmax, adapt_xmax, adapt_emax'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  eel_cut                              [real, default 1.0, eV]'
          write (*, '(A)') '      Kinetic energy below which an atom is too slow to lose energy to the'
          write (*, '(A)') '      electrons, so electronic stopping is not applied to it.'
          write (*, '(A)') '      -> needs electronic_stopping'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  eel_freq_out                         [integer, default 1]'
          write (*, '(A)') '      How often, in steps, to report the energy lost to electronic'
          write (*, '(A)') '      stopping.'
          write (*, '(A)') '      -> needs electronic_stopping'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  electronic_stopping                  [logical, default false]'
          write (*, '(A)') '      Drain energy from fast atoms into the electronic system, the'
          write (*, '(A)') '      dominant energy loss at the start of a radiation cascade. Reads its'
@@ -1447,14 +1466,14 @@ contains
          write (*, '(A)') '      -> see estop_filename, eel_cut'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  eph_betafile                         [string, default NULL]'
          write (*, '(A)') '      File holding the beta(rho) coupling data the EPH model needs, one'
          write (*, '(A)') '      entry per species.'
          write (*, '(A)') '      -> needs nonadiabatic_processes'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  eph_box_limits                       [real(6), default [-100.0, 100.0, -100.0, 100.0, ..., A]'
          write (*, '(A)') '      Extent of the electronic grid, as xmin xmax ymin ymax zmin zmax.'
          write (*, '(A)') '      Also written into the six individual bounds the solver reads.'
@@ -1462,92 +1481,92 @@ contains
          write (*, '(A)') '         in_y0; sets in_y1; sets in_z0; sets in_z1'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  eph_c_e                              [real, default 1.0, eV/A^3/K]'
          write (*, '(A)') '      Electronic heat capacity per unit volume, used when the electronic'
          write (*, '(A)') '      temperature is evolved rather than held fixed.'
          write (*, '(A)') '      -> needs nonadiabatic_processes'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  eph_e_prev_time                      [real, default 0.0, eV]'
          write (*, '(A)') '      Electronic energy carried over from a previous run, for restarting a'
          write (*, '(A)') '      cascade.'
          write (*, '(A)') '      -> needs nonadiabatic_processes'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  eph_fdm_option                       [integer, default 1]'
          write (*, '(A)') '      How the electronic temperature grid is initialised: from'
          write (*, '(A)') '      eph_Tinfile, or uniformly at eph_Ti_e.'
          write (*, '(A)') '      -> needs nonadiabatic_processes'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  eph_fdm_steps                        [integer, default 1]'
          write (*, '(A)') '      Number of electronic diffusion sub-steps taken per MD step, the'
          write (*, '(A)') '      electronic system being much faster than the ionic one.'
          write (*, '(A)') '      -> needs nonadiabatic_processes'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  eph_freq_mesh_tout                   [integer, default 1]'
          write (*, '(A)') '      How often, in steps, to write the whole electronic temperature grid.'
          write (*, '(A)') '      -> needs nonadiabatic_processes'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  eph_freq_tout                        [integer, default 1]'
          write (*, '(A)') '      How often, in steps, to write the electronic temperature summary.'
          write (*, '(A)') '      -> needs nonadiabatic_processes'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  eph_friction_option                  [integer, default 1]'
          write (*, '(A)') '      Which friction term of the electron-phonon coupling to apply, or'
          write (*, '(A)') '      none.'
          write (*, '(A)') '      -> needs nonadiabatic_processes'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  eph_gsx                              [integer, default 1]'
          write (*, '(A)') '      Number of electronic grid cells along x.'
          write (*, '(A)') '      -> needs nonadiabatic_processes'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  eph_gsy                              [integer, default 1]'
          write (*, '(A)') '      Number of electronic grid cells along y.'
          write (*, '(A)') '      -> needs nonadiabatic_processes'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  eph_gsz                              [integer, default 1]'
          write (*, '(A)') '      Number of electronic grid cells along z.'
          write (*, '(A)') '      -> needs nonadiabatic_processes'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  eph_kappa_e                          [real, default 1.0, eV/A/fs/K]'
          write (*, '(A)') '      Electronic thermal conductivity entering the diffusion of the'
          write (*, '(A)') '      electronic temperature.'
          write (*, '(A)') '      -> needs nonadiabatic_processes'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  eph_md_last_step                     [integer, default 0]'
          write (*, '(A)') '      Step number the previous run finished at, for restarting a cascade.'
          write (*, '(A)') '      -> needs nonadiabatic_processes'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  eph_md_prev_time                     [real, default 0.0, fs]'
          write (*, '(A)') '      Simulated time the previous run finished at, for restarting a'
          write (*, '(A)') '      cascade.'
          write (*, '(A)') '      -> needs nonadiabatic_processes'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  eph_random_option                    [integer, default 1]'
          write (*, '(A)') '      Which random term of the electron-phonon coupling to apply, or none.'
          write (*, '(A)') '      Paired with the friction term it is what makes the coupling a'
@@ -1555,45 +1574,45 @@ contains
          write (*, '(A)') '      -> needs nonadiabatic_processes; see eph_friction_option'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  eph_rho_e                            [real, default 1.0, 1/A^3]'
          write (*, '(A)') '      Electronic density entering the coupling.'
          write (*, '(A)') '      -> needs nonadiabatic_processes'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  eph_ti_e                             [real, default 300.0, K]'
          write (*, '(A)') '      Initial electronic temperature, when the grid is started uniform'
          write (*, '(A)') '      rather than read from a file.'
          write (*, '(A)') '      -> needs nonadiabatic_processes; see eph_fdm_option'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  eph_tinfile                          [string, default NULL]'
          write (*, '(A)') '      File holding an initial electronic temperature grid.'
          write (*, '(A)') '      -> needs nonadiabatic_processes'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  eph_toutfile                         [string, default NULL]'
          write (*, '(A)') '      File the electronic temperature grid is written to.'
          write (*, '(A)') '      -> needs nonadiabatic_processes'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  estop_filename                       [string, default NULL]'
          write (*, '(A)') '      File holding the electronic stopping power per species as a function'
          write (*, '(A)') '      of velocity.'
          write (*, '(A)') '      -> needs electronic_stopping'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  model_eph                            [integer, default 1]'
          write (*, '(A)') '      Which electron-phonon model to evaluate.'
          write (*, '(A)') '      -> needs nonadiabatic_processes'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md') then
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  nonadiabatic_processes               [logical, default false]'
          write (*, '(A)') '      Exchange energy between the ions and an explicit electronic'
          write (*, '(A)') '      subsystem through the EPH model, rather than the one-way drain of'
@@ -1603,11 +1622,11 @@ contains
       end if
 
 !     ---- Local properties
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '=== LOCAL PROPERTIES ==='
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  compute_local_properties             [string list]'
          write (*, '(A)') '      Which local properties to predict, by name, one per property. The'
          write (*, '(A)') '      GAP has to carry a model for each. n_local_properties must appear'
@@ -1615,7 +1634,7 @@ contains
          write (*, '(A)') '      -> needs n_local_properties'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  core_pot_buffer                      [real, default 1.0, A]'
          write (*, '(A)') '      Width over which the core potential is smoothly turned off'
          write (*, '(A)') '      approaching core_pot_cutoff, so the tabulated potential and its'
@@ -1623,14 +1642,14 @@ contains
          write (*, '(A)') '      -> see core_pot_cutoff'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  core_pot_cutoff                      [real, default 1.e10, A]'
          write (*, '(A)') '      Distance beyond which the tabulated core potential is dropped. The'
          write (*, '(A)') '      default is effectively infinite, meaning the whole table is used.'
          write (*, '(A)') '      -> see core_pot_buffer'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  n_local_properties                   [integer, default 0]'
          write (*, '(A)') '      Number of local properties to predict. Give it before'
          write (*, '(A)') '      compute_local_properties and write_local_properties, which it'
@@ -1639,7 +1658,7 @@ contains
          write (*, '(A)') '         see compute_local_properties'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  print_lp_forces                      [logical]'
          write (*, '(A)') '      Accepted and ignored. Local-property force reporting switch; nothing'
          write (*, '(A)') '      consults it.'
@@ -1647,114 +1666,114 @@ contains
       end if
 
 !     ---- Output
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '=== OUTPUT ==='
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  print_progress                       [logical, default true]'
          write (*, '(A)') '      Print a progress line as the run advances.'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  write_exp                            [logical, default true]'
          write (*, '(A)') '      Write the predicted experimental observables to file.'
          write (*, '(A)') '      -> needs do_exp'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  write_fixes                          [logical, default true]'
          write (*, '(A)') '      Include the per-atom fix flags as a column in the XYZ output.'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  write_forces                         [logical, default true]'
          write (*, '(A)') '      Include forces as columns in the XYZ output.'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  write_hirshfeld_v                    [logical]'
          write (*, '(A)') '      Accepted and ignored. Hirshfeld-volume output switch; the volumes'
          write (*, '(A)') '      follow the local-property output instead, so nothing consults it.'
          write (*, '(A)') '      -> see write_local_properties'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  write_local_energies                 [logical, default true]'
          write (*, '(A)') '      Include the per-atom energy decomposition as a column in the XYZ'
          write (*, '(A)') '      output.'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  write_local_properties               [logical list]'
          write (*, '(A)') '      Which predicted local properties to write, one flag per property in'
          write (*, '(A)') '      the order of compute_local_properties.'
          write (*, '(A)') '      -> needs n_local_properties; see compute_local_properties'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  write_lv                             [logical, default false]'
          write (*, '(A)') '      Write the lattice vectors on every frame.'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  write_masses                         [logical, default false]'
          write (*, '(A)') '      Include atomic masses as a column in the XYZ output.'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  write_nd                             [logical, default false]'
          write (*, '(A)') '      Write the predicted neutron diffraction pattern to file.'
          write (*, '(A)') '      -> needs do_nd'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  write_pair_distribution              [logical, default false]'
          write (*, '(A)') '      Write the predicted pair distribution to file.'
          write (*, '(A)') '      -> needs do_pair_distribution'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  write_pressure                       [logical, default true]'
          write (*, '(A)') '      Include the pressure in the frame comment line.'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  write_stress                         [logical, default true]'
          write (*, '(A)') '      Include the stress tensor in the frame comment line.'
          write (*, '(A)') '      -> see write_virial'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  write_structure_factor               [logical, default false]'
          write (*, '(A)') '      Write the predicted structure factor to file.'
          write (*, '(A)') '      -> needs do_structure_factor'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md' .or. mode == 'mc') then
+      if (every .or. (mode == 'md' .or. mode == 'mc')) then
          write (*, '(A)') '  write_thermo                         [integer, default 1]'
          write (*, '(A)') '      Write a thermodynamic summary line every this many steps. Zero'
          write (*, '(A)') '      switches it off.'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  write_velocities                     [logical, default true]'
          write (*, '(A)') '      Include velocities as columns in the XYZ output.'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  write_virial                         [logical, default true]'
          write (*, '(A)') '      Include the virial tensor in the frame comment line.'
          write (*, '(A)') '      -> see write_stress'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  write_xrd                            [logical, default false]'
          write (*, '(A)') '      Write the predicted X-ray diffraction pattern to file.'
          write (*, '(A)') '      -> needs do_xrd'
          write (*, '(A)') ''
       end if
-      if (every .or. mode == 'md' .or. mode == 'mc') then
+      if (every .or. (mode == 'md' .or. mode == 'mc')) then
          write (*, '(A)') '  write_xyz                            [integer, default 0]'
          write (*, '(A)') '      Write a trajectory frame every this many steps. Zero, the default,'
          write (*, '(A)') '      writes only the last.'
@@ -1762,11 +1781,11 @@ contains
       end if
 
 !     ---- GPU
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '=== GPU ==='
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  gpu_batched                          [logical, default true]'
          write (*, '(A)') '      Evaluate the experimental observables in batches on the device,'
          write (*, '(A)') '      staging one batch of pairs at a time. Switching it off takes the'
@@ -1774,7 +1793,7 @@ contains
          write (*, '(A)') '      the batched route is checked against.'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  gpu_low_memory                       [logical, default true]'
          write (*, '(A)') '      Free each batch''s device arrays as soon as its contribution has been'
          write (*, '(A)') '      accumulated, rather than holding them for the whole calculation.'
@@ -1782,25 +1801,520 @@ contains
          write (*, '(A)') '      -> see gpu_batched'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  gpu_max_batch_size                   [real, default 1.0, GB]'
          write (*, '(A)') '      Largest device allocation a single batch may make. The batch count'
          write (*, '(A)') '      follows from it.'
          write (*, '(A)') '      -> see gpu_n_batches'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  gpu_n_batches                        [integer, default 1]'
          write (*, '(A)') '      Split the work into exactly this many batches, instead of choosing'
          write (*, '(A)') '      the count from the memory budget.'
          write (*, '(A)') '      -> see gpu_max_batch_size'
          write (*, '(A)') ''
       end if
-      if (.true.) then
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  n_batches                            [integer, default 0]'
          write (*, '(A)') '      Split the SOAP descriptor calculation into exactly this many'
          write (*, '(A)') '      batches, instead of choosing the count from max_Gbytes_per_process.'
          write (*, '(A)') '      -> see max_gbytes_per_process'
+         write (*, '(A)') ''
+      end if
+
+!  ======== the potential (.gap) file
+      if (every .or. gap_only) then
+         write (*, '(A)') ''
+         write (*, '(A)') '##### KEYWORDS FOR THE POTENTIAL (.GAP) FILE #####'
+         write (*, '(A)') ''
+         write (*, '(A)') '  The fitted potential, named by pot_file in the input file. It is a'
+         write (*, '(A)') '  sequence of blocks, each opened by gap_beg <descriptor> and closed by'
+         write (*, '(A)') '  gap_end, holding one keyword = value per line. gap_beg and gap_end are'
+         write (*, '(A)') '  file syntax rather than settings and are not listed below. Unlike the'
+         write (*, '(A)') '  input file, a keyword the block does not recognise is skipped in'
+         write (*, '(A)') '  silence, so a misspelling here shows up as a wrong answer rather than an'
+         write (*, '(A)') '  error. These files are written by the fitting code, not by hand.'
+         write (*, '(A)') ''
+      end if
+
+!     ---- soap_turbo
+      if (every .or. gap_only) then
+         write (*, '(A)') '=== SOAP_TURBO ==='
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  alphas_sparse                        [string]'
+         write (*, '(A)') '      File holding the fitted sparse-set coefficients, one per sparse'
+         write (*, '(A)') '      point. Read together with desc_sparse, which must have the same'
+         write (*, '(A)') '      number of rows.'
+         write (*, '(A)') '      -> see desc_sparse'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  amplitude_scaling                    [real list]'
+         write (*, '(A)') '      How the amplitude of a neighbour''s Gaussian falls with distance, one'
+         write (*, '(A)') '      per species, in the form set by scaling_mode. Larger values weight'
+         write (*, '(A)') '      the near neighbours more heavily.'
+         write (*, '(A)') '      -> see scaling_mode'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  atom_sigma_r                         [real list, A]'
+         write (*, '(A)') '      Radial width of the Gaussian each neighbour is smeared into, one per'
+         write (*, '(A)') '      species. Small values resolve fine radial structure and need a'
+         write (*, '(A)') '      larger n_max to represent.'
+         write (*, '(A)') '      -> see atom_sigma_r_scaling, n_max'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  atom_sigma_r_scaling                 [real list]'
+         write (*, '(A)') '      How the radial width grows with neighbour distance, one per species:'
+         write (*, '(A)') '      the width used is atom_sigma_r * (1 + scaling * r). Letting distant'
+         write (*, '(A)') '      neighbours blur is what keeps the descriptor from resolving'
+         write (*, '(A)') '      structure the fit cannot support.'
+         write (*, '(A)') '      -> see atom_sigma_r'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  atom_sigma_t                         [real list, A]'
+         write (*, '(A)') '      Angular width of that Gaussian, measured as an arc length rather'
+         write (*, '(A)') '      than an angle, one per species. Divided by the neighbour distance to'
+         write (*, '(A)') '      give the angular spread, so a fixed value keeps the angular'
+         write (*, '(A)') '      resolution roughly constant with distance.'
+         write (*, '(A)') '      -> see atom_sigma_t_scaling, l_max'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  atom_sigma_t_scaling                 [real list]'
+         write (*, '(A)') '      The same linear growth for the angular width.'
+         write (*, '(A)') '      -> see atom_sigma_t'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  basis                                [string, default poly3]'
+         write (*, '(A)') '      Radial basis to expand the density in. "poly3" is the polynomial'
+         write (*, '(A)') '      basis, and "poly3gauss" adds a Gaussian for the central atom.'
+         write (*, '(A)') '      -> see n_max'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  buffer                               [real list, A]'
+         write (*, '(A)') '      Width of the buffer zone inside the hard cutoff over which a'
+         write (*, '(A)') '      neighbour''s contribution is smoothly taken to zero, one per species.'
+         write (*, '(A)') '      Read as a width and converted to the soft cutoff rcut - buffer once'
+         write (*, '(A)') '      the block closes; zero means no buffer, and the density is cut'
+         write (*, '(A)') '      abruptly.'
+         write (*, '(A)') '      -> see rcut'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  central_species                      [integer, default 0]'
+         write (*, '(A)') '      Which entry of species this descriptor is centred on, as a 1-based'
+         write (*, '(A)') '      index. One soap_turbo block per central species is the usual'
+         write (*, '(A)') '      arrangement, each seeing all of them as neighbours.'
+         write (*, '(A)') '      -> see species'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  central_weight                       [real list]'
+         write (*, '(A)') '      Weight given to the central atom''s own contribution to the density,'
+         write (*, '(A)') '      one per species. Zero leaves the centre out of its own descriptor.'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  compress_mode                        [string, default none]'
+         write (*, '(A)') '      Named compression scheme to use, resolved into the projection'
+         write (*, '(A)') '      internally. Use this or file_compress_soap, not both.'
+         write (*, '(A)') '      -> needs compress_soap; see file_compress_soap'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  compress_soap                        [logical, default false]'
+         write (*, '(A)') '      Project the descriptor onto a smaller set of components before the'
+         write (*, '(A)') '      kernel is evaluated. The SOAP vector grows as n_max^2 l_max, and'
+         write (*, '(A)') '      compression is what keeps a many-species descriptor affordable.'
+         write (*, '(A)') '      -> see compress_mode, file_compress_soap'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  delta                                [real, default 1.0, eV]'
+         write (*, '(A)') '      Energy scale of this GAP: the standard deviation of the prior on the'
+         write (*, '(A)') '      energy it contributes. It sets how much of the total energy this'
+         write (*, '(A)') '      descriptor is allowed to account for, and setting it to zero'
+         write (*, '(A)') '      switches the descriptor''s contribution off without removing the'
+         write (*, '(A)') '      block.'
+         write (*, '(A)') '      -> see zeta'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  desc_sparse                          [string]'
+         write (*, '(A)') '      File holding the sparse-set descriptors, one row per sparse point.'
+         write (*, '(A)') '      Its row count sets n_sparse and so the cost of every prediction.'
+         write (*, '(A)') '      -> see alphas_sparse'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  dipole_model                         [logical, default false]'
+         write (*, '(A)') '      This descriptor''s fitted scalar is not an energy but a potential'
+         write (*, '(A)') '      whose gradient with respect to the central atom''s own position is'
+         write (*, '(A)') '      the local dipole. Its energy, forces and virial are meaningless and'
+         write (*, '(A)') '      are not summed into the totals; only the dipole is taken.'
+         write (*, '(A)') '      -> see delta'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  file_compress_soap                   [string, default none]'
+         write (*, '(A)') '      File giving the compression explicitly, as the list of components to'
+         write (*, '(A)') '      keep or a transformation matrix. The alternative to naming a'
+         write (*, '(A)') '      compress_mode.'
+         write (*, '(A)') '      -> needs compress_soap; see compress_mode'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  global_scaling                       [real list]'
+         write (*, '(A)') '      Overall multiplier on each species'' contribution to the density, one'
+         write (*, '(A)') '      per species. This is where a species is made to count for more or'
+         write (*, '(A)') '      less than its neighbours.'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  has_local_properties                 [logical, default false]'
+         write (*, '(A)') '      This descriptor carries per-atom quantities fitted alongside the'
+         write (*, '(A)') '      energy -- Hirshfeld volumes, charges, core-electron binding'
+         write (*, '(A)') '      energies. Set implicitly by n_local_properties.'
+         write (*, '(A)') '      -> see n_local_properties, local_property_labels'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  has_vdw                              [logical, default false]'
+         write (*, '(A)') '      Deprecated. Superseded by has_local_properties. A Hirshfeld-volume'
+         write (*, '(A)') '      model is now one local property among several rather than a special'
+         write (*, '(A)') '      case, and this keyword still sets up that one property so that older'
+         write (*, '(A)') '      potential files load.'
+         write (*, '(A)') '      -> sets has_local_properties; sets n_local_properties; sets'
+         write (*, '(A)') '         vdw_index; see has_local_properties'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  l_max                                [integer]'
+         write (*, '(A)') '      Highest spherical-harmonic degree kept in the angular expansion. The'
+         write (*, '(A)') '      descriptor''s angular resolution, and the counterpart of n_max: the'
+         write (*, '(A)') '      cost of the descriptor grows with both.'
+         write (*, '(A)') '      -> see n_max, atom_sigma_t'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  local_property_alphas                [type(local_property_soap_turbo) list]'
+         write (*, '(A)') '      Sparse-set coefficient file for each local property, one per'
+         write (*, '(A)') '      property.'
+         write (*, '(A)') '      -> needs n_local_properties; sets n_local_properties; see'
+         write (*, '(A)') '         local_property_qs'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  local_property_deltas                [type(local_property_soap_turbo) list]'
+         write (*, '(A)') '      Prior scale for each local property, one per property, in whatever'
+         write (*, '(A)') '      units that property has.'
+         write (*, '(A)') '      -> needs n_local_properties; see delta'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  local_property_labels                [type(local_property_soap_turbo) list]'
+         write (*, '(A)') '      What each local property is, one name per property. The names are'
+         write (*, '(A)') '      meaningful, not decorative: "hirshfeld_v" is what the van der Waals'
+         write (*, '(A)') '      correction looks for, and "core_electron_be" is what the XPS'
+         write (*, '(A)') '      spectrum is built from. Naming either one switches on the machinery'
+         write (*, '(A)') '      that consumes it and records which slot it occupies.'
+         write (*, '(A)') '      -> needs n_local_properties; sets n_local_properties; sets'
+         write (*, '(A)') '         has_vdw; sets vdw_index; sets has_core_electron_be; sets'
+         write (*, '(A)') '         core_electron_be_index; see local_property_qs,'
+         write (*, '(A)') '         local_property_alphas'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  local_property_qs                    [type(local_property_soap_turbo) list]'
+         write (*, '(A)') '      Sparse-set descriptor file for each local property, one per'
+         write (*, '(A)') '      property.'
+         write (*, '(A)') '      -> needs n_local_properties; sets n_local_properties; see'
+         write (*, '(A)') '         local_property_alphas'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  local_property_v0s                   [type(local_property_soap_turbo) list]'
+         write (*, '(A)') '      Baseline added to each local property''s prediction, one per'
+         write (*, '(A)') '      property. For Hirshfeld volumes this is the free-atom volume the fit'
+         write (*, '(A)') '      is a correction to.'
+         write (*, '(A)') '      -> needs n_local_properties'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  local_property_zetas                 [integer, default 0]'
+         write (*, '(A)') '      Kernel exponent for each local property, one per property. The local'
+         write (*, '(A)') '      properties are fitted with their own kernels and need not share the'
+         write (*, '(A)') '      energy''s zeta.'
+         write (*, '(A)') '      -> needs n_local_properties; see zeta'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  n_local_properties                   [integer, default 0]'
+         write (*, '(A)') '      How many local properties this descriptor carries. Give it before'
+         write (*, '(A)') '      the local_property_* lists, which it allocates and which are all'
+         write (*, '(A)') '      read this many values wide.'
+         write (*, '(A)') '      -> see local_property_labels'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  n_max                                [integer]'
+         write (*, '(A)') '      Number of radial basis functions per species. The descriptor''s'
+         write (*, '(A)') '      radial resolution: it has to be large enough to represent features'
+         write (*, '(A)') '      of width atom_sigma_r out to the cutoff. The block''s total radial'
+         write (*, '(A)') '      basis size is the sum over species.'
+         write (*, '(A)') '      -> sets alpha_max; see l_max, atom_sigma_r'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  n_species                            [integer]'
+         write (*, '(A)') '      Number of species appearing in the neighbour environments this'
+         write (*, '(A)') '      descriptor sees. It must come first in the block: every per-species'
+         write (*, '(A)') '      list below is read n_species values wide, and the block is'
+         write (*, '(A)') '      pre-scanned for this keyword alone before anything else is parsed so'
+         write (*, '(A)') '      that those arrays can be allocated.'
+         write (*, '(A)') '      -> sets nf; sets rcut; sets buffer; sets atom_sigma_r; sets'
+         write (*, '(A)') '         atom_sigma_t; sets atom_sigma_r_scaling; sets'
+         write (*, '(A)') '         atom_sigma_t_scaling; sets amplitude_scaling; sets'
+         write (*, '(A)') '         central_weight; sets global_scaling; sets n_max; sets species;'
+         write (*, '(A)') '         see species'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  nf                                   [real list]'
+         write (*, '(A)') '      Steepness of the radial filter applied to each species'' density, one'
+         write (*, '(A)') '      per species. Larger values make the transition sharper.'
+         write (*, '(A)') '      -> see rcut, buffer'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  radial_enhancement                   [integer, default 0]'
+         write (*, '(A)') '      Multiply the radial density by r raised to this power before'
+         write (*, '(A)') '      expanding it, which weights the outer shells more heavily. 0, 1 and'
+         write (*, '(A)') '      2 are the usual choices.'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  rcut                                 [real list, A]'
+         write (*, '(A)') '      Hard cutoff, one per species: beyond it a neighbour contributes'
+         write (*, '(A)') '      nothing. The largest over every descriptor in the file becomes the'
+         write (*, '(A)') '      cutoff the neighbour lists are built to.'
+         write (*, '(A)') '      -> sets rcut_max; see buffer'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  scaling_mode                         [string, default polynomial]'
+         write (*, '(A)') '      Functional form amplitude_scaling is applied through. "polynomial"'
+         write (*, '(A)') '      is the default and the only form the GPU kernels implement.'
+         write (*, '(A)') '      -> see amplitude_scaling'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  species                              [string list]'
+         write (*, '(A)') '      Chemical symbols of the neighbour species, in the order every'
+         write (*, '(A)') '      per-species list in this block is written. n_species entries.'
+         write (*, '(A)') '      -> see n_species, central_species'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  vdw_alphas                           [string]'
+         write (*, '(A)') '      Deprecated. Superseded by local_property_alphas.'
+         write (*, '(A)') '      -> see local_property_alphas'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  vdw_delta                            [real]'
+         write (*, '(A)') '      Deprecated. Superseded by local_property_deltas.'
+         write (*, '(A)') '      -> see local_property_deltas'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  vdw_qs                               [string]'
+         write (*, '(A)') '      Deprecated. Superseded by local_property_qs.'
+         write (*, '(A)') '      -> see local_property_qs'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  vdw_v0                               [real]'
+         write (*, '(A)') '      Deprecated. Superseded by local_property_v0s.'
+         write (*, '(A)') '      -> see local_property_v0s'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  vdw_zeta                             [real]'
+         write (*, '(A)') '      Deprecated. Superseded by local_property_zetas.'
+         write (*, '(A)') '      -> see local_property_zetas'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  zeta                                 [real, default 2.0]'
+         write (*, '(A)') '      Exponent of the SOAP kernel, (q . q'')^zeta. Raising it sharpens the'
+         write (*, '(A)') '      kernel and makes the fit more local in descriptor space.'
+         write (*, '(A)') '      -> see delta'
+         write (*, '(A)') ''
+      end if
+
+!     ---- distance_2b
+      if (every .or. gap_only) then
+         write (*, '(A)') '=== DISTANCE_2B ==='
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  Z1 (or z1, species1)                 [string]'
+         write (*, '(A)') '      First species of the pair this block describes, as a chemical'
+         write (*, '(A)') '      symbol. With Z2 it decides which pairs the descriptor is evaluated'
+         write (*, '(A)') '      on.'
+         write (*, '(A)') '      -> see Z2'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  Z2 (or z2, species2)                 [string]'
+         write (*, '(A)') '      Second species of the pair. A block with Z1 and Z2 swapped would be'
+         write (*, '(A)') '      the same interaction, so only one of the two orders is given.'
+         write (*, '(A)') '      -> see Z1'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  alphas_sparse                        [string]'
+         write (*, '(A)') '      File holding the fitted sparse-set coefficients, one per sparse'
+         write (*, '(A)') '      point.'
+         write (*, '(A)') '      -> see desc_sparse'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  delta                                [real, default 1.0, eV]'
+         write (*, '(A)') '      Energy scale of this two-body GAP, the standard deviation of the'
+         write (*, '(A)') '      prior on the energy it contributes. Zero switches the block off'
+         write (*, '(A)') '      without removing it.'
+         write (*, '(A)') '      -> see sigma'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  desc_sparse                          [string]'
+         write (*, '(A)') '      File holding the sparse-set descriptors, one distance per row. Its'
+         write (*, '(A)') '      row count sets the number of sparse points.'
+         write (*, '(A)') '      -> see alphas_sparse'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  rcut                                 [real, A]'
+         write (*, '(A)') '      Cutoff of the pair interaction: beyond it the pair contributes'
+         write (*, '(A)') '      nothing.'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  sigma                                [real, default 1.0, A]'
+         write (*, '(A)') '      Width of the kernel in the descriptor, which here is the interatomic'
+         write (*, '(A)') '      distance itself. It sets how far apart two distances have to be'
+         write (*, '(A)') '      before the fit treats them as different.'
+         write (*, '(A)') '      -> see delta'
+         write (*, '(A)') ''
+      end if
+
+!     ---- angle_3b
+      if (every .or. gap_only) then
+         write (*, '(A)') '=== ANGLE_3B ==='
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  Z1 (or z1, species1)                 [string]'
+         write (*, '(A)') '      Species of the first neighbour in the triplet.'
+         write (*, '(A)') '      -> see Z_center, Z2'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  Z2 (or z2, species2)                 [string]'
+         write (*, '(A)') '      Species of the second neighbour. Swapping Z1 and Z2 gives the same'
+         write (*, '(A)') '      triplet, so only one order is given and the descriptor is'
+         write (*, '(A)') '      symmetrised internally.'
+         write (*, '(A)') '      -> see Z1'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  Z_center (or z_center, species_center) [string]'
+         write (*, '(A)') '      Species at the vertex of the triplet, as a chemical symbol. The'
+         write (*, '(A)') '      three-body term is centred on this atom with Z1 and Z2 as its two'
+         write (*, '(A)') '      neighbours.'
+         write (*, '(A)') '      -> see Z1, Z2'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  alphas_sparse                        [string]'
+         write (*, '(A)') '      File holding the fitted sparse-set coefficients, one per sparse'
+         write (*, '(A)') '      point.'
+         write (*, '(A)') '      -> see desc_sparse'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  delta                                [real, default 1.0, eV]'
+         write (*, '(A)') '      Energy scale of this three-body GAP. Zero switches the block off'
+         write (*, '(A)') '      without removing it.'
+         write (*, '(A)') '      -> see sigma'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  desc_sparse                          [string]'
+         write (*, '(A)') '      File holding the sparse-set descriptors, one triplet per row, three'
+         write (*, '(A)') '      components each.'
+         write (*, '(A)') '      -> see alphas_sparse'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  kernel_type                          [string, default exp]'
+         write (*, '(A)') '      Form of the three-body kernel. "exp" is the squared-exponential the'
+         write (*, '(A)') '      fits use.'
+         write (*, '(A)') '      -> see sigma'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  rcut                                 [real, A]'
+         write (*, '(A)') '      Cutoff on each of the two distances from the centre. Both neighbours'
+         write (*, '(A)') '      must be inside it for the triplet to contribute.'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  sigma                                [real(1:3), default 1.0]'
+         write (*, '(A)') '      Kernel widths of the three-body descriptor, three values: one for'
+         write (*, '(A)') '      each of the two distances and one for the coordinate built from the'
+         write (*, '(A)') '      angle between them.'
+         write (*, '(A)') '      -> see delta, kernel_type'
+         write (*, '(A)') ''
+      end if
+
+!     ---- core_pot
+      if (every .or. gap_only) then
+         write (*, '(A)') '=== CORE_POT ==='
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  Z1 (or z1, species1)                 [string]'
+         write (*, '(A)') '      First species of the pair this core potential acts on, as a chemical'
+         write (*, '(A)') '      symbol.'
+         write (*, '(A)') '      -> see Z2'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  Z2 (or z2, species2)                 [string]'
+         write (*, '(A)') '      Second species of the pair.'
+         write (*, '(A)') '      -> see Z1'
+         write (*, '(A)') ''
+      end if
+      if (every .or. gap_only) then
+         write (*, '(A)') '  core_pot_file                        [string]'
+         write (*, '(A)') '      File holding the tabulated potential, as distance and energy'
+         write (*, '(A)') '      columns. It is splined on read, and truncated at core_pot_cutoff'
+         write (*, '(A)') '      with a taper of width core_pot_buffer, both set in the input file'
+         write (*, '(A)') '      rather than here. This is the short-range repulsion the GAP is not'
+         write (*, '(A)') '      fitted to describe, so the table usually only covers distances the'
+         write (*, '(A)') '      training data never visited.'
+         write (*, '(A)') '      -> see core_pot_cutoff, core_pot_buffer'
          write (*, '(A)') ''
       end if
 

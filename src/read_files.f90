@@ -4322,6 +4322,12 @@ contains
                do while (iostatus == 0)
                   read (10, *, iostat=iostatus) keyword
                   counter = counter + 1
+                  !> @kw n_species
+                  !> Number of species appearing in the neighbour environments this descriptor
+                  !> sees. It must come first in the block: every per-species list below is read
+                  !> n_species values wide, and the block is pre-scanned for this keyword alone
+                  !> before anything else is parsed so that those arrays can be allocated.
+                  !> @see species
                   if (keyword == "n_species") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, n_species
@@ -4354,9 +4360,19 @@ contains
                iostatus = 0
                do while (keyword /= "gap_end" .and. iostatus == 0)
                   read (10, *, iostat=iostatus) keyword
+                  !> @kw nf
+                  !> Steepness of the radial filter applied to each species' density, one per
+                  !> species. Larger values make the transition sharper.
+                  !> @see rcut, buffer
                   if (keyword == "nf") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%nf(1:n_species)
+                  !> @kw rcut
+                  !> Hard cutoff, one per species: beyond it a neighbour contributes nothing. The
+                  !> largest over every descriptor in the file becomes the cutoff the neighbour
+                  !> lists are built to.
+                  !> @units A
+                  !> @see buffer
                   else if (keyword == "rcut") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%rcut_hard(1:n_species)
@@ -4366,30 +4382,76 @@ contains
                            soap_turbo_hypers(n_soap_turbo)%rcut_max = soap_turbo_hypers(n_soap_turbo)%rcut_hard(i)
                         end if
                      end do
+                  !> @kw buffer
+                  !> Width of the buffer zone inside the hard cutoff over which a neighbour's
+                  !> contribution is smoothly taken to zero, one per species. Read as a width and
+                  !> converted to the soft cutoff rcut - buffer once the block closes; zero means
+                  !> no buffer, and the density is cut abruptly.
+                  !> @units A
+                  !> @see rcut
                   else if (keyword == "buffer") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%rcut_soft(1:n_species)
+                  !> @kw atom_sigma_r
+                  !> Radial width of the Gaussian each neighbour is smeared into, one per species.
+                  !> Small values resolve fine radial structure and need a larger n_max to
+                  !> represent.
+                  !> @units A
+                  !> @see atom_sigma_r_scaling, n_max
                   else if (keyword == "atom_sigma_r") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%atom_sigma_r(1:n_species)
+                  !> @kw atom_sigma_t
+                  !> Angular width of that Gaussian, measured as an arc length rather than an
+                  !> angle, one per species. Divided by the neighbour distance to give the angular
+                  !> spread, so a fixed value keeps the angular resolution roughly constant with
+                  !> distance.
+                  !> @units A
+                  !> @see atom_sigma_t_scaling, l_max
                   else if (keyword == "atom_sigma_t") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%atom_sigma_t(1:n_species)
+                  !> @kw atom_sigma_r_scaling
+                  !> How the radial width grows with neighbour distance, one per species: the width
+                  !> used is atom_sigma_r * (1 + scaling * r). Letting distant neighbours blur is
+                  !> what keeps the descriptor from resolving structure the fit cannot support.
+                  !> @see atom_sigma_r
                   else if (keyword == "atom_sigma_r_scaling") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%atom_sigma_r_scaling(1:n_species)
+                  !> @kw atom_sigma_t_scaling
+                  !> The same linear growth for the angular width.
+                  !> @see atom_sigma_t
                   else if (keyword == "atom_sigma_t_scaling") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%atom_sigma_t_scaling(1:n_species)
+                  !> @kw amplitude_scaling
+                  !> How the amplitude of a neighbour's Gaussian falls with distance, one per
+                  !> species, in the form set by scaling_mode. Larger values weight the near
+                  !> neighbours more heavily.
+                  !> @see scaling_mode
                   else if (keyword == "amplitude_scaling") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%amplitude_scaling(1:n_species)
+                  !> @kw central_weight
+                  !> Weight given to the central atom's own contribution to the density, one per
+                  !> species. Zero leaves the centre out of its own descriptor.
                   else if (keyword == "central_weight") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%central_weight(1:n_species)
+                  !> @kw global_scaling
+                  !> Overall multiplier on each species' contribution to the density, one per
+                  !> species. This is where a species is made to count for more or less than its
+                  !> neighbours.
                   else if (keyword == "global_scaling") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%global_scaling(1:n_species)
+                  !> @kw n_max
+                  !> Number of radial basis functions per species. The descriptor's radial
+                  !> resolution: it has to be large enough to represent features of width
+                  !> atom_sigma_r out to the cutoff. The block's total radial basis size is the sum
+                  !> over species.
+                  !> @see l_max, atom_sigma_r
                   else if (keyword == "n_max") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%alpha_max(1:n_species)
@@ -4400,12 +4462,24 @@ contains
                         soap_turbo_hypers(n_soap_turbo)%n_max = soap_turbo_hypers(n_soap_turbo)%n_max + &
                                                                 soap_turbo_hypers(n_soap_turbo)%alpha_max(i)
                      end do
+                  !> @kw species
+                  !> Chemical symbols of the neighbour species, in the order every per-species list
+                  !> in this block is written. n_species entries.
+                  !> @see n_species, central_species
                   else if (keyword == "species") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%species_types(1:n_species)
+                  !> @kw l_max
+                  !> Highest spherical-harmonic degree kept in the angular expansion. The
+                  !> descriptor's angular resolution, and the counterpart of n_max: the cost of the
+                  !> descriptor grows with both.
+                  !> @see n_max, atom_sigma_t
                   else if (keyword == "l_max") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%l_max
+                  !> @kw radial_enhancement
+                  !> Multiply the radial density by r raised to this power before expanding it,
+                  !> which weights the outer shells more heavily. 0, 1 and 2 are the usual choices.
                   else if (keyword == "radial_enhancement") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%radial_enhancement
@@ -4418,27 +4492,68 @@ contains
                         write (*, *) '.......................................|'
                         soap_turbo_hypers(n_soap_turbo)%radial_enhancement = 0
                      end if
+                  !> @kw compress_soap
+                  !> Project the descriptor onto a smaller set of components before the kernel is
+                  !> evaluated. The SOAP vector grows as n_max^2 l_max, and compression is what
+                  !> keeps a many-species descriptor affordable.
+                  !> @see compress_mode, file_compress_soap
                   else if (keyword == "compress_soap") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%compress_soap
+                  !> @kw file_compress_soap
+                  !> File giving the compression explicitly, as the list of components to keep or a
+                  !> transformation matrix. The alternative to naming a compress_mode.
+                  !> @needs compress_soap
+                  !> @see compress_mode
                   else if (keyword == "file_compress_soap") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%file_compress
+                  !> @kw compress_mode
+                  !> Named compression scheme to use, resolved into the projection internally. Use
+                  !> this or file_compress_soap, not both.
+                  !> @needs compress_soap
+                  !> @see file_compress_soap
                   else if (keyword == "compress_mode") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%compress_mode
+                  !> @kw dipole_model
+                  !> This descriptor's fitted scalar is not an energy but a potential whose
+                  !> gradient with respect to the central atom's own position is the local dipole.
+                  !> Its energy, forces and virial are meaningless and are not summed into the
+                  !> totals; only the dipole is taken.
+                  !> @see delta
                   else if (keyword == "dipole_model") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%is_dipole_model
+                  !> @kw zeta
+                  !> Exponent of the SOAP kernel, (q . q')^zeta. Raising it sharpens the kernel and
+                  !> makes the fit more local in descriptor space.
+                  !> @see delta
                   else if (keyword == "zeta") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%zeta
+                  !> @kw delta
+                  !> Energy scale of this GAP: the standard deviation of the prior on the energy it
+                  !> contributes. It sets how much of the total energy this descriptor is allowed
+                  !> to account for, and setting it to zero switches the descriptor's contribution
+                  !> off without removing the block.
+                  !> @units eV
+                  !> @see zeta
                   else if (keyword == "delta") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%delta
+                  !> @kw central_species
+                  !> Which entry of species this descriptor is centred on, as a 1-based index. One
+                  !> soap_turbo block per central species is the usual arrangement, each seeing all
+                  !> of them as neighbours.
+                  !> @see species
                   else if (keyword == "central_species") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%central_species
+                  !> @kw basis
+                  !> Radial basis to expand the density in. "poly3" is the polynomial basis, and
+                  !> "poly3gauss" adds a Gaussian for the central atom.
+                  !> @see n_max
                   else if (keyword == "basis") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%basis
@@ -4451,6 +4566,10 @@ contains
                         write (*, *) '"poly3"                                |'
                         soap_turbo_hypers(n_soap_turbo)%basis = "poly3"
                      end if
+                  !> @kw scaling_mode
+                  !> Functional form amplitude_scaling is applied through. "polynomial" is the
+                  !> default and the only form the GPU kernels implement.
+                  !> @see amplitude_scaling
                   else if (keyword == "scaling_mode") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%scaling_mode
@@ -4461,12 +4580,26 @@ contains
                         write (*, *) 'to "polynomial"                        |'
                         soap_turbo_hypers(n_soap_turbo)%scaling_mode = "polynomial"
                      end if
+                  !> @kw alphas_sparse
+                  !> File holding the fitted sparse-set coefficients, one per sparse point. Read
+                  !> together with desc_sparse, which must have the same number of rows.
+                  !> @see desc_sparse
                   else if (keyword == "alphas_sparse") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%file_alphas
+                  !> @kw desc_sparse
+                  !> File holding the sparse-set descriptors, one row per sparse point. Its row
+                  !> count sets n_sparse and so the cost of every prediction.
+                  !> @see alphas_sparse
                   else if (keyword == "desc_sparse") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%file_desc
+                  !> @kw has_vdw
+                  !> Superseded by has_local_properties. A Hirshfeld-volume model is now one local
+                  !> property among several rather than a special case, and this keyword still sets
+                  !> up that one property so that older potential files load.
+                  !> @see has_local_properties
+                  !> @status deprecated
                   else if (keyword == "has_vdw") then
                      backspace (10)
                      !               read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%has_vdw
@@ -4501,34 +4634,64 @@ contains
                      soap_turbo_hypers(n_soap_turbo)%local_property_models(1)%do_derivatives = .true.
                      soap_turbo_hypers(n_soap_turbo)%vdw_index = 1
 
+                  !> @kw vdw_qs
+                  !> Superseded by local_property_qs.
+                  !> @see local_property_qs
+                  !> @status deprecated
                   else if (keyword == "vdw_qs") then
                      backspace (10)
                      call check_deprecated(n_deprecated, deprecated_keywords, updated_keywords, keyword)
                      !             read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%file_vdw_desc
                      read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%local_property_models(1)%file_desc
+                  !> @kw vdw_alphas
+                  !> Superseded by local_property_alphas.
+                  !> @see local_property_alphas
+                  !> @status deprecated
                   else if (keyword == "vdw_alphas") then
                      backspace (10)
                      call check_deprecated(n_deprecated, deprecated_keywords, updated_keywords, keyword)
                      !read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%file_vdw_alphas
                     read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%local_property_models(1)%file_alphas
+                  !> @kw vdw_zeta
+                  !> Superseded by local_property_zetas.
+                  !> @see local_property_zetas
+                  !> @status deprecated
                   else if (keyword == "vdw_zeta") then
                      backspace (10)
                      call check_deprecated(n_deprecated, deprecated_keywords, updated_keywords, keyword)
                      !              read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%vdw_zeta
                      read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%local_property_models(1)%zeta
+                  !> @kw vdw_delta
+                  !> Superseded by local_property_deltas.
+                  !> @see local_property_deltas
+                  !> @status deprecated
                   else if (keyword == "vdw_delta") then
                      backspace (10)
                      call check_deprecated(n_deprecated, deprecated_keywords, updated_keywords, keyword)
                      !              read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%vdw_delta
                      read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%local_property_models(1)%delta
+                  !> @kw vdw_v0
+                  !> Superseded by local_property_v0s.
+                  !> @see local_property_v0s
+                  !> @status deprecated
                   else if (keyword == "vdw_v0") then
                      backspace (10)
                      call check_deprecated(n_deprecated, deprecated_keywords, updated_keywords, keyword)
                      !              read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%vdw_v0
                      read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%local_property_models(1)%V0
+                  !> @kw has_local_properties
+                  !> This descriptor carries per-atom quantities fitted alongside the energy --
+                  !> Hirshfeld volumes, charges, core-electron binding energies. Set implicitly by
+                  !> n_local_properties.
+                  !> @see n_local_properties, local_property_labels
                   else if (keyword == "has_local_properties") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%has_local_properties
+                  !> @kw n_local_properties
+                  !> How many local properties this descriptor carries. Give it before the
+                  !> local_property_* lists, which it allocates and which are all read this many
+                  !> values wide.
+                  !> @see local_property_labels
                   else if (keyword == "n_local_properties") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%n_local_properties
@@ -4536,6 +4699,14 @@ contains
                      allocate (soap_turbo_hypers(n_soap_turbo)%local_property_models( &
                                1:soap_turbo_hypers(n_soap_turbo)%n_local_properties))
 
+                  !> @kw local_property_labels
+                  !> What each local property is, one name per property. The names are meaningful,
+                  !> not decorative: "hirshfeld_v" is what the van der Waals correction looks for,
+                  !> and "core_electron_be" is what the XPS spectrum is built from. Naming either
+                  !> one switches on the machinery that consumes it and records which slot it
+                  !> occupies.
+                  !> @needs n_local_properties
+                  !> @see local_property_qs, local_property_alphas
                   else if (keyword == "local_property_labels") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, &
@@ -4558,30 +4729,53 @@ contains
 
                      end do
 
+                  !> @kw local_property_qs
+                  !> Sparse-set descriptor file for each local property, one per property.
+                  !> @needs n_local_properties
+                  !> @see local_property_alphas
                   else if (keyword == "local_property_qs") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, &
                           (soap_turbo_hypers(n_soap_turbo)%local_property_models(nw)&
                           &%file_desc, nw=1&
                           &, soap_turbo_hypers(n_soap_turbo)%n_local_properties)
+                  !> @kw local_property_alphas
+                  !> Sparse-set coefficient file for each local property, one per property.
+                  !> @needs n_local_properties
+                  !> @see local_property_qs
                   else if (keyword == "local_property_alphas") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, &
                           (soap_turbo_hypers(n_soap_turbo)%local_property_models(nw)&
                           &%file_alphas, nw=1&
                           &, soap_turbo_hypers(n_soap_turbo)%n_local_properties)
+                  !> @kw local_property_zetas
+                  !> Kernel exponent for each local property, one per property. The local
+                  !> properties are fitted with their own kernels and need not share the energy's
+                  !> zeta.
+                  !> @needs n_local_properties
+                  !> @see zeta
                   else if (keyword == "local_property_zetas") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk,&
                           & (soap_turbo_hypers(n_soap_turbo)&
                           &%local_property_models(nw)%zeta, nw=1&
                           &, soap_turbo_hypers(n_soap_turbo)%n_local_properties)
+                  !> @kw local_property_deltas
+                  !> Prior scale for each local property, one per property, in whatever units that
+                  !> property has.
+                  !> @needs n_local_properties
+                  !> @see delta
                   else if (keyword == "local_property_deltas") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, &
                           & (soap_turbo_hypers(n_soap_turbo)%local_property_models(nw)&
                           &%delta, nw=1, soap_turbo_hypers(n_soap_turbo)&
                           &%n_local_properties)
+                  !> @kw local_property_v0s
+                  !> Baseline added to each local property's prediction, one per property. For
+                  !> Hirshfeld volumes this is the free-atom volume the fit is a correction to.
+                  !> @needs n_local_properties
                   else if (keyword == "local_property_v0s") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, &
@@ -4732,24 +4926,53 @@ contains
                iostatus = 0
                do while (keyword /= "gap_end" .and. iostatus == 0)
                   read (10, *, iostat=iostatus) keyword
+                  !> @kw delta
+                  !> Energy scale of this two-body GAP, the standard deviation of the prior on the
+                  !> energy it contributes. Zero switches the block off without removing it.
+                  !> @units eV
+                  !> @see sigma
                   if (keyword == "delta") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, distance_2b_hypers(n_distance_2b)%delta
+                  !> @kw sigma
+                  !> Width of the kernel in the descriptor, which here is the interatomic distance
+                  !> itself. It sets how far apart two distances have to be before the fit treats
+                  !> them as different.
+                  !> @units A
+                  !> @see delta
                   else if (keyword == "sigma") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, distance_2b_hypers(n_distance_2b)%sigma
+                  !> @kw rcut
+                  !> Cutoff of the pair interaction: beyond it the pair contributes nothing.
+                  !> @units A
                   else if (keyword == "rcut") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, distance_2b_hypers(n_distance_2b)%rcut
+                  !> @kw Z1, z1, species1
+                  !> First species of the pair this block describes, as a chemical symbol. With Z2
+                  !> it decides which pairs the descriptor is evaluated on.
+                  !> @see Z2
                   else if (keyword == "Z1" .or. keyword == "z1" .or. keyword == "species1") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, distance_2b_hypers(n_distance_2b)%species1
+                  !> @kw Z2, z2, species2
+                  !> Second species of the pair. A block with Z1 and Z2 swapped would be the same
+                  !> interaction, so only one of the two orders is given.
+                  !> @see Z1
                   else if (keyword == "Z2" .or. keyword == "z2" .or. keyword == "species2") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, distance_2b_hypers(n_distance_2b)%species2
+                  !> @kw desc_sparse
+                  !> File holding the sparse-set descriptors, one distance per row. Its row count
+                  !> sets the number of sparse points.
+                  !> @see alphas_sparse
                   else if (keyword == "desc_sparse") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, distance_2b_hypers(n_distance_2b)%file_desc
+                  !> @kw alphas_sparse
+                  !> File holding the fitted sparse-set coefficients, one per sparse point.
+                  !> @see desc_sparse
                   else if (keyword == "alphas_sparse") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, distance_2b_hypers(n_distance_2b)%file_alphas
@@ -4771,30 +4994,64 @@ contains
                iostatus = 0
                do while (keyword /= "gap_end" .and. iostatus == 0)
                   read (10, *, iostat=iostatus) keyword
+                  !> @kw delta
+                  !> Energy scale of this three-body GAP. Zero switches the block off without
+                  !> removing it.
+                  !> @units eV
+                  !> @see sigma
                   if (keyword == "delta") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, angle_3b_hypers(n_angle_3b)%delta
+                  !> @kw sigma
+                  !> Kernel widths of the three-body descriptor, three values: one for each of the
+                  !> two distances and one for the coordinate built from the angle between them.
+                  !> @see delta, kernel_type
                   else if (keyword == "sigma") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, angle_3b_hypers(n_angle_3b)%sigma(1:3)
+                  !> @kw rcut
+                  !> Cutoff on each of the two distances from the centre. Both neighbours must be
+                  !> inside it for the triplet to contribute.
+                  !> @units A
                   else if (keyword == "rcut") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, angle_3b_hypers(n_angle_3b)%rcut
+                  !> @kw Z1, z1, species1
+                  !> Species of the first neighbour in the triplet.
+                  !> @see Z_center, Z2
                   else if (keyword == "Z1" .or. keyword == "z1" .or. keyword == "species1") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, angle_3b_hypers(n_angle_3b)%species1
+                  !> @kw Z2, z2, species2
+                  !> Species of the second neighbour. Swapping Z1 and Z2 gives the same triplet, so
+                  !> only one order is given and the descriptor is symmetrised internally.
+                  !> @see Z1
                   else if (keyword == "Z2" .or. keyword == "z2" .or. keyword == "species2") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, angle_3b_hypers(n_angle_3b)%species2
+                  !> @kw Z_center, z_center, species_center
+                  !> Species at the vertex of the triplet, as a chemical symbol. The three-body
+                  !> term is centred on this atom with Z1 and Z2 as its two neighbours.
+                  !> @see Z1, Z2
                   else if (keyword == "Z_center" .or. keyword == "z_center" .or. keyword == "species_center") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, angle_3b_hypers(n_angle_3b)%species_center
+                  !> @kw kernel_type
+                  !> Form of the three-body kernel. "exp" is the squared-exponential the fits use.
+                  !> @see sigma
                   else if (keyword == "kernel_type") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, angle_3b_hypers(n_angle_3b)%kernel_type
+                  !> @kw desc_sparse
+                  !> File holding the sparse-set descriptors, one triplet per row, three components
+                  !> each.
+                  !> @see alphas_sparse
                   else if (keyword == "desc_sparse") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, angle_3b_hypers(n_angle_3b)%file_desc
+                  !> @kw alphas_sparse
+                  !> File holding the fitted sparse-set coefficients, one per sparse point.
+                  !> @see desc_sparse
                   else if (keyword == "alphas_sparse") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, angle_3b_hypers(n_angle_3b)%file_alphas
@@ -4826,12 +5083,25 @@ contains
 !              backspace(10)
 !              read(10, *, iostat=iostatus) cjunk, cjunk, core_pot_hypers(n_core_pot)%ypn
 !            else if( keyword == "Z1"  .or. keyword == "z1" .or. keyword == "species1" )then
+                  !> @kw Z1, z1, species1
+                  !> First species of the pair this core potential acts on, as a chemical symbol.
+                  !> @see Z2
                   if (keyword == "Z1" .or. keyword == "z1" .or. keyword == "species1") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, core_pot_hypers(n_core_pot)%species1
+                  !> @kw Z2, z2, species2
+                  !> Second species of the pair.
+                  !> @see Z1
                   else if (keyword == "Z2" .or. keyword == "z2" .or. keyword == "species2") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, core_pot_hypers(n_core_pot)%species2
+                  !> @kw core_pot_file
+                  !> File holding the tabulated potential, as distance and energy columns. It is
+                  !> splined on read, and truncated at core_pot_cutoff with a taper of width
+                  !> core_pot_buffer, both set in the input file rather than here. This is the
+                  !> short-range repulsion the GAP is not fitted to describe, so the table usually
+                  !> only covers distances the training data never visited.
+                  !> @see core_pot_cutoff, core_pot_buffer
                   else if (keyword == "core_pot_file") then
                      backspace (10)
                      read (10, *, iostat=iostatus) cjunk, cjunk, core_pot_hypers(n_core_pot)%core_pot_file

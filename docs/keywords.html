@@ -204,6 +204,25 @@ a { color: var(--accent); }
   vertical-align: 1px;
 }
 
+.railhead {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--faint); margin: 1.1rem 0 .35rem .6rem;
+}
+.rail .railhead:first-child { margin-top: 0; }
+@media (max-width: 60rem) { .railhead { display: none; } }
+
+.part { padding-top: 3rem; }
+.part > h2 {
+  font-size: 1.35rem; letter-spacing: -.015em; margin-bottom: .5rem;
+}
+.part > h2::after { display: none; }
+.part > .intro {
+  color: var(--muted); font-size: 13.5px; max-width: 64ch; margin: 0 0 .5rem;
+  border-left: 2px solid var(--accent); padding-left: .85rem;
+}
+.part.hide { display: none; }
+
 tr.hide, section.hide { display: none; }
 .empty {
   grid-column: 1 / -1; color: var(--faint); font-size: 14px;
@@ -219,11 +238,12 @@ footer {
 
 <div class="page">
 <header class="masthead">
-<p class="eyebrow">TurboGAP &middot; input reference</p>
-<h1>Input keywords</h1>
-<p class="lede">239 keywords in 12 groups. An input file is one <code>keyword = value</code> per line, and a keyword this list does not contain aborts the run. Types and defaults are read out of <code>src/types.f90</code>, and the rest out of the branch in <code>src/read_files.f90</code> that parses the keyword, so nothing here is transcribed by hand.</p>
+<p class="eyebrow">TurboGAP &middot; keyword reference</p>
+<h1>Keywords</h1>
+<p class="lede">298 keywords across the input file and the potential (.gap) file. Types and defaults are read out of <code>src/types.f90</code>, and the rest out of the branch in <code>src/read_files.f90</code> that parses the keyword, so nothing here is transcribed by hand.</p>
 </header>
 <nav class="rail" aria-label="Groups">
+<p class="railhead">the input file</p>
 <a href="#general"><span>General</span><span class="n">12</span></a>
 <a href="#run-control"><span>Run control</span><span class="n">17</span></a>
 <a href="#molecular-dynamics"><span>Molecular dynamics</span><span class="n">17</span></a>
@@ -236,6 +256,11 @@ footer {
 <a href="#local-properties"><span>Local properties</span><span class="n">5</span></a>
 <a href="#output"><span>Output</span><span class="n">19</span></a>
 <a href="#gpu"><span>GPU</span><span class="n">5</span></a>
+<p class="railhead">the potential (.gap) file</p>
+<a href="#soap-turbo"><span>soap_turbo</span><span class="n">40</span></a>
+<a href="#distance-2b"><span>distance_2b</span><span class="n">7</span></a>
+<a href="#angle-3b"><span>angle_3b</span><span class="n">9</span></a>
+<a href="#core-pot"><span>core_pot</span><span class="n">3</span></a>
 </nav>
 <main>
 <div class="filters">
@@ -248,6 +273,9 @@ footer {
 </select>
 <span class="tally" id="tally"></span>
 </div>
+<div class="part">
+<h2>Keywords for the input file</h2>
+<p class="intro">One <code>keyword = value</code> per line. A keyword this list does not contain aborts the run.</p>
 <section id="general">
 <h2>General</h2>
 <p class="blurb">The atoms, the species and how chatty the run is.</p>
@@ -2459,6 +2487,503 @@ footer {
 <td class="dp"><span class="dep">see <code>max_gbytes_per_process</code></span></td>
 </tr>
 </tbody></table></div></section>
+</div>
+<div class="part">
+<h2>Keywords for the potential (.gap) file</h2>
+<p class="intro">The fitted potential, named by <code>pot_file</code> in the input file. It is a sequence of blocks, each opened by <code>gap_beg &lt;descriptor&gt;</code> and closed by <code>gap_end</code>, holding one <code>keyword = value</code> per line. <code>gap_beg</code> and <code>gap_end</code> are file syntax rather than settings and are not listed below. Unlike the input file, a keyword the block does not recognise is skipped in silence, so a misspelling here shows up as a wrong answer rather than an error. These files are written by the fitting code, not by hand.</p>
+<section id="soap-turbo">
+<h2>soap_turbo</h2>
+<p class="blurb">The SOAP descriptor and the GAP fitted on it, one block per central species. Also carries the local-property models -- Hirshfeld volumes, charges, core-electron binding energies -- that ride on the same descriptor.</p>
+<div class="scroll"><table><thead><tr><th>Keyword</th><th>Type</th><th>Default</th><th>Units</th><th>Description</th><th>Depends on</th></tr></thead><tbody>
+<tr data-h="alphas_sparse file holding the fitted sparse-set coefficients, one per sparse point. read together with desc_sparse, which must have the same number of rows." data-m="">
+<td class="kw"><code>alphas_sparse</code></td>
+<td class="ty">string</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="de">File holding the fitted sparse-set coefficients, one per sparse point. Read together with desc_sparse, which must have the same number of rows.</td>
+<td class="dp"><span class="dep">see <code>desc_sparse</code></span></td>
+</tr>
+<tr data-h="amplitude_scaling how the amplitude of a neighbour&#x27;s gaussian falls with distance, one per species, in the form set by scaling_mode. larger values weight the near neighbours more heavily." data-m="">
+<td class="kw"><code>amplitude_scaling</code></td>
+<td class="ty">real list</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="de">How the amplitude of a neighbour&#x27;s Gaussian falls with distance, one per species, in the form set by scaling_mode. Larger values weight the near neighbours more heavily.</td>
+<td class="dp"><span class="dep">see <code>scaling_mode</code></span></td>
+</tr>
+<tr data-h="atom_sigma_r radial width of the gaussian each neighbour is smeared into, one per species. small values resolve fine radial structure and need a larger n_max to represent." data-m="">
+<td class="kw"><code>atom_sigma_r</code></td>
+<td class="ty">real list</td>
+<td class="df"></td>
+<td class="un">A</td>
+<td class="de">Radial width of the Gaussian each neighbour is smeared into, one per species. Small values resolve fine radial structure and need a larger n_max to represent.</td>
+<td class="dp"><span class="dep">see <code>atom_sigma_r_scaling</code></span><span class="dep">see <code>n_max</code></span></td>
+</tr>
+<tr data-h="atom_sigma_r_scaling how the radial width grows with neighbour distance, one per species: the width used is atom_sigma_r * (1 + scaling * r). letting distant neighbours blur is what keeps the descriptor from resolving structure the fit cannot support." data-m="">
+<td class="kw"><code>atom_sigma_r_scaling</code></td>
+<td class="ty">real list</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="de">How the radial width grows with neighbour distance, one per species: the width used is atom_sigma_r * (1 + scaling * r). Letting distant neighbours blur is what keeps the descriptor from resolving structure the fit cannot support.</td>
+<td class="dp"><span class="dep">see <code>atom_sigma_r</code></span></td>
+</tr>
+<tr data-h="atom_sigma_t angular width of that gaussian, measured as an arc length rather than an angle, one per species. divided by the neighbour distance to give the angular spread, so a fixed value keeps the angular resolution roughly constant with distance." data-m="">
+<td class="kw"><code>atom_sigma_t</code></td>
+<td class="ty">real list</td>
+<td class="df"></td>
+<td class="un">A</td>
+<td class="de">Angular width of that Gaussian, measured as an arc length rather than an angle, one per species. Divided by the neighbour distance to give the angular spread, so a fixed value keeps the angular resolution roughly constant with distance.</td>
+<td class="dp"><span class="dep">see <code>atom_sigma_t_scaling</code></span><span class="dep">see <code>l_max</code></span></td>
+</tr>
+<tr data-h="atom_sigma_t_scaling the same linear growth for the angular width." data-m="">
+<td class="kw"><code>atom_sigma_t_scaling</code></td>
+<td class="ty">real list</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="de">The same linear growth for the angular width.</td>
+<td class="dp"><span class="dep">see <code>atom_sigma_t</code></span></td>
+</tr>
+<tr data-h="basis radial basis to expand the density in. &quot;poly3&quot; is the polynomial basis, and &quot;poly3gauss&quot; adds a gaussian for the central atom." data-m="">
+<td class="kw"><code>basis</code></td>
+<td class="ty">string</td>
+<td class="df"><code>poly3</code></td>
+<td class="un"></td>
+<td class="de">Radial basis to expand the density in. &quot;poly3&quot; is the polynomial basis, and &quot;poly3gauss&quot; adds a Gaussian for the central atom.</td>
+<td class="dp"><span class="dep">see <code>n_max</code></span></td>
+</tr>
+<tr data-h="buffer width of the buffer zone inside the hard cutoff over which a neighbour&#x27;s contribution is smoothly taken to zero, one per species. read as a width and converted to the soft cutoff rcut - buffer once the block closes; zero means no buffer, and the density is cut abruptly." data-m="">
+<td class="kw"><code>buffer</code></td>
+<td class="ty">real list</td>
+<td class="df"></td>
+<td class="un">A</td>
+<td class="de">Width of the buffer zone inside the hard cutoff over which a neighbour&#x27;s contribution is smoothly taken to zero, one per species. Read as a width and converted to the soft cutoff rcut - buffer once the block closes; zero means no buffer, and the density is cut abruptly.</td>
+<td class="dp"><span class="dep">see <code>rcut</code></span></td>
+</tr>
+<tr data-h="central_species which entry of species this descriptor is centred on, as a 1-based index. one soap_turbo block per central species is the usual arrangement, each seeing all of them as neighbours." data-m="">
+<td class="kw"><code>central_species</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>0</code></td>
+<td class="un"></td>
+<td class="de">Which entry of species this descriptor is centred on, as a 1-based index. One soap_turbo block per central species is the usual arrangement, each seeing all of them as neighbours.</td>
+<td class="dp"><span class="dep">see <code>species</code></span></td>
+</tr>
+<tr data-h="central_weight weight given to the central atom&#x27;s own contribution to the density, one per species. zero leaves the centre out of its own descriptor." data-m="">
+<td class="kw"><code>central_weight</code></td>
+<td class="ty">real list</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="de">Weight given to the central atom&#x27;s own contribution to the density, one per species. Zero leaves the centre out of its own descriptor.</td>
+<td class="dp"></td>
+</tr>
+<tr data-h="compress_mode named compression scheme to use, resolved into the projection internally. use this or file_compress_soap, not both." data-m="">
+<td class="kw"><code>compress_mode</code></td>
+<td class="ty">string</td>
+<td class="df"><code>none</code></td>
+<td class="un"></td>
+<td class="de">Named compression scheme to use, resolved into the projection internally. Use this or file_compress_soap, not both.</td>
+<td class="dp"><span class="dep">needs <code>compress_soap</code></span><span class="dep">see <code>file_compress_soap</code></span></td>
+</tr>
+<tr data-h="compress_soap project the descriptor onto a smaller set of components before the kernel is evaluated. the soap vector grows as n_max^2 l_max, and compression is what keeps a many-species descriptor affordable." data-m="">
+<td class="kw"><code>compress_soap</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="de">Project the descriptor onto a smaller set of components before the kernel is evaluated. The SOAP vector grows as n_max^2 l_max, and compression is what keeps a many-species descriptor affordable.</td>
+<td class="dp"><span class="dep">see <code>compress_mode</code></span><span class="dep">see <code>file_compress_soap</code></span></td>
+</tr>
+<tr data-h="delta energy scale of this gap: the standard deviation of the prior on the energy it contributes. it sets how much of the total energy this descriptor is allowed to account for, and setting it to zero switches the descriptor&#x27;s contribution off without removing the block." data-m="">
+<td class="kw"><code>delta</code></td>
+<td class="ty">real</td>
+<td class="df"><code>1.0</code></td>
+<td class="un">eV</td>
+<td class="de">Energy scale of this GAP: the standard deviation of the prior on the energy it contributes. It sets how much of the total energy this descriptor is allowed to account for, and setting it to zero switches the descriptor&#x27;s contribution off without removing the block.</td>
+<td class="dp"><span class="dep">see <code>zeta</code></span></td>
+</tr>
+<tr data-h="desc_sparse file holding the sparse-set descriptors, one row per sparse point. its row count sets n_sparse and so the cost of every prediction." data-m="">
+<td class="kw"><code>desc_sparse</code></td>
+<td class="ty">string</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="de">File holding the sparse-set descriptors, one row per sparse point. Its row count sets n_sparse and so the cost of every prediction.</td>
+<td class="dp"><span class="dep">see <code>alphas_sparse</code></span></td>
+</tr>
+<tr data-h="dipole_model this descriptor&#x27;s fitted scalar is not an energy but a potential whose gradient with respect to the central atom&#x27;s own position is the local dipole. its energy, forces and virial are meaningless and are not summed into the totals; only the dipole is taken." data-m="">
+<td class="kw"><code>dipole_model</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="de">This descriptor&#x27;s fitted scalar is not an energy but a potential whose gradient with respect to the central atom&#x27;s own position is the local dipole. Its energy, forces and virial are meaningless and are not summed into the totals; only the dipole is taken.</td>
+<td class="dp"><span class="dep">see <code>delta</code></span></td>
+</tr>
+<tr data-h="file_compress_soap file giving the compression explicitly, as the list of components to keep or a transformation matrix. the alternative to naming a compress_mode." data-m="">
+<td class="kw"><code>file_compress_soap</code></td>
+<td class="ty">string</td>
+<td class="df"><code>none</code></td>
+<td class="un"></td>
+<td class="de">File giving the compression explicitly, as the list of components to keep or a transformation matrix. The alternative to naming a compress_mode.</td>
+<td class="dp"><span class="dep">needs <code>compress_soap</code></span><span class="dep">see <code>compress_mode</code></span></td>
+</tr>
+<tr data-h="global_scaling overall multiplier on each species&#x27; contribution to the density, one per species. this is where a species is made to count for more or less than its neighbours." data-m="">
+<td class="kw"><code>global_scaling</code></td>
+<td class="ty">real list</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="de">Overall multiplier on each species&#x27; contribution to the density, one per species. This is where a species is made to count for more or less than its neighbours.</td>
+<td class="dp"></td>
+</tr>
+<tr data-h="has_local_properties this descriptor carries per-atom quantities fitted alongside the energy -- hirshfeld volumes, charges, core-electron binding energies. set implicitly by n_local_properties." data-m="">
+<td class="kw"><code>has_local_properties</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="de">This descriptor carries per-atom quantities fitted alongside the energy -- Hirshfeld volumes, charges, core-electron binding energies. Set implicitly by n_local_properties.</td>
+<td class="dp"><span class="dep">see <code>n_local_properties</code></span><span class="dep">see <code>local_property_labels</code></span></td>
+</tr>
+<tr class="flagged" data-h="has_vdw superseded by has_local_properties. a hirshfeld-volume model is now one local property among several rather than a special case, and this keyword still sets up that one property so that older potential files load." data-m="">
+<td class="kw"><code>has_vdw</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="de"><span class="tag">deprecated</span>Superseded by has_local_properties. A Hirshfeld-volume model is now one local property among several rather than a special case, and this keyword still sets up that one property so that older potential files load.</td>
+<td class="dp"><span class="dep">sets <code>has_local_properties</code></span><span class="dep">sets <code>n_local_properties</code></span><span class="dep">sets <code>vdw_index</code></span><span class="dep">see <code>has_local_properties</code></span></td>
+</tr>
+<tr data-h="l_max highest spherical-harmonic degree kept in the angular expansion. the descriptor&#x27;s angular resolution, and the counterpart of n_max: the cost of the descriptor grows with both." data-m="">
+<td class="kw"><code>l_max</code></td>
+<td class="ty">integer</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="de">Highest spherical-harmonic degree kept in the angular expansion. The descriptor&#x27;s angular resolution, and the counterpart of n_max: the cost of the descriptor grows with both.</td>
+<td class="dp"><span class="dep">see <code>n_max</code></span><span class="dep">see <code>atom_sigma_t</code></span></td>
+</tr>
+<tr data-h="local_property_alphas sparse-set coefficient file for each local property, one per property." data-m="">
+<td class="kw"><code>local_property_alphas</code></td>
+<td class="ty">type(local_property_soap_turbo) list</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="de">Sparse-set coefficient file for each local property, one per property.</td>
+<td class="dp"><span class="dep">needs <code>n_local_properties</code></span><span class="dep">sets <code>n_local_properties</code></span><span class="dep">see <code>local_property_qs</code></span></td>
+</tr>
+<tr data-h="local_property_deltas prior scale for each local property, one per property, in whatever units that property has." data-m="">
+<td class="kw"><code>local_property_deltas</code></td>
+<td class="ty">type(local_property_soap_turbo) list</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="de">Prior scale for each local property, one per property, in whatever units that property has.</td>
+<td class="dp"><span class="dep">needs <code>n_local_properties</code></span><span class="dep">see <code>delta</code></span></td>
+</tr>
+<tr data-h="local_property_labels what each local property is, one name per property. the names are meaningful, not decorative: &quot;hirshfeld_v&quot; is what the van der waals correction looks for, and &quot;core_electron_be&quot; is what the xps spectrum is built from. naming either one switches on the machinery that consumes it and records which slot it occupies." data-m="">
+<td class="kw"><code>local_property_labels</code></td>
+<td class="ty">type(local_property_soap_turbo) list</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="de">What each local property is, one name per property. The names are meaningful, not decorative: &quot;hirshfeld_v&quot; is what the van der Waals correction looks for, and &quot;core_electron_be&quot; is what the XPS spectrum is built from. Naming either one switches on the machinery that consumes it and records which slot it occupies.</td>
+<td class="dp"><span class="dep">needs <code>n_local_properties</code></span><span class="dep">sets <code>n_local_properties</code></span><span class="dep">sets <code>has_vdw</code></span><span class="dep">sets <code>vdw_index</code></span><span class="dep">sets <code>has_core_electron_be</code></span><span class="dep">sets <code>core_electron_be_index</code></span><span class="dep">see <code>local_property_qs</code></span><span class="dep">see <code>local_property_alphas</code></span></td>
+</tr>
+<tr data-h="local_property_qs sparse-set descriptor file for each local property, one per property." data-m="">
+<td class="kw"><code>local_property_qs</code></td>
+<td class="ty">type(local_property_soap_turbo) list</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="de">Sparse-set descriptor file for each local property, one per property.</td>
+<td class="dp"><span class="dep">needs <code>n_local_properties</code></span><span class="dep">sets <code>n_local_properties</code></span><span class="dep">see <code>local_property_alphas</code></span></td>
+</tr>
+<tr data-h="local_property_v0s baseline added to each local property&#x27;s prediction, one per property. for hirshfeld volumes this is the free-atom volume the fit is a correction to." data-m="">
+<td class="kw"><code>local_property_v0s</code></td>
+<td class="ty">type(local_property_soap_turbo) list</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="de">Baseline added to each local property&#x27;s prediction, one per property. For Hirshfeld volumes this is the free-atom volume the fit is a correction to.</td>
+<td class="dp"><span class="dep">needs <code>n_local_properties</code></span></td>
+</tr>
+<tr data-h="local_property_zetas kernel exponent for each local property, one per property. the local properties are fitted with their own kernels and need not share the energy&#x27;s zeta." data-m="">
+<td class="kw"><code>local_property_zetas</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>0</code></td>
+<td class="un"></td>
+<td class="de">Kernel exponent for each local property, one per property. The local properties are fitted with their own kernels and need not share the energy&#x27;s zeta.</td>
+<td class="dp"><span class="dep">needs <code>n_local_properties</code></span><span class="dep">see <code>zeta</code></span></td>
+</tr>
+<tr data-h="n_local_properties how many local properties this descriptor carries. give it before the local_property_* lists, which it allocates and which are all read this many values wide." data-m="">
+<td class="kw"><code>n_local_properties</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>0</code></td>
+<td class="un"></td>
+<td class="de">How many local properties this descriptor carries. Give it before the local_property_* lists, which it allocates and which are all read this many values wide.</td>
+<td class="dp"><span class="dep">see <code>local_property_labels</code></span></td>
+</tr>
+<tr data-h="n_max number of radial basis functions per species. the descriptor&#x27;s radial resolution: it has to be large enough to represent features of width atom_sigma_r out to the cutoff. the block&#x27;s total radial basis size is the sum over species." data-m="">
+<td class="kw"><code>n_max</code></td>
+<td class="ty">integer</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="de">Number of radial basis functions per species. The descriptor&#x27;s radial resolution: it has to be large enough to represent features of width atom_sigma_r out to the cutoff. The block&#x27;s total radial basis size is the sum over species.</td>
+<td class="dp"><span class="dep">sets <code>alpha_max</code></span><span class="dep">see <code>l_max</code></span><span class="dep">see <code>atom_sigma_r</code></span></td>
+</tr>
+<tr data-h="n_species number of species appearing in the neighbour environments this descriptor sees. it must come first in the block: every per-species list below is read n_species values wide, and the block is pre-scanned for this keyword alone before anything else is parsed so that those arrays can be allocated." data-m="">
+<td class="kw"><code>n_species</code></td>
+<td class="ty">integer</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="de">Number of species appearing in the neighbour environments this descriptor sees. It must come first in the block: every per-species list below is read n_species values wide, and the block is pre-scanned for this keyword alone before anything else is parsed so that those arrays can be allocated.</td>
+<td class="dp"><span class="dep">sets <code>nf</code></span><span class="dep">sets <code>rcut</code></span><span class="dep">sets <code>buffer</code></span><span class="dep">sets <code>atom_sigma_r</code></span><span class="dep">sets <code>atom_sigma_t</code></span><span class="dep">sets <code>atom_sigma_r_scaling</code></span><span class="dep">sets <code>atom_sigma_t_scaling</code></span><span class="dep">sets <code>amplitude_scaling</code></span><span class="dep">sets <code>central_weight</code></span><span class="dep">sets <code>global_scaling</code></span><span class="dep">sets <code>n_max</code></span><span class="dep">sets <code>species</code></span><span class="dep">see <code>species</code></span></td>
+</tr>
+<tr data-h="nf steepness of the radial filter applied to each species&#x27; density, one per species. larger values make the transition sharper." data-m="">
+<td class="kw"><code>nf</code></td>
+<td class="ty">real list</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="de">Steepness of the radial filter applied to each species&#x27; density, one per species. Larger values make the transition sharper.</td>
+<td class="dp"><span class="dep">see <code>rcut</code></span><span class="dep">see <code>buffer</code></span></td>
+</tr>
+<tr data-h="radial_enhancement multiply the radial density by r raised to this power before expanding it, which weights the outer shells more heavily. 0, 1 and 2 are the usual choices." data-m="">
+<td class="kw"><code>radial_enhancement</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>0</code></td>
+<td class="un"></td>
+<td class="de">Multiply the radial density by r raised to this power before expanding it, which weights the outer shells more heavily. 0, 1 and 2 are the usual choices.</td>
+<td class="dp"></td>
+</tr>
+<tr data-h="rcut hard cutoff, one per species: beyond it a neighbour contributes nothing. the largest over every descriptor in the file becomes the cutoff the neighbour lists are built to." data-m="">
+<td class="kw"><code>rcut</code></td>
+<td class="ty">real list</td>
+<td class="df"></td>
+<td class="un">A</td>
+<td class="de">Hard cutoff, one per species: beyond it a neighbour contributes nothing. The largest over every descriptor in the file becomes the cutoff the neighbour lists are built to.</td>
+<td class="dp"><span class="dep">sets <code>rcut_max</code></span><span class="dep">see <code>buffer</code></span></td>
+</tr>
+<tr data-h="scaling_mode functional form amplitude_scaling is applied through. &quot;polynomial&quot; is the default and the only form the gpu kernels implement." data-m="">
+<td class="kw"><code>scaling_mode</code></td>
+<td class="ty">string</td>
+<td class="df"><code>polynomial</code></td>
+<td class="un"></td>
+<td class="de">Functional form amplitude_scaling is applied through. &quot;polynomial&quot; is the default and the only form the GPU kernels implement.</td>
+<td class="dp"><span class="dep">see <code>amplitude_scaling</code></span></td>
+</tr>
+<tr data-h="species chemical symbols of the neighbour species, in the order every per-species list in this block is written. n_species entries." data-m="">
+<td class="kw"><code>species</code></td>
+<td class="ty">string list</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="de">Chemical symbols of the neighbour species, in the order every per-species list in this block is written. n_species entries.</td>
+<td class="dp"><span class="dep">see <code>n_species</code></span><span class="dep">see <code>central_species</code></span></td>
+</tr>
+<tr class="flagged" data-h="vdw_alphas superseded by local_property_alphas." data-m="">
+<td class="kw"><code>vdw_alphas</code></td>
+<td class="ty">string</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="de"><span class="tag">deprecated</span>Superseded by local_property_alphas.</td>
+<td class="dp"><span class="dep">see <code>local_property_alphas</code></span></td>
+</tr>
+<tr class="flagged" data-h="vdw_delta superseded by local_property_deltas." data-m="">
+<td class="kw"><code>vdw_delta</code></td>
+<td class="ty">real</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="de"><span class="tag">deprecated</span>Superseded by local_property_deltas.</td>
+<td class="dp"><span class="dep">see <code>local_property_deltas</code></span></td>
+</tr>
+<tr class="flagged" data-h="vdw_qs superseded by local_property_qs." data-m="">
+<td class="kw"><code>vdw_qs</code></td>
+<td class="ty">string</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="de"><span class="tag">deprecated</span>Superseded by local_property_qs.</td>
+<td class="dp"><span class="dep">see <code>local_property_qs</code></span></td>
+</tr>
+<tr class="flagged" data-h="vdw_v0 superseded by local_property_v0s." data-m="">
+<td class="kw"><code>vdw_v0</code></td>
+<td class="ty">real</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="de"><span class="tag">deprecated</span>Superseded by local_property_v0s.</td>
+<td class="dp"><span class="dep">see <code>local_property_v0s</code></span></td>
+</tr>
+<tr class="flagged" data-h="vdw_zeta superseded by local_property_zetas." data-m="">
+<td class="kw"><code>vdw_zeta</code></td>
+<td class="ty">real</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="de"><span class="tag">deprecated</span>Superseded by local_property_zetas.</td>
+<td class="dp"><span class="dep">see <code>local_property_zetas</code></span></td>
+</tr>
+<tr data-h="zeta exponent of the soap kernel, (q . q&#x27;)^zeta. raising it sharpens the kernel and makes the fit more local in descriptor space." data-m="">
+<td class="kw"><code>zeta</code></td>
+<td class="ty">real</td>
+<td class="df"><code>2.0</code></td>
+<td class="un"></td>
+<td class="de">Exponent of the SOAP kernel, (q . q&#x27;)^zeta. Raising it sharpens the kernel and makes the fit more local in descriptor space.</td>
+<td class="dp"><span class="dep">see <code>delta</code></span></td>
+</tr>
+</tbody></table></div></section>
+<section id="distance-2b">
+<h2>distance_2b</h2>
+<p class="blurb">A two-body GAP on the interatomic distance, one block per species pair.</p>
+<div class="scroll"><table><thead><tr><th>Keyword</th><th>Type</th><th>Default</th><th>Units</th><th>Description</th><th>Depends on</th></tr></thead><tbody>
+<tr data-h="z1 z1 species1 first species of the pair this block describes, as a chemical symbol. with z2 it decides which pairs the descriptor is evaluated on." data-m="">
+<td class="kw"><code>Z1</code><span class="alias"><code>z1</code>, <code>species1</code></span></td>
+<td class="ty">string</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="de">First species of the pair this block describes, as a chemical symbol. With Z2 it decides which pairs the descriptor is evaluated on.</td>
+<td class="dp"><span class="dep">see <code>Z2</code></span></td>
+</tr>
+<tr data-h="z2 z2 species2 second species of the pair. a block with z1 and z2 swapped would be the same interaction, so only one of the two orders is given." data-m="">
+<td class="kw"><code>Z2</code><span class="alias"><code>z2</code>, <code>species2</code></span></td>
+<td class="ty">string</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="de">Second species of the pair. A block with Z1 and Z2 swapped would be the same interaction, so only one of the two orders is given.</td>
+<td class="dp"><span class="dep">see <code>Z1</code></span></td>
+</tr>
+<tr data-h="alphas_sparse file holding the fitted sparse-set coefficients, one per sparse point." data-m="">
+<td class="kw"><code>alphas_sparse</code></td>
+<td class="ty">string</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="de">File holding the fitted sparse-set coefficients, one per sparse point.</td>
+<td class="dp"><span class="dep">see <code>desc_sparse</code></span></td>
+</tr>
+<tr data-h="delta energy scale of this two-body gap, the standard deviation of the prior on the energy it contributes. zero switches the block off without removing it." data-m="">
+<td class="kw"><code>delta</code></td>
+<td class="ty">real</td>
+<td class="df"><code>1.0</code></td>
+<td class="un">eV</td>
+<td class="de">Energy scale of this two-body GAP, the standard deviation of the prior on the energy it contributes. Zero switches the block off without removing it.</td>
+<td class="dp"><span class="dep">see <code>sigma</code></span></td>
+</tr>
+<tr data-h="desc_sparse file holding the sparse-set descriptors, one distance per row. its row count sets the number of sparse points." data-m="">
+<td class="kw"><code>desc_sparse</code></td>
+<td class="ty">string</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="de">File holding the sparse-set descriptors, one distance per row. Its row count sets the number of sparse points.</td>
+<td class="dp"><span class="dep">see <code>alphas_sparse</code></span></td>
+</tr>
+<tr data-h="rcut cutoff of the pair interaction: beyond it the pair contributes nothing." data-m="">
+<td class="kw"><code>rcut</code></td>
+<td class="ty">real</td>
+<td class="df"></td>
+<td class="un">A</td>
+<td class="de">Cutoff of the pair interaction: beyond it the pair contributes nothing.</td>
+<td class="dp"></td>
+</tr>
+<tr data-h="sigma width of the kernel in the descriptor, which here is the interatomic distance itself. it sets how far apart two distances have to be before the fit treats them as different." data-m="">
+<td class="kw"><code>sigma</code></td>
+<td class="ty">real</td>
+<td class="df"><code>1.0</code></td>
+<td class="un">A</td>
+<td class="de">Width of the kernel in the descriptor, which here is the interatomic distance itself. It sets how far apart two distances have to be before the fit treats them as different.</td>
+<td class="dp"><span class="dep">see <code>delta</code></span></td>
+</tr>
+</tbody></table></div></section>
+<section id="angle-3b">
+<h2>angle_3b</h2>
+<p class="blurb">A three-body GAP on the two distances and the angle between them, one block per centre-and-pair combination.</p>
+<div class="scroll"><table><thead><tr><th>Keyword</th><th>Type</th><th>Default</th><th>Units</th><th>Description</th><th>Depends on</th></tr></thead><tbody>
+<tr data-h="z1 z1 species1 species of the first neighbour in the triplet." data-m="">
+<td class="kw"><code>Z1</code><span class="alias"><code>z1</code>, <code>species1</code></span></td>
+<td class="ty">string</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="de">Species of the first neighbour in the triplet.</td>
+<td class="dp"><span class="dep">see <code>Z_center</code></span><span class="dep">see <code>Z2</code></span></td>
+</tr>
+<tr data-h="z2 z2 species2 species of the second neighbour. swapping z1 and z2 gives the same triplet, so only one order is given and the descriptor is symmetrised internally." data-m="">
+<td class="kw"><code>Z2</code><span class="alias"><code>z2</code>, <code>species2</code></span></td>
+<td class="ty">string</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="de">Species of the second neighbour. Swapping Z1 and Z2 gives the same triplet, so only one order is given and the descriptor is symmetrised internally.</td>
+<td class="dp"><span class="dep">see <code>Z1</code></span></td>
+</tr>
+<tr data-h="z_center z_center species_center species at the vertex of the triplet, as a chemical symbol. the three-body term is centred on this atom with z1 and z2 as its two neighbours." data-m="">
+<td class="kw"><code>Z_center</code><span class="alias"><code>z_center</code>, <code>species_center</code></span></td>
+<td class="ty">string</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="de">Species at the vertex of the triplet, as a chemical symbol. The three-body term is centred on this atom with Z1 and Z2 as its two neighbours.</td>
+<td class="dp"><span class="dep">see <code>Z1</code></span><span class="dep">see <code>Z2</code></span></td>
+</tr>
+<tr data-h="alphas_sparse file holding the fitted sparse-set coefficients, one per sparse point." data-m="">
+<td class="kw"><code>alphas_sparse</code></td>
+<td class="ty">string</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="de">File holding the fitted sparse-set coefficients, one per sparse point.</td>
+<td class="dp"><span class="dep">see <code>desc_sparse</code></span></td>
+</tr>
+<tr data-h="delta energy scale of this three-body gap. zero switches the block off without removing it." data-m="">
+<td class="kw"><code>delta</code></td>
+<td class="ty">real</td>
+<td class="df"><code>1.0</code></td>
+<td class="un">eV</td>
+<td class="de">Energy scale of this three-body GAP. Zero switches the block off without removing it.</td>
+<td class="dp"><span class="dep">see <code>sigma</code></span></td>
+</tr>
+<tr data-h="desc_sparse file holding the sparse-set descriptors, one triplet per row, three components each." data-m="">
+<td class="kw"><code>desc_sparse</code></td>
+<td class="ty">string</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="de">File holding the sparse-set descriptors, one triplet per row, three components each.</td>
+<td class="dp"><span class="dep">see <code>alphas_sparse</code></span></td>
+</tr>
+<tr data-h="kernel_type form of the three-body kernel. &quot;exp&quot; is the squared-exponential the fits use." data-m="">
+<td class="kw"><code>kernel_type</code></td>
+<td class="ty">string</td>
+<td class="df"><code>exp</code></td>
+<td class="un"></td>
+<td class="de">Form of the three-body kernel. &quot;exp&quot; is the squared-exponential the fits use.</td>
+<td class="dp"><span class="dep">see <code>sigma</code></span></td>
+</tr>
+<tr data-h="rcut cutoff on each of the two distances from the centre. both neighbours must be inside it for the triplet to contribute." data-m="">
+<td class="kw"><code>rcut</code></td>
+<td class="ty">real</td>
+<td class="df"></td>
+<td class="un">A</td>
+<td class="de">Cutoff on each of the two distances from the centre. Both neighbours must be inside it for the triplet to contribute.</td>
+<td class="dp"></td>
+</tr>
+<tr data-h="sigma kernel widths of the three-body descriptor, three values: one for each of the two distances and one for the coordinate built from the angle between them." data-m="">
+<td class="kw"><code>sigma</code></td>
+<td class="ty">real(1:3)</td>
+<td class="df"><code>1.0</code></td>
+<td class="un"></td>
+<td class="de">Kernel widths of the three-body descriptor, three values: one for each of the two distances and one for the coordinate built from the angle between them.</td>
+<td class="dp"><span class="dep">see <code>delta</code></span><span class="dep">see <code>kernel_type</code></span></td>
+</tr>
+</tbody></table></div></section>
+<section id="core-pot">
+<h2>core_pot</h2>
+<p class="blurb">A tabulated pair potential added on top of the GAPs, one block per species pair. Splined on read.</p>
+<div class="scroll"><table><thead><tr><th>Keyword</th><th>Type</th><th>Default</th><th>Units</th><th>Description</th><th>Depends on</th></tr></thead><tbody>
+<tr data-h="z1 z1 species1 first species of the pair this core potential acts on, as a chemical symbol." data-m="">
+<td class="kw"><code>Z1</code><span class="alias"><code>z1</code>, <code>species1</code></span></td>
+<td class="ty">string</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="de">First species of the pair this core potential acts on, as a chemical symbol.</td>
+<td class="dp"><span class="dep">see <code>Z2</code></span></td>
+</tr>
+<tr data-h="z2 z2 species2 second species of the pair." data-m="">
+<td class="kw"><code>Z2</code><span class="alias"><code>z2</code>, <code>species2</code></span></td>
+<td class="ty">string</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="de">Second species of the pair.</td>
+<td class="dp"><span class="dep">see <code>Z1</code></span></td>
+</tr>
+<tr data-h="core_pot_file file holding the tabulated potential, as distance and energy columns. it is splined on read, and truncated at core_pot_cutoff with a taper of width core_pot_buffer, both set in the input file rather than here. this is the short-range repulsion the gap is not fitted to describe, so the table usually only covers distances the training data never visited." data-m="">
+<td class="kw"><code>core_pot_file</code></td>
+<td class="ty">string</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="de">File holding the tabulated potential, as distance and energy columns. It is splined on read, and truncated at core_pot_cutoff with a taper of width core_pot_buffer, both set in the input file rather than here. This is the short-range repulsion the GAP is not fitted to describe, so the table usually only covers distances the training data never visited.</td>
+<td class="dp"><span class="dep">see <code>core_pot_cutoff</code></span><span class="dep">see <code>core_pot_buffer</code></span></td>
+</tr>
+</tbody></table></div></section>
+</div>
 <p class="empty" id="empty">Nothing matches that filter.</p>
 </main>
 <footer>Generated by <code>tools/keyword_docs.py</code>. To change an entry, edit the <code>!&gt;</code> block above the keyword in <code>src/read_files.f90</code> and run <code>make docs</code>.</footer>
@@ -2470,18 +2995,25 @@ footer {
       tally = document.getElementById('tally'),
       empty = document.getElementById('empty'),
       rows = Array.prototype.slice.call(document.querySelectorAll('tbody tr')),
-      secs = Array.prototype.slice.call(document.querySelectorAll('section'));
+      secs = Array.prototype.slice.call(document.querySelectorAll('section')),
+      parts = Array.prototype.slice.call(document.querySelectorAll('.part'));
 
   function apply() {
     var needle = q.value.trim().toLowerCase(), m = mode.value, shown = 0;
     rows.forEach(function (r) {
+      // A row with no modes belongs to the potential file, which the mode
+      // filter says nothing about, so leave it visible.
+      var modes = r.dataset.m;
       var ok = (!needle || r.dataset.h.indexOf(needle) !== -1) &&
-               (!m || r.dataset.m.split(' ').indexOf(m) !== -1);
+               (!m || !modes || modes.split(' ').indexOf(m) !== -1);
       r.classList.toggle('hide', !ok);
       if (ok) { shown++; }
     });
     secs.forEach(function (s) {
       s.classList.toggle('hide', !s.querySelector('tbody tr:not(.hide)'));
+    });
+    parts.forEach(function (p) {
+      p.classList.toggle('hide', !p.querySelector('tbody tr:not(.hide)'));
     });
     empty.classList.toggle('show', shown === 0);
     tally.textContent = shown === rows.length

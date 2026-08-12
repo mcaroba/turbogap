@@ -301,7 +301,7 @@ program turbogap
 
    ! This is the mode in which we run TurboGAP
    character*16 :: mode = "none"
-   character*16 :: help_mode = ""
+   character*16 :: help_topic = ""
    character*32 :: mc_move = "none"
    character*32 :: exp_output = "none"
 
@@ -394,15 +394,16 @@ program turbogap
 !  GPU and no MPI: everything below this point assumes at least one of those.
    call get_command_argument(1, mode)
    if (mode == "--help" .or. mode == "-h" .or. mode == "help") then
-      call get_command_argument(2, help_mode)
-      if (len_trim(help_mode) > 0 .and. &
-          help_mode /= "predict" .and. help_mode /= "md" .and. &
-          help_mode /= "mc" .and. help_mode /= "soap") then
-         write (*, '(A)') 'ERROR: unknown mode "'//trim(help_mode)// &
-            '". turbogap --help ['//trim(keyword_help_modes())//']'
+      call get_command_argument(2, help_topic)
+      if (len_trim(help_topic) > 0 .and. &
+          help_topic /= "predict" .and. help_topic /= "md" .and. &
+          help_topic /= "mc" .and. help_topic /= "soap" .and. &
+          help_topic /= "gap") then
+         write (*, '(A)') 'ERROR: unknown help topic "'//trim(help_topic)// &
+            '". turbogap --help ['//trim(keyword_help_topics())//']'
          stop 1
       end if
-      call print_keyword_help(help_mode)
+      call print_keyword_help(help_topic)
       stop
    end if
    mode = "none"
@@ -451,7 +452,7 @@ program turbogap
    call get_command_argument(1, mode)
    if (mode == "" .or. mode == "none") then
       write (*, *) "ERROR: you need to run 'turbogap md', 'turbogap mc' or 'turbogap predict'"
-      write (*, *) "       'turbogap --help [predict|md|mc|soap]' lists the input keywords"
+      write (*, *) "       'turbogap --help [predict|md|mc|soap|gap]' lists the keywords"
       stop
       ! THIS SHOULD BE FIXED, IN CASE THE USER JUST WANT TO OUTPUT THE SOAP DESCRIPTORS
       mode = "soap"

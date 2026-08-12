@@ -48,6 +48,12 @@ DOC_HTML = os.path.join(ROOT, "docs", "keywords.html")
 GEN_F90 = os.path.join(ROOT, "src", "keyword_help.f90")
 
 MODES = ["predict", "md", "mc", "soap"]
+#  What `turbogap --help <topic>` accepts. The modes filter the input-file
+#  listing; "gap" selects the potential file instead, which has no modes.
+HELP_TOPICS = MODES + ["gap"]
+
+INPUT_FILE = "the input file"
+GAP_FILE = "the potential (.gap) file"
 
 # read_options_<suffix> -> (title, blurb).  Anything not listed still appears,
 # under its bare subroutine suffix.
@@ -64,13 +70,35 @@ GROUPS = OrderedDict([
     ("local_properties", ("Local properties", "Per-atom quantities predicted alongside the energy.")),
     ("output", ("Output", "What is written, and how often.")),
     ("gpu", ("GPU", "Accepted by the CPU build too, so one deck runs on both.")),
+
+    # .gap blocks. The key is the descriptor name that follows gap_beg.
+    ("soap_turbo", ("soap_turbo", "The SOAP descriptor and the GAP fitted on it, "
+                    "one block per central species. Also carries the local-property "
+                    "models -- Hirshfeld volumes, charges, core-electron binding "
+                    "energies -- that ride on the same descriptor.")),
+    ("distance_2b", ("distance_2b", "A two-body GAP on the interatomic distance, "
+                     "one block per species pair.")),
+    ("angle_3b", ("angle_3b", "A three-body GAP on the two distances and the angle "
+                  "between them, one block per centre-and-pair combination.")),
+    ("core_pot", ("core_pot", "A tabulated pair potential added on top of the GAPs, "
+                  "one block per species pair. Splined on read.")),
+])
+
+#  Which read_gap_hypers block writes into which derived type in types.f90.
+GAP_BLOCKS = OrderedDict([
+    ("soap_turbo", "soap_turbo"),
+    ("distance_2b", "distance_2b"),
+    ("angle_3b", "angle_3b"),
+    ("core_pot", "core_pot"),
 ])
 
 
 class Keyword(object):
-    def __init__(self, names, group, line):
+    def __init__(self, names, group, line, section=INPUT_FILE, type_name=""):
         self.names = names          # every spelling that reaches this branch
         self.group = group
+        self.section = section      # which file the keyword belongs in
+        self.type_name = type_name  # derived type in types.f90 holding its fields
         self.line = line            # 1-based line of the branch header
         self.desc = []              # prose lines
         self.units = ""
@@ -95,19 +123,33 @@ class Keyword(object):
 # ---------------------------------------------------------------- types.f90
 
 def parse_types(path):
-    """field name (lowercased) -> (fortran type, default, dimension text)."""
-    lines = open(path).read().split("\n")
-    try:
-        a = next(i for i, l in enumerate(lines) if l.strip() == "type input_parameters")
-        b = next(i for i, l in enumerate(lines) if l.strip() == "end type input_parameters")
-    except StopIteration:
-        sys.exit("could not find `type input_parameters` in " + path)
+    """derived type name (lowercased) -> {component: (type, default)}.
 
+    Every type in the file, not only input_parameters: the .gap keywords write
+    into soap_turbo, distance_2b, angle_3b and core_pot, and their defaults
+    have to come from the same place for the same reason.
+    """
+    lines = open(path).read().split("\n")
+    spans, open_at, open_name = [], None, None
+    for i, l in enumerate(lines):
+        m = re.match(r"\s*type\s+(\w+)\s*$", l)
+        if m and open_at is None:
+            open_at, open_name = i, m.group(1)
+            continue
+        if re.match(r"\s*end type\b", l) and open_at is not None:
+            spans.append((open_name.lower(), open_at, i))
+            open_at = open_name = None
+    if not any(n == "input_parameters" for n, _, _ in spans):
+        sys.exit("could not find `type input_parameters` in " + path)
+    return dict((name, _parse_type_body(lines[a + 1:b])) for name, a, b in spans)
+
+
+def _parse_type_body(raw_lines):
     decl = re.compile(
         r"^\s*(real\(dp\)|integer|logical|character\*\d+|type\([\w ]+\))"
         r"\s*(,[^:]*)?::\s*(.*)$")
     out = {}
-    for raw in lines[a + 1:b]:
+    for raw in raw_lines:
         if not raw.strip() or raw.strip().startswith("!"):
             continue
         m = decl.match(raw)
@@ -249,6 +291,91 @@ def parse_read_files(path):
     return keywords
 
 
+HYPERS_RE = re.compile(r"(\w+)_hypers\s*\([^)]*\)((?:\s*%\s*\w+(?:\([^)]*\))?)+)")
+
+
+def parse_gap_hypers(path):
+    """The .gap keywords, out of read_gap_hypers in the same file.
+
+    The file's own structure is the grouping: `gap_beg <descriptor>` opens a
+    block and `gap_end` closes it, and read_gap_hypers mirrors that with one
+    `do while (keyword /= "gap_end")` loop per descriptor. A branch counts as
+    a keyword of a block when it lies inside that block's loop, which also
+    drops the two gap_beg dispatchers -- those are file syntax, not settings,
+    and are described in the section preamble instead.
+    """
+    lines = open(path).read().split("\n")
+    try:
+        a = next(i for i, l in enumerate(lines)
+                 if l.strip().startswith("subroutine read_gap_hypers"))
+    except StopIteration:
+        return []
+    b = next(i for i, l in enumerate(lines[a:], a) if l.strip() == "end subroutine")
+    body = lines[a:b]
+
+    block_re = re.compile(r'^(\s*)(?:else\s+)?if\s*\(\s*keyword\s*==\s*"(%s)"\s*\)\s*then'
+                          % "|".join(GAP_BLOCKS))
+    loop_re = re.compile(r"^(\s*)do while \(")
+
+    # Every do-while the dispatcher opens belongs to its block. soap_turbo has
+    # two: a pre-scan that finds n_species, because the array-valued keywords
+    # cannot be allocated without it, and then the real loop over the rest.
+    loops, block, block_indent, loop_indent = [], None, -1, -1
+    for j, l in enumerate(body):
+        m = block_re.match(l)
+        if m:
+            block, block_indent, loop_indent = m.group(2), len(m.group(1)), -1
+            continue
+        m = loop_re.match(l)
+        if not m or block is None:
+            continue
+        indent = len(m.group(1))
+        if indent <= block_indent:
+            continue
+        if loop_indent < 0:
+            loop_indent = indent
+        elif indent != loop_indent:
+            continue        # a loop nested inside one of this block's branches
+        end = len(body)
+        for k in range(j + 1, len(body)):
+            s = body[k]
+            if s.strip().startswith("end do") and len(s) - len(s.lstrip()) == indent:
+                end = k
+                break
+        loops.append((block, j, end))
+
+    keywords, seen = [], set()
+    for block, lo, hi in loops:
+        starts = [j for j in range(lo, hi) if BRANCH_RE.match(body[j])]
+        for n, j in enumerate(starts):
+            end = starts[n + 1] if n + 1 < len(starts) else hi
+            header = body[j]
+            k = j
+            while header.rstrip().endswith("&") and k + 1 < len(body):
+                k += 1
+                header += body[k]
+            names = KW_RE.findall(header)
+            if not names:
+                continue
+            kw = Keyword(names, block, a + j + 1,
+                         section=GAP_FILE, type_name=GAP_BLOCKS[block])
+            fields = []
+            for m in HYPERS_RE.finditer("\n".join(body[j:end])):
+                path_ = re.sub(r"\([^)]*\)", "", m.group(2)).strip("%")
+                # Components of a nested type (local_property_models%zeta) are
+                # an implementation detail of the block, not a second keyword.
+                if "%" in path_ or path_ in fields:
+                    continue
+                fields.append(path_)
+            kw.fields = fields
+            attach_doc(kw, body, j)
+            if (block, kw.name) in seen:
+                continue        # already claimed by an earlier pass of the block
+            seen.add((block, kw.name))
+            keywords.append(kw)
+    return keywords
+
+
 def attach_doc(kw, body, j):
     """Read the !> block sitting immediately above branch line j."""
     block = []
@@ -285,6 +412,9 @@ def attach_doc(kw, body, j):
         elif tag == "units":
             kw.units = val
         elif tag == "modes":
+            if kw.section == GAP_FILE:
+                sys.exit("%s:%d: @modes on a .gap keyword; the potential file is "
+                         "read the same way in every mode" % (READ_FILES, kw.line))
             kw.modes = [x.strip() for x in re.split(r"[,\s]+", val) if x.strip()]
             for m2 in kw.modes:
                 if m2 not in MODES:
@@ -308,12 +438,18 @@ def attach_doc(kw, body, j):
 # ------------------------------------------------------------------ joining
 
 def enrich(keywords, types):
-    """Attach type/default from types.f90 and work out the side effects."""
+    """Attach type/default from types.f90 and work out the side effects.
+
+    `types` maps a derived type name to its components. A keyword's fields
+    live in input_parameters unless it named another type -- the .gap ones do.
+    """
     by_field = {}
     for kw in keywords:
         if kw.fields:
-            by_field.setdefault(kw.fields[0].lower(), kw.name)
+            by_field.setdefault((kw.section, kw.group if kw.section == GAP_FILE else "",
+                                 kw.fields[0].lower()), kw.name)
     for kw in keywords:
+        members = types.get(kw.type_name or "input_parameters", {})
         kw.type = ""
         kw.default = ""
         kw.primary = ""
@@ -332,8 +468,8 @@ def enrich(keywords, types):
         if primary is None and kw.fields:
             primary = kw.fields[0]
         kw.primary = primary or ""
-        if primary and primary.lower() in types:
-            kw.type, kw.default = types[primary.lower()]
+        if primary and primary.lower() in members:
+            kw.type, kw.default = members[primary.lower()]
         if kw.type_override:
             kw.type = kw.type_override
         if kw.default_override:
@@ -341,7 +477,9 @@ def enrich(keywords, types):
         for f in kw.fields:
             if primary and f.lower() == primary.lower():
                 continue
-            other = by_field.get(f.lower())
+            other = by_field.get((kw.section,
+                                  kw.group if kw.section == GAP_FILE else "",
+                                  f.lower()))
             kw.also.append((f, other if other and other != kw.name else ""))
 
 
@@ -358,6 +496,16 @@ def grouped(keywords):
     return out
 
 
+def sectioned(keywords):
+    """[(section, OrderedDict(group -> rows))], input file first."""
+    out = []
+    for section in (INPUT_FILE, GAP_FILE):
+        rows = [k for k in keywords if k.section == section]
+        if rows:
+            out.append((section, grouped(rows)))
+    return out
+
+
 def group_title(key):
     return GROUPS.get(key, (key.replace("_", " ").title(), ""))[0]
 
@@ -368,37 +516,67 @@ def group_blurb(key):
 
 # ------------------------------------------------------------------ outputs
 
+SECTION_INTRO = {
+    INPUT_FILE: [
+        "One `keyword = value` per line. A keyword this list does not contain",
+        "aborts the run.",
+    ],
+    GAP_FILE: [
+        "The fitted potential, named by `pot_file` in the input file. It is a",
+        "sequence of blocks, each opened by `gap_beg <descriptor>` and closed by",
+        "`gap_end`, holding one `keyword = value` per line. `gap_beg` and `gap_end`",
+        "are file syntax rather than settings and are not listed below. Unlike the",
+        "input file, a keyword the block does not recognise is skipped in silence,",
+        "so a misspelling here shows up as a wrong answer rather than an error.",
+        "These files are written by the fitting code, not by hand.",
+    ],
+}
+
+
 def render_md(keywords):
     o = []
-    o.append("# TurboGAP input keywords")
+    o.append("# TurboGAP keywords")
     o.append("")
     o.append("Generated by `tools/keyword_docs.py` from `src/read_files.f90` and")
     o.append("`src/types.f90`. Do not edit this file: edit the `!>` block above the")
     o.append("keyword in `src/read_files.f90` and regenerate with `make docs`.")
     o.append("")
-    o.append("An input file is one `keyword = value` per line. Unrecognised keywords")
-    o.append("are fatal. %d keywords in %d groups."
-             % (len(keywords), len(grouped(keywords))))
-    o.append("")
     o.append("## Contents")
     o.append("")
-    for key, rows in grouped(keywords).items():
-        o.append("- [%s](#%s) (%d)"
-                 % (group_title(key), anchor(group_title(key)), len(rows)))
-    o.append("")
-    for key, rows in grouped(keywords).items():
-        o.append("## " + group_title(key))
+    for section, groups in sectioned(keywords):
+        o.append("**%s** &mdash; %d keywords"
+                 % (section[0].upper() + section[1:],
+                    sum(len(r) for r in groups.values())))
         o.append("")
-        if group_blurb(key):
-            o.append(group_blurb(key))
+        for key, rows in groups.items():
+            o.append("- [%s](#%s) (%d)"
+                     % (group_title(key), anchor(group_title(key)), len(rows)))
+        o.append("")
+
+    for section, groups in sectioned(keywords):
+        o.append("# Keywords for %s" % section)
+        o.append("")
+        o.extend(SECTION_INTRO.get(section, []))
+        o.append("")
+        for key, rows in groups.items():
+            o.append("## " + group_title(key))
             o.append("")
-        o.append("| Keyword | Type | Default | Units | Modes | Description | Depends on |")
-        o.append("| --- | --- | --- | --- | --- | --- | --- |")
-        for kw in sorted(rows, key=lambda k: k.name):
-            o.append("| %s | %s | %s | %s | %s | %s | %s |" % (
-                md_names(kw), kw.type or "", md_code(kw.default),
-                kw.units or "", modes_text(kw), md_desc(kw), md_deps(kw)))
-        o.append("")
+            if group_blurb(key):
+                o.append(group_blurb(key))
+                o.append("")
+            o.append("| Keyword | Type | Default | Units | Modes | Description | Depends on |"
+                     if section == INPUT_FILE else
+                     "| Keyword | Type | Default | Units | Description | Depends on |")
+            o.append("| --- | --- | --- | --- | --- | --- | --- |"
+                     if section == INPUT_FILE else
+                     "| --- | --- | --- | --- | --- | --- |")
+            for kw in sorted(rows, key=lambda k: k.name):
+                cells = [md_names(kw), kw.type or "", md_code(kw.default), kw.units or ""]
+                if section == INPUT_FILE:
+                    cells.append(modes_text(kw))
+                cells += [md_desc(kw), md_deps(kw)]
+                o.append("| %s |" % " | ".join(cells))
+            o.append("")
     return "\n".join(o) + "\n"
 
 
@@ -647,6 +825,25 @@ a { color: var(--accent); }
   vertical-align: 1px;
 }
 
+.railhead {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--faint); margin: 1.1rem 0 .35rem .6rem;
+}
+.rail .railhead:first-child { margin-top: 0; }
+@media (max-width: 60rem) { .railhead { display: none; } }
+
+.part { padding-top: 3rem; }
+.part > h2 {
+  font-size: 1.35rem; letter-spacing: -.015em; margin-bottom: .5rem;
+}
+.part > h2::after { display: none; }
+.part > .intro {
+  color: var(--muted); font-size: 13.5px; max-width: 64ch; margin: 0 0 .5rem;
+  border-left: 2px solid var(--accent); padding-left: .85rem;
+}
+.part.hide { display: none; }
+
 tr.hide, section.hide { display: none; }
 .empty {
   grid-column: 1 / -1; color: var(--faint); font-size: 14px;
@@ -663,24 +860,25 @@ footer {
 
 
 def render_html(keywords):
-    groups = grouped(keywords)
+    parts = sectioned(keywords)
     o = [HTML_HEAD, '<div class="page">']
 
     o.append('<header class="masthead">')
-    o.append('<p class="eyebrow">TurboGAP &middot; input reference</p>')
-    o.append("<h1>Input keywords</h1>")
-    o.append('<p class="lede">%d keywords in %d groups. An input file is one '
-             '<code>keyword = value</code> per line, and a keyword this list does not '
-             'contain aborts the run. Types and defaults are read out of '
-             '<code>src/types.f90</code>, and the rest out of the branch in '
+    o.append('<p class="eyebrow">TurboGAP &middot; keyword reference</p>')
+    o.append("<h1>Keywords</h1>")
+    o.append('<p class="lede">%d keywords across %s. Types and defaults are read out '
+             'of <code>src/types.f90</code>, and the rest out of the branch in '
              '<code>src/read_files.f90</code> that parses the keyword, so nothing here '
-             'is transcribed by hand.</p>' % (len(keywords), len(groups)))
+             'is transcribed by hand.</p>'
+             % (len(keywords), " and ".join(esc(s) for s, _ in parts)))
     o.append("</header>")
 
     o.append('<nav class="rail" aria-label="Groups">')
-    for key, rows in groups.items():
-        o.append('<a href="#%s"><span>%s</span><span class="n">%d</span></a>'
-                 % (anchor(group_title(key)), esc(group_title(key)), len(rows)))
+    for section, groups in parts:
+        o.append('<p class="railhead">%s</p>' % esc(section))
+        for key, rows in groups.items():
+            o.append('<a href="#%s"><span>%s</span><span class="n">%d</span></a>'
+                     % (anchor(group_title(key)), esc(group_title(key)), len(rows)))
     o.append("</nav>")
 
     o.append("<main>")
@@ -696,34 +894,45 @@ def render_html(keywords):
     o.append('<span class="tally" id="tally"></span>')
     o.append("</div>")
 
-    for key, rows in groups.items():
-        o.append('<section id="%s">' % anchor(group_title(key)))
-        o.append("<h2>%s</h2>" % esc(group_title(key)))
-        if group_blurb(key):
-            o.append('<p class="blurb">%s</p>' % esc(group_blurb(key)))
-        o.append('<div class="scroll"><table><thead><tr>'
-                 "<th>Keyword</th><th>Type</th><th>Default</th><th>Units</th>"
-                 "<th>Modes</th><th>Description</th><th>Depends on</th>"
-                 "</tr></thead><tbody>")
-        for kw in sorted(rows, key=lambda k: k.name):
-            hay = " ".join([kw.name] + kw.aliases + kw.desc).lower()
-            o.append('<tr%s data-h="%s" data-m="%s">' % (
-                ' class="flagged"' if kw.status else "",
-                esc(hay), esc(" ".join(kw.modes) or " ".join(MODES))))
-            names = "<code>%s</code>" % esc(kw.name)
-            if kw.aliases:
-                names += '<span class="alias">%s</span>' % ", ".join(
-                    "<code>%s</code>" % esc(a) for a in kw.aliases)
-            o.append('<td class="kw">%s</td>' % names)
-            o.append('<td class="ty">%s</td>' % esc(kw.type))
-            o.append('<td class="df">%s</td>'
-                     % (("<code>%s</code>" % esc(kw.default)) if kw.default else ""))
-            o.append('<td class="un">%s</td>' % esc(kw.units))
-            o.append('<td class="mo">%s</td>' % esc(modes_text(kw)))
-            o.append('<td class="de">%s</td>' % html_desc(kw))
-            o.append('<td class="dp">%s</td>' % html_deps(kw))
-            o.append("</tr>")
-        o.append("</tbody></table></div></section>")
+    for section, groups in parts:
+        gap = section == GAP_FILE
+        o.append('<div class="part">')
+        o.append("<h2>Keywords for %s</h2>" % esc(section))
+        intro = " ".join(SECTION_INTRO.get(section, []))
+        intro = re.sub(r"`([^`]+)`", r"<code>\1</code>", esc(intro).replace("&#x27;", "'"))
+        if intro:
+            o.append('<p class="intro">%s</p>' % intro)
+        for key, rows in groups.items():
+            o.append('<section id="%s">' % anchor(group_title(key)))
+            o.append("<h2>%s</h2>" % esc(group_title(key)))
+            if group_blurb(key):
+                o.append('<p class="blurb">%s</p>' % esc(group_blurb(key)))
+            head = ("<th>Keyword</th><th>Type</th><th>Default</th><th>Units</th>"
+                    + ("" if gap else "<th>Modes</th>")
+                    + "<th>Description</th><th>Depends on</th>")
+            o.append('<div class="scroll"><table><thead><tr>%s</tr></thead><tbody>' % head)
+            for kw in sorted(rows, key=lambda k: k.name):
+                hay = " ".join([kw.name] + kw.aliases + kw.desc).lower()
+                o.append('<tr%s data-h="%s" data-m="%s">' % (
+                    ' class="flagged"' if kw.status else "",
+                    esc(hay),
+                    "" if gap else esc(" ".join(kw.modes) or " ".join(MODES))))
+                names = "<code>%s</code>" % esc(kw.name)
+                if kw.aliases:
+                    names += '<span class="alias">%s</span>' % ", ".join(
+                        "<code>%s</code>" % esc(a) for a in kw.aliases)
+                o.append('<td class="kw">%s</td>' % names)
+                o.append('<td class="ty">%s</td>' % esc(kw.type))
+                o.append('<td class="df">%s</td>'
+                         % (("<code>%s</code>" % esc(kw.default)) if kw.default else ""))
+                o.append('<td class="un">%s</td>' % esc(kw.units))
+                if not gap:
+                    o.append('<td class="mo">%s</td>' % esc(modes_text(kw)))
+                o.append('<td class="de">%s</td>' % html_desc(kw))
+                o.append('<td class="dp">%s</td>' % html_deps(kw))
+                o.append("</tr>")
+            o.append("</tbody></table></div></section>")
+        o.append("</div>")
     o.append('<p class="empty" id="empty">Nothing matches that filter.</p>')
     o.append("</main>")
 
@@ -734,7 +943,6 @@ def render_html(keywords):
     o.append(HTML_SCRIPT)
     o.append("</body>\n</html>")
     return "\n".join(o) + "\n"
-
 
 
 def esc(text):
@@ -766,18 +974,25 @@ HTML_SCRIPT = """<script>
       tally = document.getElementById('tally'),
       empty = document.getElementById('empty'),
       rows = Array.prototype.slice.call(document.querySelectorAll('tbody tr')),
-      secs = Array.prototype.slice.call(document.querySelectorAll('section'));
+      secs = Array.prototype.slice.call(document.querySelectorAll('section')),
+      parts = Array.prototype.slice.call(document.querySelectorAll('.part'));
 
   function apply() {
     var needle = q.value.trim().toLowerCase(), m = mode.value, shown = 0;
     rows.forEach(function (r) {
+      // A row with no modes belongs to the potential file, which the mode
+      // filter says nothing about, so leave it visible.
+      var modes = r.dataset.m;
       var ok = (!needle || r.dataset.h.indexOf(needle) !== -1) &&
-               (!m || r.dataset.m.split(' ').indexOf(m) !== -1);
+               (!m || !modes || modes.split(' ').indexOf(m) !== -1);
       r.classList.toggle('hide', !ok);
       if (ok) { shown++; }
     });
     secs.forEach(function (s) {
       s.classList.toggle('hide', !s.querySelector('tbody tr:not(.hide)'));
+    });
+    parts.forEach(function (p) {
+      p.classList.toggle('hide', !p.querySelector('tbody tr:not(.hide)'));
     });
     empty.classList.toggle('show', shown === 0);
     tally.textContent = shown === rows.length
@@ -814,6 +1029,7 @@ def wrap(text, width):
 
 
 def render_f90(keywords):
+    parts = sectioned(keywords)
     o = []
     o.append("! Generated by tools/keyword_docs.py from src/read_files.f90 and")
     o.append("! src/types.f90. Do not edit: edit the !> block above the keyword in")
@@ -824,52 +1040,78 @@ def render_f90(keywords):
     o.append("   implicit none")
     o.append("")
     o.append("   private")
-    o.append("   public :: print_keyword_help, keyword_help_modes")
+    o.append("   public :: print_keyword_help, keyword_help_topics")
     o.append("")
     o.append("contains")
     o.append("")
-    o.append("!  The modes `turbogap --help <mode>` accepts, for the error message.")
-    o.append("   function keyword_help_modes() result(text)")
+    o.append("!  What `turbogap --help <topic>` accepts, for the error message.")
+    o.append("   function keyword_help_topics() result(text)")
     o.append("      character(len=64) :: text")
-    o.append("      text = " + f_str("/".join(MODES)))
-    o.append("   end function keyword_help_modes")
+    o.append("      text = " + f_str("/".join(HELP_TOPICS)))
+    o.append("   end function keyword_help_topics")
     o.append("")
-    o.append("!  Print the keyword reference. An empty mode prints every keyword;")
-    o.append("!  otherwise only those that do something in that mode.")
-    o.append("   subroutine print_keyword_help(mode)")
+    o.append("!  Print the keyword reference. An empty topic prints everything; a mode")
+    o.append("!  prints the input-file keywords that do something in it; \"gap\" prints")
+    o.append("!  the potential-file keywords instead.")
+    o.append("   subroutine print_keyword_help(topic)")
     o.append("")
-    o.append("      character(len=*), intent(in) :: mode")
+    o.append("      character(len=*), intent(in) :: topic")
     o.append("")
     o.append("      logical :: every")
+    o.append("      logical :: gap_only")
+    o.append("      character(len=len(topic)) :: mode")
     o.append("")
-    o.append("      every = (len_trim(mode) == 0)")
+    o.append("      every = (len_trim(topic) == 0)")
+    o.append("      gap_only = (topic == " + f_str("gap") + ")")
+    o.append("!     A mode never selects the potential file, so blank it out there and")
+    o.append("!     the per-keyword guards below need no second variable.")
+    o.append("      mode = topic")
+    o.append("      if (gap_only) mode = " + f_str("") )
     o.append("")
-    o.append("      write (*, '(A)') " + f_str("TurboGAP input keywords"))
+    o.append("      write (*, '(A)') " + f_str("TurboGAP keywords"))
     o.append("      write (*, '(A)') " + f_str(""))
     o.append("      if (every) then")
     o.append("         write (*, '(A)') " + f_str(
-        "  Every keyword. Use `turbogap --help <%s>` to narrow this down." % "|".join(MODES)))
+        "  Everything. `turbogap --help <%s>` narrows this down." % "|".join(HELP_TOPICS)))
+    o.append("      else if (gap_only) then")
+    o.append("         write (*, '(A)') " + f_str(
+        "  Keywords of the potential (.gap) file."))
     o.append("      else")
-    o.append("         write (*, '(A)') " + f_str("  Keywords that do something in mode: ") + "//trim(mode)")
+    o.append("         write (*, '(A)') " + f_str(
+        "  Input-file keywords that do something in mode: ") + "//trim(topic)")
     o.append("      end if")
     o.append("      write (*, '(A)') " + f_str(""))
     o.append("      write (*, '(A)') " + f_str(
-        "  One `keyword = value` per line in the input file. An unrecognised"))
-    o.append("      write (*, '(A)') " + f_str(
-        "  keyword aborts the run. Full reference: docs/keywords.html"))
+        "  Full reference, with the cross-references: docs/keywords.html"))
     o.append("      write (*, '(A)') " + f_str(""))
 
-    for key, rows in grouped(keywords).items():
-        rows = sorted(rows, key=lambda k: k.name)
-        guard = group_guard(rows)
+    for section, groups in parts:
+        gap = section == GAP_FILE
         o.append("")
-        o.append("!     ---- %s" % group_title(key))
-        o.append("      if (%s) then" % guard)
-        o.append("         write (*, '(A)') " + f_str("=== %s ===" % group_title(key).upper()))
+        o.append("!  ======== %s" % section)
+        o.append("      if (%s) then" % ("every .or. gap_only" if gap
+                                         else "every .or. .not. gap_only"))
+        o.append("         write (*, '(A)') " + f_str(""))
+        o.append("         write (*, '(A)') " + f_str(
+            "##### KEYWORDS FOR %s #####" % section.upper()))
+        o.append("         write (*, '(A)') " + f_str(""))
+        for line in wrap(" ".join(SECTION_INTRO.get(section, []))
+                         .replace("`", ""), 72):
+            o.append("         write (*, '(A)') " + f_str("  " + line))
         o.append("         write (*, '(A)') " + f_str(""))
         o.append("      end if")
-        for kw in rows:
-            emit_keyword(o, kw)
+
+        for key, rows in groups.items():
+            rows = sorted(rows, key=lambda k: k.name)
+            o.append("")
+            o.append("!     ---- %s" % group_title(key))
+            o.append("      if (%s) then" % section_guard(section, rows))
+            o.append("         write (*, '(A)') "
+                     + f_str("=== %s ===" % group_title(key).upper()))
+            o.append("         write (*, '(A)') " + f_str(""))
+            o.append("      end if")
+            for kw in rows:
+                emit_keyword(o, kw)
 
     o.append("")
     o.append("   end subroutine print_keyword_help")
@@ -885,22 +1127,25 @@ def render_f90(keywords):
     return text
 
 
-def mode_test(kw):
-    if not kw.modes:
-        return "every .or. .true."
-    return " .or. ".join("mode == " + f_str(m) for m in kw.modes)
-
-
-def group_guard(rows):
+def section_guard(section, rows):
+    """Show a .gap group whenever the potential file is shown; show an
+    input-file group when its modes overlap the one asked for."""
+    if section == GAP_FILE:
+        return "every .or. gap_only"
     if any(not k.modes for k in rows):
-        return ".true."
+        return "every .or. .not. gap_only"
     modes = sorted({m for k in rows for m in k.modes})
-    return "every .or. " + " .or. ".join("mode == " + f_str(m) for m in modes)
+    return "every .or. (" + " .or. ".join("mode == " + f_str(m) for m in modes) + ")"
 
 
 def emit_keyword(o, kw):
-    guard = ".true." if not kw.modes else (
-        "every .or. " + " .or. ".join("mode == " + f_str(m) for m in kw.modes))
+    if kw.section == GAP_FILE:
+        guard = "every .or. gap_only"
+    elif not kw.modes:
+        guard = "every .or. .not. gap_only"
+    else:
+        guard = "every .or. (" + " .or. ".join(
+            "mode == " + f_str(m) for m in kw.modes) + ")"
     o.append("      if (%s) then" % guard)
     head = "  " + kw.name
     if kw.aliases:
@@ -955,13 +1200,14 @@ def main():
     args = ap.parse_args()
 
     types = parse_types(TYPES)
-    keywords = parse_read_files(READ_FILES)
+    keywords = parse_read_files(READ_FILES) + parse_gap_hypers(READ_FILES)
     enrich(keywords, types)
 
     missing = [k for k in keywords if not k.documented]
     if args.list_undocumented:
         for k in missing:
-            print("%s:%d: %s (%s)" % (READ_FILES, k.line, k.name, k.group))
+            print("%s:%d: %s (%s, %s)"
+                  % (READ_FILES, k.line, k.name, k.group, k.section))
         print("%d of %d undocumented" % (len(missing), len(keywords)))
         return 0
 
