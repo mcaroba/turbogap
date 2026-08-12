@@ -1568,11 +1568,6 @@ contains
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%scale_box_nested
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("scale_box_nested", params%scale_box_nested)
-      else if (keyword == 't_extra') then
-         backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, params%t_extra
-         call check_iostatus(iostatus, keyword)
-         if (rank == 0) call print_parameter("t_extra", params%t_extra)
       else
          return
       end if
@@ -1601,6 +1596,7 @@ contains
       integer :: i
       integer :: j
       integer :: k
+      real(dp) :: acceptance_counter
       integer :: nw
       logical :: valid_choice
 
@@ -1649,17 +1645,20 @@ contains
          if (rank == 0) call print_parameter("mc_move_max", params%mc_move_max)
       else if (keyword == 'mc_mu') then
          backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, (params%mc_mu(nw), nw=1, params%n_mc_mu)
+         call read_parameters(unit, iostatus, params%n_mc_mu, params%mc_mu)
+         if (rank == 0) call print_parameters("mc_mu", params%mc_mu)
       else if (keyword == 'mc_mu_acceptance') then
          backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, (params%mc_mu_acceptance(nw), nw=1, params%n_mc_types)
          ! The acceptance probability is based on this sum and normalised
+         call read_parameters(unit, iostatus, params%n_mc_mu, params%mc_mu_acceptance)
+         if (rank == 0) call print_parameters("mc_mu_acceptance", params%mc_mu_acceptance)
+         acceptance_counter = 0.0_dp
          do i = 1, params%n_mc_mu
-            k = k + params%mc_mu_acceptance(i)
+            acceptance_counter = acceptance_counter + params%mc_mu_acceptance(i)
          end do
 
          do i = 1, params%n_mc_mu
-            params%mc_mu_acceptance(i) = params%mc_mu_acceptance(i)/k
+            params%mc_mu_acceptance(i) = params%mc_mu_acceptance(i)/acceptance_counter
          end do
 
       else if (keyword == 'mc_nrelax') then
@@ -1702,10 +1701,12 @@ contains
          if (rank == 0) call print_parameter("mc_reverse_lambda", params%mc_reverse_lambda)
       else if (keyword == 'mc_species') then
          backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, (params%mc_species(nw), nw=1, params%n_mc_mu)
+         call read_parameters(unit, iostatus, params%n_mc_mu, params%mc_species)
+         if (rank == 0) call print_parameters("mc_species", params%mc_species)
       else if (keyword == 'mc_swaps') then
          backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, (params%mc_swaps(nw), nw=1, 2*params%n_mc_swaps)
+         call read_parameters(unit, iostatus, 2*params%n_mc_swaps, params%mc_swaps)
+         if (rank == 0) call print_parameters("mc_swaps", params%mc_swaps)
          !       Need the check the implemented types
          valid_choice = .false.
          do j = 1, 2*params%n_mc_swaps
@@ -1728,7 +1729,8 @@ contains
 
       else if (keyword == 'mc_types') then
          backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, (params%mc_types(nw), nw=1, params%n_mc_types)
+         call read_parameters(unit, iostatus, params%n_mc_types, params%mc_types)
+         if (rank == 0) call print_parameters("mc_types", params%mc_types)
          !       Need the check the implemented types
          valid_choice = .false.
          do j = 1, params%n_mc_types

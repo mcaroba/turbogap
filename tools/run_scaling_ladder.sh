@@ -80,6 +80,13 @@ for n in $sizes; do
   ln -sf "$DIR/gap_files" "$d/gap_files"
   cp "$DIR/$INPUT" "$d/input"
 
+  # TG_LADDER_EXTRAS: an input.mad names an experimental data file, which
+  # lives beside the systems and is not otherwise staged.
+  for _x in "$DIR"/*; do
+    case ${_x##*/} in atoms_*.xyz|input*|gap_files) continue ;; esac
+    [ -f "$_x" ] && ln -sf "$_x" "$d/${_x##*/}"
+  done
+
   # %M is peak RSS in kilobytes. GNU time only; the shell builtin has no
   # equivalent, which is why this calls /usr/bin/time explicitly.
   pre=""

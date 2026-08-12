@@ -2709,12 +2709,6 @@ program turbogap
                   if (params%verb > 50) write (*, '(1X,A,1X,L8,1X,A)')  &
                     &  'mc_hamiltonian = ', params%mc_hamiltonian, '&
                     &  |'
-                  if (params%verb > 50) write (*, '(1X,A,1X,L8,1X,A)')  &
-                    &   'mc_reverse    = ', params%mc_reverse, '    &
-                    & |'
-                  if (params%verb > 50) write (*, '(1X,A,1X,F12.6,1X&
-                    &,A)') 'mc_reverse_lambda = ', params&
-                    &%mc_reverse_lambda, '|'
 
                   if (params%verb > 50) write (*, *) '                                       |'
                   ! t_beg must
