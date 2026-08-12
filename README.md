@@ -157,8 +157,6 @@ open docs/keywords.html
 
 or the markdown `docs/keywords.md`, or one can use the `--help`:
 
-:
-
 ```sh
 turbogap --help
 ```
@@ -166,13 +164,16 @@ turbogap --help
 or
 
 ```sh
-turbogap --help <mode>
+turbogap --help <topic>
 ```
 
-where mode is any of the above (`predict`, `md`, `mc`).
+where topic is a simulation mode (`predict`, `md`, `mc`, `soap`) or `gap`.
 
-The keywords for the `input` file will be listed with descriptions and their
-dependencies and be filtered according to the simulation mode.
+Given a mode, the keywords for the `input` file are listed with descriptions
+and their dependencies, filtered to those that do something in that mode.
+`turbogap --help gap` lists the keywords of the potential (`.gap`) file
+instead, grouped by the block they belong to (`soap_turbo`, `distance_2b`,
+`angle_3b`, `core_pot`). With no topic at all, both files are listed.
 
 ## TurboGAP Tutorials
 
