@@ -446,6 +446,7 @@ program turbogap
 !  whose real work took 1.2 s reported 0.4 s "miscellaneous" and a 31 s run
 !  reported the same 0.4 s -- a constant, and therefore obviously a setup cost,
 !  but not one the report could name.
+   time%setup = 0.0_dp
    call time_start(time%setup)
    ! Start random seed
    call srand(int(time1*1000))
