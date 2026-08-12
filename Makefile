@@ -9,12 +9,69 @@ TURBOGAP_ARCH ?= Ubuntu_gfortran_mpi
 
 include makefiles/Makefile.$(TURBOGAP_ARCH)
 
+# ------------------------------------------------------------------- DEBUG
+#
+# A bounds-checked, symbol-carrying build, in its own object tree.
+#
+#     make            ->  build/       bin/turbogap
+#     make DEBUG=1    ->  build-dbg/   bin-dbg/turbogap
+#
+# The separate tree is the point, not tidiness. make decides whether to
+# rebuild from TIMESTAMPS, not from flags, so building DEBUG=1 over an
+# existing build/ recompiles only what changed and links the rest of the
+# optimised objects -- while reporting success. The reverse is worse: the
+# optimised binary everything else names would then contain debug objects, and
+# nothing in the build would say so. The GPU branch measured that: a stale
+# DEBUG=1 object tree ran a kernel 4.7x slower than the same source rebuilt
+# clean and shifted an energy by ~1e-10, which reads as a numerical regression
+# from an unrelated change.
+#
+# DEBUG=0 is left untagged deliberately. bin/turbogap is what the regression
+# suite, the extra suites and the docs all name.
+#
+# These flags are appended after the architecture's, so the last -O wins and
+# anything arch-specific (-march, and so on) survives. -fcheck=all names the
+# file and line of an out-of-range array access instead of leaving a glibc
+# "free(): invalid next size" and a backtrace of addresses.
+DEBUG ?= 0
+ifeq ($(DEBUG),1)
+  F90_OPTS += -O0 -g -fbacktrace -fcheck=all
+  BUILD_TAG := $(BUILD_TAG)-dbg
+endif
 
-# Default locations for various files
-BUILD_DIR=build
-BIN_DIR=bin
-INC_DIR=include
-LIB_DIR=lib
+# ------------------------------------------------------- an ad-hoc variant
+#
+# Extra compiler flags, and a tag so the variant gets its own object tree.
+# Both are needed together: without the tag, make sees unchanged sources and
+# relinks the previous variant's objects, so the "comparison" is a binary
+# against itself.
+#
+#     make F90_EXTRA='-ffpe-trap=invalid,zero,overflow' BUILD_TAG_EXTRA=-fpe
+#     make F90_EXTRA='-finit-real=snan -finit-integer=-99999999' BUILD_TAG_EXTRA=-poison
+#     make F90_EXTRA=-pg BUILD_TAG_EXTRA=-prof
+#
+# Use this rather than overriding F90_OPTS on the command line. A command-line
+# assignment replaces the variable outright, including the `-J $(INC_DIR)`
+# appended below, so gfortran writes every .mod into the working directory
+# instead of the build's include dir. Those stray .mod files are then found
+# ahead of the real ones by every later build in that tree, which fails with
+# "is not a member of the structure" against a field that plainly is -- and
+# deleting the build dir does not fix it, because the stale modules are not in
+# it. That happened here on 2026-08-12 and cost half an hour.
+F90_OPTS += $(F90_EXTRA)
+BUILD_TAG := $(BUILD_TAG)$(BUILD_TAG_EXTRA)
+
+# ---------------------------------------------------------------- the trees
+#
+# One object tree per flag combination. Every rule, plus clean and deepclean,
+# is written in terms of these four variables, and the generated
+# makefiles/Makefile.deps in terms of $(BUILD_DIR), so this is the only place
+# the split has to be stated. Overriding any of them on the command line still
+# works, for a one-off tree with no flag change behind it.
+BUILD_DIR=build$(BUILD_TAG)
+BIN_DIR=bin$(BUILD_TAG)
+INC_DIR=include$(BUILD_TAG)
+LIB_DIR=lib$(BUILD_TAG)
 
 # Do not change anything below this line
 ##########################################################

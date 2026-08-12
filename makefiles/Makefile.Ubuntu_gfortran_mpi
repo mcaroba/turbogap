@@ -7,9 +7,13 @@ F90=mpif90
 PP=-cpp -D _MPIF90
 F90_MOD_DIR_OPT=-J
 
-# Optimization flags (uncomment second option to enable debugging tools)
+# Optimization flags
 F90_OPTS=-fPIC -O3
-#F90_OPTS=-fPIC -O3 -fcheck=bounds -g -fcheck=all -Wall -fbacktrace
+# For a debug build use `make DEBUG=1`, which appends -O0 -g -fbacktrace
+# -fcheck=all to whatever this line sets and puts the result in build-dbg/
+# and bin-dbg/. Editing this line instead reuses the same object tree, so
+# make rebuilds only what changed and links the rest of the optimised
+# objects -- and afterwards bin/turbogap is a mixture with nothing to say so.
 
 # BLAS and LAPACK libraries
 LIBS=-llapack -lblas
