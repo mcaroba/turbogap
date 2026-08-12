@@ -149,9 +149,16 @@ predict`) or molecular dynamics (`turbogap md`) or (`turbogap mc`) for
 Monte-Carlo. For details, documentation and up-to-date information refer to the
 [TurboGAP wiki](http://turbogap.fi).
 
-If you need help with TurboGAP modes or its keywords, you can either consult the html document
+If you need help with TurboGAP modes or its keywords, you can either consult
+the html document (which is searchable)
 
 ```sh
+# On Linux
+xdg-open docs/keywords.html
+```
+
+```sh
+# On Mac
 open docs/keywords.html
 ```
 
