@@ -78,6 +78,96 @@ contains
          write (*, '(A)') '      energy scale.'
          write (*, '(A)') ''
       end if
+      if (every .or. (mode == 'md')) then
+         write (*, '(A)') '  ir_lag_factor                        [integer, default 2]'
+         write (*, '(A)') '      Ratio of the stored ensemble length to the longest correlation lag.'
+         write (*, '(A)') '      The autocorrelation at lag tau is averaged over n_window - tau'
+         write (*, '(A)') '      pairs, so a factor of 1 would leave the longest lag estimated from a'
+         write (*, '(A)') '      single pair. 2 or more.'
+         write (*, '(A)') '      -> see exp_labels, exp_energy_scales, ir_resolution'
+         write (*, '(A)') ''
+      end if
+      if (every .or. (mode == 'md')) then
+         write (*, '(A)') '  ir_match_scale                       [logical, default true]'
+         write (*, '(A)') '      Fit an overall scale factor between the computed and experimental'
+         write (*, '(A)') '      spectra before comparing them. The computed spectrum is in arbitrary'
+         write (*, '(A)') '      units, so with this off the loss compares two things on different'
+         write (*, '(A)') '      scales and its gradient is meaningless. Turn it off only if the'
+         write (*, '(A)') '      experimental spectrum has already been put on the same scale.'
+         write (*, '(A)') '      -> see exp_labels, exp_energy_scales'
+         write (*, '(A)') ''
+      end if
+      if (every .or. (mode == 'md')) then
+         write (*, '(A)') '  ir_nu_max                            [real, default 4000.0, cm^-1]'
+         write (*, '(A)') '      Highest wavenumber to fit. This is what fixes the sampling interval:'
+         write (*, '(A)') '      nothing above the Nyquist limit of the stored series can be'
+         write (*, '(A)') '      represented, and power above it folds back into the fitted range, so'
+         write (*, '(A)') '      a combination of ir_stride and md_step that cannot reach this value'
+         write (*, '(A)') '      is refused rather than aliased.'
+         write (*, '(A)') '      -> see exp_labels, exp_energy_scales, ir_stride'
+         write (*, '(A)') ''
+      end if
+      if (every .or. (mode == 'md')) then
+         write (*, '(A)') '  ir_nu_min                            [real, default 0.0, cm^-1]'
+         write (*, '(A)') '      Lowest wavenumber to fit. Experimental points outside [ir_nu_min,'
+         write (*, '(A)') '      ir_nu_max] are dropped and take no part in the loss.'
+         write (*, '(A)') '      -> see exp_labels, exp_energy_scales, ir_nu_max'
+         write (*, '(A)') ''
+      end if
+      if (every .or. (mode == 'md')) then
+         write (*, '(A)') '  ir_nu_power                          [real, default 2.0]'
+         write (*, '(A)') '      Exponent of the wavenumber prefactor in I(nu) = nu^p * FT[C(tau)].'
+         write (*, '(A)') '      The classical lineshape is p = 2; p = 0 compares the bare Fourier'
+         write (*, '(A)') '      transform of the dipole autocorrelation instead.'
+         write (*, '(A)') '      -> see exp_labels, exp_energy_scales'
+         write (*, '(A)') ''
+      end if
+      if (every .or. (mode == 'md')) then
+         write (*, '(A)') '  ir_resolution                        [real, default 20.0, cm^-1]'
+         write (*, '(A)') '      Frequency resolution wanted, which fixes the longest correlation lag'
+         write (*, '(A)') '      as 33356.41/(resolution * dt) with dt the interval between stored'
+         write (*, '(A)') '      configurations. The ensemble is ir_lag_factor times that. Asking for'
+         write (*, '(A)') '      fine resolution is expensive in memory and in how long the run must'
+         write (*, '(A)') '      go before the first force is applied.'
+         write (*, '(A)') '      -> see exp_labels, exp_energy_scales, ir_lag_factor, ir_stride'
+         write (*, '(A)') ''
+      end if
+      if (every .or. (mode == 'md')) then
+         write (*, '(A)') '  ir_restart_file                      [string, default ir_restart.dat]'
+         write (*, '(A)') '      Where the dipole history is written and read back. The ensemble is'
+         write (*, '(A)') '      the expensive part of a MAD IR run -- resolving 4 cm^-1 at 1 fs'
+         write (*, '(A)') '      sampling is 8 ps of trajectory -- so without this a restart spends'
+         write (*, '(A)') '      that long refilling before any force is applied. A file written with'
+         write (*, '(A)') '      different sizing is refused rather than adopted, since it describes'
+         write (*, '(A)') '      a different spectrum.'
+         write (*, '(A)') '      -> see exp_labels, exp_energy_scales'
+         write (*, '(A)') ''
+      end if
+      if (every .or. (mode == 'md')) then
+         write (*, '(A)') '  ir_stride                            [integer, default 1]'
+         write (*, '(A)') '      MD steps between stored configurations. The sampling interval is'
+         write (*, '(A)') '      this times md_step, and that interval is what sets the Nyquist'
+         write (*, '(A)') '      limit, so a large stride is what makes ir_nu_max unreachable.'
+         write (*, '(A)') '      -> see exp_labels, exp_energy_scales, ir_nu_max, md_step'
+         write (*, '(A)') ''
+      end if
+      if (every .or. (mode == 'md')) then
+         write (*, '(A)') '  ir_window                            [string, default hann]'
+         write (*, '(A)') '      Lag window applied before the cosine transform: "hann" or "none".'
+         write (*, '(A)') '      The autocorrelation near the longest lag is averaged over few pairs,'
+         write (*, '(A)') '      and transforming it unwindowed puts that noise straight into the'
+         write (*, '(A)') '      spectrum and hence into the force.'
+         write (*, '(A)') '      -> see exp_labels, exp_energy_scales'
+         write (*, '(A)') ''
+      end if
+      if (every .or. (mode == 'md')) then
+         write (*, '(A)') '  ir_write_spectrum                    [logical, default false]'
+         write (*, '(A)') '      Write the computed spectrum to ir_spectrum.dat whenever the'
+         write (*, '(A)') '      trajectory is written, alongside the experimental one, so the fit'
+         write (*, '(A)') '      can be watched as it runs.'
+         write (*, '(A)') '      -> see exp_labels, exp_energy_scales'
+         write (*, '(A)') ''
+      end if
       if (every .or. .not. gap_only) then
          write (*, '(A)') '  masses                               [real list, amu]'
          write (*, '(A)') '      Atomic mass of each species, one value per entry in species and in'
@@ -261,6 +351,20 @@ contains
          write (*, '(A)') '  p_tol                                [real, default 0.01, GPa]'
          write (*, '(A)') '      Convergence threshold on the pressure during a cell relaxation.'
          write (*, '(A)') '      -> needs optimize; see e_tol, f_tol'
+         write (*, '(A)') ''
+      end if
+      if (every .or. .not. gap_only) then
+         write (*, '(A)') '  soap_radial_legacy_filter            [logical, default true]'
+         write (*, '(A)') '      Keep the pre-2026 seed of the SOAP radial filter recursion. That'
+         write (*, '(A)') '      seed drops the surface term at rcut_hard, which leaves the radial'
+         write (*, '(A)') '      derivatives disagreeing with a finite difference of the coefficients'
+         write (*, '(A)') '      by about exp(-nf^2/2) -- 5e-6 relative near the hard cutoff for the'
+         write (*, '(A)') '      default nf. Setting this to .false. restores the term, which makes'
+         write (*, '(A)') '      the derivatives finite-difference exact and the expansion slightly'
+         write (*, '(A)') '      faster, at the cost of moving energies by ~3e-8 relative and forces'
+         write (*, '(A)') '      by ~3e-6 eV/A, so existing baselines have to be regenerated. Second'
+         write (*, '(A)') '      radial derivatives require .false.'
+         write (*, '(A)') '      -> see do_derivatives'
          write (*, '(A)') ''
       end if
       if (every .or. (mode == 'md')) then
@@ -1154,8 +1258,8 @@ contains
          write (*, '(A)') '      that was asked for but has no data stays switched off.'
          write (*, '(A)') '      -> sets n_exp; sets xps_idx; sets xrd_idx; sets valid_xrd; sets'
          write (*, '(A)') '         pair_distribution_partial; sets nd_idx; sets valid_nd; sets'
-         write (*, '(A)') '         pdf_idx; sets valid_pdf; sets sf_idx; sets valid_sf; see'
-         write (*, '(A)') '         exp_data_files, n_exp'
+         write (*, '(A)') '         pdf_idx; sets valid_pdf; sets sf_idx; sets valid_sf; sets'
+         write (*, '(A)') '         ir_idx; sets valid_ir; see exp_data_files, n_exp'
          write (*, '(A)') ''
       end if
       if (every .or. .not. gap_only) then

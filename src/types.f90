@@ -242,6 +242,10 @@ module types
       logical :: do_forces = .false.
       logical :: do_derivatives = .false.
       logical :: do_derivatives_fd = .false.
+!     Which of the two filter recursions the SOAP radial expansion uses.
+!     Applied to soap_turbo_radial's legacy_filter_seed in turbogap_setup; the
+!     comment at the top of soap_turbo_radial.f90 says what the two mean.
+      logical :: soap_radial_legacy_filter = .true.
       logical :: do_md = .false.
       logical :: do_mc = .false.
       logical :: do_nested_sampling = .false.
@@ -250,6 +254,29 @@ module types
 !     Set from the .gap file, not the input file: true when at least one
 !     soap_turbo descriptor is flagged dipole_model
       logical :: do_dipole = .false.
+
+!     MAD IR. Bias a trajectory towards an experimental infrared spectrum
+!     computed from the dipole autocorrelation function; see src/mad_ir.f90.
+!     Needs a dipole model, do_derivatives, and soap_radial_legacy_filter off.
+!     The observable is switched on the same way as every other one: name "ir"
+!     in exp_labels with a data file beside it. Its weight is
+!     exp_energy_scales(ir_idx), ramped like the rest, and exp_forces decides
+!     whether the gradient of the mismatch reaches the forces.
+      logical :: valid_ir = .false.
+!     true when some observable other than IR is asked for, i.e. when the
+!     per-frame prediction pipeline actually has work to do
+      logical :: do_exp_structural = .false.
+      integer :: ir_idx = 0
+      logical :: ir_match_scale = .true.
+      logical :: ir_write_spectrum = .false.
+      character*1024 :: ir_restart_file = "ir_restart.dat"
+      character*32 :: ir_window = "hann"
+      integer :: ir_stride = 1
+      integer :: ir_lag_factor = 2
+      real(dp) :: ir_resolution = 20.d0
+      real(dp) :: ir_nu_min = 0.d0
+      real(dp) :: ir_nu_max = 4000.d0
+      real(dp) :: ir_nu_power = 2.d0
 
 !     ==================================================================
 !     NEIGHBOUR LISTS AND THE CORE POTENTIAL

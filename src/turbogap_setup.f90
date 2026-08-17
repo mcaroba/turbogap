@@ -24,6 +24,7 @@ module turbogap_setup
    use timing
    use types
    use read_files
+   use soap_turbo_radial, only: legacy_filter_seed
    use local_prop
    use adaptive_time
    use electronic_stopping
@@ -181,6 +182,11 @@ contains
       ! Let's look for those and other options in the input file
       rewind (10)
       call read_input_file(n_species, mode, params, rank)
+
+! soap_turbo is a submodule with its own upstream, so it is not given a
+! dependency on this tree's parameter type; the one switch it has is set here
+! instead. Every rank reads the input file, so this needs no broadcast.
+      legacy_filter_seed = params%soap_radial_legacy_filter
 
 ! Make randomized initial velocities (and any other use of random_number)
 ! reproducible when the input asks for it, so runs can be compared.

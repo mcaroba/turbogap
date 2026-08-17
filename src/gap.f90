@@ -397,6 +397,253 @@ contains
 
    end subroutine
 
+   subroutine get_soap_dipole_weights(soap, soap_cart_der, delta, zeta0, n_neigh, w, V)
+!   **********************************************
+!   The model-side half of a dipole gradient.
+!
+!   mu_i = w_i . dq/dr_i with w_i = dE_i/dq, so
+!
+!     d mu_ia / d r_jb = sum_de (d2E_i/dq_d dq_e)(dq_d/dr_ia)(dq_e/dr_jb)   [A]
+!                      + sum_d (dE_i/dq_d)(d2 q_d/dr_ia dr_jb)              [B]
+!
+!   This routine returns what both terms need. w is term B's weight vector, to
+!   be handed to get_soap_central_hessian as its vecs argument. V is term A,
+!   pre-contracted.
+!
+!   Term A is the one that has to be written carefully. For the dot_product
+!   covariance,
+!
+!     d2E_i/dq_d dq_e = zeta(zeta-1) delta^2 sum_s alpha_s k_s^(zeta-2) q_sd q_se
+!
+!   so term A is sum_s beta_s (q_s . dq/dr_ia)(q_s . dq/dr_jb). Evaluated as
+!   written that needs the sparse-space projection of EVERY pair's derivative,
+!   which is n_sparse times the cost of the force contraction and is what makes
+!   a naive dipole gradient unaffordable. But the first factor depends only on
+!   the site, so folding the sparse sum into
+!
+!     V_a(i) = sum_s beta_s (q_s . dq/dr_ia) q_s
+!
+!   leaves term A = V_a . dq/dr_jb: three descriptor-space vectors per site,
+!   built once, and 9*n_soap per pair afterwards -- the same order as the
+!   forces, and linear in the number of pairs.
+!
+!   zeta = 1 has no term A at all (the kernel is linear in q); it returns V = 0
+!   rather than going through k^(-1).
+!
+!   soap(1:n_soap, 1:n_sites), w(1:n_soap, 1:n_sites), V(1:n_soap, 1:3, 1:n_sites)
+!   **********************************************
+
+      implicit none
+
+      real(dp), intent(in) :: soap(:, :)
+      real(dp), intent(in) :: soap_cart_der(:, :, :)
+      real(dp), intent(in) :: delta
+      real(dp), intent(in) :: zeta0
+      integer, intent(in) :: n_neigh(:)
+      real(dp), intent(out) :: w(:, :)
+      real(dp), intent(out) :: V(:, :, :)
+      real(dp), allocatable :: kernels(:, :)
+      real(dp) :: zeta
+      real(dp) :: beta
+      real(dp) :: gsa(1:3)
+      integer :: n_sites
+      integer :: n_sparse
+      integer :: n_soap
+      integer :: i
+      integer :: s
+      integer :: k
+      integer :: a
+      integer :: zeta_int
+      logical :: is_zeta_int
+
+      is_zeta_int = .false.
+      if (dabs(zeta0 - dfloat(int(zeta0))) < 1.d-5) then
+         is_zeta_int = .true.
+         zeta_int = int(zeta0)
+         zeta = dfloat(zeta_int)
+      else
+         zeta = zeta0
+      end if
+
+      n_sparse = size(alphas)
+      n_soap = size(soap, 1)
+      n_sites = size(soap, 2)
+
+      w = 0.d0
+      V = 0.d0
+      if (n_sites == 0) then
+         return
+      end if
+
+      allocate (kernels(1:n_sites, 1:n_sparse))
+      kernels = 0.d0
+      call dgemm("t", "n", n_sites, n_sparse, n_soap, 1.d0, soap, n_soap, Qs, n_soap, 0.d0, &
+                 kernels, n_sites)
+
+!   w_i = dE_i/dq. This is the vector get_soap_dipole calls Qss.
+      do i = 1, n_sites
+         do s = 1, n_sparse
+            if (is_zeta_int) then
+               beta = zeta*delta**2*alphas(s)*kernels(i, s)**(zeta_int - 1)
+            else
+               beta = zeta*delta**2*alphas(s)*kernels(i, s)**(zeta - 1.d0)
+            end if
+            w(1:n_soap, i) = w(1:n_soap, i) + beta*Qs(1:n_soap, s)
+         end do
+      end do
+
+      if (dabs(zeta - 1.d0) < 1.d-10) then
+         deallocate (kernels)
+         return
+      end if
+
+!   V_a(i). j = 1 is the self pair, so soap_cart_der(:,:,k) there is dq/dr_i.
+      k = 0
+      do i = 1, n_sites
+         k = k + 1
+         do s = 1, n_sparse
+            if (is_zeta_int) then
+               beta = zeta*(zeta - 1.d0)*delta**2*alphas(s)*kernels(i, s)**(zeta_int - 2)
+            else
+               beta = zeta*(zeta - 1.d0)*delta**2*alphas(s)*kernels(i, s)**(zeta - 2.d0)
+            end if
+            do a = 1, 3
+               gsa(a) = dot_product(Qs(1:n_soap, s), soap_cart_der(a, 1:n_soap, k))
+            end do
+            do a = 1, 3
+               V(1:n_soap, a, i) = V(1:n_soap, a, i) + (beta*gsa(a))*Qs(1:n_soap, s)
+            end do
+         end do
+         k = k + n_neigh(i) - 1
+      end do
+
+      deallocate (kernels)
+
+   end subroutine
+
+   subroutine assemble_soap_dipole_gradient(V, soap_cart_der, hess, n_neigh, dipole_der)
+!   **********************************************
+!   The two halves put together.
+!
+!     dipole_der(a, b, k2) = d mu_ia / d r_jb   for pair k2 = (site i, neighbour j)
+!
+!   with V from get_soap_dipole_weights and hess from get_soap_central_hessian
+!   called with vecs = w from the same routine. For k2 the self pair the block
+!   returned is d mu_ia / d r_ib, the central atom's own.
+!
+!   The caller's sequence is:
+!
+!       soap_hessian_enabled = .true.
+!       call get_soap(..., soap, soap_cart_der)
+!       call get_soap_dipole_weights(soap, soap_cart_der, delta, zeta, n_neigh, w, V)
+!       call get_soap_central_hessian(..., soap, 1, w, hess)
+!       call assemble_soap_dipole_gradient(V, soap_cart_der, hess, n_neigh, dipole_der)
+!
+!   and it needs soap_radial_legacy_filter = .false., because the radial second
+!   derivatives do.
+!
+!   A rigid translation cannot change a dipole, so the blocks of one site sum to
+!   zero for each (a,b). That holds term by term here, which makes it a cheap
+!   check on the caller's pair indexing rather than on the physics.
+!   **********************************************
+
+      implicit none
+
+      real(dp), intent(in) :: V(:, :, :)
+      real(dp), intent(in) :: soap_cart_der(:, :, :)
+      real(dp), intent(in) :: hess(:, :, :, :)
+      integer, intent(in) :: n_neigh(:)
+      real(dp), intent(out) :: dipole_der(:, :, :)
+      integer :: n_sites
+      integer :: n_soap
+      integer :: i
+      integer :: j
+      integer :: k
+      integer :: a
+      integer :: b
+
+      n_soap = size(V, 1)
+      n_sites = size(V, 3)
+
+      k = 0
+      do i = 1, n_sites
+         do j = 1, n_neigh(i)
+            k = k + 1
+            do b = 1, 3
+               do a = 1, 3
+                  dipole_der(a, b, k) = dot_product(V(1:n_soap, a, i), soap_cart_der(b, 1:n_soap, k)) &
+                                        + hess(a, b, 1, k)
+               end do
+            end do
+         end do
+      end do
+
+   end subroutine
+
+   subroutine accumulate_dmu_dr(V, soap_cart_der, hess, n_neigh, neighbors_list, n_sites0, dmu_dr)
+!   **********************************************
+!   d(total dipole)/d(atom position), accumulated per atom.
+!
+!     dmu_dr(a, b, j) = d mu_a / d r_jb,     mu = sum_i mu_i
+!
+!   This is the form a MAD IR force wants. The per-pair blocks are never
+!   stored: (3,3,n_atom_pairs) is 52 MB for 7000 atoms and grows with the
+!   system, whereas the scatter target is 9*n_atoms -- half a megabyte at the
+!   same size, and it does not care how many neighbours each atom has.
+!
+!   The force then costs one contraction with a single 3-vector,
+!   f_jb = -sum_a lambda_a dmu_dr(a,b,j), which is why lambda does not have to
+!   be known before the descriptor pass. Contracting it in earlier would make
+!   the Hessian pass about three times cheaper, but it would force either a
+!   second get_soap pass per step or a one-step-lagged lambda, and neither is
+!   worth it against half a megabyte.
+!
+!   Accumulates rather than assigns, so several dipole descriptors, or several
+!   batches of sites, can add into the same array. Zero it before the first
+!   call.
+!
+!   V and hess come from get_soap_dipole_weights and get_soap_central_hessian.
+!   **********************************************
+
+      implicit none
+
+      real(dp), intent(in) :: V(:, :, :)
+      real(dp), intent(in) :: soap_cart_der(:, :, :)
+      real(dp), intent(in) :: hess(:, :, :, :)
+      integer, intent(in) :: n_neigh(:)
+      integer, intent(in) :: neighbors_list(:)
+      integer, intent(in) :: n_sites0
+      real(dp), intent(inout) :: dmu_dr(:, :, :)
+      integer :: n_sites
+      integer :: n_soap
+      integer :: i
+      integer :: j
+      integer :: k
+      integer :: a
+      integer :: b
+      integer :: j2
+
+      n_soap = size(V, 1)
+      n_sites = size(V, 3)
+
+      k = 0
+      do i = 1, n_sites
+         do j = 1, n_neigh(i)
+            k = k + 1
+!           the atom this pair points at, folded back into the primitive cell
+            j2 = mod(neighbors_list(k) - 1, n_sites0) + 1
+            do b = 1, 3
+               do a = 1, 3
+                  dmu_dr(a, b, j2) = dmu_dr(a, b, j2) &
+                                     + dot_product(V(1:n_soap, a, i), soap_cart_der(b, 1:n_soap, k)) &
+                                     + hess(a, b, 1, k)
+               end do
+            end do
+         end do
+      end do
+
+   end subroutine
+
    subroutine get_2b_energy_and_forces(rjs, xyz, alphas, cutoff, rcut, buffer, delta, sigma, e0, Qs, &
                                        n_neigh, do_forces, do_timing, species, neighbor_species, &
                                        species1, species2, species_types, energies, forces, virial)

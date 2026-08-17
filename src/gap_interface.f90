@@ -35,6 +35,7 @@ module gap_interface
    use read_files
    use local_prop
    use types
+   use mad_ir, only: mad_ir_collect, mad_ir_dmu_dr
 contains
 
 !**************************************************************************
@@ -139,6 +140,12 @@ contains
       real(dp), allocatable :: local_properties_cart_der(:, :)
       real(dp), allocatable :: dipoles(:, :)
       real(dp), allocatable :: energies_dipole(:)
+      real(dp), allocatable :: mad_w(:, :)
+      real(dp), allocatable :: mad_V(:, :, :)
+      real(dp), allocatable :: mad_wv(:, :, :)
+      real(dp), allocatable :: mad_hess(:, :, :, :)
+      real(dp), allocatable :: mad_dmu(:, :, :)
+      logical :: do_mad_here
       real(dp), allocatable :: xyz(:, :)
       real(dp) :: rcut_max
       integer, allocatable :: in_to_out_site(:)
@@ -316,6 +323,13 @@ contains
          soap_cart_der = 0.d0
       end if
 
+!   The central-atom second derivatives have to be asked for BEFORE the
+!   descriptor is built, because get_soap only produces the radial ones when it
+!   is told to. Only a dipole model needs them, and only when a MAD IR bias is
+!   running.
+      do_mad_here = mad_ir_collect .and. is_dipole_model .and. do_derivatives .and. n_sites > 0
+      soap_hessian_enabled = do_mad_here
+
       if (n_sites > 0) then
          call get_soap(n_sites, n_neigh, n_species, species, species_multiplicity, n_atom_pairs, mask, rjs, &
                        thetas, phis, alpha_max, l_max, rcut_hard, rcut_soft, nf, global_scaling, &
@@ -323,6 +337,35 @@ contains
                        amplitude_scaling, radial_enhancement, central_weight, basis, scaling_mode, do_timing, &
                        do_derivatives, compress_soap, compress_P_nonzero, compress_P_i, compress_P_j, &
                        compress_P_el, soap, soap_cart_der)
+      end if
+      soap_hessian_enabled = .false.
+
+!   d(total dipole)/d(atom position) for this batch, accumulated straight into
+!   the run-wide per-atom array. The per-pair blocks are never stored, and
+!   lambda is not needed yet -- it cannot be, since it depends on the total
+!   dipole, which is only known once every batch and every rank has been
+!   summed.
+      if (do_mad_here) then
+         allocate (mad_w(1:n_soap, 1:n_sites))
+         allocate (mad_V(1:n_soap, 1:3, 1:n_sites))
+         allocate (mad_wv(1:n_soap, 1:1, 1:n_sites))
+         allocate (mad_hess(1:3, 1:3, 1:1, 1:n_atom_pairs))
+         allocate (mad_dmu(1:3, 1:3, 1:n_all_sites))
+         call get_soap_dipole_weights(soap, soap_cart_der, delta, zeta, n_neigh, mad_w, mad_V)
+         mad_wv(1:n_soap, 1, 1:n_sites) = mad_w(1:n_soap, 1:n_sites)
+         call get_soap_central_hessian(n_sites, n_neigh, n_atom_pairs, n_species, mask, rjs, &
+                                       thetas, phis, l_max, rcut_hard, atom_sigma_t, &
+                                       atom_sigma_t_scaling, compress_soap, compress_P_nonzero, &
+                                       compress_P_i, compress_P_j, compress_P_el, soap, 1, &
+                                       mad_wv, mad_hess)
+         mad_dmu = 0.d0
+         call accumulate_dmu_dr(mad_V, soap_cart_der, mad_hess, n_neigh, neighbors_list, &
+                                n_all_sites, mad_dmu)
+         do i = 1, n_all_sites
+            i2 = in_to_out_site(i)
+            mad_ir_dmu_dr(1:3, 1:3, i2) = mad_ir_dmu_dr(1:3, 1:3, i2) + mad_dmu(1:3, 1:3, i)
+         end do
+         deallocate (mad_w, mad_V, mad_wv, mad_hess, mad_dmu)
       end if
 
       !###########################################!

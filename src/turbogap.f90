@@ -57,6 +57,7 @@ program turbogap
    use exp_utils
    use exp_interface
    use soap_turbo_functions
+   use mad_ir
 #ifdef _MPIF90
    use mpi
    use mpi_helper
@@ -145,6 +146,14 @@ program turbogap
    real(dp), allocatable :: energies_dipole(:)
    real(dp), allocatable :: this_energies_dipole(:)
    real(dp) :: dipole(1:3)
+!  MAD IR bias. lambda is dL/dmu of the newest configuration; mad_ir_applied
+!  says whether the ensemble was full enough for a force to have been added.
+   real(dp) :: mad_ir_lambda(1:3) = 0.d0
+   real(dp) :: mad_ir_energy = 0.d0
+   real(dp) :: mad_ir_scale = 0.d0
+   logical :: mad_ir_applied = .false.
+   logical :: mad_ir_ok, mad_ir_resumed
+   character(len=512) :: mad_ir_msg
 
    real(dp), allocatable, target :: local_properties(:, :)
    real(dp), allocatable, target :: local_properties_cart_der(:, :, :)
@@ -1200,6 +1209,59 @@ program turbogap
                end if
 
             end if
+!           Decide here, before any descriptor is evaluated, whether this step
+!           contributes a configuration to the IR ensemble: get_soap has to be
+!           told to produce second derivatives before it builds anything, and
+!           gap_interface reads mad_ir_collect to do that.
+            if (params%valid_ir) then
+!              Set up on first use: n_sites is known by now, and doing it here
+!              rather than in the setup phase keeps the sizing next to the
+!              place that consumes it.
+               if (.not. mad_ir_state%active) then
+                  if (.not. params%do_dipole) then
+                     write (*, *) "ERROR: an ir observable needs a dipole model. Add"
+                     write (*, *) "       dipole_model = .true. to one of the soap_turbo blocks."
+                     stop
+                  end if
+                  if (params%soap_radial_legacy_filter) then
+                     write (*, *) "ERROR: an ir observable needs the descriptor second derivatives,"
+                     write (*, *) "       which require soap_radial_legacy_filter = .false."
+                     stop
+                  end if
+                  call mad_ir_setup(params%md_step, params%ir_stride, params%ir_resolution, &
+                                    params%ir_nu_min, params%ir_nu_max, params%ir_lag_factor, &
+                                    params%exp_data(params%ir_idx)%data(1, :), &
+                                    params%exp_data(params%ir_idx)%data(2, :), params%ir_restart_file, &
+                                    params%ir_match_scale, params%ir_nu_power, &
+                                    params%ir_window, n_sites, mad_ir_ok, mad_ir_resumed, mad_ir_msg)
+                  if (.not. mad_ir_ok) then
+                     write (*, *) "ERROR: ", trim(mad_ir_msg)
+                     stop
+                  end if
+                  if (rank == 0) then
+                     write (*, *) '                                       |'
+                     write (*, *) 'MAD IR bias:                           |'
+                     write (*, '(A,F12.4,A)') '  *) sampling interval: ', mad_ir_state%dt, ' fs      |'
+                     write (*, '(A,I12,A)') '  *) longest lag:       ', mad_ir_state%n_lag, '         |'
+                     write (*, '(A,I12,A)') '  *) ensemble size:     ', mad_ir_state%n_window, '         |'
+                     write (*, '(A,F12.4,A)') '  *) resolution:        ', &
+                        CM_PER_INV_FS/(dfloat(mad_ir_state%n_lag)*mad_ir_state%dt), ' cm^-1   |'
+                     write (*, '(A,F12.1,A)') '  *) Nyquist:           ', &
+                        CM_PER_INV_FS/(2.d0*mad_ir_state%dt), ' cm^-1   |'
+                     write (*, '(A,I12,A)') '  *) spectrum points:   ', mad_ir_state%n_freq, '         |'
+                     if (mad_ir_resumed) then
+                        write (*, '(A,I12,A)') '  *) resumed, frames:   ', mad_ir_state%n_stored, '         |'
+                     else
+                        write (*, *) '  *) fresh ensemble; no bias is       |'
+                        write (*, *) '     applied until it is full.        |'
+                        if (len_trim(mad_ir_msg) > 0) write (*, *) '     ', trim(mad_ir_msg)
+                     end if
+                     write (*, *) '.......................................|'
+                  end if
+               end if
+               mad_ir_collect = (md_istep >= 0) .and. (modulo(md_istep, params%ir_stride) == 0)
+               if (mad_ir_collect) mad_ir_dmu_dr = 0.d0
+            end if
             forces = 0.d0
             forces_soap = 0.d0
             forces_2b = 0.d0
@@ -2008,6 +2070,59 @@ program turbogap
          if (params%do_forces) then
             forces = forces_soap + forces_2b + forces_3b + forces_core_pot + forces_vdw
             virial = virial_soap + virial_2b + virial_3b + virial_core_pot + virial_vdw
+
+!           MAD IR bias. The dipole of this configuration joins the ensemble,
+!           the spectrum is compared with the experiment, and the gradient of
+!           the mismatch with respect to THIS configuration is added to the
+!           forces. Nothing is applied until the ensemble is full, because a
+!           partly filled one has a resolution that changes step to step.
+!
+!           No virial: the bias is a function of the dipole, not of the cell,
+!           and a stress from it would be wrong rather than merely missing.
+            if (params%valid_ir .and. mad_ir_collect) then
+#ifdef _MPIF90
+               call time_start(time%mpi)
+!              every rank holds a slice, so a plain sum is the whole reduction;
+!              all-reduce so each rank can form the same lambda and bias its own
+!              atoms without a second broadcast of the forces
+               call mpi_allreduce(MPI_IN_PLACE, mad_ir_dmu_dr, 9*n_sites, &
+                                  MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, ierr)
+               call time_end(time%mpi)
+#endif
+               call mad_ir_push(mad_ir_state, dipole)
+               if (mad_ir_ready(mad_ir_state)) then
+!                 The weight is exp_energy_scales, ramped over the run exactly
+!                 as every other MAD observable's is.
+                  call get_energy_scale(params%do_md, params%do_mc, md_istep, params%md_nsteps, &
+                                        mc_istep, params%mc_nsteps, &
+                                        params%exp_energy_scales_initial(params%ir_idx), &
+                                        params%exp_energy_scales_final(params%ir_idx), mad_ir_scale)
+                  call mad_ir_evaluate(mad_ir_state, mad_ir_scale, mad_ir_energy, mad_ir_lambda)
+!                 The mismatch is an energy like the others, spread over the
+!                 sites; the force is its gradient, and only if exp_forces.
+                  energies_exp = energies_exp + mad_ir_energy/dfloat(n_sites)
+                  if (params%exp_forces) then
+                     call mad_ir_forces(mad_ir_lambda, mad_ir_dmu_dr, forces)
+                  end if
+                  mad_ir_applied = .true.
+               else
+                  mad_ir_energy = 0.d0
+                  mad_ir_applied = .false.
+               end if
+!              Persist the ensemble alongside the trajectory. Losing it costs
+!              n_window samples of unbiased dynamics on the next restart.
+               if (rank == 0 .and. params%write_xyz > 0) then
+                  if (modulo(md_istep, params%write_xyz) == 0 .or. md_istep == params%md_nsteps) then
+                     if (trim(params%ir_restart_file) /= "none") then
+                        call mad_ir_save(mad_ir_state, params%ir_restart_file, mad_ir_ok, mad_ir_msg)
+                        if (.not. mad_ir_ok) write (*, *) "WARNING: ", trim(mad_ir_msg)
+                     end if
+                     if (params%ir_write_spectrum .and. mad_ir_applied) then
+                        call mad_ir_write_calc_spectrum(mad_ir_state, "ir_spectrum.dat")
+                     end if
+                  end if
+               end if
+            end if
 
             if (valid_estat_charges) forces = forces + forces_estat
             if (valid_estat_charges) virial = virial + virial_estat

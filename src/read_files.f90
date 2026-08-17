@@ -966,11 +966,37 @@ contains
          call system("mkdir -p walkers/")
       end if
 
+!   An IR spectrum is a time-series observable: it comes from the dipole
+!   autocorrelation over an ensemble of configurations, not from one frame's
+!   structure. It uses the exp_* keywords -- exp_labels to declare it,
+!   exp_energy_scales for its weight and ramp, exp_forces and exp_energies as
+!   the gates -- but it must not be routed through the per-frame prediction
+!   pipeline below, which exists to turn a single structure into a pair
+!   distribution, a structure factor or a diffraction pattern. If IR is the
+!   only observable, there is nothing for that pipeline to do.
+      params%do_exp_structural = .false.
+      do i = 1, params%n_exp
+         if (trim(params%exp_data(i)%label) /= "ir" .and. &
+             trim(params%exp_data(i)%label) /= "none") params%do_exp_structural = .true.
+      end do
+      if (params%do_exp .and. .not. params%do_exp_structural) then
+         params%do_exp = .false.
+         if (rank == 0 .and. params%valid_ir) then
+            write (*, *) '                                       |'
+            write (*, *) ' IR is the only experimental observable |'
+            write (*, *) ' asked for, so the per-frame prediction |'
+            write (*, *) ' pipeline stays off. exp_energy_scales, |'
+            write (*, *) ' exp_forces and exp_energies still      |'
+            write (*, *) ' apply to it.                           |'
+         end if
+      end if
+
 !   Experimental prediction checks
       if (params%do_exp) then
          if (rank == 0) write (*, *) '                                       |'
          if (rank == 0) write (*, *) ' Experimental prediction mode          |'
          do i = 1, params%n_exp
+            if (trim(params%exp_data(i)%label) == "ir") cycle
             ! check if a user range has been submitted
             write (*, *) '                                       |'
 
@@ -1343,6 +1369,122 @@ contains
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%e0(1:n_species)
          if (rank == 0) call print_parameters("e0", params%e0)
+         !> @kw ir_lag_factor
+         !> Ratio of the stored ensemble length to the longest correlation lag. The
+         !> autocorrelation at lag tau is averaged over n_window - tau pairs, so a factor of 1
+         !> would leave the longest lag estimated from a single pair. 2 or more.
+         !> @modes md
+         !> @see exp_labels exp_energy_scales ir_resolution
+      else if (keyword == 'ir_lag_factor') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_lag_factor
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_lag_factor", params%ir_lag_factor)
+         !> @kw ir_match_scale
+         !> Fit an overall scale factor between the computed and experimental spectra before
+         !> comparing them. The computed spectrum is in arbitrary units, so with this off the
+         !> loss compares two things on different scales and its gradient is meaningless. Turn
+         !> it off only if the experimental spectrum has already been put on the same scale.
+         !> @modes md
+         !> @see exp_labels exp_energy_scales
+      else if (keyword == 'ir_match_scale') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_match_scale
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_match_scale", params%ir_match_scale)
+         !> @kw ir_nu_max
+         !> Highest wavenumber to fit. This is what fixes the sampling interval: nothing above
+         !> the Nyquist limit of the stored series can be represented, and power above it folds
+         !> back into the fitted range, so a combination of ir_stride and md_step that
+         !> cannot reach this value is refused rather than aliased.
+         !> @units cm^-1
+         !> @modes md
+         !> @see exp_labels exp_energy_scales ir_stride
+      else if (keyword == 'ir_nu_max') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_nu_max
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_nu_max", params%ir_nu_max)
+         !> @kw ir_nu_min
+         !> Lowest wavenumber to fit. Experimental points outside [ir_nu_min, ir_nu_max]
+         !> are dropped and take no part in the loss.
+         !> @units cm^-1
+         !> @modes md
+         !> @see exp_labels exp_energy_scales ir_nu_max
+      else if (keyword == 'ir_nu_min') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_nu_min
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_nu_min", params%ir_nu_min)
+         !> @kw ir_nu_power
+         !> Exponent of the wavenumber prefactor in I(nu) = nu^p * FT[C(tau)]. The classical
+         !> lineshape is p = 2; p = 0 compares the bare Fourier transform of the dipole
+         !> autocorrelation instead.
+         !> @modes md
+         !> @see exp_labels exp_energy_scales
+      else if (keyword == 'ir_nu_power') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_nu_power
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_nu_power", params%ir_nu_power)
+         !> @kw ir_resolution
+         !> Frequency resolution wanted, which fixes the longest correlation lag as
+         !> 33356.41/(resolution * dt) with dt the interval between stored configurations. The
+         !> ensemble is ir_lag_factor times that. Asking for fine resolution is expensive in
+         !> memory and in how long the run must go before the first force is applied.
+         !> @units cm^-1
+         !> @modes md
+         !> @see exp_labels exp_energy_scales ir_lag_factor ir_stride
+      else if (keyword == 'ir_resolution') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_resolution
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_resolution", params%ir_resolution)
+         !> @kw ir_restart_file
+         !> Where the dipole history is written and read back. The ensemble is the expensive
+         !> part of a MAD IR run -- resolving 4 cm^-1 at 1 fs sampling is 8 ps of trajectory --
+         !> so without this a restart spends that long refilling before any force is applied. A
+         !> file written with different sizing is refused rather than adopted, since it
+         !> describes a different spectrum.
+         !> @modes md
+         !> @see exp_labels exp_energy_scales
+      else if (keyword == 'ir_restart_file') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_restart_file
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_restart_file", params%ir_restart_file)
+         !> @kw ir_stride
+         !> MD steps between stored configurations. The sampling interval is this times md_step,
+         !> and that interval is what sets the Nyquist limit, so a large stride is what makes
+         !> ir_nu_max unreachable.
+         !> @modes md
+         !> @see exp_labels exp_energy_scales ir_nu_max md_step
+      else if (keyword == 'ir_stride') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_stride
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_stride", params%ir_stride)
+         !> @kw ir_window
+         !> Lag window applied before the cosine transform: "hann" or "none". The
+         !> autocorrelation near the longest lag is averaged over few pairs, and transforming it
+         !> unwindowed puts that noise straight into the spectrum and hence into the force.
+         !> @modes md
+         !> @see exp_labels exp_energy_scales
+      else if (keyword == 'ir_window') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_window
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_window", params%ir_window)
+         !> @kw ir_write_spectrum
+         !> Write the computed spectrum to ir_spectrum.dat whenever the trajectory is
+         !> written, alongside the experimental one, so the fit can be watched as it runs.
+         !> @modes md
+         !> @see exp_labels exp_energy_scales
+      else if (keyword == 'ir_write_spectrum') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_write_spectrum
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_write_spectrum", params%ir_write_spectrum)
          !> @kw masses
          !> Atomic mass of each species, one value per entry in species and in the same order. Read in
          !> amu and converted internally to eV fs^2 / A^2. If absent they are taken from the XYZ file
@@ -1614,6 +1756,20 @@ contains
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%p_tol
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("p_tol", params%p_tol)
+         !> @kw soap_radial_legacy_filter
+         !> Keep the pre-2026 seed of the SOAP radial filter recursion. That seed drops the
+         !> surface term at rcut_hard, which leaves the radial derivatives disagreeing with a
+         !> finite difference of the coefficients by about exp(-nf^2/2) -- 5e-6 relative near
+         !> the hard cutoff for the default nf. Setting this to .false. restores the term, which
+         !> makes the derivatives finite-difference exact and the expansion slightly faster, at
+         !> the cost of moving energies by ~3e-8 relative and forces by ~3e-6 eV/A, so existing
+         !> baselines have to be regenerated. Second radial derivatives require .false.
+         !> @see do_derivatives
+      else if (keyword == 'soap_radial_legacy_filter') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%soap_radial_legacy_filter
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("soap_radial_legacy_filter", params%soap_radial_legacy_filter)
          !> @kw target_pos_step
          !> Displacement the variable time step aims for: the step is rescaled so that the fastest
          !> atom moves about this far. Naming this keyword is what enables the variable time step.
@@ -3265,6 +3421,10 @@ contains
                params%sf_idx = nw
                params%valid_sf = .true.
                if (rank == 0) write (*, *) ' - Valid exp. structure factor found   |'
+            else if (trim(params%exp_data(nw)%label) == "ir") then
+               params%ir_idx = nw
+               params%valid_ir = .true.
+               if (rank == 0) write (*, *) ' - Valid exp. IR spectrum found        |'
             end if
          end do
          !> @kw exp_n_samples
