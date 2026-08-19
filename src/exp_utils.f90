@@ -172,6 +172,17 @@ contains
       real(dp), intent(out) :: escale
       real(dp) :: t
 
+!     total_steps = 0 is a legitimate run: one configuration, forces, no
+!     dynamics. The ramp has no meaning over zero steps, so it is already
+!     finished -- take the final weight. Dividing anyway gives 0/0, and clamp
+!     cannot rescue a NaN because every comparison against one is false, so
+!     the weight came out NaN and every MAD force with it. Silently: NaN
+!     forces reach the trajectory file as the string "NaN" and the run exits 0.
+      if (total_steps <= 0) then
+         escale = escale_final
+         return
+      end if
+
       t = clamp(dfloat(current_step)/dfloat(total_steps), 0.d0, 1.d0)
       escale = (1.d0 - t)*escale_initial + t*escale_final
    end subroutine energy_scale

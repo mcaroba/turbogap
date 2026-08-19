@@ -974,6 +974,11 @@ contains
 !   pipeline below, which exists to turn a single structure into a pair
 !   distribution, a structure factor or a diffraction pattern. If IR is the
 !   only observable, there is nothing for that pipeline to do.
+!   A do_ir run exists to produce a spectrum, so asking for one and getting no
+!   file would be a surprise. write_ir still turns it off for anyone who wants
+!   the ensemble filled and nothing written.
+      if (params%do_ir .and. .not. params%write_ir) params%write_ir = .true.
+
       params%do_exp_structural = .false.
       do i = 1, params%n_exp
          if (trim(params%exp_data(i)%label) /= "ir" .and. &
@@ -1438,8 +1443,39 @@ contains
       else if (keyword == 'ir_resolution') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_resolution
+         params%ir_resolution_set = .true.
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("ir_resolution", params%ir_resolution)
+         !> @kw do_ir
+         !> Predict an IR spectrum from the trajectory. The total dipole is accumulated over the
+         !> whole run and transformed into ir_spectrum.dat, whose header records the sampling
+         !> interval, the Nyquist limit, the resolution and hence the band over which the result
+         !> can be read. Needs a dipole model in the potential file, but no experimental spectrum
+         !> and no exp_* keywords: nothing is fitted and no force is added. Implies write_ir, so
+         !> ir_prediction.dat carries the same spectrum over the whole trajectory. The ensemble is
+         !> the entire run rather than a rolling window, so the resolution follows from md_nsteps
+         !> unless ir_resolution asks for one the run is long enough to give. Naming "ir" in
+         !> exp_labels instead is the other thing -- that biases the trajectory towards an
+         !> experiment.
+         !> @modes md
+         !> @see ir_stride ir_resolution ir_nu_min ir_nu_max ir_lag_factor ir_n_samples exp_labels
+      else if (keyword == 'do_ir') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%do_ir
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("do_ir", params%do_ir)
+         !> @kw ir_n_samples
+         !> Number of points on the predicted spectrum's grid. The default, zero, puts one point
+         !> per resolution element, which is all the transform can carry; a larger number draws the
+         !> same information as a smoother curve. Prediction runs only -- a fit uses the
+         !> experimental grid.
+         !> @modes md
+         !> @see do_ir ir_resolution
+      else if (keyword == 'ir_n_samples') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_n_samples
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_n_samples", params%ir_n_samples)
          !> @kw ir_restart_file
          !> Where the dipole history is written and read back. The ensemble is the expensive
          !> part of a MAD IR run -- resolving 4 cm^-1 at 1 fs sampling is 8 ps of trajectory --
@@ -1465,25 +1501,139 @@ contains
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("ir_stride", params%ir_stride)
          !> @kw ir_window
-         !> Lag window applied before the cosine transform: "hann" or "none". The
-         !> autocorrelation near the longest lag is averaged over few pairs, and transforming it
-         !> unwindowed puts that noise straight into the spectrum and hence into the force.
+         !> Lag window applied to the autocorrelation before the cosine transform:
+         !> "hann" (default), "bartlett", "lorch", "welch" or "none". This is not optional in
+         !> substance -- "none" is a boxcar whose kernel is a sinc, with side lobes at -13.3 dB
+         !> and ringing to -21.7%, which drives an absorption spectrum negative. The choice is
+         !> which taper, not whether. Hann has the lowest far-field leakage of the set (13 dB
+         !> below the next best, because its kernel falls as 1/f^3) and is the only one whose
+         !> main lobe FWHM equals the resolution ir_resolution advertises. Bartlett is the one
+         !> shape whose kernel (Fejer) is non-negative everywhere, so with ir_estimator =
+         !> "biased" it makes a non-negative spectrum a theorem rather than an observation, at
+         !> the cost of 5 dB more leakage. Lorch is sinc(pi tau / n_lag), the same modification
+         !> function exp_utils applies to g(r) under structure_factor_window, offered so the IR
+         !> path can make the approximation the XRD path makes; it buys 13% narrower bands for
+         !> 5 dB more leakage and 1.8x more ringing. "none" is for demonstrating the ringing,
+         !> not for production. See ana/formalism_windows.py for the measured kernels.
          !> @modes md
-         !> @see exp_labels exp_energy_scales
+         !> @see exp_labels exp_energy_scales ir_resolution ir_estimator structure_factor_window
       else if (keyword == 'ir_window') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_window
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("ir_window", params%ir_window)
-         !> @kw ir_write_spectrum
-         !> Write the computed spectrum to ir_spectrum.dat whenever the trajectory is
-         !> written, alongside the experimental one, so the fit can be watched as it runs.
+         !> @kw ir_subtract_mean
+         !> Correlate the dipole FLUCTUATION mu - <mu> rather than mu itself (default .true.).
+         !> Linear response gives the spectrum as the transform of <dM(0).dM(t)> with
+         !> dM = M - <M>; a static dipole does not absorb, and the mean drops out of the
+         !> derivation for that reason. The usual defence for skipping it -- "a constant only
+         !> puts a delta at nu = 0, which the nu^2 prefactor kills" -- is false, because only
+         !> the |<mu>|^2 piece of the un-centred correlation is constant. The cross term is a
+         !> partial sum of a mean-zero series divided by its own length, i.e. a random walk in
+         !> tau whose amplitude GROWS with lag. On a 100-molecule water buffer at 2 fs,
+         !> |<mu>|^2 was 86% of C(0) and past ~300 fs of lag the cross term was 17x the real
+         !> correlation, shifting the spectrum by 19% at the O-H stretch. Set .false. only to
+         !> reproduce results from before this was fixed.
          !> @modes md
-         !> @see exp_labels exp_energy_scales
+         !> @see ir_estimator ir_taper_partial exp_labels
+      else if (keyword == 'ir_subtract_mean') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_subtract_mean
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_subtract_mean", params%ir_subtract_mean)
+         !> @kw ir_estimator
+         !> How the autocorrelation is normalised: "biased" (default) divides C(tau) by N,
+         !> "unbiased" divides by the number of pairs actually averaged, N - tau. The unbiased
+         !> estimator is unbiased and is also not a positive semi-definite sequence, so its
+         !> cosine transform can be negative -- and an absorption spectrum cannot be. The biased
+         !> one IS positive semi-definite: its transform is a periodogram (Percival &
+         !> Walden ch. 6; Numerical Recipes 13.4), at the price of scaling C(tau) by
+         !> (1 - tau/N). Since the lag window already tapers far harder than that, nothing is
+         !> lost. Note that guarantee covers the UNWINDOWED estimate: windowing convolves the
+         !> spectrum with the window kernel, so a kernel that dips negative can still drive the
+         !> result negative. Measured on one trajectory with every other fix on, ir_window =
+         !> "none" gave 124 negative points of 400 while hann, lorch and bartlett gave zero.
+         !> Combine with ir_window = "bartlett", whose Fejer kernel is non-negative everywhere,
+         !> for an unconditional guarantee.
+         !> @modes md
+         !> @see ir_window ir_subtract_mean ir_lag_factor
+      else if (keyword == 'ir_estimator') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_estimator
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_estimator", params%ir_estimator)
+         !> @kw ir_taper_partial
+         !> Rebuild the lag window over the lags actually available while the ensemble is still
+         !> filling (default .true.). Only affects do_ir prediction runs, where the buffer fills
+         !> over the whole trajectory. The window is sized for n_lag, but early on only
+         !> n_stored - 1 lags exist, so with this off the autocorrelation is truncated at a
+         !> point where the window is still near 1 -- a boxcar cut, which convolves the spectrum
+         !> with a sinc and makes it ring. How much it matters depends on ir_estimator: dividing
+         !> C(tau) by N rather than N - tau multiplies it by (1 - tau/N), which is itself a
+         !> triangular taper, so the biased estimator applies an implicit Bartlett window that
+         !> has already fallen to 1/N at the truncation point. Measured with the window sized
+         !> for n_lag = 417 and only 51 frames stored, ir_estimator = unbiased gave 160 negative
+         !> points of 400 and ir_estimator = biased gave 0. With the default biased estimator
+         !> this switch therefore does not change the ringing; what it still buys is a header
+         !> that quotes the resolution the transformed lags actually support, and correct
+         !> behaviour if the unbiased estimator is selected.
+         !> @modes md
+         !> @see do_ir ir_window ir_lag_factor write_xyz
+      else if (keyword == 'ir_taper_partial') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_taper_partial
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_taper_partial", params%ir_taper_partial)
+         !> @kw ir_weight_by_spacing
+         !> Weight each experimental point by the local grid spacing (default .true.), so that
+         !> the loss is an integral over frequency rather than a sum over however the
+         !> experimental file happened to be sampled. The fit grid is the experimental grid --
+         !> interpolating the experiment would invent structure between its points and then fit
+         !> to it -- but experimental grids are rarely uniform. The Downing & Williams water
+         !> data shipped with tests/mad_ir is sampled at 23.9 cm^-1 across the O-H stretch and
+         !> ~55 cm^-1 elsewhere, so 45% of an unweighted loss falls in the top quarter of the
+         !> range: a weighting chosen by whoever digitised the paper, not by the physics.
+         !> Weights are normalised to mean 1, so exp_energy_scales keeps its magnitude.
+         !> @modes md
+         !> @see exp_energy_scales ir_nu_min ir_nu_max exp_data_files
+      else if (keyword == 'ir_weight_by_spacing') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_weight_by_spacing
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_weight_by_spacing", params%ir_weight_by_spacing)
+         !> @kw ir_match_offset
+         !> Fit an additive baseline b alongside the scale s, comparing s*I_calc + b with the
+         !> experiment (default .false.; requires ir_match_scale). Needed when the experimental
+         !> file has had a baseline removed such that its minimum is exactly zero, as
+         !> tests/mad_ir's process_data.py does: the model spectrum is strictly positive, so
+         !> without an offset the residual in the transparency window can never vanish, and a
+         !> quadratic loss responds by shrinking the whole prediction -- fighting the very band
+         !> intensity the bias is trying to build. Both s and b sit at their own least-squares
+         !> optimum, so the gradient picks up no extra term from either.
+         !> CAUTION: the two-parameter solve is unconstrained and can return a NEGATIVE scale
+         !> when the predicted shape does not resemble the experiment -- on this potential,
+         !> whose dipole model produces no vibrational bands, it returned s = -9.7e-9 with
+         !> b = +2.70. Since dL/dI carries a factor of s, that would reverse the bias and drive
+         !> the model away from the bands it is being asked to grow. The code detects s <= 0 and
+         !> falls back to the scale-only fit with b = 0; the header reports the offset actually
+         !> used, so a run that took the fallback is identifiable. If your fits keep falling
+         !> back, the prediction and the experiment disagree in shape, not just in baseline.
+         !> @modes md
+         !> @see ir_match_scale exp_energy_scales exp_data_files
+      else if (keyword == 'ir_match_offset') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_match_offset
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_match_offset", params%ir_match_offset)
+         !> @kw ir_write_spectrum
+         !> The old name for write_ir, kept because inputs use it. Sets write_ir.
+         !> @modes md
+         !> @see write_ir exp_labels exp_energy_scales
       else if (keyword == 'ir_write_spectrum') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_write_spectrum
          call check_iostatus(iostatus, keyword)
+         if (params%ir_write_spectrum) params%write_ir = .true.
          if (rank == 0) call print_parameter("ir_write_spectrum", params%ir_write_spectrum)
          !> @kw masses
          !> Atomic mass of each species, one value per entry in species and in the same order. Read in
@@ -4398,6 +4548,23 @@ contains
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%write_forces
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("write_forces", params%write_forces)
+         !> @kw write_ir
+         !> Write the predicted IR spectrum. ir_spectrum.dat holds the current one, with the
+         !> sampling interval, Nyquist limit, resolution and trustworthy band in its header, and
+         !> with the experiment beside it when there is one. On every write_xyz step a two-column
+         !> block is also appended to ir_prediction.dat, giving the prediction over the whole
+         !> trajectory; the blocks are separated by one blank line, the same format
+         !> xrd_prediction.dat uses, so gnuplot reaches block i with "every :::i::i" rather than
+         !> with "index". A fitting run additionally writes ir_exp.dat, the experiment restricted
+         !> to the fitted range. Needs either do_ir, which implies this switch, or "ir" in
+         !> exp_labels. ir_write_spectrum is the old name for it.
+         !> @modes md
+         !> @see do_ir exp_labels write_xyz ir_stride
+      else if (keyword == 'write_ir') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%write_ir
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("write_ir", params%write_ir)
          !> @kw write_hirshfeld_v
          !> Hirshfeld-volume output switch; the volumes follow the local-property output instead, so
          !> nothing consults it.

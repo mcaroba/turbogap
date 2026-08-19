@@ -35,7 +35,7 @@ module gap_interface
    use read_files
    use local_prop
    use types
-   use mad_ir, only: mad_ir_collect, mad_ir_dmu_dr
+   use mad_ir, only: mad_ir_collect, mad_ir_dmu_dr, mad_ir_need_dmu
 contains
 
 !**************************************************************************
@@ -327,7 +327,8 @@ contains
 !   descriptor is built, because get_soap only produces the radial ones when it
 !   is told to. Only a dipole model needs them, and only when a MAD IR bias is
 !   running.
-      do_mad_here = mad_ir_collect .and. is_dipole_model .and. do_derivatives .and. n_sites > 0
+      do_mad_here = mad_ir_collect .and. mad_ir_need_dmu .and. is_dipole_model &
+                    .and. do_derivatives .and. n_sites > 0
       soap_hessian_enabled = do_mad_here
 
       if (n_sites > 0) then

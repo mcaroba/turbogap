@@ -76,6 +76,10 @@ module timing
       real(dp) :: xrd(3) = 0.0_dp
       real(dp) :: nd(3) = 0.0_dp
       real(dp) :: xps(3) = 0.0_dp
+      !! The MAD IR bias: everything between the dipole arriving and the
+      !! biased forces leaving. The MPI all-reduce that precedes it is charged
+      !! to `mpi`, so this bucket starts after it and the two stay disjoint.
+      real(dp) :: ir(3) = 0.0_dp
       real(dp) :: md(3) = 0.0_dp
       real(dp) :: mc(3) = 0.0_dp
       real(dp) :: mpi(3) = 0.0_dp
@@ -100,6 +104,20 @@ module timing
       real(dp) :: local_prop(3) = 0.0_dp      ! GPU branch
       real(dp) :: soap_solo(3) = 0.0_dp       ! GPU branch, "lolo__soap"
       real(dp) :: soap_lin(3) = 0.0_dp        ! GPU branch, "lin__turbo"
+
+      !----- children of ir: reported, never summed ------------------------
+      !! predict is the autocorrelation, the cosine transform, the loss and
+      !! lambda -- mad_ir_evaluate. forces is the 9*n_atoms contraction of
+      !! lambda with dmu/dr. io is the restart buffer and the spectrum files.
+      !!
+      !! What none of them measure is the descriptor second derivatives that
+      !! produce dmu/dr in the first place: those are built inside get_soap
+      !! and are charged to `soap`, and they are paid on every collected step
+      !! whether or not the ensemble is full yet. So ir_predict rising from
+      !! zero is the cost of the spectrum, not the cost of the bias.
+      real(dp) :: ir_predict(3) = 0.0_dp
+      real(dp) :: ir_forces(3) = 0.0_dp
+      real(dp) :: ir_io(3) = 0.0_dp
 
       !----- GPU-only, nesting not established: never summed --------------
       real(dp) :: batch_alloc(3) = 0.0_dp
@@ -157,6 +175,7 @@ contains
       total = time%setup(3) + time%read_xyz(3) + time%neigh(3) &
               + time%gap(3) + time%vdw(3) + time%estat(3) &
               + time%pdf(3) + time%sf(3) + time%xrd(3) + time%nd(3) + time%xps(3) &
+              + time%ir(3) &
               + time%md(3) + time%mc(3) &
               + time%mpi(3) + time%mpi_positions(3) + time%mpi_ef(3)
    end function sum_times

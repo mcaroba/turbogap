@@ -240,11 +240,11 @@ footer {
 <header class="masthead">
 <p class="eyebrow">TurboGAP &middot; keyword reference</p>
 <h1>Keywords</h1>
-<p class="lede">313 keywords across the input file and the potential (.gap) file. Types and defaults are read out of <code>src/types.f90</code>, and the rest out of the branch in <code>src/read_files.f90</code> that parses the keyword, so nothing here is transcribed by hand.</p>
+<p class="lede">321 keywords across the input file and the potential (.gap) file. Types and defaults are read out of <code>src/types.f90</code>, and the rest out of the branch in <code>src/read_files.f90</code> that parses the keyword, so nothing here is transcribed by hand.</p>
 </header>
 <nav class="rail" aria-label="Groups">
 <p class="railhead">the input file</p>
-<a href="#general"><span>General</span><span class="n">22</span></a>
+<a href="#general"><span>General</span><span class="n">29</span></a>
 <a href="#run-control"><span>Run control</span><span class="n">19</span></a>
 <a href="#molecular-dynamics"><span>Molecular dynamics</span><span class="n">18</span></a>
 <a href="#nested-sampling"><span>Nested sampling</span><span class="n">6</span></a>
@@ -254,7 +254,7 @@ footer {
 <a href="#experimental-data-mad"><span>Experimental data (MAD)</span><span class="n">53</span></a>
 <a href="#electronic-stopping-and-eph"><span>Electronic stopping and EPH</span><span class="n">32</span></a>
 <a href="#local-properties"><span>Local properties</span><span class="n">5</span></a>
-<a href="#output"><span>Output</span><span class="n">19</span></a>
+<a href="#output"><span>Output</span><span class="n">20</span></a>
 <a href="#gpu"><span>GPU</span><span class="n">5</span></a>
 <p class="railhead">the potential (.gap) file</p>
 <a href="#soap-turbo"><span>soap_turbo</span><span class="n">40</span></a>
@@ -289,6 +289,15 @@ footer {
 <td class="de">Path to the extended-XYZ file holding the atomic configuration, or the trajectory of configurations to loop over in predict mode. Required.</td>
 <td class="dp"></td>
 </tr>
+<tr data-h="do_ir predict an ir spectrum from the trajectory. the total dipole is accumulated over the whole run and transformed into ir_spectrum.dat, whose header records the sampling interval, the nyquist limit, the resolution and hence the band over which the result can be read. needs a dipole model in the potential file, but no experimental spectrum and no exp_* keywords: nothing is fitted and no force is added. implies write_ir, so ir_prediction.dat carries the same spectrum over the whole trajectory. the ensemble is the entire run rather than a rolling window, so the resolution follows from md_nsteps unless ir_resolution asks for one the run is long enough to give. naming &quot;ir&quot; in exp_labels instead is the other thing -- that biases the trajectory towards an experiment." data-m="md">
+<td class="kw"><code>do_ir</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">Predict an IR spectrum from the trajectory. The total dipole is accumulated over the whole run and transformed into ir_spectrum.dat, whose header records the sampling interval, the Nyquist limit, the resolution and hence the band over which the result can be read. Needs a dipole model in the potential file, but no experimental spectrum and no exp_* keywords: nothing is fitted and no force is added. Implies write_ir, so ir_prediction.dat carries the same spectrum over the whole trajectory. The ensemble is the entire run rather than a rolling window, so the resolution follows from md_nsteps unless ir_resolution asks for one the run is long enough to give. Naming &quot;ir&quot; in exp_labels instead is the other thing -- that biases the trajectory towards an experiment.</td>
+<td class="dp"><span class="dep">see <code>ir_stride</code></span><span class="dep">see <code>ir_resolution</code></span><span class="dep">see <code>ir_nu_min</code></span><span class="dep">see <code>ir_nu_max</code></span><span class="dep">see <code>ir_lag_factor</code></span><span class="dep">see <code>ir_n_samples</code></span><span class="dep">see <code>exp_labels</code></span></td>
+</tr>
 <tr data-h="e0 constant energy offset per species, added to every atom of that species. one value per entry in species, in the same order. the gap predicts energies relative to these, so they set the zero of the energy scale." data-m="predict md mc soap">
 <td class="kw"><code>e0</code></td>
 <td class="ty">real list</td>
@@ -297,6 +306,15 @@ footer {
 <td class="mo">all</td>
 <td class="de">Constant energy offset per species, added to every atom of that species. One value per entry in species, in the same order. The GAP predicts energies relative to these, so they set the zero of the energy scale.</td>
 <td class="dp"></td>
+</tr>
+<tr data-h="ir_estimator how the autocorrelation is normalised: &quot;biased&quot; (default) divides c(tau) by n, &quot;unbiased&quot; divides by the number of pairs actually averaged, n - tau. the unbiased estimator is unbiased and is also not a positive semi-definite sequence, so its cosine transform can be negative -- and an absorption spectrum cannot be. the biased one is positive semi-definite: its transform is a periodogram (percival &amp; walden ch. 6; numerical recipes 13.4), at the price of scaling c(tau) by (1 - tau/n). since the lag window already tapers far harder than that, nothing is lost. note that guarantee covers the unwindowed estimate: windowing convolves the spectrum with the window kernel, so a kernel that dips negative can still drive the result negative. measured on one trajectory with every other fix on, ir_window = &quot;none&quot; gave 124 negative points of 400 while hann, lorch and bartlett gave zero. combine with ir_window = &quot;bartlett&quot;, whose fejer kernel is non-negative everywhere, for an unconditional guarantee." data-m="md">
+<td class="kw"><code>ir_estimator</code></td>
+<td class="ty">string</td>
+<td class="df"><code>biased</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">How the autocorrelation is normalised: &quot;biased&quot; (default) divides C(tau) by N, &quot;unbiased&quot; divides by the number of pairs actually averaged, N - tau. The unbiased estimator is unbiased and is also not a positive semi-definite sequence, so its cosine transform can be negative -- and an absorption spectrum cannot be. The biased one IS positive semi-definite: its transform is a periodogram (Percival &amp; Walden ch. 6; Numerical Recipes 13.4), at the price of scaling C(tau) by (1 - tau/N). Since the lag window already tapers far harder than that, nothing is lost. Note that guarantee covers the UNWINDOWED estimate: windowing convolves the spectrum with the window kernel, so a kernel that dips negative can still drive the result negative. Measured on one trajectory with every other fix on, ir_window = &quot;none&quot; gave 124 negative points of 400 while hann, lorch and bartlett gave zero. Combine with ir_window = &quot;bartlett&quot;, whose Fejer kernel is non-negative everywhere, for an unconditional guarantee.</td>
+<td class="dp"><span class="dep">see <code>ir_window</code></span><span class="dep">see <code>ir_subtract_mean</code></span><span class="dep">see <code>ir_lag_factor</code></span></td>
 </tr>
 <tr data-h="ir_lag_factor ratio of the stored ensemble length to the longest correlation lag. the autocorrelation at lag tau is averaged over n_window - tau pairs, so a factor of 1 would leave the longest lag estimated from a single pair. 2 or more." data-m="md">
 <td class="kw"><code>ir_lag_factor</code></td>
@@ -307,6 +325,15 @@ footer {
 <td class="de">Ratio of the stored ensemble length to the longest correlation lag. The autocorrelation at lag tau is averaged over n_window - tau pairs, so a factor of 1 would leave the longest lag estimated from a single pair. 2 or more.</td>
 <td class="dp"><span class="dep">see <code>exp_labels</code></span><span class="dep">see <code>exp_energy_scales</code></span><span class="dep">see <code>ir_resolution</code></span></td>
 </tr>
+<tr data-h="ir_match_offset fit an additive baseline b alongside the scale s, comparing s*i_calc + b with the experiment (default .false.; requires ir_match_scale). needed when the experimental file has had a baseline removed such that its minimum is exactly zero, as tests/mad_ir&#x27;s process_data.py does: the model spectrum is strictly positive, so without an offset the residual in the transparency window can never vanish, and a quadratic loss responds by shrinking the whole prediction -- fighting the very band intensity the bias is trying to build. both s and b sit at their own least-squares optimum, so the gradient picks up no extra term from either. caution: the two-parameter solve is unconstrained and can return a negative scale when the predicted shape does not resemble the experiment -- on this potential, whose dipole model produces no vibrational bands, it returned s = -9.7e-9 with b = +2.70. since dl/di carries a factor of s, that would reverse the bias and drive the model away from the bands it is being asked to grow. the code detects s &lt;= 0 and falls back to the scale-only fit with b = 0; the header reports the offset actually used, so a run that took the fallback is identifiable. if your fits keep falling back, the prediction and the experiment disagree in shape, not just in baseline." data-m="md">
+<td class="kw"><code>ir_match_offset</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">Fit an additive baseline b alongside the scale s, comparing s*I_calc + b with the experiment (default .false.; requires ir_match_scale). Needed when the experimental file has had a baseline removed such that its minimum is exactly zero, as tests/mad_ir&#x27;s process_data.py does: the model spectrum is strictly positive, so without an offset the residual in the transparency window can never vanish, and a quadratic loss responds by shrinking the whole prediction -- fighting the very band intensity the bias is trying to build. Both s and b sit at their own least-squares optimum, so the gradient picks up no extra term from either. CAUTION: the two-parameter solve is unconstrained and can return a NEGATIVE scale when the predicted shape does not resemble the experiment -- on this potential, whose dipole model produces no vibrational bands, it returned s = -9.7e-9 with b = +2.70. Since dL/dI carries a factor of s, that would reverse the bias and drive the model away from the bands it is being asked to grow. The code detects s &lt;= 0 and falls back to the scale-only fit with b = 0; the header reports the offset actually used, so a run that took the fallback is identifiable. If your fits keep falling back, the prediction and the experiment disagree in shape, not just in baseline.</td>
+<td class="dp"><span class="dep">see <code>ir_match_scale</code></span><span class="dep">see <code>exp_energy_scales</code></span><span class="dep">see <code>exp_data_files</code></span></td>
+</tr>
 <tr data-h="ir_match_scale fit an overall scale factor between the computed and experimental spectra before comparing them. the computed spectrum is in arbitrary units, so with this off the loss compares two things on different scales and its gradient is meaningless. turn it off only if the experimental spectrum has already been put on the same scale." data-m="md">
 <td class="kw"><code>ir_match_scale</code></td>
 <td class="ty">logical</td>
@@ -315,6 +342,15 @@ footer {
 <td class="mo">md</td>
 <td class="de">Fit an overall scale factor between the computed and experimental spectra before comparing them. The computed spectrum is in arbitrary units, so with this off the loss compares two things on different scales and its gradient is meaningless. Turn it off only if the experimental spectrum has already been put on the same scale.</td>
 <td class="dp"><span class="dep">see <code>exp_labels</code></span><span class="dep">see <code>exp_energy_scales</code></span></td>
+</tr>
+<tr data-h="ir_n_samples number of points on the predicted spectrum&#x27;s grid. the default, zero, puts one point per resolution element, which is all the transform can carry; a larger number draws the same information as a smoother curve. prediction runs only -- a fit uses the experimental grid." data-m="md">
+<td class="kw"><code>ir_n_samples</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>0</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">Number of points on the predicted spectrum&#x27;s grid. The default, zero, puts one point per resolution element, which is all the transform can carry; a larger number draws the same information as a smoother curve. Prediction runs only -- a fit uses the experimental grid.</td>
+<td class="dp"><span class="dep">see <code>do_ir</code></span><span class="dep">see <code>ir_resolution</code></span></td>
 </tr>
 <tr data-h="ir_nu_max highest wavenumber to fit. this is what fixes the sampling interval: nothing above the nyquist limit of the stored series can be represented, and power above it folds back into the fitted range, so a combination of ir_stride and md_step that cannot reach this value is refused rather than aliased." data-m="md">
 <td class="kw"><code>ir_nu_max</code></td>
@@ -350,7 +386,7 @@ footer {
 <td class="un">cm^-1</td>
 <td class="mo">md</td>
 <td class="de">Frequency resolution wanted, which fixes the longest correlation lag as 33356.41/(resolution * dt) with dt the interval between stored configurations. The ensemble is ir_lag_factor times that. Asking for fine resolution is expensive in memory and in how long the run must go before the first force is applied.</td>
-<td class="dp"><span class="dep">see <code>exp_labels</code></span><span class="dep">see <code>exp_energy_scales</code></span><span class="dep">see <code>ir_lag_factor</code></span><span class="dep">see <code>ir_stride</code></span></td>
+<td class="dp"><span class="dep">sets <code>ir_resolution_set</code></span><span class="dep">see <code>exp_labels</code></span><span class="dep">see <code>exp_energy_scales</code></span><span class="dep">see <code>ir_lag_factor</code></span><span class="dep">see <code>ir_stride</code></span></td>
 </tr>
 <tr data-h="ir_restart_file where the dipole history is written and read back. the ensemble is the expensive part of a mad ir run -- resolving 4 cm^-1 at 1 fs sampling is 8 ps of trajectory -- so without this a restart spends that long refilling before any force is applied. a file written with different sizing is refused rather than adopted, since it describes a different spectrum." data-m="md">
 <td class="kw"><code>ir_restart_file</code></td>
@@ -370,23 +406,50 @@ footer {
 <td class="de">MD steps between stored configurations. The sampling interval is this times md_step, and that interval is what sets the Nyquist limit, so a large stride is what makes ir_nu_max unreachable.</td>
 <td class="dp"><span class="dep">see <code>exp_labels</code></span><span class="dep">see <code>exp_energy_scales</code></span><span class="dep">see <code>ir_nu_max</code></span><span class="dep">see <code>md_step</code></span></td>
 </tr>
-<tr data-h="ir_window lag window applied before the cosine transform: &quot;hann&quot; or &quot;none&quot;. the autocorrelation near the longest lag is averaged over few pairs, and transforming it unwindowed puts that noise straight into the spectrum and hence into the force." data-m="md">
+<tr data-h="ir_subtract_mean correlate the dipole fluctuation mu - &lt;mu&gt; rather than mu itself (default .true.). linear response gives the spectrum as the transform of &lt;dm(0).dm(t)&gt; with dm = m - &lt;m&gt;; a static dipole does not absorb, and the mean drops out of the derivation for that reason. the usual defence for skipping it -- &quot;a constant only puts a delta at nu = 0, which the nu^2 prefactor kills&quot; -- is false, because only the |&lt;mu&gt;|^2 piece of the un-centred correlation is constant. the cross term is a partial sum of a mean-zero series divided by its own length, i.e. a random walk in tau whose amplitude grows with lag. on a 100-molecule water buffer at 2 fs, |&lt;mu&gt;|^2 was 86% of c(0) and past ~300 fs of lag the cross term was 17x the real correlation, shifting the spectrum by 19% at the o-h stretch. set .false. only to reproduce results from before this was fixed." data-m="md">
+<td class="kw"><code>ir_subtract_mean</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>true</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">Correlate the dipole FLUCTUATION mu - &lt;mu&gt; rather than mu itself (default .true.). Linear response gives the spectrum as the transform of &lt;dM(0).dM(t)&gt; with dM = M - &lt;M&gt;; a static dipole does not absorb, and the mean drops out of the derivation for that reason. The usual defence for skipping it -- &quot;a constant only puts a delta at nu = 0, which the nu^2 prefactor kills&quot; -- is false, because only the |&lt;mu&gt;|^2 piece of the un-centred correlation is constant. The cross term is a partial sum of a mean-zero series divided by its own length, i.e. a random walk in tau whose amplitude GROWS with lag. On a 100-molecule water buffer at 2 fs, |&lt;mu&gt;|^2 was 86% of C(0) and past ~300 fs of lag the cross term was 17x the real correlation, shifting the spectrum by 19% at the O-H stretch. Set .false. only to reproduce results from before this was fixed.</td>
+<td class="dp"><span class="dep">see <code>ir_estimator</code></span><span class="dep">see <code>ir_taper_partial</code></span><span class="dep">see <code>exp_labels</code></span></td>
+</tr>
+<tr data-h="ir_taper_partial rebuild the lag window over the lags actually available while the ensemble is still filling (default .true.). only affects do_ir prediction runs, where the buffer fills over the whole trajectory. the window is sized for n_lag, but early on only n_stored - 1 lags exist, so with this off the autocorrelation is truncated at a point where the window is still near 1 -- a boxcar cut, which convolves the spectrum with a sinc and makes it ring. how much it matters depends on ir_estimator: dividing c(tau) by n rather than n - tau multiplies it by (1 - tau/n), which is itself a triangular taper, so the biased estimator applies an implicit bartlett window that has already fallen to 1/n at the truncation point. measured with the window sized for n_lag = 417 and only 51 frames stored, ir_estimator = unbiased gave 160 negative points of 400 and ir_estimator = biased gave 0. with the default biased estimator this switch therefore does not change the ringing; what it still buys is a header that quotes the resolution the transformed lags actually support, and correct behaviour if the unbiased estimator is selected." data-m="md">
+<td class="kw"><code>ir_taper_partial</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>true</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">Rebuild the lag window over the lags actually available while the ensemble is still filling (default .true.). Only affects do_ir prediction runs, where the buffer fills over the whole trajectory. The window is sized for n_lag, but early on only n_stored - 1 lags exist, so with this off the autocorrelation is truncated at a point where the window is still near 1 -- a boxcar cut, which convolves the spectrum with a sinc and makes it ring. How much it matters depends on ir_estimator: dividing C(tau) by N rather than N - tau multiplies it by (1 - tau/N), which is itself a triangular taper, so the biased estimator applies an implicit Bartlett window that has already fallen to 1/N at the truncation point. Measured with the window sized for n_lag = 417 and only 51 frames stored, ir_estimator = unbiased gave 160 negative points of 400 and ir_estimator = biased gave 0. With the default biased estimator this switch therefore does not change the ringing; what it still buys is a header that quotes the resolution the transformed lags actually support, and correct behaviour if the unbiased estimator is selected.</td>
+<td class="dp"><span class="dep">see <code>do_ir</code></span><span class="dep">see <code>ir_window</code></span><span class="dep">see <code>ir_lag_factor</code></span><span class="dep">see <code>write_xyz</code></span></td>
+</tr>
+<tr data-h="ir_weight_by_spacing weight each experimental point by the local grid spacing (default .true.), so that the loss is an integral over frequency rather than a sum over however the experimental file happened to be sampled. the fit grid is the experimental grid -- interpolating the experiment would invent structure between its points and then fit to it -- but experimental grids are rarely uniform. the downing &amp; williams water data shipped with tests/mad_ir is sampled at 23.9 cm^-1 across the o-h stretch and ~55 cm^-1 elsewhere, so 45% of an unweighted loss falls in the top quarter of the range: a weighting chosen by whoever digitised the paper, not by the physics. weights are normalised to mean 1, so exp_energy_scales keeps its magnitude." data-m="md">
+<td class="kw"><code>ir_weight_by_spacing</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>true</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">Weight each experimental point by the local grid spacing (default .true.), so that the loss is an integral over frequency rather than a sum over however the experimental file happened to be sampled. The fit grid is the experimental grid -- interpolating the experiment would invent structure between its points and then fit to it -- but experimental grids are rarely uniform. The Downing &amp; Williams water data shipped with tests/mad_ir is sampled at 23.9 cm^-1 across the O-H stretch and ~55 cm^-1 elsewhere, so 45% of an unweighted loss falls in the top quarter of the range: a weighting chosen by whoever digitised the paper, not by the physics. Weights are normalised to mean 1, so exp_energy_scales keeps its magnitude.</td>
+<td class="dp"><span class="dep">see <code>exp_energy_scales</code></span><span class="dep">see <code>ir_nu_min</code></span><span class="dep">see <code>ir_nu_max</code></span><span class="dep">see <code>exp_data_files</code></span></td>
+</tr>
+<tr data-h="ir_window lag window applied to the autocorrelation before the cosine transform: &quot;hann&quot; (default), &quot;bartlett&quot;, &quot;lorch&quot;, &quot;welch&quot; or &quot;none&quot;. this is not optional in substance -- &quot;none&quot; is a boxcar whose kernel is a sinc, with side lobes at -13.3 db and ringing to -21.7%, which drives an absorption spectrum negative. the choice is which taper, not whether. hann has the lowest far-field leakage of the set (13 db below the next best, because its kernel falls as 1/f^3) and is the only one whose main lobe fwhm equals the resolution ir_resolution advertises. bartlett is the one shape whose kernel (fejer) is non-negative everywhere, so with ir_estimator = &quot;biased&quot; it makes a non-negative spectrum a theorem rather than an observation, at the cost of 5 db more leakage. lorch is sinc(pi tau / n_lag), the same modification function exp_utils applies to g(r) under structure_factor_window, offered so the ir path can make the approximation the xrd path makes; it buys 13% narrower bands for 5 db more leakage and 1.8x more ringing. &quot;none&quot; is for demonstrating the ringing, not for production. see ana/formalism_windows.py for the measured kernels." data-m="md">
 <td class="kw"><code>ir_window</code></td>
 <td class="ty">string</td>
 <td class="df"><code>hann</code></td>
 <td class="un"></td>
 <td class="mo">md</td>
-<td class="de">Lag window applied before the cosine transform: &quot;hann&quot; or &quot;none&quot;. The autocorrelation near the longest lag is averaged over few pairs, and transforming it unwindowed puts that noise straight into the spectrum and hence into the force.</td>
-<td class="dp"><span class="dep">see <code>exp_labels</code></span><span class="dep">see <code>exp_energy_scales</code></span></td>
+<td class="de">Lag window applied to the autocorrelation before the cosine transform: &quot;hann&quot; (default), &quot;bartlett&quot;, &quot;lorch&quot;, &quot;welch&quot; or &quot;none&quot;. This is not optional in substance -- &quot;none&quot; is a boxcar whose kernel is a sinc, with side lobes at -13.3 dB and ringing to -21.7%, which drives an absorption spectrum negative. The choice is which taper, not whether. Hann has the lowest far-field leakage of the set (13 dB below the next best, because its kernel falls as 1/f^3) and is the only one whose main lobe FWHM equals the resolution ir_resolution advertises. Bartlett is the one shape whose kernel (Fejer) is non-negative everywhere, so with ir_estimator = &quot;biased&quot; it makes a non-negative spectrum a theorem rather than an observation, at the cost of 5 dB more leakage. Lorch is sinc(pi tau / n_lag), the same modification function exp_utils applies to g(r) under structure_factor_window, offered so the IR path can make the approximation the XRD path makes; it buys 13% narrower bands for 5 dB more leakage and 1.8x more ringing. &quot;none&quot; is for demonstrating the ringing, not for production. See ana/formalism_windows.py for the measured kernels.</td>
+<td class="dp"><span class="dep">see <code>exp_labels</code></span><span class="dep">see <code>exp_energy_scales</code></span><span class="dep">see <code>ir_resolution</code></span><span class="dep">see <code>ir_estimator</code></span><span class="dep">see <code>structure_factor_window</code></span></td>
 </tr>
-<tr data-h="ir_write_spectrum write the computed spectrum to ir_spectrum.dat whenever the trajectory is written, alongside the experimental one, so the fit can be watched as it runs." data-m="md">
+<tr data-h="ir_write_spectrum the old name for write_ir, kept because inputs use it. sets write_ir." data-m="md">
 <td class="kw"><code>ir_write_spectrum</code></td>
 <td class="ty">logical</td>
 <td class="df"><code>false</code></td>
 <td class="un"></td>
 <td class="mo">md</td>
-<td class="de">Write the computed spectrum to ir_spectrum.dat whenever the trajectory is written, alongside the experimental one, so the fit can be watched as it runs.</td>
-<td class="dp"><span class="dep">see <code>exp_labels</code></span><span class="dep">see <code>exp_energy_scales</code></span></td>
+<td class="de">The old name for write_ir, kept because inputs use it. Sets write_ir.</td>
+<td class="dp"><span class="dep">sets <code>write_ir</code></span><span class="dep">see <code>write_ir</code></span><span class="dep">see <code>exp_labels</code></span><span class="dep">see <code>exp_energy_scales</code></span></td>
 </tr>
 <tr data-h="masses atomic mass of each species, one value per entry in species and in the same order. read in amu and converted internally to ev fs^2 / a^2. if absent they are taken from the xyz file instead." data-m="predict md mc soap">
 <td class="kw"><code>masses</code></td>
@@ -2444,6 +2507,15 @@ footer {
 <td class="mo">all</td>
 <td class="de"><span class="tag">ignored</span>Hirshfeld-volume output switch; the volumes follow the local-property output instead, so nothing consults it.</td>
 <td class="dp"><span class="dep">see <code>write_local_properties</code></span></td>
+</tr>
+<tr data-h="write_ir write the predicted ir spectrum. ir_spectrum.dat holds the current one, with the sampling interval, nyquist limit, resolution and trustworthy band in its header, and with the experiment beside it when there is one. on every write_xyz step a two-column block is also appended to ir_prediction.dat, giving the prediction over the whole trajectory; the blocks are separated by one blank line, the same format xrd_prediction.dat uses, so gnuplot reaches block i with &quot;every :::i::i&quot; rather than with &quot;index&quot;. a fitting run additionally writes ir_exp.dat, the experiment restricted to the fitted range. needs either do_ir, which implies this switch, or &quot;ir&quot; in exp_labels. ir_write_spectrum is the old name for it." data-m="md">
+<td class="kw"><code>write_ir</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">Write the predicted IR spectrum. ir_spectrum.dat holds the current one, with the sampling interval, Nyquist limit, resolution and trustworthy band in its header, and with the experiment beside it when there is one. On every write_xyz step a two-column block is also appended to ir_prediction.dat, giving the prediction over the whole trajectory; the blocks are separated by one blank line, the same format xrd_prediction.dat uses, so gnuplot reaches block i with &quot;every :::i::i&quot; rather than with &quot;index&quot;. A fitting run additionally writes ir_exp.dat, the experiment restricted to the fitted range. Needs either do_ir, which implies this switch, or &quot;ir&quot; in exp_labels. ir_write_spectrum is the old name for it.</td>
+<td class="dp"><span class="dep">see <code>do_ir</code></span><span class="dep">see <code>exp_labels</code></span><span class="dep">see <code>write_xyz</code></span><span class="dep">see <code>ir_stride</code></span></td>
 </tr>
 <tr data-h="write_local_energies include the per-atom energy decomposition as a column in the xyz output." data-m="predict md mc soap">
 <td class="kw"><code>write_local_energies</code></td>

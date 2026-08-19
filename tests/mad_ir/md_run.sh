@@ -28,22 +28,30 @@ CASE="${2:-$HOME/work/cpu_vs_gpu_tests/input/water_dipole}"
 BIN="$ROOT/bin/turbogap"
 D="${TMPDIR:-/tmp}/mad_ir_md_$$"
 
-[ -x "$BIN" ] || { echo "no binary at $BIN; run make first" >&2; exit 1; }
-[ -d "$CASE/gap_files" ] || { echo "SKIP: no dipole case at $CASE" >&2; exit 0; }
+[ -x "$BIN" ] || {
+  echo "no binary at $BIN; run make first" >&2
+  exit 1
+}
+[ -d "$CASE/gap_files" ] || {
+  echo "SKIP: no dipole case at $CASE" >&2
+  exit 0
+}
 
 fail=0
-check () { # name  expected-substring  file
+check() { # name  expected-substring  file
   if grep -qF "$2" "$3"; then
     echo "  PASS  $1"
   else
     echo "  FAIL  $1  (expected to find: $2)"
-    fail=$((fail+1))
+    fail=$((fail + 1))
   fi
 }
 
-rm -rf "$D"; mkdir -p "$D"; cd "$D"
+rm -rf "$D"
+mkdir -p "$D"
+cd "$D"
 cp -rL "$CASE/gap_files" .
-head -8 "$CASE"/*_test.xyz > atoms.xyz
+head -8 "$CASE"/*_test.xyz >atoms.xyz
 
 # A synthetic experimental spectrum. Its shape is irrelevant to the wiring;
 # what matters is that it is read, restricted to the fitted range, and used.
@@ -59,8 +67,8 @@ with open("ir_exp.dat","w") as f:
         nu += 2.0
 PY
 
-write_input () {
-cat > input <<EOF
+write_input() {
+  cat >input <<EOF
 atoms_file = "atoms.xyz"
 pot_file = "${1:-gap_files/water_dipole.gap}"
 n_species = 2
@@ -97,11 +105,17 @@ EOF
 
 echo "==> 1/2/3. sizing, onset and momentum"
 write_input
-"$BIN" md > run1.log 2>&1
+"$BIN" md >run1.log 2>&1
 check "ensemble sized from the keywords" "ensemble size:               24" run1.log
-check "fresh ensemble reported"          "fresh ensemble"                 run1.log
-[ -f ir_restart.dat ] || { echo "  FAIL  restart file not written"; fail=$((fail+1)); }
-[ -f ir_spectrum.dat ] || { echo "  FAIL  spectrum file not written"; fail=$((fail+1)); }
+check "fresh ensemble reported" "fresh ensemble" run1.log
+[ -f ir_restart.dat ] || {
+  echo "  FAIL  restart file not written"
+  fail=$((fail + 1))
+}
+[ -f ir_spectrum.dat ] || {
+  echo "  FAIL  spectrum file not written"
+  fail=$((fail + 1))
+}
 
 python3 - <<'PY'
 import re, sys
@@ -142,42 +156,43 @@ print("  %s  momentum conserved (max|sum f| = %.3e; trajectory prints %d decimal
 ok &= good
 sys.exit(0 if ok else 1)
 PY
-[ $? -eq 0 ] || fail=$((fail+1))
+[ $? -eq 0 ] || fail=$((fail + 1))
 
 echo "==> 4. restart resumes"
 write_input gap_files/water_dipole.gap .false. 3
-"$BIN" md > run2.log 2>&1
+"$BIN" md >run2.log 2>&1
 check "history resumed" "resumed, frames:             24" run2.log
 
 echo "==> 5. restart with different sizing refused"
 write_input gap_files/water_dipole.gap .false. 3 ir_exp.dat 1 1500.0
-"$BIN" md > run3.log 2>&1
+"$BIN" md >run3.log 2>&1
 check "sizing mismatch refused" "restart was written for" run3.log
 check "fresh ensemble started instead" "fresh ensemble" run3.log
 
 echo "==> 6. input guards"
 write_input gap_files/water_dipole.gap .true. 3
-"$BIN" md > run4.log 2>&1
+"$BIN" md >run4.log 2>&1
 check "legacy filter seed refused" "soap_radial_legacy_filter = .false." run4.log
 
 write_input gap_files/water_dipole.gap .false. 3 nope.dat
-"$BIN" md > run5.log 2>&1
+"$BIN" md >run5.log 2>&1
 check "missing spectrum refused" "nope.dat" run5.log
 
 write_input gap_files/water_dipole.gap .false. 3 ir_exp.dat 8
-"$BIN" md > run6.log 2>&1
+"$BIN" md >run6.log 2>&1
 check "coarse sampling refused" "sample more often" run6.log
 
 cp -r gap_files gap_nodip
 sed -i "s/dipole_model *= *\.true\./dipole_model = .false./" gap_nodip/water_dipole.gap
 write_input gap_nodip/water_dipole.gap .false. 3
-"$BIN" md > run7.log 2>&1
+"$BIN" md >run7.log 2>&1
 check "missing dipole model refused" "needs a dipole model" run7.log
 
 echo
 if [ "$fail" -eq 0 ]; then
   echo "==> all MAD IR MD checks passed"
-  cd /; rm -rf "$D"
+  cd /
+  rm -rf "$D"
   exit 0
 else
   echo "==> $fail MAD IR MD check(s) FAILED; working directory kept at $D"

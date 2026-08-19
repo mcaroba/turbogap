@@ -154,6 +154,25 @@ program turbogap
    logical :: mad_ir_applied = .false.
    logical :: mad_ir_ok, mad_ir_resumed
    character(len=512) :: mad_ir_msg
+!  Has anything been appended to ir_prediction.dat yet? The first block cannot
+!  be identified by its step number the way the per-frame observables' can --
+!  it appears whenever the ensemble first fills, which is not step zero -- and
+!  appending to a file that does not exist is a runtime error, so the flag is
+!  carried rather than derived.
+   logical :: mad_ir_wrote_prediction = .false.
+!  What the bias costs. The ensemble fills partway into the run, so the same
+!  run measures both sides of the question: mad_ir_t_pre accumulates the
+!  wall-clock of the steps before the first spectrum and mad_ir_t_post that of
+!  the steps after, and their per-step means are directly comparable because
+!  nothing else about the step changes at that boundary.
+   real(dp) :: mad_ir_t_first = -1.d0
+   integer :: mad_ir_step_first = -1
+   real(dp) :: mad_ir_t_pre = 0.d0, mad_ir_t_post = 0.d0
+   integer :: mad_ir_n_pre = 0, mad_ir_n_post = 0
+   real(dp) :: mad_ir_step_beg = 0.d0, mad_ir_t_now = 0.d0
+   real(dp) :: mad_ir_rate_pre, mad_ir_rate_post
+   real(dp) :: mad_ir_res_ask
+   logical :: mad_ir_have_spectrum = .false.
 
    real(dp), allocatable, target :: local_properties(:, :)
    real(dp), allocatable, target :: local_properties_cart_der(:, :, :)
@@ -187,6 +206,7 @@ program turbogap
    real(dp) :: energy_exp
    integer, allocatable :: mc_id(:)
    integer :: update_bar
+   integer :: bar_frac = 0
    integer :: gd_istep = 0
    logical, allocatable :: do_list(:)
    logical, allocatable :: has_local_properties_mpi(:)
@@ -674,6 +694,11 @@ program turbogap
              .or. (params%do_mc .and. mc_istep < params%mc_nsteps))
       exit_loop = .false.
 
+!     One stamp per iteration, so that the cost of a step with the IR bias
+!     active can be compared with the cost of one without. Closed at the
+!     bottom of the loop.
+      if (params%valid_ir) call get_time(mad_ir_step_beg)
+
       if (params%do_mc) then
          mc_istep = mc_istep + 1
          ! Undo if the step is md related
@@ -688,6 +713,14 @@ program turbogap
       end if
 
       !   Update progress bar
+      !
+      !   md_nsteps = 0 is a legitimate input -- one configuration, forces, no
+      !   dynamics -- and the bar divides by it. Integer division by zero is a
+      !   SIGFPE, so the run died on the first step with a backtrace and no
+      !   message rather than producing the single frame it was asked for.
+      bar_frac = 0
+      if (params%md_nsteps > 0) bar_frac = 36*md_istep/params%md_nsteps
+      if (bar_frac > 36) bar_frac = 36
       if (params%print_progress .and. counter == update_bar .and. (.not. params%do_mc)) then
 #ifdef _MPIF90
          IF (rank == 0) THEN
@@ -696,10 +729,10 @@ program turbogap
                write (*, "(A)", advance="no") creturn
             end do
             write (*, "(1X,A)", advance="no") "["
-            do i = 1, 36*md_istep/params%md_nsteps
+            do i = 1, bar_frac
                write (*, "(A)", advance="no") "."
             end do
-            do i = 36*md_istep/params%md_nsteps + 1, 36
+            do i = bar_frac + 1, 36
                write (*, "(A)", advance="no") " "
             end do
             write (*, "(A)", advance="no") "] |"
@@ -1213,7 +1246,7 @@ program turbogap
 !           contributes a configuration to the IR ensemble: get_soap has to be
 !           told to produce second derivatives before it builds anything, and
 !           gap_interface reads mad_ir_collect to do that.
-            if (params%valid_ir) then
+            if (params%valid_ir .or. params%do_ir) then
 !              Set up on first use: n_sites is known by now, and doing it here
 !              rather than in the setup phase keeps the sizing next to the
 !              place that consumes it.
@@ -1223,24 +1256,56 @@ program turbogap
                      write (*, *) "       dipole_model = .true. to one of the soap_turbo blocks."
                      stop
                   end if
-                  if (params%soap_radial_legacy_filter) then
+                  if (params%soap_radial_legacy_filter .and. params%valid_ir) then
                      write (*, *) "ERROR: an ir observable needs the descriptor second derivatives,"
                      write (*, *) "       which require soap_radial_legacy_filter = .false."
                      stop
                   end if
-                  call mad_ir_setup(params%md_step, params%ir_stride, params%ir_resolution, &
-                                    params%ir_nu_min, params%ir_nu_max, params%ir_lag_factor, &
-                                    params%exp_data(params%ir_idx)%data(1, :), &
-                                    params%exp_data(params%ir_idx)%data(2, :), params%ir_restart_file, &
-                                    params%ir_match_scale, params%ir_nu_power, &
-                                    params%ir_window, n_sites, mad_ir_ok, mad_ir_resumed, mad_ir_msg)
+                  if (params%valid_ir) then
+                     call mad_ir_setup(params%md_step, params%ir_stride, params%ir_resolution, &
+                                       params%ir_nu_min, params%ir_nu_max, params%ir_lag_factor, &
+                                       params%exp_data(params%ir_idx)%data(1, :), &
+                                       params%exp_data(params%ir_idx)%data(2, :), params%ir_restart_file, &
+                                       params%ir_match_scale, params%ir_nu_power, &
+                                       params%ir_window, params%ir_subtract_mean, &
+                                       trim(params%ir_estimator) /= "unbiased", &
+                                       params%ir_taper_partial, params%ir_match_offset, &
+                                       params%ir_weight_by_spacing, &
+                                       n_sites, mad_ir_ok, mad_ir_resumed, mad_ir_msg)
+                  else
+!                    Prediction: the ensemble is the whole trajectory, so its
+!                    length is md_nsteps/ir_stride + 1 -- every step for which
+!                    modulo(md_istep, ir_stride) is zero, counting step zero.
+                     mad_ir_resumed = .false.
+!                    A negative resolution means "whatever the run gives"; the
+!                    default value of ir_resolution cannot be told from a
+!                    chosen one by its value, hence the flag.
+                     if (params%ir_resolution_set) then
+                        mad_ir_res_ask = params%ir_resolution
+                     else
+                        mad_ir_res_ask = -1.d0
+                     end if
+                     call mad_ir_setup_predict(params%md_step, params%ir_stride, &
+                                               params%md_nsteps/params%ir_stride + 1, &
+                                               mad_ir_res_ask, params%ir_nu_min, &
+                                               params%ir_nu_max, params%ir_lag_factor, &
+                                               params%ir_n_samples, params%ir_nu_power, &
+                                               params%ir_window, params%ir_subtract_mean, &
+                                               trim(params%ir_estimator) /= "unbiased", &
+                                               params%ir_taper_partial, &
+                                               n_sites, mad_ir_ok, mad_ir_msg)
+                  end if
                   if (.not. mad_ir_ok) then
                      write (*, *) "ERROR: ", trim(mad_ir_msg)
                      stop
                   end if
                   if (rank == 0) then
                      write (*, *) '                                       |'
-                     write (*, *) 'MAD IR bias:                           |'
+                     if (params%valid_ir) then
+                        write (*, *) 'MAD IR bias:                           |'
+                     else
+                        write (*, *) 'IR prediction:                         |'
+                     end if
                      write (*, '(A,F12.4,A)') '  *) sampling interval: ', mad_ir_state%dt, ' fs      |'
                      write (*, '(A,I12,A)') '  *) longest lag:       ', mad_ir_state%n_lag, '         |'
                      write (*, '(A,I12,A)') '  *) ensemble size:     ', mad_ir_state%n_window, '         |'
@@ -1249,7 +1314,10 @@ program turbogap
                      write (*, '(A,F12.1,A)') '  *) Nyquist:           ', &
                         CM_PER_INV_FS/(2.d0*mad_ir_state%dt), ' cm^-1   |'
                      write (*, '(A,I12,A)') '  *) spectrum points:   ', mad_ir_state%n_freq, '         |'
-                     if (mad_ir_resumed) then
+                     if (.not. params%valid_ir) then
+                        write (*, *) '  *) no experiment and no bias; the   |'
+                        write (*, *) '     spectrum is written at the end.  |'
+                     else if (mad_ir_resumed) then
                         write (*, '(A,I12,A)') '  *) resumed, frames:   ', mad_ir_state%n_stored, '         |'
                      else
                         write (*, *) '  *) fresh ensemble; no bias is       |'
@@ -1259,8 +1327,12 @@ program turbogap
                      write (*, *) '.......................................|'
                   end if
                end if
+!              Only a biased run needs dmu/dr; see mad_ir_need_dmu. Set every
+!              step rather than once, because it costs nothing and there is no
+!              earlier point at which params is known to be final.
+               mad_ir_need_dmu = params%valid_ir .and. params%exp_forces
                mad_ir_collect = (md_istep >= 0) .and. (modulo(md_istep, params%ir_stride) == 0)
-               if (mad_ir_collect) mad_ir_dmu_dr = 0.d0
+               if (mad_ir_collect .and. mad_ir_need_dmu) mad_ir_dmu_dr = 0.d0
             end if
             forces = 0.d0
             forces_soap = 0.d0
@@ -2079,30 +2151,59 @@ program turbogap
 !
 !           No virial: the bias is a function of the dipole, not of the cell,
 !           and a stress from it would be wrong rather than merely missing.
-            if (params%valid_ir .and. mad_ir_collect) then
+            if ((params%valid_ir .or. params%do_ir) .and. mad_ir_collect) then
 #ifdef _MPIF90
-               call time_start(time%mpi)
-!              every rank holds a slice, so a plain sum is the whole reduction;
-!              all-reduce so each rank can form the same lambda and bias its own
-!              atoms without a second broadcast of the forces
-               call mpi_allreduce(MPI_IN_PLACE, mad_ir_dmu_dr, 9*n_sites, &
-                                  MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, ierr)
-               call time_end(time%mpi)
+!              Nothing to reduce when no force is being formed from it.
+               if (mad_ir_need_dmu) then
+                  call time_start(time%mpi)
+!                 every rank holds a slice, so a plain sum is the whole reduction;
+!                 all-reduce so each rank can form the same lambda and bias its own
+!                 atoms without a second broadcast of the forces
+                  call mpi_allreduce(MPI_IN_PLACE, mad_ir_dmu_dr, 9*n_sites, &
+                                     MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, ierr)
+                  call time_end(time%mpi)
+               end if
 #endif
+               call time_start(time%ir)
                call mad_ir_push(mad_ir_state, dipole)
-               if (mad_ir_ready(mad_ir_state)) then
+!              A prediction run has no experiment to compare against, so it
+!              does none of what follows: it only accumulates, and transforms
+!              once when the file is written.
+               if (params%valid_ir .and. mad_ir_ready(mad_ir_state)) then
 !                 The weight is exp_energy_scales, ramped over the run exactly
 !                 as every other MAD observable's is.
                   call get_energy_scale(params%do_md, params%do_mc, md_istep, params%md_nsteps, &
                                         mc_istep, params%mc_nsteps, &
                                         params%exp_energy_scales_initial(params%ir_idx), &
                                         params%exp_energy_scales_final(params%ir_idx), mad_ir_scale)
+                  call time_start(time%ir_predict)
                   call mad_ir_evaluate(mad_ir_state, mad_ir_scale, mad_ir_energy, mad_ir_lambda)
+                  call time_end(time%ir_predict)
 !                 The mismatch is an energy like the others, spread over the
 !                 sites; the force is its gradient, and only if exp_forces.
                   energies_exp = energies_exp + mad_ir_energy/dfloat(n_sites)
+!                 The sum of energies_exp into energies happened above, before
+!                 the dipole of this configuration existed. Folding the IR term
+!                 in there is not possible -- it needs the forces pass -- so it
+!                 is folded in here instead. Without this the mismatch never
+!                 reached the reported total energy at all: energies_exp is
+!                 zeroed at the top of the next step.
+                  if (params%exp_energies) then
+                     energies = energies + mad_ir_energy/dfloat(n_sites)
+                     energy = sum(energies)
+                  end if
+                  energy_exp = sum(energies_exp)
                   if (params%exp_forces) then
+                     call time_start(time%ir_forces)
                      call mad_ir_forces(mad_ir_lambda, mad_ir_dmu_dr, forces)
+                     call time_end(time%ir_forces)
+                  end if
+                  if (.not. mad_ir_applied) then
+!                    The first spectrum of the run: how long the ensemble took
+!                    to fill, measured from the same origin as the total.
+                     call get_time(mad_ir_t_now)
+                     mad_ir_t_first = mad_ir_t_now - time3
+                     mad_ir_step_first = md_istep
                   end if
                   mad_ir_applied = .true.
                else
@@ -2111,17 +2212,85 @@ program turbogap
                end if
 !              Persist the ensemble alongside the trajectory. Losing it costs
 !              n_window samples of unbiased dynamics on the next restart.
-               if (rank == 0 .and. params%write_xyz > 0) then
+               call time_start(time%ir_io)
+               if (rank == 0 .and. params%write_xyz > 0 .and. params%valid_ir) then
                   if (modulo(md_istep, params%write_xyz) == 0 .or. md_istep == params%md_nsteps) then
                      if (trim(params%ir_restart_file) /= "none") then
                         call mad_ir_save(mad_ir_state, params%ir_restart_file, mad_ir_ok, mad_ir_msg)
                         if (.not. mad_ir_ok) write (*, *) "WARNING: ", trim(mad_ir_msg)
                      end if
-                     if (params%ir_write_spectrum .and. mad_ir_applied) then
-                        call mad_ir_write_calc_spectrum(mad_ir_state, "ir_spectrum.dat")
-                     end if
                   end if
                end if
+               call time_end(time%ir_io)
+!              The spectrum, on the same schedule every other observable's
+!              prediction is written on. ir_spectrum.dat is the current one
+!              with its sampling limits in the header; ir_prediction.dat
+!              accumulates one block per write and so covers the trajectory.
+!
+!              Two conditions, not one, because the two modes become ready at
+!              different times: a fit has a spectrum once the rolling window
+!              is full, a prediction has one as soon as there are two frames
+!              to correlate -- and the prediction's last write, at the final
+!              step, is the one the run is for.
+!              get_write_condition takes modulo(md_istep, write_xyz), so it
+!              cannot be asked anything when write_xyz is zero -- which is its
+!              default, and the natural setting for a prediction run that
+!              wants one spectrum and no trajectory.
+               if (params%write_xyz > 0) then
+                  call get_write_condition(params%do_mc, params%do_md, &
+                                           mc_istep, md_istep, params%write_xyz, write_condition)
+               else
+                  write_condition = .false.
+               end if
+               if (params%do_ir) then
+                  mad_ir_have_spectrum = mad_ir_state%n_stored > 1
+!                 The last COLLECTED step, not the last step: with an
+!                 ir_stride that does not divide md_nsteps the two differ, and
+!                 the final frame is the one the whole run was for.
+                  write_condition = write_condition .or. &
+                                    (md_istep > params%md_nsteps - params%ir_stride)
+               else
+                  mad_ir_have_spectrum = mad_ir_applied
+               end if
+               if (rank == 0 .and. params%write_ir .and. mad_ir_have_spectrum &
+                   .and. write_condition) then
+!                 A fit already transformed this step's ensemble on its way to
+!                 the loss; a prediction has not, and this is the only place
+!                 that asks for it. Timed as predict rather than io, and
+!                 outside the io region, so the two buckets stay disjoint and
+!                 "i/o" means the filesystem.
+                  if (params%do_ir) then
+                     call time_start(time%ir_predict)
+                     call mad_ir_spectrum(mad_ir_state)
+                     call time_end(time%ir_predict)
+                  end if
+                  call time_start(time%ir_io)
+                  call mad_ir_write_spectrum(mad_ir_state, "ir_spectrum.dat", &
+                                             params%valid_ir, md_istep, params%md_step)
+                  call mad_ir_append_spectrum(mad_ir_state, "ir_prediction.dat", &
+                                              .not. mad_ir_wrote_prediction, md_istep, &
+                                              dfloat(md_istep)*params%md_step)
+                  if (.not. mad_ir_wrote_prediction) then
+                     if (params%valid_ir) then
+!                       "<label>_exp.dat" is the convention, but for label
+!                       "ir" that is a name a user may well have given the
+!                       file in exp_data_files -- tests/mad_ir/md_run.sh does
+!                       exactly that -- and writing it would destroy the input
+!                       midway through the run. Reading the same path back on
+!                       the next restart would then fit the prediction to
+!                       itself.
+                        if (trim(params%exp_data(params%ir_idx)%file_data) == "ir_exp.dat") then
+                           write (*, *) "WARNING: not writing ir_exp.dat; it is the file named"
+                           write (*, *) "         in exp_data_files and would be overwritten."
+                        else
+                           call mad_ir_write_exp_spectrum(mad_ir_state, "ir_exp.dat")
+                        end if
+                     end if
+                     mad_ir_wrote_prediction = .true.
+                  end if
+                  call time_end(time%ir_io)
+               end if
+               call time_end(time%ir)
             end if
 
             if (valid_estat_charges) forces = forces + forces_estat
@@ -3269,6 +3438,21 @@ program turbogap
          end do
       end if
 
+!     Close the per-step stopwatch and charge it to whichever side of the
+!     boundary this step fell on. mad_ir_applied was set for THIS step in the
+!     force block above, so the two accumulators separate exactly at the step
+!     the ensemble filled.
+      if (params%valid_ir .and. params%do_md .and. md_istep >= 0) then
+         call get_time(mad_ir_t_now)
+         if (mad_ir_applied) then
+            mad_ir_t_post = mad_ir_t_post + (mad_ir_t_now - mad_ir_step_beg)
+            mad_ir_n_post = mad_ir_n_post + 1
+         else
+            mad_ir_t_pre = mad_ir_t_pre + (mad_ir_t_now - mad_ir_step_beg)
+            mad_ir_n_pre = mad_ir_n_pre + 1
+         end if
+      end if
+
       if (.not. params%do_mc) n_sites_prev = n_sites
       n_atom_pairs_by_rank_prev = n_atom_pairs_by_rank(rank + 1)
 
@@ -3323,6 +3507,60 @@ program turbogap
          if (params%do_structure_factor) write (*, '(A,F13.3,A)') '     -         sf:', time%sf(3), ' seconds |'
          if (params%do_xrd) write (*, '(A,F13.3,A)') '     -        xrd:', time%xrd(3), ' seconds |'
          if (params%do_nd) write (*, '(A,F13.3,A)') '     -         nd:', time%nd(3), ' seconds |'
+
+!       The MAD IR bias, and what it costs.
+!
+!       Three separate numbers, because they answer three separate questions
+!       and quoting one for another is how a bias gets blamed for a cost it
+!       does not carry:
+!
+!         - the buckets: where the time inside the bias goes. predict is the
+!           autocorrelation and the cosine transform, and it grows with
+!           n_lag*n_freq, not with the number of atoms. forces is the
+!           contraction with dmu/dr and grows with n_atoms.
+!
+!         - time to the first spectrum: the ensemble has to fill before any
+!           spectrum exists, so this is n_window*ir_stride steps of ordinary
+!           MD and is the latency before the fit can begin at all.
+!
+!         - the per-step rates either side of that point. Note what does NOT
+!           change across it: the descriptor second derivatives that produce
+!           dmu/dr are built on every collected step from step zero, so their
+!           cost is already inside the "no bias" rate. The ratio below is
+!           therefore the cost of the spectrum and its gradient alone, and the
+!           full price of asking for IR at all is larger -- compare the soap
+!           bucket here against a run without the observable.
+         if (params%valid_ir .or. params%do_ir) then
+            if (params%valid_ir) then
+               write (*, '(A,F13.3,A)') ' *  MAD IR bias  :', time%ir(3), ' seconds |'
+            else
+               write (*, '(A,F13.3,A)') ' *  IR prediction:', time%ir(3), ' seconds |'
+            end if
+            write (*, '(A,F13.3,A)') '     -    predict:', time%ir_predict(3), ' seconds |'
+            write (*, '(A,F13.3,A)') '     -     forces:', time%ir_forces(3), ' seconds |'
+            write (*, '(A,F13.3,A)') '     -        i/o:', time%ir_io(3), ' seconds |'
+!          Only a bias has a moment at which the spectrum arrives and the
+!          cost changes: a prediction accumulates from step zero and
+!          transforms at the end, so there is no before and after to compare.
+            if (params%valid_ir) then
+               if (mad_ir_step_first >= 0) then
+                  write (*, '(A,I13,A)') '   1st spectrum @:', mad_ir_step_first, ' step    |'
+                  write (*, '(A,F13.3,A)') '   1st spectrum @:', mad_ir_t_first, ' seconds |'
+               else
+                  write (*, *) '   no spectrum: ensemble never filled  |'
+               end if
+            end if
+            if (mad_ir_n_pre > 0 .and. mad_ir_n_post > 0) then
+               mad_ir_rate_pre = mad_ir_t_pre/dfloat(mad_ir_n_pre)
+               mad_ir_rate_post = mad_ir_t_post/dfloat(mad_ir_n_post)
+               write (*, '(A,F13.5,A)') '  s/step unbiased:', mad_ir_rate_pre, ' seconds |'
+               write (*, '(A,F13.5,A)') '  s/step   biased:', mad_ir_rate_post, ' seconds |'
+               if (mad_ir_rate_pre > 0.d0) then
+                  write (*, '(A,F13.3,A)') '  bias slowdown  :', &
+                     mad_ir_rate_post/mad_ir_rate_pre, ' x       |'
+               end if
+            end if
+         end if
 
          if (do_electrostatics) then
             write (*, '(A,F13.3,A)') ' * Electrostatics:', time%estat(3), ' seconds |'

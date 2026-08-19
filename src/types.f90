@@ -263,20 +263,78 @@ module types
 !     exp_energy_scales(ir_idx), ramped like the rest, and exp_forces decides
 !     whether the gradient of the mismatch reaches the forces.
       logical :: valid_ir = .false.
+!     Plain IR prediction, no experiment and no bias: run the trajectory,
+!     accumulate the dipole over all of it, transform once at the end. The
+!     sizing runs the other way round from the bias -- the run length is given
+!     and the resolution follows from it -- and the result lands in
+!     ir_prediction.dat with the sampling limits in its header.
+      logical :: do_ir = .false.
+!     Points on the predicted grid. Zero, the default, is one point per
+!     resolution element, which is as much as the transform can carry; a
+!     larger number is a smoother curve over the same information.
+      integer :: ir_n_samples = 0
 !     true when some observable other than IR is asked for, i.e. when the
 !     per-frame prediction pipeline actually has work to do
       logical :: do_exp_structural = .false.
       integer :: ir_idx = 0
       logical :: ir_match_scale = .true.
+!     Write the predicted spectrum out. Named and gated like every other
+!     observable's prediction (write_xrd, write_pair_distribution, ...): on
+!     every write_xyz step a block is appended to ir_prediction.dat, so the
+!     record covers the whole trajectory instead of only its last frame.
+!     ir_spectrum.dat holds the latest frame alone, and ir_exp.dat the
+!     experiment restricted to the fitted range.
+      logical :: write_ir = .false.
+!     The name this switch had before it wrote a trajectory. Kept because
+!     inputs use it; it sets write_ir and nothing else.
       logical :: ir_write_spectrum = .false.
       character*1024 :: ir_restart_file = "ir_restart.dat"
       character*32 :: ir_window = "hann"
       integer :: ir_stride = 1
       integer :: ir_lag_factor = 2
       real(dp) :: ir_resolution = 20.d0
+!     Did the input name ir_resolution? A prediction run takes whatever
+!     resolution the trajectory length gives unless one was asked for, and the
+!     default value cannot be told from a chosen one by its value alone.
+      logical :: ir_resolution_set = .false.
       real(dp) :: ir_nu_min = 0.d0
       real(dp) :: ir_nu_max = 4000.d0
       real(dp) :: ir_nu_power = 2.d0
+!     Estimator choices. The defaults are the correct ones; every switch here
+!     exists so the old behaviour can be recovered for reproducing an earlier
+!     result, not because the choice is a matter of taste. mad_ir.f90's header
+!     block gives the derivation and the measured cost of each.
+!
+!     ir_subtract_mean      correlate mu - <mu>, as linear response requires.
+!                           Off: a static dipole offset (86% of C(0) on a real
+!                           water buffer) leaks broadband noise into the
+!                           long-lag end of the ACF.
+!     ir_estimator          "biased" divides C(tau) by N, giving a positive
+!                           semi-definite sequence whose UNWINDOWED transform
+!                           cannot be negative; "unbiased" divides by N - tau
+!                           and is not, so it can produce negative absorption.
+!                           Windowing can still take a biased estimate negative
+!                           unless the kernel is non-negative too: pair it with
+!                           ir_window = bartlett for an unconditional guarantee.
+!     ir_taper_partial      rebuild the lag window over the lags actually
+!                           available while a do_ir ensemble is still filling,
+!                           so the header quotes the resolution the transformed
+!                           lags support. Off with ir_estimator = unbiased, C is
+!                           cut off with a boxcar and the early blocks ring hard
+!                           enough to go negative; with the default biased
+!                           estimator the implicit (1 - tau/N) taper already
+!                           covers that case.
+!     ir_weight_by_spacing  trapezoidal weights, so the loss is an integral
+!                           over frequency rather than a sum over however the
+!                           experimental file happened to be sampled.
+!     ir_match_offset       fit an additive baseline alongside the scale, for
+!                           experimental data whose baseline was subtracted to
+!                           a hard zero.
+      logical :: ir_subtract_mean = .true.
+      character*32 :: ir_estimator = "biased"
+      logical :: ir_taper_partial = .true.
+      logical :: ir_weight_by_spacing = .true.
+      logical :: ir_match_offset = .false.
 
 !     ==================================================================
 !     NEIGHBOUR LISTS AND THE CORE POTENTIAL
