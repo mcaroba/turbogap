@@ -14,6 +14,10 @@
 #   5. is a restart written for different sizing refused rather than adopted
 #   6. do the input guards fire: no dipole model, legacy filter seed on,
 #      sampling too coarse for the requested wavenumber, missing spectrum
+#   7. the same questions for ir_bias_mode = xl, which takes a different force
+#      path entirely: no (3,3,n_atoms) tensor, no all-reduce of one, and the
+#      weight contracted inside the descriptor pass against a neighbour index
+#      mapped through in_to_out_site
 #
 # The dipole model contributes no energy and no forces, so in this case the
 # MAD bias is the ONLY force in the system. That makes both its onset and its
@@ -394,6 +398,133 @@ print("  %s  Rel_error is dimensionless and O(1) (%.3f .. %.3f once active)" %
 sys.exit(0 if ok else 1)
 PY
 [ $? -eq 0 ] || fail=$((fail + 1))
+
+echo "==> 10. the resonator bank (ir_bias_mode = xl)"
+#
+# The other bias, end to end. xlverify checks its mathematics against finite
+# differences; what is checked here is that the keywords reach it, that it
+# takes the DIFFERENT force path -- contracted inside the descriptor pass, with
+# no (3,3,n_atoms) tensor formed -- and that the force it produces is still a
+# force. Momentum conservation is the check that matters most, because the
+# contraction happens against a neighbour index mapped through in_to_out_site
+# and a mapping error there gives a force of exactly the right size attached to
+# the wrong atoms.
+#
+# n_warm is warm_factor*tau/dt = 3*20/1 = 60 advances, so a 120-step run has
+# the bias off for the first half and on for the second, and both halves are
+# readable from the same trajectory.
+rm -f ir_restart.dat ir_xl_restart.dat
+cat >input <<EOF
+atoms_file = "atoms.xyz"
+pot_file = "gap_files/water_dipole.gap"
+n_species = 2
+species = H O
+masses = 1.008 15.999
+e0 = 0. 0.
+random_seed = 12345
+soap_radial_legacy_filter = .false.
+
+do_md = .true.
+md_nsteps = 120
+md_step = 1.0
+thermostat = none
+write_xyz = 1
+
+n_exp = 1
+exp_labels = ir
+exp_data_files = "ir_exp.dat"
+exp_energy_scales = 1.0e-6
+exp_forces = .true.
+exp_energies = .true.
+
+ir_stride = 1
+ir_nu_max = 4000.0
+ir_nu_min = 400.0
+ir_resolution = 3000.0
+ir_lag_factor = 2
+ir_bias_mode = xl
+ir_xl_tau_mem = 20.0
+ir_xl_n_modes = 24
+ir_write_spectrum = .true.
+EOF
+"$BIN" md >runB.log 2>&1
+check "xl mode accepted" "ir_bias_mode" runB.log
+check "the bank is reported" "MAD IR, extended Lagrangian" runB.log
+check "modes come from ir_xl_n_modes" "resonator modes:             24" runB.log
+# CM_PER_INV_FS/(pi*20) = 530.88 cm^-1. The bank's resolution is set by its
+# damping and by nothing else, and a run that quoted the ACF ensemble's
+# resolution here would be quoting a number that does not apply to it.
+check "resolution is gamma, not n_lag" "530.8837 cm^-1" runB.log
+check "coherent needs one bank" "amplitude:            coherent" runB.log
+check "the ACF ensemble is still filled" "produces no force in this mode" runB.log
+[ -f ir_xl_spectrum.dat ] || {
+  echo "  FAIL  the bank's spectrum was not written"
+  fail=$((fail + 1))
+}
+[ -f ir_xl_restart.dat ] || {
+  echo "  FAIL  the bank restart was not written"
+  fail=$((fail + 1))
+}
+
+python3 - <<'PY'
+import re, sys
+frames=[]; lines=open("trajectory_out.xyz").read().split("\n"); i=0
+while i < len(lines) and lines[i].strip():
+    n=int(lines[i]); frames.append((lines[i+1],[lines[i+2+k].split() for k in range(n)])); i+=n+2
+props=re.search(r"Properties=(\S+)", frames[0][0]).group(1).split(":")
+col=0; fcol=None
+for k in range(0,len(props),3):
+    if props[k].startswith("force"): fcol=col
+    col+=int(props[k+2])
+def stats(idx):
+    F=[[float(r[fcol+j]) for j in range(3)] for r in frames[idx][1]]
+    return (max(max(abs(v) for v in r) for r in F),
+            max(abs(sum(r[j] for r in F)) for j in range(3)))
+nat=len(frames[0][1])
+dec=0
+for tok in (r[fcol+j] for r in frames[-1][1] for j in range(3)):
+    if "." in tok:
+        dec=max(dec, len(tok.split(".")[1]))
+floor=nat*10.0**(-dec)
+n_warm=60
+before=max(stats(i)[0] for i in range(0,n_warm))
+after =max(stats(i)[0] for i in range(n_warm,len(frames)))
+net   =max(stats(i)[1] for i in range(n_warm,len(frames)))
+ok=True
+print("  %s  no bias while the bank charges (max|f| = %.3e)" %
+      ("PASS" if before==0.0 else "FAIL", before)); ok &= before==0.0
+print("  %s  bias applied once it has (max|f| = %.3e)" %
+      ("PASS" if after>0.0 else "FAIL", after)); ok &= after>0.0
+good = net <= floor
+print("  %s  momentum conserved (max|sum f| = %.3e, floor %.3e)" %
+      ("PASS" if good else "FAIL", net, floor)); ok &= good
+sys.exit(0 if ok else 1)
+PY
+[ $? -eq 0 ] || fail=$((fail + 1))
+
+# The bank is state, and a bank filtered with a different memory is a different
+# object: resumed on a second run, refused when tau_mem changes.
+"$BIN" md >runC.log 2>&1
+check "the bank is resumed" "resumed, advances:" runC.log
+sed -i "s/ir_xl_tau_mem = 20.0/ir_xl_tau_mem = 40.0/" input
+"$BIN" md >runD.log 2>&1
+check "a different tau_mem is refused" "written with a different" runD.log
+check "and a fresh bank is charged" "charging, advances:" runD.log
+
+# The guards. Each of these is a run that must stop with a message rather than
+# proceed with something that would look like a spectrum.
+sed -i "s/ir_xl_tau_mem = 40.0/ir_xl_tau_mem = 0.0/" input
+"$BIN" md >runE.log 2>&1
+check "xl without a memory time is refused" "needs a positive ir_xl_tau_mem" runE.log
+# 33356.40952/(2 pi * 400) = 13.27 fs: below that the bank is overdamped at the
+# bottom of the fitted range and its amplitudes are not spectral estimates.
+sed -i "s/ir_xl_tau_mem = 0.0/ir_xl_tau_mem = 5.0/" input
+"$BIN" md >runF.log 2>&1
+check "an overdamped bank is refused" "the bank is overdamped below" runF.log
+sed -i "s/ir_xl_tau_mem = 5.0/ir_xl_tau_mem = 20.0/" input
+sed -i "s/ir_xl_n_modes = 24/ir_xl_n_modes = 24\nir_xl_amplitude = incoherent\nir_xl_max_memory = 0.00001/" input
+"$BIN" md >runG.log 2>&1
+check "a bank over the memory limit is refused" "over the ir_xl_max_memory limit" runG.log
 
 echo
 if [ "$fail" -eq 0 ]; then

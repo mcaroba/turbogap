@@ -58,6 +58,7 @@ program turbogap
    use exp_interface
    use soap_turbo_functions
    use mad_ir
+   use mad_ir_xl
 #ifdef _MPIF90
    use mpi
    use mpi_helper
@@ -160,6 +161,12 @@ program turbogap
 !  appending to a file that does not exist is a runtime error, so the flag is
 !  carried rather than derived.
    logical :: mad_ir_wrote_prediction = .false.
+!  The extended-Lagrangian bias (ir_bias_mode = "xl"). mad_ir_xl_ok/msg mirror
+!  the ACF ones; mad_ir_xl_resumed says whether a saved resonator bank was
+!  adopted, which is the difference between biasing from the first stored frame
+!  and charging a fresh bank for ir_xl_warm_factor memory times first.
+   logical :: mad_ir_xl_ok = .false., mad_ir_xl_resumed = .false.
+   character(len=512) :: mad_ir_xl_msg
 !  What the bias costs. The ensemble fills partway into the run, so the same
 !  run measures both sides of the question: mad_ir_t_pre accumulates the
 !  wall-clock of the steps before the first spectrum and mad_ir_t_post that of
@@ -1334,13 +1341,89 @@ program turbogap
                      end if
                      write (*, *) '.......................................|'
                   end if
+!                 The resonator bank, if this is an extended-Lagrangian run. It
+!                 is set up after the ACF observable rather than instead of it
+!                 because it takes the fitted grid from mad_ir_state: the
+!                 experiment is read once, by read_exp_data, and a second
+!                 reader of the same file is exactly the sort of divergence
+!                 that shows up months later as a spectrum that does not match
+!                 the one the header quoted.
+                  if (trim(params%ir_bias_mode) == "xl") then
+                     if (.not. params%valid_ir) then
+                        write (*, *) "ERROR: ir_bias_mode = xl needs an experimental spectrum."
+                        write (*, *) "       Add ir to exp_labels with a file in exp_data_files,"
+                        write (*, *) "       or leave ir_bias_mode at acf for a prediction run."
+                        stop
+                     end if
+                     call mad_ir_xl_setup(mad_ir_state, n_sites, params%ir_xl_n_modes, &
+                                          params%md_step, params%ir_stride, &
+                                          params%ir_xl_tau_mem, &
+                                          trim(params%ir_xl_amplitude) == "coherent", &
+                                          params%ir_xl_warm_factor, &
+                                          params%ir_xl_max_memory*1.048576d6, &
+                                          params%ir_xl_restart_file, mad_ir_xl_ok, &
+                                          mad_ir_xl_resumed, mad_ir_xl_msg)
+                     if (.not. mad_ir_xl_ok) then
+                        write (*, *) "ERROR: ", trim(mad_ir_xl_msg)
+                        stop
+                     end if
+                     mad_ir_xl_active = .true.
+                     if (rank == 0) then
+                        write (*, *) 'MAD IR, extended Lagrangian:           |'
+                        write (*, '(A,I12,A)') '  *) resonator modes:   ', &
+                           mad_ir_xl_state%n_modes, '         |'
+                        write (*, '(A,F12.4,A)') '  *) memory time:       ', &
+                           mad_ir_xl_state%tau_mem, ' fs      |'
+                        write (*, '(A,F12.4,A)') '  *) bank resolution:   ', &
+                           mad_ir_xl_resolution(mad_ir_xl_state%tau_mem), ' cm^-1   |'
+                        write (*, '(A,F12.3,A)') '  *) bank memory/rank:  ', &
+                           mad_ir_xl_memory_bytes(mad_ir_xl_state%n_modes, &
+                                                  mad_ir_xl_state%n_bank)/1.048576d6, &
+                           ' MB      |'
+                        if (mad_ir_xl_state%coherent) then
+                           write (*, *) '  *) amplitude:            coherent   |'
+                        else
+                           write (*, *) '  *) amplitude:          incoherent   |'
+                        end if
+                        if (mad_ir_xl_resumed) then
+                           write (*, '(A,I12,A)') '  *) resumed, advances: ', &
+                              mad_ir_xl_state%n_steps, '         |'
+                        else
+                           write (*, '(A,I12,A)') '  *) charging, advances:', &
+                              mad_ir_xl_state%n_warm, '         |'
+                           if (len_trim(mad_ir_xl_msg) > 0) write (*, *) '     ', trim(mad_ir_xl_msg)
+                        end if
+                        write (*, *) '  *) the ACF ensemble above is still  |'
+                        write (*, *) '     filled, but only as a check: it  |'
+                        write (*, *) '     produces no force in this mode.  |'
+                        write (*, *) '.......................................|'
+                     end if
+                  end if
                end if
 !              Only a biased run needs dmu/dr; see mad_ir_need_dmu. Set every
 !              step rather than once, because it costs nothing and there is no
 !              earlier point at which params is known to be final.
-               mad_ir_need_dmu = params%valid_ir .and. params%exp_forces
+!
+!              Under the extended Lagrangian nothing wants the (3,3,n_atoms)
+!              tensor at all: the weight is already known, so the descriptor
+!              pass contracts it and leaves a force behind instead. The two
+!              are mutually exclusive and mad_ir_need_dmu is what keeps them so.
+               mad_ir_need_dmu = params%valid_ir .and. params%exp_forces &
+                                 .and. .not. mad_ir_xl_active
                mad_ir_collect = (md_istep >= 0) .and. (modulo(md_istep, params%ir_stride) == 0)
                if (mad_ir_collect .and. mad_ir_need_dmu) mad_ir_dmu_dr = 0.d0
+               mad_ir_xl_collect = mad_ir_xl_active .and. mad_ir_collect &
+                                   .and. params%valid_ir .and. params%exp_forces
+!              mad_ir_xl_site_w ALREADY HOLDS THE WEIGHT. It was formed at the
+!              end of the previous stored frame, from a bank that had just been
+!              advanced with that frame's dipole, and it is the exact gradient
+!              of the bias energy with respect to those dipoles. That is why it
+!              can be contracted inside the descriptor pass instead of leaving
+!              a (3,3,n_atoms) tensor behind for a weight that does not exist
+!              yet; the price is one stored frame of lag in the POSITIONS the
+!              gradient is contracted at, which is far below the bank's own
+!              time resolution. It is identically zero while the bank charges.
+               if (mad_ir_xl_collect) mad_ir_xl_force = 0.d0
             end if
             forces = 0.d0
             forces_soap = 0.d0
@@ -2171,13 +2254,88 @@ program turbogap
                                      MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, ierr)
                   call time_end(time%mpi)
                end if
+!              The extended Lagrangian reduces a FORCE rather than a tensor, so
+!              a third of the traffic. It is still an all-reduce and not a
+!              reduce: the bank itself is replicated and advanced identically on
+!              every rank, driven by local_dipoles, which is already broadcast,
+!              so every rank must end the step holding the same forces.
+               if (mad_ir_xl_collect) then
+                  call time_start(time%mpi)
+                  call mpi_allreduce(MPI_IN_PLACE, mad_ir_xl_force, 3*n_sites, &
+                                     MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, ierr)
+                  call time_end(time%mpi)
+               end if
 #endif
                call time_start(time%ir)
+!              The ACF ensemble is filled under BOTH biases. Under the extended
+!              Lagrangian it produces no force -- mad_ir_evaluate is never
+!              called -- but it costs three doubles a frame and it is the only
+!              independent estimate of the same spectrum the bank is claiming,
+!              so ir_spectrum.dat stays meaningful as a cross-check.
                call mad_ir_push(mad_ir_state, dipole)
 !              A prediction run has no experiment to compare against, so it
 !              does none of what follows: it only accumulates, and transforms
 !              once when the file is written.
-               if (params%valid_ir .and. mad_ir_ready(mad_ir_state)) then
+               if (mad_ir_xl_active) then
+!                 ================================================================
+!                 THE RESONATOR BANK (ir_bias_mode = xl).
+!
+!                 Four things happen here in an order that is not
+!                 interchangeable: advance the bank with this frame's dipoles,
+!                 evaluate the spectrum and the loss from the state that
+!                 produces, add the force the descriptor pass already left, and
+!                 form the weight the NEXT frame's pass will contract.
+!
+!                 The force added here was built with the weight formed at the
+!                 end of the PREVIOUS stored frame. That is the one frame of lag
+!                 the scheme trades for contracting inside the descriptor pass;
+!                 mad_ir_xl.f90's header has why it is the right trade here and
+!                 the wrong one for the ACF bias.
+!                 ================================================================
+                  call get_energy_scale(params%do_md, params%do_mc, md_istep, params%md_nsteps, &
+                                        mc_istep, params%mc_nsteps, &
+                                        params%exp_energy_scales_initial(params%ir_idx), &
+                                        params%exp_energy_scales_final(params%ir_idx), mad_ir_scale)
+                  call time_start(time%ir_predict)
+!                 Advance BEFORE evaluate: the loss and the gradient both belong
+!                 to a bank that already knows this frame's dipole. Evaluating
+!                 first would report the previous frame's spectrum and, worse,
+!                 would make the weight the gradient of a loss the current
+!                 dipole had not yet entered -- which is identically zero, not
+!                 merely inaccurate.
+                  call mad_ir_xl_advance(mad_ir_xl_state, local_dipoles(1:3, 1:n_sites))
+                  call mad_ir_xl_evaluate(mad_ir_xl_state, mad_ir_scale, mad_ir_energy)
+                  call time_end(time%ir_predict)
+                  energies_exp = energies_exp + mad_ir_energy/dfloat(n_sites)
+                  exp_dissimilarity = exp_dissimilarity + mad_ir_xl_state%dissim
+                  exp_dissim_ref = exp_dissim_ref + mad_ir_xl_state%dissim_ref
+                  if (params%exp_energies) then
+                     energies = energies + mad_ir_energy/dfloat(n_sites)
+                     energy = sum(energies)
+                  end if
+                  energy_exp = sum(energies_exp)
+!                 mad_ir_xl_force is whatever the descriptor pass left, which is
+!                 identically zero while the bank is charging because the weight
+!                 it was contracted with was. There is no readiness test here for
+!                 that reason: the gate is in mad_ir_xl_weights, where it can be
+!                 applied once instead of in every consumer.
+                  if (params%exp_forces .and. mad_ir_xl_collect) then
+                     call time_start(time%ir_forces)
+                     forces(1:3, 1:n_sites) = forces(1:3, 1:n_sites) &
+                                              + mad_ir_xl_force(1:3, 1:n_sites)
+!                    And the weight the NEXT stored frame's descriptor pass
+!                    will contract, from the bank as it now stands.
+                     call mad_ir_xl_weights(mad_ir_xl_state, mad_ir_xl_site_w)
+                     call time_end(time%ir_forces)
+                  end if
+                  if (mad_ir_xl_ready(mad_ir_xl_state) .and. .not. mad_ir_applied) then
+                     call get_time(mad_ir_t_now)
+                     mad_ir_t_first = mad_ir_t_now - time3
+                     mad_ir_step_first = md_istep
+                  end if
+                  mad_ir_applied = mad_ir_xl_ready(mad_ir_xl_state)
+                  if (.not. mad_ir_applied) mad_ir_energy = 0.d0
+               else if (params%valid_ir .and. mad_ir_ready(mad_ir_state)) then
 !                 The weight is exp_energy_scales, ramped over the run exactly
 !                 as every other MAD observable's is.
                   call get_energy_scale(params%do_md, params%do_mc, md_istep, params%md_nsteps, &
@@ -2232,6 +2390,15 @@ program turbogap
                      if (trim(params%ir_restart_file) /= "none") then
                         call mad_ir_save(mad_ir_state, params%ir_restart_file, mad_ir_ok, mad_ir_msg)
                         if (.not. mad_ir_ok) write (*, *) "WARNING: ", trim(mad_ir_msg)
+                     end if
+!                    The bank, in its own file. Losing it costs the warm-up
+!                    again, and it is the larger of the two by orders of
+!                    magnitude, which is why it is a separate write that can be
+!                    turned off on its own.
+                     if (mad_ir_xl_active .and. trim(params%ir_xl_restart_file) /= "none") then
+                        call mad_ir_xl_save(mad_ir_xl_state, params%ir_xl_restart_file, &
+                                            mad_ir_xl_ok, mad_ir_xl_msg)
+                        if (.not. mad_ir_xl_ok) write (*, *) "WARNING: ", trim(mad_ir_xl_msg)
                      end if
                   end if
                end if
@@ -2301,6 +2468,16 @@ program turbogap
                         end if
                      end if
                      mad_ir_wrote_prediction = .true.
+                  end if
+!                 The bank's own spectrum, beside the ACF one. The two are
+!                 independent estimates of the same quantity from the same
+!                 trajectory -- one a windowed transform of a stored ensemble,
+!                 the other the standing amplitude of a filter bank -- and
+!                 whether they agree is the single most useful check there is
+!                 that the bank is measuring what it claims to.
+                  if (mad_ir_xl_active) then
+                     call mad_ir_xl_write_spectrum(mad_ir_xl_state, "ir_xl_spectrum.dat", &
+                                                   params%valid_ir)
                   end if
                   call time_end(time%ir_io)
                end if
@@ -3573,6 +3750,20 @@ program turbogap
                   write (*, '(A,F13.3,A)') '  bias slowdown  :', &
                      mad_ir_rate_post/mad_ir_rate_pre, ' x       |'
                end if
+            end if
+!          HOW HARD THE BIAS IS PULLING. The weight is dU/dm of the bias
+!          energy, so its RMS is the size of the force per unit dipole
+!          gradient; it is the number to watch when deciding whether
+!          exp_energy_scales is doing anything or doing too much. The fitted
+!          scale is beside it because the two move together: a scale that
+!          drifts by orders of magnitude means the bank and the experiment are
+!          not on comparable footings and the weight is not interpretable.
+            if (mad_ir_xl_active) then
+               write (*, *) '                                       |'
+               write (*, *) ' *  XL resonators:                      |'
+               write (*, '(A,I13,A)') '     -   advances:', mad_ir_xl_state%n_steps, '         |'
+               write (*, '(A,ES13.4,A)') '     - rms weight:', mad_ir_xl_state%w_rms, '         |'
+               write (*, '(A,ES13.4,A)') '     - fit scale :', mad_ir_xl_state%scale, '         |'
             end if
          end if
 

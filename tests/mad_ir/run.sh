@@ -6,6 +6,13 @@
 #              placement, and lambda = dL/dmu(newest) against finite
 #              differences of the loss.
 #
+#   xlverify   the OTHER bias, ir_bias_mode = xl: a bank of damped resonators
+#              integrated alongside the atoms in place of a stored trajectory.
+#              Nothing but the fitted grid is shared with the ACF path, so it
+#              gets its own propagator, prefactor and gradient checks. Its
+#              h-scan is the one that found the first version of the scheme
+#              biasing in the wrong direction.
+#
 #   auxverify  the same module in AUXILIARY-VARIABLE form (ir_acf_mode =
 #              exponential), where the running correlation is integrated
 #              alongside the atoms rather than recomputed from the buffer. The
@@ -49,6 +56,12 @@ echo
 echo "==> auxverify (mad_ir with auxiliary variables)"
 $FC $FFLAGS -o auxverify "$HERE/auxverify.f90" kinds.o mad_ir.o
 ./auxverify
+
+echo
+echo "==> xlverify (the resonator bank, ir_bias_mode = xl)"
+$FC $FFLAGS -c "$SRC/mad_ir_xl.f90" -o mad_ir_xl.o
+$FC $FFLAGS -o xlverify "$HERE/xlverify.f90" kinds.o mad_ir.o mad_ir_xl.o
+./xlverify
 
 echo
 echo "==> madverify (full chain, against lib/libturbogap.a)"

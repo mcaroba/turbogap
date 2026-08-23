@@ -347,6 +347,62 @@ module types
       logical :: ir_taper_partial = .true.
       logical :: ir_weight_by_spacing = .true.
       logical :: ir_match_offset = .false.
+!     ir_bias_mode          WHICH BIAS. "acf" is everything above: the spectrum
+!                           comes from an autocorrelation of the stored dipoles
+!                           and the force is the gradient of the mismatch with
+!                           respect to the newest one. "xl" is the
+!                           EXTENDED-LAGRANGIAN bias of mad_ir_xl.f90: a bank
+!                           of damped resonators, one pair per fitted frequency
+!                           per site, integrated alongside the atoms and
+!                           coupled to the local dipoles. No trajectory is
+!                           stored and no gradient is taken through past
+!                           configurations; the mismatch retunes the
+!                           resonators and the resonators pull on the atoms.
+!
+!                           The two share the experimental grid, ir_nu_min /
+!                           ir_nu_max, ir_nu_power, ir_match_scale,
+!                           ir_match_offset, ir_weight_by_spacing, ir_stride
+!                           and exp_energy_scales, and nothing else: everything
+!                           from ir_lag_factor to ir_acf_mode describes an
+!                           autocorrelation and is ignored under "xl".
+!     ir_xl_tau_mem         the resonators' memory time in fs, and so their
+!                           resolution: d(nu) = CM_PER_INV_FS/(pi tau), the
+!                           same quantity n_lag*dt sets for the ACF bias.
+!                           Required; there is no sensible default because it
+!                           is the resolution.
+!     ir_xl_n_modes         how many of the fitted frequencies get resonators.
+!                           A SUBSET of the experimental grid, evenly spaced in
+!                           index, never an interpolation onto a grid of our
+!                           choosing. The bank is (3, n_modes, n_sites) four
+!                           times over, so this is the memory knob; there is no
+!                           point asking for more modes than
+!                           (nu_max-nu_min)/d(nu).
+!     ir_xl_amplitude       "coherent" drives ONE bank with the total dipole,
+!                           which keeps the interference between sites and so
+!                           is the actual IR observable; it needs n_modes
+!                           resonators and no per-site storage at all.
+!                           "incoherent" gives every site its own bank and sums
+!                           the squares afterwards, dropping the interference,
+!                           at n_modes*n_atoms resonators. Coherent unless a
+!                           per-site target is the point -- and there is not
+!                           one yet, so: coherent.
+!     ir_xl_warm_factor     memory times to charge the bank for before any bias
+!                           is applied. The charge-up envelope itself is common
+!                           to the whole bank and so is absorbed by the fitted
+!                           scale; what this waits out is the initial-condition
+!                           ringing, which is not.
+!     ir_xl_max_memory      refuse a bank larger than this many MB per rank,
+!                           rather than discovering it at the allocate.
+!     ir_xl_restart_file    where the bank is persisted. Separate from
+!                           ir_restart_file: a bank is not a history buffer and
+!                           the two files are never interchangeable.
+      character*32 :: ir_bias_mode = "acf"
+      real(dp) :: ir_xl_tau_mem = 0.d0
+      integer :: ir_xl_n_modes = 64
+      character*32 :: ir_xl_amplitude = "coherent"
+      real(dp) :: ir_xl_warm_factor = 3.d0
+      real(dp) :: ir_xl_max_memory = 4096.d0
+      character*1024 :: ir_xl_restart_file = "ir_xl_restart.dat"
 
 !     ==================================================================
 !     NEIGHBOUR LISTS AND THE CORE POTENTIAL

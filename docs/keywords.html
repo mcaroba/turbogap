@@ -240,11 +240,11 @@ footer {
 <header class="masthead">
 <p class="eyebrow">TurboGAP &middot; keyword reference</p>
 <h1>Keywords</h1>
-<p class="lede">327 keywords across the input file and the potential (.gap) file. Types and defaults are read out of <code>src/types.f90</code>, and the rest out of the branch in <code>src/read_files.f90</code> that parses the keyword, so nothing here is transcribed by hand.</p>
+<p class="lede">334 keywords across the input file and the potential (.gap) file. Types and defaults are read out of <code>src/types.f90</code>, and the rest out of the branch in <code>src/read_files.f90</code> that parses the keyword, so nothing here is transcribed by hand.</p>
 </header>
 <nav class="rail" aria-label="Groups">
 <p class="railhead">the input file</p>
-<a href="#general"><span>General</span><span class="n">31</span></a>
+<a href="#general"><span>General</span><span class="n">38</span></a>
 <a href="#run-control"><span>Run control</span><span class="n">19</span></a>
 <a href="#molecular-dynamics"><span>Molecular dynamics</span><span class="n">22</span></a>
 <a href="#nested-sampling"><span>Nested sampling</span><span class="n">6</span></a>
@@ -315,6 +315,15 @@ footer {
 <td class="mo">md</td>
 <td class="de">How the running dipole autocorrelation is formed: &quot;block&quot; (the default) averages over the pairs the stored ensemble holds, and &quot;exponential&quot; carries it as a set of auxiliary variables integrated alongside the atoms, one per lag, decaying with constant ir_tau_mem. The exponential form weights the past by exp(-age/ir_tau_mem) instead of a hard window, so the bias is a decaying functional of the trajectory and the force does not jump when a frame falls off the end of the buffer. It is the Markovian embedding of a generalized Langevin bias in which the target spectrum plays the part of the bath.</td>
 <td class="dp"><span class="dep">needs <code>exp_labels</code></span><span class="dep">see <code>ir_tau_mem</code></span><span class="dep">see <code>ir_lag_factor</code></span><span class="dep">see <code>ir_estimator</code></span></td>
+</tr>
+<tr data-h="ir_bias_mode which ir bias to run: &quot;acf&quot; (the default) or &quot;xl&quot;. under &quot;acf&quot; the spectrum is the cosine transform of an autocorrelation of the stored dipoles and the mad force is the gradient of the mismatch with respect to the newest configuration. under &quot;xl&quot; it is the auxiliary-variable bias: a bank of damped resonators, a quadrature pair per fitted frequency, integrated alongside the atoms and driven by the dipole. the bank is the fourier transform -- a lorentzian filter bank written as equations of motion -- so no trajectory is stored, there is no hard window for a frame to fall out of, and the resolution is set by the damping rather than by a longest lag. the bias is the exact gradient of the spectral mismatch with respect to the dipole that drives the bank. the price is one stored frame of lag: the gradient cannot be formed until the descriptor pass that produced the dipole is over, so it is contracted against the next frame&#x27;s dipole gradient. that is what lets it be contracted inside the pass, with no (3,3,n_atoms) tensor formed and a third of the work in the descriptor term. the two modes share the experimental grid, ir_nu_min, ir_nu_max, ir_nu_power, ir_match_scale, ir_match_offset, ir_weight_by_spacing, ir_stride and exp_energy_scales. everything from ir_lag_factor to ir_tau_mem describes an autocorrelation and is ignored under &quot;xl&quot;." data-m="md">
+<td class="kw"><code>ir_bias_mode</code></td>
+<td class="ty">string</td>
+<td class="df"><code>acf</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">Which IR bias to run: &quot;acf&quot; (the default) or &quot;xl&quot;. Under &quot;acf&quot; the spectrum is the cosine transform of an autocorrelation of the stored dipoles and the MAD force is the gradient of the mismatch with respect to the newest configuration. Under &quot;xl&quot; it is the auxiliary-variable bias: a bank of damped resonators, a quadrature pair per fitted frequency, integrated alongside the atoms and driven by the dipole. The bank IS the Fourier transform -- a Lorentzian filter bank written as equations of motion -- so no trajectory is stored, there is no hard window for a frame to fall out of, and the resolution is set by the damping rather than by a longest lag. The bias is the exact gradient of the spectral mismatch with respect to the dipole that drives the bank. The price is one stored frame of lag: the gradient cannot be formed until the descriptor pass that produced the dipole is over, so it is contracted against the next frame&#x27;s dipole gradient. That is what lets it be contracted INSIDE the pass, with no (3,3,n_atoms) tensor formed and a third of the work in the descriptor term. The two modes share the experimental grid, ir_nu_min, ir_nu_max, ir_nu_power, ir_match_scale, ir_match_offset, ir_weight_by_spacing, ir_stride and exp_energy_scales. Everything from ir_lag_factor to ir_tau_mem describes an autocorrelation and is ignored under &quot;xl&quot;.</td>
+<td class="dp"><span class="dep">needs <code>exp_labels</code></span><span class="dep">see <code>ir_xl_tau_mem</code></span><span class="dep">see <code>ir_xl_n_modes</code></span><span class="dep">see <code>ir_xl_amplitude</code></span><span class="dep">see <code>ir_xl_warm_factor</code></span><span class="dep">see <code>ir_acf_mode</code></span></td>
 </tr>
 <tr data-h="ir_estimator how the autocorrelation is normalised: &quot;biased&quot; (default) divides c(tau) by n, &quot;unbiased&quot; divides by the number of pairs actually averaged, n - tau. the unbiased estimator is unbiased and is also not a positive semi-definite sequence, so its cosine transform can be negative -- and an absorption spectrum cannot be. the biased one is positive semi-definite: its transform is a periodogram (percival &amp; walden ch. 6; numerical recipes 13.4), at the price of scaling c(tau) by (1 - tau/n). since the lag window already tapers far harder than that, nothing is lost. note that guarantee covers the unwindowed estimate: windowing convolves the spectrum with the window kernel, so a kernel that dips negative can still drive the result negative. measured on one trajectory with every other fix on, ir_window = &quot;none&quot; gave 124 negative points of 400 while hann, lorch and bartlett gave zero. combine with ir_window = &quot;bartlett&quot;, whose fejer kernel is non-negative everywhere, for an unconditional guarantee." data-m="md">
 <td class="kw"><code>ir_estimator</code></td>
@@ -468,6 +477,60 @@ footer {
 <td class="mo">md</td>
 <td class="de">The old name for write_ir, kept because inputs use it. Sets write_ir.</td>
 <td class="dp"><span class="dep">sets <code>write_ir</code></span><span class="dep">see <code>write_ir</code></span><span class="dep">see <code>exp_labels</code></span><span class="dep">see <code>exp_energy_scales</code></span></td>
+</tr>
+<tr data-h="ir_xl_amplitude how the collective amplitude r_k that the experiment is compared with is built from the bank: &quot;coherent&quot; (the default) sums the resonators first and squares after, |sum_i x|^2 + |sum_i y|^2, and &quot;incoherent&quot; squares first and sums after. coherent is the actual infrared observable -- absorption comes from the correlation of the total dipole, and the cross terms between sites are transition-dipole coupling, not noise. incoherent throws those away, and exists because a per-site target is only meaningful against per-site amplitudes. coherent also has no spring-constant shift and so nothing to clamp; under &quot;incoherent&quot; the bias detunes each resonator, and a shift large enough to inflect the spring is clamped and counted." data-m="md">
+<td class="kw"><code>ir_xl_amplitude</code></td>
+<td class="ty">string</td>
+<td class="df"><code>coherent</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">How the collective amplitude R_k that the experiment is compared with is built from the bank: &quot;coherent&quot; (the default) sums the resonators first and squares after, |sum_i x|^2 + |sum_i y|^2, and &quot;incoherent&quot; squares first and sums after. Coherent is the actual infrared observable -- absorption comes from the correlation of the TOTAL dipole, and the cross terms between sites are transition-dipole coupling, not noise. Incoherent throws those away, and exists because a per-site target is only meaningful against per-site amplitudes. Coherent also has no spring-constant shift and so nothing to clamp; under &quot;incoherent&quot; the bias detunes each resonator, and a shift large enough to inflect the spring is clamped and counted.</td>
+<td class="dp"><span class="dep">needs <code>ir_bias_mode</code></span><span class="dep">see <code>ir_bias_mode</code></span><span class="dep">see <code>ir_xl_n_modes</code></span></td>
+</tr>
+<tr data-h="ir_xl_max_memory refuse to start if the resonator bank would need more than this many mb on one rank. the bank is replicated per rank, so this is per rank and not per node. zero disables the check." data-m="md">
+<td class="kw"><code>ir_xl_max_memory</code></td>
+<td class="ty">real</td>
+<td class="df"><code>4096.0</code></td>
+<td class="un">MB</td>
+<td class="mo">md</td>
+<td class="de">Refuse to start if the resonator bank would need more than this many MB on one rank. The bank is replicated per rank, so this is per rank and not per node. Zero disables the check.</td>
+<td class="dp"><span class="dep">needs <code>ir_bias_mode</code></span><span class="dep">see <code>ir_bias_mode</code></span><span class="dep">see <code>ir_xl_n_modes</code></span></td>
+</tr>
+<tr data-h="ir_xl_n_modes how many fitted frequencies get resonators. under ir_xl_amplitude = &quot;coherent&quot; the bank costs 96 * ir_xl_n_modes bytes and this hardly matters; under &quot;incoherent&quot; it costs that times the number of atoms, on every rank, and this is the memory knob. the frequencies chosen are a subset of the experimental grid, evenly spaced in index and endpoints included -- never a resampling, because interpolating the experiment invents structure between its points and then fits to it. asking for more than (ir_nu_max - ir_nu_min) / d(nu) modes buys nothing: the bank cannot resolve bins narrower than its own bandwidth. a value at or above the number of fitted points keeps all of them." data-m="md">
+<td class="kw"><code>ir_xl_n_modes</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>64</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">How many fitted frequencies get resonators. Under ir_xl_amplitude = &quot;coherent&quot; the bank costs 96 * ir_xl_n_modes bytes and this hardly matters; under &quot;incoherent&quot; it costs that times the number of atoms, on every rank, and this is the memory knob. The frequencies chosen are a SUBSET of the experimental grid, evenly spaced in index and endpoints included -- never a resampling, because interpolating the experiment invents structure between its points and then fits to it. Asking for more than (ir_nu_max - ir_nu_min) / d(nu) modes buys nothing: the bank cannot resolve bins narrower than its own bandwidth. A value at or above the number of fitted points keeps all of them.</td>
+<td class="dp"><span class="dep">needs <code>ir_bias_mode</code></span><span class="dep">see <code>ir_bias_mode</code></span><span class="dep">see <code>ir_xl_tau_mem</code></span><span class="dep">see <code>ir_xl_max_memory</code></span></td>
+</tr>
+<tr data-h="ir_xl_restart_file where the resonator bank is written, and read from on a restart. &quot;none&quot; turns both off. separate from ir_restart_file because a bank is not a history buffer: a file written under a different ir_xl_tau_mem, ir_xl_g, ir_stride, mode grid or ir_xl_amplitude describes a different filter and is refused rather than adopted. a refusal is not fatal -- the run charges a fresh bank and says so." data-m="md">
+<td class="kw"><code>ir_xl_restart_file</code></td>
+<td class="ty">string</td>
+<td class="df"><code>ir_xl_restart.dat</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">Where the resonator bank is written, and read from on a restart. &quot;none&quot; turns both off. Separate from ir_restart_file because a bank is not a history buffer: a file written under a different ir_xl_tau_mem, ir_xl_g, ir_stride, mode grid or ir_xl_amplitude describes a different filter and is refused rather than adopted. A refusal is not fatal -- the run charges a fresh bank and says so.</td>
+<td class="dp"><span class="dep">needs <code>ir_bias_mode</code></span><span class="dep">see <code>ir_bias_mode</code></span><span class="dep">see <code>ir_restart_file</code></span></td>
+</tr>
+<tr data-h="ir_xl_tau_mem memory time of the extended-lagrangian resonators, and so their resolution. a resonator damped at gamma = 2/ir_xl_tau_mem is a lorentzian bandpass of full width gamma, which in wavenumbers is d(nu) = 33356.40952/(pi ir_xl_tau_mem) -- the same quantity that n_lag*md_step*ir_stride sets for the acf bias, so 4 cm^-1 needs about 2650 fs either way. there is no default because there is no default resolution. it must exceed the interval between stored frames, and it must be long enough that the lowest fitted wavenumber is still underdamped, tau &gt; 33356.40952/(2 pi nu_min)." data-m="md">
+<td class="kw"><code>ir_xl_tau_mem</code></td>
+<td class="ty">real</td>
+<td class="df"><code>0.0</code></td>
+<td class="un">fs</td>
+<td class="mo">md</td>
+<td class="de">Memory time of the extended-Lagrangian resonators, and so their resolution. A resonator damped at gamma = 2/ir_xl_tau_mem is a Lorentzian bandpass of full width gamma, which in wavenumbers is d(nu) = 33356.40952/(pi ir_xl_tau_mem) -- the same quantity that n_lag*md_step*ir_stride sets for the ACF bias, so 4 cm^-1 needs about 2650 fs either way. There is no default because there is no default resolution. It must exceed the interval between stored frames, and it must be long enough that the lowest fitted wavenumber is still underdamped, tau &gt; 33356.40952/(2 pi nu_min).</td>
+<td class="dp"><span class="dep">needs <code>ir_bias_mode</code></span><span class="dep">see <code>ir_bias_mode</code></span><span class="dep">see <code>ir_xl_n_modes</code></span><span class="dep">see <code>ir_resolution</code></span><span class="dep">see <code>ir_stride</code></span></td>
+</tr>
+<tr data-h="ir_xl_warm_factor memory times to charge the resonator bank for before any bias is applied. the charge-up envelope, 1 - exp(-t/ir_xl_tau_mem), is the same at every frequency because the damping is, so the deficit it leaves is a pure overall factor and ir_match_scale absorbs it exactly; what this waits out is the ringing left by starting the bank at rest, which is at w_k and so is not common across the bank. three memory times leaves that at 5% of its initial amplitude." data-m="md">
+<td class="kw"><code>ir_xl_warm_factor</code></td>
+<td class="ty">real</td>
+<td class="df"><code>3.0</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">Memory times to charge the resonator bank for before any bias is applied. The charge-up envelope, 1 - exp(-t/ir_xl_tau_mem), is the same at every frequency because the damping is, so the deficit it leaves is a pure overall factor and ir_match_scale absorbs it exactly; what this waits out is the ringing left by starting the bank at rest, which is at w_k and so is not common across the bank. Three memory times leaves that at 5% of its initial amplitude.</td>
+<td class="dp"><span class="dep">needs <code>ir_bias_mode</code></span><span class="dep">see <code>ir_bias_mode</code></span><span class="dep">see <code>ir_xl_tau_mem</code></span></td>
 </tr>
 <tr data-h="masses atomic mass of each species, one value per entry in species and in the same order. read in amu and converted internally to ev fs^2 / a^2. if absent they are taken from the xyz file instead." data-m="predict md mc soap">
 <td class="kw"><code>masses</code></td>

@@ -644,6 +644,95 @@ contains
 
    end subroutine
 
+   subroutine accumulate_mu_weighted_force(wsite, V, soap_cart_der, hess, n_neigh, &
+                                           neighbors_list, n_sites0, in_to_out_site, force)
+!   **********************************************
+!   The MAD IR force when the weight is already known: a per-site 3-vector
+!   contracted against the local dipole gradient as the descriptor is walked.
+!
+!     force(b, j) += sum_i sum_a wsite(a, i) d mu_ia / d r_jb
+!
+!   This is what an EXTENDED-LAGRANGIAN bias wants (mad_ir_xl.f90, equation 3),
+!   and it is a different shape of calculation from accumulate_dmu_dr's even
+!   though it walks the same pairs. There, the weight lambda is a function of
+!   the dipole of the current configuration, so it cannot exist until the
+!   descriptor pass is over, and the pass has to leave behind the whole
+!   (3,3,n_atoms) tensor for lambda to meet later. Here the weight is
+!   w_i = sum_k g x_{k,i}, a dynamical variable carried in from the previous
+!   step, so it is known BEFORE the pass and is contracted inside it. Nothing
+!   of size 9*n_atoms is ever formed, and there is 3*n_atoms rather than
+!   9*n_atoms to reduce across ranks.
+!
+!   It is also cheaper by about a factor of three in the term that dominates.
+!   Contracting the weight into V first,
+!
+!     Vw(:, i) = sum_a wsite(a, i) V(:, a, i)
+!
+!   turns the three dot products of length n_soap that accumulate_dmu_dr does
+!   per (pair, direction) into one. The Hessian term does not compress the same
+!   way -- hess carries both indices -- but it is a 3x3 contraction rather than
+!   an n_soap one.
+!
+!   THE WEIGHT IS INDEXED BY GLOBAL ATOM, THE DESCRIPTOR BY BATCH SITE. wsite
+!   is (3, n_atoms) in the caller's numbering and in_to_out_site maps this
+!   batch's local site index to it, exactly as the dipole accumulation above
+!   does for local_dipoles0. Getting this wrong gives a force that is the right
+!   size and attached to the wrong atoms.
+!
+!   Accumulates rather than assigns, so several dipole descriptors, or several
+!   batches, add into the same array. force is the run's force array and is
+!   already non-zero: this ADDS the bias to it.
+!   **********************************************
+
+      implicit none
+
+      real(dp), intent(in) :: wsite(:, :)
+      real(dp), intent(in) :: V(:, :, :)
+      real(dp), intent(in) :: soap_cart_der(:, :, :)
+      real(dp), intent(in) :: hess(:, :, :, :)
+      integer, intent(in) :: n_neigh(:)
+      integer, intent(in) :: neighbors_list(:)
+      integer, intent(in) :: n_sites0
+      integer, intent(in) :: in_to_out_site(:)
+      real(dp), intent(inout) :: force(:, :)
+      real(dp), allocatable :: Vw(:, :)
+      real(dp) :: wi(1:3), acc
+      integer :: n_sites, n_soap, i, i2, j, k, a, b, j2
+
+      n_soap = size(V, 1)
+      n_sites = size(V, 3)
+
+      allocate (Vw(1:n_soap, 1:n_sites))
+      do i = 1, n_sites
+         i2 = in_to_out_site(i)
+         Vw(1:n_soap, i) = wsite(1, i2)*V(1:n_soap, 1, i) &
+                           + wsite(2, i2)*V(1:n_soap, 2, i) &
+                           + wsite(3, i2)*V(1:n_soap, 3, i)
+      end do
+
+      k = 0
+      do i = 1, n_sites
+         i2 = in_to_out_site(i)
+         wi(1:3) = wsite(1:3, i2)
+         do j = 1, n_neigh(i)
+            k = k + 1
+!           the atom this pair points at, folded back into the primitive cell
+            j2 = mod(neighbors_list(k) - 1, n_sites0) + 1
+            j2 = in_to_out_site(j2)
+            do b = 1, 3
+               acc = dot_product(Vw(1:n_soap, i), soap_cart_der(b, 1:n_soap, k))
+               do a = 1, 3
+                  acc = acc + wi(a)*hess(a, b, 1, k)
+               end do
+               force(b, j2) = force(b, j2) + acc
+            end do
+         end do
+      end do
+
+      deallocate (Vw)
+
+   end subroutine
+
    subroutine get_2b_energy_and_forces(rjs, xyz, alphas, cutoff, rcut, buffer, delta, sigma, e0, Qs, &
                                        n_neigh, do_forces, do_timing, species, neighbor_species, &
                                        species1, species2, species_types, energies, forces, virial)

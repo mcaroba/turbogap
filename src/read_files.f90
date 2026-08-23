@@ -1472,6 +1472,147 @@ contains
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_tau_mem
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("ir_tau_mem", params%ir_tau_mem)
+         !> @kw ir_bias_mode
+         !> Which IR bias to run: "acf" (the default) or "xl". Under "acf" the spectrum is the
+         !> cosine transform of an autocorrelation of the stored dipoles and the MAD force is the
+         !> gradient of the mismatch with respect to the newest configuration. Under "xl" it is
+         !> the auxiliary-variable bias: a bank of damped resonators, a quadrature pair per fitted
+         !> frequency, integrated alongside the atoms and driven by the dipole. The bank IS the
+         !> Fourier transform -- a Lorentzian filter bank written as equations of motion -- so no
+         !> trajectory is stored, there is no hard window for a frame to fall out of, and the
+         !> resolution is set by the damping rather than by a longest lag. The bias is the exact
+         !> gradient of the spectral mismatch with respect to the dipole that drives the bank.
+         !> The price is one stored frame of lag: the gradient cannot be formed until the
+         !> descriptor pass that produced the dipole is over, so it is contracted against the
+         !> next frame's dipole gradient. That is what lets it be contracted INSIDE the pass,
+         !> with no (3,3,n_atoms) tensor formed and a third of the work in the descriptor term.
+         !> The two modes share the experimental grid, ir_nu_min, ir_nu_max, ir_nu_power,
+         !> ir_match_scale, ir_match_offset, ir_weight_by_spacing, ir_stride and
+         !> exp_energy_scales. Everything from ir_lag_factor to ir_tau_mem describes an
+         !> autocorrelation and is ignored under "xl".
+         !> @modes md
+         !> @needs exp_labels
+         !> @see ir_xl_tau_mem ir_xl_n_modes ir_xl_amplitude ir_xl_warm_factor ir_acf_mode
+      else if (keyword == 'ir_bias_mode') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_bias_mode
+         call check_iostatus(iostatus, keyword)
+         call upper_to_lower_case(params%ir_bias_mode)
+         if (trim(params%ir_bias_mode) /= "acf" .and. &
+             trim(params%ir_bias_mode) /= "xl") then
+            if (rank == 0) then
+               write (*, *) "ERROR -> Invalid ir_bias_mode keyword:", params%ir_bias_mode
+               write (*, *) "This is a list of valid options:"
+               write (*, *) "acf  xl"
+            end if
+            stop
+         end if
+         if (rank == 0) call print_parameter("ir_bias_mode", params%ir_bias_mode)
+         !> @kw ir_xl_tau_mem
+         !> Memory time of the extended-Lagrangian resonators, and so their resolution. A
+         !> resonator damped at gamma = 2/ir_xl_tau_mem is a Lorentzian bandpass of full width
+         !> gamma, which in wavenumbers is d(nu) = 33356.40952/(pi ir_xl_tau_mem) -- the same
+         !> quantity that n_lag*md_step*ir_stride sets for the ACF bias, so 4 cm^-1 needs about
+         !> 2650 fs either way. There is no default because there is no default resolution. It
+         !> must exceed the interval between stored frames, and it must be long enough that the
+         !> lowest fitted wavenumber is still underdamped, tau > 33356.40952/(2 pi nu_min).
+         !> @units fs
+         !> @modes md
+         !> @needs ir_bias_mode
+         !> @see ir_bias_mode ir_xl_n_modes ir_resolution ir_stride
+      else if (keyword == 'ir_xl_tau_mem') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_xl_tau_mem
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_xl_tau_mem", params%ir_xl_tau_mem)
+         !> @kw ir_xl_n_modes
+         !> How many fitted frequencies get resonators. Under ir_xl_amplitude = "coherent" the
+         !> bank costs 96 * ir_xl_n_modes bytes and this hardly matters; under "incoherent" it
+         !> costs that times the number of atoms, on every rank, and this is the memory knob. The
+         !> frequencies chosen are a SUBSET of the experimental grid, evenly spaced in index and
+         !> endpoints included -- never a resampling, because interpolating the experiment invents
+         !> structure between its points and then fits to it. Asking for more than
+         !> (ir_nu_max - ir_nu_min) / d(nu) modes buys nothing: the bank cannot resolve bins
+         !> narrower than its own bandwidth. A value at or above the number of fitted points keeps
+         !> all of them.
+         !> @modes md
+         !> @needs ir_bias_mode
+         !> @see ir_bias_mode ir_xl_tau_mem ir_xl_max_memory
+      else if (keyword == 'ir_xl_n_modes') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_xl_n_modes
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_xl_n_modes", params%ir_xl_n_modes)
+         !> @kw ir_xl_amplitude
+         !> How the collective amplitude R_k that the experiment is compared with is built from
+         !> the bank: "coherent" (the default) sums the resonators first and squares after,
+         !> |sum_i x|^2 + |sum_i y|^2, and "incoherent" squares first and sums after. Coherent is
+         !> the actual infrared observable -- absorption comes from the correlation of the TOTAL
+         !> dipole, and the cross terms between sites are transition-dipole coupling, not noise.
+         !> Incoherent throws those away, and exists because a per-site target is only meaningful
+         !> against per-site amplitudes. Coherent also has no spring-constant shift and so nothing
+         !> to clamp; under "incoherent" the bias detunes each resonator, and a shift large enough
+         !> to inflect the spring is clamped and counted.
+         !> @modes md
+         !> @needs ir_bias_mode
+         !> @see ir_bias_mode ir_xl_n_modes
+      else if (keyword == 'ir_xl_amplitude') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_xl_amplitude
+         call check_iostatus(iostatus, keyword)
+         call upper_to_lower_case(params%ir_xl_amplitude)
+         if (trim(params%ir_xl_amplitude) /= "coherent" .and. &
+             trim(params%ir_xl_amplitude) /= "incoherent") then
+            if (rank == 0) then
+               write (*, *) "ERROR -> Invalid ir_xl_amplitude keyword:", params%ir_xl_amplitude
+               write (*, *) "This is a list of valid options:"
+               write (*, *) "coherent  incoherent"
+            end if
+            stop
+         end if
+         if (rank == 0) call print_parameter("ir_xl_amplitude", params%ir_xl_amplitude)
+         !> @kw ir_xl_warm_factor
+         !> Memory times to charge the resonator bank for before any bias is applied. The
+         !> charge-up envelope, 1 - exp(-t/ir_xl_tau_mem), is the same at every frequency because
+         !> the damping is, so the deficit it leaves is a pure overall factor and ir_match_scale
+         !> absorbs it exactly; what this waits out is the ringing left by starting the bank at
+         !> rest, which is at w_k and so is not common across the bank. Three memory times leaves
+         !> that at 5% of its initial amplitude.
+         !> @modes md
+         !> @needs ir_bias_mode
+         !> @see ir_bias_mode ir_xl_tau_mem
+      else if (keyword == 'ir_xl_warm_factor') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_xl_warm_factor
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_xl_warm_factor", params%ir_xl_warm_factor)
+         !> @kw ir_xl_max_memory
+         !> Refuse to start if the resonator bank would need more than this many MB on one rank.
+         !> The bank is replicated per rank, so this is per rank and not per node. Zero disables
+         !> the check.
+         !> @units MB
+         !> @modes md
+         !> @needs ir_bias_mode
+         !> @see ir_bias_mode ir_xl_n_modes
+      else if (keyword == 'ir_xl_max_memory') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_xl_max_memory
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_xl_max_memory", params%ir_xl_max_memory)
+         !> @kw ir_xl_restart_file
+         !> Where the resonator bank is written, and read from on a restart. "none" turns both
+         !> off. Separate from ir_restart_file because a bank is not a history buffer: a file
+         !> written under a different ir_xl_tau_mem, ir_xl_g, ir_stride, mode grid or
+         !> ir_xl_amplitude describes a different filter and is refused rather than adopted. A
+         !> refusal is not fatal -- the run charges a fresh bank and says so.
+         !> @modes md
+         !> @needs ir_bias_mode
+         !> @see ir_bias_mode ir_restart_file
+      else if (keyword == 'ir_xl_restart_file') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_xl_restart_file
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_xl_restart_file", params%ir_xl_restart_file)
          !> @kw ir_match_scale
          !> Fit an overall scale factor between the computed and experimental spectra before
          !> comparing them. The computed spectrum is in arbitrary units, so with this off the
