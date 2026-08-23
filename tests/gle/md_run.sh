@@ -273,6 +273,101 @@ PY
 [ $? -eq 0 ] || fail=$((fail + 1))
 
 echo
+echo "==> 9. the header names exactly as many columns as the data has"
+#
+# This is the invariant the dynamic header exists to hold. It used to fail
+# silently: the header was a fixed string while the columns were already
+# conditional, so a do_exp run wrote a column the header did not name and
+# everything after it was misread by one place -- in xrd_mad the column labelled
+# "Pressure" actually held E_exp, and the pressure had no label at all.
+#
+# Checked over the combinations that switch columns on and off, because the bug
+# only appears when two optional groups are on at once and no single-flag test
+# would have caught it.
+cat >hdr_A.dat <<'EOF'
+  0.002   0.05    0.02
+ -0.05    0.02    0.0
+ -0.02    0.0     0.004
+EOF
+python3 - <<'PY'
+import math
+with open("hdr_ir.dat","w") as f:
+    nu = 0.0
+    while nu <= 4000.0:
+        f.write("%10.2f %16.8f\n" % (nu, math.exp(-((nu-1600.0)/60.0)**2)))
+        nu += 2.0
+PY
+# An ir observable needs the descriptor second derivatives, which the legacy
+# radial filter cannot supply -- without this line the run aborts.
+IRBLK='soap_radial_legacy_filter = .false.
+n_exp = 1
+exp_labels = ir
+exp_data_files = "hdr_ir.dat"
+exp_energy_scales = 1.0e-6
+exp_forces = .true.
+exp_energies = .true.
+ir_stride = 1
+ir_nu_max = 4000.0
+ir_nu_min = 400.0
+ir_resolution = 3000.0
+ir_lag_factor = 2'
+GLEBLK='gle_a_file = "hdr_A.dat"
+gle_restart = .false.'
+
+hdr_combo() { # 1 name  2 thermostat  3 extra  4 expected columns
+  # DELETE thermo.log FIRST. A run that aborts leaves the previous combo's file
+  # in place, and reading that compares a stale header against its own stale
+  # data -- which agree, so a combination that never ran reports a pass. That
+  # happened here: the IR combos aborted on the legacy radial filter and the
+  # check went green on the file left by the run before.
+  rm -f thermo.log
+  write_input "$2" 40 "$3"
+  "$BIN" md >"hdr_$1.log" 2>&1
+  if [ ! -f thermo.log ]; then
+    bad "$1: the run produced no thermo.log ($(grep -m1 -i error "hdr_$1.log" | cut -c1-60))"
+    return
+  fi
+  local h d
+  h=$(head -1 thermo.log | sed 's/^#//' | wc -w)
+  d=$(sed -n 2p thermo.log | wc -w)
+  if [ "$h" != "$d" ]; then
+    bad "$1: header names $h columns but data has $d"
+  elif [ -n "${4:-}" ] && [ "$h" != "$4" ]; then
+    # The count is also asserted outright, so that a combination silently
+    # losing a whole column group still fails even though it stays consistent.
+    bad "$1: consistent at $h columns but $4 were expected"
+  else
+    pass "$1: header names $h columns, data has $d"
+  fi
+}
+hdr_combo "plain"        none     ""                       6
+hdr_combo "gle"          gle      "$GLEBLK"                9
+hdr_combo "IR"           none     "$IRBLK"                 9
+hdr_combo "gle+IR"       gle      "$GLEBLK
+$IRBLK"                                                    12
+hdr_combo "write_lv+gle" gle      "write_lv = .true.
+$GLEBLK"                                                   18
+hdr_combo "write_lv+gle+IR" gle   "write_lv = .true.
+$GLEBLK
+$IRBLK"                                                    21
+# write_lv ALONE is deliberately left as it always was: 6 names for 15 columns,
+# the nine lattice columns unnamed. Naming them would change thermo.log for
+# every existing write_lv deck, and relax_gd and its three variants compare
+# against the frozen baseline binary, which cannot produce a new header. They
+# are named as soon as anything follows them, because only then does leaving
+# them out misalign the names that do appear -- which the two cases above check.
+rm -f thermo.log
+write_input none 40 'write_lv = .true.'
+"$BIN" md >hdr_lv.log 2>&1
+h=$(head -1 thermo.log | sed 's/^#//' | wc -w)
+d=$(sed -n 2p thermo.log | wc -w)
+if [ "$h" = "6" ] && [ "$d" = "15" ]; then
+  pass "write_lv alone keeps its historical header ($h names, $d columns)"
+else
+  bad "write_lv alone changed: $h names, $d columns (expected 6 and 15)"
+fi
+
+echo
 if [ "$fail" -eq 0 ]; then
   echo "==> gle/md_run.sh: all checks passed"
   cd /; rm -rf "$D"
