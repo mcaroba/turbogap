@@ -39,6 +39,7 @@ module turbogap_md
    use types
    use md
    use bussi
+   use gle
    use xyz_module
    use timing
    use mpi_helper
@@ -149,6 +150,14 @@ contains
       character*64 :: cjunk
       real(dp) :: instant_pressure_tensor(1:3, 1:3)
       real(dp) :: lv(1:3, 1:3)
+!     Status of the generalized Langevin thermostat. Only ever written and read
+!     inside the thermostat block below.
+      logical :: gle_ok, gle_resumed
+      character(len=512) :: gle_msg
+!     Has the bath been rebuilt for a changed particle count? Saved, because it
+!     has to outlive the call: it suppresses the setup report and the restart
+!     read on every rebuild after the first setup.
+      logical, save :: gle_rebuilt = .false.
 !     Loop scratch. Written before read here; the driver rewrites i and j in
 !     do-loops after the call and never reads i2, j2 or k2 again.
       integer :: i, i2, j, j2, k2
@@ -445,6 +454,65 @@ contains
                                                                   3*n_sites - 3, params%tau_t, time_step)/E_kinetic)
                else
                   velocities(1:3, 1:n_sites) = 0.0d0
+               end if
+            else if (params%thermostat == "gle" .or. params%thermostat == "langevin") then
+               call get_target_temp(params%t_beg, params%t_end,&
+                    & md_istep, params%md_nsteps, params%n_t_hold, &
+                    & params%t_hold, target_temp)
+!              The auxiliary array is (ns,3,n_atoms), so a run that changes the
+!              number of atoms -- mc insertion and removal do -- invalidates it.
+!              Dropping it here forces the rebuild below rather than leaving a
+!              bath sized for the old system, which gle_thermostat would use for
+!              as many atoms as it had and silently leave the rest untouched.
+!              The new bath is drawn fresh from the stationary distribution,
+!              which is the right answer anyway: after an insertion there is no
+!              bath history for the atom that just appeared.
+               if (gle_state%active .and. gle_state%n_atoms /= n_sites) then
+                  call gle_free(gle_state)
+                  gle_rebuilt = .true.
+               end if
+!              Set up on first use rather than in turbogap_setup: n_sites is
+!              not known there, and the auxiliary array is sized by it. The
+!              same reason mad_ir's setup is lazy.
+               if (.not. gle_state%active) then
+!                 Only the first setup reads the restart file. A rebuild after
+!                 the particle count changed would be offered a file for the old
+!                 count, refused, and would say so once per accepted move.
+                  call gle_setup(gle_state, params%thermostat, params%gle_a_file, &
+                                 params%gle_c_file, params%gle_restart_file, &
+                                 params%gle_restart .and. .not. gle_rebuilt, &
+                                 params%tau_t, n_sites, &
+                                 target_temp, time_step, gle_ok, gle_resumed, gle_msg)
+                  if (.not. gle_ok) then
+                     write (*, *) "ERROR: ", trim(gle_msg)
+                     stop
+                  end if
+                  if (.not. gle_rebuilt) then
+                     call gle_report(gle_state, time_step, target_temp, gle_resumed, gle_msg)
+                  end if
+               end if
+               call gle_thermostat(gle_state, velocities(1:3, 1:n_sites), &
+                                   masses(1:n_sites), fix_atom(1:3, 1:n_sites), &
+                                   target_temp, time_step, gle_ok, gle_msg)
+               if (.not. gle_ok) then
+                  write (*, *) "ERROR: ", trim(gle_msg)
+                  stop
+               end if
+!              Persist the bath alongside the trajectory. The auxiliary momenta
+!              are state in the same sense the velocities are, and a restart
+!              that drops them throws away the correlation between the bath and
+!              the atoms -- which for a kernel whose slowest mode outlasts the
+!              restart interval is the whole of what the thermostat was doing.
+!              Written on the trajectory's own schedule, so the bath on disk is
+!              never newer than the positions it belongs to.
+               if (params%gle_restart .and. params%write_xyz > 0 .and. &
+                   len_trim(params%gle_restart_file) > 0 .and. &
+                   trim(params%gle_restart_file) /= "none") then
+                  if (modulo(md_istep, params%write_xyz) == 0 .or. &
+                      md_istep == params%md_nsteps .or. exit_loop) then
+                     call gle_save(gle_state, params%gle_restart_file, gle_ok, gle_msg)
+                     if (.not. gle_ok) write (*, *) "WARNING: ", trim(gle_msg)
+                  end if
                end if
             end if
             !     Check what's the maximum atomic displacement since last neighbors build

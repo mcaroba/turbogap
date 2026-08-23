@@ -118,7 +118,10 @@ contains
 
    subroutine init_state()
       integer :: kk
-      call mad_ir_init(st, dt, n_lag, n_window, nu, Iexp, wgt, .true., 2.d0, "hann")
+!     As in irverify: the four estimator switches became required arguments
+!     after this was written and it was not updated. The type's own defaults.
+      call mad_ir_init(st, dt, n_lag, n_window, nu, Iexp, wgt, .true., 2.d0, "hann", &
+                       .true., .true., .true., .false.)
       do kk = 1, n_window - 1
          call mad_ir_push(st, mu_hist(:, kk))
       end do

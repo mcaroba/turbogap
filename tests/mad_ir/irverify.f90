@@ -168,7 +168,12 @@ contains
    subroutine load_and_eval_scale(ms)
       logical, intent(in) :: ms
       integer :: tt
-      call mad_ir_init(st, dt, n_lag, n_window, nu, Iexp, wgt, ms, 2.d0, "hann")
+!     The four estimator switches were added to mad_ir_init as required
+!     arguments after this program was written, and it was not updated -- so it
+!     had stopped compiling. Passing the type's own defaults keeps every check
+!     below measuring what it was written to measure.
+      call mad_ir_init(st, dt, n_lag, n_window, nu, Iexp, wgt, ms, 2.d0, "hann", &
+                       .true., .true., .true., .false.)
       do tt = 1, n_window
          call mad_ir_push(st, mu(:, tt))
       end do

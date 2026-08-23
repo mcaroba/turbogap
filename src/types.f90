@@ -332,6 +332,18 @@ module types
 !                           a hard zero.
       logical :: ir_subtract_mean = .true.
       character*32 :: ir_estimator = "biased"
+!     ir_acf_mode           how the running correlation is formed. "block" is
+!                           the ordinary average over the pairs the buffer
+!                           holds. "exponential" carries C(tau,t) as auxiliary
+!                           variables integrated alongside the atoms, decaying
+!                           with constant ir_tau_mem -- the Markovian embedding
+!                           of a generalized Langevin bias, in which the target
+!                           spectrum plays the part of the heat bath.
+!     ir_tau_mem            that decay constant, in fs. Must exceed the interval
+!                           between stored frames, md_step*ir_stride, or the
+!                           filter retains nothing from one frame to the next.
+      character*32 :: ir_acf_mode = "block"
+      real(dp) :: ir_tau_mem = 0.d0
       logical :: ir_taper_partial = .true.
       logical :: ir_weight_by_spacing = .true.
       logical :: ir_match_offset = .false.
@@ -371,6 +383,33 @@ module types
       real(dp) :: tau_t = 100.d0
       real(dp), allocatable :: t_hold(:)
       integer :: n_t_hold = 0
+
+!     Generalized Langevin thermostat (thermostat = gle / langevin).
+!
+!     gle_a_file is the drift matrix A_p of the Markovian embedding, of order
+!     ns+1 with the physical momentum first, in fs^-1. It is the whole
+!     specification of the memory kernel: ns, the relaxation times and the
+!     coupling strengths are all read off it, so there is no keyword for any of
+!     them and the order is taken from the file's own contents.
+!
+!     gle_c_file is the stationary covariance C_p, in eV, and is OPTIONAL in a
+!     way the drift matrix is not. Left unset, C_p = kB T I and the thermostat
+!     samples the canonical distribution at the target temperature, following a
+!     temperature ramp like every other thermostat. Set, it describes a bath at
+!     one fixed temperature -- which is how the quantum thermostats give each
+!     mode the energy of a quantum oscillator rather than kB T -- and the ramp
+!     no longer applies to it.
+!
+!     thermostat = langevin needs neither file: it is the ns = 0 member of the
+!     same family, built internally from tau_t.
+      character*1024 :: gle_a_file = ""
+      character*1024 :: gle_c_file = ""
+!     The auxiliary momenta are state, like the velocities, and a restart that
+!     drops them discards the correlation between the bath and the atoms. Kept
+!     in their own file rather than in the XYZ because they are per degree of
+!     freedom rather than per atom.
+      character*1024 :: gle_restart_file = "gle_restart.dat"
+      logical :: gle_restart = .true.
 
 !     Barostat
       character*32 :: barostat = "none"

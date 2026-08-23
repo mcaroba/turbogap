@@ -1271,7 +1271,8 @@ program turbogap
                                        trim(params%ir_estimator) /= "unbiased", &
                                        params%ir_taper_partial, params%ir_match_offset, &
                                        params%ir_weight_by_spacing, &
-                                       n_sites, mad_ir_ok, mad_ir_resumed, mad_ir_msg)
+                                       n_sites, mad_ir_ok, mad_ir_resumed, mad_ir_msg, &
+                                       params%ir_acf_mode, params%ir_tau_mem)
                   else
 !                    Prediction: the ensemble is the whole trajectory, so its
 !                    length is md_nsteps/ir_stride + 1 -- every step for which
@@ -1293,7 +1294,8 @@ program turbogap
                                                params%ir_window, params%ir_subtract_mean, &
                                                trim(params%ir_estimator) /= "unbiased", &
                                                params%ir_taper_partial, &
-                                               n_sites, mad_ir_ok, mad_ir_msg)
+                                               n_sites, mad_ir_ok, mad_ir_msg, &
+                                               params%ir_acf_mode, params%ir_tau_mem)
                   end if
                   if (.not. mad_ir_ok) then
                      write (*, *) "ERROR: ", trim(mad_ir_msg)

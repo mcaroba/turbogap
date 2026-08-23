@@ -46,8 +46,8 @@ module read_files
 !  Constant lists of what the code implements. Module parameters rather than
 !  locals rebuilt on every call, so the keyword-family subroutines can validate
 !  against them without being handed the lists.
-   character*32, parameter :: implemented_thermostats(1:3) = &
-                              [character*32 :: "none", "berendsen", "bussi"]
+   character*32, parameter :: implemented_thermostats(1:5) = &
+                              [character*32 :: "none", "berendsen", "bussi", "langevin", "gle"]
    character*32, parameter :: implemented_barostats(1:2) = &
                               [character*32 :: "none", "berendsen"]
    character*32, parameter :: implemented_mc_types(1:8) = &
@@ -966,6 +966,51 @@ contains
          call system("mkdir -p walkers/")
       end if
 
+!   Generalized Langevin thermostat checks.
+!
+!   The drift matrix is not optional and has no default. A default would have to
+!   invent a memory kernel, and a memory kernel invented by the code is a
+!   thermostat nobody chose running under a name that says it was chosen.
+      if (params%thermostat == "gle") then
+         if (len_trim(params%gle_a_file) == 0) then
+            write (*, *) "ERROR: thermostat = gle needs gle_a_file, the drift matrix of the"
+            write (*, *) "memory kernel. There is no default: use thermostat = langevin for"
+            write (*, *) "the memoryless case, which is built from tau_t alone."
+            stop
+         end if
+      else if (len_trim(params%gle_a_file) > 0) then
+         write (*, *) '                                       |'
+         write (*, *) 'WARNING: gle_a_file is set but the     |  <-- WARNING'
+         write (*, *) 'thermostat is not gle, so the matrix   |'
+         write (*, *) 'is not being used.                     |'
+      end if
+
+!   A C without an A is a covariance for a kernel that was never given.
+      if (len_trim(params%gle_c_file) > 0 .and. len_trim(params%gle_a_file) == 0) then
+         write (*, *) "ERROR: gle_c_file was given without gle_a_file. C is the stationary"
+         write (*, *) "covariance of the process the drift matrix defines; on its own it"
+         write (*, *) "specifies nothing."
+         stop
+      end if
+
+!   A supplied C describes a bath at one temperature. Following a ramp would
+!   mean rescaling it, which is exactly what a non-canonical C must not have
+!   done to it -- so the ramp is ignored rather than applied, and saying so here
+!   is the only place a user finds out before the run rather than after.
+      if (params%thermostat == "gle" .and. len_trim(params%gle_c_file) > 0 .and. &
+          params%t_beg /= params%t_end) then
+         write (*, *) '                                       |'
+         write (*, *) 'WARNING: gle_c_file fixes the bath at   |  <-- WARNING'
+         write (*, *) 'one temperature, so the t_beg -> t_end  |'
+         write (*, *) 'ramp does not apply to it. Drop         |'
+         write (*, *) 'gle_c_file for a canonical ramp.        |'
+      end if
+
+      if (params%thermostat == "langevin" .and. params%tau_t <= 0.d0) then
+         write (*, *) "ERROR: thermostat = langevin needs a positive tau_t; the friction is 1/tau_t."
+         stop
+      end if
+
 !   An IR spectrum is a time-series observable: it comes from the dipole
 !   autocorrelation over an ensemble of configurations, not from one frame's
 !   structure. It uses the exp_* keywords -- exp_labels to declare it,
@@ -1385,6 +1430,48 @@ contains
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_lag_factor
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("ir_lag_factor", params%ir_lag_factor)
+         !> @kw ir_acf_mode
+         !> How the running dipole autocorrelation is formed: "block" (the default) averages over
+         !> the pairs the stored ensemble holds, and "exponential" carries it as a set of auxiliary
+         !> variables integrated alongside the atoms, one per lag, decaying with constant
+         !> ir_tau_mem. The exponential form weights the past by exp(-age/ir_tau_mem) instead of a
+         !> hard window, so the bias is a decaying functional of the trajectory and the force does
+         !> not jump when a frame falls off the end of the buffer. It is the Markovian embedding of
+         !> a generalized Langevin bias in which the target spectrum plays the part of the bath.
+         !> @modes md
+         !> @needs exp_labels
+         !> @see ir_tau_mem ir_lag_factor ir_estimator
+      else if (keyword == 'ir_acf_mode') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_acf_mode
+         call check_iostatus(iostatus, keyword)
+         call upper_to_lower_case(params%ir_acf_mode)
+         if (trim(params%ir_acf_mode) /= "block" .and. &
+             trim(params%ir_acf_mode) /= "exponential") then
+            if (rank == 0) then
+               write (*, *) "ERROR -> Invalid ir_acf_mode keyword:", params%ir_acf_mode
+               write (*, *) "This is a list of valid options:"
+               write (*, *) "block  exponential"
+            end if
+            stop
+         end if
+         if (rank == 0) call print_parameter("ir_acf_mode", params%ir_acf_mode)
+         !> @kw ir_tau_mem
+         !> Decay constant of the exponential correlation filter. Sets how far back the bias
+         !> remembers: the auxiliary variables obey s' = -(s - mu.mu_lag)/ir_tau_mem, so the
+         !> trajectory is weighted by exp(-age/ir_tau_mem). It must exceed the interval between
+         !> stored frames, md_step*ir_stride. A value much longer than the run is allowed -- the
+         !> filter simply never charges up, and since the resulting deficit is the same at every
+         !> lag it is an overall factor that ir_match_scale absorbs.
+         !> @units fs
+         !> @modes md
+         !> @needs ir_acf_mode
+         !> @see ir_acf_mode ir_stride ir_match_scale
+      else if (keyword == 'ir_tau_mem') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_tau_mem
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_tau_mem", params%ir_tau_mem)
          !> @kw ir_match_scale
          !> Fit an overall scale factor between the computed and experimental spectra before
          !> comparing them. The computed spectrum is in arbitrary units, so with this off the
@@ -2229,12 +2316,70 @@ contains
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%tau_t
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("tau_t", params%tau_t)
+         !> @kw gle_a_file
+         !> Drift matrix of the generalized Langevin thermostat, as a plain text file of
+         !> (ns+1)x(ns+1) numbers in row-major order, with `#` comment lines allowed. The physical
+         !> momentum is the first row and column and the remaining ns are the auxiliary momenta; ns
+         !> is deduced from how many numbers the file holds, not declared. This one matrix fixes the
+         !> whole memory kernel. Fitted matrices from gle4md.org can be used directly, but they must
+         !> be downloaded in these units -- nothing here converts or guesses them.
+         !> @units fs^-1
+         !> @modes md
+         !> @needs thermostat
+         !> @see thermostat, gle_c_file
+      else if (keyword == 'gle_a_file') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%gle_a_file
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("gle_a_file", params%gle_a_file)
+         !> @kw gle_c_file
+         !> Stationary covariance of the generalized Langevin thermostat, same file format and order
+         !> as gle_a_file. Optional: left unset it is kB T I, which samples the canonical distribution
+         !> at the target temperature and follows a t_beg -> t_end ramp. Set, it describes a bath at
+         !> one fixed temperature -- the quantum thermostats work this way -- and the temperature ramp
+         !> no longer applies to it.
+         !> @units eV
+         !> @modes md
+         !> @needs gle_a_file
+         !> @see thermostat, gle_a_file
+      else if (keyword == 'gle_c_file') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%gle_c_file
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("gle_c_file", params%gle_c_file)
+         !> @kw gle_restart_file
+         !> Where the auxiliary momenta are written, and read back from on a restart. They are state
+         !> in the same sense the velocities are: a run resumed without them starts a fresh bath,
+         !> which is a legitimate but different trajectory. A file describing a different ns or a
+         !> different number of atoms is refused rather than adopted, and the run says so and
+         !> continues with a fresh bath.
+         !> @modes md
+         !> @needs thermostat
+         !> @see gle_restart
+      else if (keyword == 'gle_restart_file') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%gle_restart_file
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("gle_restart_file", params%gle_restart_file)
+         !> @kw gle_restart
+         !> Whether to read gle_restart_file at the start of the run and write it as the run goes.
+         !> Off starts a fresh bath drawn from the stationary distribution and writes nothing.
+         !> @modes md
+         !> @needs thermostat
+         !> @see gle_restart_file
+      else if (keyword == 'gle_restart') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%gle_restart
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("gle_restart", params%gle_restart)
          !> @kw thermostat
-         !> Temperature coupling: "none", "berendsen" or "bussi". Bussi is the stochastic velocity
-         !> rescaling that samples the canonical ensemble properly; Berendsen does not. Anything else
-         !> aborts the run.
+         !> Temperature coupling: "none", "berendsen", "bussi", "langevin" or "gle". Bussi is the
+         !> stochastic velocity rescaling that samples the canonical ensemble properly; Berendsen does
+         !> not. "langevin" is the exact Ornstein-Uhlenbeck update with friction 1/tau_t. "gle" is
+         !> generalized Langevin dynamics by Markovian embedding, whose memory kernel is read from
+         !> gle_a_file. Anything else aborts the run.
          !> @modes md mc
-         !> @see t_beg, t_end, tau_t
+         !> @see t_beg, t_end, tau_t, gle_a_file, gle_c_file
       else if (keyword == 'thermostat') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%thermostat

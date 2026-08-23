@@ -240,13 +240,13 @@ footer {
 <header class="masthead">
 <p class="eyebrow">TurboGAP &middot; keyword reference</p>
 <h1>Keywords</h1>
-<p class="lede">321 keywords across the input file and the potential (.gap) file. Types and defaults are read out of <code>src/types.f90</code>, and the rest out of the branch in <code>src/read_files.f90</code> that parses the keyword, so nothing here is transcribed by hand.</p>
+<p class="lede">327 keywords across the input file and the potential (.gap) file. Types and defaults are read out of <code>src/types.f90</code>, and the rest out of the branch in <code>src/read_files.f90</code> that parses the keyword, so nothing here is transcribed by hand.</p>
 </header>
 <nav class="rail" aria-label="Groups">
 <p class="railhead">the input file</p>
-<a href="#general"><span>General</span><span class="n">29</span></a>
+<a href="#general"><span>General</span><span class="n">31</span></a>
 <a href="#run-control"><span>Run control</span><span class="n">19</span></a>
-<a href="#molecular-dynamics"><span>Molecular dynamics</span><span class="n">18</span></a>
+<a href="#molecular-dynamics"><span>Molecular dynamics</span><span class="n">22</span></a>
 <a href="#nested-sampling"><span>Nested sampling</span><span class="n">6</span></a>
 <a href="#monte-carlo"><span>Monte Carlo</span><span class="n">33</span></a>
 <a href="#van-der-waals"><span>Van der Waals</span><span class="n">31</span></a>
@@ -306,6 +306,15 @@ footer {
 <td class="mo">all</td>
 <td class="de">Constant energy offset per species, added to every atom of that species. One value per entry in species, in the same order. The GAP predicts energies relative to these, so they set the zero of the energy scale.</td>
 <td class="dp"></td>
+</tr>
+<tr data-h="ir_acf_mode how the running dipole autocorrelation is formed: &quot;block&quot; (the default) averages over the pairs the stored ensemble holds, and &quot;exponential&quot; carries it as a set of auxiliary variables integrated alongside the atoms, one per lag, decaying with constant ir_tau_mem. the exponential form weights the past by exp(-age/ir_tau_mem) instead of a hard window, so the bias is a decaying functional of the trajectory and the force does not jump when a frame falls off the end of the buffer. it is the markovian embedding of a generalized langevin bias in which the target spectrum plays the part of the bath." data-m="md">
+<td class="kw"><code>ir_acf_mode</code></td>
+<td class="ty">string</td>
+<td class="df"><code>block</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">How the running dipole autocorrelation is formed: &quot;block&quot; (the default) averages over the pairs the stored ensemble holds, and &quot;exponential&quot; carries it as a set of auxiliary variables integrated alongside the atoms, one per lag, decaying with constant ir_tau_mem. The exponential form weights the past by exp(-age/ir_tau_mem) instead of a hard window, so the bias is a decaying functional of the trajectory and the force does not jump when a frame falls off the end of the buffer. It is the Markovian embedding of a generalized Langevin bias in which the target spectrum plays the part of the bath.</td>
+<td class="dp"><span class="dep">needs <code>exp_labels</code></span><span class="dep">see <code>ir_tau_mem</code></span><span class="dep">see <code>ir_lag_factor</code></span><span class="dep">see <code>ir_estimator</code></span></td>
 </tr>
 <tr data-h="ir_estimator how the autocorrelation is normalised: &quot;biased&quot; (default) divides c(tau) by n, &quot;unbiased&quot; divides by the number of pairs actually averaged, n - tau. the unbiased estimator is unbiased and is also not a positive semi-definite sequence, so its cosine transform can be negative -- and an absorption spectrum cannot be. the biased one is positive semi-definite: its transform is a periodogram (percival &amp; walden ch. 6; numerical recipes 13.4), at the price of scaling c(tau) by (1 - tau/n). since the lag window already tapers far harder than that, nothing is lost. note that guarantee covers the unwindowed estimate: windowing convolves the spectrum with the window kernel, so a kernel that dips negative can still drive the result negative. measured on one trajectory with every other fix on, ir_window = &quot;none&quot; gave 124 negative points of 400 while hann, lorch and bartlett gave zero. combine with ir_window = &quot;bartlett&quot;, whose fejer kernel is non-negative everywhere, for an unconditional guarantee." data-m="md">
 <td class="kw"><code>ir_estimator</code></td>
@@ -423,6 +432,15 @@ footer {
 <td class="mo">md</td>
 <td class="de">Rebuild the lag window over the lags actually available while the ensemble is still filling (default .true.). Only affects do_ir prediction runs, where the buffer fills over the whole trajectory. The window is sized for n_lag, but early on only n_stored - 1 lags exist, so with this off the autocorrelation is truncated at a point where the window is still near 1 -- a boxcar cut, which convolves the spectrum with a sinc and makes it ring. How much it matters depends on ir_estimator: dividing C(tau) by N rather than N - tau multiplies it by (1 - tau/N), which is itself a triangular taper, so the biased estimator applies an implicit Bartlett window that has already fallen to 1/N at the truncation point. Measured with the window sized for n_lag = 417 and only 51 frames stored, ir_estimator = unbiased gave 160 negative points of 400 and ir_estimator = biased gave 0. With the default biased estimator this switch therefore does not change the ringing; what it still buys is a header that quotes the resolution the transformed lags actually support, and correct behaviour if the unbiased estimator is selected.</td>
 <td class="dp"><span class="dep">see <code>do_ir</code></span><span class="dep">see <code>ir_window</code></span><span class="dep">see <code>ir_lag_factor</code></span><span class="dep">see <code>write_xyz</code></span></td>
+</tr>
+<tr data-h="ir_tau_mem decay constant of the exponential correlation filter. sets how far back the bias remembers: the auxiliary variables obey s&#x27; = -(s - mu.mu_lag)/ir_tau_mem, so the trajectory is weighted by exp(-age/ir_tau_mem). it must exceed the interval between stored frames, md_step*ir_stride. a value much longer than the run is allowed -- the filter simply never charges up, and since the resulting deficit is the same at every lag it is an overall factor that ir_match_scale absorbs." data-m="md">
+<td class="kw"><code>ir_tau_mem</code></td>
+<td class="ty">real</td>
+<td class="df"><code>0.0</code></td>
+<td class="un">fs</td>
+<td class="mo">md</td>
+<td class="de">Decay constant of the exponential correlation filter. Sets how far back the bias remembers: the auxiliary variables obey s&#x27; = -(s - mu.mu_lag)/ir_tau_mem, so the trajectory is weighted by exp(-age/ir_tau_mem). It must exceed the interval between stored frames, md_step*ir_stride. A value much longer than the run is allowed -- the filter simply never charges up, and since the resulting deficit is the same at every lag it is an overall factor that ir_match_scale absorbs.</td>
+<td class="dp"><span class="dep">needs <code>ir_acf_mode</code></span><span class="dep">see <code>ir_acf_mode</code></span><span class="dep">see <code>ir_stride</code></span><span class="dep">see <code>ir_match_scale</code></span></td>
 </tr>
 <tr data-h="ir_weight_by_spacing weight each experimental point by the local grid spacing (default .true.), so that the loss is an integral over frequency rather than a sum over however the experimental file happened to be sampled. the fit grid is the experimental grid -- interpolating the experiment would invent structure between its points and then fit to it -- but experimental grids are rarely uniform. the downing &amp; williams water data shipped with tests/mad_ir is sampled at 23.9 cm^-1 across the o-h stretch and ~55 cm^-1 elsewhere, so 45% of an unweighted loss falls in the top quarter of the range: a weighting chosen by whoever digitised the paper, not by the physics. weights are normalised to mean 1, so exp_energy_scales keeps its magnitude." data-m="md">
 <td class="kw"><code>ir_weight_by_spacing</code></td>
@@ -758,6 +776,42 @@ footer {
 <td class="de">Damping of the Berendsen barostat&#x27;s cell response, on top of tau_p.</td>
 <td class="dp"><span class="dep">needs <code>barostat</code></span></td>
 </tr>
+<tr data-h="gle_a_file drift matrix of the generalized langevin thermostat, as a plain text file of (ns+1)x(ns+1) numbers in row-major order, with `#` comment lines allowed. the physical momentum is the first row and column and the remaining ns are the auxiliary momenta; ns is deduced from how many numbers the file holds, not declared. this one matrix fixes the whole memory kernel. fitted matrices from gle4md.org can be used directly, but they must be downloaded in these units -- nothing here converts or guesses them." data-m="md">
+<td class="kw"><code>gle_a_file</code></td>
+<td class="ty">string</td>
+<td class="df"></td>
+<td class="un">fs^-1</td>
+<td class="mo">md</td>
+<td class="de">Drift matrix of the generalized Langevin thermostat, as a plain text file of (ns+1)x(ns+1) numbers in row-major order, with `#` comment lines allowed. The physical momentum is the first row and column and the remaining ns are the auxiliary momenta; ns is deduced from how many numbers the file holds, not declared. This one matrix fixes the whole memory kernel. Fitted matrices from gle4md.org can be used directly, but they must be downloaded in these units -- nothing here converts or guesses them.</td>
+<td class="dp"><span class="dep">needs <code>thermostat</code></span><span class="dep">see <code>thermostat</code></span><span class="dep">see <code>gle_c_file</code></span></td>
+</tr>
+<tr data-h="gle_c_file stationary covariance of the generalized langevin thermostat, same file format and order as gle_a_file. optional: left unset it is kb t i, which samples the canonical distribution at the target temperature and follows a t_beg -&gt; t_end ramp. set, it describes a bath at one fixed temperature -- the quantum thermostats work this way -- and the temperature ramp no longer applies to it." data-m="md">
+<td class="kw"><code>gle_c_file</code></td>
+<td class="ty">string</td>
+<td class="df"></td>
+<td class="un">eV</td>
+<td class="mo">md</td>
+<td class="de">Stationary covariance of the generalized Langevin thermostat, same file format and order as gle_a_file. Optional: left unset it is kB T I, which samples the canonical distribution at the target temperature and follows a t_beg -&gt; t_end ramp. Set, it describes a bath at one fixed temperature -- the quantum thermostats work this way -- and the temperature ramp no longer applies to it.</td>
+<td class="dp"><span class="dep">needs <code>gle_a_file</code></span><span class="dep">see <code>thermostat</code></span><span class="dep">see <code>gle_a_file</code></span></td>
+</tr>
+<tr data-h="gle_restart whether to read gle_restart_file at the start of the run and write it as the run goes. off starts a fresh bath drawn from the stationary distribution and writes nothing." data-m="md">
+<td class="kw"><code>gle_restart</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>true</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">Whether to read gle_restart_file at the start of the run and write it as the run goes. Off starts a fresh bath drawn from the stationary distribution and writes nothing.</td>
+<td class="dp"><span class="dep">needs <code>thermostat</code></span><span class="dep">see <code>gle_restart_file</code></span></td>
+</tr>
+<tr data-h="gle_restart_file where the auxiliary momenta are written, and read back from on a restart. they are state in the same sense the velocities are: a run resumed without them starts a fresh bath, which is a legitimate but different trajectory. a file describing a different ns or a different number of atoms is refused rather than adopted, and the run says so and continues with a fresh bath." data-m="md">
+<td class="kw"><code>gle_restart_file</code></td>
+<td class="ty">string</td>
+<td class="df"><code>gle_restart.dat</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">Where the auxiliary momenta are written, and read back from on a restart. They are state in the same sense the velocities are: a run resumed without them starts a fresh bath, which is a legitimate but different trajectory. A file describing a different ns or a different number of atoms is refused rather than adopted, and the run says so and continues with a fresh bath.</td>
+<td class="dp"><span class="dep">needs <code>thermostat</code></span><span class="dep">see <code>gle_restart</code></span></td>
+</tr>
 <tr data-h="md_nsteps number of molecular-dynamics steps to take." data-m="md">
 <td class="kw"><code>md_nsteps</code></td>
 <td class="ty">integer</td>
@@ -866,14 +920,14 @@ footer {
 <td class="de">Relaxation time of the thermostat: how quickly the kinetic energy is pushed towards the target temperature. Larger is gentler.</td>
 <td class="dp"><span class="dep">needs <code>thermostat</code></span></td>
 </tr>
-<tr data-h="thermostat temperature coupling: &quot;none&quot;, &quot;berendsen&quot; or &quot;bussi&quot;. bussi is the stochastic velocity rescaling that samples the canonical ensemble properly; berendsen does not. anything else aborts the run." data-m="md mc">
+<tr data-h="thermostat temperature coupling: &quot;none&quot;, &quot;berendsen&quot;, &quot;bussi&quot;, &quot;langevin&quot; or &quot;gle&quot;. bussi is the stochastic velocity rescaling that samples the canonical ensemble properly; berendsen does not. &quot;langevin&quot; is the exact ornstein-uhlenbeck update with friction 1/tau_t. &quot;gle&quot; is generalized langevin dynamics by markovian embedding, whose memory kernel is read from gle_a_file. anything else aborts the run." data-m="md mc">
 <td class="kw"><code>thermostat</code></td>
 <td class="ty">string</td>
 <td class="df"><code>none</code></td>
 <td class="un"></td>
 <td class="mo">md, mc</td>
-<td class="de">Temperature coupling: &quot;none&quot;, &quot;berendsen&quot; or &quot;bussi&quot;. Bussi is the stochastic velocity rescaling that samples the canonical ensemble properly; Berendsen does not. Anything else aborts the run.</td>
-<td class="dp"><span class="dep">see <code>t_beg</code></span><span class="dep">see <code>t_end</code></span><span class="dep">see <code>tau_t</code></span></td>
+<td class="de">Temperature coupling: &quot;none&quot;, &quot;berendsen&quot;, &quot;bussi&quot;, &quot;langevin&quot; or &quot;gle&quot;. Bussi is the stochastic velocity rescaling that samples the canonical ensemble properly; Berendsen does not. &quot;langevin&quot; is the exact Ornstein-Uhlenbeck update with friction 1/tau_t. &quot;gle&quot; is generalized Langevin dynamics by Markovian embedding, whose memory kernel is read from gle_a_file. Anything else aborts the run.</td>
+<td class="dp"><span class="dep">see <code>t_beg</code></span><span class="dep">see <code>t_end</code></span><span class="dep">see <code>tau_t</code></span><span class="dep">see <code>gle_a_file</code></span><span class="dep">see <code>gle_c_file</code></span></td>
 </tr>
 <tr data-h="velocity_distribution which distribution randomize_velocities draws from: &quot;maxwell&quot; for maxwell-boltzmann at t_beg, or &quot;uniform&quot; for the historical draw, whose components are uniform on [0,1) and are then scaled so the kinetic energy is exactly (3/2)(n-1)kt. only &quot;maxwell&quot; samples the canonical ensemble, and mc_hamiltonian needs it for detailed balance; &quot;uniform&quot; is the default so that existing trajectories reproduce. anything else aborts the run." data-m="md mc">
 <td class="kw"><code>velocity_distribution</code></td>

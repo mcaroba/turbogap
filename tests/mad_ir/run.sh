@@ -6,6 +6,12 @@
 #              placement, and lambda = dL/dmu(newest) against finite
 #              differences of the loss.
 #
+#   auxverify  the same module in AUXILIARY-VARIABLE form (ir_acf_mode =
+#              exponential), where the running correlation is integrated
+#              alongside the atoms rather than recomputed from the buffer. The
+#              gradient is entirely different code from irverify's and gets its
+#              own h-scan, over both the mean subtraction and the fitted scale.
+#
 #   madverify  the whole chain, linked against lib/libturbogap.a so the gap.f90
 #              routines under test are the ones that ship:
 #              get_soap -> get_soap_dipole_weights -> get_soap_central_hessian
@@ -19,7 +25,9 @@
 
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
-ROOT="${1:-$(cd "$HERE/../.." && pwd)}"
+# Absolute: every path below is used after a cd into the build directory,
+# so a relative root stops resolving the moment we move.
+ROOT="$(cd "${1:-$HERE/../..}" && pwd)"
 SRC="$ROOT/src"
 BUILD="$HERE/build"
 
@@ -38,15 +46,24 @@ $FC $FFLAGS -o irverify "$HERE/irverify.f90" kinds.o mad_ir.o
 ./irverify
 
 echo
+echo "==> auxverify (mad_ir with auxiliary variables)"
+$FC $FFLAGS -o auxverify "$HERE/auxverify.f90" kinds.o mad_ir.o
+./auxverify
+
+echo
 echo "==> madverify (full chain, against lib/libturbogap.a)"
-if [ ! -f "$ROOT/lib/libturbogap.a" ]; then
-  echo "    lib/libturbogap.a is missing; run make in $ROOT first." >&2
+# LIBDIR/INCDIR let a variant object tree (lib-dbg, lib-gle, ...) be tested
+# without rebuilding the default one that everything else names.
+LIBDIR=${LIBDIR:-$ROOT/lib}
+INCDIR=${INCDIR:-$ROOT/include}
+if [ ! -f "$LIBDIR/libturbogap.a" ]; then
+  echo "    $LIBDIR/libturbogap.a is missing; run make in $ROOT first." >&2
   exit 1
 fi
 cp -f "$HERE/../soap_derivatives/gharness.f90" .
-$MPIFC $FFLAGS -I"$ROOT/include" -c gharness.f90 -o gharness.o
-$MPIFC $FFLAGS -I"$ROOT/include" -o madverify "$HERE/madverify.f90" gharness.o \
-       "$ROOT/lib/libturbogap.a" $LIBS
+$MPIFC $FFLAGS -I"$INCDIR" -c gharness.f90 -o gharness.o
+$MPIFC $FFLAGS -I"$INCDIR" -o madverify "$HERE/madverify.f90" gharness.o \
+       "$LIBDIR/libturbogap.a" $LIBS
 ./madverify
 
 echo

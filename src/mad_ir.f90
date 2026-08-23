@@ -433,6 +433,46 @@ module mad_ir
       logical :: biased_estimator = .true. ! divide by N, not N - tau
       logical :: taper_partial = .true.    ! rebuild the taper while filling
       character(len=32) :: window_kind = "hann"
+!     HOW C(tau, t) IS FORMED. "block" averages over the pairs the buffer holds,
+!     which is the estimator every offline analysis uses. "exponential" instead
+!     carries C(tau, t) as a set of AUXILIARY VARIABLES integrated alongside the
+!     atoms, one per lag,
+!
+!        s_n' (t) = -(1/tau_mem) s_n(t) + (1/tau_mem) [ d(t) . d(t - tau_n) ]
+!
+!     which over one stored frame is exactly
+!
+!        s_n <- (1 - alpha) s_n + alpha [ d(t) . d(t - tau_n) ],
+!        alpha = 1 - exp(-dt/tau_mem).
+!
+!     alpha is the exact coefficient for that ODE over the interval, not the
+!     Euler step dt/tau_mem. The two agree to first order and the Euler form is
+!     what the derivation is usually written with, but it exceeds 1 as soon as
+!     dt > tau_mem, which is a filter that overshoots and then oscillates. The
+!     exact form is unconditionally stable and costs one exponential per run.
+!     What matters for correctness is only that the GRADIENT below uses whatever
+!     alpha the propagator used, and it does.
+!
+!     WHY IT IS NOT MERELY A DIFFERENT AVERAGE. The block estimator weights
+!     every stored frame equally and forgets nothing until it falls off the end
+!     of the buffer; the exponential one weights the past by exp(-age/tau_mem).
+!     That makes the bias a functional of a decaying window of the trajectory
+!     rather than a hard one, so the force does not jump when a frame leaves the
+!     buffer -- and it is what puts this scheme in the generalized-Langevin
+!     family, with tau_mem as the memory kernel's decay constant.
+!
+!     THE FILL TRANSIENT IS ABSORBED BY THE FITTED SCALE. Every s_n starts at
+!     zero and all of them start updating on the same step (see
+!     mad_ir_advance_aux), so after k updates each holds the same fraction
+!     1 - (1 - alpha)^k of its stationary value. A deficit identical across
+!     lags is an overall factor on the spectrum, and match_scale absorbs overall
+!     factors exactly. The running mean is bias-corrected explicitly instead,
+!     because it enters quadratically and a scale cannot absorb it.
+      character(len=32) :: acf_mode = "block"
+      real(dp) :: tau_mem = 0.d0         ! fs; exponential mode only
+      real(dp) :: alpha = 0.d0           ! 1 - exp(-dt/tau_mem)
+      integer :: n_ema = 0               ! updates applied so far
+      real(dp) :: mu_bar_raw(1:3) = 0.d0 ! the un-bias-corrected running mean
 !     n_lag is what the run was SIZED for; n_lag_used is how many lags the
 !     buffer can currently supply, and they differ only while a do_ir ensemble
 !     is still filling. n_lag_win records the half-length win() is currently
@@ -584,7 +624,7 @@ contains
 !
    subroutine mad_ir_init(this, dt, n_lag, n_window, nu, I_exp, wgt, match_scale, nu_power, &
                           window_kind, subtract_mean, biased_estimator, taper_partial, &
-                          match_offset)
+                          match_offset, acf_mode, tau_mem)
 
       implicit none
 
@@ -600,6 +640,10 @@ contains
       character(len=*), intent(in) :: window_kind
       logical, intent(in) :: subtract_mean, biased_estimator, taper_partial
       logical, intent(in) :: match_offset
+!     Optional so that every existing caller -- and tests/mad_ir, which calls
+!     this directly -- keeps the block estimator without being edited.
+      character(len=*), intent(in), optional :: acf_mode
+      real(dp), intent(in), optional :: tau_mem
 
       call mad_ir_free(this)
 
@@ -621,6 +665,24 @@ contains
       this%n_lag_used = 0
       this%n_lag_win = -1
       this%mu_mean = 0.d0
+
+      this%acf_mode = "block"
+      this%tau_mem = 0.d0
+      this%alpha = 0.d0
+      this%n_ema = 0
+      this%mu_bar_raw = 0.d0
+      if (present(acf_mode)) this%acf_mode = acf_mode
+      if (trim(this%acf_mode) == "exponential") then
+         if (.not. present(tau_mem)) then
+            this%acf_mode = "block"
+         else if (tau_mem <= 0.d0) then
+            this%acf_mode = "block"
+         else
+            this%tau_mem = tau_mem
+!           The exact discretisation of the memory ODE over one stored frame.
+            this%alpha = 1.d0 - dexp(-dt/tau_mem)
+         end if
+      end if
 
       allocate (this%mu_hist(1:3, 1:n_window))
       allocate (this%nu(1:this%n_freq), this%I_exp(1:this%n_freq), this%wgt(1:this%n_freq))
@@ -672,7 +734,69 @@ contains
       if (this%head > this%n_window) this%head = 1
       this%mu_hist(1:3, this%head) = mu(1:3)
       if (this%n_stored < this%n_window) this%n_stored = this%n_stored + 1
+!     In exponential mode the correlation is state, not something recomputed
+!     from the buffer, so it advances here -- once per stored frame, alongside
+!     the atoms, which is what makes these auxiliary degrees of freedom rather
+!     than an analysis of the trajectory.
+      if (trim(this%acf_mode) == "exponential") call mad_ir_advance_aux(this)
    end subroutine mad_ir_push
+
+!**************************************************************************
+!
+! Advance the auxiliary variables by one stored frame.
+!
+!   mu_bar_raw <- (1-alpha) mu_bar_raw + alpha mu(t)
+!   mu_bar      = mu_bar_raw / (1 - (1-alpha)^k)          k = updates so far
+!   d(n)        = mu(t - tau_n) - mu_bar
+!   s_n        <- (1-alpha) s_n + alpha [ d(0) . d(n) ]
+!
+! NOTHING UPDATES UNTIL EVERY LAG EXISTS. s_n cannot be advanced before the
+! buffer holds n+1 frames, and if each s_n started as soon as its own lag became
+! available they would have had different numbers of updates and so would carry
+! different fractions of their stationary values -- a fill deficit that varies
+! with lag, which is a distortion of the SHAPE of the spectrum and is not
+! something the fitted scale can absorb. Holding them all until the longest lag
+! is available costs n_lag frames of warm-up that the ensemble was going to
+! spend filling anyway, and buys a deficit that is a pure overall factor.
+!
+! The mean is bias-corrected explicitly rather than left to the scale, because
+! it is subtracted before the product and so enters the correlation
+! quadratically; an overall factor on mu_bar is not an overall factor on C.
+!
+   subroutine mad_ir_advance_aux(this)
+
+      implicit none
+
+      type(mad_ir_type), intent(inout) :: this
+      real(dp) :: beta, d0(1:3), dl(1:3)
+      integer :: t, m
+
+      if (this%alpha <= 0.d0) return
+      if (this%n_stored < this%n_lag + 1) return
+
+      beta = 1.d0 - this%alpha
+      this%n_ema = this%n_ema + 1
+
+      this%mu_bar_raw(1:3) = beta*this%mu_bar_raw(1:3) &
+                             + this%alpha*this%mu_hist(1:3, this%head)
+      if (this%subtract_mean) then
+         this%mu_mean(1:3) = this%mu_bar_raw(1:3)/(1.d0 - beta**this%n_ema)
+      else
+         this%mu_mean = 0.d0
+      end if
+
+      d0(1:3) = this%mu_hist(1:3, this%head) - this%mu_mean(1:3)
+      do t = 0, this%n_lag
+         m = this%head - t
+         if (m < 1) m = m + this%n_window
+         dl(1:3) = this%mu_hist(1:3, m) - this%mu_mean(1:3)
+         this%acf(t) = beta*this%acf(t) &
+                       + this%alpha*(d0(1)*dl(1) + d0(2)*dl(2) + d0(3)*dl(3))
+      end do
+
+      this%n_lag_used = this%n_lag
+
+   end subroutine mad_ir_advance_aux
 
 !**************************************************************************
 !
@@ -684,6 +808,12 @@ contains
       implicit none
       type(mad_ir_type), intent(in) :: this
       mad_ir_ready = this%active .and. (this%n_stored >= this%n_window)
+!     In exponential mode the buffer being full is necessary but not sufficient:
+!     the auxiliary variables hold off until every lag exists, so there is a
+!     window in which the ensemble is full and the correlation is still zero.
+      if (trim(this%acf_mode) == "exponential") then
+         mad_ir_ready = mad_ir_ready .and. (this%n_ema >= 1)
+      end if
    end function mad_ir_ready
 
 !**************************************************************************
@@ -729,12 +859,34 @@ contains
       if (.not. this%active) return
       if (this%n_stored < 1) return
 
+      two_pi = 2.d0*dacos(-1.d0)
+
+!     EXPONENTIAL MODE. acf() is the state that mad_ir_advance_aux has been
+!     propagating, so there is nothing to estimate here -- only the taper and
+!     the transform, which are shared with the block path below. Recomputing
+!     the correlation would overwrite the auxiliary variables with a block
+!     average, which is precisely the estimator this mode exists not to use.
+      if (trim(this%acf_mode) == "exponential") then
+         if (this%n_ema < 1) return
+         L = this%n_lag
+         this%n_lag_used = L
+         if (this%n_lag_win /= L) call mad_ir_build_window(this, L)
+         do k = 1, this%n_freq
+            acc = this%win(0)*this%acf(0)
+            do t = 1, L
+               theta = two_pi*this%nu(k)*dfloat(t)*this%dt/CM_PER_INV_FS
+               acc = acc + 2.d0*this%win(t)*this%acf(t)*dcos(theta)
+            end do
+            this%I_calc(k) = (this%nu(k)**this%nu_power)*this%dt*acc
+         end do
+         return
+      end if
+
 !     A partly filled buffer averages over what it actually holds, not over
 !     n_window: in a prediction run the ensemble is the whole trajectory and
 !     is full only at the last step, and dividing by n_window before then
 !     would scale C(tau) by the fill fraction.
       N = this%n_stored
-      two_pi = 2.d0*dacos(-1.d0)
 
 !     ---- the mean, which is what the correlation is taken about ------
       mub = 0.d0
@@ -849,6 +1001,7 @@ contains
       real(dp) :: two_pi, theta, acc, s_fit, b_fit, pref, c, denom
       real(dp) :: swi2, swi, sw, swie, swe, det
       real(dp) :: mub(1:3), dnew(1:3), dlag, Pc
+      real(dp) :: beta_e, gm
       integer :: t, k, m, N, L, c1, a
 
       energy = 0.d0
@@ -949,7 +1102,7 @@ contains
 !     ---- prefix sums of the fluctuation, for the mean-subtraction term
 !     Tpre(:,k) = sum_{a=0}^{k} d(a). Only needed when the mean is subtracted;
 !     otherwise the newest dipole enters C only directly.
-      if (this%subtract_mean) then
+      if (this%subtract_mean .and. trim(this%acf_mode) /= "exponential") then
          allocate (Tpre(1:3, -1:N - 1))
          Tpre(1:3, -1) = 0.d0
          do a = 0, N - 1
@@ -960,6 +1113,51 @@ contains
       end if
 
 !     ---- and through the autocorrelation, to dL/dmu(newest) ----------
+!
+!     EXPONENTIAL MODE. The newest dipole reaches the loss only through the one
+!     update mad_ir_advance_aux just applied, so
+!
+!        ds_n/dmu_c = alpha d/dmu_c [ d(0) . d(n) ]
+!
+!     with d(a) = mu(t - tau_a) - mu_bar and mu_bar itself a function of mu(t)
+!     through the running mean, ddmu_bar_c/dmu_c = gm = alpha/(1 - beta^k).
+!     Differentiating the dot product,
+!
+!        n > 0 :  ds_n/dmu_c = alpha [ (1 - gm) d_c(n) - gm d_c(0) ]
+!        n = 0 :  ds_0/dmu_c = 2 alpha (1 - gm) d_c(0)
+!
+!     THE FACTOR OF TWO AT ZERO LAG IS NOT OPTIONAL. s_0 correlates the newest
+!     dipole with itself, so it depends on mu(t) through both factors of the
+!     product. Written as one line covering every lag -- which is how the
+!     scheme is usually derived -- zero lag comes out half its true value, and
+!     since win(0) C(0) is the largest single contribution to the transform the
+!     resulting force is wrong by a few per cent everywhere and looks entirely
+!     reasonable. The block path has the same factor for the same reason; see
+!     the 2*S(0)*dnew term below.
+      if (trim(this%acf_mode) == "exponential") then
+         beta_e = 1.d0 - this%alpha
+         if (this%subtract_mean .and. this%n_ema > 0) then
+            gm = this%alpha/(1.d0 - beta_e**this%n_ema)
+         else
+            gm = 0.d0
+         end if
+         m = this%head
+         dnew(1:3) = this%mu_hist(1:3, m) - mub(1:3)
+         do c1 = 1, 3
+            acc = 2.d0*S(0)*this%alpha*(1.d0 - gm)*dnew(c1)
+            do t = 1, L
+               m = this%head - t
+               if (m < 1) m = m + this%n_window
+               dlag = this%mu_hist(c1, m) - mub(c1)
+               acc = acc + S(t)*this%alpha*((1.d0 - gm)*dlag - gm*dnew(c1))
+            end do
+            lambda(c1) = acc
+         end do
+         if (allocated(Tpre)) deallocate (Tpre)
+         deallocate (dLdI, S)
+         return
+      end if
+
       m = this%head
       dnew(1:3) = this%mu_hist(1:3, m) - mub(1:3)
       do c1 = 1, 3
@@ -1009,7 +1207,7 @@ contains
                            nu_in, I_in, restart_file, match_scale, nu_power, &
                            window_kind, subtract_mean, biased_estimator, &
                            taper_partial, match_offset, weight_by_spacing, &
-                           n_atoms, ok, resumed, msg)
+                           n_atoms, ok, resumed, msg, acf_mode, tau_mem)
 
       implicit none
 
@@ -1026,10 +1224,13 @@ contains
       integer, intent(in) :: n_atoms
       logical, intent(out) :: ok, resumed
       character(len=*), intent(out) :: msg
+      character(len=*), intent(in), optional :: acf_mode
+      real(dp), intent(in), optional :: tau_mem
       real(dp), allocatable :: nu(:), I_exp(:), wgt(:)
-      real(dp) :: dt
+      real(dp) :: dt, tau_use
       integer :: n_lag, n_window
       logical :: ok2
+      character(len=32) :: mode_use
       character(len=512) :: msg2
 
       ok = .false.
@@ -1049,9 +1250,21 @@ contains
                                nu, I_exp, wgt, ok2, msg)
       if (.not. ok2) return
 
+      mode_use = "block"
+      tau_use = 0.d0
+      if (present(acf_mode)) mode_use = acf_mode
+      if (present(tau_mem)) tau_use = tau_mem
+
+!     A memory longer than the run is NOT refused: the filter simply never
+!     charges up, and because every lag charges together the deficit is a pure
+!     overall factor that the fitted scale absorbs.
+      call mad_ir_check_acf_mode(mode_use, tau_use, dt, ok2, msg)
+      if (.not. ok2) return
+
       call mad_ir_init(mad_ir_state, dt, n_lag, n_window, nu, I_exp, wgt, &
                        match_scale, nu_power, window_kind, subtract_mean, &
-                       biased_estimator, taper_partial, match_offset)
+                       biased_estimator, taper_partial, match_offset, &
+                       mode_use, tau_use)
 
       if (allocated(mad_ir_dmu_dr)) deallocate (mad_ir_dmu_dr)
       allocate (mad_ir_dmu_dr(1:3, 1:3, 1:n_atoms))
@@ -1065,6 +1278,54 @@ contains
       ok = .true.
 
    end subroutine mad_ir_setup
+
+!**************************************************************************
+!
+! Is this a usable (acf_mode, tau_mem) pair for a run sampling every dt fs?
+!
+! Shared by both setup routines rather than written twice. mad_ir_init falls
+! back to the block estimator when it is handed an exponential mode with no
+! usable tau_mem -- it has no error channel to do anything else -- and a silent
+! fall back to a different estimator is exactly the failure this file is
+! organised against. This routine is what makes that fallback unreachable from
+! any driver path: if it passes, init cannot take it.
+!
+   subroutine mad_ir_check_acf_mode(mode, tau_mem, dt, ok, msg)
+
+      implicit none
+
+      character(len=*), intent(in) :: mode
+      real(dp), intent(in) :: tau_mem
+      real(dp), intent(in) :: dt
+      logical, intent(out) :: ok
+      character(len=*), intent(out) :: msg
+
+      ok = .true.
+      msg = ""
+      if (trim(mode) == "block") return
+      if (trim(mode) /= "exponential") then
+         msg = "mad_ir: ir_acf_mode must be block or exponential, not "//trim(mode)
+         ok = .false.
+         return
+      end if
+      if (tau_mem <= 0.d0) then
+         msg = "mad_ir: ir_acf_mode = exponential needs a positive ir_tau_mem"
+         ok = .false.
+         return
+      end if
+!     A memory shorter than the interval between stored frames is a filter that
+!     has forgotten the previous frame before the next one arrives: alpha is
+!     then within round-off of 1 and s_n is just the instantaneous product,
+!     which is the one thing the exponential estimator exists not to be.
+      if (tau_mem < dt) then
+         write (msg, '(A,F12.4,A,F12.4,A)') &
+            "mad_ir: ir_tau_mem = ", tau_mem, " fs is shorter than the sampling "// &
+            "interval ", dt, " fs; the filter would retain nothing"
+         ok = .false.
+         return
+      end if
+
+   end subroutine mad_ir_check_acf_mode
 
 !**************************************************************************
 !
@@ -1089,7 +1350,7 @@ contains
    subroutine mad_ir_setup_predict(dt_md, stride, n_frames, nu_res, nu_min, nu_max, &
                                    lag_factor, n_samples, nu_power, window_kind, &
                                    subtract_mean, biased_estimator, taper_partial, &
-                                   n_atoms, ok, msg)
+                                   n_atoms, ok, msg, acf_mode, tau_mem)
 
       implicit none
 
@@ -1100,6 +1361,11 @@ contains
       logical, intent(in) :: subtract_mean, biased_estimator, taper_partial
       logical, intent(out) :: ok
       character(len=*), intent(out) :: msg
+      character(len=*), intent(in), optional :: acf_mode
+      real(dp), intent(in), optional :: tau_mem
+      character(len=32) :: mode_use
+      real(dp) :: tau_use
+      logical :: ok3
       real(dp), allocatable :: nu(:), I_exp(:), wgt(:)
       real(dp) :: dt, nyquist, dnu
       integer :: n_lag, n_window, n_freq, k, n_lag_want
@@ -1181,9 +1447,28 @@ contains
       I_exp = 0.d0
       wgt = 1.d0
 
+      mode_use = "block"
+      tau_use = 0.d0
+      if (present(acf_mode)) mode_use = acf_mode
+      if (present(tau_mem)) tau_use = tau_mem
+      call mad_ir_check_acf_mode(mode_use, tau_use, dt, ok3, msg)
+      if (.not. ok3) then
+         deallocate (nu, I_exp, wgt)
+         return
+      end if
+
+!     THE FILL DEFICIT DOES NOT MATTER HERE, and that is worth stating because
+!     the bias path relies on match_scale to absorb it and this path has no fit.
+!     After k updates every s_n holds the same fraction 1 - (1-alpha)^k of its
+!     stationary value, so the deficit is one number multiplying the whole
+!     spectrum -- and a prediction spectrum is in arbitrary units by
+!     construction (see the I_exp comment above), so a uniform factor on it is
+!     not information. Correcting for it would invent a normalisation the run
+!     never had.
       call mad_ir_init(mad_ir_state, dt, n_lag, n_window, nu, I_exp, wgt, &
                        .false., nu_power, window_kind, subtract_mean, &
-                       biased_estimator, taper_partial, .false.)
+                       biased_estimator, taper_partial, .false., &
+                       mode_use, tau_use)
 
 !     No bias means no dmu/dr, but the accumulator is allocated anyway so that
 !     the gate in gap_interface is the only thing deciding whether it is
@@ -1513,12 +1798,21 @@ contains
          msg = "mad_ir: cannot write "//trim(fname)
          return
       end if
-      write (iu, '(A)') "MAD_IR_RESTART 1"
+!     Version 2 adds the auxiliary-variable block. It is written unconditionally,
+!     with acf_mode naming which of the two estimators the state belongs to, so
+!     that a file always says what it is rather than being identified by length.
+      write (iu, '(A)') "MAD_IR_RESTART 2"
       write (iu, '(ES24.16)') this%dt
       write (iu, '(3(1X,I0))') this%n_lag, this%n_window, this%n_stored
       write (iu, '(I0)') this%head
       do k = 1, this%n_window
          write (iu, '(3ES24.16)') this%mu_hist(1, k), this%mu_hist(2, k), this%mu_hist(3, k)
+      end do
+      write (iu, '(A)') trim(this%acf_mode)
+      write (iu, '(2(1X,ES24.16),1X,I0)') this%tau_mem, this%alpha, this%n_ema
+      write (iu, '(3ES24.16)') this%mu_bar_raw(1), this%mu_bar_raw(2), this%mu_bar_raw(3)
+      do k = 0, this%n_lag
+         write (iu, '(ES24.16)') this%acf(k)
       end do
       close (iu)
       ok = .true.
@@ -1544,8 +1838,10 @@ contains
       logical, intent(out) :: ok
       character(len=*), intent(out) :: msg
       integer :: iu, ios, k, n_lag_in, n_window_in, n_stored_in, head_in, ver
-      real(dp) :: dt_in
+      integer :: n_ema_in
+      real(dp) :: dt_in, tau_in, alpha_in, mu_bar_in(1:3)
       character(len=64) :: tag
+      character(len=32) :: mode_in
 
       ok = .false.
       msg = ""
@@ -1593,6 +1889,64 @@ contains
             return
          end if
       end do
+
+!     The auxiliary-variable block, present from version 2. The estimator the
+!     file was written under has to match the one this run is using: s_n is a
+!     filtered correlation with a particular tau_mem baked into it, and adopting
+!     it under a different tau_mem -- or under the block estimator, which will
+!     overwrite it -- would continue a different observable under the same name.
+!     Refused rather than adopted, on the same grounds as the sizing check above.
+      if (ver >= 2) then
+         read (iu, *, iostat=ios) mode_in
+         if (ios == 0) read (iu, *, iostat=ios) tau_in, alpha_in, n_ema_in
+         if (ios == 0) read (iu, *, iostat=ios) mu_bar_in(1), mu_bar_in(2), mu_bar_in(3)
+         if (ios /= 0) then
+            close (iu)
+            this%n_stored = 0
+            this%head = 0
+            msg = "mad_ir: "//trim(fname)//" has a truncated auxiliary-variable block"
+            return
+         end if
+         if (trim(mode_in) /= trim(this%acf_mode)) then
+            close (iu)
+            msg = "mad_ir: restart was written with acf_mode="//trim(mode_in)// &
+                  " but this run uses acf_mode="//trim(this%acf_mode)
+            return
+         end if
+         if (trim(this%acf_mode) == "exponential") then
+            if (dabs(tau_in - this%tau_mem) > 1.d-10*max(1.d0, dabs(this%tau_mem))) then
+               close (iu)
+               write (msg, '(A,F12.4,A,F12.4)') &
+                  "mad_ir: restart was written with ir_tau_mem=", tau_in, &
+                  " but this run wants ", this%tau_mem
+               return
+            end if
+            do k = 0, this%n_lag
+               read (iu, *, iostat=ios) this%acf(k)
+               if (ios /= 0) then
+                  close (iu)
+                  this%n_stored = 0
+                  this%head = 0
+                  this%acf = 0.d0
+                  msg = "mad_ir: "//trim(fname)//" ended inside the auxiliary variables"
+                  return
+               end if
+            end do
+            this%alpha = alpha_in
+            this%n_ema = n_ema_in
+            this%mu_bar_raw(1:3) = mu_bar_in(1:3)
+         end if
+      else if (trim(this%acf_mode) == "exponential") then
+!        A version-1 file carries the dipole buffer but no auxiliary variables.
+!        Rebuilding them from the buffer is possible only for the lags the
+!        buffer reaches and only under an assumption about what came before it,
+!        so the honest answer is to start the filter afresh.
+         close (iu)
+         msg = "mad_ir: restart predates the auxiliary variables (version 1); "// &
+               "starting a fresh exponential filter"
+         return
+      end if
+
       close (iu)
       this%n_stored = n_stored_in
       this%head = head_in

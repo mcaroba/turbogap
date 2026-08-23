@@ -97,6 +97,21 @@ contains
          write (*, '(A)') ''
       end if
       if (every .or. (mode == 'md')) then
+         write (*, '(A)') '  ir_acf_mode                          [string, default block]'
+         write (*, '(A)') '      How the running dipole autocorrelation is formed: "block" (the'
+         write (*, '(A)') '      default) averages over the pairs the stored ensemble holds, and'
+         write (*, '(A)') '      "exponential" carries it as a set of auxiliary variables integrated'
+         write (*, '(A)') '      alongside the atoms, one per lag, decaying with constant ir_tau_mem.'
+         write (*, '(A)') '      The exponential form weights the past by exp(-age/ir_tau_mem)'
+         write (*, '(A)') '      instead of a hard window, so the bias is a decaying functional of'
+         write (*, '(A)') '      the trajectory and the force does not jump when a frame falls off'
+         write (*, '(A)') '      the end of the buffer. It is the Markovian embedding of a'
+         write (*, '(A)') '      generalized Langevin bias in which the target spectrum plays the'
+         write (*, '(A)') '      part of the bath.'
+         write (*, '(A)') '      -> needs exp_labels; see ir_tau_mem, ir_lag_factor, ir_estimator'
+         write (*, '(A)') ''
+      end if
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  ir_estimator                         [string, default biased]'
          write (*, '(A)') '      How the autocorrelation is normalised: "biased" (default) divides'
          write (*, '(A)') '      C(tau) by N, "unbiased" divides by the number of pairs actually'
@@ -264,6 +279,19 @@ contains
          write (*, '(A)') '      the resolution the transformed lags actually support, and correct'
          write (*, '(A)') '      behaviour if the unbiased estimator is selected.'
          write (*, '(A)') '      -> see do_ir, ir_window, ir_lag_factor, write_xyz'
+         write (*, '(A)') ''
+      end if
+      if (every .or. (mode == 'md')) then
+         write (*, '(A)') '  ir_tau_mem                           [real, default 0.0, fs]'
+         write (*, '(A)') '      Decay constant of the exponential correlation filter. Sets how far'
+         write (*, '(A)') '      back the bias remembers: the auxiliary variables obey s'' = -(s -'
+         write (*, '(A)') '      mu.mu_lag)/ir_tau_mem, so the trajectory is weighted by'
+         write (*, '(A)') '      exp(-age/ir_tau_mem). It must exceed the interval between stored'
+         write (*, '(A)') '      frames, md_step*ir_stride. A value much longer than the run is'
+         write (*, '(A)') '      allowed -- the filter simply never charges up, and since the'
+         write (*, '(A)') '      resulting deficit is the same at every lag it is an overall factor'
+         write (*, '(A)') '      that ir_match_scale absorbs.'
+         write (*, '(A)') '      -> needs ir_acf_mode; see ir_acf_mode, ir_stride, ir_match_scale'
          write (*, '(A)') ''
       end if
       if (every .or. (mode == 'md')) then
@@ -577,6 +605,49 @@ contains
          write (*, '(A)') ''
       end if
       if (every .or. (mode == 'md')) then
+         write (*, '(A)') '  gle_a_file                           [string, fs^-1]'
+         write (*, '(A)') '      Drift matrix of the generalized Langevin thermostat, as a plain text'
+         write (*, '(A)') '      file of (ns+1)x(ns+1) numbers in row-major order, with `#` comment'
+         write (*, '(A)') '      lines allowed. The physical momentum is the first row and column and'
+         write (*, '(A)') '      the remaining ns are the auxiliary momenta; ns is deduced from how'
+         write (*, '(A)') '      many numbers the file holds, not declared. This one matrix fixes the'
+         write (*, '(A)') '      whole memory kernel. Fitted matrices from gle4md.org can be used'
+         write (*, '(A)') '      directly, but they must be downloaded in these units -- nothing here'
+         write (*, '(A)') '      converts or guesses them.'
+         write (*, '(A)') '      -> needs thermostat; see thermostat, gle_c_file'
+         write (*, '(A)') ''
+      end if
+      if (every .or. (mode == 'md')) then
+         write (*, '(A)') '  gle_c_file                           [string, eV]'
+         write (*, '(A)') '      Stationary covariance of the generalized Langevin thermostat, same'
+         write (*, '(A)') '      file format and order as gle_a_file. Optional: left unset it is kB T'
+         write (*, '(A)') '      I, which samples the canonical distribution at the target'
+         write (*, '(A)') '      temperature and follows a t_beg -> t_end ramp. Set, it describes a'
+         write (*, '(A)') '      bath at one fixed temperature -- the quantum thermostats work this'
+         write (*, '(A)') '      way -- and the temperature ramp no longer applies to it.'
+         write (*, '(A)') '      -> needs gle_a_file; see thermostat, gle_a_file'
+         write (*, '(A)') ''
+      end if
+      if (every .or. (mode == 'md')) then
+         write (*, '(A)') '  gle_restart                          [logical, default true]'
+         write (*, '(A)') '      Whether to read gle_restart_file at the start of the run and write'
+         write (*, '(A)') '      it as the run goes. Off starts a fresh bath drawn from the'
+         write (*, '(A)') '      stationary distribution and writes nothing.'
+         write (*, '(A)') '      -> needs thermostat; see gle_restart_file'
+         write (*, '(A)') ''
+      end if
+      if (every .or. (mode == 'md')) then
+         write (*, '(A)') '  gle_restart_file                     [string, default gle_restart.dat]'
+         write (*, '(A)') '      Where the auxiliary momenta are written, and read back from on a'
+         write (*, '(A)') '      restart. They are state in the same sense the velocities are: a run'
+         write (*, '(A)') '      resumed without them starts a fresh bath, which is a legitimate but'
+         write (*, '(A)') '      different trajectory. A file describing a different ns or a'
+         write (*, '(A)') '      different number of atoms is refused rather than adopted, and the'
+         write (*, '(A)') '      run says so and continues with a fresh bath.'
+         write (*, '(A)') '      -> needs thermostat; see gle_restart'
+         write (*, '(A)') ''
+      end if
+      if (every .or. (mode == 'md')) then
          write (*, '(A)') '  md_nsteps                            [integer, default 1]'
          write (*, '(A)') '      Number of molecular-dynamics steps to take.'
          write (*, '(A)') ''
@@ -659,10 +730,13 @@ contains
       end if
       if (every .or. (mode == 'md' .or. mode == 'mc')) then
          write (*, '(A)') '  thermostat                           [string, default none]'
-         write (*, '(A)') '      Temperature coupling: "none", "berendsen" or "bussi". Bussi is the'
-         write (*, '(A)') '      stochastic velocity rescaling that samples the canonical ensemble'
-         write (*, '(A)') '      properly; Berendsen does not. Anything else aborts the run.'
-         write (*, '(A)') '      -> see t_beg, t_end, tau_t'
+         write (*, '(A)') '      Temperature coupling: "none", "berendsen", "bussi", "langevin" or'
+         write (*, '(A)') '      "gle". Bussi is the stochastic velocity rescaling that samples the'
+         write (*, '(A)') '      canonical ensemble properly; Berendsen does not. "langevin" is the'
+         write (*, '(A)') '      exact Ornstein-Uhlenbeck update with friction 1/tau_t. "gle" is'
+         write (*, '(A)') '      generalized Langevin dynamics by Markovian embedding, whose memory'
+         write (*, '(A)') '      kernel is read from gle_a_file. Anything else aborts the run.'
+         write (*, '(A)') '      -> see t_beg, t_end, tau_t, gle_a_file, gle_c_file'
          write (*, '(A)') ''
       end if
       if (every .or. (mode == 'md' .or. mode == 'mc')) then
