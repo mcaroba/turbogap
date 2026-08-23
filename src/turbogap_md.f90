@@ -40,6 +40,7 @@ module turbogap_md
    use md
    use bussi
    use gle
+   use exp_utils, only: exp_dissimilarity, exp_dissim_ref
    use xyz_module
    use timing
    use mpi_helper
@@ -154,6 +155,23 @@ contains
 !     inside the thermostat block below.
       logical :: gle_ok, gle_resumed
       character(len=512) :: gle_msg
+!     Assembled once at step zero; long enough for every optional column.
+      character(len=1024) :: thermo_hdr
+      real(dp) :: thermo_relerr
+      real(dp) :: thermo_ek_pre
+!     Running total of the kinetic energy discarded with the centre-of-mass
+!     drift. Saved because it accumulates across steps; reset at md_istep 0.
+      real(dp), save :: e_cm_removed = 0.d0
+!     Is a generalized Langevin thermostat in play? Read in two places -- the
+!     header and the columns -- and they have to agree, so it is one expression.
+      logical :: thermo_has_gle
+!     Is there an experimental observable at all? NOT params%do_exp on its own:
+!     that flag gates the per-frame structural prediction pipeline, and an
+!     IR-only run switches it back off deliberately because IR is a time-series
+!     observable that must not be routed through it. Such a run still has a MAD
+!     energy in energies_exp and still has a mismatch worth reporting, and
+!     before this it reported neither.
+      logical :: thermo_has_exp
 !     Has the bath been rebuilt for a changed particle count? Saved, because it
 !     has to outlive the call: it suppresses the setup report and the restart
 !     read on every rebuild after the first setup.
@@ -169,6 +187,8 @@ contains
 #endif
          if (params%do_md .and. md_istep > -1) then
             call time_start(time%md)
+            thermo_has_gle = (params%thermostat == "gle" .or. params%thermostat == "langevin")
+            thermo_has_exp = (params%do_exp .or. params%valid_ir)
             !     Define the time_step and md_time prior to possible scaling (see variable_time_step below)
             if (md_istep > 0) then
                md_time = md_time + time_step
@@ -180,8 +200,25 @@ contains
             call wrap_pbc(positions(1:3, 1:n_sites), a_box&
                  &/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box&
                  &/dfloat(indices(3)))
+!           REMOVING THE CENTRE-OF-MASS DRIFT REMOVES ENERGY, and a stochastic
+!           thermostat puts energy back into that drift every step, so the two
+!           together are a steady leak that nothing else accounts for. It does
+!           not affect the sampled temperature -- the estimator already divides
+!           by 3(N-1) -- but it is the difference between an energy ledger that
+!           balances and one that drifts by ~1 eV over 300 steps, which is what
+!           E_cons would otherwise look like. Bracketed here rather than inside
+!           remove_cm_vel so that md.f90 and its other callers are untouched.
+            if (md_istep == 0) e_cm_removed = 0.d0
+            thermo_ek_pre = 0.d0
+            do i = 1, n_sites
+               thermo_ek_pre = thermo_ek_pre + 0.5d0*masses(i)*dot_product(velocities(1:3, i), velocities(1:3, i))
+            end do
             call remove_cm_vel(velocities(1:3, 1:n_sites),&
                  & masses(1:n_sites))
+            do i = 1, n_sites
+               e_cm_removed = e_cm_removed - 0.5d0*masses(i)*dot_product(velocities(1:3, i), velocities(1:3, i))
+            end do
+            e_cm_removed = e_cm_removed + thermo_ek_pre
 
             !     First we check if this is a variable time step simulation
             if (params%variable_time_step) then
@@ -306,14 +343,41 @@ contains
             end do
 
             !     Here we write thermodynamic information -> THIS NEEDS CLEAN UP AND IMPROVEMENT
-            if (md_istep == 0 .and. .not. params%do_nested_sampling) then
+            if ((md_istep == 0 .and. .not. params%do_nested_sampling) .or. &
+                (md_istep == 0 .and. i_nested == 1)) then
                open (unit=10, file="thermo.log", status="unknown")
-               write (10, "(A,A)") "#     Step             Time      Temperature                E_kin                     E_pot", &
-                  "             Pressure"
-            else if (md_istep == 0 .and. i_nested == 1) then
-               open (unit=10, file="thermo.log", status="unknown")
-               write (10, "(A,A)") "#     Step             Time      Temperature                E_kin                     E_pot", &
-                  "             Pressure"
+!              THE HEADER IS BUILT FROM THE SAME CONDITIONS AS THE COLUMNS.
+!              It used to be a fixed string while the columns were already
+!              conditional, so a do_exp run wrote an E_exp column the header did
+!              not name and every column after it was misread by one. Assembling
+!              both from the same `if`s is the only arrangement in which they
+!              cannot drift apart again.
+               thermo_hdr = "#     Step             Time      Temperature"// &
+                            "                E_kin                     E_pot"
+               if (thermo_has_exp) thermo_hdr = trim(thermo_hdr)//"                E_exp"
+               thermo_hdr = trim(thermo_hdr)//"             Pressure"
+!              The nine lattice columns have never been named in the header.
+!              They are named here ONLY when something follows them, because
+!              then the alternative is a header whose trailing names sit nine
+!              columns left of the data they describe -- worse than no name at
+!              all. When nothing follows, the long-standing output is left
+!              exactly as it was: naming them would be a cosmetic improvement
+!              that changes thermo.log for every existing write_lv deck, and
+!              the regression suite compares that file byte for byte.
+               if (params%write_lv .and. (thermo_has_exp .or. thermo_has_gle)) &
+                  thermo_hdr = trim(thermo_hdr)// &
+                               "                   ax                   ay                   az"// &
+                               "                   bx                   by                   bz"// &
+                               "                   cx                   cy                   cz"
+!              Appended last, after the lattice block, so that no existing
+!              column moves under any combination of flags. A script reading
+!              column 3 for the temperature keeps working whatever is switched
+!              on.
+               if (thermo_has_exp) thermo_hdr = trim(thermo_hdr)// &
+                                                "           Dissimilarity             Rel_error"
+               if (thermo_has_gle) thermo_hdr = trim(thermo_hdr)// &
+                                                "             E_thermo              E_cmrem               E_cons"
+               write (10, "(A)") trim(thermo_hdr)
             else
                open (unit=10, file="thermo.log", status="old", position="append")
             end if
@@ -321,7 +385,7 @@ contains
                                           .or. modulo(md_istep, params%write_thermo) == 0)) then
                !       Organize this better so that the user can have more freedom about what gets printed to thermo.log
                !       There should also be a header preceded by # specifying what gets printed
-               if (params%do_exp) then
+               if (thermo_has_exp) then
                   write (10, "(I10, 1X, F16.4, 1X, F16.4, 1X, F20.8, 1X, F20.8, 1X, F20.8, 1X, F20.8)", advance="no") &
                      md_istep, md_time, instant_temp, E_kinetic, sum(energies), sum(energies_exp), instant_pressure
                else
@@ -333,6 +397,36 @@ contains
                   write (10, "(1X, 9F20.8)", advance="no") a_box(1:3)/dfloat(indices(1)), &
                      b_box(1:3)/dfloat(indices(2)), &
                      c_box(1:3)/dfloat(indices(3))
+               end if
+!              HOW FAR THE PREDICTION IS FROM THE EXPERIMENT, which the energy
+!              alone does not say. exp_energy_scales is ramped through a MAD
+!              run, so E_exp mixes the size of the mismatch with the price
+!              currently charged for it and can fall while the agreement gets
+!              worse. Dissimilarity is sum (y_pred - y_exp)^2 over every
+!              observable with no scale on it; Rel_error is its square root
+!              relative to the experiment's own norm, which is dimensionless and
+!              so comparable between observables and between runs.
+               if (thermo_has_exp) then
+                  if (exp_dissim_ref > 0.d0) then
+                     thermo_relerr = dsqrt(exp_dissimilarity/exp_dissim_ref)
+                  else
+                     thermo_relerr = 0.d0
+                  end if
+                  write (10, "(1X, ES21.8, 1X, ES21.8)", advance="no") &
+                     exp_dissimilarity, thermo_relerr
+               end if
+!              THE THERMOSTAT'S ENERGY LEDGER. A generalized Langevin run does
+!              not conserve E_pot + E_kin and is not meant to; what it conserves
+!              is that minus the work the bath has done. E_thermo is the running
+!              total the thermostat has put in (positive) or taken out, and
+!              E_cons is the combination that should be flat. A drift in E_cons
+!              is an integration problem; a drift in E_pot + E_kin alone is just
+!              the thermostat doing its job, and without this column the two are
+!              indistinguishable.
+               if (thermo_has_gle) then
+                  write (10, "(1X, F20.8, 1X, F20.8, 1X, F20.8)", advance="no") &
+                     gle_state%e_thermo, e_cm_removed, &
+                     sum(energies) + E_kinetic - gle_state%e_thermo + e_cm_removed
                end if
                !       Further printouts should go here
                !       <<HERE>>

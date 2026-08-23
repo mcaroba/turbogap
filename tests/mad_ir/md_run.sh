@@ -344,6 +344,57 @@ sed -i "s/ir_acf_mode = block/ir_acf_mode = exponential/; s/ir_tau_mem = 30.0/ir
 "$BIN" md >runB3.log 2>&1
 check "a tau_mem below the sampling interval is refused" "retain nothing" runB3.log
 
+echo "==> 9. the dissimilarity columns in thermo.log"
+#
+# The MAD energy is 1/2 * exp_energy_scales * sum_k wgt_k (I_k - I_k^exp)^2, so
+# the reported Dissimilarity must satisfy E_exp = 0.5 * scale * Dissimilarity
+# exactly. That identity is the check: it ties the new column to the energy the
+# force is actually the gradient of, and no independent reimplementation of the
+# residual could satisfy it by accident.
+#
+# It matters because exp_energy_scales is RAMPED. E_exp alone therefore mixes
+# how far the spectrum is from the experiment with how much that is currently
+# being charged for, and can fall while the agreement gets worse.
+rm -f ir_restart.dat
+write_input
+"$BIN" md >runC1.log 2>&1
+head -1 thermo.log | grep -q "Dissimilarity" && pass "Dissimilarity column present" || bad "no Dissimilarity column"
+head -1 thermo.log | grep -q "Rel_error"     && pass "Rel_error column present"     || bad "no Rel_error column"
+# An IR-only deck switches params%do_exp back off, so before this it reported
+# neither its MAD energy nor its mismatch.
+head -1 thermo.log | grep -q "E_exp" && pass "E_exp reported for an IR-only run" || bad "no E_exp column"
+
+python3 - <<'PY'
+import sys
+rows=[l.split() for l in open("thermo.log") if l.strip() and not l.startswith("#")]
+scale=1.0e-6            # exp_energy_scales in the deck above, not ramped
+eexp=[float(r[5]) for r in rows]
+diss=[float(r[7]) for r in rows]
+rel =[float(r[8]) for r in rows]
+ok=True
+# E_exp = 0.5 * scale * Dissimilarity, to the printed precision of E_exp (8 dp)
+err=max(abs(e-0.5*scale*d) for e,d in zip(eexp,diss))
+good = err <= 1e-8
+print("  %s  E_exp == 0.5 * scale * Dissimilarity (max err %.1e)" %
+      ("PASS" if good else "FAIL", err)); ok &= good
+# Zero while the ensemble is still filling -- there is no spectrum yet, so
+# there is no mismatch -- and positive once there is one. Same onset the bias
+# itself has, and checked the same way.
+n_zero = sum(1 for d in diss if d == 0.0)
+tail = diss[n_zero:]
+good = n_zero > 0 and len(tail) > 0 and all(d > 0.0 for d in tail)
+print("  %s  zero while filling (%d rows), positive after (%d rows)" %
+      ("PASS" if good else "FAIL", n_zero, len(tail))); ok &= good
+# Rel_error is dimensionless and, for a model with no vibrational bands against
+# a synthetic spectrum that has them, should be of order one rather than tiny.
+rtail = rel[n_zero:]
+good = all(0.0 < r < 10.0 for r in rtail) and max(rtail) > 0.1
+print("  %s  Rel_error is dimensionless and O(1) (%.3f .. %.3f once active)" %
+      ("PASS" if good else "FAIL", min(rtail), max(rtail))); ok &= good
+sys.exit(0 if ok else 1)
+PY
+[ $? -eq 0 ] || fail=$((fail + 1))
+
 echo
 if [ "$fail" -eq 0 ]; then
   echo "==> all MAD IR MD checks passed"

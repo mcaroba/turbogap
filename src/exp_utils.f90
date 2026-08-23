@@ -31,6 +31,18 @@ module exp_utils
    use kinds
    use types
 
+!  SUM OF SQUARED RESIDUALS over every experimental observable evaluated this
+!  step, and the same sum over the experimental data itself. Their ratio is a
+!  dimensionless measure of agreement that does not move when the bias weight
+!  is ramped, which is what makes it the thing to watch a MAD run by; the
+!  energy alone cannot be read that way. See get_exp_energies.
+!
+!  Zeroed once per step in turbogap.f90 where energies_exp is zeroed. A saved
+!  module variable rather than an argument because it has to cross four call
+!  sites in exp_interface that already pass a dozen things each.
+   real(dp), save :: exp_dissimilarity = 0.d0
+   real(dp), save :: exp_dissim_ref = 0.d0
+
 contains
 
    ! subroutine get_single_partial_structure_factor_derivative(sinc_factor_matrix,&
@@ -2819,6 +2831,19 @@ contains
       diff = (y_pred(1:n_samples) - y_exp(1:n_samples))
       e_tot = 0.5d0*energy_scale*dot_product(diff, diff)
       energies = e_tot/dfloat(n_sites)
+
+!     The same sum of squares WITHOUT the energy scale: how far the prediction
+!     is from the experiment, as opposed to how much that mismatch is currently
+!     being charged for. The two are not interchangeable during a run, because
+!     exp_energy_scales is ramped -- the energy can fall while the agreement
+!     gets worse, and only this number says which happened. Accumulated across
+!     observables here rather than derived afterwards as 2 E / scale, which is
+!     exact for one observable and meaningless for several.
+!
+!     Zeroed once per step in turbogap.f90 alongside energies_exp, which is the
+!     only place that can know a new step has begun.
+      exp_dissimilarity = exp_dissimilarity + dot_product(diff, diff)
+      exp_dissim_ref = exp_dissim_ref + dot_product(y_exp(1:n_samples), y_exp(1:n_samples))
 
    end subroutine get_exp_energies
 

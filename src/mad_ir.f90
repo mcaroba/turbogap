@@ -426,6 +426,18 @@ module mad_ir
       real(dp) :: nu_power = 2.d0    ! I(nu) = nu**nu_power * FT[C]
       logical :: match_scale = .true.
       real(dp) :: scale = 1.d0       ! the scale fitted on the last evaluate
+!     HOW FAR THE SPECTRUM IS FROM THE EXPERIMENT, as opposed to how much that
+!     is currently being charged for. dissim is sum_k wgt_k (s I_k + b - I_k^exp)^2
+!     -- the loss without the energy scale -- and dissim_ref the same sum over
+!     the experiment alone, so sqrt(dissim/dissim_ref) is a dimensionless
+!     relative mismatch. Both are set by mad_ir_evaluate and are diagnostics
+!     only: nothing in the force reads them.
+!
+!     They exist because exp_energy_scales is RAMPED. The MAD energy therefore
+!     mixes two things that move independently, and a run whose energy is
+!     falling can be one whose agreement is getting worse. These separate them.
+      real(dp) :: dissim = 0.d0
+      real(dp) :: dissim_ref = 0.d0
       logical :: match_offset = .false.
       real(dp) :: offset = 0.d0      ! the baseline fitted on the last evaluate
 !     estimator choices; see the header block for what each one costs and buys
@@ -1081,10 +1093,16 @@ contains
 !     distribution or a structure factor, and the force really is the gradient
 !     of the spectral difference rather than of something proportional to it.
       allocate (dLdI(1:this%n_freq))
+      this%dissim = 0.d0
+      this%dissim_ref = 0.d0
       do k = 1, this%n_freq
          c = s_fit*this%I_calc(k) + b_fit - this%I_exp(k)
          energy = energy + 0.5d0*energy_scale*this%wgt(k)*c**2
          dLdI(k) = energy_scale*this%wgt(k)*s_fit*c
+!        The same residual the energy is built from, but without the scale, so
+!        that a ramped weight cannot be mistaken for improving agreement.
+         this%dissim = this%dissim + this%wgt(k)*c**2
+         this%dissim_ref = this%dissim_ref + this%wgt(k)*this%I_exp(k)**2
       end do
 
 !     ---- back through the transform, to dL/dC(tau) -------------------

@@ -225,6 +225,54 @@ else
 fi
 
 echo
+echo "==> 8. the thermostat's energy ledger in thermo.log"
+# A generalized Langevin run does not conserve E_pot + E_kin and is not meant
+# to. What it conserves is E_pot + E_kin - E_thermo + E_cmrem, and with this
+# potential -- which has no energy and no forces -- that is an IDENTITY, not an
+# approximation: every joule that entered or left the atoms did so through the
+# thermostat or through the centre-of-mass removal, and both are accounted.
+# So the column is checked for EXACT constancy, not for small drift.
+#
+# E_cmrem is in there because remove_cm_vel discards kinetic energy every step
+# while a stochastic thermostat keeps pumping energy back into the drift it
+# removes. Left out, E_cons drifts by ~1 eV over 300 steps and looks like an
+# integrator fault.
+rm -f gle_restart.dat
+write_input langevin 300 'gle_restart = .false.' 4242
+"$BIN" md >runE.log 2>&1
+head -1 thermo.log | grep -q "E_thermo" && pass "E_thermo column present" || bad "no E_thermo column"
+head -1 thermo.log | grep -q "E_cons"   && pass "E_cons column present"   || bad "no E_cons column"
+
+python3 - <<'PY'
+import sys
+rows=[l.split() for l in open("thermo.log") if l.strip() and not l.startswith("#")]
+ek  =[float(r[3]) for r in rows]
+eth =[float(r[6]) for r in rows]
+ecm =[float(r[7]) for r in rows]
+ec  =[float(r[8]) for r in rows]
+ok=True
+drift=max(abs(c-ec[0]) for c in ec)
+span =max(ek)-min(ek)
+moved=abs(eth[-1])
+# The printed precision is 8 decimals, so anything at or below 1e-8 is the
+# format, not the physics.
+good = drift <= 1e-8
+print("  %s  E_cons is constant (drift %.1e eV, while E_kin spans %.3f eV and the"
+      " thermostat moved %.3f eV)" % ("PASS" if good else "FAIL", drift, span, moved))
+ok &= good
+# and the column really is the combination it claims to be
+err=max(abs(k-t+c-e) for k,t,c,e in zip(ek,eth,ecm,ec))
+good = err <= 1e-7
+print("  %s  E_cons == E_kin - E_thermo + E_cmrem (max err %.1e)" %
+      ("PASS" if good else "FAIL", err)); ok &= good
+# a thermostat that did nothing would pass the above trivially
+good = moved > 0.1
+print("  %s  the thermostat actually moved energy" % ("PASS" if good else "FAIL")); ok &= good
+sys.exit(0 if ok else 1)
+PY
+[ $? -eq 0 ] || fail=$((fail + 1))
+
+echo
 if [ "$fail" -eq 0 ]; then
   echo "==> gle/md_run.sh: all checks passed"
   cd /; rm -rf "$D"

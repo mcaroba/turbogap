@@ -1148,6 +1148,12 @@ program turbogap
          energies_estat = 0.d0
          energies_lp = 0.d0
          energies_exp = 0.d0
+!        The dissimilarity accumulators belong to the same step as energies_exp
+!        and are zeroed with it. This is the only point that knows a new
+!        evaluation has begun; get_exp_energies is called once per observable
+!        and mad_ir separately again, so neither can reset them itself.
+         exp_dissimilarity = 0.d0
+         exp_dissim_ref = 0.d0
          local_dipoles = 0.d0
          energies_dipole = 0.d0
          dipole = 0.d0
@@ -2184,6 +2190,12 @@ program turbogap
 !                 The mismatch is an energy like the others, spread over the
 !                 sites; the force is its gradient, and only if exp_forces.
                   energies_exp = energies_exp + mad_ir_energy/dfloat(n_sites)
+!                 IR does not go through get_exp_energies -- it has its own
+!                 fitted scale and offset -- so it contributes to the shared
+!                 dissimilarity accumulator here instead. Same definition:
+!                 the residual sum of squares with no energy scale on it.
+                  exp_dissimilarity = exp_dissimilarity + mad_ir_state%dissim
+                  exp_dissim_ref = exp_dissim_ref + mad_ir_state%dissim_ref
 !                 The sum of energies_exp into energies happened above, before
 !                 the dipole of this configuration existed. Folding the IR term
 !                 in there is not possible -- it needs the forces pass -- so it
