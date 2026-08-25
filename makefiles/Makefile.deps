@@ -22,6 +22,8 @@ $(BUILD_DIR)/electrostatics.o: $(BUILD_DIR)/kinds.o $(BUILD_DIR)/neighbors.o $(B
 $(BUILD_DIR)/gle.o: $(BUILD_DIR)/kinds.o
 $(BUILD_DIR)/mad_ir.o: $(BUILD_DIR)/kinds.o
 $(BUILD_DIR)/mad_ir_xl.o: $(BUILD_DIR)/kinds.o $(BUILD_DIR)/mad_ir.o
+$(BUILD_DIR)/ir_fft.o: $(BUILD_DIR)/kinds.o
+$(BUILD_DIR)/ir_fft_io.o: $(BUILD_DIR)/kinds.o $(BUILD_DIR)/ir_fft.o
 $(BUILD_DIR)/nonneg_leastsq.o: $(BUILD_DIR)/constants.o
 $(BUILD_DIR)/splines.o: $(BUILD_DIR)/kinds.o
 $(BUILD_DIR)/types.o: $(BUILD_DIR)/kinds.o

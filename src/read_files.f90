@@ -64,12 +64,73 @@ contains
 !
 ! SPECIES X Y Z (VX VY VZ (FIXX FIXY FIXZ))
 !
+!**************************************************************************
+!
+! Pull a real-valued key=value tag out of an extended-xyz comment line.
+!
+! The comment line is a flat string of "key=value" pairs, of which TurboGAP's
+! own writer emits a dozen. This finds one by name and reads the number after
+! the "=".
+!
+! TWO THINGS MAKE THIS LESS TRIVIAL THAN IT LOOKS.
+!
+!   * The tag must be preceded by whitespace or start the line. Without that
+!     check, looking for "time=" would also match the tail of a hypothetical
+!     "cpu_time=" and return the wrong number silently. (It does NOT match
+!     "time_step=", which is a different tag and has the underscore, but the
+!     guard is cheap and the failure mode is a wavenumber axis scaled by an
+!     arbitrary factor.)
+!   * The comparison is done on a lower-cased copy, because "Time=" and
+!     "time=" both occur in the wild and neither is wrong.
+!
+! found is .false. and val untouched when the tag is absent or the text after
+! the "=" is not a number. A caller that needs the value must check.
+!
+   subroutine get_xyz_tag_real(line, tag, val, found)
+
+      implicit none
+
+      character(len=*), intent(in) :: line
+      character(len=*), intent(in) :: tag
+      real(dp), intent(out) :: val
+      logical, intent(out) :: found
+      character(len=:), allocatable :: low
+      character(len=1) :: prev
+      integer :: i, n, m, ios
+
+      found = .false.
+      val = 0.d0
+
+      m = len_trim(tag)
+      if (m < 1) return
+      low = trim(line)
+      call upper_to_lower_case(low)
+      n = len_trim(low)
+      if (n < m) return
+
+      do i = 1, n - m + 1
+         if (low(i:i + m - 1) /= tag(1:m)) cycle
+         if (i > 1) then
+            prev = low(i - 1:i - 1)
+            if (prev /= " " .and. prev /= achar(9)) cycle
+         end if
+         read (low(i + m:), *, iostat=ios) val
+         if (ios == 0) then
+            found = .true.
+         else
+            val = 0.d0
+         end if
+         return
+      end do
+
+   end subroutine get_xyz_tag_real
+
    subroutine read_xyz(filename, ase_format, all_atoms, do_timing, n_species, species_types, &
                        repeat_xyz, rcut_max, which_atom, positions, &
                        do_md, velocities, masses_types, masses, xyz_species, xyz_species_supercell, &
                        species, species_supercell, indices, a_box, b_box, c_box, n_sites, &
                        supercell_check_only, fix_atom, t_beg, write_masses, recalculate_supercell, &
-                       randomize_velocities)
+                       randomize_velocities, frame_time, has_frame_time)
 
       implicit none
 
@@ -106,6 +167,12 @@ contains
       logical, allocatable, intent(inout) :: fix_atom(:, :)
       logical, intent(in) :: randomize_velocities
 
+!   Optional outputs: the time= tag on the comment line, in fs. Optional so
+!   that the existing callers -- which do not care -- are untouched. See
+!   get_xyz_tag_real for why the tag is worth reading rather than assuming.
+      real(dp), intent(out), optional :: frame_time
+      logical, intent(out), optional :: has_frame_time
+
 !   Internal variables
       real(dp), allocatable :: positions_supercell(:, :)
       real(dp), allocatable :: velocities_supercell(:, :)
@@ -118,6 +185,8 @@ contains
       real(dp) :: kB = 8.6173303d-5
       real(dp) :: rjunk(1:3)
       real(dp) :: rjunk1d
+      real(dp) :: frame_time_local
+      logical :: has_frame_time_local
       integer :: i
       integer :: iostatus
       integer :: j
@@ -154,6 +223,15 @@ contains
             read (11, fmt='(A)') cjunk_array_flat
             cjunk_array = ""
             read (cjunk_array_flat, *, iostat=iostatus) cjunk_array(:)
+!     The time= tag, for callers that want a time axis rather than a frame
+!     index. Read from the same comment line and before anything else touches
+!     it, so a malformed tag is a missing time rather than a corrupted lattice.
+            if (present(frame_time) .or. present(has_frame_time)) then
+               call get_xyz_tag_real(cjunk_array_flat, "time=", frame_time_local, &
+                                     has_frame_time_local)
+               if (present(frame_time)) frame_time = frame_time_local
+               if (present(has_frame_time)) has_frame_time = has_frame_time_local
+            end if
 !     Read in lattice vectors
             i = 0
             do
@@ -1473,7 +1551,16 @@ contains
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("ir_tau_mem", params%ir_tau_mem)
          !> @kw ir_bias_mode
-         !> Which IR bias to run: "acf" (the default) or "xl". Under "acf" the spectrum is the
+         !> Which IR machinery to run: "acf" (the default), "xl" or "fft". It selects the
+         !> estimator for prediction as well as for the bias, despite the name. Under "fft" the
+         !> spectrum comes from ir_fft.f90, a translation of TNEP/spectroscopy.py: the
+         !> correlation is computed over the whole stored ensemble by FFT, the longest lag is
+         !> ir_fft_acf_ratio of it, the quantum correction is explicit and defaults to the
+         !> harmonic w(1 - exp(-hbar w/kT)) rather than a fixed nu^2, and the result is smoothed.
+         !> The MAD force is the exact gradient of the mismatch with respect to the newest
+         !> dipole, as under "acf", and goes through the same dmu/dr contraction. It is also the
+         !> only mode available to `turbogap predict`, where a trajectory on disk is read frame
+         !> by frame and the interval comes from the time= tags. Under "acf" the spectrum is the
          !> cosine transform of an autocorrelation of the stored dipoles and the MAD force is the
          !> gradient of the mismatch with respect to the newest configuration. Under "xl" it is
          !> the auxiliary-variable bias: a bank of damped resonators, a quadrature pair per fitted
@@ -1499,15 +1586,184 @@ contains
          call check_iostatus(iostatus, keyword)
          call upper_to_lower_case(params%ir_bias_mode)
          if (trim(params%ir_bias_mode) /= "acf" .and. &
-             trim(params%ir_bias_mode) /= "xl") then
+             trim(params%ir_bias_mode) /= "xl" .and. &
+             trim(params%ir_bias_mode) /= "fft") then
             if (rank == 0) then
                write (*, *) "ERROR -> Invalid ir_bias_mode keyword:", params%ir_bias_mode
                write (*, *) "This is a list of valid options:"
-               write (*, *) "acf  xl"
+               write (*, *) "acf  xl  fft"
             end if
             stop
          end if
          if (rank == 0) call print_parameter("ir_bias_mode", params%ir_bias_mode)
+         !> @kw ir_fft_acf_ratio
+         !> Fraction of the stored ensemble kept as lags under ir_bias_mode = fft, GPUMD's
+         !> convention (default 0.1). This and nothing else sets the frequency resolution:
+         !> 33356.40952/(ir_fft_acf_ratio * n_frames * dt) cm^-1, where dt is the interval
+         !> between stored frames. Raising it buys resolution and pays in variance, because
+         !> C(tau) at lag tau averages over n_frames - tau products and the longest lag kept is
+         !> the least well determined. Set it to 1/ir_lag_factor to resolve exactly what the
+         !> block estimator resolves, which is what to do when the point is to compare the two.
+         !> @modes md predict
+         !> @needs ir_bias_mode
+         !> @see ir_bias_mode ir_lag_factor ir_resolution ir_fft_smooth_k
+      else if (keyword == 'ir_fft_acf_ratio') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_fft_acf_ratio
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_fft_acf_ratio", params%ir_fft_acf_ratio)
+         !> @kw ir_fft_smooth_k
+         !> Smoothing width under ir_bias_mode = fft, in BINS rather than cm^-1 (default 10).
+         !> For ir_fft_smooth_kind = gaussian it is the kernel FWHM; for box the moving-average
+         !> width. 0 or 1 disables it. One bin is 33356.40952/((2*n_lag - 1)*dt) cm^-1, which is
+         !> half the resolution, so the default broadens a band by about five resolution
+         !> elements: a feature narrower than ir_fft_smooth_k bins is the smoother's shape and
+         !> not the sample's. Under a MAD bias the smoothing is differentiated exactly along
+         !> with everything else, so it changes what is being fitted rather than only how it
+         !> looks.
+         !> @modes md predict
+         !> @needs ir_bias_mode
+         !> @see ir_fft_smooth_kind ir_fft_acf_ratio ir_bias_mode
+      else if (keyword == 'ir_fft_smooth_k') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_fft_smooth_k
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_fft_smooth_k", params%ir_fft_smooth_k)
+         !> @kw ir_fft_smooth_kind
+         !> "gaussian" (default) or "box". Gaussian is a truncated Gaussian kernel with clamped
+         !> edges, matching scipy.ndimage.gaussian_filter1d(mode="nearest"); it has no sidelobes.
+         !> Box is the moving average GPUMD uses, in numpy's mode="valid": it has sinc sidelobes
+         !> and it SHORTENS the spectrum by ir_fft_smooth_k - 1 bins, shifting the first
+         !> wavenumber up by half a width. Both are exact under differentiation.
+         !> @modes md predict
+         !> @needs ir_bias_mode
+         !> @see ir_fft_smooth_k ir_bias_mode
+      else if (keyword == 'ir_fft_smooth_kind') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_fft_smooth_kind
+         call check_iostatus(iostatus, keyword)
+         call upper_to_lower_case(params%ir_fft_smooth_kind)
+         if (trim(params%ir_fft_smooth_kind) /= "gaussian" .and. &
+             trim(params%ir_fft_smooth_kind) /= "box") then
+            if (rank == 0) then
+               write (*, *) "ERROR -> Invalid ir_fft_smooth_kind keyword:", params%ir_fft_smooth_kind
+               write (*, *) "This is a list of valid options:"
+               write (*, *) "gaussian  box"
+            end if
+            stop
+         end if
+         if (rank == 0) call print_parameter("ir_fft_smooth_kind", params%ir_fft_smooth_kind)
+         !> @kw ir_fft_quantum_correction
+         !> Which quantum correction factor turns the classical lineshape into an absorption,
+         !> under ir_bias_mode = fft. "harmonic" (the default) is w(1 - exp(-hbar w/kT)), which
+         !> is what GPUMD and Xu et al. apply. "classical" (alias "quadratic") is w^2, which is
+         !> the same correction written the other way round and is what mad_ir.f90 applies with
+         !> ir_nu_power = 2. "linear" is w and "none" is 1. The first two agree only for
+         !> hbar w << kT: at 300 K that is below about 208 cm^-1, and by 3400 cm^-1 they differ
+         !> by a factor of 16 in the weight given to the band. No fitted scale can absorb that,
+         !> because it is a tilt and not a factor. When two spectra of the same trajectory
+         !> disagree about band heights, check this before anything else.
+         !> @modes md predict
+         !> @needs ir_bias_mode
+         !> @see ir_nu_power ir_fft_temperature ir_bias_mode
+      else if (keyword == 'ir_fft_quantum_correction') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_fft_quantum_correction
+         call check_iostatus(iostatus, keyword)
+         call upper_to_lower_case(params%ir_fft_quantum_correction)
+         if (trim(params%ir_fft_quantum_correction) /= "harmonic" .and. &
+             trim(params%ir_fft_quantum_correction) /= "classical" .and. &
+             trim(params%ir_fft_quantum_correction) /= "quadratic" .and. &
+             trim(params%ir_fft_quantum_correction) /= "linear" .and. &
+             trim(params%ir_fft_quantum_correction) /= "none") then
+            if (rank == 0) then
+               write (*, *) "ERROR -> Invalid ir_fft_quantum_correction keyword:", &
+                  params%ir_fft_quantum_correction
+               write (*, *) "This is a list of valid options:"
+               write (*, *) "harmonic  classical  quadratic  linear  none"
+            end if
+            stop
+         end if
+         if (rank == 0) call print_parameter("ir_fft_quantum_correction", &
+                                             params%ir_fft_quantum_correction)
+         !> @kw ir_fft_temperature
+         !> Temperature in K for the harmonic quantum correction. A value of zero or less, which
+         !> is the default, means take t_beg: the run already knows its target temperature and
+         !> making the user repeat it only creates a second number that can disagree with the
+         !> first. Set it explicitly when post-processing a trajectory whose temperature is not
+         !> the t_beg of the current input.
+         !> @units K
+         !> @modes md predict
+         !> @needs ir_fft_quantum_correction
+         !> @see ir_fft_quantum_correction t_beg
+      else if (keyword == 'ir_fft_temperature') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_fft_temperature
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_fft_temperature", params%ir_fft_temperature)
+         !> @kw ir_fft_power_dc_cutoff
+         !> Wavenumber below which bins are excluded from the POWER spectrum's peak normaliser
+         !> (default 100 cm^-1). The unweighted power spectrum M(w) has a large peak at w = 0
+         !> that is diffusion and drift rather than a vibration; normalising by it crushes every
+         !> vibrational feature to a per cent of full scale and makes the plot look empty. 0
+         !> keeps the DC bin. It affects only the normalisation of the power column, never the
+         !> intensity and never the bias.
+         !> @units cm^-1
+         !> @modes md predict
+         !> @needs ir_bias_mode
+         !> @see ir_bias_mode
+      else if (keyword == 'ir_fft_power_dc_cutoff') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_fft_power_dc_cutoff
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_fft_power_dc_cutoff", &
+                                             params%ir_fft_power_dc_cutoff)
+         !> @kw ir_fft_write_dipoles
+         !> Also write ir_fft_dipoles.dat: the time and total dipole of every frame the spectrum
+         !> was computed from (default .true.). Four columns of text, and it makes the result
+         !> reproducible outside TurboGAP -- feeding columns 2 to 4 to
+         !> TNEP/spectroscopy.py's compute_ir_spectrum reproduces ir_fft_spectrum.dat, which is
+         !> how the two implementations are checked against each other.
+         !> @modes md predict
+         !> @needs ir_bias_mode
+         !> @see ir_bias_mode do_ir
+      else if (keyword == 'ir_fft_write_dipoles') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_fft_write_dipoles
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_fft_write_dipoles", params%ir_fft_write_dipoles)
+         !> @kw ir_frame_dt
+         !> Interval between frames in fs for `turbogap predict` with do_ir, used ONLY when no
+         !> frame in the trajectory carries a time= tag. TurboGAP's own trajectory_out.xyz
+         !> always carries one, and then the labels are believed and this is ignored. That is
+         !> deliberate: the frame interval is not the MD timestep but write_xyz times it, and
+         !> getting it wrong rescales the entire wavenumber axis by that ratio while producing
+         !> a spectrum that looks perfectly reasonable. A trajectory in which SOME frames are
+         !> labelled is refused outright rather than patched up with this.
+         !> @units fs
+         !> @modes predict
+         !> @needs do_ir
+         !> @see do_ir ir_frame_dt_tol ir_bias_mode
+      else if (keyword == 'ir_frame_dt') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_frame_dt
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_frame_dt", params%ir_frame_dt)
+         !> @kw ir_frame_dt_tol
+         !> How far a consecutive frame spacing may stray from the mean, as a fraction, before
+         !> the trajectory is refused as unevenly sampled (default 1e-3). An unevenly sampled
+         !> series has no Fourier transform of the kind being computed, and the failure is
+         !> otherwise entirely silent. The default is loose because time= is written with finite
+         !> precision; it is there to catch a trajectory with frames missing, or two runs
+         !> concatenated, not to police the last digit.
+         !> @modes predict
+         !> @needs do_ir
+         !> @see ir_frame_dt do_ir
+      else if (keyword == 'ir_frame_dt_tol') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_frame_dt_tol
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_frame_dt_tol", params%ir_frame_dt_tol)
          !> @kw ir_xl_tau_mem
          !> Memory time of the extended-Lagrangian resonators, and so their resolution. A
          !> resonator damped at gamma = 2/ir_xl_tau_mem is a Lorentzian bandpass of full width

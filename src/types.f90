@@ -403,6 +403,76 @@ module types
       real(dp) :: ir_xl_warm_factor = 3.d0
       real(dp) :: ir_xl_max_memory = 4096.d0
       character*1024 :: ir_xl_restart_file = "ir_xl_restart.dat"
+!     ----------------------------------------------------------------------
+!     ir_bias_mode = "fft": the Wiener-Khinchin estimator of ir_fft.f90, a
+!     translation of TNEP/spectroscopy.py. It shares the experimental grid,
+!     ir_nu_max, ir_window, ir_match_scale, ir_match_offset,
+!     ir_weight_by_spacing, ir_stride and exp_energy_scales with the other two
+!     modes, and adds the knobs below. Everything from ir_lag_factor to
+!     ir_tau_mem describes the block estimator and is ignored under "fft" --
+!     except that the ring buffer the block estimator fills is the ensemble
+!     the FFT one transforms, so ir_resolution and ir_lag_factor still SIZE
+!     the run.
+!
+!     ir_fft_acf_ratio        fraction of the trajectory kept as lags. This
+!                             and nothing else sets the resolution:
+!                             33356.40952/(ratio*n_frames*dt) cm^-1. The GPUMD
+!                             default is 0.1. Setting it to 1/ir_lag_factor
+!                             makes the FFT estimator resolve exactly what the
+!                             block estimator does, which is what to use when
+!                             the point is to compare them.
+!     ir_fft_smooth_k         smoothing width in BINS, not cm^-1. Gaussian
+!                             FWHM or box width. 0 or 1 disables it. It
+!                             broadens the result beyond the resolution above,
+!                             so a band narrower than smooth_k*d_nu is the
+!                             smoother's shape rather than the sample's.
+!     ir_fft_smooth_kind      "gaussian" (no ringing) or "box" (GPUMD's, which
+!                             has sidelobes and shortens the axis).
+!     ir_fft_quantum_correction
+!                             "harmonic" (default), w(1 - exp(-hbar w/kT));
+!                             "classical" (alias "quadratic"), w^2, which is
+!                             what mad_ir does with ir_nu_power = 2; "linear",
+!                             w; or "none". These agree only below ~200 cm^-1
+!                             and differ by a factor 16 at the O-H stretch, so
+!                             this is the first thing to check when two
+!                             spectra of the same trajectory disagree.
+!     ir_fft_temperature      T for the harmonic correction. <= 0 means take
+!                             t_beg, so the run's own target temperature is
+!                             used rather than a second number that can
+!                             disagree with it.
+!     ir_fft_power_dc_cutoff  bins below this are excluded from the power
+!                             spectrum's peak normaliser. M(w) has a large
+!                             peak at w = 0 that is not a vibration.
+!     ir_fft_write_dipoles    also write ir_fft_dipoles.dat, the dipole
+!                             trajectory the spectrum was computed from, so
+!                             the result can be reproduced outside TurboGAP.
+!     ----------------------------------------------------------------------
+      real(dp) :: ir_fft_acf_ratio = 0.1d0
+      integer :: ir_fft_smooth_k = 10
+      character*32 :: ir_fft_smooth_kind = "gaussian"
+      character*32 :: ir_fft_quantum_correction = "harmonic"
+      real(dp) :: ir_fft_temperature = -1.d0
+      real(dp) :: ir_fft_power_dc_cutoff = 100.d0
+      logical :: ir_fft_write_dipoles = .true.
+!     ----------------------------------------------------------------------
+!     PREDICTION FROM A TRAJECTORY ON DISK (turbogap predict with do_ir).
+!
+!     ir_frame_dt      interval between frames in fs, used only when NO frame
+!                      in the file carries a time= tag. A trajectory written
+!                      by TurboGAP always carries one, and then this is
+!                      ignored and the labels are believed instead -- because
+!                      getting the interval wrong rescales the whole
+!                      wavenumber axis and produces a plausible-looking
+!                      spectrum at the wrong frequencies.
+!     ir_frame_dt_tol  how far consecutive spacings may stray from the mean
+!                      before the trajectory is refused as unevenly sampled,
+!                      as a fraction. The default is loose because time= is
+!                      written with finite precision; it is there to catch a
+!                      trajectory with frames missing or two runs
+!                      concatenated, not to police the last digit.
+!     ----------------------------------------------------------------------
+      real(dp) :: ir_frame_dt = -1.d0
+      real(dp) :: ir_frame_dt_tol = 1.d-3
 
 !     ==================================================================
 !     NEIGHBOUR LISTS AND THE CORE POTENTIAL

@@ -59,6 +59,8 @@ program turbogap
    use soap_turbo_functions
    use mad_ir
    use mad_ir_xl
+   use ir_fft
+   use ir_fft_io
 #ifdef _MPIF90
    use mpi
    use mpi_helper
@@ -180,6 +182,26 @@ program turbogap
    real(dp) :: mad_ir_rate_pre, mad_ir_rate_post
    real(dp) :: mad_ir_res_ask
    logical :: mad_ir_have_spectrum = .false.
+!  The FFT estimator (ir_bias_mode = fft, and the only estimator `turbogap
+!  predict` can use). ir_from_traj distinguishes the two ways in: reading a
+!  trajectory off disk frame by frame, versus riding along on an MD run and
+!  transforming mad_ir's rolling buffer.
+   logical :: ir_fft_active = .false.
+   logical :: ir_from_traj = .false.
+   logical :: ir_fft_ok
+   character(len=1024) :: ir_fft_msg
+   type(ir_fft_config_type) :: ir_fft_cfg
+   type(ir_fft_result_type) :: ir_fft_res
+   real(dp) :: ir_fft_dt_used = 0.d0
+   real(dp) :: ir_fft_scale_fit = 1.d0, ir_fft_offset_fit = 0.d0
+   real(dp) :: ir_fft_dissim = 0.d0, ir_fft_dissim_ref = 0.d0
+   real(dp), allocatable :: ir_fft_mu_chron(:, :)
+   real(dp), allocatable :: ir_nu_exp(:), ir_I_exp(:), ir_wgt_exp(:)
+   real(dp), allocatable :: ir_fft_I_fit(:)
+   integer :: ir_fft_n_chron = 0
+!  The time= tag of the frame just read, and whether it was there at all.
+   real(dp) :: frame_time = 0.d0
+   logical :: has_frame_time = .false.
 
    real(dp), allocatable, target :: local_properties(:, :)
    real(dp), allocatable, target :: local_properties_cart_der(:, :, :)
@@ -695,6 +717,76 @@ program turbogap
    perform%nd_forces = perform%nd .and. params%exp_forces
    perform%xps_forces = valid_xps .and. params%exp_forces
 
+!  WHICH IR ROUTE. There are two, and they are not variations of one thing.
+!
+!  ir_from_traj: `turbogap predict` with do_ir. The configurations are already
+!  on disk and are read one at a time; the ensemble is the file, its length is
+!  discovered by reaching the end of it, and the sampling interval comes from
+!  the time= tags rather than from md_step. Nothing is biased -- there is no
+!  dynamics to bias -- so this is prediction only, and it uses ir_fft.f90
+!  because that is the estimator whose sizing is an output rather than an
+!  input. mad_ir's ring buffer is not set up at all: it wants n_window before
+!  the first frame, and in this mode nobody knows it.
+!
+!  Otherwise: MD or MC, where mad_ir sizes and fills a rolling buffer as
+!  before and ir_bias_mode picks which estimator transforms it.
+   ir_from_traj = params%do_ir .and. .not. params%do_md .and. .not. params%do_mc
+   ir_fft_active = ir_from_traj .or. &
+                   ((params%valid_ir .or. params%do_ir) .and. &
+                    trim(params%ir_bias_mode) == "fft")
+
+!  One config for both routes; only dt_fs differs, and it is filled in at the
+!  point of use because in one route it comes from the file and in the other
+!  from md_step*ir_stride. normalise is off for MD: under a bias the spectrum
+!  is fitted against the experiment with a scale, and dividing by max|I| as
+!  well would be a second, discontinuous, normalisation of the same freedom.
+   if (ir_fft_active) then
+      call ir_fft_config_from_params(1.d0, params%ir_window, params%ir_fft_acf_ratio, &
+                                     params%ir_nu_max, params%ir_fft_smooth_k, &
+                                     params%ir_fft_smooth_kind, &
+                                     params%ir_fft_quantum_correction, &
+                                     params%ir_fft_temperature, params%t_beg, &
+                                     params%ir_fft_power_dc_cutoff, &
+                                     params%ir_subtract_mean, ir_from_traj, ir_fft_cfg)
+   end if
+
+   if (ir_from_traj) then
+!     Without do_prediction the descriptor pass never runs, so no dipole is
+!     ever formed and the frame buffer stays empty. That surfaces much later as
+!     "a spectrum needs at least two frames", which is true and unhelpful.
+      if (.not. params%do_prediction) then
+         write (*, *) "ERROR: do_ir in predict mode needs do_prediction = .true."
+         write (*, *) "       Without it no descriptor is evaluated and no dipole exists."
+         stop 1
+      end if
+      if (.not. params%do_dipole) then
+         write (*, *) "ERROR: do_ir in predict mode needs a dipole model. Add"
+         write (*, *) "       dipole_model = .true. to one of the soap_turbo blocks."
+         stop 1
+      end if
+      if (trim(params%ir_bias_mode) /= "fft" .and. trim(params%ir_bias_mode) /= "acf") then
+         write (*, *) "ERROR: ir_bias_mode = ", trim(params%ir_bias_mode), &
+            " has no meaning in predict mode."
+         write (*, *) "       A trajectory read from disk is transformed by the fft"
+         write (*, *) "       estimator; leave ir_bias_mode unset or set it to fft."
+         stop 1
+      end if
+      call ir_fft_frames_reset(ir_fft_frames)
+      if (rank == 0) then
+         write (*, *) '                                       |'
+         write (*, *) 'IR prediction from a trajectory:       |'
+         write (*, '(A,A)') '  *) estimator:         fft (ir_fft.f90)  |'
+         write (*, '(A,A20,A)') '  *) lag window:     ', trim(params%ir_window), '  |'
+         write (*, '(A,F12.4,A)') '  *) acf_ratio:         ', params%ir_fft_acf_ratio, '         |'
+         write (*, '(A,A20,A)') '  *) quantum corr.:  ', trim(params%ir_fft_quantum_correction), '  |'
+         write (*, '(A,I12,A)') '  *) smoothing bins:    ', params%ir_fft_smooth_k, '         |'
+         write (*, '(A,F12.1,A)') '  *) nu_max:            ', params%ir_nu_max, ' cm^-1   |'
+         write (*, *) '  *) sizing follows the file; see       |'
+         write (*, *) '     ir_fft_spectrum.dat at the end.    |'
+         write (*, *) '                                       |'
+      end if
+   end if
+
    call time_end(time%setup)
 
    do while (repeat_xyz .or. (params%do_md .and. md_istep < params%md_nsteps) &
@@ -839,7 +931,7 @@ program turbogap
                              positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
                              xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
                              n_sites, .false., fix_atom, params%t_beg, params%write_array_property(6), &
-                             .false., params%randomize_velocities)
+                             .false., params%randomize_velocities, frame_time, has_frame_time)
             end if
 #ifdef _MPIF90
          END IF
@@ -848,6 +940,11 @@ program turbogap
 #ifdef _MPIF90
          call time_start(time%mpi)
          call mpi_bcast(repeat_xyz, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+!        The frame's time label. Every rank pushes the same dipole into the
+!        same buffer -- the trajectory is the ensemble and it is replicated,
+!        not distributed -- so every rank needs the same time with it.
+         call mpi_bcast(frame_time, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+         call mpi_bcast(has_frame_time, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
          call time_end(time%mpi)
 #endif
          rebuild_neighbors_list = .true.
@@ -1259,7 +1356,7 @@ program turbogap
 !           contributes a configuration to the IR ensemble: get_soap has to be
 !           told to produce second derivatives before it builds anything, and
 !           gap_interface reads mad_ir_collect to do that.
-            if (params%valid_ir .or. params%do_ir) then
+            if ((params%valid_ir .or. params%do_ir) .and. .not. ir_from_traj) then
 !              Set up on first use: n_sites is known by now, and doing it here
 !              rather than in the setup phase keeps the sizing next to the
 !              place that consumes it.
@@ -1714,6 +1811,19 @@ program turbogap
             dipole(1) = sum(local_dipoles(1, 1:n_sites))
             dipole(2) = sum(local_dipoles(2, 1:n_sites))
             dipole(3) = sum(local_dipoles(3, 1:n_sites))
+         end if
+
+!        IR PREDICTION FROM A TRAJECTORY. This frame's total dipole joins the
+!        ensemble, with the time its comment line claimed. Nothing is
+!        transformed yet: the file's length is not known until the end of it,
+!        and the resolution follows from that length.
+!
+!        Every rank keeps the same buffer. local_dipoles was all-reduced and
+!        broadcast just above, so the sums agree bit for bit, and having the
+!        ensemble replicated means the final transform needs no communication.
+!        Three doubles a frame; a 100 ps trajectory at 1 fs is 2.4 MB.
+         if (ir_from_traj) then
+            call ir_fft_frames_push(ir_fft_frames, dipole, frame_time, has_frame_time)
          end if
 
          !     Compute vdW energies and forces
@@ -2335,6 +2445,74 @@ program turbogap
                   end if
                   mad_ir_applied = mad_ir_xl_ready(mad_ir_xl_state)
                   if (.not. mad_ir_applied) mad_ir_energy = 0.d0
+               else if (params%valid_ir .and. trim(params%ir_bias_mode) == "fft" &
+                        .and. mad_ir_ready(mad_ir_state)) then
+!                 ================================================================
+!                 THE FFT ESTIMATOR (ir_bias_mode = fft).
+!
+!                 The ensemble is mad_ir's rolling buffer -- mad_ir_push filled
+!                 it above, as it does under every mode -- so all that differs
+!                 from the ACF branch below is which routine turns that buffer
+!                 into a loss and a lambda. The buffer is circular and
+!                 ir_fft_loss wants a chronological array, so it is unrolled
+!                 first: 3*n_window doubles copied per stored frame, against a
+!                 transform that is already O(n_lag * n_bins).
+!
+!                 lambda is dL/dmu of the NEWEST configuration, the same
+!                 quantity mad_ir_evaluate returns, so mad_ir_forces contracts
+!                 it with the same dmu/dr and the force path is unchanged. That
+!                 is the whole reason this fits in as a branch rather than as a
+!                 second bias: the two estimators disagree about the spectrum
+!                 and agree exactly about what a bias on a dipole is.
+!                 ================================================================
+                  call get_energy_scale(params%do_md, params%do_mc, md_istep, params%md_nsteps, &
+                                        mc_istep, params%mc_nsteps, &
+                                        params%exp_energy_scales_initial(params%ir_idx), &
+                                        params%exp_energy_scales_final(params%ir_idx), mad_ir_scale)
+                  call time_start(time%ir_predict)
+                  if (allocated(ir_fft_mu_chron)) then
+                     if (size(ir_fft_mu_chron, 2) /= mad_ir_state%n_stored) &
+                        deallocate (ir_fft_mu_chron)
+                  end if
+                  if (.not. allocated(ir_fft_mu_chron)) &
+                     allocate (ir_fft_mu_chron(1:3, 1:mad_ir_state%n_stored))
+                  if (.not. allocated(ir_fft_I_fit)) &
+                     allocate (ir_fft_I_fit(1:mad_ir_state%n_freq))
+                  call ir_fft_md_unroll(mad_ir_state%mu_hist, mad_ir_state%n_window, &
+                                        mad_ir_state%n_stored, mad_ir_state%head, &
+                                        ir_fft_mu_chron, ir_fft_n_chron)
+                  ir_fft_cfg%dt_fs = mad_ir_state%dt
+                  call ir_fft_loss(ir_fft_mu_chron, ir_fft_n_chron, ir_fft_cfg, &
+                                   mad_ir_state%nu, mad_ir_state%I_exp, mad_ir_state%wgt, &
+                                   mad_ir_state%n_freq, params%ir_match_scale, &
+                                   params%ir_match_offset, mad_ir_scale, &
+                                   mad_ir_energy, mad_ir_lambda, ir_fft_I_fit, &
+                                   ir_fft_scale_fit, ir_fft_offset_fit, &
+                                   ir_fft_dissim, ir_fft_dissim_ref, ir_fft_ok, ir_fft_msg)
+                  call time_end(time%ir_predict)
+                  if (.not. ir_fft_ok) then
+                     write (*, *) "ERROR: ", trim(ir_fft_msg)
+                     stop
+                  end if
+                  energies_exp = energies_exp + mad_ir_energy/dfloat(n_sites)
+                  exp_dissimilarity = exp_dissimilarity + ir_fft_dissim
+                  exp_dissim_ref = exp_dissim_ref + ir_fft_dissim_ref
+                  if (params%exp_energies) then
+                     energies = energies + mad_ir_energy/dfloat(n_sites)
+                     energy = sum(energies)
+                  end if
+                  energy_exp = sum(energies_exp)
+                  if (params%exp_forces) then
+                     call time_start(time%ir_forces)
+                     call mad_ir_forces(mad_ir_lambda, mad_ir_dmu_dr, forces)
+                     call time_end(time%ir_forces)
+                  end if
+                  if (.not. mad_ir_applied) then
+                     call get_time(mad_ir_t_now)
+                     mad_ir_t_first = mad_ir_t_now - time3
+                     mad_ir_step_first = md_istep
+                  end if
+                  mad_ir_applied = .true.
                else if (params%valid_ir .and. mad_ir_ready(mad_ir_state)) then
 !                 The weight is exp_energy_scales, ramped over the run exactly
 !                 as every other MAD observable's is.
@@ -2446,6 +2624,46 @@ program turbogap
                      call time_end(time%ir_predict)
                   end if
                   call time_start(time%ir_io)
+!                 THE FFT ESTIMATOR'S OWN SPECTRUM. ir_spectrum.dat below is
+!                 always the block ACF -- that is what it has always meant and
+!                 changing it would silently rewrite the meaning of every
+!                 existing plotting script -- so under ir_bias_mode = fft the
+!                 quantity actually being biased has to be written somewhere
+!                 else, or it cannot be looked at at all. Same argument as
+!                 ir_xl_spectrum.dat.
+!
+!                 The transform is redone here rather than cached from the
+!                 bias: ir_fft_loss frees its intermediates, and this happens
+!                 on write_xyz steps rather than every step, so recomputing is
+!                 cheaper than keeping a copy alive across the whole run.
+                  if (ir_fft_active .and. .not. ir_from_traj &
+                      .and. mad_ir_state%n_stored > 1) then
+                     if (allocated(ir_fft_mu_chron)) then
+                        if (size(ir_fft_mu_chron, 2) /= mad_ir_state%n_stored) &
+                           deallocate (ir_fft_mu_chron)
+                     end if
+                     if (.not. allocated(ir_fft_mu_chron)) &
+                        allocate (ir_fft_mu_chron(1:3, 1:mad_ir_state%n_stored))
+                     call ir_fft_md_unroll(mad_ir_state%mu_hist, mad_ir_state%n_window, &
+                                           mad_ir_state%n_stored, mad_ir_state%head, &
+                                           ir_fft_mu_chron, ir_fft_n_chron)
+                     ir_fft_cfg%dt_fs = mad_ir_state%dt
+                     call ir_fft_spectrum(ir_fft_mu_chron, ir_fft_n_chron, ir_fft_cfg, &
+                                          ir_fft_res, ir_fft_ok, ir_fft_msg)
+                     if (ir_fft_ok) then
+                        call ir_fft_write_spectrum(ir_fft_res, ir_fft_cfg, &
+                                                   "ir_fft_spectrum.dat", &
+                                                   mad_ir_state%nu, mad_ir_state%I_exp, &
+                                                   mad_ir_state%n_freq, params%valid_ir, &
+                                                   ir_fft_scale_fit, ir_fft_offset_fit, &
+                                                   ir_fft_dissim, ir_fft_dissim_ref, &
+                                                   "from the rolling MD ensemble")
+                        call ir_fft_free(ir_fft_res)
+                     else
+                        write (*, *) "WARNING: ir_fft_spectrum.dat not written: ", &
+                           trim(ir_fft_msg)
+                     end if
+                  end if
                   call mad_ir_write_spectrum(mad_ir_state, "ir_spectrum.dat", &
                                              params%valid_ir, md_istep, params%md_step)
                   call mad_ir_append_spectrum(mad_ir_state, "ir_prediction.dat", &
@@ -3653,6 +3871,88 @@ program turbogap
       if (exit_loop) exit
       ! End of loop through structures in the xyz file or MD steps
    end do
+
+!**************************************************************************
+!
+!  IR PREDICTION FROM A TRAJECTORY: the transform, now that the file has been
+!  read to the end and its length is known.
+!
+!  This is the whole of the do_ir predict path. Everything before it only
+!  accumulated (time, dipole) pairs; the resolution, the grid and the sizing
+!  all follow from the number of pairs, which is why none of it could happen
+!  earlier.
+!
+!  Rank 0 writes, but every rank ran the transform on an identical buffer, so
+!  there is nothing to reduce and no rank can be holding a different answer.
+!
+   if (ir_from_traj) then
+      call time_start(time%ir_predict)
+      if (params%valid_ir) then
+!        There is an experiment: restrict it to [ir_nu_min, ir_nu_max] and
+!        weight it exactly as the MAD bias would, so the mismatch printed here
+!        is the same number a biased run would be minimising.
+         call mad_ir_select_range(params%exp_data(params%ir_idx)%data(1, :), &
+                                  params%exp_data(params%ir_idx)%data(2, :), &
+                                  params%ir_nu_min, params%ir_nu_max, &
+                                  params%ir_weight_by_spacing, &
+                                  ir_nu_exp, ir_I_exp, ir_wgt_exp, mad_ir_ok, mad_ir_msg)
+         if (.not. mad_ir_ok) then
+            write (*, *) "ERROR: ", trim(mad_ir_msg)
+            stop
+         end if
+      else
+         allocate (ir_nu_exp(1:1), ir_I_exp(1:1), ir_wgt_exp(1:1))
+         ir_nu_exp = 0.d0; ir_I_exp = 0.d0; ir_wgt_exp = 1.d0
+      end if
+
+      call ir_fft_frames_finish(ir_fft_frames, ir_fft_cfg, params%ir_frame_dt, &
+                                params%ir_frame_dt_tol, ir_nu_exp, ir_I_exp, &
+                                ir_wgt_exp, size(ir_nu_exp), params%valid_ir, &
+                                params%ir_match_scale, params%ir_match_offset, &
+                                "ir_fft_spectrum.dat", "ir_fft_dipoles.dat", &
+                                rank == 0, params%ir_fft_write_dipoles, &
+                                ir_fft_res, ir_fft_dt_used, ir_fft_scale_fit, &
+                                ir_fft_offset_fit, ir_fft_dissim, ir_fft_dissim_ref, &
+                                ir_fft_ok, ir_fft_msg)
+      call time_end(time%ir_predict)
+
+      if (.not. ir_fft_ok) then
+         if (rank == 0) then
+            write (*, *) ""
+            write (*, *) "ERROR: ", trim(ir_fft_msg)
+         end if
+!        A NONZERO exit, unlike the bare `stop` used elsewhere in this file.
+!        This path is driven by scripts -- post-processing a directory of
+!        trajectories is the obvious use -- and the whole design here is
+!        organised against failing silently. Exiting 0 with no spectrum
+!        written is precisely that failure wearing a message.
+         stop 1
+      end if
+
+      if (rank == 0) then
+         write (*, *) '                                       |'
+         write (*, *) 'IR spectrum from the trajectory:       |'
+         write (*, '(A,I12,A)') '  *) frames read:       ', ir_fft_frames%n, '         |'
+         write (*, '(A,F12.4,A)') '  *) frame interval:    ', ir_fft_dt_used, ' fs      |'
+         write (*, '(A,I12,A)') '  *) lags kept:         ', ir_fft_res%n_lag, '         |'
+         write (*, '(A,F12.4,A)') '  *) resolution:        ', ir_fft_res%resolution, ' cm^-1   |'
+         write (*, '(A,F12.4,A)') '  *) bin spacing:       ', ir_fft_res%d_nu, ' cm^-1   |'
+         write (*, '(A,F12.1,A)') '  *) Nyquist:           ', ir_fft_res%nyquist, ' cm^-1   |'
+         write (*, '(A,I12,A)') '  *) bins written:      ', ir_fft_res%n_freq, '         |'
+         if (params%valid_ir .and. ir_fft_dissim_ref > 0.d0) then
+            write (*, '(A,F12.6,A)') '  *) rel. mismatch:     ', &
+               dsqrt(ir_fft_dissim/ir_fft_dissim_ref), '         |'
+         end if
+         if (len_trim(ir_fft_msg) > 0) then
+            write (*, *) '  *) ', trim(ir_fft_msg)
+         end if
+         write (*, *) '                                       |'
+      end if
+
+      call ir_fft_free(ir_fft_res)
+      call ir_fft_frames_reset(ir_fft_frames)
+      deallocate (ir_nu_exp, ir_I_exp, ir_wgt_exp)
+   end if
 
    if (params%do_md .or. params%do_prediction .or. params%do_mc) then
       call get_time(time2)
