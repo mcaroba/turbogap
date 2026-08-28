@@ -29,7 +29,9 @@
 #define BLOCK_SIZE 512 // Number of threads per block
 
 #define gpuErrchk(ans)                                                                                                             \
-  { gpuAssert((ans), __FILE__, __LINE__); }
+  {                                                                                                                                \
+    gpuAssert((ans), __FILE__, __LINE__);                                                                                          \
+  }
 inline void gpuAssert(hipError_t code, const char* file, int line, bool abort = true) {
   if (code != hipSuccess) {
     fprintf(stderr, "GPUassert: %s %s %d\n", hipGetErrorString(code), file, line);

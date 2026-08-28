@@ -154,8 +154,7 @@ extern "C" void gpu_get_fi_dgemv(const int i, const int n_samples_sf, const int 
 // into forces0[j2] and the virial into nine addresses, both with atomicAdd,
 // which made the result depend on the order the threads arrived; the sum is
 // gpu_pair_scatter_reduce's now. See gpu_scatter.h.
-__global__ void kernel_exp_force_virial_collection(int n_k, double* pair_force, double energy_scale, double* fi,
-                                                   int* j2_list) {
+__global__ void kernel_exp_force_virial_collection(int n_k, double* pair_force, double energy_scale, double* fi, int* j2_list) {
   // tid == some n_k value
   int tid = threadIdx.x + blockIdx.x * blockDim.x;
 

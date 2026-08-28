@@ -25,8 +25,7 @@
 // virial_d       9, accumulated into, or nullptr to skip the virial
 // virial_weight  0.5 where the caller only symmetrises, 0.25 where it also
 //                halves for the second visit to each unordered pair
-void gpu_pair_scatter_reduce(int n_pairs, int n_sites, const int* j2_index_d, const double* pair_force_d,
-                             const double* pair_xyz_d, double* forces_d, double* virial_d, double virial_weight,
-                             hipStream_t* stream);
+void gpu_pair_scatter_reduce(int n_pairs, int n_sites, const int* j2_index_d, const double* pair_force_d, const double* pair_xyz_d,
+                             double* forces_d, double* virial_d, double virial_weight, hipStream_t* stream);
 
 #endif // TURBOGAP_GPU_SCATTER_H

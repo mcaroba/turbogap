@@ -111,8 +111,8 @@ __global__ void kernel_bucket_order(const int* begin, const int* counts, const i
   }
 }
 
-__global__ void kernel_gather_forces(int n_sites, const int* begin, const int* counts, const int* ordered,
-                                     const double* pair_force, double* forces) {
+__global__ void kernel_gather_forces(int n_sites, const int* begin, const int* counts, const int* ordered, const double* pair_force,
+                                     double* forces) {
   int j = blockIdx.x * blockDim.x + threadIdx.x;
   if (j >= n_sites)
     return;
@@ -136,8 +136,7 @@ __global__ void kernel_gather_forces(int n_sites, const int* begin, const int* c
 
 // One thread per virial component, each walking a fixed chunk of pairs in
 // index order.
-__global__ void kernel_virial_partials(int n_pairs, const double* pair_force, const double* pair_xyz, double w,
-                                       double* partials) {
+__global__ void kernel_virial_partials(int n_pairs, const double* pair_force, const double* pair_xyz, double w, double* partials) {
   int c = threadIdx.x;
   if (c >= 9)
     return;
@@ -161,9 +160,8 @@ __global__ void kernel_virial_finish(int n_chunks, const double* partials, doubl
   virial[c] += s;
 }
 
-void gpu_pair_scatter_reduce(int n_pairs, int n_sites, const int* j2_index_d, const double* pair_force_d,
-                             const double* pair_xyz_d, double* forces_d, double* virial_d, double virial_weight,
-                             hipStream_t* stream) {
+void gpu_pair_scatter_reduce(int n_pairs, int n_sites, const int* j2_index_d, const double* pair_force_d, const double* pair_xyz_d,
+                             double* forces_d, double* virial_d, double virial_weight, hipStream_t* stream) {
   if (n_pairs <= 0 || n_sites <= 0)
     return;
 
@@ -203,8 +201,8 @@ void gpu_pair_scatter_reduce(int n_pairs, int n_sites, const int* j2_index_d, co
     int n_vchunks = (n_pairs + VIRIAL_CHUNK - 1) / VIRIAL_CHUNK;
     double* partials;
     gpuErrchk(hipMallocAsync(&partials, (size_t) n_vchunks * 9 * sizeof(double), stream[0]));
-    kernel_virial_partials<<<dim3(n_vchunks), dim3(WARP_SIZE), 0, stream[0]>>>(n_pairs, pair_force_d, pair_xyz_d,
-                                                                              virial_weight, partials);
+    kernel_virial_partials<<<dim3(n_vchunks), dim3(WARP_SIZE), 0, stream[0]>>>(n_pairs, pair_force_d, pair_xyz_d, virial_weight,
+                                                                               partials);
     kernel_virial_finish<<<dim3(1), dim3(WARP_SIZE), 0, stream[0]>>>(n_vchunks, partials, virial_d);
     gpuErrchk(hipFreeAsync(partials, stream[0]));
   }
