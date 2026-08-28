@@ -225,7 +225,7 @@ contains
 !**************************************************************************
    subroutine velocity_verlet(positions, positions_prev, velocities, &
                               forces, forces_prev, masses, dt, dt_prev, &
-                              first_step, a_box, b_box, c_box, fix_atom)
+                              first_step, fix_atom)
 
       implicit none
 
@@ -238,9 +238,6 @@ contains
       real(dp), intent(in) :: forces(:, :)
       real(dp), intent(in) :: masses(:)
       real(dp), intent(in) :: dt
-      real(dp), intent(in) :: a_box(1:3)
-      real(dp), intent(in) :: b_box(1:3)
-      real(dp), intent(in) :: c_box(1:3)
       logical, intent(in) :: first_step
       logical, intent(in) :: fix_atom(:, :)
 !   Internal variables

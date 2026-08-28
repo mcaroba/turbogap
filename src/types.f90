@@ -404,6 +404,26 @@ module types
       real(dp) :: ir_xl_max_memory = 4096.d0
       character*1024 :: ir_xl_restart_file = "ir_xl_restart.dat"
 
+      ! Turn on the ir_auxiliary_variable optimization to match IR spectra
+      ! see ir_auxiliary_dynamics.f90
+      logical :: ir_auxiliary_variable = .false.
+      ! The restart file
+      ! Format:
+      ! n_freq
+      ! X11 X12 Z13 P11 P12 P13 eff_mass omega R_exp g_k
+      character*1024 :: ir_auxiliary_restart_file = "none"
+      character*1024 :: ir_auxiliary_restart_file_name = "ir_auxiliary_restart.dat"
+      ! The effective mass for all the auxiliary variable oscillators in AMU
+      real(dp) :: ir_eff_mass = -1.0_dp
+      ! This is a damping factor which sets the resolution ( it is the gamma in
+      ! -i omega Gamma in the bottom of the Lorentzian response function / the
+      ! velocity damping term )
+      real(dp) :: ir_damping = -1.0_dp
+      ! The auxiliary variables temperature, this will be used for
+      ! ir_auxiliary_variable and d-AFED in the future.
+      real(dp) :: t_beg_aux = 300.0_dp
+      real(dp) :: t_end_aux = 300.0_dp
+
 !     ==================================================================
 !     NEIGHBOUR LISTS AND THE CORE POTENTIAL
 !     ==================================================================

@@ -1067,7 +1067,8 @@ contains
                if (rank == 0) write (*, *) ' observable is the default (0.0, 1.0)! |'
                if (rank == 0) write (*, *) '                                       |'
                if (rank == 0) write (*, *) ' To modify specify:                    |'
-          if (rank == 0) write (*, '(A,1X,A,1X,A)') '  `range_', trim(params%exp_data(i)%label), ' = {lower_bound} {upper_bound}` |'
+               if (rank == 0) write (*, '(A,1X,A,1X,A)') '  `range_', &
+                  trim(params%exp_data(i)%label), ' = {lower_bound} {upper_bound}` |'
                if (rank == 0) write (*, *) ' in the input file.                    |'
                if (rank == 0) write (*, *) '                                       |'
             end if
@@ -1366,9 +1367,11 @@ contains
             if (rank == 0) then
                write (*, *) '                                       |'
                if (valid_choice) then
-            write (*, '(A, A8, A, F15.6, A)') ' ', adjustr(params%species_types(i)), ' (in database) ', params%masses_types(i), ' |'
+                  write (*, '(A, A8, A, F15.6, A)') ' ', adjustr(params%species_types(i)), &
+                     ' (in database) ', params%masses_types(i), ' |'
                else
-           write (*, '(A, A8, A, F11.6, A)') ' ', adjustr(params%species_types(i)), ' (not in database) ', params%masses_types(i), &
+                  write (*, '(A, A8, A, F11.6, A)') ' ', adjustr(params%species_types(i)), &
+                     ' (not in database) ', params%masses_types(i), &
                      ' |  <-- WARNING'
                end if
             end if
@@ -1419,450 +1422,6 @@ contains
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%e0(1:n_species)
          if (rank == 0) call print_parameters("e0", params%e0)
-         !> @kw ir_lag_factor
-         !> Ratio of the stored ensemble length to the longest correlation lag. The
-         !> autocorrelation at lag tau is averaged over n_window - tau pairs, so a factor of 1
-         !> would leave the longest lag estimated from a single pair. 2 or more.
-         !> @modes md
-         !> @see exp_labels exp_energy_scales ir_resolution
-      else if (keyword == 'ir_lag_factor') then
-         backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_lag_factor
-         call check_iostatus(iostatus, keyword)
-         if (rank == 0) call print_parameter("ir_lag_factor", params%ir_lag_factor)
-         !> @kw ir_acf_mode
-         !> How the running dipole autocorrelation is formed: "block" (the default) averages over
-         !> the pairs the stored ensemble holds, and "exponential" carries it as a set of auxiliary
-         !> variables integrated alongside the atoms, one per lag, decaying with constant
-         !> ir_tau_mem. The exponential form weights the past by exp(-age/ir_tau_mem) instead of a
-         !> hard window, so the bias is a decaying functional of the trajectory and the force does
-         !> not jump when a frame falls off the end of the buffer. It is the Markovian embedding of
-         !> a generalized Langevin bias in which the target spectrum plays the part of the bath.
-         !> @modes md
-         !> @needs exp_labels
-         !> @see ir_tau_mem ir_lag_factor ir_estimator
-      else if (keyword == 'ir_acf_mode') then
-         backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_acf_mode
-         call check_iostatus(iostatus, keyword)
-         call upper_to_lower_case(params%ir_acf_mode)
-         if (trim(params%ir_acf_mode) /= "block" .and. &
-             trim(params%ir_acf_mode) /= "exponential") then
-            if (rank == 0) then
-               write (*, *) "ERROR -> Invalid ir_acf_mode keyword:", params%ir_acf_mode
-               write (*, *) "This is a list of valid options:"
-               write (*, *) "block  exponential"
-            end if
-            stop
-         end if
-         if (rank == 0) call print_parameter("ir_acf_mode", params%ir_acf_mode)
-         !> @kw ir_tau_mem
-         !> Decay constant of the exponential correlation filter. Sets how far back the bias
-         !> remembers: the auxiliary variables obey s' = -(s - mu.mu_lag)/ir_tau_mem, so the
-         !> trajectory is weighted by exp(-age/ir_tau_mem). It must exceed the interval between
-         !> stored frames, md_step*ir_stride. A value much longer than the run is allowed -- the
-         !> filter simply never charges up, and since the resulting deficit is the same at every
-         !> lag it is an overall factor that ir_match_scale absorbs.
-         !> @units fs
-         !> @modes md
-         !> @needs ir_acf_mode
-         !> @see ir_acf_mode ir_stride ir_match_scale
-      else if (keyword == 'ir_tau_mem') then
-         backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_tau_mem
-         call check_iostatus(iostatus, keyword)
-         if (rank == 0) call print_parameter("ir_tau_mem", params%ir_tau_mem)
-         !> @kw ir_bias_mode
-         !> Which IR bias to run: "acf" (the default) or "xl". Under "acf" the spectrum is the
-         !> cosine transform of an autocorrelation of the stored dipoles and the MAD force is the
-         !> gradient of the mismatch with respect to the newest configuration. Under "xl" it is
-         !> the auxiliary-variable bias: a bank of damped resonators, a quadrature pair per fitted
-         !> frequency, integrated alongside the atoms and driven by the dipole. The bank IS the
-         !> Fourier transform -- a Lorentzian filter bank written as equations of motion -- so no
-         !> trajectory is stored, there is no hard window for a frame to fall out of, and the
-         !> resolution is set by the damping rather than by a longest lag. The bias is the exact
-         !> gradient of the spectral mismatch with respect to the dipole that drives the bank.
-         !> The price is one stored frame of lag: the gradient cannot be formed until the
-         !> descriptor pass that produced the dipole is over, so it is contracted against the
-         !> next frame's dipole gradient. That is what lets it be contracted INSIDE the pass,
-         !> with no (3,3,n_atoms) tensor formed and a third of the work in the descriptor term.
-         !> The two modes share the experimental grid, ir_nu_min, ir_nu_max, ir_nu_power,
-         !> ir_match_scale, ir_match_offset, ir_weight_by_spacing, ir_stride and
-         !> exp_energy_scales. Everything from ir_lag_factor to ir_tau_mem describes an
-         !> autocorrelation and is ignored under "xl".
-         !> @modes md
-         !> @needs exp_labels
-         !> @see ir_xl_tau_mem ir_xl_n_modes ir_xl_amplitude ir_xl_warm_factor ir_acf_mode
-      else if (keyword == 'ir_bias_mode') then
-         backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_bias_mode
-         call check_iostatus(iostatus, keyword)
-         call upper_to_lower_case(params%ir_bias_mode)
-         if (trim(params%ir_bias_mode) /= "acf" .and. &
-             trim(params%ir_bias_mode) /= "xl") then
-            if (rank == 0) then
-               write (*, *) "ERROR -> Invalid ir_bias_mode keyword:", params%ir_bias_mode
-               write (*, *) "This is a list of valid options:"
-               write (*, *) "acf  xl"
-            end if
-            stop
-         end if
-         if (rank == 0) call print_parameter("ir_bias_mode", params%ir_bias_mode)
-         !> @kw ir_xl_tau_mem
-         !> Memory time of the extended-Lagrangian resonators, and so their resolution. A
-         !> resonator damped at gamma = 2/ir_xl_tau_mem is a Lorentzian bandpass of full width
-         !> gamma, which in wavenumbers is d(nu) = 33356.40952/(pi ir_xl_tau_mem) -- the same
-         !> quantity that n_lag*md_step*ir_stride sets for the ACF bias, so 4 cm^-1 needs about
-         !> 2650 fs either way. There is no default because there is no default resolution. It
-         !> must exceed the interval between stored frames, and it must be long enough that the
-         !> lowest fitted wavenumber is still underdamped, tau > 33356.40952/(2 pi nu_min).
-         !> @units fs
-         !> @modes md
-         !> @needs ir_bias_mode
-         !> @see ir_bias_mode ir_xl_n_modes ir_resolution ir_stride
-      else if (keyword == 'ir_xl_tau_mem') then
-         backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_xl_tau_mem
-         call check_iostatus(iostatus, keyword)
-         if (rank == 0) call print_parameter("ir_xl_tau_mem", params%ir_xl_tau_mem)
-         !> @kw ir_xl_n_modes
-         !> How many fitted frequencies get resonators. Under ir_xl_amplitude = "coherent" the
-         !> bank costs 96 * ir_xl_n_modes bytes and this hardly matters; under "incoherent" it
-         !> costs that times the number of atoms, on every rank, and this is the memory knob. The
-         !> frequencies chosen are a SUBSET of the experimental grid, evenly spaced in index and
-         !> endpoints included -- never a resampling, because interpolating the experiment invents
-         !> structure between its points and then fits to it. Asking for more than
-         !> (ir_nu_max - ir_nu_min) / d(nu) modes buys nothing: the bank cannot resolve bins
-         !> narrower than its own bandwidth. A value at or above the number of fitted points keeps
-         !> all of them.
-         !> @modes md
-         !> @needs ir_bias_mode
-         !> @see ir_bias_mode ir_xl_tau_mem ir_xl_max_memory
-      else if (keyword == 'ir_xl_n_modes') then
-         backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_xl_n_modes
-         call check_iostatus(iostatus, keyword)
-         if (rank == 0) call print_parameter("ir_xl_n_modes", params%ir_xl_n_modes)
-         !> @kw ir_xl_amplitude
-         !> How the collective amplitude R_k that the experiment is compared with is built from
-         !> the bank: "coherent" (the default) sums the resonators first and squares after,
-         !> |sum_i x|^2 + |sum_i y|^2, and "incoherent" squares first and sums after. Coherent is
-         !> the actual infrared observable -- absorption comes from the correlation of the TOTAL
-         !> dipole, and the cross terms between sites are transition-dipole coupling, not noise.
-         !> Incoherent throws those away, and exists because a per-site target is only meaningful
-         !> against per-site amplitudes. Coherent also has no spring-constant shift and so nothing
-         !> to clamp; under "incoherent" the bias detunes each resonator, and a shift large enough
-         !> to inflect the spring is clamped and counted.
-         !> @modes md
-         !> @needs ir_bias_mode
-         !> @see ir_bias_mode ir_xl_n_modes
-      else if (keyword == 'ir_xl_amplitude') then
-         backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_xl_amplitude
-         call check_iostatus(iostatus, keyword)
-         call upper_to_lower_case(params%ir_xl_amplitude)
-         if (trim(params%ir_xl_amplitude) /= "coherent" .and. &
-             trim(params%ir_xl_amplitude) /= "incoherent") then
-            if (rank == 0) then
-               write (*, *) "ERROR -> Invalid ir_xl_amplitude keyword:", params%ir_xl_amplitude
-               write (*, *) "This is a list of valid options:"
-               write (*, *) "coherent  incoherent"
-            end if
-            stop
-         end if
-         if (rank == 0) call print_parameter("ir_xl_amplitude", params%ir_xl_amplitude)
-         !> @kw ir_xl_warm_factor
-         !> Memory times to charge the resonator bank for before any bias is applied. The
-         !> charge-up envelope, 1 - exp(-t/ir_xl_tau_mem), is the same at every frequency because
-         !> the damping is, so the deficit it leaves is a pure overall factor and ir_match_scale
-         !> absorbs it exactly; what this waits out is the ringing left by starting the bank at
-         !> rest, which is at w_k and so is not common across the bank. Three memory times leaves
-         !> that at 5% of its initial amplitude.
-         !> @modes md
-         !> @needs ir_bias_mode
-         !> @see ir_bias_mode ir_xl_tau_mem
-      else if (keyword == 'ir_xl_warm_factor') then
-         backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_xl_warm_factor
-         call check_iostatus(iostatus, keyword)
-         if (rank == 0) call print_parameter("ir_xl_warm_factor", params%ir_xl_warm_factor)
-         !> @kw ir_xl_max_memory
-         !> Refuse to start if the resonator bank would need more than this many MB on one rank.
-         !> The bank is replicated per rank, so this is per rank and not per node. Zero disables
-         !> the check.
-         !> @units MB
-         !> @modes md
-         !> @needs ir_bias_mode
-         !> @see ir_bias_mode ir_xl_n_modes
-      else if (keyword == 'ir_xl_max_memory') then
-         backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_xl_max_memory
-         call check_iostatus(iostatus, keyword)
-         if (rank == 0) call print_parameter("ir_xl_max_memory", params%ir_xl_max_memory)
-         !> @kw ir_xl_restart_file
-         !> Where the resonator bank is written, and read from on a restart. "none" turns both
-         !> off. Separate from ir_restart_file because a bank is not a history buffer: a file
-         !> written under a different ir_xl_tau_mem, ir_xl_g, ir_stride, mode grid or
-         !> ir_xl_amplitude describes a different filter and is refused rather than adopted. A
-         !> refusal is not fatal -- the run charges a fresh bank and says so.
-         !> @modes md
-         !> @needs ir_bias_mode
-         !> @see ir_bias_mode ir_restart_file
-      else if (keyword == 'ir_xl_restart_file') then
-         backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_xl_restart_file
-         call check_iostatus(iostatus, keyword)
-         if (rank == 0) call print_parameter("ir_xl_restart_file", params%ir_xl_restart_file)
-         !> @kw ir_match_scale
-         !> Fit an overall scale factor between the computed and experimental spectra before
-         !> comparing them. The computed spectrum is in arbitrary units, so with this off the
-         !> loss compares two things on different scales and its gradient is meaningless. Turn
-         !> it off only if the experimental spectrum has already been put on the same scale.
-         !> @modes md
-         !> @see exp_labels exp_energy_scales
-      else if (keyword == 'ir_match_scale') then
-         backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_match_scale
-         call check_iostatus(iostatus, keyword)
-         if (rank == 0) call print_parameter("ir_match_scale", params%ir_match_scale)
-         !> @kw ir_nu_max
-         !> Highest wavenumber to fit. This is what fixes the sampling interval: nothing above
-         !> the Nyquist limit of the stored series can be represented, and power above it folds
-         !> back into the fitted range, so a combination of ir_stride and md_step that
-         !> cannot reach this value is refused rather than aliased.
-         !> @units cm^-1
-         !> @modes md
-         !> @see exp_labels exp_energy_scales ir_stride
-      else if (keyword == 'ir_nu_max') then
-         backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_nu_max
-         call check_iostatus(iostatus, keyword)
-         if (rank == 0) call print_parameter("ir_nu_max", params%ir_nu_max)
-         !> @kw ir_nu_min
-         !> Lowest wavenumber to fit. Experimental points outside [ir_nu_min, ir_nu_max]
-         !> are dropped and take no part in the loss.
-         !> @units cm^-1
-         !> @modes md
-         !> @see exp_labels exp_energy_scales ir_nu_max
-      else if (keyword == 'ir_nu_min') then
-         backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_nu_min
-         call check_iostatus(iostatus, keyword)
-         if (rank == 0) call print_parameter("ir_nu_min", params%ir_nu_min)
-         !> @kw ir_nu_power
-         !> Exponent of the wavenumber prefactor in I(nu) = nu^p * FT[C(tau)]. The classical
-         !> lineshape is p = 2; p = 0 compares the bare Fourier transform of the dipole
-         !> autocorrelation instead.
-         !> @modes md
-         !> @see exp_labels exp_energy_scales
-      else if (keyword == 'ir_nu_power') then
-         backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_nu_power
-         call check_iostatus(iostatus, keyword)
-         if (rank == 0) call print_parameter("ir_nu_power", params%ir_nu_power)
-         !> @kw ir_resolution
-         !> Frequency resolution wanted, which fixes the longest correlation lag as
-         !> 33356.41/(resolution * dt) with dt the interval between stored configurations. The
-         !> ensemble is ir_lag_factor times that. Asking for fine resolution is expensive in
-         !> memory and in how long the run must go before the first force is applied.
-         !> @units cm^-1
-         !> @modes md
-         !> @see exp_labels exp_energy_scales ir_lag_factor ir_stride
-      else if (keyword == 'ir_resolution') then
-         backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_resolution
-         params%ir_resolution_set = .true.
-         call check_iostatus(iostatus, keyword)
-         if (rank == 0) call print_parameter("ir_resolution", params%ir_resolution)
-         !> @kw do_ir
-         !> Predict an IR spectrum from the trajectory. The total dipole is accumulated over the
-         !> whole run and transformed into ir_spectrum.dat, whose header records the sampling
-         !> interval, the Nyquist limit, the resolution and hence the band over which the result
-         !> can be read. Needs a dipole model in the potential file, but no experimental spectrum
-         !> and no exp_* keywords: nothing is fitted and no force is added. Implies write_ir, so
-         !> ir_prediction.dat carries the same spectrum over the whole trajectory. The ensemble is
-         !> the entire run rather than a rolling window, so the resolution follows from md_nsteps
-         !> unless ir_resolution asks for one the run is long enough to give. Naming "ir" in
-         !> exp_labels instead is the other thing -- that biases the trajectory towards an
-         !> experiment.
-         !> @modes md
-         !> @see ir_stride ir_resolution ir_nu_min ir_nu_max ir_lag_factor ir_n_samples exp_labels
-      else if (keyword == 'do_ir') then
-         backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, params%do_ir
-         call check_iostatus(iostatus, keyword)
-         if (rank == 0) call print_parameter("do_ir", params%do_ir)
-         !> @kw ir_n_samples
-         !> Number of points on the predicted spectrum's grid. The default, zero, puts one point
-         !> per resolution element, which is all the transform can carry; a larger number draws the
-         !> same information as a smoother curve. Prediction runs only -- a fit uses the
-         !> experimental grid.
-         !> @modes md
-         !> @see do_ir ir_resolution
-      else if (keyword == 'ir_n_samples') then
-         backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_n_samples
-         call check_iostatus(iostatus, keyword)
-         if (rank == 0) call print_parameter("ir_n_samples", params%ir_n_samples)
-         !> @kw ir_restart_file
-         !> Where the dipole history is written and read back. The ensemble is the expensive
-         !> part of a MAD IR run -- resolving 4 cm^-1 at 1 fs sampling is 8 ps of trajectory --
-         !> so without this a restart spends that long refilling before any force is applied. A
-         !> file written with different sizing is refused rather than adopted, since it
-         !> describes a different spectrum.
-         !> @modes md
-         !> @see exp_labels exp_energy_scales
-      else if (keyword == 'ir_restart_file') then
-         backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_restart_file
-         call check_iostatus(iostatus, keyword)
-         if (rank == 0) call print_parameter("ir_restart_file", params%ir_restart_file)
-         !> @kw ir_stride
-         !> MD steps between stored configurations. The sampling interval is this times md_step,
-         !> and that interval is what sets the Nyquist limit, so a large stride is what makes
-         !> ir_nu_max unreachable.
-         !> @modes md
-         !> @see exp_labels exp_energy_scales ir_nu_max md_step
-      else if (keyword == 'ir_stride') then
-         backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_stride
-         call check_iostatus(iostatus, keyword)
-         if (rank == 0) call print_parameter("ir_stride", params%ir_stride)
-         !> @kw ir_window
-         !> Lag window applied to the autocorrelation before the cosine transform:
-         !> "hann" (default), "bartlett", "lorch", "welch" or "none". This is not optional in
-         !> substance -- "none" is a boxcar whose kernel is a sinc, with side lobes at -13.3 dB
-         !> and ringing to -21.7%, which drives an absorption spectrum negative. The choice is
-         !> which taper, not whether. Hann has the lowest far-field leakage of the set (13 dB
-         !> below the next best, because its kernel falls as 1/f^3) and is the only one whose
-         !> main lobe FWHM equals the resolution ir_resolution advertises. Bartlett is the one
-         !> shape whose kernel (Fejer) is non-negative everywhere, so with ir_estimator =
-         !> "biased" it makes a non-negative spectrum a theorem rather than an observation, at
-         !> the cost of 5 dB more leakage. Lorch is sinc(pi tau / n_lag), the same modification
-         !> function exp_utils applies to g(r) under structure_factor_window, offered so the IR
-         !> path can make the approximation the XRD path makes; it buys 13% narrower bands for
-         !> 5 dB more leakage and 1.8x more ringing. "none" is for demonstrating the ringing,
-         !> not for production. See ana/formalism_windows.py for the measured kernels.
-         !> @modes md
-         !> @see exp_labels exp_energy_scales ir_resolution ir_estimator structure_factor_window
-      else if (keyword == 'ir_window') then
-         backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_window
-         call check_iostatus(iostatus, keyword)
-         if (rank == 0) call print_parameter("ir_window", params%ir_window)
-         !> @kw ir_subtract_mean
-         !> Correlate the dipole FLUCTUATION mu - <mu> rather than mu itself (default .true.).
-         !> Linear response gives the spectrum as the transform of <dM(0).dM(t)> with
-         !> dM = M - <M>; a static dipole does not absorb, and the mean drops out of the
-         !> derivation for that reason. The usual defence for skipping it -- "a constant only
-         !> puts a delta at nu = 0, which the nu^2 prefactor kills" -- is false, because only
-         !> the |<mu>|^2 piece of the un-centred correlation is constant. The cross term is a
-         !> partial sum of a mean-zero series divided by its own length, i.e. a random walk in
-         !> tau whose amplitude GROWS with lag. On a 100-molecule water buffer at 2 fs,
-         !> |<mu>|^2 was 86% of C(0) and past ~300 fs of lag the cross term was 17x the real
-         !> correlation, shifting the spectrum by 19% at the O-H stretch. Set .false. only to
-         !> reproduce results from before this was fixed.
-         !> @modes md
-         !> @see ir_estimator ir_taper_partial exp_labels
-      else if (keyword == 'ir_subtract_mean') then
-         backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_subtract_mean
-         call check_iostatus(iostatus, keyword)
-         if (rank == 0) call print_parameter("ir_subtract_mean", params%ir_subtract_mean)
-         !> @kw ir_estimator
-         !> How the autocorrelation is normalised: "biased" (default) divides C(tau) by N,
-         !> "unbiased" divides by the number of pairs actually averaged, N - tau. The unbiased
-         !> estimator is unbiased and is also not a positive semi-definite sequence, so its
-         !> cosine transform can be negative -- and an absorption spectrum cannot be. The biased
-         !> one IS positive semi-definite: its transform is a periodogram (Percival &
-         !> Walden ch. 6; Numerical Recipes 13.4), at the price of scaling C(tau) by
-         !> (1 - tau/N). Since the lag window already tapers far harder than that, nothing is
-         !> lost. Note that guarantee covers the UNWINDOWED estimate: windowing convolves the
-         !> spectrum with the window kernel, so a kernel that dips negative can still drive the
-         !> result negative. Measured on one trajectory with every other fix on, ir_window =
-         !> "none" gave 124 negative points of 400 while hann, lorch and bartlett gave zero.
-         !> Combine with ir_window = "bartlett", whose Fejer kernel is non-negative everywhere,
-         !> for an unconditional guarantee.
-         !> @modes md
-         !> @see ir_window ir_subtract_mean ir_lag_factor
-      else if (keyword == 'ir_estimator') then
-         backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_estimator
-         call check_iostatus(iostatus, keyword)
-         if (rank == 0) call print_parameter("ir_estimator", params%ir_estimator)
-         !> @kw ir_taper_partial
-         !> Rebuild the lag window over the lags actually available while the ensemble is still
-         !> filling (default .true.). Only affects do_ir prediction runs, where the buffer fills
-         !> over the whole trajectory. The window is sized for n_lag, but early on only
-         !> n_stored - 1 lags exist, so with this off the autocorrelation is truncated at a
-         !> point where the window is still near 1 -- a boxcar cut, which convolves the spectrum
-         !> with a sinc and makes it ring. How much it matters depends on ir_estimator: dividing
-         !> C(tau) by N rather than N - tau multiplies it by (1 - tau/N), which is itself a
-         !> triangular taper, so the biased estimator applies an implicit Bartlett window that
-         !> has already fallen to 1/N at the truncation point. Measured with the window sized
-         !> for n_lag = 417 and only 51 frames stored, ir_estimator = unbiased gave 160 negative
-         !> points of 400 and ir_estimator = biased gave 0. With the default biased estimator
-         !> this switch therefore does not change the ringing; what it still buys is a header
-         !> that quotes the resolution the transformed lags actually support, and correct
-         !> behaviour if the unbiased estimator is selected.
-         !> @modes md
-         !> @see do_ir ir_window ir_lag_factor write_xyz
-      else if (keyword == 'ir_taper_partial') then
-         backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_taper_partial
-         call check_iostatus(iostatus, keyword)
-         if (rank == 0) call print_parameter("ir_taper_partial", params%ir_taper_partial)
-         !> @kw ir_weight_by_spacing
-         !> Weight each experimental point by the local grid spacing (default .true.), so that
-         !> the loss is an integral over frequency rather than a sum over however the
-         !> experimental file happened to be sampled. The fit grid is the experimental grid --
-         !> interpolating the experiment would invent structure between its points and then fit
-         !> to it -- but experimental grids are rarely uniform. The Downing & Williams water
-         !> data shipped with tests/mad_ir is sampled at 23.9 cm^-1 across the O-H stretch and
-         !> ~55 cm^-1 elsewhere, so 45% of an unweighted loss falls in the top quarter of the
-         !> range: a weighting chosen by whoever digitised the paper, not by the physics.
-         !> Weights are normalised to mean 1, so exp_energy_scales keeps its magnitude.
-         !> @modes md
-         !> @see exp_energy_scales ir_nu_min ir_nu_max exp_data_files
-      else if (keyword == 'ir_weight_by_spacing') then
-         backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_weight_by_spacing
-         call check_iostatus(iostatus, keyword)
-         if (rank == 0) call print_parameter("ir_weight_by_spacing", params%ir_weight_by_spacing)
-         !> @kw ir_match_offset
-         !> Fit an additive baseline b alongside the scale s, comparing s*I_calc + b with the
-         !> experiment (default .false.; requires ir_match_scale). Needed when the experimental
-         !> file has had a baseline removed such that its minimum is exactly zero, as
-         !> tests/mad_ir's process_data.py does: the model spectrum is strictly positive, so
-         !> without an offset the residual in the transparency window can never vanish, and a
-         !> quadratic loss responds by shrinking the whole prediction -- fighting the very band
-         !> intensity the bias is trying to build. Both s and b sit at their own least-squares
-         !> optimum, so the gradient picks up no extra term from either.
-         !> CAUTION: the two-parameter solve is unconstrained and can return a NEGATIVE scale
-         !> when the predicted shape does not resemble the experiment -- on this potential,
-         !> whose dipole model produces no vibrational bands, it returned s = -9.7e-9 with
-         !> b = +2.70. Since dL/dI carries a factor of s, that would reverse the bias and drive
-         !> the model away from the bands it is being asked to grow. The code detects s <= 0 and
-         !> falls back to the scale-only fit with b = 0; the header reports the offset actually
-         !> used, so a run that took the fallback is identifiable. If your fits keep falling
-         !> back, the prediction and the experiment disagree in shape, not just in baseline.
-         !> @modes md
-         !> @see ir_match_scale exp_energy_scales exp_data_files
-      else if (keyword == 'ir_match_offset') then
-         backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_match_offset
-         call check_iostatus(iostatus, keyword)
-         if (rank == 0) call print_parameter("ir_match_offset", params%ir_match_offset)
-         !> @kw ir_write_spectrum
-         !> The old name for write_ir, kept because inputs use it. Sets write_ir.
-         !> @modes md
-         !> @see write_ir exp_labels exp_energy_scales
-      else if (keyword == 'ir_write_spectrum') then
-         backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_write_spectrum
-         call check_iostatus(iostatus, keyword)
-         if (params%ir_write_spectrum) params%write_ir = .true.
-         if (rank == 0) call print_parameter("ir_write_spectrum", params%ir_write_spectrum)
          !> @kw masses
          !> Atomic mass of each species, one value per entry in species and in the same order. Read in
          !> amu and converted internally to eV fs^2 / A^2. If absent they are taken from the XYZ file
@@ -4282,6 +3841,527 @@ contains
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%xrd_wavelength
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("xrd_wavelength", params%xrd_wavelength)
+
+         !> @kw ir_auxiliary_variable
+         !> This turns on the auxiliary variable in temporal MAD, which formulates
+         !> MAD in another way: using a bath of oscillators which have
+         !> fictitious positions and momenta, where each oscillator is
+         !> attributed to a given frequency (wavenumber) to match from the
+         !> spectrum. These are coupled to the physical system by g_k coupling
+         !> terms which are tuned by according to the magnitude of the
+         !> experiment and the magnitude of the dipole autocorrelation function
+         !> that turbogap gives. The magnitudes of these oscillators give the
+         !> ir_prediction which is compared to the experimental data, and this
+         !> is optimized during the run.
+         !> @see md
+      else if (keyword == 'ir_auxiliary_variable') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_auxiliary_variable
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_auxiliary_variable", params%ir_auxiliary_variable)
+
+         !> @kw ir_auxiliary_restart_file
+         !> The restart file which specifies the auxiliary coordinates,
+         !> Format:
+         !> n_freq
+         !> X11 X12 Z13 P11 P12 P13 eff_mass omega R_exp g_k
+         !> @see ir_auxiliary_variable t_beg_aux t_end_aux
+      else if (keyword == 'ir_auxiliary_restart_file') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_auxiliary_restart_file
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_auxiliary_restart_file", params%ir_auxiliary_restart_file)
+
+         !> @kw ir_eff_mass
+         !> The effective mass for the oscillators in ir_auxiliary_variable
+         !> The default is 100amu
+         !> @units amu
+         !> @see ir_auxiliary_variable ir_damping t_beg_aux
+      else if (keyword == 'ir_eff_mass') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_eff_mass
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_eff_mass", params%ir_eff_mass)
+
+         !> @kw ir_damping
+         !> The damping of the oscillators, it is equivalently the
+         !> bandwidth/resolution
+         !> The default 10 cm^-1
+         !> @units cm^-1
+         !> @see ir_auxiliary_variable ir_eff_mass t_beg_aux
+      else if (keyword == 'ir_damping') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_damping
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_damping", params%ir_damping)
+
+         !> @kw t_beg_aux
+         !> The auxiliary variable(s) initial temperature, by default this is
+         !> t_beg if not specified. This can be used for ir_auxiliary_variable
+         !> or d-AFED (not implemented yet).
+         !> @units K
+         !> @see ir_auxiliary_variable ir_damping ir_eff_mass
+      else if (keyword == 't_beg_aux') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%t_beg_aux
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("t_beg_aux", params%t_beg_aux)
+
+         !> @kw t_end_aux
+         !> The auxiliary variable(s) initial temperature, by default this is
+         !> t_end if not specified. This can be used for ir_auxiliary_variable
+         !> or d-AFED (not implemented yet).
+         !> @units K
+         !> @see ir_auxiliary_variable ir_damping ir_eff_mass
+      else if (keyword == 't_end_aux') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%t_end_aux
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("t_end_aux", params%t_end_aux)
+         !> @kw ir_lag_factor
+         !> Ratio of the stored ensemble length to the longest correlation lag. The
+         !> autocorrelation at lag tau is averaged over n_window - tau pairs, so a factor of 1
+         !> would leave the longest lag estimated from a single pair. 2 or more.
+         !> @modes md
+         !> @see exp_labels exp_energy_scales ir_resolution
+      else if (keyword == 'ir_lag_factor') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_lag_factor
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_lag_factor", params%ir_lag_factor)
+         !> @kw ir_acf_mode
+         !> How the running dipole autocorrelation is formed: "block" (the default) averages over
+         !> the pairs the stored ensemble holds, and "exponential" carries it as a set of auxiliary
+         !> variables integrated alongside the atoms, one per lag, decaying with constant
+         !> ir_tau_mem. The exponential form weights the past by exp(-age/ir_tau_mem) instead of a
+         !> hard window, so the bias is a decaying functional of the trajectory and the force does
+         !> not jump when a frame falls off the end of the buffer. It is the Markovian embedding of
+         !> a generalized Langevin bias in which the target spectrum plays the part of the bath.
+         !> @modes md
+         !> @needs exp_labels
+         !> @see ir_tau_mem ir_lag_factor ir_estimator
+      else if (keyword == 'ir_acf_mode') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_acf_mode
+         call check_iostatus(iostatus, keyword)
+         call upper_to_lower_case(params%ir_acf_mode)
+         if (trim(params%ir_acf_mode) /= "block" .and. &
+             trim(params%ir_acf_mode) /= "exponential") then
+            if (rank == 0) then
+               write (*, *) "ERROR -> Invalid ir_acf_mode keyword:", params%ir_acf_mode
+               write (*, *) "This is a list of valid options:"
+               write (*, *) "block  exponential"
+            end if
+            stop
+         end if
+         if (rank == 0) call print_parameter("ir_acf_mode", params%ir_acf_mode)
+         !> @kw ir_tau_mem
+         !> Decay constant of the exponential correlation filter. Sets how far back the bias
+         !> remembers: the auxiliary variables obey s' = -(s - mu.mu_lag)/ir_tau_mem, so the
+         !> trajectory is weighted by exp(-age/ir_tau_mem). It must exceed the interval between
+         !> stored frames, md_step*ir_stride. A value much longer than the run is allowed -- the
+         !> filter simply never charges up, and since the resulting deficit is the same at every
+         !> lag it is an overall factor that ir_match_scale absorbs.
+         !> @units fs
+         !> @modes md
+         !> @needs ir_acf_mode
+         !> @see ir_acf_mode ir_stride ir_match_scale
+      else if (keyword == 'ir_tau_mem') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_tau_mem
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_tau_mem", params%ir_tau_mem)
+         !> @kw ir_bias_mode
+         !> Which IR bias to run: "acf" (the default) or "xl". Under "acf" the spectrum is the
+         !> cosine transform of an autocorrelation of the stored dipoles and the MAD force is the
+         !> gradient of the mismatch with respect to the newest configuration. Under "xl" it is
+         !> the auxiliary-variable bias: a bank of damped resonators, a quadrature pair per fitted
+         !> frequency, integrated alongside the atoms and driven by the dipole. The bank IS the
+         !> Fourier transform -- a Lorentzian filter bank written as equations of motion -- so no
+         !> trajectory is stored, there is no hard window for a frame to fall out of, and the
+         !> resolution is set by the damping rather than by a longest lag. The bias is the exact
+         !> gradient of the spectral mismatch with respect to the dipole that drives the bank.
+         !> The price is one stored frame of lag: the gradient cannot be formed until the
+         !> descriptor pass that produced the dipole is over, so it is contracted against the
+         !> next frame's dipole gradient. That is what lets it be contracted INSIDE the pass,
+         !> with no (3,3,n_atoms) tensor formed and a third of the work in the descriptor term.
+         !> The two modes share the experimental grid, ir_nu_min, ir_nu_max, ir_nu_power,
+         !> ir_match_scale, ir_match_offset, ir_weight_by_spacing, ir_stride and
+         !> exp_energy_scales. Everything from ir_lag_factor to ir_tau_mem describes an
+         !> autocorrelation and is ignored under "xl".
+         !> @modes md
+         !> @needs exp_labels
+         !> @see ir_xl_tau_mem ir_xl_n_modes ir_xl_amplitude ir_xl_warm_factor ir_acf_mode
+      else if (keyword == 'ir_bias_mode') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_bias_mode
+         call check_iostatus(iostatus, keyword)
+         call upper_to_lower_case(params%ir_bias_mode)
+         if (trim(params%ir_bias_mode) /= "acf" .and. &
+             trim(params%ir_bias_mode) /= "xl") then
+            if (rank == 0) then
+               write (*, *) "ERROR -> Invalid ir_bias_mode keyword:", params%ir_bias_mode
+               write (*, *) "This is a list of valid options:"
+               write (*, *) "acf  xl"
+            end if
+            stop
+         end if
+         if (rank == 0) call print_parameter("ir_bias_mode", params%ir_bias_mode)
+         !> @kw ir_xl_tau_mem
+         !> Memory time of the extended-Lagrangian resonators, and so their resolution. A
+         !> resonator damped at gamma = 2/ir_xl_tau_mem is a Lorentzian bandpass of full width
+         !> gamma, which in wavenumbers is d(nu) = 33356.40952/(pi ir_xl_tau_mem) -- the same
+         !> quantity that n_lag*md_step*ir_stride sets for the ACF bias, so 4 cm^-1 needs about
+         !> 2650 fs either way. There is no default because there is no default resolution. It
+         !> must exceed the interval between stored frames, and it must be long enough that the
+         !> lowest fitted wavenumber is still underdamped, tau > 33356.40952/(2 pi nu_min).
+         !> @units fs
+         !> @modes md
+         !> @needs ir_bias_mode
+         !> @see ir_bias_mode ir_xl_n_modes ir_resolution ir_stride
+      else if (keyword == 'ir_xl_tau_mem') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_xl_tau_mem
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_xl_tau_mem", params%ir_xl_tau_mem)
+         !> @kw ir_xl_n_modes
+         !> How many fitted frequencies get resonators. Under ir_xl_amplitude = "coherent" the
+         !> bank costs 96 * ir_xl_n_modes bytes and this hardly matters; under "incoherent" it
+         !> costs that times the number of atoms, on every rank, and this is the memory knob. The
+         !> frequencies chosen are a SUBSET of the experimental grid, evenly spaced in index and
+         !> endpoints included -- never a resampling, because interpolating the experiment invents
+         !> structure between its points and then fits to it. Asking for more than
+         !> (ir_nu_max - ir_nu_min) / d(nu) modes buys nothing: the bank cannot resolve bins
+         !> narrower than its own bandwidth. A value at or above the number of fitted points keeps
+         !> all of them.
+         !> @modes md
+         !> @needs ir_bias_mode
+         !> @see ir_bias_mode ir_xl_tau_mem ir_xl_max_memory
+      else if (keyword == 'ir_xl_n_modes') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_xl_n_modes
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_xl_n_modes", params%ir_xl_n_modes)
+         !> @kw ir_xl_amplitude
+         !> How the collective amplitude R_k that the experiment is compared with is built from
+         !> the bank: "coherent" (the default) sums the resonators first and squares after,
+         !> |sum_i x|^2 + |sum_i y|^2, and "incoherent" squares first and sums after. Coherent is
+         !> the actual infrared observable -- absorption comes from the correlation of the TOTAL
+         !> dipole, and the cross terms between sites are transition-dipole coupling, not noise.
+         !> Incoherent throws those away, and exists because a per-site target is only meaningful
+         !> against per-site amplitudes. Coherent also has no spring-constant shift and so nothing
+         !> to clamp; under "incoherent" the bias detunes each resonator, and a shift large enough
+         !> to inflect the spring is clamped and counted.
+         !> @modes md
+         !> @needs ir_bias_mode
+         !> @see ir_bias_mode ir_xl_n_modes
+      else if (keyword == 'ir_xl_amplitude') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_xl_amplitude
+         call check_iostatus(iostatus, keyword)
+         call upper_to_lower_case(params%ir_xl_amplitude)
+         if (trim(params%ir_xl_amplitude) /= "coherent" .and. &
+             trim(params%ir_xl_amplitude) /= "incoherent") then
+            if (rank == 0) then
+               write (*, *) "ERROR -> Invalid ir_xl_amplitude keyword:", params%ir_xl_amplitude
+               write (*, *) "This is a list of valid options:"
+               write (*, *) "coherent  incoherent"
+            end if
+            stop
+         end if
+         if (rank == 0) call print_parameter("ir_xl_amplitude", params%ir_xl_amplitude)
+         !> @kw ir_xl_warm_factor
+         !> Memory times to charge the resonator bank for before any bias is applied. The
+         !> charge-up envelope, 1 - exp(-t/ir_xl_tau_mem), is the same at every frequency because
+         !> the damping is, so the deficit it leaves is a pure overall factor and ir_match_scale
+         !> absorbs it exactly; what this waits out is the ringing left by starting the bank at
+         !> rest, which is at w_k and so is not common across the bank. Three memory times leaves
+         !> that at 5% of its initial amplitude.
+         !> @modes md
+         !> @needs ir_bias_mode
+         !> @see ir_bias_mode ir_xl_tau_mem
+      else if (keyword == 'ir_xl_warm_factor') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_xl_warm_factor
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_xl_warm_factor", params%ir_xl_warm_factor)
+         !> @kw ir_xl_max_memory
+         !> Refuse to start if the resonator bank would need more than this many MB on one rank.
+         !> The bank is replicated per rank, so this is per rank and not per node. Zero disables
+         !> the check.
+         !> @units MB
+         !> @modes md
+         !> @needs ir_bias_mode
+         !> @see ir_bias_mode ir_xl_n_modes
+      else if (keyword == 'ir_xl_max_memory') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_xl_max_memory
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_xl_max_memory", params%ir_xl_max_memory)
+         !> @kw ir_xl_restart_file
+         !> Where the resonator bank is written, and read from on a restart. "none" turns both
+         !> off. Separate from ir_restart_file because a bank is not a history buffer: a file
+         !> written under a different ir_xl_tau_mem, ir_xl_g, ir_stride, mode grid or
+         !> ir_xl_amplitude describes a different filter and is refused rather than adopted. A
+         !> refusal is not fatal -- the run charges a fresh bank and says so.
+         !> @modes md
+         !> @needs ir_bias_mode
+         !> @see ir_bias_mode ir_restart_file
+      else if (keyword == 'ir_xl_restart_file') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_xl_restart_file
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_xl_restart_file", params%ir_xl_restart_file)
+         !> @kw ir_match_scale
+         !> Fit an overall scale factor between the computed and experimental spectra before
+         !> comparing them. The computed spectrum is in arbitrary units, so with this off the
+         !> loss compares two things on different scales and its gradient is meaningless. Turn
+         !> it off only if the experimental spectrum has already been put on the same scale.
+         !> @modes md
+         !> @see exp_labels exp_energy_scales
+      else if (keyword == 'ir_match_scale') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_match_scale
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_match_scale", params%ir_match_scale)
+         !> @kw ir_nu_max
+         !> Highest wavenumber to fit. This is what fixes the sampling interval: nothing above
+         !> the Nyquist limit of the stored series can be represented, and power above it folds
+         !> back into the fitted range, so a combination of ir_stride and md_step that
+         !> cannot reach this value is refused rather than aliased.
+         !> @units cm^-1
+         !> @modes md
+         !> @see exp_labels exp_energy_scales ir_stride
+      else if (keyword == 'ir_nu_max') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_nu_max
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_nu_max", params%ir_nu_max)
+         !> @kw ir_nu_min
+         !> Lowest wavenumber to fit. Experimental points outside [ir_nu_min, ir_nu_max]
+         !> are dropped and take no part in the loss.
+         !> @units cm^-1
+         !> @modes md
+         !> @see exp_labels exp_energy_scales ir_nu_max
+      else if (keyword == 'ir_nu_min') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_nu_min
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_nu_min", params%ir_nu_min)
+         !> @kw ir_nu_power
+         !> Exponent of the wavenumber prefactor in I(nu) = nu^p * FT[C(tau)]. The classical
+         !> lineshape is p = 2; p = 0 compares the bare Fourier transform of the dipole
+         !> autocorrelation instead.
+         !> @modes md
+         !> @see exp_labels exp_energy_scales
+      else if (keyword == 'ir_nu_power') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_nu_power
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_nu_power", params%ir_nu_power)
+         !> @kw ir_resolution
+         !> Frequency resolution wanted, which fixes the longest correlation lag as
+         !> 33356.41/(resolution * dt) with dt the interval between stored configurations. The
+         !> ensemble is ir_lag_factor times that. Asking for fine resolution is expensive in
+         !> memory and in how long the run must go before the first force is applied.
+         !> @units cm^-1
+         !> @modes md
+         !> @see exp_labels exp_energy_scales ir_lag_factor ir_stride
+      else if (keyword == 'ir_resolution') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_resolution
+         params%ir_resolution_set = .true.
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_resolution", params%ir_resolution)
+         !> @kw do_ir
+         !> Predict an IR spectrum from the trajectory. The total dipole is accumulated over the
+         !> whole run and transformed into ir_spectrum.dat, whose header records the sampling
+         !> interval, the Nyquist limit, the resolution and hence the band over which the result
+         !> can be read. Needs a dipole model in the potential file, but no experimental spectrum
+         !> and no exp_* keywords: nothing is fitted and no force is added. Implies write_ir, so
+         !> ir_prediction.dat carries the same spectrum over the whole trajectory. The ensemble is
+         !> the entire run rather than a rolling window, so the resolution follows from md_nsteps
+         !> unless ir_resolution asks for one the run is long enough to give. Naming "ir" in
+         !> exp_labels instead is the other thing -- that biases the trajectory towards an
+         !> experiment.
+         !> @modes md
+         !> @see ir_stride ir_resolution ir_nu_min ir_nu_max ir_lag_factor ir_n_samples exp_labels
+      else if (keyword == 'do_ir') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%do_ir
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("do_ir", params%do_ir)
+         !> @kw ir_n_samples
+         !> Number of points on the predicted spectrum's grid. The default, zero, puts one point
+         !> per resolution element, which is all the transform can carry; a larger number draws the
+         !> same information as a smoother curve. Prediction runs only -- a fit uses the
+         !> experimental grid.
+         !> @modes md
+         !> @see do_ir ir_resolution
+      else if (keyword == 'ir_n_samples') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_n_samples
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_n_samples", params%ir_n_samples)
+         !> @kw ir_restart_file
+         !> Where the dipole history is written and read back. The ensemble is the expensive
+         !> part of a MAD IR run -- resolving 4 cm^-1 at 1 fs sampling is 8 ps of trajectory --
+         !> so without this a restart spends that long refilling before any force is applied. A
+         !> file written with different sizing is refused rather than adopted, since it
+         !> describes a different spectrum.
+         !> @modes md
+         !> @see exp_labels exp_energy_scales
+      else if (keyword == 'ir_restart_file') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_restart_file
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_restart_file", params%ir_restart_file)
+         !> @kw ir_stride
+         !> MD steps between stored configurations. The sampling interval is this times md_step,
+         !> and that interval is what sets the Nyquist limit, so a large stride is what makes
+         !> ir_nu_max unreachable.
+         !> @modes md
+         !> @see exp_labels exp_energy_scales ir_nu_max md_step
+      else if (keyword == 'ir_stride') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_stride
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_stride", params%ir_stride)
+         !> @kw ir_window
+         !> Lag window applied to the autocorrelation before the cosine transform:
+         !> "hann" (default), "bartlett", "lorch", "welch" or "none". This is not optional in
+         !> substance -- "none" is a boxcar whose kernel is a sinc, with side lobes at -13.3 dB
+         !> and ringing to -21.7%, which drives an absorption spectrum negative. The choice is
+         !> which taper, not whether. Hann has the lowest far-field leakage of the set (13 dB
+         !> below the next best, because its kernel falls as 1/f^3) and is the only one whose
+         !> main lobe FWHM equals the resolution ir_resolution advertises. Bartlett is the one
+         !> shape whose kernel (Fejer) is non-negative everywhere, so with ir_estimator =
+         !> "biased" it makes a non-negative spectrum a theorem rather than an observation, at
+         !> the cost of 5 dB more leakage. Lorch is sinc(pi tau / n_lag), the same modification
+         !> function exp_utils applies to g(r) under structure_factor_window, offered so the IR
+         !> path can make the approximation the XRD path makes; it buys 13% narrower bands for
+         !> 5 dB more leakage and 1.8x more ringing. "none" is for demonstrating the ringing,
+         !> not for production. See ana/formalism_windows.py for the measured kernels.
+         !> @modes md
+         !> @see exp_labels exp_energy_scales ir_resolution ir_estimator structure_factor_window
+      else if (keyword == 'ir_window') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_window
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_window", params%ir_window)
+         !> @kw ir_subtract_mean
+         !> Correlate the dipole FLUCTUATION mu - <mu> rather than mu itself (default .true.).
+         !> Linear response gives the spectrum as the transform of <dM(0).dM(t)> with
+         !> dM = M - <M>; a static dipole does not absorb, and the mean drops out of the
+         !> derivation for that reason. The usual defence for skipping it -- "a constant only
+         !> puts a delta at nu = 0, which the nu^2 prefactor kills" -- is false, because only
+         !> the |<mu>|^2 piece of the un-centred correlation is constant. The cross term is a
+         !> partial sum of a mean-zero series divided by its own length, i.e. a random walk in
+         !> tau whose amplitude GROWS with lag. On a 100-molecule water buffer at 2 fs,
+         !> |<mu>|^2 was 86% of C(0) and past ~300 fs of lag the cross term was 17x the real
+         !> correlation, shifting the spectrum by 19% at the O-H stretch. Set .false. only to
+         !> reproduce results from before this was fixed.
+         !> @modes md
+         !> @see ir_estimator ir_taper_partial exp_labels
+      else if (keyword == 'ir_subtract_mean') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_subtract_mean
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_subtract_mean", params%ir_subtract_mean)
+         !> @kw ir_estimator
+         !> How the autocorrelation is normalised: "biased" (default) divides C(tau) by N,
+         !> "unbiased" divides by the number of pairs actually averaged, N - tau. The unbiased
+         !> estimator is unbiased and is also not a positive semi-definite sequence, so its
+         !> cosine transform can be negative -- and an absorption spectrum cannot be. The biased
+         !> one IS positive semi-definite: its transform is a periodogram (Percival &
+         !> Walden ch. 6; Numerical Recipes 13.4), at the price of scaling C(tau) by
+         !> (1 - tau/N). Since the lag window already tapers far harder than that, nothing is
+         !> lost. Note that guarantee covers the UNWINDOWED estimate: windowing convolves the
+         !> spectrum with the window kernel, so a kernel that dips negative can still drive the
+         !> result negative. Measured on one trajectory with every other fix on, ir_window =
+         !> "none" gave 124 negative points of 400 while hann, lorch and bartlett gave zero.
+         !> Combine with ir_window = "bartlett", whose Fejer kernel is non-negative everywhere,
+         !> for an unconditional guarantee.
+         !> @modes md
+         !> @see ir_window ir_subtract_mean ir_lag_factor
+      else if (keyword == 'ir_estimator') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_estimator
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_estimator", params%ir_estimator)
+         !> @kw ir_taper_partial
+         !> Rebuild the lag window over the lags actually available while the ensemble is still
+         !> filling (default .true.). Only affects do_ir prediction runs, where the buffer fills
+         !> over the whole trajectory. The window is sized for n_lag, but early on only
+         !> n_stored - 1 lags exist, so with this off the autocorrelation is truncated at a
+         !> point where the window is still near 1 -- a boxcar cut, which convolves the spectrum
+         !> with a sinc and makes it ring. How much it matters depends on ir_estimator: dividing
+         !> C(tau) by N rather than N - tau multiplies it by (1 - tau/N), which is itself a
+         !> triangular taper, so the biased estimator applies an implicit Bartlett window that
+         !> has already fallen to 1/N at the truncation point. Measured with the window sized
+         !> for n_lag = 417 and only 51 frames stored, ir_estimator = unbiased gave 160 negative
+         !> points of 400 and ir_estimator = biased gave 0. With the default biased estimator
+         !> this switch therefore does not change the ringing; what it still buys is a header
+         !> that quotes the resolution the transformed lags actually support, and correct
+         !> behaviour if the unbiased estimator is selected.
+         !> @modes md
+         !> @see do_ir ir_window ir_lag_factor write_xyz
+      else if (keyword == 'ir_taper_partial') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_taper_partial
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_taper_partial", params%ir_taper_partial)
+         !> @kw ir_weight_by_spacing
+         !> Weight each experimental point by the local grid spacing (default .true.), so that
+         !> the loss is an integral over frequency rather than a sum over however the
+         !> experimental file happened to be sampled. The fit grid is the experimental grid --
+         !> interpolating the experiment would invent structure between its points and then fit
+         !> to it -- but experimental grids are rarely uniform. The Downing & Williams water
+         !> data shipped with tests/mad_ir is sampled at 23.9 cm^-1 across the O-H stretch and
+         !> ~55 cm^-1 elsewhere, so 45% of an unweighted loss falls in the top quarter of the
+         !> range: a weighting chosen by whoever digitised the paper, not by the physics.
+         !> Weights are normalised to mean 1, so exp_energy_scales keeps its magnitude.
+         !> @modes md
+         !> @see exp_energy_scales ir_nu_min ir_nu_max exp_data_files
+      else if (keyword == 'ir_weight_by_spacing') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_weight_by_spacing
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_weight_by_spacing", params%ir_weight_by_spacing)
+         !> @kw ir_match_offset
+         !> Fit an additive baseline b alongside the scale s, comparing s*I_calc + b with the
+         !> experiment (default .false.; requires ir_match_scale). Needed when the experimental
+         !> file has had a baseline removed such that its minimum is exactly zero, as
+         !> tests/mad_ir's process_data.py does: the model spectrum is strictly positive, so
+         !> without an offset the residual in the transparency window can never vanish, and a
+         !> quadratic loss responds by shrinking the whole prediction -- fighting the very band
+         !> intensity the bias is trying to build. Both s and b sit at their own least-squares
+         !> optimum, so the gradient picks up no extra term from either.
+         !> CAUTION: the two-parameter solve is unconstrained and can return a NEGATIVE scale
+         !> when the predicted shape does not resemble the experiment -- on this potential,
+         !> whose dipole model produces no vibrational bands, it returned s = -9.7e-9 with
+         !> b = +2.70. Since dL/dI carries a factor of s, that would reverse the bias and drive
+         !> the model away from the bands it is being asked to grow. The code detects s <= 0 and
+         !> falls back to the scale-only fit with b = 0; the header reports the offset actually
+         !> used, so a run that took the fallback is identifiable. If your fits keep falling
+         !> back, the prediction and the experiment disagree in shape, not just in baseline.
+         !> @modes md
+         !> @see ir_match_scale exp_energy_scales exp_data_files
+      else if (keyword == 'ir_match_offset') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_match_offset
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_match_offset", params%ir_match_offset)
+         !> @kw ir_write_spectrum
+         !> The old name for write_ir, kept because inputs use it. Sets write_ir.
+         !> @modes md
+         !> @see write_ir exp_labels exp_energy_scales
+      else if (keyword == 'ir_write_spectrum') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_write_spectrum
+         call check_iostatus(iostatus, keyword)
+         if (params%ir_write_spectrum) params%write_ir = .true.
+         if (rank == 0) call print_parameter("ir_write_spectrum", params%ir_write_spectrum)
 !     Per-observable keywords, dispatched on the tail of the name:
 !     <label>_range, <label>_file_data and <label>_n_samples, where <label> is
 !     an entry in exp_labels. Last in the chain on purpose -- xrd_n_samples and
@@ -5569,7 +5649,8 @@ contains
                      backspace (10)
                      call check_deprecated(n_deprecated, deprecated_keywords, updated_keywords, keyword)
                      !             read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%file_vdw_desc
-                     read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%local_property_models(1)%file_desc
+                     read (10, *, iostat=iostatus) cjunk, cjunk, &
+                        soap_turbo_hypers(n_soap_turbo)%local_property_models(1)%file_desc
                      !> @kw vdw_alphas
                      !> Superseded by local_property_alphas.
                      !> @see local_property_alphas
@@ -5578,7 +5659,8 @@ contains
                      backspace (10)
                      call check_deprecated(n_deprecated, deprecated_keywords, updated_keywords, keyword)
                      !read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%file_vdw_alphas
-                    read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%local_property_models(1)%file_alphas
+                     read (10, *, iostat=iostatus) cjunk, cjunk, &
+                        soap_turbo_hypers(n_soap_turbo)%local_property_models(1)%file_alphas
                      !> @kw vdw_zeta
                      !> Superseded by local_property_zetas.
                      !> @see local_property_zetas
@@ -5587,7 +5669,8 @@ contains
                      backspace (10)
                      call check_deprecated(n_deprecated, deprecated_keywords, updated_keywords, keyword)
                      !              read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%vdw_zeta
-                     read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%local_property_models(1)%zeta
+                     read (10, *, iostat=iostatus) cjunk, cjunk, &
+                        soap_turbo_hypers(n_soap_turbo)%local_property_models(1)%zeta
                      !> @kw vdw_delta
                      !> Superseded by local_property_deltas.
                      !> @see local_property_deltas
@@ -5596,7 +5679,8 @@ contains
                      backspace (10)
                      call check_deprecated(n_deprecated, deprecated_keywords, updated_keywords, keyword)
                      !              read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%vdw_delta
-                     read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%local_property_models(1)%delta
+                     read (10, *, iostat=iostatus) cjunk, cjunk, &
+                        soap_turbo_hypers(n_soap_turbo)%local_property_models(1)%delta
                      !> @kw vdw_v0
                      !> Superseded by local_property_v0s.
                      !> @see local_property_v0s
@@ -5605,7 +5689,8 @@ contains
                      backspace (10)
                      call check_deprecated(n_deprecated, deprecated_keywords, updated_keywords, keyword)
                      !              read(10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%vdw_v0
-                     read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%local_property_models(1)%V0
+                     read (10, *, iostat=iostatus) cjunk, cjunk, &
+                        soap_turbo_hypers(n_soap_turbo)%local_property_models(1)%V0
                      !> @kw has_local_properties
                      !> This descriptor carries per-atom quantities fitted alongside the energy --
                      !> Hirshfeld volumes, charges, core-electron binding energies. Set implicitly by
@@ -5613,7 +5698,8 @@ contains
                      !> @see n_local_properties, local_property_labels
                   else if (keyword == "has_local_properties") then
                      backspace (10)
-                     read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%has_local_properties
+                     read (10, *, iostat=iostatus) cjunk, cjunk, &
+                        soap_turbo_hypers(n_soap_turbo)%has_local_properties
                      !> @kw n_local_properties
                      !> How many local properties this descriptor carries. Give it before the
                      !> local_property_* lists, which it allocates and which are all read this many
@@ -5621,7 +5707,8 @@ contains
                      !> @see local_property_labels
                   else if (keyword == "n_local_properties") then
                      backspace (10)
-                     read (10, *, iostat=iostatus) cjunk, cjunk, soap_turbo_hypers(n_soap_turbo)%n_local_properties
+                     read (10, *, iostat=iostatus) cjunk, cjunk, &
+                        soap_turbo_hypers(n_soap_turbo)%n_local_properties
                      ! Now allocate the local_property_soap_turbo object in the soap_turbo_hypers
                      allocate (soap_turbo_hypers(n_soap_turbo)%local_property_models( &
                                1:soap_turbo_hypers(n_soap_turbo)%n_local_properties))
@@ -6096,10 +6183,12 @@ contains
                else
                   qn = 0.5d0
                   un = (3.d0/(core_pot_hypers(n_core_pot)%x(n) - core_pot_hypers(n_core_pot)%x(n - 1)))* &
-                      (core_pot_hypers(n_core_pot)%ypn - (core_pot_hypers(n_core_pot)%V(n) - core_pot_hypers(n_core_pot)%V(n - 1)) &
+                       (core_pot_hypers(n_core_pot)%ypn - &
+                        (core_pot_hypers(n_core_pot)%V(n) - core_pot_hypers(n_core_pot)%V(n - 1)) &
                         /(core_pot_hypers(n_core_pot)%x(n) - core_pot_hypers(n_core_pot)%x(n - 1)))
                end if
-               core_pot_hypers(n_core_pot)%dVdx2(n) = (un - qn*u(n - 1))/(qn*core_pot_hypers(n_core_pot)%dVdx2(n - 1) + 1.d0)
+               core_pot_hypers(n_core_pot)%dVdx2(n) = (un - qn*u(n - 1)) &
+                                                      /(qn*core_pot_hypers(n_core_pot)%dVdx2(n - 1) + 1.d0)
                do i = n - 1, 1, -1
                   core_pot_hypers(n_core_pot)%dVdx2(i) = core_pot_hypers(n_core_pot)%dVdx2(i)* &
                                                          core_pot_hypers(n_core_pot)%dVdx2(i + 1) + u(i)
@@ -6205,8 +6294,10 @@ contains
 !**************************************************************************
 
    subroutine get_irreducible_local_properties(params, n_local_properties_tot, n_soap_turbo, soap_turbo_hypers, &
-                           local_property_labels, local_property_labels_temp, local_property_labels_temp2, local_property_indexes, &
-                                valid_vdw, vdw_lp_index, valid_estat_charges, charge_lp_index, core_be_lp_index, valid_xps, xps_idx)
+                                               local_property_labels, local_property_labels_temp, &
+                                               local_property_labels_temp2, local_property_indexes, &
+                                               valid_vdw, vdw_lp_index, valid_estat_charges, charge_lp_index, &
+                                               core_be_lp_index, valid_xps, xps_idx)
       implicit none
       type(input_parameters), intent(inout) :: params
       integer, intent(in) :: n_soap_turbo

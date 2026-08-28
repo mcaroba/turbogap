@@ -59,6 +59,7 @@ program turbogap
    use soap_turbo_functions
    use mad_ir
    use mad_ir_xl
+   use ir_auxiliary_dynamics, only: ir_auxiliary_dynamics_init, ir_auxiliary_restart_read
 #ifdef _MPIF90
    use mpi
    use mpi_helper
@@ -146,6 +147,10 @@ program turbogap
    real(dp), allocatable :: this_local_dipoles(:, :)
    real(dp), allocatable :: energies_dipole(:)
    real(dp), allocatable :: this_energies_dipole(:)
+
+   ! The type which has everything for ir_auxiliary_variable estimation
+   type(ir_auxiliary) :: ir_aux
+
    real(dp) :: dipole(1:3)
 !  MAD IR bias. lambda is dL/dmu of the newest configuration; mad_ir_applied
 !  says whether the ensemble was full enough for a force to have been added.
@@ -1275,6 +1280,27 @@ program turbogap
                      stop
                   end if
                   if (params%valid_ir) then
+
+                     if (params%ir_auxiliary_variable) then
+
+                        write (*, *) 'ir_auxiliary_variable is active '
+
+                        if (trim(params%ir_auxiliary_variable_restart_file) == "none") then
+
+                           write (*, *) 'NOTE: TurboGAP will wait until an initial dipole '
+                           write (*, *) '      autocorrelation function has been done (no optimization). '
+
+                           ! will call ir_auxiliary_dynamics_init when the dipole
+                           ! autocorrelation function has been calculated.
+
+                        else
+
+                           write (*, *) 'NOTE: Reading ir_auxiliary_restart_file ', params%ir_auxiliary_variable_restart_file
+                           call ir_auxiliary_restart_read(ir_aux, params%ir_auxiliary_variable_restart_file)
+                        end if
+
+                     end if
+
                      call mad_ir_setup(params%md_step, params%ir_stride, params%ir_resolution, &
                                        params%ir_nu_min, params%ir_nu_max, params%ir_lag_factor, &
                                        params%exp_data(params%ir_idx)%data(1, :), &

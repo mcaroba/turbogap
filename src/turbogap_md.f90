@@ -229,9 +229,13 @@ contains
            !! ------- option for radiation cascade simulation with electronic stopping
 
             if (params%electronic_stopping) then
-               call electron_stopping_velocity_dependent(md_istep, n_species, params%eel_cut, params%eel_freq_out, &
-                                                         velocities(1:3, 1:n_sites), forces(1:3, 1:n_sites), masses(1:n_sites), &
-                                                   params%masses_types, time_step, md_time, nrows, allelstopdata, cum_EEL, 'forces')
+               call electron_stopping_velocity_dependent(md_istep, &
+                                                         n_species, params%eel_cut, &
+                                                         params%eel_freq_out, &
+                                                         velocities(1:3, 1:n_sites), &
+                                                         forces(1:3, 1:n_sites), masses(1:n_sites), &
+                                                         params%masses_types, time_step, &
+                                                         md_time, nrows, allelstopdata, cum_EEL, 'forces')
             end if
 
            !! -----------------------------------        ******** until here for electronic stopping
@@ -239,9 +243,10 @@ contains
            !! ------- option for electronic stopping based on eph model
 
             if (params%nonadiabatic_processes) then
-               call ephlsc%eph_LangevinForces(velocities(1:3, 1:n_sites), forces(1:3, 1:n_sites), &
-                                              masses(1:n_sites), params%masses_types, md_istep, time_step, md_time, &
-                                              positions(1:3, 1:n_sites), n_species, ephbeta, ephfdm)
+               call ephlsc%eph_LangevinForces( &
+                  velocities(1:3, 1:n_sites), forces(1:3, 1:n_sites), &
+                  masses(1:n_sites), params%masses_types, md_istep, time_step, md_time, &
+                  positions(1:3, 1:n_sites), n_species, ephbeta, ephfdm)
             end if
 
           !! -----------------------------------        ******** until here for electronic stopping basd on eph model
@@ -250,9 +255,10 @@ contains
 
             if (params%adaptive_time) then
                if (MOD(md_istep, params%adapt_tstep_interval) == 0) then
-                  call variable_time_step_adaptive(md_istep == 0, velocities(1:3, 1:n_sites), forces(1:3, 1:n_sites), &
-                                                   masses(1:n_sites), params%adapt_tmin, params%adapt_tmax, params%adapt_xmax, &
-                                                   params%adapt_emax, params%md_step, time_step)
+                  call variable_time_step_adaptive( &
+                     md_istep == 0, velocities(1:3, 1:n_sites), forces(1:3, 1:n_sites), &
+                     masses(1:n_sites), params%adapt_tmin, params%adapt_tmax, params%adapt_xmax, &
+                     ms%adapt_emax, params%md_step, time_step)
                end if
             end if
 
@@ -263,15 +269,21 @@ contains
             !     dt later. forces are taken at t, and forces_prev at t-dt. forces is left unchanged by the routine, and
             !     forces_prev is returned as equal to forces (both arrays contain the same information on return)
             if (params%optimize == "vv") then
-               call velocity_verlet(positions(1:3, 1:n_sites), positions_prev(1:3, 1:n_sites), velocities(1:3, 1:n_sites), &
-                                forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), time_step, time_step_prev, &
-                                    md_istep == 0, a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
-                                    fix_atom(1:3, 1:n_sites))
+               call velocity_verlet( &
+                  positions(1:3, 1:n_sites), positions_prev(1:3, 1:n_sites), &
+                  velocities(1:3, 1:n_sites), &
+                  forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), &
+                  masses(1:n_sites), time_step, time_step_prev, &
+                  md_istep == 0, &
+                  fix_atom(1:3, 1:n_sites))
             else if (params%optimize == "gd") then
-               call gradient_descent(positions(1:3, 1:n_sites), positions_prev(1:3, 1:n_sites), velocities(1:3, 1:n_sites), &
-                                     forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), &
-                                     params%max_opt_step, md_istep == 0, a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), &
-                                     c_box/dfloat(indices(3)), fix_atom(1:3, 1:n_sites), energy)
+               call gradient_descent( &
+                  positions(1:3, 1:n_sites), positions_prev(1:3, 1:n_sites), &
+                  velocities(1:3, 1:n_sites), &
+                  forces(1:3, 1:n_sites), forces_prev(1:3, 1:n_sites), masses(1:n_sites), &
+                  params%max_opt_step, md_istep == 0, &
+                  a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), &
+                  c_box/dfloat(indices(3)), fix_atom(1:3, 1:n_sites), energy)
             else if (params%optimize == "gd-box" .or. params%optimize == "gd-box-ortho") then
                !       Positions and lattice descend together, in the
                !       preconditioned variables of Gubler et al. (2023). The
@@ -305,9 +317,10 @@ contains
         !! ------- option for radiation cascade simulation with electronic stopping
 
             if (params%electronic_stopping) then
-               call electron_stopping_velocity_dependent(md_istep, n_species, params%eel_cut, params%eel_freq_out, &
-                                                         velocities(1:3, 1:n_sites), forces(1:3, 1:n_sites), masses(1:n_sites), &
-                                                   params%masses_types, time_step, md_time, nrows, allelstopdata, cum_EEL, 'energy')
+               call electron_stopping_velocity_dependent( &
+                  md_istep, n_species, params%eel_cut, params%eel_freq_out, &
+                  velocities(1:3, 1:n_sites), forces(1:3, 1:n_sites), masses(1:n_sites), &
+                  params%masses_types, time_step, md_time, nrows, allelstopdata, cum_EEL, 'energy')
             end if
 
         !! -----------------------------------                ******** until here for electronic stopping
@@ -315,8 +328,9 @@ contains
         !! ------- option for electronic stopping based on eph model
 
             if (params%nonadiabatic_processes) then
-               call ephlsc%eph_LangevinEnergyDissipation(md_istep, md_time, velocities(1:3, 1:n_sites), &
-                                                         positions(1:3, 1:n_sites), time_step, ephfdm)
+               call ephlsc%eph_LangevinEnergyDissipation( &
+                  md_istep, md_time, velocities(1:3, 1:n_sites), &
+                  positions(1:3, 1:n_sites), time_step, ephfdm)
             end if
 
         !! -----------------------------------                ******** until here for electronic stopping basd on eph model
