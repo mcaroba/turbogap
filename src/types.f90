@@ -474,6 +474,48 @@ module types
       real(dp) :: ir_frame_dt = -1.d0
       real(dp) :: ir_frame_dt_tol = 1.d-3
 
+!     ----------------------------------------------------------------------
+!     ir_bias_mode = "aux": the envelope-targeted resonator bank of
+!     ir_auxiliary_dynamics.f90. One 3-vector resonator per fitted frequency,
+!     driven by the total dipole, whose amplitude is held at the experimental
+!     one by FEEDBACK FRICTION and not by a bias potential. A potential in the
+!     amplitude provably cannot move it -- it is a function of the action, so
+!     it shifts the angle and detunes the resonator instead -- and that file's
+!     header carries the proof and the measurement. The atoms feel the bank
+!     only through the dipole coupling, so the bias reaches them indirectly,
+!     and the reported energy is the true generator of the reported force.
+!
+!     Shares the experimental grid, ir_nu_min, ir_nu_max, ir_nu_power,
+!     ir_stride, ir_window and exp_energy_scales with the other three modes.
+!     The couplings are calibrated by linear response from the ACF the moment
+!     mad_ir's ensemble first fills, so a run under this mode is UNBIASED
+!     until then and needs no separate preparatory run.
+!
+!     ir_aux_eff_mass      fictitious mass per resonator, in amu. Well above an
+!                          atomic mass, so the bank never needs a shorter
+!                          timestep than the nuclei do.
+!     ir_aux_damping       the resonator bandwidth Gamma_k, i.e. the frequency
+!                          resolution of one channel of the filter bank. Sets
+!                          the linear-response calibration of the couplings.
+!     ir_aux_tau           relaxation time of the amplitude controller.
+!     ir_aux_gain          the controller's proportional gain kappa_k.
+!                          Negative, the default, means 2/ir_aux_tau, which
+!                          critically damps the loop. Zero leaves a pure
+!                          integral controller, which rings forever with
+!                          period 2 pi ir_aux_tau -- in the observable itself.
+!     ir_aux_eta_max       anti-windup clamp on the feedback friction, as a
+!                          fraction of each resonator's own frequency. Past
+!                          |eta| = 2 w a channel stops resonating and would
+!                          report an intensity for a frequency it cannot see.
+!     ir_aux_restart_file  where the bank is persisted. "none" disables.
+!     ----------------------------------------------------------------------
+      real(dp) :: ir_aux_eff_mass = 100.d0
+      real(dp) :: ir_aux_damping = 10.d0
+      real(dp) :: ir_aux_tau = 500.d0
+      real(dp) :: ir_aux_gain = -1.d0
+      real(dp) :: ir_aux_eta_max = 0.1d0
+      character*1024 :: ir_aux_restart_file = "ir_aux_restart.dat"
+
 !     ==================================================================
 !     NEIGHBOUR LISTS AND THE CORE POTENTIAL
 !     ==================================================================

@@ -1587,15 +1587,106 @@ contains
          call upper_to_lower_case(params%ir_bias_mode)
          if (trim(params%ir_bias_mode) /= "acf" .and. &
              trim(params%ir_bias_mode) /= "xl" .and. &
-             trim(params%ir_bias_mode) /= "fft") then
+             trim(params%ir_bias_mode) /= "fft" .and. &
+             trim(params%ir_bias_mode) /= "aux") then
             if (rank == 0) then
                write (*, *) "ERROR -> Invalid ir_bias_mode keyword:", params%ir_bias_mode
                write (*, *) "This is a list of valid options:"
-               write (*, *) "acf  xl  fft"
+               write (*, *) "acf  xl  fft  aux"
             end if
             stop
          end if
          if (rank == 0) call print_parameter("ir_bias_mode", params%ir_bias_mode)
+         !> @kw ir_aux_eff_mass
+         !> Fictitious mass of each resonator in the envelope-targeted bank, ir_bias_mode = aux.
+         !> Choose it well above an atomic mass (10^2 to 10^3 amu) so the auxiliary variables
+         !> evolve more slowly than the nuclei and never set the timestep. It largely cancels out
+         !> of the amplitude the bank reports, because the coupling is calibrated against it.
+         !> @units amu
+         !> @modes md
+         !> @needs ir_bias_mode
+         !> @see ir_bias_mode ir_aux_damping ir_aux_tau
+      else if (keyword == 'ir_aux_eff_mass') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_aux_eff_mass
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_aux_eff_mass", params%ir_aux_eff_mass)
+         !> @kw ir_aux_damping
+         !> Bandwidth Gamma_k of each resonator under ir_bias_mode = aux: the width of one
+         !> channel of the filter bank, which is what the experimental resolution actually is.
+         !> It appears in the linear-response calibration of the couplings, g_k = mu_k w_k
+         !> sqrt(Gamma_k <R_target^2>/S_MM(w_k)), so it sets how hard the dipole has to push to
+         !> reach a given amplitude. 5 to 10 cm^-1 is the usual experimental figure.
+         !> @units cm^-1
+         !> @modes md
+         !> @needs ir_bias_mode
+         !> @see ir_bias_mode ir_aux_eff_mass ir_resolution
+      else if (keyword == 'ir_aux_damping') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_aux_damping
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_aux_damping", params%ir_aux_damping)
+         !> @kw ir_aux_tau
+         !> Relaxation time of the amplitude controller under ir_bias_mode = aux. The friction
+         !> eta_k integrates the envelope error as etadot = (R^2/R_target^2 - 1)/tau^2, so tau
+         !> is how quickly the bank is pulled back onto the experimental amplitude. It must be
+         !> long compared with 1/w_k: the controller acts on the cycle-averaged envelope, and
+         !> that averaging is what makes the default gain critical.
+         !> @units fs
+         !> @modes md
+         !> @needs ir_bias_mode
+         !> @see ir_bias_mode ir_aux_gain ir_aux_eta_max
+      else if (keyword == 'ir_aux_tau') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_aux_tau
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_aux_tau", params%ir_aux_tau)
+         !> @kw ir_aux_gain
+         !> Proportional gain kappa_k of the amplitude controller under ir_bias_mode = aux, as a
+         !> rate. Negative, the default, means 2/ir_aux_tau, which critically damps the control
+         !> loop: the linearised envelope obeys nu'' + kappa nu' + nu/tau^2 = 0. Setting it to
+         !> zero leaves a pure integral controller, which is MARGINALLY STABLE and rings forever
+         !> with period 2 pi ir_aux_tau -- and the ringing is in the reported spectrum, because
+         !> the resonator amplitude is the observable.
+         !> @units 1/fs
+         !> @modes md
+         !> @needs ir_bias_mode
+         !> @see ir_bias_mode ir_aux_tau ir_aux_eta_max
+      else if (keyword == 'ir_aux_gain') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_aux_gain
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_aux_gain", params%ir_aux_gain)
+         !> @kw ir_aux_eta_max
+         !> Anti-windup clamp on the feedback friction under ir_bias_mode = aux, as a fraction
+         !> of each resonator's own frequency. When a target is unreachable the integral in
+         !> etadot winds up without bound, and past |eta| = 2 w_k the channel is overdamped: it
+         !> stops resonating and would report an intensity for a frequency it can no longer
+         !> sense. The default of 0.1 leaves the resonance essentially untouched, since the
+         !> frequency shift it permits is second order, sqrt(w^2 - (eta/2)^2).
+         !> @modes md
+         !> @needs ir_bias_mode
+         !> @see ir_bias_mode ir_aux_tau ir_aux_gain
+      else if (keyword == 'ir_aux_eta_max') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_aux_eta_max
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_aux_eta_max", params%ir_aux_eta_max)
+         !> @kw ir_aux_restart_file
+         !> Where the envelope-targeted bank is persisted under ir_bias_mode = aux, written on
+         !> the trajectory's own schedule so the bank on disk is never newer than the positions
+         !> it belongs to. It carries X, P and eta per mode along with the calibrated couplings,
+         !> which are state in the same sense the velocities are. "none" disables it. The loader
+         !> refuses a file whose frequency grid disagrees with the current run rather than adopt
+         !> it, and a refused or missing file is not fatal: the run calibrates a fresh bank.
+         !> @modes md
+         !> @needs ir_bias_mode
+         !> @see ir_bias_mode ir_restart_file ir_xl_restart_file
+      else if (keyword == 'ir_aux_restart_file') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ir_aux_restart_file
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ir_aux_restart_file", params%ir_aux_restart_file)
          !> @kw ir_fft_acf_ratio
          !> Fraction of the stored ensemble kept as lags under ir_bias_mode = fft, GPUMD's
          !> convention (default 0.1). This and nothing else sets the frequency resolution:

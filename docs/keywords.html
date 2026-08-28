@@ -240,11 +240,11 @@ footer {
 <header class="masthead">
 <p class="eyebrow">TurboGAP &middot; keyword reference</p>
 <h1>Keywords</h1>
-<p class="lede">343 keywords across the input file and the potential (.gap) file. Types and defaults are read out of <code>src/types.f90</code>, and the rest out of the branch in <code>src/read_files.f90</code> that parses the keyword, so nothing here is transcribed by hand.</p>
+<p class="lede">349 keywords across the input file and the potential (.gap) file. Types and defaults are read out of <code>src/types.f90</code>, and the rest out of the branch in <code>src/read_files.f90</code> that parses the keyword, so nothing here is transcribed by hand.</p>
 </header>
 <nav class="rail" aria-label="Groups">
 <p class="railhead">the input file</p>
-<a href="#general"><span>General</span><span class="n">47</span></a>
+<a href="#general"><span>General</span><span class="n">53</span></a>
 <a href="#run-control"><span>Run control</span><span class="n">19</span></a>
 <a href="#molecular-dynamics"><span>Molecular dynamics</span><span class="n">22</span></a>
 <a href="#nested-sampling"><span>Nested sampling</span><span class="n">6</span></a>
@@ -315,6 +315,60 @@ footer {
 <td class="mo">md</td>
 <td class="de">How the running dipole autocorrelation is formed: &quot;block&quot; (the default) averages over the pairs the stored ensemble holds, and &quot;exponential&quot; carries it as a set of auxiliary variables integrated alongside the atoms, one per lag, decaying with constant ir_tau_mem. The exponential form weights the past by exp(-age/ir_tau_mem) instead of a hard window, so the bias is a decaying functional of the trajectory and the force does not jump when a frame falls off the end of the buffer. It is the Markovian embedding of a generalized Langevin bias in which the target spectrum plays the part of the bath.</td>
 <td class="dp"><span class="dep">needs <code>exp_labels</code></span><span class="dep">see <code>ir_tau_mem</code></span><span class="dep">see <code>ir_lag_factor</code></span><span class="dep">see <code>ir_estimator</code></span></td>
+</tr>
+<tr data-h="ir_aux_damping bandwidth gamma_k of each resonator under ir_bias_mode = aux: the width of one channel of the filter bank, which is what the experimental resolution actually is. it appears in the linear-response calibration of the couplings, g_k = mu_k w_k sqrt(gamma_k &lt;r_target^2&gt;/s_mm(w_k)), so it sets how hard the dipole has to push to reach a given amplitude. 5 to 10 cm^-1 is the usual experimental figure." data-m="md">
+<td class="kw"><code>ir_aux_damping</code></td>
+<td class="ty">real</td>
+<td class="df"><code>10.0</code></td>
+<td class="un">cm^-1</td>
+<td class="mo">md</td>
+<td class="de">Bandwidth Gamma_k of each resonator under ir_bias_mode = aux: the width of one channel of the filter bank, which is what the experimental resolution actually is. It appears in the linear-response calibration of the couplings, g_k = mu_k w_k sqrt(Gamma_k &lt;R_target^2&gt;/S_MM(w_k)), so it sets how hard the dipole has to push to reach a given amplitude. 5 to 10 cm^-1 is the usual experimental figure.</td>
+<td class="dp"><span class="dep">needs <code>ir_bias_mode</code></span><span class="dep">see <code>ir_bias_mode</code></span><span class="dep">see <code>ir_aux_eff_mass</code></span><span class="dep">see <code>ir_resolution</code></span></td>
+</tr>
+<tr data-h="ir_aux_eff_mass fictitious mass of each resonator in the envelope-targeted bank, ir_bias_mode = aux. choose it well above an atomic mass (10^2 to 10^3 amu) so the auxiliary variables evolve more slowly than the nuclei and never set the timestep. it largely cancels out of the amplitude the bank reports, because the coupling is calibrated against it." data-m="md">
+<td class="kw"><code>ir_aux_eff_mass</code></td>
+<td class="ty">real</td>
+<td class="df"><code>100.0</code></td>
+<td class="un">amu</td>
+<td class="mo">md</td>
+<td class="de">Fictitious mass of each resonator in the envelope-targeted bank, ir_bias_mode = aux. Choose it well above an atomic mass (10^2 to 10^3 amu) so the auxiliary variables evolve more slowly than the nuclei and never set the timestep. It largely cancels out of the amplitude the bank reports, because the coupling is calibrated against it.</td>
+<td class="dp"><span class="dep">needs <code>ir_bias_mode</code></span><span class="dep">see <code>ir_bias_mode</code></span><span class="dep">see <code>ir_aux_damping</code></span><span class="dep">see <code>ir_aux_tau</code></span></td>
+</tr>
+<tr data-h="ir_aux_eta_max anti-windup clamp on the feedback friction under ir_bias_mode = aux, as a fraction of each resonator&#x27;s own frequency. when a target is unreachable the integral in etadot winds up without bound, and past |eta| = 2 w_k the channel is overdamped: it stops resonating and would report an intensity for a frequency it can no longer sense. the default of 0.1 leaves the resonance essentially untouched, since the frequency shift it permits is second order, sqrt(w^2 - (eta/2)^2)." data-m="md">
+<td class="kw"><code>ir_aux_eta_max</code></td>
+<td class="ty">real</td>
+<td class="df"><code>0.1</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">Anti-windup clamp on the feedback friction under ir_bias_mode = aux, as a fraction of each resonator&#x27;s own frequency. When a target is unreachable the integral in etadot winds up without bound, and past |eta| = 2 w_k the channel is overdamped: it stops resonating and would report an intensity for a frequency it can no longer sense. The default of 0.1 leaves the resonance essentially untouched, since the frequency shift it permits is second order, sqrt(w^2 - (eta/2)^2).</td>
+<td class="dp"><span class="dep">needs <code>ir_bias_mode</code></span><span class="dep">see <code>ir_bias_mode</code></span><span class="dep">see <code>ir_aux_tau</code></span><span class="dep">see <code>ir_aux_gain</code></span></td>
+</tr>
+<tr data-h="ir_aux_gain proportional gain kappa_k of the amplitude controller under ir_bias_mode = aux, as a rate. negative, the default, means 2/ir_aux_tau, which critically damps the control loop: the linearised envelope obeys nu&#x27;&#x27; + kappa nu&#x27; + nu/tau^2 = 0. setting it to zero leaves a pure integral controller, which is marginally stable and rings forever with period 2 pi ir_aux_tau -- and the ringing is in the reported spectrum, because the resonator amplitude is the observable." data-m="md">
+<td class="kw"><code>ir_aux_gain</code></td>
+<td class="ty">real</td>
+<td class="df"><code>-1.0</code></td>
+<td class="un">1/fs</td>
+<td class="mo">md</td>
+<td class="de">Proportional gain kappa_k of the amplitude controller under ir_bias_mode = aux, as a rate. Negative, the default, means 2/ir_aux_tau, which critically damps the control loop: the linearised envelope obeys nu&#x27;&#x27; + kappa nu&#x27; + nu/tau^2 = 0. Setting it to zero leaves a pure integral controller, which is MARGINALLY STABLE and rings forever with period 2 pi ir_aux_tau -- and the ringing is in the reported spectrum, because the resonator amplitude is the observable.</td>
+<td class="dp"><span class="dep">needs <code>ir_bias_mode</code></span><span class="dep">see <code>ir_bias_mode</code></span><span class="dep">see <code>ir_aux_tau</code></span><span class="dep">see <code>ir_aux_eta_max</code></span></td>
+</tr>
+<tr data-h="ir_aux_restart_file where the envelope-targeted bank is persisted under ir_bias_mode = aux, written on the trajectory&#x27;s own schedule so the bank on disk is never newer than the positions it belongs to. it carries x, p and eta per mode along with the calibrated couplings, which are state in the same sense the velocities are. &quot;none&quot; disables it. the loader refuses a file whose frequency grid disagrees with the current run rather than adopt it, and a refused or missing file is not fatal: the run calibrates a fresh bank." data-m="md">
+<td class="kw"><code>ir_aux_restart_file</code></td>
+<td class="ty">string</td>
+<td class="df"><code>ir_aux_restart.dat</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">Where the envelope-targeted bank is persisted under ir_bias_mode = aux, written on the trajectory&#x27;s own schedule so the bank on disk is never newer than the positions it belongs to. It carries X, P and eta per mode along with the calibrated couplings, which are state in the same sense the velocities are. &quot;none&quot; disables it. The loader refuses a file whose frequency grid disagrees with the current run rather than adopt it, and a refused or missing file is not fatal: the run calibrates a fresh bank.</td>
+<td class="dp"><span class="dep">needs <code>ir_bias_mode</code></span><span class="dep">see <code>ir_bias_mode</code></span><span class="dep">see <code>ir_restart_file</code></span><span class="dep">see <code>ir_xl_restart_file</code></span></td>
+</tr>
+<tr data-h="ir_aux_tau relaxation time of the amplitude controller under ir_bias_mode = aux. the friction eta_k integrates the envelope error as etadot = (r^2/r_target^2 - 1)/tau^2, so tau is how quickly the bank is pulled back onto the experimental amplitude. it must be long compared with 1/w_k: the controller acts on the cycle-averaged envelope, and that averaging is what makes the default gain critical." data-m="md">
+<td class="kw"><code>ir_aux_tau</code></td>
+<td class="ty">real</td>
+<td class="df"><code>500.0</code></td>
+<td class="un">fs</td>
+<td class="mo">md</td>
+<td class="de">Relaxation time of the amplitude controller under ir_bias_mode = aux. The friction eta_k integrates the envelope error as etadot = (R^2/R_target^2 - 1)/tau^2, so tau is how quickly the bank is pulled back onto the experimental amplitude. It must be long compared with 1/w_k: the controller acts on the cycle-averaged envelope, and that averaging is what makes the default gain critical.</td>
+<td class="dp"><span class="dep">needs <code>ir_bias_mode</code></span><span class="dep">see <code>ir_bias_mode</code></span><span class="dep">see <code>ir_aux_gain</code></span><span class="dep">see <code>ir_aux_eta_max</code></span></td>
 </tr>
 <tr data-h="ir_bias_mode which ir machinery to run: &quot;acf&quot; (the default), &quot;xl&quot; or &quot;fft&quot;. it selects the estimator for prediction as well as for the bias, despite the name. under &quot;fft&quot; the spectrum comes from ir_fft.f90, a translation of tnep/spectroscopy.py: the correlation is computed over the whole stored ensemble by fft, the longest lag is ir_fft_acf_ratio of it, the quantum correction is explicit and defaults to the harmonic w(1 - exp(-hbar w/kt)) rather than a fixed nu^2, and the result is smoothed. the mad force is the exact gradient of the mismatch with respect to the newest dipole, as under &quot;acf&quot;, and goes through the same dmu/dr contraction. it is also the only mode available to `turbogap predict`, where a trajectory on disk is read frame by frame and the interval comes from the time= tags. under &quot;acf&quot; the spectrum is the cosine transform of an autocorrelation of the stored dipoles and the mad force is the gradient of the mismatch with respect to the newest configuration. under &quot;xl&quot; it is the auxiliary-variable bias: a bank of damped resonators, a quadrature pair per fitted frequency, integrated alongside the atoms and driven by the dipole. the bank is the fourier transform -- a lorentzian filter bank written as equations of motion -- so no trajectory is stored, there is no hard window for a frame to fall out of, and the resolution is set by the damping rather than by a longest lag. the bias is the exact gradient of the spectral mismatch with respect to the dipole that drives the bank. the price is one stored frame of lag: the gradient cannot be formed until the descriptor pass that produced the dipole is over, so it is contracted against the next frame&#x27;s dipole gradient. that is what lets it be contracted inside the pass, with no (3,3,n_atoms) tensor formed and a third of the work in the descriptor term. the two modes share the experimental grid, ir_nu_min, ir_nu_max, ir_nu_power, ir_match_scale, ir_match_offset, ir_weight_by_spacing, ir_stride and exp_energy_scales. everything from ir_lag_factor to ir_tau_mem describes an autocorrelation and is ignored under &quot;xl&quot;." data-m="md">
 <td class="kw"><code>ir_bias_mode</code></td>

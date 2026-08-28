@@ -59,6 +59,11 @@ program turbogap
    use soap_turbo_functions
    use mad_ir
    use mad_ir_xl
+   use ir_auxiliary_dynamics, only: ir_aux_state, ir_aux_active, ir_aux_setup, &
+                                    ir_aux_advance, ir_aux_evaluate, ir_aux_forces, &
+                                    ir_aux_calibrate, ir_aux_calibrated, ir_aux_save, &
+                                    ir_aux_write_spectrum, ir_aux_bank_energy, &
+                                    ir_aux_energy_pumped
    use ir_fft
    use ir_fft_io
 #ifdef _MPIF90
@@ -156,6 +161,10 @@ program turbogap
    real(dp) :: mad_ir_scale = 0.d0
    logical :: mad_ir_applied = .false.
    logical :: mad_ir_ok, mad_ir_resumed
+!  The envelope-targeted bank, ir_bias_mode = aux. Calibrated once, when the
+!  ACF ensemble first fills, so the flag says whether that has happened yet.
+   logical :: ir_aux_ok, ir_aux_resumed
+   character(len=512) :: ir_aux_msg
    character(len=512) :: mad_ir_msg
 !  Has anything been appended to ir_prediction.dat yet? The first block cannot
 !  be identified by its step number the way the per-frame observables' can --
@@ -1496,6 +1505,56 @@ program turbogap
                         write (*, *) '.......................................|'
                      end if
                   end if
+!                 The envelope-targeted bank. Set up here for the same reason
+!                 the extended-Lagrangian one is: it takes the fitted grid from
+!                 mad_ir_state, so the experiment is still read exactly once.
+!                 What it does NOT do here is calibrate -- the couplings come
+!                 from the autocorrelation by linear response, and there is no
+!                 autocorrelation until the ensemble fills. That happens in the
+!                 bias block below, on the first step mad_ir_ready holds.
+                  if (trim(params%ir_bias_mode) == "aux") then
+                     if (.not. params%valid_ir) then
+                        write (*, *) "ERROR: ir_bias_mode = aux needs an experimental spectrum."
+                        write (*, *) "       Add ir to exp_labels with a file in exp_data_files,"
+                        write (*, *) "       or leave ir_bias_mode at acf for a prediction run."
+                        stop
+                     end if
+                     call ir_aux_setup(mad_ir_state, n_sites, params%md_step, params%ir_stride, &
+                                       params%ir_aux_eff_mass, params%ir_aux_damping, &
+                                       params%ir_aux_tau, params%ir_aux_gain, &
+                                       params%ir_aux_eta_max, params%ir_aux_restart_file, &
+                                       ir_aux_ok, ir_aux_resumed, ir_aux_msg)
+                     if (.not. ir_aux_ok) then
+                        write (*, *) "ERROR: ", trim(ir_aux_msg)
+                        stop
+                     end if
+                     if (rank == 0) then
+                        write (*, *) 'MAD IR, envelope-targeted bank:        |'
+                        write (*, '(A,I12,A)') '  *) resonator modes:   ', &
+                           ir_aux_state%n_modes, '         |'
+                        write (*, '(A,F12.4,A)') '  *) fictitious mass:   ', &
+                           params%ir_aux_eff_mass, ' amu     |'
+                        write (*, '(A,F12.4,A)') '  *) bank resolution:   ', &
+                           params%ir_aux_damping, ' cm^-1   |'
+                        write (*, '(A,F12.4,A)') '  *) controller time:   ', &
+                           ir_aux_state%tau(1), ' fs      |'
+                        write (*, '(A,ES12.4,A)') '  *) controller gain:   ', &
+                           ir_aux_state%kappa(1), ' 1/fs    |'
+                        write (*, '(A,F12.4,A)') '  *) critical gain:     ', &
+                           2.d0/ir_aux_state%tau(1), ' 1/fs    |'
+                        if (ir_aux_resumed) then
+                           write (*, '(A,I12,A)') '  *) resumed, advances: ', &
+                              ir_aux_state%n_steps, '         |'
+                        else
+                           write (*, *) '  *) uncalibrated: the bank waits    |'
+                           write (*, *) '     for the ACF ensemble to fill   |'
+                           write (*, *) '     and applies no force until it  |'
+                           write (*, *) '     does.                          |'
+                        end if
+                        if (len_trim(ir_aux_msg) > 0) write (*, *) '     ', trim(ir_aux_msg)
+                        write (*, *) '.......................................|'
+                     end if
+                  end if
                end if
 !              Only a biased run needs dmu/dr; see mad_ir_need_dmu. Set every
 !              step rather than once, because it costs nothing and there is no
@@ -2445,6 +2504,73 @@ program turbogap
                   end if
                   mad_ir_applied = mad_ir_xl_ready(mad_ir_xl_state)
                   if (.not. mad_ir_applied) mad_ir_energy = 0.d0
+               else if (ir_aux_active) then
+!                 ================================================================
+!                 THE ENVELOPE-TARGETED BANK (ir_bias_mode = aux).
+!
+!                 The bank is a filter bank whose OWN amplitude is held at the
+!                 experimental one by feedback friction, and the atoms feel it
+!                 only through the dipole coupling. So unlike the other three
+!                 modes there is no loss to differentiate here: the force is
+!                 escale * sum_k g_k J_i^T X_k, whose generator is the coupling
+!                 energy ir_aux_evaluate reports. ir_auxiliary_dynamics.f90's
+!                 header has why the restraint cannot be a potential instead.
+!
+!                 Calibration first, and once. It needs S_MM(w_k) from the
+!                 autocorrelation, so it cannot happen at setup time; this is
+!                 the first step on which the ensemble is full. Until then the
+!                 branch does nothing at all and the run is plain MD, which is
+!                 exactly the unbiased trajectory the calibration wants.
+!                 ================================================================
+                  if (.not. ir_aux_calibrated(ir_aux_state) .and. mad_ir_ready(mad_ir_state)) then
+                     call time_start(time%ir_predict)
+                     call ir_aux_calibrate(ir_aux_state, mad_ir_state, ir_aux_ok, ir_aux_msg)
+                     call time_end(time%ir_predict)
+                     if (rank == 0) then
+                        if (ir_aux_ok) then
+                           write (*, *) 'MAD IR: ', trim(ir_aux_msg)
+                        else
+                           write (*, *) 'WARNING: ', trim(ir_aux_msg)
+                        end if
+                     end if
+                     if (.not. ir_aux_ok) then
+                        write (*, *) "ERROR: ir_bias_mode = aux could not calibrate the bank."
+                        stop
+                     end if
+                     call get_time(mad_ir_t_now)
+                     mad_ir_t_first = mad_ir_t_now - time3
+                     mad_ir_step_first = md_istep
+                  end if
+                  if (ir_aux_calibrated(ir_aux_state)) then
+                     call get_energy_scale(params%do_md, params%do_mc, md_istep, params%md_nsteps, &
+                                           mc_istep, params%mc_nsteps, &
+                                           params%exp_energy_scales_initial(params%ir_idx), &
+                                           params%exp_energy_scales_final(params%ir_idx), mad_ir_scale)
+                     call time_start(time%ir_predict)
+!                    Advance before evaluate, for the same reason the extended
+!                    Lagrangian does: the energy and the force both belong to a
+!                    bank that already knows this frame's dipole.
+                     call ir_aux_advance(ir_aux_state, dipole)
+                     call ir_aux_evaluate(ir_aux_state, mad_ir_scale, dipole, mad_ir_energy)
+                     call time_end(time%ir_predict)
+                     energies_exp = energies_exp + mad_ir_energy/dfloat(n_sites)
+                     exp_dissimilarity = exp_dissimilarity + ir_aux_state%dissim
+                     exp_dissim_ref = exp_dissim_ref + ir_aux_state%dissim_ref
+                     if (params%exp_energies) then
+                        energies = energies + mad_ir_energy/dfloat(n_sites)
+                        energy = sum(energies)
+                     end if
+                     energy_exp = sum(energies_exp)
+                     if (params%exp_forces) then
+                        call time_start(time%ir_forces)
+                        call ir_aux_forces(ir_aux_state, mad_ir_scale, mad_ir_dmu_dr, forces)
+                        call time_end(time%ir_forces)
+                     end if
+                     mad_ir_applied = .true.
+                  else
+                     mad_ir_energy = 0.d0
+                     mad_ir_applied = .false.
+                  end if
                else if (params%valid_ir .and. trim(params%ir_bias_mode) == "fft" &
                         .and. mad_ir_ready(mad_ir_state)) then
 !                 ================================================================
@@ -2578,6 +2704,16 @@ program turbogap
                                             mad_ir_xl_ok, mad_ir_xl_msg)
                         if (.not. mad_ir_xl_ok) write (*, *) "WARNING: ", trim(mad_ir_xl_msg)
                      end if
+!                    And the envelope-targeted bank. X, P and eta are state
+!                    in the same sense the velocities are, and eta especially:
+!                    it is an integrator, so dropping it throws away everything
+!                    the controller had learned about the mismatch.
+                     if (ir_aux_active .and. ir_aux_calibrated(ir_aux_state) .and. &
+                         trim(params%ir_aux_restart_file) /= "none") then
+                        call ir_aux_save(ir_aux_state, params%ir_aux_restart_file, &
+                                         ir_aux_ok, ir_aux_msg)
+                        if (.not. ir_aux_ok) write (*, *) "WARNING: ", trim(ir_aux_msg)
+                     end if
                   end if
                end if
                call time_end(time%ir_io)
@@ -2696,6 +2832,10 @@ program turbogap
                   if (mad_ir_xl_active) then
                      call mad_ir_xl_write_spectrum(mad_ir_xl_state, "ir_xl_spectrum.dat", &
                                                    params%valid_ir)
+                  end if
+                  if (ir_aux_active .and. ir_aux_calibrated(ir_aux_state)) then
+                     call ir_aux_write_spectrum(ir_aux_state, "ir_aux_spectrum.dat", &
+                                                params%valid_ir)
                   end if
                   call time_end(time%ir_io)
                end if
