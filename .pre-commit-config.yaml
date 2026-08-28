@@ -38,6 +38,38 @@ repos:
         # `make docs`.
         exclude: ^(src/soap_turbo/|src/third_party/|src/keyword_help\.f90$)
 
+      # The CUDA and C++ counterpart, over src/gpu. Same arrangement as
+      # fprettify above and for the same reason: a local hook taking the tool
+      # from PyPI, pinned, so the hook and the copy tools/setup_dev_env.sh puts
+      # in the venv are the same wheel. The pre-commit/mirrors-clang-format
+      # repo would work too, but it installs through npm, which is a second
+      # package manager to keep alive on every machine that builds this.
+      #
+      # 20.1.8 is pinned because clang-format's output moves between major
+      # versions -- measured over src/gpu, 18.1.8 and 20.1.8 disagree about
+      # where to break six argument lists. The number must match
+      # CLANG_FORMAT_VERSION in tools/setup_dev_env.sh.
+      #
+      # .clang-format holds the rules and states them explicitly rather than
+      # leaning on "LLVM style", whose meaning is whatever the installed binary
+      # thinks it is. --style=file is the default when that file exists; it is
+      # written out so a manual run cannot be told otherwise.
+      #
+      # files: is an allow-list over src/, not a list of the directories that
+      # happen to hold C++ today, so a new .cu outside src/gpu is covered the
+      # day it lands. The whitespace fixers below need no exclusion for these:
+      # clang-format emits no trailing whitespace and always ends a file with a
+      # newline, so unlike the Fortran case the two never disagree.
+      - id: clang-format
+        name: clang-format (CUDA/C/C++ source formatting)
+        entry: clang-format
+        language: python
+        additional_dependencies: ["clang-format==20.1.8"]
+        args: ["-i", "--style=file"]
+        types: [file]
+        files: ^src/.*\.(cu|cuh|cc|cpp|c|h|hpp)$
+        exclude: ^(src/soap_turbo/|src/third_party/)
+
   - repo: local
     hooks:
       # The input-keyword reference is generated from the !> block above each

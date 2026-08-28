@@ -7,12 +7,20 @@
 # is not reconstructible from `pip install pre-commit`. Three things about it
 # are load-bearing and all three are easy to get wrong.
 #
-#   1. fprettify is PINNED to 0.3.7. The pre-commit hook pins it too, but a
-#      manual `fprettify` run must agree with the hook or the two fight over
-#      every file. Formatting drift between the CPU and GPU branches is not
-#      cosmetic here -- it inflated the measured merge surface of
-#      exp_interface.f90 by an order of magnitude (757 diverged lines reported
-#      against a real 67), which is the whole reason the trees are normalised.
+#   1. BOTH FORMATTERS ARE PINNED -- fprettify to 0.3.7 for the Fortran, and
+#      clang-format to 20.1.8 for the CUDA and C++ under src/gpu. The
+#      pre-commit hooks pin the same two versions from the same PyPI wheels, so
+#      a manual run and the hook produce identical bytes; if they disagree the
+#      two fight over every file. Formatting drift between the CPU and GPU
+#      branches is not cosmetic here -- it inflated the measured merge surface
+#      of exp_interface.f90 by an order of magnitude (757 diverged lines
+#      reported against a real 67), which is the whole reason the trees are
+#      normalised.
+#
+#      clang-format's output moves between MAJOR versions -- an unpinned run
+#      would rewrap argument lists the pinned one leaves alone -- so the number
+#      below and the `rev` in .pre-commit-config.yaml are one setting written
+#      twice. Change them together or not at all.
 #
 #   2. The host may be PEP-668 externally managed (alt is). `pip install
 #      --user` fails there, and `--break-system-packages` is the wrong answer
@@ -39,6 +47,7 @@ repo=$(cd "$here/.." && pwd)
 
 VENV=${TURBOGAP_VENV:-$HOME/.venvs/turbogap-tools}
 FPRETTIFY_VERSION=0.3.7
+CLANG_FORMAT_VERSION=20.1.8
 
 check_only=0
 [ "${1:-}" = "--check" ] && check_only=1
@@ -58,6 +67,19 @@ if [ "$check_only" = 1 ]; then
     fi
   else
     say "  MISS  fprettify -- run tools/setup_dev_env.sh"; rc=1
+  fi
+
+  # clang-format prints "clang-format version X.Y.Z", sometimes with a build
+  # hash after it, so pull the number out rather than taking the last field.
+  if [ -x "$VENV/bin/clang-format" ]; then
+    v=$("$VENV/bin/clang-format" --version 2>&1 | sed -n 's/.*version \([0-9][0-9.]*\).*/\1/p')
+    if [ "$v" = "$CLANG_FORMAT_VERSION" ]; then
+      say "  ok    clang-format $v"
+    else
+      say "  WRONG clang-format $v (expected $CLANG_FORMAT_VERSION)"; rc=1
+    fi
+  else
+    say "  MISS  clang-format -- run tools/setup_dev_env.sh"; rc=1
   fi
 
   if [ -x "$VENV/bin/pre-commit" ]; then
@@ -95,7 +117,8 @@ PY="$VENV/bin/python"
 
 say "installing pinned tooling"
 "$PY" -m pip install --quiet --upgrade pip
-"$PY" -m pip install --quiet "fprettify==$FPRETTIFY_VERSION" pre-commit
+"$PY" -m pip install --quiet "fprettify==$FPRETTIFY_VERSION" \
+                            "clang-format==$CLANG_FORMAT_VERSION" pre-commit
 
 # --------------------------------------------------------------- install hook
 # pre-commit needs fprettify's own pinned copy, which it builds into its cache
@@ -121,11 +144,20 @@ Verify at any time with:
 
 Notes:
 
-  * fprettify rewrites files DURING 'git commit', and when it does the commit
-    ABORTS. That is not a failure -- rebuild, re-run the suite, 'git add' and
-    commit again. Confirm the rewrite was whitespace-only first:
+  * fprettify and clang-format rewrite files DURING 'git commit', and when
+    they do the commit ABORTS. That is not a failure -- rebuild, re-run the
+    suite, 'git add' and commit again. Confirm the rewrite was layout-only
+    first, with the check that fits the language:
 
-        git diff -w --ignore-blank-lines    # must report nothing
+        git diff -w --ignore-blank-lines                  # Fortran
+        tools/check_reformat_only.py HEAD src/gpu/*.cu    # CUDA and C++
+
+    '-w' is the wrong instrument for the C++. fprettify only ever moves
+    whitespace within a line, so ignoring whitespace answers the question;
+    clang-format also BREAKS long lines, and breaking a #define adds a '\\'
+    continuation -- a real new token that '-w' reports as a change and cannot
+    tell you is harmless. check_reformat_only.py compares token streams, so it
+    can. (Only the GPU tree carries it, along with the C++ it is for.)
 
   * To reformat everything after changing the settings (rare, and never on one
     branch alone -- see .pre-commit-config.yaml):
