@@ -63,7 +63,8 @@ program turbogap
                                     ir_aux_advance, ir_aux_evaluate, ir_aux_forces, &
                                     ir_aux_calibrate, ir_aux_calibrated, ir_aux_save, &
                                     ir_aux_write_spectrum, ir_aux_bank_energy, &
-                                    ir_aux_energy_pumped
+                                    ir_aux_energy_pumped, ir_aux_stability, &
+                                    ir_aux_escale_max
    use ir_fft
    use ir_fft_io
 #ifdef _MPIF90
@@ -165,6 +166,13 @@ program turbogap
 !  ACF ensemble first fills, so the flag says whether that has happened yet.
    logical :: ir_aux_ok, ir_aux_resumed
    character(len=512) :: ir_aux_msg
+!  The largest back-reaction scale the run will reach, and the temperature the
+!  ensemble was collected at: the two inputs to the stability bound.
+   real(dp) :: ir_aux_escale_top = 0.d0
+   real(dp) :: ir_aux_temp = 0.d0
+!  mad_ir_evaluate is called under aux purely for the INDEPENDENT dissimilarity
+!  it leaves behind, so its energy is discarded here.
+   real(dp) :: ir_aux_acf_energy = 0.d0
    character(len=512) :: mad_ir_msg
 !  Has anything been appended to ir_prediction.dat yet? The first block cannot
 !  be identified by its step number the way the per-frame observables' can --
@@ -2524,7 +2532,15 @@ program turbogap
 !                 ================================================================
                   if (.not. ir_aux_calibrated(ir_aux_state) .and. mad_ir_ready(mad_ir_state)) then
                      call time_start(time%ir_predict)
-                     call ir_aux_calibrate(ir_aux_state, mad_ir_state, ir_aux_ok, ir_aux_msg)
+!                    The bound is tested against the WORST case the ramp will
+!                    reach, and at the LOWER of the two temperatures, since a
+!                    colder signal is a softer one and softens the threshold.
+                     ir_aux_escale_top = max(params%exp_energy_scales_initial(params%ir_idx), &
+                                             params%exp_energy_scales_final(params%ir_idx))
+                     ir_aux_temp = min(params%t_beg, params%t_end)
+                     if (ir_aux_temp <= 0.d0) ir_aux_temp = max(params%t_beg, params%t_end)
+                     call ir_aux_calibrate(ir_aux_state, mad_ir_state, ir_aux_temp, &
+                                           ir_aux_escale_top, ir_aux_ok, ir_aux_msg)
                      call time_end(time%ir_predict)
                      if (rank == 0) then
                         if (ir_aux_ok) then
@@ -2536,6 +2552,37 @@ program turbogap
                      if (.not. ir_aux_ok) then
                         write (*, *) "ERROR: ir_bias_mode = aux could not calibrate the bank."
                         stop
+                     end if
+!                    ================================================================
+!                    THE STABILITY BOUND. The coupling -g_k X_k.s is bilinear and
+!                    therefore unbounded below; it is held only by the resonator
+!                    spring and by the stiffness of the signal against the physical
+!                    potential. Past Lambda = 1 the combined quadratic form is
+!                    indefinite and the pair runs away exponentially -- measured,
+!                    for 64 H2O at the defaults, as 1e8 K within ten steps.
+!
+!                    The linear-response calibration knows nothing about this: it
+!                    matches amplitudes, and whether the resulting coupling is
+!                    below threshold is a separate question it never asks. So the
+!                    check is here, it is made before the first biased step, and
+!                    it is fatal -- a run above threshold does not produce a worse
+!                    answer, it produces no answer at all.
+!                    ================================================================
+                     if (ir_aux_state%stab >= 1.d0) then
+                        if (rank == 0) then
+                           write (*, *) "ERROR: ir_bias_mode = aux is above its stability threshold."
+                           write (*, '(A,ES12.4)') "        stability number Lambda = ", ir_aux_state%stab
+                           write (*, *) "        Lambda must be below 1; the bilinear coupling runs away above it."
+                           write (*, '(A,ES12.4)') "        largest usable exp_energy_scales = ", &
+                              ir_aux_escale_max(ir_aux_state)
+                           write (*, '(A,ES12.4)') "        this run asked for               = ", ir_aux_escale_top
+                           write (*, *) "        Lower exp_energy_scales, or raise ir_aux_damping"
+                           write (*, *) "        (which lowers every g_k), and try again."
+                        end if
+                        call turbogap_abort()
+                     else if (ir_aux_state%stab >= 0.5d0 .and. rank == 0) then
+                        write (*, '(A,ES10.2,A)') " WARNING: ir_aux stability number ", &
+                           ir_aux_state%stab, " is above 0.5; the bias is close to runaway."
                      end if
                      call get_time(mad_ir_t_now)
                      mad_ir_t_first = mad_ir_t_now - time3
@@ -2554,8 +2601,25 @@ program turbogap
                      call ir_aux_evaluate(ir_aux_state, mad_ir_scale, dipole, mad_ir_energy)
                      call time_end(time%ir_predict)
                      energies_exp = energies_exp + mad_ir_energy/dfloat(n_sites)
-                     exp_dissimilarity = exp_dissimilarity + ir_aux_state%dissim
-                     exp_dissim_ref = exp_dissim_ref + ir_aux_state%dissim_ref
+!                    ================================================================
+!                    THE FIGURE OF MERIT IS THE ACF SPECTRUM, NOT THE BANK'S.
+!
+!                    The controller drives R_k onto R_target by construction, so
+!                    the bank's own mismatch falls to zero whether or not the ATOMS
+!                    have learned anything -- it measures the controller, not the
+!                    physics. The independent estimate is the one mad_ir forms from
+!                    the stored dipoles, which no part of this mode steers, and that
+!                    is what goes in thermo.log.
+!
+!                    Called with a zero energy scale: mad_ir_evaluate sets dissim
+!                    and dissim_ref regardless of it, so this buys the honest number
+!                    and contributes no energy and no force.
+!                    ================================================================
+                     call time_start(time%ir_predict)
+                     call mad_ir_evaluate(mad_ir_state, 0.d0, ir_aux_acf_energy, mad_ir_lambda)
+                     call time_end(time%ir_predict)
+                     exp_dissimilarity = exp_dissimilarity + mad_ir_state%dissim
+                     exp_dissim_ref = exp_dissim_ref + mad_ir_state%dissim_ref
                      if (params%exp_energies) then
                         energies = energies + mad_ir_energy/dfloat(n_sites)
                         energy = sum(energies)

@@ -152,6 +152,92 @@
 ! total for thermo.log, the way the GLE thermostat's ledger does.
 !
 !==========================================================================
+! WHAT THIS IS, IN GENERAL
+!==========================================================================
+!
+! Nothing below is about infrared spectra. The module takes a three-component
+! SIGNAL s(q) and its Jacobian ds_a/dr_jb, and it steers the power that signal
+! carries in a set of frequency channels. Read "dipole" as "signal" throughout
+! and the whole file is observable-agnostic:
+!
+!   observable                signal s(q)              Jacobian
+!   ------------------------  -----------------------  --------------------
+!   IR absorption             total dipole M(q)        accumulate_dmu_dr
+!   Raman                     polarizability alpha(q)  d alpha / d r
+!   dynamic structure S(Q,w)  rho_Q = sum_j e^{iQ.r_j} i Q_a e^{iQ.r_j}
+!   VDOS / phonon DOS         mass-weighted velocity   trivial
+!   dielectric relaxation     M(q), low w              accumulate_dmu_dr
+!   Green-Kubo transport      stress, heat flux        d sigma / d r
+!
+! The class is: any observable that is a QUADRATIC FORM IN THE HISTORY of a
+! configurational signal,
+!
+!   O_k = INT INT dt dt' K_k(t - t') s(t) s(t')
+!
+! which for K_k = cos(w_k tau) is the power spectral density at w_k, and which
+! covers every entry above. What (1) does is evaluate that quadratic form by
+! INTEGRATION rather than by storing a trajectory and transforming it, and what
+! the controller does is drive it to a target. Neither step knows or cares what
+! s is.
+!
+! To add an observable, three things are needed and nothing else:
+!   1. s(q), broadcast so that every MPI rank holds the same value
+!   2. ds_a/dr_jb in the (3, 3, n_sites) layout accumulate_dmu_dr already uses
+!   3. a target spectrum on the fitted grid
+! The bank, the controller, the calibration and the stability bound below are
+! then unchanged. A signal with a different number of components needs the
+! leading dimension 3 generalised, and nothing else.
+!
+!==========================================================================
+! THE STABILITY BOUND
+!==========================================================================
+!
+! The coupling -g_k X_k.s is BILINEAR, and a bilinear form is unbounded below.
+! It is held in check only by the two quadratic terms it sits between: the
+! resonator's own spring and the stiffness of the signal against the physical
+! potential. Write the latter, in the Gaussian approximation, as
+!
+!   k_s = 3 k_B T / C(0),      C(0) = <|s - <s>|^2>                      (S1)
+!
+! (three components, equipartition per component). Minimising the combined
+! quadratic form over the X_k at fixed s gives an effective signal stiffness
+!
+!   k_eff = k_s - gamma sum_k g_k^2/(mu_k w_k^2)                         (S2)
+!
+! where gamma is whatever prefactor the back-reaction carries -- here
+! energy_scale/n_live. The system runs away the moment k_eff goes negative, so
+! define the dimensionless STABILITY NUMBER
+!
+!   Lambda = gamma ( sum_k g_k^2/(mu_k w_k^2) ) C(0) / (3 k_B T)         (S3)
+!
+!   STABLE  iff  Lambda < 1
+!
+! The same condition falls out of the dynamics rather than the statics: for a
+! signal of effective mass m_s and frequency w_s, the coupled characteristic
+! equation is (lam^2 + w_k^2)(lam^2 + w_s^2) = (g_k/mu_k)(gamma g_k/m_s), whose
+! root goes real and positive at exactly (S3), with m_s cancelling.
+!
+! WHY THIS MATTERS. The linear-response calibration (10) fixes g_k by matching
+! AMPLITUDES. It never asks whether the resulting coupling is below (S3), and
+! there is no reason it should come out that way -- the two conditions involve
+! different physics. So a bank calibrated exactly as section 4 of
+! mad_ir_notes.md prescribes can be, and for liquid water at the default
+! settings was, far above threshold: 64 H2O reached 1e8 K within ten steps of
+! the bias switching on.
+!
+! Every quantity in (S3) is already in hand at the moment of calibration --
+! C(0) is the zero-lag autocorrelation the ACF is built from -- so the bound is
+! computable a priori rather than discoverable by scanning. Inverting it gives
+! the largest usable exp_energy_scales,
+!
+!   escale_max = n_live * 3 k_B T / ( C(0) sum_k g_k^2/(mu_k w_k^2) )    (S4)
+!
+! which ir_aux_calibrate reports and beyond which it refuses to run. That is
+! the part of this scheme that generalises furthest: ANY method that biases
+! dynamics by bilinearly coupling an auxiliary variable to a configurational
+! signal has a bound of this form, and computing it costs nothing.
+!
+!==========================================================================
 ! CALIBRATION
 !==========================================================================
 !
@@ -229,6 +315,7 @@ module ir_auxiliary_dynamics
    public :: ir_aux_active
    public :: ir_aux_save, ir_aux_load, ir_aux_write_spectrum
    public :: ir_aux_bank_energy, ir_aux_energy_pumped
+   public :: ir_aux_stability, ir_aux_escale_max
    public :: IR_AUX_RESTART_VERSION
 
 !  amu -> eV fs^2 / A^2, so that mu w^2 X is an eV/A force
@@ -248,6 +335,8 @@ module ir_auxiliary_dynamics
 !  Channels below this are dropped: w = 0 has no resonator, and nu^p in the
 !  calibration divides by it. ir_nu_min defaults to 0, so this is reachable.
    real(dp), parameter :: NU_FLOOR_CM = 1.0_dp
+!  eV/K.
+   real(dp), parameter :: KB = 8.6173303e-5_dp
 
    integer, parameter :: IR_AUX_RESTART_VERSION = 1
 
@@ -268,6 +357,14 @@ module ir_auxiliary_dynamics
       real(dp) :: dissim = 0.0_dp
       real(dp) :: dissim_ref = 0.0_dp
       real(dp) :: e_pump = 0.0_dp
+!     The stability bound (S1)-(S4). c0 is the zero-lag signal autocorrelation
+!     and sum_g2 is sum_k g_k^2/(mu_k w_k^2); together with the temperature they
+!     give the stability number and the largest usable energy scale.
+      real(dp) :: c0 = 0.0_dp
+      real(dp) :: temperature = 0.0_dp
+      real(dp) :: sum_g2 = 0.0_dp
+      real(dp) :: stab = 0.0_dp
+      real(dp) :: escale_max = 0.0_dp
       integer, allocatable :: kmap(:)
       real(dp), allocatable :: nu(:)
       real(dp), allocatable :: omega(:)
@@ -337,6 +434,33 @@ contains
       type(ir_aux_type), intent(in) :: this
       ir_aux_energy_pumped = this%e_pump
    end function ir_aux_energy_pumped
+
+!**************************************************************************
+!  The stability number (S3) at a given back-reaction scale. Below 1 the
+!  combined signal-plus-bank quadratic form is positive definite; at 1 the
+!  effective signal stiffness (S2) passes through zero and the pair runs away.
+   real(dp) function ir_aux_stability(this, energy_scale)
+      implicit none
+      type(ir_aux_type), intent(in) :: this
+      real(dp), intent(in) :: energy_scale
+      real(dp) :: denom
+
+      ir_aux_stability = 0.0_dp
+      if (.not. this%active) return
+      denom = 3.0_dp*KB*this%temperature
+      if (denom <= 0.0_dp .or. this%c0 <= 0.0_dp) return
+      ir_aux_stability = energy_scale/dfloat(max(1, this%n_live)) &
+                         *this%sum_g2*this%c0/denom
+   end function ir_aux_stability
+
+!**************************************************************************
+!  (S4): the largest exp_energy_scales this bank can carry. Zero means the
+!  bound could not be formed (no signal variance, or no temperature).
+   real(dp) function ir_aux_escale_max(this)
+      implicit none
+      type(ir_aux_type), intent(in) :: this
+      ir_aux_escale_max = this%escale_max
+   end function ir_aux_escale_max
 
 !**************************************************************************
    subroutine ir_aux_free(this)
@@ -498,8 +622,21 @@ contains
       this%active = .true.
 
       ok = .true.
-      write (msg, '(A,I0,A,I0,A)') "ir_aux: bank of ", this%n_modes, " modes (", &
-         this%n_dropped, " channels below the frequency floor dropped)"
+!     The controller must be slow compared with the resonator's own linewidth,
+!     or it sets the amplitude by itself and the phase relation to the drive --
+!     which is where the information is -- stops mattering. The bank then
+!     degenerates into a prescribed comb shaking the atoms at the experimental
+!     amplitudes, which is a different method and not this one.
+      if (this%kappa(1) > 0.1_dp*this%gamma_k(1)) then
+         write (msg, '(A,I0,A,ES9.2,A,ES9.2,A)') &
+            "ir_aux: bank of ", this%n_modes, &
+            " modes. WARNING: controller gain ", this%kappa(1), &
+            " exceeds 0.1*bandwidth ", 0.1_dp*this%gamma_k(1), &
+            "; raise ir_aux_tau or ir_aux_damping so the drive, not the controller, sets the phase"
+      else
+         write (msg, '(A,I0,A,I0,A)') "ir_aux: bank of ", this%n_modes, " modes (", &
+            this%n_dropped, " channels below the frequency floor dropped)"
+      end if
 
    end subroutine ir_aux_init
 
@@ -512,12 +649,17 @@ contains
 !  would make the ranks disagree about the forces; and by construction of (10)
 !  the target amplitude IS the expected steady-state amplitude, so starting
 !  there means there is no transient to wait out.
-   subroutine ir_aux_calibrate(this, parent, ok, msg)
+   subroutine ir_aux_calibrate(this, parent, temperature, energy_scale, ok, msg)
 
       implicit none
 
       type(ir_aux_type), intent(inout) :: this
       type(mad_ir_type), intent(inout) :: parent
+!     For the stability bound (S1): the signal stiffness is thermal.
+      real(dp), intent(in) :: temperature
+!     The LARGEST back-reaction scale the run will reach, so the bound is
+!     tested against the worst case rather than against the ramp's start.
+      real(dp), intent(in) :: energy_scale
       logical, intent(out) :: ok
       character(len=*), intent(out) :: msg
 
@@ -631,6 +773,25 @@ contains
       call ir_aux_amplitude(this)
       this%calibrated = .true.
 
+!     ---- the stability bound (S1)-(S4) ------------------------------------
+!     Every ingredient is already here: C(0) is the zero-lag autocorrelation
+!     the spectrum was built from. So the runaway threshold is known BEFORE the
+!     first biased step rather than after the trajectory has been destroyed.
+      this%temperature = temperature
+      this%c0 = parent%acf(0)
+      this%sum_g2 = 0.0_dp
+      do m = 1, this%n_modes
+         if (this%muted(m)) cycle
+         this%sum_g2 = this%sum_g2 + this%g_k(m)**2/(this%eff_mass(m)*this%omega(m)**2)
+      end do
+      this%stab = ir_aux_stability(this, energy_scale)
+      if (this%c0 > 0.0_dp .and. this%sum_g2 > 0.0_dp .and. temperature > 0.0_dp) then
+         this%escale_max = dfloat(max(1, this%n_live))*3.0_dp*KB*temperature &
+                           /(this%c0*this%sum_g2)
+      else
+         this%escale_max = 0.0_dp
+      end if
+
       ok = .true.
 !     The scale of the field the atoms are about to feel, reported at once.
 !     |E_eff| times a dipole gradient of order one electron is roughly the
@@ -644,8 +805,9 @@ contains
          e_eff_scale = e_eff_scale + this%g_k(m)*this%R_target(m)
       end do
       e_eff_scale = e_eff_scale/dfloat(max(1, this%n_live))
-      write (msg, '(A,I0,A,I0,A,ES11.3,A)') "ir_aux: calibrated ", this%n_live, &
-         " of ", this%n_modes, " modes; |E_eff| ~ ", e_eff_scale, " eV/A per unit dipole gradient"
+      write (msg, '(A,I0,A,I0,A,ES10.2,A,ES10.2)') "ir_aux: calibrated ", this%n_live, &
+         " of ", this%n_modes, " modes; stability number ", this%stab, &
+         "  (must be < 1); max exp_energy_scales ", this%escale_max
 
    end subroutine ir_aux_calibrate
 
@@ -672,12 +834,14 @@ contains
 !  One step of (1) with (6) and (7), Strang split: half a step of the radial
 !  controller, an exact step of the linear resonator with the drive held
 !  constant, half a step of the controller again, then the integral update.
-   subroutine ir_aux_advance(this, dipole)
+   subroutine ir_aux_advance(this, signal)
 
       implicit none
 
       type(ir_aux_type), intent(inout) :: this
-      real(dp), intent(in) :: dipole(1:3)
+!     The configurational signal, identical on every rank. For ir_bias_mode =
+!     aux this is the total dipole; nothing in this routine depends on that.
+      real(dp), intent(in) :: signal(1:3)
 
       real(dp) :: h
       real(dp) :: half
@@ -736,7 +900,7 @@ contains
          sn = dsin(om_d*h)/om_d
 
          do a = 1, 3
-            xp = this%g_k(m)*dipole(a)/(this%eff_mass(m)*w2)
+            xp = this%g_k(m)*signal(a)/(this%eff_mass(m)*w2)
             u0 = this%X(a, m) - xp
             v0 = this%P(a, m)/this%eff_mass(m)
             this%X(a, m) = xp + ec*(u0*cs + (v0 + lam*u0)*sn)
@@ -768,7 +932,7 @@ contains
          e_after = 0.5_dp*this%eff_mass(m)*w2*this%R(m)**2
          work_drive = 0.0_dp
          do a = 1, 3
-            work_drive = work_drive + this%g_k(m)*dipole(a)*(this%X(a, m) - x_old(a))
+            work_drive = work_drive + this%g_k(m)*signal(a)*(this%X(a, m) - x_old(a))
          end do
          this%e_pump = this%e_pump + (e_after - e_before) - work_drive
 
@@ -817,13 +981,13 @@ contains
 !**************************************************************************
 !  The coupling energy -escale sum_k g_k X_k.M, which is the generator of the
 !  force ir_aux_forces adds, and the dissimilarity for thermo.log.
-   subroutine ir_aux_evaluate(this, energy_scale, dipole, energy)
+   subroutine ir_aux_evaluate(this, energy_scale, signal, energy)
 
       implicit none
 
       type(ir_aux_type), intent(inout) :: this
       real(dp), intent(in) :: energy_scale
-      real(dp), intent(in) :: dipole(1:3)
+      real(dp), intent(in) :: signal(1:3)
       real(dp), intent(out) :: energy
 
       real(dp) :: acc
@@ -844,8 +1008,8 @@ contains
       den = 0.0_dp
       do m = 1, this%n_modes
          if (this%muted(m)) cycle
-         acc = acc + this%g_k(m)*(this%X(1, m)*dipole(1) &
-                                  + this%X(2, m)*dipole(2) + this%X(3, m)*dipole(3))
+         acc = acc + this%g_k(m)*(this%X(1, m)*signal(1) &
+                                  + this%X(2, m)*signal(2) + this%X(3, m)*signal(3))
 !        Back to intensity units, so ir_aux_spectrum.dat is on the same axes as
 !        ir_exp.dat: R^2 = norm I/nu^p inverts to I = nu^p R^2/norm.
          if (this%normalisation > 0.0_dp) then

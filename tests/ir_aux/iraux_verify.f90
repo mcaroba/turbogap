@@ -23,7 +23,8 @@ program iraux_verify
                      mad_ir_ready, mad_ir_spectrum, CM_PER_INV_FS
    use ir_auxiliary_dynamics, only: ir_aux_type, ir_aux_init, ir_aux_free, &
                                     ir_aux_advance, ir_aux_evaluate, ir_aux_forces, &
-                                    ir_aux_calibrate, ir_aux_save, ir_aux_load
+                                    ir_aux_calibrate, ir_aux_save, ir_aux_load, &
+                                    ir_aux_stability, ir_aux_escale_max
 
    implicit none
 
@@ -44,6 +45,7 @@ program iraux_verify
    call check_forces(n_fail)
    call check_windup(n_fail)
    call check_calibration(n_fail)
+   call check_stability(n_fail)
    call check_restart(n_fail)
 
    write (*, *) "------------------------------------------------------------------"
@@ -715,7 +717,7 @@ contains
       write (*, *) "      ", trim(msg)
       call verdict("ir_aux_init succeeded", ok, n_fail)
 
-      call ir_aux_calibrate(b, par, ok, msg)
+      call ir_aux_calibrate(b, par, 300.0_dp, 1.0e-3_dp, ok, msg)
       write (*, *) "      ", trim(msg)
       call verdict("ir_aux_calibrate succeeded", ok, n_fail)
 
@@ -747,6 +749,99 @@ contains
       call ir_aux_free(b)
       call mad_ir_free(par)
    end subroutine check_calibration
+
+!**************************************************************************
+!  9b. THE STABILITY BOUND. The coupling -g_k X_k.s is bilinear, hence unbounded
+!  below, and is held only by the resonator spring and the signal's own
+!  stiffness. The bound (S3) is checked three ways: against an INDEPENDENT
+!  evaluation of the formula written out here from the primitive quantities,
+!  for the linearity in energy_scale that (S3) demands, and for the exact
+!  inverse relation (S4) -- escale_max must be the scale at which Lambda is 1.
+!
+!  This is the check that would have saved a water box: the calibration matches
+!  amplitudes and never asks whether the coupling it produces is below
+!  threshold, so nothing else in this suite can catch it.
+   subroutine check_stability(n_fail)
+      integer, intent(inout) :: n_fail
+      integer, parameter :: nf = 40
+      integer, parameter :: nlag = 256
+      type(mad_ir_type) :: par
+      type(ir_aux_type) :: b
+      real(dp), parameter :: KB = 8.6173303e-5_dp
+      real(dp) :: nu(nf)
+      real(dp) :: iexp(nf)
+      real(dp) :: wgt(nf)
+      real(dp) :: mu(3)
+      real(dp) :: dt
+      real(dp) :: w0
+      real(dp) :: t
+      real(dp) :: temp
+      real(dp) :: escale
+      real(dp) :: sum_g2
+      real(dp) :: lam_ref
+      real(dp) :: lam_1
+      real(dp) :: lam_2
+      real(dp) :: lam_at_max
+      character(len=512) :: msg
+      integer :: k
+      integer :: i
+      logical :: ok
+
+      write (*, *) ""
+      write (*, *) " 9b. STABILITY BOUND: Lambda = gamma sum(g^2/mu w^2) C(0)/(3 kB T)"
+
+      dt = 2.0_dp
+      temp = 300.0_dp
+      escale = 1.0e-3_dp
+      do k = 1, nf
+         nu(k) = 200.0_dp*dfloat(k)
+         iexp(k) = 1.0_dp + 0.5_dp*dsin(0.3_dp*dfloat(k))
+         wgt(k) = 1.0_dp
+      end do
+      call mad_ir_init(par, dt, nlag, 2*nlag, nu, iexp, wgt, .true., 2.0_dp, &
+                       "hann", .true., .true., .true., .false.)
+      w0 = 2.0_dp*dacos(-1.0_dp)*1400.0_dp/CM_PER_INV_FS
+      do i = 1, 3*nlag
+         t = dfloat(i - 1)*dt
+         mu(1) = dcos(w0*t) + 0.5_dp*dcos(2.3_dp*w0*t) + 0.3_dp*dcos(0.41_dp*w0*t)
+         mu(2) = 0.7_dp*dsin(1.7_dp*w0*t) + 0.2_dp*dcos(0.7_dp*w0*t)
+         mu(3) = 0.4_dp*dcos(3.1_dp*w0*t + 0.6_dp) + 0.6_dp*dsin(0.23_dp*w0*t)
+         call mad_ir_push(par, mu)
+      end do
+
+      call ir_aux_init(b, par, 8, dt, 100.0_dp, 10.0_dp, 500.0_dp, -1.0_dp, 0.1_dp, ok, msg)
+      call ir_aux_calibrate(b, par, temp, escale, ok, msg)
+      call verdict("calibration with the bound succeeded", ok, n_fail)
+
+!     An independent evaluation of (S3) from the primitives.
+      sum_g2 = 0.0_dp
+      do k = 1, b%n_modes
+         if (b%muted(k)) cycle
+         sum_g2 = sum_g2 + b%g_k(k)**2/(b%eff_mass(k)*b%omega(k)**2)
+      end do
+      lam_ref = escale/dfloat(b%n_live)*sum_g2*par%acf(0)/(3.0_dp*KB*temp)
+      write (*, '(A,ES14.6)') "      Lambda (module)      = ", b%stab
+      write (*, '(A,ES14.6)') "      Lambda (independent) = ", lam_ref
+      call verdict("Lambda matches an independent evaluation", &
+                   dabs(b%stab - lam_ref) <= 1.0e-12_dp*max(1.0_dp, dabs(lam_ref)), n_fail)
+
+!     (S3) is linear in the back-reaction scale.
+      lam_1 = ir_aux_stability(b, escale)
+      lam_2 = ir_aux_stability(b, 2.0_dp*escale)
+      write (*, '(A,F12.6)') "      Lambda(2s)/Lambda(s) = ", lam_2/lam_1
+      call verdict("Lambda is linear in exp_energy_scales", &
+                   dabs(lam_2/lam_1 - 2.0_dp) < 1.0e-12_dp, n_fail)
+
+!     (S4) inverts (S3) exactly: at escale_max the number is 1.
+      lam_at_max = ir_aux_stability(b, ir_aux_escale_max(b))
+      write (*, '(A,ES14.6)') "      escale_max           = ", ir_aux_escale_max(b)
+      write (*, '(A,F14.10)') "      Lambda(escale_max)   = ", lam_at_max
+      call verdict("escale_max is exactly where Lambda = 1", &
+                   dabs(lam_at_max - 1.0_dp) < 1.0e-10_dp, n_fail)
+
+      call ir_aux_free(b)
+      call mad_ir_free(par)
+   end subroutine check_stability
 
 !**************************************************************************
 !  10. RESTART. A round trip must return X, P and eta bit for bit -- eta
