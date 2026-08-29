@@ -1068,7 +1068,7 @@ contains
 !  genuine partition of unity -- Gamma_k tied to the grid spacing, so that
 !  sum_k chi_k(w) ~ 1 and the sum is a true reconstruction of M rather than
 !  n_live copies of it -- which is the better long-term answer.
-   subroutine ir_aux_forces(this, energy_scale, dmu_dr, forces)
+   subroutine ir_aux_forces(this, energy_scale, dmu_dr, forces, velocities, power)
 
       implicit none
 
@@ -1076,15 +1076,28 @@ contains
       real(dp), intent(in) :: energy_scale
       real(dp), intent(in) :: dmu_dr(:, :, :)
       real(dp), intent(inout) :: forces(:, :)
+!     Optional, and the reason it is here: the rate at which the bias does work
+!     on the atoms. That is NOT the controller's injection -- the two are
+!     different channels and for a bank far off target the second dominates.
+!     The drive term g_k s enters the resonator at full strength while the
+!     back-reaction returns only energy_scale/n_live of it, so the coupling is
+!     asymmetric and the atoms receive work the bank never paid for. Measuring
+!     it here, where the force is formed, is the only place it is exact.
+      real(dp), intent(in), optional :: velocities(:, :)
+      real(dp), intent(out), optional :: power
 
       real(dp) :: e_eff(1:3)
       real(dp) :: acc
+      real(dp) :: p_acc
+      logical :: want_power
       integer :: m
       integer :: j
       integer :: a
       integer :: b
       integer :: n_atoms
 
+      want_power = present(power) .and. present(velocities)
+      if (present(power)) power = 0.0_dp
       if (.not. ir_aux_calibrated(this)) return
 
       n_atoms = size(dmu_dr, 3)
@@ -1098,7 +1111,8 @@ contains
       end do
       e_eff = energy_scale*e_eff/dfloat(max(1, this%n_live))
 
-      !$omp parallel do private(j, b, a, acc) schedule(static)
+      p_acc = 0.0_dp
+      !$omp parallel do private(j, b, a, acc) reduction(+:p_acc) schedule(static)
       do j = 1, n_atoms
          do b = 1, 3
             acc = 0.0_dp
@@ -1106,9 +1120,12 @@ contains
                acc = acc + e_eff(a)*dmu_dr(a, b, j)
             end do
             forces(b, j) = forces(b, j) + acc
+            if (want_power) p_acc = p_acc + acc*velocities(b, j)
          end do
       end do
       !$omp end parallel do
+
+      if (present(power)) power = p_acc
 
    end subroutine ir_aux_forces
 

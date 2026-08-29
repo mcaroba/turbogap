@@ -183,6 +183,8 @@ program turbogap
 !  which is what a bias that is stable but too strong looks like: bounded, and
 !  a thousand degrees hot. Measured here from the pumped-energy ledger rather
 !  than predicted, because P depends on the dynamics in a way Lambda does not.
+   real(dp) :: ir_aux_power = 0.d0
+   real(dp) :: ir_aux_work = 0.d0
    real(dp) :: ir_aux_pump_prev = 0.d0
    real(dp) :: ir_aux_pump_time = 0.d0
    real(dp) :: ir_aux_dT = 0.d0
@@ -2653,8 +2655,13 @@ program turbogap
                      energy_exp = sum(energies_exp)
                      if (params%exp_forces) then
                         call time_start(time%ir_forces)
-                        call ir_aux_forces(ir_aux_state, mad_ir_scale, mad_ir_dmu_dr, forces)
+                        call ir_aux_forces(ir_aux_state, mad_ir_scale, mad_ir_dmu_dr, forces, &
+                                           velocities(1:3, 1:n_sites), ir_aux_power)
                         call time_end(time%ir_forces)
+!                       Integrated with the stored-frame interval, since that is
+!                       how often the force is refreshed.
+                        ir_aux_work = ir_aux_work &
+                                      + ir_aux_power*params%md_step*dfloat(params%ir_stride)
                      end if
                      mad_ir_applied = .true.
 !                    ---- the thermal-fidelity check -------------------------
@@ -2666,7 +2673,11 @@ program turbogap
 !                    is ~8 fs) while still reporting inside a short run.
                      if (md_time - ir_aux_pump_time > 50.d0) then
                         if (ir_aux_pump_time > 0.d0 .and. params%tau_t > 0.d0) then
-                           ir_aux_dT = 2.d0*(ir_aux_energy_pumped(ir_aux_state) - ir_aux_pump_prev) &
+!                          The work the BIAS FORCE did on the atoms, which is
+!                          the channel that actually heats: the controller's own
+!                          injection into the bank is a different and, for a bank
+!                          far off target, much smaller number.
+                           ir_aux_dT = 2.d0*(ir_aux_work - ir_aux_pump_prev) &
                                        /(md_time - ir_aux_pump_time)*params%tau_t &
                                        /(3.d0*dfloat(n_sites)*8.6173303d-5)
                            if (rank == 0 .and. .not. ir_aux_warned_hot .and. &
@@ -2678,7 +2689,7 @@ program turbogap
                               ir_aux_warned_hot = .true.
                            end if
                         end if
-                        ir_aux_pump_prev = ir_aux_energy_pumped(ir_aux_state)
+                        ir_aux_pump_prev = ir_aux_work
                         ir_aux_pump_time = md_time
                      end if
                   else
