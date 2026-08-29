@@ -173,6 +173,20 @@ program turbogap
 !  mad_ir_evaluate is called under aux purely for the INDEPENDENT dissimilarity
 !  it leaves behind, so its energy is discarded here.
    real(dp) :: ir_aux_acf_energy = 0.d0
+!  The SECOND constraint. Lambda < 1 stops the bilinear runaway, but the
+!  controller still pumps the bank and the bank still pumps the atoms, and a
+!  thermostat of time constant tau_t absorbs a steady power P only at the cost
+!  of a standing temperature offset
+!
+!     dT = 2 P tau_t / (3 N kB)
+!
+!  which is what a bias that is stable but too strong looks like: bounded, and
+!  a thousand degrees hot. Measured here from the pumped-energy ledger rather
+!  than predicted, because P depends on the dynamics in a way Lambda does not.
+   real(dp) :: ir_aux_pump_prev = 0.d0
+   real(dp) :: ir_aux_pump_time = 0.d0
+   real(dp) :: ir_aux_dT = 0.d0
+   logical :: ir_aux_warned_hot = .false.
    character(len=512) :: mad_ir_msg
 !  Has anything been appended to ir_prediction.dat yet? The first block cannot
 !  be identified by its step number the way the per-frame observables' can --
@@ -1527,6 +1541,18 @@ program turbogap
                         write (*, *) "       or leave ir_bias_mode at acf for a prediction run."
                         stop
                      end if
+!                    No virial is formed from the coupling, for the reason every
+!                    other IR bias here gives: a wrong stress is worse than a
+!                    missing one. Under a barostat that stops being a missing
+!                    diagnostic and becomes a wrong cell, so it is refused rather
+!                    than left to be discovered in the density.
+                     if (trim(params%barostat) /= "none") then
+                        write (*, *) "ERROR: ir_bias_mode = aux does not form a virial, so the cell"
+                        write (*, *) "       would relax against an incomplete stress. Run it at fixed"
+                        write (*, *) "       volume, or equilibrate the cell first with barostat on and"
+                        write (*, *) "       the bias off."
+                        call turbogap_abort()
+                     end if
                      call ir_aux_setup(mad_ir_state, n_sites, params%md_step, params%ir_stride, &
                                        params%ir_aux_eff_mass, params%ir_aux_damping, &
                                        params%ir_aux_tau, params%ir_aux_gain, &
@@ -2631,6 +2657,30 @@ program turbogap
                         call time_end(time%ir_forces)
                      end if
                      mad_ir_applied = .true.
+!                    ---- the thermal-fidelity check -------------------------
+!                    Over a window of stored frames, how much energy did the
+!                    controller put in, and what standing temperature offset
+!                    does the thermostat therefore have to hold against?
+!                    50 fs of biased dynamics is enough to average the pump
+!                    rate over many resonator periods (the fastest fitted band
+!                    is ~8 fs) while still reporting inside a short run.
+                     if (md_time - ir_aux_pump_time > 50.d0) then
+                        if (ir_aux_pump_time > 0.d0 .and. params%tau_t > 0.d0) then
+                           ir_aux_dT = 2.d0*(ir_aux_energy_pumped(ir_aux_state) - ir_aux_pump_prev) &
+                                       /(md_time - ir_aux_pump_time)*params%tau_t &
+                                       /(3.d0*dfloat(n_sites)*8.6173303d-5)
+                           if (rank == 0 .and. .not. ir_aux_warned_hot .and. &
+                               dabs(ir_aux_dT) > 0.1d0*max(1.d0, params%t_beg)) then
+                              write (*, '(A,F10.1,A)') " WARNING: ir_aux is pumping hard enough for a standing", &
+                                 ir_aux_dT, " K offset."
+                              write (*, *) "          The bias is below its stability bound but above what the"
+                              write (*, *) "          thermostat can absorb quietly. Lower exp_energy_scales."
+                              ir_aux_warned_hot = .true.
+                           end if
+                        end if
+                        ir_aux_pump_prev = ir_aux_energy_pumped(ir_aux_state)
+                        ir_aux_pump_time = md_time
+                     end if
                   else
                      mad_ir_energy = 0.d0
                      mad_ir_applied = .false.
