@@ -59,8 +59,23 @@ def getf(props, key):
 
 
 def getvec(props, key):
+    """A whitespace-separated vector property, or None if it cannot be read.
+
+    None rather than an exception on purpose. turbogap writes the virial with
+    F16.8, which a component of -339292.61388514 fills exactly, leaving no
+    space before the next one: the field comes out as two numbers run together
+    and float() raises. That is worth reporting, but not worth losing the
+    energy and force comparison for every frame in the file, which is what an
+    exception here costs.
+    """
     v = props.get(key)
-    return None if v is None else [float(x) for x in v.strip('"').split()]
+    if v is None:
+        return None
+    try:
+        return [float(x) for x in v.strip('"').split()]
+    except ValueError:
+        print("  WARN %-14s unparseable, skipped: %s" % (key, v.strip('"')[:70]))
+        return None
 
 
 def rms(xs):
