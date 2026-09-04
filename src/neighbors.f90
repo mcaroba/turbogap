@@ -30,6 +30,7 @@ module neighbors
    use kinds
 
    use soap_turbo_functions
+   use timing, only: get_time
    use mpi
 
 !  Headroom on top of soap_batch_memory_model. The terms there are the
@@ -73,6 +74,13 @@ contains
       real(dp), save :: b0(1:3) = 0.d0
       real(dp), save :: c0(1:3) = 0.d0
       real(dp), save :: mat_inv(1:3, 1:3) = 0.d0
+!     The non-orthorhombic branch below caches the reciprocal cell in these and
+!     recomputes it only when the lattice changes. Saved state shared between
+!     threads is a race, and the callers of this routine are OpenMP loops, so
+!     each thread gets its own cache. It costs one extra inversion per thread
+!     per lattice change and nothing at all on the orthorhombic path, which
+!     never touches them.
+!$OMP THREADPRIVATE(a0, b0, c0, mat_inv)
       integer :: i
       integer :: j
       integer :: k
@@ -287,10 +295,15 @@ contains
       real(dp) :: time3
       real(dp) :: tol
       real(dp) :: d_tol = 1.d-6
-      integer, allocatable :: neighbors_list_temp(:)
       integer, allocatable :: head(:)
       integer, allocatable :: this_list(:)
-      integer :: n_neigh_max
+!     Where each site's pairs begin. A prefix sum over n_neigh, so both the
+!     build's fill pass and the per-step geometry loop index rather than count,
+!     and neither carries state from one site to the next.
+      integer, allocatable :: k2_start(:)
+!     Neighbours found for one site, and which of the two build passes we are in.
+      integer :: nn
+      integer :: pass
       integer :: i
       integer :: j
       integer :: n_sites_supercell
@@ -335,7 +348,12 @@ contains
 ! write(*,*) "Time spent in dummy region", dut2-dut1
 
       if (do_timing) then
-         call cpu_time(time1)
+!        get_time, not cpu_time. cpu_time returns processor time summed over
+!        threads, so the moment the loops below became OpenMP it stopped
+!        reporting how long they took and started reporting how much work they
+!        did -- the build appeared to get slower on more threads while the
+!        wall-clock bucket around it fell.
+         call get_time(time1)
          time3 = time1
       end if
 
@@ -394,20 +412,18 @@ contains
          end if
       end if
 !
-!   This is an initial guess for the maximum number of neighbors that we expect within a cutoff
-!   It is used for the purpose of memory allocation. At the moment we are making this big, but
-!   we should find a way to increase this value automatically whenever a bigger array is needed <---- fix
-!   A way to fix it is, whenever an atom has more neighbors than n_neigh_max, to have store all
-!   the neighbors lists into a temporary array, increase the size of the lists array, and then
-!   store the lists back to it
+!   The list used to be allocated at a guessed 100 neighbours per atom and grown
+!   by 10 whenever that ran out, copying the whole array each time -- GST at a
+!   5.5 A cutoff needs 117, so it copied twice on every build. It is now sized
+!   exactly, from a counting pass, which is also what lets both passes run in
+!   parallel: a running counter shared between iterations is the one thing that
+!   cannot be.
       if (rebuild_neighbors_list) then
-         n_neigh_max = 100
-         allocate (neighbors_list(1:n_neigh_max*n_sites))
-         neighbors_list = 0
          allocate (n_neigh(1:n_sites))
          n_neigh = 0
          n_atom_pairs = 0
       end if
+      allocate (k2_start(1:n_sites))
 !   We have an efficient algorithm for square boxes and inefficient for non-square boxes (sorry!)
 !   Another requirement is that the minimum unit cell length is at least twice the cutoff
 !
@@ -432,29 +448,32 @@ contains
             this_list(i) = head(j)
             head(j) = i
          end do
-         do i = 1, n_sites
-            if (do_list(i)) then
-!         We always count atom i as its own neighbor. This is useful when building the derivatives
-               n_neigh(i) = n_neigh(i) + 1
-               n_atom_pairs = n_atom_pairs + 1
-               if (n_atom_pairs > n_neigh_max*n_sites) then
-                  allocate (neighbors_list_temp(1:(n_neigh_max + 10)*n_sites))
-                  neighbors_list_temp(1:n_atom_pairs - 1) = neighbors_list(1:n_atom_pairs - 1)
-                  deallocate (neighbors_list)
-                  allocate (neighbors_list(1:(n_neigh_max + 10)*n_sites))
-                  neighbors_list = neighbors_list_temp
-                  deallocate (neighbors_list_temp)
-                  n_neigh_max = n_neigh_max + 10
-               end if
-               neighbors_list(n_atom_pairs) = i
-!         Cell coordinates for this atom
+!        The same traversal, run twice: pass 1 counts, pass 2 fills. Written
+!        once, with pass deciding only whether the accept site stores, so the
+!        two cannot drift apart -- and the order neighbours land in is the order
+!        the old single pass produced, which matters because permuting a site's
+!        neighbours reassociates every sum downstream of it.
+!
+!        Counting first is what buys the parallelism. The single pass carried
+!        n_atom_pairs from one site to the next, and a running counter is
+!        exactly what an OpenMP loop cannot have. With the offsets known in
+!        advance each site writes only into its own slice.
+         do pass = 1, 2
+            !$omp parallel do default(shared) schedule(dynamic, 32) &
+            !$omp private(i, j, k, nn, i2, j2, k2, i3, j3, k3, dist, d, i_shift)
+            do i = 1, n_sites
+               if (.not. do_list(i)) cycle
+!              We always count atom i as its own neighbor. This is useful when building the derivatives
+               nn = 1
+               if (pass == 2) neighbors_list(k2_start(i)) = i
+!              Cell coordinates for this atom
                call get_distance([a_box(1)/2.d0, b_box(2)/2.d0, c_box(3)/2.d0], positions(1:3, i), &
                                  a_box(1:3), b_box(1:3), c_box(1:3), (/.true., .true., .true./), dist, d, i_shift)
                dist = dist + [a_box(1)/2.d0, b_box(2)/2.d0, c_box(3)/2.d0]
                i2 = 1 + int(dist(1)/(a_box(1) + tol)*mx)
                j2 = 1 + int(dist(2)/(b_box(2) + tol)*my)
                k2 = 1 + int(dist(3)/(c_box(3) + tol)*mz)
-!         Look for other atoms in this and neighboring cells
+!              Look for other atoms in this and neighboring cells
                do k3 = k2 - 1, k2 + 1
                   if (mz == 1 .and. k3 /= 1) cycle
                   if (mz == 2 .and. k2 == 1 .and. k3 == 0) cycle
@@ -474,18 +493,8 @@ contains
                               call get_distance(positions(1:3, i), positions(1:3, k), a_box(1:3), b_box(1:3), &
                                                 c_box(1:3), (/.true., .true., .true./), dist, d, i_shift)
                               if (d < rcut_max) then
-                                 n_neigh(i) = n_neigh(i) + 1
-                                 n_atom_pairs = n_atom_pairs + 1
-                                 if (n_atom_pairs > n_neigh_max*n_sites) then
-                                    allocate (neighbors_list_temp(1:(n_neigh_max + 10)*n_sites))
-                                    neighbors_list_temp(1:n_atom_pairs - 1) = neighbors_list(1:n_atom_pairs - 1)
-                                    deallocate (neighbors_list)
-                                    allocate (neighbors_list(1:(n_neigh_max + 10)*n_sites))
-                                    neighbors_list = neighbors_list_temp
-                                    deallocate (neighbors_list_temp)
-                                    n_neigh_max = n_neigh_max + 10
-                                 end if
-                                 neighbors_list(n_atom_pairs) = k
+                                 nn = nn + 1
+                                 if (pass == 2) neighbors_list(k2_start(i) + nn - 1) = k
                               end if
                            end if
                            k = this_list(k)
@@ -493,63 +502,41 @@ contains
                      end do
                   end do
                end do
-            end if
+               if (pass == 1) n_neigh(i) = nn
+            end do
+            !$omp end parallel do
+            if (pass == 1) call size_the_list(n_neigh, n_sites, k2_start, n_atom_pairs, neighbors_list)
          end do
          deallocate (head, this_list)
 !   Very inefficient algorithm for non-square boxes
       else if (rebuild_neighbors_list) then
-         do i = 1, n_sites
-            if (do_list(i)) then
-!         We always count atom i as its own neighbor. This is useful when building the derivatives
-               n_neigh(i) = n_neigh(i) + 1
-               n_atom_pairs = n_atom_pairs + 1
-               if (n_atom_pairs > n_neigh_max*n_sites) then
-                  allocate (neighbors_list_temp(1:(n_neigh_max + 10)*n_sites))
-                  neighbors_list_temp(1:n_atom_pairs - 1) = neighbors_list(1:n_atom_pairs - 1)
-                  deallocate (neighbors_list)
-                  allocate (neighbors_list(1:(n_neigh_max + 10)*n_sites))
-                  neighbors_list = neighbors_list_temp
-                  deallocate (neighbors_list_temp)
-                  n_neigh_max = n_neigh_max + 10
-               end if
-               neighbors_list(n_atom_pairs) = i
+         do pass = 1, 2
+            !$omp parallel do default(shared) schedule(dynamic, 32) &
+            !$omp private(i, j, nn, dist, d, i_shift)
+            do i = 1, n_sites
+               if (.not. do_list(i)) cycle
+!              We always count atom i as its own neighbor. This is useful when building the derivatives
+               nn = 1
+               if (pass == 2) neighbors_list(k2_start(i)) = i
                do j = 1, n_sites_supercell
                   if (j /= i) then
                      call get_distance(positions(1:3, i), positions(1:3, j), a_box(1:3), b_box(1:3), &
                                        c_box(1:3), (/.true., .true., .true./), dist, d, i_shift)
                      if (d < rcut_max) then
-                        n_neigh(i) = n_neigh(i) + 1
-                        n_atom_pairs = n_atom_pairs + 1
-                        if (n_atom_pairs > n_neigh_max*n_sites) then
-                           allocate (neighbors_list_temp(1:(n_neigh_max + 10)*n_sites))
-                           neighbors_list_temp(1:n_atom_pairs - 1) = neighbors_list(1:n_atom_pairs - 1)
-                           deallocate (neighbors_list)
-                           allocate (neighbors_list(1:(n_neigh_max + 10)*n_sites))
-                           neighbors_list = neighbors_list_temp
-                           deallocate (neighbors_list_temp)
-                           n_neigh_max = n_neigh_max + 10
-                        end if
-!                j2 = mod(j-1, n_sites) + 1
-!                neighbors_list(n_atom_pairs) = j2
-                        neighbors_list(n_atom_pairs) = j
+                        nn = nn + 1
+                        if (pass == 2) neighbors_list(k2_start(i) + nn - 1) = j
                      end if
                   end if
                end do
-            end if
+               if (pass == 1) n_neigh(i) = nn
+            end do
+            !$omp end parallel do
+            if (pass == 1) call size_the_list(n_neigh, n_sites, k2_start, n_atom_pairs, neighbors_list)
          end do
       end if
 
-      if (rebuild_neighbors_list) then
-         allocate (neighbors_list_temp(1:n_atom_pairs))
-         neighbors_list_temp = neighbors_list(1:n_atom_pairs)
-         deallocate (neighbors_list)
-         allocate (neighbors_list(1:n_atom_pairs))
-         neighbors_list = neighbors_list_temp
-         deallocate (neighbors_list_temp)
-      end if
-
       if (do_timing) then
-         call cpu_time(time2)
+         call get_time(time2)
          neigh_time = time2 - time1
          time1 = time2
       end if
@@ -574,9 +561,24 @@ contains
          allocate (phis(1:n_atom_pairs))
          allocate (neighbor_species(1:n_atom_pairs))
       end if
-      k2 = 0
+!   Offsets for the loop below. Recomputed rather than carried, because on a
+!   step that did not rebuild there is nothing to carry them from.
+      if (n_sites > 0) then
+         k2_start(1) = 1
+         do i = 2, n_sites
+            k2_start(i) = k2_start(i - 1) + n_neigh(i - 1)
+         end do
+      end if
+
+!   The geometry of every pair, every step, whether or not the topology above
+!   was rebuilt -- which is why this and not the build is the loop that matters
+!   once the Verlet skin is doing its job. Each k2 is written exactly once, so
+!   with the offsets in hand there is nothing shared between sites.
+      !$omp parallel do default(shared) schedule(static) &
+      !$omp private(i, j, k, k2, dist, d, i_shift)
       do i = 1, n_sites
          if (do_list(i)) then
+            k2 = k2_start(i) - 1
             do k = 1, n_neigh(i)
                k2 = k2 + 1
                j = neighbors_list(k2)
@@ -611,13 +613,13 @@ contains
 !            end do
                end if
             end do
-         else
-            k2 = k2 + n_neigh(i)
          end if
       end do
+      !$omp end parallel do
+      deallocate (k2_start)
 
       if (do_timing) then
-         call cpu_time(time2)
+         call get_time(time2)
          write (*, *) '                                       |'
          write (*, *) 'Atoms timings (build):                 |'
          write (*, *) '                                       |'
@@ -629,6 +631,39 @@ contains
       end if
 
    end subroutine
+!**************************************************************************
+
+!**************************************************************************
+!
+! Between the two build passes: turn the per-site neighbour counts into the
+! offsets the fill pass writes at, and size the list to exactly the number of
+! pairs there are. Sites this rank does not own have n_neigh = 0 and so take
+! no room.
+!
+   subroutine size_the_list(n_neigh, n_sites, k2_start, n_atom_pairs, neighbors_list)
+
+      implicit none
+
+      integer, intent(in) :: n_neigh(:)
+      integer, intent(in) :: n_sites
+      integer, intent(out) :: k2_start(:)
+      integer, intent(out) :: n_atom_pairs
+      integer, allocatable, intent(inout) :: neighbors_list(:)
+      integer :: i
+
+      if (n_sites < 1) then
+         n_atom_pairs = 0
+      else
+         k2_start(1) = 1
+         do i = 2, n_sites
+            k2_start(i) = k2_start(i - 1) + n_neigh(i - 1)
+         end do
+         n_atom_pairs = k2_start(n_sites) + n_neigh(n_sites) - 1
+      end if
+      if (allocated(neighbors_list)) deallocate (neighbors_list)
+      allocate (neighbors_list(1:n_atom_pairs))
+
+   end subroutine size_the_list
 !**************************************************************************
 !  What one atom pair and one site cost the SOAP descriptor path, in bytes.
 !
