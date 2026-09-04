@@ -39,6 +39,15 @@ module exp_interface
    use F_B_C
 
    use iso_c_binding
+
+   implicit none
+
+!  The batched pair distribution traces every device allocation it makes. That
+!  is per allocation, per batch, per step, and unbuffered, which costs more than
+!  the work it describes; as a parameter the compiler removes it entirely. Set
+!  it to .true. to get the trace back.
+   logical, parameter :: debug_gpu_batches = .false.
+
 contains
 
    ! This module implements the interfaces for the gradient of experimental functions
@@ -434,7 +443,7 @@ contains
       call gpu_malloc_async(gpu_neigh%xyz_d, 3*st_n_atom_pairs_double, gpu_stream)
       call cpy_htod(c_loc(xyz), gpu_neigh%xyz_d, 3*st_n_atom_pairs_double, gpu_stream)
 
-      print *, "-- Rank ", rank, " ", " malloc neighbors: n_sites_temp = ", n_sites, " n_pairs_temp = ", n_pairs
+   if (debug_gpu_batches) print *, "-- Rank ", rank, " ", " malloc neighbors: n_sites_temp = ", n_sites, " n_pairs_temp = ", n_pairs
 
       ! allocate( n_neigh_temp( 1:n_sites ) )
       ! n_neigh_temp = n_neigh
@@ -691,7 +700,7 @@ contains
 
       total = total + add
 
-      print *, " GPU mem = ", total/1024.d0/1024.d0/1024.d0, " Gb"
+      if (debug_gpu_batches) print *, " GPU mem = ", total/1024.d0/1024.d0/1024.d0, " Gb"
       call flush (101)
 
    end subroutine
@@ -822,24 +831,24 @@ contains
             call total_gpu_memory(dfloat(int((j_end - j_beg + 1), c_size_t)*2*4))
 !          call gpu_stream_sync(gpu_stream)
 
-            print *, "-- Rank ", rank, " ", "int(gpu_exp % nk_d(n_dim_idx))"
-            call gpu_print_pointer_int(gpu_exp%nk_d(n_dim_idx))
-            print *, "-- Rank ", rank, " ", "int(gpu_exp % nk_flags_d(n_dim_idx))"
-            call gpu_print_pointer_int(gpu_exp%nk_flags_d(n_dim_idx))
-            print *, "-- Rank ", rank, " ", "int(gpu_exp % nk_flags_sum_d(n_dim_idx))"
-            call gpu_print_pointer_int(gpu_exp%nk_flags_sum_d(n_dim_idx))
-            print *, "-- Rank ", rank, " ", "int(gpu_neigh % neighbors_list_d  )"
-            call gpu_print_pointer_int(gpu_neigh%neighbors_list_d)
-            print *, "-- Rank ", rank, " ", "int(gpu_neigh % n_neigh_d         )"
-            call gpu_print_pointer_int(gpu_neigh%n_neigh_d)
-            print *, "-- Rank ", rank, " ", "int(gpu_neigh % neighbor_species_d)"
-            call gpu_print_pointer_int(gpu_neigh%neighbor_species_d)
-            print *, "-- Rank ", rank, " ", "int(gpu_neigh % species_d         )"
-            call gpu_print_pointer_int(gpu_neigh%species_d)
-            print *, "-- Rank ", rank, " ", "double(gpu_neigh % rjs_d             )"
-            call gpu_print_pointer_double(gpu_neigh%rjs_d)
-            print *, "-- Rank ", rank, " ", "double(gpu_neigh % xyz_d             )"
-            call gpu_print_pointer_double(gpu_neigh%xyz_d)
+            if (debug_gpu_batches) print *, "-- Rank ", rank, " ", "int(gpu_exp % nk_d(n_dim_idx))"
+            if (debug_gpu_batches) call gpu_print_pointer_int(gpu_exp%nk_d(n_dim_idx))
+            if (debug_gpu_batches) print *, "-- Rank ", rank, " ", "int(gpu_exp % nk_flags_d(n_dim_idx))"
+            if (debug_gpu_batches) call gpu_print_pointer_int(gpu_exp%nk_flags_d(n_dim_idx))
+            if (debug_gpu_batches) print *, "-- Rank ", rank, " ", "int(gpu_exp % nk_flags_sum_d(n_dim_idx))"
+            if (debug_gpu_batches) call gpu_print_pointer_int(gpu_exp%nk_flags_sum_d(n_dim_idx))
+            if (debug_gpu_batches) print *, "-- Rank ", rank, " ", "int(gpu_neigh % neighbors_list_d  )"
+            if (debug_gpu_batches) call gpu_print_pointer_int(gpu_neigh%neighbors_list_d)
+            if (debug_gpu_batches) print *, "-- Rank ", rank, " ", "int(gpu_neigh % n_neigh_d         )"
+            if (debug_gpu_batches) call gpu_print_pointer_int(gpu_neigh%n_neigh_d)
+            if (debug_gpu_batches) print *, "-- Rank ", rank, " ", "int(gpu_neigh % neighbor_species_d)"
+            if (debug_gpu_batches) call gpu_print_pointer_int(gpu_neigh%neighbor_species_d)
+            if (debug_gpu_batches) print *, "-- Rank ", rank, " ", "int(gpu_neigh % species_d         )"
+            if (debug_gpu_batches) call gpu_print_pointer_int(gpu_neigh%species_d)
+            if (debug_gpu_batches) print *, "-- Rank ", rank, " ", "double(gpu_neigh % rjs_d             )"
+            if (debug_gpu_batches) call gpu_print_pointer_double(gpu_neigh%rjs_d)
+            if (debug_gpu_batches) print *, "-- Rank ", rank, " ", "double(gpu_neigh % xyz_d             )"
+            if (debug_gpu_batches) call gpu_print_pointer_double(gpu_neigh%xyz_d)
             call flush (101)
 
             call gpu_get_pair_distribution_nk( &
@@ -886,7 +895,7 @@ contains
             ! Now we create temporary arrays for the k indices
 
             st_rjs_index_d = int(gpu_exp%nk(n_dim_idx), c_size_t)*c_double
-            print *, " allocating rjs "
+            if (debug_gpu_batches) print *, " allocating rjs "
             call total_gpu_memory(dfloat(int(gpu_exp%nk(n_dim_idx), c_size_t)*8))
             call gpu_malloc_async(gpu_exp%rjs_index_d(n_dim_idx), st_rjs_index_d, gpu_stream)
             call gpu_memset_async(gpu_exp%rjs_index_d(n_dim_idx), 0, st_rjs_index_d, gpu_stream)
@@ -894,14 +903,14 @@ contains
             call gpu_stream_sync(gpu_stream)
             call gpu_check_error()
             gpu_exp%st_k_index_d(n_dim_idx) = int(gpu_exp%nk(n_dim_idx), c_size_t)*c_int
-            print *, " allocating k index "
+            if (debug_gpu_batches) print *, " allocating k index "
             call total_gpu_memory(dfloat(int(gpu_exp%nk(n_dim_idx), c_size_t)*4))
             call gpu_malloc_async(gpu_exp%k_index_d(n_dim_idx), gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
             call gpu_memset_async(gpu_exp%k_index_d(n_dim_idx), 0, gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
 
             call gpu_stream_sync(gpu_stream)
             call gpu_check_error()
-            print *, " allocating j2 index "
+            if (debug_gpu_batches) print *, " allocating j2 index "
             call total_gpu_memory(dfloat(int(gpu_exp%nk(n_dim_idx), c_size_t)*4))
             call gpu_malloc_async(gpu_exp%j2_index_d(n_dim_idx), gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
             call gpu_memset_async(gpu_exp%j2_index_d(n_dim_idx), 0, gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
@@ -912,7 +921,7 @@ contains
 
             ! call gpu_set_pair_distribution_rjs_only(j_end, gpu_exp % rjs_d, rjs_index_d, nk_flags_sum_d, gpu_stream )
 
-            print *, " allocating j2 index "
+            if (debug_gpu_batches) print *, " allocating j2 index "
             call gpu_stream_sync(gpu_stream)
             call gpu_check_error()
             call total_gpu_memory(dfloat(int(gpu_exp%nk(n_dim_idx), c_size_t)*8*3))
@@ -948,7 +957,7 @@ contains
 !          print *, " >> Set batch arrays on gpu "
 
             call gpu_free_async(gpu_exp%nk_flags_sum_d(n_dim_idx), gpu_stream)
-            print *, "deallocing flags sum"
+            if (debug_gpu_batches) print *, "deallocing flags sum"
             call total_gpu_memory(dfloat(-int((j_end - j_beg + 1), c_size_t)*4))
             call gpu_stream_sync(gpu_stream)
             call gpu_check_error()
@@ -957,7 +966,7 @@ contains
             allocate (gpu_host%host(n_dim_idx)%k_index_h(1:gpu_exp%nk(n_dim_idx)))
 
             !          call cpy_dtoh_event(&
-            print *, "deallocing k index"
+            if (debug_gpu_batches) print *, "deallocing k index"
             call total_gpu_memory(dfloat(-int(gpu_exp%nk(n_dim_idx), c_size_t)*4))
 
             call gpu_stream_sync(gpu_stream)
@@ -975,7 +984,7 @@ contains
             allocate (gpu_host%host(n_dim_idx)%j2_index_h(1:gpu_exp%nk(n_dim_idx)))
 
             !          call cpy_dtoh_event(&
-            print *, "deallocing j2 index"
+            if (debug_gpu_batches) print *, "deallocing j2 index"
             call total_gpu_memory(dfloat(-int(gpu_exp%nk(n_dim_idx), c_size_t)*4))
             call cpy_dtoh( &
                gpu_exp%j2_index_d(n_dim_idx), &
@@ -1004,7 +1013,7 @@ contains
 !          print *, " >> storing xyz_k_d "
             allocate (gpu_host%host(n_dim_idx)%xyz_k_h(1:3, 1:gpu_exp%nk(n_dim_idx)))
             !          call cpy_dtoh_event(&
-            print *, "deallocing xyz_k"
+            if (debug_gpu_batches) print *, "deallocing xyz_k"
             call total_gpu_memory(dfloat(-int(gpu_exp%nk(n_dim_idx), c_size_t)*3*8))
             call gpu_stream_sync(gpu_stream)
             call gpu_check_error()
@@ -1015,7 +1024,7 @@ contains
                gpu_stream)
             call gpu_free_async(gpu_exp%xyz_k_d(n_dim_idx), gpu_stream)
 
-            print *, "allocing pdf"
+            if (debug_gpu_batches) print *, "allocing pdf"
             call total_gpu_memory(dfloat(int(n_samples, c_size_t)*8))
             call gpu_stream_sync(gpu_stream)
             call gpu_check_error()
@@ -1026,7 +1035,7 @@ contains
             call gpu_memset_async(gpu_exp%pair_distribution_partial_d(n_dim_idx), 0, &
                                   gpu_exp%st_pair_distribution_partial_d(n_dim_idx), gpu_stream)
 
-            print *, "allocing pdf to reduce "
+            if (debug_gpu_batches) print *, "allocing pdf to reduce "
             call total_gpu_memory(dfloat(int(gpu_exp%nk(n_dim_idx), c_size_t)*n_samples*8))
 
             st_pdf_to_reduce_d = int(gpu_exp%nk(n_dim_idx), c_size_t)*n_samples*c_double
@@ -1053,16 +1062,16 @@ contains
 
 !          call gpu_meminfo()
 
-            print *, "gpu_exp%pair_distribution_partial_d(n_dim_idx)"
-            call gpu_print_pointer_double(gpu_exp%pair_distribution_partial_d(n_dim_idx))
-            print *, "pdf_to_reduce_d "
-            call gpu_print_pointer_double(pdf_to_reduce_d)
-            print *, "x_d "
-            call gpu_print_pointer_double(x_d)
-            print *, "dV_d "
-            call gpu_print_pointer_double(dV_d)
-            print *, "gpu_exp%rjs_index_d(n_dim_idx) "
-            call gpu_print_pointer_double(gpu_exp%rjs_index_d(n_dim_idx))
+            if (debug_gpu_batches) print *, "gpu_exp%pair_distribution_partial_d(n_dim_idx)"
+            if (debug_gpu_batches) call gpu_print_pointer_double(gpu_exp%pair_distribution_partial_d(n_dim_idx))
+            if (debug_gpu_batches) print *, "pdf_to_reduce_d "
+            if (debug_gpu_batches) call gpu_print_pointer_double(pdf_to_reduce_d)
+            if (debug_gpu_batches) print *, "x_d "
+            if (debug_gpu_batches) call gpu_print_pointer_double(x_d)
+            if (debug_gpu_batches) print *, "dV_d "
+            if (debug_gpu_batches) call gpu_print_pointer_double(dV_d)
+            if (debug_gpu_batches) print *, "gpu_exp%rjs_index_d(n_dim_idx) "
+            if (debug_gpu_batches) call gpu_print_pointer_double(gpu_exp%rjs_index_d(n_dim_idx))
             call flush (101)
 
             der_factor = 0.0d0
@@ -1250,7 +1259,7 @@ contains
       type(c_ptr) :: gpu_stream
       ! copy the xyz, j2 and k_index_d arrays
 
-      print *, "> nk = ", gpu_exp%nk(n_dim_idx)
+      if (debug_gpu_batches) print *, "> nk = ", gpu_exp%nk(n_dim_idx)
       st_rjs_index_d = int(gpu_exp%nk(n_dim_idx), c_size_t)*c_double
       call gpu_malloc_async(gpu_exp%k_index_d(n_dim_idx), gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
       call gpu_malloc_async(gpu_exp%j2_index_d(n_dim_idx), gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)

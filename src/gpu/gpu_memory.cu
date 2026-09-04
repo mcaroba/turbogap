@@ -525,13 +525,15 @@ extern "C" void host_free(void* ptr) {
 
 extern "C" void cpy_htoh_pinned(void* src, void* dest, size_t size) {
   gpuErrchk(hipMemcpy(dest, src, size, hipMemcpyHostToHost));
-  printf("%s\n", hipGetErrorString(hipGetLastError()));
 }
 
 
 extern "C" void gpu_check_error() {
+  // Synchronize and abort on a real error. It used to print the error string
+  // unconditionally, which meant a "no error" line on every one of the
+  // thousands of calls a batched step makes; gpuErrchk still reports and aborts
+  // when the code is not hipSuccess, so nothing diagnostic is lost.
   hipError_t code = hipDeviceSynchronize();
-  printf("\n %s \n", hipGetErrorString(code));
   gpuErrchk(code);
 }
 extern "C" void gpu_meminfo() {
