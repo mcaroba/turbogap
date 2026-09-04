@@ -3679,7 +3679,7 @@ contains
                call get_exp_energies(params%exp_energy_scales(xrd_idx), params%exp_data(xrd_idx)%y&
                     &, y_xrd,&
                     & params%structure_factor_n_samples, n_sites,&
-                    & energies_xrd(i_beg:i_end))
+                    & energies_xrd(i_beg:i_end), params%exp_data(xrd_idx)%w)
 
                if (params%do_forces .and. params%exp_forces) then
 
@@ -3719,7 +3719,7 @@ contains
                                 & .true., xrd_output, n_atoms_of_species, neutron, rank, cublas_handle, gpu_stream,&
                 & nk(n_dim_idx), nk_d(n_dim_idx), k_index_d(n_dim_idx), j2_index_d(n_dim_idx), xyz_k_d(n_dim_idx), pair_distribution_partial_d(n_dim_idx), pair_distribution_partial_der_d(n_dim_idx), &
                 & st_nk_d(n_dim_idx), st_k_index_d(n_dim_idx), st_j2_index_d(n_dim_idx), st_pair_distribution_partial_d(n_dim_idx), st_pair_distribution_partial_der_d(n_dim_idx), &
-                                gpu_host_storage(n_dim_idx), gpu_low_memory)
+                                gpu_host_storage(n_dim_idx), gpu_low_memory, params%exp_data(xrd_idx)%w)
                         else
                            call get_structure_factor_forces(n_sites, params%exp_energy_scales(xrd_idx),&
                                 & x_xrd, params%exp_data(xrd_idx)%y,&
@@ -3740,7 +3740,7 @@ contains
                                 & n_atoms_of_species(k))/dfloat(n_sites)/&
                                 & dfloat(n_sites))*(dfloat(n_sites)/&
                                 & v_uc), sinc_factor_matrix, n_dim_idx,&
-                                & .true., xrd_output, n_atoms_of_species, neutron, rank)
+                                & .true., xrd_output, n_atoms_of_species, neutron, rank, params%exp_data(xrd_idx)%w)
                         end if
 
                         n_dim_idx = n_dim_idx + 1

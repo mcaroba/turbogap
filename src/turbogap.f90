@@ -1640,6 +1640,17 @@ program turbogap
                     &%x, params%exp_data(i)%y, params%exp_data(i)&
                     &%n_samples, params%exp_data(i)%data)
 
+!                 The weights live on the same grid as the experiment, so they
+!                 are built here, from the same x, every time it is rebuilt.
+                  call build_exp_weights(params%exp_data(i)%x, params%exp_data(i)%w, &
+                                         params%exp_data(i)%weights_data, &
+                                         params%exp_data(i)%n_weights, &
+                                         params%exp_data(i)%data, &
+                                         params%exp_data(i)%data_weights, &
+                                         params%exp_data(i)%n_data_weights, &
+                                         params%exp_data(i)%n_data, &
+                                         trim(params%exp_data(i)%file_data_weights))
+
                   call preprocess_exp_data(params, params%exp_data(i)%x,&
                     & params%exp_data(i)%y, params%exp_data(i)%label,&
                     & n_sites, dot_product(cross_product(a_box,&

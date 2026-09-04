@@ -240,7 +240,7 @@ footer {
 <header class="masthead">
 <p class="eyebrow">TurboGAP &middot; keyword reference</p>
 <h1>Keywords</h1>
-<p class="lede">286 keywords across the input file and the potential (.gap) file. Types and defaults are read out of <code>src/types.f90</code>, and the rest out of the branch in <code>src/read_files.f90</code> that parses the keyword, so nothing here is transcribed by hand.</p>
+<p class="lede">288 keywords across the input file and the potential (.gap) file. Types and defaults are read out of <code>src/types.f90</code>, and the rest out of the branch in <code>src/read_files.f90</code> that parses the keyword, so nothing here is transcribed by hand.</p>
 </header>
 <nav class="rail" aria-label="Groups">
 <p class="railhead">the input file</p>
@@ -251,7 +251,7 @@ footer {
 <a href="#monte-carlo"><span>Monte Carlo</span><span class="n">25</span></a>
 <a href="#van-der-waals"><span>Van der Waals</span><span class="n">30</span></a>
 <a href="#electrostatics"><span>Electrostatics</span><span class="n">12</span></a>
-<a href="#experimental-data-mad"><span>Experimental data (MAD)</span><span class="n">49</span></a>
+<a href="#experimental-data-mad"><span>Experimental data (MAD)</span><span class="n">51</span></a>
 <a href="#electronic-stopping-and-eph"><span>Electronic stopping and EPH</span><span class="n">32</span></a>
 <a href="#local-properties"><span>Local properties</span><span class="n">5</span></a>
 <a href="#output"><span>Output</span><span class="n">19</span></a>
@@ -1431,6 +1431,15 @@ footer {
 <td class="de"><em>undocumented</em></td>
 <td class="dp"><span class="dep">sets <code>exp_energy_scales</code></span></td>
 </tr>
+<tr data-h="exp_data_weights" data-m="predict md mc soap">
+<td class="kw"><code>exp_data_weights</code></td>
+<td class="ty">type(exp_data_container) list</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de"><em>undocumented</em></td>
+<td class="dp"><span class="dep">sets <code>exp_energy_scales</code></span></td>
+</tr>
 <tr data-h="exp_energies" data-m="predict md mc soap">
 <td class="kw"><code>exp_energies</code></td>
 <td class="ty">logical</td>
@@ -1502,6 +1511,15 @@ footer {
 <td class="mo">all</td>
 <td class="de"><em>undocumented</em></td>
 <td class="dp"></td>
+</tr>
+<tr data-h="exp_weights_files" data-m="predict md mc soap">
+<td class="kw"><code>exp_weights_files</code></td>
+<td class="ty">type(exp_data_container) list</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de"><em>undocumented</em></td>
+<td class="dp"><span class="dep">sets <code>exp_energy_scales</code></span></td>
 </tr>
 <tr data-h="n_exp" data-m="predict md mc soap">
 <td class="kw"><code>n_exp</code></td>

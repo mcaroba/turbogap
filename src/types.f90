@@ -82,6 +82,18 @@ module types
    ! GAP+descriptor data structure for SOAP
    type exp_data_container
       character*1024 :: file_data = "none"
+!     Per-sample weights on the residual, as (x, w) pairs in a file. Read like
+!     file_data and interpolated onto the same grid, so the file does not have
+!     to know what exp_n_samples is. They enter squared --
+!     E = gamma/2 sum_i w_i^2 (y_pred_i - y_exp_i)^2 -- so the file holds w.
+!     Absent, every sample counts once.
+      character*1024 :: file_weights = "none"
+!     The other way to give weights: one number per point of the experimental
+!     data file, no abscissa, so the file is the same length as file_data. The
+!     x values come from the data itself, which is why this is resolved when the
+!     weights are built and not when the keyword is read -- otherwise it would
+!     matter whether exp_data_files came before or after it in the deck.
+      character*1024 :: file_data_weights = "none"
       character*1024 :: label
       character*1024 :: input = "default"
       integer :: n_data
@@ -96,6 +108,12 @@ module types
       real(dp), allocatable :: y(:)
       real(dp), allocatable :: y_pred(:)
       real(dp), allocatable :: y_pred_prev(:)
+!     weights_data is the file as read; w is it interpolated onto x.
+      real(dp), allocatable :: weights_data(:, :)
+      real(dp), allocatable :: data_weights(:)
+      real(dp), allocatable :: w(:)
+      integer :: n_weights = 0
+      integer :: n_data_weights = 0
       real(dp) :: similarity
       real(dp) :: range_min = 0.d0
       real(dp) :: range_max = 1.d0

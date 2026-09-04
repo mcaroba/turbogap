@@ -27,6 +27,8 @@
 ! HND XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
 module exp_utils
+   use error, only: turbogap_abort
+   use iso_fortran_env, only: error_unit
 
    use kinds
    use types
@@ -206,8 +208,9 @@ contains
         & neighbors_list, n_neigh, neighbor_species, species_types, rjs, xyz, r_min,&
         & r_max, n_samples, n_samples_sf, n_species, x_structure_factor, structure_factor, r_cut, species_1,&
         & species_2, pair_distribution_der, partial_rdf, kde_sigma,&
-        & c_factor, sinc_factor_matrix, n_dim_idx, do_xrd, output, n_atoms_of_species, neutron, rank)
+        & c_factor, sinc_factor_matrix, n_dim_idx, do_xrd, output, n_atoms_of_species, neutron, rank, w)
       implicit none
+      real(dp), intent(in), optional :: w(:)
       real(dp), intent(in) :: rjs(:)
       real(dp), intent(in) :: xyz(:, :)
       real(dp), intent(in) :: y_exp(:)
@@ -286,7 +289,13 @@ contains
       n_pairs = size(neighbors_list)
 
       allocate (prefactor(1:n_samples_sf))
+!     The weighted residual. Weighting it here is the whole change for the
+!     forces: it is the only thing the pattern's derivative is contracted
+!     against, so w_i^2 (y_i - y_exp_i) is exactly the gradient of
+!     gamma/2 * sum_i w_i^2 (y_i - y_exp_i)^2, which is what get_exp_energies
+!     computes with the same weights. Squared, so the file holds w.
       prefactor = (structure_factor - y_exp)
+      if (present(w)) prefactor = w(1:n_samples_sf)*w(1:n_samples_sf)*prefactor
 
       allocate (structure_factor_der(1:n_samples_sf))
 
@@ -783,8 +792,9 @@ contains
         & c_factor, sinc_factor_matrix, n_dim_idx, do_xrd, output, n_atoms_of_species, neutron, rank, cublas_handle, gpu_stream,&
         & nk, nk_d, k_index_d, j2_index_d, xyz_k_d, pair_distribution_partial_d, pair_distribution_partial_der_d, &
         & st_nk_d, st_k_index_d, st_j2_index_d, st_pair_distribution_partial_d, st_pair_distribution_partial_der_d &
-        , gpu_host_storage, gpu_low_memory)
+        , gpu_host_storage, gpu_low_memory, w)
       implicit none
+      real(dp), intent(in), optional :: w(:)
       real(dp), intent(in), target :: rjs(:)
       real(dp), intent(in), target :: xyz(:, :)
       real(dp), intent(in), target :: y_exp(:)
@@ -924,7 +934,13 @@ contains
       n_pairs = size(neighbors_list)
 
       allocate (prefactor(1:n_samples_sf))
+!     The weighted residual. Weighting it here is the whole change for the
+!     forces: it is the only thing the pattern's derivative is contracted
+!     against, so w_i^2 (y_i - y_exp_i) is exactly the gradient of
+!     gamma/2 * sum_i w_i^2 (y_i - y_exp_i)^2, which is what get_exp_energies
+!     computes with the same weights. Squared, so the file holds w.
       prefactor = (structure_factor - y_exp)
+      if (present(w)) prefactor = w(1:n_samples_sf)*w(1:n_samples_sf)*prefactor
 
       if (do_xrd) then
          if (.not. neutron) then
@@ -3338,7 +3354,7 @@ contains
       end do
    end subroutine get_moments_of_distribution
 
-   subroutine get_exp_energies(energy_scale, y_exp, y_pred, n_samples, n_sites, energies)
+   subroutine get_exp_energies(energy_scale, y_exp, y_pred, n_samples, n_sites, energies, w)
       implicit none
       real(dp), intent(in) :: energy_scale
       real(dp), intent(in) :: y_exp(:)
@@ -3346,17 +3362,140 @@ contains
       integer, intent(in) :: n_samples
       integer, intent(in) :: n_sites
       real(dp), intent(inout) :: energies(:)
-      real(dp) :: f
+!     Per-sample weights, entering SQUARED:
+!
+!        E = gamma/2 * sum_i w_i^2 (y_pred_i - y_exp_i)^2
+!
+!     so the file holds w and the code squares it. Optional, and absent means
+!     the unweighted expression exactly rather than a multiply by an array of
+!     ones, so no existing caller moves in its last digit.
+      real(dp), intent(in), optional :: w(:)
       real(dp) :: e_tot
       real(dp) :: diff(1:n_samples)
 
       ! We use the sum of squared differences for the energy, ideally we'd have a component resolved thing but alas.
 
       diff = (y_pred(1:n_samples) - y_exp(1:n_samples))
-      e_tot = 0.5d0*energy_scale*dot_product(diff, diff)
+      if (present(w)) then
+         e_tot = 0.5d0*energy_scale*sum(w(1:n_samples)*w(1:n_samples)*diff*diff)
+      else
+         e_tot = 0.5d0*energy_scale*dot_product(diff, diff)
+      end if
       energies = e_tot/dfloat(n_sites)
 
    end subroutine get_exp_energies
+
+!**************************************************************************
+!
+! The residual weights, on the grid the experiment ended up on.
+!
+! weights_data is the file as read, (x, w) pairs on whatever grid it was
+! written on. x is the grid the experiment was interpolated to, which depends
+! on exp_n_samples. Interpolating one onto the other is what lets a weights
+! file be written once and stay right when the sampling changes.
+!
+! Outside the file's range the nearest end value is held rather than
+! extrapolated: a weight is a statement about importance, and a linear
+! extrapolation of one goes negative, which would push the fit away from the
+! data instead of ignoring it.
+!
+! No file, or fewer than two points in it, means a flat weight of one.
+!
+   subroutine build_exp_weights(x, w, weights_data, n_weights, &
+                                data, data_weights, n_data_weights, n_data, file_data_weights)
+
+      implicit none
+
+      real(dp), allocatable, intent(in) :: x(:)
+      real(dp), allocatable, intent(inout) :: w(:)
+      real(dp), allocatable, intent(in) :: weights_data(:, :)
+      integer, intent(in) :: n_weights
+!     The exp_data_weights route: a bare column, taking its abscissa from the
+!     experimental data. Resolved here rather than at parse time so that the
+!     order of exp_data_files and exp_data_weights in the deck does not matter.
+      real(dp), allocatable, intent(in) :: data(:, :)
+      real(dp), allocatable, intent(in) :: data_weights(:)
+      integer, intent(in) :: n_data_weights
+      integer, intent(in) :: n_data
+      character(len=*), intent(in) :: file_data_weights
+      real(dp), allocatable :: pairs(:, :)
+      integer :: n_pairs
+      integer :: i
+      integer :: j
+      integer :: n
+      real(dp) :: t
+
+      if (.not. allocated(x)) return
+      n = size(x)
+      if (allocated(w)) then
+         if (size(w) /= n) deallocate (w)
+      end if
+      if (.not. allocated(w)) allocate (w(1:n))
+
+      if (n_data_weights > 0) then
+!        A weight per data point. It has to be exactly that: silently padding or
+!        truncating would weight the wrong part of the pattern, which is a
+!        mistake nothing downstream could reveal.
+         if (n_data_weights /= n_data) then
+!           To error_unit, not unit 6. turbogap_abort flushes unit 6 before it
+!           calls MPI_abort, and that is not enough when stdout is redirected to
+!           a file: the buffer is block-buffered, the process is killed, and the
+!           log ends mid-sentence with the diagnostic in it lost. stderr is
+!           unbuffered, so the reason for the abort survives being redirected --
+!           which is the only time anyone needs it.
+            write (error_unit, '(A,I0,A,I0,A)') &
+               "ERROR: exp_data_weights file "//trim(file_data_weights)//" has ", &
+               n_data_weights, " values but the experimental data has ", n_data, " points <-- ERROR"
+            write (error_unit, '(A)') &
+               "       exp_data_weights is one weight per data point. For weights on their own"
+            write (error_unit, '(A)') &
+               "       grid, use exp_weights_files, which takes (x, w) pairs."
+            flush (error_unit)
+            call turbogap_abort()
+         end if
+         if (.not. allocated(data)) return
+         allocate (pairs(1:2, 1:n_data))
+         pairs(1, 1:n_data) = data(1, 1:n_data)
+         pairs(2, 1:n_data) = data_weights(1:n_data)
+         n_pairs = n_data
+      else if (n_weights >= 2 .and. allocated(weights_data)) then
+         allocate (pairs(1:2, 1:n_weights))
+         pairs = weights_data(1:2, 1:n_weights)
+         n_pairs = n_weights
+      else
+         w = 1.d0
+         return
+      end if
+
+      if (n_pairs < 2) then
+         w = data_weights(1)
+         deallocate (pairs)
+         return
+      end if
+
+!     Interpolated onto the grid the experiment ended up on, which is what lets
+!     either form be written once and stay right when exp_n_samples changes.
+!     Outside the range the nearest end value is held rather than extrapolated:
+!     a weight is a statement about importance, and a linear extrapolation of
+!     one goes negative, which would push the fit away from the data.
+      do i = 1, n
+         if (x(i) <= pairs(1, 1)) then
+            w(i) = pairs(2, 1)
+         else if (x(i) >= pairs(1, n_pairs)) then
+            w(i) = pairs(2, n_pairs)
+         else
+            j = 1
+            do while (j < n_pairs - 1)
+               if (pairs(1, j + 1) >= x(i)) exit
+               j = j + 1
+            end do
+            t = (x(i) - pairs(1, j))/(pairs(1, j + 1) - pairs(1, j))
+            w(i) = (1.d0 - t)*pairs(2, j) + t*pairs(2, j + 1)
+         end if
+      end do
+      deallocate (pairs)
+
+   end subroutine build_exp_weights
 
    subroutine get_exp_pred_spectra_energies_forces(energy_scale, core_electron_be, core_electron_be_der,&
         & n_neigh, neighbors_list, &

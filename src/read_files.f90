@@ -474,6 +474,40 @@ contains
 
    end subroutine read_exp_data
 
+!**************************************************************************
+!
+! One weight per line, no abscissa: the file is the same length as the
+! experimental data it weights, and takes its x values from that data.
+!
+   subroutine read_exp_weight_column(file_data, n_points, w)
+
+      implicit none
+
+      character*1024, intent(in) :: file_data
+      real(dp), allocatable, intent(out) :: w(:)
+      integer, intent(out) :: n_points
+      integer :: i
+      integer :: iostatus
+      integer :: unit_number
+
+      open (newunit=unit_number, file=file_data, status="old")
+      iostatus = 0
+      n_points = -1
+      do while (iostatus == 0)
+         read (unit_number, *, iostat=iostatus)
+         n_points = n_points + 1
+      end do
+      close (unit_number)
+
+      allocate (w(1:n_points))
+      open (newunit=unit_number, file=file_data, status="old")
+      do i = 1, n_points
+         read (unit_number, *) w(i)
+      end do
+      close (unit_number)
+
+   end subroutine read_exp_weight_column
+
    subroutine write_exp_data(x, y, overwrite, filename, label)
 
       implicit none
@@ -2173,6 +2207,71 @@ contains
                params%exp_data(nw)%range_min = params%exp_data(nw)%data(1, 1)
                params%exp_data(nw)%range_max = params&
                     &%exp_data(nw)%data(1, params%exp_data(nw)%n_data)
+            end if
+         end do
+
+!        A weight per experimental sample, one file per observable, "none" for
+!        a flat weight. They enter the mismatch squared:
+!
+!           E = gamma/2 * sum_i w_i^2 (y_pred_i - y_exp_i)^2
+!
+!        so a file value of 2 counts a sample four times, not twice.
+!
+!        The point is to be able to say that part of a pattern matters more than
+!        the rest: a neutron q*F(q) has its first sharp diffraction peak below
+!        q = 1.5, where the signal is small and a plain sum of squares barely
+!        notices it, so without weighting the fit spends itself on the large
+!        high-q oscillations and leaves the FSDP unresolved.
+      else if (keyword == "exp_weights_files") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, &
+            (params%exp_data(nw)%file_weights, nw=1, params%n_exp)
+         call check_iostatus(iostatus, keyword)
+
+         do nw = 1, params%n_exp
+            if (trim(params%exp_data(nw)%file_weights) /= "none") then
+               call read_exp_data( &
+                  params%exp_data(nw)%file_weights, &
+                  params%exp_data(nw)%n_weights, &
+                  params%exp_data(nw)%weights_data)
+               if (rank == 0) then
+                  write (*, '(A,A,A,I0,A)') ' weights for ', &
+                     trim(params%exp_data(nw)%label), ': ', &
+                     params%exp_data(nw)%n_weights, ' points from '// &
+                     trim(params%exp_data(nw)%file_weights)
+               end if
+            end if
+         end do
+
+!        The same weights, given as one number per point of the experimental
+!        data file rather than as (x, w) pairs. Nothing is resolved here beyond
+!        reading the column: pairing it with the data's own x, and checking the
+!        two are the same length, happens where the weights are built, so a deck
+!        may put this keyword either side of exp_data_files.
+      else if (keyword == "exp_data_weights") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, &
+            (params%exp_data(nw)%file_data_weights, nw=1, params%n_exp)
+         call check_iostatus(iostatus, keyword)
+
+         do nw = 1, params%n_exp
+            if (trim(params%exp_data(nw)%file_data_weights) /= "none") then
+               if (trim(params%exp_data(nw)%file_weights) /= "none") then
+                  write (*, *) "ERROR: exp_data_weights and exp_weights_files both given for ", &
+                     trim(params%exp_data(nw)%label), " <-- ERROR"
+                  write (*, *) "       They are two ways of saying the same thing. Pick one."
+                  call turbogap_abort()
+               end if
+               call read_exp_weight_column( &
+                  params%exp_data(nw)%file_data_weights, &
+                  params%exp_data(nw)%n_data_weights, &
+                  params%exp_data(nw)%data_weights)
+               if (rank == 0) then
+                  write (*, '(A,A,A,I0,A)') ' weights for ', &
+                     trim(params%exp_data(nw)%label), ': ', &
+                     params%exp_data(nw)%n_data_weights, ' values from '// &
+                     trim(params%exp_data(nw)%file_data_weights)
+               end if
             end if
          end do
 

@@ -951,6 +951,13 @@ contains
 
          allocate (prefactor(1:size(y_obs)))
          prefactor(1:size(y_obs)) = (y_obs(1:size(y_obs)) - params%exp_data(obs_idx)%y(1:size(y_obs)))
+!        Weighted, the same way and for the same reason as the host route: this
+!        residual is the only thing the device force kernel contracts the
+!        pattern's derivative against. Squared, matching
+!        E = gamma/2 sum_i w_i^2 (y_i - y_exp_i)^2.
+         if (allocated(params%exp_data(obs_idx)%w)) then
+            prefactor(1:size(y_obs)) = params%exp_data(obs_idx)%w(1:size(y_obs))**2*prefactor(1:size(y_obs))
+         end if
 
          st_prefactor_d = int(size(prefactor, 1), c_size_t)*c_double
          call gpu_malloc_async(prefactor_d, st_prefactor_d, gpu_stream)

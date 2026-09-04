@@ -745,6 +745,12 @@ contains
          write (*, '(A)') ''
       end if
       if (every .or. .not. gap_only) then
+         write (*, '(A)') '  exp_data_weights                     [type(exp_data_container) list]'
+         write (*, '(A)') '      (undocumented)'
+         write (*, '(A)') '      -> sets exp_energy_scales'
+         write (*, '(A)') ''
+      end if
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  exp_energies                         [logical, default true]'
          write (*, '(A)') '      (undocumented)'
          write (*, '(A)') '      -> sets do_exp'
@@ -792,6 +798,12 @@ contains
       if (every .or. .not. gap_only) then
          write (*, '(A)') '  exp_similarity_type                  [string, default squared_diff]'
          write (*, '(A)') '      (undocumented)'
+         write (*, '(A)') ''
+      end if
+      if (every .or. .not. gap_only) then
+         write (*, '(A)') '  exp_weights_files                    [type(exp_data_container) list]'
+         write (*, '(A)') '      (undocumented)'
+         write (*, '(A)') '      -> sets exp_energy_scales'
          write (*, '(A)') ''
       end if
       if (every .or. .not. gap_only) then

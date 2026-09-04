@@ -6,7 +6,7 @@ keyword in `src/read_files.f90` and regenerate with `make docs`.
 
 ## Contents
 
-**The input file** &mdash; 227 keywords
+**The input file** &mdash; 229 keywords
 
 - [General](#general) (12)
 - [Run control](#run-control) (17)
@@ -15,7 +15,7 @@ keyword in `src/read_files.f90` and regenerate with `make docs`.
 - [Monte Carlo](#monte-carlo) (25)
 - [Van der Waals](#van-der-waals) (30)
 - [Electrostatics](#electrostatics) (12)
-- [Experimental data (MAD)](#experimental-data-mad) (49)
+- [Experimental data (MAD)](#experimental-data-mad) (51)
 - [Electronic stopping and EPH](#electronic-stopping-and-eph) (32)
 - [Local properties](#local-properties) (5)
 - [Output](#output) (19)
@@ -212,6 +212,7 @@ XPS, pair distributions, structure factors and diffraction.
 | `do_xps` | logical | `false` |  | all | _undocumented_ |  |
 | `do_xrd` | logical | `false` |  | all | _undocumented_ | sets `do_pair_distribution`; sets `do_structure_factor` |
 | `exp_data_files` | type(exp_data_container) list |  |  | all | _undocumented_ | sets `exp_energy_scales` |
+| `exp_data_weights` | type(exp_data_container) list |  |  | all | _undocumented_ | sets `exp_energy_scales` |
 | `exp_energies` | logical | `true` |  | all | _undocumented_ | sets `do_exp` |
 | `exp_energy_scales` | real list |  |  | all | _undocumented_ | sets `n_exp`; sets `exp_energy_scales_initial`; sets `exp_energy_scales_final` |
 | `exp_energy_scales_final`<br>`exp_energy_scales_end` | integer | `0` |  | all | _undocumented_ |  |
@@ -220,6 +221,7 @@ XPS, pair distributions, structure factors and diffraction.
 | `exp_labels` | type(exp_data_container) list |  |  | all | _undocumented_ | sets `exp_energy_scales`; sets `xps_idx`; sets `xrd_idx`; sets `valid_xrd`; sets `pair_distribution_partial`; sets `nd_idx`; sets `valid_nd`; sets `saxs_idx`; sets `pdf_idx`; sets `valid_pdf`; sets `sf_idx`; sets `valid_sf` |
 | `exp_n_samples` | type(exp_data_container) list |  |  | all | _undocumented_ | sets `exp_energy_scales` |
 | `exp_similarity_type` | string | `squared_diff` |  | all | _undocumented_ |  |
+| `exp_weights_files` | type(exp_data_container) list |  |  | all | _undocumented_ | sets `exp_energy_scales` |
 | `n_exp` | integer | `0` |  | all | _undocumented_ | sets `exp_data_files`; sets `exp_energy_scales`; sets `exp_energy_scales_initial`; sets `exp_energy_scales_final`; sets `do_exp` |
 | `nd_n_samples` | integer | `200` |  | all | _undocumented_ | sets `xrd_n_samples`; sets `structure_factor_n_samples` |
 | `nd_output` | string | `xrd` |  | all | _undocumented_ | sets `xrd_output` |
