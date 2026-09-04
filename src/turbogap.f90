@@ -3205,6 +3205,15 @@ program turbogap
          if (params%do_structure_factor) write (*, '(A,F13.3,A)') '     -         sf:', time%sf(3), ' seconds |'
          if (params%do_xrd) write (*, '(A,F13.3,A)') '     -        xrd:', time%xrd(3), ' seconds |'
          if (params%do_nd) write (*, '(A,F13.3,A)') '     -         nd:', time%nd(3), ' seconds |'
+         if (params%do_exp .or. params%do_pair_distribution .or. params%do_structure_factor &
+             .or. params%do_xrd .or. params%do_nd) &
+            write (*, '(A,F13.3,A)') '     -   finalize:', time%exp_final(3), ' seconds |'
+!       A memo, not a parent: exp_batched encloses the pdf, sf, xrd and nd
+!       intervals on the batched route, so adding it to sum_times would count
+!       them twice. Printed because it is the only figure that says what the
+!       batched observable route costs as a whole.
+         if (time%exp_batched(3) > 0.d0) &
+            write (*, '(A,F13.3,A)') '   (dev. batched:', time%exp_batched(3), ' seconds)|'
 
          if ((params%estat_method /= "none") .and. params%do_prediction) &
             write (*, '(A,F13.3,A)') '     -      estat:', time%estat(3), ' seconds |'

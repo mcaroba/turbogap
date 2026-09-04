@@ -85,6 +85,9 @@ module timing
       real(dp) :: xrd(3) = 0.0_dp
       real(dp) :: nd(3) = 0.0_dp
       real(dp) :: xps(3) = 0.0_dp
+!     The similarity metric and the finalize/deallocate tail of
+!     compute_exp_spectra. A parent: nothing else is timed inside it.
+      real(dp) :: exp_final(3) = 0.0_dp
       real(dp) :: md(3) = 0.0_dp
       real(dp) :: mc(3) = 0.0_dp
       real(dp) :: mpi(3) = 0.0_dp
@@ -163,6 +166,7 @@ contains
       total = time%read_input(3) + time%read_xyz(3) + time%neigh(3) &
               + time%gap(3) + time%vdw(3) + time%estat(3) &
               + time%pdf(3) + time%sf(3) + time%xrd(3) + time%nd(3) + time%xps(3) &
+              + time%exp_final(3) &
               + time%md(3) + time%mc(3) &
               + time%mpi(3) + time%mpi_positions(3) + time%mpi_ef(3)
    end function sum_times

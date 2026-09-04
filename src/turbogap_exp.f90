@@ -559,6 +559,12 @@ contains
          !           call cpu_time( time%exp_batched(1) )
          call time_start(time%exp_batched, "exp_batched")
 
+!        The pair distribution, on the device. Charged to time%pdf so that the
+!        bucket means the same phase on both routes and can be compared between
+!        them; it sits inside exp_batched, which is a memo and not summed, and
+!        beside the xrd_batched interval below, which is.
+         call time_start(time%pdf, "pair_distribution_batched")
+
 !        Size the batch count from the device, unless the input opted out.
 !
 !        The estimator was written for exactly this and its call site has been
@@ -747,6 +753,8 @@ contains
          params%do_forces = .false.
          params%exp_forces = .false.
 
+         call time_end(time%pdf, "pair_distribution_batched")
+
       else
 
 !        ---   The unbatched route   --- !
@@ -757,6 +765,13 @@ contains
 !        y_pair_distribution, which is what the similarity block below needs.
 !        It computes the pdf forces and virial itself, so exp_forces stays as
 !        the input left it.
+!
+!        This had no timer, so time%pdf was always zero and printed as
+!        "pdf: 0.000 seconds" -- unmeasured, not free. On a 7200-atom GST MAD
+!        step it is the largest single cost in the run, and all of it landed in
+!        Miscellaneous.
+         call time_start(time%pdf, "pair_distribution")
+
          call calculate_pair_distribution(params, x_pair_distribution&
            &, y_pair_distribution, y_pair_distribution_temp,&
            & pair_distribution_partial, pair_distribution_partial_temp,&
@@ -768,6 +783,8 @@ contains
            & pair_distribution_partial_der,&
            & pair_distribution_partial_temp_der, energies_pdf,&
            & forces_pdf, virial_pdf)
+
+         call time_end(time%pdf, "pair_distribution")
 
       end if
 
@@ -872,8 +889,6 @@ contains
          call time_end(time%nd, "nd")
       end if
       if (batched) then
-
-
 
          call time_start(time%xrd, "xrd_batched")
 
@@ -1127,6 +1142,8 @@ contains
       !###---   Compute similarity of experimental predictions   ---###!
       !################################################################!
 
+      call time_start(time%exp_final, "exp_final")
+
       if (params%do_exp) then
          do i = 1, params%n_exp
             ! First normalize the spectrum if it matches some type of experimental data
@@ -1198,6 +1215,8 @@ contains
       end if
 
       deallocate (species_types_actual)
+
+      call time_end(time%exp_final, "exp_final")
 
    end subroutine compute_exp_spectra
 !**************************************************************************
