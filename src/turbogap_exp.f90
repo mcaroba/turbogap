@@ -416,6 +416,12 @@ contains
 !     written inline on the `if`; it is a name now because the pattern
 !     assembly below is shared with the route that does not.
       logical :: batched
+!     Whether the PAIR DISTRIBUTION goes on the device. Separate from batched,
+!     which is about the forces: the pdf half of that route needs no forces to
+!     be wanted, and gating it on them made a run with exp_forces off fall back
+!     to the host pdf and take ten times as long as the run that also computes
+!     forces. Asking for less should not cost more.
+      logical :: batched_pdf
       real(dp), allocatable, target :: sinc_factor_matrix(:, :)
       real(dp), allocatable, target :: pair_distribution_der(:, :)
       real(dp), allocatable, target :: pair_distribution_partial(:, :)
@@ -558,8 +564,21 @@ contains
 !     route and silently get xrd forces with none for nd; .neqv. is exactly one
 !     of the two, and a run with both falls back to the unbatched route, which
 !     handles them independently.
-      batched = params%gpu_batched .and. (params%do_xrd .neqv. params%do_nd) &
-                .and. params%exp_forces .and. params%do_forces
+      batched_pdf = params%gpu_batched .and. (params%do_xrd .neqv. params%do_nd)
+
+!     The device pdf collects partials and stops; the host one also hands back
+!     y_pair_distribution, which the similarity block needs if an experimental
+!     target IS the pair distribution. So a run matching one of those keeps the
+!     host route. This was already true when forces were on -- the batched route
+!     would have left y_pair_distribution unallocated -- so the guard fixes that
+!     case as well as protecting the new one.
+      if (batched_pdf) then
+         do i = 1, params%n_exp
+            if (trim(params%exp_data(i)%label) == 'pair_distribution') batched_pdf = .false.
+         end do
+      end if
+
+      batched = batched_pdf .and. params%exp_forces .and. params%do_forces
 
 !     The matrix force route reads the device pair lists that the batched pdf
 !     builds. The unbatched pdf is the host one and builds none, so that route
@@ -571,7 +590,7 @@ contains
          params%structure_factor_matrix_forces = .false.
       end if
 
-      if (batched) then
+      if (batched_pdf) then
 
          !           print *, "> Starting batched xrd "
          !           call cpu_time( time%exp_batched(1) )
@@ -767,9 +786,26 @@ contains
             end do outerchk
          end if
 
-         ! SETTING EXP FORCES TO FALSE
-         params%do_forces = .false.
-         params%exp_forces = .false.
+!        Off so the pattern routines below do not compute forces the device
+!        block is about to compute; that block turns them back on. Only when
+!        there IS such a block -- otherwise these would be cleared and never
+!        restored, and params outlives the step.
+         if (batched) then
+            params%do_forces = .false.
+            params%exp_forces = .false.
+         else
+!           No force block to come, so the batch state has to be released here.
+!           It used to be freed at the end of that block, which was fine while
+!           the two halves ran together; with the pdf on the device and no
+!           forces wanted, the next step found gpu_exp still allocated and died
+!           on it.
+            call free_host_batches(gpu_batch_storage, params%gpu_n_batches, n_dim_partial)
+            call free_exp_batches(gpu_exp, params%gpu_n_batches)
+            if (allocated(i_beg_list)) deallocate (i_beg_list, i_end_list, j_beg_list, j_end_list)
+            if (allocated(gpu_exp)) deallocate (gpu_exp)
+            if (allocated(gpu_batch_storage)) deallocate (gpu_batch_storage)
+            call time_end(time%exp_batched, "exp_batched")
+         end if
 
          call time_end(time%pdf, "pair_distribution_batched")
 
