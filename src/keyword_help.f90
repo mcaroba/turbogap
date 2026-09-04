@@ -89,7 +89,7 @@ contains
          write (*, '(A)') ''
       end if
       if (every .or. .not. gap_only) then
-         write (*, '(A)') '  neighbors_buffer                     [real, default 0.5]'
+         write (*, '(A)') '  neighbors_buffer                     [real, default 0.25]'
          write (*, '(A)') '      (undocumented)'
          write (*, '(A)') ''
       end if
