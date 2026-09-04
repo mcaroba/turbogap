@@ -35,6 +35,14 @@ void gpu_radial_poly3(int n_atom_pairs, int n_species, bool* mask_d, double* rjs
                       int radial_enhancement, double* amplitude_scaling_d, int* alpha_max_d, double* nf_d, int n_temp_der,
                       double* W_d, bool* do_central_d, double* central_weight_d, hipStream_t* stream);
 
+// ---- gap_soap_radial_operator.cu
+void gpu_radial_poly3operator(int n_atom_pairs, int n_species, bool* mask_d, double* rjs_d, double* rcut_hard_d,
+                              double* rcut_soft_d, double* atom_sigma_d, double* atom_sigma_scaling_d, double* amplitude_scaling_d,
+                              double* central_weight_d, int* alpha_max_d, int* i_beg_d, int* i_end_d, int* k2_start_d,
+                              int* k2_i_site_d, double* A_d, double* W_d, int n_max, int max_alpha, int mode,
+                              int radial_enhancement, bool do_derivatives, double* exp_coeff_d, double* exp_coeff_der_d,
+                              hipStream_t* stream);
+
 // ---- gap_soap_angular.cu
 void gpu_get_cnk(double* radial_exp_coeff_d, hipDoubleComplex* angular_exp_coeff_d, hipDoubleComplex* cnk_d, int* n_neigh_d,
                  int* k2_start_d, int n_sites, int n_atom_pairs, int n_soap, int k_max, int n_max, int l_max, int bintybint,

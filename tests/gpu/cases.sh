@@ -28,7 +28,7 @@
 # empty rather than contributing an empty word to a command line.
 
 tg_case_list() {
-  printf '%s\n' CO_predict CO_md vdw_ts XRD_mad estat_gsf
+  printf '%s\n' CO_predict CO_md vdw_ts XRD_mad estat_gsf GST_operator GST_operator_md
 }
 
 # The large systems, listed separately and NOT returned by tg_case_list.
@@ -124,6 +124,61 @@ vdw_buffer = 0.5
 
 vdw_type = ts
 write_xyz = 1'
+    ;;
+
+  # The poly3operator radial basis, which is a different device kernel from the
+  # poly3 one every other case here runs. Its atomic density is a compact cubic
+  # rather than a Gaussian, so the coefficients are exact polynomial integrals
+  # split across a soft and a buffer region -- and at rcut 5.5 with a 0.5 A
+  # buffer this GST cell puts roughly a third of the neighbours in the buffer,
+  # where the filtered density is degree six and the arithmetic is worst
+  # conditioned. Nothing else in the suite reaches that code.
+  #
+  # tests/poly3operator/ checks the same kernel against quadrature; this pair
+  # checks that the energies and forces a run produces still match the CPU.
+  GST_operator)
+    TG_ATOMS=atoms_897.xyz
+    TG_MODE=predict
+    TG_DATA_DIR=$TG_TESTS_DIR/GST
+    TG_BODY='atoms_file = "atoms.xyz"
+pot_file = "gap_files/soap_turbo_pot_v8_3.gap"
+n_species = 3
+species = Ge Sb Te
+masses = 72.64 121.76 127.6
+e0 = 0.0 0.0 0.0
+random_seed = 12345
+
+write_forces = .true.
+write_local_energies = .true.
+write_virial = .true.'
+    ;;
+
+  # The same basis under md, which is the mode that uses the derivative half of
+  # the kernel every step. atoms_897_v.xyz carries velocities, without which the
+  # two builds start from different random draws and the comparison is
+  # meaningless after step one.
+  GST_operator_md)
+    TG_ATOMS=atoms_897_v.xyz
+    TG_MODE=md
+    TG_DATA_DIR=$TG_TESTS_DIR/GST
+    TG_BODY='atoms_file = "atoms.xyz"
+pot_file = "gap_files/soap_turbo_pot_v8_3.gap"
+n_species = 3
+species = Ge Sb Te
+masses = 72.64 121.76 127.6
+e0 = 0.0 0.0 0.0
+random_seed = 12345
+
+md_nsteps = 10
+md_step = 0.5
+thermostat = "none"
+t_beg = 300
+t_end = 300
+
+write_xyz = 1
+write_forces = .true.
+write_local_energies = .true.
+write_virial = .true.'
     ;;
 
   # Molecular Augmented Dynamics against an experimental XRD pattern. This is
@@ -292,9 +347,16 @@ tg_stage_case() {
 # docs/gpu_fixes_handoff.md. They still run and still report, but they do not
 # turn the suite red; if one starts passing, the suite says XPASS so the marker
 # gets removed rather than quietly masking a regression later.
+# XRD_mad was xfail here from 2026-08 until compare_xyz.py learned to read the
+# Properties string. The recorded reason -- "local_energy 1.9e-05 on a 1e-6
+# tolerance" -- was the comparator reading column 7 positionally: in an MD
+# trajectory, which carries velocities before forces, column 7 is forces(1), not
+# local_energy. The 1.9e-05 was a force component, on |F|max 1760, so 1.3e-08
+# relative, and the "forces 1.0e-08 on |F|max 3.05" in the same note was the
+# velocities. With the columns resolved by name the case passes outright:
+# local_energy agrees to 7.6e-07 and forces to 2.3e-05 on |F|max 1760.
 tg_case_xfail() {
   case $1 in
-  XRD_mad) printf '%s' "local_energy only, 2.7e-06 at frame 4 and 1.9e-05 at frame 5 against the CPU build, on an absolute tolerance of 1e-6. Everything else agrees -- energy 7.7e-10, virial 8.6e-09, forces 1.0e-08 on |F|max 3.05. The two builds sum an atom's energy in different orders and five MD steps amplify it; the GPU's own run-to-run half of this was the atomicAdd scatter and is fixed. See docs/gpu_fixes_handoff.md, 6c revisited" ;;
   estat_gsf) printf '%s' "batched device electrostatics disagrees with the CPU implementation: forces to 1.1 eV/A on |F|max 20.5, virial 0.7%, local_energy 0.16 eV -- every other energy component agrees exactly. Found the first time the path was ever exercised; see the commit that added this case" ;;
   *) printf '' ;;
   esac

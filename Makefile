@@ -180,7 +180,7 @@ PROGRAMS := turbogap
 # to name -- cuda_wrappers.cu (2684 lines), gpu_exp.cu (1709) and 3b_final.cc --
 # so a change to one kernel family no longer recompiles the other twelve.
 SRC_CUDA := gpu_memory.cu gpu_blas.cu gpu_scan.cu \
-            gap_predict.cu gap_soap_radial.cu gap_soap_angular.cu \
+            gap_predict.cu gap_soap_radial.cu gap_soap_radial_operator.cu gap_soap_angular.cu \
             gap_soap_descriptor.cu gap_soap_forces.cu gap_2b.cu \
             mad_pdf.cu mad_xrd.cu mad_electrostatics.cu gpu_scatter.cu
 # gap_3b stays .cc, and so is compiled by $(CC) rather than $(CU), because it

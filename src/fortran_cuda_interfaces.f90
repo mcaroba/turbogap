@@ -518,6 +518,40 @@ MODULE F_B_C
          logical(c_bool), value :: do_derivatives
       end subroutine
 
+      subroutine gpu_radial_poly3operator(n_atom_pairs, n_species, mask_d, rjs_d, rcut_hard_d, rcut_soft_d, &
+                                          atom_sigma_d, atom_sigma_scaling_d, amplitude_scaling_d, central_weight_d, &
+                                          alpha_max_d, i_beg, i_end, k2_start_d, k2_i_site_d, A_d, W_d, n_max, &
+                                          max_alpha, mode, radial_enhancement, do_derivatives, exp_coeff_d, &
+                                          exp_coeff_der_d, gpu_stream) &
+         bind(C, name="gpu_radial_poly3operator")
+         use iso_c_binding
+         type(c_ptr), value :: mask_d
+         type(c_ptr), value :: rjs_d
+         type(c_ptr), value :: rcut_hard_d
+         type(c_ptr), value :: rcut_soft_d
+         type(c_ptr), value :: atom_sigma_d
+         type(c_ptr), value :: atom_sigma_scaling_d
+         type(c_ptr), value :: amplitude_scaling_d
+         type(c_ptr), value :: central_weight_d
+         type(c_ptr), value :: alpha_max_d
+         type(c_ptr), value :: i_beg
+         type(c_ptr), value :: i_end
+         type(c_ptr), value :: k2_start_d
+         type(c_ptr), value :: k2_i_site_d
+         type(c_ptr), value :: A_d
+         type(c_ptr), value :: W_d
+         type(c_ptr), value :: exp_coeff_d
+         type(c_ptr), value :: exp_coeff_der_d
+         type(c_ptr) :: gpu_stream
+         integer(c_int), value :: n_atom_pairs
+         integer(c_int), value :: n_species
+         integer(c_int), value :: n_max
+         integer(c_int), value :: max_alpha
+         integer(c_int), value :: mode
+         integer(c_int), value :: radial_enhancement
+         logical(c_bool), value :: do_derivatives
+      end subroutine
+
       subroutine gpu_radial_poly3(n_atom_pairs, n_species, mask_d, rjs_d, rcut_hard_d, n_sites, n_neigh_d, n_max, &
                                   ntemp, do_derivatives, exp_coeff_d, exp_coeff_der_d, rcut_soft_d, atom_sigma_d, &
                                   exp_coeff_temp1_d, exp_coeff_temp2_d, exp_coeff_der_temp_d, i_beg, i_end, &

@@ -381,6 +381,8 @@ module types
       logical :: accessible_volume = .false.
       ! Reverse-Monte Carlo
       logical :: mc_optimize_exp = .false.
+      logical :: mc_reverse = .false.
+      real(dp) :: mc_reverse_lambda = 0.d0
       ! MC internal
       integer :: mc_idx = 1
       integer, allocatable :: mc_swaps_id(:)
