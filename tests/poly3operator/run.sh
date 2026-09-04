@@ -22,6 +22,11 @@ trap 'if [ "${TURBOGAP_KEEP:-0}" = "1" ]; then echo "kept $work"; else rm -rf "$
 BIN=${TURBOGAP_BIN:-$repo/bin/turbogap}
 DATA=${TURBOGAP_POLY3OP_DATA:-$repo/../turbogap_tests/GST}
 F90=${TURBOGAP_F90:-mpif90}
+# soap_turbo_radial.f90 also holds the LAPACK-based orthonormalisation, so the
+# module needs a LAPACK at link time even though this test uses the tabulated
+# one. Which library provides it is a per-machine answer: -llapack -lblas on a
+# Debian box, -lopenblas on Roihu.
+LIBS=${TURBOGAP_TEST_LIBS:--llapack -lblas}
 
 if [ ! -x "$BIN" ]; then
   echo "SKIP: no binary at $BIN (set TURBOGAP_BIN)"
@@ -62,7 +67,7 @@ echo "--- building poly3operatorverify ---"
 $F90 -O2 -J "$work" -c "$repo/src/soap_turbo/src/soap_turbo_functions.f90" -o "$work/f.o"
 $F90 -O2 -J "$work" -c "$repo/src/soap_turbo/src/soap_turbo_radial.f90" -o "$work/r.o"
 $F90 -O2 -I "$work" "$here/poly3operatorverify.f90" "$work/f.o" "$work/r.o" \
-     -o "$work/poly3operatorverify" -llapack -lblas
+     -o "$work/poly3operatorverify" $LIBS
 
 echo "--- running $BIN on the 897-atom GST cell ---"
 run=$work/run
