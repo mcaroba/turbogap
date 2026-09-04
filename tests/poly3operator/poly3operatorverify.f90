@@ -23,8 +23,8 @@
 !
 ! Usage:
 !   poly3operatorverify <dump> <alpha_max> <rcut_hard> <rcut_soft> <atom_sigma>
-!                       <amplitude_scaling> <radial_enhancement> <central_weight>
-!                       [tol]
+!                       <atom_sigma_scaling> <amplitude_scaling>
+!                       <radial_enhancement> <central_weight> [tol]
 program poly3operatorverify
 
    use soap_turbo_radial, only: get_orthonormalization_matrix_poly3_tabulated
@@ -45,6 +45,7 @@ program poly3operatorverify
    real(dp) :: rcut_hard
    real(dp) :: rcut_soft
    real(dp) :: atom_sigma
+   real(dp) :: atom_sigma_scaling
    real(dp) :: amplitude_scaling
    real(dp) :: central_weight
    real(dp) :: tol
@@ -85,9 +86,10 @@ program poly3operatorverify
 
    call gauss_legendre(xgl, wgl)
 
-   if (command_argument_count() < 8) then
+   if (command_argument_count() < 9) then
       write (*, *) "usage: poly3operatorverify <dump> <alpha_max> <rcut_hard> <rcut_soft> &
-                   &<atom_sigma> <amplitude_scaling> <radial_enhancement> <central_weight> [tol]"
+                   &<atom_sigma> <atom_sigma_scaling> <amplitude_scaling> &
+                   &<radial_enhancement> <central_weight> [tol]"
       stop 1
    end if
    call get_command_argument(1, dump_file)
@@ -95,12 +97,13 @@ program poly3operatorverify
    call get_command_argument(3, arg); read (arg, *) rcut_hard
    call get_command_argument(4, arg); read (arg, *) rcut_soft
    call get_command_argument(5, arg); read (arg, *) atom_sigma
-   call get_command_argument(6, arg); read (arg, *) amplitude_scaling
-   call get_command_argument(7, arg); read (arg, *) radial_enhancement
-   call get_command_argument(8, arg); read (arg, *) central_weight
+   call get_command_argument(6, arg); read (arg, *) atom_sigma_scaling
+   call get_command_argument(7, arg); read (arg, *) amplitude_scaling
+   call get_command_argument(8, arg); read (arg, *) radial_enhancement
+   call get_command_argument(9, arg); read (arg, *) central_weight
    tol = 1.0e-9_dp
-   if (command_argument_count() >= 9) then
-      call get_command_argument(9, arg); read (arg, *) tol
+   if (command_argument_count() >= 10) then
+      call get_command_argument(10, arg); read (arg, *) tol
    end if
 
    allocate (W(1:alpha_max, 1:alpha_max))
@@ -228,7 +231,7 @@ contains
       logical :: is_near
       real(dp) :: width
 
-      width = 2.0_dp*sqrt(2.0_dp*log(2.0_dp))*atom_sigma
+      width = 2.0_dp*sqrt(2.0_dp*log(2.0_dp))*(atom_sigma + atom_sigma_scaling*rj/rcut_hard)
       is_near = abs(rj) < eps .or. &
                 abs(rj - rcut_soft) < eps .or. &
                 abs(rj - width - rcut_soft) < eps .or. &
@@ -282,7 +285,10 @@ contains
 
       rj = rj_in/real(rcut_hard, qp)
       rcs = real(rcut_soft, qp)/real(rcut_hard, qp)
-      width = 2.0_qp*sqrt(2.0_qp*log(2.0_qp))*real(atom_sigma, qp)/real(rcut_hard, qp)
+!     The Gaussian width follows the neighbour out: sigma_j = sigma + scaling*rj,
+!     in units of rcut_hard, and the bump's half-width is its FWHM.
+      width = 2.0_qp*sqrt(2.0_qp*log(2.0_qp)) &
+              *(real(atom_sigma, qp)/real(rcut_hard, qp) + real(atom_sigma_scaling, qp)*rj)
       fw = 2.0_qp*sqrt(2.0_qp*log(2.0_qp))*(1.0_qp - rcs)
 
       raw = 0.0_qp
@@ -352,7 +358,7 @@ contains
 
       pi = acos(-1.0_qp)
       rj = rj_in/real(rcut_hard, qp)
-      sigma = real(atom_sigma, qp)/real(rcut_hard, qp)
+      sigma = real(atom_sigma, qp)/real(rcut_hard, qp) + real(atom_sigma_scaling, qp)*rj
       if (amplitude_scaling == 0.0_dp) then
          amp = 1.0_qp/sigma
       else
@@ -378,6 +384,8 @@ contains
       real(qp) :: e
       real(qp) :: worst_s
       real(qp) :: worst_i
+      real(qp) :: wmax
+      real(qp) :: tol_i
       integer :: a
       integer :: b
       integer :: c
@@ -410,9 +418,26 @@ contains
          end do
       end do
 
+!     The poly3 basis functions are nearly parallel -- every off-diagonal of S
+!     is above 0.9 -- so S is badly conditioned and W = S**(-1/2) has entries
+!     that grow fast with alpha_max: about 400 at alpha_max 4 and 3e5 at 8.
+!     W is tabulated in double precision, and forming W S W squares it, so the
+!     residual cannot be smaller than about |W|**2 * epsilon however right the
+!     table is. Test against that rather than against a fixed number, or the
+!     check reports a correct table as broken the moment alpha_max passes 6.
+      wmax = 0.0_qp
+      do a = 1, am
+         do b = 1, am
+            wmax = max(wmax, abs(real(W_in(a, b), qp)))
+         end do
+      end do
+      tol_i = 10.0_qp*wmax*wmax*real(epsilon(1.0_dp), qp)
+
       write (*, '(A,ES12.4)') "  |S_tabulated - S_analytic|_max = ", real(worst_s, dp)
-      write (*, '(A,ES12.4)') "  |W S W - I|_max                = ", real(worst_i, dp)
-      if (worst_s > 1.0e-13_qp .or. worst_i > 1.0e-8_qp) then
+      write (*, '(A,ES12.4,A,ES12.4,A)') "  |W S W - I|_max                = ", real(worst_i, dp), &
+         "   (tolerance ", real(tol_i, dp), " = 10 |W|^2 eps)"
+      write (*, '(A,ES12.4)') "  |W|_max                        = ", real(wmax, dp)
+      if (worst_s > 1.0e-13_qp .or. worst_i > tol_i) then
          write (*, '(A)') "  the tabulated matrices are not S and S**(-1/2) for this alpha_max"
          all_ok = .false.
       end if
