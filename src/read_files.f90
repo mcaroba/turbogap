@@ -2161,8 +2161,12 @@ contains
          if (rank == 0) call print_parameter("mem_fraction", params%mem_fraction)
          !> @kw neighbors_buffer
          !> Extra distance added to every cutoff when the neighbour lists are built, so that a list
-         !> stays valid for several steps as atoms move. Larger values cost memory and neighbour-loop
-         !> time but rebuild less often.
+         !> stays valid for several steps as atoms move. The list is rebuilt once the two largest
+         !> displacements since the last build sum to the buffer, which is the point at which a pair
+         !> that started outside the padded cutoff can have reached the real one. Larger values cost
+         !> memory and neighbour-loop time but rebuild less often; pairs beyond a descriptor own
+         !> cutoff are dropped before it is evaluated, so the descriptors themselves cost nothing
+         !> extra. 0 means rebuild every step and is the default.
          !> @units A
       else if (keyword == 'neighbors_buffer') then
          backspace (unit)

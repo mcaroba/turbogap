@@ -610,8 +610,13 @@ contains
          write (*, '(A)') '  neighbors_buffer                     [real, default 0.0, A]'
          write (*, '(A)') '      Extra distance added to every cutoff when the neighbour lists are'
          write (*, '(A)') '      built, so that a list stays valid for several steps as atoms move.'
-         write (*, '(A)') '      Larger values cost memory and neighbour-loop time but rebuild less'
-         write (*, '(A)') '      often.'
+         write (*, '(A)') '      The list is rebuilt once the two largest displacements since the'
+         write (*, '(A)') '      last build sum to the buffer, which is the point at which a pair'
+         write (*, '(A)') '      that started outside the padded cutoff can have reached the real'
+         write (*, '(A)') '      one. Larger values cost memory and neighbour-loop time but rebuild'
+         write (*, '(A)') '      less often; pairs beyond a descriptor own cutoff are dropped before'
+         write (*, '(A)') '      it is evaluated, so the descriptors themselves cost nothing extra. 0'
+         write (*, '(A)') '      means rebuild every step and is the default.'
          write (*, '(A)') ''
       end if
       if (every .or. .not. gap_only) then
