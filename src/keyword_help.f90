@@ -607,7 +607,7 @@ contains
          write (*, '(A)') ''
       end if
       if (every .or. .not. gap_only) then
-         write (*, '(A)') '  neighbors_buffer                     [real, default 0.5, A]'
+         write (*, '(A)') '  neighbors_buffer                     [real, default 0.25, A]'
          write (*, '(A)') '      Extra distance added to every cutoff when the neighbour lists are'
          write (*, '(A)') '      built, so that a list stays valid for several steps as atoms move.'
          write (*, '(A)') '      The list is rebuilt once the two largest displacements since the'
@@ -616,8 +616,12 @@ contains
          write (*, '(A)') '      one. Larger values cost memory and neighbour-loop time but rebuild'
          write (*, '(A)') '      less often; pairs beyond a descriptor own cutoff are dropped before'
          write (*, '(A)') '      it is evaluated, so the descriptors themselves cost nothing extra. 0'
-         write (*, '(A)') '      means rebuild every step; the default is 0.5 A, near the measured'
-         write (*, '(A)') '      optimum on GST.'
+         write (*, '(A)') '      means rebuild every step; the default is 0.25 A, the measured'
+         write (*, '(A)') '      optimum on GST. Keep it small: the cell list uses mx ='
+         write (*, '(A)') '      int(L/rcut_max), so a buffer that pushes L/rcut_max across an'
+         write (*, '(A)') '      integer coarsens the grid a whole step and costs more than the'
+         write (*, '(A)') '      skipped rebuilds save. With a large observable cutoff, check'
+         write (*, '(A)') '      int(L/(rcut+buffer)) before raising it.'
          write (*, '(A)') ''
       end if
       if (every .or. .not. gap_only) then

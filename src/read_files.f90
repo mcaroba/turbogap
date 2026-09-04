@@ -2166,7 +2166,10 @@ contains
          !> that started outside the padded cutoff can have reached the real one. Larger values cost
          !> memory and neighbour-loop time but rebuild less often; pairs beyond a descriptor own
          !> cutoff are dropped before it is evaluated, so the descriptors themselves cost nothing
-         !> extra. 0 means rebuild every step; the default is 0.5 A, near the measured optimum on GST.
+         !> extra. 0 means rebuild every step; the default is 0.25 A, the measured optimum on GST.
+         !> Keep it small: the cell list uses mx = int(L/rcut_max), so a buffer that pushes L/rcut_max
+         !> across an integer coarsens the grid a whole step and costs more than the skipped rebuilds
+         !> save. With a large observable cutoff, check int(L/(rcut+buffer)) before raising it.
          !> @units A
       else if (keyword == 'neighbors_buffer') then
          backspace (unit)
