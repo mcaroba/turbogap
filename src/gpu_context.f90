@@ -264,7 +264,7 @@ contains
       integer, intent(in) :: rank
       integer, intent(out) :: n_omp
 
-      integer :: omp_task, n_omp_temp
+      integer :: omp_task
 
       n_omp = 1
 
@@ -274,18 +274,31 @@ contains
       call create_cublas_handle(cublas_handle, gpu_stream)
 
       if (params%gpu_batched) then
-!        Do not ask for more threads than there are batches to give them.
-#ifdef _OPENMP
-         n_omp_temp = omp_get_max_threads()
-
-         !$omp parallel DEFAULT(SHARED)
-         n_omp_temp = omp_get_num_threads()
-         if (n_omp_temp > params%gpu_n_batches) n_omp_temp = params%gpu_n_batches
-         call omp_set_num_threads(n_omp_temp)
-         !$omp end parallel
-
-         n_omp = omp_get_max_threads()
-#endif
+!        One stream, deliberately, however many threads the run has.
+!
+!        The batch count is chosen so that ONE batch fits the device budget --
+!        get_gpu_batches divides the work until the largest buffer, which is
+!        n_samples x n_pairs x 8 bytes, is under max_Gbytes_per_process. Running
+!        n_omp of them at once needs n_omp times that, and nothing divides the
+!        budget by the concurrency. At 194400 atoms with a 12.6 A observable
+!        cutoff the estimator asked for 201 GB against a 56 GB budget and split
+!        it four ways; sixteen threads then tried to hold four of those at once
+!        on a 95 GB card and the run died in cudaMalloc with "invalid argument".
+!
+!        The clamp this replaces could not have prevented that. It wrote a
+!        SHARED n_omp_temp from every thread; it called omp_set_num_threads from
+!        inside a parallel region, where it sets only the calling thread's own
+!        control variable and not the master's; and it clamped against
+!        params%gpu_n_batches while that still held the input default of 1,
+!        because the real count is computed later, from the device, in
+!        compute_exp_spectra. On this machine it produced sixteen streams.
+!
+!        Raising this needs the budget divided by the number of concurrent
+!        batches, not the thread count clamped after the fact. It is worth
+!        little as things stand: the device observable work is 0.8 s of a 10.8 s
+!        step on the 7200-atom cell, while the neighbour loops that OPENMP=1 is
+!        actually for are host work and thread freely.
+         n_omp = 1
          allocate (cublas_handles(1:n_omp))
          allocate (gpu_streams(1:n_omp))
          do omp_task = 1, n_omp
