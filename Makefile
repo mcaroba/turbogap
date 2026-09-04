@@ -39,6 +39,31 @@ ifeq ($(DEBUG),1)
   BUILD_TAG := $(BUILD_TAG)-dbg
 endif
 
+# ----------------------------------------------------------------- OPENMP=1
+#
+# Host threading. No architecture makefile passes -fopenmp, so _OPENMP has been
+# undefined on every build that ever shipped and the !$OMP directives were
+# comments. The neighbour build and the per-step pair geometry in
+# src/neighbors.f90 carry them now, and they are the reason to turn this on:
+# with one MPI rank per GPU a single core built the whole list while the device
+# idled, and a node has tens of cores per rank going spare.
+#
+# Off by default all the same. It is a build-time choice that changes which
+# code runs, so it gets its own object tree and its own bin, and the regression
+# suite keeps testing the untagged one.
+#
+# gfortran needs -fopenmp at BOTH compile and link: it selects the runtime
+# library as well as enabling the directives, and the !$ sentinel lines are
+# conditionally compiled only when it is present.
+#
+#     make OPENMP=1               build-omp/   bin-omp/turbogap
+OPENMP ?= 0
+ifeq ($(OPENMP),1)
+  F90_OPTS += -fopenmp
+  LIBS += -fopenmp
+  BUILD_TAG := $(BUILD_TAG)-omp
+endif
+
 # ------------------------------------------------------- an ad-hoc variant
 #
 # Extra compiler flags, and a tag so the variant gets its own object tree.
