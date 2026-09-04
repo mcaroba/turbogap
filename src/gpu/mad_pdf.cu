@@ -61,9 +61,36 @@ extern "C" void gpu_get_pair_distribution_nk(int i_beg, int i_end, int n_pairs, 
   // down -- and splitting a cell into batches produces empty extents readily.
   // Say which launch and what it asked for.
   TG_CHECK_LAUNCH("kernel_get_pair_distribution_nk", nblocks, nthreads, "n_pairs", n_pairs);
+  // Report and clear anything left over from earlier in the stream.
+  // hipPeekAtLastError does not reset the flag, so without this the first
+  // failure anywhere is re-reported at every later check and every one of them
+  // blames its own line -- which is how a launch that was fine came to be
+  // accused of "invalid configuration argument" on every rank but zero.
+  // Clearing without saying so would instead throw away the evidence that
+  // something earlier failed, so it is printed here and named as inherited.
+  {
+    hipError_t stale = hipGetLastError();
+    if (stale != hipSuccess) {
+      fprintf(stderr,
+              "GPUlaunch: gpu_get_pair_distribution_nk entered with an error already set: %s.\n"
+              "GPUlaunch:   It came from something earlier in this stream that did not check.\n",
+              hipGetErrorString(stale));
+      fflush(stderr);
+    }
+  }
   kernel_get_pair_distribution_nk<<<nblocks, nthreads, 0, stream[0]>>>(i_beg, i_end, n_sites0, neighbors_list, n_neigh,
                                                                        neighbor_species, species, rjs, xyz, r_min, r_max, r_cut,
                                                                        buffer, nk_flags_d, species_1, species_2);
+  {
+    hipError_t launch_err = hipGetLastError();
+    if (launch_err != hipSuccess) {
+      fprintf(stderr,
+              "GPUlaunch: kernel_get_pair_distribution_nk grid(%u,%u,%u) block(%u,%u,%u) i_beg=%d i_end=%d n_pairs=%d: %s\n",
+              nblocks.x, nblocks.y, nblocks.z, nthreads.x, nthreads.y, nthreads.z, i_beg, i_end, n_pairs,
+              hipGetErrorString(launch_err));
+      fflush(stderr);
+    }
+  }
 
   hipStreamSynchronize(stream[0]);
   gpuErrchk(hipPeekAtLastError());
