@@ -607,7 +607,7 @@ contains
          write (*, '(A)') ''
       end if
       if (every .or. .not. gap_only) then
-         write (*, '(A)') '  neighbors_buffer                     [real, default 0.0, A]'
+         write (*, '(A)') '  neighbors_buffer                     [real, default 0.5, A]'
          write (*, '(A)') '      Extra distance added to every cutoff when the neighbour lists are'
          write (*, '(A)') '      built, so that a list stays valid for several steps as atoms move.'
          write (*, '(A)') '      The list is rebuilt once the two largest displacements since the'
@@ -616,7 +616,8 @@ contains
          write (*, '(A)') '      one. Larger values cost memory and neighbour-loop time but rebuild'
          write (*, '(A)') '      less often; pairs beyond a descriptor own cutoff are dropped before'
          write (*, '(A)') '      it is evaluated, so the descriptors themselves cost nothing extra. 0'
-         write (*, '(A)') '      means rebuild every step and is the default.'
+         write (*, '(A)') '      means rebuild every step; the default is 0.5 A, near the measured'
+         write (*, '(A)') '      optimum on GST.'
          write (*, '(A)') ''
       end if
       if (every .or. .not. gap_only) then

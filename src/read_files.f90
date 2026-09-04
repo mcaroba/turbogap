@@ -2166,7 +2166,7 @@ contains
          !> that started outside the padded cutoff can have reached the real one. Larger values cost
          !> memory and neighbour-loop time but rebuild less often; pairs beyond a descriptor own
          !> cutoff are dropped before it is evaluated, so the descriptors themselves cost nothing
-         !> extra. 0 means rebuild every step and is the default.
+         !> extra. 0 means rebuild every step; the default is 0.5 A, near the measured optimum on GST.
          !> @units A
       else if (keyword == 'neighbors_buffer') then
          backspace (unit)
