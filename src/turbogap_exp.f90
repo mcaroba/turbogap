@@ -400,7 +400,18 @@ contains
 !     -V dE/dV for the batched xrd, accumulated over the (a,b) channels while
 !     the device weights are still alive and added once the batches have been
 !     collected into virial_xrd.
-      real(dp) :: virial_xrd_volume(1:3, 1:3)
+      real(dp) :: virial_obs_volume(1:3, 1:3)
+!     The pair half of the batched virial, before the cell half is added.
+      real(dp) :: virial_obs_batched(1:3, 1:3)
+!     The diffraction pattern the batched route is working on. One at a time,
+!     which is what the batched condition enforces: the device buffers, the
+!     residual and the force accumulator are all single-observable. These point
+!     at either the xrd or the nd set for the whole of the batched block.
+      real(dp), pointer :: x_obs(:) => null()
+      real(dp), pointer :: y_obs(:) => null()
+      integer :: obs_idx
+      character(len=32) :: obs_output
+      logical :: obs_neutron
 !     Whether this snapshot takes the batched device route. The condition was
 !     written inline on the `if`; it is a name now because the pattern
 !     assembly below is shared with the route that does not.
@@ -540,7 +551,14 @@ contains
 
       n_dim_partial = n_species_actual*(n_species_actual + 1)/2
 
-      batched = params%gpu_batched .and. (params%do_xrd .or. params%do_nd) &
+!     One diffraction pattern at a time on the batched route. Everything it
+!     allocates -- the residual, the per-q scattering factors, the batch force
+!     accumulators -- exists once, so it can serve one observable per step. The
+!     condition used to be .or., which let a run with both patterns on take the
+!     route and silently get xrd forces with none for nd; .neqv. is exactly one
+!     of the two, and a run with both falls back to the unbatched route, which
+!     handles them independently.
+      batched = params%gpu_batched .and. (params%do_xrd .neqv. params%do_nd) &
                 .and. params%exp_forces .and. params%do_forces
 
 !     The matrix force route reads the device pair lists that the batched pdf
@@ -890,7 +908,30 @@ contains
       end if
       if (batched) then
 
-         call time_start(time%xrd, "xrd_batched")
+!        Which pattern this is. calculate_xrd above has already filled the
+!        active y and x -- with its own exp_forces off, the forces being what
+!        this block is for -- so both are allocated by the time we point at
+!        them. The route was written against the xrd-named arrays throughout,
+!        and for an nd run y_xrd is never allocated and xrd_idx never set, so
+!        it died in cuda_cpy_htod on a garbage size.
+         obs_neutron = params%do_nd
+         if (obs_neutron) then
+            obs_idx = params%nd_idx
+            obs_output = params%nd_output
+            x_obs => x_nd
+            y_obs => y_nd
+         else
+            obs_idx = params%xrd_idx
+            obs_output = params%xrd_output
+            x_obs => x_xrd
+            y_obs => y_xrd
+         end if
+
+         if (obs_neutron) then
+            call time_start(time%nd, "nd_batched")
+         else
+            call time_start(time%xrd, "xrd_batched")
+         end if
 
          ! RESETTING EXP FORCES TO FALSE
          params%do_forces = .true.
@@ -908,8 +949,8 @@ contains
          ! print *, " alloc y_xrd ", allocated(y_xrd), size( y_xrd )
          ! print *, " alloc y_exp ", allocated(params%exp_data(params%xrd_idx)%y), size(params%exp_data(params%xrd_idx)%y)
 
-         allocate (prefactor(1:size(y_xrd)))
-         prefactor(1:size(y_xrd)) = (y_xrd(1:size(y_xrd)) - params%exp_data(params%xrd_idx)%y(1:size(y_xrd)))
+         allocate (prefactor(1:size(y_obs)))
+         prefactor(1:size(y_obs)) = (y_obs(1:size(y_obs)) - params%exp_data(obs_idx)%y(1:size(y_obs)))
 
          st_prefactor_d = int(size(prefactor, 1), c_size_t)*c_double
          call gpu_malloc_async(prefactor_d, st_prefactor_d, gpu_stream)
@@ -931,11 +972,18 @@ contains
             do k = 1, n_species_actual
                if (j > k) cycle
 
+!              The do_xrd argument is "build the weights at all" and the
+!              neutron one is "which kind": get_all_scattering_factors puts its
+!              whole body behind the first and picks the branch with the second.
+!              Passing params%do_xrd meant that for an nd run it built nothing
+!              and then copied an unallocated array to the device, so it has to
+!              be .true. here -- we are inside the diffraction branch by
+!              construction -- with neutron carrying the choice.
                call get_all_scattering_factors(all_scattering_factors_d(n_dim_idx),&
-                 & n_sites, x_xrd(1:params%structure_factor_n_samples), species_types_actual, &
+                 & n_sites, x_obs(1:params%structure_factor_n_samples), species_types_actual, &
                  params%structure_factor_n_samples, n_species_actual,&
-                 & x_xrd(1:params%structure_factor_n_samples), j, k, params%do_xrd, params%xrd_output,&
-                 & n_atoms_of_species, .false., gpu_stream)
+                 & x_obs(1:params%structure_factor_n_samples), j, k, .true., obs_output,&
+                 & n_atoms_of_species, obs_neutron, gpu_stream)
 
                ! call gpu_check_error()
                n_dim_idx = n_dim_idx + 1
@@ -946,9 +994,9 @@ contains
          call get_energy_scale(params%do_md, params%do_mc,&
            & md_istep, params%md_nsteps, mc_istep, params &
            &%mc_nsteps, params&
-           &%exp_energy_scales_initial(params%xrd_idx), params&
-           &%exp_energy_scales_final(params%xrd_idx), params&
-           &%exp_energy_scales(params%xrd_idx))
+           &%exp_energy_scales_initial(obs_idx), params&
+           &%exp_energy_scales_final(obs_idx), params&
+           &%exp_energy_scales(obs_idx))
 
          ! ! $OMP SHARED(cublas_handles, gpu_streams, n_neigh, species, neighbor_species, neighbors_list, rjs, xyz, &
          ! ! $OMP xpdf_d, dV_d, dV, n_atoms_of_species, n_species_actual, n_sites, v_uc, gpu_batch_storage, gpu_exp, x_pair_distribution)
@@ -1016,7 +1064,7 @@ contains
                   ! call gpu_check_error()
                   !                    print * , "starting xrd forces"
 
-                  call get_structure_factor_forces_matrix_original(.true., params%exp_energy_scales(params%xrd_idx), &
+                  call get_structure_factor_forces_matrix_original(.true., params%exp_energy_scales(obs_idx), &
                                                                    gpu_batch_storage(i)%host(n_dim_idx)%forces_h, &
                                                                    gpu_batch_storage(i)%host(n_dim_idx)%virial_h, &
                                                             params%pair_distribution_n_samples, params%structure_factor_n_samples, &
@@ -1056,8 +1104,9 @@ contains
 !        the N/V in c_factor cancels against a V inside g_ab everywhere but the
 !        subtracted -1, which goes as 1/V. That piece belongs to the whole cell
 !        rather than to a batch or to the pairs a rank owns, so it is summed
-!        over the (a,b) channels once, here, and added to virial_xrd after the
-!        batches have been collected -- see add_structure_factor_volume_virial,
+!        over the (a,b) channels once, here, and added to the pattern's virial
+!        after the batches have been collected -- see
+!        add_structure_factor_volume_virial,
 !        which is also what the non-batched routes in exp_utils call.
 !
 !        The weights it needs are the same per-q scattering factors the force
@@ -1065,7 +1114,7 @@ contains
 !        the copy back. Done in this loop because it is the last place they are
 !        alive.
          call gpu_stream_sync(gpu_stream)
-         virial_xrd_volume = 0.d0
+         virial_obs_volume = 0.d0
          allocate (asf_host(1:params%structure_factor_n_samples))
 
          n_dim_idx = 1
@@ -1082,8 +1131,8 @@ contains
                   f = 4.d0*pi*f*((n_atoms_of_species(j)*n_atoms_of_species(k))/dfloat(n_sites)/&
                     & dfloat(n_sites))*(dfloat(n_sites)/v_uc)
 
-                  call add_structure_factor_volume_virial(virial_xrd_volume, rank,&
-                       & params%exp_energy_scales(params%xrd_idx), f, prefactor,&
+                  call add_structure_factor_volume_virial(virial_obs_volume, rank,&
+                       & params%exp_energy_scales(obs_idx), f, prefactor,&
                        & sinc_factor_matrix, params%pair_distribution_n_samples,&
                        & params%structure_factor_n_samples, asf_host)
                end if
@@ -1104,16 +1153,29 @@ contains
          ! call gpu_check_error()
          call gpu_stream_sync(gpu_stream)
 
-         allocate (forces_xrd(1:3, 1:n_sites))
-         forces_xrd = 0.d0
-         virial_xrd = 0.d0
-
-         call collect_batched_forces(size(i_beg_list), gpu_batch_storage, n_dim_partial, &
-                                     forces_xrd, virial_xrd, n_sites)
-
-!        The pair half, summed over batches, plus the cell half, which is not a
-!        per-batch quantity. Zero on every rank but 0.
-         virial_xrd = virial_xrd + virial_xrd_volume
+!        Into the active pattern's accumulators, which are the ones turbogap.f90
+!        adds to the total under perform%xrd_forces / perform%nd_forces. Written
+!        out rather than routed through a pointer because collect_batched_forces
+!        takes an allocatable dummy, and a pointer cannot be passed to one.
+!        calculate_xrd left them deallocated: its forces argument is intent(out).
+         virial_obs_batched = 0.d0
+         if (obs_neutron) then
+            if (allocated(forces_nd)) deallocate (forces_nd)
+            allocate (forces_nd(1:3, 1:n_sites))
+            forces_nd = 0.d0
+            call collect_batched_forces(size(i_beg_list), gpu_batch_storage, n_dim_partial, &
+                                        forces_nd, virial_obs_batched, n_sites)
+!           The pair half, summed over batches, plus the cell half, which is not
+!           a per-batch quantity. Zero on every rank but 0.
+            virial_nd = virial_obs_batched + virial_obs_volume
+         else
+            if (allocated(forces_xrd)) deallocate (forces_xrd)
+            allocate (forces_xrd(1:3, 1:n_sites))
+            forces_xrd = 0.d0
+            call collect_batched_forces(size(i_beg_list), gpu_batch_storage, n_dim_partial, &
+                                        forces_xrd, virial_obs_batched, n_sites)
+            virial_xrd = virial_obs_batched + virial_obs_volume
+         end if
 
          call free_host_batches(gpu_batch_storage, params%gpu_n_batches, n_dim_partial)
          call free_exp_batches(gpu_exp, params%gpu_n_batches)
@@ -1124,7 +1186,11 @@ contains
          if (allocated(gpu_exp)) deallocate (gpu_exp)
          if (allocated(gpu_batch_storage)) deallocate (gpu_batch_storage)
 
-         call time_end(time%xrd, "xrd_batched")
+         if (obs_neutron) then
+            call time_end(time%nd, "nd_batched")
+         else
+            call time_end(time%xrd, "xrd_batched")
+         end if
 
 !        Was a hand-written copy of time_end -- get_time into (2), then the
 !        accumulation into (3) -- with the xrd close in between. time_end is
