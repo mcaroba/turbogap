@@ -44,7 +44,7 @@ The atoms, the species and how chatty the run is.
 | `gpu_mem_fraction` | real | `0.0` |  | all | _undocumented_ |  |
 | `masses` | real list |  |  | all | _undocumented_ |  |
 | `max_gbytes_per_process` | real | `1.0` |  | all | _undocumented_ |  |
-| `neighbors_buffer` | real | `0.5` |  | all | _undocumented_ |  |
+| `neighbors_buffer` | real | `0.25` |  | all | _undocumented_ |  |
 | `radii` | real list |  |  | all | _undocumented_ |  |
 | `random_seed` | integer | `0` |  | all | _undocumented_ |  |
 | `species` | string list |  |  | all | _undocumented_ |  |

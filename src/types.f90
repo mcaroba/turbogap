@@ -312,14 +312,20 @@ module types
       real(dp) :: max_opt_step_eps = 0.05d0
 
       ! Neighbors parameters
-!     The Verlet skin. 0 means rebuild the neighbour lists on every step,
-!     which is what this was until the rebuild test in neighbors_skin.f90
-!     became safe to trust. 0.5 A is near the measured optimum on GST and
-!     degrades gently either side of it: below it the rebuild returns, above
-!     it the per-step geometry loop grows with the padding. Chosen over the
-!     slightly cheaper 0.25 because a hotter run moves further per step and
-!     0.5 still holds there.
-      real(dp) :: neighbors_buffer = 0.5d0
+!     The Verlet skin. 0 means rebuild the neighbour lists on every step, which
+!     is what this was until the rebuild test in neighbors_skin.f90 became safe
+!     to trust.
+!
+!     0.25 A is the measured optimum on GST, both for plain MD and for the MAD
+!     configuration. Small, and deliberately so: the cell list is built with
+!     mx = int(L/rcut_max), so a buffer that pushes L/rcut_max across an integer
+!     coarsens the grid a whole step and the 27-cell stencil then scans far more
+!     candidates. For the 7200-atom GST MAD cell -- 61.44 A, observable cutoff
+!     15 -- that boundary sits between 0.25 and 0.5: 61.44/15.25 is 4.03 and
+!     61.44/15.5 is 3.96, and the neighbours bucket goes 4.34 s to 7.33 s across
+!     it. The cliff belongs to the cell sizing, not to the skin; until the
+!     stencil is refined, a small default is the one that cannot fall off it.
+      real(dp) :: neighbors_buffer = 0.25d0
       real(dp) :: core_pot_cutoff = 1.d10
       real(dp) :: core_pot_buffer = 1.d0
 
