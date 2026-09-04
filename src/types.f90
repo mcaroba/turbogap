@@ -312,7 +312,14 @@ module types
       real(dp) :: max_opt_step_eps = 0.05d0
 
       ! Neighbors parameters
-      real(dp) :: neighbors_buffer = 0.d0
+!     The Verlet skin. 0 means rebuild the neighbour lists on every step,
+!     which is what this was until the rebuild test in neighbors_skin.f90
+!     became safe to trust. 0.5 A is near the measured optimum on GST and
+!     degrades gently either side of it: below it the rebuild returns, above
+!     it the per-step geometry loop grows with the padding. Chosen over the
+!     slightly cheaper 0.25 because a hotter run moves further per step and
+!     0.5 still holds there.
+      real(dp) :: neighbors_buffer = 0.5d0
       real(dp) :: core_pot_cutoff = 1.d10
       real(dp) :: core_pot_buffer = 1.d0
 
