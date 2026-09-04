@@ -342,8 +342,18 @@ contains
                   ! output q * i(q) === q * F_x(q)
                   sth = 0.d0
                   do j = 1, n_species
-                     call get_neutron_scattering_length(species_types(j), wfacj)
-                     sth = sth + (n_atoms_of_species(j)/dfloat(n_sites0))*wfaci !* wfaci
+!                    Into wfaci, which is the variable the sum reads. It used to
+!                    land in wfacj while the sum kept adding wfaci, and wfaci
+!                    still held b of species_1 from above the loop -- so sth came
+!                    out as b(species_1) * sum_j x_j = b(species_1) rather than
+!                    the mean <b> = sum_j x_j b_j that the F(q) normalisation
+!                    calls for. The X-ray branch a few lines up has always
+!                    fetched into wfaci; so has the device path in
+!                    get_all_scattering_factors, which is why batched and
+!                    unbatched agreed to the last bit for xrd and not at all for
+!                    nd.
+                     call get_neutron_scattering_length(species_types(j), wfaci)
+                     sth = sth + (n_atoms_of_species(j)/dfloat(n_sites0))*wfaci
                   end do
 
                   all_scattering_factors(i) = 2.d0*pi*x(i)*all_scattering_factors(i)/sth**2 !+ 1.d0
@@ -352,8 +362,18 @@ contains
                   ! Output the total scattering functon, i(q) === F_x(q)
                   sth = 0.d0
                   do j = 1, n_species
-                     call get_neutron_scattering_length(species_types(j), wfacj)
-                     sth = sth + (n_atoms_of_species(j)/dfloat(n_sites0))*wfaci !* wfaci
+!                    Into wfaci, which is the variable the sum reads. It used to
+!                    land in wfacj while the sum kept adding wfaci, and wfaci
+!                    still held b of species_1 from above the loop -- so sth came
+!                    out as b(species_1) * sum_j x_j = b(species_1) rather than
+!                    the mean <b> = sum_j x_j b_j that the F(q) normalisation
+!                    calls for. The X-ray branch a few lines up has always
+!                    fetched into wfaci; so has the device path in
+!                    get_all_scattering_factors, which is why batched and
+!                    unbatched agreed to the last bit for xrd and not at all for
+!                    nd.
+                     call get_neutron_scattering_length(species_types(j), wfaci)
+                     sth = sth + (n_atoms_of_species(j)/dfloat(n_sites0))*wfaci
                   end do
 
                   all_scattering_factors(i) = all_scattering_factors(i)/sth**2 !+ 1.d0
@@ -697,7 +717,6 @@ contains
 !    call gpu_stream_sync(gpu_stream)
 !
 
-
    end subroutine get_structure_factor_forces_matrix_original
 
 !  --------------------------------------------------------------------------
@@ -959,8 +978,18 @@ contains
                   ! output q * i(q) === q * F_x(q)
                   sth = 0.d0
                   do j = 1, n_species
-                     call get_neutron_scattering_length(species_types(j), wfacj)
-                     sth = sth + (n_atoms_of_species(j)/dfloat(n_sites0))*wfaci !* wfaci
+!                    Into wfaci, which is the variable the sum reads. It used to
+!                    land in wfacj while the sum kept adding wfaci, and wfaci
+!                    still held b of species_1 from above the loop -- so sth came
+!                    out as b(species_1) * sum_j x_j = b(species_1) rather than
+!                    the mean <b> = sum_j x_j b_j that the F(q) normalisation
+!                    calls for. The X-ray branch a few lines up has always
+!                    fetched into wfaci; so has the device path in
+!                    get_all_scattering_factors, which is why batched and
+!                    unbatched agreed to the last bit for xrd and not at all for
+!                    nd.
+                     call get_neutron_scattering_length(species_types(j), wfaci)
+                     sth = sth + (n_atoms_of_species(j)/dfloat(n_sites0))*wfaci
                   end do
 
                   all_scattering_factors(i) = 2.d0*pi*x(i)*all_scattering_factors(i)/sth**2 !+ 1.d0
@@ -969,8 +998,18 @@ contains
                   ! Output the total scattering functon, i(q) === F_x(q)
                   sth = 0.d0
                   do j = 1, n_species
-                     call get_neutron_scattering_length(species_types(j), wfacj)
-                     sth = sth + (n_atoms_of_species(j)/dfloat(n_sites0))*wfaci !* wfaci
+!                    Into wfaci, which is the variable the sum reads. It used to
+!                    land in wfacj while the sum kept adding wfaci, and wfaci
+!                    still held b of species_1 from above the loop -- so sth came
+!                    out as b(species_1) * sum_j x_j = b(species_1) rather than
+!                    the mean <b> = sum_j x_j b_j that the F(q) normalisation
+!                    calls for. The X-ray branch a few lines up has always
+!                    fetched into wfaci; so has the device path in
+!                    get_all_scattering_factors, which is why batched and
+!                    unbatched agreed to the last bit for xrd and not at all for
+!                    nd.
+                     call get_neutron_scattering_length(species_types(j), wfaci)
+                     sth = sth + (n_atoms_of_species(j)/dfloat(n_sites0))*wfaci
                   end do
 
                   all_scattering_factors(i) = all_scattering_factors(i)/sth**2 !+ 1.d0
