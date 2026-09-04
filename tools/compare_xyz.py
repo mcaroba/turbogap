@@ -32,6 +32,27 @@ def parse_frames(path):
     return frames
 
 
+def column_of(props, name):
+    """First column index of a named field, from the Properties string.
+
+    The layout is not fixed: `predict` writes species:pos:forces:local_energy,
+    `md` inserts velocities before forces, and other runs add core_electron_be
+    or dipoles. Reading columns 4-7 positionally, as this tool used to, silently
+    compared velocities under the name "forces" for every MD case.
+    """
+    spec = props.get("Properties")
+    if spec is None:
+        return None
+    fields = spec.strip('"').split(":")
+    col = 0
+    for i in range(0, len(fields) - 2, 3):
+        n, _, count = fields[i], fields[i + 1], int(fields[i + 2])
+        if n == name:
+            return col
+        col += count
+    return None
+
+
 def getf(props, key):
     v = props.get(key)
     return None if v is None else float(v.strip('"'))
@@ -94,11 +115,11 @@ def main(argv):
                 print("       new=%s" % vb)
             failed |= not ok
 
-        # columns: species, x, y, z, fx, fy, fz, ...
+        ka, kb = column_of(pa, "forces"), column_of(pb, "forces")
         try:
-            fa = [[float(v) for v in r[4:7]] for r in ca]
-            fb = [[float(v) for v in r[4:7]] for r in cb]
-        except (IndexError, ValueError):
+            fa = [[float(v) for v in r[ka:ka + 3]] for r in ca]
+            fb = [[float(v) for v in r[kb:kb + 3]] for r in cb]
+        except (IndexError, ValueError, TypeError):
             fa = fb = []
         if fa and len(fa) == len(fb):
             diffs = [abs(x - y) for ra, rb in zip(fa, fb)
@@ -110,14 +131,15 @@ def main(argv):
                   % ("OK " if ok else "DIFF", "forces", md, fmax, rms(diffs)))
             failed |= not ok
 
+        ka, kb = column_of(pa, "local_energy"), column_of(pb, "local_energy")
         try:
-            la = [float(r[7]) for r in ca]
-            lb = [float(r[7]) for r in cb]
+            la = [float(r[ka]) for r in ca]
+            lb = [float(r[kb]) for r in cb]
             md = max(abs(x - y) for x, y in zip(la, lb))
             print("  %s %-16s maxabsdiff=%.6e"
                   % ("OK " if md < 1e-6 else "DIFF", "local_energy", md))
             failed |= md >= 1e-6
-        except (IndexError, ValueError):
+        except (IndexError, ValueError, TypeError):
             pass
 
     print("\nRESULT:", "FAIL" if failed else "PASS")
