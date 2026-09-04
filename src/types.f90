@@ -112,6 +112,10 @@ module types
       real(dp), allocatable :: weights_data(:, :)
       real(dp), allocatable :: data_weights(:)
       real(dp), allocatable :: w(:)
+!     The dissimilarity at the first step of this run, so the thermo column can
+!     report D/D_first -- how much of the initial mismatch has been removed.
+!     Negative until it has been set.
+      real(dp) :: d_first = -1.d0
       integer :: n_weights = 0
       integer :: n_data_weights = 0
       real(dp) :: similarity

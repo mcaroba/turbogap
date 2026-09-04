@@ -42,6 +42,7 @@ module turbogap_md
    use xyz_module
    use timing
    use mpi_helper
+   use exp_utils, only: get_exp_dissimilarity
    use neighbors_skin, only: skin_accumulate, skin_needs_rebuild
 !  No adaptive_time / electronic_stopping / eph_* here: this branch compiles
 !  SRC_STOP but never links OBJ_STOP.
@@ -136,6 +137,12 @@ contains
       real(dp), intent(inout) :: time_step_prev
 
       character*64 :: cjunk
+!     Mismatch to an experimental target, absolute and as a fraction of the
+!     data's own magnitude.
+      real(dp) :: exp_dissim
+      real(dp) :: exp_dissim_rel
+      real(dp) :: exp_dissim_imp
+      real(dp) :: exp_dnorm
       real(dp) :: instant_pressure_tensor(1:3, 1:3)
       real(dp) :: lv(1:3, 1:3)
       character*1024 :: filename
@@ -289,12 +296,50 @@ contains
             !     Here we write thermodynamic information -> THIS NEEDS CLEAN UP AND IMPROVEMENT
             if (md_istep == 0 .and. .not. params%do_nested_sampling) then
                open (unit=10, file="thermo.log", status="unknown")
-               write (10, "(A,A)") "#     Step             Time      Temperature                E_kin                     E_pot", &
-                  "             Pressure"
+               write (10, "(A,A)", advance="no") &
+                  "#     Step             Time      Temperature                E_kin                     E_pot", &
+                  ""
+               if (params%do_exp) write (10, "(A)", advance="no") "                E_exp"
+               write (10, "(A)", advance="no") "             Pressure"
+               if (params%write_lv) write (10, "(A)", advance="no") &
+                  "                                                    lattice vectors"
+!              The mismatch to each experimental target: D is what the MAD
+!              energy is gamma times, D_rel is that as a fraction of the data's
+!              own magnitude, so it is comparable between observables and runs.
+!              Appended last so no existing column moves.
+               if (params%do_exp) then
+!                 A20 each, right-justified, because that is what 1X,ES19.8
+!                 gives the values below them. A header that does not line up
+!                 with its own columns is worse than none.
+                  do i = 1, params%n_exp
+                     write (10, "(A20,A20,A20)", advance="no") &
+                        "D_"//trim(params%exp_data(i)%label), &
+                        "Drel_"//trim(params%exp_data(i)%label), &
+                        "Dimp_"//trim(params%exp_data(i)%label)
+                  end do
+               end if
+               write (10, *)
             else if (md_istep == 0 .and. i_nested == 1) then
                open (unit=10, file="thermo.log", status="unknown")
-               write (10, "(A,A)") "#     Step             Time      Temperature                E_kin                     E_pot", &
-                  "             Pressure"
+               write (10, "(A,A)", advance="no") &
+                  "#     Step             Time      Temperature                E_kin                     E_pot", &
+                  ""
+               if (params%do_exp) write (10, "(A)", advance="no") "                E_exp"
+               write (10, "(A)", advance="no") "             Pressure"
+               if (params%write_lv) write (10, "(A)", advance="no") &
+                  "                                                    lattice vectors"
+!              The mismatch to each experimental target: D is what the MAD
+!              energy is gamma times, D_rel is that as a fraction of the data's
+!              own magnitude, so it is comparable between observables and runs.
+!              Appended last so no existing column moves.
+               if (params%do_exp) then
+                  do i = 1, params%n_exp
+                     write (10, "(A,A18,A,A18)", advance="no") &
+                        "  D_", adjustl(trim(params%exp_data(i)%label)), &
+                        "  Drel_", adjustl(trim(params%exp_data(i)%label))
+                  end do
+               end if
+               write (10, *)
             else
                open (unit=10, file="thermo.log", status="old", position="append")
             end if
@@ -314,6 +359,27 @@ contains
                   write (10, "(1X, 9F20.8)", advance="no") a_box(1:3)/dfloat(indices(1)), &
                      b_box(1:3)/dfloat(indices(2)), &
                      c_box(1:3)/dfloat(indices(3))
+               end if
+               if (params%do_exp) then
+                  do i = 1, params%n_exp
+                     call get_exp_dissimilarity(params%exp_data(i)%y, params%exp_data(i)%y_pred, &
+                                                params%exp_data(i)%w, exp_dissim, exp_dnorm)
+!                    Drel: the mismatch as a fraction of the data's own weighted
+!                    norm. Absolute, so two runs against different datasets can
+!                    be put side by side.
+                     exp_dissim_rel = 0.d0
+                     if (exp_dnorm > 0.d0) exp_dissim_rel = exp_dissim/exp_dnorm
+!                    Dimp: against the first step of THIS run, so it starts at 1
+!                    and is the fraction of the initial mismatch still left. Set
+!                    here and not in the routine, because only the caller knows
+!                    which step is the first.
+                     if (params%exp_data(i)%d_first < 0.d0) params%exp_data(i)%d_first = exp_dissim
+                     exp_dissim_imp = 0.d0
+                     if (params%exp_data(i)%d_first > 0.d0) &
+                        exp_dissim_imp = exp_dissim/params%exp_data(i)%d_first
+                     write (10, "(1X, ES19.8, 1X, ES19.8, 1X, ES19.8)", advance="no") &
+                        exp_dissim, exp_dissim_rel, exp_dissim_imp
+                  end do
                end if
                !       Further printouts should go here
                !       <<HERE>>

@@ -2911,6 +2911,66 @@ contains
 
    end subroutine calculate_exp_interpolation
 
+!**************************************************************************
+!
+! How far the prediction is from the experiment:
+!
+!   D = sqrt( sum_i w_i^2 (y_pred_i - y_exp_i)^2 )
+!
+! the same weighted mismatch the MAD energy is built from -- E = gamma/2 D^2 --
+! but as a length rather than a square, so it has the units of the observable
+! and moves linearly with the error rather than quadratically.
+!
+! Weights absent means w = 1, matching what the energy does in that case.
+!
+! Computed from y and y_pred rather than from the stored similarity, which for
+! exp_similarity_type other than squared_diff is a dot product and not a
+! mismatch at all.
+!
+! dnorm is the same norm taken of the data itself, sqrt( sum_i w_i^2 y_exp_i^2 ),
+! so that D/dnorm is a fraction: 0 for a perfect fit, 1 when the prediction is
+! as wrong as the data is large. That one is comparable between runs, stages,
+! observables and datasets, which D on its own is not -- and comparing runs is
+! the whole point of having a control.
+!
+! The other relative measure worth having, D/D_first, belongs to the caller,
+! which is the only place that knows which step was the first. This routine
+! stays pure so it cannot set a reference by being called at the wrong moment.
+!
+   subroutine get_exp_dissimilarity(y, y_pred, w, d, dnorm)
+
+      implicit none
+
+      real(dp), allocatable, intent(in) :: y(:)
+      real(dp), allocatable, intent(in) :: y_pred(:)
+      real(dp), allocatable, intent(in) :: w(:)
+      real(dp), intent(out) :: d
+      real(dp), intent(out) :: dnorm
+      logical :: weighted
+      integer :: n
+
+      d = 0.d0
+      dnorm = 0.d0
+      if (.not. allocated(y) .or. .not. allocated(y_pred)) return
+      n = min(size(y), size(y_pred))
+      if (n < 1) return
+
+      weighted = .false.
+      if (allocated(w)) then
+         if (size(w) >= n) weighted = .true.
+      end if
+
+      if (weighted) then
+         d = dsqrt(sum((w(1:n)*(y_pred(1:n) - y(1:n)))**2))
+         dnorm = dsqrt(sum((w(1:n)*y(1:n))**2))
+      else
+         d = dsqrt(dot_product(y_pred(1:n) - y(1:n), y_pred(1:n) - y(1:n)))
+         dnorm = dsqrt(dot_product(y(1:n), y(1:n)))
+      end if
+
+   end subroutine get_exp_dissimilarity
+!**************************************************************************
+
    subroutine get_data_similarity(y, y_pred, sim_exp_pred, exp_similarity_type)
       implicit none
       real(dp), allocatable, intent(in) :: y(:)

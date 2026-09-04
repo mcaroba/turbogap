@@ -2,6 +2,7 @@
 // pinned host allocator, device enumeration and selection, and the debug
 // pointer printers. Used by both the GAP and the MAD paths.
 #include "gpu_common.h"
+#include <cstdlib>
 #include "gpu_memory.h"
 
 #include <hiprand/hiprand.h>
@@ -480,6 +481,18 @@ extern "C" void cuda_set_device(int my_rank) {
   gpuErrchk(hipGetDeviceCount(&num_gpus));
   gpuErrchk(hipSetDevice(my_rank % num_gpus));
   gpuErrchk(hipGetDevice(&mygpuid));
+  // Say which card this rank took, and out of how many it could see. Whether
+  // ranks land on separate devices depends entirely on what the launcher makes
+  // visible: one GPU per task and every rank correctly picks its own single
+  // card, all GPUs to every task and rank % num_gpus spreads them. Both are
+  // right and they look identical from inside, which is why a multi-rank run
+  // that misbehaves needs this printed rather than assumed.
+  {
+    const char* vis = getenv("CUDA_VISIBLE_DEVICES");
+    fprintf(stderr, "GPUdev: rank %d sees %d device(s), took device %d (CUDA_VISIBLE_DEVICES=%s)\n", my_rank, num_gpus, mygpuid,
+            vis ? vis : "unset");
+    fflush(stderr);
+  }
   /*gpuErrchk(hipSetDevice(0));*/
   //  printf("\n Seta Aset at %d %d %d %d\n", num_gpus, my_rank%num_gpus,my_rank, mygpuid);
   //exit(0);
