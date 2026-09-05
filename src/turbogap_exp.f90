@@ -422,6 +422,8 @@ contains
 !     to the host pdf and take ten times as long as the run that also computes
 !     forces. Asking for less should not cost more.
       logical :: batched_pdf
+!     Whether this step is one the observables are wanted on; see the gate below.
+      logical :: observables_wanted
       real(dp), allocatable, target :: sinc_factor_matrix(:, :)
       real(dp), allocatable, target :: pair_distribution_der(:, :)
       real(dp), allocatable, target :: pair_distribution_partial(:, :)
@@ -556,6 +558,24 @@ contains
       end do
 
       n_dim_partial = n_species_actual*(n_species_actual + 1)/2
+
+!     A pattern that makes neither energies nor forces is a measurement, not a
+!     constraint: perform%pdf_forces and perform%nd_forces both carry
+!     `.and. params%exp_forces`, so nothing computed here reaches the dynamics.
+!     Such a run still writes it only every write_xyz steps, so computing it on
+!     every step is a factor of write_xyz of waste -- 1.2 s of a 1.6 s step at
+!     194400 atoms. Compute it when it is written, and on the first step, where
+!     the run reports the mismatch it started from.
+!
+!     What this costs: on those runs the D columns in thermo.log hold their last
+!     computed value between writes instead of moving every step. Same
+!     trajectory, sampled where the pattern is.
+      if (params%do_md .and. md_istep > 0 .and. &
+          .not. params%exp_energies .and. .not. params%exp_forces) then
+         call get_write_condition(params%do_mc, params%do_md, mc_istep, md_istep, &
+                                  params%write_xyz, observables_wanted)
+         if (.not. observables_wanted) return
+      end if
 
 !     One diffraction pattern at a time on the batched route. Everything it
 !     allocates -- the residual, the per-q scattering factors, the batch force
