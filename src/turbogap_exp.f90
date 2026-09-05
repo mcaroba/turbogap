@@ -619,7 +619,9 @@ contains
                                                           params%structure_factor_n_samples, gpu_memory_usage, &
                                                           be_verbose=(rank == 0 .and. params%gpu_mem_fraction > 0.d0))
 
-         gpu_memory_usage = 0.d0
+!        Not zeroed here: the estimate above was just written into
+!        gpu_memory_usage and is what the batch count is computed from. The
+!        estimator zeroes it on entry itself, so there is nothing to reset.
          params%gpu_n_batches = gpu_batches_for_gb(gpu_memory_usage, gpu_n_batches_floor, &
                                                    i_end - i_beg + 1, rank, "pdf/xrd batched forces")
 
