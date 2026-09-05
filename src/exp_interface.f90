@@ -878,8 +878,7 @@ contains
             call gpu_free_async(gpu_exp%nk_flags_d(n_dim_idx), gpu_stream)
 
             call gpu_stream_sync(gpu_stream)
-            call gpu_check_error()
-
+            if (debug_gpu_batches) call gpu_check_error()
             call total_gpu_memory(dfloat(-int((j_end - j_beg + 1), c_size_t)*4))
 
             ! Now copy the value of nk from the gpu
@@ -901,7 +900,7 @@ contains
             call gpu_memset_async(gpu_exp%rjs_index_d(n_dim_idx), 0, st_rjs_index_d, gpu_stream)
 
             call gpu_stream_sync(gpu_stream)
-            call gpu_check_error()
+            if (debug_gpu_batches) call gpu_check_error()
             gpu_exp%st_k_index_d(n_dim_idx) = int(gpu_exp%nk(n_dim_idx), c_size_t)*c_int
             if (debug_gpu_batches) print *, " allocating k index "
             call total_gpu_memory(dfloat(int(gpu_exp%nk(n_dim_idx), c_size_t)*4))
@@ -909,7 +908,7 @@ contains
             call gpu_memset_async(gpu_exp%k_index_d(n_dim_idx), 0, gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
 
             call gpu_stream_sync(gpu_stream)
-            call gpu_check_error()
+            if (debug_gpu_batches) call gpu_check_error()
             if (debug_gpu_batches) print *, " allocating j2 index "
             call total_gpu_memory(dfloat(int(gpu_exp%nk(n_dim_idx), c_size_t)*4))
             call gpu_malloc_async(gpu_exp%j2_index_d(n_dim_idx), gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
@@ -923,7 +922,7 @@ contains
 
             if (debug_gpu_batches) print *, " allocating j2 index "
             call gpu_stream_sync(gpu_stream)
-            call gpu_check_error()
+            if (debug_gpu_batches) call gpu_check_error()
             call total_gpu_memory(dfloat(int(gpu_exp%nk(n_dim_idx), c_size_t)*8*3))
             call gpu_malloc_async(gpu_exp%xyz_k_d(n_dim_idx), 3*st_rjs_index_d, gpu_stream)
             call gpu_memset_async(gpu_exp%xyz_k_d(n_dim_idx), 0, 3*st_rjs_index_d, gpu_stream)
@@ -960,8 +959,7 @@ contains
             if (debug_gpu_batches) print *, "deallocing flags sum"
             call total_gpu_memory(dfloat(-int((j_end - j_beg + 1), c_size_t)*4))
             call gpu_stream_sync(gpu_stream)
-            call gpu_check_error()
-
+            if (debug_gpu_batches) call gpu_check_error()
 !          print *, " >> storing k_index_d "
             allocate (gpu_host%host(n_dim_idx)%k_index_h(1:gpu_exp%nk(n_dim_idx)))
 
@@ -970,8 +968,7 @@ contains
             call total_gpu_memory(dfloat(-int(gpu_exp%nk(n_dim_idx), c_size_t)*4))
 
             call gpu_stream_sync(gpu_stream)
-            call gpu_check_error()
-
+            if (debug_gpu_batches) call gpu_check_error()
             call cpy_dtoh( &
                gpu_exp%k_index_d(n_dim_idx), &
                c_loc(gpu_host%host(n_dim_idx)%k_index_h), &
@@ -993,8 +990,7 @@ contains
                gpu_stream)
             call gpu_free_async(gpu_exp%j2_index_d(n_dim_idx), gpu_stream)
             call gpu_stream_sync(gpu_stream)
-            call gpu_check_error()
-
+            if (debug_gpu_batches) call gpu_check_error()
 !          print *, " >> storing rjs_index_d "
             allocate (gpu_host%host(n_dim_idx)%rjs_index_h(1:gpu_exp%nk(n_dim_idx)))
 
@@ -1016,7 +1012,7 @@ contains
             if (debug_gpu_batches) print *, "deallocing xyz_k"
             call total_gpu_memory(dfloat(-int(gpu_exp%nk(n_dim_idx), c_size_t)*3*8))
             call gpu_stream_sync(gpu_stream)
-            call gpu_check_error()
+            if (debug_gpu_batches) call gpu_check_error()
             call cpy_dtoh( &
                gpu_exp%xyz_k_d(n_dim_idx), &
                c_loc(gpu_host%host(n_dim_idx)%xyz_k_h), &
@@ -1027,8 +1023,7 @@ contains
             if (debug_gpu_batches) print *, "allocing pdf"
             call total_gpu_memory(dfloat(int(n_samples, c_size_t)*8))
             call gpu_stream_sync(gpu_stream)
-            call gpu_check_error()
-
+            if (debug_gpu_batches) call gpu_check_error()
             gpu_exp%st_pair_distribution_partial_d(n_dim_idx) = int(n_samples, c_size_t)*c_double
             call gpu_malloc_async(gpu_exp%pair_distribution_partial_d(n_dim_idx), &
                                   gpu_exp%st_pair_distribution_partial_d(n_dim_idx), gpu_stream)
