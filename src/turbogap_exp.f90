@@ -619,7 +619,8 @@ contains
                                                           params%structure_factor_n_samples, gpu_memory_usage, &
                                                           be_verbose=(rank == 0 .and. params%gpu_mem_fraction > 0.d0))
 
-         params%gpu_n_batches = gpu_batches_for_gb(gpu_memory_usage, params%gpu_n_batches, &
+         gpu_memory_usage = 0.d0
+         params%gpu_n_batches = gpu_batches_for_gb(gpu_memory_usage, gpu_n_batches_floor, &
                                                    i_end - i_beg + 1, rank, "pdf/xrd batched forces")
 
          call get_gpu_batches(n_neigh(i_beg:i_end), rjs(j_beg:j_end), params%pair_distribution_rcut, &

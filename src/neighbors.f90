@@ -1140,8 +1140,10 @@ contains
       integer :: n_pairs
       integer :: n_dim_partial
       real(dp), intent(inout) :: total
-      real(dp) :: total_exp = 0.d0
-      real(dp) :: total_standard = 0.d0
+!     Not initialised here: an initialiser in a declaration is an implicit SAVE,
+!     and these are running sums. They are zeroed on entry instead.
+      real(dp) :: total_exp
+      real(dp) :: total_standard
       real(dp) :: nk_int
       real(dp) :: nk_float
       real(dp) :: Gk
@@ -1161,6 +1163,9 @@ contains
 
       verbose = .false.
       if (present(be_verbose)) verbose = be_verbose
+
+      total_exp = 0.d0
+      total_standard = 0.d0
 
       total = 0.d0
 

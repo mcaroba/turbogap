@@ -59,6 +59,11 @@ module gpu_context
 
 ! Running total of device memory handed out, for the end-of-run report.
    real(dp) :: gpu_memory_usage = 0.d0
+!  What the input asked for, kept so the per-step batch count is computed
+!  against it rather than against whatever the previous step arrived at.
+!  gpu_batches_for_gb only ever raises its argument, so feeding last step's
+!  answer back in makes the count a ratchet that never comes down.
+   integer :: gpu_n_batches_floor = 1
 
 ! The device memory budget this rank may use, in bytes. Set by
 ! gpu_memory_budget_init from the device's own free memory; zero means it was
@@ -139,6 +144,8 @@ contains
 
 !     So an out-of-memory abort can print the keyword and its value rather than
 !     just "out of memory".
+      gpu_n_batches_floor = max(1, params%gpu_n_batches)
+
       call gpu_mem_set_hint(params%max_Gbytes_per_process, params%gpu_n_batches)
 
    end subroutine gpu_memory_budget_init
