@@ -20,6 +20,8 @@ $(BUILD_DIR)/timing.o: $(BUILD_DIR)/kinds.o
 $(BUILD_DIR)/misc.o: $(BUILD_DIR)/kinds.o
 $(BUILD_DIR)/electrostatics.o: $(BUILD_DIR)/kinds.o $(BUILD_DIR)/neighbors.o $(BUILD_DIR)/types.o
 $(BUILD_DIR)/gle.o: $(BUILD_DIR)/kinds.o
+$(BUILD_DIR)/ipi_socket.o: $(BUILD_DIR)/error.o $(BUILD_DIR)/kinds.o
+$(BUILD_DIR)/ipi_driver.o: $(BUILD_DIR)/error.o $(BUILD_DIR)/ipi_socket.o $(BUILD_DIR)/kinds.o $(BUILD_DIR)/md.o $(BUILD_DIR)/neighbors_skin.o
 $(BUILD_DIR)/mad_ir.o: $(BUILD_DIR)/kinds.o
 $(BUILD_DIR)/mad_ir_xl.o: $(BUILD_DIR)/kinds.o $(BUILD_DIR)/mad_ir.o
 $(BUILD_DIR)/ir_fft.o: $(BUILD_DIR)/kinds.o

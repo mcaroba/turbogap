@@ -6,11 +6,11 @@ keyword in `src/read_files.f90` and regenerate with `make docs`.
 
 ## Contents
 
-**The input file** &mdash; 284 keywords
+**The input file** &mdash; 285 keywords
 
 - [General](#general) (47)
 - [Run control](#run-control) (19)
-- [Molecular dynamics](#molecular-dynamics) (22)
+- [Molecular dynamics](#molecular-dynamics) (23)
 - [Nested sampling](#nested-sampling) (6)
 - [Monte Carlo](#monte-carlo) (33)
 - [Van der Waals](#van-der-waals) (31)
@@ -127,6 +127,7 @@ Time stepping, thermostat and barostat.
 | `gle_c_file` | string |  | eV | md | Stationary covariance of the generalized Langevin thermostat, same file format and order as gle_a_file. Optional: left unset it is kB T I, which samples the canonical distribution at the target temperature and follows a t_beg -> t_end ramp. Set, it describes a bath at one fixed temperature -- the quantum thermostats work this way -- and the temperature ramp no longer applies to it. | needs `gle_a_file`; see `thermostat`; see `gle_a_file` |
 | `gle_restart` | logical | `true` |  | md | Whether to read gle_restart_file at the start of the run and write it as the run goes. Off starts a fresh bath drawn from the stationary distribution and writes nothing. | needs `thermostat`; see `gle_restart_file` |
 | `gle_restart_file` | string | `gle_restart.dat` |  | md | Where the auxiliary momenta are written, and read back from on a restart. They are state in the same sense the velocities are: a run resumed without them starts a fresh bath, which is a legitimate but different trajectory. A file describing a different ns or a different number of atoms is refused rather than adopted, and the run says so and continues with a fresh bath. | needs `thermostat`; see `gle_restart` |
+| `ipi_address` | string |  |  | ipi | Where the i-PI server is listening, as UNIX:name for a UNIX-domain socket at /tmp/ipi_name, or host:port for TCP. Only `turbogap ipi` uses it, and in that mode it is required. The host must be localhost or a dotted-quad IP address; hostnames are not resolved. Start i-PI first: there is no retry, because a driver that outlived its server would hang rather than fail. |  |
 | `md_nsteps` | integer | `1` |  | md | Number of molecular-dynamics steps to take. |  |
 | `md_step` | real | `1.0` | fs | md | Time step. With a variable time step this is the starting value. | see `target_pos_step` |
 | `n_t_hold` | integer | `0` |  | md | Number of entries in the t_hold list, which must be given before it. | sets `t_hold`; see `t_hold` |

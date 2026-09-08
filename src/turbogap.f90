@@ -50,6 +50,7 @@ program turbogap
    use turbogap_setup
    use turbogap_exp
    use turbogap_md
+   use ipi_driver, only: ipi_driver_open, ipi_driver_exchange, ipi_driver_close
    use gap_backend
    use gpu_context
    use turbogap_vdw
@@ -462,10 +463,14 @@ program turbogap
    call get_command_argument(1, mode)
    if (mode == "--help" .or. mode == "-h" .or. mode == "help") then
       call get_command_argument(2, help_topic)
+!     Validated against the SAME list the error message prints, which
+!     keyword_help.f90 generates from tools/keyword_docs.py. It used to be a
+!     hardcoded chain of comparisons beside a generated message, and the two
+!     drifted the moment a mode was added: --help ipi was rejected by a message
+!     that listed ipi as valid. Slashes on both sides so that a topic cannot
+!     match a substring of another.
       if (len_trim(help_topic) > 0 .and. &
-          help_topic /= "predict" .and. help_topic /= "md" .and. &
-          help_topic /= "mc" .and. help_topic /= "soap" .and. &
-          help_topic /= "gap") then
+          index("/"//trim(keyword_help_topics())//"/", "/"//trim(help_topic)//"/") == 0) then
          write (*, '(A)') 'ERROR: unknown help topic "'//trim(help_topic)// &
             '". turbogap --help ['//trim(keyword_help_topics())//']'
          stop 1
@@ -525,7 +530,8 @@ program turbogap
    !
    call get_command_argument(1, mode)
    if (mode == "" .or. mode == "none") then
-      write (*, *) "ERROR: you need to run 'turbogap md', 'turbogap mc' or 'turbogap predict'"
+      write (*, *) "ERROR: you need to run 'turbogap md', 'turbogap mc', 'turbogap predict'"
+      write (*, *) "       or 'turbogap ipi' (forces for an i-PI server; see ipi_address)"
       write (*, *) "       'turbogap --help [predict|md|mc|soap|gap]' lists the keywords"
       stop
       ! THIS SHOULD BE FIXED, IN CASE THE USER JUST WANT TO OUTPUT THE SOAP DESCRIPTORS
@@ -788,6 +794,10 @@ program turbogap
    end if
 
    call time_end(time%setup)
+
+!  Connect before the first force call, so that a missing or unstarted i-PI
+!  server is reported now rather than after the first GAP evaluation.
+   if (mode == "ipi") call ipi_driver_open(params%ipi_address, rank)
 
    do while (repeat_xyz .or. (params%do_md .and. md_istep < params%md_nsteps) &
              .or. (params%do_mc .and. mc_istep < params%mc_nsteps))
@@ -2886,17 +2896,27 @@ program turbogap
       !**************************************************************************
       !   Do MD stuff here. Moved to src/turbogap_md.f90; the rank guard and the
       !   position broadcast moved with it.
-      call compute_md(params, rank, ierr, n_sites, n_species, md_istep, md_time, time_step, &
-                      positions, positions_prev, positions_diff, velocities, forces, forces_prev, masses, &
-                      masses_types, xyz, xyz_species, a_box, b_box, c_box, indices, v_uc, virial, energy, &
-                      energy_prev, energies, energies_soap, energies_2b, energies_3b, energies_core_pot, &
-                      energies_vdw, energies_lp, energies_exp, energies_pdf, energies_sf, energies_xrd, &
-                      energies_nd, local_properties, local_property_labels, instant_temp, &
-                      instant_pressure, instant_pressure_prev, e_kin, e_kinetic, kb, evpera3tobar, &
-                      fix_atom, exit_loop, rebuild_neighbors_list, i_image, i_nested, n_pos, nrows, &
-                      filename, string, allelstopdata, ephbeta, ephfdm, ephlsc, time, &
-                      cum_eel, gd_istep, &
-                      target_temp, time_step_prev, dipole, local_dipoles, energies_dipole)
+!     In i-PI mode the integrator is i-PI's, so the forces just computed go
+!     out over the socket and the next coordinates come back in. Everything
+!     compute_md does AROUND the integration -- the skin accounting, the
+!     supercell refresh, the broadcast -- happens inside the exchange.
+      if (mode == "ipi") then
+         call ipi_driver_exchange(rank, n_sites, positions, positions_prev, positions_diff, &
+                                  velocities, a_box, b_box, c_box, indices, params%neighbors_buffer, &
+                                  forces, energy, virial, exit_loop, rebuild_neighbors_list)
+      else
+         call compute_md(params, rank, ierr, n_sites, n_species, md_istep, md_time, time_step, &
+                         positions, positions_prev, positions_diff, velocities, forces, forces_prev, masses, &
+                         masses_types, xyz, xyz_species, a_box, b_box, c_box, indices, v_uc, virial, energy, &
+                         energy_prev, energies, energies_soap, energies_2b, energies_3b, energies_core_pot, &
+                         energies_vdw, energies_lp, energies_exp, energies_pdf, energies_sf, energies_xrd, &
+                         energies_nd, local_properties, local_property_labels, instant_temp, &
+                         instant_pressure, instant_pressure_prev, e_kin, e_kinetic, kb, evpera3tobar, &
+                         fix_atom, exit_loop, rebuild_neighbors_list, i_image, i_nested, n_pos, nrows, &
+                         filename, string, allelstopdata, ephbeta, ephfdm, ephlsc, time, &
+                         cum_eel, gd_istep, &
+                         target_temp, time_step_prev, dipole, local_dipoles, energies_dipole)
+      end if
 
       !**************************************************************************
       !   Nested sampling
@@ -3871,6 +3891,11 @@ program turbogap
       if (exit_loop) exit
       ! End of loop through structures in the xyz file or MD steps
    end do
+
+!  i-PI has said EXIT, or something else ended the loop. Close the socket
+!  before the reports below, so that i-PI sees the driver leave cleanly
+!  rather than timing out on a half-open connection.
+   if (mode == "ipi") call ipi_driver_close(rank)
 
 !**************************************************************************
 !

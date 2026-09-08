@@ -909,6 +909,20 @@ contains
       else if (mode == "predict") then
          params%do_prediction = .true.
          params%do_forces = .true.
+      else if (mode == "ipi") then
+!        An MD run whose integrator lives in another process. do_md is what
+!        makes the main loop iterate and the neighbour lists persist between
+!        steps, so it is set here for the same reason mode md sets it. How
+!        many steps there are is i-PI's business, so the count is put out of
+!        reach and the loop ends when i-PI says EXIT.
+         params%do_md = .true.
+         params%do_prediction = .true.
+         params%do_forces = .true.
+         params%do_derivatives = .true.
+         params%md_nsteps = huge(1)/2
+!        A progress bar over an unknown number of steps says nothing, and it
+!        would redraw itself on every force call.
+         params%print_progress = .false.
       end if
 
 !   Let's allocate some arrays:
@@ -2751,6 +2765,18 @@ contains
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%gle_c_file
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("gle_c_file", params%gle_c_file)
+         !> @kw ipi_address
+         !> Where the i-PI server is listening, as UNIX:name for a UNIX-domain socket at
+         !> /tmp/ipi_name, or host:port for TCP. Only `turbogap ipi` uses it, and in that mode
+         !> it is required. The host must be localhost or a dotted-quad IP address; hostnames
+         !> are not resolved. Start i-PI first: there is no retry, because a driver that
+         !> outlived its server would hang rather than fail.
+         !> @modes ipi
+      else if (keyword == 'ipi_address') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%ipi_address
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("ipi_address", params%ipi_address)
          !> @kw gle_restart_file
          !> Where the auxiliary momenta are written, and read back from on a restart. They are state
          !> in the same sense the velocities are: a run resumed without them starts a fresh bath,

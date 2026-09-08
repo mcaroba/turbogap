@@ -14,7 +14,7 @@ contains
 !  What `turbogap --help <topic>` accepts, for the error message.
    function keyword_help_topics() result(text)
       character(len=64) :: text
-      text = 'predict/md/mc/soap/gap'
+      text = 'predict/md/mc/soap/ipi/gap'
    end function keyword_help_topics
 
 !  Print the keyword reference. An empty topic prints everything; a mode
@@ -38,7 +38,7 @@ contains
       write (*, '(A)') 'TurboGAP keywords'
       write (*, '(A)') ''
       if (every) then
-         write (*, '(A)') '  Everything. `turbogap --help <predict|md|mc|soap|gap>` narrows this down.'
+         write (*, '(A)') '  Everything. `turbogap --help <predict|md|mc|soap|ipi|gap>` narrows this down.'
       else if (gap_only) then
          write (*, '(A)') '  Keywords of the potential (.gap) file.'
       else
@@ -893,6 +893,16 @@ contains
          write (*, '(A)') '      different number of atoms is refused rather than adopted, and the'
          write (*, '(A)') '      run says so and continues with a fresh bath.'
          write (*, '(A)') '      -> needs thermostat; see gle_restart'
+         write (*, '(A)') ''
+      end if
+      if (every .or. (mode == 'ipi')) then
+         write (*, '(A)') '  ipi_address                          [string]'
+         write (*, '(A)') '      Where the i-PI server is listening, as UNIX:name for a UNIX-domain'
+         write (*, '(A)') '      socket at /tmp/ipi_name, or host:port for TCP. Only `turbogap ipi`'
+         write (*, '(A)') '      uses it, and in that mode it is required. The host must be localhost'
+         write (*, '(A)') '      or a dotted-quad IP address; hostnames are not resolved. Start i-PI'
+         write (*, '(A)') '      first: there is no retry, because a driver that outlived its server'
+         write (*, '(A)') '      would hang rather than fail.'
          write (*, '(A)') ''
       end if
       if (every .or. (mode == 'md')) then

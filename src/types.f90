@@ -550,6 +550,10 @@ module types
       character*1024 :: gle_restart_file = "gle_restart.dat"
       logical :: gle_restart = .true.
 
+!     i-PI driver mode. The address of the i-PI server, as UNIX:name or
+!     host:port. Only `turbogap ipi` reads it.
+      character*1024 :: ipi_address = ""
+
 !     Barostat
       character*32 :: barostat = "none"
       character*32 :: barostat_sym = "isotropic"
