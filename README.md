@@ -44,10 +44,19 @@ copyright (c) of Miguel A. Caro and they are also distributed under the ASL. The
 can freely use this code for non-commercial academic research or teaching. If you want to
 obtain a commercial license for **soap_turbo** please contact Miguel Caro (mcaroba@gmail.com).
 
-This tree tracks `soap_turbo` from the fork at
-`https://github.com/TiganyZ/soap_turbo.git`, branch `master`, which carries the
-radial-coefficient dump guard the regression cases rely on. `git clone
---recursive` resolves it without further setup.
+`git clone --recursive` pulls three submodules, none of which needs any
+further setup:
+
+| submodule | from | why |
+|---|---|---|
+| `src/soap_turbo` | `TiganyZ/soap_turbo` `master` | the CPU SOAP routines, carrying the radial-coefficient dump guard the regression cases rely on |
+| `src/soap_turbo_gpu` | `TiganyZ/soap_turbo` `gpu` | the GPU SOAP routines. Not a newer `soap_turbo`: its `get_soap` takes device pointers, a cuBLAS handle and a stream, so it is a second implementation of the same module rather than a later version of the first |
+| `src/hop` | `cschpc/hop` `master` | the HIP/CUDA portability headers a device build includes |
+
+Which `soap_turbo` is compiled is set by `ST_DIR`, defaulting to
+`src/soap_turbo/src` and overridden to `src/soap_turbo_gpu/src` by a GPU arch
+makefile. `HOP_ROOT` defaults to `src/hop`, so a device build needs nothing in
+the environment; setting it still overrides.
 
 ## Overview of the code
 
