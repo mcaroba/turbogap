@@ -1,0 +1,12 @@
+# mc_istep  mc_move  accepted  E_trial              E_current           N_tot_trial  N_mc_species_trial
+       1  insertion    T        -356.29685613        -343.87453954       42  CO        4
+       2  insertion    T        -370.93607551        -356.29685613       44  CO        5
+       3    removal    F        -356.29685613        -370.93607551       42  CO        4
+       4    removal    F        -356.21158112        -370.93607551       42  CO        4
+       5  insertion    T        -383.90517868        -370.93607551       46  CO        6
+       6  insertion    T        -393.67554573        -383.90517868       48  CO        7
+       7  insertion    T        -405.11373155        -393.67554573       50  CO        6
+       8  insertion    F        -405.46391228        -405.11373155       52  CO        6
+       9    removal    F        -392.53051829        -405.11373155       48  CO        4
+      10    removal    F        -390.47451260        -405.11373155       48  CO        4
+      11  insertion    T        -419.21637885        -405.11373155       52  CO        6

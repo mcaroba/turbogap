@@ -6,13 +6,13 @@ keyword in `src/read_files.f90` and regenerate with `make docs`.
 
 ## Contents
 
-**The input file** &mdash; 295 keywords
+**The input file** &mdash; 297 keywords
 
 - [General](#general) (55)
 - [Run control](#run-control) (19)
 - [Molecular dynamics](#molecular-dynamics) (23)
 - [Nested sampling](#nested-sampling) (6)
-- [Monte Carlo](#monte-carlo) (33)
+- [Monte Carlo](#monte-carlo) (35)
 - [Van der Waals](#van-der-waals) (31)
 - [Electrostatics](#electrostatics) (11)
 - [Experimental data (MAD)](#experimental-data-mad) (55)
@@ -179,6 +179,8 @@ Move types, acceptance and the grand-canonical ensemble.
 | `mc_max_dist_to_planes` | real list |  | A | mc | Distance from each plane within which a moved or inserted atom must stay, one value per plane. mc_n_planes must appear first. | needs `mc_n_planes`; sets `mc_n_planes`; see `mc_planes` |
 | `mc_max_insertion_trials` | integer | `500` |  | mc | How many random positions an insertion move may try before giving up. The run reports the failure and says which of mc_min_dist, mc_max_dist or this to change. | see `mc_min_dist`; see `mc_max_dist` |
 | `mc_min_dist` | real | `0.2` | A | mc | Closest an inserted atom may come to an existing one. Trials nearer than this are rejected without evaluating the potential, which is what keeps an insertion from landing on top of an atom. | see `mc_max_dist` |
+| `mc_mol_bond_scale` | real | `1.2` |  | mc | Two atoms are bonded when they are closer than this times the sum of their COVALENT radii (default 1.2). Covalent, not van der Waals: the van der Waals radii are about twice as large and describe contact rather than bonding, and with them every atom in a condensed phase is bonded to its neighbours, the structure becomes one connected component, and nothing matches. Only consulted when mc_mol_identify = topology. | see `mc_mol_identify` |
+| `mc_mol_identify` | string | `tag` |  | mc | How a removal move recognises one of its molecules in the structure: "tag" (default) or "topology". "tag" can only see molecules this run inserted, because the label is written at insertion -- a molecule that was in the starting structure is invisible to removal, so a solvated system can never come to equilibrium with its reservoir. "topology" finds them by their bonding instead, so a pre-existing molecule is as removable as an inserted one. A molecule covalently bound to the rest of the structure is deliberately not matched: it is not free, and removing it would break bonds the potential is holding. | needs `mc_molecule_files`; see `mc_mol_bond_scale` |
 | `mc_molecule_files` | string list |  |  | mc | Insert and remove a whole rigid molecule instead of a single atom, one xyz file per entry in mc_species, or "none" for an entry that really is an atom. n_mc_mu must appear first. Every species in the file has to be in species. The molecule is placed with a uniformly random orientation and its centre of mass drawn like an atomic insertion, and a removal takes all of its atoms together, so mc_mu is the chemical potential of the molecule. | needs `n_mc_mu`; sets `n_mc_mu`; see `mc_species`; see `mc_mu`; see `mc_min_dist` |
 | `mc_move_max` | real | `1.0` | A | mc | Largest displacement of a single-atom "move". The trial displacement is drawn uniformly up to this. | needs `mc_types` |
 | `mc_mu` | real list |  | eV | mc | Chemical potential of each species that may be inserted or removed, one value per entry in mc_species. Its length sets n_mc_mu. | sets `n_mc_mu`; see `mc_species`; see `mc_types` |

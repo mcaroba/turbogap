@@ -28,7 +28,9 @@ $(BUILD_DIR)/ir_fft.o: $(BUILD_DIR)/kinds.o
 $(BUILD_DIR)/ir_fft_io.o: $(BUILD_DIR)/ir_fft.o $(BUILD_DIR)/kinds.o
 $(BUILD_DIR)/nonneg_leastsq.o: $(BUILD_DIR)/constants.o
 $(BUILD_DIR)/splines.o: $(BUILD_DIR)/kinds.o
-$(BUILD_DIR)/types.o: $(BUILD_DIR)/kinds.o
+$(BUILD_DIR)/elements.o: $(BUILD_DIR)/kinds.o
+$(BUILD_DIR)/topology.o: $(BUILD_DIR)/elements.o $(BUILD_DIR)/kinds.o
+$(BUILD_DIR)/types.o: $(BUILD_DIR)/kinds.o $(BUILD_DIR)/topology.o
 $(BUILD_DIR)/gpu_context_cpu.o: $(BUILD_DIR)/kinds.o $(BUILD_DIR)/types.o
 $(BUILD_DIR)/neighbors.o: $(BUILD_DIR)/kinds.o $(BUILD_DIR)/soap_turbo_functions.o $(BUILD_DIR)/timing.o
 $(BUILD_DIR)/neighbors_skin.o: $(BUILD_DIR)/error.o $(BUILD_DIR)/kinds.o
@@ -39,8 +41,8 @@ $(BUILD_DIR)/exp_utils.o: $(BUILD_DIR)/error.o $(BUILD_DIR)/kinds.o $(BUILD_DIR)
 $(BUILD_DIR)/xyz.o: $(BUILD_DIR)/kinds.o $(BUILD_DIR)/soap_turbo_functions.o
 $(BUILD_DIR)/md.o: $(BUILD_DIR)/kinds.o $(BUILD_DIR)/neighbors.o
 $(BUILD_DIR)/ir_auxiliary_dynamics.o: $(BUILD_DIR)/kinds.o $(BUILD_DIR)/mad_ir.o
-$(BUILD_DIR)/mc.o: $(BUILD_DIR)/kinds.o $(BUILD_DIR)/md.o $(BUILD_DIR)/neighbors.o $(BUILD_DIR)/types.o
-$(BUILD_DIR)/read_files.o: $(BUILD_DIR)/error.o $(BUILD_DIR)/kinds.o $(BUILD_DIR)/md.o $(BUILD_DIR)/neighbors.o $(BUILD_DIR)/printing.o $(BUILD_DIR)/read_utils.o $(BUILD_DIR)/soap_turbo_compress.o $(BUILD_DIR)/splines.o $(BUILD_DIR)/types.o $(BUILD_DIR)/vdw.o $(BUILD_DIR)/xyz.o
+$(BUILD_DIR)/mc.o: $(BUILD_DIR)/kinds.o $(BUILD_DIR)/md.o $(BUILD_DIR)/neighbors.o $(BUILD_DIR)/topology.o $(BUILD_DIR)/types.o
+$(BUILD_DIR)/read_files.o: $(BUILD_DIR)/error.o $(BUILD_DIR)/kinds.o $(BUILD_DIR)/md.o $(BUILD_DIR)/neighbors.o $(BUILD_DIR)/printing.o $(BUILD_DIR)/read_utils.o $(BUILD_DIR)/soap_turbo_compress.o $(BUILD_DIR)/splines.o $(BUILD_DIR)/topology.o $(BUILD_DIR)/types.o $(BUILD_DIR)/vdw.o $(BUILD_DIR)/xyz.o
 $(BUILD_DIR)/gap_backend_cpu.o: $(BUILD_DIR)/gap.o $(BUILD_DIR)/kinds.o $(BUILD_DIR)/timing.o $(BUILD_DIR)/types.o
 $(BUILD_DIR)/gap_interface.o: $(BUILD_DIR)/gap.o $(BUILD_DIR)/gpu_context_cpu.o $(BUILD_DIR)/kinds.o $(BUILD_DIR)/local_properties.o $(BUILD_DIR)/mad_ir.o $(BUILD_DIR)/mad_ir_xl.o $(BUILD_DIR)/read_files.o $(BUILD_DIR)/soap_turbo.o $(BUILD_DIR)/timing.o $(BUILD_DIR)/types.o
 $(BUILD_DIR)/mpi.o: $(BUILD_DIR)/kinds.o $(BUILD_DIR)/types.o

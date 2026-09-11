@@ -72,6 +72,13 @@ jobs:
       # Not physics, but it decides the verdict of every device regression run,
       # and a comparator that passes everything would turn that suite into a
       # formality with nothing else to notice.
+      # Structures whose answer is known because the driver built them: four
+      # ethanols in a box is four, and an ethanol bonded to a surface is none.
+      - name: Molecular topology
+        if: always()
+        working-directory: turbogap
+        run: tests/topology/run.sh
+
       - name: Tolerance comparator self-test
         if: always()
         working-directory: turbogap

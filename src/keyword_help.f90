@@ -1229,6 +1229,33 @@ contains
          write (*, '(A)') ''
       end if
       if (every .or. (mode == 'mc')) then
+         write (*, '(A)') '  mc_mol_bond_scale                    [real, default 1.2]'
+         write (*, '(A)') '      Two atoms are bonded when they are closer than this times the sum of'
+         write (*, '(A)') '      their COVALENT radii (default 1.2). Covalent, not van der Waals: the'
+         write (*, '(A)') '      van der Waals radii are about twice as large and describe contact'
+         write (*, '(A)') '      rather than bonding, and with them every atom in a condensed phase'
+         write (*, '(A)') '      is bonded to its neighbours, the structure becomes one connected'
+         write (*, '(A)') '      component, and nothing matches. Only consulted when mc_mol_identify'
+         write (*, '(A)') '      = topology.'
+         write (*, '(A)') '      -> see mc_mol_identify'
+         write (*, '(A)') ''
+      end if
+      if (every .or. (mode == 'mc')) then
+         write (*, '(A)') '  mc_mol_identify                      [string, default tag]'
+         write (*, '(A)') '      How a removal move recognises one of its molecules in the structure:'
+         write (*, '(A)') '      "tag" (default) or "topology". "tag" can only see molecules this run'
+         write (*, '(A)') '      inserted, because the label is written at insertion -- a molecule'
+         write (*, '(A)') '      that was in the starting structure is invisible to removal, so a'
+         write (*, '(A)') '      solvated system can never come to equilibrium with its reservoir.'
+         write (*, '(A)') '      "topology" finds them by their bonding instead, so a pre-existing'
+         write (*, '(A)') '      molecule is as removable as an inserted one. A molecule covalently'
+         write (*, '(A)') '      bound to the rest of the structure is deliberately not matched: it'
+         write (*, '(A)') '      is not free, and removing it would break bonds the potential is'
+         write (*, '(A)') '      holding.'
+         write (*, '(A)') '      -> needs mc_molecule_files; see mc_mol_bond_scale'
+         write (*, '(A)') ''
+      end if
+      if (every .or. (mode == 'mc')) then
          write (*, '(A)') '  mc_molecule_files                    [string list]'
          write (*, '(A)') '      Insert and remove a whole rigid molecule instead of a single atom,'
          write (*, '(A)') '      one xyz file per entry in mc_species, or "none" for an entry that'

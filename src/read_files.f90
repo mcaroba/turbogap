@@ -33,6 +33,7 @@ module read_files
                        print_warning, print_note, print_message
    use read_utils, only: read_parameters, check_iostatus, check_file_exists
    use error, only: turbogap_abort
+   use topology, only: topology_reference, topology_describe
    use kinds
 
    use neighbors
@@ -888,6 +889,10 @@ contains
 
       implicit none
 
+!     Whether the molecular reference could be fingerprinted, and why not.
+      logical :: topology_ok
+      character(len=256) :: topology_message
+
 !   Input variables
       integer, intent(in) :: n_species
       integer, intent(in) :: rank
@@ -1345,6 +1350,34 @@ contains
                                      n_species, rank)
                params%mc_exchange_mass(i) = params%mc_molecules(i)%total_mass
                params%mc_exchange_e0(i) = params%mc_molecules(i)%e0_total
+!              The bonding fingerprint of the molecule, built once from the
+!              file it was read from. Done here rather than inside
+!              read_mc_molecule because it needs mc_mol_identify, and this is
+!              the point at which every keyword has been read whatever order
+!              the deck gave them in.
+               if (trim(params%mc_mol_identify) == "topology") then
+                  params%mc_molecules(i)%match_by_topology = .true.
+                  params%mc_molecules(i)%bond_scale = params%mc_mol_bond_scale
+                  call topology_reference(params%mc_molecules(i)%positions, &
+                                          params%mc_molecules(i)%xyz_species, &
+                                          params%mc_molecules(i)%n_atoms, &
+                                          params%mc_mol_bond_scale, &
+                                          params%mc_molecules(i)%fingerprint, &
+                                          topology_ok, topology_message)
+                  if (.not. topology_ok) then
+                     write (*, *) "ERROR: mc_mol_identify = topology, but the molecule in "// &
+                        trim(params%mc_molecule_files(i))//" cannot be used as a reference:"
+                     write (*, *) "       "//trim(topology_message)
+                     write (*, *) "       A reference that falls into two pieces would match any two"
+                     write (*, *) "       pieces anywhere, and the removal would take atoms that are"
+                     write (*, *) "       not a molecule. Check the file, or mc_mol_bond_scale."
+                     call turbogap_abort()
+                  end if
+                  if (rank == 0) then
+                     call topology_describe(params%mc_molecules(i)%fingerprint, topology_message)
+                     call print_parameter(trim(params%mc_species(i)), trim(topology_message))
+                  end if
+               end if
             else
                do j = 1, n_species
                   if (trim(adjustl(params%species_types(j))) == trim(adjustl(params%mc_species(i)))) then
@@ -3237,6 +3270,38 @@ contains
          read (unit, *, iostat=iostatus) cjunk, cjunk, (params%mc_molecule_files(nw), nw=1, params%n_mc_mu)
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameters("mc_molecule_files", params%mc_molecule_files)
+         !> @kw mc_mol_identify
+         !> How a removal move recognises one of its molecules in the structure: "tag"
+         !> (default) or "topology". "tag" can only see molecules this run inserted, because
+         !> the label is written at insertion -- a molecule that was in the starting structure
+         !> is invisible to removal, so a solvated system can never come to equilibrium with
+         !> its reservoir. "topology" finds them by their bonding instead, so a pre-existing
+         !> molecule is as removable as an inserted one. A molecule covalently bound to the
+         !> rest of the structure is deliberately not matched: it is not free, and removing it
+         !> would break bonds the potential is holding.
+         !> @needs mc_molecule_files
+         !> @see mc_mol_bond_scale
+         !> @modes mc
+      else if (keyword == 'mc_mol_identify') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%mc_mol_identify
+         call check_iostatus(iostatus, keyword)
+         call upper_to_lower_case(params%mc_mol_identify)
+         if (rank == 0) call print_parameter("mc_mol_identify", params%mc_mol_identify)
+         !> @kw mc_mol_bond_scale
+         !> Two atoms are bonded when they are closer than this times the sum of their
+         !> COVALENT radii (default 1.2). Covalent, not van der Waals: the van der Waals radii
+         !> are about twice as large and describe contact rather than bonding, and with them
+         !> every atom in a condensed phase is bonded to its neighbours, the structure becomes
+         !> one connected component, and nothing matches. Only consulted when
+         !> mc_mol_identify = topology.
+         !> @see mc_mol_identify
+         !> @modes mc
+      else if (keyword == 'mc_mol_bond_scale') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%mc_mol_bond_scale
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("mc_mol_bond_scale", params%mc_mol_bond_scale)
          !> @kw mc_mu_reference
          !> What mc_mu is measured from. "absolute" compares it against the total energy change of
          !> the exchange, which carries the e0 of whatever was inserted or removed. "e0" adds that

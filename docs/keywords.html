@@ -240,7 +240,7 @@ footer {
 <header class="masthead">
 <p class="eyebrow">TurboGAP &middot; keyword reference</p>
 <h1>Keywords</h1>
-<p class="lede">354 keywords across the input file and the potential (.gap) file. Types and defaults are read out of <code>src/types.f90</code>, and the rest out of the branch in <code>src/read_files.f90</code> that parses the keyword, so nothing here is transcribed by hand.</p>
+<p class="lede">356 keywords across the input file and the potential (.gap) file. Types and defaults are read out of <code>src/types.f90</code>, and the rest out of the branch in <code>src/read_files.f90</code> that parses the keyword, so nothing here is transcribed by hand.</p>
 </header>
 <nav class="rail" aria-label="Groups">
 <p class="railhead">the input file</p>
@@ -248,7 +248,7 @@ footer {
 <a href="#run-control"><span>Run control</span><span class="n">19</span></a>
 <a href="#molecular-dynamics"><span>Molecular dynamics</span><span class="n">23</span></a>
 <a href="#nested-sampling"><span>Nested sampling</span><span class="n">6</span></a>
-<a href="#monte-carlo"><span>Monte Carlo</span><span class="n">33</span></a>
+<a href="#monte-carlo"><span>Monte Carlo</span><span class="n">35</span></a>
 <a href="#van-der-waals"><span>Van der Waals</span><span class="n">31</span></a>
 <a href="#electrostatics"><span>Electrostatics</span><span class="n">11</span></a>
 <a href="#experimental-data-mad"><span>Experimental data (MAD)</span><span class="n">55</span></a>
@@ -1308,6 +1308,24 @@ footer {
 <td class="mo">mc</td>
 <td class="de">Closest an inserted atom may come to an existing one. Trials nearer than this are rejected without evaluating the potential, which is what keeps an insertion from landing on top of an atom.</td>
 <td class="dp"><span class="dep">see <code>mc_max_dist</code></span></td>
+</tr>
+<tr data-h="mc_mol_bond_scale two atoms are bonded when they are closer than this times the sum of their covalent radii (default 1.2). covalent, not van der waals: the van der waals radii are about twice as large and describe contact rather than bonding, and with them every atom in a condensed phase is bonded to its neighbours, the structure becomes one connected component, and nothing matches. only consulted when mc_mol_identify = topology." data-m="mc">
+<td class="kw"><code>mc_mol_bond_scale</code></td>
+<td class="ty">real</td>
+<td class="df"><code>1.2</code></td>
+<td class="un"></td>
+<td class="mo">mc</td>
+<td class="de">Two atoms are bonded when they are closer than this times the sum of their COVALENT radii (default 1.2). Covalent, not van der Waals: the van der Waals radii are about twice as large and describe contact rather than bonding, and with them every atom in a condensed phase is bonded to its neighbours, the structure becomes one connected component, and nothing matches. Only consulted when mc_mol_identify = topology.</td>
+<td class="dp"><span class="dep">see <code>mc_mol_identify</code></span></td>
+</tr>
+<tr data-h="mc_mol_identify how a removal move recognises one of its molecules in the structure: &quot;tag&quot; (default) or &quot;topology&quot;. &quot;tag&quot; can only see molecules this run inserted, because the label is written at insertion -- a molecule that was in the starting structure is invisible to removal, so a solvated system can never come to equilibrium with its reservoir. &quot;topology&quot; finds them by their bonding instead, so a pre-existing molecule is as removable as an inserted one. a molecule covalently bound to the rest of the structure is deliberately not matched: it is not free, and removing it would break bonds the potential is holding." data-m="mc">
+<td class="kw"><code>mc_mol_identify</code></td>
+<td class="ty">string</td>
+<td class="df"><code>tag</code></td>
+<td class="un"></td>
+<td class="mo">mc</td>
+<td class="de">How a removal move recognises one of its molecules in the structure: &quot;tag&quot; (default) or &quot;topology&quot;. &quot;tag&quot; can only see molecules this run inserted, because the label is written at insertion -- a molecule that was in the starting structure is invisible to removal, so a solvated system can never come to equilibrium with its reservoir. &quot;topology&quot; finds them by their bonding instead, so a pre-existing molecule is as removable as an inserted one. A molecule covalently bound to the rest of the structure is deliberately not matched: it is not free, and removing it would break bonds the potential is holding.</td>
+<td class="dp"><span class="dep">needs <code>mc_molecule_files</code></span><span class="dep">see <code>mc_mol_bond_scale</code></span></td>
 </tr>
 <tr data-h="mc_molecule_files insert and remove a whole rigid molecule instead of a single atom, one xyz file per entry in mc_species, or &quot;none&quot; for an entry that really is an atom. n_mc_mu must appear first. every species in the file has to be in species. the molecule is placed with a uniformly random orientation and its centre of mass drawn like an atomic insertion, and a removal takes all of its atoms together, so mc_mu is the chemical potential of the molecule." data-m="mc">
 <td class="kw"><code>mc_molecule_files</code></td>

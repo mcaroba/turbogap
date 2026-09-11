@@ -31,6 +31,7 @@ module types
 
    use kinds
    use iso_c_binding
+   use topology, only: topology_fingerprint
 
    implicit none
 
@@ -299,6 +300,12 @@ module types
       real(dp) :: radius = 0.d0
       logical :: is_molecule = .false.
       character*1024 :: file = "none"
+!     Identify this molecule in the structure by its bonding rather than by a
+!     record of having inserted it, which is what lets a molecule that was in
+!     the starting structure be removed. See src/topology.f90.
+      logical :: match_by_topology = .false.
+      real(dp) :: bond_scale = 1.2d0
+      type(topology_fingerprint) :: fingerprint
    end type mc_molecule
 
    type input_parameters
@@ -712,6 +719,8 @@ module types
       logical :: mc_write_xyz = .false.
       logical :: mc_hamiltonian = .false.
       logical :: mc_reverse = .false.
+      character*32 :: mc_mol_identify = "tag"
+      real(dp) :: mc_mol_bond_scale = 1.2d0
       real(dp) :: mc_reverse_lambda = 0.d0
       integer :: mc_idx = 1
       logical :: accessible_volume = .false.

@@ -192,7 +192,7 @@ else
   SRC_CC :=
 endif
 
-SRC := printing.f90 error.f90 read_utils.f90 nvtx.f90 timing.f90 misc.f90 electrostatics.f90 constants.f90 gle.f90 ipi_socket.f90 ipi_driver.f90 mad_ir.f90 mad_ir_xl.f90 ir_fft.f90 ir_fft_io.f90 nonneg_leastsq.f90 splines.f90 types.f90 $(GPU_CONTEXT) neighbors.f90 neighbors_skin.f90 gap.f90 vdw.f90		\
+SRC := printing.f90 error.f90 read_utils.f90 nvtx.f90 timing.f90 misc.f90 electrostatics.f90 constants.f90 gle.f90 ipi_socket.f90 ipi_driver.f90 mad_ir.f90 mad_ir_xl.f90 ir_fft.f90 ir_fft_io.f90 nonneg_leastsq.f90 splines.f90 elements.f90 topology.f90 types.f90 $(GPU_CONTEXT) neighbors.f90 neighbors_skin.f90 gap.f90 vdw.f90		\
 	local_properties.f90 exp_utils.f90  xyz.f90 md.f90 ir_auxiliary_dynamics.f90 mc.f90 read_files.f90	\
 	$(GAP_BACKEND) gap_interface.f90 mpi.f90 exp_interface.f90 turbogap_exp.f90 turbogap_md.f90 turbogap_vdw.f90 turbogap_estat.f90 turbogap_setup.f90
 

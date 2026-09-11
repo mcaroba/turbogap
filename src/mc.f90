@@ -31,6 +31,7 @@ module mc
    use kinds
 
    use neighbors
+   use topology, only: topology_find
    use md
    use types
 
@@ -901,6 +902,7 @@ contains
       integer, allocatable, intent(in) :: im_mol_id(:)
       integer, allocatable, intent(in) :: im_mol_mu(:)
       integer, intent(inout) :: mc_mol_next
+      integer :: n_topology_found
       logical :: is_molecule
       logical :: is_new_molecule
       logical, allocatable :: keep(:)
@@ -1061,6 +1063,30 @@ contains
          end if
 
          n_ref = n_sites
+
+!        Relabel from the bonding, when this molecule is identified that way.
+!        The labels are rebuilt rather than added to: a molecule is a molecule
+!        whether this run inserted it or found it, and one namespace with one
+!        source avoids the two disagreeing. Everything below reads mc_mol_id
+!        and mc_mol_mu exactly as before.
+         if (is_molecule .and. mc_molecules(mc_mu_id)%match_by_topology) then
+            do i = 1, n_ref
+               if (mc_mol_mu(i) == mc_mu_id) then
+                  mc_mol_id(i) = 0
+                  mc_mol_mu(i) = 0
+               end if
+            end do
+            call topology_find(positions, xyz_species, n_ref, a_box, b_box, c_box, &
+                               mc_molecules(mc_mu_id)%bond_scale, &
+                               mc_molecules(mc_mu_id)%fingerprint, &
+                               mc_mol_next + 1, mc_mol_id, n_topology_found)
+            do i = 1, n_ref
+               if (mc_mol_id(i) > mc_mol_next) mc_mol_mu(i) = mc_mu_id
+            end do
+            mc_mol_next = mc_mol_next + n_topology_found
+            if (verb > 10) write (*, '(A,I0,A,A)') "  topology: ", n_topology_found, &
+               " removable ", trim(mc_species(mc_mu_id))
+         end if
 
 !        The removal candidates, and the count that the acceptance ratio's
 !        N_exch is taken from. For a molecular potential both are counted in
