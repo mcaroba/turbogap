@@ -165,6 +165,15 @@ contains
 !     Is a generalized Langevin thermostat in play? Read in two places -- the
 !     header and the columns -- and they have to agree, so it is one expression.
       logical :: thermo_has_gle
+!     Is this an ensemble, as opposed to a relaxation? A gradient descent has no
+!     conserved quantity to report and no bath to report it against.
+      logical :: thermo_has_md
+!     Work done BY the thermostat ON the atoms, accumulated over the run:
+!     positive when it has put energy in. Measured as the kinetic energy across
+!     the thermostat call, which is what gle.f90 accumulates internally, so a
+!     GLE run reports the same number it did before.
+      real(dp), save :: e_thermo_work = 0.d0
+      real(dp) :: ek_pre_thermo
 !     Is there an experimental observable at all? NOT params%do_exp on its own:
 !     that flag gates the per-frame structural prediction pipeline, and an
 !     IR-only run switches it back off deliberately because IR is a time-series
@@ -187,6 +196,7 @@ contains
          if (params%do_md .and. md_istep > -1) then
             call time_start(time%md)
             thermo_has_gle = (params%thermostat == "gle" .or. params%thermostat == "langevin")
+            thermo_has_md = (params%optimize == "vv")
             thermo_has_exp = (params%do_exp .or. params%valid_ir)
             !     Define the time_step and md_time prior to possible scaling (see variable_time_step below)
             if (md_istep > 0) then
@@ -352,7 +362,7 @@ contains
 !              both from the same `if`s is the only arrangement in which they
 !              cannot drift apart again.
                thermo_hdr = "#     Step             Time      Temperature"// &
-                            "                E_kin                     E_pot"
+                            "                E_kin                E_pot"
                if (thermo_has_exp) thermo_hdr = trim(thermo_hdr)//"                E_exp"
                thermo_hdr = trim(thermo_hdr)//"             Pressure"
 !              The nine lattice columns have never been named in the header.
@@ -365,17 +375,19 @@ contains
 !              the regression suite compares that file byte for byte.
                if (params%write_lv .and. (thermo_has_exp .or. thermo_has_gle)) &
                   thermo_hdr = trim(thermo_hdr)// &
-                               "                   ax                   ay                   az"// &
-                               "                   bx                   by                   bz"// &
-                               "                   cx                   cy                   cz"
+                               "                   ax                  ay                  az"// &
+                               "                  bx                  by                  bz"// &
+                               "                  cx                  cy                  cz"
 !              Appended last, after the lattice block, so that no existing
 !              column moves under any combination of flags. A script reading
 !              column 3 for the temperature keeps working whatever is switched
 !              on.
                if (thermo_has_exp) thermo_hdr = trim(thermo_hdr)// &
-                                                "           Dissimilarity             Rel_error"
-               if (thermo_has_gle) thermo_hdr = trim(thermo_hdr)// &
-                                                "             E_thermo              E_cmrem               E_cons"
+                                                "         Dissimilarity             Rel_error"
+!              21 characters each, right-justified, which is what 1X,F20.8
+!              gives the values below them.
+               if (thermo_has_md) thermo_hdr = trim(thermo_hdr)// &
+                                               "             E_thermo              E_cmrem               E_cons"
                write (10, "(A)") trim(thermo_hdr)
             else
                open (unit=10, file="thermo.log", status="old", position="append")
@@ -422,10 +434,10 @@ contains
 !              is an integration problem; a drift in E_pot + E_kin alone is just
 !              the thermostat doing its job, and without this column the two are
 !              indistinguishable.
-               if (thermo_has_gle) then
+               if (thermo_has_md) then
                   write (10, "(1X, F20.8, 1X, F20.8, 1X, F20.8)", advance="no") &
-                     gle_state%e_thermo, e_cm_removed, &
-                     sum(energies) + E_kinetic - gle_state%e_thermo + e_cm_removed
+                     e_thermo_work, e_cm_removed, &
+                     sum(energies) + E_kinetic - e_thermo_work + e_cm_removed
                end if
                !       Further printouts should go here
                !       <<HERE>>
@@ -528,6 +540,13 @@ contains
             !     lattice moved with the positions in the single
             !     gradient_descent_positions_and_lattice call above.
             !     If there are thermostating operations they happen here
+!           Bracket every thermostat, so the ledger does not depend on which one
+!           is in use or on it keeping its own accounting.
+            if (md_istep == 0) e_thermo_work = 0.d0
+            ek_pre_thermo = 0.d0
+            do i = 1, n_sites
+               ek_pre_thermo = ek_pre_thermo + 0.5d0*masses(i)*dot_product(velocities(1:3, i), velocities(1:3, i))
+            end do
             if (params%thermostat == "berendsen") then
                call get_target_temp(params%t_beg, params%t_end,&
                     & md_istep, params%md_nsteps, params%n_t_hold, &
@@ -606,6 +625,11 @@ contains
                   end if
                end if
             end if
+            do i = 1, n_sites
+               e_thermo_work = e_thermo_work &
+                               + 0.5d0*masses(i)*dot_product(velocities(1:3, i), velocities(1:3, i))
+            end do
+            e_thermo_work = e_thermo_work - ek_pre_thermo
             !     Displacement since the last neighbours build, under the minimum image
             !     of the primitive cell -- the same cell the positions were wrapped into
             !     a few lines up, so that an atom crossing a boundary contributes its
