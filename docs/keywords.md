@@ -6,11 +6,11 @@ keyword in `src/read_files.f90` and regenerate with `make docs`.
 
 ## Contents
 
-**The input file** &mdash; 290 keywords
+**The input file** &mdash; 291 keywords
 
 - [General](#general) (53)
 - [Run control](#run-control) (19)
-- [Molecular dynamics](#molecular-dynamics) (22)
+- [Molecular dynamics](#molecular-dynamics) (23)
 - [Nested sampling](#nested-sampling) (6)
 - [Monte Carlo](#monte-carlo) (33)
 - [Van der Waals](#van-der-waals) (31)
@@ -85,7 +85,7 @@ The atoms, the species and how chatty the run is.
 | `masses` | real list |  | amu | all | Atomic mass of each species, one value per entry in species and in the same order. Read in amu and converted internally to eV fs^2 / A^2. If absent they are taken from the XYZ file instead. | see `species` |
 | `max_gbytes_per_process` | real | `1.0` | GB | all | Memory an MPI rank may use for the SOAP descriptor and its derivatives; the rank splits its atoms into as many batches as it takes to stay under this. Naming it in the input file also stops the run sizing the budget from the node automatically, so a value chosen deliberately is never overwritten. | sets `max_Gbytes_set`; see `mem_fraction` |
 | `mem_fraction` | real | `0.25` |  | all | Fraction of the node's memory to divide between the ranks on it when max_Gbytes_per_process was not given. Only consulted for that automatic budget, and ignored once max_Gbytes_per_process appears in the deck. | see `max_gbytes_per_process` |
-| `neighbors_buffer` | real | `0.0` | A | all | Extra distance added to every cutoff when the neighbour lists are built, so that a list stays valid for several steps as atoms move. Larger values cost memory and neighbour-loop time but rebuild less often. |  |
+| `neighbors_buffer` | real | `0.25` | A | all | Extra distance added to every cutoff when the neighbour lists are built, so that a list stays valid for several steps as atoms move. The list is rebuilt once the two largest displacements since the last build sum to the buffer, which is the point at which a pair that started outside the padded cutoff can have reached the real one. Larger values cost memory and neighbour-loop time but rebuild less often; pairs beyond a descriptor own cutoff are dropped before it is evaluated, so the descriptors themselves cost nothing extra. 0 means rebuild every step; the default is 0.25 A, the measured optimum on GST. Keep it small: the cell list uses mx = int(L/rcut_max), so a buffer that pushes L/rcut_max across an integer coarsens the grid a whole step and costs more than the skipped rebuilds save. With a large observable cutoff, check int(L/(rcut+buffer)) before raising it. |  |
 | `radii` | real list |  | A | all | Per-species radius used by the Monte-Carlo insertion and accessible-volume tests, one value per entry in species. Not a physical parameter of the potential. | see `accessible_volume`; see `mc_types` |
 | `random_seed` | integer | `0` |  | all | Seed for the intrinsic pseudo-random number generator. Zero, the default, leaves the compiler's own sequence alone; any other value makes a run repeatable, which is what the regression comparisons rely on when the initial velocities are randomized. | see `randomize_velocities` |
 | `species` | string list |  |  | all | Chemical symbols of the species in the system, in the order every other per-species list is written in. n_species entries. |  |
@@ -133,6 +133,7 @@ Time stepping, thermostat and barostat.
 | `gle_c_file` | string |  | eV | md | Stationary covariance of the generalized Langevin thermostat, same file format and order as gle_a_file. Optional: left unset it is kB T I, which samples the canonical distribution at the target temperature and follows a t_beg -> t_end ramp. Set, it describes a bath at one fixed temperature -- the quantum thermostats work this way -- and the temperature ramp no longer applies to it. | needs `gle_a_file`; see `thermostat`; see `gle_a_file` |
 | `gle_restart` | logical | `true` |  | md | Whether to read gle_restart_file at the start of the run and write it as the run goes. Off starts a fresh bath drawn from the stationary distribution and writes nothing. | needs `thermostat`; see `gle_restart_file` |
 | `gle_restart_file` | string | `gle_restart.dat` |  | md | Where the auxiliary momenta are written, and read back from on a restart. They are state in the same sense the velocities are: a run resumed without them starts a fresh bath, which is a legitimate but different trajectory. A file describing a different ns or a different number of atoms is refused rather than adopted, and the run says so and continues with a fresh bath. | needs `thermostat`; see `gle_restart` |
+| `ipi_address` | string |  |  | ipi | Where the i-PI server is listening, as UNIX:name for a UNIX-domain socket at /tmp/ipi_name, or host:port for TCP. Only `turbogap ipi` uses it, and in that mode it is required. The host must be localhost or a dotted-quad IP address; hostnames are not resolved. Start i-PI first: there is no retry, because a driver that outlived its server would hang rather than fail. |  |
 | `md_nsteps` | integer | `1` |  | md | Number of molecular-dynamics steps to take. |  |
 | `md_step` | real | `1.0` | fs | md | Time step. With a variable time step this is the starting value. | see `target_pos_step` |
 | `n_t_hold` | integer | `0` |  | md | Number of entries in the t_hold list, which must be given before it. | sets `t_hold`; see `t_hold` |

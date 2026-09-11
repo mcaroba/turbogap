@@ -59,3 +59,12 @@ t_beg = 1000
 t_end = 1000
 random_seed = 12345
 write_xyz = 1
+
+! Pinned because this case's expected/ output predates neighbors_buffer
+! defaulting to 0.5. Padding the neighbour list does not change which pairs a
+! descriptor sees -- gap_interface drops everything beyond its own cutoff --
+! but it changes the order they are summed in, and that moves the last digit;
+! here it moved a force from ...96610 to ...96611. Pinned to 0 so the stored
+! expectation stays a real regression check rather than being reblessed over a
+! deliberate default change. The default has its own case, neighbors_skin.
+neighbors_buffer = 0

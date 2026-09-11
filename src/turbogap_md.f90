@@ -49,6 +49,7 @@ module turbogap_md
    use eph_beta
    use eph_fdm
    use eph_electronic_stopping
+   use neighbors_skin, only: skin_accumulate, skin_needs_rebuild
 #ifdef _MPIF90
    use mpi
 #endif
@@ -609,8 +610,13 @@ contains
                   end if
                end if
             end if
-            !     Check what's the maximum atomic displacement since last neighbors build
-            positions_diff = positions_diff + positions(1:3, 1:n_sites) - positions_prev(1:3, 1:n_sites)
+            !     Displacement since the last neighbours build, under the minimum image
+            !     of the primitive cell -- the same cell the positions were wrapped into
+            !     a few lines up, so that an atom crossing a boundary contributes its
+            !     step and not a box length.
+            call skin_accumulate(positions(1:3, 1:n_sites), positions_prev(1:3, 1:n_sites), &
+                                 reshape([a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), &
+                                          c_box/dfloat(indices(3))], [3, 3]), positions_diff)
             rebuild_neighbors_list = .false.
             !--------
             ! CHECK THIS OUT and fix it at some point
@@ -624,13 +630,10 @@ contains
                rebuild_neighbors_list = .true.
             end if
             !--------
-            do i = 1, n_sites
-               if (positions_diff(1, i)**2 + positions_diff(2, i)**2 + positions_diff(3, i)**2 > params%neighbors_buffer/2.d0) then
-                  rebuild_neighbors_list = .true.
-                  positions_diff = 0.d0
-                  exit
-               end if
-            end do
+            if (skin_needs_rebuild(positions_diff, params%neighbors_buffer)) then
+               rebuild_neighbors_list = .true.
+               positions_diff = 0.d0
+            end if
             !       We make sure the atoms in the supercell have the same positions and velocities as in the unit cell
             j = 0
             do i2 = 1, indices(1)

@@ -47,7 +47,7 @@ DOC_MD = os.path.join(ROOT, "docs", "keywords.md")
 DOC_HTML = os.path.join(ROOT, "docs", "keywords.html")
 GEN_F90 = os.path.join(ROOT, "src", "keyword_help.f90")
 
-MODES = ["predict", "md", "mc", "soap"]
+MODES = ["predict", "md", "mc", "soap", "ipi"]
 #  What `turbogap --help <topic>` accepts. The modes filter the input-file
 #  listing; "gap" selects the potential file instead, which has no modes.
 HELP_TOPICS = MODES + ["gap"]

@@ -14,7 +14,7 @@ contains
 !  What `turbogap --help <topic>` accepts, for the error message.
    function keyword_help_topics() result(text)
       character(len=64) :: text
-      text = 'predict/md/mc/soap/gap'
+      text = 'predict/md/mc/soap/ipi/gap'
    end function keyword_help_topics
 
 !  Print the keyword reference. An empty topic prints everything; a mode
@@ -38,7 +38,7 @@ contains
       write (*, '(A)') 'TurboGAP keywords'
       write (*, '(A)') ''
       if (every) then
-         write (*, '(A)') '  Everything. `turbogap --help <predict|md|mc|soap|gap>` narrows this down.'
+         write (*, '(A)') '  Everything. `turbogap --help <predict|md|mc|soap|ipi|gap>` narrows this down.'
       else if (gap_only) then
          write (*, '(A)') '  Keywords of the potential (.gap) file.'
       else
@@ -685,11 +685,21 @@ contains
          write (*, '(A)') ''
       end if
       if (every .or. .not. gap_only) then
-         write (*, '(A)') '  neighbors_buffer                     [real, default 0.0, A]'
+         write (*, '(A)') '  neighbors_buffer                     [real, default 0.25, A]'
          write (*, '(A)') '      Extra distance added to every cutoff when the neighbour lists are'
          write (*, '(A)') '      built, so that a list stays valid for several steps as atoms move.'
-         write (*, '(A)') '      Larger values cost memory and neighbour-loop time but rebuild less'
-         write (*, '(A)') '      often.'
+         write (*, '(A)') '      The list is rebuilt once the two largest displacements since the'
+         write (*, '(A)') '      last build sum to the buffer, which is the point at which a pair'
+         write (*, '(A)') '      that started outside the padded cutoff can have reached the real'
+         write (*, '(A)') '      one. Larger values cost memory and neighbour-loop time but rebuild'
+         write (*, '(A)') '      less often; pairs beyond a descriptor own cutoff are dropped before'
+         write (*, '(A)') '      it is evaluated, so the descriptors themselves cost nothing extra. 0'
+         write (*, '(A)') '      means rebuild every step; the default is 0.25 A, the measured'
+         write (*, '(A)') '      optimum on GST. Keep it small: the cell list uses mx ='
+         write (*, '(A)') '      int(L/rcut_max), so a buffer that pushes L/rcut_max across an'
+         write (*, '(A)') '      integer coarsens the grid a whole step and costs more than the'
+         write (*, '(A)') '      skipped rebuilds save. With a large observable cutoff, check'
+         write (*, '(A)') '      int(L/(rcut+buffer)) before raising it.'
          write (*, '(A)') ''
       end if
       if (every .or. .not. gap_only) then
@@ -961,6 +971,16 @@ contains
          write (*, '(A)') '      different number of atoms is refused rather than adopted, and the'
          write (*, '(A)') '      run says so and continues with a fresh bath.'
          write (*, '(A)') '      -> needs thermostat; see gle_restart'
+         write (*, '(A)') ''
+      end if
+      if (every .or. (mode == 'ipi')) then
+         write (*, '(A)') '  ipi_address                          [string]'
+         write (*, '(A)') '      Where the i-PI server is listening, as UNIX:name for a UNIX-domain'
+         write (*, '(A)') '      socket at /tmp/ipi_name, or host:port for TCP. Only `turbogap ipi`'
+         write (*, '(A)') '      uses it, and in that mode it is required. The host must be localhost'
+         write (*, '(A)') '      or a dotted-quad IP address; hostnames are not resolved. Start i-PI'
+         write (*, '(A)') '      first: there is no retry, because a driver that outlived its server'
+         write (*, '(A)') '      would hang rather than fail.'
          write (*, '(A)') ''
       end if
       if (every .or. (mode == 'md')) then

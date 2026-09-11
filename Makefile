@@ -39,6 +39,31 @@ ifeq ($(DEBUG),1)
   BUILD_TAG := $(BUILD_TAG)-dbg
 endif
 
+# ----------------------------------------------------------------- OPENMP=1
+#
+# Host threading. No architecture makefile passes -fopenmp, so _OPENMP has been
+# undefined on every build that ever shipped and the !$OMP directives were
+# comments. The neighbour build and the per-step pair geometry in
+# src/neighbors.f90 carry them now, and they are the reason to turn this on:
+# with one MPI rank per GPU a single core built the whole list while the device
+# idled, and a node has tens of cores per rank going spare.
+#
+# Off by default all the same. It is a build-time choice that changes which
+# code runs, so it gets its own object tree and its own bin, and the regression
+# suite keeps testing the untagged one.
+#
+# gfortran needs -fopenmp at BOTH compile and link: it selects the runtime
+# library as well as enabling the directives, and the !$ sentinel lines are
+# conditionally compiled only when it is present.
+#
+#     make OPENMP=1               build-omp/   bin-omp/turbogap
+OPENMP ?= 0
+ifeq ($(OPENMP),1)
+  F90_OPTS += -fopenmp
+  LIBS += -fopenmp
+  BUILD_TAG := $(BUILD_TAG)-omp
+endif
+
 # ------------------------------------------------------- an ad-hoc variant
 #
 # Extra compiler flags, and a tag so the variant gets its own object tree.
@@ -81,7 +106,7 @@ F90_OPTS += $(F90_MOD_DIR_OPT) $(INC_DIR)
 PROGRAMS := turbogap
 
 
-SRC := printing.f90 error.f90 read_utils.f90 timing.f90 misc.f90 electrostatics.f90 constants.f90 gle.f90 mad_ir.f90 mad_ir_xl.f90 ir_fft.f90 ir_fft_io.f90 nonneg_leastsq.f90 splines.f90 types.f90 gpu_context.f90 neighbors.f90 gap.f90 vdw.f90		\
+SRC := printing.f90 error.f90 read_utils.f90 timing.f90 misc.f90 electrostatics.f90 constants.f90 gle.f90 ipi_socket.f90 ipi_driver.f90 mad_ir.f90 mad_ir_xl.f90 ir_fft.f90 ir_fft_io.f90 nonneg_leastsq.f90 splines.f90 types.f90 gpu_context.f90 neighbors.f90 neighbors_skin.f90 gap.f90 vdw.f90		\
 	local_properties.f90 exp_utils.f90  xyz.f90 md.f90 ir_auxiliary_dynamics.f90 mc.f90 read_files.f90	\
 	gap_backend_cpu.f90 gap_interface.f90 mpi.f90 exp_interface.f90 turbogap_exp.f90 turbogap_md.f90 turbogap_vdw.f90 turbogap_estat.f90 turbogap_setup.f90
 
