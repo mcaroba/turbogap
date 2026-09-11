@@ -3,3 +3,9 @@ build/
 include/
 lib/
 tests/regression/baseline/turbogap.*
+bin-*/
+build-*/
+lib-*/
+include-*/
+.backup-*/
+*.bak
