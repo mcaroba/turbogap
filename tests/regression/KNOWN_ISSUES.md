@@ -767,7 +767,7 @@ first, and the contract being retired had demonstrably been met.
 
 ---
 
-## 15. `gd-box-ortho` does not converge — OPEN
+## 15. `gd-box-ortho` did not converge — FIXED
 
 **Measured** 2026-09-12 by `tests/relaxation/`, which drives each relaxation
 mode to convergence rather than stopping it after fifteen steps.
@@ -793,5 +793,26 @@ The convergence test in `turbogap_md.f90` is the same expression for both modes
 (`|dE| < e_tol*N`, `|dP| < p_tol`, `max|F| < f_tol`), so the difference is in
 the step the optimiser takes, not in when it agrees to stop.
 
-`tests/relaxation/` reports this as KNOWN rather than failing on it, and turns
-green by itself if it starts converging.
+**What it was.** The backtracking line search had no bound. Armijo accepts a
+step when the energy falls by at least `gamma*0.5*|g|^2`, and each rejection
+halves `gamma` -- which halves the decrease being demanded. But the decrease
+actually available near a minimum is second order in `gamma`, so below some step
+size the demand sits under the energy's own numerical resolution and can never
+be met again. The search then halves for ever, the step reaches zero, and a zero
+step means the forces never change, so nothing can recover. 115 of 120
+iterations were spent backtracking.
+
+`gd-box` escaped it only by luck: its off-diagonal lattice components keep the
+Barzilai-Borwein history varied enough to land on a workable step.
+
+**The fix.** A search that has halved ten times has cut the step a
+thousandfold and is not going to succeed. What is stale at that point is the BB
+history, not the point, so it restarts: a fresh steepest-descent step of
+`max_opt_step` in the largest gradient component, exactly as the first
+iteration takes.
+
+`gd-box-ortho` now converges in 146 frames at `max|F| = 0.00184`, and reaches
+**-4321.6445** where it used to stop at -4321.6415 -- it was stuck, not
+converged. The four relaxation regression cases are unchanged: they run fifteen
+steps, and the restart needs ten consecutive rejections, so it never fires
+there.

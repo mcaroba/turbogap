@@ -828,6 +828,12 @@ contains
       real(dp), save :: gamma_back0
       real(dp), save :: energy0
       real(dp), save :: m_prev
+!   Consecutive rejections by the line search, and the point past which it is
+!   the Barzilai-Borwein history that is stale rather than the step too big.
+!   Ten halvings is a thousandfold reduction.
+      integer, save :: n_backtrack = 0
+      integer, parameter :: MAX_BACKTRACK = 10
+      logical :: restart_step
       logical, save :: backtracking
       logical, save :: initialized = .false.
 
@@ -906,6 +912,7 @@ contains
       end if
 
       gamma = 0.d0
+      restart_step = .false.
       if (first_step) then
 !     Open with a step that moves the largest gradient component by
 !     max_opt_step, unless a previous line search already found a good one.
@@ -930,7 +937,16 @@ contains
             backtracking = .false.
             initialized = .true.
             gamma_back0 = gamma_prev
+            n_backtrack = 0
+         else if (n_backtrack >= MAX_BACKTRACK) then
+!           Halving again would only make the step smaller than the one that
+!           has already failed ten times. Leave the line search and rebuild.
+            backtracking = .false.
+            initialized = .false.
+            n_backtrack = 0
+            restart_step = .true.
          else
+            n_backtrack = n_backtrack + 1
             gamma = gamma_prev*0.5d0
             q = q0
             fq = fq0
@@ -939,7 +955,7 @@ contains
          end if
       end if
 
-      if (.not. first_step .and. .not. backtracking) then
+      if (.not. first_step .and. .not. backtracking .and. .not. restart_step) then
 !     Barzilai-Borwein, over the concatenated (q, A~) vector. The whole point
 !     of the scaling above is that one step length can serve both blocks.
          num = sum((q - q_prev)*(fq - fq_prev)) &
@@ -949,6 +965,22 @@ contains
             gamma = 0.d0
          else
             gamma = dabs(num/den)
+         end if
+      end if
+
+!   A restart asked for above: size the step from the gradient as it stands,
+!   the way the first iteration sizes one.
+      if (restart_step) then
+         max_grad = 0.d0
+         do i = 1, n_sites
+            this_grad = maxval(dabs(fq(1:3, i)))
+            if (this_grad > max_grad) max_grad = this_grad
+         end do
+         max_grad = max(max_grad, maxval(dabs(f_tilde)))
+         if (max_grad == 0.d0) then
+            gamma = 0.d0
+         else
+            gamma = max_opt_step/max_grad
          end if
       end if
 

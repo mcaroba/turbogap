@@ -235,11 +235,12 @@ def check_lattice_constraint_is_honoured():
     print("\n  the diagonal-only constraint is honoured, and converges")
     force, energy, steps, trajectory = relax("gdbox_ortho", "atoms.xyz", "gd-box-ortho",
                                              F_TOL_BOX, E_TOL_BOX)
-    check_known(force < F_TOL_BOX,
-                f"gd-box-ortho max|F| = {force:.6f} < {F_TOL_BOX}", "15",
-                f"ran {steps} frames without reaching it; gd-box needs 149")
-    check_known(steps < MAX_STEPS,
-                f"gd-box-ortho terminated in {steps} frames", "15")
+    check(force < F_TOL_BOX,
+          f"gd-box-ortho max|F| = {force:.6f} < {F_TOL_BOX}",
+          f"ran {steps} frames without reaching it; gd-box needs about 149")
+    check(steps < MAX_STEPS,
+          f"gd-box-ortho terminated in {steps} frames",
+          "it is hitting the step cap, which is how KNOWN_ISSUES 15 looked")
 
     before = off_diagonal(lattice_of(trajectory, "first"))
     after = off_diagonal(lattice_of(trajectory, "last"))
