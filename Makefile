@@ -7,7 +7,21 @@ SHELL = /bin/sh
 
 TURBOGAP_ARCH ?= Ubuntu_gfortran_mpi
 
+# Where the HOP headers live. hop is a submodule, so a recursive clone needs
+# no HOP_ROOT in the environment; setting one still overrides this.
+HOP_ROOT ?= $(CURDIR)/src/hop
+export HOP_ROOT
+
 include makefiles/Makefile.$(TURBOGAP_ARCH)
+
+# Which soap_turbo checkout the SOAP routines come from. The CPU and GPU lines
+# are separate submodules: their get_soap signatures differ (the GPU one takes
+# device pointers, a cuBLAS handle and a stream) and so do their module
+# dependencies. A GPU arch makefile sets this to src/soap_turbo_gpu/src.
+ST_DIR ?= src/soap_turbo/src
+
+# The module graph differs with ST_DIR, so the generated deps do too.
+DEPS_FILE ?= makefiles/Makefile.deps
 
 # ------------------------------------------------------------------- DEBUG
 #
@@ -170,7 +184,7 @@ $(BUILD_DIR)/%.o: src/third_party/bussi_thermostat/%.f90 | $$(@D)
 	$(F90) $(PP) $(F90_OPTS) -c $< -o $@
 $(BUILD_DIR)/%.o: src/third_party/nnls/%.f90 | $$(@D)
 	$(F90) $(PP) $(F90_OPTS) -c $< -o $@
-$(BUILD_DIR)/%.o: src/soap_turbo/src/%.f90 | $$(@D)
+$(BUILD_DIR)/%.o: $(ST_DIR)/%.f90 | $$(@D)
 	$(F90) $(PP) $(F90_OPTS) -c $< -o $@
 $(BUILD_DIR)/%.o: src/%.f90 | $$(@D)
 	$(F90) $(PP) $(F90_OPTS) -c $< -o $@
@@ -197,6 +211,8 @@ $(LIB_DIR):
 # of these dependency lines the default goal, and `make` would silently build a
 # single object and exit 0.
 #
-# Regenerate after adding, removing or moving a USE / module:
+# Regenerate after adding, removing or moving a USE / module. DEPS_FILE is
+# per-arch because ST_DIR selects a soap_turbo whose module graph differs:
 #     python3 tools/gen_fortran_deps.py . > makefiles/Makefile.deps
-include makefiles/Makefile.deps
+#     make TURBOGAP_ARCH=<gpu arch> ... then regenerate into Makefile.deps.gpu
+include $(DEPS_FILE)

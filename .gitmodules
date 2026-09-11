@@ -2,3 +2,11 @@
 	path = src/soap_turbo
 	url = https://github.com/TiganyZ/soap_turbo.git
 	branch = master
+[submodule "src/soap_turbo_gpu"]
+	path = src/soap_turbo_gpu
+	url = https://github.com/TiganyZ/soap_turbo.git
+	branch = gpu
+[submodule "src/hop"]
+	path = src/hop
+	url = https://github.com/cschpc/hop.git
+	branch = master

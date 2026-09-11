@@ -63,6 +63,32 @@ def parse_var(lines, name):
     return []
 
 
+RE_VAR_REF = re.compile(r"\$\(([A-Za-z_][A-Za-z_0-9]*)\)")
+
+
+def expand_vars(text, lines):
+    """Resolve $(VAR) in a pattern-rule directory against the Makefile.
+
+    ST_DIR names the soap_turbo checkout and is set per arch, so the rule
+    reads $(ST_DIR)/%.f90 rather than a literal path.
+    """
+    for name in RE_VAR_REF.findall(text):
+        prefix = name + " "
+        value = None
+        for line in lines:
+            stripped = line.strip()
+            if not stripped.startswith(name):
+                continue
+            rest = stripped[len(name):].lstrip()
+            for op in (":=", "?=", "="):
+                if rest.startswith(op):
+                    value = rest[len(op):].split("#", 1)[0].strip()
+                    break
+        if value is not None:
+            text = text.replace("$(%s)" % name, value)
+    return text
+
+
 def main():
     repo = Path(sys.argv[1] if len(sys.argv) > 1 else '.').resolve()
     mk = repo / 'Makefile'
@@ -71,7 +97,8 @@ def main():
         return 1
     lines = read_makefile(mk)
 
-    search_dirs = [m.group(1) for line in lines for m in [RE_OBJ_RULE.match(line)] if m]
+    search_dirs = [expand_vars(m.group(1), lines)
+                   for line in lines for m in [RE_OBJ_RULE.match(line)] if m]
     if not search_dirs:
         print('ERROR: found no $(BUILD_DIR)/%.o: <dir>/%.f90 pattern rules', file=sys.stderr)
         return 1
