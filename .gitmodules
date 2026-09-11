@@ -1,4 +1,4 @@
 [submodule "src/soap_turbo"]
 	path = src/soap_turbo
 	url = https://github.com/TiganyZ/soap_turbo.git
-	branch = gpu-poly3operator
+	branch = gpu
