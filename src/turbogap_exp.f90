@@ -277,7 +277,7 @@ contains
 ! paths -- streams, cuBLAS handles, gpu_exp, gpu_neigh, gpu_batch_storage
 ! -- comes from gpu_context by USE, which is what lets the body move
 ! unchanged instead of growing eight more arguments.
-   subroutine compute_exp_spectra(params, n_sites, species, rjs, xyz, neighbors_list, &
+   subroutine compute_exp_spectra(params, n_sites, species, positions, rjs, xyz, neighbors_list, &
                                   n_neigh, neighbor_species, indices, a_box, b_box, c_box, i_beg, i_end, j_beg, j_end, &
                                   rank, ntasks, ierr, md_istep, mc_istep, energies_pdf, forces_pdf, virial_pdf, &
                                   energies_sf, forces_sf, virial_sf, &
@@ -304,6 +304,7 @@ contains
       real(dp), intent(in) :: a_box(1:3)
       real(dp), intent(in) :: b_box(1:3)
       real(dp), intent(in) :: c_box(1:3)
+      real(dp), intent(in), allocatable :: positions(:, :)
       real(dp), intent(in), allocatable :: rjs(:)
       real(dp), intent(in), allocatable :: xyz(:, :)
       integer, intent(in), allocatable :: neighbors_list(:)
@@ -578,7 +579,11 @@ contains
 !     route and silently get xrd forces with none for nd; .neqv. is exactly one
 !     of the two, and a run with both falls back to the unbatched route, which
 !     handles them independently.
-      batched_pdf = params%gpu_batched .and. (params%do_xrd .neqv. params%do_nd)
+!     Not on the Debye route: that replaces the pair-distribution and
+!     structure-factor calculations rather than building on them, so the
+!     arrays this path reads are never filled.
+      batched_pdf = params%gpu_batched .and. (params%do_xrd .neqv. params%do_nd) &
+                    .and. .not. params%xrd_debye
 
 !     The device pdf collects partials and stops; the host one also hands back
 !     y_pair_distribution, which the similarity block needs if an experimental
@@ -891,28 +896,38 @@ contains
          !time%xrd(1) = MPI_wtime()
          call time_start(time%xrd, "xrd")
 
-         call calculate_xrd(params, x_xrd, x_xrd_temp, y_xrd,&
-           & y_xrd_temp, x_structure_factor,&
-           & x_structure_factor_temp,&
-           & structure_factor_partial,&
-           & structure_factor_partial_temp, n_species_actual,&
-           & species_types_actual, n_atoms_of_species,&
-           & n_sites, a_box, b_box, c_box, indices, md_istep,&
-           & mc_istep, i_beg, i_end, j_beg, j_end, ierr, rjs,&
-           & xyz, neighbors_list, n_neigh, neighbor_species,&
-           & species, rank, q_beg, q_end, ntasks,&
-           & sinc_factor_matrix, params%exp_forces, nk, nk_d,&
-           & k_index_d, j2_index_d, xyz_k_d,&
-           & pair_distribution_partial_d,&
-           & pair_distribution_partial_der_d, st_nk_d,&
-           & st_k_index_d, st_j2_index_d,&
-           & st_pair_distribution_partial_d,&
-           & st_pair_distribution_partial_der_d,&
-         & pair_distribution_partial_der, energies_xrd,&
-           & forces_xrd, virial_xrd, .false., params&
-           &%structure_factor_matrix_forces, cublas_handle,&
-           & gpu_stream, gpu_host_exp_storage, params&
-           &%gpu_low_memory)
+         if (params%xrd_debye) then
+!           The Debye route sums over the positions and needs none of the
+!           structure-factor machinery, which the deck has switched off -- so
+!           the arrays the other branch reads are not allocated here.
+            call calculate_xrd_debye(params, x_xrd, x_xrd_temp, y_xrd, y_xrd_temp,&
+                 & n_sites, positions, species, md_istep, mc_istep, i_beg, i_end,&
+                 & ierr, rank, params%exp_forces, energies_xrd, forces_xrd,&
+                 & virial_xrd, .false.)
+         else
+            call calculate_xrd(params, x_xrd, x_xrd_temp, y_xrd,&
+              & y_xrd_temp, x_structure_factor,&
+              & x_structure_factor_temp,&
+              & structure_factor_partial,&
+              & structure_factor_partial_temp, n_species_actual,&
+              & species_types_actual, n_atoms_of_species,&
+              & n_sites, a_box, b_box, c_box, indices, md_istep,&
+              & mc_istep, i_beg, i_end, j_beg, j_end, ierr, rjs,&
+              & xyz, neighbors_list, n_neigh, neighbor_species,&
+              & species, rank, q_beg, q_end, ntasks,&
+              & sinc_factor_matrix, params%exp_forces, nk, nk_d,&
+              & k_index_d, j2_index_d, xyz_k_d,&
+              & pair_distribution_partial_d,&
+              & pair_distribution_partial_der_d, st_nk_d,&
+              & st_k_index_d, st_j2_index_d,&
+              & st_pair_distribution_partial_d,&
+              & st_pair_distribution_partial_der_d,&
+            & pair_distribution_partial_der, energies_xrd,&
+              & forces_xrd, virial_xrd, .false., params&
+              &%structure_factor_matrix_forces, cublas_handle,&
+              & gpu_stream, gpu_host_exp_storage, params&
+              &%gpu_low_memory)
+         end if
 
          !time%xrd(2) = MPI_wtime()
          call time_end(time%xrd, "xrd")
@@ -924,28 +939,35 @@ contains
          !time%nd(1) = MPI_wtime()
          call time_start(time%nd, "nd")
 
-         call calculate_xrd(params, x_nd, x_nd_temp, y_nd,&
-           & y_nd_temp, x_structure_factor,&
-           & x_structure_factor_temp,&
-           & structure_factor_partial,&
-           & structure_factor_partial_temp, n_species_actual,&
-           & species_types_actual, n_atoms_of_species,&
-           & n_sites, a_box, b_box, c_box, indices, md_istep,&
-           & mc_istep, i_beg, i_end, j_beg, j_end, ierr, rjs,&
-           & xyz, neighbors_list, n_neigh, neighbor_species,&
-           & species, rank, q_beg, q_end, ntasks,&
-           & sinc_factor_matrix, params%exp_forces, nk, nk_d,&
-           & k_index_d, j2_index_d, xyz_k_d,&
-           & pair_distribution_partial_d,&
-           & pair_distribution_partial_der_d, st_nk_d,&
-           & st_k_index_d, st_j2_index_d,&
-           & st_pair_distribution_partial_d,&
-           & st_pair_distribution_partial_der_d,&
-         & pair_distribution_partial_der, energies_nd, forces_nd&
-           &, virial_nd, .true., params &
-           &%structure_factor_matrix_forces, cublas_handle,&
-           & gpu_stream, gpu_host_exp_storage, params&
-           &%gpu_low_memory)
+         if (params%xrd_debye) then
+            call calculate_xrd_debye(params, x_nd, x_nd_temp, y_nd, y_nd_temp,&
+                 & n_sites, positions, species, md_istep, mc_istep, i_beg, i_end,&
+                 & ierr, rank, params%exp_forces, energies_nd, forces_nd,&
+                 & virial_nd, .true.)
+         else
+            call calculate_xrd(params, x_nd, x_nd_temp, y_nd,&
+              & y_nd_temp, x_structure_factor,&
+              & x_structure_factor_temp,&
+              & structure_factor_partial,&
+              & structure_factor_partial_temp, n_species_actual,&
+              & species_types_actual, n_atoms_of_species,&
+              & n_sites, a_box, b_box, c_box, indices, md_istep,&
+              & mc_istep, i_beg, i_end, j_beg, j_end, ierr, rjs,&
+              & xyz, neighbors_list, n_neigh, neighbor_species,&
+              & species, rank, q_beg, q_end, ntasks,&
+              & sinc_factor_matrix, params%exp_forces, nk, nk_d,&
+              & k_index_d, j2_index_d, xyz_k_d,&
+              & pair_distribution_partial_d,&
+              & pair_distribution_partial_der_d, st_nk_d,&
+              & st_k_index_d, st_j2_index_d,&
+              & st_pair_distribution_partial_d,&
+              & st_pair_distribution_partial_der_d,&
+            & pair_distribution_partial_der, energies_nd, forces_nd&
+              &, virial_nd, .true., params &
+              &%structure_factor_matrix_forces, cublas_handle,&
+              & gpu_stream, gpu_host_exp_storage, params&
+              &%gpu_low_memory)
+         end if
 
          !time%nd(2) = MPI_wtime()
          call time_end(time%nd, "nd")
@@ -1292,15 +1314,26 @@ contains
       end if
 
       if (params%do_xrd) then
-         call finalize_xrd(params, x_xrd, x_xrd_temp,&
-           & y_xrd, y_xrd_temp, x_structure_factor, x_structure_factor_temp,&
-           & structure_factor_partial, structure_factor_partial_temp)
+         if (params%xrd_debye) then
+!           finalize_xrd would free structure-factor arrays this route never
+!           touched, and which a structure_factor calculation in its own right
+!           still needs.
+            call finalize_xrd_debye(x_xrd, x_xrd_temp, y_xrd, y_xrd_temp)
+         else
+            call finalize_xrd(params, x_xrd, x_xrd_temp,&
+              & y_xrd, y_xrd_temp, x_structure_factor, x_structure_factor_temp,&
+              & structure_factor_partial, structure_factor_partial_temp)
+         end if
       end if
 
       if (params%do_nd) then
-         call finalize_xrd(params, x_nd, x_nd_temp,&
-           & y_nd, y_nd_temp, x_structure_factor, x_structure_factor_temp,&
-           & structure_factor_partial, structure_factor_partial_temp)
+         if (params%xrd_debye) then
+            call finalize_xrd_debye(x_nd, x_nd_temp, y_nd, y_nd_temp)
+         else
+            call finalize_xrd(params, x_nd, x_nd_temp,&
+              & y_nd, y_nd_temp, x_structure_factor, x_structure_factor_temp,&
+              & structure_factor_partial, structure_factor_partial_temp)
+         end if
       end if
 
       deallocate (species_types_actual)

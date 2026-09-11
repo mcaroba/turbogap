@@ -764,3 +764,34 @@ cannot leave the suite quietly comparing against the previous binary.
 Re-baselining is not a way to green a failing suite and should not become one.
 What made it right here is that the difference had been measured and explained
 first, and the contract being retired had demonstrably been met.
+
+---
+
+## 15. `gd-box-ortho` does not converge — OPEN
+
+**Measured** 2026-09-12 by `tests/relaxation/`, which drives each relaxation
+mode to convergence rather than stopping it after fifteen steps.
+
+`optimize = "gd-box"` relaxes a 512-atom cell to `max|F| < 0.002` in 149
+frames. `optimize = "gd-box-ortho"` on the same structure, the same tolerances
+and the same energy criterion **never gets there**: it runs to the 800-step cap
+with `max|F| = 0.0065`, three times its tolerance and thirty times what the
+unconstrained relaxation reaches.
+
+It is not the constraint being violated, and not the energy going the wrong
+way. The test checks both:
+
+* the six off-diagonal lattice components move by **0.0** over the whole run,
+  so the orthorhombic constraint is exactly honoured;
+* the energies come out in the order the degrees of freedom demand,
+  `gd` -4321.5890 → `gd-box-ortho` -4321.6415 → `gd-box` -4321.9728, each mode
+  reaching no higher than the one with less freedom.
+
+So the constrained minimisation is finding a lower energy than position-only
+relaxation, in the right subspace, and then failing to settle the atoms in it.
+The convergence test in `turbogap_md.f90` is the same expression for both modes
+(`|dE| < e_tol*N`, `|dP| < p_tol`, `max|F| < f_tol`), so the difference is in
+the step the optimiser takes, not in when it agrees to stop.
+
+`tests/relaxation/` reports this as KNOWN rather than failing on it, and turns
+green by itself if it starts converging.

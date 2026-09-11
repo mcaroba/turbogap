@@ -2235,7 +2235,7 @@ program turbogap
          ! lists disappear from the moved code.
 #ifdef _GPU
 #ifdef _MPIF90
-         call compute_exp_spectra(params, n_sites, species, rjs, xyz, neighbors_list, &
+         call compute_exp_spectra(params, n_sites, species, positions, rjs, xyz, neighbors_list, &
                                   n_neigh, neighbor_species, indices, a_box, b_box, c_box, i_beg, i_end, j_beg, &
                                   j_end, rank, ntasks, ierr, md_istep, mc_istep, this_energies_pdf, &
                                   this_forces_pdf, this_virial_pdf, this_energies_sf, &
@@ -2246,7 +2246,7 @@ program turbogap
                                   n_sites_temp, n_pairs_temp, write_condition, overwrite_condition, &
                                   temp_string, species_types_actual, v_uc)
 #else
-         call compute_exp_spectra(params, n_sites, species, rjs, xyz, neighbors_list, &
+         call compute_exp_spectra(params, n_sites, species, positions, rjs, xyz, neighbors_list, &
                                   n_neigh, neighbor_species, indices, a_box, b_box, c_box, i_beg, i_end, j_beg, &
                                   j_end, rank, ntasks, ierr, md_istep, mc_istep, energies_pdf, forces_pdf, &
                                   virial_pdf, energies_sf, forces_sf, &

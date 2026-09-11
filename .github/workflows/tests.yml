@@ -41,7 +41,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install numpy
+      - run: pip install numpy ipi
 
       # The test systems are trajectories and fitted potentials in a repository
       # of their own. Key the cache on the revision they are at, so a new
@@ -74,6 +74,20 @@ jobs:
       # formality with nothing else to notice.
       # Structures whose answer is known because the driver built them: four
       # ethanols in a box is four, and an ethanol bonded to a surface is none.
+      # Drives each relaxation mode to convergence, which the regression
+      # cases -- fifteen steps and a byte comparison -- cannot say anything
+      # about.
+      - name: Relaxation converges
+        if: always()
+        working-directory: turbogap
+        run: TURBOGAP_PYTHON=python tests/relaxation/run.sh
+
+      # Eight beads, eight drivers, one i-PI. Skips loudly if i-PI is absent.
+      - name: i-PI path-integral MD
+        if: always()
+        working-directory: turbogap
+        run: TURBOGAP_PYTHON=python tests/ipi_pimd/run.sh
+
       - name: Molecular topology
         if: always()
         working-directory: turbogap

@@ -48,6 +48,11 @@ repo=$(cd "$here/.." && pwd)
 VENV=${TURBOGAP_VENV:-$HOME/.venvs/turbogap-tools}
 FPRETTIFY_VERSION=0.3.7
 CLANG_FORMAT_VERSION=20.1.8
+# i-PI drives turbogap over a socket; see docs/keywords.md under ipi_address.
+# numpy is what the python test drivers compare against, and without it
+# tests/ipi_socket, tests/ir_fft and tests/mad_ir skip rather than run.
+IPI_VERSION=2.6.3
+NUMPY_VERSION=2.1.3
 
 check_only=0
 [ "${1:-}" = "--check" ] && check_only=1
@@ -82,6 +87,16 @@ if [ "$check_only" = 1 ]; then
     say "  MISS  clang-format -- run tools/setup_dev_env.sh"; rc=1
   fi
 
+  if [ -x "$VENV/bin/i-pi" ]; then
+    say "  ok    i-pi $("$VENV/bin/i-pi" --help 2>&1 | head -1 | awk '{print $NF}')"
+  else
+    say "  MISS  i-pi is not in $VENV"; rc=1
+  fi
+  if "$VENV/bin/python" -c "import numpy" 2>/dev/null; then
+    say "  ok    numpy $("$VENV/bin/python" -c 'import numpy; print(numpy.__version__)')"
+  else
+    say "  MISS  numpy is not in $VENV"; rc=1
+  fi
   if [ -x "$VENV/bin/pre-commit" ]; then
     say "  ok    pre-commit $("$VENV/bin/pre-commit" --version | awk '{print $NF}')"
   else
@@ -119,6 +134,7 @@ say "installing pinned tooling"
 "$PY" -m pip install --quiet --upgrade pip
 "$PY" -m pip install --quiet "fprettify==$FPRETTIFY_VERSION" \
                             "clang-format==$CLANG_FORMAT_VERSION" pre-commit
+"$PY" -m pip install --quiet "numpy==$NUMPY_VERSION" "ipi==$IPI_VERSION"
 
 # --------------------------------------------------------------- install hook
 # pre-commit needs fprettify's own pinned copy, which it builds into its cache

@@ -89,17 +89,60 @@ or left on the Issues section of the Github page.
 
 ## Installation
 
-_**tl;dr**_ (for standard linux builds with the prerequisites installed):
+_**tl;dr, CPU**_ (standard linux, prerequisites installed):
 
 ```sh
-git clone --recursive --depth=1 http://github.com/mcaroba/turbogap.git
+git clone --recursive https://github.com/mcaroba/turbogap.git
 cd turbogap
-export TURBOGAP_ARCH=Ubuntu_gfortran_mpi
-make -j4
-turbogap_dir=$(realpath bin)
-export PATH="$turbogap_dir:$PATH"
-echo "export PATH=\"${turbogap_dir}:\$PATH\"" >> ~/.bashrc
+./compile_cpu.sh
+export PATH="$(realpath bin):$PATH"
 ```
+
+_**tl;dr, GPU**_ (CUDA or ROCm, on top of the above):
+
+```sh
+./compile_gpu.sh
+export PATH="$(realpath bin-gpu):$PATH"
+```
+
+Both binaries are built into separate object trees and coexist: `bin/turbogap`
+and `bin-gpu/turbogap`. The regression suite compares one against the other, so
+you want both.
+
+`compile_cpu.sh` and `compile_gpu.sh` default to `Ubuntu_gfortran_mpi` and
+`Aalto_gfortran_openblas_hip_cuda`; pick another from `makefiles/` with
+`TURBOGAP_ARCH=<name> ./compile_cpu.sh`. Each script fetches the submodules,
+checks for the compilers it needs, and refuses an architecture meant for the
+other script rather than producing a binary that is not what you asked for.
+
+_**tl;dr, developer tooling**_ (only needed to commit, or to run the python
+test drivers):
+
+```sh
+tools/setup_dev_env.sh
+export PATH="$HOME/.venvs/turbogap-tools/bin:$PATH"
+tools/setup_dev_env.sh --check
+```
+
+### What gets installed
+
+A `--recursive` clone brings three submodules:
+
+| submodule | what it is |
+|---|---|
+| `src/soap_turbo` | the SOAP routines the **host** build uses |
+| `src/soap_turbo_gpu` | the SOAP routines the **device** build uses. A second implementation, not a later version: its `get_soap` takes device pointers and it represents the descriptor compression differently, so both are needed and each build takes its own |
+| `src/hop` | the HIP-on-CUDA headers the device build compiles against, so one source tree targets both vendors. No `HOP_ROOT` to set |
+
+`tools/setup_dev_env.sh` creates a virtual environment at
+`~/.venvs/turbogap-tools` holding, all pinned:
+
+| tool | why |
+|---|---|
+| `fprettify`, `clang-format` | the formatting the pre-commit hook applies. Pinned because an unpinned formatter rewrites files nobody touched |
+| `pre-commit` | the hook itself: formatting, the generated keyword reference, whitespace |
+| `numpy` | what the python test drivers compare against. Without it `tests/ir_fft`, `tests/mad_ir` and `tests/ipi_socket` skip rather than run |
+| `i-PI` | drives TurboGAP over a socket in `turbogap ipi` mode, for path-integral and other advanced dynamics. `tests/ipi_pimd` runs an eight-bead ring polymer against it |
 
 ### Prerequisites
 

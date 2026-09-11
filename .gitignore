@@ -11,3 +11,5 @@ profiling/
 tests/gpu/cron-logs/
 .backup-*/
 *.bak
+
+__pycache__/
