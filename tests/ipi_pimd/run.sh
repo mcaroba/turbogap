@@ -32,7 +32,14 @@ STEPS=6
 
 # shellcheck source=../data_root.sh
 . "$repo/tests/data_root.sh"
-DATA=$DATA_ROOT/water_dipole
+
+# A water potential that returns ENERGIES. The water_dipole model in the test
+# data is a dipole model -- dipole_model = .true. on both its descriptors --
+# which by construction returns none, so a ring polymer driven by it does not
+# move and the dynamics are untestable. Point TURBOGAP_WATER_POT at a directory
+# holding gap_files/ for a water GAP with an energy model.
+DATA=${TURBOGAP_WATER_POT:-$DATA_ROOT/water_dipole}
+POT=${TURBOGAP_WATER_GAP:-water_dipole.gap}
 
 WORK=""
 cleanup() {
@@ -50,8 +57,8 @@ check_inputs() {
     [ -x "$BIN" ] || { printf 'ERROR: no binary at %s\n' "$BIN" >&2; exit 2; }
     command -v "$IPI" >/dev/null || {
         printf 'SKIP: i-pi is not on PATH; run tools/setup_dev_env.sh\n'; exit 0; }
-    [ -f "$DATA/gap_files/water_dipole.gap" ] || {
-        printf 'SKIP: no water potential at %s\n' "$DATA"; exit 0; }
+    [ -f "$DATA/gap_files/$POT" ] || {
+        printf 'SKIP: no water potential at %s/gap_files/%s\n' "$DATA" "$POT"; exit 0; }
 }
 
 write_structure() {
@@ -111,7 +118,7 @@ XMLEOF
 write_turbogap_input() {
     cat > "$WORK/input" <<INPEOF
 atoms_file = "water.xyz"
-pot_file = "gap_files/water_dipole.gap"
+pot_file = "gap_files/${POT}"
 n_species = 2
 species = H O
 masses = 1.008 15.999
