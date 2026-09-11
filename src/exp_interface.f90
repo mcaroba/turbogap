@@ -68,8 +68,6 @@ contains
    !      print *, "Trying to reallocate gpu_variable!"
    !   end if
 
-   ! end subroutine galloc
-
    subroutine get_write_condition(do_mc, do_md, mc_istep, md_istep, write_xyz, write_condition)
       implicit none
       logical, intent(in) :: do_mc
@@ -200,8 +198,6 @@ contains
          end if
       elseif (trim(label) == "xrd") then
          output = params%xrd_output
-         ! mag = sqrt(dot_product(y, y)) * dx
-         ! y = y / mag
 
          if (trim(params%xrd_output) == "q*i(q)" .and. params%q_units &
               &== "q") then
@@ -219,8 +215,6 @@ contains
 
       elseif (trim(label) == "nd") then
          output = params%nd_output
-         ! mag = sqrt(dot_product(y, y)) * dx
-         ! y = y / mag
 
          if (trim(params%nd_output) == "q*i(q)" .and. params%q_units &
               &== "q") then
@@ -445,49 +439,6 @@ contains
 
    if (debug_gpu_batches) print *, "-- Rank ", rank, " ", " malloc neighbors: n_sites_temp = ", n_sites, " n_pairs_temp = ", n_pairs
 
-      ! allocate( n_neigh_temp( 1:n_sites ) )
-      ! n_neigh_temp = n_neigh
-      ! allocate( species_temp( 1:n_sites ) )
-      ! species_temp = species
-
-      ! allocate( neighbor_species_temp( 1:n_pairs ) )
-      ! neighbor_species_temp = neighbor_species
-      ! allocate( neighbors_list_temp( 1:n_pairs ) )
-      ! neighbors_list_temp = neighbors_list
-      ! allocate( rjs_temp( 1:n_pairs ) )
-      ! rjs_temp = rjs
-      ! allocate( xyz_temp(1:3, 1:n_pairs ) )
-      ! xyz_temp = xyz
-
-      ! st_n_sites_int = n_sites * c_int
-      ! gpu_neigh % st_n_neigh_d = st_n_sites_int
-      ! gpu_neigh % st_species_d = st_n_sites_int
-      ! call gpu_malloc_async(gpu_neigh % n_neigh_d,st_n_sites_int,gpu_stream)
-      ! call cpy_htod(c_loc(n_neigh_temp), gpu_neigh % n_neigh_d, st_n_sites_int,gpu_stream)
-      ! call gpu_malloc_async(gpu_neigh % species_d,st_n_sites_int,gpu_stream)
-      ! call cpy_htod(c_loc(species_temp), gpu_neigh % species_d, st_n_sites_int,gpu_stream)
-
-      ! st_n_atom_pairs_int = n_pairs * c_int
-      ! gpu_neigh % st_neighbor_species_d = st_n_atom_pairs_int
-      ! gpu_neigh % st_neighbors_list_d    = st_n_atom_pairs_int
-      ! call gpu_malloc_async(gpu_neigh % neighbor_species_d,st_n_atom_pairs_int,gpu_stream)
-      ! call cpy_htod(c_loc(neighbor_species_temp),gpu_neigh % neighbor_species_d, st_n_atom_pairs_int,gpu_stream)
-      ! call gpu_malloc_async(gpu_neigh % neighbors_list_d,st_n_atom_pairs_int,gpu_stream)
-      ! call cpy_htod(c_loc(neighbors_list_temp),gpu_neigh % neighbors_list_d, st_n_atom_pairs_int,gpu_stream)
-
-      ! st_n_atom_pairs_double = n_pairs * c_double
-      ! gpu_neigh % st_rjs_d    =     st_n_atom_pairs_double
-      ! gpu_neigh % st_xyz_d    = 3 * st_n_atom_pairs_double
-
-      ! call gpu_malloc_async(gpu_neigh % rjs_d,st_n_atom_pairs_double,gpu_stream)
-      ! call cpy_htod(c_loc(rjs_temp),gpu_neigh % rjs_d, st_n_atom_pairs_double,gpu_stream)
-      ! call gpu_malloc_async(gpu_neigh % xyz_d,3*st_n_atom_pairs_double,gpu_stream)
-      ! call cpy_htod(c_loc(xyz_temp),gpu_neigh % xyz_d,3*st_n_atom_pairs_double,gpu_stream)
-
-      ! call gpu_stream_sync( gpu_stream )
-
-!    deallocate( n_neigh_temp, species_temp, neighbor_species_temp, neighbors_list_temp, rjs_temp, xyz_temp)
-
    end subroutine gpu_malloc_neighbors
 
    subroutine gpu_free_neighbors(gpu_neigh, gpu_stream)
@@ -571,7 +522,6 @@ contains
       call mpi_bcast(pair_distribution_partial, n_samples*n_dim_partial, MPI_DOUBLE_PRECISION, 0,&
            & MPI_COMM_WORLD, ierr)
 
-!    deallocate( pair_distribution_partial_temp )
 #endif
 
    end subroutine collect_batched_pair_distribution
@@ -590,19 +540,11 @@ contains
       integer :: k
       integer :: n_dim_idx
 
-      ! allocate( forces_out( 1:3, 1:n_sites))
-      ! forces_out = 0.d0
-      ! print *, " size forces_out  ", size( forces_out,1 ), " ", size( forces_out,2 )
-
       do i = 1, n_batches
          do j = 1, n_dim_partial
 
-!          print *, " size forces_h   i ", i, " j ", j , " ", size( gpu_host( i ) % host( j ) % forces_h,1 ), " ", size( gpu_host( i ) % host( j ) % forces_h,2 )
-
             forces_out = forces_out + gpu_host(i)%host(j)%forces_h
             virial_out = virial_out + gpu_host(i)%host(j)%virial_h
-
-!          print *, "virial h ", i, j, gpu_host( i ) % host( j ) % virial_h
 
          end do
       end do
@@ -729,7 +671,6 @@ contains
       v_uc, &
       rank)
       implicit none
-      ! Input variables
       integer, intent(in) :: n_species
       integer, intent(in) :: i_beg
       integer, intent(in) :: i_end
@@ -750,7 +691,6 @@ contains
       type(gpu_host_batch_storage_type), intent(inout), target :: gpu_host
       type(gpu_neigh_storage_type), intent(in) :: gpu_neigh
 
-      ! Local variables
       real(dp), parameter :: pi = acos(-1.0)
       integer :: n_dim_partial
       integer :: n_dim_idx
@@ -784,38 +724,22 @@ contains
 
       allocate (gpu_host%host(1:n_dim_partial))
 
-      ! allocate( nk_flags_d(1:n_dim_partial) )
-      ! allocate( nk_flags_sum_d(1:n_dim_partial) )
-
       allocate (gpu_exp%nk(1:n_dim_partial))
       allocate (gpu_exp%nk_d(1:n_dim_partial))
       allocate (gpu_exp%k_index_d(1:n_dim_partial))
       allocate (gpu_exp%j2_index_d(1:n_dim_partial))
-!   allocate( gpu_exp % rjs_index_d(1:n_dim_partial) )
       allocate (gpu_exp%xyz_k_d(1:n_dim_partial))
       allocate (gpu_exp%pair_distribution_partial_d(1:n_dim_partial))
       allocate (gpu_exp%nk_flags_sum_d(1:n_dim_partial))
       allocate (gpu_exp%nk_flags_d(1:n_dim_partial))
       allocate (gpu_exp%rjs_index_d(1:n_dim_partial))
 
-!   allocate( gpu_exp % pair_distribution_partial_der_d(1:n_dim_partial) )
       allocate (gpu_exp%st_nk_d(1:n_dim_partial))
       allocate (gpu_exp%st_k_index_d(1:n_dim_partial))
       allocate (gpu_exp%st_j2_index_d(1:n_dim_partial))
-!   allocate( gpu_exp % st_rjs(1:n_dim_partial) )
       allocate (gpu_exp%st_pair_distribution_partial_d(1:n_dim_partial))
-!   allocate( gpu_exp % st_pair_distribution_partial_der_d(1:n_dim_partial) )
-
-      ! st_x_d = n_samples * c_double
-
-      ! call gpu_malloc_async(x_d,      st_x_d, gpu_stream)
-      ! call cpy_htod( c_loc( x ), x_d, st_x_d, gpu_stream )
-
-      ! call gpu_malloc_async(dV_d,      st_x_d, gpu_stream)
-      ! call cpy_htod( c_loc( dV ), dV_d, st_x_d, gpu_stream )
 
       n_dim_idx = 1
-      !    call gpu_stream_sync( gpu_stream )
       outer1: do j = 1, n_species
          do k = 1, n_species
 
@@ -829,7 +753,6 @@ contains
             call gpu_malloc_async(gpu_exp%nk_flags_sum_d(n_dim_idx), st_nk_flags, gpu_stream)
 
             call total_gpu_memory(dfloat(int((j_end - j_beg + 1), c_size_t)*2*4))
-!          call gpu_stream_sync(gpu_stream)
 
             if (debug_gpu_batches) print *, "-- Rank ", rank, " ", "int(gpu_exp % nk_d(n_dim_idx))"
             if (debug_gpu_batches) call gpu_print_pointer_int(gpu_exp%nk_d(n_dim_idx))
@@ -889,7 +812,6 @@ contains
 
             gpu_exp%nk(n_dim_idx) = nk_temp(1)
             call gpu_free_async(gpu_exp%nk_d(n_dim_idx), gpu_stream)
-            ! print *, " -- Rank ", rank, " nk batched = ", gpu_exp % nk(n_dim_idx)
 
             ! Now we create temporary arrays for the k indices
 
@@ -914,31 +836,12 @@ contains
             call gpu_malloc_async(gpu_exp%j2_index_d(n_dim_idx), gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
             call gpu_memset_async(gpu_exp%j2_index_d(n_dim_idx), 0, gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
 
-            ! st_rjs_index_d = gpu_exp % nk(n_dim_idx) * c_double
-            ! call gpu_malloc_async(rjs_index_d, st_rjs_index_d, gpu_stream)
-            ! call gpu_memset_async(rjs_index_d, 0, st_rjs_index_d, gpu_stream)
-
-            ! call gpu_set_pair_distribution_rjs_only(j_end, gpu_exp % rjs_d, rjs_index_d, nk_flags_sum_d, gpu_stream )
-
             if (debug_gpu_batches) print *, " allocating j2 index "
             call gpu_stream_sync(gpu_stream)
             if (debug_gpu_batches) call gpu_check_error()
             call total_gpu_memory(dfloat(int(gpu_exp%nk(n_dim_idx), c_size_t)*8*3))
             call gpu_malloc_async(gpu_exp%xyz_k_d(n_dim_idx), 3*st_rjs_index_d, gpu_stream)
             call gpu_memset_async(gpu_exp%xyz_k_d(n_dim_idx), 0, 3*st_rjs_index_d, gpu_stream)
-!          call gpu_stream_sync(gpu_stream)
-
-            !          call gpu_meminfo()
-
-            ! print *, " "
-            ! print *, "-- Rank ", rank, " set k ",   "double(gpu_neigh % rjs_d             )"
-            ! call gpu_print_pointer_double(gpu_neigh % rjs_d             )
-            ! print *, "-- Rank ", rank, " set k ",   "double(gpu_neigh % xyz_d             )"
-            ! call gpu_print_pointer_double(gpu_neigh % xyz_d             )
-            ! print *, "-- Rank ", rank, " set k ",   "int(gpu_exp % nk_flags_d(n_dim_idx))"
-            ! call gpu_print_pointer_int(gpu_exp % nk_flags_d(n_dim_idx))
-            ! print *, "-- Rank ", rank, " set k ",   "int(gpu_exp % nk_flags_sum_d(n_dim_idx))"
-            ! call gpu_print_pointer_int(gpu_exp % nk_flags_sum_d(n_dim_idx))
 
             call gpu_set_pair_distribution_k_index(1, i_end - i_beg + 1, j_end - j_beg + 1, n_sites, & ! i_beg, i_end, j_end, n_sites,&
                                                    gpu_neigh%neighbors_list_d, &
@@ -950,20 +853,14 @@ contains
                                                    gpu_exp%xyz_k_d(n_dim_idx), &
                                                    gpu_exp%nk_flags_d(n_dim_idx), gpu_exp%nk_flags_sum_d(n_dim_idx), &
                                                    gpu_stream)
-            !call gpu_device_sync()
-!          call gpu_stream_sync(gpu_stream)
-
-!          print *, " >> Set batch arrays on gpu "
 
             call gpu_free_async(gpu_exp%nk_flags_sum_d(n_dim_idx), gpu_stream)
             if (debug_gpu_batches) print *, "deallocing flags sum"
             call total_gpu_memory(dfloat(-int((j_end - j_beg + 1), c_size_t)*4))
             call gpu_stream_sync(gpu_stream)
             if (debug_gpu_batches) call gpu_check_error()
-!          print *, " >> storing k_index_d "
             allocate (gpu_host%host(n_dim_idx)%k_index_h(1:gpu_exp%nk(n_dim_idx)))
 
-            !          call cpy_dtoh_event(&
             if (debug_gpu_batches) print *, "deallocing k index"
             call total_gpu_memory(dfloat(-int(gpu_exp%nk(n_dim_idx), c_size_t)*4))
 
@@ -975,12 +872,9 @@ contains
                gpu_exp%st_k_index_d(n_dim_idx), &
                gpu_stream)
             call gpu_free_async(gpu_exp%k_index_d(n_dim_idx), gpu_stream)
-            !         call gpu_stream_sync( gpu_stream )
 
-!          print *, " >> storing j2_index_d "
             allocate (gpu_host%host(n_dim_idx)%j2_index_h(1:gpu_exp%nk(n_dim_idx)))
 
-            !          call cpy_dtoh_event(&
             if (debug_gpu_batches) print *, "deallocing j2 index"
             call total_gpu_memory(dfloat(-int(gpu_exp%nk(n_dim_idx), c_size_t)*4))
             call cpy_dtoh( &
@@ -991,24 +885,15 @@ contains
             call gpu_free_async(gpu_exp%j2_index_d(n_dim_idx), gpu_stream)
             call gpu_stream_sync(gpu_stream)
             if (debug_gpu_batches) call gpu_check_error()
-!          print *, " >> storing rjs_index_d "
             allocate (gpu_host%host(n_dim_idx)%rjs_index_h(1:gpu_exp%nk(n_dim_idx)))
 
-            !          call cpy_dtoh_event(&
             call cpy_dtoh( &
                gpu_exp%rjs_index_d(n_dim_idx), &
                c_loc(gpu_host%host(n_dim_idx)%rjs_index_h), &
                st_rjs_index_d, &
                gpu_stream)
 
-!          call gpu_stream_sync( gpu_stream )
-            ! do i = 1, gpu_exp % nk( n_dim_idx )
-            !    print *,  " rjk check: i ", i, " ", gpu_host % host( n_dim_idx ) % rjs_index_h(i)
-            ! end do
-
-!          print *, " >> storing xyz_k_d "
             allocate (gpu_host%host(n_dim_idx)%xyz_k_h(1:3, 1:gpu_exp%nk(n_dim_idx)))
-            !          call cpy_dtoh_event(&
             if (debug_gpu_batches) print *, "deallocing xyz_k"
             call total_gpu_memory(dfloat(-int(gpu_exp%nk(n_dim_idx), c_size_t)*3*8))
             call gpu_stream_sync(gpu_stream)
@@ -1039,23 +924,13 @@ contains
 
             pdf_factor = ((r_max - r_min)/dfloat(n_samples))/(sqrt(2.d0*pi)*kde_sigma)
 
-!          print *, " >> pdf factor = ", pdf_factor
-!          der_factor = 0.d0
-
             !        if ( j == k ) f = 1.d0
 !           if ( j /= k ) f = 2.d0
-
-!           der_factor = v_uc /  n_atoms_of_species(j) / n_atoms_of_species(k) / f
-
-!           print *, " >> der factor = ", der_factor
-!           print *, " >> pdf*der factor = ", pdf_factor * der_factor
 
 !            pdf_factor = pdf_factor * der_factor
 ! ! !
 !          call gpu_stream_sync(gpu_stream)
             !          print *, " >> Getting pdf batch"
-
-!          call gpu_meminfo()
 
             if (debug_gpu_batches) print *, "gpu_exp%pair_distribution_partial_d(n_dim_idx)"
             if (debug_gpu_batches) call gpu_print_pointer_double(gpu_exp%pair_distribution_partial_d(n_dim_idx))
@@ -1083,10 +958,6 @@ contains
                der_factor, &
                gpu_stream)
 
-            ! call gpu_device_sync()
-            ! call gpu_check_error()
-            !  stop(0)
-
             !--- check x ---!
             ! allocate( x_check(1:n_samples) )
             ! st_x_d = n_samples * c_double
@@ -1097,40 +968,21 @@ contains
             !      st_x_d, &
             !      gpu_stream)
 
-            ! do l = 1, n_samples
-            !    print *, "x_d, l, ", l, " x_d = ", x_check(l)
-            ! end do
-
             ! call cpy_dtoh_event(&
             !      dV_d, &
             !      c_loc(x_check), &
             !      st_x_d, &
             !      gpu_stream)
 
-            ! do l = 1, n_samples
-            !    print *, "dV_d, l, ", l, " dV_d = ", x_check(l)
-            ! end do
-
-            ! deallocate(x_check)
-
             call gpu_free_async(pdf_to_reduce_d, gpu_stream)
-!          print *, " >> freeing rjs_index_d "
             call gpu_free_async(gpu_exp%rjs_index_d(n_dim_idx), gpu_stream)
 
-!          print *, " >> storing pair_distribution_partial_d "
             allocate (gpu_host%host(n_dim_idx)%pair_distribution_partial_h(1:n_samples))
-            !          call cpy_dtoh_event(&
             call cpy_dtoh( &
                gpu_exp%pair_distribution_partial_d(n_dim_idx), &
                c_loc(gpu_host%host(n_dim_idx)%pair_distribution_partial_h), &
                gpu_exp%st_pair_distribution_partial_d(n_dim_idx), &
                gpu_stream)
-
-            ! do l = 1, n_samples
-            !    if ( mod( l, 1 ) == 0)then
-            !       print *, " pdf ", n_dim_idx, " l ", l , " ", gpu_host % host( n_dim_idx ) % pair_distribution_partial_h(l)
-            !    end if
-            ! end do
 
             call gpu_free_async(gpu_exp%pair_distribution_partial_d(n_dim_idx), gpu_stream)
 
@@ -1140,8 +992,6 @@ contains
             !      gpu_stream )
 
             n_dim_idx = n_dim_idx + 1
-
-!          call gpu_meminfo()
 
             if (n_dim_idx > n_dim_partial) then
                exit outer1
@@ -1157,7 +1007,6 @@ contains
         & i_beg, i_end, j_beg, j_end, n_samples, r_min, r_max, r_cut, kde_sigma, &
         & gpu_stream, x_d, dV_d, j, k, n_dim_idx, v_uc)
       implicit none
-      ! Input variables
       integer, intent(in) :: n_species
       integer, intent(in) :: i_beg
       integer, intent(in) :: i_end
@@ -1179,7 +1028,6 @@ contains
       type(gpu_storage_type), intent(inout) :: gpu_exp
       type(gpu_host_batch_storage_type), intent(inout), target :: gpu_host
 
-      ! Local variables
       real(dp), parameter :: pi = acos(-1.0)
       integer :: n_dim_partial
       type(c_ptr), intent(in) :: x_d
@@ -1228,7 +1076,6 @@ contains
       der_factor = v_uc/n_atoms_of_species(j)/ &
            & n_atoms_of_species(k)/f
 
-!    print *, " starting pdf der only "
       call gpu_get_pair_distribution_der_only( &
          gpu_exp%pair_distribution_partial_der_d(n_dim_idx), &
          gpu_exp%nk(n_dim_idx), &
@@ -1237,11 +1084,7 @@ contains
          x_d, dV_d, &
          rjs_index_d, pdf_factor, der_factor, gpu_stream)
 
-!    print *, " finished pdf der only "
       call gpu_free_async(rjs_index_d, gpu_stream)
-
-      ! call gpu_free_async(x_d, gpu_stream)
-      ! call gpu_free_async(dV_d)
 
    end subroutine calculate_batched_pair_distribution_der
 
@@ -1416,28 +1259,6 @@ contains
       integer(c_size_t) :: st_n_atom_pairs_double
       integer(c_size_t) :: st_species_types_d
 
-!            print *, ""
-!            print *, " >> Allocating GPU arrays for Exp Calculation << "
-!            print *, ""
-!            st_n_sites_int = n_sites*sizeof(n_neigh(1))
-!            call gpu_malloc_async(n_neigh_d,st_n_sites_int,gpu_stream)
-!            call cpy_htod(c_loc(n_neigh),n_neigh_d, st_n_sites_int,gpu_stream)
-!            call gpu_malloc_async(species_d,st_n_sites_int,gpu_stream)
-!            call cpy_htod(c_loc(species),species_d, st_n_sites_int,gpu_stream)
-!            st_n_atom_pairs_int = j_end * sizeof(neighbor_species(1))
-
-!            call gpu_malloc_async(neighbor_species_d,st_n_atom_pairs_int,gpu_stream)
-!            call cpy_htod(c_loc(neighbor_species),neighbor_species_d, st_n_atom_pairs_int,gpu_stream)
-!            call gpu_malloc_async(neighbors_list_d,st_n_atom_pairs_int,gpu_stream)
-!            print *, " -- n_pairs for neighbor_list = ", j_end
-!            call cpy_htod(c_loc(neighbors_list),neighbors_list_d, st_n_atom_pairs_int,gpu_stream)
-
-!            st_n_atom_pairs_double = j_end*sizeof(rjs(1))
-!            call gpu_malloc_async(rjs_d,st_n_atom_pairs_double,gpu_stream)
-!            call cpy_htod(c_loc(rjs),rjs_d, st_n_atom_pairs_double,gpu_stream)
-!            call gpu_malloc_async(xyz_d,3*st_n_atom_pairs_double,gpu_stream)
-!            call cpy_htod(c_loc(xyz),xyz_d,3*st_n_atom_pairs_double,gpu_stream)
-
 !            st_species_types_d = n_species * c_int
 !            call gpu_malloc_async(species_types_d,st_species_types_d,gpu_stream)
 !            call cpy_htod(c_loc(species_types),species_types_d,st_species_types_d,gpu_stream)
@@ -1553,9 +1374,7 @@ contains
            & dfloat(indices(1)*indices(2)&
            &*indices(3)))
 
-      !#####################################################################!
       !###---   Calculating the partial pair distribution functions   ---###!
-      !#####################################################################!
 !!    print *, " - Allocating pdf gpu pointers -"
       allocate (nk_d(1:n_dim_partial))
       allocate (nk_flags_d(1:n_dim_partial))
@@ -1607,7 +1426,6 @@ contains
                   ! Get all nk_flags
                   call gpu_meminfo()
 
-!                print *, "pdfpairs:  j ", j, " k ",  k
                   call gpu_stream_sync(gpu_stream)
 
                   st_nk_temp = int(1, c_size_t)*c_int
@@ -1616,7 +1434,6 @@ contains
                   call gpu_malloc_async(nk_flags_d(n_dim_idx), st_nk_flags, gpu_stream)
                   call gpu_memset_async(nk_flags_d(n_dim_idx), 0, st_nk_flags, gpu_stream)
                   call gpu_malloc_async(nk_flags_sum_d(n_dim_idx), st_nk_flags, gpu_stream)
-!                call gpu_stream_sync(gpu_stream)
 
                   ! Here I need the neighbor_list_d, n_neigh_d, neighbor_species_d, species_d, rjs_d
 
@@ -1635,12 +1452,6 @@ contains
                   st_n_atom_pairs_double = j_end*sizeof(rjs(1))
                   call gpu_malloc_async(rjs_d, st_n_atom_pairs_double, gpu_stream)
                   call cpy_htod(c_loc(rjs), rjs_d, st_n_atom_pairs_double, gpu_stream)
-                  ! call gpu_malloc_async(xyz_d,3*st_n_atom_pairs_double,gpu_stream)
-                  ! call cpy_htod(c_loc(xyz),xyz_d,3*st_n_atom_pairs_double,gpu_stream)
-
-                  ! st_species_types_d = n_species * c_int
-                  ! call gpu_malloc_async(species_types_d,st_species_types_d,gpu_stream)
-                  ! call cpy_htod(c_loc(species_types),species_types_d,st_species_types_d,gpu_stream)
 
                   ! I don't actually need xyz_d here at all!
                   call gpu_get_pair_distribution_nk(i_beg, i_end, j_end, n_sites, neighbor_list_d, &
@@ -1655,25 +1466,18 @@ contains
                   call gpu_free_async(neighbor_list_d, gpu_stream)
                   call gpu_free_async(rjs_d, gpu_stream)
 
-                  !                call gpu_free_async(species_types_actual_d,gpu_stream)
-
                   call gpu_free_async(nk_flags_d(n_dim_idx), gpu_stream)
 
-!                print *, "out of pdf nk kernel "
                   st_nk_temp = int(1, c_size_t)*c_int
                   call cpy_dtoh(nk_d(n_dim_idx), c_loc(nk_temp), st_nk_temp, gpu_stream)
-!                call gpu_stream_sync(gpu_stream)
 
                   nk(n_dim_idx) = nk_temp(1)
-!                print *, " nk = ", nk(n_dim_idx)
 
                   ! call estimate_device_memory_usage( n_sites, nk(n_dim_idx), params%pair_distribution_n_samples,&
                   !      params%structure_factor_n_samples, total_memory_usage )
 
                   ! Now we create temporary arrays for the k indices
-                  ! ---------------------------------------------------
                   ! -------------------- Setting k --------------------
-                  ! ---------------------------------------------------
                   st_k_index_d(n_dim_idx) = int(nk(n_dim_idx), c_size_t)*c_int
                   call gpu_malloc_async(k_index_d(n_dim_idx), st_k_index_d(n_dim_idx), gpu_stream)
                   call gpu_memset_async(k_index_d(n_dim_idx), 0, st_k_index_d(n_dim_idx), gpu_stream)
@@ -1689,9 +1493,7 @@ contains
                   call gpu_stream_sync(gpu_stream)
                   call gpu_free_async(k_index_d(n_dim_idx), gpu_stream)
 
-                  ! ----------------------------------------------------
                   ! -------------------- Setting j2 --------------------
-                  ! ----------------------------------------------------
                   call gpu_malloc_async(j2_index_d(n_dim_idx), st_k_index_d(n_dim_idx), gpu_stream)
                   call gpu_memset_async(j2_index_d(n_dim_idx), 0, st_k_index_d(n_dim_idx), gpu_stream)
 
@@ -1712,9 +1514,7 @@ contains
                   call gpu_stream_sync(gpu_stream)
                   call gpu_free_async(j2_index_d(n_dim_idx), gpu_stream)
 
-                  ! -----------------------------------------------------
                   ! -------------------- Setting xyz --------------------
-                  ! -----------------------------------------------------
                   call gpu_malloc_async(xyz_d, 3*st_n_atom_pairs_double, gpu_stream)
                   call cpy_htod(c_loc(xyz), xyz_d, 3*st_n_atom_pairs_double, gpu_stream)
 
@@ -1729,9 +1529,7 @@ contains
                   call gpu_free_async(xyz_d, gpu_stream)
                   call gpu_stream_sync(gpu_stream)
 
-                  ! -----------------------------------------------------
                   ! -------------------- Setting rjs --------------------
-                  ! -----------------------------------------------------
                   st_n_atom_pairs_double = j_end*sizeof(rjs(1))
                   call gpu_malloc_async(rjs_d, st_n_atom_pairs_double, gpu_stream)
                   call cpy_htod(c_loc(rjs), rjs_d, st_n_atom_pairs_double, gpu_stream)
@@ -1746,13 +1544,10 @@ contains
 
                   ! No need for device storage here
 
-!                call gpu_stream_sync(gpu_stream)
-
                   call gpu_meminfo()
                   call gpu_free_async(nk_flags_sum_d(n_dim_idx), gpu_stream)
                   call gpu_stream_sync(gpu_stream)
 
-!                print *, "Setting pdf device arrays kernel "
                   st_pair_distribution_partial_d(n_dim_idx) = int(params%pair_distribution_n_samples, c_size_t)*c_double
                 call gpu_malloc_async(pair_distribution_partial_d(n_dim_idx), st_pair_distribution_partial_d(n_dim_idx), gpu_stream)
              call gpu_memset_async(pair_distribution_partial_d(n_dim_idx), 0, st_pair_distribution_partial_d(n_dim_idx), gpu_stream)
@@ -1765,7 +1560,6 @@ contains
 
                   call gpu_stream_sync(gpu_stream)
 
-!                print *, " starting pdf only "
                   call gpu_get_pair_distribution_only( &
                      pair_distribution_partial_d(n_dim_idx), &
                      nk(n_dim_idx), &
@@ -1786,7 +1580,6 @@ contains
         call gpu_malloc_async(pair_distribution_partial_der_d(n_dim_idx), st_pair_distribution_partial_der_d(n_dim_idx), gpu_stream)
      call gpu_memset_async(pair_distribution_partial_der_d(n_dim_idx), 0, st_pair_distribution_partial_der_d(n_dim_idx), gpu_stream)
 
-!                print *, " starting pdf der only "
                   call gpu_get_pair_distribution_der_only( &
                      pair_distribution_partial_der_d(n_dim_idx), &
                      nk(n_dim_idx), &
@@ -1794,8 +1587,6 @@ contains
                      params%pair_distribution_kde_sigma, &
                      x_d, dV_d, &
                      rjs_index_d(n_dim_idx), pdf_factor, der_factor, gpu_stream)
-
-!                call gpu_stream_sync(gpu_stream)
 
                   ! call gpu_get_pair_distribution_and_ders(&
                   !      pair_distribution_partial_d(n_dim_idx),&
@@ -1818,8 +1609,6 @@ contains
                   ! call gpu_copy_pdf_der( params%pair_distribution_n_samples, pair_distribution_partial_d(n_dim_idx), &
                   !      pair_distribution_partial(1:params%pair_distribution_n_samples, n_dim_idx), &
                   !      gpu_stream )
-
-!                call gpu_stream_sync(gpu_stream)
 
                   n_dim_idx = n_dim_idx + 1
 
@@ -1847,21 +1636,18 @@ contains
                   ! Get all nk_flags
                   call gpu_meminfo()
 
-!                print *, "pdfpairs:  j ", j, " k ",  k
                   st_nk_temp = int(1, c_size_t)*c_int
                   call gpu_malloc_async(nk_d(n_dim_idx), st_nk_temp, gpu_stream)
                   st_nk_flags = int(j_end, c_size_t)*c_int
                   call gpu_malloc_async(nk_flags_d(n_dim_idx), st_nk_flags, gpu_stream)
                   call gpu_memset_async(nk_flags_d(n_dim_idx), 0, st_nk_flags, gpu_stream)
                   call gpu_malloc_async(nk_flags_sum_d(n_dim_idx), st_nk_flags, gpu_stream)
-!                call gpu_stream_sync(gpu_stream)
 
                   call gpu_get_pair_distribution_nk(i_beg, i_end, j_end, n_sites, neighbor_list_d, &
                        n_neigh_d, neighbor_species_d, species_d,&
                        & rjs_d, xyz_d, params%r_range_min, params%r_range_max, params%pair_distribution_rcut, 6.d0&
                        &*params%pair_distribution_kde_sigma,&
                        & nk_d(n_dim_idx), nk_flags_d(n_dim_idx), nk_flags_sum_d(n_dim_idx), j, k, gpu_stream)
-                  !             call gpu_device_sync()
 
                   call gpu_free_async(nk_flags_d(n_dim_idx), gpu_stream)
 
@@ -1869,10 +1655,8 @@ contains
 !                print *, "out of pdf nk kernel "
                   st_nk_temp = int(1, c_size_t)*c_int
                   call cpy_dtoh(nk_d(n_dim_idx), c_loc(nk_temp), st_nk_temp, gpu_stream)
-!                call gpu_stream_sync(gpu_stream)
 
                   nk(n_dim_idx) = nk_temp(1)
-!                print *, " nk = ", nk(n_dim_idx)
 
                   call estimate_device_memory_usage(n_sites, 0, nk(n_dim_idx), params%pair_distribution_n_samples, &
                                                     params%structure_factor_n_samples, total_memory_usage, .false.)
@@ -1892,18 +1676,14 @@ contains
 
                   call gpu_malloc_async(xyz_k_d(n_dim_idx), 3*st_rjs(n_dim_idx), gpu_stream)
                   call gpu_memset_async(xyz_k_d(n_dim_idx), 0, 3*st_rjs(n_dim_idx), gpu_stream)
-                  !               call gpu_stream_sync(gpu_stream)
 
                   call gpu_meminfo()
                   call gpu_set_pair_distribution_k_index(i_beg, i_end, j_end, n_sites, neighbor_list_d,&
                        & rjs_d, xyz_d, k_index_d(n_dim_idx), j2_index_d(n_dim_idx),&
                        & rjs_index_d(n_dim_idx), xyz_k_d(n_dim_idx), nk_flags_d(n_dim_idx), nk_flags_sum_d(n_dim_idx),&
                        & gpu_stream)
-                  !             call gpu_device_sync()
 
                   call gpu_free_async(nk_flags_sum_d(n_dim_idx), gpu_stream)
-
-                  !             call gpu_meminfo()
 
                   !--- CALCULATING THE PAIR DISTRIBUTION FUNCTION ---!
                   !             print *, " Allocating pdf arrays   "
@@ -1920,8 +1700,6 @@ contains
 
                   der_factor = v_uc/n_atoms_of_species(j)/ &
                        & n_atoms_of_species(k)/factors(n_dim_idx)
-
-!                call gpu_stream_sync(gpu_stream)
 
                   call gpu_get_pair_distribution_and_ders( &
                      pair_distribution_partial_d(n_dim_idx), &
@@ -1952,40 +1730,7 @@ contains
                   ! print *, "checking pdf"
                   ! allocate(pdf_gpu_check(1:params%pair_distribution_n_samples))
 
-                  ! call cpy_dtoh( pair_distribution_partial_d(n_dim_idx), c_loc(pdf_gpu_check), &
-                  !      st_pair_distribution_partial_d(n_dim_idx), gpu_stream )
-                  ! call gpu_device_sync()
-
-                  ! do l = 1, params%pair_distribution_n_samples
-                  !    print *, " pdfcheck, l = ", l, " gpu ", pdf_gpu_check(l), " cpu ", pair_distribution_partial(l, n_dim_idx)
-                  ! end do
-
-                  ! deallocate(pdf_gpu_check)
-
-                  !------------------------------!
                   !-------- PDF DER CHECK -------!
-
-                  ! allocate( ks_temp(1:nk(n_dim_idx)) )
-                  ! call cpy_dtoh( k_index_d(n_dim_idx), c_loc(ks_temp), &
-                  !      st_k_index_d(n_dim_idx), gpu_stream )
-                  ! allocate(ders_temp(1:params%pair_distribution_n_samples, 1 : nk(n_dim_idx) ))
-                  ! call cpy_dtoh( pair_distribution_partial_der_d(n_dim_idx), c_loc(ders_temp), &
-                  !      st_pair_distribution_partial_der_d(n_dim_idx), gpu_stream )
-                  ! call gpu_device_sync()
-                  ! do l = 1, params%pair_distribution_n_samples
-                  !    do i = 1, nk(n_dim_idx)
-                  !       i2 = ks_temp(i)+1
-
-                  !       if ( modulo( i , 10000 ) == 0 )then
-                  !          print *, " pdfdercheck, l = ", l, "i ", i, " i2 ", i2,  " gpu ", ders_temp(l,i), " cpu ", pair_distribution_partial_der(l, n_dim_idx, i2  )
-                  !       end if
-                  !    end do
-                  ! end do
-                  ! deallocate(ders_temp)
-                  ! deallocate(ks_temp)
-
-                  ! call cpy_dtoh( pair_distribution_partial_d(n_dim_idx), c_loc(pair_distribution_partial(), &
-                  !      st_pair_distribution_partial_d(n_dim_idx), gpu_stream )
 
                   ! will need to do a separate function to copy the pair distribution
                   !             call gpu_device_sync()
@@ -1999,7 +1744,6 @@ contains
 
                   ! We can deallocate the rjs as we don't need them any more
                   call gpu_free_async(rjs_index_d(n_dim_idx), gpu_stream)
-!                call gpu_stream_sync(gpu_stream)
 
                   n_dim_idx = n_dim_idx + 1
 
@@ -2070,9 +1814,6 @@ contains
          ! ! Note, we have only so far divided by 4 pi r^2 dr
          ! ! Therefore, we must scale by the density
 
-         ! pair_distribution_partial_der =  pair_distribution_partial_der_temp
-         ! deallocate( pair_distribution_partial_der_temp )
-
 #endif
 
          if (params%valid_pdf) then
@@ -2086,9 +1827,7 @@ contains
 
          end if
 
-         !####################################!
          !###---   Accumulate the PDF   ---###!
-         !####################################!
 
          y_pair_distribution = 0.d0
          n_dim_idx = 1
@@ -2132,9 +1871,7 @@ contains
             y_pair_distribution = 4.d0*pi*(dfloat(n_sites)/v_uc)*x_pair_distribution*(y_pair_distribution - 1.d0)
          end if
 
-         !######################################!
          !###---   Calculate the forces   ---###!
-         !######################################!
 
          if (params%valid_pdf .and. allocated(params%exp_energy_scales)) then
 
@@ -2152,9 +1889,6 @@ contains
                  & energies_pair_distribution(i_beg:i_end))
 
             if (params%do_forces .and. params%exp_forces) then
-               ! forces_pair_distribution = 0.d0
-               ! allocate( pair_distribution_der_temp( 1:params%pair_distribution_n_samples ) )
-               ! pair_distribution_der_temp = 0.d0
 
                n_dim_idx = 1
                outerforces: do j = 1, n_species
@@ -2221,22 +1955,15 @@ contains
                end if
             end if
 
-            ! do i = 1, params%pair_distribution_n_samples
-            !    print *,  "ppd ", 100, pair_distribution_der_temp( 1 ), pair_distribution_partial_der( 1, 2, 100:102 )
-            ! end do
-
             ! open(unit=1234, file="grad", status="unknown")
             ! do i = 100, 110
             !    write(1234,  '(A,1X,I8,1X,F20.8)'), "dg_dr_0^1 ", i, pair_distribution_der_temp( i )
             ! end do
             ! close(unit=1234)
 
-            ! deallocate( pair_distribution_der_temp)
          end if
 
-         !##################################################################!
          !###---   If not doing partial pair distribution functions   ---###!
-         !##################################################################!
 
       else
 #ifdef _MPIF90
@@ -2253,22 +1980,13 @@ contains
               &%pair_distribution_n_samples, MPI_DOUBLE_PRECISION, 0,&
               & MPI_COMM_WORLD, ierr)
 
-         ! if ( do_derivatives .and. params%exp_forces .and. allocated( params%exp_energy_scales ) )then
-         !    allocate( forces_pair_distribution_temp(1:3, 1:n_sites) )
-         !    forces_pair_distribution_temp = 0.d0
-
          !    call mpi_reduce(forces_pair_distribution,&
          !         & forces_pair_distribution_temp, 3 * n_sites,&
          !         & MPI_DOUBLE_PRECISION, MPI_SUM, 0,&
          !         & MPI_COMM_WORLD, ierr)
 
-         !    forces_pair_distribution = forces_pair_distribution_temp
-         !    deallocate( forces_pair_distribution_temp )
-
          !    call mpi_bcast(forces_pair_distribution, 3*n_sites, MPI_DOUBLE_PRECISION, 0,&
          !         & MPI_COMM_WORLD, ierr)
-
-         ! end if
 
 #endif
          y_pair_distribution = y_pair_distribution* &
@@ -2500,9 +2218,7 @@ contains
            & dfloat(indices(1)*indices(2)&
            &*indices(3)))
 
-      !#####################################################################!
       !###---   Calculating the partial pair distribution functions   ---###!
-      !#####################################################################!
 
       if (params%pair_distribution_partial) then
          n_dim_idx = 1
@@ -2584,9 +2300,6 @@ contains
          ! ! Note, we have only so far divided by 4 pi r^2 dr
          ! ! Therefore, we must scale by the density
 
-         ! pair_distribution_partial_der =  pair_distribution_partial_der_temp
-         ! deallocate( pair_distribution_partial_der_temp )
-
 #endif
 
          if (params%valid_pdf) then
@@ -2600,9 +2313,7 @@ contains
 
          end if
 
-         !####################################!
          !###---   Accumulate the PDF   ---###!
-         !####################################!
 
          y_pair_distribution = 0.d0
          n_dim_idx = 1
@@ -2646,9 +2357,7 @@ contains
             y_pair_distribution = 4.d0*pi*(dfloat(n_sites)/v_uc)*x_pair_distribution*(y_pair_distribution - 1.d0)
          end if
 
-         !######################################!
          !###---   Calculate the forces   ---###!
-         !######################################!
 
          if (params%valid_pdf .and. allocated(params%exp_energy_scales)) then
 
@@ -2666,9 +2375,6 @@ contains
                  & energies_pair_distribution(i_beg:i_end))
 
             if (params%do_forces .and. params%exp_forces) then
-               ! forces_pair_distribution = 0.d0
-               ! allocate( pair_distribution_der_temp( 1:params%pair_distribution_n_samples ) )
-               ! pair_distribution_der_temp = 0.d0
 
                n_dim_idx = 1
                outerforces: do j = 1, n_species
@@ -2735,22 +2441,15 @@ contains
                end if
             end if
 
-            ! do i = 1, params%pair_distribution_n_samples
-            !    print *,  "ppd ", 100, pair_distribution_der_temp( 1 ), pair_distribution_partial_der( 1, 2, 100:102 )
-            ! end do
-
             ! open(unit=1234, file="grad", status="unknown")
             ! do i = 100, 110
             !    write(1234,  '(A,1X,I8,1X,F20.8)'), "dg_dr_0^1 ", i, pair_distribution_der_temp( i )
             ! end do
             ! close(unit=1234)
 
-            ! deallocate( pair_distribution_der_temp)
          end if
 
-         !##################################################################!
          !###---   If not doing partial pair distribution functions   ---###!
-         !##################################################################!
 
       else
 #ifdef _MPIF90
@@ -2767,22 +2466,13 @@ contains
               &%pair_distribution_n_samples, MPI_DOUBLE_PRECISION, 0,&
               & MPI_COMM_WORLD, ierr)
 
-         ! if ( do_derivatives .and. params%exp_forces .and. allocated( params%exp_energy_scales ) )then
-         !    allocate( forces_pair_distribution_temp(1:3, 1:n_sites) )
-         !    forces_pair_distribution_temp = 0.d0
-
          !    call mpi_reduce(forces_pair_distribution,&
          !         & forces_pair_distribution_temp, 3 * n_sites,&
          !         & MPI_DOUBLE_PRECISION, MPI_SUM, 0,&
          !         & MPI_COMM_WORLD, ierr)
 
-         !    forces_pair_distribution = forces_pair_distribution_temp
-         !    deallocate( forces_pair_distribution_temp )
-
          !    call mpi_bcast(forces_pair_distribution, 3*n_sites, MPI_DOUBLE_PRECISION, 0,&
          !         & MPI_COMM_WORLD, ierr)
-
-         ! end if
 
 #endif
          y_pair_distribution = y_pair_distribution* &
@@ -3160,9 +2850,7 @@ contains
                  & pair_distribution_partial - 1.d0, m, 0.d0,&
                  & structure_factor_partial, n)
 
-            !##################################!
             !###---   Do derivatives!    ---###!
-            !##################################!
 
             ! Should do this smartly with memory allocation
 
@@ -3624,26 +3312,7 @@ contains
 
       end if
 
-      !###################################################################################!
       !###---   Can calculate the Structure factors related to XRD / Neutron here   ---###!
-      !###################################################################################!
-
-      ! if (allocated(sf_parameters) ) deallocate( sf_parameters )
-      ! allocate( sf_parameters(1:9,1:n_species))
-      ! sf_parameters = 0.d0
-      ! do i = 1, n_species
-      !    call get_scattering_factor_params(params%species_types(i), sf_parameters(1:9,i))
-      ! end do
-
-      ! do j = 1, params%structure_factor_n_samples
-      !    wfac = 0.d0
-      !    do k = 1, n_species
-      !       call get_scattering_factor(wfac_temp, sf_parameters(1:9,k), x_xrd(j)/2.d0 )
-      !       wfac = wfac + wfac_temp*wfac_temp *n_atoms_of_species(k)  / dfloat(n_sites)
-      !    end do
-      !    print *, wfac
-      !    y_xrd(j) = y_xrd(j) / (wfac)
-      ! end do
 
 #ifdef _MPIF90
 
@@ -3798,7 +3467,6 @@ contains
       !       ! do nothing,
       !       ! Output the total scattering functon, i(q) === F_x(q)
 
-      !    end if
       if (allocated(y_sub)) deallocate (y_sub)
 
    end subroutine calculate_xrd

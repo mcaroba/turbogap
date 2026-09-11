@@ -43,7 +43,6 @@ contains
 
       implicit none
 
-      !   Input variables
       integer(c_int), intent(in) :: n_sparse
       real(c_double), intent(in), target :: soap(:, :)
       real(c_double), intent(in), target :: delta
@@ -141,7 +140,6 @@ contains
 
       call gpu_malloc_async(kernels_d, st_kernels, gpu_stream)
       call gpu_malloc_async(kernels_copy_d, st_kernels, gpu_stream)
-      !call gpu_malloc_async(local_properties_d, st_local_properties, gpu_stream)
 
       call gpu_blas_mmul_t_n(cublas_handle, Qs_d, soap_d, kernels_d, n_sparse, n_soap, n_sites)
       call gpu_kernels_pow(kernels_d, kernels_copy_d, zeta, size_kernels, gpu_stream)
@@ -180,7 +178,6 @@ contains
          size_local_properties_cart_der = n1local_properties_cart_der*n2local_properties_cart_der
 
          st_local_properties_cart_der = size_local_properties_cart_der*sizeof(local_properties_cart_der(1, 1))
-         !call gpu_malloc_async(local_properties_cart_der_d, st_local_properties_cart_der, gpu_stream)
 
          call gpu_local_property_derivatives(n_sites, &
                                              Qss_d, n_soap, l_index_d, &
@@ -207,7 +204,6 @@ contains
 
       implicit none
 
-!   Input variables
       real(dp), intent(in) :: soap(:, :)
       real(dp), intent(in) :: Qs(:, :)
       real(dp), intent(in) :: alphas(:)
@@ -217,10 +213,8 @@ contains
       real(dp), intent(in) :: soap_cart_der(:, :, :)
       integer, intent(in) :: n_neigh(:)
       logical, intent(in) :: do_derivatives
-!   Output variables
       real(dp), intent(out) :: V(:)
       real(dp), intent(out) :: V_der(:, :)
-!   Internal variables
       real(dp), allocatable :: K(:, :)
       real(dp), allocatable :: K_der(:, :)
       real(dp), allocatable :: Qss(:, :)
@@ -323,6 +317,5 @@ contains
       deallocate (K)
 
    end subroutine
-!**************************************************************************
 
 end module

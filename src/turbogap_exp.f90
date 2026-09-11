@@ -52,7 +52,6 @@ module turbogap_exp
 
 contains
 
-!**************************************************************************
    subroutine compute_exp_xps(params, n_sites, n_xyz, xyz, neighbors_list, n_neigh, &
                               local_properties, local_properties_cart_der, soap_turbo_hypers, &
                               a_box, b_box, c_box, indices, i_beg, i_end, j_beg, j_end, rank, &
@@ -144,16 +143,6 @@ contains
            & local_properties(1:n_sites, core_be_lp_index),&
            & .true.)
 
-         ! call get_compare_xps_spectra(params%exp_data(xps_idx)%data&
-         !      & , local_properties(1:n_sites, core_be_lp_index),&
-         !      & params%xps_sigma, params%exp_data(xps_idx) &
-         !      &%n_samples, mag, params%exp_data(xps_idx)%similarity&
-         !      & , params%exp_data(xps_idx)%x, params &
-         !      &%exp_data(xps_idx)%y, params%exp_data(xps_idx) &
-         !      &%y_pred, y_i_pred_all, .not. allocated(params &
-         !      &%exp_data(xps_idx)%x), params%exp_similarity_type )
-
-         ! print *, params%exp_data(xps_idx)%n_samples, xps_idx
          call get_energy_scale(params%do_md, params%do_mc,&
            & md_istep, params%md_nsteps, mc_istep, params&
            &%mc_nsteps, params &
@@ -222,7 +211,6 @@ contains
 
          end if
 
-         !deallocate( params%exp_data(xps_idx)%y_pred )
          if (allocated(y_i_pred_all)) deallocate (y_i_pred_all)
          ! sim_exp_pred would be an energy if multiplied by some energy scale \gamma * ( 1 - sim )
          ! sim_exp_pred_der would be the array of forces if multiplied by (- \gamma )
@@ -235,7 +223,6 @@ contains
       else if (any(soap_turbo_hypers(:)%has_core_electron_be) .and. params%do_xps) then
          ! Get the linspace of the xps spectrum and then perform the
          ! calculation and write to the prediction file
-         !
          if (rank == 0) then
             call get_xps_spectra_standalone(&
                  & params%xps_e_min,&
@@ -263,9 +250,7 @@ contains
       end if
 
    end subroutine compute_exp_xps
-!**************************************************************************
 
-!**************************************************************************
 ! The (partial) pair distribution functions, structure factors and
 ! diffraction patterns, and the energies and forces that fitting them
 ! against experiment produces.
@@ -280,7 +265,6 @@ contains
 ! paths -- streams, cuBLAS handles, gpu_exp, gpu_neigh, gpu_batch_storage
 ! -- comes from gpu_context by USE, which is what lets the body move
 ! unchanged instead of growing eight more arguments.
-!**************************************************************************
    subroutine compute_exp_spectra(params, n_sites, species, rjs, xyz, neighbors_list, &
                                   n_neigh, neighbor_species, indices, a_box, b_box, c_box, i_beg, i_end, j_beg, j_end, &
                                   rank, ntasks, ierr, md_istep, mc_istep, energies_pdf, forces_pdf, virial_pdf, &
@@ -473,9 +457,7 @@ contains
 
       type(gpu_host_storage_type), allocatable :: gpu_host_exp_storage(:)
 
-      !##############################################################!
       !###---   (Partial) Pair distribution functions and XRD   ---###!
-      !##############################################################!
 
       ! We use these to calculate the (partial) structure factors, which
       ! can be used for X-Ray scattering and (in the future)
@@ -612,8 +594,6 @@ contains
 
       if (batched_pdf) then
 
-         !           print *, "> Starting batched xrd "
-         !           call cpu_time( time%exp_batched(1) )
          call time_start(time%exp_batched, "exp_batched")
 
 !        The pair distribution, on the device. Charged to time%pdf so that the
@@ -661,7 +641,6 @@ contains
 
          call get_n_atoms_of_species(n_atoms_of_species, n_sites, species, n_species_actual)
 
-         ! call gpu_check_error()
          allocate (gpu_neigh(1:size(i_beg_list)))
          allocate (gpu_exp(1:size(i_beg_list)))
          allocate (gpu_batch_storage(1:size(i_beg_list)))
@@ -716,8 +695,6 @@ contains
 
             call total_gpu_memory(dfloat((this_j_end - this_j_beg + 1)*8*5))
 
-            ! call gpu_check_error()
-
             ! Now as we don't need anything else we can just try and
             ! calculate the electrostatics of this batch directly,
             ! with the forces too
@@ -746,10 +723,8 @@ contains
                v_uc, &
                rank)
 
-            ! call gpu_check_error()
             call gpu_free_neighbors(gpu_neigh(i), gpu_streams(omp_task))
 
-            ! call gpu_check_error()
             write (*, '(A,I4,A,I4,A,I4,A,I4,A,I4,A,I4)') "pdf batches finished---Rank ", rank, " ---Thread ", omp_task, &
                " / ", n_omp, " i = ", i, &
                " i_beg = ", this_i_beg, &
@@ -778,8 +753,6 @@ contains
          call collect_batched_pair_distribution(size(i_beg_list), gpu_batch_storage, &
                                                 n_dim_partial, params%pair_distribution_n_samples, &
                                                 pair_distribution_partial, n_species_actual, n_atoms_of_species, v_uc)
-
-         ! call gpu_check_error()
 
          ! Write out the partial pair distribution functions
          call get_write_condition(params%do_mc, params%do_md&
@@ -1005,9 +978,6 @@ contains
          !      & x_structure_factor, j,k, params%do_xrd, params&
          !      &%xrd_output, n_atoms_of_species, .false.)
 
-         ! print *, " alloc y_xrd ", allocated(y_xrd), size( y_xrd )
-         ! print *, " alloc y_exp ", allocated(params%exp_data(params%xrd_idx)%y), size(params%exp_data(params%xrd_idx)%y)
-
          allocate (prefactor(1:size(y_obs)))
          prefactor(1:size(y_obs)) = (y_obs(1:size(y_obs)) - params%exp_data(obs_idx)%y(1:size(y_obs)))
 !        Weighted, the same way and for the same reason as the host route: this
@@ -1021,11 +991,6 @@ contains
          st_prefactor_d = int(size(prefactor, 1), c_size_t)*c_double
          call gpu_malloc_async(prefactor_d, st_prefactor_d, gpu_stream)
          call cpy_htod(c_loc(prefactor), prefactor_d, st_prefactor_d, gpu_stream)
-
-         ! call gpu_check_error()
-         ! st_all_scattering_factors_d = size( all_scattering_factors, 1) * c_double
-         ! call gpu_malloc_async(all_scattering_factors_d, st_all_scattering_factors_d, gpu_stream)
-         ! call cpy_htod(c_loc( all_scattering_factors ), all_scattering_factors_d, st_all_scattering_factors_d, gpu_stream)
 
          st_sinc_factor_matrix_d = int(size(sinc_factor_matrix, 1), c_size_t)*size(sinc_factor_matrix, 2)*c_double
          call gpu_malloc_async(sinc_factor_matrix_d, st_sinc_factor_matrix_d, gpu_stream)
@@ -1051,7 +1016,6 @@ contains
                  & x_obs(1:params%structure_factor_n_samples), j, k, .true., obs_output,&
                  & n_atoms_of_species, obs_neutron, gpu_stream)
 
-               ! call gpu_check_error()
                n_dim_idx = n_dim_idx + 1
                if (n_dim_idx > n_dim_partial) exit outerprep
             end do
@@ -1110,12 +1074,7 @@ contains
                                                                params%pair_distribution_rcut, params%pair_distribution_kde_sigma, &
                                                                gpu_streams(omp_task), xpdf_d, dV_d, j, k, n_dim_idx, v_uc)
 
-                  ! call gpu_check_error()
-
-                  !                    print * , "starting xrd setup"
                   call setup_gpu_xrd_forces(gpu_exp(i), gpu_batch_storage(i), n_dim_idx, gpu_streams(omp_task))
-
-                  !                    print * , "finished xrd setup"
 
                   if (j == k) f = 1.d0
                   if (j /= k) f = 2.d0
@@ -1126,9 +1085,6 @@ contains
                   allocate (gpu_batch_storage(i)%host(n_dim_idx)%forces_h(1:3, 1:n_sites))
                   gpu_batch_storage(i)%host(n_dim_idx)%forces_h = 0.d0
                   gpu_batch_storage(i)%host(n_dim_idx)%virial_h = 0.d0
-
-                  ! call gpu_check_error()
-                  !                    print * , "starting xrd forces"
 
                   call get_structure_factor_forces_matrix_original(.true., params%exp_energy_scales(obs_idx), &
                                                                    gpu_batch_storage(i)%host(n_dim_idx)%forces_h, &
@@ -1143,10 +1099,8 @@ contains
                                                                    sinc_factor_matrix_d, &
                                   all_scattering_factors_d(n_dim_idx), prefactor_d, gpu_streams(omp_task), cublas_handles(omp_task))
 
-                  ! print *, "virial after function exit ", gpu_batch_storage(i) % host( n_dim_idx ) % virial_h
                   call free_gpu_xrd_forces(gpu_exp(i), gpu_batch_storage(i), n_dim_idx, gpu_streams(omp_task))
 
-                  ! call gpu_check_error()
                   n_dim_idx = n_dim_idx + 1
                   if (n_dim_idx > n_dim_partial) exit outer
 
@@ -1216,7 +1170,6 @@ contains
 
          deallocate (prefactor)
 
-         ! call gpu_check_error()
          call gpu_stream_sync(gpu_stream)
 
 !        Into the active pattern's accumulators, which are the ones turbogap.f90
@@ -1270,9 +1223,7 @@ contains
          if (rank == 0) print *, " "
       end if
 
-      !################################################################!
       !###---   Compute similarity of experimental predictions   ---###!
-      !################################################################!
 
       call time_start(time%exp_final, "exp_final")
 
@@ -1302,16 +1253,10 @@ contains
                  &%exp_similarity_type)
             end if
 
-            ! deallocate(params%exp_data(i)%x)
-            ! deallocate(params%exp_data(i)%y)
-            ! deallocate(params%exp_data(i)%y_pred)
-
          end do
       end if
 
-      !##############################################!
       !###---   Finalize experimental arrays   ---###!
-      !##############################################!
 
       if (params%do_pair_distribution) then
          call finalize_pair_distribution(params, x_pair_distribution&
@@ -1351,6 +1296,5 @@ contains
       call time_end(time%exp_final, "exp_final")
 
    end subroutine compute_exp_spectra
-!**************************************************************************
 
 end module turbogap_exp

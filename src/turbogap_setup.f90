@@ -119,7 +119,6 @@ contains
       real(dp), allocatable :: allelstopdata(:)
 
       ! Read input file and other files
-      !
       time%read_input(3) = 0.d0
 
       !time%read_input(1) = MPI_wtime()
@@ -156,7 +155,6 @@ contains
 #endif
          stop
       end if
-      !
       ! First, we look for n_species, which determines how we allocate the species-specific arrays
       do while (iostatus == 0)
          read (10, *, iostat=iostatus) keyword
@@ -221,7 +219,6 @@ contains
          write (*, *) '_______________________________________/'
       END IF
 #endif
-!
 ! Second, we look for pot_file, which contains the GAP difinitions
       rewind (10)
       iostatus = 0
@@ -330,11 +327,6 @@ contains
             !       ! This property has the labels of the quantities to
             !       ! compute. We must specify the number of local properties, for the sake of coding simplicity
             !       if(allocated(params%compute_local_properties))then
-
-            !          if(.not. allocated(local_property_labels))then
-            !             allocate(local_property_labels(1:size(params%compute_local_properties)))
-            !             local_property_labels = params%compute_local_properties
-            !          end if
 
             !          n_local_properties_tot = n_local_properties_tot + soap_turbo_hypers(j)%n_local_properties
             !          do k = 1, soap_turbo_hypers(j)%n_local_properties
@@ -446,7 +438,6 @@ contains
          allocate (n_sparse_mpi_distance_2b(1:n_distance_2b))
          allocate (n_sparse_mpi_angle_3b(1:n_angle_3b))
          allocate (n_mpi_core_pot(1:n_core_pot))
-         !     allocate( compress_P_nonzero_mpi(1:n_soap_turbo) )
          IF (rank == 0) THEN
             n_species_mpi = soap_turbo_hypers(1:n_soap_turbo)%n_species
             n_sparse_mpi_soap_turbo = soap_turbo_hypers(1:n_soap_turbo)%n_sparse
@@ -515,8 +506,6 @@ contains
          call mpi_bcast(n_sparse_mpi_distance_2b, n_distance_2b, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
          call mpi_bcast(n_sparse_mpi_angle_3b, n_angle_3b, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
          call mpi_bcast(n_mpi_core_pot, n_core_pot, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-         !     call mpi_bcast(compress_P_nonzero_mpi, n_soap_turbo, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-         ! time%mpi(2)=MPI_Wtime()
          call time_end(time%mpi)
 
          IF (rank /= 0) THEN
@@ -580,12 +569,6 @@ contains
                call mpi_bcast(soap_turbo_hypers(i)%compress_soap_indices(1:dim), dim, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
             end if
 
-            ! if( soap_turbo_hypers(i)%compress_soap )then
-            !    cPnz = soap_turbo_hypers(i)%compress_P_nonzero
-            !    call mpi_bcast(soap_turbo_hypers(i)%compress_P_el(1:cPnz), cPnz, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-            !    call mpi_bcast(soap_turbo_hypers(i)%compress_P_i(1:cPnz), cPnz, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-            !    call mpi_bcast(soap_turbo_hypers(i)%compress_P_j(1:cPnz), cPnz, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-            ! end if
             call mpi_bcast(soap_turbo_hypers(i)%is_dipole_model, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
             call mpi_bcast(soap_turbo_hypers(i)%has_local_properties, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
             call mpi_bcast(soap_turbo_hypers(i)%has_core_electron_be, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
@@ -722,7 +705,6 @@ contains
 
       ! time%read_input(2)=MPI_Wtime()
       call time_end(time%read_input)
-      !**************************************************************************
 
   !! If electronic stopping based on eph model is to be calculated, these data structures are required to be
   !! initialized first.

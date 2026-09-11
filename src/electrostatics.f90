@@ -299,7 +299,6 @@ contains
                                                forces, &
                                                virial, &
                                                options, r_cut_in, r_cut_width, gpu_stream)
-      ! Input variables
       implicit none
       ! -- Electrostatics variables
       real(dp), dimension(:), intent(in), target :: charges !
@@ -337,7 +336,6 @@ contains
       integer :: j
       integer :: k
 
-      ! Local variables
       integer :: n_dim_partial
       integer :: n_dim_idx
       integer :: this_n_sites
@@ -399,22 +397,18 @@ contains
 
       memory = 0.0
 
-!    allocate( gpu_host % host( 1:n_dim_partial ) )
-
       allocate (gpu_exp%nk(1:n_dim_partial))
       allocate (gpu_exp%nk_d(1:n_dim_partial))
       allocate (gpu_exp%k_index_d(1:n_dim_partial))
       allocate (gpu_exp%j2_index_d(1:n_dim_partial))
       allocate (gpu_exp%rjs_index_d(1:n_dim_partial))
       allocate (gpu_exp%xyz_k_d(1:n_dim_partial))
-!    allocate( gpu_exp % pair_distribution_partial_d(1:n_dim_partial) )
       allocate (gpu_exp%nk_flags_sum_d(1:n_dim_partial))
       allocate (gpu_exp%nk_flags_d(1:n_dim_partial))
 
       allocate (gpu_exp%st_nk_d(1:n_dim_partial))
       allocate (gpu_exp%st_k_index_d(1:n_dim_partial))
       allocate (gpu_exp%st_j2_index_d(1:n_dim_partial))
-!    allocate( gpu_exp % st_pair_distribution_partial_d(1:n_dim_partial) )
 
       n_dim_idx = 1
 
@@ -539,36 +533,12 @@ contains
 
       ! We do an inclusive scan on n_neigh for the sites that are actually in the list
 
-      ! allocate(n_neigh_check(1:this_n_sites))
-      ! allocate(n_neigh_check_sum(1:this_n_sites))
-      ! st_nk_temp = c_int * this_n_sites
-      ! call cpy_dtoh( n_neigh_index_d, c_loc( n_neigh_check ), st_nk_temp , gpu_stream )
-      ! call gpu_stream_sync(gpu_stream)
-
-      ! do i = 2, this_n_sites
-      !    n_neigh_check(i) = n_neigh_check(i) + n_neigh_check(i-1)
-      ! end do
-
       write (*, '(A,1X,I8,1X,A)') "rank = ", rank, "  inclusive scan"
       call flush (101)
       call gpu_inclusive_scan_int(this_n_sites, n_neigh_index_d, gpu_stream)
 
       write (*, '(A,1X,I8,1X,A)') "rank = ", rank, " finished inclusive scan"
       call flush (101)
-!     call cpy_dtoh( n_neigh_index_d, c_loc( n_neigh_check_sum ), st_nk_temp , gpu_stream )
-!     call gpu_stream_sync(gpu_stream)
-
-!     do i = 1, this_n_sites
-!       if ( abs( n_neigh_check(i) - n_neigh_check_sum(i) ) > 0  ) then
-!           write(*, '(1X,I8,1X,I8,1X,I8,1X,I8,1X)') &
-!               this_n_sites, i,  n_neigh_check(i) , n_neigh_check_sum(i)
-!       end if
-!     end do
-
-!     call cpy_htod( c_loc( n_neigh_check ), n_neigh_index_d, st_nk_temp , gpu_stream )
-
-!       deallocate(n_neigh_check)
-!       deallocate(n_neigh_check_sum)
 
       c_do_forces = logical(do_gradients, kind=c_bool)
       c_do_damping_cosine = logical(options%damped_cosine, kind=c_bool)
@@ -607,13 +577,11 @@ contains
       st_energies_d = int(c_double, c_size_t)*this_n_sites
       call cpy_dtoh(energies_d, c_loc(energies_temp), st_energies_d, gpu_stream)
 
-      !   if ( c_do_forces )then
       st_forces_d = int(c_double, c_size_t)*n_sites*3
       call cpy_dtoh(forces_d, c_loc(forces_temp), st_forces_d, gpu_stream)
 
       st_virial_d = int(c_double, c_size_t)*9
       call cpy_dtoh(virial_d, c_loc(virial_temp), st_virial_d, gpu_stream)
-      !  end if
 
       call gpu_free_async(gpu_exp%rjs_index_d(n_dim_idx), gpu_stream)
       call gpu_free_async(gpu_exp%xyz_k_d(n_dim_idx), gpu_stream)
@@ -717,12 +685,6 @@ contains
          allocate (vc_grad_prefactor(1:n_sites_this))
          vc_grad_prefactor = 0.0_dp
 
-         ! pair_counter = 0
-         ! do center_i = 1, n_sites_this
-         !    pair_counter = pair_counter + n_neigh(center_i)
-         ! end do
-
-         ! allocate( vc_grad( 1:3, 1:pair_counter ) )
       end if
 
       if (options%damped) then
@@ -861,7 +823,6 @@ contains
                ! Different sign than above because the position vector is reversed
                ! (f_ki versus r_ik)
                virial = virial + outer_prod(fki_vec, xyz(:, soap_pair_counter))
-!                    end if
 
             end do
          end if

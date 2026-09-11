@@ -6,7 +6,6 @@
 module nvtx
 
 ! Why this exists
-! ---------------
 ! nsys shows two rows that are hard to join by eye: what the CPU is doing, and
 ! what the GPU is doing. TurboGAP's phases (neighbour build, SOAP, 2b, 3b, vdW,
 ! electrostatics, the batched pdf/xrd loops) are host-side control flow, so
@@ -22,7 +21,6 @@ module nvtx
 ! the first, and the two would disagree the first time a bucket moved.
 !
 ! Cost when off
-! -------------
 ! Without -D_NVTX the two routines have empty bodies and gfortran inlines them
 ! away. Without the profiler attached, libnvToolsExt's push/pop are a load and
 ! a predictable branch: measured below the noise of the wall-clock call that
@@ -30,7 +28,6 @@ module nvtx
 ! only, and cost nothing in either case.
 !
 ! Nesting
-! -------
 ! NVTX ranges are a per-thread stack: every push must be popped on the same
 ! thread, in order. time_start/time_end take the label as an OPTIONAL argument
 ! precisely so this cannot break -- a call site that labels its start must
@@ -61,7 +58,6 @@ module nvtx
 
 contains
 
-!**************************************************************************
    subroutine nvtx_push(label)
       !! Open a named range on the calling thread's NVTX stack.
       implicit none
@@ -71,9 +67,7 @@ contains
       call nvtxRangePushA(trim(label)//c_null_char)
 #endif
    end subroutine nvtx_push
-!**************************************************************************
 
-!**************************************************************************
    subroutine nvtx_pop()
       !! Close the innermost range on the calling thread's NVTX stack.
       implicit none
@@ -82,6 +76,5 @@ contains
       call nvtxRangePop()
 #endif
    end subroutine nvtx_pop
-!**************************************************************************
 
 end module nvtx

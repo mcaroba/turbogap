@@ -72,7 +72,6 @@ module gpu_context
 
 contains
 
-!**************************************************************************
 !  Establish the device memory budget, and report it.
 !
 !  Called once, after gpu_set_device and before anything allocates. It has to be
@@ -149,9 +148,7 @@ contains
       call gpu_mem_set_hint(params%max_Gbytes_per_process, params%gpu_n_batches)
 
    end subroutine gpu_memory_budget_init
-!**************************************************************************
 
-!**************************************************************************
 !  How many batches a loop needs, given what one unbatched pass would cost.
 !
 !  need_gb comes from the caller because only the caller knows what its kernels
@@ -212,18 +209,14 @@ contains
       end if
 
    end function gpu_batches_for_gb
-!**************************************************************************
 
-!**************************************************************************
 !  Print the ledger next to the device's own figures.
    subroutine gpu_memory_report(label)
       character(len=*), intent(in) :: label
 
       call gpu_mem_report(trim(label)//c_null_char)
    end subroutine gpu_memory_report
-!**************************************************************************
 
-!**************************************************************************
 !  Which stream the calling thread owns.
 !
 !  The only correct answer is the thread's own index. Two threads running at
@@ -250,9 +243,7 @@ contains
       gpu_omp_task = 1
 !$    gpu_omp_task = omp_get_thread_num() + 1
    end function gpu_omp_task
-!**************************************************************************
 
-!**************************************************************************
 !  Bring the device up, and take it down.
 !
 !  These two exist on both branches under the same names and the same argument
@@ -317,9 +308,7 @@ contains
       end if
 
    end subroutine gpu_context_init
-!**************************************************************************
 
-!**************************************************************************
    subroutine gpu_context_finalize(params, n_omp)
       type(input_parameters), intent(in) :: params
       integer, intent(in) :: n_omp
@@ -336,6 +325,5 @@ contains
       call gpu_device_reset()
 
    end subroutine gpu_context_finalize
-!**************************************************************************
 
 end module gpu_context

@@ -40,13 +40,10 @@ contains
 
       implicit none
 
-!   Input variables
       real(dp), intent(in) :: y(:), x(:), a, b
       character(len=*), intent(in) :: method
-!   Output variables
       real(dp), intent(out) :: integral
 
-!   Internal variables
       real(dp), allocatable :: yc(:), xc(:)
       real(dp) :: x_start, x_end, f, x_temp, y_temp
       integer :: n, i, j
@@ -150,10 +147,6 @@ contains
 
       n = size(iA, 1)
 
-      !allocate( res(1:dim2) )
-      !allocate( resd(1:dim2) )
-      !allocate( ress(1:dim2) )
-
       allocate (ipointer(1:dim1))
 
       allocate (A_CSR(1:n))
@@ -183,7 +176,6 @@ contains
       !call cpu_time(t2)
       !write(*,*) t2-t1, "seconds to make A_CSR from dense matrix"
 
-      !call cpu_time(t1)
       ipointer = 0
 ! Count how many elements in each row
       do k = 1, n
@@ -211,8 +203,6 @@ contains
          j_CSR(m) = jA(k)
          ipointer(i) = m + 1
       end do
-      !call cpu_time(t2)
-      !write(*,*) t2-t1, "seconds to make A_CSR from sparse matrix"
 
 ! Dense A calculation
 !  call cpu_time(t1)
@@ -221,8 +211,6 @@ contains
 !  write(*, *) "dense matmul in", t2-t1, "seconds"
 
       !resd = res
-
-      !td=t2-t1
 
 ! Sparse A calculation with randomly ordered elements in A
 !  call cpu_time(t1)
@@ -237,8 +225,6 @@ contains
 
       !ress = res
 
-      !ts=t2-t1
-
 ! Sparse A calculation with A expressed using CSR convention (contiguous memory access)
       !call cpu_time(t1)
       res = 0.d0
@@ -250,11 +236,6 @@ contains
          end do
          res(i) = s
       end do
-
-      !call cpu_time(t2)
-      !write(*, *) "CSR sparse matmul in", t2-t1, "seconds"
-
-      !tcsr=t2-t1
 
       !write(*,*) "Timing: "
       !write(*,*) ts, "(naive sparse)"
@@ -274,16 +255,13 @@ contains
 
       implicit none
 
-!   Input variables
       !real(psb_dpk_),
       real(dp), intent(in) :: val(:)
       !integer(psb_lpk_),
       integer(i64), intent(in) :: ia(:), ja(:) !, myidx(:)
       integer, intent(in) :: dim !, nnz
       integer, intent(in) :: n_iter
-!   Output variables
       real(dp), intent(inout) :: b(:)
-!   Internal variables
       integer :: k, N
       real(dp), allocatable :: b_k(:), b_k1(:)
       real(dp) :: b_k1_norm, time1, time2
@@ -297,21 +275,11 @@ contains
       allocate (b_k(1:N))
       allocate (b_k1(1:N))
 
-!    call random_number( b_k )
       b_k = 0.5d0
-
-      !call psb_init(icontxt)
-      !call psb_cdall(icontxt, desc_a, info_psb, vl=myidx)
-      !call psb_spall(A_sp, desc_a, info_psb, nnz=nnz)
-      !call psb_spins(nnz, ia(1:nnz), ja(1:nnz), val(1:nnz), A_sp, desc_a, info_psb)
-      !call psb_cdasb(desc_a, info_psb)
-      !call psb_spasb(A_sp, desc_a, info_psb)
 
       do k = 1, n_iter
 
-         !call psb_spmm(1.d0, A_sp, b_k, 0.d0, b_k1, desc_a, info_psb, 'N')
          call sparse_mul(val, b_k, dim, ia, ja, b_k1)
-         !call dgemm('N', 'N', size(A,1), 1, size(A,2), 1.d0, A, size(A,1), b_k, size(A,2), 0.d0, b_k1, size(A,1))
          b_k1_norm = sqrt(dot_product(b_k1, b_k1))
          b_k = b_k1/b_k1_norm
       end do
@@ -325,17 +293,14 @@ contains
 
       implicit none
 
-!   Input variables
       !real(psb_dpk_),
       real(dp), intent(in) :: val(:)
       !integer(psb_lpk_),
       integer(i64), intent(in) :: ia(:), ja(:) !, myidx(:)
       integer, intent(in) :: dim !, nnz
       integer, intent(in) :: n_iter
-!   Output variables
       !real(dp), intent(inout) :: b(:)
       real(dp), intent(inout) :: l_min, l_max
-!   Internal variables
       integer :: k, N, info
       real(dp), allocatable :: v(:, :), w(:, :), alpha(:), beta(:), T(:, :), work_arr(:)
       real(dp) :: b_k1_norm, time1, time2
@@ -382,9 +347,6 @@ contains
       T(n_iter, n_iter - 1) = beta(n_iter)
 
       call dpteqr('N', n_iter, alpha, beta, 0.d0, 1, work_arr, info)
-
-      !write(*,*) "dpteqr info", info
-      !write(*,*) "Lanczos eigs", alpha-1.d0
 
       l_min = minval(alpha)
       l_max = maxval(alpha)

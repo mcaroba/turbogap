@@ -33,7 +33,6 @@ module xyz_module
 
 contains
 
-!**************************************************************************
 ! This subroutine writes the trajectory_out.xyz file with ASE's extended
 ! XYZ format
 !
@@ -63,7 +62,6 @@ contains
 !
 ! If the corresponding write_property(i) or write_array_property(i)
 ! is .true., we write out the corresponding property
-!
 
    subroutine get_xyz_energy_string(energies_soap, energies_2b,&
         & energies_3b, energies_core_pot, energies_vdw, energies_estat, energies_exp&
@@ -357,25 +355,21 @@ contains
          end do
          write (10, "(1X,11A)", advance="no") "Lattice=""", adjustl(lattice_string(1)), lattice_string(2:9), """"
       end if
-!
 !   Temperature
       if (write_property(3)) then
          write (temp_string, "(F16.8)") temperature
          write (10, "(1X,2A)", advance="no") "temperature=", trim(adjustl(temp_string))
       end if
-!
 !   Pressure
       if (write_property(4)) then
          write (temp_string, "(F16.8)") pressure
          write (10, "(1X,2A)", advance="no") "pressure=", trim(adjustl(temp_string))
       end if
-!
 !   Time step
       if (write_property(5)) then
          write (temp_string, "(F16.4)") dt
          write (10, "(1X,2A)", advance="no") "time_step=", trim(adjustl(temp_string))
       end if
-!
 !   Time
       if (write_property(6)) then
          !******** time is actually the md_time not md_istep*dt since dt changes, so md_time is put in the trajectory_out.xyz file
@@ -383,7 +377,6 @@ contains
          write (temp_string, "(F16.6)") md_time                        !dfloat(md_istep)*dt
          write (10, "(1X,2A)", advance="no") "time=", trim(adjustl(temp_string))
       end if
-!
 !  Total energy
       if (write_property(7)) then
          write (temp_string, "(F16.6)") sum(local_energies)
@@ -392,7 +385,6 @@ contains
          write (10, "(1X,A)", advance="no") trim(adjustl(string))
 
       end if
-!
 !   Virial tensor
       if (write_property(8)) then
          do i = 1, 3
@@ -402,7 +394,6 @@ contains
          end do
          write (10, "(1X,11A)", advance="no") "virial=""", adjustl(lattice_string(1)), lattice_string(2:9), """"
       end if
-!
 !   Stress tensor
       if (write_property(9)) then
          vol = dot_product(cross_product(a_cell, b_cell), c_cell)
@@ -413,13 +404,11 @@ contains
          end do
          write (10, "(1X,11A)", advance="no") "stress=""", adjustl(lattice_string(1)), lattice_string(2:9), """"
       end if
-!
 !   Volume
       if (write_property(10)) then
          write (temp_string, "(F16.6)") dot_product(cross_product(a_cell, b_cell), c_cell)
          write (10, "(1X,2A)", advance="no") "volume=", trim(adjustl(temp_string))
       end if
-!
 !   Step
       if (write_property(11)) then
          if (md_istep >= 0) then
@@ -430,7 +419,6 @@ contains
             write (10, "(1X,2A)", advance="no") "i_config=", trim(adjustl(temp_string))
          end if
       end if
-      !
 
 !   Advance
       write (10, *)
@@ -487,19 +475,15 @@ contains
       close (10)
 
    end subroutine
-!**************************************************************************
 
-!**************************************************************************
    subroutine read_xyz_line(properties, line, species, positions, velocities, fix_atom, has_velocities, &
                             masses, has_masses)
 
       implicit none
 
-!   Input variables
       character*1024, intent(in) :: properties
       character*1024, intent(in) :: line
 
-!   Output variables
       real(dp), intent(inout) :: velocities(1:3)
       real(dp), intent(inout) :: positions(1:3)
       real(dp), intent(inout) :: masses
@@ -508,7 +492,6 @@ contains
       logical, intent(out) :: has_velocities
       logical, intent(out) :: has_masses
 
-!   Internal variables
       integer :: i
       integer :: j
       integer :: k
@@ -555,6 +538,5 @@ contains
       end do
 
    end subroutine
-!**************************************************************************
 
 end module

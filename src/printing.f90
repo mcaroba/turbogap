@@ -106,16 +106,13 @@ contains
             write (string, '(a17,a3,a,a)') adjustl(temp), equals, trim(value), adjustl(unit)
          type is (real(dp))
             if (value < 0.0_dp) then
-               !write (temp2, '(g13.6)') value
                write (temp2, '(f13.6)') value
                write (string, '(a20,a3,a13,1X,a)') adjustl(temp), equals, adjustl(temp2), adjustl(unit)
             else
-               !write (temp2, '(g13.7)') value
                write (temp2, '(f13.7)') value
                write (string, '(a20,a3,a13,1X,a)') adjustl(temp), equals, " "//adjustl(temp2), adjustl(unit)
             end if
 
-            !write (string, '(a17,a3,g18.6,a)') adjustl(temp), equals, value, adjustl(unit)
          type is (integer)
             write (string, '(a17,a3,i8,a)') adjustl(temp), equals, value, adjustl(unit)
          type is (logical)
@@ -137,7 +134,6 @@ contains
 
          type is (real(dp))
             if (value < 0.0_dp) then
-               !write (temp2, '(g18.6)') value
                write (temp2, '(f18.6)') value
                write (string, '(a20,a3,a18)') adjustl(temp), equals, adjustl(temp2)
             else
@@ -262,11 +258,8 @@ contains
       integer :: length
 
       length = len_trim(message)
-      !call print_line(repeat('-', length))
-      !call print_separator('-')
       call print_unbroken_lines(message, 'normal')
       call print_line(repeat('-', length))
-      ! call print_separator('-')
 
    end subroutine print_small_message
 
@@ -276,7 +269,6 @@ contains
       class(*) :: value
       character(len=max_length*4) :: string
 
-      !call print_separator('-')
       call print_separator(' ')
 
       select type (value)

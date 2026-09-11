@@ -58,7 +58,6 @@ module gap_backend
 
 contains
 
-!**************************************************************************
 ! Take the stream the backend launches on from gpu_context, so the call itself
 ! carries no device handle and the CPU branch can offer the same name with an
 ! empty body. Called once from the driver, straight after gpu_context_init.
@@ -68,7 +67,6 @@ contains
       gpu_stream = ctx_stream
    end subroutine gap_backend_init
 
-!**************************************************************************
 ! Upload the neighbour data once for all three contribution calls.
    subroutine gap_backend_begin(params, rjs, xyz, n_neigh, species, neighbor_species, &
                                 neighbors_list, i_beg, i_end, j_beg, j_end)
@@ -120,7 +118,6 @@ contains
 !   pair index, not the rank's pair count -- as does neighbors_list_d with
 !   size(neighbors_list). These two were the only ones written the other way.
       st_n_sites_int = i_end*sizeof(n_neigh(1))
-      !        print *, rank, " >> Allocating 2b on gpu"
       call gpu_malloc_async(n_neigh_d, st_n_sites_int, gpu_stream)
       call cpy_htod(c_loc(n_neigh), n_neigh_d, st_n_sites_int, gpu_stream)
       call gpu_malloc_async(species_d, st_n_sites_int, gpu_stream)
@@ -141,7 +138,6 @@ contains
 
    end subroutine gap_backend_begin
 
-!**************************************************************************
    subroutine gap_backend_end()
       implicit none
 
@@ -154,7 +150,6 @@ contains
 
    end subroutine gap_backend_end
 
-!**************************************************************************
 ! Accumulate the two-body energies, forces and virial on the GPU.
    subroutine add_2b_contribution(n_distance_2b, distance_2b_hypers, &
                                   params, rjs, xyz, n_neigh, species, neighbor_species, &
@@ -267,7 +262,6 @@ contains
          & cutoff_d, qs_d, distance_2b_hypers(i)&
          &%sigma, alphas_d, xyz_d, gpu_stream)
 
-         !          print *, rank, " >>--- Finished 2b energies forces on gpu ---"
          call gpu_free_async(alphas_d, gpu_stream)
          call gpu_free_async(cutoff_d, gpu_stream)
          call gpu_free_async(qs_d, gpu_stream)
@@ -291,7 +285,6 @@ contains
       call gpu_free_async(energies_2b_d, gpu_stream)
       call gpu_free_async(forces_2b_d, gpu_stream)
       call gpu_free_async(virial_2b_d, gpu_stream)
-      !        print *, rank, " >>~~~ Finished freeing 2b energies forces on gpu ~~~<<"
 
 !   The bucket wraps the whole routine, not each descriptor.
 !
@@ -306,7 +299,6 @@ contains
 
    end subroutine add_2b_contribution
 
-!**************************************************************************
 ! Accumulate the core-potential energies, forces and virial on the GPU.
    subroutine add_core_pot_contribution(n_core_pot, core_pot_hypers, &
                                         params, rjs, xyz, n_neigh, species, neighbor_species, &
@@ -377,7 +369,6 @@ contains
       !       Loop through core_pot descriptors
       do i = 1, n_core_pot
 
-         !           print *, " > Getting core potential"
          call time_start(time%gap_core_pot, "core_pot")
 
          n_sparse = core_pot_hypers(i)%n
@@ -388,9 +379,6 @@ contains
          call cpy_htod(c_loc(core_pot_hypers(i)%V), V_d, st_n_sparse_double, gpu_stream)
          call gpu_malloc_async(dVdx2_d, st_n_sparse_double, gpu_stream)
          call cpy_htod(c_loc(core_pot_hypers(i)%dVdx2), dVdx2_d, st_n_sparse_double, gpu_stream)
-
-         ! print *, rank, " >>--- Finished allocating core_pot on gpu ---"
-         ! print *, rank, " > Starting core_pot energies forces on gpu "
 
 !   The kernel filters neighbours by species index, so sp1/sp2 must be the
 !   position of this descriptor's species within params%species_types. They
@@ -413,7 +401,6 @@ contains
          call gpu_get_core_pot_energy_and_forces(i_beg, i_end, c_do_forces, species_d, sp1, sp2, n_neigh_d, neighbor_species_d, &
                                                rjs_d, n_sparse, x_d, V_d, dVdx2_d, core_pot_hypers(i)%yp1, core_pot_hypers(i)%ypn, &
                                                  xyz_d, forces_core_pot_d, virial_core_pot_d, energies_core_pot_d, gpu_stream)
-         !          print *, rank, " >>--- Finished core_pot energies forces on gpu ---<<"
          call gpu_free_async(x_d, gpu_stream)
          call gpu_free_async(V_d, gpu_stream)
          call gpu_free_async(dVdx2_d, gpu_stream)
@@ -442,7 +429,6 @@ contains
 
    end subroutine add_core_pot_contribution
 
-!**************************************************************************
 ! Accumulate the three-body energies, forces and virial on the GPU.
    subroutine add_3b_contribution(n_angle_3b, angle_3b_hypers, neighbors_list, &
                                   params, rjs, xyz, n_neigh, species, neighbor_species, &
@@ -564,8 +550,6 @@ contains
       call gpu_stream_sync(gpu_stream)
       deallocate (kappas)
 
-      !        call gpu_create_kappas(kappas_array_d, c_loc(n_neigh),gpu_stream, size(n_neigh))
-
       max_np = 0
       do i = 1, n_angle_3b
       if (angle_3b_hypers(i)%n_sparse > max_np) then
@@ -573,7 +557,6 @@ contains
       end if
       end do
 
-      !write(0,*) "max np is: ",max_np
       size_maxnp_bytes = max_np*c_double
       call gpu_malloc_async(cutoff_d, size_maxnp_bytes, gpu_stream)
       call gpu_malloc_async(alphas_d, size_maxnp_bytes, gpu_stream)
@@ -591,8 +574,6 @@ contains
          call cpy_htod(c_loc(angle_3b_hypers(i)%qs), qs_d, size_maxnp_qs_bytes, gpu_stream)
          call cpy_htod(c_loc(angle_3b_hypers(i)%alphas), alphas_d, size_maxnp_bytes, gpu_stream)
 
-         ! print *, rank, " >> Finished allocation 3b on gpu "
-         ! print *, rank, " >> Starting setup 3b on gpu "
          call setup_3b_gpu(angle_3b_hypers(i)%kernel_type, angle_3b_hypers(i)%species_center, &
                            angle_3b_hypers(i)%species1, angle_3b_hypers(i)%species2, params%species_types, &
                            c_name_3b, sp0_3b, sp1_3b, sp2_3b)

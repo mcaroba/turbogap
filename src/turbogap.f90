@@ -71,9 +71,7 @@ program turbogap
 
    implicit none
 
-   !**************************************************************************
    ! Variable definitions
-   !
    real(dp), allocatable, target :: rjs(:)
    real(dp), allocatable, target :: thetas(:)
    real(dp), allocatable, target :: phis(:)
@@ -284,7 +282,6 @@ program turbogap
 
    integer :: n_omp
    integer :: omp_task
-   !**************************************************************************
    integer(c_size_t) :: st_size_nf
    type(c_ptr) :: alphas_d
    type(c_ptr) :: qs_d
@@ -392,9 +389,6 @@ program turbogap
    integer :: n_sites_mpi
    integer :: j_beg
    integer :: j_end
-   !**************************************************************************
-
-   !**************************************************************************
 
    ! Nested sampling
    real(dp) :: e_max
@@ -413,22 +407,14 @@ program turbogap
 
    ! Storage of host arrays which are compatible with gpu implementation
 
-   !**************************************************************************
-
    !--- TODO: Add in random seeds for repeatable calculations which rely on random numbers! ---!
 
-   ! call random_number(AA)
-   ! call random_number(BB)
-
-   !**************************************************************************
    ! Start recording the time
 
    !  call cpu_time(time1)
    ! Start random seed
    !call srand(int(time1*1000))
-   !**************************************************************************
 
-   !**************************************************************************
    ! MPI stuff
 #ifdef _MPIF90
    call mpi_init(ierr)
@@ -448,11 +434,8 @@ program turbogap
    ntasks = 1
 #endif
    allocate (n_atom_pairs_by_rank(1:ntasks))
-   !**************************************************************************
 
-   !################################################!
    !###---   OPENMP PARALLELIZATION STARTUP   ---###!
-   !################################################!
 
    n_omp = 1
    omp_task = 0
@@ -467,9 +450,7 @@ program turbogap
    call gap_backend_init()
    call time_end(time%create_streams)
 
-   !**************************************************************************
    ! Read the mode. It should be "soap", "predict" or "md"
-   !
    call get_command_argument(1, mode)
    if (mode == "" .or. mode == "none") then
       write (*, *) "ERROR: you need to run 'turbogap md' or 'turbogap predict'"
@@ -477,11 +458,8 @@ program turbogap
       ! THIS SHOULD BE FIXED, IN CASE THE USER JUST WANT TO OUTPUT THE SOAP DESCRIPTORS
       mode = "soap"
    end if
-   !**************************************************************************
 
-   !**************************************************************************
    ! Prints some welcome message and reads in the input file
-   !
 #ifdef _MPIF90
    IF (rank == 0) THEN
 #endif
@@ -540,11 +518,8 @@ program turbogap
 #ifdef _MPIF90
    END IF
 #endif
-   !**************************************************************************
 
-   !**************************************************************************
    ! Read input file and other files
-   !
    call read_input_and_gap_files(mode, rank, ntasks, params, &
                                  soap_turbo_hypers, distance_2b_hypers, angle_3b_hypers, core_pot_hypers, &
                                  n_soap_turbo, n_distance_2b, n_angle_3b, n_core_pot, n_species, rcut_max, &
@@ -570,7 +545,6 @@ program turbogap
 !  when there are more ranks than devices they share, and each one budgeting the
 !  whole card is a guaranteed failure that looks like a code bug.
    call gpu_memory_budget_init(params, rank, ntasks)
-   !**************************************************************************
    ! <----------------------------------------------------------------------------------------------- Finish printouts
 #ifdef _MPIF90
    IF (rank == 0) THEN
@@ -600,9 +574,7 @@ program turbogap
 #ifdef _MPIF90
    END IF
 #endif
-   !**************************************************************************
 
-   !**************************************************************************
    ! Print progress bar and initialize timers
 
    xps_idx = params%xps_idx
@@ -633,11 +605,7 @@ program turbogap
       end if
       counter = 1
    end if
-   !**************************************************************************
 
-   !**************************************************************************
-   !**************************************************************************
-   !**************************************************************************
    ! This checks if we need to do the SOAP calculation more than once, if there are several concatenated
    ! structures in the xyz file provided or we're doing molecular dynamics
 
@@ -707,9 +675,7 @@ program turbogap
       else
          counter = counter + 1
       end if
-      !**************************************************************************
 
-      !**************************************************************************
       !   This chunk of code does all the reading/neighbor builds etc for each snapshot
       !   or MD step
       !   Read in XYZ file and build neighbors lists
@@ -887,7 +853,6 @@ program turbogap
          allocate (do_list(1:n_sites))
          do_list = .true.
       end if
-      !
       call time_start(time%neigh, "neigh")
 #ifdef _MPIF90
       !   Parallel neighbors list build
@@ -993,9 +958,7 @@ program turbogap
       call get_time(time2)
 
       call time_end(time%neigh, "neigh")
-      !**************************************************************************
 
-      !**************************************************************************
       !   If we are doing prediction, we run this chunk of code
       if (params%do_prediction .or. params%write_soap .or. params%write_derivatives) then
 
@@ -1258,8 +1221,6 @@ program turbogap
 
          !     Loop through soap_turbo descriptors - we always call this routine, even if we don't want to do prediction
          n_lp_count = 0 ! This counts the local properties
-
-         !#################################################################
 
          call time_start(time%gap, "gap:soap")
          do i = 1, n_soap_turbo
@@ -1536,8 +1497,6 @@ program turbogap
          end do
          call time_end(time%gap, "gap:soap")
 
-         !#################################################################
-
 #ifdef _MPIF90
          if (any(soap_turbo_hypers(:)%has_local_properties)) then
             call time_start(time%mpi)
@@ -1612,18 +1571,14 @@ program turbogap
                             energies_estat, forces_estat, virial_estat, time)
 #endif
 
-         !----------------------------------------------------!
          !--- EXPERIMENTAL SPECTRUM CALCULATION AND FORCES ---!
-         !----------------------------------------------------!
 
          ! --- Changing the implementation:
          !     > All experimental prediction should be done here
          !     > do_exp is the variable which says whether calculation should be done
          !     > experimental_forces = .true. will add forces to the calculation
 
-         !#########################################################!
          !###---   Compute Experimental Data Interpolation   ---###!
-         !#########################################################!
 
          if (params%do_exp) then
             do i = 1, params%n_exp
@@ -1689,19 +1644,13 @@ program turbogap
                !                & trim(params%exp_data(i)%label) // " : output = "&
                !                & // trim( exp_output ))
 
-               !            end if
-
-               !          end if
-
                params%exp_data(i)%wrote_exp = .true.
                params%exp_data(i)%compute_exp = .true.
 
             end do
          end if
 
-         !###################################################!
          !###---   XPS Forces and Spectra Prediction   ---###!
-         !###################################################!
 
          !     Compute core_electron_be energies and forces
          !
@@ -1724,9 +1673,7 @@ program turbogap
                               energies_lp, forces_lp, virial_lp, time)
 #endif
 
-         !##############################################################!
          !###---   (Partial) Pair distribution functions and XRD   ---###!
-         !##############################################################!
          !
          ! Moved to src/turbogap_exp.f90. The #ifdef below is the whole reason
          ! it is here rather than inside: the exp_interface routines take the
@@ -2270,9 +2217,7 @@ program turbogap
          END IF
 #endif
       end if
-      !**************************************************************************
 
-      !**************************************************************************
       !   Do MD stuff here. Moved to src/turbogap_md.f90; the rank guard and the
       !   position broadcast moved with it.
       call compute_md(params, rank, ierr, n_sites, md_istep, md_time, time_step, positions, &
@@ -2286,7 +2231,6 @@ program turbogap
                       time, gd_box_do_pos, gd_istep, restart_box_optim, &
                       target_temp, time_step_prev, dipole, local_dipoles, energies_dipole)
 
-      !**************************************************************************
       !   Nested sampling
       !   PUT THIS INTO A MODULE!!!!!!!!!!!!!!
 
@@ -2851,7 +2795,6 @@ program turbogap
                  &%mc_relax_after, do_mc_relax, params%verb)
 
                rebuild_neighbors_list = .true.
-               ! end if
 
                ! NOTE: the species_supercell and xyz_species_supercell are
                ! not commensurate with the new image as these have not been
@@ -3121,7 +3064,6 @@ program turbogap
          allocate (do_list(1:n_sites))
          do_list = .true.
       end if
-      !
 
       !     !     !     !     call cpu_time(time1)
       call get_time(time1)

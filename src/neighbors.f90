@@ -42,11 +42,9 @@ module neighbors
 
 contains
 
-!**************************************************************************
 !
 ! This subroutine returns the distance between ri and rj under certain
 ! boundary conditions.
-!
    subroutine get_distance(posi, posj, a, b, c, PBC, dist, d, i_shift)
 
       implicit none
@@ -171,9 +169,7 @@ contains
 
       return
    end subroutine get_distance
-!**************************************************************************
 
-!**************************************************************************
 !
 ! This subroutine returns the number of primitive unit cells required to
 ! construct a supercell whose unit cell's planes are at least 2*rcut apart.
@@ -181,7 +177,6 @@ contains
 ! cutoff. indices(1:3) tell the user how many repetitions are required to
 ! construct a unit cell with the properties outlined above. (1,1,1) means
 ! that the primitive unit cell is already enough.
-!
    subroutine number_of_unit_cells_for_given_cutoff(a, b, c, rcut, PBC, indices)
 
       implicit none
@@ -244,12 +239,9 @@ contains
       end do
 
    end subroutine
-!**************************************************************************
 
-!**************************************************************************
 ! This subroutine reads in the XYZ file and builds the lists of neighbors, the spherical
 ! coordinates, etc.
-!
    subroutine build_neighbors_list(positions, a_box, b_box, c_box, do_timing, &
                                    species_supercell, rcut_max, n_atom_pairs, rjs, &
                                    thetas, phis, xyz, n_neigh, neighbors_list, neighbor_species, &
@@ -257,7 +249,6 @@ contains
 
       implicit none
 
-!   Input variables
       real(dp), intent(in) :: rcut_max
       real(dp), intent(in) :: positions(:, :)
 !    integer, intent(in) :: species_multiplicity(:), n_species
@@ -269,11 +260,9 @@ contains
       logical, intent(in) :: rebuild_neighbors_list
       logical, intent(in) :: do_list(:)
 
-!   Output variables
       integer, intent(out) :: n_atom_pairs
 !    logical, allocatable, intent(out) :: mask_species(:,:)
 
-!   In and out variables
       real(dp), allocatable, intent(inout) :: rjs(:)
       real(dp), allocatable, intent(inout) :: thetas(:)
       real(dp), allocatable, intent(inout) :: phis(:)
@@ -286,7 +275,6 @@ contains
       integer, allocatable, intent(inout) :: n_neigh(:)
 !    integer, allocatable, intent(inout) :: species_supercell(:,:)
 
-!   Internal variables
       real(dp) :: time1
       real(dp) :: time2
       real(dp) :: dist(1:3)
@@ -325,27 +313,6 @@ contains
 
 ! integer :: n_ii,i_ii, j_jj,k_ii
 ! real(dp) :: CC(1:1024,1:1024), BB(1:1024,1:1024), AA(1:1024,1:1024), dut1, dut2
-
-! call random_number(AA)
-! call random_number(BB)
-
-! write(*,*) "Starting dummy kernel"
-
-! dut1= MPI_Wtime()
-! do n_ii=1,3
-
-!      do i_ii=1, 1024
-!      do j_jj=1,1024
-!      CC(i_ii,j_jj)=0.0
-!      do k_ii=1,1024
-!      CC(i_ii,j_jj)=CC(i,j)+AA(i_ii,k_ii)*BB(k_ii,j_jj)
-!      enddo
-!      enddo
-!      enddo
-! enddo
-! dut2= MPI_Wtime()
-! write(*,*) "Ending dummy region"
-! write(*,*) "Time spent in dummy region", dut2-dut1
 
       if (do_timing) then
 !        get_time, not cpu_time. cpu_time returns processor time summed over
@@ -391,7 +358,6 @@ contains
             write (*, *) '                                       |'
          end if
       end if
-!
 !   This is also inefficient <---------------------------------------- FIX THIS
       is_box_small = .false.
       if (any(indices > 1)) then
@@ -411,7 +377,6 @@ contains
             write (*, *) '                                       |'
          end if
       end if
-!
 !   The list used to be allocated at a guessed 100 neighbours per atom and grown
 !   by 10 whenever that ran out, copying the whole array each time -- GST at a
 !   5.5 A cutoff needs 117, so it copied twice on every build. It is now sized
@@ -547,13 +512,10 @@ contains
 !   each atom is accompanied by its full list of neighbors. It also prevents ackward memory access.
 !   In any case, I may want to rethink this in the future if I want to further gain extra performance (at the
 !   expense of complicating the code, that is).
-!
       n_atom_pairs = 0
       do i = 1, n_sites
          n_atom_pairs = n_atom_pairs + n_neigh(i)
       end do
-!    allocate( mask_species(1:n_atom_pairs, 1:n_species) )
-!    mask_species = .false.
       if (rebuild_neighbors_list) then
          allocate (rjs(1:n_atom_pairs))
          allocate (xyz(1:3, 1:n_atom_pairs))
@@ -588,9 +550,6 @@ contains
                   thetas(k2) = 0.d0
                   phis(k2) = 0.d0
                   neighbor_species(k2) = species_supercell(i)
-!            do i2 = 1, species_multiplicity(i)
-!              mask_species(k2, species_supercell(i2, j)) = .true.
-!            end do
                else
                   call get_distance(positions(1:3, i), positions(1:3, j), a_box(1:3), b_box(1:3), &
                                     c_box(1:3), (/.true., .true., .true./), dist, d, i_shift)
@@ -608,9 +567,6 @@ contains
                   end if
                   phis(k2) = datan2(dist(2), dist(1))
                   neighbor_species(k2) = species_supercell(j)
-!            do i2 = 1, species_multiplicity(i)
-!              mask_species(k2, species_supercell(i2, j)) = .true.
-!            end do
                end if
             end do
          end if
@@ -631,15 +587,12 @@ contains
       end if
 
    end subroutine
-!**************************************************************************
 
-!**************************************************************************
 !
 ! Between the two build passes: turn the per-site neighbour counts into the
 ! offsets the fill pass writes at, and size the list to exactly the number of
 ! pairs there are. Sites this rank does not own have n_neigh = 0 and so take
 ! no room.
-!
    subroutine size_the_list(n_neigh, n_sites, k2_start, n_atom_pairs, neighbors_list)
 
       implicit none
@@ -664,7 +617,6 @@ contains
       allocate (neighbors_list(1:n_atom_pairs))
 
    end subroutine size_the_list
-!**************************************************************************
 !  What one atom pair and one site cost the SOAP descriptor path, in bytes.
 !
 !  Every term below is one allocation in get_soap (src/soap_turbo/src/) or in
@@ -717,9 +669,6 @@ contains
                        + 24.d0
 
    end subroutine soap_batch_memory_model
-!**************************************************************************
-
-!**************************************************************************
 
    subroutine get_number_of_atom_pairs_batches(n_batches, n_neigh, rjs, rcut, l_max, n_max, n_soap, n_species, &
                                                max_Gbytes_per_process, &
@@ -727,7 +676,6 @@ contains
 
       implicit none
 
-!   Input variables
       real(dp), intent(in) :: rjs(:)
       real(dp), intent(in) :: rcut
       real(dp), intent(in) :: max_Gbytes_per_process
@@ -738,13 +686,11 @@ contains
       integer, intent(in) :: n_species
       integer, intent(in) :: n_batches
 
-!   Output variables
       integer, allocatable, intent(out) :: i_beg_list(:)
       integer, allocatable, intent(out) :: i_end_list(:)
       integer, allocatable, intent(out) :: j_beg_list(:)
       integer, allocatable, intent(out) :: j_end_list(:)
 
-!   Internal variables
       real(dp) :: estimated_memory_in_Gbytes
       real(dp) :: bytes_per_pair
       real(dp) :: bytes_per_site
@@ -834,14 +780,12 @@ contains
       return
 
    end subroutine
-!**************************************************************************
    subroutine get_number_of_atom_pairs(n_neigh, rjs, rcut, l_max, n_max, n_soap, n_species, &
                                        max_Gbytes_per_process, &
                                        i_beg_list, i_end_list, j_beg_list, j_end_list)
 
       implicit none
 
-!   Input variables
       real(dp), intent(in) :: rjs(:)
       real(dp), intent(in) :: rcut
       real(dp), intent(in) :: max_Gbytes_per_process
@@ -851,13 +795,11 @@ contains
       integer, intent(in) :: n_soap
       integer, intent(in) :: n_species
 
-!   Output variables
       integer, allocatable, intent(out) :: i_beg_list(:)
       integer, allocatable, intent(out) :: i_end_list(:)
       integer, allocatable, intent(out) :: j_beg_list(:)
       integer, allocatable, intent(out) :: j_end_list(:)
 
-!   Internal variables
       real(dp) :: estimated_memory_in_Gbytes
       real(dp) :: bytes_per_pair
       real(dp) :: bytes_per_site
@@ -945,27 +887,21 @@ contains
       return
 
    end subroutine
-!**************************************************************************
 
-!**************************************************************************
 !
 ! This subroutine returns the fractional coordinates from a list of
 ! Cartesian positions. This subroutine does NOT carry out unit cell
 ! wrapping. Wrapped Cartesian coordinates should be provided if wrapped
 ! fractional coordinates are wanted.
-!
    subroutine get_fractional_coordinates(pos, a, b, c, frac)
 
       implicit none
 
-!   Input variables
       real(dp), intent(in) :: pos(:, :)
       real(dp), intent(in) :: a(1:3)
       real(dp), intent(in) :: b(1:3)
       real(dp), intent(in) :: c(1:3)
-!   Output variables
       real(dp), intent(out) :: frac(1:3, 1:size(pos, 2))
-!   Internal variables
       real(dp) :: L(1:3)
       real(dp) :: d_tol = 1.d-6
       real(dp) :: mat(1:3, 1:3)
@@ -1027,27 +963,23 @@ contains
 
       return
    end subroutine get_fractional_coordinates
-!**************************************************************************
 
    subroutine get_gpu_batches(n_neigh, rjs, rcut, n_chunks, estimated_memory_in_Gbytes, max_Gbytes_per_process, &
                               i_beg_list, i_end_list, j_beg_list, j_end_list)
 
       implicit none
 
-!   Input variables
       real(dp), intent(in) :: rjs(:)
       real(dp), intent(in) :: rcut
       real(dp), intent(in) :: max_Gbytes_per_process
       real(dp), intent(in) :: estimated_memory_in_Gbytes
       integer, intent(in) :: n_neigh(:)
 
-!   Output variables
       integer, allocatable, intent(out) :: i_beg_list(:)
       integer, allocatable, intent(out) :: i_end_list(:)
       integer, allocatable, intent(out) :: j_beg_list(:)
       integer, allocatable, intent(out) :: j_end_list(:)
 
-!   Internal variables
       real(dp) :: mem_ratio
       real(dp) :: pairs_per_chunk
       integer :: n_sites

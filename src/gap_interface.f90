@@ -44,7 +44,6 @@ module gap_interface
 
 contains
 
-   !**************************************************************************
    subroutine get_gap_soap(n_sparse, n_total_sites, n_sites0, n_neigh0, neighbors_list0, n_species, species_types, &
         rjs0, thetas0, phis0, xyz0, alpha_max_d, alpha_max, l_max, n_soap, &
         rcut_hard_d, rcut_hard, rcut_soft_d, nf_d, global_scaling_d, atom_sigma_r_d, &
@@ -67,7 +66,6 @@ contains
 
       implicit none
 
-      !   Input variables
       type(local_property_soap_turbo), allocatable :: local_property_models(:)
 
       !   real(dp), intent(in) :: rjs0(:), thetas0(:), phis0(:), xyz0(:,:), rcut_hard(:), rcut_soft(:), &
@@ -114,7 +112,6 @@ contains
       character*8, intent(in) :: xyz_species_supercell(:)
       character*8, intent(in) :: species_types(:)
 
-      !   Output variables
       real(dp), allocatable, intent(out) :: soap(:, :)
       real(dp), allocatable, intent(out) :: soap_cart_der(:, :, :)
       real(dp), intent(out) :: virial(1:3, 1:3)
@@ -129,7 +126,6 @@ contains
       real(dp), intent(inout) :: local_dipoles0(:, :)
       real(dp), intent(inout) :: energies_dipole0(:)
 
-      !   Internal variables
       real(dp), allocatable :: rjs(:)
       real(dp), allocatable :: thetas(:)
       real(dp), allocatable :: phis(:)
@@ -221,9 +217,7 @@ contains
       !--- TODO: CHANGE THE LOCAL PROPERTIES PARAMS TO DOUBLES TOO ---!
 
       call mpi_comm_rank(MPI_COMM_WORLD, rank, ierr)
-      ! call gpu_set_device(rank) ! Every node has 4 GPUs. Even if there are more than 1 nodes used. This will assing the ranks to GPU in a roundbin fashion
 
-      !call create_cublas_handle(cublas_handle, gpu_stream)
       n_sites_supercell = size(xyz_species_supercell)
 
       !   Work out the multiplicity stuff
@@ -385,7 +379,6 @@ contains
          end if
 
          if (n_sites > 0) then
-            !      call cpu_time(ttt(1))
             call get_soap(n_sites, n_neigh, n_species, species, species_multiplicity, n_atom_pairs, mask, rjs, &
                  thetas, phis, alpha_max_d, alpha_max, l_max, rcut_hard_d, rcut_hard, rcut_soft_d, nf_d, global_scaling_d, &
                  atom_sigma_r_d, atom_sigma_r, atom_sigma_r_scaling_d, atom_sigma_t_d, atom_sigma_t_scaling_d, &
@@ -399,9 +392,7 @@ contains
 
          end if
 
-         !###########################################!
          !###---      Dipole prediction        ---###!
-         !###########################################!
 
          if (is_dipole_model) then
 !          virial is intent(out) and is otherwise only defined inside
@@ -463,9 +454,7 @@ contains
             end if
          end if
 
-         !     !###########################################!
          !     !###---   Local property prediction   ---###!
-         !     !###########################################!
          call get_time(time_local_prop(1))
 
          if (has_local_properties) then
@@ -570,9 +559,7 @@ contains
 
       end if
    end subroutine get_gap_soap
-!**************************************************************************
 
-! !**************************************************************************
 !   subroutine get_gap_soap(n_total_sites, n_sites0, n_neigh0, neighbors_list0, n_species, species_types, &
 !                           rjs0, thetas0, phis0, xyz0, alpha_max, l_max, n_soap, &
 !                           rcut_hard, rcut_soft, nf, global_scaling, atom_sigma_r, &
@@ -818,44 +805,6 @@ contains
 ! !call cpu_time(time1)
 !        allocate( local_properties( 1:n_sites_out, 1:n_local_properties ) )
 
-!       do i = 1, n_local_properties
-!          if(local_property_models(i)%do_derivatives)then
-!             allocate( local_properties_cart_der(1:3, 1:n_sites_out, 1:n_local_properties ) )
-!          end if
-!       end do
-
-!       do i = 1, n_local_properties
-!          local_properties = 0.d0
-!          if(local_property_models(i)%do_derivatives)then
-!             local_properties_cart_der = 0.d0
-!          end if
-
-!          call local_property_predict( soap, &
-!               & local_property_models(i)%Qs,&
-!               & local_property_models(i)%alphas,&
-!               & local_property_models(i)%V0,&
-!               & local_property_models(i)%delta,&
-!               & local_property_models(i)%zeta,&
-!               & local_properties(i,1:n_sites_out),&
-!               & local_property_models(i)%do_derivatives,&
-!               & soap_cart_der, n_neigh_out, local_properties_cart_der(1:3, 1:n_sites_out, i) )
-!          do j = 1, n_sites_out
-!             i2 = in_to_out_site(j)
-!             local_properties0(i2) = local_properties(j)
-!          end do
-!          if( local_property_models(i)%do_derivatives )then
-!             do k = 1, n_atom_pairs
-!                k2 = in_to_out_pairs(k)
-!                local_properties_cart_der0(1:3, k2) = local_properties_cart_der(1:3, k)
-!             end do
-!          end if
-!       end do
-
-!       deallocate( local_properties )
-!       do i = 1, n_local_properties
-!          if(local_property_models(i)%do_derivatives) deallocate( local_properties_cart_der )
-!       end do
-
 ! !call cpu_time(time2)
 ! !write(*,*) "hirshfeld_v time =", time2-time1, "seconds"
 !    end if
@@ -873,18 +822,6 @@ contains
 !                                         n_neigh_out, neighbors_list, xyz, do_forces, do_timing, &
 !                                         energies, forces, virial)
 !       end if
-
-!       do i = 1, n_sites_out
-!         i2 = in_to_out_site(i)
-!         energies0(i2) = energies(i)
-!       end do
-!       if( do_forces )then
-!         do i = 1, n_all_sites
-!           i2 = in_to_out_site(i)
-!           forces0(1:3, i2) = forces(1:3, i)
-!         end do
-!       end if
-!     end if
 
 ! !   This is slow, but writing to disk is even slower so who cares
 !     if( write_soap )then
@@ -913,13 +850,6 @@ contains
 !       end do
 !     end if
 
-!     if( do_prediction )then
-!       deallocate( energies )
-!     end if
-!     if( do_forces )then
-!       deallocate( forces )
-!     end if
-
 !     deallocate( neighbors_list, rjs, thetas, phis, mask, mask0, is_atom_seen )
 !     deallocate( species0, species_multiplicity0, species, species_multiplicity, species_multiplicity_supercell )
 !     if(.not. has_local_properties )then
@@ -927,16 +857,6 @@ contains
 !     else
 !        deallocate(out_to_in_site)
 !     end if
-
-!     if( .not. write_soap .and. .not. has_local_properties )then
-!        deallocate( soap )
-!     end if
-!     if( do_derivatives .and. .not. write_derivatives .and. .not. has_local_properties )then
-!       deallocate( soap_cart_der )
-!    end if
-
-!   end subroutine
-! !**************************************************************************
 
    subroutine get_local_properties(soap, Qs, alphas, V0, delta, zeta, &
                                  local_property0, do_derivatives, soap_cart_der, n_neigh_out, &
@@ -988,8 +908,6 @@ contains
       if (do_derivatives) then
          deallocate (local_property_cart_der)
       end if
-!call cpu_time(time2)
-!write(*,*) "hirshfeld_v time =", time2-time1, "seconds"
    end subroutine get_local_properties
 
 end module

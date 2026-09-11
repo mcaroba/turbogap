@@ -1216,7 +1216,6 @@ MODULE F_B_C
          type(c_ptr), value :: d
       end subroutine cpy_htoh_pinned
 
-      !
 !      subroutine gpu_2b(n_sparse, n_sites, sp1, sp2, alpha, delta, cutoff, stream, rjs, xyz, n_neigh, species, neighbor_species, do_forces, rcut,buffer, sigma,qs,n_neigh_host) bind(C,name="gpu_2b")
 !        use iso_c_binding
 !        implicit none

@@ -107,7 +107,6 @@ contains
         energies, forces, virial, solo_time_soap, soap_d, &
         soap_der_d, n_neigh_d,&
         & n_pairs)
-      !   **********************************************
       !   soap(1:n_soap, 1:n_sites)
 
       !use mpi
@@ -458,7 +457,6 @@ contains
 
    subroutine get_soap_dipole(n_sparse, soap, delta, zeta0, n_neigh, dipoles, energies, &
                               soap_d, soap_der_d)
-      !   **********************************************
       !   Local dipoles from a dipole GAP, on the device.
       !
       !   The model is a GAP whose local "energy" E_i is a fictitious scalar,
@@ -480,7 +478,6 @@ contains
       !   been formed here. It is a fitting artefact with no physical meaning:
       !   it is reported as energy_dipole and must never be added to the total
       !   energy, and its gradient must never be added to the forces.
-      !   **********************************************
 
       implicit none
 
@@ -626,7 +623,6 @@ contains
 
       implicit none
 
-!   Input variables
       real(dp), intent(in) :: rjs(:)
       real(dp), intent(in) :: xyz(:, :)
       real(dp), intent(in) :: alphas(:)
@@ -646,12 +642,10 @@ contains
       logical, intent(in) :: do_forces
       logical, intent(in) :: do_timing
 
-!   Output variables
       real(dp), intent(out) :: energies(:)
       real(dp), intent(out) :: forces(:, :)
       real(dp), intent(out) :: virial(1:3, 1:3)
 
-!   Internal variables
       real(dp) :: time1
       real(dp) :: time2
       real(dp) :: fcut
@@ -758,7 +752,6 @@ contains
                                        dexp(-0.5d0*(rjs(k) - Qs(s))**2/sigma**2)* &
                                        xyz(1:3, k)/rjs(k)*((rjs(k) - Qs(s))/sigma**2*fcut + dfcut)
                      forces(1:3, i) = forces(1:3, i) + this_force(1:3)
-!              virial = virial - dot_product( this_force(1:3), xyz(1:3,k) )
                      do k1 = 1, 3
                         do k2 = 1, 3
                            virial(k1, k2) = virial(k1, k2) - 0.5d0*(this_force(k1)*xyz(k2, k) + this_force(k2)*xyz(k1, k))
@@ -790,7 +783,6 @@ contains
 
       implicit none
 
-!   Input variables
       real(dp), intent(in) :: rjs(:)
       real(dp), intent(in) :: xyz(:, :)
       real(dp), intent(in) :: x(:)
@@ -807,12 +799,10 @@ contains
       logical, intent(in) :: do_forces
       logical, intent(in) :: do_timing
 
-!   Output variables
       real(dp), intent(out) :: energies(:)
       real(dp), intent(out) :: forces(:, :)
       real(dp), intent(out) :: virial(1:3, 1:3)
 
-!   Internal variables
 !   There are two ways of doing the core_pot interpolation; most efficient probably depends on
 !   whether a small subset or big subset of the total number of atom pairs has a core potential
 !   term associated to it. The current implementation is fast going over pairs, but slow computing
@@ -917,7 +907,6 @@ contains
                   dV_int = spline_der(x, V, dVdx2, yp1, ypn, rjs(k:k), rcut)
                   this_force(1:3) = dV_int(1)*xyz(1:3, k)/rjs(k)
                   forces(1:3, i) = forces(1:3, i) + this_force(1:3)
-!            virial = virial - dot_product( this_force(1:3), xyz(1:3, k) )
                   do k1 = 1, 3
                      do k2 = 1, 3
                         virial(k1, k2) = virial(k1, k2) - 0.5d0*(this_force(k1)*xyz(k2, k) + this_force(k2)*xyz(k1, k))
@@ -941,8 +930,6 @@ contains
       end if
 
    end subroutine
-
-!*****************************************************************
 
    subroutine setup_3b_gpu(kernel_type, species_center, species1, species2, species_types, c_name, sp0, sp1, sp2)
       implicit none
@@ -980,7 +967,6 @@ contains
 
    end subroutine
 
-!**************************************************************************
    subroutine get_3b_energy_and_forces(rjs, xyz, alphas, cutoff, rcut, buffer, delta, sigma, e0, Qs, &
                                        n_neigh, neighbors_list, do_forces, do_timing, kernel_type, &
                                        species, neighbor_species, species_center, species1, species2, &
@@ -988,7 +974,6 @@ contains
 
       implicit none
 
-!   Input variables
       real(dp), intent(in) :: rjs(:)
       real(dp), intent(in) :: xyz(:, :)
       real(dp), intent(in) :: alphas(:)
@@ -1011,12 +996,10 @@ contains
       character*8, intent(in) :: species2
       character*8, intent(in) :: species_types(:)
 
-!   Output variables
       real(dp), intent(out) :: energies(:)
       real(dp), intent(out) :: forces(:, :)
       real(dp), intent(out) :: virial(1:3, 1:3)
 
-!   Internal variables
       real(dp) :: time1
       real(dp) :: time2
       real(dp) :: fcut
@@ -1067,7 +1050,6 @@ contains
       integer :: n_sites0
       integer :: k1
       integer :: k4
-      !write(*,*) "3B"
       if (do_timing) then
          call cpu_time(time1)
       end if
@@ -1299,12 +1281,9 @@ contains
       end if
 
    end subroutine
-!**************************************************************************
 
-!**************************************************************************
 !
 ! This is two functions
-!
    function cov_pp(r, d, q) result(cov)
 
       implicit none
@@ -1369,6 +1348,5 @@ contains
       end if
 
    end function
-!**************************************************************************
 
 end module gap

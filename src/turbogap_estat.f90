@@ -40,7 +40,6 @@ module turbogap_estat
 
 contains
 
-   !**************************************************************************
    subroutine compute_estat(params, do_electrostatics, valid_estat_charges, charge_lp_index, &
                             n_sites, n_neigh, neighbors_list, species, neighbor_species, rjs, xyz, &
                             local_properties, local_properties_cart_der, &
@@ -48,7 +47,6 @@ contains
                             energies_estat, forces_estat, virial_estat, time)
       implicit none
 
-!     Input variables
       type(input_parameters), intent(in) :: params
       logical, intent(in) :: do_electrostatics
       logical, intent(in) :: valid_estat_charges
@@ -72,7 +70,6 @@ contains
       real(dp), intent(inout) :: virial_estat(1:3, 1:3)
       type(times_t), intent(inout) :: time
 
-!     Internal variables
       real(dp), allocatable :: chg_neigh_estat(:)
       real(dp) :: charge_sum
       integer :: i, j, k, j2
@@ -166,12 +163,6 @@ contains
                                        params%gpu_max_batch_size, i_beg_list, i_end_list, j_beg_list, j_end_list)
 
                   gpu_memory_usage = 0.d0
-
-                  ! do i = 1, size(i_beg_list)
-                  !    write(*,'(A,I8,A,I8,A,I8,A,I8,A,I8,A,I8)') "batches, rank ", rank, &
-                  !         " i ", i, " i_beg_i = ", i_beg_list(i), " i_end_i = ", i_end_list(i), &
-                  !         " j_beg_i = ", j_beg_list(i), " j_end_i = ", j_end_list(i)
-                  ! end do
 
                   allocate (gpu_neigh(1:size(i_beg_list)))
                   allocate (gpu_exp(1:size(i_beg_list)))
@@ -298,6 +289,5 @@ contains
       end if
 
    end subroutine compute_estat
-   !**************************************************************************
 
 end module turbogap_estat

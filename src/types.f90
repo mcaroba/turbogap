@@ -651,7 +651,6 @@ module types
       character*8, allocatable :: xyz_species_supercell(:)
    end type image
 
-!**************************************************************************
 !   One additive contribution family as it crosses the MPI reduce block in
 !   turbogap.f90: where its energies, forces and virial are packed from, and
 !   where the reduced result is unpacked to.
@@ -661,7 +660,6 @@ module types
 !   are the same array. Holding both ends here is what lets the pack and unpack
 !   walks collapse to one loop each, so they cannot disagree about which slot
 !   belongs to which family.
-!**************************************************************************
 !   Per-run decisions, evaluated once and only read thereafter.
 !
 !   The rule this exists to enforce: a condition written at N sites is free to
@@ -687,7 +685,6 @@ module types
       logical :: nd_forces = .false.
       logical :: xps_forces = .false.
    end type perform_t
-!**************************************************************************
 
    type contribution_ref
       real(dp), pointer :: e_src(:) => null()
@@ -698,11 +695,9 @@ module types
       real(dp), pointer :: v_dst(:, :) => null()
       logical         :: forces = .false.
    end type contribution_ref
-!**************************************************************************
 
 contains
 
-!**************************************************************************
 ! This provides a way to pass all the individual arrays/variables in the main code to an image container
 ! In time I should make the image data type the default way to store these properties!!!!!!!
    subroutine from_properties_to_image(this_image, positions, velocities, masses, &
@@ -712,7 +707,6 @@ contains
                                        local_dipoles, energies_dipole, dipole)
       implicit none
 
-!   Input variables
       real(dp), intent(in) :: positions(:, :)
       real(dp), intent(in) :: velocities(:, :)
       real(dp), intent(in) :: masses(:)
@@ -737,7 +731,6 @@ contains
       character*8, intent(in) :: xyz_species_supercell(:)
 !   In/out variables
       type(image), intent(inout) :: this_image
-!   Internal variables
       integer :: n
       integer :: n2
 
@@ -836,9 +829,7 @@ contains
       if (present(dipole)) this_image%dipole = dipole
 
    end subroutine
-!**************************************************************************
 
-!**************************************************************************
    subroutine from_image_to_properties(this_image, positions, velocities, masses, &
                                        forces, a_box, b_box, c_box, energy, energies, energy_exp, e_kin, &
                                        species, species_supercell, n_sites, indices, fix_atom, &
@@ -846,9 +837,7 @@ contains
                                        local_dipoles, energies_dipole, dipole)
       implicit none
 
-!   Input variables
       type(image), intent(in) :: this_image
-!   Output variables
       real(dp), allocatable, intent(out) :: positions(:, :)
       real(dp), allocatable, intent(out) :: velocities(:, :)
       real(dp), allocatable, intent(out) :: masses(:)
@@ -871,7 +860,6 @@ contains
       logical, allocatable, intent(out) :: fix_atom(:, :)
       character*8, allocatable, intent(out) :: xyz_species(:)
       character*8, allocatable, intent(out) :: xyz_species_supercell(:)
-!   Internal variables
       integer :: n
       integer :: n2
 
@@ -957,6 +945,5 @@ contains
       if (present(dipole)) dipole = this_image%dipole
 
    end subroutine
-!**************************************************************************
 
 end module

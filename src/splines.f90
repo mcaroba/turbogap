@@ -31,7 +31,6 @@ module splines
 
 contains
 
-!**************************************************************************
    function spline(x, y, y2, yp1, ypn, r, rcut) result(s)
 
 !   This function computes a cubic spline on all the points defined in
@@ -186,6 +185,5 @@ contains
       end do
 
    end function
-!**************************************************************************
 
 end module

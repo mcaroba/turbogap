@@ -37,7 +37,6 @@ contains
                                         local_properties_n_sparse, local_properties_dim, has_local_properties, n_local_properties, &
                                          compress_soap, desc)
 
-!   Input variables
       integer, intent(in) :: n_soap_turbo
       integer, intent(in) :: n_species(:)
       integer, intent(in) :: n_sparse(:)
@@ -48,10 +47,7 @@ contains
       logical, intent(in) :: compress_soap(:)
       logical, intent(in) :: has_local_properties(:)
 
-!   Output_variables
       type(soap_turbo), allocatable, intent(out) :: desc(:)
-
-!   Internal variables
 
       integer :: i
       integer :: n_sp
@@ -90,11 +86,6 @@ contains
             allocate (desc(i)%compress_soap_indices(1:d))
          end if
 
-         ! if( compress_soap(i) )then
-         !    allocate( desc(i)%compress_P_el(1:cPnz) )
-         !    allocate( desc(i)%compress_P_i(1:cPnz) )
-         !    allocate( desc(i)%compress_P_j(1:cPnz) )
-         ! end if
          if (has_local_properties(i)) then
             desc(i)%n_local_properties = n_local_properties(i)
             allocate (desc(i)%local_property_models(1:n_local_properties(i)))
@@ -117,19 +108,14 @@ contains
       end do
 
    end subroutine
-!**************************************************************************
 
-!**************************************************************************
    subroutine allocate_distance_2b_hypers(n_distance_2b, n_sparse, desc)
 
-!   Input variables
       integer, intent(in) :: n_distance_2b
       integer, intent(in) :: n_sparse(:)
 
-!   Output_variables
       type(distance_2b), allocatable, intent(out) :: desc(:)
 
-!   Internal variables
       integer :: i
       integer :: n_sp
 
@@ -144,19 +130,14 @@ contains
       end do
 
    end subroutine
-!**************************************************************************
 
-!**************************************************************************
    subroutine allocate_angle_3b_hypers(n_angle_3b, n_sparse, desc)
 
-!   Input variables
       integer, intent(in) :: n_angle_3b
       integer, intent(in) :: n_sparse(:)
 
-!   Output_variables
       type(angle_3b), allocatable, intent(out) :: desc(:)
 
-!   Internal variables
       integer :: i
       integer :: n_sp
 
@@ -171,19 +152,14 @@ contains
       end do
 
    end subroutine
-!**************************************************************************
 
-!**************************************************************************
    subroutine allocate_core_pot_hypers(n_core_pot, n, desc)
 
-!   Input variables
       integer, intent(in) :: n_core_pot
       integer, intent(in) :: n(:)
 
-!   Output_variables
       type(core_pot), allocatable, intent(out) :: desc(:)
 
-!   Internal variables
       integer :: i
       integer :: n_sp
 
@@ -198,7 +174,6 @@ contains
       end do
 
    end subroutine
-!**************************************************************************
 
    subroutine count_energies_forces(counter2, n_sites, &
                                     energies, forces, virial, do_forces, &

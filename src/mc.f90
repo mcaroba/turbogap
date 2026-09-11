@@ -164,8 +164,6 @@ contains
 
    !   ! is the number of neighbors for a given atom index including itself
 
-   ! end subroutine get_volume_bias
-
    subroutine get_mc_acceptance(mc_move, p_accept, energy, energy_prev, temp, &
                                 mu, n_mc_species, v_uc, v_uc_prev, v_a_uc, v_a_uc_prev, mass, pressure)
       implicit none
@@ -773,13 +771,11 @@ contains
    ! end subroutine get_mc_conditions
    subroutine modify_box(positions, eps, a_box, b_box, c_box)
       implicit none
-!   Input variables
       real(dp), intent(inout) :: positions(:, :)
       real(dp), intent(inout) :: a_box(1:3)
       real(dp), intent(inout) :: b_box(1:3)
       real(dp), intent(inout) :: c_box(1:3)
       real(dp), intent(in) :: eps(1:6)
-!   Internal variables
       real(dp) :: t_eps(1:3, 1:3)
       real(dp), allocatable :: frac_pos(:, :)
       real(dp) :: a_box0(1:3)
@@ -818,7 +814,5 @@ contains
       deallocate (frac_pos)
 
    end subroutine
-!**************************************************************************
-!**************************************************************************
 
 end module mc
