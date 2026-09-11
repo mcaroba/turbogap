@@ -53,17 +53,60 @@ def read_makefile(path):
 
 
 def parse_var(lines, name):
-    """Return the .f90 entries assigned to a make variable, comments stripped."""
-    pat = re.compile(r'^\s*' + re.escape(name) + r'\s*:?=\s*(.*)$')
+    """Return the .f90 entries assigned to a make variable, comments stripped.
+
+    += is honoured as well as =, and $(VAR) is resolved first: SRC names the
+    two modules that have a device implementation as variables.
+    """
+    pat = re.compile(r'^\s*' + re.escape(name) + r'\s*(:?=|\?=|\+=)\s*(.*)$')
+    found = []
     for line in lines:
         m = pat.match(line)
-        if m:
-            body = m.group(1).split('#', 1)[0]
-            return [t for t in body.split() if t.endswith('.f90')]
-    return []
+        if not m:
+            continue
+        body = expand_vars(m.group(2).split('#', 1)[0], lines)
+        entries = [t for t in body.split() if t.endswith('.f90')]
+        if m.group(1) == '+=':
+            found.extend(entries)
+        else:
+            found = entries
+    return found
+
+
+def select_gpu(lines, gpu):
+    """Drop the branch of each ifeq ($(GPU),1) block that is not taken.
+
+    The generator reads the Makefile as text, so it has to resolve this one
+    conditional itself; everything else in the file is unconditional.
+    """
+    out, state = [], []
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith('ifeq ($(GPU),1)'):
+            state.append(gpu)
+            continue
+        if state and stripped == 'else':
+            state[-1] = not state[-1]
+            continue
+        if state and stripped == 'endif':
+            state.pop()
+            continue
+        if all(state):
+            out.append(line)
+    return out
 
 
 RE_VAR_REF = re.compile(r"\$\(([A-Za-z_][A-Za-z_0-9]*)\)")
+
+
+def cli_overrides():
+    """VAR=value arguments, which win over the Makefile's own assignment."""
+    out = {}
+    for arg in sys.argv[1:]:
+        if "=" in arg and not arg.startswith("-"):
+            name, _, value = arg.partition("=")
+            out[name] = value
+    return out
 
 
 def expand_vars(text, lines):
@@ -72,8 +115,11 @@ def expand_vars(text, lines):
     ST_DIR names the soap_turbo checkout and is set per arch, so the rule
     reads $(ST_DIR)/%.f90 rather than a literal path.
     """
+    overrides = cli_overrides()
     for name in RE_VAR_REF.findall(text):
-        prefix = name + " "
+        if name in overrides:
+            text = text.replace("$(%s)" % name, overrides[name])
+            continue
         value = None
         for line in lines:
             stripped = line.strip()
@@ -96,6 +142,7 @@ def main():
         print(f'ERROR: no Makefile at {mk}', file=sys.stderr)
         return 1
     lines = read_makefile(mk)
+    lines = select_gpu(lines, '--gpu' in sys.argv)
 
     search_dirs = [expand_vars(m.group(1), lines)
                    for line in lines for m in [RE_OBJ_RULE.match(line)] if m]

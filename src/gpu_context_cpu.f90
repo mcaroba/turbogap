@@ -1,9 +1,9 @@
 ! Device context: the CPU implementation.
 !
 ! One module name, two implementation files, chosen in the Makefile -- the same
-! arrangement as gap_backend_cpu / gap_backend_gpu. The GPU branch's
-! src/gpu_context.f90 owns the default stream, the cuBLAS handles, the
-! per-OpenMP-task stream arrays and the device-side batch storage, and brings
+! arrangement as gap_backend_cpu / gap_backend_gpu. src/gpu_context_gpu.f90
+! owns the default stream, the cuBLAS handles, the per-OpenMP-task stream
+! arrays and the device-side batch storage, and brings
 ! them up and down in these two procedures. Here there is nothing to bring up,
 ! so both bodies are empty.
 !

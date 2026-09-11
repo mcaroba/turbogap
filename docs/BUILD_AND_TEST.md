@@ -1,11 +1,7 @@
 # Build and test: the one-liners
 
-Everything here is copy-pasteable. `$M` and `$G` are the two trees:
-
-```sh
-export M=/u/74/zarrout1/unix/work/cpu_vs_gpu_tests/turbogap_master_2026
-export G=/u/74/zarrout1/unix/work/cpu_vs_gpu_tests/turbogap_gpu_commit_mahti
-```
+Everything here is copy-pasteable. One tree builds both the host and the device
+binary; which one you get is decided by `TURBOGAP_ARCH`.
 
 ---
 
@@ -20,25 +16,60 @@ tools/setup_dev_env.sh --check         # exits non-zero if anything is missing
 `tests/fetch_test_data.sh` runs automatically on the first suite run and clones
 `https://github.com/TiganyZ/turbogap_tests` to `<repo>/../turbogap_tests`.
 
+Three submodules, all fetched by a recursive clone:
+
+```sh
+git submodule update --init --recursive
+```
+
+`src/soap_turbo` and `src/soap_turbo_gpu` are two checkouts of the same
+repository on different branches, not an old version and a new one. Their
+`get_soap` signatures differ -- the device one takes device pointers, a cuBLAS
+handle and a stream, and compresses through a single index array where the host
+one uses the sparse `compress_P` triple -- so each build takes its own, and the
+architecture makefile says which.
+
 ---
 
 ## 1. Build
 
 ```sh
-# CPU
-cd $M && make -j12                                    # ~26 s
+# Host
+make -j12                                             # ~30 s -> bin/turbogap
 
-# GPU -- DEBUG defaults to 1, which is a 2.1x slowdown. Always pass DEBUG=0.
-cd $G && export HOP_ROOT=/u/74/zarrout1/unix/work/hop \
-      && export TURBOGAP_ARCH=Aalto_gfortran_openblas_hip_cuda \
-      && make -j12 DEBUG=0                            # ~15 s
+# Device. DEBUG defaults to 1 in the device architecture makefiles, which is a
+# 2.1x slowdown, so always pass DEBUG=0. BUILD_TAG_EXTRA gives it its own
+# object tree, which is what lets the two binaries exist at once -- and the
+# regression suite's --both mode needs both at once.
+make -j8 TURBOGAP_ARCH=Aalto_gfortran_openblas_hip_cuda DEBUG=0 \
+     BUILD_TAG_EXTRA=-gpu                             # -> bin-gpu/turbogap
 ```
+
+`HOP_ROOT` needs no setting: `src/hop` is a submodule and the Makefile points at
+it. Setting one still overrides it.
+
+A device architecture makefile is marked by `GPU = 1`, which selects
+`gpu_context_gpu.f90` and `gap_backend_gpu.f90` over their `_cpu` counterparts,
+pulls `src/gpu/` and `fortran_cuda_interfaces.f90` into the build, and sets
+`ST_DIR` and `DEPS_FILE`. It also puts `-D _GPU` in `PP`, which is what compiles
+the device code guarded inside the shared sources.
 
 ### Dependencies -- REGENERATE AFTER ADDING OR REMOVING A SOURCE FILE
 
+Two files, because the module graph differs between the builds: the device one
+pulls in `F_B_C` and takes soap_turbo from the other checkout.
+
 ```sh
 python3 tools/gen_fortran_deps.py . > makefiles/Makefile.deps
+python3 tools/gen_fortran_deps.py . --gpu ST_DIR=src/soap_turbo_gpu/src \
+    > makefiles/Makefile.deps.gpu
 ```
+
+`--gpu` resolves the `ifeq ($(GPU),1)` branch of the Makefile; `ST_DIR=` is
+needed because the generator reads the top-level Makefile only and that value
+comes from the architecture makefile. Redirect stderr away from the file or
+keep it on the terminal -- the generator writes its summary there, and folding
+it into the output gives `missing separator`.
 
 The Makefile expresses no Fortran module dependencies of its own, so without
 this `make -j` races and fails with `Cannot open module file`. Regenerate
@@ -67,21 +98,30 @@ that is the symptom of a stale `Makefile.deps`, not a flaky build.
 
 ## 2. Test
 
-```sh
-# CPU: 18 cases, bit-exact against a frozen baseline binary, ~7 min
-cd $M && tests/regression/run.sh
-cd $M && tests/regression/run.sh vdw_ts co_predict     # named cases
-cd $M && tests/regression/run.sh --list
+One suite, one case list, either binary:
 
-# GPU: 4 cases, compared against the CPU build. REF_BIN must be ABSOLUTE --
-# it is resolved from the staging directory, not from $PWD.
-cd $G && export HOP_ROOT=/u/74/zarrout1/unix/work/hop \
-      && export TURBOGAP_ARCH=Aalto_gfortran_openblas_hip_cuda \
-      && TURBOGAP_REF_BIN=$M/bin/turbogap tests/gpu/run_regression.sh
+```sh
+tests/regression/run.sh                    # host, bit-exact (the default)
+tests/regression/run.sh --gpu              # device, within a tolerance
+tests/regression/run.sh --both             # both passes, fails if either does
+tests/regression/run.sh vdw_ts co_predict  # named cases
+tests/regression/run.sh --list
 ```
 
-Expected: CPU **18 passed, 0 failed**; GPU **3 passed, 0 failed, 1 xfail**
-(`XRD_mad`, the known ~1e-5 `local_energy` drift).
+The host binary is compared **bit for bit** against the frozen baseline. The
+device binary cannot be: the SOAP batch decomposition and the cuBLAS reductions
+sum the same terms in a different order, so the last digits move on a run that
+is entirely correct. `--gpu` compares numerically instead, through
+`tests/regression/compare_tol.py`, which still requires every non-numeric token
+to match exactly -- a species column or a `Properties=` string that changed is
+a failure whatever the tolerance.
+
+The default tolerance is `rtol = atol = 1e-6`, and the absolute term is the one
+that matters: a force component near zero has a huge relative deviation for an
+absolute one of 1e-8. On `co_md` the device binary's whole trajectory differs
+from the host binary's by at most **6e-8** in absolute value -- a few units in
+the last digit the output carries, since positions and forces are written
+`F16.8`. A case may set `GPU_RTOL` and `GPU_ATOL` in its `case.conf`.
 
 ### Do not let a rebuild race a running suite
 
@@ -102,6 +142,49 @@ cd $M && make -j12 && cp bin/turbogap /tmp/tg_under_test \
 | `TURBOGAP_KEEP=1` | keep the staging directory for inspection |
 | `TURBOGAP_BLESS=1` | regenerate a golden case's `expected/` -- deliberately, never to green a red suite |
 | `TURBOGAP_TIME_TOL` | fail if test/ref wall-clock exceeds this ratio |
+
+---
+
+## 2b. Profile
+
+`docs/PROFILING.md` is the whole workflow. The two commands:
+
+```sh
+tools/setup_profiling_env.sh --check    # what would stop a profile, and the fix
+tools/profile_gpu.sh CO_predict         # build PROFILE=1, run under nsys, analyse
+```
+
+The cases come from `tests/gpu/cases.sh`, which `tests/gpu/run_regression.sh`
+reads too, so a profile is always of an input the suite checks. **Never profile
+a `DEBUG=1` build** -- the Makefile refuses it, because `-G` is a 2.1x slowdown
+that also reorders the kernel ranking.
+
+`make PROFILE=1` and `make OPENMP=1` each get their own object tree
+(`build-profile/`, `build-omp/`), so neither can silently reuse the other's
+objects or invalidate `bin/turbogap` while the suite is reading it.
+
+## 2c. Device memory, and systems too big for the suite
+
+Every run now ends with a `GPUmem` block: what the device has, what this rank
+held, and its peak. An allocation that does not fit retries once (after draining
+the stream, because `hipFreeAsync` is stream-ordered) and then reports the size,
+the budget and the keyword that fixes it, instead of a bare "out of memory".
+
+```
+gpu_mem_fraction = 0.8      # size max_Gbytes_per_process from the card
+```
+
+Default 0 = off, so existing inputs are unchanged. The 1.0 GB default for
+`max_Gbytes_per_process` was chosen with no device in mind. An explicit
+`gpu_n_batches` is a **floor**: the automatic sizing raises it, never lowers it.
+
+The diamond ladder (13,824 → 1,000,000 atoms) lives outside both repos in
+`../large_systems/diamond_1M/`; see its `README.md` and `docs/PROFILING.md` §6.
+
+```sh
+tools/run_scaling_ladder.sh              # wall time, host RSS, device peak per size
+tools/profile_gpu.sh diamond_125k        # one rung, under nsys
+```
 
 ---
 

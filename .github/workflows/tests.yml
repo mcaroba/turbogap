@@ -69,6 +69,14 @@ jobs:
       # Each suite gets its own step: a red X then names the physics that
       # broke, and `if: always()` means the first failure does not hide the
       # rest.
+      # Not physics, but it decides the verdict of every device regression run,
+      # and a comparator that passes everything would turn that suite into a
+      # formality with nothing else to notice.
+      - name: Tolerance comparator self-test
+        if: always()
+        working-directory: turbogap
+        run: python3 tests/regression/test_compare_tol.py
+
       - name: XRD and ND from the Debye scattering equation
         if: always()
         working-directory: turbogap

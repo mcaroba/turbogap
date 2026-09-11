@@ -96,6 +96,26 @@ contains
          write (*, '(A)') '      energy scale.'
          write (*, '(A)') ''
       end if
+      if (every .or. .not. gap_only) then
+         write (*, '(A)') '  estat_gpu_batched                    [logical, default false]'
+         write (*, '(A)') '      Compute the electrostatics with the batched device kernel (default'
+         write (*, '(A)') '      .false.). Off because that kernel disagrees with both the host build'
+         write (*, '(A)') '      and the device''s own unbatched path -- see KNOWN_ISSUES 13 -- and a'
+         write (*, '(A)') '      device build would otherwise get a silently wrong electrostatic'
+         write (*, '(A)') '      energy. Kept so the kernel can still be run by whoever fixes it.'
+         write (*, '(A)') '      Ignored by a host build.'
+         write (*, '(A)') '      -> see estat_method, gpu_batched'
+         write (*, '(A)') ''
+      end if
+      if (every .or. .not. gap_only) then
+         write (*, '(A)') '  gpu_mem_fraction                     [real, default 0.0]'
+         write (*, '(A)') '      Fraction of the device''s memory one rank may use for the SOAP'
+         write (*, '(A)') '      descriptor batches. The device analogue of mem_fraction, consulted'
+         write (*, '(A)') '      only by a GPU build and only when max_gbytes_per_process was not'
+         write (*, '(A)') '      given.'
+         write (*, '(A)') '      -> see mem_fraction, max_gbytes_per_process'
+         write (*, '(A)') ''
+      end if
       if (every .or. (mode == 'md')) then
          write (*, '(A)') '  ir_acf_mode                          [string, default block]'
          write (*, '(A)') '      How the running dipole autocorrelation is formed: "block" (the'
@@ -1766,6 +1786,17 @@ contains
          write (*, '(A)') ''
       end if
       if (every .or. .not. gap_only) then
+         write (*, '(A)') '  exp_data_weights                     [string list]'
+         write (*, '(A)') '      The same weights as exp_weights_files, given as one number per point'
+         write (*, '(A)') '      of the experimental data file rather than as (x, w) pairs. Nothing'
+         write (*, '(A)') '      is resolved here beyond reading the column: pairing it with the'
+         write (*, '(A)') '      data''s own x, and checking the two are the same length, happens'
+         write (*, '(A)') '      where the weights are built, so a deck may put this keyword either'
+         write (*, '(A)') '      side of exp_data_files. Giving both for one observable is an error.'
+         write (*, '(A)') '      -> sets n_exp; see exp_data_files, exp_weights_files'
+         write (*, '(A)') ''
+      end if
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  exp_energies                         [logical, default true]'
          write (*, '(A)') '      Add the data mismatch to the energy. Naming it enables do_exp.'
          write (*, '(A)') '      -> sets do_exp; see exp_energy_scales'
@@ -1830,6 +1861,21 @@ contains
          write (*, '(A)') '      "squared_diff" for a sum of squared residuals, or'
          write (*, '(A)') '      "similarity"/"overlap" for a normalised overlap.'
          write (*, '(A)') '      -> see exp_energy_scales'
+         write (*, '(A)') ''
+      end if
+      if (every .or. .not. gap_only) then
+         write (*, '(A)') '  exp_weights_files                    [string list]'
+         write (*, '(A)') '      A weight per experimental sample, one file per observable in the'
+         write (*, '(A)') '      order of exp_labels, "none" for a flat weight. Two columns, abscissa'
+         write (*, '(A)') '      and weight, interpolated onto the same grid as the data, so the file'
+         write (*, '(A)') '      need not know exp_n_samples. They enter the mismatch squared -- E ='
+         write (*, '(A)') '      gamma/2 sum_i w_i^2 (y_pred_i - y_exp_i)^2 -- so a file value of 2'
+         write (*, '(A)') '      counts a sample four times, not twice. The point is to say that part'
+         write (*, '(A)') '      of a pattern matters more than the rest: a neutron q*F(q) has its'
+         write (*, '(A)') '      first sharp diffraction peak below q = 1.5, where the signal is'
+         write (*, '(A)') '      small and a plain sum of squares barely notices it.'
+         write (*, '(A)') '      -> sets n_exp; see exp_data_files, exp_data_weights,'
+         write (*, '(A)') '         exp_energy_scales'
          write (*, '(A)') ''
       end if
       if (every .or. .not. gap_only) then

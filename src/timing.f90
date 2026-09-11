@@ -39,9 +39,20 @@
 ! ignorance; a negative one is a lie, and it is the reason the printed totals
 ! were unusable as refactor instrumentation.
 
+! time_start and time_end take an OPTIONAL label. When one is given and the
+! build defines _NVTX (make PROFILE=1), the interval is also pushed as an NVTX
+! range, so nsys shows the phase on the timeline next to the kernels it
+! launched. The label is not stored, printed or used in any arithmetic, so an
+! unlabelled call site behaves exactly as before.
+!
+! The label must be given to BOTH calls of a pair or NEITHER. NVTX ranges are a
+! stack; labelling only the start leaks a range and every later phase nests
+! inside it.
+
 module timing
 
    use kinds
+   use nvtx, only: nvtx_push, nvtx_pop
 
 #ifdef _MPIF90
    use mpi
@@ -75,6 +86,10 @@ module timing
       real(dp) :: xrd(3) = 0.0_dp
       real(dp) :: nd(3) = 0.0_dp
       real(dp) :: xps(3) = 0.0_dp
+
+      !! The similarity metric and the finalize/deallocate tail of
+      !! compute_exp_spectra. A parent: nothing else is timed inside it.
+      real(dp) :: exp_final(3) = 0.0_dp
       !! The MAD IR bias: everything between the dipole arriving and the
       !! biased forces leaving. The MPI all-reduce that precedes it is charged
       !! to `mpi`, so this bucket starts after it and the two stay disjoint.
@@ -139,21 +154,27 @@ contains
 #endif
    end subroutine get_time
 
-   subroutine time_start(bucket)
+   subroutine time_start(bucket, label)
       !! Stamp the start of an interval. Pairs with time_end on the same bucket.
+      !! If label is present it also opens an NVTX range; then time_end MUST be
+      !! given a label too (see the header).
       implicit none
       real(dp), intent(inout) :: bucket(3)
+      character(len=*), intent(in), optional :: label
 
+      if (present(label)) call nvtx_push(label)
       call get_time(bucket(1))
    end subroutine time_start
 
-   subroutine time_end(bucket)
+   subroutine time_end(bucket, label)
       !! Close the interval opened by time_start and add it to the total.
       implicit none
       real(dp), intent(inout) :: bucket(3)
+      character(len=*), intent(in), optional :: label
 
       call get_time(bucket(2))
       bucket(3) = bucket(3) + bucket(2) - bucket(1)
+      if (present(label)) call nvtx_pop()
    end subroutine time_end
 
    pure function sum_times(time) result(total)

@@ -31,6 +31,9 @@ module neighbors
 
    use soap_turbo_functions
    use timing, only: get_time
+#ifdef _GPU
+   use mpi
+#endif
 
 !  Headroom on top of soap_batch_memory_model. The terms there are the
 !  allocations that scale with the batch; this covers what does not appear in
@@ -640,7 +643,32 @@ contains
       allocate (neighbors_list(1:n_atom_pairs))
 
    end subroutine size_the_list
-
+#ifdef _GPU
+!  What one atom pair and one site cost the SOAP descriptor path, in bytes.
+!
+!  Every term below is one allocation in get_soap (src/soap_turbo/src/) or in
+!  get_gap_soap (src/gap_interface.f90), with do_derivatives on. Element sizes:
+!  complex(dp) 16, real(dp) 8, integer 4, logical 4.
+!
+!  PER PAIR
+!    48*k_max*n_max   cnk_rad_der_d, cnk_azi_der_d, cnk_pol_der_d
+!    64*k_max         angular_exp_coeff_d and its rad/azi/pol derivatives
+!    72*n_soap        soap_{rad,azi,pol}_der_d, soap_cart_der_d, and the host
+!                     soap_cart_der, which is still allocated at full size
+!    40*n_max         radial_exp_coeff_d, radial_exp_coeff_der_d and the three
+!                     temporaries (ntemp = maxval(alpha_max) <= n_max, so using
+!                     n_max here is the conservative direction)
+!     8*n_species     mask_d and its host copy
+!    88               rjs/thetas/phis/xyz and the pair index arrays, host+device
+!
+!  PER SITE
+!    16*k_max*n_max   cnk_d
+!    16*n_soap        soap_d and its host copy
+!    24               sqrt_dot_p_d, n_neigh_d, k2_start_d, i_k2_start_d
+!
+!  Per-site is not a rounding correction: cnk_d is the same order as the
+!  per-pair total divided by the neighbour count, and it is the term that
+!  decides the answer for a short cutoff, where there are few pairs per site.
    subroutine soap_batch_memory_model(l_max, n_max, n_soap, n_species, &
                                       bytes_per_pair, bytes_per_site)
       implicit none
@@ -658,20 +686,20 @@ contains
 
       bytes_per_pair = 48.d0*dfloat(k_max)*dfloat(n_max) &
                        + 64.d0*dfloat(k_max) &
-                       + 48.d0*dfloat(n_soap) &
-                       + 16.d0*dfloat(n_max) &
-                       + 4.d0*dfloat(n_species) &
-                       + 56.d0
+                       + 72.d0*dfloat(n_soap) &
+                       + 40.d0*dfloat(n_max) &
+                       + 8.d0*dfloat(n_species) &
+                       + 88.d0
 
       bytes_per_site = 16.d0*dfloat(k_max)*dfloat(n_max) &
-                       + 8.d0*dfloat(n_soap) &
-                       + 16.d0
+                       + 16.d0*dfloat(n_soap) &
+                       + 24.d0
 
    end subroutine soap_batch_memory_model
 
-   subroutine get_number_of_atom_pairs(n_neigh, rjs, rcut, l_max, n_max, n_soap, n_species, &
-                                       max_Gbytes_per_process, &
-                                       i_beg_list, i_end_list, j_beg_list, j_end_list)
+   subroutine get_number_of_atom_pairs_batches(n_batches, n_neigh, rjs, rcut, l_max, n_max, n_soap, n_species, &
+                                               max_Gbytes_per_process, &
+                                               i_beg_list, i_end_list, j_beg_list, j_end_list)
 
       implicit none
 
@@ -683,6 +711,7 @@ contains
       integer, intent(in) :: n_max
       integer, intent(in) :: n_soap
       integer, intent(in) :: n_species
+      integer, intent(in) :: n_batches
 
       integer, allocatable, intent(out) :: i_beg_list(:)
       integer, allocatable, intent(out) :: i_end_list(:)
@@ -705,154 +734,551 @@ contains
       integer :: i_chunk
       integer :: n_atom_pairs_in
 
-      n_sites = size(n_neigh)
-      n_atom_pairs = size(rjs)
+#else
 
-      k = 0
-      n_atom_pairs_in = 0
-      do i = 1, n_sites
-         do j = 1, n_neigh(i)
-            k = k + 1
-            if (rjs(k) < rcut) then
-               n_atom_pairs_in = n_atom_pairs_in + 1
-            end if
+      subroutine soap_batch_memory_model(l_max, n_max, n_soap, n_species, &
+                                         bytes_per_pair, bytes_per_site)
+         implicit none
+
+         integer, intent(in) :: l_max
+         integer, intent(in) :: n_max
+         integer, intent(in) :: n_soap
+         integer, intent(in) :: n_species
+         real(dp), intent(out) :: bytes_per_pair
+         real(dp), intent(out) :: bytes_per_site
+
+         integer :: k_max
+
+         k_max = 1 + l_max*(l_max + 1)/2 + l_max
+
+         bytes_per_pair = 48.d0*dfloat(k_max)*dfloat(n_max) &
+                          + 64.d0*dfloat(k_max) &
+                          + 48.d0*dfloat(n_soap) &
+                          + 16.d0*dfloat(n_max) &
+                          + 4.d0*dfloat(n_species) &
+                          + 56.d0
+
+         bytes_per_site = 16.d0*dfloat(k_max)*dfloat(n_max) &
+                          + 8.d0*dfloat(n_soap) &
+                          + 16.d0
+
+      end subroutine soap_batch_memory_model
+
+      subroutine get_number_of_atom_pairs(n_neigh, rjs, rcut, l_max, n_max, n_soap, n_species, &
+                                          max_Gbytes_per_process, &
+                                          i_beg_list, i_end_list, j_beg_list, j_end_list)
+
+         implicit none
+
+         real(dp), intent(in) :: rjs(:)
+         real(dp), intent(in) :: rcut
+         real(dp), intent(in) :: max_Gbytes_per_process
+         integer, intent(in) :: n_neigh(:)
+         integer, intent(in) :: l_max
+         integer, intent(in) :: n_max
+         integer, intent(in) :: n_soap
+         integer, intent(in) :: n_species
+
+         integer, allocatable, intent(out) :: i_beg_list(:)
+         integer, allocatable, intent(out) :: i_end_list(:)
+         integer, allocatable, intent(out) :: j_beg_list(:)
+         integer, allocatable, intent(out) :: j_end_list(:)
+
+         real(dp) :: estimated_memory_in_Gbytes
+         real(dp) :: bytes_per_pair
+         real(dp) :: bytes_per_site
+         real(dp) :: mem_ratio
+         real(dp) :: pairs_per_chunk
+         integer :: n_sites
+         integer :: n_atom_pairs
+         integer :: k_max
+         integer :: n_chunks
+         integer :: i
+         integer :: j
+         integer :: k
+         integer :: k2
+         integer :: i_chunk
+         integer :: n_atom_pairs_in
+
+#endif
+         n_sites = size(n_neigh)
+         n_atom_pairs = size(rjs)
+
+         k = 0
+         n_atom_pairs_in = 0
+         do i = 1, n_sites
+            do j = 1, n_neigh(i)
+               k = k + 1
+               if (rjs(k) < rcut) then
+                  n_atom_pairs_in = n_atom_pairs_in + 1
+               end if
+            end do
          end do
-      end do
 
-      k_max = 1 + l_max*(l_max + 1)/2 + l_max
+         k_max = 1 + l_max*(l_max + 1)/2 + l_max
 !   What the descriptor path will actually allocate for these pairs and sites,
 !   enumerated in soap_batch_memory_model rather than folded into one constant.
-      call soap_batch_memory_model(l_max, n_max, n_soap, n_species, bytes_per_pair, bytes_per_site)
-      estimated_memory_in_Gbytes = SOAP_BATCH_SAFETY* &
-                                   (dfloat(n_atom_pairs_in)*bytes_per_pair &
-                                    + dfloat(n_sites)*bytes_per_site)/1024.d0**3
-      mem_ratio = estimated_memory_in_Gbytes/max_Gbytes_per_process
+         call soap_batch_memory_model(l_max, n_max, n_soap, n_species, bytes_per_pair, bytes_per_site)
+         estimated_memory_in_Gbytes = SOAP_BATCH_SAFETY* &
+                                      (dfloat(n_atom_pairs_in)*bytes_per_pair &
+                                       + dfloat(n_sites)*bytes_per_site)/1024.d0**3
+         mem_ratio = estimated_memory_in_Gbytes/max_Gbytes_per_process
+#ifdef _GPU
+         n_chunks = n_batches
+#else
+         n_chunks = ceiling(mem_ratio)
+#endif
+         if (n_chunks > n_sites) then
+            n_chunks = n_sites
+         end if
 
-      n_chunks = ceiling(mem_ratio)
-      if (n_chunks > n_sites) then
-         n_chunks = n_sites
-      end if
+         if (n_chunks > 0) &
+            pairs_per_chunk = dfloat(n_atom_pairs_in)/dfloat(n_chunks)
 
-      if (n_chunks > 0) &
-         pairs_per_chunk = dfloat(n_atom_pairs_in)/dfloat(n_chunks)
+         allocate (i_beg_list(1:n_chunks))
+         allocate (i_end_list(1:n_chunks))
+         allocate (j_beg_list(1:n_chunks))
+         allocate (j_end_list(1:n_chunks))
 
-      allocate (i_beg_list(1:n_chunks))
-      allocate (i_end_list(1:n_chunks))
-      allocate (j_beg_list(1:n_chunks))
-      allocate (j_end_list(1:n_chunks))
+         if (n_chunks == 0) then
+            return
+         end if
 
-      if (n_chunks == 0) then
-         return
-      end if
+         i_beg_list(1) = 1
+         j_beg_list(1) = 1
+         i_end_list(n_chunks) = n_sites
+         j_end_list(n_chunks) = n_atom_pairs
 
-      i_beg_list(1) = 1
-      j_beg_list(1) = 1
-      i_end_list(n_chunks) = n_sites
-      j_end_list(n_chunks) = n_atom_pairs
+         if (n_chunks == 1) then
+            return
+         end if
 
-      if (n_chunks == 1) then
-         return
-      end if
-
-      k = 0
-      k2 = 0
-      i_chunk = 1
-      do i = 1, n_sites
-         do j = 1, n_neigh(i)
-            k = k + 1
-            if (rjs(k) < rcut) then
-               k2 = k2 + 1
+         k = 0
+         k2 = 0
+         i_chunk = 1
+         do i = 1, n_sites
+            do j = 1, n_neigh(i)
+               k = k + 1
+               if (rjs(k) < rcut) then
+                  k2 = k2 + 1
+               end if
+            end do
+            if (k2 >= int(float(i_chunk)*pairs_per_chunk)) then
+               i_end_list(i_chunk) = i
+               j_end_list(i_chunk) = k
+               i_chunk = i_chunk + 1
+               i_beg_list(i_chunk) = i + 1
+               j_beg_list(i_chunk) = k + 1
+               if (i_chunk == n_chunks) then
+                  exit
+               end if
             end if
          end do
-         if (k2 >= int(float(i_chunk)*pairs_per_chunk)) then
-            i_end_list(i_chunk) = i
-            j_end_list(i_chunk) = k
-            i_chunk = i_chunk + 1
-            i_beg_list(i_chunk) = i + 1
-            j_beg_list(i_chunk) = k + 1
-            if (i_chunk == n_chunks) then
-               exit
-            end if
-         end if
-      end do
-      return
+         return
 
-   end subroutine
+      end subroutine
+#ifdef _GPU
+      subroutine get_number_of_atom_pairs(n_neigh, rjs, rcut, l_max, n_max, n_soap, n_species, &
+                                          max_Gbytes_per_process, &
+                                          i_beg_list, i_end_list, j_beg_list, j_end_list)
+
+         implicit none
+
+         real(dp), intent(in) :: rjs(:)
+         real(dp), intent(in) :: rcut
+         real(dp), intent(in) :: max_Gbytes_per_process
+         integer, intent(in) :: n_neigh(:)
+         integer, intent(in) :: l_max
+         integer, intent(in) :: n_max
+         integer, intent(in) :: n_soap
+         integer, intent(in) :: n_species
+
+         integer, allocatable, intent(out) :: i_beg_list(:)
+         integer, allocatable, intent(out) :: i_end_list(:)
+         integer, allocatable, intent(out) :: j_beg_list(:)
+         integer, allocatable, intent(out) :: j_end_list(:)
+
+         real(dp) :: estimated_memory_in_Gbytes
+         real(dp) :: bytes_per_pair
+         real(dp) :: bytes_per_site
+         real(dp) :: mem_ratio
+         real(dp) :: pairs_per_chunk
+         integer :: n_sites
+         integer :: n_atom_pairs
+         integer :: k_max
+         integer :: n_chunks
+         integer :: i
+         integer :: j
+         integer :: k
+         integer :: k2
+         integer :: i_chunk
+         integer :: n_atom_pairs_in
+
+         n_sites = size(n_neigh)
+         n_atom_pairs = size(rjs)
+
+         k = 0
+         n_atom_pairs_in = 0
+         do i = 1, n_sites
+            do j = 1, n_neigh(i)
+               k = k + 1
+               if (rjs(k) < rcut) then
+                  n_atom_pairs_in = n_atom_pairs_in + 1
+               end if
+            end do
+         end do
+
+         k_max = 1 + l_max*(l_max + 1)/2 + l_max
+!   What the descriptor path will actually allocate for these pairs and sites,
+!   enumerated in soap_batch_memory_model rather than folded into one constant.
+         call soap_batch_memory_model(l_max, n_max, n_soap, n_species, bytes_per_pair, bytes_per_site)
+         estimated_memory_in_Gbytes = SOAP_BATCH_SAFETY* &
+                                      (dfloat(n_atom_pairs_in)*bytes_per_pair &
+                                       + dfloat(n_sites)*bytes_per_site)/1024.d0**3
+         mem_ratio = estimated_memory_in_Gbytes/max_Gbytes_per_process
+         n_chunks = ceiling(mem_ratio)
+         if (n_chunks > n_sites) then
+            n_chunks = n_sites
+         end if
+
+         pairs_per_chunk = float(n_atom_pairs_in)/float(n_chunks)
+
+         allocate (i_beg_list(1:n_chunks))
+         allocate (i_end_list(1:n_chunks))
+         allocate (j_beg_list(1:n_chunks))
+         allocate (j_end_list(1:n_chunks))
+
+         if (n_chunks == 0) then
+            return
+         end if
+
+         i_beg_list(1) = 1
+         j_beg_list(1) = 1
+         i_end_list(n_chunks) = n_sites
+         j_end_list(n_chunks) = n_atom_pairs
+
+         if (n_chunks == 1) then
+            return
+         end if
+
+         k = 0
+         k2 = 0
+         i_chunk = 1
+         do i = 1, n_sites
+            do j = 1, n_neigh(i)
+               k = k + 1
+               if (rjs(k) < rcut) then
+                  k2 = k2 + 1
+               end if
+            end do
+            if (k2 >= int(float(i_chunk)*pairs_per_chunk)) then
+               i_end_list(i_chunk) = i
+               j_end_list(i_chunk) = k
+               i_chunk = i_chunk + 1
+               i_beg_list(i_chunk) = i + 1
+               j_beg_list(i_chunk) = k + 1
+               if (i_chunk == n_chunks) then
+                  exit
+               end if
+            end if
+         end do
+         return
+
+      end subroutine
+#endif
 
 !
 ! This subroutine returns the fractional coordinates from a list of
 ! Cartesian positions. This subroutine does NOT carry out unit cell
 ! wrapping. Wrapped Cartesian coordinates should be provided if wrapped
 ! fractional coordinates are wanted.
-   subroutine get_fractional_coordinates(pos, a, b, c, frac)
+      subroutine get_fractional_coordinates(pos, a, b, c, frac)
 
-      implicit none
+         implicit none
 
-      real(dp), intent(in) :: pos(:, :)
-      real(dp), intent(in) :: a(1:3)
-      real(dp), intent(in) :: b(1:3)
-      real(dp), intent(in) :: c(1:3)
-      real(dp), intent(out) :: frac(1:3, 1:size(pos, 2))
-      real(dp) :: L(1:3)
-      real(dp) :: d_tol = 1.d-6
-      real(dp) :: mat(1:3, 1:3)
-      real(dp) :: md
-      real(dp), save :: a0(1:3) = 0.d0
-      real(dp), save :: b0(1:3) = 0.d0
-      real(dp), save :: c0(1:3) = 0.d0
-      real(dp), save :: mat_inv(1:3, 1:3) = 0.d0
-      integer :: i
-      integer :: atom
-      integer :: n_atoms
-      logical :: lattice_check_a(1:3)
-      logical :: lattice_check_b(1:3)
-      logical :: lattice_check_c(1:3)
+         real(dp), intent(in) :: pos(:, :)
+         real(dp), intent(in) :: a(1:3)
+         real(dp), intent(in) :: b(1:3)
+         real(dp), intent(in) :: c(1:3)
+         real(dp), intent(out) :: frac(1:3, 1:size(pos, 2))
+         real(dp) :: L(1:3)
+         real(dp) :: d_tol = 1.d-6
+         real(dp) :: mat(1:3, 1:3)
+         real(dp) :: md
+         real(dp), save :: a0(1:3) = 0.d0
+         real(dp), save :: b0(1:3) = 0.d0
+         real(dp), save :: c0(1:3) = 0.d0
+         real(dp), save :: mat_inv(1:3, 1:3) = 0.d0
+         integer :: i
+         integer :: atom
+         integer :: n_atoms
+         logical :: lattice_check_a(1:3)
+         logical :: lattice_check_b(1:3)
+         logical :: lattice_check_c(1:3)
 
-      n_atoms = size(pos, 2)
+         n_atoms = size(pos, 2)
 
-      if (dabs(a(2)) < d_tol .and. dabs(a(3)) < d_tol .and. &
-          dabs(b(1)) < d_tol .and. dabs(b(3)) < d_tol .and. &
-          dabs(c(1)) < d_tol .and. dabs(c(2)) < d_tol) then
+         if (dabs(a(2)) < d_tol .and. dabs(a(3)) < d_tol .and. &
+             dabs(b(1)) < d_tol .and. dabs(b(3)) < d_tol .and. &
+             dabs(c(1)) < d_tol .and. dabs(c(2)) < d_tol) then
 !     Fast solution for orthorhombic cells
-         L = (/a(1), b(2), c(3)/)
-         do atom = 1, n_atoms
-            do i = 1, 3
-               frac(i, atom) = pos(i, atom)/L(i)
+            L = (/a(1), b(2), c(3)/)
+            do atom = 1, n_atoms
+               do i = 1, 3
+                  frac(i, atom) = pos(i, atom)/L(i)
+               end do
             end do
-         end do
-      else
+         else
 !     Slow solution for other unit cells
-         lattice_check_a = (a /= a0)
-         lattice_check_b = (b /= b0)
-         lattice_check_c = (c /= c0)
-         if (any(lattice_check_a) .or. any(lattice_check_b) .or. any(lattice_check_c)) then
-            a0 = a
-            b0 = b
-            c0 = c
+            lattice_check_a = (a /= a0)
+            lattice_check_b = (b /= b0)
+            lattice_check_c = (c /= c0)
+            if (any(lattice_check_a) .or. any(lattice_check_b) .or. any(lattice_check_c)) then
+               a0 = a
+               b0 = b
+               c0 = c
 !       We construct our matrix to get the MIC only if the lattice vectors have changed
-            mat(1:3, 1) = a(1:3)
-            mat(1:3, 2) = b(1:3)
-            mat(1:3, 3) = c(1:3)
+               mat(1:3, 1) = a(1:3)
+               mat(1:3, 2) = b(1:3)
+               mat(1:3, 3) = c(1:3)
 !       We compute the inverse of this matrix analytically
            md = -mat(1,3)*mat(3,1)*mat(2,2) + mat(2,1)*mat(1,3)*mat(3,2) + mat(1,2)*mat(3,1)*mat(2,3) - mat(1,1)*mat(2,3)*mat(3,2) &
-                 - mat(1, 2)*mat(2, 1)*mat(3, 3) + mat(1, 1)*mat(2, 2)*mat(3, 3)
-            mat_inv(1, 1) = mat(2, 2)*mat(3, 3) - mat(2, 3)*mat(3, 2)
-            mat_inv(1, 2) = mat(1, 3)*mat(3, 2) - mat(1, 2)*mat(3, 3)
-            mat_inv(1, 3) = mat(1, 2)*mat(2, 3) - mat(1, 3)*mat(2, 2)
-            mat_inv(2, 1) = mat(2, 3)*mat(3, 1) - mat(2, 1)*mat(3, 3)
-            mat_inv(2, 2) = mat(1, 1)*mat(3, 3) - mat(1, 3)*mat(3, 1)
-            mat_inv(2, 3) = mat(1, 3)*mat(2, 1) - mat(1, 1)*mat(2, 3)
-            mat_inv(3, 1) = mat(2, 1)*mat(3, 2) - mat(2, 2)*mat(3, 1)
-            mat_inv(3, 2) = mat(1, 2)*mat(3, 1) - mat(1, 1)*mat(3, 2)
-            mat_inv(3, 3) = mat(1, 1)*mat(2, 2) - mat(1, 2)*mat(2, 1)
-            mat_inv = mat_inv/md
+                    - mat(1, 2)*mat(2, 1)*mat(3, 3) + mat(1, 1)*mat(2, 2)*mat(3, 3)
+               mat_inv(1, 1) = mat(2, 2)*mat(3, 3) - mat(2, 3)*mat(3, 2)
+               mat_inv(1, 2) = mat(1, 3)*mat(3, 2) - mat(1, 2)*mat(3, 3)
+               mat_inv(1, 3) = mat(1, 2)*mat(2, 3) - mat(1, 3)*mat(2, 2)
+               mat_inv(2, 1) = mat(2, 3)*mat(3, 1) - mat(2, 1)*mat(3, 3)
+               mat_inv(2, 2) = mat(1, 1)*mat(3, 3) - mat(1, 3)*mat(3, 1)
+               mat_inv(2, 3) = mat(1, 3)*mat(2, 1) - mat(1, 1)*mat(2, 3)
+               mat_inv(3, 1) = mat(2, 1)*mat(3, 2) - mat(2, 2)*mat(3, 1)
+               mat_inv(3, 2) = mat(1, 2)*mat(3, 1) - mat(1, 1)*mat(3, 2)
+               mat_inv(3, 3) = mat(1, 1)*mat(2, 2) - mat(1, 2)*mat(2, 1)
+               mat_inv = mat_inv/md
+            end if
+            do atom = 1, n_atoms
+               frac(1:3, atom) = matmul(mat_inv, pos(1:3, atom))
+            end do
          end if
-         do atom = 1, n_atoms
-            frac(1:3, atom) = matmul(mat_inv, pos(1:3, atom))
+
+         return
+      end subroutine get_fractional_coordinates
+
+#ifdef _GPU
+      subroutine get_gpu_batches(n_neigh, rjs, rcut, n_chunks, estimated_memory_in_Gbytes, max_Gbytes_per_process, &
+                                 i_beg_list, i_end_list, j_beg_list, j_end_list)
+
+         implicit none
+
+         real(dp), intent(in) :: rjs(:)
+         real(dp), intent(in) :: rcut
+         real(dp), intent(in) :: max_Gbytes_per_process
+         real(dp), intent(in) :: estimated_memory_in_Gbytes
+         integer, intent(in) :: n_neigh(:)
+
+         integer, allocatable, intent(out) :: i_beg_list(:)
+         integer, allocatable, intent(out) :: i_end_list(:)
+         integer, allocatable, intent(out) :: j_beg_list(:)
+         integer, allocatable, intent(out) :: j_end_list(:)
+
+         real(dp) :: mem_ratio
+         real(dp) :: pairs_per_chunk
+         integer :: n_sites
+         integer :: n_atom_pairs
+         integer :: k_max
+         integer :: n_chunks
+         integer :: i
+         integer :: j
+         integer :: k
+         integer :: k2
+         integer :: i_chunk
+         integer :: n_atom_pairs_in
+
+         n_sites = size(n_neigh)
+         n_atom_pairs = size(rjs)
+
+         k = 0
+         n_atom_pairs_in = 0
+         do i = 1, n_sites
+            do j = 1, n_neigh(i)
+               k = k + 1
+               if (rjs(k) < rcut) then
+                  n_atom_pairs_in = n_atom_pairs_in + 1
+               end if
+            end do
          end do
-      end if
 
-      return
-   end subroutine get_fractional_coordinates
+         ! !   This is a conservative estimate of the maximum memory that this run will need
 
-end module neighbors
+         ! !
+         ! estimated_memory_in_Gbytes = dfloat(n_atom_pairs_in) * 150.d0 / 1024.d0**3
+         mem_ratio = estimated_memory_in_Gbytes/max_Gbytes_per_process
+!    n_chunks = ceiling(mem_ratio)
+         if (n_chunks > n_sites) then
+            n_chunks = n_sites
+         end if
+
+         pairs_per_chunk = dfloat(n_atom_pairs_in)/dfloat(n_chunks)
+
+         allocate (i_beg_list(1:n_chunks))
+         allocate (i_end_list(1:n_chunks))
+         allocate (j_beg_list(1:n_chunks))
+         allocate (j_end_list(1:n_chunks))
+
+         if (n_chunks == 0) then
+            return
+         end if
+
+         i_beg_list(1) = 1
+         j_beg_list(1) = 1
+         i_end_list(n_chunks) = n_sites
+         j_end_list(n_chunks) = n_atom_pairs
+
+         if (n_chunks == 1) then
+            return
+         end if
+
+         k = 0
+         k2 = 0
+         i_chunk = 1
+         do i = 1, n_sites
+            do j = 1, n_neigh(i)
+               k = k + 1
+               if (rjs(k) < rcut) then
+                  k2 = k2 + 1
+               end if
+            end do
+            if (k2 >= int(float(i_chunk)*pairs_per_chunk)) then
+               i_end_list(i_chunk) = i
+               j_end_list(i_chunk) = k
+               i_chunk = i_chunk + 1
+               i_beg_list(i_chunk) = i + 1
+               j_beg_list(i_chunk) = k + 1
+               if (i_chunk == n_chunks) then
+                  exit
+               end if
+            end if
+         end do
+         return
+
+      end subroutine get_gpu_batches
+
+      subroutine estimate_max_exp_forces_device_memory_usage(n_sites, n_pairs, n_dim_partial, n_samples, n_samples_sf, total, &
+                                                             be_verbose)
+         implicit none
+         integer :: n_sites
+         integer :: nk
+         integer :: n_samples
+         integer :: n_samples_sf
+         integer :: n_pairs
+         integer :: n_dim_partial
+         real(dp), intent(inout) :: total
+!     Not initialised here: an initialiser in a declaration is an implicit SAVE,
+!     and these are running sums. They are zeroed on entry instead.
+         real(dp) :: total_exp
+         real(dp) :: total_standard
+         real(dp) :: nk_int
+         real(dp) :: nk_float
+         real(dp) :: Gk
+         real(dp) :: dermat
+         real(dp) :: sf
+         real(dp) :: fi
+         real(dp) :: pref
+         real(dp) :: xyz
+         real(dp) :: forces
+         real(dp) :: neigh_list
+         real(dp) :: to_gb
+!     Off unless asked. This is called once per snapshot on the batched path and
+!     prints twenty lines; useful the first time, noise for the rest of an MD
+!     run, and multiplied by every MPI rank.
+         logical, intent(in), optional :: be_verbose
+         logical :: verbose
+
+         verbose = .false.
+         if (present(be_verbose)) verbose = be_verbose
+
+         total_exp = 0.d0
+         total_standard = 0.d0
+
+         total = 0.d0
+
+         nk = n_pairs
+
+         total = 0.d0
+
+         to_gb = 1/dfloat(1024**3)
+
+         neigh_list = dfloat(n_pairs)*4.d0*to_gb
+
+         forces = dfloat(n_sites)*8.d0*to_gb
+         nk_int = dfloat(nk)*4.d0*to_gb
+         nk_float = dfloat(nk)*8.d0*to_gb
+         sf = dfloat(n_samples*n_samples_sf)*8.d0*to_gb
+
+         pref = dfloat(n_samples_sf)*8.d0*to_gb
+         Gk = n_samples*nk_float
+         dermat = n_samples_sf*nk_float
+         fi = 3*nk_float
+         xyz = 3*nk_float
+
+         if (verbose) write (*, '(A)') "> Estimating memory for normal allocations "
+         total_standard = total_standard + neigh_list
+         if (verbose) write (*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device neigh_list_d  ", neigh_list, " Gb"
+
+         total_standard = total_standard + neigh_list
+         if (verbose) write (*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device neigh_spec_d  ", neigh_list, " Gb"
+
+         total_standard = total_standard + neigh_list*2.d0*3.d0
+         if (verbose) write (*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device xyz_d         ", neigh_list*2.d0*3.d0, " Gb"
+
+         total_standard = total_standard + neigh_list*2.d0
+         if (verbose) write (*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device rjs_d         ", neigh_list*2.d0, " Gb"
+
+         total_standard = total_standard + neigh_list*2.d0
+         if (verbose) write (*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device rjs_d         ", neigh_list*2.d0, " Gb"
+
+         total_standard = total_standard + forces/3.d0
+         if (verbose) write (*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device species_d     ", forces/3.d0, " Gb"
+
+         if (verbose) write (*, '(A)') "> Estimating memory xrd and pdf calculation"
+         total_exp = total_exp + nk_int*n_dim_partial
+         if (verbose) write (*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device k_index_d     ", nk_int, " Gb"
+
+         total_exp = total_exp + nk_int*n_dim_partial
+         if (verbose) write (*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device j_index_d     ", nk_int, " Gb"
+
+         total_exp = total_exp + 3.d0*Gk
+         if (verbose) write (*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device      Gk_d     ", Gk, " Gb"
+         if (verbose) write (*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device     Gka_d     ", Gk, " Gb"
+
+         if (verbose) write (*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device par_pdf_d     ", Gk, " Gb"
+
+         total_exp = total_exp + dermat
+         if (verbose) write (*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device  dermat_d     ", dermat, " Gb"
+
+         total_exp = total_exp + fi
+         if (verbose) write (*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device      fi_d     ", fi, " Gb"
+
+         total_exp = total_exp + xyz*n_dim_partial
+         if (verbose) write (*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device     xyz_d     ", xyz, " Gb"
+
+         total_exp = total_exp + forces
+         if (verbose) write (*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device   forces_d    ", forces, " Gb"
+
+         total_exp = total_exp + pref
+         if (verbose) write (*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device    pref_d     ", pref, " Gb"
+
+         total_exp = total_exp + pref
+         if (verbose) write (*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device  scat_f_d     ", pref, " Gb"
+
+         total_exp = total_exp + sf
+         if (verbose) write (*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device  sinc_f_d     ", sf, " Gb"
+
+         total = total + total_exp + total_standard
+         if (verbose) write (*, '(A,1X,F10.6,1X,A)') "--- Total from standard neigh:  ", total_standard, " Gb"
+         if (verbose) write (*, '(A,1X,F10.6,1X,A)') "--- Total from exp forces imp:  ", total_exp, " Gb"
+         if (verbose) write (*, '(A,1X,F10.6,1X,A)') "--- Total device memory usage:  ", total, " Gb"
+
+      end subroutine estimate_max_exp_forces_device_memory_usage
+#endif
+
+      end module neighbors

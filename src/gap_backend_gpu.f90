@@ -1,0 +1,643 @@
+! Copyright (c) 2020-2026 by Albert Bartok and Miguel Caro
+!
+! The two-body, core-potential and three-body contributions: the GPU
+! implementation of the gap_backend seam. The CPU implementation is
+! gap_backend_cpu.f90 on the master branch. Same module name, same three
+! contribution procedures, same argument lists; the Makefile compiles one.
+!
+! The point of this file is what is NOT in its interface. These three
+! computations were internal procedures of turbogap.f90 reaching ten device
+! buffers by host association -- rjs_d, xyz_d, species_d, neighbors_list_d,
+! neighbor_species_d, n_neigh_d, alphas_d, qs_d, cutoff_d and the stream. The
+! driver allocated them, the procedures used them, the driver freed them, and
+! none of that could be expressed in an interface a CPU build could also
+! satisfy. They are module state here, so the driver never names a device
+! pointer and the argument lists match the CPU side exactly.
+!
+! gap_backend_begin uploads the neighbour data once for all three calls, which
+! is what the driver used to do inline; gap_backend_end frees it. On the CPU
+! both are empty.
+!
+! alphas_d is declared here rather than shared with the driver on purpose. The
+! driver reuses one alphas_d for the SOAP path and the 2b/3b path -- separate
+! allocate/upload/free cycles holding different data through one name. That is
+! the reuse pattern that hid bug 5 (handoff section 4); the backend owning its
+! own removes one instance of it.
+module gap_backend
+
+   use kinds
+
+   use types
+   use gap
+   use timing
+   use F_B_C
+   use iso_c_binding
+
+   implicit none
+
+   private
+   public :: gap_backend_init
+   public :: gap_backend_begin
+   public :: gap_backend_end
+   public :: add_2b_contribution
+   public :: add_core_pot_contribution
+   public :: add_3b_contribution
+
+!   Device state owned by this module. Named as in the driver so the lifted
+!   bodies below are unchanged.
+   type(c_ptr) :: n_neigh_d
+   type(c_ptr) :: species_d
+   type(c_ptr) :: neighbor_species_d
+   type(c_ptr) :: rjs_d
+   type(c_ptr) :: xyz_d
+   type(c_ptr) :: neighbors_list_d
+   type(c_ptr) :: alphas_d
+   type(c_ptr) :: cutoff_d
+   type(c_ptr) :: qs_d
+   type(c_ptr) :: gpu_stream
+
+contains
+
+! Take the stream the backend launches on from gpu_context, so the call itself
+! carries no device handle and the CPU branch can offer the same name with an
+! empty body. Called once from the driver, straight after gpu_context_init.
+   subroutine gap_backend_init()
+      use gpu_context, only: ctx_stream => gpu_stream
+      implicit none
+      gpu_stream = ctx_stream
+   end subroutine gap_backend_init
+
+! Upload the neighbour data once for all three contribution calls.
+   subroutine gap_backend_begin(params, rjs, xyz, n_neigh, species, neighbor_species, &
+                                neighbors_list, i_beg, i_end, j_beg, j_end)
+
+      implicit none
+      type(input_parameters), intent(inout) :: params
+      real(dp), intent(in), allocatable, target :: rjs(:)
+      real(dp), intent(in), allocatable, target :: xyz(:, :)
+      integer, intent(in), allocatable, target :: n_neigh(:)
+      integer, intent(in), allocatable, target :: species(:)
+      integer, intent(in), allocatable, target :: neighbor_species(:)
+      integer, intent(in), allocatable, target :: neighbors_list(:)
+      integer, intent(in) :: i_beg
+      integer, intent(in) :: i_end
+      integer, intent(in) :: j_beg
+      integer, intent(in) :: j_end
+
+      integer(c_size_t) :: st_n_sites_int
+      integer(c_size_t) :: st_n_atom_pairs_int
+      integer(c_size_t) :: st_n_atom_pairs_double
+      integer(c_size_t) :: size_maxnp_bytes
+      integer :: n_sites
+
+      n_sites = i_end - i_beg + 1
+
+!   i_end, not (i_end - i_beg + 1). This is the fix for the multi-rank crash.
+!
+!   The copy starts at c_loc(n_neigh), i.e. element 1 of the WHOLE array, and
+!   the kernels index it with the GLOBAL site number:
+!
+!       int i_site = i_beg - 1 + threadIdx.x + blockIdx.x * blockDim.x;
+!       ... species_d[i_site] ... n_neigh_d[i]  for i in [i_beg-1, i_site)
+!
+!   so the buffer has to reach index i_end - 1, not hold i_end - i_beg + 1
+!   elements. The two agree only when i_beg == 1 -- which is rank 0, and only
+!   rank 0. Every other rank read past the end of the allocation, and
+!   compute-sanitizer put it exactly there:
+!
+!       Invalid __global__ read of size 4 bytes
+!         at kernel_get_2b+0xd0 by thread (32,0,0) in block (1,0,0)
+!         Access to 0x7da1bef90 is out of bounds
+!         and is 112 bytes before the nearest allocation
+!
+!   Note the shape of the failure: it read BEFORE a neighbouring allocation, so
+!   with a different allocator layout it would silently read another buffer's
+!   data instead of faulting. A single-rank test can never see any of this.
+!
+!   The three buffers below already do exactly this -- j_end, the global top
+!   pair index, not the rank's pair count -- as does neighbors_list_d with
+!   size(neighbors_list). These two were the only ones written the other way.
+      st_n_sites_int = i_end*sizeof(n_neigh(1))
+      call gpu_malloc_async(n_neigh_d, st_n_sites_int, gpu_stream)
+      call cpy_htod(c_loc(n_neigh), n_neigh_d, st_n_sites_int, gpu_stream)
+      call gpu_malloc_async(species_d, st_n_sites_int, gpu_stream)
+      call cpy_htod(c_loc(species), species_d, st_n_sites_int, gpu_stream)
+      ! Changed n_atom_pairs to n_atom_pairs_by_rank
+      st_n_atom_pairs_int = j_end*sizeof(neighbor_species(1))
+      call gpu_malloc_async(neighbor_species_d, st_n_atom_pairs_int, gpu_stream)
+      call cpy_htod(c_loc(neighbor_species), neighbor_species_d, st_n_atom_pairs_int, gpu_stream)
+      st_n_atom_pairs_double = j_end*sizeof(rjs(1))
+      call gpu_malloc_async(rjs_d, st_n_atom_pairs_double, gpu_stream)
+      call cpy_htod(c_loc(rjs), rjs_d, st_n_atom_pairs_double, gpu_stream)
+      call gpu_malloc_async(xyz_d, 3*st_n_atom_pairs_double, gpu_stream)
+      call cpy_htod(c_loc(xyz), xyz_d, 3*st_n_atom_pairs_double, gpu_stream)
+
+      size_maxnp_bytes = size(neighbors_list)*c_int
+      call gpu_malloc_async(neighbors_list_d, size_maxnp_bytes, gpu_stream)
+      call cpy_htod(c_loc(neighbors_list), neighbors_list_d, size_maxnp_bytes, gpu_stream)
+
+   end subroutine gap_backend_begin
+
+   subroutine gap_backend_end()
+      implicit none
+
+      call gpu_free_async(species_d, gpu_stream)
+      call gpu_free_async(n_neigh_d, gpu_stream)
+      call gpu_free_async(neighbor_species_d, gpu_stream)
+      call gpu_free_async(rjs_d, gpu_stream)
+      call gpu_free_async(xyz_d, gpu_stream)
+      call gpu_free_async(neighbors_list_d, gpu_stream)
+
+   end subroutine gap_backend_end
+
+! Accumulate the two-body energies, forces and virial on the GPU.
+   subroutine add_2b_contribution(n_distance_2b, distance_2b_hypers, &
+                                  params, rjs, xyz, n_neigh, species, neighbor_species, &
+                                  i_beg, i_end, j_beg, j_end, this_energies, this_forces, this_virial, &
+                                  energies_2b, forces_2b, virial_2b, time)
+
+      implicit none
+      integer, intent(in) :: n_distance_2b
+      type(distance_2b), allocatable, intent(inout), target :: distance_2b_hypers(:)
+      type(input_parameters), intent(inout) :: params
+      real(dp), intent(in), allocatable, target :: rjs(:)
+      real(dp), intent(in), allocatable, target :: xyz(:, :)
+      integer, intent(in), allocatable, target :: n_neigh(:)
+      integer, intent(in), allocatable, target :: species(:)
+      integer, intent(in), allocatable, target :: neighbor_species(:)
+      integer, intent(in) :: i_beg
+      integer, intent(in) :: i_end
+      integer, intent(in) :: j_beg
+      integer, intent(in) :: j_end
+      real(dp), intent(inout), allocatable, target :: this_energies(:)
+      real(dp), intent(inout), allocatable, target :: this_forces(:, :)
+      real(dp), intent(inout), target :: this_virial(1:3, 1:3)
+      real(dp), intent(inout), allocatable, target :: energies_2b(:)
+      real(dp), intent(inout), allocatable, target :: forces_2b(:, :)
+      real(dp), intent(inout), target :: virial_2b(1:3, 1:3)
+      type(times_t), intent(inout) :: time
+      type(c_ptr) :: energies_2b_d
+      type(c_ptr) :: forces_2b_d
+      type(c_ptr) :: virial_2b_d
+      integer :: i
+      integer :: j
+      integer :: sp1
+      integer :: sp2
+      integer :: n_sparse
+      integer(c_size_t) :: st_n_sites_double
+      integer(c_size_t) :: st_n_sparse_double
+      integer(c_size_t) :: st_virial
+      logical(c_bool) :: c_do_forces
+      integer :: n_sites
+      real(dp) :: t1
+      real(dp) :: t2
+
+      n_sites = i_end - i_beg + 1
+      c_do_forces = logical(params%do_forces, kind=c_bool)
+!   These two were set in the 2b procedure and read by the other two through
+!   host association -- an undocumented ordering dependency between the three,
+!   which is exactly what a shared host scope hides. Each computes its own now.
+      st_n_sites_double = int(n_sites, c_size_t)*c_double
+      st_virial = int(9, c_size_t)*c_double
+
+      if (n_distance_2b == 0) return
+
+      call time_start(time%gap_2b, "2b")
+
+!   size(energies_2b), not the rank's site count. Same defect as the one fixed
+!   in gap_backend_begin, one layer along and on the OUTPUT side.
+!
+!   kernel_get_2b writes energies_d[i_site] and forces_d[3*i_site + l] with the
+!   GLOBAL site index, and the host arrays it is copied to and from --
+!   energies_2b, forces_2b, this_energies, this_forces -- are allocated
+!   (1:n_sites) over the WHOLE system on every rank (turbogap.f90). Only the
+!   device buffer was sized by (i_end - i_beg + 1), so on any rank but the first
+!   the kernel wrote past the end of it and the read-back took the wrong slice.
+!
+!   Sizing from the host array rather than from a count means the buffer cannot
+!   drift from the thing it is copied to. add_3b_contribution has always done
+!   this (size(n_neigh), size(forces,2)); 2b and core_pot were the two that did
+!   not.
+      st_n_sites_double = size(energies_2b)*sizeof(energies_2b(1))
+      call gpu_malloc_async(energies_2b_d, st_n_sites_double, gpu_stream)
+      call cpy_htod(c_loc(energies_2b), energies_2b_d, st_n_sites_double, gpu_stream)
+      call gpu_malloc_async(forces_2b_d, 3*st_n_sites_double, gpu_stream)
+      call cpy_htod(c_loc(forces_2b), forces_2b_d, 3*st_n_sites_double, gpu_stream)
+      st_virial = 9*sizeof(virial_2b(1, 1))
+      call gpu_malloc_async(virial_2b_d, st_virial, gpu_stream)
+      call cpy_htod(c_loc(virial_2b), virial_2b_d, st_virial, gpu_stream)
+
+      do i = 1, n_distance_2b
+         !                The kernel filters neighbours by species index, so sp1/sp2
+         !                must be the position of the descriptor's species within
+         !                params%species_types (j), not the descriptor index (i).
+         do j = 1, size(params%species_types)
+         if (distance_2b_hypers(i)%species1 == params%species_types(j)) then
+            sp1 = j
+            exit
+         end if
+         end do
+         do j = 1, size(params%species_types)
+         if (distance_2b_hypers(i)%species2 == params%species_types(j)) then
+            sp2 = j
+            exit
+         end if
+         end do
+
+         n_sparse = distance_2b_hypers(i)%n_sparse
+         st_n_sparse_double = n_sparse*sizeof(distance_2b_hypers(i)%alphas(1))
+         call gpu_malloc_async(alphas_d, st_n_sparse_double, gpu_stream)
+         call cpy_htod(c_loc(distance_2b_hypers(i)%alphas), alphas_d, st_n_sparse_double, gpu_stream)
+         call gpu_malloc_async(cutoff_d, st_n_sparse_double, gpu_stream)
+         call cpy_htod(c_loc(distance_2b_hypers(i)%cutoff), cutoff_d, st_n_sparse_double, gpu_stream)
+         call gpu_malloc_async(qs_d, st_n_sparse_double, gpu_stream)
+         call cpy_htod(c_loc(distance_2b_hypers(i)%Qs(:, 1)), qs_d, st_n_sparse_double, gpu_stream)
+
+         call gpu_get_2b_forces_energies(i_beg, i_end,&
+         & n_sparse, energies_2b_d, 0.0d0, n_neigh_d,&
+         & c_do_forces, forces_2b_d, virial_2b_d,&
+         & rjs_d, distance_2b_hypers(i)%rcut,&
+         & species_d, neighbor_species_d, sp1, sp2,&
+         & 0.5d0, distance_2b_hypers(i)%delta,&
+         & cutoff_d, qs_d, distance_2b_hypers(i)&
+         &%sigma, alphas_d, xyz_d, gpu_stream)
+
+         call gpu_free_async(alphas_d, gpu_stream)
+         call gpu_free_async(cutoff_d, gpu_stream)
+         call gpu_free_async(qs_d, gpu_stream)
+      end do
+
+      !              The kernels accumulate into the device buffers, so after the
+      !              loop these already hold the sum over every 2b descriptor.
+      !              Reading them back inside the loop and adding to the host arrays
+      !              counted each descriptor once more for every later iteration.
+      call cpy_dtoh(energies_2b_d, c_loc(this_energies), st_n_sites_double, gpu_stream)
+      call cpy_dtoh(forces_2b_d, c_loc(this_forces), 3*st_n_sites_double, gpu_stream)
+      call cpy_dtoh(virial_2b_d, c_loc(this_virial), st_virial, gpu_stream)
+
+      call gpu_stream_sync(gpu_stream)
+      energies_2b = energies_2b + this_energies
+      if (params%do_forces) then
+         forces_2b = forces_2b + this_forces
+         virial_2b = virial_2b + this_virial
+      end if
+
+      call gpu_free_async(energies_2b_d, gpu_stream)
+      call gpu_free_async(forces_2b_d, gpu_stream)
+      call gpu_free_async(virial_2b_d, gpu_stream)
+
+!   The bucket wraps the whole routine, not each descriptor.
+!
+!   It used to be started and ended inside the loop, which was only meaningful
+!   while gpu_get_2b_forces_energies ended in a stream synchronise: with that
+!   gone the launch returns immediately and a per-descriptor interval would
+!   measure launch overhead and call it 2b time. Here the interval encloses the
+!   gpu_stream_sync above, so it still measures the kernels -- and it is one
+!   interval per call rather than one per descriptor, which is also what the
+!   NVTX phase table wants.
+      call time_end(time%gap_2b, "2b")
+
+   end subroutine add_2b_contribution
+
+! Accumulate the core-potential energies, forces and virial on the GPU.
+   subroutine add_core_pot_contribution(n_core_pot, core_pot_hypers, &
+                                        params, rjs, xyz, n_neigh, species, neighbor_species, &
+                                        i_beg, i_end, j_beg, j_end, this_energies, this_forces, this_virial, &
+                                        energies_core_pot, forces_core_pot, virial_core_pot, time)
+
+      implicit none
+      integer, intent(in) :: n_core_pot
+      type(core_pot), allocatable, intent(inout), target :: core_pot_hypers(:)
+      type(input_parameters), intent(inout) :: params
+      real(dp), intent(in), allocatable, target :: rjs(:)
+      real(dp), intent(in), allocatable, target :: xyz(:, :)
+      integer, intent(in), allocatable, target :: n_neigh(:)
+      integer, intent(in), allocatable, target :: species(:)
+      integer, intent(in), allocatable, target :: neighbor_species(:)
+      integer, intent(in) :: i_beg
+      integer, intent(in) :: i_end
+      integer, intent(in) :: j_beg
+      integer, intent(in) :: j_end
+      real(dp), intent(inout), allocatable, target :: this_energies(:)
+      real(dp), intent(inout), allocatable, target :: this_forces(:, :)
+      real(dp), intent(inout), target :: this_virial(1:3, 1:3)
+      real(dp), intent(inout), allocatable, target :: energies_core_pot(:)
+      real(dp), intent(inout), allocatable, target :: forces_core_pot(:, :)
+      real(dp), intent(inout), target :: virial_core_pot(1:3, 1:3)
+      type(times_t), intent(inout) :: time
+      type(c_ptr) :: energies_core_pot_d
+      type(c_ptr) :: forces_core_pot_d
+      type(c_ptr) :: virial_core_pot_d
+      type(c_ptr) :: x_d
+      type(c_ptr) :: V_d
+      type(c_ptr) :: dVdx2_d
+      integer :: i
+      integer :: j
+      integer :: sp1
+      integer :: sp2
+      integer :: n_sparse
+      integer(c_size_t) :: st_n_sites_double
+      integer(c_size_t) :: st_n_sparse_double
+      integer(c_size_t) :: st_virial
+      logical(c_bool) :: c_do_forces
+      integer :: n_sites
+      real(dp) :: t1
+      real(dp) :: t2
+
+      n_sites = i_end - i_beg + 1
+      c_do_forces = logical(params%do_forces, kind=c_bool)
+!   These two were set in the 2b procedure and read by the other two through
+!   host association -- an undocumented ordering dependency between the three,
+!   which is exactly what a shared host scope hides. Each computes its own now.
+      st_n_sites_double = int(n_sites, c_size_t)*c_double
+      st_virial = int(9, c_size_t)*c_double
+
+      if (n_core_pot == 0) return
+
+      !        print *, rank, " > Allocating core_pot on gpu "
+!   Global, not rank-local -- see the note in add_2b_contribution. The core
+!   potential kernel indexes energies_d and forces_d exactly as the 2b one does.
+      st_n_sites_double = size(energies_core_pot)*sizeof(energies_core_pot(1))
+      call gpu_malloc_async(energies_core_pot_d, st_n_sites_double, gpu_stream)
+      call cpy_htod(c_loc(energies_core_pot), energies_core_pot_d, st_n_sites_double, gpu_stream)
+      call gpu_malloc_async(forces_core_pot_d, 3*st_n_sites_double, gpu_stream)
+      call cpy_htod(c_loc(forces_core_pot), forces_core_pot_d, 3*st_n_sites_double, gpu_stream)
+      st_virial = 9*sizeof(virial_core_pot(1, 1))
+      call gpu_malloc_async(virial_core_pot_d, st_virial, gpu_stream)
+      call cpy_htod(c_loc(virial_core_pot), virial_core_pot_d, st_virial, gpu_stream)
+
+      !       Loop through core_pot descriptors
+      do i = 1, n_core_pot
+
+         call time_start(time%gap_core_pot, "core_pot")
+
+         n_sparse = core_pot_hypers(i)%n
+         st_n_sparse_double = n_sparse*sizeof(core_pot_hypers(i)%x(1))
+         call gpu_malloc_async(x_d, st_n_sparse_double, gpu_stream)
+         call cpy_htod(c_loc(core_pot_hypers(i)%x), x_d, st_n_sparse_double, gpu_stream)
+         call gpu_malloc_async(V_d, st_n_sparse_double, gpu_stream)
+         call cpy_htod(c_loc(core_pot_hypers(i)%V), V_d, st_n_sparse_double, gpu_stream)
+         call gpu_malloc_async(dVdx2_d, st_n_sparse_double, gpu_stream)
+         call cpy_htod(c_loc(core_pot_hypers(i)%dVdx2), dVdx2_d, st_n_sparse_double, gpu_stream)
+
+!   The kernel filters neighbours by species index, so sp1/sp2 must be the
+!   position of this descriptor's species within params%species_types. They
+!   were never set here: the routine passed whatever add_2b_contribution had
+!   left in the enclosing scope, which is the same defect as bug 3 in section 4
+!   and was fixed there but not here.
+         do j = 1, size(params%species_types)
+            if (core_pot_hypers(i)%species1 == params%species_types(j)) then
+               sp1 = j
+               exit
+            end if
+         end do
+         do j = 1, size(params%species_types)
+            if (core_pot_hypers(i)%species2 == params%species_types(j)) then
+               sp2 = j
+               exit
+            end if
+         end do
+
+         call gpu_get_core_pot_energy_and_forces(i_beg, i_end, c_do_forces, species_d, sp1, sp2, n_neigh_d, neighbor_species_d, &
+                                               rjs_d, n_sparse, x_d, V_d, dVdx2_d, core_pot_hypers(i)%yp1, core_pot_hypers(i)%ypn, &
+                                                 xyz_d, forces_core_pot_d, virial_core_pot_d, energies_core_pot_d, gpu_stream)
+         call gpu_free_async(x_d, gpu_stream)
+         call gpu_free_async(V_d, gpu_stream)
+         call gpu_free_async(dVdx2_d, gpu_stream)
+
+         call time_end(time%gap_core_pot, "core_pot")
+      end do
+
+      !              As for the 2b and 3b terms, the kernel accumulates into the
+      !              device buffers, so the totals are read back only once the loop
+      !              over descriptors has finished.
+      call cpy_dtoh(energies_core_pot_d, c_loc(this_energies), st_n_sites_double, gpu_stream)
+      call cpy_dtoh(forces_core_pot_d, c_loc(this_forces), 3*st_n_sites_double, gpu_stream)
+      call cpy_dtoh(virial_core_pot_d, c_loc(this_virial), st_virial, gpu_stream)
+
+      call gpu_stream_sync(gpu_stream)
+
+      energies_core_pot = energies_core_pot + this_energies
+      if (params%do_forces) then
+         forces_core_pot = forces_core_pot + this_forces
+         virial_core_pot = virial_core_pot + this_virial
+      end if
+
+      call gpu_free_async(energies_core_pot_d, gpu_stream)
+      call gpu_free_async(forces_core_pot_d, gpu_stream)
+      call gpu_free_async(virial_core_pot_d, gpu_stream)
+
+   end subroutine add_core_pot_contribution
+
+! Accumulate the three-body energies, forces and virial on the GPU.
+   subroutine add_3b_contribution(n_angle_3b, angle_3b_hypers, neighbors_list, &
+                                  params, rjs, xyz, n_neigh, species, neighbor_species, &
+                                  i_beg, i_end, j_beg, j_end, this_energies, this_forces, this_virial, &
+                                  forces, energies_3b, forces_3b, virial_3b, time)
+
+      implicit none
+      integer, intent(in) :: n_angle_3b
+      type(angle_3b), allocatable, intent(inout), target :: angle_3b_hypers(:)
+      integer, intent(in), allocatable, target :: neighbors_list(:)
+      type(input_parameters), intent(inout) :: params
+      real(dp), intent(in), allocatable, target :: rjs(:)
+      real(dp), intent(in), allocatable, target :: xyz(:, :)
+      integer, intent(in), allocatable, target :: n_neigh(:)
+      integer, intent(in), allocatable, target :: species(:)
+      integer, intent(in), allocatable, target :: neighbor_species(:)
+      integer, intent(in) :: i_beg
+      integer, intent(in) :: i_end
+      integer, intent(in) :: j_beg
+      integer, intent(in) :: j_end
+      real(dp), intent(inout), allocatable, target :: this_energies(:)
+      real(dp), intent(inout), allocatable, target :: this_forces(:, :)
+      real(dp), intent(inout), target :: this_virial(1:3, 1:3)
+!   Read only for its extent; the 3b kernel sizes a device buffer from it.
+      real(dp), intent(in), allocatable :: forces(:, :)
+      real(dp), intent(inout), allocatable, target :: energies_3b(:)
+      real(dp), intent(inout), allocatable, target :: forces_3b(:, :)
+      real(dp), intent(inout), target :: virial_3b(1:3, 1:3)
+      type(times_t), intent(inout) :: time
+      type(c_ptr) :: energies_3b_d
+      type(c_ptr) :: forces_3b_d
+      type(c_ptr) :: virial_3b_d
+      integer :: i
+      integer :: j
+      integer :: sp1
+      integer :: sp2
+      integer :: n_sparse
+      integer(c_size_t) :: st_n_sites_double
+      integer(c_size_t) :: st_n_sparse_double
+      integer(c_size_t) :: st_virial
+      logical(c_bool) :: c_do_forces
+      integer :: n_sites
+      real(dp) :: t1
+      real(dp) :: t2
+      integer :: k
+      integer :: max_np
+      integer :: sp0_3b
+      integer :: sp1_3b
+      integer :: sp2_3b
+      integer, allocatable, target :: kappas(:)
+      type(c_ptr) :: kappas_array_d
+      character(kind=c_char, len=4) :: c_name_3b
+      integer(c_size_t) :: size_maxnp_bytes
+      integer(c_size_t) :: size_maxnp_qs_bytes
+      integer(c_size_t) :: size_alphas_bytes
+      integer(c_size_t) :: size_energy3b
+      integer(c_size_t) :: size_forces3b
+      integer(c_size_t) :: size_virial3b
+      type(c_ptr) :: sigma_d
+
+      n_sites = i_end - i_beg + 1
+      c_do_forces = logical(params%do_forces, kind=c_bool)
+!   These two were set in the 2b procedure and read by the other two through
+!   host association -- an undocumented ordering dependency between the three,
+!   which is exactly what a shared host scope hides. Each computes its own now.
+      st_n_sites_double = int(n_sites, c_size_t)*c_double
+      st_virial = int(9, c_size_t)*c_double
+
+      if (n_angle_3b == 0) return
+
+      size_energy3b = size(n_neigh)*c_double
+      call gpu_malloc_async(energies_3b_d, size_energy3b, gpu_stream)
+      call gpu_memset_async(energies_3b_d, 0, size_energy3b, gpu_stream)
+      size_forces3b = size(forces, 2)*3*c_double
+      call gpu_malloc_async(forces_3b_d, size_forces3b, gpu_stream)
+      call gpu_memset_async(forces_3b_d, 0, size_forces3b, gpu_stream)
+      size_virial3b = 9*c_double
+      call gpu_malloc_async(virial_3b_d, size_virial3b, gpu_stream)
+      call gpu_memset_async(virial_3b_d, 0, size_virial3b, gpu_stream)
+
+      size_maxnp_bytes = size(n_neigh)*c_int
+      call gpu_malloc_async(kappas_array_d, size_maxnp_bytes, gpu_stream)
+
+!   size(n_neigh), not the rank's site count, and zeroed.
+!
+!   The loop below indexes kappas with the GLOBAL site number i in [i_beg,i_end],
+!   and the cpy_htod two statements down copies size_maxnp_bytes = size(n_neigh)
+!   integers out of it. Allocated (1:i_end-i_beg+1) it was too small for both:
+!   on rank 0 (i_beg = 1) the two agree by accident, and on every other rank the
+!   loop wrote one element past the end of the heap block. That is the
+!   `free(): invalid next size` abort, and gfortran's -fcheck=all names it
+!   outright:
+!
+!       Fortran runtime error: Index '3589' of dimension 1 of array 'kappas'
+!       above upper bound of 3588
+!
+!   Zeroed because only [i_beg,i_end] is filled: the rest is uploaded too, and
+!   uninitialised heap makes a run that differs from itself.
+      allocate (kappas(1:size(n_neigh)))
+      kappas = 0
+
+      k = 0
+      do i = i_beg, i_end
+         kappas(i) = k
+         do j = 1, n_neigh(i)
+            k = k + 1
+         end do
+      end do
+
+      ! do i = 1, size(n_neigh)
+      !    if( i == 1 )then
+      !       kappas( i ) = 0
+      !    else
+      !       kappas( i ) = n_neigh( i-1 ) + kappas( i-1 )
+      !    end if
+      ! end do
+
+      call cpy_htod(c_loc(kappas), kappas_array_d, size_maxnp_bytes, gpu_stream)
+      call gpu_stream_sync(gpu_stream)
+      deallocate (kappas)
+
+      max_np = 0
+      do i = 1, n_angle_3b
+      if (angle_3b_hypers(i)%n_sparse > max_np) then
+         max_np = angle_3b_hypers(i)%n_sparse
+      end if
+      end do
+
+      size_maxnp_bytes = max_np*c_double
+      call gpu_malloc_async(cutoff_d, size_maxnp_bytes, gpu_stream)
+      call gpu_malloc_async(alphas_d, size_maxnp_bytes, gpu_stream)
+      size_maxnp_qs_bytes = 3*size_maxnp_bytes
+      call gpu_malloc_async(qs_d, size_maxnp_qs_bytes, gpu_stream)
+      size_alphas_bytes = 3*c_double
+      call gpu_malloc_async(sigma_d, size_alphas_bytes, gpu_stream)
+
+      !       Loop through angle_3b descriptors
+      do i = 1, n_angle_3b
+         call time_start(time%gap_3b, "3b")
+
+         call cpy_htod(c_loc(angle_3b_hypers(i)%cutoff), cutoff_d, size_maxnp_bytes, gpu_stream)
+         call cpy_htod(c_loc(angle_3b_hypers(i)%sigma), sigma_d, size_alphas_bytes, gpu_stream)
+         call cpy_htod(c_loc(angle_3b_hypers(i)%qs), qs_d, size_maxnp_qs_bytes, gpu_stream)
+         call cpy_htod(c_loc(angle_3b_hypers(i)%alphas), alphas_d, size_maxnp_bytes, gpu_stream)
+
+         call setup_3b_gpu(angle_3b_hypers(i)%kernel_type, angle_3b_hypers(i)%species_center, &
+                           angle_3b_hypers(i)%species1, angle_3b_hypers(i)%species2, params%species_types, &
+                           c_name_3b, sp0_3b, sp1_3b, sp2_3b)
+
+         call gpu_3b(size(angle_3b_hypers(i)%alphas), i_end - i_beg + 1, size(rjs), size(forces, 2), &
+                     sp0_3b, sp1_3b, sp2_3b, alphas_d, angle_3b_hypers(i)%delta, 0.d0, cutoff_d, gpu_stream, &
+                     rjs_d, xyz_d, n_neigh_d, species_d, neighbors_list_d, neighbor_species_d, &
+                     c_do_forces, angle_3b_hypers(i)%rcut, 0.5d0, sigma_d, qs_d, c_name_3b, &
+                     i_beg, i_end, energies_3b_d, forces_3b_d, virial_3b_d, kappas_array_d)
+
+         call time_end(time%gap_3b, "3b")
+
+         ! print *, rank, " >>--- Finished 3b on gpu ---<< took ",&
+         !   time%gap_3b(2) - time%gap_3b(1), " with total being ", time%gap_3b(3)
+
+      end do
+
+      !              As for the 2b term, the kernels accumulate into the device
+      !              buffers, so the totals are only read back once the loop over
+      !              descriptors has finished.
+!              The READ-BACK lengths, which are the last place this file mixed
+!              the two conventions.
+!
+!              These buffers were allocated size_energy3b = size(n_neigh) and
+!              size_forces3b = size(forces,2) -- global -- and the kernel writes
+!              into them at the global site index. Reading them back with
+!              st_n_sites_double = (i_end - i_beg + 1) copied that many doubles
+!              from OFFSET ZERO, i.e. global sites 1..n_local. On rank 0
+!              (i_beg = 1) that is exactly rank 0's own sites and the answer is
+!              right; on every other rank it is a slice the kernel never wrote,
+!              so the rank contributed zeros and its share of the energy simply
+!              vanished in the MPI_SUM.
+!
+!              It showed up as a 3b energy that fell to 1/nranks on a test cell
+!              that happens to be a 2x2x2 replication -- exactly 1/2 on two
+!              ranks and 1/4 on four, but not 1/3 on three, which is the
+!              signature of "only rank 0 counted" rather than of a division.
+      call cpy_dtoh(energies_3b_d, c_loc(this_energies), size_energy3b, gpu_stream)
+      call cpy_dtoh(forces_3b_d, c_loc(this_forces), size_forces3b, gpu_stream)
+      call cpy_dtoh(virial_3b_d, c_loc(this_virial), st_virial, gpu_stream)
+
+      call gpu_stream_sync(gpu_stream)
+
+      energies_3b = energies_3b + this_energies
+      if (params%do_forces) then
+         forces_3b = forces_3b + this_forces
+         virial_3b = virial_3b + this_virial
+      end if
+
+      !              All of the buffers below are allocated once before the descriptor
+      !              loop (the parameter buffers are sized for max_np so they can be
+      !              reused by every descriptor). They must therefore only be released
+      !              after the loop has finished -- freeing them per iteration left
+      !              dangling device pointers that the next iteration copied into.
+      call gpu_free_async(energies_3b_d, gpu_stream)
+      call gpu_free_async(forces_3b_d, gpu_stream)
+      call gpu_free_async(kappas_array_d, gpu_stream)
+      call gpu_free_async(virial_3b_d, gpu_stream)
+
+      call gpu_free_async(cutoff_d, gpu_stream)
+      call gpu_free_async(sigma_d, gpu_stream)
+      call gpu_free_async(qs_d, gpu_stream)
+      call gpu_free_async(alphas_d, gpu_stream)
+
+   end subroutine add_3b_contribution
+
+end module gap_backend

@@ -27,13 +27,12 @@
 
 module electrostatics
 
-!  This is the CPU copy of the module. The GPU branch's copy additionally holds
 !  calculate_batched_electrostatics, the batched device implementation of the
-!  gsf method, and USEs F_B_C and iso_c_binding for it. Nothing else in the
-!  module touches the device -- 23 of its 24 procedures have no GPU token at all
-!  -- so the two copies differ by exactly that one procedure and those two USE
-!  statements. Keep it that way: anything added here that the GPU copy does not
-!  have, or vice versa, is merge debt.
+!  gsf method, is compiled only when the build defines _GPU, as are the two USE
+!  statements it needs. Nothing else in the module touches the device -- 23 of
+!  its 24 procedures have no GPU token at all -- so that guard is the whole of
+!  the difference between a host and a device build of this file. Keep it that
+!  way: device code outside the guard breaks every CPU architecture.
 
    use kinds
 
@@ -42,6 +41,10 @@ module electrostatics
 
    ! use gpu_var_int_mod
    ! use gpu_var_double_mod
+#ifdef _GPU
+   use F_B_C
+   use iso_c_binding
+#endif
 
    ! Both of these from the NIST website, references 2018 CODATA values
    real(dp), parameter :: HARTREE_EV = 27.2113862460_dp
@@ -298,6 +301,337 @@ contains
 
    end function w_a_undamped
 
+#ifdef _GPU
+   subroutine calculate_batched_electrostatics(gpu_exp, gpu_host, &
+                                               gpu_neigh, n_sites, &
+                                               i_beg, i_end, j_beg, j_end, rank, r_cut, dsf_alpha, &
+                                               charges, charges_d, &
+                                               charge_gradients, &
+                                               do_gradients, &
+                                               energies, &
+                                               forces, &
+                                               virial, &
+                                               options, r_cut_in, r_cut_width, gpu_stream)
+      implicit none
+      ! -- Electrostatics variables
+      real(dp), dimension(:), intent(in), target :: charges !
+      real(dp), dimension(:, :), intent(in), target :: charge_gradients
+      real(dp), intent(in) :: r_cut
+      real(dp), intent(in) :: dsf_alpha
+      real(dp), intent(in) :: r_cut_in
+      real(dp), intent(in) :: r_cut_width
+
+      integer, allocatable, target :: n_neigh_check(:)
+      integer, allocatable, target :: n_neigh_check_sum(:)
+      real(dp), intent(inout) :: energies(:)
+      real(dp), intent(inout) :: forces(:, :)
+      real(dp), intent(inout) :: virial(1:3, 1:3)
+
+      real(dp), allocatable, target :: energies_temp(:)
+      real(dp), allocatable, target :: forces_temp(:, :)
+      real(dp), allocatable, target :: rjs_check(:)
+      real(dp), target :: virial_temp(1:3, 1:3)
+
+      logical, intent(in) :: do_gradients
+      type(options_estat), intent(in) :: options
+
+      integer, intent(in) :: i_beg
+      integer, intent(in) :: i_end
+      integer, intent(in) :: j_beg
+      integer, intent(in) :: j_end
+      integer, intent(in) :: n_sites
+      integer, intent(in) :: rank
+      type(gpu_storage_type), intent(inout) :: gpu_exp
+      type(gpu_host_batch_storage_type), intent(inout), target :: gpu_host
+      type(gpu_neigh_storage_type), intent(in) :: gpu_neigh
+
+      integer :: i
+      integer :: j
+      integer :: k
+
+      integer :: n_dim_partial
+      integer :: n_dim_idx
+      integer :: this_n_sites
+      integer :: this_n_pairs
+      integer, target :: nk_temp(1)
+      type(c_ptr) :: nk_flags_d
+      type(c_ptr) :: nk_flags_sum_d
+      integer(c_size_t) :: st_nk_flags
+      integer(c_size_t) :: st_nk_temp
+      type(c_ptr) :: rjs_index_d
+      integer(c_size_t) :: st_rjs_index_d
+      integer(c_size_t) :: st_k_index_d
+
+      type(c_ptr) :: energies_d
+      integer(c_size_t) :: st_energies_d
+
+      type(c_ptr) :: forces_d
+      integer(c_size_t) :: st_forces_d
+
+      type(c_ptr) :: force_prefactor_d
+      integer(c_size_t) :: st_force_prefactor_d
+
+      type(c_ptr) :: virial_d
+      integer(c_size_t) :: st_virial_d
+
+      type(c_ptr), intent(in) :: charges_d
+
+      type(c_ptr) :: n_neigh_index_d
+      integer(c_size_t) :: st_n_neigh_index_d
+
+      type(c_ptr) :: n_neigh_index_sum_d
+      integer(c_size_t) :: st_n_neigh_index_sum_d
+
+      type(c_ptr) :: neighbor_charges_index_d
+      integer(c_size_t) :: st_neighbor_charges_index_d
+
+      type(c_ptr) :: charge_gradients_d
+      type(c_ptr) :: charge_gradients_index_d
+      integer(c_size_t) :: st_charge_gradients_d
+
+      logical(c_bool) :: c_do_forces
+      logical(c_bool) :: c_do_damping_cosine
+
+      real(dp) :: pair_energy_rcut
+      real(dp) :: pair_energy_rcut_der
+      real(dp) :: memory
+
+      real(c_double) :: pair_energy_rcut_d
+      real(c_double) :: pair_energy_rcut_der_d
+      type(c_ptr) :: gpu_stream
+
+      pair_energy_rcut = kernel_B0(r_cut, dsf_alpha)
+      pair_energy_rcut_der = kernel_B0_der_pre(r_cut, dsf_alpha, pair_energy_rcut)
+
+      ! pair_energy_rcut_d = real( pair_energy_rcut, kind=c_double )
+      ! pair_energy_rcut_der_d = real( pair_energy_rcut_der, kind=c_double )
+
+      n_dim_partial = 1
+
+      memory = 0.0
+
+      allocate (gpu_exp%nk(1:n_dim_partial))
+      allocate (gpu_exp%nk_d(1:n_dim_partial))
+      allocate (gpu_exp%k_index_d(1:n_dim_partial))
+      allocate (gpu_exp%j2_index_d(1:n_dim_partial))
+      allocate (gpu_exp%rjs_index_d(1:n_dim_partial))
+      allocate (gpu_exp%xyz_k_d(1:n_dim_partial))
+      allocate (gpu_exp%nk_flags_sum_d(1:n_dim_partial))
+      allocate (gpu_exp%nk_flags_d(1:n_dim_partial))
+
+      allocate (gpu_exp%st_nk_d(1:n_dim_partial))
+      allocate (gpu_exp%st_k_index_d(1:n_dim_partial))
+      allocate (gpu_exp%st_j2_index_d(1:n_dim_partial))
+
+      n_dim_idx = 1
+
+      st_nk_temp = int(1, c_size_t)*c_int
+      call gpu_malloc_async(gpu_exp%nk_d(n_dim_idx), st_nk_temp, gpu_stream)
+      st_nk_flags = int((j_end - j_beg + 1), c_size_t)*c_int
+      call gpu_malloc_async(gpu_exp%nk_flags_d(n_dim_idx), st_nk_flags, gpu_stream)
+      call gpu_memset_async(gpu_exp%nk_flags_d(n_dim_idx), 0, st_nk_flags, gpu_stream)
+      call gpu_malloc_async(gpu_exp%nk_flags_sum_d(n_dim_idx), st_nk_flags, gpu_stream)
+
+      this_n_sites = i_end - i_beg + 1
+      this_n_pairs = j_end - j_beg + 1
+
+      st_n_neigh_index_d = int(c_int, c_size_t)*this_n_sites
+      call gpu_malloc_async(n_neigh_index_d, st_n_neigh_index_d, gpu_stream)
+      call gpu_memset_async(n_neigh_index_d, 0, st_n_neigh_index_d, gpu_stream)
+
+      write (*, '(A,1X,I8,1X,A)') "rank = ", rank, " gpu_get_electrostatics_nk"
+      call flush (101)
+
+      call gpu_get_electrostatics_nk( &
+         1, &
+         i_end - i_beg + 1, &
+         j_end - j_beg + 1, &
+         gpu_neigh%n_neigh_d, &
+         n_neigh_index_d, &
+         gpu_neigh%rjs_d, &
+         gpu_neigh%xyz_d, &
+         r_cut, &
+         gpu_exp%nk_d(n_dim_idx), &
+         gpu_exp%nk_flags_d(n_dim_idx), &
+         gpu_exp%nk_flags_sum_d(n_dim_idx), &
+         gpu_stream)
+
+      ! Now copy the value of nk from the gpu
+      st_nk_temp = int(1, c_size_t)*c_int
+      call cpy_dtoh(gpu_exp%nk_d(n_dim_idx), c_loc(nk_temp), st_nk_temp, gpu_stream)
+      call gpu_stream_sync(gpu_stream)
+      gpu_exp%nk(n_dim_idx) = nk_temp(1)
+
+      call gpu_free_async(gpu_exp%nk_d(n_dim_idx), gpu_stream)
+      call gpu_free_async(gpu_exp%nk_flags_d(n_dim_idx), gpu_stream)
+
+      ! Now we create temporary arrays for the k indices
+      st_rjs_index_d = int(gpu_exp%nk(n_dim_idx), c_size_t)*c_double
+      call gpu_malloc_async(gpu_exp%rjs_index_d(n_dim_idx), st_rjs_index_d, gpu_stream)
+      call gpu_memset_async(gpu_exp%rjs_index_d(n_dim_idx), 0, st_rjs_index_d, gpu_stream)
+
+      call gpu_malloc_async(gpu_exp%xyz_k_d(n_dim_idx), 3*st_rjs_index_d, gpu_stream)
+      call gpu_memset_async(gpu_exp%xyz_k_d(n_dim_idx), 0, 3*st_rjs_index_d, gpu_stream)
+
+      gpu_exp%st_k_index_d(n_dim_idx) = int(gpu_exp%nk(n_dim_idx), c_size_t)*c_int
+      call gpu_malloc_async(gpu_exp%k_index_d(n_dim_idx), gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
+      call gpu_memset_async(gpu_exp%k_index_d(n_dim_idx), 0, gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
+
+      call gpu_malloc_async(gpu_exp%j2_index_d(n_dim_idx), gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
+      call gpu_memset_async(gpu_exp%j2_index_d(n_dim_idx), 0, gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
+
+      write (*, '(A,1X,I8,1X,A)') "rank = ", rank, " finished gpu_get_electrostatics_nk"
+
+      call flush (101)
+
+      ! The charges themselves are allocated outside of this routine, hence they do not need to be passed in.
+
+      ! Allocate the array which will store the neighbor charges
+      ! > We only need the index array, as we can obviate the need for
+      !   doing any of the neighbor charge allocation on the cpu
+      st_neighbor_charges_index_d = int(c_double, c_size_t)*gpu_exp%nk(n_dim_idx)
+      call gpu_malloc_async(neighbor_charges_index_d, st_neighbor_charges_index_d, gpu_stream)
+      ! Don't need to set to zero
+
+      ! Allocate the charge gradients on the gpu
+      ! > First, the actual array
+      st_charge_gradients_d = int(c_double, c_size_t)*this_n_pairs*3
+      call gpu_malloc_async(charge_gradients_d, st_charge_gradients_d, gpu_stream)
+      call cpy_htod(c_loc(charge_gradients), charge_gradients_d, st_charge_gradients_d, gpu_stream)
+
+      ! Then the array of reduced size
+      st_charge_gradients_d = int(c_double, c_size_t)*gpu_exp%nk(n_dim_idx)*3
+      call gpu_malloc_async(charge_gradients_index_d, st_charge_gradients_d, gpu_stream)
+      call gpu_memset_async(charge_gradients_index_d, 0, st_charge_gradients_d, gpu_stream)
+
+      write (*, '(A,1X,I8,1X,A)') "rank = ", rank, "  gpu_get_electrostatics_k_index"
+      call flush (101)
+      ! Reusing this function to set the k indices for electrostatics
+      call gpu_set_electrostatics_k_index(1, i_end - i_beg + 1, j_end - j_beg + 1, n_sites, & ! i_beg, i_end, j_end, n_sites,&
+                                          gpu_neigh%neighbors_list_d, &
+                                          gpu_neigh%rjs_d, &
+                                          gpu_neigh%xyz_d, &
+                                          charges_d, &
+                                          neighbor_charges_index_d, &
+                                          charge_gradients_d, &
+                                          charge_gradients_index_d, &
+                                          gpu_exp%k_index_d(n_dim_idx), &
+                                          gpu_exp%j2_index_d(n_dim_idx), &
+                                          gpu_exp%rjs_index_d(n_dim_idx), &
+                                          gpu_exp%xyz_k_d(n_dim_idx), &
+                                          gpu_exp%nk_flags_sum_d(n_dim_idx), &
+                                          gpu_stream)
+
+      ! Deallocating the flag array
+      call gpu_free_async(charge_gradients_d, gpu_stream)
+      call gpu_free_async(gpu_exp%nk_flags_sum_d(n_dim_idx), gpu_stream)
+
+      allocate (energies_temp(1:this_n_sites))
+      allocate (forces_temp(1:3, 1:n_sites))
+
+      write (*, '(A,1X,I8,1X,A)') "rank = ", rank, "  finished gpu_get_electrostatics_k_index"
+
+      call flush (101)
+      st_energies_d = int(c_double, c_size_t)*this_n_sites
+      call gpu_malloc_async(energies_d, st_energies_d, gpu_stream)
+      call gpu_memset_async(energies_d, 0, st_energies_d, gpu_stream)
+
+      st_forces_d = int(c_double, c_size_t)*n_sites*3
+      call gpu_malloc_async(forces_d, st_forces_d, gpu_stream)
+      call gpu_memset_async(forces_d, 0, st_forces_d, gpu_stream)
+
+      st_virial_d = int(c_double, c_size_t)*9
+      call gpu_malloc_async(virial_d, st_virial_d, gpu_stream)
+      call gpu_memset_async(virial_d, 0, st_virial_d, gpu_stream)
+
+      ! We do an inclusive scan on n_neigh for the sites that are actually in the list
+
+      write (*, '(A,1X,I8,1X,A)') "rank = ", rank, "  inclusive scan"
+      call flush (101)
+      call gpu_inclusive_scan_int(this_n_sites, n_neigh_index_d, gpu_stream)
+
+      write (*, '(A,1X,I8,1X,A)') "rank = ", rank, " finished inclusive scan"
+      call flush (101)
+
+      c_do_forces = logical(do_gradients, kind=c_bool)
+      c_do_damping_cosine = logical(options%damped_cosine, kind=c_bool)
+
+      write (*, '(A,1X,I8,1X,A)') "rank = ", rank, " starting electrostatics energies"
+      call flush (101)
+
+      call gpu_get_electrostatics_energies( &
+         i_beg, &
+         nk_temp(1), &
+         energies_d, &
+         forces_d, &
+         virial_d, &
+         gpu_exp%j2_index_d(n_dim_idx), &
+         n_sites, &
+         this_n_sites, &
+         this_n_pairs, &
+         n_neigh_index_d, &
+         charges_d, &
+         charge_gradients_index_d, &
+         neighbor_charges_index_d, &
+         gpu_exp%rjs_index_d(n_dim_idx), &
+         gpu_exp%xyz_k_d(n_dim_idx), &
+         dsf_alpha, &
+         r_cut, &
+         r_cut_in, &
+         r_cut_width, &
+         pair_energy_rcut, &
+         pair_energy_rcut_der, &
+         c_do_damping_cosine, &
+         c_do_forces, &
+         gpu_stream)
+
+      write (*, '(A,1X,I8,1X,A)') "rank = ", rank, " finished electrostatics energies"
+      call flush (101)
+      st_energies_d = int(c_double, c_size_t)*this_n_sites
+      call cpy_dtoh(energies_d, c_loc(energies_temp), st_energies_d, gpu_stream)
+
+      st_forces_d = int(c_double, c_size_t)*n_sites*3
+      call cpy_dtoh(forces_d, c_loc(forces_temp), st_forces_d, gpu_stream)
+
+      st_virial_d = int(c_double, c_size_t)*9
+      call cpy_dtoh(virial_d, c_loc(virial_temp), st_virial_d, gpu_stream)
+
+      call gpu_free_async(gpu_exp%rjs_index_d(n_dim_idx), gpu_stream)
+      call gpu_free_async(gpu_exp%xyz_k_d(n_dim_idx), gpu_stream)
+      call gpu_free_async(gpu_exp%k_index_d(n_dim_idx), gpu_stream)
+      call gpu_free_async(gpu_exp%j2_index_d(n_dim_idx), gpu_stream)
+
+      call gpu_free_async(charge_gradients_index_d, gpu_stream)
+      call gpu_free_async(neighbor_charges_index_d, gpu_stream)
+      call gpu_free_async(n_neigh_index_d, gpu_stream)
+
+      call gpu_free_async(energies_d, gpu_stream)
+      call gpu_free_async(forces_d, gpu_stream)
+      call gpu_free_async(virial_d, gpu_stream)
+
+      call gpu_stream_sync(gpu_stream)
+
+      energies = energies + energies_temp
+      forces = forces + forces_temp
+      virial = virial + virial_temp
+
+      deallocate (energies_temp, forces_temp)
+
+      deallocate (gpu_exp%nk)
+      deallocate (gpu_exp%nk_d)
+      deallocate (gpu_exp%k_index_d)
+      deallocate (gpu_exp%j2_index_d)
+      deallocate (gpu_exp%rjs_index_d)
+      deallocate (gpu_exp%xyz_k_d)
+      deallocate (gpu_exp%nk_flags_sum_d)
+      deallocate (gpu_exp%nk_flags_d)
+      deallocate (gpu_exp%st_nk_d)
+      deallocate (gpu_exp%st_k_index_d)
+      deallocate (gpu_exp%st_j2_index_d)
+
+   end subroutine calculate_batched_electrostatics
+
+#endif
    subroutine compute_coulomb_lamichhane( &
       charges, &
       charge_gradients, &

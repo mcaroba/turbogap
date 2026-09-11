@@ -46,8 +46,60 @@ jobs:
             exit 1
           }
 
+      # The device build has a module graph of its own: it takes soap_turbo
+      # from the other submodule and pulls in F_B_C, so it needs its own deps
+      # file and that one goes stale the same way.
+      - name: Device module dependencies are up to date
+        run: |
+          python3 tools/gen_fortran_deps.py . --gpu ST_DIR=src/soap_turbo_gpu/src \
+            > /tmp/Makefile.deps.gpu
+          diff -u makefiles/Makefile.deps.gpu /tmp/Makefile.deps.gpu || {
+            echo "::error::makefiles/Makefile.deps.gpu is stale."
+            echo "::error::Run: python3 tools/gen_fortran_deps.py . --gpu \\"
+            echo "::error::          ST_DIR=src/soap_turbo_gpu/src > makefiles/Makefile.deps.gpu"
+            exit 1
+          }
+
+      # docs/keywords.{md,html} and src/keyword_help.f90 are generated from the
+      # !> blocks in read_files.f90. The pre-commit hook regenerates them, but
+      # nothing in CI was checking, so a keyword added without one -- or with a
+      # stale copy committed -- reached master silently.
+      - name: Keyword documentation is up to date
+        run: |
+          make check-docs || {
+            echo "::error::The generated keyword reference is stale or a keyword has no !> block."
+            echo "::error::Run: make docs"
+            exit 1
+          }
+
       - name: Build
         run: make -j"$(nproc)"
+
+      # A hosted runner has no CUDA and no device, so the device build cannot
+      # be compiled here -- but its wiring can be checked, and that is where
+      # the mistakes are: GPU=1 selecting the _gpu implementation files, ST_DIR
+      # pointing at the other submodule, DEPS_FILE at the other deps file. A
+      # dry run resolves all of it without invoking a compiler.
+      - name: Device build wiring resolves
+        run: |
+          # Its own object tree: make decides from timestamps, so against the
+          # host build's build/ it would report the Fortran objects up to date
+          # and print nothing for them -- which is also how a device build run
+          # without BUILD_TAG_EXTRA silently links host objects.
+          make -n TURBOGAP_ARCH=CSC-Roihu_gfortran_openblas_cuda DEBUG=0 \
+               BUILD_TAG_EXTRA=-wiring > /tmp/dry.log || {
+            echo "::error::The device arch does not resolve; see the log below."
+            cat /tmp/dry.log
+            exit 1
+          }
+          grep -q 'soap_turbo_gpu/src' /tmp/dry.log || {
+            echo "::error::The device build is not taking soap_turbo from src/soap_turbo_gpu."
+            exit 1
+          }
+          grep -q 'gpu_context_gpu' /tmp/dry.log || {
+            echo "::error::The device build is not taking the device gpu_context."
+            exit 1
+          }
 
       - name: The binary runs
         run: ./bin/turbogap 2>&1 | head -20 || true

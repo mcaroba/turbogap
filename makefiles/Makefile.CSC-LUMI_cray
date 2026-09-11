@@ -1,0 +1,49 @@
+# Copyright (c) 2020-2021 by Albert Bartók and Miguel Caro
+
+# This is an important note for those building TurboGAP on CSC's Mahti
+# supercomputer with this Makefile. Before compiling, make sure you have
+# loaded the correct module environment:
+#
+#     module reset
+#     module load gcc
+#     module load openblas
+#     module load openmpi
+#     module load cuda
+#
+# When you run TurboGAP, make sure to load this same environment at the top
+# of your Slurm submission script.
+
+# Compiler, preprocessor directives, etc.
+
+F90=ftn
+
+CU=hipcc -xhip -munsafe-fp-atomics # -g -ggdb
+
+CC=hipcc
+
+PP=-eZ -D_MPIF90 -D_GPU
+
+F90_MOD_DIR_OPT=-J
+
+
+# Optimization flags (uncomment second option to enable debugging tools)
+
+F90_OPTS= -fPIC -h noomp -h flex_mp=intolerant  -O0 -g  # -O3
+
+CUDA_OPTS=   --offload-arch=gfx90a  -O0 -g -ggdb
+
+CC_OPTS=-xhip -std=c++20  -O0 -g -ggdb
+
+
+# BLAS and LAPACK libraries
+LIBS=  -lsci_cray -L/$(ROCM_PATH)/lib -lamdhip64 -lhiprand  -lhipblas # -lhipsolver
+
+# A device build. _GPU guards the device code in the sources shared with the
+# CPU build; ST_DIR and DEPS_FILE pick the GPU soap_turbo, whose get_soap takes
+# device pointers and whose module graph pulls in F_B_C.
+# A device build: src/gpu/, the device implementations of gpu_context and
+# gap_backend, and the F_B_C interface module.
+GPU = 1
+
+ST_DIR    = src/soap_turbo_gpu/src
+DEPS_FILE = makefiles/Makefile.deps.gpu

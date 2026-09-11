@@ -39,7 +39,11 @@ module read_files
    use types
    use splines
    use vdw
+#ifdef _GPU
+   use soap_turbo_compress
+#else
    use soap_turbo_compress_module
+#endif
    use xyz_module
    use md
 
@@ -526,6 +530,38 @@ contains
 !**************************************************************************
 
 !**************************************************************************
+
+! One weight per line, no abscissa: the file is the same length as the
+! experimental data it weights, and takes its x values from that data.
+   subroutine read_exp_weight_column(file_data, n_points, w)
+
+      implicit none
+
+      character*1024, intent(in) :: file_data
+      real(dp), allocatable, intent(out) :: w(:)
+      integer, intent(out) :: n_points
+      integer :: i
+      integer :: iostatus
+      integer :: unit_number
+
+      open (newunit=unit_number, file=file_data, status="old")
+      iostatus = 0
+      n_points = -1
+      do while (iostatus == 0)
+         read (unit_number, *, iostat=iostatus)
+         n_points = n_points + 1
+      end do
+      close (unit_number)
+
+      allocate (w(1:n_points))
+      open (newunit=unit_number, file=file_data, status="old")
+      do i = 1, n_points
+         read (unit_number, *) w(i)
+      end do
+      close (unit_number)
+
+   end subroutine read_exp_weight_column
+
    subroutine read_exp_data(file_data, n_points, data)
 
       implicit none
@@ -2254,6 +2290,28 @@ contains
 !       cannot know about.
          params%max_Gbytes_set = .true.
          if (rank == 0) call print_parameter("max_Gbytes_per_process", params%max_Gbytes_per_process)
+         !> @kw estat_gpu_batched
+         !> Compute the electrostatics with the batched device kernel (default .false.). Off
+         !> because that kernel disagrees with both the host build and the device's own
+         !> unbatched path -- see KNOWN_ISSUES 13 -- and a device build would otherwise get a
+         !> silently wrong electrostatic energy. Kept so the kernel can still be run by whoever
+         !> fixes it. Ignored by a host build.
+         !> @see estat_method, gpu_batched
+      else if (keyword == 'estat_gpu_batched') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%estat_gpu_batched
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("estat_gpu_batched", params%estat_gpu_batched)
+         !> @kw gpu_mem_fraction
+         !> Fraction of the device's memory one rank may use for the SOAP descriptor batches.
+         !> The device analogue of mem_fraction, consulted only by a GPU build and only when
+         !> max_gbytes_per_process was not given.
+         !> @see mem_fraction, max_gbytes_per_process
+      else if (keyword == 'gpu_mem_fraction') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%gpu_mem_fraction
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("gpu_mem_fraction", params%gpu_mem_fraction)
          !> @kw mem_fraction
          !> Fraction of the node's memory to divide between the ranks on it when
          !> max_Gbytes_per_process was not given. Only consulted for that automatic budget, and
@@ -4107,6 +4165,72 @@ contains
                params%exp_data(nw)%range_min = params%exp_data(nw)%data(1, 1)
                params%exp_data(nw)%range_max = params&
                     &%exp_data(nw)%data(1, params%exp_data(nw)%n_data)
+            end if
+         end do
+
+         !> @kw exp_weights_files
+         !> A weight per experimental sample, one file per observable in the order of exp_labels,
+         !> "none" for a flat weight. Two columns, abscissa and weight, interpolated onto the same
+         !> grid as the data, so the file need not know exp_n_samples. They enter the mismatch
+         !> squared -- E = gamma/2 sum_i w_i^2 (y_pred_i - y_exp_i)^2 -- so a file value of 2
+         !> counts a sample four times, not twice. The point is to say that part of a pattern
+         !> matters more than the rest: a neutron q*F(q) has its first sharp diffraction peak
+         !> below q = 1.5, where the signal is small and a plain sum of squares barely notices it.
+         !> @see exp_data_files, exp_data_weights, exp_energy_scales
+         !> @type string list
+      else if (keyword == "exp_weights_files") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, &
+            (params%exp_data(nw)%file_weights, nw=1, params%n_exp)
+         call check_iostatus(iostatus, keyword)
+
+         do nw = 1, params%n_exp
+            if (trim(params%exp_data(nw)%file_weights) /= "none") then
+               call read_exp_data( &
+                  params%exp_data(nw)%file_weights, &
+                  params%exp_data(nw)%n_weights, &
+                  params%exp_data(nw)%weights_data)
+               if (rank == 0) then
+                  write (*, '(A,A,A,I0,A)') ' weights for ', &
+                     trim(params%exp_data(nw)%label), ': ', &
+                     params%exp_data(nw)%n_weights, ' points from '// &
+                     trim(params%exp_data(nw)%file_weights)
+               end if
+            end if
+         end do
+
+         !> @kw exp_data_weights
+         !> The same weights as exp_weights_files, given as one number per point of the
+         !> experimental data file rather than as (x, w) pairs. Nothing is resolved here beyond
+         !> reading the column: pairing it with the data's own x, and checking the two are the
+         !> same length, happens where the weights are built, so a deck may put this keyword
+         !> either side of exp_data_files. Giving both for one observable is an error.
+         !> @see exp_data_files, exp_weights_files
+         !> @type string list
+      else if (keyword == "exp_data_weights") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, &
+            (params%exp_data(nw)%file_data_weights, nw=1, params%n_exp)
+         call check_iostatus(iostatus, keyword)
+
+         do nw = 1, params%n_exp
+            if (trim(params%exp_data(nw)%file_data_weights) /= "none") then
+               if (trim(params%exp_data(nw)%file_weights) /= "none") then
+                  write (*, *) "ERROR: exp_data_weights and exp_weights_files both given for ", &
+                     trim(params%exp_data(nw)%label), " <-- ERROR"
+                  write (*, *) "       They are two ways of saying the same thing. Pick one."
+                  call turbogap_abort()
+               end if
+               call read_exp_weight_column( &
+                  params%exp_data(nw)%file_data_weights, &
+                  params%exp_data(nw)%n_data_weights, &
+                  params%exp_data(nw)%data_weights)
+               if (rank == 0) then
+                  write (*, '(A,A,A,I0,A)') ' weights for ', &
+                     trim(params%exp_data(nw)%label), ': ', &
+                     params%exp_data(nw)%n_data_weights, ' values from '// &
+                     trim(params%exp_data(nw)%file_data_weights)
+               end if
             end if
          end do
 
@@ -6026,12 +6150,21 @@ contains
                            soap_turbo_hypers(n_soap_turbo)%has_vdw = .true.
                            soap_turbo_hypers(n_soap_turbo)%local_property_models(nw)%do_derivatives = .true.
                            soap_turbo_hypers(n_soap_turbo)%vdw_index = nw
+!                          A negative Hirshfeld volume is meaningless, and
+!                          truncating it at zero is what this path has always
+!                          done. Every other local property keeps the type's
+!                          default of .false. -- see local_property_predict.
+                           soap_turbo_hypers(n_soap_turbo)%local_property_models(nw)%zero_trunc = .true.
                         end if
 
                         if (trim(soap_turbo_hypers(n_soap_turbo)%local_property_models(nw)&
                              &%label) == "core_electron_be") then
                            soap_turbo_hypers(n_soap_turbo)%has_core_electron_be = .true.
                            soap_turbo_hypers(n_soap_turbo)%core_electron_be_index = nw
+!                          A binding energy is positive by construction, so the
+!                          floor is an assertion rather than a correction; it
+!                          warns if it ever fires. See local_property_predict.
+                           soap_turbo_hypers(n_soap_turbo)%local_property_models(nw)%zero_trunc = .true.
                         end if
 
                      end do
@@ -6181,6 +6314,18 @@ contains
                               soap_turbo_hypers(n_soap_turbo)%compress_P_j(i), &
                               soap_turbo_hypers(n_soap_turbo)%compress_P_el(i)
                         end do
+#ifdef _GPU
+!                       A general projection has no list of kept components to
+!                       give the device descriptor, so it cannot be represented
+!                       there at all. Said plainly here rather than left to
+!                       produce a differently compressed descriptor later.
+                        write (*, *) "ERROR: a device build cannot use a P_transformation compression", &
+                           "file <-- ERROR"
+                        write (*, *) "       src/soap_turbo_gpu takes one index per kept component."
+                        write (*, *) "       Use the index-list form of ", &
+                           trim(soap_turbo_hypers(n_soap_turbo)%file_compress), " or a compress_mode."
+                        call turbogap_abort()
+#endif
                      else
 !               Old way to handle compression for backcompatibility
                         backspace (20)
@@ -6193,9 +6338,35 @@ contains
                            soap_turbo_hypers(n_soap_turbo)%compress_P_i(i) = i
                            soap_turbo_hypers(n_soap_turbo)%compress_P_el(i) = 1.d0
                         end do
+#ifdef _GPU
+!                       The same compression, in the form the device descriptor
+!                       takes it: one index per kept component. In this form of
+!                       the file that is what compress_P_j already holds, the
+!                       row index being the identity and the element 1, so the
+!                       two representations are the same numbers.
+                        allocate (soap_turbo_hypers(n_soap_turbo)%compress_soap_indices( &
+                                  1:soap_turbo_hypers(n_soap_turbo)%dim))
+                        soap_turbo_hypers(n_soap_turbo)%compress_soap_indices = &
+                           soap_turbo_hypers(n_soap_turbo)%compress_P_j
+#endif
                      end if
                      close (20)
                   else if (soap_turbo_hypers(n_soap_turbo)%compress_mode /= "none") then
+#ifdef _GPU
+                     call get_compress_indices(soap_turbo_hypers(n_soap_turbo)%compress_mode, &
+                                               soap_turbo_hypers(n_soap_turbo)%alpha_max, &
+                                               soap_turbo_hypers(n_soap_turbo)%l_max, &
+                                               soap_turbo_hypers(n_soap_turbo)%dim, &
+                                               soap_turbo_hypers(n_soap_turbo)%compress_soap_indices, &
+                                               "get_dim")
+                     allocate (soap_turbo_hypers(n_soap_turbo)%compress_soap_indices(1:soap_turbo_hypers(n_soap_turbo)%dim))
+                     call get_compress_indices(soap_turbo_hypers(n_soap_turbo)%compress_mode, &
+                                               soap_turbo_hypers(n_soap_turbo)%alpha_max, &
+                                               soap_turbo_hypers(n_soap_turbo)%l_max, &
+                                               soap_turbo_hypers(n_soap_turbo)%dim, &
+                                               soap_turbo_hypers(n_soap_turbo)%compress_soap_indices, &
+                                               "set_indices")
+#else
                      call get_compress_indices(soap_turbo_hypers(n_soap_turbo)%compress_mode, &
                                                soap_turbo_hypers(n_soap_turbo)%alpha_max, &
                                                soap_turbo_hypers(n_soap_turbo)%l_max, &
@@ -6217,6 +6388,7 @@ contains
                                                soap_turbo_hypers(n_soap_turbo)%compress_P_j, &
                                                soap_turbo_hypers(n_soap_turbo)%compress_P_el, &
                                                "set_indices")
+#endif
                   else
                      write (*, *) "ERROR: you're trying to use compression but neither a file_compress_soap nor", &
                         "compress_mode are defined!"

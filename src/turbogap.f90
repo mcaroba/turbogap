@@ -75,6 +75,10 @@ program turbogap
    use bussi
    use xyz_module
    use keyword_help
+#ifdef _GPU
+   use F_B_C
+   use iso_c_binding
+#endif
 
    implicit none
 
@@ -487,6 +491,28 @@ program turbogap
    type(image), allocatable :: images(:)
    type(image), allocatable :: images_temp(:)
    character*32 :: implemented_exp_observables(1:5)
+#ifdef _GPU
+   integer :: omp_task
+   integer(c_size_t) :: st_size_nf
+   type(c_ptr) :: alphas_d
+   type(c_ptr) :: qs_d
+   type(c_ptr) :: nf_d
+   type(c_ptr) :: rcut_hard_d
+   type(c_ptr) :: rcut_soft_d
+   type(c_ptr) :: global_scaling_d
+   type(c_ptr) :: atom_sigma_r_d
+   type(c_ptr) :: atom_sigma_r_scaling_d
+   type(c_ptr) :: atom_sigma_t_d
+   type(c_ptr) :: atom_sigma_t_scaling_d
+   type(c_ptr) :: amplitude_scaling_d
+   type(c_ptr) :: alpha_max_d
+   type(c_ptr) :: central_weight_d
+   integer :: n_sparse
+   integer :: dim
+   integer :: n_pairs_temp
+   integer :: n_sites_temp
+   character*8, allocatable, target :: species_types_actual(:)
+#endif
 
 !  --help answers from the generated keyword reference and exits. It is the
 !  first thing the program does because it must work with no input file, no
@@ -1675,10 +1701,93 @@ program turbogap
             !       This subroutine splits the load optimally so as to not use more memory per MPI process than available.
             !       TurboGAP does not check how much memory is available, it just relies on heuristics and a user provided
             !       max_Gbytes_per_process (default = 1.d0)
+#ifdef _GPU
+            if (params%n_batches > 0) then
+               call get_number_of_atom_pairs_batches(params%n_batches, n_neigh(i_beg:i_end), &
+                                                     rjs(j_beg:j_end), soap_turbo_hypers(i)%rcut_max, &
+                                                     soap_turbo_hypers(i)%l_max, &
+                                                     soap_turbo_hypers(i)%n_max, &
+                                                     soap_turbo_hypers(i)%dim, &
+                                                     soap_turbo_hypers(i)%n_species, &
+                                                     params%max_Gbytes_per_process, i_beg_list, &
+                                                     i_end_list, j_beg_list, j_end_list)
+            else
+               call get_number_of_atom_pairs(n_neigh(i_beg:i_end), rjs(j_beg:j_end), &
+                                             soap_turbo_hypers(i)%rcut_max, &
+                                             soap_turbo_hypers(i)%l_max, &
+                                             soap_turbo_hypers(i)%n_max, &
+                                             soap_turbo_hypers(i)%dim, &
+                                             soap_turbo_hypers(i)%n_species, &
+                                             params%max_Gbytes_per_process, i_beg_list, &
+                                             i_end_list, j_beg_list, j_end_list)
+            end if
+
+            n_sp = soap_turbo_hypers(i)%n_species
+
+            st_size_nf = n_sp*sizeof(soap_turbo_hypers(i)%nf(1))
+            call gpu_malloc_async(nf_d, st_size_nf, gpu_stream)
+            call cpy_htod(c_loc(soap_turbo_hypers(i)%nf), nf_d, st_size_nf, gpu_stream)
+            call gpu_malloc_async(rcut_hard_d, st_size_nf, gpu_stream)
+            call cpy_htod(c_loc(soap_turbo_hypers(i)%rcut_hard), rcut_hard_d, st_size_nf, gpu_stream)
+            call gpu_malloc_async(rcut_soft_d, st_size_nf, gpu_stream)
+            call cpy_htod(c_loc(soap_turbo_hypers(i)%rcut_soft), rcut_soft_d, st_size_nf, gpu_stream)
+            call gpu_malloc_async(global_scaling_d, st_size_nf, gpu_stream)
+            call cpy_htod(c_loc(soap_turbo_hypers(i)%global_scaling), global_scaling_d, st_size_nf, gpu_stream)
+            call gpu_malloc_async(atom_sigma_r_d, st_size_nf, gpu_stream)
+            call cpy_htod(c_loc(soap_turbo_hypers(i)%atom_sigma_r), atom_sigma_r_d, st_size_nf, gpu_stream)
+            call gpu_malloc_async(atom_sigma_r_scaling_d, st_size_nf, gpu_stream)
+            call cpy_htod(c_loc(soap_turbo_hypers(i)%atom_sigma_r_scaling), atom_sigma_r_scaling_d, st_size_nf, gpu_stream)
+            call gpu_malloc_async(atom_sigma_t_d, st_size_nf, gpu_stream)
+            call cpy_htod(c_loc(soap_turbo_hypers(i)%atom_sigma_t), atom_sigma_t_d, st_size_nf, gpu_stream)
+            call gpu_malloc_async(atom_sigma_t_scaling_d, st_size_nf, gpu_stream)
+            call cpy_htod(c_loc(soap_turbo_hypers(i)%atom_sigma_t_scaling), atom_sigma_t_scaling_d, st_size_nf, gpu_stream)
+            call gpu_malloc_async(amplitude_scaling_d, st_size_nf, gpu_stream)
+            call cpy_htod(c_loc(soap_turbo_hypers(i)%amplitude_scaling), amplitude_scaling_d, st_size_nf, gpu_stream)
+            call gpu_malloc_async(central_weight_d, st_size_nf, gpu_stream)
+            call cpy_htod(c_loc(soap_turbo_hypers(i)%central_weight), central_weight_d, st_size_nf, gpu_stream)
+            st_size_nf = n_sp*sizeof(soap_turbo_hypers(i)%alpha_max(1))
+            call gpu_malloc_async(alpha_max_d, st_size_nf, gpu_stream)
+            call cpy_htod(c_loc(soap_turbo_hypers(i)%alpha_max), alpha_max_d, st_size_nf, gpu_stream)
+            n_sparse = soap_turbo_hypers(i)%n_sparse
+            dim = soap_turbo_hypers(i)%dim
+            call soap_backend_begin(soap_turbo_hypers(i))
+
+            if (soap_turbo_hypers(i)%has_local_properties) then
+               ! Allocate gpu memory
+               do j = 1, soap_turbo_hypers(i)%n_local_properties
+                  soap_turbo_hypers(i)%local_property_models(j)%st_size_alphas = &
+                     soap_turbo_hypers(i)%local_property_models(j)%n_sparse* &
+                     sizeof(soap_turbo_hypers(i)%local_property_models(j)%alphas(1))
+                  call gpu_malloc_async(soap_turbo_hypers(i)%local_property_models(j)%alphas_d, &
+                                        soap_turbo_hypers(i)%local_property_models(j)%st_size_alphas, gpu_stream)
+                  call cpy_htod(c_loc(soap_turbo_hypers(i)&
+                    &%local_property_models(j)%alphas), &
+                    & soap_turbo_hypers(i)%local_property_models(j)&
+                    &%alphas_d, soap_turbo_hypers(i)&
+                    &%local_property_models(j)%st_size_alphas,&
+                    & gpu_stream)
+
+                  soap_turbo_hypers(i)%local_property_models(j)%st_size_Qs = &
+                     soap_turbo_hypers(i)%local_property_models(j)%n_sparse* &
+                     soap_turbo_hypers(i)%local_property_models(j)%dim* &
+                     sizeof(soap_turbo_hypers(i)%local_property_models(j)%Qs(1, 1))
+
+                  call gpu_malloc_async(soap_turbo_hypers(i)%local_property_models(j)%Qs_d, &
+                                        soap_turbo_hypers(i)%local_property_models(j)%st_size_Qs, gpu_stream)
+                  call cpy_htod(c_loc(soap_turbo_hypers(i)%local_property_models(j)%Qs), &
+                                soap_turbo_hypers(i)%local_property_models(j)%Qs_d, &
+                                soap_turbo_hypers(i)%local_property_models(j)%st_size_Qs, &
+                                gpu_stream)
+
+               end do
+
+            end if
+#else
             call get_number_of_atom_pairs(n_neigh(i_beg:i_end), rjs(j_beg:j_end), soap_turbo_hypers(i)%rcut_max, &
                                           soap_turbo_hypers(i)%l_max, soap_turbo_hypers(i)%n_max, &
                                           soap_turbo_hypers(i)%dim, soap_turbo_hypers(i)%n_species, &
                                           params%max_Gbytes_per_process, i_beg_list, i_end_list, j_beg_list, j_end_list)
+#endif
 
             do j = 1, size(i_beg_list)
                this_i_beg = i_beg - 1 + i_beg_list(j)
@@ -1708,6 +1817,32 @@ program turbogap
                   end if
                end if
 
+#ifdef _GPU
+               call get_gap_soap( &
+                  n_sparse, n_sites, this_n_sites_mpi, n_neigh(this_i_beg:this_i_end), &
+                  neighbors_list(this_j_beg:this_j_end), soap_turbo_hypers(i)%n_species, &
+                  soap_turbo_hypers(i)%species_types, rjs(this_j_beg:this_j_end), thetas(this_j_beg:this_j_end), &
+                  phis(this_j_beg:this_j_end), xyz(1:3, this_j_beg:this_j_end), alpha_max_d, &
+                  soap_turbo_hypers(i)%alpha_max, soap_turbo_hypers(i)%l_max, soap_turbo_hypers(i)%dim, rcut_hard_d, &
+                  soap_turbo_hypers(i)%rcut_hard, rcut_soft_d, nf_d, global_scaling_d, atom_sigma_r_d, &
+                  soap_turbo_hypers(i)%atom_sigma_r, atom_sigma_r_scaling_d, atom_sigma_t_d, atom_sigma_t_scaling_d, &
+                  amplitude_scaling_d, soap_turbo_hypers(i)%radial_enhancement, central_weight_d, &
+                  soap_turbo_hypers(i)%central_weight, soap_turbo_hypers(i)%basis, &
+                  soap_turbo_hypers(i)%scaling_mode, params%do_timing, params%do_derivatives, params%do_forces, &
+                  params%do_prediction, params%write_soap, params%write_derivatives, &
+                  soap_turbo_hypers(i)%compress_soap, soap_turbo_hypers(i)%compress_soap_indices, &
+                  soap_turbo_hypers(i)%delta, soap_turbo_hypers(i)%zeta, soap_turbo_hypers(i)%central_species, &
+                  xyz_species(this_i_beg:this_i_end), xyz_species_supercell, params%all_atoms, &
+                  params%which_atom, indices, soap, soap_cart_der, der_neighbors, der_neighbors_list, &
+                  soap_turbo_hypers(i)%has_local_properties, soap_turbo_hypers(i)%n_local_properties, &
+                  soap_turbo_hypers(i)%local_property_models, n_lp_count, energies_soap, forces_soap, &
+                  this_local_properties_pt, this_local_properties_cart_der_pt, local_property_indexes, this_virial, &
+                  time%soap_lin(3), time%get_soap(3), soap_turbo_hypers(i)%W_d, soap_turbo_hypers(i)%S_d, &
+                  soap_turbo_hypers(i)%multiplicity_array_d, soap_turbo_hypers(i)%st_W_d, &
+                  soap_turbo_hypers(i)%st_S_d, soap_turbo_hypers(i)%st_multiplicity_array_d, &
+                  soap_turbo_hypers(i)%recompute_basis, time%local_prop, &
+                  soap_turbo_hypers(i)%is_dipole_model, local_dipoles, energies_dipole)
+#else
                call soap_backend_begin(soap_turbo_hypers(i))
                call get_gap_soap(n_sites, this_n_sites_mpi, n_neigh(this_i_beg:this_i_end), neighbors_list(this_j_beg:this_j_end), &
                     soap_turbo_hypers(i)%n_species, soap_turbo_hypers(i)%species_types, &
@@ -1739,6 +1874,7 @@ program turbogap
                     & this_local_dipoles, this_energies_dipole)
 
                call soap_backend_end()
+#endif
 
                ! We can have a pointer to specific parts of this_local_properties array to then
 
@@ -1772,7 +1908,34 @@ program turbogap
             end do
             n_lp_count = n_lp_count + soap_turbo_hypers(i)%n_local_properties
 
+#ifdef _GPU
+            call gpu_free_async(nf_d, gpu_stream)
+            call gpu_free_async(rcut_hard_d, gpu_stream)
+            call gpu_free_async(rcut_soft_d, gpu_stream)
+            call gpu_free_async(global_scaling_d, gpu_stream)
+            call gpu_free_async(atom_sigma_r_d, gpu_stream)
+            call gpu_free_async(atom_sigma_r_scaling_d, gpu_stream)
+            call gpu_free_async(atom_sigma_t_d, gpu_stream)
+            call gpu_free_async(atom_sigma_t_scaling_d, gpu_stream)
+            call gpu_free_async(amplitude_scaling_d, gpu_stream)
+            call gpu_free_async(alpha_max_d, gpu_stream)
+            call gpu_free_async(central_weight_d, gpu_stream)
+
+            if (soap_turbo_hypers(i)%has_local_properties) then
+               do j = 1, soap_turbo_hypers(i)%n_local_properties
+                  call gpu_free_async(soap_turbo_hypers(i)%local_property_models(j)%alphas_d, gpu_stream)
+                  call gpu_free_async(soap_turbo_hypers(i)%local_property_models(j)%Qs_d, gpu_stream)
+               end do
+            end if
+
+            call soap_backend_end()
+
+            call get_time(time%soap_solo(2))
+#endif
             deallocate (i_beg_list, i_end_list, j_beg_list, j_end_list)
+#ifdef _GPU
+            time%soap_solo(3) = time%soap_solo(3) + time%soap_solo(2) - time%soap_solo(1)
+#endif
 
             ! THIS WON'T WORK! THE SOAP AND SOAP DERIVATIVES NEED TO BE COLLECTED FROM ALL RANKS <--------------------- FIX THIS!!!!
             ! AT THE MOMENT I'M MAKING THE CODE PRINT AN ERROR MESSAGE AND STOP EXECUTION IF THE USER TRIES TO WRITE OUT THESE
@@ -1916,6 +2079,21 @@ program turbogap
 !        Moved to src/turbogap_estat.f90. The #ifdef is here, at the one call,
 !        rather than inside three continued argument lists where nothing
 !        Fortran-aware could parse it.
+#ifdef _GPU
+#ifdef _MPIF90
+         call compute_estat(params, do_electrostatics, valid_estat_charges, charge_lp_index, &
+                            n_sites, n_neigh, neighbors_list, species, neighbor_species, rjs, xyz, &
+                            local_properties, local_properties_cart_der, &
+                            i_beg, i_end, j_beg, j_end, rank, n_omp, &
+                            this_energies_estat, this_forces_estat, this_virial_estat, time)
+#else
+         call compute_estat(params, do_electrostatics, valid_estat_charges, charge_lp_index, &
+                            n_sites, n_neigh, neighbors_list, species, neighbor_species, rjs, xyz, &
+                            local_properties, local_properties_cart_der, &
+                            i_beg, i_end, j_beg, j_end, rank, n_omp, &
+                            energies_estat, forces_estat, virial_estat, time)
+#endif
+#else
 #ifdef _MPIF90
          call compute_estat(params, do_electrostatics, valid_estat_charges, charge_lp_index, &
                             n_sites, n_neigh, neighbors_list, rjs, xyz, &
@@ -1928,6 +2106,7 @@ program turbogap
                             local_properties, local_properties_cart_der, &
                             i_beg, i_end, j_beg, j_end, rank, &
                             energies_estat, forces_estat, virial_estat, time)
+#endif
 #endif
 
          call compute_vdw(params, any_has_vdw(soap_turbo_hypers), n_sites, &
@@ -1964,6 +2143,17 @@ program turbogap
                   call calculate_exp_interpolation(params%exp_data(i)&
                        &%x, params%exp_data(i)%y, params%exp_data(i)&
                        &%n_samples, params%exp_data(i)%data)
+
+!                 The weights live on the same grid as the experiment, so they
+!                 are built here, from the same x, every time it is rebuilt.
+                  call build_exp_weights(params%exp_data(i)%x, params%exp_data(i)%w, &
+                                         params%exp_data(i)%weights_data, &
+                                         params%exp_data(i)%n_weights, &
+                                         params%exp_data(i)%data, &
+                                         params%exp_data(i)%data_weights, &
+                                         params%exp_data(i)%n_data_weights, &
+                                         params%exp_data(i)%n_data, &
+                                         trim(params%exp_data(i)%file_data_weights))
 
                   call preprocess_exp_data(params, params%exp_data(i)%x,&
                        & params%exp_data(i)%y, params%exp_data(i)%label,&
@@ -2043,6 +2233,30 @@ program turbogap
          ! this_-prefixed arrays under MPI and the plain ones otherwise. Choosing
          ! once, at the call, is what let four preprocessor-interrupted argument
          ! lists disappear from the moved code.
+#ifdef _GPU
+#ifdef _MPIF90
+         call compute_exp_spectra(params, n_sites, species, rjs, xyz, neighbors_list, &
+                                  n_neigh, neighbor_species, indices, a_box, b_box, c_box, i_beg, i_end, j_beg, &
+                                  j_end, rank, ntasks, ierr, md_istep, mc_istep, this_energies_pdf, &
+                                  this_forces_pdf, this_virial_pdf, this_energies_sf, &
+                                  this_forces_sf, this_virial_sf, this_energies_xrd, this_forces_xrd, &
+                                  this_virial_xrd, this_energies_nd, this_forces_nd, this_virial_nd, time, &
+                                  i_beg_list, i_end_list, j_beg_list, &
+                                  j_end_list, n_omp, omp_task, this_i_beg, this_i_end, this_j_beg, this_j_end, &
+                                  n_sites_temp, n_pairs_temp, write_condition, overwrite_condition, &
+                                  temp_string, species_types_actual, v_uc)
+#else
+         call compute_exp_spectra(params, n_sites, species, rjs, xyz, neighbors_list, &
+                                  n_neigh, neighbor_species, indices, a_box, b_box, c_box, i_beg, i_end, j_beg, &
+                                  j_end, rank, ntasks, ierr, md_istep, mc_istep, energies_pdf, forces_pdf, &
+                                  virial_pdf, energies_sf, forces_sf, &
+                                  virial_sf, energies_xrd, forces_xrd, virial_xrd, energies_nd, forces_nd, &
+                                  virial_nd, time, i_beg_list, &
+                                  i_end_list, j_beg_list, j_end_list, n_omp, omp_task, this_i_beg, this_i_end, &
+                                  this_j_beg, this_j_end, n_sites_temp, n_pairs_temp, write_condition, &
+                                  overwrite_condition, temp_string, species_types_actual, v_uc)
+#endif
+#else
 #ifdef _MPIF90
          call compute_exp_spectra(params, n_sites, species, positions, rjs, xyz, neighbors_list, &
                                   n_neigh, neighbor_species, indices, a_box, b_box, c_box, &
@@ -2061,6 +2275,7 @@ program turbogap
                                   energies_xrd, forces_xrd, virial_xrd, &
                                   energies_nd, forces_nd, virial_nd, &
                                   time)
+#endif
 #endif
 
          if (params%do_prediction) then
@@ -2083,10 +2298,17 @@ program turbogap
                                            i_beg, i_end, j_beg, j_end, this_energies, this_forces, this_virial, &
                                            energies_core_pot, forces_core_pot, virial_core_pot, time)
 
+#ifdef _GPU
+            call add_3b_contribution(n_angle_3b, angle_3b_hypers, neighbors_list, &
+                                     params, rjs, xyz, n_neigh, species, neighbor_species, &
+                                     i_beg, i_end, j_beg, j_end, this_energies, this_forces, this_virial, &
+                                     forces, energies_3b, forces_3b, virial_3b, time)
+#else
             call add_3b_contribution(n_angle_3b, angle_3b_hypers, neighbors_list, &
                                      params, rjs, xyz, n_neigh, species, neighbor_species, &
                                      i_beg, i_end, j_beg, j_end, this_energies, this_forces, this_virial, &
                                      energies_3b, forces_3b, virial_3b, time)
+#endif
 
             call gap_backend_end()
 
@@ -4340,6 +4562,15 @@ program turbogap
 #endif
    end if
 
+#ifdef _GPU
+   do i = 1, n_soap_turbo
+      if (.not. soap_turbo_hypers(i)%recompute_basis) then
+         call gpu_free_async(soap_turbo_hypers(i)%W_d, gpu_stream)
+         call gpu_free_async(soap_turbo_hypers(i)%S_d, gpu_stream)
+         call gpu_free_async(soap_turbo_hypers(i)%multiplicity_array_d, gpu_stream)
+      end if
+   end do
+#endif
    if (allocated(fix_atom)) deallocate (fix_atom)
    if (allocated(positions)) deallocate (positions)
    if (allocated(velocities)) deallocate (velocities)
@@ -4437,6 +4668,15 @@ program turbogap
    END IF
 #endif
 
+#ifdef _GPU
+!  The high-water mark, which is the number that sizes the next run.
+!
+!  Before gpu_context_finalize, which calls hipDeviceReset and takes the whole
+!  context down -- after it there is nothing left to ask. Printed unconditionally
+!  and to stderr: it costs one line, and "what did that actually use" is the
+!  first question asked after any run that was close to the limit.
+   if (rank == 0) call gpu_memory_report("end of run")
+#endif
 #ifdef _MPIF90
    call mpi_finalize(ierr)
 #endif

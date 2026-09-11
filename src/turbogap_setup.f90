@@ -24,7 +24,10 @@ module turbogap_setup
    use timing
    use types
    use read_files
+#ifndef _GPU
+!  The GPU soap_turbo predates this switch, so only the host build sets it.
    use soap_turbo_radial, only: legacy_filter_seed
+#endif
    use local_prop
    use adaptive_time
    use electronic_stopping
@@ -185,7 +188,9 @@ contains
 ! soap_turbo is a submodule with its own upstream, so it is not given a
 ! dependency on this tree's parameter type; the one switch it has is set here
 ! instead. Every rank reads the input file, so this needs no broadcast.
+#ifndef _GPU
       legacy_filter_seed = params%soap_radial_legacy_filter
+#endif
 
 ! Make randomized initial velocities (and any other use of random_number)
 ! reproducible when the input asks for it, so runs can be compared.
@@ -486,6 +491,9 @@ contains
                call mpi_bcast(soap_turbo_hypers(i)%compress_P_el(1:cPnz), cPnz, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
                call mpi_bcast(soap_turbo_hypers(i)%compress_P_i(1:cPnz), cPnz, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
                call mpi_bcast(soap_turbo_hypers(i)%compress_P_j(1:cPnz), cPnz, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+#ifdef _GPU
+               call mpi_bcast(soap_turbo_hypers(i)%compress_soap_indices(1:dim), dim, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+#endif
             end if
             call mpi_bcast(soap_turbo_hypers(i)%is_dipole_model, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
             call mpi_bcast(soap_turbo_hypers(i)%has_local_properties, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)

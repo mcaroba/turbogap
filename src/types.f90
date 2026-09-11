@@ -30,12 +30,70 @@
 module types
 
    use kinds
+   use iso_c_binding
 
    implicit none
+
+! dp came from here before src/kinds.f90 existed. It is now use-associated from
+! kinds and re-exported, so every module that gets dp through use types still
+! does, and there is one definition rather than two.
+
+   type gpu_host_storage_type
+      real(dp), allocatable :: xyz_k_h(:, :)
+      real(dp), allocatable :: pair_distribution_partial_h(:)
+      real(dp), allocatable :: pair_distribution_partial_der_h(:, :)
+      real(dp), allocatable :: forces_h(:, :)
+      real(dp), allocatable :: rjs_index_h(:)
+      real(dp) :: virial_h(1:3, 1:3)
+      integer, allocatable :: k_index_h(:)
+      integer, allocatable :: j2_index_h(:)
+   end type gpu_host_storage_type
+
+   type gpu_host_batch_storage_type
+      type(gpu_host_storage_type), allocatable :: host(:)
+   end type gpu_host_batch_storage_type
+
+   ! each one of these will be allocated 1:n_dim_partial
+   type gpu_storage_type
+      integer, allocatable :: nk(:)
+      type(c_ptr), allocatable :: nk_d(:), k_index_d(:), j2_index_d(:), xyz_k_d(:), &
+                pair_distribution_partial_d(:), pair_distribution_partial_der_d(:), nk_flags_sum_d(:), nk_flags_d(:), rjs_index_d(:)
+      integer(c_size_t), allocatable :: st_nk_d(:)
+      integer(c_size_t), allocatable :: st_k_index_d(:)
+      integer(c_size_t), allocatable :: st_j2_index_d(:)
+      integer(c_size_t), allocatable :: st_pair_distribution_partial_d(:)
+      integer(c_size_t), allocatable :: st_pair_distribution_partial_der_d(:)
+   end type gpu_storage_type
+
+   ! type gpu_batch_storage_type
+   !    type( gpu_storage_type ), allocatable :: device(:)
+   ! end type gpu_batch_storage_type
+
+   type gpu_neigh_storage_type
+      type(c_ptr) :: n_neigh_d, species_d, neighbors_list_d, neighbor_species_d, rjs_d, xyz_d
+      integer(c_size_t) :: st_n_neigh_d
+      integer(c_size_t) :: st_species_d
+      integer(c_size_t) :: st_neighbors_list_d
+      integer(c_size_t) :: st_neighbor_species_d
+      integer(c_size_t) :: st_rjs_d
+      integer(c_size_t) :: st_xyz_d
+   end type gpu_neigh_storage_type
 
    ! GAP+descriptor data structure for SOAP
    type exp_data_container
       character*1024 :: file_data = "none"
+!     Per-sample weights on the residual, as (x, w) pairs in a file. Read like
+!     file_data and interpolated onto the same grid, so the file does not have
+!     to know what exp_n_samples is. They enter squared --
+!     E = gamma/2 sum_i w_i^2 (y_pred_i - y_exp_i)^2 -- so the file holds w.
+!     Absent, every sample counts once.
+      character*1024 :: file_weights = "none"
+!     The other way to give weights: one number per point of the experimental
+!     data file, no abscissa, so the file is the same length as file_data. The
+!     x values come from the data itself, which is why this is resolved when the
+!     weights are built and not when the keyword is read -- otherwise it would
+!     matter whether exp_data_files came before or after it in the deck.
+      character*1024 :: file_data_weights = "none"
       character*1024 :: label
       character*1024 :: input = "default"
       integer :: n_data
@@ -50,11 +108,30 @@ module types
       real(dp), allocatable :: y(:)
       real(dp), allocatable :: y_pred(:)
       real(dp), allocatable :: y_pred_prev(:)
+!     weights_data is the file as read; w is it interpolated onto x.
+      real(dp), allocatable :: weights_data(:, :)
+      real(dp), allocatable :: data_weights(:)
+      real(dp), allocatable :: w(:)
+!     The dissimilarity at the first step of this run, so the thermo column can
+!     report D/D_first -- how much of the initial mismatch has been removed.
+!     Negative until it has been set.
+      real(dp) :: d_first = -1.d0
+      integer :: n_weights = 0
+      integer :: n_data_weights = 0
       real(dp) :: similarity
       real(dp) :: range_min = 0.d0
       real(dp) :: range_max = 1.d0
       real(dp) :: mag
    end type exp_data_container
+
+   type exp_pred_container
+      integer             :: n_samples = 200
+      logical             :: write = .false.
+      real(dp), allocatable :: x(:)
+      real(dp), allocatable :: y(:)
+      real(dp) :: range_min = 0.d0
+      real(dp) :: range_max = 1.d0
+   end type exp_pred_container
 
    type local_property_soap_turbo
       real(dp), allocatable :: Qs(:, :)
@@ -70,6 +147,11 @@ module types
       integer :: dim
       logical :: do_derivatives = .false.
       logical :: compute = .true.
+      logical :: zero_trunc = .false.
+      type(c_ptr)         :: Qs_d, alphas_d
+      integer(c_int)      :: n_sparse_d
+      integer(c_size_t) :: st_size_alphas
+      integer(c_size_t) :: st_size_Qs
    end type local_property_soap_turbo
 
    type soap_turbo
@@ -97,6 +179,7 @@ module types
       real(dp) :: vdw_delta
       real(dp) :: vdw_V0
       integer, allocatable :: alpha_max(:)
+      integer, allocatable :: compress_soap_indices(:)
       integer, allocatable :: compress_P_i(:)
       integer, allocatable :: compress_P_j(:)
       integer :: n_species
@@ -130,7 +213,12 @@ module types
 !     reproduces the local dipole. Such a descriptor contributes to mu only: its
 !     energy, forces and virial are meaningless and are not accumulated.
       logical :: is_dipole_model = .false.
+      logical :: recompute_basis = .true.
       type(local_property_soap_turbo), allocatable :: local_property_models(:)
+      type(c_ptr) :: W_d, S_d, multiplicity_array_d
+      integer(c_size_t) :: st_W_d
+      integer(c_size_t) :: st_S_d
+      integer(c_size_t) :: st_multiplicity_array_d
    end type soap_turbo
 
 ! GAP+descriptor data structure for distance_2b
@@ -595,6 +683,8 @@ module types
       real(dp) :: f_tol = 0.01d0
       real(dp) :: p_tol = 0.01d0
       real(dp) :: max_opt_step = 0.1d0
+      real(dp) :: gamma0 = 0.01d0
+      real(dp) :: max_opt_step_eps = 0.05d0
       real(dp) :: gd_box_weight = 2.d0
 
 !     Variable time step
@@ -621,6 +711,9 @@ module types
       integer :: mc_max_insertion_trials = 500
       logical :: mc_write_xyz = .false.
       logical :: mc_hamiltonian = .false.
+      logical :: mc_reverse = .false.
+      real(dp) :: mc_reverse_lambda = 0.d0
+      integer :: mc_idx = 1
       logical :: accessible_volume = .false.
       character*16 :: mc_hybrid_opt = "vv"
 
@@ -677,8 +770,11 @@ module types
       real(dp), allocatable :: vdw_c6_ref(:)
       real(dp), allocatable :: vdw_r0_ref(:)
       real(dp), allocatable :: vdw_alpha0_ref(:)
+
       logical :: vdw_hirsh_grad = .true.
       logical :: print_vdw_forces = .false.
+      logical :: write_hirshfeld_v = .true.
+      logical :: print_lp_forces = .false.
 
 !     Many-body dispersion
       real(dp) :: vdw_mbd_rcut = 15.d0
@@ -724,6 +820,7 @@ module types
       real(dp), allocatable :: exp_energy_scales_final(:)
       integer :: n_moments = 0
       logical :: write_exp = .true.
+      integer :: n_exp_opt = 0
 
 !     XPS
       type(exp_data_container) :: xps
@@ -731,6 +828,7 @@ module types
       real(dp) :: xps_e_min = 280.0
       real(dp) :: xps_e_max = 300.0
       integer :: xps_n_samples = 200
+      character*32 :: xps_force_type = "similarity"
 
 !     PAIR DISTRIBUTION
       logical :: do_pair_distribution = .false.
@@ -755,6 +853,10 @@ module types
       real(dp) :: q_range_min = 1.0
       real(dp) :: q_range_max = 5.d0
       character*32 :: q_units = "q"
+      type(exp_pred_container) :: pair_distribution_params
+      type(exp_pred_container) :: structure_factor_params
+      type(exp_pred_container) :: xrd_params
+      integer :: saxs_idx = 0
 
 !     X-RAY AND NEUTRON DIFFRACTION
       logical :: do_xrd = .false.
@@ -771,6 +873,7 @@ module types
       character*32 :: nd_output = "xrd"
       integer :: nd_n_samples = 200
       real(dp) :: nd_rcut = 4.d0
+      real(dp) :: nd_wavelength = 1.5405981d0
 !     Compute the XRD/ND pattern from the N^2 Debye sum over atomic positions
 !     instead of Fourier-transforming the partial pair distributions. The two
 !     routes answer the same question by different approximations: the pdf/sf
@@ -798,6 +901,8 @@ module types
 !     Accepted by the CPU build too, so that one input deck runs on both.
       logical :: gpu_batched = .true.
       logical :: gpu_low_memory = .true.
+      real(dp) :: gpu_mem_fraction = 0.d0
+      logical :: estat_gpu_batched = .false.
       integer :: gpu_n_batches = 1
       integer :: n_batches = 0
       real(dp) :: gpu_max_batch_size = 1.d0

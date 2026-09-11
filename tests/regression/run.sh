@@ -36,8 +36,33 @@
 # tests: they pin behaviour against future drift and assert nothing about
 # whether the physics is right.
 #
-# Usage: run.sh [case ...]      (no arguments runs every case)
+# Usage: run.sh [--cpu|--gpu|--both] [case ...]   (no case names runs every case)
 #        run.sh --list
+#
+# --cpu (the default) tests bin/turbogap and compares bit for bit.
+# --gpu tests bin-gpu/turbogap against the HOST build of the same source --
+#       not against the frozen baseline -- and compares NUMERICALLY, within a
+#       tolerance:
+#       the device build sums the SOAP batches and the cuBLAS reductions in a
+#       different order, so the last digits move on a run that is entirely
+#       correct, and a bit-exact diff would report every case as a failure.
+#       A case may set GPU_RTOL and GPU_ATOL in its case.conf; the defaults are
+#       below. Build the device binary into its own tree so the two coexist:
+#           make TURBOGAP_ARCH=<device arch> DEBUG=0 BUILD_TAG_EXTRA=-gpu
+# --both runs the CPU pass and then the GPU pass, and fails if either does.
+#
+#   TURBOGAP_GPU_BIN    device binary (default: <repo>/bin-gpu/turbogap)
+#   TURBOGAP_GPU_RTOL   default relative tolerance in --gpu mode (1e-6)
+#   TURBOGAP_GPU_ATOL   default absolute tolerance in --gpu mode (1e-6)
+#
+# Where those defaults come from: on co_md the device binary's whole trajectory
+# differs from the host binary's by at most 6e-8 in absolute value, which is a
+# few units in the last digit the output carries (positions and forces are
+# written F16.8, so 1e-8 is the smallest difference the file can express). 1e-6
+# is two orders above that and still far below any error in the physics, which
+# would move a force by very much more. The absolute term is what matters: a
+# force component near zero has a large relative deviation for an absolute one
+# of 1e-8, which is why a relative tolerance alone cannot be used here.
 
 set -u
 
@@ -58,6 +83,39 @@ die() {
 if [ "${1:-}" = --list ]; then
   for d in "$here"/cases/*/; do basename "$d"; done
   exit 0
+fi
+
+ARCH=cpu
+case "${1:-}" in
+  --cpu) ARCH=cpu; shift ;;
+  --gpu) ARCH=gpu; shift ;;
+  --both) ARCH=both; shift ;;
+esac
+
+# Two passes, reported separately, so it is always clear which build failed.
+if [ "$ARCH" = both ]; then
+  "$0" --cpu "$@"; cpu_rc=$?
+  printf '\n'
+  "$0" --gpu "$@"; gpu_rc=$?
+  printf '\nCPU pass: %s    GPU pass: %s\n' \
+    "$([ $cpu_rc -eq 0 ] && echo ok || echo FAILED)" \
+    "$([ $gpu_rc -eq 0 ] && echo ok || echo FAILED)"
+  [ $cpu_rc -eq 0 ] && [ $gpu_rc -eq 0 ]
+  exit $?
+fi
+
+GPU_BIN=${TURBOGAP_GPU_BIN:-$repo/bin-gpu/turbogap}
+DEFAULT_GPU_RTOL=${TURBOGAP_GPU_RTOL:-1e-6}
+DEFAULT_GPU_ATOL=${TURBOGAP_GPU_ATOL:-1e-6}
+if [ "$ARCH" = gpu ]; then
+  BIN=${TURBOGAP_BIN:-$GPU_BIN}
+  # The reference for a device run is the HOST BUILD OF THE SAME SOURCE, not
+  # the frozen baseline. The baseline predates the driver refactor and master
+  # has moved legitimately since -- 15 of the cases differ from it on the host
+  # build alone -- so comparing the device binary against it would fold that
+  # evolution into the same number as the host/device difference and answer
+  # neither question.
+  REF_BIN=${TURBOGAP_REF_BIN:-$repo/bin/turbogap}
 fi
 
 [ -x "$BIN" ] || die "binary under test not found or not executable: $BIN"
@@ -101,6 +159,12 @@ stage() {
     ln -sf "$DATA_ROOT/$DATA/$src" "$dir/$dst"
   done
   cp "$here/cases/$name/input" "$dir/input"
+  # Small inputs the case carries itself, for what the shared data repository
+  # has no copy of. Copied, not linked, so a run cannot write back into the
+  # case directory.
+  if [ -d "$here/cases/$name/files" ]; then
+    cp "$here/cases/$name/files/"* "$dir/"
+  fi
   # Pin the SOAP batch split. gpu_memory_budget_init sizes
   # max_Gbytes_per_process from the node's memory, and the batch count it
   # produces changes the order the per-batch force contributions are summed --
@@ -143,6 +207,19 @@ run() {
   return 0
 }
 
+# same <reference> <test>
+#
+# Bit-exact for a host build, within a tolerance for a device build. Which one
+# is not a per-case choice: it follows from which binary is under test.
+same() {
+  if [ "$ARCH" = gpu ]; then
+    "${TURBOGAP_PYTHON:-python3}" "$here/compare_tol.py" \
+      "$1" "$2" --rtol "$GPU_RTOL" --atol "$GPU_ATOL" >/dev/null
+  else
+    diff -q "$1" "$2" >/dev/null
+  fi
+}
+
 pass=0
 fail=0
 skip=0
@@ -161,6 +238,8 @@ for name in "${cases[@]}"; do
   OUTPUTS=
   NEEDS=
   REFERENCE=baseline
+  GPU_RTOL=$DEFAULT_GPU_RTOL
+  GPU_ATOL=$DEFAULT_GPU_ATOL
   # shellcheck source=/dev/null
   . "$conf"
 
@@ -231,7 +310,7 @@ for name in "${cases[@]}"; do
       bad="$bad $out(produced-by-only-one)"
       continue
     fi
-    if ! diff -q "$rdir/$out" "$tdir/$out" >/dev/null; then
+    if ! same "$rdir/$out" "$tdir/$out"; then
       bad="$bad $out"
     fi
   done
@@ -245,7 +324,12 @@ for name in "${cases[@]}"; do
     for out in $bad; do
       case $out in *\(*\)) continue ;; esac
       printf '      --- first differences in %s ---\n' "$out"
-      diff "$rdir/$out" "$tdir/$out" | head -12 | sed 's/^/      /'
+      if [ "$ARCH" = gpu ]; then
+        "${TURBOGAP_PYTHON:-python3}" "$here/compare_tol.py" \
+          "$rdir/$out" "$tdir/$out" --rtol "$GPU_RTOL" --atol "$GPU_ATOL"
+      else
+        diff "$rdir/$out" "$tdir/$out" | head -12 | sed 's/^/      /'
+      fi
     done
     fail=$((fail + 1))
     continue

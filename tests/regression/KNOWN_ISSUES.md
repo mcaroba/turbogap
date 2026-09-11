@@ -577,3 +577,140 @@ tests/fd_gap/run.sh soap        # then edit out --exclude-atoms 326
 regression suite would see it — every case there computes energies at fixed
 geometries — but a relaxation or an MD trajectory passing through such a point
 gets a force that does not integrate the energy it is supposed to.
+
+---
+
+## 13. Electrostatics: three defects found by the first run — TWO FIXED
+
+**Found** 2026-09-11, on the first run of `estat_gsf` against a device build.
+
+`estat_gsf` is the only case that reaches the electrostatics path at all: the
+CCLi GAP is the only potential in the test data declaring an `atomic_charge`
+local property. It is also the only one that compresses from a file. Running it
+turned up three separate things.
+
+### a. Compression indices unallocated from a file — FIXED
+
+`src/soap_turbo_gpu` takes the SOAP compression as one index per kept component,
+`src/soap_turbo` as the sparse `compress_P` triple. `read_files` filled the index
+array only on the `compress_mode` path, so a potential naming a compression FILE
+left `compress_soap_indices` unallocated and the hypers broadcast in
+`turbogap_setup.f90` indexed it. In the backwards-compatible file form the file
+is exactly that list, read into `compress_P_j` with a unit element and a running
+row index, so the fix is a copy rather than a second parse. A general
+`P_transformation` file has no such list, and a device build now says so and
+stops rather than compressing differently from the host.
+
+### b. Negative local properties truncated at zero — FIXED, and it was wrong on BOTH builds
+
+`local_property_predict` clamped every predicted local property at zero:
+
+```fortran
+!   Make sure all V are >= 0
+    do i = 1, size(V)
+       if (V(i) < 0.d0) V(i) = 0.d0
+    end do
+```
+
+That is right for a Hirshfeld volume and wrong for an atomic charge, which is
+negative for half the atoms in any polar system. The host build's charges were
+therefore positive-definite before neutralisation, and the electrostatic energy
+computed from them was wrong: **-0.085 eV against -11.628 eV**. The device path
+never had the clamp, which is why the two builds disagreed, but the host was the
+one in error.
+
+The GPU branch had already found this and added `zero_trunc` to the
+local-property model for it -- *"This is important -- no truncating the charges;
+it doesn't make sense here!"* -- but nothing on the host side ever read the flag.
+It is read now: absent means clamp, `hirshfeld_v` is set `.true.` explicitly so
+the van der Waals path is unchanged bit for bit, and everything else keeps the
+type's default of `.false.`.
+
+With this fixed the two builds agree on the charges to 1e-8, which is the
+resolution the output carries.
+
+### c. The batched device electrostatics kernel is wrong — OPEN
+
+With the charges right, the device still gave `estat energy: -0.085 eV` where
+the host gave `-11.628 eV`. Setting `gpu_batched = .false.` makes the device
+reproduce the host exactly, to all printed digits, and the whole run agrees to
+4e-10 relative.
+
+So `calculate_batched_electrostatics` is wrong, and it is the kernel rather than
+the batch bookkeeping: the run uses a **single** batch covering all 897 atoms
+(`i = 1 / 1, i_beg = 1, i_end = 897`) and still gets the wrong answer. The
+unbatched path on the same build is correct.
+
+Until it is fixed, the batched kernel is off by default and reached only through
+the new `estat_gpu_batched` keyword -- not through `gpu_batched`, which also
+drives the batched pdf and structure-factor paths and which those need. A device
+run therefore gets correct electrostatics without asking for it, and the kernel
+stays reachable for whoever fixes it.
+
+---
+
+## 14. The frozen baseline is stale: 14 cases, one cause — OPEN, needs a decision
+
+**Measured** 2026-09-11, by triaging every failing case rather than reading the
+diffs.
+
+Every case whose `case.conf` says `REFERENCE=baseline` fails, and every case
+that says `REFERENCE=golden` passes. That is **14 of 14** against **24 of 24**.
+So this is not fourteen problems; it is one, and it is the reference.
+
+**What differs.** Only `energy_soap`, and only in the last digit it prints:
+
+```
+baseline e6eb1aa   energy_soap=-8173.42514464
+current            energy_soap=-8173.42514465
+```
+
+1.2e-12 relative. `energy_2b`, `energy_3b` and `energy_core_pot` are bit-identical,
+and so is every derived file a case writes -- for `xrd_predict`, all four pair
+distributions, all four structure factors, the xrd prediction and both exp files
+are identical, and only `trajectory_out.xyz` differs, by 5e-8 absolute.
+
+**What the size of the failure tracks** is how much the case amplifies that
+round-off, not how wrong it is:
+
+| case | kind | worst absolute |
+|---|---|---|
+| `xrd_predict` | single-point predict | 5e-8 |
+| `co_predict` | single-point predict | 1.5e-6 |
+| `co_md` | molecular dynamics | 4.3e-5 |
+| `relax_gd` | gradient-descent relaxation | 7.2e-2 |
+
+A relaxation follows a path, and two paths that start 1e-12 apart separate.
+
+**It is not the batch decomposition**, which is the explanation this file and
+`docs/BUILD_AND_TEST.md` have been carrying. Running `co_predict` against the
+baseline binary at `max_Gbytes_per_process = 1.0` and at `64.0` -- many batches
+and one -- gives the *same* worst deviation, 2.5e-7, to every digit. Regrouping
+the partial sums does not produce this and does not remove it.
+
+**It is not `soap_radial_legacy_filter` either.** That switch defaults to
+`.true.` and is doing its job: turning it off moves `energy_soap` by 2.5e-4,
+which is four orders larger and plainly a different approximation, while leaving
+it on reproduces the baseline to 1e-8. What remains is an implementation
+difference in the SOAP path itself -- master takes its soap_turbo from a
+submodule whose compression API is not the one `e6eb1aa` was built against, and
+a different implementation of the same arithmetic differs in the last bits.
+
+**So there is nothing to fix in the code.** The bit-exact contract these 14
+cases encode -- "the driver refactor must not move a digit" -- was met and is
+now finished: master is 165 commits past `e6eb1aa` and has deliberately changed
+the SOAP path since. The cost of leaving it is that the suite can never be
+green, and a suite that is always red cannot show a new regression.
+
+The choice is the maintainer's, and deliberately not made here, because
+regenerating a reference to turn a suite green is the one thing this suite must
+never do casually:
+
+1. **Re-baseline.** Build `tests/regression/baseline/turbogap.<sha>` from a
+   chosen commit and update `COMMIT`. Keeps bit-exactness as the contract, and
+   restates what it is a contract about.
+2. **Convert the 14 to golden**, as the other 24 already are. They then pin
+   behaviour against future drift, which is what they can still usefully do,
+   but they stop being a statement about the refactor.
+3. **Leave them red**, and read the suite as "14 known, 0 new". This is what is
+   happening today, and it works only for as long as someone remembers the 14.

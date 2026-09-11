@@ -30,6 +30,12 @@ module exp_utils
 
    use kinds
    use types
+   use error, only: turbogap_abort
+   use iso_fortran_env, only: error_unit
+#ifdef _GPU
+   use F_B_C
+   use iso_c_binding
+#endif
 
 !  SUM OF SQUARED RESIDUALS over every experimental observable evaluated this
 !  step, and the same sum over the experimental data itself. Their ratio is a
@@ -135,6 +141,20 @@ contains
       if (x > high) clamp = high
    end function clamp
 
+#ifdef _GPU
+   subroutine energy_scale(current_step, total_steps, escale_initial, escale_final, escale)
+      implicit none
+      integer, intent(in) :: current_step
+      integer, intent(in) :: total_steps
+      real(dp), intent(in) :: escale_initial
+      real(dp), intent(in) :: escale_final
+      real(dp), intent(out) :: escale
+      real(dp) :: t
+
+      t = clamp(dfloat(current_step)/dfloat(total_steps), 0.d0, 1.d0)
+      escale = (1.d0 - t)*escale_initial + t*escale_final
+   end subroutine energy_scale
+#else
    subroutine energy_scale(current_step, total_steps, escale_initial, escale_final, escale)
       implicit none
       integer, intent(in) :: current_step
@@ -158,6 +178,7 @@ contains
       t = clamp(dfloat(current_step)/dfloat(total_steps), 0.d0, 1.d0)
       escale = (1.d0 - t)*escale_initial + t*escale_final
    end subroutine energy_scale
+#endif
 
    subroutine get_energy_scale(do_md, do_mc, md_istep, md_nsteps,&
         & mc_istep, mc_nsteps, escale_initial, escale_final, escale)
@@ -183,6 +204,304 @@ contains
 
    end subroutine get_energy_scale
 
+#ifdef _GPU
+   subroutine get_structure_factor_forces(n_sites0, energy_scale, x, y_exp, forces0, virial,  &
+        & neighbors_list, n_neigh, neighbor_species, species_types, rjs, xyz, r_min,&
+        & r_max, n_samples, n_samples_sf, n_species, x_structure_factor, structure_factor, r_cut, species_1,&
+        & species_2, pair_distribution_der, partial_rdf, kde_sigma,&
+        & c_factor, sinc_factor_matrix, n_dim_idx, do_xrd, output, n_atoms_of_species, neutron, rank, w)
+      implicit none
+      real(dp), intent(in), optional :: w(:)
+      real(dp), intent(in) :: rjs(:)
+      real(dp), intent(in) :: xyz(:, :)
+      real(dp), intent(in) :: y_exp(:)
+      real(dp), intent(in) :: energy_scale
+      real(dp), intent(in) :: kde_sigma
+      real(dp), intent(in) :: c_factor
+      real(dp), intent(in) :: sinc_factor_matrix(:, :)
+      real(dp), intent(in) :: x(:)
+      integer, intent(in) :: n_sites0
+      integer, intent(in) :: n_samples_sf
+      integer, intent(in) :: n_species
+      character*8, allocatable, intent(in) :: species_types(:)
+      real(dp) :: r_min
+      real(dp) :: r_max
+      real(dp) :: r_cut
+      integer, intent(in) :: neighbors_list(:)
+      integer, intent(in) :: n_neigh(:)
+      integer, intent(in) :: neighbor_species(:)
+      integer, intent(in) :: n_samples
+      integer, intent(in) :: species_1
+      integer, intent(in) :: species_2
+      integer, intent(in) :: n_dim_idx
+      integer :: n_sites
+      integer :: n_pairs
+      integer :: count
+      integer :: count_species_1
+      integer :: i
+      integer :: j
+      integer :: k
+      integer :: ki
+      integer :: k1
+      integer :: k2
+      integer :: i2
+      integer :: j2
+      integer :: l
+      integer :: ii
+      integer :: jj
+      integer :: kk
+      integer :: i3
+      integer :: j3
+      integer :: i4
+      integer :: species_i
+      integer :: species_j
+!     Only rank 0 adds the volume half of the virial: it belongs to the cell,
+!     not to the pairs this rank owns, and the virial is summed over ranks.
+      integer, intent(in) :: rank
+      real(dp), intent(in) :: x_structure_factor(:)
+      real(dp), intent(in) :: structure_factor(:)
+      real(dp), intent(in) :: n_atoms_of_species(:)
+      real(dp), intent(in) :: pair_distribution_der(:, :)
+      real(dp), intent(inout) :: forces0(:, :)
+      real(dp), intent(inout) :: virial(1:3, 1:3)
+      character*32, intent(in) :: output
+      real(dp), allocatable :: prefactor(:)
+      real(dp), allocatable :: all_scattering_factors(:)
+      real(dp), allocatable :: sf_parameters(:, :)
+      real(dp), allocatable :: structure_factor_der(:)
+      real(dp) :: r
+      real(dp) :: n_pc
+      real(dp) :: this_force(1:3)
+      real(dp) :: f
+      real(dp) :: wfaci
+      real(dp) :: wfacj
+      real(dp) :: temp(1:n_samples_sf)
+      real(dp) :: sth
+      real(dp), parameter :: pi = acos(-1.0)
+      logical, intent(in) :: partial_rdf
+      logical, intent(in) :: do_xrd
+      logical, intent(in) :: neutron
+      logical :: species_in_list
+      logical :: counted_1 = .false.
+
+      ! First allocate the pair correlation function array
+
+      n_sites = size(n_neigh)
+      n_pairs = size(neighbors_list)
+
+      allocate (prefactor(1:n_samples_sf))
+!     The weighted residual. Weighting it here is the whole change for the
+!     forces: it is the only thing the pattern's derivative is contracted
+!     against, so w_i^2 (y_i - y_exp_i) is exactly the gradient of
+!     gamma/2 * sum_i w_i^2 (y_i - y_exp_i)^2, which is what get_exp_energies
+!     computes with the same weights. Squared, so the file holds w.
+      prefactor = (structure_factor - y_exp)
+      if (present(w)) prefactor = w(1:n_samples_sf)*w(1:n_samples_sf)*prefactor
+
+      allocate (structure_factor_der(1:n_samples_sf))
+
+      if (do_xrd) then
+         if (.not. neutron) then
+            allocate (sf_parameters(1:9, 1:n_species))
+            allocate (all_scattering_factors(1:n_samples_sf))
+
+            sf_parameters = 0.d0
+            do i = 1, size(species_types)
+               call get_scattering_factor_params(species_types(i), sf_parameters(1:9, i))
+            end do
+
+            do i = 1, n_samples_sf
+               call get_scattering_factor(wfaci, sf_parameters(1:9, species_1), x_structure_factor(i)/2.d0)
+               call get_scattering_factor(wfacj, sf_parameters(1:9, species_2), x_structure_factor(i)/2.d0)
+               all_scattering_factors(i) = wfaci*wfacj
+
+               if (trim(output) == "q*i(q)" .or. trim(output) == "q*F(q)") then
+                  ! we now handlw this case in preprocess experimental data
+                  ! output q * i(q) === q * F_x(q)
+                  sth = 0.d0
+                  do j = 1, n_species
+                     call get_scattering_factor(wfaci, sf_parameters(1:9, j), x_structure_factor(i)/2.d0)
+                     sth = sth + (n_atoms_of_species(j)/dfloat(n_sites0))*wfaci !* wfaci
+                  end do
+
+                  all_scattering_factors(i) = 2.d0*pi*x(i)*all_scattering_factors(i)/sth**2 !+ 1.d0
+
+               elseif (trim(output) == "F(q)" .or. trim(output) == "i(q)") then
+                  ! Output the total scattering functon, i(q) === F_x(q)
+                  sth = 0.d0
+                  do j = 1, n_species
+                     call get_scattering_factor(wfaci, sf_parameters(1:9, j), x_structure_factor(i)/2.d0)
+                     sth = sth + (n_atoms_of_species(j)/dfloat(n_sites0))*wfaci !* wfaci
+                  end do
+
+                  all_scattering_factors(i) = all_scattering_factors(i)/sth**2 !+ 1.d0
+
+               end if
+
+            end do
+         else
+            allocate (sf_parameters(1:9, 1:n_species))
+            allocate (all_scattering_factors(1:n_samples_sf))
+            do i = 1, n_samples_sf
+               call get_neutron_scattering_length(species_types(species_1), wfaci)
+               call get_neutron_scattering_length(species_types(species_2), wfacj)
+               all_scattering_factors(i) = wfaci*wfacj
+
+               if (trim(output) == "q*i(q)" .or. trim(output) == "q*F(q)") then
+                  ! we now handlw this case in preprocess experimental data
+                  ! output q * i(q) === q * F_x(q)
+                  sth = 0.d0
+                  do j = 1, n_species
+!                    Into wfaci, which is the variable the sum reads. It used to
+!                    land in wfacj while the sum kept adding wfaci, and wfaci
+!                    still held b of species_1 from above the loop -- so sth came
+!                    out as b(species_1) * sum_j x_j = b(species_1) rather than
+!                    the mean <b> = sum_j x_j b_j that the F(q) normalisation
+!                    calls for. The X-ray branch a few lines up has always
+!                    fetched into wfaci; so has the device path in
+!                    get_all_scattering_factors, which is why batched and
+!                    unbatched agreed to the last bit for xrd and not at all for
+!                    nd.
+                     call get_neutron_scattering_length(species_types(j), wfaci)
+                     sth = sth + (n_atoms_of_species(j)/dfloat(n_sites0))*wfaci
+                  end do
+
+                  all_scattering_factors(i) = 2.d0*pi*x(i)*all_scattering_factors(i)/sth**2 !+ 1.d0
+
+               elseif (trim(output) == "F(q)" .or. trim(output) == "i(q)") then
+                  ! Output the total scattering functon, i(q) === F_x(q)
+                  sth = 0.d0
+                  do j = 1, n_species
+!                    Into wfaci, which is the variable the sum reads. It used to
+!                    land in wfacj while the sum kept adding wfaci, and wfaci
+!                    still held b of species_1 from above the loop -- so sth came
+!                    out as b(species_1) * sum_j x_j = b(species_1) rather than
+!                    the mean <b> = sum_j x_j b_j that the F(q) normalisation
+!                    calls for. The X-ray branch a few lines up has always
+!                    fetched into wfaci; so has the device path in
+!                    get_all_scattering_factors, which is why batched and
+!                    unbatched agreed to the last bit for xrd and not at all for
+!                    nd.
+                     call get_neutron_scattering_length(species_types(j), wfaci)
+                     sth = sth + (n_atoms_of_species(j)/dfloat(n_sites0))*wfaci
+                  end do
+
+                  all_scattering_factors(i) = all_scattering_factors(i)/sth**2 !+ 1.d0
+
+               end if
+
+            end do
+
+         end if
+
+      end if
+
+      ! Not reinitalizing the forces as these will be added to for each partial
+      !    forces0 = 0.d0
+      k = 0
+      do i = 1, n_sites
+         ! k is the index which keeps a number of the atom pairs
+         ! i2 is the index of a particular atom
+         i2 = modulo(neighbors_list(k + 1) - 1, n_sites0) + 1
+         species_i = neighbor_species(k + 1)
+         k = k + 1
+         do j = 2, n_neigh(i)
+            ! Loop through the neighbors of atom i
+            ! j2 is the index of a neighboring atom to i
+            k = k + 1
+            j2 = modulo(neighbors_list(k) - 1, n_sites0) + 1
+
+            species_j = neighbor_species(k)
+
+            if (partial_rdf) then
+
+               if (((species_i /= species_1) .or. (species_j /= species_2))) then
+                  if (.not. (species_i == species_2 .and. species_j == species_1)) cycle
+               end if
+
+            end if
+
+            r = rjs(k) ! atom pair distance
+
+            if (r < 1e-3 .or. r > r_cut) cycle
+            if (r < r_min) cycle
+            if (r > r_max + kde_sigma*6.d0) cycle
+
+            if ((.not. all(xyz(1:3, k) == 0.d0)) .and. &
+                 & (.not. all(pair_distribution_der(1:n_samples, k) == 0.d0))) then
+
+               ! Actual derivative of the pair distribution function given here, no normalisation needed I think
+
+               ! call get_single_partial_structure_factor_derivative(sinc_factor_matrix,&
+               !            & n_samples_pc, n_samples_sf, n_dim_idx,  alpha, k,  xyz, &
+               ! & pair_distribution_partial_der, structure_factor_partial_der, c_factor)
+
+               structure_factor_der = 0.d0
+               call dgemv("N", n_samples_sf, n_samples, -2.d0*xyz(1, k)*c_factor, sinc_factor_matrix, n_samples_sf,&
+                    &  pair_distribution_der(1:n_samples, k), 1, 0.d0,&
+                    & structure_factor_der, 1)
+
+               if (do_xrd) structure_factor_der = all_scattering_factors*structure_factor_der
+               !if (trim(output) == "q*i(q)") structure_factor_der = 2.d0 * pi * x * structure_factor_der
+               this_force(1) = dot_product(structure_factor_der(1:n_samples_sf), prefactor(1:n_samples_sf))
+
+               structure_factor_der = 0.d0
+               call dgemv("N", n_samples_sf, n_samples, -2.d0*xyz(2, k)*c_factor, sinc_factor_matrix, n_samples_sf,&
+                    & pair_distribution_der(1:n_samples, k), 1, 0.d0,&
+                    & structure_factor_der, 1)
+
+               if (do_xrd) structure_factor_der = all_scattering_factors*structure_factor_der
+               !if (trim(output) == "q*i(q)") structure_factor_der = 2.d0 * pi * x * structure_factor_der
+               this_force(2) = dot_product(structure_factor_der(1:n_samples_sf), prefactor(1:n_samples_sf))
+
+               structure_factor_der = 0.d0
+               call dgemv("N", n_samples_sf, n_samples, -2.d0*xyz(3, k)*c_factor, sinc_factor_matrix, n_samples_sf,&
+                    &  pair_distribution_der(1:n_samples, k), 1, 0.d0,&
+                    & structure_factor_der, 1)
+
+               if (do_xrd) structure_factor_der = all_scattering_factors*structure_factor_der
+               !if (trim(output) == "q*i(q)") structure_factor_der = 2.d0 * pi * x * structure_factor_der
+               this_force(3) = dot_product(structure_factor_der(1:n_samples_sf), prefactor(1:n_samples_sf))
+
+               this_force(1:3) = energy_scale*this_force(1:3)
+
+               forces0(1:3, j2) = forces0(1:3, j2) + this_force(1:3)
+
+               ! if ( all( forces0(1:3, j2) > 0.01d0) ) print *, forces0(1:3, j2)
+               !             Sign is plus because this force is acting on j2. Factor of one is because this is
+               !             derived from a local energy
+               !              virial = virial + dot_product(this_force(1:3), xyz(1:3,k))
+               !
+               !             0.25 = 0.5 to symmetrise, times 0.5 because this loop
+               !             runs over ordered pairs. sum_a F_a (x) r_a telescopes
+               !             into one term per *unordered* pair, this_force (x) xyz,
+               !             and the reversed pair reproduces it rather than adding
+               !             anything new: xyz and this_force both change sign.
+               do k1 = 1, 3
+                  do k2 = 1, 3
+                     virial(k1, k2) = virial(k1, k2) + 0.25d0*(this_force(k1)*xyz(k2, k) + this_force(k2)*xyz(k1, k))
+                  end do
+               end do
+            end if
+
+         end do
+      end do
+
+      if (do_xrd) then
+         call add_structure_factor_volume_virial(virial, rank, energy_scale, c_factor,&
+              & prefactor, sinc_factor_matrix, n_samples, n_samples_sf, all_scattering_factors)
+      else
+         call add_structure_factor_volume_virial(virial, rank, energy_scale, c_factor,&
+              & prefactor, sinc_factor_matrix, n_samples, n_samples_sf)
+      end if
+
+      if (do_xrd) deallocate (all_scattering_factors)
+      if (do_xrd) deallocate (sf_parameters)
+      deallocate (structure_factor_der)
+      deallocate (prefactor)
+
+   end subroutine get_structure_factor_forces
+#else
    subroutine get_structure_factor_forces(n_sites0, energy_scale, x, y_exp, forces0, virial,  &
         & neighbors_list, n_neigh, neighbor_species, species_types, rjs, xyz, r_min,&
         & r_max, n_samples, n_samples_sf, n_species, x_structure_factor, structure_factor, r_cut, species_1,&
@@ -505,6 +824,7 @@ contains
 !
 !  The caller holds one (a,b) channel, and the channels sum, which is why this
 !  is written as an accumulation rather than as a single closed form.
+#endif
    subroutine add_structure_factor_volume_virial(virial, rank, energy_scale, c_factor,&
         & prefactor, sinc_factor_matrix, n_samples, n_samples_sf, all_scattering_factors)
       implicit none
@@ -538,12 +858,669 @@ contains
 
    end subroutine add_structure_factor_volume_virial
 
+#ifdef _GPU
+   subroutine get_structure_factor_forces_matrix(i_beg, i_end, n_sites0, energy_scale, x, y_exp, forces0, virial,  &
+        & neighbors_list, n_neigh, neighbor_species, species_types, species, rjs, xyz, r_min,&
+        & r_max, n_samples, n_samples_sf, n_species, x_structure_factor, structure_factor, r_cut, species_1,&
+        & species_2, pair_distribution_der, partial_rdf, kde_sigma,&
+        & c_factor, sinc_factor_matrix, n_dim_idx, do_xrd, output, n_atoms_of_species, neutron, rank, cublas_handle, gpu_stream,&
+        & nk, nk_d, k_index_d, j2_index_d, xyz_k_d, pair_distribution_partial_d, pair_distribution_partial_der_d, &
+        & st_nk_d, st_k_index_d, st_j2_index_d, st_pair_distribution_partial_d, st_pair_distribution_partial_der_d &
+        , gpu_host_storage, gpu_low_memory, w)
+      implicit none
+      real(dp), intent(in), optional :: w(:)
+      real(dp), intent(in), target :: rjs(:)
+      real(dp), intent(in), target :: xyz(:, :)
+      real(dp), intent(in), target :: y_exp(:)
+      real(dp), intent(in), target :: energy_scale
+      real(dp), intent(in), target :: kde_sigma
+      real(dp), intent(in), target :: c_factor
+      real(dp), intent(in), target :: sinc_factor_matrix(:, :)
+      real(dp), intent(in), target :: x(:)
+      integer, intent(in) :: n_sites0
+      integer, intent(in) :: n_samples_sf
+      integer, intent(in) :: n_species
+      character*8, allocatable, intent(in) :: species_types(:)
+      real(dp) :: r_min
+      real(dp) :: r_max
+      real(dp) :: r_cut
+      real(dp) :: alpha
+      real(dp) :: beta
+      integer, intent(in), target :: neighbors_list(:)
+      integer, intent(in), target :: n_neigh(:)
+      integer, intent(in), target :: neighbor_species(:)
+      integer, intent(in), target :: species(:)
+      integer, intent(in) :: n_samples
+      integer, intent(in) :: species_1
+      integer, intent(in) :: species_2
+      integer, intent(in) :: n_dim_idx
+      integer, intent(in) :: i_beg
+      integer, intent(in) :: i_end
+      integer :: n_sites
+      integer :: n_pairs
+      integer :: count
+      integer :: count_species_1
+      integer :: n_k_all
+      integer, target :: nk_temp(1)
+      integer, allocatable, target :: nk_sum_flags_host(:)
+      integer :: i
+      integer :: j
+      integer :: k
+      integer :: ki
+      integer :: k1
+      integer :: k2
+      integer :: i2
+      integer :: j2
+      integer :: l
+      integer :: ii
+      integer :: jj
+      integer :: kk
+      integer :: i3
+      integer :: j3
+      integer :: i4
+      integer :: species_i
+      integer :: species_j
+      integer :: n_k
+!     Only rank 0 adds the volume half of the virial: it belongs to the cell,
+!     not to the pairs this rank owns, and the virial is summed over ranks.
+      integer, intent(in) :: rank
+      real(dp), intent(in) :: x_structure_factor(:)
+      real(dp), intent(in) :: structure_factor(:)
+      real(dp), intent(in) :: n_atoms_of_species(:)
+      real(dp), intent(in) :: pair_distribution_der(:, :)
+      real(dp), intent(inout), target :: forces0(:, :)
+      real(dp), intent(inout), target :: virial(1:3, 1:3)
+      character*32, intent(in) :: output
+      real(dp), allocatable, target :: prefactor(:)
+      real(dp), allocatable, target :: all_scattering_factors(:)
+      real(dp), allocatable, target :: sf_parameters(:, :)
+      real(dp), allocatable, target :: structure_factor_der(:)
+      real(dp) :: r
+      real(dp) :: n_pc
+      real(dp) :: this_force(1:3)
+      real(dp) :: f
+      real(dp) :: wfaci
+      real(dp) :: wfacj
+      real(dp) :: temp(1:n_samples_sf)
+      real(dp) :: sth
+      real(dp) :: time(1:3)
+      real(dp), parameter :: pi = acos(-1.0)
+      logical, intent(in) :: partial_rdf
+      logical, intent(in) :: do_xrd
+      logical, intent(in) :: neutron
+      logical :: species_in_list
+      logical :: counted_1 = .false.
+      real(dp), allocatable, target :: xyz_k(:, :)
+      real(dp), allocatable, target :: Gk(:, :)
+      real(dp), allocatable, target :: Gka(:, :)
+      real(dp), allocatable, target :: dermat(:, :)
+      real(dp), allocatable, target :: fi(:, :)
+      real(dp), allocatable, target :: fi_temp(:, :)
+      real(dp), allocatable, target :: Gk_temp(:, :)
+      integer, allocatable, target :: k_list(:)
+      integer, allocatable, target :: i2_list(:)
+      integer, allocatable, target :: j2_list(:)
+      integer, allocatable, target :: ks_temp(:)
+
+      ! GPU VARIABLES
+      type(c_ptr) :: forces0_d
+      type(c_ptr) :: fi_d
+      type(c_ptr) :: virial_d
+      type(c_ptr) :: dermat_d
+      type(c_ptr) :: prefactor_d
+      type(c_ptr) :: all_scattering_factors_d
+      type(c_ptr) :: sinc_factor_matrix_d
+      type(c_ptr) :: Gka_d
+      type(c_ptr) :: Gk_d
+      integer(c_size_t) :: st_forces0_d
+      integer(c_size_t) :: st_fi_d
+      integer(c_size_t) :: st_virial_d
+      integer(c_size_t) :: st_dermat_d
+      integer(c_size_t) :: st_prefactor_d
+      integer(c_size_t) :: st_all_scattering_factors_d
+      integer(c_size_t) :: st_sinc_factor_matrix_d
+      integer(c_size_t) :: st_Gka_d
+      integer(c_size_t) :: st_Gk_d
+      integer, intent(in) :: nk
+      type(c_ptr) :: cublas_handle
+      type(c_ptr) :: gpu_stream
+      type(c_ptr) :: nk_d
+      type(c_ptr) :: nk_flags_d
+      type(c_ptr) :: nk_flags_sum_d
+      type(c_ptr) :: k_index_d
+      type(c_ptr) :: j2_index_d
+      type(c_ptr) :: rjs_index_d
+      type(c_ptr) :: xyz_k_d
+      type(c_ptr) :: pair_distribution_partial_d
+      type(c_ptr) :: pair_distribution_partial_der_d
+      integer(c_size_t) :: st_nk_d
+      integer(c_size_t) :: st_k_index_d
+      integer(c_size_t) :: st_j2_index_d
+      integer(c_size_t) :: st_rjs
+      integer(c_size_t) :: st_pair_distribution_partial_d
+      integer(c_size_t) :: st_pair_distribution_partial_der_d
+      type(gpu_host_storage_type), intent(inout), target :: gpu_host_storage
+      logical, intent(in) :: gpu_low_memory
+
+      ! First allocate the pair correlation function array
+
+      n_sites = size(n_neigh)
+      n_pairs = size(neighbors_list)
+
+      allocate (prefactor(1:n_samples_sf))
+!     The weighted residual. Weighting it here is the whole change for the
+!     forces: it is the only thing the pattern's derivative is contracted
+!     against, so w_i^2 (y_i - y_exp_i) is exactly the gradient of
+!     gamma/2 * sum_i w_i^2 (y_i - y_exp_i)^2, which is what get_exp_energies
+!     computes with the same weights. Squared, so the file holds w.
+      prefactor = (structure_factor - y_exp)
+      if (present(w)) prefactor = w(1:n_samples_sf)*w(1:n_samples_sf)*prefactor
+
+      if (do_xrd) then
+         if (.not. neutron) then
+            allocate (sf_parameters(1:9, 1:n_species))
+            allocate (all_scattering_factors(1:n_samples_sf))
+
+            sf_parameters = 0.d0
+            do i = 1, size(species_types)
+               call get_scattering_factor_params(species_types(i), sf_parameters(1:9, i))
+            end do
+
+            do i = 1, n_samples_sf
+               call get_scattering_factor(wfaci, sf_parameters(1:9, species_1), x_structure_factor(i)/2.d0)
+               call get_scattering_factor(wfacj, sf_parameters(1:9, species_2), x_structure_factor(i)/2.d0)
+               all_scattering_factors(i) = wfaci*wfacj
+
+               if (trim(output) == "q*i(q)" .or. trim(output) == "q*F(q)") then
+                  ! we now handlw this case in preprocess experimental data
+                  ! output q * i(q) === q * F_x(q)
+                  sth = 0.d0
+                  do j = 1, n_species
+                     call get_scattering_factor(wfaci, sf_parameters(1:9, j), x_structure_factor(i)/2.d0)
+                     sth = sth + (n_atoms_of_species(j)/dfloat(n_sites0))*wfaci !* wfaci
+                  end do
+
+                  all_scattering_factors(i) = 2.d0*pi*x(i)*all_scattering_factors(i)/sth**2 !+ 1.d0
+
+               elseif (trim(output) == "F(q)" .or. trim(output) == "i(q)") then
+                  ! Output the total scattering functon, i(q) === F_x(q)
+                  sth = 0.d0
+                  do j = 1, n_species
+                     call get_scattering_factor(wfaci, sf_parameters(1:9, j), x_structure_factor(i)/2.d0)
+                     sth = sth + (n_atoms_of_species(j)/dfloat(n_sites0))*wfaci !* wfaci
+                  end do
+
+                  all_scattering_factors(i) = all_scattering_factors(i)/sth**2 !+ 1.d0
+
+               end if
+
+            end do
+         else
+            allocate (sf_parameters(1:9, 1:n_species))
+            allocate (all_scattering_factors(1:n_samples_sf))
+            do i = 1, n_samples_sf
+               call get_neutron_scattering_length(species_types(species_1), wfaci)
+               call get_neutron_scattering_length(species_types(species_2), wfacj)
+               all_scattering_factors(i) = wfaci*wfacj
+
+               if (trim(output) == "q*i(q)" .or. trim(output) == "q*F(q)") then
+                  ! we now handlw this case in preprocess experimental data
+                  ! output q * i(q) === q * F_x(q)
+                  sth = 0.d0
+                  do j = 1, n_species
+!                    Into wfaci, which is the variable the sum reads. It used to
+!                    land in wfacj while the sum kept adding wfaci, and wfaci
+!                    still held b of species_1 from above the loop -- so sth came
+!                    out as b(species_1) * sum_j x_j = b(species_1) rather than
+!                    the mean <b> = sum_j x_j b_j that the F(q) normalisation
+!                    calls for. The X-ray branch a few lines up has always
+!                    fetched into wfaci; so has the device path in
+!                    get_all_scattering_factors, which is why batched and
+!                    unbatched agreed to the last bit for xrd and not at all for
+!                    nd.
+                     call get_neutron_scattering_length(species_types(j), wfaci)
+                     sth = sth + (n_atoms_of_species(j)/dfloat(n_sites0))*wfaci
+                  end do
+
+                  all_scattering_factors(i) = 2.d0*pi*x(i)*all_scattering_factors(i)/sth**2 !+ 1.d0
+
+               elseif (trim(output) == "F(q)" .or. trim(output) == "i(q)") then
+                  ! Output the total scattering functon, i(q) === F_x(q)
+                  sth = 0.d0
+                  do j = 1, n_species
+!                    Into wfaci, which is the variable the sum reads. It used to
+!                    land in wfacj while the sum kept adding wfaci, and wfaci
+!                    still held b of species_1 from above the loop -- so sth came
+!                    out as b(species_1) * sum_j x_j = b(species_1) rather than
+!                    the mean <b> = sum_j x_j b_j that the F(q) normalisation
+!                    calls for. The X-ray branch a few lines up has always
+!                    fetched into wfaci; so has the device path in
+!                    get_all_scattering_factors, which is why batched and
+!                    unbatched agreed to the last bit for xrd and not at all for
+!                    nd.
+                     call get_neutron_scattering_length(species_types(j), wfaci)
+                     sth = sth + (n_atoms_of_species(j)/dfloat(n_sites0))*wfaci
+                  end do
+
+                  all_scattering_factors(i) = all_scattering_factors(i)/sth**2 !+ 1.d0
+
+               end if
+
+            end do
+
+         end if
+
+      end if
+
+      ! First loop to get the number of valid k indexes
+      call cpu_time(time(1))
+
+      if (gpu_low_memory) then
+         ! copy back things we need from host to device
+
+         call gpu_meminfo()
+
+         st_fi_d = int(nk, c_size_t)*3*c_double
+         call gpu_malloc_async(fi_d, st_fi_d, gpu_stream)
+         call gpu_memset_async(fi_d, 0, st_fi_d, gpu_stream)
+
+         st_prefactor_d = int(size(prefactor, 1), c_size_t)*c_double
+         call gpu_malloc_async(prefactor_d, st_prefactor_d, gpu_stream)
+         call cpy_htod(c_loc(prefactor), prefactor_d, st_prefactor_d, gpu_stream)
+
+         st_all_scattering_factors_d = int(size(all_scattering_factors, 1), c_size_t)*c_double
+         call gpu_malloc_async(all_scattering_factors_d, st_all_scattering_factors_d, gpu_stream)
+         call cpy_htod(c_loc(all_scattering_factors), all_scattering_factors_d, st_all_scattering_factors_d, gpu_stream)
+
+         alpha = 1.d0
+         beta = 0.d0
+
+         call gpu_stream_sync(gpu_stream)
+         call gpu_meminfo()
+
+         do i = 1, 3
+
+            call gpu_malloc_async(k_index_d, st_k_index_d, gpu_stream)
+            call cpy_htod(c_loc(gpu_host_storage%k_index_h), k_index_d, st_k_index_d, gpu_stream)
+
+            call gpu_malloc_async(pair_distribution_partial_der_d, st_pair_distribution_partial_der_d, gpu_stream)
+          call cpy_htod( c_loc( gpu_host_storage % pair_distribution_partial_der_h), pair_distribution_partial_der_d, st_pair_distribution_partial_der_d, gpu_stream)
+
+            st_Gk_d = int(n_samples, c_size_t)*nk*c_double
+            call gpu_malloc_async(Gk_d, st_Gk_d, gpu_stream)
+
+            call gpu_stream_sync(gpu_stream)
+            call gpu_set_Gk(nk, n_samples, k_index_d, Gk_d, pair_distribution_partial_der_d, c_factor, gpu_stream)
+
+            call gpu_free_async(k_index_d, gpu_stream)
+            call gpu_free_async(pair_distribution_partial_der_d, gpu_stream)
+
+            st_rjs = int(nk, c_size_t)*c_double
+            call gpu_stream_sync(gpu_stream)
+            call gpu_malloc_async(xyz_k_d, 3*st_rjs, gpu_stream)
+            call cpy_htod(c_loc(gpu_host_storage%xyz_k_h), xyz_k_d, 3*st_rjs, gpu_stream)
+
+            call gpu_stream_sync(gpu_stream)
+            call gpu_get_Gka_inplace(i, nk, n_samples, Gk_d, xyz_k_d, gpu_stream)
+            call gpu_free_async(xyz_k_d, gpu_stream)
+
+            call gpu_stream_sync(gpu_stream)
+            st_sinc_factor_matrix_d = int(size(sinc_factor_matrix, 1), c_size_t)*size(sinc_factor_matrix, 2)*c_double
+            call gpu_malloc_async(sinc_factor_matrix_d, st_sinc_factor_matrix_d, gpu_stream)
+            call cpy_htod(c_loc(sinc_factor_matrix), sinc_factor_matrix_d, st_sinc_factor_matrix_d, gpu_stream)
+
+            st_dermat_d = int(n_samples_sf, c_size_t)*nk*c_double
+            call gpu_malloc_async(dermat_d, st_dermat_d, gpu_stream)
+
+            call gpu_stream_sync(gpu_stream)
+            call gpu_dgemm_n_n(n_samples_sf, nk, n_samples, alpha, sinc_factor_matrix_d, n_samples_sf,&
+                 & Gk_d, n_samples, beta, dermat_d, n_samples_sf, cublas_handle)
+
+            call gpu_free_async(sinc_factor_matrix_d, gpu_stream)
+            call gpu_free_async(Gk_d, gpu_stream)
+
+            call gpu_stream_sync(gpu_stream)
+            if (do_xrd) then
+               call gpu_hadamard_vec_mat_product(n_samples_sf, nk, all_scattering_factors_d, dermat_d, gpu_stream)
+            end if
+
+            ! Keeping fi on the device
+            call gpu_get_fi_dgemv(i, n_samples_sf, nk, dermat_d, prefactor_d, fi_d, cublas_handle, gpu_stream)
+
+            call gpu_free_async(dermat_d, gpu_stream)
+            call gpu_stream_sync(gpu_stream)
+
+         end do
+
+         call gpu_free_async(all_scattering_factors_d, gpu_stream)
+         call gpu_free_async(prefactor_d, gpu_stream)
+
+         call gpu_stream_sync(gpu_stream)
+         st_forces0_d = int(size(forces0, 2), c_size_t)*size(forces0, 1)*c_double
+         call gpu_malloc_async(forces0_d, st_forces0_d, gpu_stream)
+         call cpy_htod(c_loc(forces0), forces0_d, st_forces0_d, gpu_stream)
+
+         st_virial_d = int(9, c_size_t)*c_double
+         call gpu_malloc_async(virial_d, st_virial_d, gpu_stream)
+         call cpy_htod(c_loc(virial), virial_d, st_virial_d, gpu_stream)
+
+         do j = 1, 3
+            do i = 1, 3
+               print *, "virial portion, cpu ", i, " ", j, " ", virial(i, j)
+            end do
+         end do
+
+         st_rjs = int(nk, c_size_t)*c_double
+         call gpu_stream_sync(gpu_stream)
+         call gpu_malloc_async(xyz_k_d, 3*st_rjs, gpu_stream)
+         call cpy_htod(c_loc(gpu_host_storage%xyz_k_h), xyz_k_d, 3*st_rjs, gpu_stream)
+
+         call gpu_malloc_async(j2_index_d, st_k_index_d, gpu_stream)
+         call cpy_htod(c_loc(gpu_host_storage%j2_index_h), j2_index_d, st_k_index_d, gpu_stream)
+
+         call gpu_stream_sync(gpu_stream)
+         call gpu_exp_force_virial_collection(nk, size(forces0, 2), forces0_d, energy_scale, fi_d, &
+                                              j2_index_d, virial_d, xyz_k_d, gpu_stream)
+
+         call gpu_stream_sync(gpu_stream)
+
+         call cpy_dtoh(forces0_d, c_loc(forces0), st_forces0_d, gpu_stream)
+         call cpy_dtoh(virial_d, c_loc(virial), st_virial_d, gpu_stream)
+
+         call gpu_free_async(j2_index_d, gpu_stream)
+         call gpu_free_async(xyz_k_d, gpu_stream)
+         call gpu_free_async(forces0_d, gpu_stream)
+         call gpu_free_async(fi_d, gpu_stream)
+         call gpu_free_async(virial_d, gpu_stream)
+
+!        The device kernel accumulated the pair half of the virial, and the
+!        copy back is asynchronous: the host cannot add to virial until the
+!        stream has drained.
+         call gpu_stream_sync(gpu_stream)
+
+         if (do_xrd) then
+            call add_structure_factor_volume_virial(virial, rank, energy_scale, c_factor,&
+                 & prefactor, sinc_factor_matrix, n_samples, n_samples_sf, all_scattering_factors)
+         else
+            call add_structure_factor_volume_virial(virial, rank, energy_scale, c_factor,&
+                 & prefactor, sinc_factor_matrix, n_samples, n_samples_sf)
+         end if
+
+         if (do_xrd) deallocate (all_scattering_factors)
+         if (do_xrd) deallocate (sf_parameters)
+         deallocate (prefactor)
+
+         do j = 1, 3
+            do i = 1, 3
+               print *, "virial post gpu ", i, " ", j, " ", virial(i, j)
+            end do
+         end do
+
+      else
+
+         st_Gk_d = int(n_samples, c_size_t)*nk*c_double
+         call gpu_malloc_async(Gk_d, st_Gk_d, gpu_stream)
+
+         call gpu_set_Gk(nk, n_samples, k_index_d, Gk_d, pair_distribution_partial_der_d, c_factor, gpu_stream)
+         call gpu_meminfo()
+
+         st_sinc_factor_matrix_d = int(size(sinc_factor_matrix, 1), c_size_t)*size(sinc_factor_matrix, 2)*c_double
+         call gpu_malloc_async(sinc_factor_matrix_d, st_sinc_factor_matrix_d, gpu_stream)
+         call cpy_htod(c_loc(sinc_factor_matrix), sinc_factor_matrix_d, st_sinc_factor_matrix_d, gpu_stream)
+
+         st_dermat_d = int(n_samples_sf, c_size_t)*nk*c_double
+         call gpu_malloc_async(dermat_d, st_dermat_d, gpu_stream)
+
+         st_fi_d = int(nk, c_size_t)*3*c_double
+         call gpu_malloc_async(fi_d, st_fi_d, gpu_stream)
+         call gpu_memset_async(fi_d, 0, st_fi_d, gpu_stream)
+
+         st_prefactor_d = int(size(prefactor, 1), c_size_t)*c_double
+         call gpu_malloc_async(prefactor_d, st_prefactor_d, gpu_stream)
+         call cpy_htod(c_loc(prefactor), prefactor_d, st_prefactor_d, gpu_stream)
+
+         st_all_scattering_factors_d = int(size(all_scattering_factors, 1), c_size_t)*c_double
+         call gpu_malloc_async(all_scattering_factors_d, st_all_scattering_factors_d, gpu_stream)
+         call cpy_htod(c_loc(all_scattering_factors), all_scattering_factors_d, st_all_scattering_factors_d, gpu_stream)
+
+         alpha = 1.d0
+         beta = 0.d0
+
+         st_Gka_d = int(n_samples, c_size_t)*nk*c_double
+         call gpu_malloc_async(Gka_d, st_Gka_d, gpu_stream)
+
+         call gpu_stream_sync(gpu_stream)
+         call gpu_meminfo()
+
+         do i = 1, 3
+
+            call gpu_get_Gka(i, nk, n_samples, Gka_d, Gk_d, xyz_k_d, gpu_stream)
+
+            call gpu_device_sync()
+            call gpu_dgemm_n_n(n_samples_sf, nk, n_samples, alpha, sinc_factor_matrix_d, n_samples_sf,&
+                 & Gka_d, n_samples, beta, dermat_d, n_samples_sf, cublas_handle)
+
+            if (do_xrd) then
+               call gpu_hadamard_vec_mat_product(n_samples_sf, nk, all_scattering_factors_d, dermat_d, gpu_stream)
+            end if
+
+            call gpu_get_fi_dgemv(i, n_samples_sf, nk, dermat_d, prefactor_d, fi_d, cublas_handle, gpu_stream)
+
+         end do
+
+         call gpu_free_async(Gk_d, gpu_stream)
+         call gpu_free_async(Gka_d, gpu_stream)
+         call gpu_free_async(sinc_factor_matrix_d, gpu_stream)
+         call gpu_free_async(all_scattering_factors_d, gpu_stream)
+         call gpu_free_async(prefactor_d, gpu_stream)
+         call gpu_free_async(dermat_d, gpu_stream)
+
+         st_forces0_d = int(size(forces0, 2), c_size_t)*size(forces0, 1)*c_double
+         call gpu_malloc_async(forces0_d, st_forces0_d, gpu_stream)
+         call cpy_htod(c_loc(forces0), forces0_d, st_forces0_d, gpu_stream)
+
+         st_virial_d = int(9, c_size_t)*c_double
+         call gpu_malloc_async(virial_d, st_virial_d, gpu_stream)
+         call cpy_htod(c_loc(virial), virial_d, st_virial_d, gpu_stream)
+
+         do j = 1, 3
+            do i = 1, 3
+               print *, "virial pre gpu ", i, " ", j, " ", virial(i, j)
+            end do
+         end do
+
+         call gpu_stream_sync(gpu_stream)
+
+         call gpu_exp_force_virial_collection(nk, size(forces0, 2), forces0_d, energy_scale, fi_d, &
+                                              j2_index_d, virial_d, xyz_k_d, gpu_stream)
+
+         call gpu_stream_sync(gpu_stream)
+
+         call cpy_dtoh(forces0_d, c_loc(forces0), st_forces0_d, gpu_stream)
+         call cpy_dtoh_blocking(virial_d, c_loc(virial), st_virial_d)
+
+         call gpu_free_async(forces0_d, gpu_stream)
+         call gpu_free_async(fi_d, gpu_stream)
+         call gpu_free_async(virial_d, gpu_stream)
+
+!        The device kernel accumulated the pair half of the virial; the copy
+!        above was blocking, so the cell half can be added straight away.
+         if (do_xrd) then
+            call add_structure_factor_volume_virial(virial, rank, energy_scale, c_factor,&
+                 & prefactor, sinc_factor_matrix, n_samples, n_samples_sf, all_scattering_factors)
+         else
+            call add_structure_factor_volume_virial(virial, rank, energy_scale, c_factor,&
+                 & prefactor, sinc_factor_matrix, n_samples, n_samples_sf)
+         end if
+
+         if (do_xrd) deallocate (all_scattering_factors)
+         if (do_xrd) deallocate (sf_parameters)
+         deallocate (prefactor)
+
+         do j = 1, 3
+            do i = 1, 3
+               print *, "virial post gpu ", i, " ", j, " ", virial(i, j)
+            end do
+         end do
+
+      end if
+
+      call gpu_meminfo()
+   end subroutine get_structure_factor_forces_matrix
+
+   ! subroutine get_all_scattering_factors(&
+   !      all_scattering_factors, do_xrd, neutron, n_species,&
+   !      & species_types, x, x_structure_factor, output, n_samples_sf,&
+   !      & n_atoms_of_species, species_1, species_2)
+   !   implicit none
+   !   logical, intent(in) :: do_xrd, neutron
+   !   integer, intent(in) :: n_species, n_samples_sf, species_1, species_2
+   !   real(dp), allocatable, intent(in) :: x_structure_factor(:), n_atoms_of_species(:), x(:)
+   !   real(dp), allocatable :: sf_parameters(:,:)
+   !   real(dp), intent(out) :: all_scattering_factors(:)
+   !   character*8, allocatable, intent(in) :: species_types(:)
+   !   character*32, intent(in) :: output
+   !   real(dp), parameter :: pi = acos(-1.0)
+   !   real(dp) :: sth, wfaci, wfacj
+   !   integer :: i, j
+
+   !            if ( trim(output) == "q*i(q)" .or. trim(output) == "q*F(q)")then
+   !               sth = 0.d0
+   !               do j = 1, n_species
+   !                  call get_scattering_factor(wfaci, sf_parameters(1:9,j), x_structure_factor(i)/2.d0)
+   !                  sth = sth + ( n_atoms_of_species(j) / dfloat(n_sites0) ) * wfaci !* wfaci
+   !               end do
+
+   !               all_scattering_factors(i) =  2.d0 * pi * x(i) * all_scattering_factors(i) / sth**2 !+ 1.d0
+
+   !            elseif( trim(output) == "F(q)" .or. trim(output) == "i(q)")then
+   !               ! Output the total scattering functon, i(q) === F_x(q)
+   !               sth = 0.d0
+   !               do j = 1, n_species
+   !                  call get_scattering_factor(wfaci, sf_parameters(1:9,j), x_structure_factor(i)/2.d0)
+   !                  sth = sth + ( n_atoms_of_species(j) / dfloat(n_sites0) ) * wfaci !* wfaci
+   !               end do
+
+   !               all_scattering_factors(i) = all_scattering_factors(i) / sth**2 !+ 1.d0
+
+   !         end do
+   !      else
+   !         allocate( sf_parameters(1:9,1:n_species) )
+   !         allocate( all_scattering_factors(1:n_samples_sf) )
+   !         do i = 1, n_samples_sf
+   !            call get_neutron_scattering_length(species_types(species_1), wfaci)
+   !            call get_neutron_scattering_length(species_types(species_2), wfacj)
+   !            all_scattering_factors(i) = wfaci * wfacj
+
+   !            if ( trim(output) == "q*i(q)" .or. trim(output) == "q*F(q)")then
+   !               ! we now handlw this case in preprocess experimental data
+   !               ! output q * i(q) === q * F_x(q)
+   !               sth = 0.d0
+   !               do j = 1, n_species
+   !                  call get_neutron_scattering_length(species_types(j), wfacj)
+   !                  sth = sth + ( n_atoms_of_species(j) / dfloat(n_sites0) ) * wfaci !* wfaci
+   !               end do
+
+   !               all_scattering_factors(i) =  2.d0 * pi * x(i) * all_scattering_factors(i) / sth**2 !+ 1.d0
+
+   !            elseif( trim(output) == "F(q)" .or. trim(output) == "i(q)")then
+   !               ! Output the total scattering functon, i(q) === F_x(q)
+   !               sth = 0.d0
+   !               do j = 1, n_species
+   !                  call get_neutron_scattering_length(species_types(j), wfacj)
+   !                  sth = sth + ( n_atoms_of_species(j) / dfloat(n_sites0) ) * wfaci !* wfaci
+   !               end do
+
+   !               all_scattering_factors(i) = all_scattering_factors(i) / sth**2 !+ 1.d0
+
+   ! subroutine gpu_get_structure_factor_forces_matrix(energy_scale,  forces0, virial,  &
+   !      x_structure_factor, structure_factor, r_cut, species_1,&
+   !      & species_2,  pair_distribution_der, partial_rdf, kde_sigma,&
+   !      & c_factor, sinc_factor_matrix, n_dim_idx, do_xrd, output, n_atoms_of_species, neutron, cublas_handle, gpu_stream,&
+   !      & nk, nk_d, k_index_d, j2_index_d, xyz_k_d, pair_distribution_partial_d, pair_distribution_partial_der_d, &
+   !      & st_nk_d, st_k_index_d, st_j2_index_d, st_pair_distribution_partial_d, st_pair_distribution_partial_der_d&
+   !      , gpu_host_storage, gpu_low_memory)
+   !   implicit none
+   !   real(dp),  intent(in), target :: rjs(:), xyz(:,:), y_exp(:), energy_scale,  kde_sigma, c_factor, sinc_factor_matrix(:,:), x(:)
+   !   integer, intent(in) :: n_sites0, n_samples_sf, n_species
+   !   character*8, allocatable, intent(in) :: species_types(:)
+   !   real(dp) :: r_min, r_max, r_cut, alpha, beta
+   !   integer, intent(in), target :: neighbors_list(:), n_neigh(:), neighbor_species(:), species(:)
+   !   integer, intent(in) :: n_samples, species_1, species_2, n_dim_idx, i_beg, i_end
+   !   integer :: n_sites, n_pairs, count, count_species_1, n_k_all
+   !   integer, target :: nk_temp(1)
+   !   integer, allocatable, target :: nk_sum_flags_host(:)
+   !   integer :: i, j, k, ki, k1, k2,  i2, j2, l, ii, jj, kk, i3, j3, i4,  species_i, species_j, n_k
+   !   real(dp),  intent(in) :: x_structure_factor(:), structure_factor(:), n_atoms_of_species(:)
+   !   real(dp),  intent(in) :: pair_distribution_der(:,:)
+   !   real(dp),  intent(inout), target :: forces0(:,:), virial(1:3,1:3)
+   !   character*32, intent(in) :: output
+   !   real(dp), allocatable, target ::  prefactor(:), all_scattering_factors(:), sf_parameters(:,:), structure_factor_der(:)
+   !   real(dp) :: r, n_pc, this_force(1:3), f, wfaci, wfacj, temp(1:n_samples_sf), sth, time(1:3)
+   !   real(dp), parameter :: pi = acos(-1.0)
+   !   logical, intent(in) :: partial_rdf, do_xrd, neutron
+   !   logical :: species_in_list, counted_1=.false.
+   !   real(dp), allocatable, target ::  xyz_k(:,:), Gk(:,:), Gka(:,:), dermat(:,:), fi(:,:), fi_temp(:,:), Gk_temp(:,:)
+   !   integer, allocatable, target :: k_list(:), i2_list(:), j2_list(:), ks_temp(:)
+
+   !   ! GPU VARIABLES
+   !   type(c_ptr) :: forces0_d, fi_d, virial_d, &
+   !        & dermat_d, prefactor_d, all_scattering_factors_d,&
+   !        & sinc_factor_matrix_d, Gka_d, Gk_d
+   !   integer(c_size_t) :: st_forces0_d, st_fi_d,&
+   !        & st_virial_d, st_dermat_d, st_prefactor_d,&
+   !        & st_all_scattering_factors_d , st_sinc_factor_matrix_d,&
+   !        & st_Gka_d, st_Gk_d
+   !   integer, intent(in) :: nk
+   !   type(c_ptr) :: cublas_handle, gpu_stream
+   !   type(c_ptr) :: nk_d, nk_flags_d, nk_flags_sum_d, k_index_d, j2_index_d, rjs_index_d, xyz_k_d, pair_distribution_partial_d, pair_distribution_partial_der_d
+   !   integer(c_size_t) :: st_nk_d, st_k_index_d, st_j2_index_d, st_rjs, st_pair_distribution_partial_d, st_pair_distribution_partial_der_d
+   !   type( gpu_host_storage_type ), intent(inout),  target :: gpu_host_storage
+   !   logical, intent(in) :: gpu_low_memory
+
+   !   ! First allocate the pair correlation function array
+
+   !   ! First loop to get the number of valid k indexes
+   !   call cpu_time(time(1))
+
+   !   !    call gpu_device_sync()
+   !   call gpu_set_Gk( nk, n_samples, k_index_d, Gk_d, pair_distribution_partial_der_d, c_factor, gpu_stream   )
+   !   call gpu_meminfo()
+
+   !      call gpu_device_sync()
+   !      call gpu_dgemm_n_n(n_samples_sf, nk, n_samples, alpha, sinc_factor_matrix_d, n_samples_sf,&
+   !           & Gka_d, n_samples, beta, dermat_d, n_samples_sf, cublas_handle)
+   !      !       call gpu_device_sync()
+
+   !      if( do_xrd )then
+   !         call gpu_hadamard_vec_mat_product(n_samples_sf, nk, all_scattering_factors_d, dermat_d, gpu_stream )
+   !         !          call gpu_device_sync()
+   !      end if
+
+   !      call gpu_get_fi_dgemv( i, n_samples_sf, nk, dermat_d, prefactor_d, fi_d, cublas_handle, gpu_stream )
+   !      !       call gpu_device_sync()
+
+   !   call gpu_exp_force_virial_collection( nk, forces0_d, energy_scale,  fi_d,&
+   !        j2_index_d,  virial_d,  xyz_k_d, gpu_stream )
+
+   !   call gpu_free_async(forces0_d,  gpu_stream)
+   !   call gpu_free_async(fi_d,       gpu_stream)
+   !   call gpu_free(virial_d)
+   !   if (do_xrd) deallocate( all_scattering_factors )
+   !   if (do_xrd) deallocate( sf_parameters )
+   !   deallocate(prefactor)
+   !   !       call gpu_stream_sync(gpu_stream)
+#else
    subroutine get_structure_factor_forces_matrix(n_sites0, energy_scale, x, y_exp, forces0, virial,  &
         & neighbors_list, n_neigh, neighbor_species, species_types, rjs, xyz, r_min,&
         & r_max, n_samples, n_samples_sf, n_species, x_structure_factor, structure_factor, r_cut, species_1,&
         & species_2, pair_distribution_der, partial_rdf, kde_sigma,&
-        & c_factor, sinc_factor_matrix, n_dim_idx, do_xrd, output, n_atoms_of_species, neutron, rank, lp)
+        & c_factor, sinc_factor_matrix, n_dim_idx, do_xrd, output, n_atoms_of_species, neutron, rank, lp, w)
       implicit none
+!     Per-sample weights on the residual, entering SQUARED, so that this is
+!     exactly the gradient of the weighted energy get_exp_energies computes with
+!     the same array. Absent means unweighted, bit for bit.
+      real(dp), intent(in), optional :: w(:)
       real(dp), intent(in) :: rjs(:)
       real(dp), intent(in) :: xyz(:, :)
       real(dp), intent(in) :: y_exp(:)
@@ -636,6 +1613,7 @@ contains
 
       allocate (prefactor(1:n_samples_sf))
       prefactor = (structure_factor - y_exp)
+      if (present(w)) prefactor = w(1:n_samples_sf)*w(1:n_samples_sf)*prefactor
 
       if (do_xrd) then
          if (.not. neutron) then
@@ -878,6 +1856,7 @@ contains
       deallocate (prefactor)
 
    end subroutine get_structure_factor_forces_matrix
+#endif
 
    subroutine my_dgemm(A, B, C, M, N, K)
       implicit none
@@ -2736,7 +3715,7 @@ contains
       end do
    end subroutine get_moments_of_distribution
 
-   subroutine get_exp_energies(energy_scale, y_exp, y_pred, n_samples, n_sites, energies)
+   subroutine get_exp_energies(energy_scale, y_exp, y_pred, n_samples, n_sites, energies, w)
       implicit none
       real(dp), intent(in) :: energy_scale
       real(dp), intent(in) :: y_exp(:)
@@ -2744,14 +3723,25 @@ contains
       integer, intent(in) :: n_samples
       integer, intent(in) :: n_sites
       real(dp), intent(inout) :: energies(:)
-      real(dp) :: f
+!     Per-sample weights, entering SQUARED:
+!
+!        E = gamma/2 * sum_i w_i^2 (y_pred_i - y_exp_i)^2
+!
+!     so the file holds w and the code squares it. Optional, and absent means
+!     the unweighted expression exactly rather than a multiply by an array of
+!     ones, so no existing caller moves in its last digit.
+      real(dp), intent(in), optional :: w(:)
       real(dp) :: e_tot
       real(dp) :: diff(1:n_samples)
 
       ! We use the sum of squared differences for the energy, ideally we'd have a component resolved thing but alas.
 
       diff = (y_pred(1:n_samples) - y_exp(1:n_samples))
-      e_tot = 0.5d0*energy_scale*dot_product(diff, diff)
+      if (present(w)) then
+         e_tot = 0.5d0*energy_scale*sum(w(1:n_samples)*w(1:n_samples)*diff*diff)
+      else
+         e_tot = 0.5d0*energy_scale*dot_product(diff, diff)
+      end if
       energies = e_tot/dfloat(n_sites)
 
 !     The same sum of squares WITHOUT the energy scale: how far the prediction
@@ -2762,12 +3752,30 @@ contains
 !     observables here rather than derived afterwards as 2 E / scale, which is
 !     exact for one observable and meaningless for several.
 !
+!     Unweighted on purpose, even when the energy above is weighted: it is a
+!     measure of agreement with the data, not of the objective being minimised.
+!
 !     Zeroed once per step in turbogap.f90 alongside energies_exp, which is the
 !     only place that can know a new step has begun.
       exp_dissimilarity = exp_dissimilarity + dot_product(diff, diff)
       exp_dissim_ref = exp_dissim_ref + dot_product(y_exp(1:n_samples), y_exp(1:n_samples))
 
    end subroutine get_exp_energies
+
+!
+! The residual weights, on the grid the experiment ended up on.
+!
+! weights_data is the file as read, (x, w) pairs on whatever grid it was
+! written on. x is the grid the experiment was interpolated to, which depends
+! on exp_n_samples. Interpolating one onto the other is what lets a weights
+! file be written once and stay right when the sampling changes.
+!
+! Outside the file's range the nearest end value is held rather than
+! extrapolated: a weight is a statement about importance, and a linear
+! extrapolation of one goes negative, which would push the fit away from the
+! data instead of ignoring it.
+!
+! No file, or fewer than two points in it, means a flat weight of one.
 
    subroutine get_exp_pred_spectra_energies_forces(energy_scale, core_electron_be, core_electron_be_der,&
         & n_neigh, neighbors_list, &
@@ -3718,5 +4726,494 @@ contains
          write (*, '(A,1X,A,1X,A)') '!!! ND Warning !!! The element ', element, ' is not in the ND factor database! '
       end if
    end subroutine get_neutron_scattering_length
+
+#ifdef _GPU
+   subroutine get_all_scattering_factors(all_scattering_factors_d,&
+        & n_sites0, x, species_types, n_samples_sf, n_species,&
+        & x_structure_factor, species_1, species_2, do_xrd, output,&
+        & n_atoms_of_species, neutron, gpu_stream)
+      implicit none
+
+      ! Intent and type declarations
+      real(dp), intent(in) :: x(:)
+      integer, intent(in) :: n_sites0
+      integer, intent(in) :: n_samples_sf
+      integer, intent(in) :: n_species
+      character*8, allocatable, intent(in) :: species_types(:)
+      integer, intent(in) :: species_1
+      integer, intent(in) :: species_2
+      real(dp), intent(in) :: x_structure_factor(:)
+      real(dp), intent(in) :: n_atoms_of_species(:)
+      character*32, intent(in) :: output
+      logical, intent(in) :: do_xrd
+      logical, intent(in) :: neutron
+      real(dp), allocatable, target :: all_scattering_factors(:)
+      real(dp), allocatable :: sf_parameters(:, :)
+      real(dp), parameter :: pi = acos(-1.0)
+
+      type(c_ptr) :: all_scattering_factors_d
+      type(c_ptr) :: gpu_stream
+      integer(c_size_t) :: st_all_scattering_factors_d
+
+      integer :: i
+      integer :: j
+      real(dp) :: wfaci
+      real(dp) :: wfacj
+      real(dp) :: sth
+
+      ! Check if XRD data is being used
+      if (do_xrd) then
+         ! Allocate necessary arrays
+         allocate (sf_parameters(1:9, 1:n_species))
+         allocate (all_scattering_factors(1:n_samples_sf))
+         sf_parameters = 0.d0
+
+         if (.not. neutron) then
+            ! XRD specific scattering factor computation
+            do i = 1, size(species_types)
+               call get_scattering_factor_params(species_types(i), sf_parameters(1:9, i))
+            end do
+
+            do i = 1, n_samples_sf
+               call get_scattering_factor(wfaci, sf_parameters(1:9, species_1), x_structure_factor(i)/2.d0)
+               call get_scattering_factor(wfacj, sf_parameters(1:9, species_2), x_structure_factor(i)/2.d0)
+               all_scattering_factors(i) = wfaci*wfacj
+
+               ! Process different output cases
+               if (trim(output) == "q*i(q)" .or. trim(output) == "q*F(q)") then
+                  sth = 0.d0
+                  do j = 1, n_species
+                     call get_scattering_factor(wfaci, sf_parameters(1:9, j), x_structure_factor(i)/2.d0)
+                     sth = sth + (n_atoms_of_species(j)/dfloat(n_sites0))*wfaci
+                  end do
+                  all_scattering_factors(i) = 2.d0*pi*x(i)*all_scattering_factors(i)/sth**2
+               elseif (trim(output) == "F(q)" .or. trim(output) == "i(q)") then
+                  sth = 0.d0
+                  do j = 1, n_species
+                     call get_scattering_factor(wfaci, sf_parameters(1:9, j), x_structure_factor(i)/2.d0)
+                     sth = sth + (n_atoms_of_species(j)/dfloat(n_sites0))*wfaci
+                  end do
+                  all_scattering_factors(i) = all_scattering_factors(i)/sth**2
+               end if
+            end do
+
+         else
+            ! Neutron-specific scattering factor computation
+            do i = 1, n_samples_sf
+               call get_neutron_scattering_length(species_types(species_1), wfaci)
+               call get_neutron_scattering_length(species_types(species_2), wfacj)
+               all_scattering_factors(i) = wfaci*wfacj
+
+               ! Process different output cases
+               if (trim(output) == "q*i(q)" .or. trim(output) == "q*F(q)") then
+                  sth = 0.d0
+                  do j = 1, n_species
+                     call get_neutron_scattering_length(species_types(j), wfaci)
+                     sth = sth + (n_atoms_of_species(j)/dfloat(n_sites0))*wfaci
+                  end do
+                  all_scattering_factors(i) = 2.d0*pi*x(i)*all_scattering_factors(i)/sth**2
+               elseif (trim(output) == "F(q)" .or. trim(output) == "i(q)") then
+                  sth = 0.d0
+                  do j = 1, n_species
+                     call get_neutron_scattering_length(species_types(j), wfaci)
+                     sth = sth + (n_atoms_of_species(j)/dfloat(n_sites0))*wfaci
+                  end do
+                  all_scattering_factors(i) = all_scattering_factors(i)/sth**2
+               end if
+            end do
+         end if
+      end if
+
+      st_all_scattering_factors_d = int(n_samples_sf, c_size_t)*c_double
+      call gpu_malloc_async(all_scattering_factors_d, st_all_scattering_factors_d, gpu_stream)
+      call cpy_htod(c_loc(all_scattering_factors), all_scattering_factors_d, st_all_scattering_factors_d, gpu_stream)
+
+   end subroutine get_all_scattering_factors
+#endif
+
+#ifdef _GPU
+  subroutine get_structure_factor_forces_matrix_original(do_xrd, energy_scale, forces0, virial, n_samples, n_samples_sf, c_factor, &
+                                        nk, k_index_d, j2_index_d, xyz_k_d, pair_distribution_partial_der_d, sinc_factor_matrix_d, &
+                                                          all_scattering_factors_d, prefactor_d, gpu_stream, cublas_handle)
+      implicit none
+      ! Passed in
+      logical, intent(in) :: do_xrd
+      real(dp), allocatable, intent(inout), target :: forces0(:, :)
+      real(dp), intent(inout), target :: virial(1:3, 1:3)
+      integer, intent(in) :: n_samples
+      integer, intent(in) :: n_samples_sf
+      integer, intent(in) :: nk
+      real(dp), intent(in) :: c_factor
+      real(dp), intent(in) :: energy_scale
+      type(c_ptr), intent(in) :: k_index_d
+      type(c_ptr), intent(in) :: j2_index_d
+      type(c_ptr), intent(in) :: xyz_k_d
+      type(c_ptr), intent(in) :: pair_distribution_partial_der_d
+      type(c_ptr), intent(in) :: sinc_factor_matrix_d
+      type(c_ptr), intent(in) :: all_scattering_factors_d
+      type(c_ptr), intent(in) :: prefactor_d
+      type(c_ptr), intent(in) :: gpu_stream
+      type(c_ptr), intent(in) :: cublas_handle
+
+      ! Internal
+      real(dp) :: time(3)
+      real(dp) :: alpha
+      real(dp) :: beta
+      type(c_ptr) :: Gk_d
+      type(c_ptr) :: Gka_d
+      type(c_ptr) :: fi_d
+      type(c_ptr) :: dermat_d
+      type(c_ptr) :: forces0_d
+      type(c_ptr) :: virial_d
+      integer(c_size_t) :: st_Gk_d
+      integer(c_size_t) :: st_Gka_d
+      integer(c_size_t) :: st_fi_d
+      integer(c_size_t) :: st_dermat_d
+      integer(c_size_t) :: st_forces0_d
+      integer(c_size_t) :: st_virial_d
+      integer :: i
+
+      ! First loop to get the number of valid k indexes
+      call cpu_time(time(1))
+
+      st_Gk_d = int(n_samples, c_size_t)*nk*c_double
+      call gpu_malloc_async(Gk_d, st_Gk_d, gpu_stream)
+
+      call gpu_set_Gk(nk, n_samples, k_index_d, Gk_d, pair_distribution_partial_der_d, c_factor, gpu_stream)
+
+      st_dermat_d = int(n_samples_sf, c_size_t)*nk*c_double
+      call gpu_malloc_async(dermat_d, st_dermat_d, gpu_stream)
+
+      st_fi_d = int(nk, c_size_t)*3*c_double
+      call gpu_malloc_async(fi_d, st_fi_d, gpu_stream)
+      call gpu_memset_async(fi_d, 0, st_fi_d, gpu_stream)
+
+      alpha = 1.d0
+      beta = 0.d0
+
+      st_Gka_d = int(n_samples, c_size_t)*nk*c_double
+      call gpu_malloc_async(Gka_d, st_Gka_d, gpu_stream)
+
+      do i = 1, 3
+
+         call gpu_get_Gka(i, nk, n_samples, Gka_d, Gk_d, xyz_k_d, gpu_stream)
+
+         call gpu_dgemm_n_n(n_samples_sf, nk, n_samples, alpha, sinc_factor_matrix_d, n_samples_sf,&
+              & Gka_d, n_samples, beta, dermat_d, n_samples_sf, cublas_handle)
+
+         if (do_xrd) then
+            call gpu_hadamard_vec_mat_product(n_samples_sf, nk, all_scattering_factors_d, dermat_d, gpu_stream)
+         end if
+
+         call gpu_get_fi_dgemv(i, n_samples_sf, nk, dermat_d, prefactor_d, fi_d, cublas_handle, gpu_stream)
+
+      end do
+
+      call gpu_free_async(Gk_d, gpu_stream)
+      call gpu_free_async(Gka_d, gpu_stream)
+      call gpu_free_async(dermat_d, gpu_stream)
+
+      st_forces0_d = int(size(forces0, 2), c_size_t)*size(forces0, 1)*c_double
+      call gpu_malloc_async(forces0_d, st_forces0_d, gpu_stream)
+      call cpy_htod(c_loc(forces0), forces0_d, st_forces0_d, gpu_stream)
+
+      st_virial_d = int(9, c_size_t)*c_double
+      call gpu_malloc_async(virial_d, st_virial_d, gpu_stream)
+      call cpy_htod(c_loc(virial), virial_d, st_virial_d, gpu_stream)
+
+      call gpu_exp_force_virial_collection(nk, size(forces0, 2), forces0_d, energy_scale, fi_d, &
+                                           j2_index_d, virial_d, xyz_k_d, gpu_stream)
+
+      call cpy_dtoh_event(forces0_d, c_loc(forces0), st_forces0_d, gpu_stream)
+      call cpy_dtoh_event(virial_d, c_loc(virial), st_virial_d, gpu_stream)
+
+      call gpu_free_async(forces0_d, gpu_stream)
+      call gpu_free_async(fi_d, gpu_stream)
+      call gpu_free_async(virial_d, gpu_stream)
+
+   end subroutine get_structure_factor_forces_matrix_original
+
+!  The cell half of the pdf-route virial.
+!
+!  A partial structure factor is built as
+!
+!     S_ab(q) - delta_ab = c_factor * sum_r M(q,r) ( g_ab(r) - 1 )
+!
+!  where c_factor carries the number density N/V and g_ab carries a
+!  compensating factor of V from its own normalisation. The two cancel in the
+!  g_ab term, which therefore depends on the cell only through the interatomic
+!  distances the pair loop above already differentiates. They do not cancel in
+!  the -1 term: that piece of the pattern goes as 1/V, so a homogeneous strain
+!  moves the energy through the volume as well, and the virial owes the cell
+!
+!     -V dE/dV = -energy_scale * sum_q ( y_q - y_exp_q ) * c_factor * asf(q)
+!                                     * sum_r M(q,r)
+!
+!  on each diagonal. asf is the same per-q weight that turns dS_ab/dr into
+!  dy/dr, so it carries the xrd_output convention and the Lorentz-polarization
+!  factor with it; absent, as on the plain structure factor, it is one.
+!
+!  The caller holds one (a,b) channel, and the channels sum, which is why this
+!  is written as an accumulation rather than as a single closed form.
+#endif
+   subroutine setup_pdf_arrays(r_min, r_max, r_cut, n_samples, x, dV)
+      implicit none
+      real(dp), intent(in) :: r_min
+      real(dp), intent(in) :: r_max
+      real(dp), intent(in) :: r_cut
+      integer, intent(in) :: n_samples
+      real(dp), allocatable, intent(inout) :: x(:)
+      real(dp), allocatable, intent(inout) :: dV(:)
+      real(dp), allocatable :: bin_edges(:)
+      real(dp), parameter :: pi = acos(-1.0)
+      integer :: i
+
+      allocate (bin_edges(1:n_samples + 1))
+
+      x = 0.d0
+      bin_edges = 0.d0
+
+      do i = 1, n_samples + 1
+         bin_edges(i) = r_min + (real((i - 1))/real(n_samples))*(r_max - r_min)
+      end do
+
+      do i = 1, n_samples
+         x(i) = (bin_edges(i) + bin_edges(i + 1))/2.d0
+
+         dV(i) = 4.d0*pi*(bin_edges(i)**2*(bin_edges(i + 1) - bin_edges(i)))
+      end do
+
+      deallocate (bin_edges)
+   end subroutine setup_pdf_arrays
+
+   subroutine setup_rjs(rjs_temp, ks_temp, n_sites0, &
+        & neighbors_list, n_neigh, neighbor_species, rjs, r_min,&
+        & r_max, n_samples, r_cut, species_1, species_2, kde_sigma)
+      implicit none
+      real(dp), intent(in) :: rjs(:)
+      real(dp), intent(in) :: kde_sigma
+      real(dp) :: r_min
+      real(dp) :: r_max
+      real(dp) :: r_cut
+      integer, intent(in) :: neighbors_list(:)
+      integer, intent(in) :: n_neigh(:)
+      integer, intent(in) :: neighbor_species(:)
+      integer, intent(in) :: n_sites0
+      integer, intent(in) :: n_samples
+      integer, intent(in) :: species_1
+      integer, intent(in) :: species_2
+      integer :: n_sites
+      integer :: n_pairs
+      integer :: species_i
+      integer :: species_j
+      integer :: i
+      integer :: j
+      integer :: k
+      integer :: ki
+      integer :: i2
+      integer :: j2
+      integer :: l
+      integer :: ii
+      integer :: jj
+      integer :: kk
+      integer :: i3
+      integer :: j3
+      integer :: i4
+      integer :: ind_bin_l
+      integer :: n_k
+      real(dp), intent(out), allocatable :: rjs_temp(:)
+      integer, intent(out), allocatable :: ks_temp(:)
+      real(dp) :: r
+
+      n_sites = size(n_neigh)
+      n_pairs = size(neighbors_list)
+      k = 0
+      n_k = 0
+      do i = 1, n_sites
+         i2 = modulo(neighbors_list(k + 1) - 1, n_sites0) + 1
+         species_i = neighbor_species(k + 1)
+         k = k + 1
+         do j = 2, n_neigh(i)
+            k = k + 1
+            j2 = modulo(neighbors_list(k) - 1, n_sites0) + 1
+
+            species_j = neighbor_species(k)
+
+            if (((species_i /= species_1) .or. (species_j /= species_2))) then
+               if (.not. (species_i == species_2 .and. species_j == species_1)) cycle
+            end if
+
+            r = rjs(k) ! atom pair distance
+
+            if (r > r_cut) cycle
+            if (r < r_min) cycle
+            if (r > r_max + kde_sigma*6.d0) cycle
+
+            n_k = n_k + 1
+         end do
+      end do
+
+      allocate (rjs_temp(1:n_k))
+      allocate (ks_temp(1:n_k))
+
+      k = 0
+      n_k = 0
+      do i = 1, n_sites
+         i2 = modulo(neighbors_list(k + 1) - 1, n_sites0) + 1
+         species_i = neighbor_species(k + 1)
+         k = k + 1
+         do j = 2, n_neigh(i)
+            k = k + 1
+            j2 = modulo(neighbors_list(k) - 1, n_sites0) + 1
+
+            species_j = neighbor_species(k)
+
+            if (((species_i /= species_1) .or. (species_j /= species_2))) then
+               if (.not. (species_i == species_2 .and. species_j == species_1)) cycle
+            end if
+
+            r = rjs(k) ! atom pair distance
+
+            if (r > r_cut) cycle
+            if (r < r_min) cycle
+            if (r > r_max + kde_sigma*6.d0) cycle
+
+            n_k = n_k + 1
+            rjs_temp(n_k) = r
+            ks_temp(n_k) = k
+         end do
+      end do
+   end subroutine setup_rjs
+
+   subroutine get_exp_dissimilarity(y, y_pred, w, d, dnorm)
+
+      implicit none
+
+      real(dp), allocatable, intent(in) :: y(:)
+      real(dp), allocatable, intent(in) :: y_pred(:)
+      real(dp), allocatable, intent(in) :: w(:)
+      real(dp), intent(out) :: d
+      real(dp), intent(out) :: dnorm
+      logical :: weighted
+      integer :: n
+
+      d = 0.d0
+      dnorm = 0.d0
+      if (.not. allocated(y) .or. .not. allocated(y_pred)) return
+      n = min(size(y), size(y_pred))
+      if (n < 1) return
+
+      weighted = .false.
+      if (allocated(w)) then
+         if (size(w) >= n) weighted = .true.
+      end if
+
+      if (weighted) then
+         d = dsqrt(sum((w(1:n)*(y_pred(1:n) - y(1:n)))**2))
+         dnorm = dsqrt(sum((w(1:n)*y(1:n))**2))
+      else
+         d = dsqrt(dot_product(y_pred(1:n) - y(1:n), y_pred(1:n) - y(1:n)))
+         dnorm = dsqrt(dot_product(y(1:n), y(1:n)))
+      end if
+
+   end subroutine get_exp_dissimilarity
+
+   subroutine build_exp_weights(x, w, weights_data, n_weights, &
+                                data, data_weights, n_data_weights, n_data, file_data_weights)
+
+      implicit none
+
+      real(dp), allocatable, intent(in) :: x(:)
+      real(dp), allocatable, intent(inout) :: w(:)
+      real(dp), allocatable, intent(in) :: weights_data(:, :)
+      integer, intent(in) :: n_weights
+!     The exp_data_weights route: a bare column, taking its abscissa from the
+!     experimental data. Resolved here rather than at parse time so that the
+!     order of exp_data_files and exp_data_weights in the deck does not matter.
+      real(dp), allocatable, intent(in) :: data(:, :)
+      real(dp), allocatable, intent(in) :: data_weights(:)
+      integer, intent(in) :: n_data_weights
+      integer, intent(in) :: n_data
+      character(len=*), intent(in) :: file_data_weights
+      real(dp), allocatable :: pairs(:, :)
+      integer :: n_pairs
+      integer :: i
+      integer :: j
+      integer :: n
+      real(dp) :: t
+
+      if (.not. allocated(x)) return
+      n = size(x)
+!     Released first, and reallocated below only once there is something to put
+!     in it. No weights configured therefore reaches get_exp_energies as an
+!     ABSENT argument rather than as an array of ones, and the unweighted
+!     expression is then evaluated exactly -- an existing deck cannot move in
+!     its last digit because this routine started being called.
+      if (allocated(w)) deallocate (w)
+
+      if (n_data_weights > 0) then
+!        A weight per data point. It has to be exactly that: silently padding or
+!        truncating would weight the wrong part of the pattern, which is a
+!        mistake nothing downstream could reveal.
+         if (n_data_weights /= n_data) then
+!           To error_unit, not unit 6. turbogap_abort flushes unit 6 before it
+!           calls MPI_abort, and that is not enough when stdout is redirected to
+!           a file: the buffer is block-buffered, the process is killed, and the
+!           log ends mid-sentence with the diagnostic in it lost. stderr is
+!           unbuffered, so the reason for the abort survives being redirected --
+!           which is the only time anyone needs it.
+            write (error_unit, '(A,I0,A,I0,A)') &
+               "ERROR: exp_data_weights file "//trim(file_data_weights)//" has ", &
+               n_data_weights, " values but the experimental data has ", n_data, " points <-- ERROR"
+            write (error_unit, '(A)') &
+               "       exp_data_weights is one weight per data point. For weights on their own"
+            write (error_unit, '(A)') &
+               "       grid, use exp_weights_files, which takes (x, w) pairs."
+            flush (error_unit)
+            call turbogap_abort()
+         end if
+         if (.not. allocated(data)) return
+         allocate (pairs(1:2, 1:n_data))
+         pairs(1, 1:n_data) = data(1, 1:n_data)
+         pairs(2, 1:n_data) = data_weights(1:n_data)
+         n_pairs = n_data
+      else if (n_weights >= 2 .and. allocated(weights_data)) then
+         allocate (pairs(1:2, 1:n_weights))
+         pairs = weights_data(1:2, 1:n_weights)
+         n_pairs = n_weights
+      else
+         return
+      end if
+
+      allocate (w(1:n))
+      if (n_pairs < 2) then
+         w = data_weights(1)
+         deallocate (pairs)
+         return
+      end if
+
+!     Interpolated onto the grid the experiment ended up on, which is what lets
+!     either form be written once and stay right when exp_n_samples changes.
+!     Outside the range the nearest end value is held rather than extrapolated:
+!     a weight is a statement about importance, and a linear extrapolation of
+!     one goes negative, which would push the fit away from the data.
+      do i = 1, n
+         if (x(i) <= pairs(1, 1)) then
+            w(i) = pairs(2, 1)
+         else if (x(i) >= pairs(1, n_pairs)) then
+            w(i) = pairs(2, n_pairs)
+         else
+            j = 1
+            do while (j < n_pairs - 1)
+               if (pairs(1, j + 1) >= x(i)) exit
+               j = j + 1
+            end do
+            t = (x(i) - pairs(1, j))/(pairs(1, j + 1) - pairs(1, j))
+            w(i) = (1.d0 - t)*pairs(2, j) + t*pairs(2, j + 1)
+         end if
+      end do
+      deallocate (pairs)
+
+   end subroutine build_exp_weights
 
 end module exp_utils

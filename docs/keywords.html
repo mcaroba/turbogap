@@ -240,18 +240,18 @@ footer {
 <header class="masthead">
 <p class="eyebrow">TurboGAP &middot; keyword reference</p>
 <h1>Keywords</h1>
-<p class="lede">350 keywords across the input file and the potential (.gap) file. Types and defaults are read out of <code>src/types.f90</code>, and the rest out of the branch in <code>src/read_files.f90</code> that parses the keyword, so nothing here is transcribed by hand.</p>
+<p class="lede">354 keywords across the input file and the potential (.gap) file. Types and defaults are read out of <code>src/types.f90</code>, and the rest out of the branch in <code>src/read_files.f90</code> that parses the keyword, so nothing here is transcribed by hand.</p>
 </header>
 <nav class="rail" aria-label="Groups">
 <p class="railhead">the input file</p>
-<a href="#general"><span>General</span><span class="n">53</span></a>
+<a href="#general"><span>General</span><span class="n">55</span></a>
 <a href="#run-control"><span>Run control</span><span class="n">19</span></a>
 <a href="#molecular-dynamics"><span>Molecular dynamics</span><span class="n">23</span></a>
 <a href="#nested-sampling"><span>Nested sampling</span><span class="n">6</span></a>
 <a href="#monte-carlo"><span>Monte Carlo</span><span class="n">33</span></a>
 <a href="#van-der-waals"><span>Van der Waals</span><span class="n">31</span></a>
 <a href="#electrostatics"><span>Electrostatics</span><span class="n">11</span></a>
-<a href="#experimental-data-mad"><span>Experimental data (MAD)</span><span class="n">53</span></a>
+<a href="#experimental-data-mad"><span>Experimental data (MAD)</span><span class="n">55</span></a>
 <a href="#electronic-stopping-and-eph"><span>Electronic stopping and EPH</span><span class="n">32</span></a>
 <a href="#local-properties"><span>Local properties</span><span class="n">5</span></a>
 <a href="#output"><span>Output</span><span class="n">20</span></a>
@@ -307,6 +307,24 @@ footer {
 <td class="mo">all</td>
 <td class="de">Constant energy offset per species, added to every atom of that species. One value per entry in species, in the same order. The GAP predicts energies relative to these, so they set the zero of the energy scale.</td>
 <td class="dp"></td>
+</tr>
+<tr data-h="estat_gpu_batched compute the electrostatics with the batched device kernel (default .false.). off because that kernel disagrees with both the host build and the device&#x27;s own unbatched path -- see known_issues 13 -- and a device build would otherwise get a silently wrong electrostatic energy. kept so the kernel can still be run by whoever fixes it. ignored by a host build." data-m="predict md mc soap ipi">
+<td class="kw"><code>estat_gpu_batched</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>false</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Compute the electrostatics with the batched device kernel (default .false.). Off because that kernel disagrees with both the host build and the device&#x27;s own unbatched path -- see KNOWN_ISSUES 13 -- and a device build would otherwise get a silently wrong electrostatic energy. Kept so the kernel can still be run by whoever fixes it. Ignored by a host build.</td>
+<td class="dp"><span class="dep">see <code>estat_method</code></span><span class="dep">see <code>gpu_batched</code></span></td>
+</tr>
+<tr data-h="gpu_mem_fraction fraction of the device&#x27;s memory one rank may use for the soap descriptor batches. the device analogue of mem_fraction, consulted only by a gpu build and only when max_gbytes_per_process was not given." data-m="predict md mc soap ipi">
+<td class="kw"><code>gpu_mem_fraction</code></td>
+<td class="ty">real</td>
+<td class="df"><code>0.0</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Fraction of the device&#x27;s memory one rank may use for the SOAP descriptor batches. The device analogue of mem_fraction, consulted only by a GPU build and only when max_gbytes_per_process was not given.</td>
+<td class="dp"><span class="dep">see <code>mem_fraction</code></span><span class="dep">see <code>max_gbytes_per_process</code></span></td>
 </tr>
 <tr data-h="ir_acf_mode how the running dipole autocorrelation is formed: &quot;block&quot; (the default) averages over the pairs the stored ensemble holds, and &quot;exponential&quot; carries it as a set of auxiliary variables integrated alongside the atoms, one per lag, decaying with constant ir_tau_mem. the exponential form weights the past by exp(-age/ir_tau_mem) instead of a hard window, so the bias is a decaying functional of the trajectory and the force does not jump when a frame falls off the end of the buffer. it is the markovian embedding of a generalized langevin bias in which the target spectrum plays the part of the bath." data-m="md">
 <td class="kw"><code>ir_acf_mode</code></td>
@@ -1963,6 +1981,15 @@ footer {
 <td class="de">Files holding the measured data, one per observable, in the order of exp_labels. Two columns: abscissa and intensity.</td>
 <td class="dp"><span class="dep">sets <code>n_exp</code></span><span class="dep">see <code>exp_labels</code></span><span class="dep">see <code>n_exp</code></span></td>
 </tr>
+<tr data-h="exp_data_weights the same weights as exp_weights_files, given as one number per point of the experimental data file rather than as (x, w) pairs. nothing is resolved here beyond reading the column: pairing it with the data&#x27;s own x, and checking the two are the same length, happens where the weights are built, so a deck may put this keyword either side of exp_data_files. giving both for one observable is an error." data-m="predict md mc soap ipi">
+<td class="kw"><code>exp_data_weights</code></td>
+<td class="ty">string list</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">The same weights as exp_weights_files, given as one number per point of the experimental data file rather than as (x, w) pairs. Nothing is resolved here beyond reading the column: pairing it with the data&#x27;s own x, and checking the two are the same length, happens where the weights are built, so a deck may put this keyword either side of exp_data_files. Giving both for one observable is an error.</td>
+<td class="dp"><span class="dep">sets <code>n_exp</code></span><span class="dep">see <code>exp_data_files</code></span><span class="dep">see <code>exp_weights_files</code></span></td>
+</tr>
 <tr data-h="exp_energies add the data mismatch to the energy. naming it enables do_exp." data-m="predict md mc soap ipi">
 <td class="kw"><code>exp_energies</code></td>
 <td class="ty">logical</td>
@@ -2034,6 +2061,15 @@ footer {
 <td class="mo">all</td>
 <td class="de">How the mismatch between prediction and data is measured: &quot;squared_diff&quot; for a sum of squared residuals, or &quot;similarity&quot;/&quot;overlap&quot; for a normalised overlap.</td>
 <td class="dp"><span class="dep">see <code>exp_energy_scales</code></span></td>
+</tr>
+<tr data-h="exp_weights_files a weight per experimental sample, one file per observable in the order of exp_labels, &quot;none&quot; for a flat weight. two columns, abscissa and weight, interpolated onto the same grid as the data, so the file need not know exp_n_samples. they enter the mismatch squared -- e = gamma/2 sum_i w_i^2 (y_pred_i - y_exp_i)^2 -- so a file value of 2 counts a sample four times, not twice. the point is to say that part of a pattern matters more than the rest: a neutron q*f(q) has its first sharp diffraction peak below q = 1.5, where the signal is small and a plain sum of squares barely notices it." data-m="predict md mc soap ipi">
+<td class="kw"><code>exp_weights_files</code></td>
+<td class="ty">string list</td>
+<td class="df"></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">A weight per experimental sample, one file per observable in the order of exp_labels, &quot;none&quot; for a flat weight. Two columns, abscissa and weight, interpolated onto the same grid as the data, so the file need not know exp_n_samples. They enter the mismatch squared -- E = gamma/2 sum_i w_i^2 (y_pred_i - y_exp_i)^2 -- so a file value of 2 counts a sample four times, not twice. The point is to say that part of a pattern matters more than the rest: a neutron q*F(q) has its first sharp diffraction peak below q = 1.5, where the signal is small and a plain sum of squares barely notices it.</td>
+<td class="dp"><span class="dep">sets <code>n_exp</code></span><span class="dep">see <code>exp_data_files</code></span><span class="dep">see <code>exp_data_weights</code></span><span class="dep">see <code>exp_energy_scales</code></span></td>
 </tr>
 <tr data-h="n_exp number of experimental observables. give it before exp_data_files, exp_labels and exp_energy_scales, which it allocates." data-m="predict md mc soap ipi">
 <td class="kw"><code>n_exp</code></td>
