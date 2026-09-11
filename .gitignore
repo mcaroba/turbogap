@@ -7,3 +7,6 @@ build-*/
 include-*/
 lib-*/
 profiling/
+tests/gpu/cron-logs/
+.backup-*/
+*.bak

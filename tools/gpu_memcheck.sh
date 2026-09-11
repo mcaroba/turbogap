@@ -152,8 +152,8 @@ fi
 # hand-written grep over the record headers. The first version of this script
 # matched '^====== ' where the records actually begin with nine '=', so it
 # counted zero errors on a run that reported one and printed "clean" -- the
-# exact "reports success while being wrong" shape catalogued in
-# session_handoff_2026-08.md section 1. If the summary line is absent at all,
+# exact "reports success while being wrong" shape. If the summary line is
+# absent at all,
 # that is a failure too: it means the run did not complete.
 summary=$(grep -E '^=+ ERROR SUMMARY' sanitizer.log | tail -1 || true)
 if [ -z "$summary" ]; then

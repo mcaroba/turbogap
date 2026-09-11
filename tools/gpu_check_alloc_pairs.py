@@ -59,8 +59,7 @@ for n in PLAIN_FREE:
 
 # `call gpu_free(x)` and `call gpu_free_async(x, s)` -- longest name first, or
 # gpu_free matches the prefix of gpu_free_async and every async free is
-# misreported as a plain one. This is the same shape as the time_mpi /
-# time_mpi_positions ordering trap in tools/bundle_timers.py.
+# misreported as a plain one.
 NAMES = sorted(FAMILY, key=len, reverse=True)
 CALL = re.compile(r"\bcall\s+(%s)\s*\(" % "|".join(NAMES), re.I)
 
