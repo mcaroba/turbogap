@@ -21,7 +21,7 @@ Missing data is a skip, not a failure.
 
 ## Why this is not in tests/regression
 
-That suite compares byte-for-byte against `baseline/turbogap.e6eb1aa`, a binary
+That suite compares byte-for-byte against the frozen baseline, a binary
 frozen before the refactor started. It has no dipole support, so it cannot
 produce a reference here at all, and `diff` admits no tolerance. This test asks
 a different question — do two independent codes agree on the same model — and

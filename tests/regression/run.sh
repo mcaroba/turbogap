@@ -17,7 +17,7 @@
 #
 # Environment:
 #   TURBOGAP_BIN        binary under test  (default: <repo>/bin/turbogap)
-#   TURBOGAP_REF_BIN    reference binary   (default: <repo>/tests/regression/baseline/turbogap.e6eb1aa)
+#   TURBOGAP_REF_BIN    reference binary   (default: the one baseline/COMMIT names)
 #   TURBOGAP_DATA_ROOT  directory holding the test systems. Default: the
 #                       turbogap_tests clone beside this repository, which
 #                       tests/fetch_test_data.sh creates on the first run
@@ -70,7 +70,11 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repo=$(cd "$here/../.." && pwd)
 
 BIN=${TURBOGAP_BIN:-$repo/bin/turbogap}
-REF_BIN=${TURBOGAP_REF_BIN:-$here/baseline/turbogap.e6eb1aa}
+# Which binary is the reference: whatever baseline/COMMIT names, so that
+# re-baselining is a one-line change to that file and cannot leave run.sh
+# quietly pointing at the previous one.
+baseline_commit=$(sed -n 1p "$here/baseline/COMMIT" 2>/dev/null)
+REF_BIN=${TURBOGAP_REF_BIN:-$here/baseline/turbogap.${baseline_commit:0:7}}
 TIME_TOL=${TURBOGAP_TIME_TOL:-}
 CASE_TIMEOUT=${TURBOGAP_CASE_TIMEOUT:-1800}
 WORK=${TMPDIR:-/tmp}/turbogap_regression.$$

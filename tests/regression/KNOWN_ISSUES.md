@@ -649,7 +649,7 @@ stays reachable for whoever fixes it.
 
 ---
 
-## 14. The frozen baseline is stale: 14 cases, one cause — OPEN, needs a decision
+## 14. The frozen baseline was stale: 14 cases, one cause — RESOLVED by re-baselining
 
 **Measured** 2026-09-11, by triaging every failing case rather than reading the
 diffs.
@@ -702,15 +702,17 @@ now finished: master is 165 commits past `e6eb1aa` and has deliberately changed
 the SOAP path since. The cost of leaving it is that the suite can never be
 green, and a suite that is always red cannot show a new regression.
 
-The choice is the maintainer's, and deliberately not made here, because
-regenerating a reference to turn a suite green is the one thing this suite must
-never do casually:
+**Resolved 2026-09-11 by re-baselining**, at the GPU merge commit. The
+alternatives were to convert the 14 cases to golden, which would have dropped
+the bit-exact comparison they are good at, or to leave them red and read the
+suite as "14 known, 0 new", which works only for as long as everyone remembers
+the 14. What they assert now is what the other 24 already did: that behaviour
+does not drift from here.
 
-1. **Re-baseline.** Build `tests/regression/baseline/turbogap.<sha>` from a
-   chosen commit and update `COMMIT`. Keeps bit-exactness as the contract, and
-   restates what it is a contract about.
-2. **Convert the 14 to golden**, as the other 24 already are. They then pin
-   behaviour against future drift, which is what they can still usefully do,
-   but they stop being a statement about the refactor.
-3. **Leave them red**, and read the suite as "14 known, 0 new". This is what is
-   happening today, and it works only for as long as someone remembers the 14.
+`run.sh` no longer hard-codes the reference binary's name. It reads
+`baseline/COMMIT`, so the next re-baseline is a one-line change to that file and
+cannot leave the suite quietly comparing against the previous binary.
+
+Re-baselining is not a way to green a failing suite and should not become one.
+What made it right here is that the difference had been measured and explained
+first, and the contract being retired had demonstrably been met.

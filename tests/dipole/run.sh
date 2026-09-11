@@ -3,7 +3,7 @@
 # Dipole acceptance test: does TurboGAP reproduce QUIP's dipole prediction?
 #
 # This is deliberately NOT part of tests/regression. That suite compares
-# byte-for-byte against baseline/turbogap.e6eb1aa, a binary frozen before the
+# byte-for-byte against the frozen baseline, a binary built before the
 # refactor which knows nothing about dipole models and cannot produce a
 # reference here at all; and its comparator is plain `diff`, which has no
 # tolerance. This test asks a different question -- do two independent codes

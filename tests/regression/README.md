@@ -18,7 +18,7 @@ there is nothing to set up by hand.
 | variable             | meaning                                                          |
 | -------------------- | ---------------------------------------------------------------- |
 | `TURBOGAP_BIN`       | binary under test (default `bin/turbogap`)                       |
-| `TURBOGAP_REF_BIN`   | reference (default `tests/regression/baseline/turbogap.e6eb1aa`) |
+| `TURBOGAP_REF_BIN`   | reference (default: the binary `baseline/COMMIT` names) |
 | `TURBOGAP_DATA_ROOT` | take the systems from here and fetch nothing                     |
 | `TURBOGAP_TESTS_DIR` | where the data repository is cloned                              |
 | `TURBOGAP_TIME_TOL`  | fail if test/ref wall-clock exceeds this ratio                   |
@@ -43,7 +43,10 @@ associative and rank counts legitimately differ in the last digit or two.
 
 ## The baseline
 
-`baseline/turbogap.e6eb1aa` is master HEAD at the point the refactor started;
+`baseline/COMMIT` names the reference, and `make_baseline.sh` builds it. It was
+master HEAD at the point the refactor started until 2026-09-11, when it moved to
+the GPU merge -- that contract had been met and the stale reference was failing
+14 cases on a 1.2e-12 round-off nobody could act on. See KNOWN_ISSUES 14;
 `baseline/COMMIT` records the parent and submodule SHAs it was built from.
 **Do not regenerate it from a refactored tree** — it is the only thing that
 knows what the code did before, and rebuilding it from the branch under test

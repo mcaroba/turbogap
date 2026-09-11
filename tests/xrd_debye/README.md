@@ -32,7 +32,7 @@ TURBOGAP_PYTHON=$HOME/.venvs/turbogap-profiling/bin/python tests/xrd_debye/run.s
 ## Why this is not in tests/regression
 
 Same reason `tests/dipole` is not. That suite compares byte-for-byte against
-`baseline/turbogap.e6eb1aa`, a binary frozen before this keyword existed — it
+the frozen baseline, built before this keyword existed — it
 exits with *"I do not recognize the input file keyword xrd_debye"* and cannot
 produce a reference at all. Its comparator is plain `diff`, which has no
 tolerance, and the question here needs one.
