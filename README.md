@@ -44,6 +44,11 @@ copyright (c) of Miguel A. Caro and they are also distributed under the ASL. The
 can freely use this code for non-commercial academic research or teaching. If you want to
 obtain a commercial license for **soap_turbo** please contact Miguel Caro (mcaroba@gmail.com).
 
+This tree tracks `soap_turbo` from the fork at
+`https://github.com/TiganyZ/soap_turbo.git`, branch `master`, which carries the
+radial-coefficient dump guard the regression cases rely on. `git clone
+--recursive` resolves it without further setup.
+
 ## Overview of the code
 
 The **TurboGAP** code consists of a series of Fortran routines written by Dr. Miguel A. Caro
