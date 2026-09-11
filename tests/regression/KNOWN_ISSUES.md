@@ -580,7 +580,7 @@ gets a force that does not integrate the energy it is supposed to.
 
 ---
 
-## 13. Electrostatics: three defects found by the first run — TWO FIXED
+## 13. Electrostatics: six defects found by the first run — FIXED, with the device suite still short
 
 **Found** 2026-09-11, on the first run of `estat_gsf` against a device build.
 
@@ -629,7 +629,55 @@ type's default of `.false.`.
 With this fixed the two builds agree on the charges to 1e-8, which is the
 resolution the output carries.
 
-### c. The batched device electrostatics kernel is wrong — OPEN
+### c. The batched device electrostatics kernel was wrong — FIXED
+
+Four defects, and none of them the arithmetic:
+
+* `kernel_get_electrostatics_nk` did not advance its index into the global pair
+  array when a pair failed the cutoff, so it stuck on the first long pair of
+  each site and lost every pair after it -- 2,223 pairs against the host's
+  626,282.
+* `inclusiveScan` never wrote its last element, because the wrapper turns the
+  kernel's exclusive scan into an inclusive one by copying back shifted by one
+  and the last value would need the total. The energy kernel had a special case
+  for the last site compensating for it.
+* The charge-gradient virial used a position vector it never loaded for the
+  pair it was working on.
+* `compress_P_*` was broadcast and allocated on a device build that never fills
+  it, which crashed every multi-rank case.
+
+`estat_gsf` now agrees with the host on every printed digit of the
+electrostatic energy, no site differing by more than 1e-9, and the virial to
+1.8e-9 relative. The `estat_gpu_batched` keyword that had disabled the kernel is
+gone with it.
+
+### d. What the device suite still fails — OPEN
+
+`tests/regression/run.sh --gpu` gives 22 passed, 17 failed, reproducibly and
+identically from a fresh clone. Two kinds:
+
+**Two crashes**, `xrd_debye_mad` and its mpi2 variant. These are the last of the
+ten the suite started with; the other eight were the compression broadcast
+above.
+
+**Fifteen numeric**, and the spread is the shape of round-off amplified by the
+case rather than of a wrong answer:
+
+| case | worst absolute |
+|---|---|
+| `gcmc_xps`, `gcmc_xps_mpi2`, `vdw_tsmbd_mc` | 7.0e-6 |
+| `neighbors_skin`, `xrd_mad`, `xrd_mad_mpi2` | 1.4e-5 |
+| `xrd_mad_weights` | 2.9e-5 |
+| `xrd_mad_data_weights` | 3.5e-4 |
+| `relax_gd_box*` | 5e-4 to 2.9e-3 |
+| `relax_gd` | 1.9e-2 to 2.7e-2 |
+
+The three at 7.0e-6 are just over the 1e-6 tolerance, which was calibrated on
+`co_md`; the relaxations amplify their starting difference by about 10^6, as
+measured on the host in issue 14. That does not make any of them right --
+nothing here has been traced to its source -- but it does mean the tolerance is
+not the thing to reach for first. Loosening it would hide the very thing these
+cases exist to show.
 
 With the charges right, the device still gave `estat energy: -0.085 eV` where
 the host gave `-11.628 eV`. Setting `gpu_batched = .false.` makes the device
