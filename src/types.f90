@@ -911,7 +911,6 @@ module types
       logical :: gpu_batched = .true.
       logical :: gpu_low_memory = .true.
       real(dp) :: gpu_mem_fraction = 0.d0
-      logical :: estat_gpu_batched = .false.
       integer :: gpu_n_batches = 1
       integer :: n_batches = 0
       real(dp) :: gpu_max_batch_size = 1.d0

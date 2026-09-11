@@ -84,11 +84,14 @@ contains
          !     Currently the cutoff does not get allocated
          !      allocate( desc(i)%cutoff(1:n_sp) )
          if (compress_soap(i)) then
+!           The representation this build broadcasts into. cPnz is meaningless
+!           on a device build, which never fills compress_P_nonzero.
+#ifdef _GPU
+            allocate (desc(i)%compress_soap_indices(1:d))
+#else
             allocate (desc(i)%compress_P_el(1:cPnz))
             allocate (desc(i)%compress_P_i(1:cPnz))
             allocate (desc(i)%compress_P_j(1:cPnz))
-#ifdef _GPU
-            allocate (desc(i)%compress_soap_indices(1:d))
 #endif
          end if
          if (has_local_properties(i)) then

@@ -182,6 +182,13 @@ __global__ void inclusiveScanKernel(int* d_data, int* d_blockSums, int n) {
 }
 
 // Kernel to add block sums to each element
+// out[n-1] = out[n-2] + input[n-1]. See the note in inclusiveScan.
+__global__ void fixLastInclusiveKernel(int* d_data_out, int n) {
+  if (threadIdx.x == 0 && blockIdx.x == 0 && n >= 2) {
+    d_data_out[n - 1] += d_data_out[n - 2];
+  }
+}
+
 __global__ void addBlockSumsKernel(int* d_data, int* d_blockSums, int n) {
   int globalIndex = threadIdx.x + blockIdx.x * blockDim.x * 2;
   if (blockIdx.x > 0) {
@@ -322,8 +329,14 @@ void inclusiveScan(int* d_data_out, int n, hipStream_t* stream) {
     addBlockSumsKernel<<<numBlocks, BLOCK_SIZE, 0, stream[0]>>>(d_data, d_blockSums, n);
   }
 
-  // Copy result back to host
+  // Shifted by one, which turns the kernel's exclusive scan into an inclusive
+  // one -- for every element but the last, whose value the kernel never wrote.
   gpuErrchk(hipMemcpyAsync(d_data_out, d_data + 1, (n - 1) * sizeof(int), hipMemcpyDeviceToDevice, stream[0]));
+
+  // d_data_out[n-1] still holds the caller's own last input at this point, so
+  // adding the element before it -- now the last exclusive value -- completes
+  // the scan. n == 1 needs nothing: one element is its own inclusive scan.
+  fixLastInclusiveKernel<<<1, 1, 0, stream[0]>>>(d_data_out, n);
 
   // Free device memory
   gpuErrchk(hipFreeAsync(d_data, stream[0]));

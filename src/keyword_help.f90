@@ -97,17 +97,6 @@ contains
          write (*, '(A)') ''
       end if
       if (every .or. .not. gap_only) then
-         write (*, '(A)') '  estat_gpu_batched                    [logical, default false]'
-         write (*, '(A)') '      Compute the electrostatics with the batched device kernel (default'
-         write (*, '(A)') '      .false.). Off because that kernel disagrees with both the host build'
-         write (*, '(A)') '      and the device''s own unbatched path -- see KNOWN_ISSUES 13 -- and a'
-         write (*, '(A)') '      device build would otherwise get a silently wrong electrostatic'
-         write (*, '(A)') '      energy. Kept so the kernel can still be run by whoever fixes it.'
-         write (*, '(A)') '      Ignored by a host build.'
-         write (*, '(A)') '      -> see estat_method, gpu_batched'
-         write (*, '(A)') ''
-      end if
-      if (every .or. .not. gap_only) then
          write (*, '(A)') '  gpu_mem_fraction                     [real, default 0.0]'
          write (*, '(A)') '      Fraction of the device''s memory one rank may use for the SOAP'
          write (*, '(A)') '      descriptor batches. The device analogue of mem_fraction, consulted'

@@ -28,11 +28,15 @@ __global__ void kernel_get_electrostatics_nk(int i_beg, int i_end, int* n_neigh_
 
     for (j = 0; j < n_neigh_d[i_site]; j++) {
       r = rjs_d[k];
-      if (r > r_cut)
-        continue;
-      nk_loc += 1;
-      nk_flags_d[k] = 1;
-
+      // k indexes the global pair array and has to advance for EVERY
+      // neighbour, in or out of range. Skipping the increment for an
+      // out-of-range pair leaves k on it, the same distance fails the test
+      // again for every remaining neighbour of this site, and every pair past
+      // the first long one is lost.
+      if (r <= r_cut) {
+        nk_loc += 1;
+        nk_flags_d[k] = 1;
+      }
       k += 1;
     }
     n_neigh_index_d[k_val] = nk_loc;
@@ -59,18 +63,9 @@ extern "C" void gpu_get_electrostatics_nk(int i_beg, int i_end, int n_pairs, int
 
   gpuErrchk(hipMemcpyAsync(nk_flags_sum_d, nk_flags_d, n_pairs * sizeof(int), hipMemcpyDeviceToDevice, stream[0]));
 
-  printf("After recursive reduce");
-  gpu_peek_stream_error(stream);
-  hipError_t err;
-  hipDeviceSynchronize();
-  err = hipGetLastError();
-
+  // No tracing here: this runs once per batch per step, and an unconditional
+  // printf in it has filled a scratch filesystem before now.
   inclusiveScan(nk_flags_sum_d, n_pairs, stream);
-
-  printf("After incluseive scan reduce");
-  gpu_peek_stream_error(stream);
-  hipDeviceSynchronize();
-  err = hipGetLastError();
 
 
   //  gpu_peek_stream_error( stream );
@@ -91,11 +86,6 @@ extern "C" void gpu_get_electrostatics_nk(int i_beg, int i_end, int n_pairs, int
 
 
   gpu_multiply_flags(n_pairs, nk_flags_d, nk_flags_sum_d, stream);
-
-  printf("After multiply flage reduce");
-  gpu_peek_stream_error(stream);
-  hipDeviceSynchronize();
-  err = hipGetLastError();
 }
 
 __global__ void kernel_set_electrostatics_k_index(int i_beg, int i_end, int n_pairs, int n_sites0, int* neighbors_list_d,
@@ -248,11 +238,11 @@ __global__ void kernel_electrostatics_gsf(const int i_beg, const int nk_max, dou
     n_site_pair_offset = n_neigh_index_d[temp_i_site - 1];
   }
 
+  // n_neigh_index_d holds an INCLUSIVE scan, so a site's own count is the
+  // difference against the previous entry -- the last site included. Giving it
+  // the raw scan value there hands it the total over all sites, and the block
+  // then reads off the end of every compacted array.
   int n_site_pairs = n_neigh_index_d[temp_i_site] - n_site_pair_offset;
-
-  if (temp_i_site + 1 == this_n_sites) {
-    n_site_pairs = n_neigh_index_d[temp_i_site];
-  }
 
   int neigh_idx;
 
@@ -399,6 +389,13 @@ __global__ void kernel_electrostatics_gsf(const int i_beg, const int nk_max, dou
         // Note we are going over all the gradients now
 
         neigh_idx = j2_index_d[pair_idx];
+
+        // This pair's own position vector. Without this the virial below uses
+        // whatever the first loop left in this_xyz, which is a different pair
+        // or, for a thread that never entered it, nothing at all.
+        this_xyz[0] = xyz_index_d[3 * pair_idx];
+        this_xyz[1] = xyz_index_d[3 * pair_idx + 1];
+        this_xyz[2] = xyz_index_d[3 * pair_idx + 2];
 
         this_force[0] = -temp_prefactor / charge_site * charge_gradients_d[3 * pair_idx];
         this_force[1] = -temp_prefactor / charge_site * charge_gradients_d[3 * pair_idx + 1];

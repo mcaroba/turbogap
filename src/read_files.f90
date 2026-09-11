@@ -2323,18 +2323,6 @@ contains
 !       cannot know about.
          params%max_Gbytes_set = .true.
          if (rank == 0) call print_parameter("max_Gbytes_per_process", params%max_Gbytes_per_process)
-         !> @kw estat_gpu_batched
-         !> Compute the electrostatics with the batched device kernel (default .false.). Off
-         !> because that kernel disagrees with both the host build and the device's own
-         !> unbatched path -- see KNOWN_ISSUES 13 -- and a device build would otherwise get a
-         !> silently wrong electrostatic energy. Kept so the kernel can still be run by whoever
-         !> fixes it. Ignored by a host build.
-         !> @see estat_method, gpu_batched
-      else if (keyword == 'estat_gpu_batched') then
-         backspace (unit)
-         read (unit, *, iostat=iostatus) cjunk, cjunk, params%estat_gpu_batched
-         call check_iostatus(iostatus, keyword)
-         if (rank == 0) call print_parameter("estat_gpu_batched", params%estat_gpu_batched)
          !> @kw gpu_mem_fraction
          !> Fraction of the device's memory one rank may use for the SOAP descriptor batches.
          !> The device analogue of mem_fraction, consulted only by a GPU build and only when

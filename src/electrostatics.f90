@@ -439,9 +439,6 @@ contains
       call gpu_malloc_async(n_neigh_index_d, st_n_neigh_index_d, gpu_stream)
       call gpu_memset_async(n_neigh_index_d, 0, st_n_neigh_index_d, gpu_stream)
 
-      write (*, '(A,1X,I8,1X,A)') "rank = ", rank, " gpu_get_electrostatics_nk"
-      call flush (101)
-
       call gpu_get_electrostatics_nk( &
          1, &
          i_end - i_beg + 1, &
@@ -480,10 +477,6 @@ contains
       call gpu_malloc_async(gpu_exp%j2_index_d(n_dim_idx), gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
       call gpu_memset_async(gpu_exp%j2_index_d(n_dim_idx), 0, gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
 
-      write (*, '(A,1X,I8,1X,A)') "rank = ", rank, " finished gpu_get_electrostatics_nk"
-
-      call flush (101)
-
       ! The charges themselves are allocated outside of this routine, hence they do not need to be passed in.
 
       ! Allocate the array which will store the neighbor charges
@@ -504,8 +497,6 @@ contains
       call gpu_malloc_async(charge_gradients_index_d, st_charge_gradients_d, gpu_stream)
       call gpu_memset_async(charge_gradients_index_d, 0, st_charge_gradients_d, gpu_stream)
 
-      write (*, '(A,1X,I8,1X,A)') "rank = ", rank, "  gpu_get_electrostatics_k_index"
-      call flush (101)
       ! Reusing this function to set the k indices for electrostatics
       call gpu_set_electrostatics_k_index(1, i_end - i_beg + 1, j_end - j_beg + 1, n_sites, & ! i_beg, i_end, j_end, n_sites,&
                                           gpu_neigh%neighbors_list_d, &
@@ -529,9 +520,6 @@ contains
       allocate (energies_temp(1:this_n_sites))
       allocate (forces_temp(1:3, 1:n_sites))
 
-      write (*, '(A,1X,I8,1X,A)') "rank = ", rank, "  finished gpu_get_electrostatics_k_index"
-
-      call flush (101)
       st_energies_d = int(c_double, c_size_t)*this_n_sites
       call gpu_malloc_async(energies_d, st_energies_d, gpu_stream)
       call gpu_memset_async(energies_d, 0, st_energies_d, gpu_stream)
@@ -546,18 +534,10 @@ contains
 
       ! We do an inclusive scan on n_neigh for the sites that are actually in the list
 
-      write (*, '(A,1X,I8,1X,A)') "rank = ", rank, "  inclusive scan"
-      call flush (101)
       call gpu_inclusive_scan_int(this_n_sites, n_neigh_index_d, gpu_stream)
-
-      write (*, '(A,1X,I8,1X,A)') "rank = ", rank, " finished inclusive scan"
-      call flush (101)
 
       c_do_forces = logical(do_gradients, kind=c_bool)
       c_do_damping_cosine = logical(options%damped_cosine, kind=c_bool)
-
-      write (*, '(A,1X,I8,1X,A)') "rank = ", rank, " starting electrostatics energies"
-      call flush (101)
 
       call gpu_get_electrostatics_energies( &
          i_beg, &
@@ -585,8 +565,6 @@ contains
          c_do_forces, &
          gpu_stream)
 
-      write (*, '(A,1X,I8,1X,A)') "rank = ", rank, " finished electrostatics energies"
-      call flush (101)
       st_energies_d = int(c_double, c_size_t)*this_n_sites
       call cpy_dtoh(energies_d, c_loc(energies_temp), st_energies_d, gpu_stream)
 

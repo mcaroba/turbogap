@@ -170,12 +170,7 @@ contains
                   energies_estat(i_beg:i_end), forces_estat, virial_estat, params%estat_options)
             else if (trim(params%estat_method) == "gsf") then
 #ifdef _GPU
-!              Not params%gpu_batched alone: that switch also drives the
-!              batched pdf and structure-factor paths, which are fine. This one
-!              kernel is not, so it takes an explicit opt-in of its own.
-               if (params%gpu_batched .and. params%estat_gpu_batched) then
-
-                  print *, "> Starting GPU electrostatics, rank = ", rank
+               if (params%gpu_batched) then
 
                   call get_gpu_batches(n_neigh(i_beg:i_end), rjs(j_beg:j_end), params%estat_rcut, &
                                        params%gpu_n_batches, gpu_memory_usage, &
@@ -234,15 +229,6 @@ contains
                      n_sites_temp = this_i_end - this_i_beg + 1
                      n_pairs_temp = this_j_end - this_j_beg + 1
 
-                     print *, " "
-                     write (*, '(9(A,I4))') &
-                        "estat batches---Rank ", rank, " ---Thread ", omp_task, &
-                        " / ", n_omp, " i = ", i, " / ", params%gpu_n_batches, &
-                        " i_beg = ", this_i_beg, &
-                        " i_end = ", this_i_end, &
-                        " j_beg = ", this_j_beg, &
-                        " j_end = ", this_j_end
-
                      call gpu_malloc_neighbors(gpu_neigh(i), &
                                                n_sites_temp, n_pairs_temp, &
                                                n_neigh(this_i_beg:this_i_end), &
@@ -267,12 +253,6 @@ contains
 
                      call gpu_free_neighbors(gpu_neigh(i), gpu_streams(omp_task))
 
-            write (*, '(A,I4,A,I4,A,I4,A,I4,A,I4,A,I4)') "Electrostatics batches finished---Rank ", rank, " ---Thread ", omp_task, &
-                        " / ", n_omp, " i = ", i, &
-                        " i_beg = ", this_i_beg, &
-                        " i_end = ", this_i_end, &
-                        " j_beg = ", this_j_beg, &
-                        " j_end = ", this_j_end
                   end do
                   !     !$OMP END PARALLEL DO
                   deallocate (gpu_neigh)

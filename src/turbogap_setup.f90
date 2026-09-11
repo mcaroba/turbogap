@@ -487,12 +487,17 @@ contains
             call mpi_bcast(soap_turbo_hypers(i)%radial_enhancement, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
             call mpi_bcast(soap_turbo_hypers(i)%compress_soap, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
             if (soap_turbo_hypers(i)%compress_soap) then
+!              Each build broadcasts the compression it reads. A device build
+!              never fills compress_P_nonzero -- its read_files branch produces
+!              the index array instead -- so broadcasting the triple there sizes
+!              itself from uninitialised memory.
+#ifdef _GPU
+               call mpi_bcast(soap_turbo_hypers(i)%compress_soap_indices(1:dim), dim, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+#else
                cPnz = soap_turbo_hypers(i)%compress_P_nonzero
                call mpi_bcast(soap_turbo_hypers(i)%compress_P_el(1:cPnz), cPnz, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
                call mpi_bcast(soap_turbo_hypers(i)%compress_P_i(1:cPnz), cPnz, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
                call mpi_bcast(soap_turbo_hypers(i)%compress_P_j(1:cPnz), cPnz, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-#ifdef _GPU
-               call mpi_bcast(soap_turbo_hypers(i)%compress_soap_indices(1:dim), dim, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
 #endif
             end if
             call mpi_bcast(soap_turbo_hypers(i)%is_dipole_model, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)

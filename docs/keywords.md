@@ -6,9 +6,9 @@ keyword in `src/read_files.f90` and regenerate with `make docs`.
 
 ## Contents
 
-**The input file** &mdash; 297 keywords
+**The input file** &mdash; 296 keywords
 
-- [General](#general) (55)
+- [General](#general) (54)
 - [Run control](#run-control) (19)
 - [Molecular dynamics](#molecular-dynamics) (23)
 - [Nested sampling](#nested-sampling) (6)
@@ -42,7 +42,6 @@ The atoms, the species and how chatty the run is.
 | `atoms_file`<br>`input_file` | string |  |  | all | Path to the extended-XYZ file holding the atomic configuration, or the trajectory of configurations to loop over in predict mode. Required. |  |
 | `do_ir` | logical | `false` |  | md | Predict an IR spectrum from the trajectory. The total dipole is accumulated over the whole run and transformed into ir_spectrum.dat, whose header records the sampling interval, the Nyquist limit, the resolution and hence the band over which the result can be read. Needs a dipole model in the potential file, but no experimental spectrum and no exp_* keywords: nothing is fitted and no force is added. Implies write_ir, so ir_prediction.dat carries the same spectrum over the whole trajectory. The ensemble is the entire run rather than a rolling window, so the resolution follows from md_nsteps unless ir_resolution asks for one the run is long enough to give. Naming "ir" in exp_labels instead is the other thing -- that biases the trajectory towards an experiment. | see `ir_stride`; see `ir_resolution`; see `ir_nu_min`; see `ir_nu_max`; see `ir_lag_factor`; see `ir_n_samples`; see `exp_labels` |
 | `e0` | real list |  | eV | all | Constant energy offset per species, added to every atom of that species. One value per entry in species, in the same order. The GAP predicts energies relative to these, so they set the zero of the energy scale. |  |
-| `estat_gpu_batched` | logical | `false` |  | all | Compute the electrostatics with the batched device kernel (default .false.). Off because that kernel disagrees with both the host build and the device's own unbatched path -- see KNOWN_ISSUES 13 -- and a device build would otherwise get a silently wrong electrostatic energy. Kept so the kernel can still be run by whoever fixes it. Ignored by a host build. | see `estat_method`; see `gpu_batched` |
 | `gpu_mem_fraction` | real | `0.0` |  | all | Fraction of the device's memory one rank may use for the SOAP descriptor batches. The device analogue of mem_fraction, consulted only by a GPU build and only when max_gbytes_per_process was not given. | see `mem_fraction`; see `max_gbytes_per_process` |
 | `ir_acf_mode` | string | `block` |  | md | How the running dipole autocorrelation is formed: "block" (the default) averages over the pairs the stored ensemble holds, and "exponential" carries it as a set of auxiliary variables integrated alongside the atoms, one per lag, decaying with constant ir_tau_mem. The exponential form weights the past by exp(-age/ir_tau_mem) instead of a hard window, so the bias is a decaying functional of the trajectory and the force does not jump when a frame falls off the end of the buffer. It is the Markovian embedding of a generalized Langevin bias in which the target spectrum plays the part of the bath. | needs `exp_labels`; see `ir_tau_mem`; see `ir_lag_factor`; see `ir_estimator` |
 | `ir_aux_damping` | real | `10.0` | cm^-1 | md | Bandwidth Gamma_k of each resonator under ir_bias_mode = aux: the width of one channel of the filter bank, which is what the experimental resolution actually is. It appears in the linear-response calibration of the couplings, g_k = mu_k w_k sqrt(Gamma_k <R_target^2>/S_MM(w_k)), so it sets how hard the dipole has to push to reach a given amplitude. 5 to 10 cm^-1 is the usual experimental figure. | needs `ir_bias_mode`; see `ir_bias_mode`; see `ir_aux_eff_mass`; see `ir_resolution` |
