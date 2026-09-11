@@ -28,9 +28,7 @@
 ! the adjoint of the whole pipeline, which is what makes it usable as a MAD
 ! bias.
 !
-!==========================================================================
 ! THE PIPELINE, IN THE ORDER IT RUNS
-!==========================================================================
 !
 ! Input: mu(1:3, 1:T), CHRONOLOGICAL -- mu(:,1) is the oldest frame and
 ! mu(:,T) the newest -- sampled every dt fs.
@@ -85,9 +83,7 @@
 !       sees the cut edge, and normalising last means the peak is the peak of
 !       what is returned. The Python does it in this order and so does this.
 !
-!==========================================================================
 ! THE QUANTUM CORRECTION, WHICH IS WHERE THE TWO ESTIMATORS PART COMPANY
-!==========================================================================
 !
 ! Linear response gives the absorption as
 !
@@ -126,9 +122,7 @@
 ! to the grid, the smoothing and the normalisation, and that is how the two
 ! implementations are cross-checked against each other.
 !
-!==========================================================================
 ! DEVIATIONS FROM spectroscopy.py, ALL DELIBERATE, ALL HERE
-!==========================================================================
 !
 !   * BLACKMAN IS THE HALF WINDOW, NOT numpy's. The Python calls np.blackman(L)
 !     and applies it to lags 0..L-1. np.blackman is SYMMETRIC: it is ~0 at
@@ -163,9 +157,7 @@
 !     fits a scale against the experiment instead, which is the same freedom
 !     applied smoothly.
 !
-!==========================================================================
 ! COST
-!==========================================================================
 !
 ! Per call, with T frames, L = acf_ratio*T lags kept and K bins below
 ! max_freq_cm:
@@ -182,7 +174,6 @@
 ! On 6000 frames with acf_ratio = 0.2 and max_freq_cm = 4000 that is L = 1200,
 ! K = 288, so ~7e5 multiply-adds for the transform: microseconds. It is the
 ! FFT length, not the transform, that grows with the trajectory.
-!
 module ir_fft
 
    use kinds
@@ -267,11 +258,9 @@ module ir_fft
 
 contains
 
-!**************************************************************************
 !
 ! Smallest power of two that is at least n. Used for the FFT length; see the
 ! header on why any length >= 2T-1 is equivalent.
-!
    function ir_fft_next_pow2(n) result(m)
 
       implicit none
@@ -286,7 +275,6 @@ contains
 
    end function ir_fft_next_pow2
 
-!**************************************************************************
 !
 ! In-place radix-2 Cooley-Tukey FFT, n a power of two.
 !
@@ -297,7 +285,6 @@ contains
 ! taken from a library because the only two transforms this module needs are a
 ! forward and an inverse of the same power-of-two length, and a dependency for
 ! that is not worth the build complexity.
-!
    subroutine ir_fft_transform(z, n, isign)
 
       implicit none
@@ -348,7 +335,6 @@ contains
 
    end subroutine ir_fft_transform
 
-!**************************************************************************
 !
 ! The dipole autocorrelation, by Wiener-Khinchin.
 !
@@ -364,7 +350,6 @@ contains
 ! equal to the linear one: with n >= 2T the wrap-round term at lag tau
 ! involves products of d(a) with d(a + tau - n), and a + tau - n < 0 for every
 ! a < T, so it is a product with a zero.
-!
    subroutine ir_fft_autocorrelation(mu, n_frames, subtract_mean, acf, mu_mean)
 
       implicit none
@@ -417,7 +402,6 @@ contains
 
    end subroutine ir_fft_autocorrelation
 
-!**************************************************************************
 !
 ! The lag window w(tau), tau = 0 .. L-1, over a half-length of L.
 !
@@ -429,7 +413,6 @@ contains
 ! "lorch" are mad_ir.f90's set, offered so that the two estimators can be run
 ! with the same taper and the remaining difference attributed to something
 ! else.
-!
    subroutine ir_fft_lag_window(kind, L, w)
 
       implicit none
@@ -474,11 +457,9 @@ contains
 
    end subroutine ir_fft_lag_window
 
-!**************************************************************************
 !
 ! How many lags acf_ratio buys out of T frames, and what resolution that is.
 ! Truncating rather than rounding matches the Python's int().
-!
    function ir_fft_n_lag(n_frames, acf_ratio) result(L)
 
       implicit none
@@ -505,12 +486,10 @@ contains
 
    end function ir_fft_resolution
 
-!**************************************************************************
 !
 ! The quantum-correction prefactor P(nu), by which the power spectrum M is
 ! multiplied to give the absorption lineshape. See the header for what the
 ! choice does.
-!
    subroutine ir_fft_prefactor(kind, temperature, nu, n, pref, ok, msg)
 
       implicit none
@@ -553,11 +532,9 @@ contains
 
    end subroutine ir_fft_prefactor
 
-!**************************************************************************
 !
 ! Validate a configuration before anything is allocated, so that a bad input
 ! is a message rather than a crash three routines down.
-!
    subroutine ir_fft_check_config(cfg, n_frames, ok, msg)
 
       implicit none
@@ -637,7 +614,6 @@ contains
 
    end subroutine ir_fft_check_config
 
-!**************************************************************************
 !
 ! Gaussian smoothing, matching scipy.ndimage.gaussian_filter1d with
 ! mode = "nearest" and the default truncate = 4.
@@ -649,7 +625,6 @@ contains
 !
 ! The kernel is symmetric, so correlation and convolution coincide and the
 ! adjoint below only has to undo the edge clamping.
-!
    subroutine ir_fft_smooth_gaussian(x, n, smooth_k, y)
 
       implicit none
@@ -730,7 +705,6 @@ contains
 
    end subroutine ir_fft_smooth_gaussian_adj
 
-!**************************************************************************
 !
 ! Box smoothing: a moving average of width k, in numpy's mode = "valid". The
 ! output is SHORTER by k-1 and its first bin is centred k-1 bins in half a
@@ -742,7 +716,6 @@ contains
 ! This is GPUMD's smoother. It has sidelobes -- a boxcar in the frequency
 ! domain is a sinc in the lag domain -- so "gaussian" is the default here even
 ! though the Python offers both.
-!
    subroutine ir_fft_smooth_box(x, n, smooth_k, y, n_out)
 
       implicit none
@@ -791,10 +764,8 @@ contains
 
    end subroutine ir_fft_smooth_box_adj
 
-!**************************************************************************
 !
 ! Release a result.
-!
    subroutine ir_fft_free(res)
 
       implicit none
@@ -814,13 +785,11 @@ contains
 
    end subroutine ir_fft_free
 
-!**************************************************************************
 !
 ! THE PIPELINE. Steps (1) to (8) of the header, in that order.
 !
 ! mu(1:3, 1:n_frames) is chronological. Everything else comes from cfg, and
 ! res is filled from scratch (any previous contents are released first).
-!
    subroutine ir_fft_spectrum(mu, n_frames, cfg, res, ok, msg)
 
       implicit none
@@ -1005,7 +974,6 @@ contains
 
    end subroutine ir_fft_spectrum
 
-!**************************************************************************
 !
 ! THE MAD BIAS: the mismatch with an experiment, and its exact gradient with
 ! respect to the NEWEST dipole in the buffer.
@@ -1052,7 +1020,6 @@ contains
 !
 ! NOT NORMALISED. cfg%normalise is ignored here and treated as .false.; see
 ! the header on why dividing by max|I| is not a thing to differentiate.
-!
    subroutine ir_fft_loss(mu, n_frames, cfg, nu_exp, I_exp, wgt, n_exp, &
                           match_scale, match_offset, energy_scale, &
                           energy, lambda, I_fit, scale, offset, &

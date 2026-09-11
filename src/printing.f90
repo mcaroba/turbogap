@@ -258,11 +258,8 @@ contains
       integer :: length
 
       length = len_trim(message)
-      !call print_line(repeat('-', length))
-      !call print_separator('-')
       call print_unbroken_lines(message, 'normal')
       call print_line(repeat('-', length))
-      ! call print_separator('-')
 
    end subroutine print_small_message
 
@@ -272,7 +269,6 @@ contains
       class(*) :: value
       character(len=max_length*4) :: string
 
-      !call print_separator('-')
       call print_separator(' ')
 
       select type (value)

@@ -89,7 +89,6 @@ module ipi_driver
 
 contains
 
-!**************************************************************************
    subroutine ipi_driver_open(address, rank)
 
       implicit none
@@ -109,9 +108,7 @@ contains
       write (*, *) '                                       |'
 
    end subroutine ipi_driver_open
-!**************************************************************************
 
-!**************************************************************************
    subroutine ipi_driver_close(rank)
 
       implicit none
@@ -122,9 +119,7 @@ contains
       call ipi_disconnect(fd)
 
    end subroutine ipi_driver_close
-!**************************************************************************
 
-!**************************************************************************
 !  Serve i-PI until it has taken the forces in hand and given back the next
 !  set of coordinates, or until it says EXIT.
 !
@@ -351,9 +346,7 @@ contains
 #endif
 
    end subroutine ipi_driver_exchange
-!**************************************************************************
 
-!**************************************************************************
 !  What i-PI actually handed over on the first call.
 !
 !  A units mismatch between i-PI's structure file and this client does not
@@ -410,9 +403,7 @@ contains
       flush (6)
 
    end subroutine report_first_geometry
-!**************************************************************************
 
-!**************************************************************************
 !  How many force calls this client has served, and what they cost.
 !
 !  The first few and then every hundredth: a driver that is connected but
@@ -442,6 +433,5 @@ contains
       t_last = t_now
 
    end subroutine report_rate
-!**************************************************************************
 
 end module ipi_driver

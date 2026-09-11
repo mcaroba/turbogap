@@ -32,7 +32,6 @@ module turbogap_exp
 
 contains
 
-!**************************************************************************
    subroutine compute_exp_spectra(params, n_sites, species, positions, rjs, xyz, neighbors_list, &
                                   n_neigh, neighbor_species, indices, a_box, b_box, c_box, &
                                   i_beg, i_end, j_beg, j_end, rank, ntasks, ierr, md_istep, mc_istep, &
@@ -119,9 +118,7 @@ contains
       integer :: q_beg
       integer :: q_end
 
-      !##############################################################!
       !###---   (Partial) Pair distribution functions and XRD   ---###!
-      !##############################################################!
 
       ! We use these to calculate the (partial) structure factors, which
       ! can be used for X-Ray scattering and (in the future)
@@ -292,9 +289,7 @@ contains
 
       end if
 
-      !################################################################!
       !###---   Compute similarity of experimental predictions   ---###!
-      !################################################################!
 
       if (params%do_exp) then
          do i = 1, params%n_exp
@@ -322,16 +317,10 @@ contains
                     &%exp_similarity_type)
             end if
 
-            ! deallocate(params%exp_data(i)%x)
-            ! deallocate(params%exp_data(i)%y)
-            ! deallocate(params%exp_data(i)%y_pred)
-
          end do
       end if
 
-      !##############################################!
       !###---   Finalize experimental arrays   ---###!
-      !##############################################!
 
       if (params%do_pair_distribution) then
          call finalize_pair_distribution(params, x_pair_distribution&
@@ -380,9 +369,7 @@ contains
       deallocate (species_types_actual)
 
    end subroutine compute_exp_spectra
-!**************************************************************************
 
-!**************************************************************************
 ! The XPS spectrum predicted from core-electron binding energies, and the
 ! energies and forces that fitting it against experiment produces.
 !
@@ -479,16 +466,6 @@ contains
               & local_properties(1:n_sites, core_be_lp_index),&
               & .true.)
 
-         ! call get_compare_xps_spectra(params%exp_data(xps_idx)%data&
-         !      & , local_properties(1:n_sites, core_be_lp_index),&
-         !      & params%xps_sigma, params%exp_data(xps_idx) &
-         !      &%n_samples, mag, params%exp_data(xps_idx)%similarity&
-         !      & , params%exp_data(xps_idx)%x, params &
-         !      &%exp_data(xps_idx)%y, params%exp_data(xps_idx) &
-         !      &%y_pred, y_i_pred_all, .not. allocated(params &
-         !      &%exp_data(xps_idx)%x), params%exp_similarity_type )
-
-         ! print *, params%exp_data(xps_idx)%n_samples, xps_idx
          call get_energy_scale(params%do_md, params%do_mc,&
               & md_istep, params%md_nsteps, mc_istep, params&
               &%mc_nsteps, params &
@@ -557,7 +534,6 @@ contains
 
          end if
 
-         !deallocate( params%exp_data(xps_idx)%y_pred )
          if (allocated(y_i_pred_all)) deallocate (y_i_pred_all)
          ! sim_exp_pred would be an energy if multiplied by some energy scale \gamma * ( 1 - sim )
          ! sim_exp_pred_der would be the array of forces if multiplied by (- \gamma )
@@ -569,7 +545,6 @@ contains
       else if (any_has_core_electron_be(soap_turbo_hypers) .and. params%do_xps) then
          ! Get the linspace of the xps spectrum and then perform the
          ! calculation and write to the prediction file
-         !
          if (rank == 0) then
             call get_xps_spectra_standalone(&
                  & params%xps_e_min,&
@@ -597,6 +572,5 @@ contains
       end if
 
    end subroutine compute_exp_xps
-!**************************************************************************
 
 end module turbogap_exp

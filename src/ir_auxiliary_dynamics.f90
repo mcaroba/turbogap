@@ -4,9 +4,7 @@
 !
 ! Selected with ir_bias_mode = "aux".
 !
-!==========================================================================
 ! THE SCHEME
-!==========================================================================
 !
 ! To every fitted frequency w_k attach a 3-vector resonator (X_k, P_k) with
 ! fictitious mass mu_k, driven by the total dipole M(q):
@@ -34,9 +32,7 @@
 ! The energy reported alongside (3) is -escale sum_k g_k X_k.M, which IS the
 ! generator of (3); unlike the ACF bias there is no frozen-past caveat here.
 !
-!==========================================================================
 ! WHY THE RESTRAINT IS FEEDBACK AND NOT A POTENTIAL
-!==========================================================================
 !
 ! The obvious way to hold R_k at a target is to add a bias potential
 ! U(R_k) = 1/2 gamma (R_k - R_target)^2 to the extended Hamiltonian and let
@@ -82,9 +78,7 @@
 !
 ! An amplitude cannot be steered by a potential. It can be steered by friction.
 !
-!==========================================================================
 ! THE CONTROLLER
-!==========================================================================
 !
 ! eta_k in (1) is a per-mode friction that is free to go negative, integrating
 ! the envelope error, plus a proportional term that damps the loop:
@@ -151,9 +145,7 @@
 ! target amplitude means pumping it. ir_aux_energy_pumped carries the running
 ! total for thermo.log, the way the GLE thermostat's ledger does.
 !
-!==========================================================================
 ! WHAT THIS IS, IN GENERAL
-!==========================================================================
 !
 ! Nothing below is about infrared spectra. The module takes a three-component
 ! SIGNAL s(q) and its Jacobian ds_a/dr_jb, and it steers the power that signal
@@ -188,9 +180,7 @@
 ! then unchanged. A signal with a different number of components needs the
 ! leading dimension 3 generalised, and nothing else.
 !
-!==========================================================================
 ! THE STABILITY BOUND
-!==========================================================================
 !
 ! The coupling -g_k X_k.s is BILINEAR, and a bilinear form is unbounded below.
 ! It is held in check only by the two quadratic terms it sits between: the
@@ -237,9 +227,7 @@
 ! dynamics by bilinearly coupling an auxiliary variable to a configurational
 ! signal has a bound of this form, and computing it costs nothing.
 !
-!==========================================================================
 ! CALIBRATION
-!==========================================================================
 !
 ! Run unbiased first. Once mad_ir's ensemble is full its autocorrelation gives
 ! the unconstrained dipole power spectral density, and linear response fixes
@@ -264,9 +252,7 @@
 !
 !   R_target_k^2 = norm I_exp(k)/nu_k^p,   norm = R_MAX^2/max_k(I_exp/nu^p)
 !
-!==========================================================================
 ! UNITS
-!==========================================================================
 !
 ! Everything internal is in rad/fs. The experimental grid, ir_damping and the
 ! output are wavenumbers in cm^-1, and the conversion is
@@ -279,9 +265,7 @@
 ! CM_PER_INV_FS instead of dividing puts a 10 cm^-1 bandwidth at 3.3e5 fs^-1
 ! rather than 1.9e-3. Check 6 exists because both were once in this file.
 !
-!==========================================================================
 ! INTEGRATOR
-!==========================================================================
 !
 ! Strang split, so the bank is stable for any dt the MD can take. The linear
 ! part of (1) -- harmonic, eta damping, drive held constant over the step -- is
@@ -394,7 +378,6 @@ module ir_auxiliary_dynamics
 
 contains
 
-!**************************************************************************
 !  True once the bank has been calibrated against a full ensemble. Before
 !  that it applies no force: the couplings are not known yet.
    logical function ir_aux_calibrated(this)
@@ -403,14 +386,12 @@ contains
       ir_aux_calibrated = this%active .and. this%calibrated
    end function ir_aux_calibrated
 
-!**************************************************************************
    logical function ir_aux_ready(this)
       implicit none
       type(ir_aux_type), intent(in) :: this
       ir_aux_ready = ir_aux_calibrated(this) .and. (this%n_steps >= 1)
    end function ir_aux_ready
 
-!**************************************************************************
 !  The bank's own mechanical energy, sum_k [ P^2/2mu + 1/2 mu w^2 X^2 ], which
 !  for this parametrisation is sum_k 1/2 mu_k w_k^2 R_k^2 exactly.
    real(dp) function ir_aux_bank_energy(this)
@@ -425,7 +406,6 @@ contains
       end do
    end function ir_aux_bank_energy
 
-!**************************************************************************
 !  Running total of the energy the controller has put into the bank (or taken
 !  out of it). H_ext is not conserved by construction, so this is the ledger
 !  entry that says by how much.
@@ -435,7 +415,6 @@ contains
       ir_aux_energy_pumped = this%e_pump
    end function ir_aux_energy_pumped
 
-!**************************************************************************
 !  The stability number (S3) at a given back-reaction scale. Below 1 the
 !  combined signal-plus-bank quadratic form is positive definite; at 1 the
 !  effective signal stiffness (S2) passes through zero and the pair runs away.
@@ -453,7 +432,6 @@ contains
                          *this%sum_g2*this%c0/denom
    end function ir_aux_stability
 
-!**************************************************************************
 !  (S4): the largest exp_energy_scales this bank can carry. Zero means the
 !  bound could not be formed (no signal variance, or no temperature).
    real(dp) function ir_aux_escale_max(this)
@@ -462,7 +440,6 @@ contains
       ir_aux_escale_max = this%escale_max
    end function ir_aux_escale_max
 
-!**************************************************************************
    subroutine ir_aux_free(this)
       implicit none
       type(ir_aux_type), intent(inout) :: this
@@ -494,7 +471,6 @@ contains
 
    end subroutine ir_aux_free
 
-!**************************************************************************
 !  Allocate the bank on the frequencies of parent that can carry a resonator.
 !  No experiment is read here and no coupling is set: that is ir_aux_calibrate,
 !  which needs a full ensemble and therefore cannot run at setup time.
@@ -640,7 +616,6 @@ contains
 
    end subroutine ir_aux_init
 
-!**************************************************************************
 !  Set the couplings and the targets from a full ensemble, and seed the bank at
 !  its target amplitude. Call once, when mad_ir_ready(parent) first holds.
 !
@@ -811,7 +786,6 @@ contains
 
    end subroutine ir_aux_calibrate
 
-!**************************************************************************
 !  R_k from (2). Kept in one place: it is the observable, and three routines
 !  need it.
    subroutine ir_aux_amplitude(this)
@@ -830,7 +804,6 @@ contains
 
    end subroutine ir_aux_amplitude
 
-!**************************************************************************
 !  One step of (1) with (6) and (7), Strang split: half a step of the radial
 !  controller, an exact step of the linear resonator with the drive held
 !  constant, half a step of the controller again, then the integral update.
@@ -942,7 +915,6 @@ contains
 
    end subroutine ir_aux_advance
 
-!**************************************************************************
    subroutine ir_aux_amplitude_one(this, m)
 
       implicit none
@@ -957,7 +929,6 @@ contains
 
    end subroutine ir_aux_amplitude_one
 
-!**************************************************************************
 !  exp(c_k dt) for the radial flow (7)-(8). Returned as a factor rather than a
 !  rate because that is what makes the half step exact.
    real(dp) function ir_aux_radial_factor(this, m, dt_use)
@@ -978,7 +949,6 @@ contains
 
    end function ir_aux_radial_factor
 
-!**************************************************************************
 !  The coupling energy -escale sum_k g_k X_k.M, which is the generator of the
 !  force ir_aux_forces adds, and the dissimilarity for thermo.log.
    subroutine ir_aux_evaluate(this, energy_scale, signal, energy)
@@ -1035,7 +1005,6 @@ contains
 
    end subroutine ir_aux_evaluate
 
-!**************************************************************************
 !  F_jb += (escale/n_live) sum_a (sum_k g_k X_ka) dmu_a/dr_jb.
 !
 !  dmu_dr(a, b, j) = d mu_a / d r_jb, exactly as accumulate_dmu_dr leaves it.
@@ -1129,7 +1098,6 @@ contains
 
    end subroutine ir_aux_forces
 
-!**************************************************************************
 !  Lazy first-use setup, for the same reason mad_ir's and the GLE bath's are
 !  lazy: n_sites is not known at input-reading time.
    subroutine ir_aux_setup(parent, n_sites, dt_md, stride, eff_mass_amu, damping_cm, &
@@ -1176,7 +1144,6 @@ contains
 
    end subroutine ir_aux_setup
 
-!**************************************************************************
    subroutine ir_aux_save(this, fname, ok, msg)
 
       implicit none
@@ -1228,7 +1195,6 @@ contains
 
    end subroutine ir_aux_save
 
-!**************************************************************************
 !  Refuse a file that does not describe this bank rather than adopt it. The
 !  frequencies are the identity: a grid that has moved means the modes mean
 !  something else, and silently carrying X and P across would be worse than
@@ -1349,7 +1315,6 @@ contains
 
    end subroutine ir_aux_load
 
-!**************************************************************************
    subroutine ir_aux_write_spectrum(this, fname, with_exp)
 
       implicit none

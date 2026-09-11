@@ -195,13 +195,11 @@ contains
 !        end if
 !        local_properties(:,vdw_lp_index) = this_local_properties(:,vdw_lp_index)
 !        call mpi_bcast(local_properties(:,vdw_lp_index), n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !       HERE WE TRANSFER THE HIRSHFELD VOLUME GRADIENTS IF NEEDED FOR SCS
 !       Putting this outside the if condition to avoid segfaults for vdw_hirsh_grad = .false.
          if (allocated(hirshfeld_v_cart_der_ji)) deallocate (hirshfeld_v_cart_der_ji)
          allocate (hirshfeld_v_cart_der_ji(1:3, 1:n_atom_pairs_by_rank(rank + 1)))
          hirshfeld_v_cart_der_ji = 0.d0
-!!!!!!!!!!!!!!!!!
          if (params%do_forces .and. params%vdw_hirsh_grad) then
             allocate (hirshfeld_transfer(1:ntasks, 1:ntasks))
             allocate (this_hirshfeld_transfer(1:ntasks))
@@ -312,7 +310,6 @@ contains
                                  + modulo(-jz, indices(3))*indices(1)*indices(2)*n_sites
                end do
             end do
-!
 !         Now we need to map the position in the big hirshfeld_v_cart_der array to those in the hirshfeld_v_cart_der_receive array
 !         NOTE THIS ARRAY INDEX DOES NOT START BY 1
             allocate (k_start(i_beg:i_end))
@@ -336,7 +333,6 @@ contains
                   end if
                end do
             end do
-!
             deallocate (this_hirshfeld_transfer, hirshfeld_transfer, hirshfeld_v_cart_der_send, i_send, j_send, &
                         k_array, hirshfeld_v_cart_der_receive, i_receive, j_receive, hirshfeld_disp, k_start)
          end if
@@ -433,13 +429,11 @@ contains
             omega_SCS = 0.d0
             this_alpha_SCS = 0.d0
             this_omega_SCS = 0.d0
-            !allocate( alpha_SCS_grad(j_beg:j_end,1:3) )
             allocate (alpha_SCS_grad(1:n_sites, 1:3))
             allocate (c6_scs(1:j_end - j_beg + 1))
             allocate (r0_scs(1:j_end - j_beg + 1))
             allocate (alpha0_scs(1:j_end - j_beg + 1))
             call get_time(time1)
-            !write(*,*) "SCS calculation starts here"
             call get_scs_polarizabilities(n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
                                           neighbor_species(j_beg:j_end), &
                                           params%vdw_scs_rcut, params%vdw_buffer, &
@@ -454,7 +448,6 @@ contains
             forces_vdw)
 #endif
             call get_time(time2)
-!write(*,*) "SCS timing", time2-time1
             call get_time(time1)
 
             call mpi_reduce(alpha_SCS, this_alpha_SCS, n_sites, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
@@ -465,14 +458,8 @@ contains
             call mpi_bcast(omega_SCS, n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
 
             call get_time(time2)
-!write(*,*) "Communication timing", time2-time1
 
-!write(*,*) "alpha_SCS"
-!do i = 1, n_sites
-!  write(*,*) i, alpha_SCS(i), omega_SCS(i)
-!end do
             call get_time(time1)
-!write(*,*) "scs timing", time1-time2
             if (params%vdw_2b_rcut > params%vdw_mbd_rcut) then ! Call 2b version if primary 2b cut-off is larger than primary mbd cut-off
                include_2b = .true.
                call get_mbd_energies_and_forces(hirshfeld_v_cart_der_ji(1:3, j_beg:j_end), &
@@ -539,7 +526,6 @@ contains
 #endif
             end if
             call get_time(time2)
-!write(*,*) "MBD timing", time2-time1
 
 !        call get_ts_energy_and_forces( hirshfeld_v(i_beg:i_end), hirshfeld_v_cart_der(1:3, j_beg:j_end), &
 !                                       n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
@@ -563,10 +549,6 @@ contains
             !              params%vdw_c6_ref, params%vdw_r0_ref, params%vdw_alpha0_ref, &
             !              params%vdw_mbd_grad, energies_vdw(i_beg:i_end), forces_vdw, virial_vdw )
 
-            !write(*,*) "vdw forces"
-            !do i = 1, n_sites
-            !  write(*,*) forces_vdw(1:3,i), this_forces_vdw(1:3,i), energies_vdw(i), this_energies_vdw(i)
-            !end do
             deallocate (alpha_SCS, omega_SCS, alpha_SCS_grad, c6_scs, r0_scs, alpha0_scs, &
                         this_alpha_SCS, this_omega_SCS)
             if (.not. (params%vdw_type == "ts+mbd" .and. is_correction_step)) deallocate (v_neigh_vdw)
@@ -598,11 +580,6 @@ contains
 !         This updates the correction every mbd_correction_freq steps
             if (is_correction_step) then
 #ifdef _MPIF90
-!            this_mbd_ts_scaling = 1.d0 + (dabs(this_energies_vdw) - dabs(state%this_energies_vdw_corr)) &
-!                                  / (dabs(state%this_energies_vdw_corr) + 0.01d0)
-!            this_mbd_ts_scaling = 1.d0
-!            state%this_energies_vdw_corr(i_beg:i_end) = this_energies_vdw(i_beg:i_end) - state%this_energies_vdw_corr(i_beg:i_end)
-!            state%this_energies_vdw_corr = this_energies_vdw - state%this_energies_vdw_corr
                state%this_energies_vdw_corr = this_energies_vdw ! we do this when scaling is used in TS because TS is run twice
 !            state%this_forces_vdw_corr = this_forces_vdw - state%this_forces_vdw_corr
 !            state%this_virial_vdw_corr = this_virial_vdw - state%this_virial_vdw_corr
@@ -614,7 +591,6 @@ contains
                                MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
                if (rank == 0) then
                   if (update_mbd_ts_scaling) then
-!                this_mbd_ts_scaling = smooth_ratio(sum(local_virial_vdw_diag, 1), sum(local_virial_vdw_diag_corr, 1), 0.1d0, 3.d0)
                      this_mbd_ts_scaling = this_mbd_ts_scaling + 0.1d0*( &
                                       smooth_ratio(sum(local_virial_vdw_diag, 1), sum(local_virial_vdw_diag_corr, 1), -1.d0, 3.d0) &
                                            - 1.d0)
@@ -629,18 +605,9 @@ contains
                end if
                call mpi_bcast(this_mbd_ts_scaling, n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
 #else
-!            mbd_ts_scaling = 1.d0 + (dabs(this_energies_vdw) - dabs(state%this_energies_vdw_corr)) &
-!                                  / (dabs(state%this_energies_vdw_corr) + 0.01d0)
-!            mbd_ts_scaling = 1.d0
-!            energies_vdw_corr(i_beg:i_end) = energies_vdw(i_beg:i_end) - energies_vdw_corr(i_beg:i_end)
-!            energies_vdw_corr = energies_vdw - energies_vdw_corr
                energies_vdw_corr = energies_vdw ! we do this when scaling is used in TS because TS is run twice
-!            forces_vdw_corr = forces_vdw - forces_vdw_corr
-!            state%virial_vdw_corr = virial_vdw - state%virial_vdw_corr
                state%virial_vdw_corr = virial_vdw ! we do this when scaling is used in TS because TS is run twice
-!            local_virial_vdw_diag_corr = local_virial_vdw_diag - local_virial_vdw_diag_corr
                if (update_mbd_ts_scaling) then
-!              mbd_ts_scaling = smooth_ratio(sum(local_virial_vdw_diag, 1), sum(local_virial_vdw_diag_corr, 1), 0.1d0, 3.d0)
                   mbd_ts_scaling = mbd_ts_scaling + 0.1d0*( &
                                    smooth_ratio(sum(local_virial_vdw_diag, 1), sum(local_virial_vdw_diag_corr, 1), -1.d0, 3.d0) &
                                    - 1.d0)
@@ -682,17 +649,11 @@ contains
 #ifdef _MPIF90
 !            this_energies_vdw(i_beg:i_end) = this_energies_vdw(i_beg:i_end) + state%this_energies_vdw_corr(i_beg:i_end)
                this_energies_vdw = this_energies_vdw + state%this_energies_vdw_corr
-!            this_forces_vdw = this_forces_vdw + state%this_forces_vdw_corr
                this_virial_vdw = this_virial_vdw + state%this_virial_vdw_corr
-!            this_local_virial_vdw_diag = this_local_virial_vdw_diag + state%this_local_virial_vdw_diag_corr
-!            this_forces_vdw = this_forces_vdw - state%this_local_virial_vdw_diag_corr * S_xyz_inv
 #else
 !            energies_vdw(i_beg:i_end) = energies_vdw(i_beg:i_end) + energies_vdw_corr(i_beg:i_end)
                energies_vdw = energies_vdw + energies_vdw_corr
-!            forces_vdw = forces_vdw + forces_vdw_corr
                virial_vdw = virial_vdw + state%virial_vdw_corr
-!            local_virial_trace_vdw = local_virial_trace_vdw + local_virial_vdw_diag_corr
-!            forces_vdw = forces_vdw - local_virial_vdw_diag_corr * S_xyz_inv
 #endif
             end if
          end if
@@ -717,9 +678,6 @@ contains
 !                mbd_ts_scaling )
 !#endif
          call time_end(time%vdw)
-!           if( .not. (params%vdw_type == "ts+mbd" .and. modulo(md_istep, params%mbd_correction_freq) == 0) )then
-!             deallocate(v_neigh_vdw)
-!           end if
       end if
 
    end subroutine compute_vdw

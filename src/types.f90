@@ -215,9 +215,7 @@ module types
 
    type input_parameters
 
-!     ==================================================================
 !     GENERAL
-!     ==================================================================
       character*1024 :: atoms_file
       character*8, allocatable :: species_types(:)
       real(dp), allocatable :: masses_types(:)
@@ -235,9 +233,7 @@ module types
 !     on when initial velocities have to be randomized.
       integer :: random_seed_value = 0
 
-!     ==================================================================
 !     WHAT THE RUN COMPUTES
-!     ==================================================================
       logical :: do_prediction = .false.
       logical :: do_forces = .false.
       logical :: do_derivatives = .false.
@@ -403,7 +399,6 @@ module types
       real(dp) :: ir_xl_warm_factor = 3.d0
       real(dp) :: ir_xl_max_memory = 4096.d0
       character*1024 :: ir_xl_restart_file = "ir_xl_restart.dat"
-!     ----------------------------------------------------------------------
 !     ir_bias_mode = "fft": the Wiener-Khinchin estimator of ir_fft.f90, a
 !     translation of TNEP/spectroscopy.py. It shares the experimental grid,
 !     ir_nu_max, ir_window, ir_match_scale, ir_match_offset,
@@ -446,7 +441,6 @@ module types
 !     ir_fft_write_dipoles    also write ir_fft_dipoles.dat, the dipole
 !                             trajectory the spectrum was computed from, so
 !                             the result can be reproduced outside TurboGAP.
-!     ----------------------------------------------------------------------
       real(dp) :: ir_fft_acf_ratio = 0.1d0
       integer :: ir_fft_smooth_k = 10
       character*32 :: ir_fft_smooth_kind = "gaussian"
@@ -454,7 +448,6 @@ module types
       real(dp) :: ir_fft_temperature = -1.d0
       real(dp) :: ir_fft_power_dc_cutoff = 100.d0
       logical :: ir_fft_write_dipoles = .true.
-!     ----------------------------------------------------------------------
 !     PREDICTION FROM A TRAJECTORY ON DISK (turbogap predict with do_ir).
 !
 !     ir_frame_dt      interval between frames in fs, used only when NO frame
@@ -470,11 +463,9 @@ module types
 !                      written with finite precision; it is there to catch a
 !                      trajectory with frames missing or two runs
 !                      concatenated, not to police the last digit.
-!     ----------------------------------------------------------------------
       real(dp) :: ir_frame_dt = -1.d0
       real(dp) :: ir_frame_dt_tol = 1.d-3
 
-!     ----------------------------------------------------------------------
 !     ir_bias_mode = "aux": the envelope-targeted resonator bank of
 !     ir_auxiliary_dynamics.f90. One 3-vector resonator per fitted frequency,
 !     driven by the total dipole, whose amplitude is held at the experimental
@@ -508,7 +499,6 @@ module types
 !                          |eta| = 2 w a channel stops resonating and would
 !                          report an intensity for a frequency it cannot see.
 !     ir_aux_restart_file  where the bank is persisted. "none" disables.
-!     ----------------------------------------------------------------------
       real(dp) :: ir_aux_eff_mass = 100.d0
       real(dp) :: ir_aux_damping = 10.d0
       real(dp) :: ir_aux_tau = 500.d0
@@ -516,9 +506,7 @@ module types
       real(dp) :: ir_aux_eta_max = 0.1d0
       character*1024 :: ir_aux_restart_file = "ir_aux_restart.dat"
 
-!     ==================================================================
 !     NEIGHBOUR LISTS AND THE CORE POTENTIAL
-!     ==================================================================
 !     The Verlet skin. 0 means rebuild the neighbour lists on every step, which
 !     is what this was until the rebuild test in neighbors_skin.f90 became safe
 !     to trust.
@@ -536,9 +524,7 @@ module types
       real(dp) :: core_pot_cutoff = 1.d10
       real(dp) :: core_pot_buffer = 1.d0
 
-!     ==================================================================
 !     MEMORY BUDGET AND SOAP BATCHING
-!     ==================================================================
       real(dp) :: max_GBytes_per_process = 1.d0
 !     Did the input name max_Gbytes_per_process? gpu_memory_budget_init sizes
 !     that keyword from the node, and must not do so over a value someone chose
@@ -546,9 +532,7 @@ module types
       logical :: max_Gbytes_set = .false.
       real(dp) :: mem_fraction = 0.25d0
 
-!     ==================================================================
 !     MOLECULAR DYNAMICS
-!     ==================================================================
       integer :: md_nsteps = 1
       real(dp) :: md_step = 1.d0
       character*16 :: optimize = "vv"
@@ -618,18 +602,14 @@ module types
       real(dp) :: target_pos_step
       real(dp) :: tau_dt = 100.d0
 
-!     ==================================================================
 !     NESTED SAMPLING
-!     ==================================================================
       integer :: n_nested = 0
       real(dp) :: p_nested = 0.d0
       real(dp) :: nested_max_strain = 0.d0
       real(dp) :: nested_max_volume_change = 0.d0
       logical :: scale_box_nested = .false.
 
-!     ==================================================================
 !     MONTE CARLO
-!     ==================================================================
       integer :: mc_nsteps = 1
       character*32, allocatable :: mc_types(:)
       real(dp), allocatable :: mc_acceptance(:)
@@ -685,9 +665,7 @@ module types
 !     Reverse Monte Carlo against experimental data
       logical :: mc_optimize_exp = .false.
 
-!     ==================================================================
 !     VAN DER WAALS
-!     ==================================================================
       character*32 :: vdw_type = "none"
       real(dp) :: vdw_sr = 0.94d0
       real(dp) :: vdw_d = 20.d0
@@ -721,9 +699,7 @@ module types
       real(dp) :: poly_cut_xmax = 10.d0
       logical :: do_nnls = .false.
 
-!     ==================================================================
 !     ELECTROSTATICS
-!     ==================================================================
       character*32 :: estat_method = "none"
       type(options_estat) :: estat_options
       real(dp) :: estat_rcut = 10.d0
@@ -732,16 +708,12 @@ module types
       real(dp) :: estat_dsf_alpha = -1.d0
       logical :: print_estat_forces = .false.
 
-!     ==================================================================
 !     LOCAL PROPERTIES
-!     ==================================================================
       integer :: n_local_properties = 0
       character*1024, allocatable :: compute_local_properties(:)
       logical, allocatable :: write_local_properties(:)
 
-!     ==================================================================
 !     EXPERIMENTAL DATA (MAD): SHARED
-!     ==================================================================
       integer :: n_exp = 0
       type(exp_data_container), allocatable :: exp_data(:)
       character*32 :: exp_similarity_type = "squared_diff"
@@ -753,18 +725,14 @@ module types
       integer :: n_moments = 0
       logical :: write_exp = .true.
 
-!     ==================================================================
 !     XPS
-!     ==================================================================
       type(exp_data_container) :: xps
       real(dp) :: xps_sigma = 0.4d0
       real(dp) :: xps_e_min = 280.0
       real(dp) :: xps_e_max = 300.0
       integer :: xps_n_samples = 200
 
-!     ==================================================================
 !     PAIR DISTRIBUTION
-!     ==================================================================
       logical :: do_pair_distribution = .false.
       logical :: write_pair_distribution = .false.
       logical :: pair_distribution_partial = .true.
@@ -775,9 +743,7 @@ module types
       real(dp) :: r_range_min = 1.0
       real(dp) :: r_range_max = 5.d0
 
-!     ==================================================================
 !     STRUCTURE FACTOR
-!     ==================================================================
       logical :: do_structure_factor = .false.
       logical :: write_structure_factor = .false.
       logical :: structure_factor_from_pdf = .true.
@@ -790,9 +756,7 @@ module types
       real(dp) :: q_range_max = 5.d0
       character*32 :: q_units = "q"
 
-!     ==================================================================
 !     X-RAY AND NEUTRON DIFFRACTION
-!     ==================================================================
       logical :: do_xrd = .false.
       logical :: write_xrd = .false.
       character*32 :: xrd_method = "xrd"
@@ -830,9 +794,7 @@ module types
 !     Deprecated, read and ignored.
       logical :: xrd_iwasa = .true.
 
-!     ==================================================================
 !     GPU
-!     ==================================================================
 !     Accepted by the CPU build too, so that one input deck runs on both.
       logical :: gpu_batched = .true.
       logical :: gpu_low_memory = .true.
@@ -840,9 +802,7 @@ module types
       integer :: n_batches = 0
       real(dp) :: gpu_max_batch_size = 1.d0
 
-!     ==================================================================
 !     OUTPUT
-!     ==================================================================
       integer :: write_xyz = 0
       integer :: write_thermo = 1
       logical :: write_soap = .false.
@@ -862,9 +822,7 @@ module types
       logical :: write_property(1:11) = .true.
       logical :: write_array_property(1:8) = .true.
 
-!     ==================================================================
 !     ADAPTIVE TIME STEP
-!     ==================================================================
       logical :: adaptive_time = .false.
       integer :: adapt_tstep_interval = 1
       real(dp) :: adapt_tmin = 1.0d-3
@@ -872,17 +830,13 @@ module types
       real(dp) :: adapt_xmax = 1.0d-2
       real(dp) :: adapt_emax = 1.0d+1
 
-!     ==================================================================
 !     RADIATION CASCADE: ELECTRONIC STOPPING
-!     ==================================================================
       logical :: electronic_stopping = .false.
       real(dp) :: eel_cut = 1.0d0
       integer :: eel_freq_out = 1
       character*1024 :: estop_filename = 'NULL'
 
-!     ==================================================================
 !     NON-ADIABATIC ENERGY EXCHANGE: EPH MODEL
-!     ==================================================================
       logical :: nonadiabatic_processes = .false.
       integer :: model_eph = 1
       integer :: eph_fdm_option = 1
@@ -912,10 +866,8 @@ module types
       character*128 :: eph_Toutfile = 'NULL'
       character*128 :: eph_betafile = 'NULL'
 
-!     ==================================================================
 !     INTERNAL: set by read_files from the keywords above, never read
 !     directly from the input file
-!     ==================================================================
 !     Index into exp_data of each observable, or 0 when that observable
 !     has no data file
       integer :: xps_idx
@@ -974,7 +926,6 @@ module types
       character*8, allocatable :: xyz_species_supercell(:)
    end type image
 
-!**************************************************************************
 !   One additive contribution family as it crosses the MPI reduce block in
 !   turbogap.f90: where its energies, forces and virial are packed from, and
 !   where the reduced result is unpacked to.
@@ -989,7 +940,6 @@ module types
 !   actually carries forces -- for the exp-spectra families that additionally
 !   requires exp_forces, and their this_forces_ arrays are not allocated
 !   otherwise.
-!**************************************************************************
 !   Per-run decisions, evaluated once and only read thereafter.
 !
 !   The rule this exists to enforce: a condition written at N sites is free to
@@ -1015,7 +965,6 @@ module types
       logical :: nd_forces = .false.
       logical :: xps_forces = .false.
    end type perform_t
-!**************************************************************************
 
    type contribution_ref
       real(dp), pointer :: e_src(:) => null()
@@ -1026,13 +975,10 @@ module types
       real(dp), pointer :: v_dst(:, :) => null()
       logical :: forces = .false.
    end type contribution_ref
-!**************************************************************************
 
 contains
 
-!**************************************************************************
 ! This provides a way to pass all the individual arrays/variables in the main code to an image container
-!**************************************************************************
 !  Whether any soap_turbo descriptor sets a given flag.
 !
 !  A potential file need not contain a soap_turbo block at all -- a pure 2b, 3b
@@ -1067,7 +1013,6 @@ contains
       if (allocated(hypers)) flag = any(hypers(:)%has_core_electron_be)
 
    end function any_has_core_electron_be
-!**************************************************************************
 
 ! In time I should make the image data type the default way to store these properties!!!!!!!
    subroutine from_properties_to_image(this_image, positions, velocities, masses, &
@@ -1077,7 +1022,6 @@ contains
                                        local_dipoles, energies_dipole, dipole, mc_mol_id, mc_mol_mu)
       implicit none
 
-!   Input variables
       real(dp), intent(in) :: positions(:, :)
       real(dp), intent(in) :: velocities(:, :)
       real(dp), intent(in) :: masses(:)
@@ -1107,7 +1051,6 @@ contains
       integer, allocatable, intent(in), optional :: mc_mol_mu(:)
 !   In/out variables
       type(image), intent(inout) :: this_image
-!   Internal variables
       integer :: n
       integer :: n2
 
@@ -1223,9 +1166,7 @@ contains
       if (present(dipole)) this_image%dipole = dipole
 
    end subroutine
-!**************************************************************************
 
-!**************************************************************************
    subroutine from_image_to_properties(this_image, positions, velocities, masses, &
                                        forces, a_box, b_box, c_box, energy, energies, energy_exp, e_kin, &
                                        species, species_supercell, n_sites, indices, fix_atom, &
@@ -1233,9 +1174,7 @@ contains
                                        local_dipoles, energies_dipole, dipole, mc_mol_id, mc_mol_mu)
       implicit none
 
-!   Input variables
       type(image), intent(in) :: this_image
-!   Output variables
       real(dp), allocatable, intent(out) :: positions(:, :)
       real(dp), allocatable, intent(out) :: velocities(:, :)
       real(dp), allocatable, intent(out) :: masses(:)
@@ -1261,7 +1200,6 @@ contains
 !   Molecule bookkeeping; see from_properties_to_image.
       integer, allocatable, intent(inout), optional :: mc_mol_id(:)
       integer, allocatable, intent(inout), optional :: mc_mol_mu(:)
-!   Internal variables
       integer :: n
       integer :: n2
 
@@ -1364,6 +1302,5 @@ contains
       if (present(dipole)) dipole = this_image%dipole
 
    end subroutine
-!**************************************************************************
 
 end module

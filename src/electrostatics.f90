@@ -365,12 +365,6 @@ contains
          allocate (vc_grad_prefactor(1:n_sites_this))
          vc_grad_prefactor = 0.0_dp
 
-         ! pair_counter = 0
-         ! do center_i = 1, n_sites_this
-         !    pair_counter = pair_counter + n_neigh(center_i)
-         ! end do
-
-         ! allocate( vc_grad( 1:3, 1:pair_counter ) )
       end if
 
       if (options%damped) then
@@ -509,7 +503,6 @@ contains
                ! Different sign than above because the position vector is reversed
                ! (f_ki versus r_ik)
                virial = virial + outer_prod(fki_vec, xyz(:, soap_pair_counter))
-!                    end if
 
             end do
          end if

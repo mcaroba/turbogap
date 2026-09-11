@@ -6,9 +6,7 @@
 ! program and compared with the Python line by line. This module is where it
 ! meets TurboGAP.
 !
-!==========================================================================
 ! THE TWO WAYS IN
-!==========================================================================
 !
 ! PREDICTION (turbogap predict, do_ir = .true.). The frames are already on
 ! disk: an extended-xyz trajectory, one configuration per frame, each carrying
@@ -35,9 +33,7 @@
 ! configuration, which is precisely what mad_ir_forces contracts with dmu/dr,
 ! so the force path downstream is the ACF bias's, unchanged.
 !
-!==========================================================================
 ! WHAT IS WRITTEN
-!==========================================================================
 !
 !   ir_fft_spectrum.dat   nu, intensity, power, and the raw (un-normalised)
 !                         columns of each, with the sizing in the header. When
@@ -55,7 +51,6 @@
 ! block ACF estimator of mad_ir.f90 -- so that a run with ir_bias_mode = fft
 ! carries two independent estimates of the same spectrum, exactly as an xl run
 ! does.
-!
 module ir_fft_io
 
    use kinds
@@ -106,12 +101,10 @@ contains
 
    end subroutine ir_fft_frames_reset
 
-!**************************************************************************
 !
 ! Append one frame. have_time says whether the comment line carried a time=
 ! tag; when it did not, t is stored as a placeholder and have_times latches
 ! false so that ir_fft_frames_dt can say which frames were unlabelled.
-!
    subroutine ir_fft_frames_push(this, mu, time_fs, have_time)
 
       implicit none
@@ -147,7 +140,6 @@ contains
 
    end subroutine ir_fft_frames_push
 
-!**************************************************************************
 !
 ! The interval between frames, from the labels, with the uniformity check
 ! that makes taking it from the labels worth doing.
@@ -165,7 +157,6 @@ contains
 ! a label. That is the case of a hand-built xyz, and refusing it outright
 ! would be unhelpful; refusing a PARTLY labelled one is not, because there the
 ! file is telling us something inconsistent about itself.
-!
    subroutine ir_fft_frames_dt(this, dt_fallback, tol, dt, ok, msg)
 
       implicit none
@@ -246,7 +237,6 @@ contains
 
    end subroutine ir_fft_frames_dt
 
-!**************************************************************************
 !
 ! Copy mad_ir's circular buffer out in chronological order, oldest first, so
 ! that mu(:, n) is the newest frame -- the one ir_fft_loss differentiates with
@@ -254,7 +244,6 @@ contains
 !
 ! head is the slot holding the newest frame and ages run backwards from it,
 ! which is mad_ir_push's convention; n_stored caps at n_window.
-!
    subroutine ir_fft_md_unroll(mu_hist, n_window, n_stored, head, mu, n)
 
       implicit none
@@ -278,7 +267,6 @@ contains
 
    end subroutine ir_fft_md_unroll
 
-!**************************************************************************
 !
 ! Assemble a config from the parameters the input file carries. Kept here
 ! rather than in turbogap.f90 so that the mapping from keyword to field is in
@@ -287,7 +275,6 @@ contains
 ! temperature <= 0 means "take the run's target temperature", which is what
 ! t_beg is; the harmonic correction needs a number and the run already knows
 ! one, so making the user repeat it is an invitation to have them disagree.
-!
    subroutine ir_fft_config_from_params(dt_fs, window, acf_ratio, max_freq_cm, &
                                         smooth_k, smooth_kind, quantum_correction, &
                                         temperature, t_beg, power_dc_cutoff_cm, &
@@ -320,10 +307,8 @@ contains
 
    end subroutine ir_fft_config_from_params
 
-!**************************************************************************
 !
 ! The dipole trajectory the spectrum was computed from.
-!
    subroutine ir_fft_write_dipoles(this, fname)
 
       implicit none
@@ -345,7 +330,6 @@ contains
 
    end subroutine ir_fft_write_dipoles
 
-!**************************************************************************
 !
 ! The spectrum, with enough provenance in the header to read it.
 !
@@ -367,7 +351,6 @@ contains
 ! With an experiment present the fitted scale and the experimental curve
 ! interpolated onto the same grid are written too, so the file is
 ! self-contained for plotting.
-!
    subroutine ir_fft_write_spectrum(res, cfg, fname, nu_exp, I_exp, n_exp, &
                                     has_exp, scale, offset, dissim, dissim_ref, &
                                     label)
@@ -478,14 +461,12 @@ contains
 
    end subroutine ir_fft_write_spectrum
 
-!**************************************************************************
 !
 ! End of a prediction run: work out the timestep, transform, compare with the
 ! experiment if there is one, and write both files.
 !
 ! Called once, on rank 0, after the last frame. Everything it needs is in the
 ! frame buffer and in cfg apart from the experiment, which is optional.
-!
    subroutine ir_fft_frames_finish(this, cfg_in, dt_fallback, dt_tol, &
                                    nu_exp, I_exp, wgt, n_exp, has_exp, &
                                    match_scale, match_offset, &

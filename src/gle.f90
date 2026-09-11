@@ -84,7 +84,6 @@
 ! own. The only external it needs is LAPACK's dgeev, and that only to report
 ! the kernel's relaxation times at setup -- nothing the propagator does depends
 ! on it.
-!
 module gle
 
    use kinds
@@ -140,11 +139,9 @@ module gle
 
 contains
 
-!**************************************************************************
 !
 ! Standard normal deviates by the polar Box-Muller transform. See the module
 ! header for why this is a copy of md.f90's rather than a use of it.
-!
    subroutine gle_gaussian(g)
 
       implicit none
@@ -170,7 +167,6 @@ contains
 
    end subroutine gle_gaussian
 
-!**************************************************************************
 !
 ! exp(M) for a small dense M, by scaling and squaring around a Taylor series.
 !
@@ -181,7 +177,6 @@ contains
 ! point of it is that the fastest and slowest modes are far apart. Halving
 ! until the norm is below 1/2 and then squaring back up keeps every
 ! intermediate O(1).
-!
    subroutine gle_expm(n, M, E)
 
       implicit none
@@ -222,7 +217,6 @@ contains
 
    end subroutine gle_expm
 
-!**************************************************************************
 !
 ! Cholesky factor of a symmetric positive-semi-definite M, L L^T = M, with L
 ! lower triangular.
@@ -242,7 +236,6 @@ contains
 ! who writes down an A and a C that do not satisfy it has asked for a process
 ! with negative noise variance, and the only place that shows up is here, as a
 ! clamped negative pivot and a residual that does not go away.
-!
    subroutine gle_cholesky(n, M, L, resid)
 
       implicit none
@@ -296,7 +289,6 @@ contains
 
    end subroutine gle_cholesky
 
-!**************************************************************************
 !
 ! Read a square matrix from a text file.
 !
@@ -313,7 +305,6 @@ contains
 ! temperature or the wrong rate while looking entirely healthy -- so the
 ! keyword documentation states the units and this routine takes the file at its
 ! word.
-!
    subroutine gle_read_matrix(fname, n, M, ok, msg)
 
       implicit none
@@ -430,7 +421,6 @@ contains
       end if
    end subroutine gle_drop_token
 
-!**************************************************************************
 !
 ! Build the propagator for the current dt and target temperature.
 !
@@ -439,7 +429,6 @@ contains
 ! only when this module built it; a C that came from a file describes a bath at
 ! one temperature and rescaling it would silently turn a quantum thermostat
 ! into something with no name.
-!
    subroutine gle_rebuild(this, dt, temp, ok, msg)
 
       implicit none
@@ -493,7 +482,6 @@ contains
 
    end subroutine gle_rebuild
 
-!**************************************************************************
 !
 ! Set up from an explicit drift matrix, and optionally an explicit covariance.
 !
@@ -501,7 +489,6 @@ contains
 ! must match it. n_atoms sizes the auxiliary array, which is (ns,3,n_atoms) and
 ! therefore 8*ns*3*n_atoms bytes -- 1.7 MB for ns = 8 at 7000 atoms, which is
 ! why the auxiliary variables are stored and not recomputed.
-!
    subroutine gle_init(this, A_in, C_in, n_atoms, temp, dt, kind, ok, msg)
 
       implicit none
@@ -601,12 +588,10 @@ contains
 
    end subroutine gle_init
 
-!**************************************************************************
 !
 ! The ns = 0 case, built from a friction rather than a file: ordinary Langevin
 ! with gamma = 1/tau_t. See the module header for why this shares every line
 ! below gle_init with the general path instead of being its own integrator.
-!
    subroutine gle_init_white(this, tau_t, n_atoms, temp, dt, ok, msg)
 
       implicit none
@@ -633,7 +618,6 @@ contains
 
    end subroutine gle_init_white
 
-!**************************************************************************
 !
 ! Draw the auxiliary variables from their stationary marginal.
 !
@@ -641,7 +625,6 @@ contains
 ! which the thermostat is not the one that was asked for; drawing them from
 ! N(0, C_ss) starts the bath already equilibrated. The mass-scaled convention
 ! is what makes this possible without knowing the masses.
-!
    subroutine gle_draw_aux(this)
 
       implicit none
@@ -671,7 +654,6 @@ contains
 
    end subroutine gle_draw_aux
 
-!**************************************************************************
 !
 ! One thermostat step: z <- T z + S xi, for every Cartesian degree of freedom.
 !
@@ -684,7 +666,6 @@ contains
 ! thermostat that heated them would be quietly undoing the constraint; their
 ! auxiliary variables are not propagated either, so a component that is later
 ! released does not carry a bath that has been running without it.
-!
    subroutine gle_thermostat(this, velocities, masses, fix_atom, target_temp, dt, ok, msg)
 
       implicit none
@@ -764,11 +745,9 @@ contains
 
    end subroutine gle_thermostat
 
-!**************************************************************************
 !
 ! Release everything. Safe to call on a state that was never initialised, which
 ! is what lets the error paths in gle_init use it as an unwind.
-!
    subroutine gle_free(this)
 
       implicit none
@@ -792,7 +771,6 @@ contains
 
    end subroutine gle_free
 
-!**************************************************************************
 !
 ! Write the auxiliary variables so a restart continues the same bath.
 !
@@ -801,7 +779,6 @@ contains
 ! correlation between the bath and the atoms, and for a memory kernel whose
 ! slowest mode is longer than the restart interval that correlation is the
 ! whole of what the thermostat was doing.
-!
    subroutine gle_save(this, fname, ok, msg)
 
       implicit none
@@ -846,7 +823,6 @@ contains
 
    end subroutine gle_save
 
-!**************************************************************************
 !
 ! Read auxiliary variables back.
 !
@@ -857,7 +833,6 @@ contains
 ! another. Refusal is not fatal -- the caller falls back to a fresh draw from
 ! the stationary distribution, which is a legitimate start -- so the message
 ! matters more than the status.
-!
    subroutine gle_load(this, fname, ok, msg)
 
       implicit none
@@ -969,7 +944,6 @@ contains
       end do
    end subroutine gle_next_data_line
 
-!**************************************************************************
 !
 ! Everything a driver needs to start a GLE run: read the matrices, build the
 ! propagator, and resume the bath if there is one to resume.
@@ -983,7 +957,6 @@ contains
 ! distribution is a legitimate start -- so it comes back as resumed = .false.
 ! with a message, while ok = .false. is reserved for the matrices themselves
 ! being unusable, which is fatal.
-!
    subroutine gle_setup(this, kind, a_file, c_file, restart_file, do_restart, &
                         tau_t, n_atoms, temp, dt, ok, resumed, msg)
 
@@ -1043,7 +1016,6 @@ contains
 
    end subroutine gle_setup
 
-!**************************************************************************
 !
 ! The setup report.
 !
@@ -1055,7 +1027,6 @@ contains
 ! whose fastest mode is much longer than the run is a thermostat that will not
 ! act within it. Neither is an error and neither is refused -- both are
 ! legitimate things to ask for -- but both are things to have been told.
-!
    subroutine gle_report(this, dt, temp, resumed, resume_msg)
 
       implicit none
@@ -1109,7 +1080,6 @@ contains
 
    end subroutine gle_report
 
-!**************************************************************************
 !
 ! The timescales the supplied kernel actually covers.
 !
@@ -1133,7 +1103,6 @@ contains
 ! the memory -- the discs reach through zero and the bound degenerates to "the
 ! slowest mode is somewhere between infinity and nothing". It reported nothing
 ! useful for exactly the matrices a user needs it for.
-!
    subroutine gle_timescales(this, tau_fast, tau_slow)
 
       implicit none

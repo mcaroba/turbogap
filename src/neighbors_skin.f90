@@ -45,11 +45,9 @@ module neighbors_skin
 
 contains
 
-!**************************************************************************
 !  Add this step's displacement to the running total since the last build,
 !  under the minimum image convention of the primitive cell. cell holds the
 !  lattice vectors as its columns.
-!
    subroutine skin_accumulate(positions, positions_prev, cell, positions_diff)
 
       implicit none
@@ -78,11 +76,8 @@ contains
       end do
 
    end subroutine skin_accumulate
-!**************************************************************************
 
-!**************************************************************************
 !  Is the list built when positions_diff was last zeroed still complete?
-!
    pure function skin_needs_rebuild(positions_diff, buffer) result(rebuild)
 
       implicit none
@@ -101,13 +96,10 @@ contains
       rebuild = (d1 + d2 >= buffer)
 
    end function skin_needs_rebuild
-!**************************************************************************
 
-!**************************************************************************
 !  The two largest displacement magnitudes. Two and not one: the bound is on
 !  how fast a PAIR closes, and the pair is made of two atoms that may both be
 !  moving. Selected in the square to keep the square roots out of the loop.
-!
    pure subroutine skin_two_largest(positions_diff, d1, d2)
 
       implicit none
@@ -135,13 +127,10 @@ contains
       d2 = dsqrt(dsq2)
 
    end subroutine skin_two_largest
-!**************************************************************************
 
-!**************************************************************************
 !  Analytic inverse of the 3x3 cell. Kept here rather than taken from misc so
 !  that the module depends on kinds and nothing else, which is what lets the
 !  verifier compile it on its own.
-!
    subroutine invert_cell(cell, cell_inv)
 
       implicit none
@@ -163,6 +152,5 @@ contains
       cell_inv = cell_inv/det
 
    end subroutine invert_cell
-!**************************************************************************
 
 end module neighbors_skin

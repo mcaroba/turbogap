@@ -35,13 +35,11 @@ module vdw
 
 contains
 
-!**************************************************************************
    subroutine hirshfeld_predict(soap, Qs, alphas, V0, delta, zeta, V, &
                                 do_derivatives, soap_cart_der, n_neigh, V_der)
 
       implicit none
 
-!   Input variables
       real(dp), intent(in) :: soap(:, :)
       real(dp), intent(in) :: Qs(:, :)
       real(dp), intent(in) :: alphas(:)
@@ -51,10 +49,8 @@ contains
       real(dp), intent(in) :: soap_cart_der(:, :, :)
       integer, intent(in) :: n_neigh(:)
       logical, intent(in) :: do_derivatives
-!   Output variables
       real(dp), intent(out) :: V(:)
       real(dp), intent(out) :: V_der(:, :)
-!   Internal variables
       real(dp), allocatable :: K(:, :)
       real(dp), allocatable :: K_der(:, :)
       real(dp), allocatable :: Qss(:, :)
@@ -157,9 +153,7 @@ contains
       deallocate (K)
 
    end subroutine
-!**************************************************************************
 
-!**************************************************************************
    subroutine get_ts_energy_and_forces(hirshfeld_v, hirshfeld_v_cart_der, &
                                        n_neigh, neighbors_list, neighbor_species, &
                                        rcut, buffer, rcut_inner, buffer_inner, rjs, xyz, hirshfeld_v_neigh, &
@@ -169,7 +163,6 @@ contains
 
       implicit none
 
-!   Input variables
       real(dp), intent(in) :: hirshfeld_v(:)
       real(dp), intent(in) :: hirshfeld_v_cart_der(:, :)
       real(dp), intent(in) :: rcut
@@ -191,13 +184,11 @@ contains
       integer, intent(in) :: neighbors_list(:)
       integer, intent(in) :: neighbor_species(:)
       logical, intent(in) :: do_forces
-!   Output variables
       real(dp), intent(out) :: virial(1:3, 1:3)
 !   In-Out variables
       real(dp), intent(inout) :: energies(:)
       real(dp), intent(inout) :: forces0(:, :)
       real(dp), intent(inout) :: local_virial_diag0(:, :)
-!   Internal variables
       real(dp), allocatable :: neighbor_c6_ii(:)
       real(dp), allocatable :: neighbor_c6_ij(:)
       real(dp), allocatable :: r0_ii(:)
@@ -491,9 +482,7 @@ contains
       end if
 
    end subroutine
-!**************************************************************************
 
-!**************************************************************************
    subroutine get_scs_polarizabilities(n_neigh, neighbors_list, neighbor_species, &
                                        rcut, r_buffer, rjs, xyz, &
                                        hirshfeld_v_neigh, sR, d, c6_ref, r0_ref, alpha0_ref, &
@@ -502,7 +491,6 @@ contains
 
       implicit none
 
-!   Input variables
       real(dp), intent(in) :: rcut
       real(dp), intent(in) :: r_buffer
       real(dp), intent(in) :: hirshfeld_v_neigh(:)
@@ -518,12 +506,10 @@ contains
       integer, intent(in) :: neighbors_list(:)
       integer, intent(in) :: neighbor_species(:)
       logical, intent(in) :: polynomial_expansion
-!   Output variables
 !   In-Out variables
       real(dp), intent(inout) :: central_pol(:)
       real(dp), intent(inout) :: central_omega(:)
       real(dp), intent(inout) :: forces0(:, :)
-!   Internal variables
       real(dp), allocatable :: neighbor_c6_ii(:)
       real(dp), allocatable :: r0_ii(:)
       real(dp), allocatable :: f_damp(:)
@@ -646,8 +632,6 @@ contains
 !   probably fix this at some point but it will require using the full n_neigh(i) again, instead of
 !   n_ssites, to construct the sneighbors_list.
 
-      !write(*,*) "rcut (SCS)", rcut
-
       n_sites = size(n_neigh)
       n_pairs = size(neighbors_list)
       n_species = size(c6_ref)
@@ -662,66 +646,15 @@ contains
       ! HACK FOR HIRSHFELD DERIVATIVES
       !allocate( hirshfeld_v_cart_der_H(1:3, n_pairs) )
 
-      !hirshfeld_v_cart_der_H = 0.d0
-
-      !write(*,*) "dv"
-      !k = 0
-      !do i = 1, n_sites
-      !  do j2 = 1, n_neigh(i)
-      !    k = k+1
-      !    j = neighbors_list(k)
-      !    n_tot = sum(n_neigh(1:j)) - n_neigh(j)
-      !    a = findloc(neighbors_list(n_tot+1:n_tot+n_neigh(j)),i,1)
-      !    hirshfeld_v_cart_der_H(:,k) = hirshfeld_v_cart_der(:,n_tot+a)
-      !  end do
-      !end do
-
-      !do i = 1, n_neigh(1)
-      !  write(*,*) hirshfeld_v_cart_der_H(1:3,i), hirshfeld_v_cart_der_ji(1:3,i)
-      !end do
-      !if ( do_derivatives .and. do_hirshfeld_gradients ) then
-      !hirshfeld_v_cart_der_H = hirshfeld_v_cart_der_ji
-      !write(*,*) "hirshfeld_der"
-      !write(*,*) hirshfeld_v_cart_der_H(1:n_neigh(1))
-      !end if
-
       ! HACK END
-
-      !write(*,*) "hirshfeld"
-      !do p = 1, n_neigh(1)
-      !  write(*,*) hirshfeld_v_neigh(p)
-      !end do
-      !write(*,*) "der"
-      !do p = 1, n_neigh(1)
-      !  write(*,*) hirshfeld_v_cart_der_H(1,p)
-      !end do
 
 !   Hartree units (calculations done in Hartree units for simplicity)
       Bohr = 0.5291772105638411d0
       Hartree = 27.211386024367243d0
       pi = acos(-1.d0)
 
-      !write(*,*) "rcut", rcut/Bohr
-
 !   Number of frequencies
       !n_freq = size(alpha_SCS0, 2)
-
-      !write(*,*) "Starting local calculation"
-
-      !E_MBD = 0.d0
-
-      !alpha_SCS0 = 0.d0
-      !allocate( alpha_SCS_full(1:3*n_sites,1:3,1:2) )
-      !if ( do_derivatives ) then
-      !  dalpha_full = 0.d0
-      !end if
-
-      !alpha_SCS_full = 0.d0
-
-      !allocate( central_pol(1:n_sites) )
-      !central_pol = 0.d0
-      !allocate( central_omega(1:n_sites) )
-      !central_omega = 0.d0
 
       if (rcut < r_buffer) then
          r_buf = rcut
@@ -781,20 +714,9 @@ contains
          allocate (ipiv(1:3*n_sub_sites))
          allocate (work_arr(1:12*n_sub_sites))
          allocate (inner_damp(1:n_sub_pairs))
-         !allocate( a_iso(1:n_sub_sites,1:2) )
-         !allocate( o_p(1:n_sub_sites) )
-         !if ( do_derivatives .and. do_hirshfeld_gradients ) then
-         !  allocate( hirshfeld_v_sub_der(1:3,1:n_sub_sites) )
-         !  hirshfeld_v_sub_der = 0.d0
-         !end if
 
-         !allocate( ia(1:9*n_sub_pairs) )
-         !allocate( ja(1:9*n_sub_pairs) )
-         !allocate( val(1:9*n_sub_pairs) )
          allocate (b_i(1:3*n_sub_sites, 1:3))
          allocate (d_vec(1:3*n_sub_sites, 1:3))
-
-         !a_iso = 0.d0
 
          do om = 1, 2
 
@@ -839,9 +761,6 @@ contains
                   !rjs_0(k2) = rjs(n_tot+k_i)
                   s = neighbor_species(n_tot + k_i)
                   sub_neighbors_list(k2) = i2
-                  !if ( do_derivatives .and. do_hirshfeld_gradients ) then
-                  !  hirshfeld_v_sub_der(1:3,p) = hirshfeld_v_cart_der_H(1:3,n_tot+k_i)
-                  !end if
                   n_sub_neigh(p) = n_sub_neigh(p) + 1
                   p_list(k2) = p
                   r0_ii(k2) = r0_ref(s)/Bohr*hirshfeld_v_neigh(n_tot + k_i)**(1.d0/3.d0)
@@ -865,10 +784,6 @@ contains
                   end if
                   do c1 = 1, 3
                      B_mat(3*(p - 1) + c1, 3*(p - 1) + c1) = 1.d0/neighbor_alpha0(k2)
-                     !nnz = nnz+1
-                     !ia(nnz) = 3*(p-1)+c1
-                     !ja(nnz) = 3*(p-1)+c1
-                     !val(nnz) = 1.d0/neighbor_alpha0(k2)
                   end do
                   mult1_i = 1.d0
                   if (rjs(n_tot + k_i) > rcut - r_buf) then
@@ -952,11 +867,6 @@ contains
                                           b_i(3*(q - 1) + c2, c1) = (1.d0 - f_damp(k2))*(-T_func(k3)* &
                                                                                       g_func(k2) + h_func(k3))*mult1_i*mult1_j*mult2
                                        end if
-                                       !nnz = nnz+1
-                                       !ia(nnz) = 3*(p-1)+c1
-                                       !ja(nnz) = 3*(q-1)+c2
-                                       !val(nnz) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
-                                       !           g_func(k2) + h_func(k3)) * mult1_j * mult2
                                        d_vec(3*(p - 1) + c1, c2) = d_vec(3*(p - 1) + c1, c2) - (1.d0 - f_damp(k2))*(-T_func(k3)* &
                                                                                      g_func(k2) + h_func(k3))*neighbor_alpha0(k2)* &
                                                                    mult1_i*(1.d0 - mult1_j)*mult2*inner_damp(k2)
@@ -990,8 +900,6 @@ contains
                end if
             end do
 
-            !call cpu_time(time1)
-
             if (polynomial_expansion) then
 
                if (om == 2) then
@@ -1011,26 +919,11 @@ contains
 
                n_degree = size(polyfit) - 1
 
-               !allocate( myidx(1:3*n_sub_sites) )
                allocate (val_xv(1:3*n_sub_sites, 1:3))
                val_xv = 0.d0
-               !k2 = 0
-               !do c1 = 1, 3
-               !  do p = 1, n_sub_sites
-               !    k2 = k2+1
-               !    myidx(k2) = k2
-               !  end do
-               !end do
 
-               !call psb_init(icontxt)
                a_SCS = polyfit(2)*b_i
-               !call psb_cdall(icontxt, desc_a, info_psb, vl=myidx)
-               !call psb_spall(A_sp, desc_a, info_psb, nnz=nnz)
-               !call psb_spins(nnz, ia(1:nnz), ja(1:nnz), val(1:nnz), A_sp, desc_a, info_psb)
-               !call psb_cdasb(desc_a, info_psb)
-               !call psb_spasb(A_sp, desc_a, info_psb)
                do k2 = 3, n_degree + 1
-                  !call psb_spmm(1.d0, A_sp, b_i, 0.d0, val_xv, desc_a, info_psb, 'T')
                   call dgemm("n", "n", 3*n_sub_sites, 3, 3*n_sub_sites, 1.d0, B_mat, 3*n_sub_sites, b_i, &
                              3*n_sub_sites, 0.d0, val_xv, 3*n_sub_sites)
                   a_SCS = a_SCS + polyfit(k2)*val_xv
@@ -1041,7 +934,6 @@ contains
                   do c1 = 1, 3
                      pol1 = pol1 + dot_product(a_SCS(:, c1), d_vec(:, c1))/3.d0
                   end do
-                  !write(*,*) "pol1", pol1
                else
                   central_pol(i) = polyfit(1)
                   do c1 = 1, 3
@@ -1056,11 +948,9 @@ contains
                   else
                      central_omega(i) = vdw_omega_ref*omega_ref/sqrt(central_pol(i)/pol1 - 1.d0)
                   end if
-                  !write(*,*) "Polynomial central polarizability", i0, central_pol(i), central_omega(i)
                end if
 
                deallocate (val_xv)
-               !deallocate( myidx )
 
             else
 
@@ -1104,7 +994,6 @@ contains
                      return
                   end if
                   central_pol(i) = central_pol(i)/3.d0
-                  !write(*,*) i0, central_pol(i)
                   if (central_pol(i) .le. pol1) then
                      write (*, *) "ERROR: frequency dependency approximation fails for"
                      write (*, *) "one of the central polarizabilities."
@@ -1118,52 +1007,26 @@ contains
 
             end if
 
-            !call cpu_time(time2)
-
-            !write(*,*) "Timing for solving the polarizability of central atom:", time2-time1
-
          end do
 
          deallocate (sub_neighbors_list, n_sub_neigh, p_list, xyz_H, rjs_H, r0_ii, neighbor_alpha0, neighbor_sigma, &
                      omegas, T_func, B_mat, f_damp, g_func, h_func, a_SCS, ipiv, work_arr, inner_damp)
-         !deallocate( a_iso )
-         !if ( do_derivatives .and. do_hirshfeld_gradients ) then
-         !  deallocate( hirshfeld_v_sub_der )
-         !end if
 
          deallocate (b_i, d_vec)
-         !deallocate( ia, ja, val )
-         !write(*,*) "central pol", i, central_pol(i)
 
       end do
 
-      !   write(*,*) "ref alpha", alpha0_ref(1)/Bohr**3
-      !   write(*,*) "Central polarizabilities"
-      !   k2 = 0
-      !   do i = 1, n_sites
-      !     write(*,*) central_pol(i), hirshfeld_v_neigh(k2+1)
-      !     if ( i < n_sites ) then
-      !       k2 = k2 + n_neigh(i)
-      !     end if
-      !   end do
-
       call cpu_time(time2)
 
-      !write(*,*) "Central polarizabilities timing", time2-time1
-
    end subroutine
-!**************************************************************************
 
-!******************************************************************************************
 ! This is where you would break this into get_scs and get_mbd for two separate subroutines:
 ! Store central_pol and central_omega and pass them to get_mbd
-!******************************************************************************************
 
 ! TEST !!!!!!!!!!!!!!!!
 !central_pol = 10.d0
 !central_omega = 0.5d0
 
-!**************************************************************************
    subroutine get_mbd_energies_and_forces(hirshfeld_v_cart_der_ji, &
                                           n_neigh, neighbors_list, neighbor_species, &
                                           rcut, rcut_loc, rcut_mbd, rcut_mbd2, r_buffer, rjs, xyz, &
@@ -1175,7 +1038,6 @@ contains
 
       implicit none
 
-!   Input variables
       real(dp), intent(in) :: rcut
       real(dp), intent(in) :: r_buffer
       real(dp), intent(in) :: rjs(:)
@@ -1203,7 +1065,6 @@ contains
       logical, intent(in) :: do_nnls
       logical, intent(in) :: include_2b
       logical, intent(in) :: cent_appr
-!   Output variables
       real(dp), intent(out) :: virial(1:3, 1:3)
 !   In-Out variables
       real(dp), intent(inout) :: energies(:)
@@ -1211,7 +1072,6 @@ contains
       real(dp), intent(inout) :: central_pol(:)
       real(dp), intent(inout) :: central_omega(:)
       real(dp), intent(inout) :: local_virial_diag0(:, :)
-!   Internal variables
       real(dp), allocatable :: neighbor_c6_ii(:)
       real(dp), allocatable :: r0_ii(:)
       real(dp), allocatable :: f_damp(:)
@@ -1592,11 +1452,6 @@ contains
       real(dp), allocatable :: dval(:, :) !
       real(dp), allocatable :: val_sym_test(:, :)  !
 
-!central_pol = 10.d0
-!central_omega = 0.5d0
-
-!hirshfeld_v_neigh = 1.d0
-
       ac4 = 8.d0*(2.d0)**(1.d0/2.d0) - 8.d0
       ac3 = -2.d0*ac4 - 2.d0
       ac2 = 3.d0 + ac4
@@ -1641,22 +1496,8 @@ contains
 
       hirshfeld_v_cart_der_H = 0.d0
 
-!    if ( do_derivatives ) then
       virial = 0.d0
       local_virial_diag0 = 0.d0
-!    end if
-
-      !write(*,*) "dv"
-      !k = 0
-      !do i = 1, n_sites
-      !  do j2 = 1, n_neigh(i)
-      !    k = k+1
-      !    j = neighbors_list(k)
-      !    n_tot = sum(n_neigh(1:j)) - n_neigh(j)
-      !    a = findloc(neighbors_list(n_tot+1:n_tot+n_neigh(j)),i,1)
-      !    hirshfeld_v_cart_der_H(:,k) = hirshfeld_v_cart_der(:,n_tot+a)
-      !  end do
-      !end do
 
       !write(*,*) "hirshfeld_v_cart_der_ji"
       !open(unit=79, file="hv_der.dat", status="new")
@@ -1666,47 +1507,20 @@ contains
       !close(79)
       !write(*,*) "der done"
 
-      !do i = 1, n_neigh(1)
-      !  write(*,*) hirshfeld_v_cart_der_H(1:3,i), hirshfeld_v_cart_der_ji(1:3,i)
-      !end do
       if (do_derivatives .and. do_hirshfeld_gradients) then
          hirshfeld_v_cart_der_H = hirshfeld_v_cart_der_ji
-         !write(*,*) "hirshfeld_der"
-         !write(*,*) hirshfeld_v_cart_der_H(1:n_neigh(1))
       end if
 
       ! HACK END
 
-      !write(*,*) "hirshfeld"
-      !do p = 1, n_neigh(1)
-      !  write(*,*) hirshfeld_v_neigh(p)
-      !end do
-      !write(*,*) "der"
-      !do p = 1, n_neigh(1)
-      !  write(*,*) hirshfeld_v_cart_der_H(1,p)
-      !end do
       Bohr = 0.5291772105638411d0
       Hartree = 27.211386024367243d0
       pi = acos(-1.d0)
 
-      !write(*,*) "rcut", rcut/Bohr
-
 !   Number of frequencies
       !n_freq = size(alpha_SCS0, 2)
 
-      !write(*,*) "Starting local calculation"
-
       E_MBD = 0.d0
-
-      !alpha_SCS0 = 0.d0
-      !allocate( alpha_SCS_full(1:3*n_sites,1:3,1:2) )
-
-      !alpha_SCS_full = 0.d0
-
-      !allocate( central_pol(1:n_sites) )
-      !central_pol = 0.d0
-      !allocate( central_omega(1:n_sites) )
-      !central_omega = 0.d0
 
       !r_buffer = 0.5d0
 
@@ -1733,17 +1547,12 @@ contains
          r_buf_mbd = r_buffer
       end if
 
-      !rcut_mbd2 = 8.d0
-
       rcut_tot = maxval((/2.d0*rcut_mbd2 + rcut_loc, rcut_mbd + rcut_mbd2/))
-      !rcut_force = maxval((/rcut_mbd2+rcut_loc,rcut_mbd/))
-      !write(*,*) "rcut_tot", rcut_tot
       rcut_force = rcut_tot
 
       !r_buf_mbd = r_buffer
       r_buf_mbd = r_buffer
       r_buf_ij = r_buffer
-      !r_buf_ij = 0.d0
 
       !if ( rcut_2b-rcut_mbd < r_buffer ) then
       !  r_buf_2b = rcut_2b-rcut_mbd
@@ -1751,11 +1560,7 @@ contains
       !  r_buf_2b = r_buffer
       !end if
 
-      !call cpu_time(time3)
-
       do i = 1, n_sites
-
-         !call cpu_time(time3)
 
          call cpu_time(time1)
          n_tot = sum(n_neigh(1:i)) - n_neigh(i)
@@ -1832,9 +1637,6 @@ contains
             hirshfeld_v_sub_der = 0.d0
          end if
 
-         !allocate( ia(1:9*n_sub_pairs) )
-         !allocate( ja(1:9*n_sub_pairs) )
-         !allocate( val(1:9*n_sub_pairs) )
          allocate (b_i(1:3*n_sub_sites, 1:3))
          allocate (d_vec(1:3*n_sub_sites, 1:3))
          if (polynomial_expansion) then
@@ -1843,15 +1645,6 @@ contains
          end if
 
          a_iso = 0.d0
-         !T_SR = 0.d0
-         !T_SR_mult = 0.d0
-         !d_arr_i = 0.d0
-         !d_arr_o = 0.d0
-         !d_mult_i = 0.d0
-         !d_mult_o = 0.d0
-         !dT_SR_mult = 0.d0
-         !d_dmult_i = 0.d0
-         !d_dmult_o = 0.d0
          call cpu_time(time2)
 
          if (do_timing) then
@@ -1944,10 +1737,6 @@ contains
                         k3 = k3 + 1
                         if (c1 == c2) then
                            B_mat(3*(p - 1) + c1, 3*(p - 1) + c1) = 1.d0/neighbor_alpha0(k2)
-                           !nnz = nnz+1
-                           !ia(nnz) = 3*(p-1)+c1
-                           !ja(nnz) = 3*(p-1)+c1
-                           !val(nnz) = 1.d0/neighbor_alpha0(k2)
                            T_SR(k3) = 1.d0/neighbor_alpha0(k2)
                         end if
                      end do
@@ -2112,11 +1901,6 @@ contains
                                           b_i(3*(q - 1) + c2, c1) = (1.d0 - f_damp(k2))*(-T_func(k3)* &
                                                                                          g_func(k2) + h_func(k3))*T_SR_mult(k2)
                                        end if
-                                       !nnz = nnz+1
-                                       !ia(nnz) = 3*(p-1)+c1
-                                       !ja(nnz) = 3*(q-1)+c2
-                                       !val(nnz) = (1.d0-f_damp(k2)) * (-T_func(k3) * &
-                                       !           g_func(k2) + h_func(k3)) * T_SR_mult(k2)
                                        d_vec(3*(p - 1) + c1, c2) = d_vec(3*(p - 1) + c1, c2) - (1.d0 - f_damp(k2))*(-T_func(k3)* &
                                                                                      g_func(k2) + h_func(k3))*neighbor_alpha0(k2)* &
                                                                    d_mult_i(k2)*inner_damp(k2)
@@ -2144,17 +1928,6 @@ contains
                write (*, *) "B_mat timing", time2 - time1
             end if
 
-            !if ( i == 1 .and. om == 2 ) then
-            !  write(*,*) "d_vec"
-            !  write(*,*) "B_mat"
-            !  do p = 1, 3*n_sub_sites
-            !    write(*,*) B_mat(p,:)
-            !    write(*,*) d_vec(p,:)
-            !  end do
-            !  write(*,*) "d_mult_o", d_mult_o
-            !  write(*,*) "d_dmult_o", d_dmult_o
-            !end if
-
             call cpu_time(time1)
 
             if (polynomial_expansion) then
@@ -2176,32 +1949,15 @@ contains
 
                n_degree = size(polyfit) - 1
 
-               !allocate( myidx(1:3*n_sub_sites) )
                allocate (val_xv(1:3*n_sub_sites, 1:3*n_sub_sites))
-               !allocate( B_pol(1:3*n_sub_sites,1:3*n_sub_sites) )
                allocate (B_mult(1:3*n_sub_sites, 1:3*n_sub_sites))
                B_mult = B_mat
                val_xv = 0.d0
-               !k2 = 0
-               !do c1 = 1, 3
-               !  do p = 1, n_sub_sites
-               !    k2 = k2+1
-               !    myidx(k2) = k2
-               !  end do
-               !end do
 
-               !call psb_init(icontxt)
                B_pol = polyfit(2)*B_mat
                do p = 1, 3*n_sub_sites
                   B_pol(p, p) = B_pol(p, p) + polyfit(1)
                end do
-               !call psb_cdall(icontxt, desc_a, info_psb, vl=myidx)
-               !call psb_spall(A_sp, desc_a, info_psb, nnz=nnz)
-               !call psb_spins(nnz, ia(1:nnz), ja(1:nnz), val(1:nnz), A_sp, desc_a, info_psb)
-               !call psb_cdasb(desc_a, info_psb)
-               !call psb_spasb(A_sp, desc_a, info_psb)
-
-               !call cpu_time(time1)
 
                do k2 = 3, n_degree + 1
                   ! ATTENTION: For some reason psb_spmm slows down after the first iteration and dgemm perfoms faster.
@@ -2211,10 +1967,6 @@ contains
                   B_pol = B_pol + polyfit(k2)*val_xv
                   B_mult = val_xv
                end do
-
-               !call cpu_time(time2)
-
-               !write(*,*) "Timing for matrix multiplications", time2-time1
 
                a_SCS = 0.d0
                do p = 1, n_sub_sites
@@ -2263,7 +2015,6 @@ contains
                end if
 
                deallocate (val_xv, B_mult)
-               !deallocate( myidx )
 
             else
 
@@ -2321,19 +2072,12 @@ contains
                end if
 
                if (.false.) then
-                  !write(*,*) "a_iso"
                   k2 = 0
                   do p = 1, n_sub_sites
                      j2 = sub_neighbors_list(k2 + 1)
                      k2 = k2 + n_sub_neigh(p)
                   end do
                end if
-
-               !do c1 = 1, 3
-               !  do c2 = 1, 3
-               !    alpha_SCS_full(3*(i-1)+c1,c2,om) = a_SCS(c1,c2)
-               !  end do
-               !end do
 
                !alpha_SCS0(i,om) = 0.d0
                !do c1 = 1, 3
@@ -2368,30 +2112,23 @@ contains
                   k_i = 0
                   do i3 = 1, n_neigh(i)
                      k_i = k_i + 1
-                     !if (rjs(n_tot+k_i) .le. rcut_mbd ) then
                      if (rjs(n_tot + k_i) .le. rcut_tot) then
                         n_mbd_sites = n_mbd_sites + 1
                         n_mbd_pairs = n_mbd_pairs + 1
                         if (rjs(n_tot + k_i) .le. rcut_force) then
                            n_force_sites = n_force_sites + 1
                         end if
-                        !if ( rjs(n_tot+k_i) .le. rcut_mbd ) then
-                        !  n_ene_sites = n_ene_sites + 1
-                        !end if
                         xyz_i = xyz(:, n_tot + k_i)/Bohr
                         k_j = 0
                         do j3 = 1, n_neigh(i)
                            k_j = k_j + 1
-                           !if ( rjs(n_tot+k_j) .le. rcut_mbd ) then
                            if (i3 == 1) then
                               if (rjs(n_tot + k_j) .le. rcut_tot) then
                                  if (i3 .ne. j3) then
                                     xyz_j = xyz(:, n_tot + k_j)/Bohr
                                     if (sqrt(sum((xyz_j - xyz_i)**2)) .le. (rcut_mbd)/Bohr) then
-                                       !if ( rjs(n_tot+k_i) + rjs(n_tot+k_j) + sqrt(sum((xyz_j-xyz_i)**2))*Bohr .le. 2.d0*rcut_mbd ) then
                                        n_mbd_pairs = n_mbd_pairs + 2
                                     end if
-                                    ! end if
                                  end if
                               end if
                            else
@@ -2399,10 +2136,8 @@ contains
                                  if (i3 .ne. j3 .and. j3 .ne. 1) then
                                     xyz_j = xyz(:, n_tot + k_j)/Bohr
                                     if (sqrt(sum((xyz_j - xyz_i)**2)) .le. (rcut_mbd2)/Bohr) then
-                                       !if ( rjs(n_tot+k_i) + rjs(n_tot+k_j) + sqrt(sum((xyz_j-xyz_i)**2))*Bohr .le. 2.d0*rcut_mbd ) then
                                        n_mbd_pairs = n_mbd_pairs + 1
                                     end if
-                                    ! end if
                                  end if
                               end if
                            end if
@@ -2410,8 +2145,6 @@ contains
                      end if
                   end do
 
-                  !write(*,*) "n_mbd_pairs", n_mbd_pairs
-                  !write(*,*) "n_pairs", n_pairs
                end if
 
                k_i = 0
@@ -2436,8 +2169,6 @@ contains
                   if (.not. cent_appr) then
                      allocate (AT(1:3*n_mbd_sites, 1:3*n_mbd_sites, 1:n_freq))
                   end if
-                  !allocate( AT_n(1:3*n_mbd_sites,1:3,n_order-1,1:n_freq) )
-                  !allocate( energy_series(1:3*n_mbd_sites,1:3) )
                   allocate (omegas_mbd(1:n_freq))
                   allocate (integrand(1:n_freq))
                   allocate (n_mbd_neigh(1:n_mbd_sites))
@@ -2458,21 +2189,16 @@ contains
                   allocate (T_LR_mult_ij(1:n_mbd_pairs))
                   allocate (T_LR_mult_0ij(1:n_mbd_pairs))
                   allocate (T_LR_mult_0ji(1:n_mbd_pairs))
-                  !allocate( AT_mult(1:n_mbd_sites) )
-                  !allocate( E_mult(1:n_mbd_sites) )
                   hirshfeld_mbd_neigh = 0.d0
                   if (do_derivatives) then
                      allocate (da_mbd(1:n_mbd_pairs))
-                     !allocate( AT_n_f(1:3*n_mbd_sites,1:3*n_mbd_sites,1:n_order-1,1:n_freq) )
                      allocate (dT_mbd(1:9*n_mbd_pairs))
                      allocate (f_damp_der_mbd(1:n_mbd_pairs))
                      allocate (f_damp_der_SCS(1:n_mbd_pairs))
                      if (.not. cent_appr) then
                         allocate (dT_LR(1:3*n_mbd_sites, 1:3*n_mbd_sites))
                      end if
-                     !allocate( force_series(1:3*n_mbd_sites,1:3*n_mbd_sites) )
                      if (do_total_energy) then
-                        !  allocate( total_energy_series(1:3*n_mbd_sites,1:3*n_mbd_sites) )
                         allocate (total_integrand(1:n_freq))
                      end if
                      allocate (do_mbd(1:n_mbd_pairs))
@@ -2480,11 +2206,7 @@ contains
                      allocate (dT_LR_mult_0i(1:n_mbd_pairs))
                      allocate (dT_LR_mult_0j(1:n_mbd_pairs))
                      allocate (dT_LR_mult_ij(1:n_mbd_pairs))
-                     !allocate( dT_LR_mult_0ij(1:n_mbd_pairs) )
-                     !allocate( dT_LR_mult_0ji(1:n_mbd_pairs) )
                      allocate (dT_LR_mult_ij0(1:n_mbd_pairs))
-                     !allocate( dAT_mult(1:n_mbd_sites) )
-                     !allocate( dE_mult(1:n_mbd_sites) )
                   end if
                   if (do_derivatives .and. do_hirshfeld_gradients) then
                      allocate (hirshfeld_v_mbd_der(1:3, 1:n_mbd_pairs))
@@ -2496,7 +2218,6 @@ contains
                   if (cent_appr) then
                      allocate (val_sym(1:9*(n_mbd_pairs - n_mbd_sites), 1:n_freq))
                      allocate (AT_sym(1:3*n_mbd_sites, 1:3, 1:n_freq))
-                     !allocate( pol_sym(1:3*n_mbd_sites,1:3,1:n_freq) )
                      allocate (integrand_sym(1:n_freq))
                      allocate (T_LR_sym(1:3, 1:3*n_mbd_sites))
                      integrand_sym = 0.d0
@@ -2509,8 +2230,6 @@ contains
                         if (cent_appr .and. include_2b) then
                            allocate (dval(1:9*(n_mbd_pairs - n_mbd_sites), 1:n_freq))
                            dval = 0.d0
-                           !allocate( val_sym_test(1:9*(n_mbd_pairs-n_mbd_sites),1:n_freq) )
-                           !val_sym_test = 0.d0
                            allocate (virial_integrand_2b(1:3, 1:n_freq))
                            allocate (damped_virial_integrand_2b(1:3, 1:n_freq))
                         end if
@@ -2545,7 +2264,6 @@ contains
                      T_LR = 0.d0
                      AT = 0.d0
                   end if
-                  !AT_n = 0.d0
                   r0_ii_SCS = 0.d0
                   f_damp_SCS = 0.d0
 
@@ -2554,7 +2272,6 @@ contains
                   T_LR_mult_ij = 1.d0
                   T_LR_mult_0ij = 1.d0
                   T_LR_mult_0ji = 1.d0
-                  !AT_mult = 0.d0
 
                   n_mbd_neigh = 0
                   mbd_neighbors_list = 0
@@ -2593,7 +2310,6 @@ contains
                      k_i = k_i + 1
                      i2 = neighbors_list(n_tot + k_i)
                      i1 = modulo(i2 - 1, n_sites0) + 1
-                     !if ( rjs(n_tot+k_i) .le. rcut_mbd ) then
                      if (rjs(n_tot + k_i) .le. rcut_tot) then
                         call cpu_time(time3)
                         p = p + 1
@@ -2672,15 +2388,12 @@ contains
                         time_tot4 = time_tot4 + time4 - time3
                         do j3 = 1, n_neigh(i)
                            k_j = k_j + 1
-                           !if ( rjs(n_tot+k_j) .le. rcut_mbd ) then
                            if (i3 == 1) then
                            if (rjs(n_tot + k_j) .le. rcut_tot) then
                               q = q + 1
                               if (i3 .ne. j3) then
                                  xyz_j = xyz(:, n_tot + k_j)/Bohr
-                                 !if ( sqrt(sum((xyz_j-xyz_i)**2)) .le. (rcut_mbd)/Bohr ) then
                                  if (sum((xyz_j - xyz_i)**2) .le. rcut_mbd_sqrd) then
-                                    !if ( rjs(n_tot+k_i) + rjs(n_tot+k_j) + sqrt(sum((xyz_j-xyz_i)**2))*Bohr .le. 2.d0*rcut_mbd ) then
                                     call cpu_time(time3)
                                     n_mbd_neigh(p) = n_mbd_neigh(p) + 1
                                     j = neighbors_list(n_tot + k_j)
@@ -2841,7 +2554,6 @@ contains
                                     xyz_0_mbd(:, k2) = xyz_j
                                     n_mbd_neigh(p) = n_mbd_neigh(p) + 1
                                  end if
-                                 !end if
                               end if
                            end if
                            else
@@ -2849,9 +2561,7 @@ contains
                               q = q + 1
                               if (i3 .ne. j3 .and. j3 .ne. 1) then
                                  xyz_j = xyz(:, n_tot + k_j)/Bohr
-                                 !if ( sqrt(sum((xyz_j-xyz_i)**2)) .le. (rcut_mbd2)/Bohr ) then
                                  if (sum((xyz_j - xyz_i)**2) .le. rcut_mbd2_sqrd) then
-                                    !if ( rjs(n_tot+k_i) + rjs(n_tot+k_j) + sqrt(sum((xyz_j-xyz_i)**2))*Bohr .le. 2.d0*rcut_mbd ) then
                                     call cpu_time(time3)
                                     n_mbd_neigh(p) = n_mbd_neigh(p) + 1
                                     j = neighbors_list(n_tot + k_j)
@@ -2972,18 +2682,11 @@ contains
                                                 end if
                                              end do
                                           end if
-                                          !if ( i == 1 .and. p == 8 .and. q == 4 .and. c1 == 1 .and. c2 == 2 ) then
-                                          !  write(*,*) w"T_LR", T_LR(3*(p-1)+c1,3*(q-1)+c2)
-                                          !  write(*,*) "T_mbd", T_mbd(k3)
-                                          !  write(*,*) "f_damp_SCS", f_damp_SCS(k2)
-                                          !  write(*,*) "T_LR_mult", T_LR_mult_i, T_LR_mult_j, T_LR_mult_ij(k2)
-                                          !end if
                                        end do
                                     end do
                                     call cpu_time(time4)
                                     time_tot = time_tot + time4 - time3
                                  end if
-                                 !end if
                               end if
                            end if
                            end if
@@ -2991,14 +2694,12 @@ contains
                      end if
                   end do
                   nnz = k4
-                  !write(*,*) "k2 / n_mbd_pairs", k2, "/", n_mbd_pairs
 
                   call cpu_time(time2)
 
                   if (do_timing) then
                      write (*, *) "k_i, k_j, k2", k_i, k_j, k2
                      write (*, *) "the rest timing", time_tot4
-                     !write(*,*) "f_damp timing", time_tot3
                      write (*, *) "Range dependent polarizability time", time_tot2
                      write (*, *) "Total T_LR inner loop time", time_tot
                      write (*, *) "Matrix construction timing", time2 - time1
@@ -3010,29 +2711,15 @@ contains
 
                      open (unit=89, file="T_LR_sym.dat", status="new")
                      write (*, *) "T_LR_sym"
-                     !  write(*,*) "n_mbd_sites", n_mbd_sites
-                     !  write(*,*) "size of AT", size(AT(:,:,1))
-                     !  write(*,*) "T_LR"
                      do p = 1, 3
                         write (89, *) T_LR_sym(p, :)
-                        !    write(*,*) T_LR(p,:)
                      end do
-                     !write(*,*) "ia"
-                     !write(*,*) ia
-                     !write(*,*) "ja"
-                     !write(*,*) ja
-                     !write(*,*) "val"
-                     !write(*,*) val
                      close (89)
                      write (*, *) "T_LR_sym done"
-                     !write(*,*) val(:,1)
 
                   end if
 
                end if
-
-               !write(*,*) "a_mbd", a_mbd
-               !write(*,*) "o_mbd", o_mbd
 
                if (abs(rcut_tsscs) > 1.d-10) then
 
@@ -3074,9 +2761,6 @@ contains
                         k2 = k2 + 1
                         s = neighbor_species(n_tot + k_i)
                         sub_2b_list(k2) = neighbors_list(n_tot + k_i)
-                        !if ( do_derivatives .and. do_hirshfeld_gradients ) then
-                        !  hirshfeld_v_2b_der(1:3,k2) = hirshfeld_v_cart_der_H(1:3,n_tot+k_i)
-                        !end if
                         r0_ii_2b(k2) = r0_ref(s)/Bohr !* hirshfeld_v_neigh(n_tot+k_i)**(1.d0/3.d0)
                         xyz_2b(:, k2) = xyz(:, n_tot + k_i)/Bohr
                         xyz_i = xyz_2b(:, k2)
@@ -3145,7 +2829,6 @@ contains
                      end if
                   end do
                   E_TS = 1.d0/2.d0*E_TS
-                  !write(*,*) "E_TS", E_TS
                   energies(i) = E_TS*Hartree
 
                   deallocate (sub_2b_list, xyz_2b, rjs_2b, r0_ii_2b, neighbor_alpha0_2b, &
@@ -3201,8 +2884,6 @@ contains
                      write (*, *) "AT construction timing", time2 - time1
                   end if
 
-                  !write(*,*) "n_mbd_sites", n_mbd_sites
-
                   if (.false.) then
                      open (unit=89, file="AT_sym.dat", status="new")
 
@@ -3254,20 +2935,9 @@ contains
                   if (do_timing) then
                      write (*, *) "AT and other stuff timing", time6 - time5
                   end if
-                  !write(*,*) "AT timing", time2-time1
 
                   call cpu_time(time1)
                   if (series_expansion) then
-
-                     !allocate( myidx(1:3*n_mbd_sites) )
-
-                     !k2 = 0
-                     !do p = 1, n_mbd_sites
-                     !  do c1 = 1, 3
-                     !    k2 = k2+1
-                     !    myidx(k2) = k2
-                     !  end do
-                     !end do
 
                      allocate (integrand_sp(1:n_freq))
                      allocate (at_vec(1:3*n_mbd_sites))
@@ -3278,27 +2948,14 @@ contains
 
                      integrand = 0.d0
                      do i2 = 1, n_freq
-                        !energy_series = 0.d0
-                        !do k2 = 1, n_order-1
-                        !  energy_series = energy_series - 1.d0/(k2+1) * AT_n(:,1:3,k2,i2)
-                        !end do
-                        !call psb_init(icontxt)
-                        !call psb_cdall(icontxt, desc_a, info_psb, vl=myidx)
-                        !call psb_spall(A_sp, desc_a, info_psb, nnz=nnz)
-                        !call psb_spins(nnz, ia(1:nnz), ja(1:nnz), val(1:nnz,i2), A_sp, desc_a, info_psb)
-                        !call psb_cdasb(desc_a, info_psb)
-                        !call psb_spasb(A_sp, desc_a, info_psb)
                         do c1 = 1, 3
                            !integrand(i2) = integrand(i2) + a_mbd(1)/(1.d0 + (omegas_mbd(i2)/o_mbd(1))**2) &
                            !                * dot_product(T_LR(c1,:),energy_series(:,c1))
                            at_vec = AT(:, c1, i2)
-                           !write(*,*) "at_vec", at_vec
                            if (n_order > 2) then
                               do k2 = 1, n_order - 2
-                                 !call psb_spmm(1.d0, A_sp, at_vec, 0.d0, at_n_vec, desc_a, info_psb, 'N')
                                  call sparse_mul(val(1:nnz, i2), at_vec, 3*n_mbd_sites, ia(1:nnz), &
                                                  ja(1:nnz), at_n_vec)
-                                 !write(*,*) "at_n_vec", at_n_vec
                                  at_vec = at_n_vec
                                  !integrand_sp(i2) = integrand_sp(i2) - 1.d0/(k2+1) * at_n_vec(c1)
                                  integrand(i2) = integrand(i2) - 1.d0/(k2 + 1)*at_n_vec(c1)
@@ -3312,26 +2969,14 @@ contains
                                                                     (omegas_mbd(i2)/o_mbd(1))**2)*dot_product(T_LR(c1, :), at_n_vec)
                         end do
                      end do
-                     !write(*,*) "integrand", integrand
-                     !write(*,*) "integrand_sp", integrand_sp
 
                      deallocate (integrand_sp, at_vec, at_n_vec)
-                     !deallocate( myidx )
                   else
-                     !call cpu_time(time1)
                      if (n_order < 2) then
                         write (*, *) "n_order must be larger than 2!"
                         stop
                      else
                         call cpu_time(time5)
-                        !allocate( myidx(1:3*n_mbd_sites) )
-                        !k2 = 0
-                        !do p = 1, n_mbd_sites
-                        !  do c1 = 1, 3
-                        !    k2 = k2+1
-                        !    myidx(k2) = k2
-                        !  end do
-                        !end do
                         allocate (ia2(1:nnz + 3*n_mbd_sites))
                         allocate (ja2(1:nnz + 3*n_mbd_sites))
                         allocate (val2(1:nnz + 3*n_mbd_sites))
@@ -3360,7 +3005,6 @@ contains
                         res_mat = 0.d0
                         allocate (ipiv_lsq(1:n_order + 1))
                         ipiv_lsq = 0
-                        !allocate( log_exp(1:3,1:3*n_mbd_sites) )
                         allocate (AT_power(1:3*n_mbd_sites, 1:3))
                         allocate (temp_mat(1:3*n_mbd_sites, 1:3))
                         AT_power = 0.d0
@@ -3416,9 +3060,7 @@ contains
                            I_mat(p, p) = 1.d0
                         end do
                         call cpu_time(time6)
-                        !write(*,*) "Integrand initialization timing", time6-time5
                         do i2 = 1, n_freq
-                           !if ( i2 == 1 ) then
                            if (.not. cent_appr) then
                               if (default_coeff) then
                                  res_mat(1) = 0.d0
@@ -3430,7 +3072,6 @@ contains
                                  call cpu_time(time5)
                                  call power_iteration(val(1:nnz, i2), ia(1:nnz), ja(1:nnz), 3*n_mbd_sites, 60, b_vec) !myidx, nnz, 20, b_vec )
                                  call cpu_time(time6)
-                                 !write(*,*) "Power iteration timing", time6-time5
                                  b_norm = dot_product(b_vec, b_vec)
                                  call cpu_time(time5)
                                  !call dgemm('N', 'N',  3*n_mbd_sites, 1, 3*n_mbd_sites, 1.d0, AT(:,:,i2), 3*n_mbd_sites, b_vec, &
@@ -3444,7 +3085,6 @@ contains
                                  !call psb_spmm(1.d0, A_sp, b_vec, 0.d0, Ab, desc_a, info_psb, 'N')
                                  call sparse_mul(val(1:nnz, i2), b_vec, 3*n_mbd_sites, ia(1:nnz), ja(1:nnz), Ab)
                                  call cpu_time(time6)
-                                 !write(*,*) "AT-Ab mult timing", time6-time5
                                  l_dom = dot_product(b_vec, Ab)/b_norm
                                  if (l_dom < 0.d0) then
                                     l_min = l_dom - 0.01d0
@@ -3464,8 +3104,6 @@ contains
                                  call power_iteration(val2(1:nnz2), ia2(1:nnz2), ja2(1:nnz2), &
                                                       3*n_mbd_sites, 60, b_vec) !myidx, nnz2, 20, b_vec )
                                  call cpu_time(time6)
-                                 !write(*,*) "Power iteration timing second", time6-time5
-                                 !call power_iteration( AT(:,:,i2)-l_dom*I_mat, 50, b_vec )
                                  b_norm = dot_product(b_vec, b_vec)
                                  call cpu_time(time5)
                                  !call dgemm('N', 'N',  3*n_mbd_sites, 1, 3*n_mbd_sites, 1.d0, AT(:,:,i2)-l_dom*I_mat, &
@@ -3480,13 +3118,11 @@ contains
                                  call sparse_mul(val2(1:nnz2), b_vec, 3*n_mbd_sites, ia2(1:nnz2), &
                                                  ja2(1:nnz2), Ab)
                                  call cpu_time(time6)
-                                 !write(*,*) "AT-Ab 2nd mult timing", time6-time5
                                  if (l_dom < 0.d0) then
                                     l_max = dot_product(b_vec, Ab)/b_norm + l_dom + 0.01d0
                                  else
                                     l_min = dot_product(b_vec, Ab)/b_norm + l_dom - 0.01d0
                                  end if
-                                 !write(*,*) "l_min, l_max", l_min, l_max
                                  l_vals(1) = l_min
                                  do k2 = 2, 1001
                                     l_vals(k2) = l_min + (k2 - 1)*(l_max - l_min)/1000
@@ -3500,15 +3136,7 @@ contains
                                  end do
                                  call cpu_time(time5)
                                  call dgesv(n_order + 1, 1, lsq_mat, n_order + 1, ipiv_lsq, res_mat, n_order + 1, info)
-                                 !write(*,*) "coeff", res_mat
                                  call cpu_time(time6)
-                                 !write(*,*) "dgesv timing", time6-time5
-                                 !call psb_init(icontxt)
-                                 !call psb_cdall(icontxt, desc_a, info_psb, vl=myidx)
-                                 !call psb_spall(A_sp, desc_a, info_psb, nnz=nnz)
-                                 !call psb_spins(nnz, ia(1:nnz), ja(1:nnz), val(1:nnz,i2), A_sp, desc_a, info_psb)
-                                 !call psb_cdasb(desc_a, info_psb)
-                                 !call psb_spasb(A_sp, desc_a, info_psb)
                                  if (do_derivatives) then
                                     inv_vals = 1.d0/(1.d0 - l_vals)
                                     do j2 = 1, n_order + 1
@@ -3517,10 +3145,7 @@ contains
                                           lsq_inv(j2, k2) = sum(l_vals**(j2 - 1 + k2 - 1))
                                        end do
                                     end do
-                                    !call cpu_time(time1)
                                     call dgesv(n_order + 1, 1, lsq_inv, n_order + 1, ipiv_lsq, res_inv, n_order + 1, info)
-                                    !call cpu_time(time2)
-                                    !write(*,*) "dgesv timing", time2-time1
                                  end if
                               end if
                            end if
@@ -3553,7 +3178,6 @@ contains
                                     !call psb_spmm(1.d0, A_sp_sym, b_vec, 0.d0, Ab, desc_a, info_psb, 'N')
                                     call sparse_mul(val_sym(1:nnz, i2), b_vec, 3*n_mbd_sites, ia(1:nnz), ja(1:nnz), Ab)
                                     call cpu_time(time6)
-                                    !write(*,*) "AT-Ab mult timing", time6-time5
                                     l_dom = dot_product(b_vec, Ab)/b_norm
                                     if (l_dom < 0.d0) then
                                        l_min = l_dom - 0.01d0
@@ -3576,7 +3200,6 @@ contains
                                     if (do_timing) then
                                        write (*, *) "Power iteration timing second", time6 - time5
                                     end if
-                                    !call power_iteration( AT(:,:,i2)-l_dom*I_mat, 50, b_vec )
                                     b_norm = dot_product(b_vec, b_vec)
                                     call cpu_time(time5)
                                     !call dgemm('N', 'N',  3*n_mbd_sites, 1, 3*n_mbd_sites, 1.d0, AT(:,:,i2)-l_dom*I_mat, &
@@ -3591,7 +3214,6 @@ contains
                                     call sparse_mul(val2(1:nnz2), b_vec, 3*n_mbd_sites, ia2(1:nnz2), &
                                                     ja2(1:nnz2), Ab)
                                     call cpu_time(time6)
-                                    !write(*,*) "AT-Ab 2nd mult timing", time6-time5
                                     if (l_dom < 0.d0) then
                                        l_max = dot_product(b_vec, Ab)/b_norm + l_dom + 0.01d0
                                     else
@@ -3619,12 +3241,9 @@ contains
 
                                     l_max = l_max - 1.d0
                                     l_min = l_min - 1.d0
-                                    !l_max = l_max + 0.01d0
-                                    !l_min = l_min - 0.01d0
 
                                  end if
 
-                                 !write(*,*) "l_min, l_max", i, l_min+0.01d0, l_max-0.01d0
                                  l_vals(1) = l_min
                                  do k2 = 2, 1001
                                     l_vals(k2) = l_min + (k2 - 1)*(l_max - l_min)/1000
@@ -3636,22 +3255,12 @@ contains
                                        lsq_mat(j2, k2) = sum(l_vals**(j2 - 1 + k2 - 1))
                                     end do
                                  end do
-                                 !do j2 = 1, n_order+1
-                                 !  write(*,*) "lsq_mat", lsq_mat(j2,:)
-                                 !end do
                                  call cpu_time(time5)
                                  call dgesv(n_order + 1, 1, lsq_mat, n_order + 1, ipiv_lsq, res_sym, n_order + 1, info)
-                                 !write(*,*) "coeff", res_sym
                                  call cpu_time(time6)
                                  if (do_timing) then
                                     write (*, *) "dgesv timing", time6 - time5
                                  end if
-                                 !call psb_init(icontxt)
-                                 !call psb_cdall(icontxt, desc_a, info_psb, vl=myidx)
-                                 !call psb_spall(A_sp_sym, desc_a, info_psb, nnz=nnz)
-                                 !call psb_spins(nnz, ia(1:nnz), ja(1:nnz), val_sym(1:nnz,i2), A_sp_sym, desc_a, info_psb)
-                                 !call psb_cdasb(desc_a, info_psb)
-                                 !call psb_spasb(A_sp_sym, desc_a, info_psb)
                               end if ! default_coeff
                               if (.not. default_coeff) then
                                  do c1 = 1, 3
@@ -3669,7 +3278,6 @@ contains
                               end if
                               AT_sym_power = AT_sym(:, :, i2)
                            end if !cent_appr
-                           !end if ! if ( i2 == 1 ) then
                            if (.not. cent_appr) then
                               AT_power = AT(:, 1:3, i2)
                               if (.not. default_coeff) then
@@ -3685,7 +3293,6 @@ contains
                                  !if ( do_total_energy ) then
                                  k3 = 0
                                  q = 0
-                                 !call cpu_time(time1)
                                  if (.not. default_coeff) then
                                  do p = 1, n_mbd_sites
                                     if (rjs_0_mbd(k3 + 1) .le. (rcut_force)/Bohr) then
@@ -3722,45 +3329,24 @@ contains
                                     end if
                                  end do
                                  end if
-                                 !call cpu_time(time2)
-                                 !write(*,*) "init timing", time2-time1
-                                 !end if
                               end if
                            end if !.not. cent_appr
                            if (n_order > 2) then
                            do k2 = 3, n_order
                               if (.not. cent_appr) then
-                                 !write(*,*) "i2, k2", i2, k2
-                                 !call dgemm('N', 'N', 3, 3*n_mbd_sites, 3*n_mbd_sites, 1.d0, AT_power, &
-                                 !           3, AT(:,:,i2), 3*n_mbd_sites, 0.d0, temp_mat, 3)
-                                 !call psb_spmm(1.d0, A_sp, AT_power, 0.d0, temp_mat, desc_a, info_psb, 'N')
                                  do c1 = 1, 3
                                     call sparse_mul(val(1:nnz, i2), AT_power(:, c1), 3*n_mbd_sites, &
                                                     ia(1:nnz), ja(1:nnz), temp_mat(:, c1))
                                  end do
-                                 !do c1 = 1, 3
-                                 !  call cpu_time(time5)
-                                 !  call psb_spmm(1.d0, A_sp, AT_power(:,c1), 0.d0, temp_mat(:,c1), desc_a, info_psb, 'N')
-                                 !  call cpu_time(time6)
-                                 !  write(*,*) "spmm timing", time6-time5
-                                 !  AT_power(:,c1) = temp_mat(:,c1)
-                                 !  integrand(i2) = integrand(i2) + res_mat(k2)*AT_power(c1,c1)
-                                 !end do
                                  AT_power = temp_mat
-                                 !write(*,*) "AT_power", AT_power
                                  if (k2 > 3) then
                                  do c1 = 1, 3
                                     integrand(i2) = integrand(i2) + res_mat(k2)*AT_power(c1, c1)
                                  end do
                                  end if
-                                 !log_exp = log_exp + res_mat(k2) * AT_power
-                                 !do c1 = 1, 3
-                                 !  integrand(i2) = integrand(i2) + res_mat(k2)*AT_power(c1,c1)
-                                 !end do
                               end if ! .not. cent_appr
                               if (cent_appr) then
                                  call cpu_time(time5)
-                                 !call psb_spmm(1.d0, A_sp_sym, AT_sym_power, 0.d0, temp_mat, desc_a, info_psb, 'N')
                                  do c1 = 1, 3
                                     call sparse_mul(val_sym(1:nnz, i2), AT_sym_power(:, c1), 3*n_mbd_sites, &
                                                     ia(1:nnz), ja(1:nnz), temp_mat(:, c1))
@@ -3801,10 +3387,7 @@ contains
                                        k3 = k3 + n_mbd_neigh(p)
                                     end if
                                  end do
-                                 !call cpu_time(time6)
-                                 !write(*,*) "dgemm der timing", time6-time5
                                  AT_power_full = temp_mat_forces
-                                 !if ( k2 > 3 ) then
                                  pol_grad(:, :, i2) = pol_grad(:, :, i2) - k2*res_mat(k2 + 1)*AT_power_full
                                  pol_inv(:, :, i2) = pol_inv(:, :, i2) + res_inv(k2)*AT_power_full
                                  if (do_total_energy) then
@@ -3825,7 +3408,6 @@ contains
                                        end do
                                     end if
                                  end if
-                                 !end if
                               end if
                               end if !.not. cent_appr
                            end do
@@ -3857,8 +3439,6 @@ contains
                                     k3 = k3 + n_mbd_neigh(p)
                                  end if
                               end do
-                              !call cpu_time(time2)
-                              !write(*,*) "dgemm final der timing", time2-time1
                               AT_power_full = temp_mat_forces
                               pol_inv(:, :, i2) = pol_inv(:, :, i2) + res_inv(n_order + 1)*AT_power_full
                            end if
@@ -3867,7 +3447,6 @@ contains
                               integrand(i2) = integrand(i2) + &
                                               res_mat(n_order + 1)*dot_product(AT(c1, :, i2), AT_power(:, c1))
                               call cpu_time(time6)
-                              !write(*,*) "Dot product timing", time6-time5
                            end do
                            if (do_derivatives) then
                               if (do_total_energy) then
@@ -3950,19 +3529,15 @@ contains
                         if (do_log) then
                            deallocate (temp_mat_full)
                         end if
-                        ! deallocate( myidx )
                         if (cent_appr) then
                            deallocate (AT_sym_power, res_sym)
                         end if
-                        !deallocate( log_exp )
                         if (do_derivatives) then
                            if (.not. cent_appr) then
                               deallocate (AT_power_full, inv_vals, lsq_inv, temp_mat_forces)
                            end if
                         end if
                      end if ! n_order < 2
-                     !call cpu_time(time2)
-                     !write(*,*) "integrand timing", time2-time1
                   end if
                   call cpu_time(time2)
 
@@ -4046,42 +3621,12 @@ contains
                      end if
 
                      call nnls(A_nnls, n_freq, 3*n_order + 1, b_nnls, coeff_nnls, res_nnls, work_nnls, ind_nnls, mode_nnls)
-                     !write(*,*) "nnls mode", mode_nnls
-                     !write(*,*) "nnls mode", mode_nnls
-                     !write(*,*) "omegas_mbd", omegas_mbd
-                     !if ( .not. cent_appr ) then
-                     !write(*,*) "integrand", integrand
-                     !end if
-                     !if ( cent_appr ) then
-                     !write(*,*) "sym integrand", integrand_sym
-                     !end if
-                     !write(*,*) "coeff_nnls", coeff_nnls
                      if (mode_nnls .ne. 1) then
                         write (*, *) "nnls failed"
                      end if
 
-                     !integrand_nnls = 1.d0
-                     !omegas_nnls = 0.d0
-
                      if (.not. cent_appr) then
-                        !do j2 = 2, n_order+1
-                        !  integrand_nnls(1) = integrand_nnls(1) + coeff_nnls(j2)*omegas_nnls(1)**(2.d0*(j2-1))
-                        !end do
-                        !integrand_nnls(1) = sign(coeff_nnls(1),integrand(1))/integrand_nnls(1)
-                        !do i2 = 2, 201
-                        !  omegas_nnls(i2) = omegas_nnls(i2-1)+0.02d0
-                        !  do j2 = 2, n_order+1
-                        !    integrand_nnls(i2) = integrand_nnls(i2) + coeff_nnls(j2)*omegas_nnls(i2)**(2.d0*(j2-1))
-                        !  end do
-                        !  integrand_nnls(i2) = sign(coeff_nnls(1),integrand(1))/integrand_nnls(i2)
-                        !end do
 
-                        !integral = 0.d0
-                        !call cpu_time(time1)
-                        !call integrate("trapezoidal", omegas_nnls, integrand_nnls, omegas_nnls(1), omegas_nnls(size(omegas_nnls)), integral)
-                        !call cpu_time(time2)
-                        !write(*,*) "Integration time", time2-time1
-                        !integral = integral/(2.d0*pi)
                         integrand_nnls = coeff_nnls(1)
                         omegas_nnls = 0.d0
                         do i2 = 2, 201
@@ -4101,34 +3646,12 @@ contains
                         end if
 
                         integral = 0.d0
-                        !call cpu_time(time1)
                 call integrate("trapezoidal", omegas_nnls, integrand_nnls, omegas_nnls(1), omegas_nnls(size(omegas_nnls)), integral)
-                        !call cpu_time(time2)
-                        !write(*,*) "Integration time", time2-time1
                         integral = integral/(2.d0*pi)
 
                      end if
 
                      if (cent_appr) then
-                        !do j2 = 2, n_order+1
-                        !  integrand_nnls(1) = integrand_nnls(1) + coeff_nnls(j2)*omegas_nnls(1)**(2.d0*(j2-1))
-                        !end do
-                        !integrand_nnls(1) = sign(coeff_nnls(1),integrand_sym(1))/integrand_nnls(1)
-                        !do i2 = 2, 201
-                        !  omegas_nnls(i2) = omegas_nnls(i2-1)+0.02d0
-                        !  do j2 = 2, n_order+1
-                        !    integrand_nnls(i2) = integrand_nnls(i2) + coeff_nnls(j2)*omegas_nnls(i2)**(2.d0*(j2-1))
-                        !  end do
-                        !  integrand_nnls(i2) = sign(coeff_nnls(1),integrand_sym(1))/integrand_nnls(i2)
-                        !end do
-
-                        !sym_integral = 0.d0
-                        !call cpu_time(time1)
-                        !call integrate("trapezoidal", omegas_nnls, integrand_nnls, omegas_nnls(1), &
-                        !                omegas_nnls(size(omegas_nnls)), sym_integral)
-                        !call cpu_time(time2)
-                        !write(*,*) "Integration time", time2-time1
-                        !sym_integral = sym_integral/(2.d0*pi)
 
                         integrand_nnls = coeff_nnls(1)
                         omegas_nnls = 0.d0
@@ -4149,11 +3672,8 @@ contains
                         end if
 
                         sym_integral = 0.d0
-                        !call cpu_time(time1)
                         call integrate("trapezoidal", omegas_nnls, integrand_nnls, omegas_nnls(1), &
                                        omegas_nnls(size(omegas_nnls)), sym_integral)
-                        !call cpu_time(time2)
-                        !write(*,*) "Integration time", time2-time1
                         sym_integral = sym_integral/(2.d0*pi)
 
                      end if
@@ -4164,10 +3684,8 @@ contains
                   else
 
                      integral = 0.d0
-                     !write(*,*) "integrand", integrand
                      call integrate("trapezoidal", omegas_mbd, integrand, omegas_mbd(1), omegas_mbd(n_freq), integral)
                      integral = integral/(2.d0*pi)
-                     !write(*,*) "integral", integral
                      if (do_derivatives) then
                         if (do_total_energy) then
                            total_integral = 0.d0
@@ -4179,7 +3697,6 @@ contains
                         sym_integral = 0.d0
                         call integrate("trapezoidal", omegas_mbd, integrand_sym, omegas_mbd(1), omegas_mbd(n_freq), sym_integral)
                         sym_integral = sym_integral/(2.d0*pi)
-                        !write(*,*) "Sym energy", sym_integral*Hartree
                      end if
                      if (.not. series_expansion .and. do_log) then
                         log_integral = 0.d0
@@ -4191,8 +3708,6 @@ contains
 
                   end if
 
-                  !end if ! do_nnls
-
                   call cpu_time(time2)
 
                   if (do_timing) then
@@ -4200,14 +3715,12 @@ contains
                   end if
 
                   E_TS = 0.d0
-                  !write(*,*) "integral, E_TS", integral, E_TS
                   if (.not. cent_appr) then
                      energies(i) = energies(i) + (integral + E_TS)*Hartree
                   end if
                   if (cent_appr) then
                      energies(i) = energies(i) + (sym_integral + E_TS)*Hartree
                   end if
-                  !write(*,*) "MBD energy", i, energies(i)
 
                   if (do_derivatives) then
                      if (do_total_energy) then
@@ -4216,10 +3729,6 @@ contains
                   end if
 
                   E_MBD = E_MBD + energies(i)
-
-                  !call cpu_time(time2)
-
-                  !write(*,*) "Timing for the rest of energy calculation", time2-time1
 
                end if
 
@@ -4233,8 +3742,6 @@ contains
 
                allocate (da_SCS(1:3*n_sub_sites, 1:3))
                allocate (dT(1:9*n_sub_pairs))
-               !allocate( dB_mat(1:3*n_sub_sites,1:3*n_sub_sites) )
-               !dB_mat = 0.d0
                allocate (b_der(1:3*n_sub_sites, 1:3))
                allocate (f_damp_der(1:n_sub_pairs))
                allocate (g_func_der(1:n_sub_pairs))
@@ -4272,11 +3779,7 @@ contains
 
                   ! Derivatives are always w.r.t. the central atom:
                   a = i0
-                  !if ( (i == 1 .or. i == 31) .and. c3 == 1 .and. om == 2 ) then
-                  !  write(*,*) "i, a, i0", i, a, i0
-                  !end if
 
-                  !dB_mat = 0.d0
                   f_damp_der = 0.d0
                   g_func_der = 0.d0
                   h_func_der = 0.d0
@@ -4350,9 +3853,6 @@ contains
                                                                                  h_func_der(k4)*(1.d0 - f_damp(k3)))*d_mult_i(k3)* &
                                                                    neighbor_alpha0(k3)*inner_damp(k3) - d_arr_i(k4)* &
                                                                    d_mult_i(k3)*inner_damp_der
-                                       !if ( (i == 1 .or. i == 31) .and. c3 == 1 .and. om == 2 .and. 3*(p-1)+c1 == 1 .and. 3*(q-1)+c2 == 4 ) then
-                                       !  write(*,*) "dB_mat", dB_mat(3*(p-1)+c1,3*(q-1)+c2)
-                                       !end if
                                     else
                                        b_der(3*(p - 1) + c1, :) = b_der(3*(p - 1) + c1, :) + (f_damp_der(k3)*T_func(k4)* &
                                                                                           g_func(k3) - (1.d0 - f_damp(k3))*dT(k4)* &
@@ -4399,10 +3899,6 @@ contains
                         end if
                      end do
                   end do
-
-                  !if ( ( i == 1 .or. i == 31 ) .and. c3 == 1 .and. om == 2 ) then
-                  !  write(*,*) "dB_mat", i, dB_mat(1,4)
-                  !end if
 
                   if (do_hirshfeld_gradients) then
 
@@ -4549,46 +4045,9 @@ contains
                      end do
                   end do
 
-                  !if ( i == 1 .and. c3 == 1 .and. om == 2 ) then
-                  ! write(*,*) "d_der"
-                  ! do c1 = 1, 3
-                  !   write(*,*) d_der(3*(55-1)+c1,:)
-                  ! end do
-                  ! write(*,*) "dB_mat"
-                  ! do p = 1, 3*n_sub_sites
-                  !   write(*,*) dB_mat(p,:)
-                  ! end do
-                  !  write(*,*) "n_sub_sites", n_sub_sites
-                  !  write(*,*) "a_SCS"
-                  !  do p = 1, 3*n_sub_sites
-                  !    write(*,*) a_SCS(p,:)
-                  !  end do
-                  !end if
-
-                  !if ( i == 1 .and. c3 == 2 .and. om == 2 ) then
-                  !  do p = 3, 4
-                  !    write(*,*) "p", p
-                  !    do c1 = 1, 3
-                  !      write(*,*) "d_der", d_der(3*(p-1)+c1,:)
-                  !    end do
-                  !  end do
-                  !end if
-
                   b_der = -b_der + d_der
 
                   call cpu_time(time1)
-                  !if ( (i == 1 .or. i == 31) .and. c3 == 1 .and. om == 2 ) then
-                  !  write(*,*) "dB_mat", i, dB_mat(1,4)
-                  !end if
-
-                  !if ( i == 1 .and. c3 == 2 .and. om == 2 ) then
-                  !  do p = 3, 4
-                  !    write(*,*) "p", p
-                  !    do c1 = 1, 3
-                  !      write(*,*) "b_der", b_der(3*(p-1)+c1,:)
-                  !    end do
-                  !  end do
-                  !end if
 
                   if (polynomial_expansion) then
 
@@ -4604,23 +4063,12 @@ contains
 
                   end if
 
-                  !call cpu_time(time2)
-
-                  !write(*,*) "Timing for solving force component", time2-time1
-
                   do p = 1, n_sub_sites
                      do c1 = 1, 3
                         da_iso(p, c3, om) = da_iso(p, c3, om) + da_SCS(3*(p - 1) + c1, c1)
                      end do
                   end do
                   da_iso(:, c3, om) = da_iso(:, c3, om)/3.d0
-
-                  !if ( om == 2 .and. c3 == 3 .and. i == 1 ) then
-                  !write(*,*) "da_iso", i
-                  !do p = 1, n_sub_sites
-                  !  write(*,*) da_iso(p,:,2)
-                  !end do
-                  !end if
 
                   !if ( i == 1 .and. c3 == 1 .and. om == 2 ) then
                   !  write(*,*) "da_iso"
@@ -4633,15 +4081,12 @@ contains
 
                   call cpu_time(time2)
 
-                  !write(*,*) "Polarizability gradient timing", time2-time1
-
                   if (om == 2) then
 
                      if (abs(rcut_tsscs) < 1.d-10) then
 
                         call cpu_time(time1)
 
-                        !call cpu_time(time5)
                         f_damp_der_SCS = 0.d0
                         f_damp_der_mbd = 0.d0 ! This is cleared so we can recalculate it with SCS values
                         dT_mbd = 0.d0
@@ -4727,7 +4172,6 @@ contains
                                                 - 60.d0*rb**3 &
                                                 + 30.d0*rb**4) &
                                                *(-xyz_0_mbd(c3, k2)/rjs_0_mbd(k2)/(r_buf_loc/Bohr))
-                              !if ( do_hirshfeld_gradients ) then
                               if (.false.) then
                                  da_mbd(k2) = da_mbd(k2) + neighbor_alpha0_mbd(k2)* &
                                               hirshfeld_v_mbd_der(c3, k2)*Bohr* &
@@ -4756,7 +4200,6 @@ contains
                                             + 30.d0*rb**4) &
                                            *(-xyz_0_mbd(c3, k2)/rjs_0_mbd(k2)/(r_buf_loc/Bohr))
                            else if (rjs_0_mbd(k2) > rcut_loc/Bohr .and. rjs_0_mbd(k2) .le. rcut_tot/Bohr) then
-                              !if ( do_hirshfeld_gradients ) then
                               if (.false.) then
                                  da_mbd(k2) = neighbor_alpha0_mbd(k2)* &
                                               hirshfeld_v_mbd_der(c3, k2)*Bohr
@@ -4844,7 +4287,6 @@ contains
                                                       - 60.d0*rb**3 &
                                                       + 30.d0*rb**4) &
                                                      *(-xyz_0_mbd(c3, k2)/rjs_0_mbd(k2)/(r_buf_loc/Bohr))
-                                    !if ( do_hirshfeld_gradients ) then
                                     if (.false.) then
                                        da_mbd(k2) = da_mbd(k2) + neighbor_alpha0_mbd(k2)* &
                                                     hirshfeld_v_mbd_der(c3, k2)*Bohr* &
@@ -4873,7 +4315,6 @@ contains
                                                   + 30.d0*rb**4) &
                                                  *(-xyz_0_mbd(c3, k2)/rjs_0_mbd(k2)/(r_buf_loc/Bohr))
                                  else if (rjs_0_mbd(k2) > rcut_loc/Bohr .and. rjs_0_mbd(k2) .le. rcut_mbd/Bohr) then
-                                    !if ( do_hirshfeld_gradients ) then
                                     if (.false.) then
                                        da_mbd(k2) = neighbor_alpha0_mbd(k2)* &
                                                     hirshfeld_v_mbd_der(c3, k2)*Bohr
@@ -5006,7 +4447,6 @@ contains
                                           dT_LR(3*(p - 1) + c1, 3*(q - 1) + c2) = dT_LR(3*(p - 1) + c1, 3*(q - 1) + c2) + &
                                                                                   f_damp_SCS(k2)*T_mbd(k3)* &
                                                                                   dT_LR_mult_ij(k2)
-                                          !if ( 3*(p-1)+c1 == 2 .and. 3*(q-1)+c2 == 60 ) then
                                           end if
                                           if (cent_appr) then
                                           if (i0 == i2) then
@@ -5077,35 +4517,6 @@ contains
                                           damped_virial_integrand_2b(:, i_om) = damped_virial_integrand_2b(:, i_om) - 0.5d0*xyz_i* &
                                                                                       dval(k4, i_om)* &
                                         val_sym(k4, i_om)*poly_cut(sqrt(xyz_i(1)**2 + xyz_i(2)**2 + xyz_i(3)**2)*Bohr, x_min, x_max)
-!                                                            val_sym(k4,i_om) * poly_cut(rjs_i*Bohr,x_min,x_max)
-                                                !val_sym_test(k4,i_om) = sqrt(a_mbd_i/(1.d0+(omegas_mbd(i_om)/o_mbd_i)**2)) * &
-                                                !                     sqrt(a_mbd_j/(1.d0+(omegas_mbd(i_om)/o_mbd_j)**2)) * &
-                                                !                        f_damp_SCS(k2) * T_mbd(k3)  &
-                                                !                         * T_LR_mult_ij(k2)
-                                                !if ( i == 1 .and. c3 == 1 .and. k4 == 26938 .and. i_om == 2 ) then
-                                                !write(*,*) "p", p
-                                                !write(*,*) "q", q
-                                                !write(*,*) "c1", c1
-                                                !write(*,*) "c2", c2
-                                                !write(*,*) "dval", dval(k4,i_om)
-                                                !write(*,*) "dA p", 1.d0/2.d0 * &
-                                                !                   1.d0/sqrt(a_mbd_i/(1.d0+(omegas_mbd(i_om)/o_mbd_i)**2)) * &
-                                                !                   ( da_mbd_i/(1.d0 + (omegas_mbd(i_om)/o_mbd_i)**2) + &
-                                                !                   a_mbd_i * (2.d0 * omegas_mbd(i_om)**2 * o_mbd_i) * &
-                                                !                   do_mbd_i / ( o_mbd_i**2 + omegas_mbd(i_om)**2 )**2 )
-                                                !  write(*,*) "dA q", 1.d0/2.d0 * &
-                                                !                     1.d0/sqrt(a_mbd_j/(1.d0+(omegas_mbd(i_om)/o_mbd_j)**2)) * &
-                                                !                     ( da_mbd_j/(1.d0 + (omegas_mbd(i_om)/o_mbd_j)**2) + &
-                                                !                     a_mbd_j * (2.d0 * omegas_mbd(i_om)**2 * o_mbd_j) * &
-                                                !                     do_mbd_j / ( o_mbd_j**2 + omegas_mbd(i_om)**2 )**2 )
-                                                !write(*,*) "A p", sqrt(a_mbd_i/(1.d0+(omegas_mbd(i_om)/o_mbd_i)**2))
-                                                !write(*,*) "A q", sqrt(a_mbd_j/(1.d0+(omegas_mbd(i_om)/o_mbd_j)**2))
-                                                !  write(*,*) "a_mbd", a_mbd_j
-                                                !  write(*,*) "o_mbd", o_mbd_j
-                                                !  write(*,*) "da_mbd", da_mbd_j
-                                                !  write(*,*) "do_mbd", do_mbd_j
-                                                !  write(*,*) "rjs_0_mbd", rjs_0_mbd(k2)*Bohr
-                                                !end if
                                              end do
                                              if (k2 + 1 < n_mbd_pairs) then
                                                 if (p_mbd(k2 + 1) == -1) then
@@ -5134,22 +4545,6 @@ contains
                                           dT_LR(3*(p - 1) + 1:3*(p - 1) + 3, 3*(q - 1) + 1:3*(q - 1) + 3)
                                     end if
                                     end if
-                                    !if ( cent_appr .and. include_2b ) then
-                                    !  k3 = 9*(k2-1)
-                                    !  do c1 = 1, 3
-                                    !    do c2 = 1, 3
-                                    !      k3 = k3+1
-                                    !      if ( abs(f_damp_SCS(k2) * T_mbd(k3)  &
-                                    !                                    * T_LR_mult_ij(k2)) > 1.d-20 ) then
-                                    !        k4 = k4 + 1
-                                    !        do i_om = 1, n_freq
-                                    !          dval(k4,i_om) = dval(k4-9,i_om)
-                                    !          val_sym_test(k4,i_om) = val_sym_test(k4-9,i_om)
-                                    !        end do
-                                    !      end if
-                                    !    end do
-                                    !  end do
-                                    !end if
                                  end if
                               end if ! q .ne. -1
                            end do
@@ -5189,23 +4584,19 @@ contains
                               do j3 = 1, n_neigh(i)
                                  k_j = k_j + 1
                                  if (rjs(n_tot + k_i) .le. rcut_mbd - r_buf_mbd) then
-                                    !if ( rjs(n_tot+k_j) .le. rcut_tsscs .and. rjs(n_tot+k_j) > rcut_mbd-r_buf_mbd ) then
                                     if (i3 .ne. j3) then
                                        xyz_j = xyz(:, n_tot + k_j)/Bohr
                                        if (sqrt(sum((xyz_j - xyz_i)**2)) .le. rcut_tsscs/Bohr) then
                                           n_2b_tot_pairs = n_2b_tot_pairs + 1
                                        end if
                                     end if
-                                    !end if
                                  else
-                                    !if ( rjs(n_tot+k_j) .le. rcut_tsscs ) then
                                     if (i3 .ne. j3) then
                                        xyz_j = xyz(:, n_tot + k_j)/Bohr
                                        if (sqrt(sum((xyz_j - xyz_i)**2)) .le. rcut_tsscs/Bohr) then
                                           n_2b_tot_pairs = n_2b_tot_pairs + 1
                                        end if
                                     end if
-                                    !end if
                                  end if
                               end do
                            end if
@@ -5365,7 +4756,6 @@ contains
                                                       - 60.d0*rb**3 &
                                                       + 30.d0*rb**4) &
                                                      *(-xyz(c3, n_tot + k_i)/rjs(n_tot + k_i)/(r_buf_loc/Bohr))
-                                 !if ( do_hirshfeld_gradients ) then
                                  if (.false.) then
                                     da_2b(k2) = da_2b(k2) + neighbor_alpha0_2b_tot(k2)* &
                                                 hirshfeld_v_2b_der(c3, k2)*Bohr* &
@@ -5400,8 +4790,6 @@ contains
                                  o_2b_tot(k2) = central_omega(i1)
                                  r0_ii_SCS_2b_tot(k2) = r0_ii_2b_tot(k2)* &
                                                         (central_pol(i1)/neighbor_alpha0_2b_tot(k2))**(1.d0/3.d0)
-                                 !(hirshfeld_2b_tot_neigh(k2))**(1.d0/3.d0)
-                                 !if ( do_hirshfeld_gradients ) then
                                  if (.false.) then
                                     da_2b(k2) = neighbor_alpha0_2b_tot(k2)*hirshfeld_v_2b_der(c3, k2)*Bohr
                                     dr0_ii_SCS_2b(k2) = r0_ii_2b_tot(k2)* &
@@ -5536,7 +4924,6 @@ contains
                                                                   - 60.d0*rb**3 &
                                                                   + 30.d0*rb**4) &
                                                                  *(-xyz(c3, n_tot + k_j)/rjs(n_tot + k_j)/(r_buf_loc/Bohr))
-                                             !if ( do_hirshfeld_gradients ) then
                                              if (.false.) then
                                                 da_2b(k2) = da_2b(k2) + neighbor_alpha0_2b_tot(k2)* &
                                                             hirshfeld_v_2b_der(c3, k2)*Bohr* &
@@ -5571,8 +4958,6 @@ contains
                                              o_2b_tot(k2) = central_omega(j1)
                                              r0_ii_SCS_2b_tot(k2) = r0_ii_2b_tot(k2) &
                                                                     *(central_pol(j1)/neighbor_alpha0_2b_tot(k2))**(1.d0/3.d0)
-                                             !* (hirshfeld_2b_tot_neigh(k2))**(1.d0/3.d0)
-                                             !if ( do_hirshfeld_gradients ) then
                                              if (.false.) then
                                                 da_2b(k2) = neighbor_alpha0_2b_tot(k2)*hirshfeld_v_2b_der(c3, k2)*Bohr
                                                 dr0_ii_SCS_2b(k2) = r0_ii_2b_tot(k2)* &
@@ -5686,9 +5071,6 @@ contains
                                                       *r6_mult_0i(k2)*dr6_mult_0j(k2)
                                        end if
                                     end if
-                                    !end if
-                                    !else if ( rjs(n_tot+k_i) .le. rcut_tsscs .and. rjs(n_tot+k_i) > rcut_mbd-r_buf_mbd .and. &
-                                    !          rjs(n_tot+k_j) .le. rcut_tsscs ) then
                                  else if (rjs(n_tot + k_i) .le. rcut_tsscs) then
                                     if (i3 .ne. j3) then
                                        xyz_j = xyz(:, n_tot + k_j)/Bohr
@@ -5789,7 +5171,6 @@ contains
                                                                   - 60.d0*rb**3 &
                                                                   + 30.d0*rb**4) &
                                                                  *(-xyz(c3, n_tot + k_j)/rjs(n_tot + k_j)/(r_buf_loc/Bohr))
-                                             !if ( do_hirshfeld_gradients ) then
                                              if (.false.) then
                                                 da_2b(k2) = da_2b(k2) + neighbor_alpha0_2b_tot(k2)* &
                                                             hirshfeld_v_2b_der(c3, k2)*Bohr* &
@@ -5824,8 +5205,6 @@ contains
                                              o_2b_tot(k2) = central_omega(j1)
                                              r0_ii_SCS_2b_tot(k2) = r0_ii_2b_tot(k2)* &
                                                                     (central_pol(j1)/neighbor_alpha0_2b_tot(k2))**(1.d0/3.d0)
-                                             !(hirshfeld_2b_tot_neigh(k2))**(1.d0/3.d0)
-                                             !if ( do_hirshfeld_gradients ) then
                                              if (.false.) then
                                                 da_2b(k2) = neighbor_alpha0_2b_tot(k2)*hirshfeld_v_2b_der(c3, k2)*Bohr
                                                 dr0_ii_SCS_2b(k2) = r0_ii_2b_tot(k2)* &
@@ -5903,7 +5282,6 @@ contains
                                                       *r6_mult_0i(k2)*dr6_mult_0j(k2)
                                        end if
                                     end if
-                                    !end if
                                  end if
                               end do
                            end if
@@ -5937,7 +5315,6 @@ contains
                         end if
                         integrand = 0.d0
 
-                        !write(*,*) "AT_mult"
                         do j = 1, n_freq
                            if (.not. cent_appr) then
                               temp_mat = 0.d0
@@ -5951,9 +5328,7 @@ contains
                                                 do_mbd(1)/(o_mbd(1)**2 + omegas_mbd(j)**2)**2)*T_LR_sym(1:3, :) + &
                                                sqrt(a_mbd(1)/(1.d0 + (omegas_mbd(j)/o_mbd(1))**2))*dT_LR_sym(1:3, :)
                            end if
-                           !dAT_mult = 0.d0
                            do p = 1, n_mbd_sites
-                              !if ( rjs_0_mbd(k3+1) .le. (rcut_mbd2+rcut_loc)/Bohr ) then
                               if (rjs_0_mbd(k3 + 1) .le. (rcut_force)/Bohr) then
                                  !i2 = mbd_neighbors_list(k3+1)
                                  if (.not. cent_appr) then
@@ -5974,19 +5349,6 @@ contains
                                                                                       T_LR(3*(p - 1) + 1:3*(p - 1) + 3, :)
                          G_mat(3*(p - 1) + 1:3*(p - 1) + 3, :, j) = sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2))* &
                                                                                dT_LR(3*(p - 1) + 1:3*(p - 1) + 3, :)
-                                    !if ( i == 1 .and. c3 == 1 .and. p == 24 .and. j == 1 ) then
-                                    !  write(*,*) "p", p, 3*(p-1)+1
-                                    !  write(*,*) "k3", k3
-                                    !  write(*,*) "rjs_0_mbd", rjs_0_mbd(k3+1)*Bohr
-                                    !  write(*,*) "a_mbd", sqrt( a_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) )
-                                    !  write(*,*) "da_mbd", 1.d0/2.d0 * &
-                                    !  1.d0/sqrt(a_mbd(k3+1)/(1.d0+(omegas_mbd(j)/o_mbd(k3+1))**2)) * &
-                                    !  ( da_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) + &
-                                    !  a_mbd(k3+1) * (2.d0 * omegas_mbd(j)**2 * o_mbd(k3+1)) * &
-                                    !  do_mbd(k3+1) / ( o_mbd(k3+1)**2 + omegas_mbd(j)**2 )**2 )
-                                    !  write(*,*) "T_LR", T_LR(3*(p-1)+1,3*(56-1)+1)
-                                    !  write(*,*) "dT_LR", dT_LR(3*(p-1)+1,3*(56-1)+1)
-                                    !end if
                                  end if
                                  if (cent_appr .and. n_order > 2) then
                                     G_sym(:, 3*(p - 1) + 1:3*(p - 1) + 3, j) = G_sym(:, 3*(p - 1) + 1:3*(p - 1) + 3, j)* &
@@ -6016,34 +5378,6 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
                             do_mbd(k3 + 1)/(o_mbd(k3 + 1)**2 + omegas_mbd(j)**2)**2)*temp_mat_forces(:, 3*(p - 1) + 1:3*(p - 1) + 3)
                          G_mat(:, 3*(p - 1) + 1:3*(p - 1) + 3, j) = sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2))* &
                                                                                G_mat(:, 3*(p - 1) + 1:3*(p - 1) + 3, j)
-                                    !if ( p == 83 .and. i == 1 .and. c3 == 2 ) then
-                                    !  write(*,*) "G_MAT******************************************************************************"
-                                    !  write(*,*) "rjs_0_mbd", rjs_0_mbd(k3+1)*Bohr
-                                    !  write(*,*) "k3+1", k3+1
-                                    !  write(*,*) "a_mbd", a_mbd(k3+1)
-                                    !  write(*,*) "da_mbd", da_mbd(k3+1)
-                                    !end if
-                                    !if ( i == 1 .and. c3 == 1 .and. j == 2 .and. p == 35 ) then
-                                    !  write(*,*) "dA q", 1.d0/2.d0 * &
-                                    !  1.d0/sqrt(a_mbd(k3+1)/(1.d0+(omegas_mbd(j)/o_mbd(k3+1))**2)) * &
-                                    !  ( da_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) + &
-                                    !  a_mbd(k3+1) * (2.d0 * omegas_mbd(j)**2 * o_mbd(k3+1)) * &
-                                    !  do_mbd(k3+1) / ( o_mbd(k3+1)**2 + omegas_mbd(j)**2 )**2 )
-                                    !  write(*,*) "a_mbd", a_mbd(k3+1)
-                                    !  write(*,*) "o_mbd", o_mbd(k3+1)
-                                    !  write(*,*) "da_mbd", da_mbd(k3+1)
-                                    !  write(*,*) "do_mbd", do_mbd(k3+1)
-                                    !  write(*,*) "rjs_0_mbd", rjs_0_mbd(k3+1)*Bohr
-                                    !end if
-                                    !if ( i == 1 .and. c3 == 1 .and. p == 56 .and. j == 1 ) then
-                                    !  write(*,*) "q", p, 3*(p-1)+1
-                                    !  write(*,*) "a_mbd", sqrt( a_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) )
-                                    !  write(*,*) "da_mbd", 1.d0/2.d0 * &
-                                    !  1.d0/sqrt(a_mbd(k3+1)/(1.d0+(omegas_mbd(j)/o_mbd(k3+1))**2)) * &
-                                    !  ( da_mbd(k3+1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) + &
-                                    !  a_mbd(k3+1) * (2.d0 * omegas_mbd(j)**2 * o_mbd(k3+1)) * &
-                                    !  do_mbd(k3+1) / ( o_mbd(k3+1)**2 + omegas_mbd(j)**2 )**2 )
-                                    !end if
                                  end if
                                  if (p .ne. n_mbd_sites) then
                                     k3 = k3 + n_mbd_neigh(p)
@@ -6055,7 +5389,6 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
                         end do
 
                         if (.false.) then
-                           !if ( cent_appr .and. include_2b .and. i == 1 .and. c3 == 1 ) then
                            write (*, *) "val_sym"
                            open (unit=89, file="val_sym.dat", status="new")
                            do k2 = 1, nnz
@@ -6065,23 +5398,11 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
                            close (89)
                            write (*, *) "val_sym_test"
                            open (unit=89, file="val_sym_test.dat", status="new")
-                           !do k2 = 1, nnz
-                           !  write(89,*) val_sym_test(k2,1)
-                           !end do
                            write (*, *) "val_sym_test done"
                            close (89)
 
                         end if
 
-                        !if ( (i == 1 .or. i == 31) .and. c3 == 1 ) then
-                        !  write(*,*) "G_sym"
-                        !  do c1 = 1, 3
-                        !    write(*,*) G_sym(c1,1:6,1)
-                        !  end do
-                        !  write(*,*) "da_mbd, a_mbd", da_mbd(1), a_mbd(1)
-                        !end if
-
-                        !if ( i == 1 .and. c3 == 1 ) then
                         if (.false.) then
 
                            write (*, *) "G_sparse"
@@ -6104,12 +5425,10 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
                                                   *T_LR_mult_ij(k2)) > 1.d-20) then
                                              k4 = k4 + 1
                                              write (89, *) G_mat(3*(p - 1) + c1, 3*(q - 1) + c2, 2)
-                                             !write(89,*) dval(k4,2)
                                              if (k2 + 1 < n_mbd_pairs) then
                                              if (p_mbd(k2 + 1) == -1) then
                                                 k4 = k4 + 1
                                                 write (89, *) G_mat(3*(q - 1) + c1, 3*(p - 1) + c2, 2)
-                                                !write(89,*) dval(k4,2)
                                              end if
                                              end if
                                           end if
@@ -6118,18 +5437,11 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
                                  end if ! q .ne. -1
                               end do
                            end do
-                           ! write(*,*) "k4", k4
 
                            close (89)
                            write (*, *) "G_sparse done"
 
                         end if
-
-                        !if ( cent_appr .and. include_2b ) then
-                        !  do i_om = 1, n_freq
-                        !    write(*,*) "2b sym integrand", sum(val_sym(:,i_om)*dval(:,i_om))
-                        !  end do
-                        !end if
 
                         if (.not. cent_appr) then
                            deallocate (temp_mat, temp_mat_forces)
@@ -6144,11 +5456,7 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
                            !open(unit=89, file="AT.dat", status="new")
                            do p = 1, 3*n_mbd_sites
                               write (89, *) G_mat(p, :, 1)
-                              !write(89,*) AT(p,:,1)
                            end do
-                           !do p = 1, 3
-                           !  write(79,*) G_sym(p,:,1)
-                           !end do
                            close (89)
                            !close(79)
                            write (*, *) "AT done"
@@ -6156,7 +5464,6 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
                         end if
 
                         if (.false.) then
-                           !if ( i == 1 .and. c3 == 1 .and. .not. include_2b ) then
 
                            write (*, *) "G_mat"
                            open (unit=79, file="pol_grad.dat", status="new")
@@ -6170,23 +5477,10 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
                            do p = 1, 3*n_mbd_sites
                               write (79, *) pol_grad(p, 1:3, 1)
                            end do
-                           !do p = 1, 3
-                           !  write(79,*) G_sym(p,:,1)
-                           !end do
                            close (89)
                            close (79)
                            write (*, *) "G_mat done"
                         end if
-
-                        !allocate( myidx(1:3*n_mbd_sites) )
-
-                        !k2 = 0
-                        !do p = 1, n_mbd_sites
-                        !  do c1 = 1, 3
-                        !    k2 = k2+1
-                        !    myidx(k2) = k2
-                        !  end do
-                        !end do
 
                         allocate (integrand_sp(1:n_freq))
                         allocate (at_vec(1:3*n_mbd_sites))
@@ -6207,39 +5501,20 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
                            do j = 1, n_freq
 
                               k3 = 0
-                              !E_mult = 1.d0
-                              !dE_mult = 0.d0
-                              !call psb_init(icontxt)
-                              !call psb_cdall(icontxt, desc_a, info_psb, vl=myidx)
-                              !call psb_spall(A_sp, desc_a, info_psb, nnz=nnz)
-                              !call psb_spins(nnz, ia(1:nnz), ja(1:nnz), val(1:nnz,j), A_sp, desc_a, info_psb)
-                              !call psb_cdasb(desc_a, info_psb)
-                              !call psb_spasb(A_sp, desc_a, info_psb)
                               do p = 1, n_mbd_sites ! 1, n_mbd_sites ! This should loop only over p = 1 to include MBD for central atom and 2b for everything else
                                  i2 = mbd_neighbors_list(k3 + 1)
                                  if (rjs_0_mbd(k3 + 1) .le. (rcut_force)/Bohr) then
                                     do c1 = 1, 3
 
-                                       !if ( j == 1 ) then
-                                       !  pol1 = integrand(j)
-                                       !end if
-                                       !integrand(j) = integrand(j) + E_mult(p) * &
-                                       !  dot_product(G_mat(3*(p-1)+c1,:,j),force_series(:,3*(p-1)+c1))
                                        g_vec = G_mat(:, 3*(p - 1) + c1, j)
                                        at_vec = AT(:, 3*(p - 1) + c1, j)
-                                       !write(*,*) "at_vec", at_vec
                                        if (n_order > 2) then !.and. p == 1 ) then
                                           do k2 = 1, n_order - 2
-                                             !call cpu_time(time3)
-                                             !call psb_spmm(1.d0, A_sp, g_vec, 0.d0, g_n_vec, desc_a, info_psb, 'N')
                                              call sparse_mul(val(1:nnz, j), g_vec, 3*n_mbd_sites, ia(1:nnz), &
                                                              ja(1:nnz), g_n_vec)
-                                             !call cpu_time(time4)
-                                             !write(*,*) "Sparse matrix vector multiplication timing", time4-time3, j, p, c1, k2
                                              g_vec = g_n_vec
                                              integrand(j) = integrand(j) + g_n_vec(3*(p - 1) + c1)
                                              if (c3 == 1 .and. do_total_energy) then
-                                                !call psb_spmm(1.d0, A_sp, at_vec, 0.d0, at_n_vec, desc_a, info_psb, 'N')
                                                 call sparse_mul(val(1:nnz, j), at_vec, 3*n_mbd_sites, ia(1:nnz), &
                                                                 ja(1:nnz), at_n_vec)
                                                 at_vec = at_n_vec
@@ -6252,22 +5527,12 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
                                              at_n_vec = at_vec
                                           end if
                                        end if
-                                       !integrand_sp(j) = integrand_sp(j) + a_mbd(k3+1)/(1.d0 + &
-                                       !        (omegas_mbd(j)/o_mbd(k3+1))**2) * dot_product(T_LR(3*(p-1)+c1,:),at_n_vec)
-                                       !if ( p .ne. 1 ) then
                                        integrand(j) = integrand(j) + a_mbd(k3 + 1)/(1.d0 + &
                                                      (omegas_mbd(j)/o_mbd(k3 + 1))**2)*dot_product(T_LR(3*(p - 1) + c1, :), g_n_vec)
                                        if (c3 == 1 .and. do_total_energy) then
                                           total_integrand(j) = total_integrand(j) - a_mbd(k3 + 1)/(1.d0 + &
                                      (omegas_mbd(j)/o_mbd(k3 + 1))**2)*1.d0/(n_order)*dot_product(T_LR(3*(p - 1) + c1, :), at_n_vec)
                                        end if
-                                       !end if
-                                       !if ( c3 == 1 .and. do_total_energy ) then
-                                       !  total_integrand(j) = total_integrand(j) + a_mbd(k3+1) / &
-                                       !        (1.d0 + (omegas_mbd(j)/o_mbd(k3+1))**2) * AT_mult(p) &
-                                       !        * E_mult(p) * dot_product(T_LR(3*(p-1)+c1,:), &
-                                       !        total_energy_series(:,3*(p-1)+c1))
-                                       !end if
                                     end do
                                  end if
                                  k3 = k3 + n_mbd_neigh(p)
@@ -6276,10 +5541,8 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
                            deallocate (G_mat)
                            if (c3 == 1 .and. do_total_energy) then
                               E_tot = 0.d0
-                              !E_TS_tot = 0.d0
                               call integrate("trapezoidal", omegas_mbd, total_integrand, omegas_mbd(1), omegas_mbd(n_freq), E_tot)
                               E_tot = (E_tot/(2.d0*pi) + E_TS_tot)*Hartree
-                              !write(*,*) "Total energy of sphere", i, E_tot
                            end if
                         else
                            ! Diagonalization stuff:
@@ -6289,7 +5552,6 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
                            AT_copy = 0.d0
                            WR = 0.d0
                            WI = 0.d0
-                           !allocate( VL(1,1) )
                            allocate (VR(1:3*n_mbd_sites, 1:3*n_mbd_sites))
                            allocate (VR_inv(1:3*n_mbd_sites, 1:3*n_mbd_sites))
                            allocate (work_mbd(1:24*n_mbd_sites))
@@ -6318,7 +5580,6 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
                                     do p = 1, 3*n_mbd_sites
                                        AT_copy(p, p) = AT_copy(p, p) + 1.d0
                                     end do
-                                    !call cpu_time(time3)
                                     call dgeev('N', 'V', 3*n_mbd_sites, AT_copy, 3*n_mbd_sites, WR, WI, VL, 1, VR, 3*n_mbd_sites, &
                                                work_mbd, 24*n_mbd_sites, info)
                                     !call dgeev('N', 'N', 3*n_mbd_sites, AT_copy, 3*n_mbd_sites, WR, WI, VL, 1, VR, 3*n_mbd_sites, &
@@ -6374,9 +5635,6 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
                                        f_ki = 0.d0
                                        do c1 = 1, 3
                   integrand_pol(i2) = integrand_pol(i2) + dot_product(G_mat(3*(p - 1) + c1, :, i2), pol_grad(:, 3*(q - 1) + c1, i2))
-                                          !if ( p == 1 ) then
-                                          !integrand_pol(i2) = integrand_pol(i2) + dot_product(dT_LR(3*(p-1)+c1,:), AT(:,3*(p-1)+c1,i2))
-                                          !end if
                            integrand(i2) = integrand(i2) + dot_product(G_mat(3*(p - 1) + c1, :, i2), pol_inv(:, 3*(q - 1) + c1, i2))
                                           f_ki = f_ki + dot_product(G_mat(3*(p - 1) + c1, :, i2), pol_grad(:, 3*(q - 1) + c1, i2))
                                        end do
@@ -6407,7 +5665,6 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
                                     !q = 0
                                     do p = 1, n_mbd_sites
                                        if (rjs_0_mbd(k3 + 1) .le. (rcut_force)/Bohr) then
-                                          !q = q + 1
                                           f_ki = 0.d0
                                           do c1 = 1, 3
                                              f_ki = f_ki + dot_product(pol_sym(3*(p - 1) + c1, :, i2), G_sym(:, 3*(p - 1) + c1, i2))
@@ -6435,19 +5692,14 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
                            end if
                            if (c3 == 1 .and. do_total_energy .and. do_log) then
                               E_tot = 0.d0
-                              !E_TS_tot = 0.d0
                               call integrate("trapezoidal", omegas_mbd, total_integrand, omegas_mbd(1), omegas_mbd(n_freq), E_tot)
                               E_tot = (E_tot/(2.d0*pi) + E_TS_tot)*Hartree
-                              !write(*,*) "Total energy of sphere", i, E_tot
                            end if
                         end if
 
                         deallocate (integrand_sp, at_vec, at_n_vec, g_vec, g_n_vec)
-                        ! deallocate( myidx )
 
                         call cpu_time(time2)
-
-                        !write(*,*) "Force integrand timing", time2-time1
 
                         call cpu_time(time1)
 
@@ -6455,40 +5707,11 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
 
                            if (do_nnls) then
 
-                              !allocate( A_nnls(1:n_freq,1:2*n_order+1) )
-                              !allocate( b_nnls(1:n_freq) )
-                              !allocate( coeff_nnls(1:2*n_order+1) )
-                              !allocate( work_nnls(1:2*n_order+1) )
-                              !allocate( ind_nnls(1:2*n_order+1) )
-                              !allocate( omegas_nnls(1:21) )
-                              !allocate( integrand_nnls(1:21) )
-                              !allocate( work_integrand(1:size(integrand)) )
-
-                              !A_nnls = 0.d0
-                              !b_nnls = 0.d0
-                              !coeff_nnls = 0.d0
-                              !res_nnls = 0.d0
-                              !work_nnls = 0.d0
-                              !ind_nnls = 0.d0
-
                               !if (integrand(1) < 0.d0 ) then
                               !  work_integrand = -integrand
                               !else
                               !  work_integrand = integrand
                               !end if
-
-                              !do i2 = 1, n_freq
-                              !  b_nnls(i2) = work_integrand(i2)
-                              ! A_nnls(i2,1) = 1.d0
-                              !  do j2 = 1, n_order
-                              !    A_nnls(i2,j2+1) = (-1.d0 * omegas_mbd(i2))**j2
-                              !    A_nnls(i2,n_order+j2+1) = -work_integrand(i2) * omegas_mbd(i2)**(2*j2)
-                              !  end do
-                              !end do
-
-                              !call nnls(A_nnls, n_freq, n_order+3, b_nnls, coeff_nnls, res_nnls, work_nnls, ind_nnls, mode_nnls)
-                              !write(*,*) "nnls mode forces", mode_nnls
-                              !write(*,*) "coeff", coeff_nnls
 
                               !if ( integrand(1) < 0.d0 ) then
                               !  integrand_nnls = -coeff_nnls(1)
@@ -6524,11 +5747,6 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
                               !  integrand_nnls(i2) = integrand_nnls(i2)/denom
                               !end do
 
-                              !integral = 0.d0
-                              !call integrate("trapezoidal", omegas_nnls, integrand_nnls, omegas_nnls(1), &
-                              !               omegas_nnls(size(omegas_nnls)), integral)
-
-                              !deallocate( A_nnls, b_nnls, coeff_nnls, work_nnls, ind_nnls, omegas_nnls, integrand_nnls, work_integrand )
                               allocate (A_nnls(1:n_freq, 1:3*n_order + 1))
                               allocate (b_nnls(1:n_freq))
                               allocate (coeff_nnls(1:3*n_order + 1))
@@ -6583,16 +5801,6 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
                               end if
 
                               call nnls(A_nnls, n_freq, 3*n_order + 1, b_nnls, coeff_nnls, res_nnls, work_nnls, ind_nnls, mode_nnls)
-                              !write(*,*) "nnls mode", mode_nnls
-                              !write(*,*) "nnls mode", mode_nnls
-                              !write(*,*) "omegas_mbd", omegas_mbd
-                              !if ( .not. cent_appr ) then
-                              !write(*,*) "integrand", integrand_pol
-                              !end if
-                              !if ( cent_appr ) then
-                              !write(*,*) "sym integrand", integrand_sym
-                              !end if
-                              !write(*,*) "coeff_nnls", coeff_nnls
                               if (mode_nnls .ne. 1) then
                                  write (*, *) "nnls failed"
                               end if
@@ -6618,14 +5826,8 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
                                  end if
 
                                  integral = 0.d0
-                                 !call cpu_time(time1)
                                  call integrate("trapezoidal", omegas_nnls, integrand_nnls, omegas_nnls(1), &
                                                 omegas_nnls(size(omegas_nnls)), integral)
-                                 !call cpu_time(time2)
-                                 !write(*,*) "Integration time", time2-time1
-                                 !integral = integral/(2.d0*pi)
-                                 !write(*,*) "Polynomial derivative force"
-                                 !write(*,*) i, c3, integral/(2.d0*pi) * Hartree/Bohr
 
                               end if
 
@@ -6650,15 +5852,9 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
                                  end if
 
                                  sym_integral = 0.d0
-                                 !call cpu_time(time1)
                                  call integrate("trapezoidal", omegas_nnls, integrand_nnls, omegas_nnls(1), &
                                                 omegas_nnls(size(omegas_nnls)), sym_integral)
-                                 !call cpu_time(time2)
-                                 !write(*,*) "Integration time", time2-time1
-                                 !sym_integral = sym_integral/(2.d0*pi)
 
-                                 !write(*,*) "Sym force"
-                                 !write(*,*) i, c3, sym_integral/(2.d0*pi) * Hartree/Bohr
                               end if
 
                               deallocate (A_nnls, b_nnls, coeff_nnls, work_nnls, ind_nnls, omegas_nnls, &
@@ -6666,27 +5862,11 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
 
                            else
 
-!                  integral = 0.d0
-!                  call integrate("trapezoidal", omegas_mbd, integrand, omegas_mbd(1), omegas_mbd(n_freq), integral)
-
-!                end if
-
-!                if ( .not. series_expansion ) then
                               if (.not. cent_appr) then
                                  integral = 0.d0
                                call integrate("trapezoidal", omegas_mbd, log_integrand, omegas_mbd(1), omegas_mbd(n_freq), integral)
-                                 !write(*,*) "Log force", write(*,*) i, c3, integral/(2.d0*pi) * Hartree/Bohr
                                  integral = 0.d0
-                                 !do i_om = 1, n_freq
-                                 !  write(*,*) "integrand pol", integrand_pol(i_om)
-                                 !end do
                                call integrate("trapezoidal", omegas_mbd, integrand_pol, omegas_mbd(1), omegas_mbd(n_freq), integral)
-                                 !write(*,*) "integrand_pol", integrand_pol
-                                 !write(*,*) "Polynomial derivative force"
-                                 !write(*,*) i0, c3, integral/(2.d0*pi) * Hartree/Bohr
-                                 !integral = 0.d0
-                                 !call integrate("trapezoidal", omegas_mbd, integrand, omegas_mbd(1), omegas_mbd(n_freq), integral)
-                                 !write(*,*) "Inverse force", i, c3, integral/(2.d0*pi) * Hartree/Bohr
                                  virial_integral = 0.d0
                                  damped_virial_integral = 0.d0
                                  do c1 = 1, 3
@@ -6696,7 +5876,6 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
                                                    omegas_mbd(n_freq), damped_virial_integral(c1))
                                  end do
                               end if ! .not. cent_appr
-                              !deallocate( log_integrand, integrand_pol )
                               if (cent_appr) then
                                  sym_integral = 0.d0
                            call integrate("trapezoidal", omegas_mbd, integrand_sym, omegas_mbd(1), omegas_mbd(n_freq), sym_integral)
@@ -6712,8 +5891,6 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
                                     call integrate("trapezoidal", omegas_mbd, damped_virial_integrand(c1, :), omegas_mbd(1), &
                                                    omegas_mbd(n_freq), damped_virial_integral(c1))
                                  end do
-                                 !write(*,*) "Sym force"
-                                 !write(*,*) i, c3, sym_integral/(2.d0*pi) * Hartree/Bohr
                               end if
                            end if
                            !i1 = modulo(neighbors_list(n_tot+1)-1, n_sites0) + 1
@@ -6723,25 +5900,16 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
                             local_virial_diag0(c3, i0) = local_virial_diag0(c3, i0) + (1.d0/(pi)*damped_virial_integral(c3))*Hartree
                            end if
                            if (cent_appr) then
-                              !if ( (i == 1 .or. i == 31) .and. c3 == 1 ) then
-                              !  write(*,*) "integrand_sym", i, c3, integrand_sym
-                              !end if
                               forces0(c3, i0) = forces0(c3, i0) + (1.d0/(2.d0*pi)*sym_integral)*Hartree/Bohr
                               virial(:, c3) = virial(:, c3) + (1.d0/(pi)*virial_integral)*Hartree
                             local_virial_diag0(c3, i0) = local_virial_diag0(c3, i0) + (1.d0/(pi)*damped_virial_integral(c3))*Hartree
                            end if
-
-                !!!!!!write(*,*) "MBD force", i, c3, 1.d0/(2.d0*pi) * integral * Hartree/Bohr
-                           !write(*,*) & !"Total force",
-                           !           i, c3, forces0(c3,i)
 
                            deallocate (log_integrand, integrand_pol, virial_integrand, damped_virial_integrand)
 
                         end if
 
                         call cpu_time(time2)
-
-                        !write(*,*) "Timing for the rest of force calculation", time2-time1
 
                      end if ! om loop(?)
 
@@ -6756,7 +5924,6 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
                deallocate (g_func_der)
                deallocate (h_func_der)
                deallocate (f_damp_der)
-               !deallocate( dB_mat )
 
             end if ! do_derivatives
 
@@ -6789,7 +5956,6 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
                         end if
                      end if
                   end if
-                  !deallocate( AT_n, energy_series )
                end if
 
                if (do_derivatives .and. om == 2) then
@@ -6799,9 +5965,7 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
                   if (.not. cent_appr) then
                      deallocate (dT_LR)
                   end if
-                  !deallocate( AT_n_f, force_series )
                   if (do_total_energy) then
-                     !  deallocate( total_energy_series, total_integrand )
                      deallocate (total_integrand)
                   end if
                   if (do_hirshfeld_gradients) then
@@ -6824,7 +5988,6 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
                      T_func, b_i, d_vec, g_func, h_func, f_damp, a_SCS, ipiv, p_list, work_arr, rjs_0, &
                      a_iso, o_p, T_SR, T_SR_mult, d_arr_i, d_arr_o, d_mult_i, d_mult_o, dT_SR_mult, d_dmult_i, &
                      d_dmult_o, hirshfeld_sub_neigh, inner_damp)
-         !deallocate( ia, ja, val )
 
          deallocate (B_mat)
          if (polynomial_expansion) then
@@ -6839,23 +6002,13 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
          end if
 
          call cpu_time(time4)
-         !write(*,*) "time per atom", time4-time3
 
       end do
 
-      !write(*,*) "Local energies and forces timing", time2-time1
-
-      !write(*,*) "E_MBD", E_MBD
-
-      !deallocate( central_pol, central_omega )
       deallocate (hirshfeld_v_cart_der_H)
-      !deallocate( alpha_SCS_full )
 
    end subroutine
 
-!**************************************************************************
-
-!**************************************************************************
    subroutine get_vdw_ref_params(element, C6, R0, alpha0, rank)
 
       implicit none
@@ -6933,6 +6086,5 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
       end if
 
    end subroutine
-!**************************************************************************
 
 end module

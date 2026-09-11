@@ -4,9 +4,7 @@
 ! the total dipole along a trajectory, and the MAD force is the gradient of the
 ! mismatch between that spectrum and an experimental one.
 !
-!==========================================================================
 ! WHERE THE FORMULA COMES FROM
-!==========================================================================
 !
 ! A weak IR field couples to the cell through H' = -M.E(t), where M is the
 ! total dipole. Linear response (Gordon 1965; McQuarrie ch. 21) gives the
@@ -44,9 +42,7 @@
 ! runs from ~1.45 in the librational region to ~1.16 across the O-H stretch, so
 ! the choice moves relative band intensities by tens of percent.
 !
-!==========================================================================
 ! WHAT A LAG IS, AND WHY THE LONGEST ONE IS THE PARAMETER THAT MATTERS
-!==========================================================================
 !
 ! This is the single most misunderstood part of the method, so it is worth
 ! setting out from the beginning.
@@ -104,9 +100,7 @@
 ! NEGATIVE. That is what the lag window is for, and it is the subject of the
 ! next block.
 !
-!==========================================================================
 ! THE LAG WINDOW: WHY HANN, AND WHY THE XRD-STYLE SINC IS ALSO OFFERED
-!==========================================================================
 !
 ! ir_window chooses w(tau), applied to C(tau) before transforming. Setting it
 ! to "none" is NOT "no window" -- it is a boxcar window, and the sinc ringing
@@ -182,9 +176,7 @@
 ! the same trajectory with ir_window = none and ir_window = hann and compare
 ! the number of negative intensities. It is not a supported production setting.
 !
-!==========================================================================
 ! WHAT SETS THE SIZE OF THE ENSEMBLE
-!==========================================================================
 !
 ! Three separate numbers, and they are set by three different requirements. Get
 ! them confused and the spectrum is quietly wrong rather than obviously wrong.
@@ -209,9 +201,7 @@
 ! mad_ir_size_window turns (dt, resolution, highest wavenumber) into n_lag and
 ! n_window and refuses combinations that cannot work.
 !
-!==========================================================================
 ! THE ESTIMATOR, AND THE THREE KNOBS THAT CONTROL IT
-!==========================================================================
 !
 ! ir_subtract_mean (default .true.)
 !   Correlate mu - <mu> rather than mu, as equation (1) requires. The defence
@@ -279,9 +269,7 @@
 !   The 157-of-400 first block that motivated this fix came from the original
 !   code, which had the unbiased estimator AND no partial taper.
 !
-!==========================================================================
 ! FITTING TO THE EXPERIMENT
-!==========================================================================
 !
 ! ir_match_scale (default .true.)
 !   The transform's output is in arbitrary units, so a scale must be fitted or
@@ -315,9 +303,7 @@
 !   over frequency and removes that dependence. Weights are normalised to mean
 !   1 so that exp_energy_scales keeps its magnitude.
 !
-!==========================================================================
 ! WHERE THE FORCE ACTS, AND WHAT IT IS
-!==========================================================================
 !
 ! The spectrum is a functional of the whole stored trajectory, but only the
 ! newest configuration can still be moved. So the loss is differentiated with
@@ -372,7 +358,6 @@
 ! Because lambda is a single 3-vector for the whole cell, and dmu/dr is
 ! accumulated per atom rather than per pair, the entire per-step cost beyond
 ! the descriptor Hessian is one cosine transform and a 9*n_atoms contraction.
-!
 module mad_ir
 
    use kinds
@@ -394,7 +379,6 @@ module mad_ir
 !  Wavenumber in cm^-1 of a frequency of 1/fs: 1/(c) with c in cm/fs.
    real(dp), parameter :: CM_PER_INV_FS = 33356.40952d0
 
-!  ---------------------------------------------------------------------------
 !  Run-wide state.
 !
 !  It lives here rather than being threaded through get_gap_soap's already very
@@ -402,7 +386,6 @@ module mad_ir
 !  and across MPI ranks during the force pass, and only contracted with lambda
 !  once the total dipole is known -- which is why lambda does not have to exist
 !  before the descriptors are evaluated.
-!  ---------------------------------------------------------------------------
    real(dp), allocatable, save :: mad_ir_dmu_dr(:, :, :)   ! (3, 3, n_atoms)
    logical, save :: mad_ir_collect = .false.               ! gate in gap_interface
 !  Is dmu/dr wanted at all? The spectrum needs only the dipole, which the
@@ -506,12 +489,10 @@ module mad_ir
 
 contains
 
-!**************************************************************************
 !
 ! Turn the spectral requirements into buffer sizes, and refuse the ones that
 ! cannot be met. dt is in fs and is the interval between stored frames, which
 ! is the MD timestep times whatever stride the caller uses.
-!
    subroutine mad_ir_size_window(dt, nu_res, nu_max, lag_factor, n_lag, n_window, ok, msg)
 
       implicit none
@@ -562,7 +543,6 @@ contains
 
    end subroutine mad_ir_size_window
 
-!**************************************************************************
 !
 ! Build the lag window over a half-length of L, i.e. w(0) = 1 falling to
 ! w(L) = 0, and zero beyond L so that lags outside the range contribute
@@ -573,7 +553,6 @@ contains
 ! over n_lag instead would cut C(tau) off at a point where the window is still
 ! near 1 -- a boxcar, with all of its ringing. Rebuilt only when L changes, so
 ! a bias run (whose buffer is always full) builds it once.
-!
    subroutine mad_ir_build_window(this, L)
 
       implicit none
@@ -627,13 +606,11 @@ contains
 
    end subroutine mad_ir_build_window
 
-!**************************************************************************
 !
 ! window_kind: see mad_ir_build_window and the header. A lag window is not
 ! cosmetic here -- C(tau) at tau near n_lag is averaged over very few pairs,
 ! and transforming it unwindowed puts that noise straight into the spectrum
 ! and hence into the force.
-!
    subroutine mad_ir_init(this, dt, n_lag, n_window, nu, I_exp, wgt, match_scale, nu_power, &
                           window_kind, subtract_mean, biased_estimator, taper_partial, &
                           match_offset, acf_mode, tau_mem)
@@ -716,7 +693,6 @@ contains
 
    end subroutine mad_ir_init
 
-!**************************************************************************
    subroutine mad_ir_free(this)
       implicit none
       type(mad_ir_type), intent(inout) :: this
@@ -733,11 +709,9 @@ contains
       this%n_lag_win = -1
    end subroutine mad_ir_free
 
-!**************************************************************************
 !
 ! Store the current total dipole. The buffer is circular, so the newest frame
 ! is at head and the frame of age a is at head - a wrapped into range.
-!
    subroutine mad_ir_push(this, mu)
       implicit none
       type(mad_ir_type), intent(inout) :: this
@@ -753,7 +727,6 @@ contains
       if (trim(this%acf_mode) == "exponential") call mad_ir_advance_aux(this)
    end subroutine mad_ir_push
 
-!**************************************************************************
 !
 ! Advance the auxiliary variables by one stored frame.
 !
@@ -774,7 +747,6 @@ contains
 ! The mean is bias-corrected explicitly rather than left to the scale, because
 ! it is subtracted before the product and so enters the correlation
 ! quadratically; an overall factor on mu_bar is not an overall factor on C.
-!
    subroutine mad_ir_advance_aux(this)
 
       implicit none
@@ -810,12 +782,10 @@ contains
 
    end subroutine mad_ir_advance_aux
 
-!**************************************************************************
 !
 ! No spectrum until the ensemble is full. Producing one from a partly filled
 ! buffer would give a resolution that changes from step to step, and a force
 ! that reflects the fill state rather than the structure.
-!
    logical function mad_ir_ready(this)
       implicit none
       type(mad_ir_type), intent(in) :: this
@@ -828,7 +798,6 @@ contains
       end if
    end function mad_ir_ready
 
-!**************************************************************************
 !
 ! The autocorrelation of the stored dipoles and its cosine transform. This is
 ! the whole of the prediction; everything mad_ir_evaluate does beyond it --
@@ -858,7 +827,6 @@ contains
 ! the spectrum only at the end, share the arithmetic with the bias rather than
 ! reimplementing it. Two cosine transforms that must agree is the shape of
 ! defect this file's header warns about.
-!
    subroutine mad_ir_spectrum(this)
 
       implicit none
@@ -957,7 +925,6 @@ contains
 
    end subroutine mad_ir_spectrum
 
-!**************************************************************************
 !
 ! Spectrum, loss, and the sensitivity of the loss to the newest dipole.
 !
@@ -998,7 +965,6 @@ contains
 ! gradient of the loss: ana/check_gradient.py verifies that against finite
 ! differences for every combination of the switches, and an approximate
 ! gradient would pass every spectrum-shaped test while still being wrong.
-!
    subroutine mad_ir_evaluate(this, energy_scale, energy, lambda)
 
       implicit none
@@ -1206,7 +1172,6 @@ contains
 
    end subroutine mad_ir_evaluate
 
-!**************************************************************************
 !
 ! Everything a driver needs to start a MAD IR run: size the ensemble from the
 ! spectral requirements, read the experiment, allocate the per-atom gradient
@@ -1220,7 +1185,6 @@ contains
 ! is not an error -- the run simply starts filling a fresh ensemble -- but the
 ! caller should say so, because it means no bias for the next n_window
 ! samples.
-!
    subroutine mad_ir_setup(dt_md, stride, nu_res, nu_min, nu_max, lag_factor, &
                            nu_in, I_in, restart_file, match_scale, nu_power, &
                            window_kind, subtract_mean, biased_estimator, &
@@ -1297,7 +1261,6 @@ contains
 
    end subroutine mad_ir_setup
 
-!**************************************************************************
 !
 ! Is this a usable (acf_mode, tau_mem) pair for a run sampling every dt fs?
 !
@@ -1307,7 +1270,6 @@ contains
 ! fall back to a different estimator is exactly the failure this file is
 ! organised against. This routine is what makes that fallback unreachable from
 ! any driver path: if it passes, init cannot take it.
-!
    subroutine mad_ir_check_acf_mode(mode, tau_mem, dt, ok, msg)
 
       implicit none
@@ -1345,7 +1307,6 @@ contains
 
    end subroutine mad_ir_check_acf_mode
 
-!**************************************************************************
 !
 ! Set up a PREDICTION run: no experiment, no bias, one spectrum at the end.
 !
@@ -1364,7 +1325,6 @@ contains
 ! for it and refused with the required step count when it is not, because the
 ! alternative -- quietly giving a coarser spectrum than the input asked for --
 ! is the failure mode this whole file is organised against.
-!
    subroutine mad_ir_setup_predict(dt_md, stride, n_frames, nu_res, nu_min, nu_max, &
                                    lag_factor, n_samples, nu_power, window_kind, &
                                    subtract_mean, biased_estimator, taper_partial, &
@@ -1500,7 +1460,6 @@ contains
 
    end subroutine mad_ir_setup_predict
 
-!**************************************************************************
 !
 ! The spectrum, with the provenance needed to read it.
 !
@@ -1527,7 +1486,6 @@ contains
 ! with_exp adds the experimental column and the fitted scale, i.e. the file
 ! says what the bias was comparing. A do_ir run has neither, and printing a
 ! column of zeros for the experiment would invite it to be plotted.
-!
    subroutine mad_ir_write_spectrum(this, fname, with_exp, n_md_steps, md_step_fs)
       implicit none
       type(mad_ir_type), intent(in) :: this
@@ -1628,7 +1586,6 @@ contains
       close (iu)
    end subroutine mad_ir_write_spectrum
 
-!**************************************************************************
 !
 ! The predicted spectrum appended as one more block, so that the whole
 ! trajectory of predictions survives the run rather than only its last frame.
@@ -1649,7 +1606,6 @@ contains
 ! fills, which is not step zero, and opening with status="old" before anything
 ! has been written is a runtime error rather than an empty file. The caller
 ! owns that flag and flips it after the first successful write.
-!
    subroutine mad_ir_append_spectrum(this, fname, overwrite, istep, time_fs)
       implicit none
       type(mad_ir_type), intent(in) :: this
@@ -1684,14 +1640,12 @@ contains
       close (iu)
    end subroutine mad_ir_append_spectrum
 
-!**************************************************************************
 !
 ! The experimental spectrum as the fit actually sees it: restricted to
 ! [nu_min, nu_max] and on its own grid. The file named by exp_data_files is
 ! the raw one, so plotting the prediction against it is plotting against
 ! points that were never fitted. Written once, mirroring the "<label>_exp.dat"
 ! that the per-frame observables get from turbogap.f90.
-!
    subroutine mad_ir_write_exp_spectrum(this, fname)
       implicit none
       type(mad_ir_type), intent(in) :: this
@@ -1707,7 +1661,6 @@ contains
       close (iu)
    end subroutine mad_ir_write_exp_spectrum
 
-!**************************************************************************
 !
 ! Keep the experimental points inside [nu_min, nu_max].
 !
@@ -1718,7 +1671,6 @@ contains
 ! The fit grid IS the experimental grid, restricted. Interpolating the
 ! experiment onto a grid of our own choosing would invent structure between its
 ! points and then fit to it.
-!
    subroutine mad_ir_select_range(nu_in, I_in, nu_min, nu_max, weight_by_spacing, &
                                   nu, I_exp, wgt, ok, msg)
 
@@ -1788,13 +1740,11 @@ contains
 
    end subroutine mad_ir_select_range
 
-!**************************************************************************
 !
 ! Restart. The history buffer is the expensive thing in a MAD IR run -- a
 ! 2085-lag window at 2 fs sampling is 4 ps of trajectory -- so losing it means
 ! 4 ps with no force applied while it refills. Small enough to write as text,
 ! which also makes it inspectable.
-!
    subroutine mad_ir_save(this, fname, ok, msg)
 
       implicit none
@@ -1837,7 +1787,6 @@ contains
 
    end subroutine mad_ir_save
 
-!**************************************************************************
 !
 ! Load a history buffer into an already-initialised state.
 !
@@ -1846,7 +1795,6 @@ contains
 ! would change the observable mid-run in a way nothing downstream could
 ! notice. Refusing is the only safe answer; the caller can then choose to start
 ! a fresh buffer.
-!
    subroutine mad_ir_load(this, fname, ok, msg)
 
       implicit none
@@ -1972,7 +1920,6 @@ contains
 
    end subroutine mad_ir_load
 
-!**************************************************************************
 !
 ! f_jb = - dE/dr_jb = - sum_a lambda_a dmu_a/dr_jb, with lambda = dE/dmu of the
 ! newest configuration. E is the MAD energy, so this is the gradient of the
@@ -1981,7 +1928,6 @@ contains
 ! dmu_dr(a,b,j) is what gap.f90's accumulate_dmu_dr builds. The forces are
 ! ADDED to whatever is already in forces, since a MAD run carries a real
 ! potential alongside the bias.
-!
    subroutine mad_ir_forces(lambda, dmu_dr, forces)
       implicit none
       real(dp), intent(in) :: lambda(1:3)

@@ -38,7 +38,6 @@ module gap_backend
 
 contains
 
-!**************************************************************************
 ! Bracket the three contribution calls.
 !
 ! Nothing to do on the CPU: the arrays the kernels read are already in host
@@ -46,13 +45,11 @@ contains
 ! the neighbour data once for all three calls rather than three times, and that
 ! has to happen without the driver ever holding a device pointer. An empty pair
 ! here is the price of keeping the interface physics-only.
-!**************************************************************************
 ! The GPU implementation takes the stream it launches on from gpu_context here.
 ! There is nothing to take on the CPU, but the name and the empty argument list
 ! exist on both branches so the driver's call site is identical.
    subroutine gap_backend_init()
    end subroutine gap_backend_init
-!**************************************************************************
 
    subroutine gap_backend_begin(params, rjs, xyz, n_neigh, species, neighbor_species, &
                                 neighbors_list, i_beg, i_end, j_beg, j_end)
@@ -74,7 +71,6 @@ contains
       implicit none
    end subroutine gap_backend_end
 
-!**************************************************************************
 ! Accumulate the two-body energies, forces and virial.
    subroutine add_2b_contribution(n_distance_2b, distance_2b_hypers, &
                                   params, rjs, xyz, n_neigh, species, neighbor_species, &
@@ -138,7 +134,6 @@ contains
 
    end subroutine add_2b_contribution
 
-!**************************************************************************
 ! Accumulate the core-potential energies, forces and virial.
    subroutine add_core_pot_contribution(n_core_pot, core_pot_hypers, &
                                         params, rjs, xyz, n_neigh, species, neighbor_species, &
@@ -201,7 +196,6 @@ contains
 
    end subroutine add_core_pot_contribution
 
-!**************************************************************************
 ! Accumulate the three-body energies, forces and virial.
    subroutine add_3b_contribution(n_angle_3b, angle_3b_hypers, neighbors_list, &
                                   params, rjs, xyz, n_neigh, species, neighbor_species, &

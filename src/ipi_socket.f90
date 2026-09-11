@@ -117,7 +117,6 @@ module ipi_socket
 
 contains
 
-!**************************************************************************
 !  Signed-char storage holds -128..127, and an IP octet or a high byte of a
 !  port does not. Same bit pattern either way; this is the wrap C does for
 !  free on assignment to a char.
@@ -135,9 +134,7 @@ contains
       end if
 
    end function to_byte
-!**************************************************************************
 
-!**************************************************************************
 !  One direction of one transfer, looping until nbytes have moved. A stream
 !  socket may satisfy a request partially; a return of zero means the peer
 !  closed, and negative means an error, and both are fatal here because there
@@ -173,9 +170,7 @@ contains
       end do
 
    end subroutine sock_xfer
-!**************************************************************************
 
-!**************************************************************************
 !  Connect to an i-PI server. `address` is either
 !
 !     UNIX:name          a UNIX-domain socket at /tmp/ipi_name
@@ -271,9 +266,7 @@ contains
       end if
 
    end subroutine ipi_connect
-!**************************************************************************
 
-!**************************************************************************
    subroutine parse_dotted_quad(host, ip)
 
       implicit none
@@ -308,9 +301,7 @@ contains
       end do
 
    end subroutine parse_dotted_quad
-!**************************************************************************
 
-!**************************************************************************
    subroutine ipi_disconnect(fd)
 
       implicit none
@@ -322,9 +313,7 @@ contains
       fd = -1
 
    end subroutine ipi_disconnect
-!**************************************************************************
 
-!**************************************************************************
    subroutine ipi_get_header(fd, header)
 
       implicit none
@@ -340,9 +329,7 @@ contains
       end do
 
    end subroutine ipi_get_header
-!**************************************************************************
 
-!**************************************************************************
 !  Headers are fixed width and space padded. A header sent short desynchronises
 !  the stream in a way that surfaces several messages later.
    subroutine ipi_put_header(fd, header)
@@ -361,9 +348,7 @@ contains
       call sock_xfer(fd, buf, IPI_MSGLEN, .true.)
 
    end subroutine ipi_put_header
-!**************************************************************************
 
-!**************************************************************************
 !  i-PI's integers on the wire are 32 bit, whatever the client's default
 !  integer kind happens to be.
    subroutine ipi_get_int(fd, v)
@@ -380,9 +365,7 @@ contains
       v = int(tmp)
 
    end subroutine ipi_get_int
-!**************************************************************************
 
-!**************************************************************************
    subroutine ipi_put_int(fd, v)
 
       implicit none
@@ -397,9 +380,7 @@ contains
       call sock_xfer(fd, buf, 4, .true.)
 
    end subroutine ipi_put_int
-!**************************************************************************
 
-!**************************************************************************
    subroutine ipi_get_reals(fd, x)
 
       implicit none
@@ -414,9 +395,7 @@ contains
       deallocate (buf)
 
    end subroutine ipi_get_reals
-!**************************************************************************
 
-!**************************************************************************
    subroutine ipi_put_reals(fd, x)
 
       implicit none
@@ -431,9 +410,7 @@ contains
       deallocate (buf)
 
    end subroutine ipi_put_reals
-!**************************************************************************
 
-!**************************************************************************
    subroutine ipi_put_real(fd, v)
 
       implicit none
@@ -446,9 +423,7 @@ contains
       call ipi_put_reals(fd, x)
 
    end subroutine ipi_put_real
-!**************************************************************************
 
-!**************************************************************************
 !  Read and throw away. The INIT message carries a per-replica parameter
 !  string that electronic-structure clients use and this one does not, but it
 !  is on the wire and has to leave it.
@@ -466,6 +441,5 @@ contains
       deallocate (buf)
 
    end subroutine ipi_skip_bytes
-!**************************************************************************
 
 end module ipi_socket

@@ -142,7 +142,6 @@ contains
       ! & do_forces_pdf, do_forces_sf, do_forces_xrd, &
       ! &    forces_pdf,    forces_sf,    forces_xrd )
       implicit none
-      ! Input Variables
       real(dp), intent(in) :: rjs(:)
       real(dp), intent(in) :: kde_sigma
       real(dp), intent(in) :: xyz(:, :)
@@ -160,7 +159,6 @@ contains
       integer, intent(in) :: rank
       logical, intent(in) :: do_derivatives !
       character*8, intent(in), allocatable :: species_types(:)
-      ! Output Variables
       real(dp), intent(out), allocatable :: pair_distribution(:, :)
       real(dp), intent(out), allocatable :: pair_distribution_der(:, :, :)!
 
@@ -388,8 +386,6 @@ contains
       ! forces pdf only and we can construct the structure factor / xrd
       ! spectrum
 
-      ! if (do_derivatives .and. ( do_forces_pdf .or. do_forces_sf .or. do_forces_xrd ))then
-
       !    if (do_forces_pdf) allocate(prefactor_pdf(1:n_samples))
       !    if (do_forces_sf ) allocate(prefactor_sf(1:n_samples_sf))
       !    if (do_forces_xrd) allocate(prefactor_xrd(1:n_samples_sf))
@@ -410,26 +406,6 @@ contains
 
       !          if ( .not. all( xyz( 1:3, k ) == 0.d0 ) )then
       !             ! Actual derivative of the pair distribution function given here, no normalisation needed I think
-
-      !             if ( do_forces_pdf )then
-      !                call get_this_exp_force(k, xyz(1:3,k), n_samples, n_dim_idx, pair_distribution_der, energy_scale, f,  this_force)
-      !                forces_pdf(1:3, j2) = forces_pdf(1:3, j2) + this_force(1:3)
-      !             end if
-
-      !             if ( do_forces_sf )then
-      !                call get_this_exp_force(k, xyz(1:3,k), n_samples_sf, n_dim_idx, pair_distribution_der, energy_scale, f,  this_force)
-      !                forces_sf(1:3, j2) = forces_sf(1:3, j2) + this_force(1:3)
-      !             end if
-
-      !             if ( do_forces_xrd )then
-      !                call get_this_exp_force(k, xyz(1:3,k), n_samples_sf, n_dim_idx, pair_distribution_der, energy_scale, f,  this_force)
-      !                forces_xrd(1:3, j2) = forces_xrd(1:3, j2) + this_force(1:3)
-      !             end if
-
-      !          end if
-      !       end do
-      !    end do
-      ! end if
 
       deallocate (species_to_ndim)
       deallocate (species1_partial)
@@ -462,8 +438,6 @@ contains
    !        & prefactor(1:n_samples))
 
    !   this_force(1:3) =  - f * energy_scale  * this_force(1:3)
-
-   ! end subroutine get_this_exp_force
 
    subroutine preprocess_exp_data(params, x, y, label, n_sites, V, input, output, exp)
       implicit none
@@ -500,8 +474,6 @@ contains
          end if
       elseif (trim(label) == "xrd") then
          output = params%xrd_output
-         ! mag = sqrt(dot_product(y, y)) * dx
-         ! y = y / mag
 
          if (trim(params%xrd_output) == "q*i(q)" .and. params%q_units &
               &== "q") then
@@ -520,8 +492,6 @@ contains
          end if
       elseif (trim(label) == "nd") then
          output = params%nd_output
-         ! mag = sqrt(dot_product(y, y)) * dx
-         ! y = y / mag
 
          if (trim(params%nd_output) == "q*i(q)" .and. params%q_units &
               &== "q") then
@@ -707,9 +677,7 @@ contains
            & dfloat(indices(1)*indices(2)&
            &*indices(3)))
 
-      !#####################################################################!
       !###---   Calculating the partial pair distribution functions   ---###!
-      !#####################################################################!
 
       if (params%pair_distribution_partial) then
          n_dim_idx = 1
@@ -791,9 +759,6 @@ contains
          ! ! Note, we have only so far divided by 4 pi r^2 dr
          ! ! Therefore, we must scale by the density
 
-         ! pair_distribution_partial_der =  pair_distribution_partial_der_temp
-         ! deallocate( pair_distribution_partial_der_temp )
-
 #endif
 
          if (params%valid_pdf) then
@@ -807,9 +772,7 @@ contains
 
          end if
 
-         !####################################!
          !###---   Accumulate the PDF   ---###!
-         !####################################!
 
          y_pair_distribution = 0.d0
          n_dim_idx = 1
@@ -853,9 +816,7 @@ contains
             y_pair_distribution = 4.d0*pi*(dfloat(n_sites)/v_uc)*x_pair_distribution*(y_pair_distribution - 1.d0)
          end if
 
-         !######################################!
          !###---   Calculate the forces   ---###!
-         !######################################!
 
          if (params%valid_pdf .and. allocated(params%exp_energy_scales)) then
 
@@ -873,9 +834,6 @@ contains
                  & energies_pair_distribution(i_beg:i_end))
 
             if (params%do_forces .and. params%exp_forces) then
-               ! forces_pair_distribution = 0.d0
-               ! allocate( pair_distribution_der_temp( 1:params%pair_distribution_n_samples ) )
-               ! pair_distribution_der_temp = 0.d0
 
                n_dim_idx = 1
                outerforces: do j = 1, n_species
@@ -942,22 +900,15 @@ contains
                end if
             end if
 
-            ! do i = 1, params%pair_distribution_n_samples
-            !    print *,  "ppd ", 100, pair_distribution_der_temp( 1 ), pair_distribution_partial_der( 1, 2, 100:102 )
-            ! end do
-
             ! open(unit=1234, file="grad", status="unknown")
             ! do i = 100, 110
             !    write(1234,  '(A,1X,I8,1X,F20.8)'), "dg_dr_0^1 ", i, pair_distribution_der_temp( i )
             ! end do
             ! close(unit=1234)
 
-            ! deallocate( pair_distribution_der_temp)
          end if
 
-         !##################################################################!
          !###---   If not doing partial pair distribution functions   ---###!
-         !##################################################################!
 
       else
 #ifdef _MPIF90
@@ -974,22 +925,13 @@ contains
               &%pair_distribution_n_samples, MPI_DOUBLE_PRECISION, 0,&
               & MPI_COMM_WORLD, ierr)
 
-         ! if ( do_derivatives .and. params%exp_forces .and. allocated( params%exp_energy_scales ) )then
-         !    allocate( forces_pair_distribution_temp(1:3, 1:n_sites) )
-         !    forces_pair_distribution_temp = 0.d0
-
          !    call mpi_reduce(forces_pair_distribution,&
          !         & forces_pair_distribution_temp, 3 * n_sites,&
          !         & MPI_DOUBLE_PRECISION, MPI_SUM, 0,&
          !         & MPI_COMM_WORLD, ierr)
 
-         !    forces_pair_distribution = forces_pair_distribution_temp
-         !    deallocate( forces_pair_distribution_temp )
-
          !    call mpi_bcast(forces_pair_distribution, 3*n_sites, MPI_DOUBLE_PRECISION, 0,&
          !         & MPI_COMM_WORLD, ierr)
-
-         ! end if
 
 #endif
          y_pair_distribution = y_pair_distribution* &
@@ -1343,9 +1285,7 @@ contains
                  & pair_distribution_partial - 1.d0, m, 0.d0,&
                  & structure_factor_partial, n)
 
-            !##################################!
             !###---   Do derivatives!    ---###!
-            !##################################!
 
             ! Should do this smartly with memory allocation
 
@@ -1780,26 +1720,7 @@ contains
 
       end if
 
-      !###################################################################################!
       !###---   Can calculate the Structure factors related to XRD / Neutron here   ---###!
-      !###################################################################################!
-
-      ! if (allocated(sf_parameters) ) deallocate( sf_parameters )
-      ! allocate( sf_parameters(1:9,1:n_species))
-      ! sf_parameters = 0.d0
-      ! do i = 1, n_species
-      !    call get_scattering_factor_params(params%species_types(i), sf_parameters(1:9,i))
-      ! end do
-
-      ! do j = 1, params%structure_factor_n_samples
-      !    wfac = 0.d0
-      !    do k = 1, n_species
-      !       call get_scattering_factor(wfac_temp, sf_parameters(1:9,k), x_xrd(j)/2.d0 )
-      !       wfac = wfac + wfac_temp*wfac_temp *n_atoms_of_species(k)  / dfloat(n_sites)
-      !    end do
-      !    print *, wfac
-      !    y_xrd(j) = y_xrd(j) / (wfac)
-      ! end do
 
 #ifdef _MPIF90
 
@@ -1976,7 +1897,6 @@ contains
       !       ! do nothing,
       !       ! Output the total scattering functon, i(q) === F_x(q)
 
-      !    end if
       if (allocated(y_sub)) deallocate (y_sub)
       if (allocated(lp)) deallocate (lp)
 
@@ -2006,7 +1926,6 @@ contains
       if (allocated(structure_factor_partial_temp)) deallocate (structure_factor_partial_temp)
    end subroutine finalize_xrd
 
-!**************************************************************************
 !  The XRD (or ND) pattern from the Debye scattering equation, with the
 !  energies, forces and virial that fitting it against experiment produces.
 !
@@ -2032,7 +1951,6 @@ contains
 !  the constants: dy(l)/dr = lp(l) a(l) dI(l)/dr. That is what keeps the
 !  forces below consistent with the energy no matter which output, and which
 !  the pdf/sf route cannot say as cheaply.
-!**************************************************************************
    subroutine calculate_xrd_debye(params, x_xrd, x_xrd_temp, y_xrd, y_xrd_temp, &
         & n_sites, positions, species, md_istep, mc_istep, i_beg, i_end, &
         & ierr, rank, do_derivatives, energies_xrd, forces_xrd, virial_xrd, neutron)

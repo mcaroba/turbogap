@@ -32,7 +32,6 @@ module local_prop
 
 contains
 
-   ! !**************************************************************************
    ! subroutine get_local_property_details( n_soap_turbo, soap_turbo_hypers, n_local_properties_tot, local_property_labels, write_local_properties )
    !   implicit none
    !   integer, intent(in) :: n_soap_turbo
@@ -46,8 +45,6 @@ contains
    !     if( soap_turbo_hypers(j)%has_local_properties )then
    !        ! This property has the labels of the quantities to
    !        ! compute. We must specify the number of local properties, for the sake of coding simplicity
-
-   !        n_local_properties_tot = n_local_properties_tot + soap_turbo_hypers(j)%n_local_properties
 
    !        if(.not. allocated(local_property_labels))then
    !           allocate(local_property_labels(1:n_local_properties_tot))
@@ -64,13 +61,6 @@ contains
    !           deallocate(local_property_labels)
    !           allocate(local_property_labels(1:n_local_properties_tot))
 
-   !           nprop = soap_turbo_hypers(j)%n_local_properties
-   !           do i = 1, n_local_properties_tot - nprop
-   !              local_property_labels(i) = local_property_labels_temp(i)
-   !           end do
-
-   !           deallocate(local_property_labels_temp)
-
    !           do i = 1, nprop
    !              local_property_labels(i + n_local_properties_tot -&
    !                   & nprop) = soap_turbo_hypers(j)&
@@ -79,11 +69,6 @@ contains
    !              write(*,'(A,1X,I8,1X,A,1X,A)')' Descriptor ', j,&
    !                   & trim(soap_turbo_hypers(j)&
    !                   &%local_property_models(i)%label),  ' |'
-
-   !           end do
-   !        end if
-   !     end if
-   !  end do
 
    !  ! Now we create an irreducible list of the labels
    !  if (n_local_properties_tot > 0)then
@@ -121,14 +106,6 @@ contains
 
    !              local_property_indexes(j) = i
 
-   !              if ( trim(local_property_labels(j)) == "hirshfeld_v" )then
-   !                 vdw_lp_index = i
-   !                 valid_vdw = .true.
-   !              end if
-
-   !              if ( trim(local_property_labels(j)) == "core_electron_be" )then
-   !                 core_be_lp_index = i
-
    !                 ! Check if there is experimental data for one to do xps fitting
    !                 do i2 = 1, params%n_exp
    !                    if(( trim(params%exp_data(i2)%label) == "xps" .and.  &
@@ -146,37 +123,16 @@ contains
    !                 end do
    !              end if
 
-   !           end if
-   !        end do
-   !     end do
-
    !     print *, "n_local_properties ", params%n_local_properties
    !     print *, "n_local_properties_tot ", n_local_properties_tot
    !     ! print *, "local_property_labels ", local_property_labels
    !     ! print *, "local_property_labels_temp (irreducible) ", local_property_labels_temp
-
-   !     deallocate(local_property_labels)
-   !     allocate(local_property_labels(1:size(local_property_labels_temp,1)))
-   !     local_property_labels = local_property_labels_temp
-   !     deallocate(local_property_labels_temp)
-
-   !     do i = 1, params%n_local_properties
-   !        write(*,*)' Irreducible local properties                   |'
-   !        write(*,'(1X,A)') trim( local_property_labels(i) )
-   !     end do
-
-   !     allocate( params%write_local_properties(1:params%n_local_properties) )
-   !     params%write_local_properties = .true.
-   !  end if
-
-   ! end subroutine get_local_property_details
 
    subroutine local_property_predict(soap, Qs, alphas, V0, delta, zeta, V, &
                                      do_derivatives, soap_cart_der, n_neigh, V_der)
 
       implicit none
 
-!   Input variables
       real(dp), intent(in) :: soap(:, :)
       real(dp), intent(in) :: Qs(:, :)
       real(dp), intent(in) :: alphas(:)
@@ -186,10 +142,8 @@ contains
       real(dp), intent(in) :: soap_cart_der(:, :, :)
       integer, intent(in) :: n_neigh(:)
       logical, intent(in) :: do_derivatives
-!   Output variables
       real(dp), intent(out) :: V(:)
       real(dp), intent(out) :: V_der(:, :)
-!   Internal variables
       real(dp), allocatable :: K(:, :)
       real(dp), allocatable :: K_der(:, :)
       real(dp), allocatable :: Qss(:, :)
@@ -292,6 +246,5 @@ contains
       deallocate (K)
 
    end subroutine
-!**************************************************************************
 
 end module

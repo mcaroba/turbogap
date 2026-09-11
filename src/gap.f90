@@ -66,7 +66,6 @@ contains
    subroutine get_soap_energy_and_forces(soap, soap_der, delta, zeta0, e0, &
                                          n_neigh, neighbors_list, xyz, do_forces, do_timing, &
                                          energies, forces, virial)
-!   **********************************************
 !   soap(1:n_soap, 1:n_sites)
 
       implicit none
@@ -207,7 +206,6 @@ contains
             this_Qss = Qss(i, 1:n_soap)
             do j = 1, n_neigh(i)
                l = l + 1
-!         do l = neighbors_beg(i), neighbors_end(i)
                j2 = mod(neighbors_list(l) - 1, n_sites0) + 1
                do k = 1, 3
                   this_force(k) = dot_product(this_Qss, soap_der(k, :, l))
@@ -259,7 +257,6 @@ contains
    end subroutine
 
    subroutine get_soap_dipole(soap, soap_cart_der, delta, zeta0, n_neigh, do_timing, dipoles, energies)
-!   **********************************************
 !   Local dipoles from a dipole GAP.
 !
 !   The model is a GAP whose local "energy" E_i is a fictitious scalar, fitted so
@@ -282,7 +279,6 @@ contains
 !   its gradient must never be added to the forces.
 !
 !   soap(1:n_soap, 1:n_sites), dipoles(1:3, 1:n_sites)
-!   **********************************************
 
       implicit none
 
@@ -398,7 +394,6 @@ contains
    end subroutine
 
    subroutine get_soap_dipole_weights(soap, soap_cart_der, delta, zeta0, n_neigh, w, V)
-!   **********************************************
 !   The model-side half of a dipole gradient.
 !
 !   mu_i = w_i . dq/dr_i with w_i = dE_i/dq, so
@@ -431,7 +426,6 @@ contains
 !   rather than going through k^(-1).
 !
 !   soap(1:n_soap, 1:n_sites), w(1:n_soap, 1:n_sites), V(1:n_soap, 1:3, 1:n_sites)
-!   **********************************************
 
       implicit none
 
@@ -480,7 +474,6 @@ contains
       call dgemm("t", "n", n_sites, n_sparse, n_soap, 1.d0, soap, n_soap, Qs, n_soap, 0.d0, &
                  kernels, n_sites)
 
-!   w_i = dE_i/dq. This is the vector get_soap_dipole calls Qss.
       do i = 1, n_sites
          do s = 1, n_sparse
             if (is_zeta_int) then
@@ -522,7 +515,6 @@ contains
    end subroutine
 
    subroutine assemble_soap_dipole_gradient(V, soap_cart_der, hess, n_neigh, dipole_der)
-!   **********************************************
 !   The two halves put together.
 !
 !     dipole_der(a, b, k2) = d mu_ia / d r_jb   for pair k2 = (site i, neighbour j)
@@ -545,7 +537,6 @@ contains
 !   A rigid translation cannot change a dipole, so the blocks of one site sum to
 !   zero for each (a,b). That holds term by term here, which makes it a cheap
 !   check on the caller's pair indexing rather than on the physics.
-!   **********************************************
 
       implicit none
 
@@ -581,7 +572,6 @@ contains
    end subroutine
 
    subroutine accumulate_dmu_dr(V, soap_cart_der, hess, n_neigh, neighbors_list, n_sites0, dmu_dr)
-!   **********************************************
 !   d(total dipole)/d(atom position), accumulated per atom.
 !
 !     dmu_dr(a, b, j) = d mu_a / d r_jb,     mu = sum_i mu_i
@@ -603,7 +593,6 @@ contains
 !   call.
 !
 !   V and hess come from get_soap_dipole_weights and get_soap_central_hessian.
-!   **********************************************
 
       implicit none
 
@@ -646,7 +635,6 @@ contains
 
    subroutine accumulate_mu_weighted_force(wsite, V, soap_cart_der, hess, n_neigh, &
                                            neighbors_list, n_sites0, in_to_out_site, force)
-!   **********************************************
 !   The MAD IR force when the weight is already known: a per-site 3-vector
 !   contracted against the local dipole gradient as the descriptor is walked.
 !
@@ -682,7 +670,6 @@ contains
 !   Accumulates rather than assigns, so several dipole descriptors, or several
 !   batches, add into the same array. force is the run's force array and is
 !   already non-zero: this ADDS the bias to it.
-!   **********************************************
 
       implicit none
 
@@ -739,7 +726,6 @@ contains
 
       implicit none
 
-!   Input variables
       real(dp), intent(in) :: rjs(:)
       real(dp), intent(in) :: xyz(:, :)
       real(dp), intent(in) :: alphas(:)
@@ -759,12 +745,10 @@ contains
       logical, intent(in) :: do_forces
       logical, intent(in) :: do_timing
 
-!   Output variables
       real(dp), intent(out) :: energies(:)
       real(dp), intent(out) :: forces(:, :)
       real(dp), intent(out) :: virial(1:3, 1:3)
 
-!   Internal variables
       real(dp) :: time1
       real(dp) :: time2
       real(dp) :: fcut
@@ -872,7 +856,6 @@ contains
                                        dexp(-0.5d0*(rjs(k) - Qs(s))**2/sigma**2)* &
                                        xyz(1:3, k)/rjs(k)*((rjs(k) - Qs(s))/sigma**2*fcut + dfcut)
                      forces(1:3, i) = forces(1:3, i) + this_force(1:3)
-!              virial = virial - dot_product( this_force(1:3), xyz(1:3,k) )
                      do k1 = 1, 3
                         do k2 = 1, 3
                            virial(k1, k2) = virial(k1, k2) - 0.5d0*(this_force(k1)*xyz(k2, k) + this_force(k2)*xyz(k1, k))
@@ -904,7 +887,6 @@ contains
 
       implicit none
 
-!   Input variables
       real(dp), intent(in) :: rjs(:)
       real(dp), intent(in) :: xyz(:, :)
       real(dp), intent(in) :: x(:)
@@ -921,12 +903,10 @@ contains
       logical, intent(in) :: do_forces
       logical, intent(in) :: do_timing
 
-!   Output variables
       real(dp), intent(out) :: energies(:)
       real(dp), intent(out) :: forces(:, :)
       real(dp), intent(out) :: virial(1:3, 1:3)
 
-!   Internal variables
 !   There are two ways of doing the core_pot interpolation; most efficient probably depends on
 !   whether a small subset or big subset of the total number of atom pairs has a core potential
 !   term associated to it. The current implementation is fast going over pairs, but slow computing
@@ -1031,7 +1011,6 @@ contains
                   dV_int = spline_der(x, V, dVdx2, yp1, ypn, rjs(k:k), rcut)
                   this_force(1:3) = dV_int(1)*xyz(1:3, k)/rjs(k)
                   forces(1:3, i) = forces(1:3, i) + this_force(1:3)
-!            virial = virial - dot_product( this_force(1:3), xyz(1:3, k) )
                   do k1 = 1, 3
                      do k2 = 1, 3
                         virial(k1, k2) = virial(k1, k2) - 0.5d0*(this_force(k1)*xyz(k2, k) + this_force(k2)*xyz(k1, k))
@@ -1056,7 +1035,6 @@ contains
 
    end subroutine
 
-!**************************************************************************
    subroutine get_3b_energy_and_forces(rjs, xyz, alphas, cutoff, rcut, buffer, delta, sigma, e0, Qs, &
                                        n_neigh, neighbors_list, do_forces, do_timing, kernel_type, &
                                        species, neighbor_species, species_center, species1, species2, &
@@ -1064,7 +1042,6 @@ contains
 
       implicit none
 
-!   Input variables
       real(dp), intent(in) :: rjs(:)
       real(dp), intent(in) :: xyz(:, :)
       real(dp), intent(in) :: alphas(:)
@@ -1087,12 +1064,10 @@ contains
       character*8, intent(in) :: species2
       character*8, intent(in) :: species_types(:)
 
-!   Output variables
       real(dp), intent(out) :: energies(:)
       real(dp), intent(out) :: forces(:, :)
       real(dp), intent(out) :: virial(1:3, 1:3)
 
-!   Internal variables
       real(dp) :: time1
       real(dp) :: time2
       real(dp) :: fcut
@@ -1376,12 +1351,9 @@ contains
       end if
 
    end subroutine
-!**************************************************************************
 
-!**************************************************************************
 !
 ! This is two functions
-!
    function cov_pp(r, d, q) result(cov)
 
       implicit none
@@ -1446,6 +1418,5 @@ contains
       end if
 
    end function
-!**************************************************************************
 
 end module gap

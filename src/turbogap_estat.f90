@@ -34,7 +34,6 @@ module turbogap_estat
 
 contains
 
-   !**************************************************************************
    subroutine compute_estat(params, do_electrostatics, valid_estat_charges, charge_lp_index, &
                             n_sites, n_neigh, neighbors_list, rjs, xyz, &
                             local_properties, local_properties_cart_der, &
@@ -42,7 +41,6 @@ contains
                             energies_estat, forces_estat, virial_estat, time)
       implicit none
 
-!     Input variables
       type(input_parameters), intent(in) :: params
       logical, intent(in) :: do_electrostatics
       logical, intent(in) :: valid_estat_charges
@@ -63,7 +61,6 @@ contains
       real(dp), intent(inout) :: virial_estat(1:3, 1:3)
       type(times_t), intent(inout) :: time
 
-!     Internal variables
       real(dp), allocatable :: chg_neigh_estat(:)
       real(dp) :: charge_sum
       integer :: i, j, k, j2
@@ -155,6 +152,5 @@ contains
       end if
 
    end subroutine compute_estat
-   !**************************************************************************
 
 end module turbogap_estat

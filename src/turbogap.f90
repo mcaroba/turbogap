@@ -78,9 +78,7 @@ program turbogap
 
    implicit none
 
-   !**************************************************************************
    ! Variable definitions
-   !
    real(dp), allocatable :: rjs(:)
    real(dp), allocatable :: thetas(:)
    real(dp), allocatable :: phis(:)
@@ -519,18 +517,13 @@ program turbogap
    implemented_exp_observables(4) = "pair_distribution"
    implemented_exp_observables(5) = "structure_factor"
 
-   !**************************************************************************
-
-   !**************************************************************************
 !  Bring the device context up. Empty on this branch (src/gpu_context.f90);
 !  on the GPU branch the same two names create the streams and cuBLAS handles.
    call time_start(time%create_streams)
    call gpu_context_init(params, rank, n_omp)
    call gap_backend_init()
    call time_end(time%create_streams)
-   !**************************************************************************
 
-   !**************************************************************************
    ! Start recording the time
    call get_time(time1)
    time3 = time1
@@ -543,9 +536,7 @@ program turbogap
    call time_start(time%setup)
    ! Start random seed
    call srand(int(time1*1000))
-   !**************************************************************************
 
-   !**************************************************************************
    ! MPI stuff
 #ifdef _MPIF90
    call mpi_init(ierr)
@@ -556,11 +547,8 @@ program turbogap
    ntasks = 1
 #endif
    allocate (n_atom_pairs_by_rank(1:ntasks))
-   !**************************************************************************
 
-   !**************************************************************************
    ! Read the mode. It should be "soap", "predict" or "md"
-   !
    call get_command_argument(1, mode)
    if (mode == "" .or. mode == "none") then
       write (*, *) "ERROR: you need to run 'turbogap md', 'turbogap mc', 'turbogap predict'"
@@ -570,11 +558,8 @@ program turbogap
       ! THIS SHOULD BE FIXED, IN CASE THE USER JUST WANT TO OUTPUT THE SOAP DESCRIPTORS
       mode = "soap"
    end if
-   !**************************************************************************
 
-   !**************************************************************************
    ! Prints some welcome message and reads in the input file
-   !
 #ifdef _MPIF90
    IF (rank == 0) THEN
 #endif
@@ -633,11 +618,8 @@ program turbogap
 #ifdef _MPIF90
    END IF
 #endif
-   !**************************************************************************
 
-   !**************************************************************************
    ! Read input file and other files
-   !
    call read_input_and_gap_files(mode, rank, ntasks, params, &
                                  soap_turbo_hypers, distance_2b_hypers, angle_3b_hypers, core_pot_hypers, &
                                  n_soap_turbo, n_distance_2b, n_angle_3b, n_core_pot, n_species, rcut_max, &
@@ -662,7 +644,6 @@ program turbogap
 !  the device instead of from the node.
    call gpu_memory_budget_init(params, rank, ntasks)
 
-   !**************************************************************************
    ! <----------------------------------------------------------------------------------------------- Finish printouts
 #ifdef _MPIF90
    IF (rank == 0) THEN
@@ -692,9 +673,7 @@ program turbogap
 #ifdef _MPIF90
    END IF
 #endif
-   !**************************************************************************
 
-   !**************************************************************************
    ! Print progress bar and initialize timers
 
    xps_idx = params%xps_idx
@@ -725,11 +704,7 @@ program turbogap
       end if
       counter = 1
    end if
-   !**************************************************************************
 
-   !**************************************************************************
-   !**************************************************************************
-   !**************************************************************************
    ! This checks if we need to do the SOAP calculation more than once, if there are several concatenated
    ! structures in the xyz file provided or we're doing molecular dynamics
 
@@ -888,9 +863,7 @@ program turbogap
       else
          counter = counter + 1
       end if
-      !**************************************************************************
 
-      !**************************************************************************
       !   This chunk of code does all the reading/neighbor builds etc for each snapshot
       !   or MD step
       !   Read in XYZ file and build neighbors lists
@@ -1081,7 +1054,6 @@ program turbogap
          allocate (do_list(1:n_sites))
          do_list = .true.
       end if
-      !
       call time_start(time%neigh)
 #ifdef _MPIF90
       !   Parallel neighbors list build
@@ -1184,9 +1156,7 @@ program turbogap
       !   Compute the volume of the "primitive" unit cell
       v_uc = dot_product(cross_product(a_box, b_box), c_box)/(dfloat(indices(1)*indices(2)*indices(3)))
       call time_end(time%neigh)
-      !**************************************************************************
 
-      !**************************************************************************
       !   If we are doing prediction, we run this chunk of code
       if (params%do_prediction .or. params%write_soap .or. params%write_derivatives) then
 
@@ -1971,18 +1941,14 @@ program turbogap
                           local_virial_vdw_diag_corr, mbd_ts_scaling, this_mbd_ts_scaling, &
                           update_mbd_ts_scaling, time)
 
-         !----------------------------------------------------!
          !--- EXPERIMENTAL SPECTRUM CALCULATION AND FORCES ---!
-         !----------------------------------------------------!
 
          ! --- Changing the implementation:
          !     > All experimental prediction should be done here
          !     > do_exp is the variable which says whether calculation should be done
          !     > experimental_forces = .true. will add forces to the calculation
 
-         !#########################################################!
          !###---   Compute Experimental Data Interpolation   ---###!
-         !#########################################################!
 
          if (params%do_exp) then
             do i = 1, params%n_exp
@@ -2047,9 +2013,7 @@ program turbogap
             end do
          end if
 
-         !###################################################!
          !###---   XPS Forces and Spectra Prediction   ---###!
-         !###################################################!
 
          !     Compute core_electron_be energies and forces
          !
@@ -2072,9 +2036,7 @@ program turbogap
                               energies_lp, forces_lp, virial_lp, time)
 #endif
 
-         !##############################################################!
          !###---   (Partial) Pair distribution functions and XRD   ---###!
-         !##############################################################!
          !
          ! Moved to src/turbogap_exp.f90. The #ifdef below is the whole reason
          ! it is here rather than inside: the exp_interface routines take the
@@ -2492,7 +2454,6 @@ program turbogap
 !              does none of what follows: it only accumulates, and transforms
 !              once when the file is written.
                if (mad_ir_xl_active) then
-!                 ================================================================
 !                 THE RESONATOR BANK (ir_bias_mode = xl).
 !
 !                 Four things happen here in an order that is not
@@ -2506,7 +2467,6 @@ program turbogap
 !                 the scheme trades for contracting inside the descriptor pass;
 !                 mad_ir_xl.f90's header has why it is the right trade here and
 !                 the wrong one for the ACF bias.
-!                 ================================================================
                   call get_energy_scale(params%do_md, params%do_mc, md_istep, params%md_nsteps, &
                                         mc_istep, params%mc_nsteps, &
                                         params%exp_energy_scales_initial(params%ir_idx), &
@@ -2551,7 +2511,6 @@ program turbogap
                   mad_ir_applied = mad_ir_xl_ready(mad_ir_xl_state)
                   if (.not. mad_ir_applied) mad_ir_energy = 0.d0
                else if (ir_aux_active) then
-!                 ================================================================
 !                 THE ENVELOPE-TARGETED BANK (ir_bias_mode = aux).
 !
 !                 The bank is a filter bank whose OWN amplitude is held at the
@@ -2567,7 +2526,6 @@ program turbogap
 !                 the first step on which the ensemble is full. Until then the
 !                 branch does nothing at all and the run is plain MD, which is
 !                 exactly the unbiased trajectory the calibration wants.
-!                 ================================================================
                   if (.not. ir_aux_calibrated(ir_aux_state) .and. mad_ir_ready(mad_ir_state)) then
                      call time_start(time%ir_predict)
 !                    The bound is tested against the WORST case the ramp will
@@ -2591,7 +2549,6 @@ program turbogap
                         write (*, *) "ERROR: ir_bias_mode = aux could not calibrate the bank."
                         stop
                      end if
-!                    ================================================================
 !                    THE STABILITY BOUND. The coupling -g_k X_k.s is bilinear and
 !                    therefore unbounded below; it is held only by the resonator
 !                    spring and by the stiffness of the signal against the physical
@@ -2605,7 +2562,6 @@ program turbogap
 !                    check is here, it is made before the first biased step, and
 !                    it is fatal -- a run above threshold does not produce a worse
 !                    answer, it produces no answer at all.
-!                    ================================================================
                      if (ir_aux_state%stab >= 1.d0) then
                         if (rank == 0) then
                            write (*, *) "ERROR: ir_bias_mode = aux is above its stability threshold."
@@ -2639,7 +2595,6 @@ program turbogap
                      call ir_aux_evaluate(ir_aux_state, mad_ir_scale, dipole, mad_ir_energy)
                      call time_end(time%ir_predict)
                      energies_exp = energies_exp + mad_ir_energy/dfloat(n_sites)
-!                    ================================================================
 !                    THE FIGURE OF MERIT IS THE ACF SPECTRUM, NOT THE BANK'S.
 !
 !                    The controller drives R_k onto R_target by construction, so
@@ -2652,7 +2607,6 @@ program turbogap
 !                    Called with a zero energy scale: mad_ir_evaluate sets dissim
 !                    and dissim_ref regardless of it, so this buys the honest number
 !                    and contributes no energy and no force.
-!                    ================================================================
                      call time_start(time%ir_predict)
                      call mad_ir_evaluate(mad_ir_state, 0.d0, ir_aux_acf_energy, mad_ir_lambda)
                      call time_end(time%ir_predict)
@@ -2708,7 +2662,6 @@ program turbogap
                   end if
                else if (params%valid_ir .and. trim(params%ir_bias_mode) == "fft" &
                         .and. mad_ir_ready(mad_ir_state)) then
-!                 ================================================================
 !                 THE FFT ESTIMATOR (ir_bias_mode = fft).
 !
 !                 The ensemble is mad_ir's rolling buffer -- mad_ir_push filled
@@ -2725,7 +2678,6 @@ program turbogap
 !                 is the whole reason this fits in as a branch rather than as a
 !                 second bias: the two estimators disagree about the spectrum
 !                 and agree exactly about what a bias on a dipole is.
-!                 ================================================================
                   call get_energy_scale(params%do_md, params%do_mc, md_istep, params%md_nsteps, &
                                         mc_istep, params%mc_nsteps, &
                                         params%exp_energy_scales_initial(params%ir_idx), &
@@ -3156,9 +3108,7 @@ program turbogap
          END IF
 #endif
       end if
-      !**************************************************************************
 
-      !**************************************************************************
       !   Do MD stuff here. Moved to src/turbogap_md.f90; the rank guard and the
       !   position broadcast moved with it.
 !     In i-PI mode the integrator is i-PI's, so the forces just computed go
@@ -3183,7 +3133,6 @@ program turbogap
                          target_temp, time_step_prev, dipole, local_dipoles, energies_dipole)
       end if
 
-      !**************************************************************************
       !   Nested sampling
       !   PUT THIS INTO A MODULE!!!!!!!!!!!!!!
 
@@ -3429,7 +3378,6 @@ program turbogap
                        & params%mc_exchange_e0, params%mc_mu_reference, &
                        & params%p_beg, n_sites)
 
-!
 !                 call get_mc_acceptance(mc_move, p_accept, &
 !                      energy + E_kinetic, &
 !                      images(i_current_image)%energy + images(i_current_image)%e_kin, &
@@ -3803,7 +3751,6 @@ program turbogap
                     images(i_current_image)%mc_mol_id, images(i_current_image)%mc_mol_mu, mc_mol_next)
 
                rebuild_neighbors_list = .true.
-               ! end if
 
                ! NOTE: the species_supercell and xyz_species_supercell are
                ! not commensurate with the new image as these have not been
@@ -4088,7 +4035,6 @@ program turbogap
          allocate (do_list(1:n_sites))
          do_list = .true.
       end if
-      !
       call get_time(time1)
 #ifdef _MPIF90
       !   Parallel neighbors list build
@@ -4162,7 +4108,6 @@ program turbogap
 !  rather than timing out on a half-open connection.
    if (mode == "ipi") call ipi_driver_close(rank)
 
-!**************************************************************************
 !
 !  IR PREDICTION FROM A TRAJECTORY: the transform, now that the file has been
 !  read to the end and its length is known.
@@ -4174,7 +4119,6 @@ program turbogap
 !
 !  Rank 0 writes, but every rank ran the transform on an identical buffer, so
 !  there is nothing to reduce and no rank can be holding a different answer.
-!
    if (ir_from_traj) then
       call time_start(time%ir_predict)
       if (params%valid_ir) then

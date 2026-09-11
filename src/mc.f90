@@ -164,8 +164,6 @@ contains
 
    !   ! is the number of neighbors for a given atom index including itself
 
-   ! end subroutine get_volume_bias
-
    subroutine get_mc_acceptance(mc_move, p_accept, energy, energy_prev, temp, &
                                 mc_mu_id, mu_in, n_mc_species_in, &
                                 v_uc, v_uc_prev, v_a_uc, v_a_uc_prev, &
@@ -485,7 +483,6 @@ contains
 
    end subroutine mc_insert_site
 
-!**************************************************************************
 !  A rotation matrix drawn uniformly from SO(3), by Shoemake's method: a
 !  uniform unit quaternion, converted. Sampling Euler angles uniformly instead
 !  would bias insertions towards particular orientations, and the whole point
@@ -517,9 +514,7 @@ contains
       r(3, 3) = 1.d0 - 2.d0*(q(1)*q(1) + q(2)*q(2))
 
    end subroutine random_rotation_matrix
-!**************************************************************************
 
-!**************************************************************************
 !  Place one rigid molecule: a uniformly random orientation about its centre of
 !  mass, and a centre of mass drawn the same way mc_insert_site draws an atom.
 !
@@ -640,7 +635,6 @@ contains
       end if
 
    end subroutine mc_insert_molecule
-!**************************************************************************
 
    subroutine check_in_polyhedron(position, n_planes, planes, not_in_polyhedron)
       implicit none
@@ -663,7 +657,6 @@ contains
 
          d = -(planes(i*4) - position(1)*normal(1) - position(2)*normal(2) - position(3)*normal(3))
 
-         !       print *, " d = ", d, d>0
          if (d > 0) then
 
             in_polyhedron = .false.
@@ -698,15 +691,7 @@ contains
 
          d = planes(i*4) - position(1)*normal(1) - position(2)*normal(2) - position(3)*normal(3)
 
-         ! closest_point_on_plane = normal * d / ( dot_product( normal, normal ) )
-
-         ! print *, "closest point on plane is ", closest_point_on_plane
-
-         ! dist = sqrt( dot_product( closest_point_on_plane, closest_point_on_plane ) )
-         ! print *, "distance1 is ", dist
-
          dist = abs(d)/sqrt(dot_product(normal, normal))
-         ! print *, "distance2 is ", dist
 
          maximum = min(dist, maximum)
 
@@ -1307,13 +1292,11 @@ contains
    ! end subroutine get_mc_conditions
    subroutine modify_box(positions, eps, a_box, b_box, c_box)
       implicit none
-!   Input variables
       real(dp), intent(inout) :: positions(:, :)
       real(dp), intent(inout) :: a_box(1:3)
       real(dp), intent(inout) :: b_box(1:3)
       real(dp), intent(inout) :: c_box(1:3)
       real(dp), intent(in) :: eps(1:6)
-!   Internal variables
       real(dp) :: t_eps(1:3, 1:3)
       real(dp), allocatable :: frac_pos(:, :)
       real(dp) :: a_box0(1:3)
@@ -1352,7 +1335,5 @@ contains
       deallocate (frac_pos)
 
    end subroutine
-!**************************************************************************
-!**************************************************************************
 
 end module mc

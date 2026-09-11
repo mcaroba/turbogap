@@ -149,7 +149,6 @@ contains
 #endif
          stop
       end if
-      !
       ! First, we look for n_species, which determines how we allocate the species-specific arrays
       do while (iostatus == 0)
          read (10, *, iostat=iostatus) keyword
@@ -219,7 +218,6 @@ contains
          write (*, *) '_______________________________________/'
       END IF
 #endif
-      !
       ! Second, we look for pot_file, which contains the GAP difinitions
       rewind (10)
       iostatus = 0
@@ -621,7 +619,6 @@ contains
          stop
       end if
       call time_end(time%read_input)
-      !**************************************************************************
 
 !! If electronic stopping based on eph model is to be calculated, these data structures are required to be
 !! initialized first.

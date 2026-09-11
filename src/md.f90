@@ -33,7 +33,6 @@ module md
 
 contains
 
-!**************************************************************************
 !  Standard normal deviates by the polar Box-Muller transform, drawn from the
 !  intrinsic generator so that they belong to the same stream random_seed
 !  fixes. `bussi` carries a gasdev() of its own, but it runs off that module's
@@ -66,9 +65,7 @@ contains
       end do
 
    end subroutine gaussian_deviates
-!**************************************************************************
 
-!**************************************************************************
 !  Fresh momenta at t_beg, by one of two draws.
 !
 !  "uniform" is the historical one: each component uniform on [0,1), the
@@ -157,7 +154,6 @@ contains
 
    end subroutine randomize_velocities
 
-!**************************************************************************
 ! Verlet is two subroutines
 !
 ! Regular Verlet
@@ -220,16 +216,13 @@ contains
       end if
 
    end subroutine
-!**************************************************************************
 
-!**************************************************************************
    subroutine velocity_verlet(positions, positions_prev, velocities, &
                               forces, forces_prev, masses, dt, dt_prev, &
                               first_step, a_box, b_box, c_box, fix_atom)
 
       implicit none
 
-!   Input variables
       real(dp), intent(inout) :: positions(:, :)
       real(dp), intent(inout) :: positions_prev(:, :)
       real(dp), intent(inout) :: velocities(:, :)
@@ -243,7 +236,6 @@ contains
       real(dp), intent(in) :: c_box(1:3)
       logical, intent(in) :: first_step
       logical, intent(in) :: fix_atom(:, :)
-!   Internal variables
       integer :: n_sites
       integer :: i
       integer :: j
@@ -281,11 +273,8 @@ contains
       dt_prev = dt        !! minimum modification for variable time-step situations
 
    end subroutine
-!**************************************************************************
 
-!**************************************************************************
 ! Berendsen's velocity rescaling thermostat
-!
    subroutine berendsen_thermostat(vel, T0, T, tau, dt)
 
       implicit none
@@ -310,9 +299,7 @@ contains
       end if
 
    end subroutine
-!**************************************************************************
 
-!**************************************************************************
    subroutine remove_cm_vel(vel, M)
 
 !   I should adapt this code to mixed boundary conditions, where
@@ -342,9 +329,7 @@ contains
       end do
 
    end subroutine
-!**************************************************************************
 
-!**************************************************************************
    subroutine wrap_pbc(positions, a_box, b_box, c_box)
 
       implicit none
@@ -378,9 +363,7 @@ contains
       end do
 
    end subroutine
-!**************************************************************************
 
-!**************************************************************************
    subroutine berendsen_barostat(positions, P0, P, sym, tau, gamma, dt)
 !   Berendsen barostat that takes the bulk moduli ratio to that of water, gamma,
 !   and takes P in bar
@@ -415,9 +398,7 @@ contains
       end if
 
    end subroutine
-!**************************************************************************
 
-!**************************************************************************
    subroutine box_scaling(positions, a_box, b_box, c_box, indices, i_step, n_steps, gamma)
 
       implicit none
@@ -444,11 +425,6 @@ contains
          indices0(1:3) = indices(1:3)
       end if
 
-!    positions = positions * ( 1.d0 + (gamma-1.d0) / dfloat(n_steps) )
-!    f = 1.d0 + (gamma-1.d0) * dfloat(i_step+1) / dfloat(n_steps)
-!    a_box = a0 * f / dfloat(indices0(1)) * dfloat(indices(1))
-!    b_box = b0 * f / dfloat(indices0(2)) * dfloat(indices(2))
-!    c_box = c0 * f / dfloat(indices0(3)) * dfloat(indices(3))
       positions = positions + matmul(gamma - identity, positions)/dfloat(n_steps)
       f = identity + (gamma - identity)*dfloat(i_step + 1)/dfloat(n_steps)
       a_box = matmul(f, a0)/dfloat(indices0(1))*dfloat(indices(1))
@@ -456,11 +432,8 @@ contains
       c_box = matmul(f, c0)/dfloat(indices0(3))*dfloat(indices(3))
 
    end subroutine
-!**************************************************************************
 
-!**************************************************************************
 ! Custom variable time step algorithm
-!
    subroutine variable_time_step(init, vel, forces, masses, target_pos_step, tau_dt, dt0, dt)
 
       implicit none
@@ -534,16 +507,13 @@ contains
       end if
 
    end subroutine
-!**************************************************************************
 
-!**************************************************************************
    subroutine gradient_descent(positions, positions_prev, velocities, &
                                forces, forces_prev, masses, max_opt_step, &
                                first_step, a_box, b_box, c_box, fix_atom, energy)
 
       implicit none
 
-!   Input variables
       real(dp), intent(inout) :: positions(:, :)
       real(dp), intent(inout) :: positions_prev(:, :)
       real(dp), intent(inout) :: velocities(:, :)
@@ -557,7 +527,6 @@ contains
       real(dp), intent(in) :: energy
       logical, intent(in) :: fix_atom(:, :)
       logical, intent(in) :: first_step
-!   Internal variables
       real(dp) :: gamma
       real(dp) :: max_force
       real(dp) :: this_force
@@ -636,7 +605,6 @@ contains
             positions_prev(1:3, i) = positions(1:3, i) - pos(1:3)
          end do
 !     Barzilai–Borwein method for finding gamma
-!
          if (sum((forces - forces_prev)**2) == 0.d0) then
             gamma = 0.0d0
          else
@@ -661,9 +629,7 @@ contains
       m_prev = sum(forces**2)
 
    end subroutine
-!**************************************************************************
 
-!**************************************************************************
    subroutine volume_preserving_strain_transformation(a_box, b_box, c_box, gamma)
 
       implicit none
@@ -692,9 +658,7 @@ contains
       gamma = gamma*vol_ratio
 
    end subroutine
-!**************************************************************************
 
-!**************************************************************************
    subroutine get_ns_unbiased_volume_proposal(V1, V2, n_sites, V)
 
 !   V1 is the minimal volume, V2 is the maximal volume, V is the volume proposal
@@ -708,9 +672,7 @@ contains
       real(dp), intent(in) :: V1
       real(dp), intent(in) :: V2
       integer, intent(in) :: n_sites
-!   Output variables
       real(dp), intent(out) :: V
-!   Internal variables
       real(dp) :: rand
       real(dp) :: log_V_V2
       real(dp) :: v_ratio
@@ -725,7 +687,6 @@ contains
 
    end subroutine
 
-!**************************************************************************
 !  3x3 inverse and determinant, by cofactors. Only ever applied to lattice
 !  matrices, which are well conditioned by construction, so no pivoting.
    pure function determinant_3x3(m) result(det)
@@ -764,9 +725,7 @@ contains
       inv = inv/det
 
    end function invert_3x3
-!**************************************************************************
 
-!**************************************************************************
 !  Variable-cell relaxation: positions and lattice vectors optimized together,
 !  in the preconditioned variables of Gubler, Finkler, Schaefer and Goedecker,
 !  "Efficient variable cell shape geometry optimization" (2023).
@@ -818,7 +777,6 @@ contains
 
       implicit none
 
-!   Input variables
       real(dp), intent(inout) :: positions(:, :)
       real(dp), intent(inout) :: velocities(:, :)
       real(dp), intent(in) :: forces(:, :)
@@ -833,7 +791,6 @@ contains
       real(dp), intent(in) :: max_opt_step
       logical, intent(in) :: ortho_only
       logical, intent(in) :: first_step
-!   Internal variables
       real(dp) :: a_lat(1:3, 1:3)
       real(dp) :: a_lat_inv(1:3, 1:3)
       real(dp) :: a_tilde(1:3, 1:3)
@@ -1035,19 +992,14 @@ contains
       c_box(1:3) = a_lat(1:3, 3)*dfloat(indices(3))
 
    end subroutine gradient_descent_positions_and_lattice
-!**************************************************************************
 
-!**************************************************************************
    subroutine get_atomic_mass(element, mass, is_in_database)
 
       implicit none
 
-!   Input variables
       character*8, intent(in) :: element
-!   Output variables
       real(dp), intent(out) :: mass
       logical, intent(out) :: is_in_database
-!   Internal variables
       real(dp) :: masses(1:96)
       character*8 :: elements(1:96)
       integer :: i
@@ -1126,7 +1078,5 @@ contains
          end do
       end if
    end subroutine get_target_temp
-
-!**************************************************************************
 
 end module

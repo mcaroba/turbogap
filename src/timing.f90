@@ -49,7 +49,6 @@ module timing
 
    implicit none
 
-   !**************************************************************************
    type times_t
       !! Wall-clock accumulators. (1) start, (2) end, (3) running total.
       !!
@@ -126,11 +125,9 @@ module timing
       real(dp) :: create_streams(3) = 0.0_dp
       real(dp) :: exp_batched(3) = 0.0_dp
    end type times_t
-   !**************************************************************************
 
 contains
 
-   !**************************************************************************
    subroutine get_time(time)
       implicit none
       real(dp), intent(out) :: time
@@ -141,9 +138,7 @@ contains
       call cpu_time(time)
 #endif
    end subroutine get_time
-   !**************************************************************************
 
-   !**************************************************************************
    subroutine time_start(bucket)
       !! Stamp the start of an interval. Pairs with time_end on the same bucket.
       implicit none
@@ -151,9 +146,7 @@ contains
 
       call get_time(bucket(1))
    end subroutine time_start
-   !**************************************************************************
 
-   !**************************************************************************
    subroutine time_end(bucket)
       !! Close the interval opened by time_start and add it to the total.
       implicit none
@@ -162,9 +155,7 @@ contains
       call get_time(bucket(2))
       bucket(3) = bucket(3) + bucket(2) - bucket(1)
    end subroutine time_end
-   !**************************************************************************
 
-   !**************************************************************************
    pure function sum_times(time) result(total)
       !! The sum of the PARENT buckets only. Adding a child here makes
       !! Miscellaneous negative; see the header.
@@ -179,6 +170,5 @@ contains
               + time%md(3) + time%mc(3) &
               + time%mpi(3) + time%mpi_positions(3) + time%mpi_ef(3)
    end function sum_times
-   !**************************************************************************
 
 end module timing

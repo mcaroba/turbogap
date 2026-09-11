@@ -8,9 +8,7 @@
 ! alongside the atoms, and the bias is the gradient of the mismatch with
 ! respect to the dipoles that drive them.
 !
-!==========================================================================
 ! THE SCHEME
-!==========================================================================
 !
 ! Attach to the dipole a pair of damped resonators for every fitted frequency
 ! w_k, driven by the dipole and by its time derivative:
@@ -38,9 +36,7 @@
 ! What it is not is set out below, because the difference is the whole content
 ! of the file.
 !
-!==========================================================================
 ! WHY THE RESTRAINT IS NOT A POTENTIAL IN THE AUXILIARY COORDINATES
-!==========================================================================
 !
 ! The natural way to write this scheme is to make U a term in an extended
 ! Lagrangian alongside the resonators, coupling them to the atoms by g x.m(q)
@@ -85,9 +81,7 @@
 ! runs free, at its own frequencies, undisturbed by what is being asked of the
 ! spectrum.
 !
-!==========================================================================
 ! THE GRADIENT
-!==========================================================================
 !
 ! The dipole of the current configuration enters the bank through exactly one
 ! advance, and the propagator below is a closed form, so its sensitivity is
@@ -141,9 +135,7 @@
 ! cannot respond to anything faster than 1/gamma = tau/2 anyway -- so it is the
 ! right trade here and the wrong one there.
 !
-!==========================================================================
 ! FOUR THINGS THAT ARE WRONG QUIETLY
-!==========================================================================
 !
 ! 1. AN UNDAMPED RESONATOR HAS NO AMPLITUDE TO MEASURE. Driven on resonance it
 !    grows without limit, so R_k never reaches a value that can be compared
@@ -199,9 +191,7 @@
 !    is Improvement A below and does not exist yet. The incoherent mode is
 !    provided because it is the half of that idea that can be built today.
 !
-!==========================================================================
 ! WHAT IS NOT IMPLEMENTED, AND WHERE IT WOULD GO
-!==========================================================================
 !
 ! IMPROVEMENT A, environment-aware targets. The experiment is one macroscopic
 ! curve; an incoherent bank is per site. Matching the sum against it lets the
@@ -214,9 +204,7 @@
 ! mad_ir_xl_evaluate accumulates the loss per site instead of summing R^2 over
 ! sites first. Nothing else in this file would change.
 !
-!==========================================================================
 ! COST
-!==========================================================================
 !
 ! Coherent: 96 * n_modes bytes, which is nothing, so ir_xl_n_modes can keep the
 ! whole experimental grid. Incoherent: 96 * n_modes * n_atoms bytes per rank,
@@ -229,7 +217,6 @@
 !
 ! Related: mad_ir.f90 (the ACF bias, and the experimental grid this shares),
 ! gle.f90 (the same Markovian-embedding device applied to a thermostat).
-!
 module mad_ir_xl
 
    use kinds
@@ -252,7 +239,6 @@ module mad_ir_xl
 !  history buffer and the two files are never interchangeable.
    integer, parameter :: MAD_IR_XL_RESTART_VERSION = 1
 
-!  ---------------------------------------------------------------------------
 !  Run-wide state, for the same reason mad_ir_dmu_dr is run-wide: it is read
 !  inside the descriptor pass, several batches deep in an argument list that is
 !  already too long.
@@ -267,7 +253,6 @@ module mad_ir_xl
 !  is several batches and one MPI reduction away from the caller that owns
 !  those forces, and threading them down would mean adding an argument to a
 !  chain that already carries thirty.
-!  ---------------------------------------------------------------------------
    real(dp), allocatable, save :: mad_ir_xl_site_w(:, :)
    real(dp), allocatable, save :: mad_ir_xl_force(:, :)
    logical, save :: mad_ir_xl_active = .false.
@@ -340,7 +325,6 @@ module mad_ir_xl
 
 contains
 
-!**************************************************************************
 !
 ! The resolution the bank actually has, in cm^-1.
 !
@@ -348,7 +332,6 @@ contains
 ! gamma/(2 pi c) in wavenumber. This is the number to compare with
 ! CM_PER_INV_FS/(n_lag*dt) for the block estimator; they are the same quantity,
 ! and a run should not be asked for a target grid much finer than either.
-!
    real(dp) function mad_ir_xl_resolution(tau_mem)
       implicit none
       real(dp), intent(in) :: tau_mem
@@ -359,17 +342,14 @@ contains
       end if
    end function mad_ir_xl_resolution
 
-!**************************************************************************
 !
 ! Bytes the bank occupies, per MPI rank: four (3, n_modes, n_bank) arrays.
-!
    real(dp) function mad_ir_xl_memory_bytes(n_modes, n_bank)
       implicit none
       integer, intent(in) :: n_modes, n_bank
       mad_ir_xl_memory_bytes = 4.d0*3.d0*8.d0*dfloat(n_modes)*dfloat(n_bank)
    end function mad_ir_xl_memory_bytes
 
-!**************************************************************************
 !
 ! Is this a combination the bank can be run with? Refuse rather than silently
 ! repair, and say which requirement failed.
@@ -384,7 +364,6 @@ contains
 ! which is 53 fs at 100 cm^-1, so it bites only for a bank taken down towards
 ! zero frequency. It is checked anyway: the failure mode is a spectrum that
 ! looks smooth and means nothing.
-!
    subroutine mad_ir_xl_check(tau_mem, n_modes, nu_min, dt, max_mem, n_bank, ok, msg)
 
       implicit none
@@ -445,7 +424,6 @@ contains
 
    end subroutine mad_ir_xl_check
 
-!**************************************************************************
 !
 ! Choose which of the parent's fitted frequencies get resonators.
 !
@@ -456,7 +434,6 @@ contains
 ! Evenly spaced in index rather than in wavenumber because the parent grid is
 ! already whatever spacing the experiment came on, and weight_by_spacing has
 ! already accounted for it; respacing here would double-count that.
-!
    subroutine mad_ir_xl_pick_modes(n_freq, n_modes_ask, kmap, n_modes)
 
       implicit none
@@ -501,7 +478,6 @@ contains
 
    end subroutine mad_ir_xl_pick_modes
 
-!**************************************************************************
 !
 ! Allocate the bank and precompute everything that depends only on the grid.
 !
@@ -510,7 +486,6 @@ contains
 ! filled and mad_ir_select_range has already restricted to [nu_min, nu_max].
 ! Duplicating any of that here would be a second reader of the same file, which
 ! mad_ir.f90 is explicit about not wanting.
-!
    subroutine mad_ir_xl_init(this, parent, n_sites, n_modes_ask, dt, tau_mem, &
                              coherent, warm_factor)
 
@@ -611,8 +586,6 @@ contains
 
    end subroutine mad_ir_xl_init
 
-!**************************************************************************
-
    subroutine mad_ir_xl_free(this)
       implicit none
       type(mad_ir_xl_type), intent(inout) :: this
@@ -641,17 +614,14 @@ contains
       this%n_prev = 0
    end subroutine mad_ir_xl_free
 
-!**************************************************************************
 !
 ! Has the bank charged enough for its amplitudes to mean anything?
-!
    logical function mad_ir_xl_ready(this)
       implicit none
       type(mad_ir_xl_type), intent(in) :: this
       mad_ir_xl_ready = this%active .and. (this%n_steps >= this%n_warm)
    end function mad_ir_xl_ready
 
-!**************************************************************************
 !
 ! Advance the bank by one stored frame, driven by the dipoles of the current
 ! configuration.
@@ -678,7 +648,6 @@ contains
 ! and mad_ir_xl_evaluate and mad_ir_xl_weights follow it. The weight the next
 ! frame contracts is therefore formed from a bank that already knows this
 ! frame's dipole; see the header's note on the one frame of lag.
-!
    subroutine mad_ir_xl_advance(this, mu_site)
 
       implicit none
@@ -763,7 +732,6 @@ contains
 
    end subroutine mad_ir_xl_advance
 
-!**************************************************************************
 !
 ! Amplitudes, predicted spectrum, loss, and dU/dI.
 !
@@ -773,7 +741,6 @@ contains
 ! energy is the bias energy, with the same 1/2 and the same energy_scale that
 ! get_exp_energies produces for every other observable. Nothing here touches
 ! the atoms; dLdI is what mad_ir_xl_weights turns into a force.
-!
    subroutine mad_ir_xl_evaluate(this, energy_scale, energy)
 
       implicit none
@@ -856,7 +823,6 @@ contains
 
    end subroutine mad_ir_xl_evaluate
 
-!**************************************************************************
 !
 ! The per-site weight the descriptor pass contracts against d m_i / d r_j:
 ! equation (7), already negated, so it is the force weight and the pass adds.
@@ -870,7 +836,6 @@ contains
 ! Zero while the bank is charging, so that a warming step applies exactly no
 ! force rather than a transient one whose size depends on when the run started.
 ! The gate is here, once, rather than in every consumer.
-!
    subroutine mad_ir_xl_weights(this, w_out)
 
       implicit none
@@ -921,14 +886,12 @@ contains
 
    end subroutine mad_ir_xl_weights
 
-!**************************************************************************
 !
 ! Set the bank up from the parent observable and, if there is one, a restart.
 !
 ! resumed says whether a saved bank was adopted. A refused or missing one is
 ! not fatal: the run charges a fresh bank, which costs n_warm stored frames of
 ! unbiased dynamics, and the caller should say so.
-!
    subroutine mad_ir_xl_setup(parent, n_sites, n_modes_ask, dt_md, stride, &
                               tau_mem, coherent, warm_factor, max_mem, &
                               restart_file, ok, resumed, msg)
@@ -1003,7 +966,6 @@ contains
 
    end subroutine mad_ir_xl_setup
 
-!**************************************************************************
 !
 ! Persist the bank.
 !
@@ -1012,7 +974,6 @@ contains
 ! sampling interval and mode grid baked into it, and adopting it under
 ! different ones would change the observable mid-run in a way nothing
 ! downstream could notice. mad_ir_xl_load refuses each mismatch by name.
-!
    subroutine mad_ir_xl_save(this, fname, ok, msg)
 
       implicit none
@@ -1054,8 +1015,6 @@ contains
       ok = .true.
 
    end subroutine mad_ir_xl_save
-
-!**************************************************************************
 
    subroutine mad_ir_xl_load(this, fname, ok, msg)
 
@@ -1182,7 +1141,6 @@ contains
 
    end subroutine mad_ir_xl_load
 
-!**************************************************************************
 !
 ! The predicted spectrum on the mode grid, with the experiment beside it.
 !
@@ -1190,7 +1148,6 @@ contains
 ! comparable; the raw R^2 is kept as a fourth column because it is the quantity
 ! the bias acts on, and a band that is not growing is diagnosed there rather
 ! than in the scaled spectrum.
-!
    subroutine mad_ir_xl_write_spectrum(this, fname, with_exp)
 
       implicit none

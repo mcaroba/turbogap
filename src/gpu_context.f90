@@ -37,7 +37,6 @@ module gpu_context
 
 contains
 
-   !**************************************************************************
    subroutine gpu_context_init(params, rank, n_omp)
       implicit none
       type(input_parameters), intent(in) :: params
@@ -47,18 +46,14 @@ contains
       n_omp = 1
 
    end subroutine gpu_context_init
-   !**************************************************************************
 
-   !**************************************************************************
    subroutine gpu_context_finalize(params, n_omp)
       implicit none
       type(input_parameters), intent(in) :: params
       integer, intent(in) :: n_omp
 
    end subroutine gpu_context_finalize
-   !**************************************************************************
 
-   !**************************************************************************
    !  Establish this rank's host memory budget for the SOAP descriptor loop,
    !  and report it.
    !
@@ -160,9 +155,7 @@ contains
       call banner(rank, '')
 
    end subroutine gpu_memory_budget_init
-   !**************************************************************************
 
-   !**************************************************************************
    !  One line of the start-up box: 39 columns of text, then the wall.
    !
    !  The surrounding printouts draw that wall by hand-counting spaces into the
@@ -180,9 +173,7 @@ contains
       write (*, '(1X,A39,A)') padded, '|'
 
    end subroutine banner
-   !**************************************************************************
 
-   !**************************************************************************
    !  How many ranks share this node's memory.
    !
    !  Every rank on a node budgets from the same total, so without this each of
@@ -216,9 +207,7 @@ contains
 #endif
 
    end function ranks_sharing_node
-   !**************************************************************************
 
-   !**************************************************************************
    !  The memory ceiling this process must live under, in bytes, and where the
    !  number came from. Zero means we could not find out.
    !
@@ -241,9 +230,7 @@ contains
       if (bytes > 0_8) source = 'MemTotal'
 
    end subroutine host_memory_limit
-   !**************************************************************************
 
-   !**************************************************************************
    !  MemTotal from /proc/meminfo, in bytes. Zero if the file is not there,
    !  which is the normal answer anywhere that is not Linux.
    subroutine meminfo_memtotal(bytes)
@@ -272,9 +259,7 @@ contains
       close (unit)
 
    end subroutine meminfo_memtotal
-   !**************************************************************************
 
-   !**************************************************************************
    !  This process's cgroup memory limit in bytes, or zero if there is none.
    !
    !  The limit that applies is not the one at the root of the hierarchy: slurm
@@ -337,9 +322,7 @@ contains
       end do
 
    end subroutine cgroup_memory_limit
-   !**************************************************************************
 
-   !**************************************************************************
    !  Read a file holding a single integer. Zero if it is absent, unreadable, or
    !  holds 'max' -- which is how cgroup v2 spells "no limit at this level".
    subroutine read_integer_file(fname, value)
@@ -362,6 +345,5 @@ contains
       if (iostatus /= 0) value = 0_8
 
    end subroutine read_integer_file
-   !**************************************************************************
 
 end module gpu_context

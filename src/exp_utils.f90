@@ -62,8 +62,6 @@ contains
    !        &  pair_distribution_partial_der, m, 0.d0,&
    !        & structure_factor_partial_der, n)
 
-   ! end subroutine get_single_partial_structure_factor_derivative
-
    ! subroutine get_partial_structure_factor_derivative(sinc_factor_matrix,&
    !      & n_samples_pc, n_samples_sf, n_dim_partial, n_species, alpha, k,  xyz, &
    !      & pair_distribution_partial_der, structure_factor_der,&
@@ -88,11 +86,6 @@ contains
    !        &  pair_distribution_partial_der(1:n_samples_pc, 1:n_dim_partial, k ), m, 0.d0,&
    !        & structure_factor_partial_der, n)
 
-   !   structure_factor_der = 0.d0
-   !   n_dim_idx = 1
-   !   outer: do i = 1, n_species
-   !      do j = 1, n_species
-
    !         if (i > j) cycle
 
    !         if (i == j) f = 1.d0
@@ -113,18 +106,11 @@ contains
    !                 & 4.d0 * pi * cacb * f * structure_factor_partial_der(1:n_samples_sf, n_dim_idx)
    !         end if
 
-   !         n_dim_idx = n_dim_idx + 1
-
    !         if (n_dim_idx > n_dim_partial) exit outer
-
-   !      end do
-   !   end do outer
 
    !   ! call dgemv("N",  n,  m, -2.d0 * xyz(alpha, k), sinc_factor_matrix, n,&
    !   !      &  pair_distribution_partial_der(1:n_samples_pc, n_dim_idx, k ), m, 0.d0,&
    !   !      & structure_factor_partial_der, n)
-
-   ! end subroutine get_partial_structure_factor_derivative
 
    ! subroutine get_all_scattering_factors(n_species, n_samples_sf, n_dim_partial, all_scattering_factors, qs, species_types)
    !   implicit none
@@ -136,33 +122,7 @@ contains
    !   real(dp), allocatable :: sf_parameters(:,:)
    !   integer :: i, j, k, n_dim_idx
 
-   !   allocate( sf_parameters(1:9,1:n_species) )
-   !   allocate( all_scattering_factors(1:n_samples_sf, 1:n_dim_partial) )
-
-   !   sf_parameters = 0.d0
-   !   do i = 1, n_species
-   !      call get_scattering_factor_params(species_types(i), sf_parameters(1:9,i))
-   !   end do
-
-   !   do i = 1, n_samples_sf
-   !      n_dim_idx = 1
-   !      outer: do j = 1, n_species
-   !         do k = 1, n_species
-   !            if (j > k) cycle
-
-   !            call get_scattering_factor(wfaci, sf_parameters(1:9, j), qs(i)/2.d0)
-   !            call get_scattering_factor(wfacj, sf_parameters(1:9, k), qs(i)/2.d0)
-
    !            all_scattering_factors(i, n_dim_idx) = wfaci * wfacj
-
-   !            n_dim_idx = n_dim_idx + 1
-   !            if (n_dim_idx > n_dim_partial) exit outer
-
-   !         end do
-   !      end do outer
-   !   end do
-
-   ! end subroutine get_all_scattering_factors
 
    function clamp(x, low, high)
       implicit none
@@ -523,7 +483,6 @@ contains
 
    end subroutine get_structure_factor_forces
 
-!  --------------------------------------------------------------------------
 !  The cell half of the pdf-route virial.
 !
 !  A partial structure factor is built as
@@ -546,7 +505,6 @@ contains
 !
 !  The caller holds one (a,b) channel, and the channels sum, which is why this
 !  is written as an accumulation rather than as a single closed form.
-!  --------------------------------------------------------------------------
    subroutine add_structure_factor_volume_virial(virial, rank, energy_scale, c_factor,&
         & prefactor, sinc_factor_matrix, n_samples, n_samples_sf, all_scattering_factors)
       implicit none
@@ -806,8 +764,6 @@ contains
             end if
          end do
       end do
-      ! call cpu_time(time(2))
-      ! print *, " Time first loop = ", time(2) - time(1)
 
       ! print *, " Structure factor forces Matrix: ", species_1, species_2
       ! write(*, '(A,1X,F7.4,1X,A)') "Gb/core: SFM = ", dfloat(n_k * ( 2 * n_samples + 6 + n_samples_sf ))&
@@ -866,10 +822,7 @@ contains
             end if
          end do
       end do
-!    call cpu_time(time(2))
-!    print *, " Time allocation loop = ", time(2) - time(1)
 
-!    call cpu_time(time(1))
       do i = 1, 3
 
          do j = 1, n_samples
@@ -896,10 +849,7 @@ contains
               &  prefactor, 1, 0.d0, fi(:, i), 1)
 
       end do
-!    call cpu_time(time(2))
-!    print *, " Time Matrix loop = ", time(2) - time(1)
 
-!    call cpu_time(time(1))
       do j = 1, n_k
          this_force(1:3) = energy_scale*fi(j, 1:3)
          forces0(1:3, j2_list(j)) = forces0(1:3, j2_list(j)) + this_force(1:3)
@@ -913,9 +863,6 @@ contains
             end do
          end do
       end do
-!    call cpu_time(time(2))
-!    print *, " Time Forces loop = ", time(2) - time(1)
-!    print *, " "
 
       if (do_xrd) then
          call add_structure_factor_volume_virial(virial, rank, energy_scale, c_factor,&
@@ -1249,10 +1196,6 @@ contains
 
             end if
 
-            ! if (partial_rdf)then
-            !    if (species_j /= species_2) cycle
-            ! end if
-
             r = rjs(k) ! atom pair distance
 
             if (r > r_cut) then
@@ -1262,12 +1205,10 @@ contains
 
             ! edge cases where r is not in range
             if (r < r_min) then
-               !            print *, "pair_distribution_function: Given r is less than r_min! Continuing loop "
                cycle
             end if
 
             if (r > r_max + kde_sigma*6.d0) then
-               !            print *, "pair_distribution_function: Given r is more than r_max! Continuing loop "
                cycle
             end if
 
@@ -1394,7 +1335,6 @@ contains
             m = int(real(h + l)/2.d0)
          end if
 
-         !         print *, " h - l = ", h - l
          if (h - l == 1) then
             ! terminate the search
             found = .true.
@@ -1489,12 +1429,10 @@ contains
 
             ! edge cases where r is not in range
             if (r < r_min) then
-               !            print *, "pair_distribution_function: Given r is less than r_min! Continuing loop "
                cycle
             end if
 
             if (r > r_max) then
-               !            print *, "pair_distribution_function: Given r is more than r_max! Continuing loop "
                cycle
             end if
 
@@ -1550,7 +1488,6 @@ contains
       ! rs has size n_samples_pc
 
       structure_factor = 0.d0
-      ! n = q_end - q_beg + 1 !size(q_list)
 
       dr = rs(2) - rs(1)
 
@@ -1637,27 +1574,12 @@ contains
    !   ! values, and use the in-built parallelism of the splitting of the rdf gradients.
    !   structure_factor_partial_der = 0.d0
 
-   !   allocate( indexes_ndim( 1:n_species, 1:n_species ) )
-   !   indexes_ndim = 0
-
-   !   n_dim_idx = 1
-   !   outer: do i = 1, n_species
-   !      do j = 1, n_species
-
    !         if (i > j) cycle
 
    !         indexes_ndim(i,j) =  n_dim_idx
    !         indexes_ndim(j,i) =  n_dim_idx
 
-   !         n_dim_idx = n_dim_idx + 1
-
    !         if (n_dim_idx > n_dim_partial) exit outer
-
-   !      end do
-   !   end do outer
-
-   !   dr = rs(2) - rs(1)
-   !   w = 1.d0
 
    !   ! Now we integrate over r for every q for each k value in the
 
@@ -1699,31 +1621,11 @@ contains
    !            cycle
    !         end if
 
-   !         do n = 1, n_samples_sf
-   !            q = q_list(n) * 2.d0 * pi
-
    !            do l = 1, n_samples_pc
    !               ! do the integral
    !               if (window) w = sinc( pi * rs(l) / r_cut )
 
-   !               structure_factor_partial_der(n, n_dim_idx, 1:3, k) = &
-   !                    & structure_factor_partial_der(n, n_dim_idx, 1:3,  k) + &
-   !                    & dr * rs(l)**2 &
-   !                    & * ( - 2.d0 * xyz(1:3, l) *  pair_distribution_partial_der(l, n_dim_idx, k)  ) &
-   !                    & * sinc( q * rs(l) ) * w
-   !            end do
-
    !            structure_factor_partial(k,n_dim_idx) = 4.d0 * pi * cabh * rho * structure_factor_partial(k,n_dim_idx)
-
-   !            if (i == j)then
-   !               structure_factor_partial(k,n_dim_idx)  = structure_factor_partial(k,n_dim_idx)  + 1.d0
-   !            end if
-
-   !         end do
-   !      end if
-
-   !   end do
-   ! end subroutine get_partial_structure_factor_derivatives
 
    subroutine get_partial_structure_factor(q_beg, q_end, &
         & pair_distribution_partial, q_list, rs, r_cut,&
@@ -1770,8 +1672,6 @@ contains
       !      &%structure_factor_n_samples, 1 : n_species , 1 :&
       !      & n_species) )
       structure_factor_partial = 0.d0
-
-      ! n = q_end - q_beg + 1 !size(q_list)
 
       dr = rs(2) - rs(1)
 
@@ -1919,12 +1819,10 @@ contains
 
             ! edge cases where r is not in range
             if (r < r_min) then
-               !            print *, "pair_distribution_function: Given r is less than r_min! Continuing loop "
                cycle
             end if
 
             if (r > r_max) then
-               !            print *, "pair_distribution_function: Given r is more than r_max! Continuing loop "
                cycle
             end if
 
@@ -2025,8 +1923,6 @@ contains
                   call get_neutron_scattering_length(species_types(j), wfacj)
                end if
 
-               !               call get_scattering_factor(species_types(j), x(l)/2.d0, wfacj)
-
                if (i > j) cycle
 
                if (i == j) f = 1.d0
@@ -2067,7 +1963,6 @@ contains
                   call get_neutron_scattering_length(species_types(i), wfaci)
                end if
 
-               !             call get_scattering_factor(wfaci, sf_parameters(1:9,i), x(l)/2.d0)
                sth = sth + (n_atoms_of_species(i)/ntot)*wfaci !* wfaci
             end do
 
@@ -2098,9 +1993,7 @@ contains
 
    end subroutine get_xrd_from_partial_structure_factors
 
-   !####################################################################!
    !###---   Debye scattering equation: XRD / ND from positions   ---###!
-   !####################################################################!
 
 !  The scattering power of each species on the whole q grid, in one table.
 !
@@ -2350,9 +2243,7 @@ contains
 
    end subroutine get_xrd_debye
 
-   !#############################################################!
    !###---   Experimental Interpolation and Similarities   ---###!
-   !#############################################################!
 
    subroutine get_all_similarities(n_exp, exp_data, energy_scales, s_tot)
       implicit none
@@ -2388,7 +2279,6 @@ contains
       end do
    end subroutine check_species_in_list
 
-   !**************************************************************************
    subroutine calculate_exp_interpolation(x, y, n_samples, data)
       implicit none
       real(dp), allocatable, intent(in) :: data(:, :)
@@ -2425,9 +2315,7 @@ contains
       end if
    end subroutine get_data_similarity
 
-   !########################################!
    !###---   XPS spectrum utilities   ---###!
-   !########################################!
 
    subroutine get_compare_xps_spectra(data, core_electron_be, &
         & sigma, n_samples, mag, sim_exp_pred, &
@@ -2647,7 +2535,6 @@ contains
 
    end subroutine get_xps_weights
 
-   !**************************************************************************
    subroutine get_xrd_single_process(positions, n_species, species, wavelength, damping, alpha, &
         & method, use_iwasa, x_min, x_max, n_samples, x_i_exp, y_i_pred)
       implicit none
@@ -2722,7 +2609,6 @@ contains
          prefactor = exp(-damping*s(l)**(2.d0)/2.d0)
 
          do i = 1, n_species
-            !            call get_scattering_factor(species_types(i), s(l)/2.d0, wfac_species(i))
          end do
 
          do i = 1, n_sites
@@ -2749,12 +2635,10 @@ contains
          do i = 1, n_sites
             wfac_n = wfac_n + wfac(i)*wfac(j)
             do j = i + 1, n_sites
-               !      if (i /= j)then
                diff(1:3) = positions(1:3, i) - positions(1:3, j)
                rij = sqrt(dot_product(diff, diff))
                ! Now should
                intensity = intensity + wfac(i)*wfac(j)*(sinc(2.d0*s(l)*rij))
-               !     end if
             end do
          end do
 
@@ -2814,9 +2698,7 @@ contains
       if (x /= 0.0) coscp = cos(x)/x
    end function coscp
 
-   !************************************
 !!!   XPS related Functions Below !!!
-   !************************************
 
    subroutine get_moments_of_distribution(x, y, dx, moments, n_moments, mean_reference)
       implicit none
@@ -3156,8 +3038,6 @@ contains
       do i = 1, size(x) - 1
          idx = int((((x(i) - x_min)/x_range)*dfloat(size(xi))) + 1)
 
-         !         print *, x(i), x(idx), x(idx+1)
-
          do while (x(i) < xi(idx))
             idx = idx - 1
          end do
@@ -3254,11 +3134,8 @@ contains
       real(dp), intent(in) :: s ! scattering vector: s = q / 4pi [1/A]
       real(dp) :: w(1:11, 1:49)
       character*8 :: elements(1:49)
-      !   Input variables
       character*8, intent(in) :: element
-      !   Output variables
       logical :: is_in_database = .false.
-      !   Internal variables
       real(dp) :: s_sq
       real(dp), intent(out) :: f
       integer :: i
@@ -3428,11 +3305,8 @@ contains
       !      real(dp), intent(in) :: s ! scattering vector: s = q / 2pi [1/A]
       real(dp) :: w(1:9, 1:215)
       character*20 :: elements(1:215)
-      !   Input variables
       character*8, intent(in) :: element
-      !   Output variables
       logical :: is_in_database = .false.
-      !   Internal variables
       real(dp), intent(out) :: wout(1:9)
       integer :: i
 
@@ -3696,12 +3570,7 @@ contains
          if (trim(adjustl(elements(i))) == trim(adjustl(element))) then
             is_in_database = .true.
             wout(1:9) = w(1:9, i)
-            ! f = w(9, i)
-            ! s_sq = s * s
 
-            ! do j = 1, 4
-            !    f = f + w(j, i) * exp( - w( 4 + j, i ) * s_sq  )
-            ! end do
             exit outer
          end if
       end do outer

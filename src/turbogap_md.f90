@@ -61,7 +61,6 @@ module turbogap_md
 
 contains
 
-!**************************************************************************
    subroutine compute_md(params, rank, ierr, n_sites, n_species, md_istep, md_time, &
                          time_step, positions, positions_prev, positions_diff, velocities, forces, &
                          forces_prev, masses, masses_types, xyz, xyz_species, a_box, b_box, c_box, indices, &
@@ -181,7 +180,6 @@ contains
 !     do-loops after the call and never reads i2, j2 or k2 again.
       integer :: i, i2, j, j2, k2
 
-      !**************************************************************************
       !   Do MD stuff here
 #ifdef _MPIF90
       IF (rank == 0) THEN
@@ -436,7 +434,6 @@ contains
                write (10, *)
             end if
             close (10)
-            !
             !     Check if we have converged a relaxation calculation
             !     Check if we have converged a relaxation calculation
             if (params%do_md .and. params%optimize == "gd" .and. md_istep > 0 .and. &
@@ -509,7 +506,6 @@ contains
                     & params%do_dipole, local_dipoles(1:3, 1:n_sites))
 
             end if
-            !
             !     If there are pressure/box rescaling operations they happen here
             if (params%scale_box) then
                call box_scaling(positions(1:3, 1:n_sites), a_box(1:3), b_box(1:3), c_box(1:3), &
@@ -618,7 +614,6 @@ contains
                                  reshape([a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), &
                                           c_box/dfloat(indices(3))], [3, 3]), positions_diff)
             rebuild_neighbors_list = .false.
-            !--------
             ! CHECK THIS OUT and fix it at some point
             ! Here we set the neighbors list rebuild to always true if the supercell and the primitive unit cell are not
             ! the same. This is because of how atoms get wrapped around the PBC during MD (they get wrapped around the
@@ -629,7 +624,6 @@ contains
             if (any(indices > 1)) then
                rebuild_neighbors_list = .true.
             end if
-            !--------
             if (skin_needs_rebuild(positions_diff, params%neighbors_buffer)) then
                rebuild_neighbors_list = .true.
                positions_diff = 0.d0
@@ -669,6 +663,5 @@ contains
 #endif
 
    end subroutine compute_md
-!**************************************************************************
 
 end module turbogap_md
