@@ -60,6 +60,15 @@
 #define TG_LAMBDA [=] __device__
 #endif
 
+// The annotation a device HELPER function carries -- a spline evaluation, an
+// integer power -- as opposed to a kernel body. Same reasoning as TG_LAMBDA:
+// __device__ is CUDA's spelling and does not exist for a Kokkos host backend.
+#ifdef _KOKKOS
+#define TG_INLINE_FUNCTION KOKKOS_INLINE_FUNCTION
+#else
+#define TG_INLINE_FUNCTION __device__ __forceinline__
+#endif
+
 // An atomic add usable from a body that compiles under either backend.
 //
 // atomicAdd would in fact compile both ways today, because the Kokkos backend
@@ -182,6 +191,24 @@ template <class Functor> __global__ void tg_range_kernel(int n, Functor f) {
   }
 }
 
+template <class Functor> __global__ void tg_range_kernel_long(long long n, Functor f) {
+  long long i = (long long) blockIdx.x * blockDim.x + threadIdx.x;
+  if (i < n) {
+    f(i);
+  }
+}
+
+// The 3-D form keeps the geometry the hand-written launches used: the fast
+// index tiled across a block, the other two carried on the grid's y and z.
+template <class Functor> __global__ void tg_range_kernel_3d(int n0, int n1, int n2, Functor f) {
+  int i0 = blockIdx.x * blockDim.x + threadIdx.x;
+  int i1 = blockIdx.y;
+  int i2 = blockIdx.z;
+  if (i0 < n0 && i1 < n1 && i2 < n2) {
+    f(i0, i1, i2);
+  }
+}
+
 #endif // _KOKKOS
 
 // ---------------------------------------------------------------- parallel_for
@@ -201,6 +228,53 @@ inline void tg_parallel_for(const char* name, int n, hipStream_t* stream, const 
   dim3 nblocks((n + block - 1) / block, 1, 1);
   dim3 nthreads(block, 1, 1);
   tg_range_kernel<<<nblocks, nthreads, 0, stream[0]>>>(n, f);
+#endif
+}
+
+// The same, over a range that does not fit in an int.
+//
+// The structure-factor kernels index n_k * n_samples, a product of two counts
+// each of which is comfortably an int and whose product need not be. They were
+// written with a `long long` thread index for that reason, and converting them
+// to the int form above would reintroduce exactly the overflow they avoid.
+template <class Functor>
+inline void tg_parallel_for_long(const char* name, long long n, hipStream_t* stream, const Functor& f, int block = 256) {
+  if (n <= 0)
+    return;
+#ifdef _KOKKOS
+  (void) block;
+  Kokkos::parallel_for(name, Kokkos::RangePolicy<TGDeviceType, Kokkos::IndexType<long long>>(tg_exec(stream), 0, n), f);
+#else
+  (void) name;
+  long long n_blocks = (n + block - 1) / block;
+  dim3 nblocks((unsigned int) n_blocks, 1, 1);
+  dim3 nthreads(block, 1, 1);
+  tg_range_kernel_long<<<nblocks, nthreads, 0, stream[0]>>>(n, f);
+#endif
+}
+
+// ------------------------------------------------------------------ 3-D range
+//
+// For a kernel whose work is naturally three indices -- site, radial n, angular
+// k -- rather than one. Flattening it into a single index by hand would work
+// and would read badly, and Kokkos has MDRangePolicy for exactly this.
+//
+// ONLY for a pure map: Kokkos tiles an MDRange differently from the y/z grid
+// the <<<>>> path uses, so the order the triples are visited is not the same.
+// That is immaterial when each triple writes its own output and reads nothing
+// another triple writes, and wrong the moment it does not.
+template <class Functor>
+inline void tg_parallel_for_3d(const char* name, int n0, int n1, int n2, hipStream_t* stream, const Functor& f, int block = 256) {
+  if (n0 <= 0 || n1 <= 0 || n2 <= 0)
+    return;
+#ifdef _KOKKOS
+  (void) block;
+  Kokkos::parallel_for(name, Kokkos::MDRangePolicy<TGDeviceType, Kokkos::Rank<3>>(tg_exec(stream), {0, 0, 0}, {n0, n1, n2}), f);
+#else
+  (void) name;
+  dim3 nblocks((n0 + block - 1) / block, n1, n2);
+  dim3 nthreads(block, 1, 1);
+  tg_range_kernel_3d<<<nblocks, nthreads, 0, stream[0]>>>(n0, n1, n2, f);
 #endif
 }
 

@@ -3,6 +3,7 @@
 // Counting the pairs inside the pdf cutoff, compacting them into the k-indexed
 // buffers, the kernel density estimate of g(r) and its derivative, and the
 // reduction over pairs.
+#include "gpu_backend.h"
 #include "gpu_common.h"
 #include "gpu_scan.h"
 #include "mad_gpu.h"
@@ -170,95 +171,72 @@ extern "C" void gpu_set_pair_distribution_k_index(int i_beg, int i_end, int n_pa
 }
 
 
-__global__ void kernel_set_pair_distribution_k_index_only(int n_pairs, int* k_index_d, int* nk_sum_flags_d) {
-  int tid = threadIdx.x + blockIdx.x * blockDim.x;
-  int nk;
-  if (tid < n_pairs) {
-    if (nk_sum_flags_d[tid] > 0) {
-      nk = nk_sum_flags_d[tid] - 1;
-      if (tid == n_pairs - 1) {
-        nk = nk_sum_flags_d[tid - 1];
-      }
-      k_index_d[nk] = tid;
-    }
-  }
-}
-
 extern "C" void gpu_set_pair_distribution_k_index_only(int n_pairs, int* k_index_d, int* nk_sum_flags_d, hipStream_t* stream) {
-  dim3 nblocks = dim3((n_pairs + tpb - 1) / tpb, 1, 1);
-  dim3 nthreads = dim3(tpb, 1, 1);
-  kernel_set_pair_distribution_k_index_only<<<nblocks, nthreads, 0, stream[0]>>>(n_pairs, k_index_d, nk_sum_flags_d);
+  tg_parallel_for(
+      "turbogap_pdf_k_index", n_pairs, stream,
+      TG_LAMBDA(const int tid) {
+        if (nk_sum_flags_d[tid] <= 0)
+          return;
+        int nk = nk_sum_flags_d[tid] - 1;
+        if (tid == n_pairs - 1) {
+          nk = nk_sum_flags_d[tid - 1];
+        }
+        k_index_d[nk] = tid;
+      },
+      tpb);
 }
 
-
-__global__ void kernel_set_pair_distribution_j2_only(int n_pairs, int n_sites0, int* neighbors_list_d, int* j2_index_d,
-                                                     int* nk_sum_flags_d) {
-  int tid = threadIdx.x + blockIdx.x * blockDim.x;
-  int j2, nk;
-  if (tid < n_pairs) {
-    if (nk_sum_flags_d[tid] > 0) {
-      nk = nk_sum_flags_d[tid] - 1;
-      if (tid == n_pairs - 1) {
-        nk = nk_sum_flags_d[tid - 1];
-      }
-      j2 = ((neighbors_list_d[tid] - 1) % n_sites0);
-      j2_index_d[nk] = j2 + 1;
-    }
-  }
-}
 
 extern "C" void gpu_set_pair_distribution_j2_only(int n_pairs, int n_sites0, int* neighbors_list_d, int* j2_index_d,
                                                   int* nk_sum_flags_d, hipStream_t* stream) {
-  dim3 nblocks = dim3((n_pairs + tpb - 1) / tpb, 1, 1);
-  dim3 nthreads = dim3(tpb, 1, 1);
-  kernel_set_pair_distribution_j2_only<<<nblocks, nthreads, 0, stream[0]>>>(n_pairs, n_sites0, neighbors_list_d, j2_index_d,
-                                                                            nk_sum_flags_d);
+  tg_parallel_for(
+      "turbogap_pdf_j2", n_pairs, stream,
+      TG_LAMBDA(const int tid) {
+        if (nk_sum_flags_d[tid] <= 0)
+          return;
+        int nk = nk_sum_flags_d[tid] - 1;
+        if (tid == n_pairs - 1) {
+          nk = nk_sum_flags_d[tid - 1];
+        }
+        j2_index_d[nk] = ((neighbors_list_d[tid] - 1) % n_sites0) + 1;
+      },
+      tpb);
 }
 
-
-__global__ void kernel_set_pair_distribution_rjs_only(int n_pairs, double* rjs, double* rjs_index_d, int* nk_sum_flags_d) {
-  int tid = threadIdx.x + blockIdx.x * blockDim.x;
-  int nk;
-  if (tid < n_pairs) {
-    if (nk_sum_flags_d[tid] > 0) {
-      nk = nk_sum_flags_d[tid] - 1;
-      if (tid == n_pairs - 1) {
-        nk = nk_sum_flags_d[tid - 1];
-      }
-      rjs_index_d[nk] = rjs[tid];
-    }
-  }
-}
 
 extern "C" void gpu_set_pair_distribution_rjs_only(int n_pairs, double* rjs, double* rjs_index_d, int* nk_sum_flags_d,
                                                    hipStream_t* stream) {
-  dim3 nblocks = dim3((n_pairs + tpb - 1) / tpb, 1, 1);
-  dim3 nthreads = dim3(tpb, 1, 1);
-  kernel_set_pair_distribution_rjs_only<<<nblocks, nthreads, 0, stream[0]>>>(n_pairs, rjs, rjs_index_d, nk_sum_flags_d);
+  tg_parallel_for(
+      "turbogap_pdf_rjs", n_pairs, stream,
+      TG_LAMBDA(const int tid) {
+        if (nk_sum_flags_d[tid] <= 0)
+          return;
+        int nk = nk_sum_flags_d[tid] - 1;
+        if (tid == n_pairs - 1) {
+          nk = nk_sum_flags_d[tid - 1];
+        }
+        rjs_index_d[nk] = rjs[tid];
+      },
+      tpb);
 }
 
-
-__global__ void kernel_set_pair_distribution_xyz_only(int n_pairs, double* xyz, double* xyz_index_d, int* nk_sum_flags_d) {
-  int tid = threadIdx.x + blockIdx.x * blockDim.x;
-  int nk;
-  if (tid < n_pairs) {
-    if (nk_sum_flags_d[tid] > 0) {
-      nk = nk_sum_flags_d[tid] - 1;
-      if (tid == n_pairs - 1) {
-        nk = nk_sum_flags_d[tid - 1];
-      }
-      xyz_index_d[3 * nk] = xyz[3 * tid];
-      xyz_index_d[3 * nk + 1] = xyz[3 * tid + 1];
-      xyz_index_d[3 * nk + 2] = xyz[3 * tid + 2];
-    }
-  }
-}
 
 extern "C" void gpu_set_pair_distribution_xyz_only(int n_pairs, double* xyz, double* xyz_index_d, int* nk_sum_flags_d,
                                                    hipStream_t* stream) {
-  dim3 nblocks = dim3((n_pairs + tpb - 1) / tpb, 1, 1);
-  dim3 nthreads = dim3(tpb, 1, 1);
-  kernel_set_pair_distribution_xyz_only<<<nblocks, nthreads, 0, stream[0]>>>(n_pairs, xyz, xyz_index_d, nk_sum_flags_d);
+  tg_parallel_for(
+      "turbogap_pdf_xyz", n_pairs, stream,
+      TG_LAMBDA(const int tid) {
+        if (nk_sum_flags_d[tid] <= 0)
+          return;
+        int nk = nk_sum_flags_d[tid] - 1;
+        if (tid == n_pairs - 1) {
+          nk = nk_sum_flags_d[tid - 1];
+        }
+        xyz_index_d[3 * nk] = xyz[3 * tid];
+        xyz_index_d[3 * nk + 1] = xyz[3 * tid + 1];
+        xyz_index_d[3 * nk + 2] = xyz[3 * tid + 2];
+      },
+      tpb);
 }
 
 
@@ -297,6 +275,11 @@ __global__ void kernel_get_pair_distribution_kde(double* pdf_out, double* pdf_de
   }
 }
 
+// NOT converted to the backend layer, deliberately. This is a __shared__ block
+// reduction over DOUBLES, and Kokkos would sum the block in a different order.
+// Reassociating a floating-point sum moves the result, so converting it would
+// be a physics change wearing a refactor's clothes. It needs a TeamPolicy that
+// reproduces this tree order, worth doing separately and checking on its own.
 __global__ void kernel_reduce_pair_distribution(double* pdf_in, double* pdf_out, int n_k, int n_samples) {
   int tid = threadIdx.x;
   int i, stride;
