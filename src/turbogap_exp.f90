@@ -797,6 +797,41 @@ contains
                   if (n_dim_idx > n_dim_partial) exit outerchk
                end do
             end do outerchk
+
+!           The total, weighted by composition. collect_batched_pair_distribution
+!           has already divided each partial by v_uc/(n_j n_k) and by two for an
+!           unlike pair, so what is left here is the weight with which each
+!           partial enters the total -- the same expression as the host's, in
+!           calculate_pair_distribution.
+            if (allocated(y_pair_distribution)) deallocate (y_pair_distribution)
+            allocate (y_pair_distribution(1:params%pair_distribution_n_samples))
+            y_pair_distribution = 0.d0
+            n_dim_idx = 1
+            outertot: do j = 1, n_species_actual
+               do k = 1, n_species_actual
+                  if (j > k) cycle
+                  if (j == k) f = 1.d0
+                  if (j /= k) f = 2.d0
+                  y_pair_distribution(1:params%pair_distribution_n_samples) = &
+                     y_pair_distribution(1:params%pair_distribution_n_samples) + &
+                     f*(n_atoms_of_species(j)*n_atoms_of_species(k))* &
+                     pair_distribution_partial(1:params%pair_distribution_n_samples, n_dim_idx) &
+                     /dfloat(n_sites)/dfloat(n_sites)
+                  n_dim_idx = n_dim_idx + 1
+                  if (n_dim_idx > n_dim_partial) exit outertot
+               end do
+            end do outertot
+
+            if (trim(params%pair_distribution_output) == "D(r)") then
+               y_pair_distribution = 4.d0*pi*(dfloat(n_sites)/v_uc)*x_pair_distribution &
+                                     *(y_pair_distribution - 1.d0)
+            end if
+
+            write (temp_string, '(A)') "pair_distribution_total.dat"
+            call write_exp_datan(x_pair_distribution(1:params%pair_distribution_n_samples),&
+              & y_pair_distribution(1:params%pair_distribution_n_samples),&
+              & overwrite_condition, temp_string, "pair_distribution  output: "//trim(params&
+              &%pair_distribution_output))
          end if
 
 !        Off so the pattern routines below do not compute forces the device

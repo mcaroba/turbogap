@@ -543,12 +543,18 @@ contains
       integer :: j
       integer :: i_shift(1:3)
       logical, save :: backtracking
+!   Consecutive rejections by the line search, and the point past which it is
+!   the Barzilai-Borwein history that is stale rather than the step too big.
+      integer, save :: n_backtrack = 0
+      integer, parameter :: MAX_BACKTRACK = 10
+      logical :: restart_step
       logical, save :: initialized = .false.
 
       n_sites = size(masses)
 
 !   Here we always set the velocities to zero
       velocities = 0.d0
+      restart_step = .false.
 
       if (first_step) then
          backtracking = .true.
@@ -588,16 +594,27 @@ contains
             backtracking = .false.
             initialized = .true.
             gamma_back0 = gamma_prev
+            n_backtrack = 0
+         else if (n_backtrack >= MAX_BACKTRACK) then
+!       Halving again would only make the step smaller than the one that has
+!       already failed ten times. Leave the search and rebuild from a fresh one.
+            backtracking = .false.
+            initialized = .false.
+            n_backtrack = 0
+            restart_step = .true.
+            positions = positions0
+            forces = forces0
          else
 !       If the condition is not fulfilled, we restore the original positions and decrease
 !       the step by half
+            n_backtrack = n_backtrack + 1
             gamma = gamma_prev*0.5d0
             positions = positions0
             forces = forces0
          end if
       end if
 
-      if (.not. first_step .and. .not. backtracking) then
+      if (.not. first_step .and. .not. backtracking .and. .not. restart_step) then
 !     Make sure we use the same image convention for positions and positions_prev
          do i = 1, n_sites
             call get_distance(positions_prev(1:3, i), positions(1:3, i), a_box, b_box, c_box, &
@@ -610,6 +627,21 @@ contains
          else
             gamma = sum((positions - positions_prev)*(forces - forces_prev))/sum((forces - forces_prev)**2)
             gamma = abs(gamma)
+         end if
+      end if
+
+!   A restart asked for above: size the step from the forces as they stand, the
+!   way the first iteration sizes one.
+      if (restart_step) then
+         max_force = 0.d0
+         do i = 1, n_sites
+            this_force = sqrt(dot_product(forces(1:3, i), forces(1:3, i)))
+            if (this_force > max_force) max_force = this_force
+         end do
+         if (max_force == 0.d0) then
+            gamma = 0.d0
+         else
+            gamma = max_opt_step/max_force
          end if
       end if
 
