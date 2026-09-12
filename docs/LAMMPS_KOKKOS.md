@@ -97,35 +97,74 @@ every kernel it drives lives in this repository:
 So porting `soap_turbo_gpu` needs **no change to the submodule**: its Fortran is
 already backend-agnostic, and the work is converting those five files here.
 
-## The remaining kernels, by what each one needs
+## What is converted, and what is not
 
-51 kernels are still raw launches. They are not equally hard; cheapest first:
+| file | state |
+| --- | --- |
+| `gpu_scan.cu` | Kokkos `parallel_reduce` and `parallel_scan`; the hand-written primitives stay as the CUDA fallback |
+| `gpu_scatter.cu` | all 9 passes |
+| `mad_xrd.cu` | all 5 |
+| `gap_predict.cu` | all 4 |
+| `gap_2b.cu` | both |
+| `gap_soap_radial.cu` | all 3 |
+| `gap_soap_angular.cu` | all 6, one through `tg_parallel_for_3d` |
+| `mad_electrostatics.cu` | 2 of 3 |
+| `mad_pdf.cu` | 4 of 10 |
+| `gap_soap_descriptor.cu` | 2 of 9 |
+| `gap_soap_radial_operator.cu` | none |
+| `gap_soap_forces.cu` | none |
+| `gap_3b.cc` | none |
 
-| file | kernels | needs |
-| --- | --- | --- |
-| `gap_predict.cu` | 4 | flat maps — `tg_parallel_for` as it stands |
-| `gap_2b.cu` | 2 | flat maps |
-| `mad_xrd.cu` | 6 | flat maps |
-| `gap_soap_radial.cu` | 4 | flat maps. The first of the SOAP group |
-| `mad_pdf.cu` | 10 | flat, except one shared-memory reduction |
-| `mad_electrostatics.cu` | 3 | two shared-memory reductions |
-| `gap_soap_angular.cu` | 8 | one 3-D grid — needs an MDRange policy |
-| `gap_soap_radial_operator.cu` | 1 | one shared-memory kernel |
-| `gap_soap_descriptor.cu` | 10 | 4 shared-memory, one 3-D grid, tiled transposes |
-| `gap_soap_forces.cu` | 3 | 9 shared-memory arrays across 3 kernels. The hardest |
+### Why the rest are not converted
 
-Two things the dispatch layer does not have yet, which the bottom half of that
-table needs:
+Four reasons, and they are not equally serious. The first is the one that
+matters.
 
-- **`tg_parallel_for_2d` / `_3d`.** Two kernels launch
-  `dim3((n + tpb - 1) / tpb, n_max, k_max)`. Flattening the index by hand would
-  work and would read badly; Kokkos has `MDRangePolicy` for exactly this.
-- **A team policy with scratch.** `<<<n_sites, tpb>>>` with a block's threads
-  cooperating over one atom is a `TeamPolicy`, and `__shared__` becomes
-  `team.team_scratch(0)`. This is the real work in `gap_soap_forces.cu`.
+**It would change the numbers.** These kernels finish with a `__shared__` tree
+reduction over doubles -- `sh[tid] += sh[tid + s]`, halving until one value
+remains:
 
-Neither is hard. Both should be added when the first kernel actually needs one,
-and checked against the control the same way, rather than written speculatively.
+- `kernel_electrostatics_gsf` (`mad_electrostatics.cu`)
+- `kernel_reduce_pair_distribution` (`mad_pdf.cu`)
+- all three kernels in `gap_soap_forces.cu`
+- `cuda_get_soap_der_two_one` (`gap_soap_descriptor.cu`)
+
+Floating-point addition is not associative, so a Kokkos team reduction summing
+the same values in a different order gives a different answer. Converting these
+is a physics change wearing a refactor's clothes, and it would land as exactly
+the last-digit drift the device already has too much of. Each needs a
+`TeamPolicy` that reproduces *this* tree order, and a check of its own. The
+reason is written beside each kernel, so nobody converts one by reflex.
+
+**A block cooperating without reducing.** `gap_soap_radial_operator.cu` stages
+`A_d` into dynamic shared memory and gives each thread scratch;
+`naive_transpose_soap_rad_azi_pol` is a tiled transpose. Both use `__shared__`
+purely to share data, with one barrier and no accumulation, so there is no
+numerical hazard at all -- they need `TeamPolicy` with `team_scratch` and
+nothing more.
+
+**A grid index that is part of the addressing.** The rest of
+`gap_soap_descriptor.cu` -- `_der_two_two`, `_thr_one`, `_thr_two`,
+`cuda_soap_normalize`, `cuda_get_derivatives_new_new` -- index by block as well
+as thread. `MDRangePolicy` or an explicit flattening; mechanical, just not
+done.
+
+**No Kokkos equivalent.** `gap_3b.cc`'s main kernel is a template carrying
+`__maxnreg__` (through `TG_3B_REGCAP`) to cap its register count. Kokkos offers
+`LaunchBounds`, which is `__launch_bounds__` -- a different mechanism, bounding
+occupancy rather than registers. Converting would silently drop the cap on
+CUDA >= 12.4, where it is live. Worth doing only alongside a measurement
+showing the register count did not run away.
+
+### About `tg_parallel_for_3d`
+
+`cuda_get_cnk_one_new_new` indexes site, radial `n` and angular `k`, carried on
+the grid's x, y and z. Kokkos tiles an `MDRangePolicy` differently, so the
+order the triples are visited is not the same. That is safe here because each
+triple runs a serial neighbour loop and writes one `cnk` entry, reading nothing
+another triple writes -- and would be wrong the moment that stopped holding.
+The CUDA path keeps the original y/z grid exactly.
+
 
 ## Then the part that is not kernels
 

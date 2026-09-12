@@ -1,5 +1,24 @@
 // Contraction of the SOAP Cartesian derivatives into forces and the virial,
 // and the same contraction for local properties.
+// NOT converted to the backend layer, and not simply because nobody got to it.
+//
+// All three kernels here are one block per pair or per site, with the block's
+// threads cooperating and then closing with a __shared__ TREE REDUCTION OVER
+// DOUBLES:
+//
+//     for (int s = tpb / 2; s > 0; s >>= 1)
+//       if (tid < s) sh[tid] += sh[tid + s];
+//
+// Floating-point addition is not associative. A Kokkos team reduction sums the
+// same values in a different order and returns a different number, so putting
+// these through tg_parallel_for would be a physics change wearing a refactor's
+// clothes -- and it would surface as exactly the last-digit drift this device
+// already has too much of, which gpu_scatter.cu exists to remove.
+//
+// Converting them needs a TeamPolicy that reproduces THIS tree order, and a
+// check of its own against the control in tools/verify_kokkos.sh. See
+// docs/LAMMPS_KOKKOS.md.
+
 #include "gpu_common.h"
 #include "gap_gpu.h"
 #include "gpu_scatter.h"
