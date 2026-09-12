@@ -101,6 +101,51 @@ jobs:
             exit 1
           }
 
+      # Same trick for the Kokkos backend: a hosted runner has no Kokkos and no
+      # device, but KOKKOS=1 is mostly Makefile logic -- the guards, the
+      # -D_KOKKOS, the include and library paths, and the separate object tree
+      # -- and all of that resolves in a dry run against a stub prefix. What
+      # this catches is the wiring rotting while nobody has a GPU to notice.
+      - name: Kokkos build wiring resolves
+        run: |
+          # The guard first: KOKKOS=1 with no KOKKOS_ROOT must fail, and say so.
+          if make -n TURBOGAP_ARCH=CSC-Roihu_gfortran_openblas_cuda DEBUG=0 \
+                  KOKKOS=1 BUILD_TAG_EXTRA=-noroot > /tmp/noroot.log 2>&1; then
+            echo "::error::KOKKOS=1 without KOKKOS_ROOT should have failed and did not."
+            exit 1
+          fi
+          grep -q 'KOKKOS_ROOT' /tmp/noroot.log || {
+            echo "::error::KOKKOS=1 without KOKKOS_ROOT failed without naming KOKKOS_ROOT."
+            cat /tmp/noroot.log
+            exit 1
+          }
+
+          # Then the wiring, against a prefix that only has to exist: nothing is
+          # compiled or linked in a dry run, so the files need not be real
+          # Kokkos.
+          mkdir -p /tmp/kokkos-stub/include /tmp/kokkos-stub/lib
+          touch /tmp/kokkos-stub/include/Kokkos_Core.hpp
+          touch /tmp/kokkos-stub/lib/libkokkoscore.a
+          make -n TURBOGAP_ARCH=CSC-Roihu_gfortran_openblas_cuda DEBUG=0 \
+               KOKKOS=1 KOKKOS_ROOT=/tmp/kokkos-stub BUILD_TAG_EXTRA=-wiring \
+               > /tmp/dry_kokkos.log || {
+            echo "::error::KOKKOS=1 does not resolve; see the log below."
+            cat /tmp/dry_kokkos.log
+            exit 1
+          }
+          grep -q '\-D_KOKKOS' /tmp/dry_kokkos.log || {
+            echo "::error::KOKKOS=1 is not passing -D_KOKKOS to the device compiler."
+            exit 1
+          }
+          grep -q 'build-kokkos-wiring/' /tmp/dry_kokkos.log || {
+            echo "::error::KOKKOS=1 is not building into its own object tree."
+            exit 1
+          }
+          grep -q 'lkokkoscore' /tmp/dry_kokkos.log || {
+            echo "::error::KOKKOS=1 is not linking against Kokkos."
+            exit 1
+          }
+
       - name: The binary runs
         run: ./bin/turbogap 2>&1 | head -20 || true
 

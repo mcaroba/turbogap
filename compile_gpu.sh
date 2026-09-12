@@ -16,6 +16,10 @@ JOBS=${JOBS:-8}
 DEBUG=${DEBUG:-0}
 # Its own object tree, so the host build is not overwritten.
 TAG=${BUILD_TAG_EXTRA:--gpu}
+# KOKKOS=1 dispatches the device kernels through Kokkos instead of raw <<<>>>.
+# The Makefile puts such a build in its own tree too, prefixing -kokkos, so the
+# binary lands in bin-kokkos$TAG rather than bin$TAG.
+KOKKOS=${KOKKOS:-0}
 
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
@@ -43,6 +47,24 @@ check_toolchain() {
         die "neither nvcc nor hipcc found; load a CUDA or ROCm module"
 }
 
+check_kokkos() {
+    [ "$KOKKOS" = 1 ] || return 0
+    [ -n "${KOKKOS_ROOT:-}" ] ||
+        die "KOKKOS=1 needs KOKKOS_ROOT. Run tools/install_kokkos.sh, then export the line it prints"
+    [ -f "$KOKKOS_ROOT/include/Kokkos_Core.hpp" ] ||
+        die "no Kokkos_Core.hpp under KOKKOS_ROOT=$KOKKOS_ROOT"
+    return 0
+}
+
+# Where the Makefile actually puts it: KOKKOS=1 prefixes the build tag.
+out_dir() {
+    if [ "$KOKKOS" = 1 ]; then
+        printf 'bin-kokkos%s' "$TAG"
+    else
+        printf 'bin%s' "$TAG"
+    fi
+}
+
 fetch_submodules() {
     # A device build takes its SOAP routines from src/soap_turbo_gpu, whose
     # get_soap signature differs from the host one -- it is a second
@@ -51,20 +73,27 @@ fetch_submodules() {
 }
 
 build() {
-    make -C "$repo" -j "$JOBS" TURBOGAP_ARCH="$ARCH" DEBUG="$DEBUG" BUILD_TAG_EXTRA="$TAG"
+    make -C "$repo" -j "$JOBS" TURBOGAP_ARCH="$ARCH" DEBUG="$DEBUG" \
+        BUILD_TAG_EXTRA="$TAG" KOKKOS="$KOKKOS"
 }
 
 report() {
-    local bin=$repo/bin$TAG/turbogap
+    local bin=$repo/$(out_dir)/turbogap
     [ -x "$bin" ] || die "build reported success but $bin is not there"
     printf '\nbuilt %s\n' "$bin"
-    printf 'test with: tests/regression/run.sh --gpu     (or --both)\n'
+    if [ "$KOKKOS" = 1 ]; then
+        printf 'kernels dispatched through Kokkos %s\n' "$KOKKOS_ROOT"
+        printf 'check it against the plain device build: tools/verify_kokkos.sh\n'
+    else
+        printf 'test with: tests/regression/run.sh --gpu     (or --both)\n'
+    fi
 }
 
 # ------------------------------------------------------------------- the run
 
 check_arch
 check_toolchain
+check_kokkos
 fetch_submodules
 build
 report

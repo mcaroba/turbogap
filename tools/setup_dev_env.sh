@@ -37,6 +37,7 @@
 #     tools/setup_dev_env.sh              # default venv location
 #     TURBOGAP_VENV=/path tools/setup_dev_env.sh
 #     tools/setup_dev_env.sh --check      # verify only, change nothing
+#     tools/setup_dev_env.sh --with-kokkos  # also build Kokkos (~15 min)
 #
 # Then add the venv's bin to PATH (the script prints the exact line).
 
@@ -55,7 +56,14 @@ IPI_VERSION=2.6.3
 NUMPY_VERSION=2.1.3
 
 check_only=0
-[ "${1:-}" = "--check" ] && check_only=1
+with_kokkos=0
+for arg in "$@"; do
+  case "$arg" in
+    --check) check_only=1 ;;
+    --with-kokkos) with_kokkos=1 ;;
+    *) printf 'unknown option: %s\n' "$arg" >&2; exit 2 ;;
+  esac
+done
 
 say() { printf '%s\n' "$*"; }
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
@@ -114,6 +122,14 @@ if [ "$check_only" = 1 ]; then
     *)               say "  MISS  $VENV/bin is NOT on PATH"; rc=1 ;;
   esac
 
+  # Kokkos is optional -- only a KOKKOS=1 device build needs it -- so this
+  # reports and never sets rc. A CPU developer must still see --check exit 0.
+  if [ -n "${KOKKOS_ROOT:-}" ] && [ -f "$KOKKOS_ROOT/include/Kokkos_Core.hpp" ]; then
+    say "  ok    kokkos at $KOKKOS_ROOT"
+  else
+    say "  --    kokkos not installed (optional; tools/install_kokkos.sh)"
+  fi
+
   exit $rc
 fi
 
@@ -135,6 +151,15 @@ say "installing pinned tooling"
 "$PY" -m pip install --quiet "fprettify==$FPRETTIFY_VERSION" \
                             "clang-format==$CLANG_FORMAT_VERSION" pre-commit
 "$PY" -m pip install --quiet "numpy==$NUMPY_VERSION" "ipi==$IPI_VERSION"
+
+# Kokkos, only when asked. It is a from-source CUDA build of about fifteen
+# minutes, and only a KOKKOS=1 device build needs it, so it is not part of the
+# default environment the way i-PI is.
+if [ "$with_kokkos" = 1 ]; then
+  say ""
+  say "building kokkos (this takes a while)"
+  "$repo/tools/install_kokkos.sh" || die "kokkos install failed"
+fi
 
 # --------------------------------------------------------------- install hook
 # pre-commit needs fprettify's own pinned copy, which it builds into its cache
