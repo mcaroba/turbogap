@@ -47,11 +47,11 @@ obtain a commercial license for **soap_turbo** please contact Miguel Caro (mcaro
 `git clone --recursive` pulls three submodules, none of which needs any
 further setup:
 
-| submodule | from | why |
-|---|---|---|
-| `src/soap_turbo` | `TiganyZ/soap_turbo` `master` | the CPU SOAP routines, carrying the radial-coefficient dump guard the regression cases rely on |
-| `src/soap_turbo_gpu` | `TiganyZ/soap_turbo` `gpu` | the GPU SOAP routines. Not a newer `soap_turbo`: its `get_soap` takes device pointers, a cuBLAS handle and a stream, so it is a second implementation of the same module rather than a later version of the first |
-| `src/hop` | `cschpc/hop` `master` | the HIP/CUDA portability headers a device build includes |
+| submodule            | from                          | why                                          |
+| -------------------- | ----------------------------- | -------------------------------------------- |
+| `src/soap_turbo`     | `TiganyZ/soap_turbo` `master` | the CPU SOAP routines                        |
+| `src/soap_turbo_gpu` | `TiganyZ/soap_turbo` `gpu`    | the GPU port of soap_turbo                   |
+| `src/hop`            | `cschpc/hop` `master`         | HIP/CUDA portability headers for a gpu build |
 
 Which `soap_turbo` is compiled is set by `ST_DIR`, defaulting to
 `src/soap_turbo/src` and overridden to `src/soap_turbo_gpu/src` by a GPU arch
@@ -105,9 +105,10 @@ _**tl;dr, GPU**_ (CUDA or ROCm, on top of the above):
 export PATH="$(realpath bin-gpu):$PATH"
 ```
 
-Both binaries are built into separate object trees and coexist: `bin/turbogap`
-and `bin-gpu/turbogap`. The regression suite compares one against the other, so
-you want both.
+Remember you must specify the architecture of your GPU: so you must change the `Makefile.<TURBOGAP_ARCH>` to reflect your machine.
+
+Both binaries are built into separate directories: `bin/turbogap`
+and `bin-gpu/turbogap`.
 
 `compile_cpu.sh` and `compile_gpu.sh` default to `Ubuntu_gfortran_mpi` and
 `Aalto_gfortran_openblas_hip_cuda`; pick another from `makefiles/` with
@@ -128,21 +129,21 @@ tools/setup_dev_env.sh --check
 
 A `--recursive` clone brings three submodules:
 
-| submodule | what it is |
-|---|---|
-| `src/soap_turbo` | the SOAP routines the **host** build uses |
+| submodule            | what it is                                                                                                                                                                                                                                |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/soap_turbo`     | the SOAP routines the **host** build uses                                                                                                                                                                                                 |
 | `src/soap_turbo_gpu` | the SOAP routines the **device** build uses. A second implementation, not a later version: its `get_soap` takes device pointers and it represents the descriptor compression differently, so both are needed and each build takes its own |
-| `src/hop` | the HIP-on-CUDA headers the device build compiles against, so one source tree targets both vendors. No `HOP_ROOT` to set |
+| `src/hop`            | the HIP-on-CUDA headers the device build compiles against, so one source tree targets both vendors. No `HOP_ROOT` to set                                                                                                                  |
 
 `tools/setup_dev_env.sh` creates a virtual environment at
 `~/.venvs/turbogap-tools` holding, all pinned:
 
-| tool | why |
-|---|---|
-| `fprettify`, `clang-format` | the formatting the pre-commit hook applies. Pinned because an unpinned formatter rewrites files nobody touched |
-| `pre-commit` | the hook itself: formatting, the generated keyword reference, whitespace |
-| `numpy` | what the python test drivers compare against. Without it `tests/ir_fft`, `tests/mad_ir` and `tests/ipi_socket` skip rather than run |
-| `i-PI` | drives TurboGAP over a socket in `turbogap ipi` mode, for path-integral and other advanced dynamics. `tests/ipi_pimd` runs an eight-bead ring polymer against it |
+| tool                        | why                                                                                                                                 |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `fprettify`, `clang-format` | the formatting the pre-commit hook applies. Pinned because an unpinned formatter rewrites files nobody touched                      |
+| `pre-commit`                | the hook itself: formatting, the generated keyword reference, whitespace                                                            |
+| `numpy`                     | what the python test drivers compare against. Without it `tests/ir_fft`, `tests/mad_ir` and `tests/ipi_socket` skip rather than run |
+| `i-PI`                      | drives TurboGAP over a socket in `turbogap ipi` mode, for path-integral and other advanced dynamics.                                |
 
 ### Prerequisites
 
@@ -271,7 +272,35 @@ TURBOGAP_KEEP=1 ./run.sh
 
 and the tests will be found in `$TMPDIR/turbogap_regression.xxxxx`.
 
+### Testing a GPU build
+
+The same case list runs against the device binary. Build both, then:
+
+```sh
+tests/regression/run.sh --gpu      # every case, on bin-gpu/turbogap
+tests/regression/run.sh --both     # the host pass, then the device pass
+```
+
+`--gpu` compares the device binary against the **host build of the same
+source**, not against the frozen baseline: the baseline is a snapshot of an
+older commit, and comparing against it would fold every intended change since
+into the same number as the host/device difference.
+
+The comparison is numerical rather than bit-exact, through
+`tests/regression/compare_tol.py`. The device sums the SOAP batches and the
+cuBLAS reductions in a different order, so the last digits move on a run that is
+entirely correct; a bit-exact diff would call every device run a failure.
+Non-numeric tokens -- species columns, `Properties=` strings -- must still match
+exactly, so a structural change is still caught. The default tolerance is
+`rtol = atol = 1e-6`, overridable per case with `GPU_RTOL` and `GPU_ATOL` in its
+`case.conf`, or globally with `TURBOGAP_GPU_RTOL` and `TURBOGAP_GPU_ATOL`.
+
 Other tests can be done by running the scripts in the `tests/<test_name>/run.sh` directories respectively.
+Each honours `TURBOGAP_BIN`, so the same suite can be pointed at either build:
+
+```sh
+TURBOGAP_BIN=$(realpath bin-gpu/turbogap) tests/ipi_pimd/run.sh
+```
 
 ## Developing TurboGAP
 
