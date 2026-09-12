@@ -76,14 +76,60 @@ Done:
   integer, so the two backends agree exactly.
 - `KOKKOS=1`, its own object tree, `tools/install_kokkos.sh`,
   `tools/verify_kokkos.sh`.
+- `src/gpu/gpu_scatter.cu` — all nine passes of the deterministic scatter.
+  They are flat maps and per-chunk serial sums, so the conversion does not
+  touch the ordering the file exists to guarantee.
 
-Not done, in the order it should be taken:
+## About `src/soap_turbo_gpu`
 
-1. **The rest of the kernels.** `gpu_scatter.cu` first — its kernels are flat
-   maps and per-chunk serial sums, so they convert without touching the
-   ordering that makes it deterministic. Then `mad_*`, then the `gap_soap_*`
-   group, which is the large one.
-2. **A compute entry point that does not come from Fortran.** Every device
+Worth stating plainly, because the name misleads: **the GPU `soap_turbo`
+submodule contains no device code at all.** It is 4100 lines of Fortran, and
+every kernel it drives lives in this repository:
+
+| what `soap_turbo_gpu` calls | where the kernel is |
+| --- | --- |
+| `gpu_radial_poly3`, `gpu_radial_poly3gauss` | `gap_soap_radial.cu` |
+| `gpu_radial_poly3operator` | `gap_soap_radial_operator.cu` |
+| `gpu_get_plm_array_global`, `gpu_get_exp_coeff_array`, `gpu_get_cnk` | `gap_soap_angular.cu` |
+| `gpu_get_sqrt_dot_p`, `gpu_soap_normalize`, `gpu_get_derivatives` | `gap_soap_descriptor.cu` |
+| `gpu_get_soap_der` | `gap_soap_forces.cu` |
+
+So porting `soap_turbo_gpu` needs **no change to the submodule**: its Fortran is
+already backend-agnostic, and the work is converting those five files here.
+
+## The remaining kernels, by what each one needs
+
+51 kernels are still raw launches. They are not equally hard; cheapest first:
+
+| file | kernels | needs |
+| --- | --- | --- |
+| `gap_predict.cu` | 4 | flat maps — `tg_parallel_for` as it stands |
+| `gap_2b.cu` | 2 | flat maps |
+| `mad_xrd.cu` | 6 | flat maps |
+| `gap_soap_radial.cu` | 4 | flat maps. The first of the SOAP group |
+| `mad_pdf.cu` | 10 | flat, except one shared-memory reduction |
+| `mad_electrostatics.cu` | 3 | two shared-memory reductions |
+| `gap_soap_angular.cu` | 8 | one 3-D grid — needs an MDRange policy |
+| `gap_soap_radial_operator.cu` | 1 | one shared-memory kernel |
+| `gap_soap_descriptor.cu` | 10 | 4 shared-memory, one 3-D grid, tiled transposes |
+| `gap_soap_forces.cu` | 3 | 9 shared-memory arrays across 3 kernels. The hardest |
+
+Two things the dispatch layer does not have yet, which the bottom half of that
+table needs:
+
+- **`tg_parallel_for_2d` / `_3d`.** Two kernels launch
+  `dim3((n + tpb - 1) / tpb, n_max, k_max)`. Flattening the index by hand would
+  work and would read badly; Kokkos has `MDRangePolicy` for exactly this.
+- **A team policy with scratch.** `<<<n_sites, tpb>>>` with a block's threads
+  cooperating over one atom is a `TeamPolicy`, and `__shared__` becomes
+  `team.team_scratch(0)`. This is the real work in `gap_soap_forces.cu`.
+
+Neither is hard. Both should be added when the first kernel actually needs one,
+and checked against the control the same way, rather than written speculatively.
+
+## Then the part that is not kernels
+
+1. **A compute entry point that does not come from Fortran.** Every device
    entry point today is reached through `bind(C)` from a Fortran driver that
    also owns the neighbour list, the GAP hyperparameters and the SOAP
    compression. A pair style has none of that. This needs a C++ object that
