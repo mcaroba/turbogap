@@ -1,6 +1,7 @@
 // Device memory: the allocation ledger, the malloc/free/memcpy wrappers, the
 // pinned host allocator, device enumeration and selection, and the debug
 // pointer printers. Used by both the GAP and the MAD paths.
+#include "gpu_backend.h"
 #include "gpu_common.h"
 #include <cstdlib>
 #include "gpu_memory.h"
@@ -257,6 +258,9 @@ extern "C" void cuda_malloc_all_blocking(void** a_d, size_t Np) {
   return;
 }
 extern "C" void cuda_device_reset() {
+  // Before the reset, never after: Kokkos holds handles into the context this
+  // is about to destroy. See tg_backend_finalize. A no-op without -D_KOKKOS.
+  tg_backend_finalize();
   hipDeviceReset();
 }
 extern "C" void cuda_free(void** a_d) {
@@ -493,9 +497,13 @@ extern "C" void cuda_set_device(int my_rank) {
             vis ? vis : "unset");
     fflush(stderr);
   }
-  /*gpuErrchk(hipSetDevice(0));*/
-  //  printf("\n Seta Aset at %d %d %d %d\n", num_gpus, my_rank%num_gpus,my_rank, mygpuid);
-  //exit(0);
+  // Kokkos comes up here, and only here, because this is where the card is
+  // chosen. A default-initialised Kokkos takes device 0 whatever this rank
+  // selected, which is not an error -- just every rank's kernels queued onto
+  // one card while the rest of the code uses another. A no-op without
+  // -D_KOKKOS.
+  tg_backend_initialize(mygpuid);
+
   return;
 }
 

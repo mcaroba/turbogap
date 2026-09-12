@@ -3,47 +3,12 @@
 // Grouped with the MAD sources rather than the GAP ones because it is reached
 // from the same experimental-prediction driver and shares their pair
 // compaction, but it is a separate physical model from pdf and xrd.
+#include "gpu_backend.h"
 #include "gpu_common.h"
 #include "gpu_scan.h"
 #include "mad_gpu.h"
 
 #define tpb 512
-
-__global__ void kernel_get_electrostatics_nk(int i_beg, int i_end, int* n_neigh_d, int* n_neigh_index_d, double* rjs_d, double* xyz,
-                                             double r_cut, int* nk_flags_d) {
-  int i_site = i_beg - 1 + threadIdx.x + blockIdx.x * blockDim.x;
-  int k_val = threadIdx.x + blockIdx.x * blockDim.x;
-  int i, j, k, s, k1, k2;
-  double r;
-  int tid = threadIdx.x;
-  int lane = tid % WARP_SIZE;
-  int warpId = tid / WARP_SIZE;
-
-
-  int nk_loc = 0;
-  if (i_site < i_end) {
-    k = 0;
-    for (i = i_beg - 1; i < i_site; i++)
-      k += n_neigh_d[i];
-
-    for (j = 0; j < n_neigh_d[i_site]; j++) {
-      r = rjs_d[k];
-      // k indexes the global pair array and has to advance for EVERY
-      // neighbour, in or out of range. Skipping the increment for an
-      // out-of-range pair leaves k on it, the same distance fails the test
-      // again for every remaining neighbour of this site, and every pair past
-      // the first long one is lost.
-      if (r <= r_cut) {
-        nk_loc += 1;
-        nk_flags_d[k] = 1;
-      }
-      k += 1;
-    }
-    n_neigh_index_d[k_val] = nk_loc;
-    //      printf(" - site %d  nk_local %d\n", i_site, nk_loc);
-  }
-}
-
 
 extern "C" void gpu_get_electrostatics_nk(int i_beg, int i_end, int n_pairs, int* n_neigh, int* n_neigh_index_d, double* rjs,
                                           double* xyz, double r_cut, int* nk_out_d, int* nk_flags_d, int* nk_flags_sum_d,
@@ -51,13 +16,30 @@ extern "C" void gpu_get_electrostatics_nk(int i_beg, int i_end, int n_pairs, int
   // This function is to set the k_index array for the partial pair distributions
 
 
-  dim3 nblocks = dim3((i_end - i_beg + tpb) / tpb, 1, 1);
-  dim3 nthreads = dim3(tpb, 1, 1);
+  tg_parallel_for(
+      "turbogap_electrostatics_nk", i_end - i_beg + 1, stream,
+      TG_LAMBDA(const int tid) {
+        const int i_site = i_beg - 1 + tid;
+        int k = 0;
+        for (int i = i_beg - 1; i < i_site; i++)
+          k += n_neigh[i];
 
-  // gpuErrchk( hipPeekAtLastError() );
-
-  kernel_get_electrostatics_nk<<<nblocks, nthreads, 0, stream[0]>>>(i_beg, i_end, n_neigh, n_neigh_index_d, rjs, xyz, r_cut,
-                                                                    nk_flags_d);
+        int nk_loc = 0;
+        for (int j = 0; j < n_neigh[i_site]; j++) {
+          // k indexes the global pair array and has to advance for EVERY
+          // neighbour, in or out of range. Skipping the increment for an
+          // out-of-range pair leaves k on it, the same distance fails the test
+          // again for every remaining neighbour of this site, and every pair
+          // past the first long one is lost.
+          if (rjs[k] <= r_cut) {
+            nk_loc += 1;
+            nk_flags_d[k] = 1;
+          }
+          k += 1;
+        }
+        n_neigh_index_d[tid] = nk_loc;
+      },
+      tpb);
 
   recursiveReduce(nk_flags_d, nk_out_d, n_pairs, stream);
 
@@ -88,58 +70,44 @@ extern "C" void gpu_get_electrostatics_nk(int i_beg, int i_end, int n_pairs, int
   gpu_multiply_flags(n_pairs, nk_flags_d, nk_flags_sum_d, stream);
 }
 
-__global__ void kernel_set_electrostatics_k_index(int i_beg, int i_end, int n_pairs, int n_sites0, int* neighbors_list_d,
-                                                  double* rjs, double* xyz, double* charges_d, double* neighbor_charges_index_d,
-                                                  double* charge_gradients_d, double* charge_gradients_index_d, int* k_index_d,
-                                                  int* j2_index_d, double* rjs_index_d, double* xyz_index_d, int* nk_sum_flags_d) {
-  int tid = threadIdx.x + blockIdx.x * blockDim.x;
-  int i, j2, nk, nk_temp;
-
-  if (tid < n_pairs) {
-    if (nk_sum_flags_d[tid] > 0) {
-      nk = nk_sum_flags_d[tid] - 1;
-
-      if (tid == n_pairs - 1) {
-        // Search for the last non-zero value
-        i = 0;
-        while (nk == 0) {
-          i += 1;
-          nk = nk_sum_flags_d[tid - i];
-        }
-      }
-
-      k_index_d[nk] = tid;
-
-      j2 = ((neighbors_list_d[tid] - 1) % n_sites0);
-      j2_index_d[nk] = j2;
-
-      rjs_index_d[nk] = rjs[tid];
-
-      xyz_index_d[3 * nk] = xyz[3 * tid];
-      xyz_index_d[3 * nk + 1] = xyz[3 * tid + 1];
-      xyz_index_d[3 * nk + 2] = xyz[3 * tid + 2];
-
-      neighbor_charges_index_d[nk] = charges_d[j2];
-
-      charge_gradients_index_d[3 * nk] = charge_gradients_d[3 * tid];
-      charge_gradients_index_d[3 * nk + 1] = charge_gradients_d[3 * tid + 1];
-      charge_gradients_index_d[3 * nk + 2] = charge_gradients_d[3 * tid + 2];
-    }
-  }
-}
-
-
 extern "C" void gpu_set_electrostatics_k_index(int i_beg, int i_end, int n_pairs, int n_sites0, int* neighbors_list, double* rjs,
                                                double* xyz, double* charges_d, double* neighbor_charges_index_d,
                                                double* charge_gradients_d, double* charge_gradients_index_d, int* k_index_d,
                                                int* j2_index_d, double* rjs_index_d, double* xyz_k_d, int* nk_sum_flags_d,
                                                hipStream_t* stream) {
-  dim3 nblocks = dim3((n_pairs + tpb - 1) / tpb, 1, 1);
-  dim3 nthreads = dim3(tpb, 1, 1);
+  tg_parallel_for(
+      "turbogap_electrostatics_k_index", n_pairs, stream,
+      TG_LAMBDA(const int tid) {
+        if (nk_sum_flags_d[tid] <= 0)
+          return;
+        int nk = nk_sum_flags_d[tid] - 1;
+        if (tid == n_pairs - 1) {
+          // Search back for the last non-zero value.
+          int i = 0;
+          while (nk == 0) {
+            i += 1;
+            nk = nk_sum_flags_d[tid - i];
+          }
+        }
 
-  kernel_set_electrostatics_k_index<<<nblocks, nthreads, 0, stream[0]>>>(
-      i_beg, i_end, n_pairs, n_sites0, neighbors_list, rjs, xyz, charges_d, neighbor_charges_index_d, charge_gradients_d,
-      charge_gradients_index_d, k_index_d, j2_index_d, rjs_index_d, xyz_k_d, nk_sum_flags_d);
+        k_index_d[nk] = tid;
+
+        const int j2 = ((neighbors_list[tid] - 1) % n_sites0);
+        j2_index_d[nk] = j2;
+
+        rjs_index_d[nk] = rjs[tid];
+
+        xyz_k_d[3 * nk] = xyz[3 * tid];
+        xyz_k_d[3 * nk + 1] = xyz[3 * tid + 1];
+        xyz_k_d[3 * nk + 2] = xyz[3 * tid + 2];
+
+        neighbor_charges_index_d[nk] = charges_d[j2];
+
+        charge_gradients_index_d[3 * nk] = charge_gradients_d[3 * tid];
+        charge_gradients_index_d[3 * nk + 1] = charge_gradients_d[3 * tid + 1];
+        charge_gradients_index_d[3 * nk + 2] = charge_gradients_d[3 * tid + 2];
+      },
+      tpb);
 
   // hipError_t err;
   // hipDeviceSynchronize();
@@ -204,6 +172,13 @@ __device__ double damping_function_cosine_der(double distance, double r_inner, d
 }
 
 
+// NOT converted to the backend layer, deliberately. This kernel closes with a
+// __shared__ block reduction over DOUBLES, and the Kokkos equivalent would sum
+// the block in a different order. Reassociating a floating-point sum moves the
+// result, so converting it would be a physics change wearing a refactor's
+// clothes -- and it would show up as exactly the kind of last-digit drift the
+// device already has too much of. It needs a TeamPolicy that reproduces this
+// tree order, which is worth doing separately and checking on its own.
 __global__ void kernel_electrostatics_gsf(const int i_beg, const int nk_max, double* energies_d, double* forces_d, double* virial_d,
                                           int* j2_index_d, const int n_sites, const int this_n_sites, const int this_n_pairs,
                                           int* n_neigh_index_d, double* charges_d, double* charge_gradients_d,

@@ -112,6 +112,67 @@ ifeq ($(OPENMP),1)
   BUILD_TAG := $(BUILD_TAG)-omp
 endif
 
+# ----------------------------------------------------------------- KOKKOS=1
+#
+# The device kernels dispatched through Kokkos instead of raw <<<>>>.
+#
+# Why there is a second device backend at all: LAMMPS's KOKKOS package is
+# Kokkos, and a pair_style that calls TurboGAP has to run in LAMMPS's execution
+# space on LAMMPS's memory. Expressing the kernels in Kokkos is the step that
+# makes that possible without writing them a third time. See
+# docs/LAMMPS_KOKKOS.md and the header comment in src/gpu/gpu_backend.h.
+#
+# It is the SAME SOURCE either way. The backend is chosen by -D_KOKKOS inside
+# one header, not by a parallel set of files, so a kernel cannot be fixed on
+# one path and left broken on the other. The two builds are expected to agree
+# BIT FOR BIT, not within a tolerance: everything converted so far is either
+# integer arithmetic or sums sequentially inside a thread.
+#
+# Its own object tree all the same, for the reason DEBUG has one -- this
+# changes which code runs, and make decides from timestamps, so mixing objects
+# would report a success that means nothing.
+#
+#     make GPU=1 KOKKOS=1          build-kokkos/   bin-kokkos/turbogap
+#
+# KOKKOS_ROOT comes from tools/install_kokkos.sh.
+KOKKOS ?= 0
+ifeq ($(KOKKOS),1)
+  ifneq ($(GPU),1)
+    $(error KOKKOS=1 needs a device architecture, which sets GPU = 1. Pick one \
+      with TURBOGAP_ARCH; see makefiles/)
+  endif
+  ifndef KOKKOS_ROOT
+    $(error KOKKOS=1 needs KOKKOS_ROOT. Run tools/install_kokkos.sh and export \
+      the line it prints)
+  endif
+  # Installed into lib on some systems and lib64 on others.
+  KOKKOS_LIBDIR := $(firstword $(wildcard $(KOKKOS_ROOT)/lib64 $(KOKKOS_ROOT)/lib))
+  ifeq ($(KOKKOS_LIBDIR),)
+    $(error found no lib or lib64 under KOKKOS_ROOT=$(KOKKOS_ROOT) -- is that an \
+      install prefix, or a build directory?)
+  endif
+  CU += -D_KOKKOS -I$(KOKKOS_ROOT)/include
+  CC += -D_KOKKOS -I$(KOKKOS_ROOT)/include
+  # The CUDA libraries are repeated AFTER the Kokkos archives on purpose. ld
+  # scans left to right and keeps only the archive members that resolve
+  # something already referenced, so the -lcuda the architecture's LIBS lists
+  # earlier has been scanned and dropped by the time libkokkoscore.a asks for
+  # cuStreamGetCtx. Without this the build compiles and fails at the link.
+  LIBS += -L$(KOKKOS_LIBDIR) -lkokkoscore -lkokkoscontainers -lcuda -lcudart -ldl
+  BUILD_TAG := $(BUILD_TAG)-kokkos
+endif
+
+# The kernel bodies in src/gpu/gpu_backend.h are lambdas, which nvcc compiles
+# for the device only with these. They enable a language feature and change no
+# codegen, so every device build gets them rather than only KOKKOS=1 -- the
+# <<<>>> path runs the same lambdas. An architecture whose compiler spells this
+# differently (hipcc needs no flag) sets CU_LAMBDA_OPTS empty before this line.
+ifeq ($(GPU),1)
+  CU_LAMBDA_OPTS ?= --expt-extended-lambda --expt-relaxed-constexpr
+  CU += $(CU_LAMBDA_OPTS)
+  CC += $(CU_LAMBDA_OPTS)
+endif
+
 # ------------------------------------------------------- an ad-hoc variant
 #
 # Extra compiler flags, and a tag so the variant gets its own object tree.

@@ -110,6 +110,22 @@ Remember you must specify the architecture of your GPU: so you must change the `
 Both binaries are built into separate directories: `bin/turbogap`
 and `bin-gpu/turbogap`.
 
+_**tl;dr, GPU through Kokkos**_ (optional; needed to run TurboGAP from LAMMPS):
+
+```sh
+tools/install_kokkos.sh              # builds Kokkos, ~15 min, once
+export KOKKOS_ROOT=$HOME/.local/kokkos-4.7.04
+KOKKOS=1 ./compile_gpu.sh
+export PATH="$(realpath bin-kokkos-gpu):$PATH"
+```
+
+This is the same device code, dispatching its kernels through Kokkos instead of
+raw CUDA launches, into its own `bin-kokkos-gpu/`. It exists because LAMMPS's
+accelerator package is Kokkos, so a `pair_style` calling TurboGAP has to run in
+LAMMPS's execution space on LAMMPS's memory -- see `docs/LAMMPS_KOKKOS.md` for
+what that needs and how far it has got. `tools/install_kokkos.sh` also installs
+`cmake` from PyPI if the machine has none.
+
 `compile_cpu.sh` and `compile_gpu.sh` default to `Ubuntu_gfortran_mpi` and
 `Aalto_gfortran_openblas_hip_cuda`; pick another from `makefiles/` with
 `TURBOGAP_ARCH=<name> ./compile_cpu.sh`. Each script fetches the submodules,
@@ -144,6 +160,13 @@ A `--recursive` clone brings three submodules:
 | `pre-commit`                | the hook itself: formatting, the generated keyword reference, whitespace                                                            |
 | `numpy`                     | what the python test drivers compare against. Without it `tests/ir_fft`, `tests/mad_ir` and `tests/ipi_socket` skip rather than run |
 | `i-PI`                      | drives TurboGAP over a socket in `turbogap ipi` mode, for path-integral and other advanced dynamics.                                |
+| `cmake` | only installed by `tools/install_kokkos.sh`, and only when the machine has none of its own. Kokkos has no other build system |
+
+Kokkos is **not** part of that environment: it is a from-source CUDA build of
+about fifteen minutes, and only a `KOKKOS=1` device build needs it. Install it
+separately with `tools/install_kokkos.sh`, or ask for it at the same time with
+`tools/setup_dev_env.sh --with-kokkos`. It lands in `~/.local/kokkos-<version>`
+and is found through `KOKKOS_ROOT`.
 
 ### Prerequisites
 
@@ -294,6 +317,23 @@ Non-numeric tokens -- species columns, `Properties=` strings -- must still match
 exactly, so a structural change is still caught. The default tolerance is
 `rtol = atol = 1e-6`, overridable per case with `GPU_RTOL` and `GPU_ATOL` in its
 `case.conf`, or globally with `TURBOGAP_GPU_RTOL` and `TURBOGAP_GPU_ATOL`.
+
+### Testing a Kokkos build
+
+Not with a plain diff against the CUDA binary. The device binary is not
+reproducible run to run -- run `estat_gsf` twice with one unchanged binary and
+`energy_soap` moves in the tenth digit -- so a straight comparison would charge
+the Kokkos backend for differences that were there without it.
+
+```sh
+tools/verify_kokkos.sh             # every case; add case names to narrow it
+```
+
+That runs the suite twice: the CUDA binary against a copy of itself, which
+measures how much the device moves on its own, and the Kokkos binary against
+the CUDA one. What it reports is the difference of the two failure sets, so a
+case listed at the end differs *because of* the Kokkos backend and not because
+of the device.
 
 Other tests can be done by running the scripts in the `tests/<test_name>/run.sh` directories respectively.
 Each honours `TURBOGAP_BIN`, so the same suite can be pointed at either build:

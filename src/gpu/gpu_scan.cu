@@ -1,6 +1,5 @@
 // Parallel primitives shared by the MAD and electrostatics neighbour-counting
-// paths: a block reduction, a recursive reduction and an inclusive scan over
-// per-pair flags.
+// paths: a reduction and an inclusive scan over per-pair flags.
 //
 // These used to sit at the top of gpu_exp.cu, where the pdf and the
 // electrostatics entry points could launch kernel_multiply_flags directly.
@@ -8,48 +7,44 @@
 // one without -rdc=true, so that kernel is now reached through the host
 // launcher gpu_multiply_flags -- which computes the same geometry both call
 // sites computed inline.
+//
+// TWO BACKENDS. Under -D_KOKKOS the reduction and the scan are Kokkos
+// primitives; otherwise they are the hand-written block reduction and Blelloch
+// scan below. The public names are the same either way, so mad_pdf.cu and
+// mad_electrostatics.cu do not know which they got.
+//
+// The two agree EXACTLY, not approximately: both sum ints, and integer
+// addition is associative, so no reassociation Kokkos performs can move a
+// result. That is the property that makes the bit-exact regression suite a
+// real check on this port rather than a tolerance to be tuned. See
+// src/gpu/gpu_backend.h.
+#include "gpu_backend.h"
 #include "gpu_common.h"
 #include "gpu_scan.h"
 
 #define tpb 512
 
-//#define LOG_BLOCK_SIZE 10 // Log base 2 of BLOCK_SIZE
 #define NUM_BANKS 32    // Define the number of shared memory banks
 #define LOG_NUM_BANKS 5 // Logarithm base 2 of NUM_BANKS
-//#define CONFLICT_FREE_OFFSET(index) ((index) >> LOG_NUM_BANKS)
 #ifdef ZERO_BANK_CONFLICTS
 #define CONFLICT_FREE_OFFSET(n) ((n) >> (LOG_NUM_BANKS) + (n) >> (2 * LOG_NUM_BANKS))
 #else
 #define CONFLICT_FREE_OFFSET(n) ((n) >> LOG_NUM_BANKS)
 #endif
 
+#ifdef _KOKKOS
 
-// Warp reduction function to sum values within a warp
-__inline__ __device__ int warpReduceSum(int val) {
-  // Use shuffle down to reduce across the warp
-  for (int offset = warpSize / 2; offset > 0; offset >>= 1) {
-#ifdef CUDA
-    val += __shfl_down_sync(0xffffffff, val, offset, warpSize);
-#else
-    val += __shfl_down(val, offset, warpSize);
-#endif
-  }
-  return val;
+// Kokkos owns the recursion and the block geometry; these are the same two
+// primitives, asked for by name.
+void recursiveReduce(int* d_in, int* d_out, int n, hipStream_t* stream) {
+  tg_reduce_sum_int("turbogap_reduce_flags", d_in, n, d_out, stream);
 }
 
-
-__inline__ __device__ double warpReduceSumDouble(double val) {
-  // Use shuffle down to reduce across the warp
-  for (int offset = warpSize / 2; offset > 0; offset >>= 1) {
-#ifdef CUDA
-    val += __shfl_down_sync(0xffffffff, val, offset, warpSize);
-#else
-    val += __shfl_down(val, offset, warpSize);
-#endif
-  }
-  return val;
+void inclusiveScan(int* d_data_out, int n, hipStream_t* stream) {
+  tg_inclusive_scan_int("turbogap_scan_flags", d_data_out, n, stream);
 }
 
+#else // the hand-written CUDA/HIP primitives
 
 //------------------------------------------------------------//
 //-------------------   Reduction Kernel   -------------------//
@@ -200,100 +195,6 @@ __global__ void addBlockSumsKernel(int* d_data, int* d_blockSums, int n) {
   }
 }
 
-// // Kernel for inclusive scan with shared memory padding to avoid bank conflicts
-// __global__ void inclusive_scan_kernel_diff(int *d_in, int *d_out, int n, int block_size) {
-//     // Dynamically allocate shared memory with padding to avoid bank conflicts
-//     extern __shared__ int temp[];
-
-//     int tid = threadIdx.x;
-//     int gid = blockIdx.x * block_size + tid;
-
-//     // Calculate the effective index in padded shared memory
-//     int warp_size = 32; // Warp size for CUDA architectures
-//     int effective_index = tid + tid / warp_size; // Add padding every warp_size elements
-
-//     // Load input into shared memory
-//     if (gid < n) {
-//         temp[effective_index] = d_in[gid];
-//     } else {
-//         temp[effective_index] = 0; // Pad with zero if outside array bounds
-//     }
-
-//     __syncthreads();
-
-//     // Perform the scan
-//     for (int offset = 1; offset < block_size; offset *= 2) {
-//         int val = 0;
-//         if (tid >= offset) {
-//             val = temp[effective_index - offset];
-//         }
-//         __syncthreads(); // Synchronize before updating
-//         temp[effective_index] += val;
-//         __syncthreads(); // Synchronize after updating
-//     }
-
-//     // Write result to output array
-//     if (gid < n) {
-//         d_out[gid] = temp[effective_index]; // Inclusive: No adjustment needed
-//     }
-// }
-
-// void inclusive_scan_diff(int *h_in, int *h_out, int n, int block_size) {
-//     int *d_in, *d_out;
-//     size_t size = n * sizeof(int);
-
-//     // Allocate device memory
-//     cudaMalloc(&d_in, size);
-//     cudaMalloc(&d_out, size);
-
-//     // Copy input to device
-//     cudaMemcpy(d_in, h_in, size, cudaMemcpyHostToDevice);
-
-//     // Launch kernel
-//     int threads_per_block = block_size;
-//     int blocks_per_grid = (n + threads_per_block - 1) / threads_per_block;
-
-//     // Calculate shared memory size with padding
-//     int warp_size = 32;
-//     int shared_memory_size = (block_size + block_size / warp_size) * sizeof(int);
-
-//     inclusive_scan_kernel_diff<<<blocks_per_grid, threads_per_block, shared_memory_size>>>(d_in, d_out, n, block_size);
-
-//     // Copy result back to host
-//     cudaMemcpy(h_out, d_out, size, cudaMemcpyDeviceToHost);
-
-//     // Free device memory
-//     cudaFree(d_in);
-//     cudaFree(d_out);
-// }
-
-// int main() {
-//     // Example input
-//     int h_in[] = {1, 2, 3, 4, 5};
-//     int n = sizeof(h_in) / sizeof(h_in[0]);
-//     int h_out[n];
-
-//     // Set block size (can be any power of 2, up to maximum threads per block)
-//     int block_size = 128;
-
-//     // Perform inclusive scan
-//     inclusive_scan(h_in, h_out, n, block_size);
-
-//     // Print result
-//     std::cout << "Input: ";
-//     for (int i = 0; i < n; i++) {
-//         std::cout << h_in[i] << " ";
-//     }
-//     std::cout << "\nOutput: ";
-//     for (int i = 0; i < n; i++) {
-//         std::cout << h_out[i] << " ";
-//     }
-//     std::cout << std::endl;
-
-//     return 0;
-// }
-
-
 // Function to perform an inclusive scan on an array
 void inclusiveScan(int* d_data_out, int n, hipStream_t* stream) {
   // Calculate the size needed for padding
@@ -343,12 +244,8 @@ void inclusiveScan(int* d_data_out, int n, hipStream_t* stream) {
   gpuErrchk(hipFreeAsync(d_blockSums, stream[0]));
 }
 
-__global__ void kernel_multiply_flags(int n_pairs, int* nk_flags_d, int* nk_sum_flags_d) {
-  int tid = threadIdx.x + blockIdx.x * blockDim.x;
-  if (tid < n_pairs) {
-    nk_sum_flags_d[tid] *= nk_flags_d[tid];
-  }
-}
+
+#endif // _KOKKOS
 
 void gpu_peek_stream_error(hipStream_t* stream) {
   hipError_t code = hipDeviceSynchronize();
@@ -367,9 +264,8 @@ extern "C" void gpu_inclusive_scan_int(int size, int* n_neigh_index_d, hipStream
 
 // See gpu_scan.h: the two callers used to launch kernel_multiply_flags
 // directly, with exactly this geometry, when they shared a translation unit
-// with it.
+// with it. One body now, dispatched to whichever backend is compiled in.
 void gpu_multiply_flags(int n_pairs, int* nk_flags_d, int* nk_sum_flags_d, hipStream_t* stream) {
-  dim3 nblocks = dim3((n_pairs + tpb) / tpb, 1, 1);
-  dim3 nthreads = dim3(tpb, 1, 1);
-  kernel_multiply_flags<<<nblocks, nthreads, 0, stream[0]>>>(n_pairs, nk_flags_d, nk_sum_flags_d);
+  tg_parallel_for(
+      "turbogap_multiply_flags", n_pairs, stream, TG_LAMBDA(const int tid) { nk_sum_flags_d[tid] *= nk_flags_d[tid]; }, tpb);
 }

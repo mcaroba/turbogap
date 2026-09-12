@@ -54,6 +54,50 @@ pulls `src/gpu/` and `fortran_cuda_interfaces.f90` into the build, and sets
 `ST_DIR` and `DEPS_FILE`. It also puts `-D _GPU` in `PP`, which is what compiles
 the device code guarded inside the shared sources.
 
+### Two device backends
+
+A device build dispatches its kernels one of two ways, and it is the same
+source either way:
+
+```sh
+# Raw CUDA/HIP launches -- the default
+make -j8 TURBOGAP_ARCH=<device arch> DEBUG=0 BUILD_TAG_EXTRA=-gpu
+
+# The same kernels through Kokkos
+export KOKKOS_ROOT=$HOME/.local/kokkos-4.7.04     # tools/install_kokkos.sh
+make -j8 TURBOGAP_ARCH=<device arch> DEBUG=0 BUILD_TAG_EXTRA=-gpu KOKKOS=1
+                                                  # -> bin-kokkos-gpu/turbogap
+```
+
+`KOKKOS=1` adds `-D_KOKKOS`, which switches the dispatch macros in
+`src/gpu/gpu_backend.h`. There is no second set of source files: a kernel is
+written once, as a lambda passed to `tg_parallel_for` (or one of the scan and
+reduce helpers), and the macro decides whether that becomes a `<<<>>>` launch
+or a `Kokkos::parallel_for`. Kokkos adopts the stream `gpu_context` already
+owns, so converted and unconverted kernels stay ordered with respect to each
+other and the port can proceed a file at a time.
+
+It gets its own object tree, prefixed `-kokkos`, for the reason `DEBUG` does:
+make decides from timestamps, so mixing objects across a flag that changes
+which code runs reports a success that means nothing.
+
+Why it exists: LAMMPS's accelerator package is Kokkos, and a `pair_style`
+calling TurboGAP must run in LAMMPS's execution space on LAMMPS's memory. See
+`docs/LAMMPS_KOKKOS.md` for the target architecture and what is still missing.
+
+**Checking one needs a control, not a diff.** The device binary is not
+reproducible against itself: with one unchanged CUDA binary, 26 of the 39
+regression cases differ from their own previous run. Comparing Kokkos against
+CUDA directly would charge the port for all 26.
+
+```sh
+tools/verify_kokkos.sh          # runs the suite twice and subtracts
+```
+
+It runs CUDA against a copy of itself to measure that noise, then Kokkos
+against CUDA, and reports only the cases in the second set that are not in the
+first.
+
 ### Dependencies -- REGENERATE AFTER ADDING OR REMOVING A SOURCE FILE
 
 Two files, because the module graph differs between the builds: the device one
