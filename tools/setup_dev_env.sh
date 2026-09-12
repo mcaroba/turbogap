@@ -124,10 +124,23 @@ if [ "$check_only" = 1 ]; then
 
   # Kokkos is optional -- only a KOKKOS=1 device build needs it -- so this
   # reports and never sets rc. A CPU developer must still see --check exit 0.
+  #
+  # Distinguishes "not installed" from "installed but KOKKOS_ROOT unset",
+  # because those need different fixes and the second is the common one: the
+  # install lands in ~/.local and nothing exports the variable for you.
   if [ -n "${KOKKOS_ROOT:-}" ] && [ -f "$KOKKOS_ROOT/include/Kokkos_Core.hpp" ]; then
     say "  ok    kokkos at $KOKKOS_ROOT"
   else
-    say "  --    kokkos not installed (optional; tools/install_kokkos.sh)"
+    found=""
+    for d in "$HOME"/.local/kokkos-*; do
+      [ -f "$d/include/Kokkos_Core.hpp" ] && found=$d
+    done
+    if [ -n "$found" ]; then
+      say "  --    kokkos is at $found but KOKKOS_ROOT is not set"
+      say "        export KOKKOS_ROOT=$found"
+    else
+      say "  --    kokkos not installed (optional; tools/install_kokkos.sh)"
+    fi
   fi
 
   exit $rc
