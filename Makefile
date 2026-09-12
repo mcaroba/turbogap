@@ -141,6 +141,30 @@ ifeq ($(KOKKOS),1)
     $(error KOKKOS=1 needs a device architecture, which sets GPU = 1. Pick one \
       with TURBOGAP_ARCH; see makefiles/)
   endif
+  # Checked before KOKKOS_ROOT, because a compiler that cannot build Kokkos is
+  # the more fundamental problem: there is no point sending someone to install
+  # Kokkos with an nvcc that will not compile it.
+  #
+  # Nothing else here needs a version check. The device sources compile from
+  # 12.0 through 13.4 unchanged and carry no CUDA-version conditional. Kokkos 5
+  # is the constraint: it wants C++20 from a compiler that supports it, which
+  # is nvcc 12.2 and later. Below that the failure is a wall of template errors
+  # inside Kokkos headers naming nothing recognisable, so refuse early.
+  NVCC_VER := $(shell nvcc --version 2>/dev/null | sed -n 's/.*release \([0-9.]*\).*/\1/p')
+  ifeq ($(NVCC_VER),)
+    $(error KOKKOS=1 needs nvcc on PATH, and none was found)
+  endif
+  # One awk rather than nested shell tests, which quote badly inside $(shell).
+  KOKKOS_NVCC_OK := $(shell nvcc --version 2>/dev/null | awk '/release/ { \
+      split($$0, a, "release "); split(a[2], b, ","); split(b[1], v, "."); \
+      if (v[1] > 12 || (v[1] == 12 && v[2] >= 2)) print "yes" }')
+  ifneq ($(KOKKOS_NVCC_OK),yes)
+    $(warning nvcc $(NVCC_VER) is below the 12.2 that Kokkos 5 needs for C++20.)
+    $(warning A machine often carries a newer toolkit that is not on PATH:)
+    $(warning try  ls -d /usr/local/cuda-*  and put the bin/ of a newer one first.)
+    $(error nvcc $(NVCC_VER) is too old for KOKKOS=1)
+  endif
+
   ifndef KOKKOS_ROOT
     $(error KOKKOS=1 needs KOKKOS_ROOT. Run tools/install_kokkos.sh and export \
       the line it prints)
