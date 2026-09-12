@@ -95,9 +95,26 @@
 #ifdef _KOKKOS
 
 // Named to match LAMMPS's LMPDeviceType, which a pair_style templates on.
+//
+// hop and Kokkos each decide independently which vendor they target -- hop
+// from -DHOP_TARGET_CUDA and the compiler, Kokkos from how it was configured
+// -- and nothing made them agree. A mismatch is not a compile error on its
+// own: it is two runtimes in one binary, discovered at the first launch, or
+// not discovered at all. Made an error here instead, where the two decisions
+// are visible together.
 #if defined(HOP_TARGET_CUDA) || defined(CUDA)
+#if !defined(KOKKOS_ENABLE_CUDA)
+#error "hop targets CUDA (HOP_TARGET_CUDA) but this Kokkos has no CUDA backend. \
+Configure Kokkos with Kokkos_ENABLE_CUDA, or build the device code for the \
+vendor Kokkos was built for."
+#endif
 using TGDeviceType = Kokkos::Cuda;
 #else
+#if !defined(KOKKOS_ENABLE_HIP)
+#error "hop targets ROCm but this Kokkos has no HIP backend. Configure Kokkos \
+with Kokkos_ENABLE_HIP, or build the device code for the vendor Kokkos was \
+built for."
+#endif
 using TGDeviceType = Kokkos::HIP;
 #endif
 
@@ -107,18 +124,31 @@ using TGDeviceType = Kokkos::HIP;
 // while the rest of the code used another -- which is not an error, just
 // silently wrong results and a serialised run. Called from cuda_set_device,
 // once, after the card is chosen.
+// Whether THIS code brought Kokkos up, as opposed to finding it already up.
+//
+// It matters because TurboGAP is not always the program. Built into LAMMPS's
+// KOKKOS package, Kokkos is initialised by LAMMPS before any of this runs and
+// belongs to LAMMPS for the rest of the process. Finalising it from here would
+// tear the host application's runtime down underneath it, from a routine whose
+// name promises only to reset a device.
+inline bool& tg_owns_kokkos() {
+  static bool owned = false;
+  return owned;
+}
+
 inline void tg_backend_initialize(int device_id) {
   if (Kokkos::is_initialized() || Kokkos::is_finalized())
-    return;
+    return; // someone else owns it, and owns tearing it down too
   Kokkos::InitializationSettings settings;
   settings.set_device_id(device_id);
   settings.set_disable_warnings(true);
   Kokkos::initialize(settings);
+  tg_owns_kokkos() = true;
   // A backstop only, for a path that never reaches gpu_context_finalize. The
   // ordered teardown is tg_backend_finalize below; by the time this runs the
   // CUDA context is usually already gone.
   std::atexit([]() {
-    if (Kokkos::is_initialized() && !Kokkos::is_finalized())
+    if (tg_owns_kokkos() && Kokkos::is_initialized() && !Kokkos::is_finalized())
       Kokkos::finalize();
   });
 }
@@ -136,8 +166,11 @@ inline void tg_backend_initialize(int device_id) {
 // a SIGABRT backtrace on a run that had already finished its work correctly.
 // Called from cuda_device_reset, ahead of the reset.
 inline void tg_backend_finalize() {
+  if (!tg_owns_kokkos())
+    return; // not ours to finalise; see tg_owns_kokkos
   if (Kokkos::is_initialized() && !Kokkos::is_finalized())
     Kokkos::finalize();
+  tg_owns_kokkos() = false;
 }
 
 // An execution space instance wrapping a stream the Fortran context owns.
