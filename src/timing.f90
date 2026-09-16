@@ -52,6 +52,7 @@
 module timing
 
    use kinds
+   use, intrinsic :: iso_fortran_env, only: int64
    use nvtx, only: nvtx_push, nvtx_pop
 
 #ifdef _MPIF90
@@ -144,14 +145,26 @@ module timing
 contains
 
    subroutine get_time(time)
+      !! Wall-clock seconds from a fixed reference.
+      !!
+      !! Not MPI_Wtime. That is only defined once MPI_Init has run, and the
+      !! setup bucket deliberately opens before it -- turbogap.f90 stamps it
+      !! seven lines ahead of the mpi_init call. On OpenMPI 5 the pre-init
+      !! reading uses a different epoch from every later one, so that single
+      !! interval closed as minus the node's uptime: -1069722 s of "Setup" on
+      !! Roihu, which carried the reported total negative with it. An interval
+      !! that straddles MPI_Init needs one clock on both sides of it.
+      !!
+      !! int64 counts because the default integer kind wraps every 24.86 days
+      !! at the 1 kHz rate gfortran reports for it, which is inside the uptime
+      !! of any login node.
       implicit none
       real(dp), intent(out) :: time
+      integer(int64) :: count
+      integer(int64) :: count_rate
 
-#ifdef _MPIF90
-      time = MPI_Wtime()
-#else
-      call cpu_time(time)
-#endif
+      call system_clock(count, count_rate)
+      time = real(count, dp)/real(count_rate, dp)
    end subroutine get_time
 
    subroutine time_start(bucket, label)
