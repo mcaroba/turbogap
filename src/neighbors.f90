@@ -31,6 +31,9 @@ module neighbors
 
    use soap_turbo_functions
    use timing, only: get_time
+!  int64 for the bin-count product in cell_grid, which overflows the default
+!  kind before any real cell needs that many bins.
+   use, intrinsic :: iso_fortran_env, only: int64
 #ifdef _GPU
    use mpi
 #endif
@@ -284,6 +287,9 @@ contains
       real(dp) :: time3
       real(dp) :: tol
       real(dp) :: d_tol = 1.d-6
+!     Rows that turn a Cartesian position into a fractional one, for the cell
+!     list the non-orthorhombic branch bins with.
+      real(dp) :: recip(1:3, 1:3)
       integer, allocatable :: head(:)
       integer, allocatable :: this_list(:)
 !     Where each site's pairs begin. A prefix sum over n_neigh, so both the
@@ -471,31 +477,79 @@ contains
             if (pass == 1) call size_the_list(n_neigh, n_sites, k2_start, n_atom_pairs, neighbors_list)
          end do
          deallocate (head, this_list)
-!   Very inefficient algorithm for non-square boxes
+!   The same cell list for every other cell: any lattice with a non-zero
+!   off-diagonal component, and any cell smaller than the cutoff sphere. What
+!   this replaces tested every site against every supercell position, twice per
+!   rebuild, through a minimum image that brute-forces 27 images per call. The
+!   glassy-carbon MAD case is 2912 atoms in a hexagonal cell, so it spent 19.7 s
+!   of a 25.4 s GH200 run in here against 3.3 s in the descriptor it feeds.
+!
+!   Binning is in fractional coordinates, so the wrap is modular arithmetic on
+!   bin indices and the cell shape never enters. One bin either way is enough:
+!   a pair inside rcut has |ds_k| < rcut/w_k for the perpendicular width w_k,
+!   and m_k = floor(w_k/rcut) bins make that less than one bin. Which pairs are
+!   accepted does not change -- this only decides which ones are tested.
       else if (rebuild_neighbors_list) then
+         call cell_grid(a_box, b_box, c_box, rcut_max, n_sites_supercell, recip, mx, my, mz)
+         allocate (head(1:mx*my*mz))
+         head = 0
+         allocate (this_list(1:n_sites_supercell))
+         do i = 1, n_sites_supercell
+            call bin_coords(positions(1:3, i), recip, mx, my, mz, i2, j2, k2)
+            j = i2 + (j2 - 1)*mx + (k2 - 1)*mx*my
+            this_list(i) = head(j)
+            head(j) = i
+         end do
          do pass = 1, 2
             !$omp parallel do default(shared) schedule(dynamic, 32) &
-            !$omp private(i, j, nn, dist, d, i_shift)
+            !$omp private(i, j, k, nn, i2, j2, k2, i3, j3, k3, dist, d, i_shift)
             do i = 1, n_sites
                if (.not. do_list(i)) cycle
 !              We always count atom i as its own neighbor. This is useful when building the derivatives
                nn = 1
                if (pass == 2) neighbors_list(k2_start(i)) = i
-               do j = 1, n_sites_supercell
-                  if (j /= i) then
-                     call get_distance(positions(1:3, i), positions(1:3, j), a_box(1:3), b_box(1:3), &
-                                       c_box(1:3), (/.true., .true., .true./), dist, d, i_shift)
-                     if (d < rcut_max) then
-                        nn = nn + 1
-                        if (pass == 2) neighbors_list(k2_start(i) + nn - 1) = j
-                     end if
-                  end if
+               call bin_coords(positions(1:3, i), recip, mx, my, mz, i2, j2, k2)
+               do k3 = k2 - 1, k2 + 1
+                  if (mz == 1 .and. k3 /= 1) cycle
+                  if (mz == 2 .and. k2 == 1 .and. k3 == 0) cycle
+                  if (mz == 2 .and. k2 == 2 .and. k3 == 3) cycle
+                  do j3 = j2 - 1, j2 + 1
+                     if (my == 1 .and. j3 /= 1) cycle
+                     if (my == 2 .and. j2 == 1 .and. j3 == 0) cycle
+                     if (my == 2 .and. j2 == 2 .and. j3 == 3) cycle
+                     do i3 = i2 - 1, i2 + 1
+                        if (mx == 1 .and. i3 /= 1) cycle
+                        if (mx == 2 .and. i2 == 1 .and. i3 == 0) cycle
+                        if (mx == 2 .and. i2 == 2 .and. i3 == 3) cycle
+                        j = 1 + modulo(i3 - 1, mx) + modulo(j3 - 1, my)*mx + modulo(k3 - 1, mz)*mx*my
+                        k = head(j)
+                        do while (k /= 0)
+                           if (k /= i) then
+                              call get_distance(positions(1:3, i), positions(1:3, k), a_box(1:3), b_box(1:3), &
+                                                c_box(1:3), (/.true., .true., .true./), dist, d, i_shift)
+                              if (d < rcut_max) then
+                                 nn = nn + 1
+                                 if (pass == 2) neighbors_list(k2_start(i) + nn - 1) = k
+                              end if
+                           end if
+                           k = this_list(k)
+                        end do
+                     end do
+                  end do
                end do
                if (pass == 1) n_neigh(i) = nn
+!              Ascending index, which is the order the loop over every position
+!              produced. Not cosmetic: permuting a site's neighbours
+!              reassociates every sum downstream and moves the last digit of
+!              every force, so without this the change is not verifiable.
+               if (pass == 2 .and. nn > 2) then
+                  call sort_ascending(neighbors_list(k2_start(i) + 1:k2_start(i) + nn - 1))
+               end if
             end do
             !$omp end parallel do
             if (pass == 1) call size_the_list(n_neigh, n_sites, k2_start, n_atom_pairs, neighbors_list)
          end do
+         deallocate (head, this_list)
       end if
 
       if (do_timing) then
@@ -619,6 +673,111 @@ contains
 ! offsets the fill pass writes at, and size the list to exactly the number of
 ! pairs there are. Sites this rank does not own have n_neigh = 0 and take no
 ! room.
+!  The fractional-coordinate rows, and how many bins fit along each lattice
+!  direction. w_k = V/|b x c| and its cyclic partners is the distance between
+!  the two cell planes normal to k; for an orthorhombic cell that is a(1), b(2),
+!  c(3), so this gives the same counts the orthorhombic branch works out itself.
+   subroutine cell_grid(a, b, c, rcut, n_atoms, recip, mx, my, mz)
+
+      implicit none
+
+      real(dp), intent(in) :: a(1:3)
+      real(dp), intent(in) :: b(1:3)
+      real(dp), intent(in) :: c(1:3)
+      real(dp), intent(in) :: rcut
+      integer, intent(in) :: n_atoms
+      real(dp), intent(out) :: recip(1:3, 1:3)
+      integer, intent(out) :: mx
+      integer, intent(out) :: my
+      integer, intent(out) :: mz
+      real(dp) :: bxc(1:3)
+      real(dp) :: cxa(1:3)
+      real(dp) :: axb(1:3)
+      real(dp) :: vol
+      integer(int64) :: n_bins
+
+      bxc = cross_product(b, c)
+      cxa = cross_product(c, a)
+      axb = cross_product(a, b)
+      vol = dot_product(a, bxc)
+      recip(1, 1:3) = bxc/vol
+      recip(2, 1:3) = cxa/vol
+      recip(3, 1:3) = axb/vol
+!     max(1, ...) rather than an error: a cell thinner than the cutoff is legal
+!     and reaches here through is_box_small, and one bin on that axis degrades
+!     to testing every position along it, which is what used to happen anyway.
+      mx = max(1, int(dabs(vol)/dsqrt(dot_product(bxc, bxc))/rcut))
+      my = max(1, int(dabs(vol)/dsqrt(dot_product(cxa, cxa))/rcut))
+      mz = max(1, int(dabs(vol)/dsqrt(dot_product(axb, axb))/rcut))
+!     A cluster in a large vacuum box asks for one bin per rcut^3 of empty
+!     space, and more bins than atoms buys nothing. Halving an axis only makes
+!     bins bigger, which the one-bin search is still correct for. int64 because
+!     the product of three unclamped counts is what overflows first.
+      n_bins = int(mx, int64)*int(my, int64)*int(mz, int64)
+      do while (n_bins > 8_int64*int(max(1, n_atoms), int64) .and. max(mx, my, mz) > 1)
+         if (mx >= my .and. mx >= mz) then
+            mx = max(1, mx/2)
+         else if (my >= mz) then
+            my = max(1, my/2)
+         else
+            mz = max(1, mz/2)
+         end if
+         n_bins = int(mx, int64)*int(my, int64)*int(mz, int64)
+      end do
+
+   end subroutine cell_grid
+
+!  Which bin a position falls in, 1-based on each axis. modulo folds periodic
+!  images onto the same bin, which is what lets the search wrap.
+   subroutine bin_coords(pos, recip, mx, my, mz, i2, j2, k2)
+
+      implicit none
+
+      real(dp), intent(in) :: pos(1:3)
+      real(dp), intent(in) :: recip(1:3, 1:3)
+      integer, intent(in) :: mx
+      integer, intent(in) :: my
+      integer, intent(in) :: mz
+      integer, intent(out) :: i2
+      integer, intent(out) :: j2
+      integer, intent(out) :: k2
+      real(dp) :: s(1:3)
+
+      s(1) = modulo(dot_product(recip(1, 1:3), pos), 1.d0)
+      s(2) = modulo(dot_product(recip(2, 1:3), pos), 1.d0)
+      s(3) = modulo(dot_product(recip(3, 1:3), pos), 1.d0)
+!     min() because modulo can return a value that rounds up to 1 in the product.
+      i2 = min(mx, 1 + int(s(1)*dfloat(mx)))
+      j2 = min(my, 1 + int(s(2)*dfloat(my)))
+      k2 = min(mz, 1 + int(s(3)*dfloat(mz)))
+
+   end subroutine bin_coords
+
+!  Insertion sort, on one site's neighbours: a hundred or so entries at the
+!  cutoffs this code runs at, where the setup for anything cleverer costs more
+!  than the sort does.
+   subroutine sort_ascending(list)
+
+      implicit none
+
+      integer, intent(inout) :: list(:)
+      integer :: i
+      integer :: j
+      integer :: v
+
+      do i = 2, size(list)
+         v = list(i)
+         j = i - 1
+         do while (j >= 1)
+            if (list(j) <= v) exit
+            list(j + 1) = list(j)
+            j = j - 1
+         end do
+         list(j + 1) = v
+      end do
+
+   end subroutine sort_ascending
+
    subroutine size_the_list(n_neigh, n_sites, k2_start, n_atom_pairs, neighbors_list)
 
       implicit none
