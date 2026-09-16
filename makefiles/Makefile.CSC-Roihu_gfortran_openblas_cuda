@@ -39,7 +39,12 @@ ifeq ($(DEBUG),1)
 else
   CU += -O3
   CC += -O3
-  F90_OPTS =  -O2 -fPIC -ffree-line-length-none -fallow-argument-mismatch
+  # -O3 and a target, not generic -O2. Plenty of this build is host code -- the
+  # neighbour list above all -- and at generic -O2 it took 33.8 s of a 42 s MAD
+  # run on a GH200, against 20.5 s for the same work on one EPYC core built
+  # -O3 -march=znver5. Grace is Neoverse V2; spack's own install paths on this
+  # machine say neoverse_v2 too.
+  F90_OPTS =  -O3 -mcpu=neoverse-v2 -fPIC -ffree-line-length-none -fallow-argument-mismatch
 endif
 
 # The driver stub lives one level down from the runtime libraries, and only the
